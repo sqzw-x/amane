@@ -1,0 +1,5 @@
+# 统一所有文本文件为 LF 行尾, 不随平台 / git core.autocrlf 变化.
+# 否则 Windows 上 checkout 出的源码是 CRLF, 会让 oxfmt --check (check-web)
+# 与生成的 openapi.json 的 git diff (check-openapi) 整文件误报.
+# binary 文件由 text=auto 自动识别, 不做行尾转换.
+* text=auto eol=lf
