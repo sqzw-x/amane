@@ -31,21 +31,21 @@ class TestDownloadUrls:
 class TestGetToolDir:
     """二进制缓存目录."""
 
-    def test_returns_tools_under_data_dir(self):
-        result = get_tool_dir(Path("/data"))
-        assert result == Path("/data/tools")
+    def test_returns_tools_under_data_dir(self, tmp_path: Path):
+        result = get_tool_dir(tmp_path)
+        assert result == tmp_path / "tools"
 
 
 class TestGetBinaryPath:
     """二进制路径生成."""
 
-    def test_realesrgan_path(self):
-        path = get_binary_path(SrTool.REALESRGAN, Path("/data"))
-        assert path == Path("/data/tools/realesrgan/realesrgan-ncnn-vulkan")
+    def test_realesrgan_path(self, tmp_path: Path):
+        path = get_binary_path(SrTool.REALESRGAN, tmp_path)
+        assert path == tmp_path / "tools" / "realesrgan" / "realesrgan-ncnn-vulkan"
 
-    def test_waifu2x_path(self):
-        path = get_binary_path(SrTool.WAIFU2X, Path("/data"))
-        assert path == Path("/data/tools/waifu2x/waifu2x-ncnn-vulkan")
+    def test_waifu2x_path(self, tmp_path: Path):
+        path = get_binary_path(SrTool.WAIFU2X, tmp_path)
+        assert path == tmp_path / "tools" / "waifu2x" / "waifu2x-ncnn-vulkan"
 
 
 class TestIsBinaryAvailable:

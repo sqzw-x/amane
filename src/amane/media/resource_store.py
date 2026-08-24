@@ -93,8 +93,12 @@ class ResourceStore:
         return self._base_dir / h[:2] / f"{h}{suffix}"
 
     def _relative_path(self, full_path: Path) -> str:
-        """转为相对于 base_dir 的路径字符串."""
-        return str(full_path.relative_to(self._base_dir))
+        """转为相对于 base_dir 的路径字符串.
+
+        统一 POSIX 分隔符 (as_posix), 与给 get_by_url_hash 的 LIKE 前缀模式
+        '{h[:2]}/{h}.%' 保持一致; 否则 Windows 上存入反斜杠路径, 前缀查询匹配不到.
+        """
+        return full_path.relative_to(self._base_dir).as_posix()
 
     def full_path(self, resource: Resource) -> Path:
         """Resource 记录 → 本地绝对文件路径."""
