@@ -15,7 +15,12 @@ def is_descendant(p: str | Path, parent: str | Path) -> bool:
     p = os.path.realpath(p, strict=os.path.ALLOW_MISSING)
     parent = os.path.realpath(parent, strict=os.path.ALLOW_MISSING)
     # parent = /foo/bar, p = /foo/barbar 使得简单的前缀判断失效
-    return os.path.commonpath([p, parent]) == str(parent)
+    try:
+        common = os.path.commonpath([p, parent])
+    except ValueError:
+        # Windows 上 p, parent 来自不同盘符时 commonpath 抛 ValueError
+        return False
+    return common == str(parent)
 
 
 def is_any_descendant(p: str | Path, *parents: str | Path) -> bool:
