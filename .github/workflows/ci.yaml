@@ -22,10 +22,19 @@ env:
 
 jobs:
   check:
-    name: just ci
-    runs-on: ubuntu-latest
+    name: just ci (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+
+      # 生成的 openapi.json / TS client 均为 LF; 关闭 autocrlf 避免 Windows 上
+      # generate 后 git diff (check-openapi) 因行尾差异误报.
+      - name: Normalize line endings
+        run: git config core.autocrlf false
 
       - name: Setup UV
         uses: astral-sh/setup-uv@v9.0.0
@@ -56,7 +65,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
+          name: coverage-report-${{ matrix.os }}
           path: |
             coverage_html/
             coverage.xml

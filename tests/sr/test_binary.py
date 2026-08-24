@@ -1,7 +1,10 @@
 """binary 模块测试 - 平台检测, 路径生成, 可用性检查, 下载 URL."""
 
 import stat
+import sys
 from pathlib import Path
+
+import pytest
 
 from amane.sr import SrTool, get_binary_path, get_tool_dir, is_binary_available
 from amane.sr.tool import get_tool_meta
@@ -52,6 +55,7 @@ class TestIsBinaryAvailable:
         """二进制文件不存在时返回 False."""
         assert is_binary_available(SrTool.REALESRGAN, tmp_path) is False
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX 执行位")
     def test_binary_no_exec(self, tmp_path: Path):
         """文件存在但不可执行时返回 False."""
         binary_path = get_binary_path(SrTool.REALESRGAN, tmp_path)
@@ -60,12 +64,21 @@ class TestIsBinaryAvailable:
         binary_path.chmod(0o644)
         assert is_binary_available(SrTool.REALESRGAN, tmp_path) is False
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX 执行位")
     def test_binary_available(self, tmp_path: Path):
         """文件存在且可执行时返回 True."""
         binary_path = get_binary_path(SrTool.REALESRGAN, tmp_path)
         binary_path.parent.mkdir(parents=True, exist_ok=True)
         binary_path.write_text("#!/bin/sh\necho ok")
         binary_path.chmod(binary_path.stat().st_mode | stat.S_IXUSR)
+        assert is_binary_available(SrTool.REALESRGAN, tmp_path) is True
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows: 无 POSIX 执行位, 文件存在即可用")
+    def test_binary_present_is_available_windows(self, tmp_path: Path):
+        """Windows 上已下载 (文件存在) 即视为就绪, 不依赖执行位."""
+        binary_path = get_binary_path(SrTool.REALESRGAN, tmp_path)
+        binary_path.parent.mkdir(parents=True, exist_ok=True)
+        binary_path.write_text("fake binary")
         assert is_binary_available(SrTool.REALESRGAN, tmp_path) is True
 
 

@@ -1,6 +1,7 @@
 """oshash 计算单元测试: 与 oshash 包结果一致, 且边界/非法输入不抛异常."""
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,7 @@ class TestComputeOshash:
     def test_missing_file_returns_none(self, tmp_path: Path):
         assert compute_oshash(tmp_path / "nope.mp4") is None
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="创建符号链接需要特权, 行为不稳定")
     def test_symlink_to_valid_file(self, tmp_path: Path):
         target = tmp_path / "real.mkv"
         target.write_bytes(_rep_256(65536 * 2))

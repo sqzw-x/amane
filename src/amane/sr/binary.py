@@ -34,7 +34,13 @@ def get_binary_path(tool: SrTool, data_dir: Path) -> Path:
 def is_binary_available(tool: SrTool, data_dir: Path) -> bool:
     """检查二进制文件是否已缓存且可执行."""
     binary_path = get_binary_path(tool, data_dir)
-    return binary_path.is_file() and os.access(binary_path, os.X_OK)
+    if not binary_path.is_file():
+        return False
+    # Windows 无 POSIX 执行位; os.access 的可执行判断对非 .exe/.bat 等宿主类型不适用,
+    # 文件已存在即视作就绪 (binary_name 也刻意不含平台扩展名).
+    if sys.platform == "win32":
+        return True
+    return os.access(binary_path, os.X_OK)
 
 
 async def ensure_binary(tool: SrTool, data_dir: Path, client: httpx.AsyncClient | None = None) -> Path:

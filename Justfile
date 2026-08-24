@@ -24,7 +24,7 @@ _web-install:
 # 拉取爬虫测试 fixture (amane-testdata, 按 tests/.fixtures-rev)
 # 无访问权限时打印警告并跳过, 爬虫用例会 skip 但不阻断 setup/check.
 fixtures:
-    bash scripts/fetch_fixtures.sh
+    uv run python scripts/fetch_fixtures.py
 
 # CI check job: frozen Python(dev+extras) + frozen web
 ci-sync: _ci-sync-python _web-install-ci
