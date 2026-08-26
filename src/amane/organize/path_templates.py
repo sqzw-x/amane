@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -77,26 +78,38 @@ OPTIONAL_TEMPLATE_DEFAULTS: dict[str, str] = {
     "subtitle_template": "{video_dir}/{number}.{ext}",
 }
 
-# 占位符相位: metadata 来自 Metadata; source 需 source_path (源文件目录);
-# file 来自源文件名 (parse_file_info, 整理时检测); post_video 在视频路径渲染后注入.
-PlaceholderPhase = str  # "metadata" | "source" | "file" | "post_video"
+
+class PlaceholderPhase(StrEnum):
+    """占位符相位: 值的来源与注入时机.
+
+    - ``metadata``: 来自 Metadata 字段;
+    - ``source``: 需 ``source_path`` (源文件目录);
+    - ``file``: 来自源文件名 (``parse_file_info``, 整理时检测);
+    - ``post_video``: 视频路径渲染后注入 (侧车模板).
+    """
+
+    METADATA = "metadata"
+    SOURCE = "source"
+    FILE = "file"
+    POST_VIDEO = "post_video"
+
 
 PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
-    ("number", "metadata"),
-    ("title", "metadata"),
-    ("actor", "metadata"),
-    ("actors", "metadata"),
-    ("studio", "metadata"),
-    ("publisher", "metadata"),
-    ("series", "metadata"),
-    ("year", "metadata"),
-    ("release", "metadata"),
-    ("ext", "metadata"),
-    ("dir", "source"),
-    ("dir_path", "source"),
-    ("mosaic", "file"),
-    ("definition", "file"),
-    ("video_dir", "post_video"),
+    ("number", PlaceholderPhase.METADATA),
+    ("title", PlaceholderPhase.METADATA),
+    ("actor", PlaceholderPhase.METADATA),
+    ("actors", PlaceholderPhase.METADATA),
+    ("studio", PlaceholderPhase.METADATA),
+    ("publisher", PlaceholderPhase.METADATA),
+    ("series", PlaceholderPhase.METADATA),
+    ("year", PlaceholderPhase.METADATA),
+    ("release", PlaceholderPhase.METADATA),
+    ("ext", PlaceholderPhase.METADATA),
+    ("dir", PlaceholderPhase.SOURCE),
+    ("dir_path", PlaceholderPhase.SOURCE),
+    ("mosaic", PlaceholderPhase.FILE),
+    ("definition", PlaceholderPhase.FILE),
+    ("video_dir", PlaceholderPhase.POST_VIDEO),
 )
 
 

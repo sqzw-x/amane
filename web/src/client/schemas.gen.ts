@@ -4241,14 +4241,7 @@ export const PathTemplatePlaceholderSchema = {
             title: 'Name'
         },
         phase: {
-            type: 'string',
-            enum: [
-                'metadata',
-                'source',
-                'file',
-                'post_video'
-            ],
-            title: 'Phase'
+            $ref: '#/components/schemas/PlaceholderPhase'
         }
     },
     type: 'object',
@@ -4293,6 +4286,18 @@ export const PathTemplateSchemaResponseSchema = {
     ],
     title: 'PathTemplateSchemaResponse',
     description: '路径模板 UI 契约: 占位符相位 + 默认值, 与 resolve_paths 同源.'
+} as const;
+
+export const PlaceholderPhaseSchema = {
+    type: 'string',
+    enum: [
+        'metadata',
+        'source',
+        'file',
+        'post_video'
+    ],
+    title: 'PlaceholderPhase',
+    description: '占位符相位: 值的来源与注入时机.\n\n- ``metadata``: 来自 Metadata 字段;\n- ``source``: 需 ``source_path`` (源文件目录);\n- ``file``: 来自源文件名 (``parse_file_info``, 整理时检测);\n- ``post_video``: 视频路径渲染后注入 (侧车模板).'
 } as const;
 
 export const PluginConfigSchema = {
