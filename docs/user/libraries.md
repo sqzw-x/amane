@@ -46,8 +46,14 @@ NFO: {video_dir}/{number}.nfo
 ```
 {number}/{number}.mp4          → MIDV-123/MIDV-123.mp4
 {studio}/{number}/{title}.mp4  → Studio Name/MIDV-123/Sample Title.mp4
-{mosaic}/{definition}/{number}.mp4  → uncensored/4K/MIDV-123.mp4
+{studio}/{number}/{number}-{mosaic}-{definition}.{ext}  → Studio Name/MIDV-123/MIDV-123-uncensored-4K.mp4
 ```
+
+!!! warning
+    `{mosaic}` / `{definition}` 取自源文件名, 检测结果不落库. 若把它们放在目录段而文件名只留番号
+    (如上面的 `{mosaic}/{definition}/{number}.mp4`), 二次整理会因文件名不再含标记而按默认值
+    (censored / Unknown) 重新归位 — 与分集后缀同一约定: 想按标记分目录, 请把标记保留在文件名段
+    (如 `{number}-{mosaic}-{definition}.{ext}`).
 
 ## 整理操作
 

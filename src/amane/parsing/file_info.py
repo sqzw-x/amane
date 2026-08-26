@@ -480,7 +480,8 @@ def _detect_cd(basename: str) -> int | None:
 
 def _detect_subtitle(basename: str) -> bool:
     """通过文件名标记检测是否包含字幕."""
-    if re.search(r"-U?C(?:\.|$|-CD)", basename):
+    # -C / -UC 后不能紧跟字母或数字 (否则是 -CD1 分集、-CS 之类), 但可跟 -4K / -CD1 等标记段.
+    if re.search(r"-U?C(?![A-Z0-9])", basename):
         return True
     return bool(re.search(r"[字幕中文]", basename))
 
@@ -491,29 +492,38 @@ def _detect_mosaic(basename: str) -> str | None:
         return "uncensored"
     if re.search(r"破解|流出|LEAKED", basename):
         return "cracked"
-    if re.search(r"-UC(?:\.|$)", basename):
+    # -UC 后不能紧跟字母或数字, 但可跟 -CD1 / -4K 等标记段 (同字幕检测约定).
+    if re.search(r"-UC(?![A-Z0-9])", basename):
         return "uncensored"
     return None
 
 
+def _normalize_markers(text: str) -> str:
+    """把下划线与非 ASCII 字符 (含 CJK) 归一为分隔符, 使 \\b 词边界对汉字/下划线邻接也生效."""
+    return re.sub(r"_|[^\x00-\x7F]", ".", text)
+
+
 # 分辨率标记: 元组顺序即优先级 (高 → 低), 同时命中多个时取靠前者; 2160p 归一化为 4K.
-# \b 边界确保不误中番号/前缀里的字母串 (如 SKYHD-xxx 不命中 HD, 4KS/HDTV 不命中 4K/HD).
+# 匹配作用于 _normalize_markers 归一化后的 basename:
+# - 数字标记 (8K/4K/NNNp) 允许紧跟帧率数字 (如 1080p60), K 与 p 后不得再接字母 (4KS/HDTV 不命中);
+# - 字母标记 (HD/SD) 不得是番号前缀: -123 形态视为番号 (HD-123.mp4), 不命中.
 _DEFINITION_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("8K", re.compile(r"\b8K\b")),
-    ("4K", re.compile(r"\b4K\b")),
-    ("4K", re.compile(r"\b2160P\b")),
-    ("1440p", re.compile(r"\b1440P\b")),
-    ("1080p", re.compile(r"\b1080P\b")),
-    ("720p", re.compile(r"\b720P\b")),
-    ("480p", re.compile(r"\b480P\b")),
-    ("HD", re.compile(r"\bHD\b")),
-    ("SD", re.compile(r"\bSD\b")),
+    ("8K", re.compile(r"\b8K(?:\d+)?\b")),
+    ("4K", re.compile(r"\b4K(?:\d+)?\b")),
+    ("4K", re.compile(r"\b2160P(?:\d+)?\b")),
+    ("1440p", re.compile(r"\b1440P(?:\d+)?\b")),
+    ("1080p", re.compile(r"\b1080P(?:\d+)?\b")),
+    ("720p", re.compile(r"\b720P(?:\d+)?\b")),
+    ("480p", re.compile(r"\b480P(?:\d+)?\b")),
+    ("HD", re.compile(r"\bHD\b(?!-\d)")),
+    ("SD", re.compile(r"\bSD\b(?!-\d)")),
 )
 
 
 def _detect_definition(basename: str) -> str | None:
     """从文件名检测分辨率标记. 无命中返回 None; 命中多个时取最高."""
+    normalized = _normalize_markers(basename)
     for value, pattern in _DEFINITION_MARKERS:
-        if pattern.search(basename):
+        if pattern.search(normalized):
             return value
     return None

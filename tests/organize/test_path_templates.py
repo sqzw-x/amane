@@ -6,6 +6,7 @@
 """
 
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -338,62 +339,41 @@ class TestSourceDirVariables:
         assert result.video == media / "sub" / "ABC-123.mp4"
 
 
-class TestFilePlaceholders:
+class _RenderCase(NamedTuple):
+    """file 相位占位符渲染用例: source 经 parse_file_info 后渲染 template, 断言 video 相对库根路径段."""
+
+    source: str | None  # None 表示不传 file_info (未走 ORGANIZE 的调用方)
+    template: str
+    expected: tuple[str, ...]
+
+
+RENDER_CASES: tuple[_RenderCase, ...] = (
+    # 文件名标记优先 + 分辨率归一化
+    _RenderCase("MIDV-123-4K-無碼.mp4", "{mosaic}/{definition}/{number}.{ext}", ("uncensored", "4K", "ABC-123.mp4")),
+    # 无标记时按 content_type 兜底 (无码前缀番号 → uncensored)
+    _RenderCase("HEYZO-123-1080p.mp4", "{mosaic}/{definition}/{number}.{ext}", ("uncensored", "1080p", "ABC-123.mp4")),
+    # 无标记且非无码 → censored; 无分辨率命中 → Unknown (与其余占位符一致)
+    _RenderCase("ABC-123.mp4", "{mosaic}/{definition}/{number}.{ext}", ("censored", "Unknown", "ABC-123.mp4")),
+    # 破解/流出标记
+    _RenderCase("[破解]MIDV-123.mp4", "{mosaic}/{number}.{ext}", ("cracked", "ABC-123.mp4")),
+    # 下划线/汉字邻接的复杂文件名
+    _RenderCase("MIDV-123_4K_无码.mp4", "{mosaic}/{definition}/{number}.{ext}", ("uncensored", "4K", "ABC-123.mp4")),
+    # cd 参数省略时从 file_info.cd 回退
+    _RenderCase("MIDV-123-CD1.mp4", "{number}/{number}.{ext}", ("ABC-123", "ABC-123-CD1.mp4")),
+    # 未走 ORGANIZE 的调用方不传 file_info: 与占位符缺失回退一致
+    _RenderCase(None, "{mosaic}/{definition}/{number}.{ext}", ("Unknown", "Unknown", "ABC-123.mp4")),
+)
+
+
+@pytest.mark.parametrize("case", RENDER_CASES, ids=lambda c: c.source or "no-file-info")
+def test_file_placeholder_render(case: _RenderCase, media: Path) -> None:
     """file 相位占位符 {mosaic} / {definition}: 来自源文件名 (parse_file_info)."""
+    wp = Library(name="t", path=str(media), video_template=case.template)
+    meta = _meta()
+    file_info = parse_file_info(case.source) if case.source is not None else None
+    result = resolve_paths(wp, meta, ext="mp4", file_info=file_info)
 
-    def test_mosaic_marker_and_definition(self, media: Path):
-        """文件名标记优先生效; 分辨率归一化后渲染."""
-        wp = Library(name="t", path=str(media), video_template="{mosaic}/{definition}/{number}.{ext}")
-        meta = _meta()
-        info = parse_file_info("MIDV-123-4K-無碼.mp4")
-        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
-
-        assert result.video == media / "uncensored" / "4K" / "ABC-123.mp4"
-
-    def test_mosaic_fallback_to_content_type(self, media: Path):
-        """无文件名标记时按 content_type 兜底 (无码前缀番号 → uncensored)."""
-        wp = Library(name="t", path=str(media), video_template="{mosaic}/{definition}/{number}.{ext}")
-        meta = _meta()
-        info = parse_file_info("HEYZO-123-1080p.mp4")
-        assert info.mosaic is None
-        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
-
-        assert result.video == media / "uncensored" / "1080p" / "ABC-123.mp4"
-
-    def test_mosaic_default_censored_definition_unknown(self, media: Path):
-        """无标记且非无码 → censored; 无分辨率命中 → Unknown (与其余占位符一致)."""
-        wp = Library(name="t", path=str(media), video_template="{mosaic}/{definition}/{number}.{ext}")
-        meta = _meta()
-        info = parse_file_info("ABC-123.mp4")
-        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
-
-        assert result.video == media / "censored" / "Unknown" / "ABC-123.mp4"
-
-    def test_mosaic_cracked_marker(self, media: Path):
-        """破解/流出标记 → cracked."""
-        wp = Library(name="t", path=str(media), video_template="{mosaic}/{number}.{ext}")
-        meta = _meta()
-        info = parse_file_info("[破解]MIDV-123.mp4")
-        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
-
-        assert result.video == media / "cracked" / "ABC-123.mp4"
-
-    def test_variables_unknown_without_file_info(self, media: Path):
-        """未走 ORGANIZE 的调用方不传 file_info: 与占位符缺失回退一致, 渲染 Unknown."""
-        wp = Library(name="t", path=str(media), video_template="{mosaic}/{definition}/{number}.{ext}")
-        meta = _meta()
-        result = resolve_paths(wp, meta, ext="mp4")
-
-        assert result.video == media / "Unknown" / "Unknown" / "ABC-123.mp4"
-
-    def test_cd_falls_back_to_file_info(self, media: Path):
-        """cd 参数省略时从 file_info.cd 取 (ORGANIZE 调用方只传 file_info)."""
-        wp = Library(name="t", path=str(media), video_template="{number}/{number}.{ext}")
-        meta = _meta()
-        info = parse_file_info("MIDV-123-CD1.mp4")
-        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
-
-        assert result.video == media / "ABC-123" / "ABC-123-CD1.mp4"
+    assert result.video == media.joinpath(*case.expected)
 
 
 class TestPathTraversalProtection:

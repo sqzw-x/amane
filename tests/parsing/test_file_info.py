@@ -26,11 +26,6 @@ class _Case(NamedTuple):
     content_type: ContentType | None = None
 
 
-def _gap(case: _Case) -> object:
-    """当前解析器过不了: 下划线/汉字邻接、`-UC` 后跟分片或清晰度、`HD-`/`SD-` 番号误报。修好后会 XPASS, 去掉此包装即可。"""
-    return pytest.param(case, marks=pytest.mark.xfail(strict=True, reason="file_info marker delimiters"))
-
-
 CASES: list[object] = [
     # --- 分集 ---
     _Case("MIDV-123-CD1.mp4", cd=1, number="MIDV-123"),
@@ -65,13 +60,9 @@ CASES: list[object] = [
     _Case("MIDV-123-無碼流出.mp4", mosaic="uncensored", number="MIDV-123"),
     _Case("MIDV-123-無碼破解.mp4", mosaic="uncensored", number="MIDV-123"),
     # -UC 后面还跟分片或清晰度
-    _gap(_Case("MIDV-123-UC-CD1.mp4", cd=1, has_subtitle=True, mosaic="uncensored", number="MIDV-123")),
-    _gap(_Case("MIDV-123-UC-4K.mp4", has_subtitle=True, mosaic="uncensored", definition="4K", number="MIDV-123")),
-    _gap(
-        _Case(
-            "MIDV-123-UC-CD1-4K.mp4", cd=1, has_subtitle=True, mosaic="uncensored", definition="4K", number="MIDV-123"
-        )
-    ),
+    _Case("MIDV-123-UC-CD1.mp4", cd=1, has_subtitle=True, mosaic="uncensored", number="MIDV-123"),
+    _Case("MIDV-123-UC-4K.mp4", has_subtitle=True, mosaic="uncensored", definition="4K", number="MIDV-123"),
+    _Case("MIDV-123-UC-CD1-4K.mp4", cd=1, has_subtitle=True, mosaic="uncensored", definition="4K", number="MIDV-123"),
     # 无文件名标记: mosaic 为空 (无码片商走 content_type, 不在本字段)
     _Case("HEYZO-123.mp4", number="HEYZO-123"),
     _Case("HEYZO-123-1080p.mp4", definition="1080p", number="HEYZO-123"),
@@ -92,23 +83,23 @@ CASES: list[object] = [
     _Case("ABC-123.8K.HD.mp4", definition="8K", number="ABC-123"),
     _Case("ABC-123.720p.1080p.mp4", definition="1080p", number="ABC-123"),
     # 下划线分隔 (番号剥离已把 _ 当标记分隔符)
-    _gap(_Case("MIDV-123_4K.mp4", definition="4K", number="MIDV-123")),
-    _gap(_Case("MIDV-123_4K_无码.mp4", mosaic="uncensored", definition="4K", number="MIDV-123")),
-    _gap(_Case("MIDV-123_1080p_x.mp4", definition="1080p", number="MIDV-123")),
-    _gap(_Case("ABC-123_8K_HDR.mp4", definition="8K", number="ABC-123")),
+    _Case("MIDV-123_4K.mp4", definition="4K", number="MIDV-123"),
+    _Case("MIDV-123_4K_无码.mp4", mosaic="uncensored", definition="4K", number="MIDV-123"),
+    _Case("MIDV-123_1080p_x.mp4", definition="1080p", number="MIDV-123"),
+    _Case("ABC-123_8K_HDR.mp4", definition="8K", number="ABC-123"),
     # 方括号 / 汉字紧贴
     _Case("[4K]MIDV-123.mp4", definition="4K", number="MIDV-123"),
-    _gap(_Case("[4K無碼]MIDV-123.mp4", mosaic="uncensored", definition="4K", number="MIDV-123")),
-    _gap(_Case("[1080p無碼]MIDV-123.mp4", mosaic="uncensored", definition="1080p", number="MIDV-123")),
-    _gap(_Case("MIDV-123-4K無碼.mp4", mosaic="uncensored", definition="4K", number="MIDV-123")),
+    _Case("[4K無碼]MIDV-123.mp4", mosaic="uncensored", definition="4K", number="MIDV-123"),
+    _Case("[1080p無碼]MIDV-123.mp4", mosaic="uncensored", definition="1080p", number="MIDV-123"),
+    _Case("MIDV-123-4K無碼.mp4", mosaic="uncensored", definition="4K", number="MIDV-123"),
     _Case("MIDV-123-4K-無碼.mp4", mosaic="uncensored", definition="4K", number="MIDV-123"),
-    _gap(_Case("[破解]MIDV-123_1080p.mp4", mosaic="cracked", definition="1080p", number="MIDV-123")),
+    _Case("[破解]MIDV-123_1080p.mp4", mosaic="cracked", definition="1080p", number="MIDV-123"),
     # 空格分隔
     _Case("ABC-123 4K.mp4", definition="4K", number="ABC-123"),
     _Case("ABC-123 1080p uncensored.mp4", mosaic="uncensored", definition="1080p", number="ABC-123"),
     # 帧率后缀仍识别清晰度
-    _gap(_Case("ABC-123.1080p60.mp4", definition="1080p", number="ABC-123")),
-    _gap(_Case("ABC-123.2160p30.mp4", definition="4K", number="ABC-123")),
+    _Case("ABC-123.1080p60.mp4", definition="1080p", number="ABC-123"),
+    _Case("ABC-123.2160p30.mp4", definition="4K", number="ABC-123"),
     # 分集 + 清晰度
     _Case("MIDV-123-4K-CD1.mp4", cd=1, definition="4K", number="MIDV-123"),
     # --- 清晰度误报: 番号/编码里的字母数字不当作独立标记 ---
@@ -118,8 +109,8 @@ CASES: list[object] = [
     _Case("ABC-2160.mp4"),
     _Case("ABC-123.1080.mp4", number="ABC-123"),
     _Case("ABC-123.mp4", number="ABC-123"),
-    _gap(_Case("HD-123.mp4")),
-    _gap(_Case("SD-123.mp4")),
+    _Case("HD-123.mp4"),
+    _Case("SD-123.mp4"),
     _Case("ABC-123.FHD.mp4", number="ABC-123"),
     _Case("ABC-123.UHD.mp4", number="ABC-123"),
     # --- 完整路径: 目录关键词决定内容类型 ---
@@ -212,24 +203,20 @@ CASES: list[object] = [
         number="ABC-123",
         content_type=ContentType.WESTERN,
     ),
-    _gap(
-        _Case(
-            "/media/lib/MIDV-123-UC-CD1.mp4",
-            cd=1,
-            has_subtitle=True,
-            mosaic="uncensored",
-            number="MIDV-123",
-            content_type=ContentType.CENSORED,
-        )
+    _Case(
+        "/media/lib/MIDV-123-UC-CD1.mp4",
+        cd=1,
+        has_subtitle=True,
+        mosaic="uncensored",
+        number="MIDV-123",
+        content_type=ContentType.CENSORED,
     ),
-    _gap(
-        _Case(
-            "/incoming/MIDV-123_4K_无码.mp4",
-            mosaic="uncensored",
-            definition="4K",
-            number="MIDV-123",
-            content_type=ContentType.CENSORED,
-        )
+    _Case(
+        "/incoming/MIDV-123_4K_无码.mp4",
+        mosaic="uncensored",
+        definition="4K",
+        number="MIDV-123",
+        content_type=ContentType.CENSORED,
     ),
 ]
 
