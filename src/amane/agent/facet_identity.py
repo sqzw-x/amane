@@ -23,6 +23,8 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
         instructions=(
             "Facet kinds: actor, director, tag, studio, publisher, series, user_tag. "
             "Rename fails with conflict if another facet already has the name — use merge instead. "
+            "For actor kind, rename_facet switches the display name (old name becomes an alias row); "
+            "alias rows themselves belong in actor-ops. "
             "Deleting a scrape-side facet writes a block rule and strips names from metadata. "
             "merge_facets / delete_facet / delete_facet_rule require user approval. "
             "Actor person field edits belong in actor-ops, not here."

@@ -31,8 +31,7 @@ class TestActorsApi:
         filled.height = 160
         filled.image_urls = ["https://img.example/a.jpg"]
         filled.overview = "bio-not-for-list"
-        filled.aliases = ["HiddenFromList"]
-        await repo.save_actor(filled)
+        await repo.save_actor(filled, aliases=["HiddenFromList"])
 
         resp = await client.get("actors")
         assert resp.status_code == 200
@@ -133,9 +132,8 @@ async def _seed_filter_actors(repo: Repository) -> dict[str, int]:
     tall.hip = 88
     tall.cup = "D"
     tall.birthplace = "Tokyo"
-    tall.aliases = ["高子"]
     tall.image_urls = ["https://img.example/tall.jpg"]
-    await repo.save_actor(tall)
+    await repo.save_actor(tall, aliases=["高子"])
 
     short = await repo.get_actor(by_name["FltShort"])
     assert short is not None
@@ -157,8 +155,7 @@ async def _seed_filter_actors(repo: Repository) -> dict[str, int]:
 
     alias_only = await repo.get_actor(by_name["FltAliasOnly"])
     assert alias_only is not None
-    alias_only.aliases = ["HiddenAliasXYZ"]
-    await repo.save_actor(alias_only)
+    await repo.save_actor(alias_only, aliases=["HiddenAliasXYZ"])
 
     male = await repo.get_actor(by_name["FltMale"])
     assert male is not None

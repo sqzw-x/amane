@@ -6,6 +6,7 @@ import pytest
 
 from amane.db.models import (
     FacetKind,
+    FacetRuleAction,
     MediaFileStatus,
     MediaSortField,
     MetadataSortField,
@@ -15,7 +16,7 @@ from amane.db.models import (
     TaskStatus,
     TaskType,
 )
-from amane.db.repo_types import _MEDIA_SORT_COLUMNS, _METADATA_SORT_COLUMNS, _TASK_SORT_COLUMNS
+from amane.db.repo_types import _MEDIA_SORT_COLUMNS, _METADATA_SORT_COLUMNS, _TASK_SORT_COLUMNS, ActorBrowseParams
 from amane.enums import LibraryAutomation
 from tests.helpers import assert_exhaustive_enum
 
@@ -216,11 +217,14 @@ class TestMetadataRepo:
         meta = await repo.upsert_metadata(
             number="MIDV-123", title="X", actors=["河北彩花（河北彩伽）", "三上悠亜(みかみ ゆあ, Mikami Yua)"]
         )
-        # 真值只留规范名
+        # 真值只留展示名
         assert meta.actors == ["河北彩花", "三上悠亜"]
 
         actors = await repo.get_actors_by_names(["河北彩花", "三上悠亜"])
-        aliases_by_name = {a.name: a.aliases for a in actors}
+        aliases_by_name: dict[str, list[str]] = {}
+        for a in actors:
+            assert a.id is not None
+            aliases_by_name[a.name] = await repo.get_actor_aliases(a.id)
         assert aliases_by_name["河北彩花"] == ["河北彩伽"]
         assert aliases_by_name["三上悠亜"] == ["みかみ ゆあ", "Mikami Yua"]
 
@@ -233,8 +237,9 @@ class TestMetadataRepo:
         assert meta is not None
         assert meta.actors == ["A"]
         actors = await repo.get_actors_by_names(["A"])
-        # 重刮不重复入袋
-        assert [a.aliases for a in actors] == [["B"]]
+        # 重刮不重复入表
+        assert actors[0].id is not None
+        assert await repo.get_actor_aliases(actors[0].id) == ["B"]
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_actor_alias_clean_merges_existing_aliases(self, repo: Repository):
@@ -247,7 +252,8 @@ class TestMetadataRepo:
         await repo.upsert_metadata(number="MIDV-002", actors=["河北彩花（河北彩伽）"])
 
         actors = await repo.get_actors_by_names(["河北彩花"])
-        assert actors[0].aliases == ["Mikami Yua", "河北彩伽"]
+        assert actors[0].id is not None
+        assert await repo.get_actor_aliases(actors[0].id) == ["Mikami Yua", "河北彩伽"]
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_metadata_cleans_actor_alias_names(self, repo: Repository):
@@ -257,11 +263,12 @@ class TestMetadataRepo:
         assert updated is not None
         assert updated.actors == ["A"]
         actors = await repo.get_actors_by_names(["A"])
-        assert [a.aliases for a in actors] == [["B", "C"]]
+        assert actors[0].id is not None
+        assert await repo.get_actor_aliases(actors[0].id) == ["B", "C"]
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_alias_clean_targets_rule_resolved_actor(self, repo: Repository):
-        # 规范名被 alias 规则映射到另一实体时, 别名随目标实体走, 不留孤儿实体.
+    async def test_alias_clean_targets_renamed_actor(self, repo: Repository):
+        # 改名后旧展示名入别名行; 重刮同名 (含括号别名) 折回改名后的实体, 不留孤儿实体.
         await repo.upsert_metadata(number="MIDV-001", actors=["A"])
         facets, _ = await repo.list_facets(FacetKind.ACTOR, search="A")
         assert facets[0].name == "A"
@@ -272,7 +279,93 @@ class TestMetadataRepo:
         assert meta.actors == ["C"]
         assert await repo.get_actors_by_names(["A"]) == []
         actors = await repo.get_actors_by_names(["C"])
-        assert [a.aliases for a in actors] == [["B"]]
+        assert actors[0].id is not None
+        assert await repo.get_actor_aliases(actors[0].id) == ["A", "B"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_bare_alias_name_folds_to_display(self, repo: Repository):
+        """站点给的裸别名 (无括号) 也折到已认定演员, 不再创建重复实体."""
+        await repo.upsert_metadata(number="MIDV-001", actors=["A"])
+        actor = (await repo.get_actors_by_names(["A"]))[0]
+        assert actor.id is not None
+        await repo.update_actor(actor.id, aliases=["OldName"])
+
+        meta = await repo.upsert_metadata(number="MIDV-002", actors=["OldName"])
+        assert meta.actors == ["A"]
+        assert await repo.get_actors_by_names(["OldName"]) == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_display_switch_to_existing_alias(self, repo: Repository):
+        """展示名可切换到已有别名: 旧展示名入表, 新展示名出表, 存量影片改写."""
+        await repo.upsert_metadata(number="MIDV-001", actors=["Canonical"])
+        await repo.upsert_metadata(number="MIDV-002", actors=["Canonical"])
+        actor = (await repo.get_actors_by_names(["Canonical"]))[0]
+        assert actor.id is not None
+        await repo.update_actor(actor.id, aliases=["Preferred", "Alt"])
+
+        await repo.rename_facet(FacetKind.ACTOR, actor.id, "Preferred")
+
+        items, _ = await repo.list_facets(FacetKind.ACTOR)
+        names = {i.name for i in items}
+        assert "Canonical" not in names and "Preferred" in names
+        alias_names = await repo.get_actor_aliases(actor.id)
+        assert alias_names == ["Alt", "Canonical"]
+        metas = await repo.get_metadata_by_number("MIDV-001")
+        assert metas is not None
+        assert metas.actors == ["Preferred"]
+        # 重刮旧名折回新展示名
+        meta2 = await repo.upsert_metadata(number="MIDV-003", actors=["Canonical"])
+        assert meta2.actors == ["Preferred"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_shared_alias_resolves_both_and_keeps_ambiguity(self, repo: Repository):
+        """同名别名属于两个演员: 搜索命中两者, 裸名写入保持名字本身为新实体 (可再合并)."""
+        await repo.upsert_metadata(number="S-1", actors=["One"])
+        await repo.upsert_metadata(number="S-2", actors=["Two"])
+        one = (await repo.get_actors_by_names(["One"]))[0]
+        two = (await repo.get_actors_by_names(["Two"]))[0]
+        assert one.id is not None and two.id is not None
+        await repo.update_actor(one.id, aliases=["共享名"])
+        await repo.update_actor(two.id, aliases=["共享名"])
+
+        items, total = await repo.browse_actors(ActorBrowseParams(search="共享名"))
+        assert total == 2
+        assert {i.name for i in items} == {"One", "Two"}
+
+        # 歧义时以名字本身为展示名 (确定性, 可再合并)
+        meta = await repo.upsert_metadata(number="S-3", actors=["共享名"])
+        assert meta.actors == ["共享名"]
+        assert (await repo.get_actors_by_names(["共享名"])) != []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_delete_blocks_own_names_keeps_shared(self, repo: Repository):
+        """删除演员拉黑其独有名 (展示名+别名); 共享别名不拉黑, 另一演员仍可解析."""
+        await repo.upsert_metadata(number="D-1", actors=["One", "Two"])
+        one = (await repo.get_actors_by_names(["One"]))[0]
+        two = (await repo.get_actors_by_names(["Two"]))[0]
+        assert one.id is not None and two.id is not None
+        await repo.update_actor(one.id, aliases=["独有名", "共享名"])
+        await repo.update_actor(two.id, aliases=["共享名"])
+
+        await repo.delete_facet(FacetKind.ACTOR, one.id)
+
+        meta = await repo.upsert_metadata(number="D-2", actors=["独有名", "共享名", "OK"])
+        assert meta.actors == ["Two", "OK"]
+        rules = await repo.list_facet_rules(FacetKind.ACTOR)
+        by_source = {r.source_name for r in rules}
+        assert {"One", "独有名"} <= by_source
+        assert all(r.action == "block" for r in rules if r.source_name in by_source)
+        assert "共享名" not in by_source
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_alias_rule_write_guard(self, repo: Repository):
+        """规则唯一写点拒绝 (actor, alias); rename 走别名行, 不写规则 (见 rename 用例)."""
+        from amane.db.repos.facet_helpers import _set_facet_rule
+
+        async with repo._session() as session:
+            with pytest.raises(ValueError, match="actor_aliases 表取代"):
+                await _set_facet_rule(session, FacetKind.ACTOR, "X", FacetRuleAction.ALIAS, "Y")
+        assert await repo.list_facet_rules(FacetKind.ACTOR) == []
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_upsert_case_insensitive_preserves_number(self, repo: Repository):

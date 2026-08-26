@@ -8,10 +8,10 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
-from ..utils.extensions import MEDIA_EXTENSIONS, compile_skip_pattern
+from ..utils.extensions import MEDIA_EXTENSIONS, compile_skip_patterns, is_in_trash
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from watchdog.observers.api import BaseObserver, ObservedWatch
 
@@ -34,14 +34,14 @@ class _Handler(FileSystemEventHandler):
         patterns: list[str] | None,
         media_extensions: frozenset[str] = MEDIA_EXTENSIONS,
         debounce_seconds: float = _DEFAULT_DEBOUNCE_SECONDS,
-        skip_pattern: str | None = None,
+        skip_patterns: Sequence[str | None] | None = None,
     ):
         super().__init__()
         self.library_id = library_id
         self._patterns = patterns
         self._media_extensions = media_extensions
         self._debounce_seconds = debounce_seconds
-        self._skip_re = compile_skip_pattern(skip_pattern)
+        self._skip_res = compile_skip_patterns(skip_patterns)
         self._pending: dict[str, float] = {}
         self._pending_deletes: dict[str, float] = {}
         self._pending_moves: dict[str, tuple[str, float]] = {}  # dest -> (src, timestamp)
@@ -84,7 +84,9 @@ class _Handler(FileSystemEventHandler):
             self._pending[path_str] = time.time()
 
     def _matches(self, path: Path) -> bool:
-        if self._skip_re is not None and self._skip_re.search(path.name):
+        if is_in_trash(path):
+            return False
+        if self._skip_res is not None and any(r.search(path.name) for r in self._skip_res):
             return False
         if self._patterns:
             return any(path.match(p) for p in self._patterns)
@@ -186,7 +188,7 @@ class FileWatcher:
         library_id: int,
         recursive: bool = True,
         patterns: list[str] | None = None,
-        skip_pattern: str | None = None,
+        skip_patterns: Sequence[str | None] | None = None,
     ) -> None:
         """
         添加一个要监控的目录.
@@ -197,14 +199,15 @@ class FileWatcher:
             recursive: 是否监控子目录.
             patterns: 可选的 glob 模式 (例如 ["*.mp4", "*.mkv"]).
                      如果为 None, 则使用 MEDIA_EXTENSIONS.
-            skip_pattern: 预告片正则, 命中文件名则忽略.
+            skip_patterns: 跳过正则列表 (预告片/黑名单), 命中文件名则忽略;
+                          `.amane_trash` 目录 (回收站) 内路径恒忽略.
         """
         handler = _Handler(
             library_id,
             patterns,
             media_extensions=self._media_extensions,
             debounce_seconds=self._debounce_seconds,
-            skip_pattern=skip_pattern,
+            skip_patterns=skip_patterns,
         )
         self._handlers.append(handler)
         self._watching.append((path, recursive, patterns))

@@ -21,6 +21,7 @@ import {
   IconFilter,
   IconPencil,
   IconRefresh,
+  IconStar,
   IconTrash,
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +34,8 @@ import {
   getActorQueryKey,
   listActorsQueryKey,
   listMetadataInfiniteOptions,
+  listMetadataQueryKey,
+  renameFacetMutation,
   scrapeActorMutation,
   updateActorMutation,
 } from "@/client/@tanstack/react-query.gen";
@@ -132,6 +135,21 @@ function ActorDetailPage() {
       }),
   });
 
+  const renameMutation = useMutation({
+    ...renameFacetMutation(),
+    onSuccess: () => {
+      notifications.show({ message: t("actors.setDisplayNameDone"), color: "blue" });
+      invalidate();
+      // 展示名改写会同步影片真值, 刷新片库列表中的演员名
+      void queryClient.invalidateQueries({ queryKey: listMetadataQueryKey() });
+    },
+    onError: (err) =>
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      }),
+  });
+
   const clearMutation = useMutation({
     ...updateActorMutation(),
     onSuccess: () => {
@@ -166,6 +184,16 @@ function ActorDetailPage() {
     });
     if (!ok) return;
     clearMutation.mutate({ path: { actor_id: id }, body: CLEARED_ACTOR_PERSON_PATCH });
+  }
+
+  async function handleSetDisplay(alias: string) {
+    const ok = await confirm({
+      title: t("actors.setDisplayName"),
+      message: t("actors.setDisplayNameBody", { name: actor?.name ?? "", alias }),
+      confirmLabel: t("actors.setDisplayName"),
+    });
+    if (!ok) return;
+    renameMutation.mutate({ path: { kind: "actor", facet_id: id }, body: { name: alias } });
   }
 
   async function handleDelete() {
@@ -218,6 +246,7 @@ function ActorDetailPage() {
           onEdit={() => setEditOpen(true)}
           onClear={() => void handleClear()}
           onDelete={() => void handleDelete()}
+          onSetDisplay={(alias) => void handleSetDisplay(alias)}
         />
       ) : null}
 
@@ -260,6 +289,7 @@ function ActorHero({
   onEdit,
   onClear,
   onDelete,
+  onSetDisplay,
 }: {
   actor: ActorResponse;
   scrapePending: boolean;
@@ -268,13 +298,13 @@ function ActorHero({
   onEdit: () => void;
   onClear: () => void;
   onDelete: () => void;
+  onSetDisplay: (alias: string) => void;
 }) {
   const { t } = useTranslation(["metadata", "common"]);
   const [lightboxOpen, lightbox] = useDisclosure(false);
   const imageUrls = actor.image_urls ?? [];
   const primaryImage = imageUrls[0];
   const aliases = actor.aliases ?? [];
-  const ruleAliases = actor.rule_aliases ?? [];
   const sourceUrls = Object.entries(actor.source_urls ?? {}).filter(
     ([, url]) => typeof url === "string" && /^https?:\/\//i.test(url),
   );
@@ -375,12 +405,7 @@ function ActorHero({
 
         {aliases.length > 0 && (
           <FieldBlock label={t("browse.person.aliases")}>
-            <AliasTags values={aliases} />
-          </FieldBlock>
-        )}
-        {ruleAliases.length > 0 && (
-          <FieldBlock label={t("browse.person.ruleAliases")}>
-            <AliasTags values={ruleAliases} />
+            <AliasTags values={aliases} onSetDisplay={onSetDisplay} />
           </FieldBlock>
         )}
         {birthdayLabel && (
@@ -519,18 +544,28 @@ function ActorHero({
   );
 }
 
-function AliasTags({ values }: { values: string[] }) {
+function AliasTags({
+  values,
+  onSetDisplay,
+}: {
+  values: string[];
+  onSetDisplay: (alias: string) => void;
+}) {
+  const { t } = useTranslation(["metadata", "common"]);
   return (
     <Group gap={6}>
       {values.map((value) => (
-        <Badge
+        <Button
           key={value}
           variant="light"
-          size="sm"
+          size="compact-sm"
           style={{ textTransform: "none", fontWeight: 500 }}
+          title={t("actors.setDisplayName")}
+          rightSection={<IconStar size={12} />}
+          onClick={() => onSetDisplay(value)}
         >
           {value}
-        </Badge>
+        </Button>
       ))}
     </Group>
   );

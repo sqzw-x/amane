@@ -382,12 +382,18 @@ class TestFacetRulesPersistence:
         assert resp.status_code == 200
 
         rules = (await client.get(f"facets/{kind}/rules")).json()["items"]
-        by_source = {r["source_name"]: r for r in rules}
-        assert by_source["A"]["action"] == "alias"
-        assert by_source["A"]["target_name"] == "C"
-        assert by_source["B"]["action"] == "alias"
-        assert by_source["B"]["target_name"] == "C"
-        assert "A→B" not in {f"{r['source_name']}→{r['target_name']}" for r in rules if r["action"] == "alias"}
+        if kind == "actor":
+            # 演员别名已行化: 合并不动规则表, 名字并入 target 别名行
+            assert rules == []
+            resp = await client.get(f"actors/{id_c}")
+            assert resp.json()["aliases"] == ["B", "A"]
+        else:
+            by_source = {r["source_name"]: r for r in rules}
+            assert by_source["A"]["action"] == "alias"
+            assert by_source["A"]["target_name"] == "C"
+            assert by_source["B"]["action"] == "alias"
+            assert by_source["B"]["target_name"] == "C"
+            assert "A→B" not in {f"{r['source_name']}→{r['target_name']}" for r in rules if r["action"] == "alias"}
 
         if kind == "actor":
             await repo.upsert_metadata(number=meta.number, actors=["A", "Extra"])
@@ -462,15 +468,19 @@ class TestFacetRulesPersistence:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_rename_writes_alias(self, client: AsyncClient, repo: Repository):
+    async def test_rename_swaps_display_name(self, client: AsyncClient, repo: Repository):
         meta = await repo.upsert_metadata(number="RN-ALIAS-1", actors=["Old"])
         assert meta.id is not None
         facet_id = await _facet_id_by_name(client, "actor", "Old")
         resp = await client.patch(f"facets/actor/{facet_id}", json={"name": "New"})
         assert resp.status_code == 200
 
+        # 改名不再写规则: 旧名入别名行, 重刮折回新展示名
         rules = (await client.get("facets/actor/rules")).json()["items"]
-        assert any(r["source_name"] == "Old" and r["target_name"] == "New" and r["action"] == "alias" for r in rules)
+        assert not any(r["action"] == "alias" for r in rules)
+        detail = await client.get(f"actors/{facet_id}")
+        assert detail.json()["name"] == "New"
+        assert detail.json()["aliases"] == ["Old"]
 
         await repo.upsert_metadata(number=meta.number, actors=["Old"])
         detail = await client.get(f"metadata/{meta.id}")
@@ -496,11 +506,11 @@ class TestActorMergePersonFields:
             assert source is not None
             source.birthday = "1990-05-05"
             source.overview = "from-source"
-            source.aliases = ["Roma"]
             source.image_urls = ["http://img/a.jpg"]
             source.provider_ids = {"wikidata": "Q1"}
             session.add(source)
             await session.commit()
+        await repo.save_actor(source, aliases=["Roma"])
 
         resp = await client.post("facets/actor/merge", json={"target_id": target_id, "source_ids": [source_id]})
         assert resp.status_code == 200
@@ -512,20 +522,14 @@ class TestActorMergePersonFields:
             assert target.name == "Canonical"
             assert target.birthday == "1990-05-05"
             assert target.overview == "from-source"
-            assert target.aliases == ["Roma"]
             assert target.image_urls == ["http://img/a.jpg"]
             assert target.provider_ids == {"wikidata": "Q1"}
             assert (await session.get(Actor, source_id)) is None
 
             names = await build_actor_lookup_names(session, target)
-            assert names[0] == "Canonical"
-            assert "OtherName" in names
-            assert "Roma" in names
+            assert names == ["Canonical", "OtherName", "Roma"]
 
+        # 名字并入别名行, 不写别名规则
+        assert await repo.get_actor_aliases(target_id) == ["OtherName", "Roma"]
         rules = (await client.get("facets/actor/rules")).json()["items"]
-        assert any(
-            r["source_name"] == "OtherName" and r["target_name"] == "Canonical" and r["action"] == "alias"
-            for r in rules
-        )
-        # Actor.aliases 不自动写 FacetRule
-        assert not any(r["source_name"] == "Roma" for r in rules)
+        assert not any(r["action"] == "alias" for r in rules)

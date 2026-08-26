@@ -7,6 +7,7 @@ import {
   Stack,
   Switch,
   Text,
+  Textarea,
   TextInput,
   Tooltip,
 } from "@mantine/core";
@@ -70,6 +71,7 @@ export interface LibraryFormState {
   write_nfo: boolean;
   copy_resources: DownloadableResource[];
   trailer_pattern: string;
+  blacklist_patterns: string;
   video_template: string;
   cd_suffix_template: string;
   thumb_template: string;
@@ -94,6 +96,7 @@ export function emptyLibraryForm(schema?: PathTemplateSchemaResponse | null): Li
     write_nfo: true,
     copy_resources: DOWNLOADABLE_RESOURCES.filter((r) => r !== "trailer"),
     trailer_pattern: "(?i)trailer",
+    blacklist_patterns: "",
     video_template: schema?.video_default ?? "{studio}/{number}/{number}.{ext}",
     cd_suffix_template: schema?.cd_suffix_default ?? "-CD{cd}",
     thumb_template: defaults?.thumb_template ?? "",
@@ -118,6 +121,7 @@ export function libraryFormFromResponse(lib: LibraryResponse): LibraryFormState 
     write_nfo: lib.write_nfo,
     copy_resources: parseCopyResources(lib.copy_resources),
     trailer_pattern: lib.trailer_pattern,
+    blacklist_patterns: lib.blacklist_patterns?.join("\n") ?? "",
     video_template: lib.video_template,
     cd_suffix_template: lib.cd_suffix_template,
     thumb_template: lib.thumb_template ?? "",
@@ -139,6 +143,14 @@ export function parseLibraryPatterns(s: string): string[] {
     .filter(Boolean);
 }
 
+/** 黑名单正则按行分隔: 正则本身可含逗号 (如量词 {2,3}), 不能用逗号切分. */
+export function parseBlacklistPatterns(s: string): string[] {
+  return s
+    .split(/\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
 function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
   return {
     name: form.name.trim(),
@@ -149,6 +161,7 @@ function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
     write_nfo: form.write_nfo,
     copy_resources: form.copy_resources,
     trailer_pattern: form.trailer_pattern,
+    blacklist_patterns: parseBlacklistPatterns(form.blacklist_patterns),
     video_template: form.video_template.trim(),
     cd_suffix_template: form.cd_suffix_template.trim(),
     thumb_template: form.thumb_template.trim(),
@@ -250,6 +263,15 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
           description={t("fieldTrailerPatternHint")}
           value={value.trailer_pattern}
           onChange={(e) => onChange({ ...value, trailer_pattern: e.currentTarget.value })}
+        />
+        <Textarea
+          label={t("fieldBlacklistPatterns")}
+          description={t("fieldBlacklistPatternsHint")}
+          autosize
+          minRows={1}
+          maxRows={5}
+          value={value.blacklist_patterns}
+          onChange={(e) => onChange({ ...value, blacklist_patterns: e.currentTarget.value })}
         />
         <FieldChrome label={t("fieldMoveMode")} description={t("fieldMoveModeHint")}>
           <EnumToggle

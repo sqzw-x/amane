@@ -7,7 +7,7 @@ from sqlmodel import JSON, Field, SQLModel
 
 from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, MoveMode
 from amane.organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate
-from amane.utils.extensions import DEFAULT_TRAILER_PATTERN, TrailerPattern
+from amane.utils.extensions import DEFAULT_TRAILER_PATTERN, BlacklistPattern, TrailerPattern
 
 
 def _utcnow() -> datetime:
@@ -340,6 +340,8 @@ class Library(SQLModel, table=True):
     """整理时复制到库路径的附属资源类型."""
     trailer_pattern: TrailerPattern = Field(default=DEFAULT_TRAILER_PATTERN, sa_column=Column(String, nullable=False))
     """匹配文件名 (含扩展名) 的正则; 命中则扫描/监控跳过. 空串关闭."""
+    blacklist_patterns: list[BlacklistPattern] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    """文件名正则列表, 命中任一则扫描/监控跳过, 且 ORGANIZE 时移入库根 `.amane_trash`. 空列表关闭."""
 
 
 class Schedule(SQLModel, table=True):
@@ -444,19 +446,20 @@ class Resource(SQLModel, table=True):
 # --- 分类索引 (爬取侧投影) ---
 #
 # Metadata 上 JSON/标量列仍是刮削与 NFO 真值; 下列实体 + 关联表是查询投影.
-# Actor 为一等人物实体 (孤儿保留): name 为规范名; 跨名映射见 FacetRule; 下列为人物元数据.
+# Actor 为一等人物实体 (孤儿保留): name 为展示名, 别名行在 ActorAlias; 跨名屏蔽见 FacetRule(block).
 
 
 class Actor(SQLModel, table=True):
-    """演员实体 - 人物元数据宿主; 无影片关联时保留."""
+    """演员实体 - 人物元数据宿主; 无影片关联时保留.
+
+    name 为展示名 (全局唯一); 别名见 :class:`ActorAlias` (ID→名称一对多, 跨演员可共享).
+    """
 
     __tablename__ = "actors"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, nullable=False, index=True)
 
-    # 档案刮削別名袋, 供查找/展示; 跨名映射见 FacetRule.
-    aliases: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     gender: ActorGender = Field(
         default=ActorGender.UNKNOWN, sa_column=Column(String, nullable=False, server_default="unknown", index=True)
     )
@@ -475,6 +478,25 @@ class Actor(SQLModel, table=True):
     field_sources: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     raw: dict[str, dict[str, Any]] = Field(default_factory=dict, sa_column=Column(JSON))
 
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class ActorAlias(SQLModel, table=True):
+    """演员 ID→名称映射 (一对多): 别名行, 供查找/搜索/展示.
+
+    ``(actor_id, name)`` 唯一 (同演员不重复); ``name`` 列**不设全局唯一** — 两个演员
+    可共享同一别名. 不存展示名 (``Actor.name`` 不入表); 展示名切换 = 改 ``Actor.name``
+    并交换行 (旧展示名入表, 新展示名出表).
+    """
+
+    __tablename__ = "actor_aliases"  # type: ignore[assignment]
+    __table_args__ = (UniqueConstraint("actor_id", "name", name="uq_actor_aliases_actor_name"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    actor_id: int = Field(foreign_key="actors.id", ondelete="CASCADE", nullable=False, index=True)
+    name: str = Field(nullable=False, index=True)
+    position: int = Field(default=0)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 

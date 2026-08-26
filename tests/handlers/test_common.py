@@ -62,19 +62,39 @@ class TestIterMediaFiles:
 
     def test_skip_pattern_drops_trailer(self, tree):
         (tree / "trailer.mp4").touch()
-        result = {p.name for p in iter_media_files(tree, recursive=True, patterns=None, skip_pattern="(?i)trailer")}
+        result = {p.name for p in iter_media_files(tree, recursive=True, patterns=None, skip_patterns=["(?i)trailer"])}
         assert result == {"a.mp4", "c.mkv", "e.avi"}
         assert "trailer.mp4" not in result
 
     def test_skip_pattern_empty_keeps_trailer(self, tree):
         (tree / "trailer.mp4").touch()
-        result = {p.name for p in iter_media_files(tree, recursive=True, patterns=None, skip_pattern="")}
+        result = {p.name for p in iter_media_files(tree, recursive=True, patterns=None, skip_patterns=[""])}
         assert "trailer.mp4" in result
 
     def test_skip_pattern_custom_preview_name(self, tree):
         (tree / "中文预告片.mp4").touch()
-        result = {p.name for p in iter_media_files(tree, recursive=True, patterns=None, skip_pattern="预告")}
+        result = {p.name for p in iter_media_files(tree, recursive=True, patterns=None, skip_patterns=["预告"])}
         assert "中文预告片.mp4" not in result
+        assert "a.mp4" in result
+
+    def test_skip_patterns_any_match(self, tree):
+        """多个跳过正则: 命中任一个即跳过 (预告片 + 黑名单组合)."""
+        (tree / "新片广告.mp4").touch()
+        (tree / "trailer.mp4").touch()
+        result = {
+            p.name for p in iter_media_files(tree, recursive=True, patterns=None, skip_patterns=["广告", "(?i)trailer"])
+        }
+        assert "新片广告.mp4" not in result
+        assert "trailer.mp4" not in result
+        assert "a.mp4" in result
+
+    def test_trash_directory_never_yielded(self, tree):
+        """.amane_trash (回收站) 内容不会被扫描/整理遍历."""
+        trash = tree / ".amane_trash"
+        trash.mkdir()
+        (trash / "ad.mp4").touch()
+        result = {p.name for p in iter_media_files(tree, recursive=True, patterns=None)}
+        assert "ad.mp4" not in result
         assert "a.mp4" in result
 
 

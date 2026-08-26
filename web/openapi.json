@@ -1838,7 +1838,7 @@
           "actors"
         ],
         "summary": "Get Actor",
-        "description": "演员详情 (含 rule_aliases 与 raw).",
+        "description": "演员详情 (含别名与 raw).",
         "operationId": "get_actor",
         "parameters": [
           {
@@ -4942,15 +4942,8 @@
               "type": "string"
             },
             "type": "array",
-            "title": "Aliases"
-          },
-          "rule_aliases": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Rule Aliases",
-            "description": "FacetRule 入边来源的 alias 名"
+            "title": "Aliases",
+            "description": "别名行 (保序; 不含展示名)"
           },
           "gender": {
             "$ref": "#/components/schemas/ActorGender",
@@ -5225,20 +5218,6 @@
       },
       "ActorUpdateRequest": {
         "properties": {
-          "aliases": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Aliases"
-          },
           "gender": {
             "anyOf": [
               {
@@ -5389,6 +5368,21 @@
               }
             ],
             "title": "Source Urls"
+          },
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliases",
+            "description": "别名行 (保序), 整表替换"
           }
         },
         "type": "object",
@@ -7396,6 +7390,14 @@
             "title": "Trailer Pattern",
             "default": "(?i)trailer"
           },
+          "blacklist_patterns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blacklist Patterns",
+            "default": []
+          },
           "scan": {
             "type": "boolean",
             "title": "Scan",
@@ -7555,6 +7557,13 @@
           "trailer_pattern": {
             "type": "string",
             "title": "Trailer Pattern"
+          },
+          "blacklist_patterns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blacklist Patterns"
           }
         },
         "type": "object",
@@ -7569,7 +7578,8 @@
           "cd_suffix_template",
           "write_nfo",
           "copy_resources",
-          "trailer_pattern"
+          "trailer_pattern",
+          "blacklist_patterns"
         ],
         "title": "LibraryResponse"
       },
@@ -7776,6 +7786,20 @@
               }
             ],
             "title": "Trailer Pattern"
+          },
+          "blacklist_patterns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blacklist Patterns"
           }
         },
         "type": "object",

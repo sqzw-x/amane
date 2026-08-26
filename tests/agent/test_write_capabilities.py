@@ -132,6 +132,57 @@ async def test_update_actor_and_enqueue_scrape(write_deps: AgentDeps) -> None:
 
 
 @pytest.mark.asyncio
+async def test_actor_alias_tools(write_deps: AgentDeps) -> None:
+    await write_deps.repo.upsert_metadata(number="ALIAS-001", title="t", actors=["Alice"])
+    items, _ = await write_deps.repo.list_facets(FacetKind.ACTOR, limit=10)
+    actor_id = items[0].id
+    cap = build_actor_ops_capability()
+
+    listed = await _tool_fn(cap, "get_actor_aliases")(_Ctx(write_deps), actor_id=actor_id)
+    assert listed["name"] == "Alice"
+    assert listed["aliases"] == []
+
+    resolved = await _tool_fn(cap, "resolve_actor_name")(_Ctx(write_deps), name="Alice")
+    assert resolved["matches"] == [{"id": actor_id, "name": "Alice", "is_display": True}]
+    assert resolved["ambiguous"] is False
+    missing = await _tool_fn(cap, "resolve_actor_name")(_Ctx(write_deps), name="Nobody")
+    assert missing["matches"] == []
+
+    added = await _tool_fn(cap, "add_actor_alias")(_Ctx(write_deps), actor_id=actor_id, name="旧名")
+    assert added.get("added") is True
+    dup = await _tool_fn(cap, "add_actor_alias")(_Ctx(write_deps), actor_id=actor_id, name="旧名")
+    assert "已存在" in dup["error"]
+    resolved2 = await _tool_fn(cap, "resolve_actor_name")(_Ctx(write_deps), name="旧名")
+    assert resolved2["matches"] == [{"id": actor_id, "name": "Alice", "is_display": False}]
+    assert resolved2["ambiguous"] is False
+
+    removed = await _tool_fn(cap, "remove_actor_alias")(_Ctx(write_deps), actor_id=actor_id, name="旧名")
+    assert removed.get("removed") is True
+    gone = await _tool_fn(cap, "remove_actor_alias")(_Ctx(write_deps), actor_id=actor_id, name="旧名")
+    assert "不存在" in gone["error"]
+    self_alias = await _tool_fn(cap, "add_actor_alias")(_Ctx(write_deps), actor_id=actor_id, name="Alice")
+    assert "展示名" in self_alias["error"]
+
+    await _tool_fn(cap, "add_actor_alias")(_Ctx(write_deps), actor_id=actor_id, name="Preferred")
+    switched = await _tool_fn(cap, "set_actor_display_name")(_Ctx(write_deps), actor_id=actor_id, name="Preferred")
+    assert switched.get("name") == "Preferred"
+    listed2 = await _tool_fn(cap, "get_actor_aliases")(_Ctx(write_deps), actor_id=actor_id)
+    assert "Alice" in listed2["aliases"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_shared_alias_reports_ambiguous(write_deps: AgentDeps) -> None:
+    await write_deps.repo.upsert_metadata(number="SH-001", title="t", actors=["One", "Two"])
+    items, _ = await write_deps.repo.list_facets(FacetKind.ACTOR, limit=10)
+    cap = build_actor_ops_capability()
+    for item in items:
+        await _tool_fn(cap, "add_actor_alias")(_Ctx(write_deps), actor_id=item.id, name="共享")
+    resolved = await _tool_fn(cap, "resolve_actor_name")(_Ctx(write_deps), name="共享")
+    assert resolved["ambiguous"] is True
+    assert len(resolved["matches"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_rename_facet_and_delete_needs_approval(write_deps: AgentDeps) -> None:
     await write_deps.repo.upsert_metadata(number="F-001", title="t", studio="StudioA")
     items, _ = await write_deps.repo.list_facets(FacetKind.STUDIO, limit=10)

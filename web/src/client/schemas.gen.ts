@@ -53,15 +53,8 @@ export const ActorResponseSchema = {
                 type: 'string'
             },
             type: 'array',
-            title: 'Aliases'
-        },
-        rule_aliases: {
-            items: {
-                type: 'string'
-            },
-            type: 'array',
-            title: 'Rule Aliases',
-            description: 'FacetRule 入边来源的 alias 名'
+            title: 'Aliases',
+            description: '别名行 (保序; 不含展示名)'
         },
         gender: {
             $ref: '#/components/schemas/ActorGender',
@@ -341,20 +334,6 @@ export const ActorSortFieldSchema = {
 
 export const ActorUpdateRequestSchema = {
     properties: {
-        aliases: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Aliases'
-        },
         gender: {
             anyOf: [
                 {
@@ -505,6 +484,21 @@ export const ActorUpdateRequestSchema = {
                 }
             ],
             title: 'Source Urls'
+        },
+        aliases: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Aliases',
+            description: '别名行 (保序), 整表替换'
         }
     },
     type: 'object',
@@ -2564,6 +2558,14 @@ export const LibraryCreateRequestSchema = {
             title: 'Trailer Pattern',
             default: '(?i)trailer'
         },
+        blacklist_patterns: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Blacklist Patterns',
+            default: []
+        },
         scan: {
             type: 'boolean',
             title: 'Scan',
@@ -2725,6 +2727,13 @@ export const LibraryResponseSchema = {
         trailer_pattern: {
             type: 'string',
             title: 'Trailer Pattern'
+        },
+        blacklist_patterns: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Blacklist Patterns'
         }
     },
     type: 'object',
@@ -2739,7 +2748,8 @@ export const LibraryResponseSchema = {
         'cd_suffix_template',
         'write_nfo',
         'copy_resources',
-        'trailer_pattern'
+        'trailer_pattern',
+        'blacklist_patterns'
     ],
     title: 'LibraryResponse'
 } as const;
@@ -2947,6 +2957,20 @@ export const LibraryUpdateRequestSchema = {
                 }
             ],
             title: 'Trailer Pattern'
+        },
+        blacklist_patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Blacklist Patterns'
         }
     },
     type: 'object',

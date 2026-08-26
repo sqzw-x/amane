@@ -273,7 +273,7 @@ export const listActors = <ThrowOnError extends boolean = false>(options?: Optio
 /**
  * Get Actor
  *
- * 演员详情 (含 rule_aliases 与 raw).
+ * 演员详情 (含别名与 raw).
  */
 export const getActor = <ThrowOnError extends boolean = false>(options: Options<GetActorData, ThrowOnError>): RequestResult<GetActorResponses, GetActorErrors, ThrowOnError> => (options.client ?? client).get<GetActorResponses, GetActorErrors, ThrowOnError>({ url: '/api/actors/{actor_id}', ...options });
 

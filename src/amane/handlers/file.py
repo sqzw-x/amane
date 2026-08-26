@@ -16,13 +16,14 @@ from ..media.pipeline import RESOURCE_URL_PREFIX
 from ..net.http import WebClient
 from ..organize import MoveMode, ResolvedPaths, execute_organize, resolve_paths
 from ..parsing import parse_file_info
+from ..utils.extensions import TRASH_DIRNAME, compile_skip_patterns
 from ._common import iter_media_files
 from .models import CleanupPayload, CleanupResult, OrganizePayload, OrganizeResult
 from .protocol import TaskHandler, TaskResult
 
 if TYPE_CHECKING:
     from ..config import HotSettings
-    from ..db.models import MediaFile, Metadata
+    from ..db.models import Library, MediaFile, Metadata
     from ..db.repository import Repository
     from ..media import ResourceStore
     from ..net.http import WebClient
@@ -244,10 +245,12 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
     处理 ORGANIZE 任务 - 按已有元数据整理目录中的文件.
 
     流程:
-        1. 遍历目录, 过滤媒体文件
-        2. 对每个文件: 查 MediaFile → 查关联 Metadata
-        3. 有元数据: 执行 file operations
-        4. 无元数据: 跳过
+        1. 清掉本库失效索引 (避免幽灵行占用 dest 碰撞名)
+        2. 黑名单预处理: 命中库 blacklist_patterns 的文件移入库根 `.amane_trash` 并删记录
+        3. 遍历目录, 过滤媒体文件 (预告片/黑名单命中跳过)
+        4. 对每个文件: 查 MediaFile → 查关联 Metadata
+        5. 有元数据: 执行 file operations
+        6. 无元数据: 跳过
 
     与 SCRAPE 的区别: 数据源是本地 DB, 不联网、不改 Metadata.
     """
@@ -283,15 +286,20 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             if mf.id is not None and not Path(mf.path).exists(follow_symlinks=False):
                 await self._repo.delete_media_file(mf.id)
 
+        recursive = payload.recursive if payload.recursive is not None else True
+
+        # 黑名单预处理: 先于主循环, 命中文件移入回收站后主循环不再触碰.
+        trashed = await self._trash_blacklisted(library, scan_dir, recursive)
+
         organized = 0
         skipped = 0
         failed = 0
 
         for file_path in iter_media_files(
             scan_dir,
-            recursive=payload.recursive if payload.recursive is not None else True,
+            recursive=recursive,
             patterns=payload.patterns,
-            skip_pattern=library.trailer_pattern,
+            skip_patterns=[library.trailer_pattern, *(library.blacklist_patterns or [])],
         ):
             path_str = str(file_path)
 
@@ -340,9 +348,44 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             organized=organized,
             skipped=skipped,
             failed=failed,
+            trashed=trashed,
         )
 
-        return TaskResult(True, result=OrganizeResult(organized=organized, skipped=skipped, failed=failed))
+        return TaskResult(
+            True, result=OrganizeResult(organized=organized, skipped=skipped, failed=failed, trashed=trashed)
+        )
+
+    async def _trash_blacklisted(self, library: Library, scan_dir: Path, recursive: bool) -> int:
+        """把扫描目录中命中库黑名单的媒体文件移入库根 `.amane_trash` (固定保留名).
+
+        - 命中黑名单即判定非正片: 无论是否已有 MediaFile 记录都归档, 归档后删除记录.
+        - 归档恒为物理移动, 不受库 move_mode 影响; 已归档的 `.amane_trash` 内容不再被遍历.
+        - 失败只记日志, 不阻断整理; 返回成功归档数.
+        """
+        blacklist = library.blacklist_patterns
+        if not blacklist:
+            return 0
+        trash_res = compile_skip_patterns(blacklist)
+        if trash_res is None:
+            return 0
+        trash_dir = Path(library.path) / TRASH_DIRNAME
+        trashed = 0
+        for file_path in iter_media_files(scan_dir, recursive=recursive, patterns=None, skip_patterns=None):
+            if not any(r.search(file_path.name) for r in trash_res):
+                continue
+            result = execute_organize(
+                source=file_path, target_dir=trash_dir, target_stem=file_path.stem, mode=MoveMode.MOVE
+            )
+            if not result.success:
+                logger.warning("blacklisted file trash failed", path=str(file_path), error=result.error)
+                continue
+            logger.info("blacklisted file trashed", path=str(file_path), dest=str(result.dest))
+            media_file = await self._repo.get_media_file_by_path(str(file_path))
+            if media_file is not None:
+                assert media_file.id is not None
+                await self._repo.delete_media_file(media_file.id)
+            trashed += 1
+        return trashed
 
 
 def _add_resource_ref(url: str, live_urls: set[str], live_hashes: set[str]) -> None:

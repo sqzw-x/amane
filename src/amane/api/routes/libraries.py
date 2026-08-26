@@ -67,6 +67,7 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
         write_nfo=req.write_nfo,
         copy_resources=req.copy_resources,
         trailer_pattern=req.trailer_pattern,
+        blacklist_patterns=req.blacklist_patterns,
     )
     assert lib.id is not None
 
@@ -79,7 +80,7 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
             library_id=lib.id,
             recursive=req.recursive,
             patterns=req.patterns,
-            skip_pattern=req.trailer_pattern,
+            skip_patterns=[req.trailer_pattern, *req.blacklist_patterns],
         )
 
     # 提交初始 Refresh 任务
@@ -129,7 +130,7 @@ async def update_library(
     logger.info("library updated", library_id=library_id, fields=list(updates.keys()))
 
     # 同步文件监控: 监控相关字段变化时, 先移除旧监控再按最新状态重建
-    watch_fields = {"automation", "path", "recursive", "patterns", "trailer_pattern"}
+    watch_fields = {"automation", "path", "recursive", "patterns", "trailer_pattern", "blacklist_patterns"}
     if runtime.watcher_service and watch_fields & updates.keys():
         runtime.watcher_service.remove_library(library_id)
         if lib.automation != LibraryAutomation.NONE:
@@ -139,7 +140,7 @@ async def update_library(
                 library_id=lib.id,
                 recursive=lib.recursive,
                 patterns=lib.patterns,
-                skip_pattern=lib.trailer_pattern,
+                skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
             )
 
     return to_resp(LibraryResponse, lib)

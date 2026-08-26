@@ -100,3 +100,36 @@ def test_library_automation_backfills_from_watch_enabled(tmp_path: Path) -> None
         assert rows == {"on": "scrape", "off": "none"}
 
     engine.dispose()
+
+
+def test_library_blacklist_patterns_backfilled_for_existing_rows(tmp_path: Path) -> None:
+    """存量行迁移后 blacklist_patterns 非空且为 [] (关闭状态)."""
+    db_path = tmp_path / "migrate.db"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    command.upgrade(cfg, "5abbb79b1ae6")
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO libraries "
+                "(name, path, automation, recursive, patterns, move_mode, video_template, write_nfo, "
+                "copy_resources, trailer_pattern) "
+                "VALUES ('t', '/m', 'scrape', 1, '[]', 'move', '{number}.{ext}', 1, '[\"thumb\"]', '(?i)trailer')"
+            )
+        )
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as conn:
+        columns = {column["name"] for column in inspect(conn).get_columns("libraries")}
+        assert "blacklist_patterns" in columns
+        row = conn.execute(text("SELECT blacklist_patterns FROM libraries")).one()
+        patterns = (
+            json.loads(row.blacklist_patterns) if isinstance(row.blacklist_patterns, str) else row.blacklist_patterns
+        )
+        assert patterns == []
+
+    engine.dispose()

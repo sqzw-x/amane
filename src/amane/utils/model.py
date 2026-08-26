@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
 from types import UnionType
-from typing import TYPE_CHECKING, Annotated, Any, Optional, Self, Union, get_args, get_origin, no_type_check
+from typing import Annotated, Any, Optional, Self, Union, get_args, get_origin, no_type_check
 
 from pydantic import (
     AfterValidator,
@@ -14,10 +14,8 @@ from pydantic import (
     model_validator,
 )
 from pydantic.config import JsonDict
+from pydantic.fields import FieldInfo
 from sqlmodel import SQLModel
-
-if TYPE_CHECKING:
-    from pydantic.fields import FieldInfo
 
 _ANNOTATED_VALIDATORS = (AfterValidator, BeforeValidator, PlainValidator, WrapValidator)
 
@@ -137,6 +135,7 @@ def create_partial_model[T: BaseModel](
     partial_cls_name: str | None = None,
     ignore_fields: tuple[str, ...] = (),
     json_schema_extras: dict[str, JsonDict | Callable[[JsonDict], None]] | None = None,
+    extra_fields: dict[str, Any] | None = None,
 ) -> Any:
     """基于 ``base_cls`` 生成一个所有字段可选的 partial 模型.
 
@@ -153,6 +152,8 @@ def create_partial_model[T: BaseModel](
             被排除字段不会出现在生成模型上, 因此无法经由该模型读写, 阻断越权赋值.
         json_schema_extras: 按字段名覆盖 ``json_schema_extra``, 合并到生成模型对应字段的 JSON Schema 中.
             格式为 ``{field_name: {...extra}}``.
+        extra_fields: 非 DB 列的扩展可写字段 (如 ``Actor`` 别名行): ``{field_name: Annotated[type, Field(...)]}``.
+            仅表模型可用; 与源列一致 partial 化 (Optional 默认 None), 显式 null 被拒 (同不可空列).
     """
 
     # Convert one type to being partial - if possible
@@ -246,6 +247,25 @@ def create_partial_model[T: BaseModel](
                 else field_annotation
             )
             optional_fields[field_name] = (annotation, copy_field_info(field_info, **extra_kwargs))
+
+    # 非 DB 列扩展字段 (仅表模型): Annotated[type, Field(...)] 或裸类型.
+    for field_name, spec in (extra_fields or {}).items():
+        if field_name in base_cls.model_fields:
+            raise ValueError(f"extra_fields contains existing model field: {field_name}")
+        origin = get_origin(spec)
+        if origin is Annotated:
+            args = get_args(spec)
+            annotation = args[0]
+            infos = [a for a in args[1:] if isinstance(a, FieldInfo)]
+            field = copy_field_info(infos[0], default=None) if infos else Field(default=None)
+        else:
+            annotation = spec
+            field = Field(default=None)
+        if annotation is None:  # pragma: no cover
+            raise ValueError(f"extra_fields.{field_name} 缺少类型注解")
+        if not _allows_none(annotation):
+            non_nullable_source.add(field_name)
+        optional_fields[field_name] = (Optional[annotation], field)  # noqa: UP045
 
     # Return original model class if nothing has changed
     if not optional_fields:

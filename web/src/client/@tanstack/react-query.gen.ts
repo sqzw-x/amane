@@ -698,7 +698,7 @@ export const getActorQueryKey = (options: Options<GetActorData>) => createQueryK
 /**
  * Get Actor
  *
- * 演员详情 (含 rule_aliases 与 raw).
+ * 演员详情 (含别名与 raw).
  */
 export const getActorOptions = (options: Options<GetActorData>) => queryOptions<GetActorResponse, GetActorError, GetActorResponse, ReturnType<typeof getActorQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {

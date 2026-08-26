@@ -22,6 +22,7 @@ def build_schema_docs(*, include_tables: frozenset[str] | None = None) -> str:
     lines.append("Join keys (FK → PK):")
     lines.append("- media_files.metadata_id → metadata.id")
     lines.append("- metadata_actors.metadata_id → metadata.id ; .actor_id → actors.id")
+    lines.append("- actor_aliases.actor_id → actors.id ; actor_aliases.name is NOT unique (shared aliases)")
     lines.append("- metadata_directors.metadata_id → metadata.id ; .director_id → directors.id")
     lines.append("- metadata_tags.metadata_id → metadata.id ; .tag_id → tags.id")
     lines.append("- metadata_user_tags.metadata_id → metadata.id ; .user_tag_id → user_tags.id")

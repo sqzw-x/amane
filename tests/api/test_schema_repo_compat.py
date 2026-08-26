@@ -273,6 +273,33 @@ class TestCreatePartialModel:
         partial_with = create_partial_model(_Plain, json_schema_extras=None)
         assert partial_no.model_json_schema() == partial_with.model_json_schema()
 
+    # --- extra_fields (非 DB 列扩展可写面) ---
+
+    def test_extra_fields_added_and_partialized(self):
+        """extra_fields 字段进入结果模型: 缺省 None, 可写入, 显式 null 被拒 (同不可空列)."""
+        partial = create_partial_model(
+            _PlainTable,
+            ignore_fields=("id", "score", "note"),
+            extra_fields={"aliases": Annotated[list[str], Field(description="别名行")]},
+        )
+        assert partial().aliases is None
+        inst = partial.model_validate({"aliases": ["a", "b"]})
+        assert inst.aliases == ["a", "b"]
+        assert partial().model_dump(exclude_unset=True) == {}
+        with pytest.raises(ValidationError):
+            partial.model_validate({"aliases": None})
+        schema = partial.model_json_schema()
+        assert schema["properties"]["aliases"]["anyOf"] == [
+            {"type": "array", "items": {"type": "string"}},
+            {"type": "null"},
+        ]
+        assert schema["properties"]["aliases"]["description"] == "别名行"
+
+    def test_extra_fields_rejects_existing_model_field(self):
+        """extra_fields 与源字段重名立即报错, 防止静默覆盖."""
+        with pytest.raises(ValueError, match="extra_fields contains existing model field"):
+            create_partial_model(_Plain, extra_fields={"name": str})
+
 
 # ============================================================================
 # 2. 字段纪律: req ⊆ TypedDict ⊆ DB; 只读字段不外泄

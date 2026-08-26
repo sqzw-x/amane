@@ -38,6 +38,7 @@ _web-install-ci:
 
 lint:
     uv run ruff check {{ CHECK_DIRS }}
+    uv run ruff format --check {{ CHECK_DIRS }}
 
 fix: fix-python fix-web
 

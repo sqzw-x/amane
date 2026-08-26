@@ -102,12 +102,11 @@ class TestMergeActorRows:
 
 class TestActorPersonHelpers:
     def test_merge_person_fields_into_target(self):
-        target = Actor(name="Canonical", birthday=None, overview="keep", aliases=["JP"])
+        target = Actor(name="Canonical", birthday=None, overview="keep")
         source = Actor(
             name="AliasEN",
             birthday="1991-02-03",
             overview="drop",
-            aliases=["EN"],
             image_urls=["http://x/1.jpg"],
             provider_ids={"wikidata": "Q9"},
             raw={"wikipedia": {"overview": "drop"}},
@@ -115,25 +114,23 @@ class TestActorPersonHelpers:
         merge_person_fields_into_target(target, [source])
         assert target.birthday == "1991-02-03"
         assert target.overview == "keep"
-        assert target.aliases == ["JP", "EN"]
         assert target.image_urls == ["http://x/1.jpg"]
         assert target.provider_ids == {"wikidata": "Q9"}
         assert "wikipedia" in target.raw
 
     def test_roundtrip_aggregated(self):
-        actor = Actor(name="A", height=160, aliases=["x"], image_urls=["u"])
+        actor = Actor(name="A", height=160, image_urls=["u"])
         data = actor_to_aggregated(actor)
         other = Actor(name="B")
         apply_aggregated_to_actor(other, data)
         assert other.height == 160
-        assert other.aliases == ["x"]
         assert other.image_urls == ["u"]
         assert other.name == "B"
 
-    def test_writeback_keeps_canonical_name_and_drops_self_alias(self):
+    def test_merge_keeps_site_aliases_in_memory(self):
+        """站点名并入聚合别名 (落库行化由 repo 层负责)."""
         actor = Actor(name="鷲尾めい")
         site = AggregatedActor(aliases=["筧純", "鷲尾芽衣", "筧ジュン", "鷲尾めい"])
         merged = merge_actor_rows_fill_empty(actor_to_aggregated(actor), site)
-        apply_aggregated_to_actor(actor, merged)
         assert actor.name == "鷲尾めい"
-        assert actor.aliases == ["筧純", "鷲尾芽衣", "筧ジュン"]
+        assert merged.aliases == ["筧純", "鷲尾芽衣", "筧ジュン", "鷲尾めい"]

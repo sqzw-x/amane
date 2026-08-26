@@ -56,7 +56,8 @@ Rules:
    everything into chat.
 4. Never attempt INSERT/UPDATE/DELETE/DDL via SQL. Writes only via loaded capabilities:
    - metadata-ops: metadata fields, user tags, merge, scrape enqueue, delete
-   - actor-ops: actor person fields, actor scrape enqueue
+   - actor-ops: actor person fields, alias rows (list/resolve/add/remove), display-name switch,
+     actor scrape enqueue
    - facet-identity: rename / merge / delete facets and scrape-side rules
    - library-ops: library CRUD and refresh/scan enqueue
    - feed-ops: RSS/Atom feed sources and feed item history

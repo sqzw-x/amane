@@ -4,23 +4,25 @@
 不经 ``amane.db.repos`` 包导出面暴露 (见 ``__init__.py``).
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import delete as sqla_delete
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Mapped
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...parsing import split_actor_aliases
+from ..actor_lookup import list_actor_aliases, resolve_actor_by_name
 from ..actor_person import merge_person_fields_into_target
-from ..facet_rules import RuleEntry, apply_metadata_facet_fields, empty_rules_by_kind, resolve_name
+from ..facet_rules import RuleEntry, apply_metadata_facet_fields, empty_rules_by_kind
 from ..models import (
     SCRAPE_FACET_KINDS,
     Actor,
+    ActorAlias,
     Comment,
     Director,
     FacetKind,
@@ -61,6 +63,8 @@ class _LinkFacetSpec:
     label: str
     get_names: Callable[[Metadata], list[str]] | None = None
     set_names: Callable[[Metadata, list[str]], None] | None = None
+    # 搜索时一并命中的别名模型 (仅 Actor)
+    alias_model: type[ActorAlias] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +108,7 @@ LINK_FACETS: dict[FacetKind, _LinkFacetSpec] = {
         label="演员",
         get_names=_get_actors,
         set_names=_set_actors,
+        alias_model=ActorAlias,
     ),
     FacetKind.DIRECTOR: _LinkFacetSpec(
         kind=FacetKind.DIRECTOR,
@@ -198,6 +203,9 @@ async def _set_facet_rule(
     action: FacetRuleAction,
     target_name: str | None,
 ) -> FacetRule:
+    """规则行唯一写入点; actor 的 alias 规则已退役, 在此层直接拒绝."""
+    if kind == FacetKind.ACTOR and action == FacetRuleAction.ALIAS:
+        raise ValueError("演员别名规则已由 actor_aliases 表取代")
     existing = await _get_facet_rule(session, kind, source_name)
     now = _utcnow()
     if existing is None:
@@ -221,7 +229,13 @@ async def _set_facet_rule(
 
 
 async def _upsert_alias(session: AsyncSession, kind: FacetKind, source: str, target: str) -> None:
-    """写入单跳 alias, 并压缩入边; 目标已被 block 时改为 block source."""
+    """写入单跳 alias, 并压缩入边; 目标已被 block 时改为 block source.
+
+    仅限非 actor kind — actor 别名已由 ``ActorAlias`` 表承担 (见
+    ``actor_swap_display_name`` / ``merge_link_facets``).
+    """
+    if kind == FacetKind.ACTOR:
+        raise ValueError("演员别名规则已由 actor_aliases 表取代")
     if kind not in SCRAPE_FACET_KINDS:
         raise ValueError(f"facet kind {kind.value} 不支持别名规则")
     if source == target:
@@ -344,14 +358,53 @@ async def _strip_names_from_scalar_metadata(session: AsyncSession, kind: FacetKi
     await session.flush()
 
 
+async def _actor_delete_block_names(session: AsyncSession, actor: Actor) -> set[str]:
+    """删除演员时拉黑的名字: 展示名 + 未被其它演员引用的别名行.
+
+    共享别名 (其它演员的别名行/展示名也在用) 不拉黑, 避免误伤仍有效的身份;
+    实体删除后其独有名行随级联消失, 不拉黑则重刮会把名字复活为新实体.
+    """
+    assert actor.id is not None
+    blocked: set[str] = {actor.name}
+    alias_names = set((await session.exec(select(ActorAlias.name).where(col(ActorAlias.actor_id) == actor.id))).all())
+    if not alias_names:
+        return blocked
+    other_display = set(
+        (
+            await session.exec(select(Actor.name).where(col(Actor.name).in_(alias_names), col(Actor.id) != actor.id))
+        ).all()
+    )
+    other_rows = set(
+        (
+            await session.exec(
+                select(ActorAlias.name).where(
+                    col(ActorAlias.name).in_(alias_names), col(ActorAlias.actor_id) != actor.id
+                )
+            )
+        ).all()
+    )
+    for name in alias_names - other_display - other_rows:
+        blocked.add(name)
+    return blocked
+
+
 async def delete_link_facet(session: AsyncSession, spec: _LinkFacetSpec, facet_id: int) -> bool:
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return False
     if spec.kind in SCRAPE_FACET_KINDS:
-        blocked = await _upsert_block(session, spec.kind, entity.name)
+        if spec.kind == FacetKind.ACTOR:
+            assert isinstance(entity, Actor)
+            blocked = await _actor_delete_block_names(session, entity)
+            for name in blocked:
+                await _upsert_block(session, spec.kind, name)
+        else:
+            blocked = await _upsert_block(session, spec.kind, entity.name)
         await _strip_names_from_link_metadata(session, spec, blocked)
     await session.exec(sqla_delete(spec.link).where(col(spec.link_fk) == facet_id))
+    if spec.kind == FacetKind.ACTOR:
+        # 显式删别名行, 不依赖 FK pragma (与项目既有清理约定一致).
+        await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == facet_id))
     await session.delete(entity)
     await session.commit()
     return True
@@ -437,51 +490,164 @@ async def cascade_delete_metadata(session: AsyncSession, metadata: Metadata) -> 
     await session.delete(metadata)
 
 
-def _merge_unique(values: list[str]) -> list[str]:
+# ==================== ActorAlias 行写入 ====================
+#
+# 别名以行为单位落库: 展示名不入表 (Actor.name 全局唯一, 表内 (actor_id, name) 唯一),
+# 空名/与展示名相同的项丢弃, 幂等可重复调用.
+
+
+def _normalize_alias_names(names: Sequence[str], display_name: str) -> list[str]:
     out: list[str] = []
-    for v in values:
-        if v not in out:
-            out.append(v)
+    for n in names:
+        n = (n or "").strip()
+        if not n or n == display_name or n in out:
+            continue
+        out.append(n)
     return out
 
 
-async def clean_actor_names(session: AsyncSession, meta: Metadata) -> None:
-    """清洗 ``Metadata.actors`` 中的 ``name(alias1, alias2)`` 形式.
+async def _max_alias_position(session: AsyncSession, actor_id: int) -> int:
+    last = (
+        await session.exec(
+            select(ActorAlias.position)
+            .where(col(ActorAlias.actor_id) == actor_id)
+            .order_by(col(ActorAlias.position).desc())
+            .limit(1)
+        )
+    ).first()
+    return int(last) if last is not None else -1
 
-    规范名留在真值列表 (FacetRule 匹配、NFO、路径模板都消费它), 别名并入对应
-    ``Actor.aliases`` (查找/展示; 参与演员刮削查找键). 必须在
-    ``apply_facet_rules_to_metadata`` 之前运行, 规则才能按规范名匹配.
-    别名落袋目标按 actor 规则单跳解析 — 规范名被 alias 规则映射时别名随目标走,
-    被 block 时不落袋; 因此不会为被规则移走的规范名留下孤儿实体.
-    无括号形式时不动任何数据 (幂等, 可安全地在每次写入前调用).
+
+async def add_actor_aliases(session: AsyncSession, actor: Actor, names: Sequence[str]) -> None:
+    """追加别名行 (去重去空, 跳过展示名); 无新行时不做任何写."""
+    assert actor.id is not None
+    candidates = _normalize_alias_names(names, actor.name)
+    if not candidates:
+        return
+    existing = set((await session.exec(select(ActorAlias.name).where(col(ActorAlias.actor_id) == actor.id))).all())
+    missing = [n for n in candidates if n not in existing]
+    if not missing:
+        return
+    position = await _max_alias_position(session, actor.id)
+    now = _utcnow()
+    for name in missing:
+        position += 1
+        session.add(ActorAlias(actor_id=actor.id, name=name, position=position, created_at=now, updated_at=now))
+    await session.flush()
+
+
+async def replace_actor_aliases(session: AsyncSession, actor: Actor, names: Sequence[str]) -> None:
+    """整表替换演员别名行 (保序写入 position); 仅换别名, 不动 person 字段."""
+    assert actor.id is not None
+    await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == actor.id))
+    await session.flush()
+    await add_actor_aliases(session, actor, names)
+
+
+async def add_one_actor_alias(session: AsyncSession, actor: Actor, name: str) -> bool:
+    """幂等追加单个别名行; 空名 / 与展示名相同 / 已存在 → False."""
+    candidates = _normalize_alias_names([name], actor.name)
+    if not candidates:
+        return False
+    existing = set((await session.exec(select(ActorAlias.name).where(col(ActorAlias.actor_id) == actor.id))).all())
+    if candidates[0] in existing:
+        return False
+    await add_actor_aliases(session, actor, [name])
+    return True
+
+
+async def remove_one_actor_alias(session: AsyncSession, actor_id: int, name: str) -> bool:
+    """删除单个别名行; 名字为空 / 行不存在 → False. 展示名本身不在行内."""
+    name = (name or "").strip()
+    row = (
+        await session.exec(
+            select(ActorAlias.id).where(col(ActorAlias.actor_id) == actor_id, col(ActorAlias.name) == name)
+        )
+    ).first()
+    if row is None:
+        return False
+    await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.id) == row))
+    await session.flush()
+    return True
+
+
+async def swap_actor_display_name(session: AsyncSession, actor: Actor, old_name: str, new_name: str) -> None:
+    """展示名切换的别名行交换: 新名行出表 (即将成为展示名), 旧展示名入表 (追加末尾).
+
+    只动别名行, 不改 ``Actor.name`` (由调用方完成); 调用时机在该名字尚未修改时.
+    """
+    assert actor.id is not None
+    await session.exec(
+        sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == actor.id, col(ActorAlias.name) == new_name)
+    )
+    exists = (
+        await session.exec(
+            select(ActorAlias.id).where(col(ActorAlias.actor_id) == actor.id, col(ActorAlias.name) == old_name)
+        )
+    ).first()
+    if exists is None:
+        position = (await _max_alias_position(session, actor.id)) + 1
+        now = _utcnow()
+        session.add(ActorAlias(actor_id=actor.id, name=old_name, position=position, created_at=now, updated_at=now))
+    await session.flush()
+
+
+async def move_actor_alias_rows(session: AsyncSession, target: Actor, sources: Sequence[Actor]) -> None:
+    """merge 用: 源演员的展示名与别名行并入 target 别名行.
+
+    保持已有行在前, 源展示名/源别名行依次追加; target 展示名不入表.
+    源实体随后删除, 其残留行随 FK 级联消失.
+    """
+    names: list[str] = list(await list_actor_aliases(session, target.id or 0))
+    for src in sources:
+        names.append(src.name)
+        names.extend(await list_actor_aliases(session, src.id or 0))
+    await replace_actor_aliases(session, target, names)
+
+
+def _is_blocked(rules: Mapping[str, RuleEntry], name: str) -> bool:
+    """actor block 规则判定 (别名规则已退役, 表中只有 block 行)."""
+    rule = rules.get(name)
+    return rule is not None and rule.action == FacetRuleAction.BLOCK
+
+
+async def clean_actor_names(session: AsyncSession, meta: Metadata) -> None:
+    """清洗 ``Metadata.actors`` 的 ``name(alias1, alias2)`` 形式 (含裸名解析).
+
+    展示名留真值列表 (NFO、路径模板、投影都消费它), 别名并入对应演员的
+    ``ActorAlias`` 行. 名字先经 ``resolve_actor_by_name`` 解析 (展示名 → 别名唯一命中
+    → 歧义/无命中以名字本身为展示名), 因此站点给的任何名字都会折到已认定的演员.
+    block 判定: 解析前查原始名, 解析后查解析出的展示名 (block 对别名/展示名都生效,
+    与旧规则链 "B→D 且 block D 则 B 也拦" 等价). 必须在 ``apply_facet_rules_to_metadata``
+    之前运行. 幂等: 无括号且名字不变时不做任何写.
     """
     raw_names = normalize_names(meta.actors)
     if not raw_names:
         return
+    rules = await _load_rules_by_kind(session)
+    actor_rules = rules.get(FacetKind.ACTOR, {})
     seen: set[str] = set()
     canonical: list[str] = []
-    alias_bag: dict[str, list[str]] = {}
+    alias_targets: dict[int, list[str]] = {}
     for raw in raw_names:
         name, aliases = split_actor_aliases(raw)
-        if name not in seen:
-            seen.add(name)
-            canonical.append(name)
+        if not name or _is_blocked(actor_rules, name):
+            continue
+        actor = await resolve_actor_by_name(session, name)
+        assert actor is not None
+        if _is_blocked(actor_rules, actor.name):
+            continue
+        if actor.name not in seen:
+            seen.add(actor.name)
+            canonical.append(actor.name)
         if aliases:
-            alias_bag.setdefault(name, []).extend(aliases)
-    if alias_bag:
-        rules = await _load_rules_by_kind(session)
-        actor_rules = rules.get(FacetKind.ACTOR, {})
-        for pre_name, aliases in alias_bag.items():
-            target = resolve_name(pre_name, actor_rules)
-            if target is None:
-                continue
-            actor = await _get_or_create_named(session, Actor, target)
-            merged = _merge_unique([*(actor.aliases or []), *aliases])
-            if merged != (actor.aliases or []):
-                actor.aliases = merged
-                actor.updated_at = _utcnow()
-                session.add(actor)
-    if canonical == raw_names:
+            assert actor.id is not None
+            alias_targets.setdefault(actor.id, []).extend(aliases)
+    for actor_id, aliases in alias_targets.items():
+        actor = await session.get(Actor, actor_id)
+        if actor is not None:
+            await add_actor_aliases(session, actor, aliases)
+    if canonical == meta.actors:
         return
     meta.actors = canonical
     session.add(meta)
@@ -574,7 +740,10 @@ async def rename_link_facet(
         if conflict is not None:
             raise ValueError("名称已存在, 请使用合并")
         old_name = entity.name
-        if spec.kind in SCRAPE_FACET_KINDS:
+        if spec.kind == FacetKind.ACTOR:
+            assert isinstance(entity, Actor)
+            await swap_actor_display_name(session, entity, old_name, new_name)
+        elif spec.kind in SCRAPE_FACET_KINDS:
             await _upsert_alias(session, spec.kind, old_name, new_name)
         entity.name = new_name
         entity.updated_at = _utcnow()
@@ -660,7 +829,11 @@ async def merge_link_facets(
         return None
     sources = await _load_named_sources(session, spec.entity, source_id_set, spec.label)
     old_names = {s.name for s in sources}
-    if spec.kind in SCRAPE_FACET_KINDS:
+    if spec.kind == FacetKind.ACTOR:
+        assert isinstance(target, Actor)
+        actor_sources = [s for s in sources if isinstance(s, Actor)]
+        await move_actor_alias_rows(session, target, actor_sources)
+    elif spec.kind in SCRAPE_FACET_KINDS:
         for src_name in old_names:
             await _upsert_alias(session, spec.kind, src_name, target.name)
     stmt = select(Metadata).where(
@@ -680,6 +853,10 @@ async def merge_link_facets(
         merge_person_fields_into_target(target, actor_sources)
         target.updated_at = _utcnow()
         session.add(target)
+        await session.flush()
+        # 源别名行已并入 target, 显式删除 (不依赖 FK pragma).
+        for src in actor_sources:
+            await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == src.id))
         await session.flush()
     for src in sources:
         await session.delete(src)
@@ -720,9 +897,21 @@ async def _list_link_facets(
     order: SortOrder,
 ) -> tuple[list[FacetItem], int]:
     entity, link, link_fk = spec.entity, spec.link, spec.link_fk
+
+    def _match(pattern: str) -> Any:
+        """展示名命中; Actor 额外命中别名行 (EXISTS, 不产生重复行)."""
+        match = col(entity.name).ilike(pattern)
+        if spec.alias_model is not None:
+            alias = spec.alias_model
+            match = or_(
+                match,
+                select(alias.id).where(col(alias.actor_id) == col(entity.id), col(alias.name).ilike(pattern)).exists(),
+            )
+        return match
+
     base = select(entity)
     if search:
-        base = base.where(col(entity.name).ilike(f"%{search}%"))
+        base = base.where(_match(f"%{search}%"))
     total = (await session.exec(select(count()).select_from(base.subquery()))).one() or 0
     count_expr = count(col(link.metadata_id))
     stmt = (
@@ -736,7 +925,7 @@ async def _list_link_facets(
         .limit(limit)
     )
     if search:
-        stmt = stmt.where(col(entity.name).ilike(f"%{search}%"))
+        stmt = stmt.where(_match(f"%{search}%"))
     rows = (await session.exec(stmt)).all()
     return [_facet_row(r) for r in rows], int(total)
 

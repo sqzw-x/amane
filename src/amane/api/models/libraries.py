@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from ...db import Library
 from ...enums import DownloadableResource, LibraryAutomation, MoveMode
 from ...organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate, PlaceholderPhase
-from ...utils.extensions import DEFAULT_TRAILER_PATTERN, TrailerPattern
+from ...utils.extensions import DEFAULT_TRAILER_PATTERN, BlacklistPattern, TrailerPattern
 from ...utils.model import create_partial_model
 
 
@@ -29,6 +29,8 @@ class LibraryCreateRequest(BaseModel):
     write_nfo: bool = True
     copy_resources: list[DownloadableResource] = Field(default_factory=lambda: list(DownloadableResource))
     trailer_pattern: TrailerPattern = DEFAULT_TRAILER_PATTERN
+    blacklist_patterns: list[BlacklistPattern] = []
+    """文件名正则列表; 命中任一则扫描/监控跳过, ORGANIZE 时移入库根 `.amane_trash`."""
     scan: bool = True
 
 
@@ -59,6 +61,7 @@ class LibraryResponse(BaseModel):
     write_nfo: bool
     copy_resources: list[DownloadableResource]
     trailer_pattern: str
+    blacklist_patterns: list[str]
 
 
 class LibraryListResponse(BaseModel):

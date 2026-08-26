@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -15,7 +15,7 @@ class LibraryWatcher(Protocol):
         library_id: int,
         recursive: bool = True,
         patterns: list[str] | None = None,
-        skip_pattern: str | None = None,
+        skip_patterns: Sequence[str | None] | None = None,
     ) -> None: ...
 
     def remove_library(self, library_id: int) -> None: ...

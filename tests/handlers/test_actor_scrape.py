@@ -101,7 +101,7 @@ async def test_actor_scrape_fills_empty_and_preserves_existing(repo: Repository,
     assert saved.height == 160
     assert saved.overview == "from minnano"
     assert saved.name == "Alice"
-    assert saved.aliases == ["ありす"]
+    assert await repo.get_actor_aliases(actor_id) == ["ありす"]
     assert saved.image_urls == ["https://img.example/a.jpg"]
 
 
@@ -110,8 +110,7 @@ async def test_actor_scrape_tries_lookup_aliases(repo: Repository, hot: HotSetti
     actor_id = await _actor_id(repo, "Canonical")
     actor = await repo.get_actor(actor_id)
     assert actor is not None
-    actor.aliases = ["旧名"]
-    await repo.save_actor(actor)
+    await repo.save_actor(actor, aliases=["旧名"])
 
     crawler = _FakeActorCrawler(
         {
@@ -129,12 +128,12 @@ async def test_actor_scrape_tries_lookup_aliases(repo: Repository, hot: HotSetti
     assert saved is not None
     assert saved.birthplace == "Tokyo"
     assert saved.name == "Canonical"
-    assert saved.aliases == ["旧名"]
+    assert await repo.get_actor_aliases(actor_id) == ["旧名"]
 
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_actor_scrape_folds_site_display_name_into_aliases(repo: Repository, hot: HotSettings) -> None:
-    """已认定规范名时, 站点显示名与其它写法进别名袋, 不改 name."""
+    """已认定规范名时, 站点显示名与其它写法进别名行, 不改 name."""
     actor_id = await _actor_id(repo, "鷲尾めい")
     minnano = _FakeActorCrawler({"鷲尾めい": ActorMetadata(name="筧純", aliases=["鷲尾芽衣", "筧ジュン", "鷲尾めい"])})
     factory = _FakeFactory({"minnano": minnano, "gfriends": _FakeActorCrawler({})})
@@ -145,7 +144,7 @@ async def test_actor_scrape_folds_site_display_name_into_aliases(repo: Repositor
     saved = await repo.get_actor(actor_id)
     assert saved is not None
     assert saved.name == "鷲尾めい"
-    assert saved.aliases == ["筧純", "鷲尾芽衣", "筧ジュン"]
+    assert await repo.get_actor_aliases(actor_id) == ["筧純", "鷲尾芽衣", "筧ジュン"]
 
 
 @pytest.mark.asyncio(loop_scope="function")

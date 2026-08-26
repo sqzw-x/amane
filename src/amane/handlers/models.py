@@ -165,6 +165,8 @@ class OrganizeResult(BaseModel):
     """无元数据跳过的文件数"""
     failed: int
     """整理失败的文件数"""
+    trashed: int = 0
+    """命中库黑名单并移入 `.amane_trash` 的文件数"""
 
 
 # --- CLEANUP ---

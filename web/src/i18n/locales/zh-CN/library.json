@@ -97,6 +97,8 @@
   "fieldPatternsHint": "逗号分隔的 glob 模式",
   "fieldTrailerPattern": "预告片文件名正则",
   "fieldTrailerPatternHint": "匹配文件名（含扩展名）则扫描/监控跳过；空串关闭。默认匹配 trailer",
+  "fieldBlacklistPatterns": "黑名单正则",
+  "fieldBlacklistPatternsHint": "每行一个正则；命中的文件扫描/监控跳过，整理时移入库根 .amane_trash。留空关闭",
   "fieldMoveMode": "文件操作模式",
   "fieldMoveModeHint": "整理时如何把文件放到模板路径",
   "fieldWriteNfo": "写入 NFO",

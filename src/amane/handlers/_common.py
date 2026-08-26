@@ -11,11 +11,11 @@ handler 间共享的可复用单元.
 from typing import TYPE_CHECKING
 
 from ..db import MediaFileStatus
-from ..utils.extensions import MEDIA_EXTENSIONS, compile_skip_pattern
+from ..utils.extensions import MEDIA_EXTENSIONS, compile_skip_patterns, is_in_trash
 from ..utils.oshash import compute_oshash_async
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Sequence
     from pathlib import Path
 
     from ..db.models import MediaFile
@@ -28,7 +28,11 @@ def _maybe_file(f: Path) -> bool:
 
 
 def iter_media_files(
-    scan_dir: Path, *, recursive: bool, patterns: list[str] | None, skip_pattern: str | None = None
+    scan_dir: Path,
+    *,
+    recursive: bool,
+    patterns: list[str] | None,
+    skip_patterns: Sequence[str | None] | None = None,
 ) -> Iterator[Path]:
     """遍历目录, 产出符合条件的媒体文件路径.
 
@@ -36,20 +40,23 @@ def iter_media_files(
     - 仅产出常规文件 (跳过目录/目录符号链接等, 但允许文件符号链接和无效链接)
     - 提供 patterns 时按 glob 模式匹配 (任一命中即可)
     - 未提供 patterns 时按 MEDIA_EXTENSIONS 扩展名过滤
-    - skip_pattern 命中文件名 (含扩展名) 则跳过 (库级预告片正则)
+    - skip_patterns 任一命中文件名 (含扩展名) 则跳过 (预告片/黑名单正则)
+    - 路径任一组件为 `.amane_trash` (回收站) 则跳过
 
      Args:
          scan_dir: 待遍历目录
          recursive: 是否递归子目录
          patterns: 文件名 glob 模式列表, None 时回退到扩展名过滤
-         skip_pattern: 预告片正则, 空/非法则不跳过
+         skip_patterns: 跳过正则列表 (预告片 + 黑名单), 空/非法则跳过
     """
     glob_pattern = "**/*" if recursive else "*"
-    skip_re = compile_skip_pattern(skip_pattern)
+    skip_res = compile_skip_patterns(skip_patterns)
     for file_path in scan_dir.glob(glob_pattern):
         if not _maybe_file(file_path):
             continue
-        if skip_re is not None and skip_re.search(file_path.name):
+        if is_in_trash(file_path):
+            continue
+        if skip_res is not None and any(r.search(file_path.name) for r in skip_res):
             continue
         if patterns:
             if not any(file_path.match(p) for p in patterns):

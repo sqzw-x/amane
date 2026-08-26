@@ -5,7 +5,11 @@ from sqlmodel import col, select
 
 from amane.enums import DownloadableResource, LibraryAutomation, MoveMode
 from amane.organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, validate_cd_suffix_template
-from amane.utils.extensions import DEFAULT_TRAILER_PATTERN, validate_trailer_pattern
+from amane.utils.extensions import (
+    DEFAULT_TRAILER_PATTERN,
+    validate_blacklist_pattern,
+    validate_trailer_pattern,
+)
 
 from ..models import Library, MediaFile
 from ..repo_types import LibraryUpdates
@@ -33,6 +37,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         write_nfo: bool = True,
         copy_resources: list[DownloadableResource] | None = None,
         trailer_pattern: str | None = None,
+        blacklist_patterns: list[str] | None = None,
     ) -> Library:
         async with self._session() as session:
             lib = Library(
@@ -58,6 +63,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 trailer_pattern=validate_trailer_pattern(
                     trailer_pattern if trailer_pattern is not None else DEFAULT_TRAILER_PATTERN
                 ),
+                blacklist_patterns=[validate_blacklist_pattern(p) for p in (blacklist_patterns or [])],
             )
             session.add(lib)
             await session.commit()
@@ -159,6 +165,9 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 lib.copy_resources = resources if resources is not None else []
             if "trailer_pattern" in updates:
                 lib.trailer_pattern = validate_trailer_pattern(updates["trailer_pattern"])
+            if "blacklist_patterns" in updates:
+                patterns = updates["blacklist_patterns"]
+                lib.blacklist_patterns = [validate_blacklist_pattern(p) for p in (patterns or [])]
             session.add(lib)
             await session.commit()
             await session.refresh(lib)

@@ -1,6 +1,6 @@
 # 助理 Agent
 
-> 提交: `0d3671ac`
+> 提交: `e711e93`
 >
 > 入口: `src/amane/agent/`. 本文只解释边界与契约; 字段与签名去源码.
 > 配置见 [config.md](config.md), 列表接入见 [api.md](api.md), 翻译 LLM 见 [llm.md](llm.md), 前端 IA 见 [frontend.md](frontend.md).
@@ -28,12 +28,14 @@
 | `id` | 覆盖 |
 |------|------|
 | `metadata-ops` | 改字段、合并、user tag、刮削入队、删除 |
-| `actor-ops` | 演员人物字段、演员刮削入队 |
+| `actor-ops` | 演员人物字段、别名行 (查询/解析/增删)、展示名切换、演员刮削入队 |
 | `facet-identity` | rename / merge / delete / 规则列表与删除 |
 | `library-ops` | 库 CRUD、REFRESH 入队 |
 | `feed-ops` | RSS/Atom 源 CRUD、立即拉取、FeedItem 历史批量操作 |
 | `schedule-ops` | CLEANUP / UPSCALE / R18_IMPORT / RESCRAPE 定时 CRUD 与触发 |
 | `task-ops` | 统一提交 / 取消 / 重试 (入队, 不代跑) |
+
+`actor-ops` 的别名工具对应新别名模型 (见 [data-model.md](data-model.md) 演员身份): 别名是一对多行 (同别名可属多个演员, `resolve_actor_name` 多命中即歧义, 应交由用户决定); `set_actor_display_name` = 展示名切换 (旧名入别名行, 存量影片真值改写), 与 `facet-identity.rename_facet(kind=actor)` 等价 — 二者任一即可, 不要重复调用.
 
 `PATCH /config` **不**暴露为工具.
 

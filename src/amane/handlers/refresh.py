@@ -29,7 +29,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
             return TaskResult(success=False, error=f"Not a directory: {payload.path}")
 
         library = await self._repo.get_library(payload.library_id)
-        skip_pattern = library.trailer_pattern if library is not None else None
+        skip_patterns = [library.trailer_pattern, *(library.blacklist_patterns or [])] if library is not None else None
 
         added = removed = scrape = 0
 
@@ -42,7 +42,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
                         scan_dir,
                         recursive=payload.recursive if payload.recursive is not None else True,
                         patterns=payload.patterns,
-                        skip_pattern=skip_pattern,
+                        skip_patterns=skip_patterns,
                     ),
                 )
             )

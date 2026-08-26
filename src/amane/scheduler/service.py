@@ -15,6 +15,7 @@ from ..parsing import parse_file_info
 from .watcher import FileWatcher
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from ..db.repository import Repository
@@ -89,7 +90,7 @@ class WatcherService:
                 library_id=lib.id,
                 recursive=lib.recursive,
                 patterns=lib.patterns,
-                skip_pattern=lib.trailer_pattern,
+                skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
             )
 
         try:
@@ -128,7 +129,7 @@ class WatcherService:
         library_id: int,
         recursive: bool = True,
         patterns: list[str] | None = None,
-        skip_pattern: str | None = None,
+        skip_patterns: Sequence[str | None] | None = None,
     ) -> None:
         """热添加监控库 (运行时调用, 无需重启)"""
         if self._watcher is None:
@@ -142,7 +143,7 @@ class WatcherService:
                 debounce_seconds=self._debounce_seconds,
             )
             self._watcher.watch(
-                path, library_id=library_id, recursive=recursive, patterns=patterns, skip_pattern=skip_pattern
+                path, library_id=library_id, recursive=recursive, patterns=patterns, skip_patterns=skip_patterns
             )
             self._watcher.start()
             self._running = True
@@ -152,7 +153,7 @@ class WatcherService:
         else:
             self._watcher.unwatch(library_id)  # 幂等: 若已存在则先移除再添加
             self._watcher.watch(
-                path, library_id=library_id, recursive=recursive, patterns=patterns, skip_pattern=skip_pattern
+                path, library_id=library_id, recursive=recursive, patterns=patterns, skip_patterns=skip_patterns
             )
             logger.info("library watch added", library_id=library_id, path=path, recursive=recursive)
 

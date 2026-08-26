@@ -152,6 +152,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
             await self.report_progress(i + 1, progress_total, f"fetched {site.value}")
 
         site_agg = merge_actor_metadata(results, profile_sites=profile_sites, image_sites=image_sites)
+        existing_aliases = await self._repo.get_actor_aliases(payload.actor_id)
         merged = merge_actor_rows_fill_empty(actor_to_aggregated(actor), site_agg)
 
         if cfg.download_images and merged.image_urls and self._web_client is not None:
@@ -160,7 +161,8 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         await self.report_progress(len(sites) + 1, progress_total, "images")
 
         apply_aggregated_to_actor(actor, merged)
-        saved = await self._repo.save_actor(actor)
+        # 别名行整表替换为「既有行 + 站点名」并集 (去重/去展示名在行写入层).
+        saved = await self._repo.save_actor(actor, aliases=[*existing_aliases, *merged.aliases])
         if saved is None:
             return TaskResult(success=False, error=f"Failed to save actor {payload.actor_id}")
         await self.report_progress(progress_total, progress_total, "saved")

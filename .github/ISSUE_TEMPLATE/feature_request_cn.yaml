@@ -1,6 +1,6 @@
 name: 功能请求
 description: 使用中文请求新功能或改进
-labels: ["enhancement / 功能增强"]
+labels: ["kind:enhancement"]
 body:
   - type: checkboxes
     id: checks

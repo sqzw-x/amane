@@ -430,6 +430,35 @@ class TestRefreshHandler:
         assert result.result.removed == 0
         assert result.result.scrape == 1
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_blacklisted_files_skipped_and_records_removed(self, repo: Repository, tmp_path):
+        """黑名单命中的文件不进扫描; ScanMode.remove 时旧记录被当作失效清除."""
+        lib = await repo.create_library(name="t", path=str(tmp_path), blacklist_patterns=["广告", "(?i)ads"])
+        assert lib.id is not None
+        ad = tmp_path / "新片广告.mp4"
+        ad.write_bytes(b"\x00" * 100)
+        (tmp_path / "MIDV-123.mp4").write_bytes(b"\x00" * 100)
+        old = await repo.create_media_file(lib.id, path=str(ad), status=MediaFileStatus.SCRAPED, metadata_id=42)
+        assert old.id is not None
+
+        handler = RefreshHandler(repo=repo)
+        result = await handler.handle(
+            RefreshPayload(
+                library_id=lib.id,
+                path=str(tmp_path),
+                scan={ScanMode.add, ScanMode.remove},
+                scrape=set(),
+            )
+        )
+
+        assert result.success is True
+        assert result.result is not None
+        assert result.result.added == 1
+        assert result.result.removed == 1
+        # 旧记录已被清除; 注意 id 会被 SQLite 复用, 断言用路径而不是 id
+        assert await repo.get_media_file_by_path(str(ad)) is None
+        assert await repo.get_media_file_by_path(str(tmp_path / "MIDV-123.mp4")) is not None
+
     @pytest.mark.parametrize(
         ("scan_modes", "scrape_statuses", "expected_scrape_tasks"),
         [

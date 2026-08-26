@@ -276,6 +276,7 @@ class LibraryUpdates(TypedDict, total=False):
     write_nfo: bool
     copy_resources: list[DownloadableResource]
     trailer_pattern: str
+    blacklist_patterns: list[str]
 
 
 class ScheduleUpdates(TypedDict, total=False):

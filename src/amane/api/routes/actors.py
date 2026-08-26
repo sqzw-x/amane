@@ -51,7 +51,7 @@ def _from_actor(
     actor: Actor,
     *,
     count: int,
-    rule_aliases: list[str] | None = None,
+    aliases: list[str] | None = None,
     include_raw: bool = False,
 ) -> ActorResponse:
     assert actor.id is not None
@@ -59,8 +59,7 @@ def _from_actor(
         id=actor.id,
         name=actor.name,
         count=count,
-        aliases=list(actor.aliases or []),
-        rule_aliases=list(rule_aliases or []),
+        aliases=list(aliases or []),
         gender=_gender_of(actor.gender),
         birthday=actor.birthday,
         birthplace=actor.birthplace,
@@ -92,13 +91,14 @@ async def list_actors(repo: RepoDep, params: Annotated[ActorBrowseParams, Query(
 
 @router.get("/{actor_id}")
 async def get_actor(actor_id: int, repo: RepoDep) -> ActorResponse:
-    """演员详情 (含 rule_aliases 与 raw)."""
+    """演员详情 (含别名与 raw)."""
     item = await repo.get_facet(FacetKind.ACTOR, actor_id)
     actor = await repo.get_actor(actor_id)
     if item is None or actor is None:
         raise HTTPException(status_code=404, detail="Actor not found")
-    rule_aliases = await repo.list_inbound_actor_aliases(actor.name)
-    return _from_actor(actor, count=item.count, rule_aliases=rule_aliases, include_raw=True)
+    assert actor.id is not None
+    aliases = await repo.get_actor_aliases(actor.id)
+    return _from_actor(actor, count=item.count, aliases=aliases, include_raw=True)
 
 
 @router.patch("/{actor_id}")
@@ -123,8 +123,9 @@ async def update_actor(actor_id: int, req: ActorUpdateRequest, repo: RepoDep) ->
         raise HTTPException(status_code=404, detail="Actor not found")
     item = await repo.get_facet(FacetKind.ACTOR, actor_id)
     count = item.count if item is not None else 0
-    rule_aliases = await repo.list_inbound_actor_aliases(actor.name)
-    return _from_actor(actor, count=count, rule_aliases=rule_aliases, include_raw=True)
+    assert actor.id is not None
+    aliases = await repo.get_actor_aliases(actor.id)
+    return _from_actor(actor, count=count, aliases=aliases, include_raw=True)
 
 
 @router.post("/{actor_id}/scrape", status_code=202)

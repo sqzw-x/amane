@@ -42,6 +42,7 @@ class TestLibraries:
         assert resp.json()["write_nfo"] is True
         assert set(resp.json()["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
         assert resp.json()["trailer_pattern"] == "(?i)trailer"
+        assert resp.json()["blacklist_patterns"] == []
 
         resp = await client.get("libraries")
         assert len(resp.json()["items"]) == 1
@@ -238,6 +239,46 @@ class TestLibraries:
         assert data["write_nfo"] is False
         assert data["copy_resources"] == ["thumb"]
         assert data["trailer_pattern"] == "预告"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_with_blacklist_patterns(self, client: AsyncClient, safe_path: Path):
+        target = safe_path / "blacklist"
+        target.mkdir()
+        resp = await client.post(
+            "libraries", json={"path": str(target), "blacklist_patterns": ["广告", "(?i)ads[0-9]+"]}
+        )
+        assert resp.status_code == 201
+        assert resp.json()["blacklist_patterns"] == ["广告", "(?i)ads[0-9]+"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_default_blacklist_empty(self, client: AsyncClient, safe_path: Path):
+        target = safe_path / "empty-bl"
+        target.mkdir()
+        resp = await client.post("libraries", json={"path": str(target)})
+        assert resp.status_code == 201
+        assert resp.json()["blacklist_patterns"] == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_rejects_invalid_blacklist_pattern(self, client: AsyncClient, safe_path: Path):
+        target = safe_path / "bad-bl"
+        target.mkdir()
+        resp = await client.post("libraries", json={"path": str(target), "blacklist_patterns": ["广告", "(ads"]})
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_blacklist_patterns(self, client: AsyncClient, repo: Repository, safe_path: Path):
+        lib = await repo.create_library(name="t", path=str(safe_path), blacklist_patterns=["广告"])
+        resp = await client.patch(f"libraries/{lib.id}", json={"blacklist_patterns": ["广告", "预览"]})
+        assert resp.status_code == 200
+        assert resp.json()["blacklist_patterns"] == ["广告", "预览"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_rejects_invalid_blacklist_pattern(
+        self, client: AsyncClient, repo: Repository, safe_path: Path
+    ):
+        lib = await repo.create_library(name="t", path=str(safe_path))
+        resp = await client.patch(f"libraries/{lib.id}", json={"blacklist_patterns": ["(ads"]})
+        assert resp.status_code == 422
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_create_with_custom_cd_suffix(self, client: AsyncClient, safe_path: Path):

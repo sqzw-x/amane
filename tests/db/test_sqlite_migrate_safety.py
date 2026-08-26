@@ -345,6 +345,45 @@ class TestProjectAlembicPath:
         assert not needs_upgrade(db)
         assert "facet_rules" in _tables(db)
 
+    def test_actor_alias_migration_rows_out_bag_and_rules(self, tmp_path: Path) -> None:
+        """别名袋与 actor alias 规则行化进 actor_aliases, 规则行删除 (block 保留)."""
+        db = tmp_path / "amane.db"
+        cfg = Config("alembic.ini")
+        cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
+        command.upgrade(cfg, "5abbb79b1ae6")
+
+        now = "2026-01-01 00:00:00.000000"
+        with sqlite3.connect(db) as conn:
+            conn.executescript(
+                f"""
+                insert into actors (name, gender, image_urls, provider_ids, source_urls, field_sources, raw, aliases, created_at, updated_at)
+                values ('A','unknown','[]','{{}}','{{}}','{{}}','{{}}','["x", "A"]','{now}','{now}'),
+                       ('B','unknown','[]','{{}}','{{}}','{{}}','{{}}',NULL,'{now}','{now}');
+                insert into facet_rules (kind, source_name, action, target_name, created_at, updated_at) values
+                ('actor','旧A','alias','A','{now}','{now}'),
+                ('actor','Ghost','alias','NoEntity','{now}','{now}'),
+                ('actor','B','block',NULL,'{now}','{now}');
+                """
+            )
+            conn.commit()
+
+        command.upgrade(cfg, "head")
+
+        with sqlite3.connect(db) as conn:
+            rows = conn.execute(
+                "select actors.name, actor_aliases.name from actor_aliases join actors on actors.id = actor_aliases.actor_id"
+                " order by actors.id, actor_aliases.position"
+            ).fetchall()
+            # A: 规则入边先, 袋内 x 后, 与展示名相同的 A 剔除; Ghost→NoEntity 建实体
+            assert rows == [("A", "旧A"), ("A", "x"), ("NoEntity", "Ghost")]
+            remaining = conn.execute(
+                "select source_name, action from facet_rules where kind = 'actor' order by source_name"
+            ).fetchall()
+            assert remaining == [("B", "block")]
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(actors)").fetchall()]
+            assert "aliases" not in cols
+            assert "actor_aliases" in _tables(db)
+
     @pytest.mark.asyncio
     async def test_create_async_engine_runs_safe_upgrade(self, tmp_path: Path) -> None:
         import inspect
