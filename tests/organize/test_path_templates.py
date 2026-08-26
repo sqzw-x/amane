@@ -358,6 +358,15 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
     _RenderCase("[破解]MIDV-123.mp4", "{mosaic}/{number}.{ext}", ("cracked", "ABC-123.mp4")),
     # 下划线/汉字邻接的复杂文件名
     _RenderCase("MIDV-123_4K_无码.mp4", "{mosaic}/{definition}/{number}.{ext}", ("uncensored", "4K", "ABC-123.mp4")),
+    # 目录名整段可补 mosaic; definition 仍不从目录读
+    _RenderCase(
+        "/media/uncensored/MIDV-123.mp4",
+        "{mosaic}/{definition}/{number}.{ext}",
+        ("uncensored", "Unknown", "ABC-123.mp4"),
+    ),
+    _RenderCase(
+        "/media/4K/MIDV-123.mp4", "{mosaic}/{definition}/{number}.{ext}", ("censored", "Unknown", "ABC-123.mp4")
+    ),
     # cd 参数省略时从 file_info.cd 回退
     _RenderCase("MIDV-123-CD1.mp4", "{number}/{number}.{ext}", ("ABC-123", "ABC-123-CD1.mp4")),
     # 未走 ORGANIZE 的调用方不传 file_info: 与占位符缺失回退一致
@@ -367,7 +376,7 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
 
 @pytest.mark.parametrize("case", RENDER_CASES, ids=lambda c: c.source or "no-file-info")
 def test_file_placeholder_render(case: _RenderCase, media: Path) -> None:
-    """file 相位占位符 {mosaic} / {definition}: 来自源文件名 (parse_file_info)."""
+    """file 相位占位符 {mosaic} / {definition}: 来自 parse_file_info (文件名优先, mosaic 可补目录名)."""
     wp = Library(name="t", path=str(media), video_template=case.template)
     meta = _meta()
     file_info = parse_file_info(case.source) if case.source is not None else None

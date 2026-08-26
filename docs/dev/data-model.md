@@ -1,6 +1,6 @@
 # 数据模型
 
-> 提交: `162e14f`
+> 提交: `07c29df`
 >
 > 表结构、字段类型、便捷属性都在 `src/amane/db/models.py`. 本文只解释**为什么**这么建模、所有权关系、生命周期与已知陷阱.
 
@@ -92,11 +92,11 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 `trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH / ORGANIZE 扫描与 watcher 都不把该文件当正片入库. 空串关闭跳过. 非法正则在写入时拒绝 (422). 默认与预告片模板文件名 `{video_dir}/trailer.mp4` 对齐.
 
-分集 (CD) 后缀: `cd_suffix_template` (默认 `-CD{cd}`) 只在**视频文件名**上生效 — ORGANIZE 时从源文件名 `parse_file_info` 检测分集 (识别 `-CD{n}` / `-PART{n}` / `-A` / `-B` / 尾部位数 `-1`–`-9`; `-0` 无意义, 零填充与两位尾数 (`-01` / `-10`) 会与合法番号撞车, 均不识别), 非 None 且模板非空则在扩展名前追加渲染结果; 空串关闭. 裸数字识别与番号提取一致: `MIDV-123-1` 的番号仍是 `MIDV-123`, 尾部 `-1`–`-9` 本就是分集语义. 模板只允许恰一个 `{cd}` 占位符, 不允许路径分隔符 (写入时 422). 侧车模板基于 `{video_dir}` (父目录), 不受 CD 后缀影响. **幂等约束**: 渲染后的格式须保持可被同一检测逻辑反推 (如 `-CD1`, `-Part1`), 否则该文件二次整理会因检测不到分集而丢失后缀 — 当前只文档约束, 不加验证. 检测只做在 ORGANIZE 时, 不落库.
+分集 (CD) 后缀: `cd_suffix_template` (默认 `-CD{cd}`) 只在**视频文件名**上生效 — ORGANIZE 时从 `parse_file_info` 检测分集 (文件名识别 `-CD{n}` / `-PART{n}` / `-A` / `-B` / 尾部位数 `-1`–`-9`; `-0` 无意义, 零填充与两位尾数 (`-01` / `-10`) 会与合法番号撞车, 均不识别. 文件名无分集时, 直接父目录整段为 `CDn` / `PARTn` 也可认; 更远的祖先、`CD-1`、`A`、裸数字目录都不算), 非 None 且模板非空则在扩展名前追加渲染结果; 空串关闭. 裸数字识别与番号提取一致: `MIDV-123-1` 的番号仍是 `MIDV-123`, 尾部 `-1`–`-9` 本就是分集语义. 模板只允许恰一个 `{cd}` 占位符, 不允许路径分隔符 (写入时 422). 侧车模板基于 `{video_dir}` (父目录), 不受 CD 后缀影响. **幂等约束**: 渲染后的格式须保持可被同一检测逻辑反推 (如 `-CD1`, `-Part1`), 否则该文件二次整理会因检测不到分集而丢失后缀 — 当前只文档约束, 不加验证. 检测只做在 ORGANIZE 时, 不落库.
 
 模板**故意按资源类型独立**, 而不是一个 `output_dir` + 后缀拼接 — 用户场景包括: NAS 多盘分存、字幕集中备份、NFO 同目录 vs 集中目录.
 
-模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{dir}` / `{dir_path}` (源文件目录名 / 完整路径) 与 `{mosaic}` / `{definition}` (`parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库 (与 CD 检测同一约定); `{video_dir}` 为视频渲染后的父目录. `{mosaic}` 无标记时按 content_type 兜底为 `censored` (永不 `Unknown` — 有码/无码是全域语义, 保证目录名稳定), `{definition}` 无命中回退 `Unknown` (与普通占位符一致). **幂等约束** (与 CD 后缀同一条): 文件相位标记必须保留在渲染后的文件名段 — 若模板只把标记放目录段, 二次整理会因文件名不再含标记而按默认值重排. 占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
+模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{dir}` / `{dir_path}` (源文件目录名 / 完整路径) 与 `{mosaic}` / `{definition}` (`parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库 (与 CD 检测同一约定); `{video_dir}` 为视频渲染后的父目录. `{mosaic}` 取值: 文件名标记 → 目录名整段词表 (由近到远; `uncensored` / `cracked` / 无码 / 破解 等, 子串不算) → content_type 兜底 `censored` (永不 `Unknown` — 有码/无码是全域语义, 保证目录名稳定). `{definition}` 只看文件名, 无命中回退 `Unknown` (与普通占位符一致). **幂等约束**: `{mosaic}` 放目录段且目录名等于词表时可二次读回; `{definition}` 与 CD 后缀必须仍能从**文件名**反推, 只放目录段会按默认值重排. 占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
 
 普通占位符缺失回退 `Unknown`. `{dir}` / `{dir_path}` 无 `source_path` 时为空串 — **空变量放模板首段** (如 `{dir}/...`) 会让结果以 `/` 开头被当成绝对路径.
 

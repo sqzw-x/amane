@@ -148,7 +148,7 @@ def _safe(value: str | None) -> str | None:
 
 
 def _mosaic_value(file_info: FileInfo | None) -> str:
-    """{mosaic} 取值: 文件名标记 (uncensored/cracked) → 内容类型推断 → 兜底 censored.
+    """{mosaic} 取值: 文件名标记 → 目录名整段词表 → 内容类型推断 → 兜底 censored.
 
     有码/无码是全域语义, 默认 censored 比占位符失效 (Unknown) 更能保证目录名稳定;
     file_info 缺失 (未走 ORGANIZE 的调用方) 时与其余占位符一致回退 Unknown.

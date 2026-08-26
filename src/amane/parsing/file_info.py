@@ -186,17 +186,27 @@ def extract_number(text: str, escape_strings: list[str] | None = None) -> str | 
     return _match_number(text, escape_strings or [])
 
 
-def _classify_from_path(path_lower: str) -> ContentType | None:
-    """按路径关键词分类; 未命中返回 None."""
+_ROOT_PARTS = frozenset({"/", ".", ""})
 
-    # 里番
-    if any(kw in path_lower for kw in ("getchu", "里番", "裏番")):
-        return ContentType.HENTAI
 
-    # 欧美 (来自路径关键词)
-    if "欧美" in path_lower and "东欧美" not in path_lower:
-        return ContentType.WESTERN
+def _dir_names(path: Path) -> tuple[str, ...]:
+    """路径中的目录名 (不含文件名, 根到近)."""
+    return tuple(p for p in path.parent.parts if p not in _ROOT_PARTS)
 
+
+def _classify_from_path(stem: str, dir_names: tuple[str, ...]) -> ContentType | None:
+    """按路径段关键词分类; 未命中返回 None.
+
+    getchu 必须整段相等 (忽略大小写), 避免 forgetchu / getchu-docs 子串误伤.
+    里番/裏番/欧美必须在段首, 避免 这里番号 / 非欧美.
+    """
+    for name in (stem, *dir_names):
+        if name.lower() == "getchu":
+            return ContentType.HENTAI
+        if name.startswith(("里番", "裏番")):
+            return ContentType.HENTAI
+        if name.startswith("欧美"):
+            return ContentType.WESTERN
     return None
 
 
@@ -274,8 +284,11 @@ def _prepare_number_text(basename: str, escape_strings: list[str]) -> _NumberTex
     return _NumberText(file_name=file_name, filename=filename, western_filename=western_filename)
 
 
-def _match_number(basename: str, escape_strings: list[str]) -> str | None:
-    """命中已知番号模式则返回, 否则 None. 不含文件名最终回退."""
+def _match_number(basename: str, escape_strings: list[str], *, generic: bool = True) -> str | None:
+    """命中已知番号模式则返回, 否则 None. 不含文件名最终回退.
+
+    generic=False 时跳过过宽的回退/字母数字拼接 (给目录名用, 避免 Season02 / 2024-01 冒充番号).
+    """
     prepared = _prepare_number_text(basename, escape_strings)
     file_name = prepared.file_name
     filename = prepared.filename
@@ -365,8 +378,7 @@ def _match_number(basename: str, escape_strings: list[str]) -> str | None:
                 break
         return file_number
 
-    # 回退模式
-    if (
+    if generic and (
         (m := re.search(r"[A-Z]+-[A-Z]\d+", filename))
         or (m := re.search(r"\d{2,}[-_]\d{2,}", filename))
         or (m := re.search(r"\d{3,}-[A-Z]{3,}", filename))
@@ -381,24 +393,27 @@ def _match_number(basename: str, escape_strings: list[str]) -> str | None:
     if m := re.search(r"H_\d{3,}([A-Z]{2,})(\d{2,})", filename):
         return f"{m[1]}-{m[2]}"
 
-    # 通用: 3 个以上字母 + 2 个以上数字
-    if m := re.findall(r"([A-Z]{3,}).*?(\d{2,})", filename):
+    if generic and (m := re.findall(r"([A-Z]{3,}).*?(\d{2,})", filename)):
         return f"{m[0][0]}-{m[0][1]}"
-    if m := re.findall(r"([A-Z]{2,}).*?(\d{3,})", filename):
+    if generic and (m := re.findall(r"([A-Z]{2,}).*?(\d{3,})", filename)):
         return f"{m[0][0]}-{m[0][1]}"
 
     return None
 
 
-def _extract_number(basename: str, escape_strings: list[str]) -> str:
-    """
-    从文件名 (不含扩展名) 中提取媒体番号.
+def _extract_number(basename: str, escape_strings: list[str], dir_names: tuple[str, ...] = ()) -> str:
+    """从文件名提取番号; 未命中已知模式时再对父目录由近到远做同样匹配.
 
-    先按级联正则模式匹配 (见 _match_number); 未命中则回退到清理后的文件名, 不会返回 None.
+    目录只用已知番号模式 (不含过宽的字母数字拼接), 不会把清理后的目录名冒充番号.
+    文件名仍未命中时回退到清理后的文件名, 不会返回 None.
     """
     matched = _match_number(basename, escape_strings)
     if matched is not None:
         return matched
+    for name in reversed(dir_names):
+        matched = _match_number(name, escape_strings, generic=False)
+        if matched is not None:
+            return matched
 
     prepared = _prepare_number_text(basename, escape_strings)
     filename = prepared.filename
@@ -436,22 +451,33 @@ class FileInfo:
 
 
 def parse_file_info(filepath: str | Path, escape_strings: list[str] | None = None) -> FileInfo:
-    """从完整文件路径解析番号、内容类型、分集、字幕、马赛克、清晰度."""
-    filepath = str(filepath)
-    stem = Path(filepath).stem
-    content_type = _classify_from_path(filepath.lower())
-    number = _extract_number(stem.strip(), escape_strings or [])
+    """从完整文件路径解析番号、内容类型、分集、字幕、马赛克、清晰度.
+
+    文件名优先. 番号未命中已知模式时可从父目录回退; 马赛克可从目录名整段补;
+    分集还可认直接父目录 CD/PART; 字幕与清晰度只看文件名.
+    """
+    path = Path(filepath)
+    stem = path.stem
+    dirs = _dir_names(path)
+    content_type = _classify_from_path(stem, dirs)
+    number = _extract_number(stem.strip(), escape_strings or [], dirs)
     if content_type is None:
         content_type = classify_number(number)
     basename = stem.upper()
+    cd = _detect_cd(basename)
+    if cd is None and dirs:
+        cd = _detect_cd_from_parent(dirs[-1])
+    mosaic = _detect_mosaic(basename)
+    if mosaic is None:
+        mosaic = _detect_mosaic_from_dirs(dirs)
 
     return FileInfo(
         number=number,
         content_type=content_type,
         prefix=get_prefix(number),
-        cd=_detect_cd(basename),
+        cd=cd,
         has_subtitle=_detect_subtitle(basename),
-        mosaic=_detect_mosaic(basename),
+        mosaic=mosaic,
         definition=_detect_definition(basename),
     )
 
@@ -461,6 +487,9 @@ def infer_content_type(number: str, file_path: str | None = None) -> ContentType
     if file_path is not None:
         return parse_file_info(file_path).content_type
     return classify_number(number)
+
+
+_CD_DIR = re.compile(r"^(?:CD|PART)(\d{1,2})$", re.IGNORECASE)
 
 
 def _detect_cd(basename: str) -> int | None:
@@ -478,6 +507,15 @@ def _detect_cd(basename: str) -> int | None:
     return None
 
 
+def _detect_cd_from_parent(parent: str) -> int | None:
+    """直接父目录整段为 CDn / PARTn 时视为分集. 不含 -A / 裸数字, 也不看更远的祖先."""
+    m = _CD_DIR.fullmatch(parent.strip())
+    if m is None:
+        return None
+    n = int(m[1])
+    return n if n >= 1 else None
+
+
 def _detect_subtitle(basename: str) -> bool:
     """通过文件名标记检测是否包含字幕."""
     # -C / -UC 后不能紧跟字母或数字 (否则是 -CD1 分集、-CS 之类), 但可跟 -4K / -CD1 等标记段.
@@ -487,7 +525,7 @@ def _detect_subtitle(basename: str) -> bool:
 
 
 def _detect_mosaic(basename: str) -> str | None:
-    """检测马赛克/审查类型."""
+    """从文件名检测马赛克/审查类型."""
     if re.search(r"無碼|无码|UNCENSORED", basename):
         return "uncensored"
     if re.search(r"破解|流出|LEAKED", basename):
@@ -495,6 +533,31 @@ def _detect_mosaic(basename: str) -> str | None:
     # -UC 后不能紧跟字母或数字, 但可跟 -CD1 / -4K 等标记段 (同字幕检测约定).
     if re.search(r"-UC(?![A-Z0-9])", basename):
         return "uncensored"
+    return None
+
+
+# 目录名整段 (去括号后忽略大小写) 才计入; 不含 censored (那是无标记兜底, 不是检出标记).
+_MOSAIC_DIR_TOKENS: dict[str, str] = {
+    k.casefold(): v
+    for k, v in (
+        ("uncensored", "uncensored"),
+        ("無碼", "uncensored"),
+        ("无码", "uncensored"),
+        ("cracked", "cracked"),
+        ("leaked", "cracked"),
+        ("破解", "cracked"),
+        ("流出", "cracked"),
+    )
+}
+_DIR_BRACKET_STRIP = "[]【】()（）"
+
+
+def _detect_mosaic_from_dirs(dir_names: tuple[str, ...]) -> str | None:
+    """文件名无标记时, 由近到远认目录名整段. 子串 (uncensored-guide) 不算."""
+    for name in reversed(dir_names):
+        token = name.strip().strip(_DIR_BRACKET_STRIP).casefold()
+        if token in _MOSAIC_DIR_TOKENS:
+            return _MOSAIC_DIR_TOKENS[token]
     return None
 
 
@@ -506,7 +569,7 @@ def _normalize_markers(text: str) -> str:
 # 分辨率标记: 元组顺序即优先级 (高 → 低), 同时命中多个时取靠前者; 2160p 归一化为 4K.
 # 匹配作用于 _normalize_markers 归一化后的 basename:
 # - 数字标记 (8K/4K/NNNp) 允许紧跟帧率数字 (如 1080p60), K 与 p 后不得再接字母 (4KS/HDTV 不命中);
-# - 字母标记 (HD/SD) 不得是番号前缀: -123 形态视为番号 (HD-123.mp4), 不命中.
+# - 字母标记 (HD/SD) 不得是番号前缀: HD-123 / HD_123 (下划线归一成点后同形) 不命中.
 _DEFINITION_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("8K", re.compile(r"\b8K(?:\d+)?\b")),
     ("4K", re.compile(r"\b4K(?:\d+)?\b")),
@@ -515,8 +578,8 @@ _DEFINITION_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("1080p", re.compile(r"\b1080P(?:\d+)?\b")),
     ("720p", re.compile(r"\b720P(?:\d+)?\b")),
     ("480p", re.compile(r"\b480P(?:\d+)?\b")),
-    ("HD", re.compile(r"\bHD\b(?!-\d)")),
-    ("SD", re.compile(r"\bSD\b(?!-\d)")),
+    ("HD", re.compile(r"\bHD\b(?![.-]\d)")),
+    ("SD", re.compile(r"\bSD\b(?![.-]\d)")),
 )
 
 

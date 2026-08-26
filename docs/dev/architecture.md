@@ -1,6 +1,6 @@
 # 系统架构
 
-> 提交: `c1793b2`
+> 提交: `07c29df`
 >
 > 本文只解释**为什么**这样划分以及**何时会失效**. 字段、签名、目录清单去源码中读.
 > 配置系统见 [config.md](config.md), 数据模型见 [data-model.md](data-model.md), 任务流程见 [task-system.md](task-system.md).
@@ -11,7 +11,7 @@
 
 | 包 | 边界 | 不变量 |
 |----|------|--------|
-| `parsing/` | 文件名 / 自由文本 → 番号 + ContentType | 纯函数, 无 I/O, 无配置依赖 |
+| `parsing/` | 完整路径 / 自由文本 → 番号 + ContentType + 文件相位标记 | 纯函数, 无 I/O, 无配置依赖 |
 | `crawlers/` | 番号 → `MediaMetadata`; 演员名 → `ActorMetadata` | 无状态; HTTP 与配置构造期注入; 影片/演员分 registry |
 | `plugin/` | 第三方来源作者 SDK（再导出契约类型） | 插件只进口这里; 主机不进口 |
 | `plugins/` | 来源插件主机（发现 / 落盘 / Factory） | 作者不进口; 契约见 [plugins.md](plugins.md) |
