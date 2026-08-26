@@ -1,4 +1,4 @@
-"""在 parse_filename 基础上提取整理用附加字段 (CD / 字幕 / 马赛克)."""
+"""在 parse_filename 基础上提取整理用附加字段 (CD / 字幕 / 马赛克 / 分辨率)."""
 
 import re
 from dataclasses import dataclass
@@ -15,13 +15,14 @@ class FileInfo:
     cd: int | None = None
     has_subtitle: bool = False
     mosaic: str | None = None
+    definition: str | None = None
 
 
 def parse_file_info(filepath: str | Path) -> FileInfo:
     """
     将媒体文件路径解析为结构化信息.
 
-    提取: 番号, 内容类型, CD 分片, 字幕标记, 马赛克类型.
+    提取: 番号, 内容类型, CD 分片, 字幕标记, 马赛克类型, 分辨率.
     """
     filepath = str(filepath)
     parsed = parse_filename(filepath)
@@ -30,6 +31,7 @@ def parse_file_info(filepath: str | Path) -> FileInfo:
     cd = _detect_cd(basename)
     has_subtitle = _detect_subtitle(basename)
     mosaic = _detect_mosaic(basename)
+    definition = _detect_definition(basename)
 
     return FileInfo(
         number=parsed.number,
@@ -38,6 +40,7 @@ def parse_file_info(filepath: str | Path) -> FileInfo:
         cd=cd,
         has_subtitle=has_subtitle,
         mosaic=mosaic,
+        definition=definition,
     )
 
 
@@ -71,4 +74,31 @@ def _detect_mosaic(basename: str) -> str | None:
         return "cracked"
     if re.search(r"-UC(?:\.|$)", basename):
         return "uncensored"
+    return None
+
+
+# 分辨率标记: 元组顺序即优先级 (高 → 低), 同时命中多个时取靠前者; 2160p 归一化为 4K.
+# \b 边界确保不误中番号/前缀里的字母串 (如 SKYHD-xxx 不命中 HD, 4KS/HDTV 不命中 4K/HD).
+_DEFINITION_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("8K", re.compile(r"\b8K\b")),
+    ("4K", re.compile(r"\b4K\b")),
+    ("4K", re.compile(r"\b2160P\b")),
+    ("1440p", re.compile(r"\b1440P\b")),
+    ("1080p", re.compile(r"\b1080P\b")),
+    ("720p", re.compile(r"\b720P\b")),
+    ("480p", re.compile(r"\b480P\b")),
+    ("HD", re.compile(r"\bHD\b")),
+    ("SD", re.compile(r"\bSD\b")),
+)
+
+
+def _detect_definition(basename: str) -> str | None:
+    """从文件名检测分辨率标记.
+
+    作用于原始 basename, 独立于番号提取 (后者会剥除分辨率标记), 与 CD 检测同一约定:
+    ORGANIZE 时检测一次, 不落库. 无命中返回 None; 命中多个时取最高.
+    """
+    for value, pattern in _DEFINITION_MARKERS:
+        if pattern.search(basename):
+            return value
     return None

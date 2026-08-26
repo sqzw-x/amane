@@ -145,8 +145,10 @@ async def apply_file_operations(
         return None
 
     ext = Path(media_file.path).suffix.lstrip(".")
-    cd = parse_file_info(media_file.path).cd
-    paths = resolve_paths(library, metadata, ext=ext, cd=cd, source_path=Path(media_file.path), safe_dirs=safe_dirs)
+    file_info = parse_file_info(media_file.path)
+    paths = resolve_paths(
+        library, metadata, ext=ext, file_info=file_info, source_path=Path(media_file.path), safe_dirs=safe_dirs
+    )
     return await execute_file_operations(
         media_file=media_file,
         metadata=metadata,

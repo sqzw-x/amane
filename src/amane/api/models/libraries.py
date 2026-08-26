@@ -67,7 +67,7 @@ class LibraryListResponse(BaseModel):
 
 class PathTemplatePlaceholder(BaseModel):
     name: str
-    phase: Literal["metadata", "source", "post_video"]
+    phase: Literal["metadata", "source", "file", "post_video"]
 
 
 class PathTemplateSchemaResponse(BaseModel):

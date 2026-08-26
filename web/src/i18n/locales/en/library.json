@@ -137,6 +137,7 @@
     "phases": {
       "metadata": "From metadata fields",
       "source": "From source file directory (injected during organize)",
+      "file": "From source file name (detected during organize)",
       "post_video": "Available after video path is rendered; sidecar templates only"
     }
   },

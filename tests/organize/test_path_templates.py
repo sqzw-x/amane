@@ -11,6 +11,7 @@ import pytest
 
 from amane.db.models import Library, Metadata
 from amane.organize import CD_SUFFIX_TEMPLATE_DEFAULT, resolve_paths, validate_cd_suffix_template
+from amane.parsing import parse_file_info
 
 
 @pytest.fixture
@@ -335,6 +336,64 @@ class TestSourceDirVariables:
         meta = _meta()
         result = resolve_paths(wp, meta, ext="mp4")
         assert result.video == media / "sub" / "ABC-123.mp4"
+
+
+class TestFilePlaceholders:
+    """file 相位占位符 {mosaic} / {definition}: 来自源文件名 (parse_file_info)."""
+
+    def test_mosaic_marker_and_definition(self, media: Path):
+        """文件名标记优先生效; 分辨率归一化后渲染."""
+        wp = Library(name="t", path=str(media), video_template="{mosaic}/{definition}/{number}.{ext}")
+        meta = _meta()
+        info = parse_file_info("MIDV-123-4K-無碼.mp4")
+        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
+
+        assert result.video == media / "uncensored" / "4K" / "ABC-123.mp4"
+
+    def test_mosaic_fallback_to_content_type(self, media: Path):
+        """无文件名标记时按 content_type 兜底 (无码前缀番号 → uncensored)."""
+        wp = Library(name="t", path=str(media), video_template="{mosaic}/{definition}/{number}.{ext}")
+        meta = _meta()
+        info = parse_file_info("HEYZO-123-1080p.mp4")
+        assert info.mosaic is None
+        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
+
+        assert result.video == media / "uncensored" / "1080p" / "ABC-123.mp4"
+
+    def test_mosaic_default_censored_definition_unknown(self, media: Path):
+        """无标记且非无码 → censored; 无分辨率命中 → Unknown (与其余占位符一致)."""
+        wp = Library(name="t", path=str(media), video_template="{mosaic}/{definition}/{number}.{ext}")
+        meta = _meta()
+        info = parse_file_info("ABC-123.mp4")
+        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
+
+        assert result.video == media / "censored" / "Unknown" / "ABC-123.mp4"
+
+    def test_mosaic_cracked_marker(self, media: Path):
+        """破解/流出标记 → cracked."""
+        wp = Library(name="t", path=str(media), video_template="{mosaic}/{number}.{ext}")
+        meta = _meta()
+        info = parse_file_info("[破解]MIDV-123.mp4")
+        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
+
+        assert result.video == media / "cracked" / "ABC-123.mp4"
+
+    def test_variables_unknown_without_file_info(self, media: Path):
+        """未走 ORGANIZE 的调用方不传 file_info: 与占位符缺失回退一致, 渲染 Unknown."""
+        wp = Library(name="t", path=str(media), video_template="{mosaic}/{definition}/{number}.{ext}")
+        meta = _meta()
+        result = resolve_paths(wp, meta, ext="mp4")
+
+        assert result.video == media / "Unknown" / "Unknown" / "ABC-123.mp4"
+
+    def test_cd_falls_back_to_file_info(self, media: Path):
+        """cd 参数省略时从 file_info.cd 取 (ORGANIZE 调用方只传 file_info)."""
+        wp = Library(name="t", path=str(media), video_template="{number}/{number}.{ext}")
+        meta = _meta()
+        info = parse_file_info("MIDV-123-CD1.mp4")
+        result = resolve_paths(wp, meta, ext="mp4", file_info=info)
+
+        assert result.video == media / "ABC-123" / "ABC-123-CD1.mp4"
 
 
 class TestPathTraversalProtection:

@@ -62,6 +62,48 @@ def test_mosaic_type(filename: str, expected: str | None):
     assert info.mosaic == expected
 
 
+# --- 分辨率检测 ---
+
+DEFINITION_CASES = [
+    ("ABC-123.8K.mp4", "8K"),
+    ("ABC-123-4K.mp4", "4K"),
+    ("ABC-123.2160p.mp4", "4K"),
+    ("ABC-123.2160P.mp4", "4K"),
+    ("ABC-123.1440p.mp4", "1440p"),
+    ("ABC-123.1080p.mp4", "1080p"),
+    ("ABC-123-720p.mp4", "720p"),
+    ("ABC-123.480p.mp4", "480p"),
+    ("ABC-123.HD.mp4", "HD"),
+    ("ABC-123.SD.mp4", "SD"),
+    # 多命中取最高
+    ("ABC-123.1080p.HD.mp4", "1080p"),
+    ("ABC-123.4K.2160p.mp4", "4K"),
+    ("ABC-123.8K.HD.mp4", "8K"),
+]
+
+
+@pytest.mark.parametrize("filename,expected", DEFINITION_CASES)
+def test_definition(filename: str, expected: str | None):
+    info = parse_file_info(filename)
+    assert info.definition == expected
+
+
+# 误报规避: 番号/前缀内的字母数字串不当作分辨率标记
+DEFINITION_FALSE_POSITIVE_CASES = [
+    ("SKYHD-172.mp4", None),  # 无码前缀含 HD
+    ("ABC-123.HDTV.mp4", None),  # HDTV 非独立标记
+    ("ABC-2160.mp4", None),  # 无 p 后缀的数字不是分辨率
+    ("ABC-123.1080.mp4", None),
+    ("ABC-123.mp4", None),
+]
+
+
+@pytest.mark.parametrize("filename,expected", DEFINITION_FALSE_POSITIVE_CASES)
+def test_definition_false_positive(filename: str, expected: str | None):
+    info = parse_file_info(filename)
+    assert info.definition == expected
+
+
 # --- 与番号解析器集成 ---
 
 

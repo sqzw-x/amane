@@ -2075,7 +2075,7 @@ export type PathTemplatePlaceholder = {
     /**
      * Phase
      */
-    phase: 'metadata' | 'source' | 'post_video';
+    phase: 'metadata' | 'source' | 'file' | 'post_video';
 };
 
 /**

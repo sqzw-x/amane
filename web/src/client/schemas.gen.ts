@@ -4245,6 +4245,7 @@ export const PathTemplatePlaceholderSchema = {
             enum: [
                 'metadata',
                 'source',
+                'file',
                 'post_video'
             ],
             title: 'Phase'

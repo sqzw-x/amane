@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Annotated
 
 from pydantic import AfterValidator
 
+from ..parsing.file_info import FileInfo
+from ..parsing.number import ContentType
 from ..utils.path import is_any_descendant, is_descendant
 
 if TYPE_CHECKING:
@@ -75,8 +77,9 @@ OPTIONAL_TEMPLATE_DEFAULTS: dict[str, str] = {
     "subtitle_template": "{video_dir}/{number}.{ext}",
 }
 
-# 占位符相位: metadata 来自 Metadata; source 需 source_path; post_video 在视频路径渲染后注入.
-PlaceholderPhase = str  # "metadata" | "source" | "post_video"
+# 占位符相位: metadata 来自 Metadata; source 需 source_path (源文件目录);
+# file 来自源文件名 (parse_file_info, 整理时检测); post_video 在视频路径渲染后注入.
+PlaceholderPhase = str  # "metadata" | "source" | "file" | "post_video"
 
 PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
     ("number", "metadata"),
@@ -91,6 +94,8 @@ PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
     ("ext", "metadata"),
     ("dir", "source"),
     ("dir_path", "source"),
+    ("mosaic", "file"),
+    ("definition", "file"),
     ("video_dir", "post_video"),
 )
 
@@ -130,13 +135,34 @@ def _safe(value: str | None) -> str | None:
     )
 
 
-def _build_variables(metadata: Metadata, ext: str = "", source_dir: Path | None = None) -> dict[str, str]:
+def _mosaic_value(file_info: FileInfo | None) -> str:
+    """{mosaic} 取值: 文件名标记 (uncensored/cracked) → 内容类型推断 → 兜底 censored.
+
+    有码/无码是全域语义, 默认 censored 比占位符失效 (Unknown) 更能保证目录名稳定;
+    file_info 缺失 (未走 ORGANIZE 的调用方) 时与其余占位符一致回退 Unknown.
+    """
+    if file_info is None:
+        return "Unknown"
+    if file_info.mosaic is not None:
+        return file_info.mosaic
+    if file_info.content_type == ContentType.UNCENSORED.value:
+        return "uncensored"
+    return "censored"
+
+
+def _build_variables(
+    metadata: Metadata,
+    ext: str = "",
+    source_dir: Path | None = None,
+    file_info: FileInfo | None = None,
+) -> dict[str, str]:
     """从元数据构建模板变量字典.
 
     Args:
         metadata: 元数据对象
         ext: 文件扩展名 (不含点)
         source_dir: 源文件所在目录, 提供 {dir} (目录名) 与 {dir_path} (完整路径); None 时二者为空串
+        file_info: 源文件解析结果 (parse_file_info), 提供 {mosaic} 与 {definition}; None 时二者为 Unknown
     """
     year = metadata.release[:4] if metadata.release and len(metadata.release) >= 4 else None
     actor = metadata.actors[0] if metadata.actors else None
@@ -154,6 +180,8 @@ def _build_variables(metadata: Metadata, ext: str = "", source_dir: Path | None 
         "ext": ext,
         "dir": source_dir.name if source_dir else "",
         "dir_path": str(source_dir) if source_dir else "",
+        "mosaic": _mosaic_value(file_info),
+        "definition": (file_info.definition if file_info else None) or "Unknown",
     }
 
 
@@ -201,6 +229,7 @@ def resolve_paths(
     ext: str = "",
     cd: int | None = None,
     source_path: Path | None = None,
+    file_info: FileInfo | None = None,
     safe_dirs: Sequence[Path] = (),
 ) -> ResolvedPaths:
     """根据 Library 模板配置和元数据渲染所有输出路径.
@@ -209,8 +238,10 @@ def resolve_paths(
         library: 媒体库配置 (含模板字段)
         metadata: 元数据对象 (需有 number, title, actors, studio 等属性)
         ext: 原始文件扩展名 (不含点, 如 "mp4", "mkv")
-        cd: CD/分片编号, 非 None 且库的 cd_suffix_template 非空时按该模板追加后缀到视频文件名 (默认 -CD{n})
+        cd: CD/分片编号, 非 None 且库的 cd_suffix_template 非空时按该模板追加后缀到视频文件名 (默认 -CD{n});
+            None 时回退 file_info.cd
         source_path: 源文件完整路径, 提供 {dir} (源目录名) 与 {dir_path} (源目录完整路径) 变量
+        file_info: 源文件解析结果 (parse_file_info), 提供 {mosaic} / {definition} 变量
         safe_dirs: 允许绝对路径模板落地的可信目录集 (多盘分存等). base_path 始终可信, 无需重复列出.
 
     Returns:
@@ -221,7 +252,9 @@ def resolve_paths(
     """
     base_path = Path(library.path)
     source_dir = source_path.parent if source_path else None
-    variables = _build_variables(metadata, ext, source_dir)
+    if cd is None and file_info is not None:
+        cd = file_info.cd
+    variables = _build_variables(metadata, ext, source_dir, file_info)
 
     # 1. 渲染视频路径
     video = _render_template(library.video_template, variables, base_path, safe_dirs)
