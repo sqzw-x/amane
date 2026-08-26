@@ -5,7 +5,6 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
 
 
 class ContentType(StrEnum):
@@ -18,15 +17,6 @@ class ContentType(StrEnum):
     FC2 = "fc2"
     AMATEUR = "amateur"
     HENTAI = "hentai"
-
-
-@dataclass(frozen=True)
-class _Identity:
-    """路径解析中的身份字段 (番号 / 内容类型 / 前缀). 对外入口是 parse_file_info."""
-
-    number: str
-    content_type: ContentType
-    prefix: str
 
 
 # --- 常量 ---
@@ -195,23 +185,8 @@ def extract_number(text: str, escape_strings: list[str] | None = None) -> str | 
     return _match_number(text, escape_strings or [])
 
 
-def _parse_identity(filepath: str | Path, escape_strings: list[str] | None = None) -> _Identity:
-    """从完整路径取出番号、内容类型、前缀. 仅供 parse_file_info / infer_content_type."""
-    filepath = str(filepath)
-    path_lower = filepath.lower()
-    basename = Path(filepath).stem.strip()
-    content_type = _classify_from_path(path_lower)
-    number = _extract_number(basename, escape_strings or [])
-    if content_type is None:
-        content_type = classify_number(number)
-    return _Identity(number=number, content_type=content_type, prefix=get_prefix(number))
-
-
-# --- 内部辅助函数 ---
-
-
 def _classify_from_path(path_lower: str) -> ContentType | None:
-    """根据路径关键词分类内容类型 (仅真正依赖路径的类别; 纯番号模式在 classify_number)."""
+    """按路径关键词分类; 未命中返回 None."""
 
     # 里番
     if any(kw in path_lower for kw in ("getchu", "里番", "裏番")):
@@ -225,7 +200,7 @@ def _classify_from_path(path_lower: str) -> ContentType | None:
 
 
 def classify_number(number: str) -> ContentType:
-    """根据番号分类内容类型 (不依赖文件路径; 有路径时先走 _classify_from_path)."""
+    """根据番号分类内容类型."""
     upper = number.upper()
 
     # FC2
@@ -252,16 +227,6 @@ def classify_number(number: str) -> ContentType:
 
     # 默认: 有码
     return ContentType.CENSORED
-
-
-def infer_content_type(number: str, file_path: str | None = None) -> ContentType:
-    """推断 content_type: 有文件路径走路径关键词再番号, 否则按番号模式.
-
-    Metadata 级刮削 (无 media_file_id) 的 content_type 来源: 挂载文件 > 番号.
-    """
-    if file_path is not None:
-        return _parse_identity(file_path).content_type
-    return classify_number(number)
 
 
 def _remove_escape_strings(filename: str, escape_strings: list[str]) -> str:

@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .number import ContentType, _parse_identity
+from .number import ContentType, _classify_from_path, _extract_number, classify_number, get_prefix
 
 
 @dataclass(frozen=True)
@@ -19,23 +19,31 @@ class FileInfo:
 
 
 def parse_file_info(filepath: str | Path, escape_strings: list[str] | None = None) -> FileInfo:
-    """从完整文件路径解析番号、内容类型、分集、字幕、马赛克、清晰度.
-
-    各字段用路径的哪一段, 是内部实现. 调用方只传路径.
-    """
+    """从完整文件路径解析番号、内容类型、分集、字幕、马赛克、清晰度."""
     filepath = str(filepath)
-    identity = _parse_identity(filepath, escape_strings)
-    basename = Path(filepath).stem.upper()
+    stem = Path(filepath).stem
+    content_type = _classify_from_path(filepath.lower())
+    number = _extract_number(stem.strip(), escape_strings or [])
+    if content_type is None:
+        content_type = classify_number(number)
+    basename = stem.upper()
 
     return FileInfo(
-        number=identity.number,
-        content_type=identity.content_type,
-        prefix=identity.prefix,
+        number=number,
+        content_type=content_type,
+        prefix=get_prefix(number),
         cd=_detect_cd(basename),
         has_subtitle=_detect_subtitle(basename),
         mosaic=_detect_mosaic(basename),
         definition=_detect_definition(basename),
     )
+
+
+def infer_content_type(number: str, file_path: str | None = None) -> ContentType:
+    """推断 content_type: 有挂载文件则按路径, 否则按番号."""
+    if file_path is not None:
+        return parse_file_info(file_path).content_type
+    return classify_number(number)
 
 
 def _detect_cd(basename: str) -> int | None:
