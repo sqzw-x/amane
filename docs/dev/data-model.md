@@ -1,6 +1,6 @@
 # 数据模型
 
-> 提交: `b4dc2c6`
+> 提交: `1cb9f29`
 >
 > 表结构、字段类型、便捷属性都在 `src/amane/db/models.py`. 本文只解释**为什么**这么建模、所有权关系、生命周期与已知陷阱.
 
@@ -96,7 +96,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 模板**故意按资源类型独立**, 而不是一个 `output_dir` + 后缀拼接 — 用户场景包括: NAS 多盘分存、字幕集中备份、NFO 同目录 vs 集中目录.
 
-模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符来自 metadata 字段, 另有 `{video_dir}` (视频渲染后的父目录) 与 `{dir}` / `{dir_path}` (源文件目录名 / 完整路径). 占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
+模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{dir}` / `{dir_path}` (源文件目录名 / 完整路径) 与 `{mosaic}` / `{definition}` (源文件名检测) 只在 ORGANIZE 时注入, 不落库 (与 CD 检测同一约定); `{video_dir}` 为视频渲染后的父目录. `{mosaic}` 无标记时按 content_type 兜底为 `censored` (永不 `Unknown` — 有码/无码是全域语义, 保证目录名稳定), `{definition}` 无命中回退 `Unknown` (与普通占位符一致). 占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
 
 普通占位符缺失回退 `Unknown`. `{dir}` / `{dir_path}` 无 `source_path` 时为空串 — **空变量放模板首段** (如 `{dir}/...`) 会让结果以 `/` 开头被当成绝对路径.
 
