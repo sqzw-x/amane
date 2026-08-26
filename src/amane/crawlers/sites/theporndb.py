@@ -7,7 +7,7 @@ from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery
 
 if TYPE_CHECKING:
-    from ...parsing.number import ContentType
+    from ...parsing.file_info import ContentType
 
 # GraphQL 查询模板 - searchScene 返回完整的场景数据
 _SEARCH_QUERY = """

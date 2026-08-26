@@ -1,12 +1,14 @@
 from .actor_name import split_actor_aliases
-from .file_info import FileInfo, infer_content_type, parse_file_info
-from .number import (
+from .file_info import (
     ContentType,
+    FileInfo,
     classify_number,
     extract_number,
     get_prefix,
+    infer_content_type,
     is_amateur,
     is_uncensored,
+    parse_file_info,
 )
 
 __all__ = [

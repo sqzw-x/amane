@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from pydantic import AfterValidator
 
-from ..parsing.file_info import FileInfo
-from ..parsing.number import ContentType
+from ..parsing.file_info import ContentType, FileInfo
 from ..utils.path import is_any_descendant, is_descendant
 
 if TYPE_CHECKING:

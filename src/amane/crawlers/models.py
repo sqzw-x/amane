@@ -8,7 +8,7 @@ from amane.utils.dates import normalize_calendar_date
 if TYPE_CHECKING:
     from ..aggregate import AggregatedMetadata
     from ..enums import Language
-    from ..parsing.number import ContentType
+    from ..parsing.file_info import ContentType
 
 
 @dataclass

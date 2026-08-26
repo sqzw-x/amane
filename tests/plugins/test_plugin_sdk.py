@@ -6,7 +6,7 @@ from amane.crawlers.models import FetchOptions, MediaMetadata, SearchQuery
 from amane.enums import Language
 from amane.net.errors import FailureReason, RequestError, SourceError
 from amane.net.http import WebClient
-from amane.parsing.number import ContentType
+from amane.parsing.file_info import ContentType
 from amane.plugins.api import EmptyPluginConfig, FilmSourcePlugin, FilmSourceProvider, PluginContext
 from amane.plugins.models import (
     PLUGIN_API_VERSION,
