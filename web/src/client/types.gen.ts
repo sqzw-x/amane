@@ -2108,7 +2108,7 @@ export type PathTemplateSchemaResponse = {
  *
  * - ``metadata``: 来自 Metadata 字段;
  * - ``source``: 需 ``source_path`` (源文件目录);
- * - ``file``: 来自源文件名 (``parse_file_info``, 整理时检测);
+ * - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
  * - ``post_video``: 视频路径渲染后注入 (侧车模板).
  */
 export type PlaceholderPhase = 'metadata' | 'source' | 'file' | 'post_video';

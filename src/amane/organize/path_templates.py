@@ -84,7 +84,7 @@ class PlaceholderPhase(StrEnum):
 
     - ``metadata``: 来自 Metadata 字段;
     - ``source``: 需 ``source_path`` (源文件目录);
-    - ``file``: 来自源文件名 (``parse_file_info``, 整理时检测);
+    - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
     - ``post_video``: 视频路径渲染后注入 (侧车模板).
     """
 
@@ -158,7 +158,7 @@ def _mosaic_value(file_info: FileInfo | None) -> str:
         return "Unknown"
     if file_info.mosaic is not None:
         return file_info.mosaic
-    if file_info.content_type == ContentType.UNCENSORED.value:
+    if file_info.content_type == ContentType.UNCENSORED:
         return "uncensored"
     return "censored"
 

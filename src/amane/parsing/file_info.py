@@ -1,16 +1,16 @@
-"""在 parse_filename 基础上提取整理用附加字段 (CD / 字幕 / 马赛克 / 分辨率)."""
+"""从完整文件路径解析整理与刮削所需的全部字段."""
 
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .number import parse_filename
+from .number import ContentType, _parse_identity
 
 
 @dataclass(frozen=True)
 class FileInfo:
     number: str
-    content_type: str
+    content_type: ContentType
     prefix: str
     cd: int | None = None
     has_subtitle: bool = False
@@ -18,29 +18,23 @@ class FileInfo:
     definition: str | None = None
 
 
-def parse_file_info(filepath: str | Path) -> FileInfo:
-    """
-    将媒体文件路径解析为结构化信息.
+def parse_file_info(filepath: str | Path, escape_strings: list[str] | None = None) -> FileInfo:
+    """从完整文件路径解析番号、内容类型、分集、字幕、马赛克、清晰度.
 
-    提取: 番号, 内容类型, CD 分片, 字幕标记, 马赛克类型, 分辨率.
+    各字段用路径的哪一段, 是内部实现. 调用方只传路径.
     """
     filepath = str(filepath)
-    parsed = parse_filename(filepath)
+    identity = _parse_identity(filepath, escape_strings)
     basename = Path(filepath).stem.upper()
 
-    cd = _detect_cd(basename)
-    has_subtitle = _detect_subtitle(basename)
-    mosaic = _detect_mosaic(basename)
-    definition = _detect_definition(basename)
-
     return FileInfo(
-        number=parsed.number,
-        content_type=parsed.content_type.value,
-        prefix=parsed.prefix,
-        cd=cd,
-        has_subtitle=has_subtitle,
-        mosaic=mosaic,
-        definition=definition,
+        number=identity.number,
+        content_type=identity.content_type,
+        prefix=identity.prefix,
+        cd=_detect_cd(basename),
+        has_subtitle=_detect_subtitle(basename),
+        mosaic=_detect_mosaic(basename),
+        definition=_detect_definition(basename),
     )
 
 
@@ -93,11 +87,7 @@ _DEFINITION_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 
 def _detect_definition(basename: str) -> str | None:
-    """从文件名检测分辨率标记.
-
-    作用于原始 basename, 独立于番号提取 (后者会剥除分辨率标记), 与 CD 检测同一约定:
-    ORGANIZE 时检测一次, 不落库. 无命中返回 None; 命中多个时取最高.
-    """
+    """从文件名检测分辨率标记. 无命中返回 None; 命中多个时取最高."""
     for value, pattern in _DEFINITION_MARKERS:
         if pattern.search(basename):
             return value

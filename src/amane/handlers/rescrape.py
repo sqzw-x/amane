@@ -4,7 +4,7 @@
 (逐条复用 per-site raw 快照, 非 force 仅补缺失站点, 聚合阶段重放当前配置,
 因此也承担"配置变更后重跑生效"的用途).
 
-content_type 不存表, 运行时推断: 有挂载文件用 parse_filename (含路径关键词),
+content_type 不存表, 运行时推断: 有挂载文件用 parse_file_info (含路径关键词),
 无文件退回 classify_number (番号模式). Metadata 是 ground truth, 不依赖文件存在.
 """
 

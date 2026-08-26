@@ -16,7 +16,7 @@ from ...handlers import (
     ScrapePayload,
     UpscalePayload,
 )
-from ...parsing import ContentType, infer_content_type, parse_filename
+from ...parsing import ContentType, infer_content_type, parse_file_info
 
 
 class TaskChildStatusCounts(BaseModel):
@@ -129,7 +129,7 @@ class ScrapeRequest(BaseModel):
             media = await repo.get_media_file(self.media_id)
             if media is None:
                 raise HTTPException(status_code=404, detail=f"Media file {self.media_id} not found")
-            parsed = parse_filename(media.path)
+            parsed = parse_file_info(media.path)
             return ScrapePayload(
                 number=parsed.number,
                 content_type=self.content_type or parsed.content_type,

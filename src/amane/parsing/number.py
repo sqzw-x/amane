@@ -21,8 +21,8 @@ class ContentType(StrEnum):
 
 
 @dataclass(frozen=True)
-class ParsedNumber:
-    """文件名解析结果."""
+class _Identity:
+    """路径解析中的身份字段 (番号 / 内容类型 / 前缀). 对外入口是 parse_file_info."""
 
     number: str
     content_type: ContentType
@@ -190,41 +190,21 @@ def extract_number(text: str, escape_strings: list[str] | None = None) -> str | 
     """从自由文本提取番号.
 
     只在命中已知模式时返回; 未命中返回 None, 不会把清理后的原文冒充番号.
-    RSS 标题等非文件名场景必须走这里, 不要用 parse_filename.
+    RSS 标题等非文件名场景必须走这里, 不要用 parse_file_info.
     """
     return _match_number(text, escape_strings or [])
 
 
-def parse_filename(filepath: str | Path, escape_strings: list[str] | None = None) -> ParsedNumber:
-    """
-    解析媒体文件名以提取番号和内容类型.
-
-    Args:
-        filepath: 完整文件路径或仅文件名.
-        escape_strings: 需要从文件名中去除的额外字符串.
-
-    Returns:
-        包含提取的番号, 内容类型和前缀的 ParsedNumber.
-    """
+def _parse_identity(filepath: str | Path, escape_strings: list[str] | None = None) -> _Identity:
+    """从完整路径取出番号、内容类型、前缀. 仅供 parse_file_info / infer_content_type."""
     filepath = str(filepath)
     path_lower = filepath.lower()
-
-    # 提取不含扩展名的文件名
     basename = Path(filepath).stem.strip()
-
-    # 根据路径关键词分类内容类型 (在番号提取之前)
     content_type = _classify_from_path(path_lower)
-
-    # 提取番号
     number = _extract_number(basename, escape_strings or [])
-
-    # 若路径未能分类, 则从番号推断内容类型
     if content_type is None:
         content_type = classify_number(number)
-
-    prefix = get_prefix(number)
-
-    return ParsedNumber(number=number, content_type=content_type, prefix=prefix)
+    return _Identity(number=number, content_type=content_type, prefix=get_prefix(number))
 
 
 # --- 内部辅助函数 ---
@@ -275,12 +255,12 @@ def classify_number(number: str) -> ContentType:
 
 
 def infer_content_type(number: str, file_path: str | None = None) -> ContentType:
-    """推断 content_type: 有文件路径走 parse_filename (含路径关键词), 否则按番号模式.
+    """推断 content_type: 有文件路径走路径关键词再番号, 否则按番号模式.
 
     Metadata 级刮削 (无 media_file_id) 的 content_type 来源: 挂载文件 > 番号.
     """
     if file_path is not None:
-        return parse_filename(file_path).content_type
+        return _parse_identity(file_path).content_type
     return classify_number(number)
 
 

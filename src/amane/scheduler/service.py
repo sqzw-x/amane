@@ -11,7 +11,7 @@ from ..enums import LibraryAutomation
 from ..events import EventBus, EventType
 from ..handlers._common import register_media_file
 from ..handlers.models import ScrapePayload
-from ..parsing import parse_filename
+from ..parsing import parse_file_info
 from .watcher import FileWatcher
 
 if TYPE_CHECKING:
@@ -201,7 +201,7 @@ class WatcherService:
         logger.info("file discovered", path=path_str, media_file_id=media.id, library_id=library_id)
 
         try:
-            parsed = parse_filename(path_str)
+            parsed = parse_file_info(path_str)
         except Exception:
             logger.debug("cannot parse number", path=path_str)
             parsed = None

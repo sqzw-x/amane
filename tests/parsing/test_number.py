@@ -10,7 +10,7 @@ from amane.parsing import (
     infer_content_type,
     is_amateur,
     is_uncensored,
-    parse_filename,
+    parse_file_info,
 )
 
 # --- is_uncensored 测试 ---
@@ -62,7 +62,7 @@ def test_get_prefix(number: str, expected: str):
     assert get_prefix(number) == expected
 
 
-# --- parse_filename (表驱动测试) ---
+# --- parse_file_info (番号与内容类型) ---
 
 PARSE_CASES = [
     # (文件路径, 期望番号, 期望类型)
@@ -92,34 +92,34 @@ PARSE_CASES = [
 
 
 @pytest.mark.parametrize("filepath,expected_number,expected_type", PARSE_CASES)
-def test_parse_filename(filepath: str, expected_number: str | None, expected_type: ContentType):
-    result = parse_filename(filepath)
+def test_parse_file_info_number(filepath: str, expected_number: str | None, expected_type: ContentType):
+    result = parse_file_info(filepath)
     assert result.content_type == expected_type
     if expected_number is not None:
         assert result.number == expected_number
 
 
-# --- parse_filename: 特殊行为 ---
+# --- parse_file_info: 特殊行为 ---
 
 
 def test_multipart_cd_stripped():
-    assert parse_filename("/media/MIDV-123-CD1.mp4").number == "MIDV-123"
-    assert parse_filename("/media/SSIS-456 CD2.mp4").number == "SSIS-456"
+    assert parse_file_info("/media/MIDV-123-CD1.mp4").number == "MIDV-123"
+    assert parse_file_info("/media/SSIS-456 CD2.mp4").number == "SSIS-456"
 
 
 def test_resolution_markers_stripped():
-    assert parse_filename("/media/[HD]SSIS-456.mp4").number == "SSIS-456"
-    assert parse_filename("/media/MIDV-123-4K.mp4", escape_strings=["something"]).number == "MIDV-123"
+    assert parse_file_info("/media/[HD]SSIS-456.mp4").number == "SSIS-456"
+    assert parse_file_info("/media/MIDV-123-4K.mp4", escape_strings=["something"]).number == "MIDV-123"
 
 
 def test_western_date_in_number():
-    result = parse_filename("/media/Vixen.23.04.15.mp4")
+    result = parse_file_info("/media/Vixen.23.04.15.mp4")
     assert result.content_type == ContentType.WESTERN
     assert "23.04.15" in result.number
 
 
 def test_kin8_number():
-    result = parse_filename("/media/KIN8TENGOKU-1234.mp4")
+    result = parse_file_info("/media/KIN8TENGOKU-1234.mp4")
     assert "KIN8" in result.number and "1234" in result.number
 
 
@@ -184,4 +184,4 @@ def test_extract_number(text: str, expected: str | None):
 def test_extract_number_does_not_use_filename_fallback():
     """无番号的普通标题不得变成假番号."""
     assert extract_number("just a movie title") is None
-    assert parse_filename("just a movie title.mp4").number  # 文件名路径仍有回退
+    assert parse_file_info("just a movie title.mp4").number  # 文件名路径仍有回退

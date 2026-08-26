@@ -1,6 +1,6 @@
 # 任务系统
 
-> 提交: `613129e`
+> 提交: `162e14f`
 >
 > 入口: `src/amane/handlers/`, `src/amane/scheduler/worker.py`. Payload 结构、handler 步骤都在源码; 本文只解释**为什么**这么编排.
 > 数据所有权见 [data-model.md](data-model.md), 启动顺序见 [architecture.md](architecture.md), 日志隔离见 [observability.md](observability.md).
@@ -192,7 +192,7 @@ Metadata 是一等公民, CLEANUP **从不**因「无关联 MediaFile」删除 M
 
 **UPSCALE 例行任务**: 扫全部 `Resource`, 对低质且未超分的就地超分; `limit` 限单次批量. 与 scrape 期急切双轨, 见上节.
 
-**RESCRAPE (元数据级滚动补刮)**: 与 `RefreshHandler` 同构的 fan-out — 批量任务只选目标并下发 SCRAPE, 重活走既有 SCRAPE. 按 `updated_at ASC` 取最久未更新的 `limit` 条 Metadata (可选 `min_age_days` 门槛), 逐条以 `priority=-1` 入队非 force SCRAPE: 复用 per-site raw 快照仅补缺失站点, 聚合阶段重放当前配置 — 因此同时承担「配置变更后重跑生效」. **content_type 不存表, 运行时推断**: 有挂载文件走 `parse_filename` (路径关键词 → 番号模式), 无文件退回 `classify_number` (纯番号级; 路径关键词类如里番/欧美目录名在无文件时不可推断).
+**RESCRAPE (元数据级滚动补刮)**: 与 `RefreshHandler` 同构的 fan-out — 批量任务只选目标并下发 SCRAPE, 重活走既有 SCRAPE. 按 `updated_at ASC` 取最久未更新的 `limit` 条 Metadata (可选 `min_age_days` 门槛), 逐条以 `priority=-1` 入队非 force SCRAPE: 复用 per-site raw 快照仅补缺失站点, 聚合阶段重放当前配置 — 因此同时承担「配置变更后重跑生效」. **content_type 不存表, 运行时推断**: 有挂载文件走 `parse_file_info` (路径关键词 → 番号模式), 无文件退回 `classify_number` (纯番号级; 路径关键词类如里番/欧美目录名在无文件时不可推断).
 
 Watcher 与 Cron 与 Feed **故意分开** — 秒级反应 vs 分钟级 routine vs 每源间隔的远程拉取, 合并到同一循环会互相拖 latency 或把 HTTP/RSS 缠进 cron.py.
 

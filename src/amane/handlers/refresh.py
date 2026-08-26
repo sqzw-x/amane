@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..db import TaskType
-from ..parsing import parse_filename
+from ..parsing import parse_file_info
 from ..utils.oshash import compute_oshash_async
 from ._common import iter_media_files, register_media_file
 from .models import RefreshPayload, RefreshResult, ScanMode, ScrapePayload
@@ -86,7 +86,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
         # 提交 SCRAPE 任务: 只描述后继 (含媒体文件 ID), 由 worker 完成阶段统一创建.
         followups = []
         for f in media_files:
-            parsed = parse_filename(f.path)
+            parsed = parse_file_info(f.path)
             assert f.id is not None
             followups.append(
                 FollowupTask(
