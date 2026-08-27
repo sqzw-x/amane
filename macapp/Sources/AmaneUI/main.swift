@@ -55,7 +55,10 @@ final class MenuController: NSObject, NSApplicationDelegate {
     private let baseURL: String
     private let token: String
     private let parentPid: pid_t
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    /// 必须在 `applicationDidFinishLaunching` 里创建: 更早调用
+    /// `NSStatusBar.statusItem` 时 WindowServer / CGS 尚未就绪, SkyLight
+    /// `CGSConnectionByID` 会断言 (SIGABRT). 见 #28.
+    private var statusItem: NSStatusItem?
     private var statusLine: NSMenuItem?
     private var dataDirItem: NSMenuItem?
     private var checkUpdateItem: NSMenuItem?
@@ -100,8 +103,10 @@ final class MenuController: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only: no Dock icon, no activation in Cmd-Tab.
         NSApp.setActivationPolicy(.accessory)
-        statusItem.button?.image = Self.makeTemplateIcon()
-        statusItem.button?.toolTip = "Amane"
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.image = Self.makeTemplateIcon()
+        item.button?.toolTip = "Amane"
+        statusItem = item
         buildMenu()
         startPolling()
         if parentPid > 1 {
@@ -164,7 +169,7 @@ final class MenuController: NSObject, NSApplicationDelegate {
         quit.target = self
         menu.addItem(quit)
 
-        statusItem.menu = menu
+        statusItem?.menu = menu
     }
 
     // MARK: - Polling
@@ -210,11 +215,11 @@ final class MenuController: NSObject, NSApplicationDelegate {
         self.supervised = supervised
         if connected {
             statusLine?.title = tr("运行中 · v\(version)", "Running · v\(version)")
-            statusItem.button?.toolTip = tr(
+            statusItem?.button?.toolTip = tr(
                 "Amane 运行中 · v\(version)", "Amane running · v\(version)")
         } else {
             statusLine?.title = tr("未连接", "Disconnected")
-            statusItem.button?.toolTip = tr("Amane 服务未连接", "Amane not connected")
+            statusItem?.button?.toolTip = tr("Amane 服务未连接", "Amane not connected")
         }
         dataDirItem?.isEnabled = connected && !dataDir.isEmpty
         checkUpdateItem?.isEnabled = connected
@@ -346,8 +351,9 @@ let sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .mai
 sigtermSource.setEventHandler { NSApp.terminate(nil) }
 sigtermSource.resume()
 
+// 先建立 NSApplication, 再构造任何会碰 AppKit UI 的对象.
+let app = NSApplication.shared
 let (baseURL, token, parentPid) = parseArguments()
 let controller = MenuController(baseURL: baseURL, token: token, parentPid: parentPid)
-let app = NSApplication.shared
 app.delegate = controller
 app.run()

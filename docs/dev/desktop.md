@@ -23,7 +23,7 @@ Python 只跑 HTTP (与 Docker / `just start` 同一入口 `amane.server`), 不�
 
 - **应用进程**: `macapp/Sources/Amane` → `Contents/MacOS/Amane` (CFBundleExecutable). Launch Services 登记为 `com.github.sqzw-x.amane` (必须是 NSApplication, 第二次打开才走系统单实例). 本进程设环境、监督 Python、拉起/回收菜单栏. 服务退出码 **0 / 130 / 143** 结束 App; **3** 立刻再拉 Python (UI 继续活着); **126 / 127** exec 失败退出; 其它退避 2s. TERM 时先停两个子进程. Info.plist: `LSUIElement` + `LSMultipleInstancesProhibited`. `AMANE_SUPERVISED=1`.
 - **服务进程**: PyInstaller onedir, 冻住 `amane.server`.
-- **UI 进程**: 嵌套 `Contents/Resources/AmaneUI.app` (`com.github.sqzw-x.amane.ui`). 独立 bundle id, 避免和主进程抢 NSApplication. 无状态, 只轮询 HTTP. `--watch-parent` 指向**应用进程** PID.
+- **UI 进程**: 嵌套 `Contents/Resources/AmaneUI.app` (`com.github.sqzw-x.amane.ui`). 独立 bundle id, 避免和主进程抢 NSApplication. 无状态, 只轮询 HTTP. `--watch-parent` 指向**应用进程** PID. `NSStatusItem` 只能在 `applicationDidFinishLaunching` 里创建: 更早碰菜单栏时 WindowServer / CGS 尚未就绪, SkyLight 会断言退出, 菜单栏永远不出现.
 
 macOS 上 UI 不嵌进服务进程: 原生菜单 / 通知; 嵌进 Python 会把签名、公证和崩溃隔离变差. 菜单栏本身是独立 NSApplication (`NSStatusItem`), 不能与 Launch Services 身份共用 bundle id, 因此是嵌套 `AmaneUI.app`.
 
