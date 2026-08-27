@@ -15,6 +15,7 @@ from amane.api.app import create_app
 from amane.api.routes import API_PREFIX
 from amane.config import HotSettings
 from amane.net.errors import FailureKind, RequestError, RequestFailure
+from tests.schema_template import copy_schema
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,6 +23,18 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from amane.db.repository import Repository
+
+
+# API 测试写入的 worker.poll_interval. 生产默认 2s, 空队列认领会把任务测试钉在 2s+ 上.
+TEST_WORKER_POLL_INTERVAL = 0.1
+
+
+def hot_for_tests(hot: HotSettings | None = None) -> HotSettings:
+    """API 夹具用 HotSettings: 保留调用方覆盖, 只把 poll_interval 压到测试下限."""
+    base = hot if hot is not None else HotSettings()
+    return base.model_copy(
+        update={"worker": base.worker.model_copy(update={"poll_interval": TEST_WORKER_POLL_INTERVAL})}
+    )
 
 
 def make_app(hot: HotSettings, data_dir: Path, log_dir: Path, files_dir: Path, *, supervised: bool = False) -> FastAPI:
@@ -34,8 +47,10 @@ def make_app(hot: HotSettings, data_dir: Path, log_dir: Path, files_dir: Path, *
     data_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     files_dir.mkdir(parents=True, exist_ok=True)
+    hot = hot_for_tests(hot)
     config_path = data_dir / "config.toml"
     config_path.write_text(tomli_w.dumps(hot.model_dump(mode="json", exclude_none=True)))
+    copy_schema(data_dir / "amane.db")
 
     return create_app()
 

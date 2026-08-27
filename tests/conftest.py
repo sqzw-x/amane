@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import SQLModel
 
 from amane.db.repository import Repository
 from amane.media import ResourceStore
+from tests.schema_template import copy_schema
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -44,10 +44,9 @@ async def repo(tmp_path: Path) -> AsyncGenerator[Repository]:
 
     每个测试在 tmp_path 下独立数据库文件, 测试结束自动清理.
     """
-    engine = _file_engine(tmp_path / "amane.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-
+    db_path = tmp_path / "amane.db"
+    copy_schema(db_path)
+    engine = _file_engine(db_path)
     yield Repository(engine)
 
     await engine.dispose()
@@ -59,10 +58,9 @@ async def resource_store(tmp_path: Path) -> AsyncGenerator[ResourceStore]:
 
     handler 现强制注入 ResourceStore; 测试不触发真实下载时仅作占位.
     """
-    engine = _file_engine(tmp_path / "resources.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-
+    db_path = tmp_path / "resources.db"
+    copy_schema(db_path)
+    engine = _file_engine(db_path)
     yield ResourceStore(engine=engine, base_dir=tmp_path / "resources")
 
     await engine.dispose()

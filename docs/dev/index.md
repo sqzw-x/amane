@@ -1,6 +1,6 @@
 # 开发文档
 
-> 提交: `e953d798`
+> 提交: `bf227f36`
 >
 > 只写跨文件的边界、顺序、契约、取舍与踩坑. 字段、签名、枚举去源码或 `web/openapi.json`.
 
@@ -24,5 +24,6 @@
 | 排障 / 回放刮削 | [observability.md](observability.md) |
 | RSS/Atom 远程发现 | [feeds.md](feeds.md) |
 | 桌面菜单栏 / 托盘 / 打包 | [desktop.md](desktop.md) |
+| 加后端测试 | [testing.md](testing.md) |
 
 同一事实只出现在一个文档; 其它位置用相对链接.

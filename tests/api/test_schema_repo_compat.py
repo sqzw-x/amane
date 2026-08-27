@@ -38,6 +38,7 @@ from amane.db import Feed, Library, MediaFile, Metadata, Repository, Schedule
 from amane.db.models import RoutineType
 from amane.db.repo_types import FeedUpdates, LibraryUpdates, MediaFileUpdates, MetadataFields, ScheduleUpdates
 from amane.utils.model import create_partial_model
+from tests.schema_template import copy_schema
 
 # ============================================================================
 # 1. create_partial_model 正确性
@@ -425,7 +426,9 @@ async def repo(tmp_path: Path) -> AsyncGenerator[Repository]:
     拉取失败后时间列被覆盖为当前时间, 与 DB 往返断言竞态 (全套件 -n auto 负载下
     必现). 序列化保真与后台服务无关, 此测试使用无后台服务的独立引擎.
     """
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'repo.db'}", connect_args={"timeout": 5})
+    db_path = tmp_path / "repo.db"
+    copy_schema(db_path)
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", connect_args={"timeout": 5})
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragma(dbapi_conn, _connection_record):
@@ -434,9 +437,6 @@ async def repo(tmp_path: Path) -> AsyncGenerator[Repository]:
         cursor.execute("PRAGMA synchronous=OFF")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
 
     yield Repository(engine)
     await engine.dispose()

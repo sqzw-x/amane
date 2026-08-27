@@ -5,7 +5,7 @@
 # - src/amane 后端源码变化 → 重新生成 OpenAPI + TS client
 # - Python 文件变化 → ruff 修复/检查 + pyright 类型检查
 # - web/ 下任何文件变化 → oxfmt/oxlint 修复 + web 全量检查
-# - src/amane 或 tests 变化 → 运行测试
+# - src/amane 或 tests 变化 → 运行测试 (just test, 不含 coverage; coverage 留给 just check / CI)
 # - 其余文件 (docs/md、yaml、Dockerfile 等) 不触发任何钩子
 #
 # 失败即停: 修复型钩子 (fix-*) 失败 = 文件被修改, 需重新 stage 再提交,
@@ -64,7 +64,7 @@ repos:
 
       - id: test
         name: pytest -n auto
-        entry: just test-cov
+        entry: just test
         language: system
         pass_filenames: false
         files: '^(src/amane|tests)/.*\.py$'

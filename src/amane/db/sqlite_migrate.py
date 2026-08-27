@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, date, datetime
+from functools import lru_cache
 from pathlib import Path
 
 import structlog
@@ -129,16 +130,23 @@ def current_revision(db_path: Path) -> str | None:
         engine.dispose()
 
 
+@lru_cache(maxsize=8)
+def _alembic_head_revs(script_location: str, versions_mtime: float) -> frozenset[str]:
+    """解析 Alembic head; 以 versions 目录 mtime 为缓存键, 同路径追加 revision 后失效."""
+    cfg = Config()
+    cfg.set_main_option("script_location", script_location)
+    return frozenset(ScriptDirectory.from_config(cfg).get_heads())
+
+
 def needs_upgrade(db_path: Path, *, script_location: Path | None = None) -> bool:
     """当前 revision 是否落后于脚本 head."""
-    script_location = script_location or migrations_dir()
-    cfg = Config()
-    cfg.set_main_option("script_location", str(script_location))
-    script = ScriptDirectory.from_config(cfg)
-    head_revs = set(script.get_heads())
-
     if not db_path.is_file() or db_path.stat().st_size == 0:
         return True
+
+    script_location = script_location or migrations_dir()
+    versions = script_location / "versions"
+    versions_mtime = versions.stat().st_mtime if versions.is_dir() else 0.0
+    head_revs = set(_alembic_head_revs(str(script_location), versions_mtime))
 
     engine = create_engine(f"sqlite:///{db_path}")
     try:

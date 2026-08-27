@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from watchdog.observers.api import BaseObserver, ObservedWatch
 
 _DEFAULT_DEBOUNCE_SECONDS = 3.0
+_DEFAULT_OBSERVER_TIMEOUT = 1.0  # 与 watchdog Observer/PollingObserver 构造默认一致
 
 # 测试中引用此名称, 保留常量别名.
 DEBOUNCE_SECONDS = _DEFAULT_DEBOUNCE_SECONDS
@@ -165,6 +166,7 @@ class FileWatcher:
         use_polling: bool = False,
         media_extensions: list[str] | None = None,
         debounce_seconds: float = _DEFAULT_DEBOUNCE_SECONDS,
+        observer_timeout: float = _DEFAULT_OBSERVER_TIMEOUT,
     ):
         self._on_file_found = on_file_found
         self._on_file_deleted = on_file_deleted
@@ -172,6 +174,7 @@ class FileWatcher:
         self._use_polling = use_polling
         self._media_extensions = frozenset(media_extensions) if media_extensions else MEDIA_EXTENSIONS
         self._debounce_seconds = debounce_seconds
+        self._observer_timeout = observer_timeout
         self._observer: BaseObserver | None = None
         self._handlers: list[_Handler] = []
         self._watching: list[tuple[str, bool, list[str] | None]] = []
@@ -213,7 +216,7 @@ class FileWatcher:
         self._watching.append((path, recursive, patterns))
         if self._observer is None:
             observer_class = PollingObserver if self._use_polling else Observer
-            self._observer = observer_class()
+            self._observer = observer_class(timeout=self._observer_timeout)
         self._watches[library_id] = self._observer.schedule(handler, path, recursive=recursive)
 
     def unwatch(self, library_id: int) -> None:

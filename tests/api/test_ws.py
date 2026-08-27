@@ -190,7 +190,7 @@ class TestWorkerEventBroadcast:
                             completed = True
                     if started and completed:
                         break
-                    time.sleep(0.2)
+                    time.sleep(0.05)
 
                 stop.set()
                 t.join(timeout=1.0)

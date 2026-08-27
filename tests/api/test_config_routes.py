@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from amane.config import HotSettings
+from tests.api.conftest import hot_for_tests
 
 if TYPE_CHECKING:
     from httpx2 import AsyncClient
@@ -15,7 +16,7 @@ class TestGetConfig:
     async def test_returns_full_config(self, client: AsyncClient):
         resp = await client.get("config")
         assert resp.status_code == 200
-        assert HotSettings.model_validate(resp.json()) == HotSettings()
+        assert HotSettings.model_validate(resp.json()) == hot_for_tests()
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_response_types(self, client: AsyncClient):
@@ -52,13 +53,13 @@ class TestUpdateConfig:
     async def test_empty_patch_returns_current(self, client: AsyncClient):
         resp = await client.patch("config", json={})
         assert resp.status_code == 200
-        assert HotSettings.model_validate(resp.json()) == HotSettings()
+        assert HotSettings.model_validate(resp.json()) == hot_for_tests()
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_get_reflects_previous_put(self, client: AsyncClient):
         await client.patch("config", json={"network": {"proxy": "socks5://test"}})
         resp = await client.get("config")
-        expected = HotSettings()
+        expected = hot_for_tests()
         expected.network.proxy = "socks5://test"
         assert HotSettings.model_validate(resp.json()) == expected
 
@@ -105,11 +106,11 @@ class TestConfigRebuild:
 
         import asyncio
 
-        for _ in range(20):
+        for _ in range(40):
             check = await client.get(f"tasks/{task_id}")
             if check.json()["status"] in ("done", "failed"):
                 break
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.05)
 
         final = await client.get(f"tasks/{task_id}")
         assert final.json()["status"] == "done"

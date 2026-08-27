@@ -14,8 +14,9 @@ from httpx2 import ASGITransport, AsyncClient
 from amane.api.app import create_app
 from amane.api.middleware import API_TOKEN_COOKIE
 from amane.api.routes import API_PREFIX
-from amane.config import HotSettings
 from amane.config.token import resolve_api_token
+from tests.api.conftest import hot_for_tests
+from tests.schema_template import copy_schema
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,8 +37,9 @@ def make_token_app(tmp_path: Path, token_env: str | None) -> FastAPI:
     (tmp_path / "data").mkdir(parents=True, exist_ok=True)
     (tmp_path / "files").mkdir(parents=True, exist_ok=True)
     (tmp_path / "logs").mkdir(parents=True, exist_ok=True)
+    copy_schema(tmp_path / "data" / "amane.db")
     (tmp_path / "data" / "config.toml").write_text(
-        tomli_w.dumps(HotSettings().model_dump(mode="json", exclude_none=True))
+        tomli_w.dumps(hot_for_tests().model_dump(mode="json", exclude_none=True))
     )
     return create_app()
 

@@ -62,11 +62,11 @@ check-web:
     pnpm check
 
 test: fixtures
-    uv run pytest tests/ -q -n auto
+    uv run pytest tests/ -q -n auto --dist worksteal
 
 # Test with coverage (CI artifact)
 test-cov: fixtures
-    uv run pytest tests/ -n auto --cov=amane --cov-report=term-missing --cov-report=html:coverage_html --cov-report=xml:coverage.xml
+    uv run pytest tests/ -n auto --dist worksteal --cov=amane --cov-report=term-missing --cov-report=html:coverage_html --cov-report=xml:coverage.xml
 
 check: lint typecheck check-web test-cov
 

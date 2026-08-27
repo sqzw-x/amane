@@ -49,12 +49,16 @@ class WatcherService:
         use_polling: bool = False,
         media_extensions: list[str] | None = None,
         debounce_seconds: float = 3.0,
+        check_interval: float = _CHECK_INTERVAL,
+        observer_timeout: float = 1.0,
     ):
         self._repo = repo
         self._event_bus = event_bus
         self._use_polling = use_polling
         self._media_extensions = media_extensions
         self._debounce_seconds = debounce_seconds
+        self._check_interval = check_interval
+        self._observer_timeout = observer_timeout
         self._watcher: FileWatcher | None = None
         self._debounce_task: asyncio.Task | None = None
         self._running = False
@@ -62,6 +66,17 @@ class WatcherService:
     @property
     def is_running(self) -> bool:
         return self._running
+
+    def _new_watcher(self) -> FileWatcher:
+        return FileWatcher(
+            on_file_found=self._on_file_found_sync,
+            on_file_deleted=self._on_file_deleted_sync,
+            on_file_moved=self._on_file_moved_sync,
+            use_polling=self._use_polling,
+            media_extensions=self._media_extensions,
+            debounce_seconds=self._debounce_seconds,
+            observer_timeout=self._observer_timeout,
+        )
 
     async def start(self) -> None:
         """从 DB 加载监控路径并启动文件监控"""
@@ -73,14 +88,7 @@ class WatcherService:
             logger.info("no watch-enabled libraries configured, watcher not started")
             return
 
-        self._watcher = FileWatcher(
-            on_file_found=self._on_file_found_sync,
-            on_file_deleted=self._on_file_deleted_sync,
-            on_file_moved=self._on_file_moved_sync,
-            use_polling=self._use_polling,
-            media_extensions=self._media_extensions,
-            debounce_seconds=self._debounce_seconds,
-        )
+        self._watcher = self._new_watcher()
 
         for lib in libraries:
             assert lib.id is not None
@@ -134,14 +142,7 @@ class WatcherService:
         """热添加监控库 (运行时调用, 无需重启)"""
         if self._watcher is None:
             # 首次添加: 创建 watcher 并启动
-            self._watcher = FileWatcher(
-                on_file_found=self._on_file_found_sync,
-                on_file_deleted=self._on_file_deleted_sync,
-                on_file_moved=self._on_file_moved_sync,
-                use_polling=self._use_polling,
-                media_extensions=self._media_extensions,
-                debounce_seconds=self._debounce_seconds,
-            )
+            self._watcher = self._new_watcher()
             self._watcher.watch(
                 path, library_id=library_id, recursive=recursive, patterns=patterns, skip_patterns=skip_patterns
             )
@@ -252,6 +253,6 @@ class WatcherService:
     async def _debounce_loop(self) -> None:
         """定期检查防抖完成后可以处理的文件"""
         while self._running:
-            await asyncio.sleep(_CHECK_INTERVAL)
+            await asyncio.sleep(self._check_interval)
             if self._watcher:
                 self._watcher.check_debounced()

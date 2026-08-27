@@ -164,18 +164,18 @@ class TestFileWatcher:
     """FileWatcher 类的测试"""
 
     def test_watch_creates_observer(self, tmp_path: Path):
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None)
         watcher.watch(str(tmp_path), library_id=1)
         assert watcher._observer is not None
         assert len(watcher._handlers) == 1
 
     def test_watch_polling_mode(self, tmp_path: Path):
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None, use_polling=True)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None, use_polling=True)
         watcher.watch(str(tmp_path), library_id=1)
         assert isinstance(watcher._observer, PollingObserver)
 
     def test_start_stop_lifecycle(self, tmp_path: Path):
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None)
         watcher.watch(str(tmp_path), library_id=1)
         watcher.start()
         assert watcher.is_running
@@ -184,7 +184,7 @@ class TestFileWatcher:
 
     def test_check_debounced_calls_callback(self, tmp_path: Path):
         received = []
-        watcher = FileWatcher(on_file_found=lambda p, _lib: received.append(p))
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: received.append(p))
         watcher.watch(str(tmp_path), library_id=1)
 
         # 手动注入一个已过 debounce 的 pending 文件
@@ -204,7 +204,7 @@ class TestFileWatcher:
         dir1.mkdir()
         dir2.mkdir()
 
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None)
         watcher.watch(str(dir1), library_id=1)
         watcher.watch(str(dir2), library_id=2, patterns=["*.mkv"])
         assert len(watcher._handlers) == 2
@@ -213,7 +213,9 @@ class TestFileWatcher:
     def test_real_file_detection(self, tmp_path: Path, use_polling: bool):
         """集成测试: 创建文件并验证 watcher 能检测到 (两种策略)"""
         received = []
-        watcher = FileWatcher(on_file_found=lambda p, _lib: received.append(p), use_polling=use_polling)
+        watcher = FileWatcher(
+            observer_timeout=0.1, on_file_found=lambda p, _lib: received.append(p), use_polling=use_polling
+        )
         watcher.watch(str(tmp_path), library_id=1)
         watcher.start()
 
@@ -235,7 +237,7 @@ class TestFileWatcher:
             watcher.stop()
 
     def test_is_running_false_before_start(self, tmp_path: Path):
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None)
         watcher.watch(str(tmp_path), library_id=1)
         assert not watcher.is_running
 
@@ -244,7 +246,7 @@ class TestFileWatcher:
         dir2 = tmp_path / "d2"
         dir1.mkdir()
         dir2.mkdir()
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None)
         watcher.watch(str(dir1), library_id=1)
         watcher.watch(str(dir2), library_id=2)
         assert len(watcher._handlers) == 2
@@ -254,13 +256,13 @@ class TestFileWatcher:
         assert 1 not in watcher._watches
 
     def test_unwatch_unknown_is_noop(self, tmp_path: Path):
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None)
         watcher.watch(str(tmp_path), library_id=1)
         watcher.unwatch(999)  # 不应抛出
         assert len(watcher._handlers) == 1
 
     def test_unwatch_while_running(self, tmp_path: Path):
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None)
         watcher.watch(str(tmp_path), library_id=1)
         watcher.start()
         try:
@@ -288,7 +290,7 @@ class TestWatcherService:
 
     @pytest.fixture
     def service(self, repo: Repository, bus):
-        return WatcherService(repo, bus, use_polling=True)
+        return WatcherService(repo, bus, use_polling=True, check_interval=0.05, observer_timeout=0.1)
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_start_without_watch_paths(self, service):
@@ -475,7 +477,9 @@ class TestFileWatcherTmpFiles:
     def test_created_file_enters_pending(self, tmp_path: Path, use_polling: bool):
         """在监控目录中创建媒体文件会将其加入 pending"""
         received = []
-        watcher = FileWatcher(on_file_found=lambda p, _lib: received.append(p), use_polling=use_polling)
+        watcher = FileWatcher(
+            observer_timeout=0.1, on_file_found=lambda p, _lib: received.append(p), use_polling=use_polling
+        )
         watcher.watch(str(tmp_path), library_id=1)
         watcher.start()
 
@@ -491,7 +495,7 @@ class TestFileWatcherTmpFiles:
     @pytest.mark.parametrize("use_polling", [True, False])
     def test_non_media_file_ignored(self, tmp_path: Path, use_polling: bool):
         """非媒体文件不会被 watcher 拾取"""
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None, use_polling=use_polling)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None, use_polling=use_polling)
         watcher.watch(str(tmp_path), library_id=1)
         watcher.start()
 
@@ -500,7 +504,7 @@ class TestFileWatcherTmpFiles:
             txt.write_text("hello")
 
             handler = watcher._handlers[0]
-            wait_for(lambda: str(txt) not in handler._pending, duration=2)
+            wait_for(lambda: str(txt) not in handler._pending, duration=0.3, interval=0.05)
         finally:
             watcher.stop()
 
@@ -510,7 +514,7 @@ class TestFileWatcherTmpFiles:
         subdir = tmp_path / "season1"
         subdir.mkdir()
 
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None, use_polling=use_polling)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None, use_polling=use_polling)
         watcher.watch(str(tmp_path), library_id=1, recursive=True)
         watcher.start()
 
@@ -535,7 +539,7 @@ class TestFileWatcherTmpFiles:
         src = staging / "clip.mp4"
         src.write_bytes(b"\x00" * 128)
 
-        watcher = FileWatcher(on_file_found=lambda p, _lib: None, use_polling=use_polling)
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None, use_polling=use_polling)
         watcher.watch(str(watched), library_id=1)
         watcher.start()
 
