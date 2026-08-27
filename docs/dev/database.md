@@ -81,11 +81,13 @@ SQLite 不支持删列、改类型等 ALTER TABLE 操作. Alembic 通过 batch m
 
 | 场景 | 方式 | 原因 |
 |------|------|------|
-| 业务逻辑测试 | 内存 DB + `create_all()` | 快, 不依赖迁移历史 |
+| 业务逻辑测试 | 文件 DB + `copy_schema()` (schema_template.py) | 快 (进程级模板, 避免重复跑 24 个 Alembic revision), 不依赖迁移历史 |
 | 迁移逻辑测试 | 临时文件 DB + `command.upgrade` | 测试 "旧→新" 路径 |
 | 备份 / 事务性 DDL | `tests/db/test_sqlite_migrate_safety.py` | WAL 一致备份、失败 revision 回滚、启动路径冒烟 |
 
-不在业务测试中跑迁移 — `create_all` 绕过迁移, 保证测试的是当前 schema 而非迁移路径.
+schema_template.py 在进程首次调用时构建已迁移的 SQLite 模板并 vacuum, 后续测试直接拷贝文件, 避免为每个测试重复跑 Alembic. 例外: 测迁移本身 (`test_engine` / `test_sqlite_migrate_safety`) 必须从空文件起步.
+
+不在业务测试中跑迁移 — `copy_schema()` (从预构建的进程级 schema 模板拷贝) 绕过迁移, 保证测试的是当前 schema 而非迁移路径.
 
 ## 路径与配置
 
