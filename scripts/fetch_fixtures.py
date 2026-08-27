@@ -32,9 +32,20 @@ def _read_rev() -> str:
     return "".join((ROOT / "tests" / ".fixtures-rev").read_text().split())
 
 
+# pre-commit / `git commit` 会注入 GIT_DIR 等, 子进程里的 `git -C cases` 会误操作主仓库 index.
+_GIT_HOOK_VARS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+)
+
+
 def _run(cmd: list[str], env: dict[str, str]) -> bool:
     """在仓库根执行 git 命令, 返回是否成功."""
-    return subprocess.run(cmd, cwd=ROOT, env=env, check=False).returncode == 0
+    clean = {k: v for k, v in env.items() if k not in _GIT_HOOK_VARS}
+    return subprocess.run(cmd, cwd=ROOT, env=clean, check=False).returncode == 0
 
 
 def main() -> int:
