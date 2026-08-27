@@ -300,43 +300,45 @@ class TestResolvePathsEdgeCases:
         assert result.video == media / "2024" / "ABC-123" / "ABC-123.mp4"
 
 
-class TestSourceDirVariables:
-    """源文件目录变量 {dir} / {dir_path}."""
+class TestSourceVariables:
+    """源文件变量 {raw_dir} / {raw_name}."""
 
-    def test_dir_is_source_parent_name(self, media: Path):
-        """{dir} 渲染为源文件所在目录的名称."""
+    def test_raw_dir_is_source_parent_name(self, media: Path):
+        """{raw_dir}: A/B/C.mp4 → B."""
+        arch = media / "archive"
+        wp = Library(name="t", path=str(arch), video_template=str(arch / "{raw_dir}" / "{number}.{ext}"))
+        meta = _meta()
+        result = resolve_paths(wp, meta, ext="mp4", source_path=media / "A" / "B" / "C.mp4")
+        assert result.video == arch / "B" / "ABC-123.mp4"
+
+    def test_raw_name_is_source_stem(self, media: Path):
+        """{raw_name}: A/B.mp4 → B."""
+        wp = Library(name="t", path=str(media), video_template="{studio}/{number}/{raw_name}.{ext}")
+        meta = _meta()
+        result = resolve_paths(wp, meta, ext="mp4", source_path=media / "A" / "B.mp4")
+        assert result.video == media / "StudioX" / "ABC-123" / "B.mp4"
+
+    def test_raw_dir_empty_when_no_source_path(self, media: Path):
+        """不传 source_path 时 {raw_dir} 降级为空串 (非首段, 多余分隔符被 resolve 折叠)."""
+        wp = Library(name="t", path=str(media), video_template="sub/{raw_dir}/{number}.{ext}")
+        meta = _meta()
+        result = resolve_paths(wp, meta, ext="mp4")
+        assert result.video == media / "sub" / "ABC-123.mp4"
+
+    def test_raw_name_empty_when_no_source_path(self, media: Path):
+        """不传 source_path 时 {raw_name} 降级为空串."""
+        wp = Library(name="t", path=str(media), video_template="sub/{raw_name}.{ext}")
+        meta = _meta()
+        result = resolve_paths(wp, meta, ext="mp4")
+        assert result.video == media / "sub" / ".mp4"
+
+    def test_dir_alias_matches_raw_dir(self, media: Path):
+        """{dir} 与 {raw_dir} 同值."""
         arch = media / "archive"
         wp = Library(name="t", path=str(arch), video_template=str(arch / "{dir}" / "{number}.{ext}"))
         meta = _meta()
-        result = resolve_paths(wp, meta, ext="mp4", source_path=media / "incoming" / "Batch-01" / "ABC-123.mp4")
-        assert result.video == arch / "Batch-01" / "ABC-123.mp4"
-
-    def test_dir_path_is_full_source_parent(self, media: Path):
-        """{dir_path} 渲染为源文件所在目录的完整路径 (绝对模板, 源目录在 safe_dirs 内)."""
-        wp = Library(name="t", path=str(media / "archive"), video_template="{dir_path}/{number}.{ext}")
-        meta = _meta()
-        result = resolve_paths(
-            wp,
-            meta,
-            ext="mp4",
-            source_path=media / "incoming" / "Batch-01" / "ABC-123.mp4",
-            safe_dirs=[media / "incoming"],
-        )
-        assert result.video == media / "incoming" / "Batch-01" / "ABC-123.mp4"
-
-    def test_dir_empty_when_no_source_path(self, media: Path):
-        """不传 source_path 时 {dir} 降级为空串 (非首段, 多余分隔符被 resolve 折叠)."""
-        wp = Library(name="t", path=str(media), video_template="sub/{dir}/{number}.{ext}")
-        meta = _meta()
-        result = resolve_paths(wp, meta, ext="mp4")
-        assert result.video == media / "sub" / "ABC-123.mp4"
-
-    def test_dir_path_empty_when_no_source_path(self, media: Path):
-        """不传 source_path 时 {dir_path} 降级为空串."""
-        wp = Library(name="t", path=str(media), video_template="sub/{dir_path}/{number}.{ext}")
-        meta = _meta()
-        result = resolve_paths(wp, meta, ext="mp4")
-        assert result.video == media / "sub" / "ABC-123.mp4"
+        result = resolve_paths(wp, meta, ext="mp4", source_path=media / "A" / "B" / "C.mp4")
+        assert result.video == arch / "B" / "ABC-123.mp4"
 
 
 class _RenderCase(NamedTuple):

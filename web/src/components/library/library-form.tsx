@@ -326,7 +326,11 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
             {placeholders.map((p) => (
               <Tooltip
                 key={p.name}
-                label={t(`placeholders.phases.${p.phase}`, { defaultValue: p.phase })}
+                label={t(`placeholders.items.${p.name}`, {
+                  defaultValue: t(`placeholders.phases.${p.phase}`, { defaultValue: p.phase }),
+                })}
+                multiline
+                maw={280}
               >
                 <Badge
                   component="button"

@@ -82,7 +82,7 @@ class PlaceholderPhase(StrEnum):
     """占位符相位: 值的来源与注入时机.
 
     - ``metadata``: 来自 Metadata 字段;
-    - ``source``: 需 ``source_path`` (源文件目录);
+    - ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);
     - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
     - ``post_video``: 视频路径渲染后注入 (侧车模板).
     """
@@ -104,8 +104,8 @@ PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
     ("year", PlaceholderPhase.METADATA),
     ("release", PlaceholderPhase.METADATA),
     ("ext", PlaceholderPhase.METADATA),
-    ("dir", PlaceholderPhase.SOURCE),
-    ("dir_path", PlaceholderPhase.SOURCE),
+    ("raw_dir", PlaceholderPhase.SOURCE),
+    ("raw_name", PlaceholderPhase.SOURCE),
     ("mosaic", PlaceholderPhase.FILE),
     ("definition", PlaceholderPhase.FILE),
     ("video_dir", PlaceholderPhase.POST_VIDEO),
@@ -165,7 +165,7 @@ def _mosaic_value(file_info: FileInfo | None) -> str:
 def _build_variables(
     metadata: Metadata,
     ext: str = "",
-    source_dir: Path | None = None,
+    source_path: Path | None = None,
     file_info: FileInfo | None = None,
 ) -> dict[str, str]:
     """从元数据构建模板变量字典.
@@ -173,11 +173,15 @@ def _build_variables(
     Args:
         metadata: 元数据对象
         ext: 文件扩展名 (不含点)
-        source_dir: 源文件所在目录, 提供 {dir} (目录名) 与 {dir_path} (完整路径); None 时二者为空串
+        source_path: 源文件完整路径, 提供 {raw_dir} (父目录名) 与 {raw_name} (文件名不含扩展名);
+            None 时二者为空串. {dir} 与 {raw_dir} 同值.
         file_info: 源文件解析结果 (parse_file_info), 提供 {mosaic} 与 {definition}; None 时二者为 Unknown
     """
     year = metadata.release[:4] if metadata.release and len(metadata.release) >= 4 else None
     actor = metadata.actors[0] if metadata.actors else None
+    source_dir = source_path.parent if source_path else None
+    raw_dir = source_dir.name if source_dir else ""
+    raw_name = source_path.stem if source_path else ""
 
     return {
         "number": metadata.number,
@@ -190,8 +194,9 @@ def _build_variables(
         "year": year or "Unknown",
         "release": _safe(metadata.release) or "Unknown",
         "ext": ext,
-        "dir": source_dir.name if source_dir else "",
-        "dir_path": str(source_dir) if source_dir else "",
+        "raw_dir": raw_dir,
+        "raw_name": raw_name,
+        "dir": raw_dir,
         "mosaic": _mosaic_value(file_info),
         "definition": (file_info.definition if file_info else None) or "Unknown",
     }
@@ -252,7 +257,7 @@ def resolve_paths(
         ext: 原始文件扩展名 (不含点, 如 "mp4", "mkv")
         cd: CD/分片编号, 非 None 且库的 cd_suffix_template 非空时按该模板追加后缀到视频文件名 (默认 -CD{n});
             None 时回退 file_info.cd
-        source_path: 源文件完整路径, 提供 {dir} (源目录名) 与 {dir_path} (源目录完整路径) 变量
+        source_path: 源文件完整路径, 提供 {raw_dir} (源父目录名) 与 {raw_name} (源文件名不含扩展名)
         file_info: 源文件解析结果 (parse_file_info), 提供 {mosaic} / {definition} 变量
         safe_dirs: 允许绝对路径模板落地的可信目录集 (多盘分存等). base_path 始终可信, 无需重复列出.
 
@@ -263,10 +268,9 @@ def resolve_paths(
         ValueError: 任一模板渲染后逃逸了 base_path 与 safe_dirs 构成的边界
     """
     base_path = Path(library.path)
-    source_dir = source_path.parent if source_path else None
     if cd is None and file_info is not None:
         cd = file_info.cd
-    variables = _build_variables(metadata, ext, source_dir, file_info)
+    variables = _build_variables(metadata, ext, source_path, file_info)
 
     # 1. 渲染视频路径
     video = _render_template(library.video_template, variables, base_path, safe_dirs)

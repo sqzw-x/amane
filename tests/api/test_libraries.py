@@ -120,10 +120,13 @@ class TestLibraries:
         assert data["cd_suffix_default"] == CD_SUFFIX_TEMPLATE_DEFAULT
         assert data["optional_defaults"] == OPTIONAL_TEMPLATE_DEFAULTS
         names = {p["name"] for p in data["placeholders"]}
-        assert {"number", "studio", "video_dir", "dir", "ext", "mosaic", "definition"} <= names
+        assert {"number", "studio", "video_dir", "raw_dir", "raw_name", "ext", "mosaic", "definition"} <= names
+        assert "dir_path" not in names
+        assert "dir" not in names
         phases = {p["name"]: p["phase"] for p in data["placeholders"]}
         assert phases["number"] == "metadata"
-        assert phases["dir"] == "source"
+        assert phases["raw_dir"] == "source"
+        assert phases["raw_name"] == "source"
         assert phases["mosaic"] == "file"
         assert phases["definition"] == "file"
         assert phases["video_dir"] == "post_video"

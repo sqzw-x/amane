@@ -138,9 +138,26 @@
     "copyFailed": "Copy failed, please copy manually",
     "phases": {
       "metadata": "From metadata fields",
-      "source": "From source file directory (injected during organize)",
-      "file": "From source file name (detected during organize)",
+      "source": "From the source file (injected during organize)",
+      "file": "From the source file name (detected during organize)",
       "post_video": "Available after video path is rendered; sidecar templates only"
+    },
+    "items": {
+      "number": "Catalog number",
+      "title": "Title",
+      "actor": "First actor",
+      "actors": "All actors, comma-separated",
+      "studio": "Studio",
+      "publisher": "Publisher",
+      "series": "Series",
+      "year": "Release year",
+      "release": "Release date",
+      "ext": "Source file extension, no dot. e.g. A/B.mp4 → mp4",
+      "raw_name": "Source filename without extension. e.g. A/B.mp4 → B",
+      "raw_dir": "Source parent directory name. e.g. A/B/C.mp4 → B",
+      "mosaic": "Censorship type, from filename or directory",
+      "definition": "Resolution, from filename",
+      "video_dir": "Directory of the rendered video path; sidecar templates only"
     }
   },
   "tpl": {

@@ -1,6 +1,6 @@
 # 数据模型
 
-> 提交: `b472d2e`
+> 提交: `721b833`
 >
 > 表结构、字段类型、便捷属性都在 `src/amane/db/models.py`. 本文只解释**为什么**这么建模、所有权关系、生命周期与已知陷阱.
 
@@ -102,11 +102,11 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 模板**故意按资源类型独立**, 而不是一个 `output_dir` + 后缀拼接 — 用户场景包括: NAS 多盘分存、字幕集中备份、NFO 同目录 vs 集中目录.
 
-模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{dir}` / `{dir_path}` (源文件目录名 / 完整路径) 与 `{mosaic}` / `{definition}` (`parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库 (与 CD 检测同一约定); `{video_dir}` 为视频渲染后的父目录. `{mosaic}` 取值: 文件名标记 → 目录名整段词表 (由近到远; `uncensored` / `cracked` / 无码 / 破解 等, 子串不算) → content_type 兜底 `censored` (永不 `Unknown` — 有码/无码是全域语义, 保证目录名稳定). `{definition}` 只看文件名, 无命中回退 `Unknown` (与普通占位符一致). **幂等约束**: `{mosaic}` 放目录段且目录名等于词表时可二次读回; `{definition}` 与 CD 后缀必须仍能从**文件名**反推, 只放目录段会按默认值重排. 占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
+模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` (源文件父目录名 / 源文件名不含扩展名) 与 `{mosaic}` / `{definition}` (`parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库 (与 CD 检测同一约定); `{video_dir}` 为视频渲染后的父目录, 仅侧车模板可用. `{mosaic}` 取值: 文件名标记 → 目录名整段词表 (由近到远; `uncensored` / `cracked` / 无码 / 破解 等, 子串不算) → content_type 兜底 `censored` (永不 `Unknown` — 有码/无码是全域语义, 保证目录名稳定). `{definition}` 只看文件名, 无命中回退 `Unknown` (与普通占位符一致). **幂等约束**: `{mosaic}` 放目录段且目录名等于词表时可二次读回; `{definition}` 与 CD 后缀必须仍能从**文件名**反推, 只放目录段会按默认值重排. 占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
 
-普通占位符缺失回退 `Unknown`. `{dir}` / `{dir_path}` 无 `source_path` 时为空串 — **空变量放模板首段** (如 `{dir}/...`) 会让结果以 `/` 开头被当成绝对路径.
+普通占位符缺失回退 `Unknown`. `{raw_dir}` / `{raw_name}` 无 `source_path` 时为空串 — **空变量放模板首段** (如 `{raw_dir}/...`) 会让结果以 `/` 开头被当成绝对路径.
 
-**逃逸防护**: 相对模板必须是 library 根的后代; 绝对模板 (含展开 `{video_dir}` / `{dir_path}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. 多盘分存要求目标盘在 `safe_dirs` 内.
+**逃逸防护**: 相对模板必须是 library 根的后代; 绝对模板 (含展开 `{video_dir}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. 多盘分存要求目标盘在 `safe_dirs` 内.
 
 ## Resource (一等存储, 非缓存)
 
