@@ -82,20 +82,28 @@ CASES: tuple[_Case, ...] = (
         ("b-CD2.ass",),
     ),
     _Case(
-        "only-cd2-present-unparsed-follows-first-present",
+        "cd2-does-not-take-unparsed",
         ("MIDV-123-CD2.mp4", "chs.srt", "b-CD2.ass"),
         "MIDV-123-CD2.mp4",
         2,
         DEFAULT_SUBTITLE_EXTENSIONS,
-        ("b-CD2.ass", "chs.srt"),
+        ("b-CD2.ass",),
     ),
     _Case(
-        "unnumbered-and-cd2-unparsed-goes-to-unnumbered",
+        "unnumbered-takes-unparsed-not-other-cd",
         ("MIDV-123.mp4", "MIDV-123-CD2.mp4", "chs.srt", "b-CD2.ass"),
         "MIDV-123.mp4",
         None,
         DEFAULT_SUBTITLE_EXTENSIONS,
         ("chs.srt",),
+    ),
+    _Case(
+        "cd1-ignores-sibling-trailer",
+        ("MIDV-123-CD1.mp4", "trailer.mp4", "chs.srt", "a-CD1.srt"),
+        "MIDV-123-CD1.mp4",
+        1,
+        DEFAULT_SUBTITLE_EXTENSIONS,
+        ("a-CD1.srt", "chs.srt"),
     ),
 )
 
