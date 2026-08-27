@@ -99,6 +99,8 @@
   "fieldTrailerPatternHint": "匹配文件名（含扩展名）则扫描/监控跳过；空串关闭。默认匹配 trailer",
   "fieldBlacklistPatterns": "黑名单正则",
   "fieldBlacklistPatternsHint": "每行一个正则；命中的文件扫描/监控跳过，整理时移入库根 .amane_trash。留空关闭",
+  "fieldSubtitleExtensions": "字幕扩展名",
+  "fieldSubtitleExtensionsHint": "逗号分隔；整理时发现视频同目录下这些扩展名的字幕并一起搬走。留空关闭。默认 .srt .ass .ssa .vtt .sub",
   "fieldMoveMode": "文件操作模式",
   "fieldMoveModeHint": "整理时如何把文件放到模板路径",
   "fieldWriteNfo": "写入 NFO",
@@ -134,7 +136,8 @@
       "metadata": "来自元数据字段",
       "source": "来自源文件（整理时注入）",
       "file": "来自源文件名（整理时检测）",
-      "post_video": "视频路径渲染后可用，仅附属资源模板"
+      "post_video": "视频路径渲染后可用，仅附属资源模板",
+      "subtitle": "来自字幕源文件，仅字幕模板"
     },
     "items": {
       "number": "番号",
@@ -146,12 +149,13 @@
       "series": "系列",
       "year": "发行年份",
       "release": "发行日期",
-      "ext": "源文件扩展名，不含点。例：A/B.mp4 → mp4",
-      "raw_name": "源文件名，不含扩展名。例：A/B.mp4 → B",
+      "ext": "正在放置的文件扩展名，不含点。视频模板为视频扩展名，字幕模板为该字幕扩展名",
+      "raw_name": "源视频文件名，不含扩展名。例：A/B.mp4 → B",
       "raw_dir": "源文件父目录名。例：A/B/C.mp4 → B",
       "mosaic": "有码/无码等，从文件名或目录检测",
       "definition": "分辨率，从文件名检测",
-      "video_dir": "按模板渲染后目标文件所在目录的路径，仅可用于附属资源模板"
+      "video_dir": "按模板渲染后目标文件所在目录的路径，仅可用于附属资源模板",
+      "raw_srt_name": "字幕原文件名，不含扩展名。例：A/foo.zh.srt → foo.zh"
     }
   },
   "tpl": {

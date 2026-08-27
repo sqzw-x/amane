@@ -11,7 +11,7 @@ from typing import NamedTuple
 import pytest
 
 from amane.db.models import Library, Metadata
-from amane.organize import CD_SUFFIX_TEMPLATE_DEFAULT, resolve_paths, validate_cd_suffix_template
+from amane.organize import CD_SUFFIX_TEMPLATE_DEFAULT, resolve_paths, resolve_subtitle_path, validate_cd_suffix_template
 from amane.parsing import parse_file_info
 
 
@@ -207,12 +207,12 @@ class TestResolvePathsDefaults:
 
         assert result.trailer == media / "StudioX" / "ABC-123" / "trailer.mp4"
 
-    def test_subtitle_default(self, media: Path):
+    def test_subtitle_default_keeps_raw_name(self, media: Path):
         wp = Library(name="t", path=str(media), video_template="{studio}/{number}/{number}.{ext}")
         meta = _meta()
-        result = resolve_paths(wp, meta, ext="srt")
-
-        assert result.subtitle == media / "StudioX" / "ABC-123" / "ABC-123.srt"
+        video = resolve_paths(wp, meta, ext="mp4")
+        sub = resolve_subtitle_path(wp, meta, Path("/inbox/MIDV-123.zh.srt"), video_dir=video.video.parent)
+        assert sub == media / "StudioX" / "ABC-123" / "MIDV-123.zh.srt"
 
 
 class TestResolvePathsCustomTemplates:

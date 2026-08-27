@@ -33,6 +33,11 @@ MEDIA_EXTENSIONS = frozenset(
 # 与默认 trailer 模板文件名 `{video_dir}/trailer.mp4` 对齐; 空串表示不跳过.
 DEFAULT_TRAILER_PATTERN = "(?i)trailer"
 
+# ORGANIZE 同目录字幕发现用; 空列表关闭. 不进 MEDIA_EXTENSIONS (字幕不是正片).
+DEFAULT_SUBTITLE_EXTENSIONS: tuple[str, ...] = (".srt", ".ass", ".ssa", ".vtt", ".sub")
+
+_SUBTITLE_EXT_RE = re.compile(r"^\.[a-z0-9]+$")
+
 # 黑名单命中的文件在 ORGANIZE 时移入库根下该目录 (固定保留名, 任何深度都不入库).
 TRASH_DIRNAME = ".amane_trash"
 
@@ -81,8 +86,33 @@ def validate_blacklist_pattern(pattern: str) -> str:
     return validate_regex_pattern(pattern, "blacklist_pattern")
 
 
+def validate_subtitle_extension(value: str) -> str:
+    """规范化字幕扩展名: 小写、补前导点. 空串/路径分隔符/非字母数字非法."""
+    stripped = value.strip().lower()
+    if not stripped:
+        raise ValueError("subtitle extension must not be empty")
+    if not stripped.startswith("."):
+        stripped = f".{stripped}"
+    if "/" in stripped or "\\" in stripped or _SUBTITLE_EXT_RE.fullmatch(stripped) is None:
+        raise ValueError(f"invalid subtitle extension: {value!r}")
+    return stripped
+
+
+def normalize_subtitle_extensions(values: list[str]) -> list[str]:
+    """逐项规范化并去重 (保序). 空列表合法, 表示关闭字幕发现."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in values:
+        ext = validate_subtitle_extension(raw)
+        if ext not in seen:
+            seen.add(ext)
+            out.append(ext)
+    return out
+
+
 TrailerPattern = Annotated[str, AfterValidator(validate_trailer_pattern)]
 BlacklistPattern = Annotated[str, AfterValidator(validate_blacklist_pattern)]
+SubtitleExtensions = Annotated[list[str], AfterValidator(normalize_subtitle_extensions)]
 
 
 def is_skipped_media(path: Path, pattern: str | None) -> bool:

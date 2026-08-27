@@ -10,7 +10,9 @@ from amane.utils.extensions import (
     compile_skip_patterns,
     is_in_trash,
     is_skipped_media,
+    normalize_subtitle_extensions,
     validate_blacklist_pattern,
+    validate_subtitle_extension,
     validate_trailer_pattern,
 )
 
@@ -85,3 +87,31 @@ TRASH_CASES = [
 @pytest.mark.parametrize(("path", "in_trash"), TRASH_CASES)
 def test_is_in_trash(path: str, in_trash: bool):
     assert is_in_trash(Path(path)) is in_trash
+
+
+EXT_CASES = [
+    (".srt", ".srt"),
+    ("SRT", ".srt"),
+    (" .Ass ", ".ass"),
+]
+
+
+@pytest.mark.parametrize(("raw", "expected"), EXT_CASES)
+def test_validate_subtitle_extension(raw: str, expected: str):
+    assert validate_subtitle_extension(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["", ".", ".srt.ass", "../srt", "s r t", ".srt/x"])
+def test_validate_subtitle_extension_rejects(raw: str):
+    with pytest.raises(ValueError, match="subtitle extension"):
+        validate_subtitle_extension(raw)
+
+
+def test_normalize_subtitle_extensions_dedupes_and_allows_empty():
+    assert normalize_subtitle_extensions(["SRT", ".srt", "ass"]) == [".srt", ".ass"]
+    assert normalize_subtitle_extensions([]) == []
+
+
+def test_library_rejects_invalid_subtitle_extension():
+    with pytest.raises(ValidationError):
+        Library.model_validate({"name": "x", "path": "/m", "subtitle_extensions": [".srt", "bad ext"]})

@@ -5,7 +5,13 @@ from pydantic import BaseModel, Field
 from ...db import Library
 from ...enums import DownloadableResource, LibraryAutomation, MoveMode
 from ...organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate, PlaceholderPhase
-from ...utils.extensions import DEFAULT_TRAILER_PATTERN, BlacklistPattern, TrailerPattern
+from ...utils.extensions import (
+    DEFAULT_SUBTITLE_EXTENSIONS,
+    DEFAULT_TRAILER_PATTERN,
+    BlacklistPattern,
+    SubtitleExtensions,
+    TrailerPattern,
+)
 from ...utils.model import create_partial_model
 
 
@@ -26,6 +32,7 @@ class LibraryCreateRequest(BaseModel):
     nfo_template: str | None = None
     trailer_template: str | None = None
     subtitle_template: str | None = None
+    subtitle_extensions: SubtitleExtensions = Field(default_factory=lambda: list(DEFAULT_SUBTITLE_EXTENSIONS))
     write_nfo: bool = True
     copy_resources: list[DownloadableResource] = Field(default_factory=lambda: list(DownloadableResource))
     trailer_pattern: TrailerPattern = DEFAULT_TRAILER_PATTERN
@@ -58,6 +65,7 @@ class LibraryResponse(BaseModel):
     nfo_template: str | None = None
     trailer_template: str | None = None
     subtitle_template: str | None = None
+    subtitle_extensions: list[str]
     write_nfo: bool
     copy_resources: list[DownloadableResource]
     trailer_pattern: str
@@ -80,3 +88,4 @@ class PathTemplateSchemaResponse(BaseModel):
     cd_suffix_default: str
     optional_defaults: dict[str, str]
     placeholders: list[PathTemplatePlaceholder]
+    subtitle_extensions_default: list[str]

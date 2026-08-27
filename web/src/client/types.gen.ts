@@ -1250,6 +1250,10 @@ export type LibraryCreateRequest = {
      */
     subtitle_template?: string | null;
     /**
+     * Subtitle Extensions
+     */
+    subtitle_extensions?: Array<string>;
+    /**
      * Write Nfo
      */
     write_nfo?: boolean;
@@ -1344,6 +1348,10 @@ export type LibraryResponse = {
      */
     subtitle_template?: string | null;
     /**
+     * Subtitle Extensions
+     */
+    subtitle_extensions: Array<string>;
+    /**
      * Write Nfo
      */
     write_nfo: boolean;
@@ -1419,6 +1427,10 @@ export type LibraryUpdateRequest = {
      * Subtitle Template
      */
     subtitle_template?: string | null;
+    /**
+     * Subtitle Extensions
+     */
+    subtitle_extensions?: Array<string> | null;
     /**
      * Write Nfo
      */
@@ -2109,6 +2121,10 @@ export type PathTemplateSchemaResponse = {
      * Placeholders
      */
     placeholders: Array<PathTemplatePlaceholder>;
+    /**
+     * Subtitle Extensions Default
+     */
+    subtitle_extensions_default: Array<string>;
 };
 
 /**
@@ -2119,9 +2135,10 @@ export type PathTemplateSchemaResponse = {
  * - ``metadata``: 来自 Metadata 字段;
  * - ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);
  * - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
- * - ``post_video``: 视频路径渲染后注入 (侧车模板).
+ * - ``post_video``: 视频路径渲染后注入 (附属资源模板).
+ * - ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).
  */
-export type PlaceholderPhase = 'metadata' | 'source' | 'file' | 'post_video';
+export type PlaceholderPhase = 'metadata' | 'source' | 'file' | 'post_video' | 'subtitle';
 
 /**
  * PluginConfig

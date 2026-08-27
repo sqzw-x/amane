@@ -2541,6 +2541,13 @@ export const LibraryCreateRequestSchema = {
             ],
             title: 'Subtitle Template'
         },
+        subtitle_extensions: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Subtitle Extensions'
+        },
         write_nfo: {
             type: 'boolean',
             title: 'Write Nfo',
@@ -2713,6 +2720,13 @@ export const LibraryResponseSchema = {
             ],
             title: 'Subtitle Template'
         },
+        subtitle_extensions: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Subtitle Extensions'
+        },
         write_nfo: {
             type: 'boolean',
             title: 'Write Nfo'
@@ -2746,6 +2760,7 @@ export const LibraryResponseSchema = {
         'move_mode',
         'video_template',
         'cd_suffix_template',
+        'subtitle_extensions',
         'write_nfo',
         'copy_resources',
         'trailer_pattern',
@@ -2921,6 +2936,20 @@ export const LibraryUpdateRequestSchema = {
                 }
             ],
             title: 'Subtitle Template'
+        },
+        subtitle_extensions: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Subtitle Extensions'
         },
         write_nfo: {
             anyOf: [
@@ -4299,6 +4328,13 @@ export const PathTemplateSchemaResponseSchema = {
             },
             type: 'array',
             title: 'Placeholders'
+        },
+        subtitle_extensions_default: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Subtitle Extensions Default'
         }
     },
     type: 'object',
@@ -4306,7 +4342,8 @@ export const PathTemplateSchemaResponseSchema = {
         'video_default',
         'cd_suffix_default',
         'optional_defaults',
-        'placeholders'
+        'placeholders',
+        'subtitle_extensions_default'
     ],
     title: 'PathTemplateSchemaResponse',
     description: '路径模板 UI 契约: 占位符相位 + 默认值, 与 resolve_paths 同源.'
@@ -4318,10 +4355,11 @@ export const PlaceholderPhaseSchema = {
         'metadata',
         'source',
         'file',
-        'post_video'
+        'post_video',
+        'subtitle'
     ],
     title: 'PlaceholderPhase',
-    description: '占位符相位: 值的来源与注入时机.\n\n- ``metadata``: 来自 Metadata 字段;\n- ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);\n- ``file``: 来自源路径 (``parse_file_info``, 整理时检测);\n- ``post_video``: 视频路径渲染后注入 (侧车模板).'
+    description: '占位符相位: 值的来源与注入时机.\n\n- ``metadata``: 来自 Metadata 字段;\n- ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);\n- ``file``: 来自源路径 (``parse_file_info``, 整理时检测);\n- ``post_video``: 视频路径渲染后注入 (附属资源模板).\n- ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).'
 } as const;
 
 export const PluginConfigSchema = {

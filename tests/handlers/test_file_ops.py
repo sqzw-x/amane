@@ -41,7 +41,6 @@ def _paths(base: Path) -> ResolvedPaths:
         extrafanart_dir=base / "MIDV-123" / "extrafanart",
         nfo=base / "MIDV-123" / "MIDV-123.nfo",
         trailer=base / "MIDV-123" / "trailer.mp4",
-        subtitle=base / "MIDV-123" / "MIDV-123.srt",
     )
 
 

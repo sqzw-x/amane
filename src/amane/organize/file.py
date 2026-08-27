@@ -20,6 +20,8 @@ def execute_organize(
     target_dir: Path,
     target_stem: str,
     mode: MoveMode = MoveMode.MOVE,
+    *,
+    suffix: str | None = None,
 ) -> OrganizeResult:
     """
     执行文件整理操作.
@@ -31,6 +33,7 @@ def execute_organize(
         target_dir: 目标目录 (不存在时自动创建).
         target_stem: 目标文件名 (不含扩展名).
         mode: 文件放置方式 (move/copy/hardlink/symlink).
+        suffix: 目标扩展名 (含点); None 则用 source.suffix.
 
     Returns:
         包含成功状态和目标路径的 OrganizeResult.
@@ -41,8 +44,8 @@ def execute_organize(
 
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
-        suffix = source.suffix
-        dest = target_dir / f"{target_stem}{suffix}"
+        dest_suffix = source.suffix if suffix is None else suffix
+        dest = target_dir / f"{target_stem}{dest_suffix}"
         if _already_at_dest(source, dest):
             return OrganizeResult(success=True, dest=dest)
 

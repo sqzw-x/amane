@@ -16,6 +16,7 @@ from amane.db.models import (
     TaskType,
 )
 from amane.enums import DownloadableResource, LibraryAutomation, MoveMode
+from amane.utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
 
 
 @pytest.fixture
@@ -154,6 +155,7 @@ class TestLibrary:
         assert lib.copy_resources == [r for r in DownloadableResource if r != DownloadableResource.trailer]
         assert lib.trailer_pattern == "(?i)trailer"
         assert lib.automation == LibraryAutomation.SCRAPE
+        assert lib.subtitle_extensions == list(DEFAULT_SUBTITLE_EXTENSIONS)
 
 
 class TestSchedule:

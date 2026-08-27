@@ -72,6 +72,7 @@ export interface LibraryFormState {
   copy_resources: DownloadableResource[];
   trailer_pattern: string;
   blacklist_patterns: string;
+  subtitle_extensions: string;
   video_template: string;
   cd_suffix_template: string;
   thumb_template: string;
@@ -97,6 +98,9 @@ export function emptyLibraryForm(schema?: PathTemplateSchemaResponse | null): Li
     copy_resources: DOWNLOADABLE_RESOURCES.filter((r) => r !== "trailer"),
     trailer_pattern: "(?i)trailer",
     blacklist_patterns: "",
+    subtitle_extensions: (
+      schema?.subtitle_extensions_default ?? [".srt", ".ass", ".ssa", ".vtt", ".sub"]
+    ).join(", "),
     video_template: schema?.video_default ?? "{studio}/{number}/{number}.{ext}",
     cd_suffix_template: schema?.cd_suffix_default ?? "-CD{cd}",
     thumb_template: defaults?.thumb_template ?? "",
@@ -122,6 +126,7 @@ export function libraryFormFromResponse(lib: LibraryResponse): LibraryFormState 
     copy_resources: parseCopyResources(lib.copy_resources),
     trailer_pattern: lib.trailer_pattern,
     blacklist_patterns: lib.blacklist_patterns?.join("\n") ?? "",
+    subtitle_extensions: lib.subtitle_extensions?.join(", ") ?? "",
     video_template: lib.video_template,
     cd_suffix_template: lib.cd_suffix_template,
     thumb_template: lib.thumb_template ?? "",
@@ -162,6 +167,7 @@ function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
     copy_resources: form.copy_resources,
     trailer_pattern: form.trailer_pattern,
     blacklist_patterns: parseBlacklistPatterns(form.blacklist_patterns),
+    subtitle_extensions: parseLibraryPatterns(form.subtitle_extensions),
     video_template: form.video_template.trim(),
     cd_suffix_template: form.cd_suffix_template.trim(),
     thumb_template: form.thumb_template.trim(),
@@ -272,6 +278,12 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
           maxRows={5}
           value={value.blacklist_patterns}
           onChange={(e) => onChange({ ...value, blacklist_patterns: e.currentTarget.value })}
+        />
+        <TextInput
+          label={t("fieldSubtitleExtensions")}
+          description={t("fieldSubtitleExtensionsHint")}
+          value={value.subtitle_extensions}
+          onChange={(e) => onChange({ ...value, subtitle_extensions: e.currentTarget.value })}
         />
         <FieldChrome label={t("fieldMoveMode")} description={t("fieldMoveModeHint")}>
           <EnumToggle

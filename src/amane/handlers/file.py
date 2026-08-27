@@ -14,8 +14,8 @@ from ..media import ResourceStore, crop_poster
 from ..media import write_nfo as write_nfo_file
 from ..media.pipeline import RESOURCE_URL_PREFIX
 from ..net.http import WebClient
-from ..organize import MoveMode, ResolvedPaths, execute_organize, resolve_paths
-from ..parsing import parse_file_info
+from ..organize import MoveMode, ResolvedPaths, discover_subtitles, execute_organize, place_subtitles, resolve_paths
+from ..parsing import FileInfo, parse_file_info
 from ..utils.extensions import TRASH_DIRNAME, compile_skip_patterns
 from ._common import iter_media_files
 from .models import CleanupPayload, CleanupResult, OrganizePayload, OrganizeResult
@@ -51,6 +51,9 @@ async def execute_file_operations(
     copy_resources: Sequence[DownloadableResource] | None = None,
     web_client: WebClient | None = None,
     config: HotSettings | None = None,
+    library: Library | None = None,
+    file_info: FileInfo | None = None,
+    safe_dirs: Sequence[Path] = (),
 ) -> FileOperationsResult:
     """
     执行文件后处理: 图片下载, 文件整理, NFO 生成.
@@ -66,6 +69,9 @@ async def execute_file_operations(
         copy_resources: 要复制到库路径的资源类型; None 表示全部
         web_client: HTTP 客户端 (可选, 无则跳过下载)
         config: 热配置 (仅用于读取 scraping 细节设置)
+        library: 有则整理同目录字幕文件; None 跳过
+        file_info: 源文件解析 (分集配对); library 非空且此项为空时从 source 现算
+        safe_dirs: 字幕绝对路径模板允许落地的可信目录
 
     Returns:
         FileOperationsResult 包含是否成功和目标路径
@@ -83,7 +89,12 @@ async def execute_file_operations(
         kinds = set(copy_resources) if copy_resources is not None else set(DownloadableResource)
         await _download_images_via_store(metadata, resource_store, web_client, paths, config, kinds)
 
-    # 2. 执行文件移动/复制
+    # 2. 先发现同目录字幕 (视频挪走前), 再移动/复制视频
+    info = file_info if file_info is not None else parse_file_info(source_path)
+    subtitles: list[Path] = []
+    if library is not None:
+        subtitles = discover_subtitles(source_path, library.subtitle_extensions, info.cd)
+
     target_dir = paths.video.parent
     target_stem = paths.video.stem
     org_result = execute_organize(
@@ -96,6 +107,18 @@ async def execute_file_operations(
     # 3. 写入 NFO (路径由库 nfo_template 渲染, 直接写渲染结果)
     if org_result.success and org_result.dest and write_nfo:
         await write_nfo_file(metadata, paths.nfo)
+
+    if org_result.success and org_result.dest and library is not None and subtitles:
+        place_subtitles(
+            subtitles,
+            video_source=source_path,
+            video_dest=org_result.dest,
+            library=library,
+            metadata=metadata,
+            file_info=info,
+            mode=move_mode,
+            safe_dirs=safe_dirs,
+        )
 
     if org_result.success:
         logger.debug("file operations done", number=metadata.number, dest=str(org_result.dest), mode=str(move_mode))
@@ -161,6 +184,9 @@ async def apply_file_operations(
         copy_resources=copy_resources,
         web_client=web_client,
         config=config,
+        library=library,
+        file_info=file_info,
+        safe_dirs=safe_dirs,
     )
 
 

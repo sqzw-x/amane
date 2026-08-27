@@ -105,6 +105,8 @@
   "fieldTrailerPatternHint": "Skip files whose names (with extension) match; empty disables. Default matches trailer",
   "fieldBlacklistPatterns": "Blacklist regexes",
   "fieldBlacklistPatternsHint": "One regex per line; matching files are skipped from scans and moved to .amane_trash on organize. Empty disables",
+  "fieldSubtitleExtensions": "Subtitle extensions",
+  "fieldSubtitleExtensionsHint": "Comma-separated; organize moves same-folder files with these extensions alongside the video. Empty disables. Default .srt .ass .ssa .vtt .sub",
   "fieldMoveMode": "File Operation Mode",
   "fieldMoveModeHint": "How files are placed onto template paths during organize",
   "fieldWriteNfo": "Write NFO",
@@ -140,7 +142,8 @@
       "metadata": "From metadata fields",
       "source": "From the source file (injected during organize)",
       "file": "From the source file name (detected during organize)",
-      "post_video": "Available after video path is rendered; sidecar templates only"
+      "post_video": "Available after video path is rendered; sidecar templates only",
+      "subtitle": "From the subtitle source file; subtitle template only"
     },
     "items": {
       "number": "Catalog number",
@@ -152,12 +155,13 @@
       "series": "Series",
       "year": "Release year",
       "release": "Release date",
-      "ext": "Source file extension, no dot. e.g. A/B.mp4 → mp4",
-      "raw_name": "Source filename without extension. e.g. A/B.mp4 → B",
+      "ext": "Extension of the file being placed, no dot. Video template uses the video; subtitle template uses that subtitle",
+      "raw_name": "Source video filename without extension. e.g. A/B.mp4 → B",
       "raw_dir": "Source parent directory name. e.g. A/B/C.mp4 → B",
       "mosaic": "Censorship type, from filename or directory",
       "definition": "Resolution, from filename",
-      "video_dir": "Directory of the rendered video path; sidecar templates only"
+      "video_dir": "Directory of the rendered video path; sidecar templates only",
+      "raw_srt_name": "Subtitle filename without extension. e.g. A/foo.zh.srt → foo.zh"
     }
   },
   "tpl": {

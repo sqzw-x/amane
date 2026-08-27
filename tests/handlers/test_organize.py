@@ -341,3 +341,104 @@ async def test_organize_trash_untracked_and_collision(
     again = await org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root)))
     assert again.result is not None
     assert again.result.trashed == 0
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_moves_same_dir_subtitles(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """同目录多个字幕全部搬走, 保持原文件名."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / "NSFS-039.mp4"
+    src.write_bytes(b"video")
+    (src_dir / "chs.srt").write_text("sub1")
+    (src_dir / "NSFS-039.zh.ass").write_text("sub2")
+    (src_dir / "readme.txt").write_text("skip")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    source = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert source.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.failed == 0
+
+    dest_dir = lib_root / "Studio" / "NSFS-039"
+    assert (dest_dir / "NSFS-039.mp4").exists()
+    assert (dest_dir / "chs.srt").read_text() == "sub1"
+    assert (dest_dir / "NSFS-039.zh.ass").read_text() == "sub2"
+    assert (src_dir / "readme.txt").exists()
+    assert not (src_dir / "chs.srt").exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_subtitles_follow_cd(repo: Repository, resource_store: ResourceStore, tmp_path: Path) -> None:
+    """多分集: 有 CD 的字幕跟对应集, 解析不出的跟第一集."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src1 = src_dir / "NSFS-039-CD1.mp4"
+    src2 = src_dir / "NSFS-039-CD2.mp4"
+    src1.write_bytes(b"cd1")
+    src2.write_bytes(b"cd2")
+    (src_dir / "a-CD1.srt").write_text("cd1sub")
+    (src_dir / "b-CD2.ass").write_text("cd2sub")
+    (src_dir / "chs.srt").write_text("unparsed")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    for src in (src1, src2):
+        mf = await repo.create_media_file(
+            lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        )
+        assert mf.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.failed == 0
+
+    dest_dir = lib_root / "Studio" / "NSFS-039"
+    assert (dest_dir / "a-CD1.srt").read_text() == "cd1sub"
+    assert (dest_dir / "chs.srt").read_text() == "unparsed"
+    assert (dest_dir / "b-CD2.ass").read_text() == "cd2sub"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_empty_subtitle_extensions_leaves_subs(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """空扩展名列表关闭字幕发现."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / "NSFS-039.mp4"
+    src.write_bytes(b"video")
+    sub = src_dir / "chs.srt"
+    sub.write_text("keep")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, subtitle_extensions=[])
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert sub.exists()
+    assert not (lib_root / "Studio" / "NSFS-039" / "chs.srt").exists()

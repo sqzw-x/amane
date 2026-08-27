@@ -7,7 +7,13 @@ from sqlmodel import JSON, Field, SQLModel
 
 from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, MoveMode
 from amane.organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate
-from amane.utils.extensions import DEFAULT_TRAILER_PATTERN, BlacklistPattern, TrailerPattern
+from amane.utils.extensions import (
+    DEFAULT_SUBTITLE_EXTENSIONS,
+    DEFAULT_TRAILER_PATTERN,
+    BlacklistPattern,
+    SubtitleExtensions,
+    TrailerPattern,
+)
 
 
 def _utcnow() -> datetime:
@@ -331,6 +337,11 @@ class Library(SQLModel, table=True):
     nfo_template: str | None = None
     trailer_template: str | None = None
     subtitle_template: str | None = None
+    subtitle_extensions: SubtitleExtensions = Field(
+        default_factory=lambda: list(DEFAULT_SUBTITLE_EXTENSIONS),
+        sa_column=Column(JSON, nullable=False),
+    )
+    """ORGANIZE 时在视频同目录发现字幕的扩展名列表; 空列表关闭."""
     write_nfo: bool = Field(default=True)
     """整理时是否写入 NFO."""
     copy_resources: list[DownloadableResource] = Field(

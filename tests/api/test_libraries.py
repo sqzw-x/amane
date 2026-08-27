@@ -43,6 +43,7 @@ class TestLibraries:
         assert set(resp.json()["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
         assert resp.json()["trailer_pattern"] == "(?i)trailer"
         assert resp.json()["blacklist_patterns"] == []
+        assert resp.json()["subtitle_extensions"] == [".srt", ".ass", ".ssa", ".vtt", ".sub"]
 
         resp = await client.get("libraries")
         assert len(resp.json()["items"]) == 1
@@ -112,6 +113,7 @@ class TestLibraries:
     async def test_path_template_schema(self, client: AsyncClient):
         """path-template-schema 与 resolve_paths 同源: 含占位符相位与默认模板."""
         from amane.organize import CD_SUFFIX_TEMPLATE_DEFAULT, OPTIONAL_TEMPLATE_DEFAULTS, VIDEO_TEMPLATE_DEFAULT
+        from amane.utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
 
         resp = await client.get("libraries/path-template-schema")
         assert resp.status_code == 200
@@ -130,6 +132,8 @@ class TestLibraries:
         assert phases["mosaic"] == "file"
         assert phases["definition"] == "file"
         assert phases["video_dir"] == "post_video"
+        assert phases["raw_srt_name"] == "subtitle"
+        assert data["subtitle_extensions_default"] == list(DEFAULT_SUBTITLE_EXTENSIONS)
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_create_with_all_fields(self, client: AsyncClient, safe_path: Path):
@@ -282,6 +286,44 @@ class TestLibraries:
         lib = await repo.create_library(name="t", path=str(safe_path))
         resp = await client.patch(f"libraries/{lib.id}", json={"blacklist_patterns": ["(ads"]})
         assert resp.status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_default_subtitle_extensions(self, client: AsyncClient, safe_path: Path):
+        target = safe_path / "sub-default"
+        target.mkdir()
+        resp = await client.post("libraries", json={"path": str(target)})
+        assert resp.status_code == 201
+        assert resp.json()["subtitle_extensions"] == [".srt", ".ass", ".ssa", ".vtt", ".sub"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_normalizes_subtitle_extensions(self, client: AsyncClient, safe_path: Path):
+        target = safe_path / "sub-norm"
+        target.mkdir()
+        resp = await client.post("libraries", json={"path": str(target), "subtitle_extensions": ["SRT", ".ass", "srt"]})
+        assert resp.status_code == 201
+        assert resp.json()["subtitle_extensions"] == [".srt", ".ass"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_allows_empty_subtitle_extensions(self, client: AsyncClient, safe_path: Path):
+        target = safe_path / "sub-off"
+        target.mkdir()
+        resp = await client.post("libraries", json={"path": str(target), "subtitle_extensions": []})
+        assert resp.status_code == 201
+        assert resp.json()["subtitle_extensions"] == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_rejects_invalid_subtitle_extension(self, client: AsyncClient, safe_path: Path):
+        target = safe_path / "sub-bad"
+        target.mkdir()
+        resp = await client.post("libraries", json={"path": str(target), "subtitle_extensions": [".srt", "bad ext"]})
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_subtitle_extensions(self, client: AsyncClient, repo: Repository, safe_path: Path):
+        lib = await repo.create_library(name="t", path=str(safe_path))
+        resp = await client.patch(f"libraries/{lib.id}", json={"subtitle_extensions": ["vtt"]})
+        assert resp.status_code == 200
+        assert resp.json()["subtitle_extensions"] == [".vtt"]
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_create_with_custom_cd_suffix(self, client: AsyncClient, safe_path: Path):

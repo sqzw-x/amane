@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Annotated
 from pydantic import AfterValidator
 
 from ..parsing.file_info import ContentType, FileInfo
+from ..utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
 from ..utils.path import is_any_descendant, is_descendant
 
 if TYPE_CHECKING:
@@ -26,7 +27,6 @@ class ResolvedPaths:
     extrafanart_dir: Path
     nfo: Path
     trailer: Path
-    subtitle: Path
 
 
 # --- 默认模板 (当对应字段为 None 时使用) ---
@@ -74,7 +74,7 @@ OPTIONAL_TEMPLATE_DEFAULTS: dict[str, str] = {
     "extrafanart_template": "{video_dir}/extrafanart",
     "nfo_template": "{video_dir}/{number}.nfo",
     "trailer_template": "{video_dir}/trailer.mp4",
-    "subtitle_template": "{video_dir}/{number}.{ext}",
+    "subtitle_template": "{video_dir}/{raw_srt_name}.{ext}",
 }
 
 
@@ -84,13 +84,15 @@ class PlaceholderPhase(StrEnum):
     - ``metadata``: 来自 Metadata 字段;
     - ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);
     - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
-    - ``post_video``: 视频路径渲染后注入 (侧车模板).
+    - ``post_video``: 视频路径渲染后注入 (附属资源模板).
+    - ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).
     """
 
     METADATA = "metadata"
     SOURCE = "source"
     FILE = "file"
     POST_VIDEO = "post_video"
+    SUBTITLE = "subtitle"
 
 
 PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
@@ -109,6 +111,7 @@ PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
     ("mosaic", PlaceholderPhase.FILE),
     ("definition", PlaceholderPhase.FILE),
     ("video_dir", PlaceholderPhase.POST_VIDEO),
+    ("raw_srt_name", PlaceholderPhase.SUBTITLE),
 )
 
 
@@ -119,6 +122,7 @@ def path_template_schema() -> dict[str, object]:
         "cd_suffix_default": CD_SUFFIX_TEMPLATE_DEFAULT,
         "optional_defaults": dict(OPTIONAL_TEMPLATE_DEFAULTS),
         "placeholders": [{"name": name, "phase": phase} for name, phase in PLACEHOLDERS],
+        "subtitle_extensions_default": list(DEFAULT_SUBTITLE_EXTENSIONS),
     }
 
 
@@ -262,7 +266,7 @@ def resolve_paths(
         safe_dirs: 允许绝对路径模板落地的可信目录集 (多盘分存等). base_path 始终可信, 无需重复列出.
 
     Returns:
-        ResolvedPaths 包含所有文件类型的完整路径
+        ResolvedPaths 包含视频与刮削产物路径 (字幕按源文件逐条渲染, 见 resolve_subtitle_path).
 
     Raises:
         ValueError: 任一模板渲染后逃逸了 base_path 与 safe_dirs 构成的边界
@@ -304,9 +308,6 @@ def resolve_paths(
     trailer = _render_template(
         library.trailer_template or OPTIONAL_TEMPLATE_DEFAULTS["trailer_template"], variables, base_path, safe_dirs
     )
-    subtitle = _render_template(
-        library.subtitle_template or OPTIONAL_TEMPLATE_DEFAULTS["subtitle_template"], variables, base_path, safe_dirs
-    )
 
     return ResolvedPaths(
         video=video,
@@ -316,5 +317,29 @@ def resolve_paths(
         extrafanart_dir=extrafanart_dir,
         nfo=nfo,
         trailer=trailer,
-        subtitle=subtitle,
     )
+
+
+def resolve_subtitle_path(
+    library: Library,
+    metadata: Metadata,
+    subtitle_source: Path,
+    *,
+    video_dir: Path,
+    source_path: Path | None = None,
+    file_info: FileInfo | None = None,
+    safe_dirs: Sequence[Path] = (),
+) -> Path:
+    """按字幕模板渲染单个字幕的目标路径.
+
+    `{ext}` / `{raw_srt_name}` 取自该字幕源文件; `{raw_name}` / `{raw_dir}` 仍是视频源.
+    `{video_dir}` 为已渲染视频父目录. 默认模板保持原文件名与扩展名.
+    """
+    base_path = Path(library.path)
+    variables = _build_variables(
+        metadata, ext=subtitle_source.suffix.lstrip("."), source_path=source_path, file_info=file_info
+    )
+    variables["video_dir"] = str(video_dir)
+    variables["raw_srt_name"] = subtitle_source.stem
+    template = library.subtitle_template or OPTIONAL_TEMPLATE_DEFAULTS["subtitle_template"]
+    return _render_template(template, variables, base_path, safe_dirs)

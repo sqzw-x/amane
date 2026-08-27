@@ -6,7 +6,9 @@ from sqlmodel import col, select
 from amane.enums import DownloadableResource, LibraryAutomation, MoveMode
 from amane.organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, validate_cd_suffix_template
 from amane.utils.extensions import (
+    DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
+    normalize_subtitle_extensions,
     validate_blacklist_pattern,
     validate_trailer_pattern,
 )
@@ -34,6 +36,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         nfo_template: str | None = None,
         trailer_template: str | None = None,
         subtitle_template: str | None = None,
+        subtitle_extensions: list[str] | None = None,
         write_nfo: bool = True,
         copy_resources: list[DownloadableResource] | None = None,
         trailer_pattern: str | None = None,
@@ -58,6 +61,9 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 nfo_template=nfo_template,
                 trailer_template=trailer_template,
                 subtitle_template=subtitle_template,
+                subtitle_extensions=normalize_subtitle_extensions(
+                    list(subtitle_extensions) if subtitle_extensions is not None else list(DEFAULT_SUBTITLE_EXTENSIONS)
+                ),
                 write_nfo=write_nfo,
                 copy_resources=list(copy_resources) if copy_resources is not None else list(DownloadableResource),
                 trailer_pattern=validate_trailer_pattern(
@@ -158,6 +164,11 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 lib.trailer_template = updates["trailer_template"]
             if "subtitle_template" in updates:
                 lib.subtitle_template = updates["subtitle_template"]
+            if "subtitle_extensions" in updates:
+                extensions = updates["subtitle_extensions"]
+                lib.subtitle_extensions = normalize_subtitle_extensions(
+                    list(extensions) if extensions is not None else []
+                )
             if "write_nfo" in updates:
                 lib.write_nfo = updates["write_nfo"]
             if "copy_resources" in updates:

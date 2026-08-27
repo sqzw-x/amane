@@ -983,6 +983,23 @@ class TestLibraryRepo:
         with pytest.raises(ValueError):
             await repo.create_library(name="bad", path="/media/bad", cd_suffix_template="a{cd}b{c}")
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_subtitle_extensions_roundtrip(self, repo: Repository):
+        lib = await repo.create_library(name="t", path="/media/t")
+        assert lib is not None and lib.id is not None
+        assert lib.subtitle_extensions == [".srt", ".ass", ".ssa", ".vtt", ".sub"]
+
+        updated = await repo.update_library(lib.id, subtitle_extensions=["SRT", ".ass"])
+        assert updated is not None
+        assert updated.subtitle_extensions == [".srt", ".ass"]
+
+        cleared = await repo.update_library(lib.id, subtitle_extensions=[])
+        assert cleared is not None
+        assert cleared.subtitle_extensions == []
+
+        with pytest.raises(ValueError):
+            await repo.update_library(lib.id, subtitle_extensions=[".srt/x"])
+
 
 class TestScheduleRepo:
     @pytest.mark.asyncio(loop_scope="function")

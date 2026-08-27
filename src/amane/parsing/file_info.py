@@ -492,6 +492,11 @@ def infer_content_type(number: str, file_path: str | None = None) -> ContentType
 _CD_DIR = re.compile(r"^(?:CD|PART)(\d{1,2})$", re.IGNORECASE)
 
 
+def detect_cd(filename: str | Path) -> int | None:
+    """从文件名 (不含目录) 检测分集编号. 字幕配对只走这一层, 不看父目录."""
+    return _detect_cd(Path(filename).stem.upper())
+
+
 def _detect_cd(basename: str) -> int | None:
     """从文件名中检测分集编号 (多盘/多段, 如 -CD1 / -PART2 / -A / -1)."""
     if m := re.search(r"[-_.]CD(\d{1,2})", basename):

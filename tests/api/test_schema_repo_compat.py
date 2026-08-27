@@ -402,7 +402,13 @@ async def _make_feed(repo: Repository) -> int:
 # (TypedDict, 建种子记录, repo update 方法名, 跳过的外键列, 跳过的语义校验列)
 _ROUNDTRIP = [
     (MediaFileUpdates, _make_media, "update_media_file", frozenset({"metadata_id"}), frozenset()),
-    (LibraryUpdates, _make_library, "update_library", frozenset(), frozenset({"cd_suffix_template"})),
+    (
+        LibraryUpdates,
+        _make_library,
+        "update_library",
+        frozenset(),
+        frozenset({"cd_suffix_template", "subtitle_extensions"}),
+    ),
     (ScheduleUpdates, _make_schedule, "update_schedule", frozenset(), frozenset()),
     (MetadataFields, _make_metadata, "update_metadata", frozenset(), frozenset()),
     (FeedUpdates, _make_feed, "update_feed", frozenset(), frozenset()),

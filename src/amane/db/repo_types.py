@@ -273,6 +273,7 @@ class LibraryUpdates(TypedDict, total=False):
     nfo_template: str | None
     trailer_template: str | None
     subtitle_template: str | None
+    subtitle_extensions: list[str]
     write_nfo: bool
     copy_resources: list[DownloadableResource]
     trailer_pattern: str
