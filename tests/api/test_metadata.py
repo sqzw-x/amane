@@ -26,38 +26,24 @@ async def _seed_library(repo: Repository) -> None:
 
 class TestListMetadata:
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_empty(self, client: AsyncClient):
-        resp = await client.get("metadata")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["items"] == []
-        assert data["total"] == 0
+    async def test_list_search_pagination(self, client: AsyncClient, repo: Repository):
+        empty = await client.get("metadata")
+        assert empty.status_code == 200
+        assert empty.json()["items"] == []
+        assert empty.json()["total"] == 0
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_with_items(self, client: AsyncClient, repo: Repository):
-        await repo.upsert_metadata(number="ABC-001", title="First")
-        await repo.upsert_metadata(number="ABC-002", title="Second")
-        resp = await client.get("metadata")
-        data = resp.json()
-        assert data["total"] == 2
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_search(self, client: AsyncClient, repo: Repository):
         await repo.upsert_metadata(number="ABC-001", title="Alpha")
         await repo.upsert_metadata(number="XYZ-999", title="Beta")
-        resp = await client.get("metadata?search=Alpha")
-        data = resp.json()
-        assert data["total"] == 1
+        listed = await client.get("metadata")
+        assert listed.json()["total"] == 2
+        search = await client.get("metadata?search=Alpha")
+        assert search.json()["total"] == 1
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_pagination(self, client: AsyncClient, repo: Repository):
         for i in range(5):
             await repo.upsert_metadata(number=f"TEST-{i:03d}", title=f"Title {i}")
-
-        resp = await client.get("metadata?limit=2&offset=1")
-        data = resp.json()
-        assert len(data["items"]) == 2
-        assert data["total"] == 5
+        page = await client.get("metadata?limit=2&offset=1")
+        assert len(page.json()["items"]) == 2
+        assert page.json()["total"] == 7
 
 
 class TestGetMetadata:
@@ -75,23 +61,10 @@ class TestGetMetadata:
         data = resp.json()
         assert data["metadata"]["title"] == "Test"
         assert len(data["files"]) == 1
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_not_found(self, client: AsyncClient):
-        resp = await client.get("metadata/9999")
-        assert resp.status_code == 404
+        assert (await client.get("metadata/9999")).status_code == 404
 
 
 class TestUpdateMetadata:
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_update_title(self, client: AsyncClient, repo: Repository):
-        meta = await repo.upsert_metadata(number="ABC-001", title="Old")
-        assert meta.id is not None
-
-        resp = await client.patch(f"metadata/{meta.id}", json={"title": "New"})
-        assert resp.status_code == 200
-        assert resp.json()["title"] == "New"
-
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_release_normalizes(self, client: AsyncClient, repo: Repository):
         meta = await repo.upsert_metadata(number="ABC-REL-1")
@@ -126,42 +99,13 @@ class TestUpdateMetadata:
         assert data["poster_url"] == "https://a/p.jpg"
         assert data["score"] == 4.5
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_not_found(self, client: AsyncClient):
-        resp = await client.patch("metadata/9999", json={"title": "X"})
-        assert resp.status_code == 404
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_empty_body_rejected(self, client: AsyncClient, repo: Repository):
-        meta = await repo.upsert_metadata(number="ABC-001")
-        assert meta.id is not None
-
-        resp = await client.patch(f"metadata/{meta.id}", json={})
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_extra_field_ignored(self, client: AsyncClient, repo: Repository):
-        """PUT 的 cast 通过 `v is not None` 过滤 - 未知字段被 Pydantic 丢弃."""
-        meta = await repo.upsert_metadata(number="ABC-001", title="Old")
-        assert meta.id is not None
-        resp = await client.patch(f"metadata/{meta.id}", json={"title": "New", "unknown_field": "ignored"})
-        assert resp.status_code == 200
-        assert resp.json()["title"] == "New"
-
-    @pytest.mark.parametrize(
-        "bad_payload",
-        [
-            {"runtime": "not_an_int"},
-            {"actors": "not_a_list"},
-        ],
-        ids=["runtime_str", "actors_str"],
-    )
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_wrong_type_rejected(self, client: AsyncClient, repo: Repository, bad_payload):
-        meta = await repo.upsert_metadata(number="ABC-001")
-        assert meta.id is not None
-        resp = await client.patch(f"metadata/{meta.id}", json=bad_payload)
-        assert resp.status_code == 422
+        assert (await client.patch("metadata/9999", json={"title": "X"})).status_code == 404
+        assert (await client.patch(f"metadata/{meta.id}", json={})).status_code == 422
+        extra = await client.patch(f"metadata/{meta.id}", json={"title": "New", "unknown_field": "ignored"})
+        assert extra.status_code == 200
+        assert extra.json()["title"] == "New"
+        for bad_payload in ({"runtime": "not_an_int"}, {"actors": "not_a_list"}):
+            assert (await client.patch(f"metadata/{meta.id}", json=bad_payload)).status_code == 422
 
 
 class TestMetadataSchema:
@@ -176,14 +120,6 @@ class TestMetadataSchema:
 
 
 class TestDeleteMetadata:
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_delete(self, client: AsyncClient, repo: Repository):
-        meta = await repo.upsert_metadata(number="ABC-001", title="Test")
-        assert meta.id is not None
-
-        resp = await client.delete(f"metadata/{meta.id}")
-        assert resp.status_code == 204
-
     @pytest.mark.asyncio(loop_scope="function")
     async def test_delete_nullifies_media_file_fk(self, client: AsyncClient, repo: Repository):
         """删除 Metadata 经 API 应应用层级联清空 MediaFile.metadata_id, 状态回 PENDING."""
@@ -200,11 +136,7 @@ class TestDeleteMetadata:
         assert updated is not None
         assert updated.metadata_id is None
         assert updated.status == MediaFileStatus.PENDING
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_not_found(self, client: AsyncClient):
-        resp = await client.delete("metadata/9999")
-        assert resp.status_code == 404
+        assert (await client.delete("metadata/9999")).status_code == 404
 
 
 class TestMergeMetadata:

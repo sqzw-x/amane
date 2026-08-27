@@ -22,13 +22,11 @@ def _body(**overrides: object) -> dict[str, object]:
 
 class TestFeedsCrud:
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_empty(self, client: AsyncClient):
-        resp = await client.get("feeds")
-        assert resp.status_code == 200
-        assert resp.json() == {"items": [], "total": 0}
-
-    @pytest.mark.asyncio(loop_scope="function")
     async def test_create_and_get(self, client: AsyncClient):
+        empty = await client.get("feeds")
+        assert empty.status_code == 200
+        assert empty.json() == {"items": [], "total": 0}
+
         resp = await client.post("feeds", json=_body())
         assert resp.status_code == 201
         data = resp.json()
@@ -48,37 +46,22 @@ class TestFeedsCrud:
         missing = await client.get("feeds/9999")
         assert missing.status_code == 404
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_duplicate_url(self, client: AsyncClient):
-        assert (await client.post("feeds", json=_body())).status_code == 201
-        resp = await client.post("feeds", json=_body(name="other"))
-        assert resp.status_code == 409
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_invalid_url(self, client: AsyncClient):
-        resp = await client.post("feeds", json=_body(url="ftp://example.com/rss"))
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_invalid_interval(self, client: AsyncClient):
-        low = await client.post("feeds", json=_body(interval_seconds=59))
-        high = await client.post("feeds", json=_body(url="https://example.com/b.xml", interval_seconds=86401))
-        assert low.status_code == 422
-        assert high.status_code == 422
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_invalid_regex(self, client: AsyncClient):
-        resp = await client.post("feeds", json=_body(number_pattern="("))
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_blank_name_allowed(self, client: AsyncClient):
-        resp = await client.post("feeds", json=_body(name="   "))
-        assert resp.status_code == 201
-        assert resp.json()["name"] == ""
+        assert (await client.post("feeds", json=_body(name="other"))).status_code == 409
+        blank = await client.post("feeds", json=_body(url="https://example.com/blank.xml", name="   "))
+        assert blank.status_code == 201
+        assert blank.json()["name"] == ""
         omitted = await client.post("feeds", json={"url": "https://example.com/other.xml"})
         assert omitted.status_code == 201
         assert omitted.json()["name"] == ""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_rejects_invalid_payloads(self, client: AsyncClient):
+        assert (await client.post("feeds", json=_body(url="ftp://example.com/rss"))).status_code == 422
+        assert (await client.post("feeds", json=_body(interval_seconds=59))).status_code == 422
+        assert (
+            await client.post("feeds", json=_body(url="https://example.com/b.xml", interval_seconds=86401))
+        ).status_code == 422
+        assert (await client.post("feeds", json=_body(number_pattern="("))).status_code == 422
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_patch_and_delete(self, client: AsyncClient):

@@ -12,36 +12,23 @@ if TYPE_CHECKING:
     from amane.db.repository import Repository
 
 
-class TestListSchedules:
+class TestSchedules:
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_empty(self, client: AsyncClient):
-        resp = await client.get("schedules")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["items"] == []
-        assert data["total"] == 0
+    async def test_crud_and_trigger(self, client: AsyncClient, repo: Repository):
+        empty = await client.get("schedules")
+        assert empty.status_code == 200
+        assert empty.json()["items"] == []
+        assert empty.json()["total"] == 0
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_with_items(self, client: AsyncClient, repo: Repository):
-        await repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={})
-        await repo.create_schedule(cron="0 12 * * *", task_type=RoutineType.CLEANUP, payload={})
-        resp = await client.get("schedules")
-        assert resp.status_code == 200
-        assert resp.json()["total"] == 2
-
-
-class TestCreateSchedule:
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_create_cleanup(self, client: AsyncClient):
-        resp = await client.post(
+        created = await client.post(
             "schedules",
             json={
                 "cron": "0 */6 * * *",
                 "submission": {"type": "cleanup", "remove_missing_files": False},
             },
         )
-        assert resp.status_code == 201
-        data = resp.json()
+        assert created.status_code == 201
+        data = created.json()
         assert data["cron"] == "0 */6 * * *"
         assert data["task_type"] == "cleanup"
         assert data["enabled"] is True
@@ -49,12 +36,9 @@ class TestCreateSchedule:
         fetched = await client.get(f"schedules/{data['id']}")
         assert fetched.status_code == 200
         assert fetched.json()["id"] == data["id"]
-        missing = await client.get("schedules/9999")
-        assert missing.status_code == 404
+        assert (await client.get("schedules/9999")).status_code == 404
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_create_with_name_and_disabled(self, client: AsyncClient):
-        resp = await client.post(
+        named = await client.post(
             "schedules",
             json={
                 "cron": "0 8 * * *",
@@ -63,94 +47,44 @@ class TestCreateSchedule:
                 "submission": {"type": "cleanup"},
             },
         )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["name"] == "daily"
-        assert data["enabled"] is False
-        assert data["task_type"] == "cleanup"
+        assert named.json()["name"] == "daily"
+        assert named.json()["enabled"] is False
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_create_upscale(self, client: AsyncClient):
-        resp = await client.post(
+        upscale = await client.post(
             "schedules",
-            json={
-                "cron": "0 3 * * *",
-                "submission": {"type": "upscale", "limit": 50},
-            },
+            json={"cron": "0 3 * * *", "submission": {"type": "upscale", "limit": 50}},
         )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["task_type"] == "upscale"
-        assert data["payload"]["limit"] == 50
+        assert upscale.status_code == 201
+        assert upscale.json()["task_type"] == "upscale"
+        assert upscale.json()["payload"]["limit"] == 50
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_invalid_cron_rejected(self, client: AsyncClient):
-        resp = await client.post("schedules", json={"cron": "invalid", "submission": {"type": "cleanup"}})
-        assert resp.status_code == 422
+        listed = await client.get("schedules")
+        assert listed.json()["total"] == 3
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_invalid_submission_type_rejected(self, client: AsyncClient):
-        resp = await client.post("schedules", json={"cron": "0 * * * *", "submission": {"type": "invalid_type"}})
-        assert resp.status_code == 422
-
-
-class TestUpdateSchedule:
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_update_fields(self, client: AsyncClient, repo: Repository):
         sched = await repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={}, name="old")
-        resp = await client.patch(f"schedules/{sched.id}", json={"name": "updated", "enabled": False})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["name"] == "updated"
-        assert data["enabled"] is False
+        patched = await client.patch(f"schedules/{sched.id}", json={"name": "updated", "enabled": False})
+        assert patched.json()["name"] == "updated"
+        assert patched.json()["enabled"] is False
+        meta = await client.patch(f"schedules/{sched.id}", json={"name": "renamed", "cron": "0 6 * * *"})
+        assert meta.json()["cron"] == "0 6 * * *"
+        assert meta.json()["task_type"] == "cleanup"
+        assert (await client.patch("schedules/9999", json={"name": "x"})).status_code == 404
+        assert (await client.patch(f"schedules/{sched.id}", json={"cron": "bad"})).status_code == 422
+
+        triggered = await client.post(f"schedules/{sched.id}/trigger")
+        assert triggered.status_code == 200
+        assert triggered.json()["next_run"] is not None
+        assert (await client.post("schedules/9999/trigger")).status_code == 404
+
+        deleted = await client.delete(f"schedules/{sched.id}")
+        assert deleted.status_code == 204
+        assert (await client.delete("schedules/9999")).status_code == 404
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_update_not_found(self, client: AsyncClient):
-        resp = await client.patch("schedules/9999", json={"name": "x"})
-        assert resp.status_code == 404
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_update_invalid_cron(self, client: AsyncClient, repo: Repository):
-        sched = await repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={})
-        resp = await client.patch(f"schedules/{sched.id}", json={"cron": "bad"})
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_update_meta_only(self, client: AsyncClient, repo: Repository):
-        """PUT 仅改 name/cron/enabled; 不支持改任务内容 (删除重建)."""
-        sched = await repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={}, name="old")
-        resp = await client.patch(f"schedules/{sched.id}", json={"name": "renamed", "cron": "0 6 * * *"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["name"] == "renamed"
-        assert data["cron"] == "0 6 * * *"
-        assert data["task_type"] == "cleanup"
-
-
-class TestDeleteSchedule:
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_delete(self, client: AsyncClient, repo: Repository):
-        sched = await repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={})
-        resp = await client.delete(f"schedules/{sched.id}")
-        assert resp.status_code == 204
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_delete_not_found(self, client: AsyncClient):
-        resp = await client.delete("schedules/9999")
-        assert resp.status_code == 404
-
-
-class TestTriggerSchedule:
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_trigger_sets_next_run(self, client: AsyncClient, repo: Repository):
-        sched = await repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={})
-        resp = await client.post(f"schedules/{sched.id}/trigger")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["task_type"] == "cleanup"
-        assert data["next_run"] is not None
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_trigger_not_found(self, client: AsyncClient):
-        resp = await client.post("schedules/9999/trigger")
-        assert resp.status_code == 404
+    async def test_rejects_invalid_payloads(self, client: AsyncClient):
+        assert (
+            await client.post("schedules", json={"cron": "invalid", "submission": {"type": "cleanup"}})
+        ).status_code == 422
+        assert (
+            await client.post("schedules", json={"cron": "0 * * * *", "submission": {"type": "invalid_type"}})
+        ).status_code == 422

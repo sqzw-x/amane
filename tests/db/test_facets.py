@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from amane.db.models import Actor, FacetKind, FacetSortField, MetadataActor, SortOrder
+from amane.db.actor_lookup import build_actor_lookup_names
+from amane.db.models import Actor, FacetKind, FacetRuleAction, FacetSortField, Metadata, MetadataActor, SortOrder
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -245,3 +246,319 @@ class TestOrphanActorRetention:
             assert row is not None
             links = (await session.exec(select(MetadataActor).where(MetadataActor.actor_id == row.id))).all()
             assert links == []
+
+
+_LIST_KINDS: tuple[tuple[FacetKind, str], ...] = (
+    (FacetKind.ACTOR, "actors"),
+    (FacetKind.DIRECTOR, "directors"),
+    (FacetKind.TAG, "tags"),
+)
+_SCALAR_KINDS: tuple[tuple[FacetKind, str], ...] = (
+    (FacetKind.STUDIO, "studio"),
+    (FacetKind.PUBLISHER, "publisher"),
+    (FacetKind.SERIES, "series"),
+)
+
+
+async def _facet_id(repo: Repository, kind: FacetKind, name: str) -> int:
+    items, _ = await repo.list_facets(kind, search=name)
+    fid = next(i.id for i in items if i.name == name)
+    assert fid is not None
+    return fid
+
+
+async def _seed_list(repo: Repository, number: str, kind: FacetKind, values: list[str]):
+    if kind == FacetKind.ACTOR:
+        return await repo.upsert_metadata(number=number, actors=values)
+    if kind == FacetKind.DIRECTOR:
+        return await repo.upsert_metadata(number=number, directors=values)
+    if kind == FacetKind.TAG:
+        return await repo.upsert_metadata(number=number, tags=values)
+    raise ValueError(kind)
+
+
+async def _seed_scalar(repo: Repository, number: str, kind: FacetKind, value: str):
+    if kind == FacetKind.STUDIO:
+        return await repo.upsert_metadata(number=number, studio=value)
+    if kind == FacetKind.PUBLISHER:
+        return await repo.upsert_metadata(number=number, publisher=value)
+    if kind == FacetKind.SERIES:
+        return await repo.upsert_metadata(number=number, series=value)
+    raise ValueError(kind)
+
+
+def _list_names(meta: Metadata, kind: FacetKind) -> list[str]:
+    if kind == FacetKind.ACTOR:
+        return meta.actors
+    if kind == FacetKind.DIRECTOR:
+        return meta.directors
+    if kind == FacetKind.TAG:
+        return meta.tags
+    raise ValueError(kind)
+
+
+def _scalar_name(meta: Metadata, kind: FacetKind) -> str | None:
+    if kind == FacetKind.STUDIO:
+        return meta.studio
+    if kind == FacetKind.PUBLISHER:
+        return meta.publisher
+    if kind == FacetKind.SERIES:
+        return meta.series
+    raise ValueError(kind)
+
+
+class TestFacetRenameMergeDelete:
+    """rename / merge / delete / 规则压缩: 语义在 repo, API 只测接线."""
+
+    async def test_rename_and_conflict_list_kinds(self, repo: Repository) -> None:
+        for kind, _field in _LIST_KINDS:
+            meta = await _seed_list(repo, f"RN-{kind.value}-1", kind, ["Alice", "Carol"])
+            assert meta.id is not None
+            facet_id = await _facet_id(repo, kind, "Alice")
+            renamed = await repo.rename_facet(kind, facet_id, "Renamed")
+            assert renamed is not None and renamed.name == "Renamed"
+            got = await repo.get_metadata(meta.id)
+            assert got is not None
+            assert _list_names(got, kind) == ["Renamed", "Carol"]
+
+            same = await repo.rename_facet(kind, facet_id, "Renamed")
+            assert same is not None and same.name == "Renamed"
+            assert await repo.rename_facet(kind, 9999, "X") is None
+
+            await _seed_list(repo, f"RN-{kind.value}-2a", kind, ["DupA"])
+            await _seed_list(repo, f"RN-{kind.value}-2b", kind, ["DupB"])
+            dup_id = await _facet_id(repo, kind, "DupA")
+            with pytest.raises(ValueError, match="合并"):
+                await repo.rename_facet(kind, dup_id, "DupB")
+
+    async def test_rename_and_conflict_scalar_kinds(self, repo: Repository) -> None:
+        for kind, _field in _SCALAR_KINDS:
+            m1 = await _seed_scalar(repo, f"RS-{kind.value}-1a", kind, "Old")
+            m2 = await _seed_scalar(repo, f"RS-{kind.value}-1b", kind, "Old")
+            assert m1.id is not None and m2.id is not None
+            facet_id = await _facet_id(repo, kind, "Old")
+            renamed = await repo.rename_facet(kind, facet_id, "New")
+            assert renamed is not None and renamed.name == "New" and renamed.count == 2
+            for mid in (m1.id, m2.id):
+                got = await repo.get_metadata(mid)
+                assert got is not None
+                assert _scalar_name(got, kind) == "New"
+            await _seed_scalar(repo, f"RS-{kind.value}-2a", kind, "A")
+            await _seed_scalar(repo, f"RS-{kind.value}-2b", kind, "B")
+            aid = await _facet_id(repo, kind, "A")
+            with pytest.raises(ValueError, match="合并"):
+                await repo.rename_facet(kind, aid, "B")
+
+    async def test_merge_list_kinds(self, repo: Repository) -> None:
+        for kind, _field in _LIST_KINDS:
+            meta_a = await _seed_list(repo, f"MG-{kind.value}-a", kind, ["A"])
+            meta_b = await _seed_list(repo, f"MG-{kind.value}-b", kind, ["B"])
+            meta_ab = await _seed_list(repo, f"MG-{kind.value}-c", kind, ["A", "B", "Other"])
+            assert meta_a.id is not None and meta_b.id is not None and meta_ab.id is not None
+            target_id = await _facet_id(repo, kind, "A")
+            source_id = await _facet_id(repo, kind, "B")
+            merged = await repo.merge_facets(kind, target_id, [source_id])
+            assert merged is not None and merged.name == "A" and merged.count == 3
+            for mid in (meta_a.id, meta_b.id, meta_ab.id):
+                got = await repo.get_metadata(mid)
+                assert got is not None
+                values = _list_names(got, kind)
+                assert values.count("A") == 1
+                assert "B" not in values
+            ab = await repo.get_metadata(meta_ab.id)
+            assert ab is not None
+            assert _list_names(ab, kind) == ["A", "Other"]
+            assert await repo.get_facet(kind, source_id) is None
+            with pytest.raises(ValueError):
+                await repo.merge_facets(kind, target_id, [9999])
+            with pytest.raises(ValueError):
+                await repo.merge_facets(kind, target_id, [target_id])
+            assert await repo.merge_facets(kind, 9999, [target_id]) is None
+
+    async def test_merge_scalar_kinds(self, repo: Repository) -> None:
+        for kind, _field in _SCALAR_KINDS:
+            meta_a = await _seed_scalar(repo, f"MGS-{kind.value}-a", kind, "A")
+            meta_b = await _seed_scalar(repo, f"MGS-{kind.value}-b", kind, "B")
+            assert meta_a.id is not None and meta_b.id is not None
+            target_id = await _facet_id(repo, kind, "A")
+            source_id = await _facet_id(repo, kind, "B")
+            merged = await repo.merge_facets(kind, target_id, [source_id])
+            assert merged is not None and merged.name == "A" and merged.count == 2
+            for mid in (meta_a.id, meta_b.id):
+                got = await repo.get_metadata(mid)
+                assert got is not None
+                assert _scalar_name(got, kind) == "A"
+            assert await repo.get_facet(kind, source_id) is None
+
+    async def test_delete_blocks_and_alias_chain(self, repo: Repository) -> None:
+        for kind, _field in _LIST_KINDS:
+            meta = await _seed_list(repo, f"BL-{kind.value}-1", kind, ["Alice", "Bob"])
+            assert meta.id is not None
+            facet_id = await _facet_id(repo, kind, "Alice")
+            assert await repo.delete_facet(kind, facet_id) is True
+            got = await repo.get_metadata(meta.id)
+            assert got is not None
+            assert "Alice" not in _list_names(got, kind)
+            assert "Bob" in _list_names(got, kind)
+            rules = await repo.list_facet_rules(kind)
+            assert any(r.source_name == "Alice" and r.action == FacetRuleAction.BLOCK for r in rules)
+            await _seed_list(repo, meta.number, kind, ["Alice", "Bob"])
+            again = await repo.get_metadata(meta.id)
+            assert again is not None
+            assert "Alice" not in _list_names(again, kind)
+            items, _ = await repo.list_facets(kind, search="Alice")
+            assert all(i.name != "Alice" for i in items)
+
+            meta2 = await _seed_list(repo, f"AL-{kind.value}-1", kind, ["ChainA"])
+            await _seed_list(repo, f"AL-{kind.value}-2", kind, ["ChainB"])
+            await _seed_list(repo, f"AL-{kind.value}-3", kind, ["ChainC"])
+            assert meta2.id is not None
+            id_a = await _facet_id(repo, kind, "ChainA")
+            id_b = await _facet_id(repo, kind, "ChainB")
+            id_c = await _facet_id(repo, kind, "ChainC")
+            assert await repo.merge_facets(kind, id_b, [id_a]) is not None
+            assert await repo.merge_facets(kind, id_c, [id_b]) is not None
+            if kind == FacetKind.ACTOR:
+                assert not any(r.action == FacetRuleAction.ALIAS for r in await repo.list_facet_rules(kind))
+                assert await repo.get_actor_aliases(id_c) == ["ChainB", "ChainA"]
+            else:
+                by_source = {r.source_name: r for r in await repo.list_facet_rules(kind)}
+                assert by_source["ChainA"].action == FacetRuleAction.ALIAS
+                assert by_source["ChainA"].target_name == "ChainC"
+                assert by_source["ChainB"].target_name == "ChainC"
+            await _seed_list(repo, meta2.number, kind, ["ChainA", "Extra"])
+            after = await repo.get_metadata(meta2.id)
+            assert after is not None
+            assert _list_names(after, kind) == ["ChainC", "Extra"]
+
+            meta3 = await _seed_list(repo, f"BK-{kind.value}-1", kind, ["BlkA"])
+            await _seed_list(repo, f"BK-{kind.value}-2", kind, ["BlkB"])
+            assert meta3.id is not None
+            bid_a = await _facet_id(repo, kind, "BlkA")
+            bid_b = await _facet_id(repo, kind, "BlkB")
+            assert await repo.merge_facets(kind, bid_b, [bid_a]) is not None
+            bid_b2 = await _facet_id(repo, kind, "BlkB")
+            assert await repo.delete_facet(kind, bid_b2) is True
+            blocked = {r.source_name: r for r in await repo.list_facet_rules(kind)}
+            assert blocked["BlkA"].action == FacetRuleAction.BLOCK
+            assert blocked["BlkB"].action == FacetRuleAction.BLOCK
+            await _seed_list(repo, meta3.number, kind, ["BlkA", "BlkB", "Keep"])
+            kept = await repo.get_metadata(meta3.id)
+            assert kept is not None
+            assert _list_names(kept, kind) == ["Keep"]
+
+        assert await repo.delete_facet(FacetKind.ACTOR, 9999) is False
+
+    async def test_user_tag_rename_merge_delete(self, repo: Repository) -> None:
+        tag = await repo.create_user_tag("old")
+        assert tag.id is not None
+        renamed = await repo.rename_facet(FacetKind.USER_TAG, tag.id, "new")
+        assert renamed is not None and renamed.name == "new"
+        await repo.create_user_tag("taken")
+        mine = await repo.create_user_tag("mine")
+        assert mine.id is not None
+        with pytest.raises(ValueError, match="合并"):
+            await repo.rename_facet(FacetKind.USER_TAG, mine.id, "taken")
+        assert await repo.rename_facet(FacetKind.USER_TAG, 9999, "x") is None
+
+        target = await repo.create_user_tag("target")
+        source = await repo.create_user_tag("source")
+        assert target.id is not None and source.id is not None
+        meta_a = await repo.upsert_metadata(number="MGU-1a")
+        meta_b = await repo.upsert_metadata(number="MGU-1b")
+        assert meta_a.id is not None and meta_b.id is not None
+        await repo.attach_user_tag(meta_a.id, target.id)
+        await repo.attach_user_tag(meta_b.id, source.id)
+        merged = await repo.merge_facets(FacetKind.USER_TAG, target.id, [source.id])
+        assert merged is not None and merged.name == "target" and merged.count == 2
+        tags_b = await repo.list_metadata_user_tags(meta_b.id)
+        assert any(t.name == "target" for t in tags_b)
+        assert await repo.get_facet(FacetKind.USER_TAG, source.id) is None
+
+        t2 = await repo.create_user_tag("t")
+        s2 = await repo.create_user_tag("s")
+        assert t2.id is not None and s2.id is not None
+        meta = await repo.upsert_metadata(number="MGU-2")
+        assert meta.id is not None
+        await repo.attach_user_tag(meta.id, t2.id)
+        await repo.attach_user_tag(meta.id, s2.id)
+        dup = await repo.merge_facets(FacetKind.USER_TAG, t2.id, [s2.id])
+        assert dup is not None and dup.count == 1
+        assert [t.name for t in await repo.list_metadata_user_tags(meta.id)] == ["t"]
+
+        only = await repo.create_user_tag("only")
+        assert only.id is not None
+        with pytest.raises(ValueError):
+            await repo.merge_facets(FacetKind.USER_TAG, only.id, [9999])
+        orphan = await repo.create_user_tag("orphan-source")
+        assert orphan.id is not None
+        assert await repo.merge_facets(FacetKind.USER_TAG, 9999, [orphan.id]) is None
+
+        doomed = await repo.create_user_tag("doomed")
+        assert doomed.id is not None
+        assert await repo.delete_facet(FacetKind.USER_TAG, doomed.id) is True
+        with pytest.raises(ValueError):
+            await repo.list_facet_rules(FacetKind.USER_TAG)
+
+    async def test_actor_rename_swaps_display_name(self, repo: Repository) -> None:
+        meta = await repo.upsert_metadata(number="RN-ALIAS-1", actors=["Old"])
+        assert meta.id is not None
+        facet_id = await _facet_id(repo, FacetKind.ACTOR, "Old")
+        renamed = await repo.rename_facet(FacetKind.ACTOR, facet_id, "New")
+        assert renamed is not None and renamed.name == "New"
+        rules = await repo.list_facet_rules(FacetKind.ACTOR)
+        assert not any(r.action == FacetRuleAction.ALIAS for r in rules)
+        assert await repo.get_actor_aliases(facet_id) == ["Old"]
+        await repo.upsert_metadata(number=meta.number, actors=["Old"])
+        got = await repo.get_metadata(meta.id)
+        assert got is not None
+        assert got.actors == ["New"]
+
+    async def test_delete_rule_allows_name_again(self, repo: Repository) -> None:
+        meta = await repo.upsert_metadata(number="RULE-1", actors=["Alice"])
+        assert meta.id is not None
+        facet_id = await _facet_id(repo, FacetKind.ACTOR, "Alice")
+        assert await repo.delete_facet(FacetKind.ACTOR, facet_id) is True
+        rules = await repo.list_facet_rules(FacetKind.ACTOR)
+        rule = next(r for r in rules if r.source_name == "Alice")
+        assert rule.id is not None
+        assert await repo.delete_facet_rule(FacetKind.ACTOR, rule.id) is True
+        await repo.upsert_metadata(number=meta.number, actors=["Alice"])
+        got = await repo.get_metadata(meta.id)
+        assert got is not None
+        assert got.actors == ["Alice"]
+
+    async def test_actor_merge_carries_person_metadata(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="ACT-PERSON-1", actors=["Canonical"])
+        await repo.upsert_metadata(number="ACT-PERSON-2", actors=["OtherName"])
+        target_id = await _facet_id(repo, FacetKind.ACTOR, "Canonical")
+        source_id = await _facet_id(repo, FacetKind.ACTOR, "OtherName")
+        async with repo._session() as session:
+            source = await session.get(Actor, source_id)
+            assert source is not None
+            source.birthday = "1990-05-05"
+            source.overview = "from-source"
+            source.image_urls = ["http://img/a.jpg"]
+            source.provider_ids = {"wikidata": "Q1"}
+            session.add(source)
+            await session.commit()
+        source = await repo.get_actor(source_id)
+        assert source is not None
+        await repo.save_actor(source, aliases=["Roma"])
+
+        merged = await repo.merge_facets(FacetKind.ACTOR, target_id, [source_id])
+        assert merged is not None and merged.id == target_id
+        async with repo._session() as session:
+            target = await session.get(Actor, target_id)
+            assert target is not None
+            assert target.name == "Canonical"
+            assert target.birthday == "1990-05-05"
+            assert target.overview == "from-source"
+            assert target.image_urls == ["http://img/a.jpg"]
+            assert target.provider_ids == {"wikidata": "Q1"}
+            assert (await session.get(Actor, source_id)) is None
+            names = await build_actor_lookup_names(session, target)
+            assert names == ["Canonical", "OtherName", "Roma"]
+        assert await repo.get_actor_aliases(target_id) == ["OtherName", "Roma"]
+        rules = await repo.list_facet_rules(FacetKind.ACTOR)
+        assert not any(r.action == FacetRuleAction.ALIAS for r in rules)

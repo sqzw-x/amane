@@ -18,90 +18,128 @@ if TYPE_CHECKING:
 
 class TestListTasks:
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_empty(self, client: AsyncClient):
-        resp = await client.get("tasks")
-        assert resp.status_code == 200
-        assert resp.json()["items"] == []
+    async def test_list_filters(self, client: AsyncClient, repo: Repository, stop_worker: None):
+        empty = await client.get("tasks")
+        assert empty.status_code == 200
+        assert empty.json()["items"] == []
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_with_tasks(self, client: AsyncClient, repo: Repository):
         await repo.create_task(task_type=TaskType.SCRAPE, payload={"x": 1})
-        await repo.create_task(task_type=TaskType.REFRESH, payload={})
-        resp = await client.get("tasks")
-        assert resp.json()["total"] == 2
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_filter_by_status(self, client: AsyncClient, repo: Repository, stop_worker: None):
-        await repo.create_task(task_type=TaskType.SCRAPE, payload={})
         task2 = await repo.create_task(task_type=TaskType.REFRESH, payload={})
-        await repo.claim_next_task()  # 将第一个标记为 running
+        listed = await client.get("tasks")
+        assert listed.json()["total"] == 2
 
-        resp = await client.get("tasks?status=queued")
-        items = resp.json()["items"]
-        assert len(items) == 1
-        assert items[0]["id"] == task2.id
+        await repo.claim_next_task()
+        queued = await client.get("tasks?status=queued")
+        assert len(queued.json()["items"]) == 1
+        assert queued.json()["items"][0]["id"] == task2.id
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_filter_by_type(self, client: AsyncClient, repo: Repository):
-        await repo.create_task(task_type=TaskType.REFRESH, payload={})
-        await repo.create_task(task_type=TaskType.SCRAPE, payload={})
+        by_type = await client.get("tasks?type=refresh")
+        assert len(by_type.json()["items"]) == 1
+        assert by_type.json()["items"][0]["type"] == "refresh"
 
-        resp = await client.get("tasks?type=refresh")
-        items = resp.json()["items"]
-        assert len(items) == 1
-        assert items[0]["type"] == "refresh"
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_limit(self, client: AsyncClient, repo: Repository):
         for _ in range(5):
-            await repo.create_task(task_type=TaskType.REFRESH, payload={})
-
-        resp = await client.get("tasks?limit=3")
-        data = resp.json()
-        assert len(data["items"]) == 3
-        # total = len(filtered items) 不包含未返回的
+            await repo.create_task(task_type=TaskType.CLEANUP, payload={})
+        limited = await client.get("tasks?limit=3")
+        assert len(limited.json()["items"]) == 3
 
 
 class TestSubmitTask:
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_refresh_with_library_id(self, client: AsyncClient, repo: Repository, safe_path):
+    async def test_submit_payloads_and_rejects(
+        self, client: AsyncClient, repo: Repository, safe_path, seed_library: Repository
+    ):
         lib = await repo.create_library(name="t", path=str(safe_path), recursive=False, patterns=["*.mp4"])
-        resp = await client.post("tasks", json={"type": "refresh", "library_id": lib.id})
-        assert resp.status_code == 202
-        data = resp.json()
-        assert data["type"] == "refresh"
-        assert data["status"] == "queued"
-        payload = data["payload"]
-        # path/recursive/patterns 从 library 派生
+        refresh = await client.post("tasks", json={"type": "refresh", "library_id": lib.id})
+        assert refresh.status_code == 202
+        payload = refresh.json()["payload"]
         assert payload["path"] == str(safe_path)
         assert payload["recursive"] is False
         assert payload["patterns"] == ["*.mp4"]
         assert payload["library_id"] == lib.id
-        assert payload["scan"] == ["add"]  # 默认 scan 模式
-        assert payload["scrape"] == ["pending"]  # 默认 scrape 状态
+        assert payload["scan"] == ["add"]
+        assert payload["scrape"] == ["pending"]
+        assert sorted(payload["use_cache"]) == ["metadata", "trans"]
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_refresh_overrides(self, client: AsyncClient, repo: Repository, safe_path):
-        lib = await repo.create_library(name="t", path=str(safe_path), recursive=True)
-        resp = await client.post(
+        overridden = await client.post(
             "tasks", json={"type": "refresh", "library_id": lib.id, "recursive": False, "scan": ["remove"]}
         )
-        assert resp.status_code == 202
-        payload = resp.json()["payload"]
-        assert payload["recursive"] is False  # submission 覆盖库设置
-        assert payload["scan"] == ["remove"]
+        assert overridden.status_code == 202
+        assert overridden.json()["payload"]["scan"] == ["remove"]
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_organize_with_library_id(self, client: AsyncClient, repo: Repository, safe_path):
-        lib = await repo.create_library(name="t", path=str(safe_path))
-        resp = await client.post("tasks", json={"type": "organize", "library_id": lib.id})
-        assert resp.status_code == 202
-        data = resp.json()
-        assert data["type"] == "organize"
-        assert data["payload"]["library_id"] == lib.id
-        assert data["payload"]["path"] == str(safe_path)
-        assert data["payload"]["write_nfo"] is True
-        assert set(data["payload"]["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
+        org = await client.post("tasks", json={"type": "organize", "library_id": lib.id})
+        assert org.status_code == 202
+        assert org.json()["payload"]["write_nfo"] is True
+        assert set(org.json()["payload"]["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
+
+        lib2 = await repo.create_library(name="o", path=str(safe_path / "o"), write_nfo=True)
+        (safe_path / "o").mkdir()
+        over_org = await client.post(
+            "tasks",
+            json={"type": "organize", "library_id": lib2.id, "write_nfo": False, "copy_resources": ["thumb", "poster"]},
+        )
+        assert over_org.json()["payload"]["write_nfo"] is False
+        assert over_org.json()["payload"]["copy_resources"] == ["thumb", "poster"]
+
+        lib3 = await repo.create_library(
+            name="i",
+            path=str(safe_path / "i"),
+            write_nfo=False,
+            copy_resources=[DownloadableResource.thumb],
+        )
+        (safe_path / "i").mkdir()
+        inherited = await client.post("tasks", json={"type": "organize", "library_id": lib3.id})
+        assert inherited.json()["payload"]["write_nfo"] is False
+        assert inherited.json()["payload"]["copy_resources"] == ["thumb"]
+
+        scrape = await client.post("tasks", json={"type": "scrape", "number": "MIDV-123"})
+        assert scrape.status_code == 202
+        assert scrape.json()["payload"]["number"] == "MIDV-123"
+        assert sorted(scrape.json()["payload"]["use_cache"]) == ["metadata", "trans"]
+        assert scrape.json()["payload"]["content_type"] == "censored"
+        for number, expected in (
+            ("FC2-PPV-1234567", "fc2"),
+            ("vixen.23.04.15", "western"),
+            ("MD-0123", "chinese"),
+            ("MIDV-123", "censored"),
+        ):
+            inferred = await client.post("tasks", json={"type": "scrape", "number": number})
+            assert inferred.json()["payload"]["content_type"] == expected
+        forced = await client.post(
+            "tasks", json={"type": "scrape", "number": "FC2-PPV-1234567", "content_type": "censored"}
+        )
+        assert forced.json()["payload"]["content_type"] == "censored"
+
+        media = await seed_library.create_media_file(library_id=1, path="/media/里番/MD-0123.mp4")
+        assert media.id is not None
+        hentai = await client.post("tasks", json={"type": "scrape", "media_id": media.id})
+        assert hentai.json()["payload"]["content_type"] == "hentai"
+        await seed_library.update_media_file(media.id, number="MIDV-123")
+        cached = await client.post("tasks", json={"type": "scrape", "media_id": media.id, "use_cache": ["trans"]})
+        assert cached.json()["payload"]["use_cache"] == ["trans"]
+
+        cleanup = await client.post("tasks", json={"type": "cleanup"})
+        assert cleanup.status_code == 202
+        assert cleanup.json()["payload"]["remove_missing_files"] is True
+        custom = await client.post(
+            "tasks",
+            json={"type": "cleanup", "remove_missing_files": False, "remove_unreferenced_resources": False},
+        )
+        assert custom.json()["payload"]["remove_missing_files"] is False
+        upscale = await client.post("tasks", json={"type": "upscale", "limit": 10})
+        assert upscale.status_code == 202
+        assert upscale.json()["payload"]["limit"] == 10
+
+        assert (await client.post("tasks", json={"type": "unknown"})).status_code == 422
+        assert (await client.post("tasks", json={"library_id": 1})).status_code == 422
+        assert (await client.post("tasks", json={"type": "refresh"})).status_code == 422
+        assert (await client.post("tasks", json={"type": "refresh", "library_id": 9999})).status_code == 404
+        assert (await client.post("tasks", json={"type": "organize", "library_id": 9999})).status_code == 404
+
+        schema = await client.get("tasks/schema")
+        assert schema.status_code == 200
+        covered = set(schema.json()["discriminator"]["mapping"].keys())
+        missing = set(TaskType) - covered
+        assert not missing, f"TaskSubmission missing: {missing}. Add submission model to TaskSubmission union."
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_submit_organize_reuses_active(
@@ -116,187 +154,27 @@ class TestSubmitTask:
         listed = await repo.list_tasks(task_types=[TaskType.ORGANIZE])
         assert len(listed) == 1
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_organize_overrides_library_defaults(self, client: AsyncClient, repo: Repository, safe_path):
-        lib = await repo.create_library(name="t", path=str(safe_path), write_nfo=True)
-        resp = await client.post(
-            "tasks",
-            json={
-                "type": "organize",
-                "library_id": lib.id,
-                "write_nfo": False,
-                "copy_resources": ["thumb", "poster"],
-            },
-        )
-        assert resp.status_code == 202
-        payload = resp.json()["payload"]
-        assert payload["write_nfo"] is False
-        assert payload["copy_resources"] == ["thumb", "poster"]
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_organize_inherits_library_defaults(self, client: AsyncClient, repo: Repository, safe_path):
-        lib = await repo.create_library(
-            name="t",
-            path=str(safe_path),
-            write_nfo=False,
-            copy_resources=[DownloadableResource.thumb],
-        )
-        resp = await client.post("tasks", json={"type": "organize", "library_id": lib.id})
-        assert resp.status_code == 202
-        payload = resp.json()["payload"]
-        assert payload["write_nfo"] is False
-        assert payload["copy_resources"] == ["thumb"]
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_scrape(self, client: AsyncClient):
-        resp = await client.post("tasks", json={"type": "scrape", "number": "MIDV-123"})
-        assert resp.status_code == 202
-        data = resp.json()
-        assert data["type"] == "scrape"
-        assert data["payload"]["number"] == "MIDV-123"
-        # 默认值
-        assert sorted(data["payload"]["use_cache"]) == ["metadata", "trans"]
-        # content_type 未指定 → 服务端按番号推断
-        assert data["payload"]["content_type"] == "censored"
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_scrape_number_content_type_inference(self, client: AsyncClient):
-        # 番号模式: FC2 / 欧美日期 / 国产 MD / 默认有码
-        for number, expected in (
-            ("FC2-PPV-1234567", "fc2"),
-            ("vixen.23.04.15", "western"),
-            ("MD-0123", "chinese"),
-            ("MIDV-123", "censored"),
-        ):
-            resp = await client.post("tasks", json={"type": "scrape", "number": number})
-            assert resp.status_code == 202
-            assert resp.json()["payload"]["content_type"] == expected
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_scrape_content_type_override(self, client: AsyncClient):
-        # 显式指定覆盖推断
-        resp = await client.post(
-            "tasks", json={"type": "scrape", "number": "FC2-PPV-1234567", "content_type": "censored"}
-        )
-        assert resp.status_code == 202
-        assert resp.json()["payload"]["content_type"] == "censored"
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_scrape_media_id_content_type_inference(self, client: AsyncClient, seed_library: Repository):
-        # media_id 路径: 未指定时按文件路径解析 (路径关键词优先于番号模式)
-        media = await seed_library.create_media_file(library_id=1, path="/media/里番/MD-0123.mp4")
-        assert media.id is not None
-        resp = await client.post("tasks", json={"type": "scrape", "media_id": media.id})
-        assert resp.status_code == 202
-        assert resp.json()["payload"]["content_type"] == "hentai"
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_scrape_with_use_cache(self, client: AsyncClient, seed_library: Repository):
-        media = await seed_library.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
-        assert media.id is not None
-        await seed_library.update_media_file(media.id, number="MIDV-123")
-        resp = await client.post("tasks", json={"type": "scrape", "media_id": media.id, "use_cache": ["trans"]})
-        assert resp.status_code == 202
-        payload = resp.json()["payload"]
-        assert payload["use_cache"] == ["trans"]  # 仅保留译文缓存 = 强制重爬元数据
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_refresh_defaults(self, client: AsyncClient, repo: Repository, safe_path):
-        lib = await repo.create_library(name="t", path=str(safe_path))
-        resp = await client.post("tasks", json={"type": "refresh", "library_id": lib.id})
-        assert resp.status_code == 202
-        payload = resp.json()["payload"]
-        assert payload["scan"] == ["add"]
-        assert payload["scrape"] == ["pending"]
-        assert sorted(payload["use_cache"]) == ["metadata", "trans"]
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_unknown_type_rejected(self, client: AsyncClient):
-        resp = await client.post("tasks", json={"type": "unknown"})
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_missing_type_rejected(self, client: AsyncClient, safe_path):
-        resp = await client.post("tasks", json={"library_id": 1})
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_refresh_requires_library_id(self, client: AsyncClient):
-        # library_id 必填, 缺失被 validator 拒绝
-        resp = await client.post("tasks", json={"type": "refresh"})
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_refresh_unknown_library(self, client: AsyncClient):
-        resp = await client.post("tasks", json={"type": "refresh", "library_id": 9999})
-        assert resp.status_code == 404
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_organize_unknown_library(self, client: AsyncClient):
-        resp = await client.post("tasks", json={"type": "organize", "library_id": 9999})
-        assert resp.status_code == 404
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_schema_covers_all_task_types(self, client: AsyncClient):
-        """所有 TaskType 都必须在 TaskSubmission discriminated union 中有对应入口.
-        添加新 TaskType 时如果忘记扩展 TaskSubmission, 此测试会失败."""
-        resp = await client.get("tasks/schema")
-        assert resp.status_code == 200
-        schema = resp.json()
-
-        # 从 discriminated union 提取允许的 discriminator 值
-        covered = set(schema["discriminator"]["mapping"].keys())
-        expected = set(TaskType)
-        missing = expected - covered
-        assert not missing, f"TaskSubmission missing: {missing}. Add submission model to TaskSubmission union."
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_cleanup_with_defaults(self, client: AsyncClient):
-        resp = await client.post("tasks", json={"type": "cleanup"})
-        assert resp.status_code == 202
-        data = resp.json()
-        assert data["type"] == "cleanup"
-        assert data["status"] == "queued"
-        assert data["payload"]["remove_missing_files"] is True
-        assert data["payload"]["remove_unreferenced_resources"] is True
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_cleanup_custom_flags(self, client: AsyncClient):
-        resp = await client.post(
-            "tasks",
-            json={
-                "type": "cleanup",
-                "remove_missing_files": False,
-                "remove_unreferenced_resources": False,
-            },
-        )
-        assert resp.status_code == 202
-        data = resp.json()
-        assert data["type"] == "cleanup"
-        assert data["payload"]["remove_missing_files"] is False
-        assert data["payload"]["remove_unreferenced_resources"] is False
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_upscale(self, client: AsyncClient):
-        resp = await client.post("tasks", json={"type": "upscale", "limit": 10})
-        assert resp.status_code == 202
-        data = resp.json()
-        assert data["type"] == "upscale"
-        assert data["payload"]["limit"] == 10
-
 
 class TestGetTask:
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_get_existing(self, client: AsyncClient, repo: Repository):
-        task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"n": "ABC-001"})
+    async def test_get_and_titles(self, client: AsyncClient, repo: Repository, stop_worker: None):
+        task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"n": "ABC-001", "number": "MIDV-123"})
         resp = await client.get(f"tasks/{task.id}")
         assert resp.status_code == 200
-        assert resp.json()["payload"] == {"n": "ABC-001"}
+        assert resp.json()["payload"]["n"] == "ABC-001"
+        assert resp.json()["title"] == "MIDV-123"
+        assert (await client.get("tasks/9999")).status_code == 404
 
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_not_found(self, client: AsyncClient):
-        resp = await client.get("tasks/9999")
-        assert resp.status_code == 404
+        await repo.upsert_metadata(number="T-1", actors=["Taro"])
+        actors = (await client.get("facets/actor")).json()["items"]
+        actor_id = next(a["id"] for a in actors if a["name"] == "Taro")
+        scrape = await client.post("tasks", json={"type": "actor_scrape", "actor_id": actor_id})
+        assert scrape.status_code == 202
+        assert scrape.json()["title"] == "Taro"
+        listed = await client.get("tasks")
+        assert any(i["title"] == "MIDV-123" for i in listed.json()["items"])
+        cleanup = await repo.create_task(task_type=TaskType.CLEANUP, payload={})
+        assert (await client.get(f"tasks/{cleanup.id}")).json()["title"] is None
 
 
 class TestBatchTasks:
@@ -496,38 +374,6 @@ class TestTaskWorker:
         resumed = await client.post("tasks/worker/resume")
         assert resumed.json()["paused"] is False
         assert app.state.runtime.worker.is_paused is False
-
-
-class TestTaskTitle:
-    """TaskResponse.title: scrape→番号, actor_scrape→演员名 (任务列表展示用)."""
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_scrape_title_from_number(self, client: AsyncClient, repo: Repository, stop_worker: None):
-        task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "MIDV-123"})
-        resp = await client.get(f"tasks/{task.id}")
-        assert resp.status_code == 200
-        assert resp.json()["title"] == "MIDV-123"
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_actor_scrape_title_from_actor_name(self, client: AsyncClient, repo: Repository, stop_worker: None):
-        await repo.upsert_metadata(number="T-1", actors=["Taro"])
-        actors = (await client.get("facets/actor")).json()["items"]
-        actor_id = next(a["id"] for a in actors if a["name"] == "Taro")
-        resp = await client.post("tasks", json={"type": "actor_scrape", "actor_id": actor_id})
-        assert resp.status_code == 202
-        assert resp.json()["title"] == "Taro"
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_list_includes_titles(self, client: AsyncClient, repo: Repository, stop_worker: None):
-        await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "SSIS-497"})
-        resp = await client.get("tasks")
-        assert any(i["title"] == "SSIS-497" for i in resp.json()["items"])
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_other_types_title_none(self, client: AsyncClient, repo: Repository, stop_worker: None):
-        task = await repo.create_task(task_type=TaskType.CLEANUP, payload={})
-        resp = await client.get(f"tasks/{task.id}")
-        assert resp.json()["title"] is None
 
 
 class TestTaskReport:

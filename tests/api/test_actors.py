@@ -168,75 +168,46 @@ async def _seed_filter_actors(repo: Repository) -> dict[str, int]:
     return {k: v for k, v in by_name.items() if v is not None}
 
 
+# (query params, 期望 Flt* 名, HTTP status). 同一 client/播种上循环, 避免 parametrize 付 N 次 lifespan.
+_FILTER_CASES: list[tuple[dict[str, str | int | list[str]], set[str], int]] = [
+    ({"gender": "female"}, {"FltTall", "FltShort", "FltNullMetric"}, 200),
+    ({"gender": ["female", "male"]}, {"FltTall", "FltShort", "FltNullMetric", "FltMale"}, 200),
+    ({"height_min": 160}, {"FltTall", "FltMale"}, 200),
+    ({"height_max": 155}, {"FltShort"}, 200),
+    ({"height_min": 155, "height_max": 170}, {"FltTall"}, 200),
+    ({"birthday_min": "1992-01-01"}, {"FltShort"}, 200),
+    ({"birthday_max": "1991-12-31"}, {"FltTall", "FltMale"}, 200),
+    ({"birthday_min": "1990-01-01", "birthday_max": "1990-12-31"}, {"FltTall"}, 200),
+    ({"cup_min": "C", "cup_max": "E"}, {"FltTall"}, 200),
+    ({"cup_max": "B"}, {"FltShort"}, 200),
+    ({"bust_min": 85}, {"FltTall"}, 200),
+    ({"birthplace": "kyo"}, {"FltTall"}, 200),
+    ({"height_min": 160, "has_image": "true"}, {"FltTall"}, 200),
+    ({"height_min": 200, "height_max": 150}, set(), 422),
+    ({"birthday_min": "1995-01-01", "birthday_max": "1990-01-01"}, set(), 422),
+    ({"cup_min": "E", "cup_max": "A"}, set(), 422),
+    ({"birthday_min": "not-a-date"}, set(), 422),
+    ({"birthday_max": "1990/13/40"}, set(), 422),
+]
+
+
 class TestActorFieldFilters:
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_search_matches_alias(self, client: AsyncClient, repo: Repository) -> None:
+    async def test_field_filters(self, client: AsyncClient, repo: Repository) -> None:
         ids = await _seed_filter_actors(repo)
-        resp = await client.get("actors", params={"search": "HiddenAliasXYZ"})
-        assert resp.status_code == 200
-        found = {i["id"] for i in resp.json()["items"]}
+
+        alias = await client.get("actors", params={"search": "HiddenAliasXYZ"})
+        assert alias.status_code == 200
+        found = {i["id"] for i in alias.json()["items"]}
         assert ids["FltAliasOnly"] in found
         assert ids["FltTall"] not in found
 
-    @pytest.mark.parametrize(
-        ("params", "expect_names", "status"),
-        [
-            ({"gender": "female"}, {"FltTall", "FltShort", "FltNullMetric"}, 200),
-            ({"gender": ["female", "male"]}, {"FltTall", "FltShort", "FltNullMetric", "FltMale"}, 200),
-            ({"height_min": 160}, {"FltTall", "FltMale"}, 200),
-            ({"height_max": 155}, {"FltShort"}, 200),
-            ({"height_min": 155, "height_max": 170}, {"FltTall"}, 200),
-            ({"birthday_min": "1992-01-01"}, {"FltShort"}, 200),
-            ({"birthday_max": "1991-12-31"}, {"FltTall", "FltMale"}, 200),
-            ({"birthday_min": "1990-01-01", "birthday_max": "1990-12-31"}, {"FltTall"}, 200),
-            ({"cup_min": "C", "cup_max": "E"}, {"FltTall"}, 200),
-            ({"cup_max": "B"}, {"FltShort"}, 200),
-            ({"bust_min": 85}, {"FltTall"}, 200),
-            ({"birthplace": "kyo"}, {"FltTall"}, 200),
-            ({"height_min": 160, "has_image": "true"}, {"FltTall"}, 200),
-            ({"height_min": 200, "height_max": 150}, set(), 422),
-            ({"birthday_min": "1995-01-01", "birthday_max": "1990-01-01"}, set(), 422),
-            ({"cup_min": "E", "cup_max": "A"}, set(), 422),
-            ({"birthday_min": "not-a-date"}, set(), 422),
-            ({"birthday_max": "1990/13/40"}, set(), 422),
-        ],
-        ids=[
-            "gender_female",
-            "gender_multi",
-            "height_min",
-            "height_max",
-            "height_closed",
-            "birthday_min",
-            "birthday_max",
-            "birthday_closed",
-            "cup_range",
-            "cup_max",
-            "bust_min",
-            "birthplace",
-            "height_and_image",
-            "height_inverted",
-            "birthday_inverted",
-            "cup_inverted",
-            "birthday_min_bad",
-            "birthday_max_bad",
-        ],
-    )
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_field_filters(
-        self,
-        client: AsyncClient,
-        repo: Repository,
-        params: dict,
-        expect_names: set[str],
-        status: int,
-    ) -> None:
-        ids = await _seed_filter_actors(repo)
-        resp = await client.get("actors", params={**params, "limit": 200})
-        assert resp.status_code == status
-        if status != 200:
-            return
-        got = {i["name"] for i in resp.json()["items"] if i["name"].startswith("Flt")}
-        assert got == expect_names
-        # NULL 身高不会进 height 范围
-        if "height_min" in params or "height_max" in params:
-            assert ids["FltNullMetric"] not in {i["id"] for i in resp.json()["items"]}
+        for params, expect_names, status in _FILTER_CASES:
+            resp = await client.get("actors", params={**params, "limit": 200})
+            assert resp.status_code == status, params
+            if status != 200:
+                continue
+            got = {i["name"] for i in resp.json()["items"] if i["name"].startswith("Flt")}
+            assert got == expect_names, params
+            if "height_min" in params or "height_max" in params:
+                assert ids["FltNullMetric"] not in {i["id"] for i in resp.json()["items"]}

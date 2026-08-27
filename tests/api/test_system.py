@@ -44,6 +44,10 @@ async def test_desktop_info(client: HttpxClient) -> None:
     assert data["version"]
     assert data["data_dir"].endswith("data")
     assert data["supervised"] is False
+    health = await client.get("health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+    assert "version" in health.json()
 
 
 @pytest.mark.asyncio(loop_scope="function")
