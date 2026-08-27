@@ -106,7 +106,7 @@
   "fieldBlacklistPatterns": "Blacklist regexes",
   "fieldBlacklistPatternsHint": "One regex per line; matching files are skipped from scans and moved to .amane_trash on organize. Empty disables",
   "fieldSubtitleExtensions": "Subtitle extensions",
-  "fieldSubtitleExtensionsHint": "Comma-separated; organize moves same-folder files with these extensions alongside the video. Empty disables. Default .srt .ass .ssa .vtt .sub",
+  "fieldSubtitleExtensionsHint": "Comma-separated",
   "fieldMoveMode": "File Operation Mode",
   "fieldMoveModeHint": "How files are placed onto template paths during organize",
   "fieldWriteNfo": "Write NFO",
