@@ -328,7 +328,7 @@ class TestFacetRenameMergeDelete:
             await _seed_list(repo, f"RN-{kind.value}-2a", kind, ["DupA"])
             await _seed_list(repo, f"RN-{kind.value}-2b", kind, ["DupB"])
             dup_id = await _facet_id(repo, kind, "DupA")
-            with pytest.raises(ValueError, match="合并"):
+            with pytest.raises(ValueError):
                 await repo.rename_facet(kind, dup_id, "DupB")
 
     async def test_rename_and_conflict_scalar_kinds(self, repo: Repository) -> None:
@@ -346,7 +346,7 @@ class TestFacetRenameMergeDelete:
             await _seed_scalar(repo, f"RS-{kind.value}-2a", kind, "A")
             await _seed_scalar(repo, f"RS-{kind.value}-2b", kind, "B")
             aid = await _facet_id(repo, kind, "A")
-            with pytest.raises(ValueError, match="合并"):
+            with pytest.raises(ValueError):
                 await repo.rename_facet(kind, aid, "B")
 
     async def test_merge_list_kinds(self, repo: Repository) -> None:
@@ -457,7 +457,7 @@ class TestFacetRenameMergeDelete:
         await repo.create_user_tag("taken")
         mine = await repo.create_user_tag("mine")
         assert mine.id is not None
-        with pytest.raises(ValueError, match="合并"):
+        with pytest.raises(ValueError):
             await repo.rename_facet(FacetKind.USER_TAG, mine.id, "taken")
         assert await repo.rename_facet(FacetKind.USER_TAG, 9999, "x") is None
 

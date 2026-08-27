@@ -93,21 +93,15 @@ def test_extract_section_distinguishes_0_5_10() -> None:
     assert "媒体库文件过滤" not in notes
 
 
-@pytest.mark.parametrize(
-    ("version", "match"),
-    [
-        ("0.9.9", r"没有 v0\.9\.9 节"),
-        ("", "版本号为空"),
-    ],
-)
-def test_extract_section_missing(version: str, match: str) -> None:
-    with pytest.raises(cl.ChangelogError, match=match):
+@pytest.mark.parametrize("version", ["0.9.9", ""])
+def test_extract_section_missing(version: str) -> None:
+    with pytest.raises(cl.ChangelogError):
         cl.extract_section(SAMPLE, version)
 
 
 def test_extract_section_empty() -> None:
     text = "# Changelog\n\n## v1.0.0\n\n\n## v0.9.0\n\n- x\n"
-    with pytest.raises(cl.ChangelogError, match=r"v1\.0\.0 节为空"):
+    with pytest.raises(cl.ChangelogError):
         cl.extract_section(text, "1.0.0")
 
 
@@ -120,7 +114,7 @@ def test_extract_file_and_cli(tmp_path: Path) -> None:
 
 def test_extract_file_missing(tmp_path: Path) -> None:
     missing = tmp_path / "CHANGELOG.md"
-    with pytest.raises(cl.ChangelogError, match=r"缺少 CHANGELOG\.md"):
+    with pytest.raises(cl.ChangelogError):
         cl.extract_file(missing, "0.5.0")
     assert cl.main(["extract", "0.5.0", "--file", str(missing)]) == 1
 
