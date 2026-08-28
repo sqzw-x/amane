@@ -14,6 +14,7 @@ import type {
   FacetKind,
   FacetSortField,
   LibraryAutomation,
+  LinkMode,
   LoggingConfig,
   MediaFileStatus,
   MediaSortField,
@@ -91,6 +92,9 @@ export const DOWNLOADABLE_RESOURCES = exhaustiveTuple<DownloadableResource>()(
 
 /** `LibraryAutomation` 的运行时枚举 (库发现侧自动化级别). */
 export const LIBRARY_AUTOMATIONS = exhaustiveTuple<LibraryAutomation>()("none", "watch", "scrape");
+
+/** `LinkMode` 的运行时枚举 (整理后链接入口). */
+export const LINK_MODES = exhaustiveTuple<LinkMode>()("strm", "symlink");
 
 /** `MediaFileStatus` 的运行时枚举. */
 export const MEDIA_FILE_STATUSES = exhaustiveTuple<MediaFileStatus>()(

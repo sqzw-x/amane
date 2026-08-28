@@ -30,7 +30,17 @@ class TestLibraries:
         assert data["cd_suffix_default"] == CD_SUFFIX_TEMPLATE_DEFAULT
         assert data["optional_defaults"] == OPTIONAL_TEMPLATE_DEFAULTS
         names = {p["name"] for p in data["placeholders"]}
-        assert {"number", "studio", "video_dir", "raw_dir", "raw_name", "ext", "mosaic", "definition"} <= names
+        assert {
+            "number",
+            "studio",
+            "video_dir",
+            "link_dir",
+            "raw_dir",
+            "raw_name",
+            "ext",
+            "mosaic",
+            "definition",
+        } <= names
         assert "dir_path" not in names and "dir" not in names
         phases = {p["name"]: p["phase"] for p in data["placeholders"]}
         assert phases["number"] == "metadata"
@@ -39,6 +49,7 @@ class TestLibraries:
         assert phases["mosaic"] == "file"
         assert phases["definition"] == "file"
         assert phases["video_dir"] == "post_video"
+        assert phases["link_dir"] == "post_video"
         assert phases["raw_srt_name"] == "subtitle"
         assert data["subtitle_extensions_default"] == list(DEFAULT_SUBTITLE_EXTENSIONS)
 
@@ -54,6 +65,8 @@ class TestLibraries:
         assert body["automation"] == "scrape"
         assert body["name"] == "incoming"
         assert body["move_mode"] == "move"
+        assert body["link_template"] is None
+        assert body["link_mode"] == "strm"
         assert body["write_nfo"] is True
         assert set(body["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
         assert body["trailer_pattern"] == "(?i)trailer"
@@ -107,6 +120,8 @@ class TestLibraries:
                 "blacklist_patterns": ["广告", "预览"],
                 "subtitle_extensions": ["vtt"],
                 "cd_suffix_template": "",
+                "link_template": str(safe_path / "emby" / "{number}" / "{number}.{ext}"),
+                "link_mode": "symlink",
             },
         )
         assert patched.status_code == 200
@@ -118,6 +133,8 @@ class TestLibraries:
         assert pbody["blacklist_patterns"] == ["广告", "预览"]
         assert pbody["subtitle_extensions"] == [".vtt"]
         assert pbody["cd_suffix_template"] == ""
+        assert pbody["link_mode"] == "symlink"
+        assert pbody["link_template"] == str(safe_path / "emby" / "{number}" / "{number}.{ext}")
 
         cleared = await client.patch(f"libraries/{lib_id}", json={"patterns": []})
         assert cleared.status_code == 200
@@ -150,6 +167,7 @@ class TestLibraries:
         target.mkdir()
         base = {"path": str(target), "scan": False}
         assert (await client.post("libraries", json={**base, "move_mode": "foobar"})).status_code == 422
+        assert (await client.post("libraries", json={**base, "link_mode": "foobar"})).status_code == 422
         assert (await client.post("libraries", json={**base, "trailer_pattern": "[unclosed"})).status_code == 422
         assert (
             await client.post("libraries", json={**base, "blacklist_patterns": ["广告", "(ads"]})

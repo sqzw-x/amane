@@ -11,7 +11,14 @@ from typing import NamedTuple
 import pytest
 
 from amane.db.models import Library, Metadata
-from amane.organize import CD_SUFFIX_TEMPLATE_DEFAULT, resolve_paths, resolve_subtitle_path, validate_cd_suffix_template
+from amane.enums import LinkMode
+from amane.organize import (
+    CD_SUFFIX_TEMPLATE_DEFAULT,
+    normalize_link_template,
+    resolve_paths,
+    resolve_subtitle_path,
+    validate_cd_suffix_template,
+)
 from amane.parsing import parse_file_info
 
 
@@ -439,3 +446,116 @@ class TestPathTraversalProtection:
         meta = _meta()
         result = resolve_paths(wp, meta, ext="mp4")
         assert result.video == media / "sub" / "dir" / "ABC-123.mp4"
+
+
+class TestNormalizeLinkTemplate:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (None, None),
+            ("", None),
+            ("   ", None),
+            ("/out/{number}/{number}.{ext}", "/out/{number}/{number}.{ext}"),
+            ("  /out/{number}.strm  ", "/out/{number}.strm"),
+        ],
+    )
+    def test_blank_is_unset(self, raw: str | None, expected: str | None):
+        assert normalize_link_template(raw) == expected
+
+
+class TestResolvePathsLink:
+    """link_template 渲染: 库外入口 + {link_dir} 换根."""
+
+    def test_unset_link_matches_video_dir(self, media: Path):
+        wp = Library(name="t", path=str(media), video_template="{studio}/{number}/{number}.{ext}")
+        result = resolve_paths(wp, _meta(), ext="mp4")
+        assert result.link is None
+        assert result.nfo == result.video.parent / "ABC-123.nfo"
+
+    def test_strm_forces_suffix_and_sidecars_follow_link_dir(self, media: Path, other: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{studio}/{number}/{number}.{ext}",
+            link_template=str(other / "{studio}" / "{number}" / "{number}.{ext}"),
+            link_mode=LinkMode.STRM,
+        )
+        result = resolve_paths(wp, _meta(), ext="mp4", safe_dirs=[other])
+        assert result.video == media / "StudioX" / "ABC-123" / "ABC-123.mp4"
+        assert result.link == other / "StudioX" / "ABC-123" / "ABC-123.strm"
+        assert result.nfo == other / "StudioX" / "ABC-123" / "ABC-123.nfo"
+        assert result.poster == other / "StudioX" / "ABC-123" / "poster.jpg"
+
+    def test_symlink_keeps_video_extension(self, media: Path, other: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}.{ext}",
+            link_template=str(other / "{number}" / "{number}.{ext}"),
+            link_mode=LinkMode.SYMLINK,
+        )
+        result = resolve_paths(wp, _meta(), ext="mkv", safe_dirs=[other])
+        assert result.link == other / "ABC-123" / "ABC-123.mkv"
+
+    def test_cd_suffix_applied_to_link(self, media: Path, other: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}.{ext}",
+            link_template=str(other / "{number}" / "{number}.{ext}"),
+            link_mode=LinkMode.STRM,
+        )
+        result = resolve_paths(wp, _meta(), ext="mp4", cd=2, safe_dirs=[other])
+        assert result.video == media / "ABC-123" / "ABC-123-CD2.mp4"
+        assert result.link == other / "ABC-123" / "ABC-123-CD2.strm"
+
+    def test_custom_video_dir_stays_with_real_video(self, media: Path, other: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}.{ext}",
+            link_template=str(other / "{number}" / "{number}.{ext}"),
+            nfo_template="{video_dir}/{number}.nfo",
+        )
+        result = resolve_paths(wp, _meta(), ext="mp4", safe_dirs=[other])
+        assert result.nfo == media / "ABC-123" / "ABC-123.nfo"
+        assert result.link == other / "ABC-123" / "ABC-123.strm"
+
+    def test_relative_link_rejected(self, media: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}.{ext}",
+            link_template="{number}/{number}.{ext}",
+        )
+        with pytest.raises(ValueError, match="outside the library root"):
+            resolve_paths(wp, _meta(), ext="mp4")
+
+    def test_absolute_link_inside_library_rejected(self, media: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}.{ext}",
+            link_template=str(media / "links" / "{number}.{ext}"),
+        )
+        with pytest.raises(ValueError, match="outside the library root"):
+            resolve_paths(wp, _meta(), ext="mp4")
+
+    def test_subtitle_default_follows_link_dir(self, media: Path, other: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{studio}/{number}/{number}.{ext}",
+            link_template=str(other / "{studio}" / "{number}" / "{number}.{ext}"),
+        )
+        video = resolve_paths(wp, _meta(), ext="mp4", safe_dirs=[other])
+        assert video.link is not None
+        sub = resolve_subtitle_path(
+            wp,
+            _meta(),
+            Path("/inbox/MIDV-123.zh.srt"),
+            video_dir=video.video.parent,
+            link_dir=video.link.parent,
+            safe_dirs=[other],
+        )
+        assert sub == other / "StudioX" / "ABC-123" / "MIDV-123.zh.srt"

@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from amane.organize import MoveMode, execute_organize
+from amane.enums import LinkMode
+from amane.organize import MoveMode, create_video_link, execute_organize
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -155,3 +156,54 @@ class TestExecuteOrganize:
         assert result.success is True
         assert result.dest is not None
         assert result.dest.is_symlink()
+
+
+class TestCreateVideoLink:
+    def test_strm_writes_target_path(self, tmp_path: Path):
+        target = tmp_path / "lib" / "A.mp4"
+        target.parent.mkdir()
+        target.write_text("video")
+        link = tmp_path / "emby" / "A.strm"
+        result = create_video_link(target, link, LinkMode.STRM)
+        assert result.success is True
+        assert result.dest == link
+        assert link.read_text(encoding="utf-8") == f"{target}\n"
+
+    def test_strm_idempotent(self, tmp_path: Path):
+        target = tmp_path / "A.mp4"
+        target.write_text("video")
+        link = tmp_path / "A.strm"
+        assert create_video_link(target, link, LinkMode.STRM).success
+        assert create_video_link(target, link, LinkMode.STRM).success
+        assert link.read_text(encoding="utf-8") == f"{target}\n"
+
+    def test_strm_refuses_regular_file(self, tmp_path: Path):
+        target = tmp_path / "A.mp4"
+        target.write_text("video")
+        occupied = tmp_path / "A.jpg"
+        occupied.write_text("nope")
+        result = create_video_link(target, occupied, LinkMode.STRM)
+        assert result.success is False
+        assert occupied.read_text() == "nope"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="符号链接行为在 Windows 下不一致")
+    def test_symlink_points_at_target(self, tmp_path: Path):
+        target = tmp_path / "lib" / "A.mp4"
+        target.parent.mkdir()
+        target.write_text("video")
+        link = tmp_path / "emby" / "A.mp4"
+        result = create_video_link(target, link, LinkMode.SYMLINK)
+        assert result.success is True
+        assert result.dest is not None
+        assert result.dest.is_symlink()
+        assert result.dest.resolve() == target.resolve()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="符号链接行为在 Windows 下不一致")
+    def test_symlink_refuses_regular_file(self, tmp_path: Path):
+        target = tmp_path / "A.mp4"
+        target.write_text("video")
+        occupied = tmp_path / "B.mp4"
+        occupied.write_text("other")
+        result = create_video_link(target, occupied, LinkMode.SYMLINK)
+        assert result.success is False
+        assert occupied.read_text() == "other"

@@ -28,7 +28,7 @@ import { PathPicker } from "@/components/path-picker";
 import { encodeFormBody } from "@/components/schema-form/encode";
 import { EnumToggle } from "@/components/common/enum-toggle";
 import { FieldChrome } from "@/components/schema-form/fields/field-chrome";
-import { DOWNLOADABLE_RESOURCES, LIBRARY_AUTOMATIONS } from "@/lib/exhaustive-maps";
+import { DOWNLOADABLE_RESOURCES, LIBRARY_AUTOMATIONS, LINK_MODES } from "@/lib/exhaustive-maps";
 
 /** 创建/编辑共用: 宽屏两列, 窄屏仍单列. */
 export const LIBRARY_FORM_MODAL_SIZE = "min(64rem, 94vw)";
@@ -68,6 +68,8 @@ export interface LibraryFormState {
   recursive: boolean;
   patterns: string;
   move_mode: LibraryResponse["move_mode"];
+  link_template: string;
+  link_mode: LibraryResponse["link_mode"];
   write_nfo: boolean;
   copy_resources: DownloadableResource[];
   trailer_pattern: string;
@@ -94,6 +96,8 @@ export function emptyLibraryForm(schema?: PathTemplateSchemaResponse | null): Li
     recursive: true,
     patterns: "",
     move_mode: "move",
+    link_template: "",
+    link_mode: "strm",
     write_nfo: true,
     copy_resources: DOWNLOADABLE_RESOURCES.filter((r) => r !== "trailer"),
     trailer_pattern: "(?i)trailer",
@@ -122,6 +126,8 @@ export function libraryFormFromResponse(lib: LibraryResponse): LibraryFormState 
     recursive: lib.recursive,
     patterns: lib.patterns?.join(", ") ?? "",
     move_mode: lib.move_mode,
+    link_template: lib.link_template ?? "",
+    link_mode: lib.link_mode,
     write_nfo: lib.write_nfo,
     copy_resources: parseCopyResources(lib.copy_resources),
     trailer_pattern: lib.trailer_pattern,
@@ -163,6 +169,8 @@ function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
     recursive: form.recursive,
     patterns: parseLibraryPatterns(form.patterns),
     move_mode: form.move_mode,
+    link_template: form.link_template.trim(),
+    link_mode: form.link_mode,
     write_nfo: form.write_nfo,
     copy_resources: form.copy_resources,
     trailer_pattern: form.trailer_pattern,
@@ -328,6 +336,21 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
         value={value.video_template}
         onChange={(e) => onChange({ ...value, video_template: e.currentTarget.value })}
       />
+      <TextInput
+        label={t("fieldLinkTemplate")}
+        description={t("fieldLinkTemplateHint")}
+        placeholder={t("fieldLinkTemplatePlaceholder")}
+        value={value.link_template}
+        onChange={(e) => onChange({ ...value, link_template: e.currentTarget.value })}
+      />
+      <FieldChrome label={t("fieldLinkMode")} description={t("fieldLinkModeHint")}>
+        <EnumToggle
+          options={LINK_MODES}
+          value={value.link_mode}
+          onChange={(link_mode) => onChange({ ...value, link_mode })}
+          getLabel={(mode) => t(`linkMode.${mode}`)}
+        />
+      </FieldChrome>
 
       {placeholders.length > 0 && (
         <Stack gap={4}>

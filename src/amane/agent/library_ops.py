@@ -25,6 +25,8 @@ _LIBRARY_UPDATE_KEYS = frozenset(
         "patterns",
         "move_mode",
         "video_template",
+        "link_template",
+        "link_mode",
         "cd_suffix_template",
         "thumb_template",
         "poster_template",

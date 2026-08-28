@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from pydantic import AfterValidator
 
+from ..enums import LinkMode
 from ..parsing.file_info import ContentType, FileInfo
 from ..utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
 from ..utils.path import is_any_descendant, is_descendant
@@ -27,6 +28,7 @@ class ResolvedPaths:
     extrafanart_dir: Path
     nfo: Path
     trailer: Path
+    link: Path | None = None
 
 
 # --- 默认模板 (当对应字段为 None 时使用) ---
@@ -62,19 +64,27 @@ def validate_cd_suffix_template(value: str) -> str:
 CdSuffixTemplate = Annotated[str, AfterValidator(validate_cd_suffix_template)]
 
 
+def normalize_link_template(value: str | None) -> str | None:
+    """空白 link_template 视为未设置 (不创建链接)."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 def render_cd_suffix(template: str, cd: int) -> str:
     """渲染 CD 后缀 (调用前提: cd 非 None 且模板非空; 校验已保证恰好一个 {cd})."""
     return template.format(cd=cd)
 
 
 OPTIONAL_TEMPLATE_DEFAULTS: dict[str, str] = {
-    "thumb_template": "{video_dir}/thumb.jpg",
-    "poster_template": "{video_dir}/poster.jpg",
-    "fanart_template": "{video_dir}/fanart.jpg",
-    "extrafanart_template": "{video_dir}/extrafanart",
-    "nfo_template": "{video_dir}/{number}.nfo",
-    "trailer_template": "{video_dir}/trailer.mp4",
-    "subtitle_template": "{video_dir}/{raw_srt_name}.{ext}",
+    "thumb_template": "{link_dir}/thumb.jpg",
+    "poster_template": "{link_dir}/poster.jpg",
+    "fanart_template": "{link_dir}/fanart.jpg",
+    "extrafanart_template": "{link_dir}/extrafanart",
+    "nfo_template": "{link_dir}/{number}.nfo",
+    "trailer_template": "{link_dir}/trailer.mp4",
+    "subtitle_template": "{link_dir}/{raw_srt_name}.{ext}",
 }
 
 
@@ -84,7 +94,7 @@ class PlaceholderPhase(StrEnum):
     - ``metadata``: 来自 Metadata 字段;
     - ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);
     - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
-    - ``post_video``: 视频路径渲染后注入 (附属资源模板).
+    - ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).
     - ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).
     """
 
@@ -111,6 +121,7 @@ PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
     ("mosaic", PlaceholderPhase.FILE),
     ("definition", PlaceholderPhase.FILE),
     ("video_dir", PlaceholderPhase.POST_VIDEO),
+    ("link_dir", PlaceholderPhase.POST_VIDEO),
     ("raw_srt_name", PlaceholderPhase.SUBTITLE),
 )
 
@@ -277,14 +288,13 @@ def resolve_paths(
     variables = _build_variables(metadata, ext, source_path, file_info)
 
     # 1. 渲染视频路径
-    video = _render_template(library.video_template, variables, base_path, safe_dirs)
-    if cd is not None and library.cd_suffix_template:
-        # 在扩展名前插入 CD 后缀 (模板由用户配置, 默认 -CD{n}; 空串关闭)
-        video = video.with_name(f"{video.stem}{render_cd_suffix(library.cd_suffix_template, cd)}{video.suffix}")
+    video = _apply_cd_suffix(_render_template(library.video_template, variables, base_path, safe_dirs), library, cd)
 
-    # 2. 计算 video_dir 变量
+    # 2. 计算 video_dir / link_dir
     video_dir = str(video.parent)
     variables["video_dir"] = video_dir
+    link = _resolve_link_path(library, variables, base_path, safe_dirs, cd)
+    variables["link_dir"] = str(link.parent) if link is not None else video_dir
 
     # 3. 渲染其他路径 (None 时使用默认模板)
     thumb = _render_template(
@@ -317,7 +327,35 @@ def resolve_paths(
         extrafanart_dir=extrafanart_dir,
         nfo=nfo,
         trailer=trailer,
+        link=link,
     )
+
+
+def _apply_cd_suffix(path: Path, library: Library, cd: int | None) -> Path:
+    """识别到分集且模板非空时, 在扩展名前追加 CD 后缀."""
+    if cd is None or not library.cd_suffix_template:
+        return path
+    return path.with_name(f"{path.stem}{render_cd_suffix(library.cd_suffix_template, cd)}{path.suffix}")
+
+
+def _resolve_link_path(
+    library: Library,
+    variables: dict[str, str],
+    base_path: Path,
+    safe_dirs: Sequence[Path],
+    cd: int | None,
+) -> Path | None:
+    """渲染 link_template; 空模板返回 None. 结果必须落在库根之外."""
+    template = normalize_link_template(library.link_template)
+    if template is None:
+        return None
+    link = _render_template(template, variables, base_path, safe_dirs)
+    link = _apply_cd_suffix(link, library, cd)
+    if library.link_mode == LinkMode.STRM:
+        link = link.with_suffix(".strm")
+    if is_descendant(link, base_path):
+        raise ValueError(f"link_template must resolve outside the library root: '{link}' is under '{base_path}'")
+    return link
 
 
 def resolve_subtitle_path(
@@ -326,6 +364,7 @@ def resolve_subtitle_path(
     subtitle_source: Path,
     *,
     video_dir: Path,
+    link_dir: Path | None = None,
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
     safe_dirs: Sequence[Path] = (),
@@ -333,13 +372,15 @@ def resolve_subtitle_path(
     """按字幕模板渲染单个字幕的目标路径.
 
     `{ext}` / `{raw_srt_name}` 取自该字幕源文件; `{raw_name}` / `{raw_dir}` 仍是视频源.
-    `{video_dir}` 为已渲染视频父目录. 默认模板保持原文件名与扩展名.
+    `{video_dir}` 为已渲染视频父目录; `{link_dir}` 为链接父目录 (未设链接时与 `{video_dir}` 相同).
+    默认模板保持原文件名与扩展名.
     """
     base_path = Path(library.path)
     variables = _build_variables(
         metadata, ext=subtitle_source.suffix.lstrip("."), source_path=source_path, file_info=file_info
     )
     variables["video_dir"] = str(video_dir)
+    variables["link_dir"] = str(link_dir if link_dir is not None else video_dir)
     variables["raw_srt_name"] = subtitle_source.stem
     template = library.subtitle_template or OPTIONAL_TEMPLATE_DEFAULTS["subtitle_template"]
     return _render_template(template, variables, base_path, safe_dirs)

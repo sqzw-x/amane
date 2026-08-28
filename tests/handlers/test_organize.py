@@ -8,7 +8,7 @@ import pytest
 
 from amane.config import HotSettings
 from amane.db.models import MediaFileStatus
-from amane.enums import DownloadableResource
+from amane.enums import DownloadableResource, LinkMode
 from amane.handlers import OrganizeHandler, OrganizePayload
 
 if TYPE_CHECKING:
@@ -497,3 +497,50 @@ async def test_organize_empty_subtitle_extensions_leaves_subs(
     assert result.success is True
     assert sub.exists()
     assert not (lib_root / "Studio" / "NSFS-039" / "chs.srt").exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_writes_strm_and_nfo_next_to_link(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """视频在库内整理; strm + 默认 NFO 写到库外 link_template."""
+    lib_root = tmp_path / "lib"
+    local = tmp_path / "emby"
+    lib_root.mkdir()
+    local.mkdir()
+    src = lib_root / "incoming" / "NSFS-039.mp4"
+    src.parent.mkdir()
+    src.write_bytes(b"video")
+
+    lib = await repo.create_library(
+        name="t",
+        path=str(lib_root),
+        link_template=str(local / "{studio}" / "{number}" / "{number}.{ext}"),
+        link_mode=LinkMode.STRM,
+        copy_resources=[],
+    )
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    media = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert media.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store, safe_dirs=[tmp_path])
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src.parent)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.organized == 1
+    assert result.result.failed == 0
+
+    dest = lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4"
+    strm = local / "Studio" / "NSFS-039" / "NSFS-039.strm"
+    nfo = local / "Studio" / "NSFS-039" / "NSFS-039.nfo"
+    assert dest.exists()
+    assert not src.exists()
+    assert strm.read_text(encoding="utf-8") == f"{dest}\n"
+    assert nfo.exists()
+    updated = await repo.get_media_file(media.id)
+    assert updated is not None
+    assert updated.path == str(dest)

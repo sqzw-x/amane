@@ -15,7 +15,7 @@ from amane.db.models import (
     TaskStatus,
     TaskType,
 )
-from amane.enums import DownloadableResource, LibraryAutomation, MoveMode
+from amane.enums import DownloadableResource, LibraryAutomation, LinkMode, MoveMode
 from amane.utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
 
 
@@ -150,6 +150,8 @@ class TestLibrary:
         assert lib.path == "/media/incoming"
         assert lib.patterns == ["*.mp4", "*.mkv", "*.avi"]
         assert lib.move_mode == MoveMode.MOVE
+        assert lib.link_template is None
+        assert lib.link_mode == LinkMode.STRM
         assert lib.video_template == "/out/{studio}/{number}/{number}.{ext}"
         assert lib.write_nfo is True
         assert lib.copy_resources == [r for r in DownloadableResource if r != DownloadableResource.trailer]

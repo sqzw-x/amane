@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from ...db import Library
-from ...enums import DownloadableResource, LibraryAutomation, MoveMode
+from ...enums import DownloadableResource, LibraryAutomation, LinkMode, MoveMode
 from ...organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate, PlaceholderPhase
 from ...utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
@@ -24,6 +24,8 @@ class LibraryCreateRequest(BaseModel):
     patterns: list[str] = []
     move_mode: MoveMode = MoveMode.MOVE
     video_template: str = "{studio}/{number}/{number}.{ext}"
+    link_template: str | None = None
+    link_mode: LinkMode = LinkMode.STRM
     cd_suffix_template: CdSuffixTemplate = CD_SUFFIX_TEMPLATE_DEFAULT
     thumb_template: str | None = None
     poster_template: str | None = None
@@ -57,6 +59,8 @@ class LibraryResponse(BaseModel):
     patterns: list[str] = []
     move_mode: MoveMode
     video_template: str
+    link_template: str | None = None
+    link_mode: LinkMode
     cd_suffix_template: str
     thumb_template: str | None = None
     poster_template: str | None = None

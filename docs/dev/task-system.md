@@ -114,6 +114,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 - **整理 = 复制到库路径**: 优先用 Resource 已有文件; 缺失才现场 `acquire`. 复制哪些类型由 Library.`copy_resources` (或 ORGANIZE payload 覆盖) 决定, 不由 `scraping.download_resources` 控制.
 - **海报缺失**: 按 `scraping.crop_poster` 从已落盘 thumb 裁剪兜底.
 - **已就位**: 源与模板 dest 已是同一文件 (含硬链) 时视为成功, 不追加 `(1)`; 碰撞改名只用于 dest 被另一文件占用.
+- **链接入口**: `link_template` 非空时, 视频就位后在库根之外写 strm 或软链接, 指向这次的 dest. `MediaFile.path` 仍是真实视频. 链接写入失败时 dest 仍回写 (视频已搬家), 任务记失败以便重试补链接.
 - **失效索引**: ORGANIZE 落盘前按库删除 path 在磁盘上不存在的 MediaFile. 碰撞改名只看磁盘; 不先清幽灵行会让 dest(1) 在 UNIQUE 上撞库内旧 path.
 
 ## 刮削期资源物化
