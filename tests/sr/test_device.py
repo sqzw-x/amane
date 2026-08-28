@@ -1,5 +1,6 @@
 """Vulkan ICD 探测与镜像捆绑二进制路径."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,13 @@ class TestHasVulkanIcd:
         icd = tmp_path / "lvp.json"
         icd.write_text("{}")
         monkeypatch.setenv("VK_ICD_FILENAMES", str(icd))
+        monkeypatch.setattr("amane.sr.device.sys.platform", "linux")
+        assert has_vulkan_icd() is True
+
+    def test_explicit_pathsep_list(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        icd = tmp_path / "lvp.json"
+        icd.write_text("{}")
+        monkeypatch.setenv("VK_ICD_FILENAMES", os.pathsep.join([str(tmp_path / "missing.json"), str(icd)]))
         monkeypatch.setattr("amane.sr.device.sys.platform", "linux")
         assert has_vulkan_icd() is True
 
