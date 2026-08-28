@@ -20,7 +20,7 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 RUN uv sync --no-dev --frozen --no-editable
 
-# --- 最终镜像 ---
+# --- 超分二进制 ---
 FROM debian:13-slim AS sr-bin
 # patched waifu2x: 有 ICD 走 GPU, -g -1 走 process_cpu 且不 init Vulkan.
 # 官方 Release zip 无 ICD 时 exit 127 / SIGSEGV; 见 docker/sr-cpu/.
@@ -33,6 +33,7 @@ COPY docker/sr-cpu /src/sr-cpu
 ARG GH_PROXY=
 RUN GH_PROXY="$GH_PROXY" bash /src/sr-cpu/build.sh /opt/amane/sr
 
+# --- 最终镜像 ---
 FROM base
 # libgomp1: ncnn OpenMP. libvulkan1: 捆绑二进制动态链接 loader (CPU 路径不需要 ICD).
 # postgresql-client: r18.dev dump 导入走 psql -f 子进程 (见 docs/dev/crawlers.md). 不配 r18 时无害.
