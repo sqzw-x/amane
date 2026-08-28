@@ -29,7 +29,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgomp1 libvulkan-dev glslang-tools pkg-config make \
     && rm -rf /var/lib/apt/lists/*
 COPY docker/sr-cpu /src/sr-cpu
-RUN bash /src/sr-cpu/build.sh /opt/amane/sr
+# GH_PROXY: GitHub HTTPS 前缀, 国内构建例如 --build-arg GH_PROXY=https://gh-proxy.com
+ARG GH_PROXY=
+RUN GH_PROXY="$GH_PROXY" bash /src/sr-cpu/build.sh /opt/amane/sr
 
 FROM base
 # libgomp1: ncnn OpenMP. libvulkan1: 捆绑二进制动态链接 loader (CPU 路径不需要 ICD).

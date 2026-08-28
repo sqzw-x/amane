@@ -2,8 +2,10 @@
 """Patch waifu2x-ncnn-vulkan so -g -1 never calls create_gpu_instance.
 
 The official Linux zip still initializes Vulkan before reading -g, then crashes
-without an ICD (and SIGSEGVs on -g -1 even with lavapipe). CPU inference itself
-is process_cpu(); we only skip the GPU instance and null-check the destructor.
+without an ICD (and SIGSEGVs on -g -1 even with lavapipe). CPU inference is
+process_cpu(); skip GPU init, skip set_vulkan_device(nullptr), disable sgemm
+(WITH_LAYER_gemm is off, Deconvolution would null-deref), fp32 storage on CPU,
+and null-check the bicubic destructor.
 """
 
 from __future__ import annotations
@@ -75,6 +77,29 @@ main = (
         ncnn::destroy_gpu_instance();
 """
     + main[last.end() :]
+)
+
+waifu = must_sub(
+    waifu,
+    r"[ \t]*net\.opt\.use_vulkan_compute = vkdev \? true : false;\n[ \t]*net\.opt\.use_fp16_packed = true;\n[ \t]*net\.opt\.use_fp16_storage = true;\n[ \t]*net\.opt\.use_fp16_arithmetic = false;\n[ \t]*net\.opt\.use_int8_storage = true;\n",
+    """    net.opt.use_vulkan_compute = vkdev ? true : false;
+    // deps_ncnn.cmake turns WITH_LAYER_gemm OFF; CPU Deconvolution sgemm
+    // path would create_layer_cpu(Gemm) == 0 and SIGSEGV.
+    net.opt.use_sgemm_convolution = vkdev ? true : false;
+    net.opt.use_fp16_packed = vkdev ? true : false;
+    net.opt.use_fp16_storage = vkdev ? true : false;
+    net.opt.use_fp16_arithmetic = false;
+    net.opt.use_int8_storage = vkdev ? true : false;
+""",
+    "waifu2x.cpp cpu storage flags",
+)
+
+waifu = must_sub(
+    waifu,
+    r"[ \t]*net\.set_vulkan_device\(vkdev\);\n",
+    """    if (vkdev)
+        net.set_vulkan_device(vkdev);\n""",
+    "waifu2x.cpp set_vulkan_device",
 )
 
 waifu = must_sub(

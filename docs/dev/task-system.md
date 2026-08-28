@@ -133,7 +133,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 **就地覆盖**: 不产生新 URL, 直接覆盖磁盘文件并在 `meta` 打 `'sr'`. URL / metadata 不变, 前端零感知; 去重看 `'sr' in meta`. 阈值纯函数 `needs_upscale` (`max_dim_threshold` / `max_bytes_threshold`); 视频永不超分.
 
-预设只暴露两个, 屏蔽工具/模型/倍率: 默认 `waifu-photo-2x` (快、膨胀小 — 源图已够看时补一档); `realesr-photo-4x` 给明显低质图. Docker 镜像编进 patched waifu2x (与上游同一套 GPU 代码, 补丁只让 `-g -1` 跳过 `create_gpu_instance` 走 `process_cpu`); 有 Vulkan ICD 时不传 `-g` 用 GPU, 没有则 CPU. 桌面 APP 仍按需下上游 zip 到 `{data_dir}/tools/`. realesrgan 上游没有 CPU 路径, 无 GPU 时该预设会失败.
+预设只暴露两个, 屏蔽工具/模型/倍率: 默认 `waifu-photo-2x` (快、膨胀小 — 源图已够看时补一档); `realesr-photo-4x` 给明显低质图. Docker 镜像编进 patched waifu2x (与上游同一套 GPU 代码): `-g -1` 跳过 `create_gpu_instance`, CPU 还要关掉 sgemm (上游 `WITH_LAYER_gemm` 未编, Deconvolution 会空指针). 有 Vulkan ICD 时不传 `-g` 用 GPU, 没有则 CPU. 桌面 APP 仍按需下上游 zip 到 `{data_dir}/tools/`. realesrgan 上游没有 CPU 路径, 无 GPU 时该预设会失败.
 
 ## Worker 并发
 
