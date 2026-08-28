@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING
 import structlog
 
 from .args import build_args
-from .binary import ensure_binary
-from .tool import get_preset_meta
+from .binary import ensure_binary, get_bundled_binary_path
+from .device import has_vulkan_icd
+from .tool import SrTool, get_preset_meta
 
 if TYPE_CHECKING:
     from ..config import SrConfig
@@ -33,6 +34,9 @@ class SrResult:
 async def run_SR(input: Path, output: Path, config: SrConfig, data_dir: Path, *, timeout: float = 600) -> SrResult:
     """执行图像超分 - 检查二进制, 生成参数, 运行进程.
 
+    Docker 镜像捆绑的是 patched waifu2x: 有 ICD 走 Vulkan GPU, 无 ICD 传 ``-g -1``
+    用 ncnn ``process_cpu``. 未捆绑时 (桌面) 仍按需下上游 zip.
+
     Args:
         input: 输入图片路径 (文件或目录).
         output: 输出路径.
@@ -48,26 +52,34 @@ async def run_SR(input: Path, output: Path, config: SrConfig, data_dir: Path, *,
     tool = pm.tool
     log = logger.bind(preset=config.preset, tool=tool, input=str(input), output=str(output))
 
-    # 记录输入文件大小
     input_size = input.stat().st_size if input.is_file() else 0
 
     try:
-        # 1. 确保二进制可用
-        binary_path = await ensure_binary(tool, data_dir)
-        log.debug("sr binary ready", path=str(binary_path))
+        gpu_id: int | None = None
+        bundled = get_bundled_binary_path(tool)
+        if bundled is not None:
+            # 同一份 patched 二进制: 有 ICD 不传 -g (auto GPU), 没有则 -g -1 (process_cpu).
+            binary_path = bundled
+            if not has_vulkan_icd():
+                gpu_id = -1
+        elif not has_vulkan_icd() and tool == SrTool.REALESRGAN:
+            duration = (time.monotonic() - started) * 1000
+            error = "realesrgan 需要 Vulkan GPU; 无 GPU 时请改用 waifu-photo-2x"
+            log.error("sr backend unavailable", error=error)
+            return SrResult(False, error=error, duration_ms=duration)
+        else:
+            binary_path = await ensure_binary(tool, data_dir)
+        log.debug("sr binary ready", path=str(binary_path), gpu_id=gpu_id)
 
-        # 2. 生成参数
-        args = build_args(input, output, config)
+        args = build_args(input, output, config, gpu_id=gpu_id)
         log.debug("sr args", args=args)
 
-        # 3. 确保输出目录存在
         if input.is_file():
             output.parent.mkdir(parents=True, exist_ok=True)
         else:
             output.mkdir(parents=True, exist_ok=True)
 
-        # 4. 执行 (realesrgan 从 CWD 解析模型路径)
-        log.info("sr process starting")
+        log.info("sr process starting", backend="cpu" if gpu_id == -1 else "vulkan")
         proc = await asyncio.create_subprocess_exec(
             binary_path,
             *args,
@@ -99,7 +111,6 @@ async def run_SR(input: Path, output: Path, config: SrConfig, data_dir: Path, *,
                 stderr=stderr,
             )
 
-        # 5. 验证输出
         output_size = output.stat().st_size if output.is_file() else 0
         if output.is_file() or (output.is_dir() and any(output.iterdir())):
             if input_size and output_size:

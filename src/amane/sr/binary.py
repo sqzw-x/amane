@@ -17,7 +17,34 @@ import structlog
 
 from .tool import SrTool, get_tool_meta
 
+# Docker 镜像编进的 patched ncnn 二进制 (GPU + process_cpu). 桌面仍按需下上游 zip.
+_BUNDLE_DIR_ENV = "AMANE_SR_BUNDLE_DIR"
+_BUNDLE_DIR_DEFAULT = Path("/opt/amane/sr")
+
 logger = structlog.get_logger()
+
+
+def bundle_dir() -> Path | None:
+    """镜像捆绑的 sr 根目录. 不存在则无捆绑二进制."""
+    raw = os.environ.get(_BUNDLE_DIR_ENV)
+    root = Path(raw) if raw else _BUNDLE_DIR_DEFAULT
+    return root if root.is_dir() else None
+
+
+def get_bundled_binary_path(tool: SrTool) -> Path | None:
+    """镜像内 patched ncnn 二进制 (Vulkan GPU 与 ``-g -1`` CPU 同一份).
+
+    目前只编 waifu2x; realesrgan 上游没有 process_cpu, 不捆绑.
+    """
+    root = bundle_dir()
+    if root is None:
+        return None
+    path = root / tool / get_tool_meta(tool).binary_name
+    if not path.is_file():
+        return None
+    if sys.platform != "win32" and not os.access(path, os.X_OK):
+        return None
+    return path
 
 
 def get_tool_dir(data_dir: Path) -> Path:

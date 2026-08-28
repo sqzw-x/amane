@@ -76,6 +76,10 @@ class TestBuildArgsWaifu2x:
         result = build_args(Path("a.jpg"), Path("b.jpg"), _cfg(preset=SrPreset.WAIFU_PHOTO_2X))
         assert "-n" not in result
 
+    def test_gpu_id_cpu(self):
+        result = build_args(Path("a.jpg"), Path("b.jpg"), _cfg(preset=SrPreset.WAIFU_PHOTO_2X), gpu_id=-1)
+        assert result[-2:] == ["-g", "-1"]
+
 
 class TestPresetMeta:
     def test_realesr_preset_resolves_correctly(self):
