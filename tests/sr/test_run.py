@@ -1,5 +1,6 @@
 """run_SR() 集成测试 - 使用真实二进制."""
 
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -119,3 +120,57 @@ class TestRunErrors:
 
         assert result.success
         assert output.is_file()
+
+
+@pytest.mark.asyncio
+class TestBundledBinary:
+    """镜像捆绑的 patched waifu2x: 无 ICD 传 -g -1, 有 ICD 不传 -g; realesrgan 无 GPU 失败."""
+
+    def _install_fake(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        bundle = tmp_path / "sr-bundle"
+        tool_dir = bundle / "waifu2x"
+        tool_dir.mkdir(parents=True)
+        fake = tool_dir / "waifu2x-ncnn-vulkan"
+        fake.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "a = sys.argv\n"
+            "src = Path(a[a.index('-i') + 1])\n"
+            "dst = Path(a[a.index('-o') + 1])\n"
+            "if '-g' in a:\n"
+            "    Path(str(dst) + '.g').write_text(a[a.index('-g') + 1])\n"
+            "dst.write_bytes(src.read_bytes())\n"
+        )
+        fake.chmod(0o755)
+        monkeypatch.setenv("AMANE_SR_BUNDLE_DIR", str(bundle))
+        return tmp_path / "out.jpg"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX shebang stub")
+    async def test_no_icd_passes_cpu_flag(self, test_image: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        output = self._install_fake(tmp_path, monkeypatch)
+        monkeypatch.setattr("amane.sr.run.has_vulkan_icd", lambda: False)
+        cfg = SrConfig(enabled=True, preset=SrPreset.WAIFU_PHOTO_2X, output_format="jpg")
+        result = await run_SR(test_image, output, cfg, tmp_path)
+        assert result.success
+        assert output.is_file()
+        assert (tmp_path / "out.jpg.g").read_text() == "-1"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX shebang stub")
+    async def test_with_icd_uses_auto_gpu(self, test_image: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        output = self._install_fake(tmp_path, monkeypatch)
+        monkeypatch.setattr("amane.sr.run.has_vulkan_icd", lambda: True)
+        cfg = SrConfig(enabled=True, preset=SrPreset.WAIFU_PHOTO_2X, output_format="jpg")
+        result = await run_SR(test_image, output, cfg, tmp_path)
+        assert result.success
+        assert output.is_file()
+        assert not (tmp_path / "out.jpg.g").exists()
+
+    async def test_realesrgan_without_gpu(self, test_image: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("AMANE_SR_BUNDLE_DIR", str(tmp_path / "empty-sr"))
+        monkeypatch.setattr("amane.sr.run.has_vulkan_icd", lambda: False)
+        cfg = SrConfig(enabled=True, preset=SrPreset.REALESR_PHOTO_4X, output_format="jpg")
+        result = await run_SR(test_image, tmp_path / "out.jpg", cfg, tmp_path)
+        assert not result.success
+        assert result.error is not None
+        assert "waifu-photo-2x" in result.error

@@ -16,8 +16,11 @@ if TYPE_CHECKING:
     from ..config import SrConfig
 
 
-def build_args(input: Path, output: Path, config: SrConfig) -> list[str]:
-    """将 SrConfig + input/output 转换为 CLI 参数列表."""
+def build_args(input: Path, output: Path, config: SrConfig, *, gpu_id: int | None = None) -> list[str]:
+    """将 SrConfig + input/output 转换为 CLI 参数列表.
+
+    gpu_id: 传给 ``-g``. ``-1`` = ncnn CPU (process_cpu). None = 不传, 上游 auto GPU.
+    """
     preset_meta = get_preset_meta(config.preset)
     tool = preset_meta.tool
 
@@ -38,5 +41,8 @@ def build_args(input: Path, output: Path, config: SrConfig) -> list[str]:
 
     if config.tta:
         cli.append("-x")
+
+    if gpu_id is not None:
+        cli += ["-g", str(gpu_id)]
 
     return cli

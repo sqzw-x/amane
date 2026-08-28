@@ -1,6 +1,6 @@
 # 系统架构
 
-> 提交: `07c29df`
+> 提交: `ec165d2`
 >
 > 本文只解释**为什么**这样划分以及**何时会失效**. 字段、签名、目录清单去源码中读.
 > 配置系统见 [config.md](config.md), 数据模型见 [data-model.md](data-model.md), 任务流程见 [task-system.md](task-system.md).
@@ -20,7 +20,7 @@
 | `media/` `organize/` | 元数据 + 路径模板 → 磁盘文件 | 调用方传配置, 自身不读 `HotSettings` 全局 |
 | `llm/` | LLM 后端 + 翻译协议 + 译文缓存 | 管线只依赖协议, 不耦合具体 SDK |
 | `agent/` | 助理 Agent (产品面 Amane) + Saved Query + 会话 trace | 读=任意只读 SQL; 写=封装工具 + pydantic-ai 渐进披露 (Capability); 与 `llm/` 配置分离 |
-| `sr/` | 超分二进制封装 | 就地覆盖本地资源文件 |
+| `sr/` | 超分二进制封装 | Docker 用镜像内 patched waifu2x (有 ICD 走 GPU, 否则 ``-g -1`` / process_cpu). 桌面仍下上游 zip. realesrgan 无 CPU. |
 | `db/` | SQLModel 表 + 异步 Repository (按聚合 mixin 拆分) | 单一数据源; 启动期自动 `alembic upgrade head` |
 | `scheduler/` | 队列消费 / cron / 文件监控 / RSS 发现 | 与 api 解耦, 通过 EventBus 上报 |
 | `observability/` | 进程级日志管线 + 单任务 Recorder | 叙事走 structlog; 任务产物落 `{log_dir}/tasks/task-{id}/` |
