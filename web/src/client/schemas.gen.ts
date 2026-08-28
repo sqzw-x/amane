@@ -2459,6 +2459,21 @@ export const LibraryCreateRequestSchema = {
             title: 'Video Template',
             default: '{studio}/{number}/{number}.{ext}'
         },
+        link_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Link Template'
+        },
+        link_mode: {
+            $ref: '#/components/schemas/LinkMode',
+            default: 'strm'
+        },
         cd_suffix_template: {
             type: 'string',
             title: 'Cd Suffix Template',
@@ -2639,6 +2654,20 @@ export const LibraryResponseSchema = {
             type: 'string',
             title: 'Video Template'
         },
+        link_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Link Template'
+        },
+        link_mode: {
+            $ref: '#/components/schemas/LinkMode'
+        },
         cd_suffix_template: {
             type: 'string',
             title: 'Cd Suffix Template'
@@ -2759,6 +2788,7 @@ export const LibraryResponseSchema = {
         'recursive',
         'move_mode',
         'video_template',
+        'link_mode',
         'cd_suffix_template',
         'subtitle_extensions',
         'write_nfo',
@@ -2848,6 +2878,27 @@ export const LibraryUpdateRequestSchema = {
                 }
             ],
             title: 'Video Template'
+        },
+        link_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Link Template'
+        },
+        link_mode: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/LinkMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
         },
         cd_suffix_template: {
             anyOf: [
@@ -3004,6 +3055,16 @@ export const LibraryUpdateRequestSchema = {
     },
     type: 'object',
     title: 'LibraryUpdateRequest'
+} as const;
+
+export const LinkModeSchema = {
+    type: 'string',
+    enum: [
+        'strm',
+        'symlink'
+    ],
+    title: 'LinkMode',
+    description: '整理后在 link_template 位置如何指向真实视频.'
 } as const;
 
 export const LoggingConfigSchema = {
@@ -4359,7 +4420,7 @@ export const PlaceholderPhaseSchema = {
         'subtitle'
     ],
     title: 'PlaceholderPhase',
-    description: '占位符相位: 值的来源与注入时机.\n\n- ``metadata``: 来自 Metadata 字段;\n- ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);\n- ``file``: 来自源路径 (``parse_file_info``, 整理时检测);\n- ``post_video``: 视频路径渲染后注入 (附属资源模板).\n- ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).'
+    description: '占位符相位: 值的来源与注入时机.\n\n- ``metadata``: 来自 Metadata 字段;\n- ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);\n- ``file``: 来自源路径 (``parse_file_info``, 整理时检测);\n- ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).\n- ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).'
 } as const;
 
 export const PluginConfigSchema = {

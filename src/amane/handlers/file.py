@@ -9,12 +9,13 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..config import HotSettings
-from ..enums import DownloadableResource
+from ..enums import DownloadableResource, LinkMode
 from ..media import ResourceStore, crop_poster
 from ..media import write_nfo as write_nfo_file
 from ..media.pipeline import RESOURCE_URL_PREFIX
 from ..net.http import WebClient
 from ..organize import MoveMode, ResolvedPaths, discover_subtitles, execute_organize, place_subtitles, resolve_paths
+from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
 from ..utils.extensions import TRASH_DIRNAME, compile_skip_patterns
 from ._common import iter_media_files
@@ -104,7 +105,14 @@ async def execute_file_operations(
         mode=move_mode,
     )
 
-    # 3. 写入 NFO (路径由库 nfo_template 渲染, 直接写渲染结果)
+    # 3. 视频就位后写链接 (strm / 软链接); 失败仍带 dest 以便回写 MediaFile.path
+    if org_result.success and org_result.dest and paths.link is not None:
+        mode = LinkMode(library.link_mode) if library is not None else LinkMode.STRM
+        link_result = create_video_link(org_result.dest, paths.link, mode)
+        if not link_result.success:
+            return FileOperationsResult(success=False, dest=org_result.dest, error=link_result.error)
+
+    # 4. 写入 NFO (路径由库 nfo_template 渲染, 直接写渲染结果)
     if org_result.success and org_result.dest and write_nfo:
         await write_nfo_file(metadata, paths.nfo)
 
@@ -118,6 +126,7 @@ async def execute_file_operations(
             file_info=info,
             mode=move_mode,
             safe_dirs=safe_dirs,
+            link_dir=paths.link.parent if paths.link is not None else None,
         )
 
     if org_result.success:
@@ -359,10 +368,9 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                 skipped += 1
                 continue
 
+            if fop_result.dest and media_file.id is not None:
+                await self._repo.update_media_file(media_file.id, path=str(fop_result.dest))
             if fop_result.success:
-                # 更新 MediaFile.path
-                if fop_result.dest and media_file.id is not None:
-                    await self._repo.update_media_file(media_file.id, path=str(fop_result.dest))
                 organized += 1
             else:
                 logger.warning("organize failed", path=path_str, error=fop_result.error)

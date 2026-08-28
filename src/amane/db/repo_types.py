@@ -6,7 +6,7 @@ from sqlalchemy import UnaryExpression, asc, desc, exists, func
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, select
 
-from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, MoveMode
+from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, LinkMode, MoveMode
 from amane.utils.dates import normalize_calendar_date
 
 from .models import (
@@ -265,6 +265,8 @@ class LibraryUpdates(TypedDict, total=False):
     patterns: list[str]
     move_mode: MoveMode
     video_template: str
+    link_template: str | None
+    link_mode: LinkMode
     cd_suffix_template: str
     thumb_template: str | None
     poster_template: str | None

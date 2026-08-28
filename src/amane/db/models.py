@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import Column, Index, String, Text, UniqueConstraint, text
 from sqlmodel import JSON, Field, SQLModel
 
-from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, MoveMode
+from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, LinkMode, MoveMode
 from amane.organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate
 from amane.utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
@@ -321,13 +321,17 @@ class Library(SQLModel, table=True):
     """整理时如何把源文件放到模板路径."""
     # 路径模板
     video_template: str = Field(default="{studio}/{number}/{number}.{ext}")
+    link_template: str | None = None
+    """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或软链接, 必须落在库根之外."""
+    link_mode: LinkMode = Field(default=LinkMode.STRM, sa_column=Column(String, nullable=False, server_default="strm"))
+    """link_template 非空时: strm 写 .strm 文本 (内容为视频绝对路径); symlink 做文件系统软链接."""
     cd_suffix_template: CdSuffixTemplate = Field(
         default=CD_SUFFIX_TEMPLATE_DEFAULT,
         sa_column=Column(String, nullable=False, server_default=CD_SUFFIX_TEMPLATE_DEFAULT),
     )
     """识别到分集文件时追加到视频文件名的后缀模板 (默认 -CD{n}); 空串关闭.
 
-    仅作用于视频文件名 (插在扩展名之前), 附属资源模板基于 {video_dir} 不受影响.
+    仅作用于视频文件名 (插在扩展名之前), 附属资源模板基于 {link_dir} 不受影响.
     渲染格式须保持可被 _detect_cd 反推, 否则二次整理会丢失分集标识.
     """
     thumb_template: str | None = None

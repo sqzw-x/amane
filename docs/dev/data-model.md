@@ -90,7 +90,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 每个 Library 持有整理时的放置方式 (`move_mode`: move / copy / hardlink / symlink)、一组路径模板 (`video_template`, `thumb_template`, `nfo_template`, ...)、以及整理默认 (`write_nfo`、`copy_resources`). 放置方式与默认按库区分, 同一进程里各库可以不同. `copy_resources` 与刮削热配置 `scraping.download_resources` 共用 `DownloadableResource` 枚举, 但互不读写 — 刮削控制进 Resource 目录, 整理控制复制到库路径. ORGANIZE payload 上对应字段为 `None` 时沿用库设置, 非空则只覆盖该次任务. JSON 列读回是 str 不是 enum; `OrganizePayload.resolve` 沿用库设置时再做成 `DownloadableResource`, 否则 Pydantic 序列化会 UnexpectedValue.
 
-`trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH / ORGANIZE 扫描与 watcher 都不把该文件当正片入库. 空串关闭跳过. 非法正则在写入时拒绝 (422). 默认与预告片模板文件名 `{video_dir}/trailer.mp4` 对齐.
+`trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH / ORGANIZE 扫描与 watcher 都不把该文件当正片入库. 空串关闭跳过. 非法正则在写入时拒绝 (422). 默认与预告片模板文件名 `{link_dir}/trailer.mp4` 对齐.
 
 `blacklist_patterns` (正则**列表**) 与预告片同属"文件名匹配即跳过", 语义差别在 ORGANIZE:
 - 命中文件被 ORGANIZE 移入库根 **`.amane_trash`** (固定保留名, 恒为物理移动, 不受 `move_mode`), 移动后删除其 `MediaFile` 记录; 无论是否已有记录都归档 (存量黑名单文件收口).
@@ -98,17 +98,19 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 - `.amane_trash` 是保留目录: 目录本身与任意深度下级路径在任何扫描/监控中都恒被忽略 (否则归档内容会被再次注册), 手动移出 `.amane_trash` 会被当作新文件重新入库.
 - 跳过正则在扫描/监控侧**逐条编译、任一命中即跳过** — 不做 `|` 拼接: 用户全局旗标 (`(?i)ads`) 拼在联合式中间会触发 re 的 "global flags not at the start". 空列表关闭.
 
-分集 (CD) 后缀: `cd_suffix_template` (默认 `-CD{cd}`) 只在**视频文件名**上生效 — ORGANIZE 时从 `parse_file_info` 检测分集 (文件名识别 `-CD{n}` / `-PART{n}` / `-A` / `-B` / 尾部位数 `-1`–`-9`; `-0` 无意义, 零填充与两位尾数 (`-01` / `-10`) 会与合法番号撞车, 均不识别. 文件名无分集时, 直接父目录整段为 `CDn` / `PARTn` 也可认; 更远的祖先、`CD-1`、`A`、裸数字目录都不算), 非 None 且模板非空则在扩展名前追加渲染结果; 空串关闭. 裸数字识别与番号提取一致: `MIDV-123-1` 的番号仍是 `MIDV-123`, 尾部 `-1`–`-9` 本就是分集语义. 模板只允许恰一个 `{cd}` 占位符, 不允许路径分隔符 (写入时 422). 附属资源模板基于 `{video_dir}` (父目录), 不受 CD 后缀影响. **幂等约束**: 渲染后的格式须保持可被同一检测逻辑反推 (如 `-CD1`, `-Part1`), 否则该文件二次整理会因检测不到分集而丢失后缀 — 当前只文档约束, 不加验证. 检测只做在 ORGANIZE 时, 不落库.
+分集 (CD) 后缀: `cd_suffix_template` (默认 `-CD{cd}`) 只在**视频文件名**上生效 — ORGANIZE 时从 `parse_file_info` 检测分集 (文件名识别 `-CD{n}` / `-PART{n}` / `-A` / `-B` / 尾部位数 `-1`–`-9`; `-0` 无意义, 零填充与两位尾数 (`-01` / `-10`) 会与合法番号撞车, 均不识别. 文件名无分集时, 直接父目录整段为 `CDn` / `PARTn` 也可认; 更远的祖先、`CD-1`、`A`、裸数字目录都不算), 非 None 且模板非空则在扩展名前追加渲染结果; 空串关闭. 裸数字识别与番号提取一致: `MIDV-123-1` 的番号仍是 `MIDV-123`, 尾部 `-1`–`-9` 本就是分集语义. 模板只允许恰一个 `{cd}` 占位符, 不允许路径分隔符 (写入时 422). 链接文件名走同一套后缀; 附属资源模板基于 `{link_dir}` (父目录), 不受 CD 后缀影响. **幂等约束**: 渲染后的格式须保持可被同一检测逻辑反推 (如 `-CD1`, `-Part1`), 否则该文件二次整理会因检测不到分集而丢失后缀 — 当前只文档约束, 不加验证. 检测只做在 ORGANIZE 时, 不落库.
 
-字幕文件: ORGANIZE 在视频**挪走前**扫描其同目录 (不递归、不入库). 扩展名由库 `subtitle_extensions` 配置 (默认 `.srt` `.ass` `.ssa` `.vtt` `.sub`; 写入时规范化为小写带点; 空列表关闭). 多个字幕全部搬走, 不挑主字幕. 配对只用当前视频已解析的 `FileInfo.cd`, 不扫同目录其它视频. 只解析字幕**文件名**上的分集 (`detect_cd`, 不看目录): 有标记的跟当前视频同号; 解析不出的跟无分集或 CD1 的视频 (无分集是同分集, CD1 额外收未标记). 放置走与视频相同的 `move_mode`. 路径由 `resolve_subtitle_path` 逐文件渲染, 默认 `{video_dir}/{raw_srt_name}.{ext}` 保持原文件名与扩展名.
+字幕文件: ORGANIZE 在视频**挪走前**扫描其同目录 (不递归、不入库). 扩展名由库 `subtitle_extensions` 配置 (默认 `.srt` `.ass` `.ssa` `.vtt` `.sub`; 写入时规范化为小写带点; 空列表关闭). 多个字幕全部搬走, 不挑主字幕. 配对只用当前视频已解析的 `FileInfo.cd`, 不扫同目录其它视频. 只解析字幕**文件名**上的分集 (`detect_cd`, 不看目录): 有标记的跟当前视频同号; 解析不出的跟无分集或 CD1 的视频 (无分集是同分集, CD1 额外收未标记). 放置走与视频相同的 `move_mode`. 路径由 `resolve_subtitle_path` 逐文件渲染, 默认 `{link_dir}/{raw_srt_name}.{ext}` 保持原文件名与扩展名.
 
 模板**故意按资源类型独立**, 而不是一个 `output_dir` + 后缀拼接 — 用户场景包括: NAS 多盘分存、字幕集中备份、NFO 同目录 vs 集中目录.
 
-模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` (源文件父目录名 / 源文件名不含扩展名) 与 `{mosaic}` / `{definition}` (`parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库 (与 CD 检测同一约定); `{video_dir}` 为视频渲染后的父目录, 仅附属资源模板可用. `{raw_srt_name}` 仅字幕模板, 为该字幕原文件名不含扩展名; 字幕模板里的 `{ext}` 是该字幕自己的扩展名. `{mosaic}` 取值: 文件名标记 → 目录名整段词表 (由近到远; `uncensored` / `cracked` / 无码 / 破解 等, 子串不算) → content_type 兜底 `censored` (永不 `Unknown` — 有码/无码是全域语义, 保证目录名稳定). `{definition}` 只看文件名, 无命中回退 `Unknown` (与普通占位符一致). **幂等约束**: `{mosaic}` 放目录段且目录名等于词表时可二次读回; `{definition}` 与 CD 后缀必须仍能从**文件名**反推, 只放目录段会按默认值重排. 占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
+`link_template` 为空则不创建链接, `{link_dir}` 等于 `{video_dir}`. 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的入口: `link_mode=strm` 写 `.strm` (内容为一行视频绝对路径, 后缀强制 `.strm`); `symlink` 做文件系统软链接. 链接必须落在库根之外 (否则 REFRESH 会把 strm/软链接再扫成媒体). `{video_dir}` 始终是真实视频父目录; `{link_dir}` 是链接父目录. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO/海报自动跟链接走, 不必改六个附属模板. 想把某类附属文件留在网盘侧, 显式写 `{video_dir}/…`.
+
+模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` (源文件父目录名 / 源文件名不含扩展名) 与 `{mosaic}` / `{definition}` (`parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库 (与 CD 检测同一约定); `{video_dir}` 为视频渲染后的父目录, `{link_dir}` 为链接渲染后的父目录 (未设链接时二者相同), 仅附属资源模板可用. `{raw_srt_name}` 仅字幕模板, 为该字幕原文件名不含扩展名; 字幕模板里的 `{ext}` 是该字幕自己的扩展名. `{mosaic}` 取值: 文件名标记 → 目录名整段词表 (由近到远; `uncensored` / `cracked` / 无码 / 破解 等, 子串不算) → content_type 兜底 `censored` (永不 `Unknown` — 有码/无码是全域语义, 保证目录名稳定). `{definition}` 只看文件名, 无命中回退 `Unknown` (与普通占位符一致). **幂等约束**: `{mosaic}` 放目录段且目录名等于词表时可二次读回; `{definition}` 与 CD 后缀必须仍能从**文件名**反推, 只放目录段会按默认值重排. 占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
 
 普通占位符缺失回退 `Unknown`. `{raw_dir}` / `{raw_name}` 无 `source_path` 时为空串 — **空变量放模板首段** (如 `{raw_dir}/...`) 会让结果以 `/` 开头被当成绝对路径.
 
-**逃逸防护**: 相对模板必须是 library 根的后代; 绝对模板 (含展开 `{video_dir}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. 多盘分存要求目标盘在 `safe_dirs` 内.
+**逃逸防护**: 相对模板必须是 library 根的后代; 绝对模板 (含展开 `{video_dir}` / `{link_dir}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. 多盘分存要求目标盘在 `safe_dirs` 内. `link_template` 额外要求渲染结果**不是**库根的后代.
 
 ## Resource (一等存储, 非缓存)
 

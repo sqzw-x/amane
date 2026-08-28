@@ -54,6 +54,8 @@ class TestLibraryCreateRequest:
         assert req.recursive is True
         assert req.patterns == []
         assert req.move_mode == "move"
+        assert req.link_mode == "strm"
+        assert req.link_template is None
 
     def test_full(self):
         req = LibraryCreateRequest(

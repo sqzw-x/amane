@@ -58,6 +58,13 @@ class MoveMode(StrEnum):
     SYMLINK = "symlink"
 
 
+class LinkMode(StrEnum):
+    """整理后在 link_template 位置如何指向真实视频."""
+
+    STRM = "strm"
+    SYMLINK = "symlink"
+
+
 class LibraryAutomation(StrEnum):
     """媒体库自动化级别. 含更低级别的行为; 自动整理尚未开放."""
 

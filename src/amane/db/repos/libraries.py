@@ -3,8 +3,12 @@ from typing import Unpack
 
 from sqlmodel import col, select
 
-from amane.enums import DownloadableResource, LibraryAutomation, MoveMode
-from amane.organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, validate_cd_suffix_template
+from amane.enums import DownloadableResource, LibraryAutomation, LinkMode, MoveMode
+from amane.organize.path_templates import (
+    CD_SUFFIX_TEMPLATE_DEFAULT,
+    normalize_link_template,
+    validate_cd_suffix_template,
+)
 from amane.utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -28,6 +32,8 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         patterns: list[str] | None = None,
         move_mode: MoveMode = MoveMode.MOVE,
         video_template: str = "{studio}/{number}/{number}.{ext}",
+        link_template: str | None = None,
+        link_mode: LinkMode = LinkMode.STRM,
         cd_suffix_template: str | None = None,
         thumb_template: str | None = None,
         poster_template: str | None = None,
@@ -51,6 +57,8 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 patterns=patterns if patterns is not None else [],
                 move_mode=move_mode,
                 video_template=video_template,
+                link_template=normalize_link_template(link_template),
+                link_mode=link_mode,
                 cd_suffix_template=validate_cd_suffix_template(
                     cd_suffix_template if cd_suffix_template is not None else CD_SUFFIX_TEMPLATE_DEFAULT
                 ),
@@ -148,6 +156,10 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 lib.move_mode = updates["move_mode"]
             if "video_template" in updates:
                 lib.video_template = updates["video_template"]
+            if "link_template" in updates:
+                lib.link_template = normalize_link_template(updates["link_template"])
+            if "link_mode" in updates:
+                lib.link_mode = updates["link_mode"]
             if "cd_suffix_template" in updates:
                 lib.cd_suffix_template = validate_cd_suffix_template(updates["cd_suffix_template"])
             if "thumb_template" in updates:

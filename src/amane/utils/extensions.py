@@ -30,7 +30,7 @@ MEDIA_EXTENSIONS = frozenset(
     }
 )
 
-# 与默认 trailer 模板文件名 `{video_dir}/trailer.mp4` 对齐; 空串表示不跳过.
+# 与默认 trailer 模板文件名 `{link_dir}/trailer.mp4` 对齐; 空串表示不跳过.
 DEFAULT_TRAILER_PATTERN = "(?i)trailer"
 
 # ORGANIZE 同目录字幕发现用; 空列表关闭. 不进 MEDIA_EXTENSIONS (字幕不是正片).

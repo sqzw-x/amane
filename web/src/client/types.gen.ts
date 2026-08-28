@@ -1218,6 +1218,11 @@ export type LibraryCreateRequest = {
      */
     video_template?: string;
     /**
+     * Link Template
+     */
+    link_template?: string | null;
+    link_mode?: LinkMode;
+    /**
      * Cd Suffix Template
      */
     cd_suffix_template?: string;
@@ -1316,6 +1321,11 @@ export type LibraryResponse = {
      */
     video_template: string;
     /**
+     * Link Template
+     */
+    link_template?: string | null;
+    link_mode: LinkMode;
+    /**
      * Cd Suffix Template
      */
     cd_suffix_template: string;
@@ -1396,6 +1406,11 @@ export type LibraryUpdateRequest = {
      */
     video_template?: string | null;
     /**
+     * Link Template
+     */
+    link_template?: string | null;
+    link_mode?: LinkMode | null;
+    /**
      * Cd Suffix Template
      */
     cd_suffix_template?: string | null;
@@ -1448,6 +1463,13 @@ export type LibraryUpdateRequest = {
      */
     blacklist_patterns?: Array<string> | null;
 };
+
+/**
+ * LinkMode
+ *
+ * 整理后在 link_template 位置如何指向真实视频.
+ */
+export type LinkMode = 'strm' | 'symlink';
 
 /**
  * LoggingConfig
@@ -2135,7 +2157,7 @@ export type PathTemplateSchemaResponse = {
  * - ``metadata``: 来自 Metadata 字段;
  * - ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);
  * - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
- * - ``post_video``: 视频路径渲染后注入 (附属资源模板).
+ * - ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).
  * - ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).
  */
 export type PlaceholderPhase = 'metadata' | 'source' | 'file' | 'post_video' | 'subtitle';

@@ -30,10 +30,14 @@ def test_library_organize_columns_backfill_existing_rows(tmp_path: Path) -> None
 
     with engine.connect() as conn:
         columns = {column["name"] for column in inspect(conn).get_columns("libraries")}
-        assert {"write_nfo", "copy_resources", "trailer_pattern"} <= columns
-        row = conn.execute(text("SELECT write_nfo, copy_resources, trailer_pattern FROM libraries")).one()
+        assert {"write_nfo", "copy_resources", "trailer_pattern", "link_template", "link_mode"} <= columns
+        row = conn.execute(
+            text("SELECT write_nfo, copy_resources, trailer_pattern, link_template, link_mode FROM libraries")
+        ).one()
         assert row.write_nfo in (1, True)
         assert row.trailer_pattern == "(?i)trailer"
+        assert row.link_template is None
+        assert row.link_mode == "strm"
         resources = json.loads(row.copy_resources) if isinstance(row.copy_resources, str) else row.copy_resources
         assert set(resources) == {"thumb", "poster", "extrafanart", "trailer"}
 
