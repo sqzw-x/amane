@@ -1000,6 +1000,17 @@ class TestLibraryRepo:
         with pytest.raises(ValueError):
             await repo.update_library(lib.id, subtitle_extensions=[".srt/x"])
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_min_file_size_roundtrip(self, repo: Repository):
+        lib = await repo.create_library(name="t", path="/media/t", min_file_size=50 * 1024 * 1024)
+        assert lib.min_file_size == 50 * 1024 * 1024
+        assert lib.id is not None
+        updated = await repo.update_library(lib.id, min_file_size=0)
+        assert updated is not None
+        assert updated.min_file_size == 0
+        with pytest.raises(ValueError, match="min_file_size"):
+            await repo.update_library(lib.id, min_file_size=-1)
+
 
 class TestScheduleRepo:
     @pytest.mark.asyncio(loop_scope="function")

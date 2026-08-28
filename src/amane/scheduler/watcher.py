@@ -8,7 +8,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
-from ..utils.extensions import MEDIA_EXTENSIONS, compile_skip_patterns, is_in_trash
+from ..utils.extensions import MEDIA_EXTENSIONS, compile_skip_patterns, is_in_trash, is_undersized_video
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -36,6 +36,7 @@ class _Handler(FileSystemEventHandler):
         media_extensions: frozenset[str] = MEDIA_EXTENSIONS,
         debounce_seconds: float = _DEFAULT_DEBOUNCE_SECONDS,
         skip_patterns: Sequence[str | None] | None = None,
+        min_file_size: int = 0,
     ):
         super().__init__()
         self.library_id = library_id
@@ -43,6 +44,7 @@ class _Handler(FileSystemEventHandler):
         self._media_extensions = media_extensions
         self._debounce_seconds = debounce_seconds
         self._skip_res = compile_skip_patterns(skip_patterns)
+        self._min_file_size = min_file_size
         self._pending: dict[str, float] = {}
         self._pending_deletes: dict[str, float] = {}
         self._pending_moves: dict[str, tuple[str, float]] = {}  # dest -> (src, timestamp)
@@ -90,8 +92,12 @@ class _Handler(FileSystemEventHandler):
         if self._skip_res is not None and any(r.search(path.name) for r in self._skip_res):
             return False
         if self._patterns:
-            return any(path.match(p) for p in self._patterns)
-        return path.suffix.lower() in self._media_extensions
+            matched = any(path.match(p) for p in self._patterns)
+        else:
+            matched = path.suffix.lower() in self._media_extensions
+        if not matched:
+            return False
+        return not is_undersized_video(path, self._min_file_size, media_extensions=self._media_extensions)
 
     def get_ready_files(self) -> list[Path]:
         """返回已稳定超过 debounce_seconds 的新文件"""
@@ -192,6 +198,7 @@ class FileWatcher:
         recursive: bool = True,
         patterns: list[str] | None = None,
         skip_patterns: Sequence[str | None] | None = None,
+        min_file_size: int = 0,
     ) -> None:
         """
         添加一个要监控的目录.
@@ -204,6 +211,8 @@ class FileWatcher:
                      如果为 None, 则使用 MEDIA_EXTENSIONS.
             skip_patterns: 跳过正则列表 (预告片/黑名单), 命中文件名则忽略;
                           `.amane_trash` 目录 (回收站) 内路径恒忽略.
+            min_file_size: 视频体积下限 (字节); 0 关闭. 只对 media_extensions 判定,
+                          `.strm` 指针不参与.
         """
         handler = _Handler(
             library_id,
@@ -211,6 +220,7 @@ class FileWatcher:
             media_extensions=self._media_extensions,
             debounce_seconds=self._debounce_seconds,
             skip_patterns=skip_patterns,
+            min_file_size=min_file_size,
         )
         self._handlers.append(handler)
         self._watching.append((path, recursive, patterns))

@@ -56,6 +56,7 @@ class TestLibraryCreateRequest:
         assert req.move_mode == "move"
         assert req.link_mode == "strm"
         assert req.link_template is None
+        assert req.min_file_size == 0
 
     def test_full(self):
         req = LibraryCreateRequest(

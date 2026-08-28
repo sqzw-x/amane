@@ -324,7 +324,7 @@ def build_handlers(
         cache=translation_cache,
     )
     handlers: dict[TaskType, TaskHandler[Any, Any]] = {
-        TaskType.REFRESH: RefreshHandler(repo),
+        TaskType.REFRESH: RefreshHandler(repo, media_extensions=hot.watcher.media_extensions),
         TaskType.SCRAPE: ScrapeHandler(
             repo,
             factory,

@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -5,6 +6,7 @@ import structlog
 
 from ..db import TaskType
 from ..parsing import parse_file_info
+from ..utils.extensions import MEDIA_EXTENSIONS
 from ..utils.oshash import compute_oshash_async
 from ._common import iter_media_files, register_media_file
 from .models import RefreshPayload, RefreshResult, ScanMode, ScrapePayload
@@ -19,9 +21,10 @@ logger = structlog.get_logger()
 class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
     """以 Library 为单位, 按需扫描文件索引 (注册新文件/清理失效/回填 oshash) 并 fan-out SCRAPE."""
 
-    def __init__(self, repo: Repository):
+    def __init__(self, repo: Repository, media_extensions: Sequence[str] | None = None):
         super().__init__(payload_t=RefreshPayload, result_t=RefreshResult)
         self._repo = repo
+        self._media_extensions = frozenset(media_extensions) if media_extensions else MEDIA_EXTENSIONS
 
     async def handle(self, payload: RefreshPayload) -> TaskResult[RefreshResult]:
         scan_dir = Path(payload.path)
@@ -30,6 +33,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
 
         library = await self._repo.get_library(payload.library_id)
         skip_patterns = [library.trailer_pattern, *(library.blacklist_patterns or [])] if library is not None else None
+        min_file_size = library.min_file_size if library is not None else 0
 
         added = removed = scrape = 0
 
@@ -43,6 +47,8 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
                         recursive=payload.recursive if payload.recursive is not None else True,
                         patterns=payload.patterns,
                         skip_patterns=skip_patterns,
+                        min_file_size=min_file_size,
+                        media_extensions=self._media_extensions,
                     ),
                 )
             )

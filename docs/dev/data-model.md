@@ -1,6 +1,6 @@
 # 数据模型
 
-> 提交: `7f7ffb1`
+> 提交: `9330fb5`
 >
 > 表结构、字段类型、便捷属性都在 `src/amane/db/models.py`. 本文只解释**为什么**这么建模、所有权关系、生命周期与已知陷阱.
 
@@ -31,7 +31,7 @@
 
 ## Library 归属 (强关系)
 
-与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理放置方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 跳过正则 (`trailer_pattern` / `blacklist_patterns`). 库始终有效, `automation` 只控制发现侧: 不监控、仅登记、或登记后自动刮削. **自动整理尚未开放**, 落盘只由手动 ORGANIZE. **每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK). 库目录落盘只由 ORGANIZE 执行 —— 读 `media_file.library_id` 取模板与放置方式, 是归属的唯一真值来源. SCRAPE 用 `media_file_id` 只作查询输入 (番号 / oshash) 与刮削后回写关联, 不移动文件.
+与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理放置方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 跳过规则 (`trailer_pattern` / `blacklist_patterns` / `min_file_size`). 库始终有效, `automation` 只控制发现侧: 不监控、仅登记、或登记后自动刮削. **自动整理尚未开放**, 落盘只由手动 ORGANIZE. **每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK). 库目录落盘只由 ORGANIZE 执行 —— 读 `media_file.library_id` 取模板与放置方式, 是归属的唯一真值来源. SCRAPE 用 `media_file_id` 只作查询输入 (番号 / oshash) 与刮削后回写关联, 不移动文件.
 
 **强 FK 的意义**: 归属在文件**入库时确定一次**, 同一文件经任何入口行为一致:
 
@@ -91,6 +91,8 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 每个 Library 持有整理时的放置方式 (`move_mode`: move / copy / hardlink / symlink)、一组路径模板 (`video_template`, `thumb_template`, `nfo_template`, ...)、以及整理默认 (`write_nfo`、`copy_resources`). 放置方式与默认按库区分, 同一进程里各库可以不同. `copy_resources` 与刮削热配置 `scraping.download_resources` 共用 `DownloadableResource` 枚举, 但互不读写 — 刮削控制进 Resource 目录, 整理控制复制到库路径. ORGANIZE payload 上对应字段为 `None` 时沿用库设置, 非空则只覆盖该次任务. JSON 列读回是 str 不是 enum; `OrganizePayload.resolve` 沿用库设置时再做成 `DownloadableResource`, 否则 Pydantic 序列化会 UnexpectedValue.
 
 `trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH / ORGANIZE 扫描与 watcher 都不把该文件当正片入库. 空串关闭跳过. 非法正则在写入时拒绝 (422). 默认与预告片模板文件名 `{link_dir}/trailer.mp4` 对齐.
+
+`min_file_size` (字节, 默认 0 关闭) 只过滤**扫描视频**: 后缀必须属于该次扫描用的视频扩展名白名单 (`watcher.media_extensions`, 缺省 `MEDIA_EXTENSIONS`). 图片、NFO、字幕即使体积很小也不走这条. `.strm` 虽在扫描白名单里, 但是路径指针不是视频字节, 不参与体积判定. 软链接跟随目标 (`stat(follow_symlinks=True)`), 比的是真实文件体积 — 库 `move_mode=symlink` 落盘的入口本身只有几个字节, 不能当广告. 低于阈值的视频与黑名单同语义: REFRESH / watcher 不入库, ORGANIZE 移入 `.amane_trash` (预告片仍只跳过不归档). stat 失败 (含悬空链接) 视为不匹配, 避免把读不到的正片当广告丢掉.
 
 `blacklist_patterns` (正则**列表**) 与预告片同属"文件名匹配即跳过", 语义差别在 ORGANIZE:
 - 命中文件被 ORGANIZE 移入库根 **`.amane_trash`** (固定保留名, 恒为物理移动, 不受 `move_mode`), 移动后删除其 `MediaFile` 记录; 无论是否已有记录都归档 (存量黑名单文件收口).

@@ -36,6 +36,21 @@ class TestHandler:
         assert handler._matches(Path("/tmp/video.mp4")) is True
         assert handler._matches(Path("/tmp/中文预告片.mp4")) is True  # (?i)trailer 不匹配预告
 
+    def test_skips_undersized_video(self, tmp_path: Path):
+        """体积阈值只跳过真实存在的小视频; 缺失路径不因 stat 失败被挡 (删除事件仍匹配)."""
+        small = tmp_path / "ad.mp4"
+        small.write_bytes(b"tiny")
+        large = tmp_path / "film.mp4"
+        large.write_bytes(b"x" * 100)
+        nfo = tmp_path / "note.nfo"
+        nfo.write_bytes(b"nfo")
+        handler = _Handler(library_id=1, patterns=None, min_file_size=50)
+        assert handler._matches(small) is False
+        assert handler._matches(large) is True
+        assert handler._matches(nfo) is False
+        missing = tmp_path / "gone.mp4"
+        assert handler._matches(missing) is True
+
     def test_skips_custom_preview_name(self):
         handler = _Handler(library_id=1, patterns=None, skip_patterns=["预告"])
         assert handler._matches(Path("/tmp/中文预告片.mp4")) is False

@@ -158,6 +158,7 @@ class TestLibrary:
         assert lib.trailer_pattern == "(?i)trailer"
         assert lib.automation == LibraryAutomation.SCRAPE
         assert lib.subtitle_extensions == list(DEFAULT_SUBTITLE_EXTENSIONS)
+        assert lib.min_file_size == 0
 
 
 class TestSchedule:

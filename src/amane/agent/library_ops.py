@@ -40,6 +40,7 @@ _LIBRARY_UPDATE_KEYS = frozenset(
         "copy_resources",
         "trailer_pattern",
         "blacklist_patterns",
+        "min_file_size",
     }
 )
 
@@ -52,10 +53,18 @@ def _sync_watcher_add(
     recursive: bool,
     patterns: list[str],
     skip_patterns: list[str],
+    min_file_size: int = 0,
 ) -> None:
     watcher = deps.bridge.watcher
     if watcher is not None:
-        watcher.add_library(path, library_id, recursive=recursive, patterns=patterns, skip_patterns=skip_patterns)
+        watcher.add_library(
+            path,
+            library_id,
+            recursive=recursive,
+            patterns=patterns,
+            skip_patterns=skip_patterns,
+            min_file_size=min_file_size,
+        )
 
 
 def _sync_watcher_remove(deps: AgentDeps, library_id: int) -> None:
@@ -126,6 +135,7 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
                 recursive=lib.recursive,
                 patterns=list(lib.patterns or []),
                 skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
+                min_file_size=lib.min_file_size,
             )
         task_id: int | None = None
         if scan:
@@ -168,7 +178,15 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
         lib = await ctx.deps.repo.update_library(library_id, **cast(LibraryUpdates, patch))
         if lib is None:
             return {"error": f"library {library_id} 不存在"}
-        watch_fields = {"automation", "path", "recursive", "patterns", "trailer_pattern", "blacklist_patterns"}
+        watch_fields = {
+            "automation",
+            "path",
+            "recursive",
+            "patterns",
+            "trailer_pattern",
+            "blacklist_patterns",
+            "min_file_size",
+        }
         if watch_fields & set(patch):
             _sync_watcher_remove(ctx.deps, library_id)
             if lib.automation != LibraryAutomation.NONE:
@@ -180,6 +198,7 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
                     recursive=lib.recursive,
                     patterns=list(lib.patterns or []),
                     skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
+                    min_file_size=lib.min_file_size,
                 )
         out = {"id": lib.id, "name": lib.name, "path": lib.path, "updated": True}
         trace_tool(ctx, "tool_result", {"tool": "update_library", "result": out})

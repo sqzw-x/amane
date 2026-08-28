@@ -9,6 +9,7 @@ from ...utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
     BlacklistPattern,
+    MinFileSize,
     SubtitleExtensions,
     TrailerPattern,
 )
@@ -40,6 +41,8 @@ class LibraryCreateRequest(BaseModel):
     trailer_pattern: TrailerPattern = DEFAULT_TRAILER_PATTERN
     blacklist_patterns: list[BlacklistPattern] = []
     """文件名正则列表; 命中任一则扫描/监控跳过, ORGANIZE 时移入库根 `.amane_trash`."""
+    min_file_size: MinFileSize = 0
+    """视频体积下限 (字节). 小于此值的扫描视频跳过入库, ORGANIZE 时进 `.amane_trash`. 0 关闭."""
     scan: bool = True
 
 
@@ -74,6 +77,7 @@ class LibraryResponse(BaseModel):
     copy_resources: list[DownloadableResource]
     trailer_pattern: str
     blacklist_patterns: list[str]
+    min_file_size: int
 
 
 class LibraryListResponse(BaseModel):

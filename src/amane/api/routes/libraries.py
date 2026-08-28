@@ -71,6 +71,7 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
         copy_resources=req.copy_resources,
         trailer_pattern=req.trailer_pattern,
         blacklist_patterns=req.blacklist_patterns,
+        min_file_size=req.min_file_size,
     )
     assert lib.id is not None
 
@@ -84,6 +85,7 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
             recursive=req.recursive,
             patterns=req.patterns,
             skip_patterns=[req.trailer_pattern, *req.blacklist_patterns],
+            min_file_size=req.min_file_size,
         )
 
     # 提交初始 Refresh 任务
@@ -133,7 +135,15 @@ async def update_library(
     logger.info("library updated", library_id=library_id, fields=list(updates.keys()))
 
     # 同步文件监控: 监控相关字段变化时, 先移除旧监控再按最新状态重建
-    watch_fields = {"automation", "path", "recursive", "patterns", "trailer_pattern", "blacklist_patterns"}
+    watch_fields = {
+        "automation",
+        "path",
+        "recursive",
+        "patterns",
+        "trailer_pattern",
+        "blacklist_patterns",
+        "min_file_size",
+    }
     if runtime.watcher_service and watch_fields & updates.keys():
         runtime.watcher_service.remove_library(library_id)
         if lib.automation != LibraryAutomation.NONE:
@@ -144,6 +154,7 @@ async def update_library(
                 recursive=lib.recursive,
                 patterns=lib.patterns,
                 skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
+                min_file_size=lib.min_file_size,
             )
 
     return to_resp(LibraryResponse, lib)

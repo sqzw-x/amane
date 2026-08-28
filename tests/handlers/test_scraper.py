@@ -459,6 +459,36 @@ class TestRefreshHandler:
         assert await repo.get_media_file_by_path(str(ad)) is None
         assert await repo.get_media_file_by_path(str(tmp_path / "MIDV-123.mp4")) is not None
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_undersized_videos_skipped_and_records_removed(self, repo: Repository, tmp_path):
+        """低于 min_file_size 的视频不进扫描; nfo 即使很小也不当视频过滤; ScanMode.remove 清旧记录."""
+        lib = await repo.create_library(name="t", path=str(tmp_path), min_file_size=50)
+        assert lib.id is not None
+        ad = tmp_path / "ad.mp4"
+        ad.write_bytes(b"tiny")
+        (tmp_path / "MIDV-123.mp4").write_bytes(b"x" * 100)
+        (tmp_path / "note.nfo").write_bytes(b"nfo")
+        old = await repo.create_media_file(lib.id, path=str(ad), status=MediaFileStatus.SCRAPED, metadata_id=42)
+        assert old.id is not None
+
+        handler = RefreshHandler(repo=repo)
+        result = await handler.handle(
+            RefreshPayload(
+                library_id=lib.id,
+                path=str(tmp_path),
+                scan={ScanMode.add, ScanMode.remove},
+                scrape=set(),
+            )
+        )
+
+        assert result.success is True
+        assert result.result is not None
+        assert result.result.added == 1
+        assert result.result.removed == 1
+        assert await repo.get_media_file_by_path(str(ad)) is None
+        assert await repo.get_media_file_by_path(str(tmp_path / "MIDV-123.mp4")) is not None
+        assert await repo.get_media_file_by_path(str(tmp_path / "note.nfo")) is None
+
     @pytest.mark.parametrize(
         ("scan_modes", "scrape_statuses", "expected_scrape_tasks"),
         [

@@ -105,6 +105,8 @@
   "fieldTrailerPatternHint": "Skip files whose names (with extension) match; empty disables. Default matches trailer",
   "fieldBlacklistPatterns": "Blacklist regexes",
   "fieldBlacklistPatternsHint": "One regex per line; matching files are skipped from scans and moved to .amane_trash on organize. Empty disables",
+  "fieldMinFileSize": "Minimum video size",
+  "fieldMinFileSizeHint": "Videos smaller than this are skipped from scans and moved to .amane_trash on organize. Applies only to scanned video extensions, not images/NFO/subtitles. 0 disables",
   "fieldSubtitleExtensions": "Subtitle extensions",
   "fieldSubtitleExtensionsHint": "Comma-separated",
   "fieldMoveMode": "File Operation Mode",

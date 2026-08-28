@@ -97,6 +97,23 @@ class TestIterMediaFiles:
         assert "ad.mp4" not in result
         assert "a.mp4" in result
 
+    def test_min_file_size_skips_small_videos_only(self, tree):
+        """体积阈值只过滤扫描视频; 自定义 glob 扫到的 nfo 即使很小也保留."""
+        (tree / "a.mp4").write_bytes(b"x" * 10)
+        (tree / "sub" / "c.mkv").write_bytes(b"x" * 100)
+        (tree / "sub" / "deep" / "e.avi").write_bytes(b"x" * 100)
+        (tree / "sub" / "d.nfo").write_bytes(b"nfo")
+        videos = {p.name for p in iter_media_files(tree, recursive=True, patterns=None, min_file_size=50)}
+        assert videos == {"c.mkv", "e.avi"}
+        mixed = {p.name for p in iter_media_files(tree, recursive=True, patterns=["*.mp4", "*.nfo"], min_file_size=50)}
+        assert "a.mp4" not in mixed
+        assert "d.nfo" in mixed
+
+    def test_min_file_size_zero_disabled(self, tree):
+        (tree / "a.mp4").write_bytes(b"tiny")
+        result = {p.name for p in iter_media_files(tree, recursive=True, patterns=None, min_file_size=0)}
+        assert "a.mp4" in result
+
 
 class TestFinalizeMediaFile:
     """标记 MediaFile 已刮削并关联 Metadata."""

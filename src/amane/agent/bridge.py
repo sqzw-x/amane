@@ -16,6 +16,7 @@ class LibraryWatcher(Protocol):
         recursive: bool = True,
         patterns: list[str] | None = None,
         skip_patterns: Sequence[str | None] | None = None,
+        min_file_size: int = 0,
     ) -> None: ...
 
     def remove_library(self, library_id: int) -> None: ...

@@ -1,6 +1,6 @@
 # 任务系统
 
-> 提交: `7f7ffb1`
+> 提交: `9330fb5`
 >
 > 入口: `src/amane/handlers/`, `src/amane/scheduler/worker.py`. Payload 结构、handler 步骤都在源码; 本文只解释**为什么**这么编排.
 > 数据所有权见 [data-model.md](data-model.md), 启动顺序见 [architecture.md](architecture.md), 日志隔离见 [observability.md](observability.md).
@@ -101,7 +101,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 | 单元 | 位置 | 复用方 | 职责 |
 | ------ | ------ | -------- | ------ |
-| `iter_media_files` | `handlers/_common.py` | REFRESH / ORGANIZE | 目录遍历 + patterns/扩展名过滤 + 库级 `trailer_pattern` |
+| `iter_media_files` | `handlers/_common.py` | REFRESH / ORGANIZE | 目录遍历 + patterns/扩展名过滤 + 库级 `trailer_pattern` / 黑名单 / `min_file_size` |
 | `finalize_media_file` | `handlers/_common.py` | SCRAPE (缓存/主路径) | 标记 SCRAPED + 关联 Metadata |
 | `apply_file_operations` | `handlers/file.py` | ORGANIZE | 取 MediaFile→取 Library→渲染路径→执行 file ops |
 

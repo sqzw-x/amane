@@ -2588,6 +2588,11 @@ export const LibraryCreateRequestSchema = {
             title: 'Blacklist Patterns',
             default: []
         },
+        min_file_size: {
+            type: 'integer',
+            title: 'Min File Size',
+            default: 0
+        },
         scan: {
             type: 'boolean',
             title: 'Scan',
@@ -2777,6 +2782,10 @@ export const LibraryResponseSchema = {
             },
             type: 'array',
             title: 'Blacklist Patterns'
+        },
+        min_file_size: {
+            type: 'integer',
+            title: 'Min File Size'
         }
     },
     type: 'object',
@@ -2794,7 +2803,8 @@ export const LibraryResponseSchema = {
         'write_nfo',
         'copy_resources',
         'trailer_pattern',
-        'blacklist_patterns'
+        'blacklist_patterns',
+        'min_file_size'
     ],
     title: 'LibraryResponse'
 } as const;
@@ -3051,6 +3061,17 @@ export const LibraryUpdateRequestSchema = {
                 }
             ],
             title: 'Blacklist Patterns'
+        },
+        min_file_size: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Min File Size'
         }
     },
     type: 'object',

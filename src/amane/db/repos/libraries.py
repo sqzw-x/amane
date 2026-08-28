@@ -14,6 +14,7 @@ from amane.utils.extensions import (
     DEFAULT_TRAILER_PATTERN,
     normalize_subtitle_extensions,
     validate_blacklist_pattern,
+    validate_min_file_size,
     validate_trailer_pattern,
 )
 
@@ -47,7 +48,9 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         copy_resources: list[DownloadableResource] | None = None,
         trailer_pattern: str | None = None,
         blacklist_patterns: list[str] | None = None,
+        min_file_size: int = 0,
     ) -> Library:
+        min_file_size = validate_min_file_size(min_file_size)
         async with self._session() as session:
             lib = Library(
                 name=name,
@@ -78,6 +81,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                     trailer_pattern if trailer_pattern is not None else DEFAULT_TRAILER_PATTERN
                 ),
                 blacklist_patterns=[validate_blacklist_pattern(p) for p in (blacklist_patterns or [])],
+                min_file_size=min_file_size,
             )
             session.add(lib)
             await session.commit()
@@ -191,6 +195,8 @@ class LibrariesRepoMixin(RepositoryMixinBase):
             if "blacklist_patterns" in updates:
                 patterns = updates["blacklist_patterns"]
                 lib.blacklist_patterns = [validate_blacklist_pattern(p) for p in (patterns or [])]
+            if "min_file_size" in updates:
+                lib.min_file_size = validate_min_file_size(updates["min_file_size"])
             session.add(lib)
             await session.commit()
             await session.refresh(lib)

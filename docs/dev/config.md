@@ -1,6 +1,6 @@
 # 配置系统
 
-> 提交: `ece9523c`
+> 提交: `9330fb5`
 >
 > 入口: `src/amane/config/`. 本文解释分层设计动机、热重载机制和添加新配置的约定.
 > 启动编排见 [architecture.md](architecture.md).
@@ -38,7 +38,7 @@ RateLimiters → WebClient → HttpClient → CrawlerFactory
 
 **不重建的对象**: `Repository`、`EventBus`、`WatcherService`、`FeedService`、`ResourceStore`、`TranslationCache`、`ProxyFailureCache`、`AgentService` 内的 `ResultCache` — 它们的状态是会话级的 (DB 连接池、WS 客户端、watchdog observer、feed 轮询循环、资源去重表、译文缓存连接、proxy-image 失败负缓存、交付结果内存缓存), 重建会切断现有连接或丢掉缓存句柄. `rebuild()` 只把新 `WebClient` 交给 `FeedService.set_web_client`.
 
-`watcher.use_polling` / `media_extensions` / `debounce_seconds` 在 `start_app` 构造时一次性注入, **不随 rebuild 更新**, 改 TOML 后需重启. Library 的 `automation` / path / recursive / patterns / `trailer_pattern` 由 libraries 路由热增删监控根, 与上述三项无关.
+`watcher.use_polling` / `media_extensions` / `debounce_seconds` 在 `start_app` 构造时一次性注入, **不随 rebuild 更新**, 改 TOML 后需重启. Library 的 `automation` / path / recursive / patterns / `trailer_pattern` / `blacklist_patterns` / `min_file_size` 由 libraries 路由热增删监控根, 与上述三项无关.
 
 旧 worker 在 rebuild 后被替换, 调用方必须排空它再启动新 worker, 否则两个 worker 会同时认领任务. 新 worker 继承 pause, 避免 PATCH 时意外恢复领队. 配置 PATCH、插件启用/禁用、以及插件安装/卸载/重新扫描都走 `AppRuntime.apply_rebuild()`, 串行化这段替换.
 

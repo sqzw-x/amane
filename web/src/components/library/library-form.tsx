@@ -3,6 +3,7 @@ import {
   Badge,
   Checkbox,
   Group,
+  NumberInput,
   SimpleGrid,
   Stack,
   Switch,
@@ -55,6 +56,16 @@ type OptionalTemplateKey = (typeof OPTIONAL_TEMPLATE_KEYS)[number];
 
 const MOVE_MODES: readonly LibraryResponse["move_mode"][] = ["move", "copy", "hardlink", "symlink"];
 
+const BYTES_PER_MB = 1024 * 1024;
+
+function bytesToMb(bytes: number): number {
+  return bytes <= 0 ? 0 : bytes / BYTES_PER_MB;
+}
+
+function mbToBytes(mb: number): number {
+  return mb <= 0 ? 0 : Math.round(mb * BYTES_PER_MB);
+}
+
 export const LIBRARY_AUTOMATION_BADGE_COLOR = {
   none: "gray",
   watch: "blue",
@@ -74,6 +85,7 @@ export interface LibraryFormState {
   copy_resources: DownloadableResource[];
   trailer_pattern: string;
   blacklist_patterns: string;
+  min_file_size: number;
   subtitle_extensions: string;
   video_template: string;
   cd_suffix_template: string;
@@ -102,6 +114,7 @@ export function emptyLibraryForm(schema?: PathTemplateSchemaResponse | null): Li
     copy_resources: DOWNLOADABLE_RESOURCES.filter((r) => r !== "trailer"),
     trailer_pattern: "(?i)trailer",
     blacklist_patterns: "",
+    min_file_size: 0,
     subtitle_extensions: (
       schema?.subtitle_extensions_default ?? [".srt", ".ass", ".ssa", ".vtt", ".sub"]
     ).join(", "),
@@ -132,6 +145,7 @@ export function libraryFormFromResponse(lib: LibraryResponse): LibraryFormState 
     copy_resources: parseCopyResources(lib.copy_resources),
     trailer_pattern: lib.trailer_pattern,
     blacklist_patterns: lib.blacklist_patterns?.join("\n") ?? "",
+    min_file_size: lib.min_file_size ?? 0,
     subtitle_extensions: lib.subtitle_extensions?.join(", ") ?? "",
     video_template: lib.video_template,
     cd_suffix_template: lib.cd_suffix_template,
@@ -175,6 +189,7 @@ function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
     copy_resources: form.copy_resources,
     trailer_pattern: form.trailer_pattern,
     blacklist_patterns: parseBlacklistPatterns(form.blacklist_patterns),
+    min_file_size: form.min_file_size,
     subtitle_extensions: parseLibraryPatterns(form.subtitle_extensions),
     video_template: form.video_template.trim(),
     cd_suffix_template: form.cd_suffix_template.trim(),
@@ -286,6 +301,18 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
           maxRows={5}
           value={value.blacklist_patterns}
           onChange={(e) => onChange({ ...value, blacklist_patterns: e.currentTarget.value })}
+        />
+        <NumberInput
+          label={t("fieldMinFileSize")}
+          description={t("fieldMinFileSizeHint")}
+          min={0}
+          allowDecimal={false}
+          suffix=" MB"
+          value={bytesToMb(value.min_file_size)}
+          onChange={(raw) => {
+            const mb = typeof raw === "number" ? raw : 0;
+            onChange({ ...value, min_file_size: mbToBytes(mb) });
+          }}
         />
         <TextInput
           label={t("fieldSubtitleExtensions")}

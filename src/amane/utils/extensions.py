@@ -41,6 +41,9 @@ _SUBTITLE_EXT_RE = re.compile(r"^\.[a-z0-9]+$")
 # 黑名单命中的文件在 ORGANIZE 时移入库根下该目录 (固定保留名, 任何深度都不入库).
 TRASH_DIRNAME = ".amane_trash"
 
+# .strm 在扫描扩展名里 (当正片入口), 但是路径指针不是视频字节; 体积过滤不碰它.
+_POINTER_EXTENSIONS = frozenset({".strm"})
+
 
 def compile_skip_patterns(patterns: Sequence[str | None] | None) -> list[Pattern[str]] | None:
     """逐条编译跳过正则 (预告片 + 黑名单), 任一命中即跳过.
@@ -110,9 +113,49 @@ def normalize_subtitle_extensions(values: list[str]) -> list[str]:
     return out
 
 
+def validate_min_file_size(value: int) -> int:
+    """字节阈值; 0 关闭. 负数非法."""
+    if value < 0:
+        raise ValueError("min_file_size must be >= 0")
+    return value
+
+
 TrailerPattern = Annotated[str, AfterValidator(validate_trailer_pattern)]
 BlacklistPattern = Annotated[str, AfterValidator(validate_blacklist_pattern)]
 SubtitleExtensions = Annotated[list[str], AfterValidator(normalize_subtitle_extensions)]
+MinFileSize = Annotated[int, AfterValidator(validate_min_file_size)]
+
+
+def is_video_media(path: Path, media_extensions: frozenset[str] | None = None) -> bool:
+    """后缀是否属于扫描用的视频扩展名白名单 (默认 MEDIA_EXTENSIONS)."""
+    extensions = MEDIA_EXTENSIONS if media_extensions is None else media_extensions
+    return path.suffix.lower() in extensions
+
+
+def is_undersized_video(
+    path: Path,
+    min_file_size: int,
+    media_extensions: frozenset[str] | None = None,
+) -> bool:
+    """是否为低于阈值的视频文件.
+
+    - min_file_size <= 0 视为关闭.
+    - 只对扫描视频扩展名判定; 图片 / nfo / 字幕等后缀一律不算.
+    - .strm 是路径指针, 体积无意义, 不参与过滤.
+    - 软链接跟随目标, 比目标文件字节, 不是链接节点本身.
+    - stat 失败 (含悬空链接) 视为不匹配, 避免把读不到的正片当广告丢掉.
+    """
+    if min_file_size <= 0:
+        return False
+    suffix = path.suffix.lower()
+    if suffix in _POINTER_EXTENSIONS:
+        return False
+    if not is_video_media(path, media_extensions):
+        return False
+    try:
+        return path.stat(follow_symlinks=True).st_size < min_file_size
+    except OSError:
+        return False
 
 
 def is_skipped_media(path: Path, pattern: str | None) -> bool:

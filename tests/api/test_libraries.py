@@ -71,6 +71,7 @@ class TestLibraries:
         assert set(body["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
         assert body["trailer_pattern"] == "(?i)trailer"
         assert body["blacklist_patterns"] == []
+        assert body["min_file_size"] == 0
         assert body["subtitle_extensions"] == [".srt", ".ass", ".ssa", ".vtt", ".sub"]
         assert body["cd_suffix_template"] == "-CD{cd}"
         lib_id = body["id"]
@@ -98,6 +99,7 @@ class TestLibraries:
                 "thumb_template": "/out/{number}/thumb.jpg",
                 "fanart_template": "/out/{number}/fanart.jpg",
                 "blacklist_patterns": ["广告", "(?i)ads[0-9]+"],
+                "min_file_size": 10485760,
                 "cd_suffix_template": "-Part {cd}",
                 "scan": False,
             },
@@ -108,6 +110,7 @@ class TestLibraries:
         assert fbody["move_mode"] == "hardlink"
         assert fbody["video_template"] == "/out/{number}/{number}.mp4"
         assert fbody["blacklist_patterns"] == ["广告", "(?i)ads[0-9]+"]
+        assert fbody["min_file_size"] == 10485760
         assert fbody["cd_suffix_template"] == "-Part {cd}"
 
         patched = await client.patch(
@@ -118,6 +121,7 @@ class TestLibraries:
                 "copy_resources": ["thumb"],
                 "trailer_pattern": "预告",
                 "blacklist_patterns": ["广告", "预览"],
+                "min_file_size": 0,
                 "subtitle_extensions": ["vtt"],
                 "cd_suffix_template": "",
                 "link_template": str(safe_path / "emby" / "{number}" / "{number}.{ext}"),
@@ -131,6 +135,7 @@ class TestLibraries:
         assert pbody["copy_resources"] == ["thumb"]
         assert pbody["trailer_pattern"] == "预告"
         assert pbody["blacklist_patterns"] == ["广告", "预览"]
+        assert pbody["min_file_size"] == 0
         assert pbody["subtitle_extensions"] == [".vtt"]
         assert pbody["cd_suffix_template"] == ""
         assert pbody["link_mode"] == "symlink"
@@ -172,6 +177,7 @@ class TestLibraries:
         assert (
             await client.post("libraries", json={**base, "blacklist_patterns": ["广告", "(ads"]})
         ).status_code == 422
+        assert (await client.post("libraries", json={**base, "min_file_size": -1})).status_code == 422
         assert (
             await client.post("libraries", json={**base, "subtitle_extensions": [".srt", "bad ext"]})
         ).status_code == 422
@@ -208,6 +214,7 @@ class TestLibraries:
         assert skipped.json()["automation"] == "none"
 
         assert (await client.patch(f"libraries/{lib.id}", json={"blacklist_patterns": ["(ads"]})).status_code == 422
+        assert (await client.patch(f"libraries/{lib.id}", json={"min_file_size": -1})).status_code == 422
         assert (
             await client.patch(f"libraries/{lib.id}", json={"cd_suffix_template": "no-placeholder"})
         ).status_code == 422

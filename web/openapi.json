@@ -7420,6 +7420,11 @@
             "title": "Blacklist Patterns",
             "default": []
           },
+          "min_file_size": {
+            "type": "integer",
+            "title": "Min File Size",
+            "default": 0
+          },
           "scan": {
             "type": "boolean",
             "title": "Scan",
@@ -7607,6 +7612,10 @@
             },
             "type": "array",
             "title": "Blacklist Patterns"
+          },
+          "min_file_size": {
+            "type": "integer",
+            "title": "Min File Size"
           }
         },
         "type": "object",
@@ -7624,7 +7633,8 @@
           "write_nfo",
           "copy_resources",
           "trailer_pattern",
-          "blacklist_patterns"
+          "blacklist_patterns",
+          "min_file_size"
         ],
         "title": "LibraryResponse"
       },
@@ -7880,6 +7890,17 @@
               }
             ],
             "title": "Blacklist Patterns"
+          },
+          "min_file_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min File Size"
           }
         },
         "type": "object",

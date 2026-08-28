@@ -10,6 +10,8 @@ from amane.utils.extensions import (
     compile_skip_patterns,
     is_in_trash,
     is_skipped_media,
+    is_undersized_video,
+    is_video_media,
     normalize_subtitle_extensions,
     validate_blacklist_pattern,
     validate_subtitle_extension,
@@ -115,3 +117,64 @@ def test_normalize_subtitle_extensions_dedupes_and_allows_empty():
 def test_library_rejects_invalid_subtitle_extension():
     with pytest.raises(ValidationError):
         Library.model_validate({"name": "x", "path": "/m", "subtitle_extensions": [".srt", "bad ext"]})
+
+
+def test_library_rejects_negative_min_file_size():
+    with pytest.raises(ValidationError):
+        Library.model_validate({"name": "x", "path": "/m", "min_file_size": -1})
+
+
+def test_is_video_media_uses_scan_extensions(tmp_path: Path):
+    assert is_video_media(tmp_path / "a.mp4") is True
+    assert is_video_media(tmp_path / "a.nfo") is False
+    assert is_video_media(tmp_path / "a.srt") is False
+    assert is_video_media(tmp_path / "a.jpg") is False
+    assert is_video_media(tmp_path / "a.strm") is True
+    assert is_video_media(tmp_path / "a.m2ts", media_extensions=frozenset({".m2ts"})) is True
+    assert is_video_media(tmp_path / "a.mp4", media_extensions=frozenset({".m2ts"})) is False
+
+
+SIZE_CASES = [
+    ("a.mp4", 10, 50, True, "below threshold"),
+    ("a.mp4", 50, 50, False, "equal to threshold stays"),
+    ("a.mp4", 51, 50, False, "above threshold"),
+    ("a.mp4", 10, 0, False, "threshold 0 disables"),
+    ("a.nfo", 10, 50, False, "nfo is not video"),
+    ("a.srt", 10, 50, False, "subtitle is not video"),
+    ("a.jpg", 10, 50, False, "image is not video"),
+    ("a.strm", 10, 50, False, "strm pointer is not sized"),
+]
+
+
+@pytest.mark.parametrize(("name", "size", "min_size", "undersized", "_"), SIZE_CASES)
+def test_is_undersized_video(tmp_path: Path, name: str, size: int, min_size: int, undersized: bool, _: str):
+    path = tmp_path / name
+    path.write_bytes(b"x" * size)
+    assert is_undersized_video(path, min_size) is undersized
+
+
+def test_is_undersized_video_follows_symlink_target(tmp_path: Path):
+    large = tmp_path / "real.mp4"
+    large.write_bytes(b"x" * 100)
+    link = tmp_path / "link.mp4"
+    link.symlink_to("real.mp4")
+    assert link.lstat().st_size < 50
+    assert is_undersized_video(link, 50) is False
+
+
+def test_is_undersized_video_symlink_to_small_target(tmp_path: Path):
+    small = tmp_path / "ad.mp4"
+    small.write_bytes(b"x" * 10)
+    link = tmp_path / "link.mp4"
+    link.symlink_to(small)
+    assert is_undersized_video(link, 50) is True
+
+
+def test_is_undersized_video_broken_symlink_is_not_undersized(tmp_path: Path):
+    link = tmp_path / "broken.mp4"
+    link.symlink_to(tmp_path / "missing.mp4")
+    assert is_undersized_video(link, 50) is False
+
+
+def test_is_undersized_video_stat_failure_is_not_undersized(tmp_path: Path):
+    assert is_undersized_video(tmp_path / "missing.mp4", 10) is False

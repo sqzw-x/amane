@@ -399,6 +399,52 @@ async def test_organize_trash_untracked_and_collision(
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_organize_trashes_undersized_videos_keeps_sidecars(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """低于 min_file_size 的视频进回收站; 预告片/字幕/nfo 不因体积归档; 正片落盘."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    ad = src_dir / "ad.mp4"
+    ad.write_bytes(b"tiny")
+    video = src_dir / "NSFS-039.mp4"
+    video.write_bytes(b"x" * 200)
+    trailer = src_dir / "trailer.mp4"
+    trailer.write_bytes(b"t")
+    (src_dir / "note.nfo").write_bytes(b"nfo")
+    (src_dir / "NSFS-039.srt").write_text("sub")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, min_file_size=50)
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    ad_record = await repo.create_media_file(
+        lib.id, path=str(ad), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    source = await repo.create_media_file(
+        lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert ad_record.id is not None and source.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.trashed == 1
+    assert result.result.organized == 1
+
+    assert not ad.exists()
+    assert (lib_root / ".amane_trash" / "ad.mp4").exists()
+    assert await repo.get_media_file(ad_record.id) is None
+    assert trailer.exists()
+    assert (src_dir / "note.nfo").exists()
+    dest_dir = lib_root / "Studio" / "NSFS-039"
+    assert (dest_dir / "NSFS-039.mp4").exists()
+    assert (dest_dir / "NSFS-039.srt").exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_organize_moves_same_dir_subtitles(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:

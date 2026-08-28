@@ -17,7 +17,7 @@ from ..net.http import WebClient
 from ..organize import MoveMode, ResolvedPaths, discover_subtitles, execute_organize, place_subtitles, resolve_paths
 from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
-from ..utils.extensions import TRASH_DIRNAME, compile_skip_patterns
+from ..utils.extensions import MEDIA_EXTENSIONS, TRASH_DIRNAME, compile_skip_patterns, is_undersized_video
 from ._common import iter_media_files
 from .models import CleanupPayload, CleanupResult, OrganizePayload, OrganizeResult
 from .protocol import TaskHandler, TaskResult
@@ -281,8 +281,9 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
 
     流程:
         1. 清掉本库失效索引 (避免幽灵行占用 dest 碰撞名)
-        2. 黑名单预处理: 命中库 blacklist_patterns 的文件移入库根 `.amane_trash` 并删记录
-        3. 遍历目录, 过滤媒体文件 (预告片/黑名单命中跳过)
+        2. 黑名单/小视频预处理: 命中库 blacklist_patterns 或低于 min_file_size 的视频
+           移入库根 `.amane_trash` 并删记录 (预告片只跳过不归档)
+        3. 遍历目录, 过滤媒体文件 (预告片/黑名单/小视频跳过)
         4. 对每个文件: 查 MediaFile → 查关联 Metadata
         5. 有元数据: 执行 file operations
         6. 无元数据: 跳过
@@ -322,9 +323,10 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                 await self._repo.delete_media_file(mf.id)
 
         recursive = payload.recursive if payload.recursive is not None else True
+        media_extensions = frozenset(self._config.watcher.media_extensions) or MEDIA_EXTENSIONS
 
-        # 黑名单预处理: 先于主循环, 命中文件移入回收站后主循环不再触碰.
-        trashed = await self._trash_blacklisted(library, scan_dir, recursive)
+        # 黑名单/小视频预处理: 先于主循环, 命中文件移入回收站后主循环不再触碰.
+        trashed = await self._trash_unwanted(library, scan_dir, recursive, media_extensions)
 
         organized = 0
         skipped = 0
@@ -335,6 +337,8 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             recursive=recursive,
             patterns=payload.patterns,
             skip_patterns=[library.trailer_pattern, *(library.blacklist_patterns or [])],
+            min_file_size=library.min_file_size,
+            media_extensions=media_extensions,
         ):
             path_str = str(file_path)
 
@@ -389,31 +393,50 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             True, result=OrganizeResult(organized=organized, skipped=skipped, failed=failed, trashed=trashed)
         )
 
-    async def _trash_blacklisted(self, library: Library, scan_dir: Path, recursive: bool) -> int:
-        """把扫描目录中命中库黑名单的媒体文件移入库根 `.amane_trash` (固定保留名).
+    async def _trash_unwanted(
+        self,
+        library: Library,
+        scan_dir: Path,
+        recursive: bool,
+        media_extensions: frozenset[str],
+    ) -> int:
+        """把扫描目录中命中库黑名单或低于体积阈值的视频移入库根 `.amane_trash`.
 
         - 命中黑名单即判定非正片: 无论是否已有 MediaFile 记录都归档, 归档后删除记录.
+        - 低于 min_file_size 的扫描视频同样归档; 预告片 (trailer_pattern) 只跳过不归档.
+        - 图片 / NFO / 字幕 / .strm 不参与体积判定.
         - 归档恒为物理移动, 不受库 move_mode 影响; 已归档的 `.amane_trash` 内容不再被遍历.
         - 失败只记日志, 不阻断整理; 返回成功归档数.
         """
         blacklist = library.blacklist_patterns
-        if not blacklist:
+        min_file_size = library.min_file_size
+        if not blacklist and min_file_size <= 0:
             return 0
         trash_res = compile_skip_patterns(blacklist)
-        if trash_res is None:
-            return 0
+        trailer_res = compile_skip_patterns([library.trailer_pattern])
         trash_dir = Path(library.path) / TRASH_DIRNAME
         trashed = 0
-        for file_path in iter_media_files(scan_dir, recursive=recursive, patterns=None, skip_patterns=None):
-            if not any(r.search(file_path.name) for r in trash_res):
+        for file_path in iter_media_files(
+            scan_dir,
+            recursive=recursive,
+            patterns=None,
+            skip_patterns=None,
+            media_extensions=media_extensions,
+        ):
+            blacklisted = trash_res is not None and any(r.search(file_path.name) for r in trash_res)
+            trailer = trailer_res is not None and any(r.search(file_path.name) for r in trailer_res)
+            undersized = (not trailer) and is_undersized_video(
+                file_path, min_file_size, media_extensions=media_extensions
+            )
+            if not blacklisted and not undersized:
                 continue
             result = execute_organize(
                 source=file_path, target_dir=trash_dir, target_stem=file_path.stem, mode=MoveMode.MOVE
             )
             if not result.success:
-                logger.warning("blacklisted file trash failed", path=str(file_path), error=result.error)
+                logger.warning("unwanted file trash failed", path=str(file_path), error=result.error)
                 continue
-            logger.info("blacklisted file trashed", path=str(file_path), dest=str(result.dest))
+            logger.info("unwanted file trashed", path=str(file_path), dest=str(result.dest))
             media_file = await self._repo.get_media_file_by_path(str(file_path))
             if media_file is not None:
                 assert media_file.id is not None

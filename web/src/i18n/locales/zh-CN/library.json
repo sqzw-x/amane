@@ -99,6 +99,8 @@
   "fieldTrailerPatternHint": "匹配文件名（含扩展名）则扫描/监控跳过；空串关闭。默认匹配 trailer",
   "fieldBlacklistPatterns": "黑名单正则",
   "fieldBlacklistPatternsHint": "每行一个正则；命中的文件扫描/监控跳过，整理时移入库根 .amane_trash。留空关闭",
+  "fieldMinFileSize": "最小视频体积",
+  "fieldMinFileSizeHint": "小于此值的视频扫描/监控跳过，整理时进 .amane_trash。只作用于扫描视频扩展名，不含图片/NFO/字幕。0 关闭",
   "fieldSubtitleExtensions": "字幕扩展名",
   "fieldSubtitleExtensionsHint": "逗号分隔",
   "fieldMoveMode": "文件操作模式",

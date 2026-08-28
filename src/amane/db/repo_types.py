@@ -280,6 +280,7 @@ class LibraryUpdates(TypedDict, total=False):
     copy_resources: list[DownloadableResource]
     trailer_pattern: str
     blacklist_patterns: list[str]
+    min_file_size: int
 
 
 class ScheduleUpdates(TypedDict, total=False):

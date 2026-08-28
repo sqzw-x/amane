@@ -11,7 +11,7 @@ handler 间共享的可复用单元.
 from typing import TYPE_CHECKING
 
 from ..db import MediaFileStatus
-from ..utils.extensions import MEDIA_EXTENSIONS, compile_skip_patterns, is_in_trash
+from ..utils.extensions import MEDIA_EXTENSIONS, compile_skip_patterns, is_in_trash, is_undersized_video
 from ..utils.oshash import compute_oshash_async
 
 if TYPE_CHECKING:
@@ -33,24 +33,30 @@ def iter_media_files(
     recursive: bool,
     patterns: list[str] | None,
     skip_patterns: Sequence[str | None] | None = None,
+    min_file_size: int = 0,
+    media_extensions: frozenset[str] | None = None,
 ) -> Iterator[Path]:
     """遍历目录, 产出符合条件的媒体文件路径.
 
      过滤规则:
     - 仅产出常规文件 (跳过目录/目录符号链接等, 但允许文件符号链接和无效链接)
     - 提供 patterns 时按 glob 模式匹配 (任一命中即可)
-    - 未提供 patterns 时按 MEDIA_EXTENSIONS 扩展名过滤
+    - 未提供 patterns 时按 media_extensions (默认 MEDIA_EXTENSIONS) 扩展名过滤
     - skip_patterns 任一命中文件名 (含扩展名) 则跳过 (预告片/黑名单正则)
     - 路径任一组件为 `.amane_trash` (回收站) 则跳过
+    - min_file_size > 0 时跳过低于阈值的**视频** (同一套扩展名; 图片/nfo/字幕/strm 不参与)
 
      Args:
          scan_dir: 待遍历目录
          recursive: 是否递归子目录
          patterns: 文件名 glob 模式列表, None 时回退到扩展名过滤
          skip_patterns: 跳过正则列表 (预告片 + 黑名单), 空/非法则跳过
+         min_file_size: 视频体积下限 (字节); 0 关闭
+         media_extensions: 视频扩展名白名单; None 则 MEDIA_EXTENSIONS
     """
     glob_pattern = "**/*" if recursive else "*"
     skip_res = compile_skip_patterns(skip_patterns)
+    extensions = MEDIA_EXTENSIONS if media_extensions is None else media_extensions
     for file_path in scan_dir.glob(glob_pattern):
         if not _maybe_file(file_path):
             continue
@@ -61,7 +67,9 @@ def iter_media_files(
         if patterns:
             if not any(file_path.match(p) for p in patterns):
                 continue
-        elif file_path.suffix.lower() not in MEDIA_EXTENSIONS:
+        elif file_path.suffix.lower() not in extensions:
+            continue
+        if is_undersized_video(file_path, min_file_size, media_extensions=extensions):
             continue
         yield file_path
 

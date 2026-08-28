@@ -1275,6 +1275,10 @@ export type LibraryCreateRequest = {
      */
     blacklist_patterns?: Array<string>;
     /**
+     * Min File Size
+     */
+    min_file_size?: number;
+    /**
      * Scan
      */
     scan?: boolean;
@@ -1377,6 +1381,10 @@ export type LibraryResponse = {
      * Blacklist Patterns
      */
     blacklist_patterns: Array<string>;
+    /**
+     * Min File Size
+     */
+    min_file_size: number;
 };
 
 /**
@@ -1462,6 +1470,10 @@ export type LibraryUpdateRequest = {
      * Blacklist Patterns
      */
     blacklist_patterns?: Array<string> | null;
+    /**
+     * Min File Size
+     */
+    min_file_size?: number | null;
 };
 
 /**

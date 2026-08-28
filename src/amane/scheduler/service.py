@@ -99,6 +99,7 @@ class WatcherService:
                 recursive=lib.recursive,
                 patterns=lib.patterns,
                 skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
+                min_file_size=lib.min_file_size,
             )
 
         try:
@@ -138,13 +139,19 @@ class WatcherService:
         recursive: bool = True,
         patterns: list[str] | None = None,
         skip_patterns: Sequence[str | None] | None = None,
+        min_file_size: int = 0,
     ) -> None:
         """热添加监控库 (运行时调用, 无需重启)"""
         if self._watcher is None:
             # 首次添加: 创建 watcher 并启动
             self._watcher = self._new_watcher()
             self._watcher.watch(
-                path, library_id=library_id, recursive=recursive, patterns=patterns, skip_patterns=skip_patterns
+                path,
+                library_id=library_id,
+                recursive=recursive,
+                patterns=patterns,
+                skip_patterns=skip_patterns,
+                min_file_size=min_file_size,
             )
             self._watcher.start()
             self._running = True
@@ -154,7 +161,12 @@ class WatcherService:
         else:
             self._watcher.unwatch(library_id)  # 幂等: 若已存在则先移除再添加
             self._watcher.watch(
-                path, library_id=library_id, recursive=recursive, patterns=patterns, skip_patterns=skip_patterns
+                path,
+                library_id=library_id,
+                recursive=recursive,
+                patterns=patterns,
+                skip_patterns=skip_patterns,
+                min_file_size=min_file_size,
             )
             logger.info("library watch added", library_id=library_id, path=path, recursive=recursive)
 
