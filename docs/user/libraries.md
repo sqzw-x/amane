@@ -29,16 +29,17 @@
 | `{raw_name}` | 源视频文件名，不含扩展名 | `A/B.mp4` → `B` |
 | `{raw_dir}` | 源文件父目录名 | `A/B/C.mp4` → `B` |
 | `{video_dir}` | 按模板渲染后目标文件所在目录的路径，仅可用于附属资源模板 | — |
+| `{link_dir}` | 链接文件渲染后的父目录 (无链接时等于 video_dir) | — |
 | `{raw_srt_name}` | 字幕原文件名，不含扩展名，仅字幕模板 | `foo.zh.srt` → `foo.zh` |
 
 ### 默认模板
 
 ```
 视频: {studio}/{number}/{number}.{ext}
-缩略图: {video_dir}/thumb.jpg
-海报: {video_dir}/poster.jpg
-NFO: {video_dir}/{number}.nfo
-字幕: {video_dir}/{raw_srt_name}.{ext}
+缩略图: {link_dir}/thumb.jpg
+海报: {link_dir}/poster.jpg
+NFO: {link_dir}/{number}.nfo
+字幕: {link_dir}/{raw_srt_name}.{ext}
 ```
 
 ### 示例
@@ -57,6 +58,26 @@ NFO: {video_dir}/{number}.nfo
     则后续整理时该字段会无法获取而变为 `Unknown`. 因此若要用 `{definition}` 最好在文件名中同时记录,
     (如 `{number}-{definition}.{ext}`).
 
+## 链接模板与模式
+
+媒体库支持在库外创建指向库内视频的入口, 适用于网盘挂载等场景:
+
+- **`link_template`**: 链接文件的路径模板 (如 `/本地路径/{number}/{number}`). 为空则不创建链接, `{link_dir}` 等于 `{video_dir}`.
+- **`link_mode`**: 链接类型
+  - `strm`: 创建 `.strm` 文件 (内容为视频绝对路径), Emby/Jellyfin 可识别
+  - `symlink`: 创建文件系统软链接
+
+### 使用场景
+
+网盘库整理时, 库路径指向挂载盘 (如 `/mnt/cloud`), `link_template` 填本地路径 (需在 `safe_dirs` 内):
+
+- 视频在挂载盘上按模板改名
+- 本地出现 strm 文件或软链接 + NFO/海报
+- 媒体服务器扫描本地路径即可
+
+!!! note
+    链接路径必须在库根之外, 否则会被扫描为新文件. `{link_dir}` 占位符在有链接时指向链接父目录, 默认的 NFO/海报模板已改用 `{link_dir}`, 因此填写链接模板后附属文件自动跟随, 无需修改其他模板.
+
 ## 整理操作
 
 整理 (Organize) 操作会将媒体文件按路径模板放置到指定位置:
@@ -64,6 +85,7 @@ NFO: {video_dir}/{number}.nfo
 1. 在媒体库页面点击「整理」
 2. 系统会根据路径模板计算目标位置
 3. 按放置方式 (移动/复制/硬链接/符号链接) 执行
+4. 如果配置了链接模板, 在库外创建 strm 文件或软链接
 
 !!! note
     整理操作不会自动触发, 需要手动执行. 可以通过任务系统排队整理任务.
