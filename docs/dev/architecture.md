@@ -1,6 +1,6 @@
 # 系统架构
 
-> 提交: `ec165d2`
+> 提交: `f95e1f8`
 >
 > 本文只解释**为什么**这样划分以及**何时会失效**. 字段、签名、目录清单去源码中读.
 > 配置系统见 [config.md](config.md), 数据模型见 [data-model.md](data-model.md), 任务流程见 [task-system.md](task-system.md).
