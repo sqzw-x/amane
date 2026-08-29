@@ -1,6 +1,6 @@
 # 内容路由与站点特性
 
-> 提交: `fc6e05a`
+> 提交: `a687b6a`
 >
 > 默认 `content_routes` 的取舍、各源覆盖与怪癖. 资格真值 / `field_priority` 编译见 [config.md](config.md); 建图见 [task-system.md](task-system.md). 成员与顺序以 `src/amane/config/manager.py` `_DEFAULT_CONTENT_ROUTES` 为准, 本文不抄表.
 
@@ -73,7 +73,7 @@
 
 **kin8tengoku.com** — 「金髪洋物専門 無修正」. 从任意番号抽数字拼 `/moviepages/{id}/`, 有误伤. 不进默认表.
 
-**theporndb.net** — 未登录跳 `/login`. GraphQL 无 token 时爬虫直接 `None`. 欧美路由第一. uncensored fixture 走 `?type=Scene`.
+**theporndb.net** — 未登录跳 `/login`. GraphQL 无 token 时影片/演员爬虫都直接 `None`. 欧美路由第一. uncensored fixture 走 `?type=Scene`. 演员走 `searchPerformer`, 精确匹配 name/aliases, 不回退首条; 与影片共用 `site_config.api_token`.
 
 **official** — Will/Outvision 官网集群. 前缀对不上不发 HTTP, 可以垫在有碼末尾.
 

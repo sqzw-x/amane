@@ -1,6 +1,6 @@
 # 爬虫开发
 
-> 提交: `0f642c7`
+> 提交: `a687b6a`
 >
 > 入口: `src/amane/crawlers/`. 本文解释爬虫架构、HTTP 层设计、限速机制, 以及添加新爬虫的完整步骤.
 > 测试约定见 [crawler-testing.md](crawler-testing.md). 默认路由与站点覆盖见 [content-routes.md](content-routes.md).
@@ -24,9 +24,9 @@ CrawlerFactory (缓存实例)
 
 **核心设计:** 爬虫异步并发安全. `SiteConfig` 构造期注入, `__init__` 里 `_resolve_config()` 合并 profile 默认与用户配置 — 子类直接用 `self.base_url` / `self.cookies`; 实例可缓存, 仅配置变化时重建工厂.
 
-- 演员站与影片站共用 HttpClient / 限速; 实现在 `crawlers/actor/`, 只注册 `actor_registry` (可以不在影片 `registry`). **双料站** (javdb) 同一 `SiteName` 两套爬虫、共用 `site_config`.
+- 演员站与影片站共用 HttpClient / 限速; 实现在 `crawlers/actor/`, 只注册 `actor_registry` (可以不在影片 `registry`). **双料站** (javdb / theporndb) 同一 `SiteName` 两套爬虫、共用 `site_config`.
 - gFriends 额外依赖 `data_dir` (Filetree 缓存) 与 `actor_scraping.gfriends_repo`.
-- **性别覆盖** (`crawlers/actor/site_coverage`, 非 HotSettings): minnano/gFriends 仅 female; javdb/wikipedia 双向. Handler 按 `Actor.gender` 裁站, 见 [task-system.md](task-system.md).
+- **性别覆盖** (`crawlers/actor/site_coverage`, 非 HotSettings): minnano/gFriends 仅 female; javdb/wikipedia/theporndb 双向. Handler 按 `Actor.gender` 裁站, 见 [task-system.md](task-system.md).
 - **角色能力** (`site_roles`): 配置 JSON Schema 的站点列表只暴露对应子集; `site_config` 仍含全集. 演员聚合契约见 [config.md](config.md) `actor_scraping`. 聚合引擎只对 `MULTI_LANGUAGE_SITES` (当前 iqqtv / r18dev) 展开带语言的抓取节点, 因为只有这些爬虫消费 `FetchOptions.language`.
 - 生日 / 发行日输出均为 `YYYY-MM-DD` (`normalize_calendar_date`); 非法文本丢弃, 不写脏串.
 

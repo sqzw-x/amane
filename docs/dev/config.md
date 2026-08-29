@@ -1,6 +1,6 @@
 # 配置系统
 
-> 提交: `e8b40a9`
+> 提交: `a687b6a`
 >
 > 入口: `src/amane/config/`. 本文解释分层设计动机、热重载机制和添加新配置的约定.
 > 启动编排见 [architecture.md](architecture.md).
@@ -84,7 +84,7 @@ Cold 配置同样加到 `manager.py::ColdSettings`, 无需 UI — 只通过 `AMA
 
 契约 (实现见 `ActorScrapeHandler` / `aggregate.actor`):
 
-- **`profile_sites`**: 档案源顺序 — 标量填空优先级 (minnano / javdb / wikipedia; 枚举收窄为 `ACTOR_PROFILE_SITES`). javdb 贡献中文别名, 且男女都覆盖.
+- **`profile_sites`**: 档案源顺序 — 标量填空优先级 (minnano / javdb / wikipedia / theporndb; 枚举收窄为 `ACTOR_PROFILE_SITES`). javdb 贡献中文别名; theporndb 垫后 (与影片共用 `api_token`, 无 token 空跑), 二者男女都覆盖.
 - **`image_sites`**: 头像源顺序 — 优先于档案站附图拼接 `image_urls` (当前 gFriends; `ACTOR_IMAGE_SITES`).
 - **`download_images`**: 是否经 ResourceStore 缓存头像 (URL 仍为远端 locator).
 - **`auto_scrape`**: 影片刮削成功后自动链式入队该片演员的 `ACTOR_SCRAPE` 任务 (已刮过的 Actor 跳过; 见 [task-system.md](task-system.md) ACTOR_SCRAPE).

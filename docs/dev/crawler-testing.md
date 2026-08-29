@@ -1,6 +1,6 @@
 # 爬虫测试
 
-> 提交: `0f642c7`
+> 提交: `a687b6a`
 >
 > 运行器: `tests/crawlers/test_crawlers.py` (影片) / `test_actor_crawlers.py` (演员). TOML 字段语法以解析器源码为准; 本文只写约定与仍会影响采集的坑.
 > 爬虫架构见 [crawlers.md](crawlers.md).
@@ -28,7 +28,7 @@
 
 每个 TOML **顶部注释必须记录**采集命令 (curl / `uv run python -c` / 浏览器步骤), 方便刷新. 一个 TOML 一个场景, 不要塞多 case.
 
-布局 `cases/{site}/`: 纯演员站 TOML 在站点根; 双料站影片在根、演员只放 `actor/` (影片 runner 忽略 `actor/` 段). 查询键: 影片 `number`, 演员 `name`. 覆盖 `fetch()` 的站只写 `[fetch]`.
+布局 `cases/{site}/`: 纯演员站 TOML 在站点根; 双料站影片在根、演员只放 `actor/` (影片 runner 忽略 `actor/` 段; 演员 runner 不回退根目录). 查询键: 影片 `number`, 演员 `name`. 覆盖 `fetch()` 的站只写 `[fetch]`. `[fetch].config` / `[search].config` / `[scrape].config` 注入 `SiteConfig` (theporndb `api_token` 等).
 
 命名: 影片 `{番号小写}_{变体}.toml`; 演员 `{名字或场景}_{变体}.toml`. 响应与 TOML 同目录, `.html`→`get_text`, `.json`→`post_json`.
 
