@@ -12,9 +12,11 @@ from __future__ import annotations
 import contextlib
 import re
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import TypedDict
 
 # ---------------------------------------------------------------------------
 # Types
@@ -45,6 +47,25 @@ class FileInfo:
     cd: int | None = None
     has_subtitle: bool = False
     mosaic: Mosaic | None = None
+    definition: str | None = None
+
+
+class FilePhase(TypedDict):
+    """MediaFile 上持久化的文件相位 (path 的投影, 不含 number/cd)."""
+
+    content_type: ContentType
+    mosaic: Mosaic | None
+    has_subtitle: bool
+    definition: str | None
+
+
+@dataclass(frozen=True)
+class FilePhaseSummary:
+    """多文件相位聚合: 任一文件具备某性质即亮; definition 取最高档."""
+
+    has_subtitle: bool = False
+    uncensored: bool = False
+    mosaics: tuple[Mosaic, ...] = ()
     definition: str | None = None
 
 
@@ -261,6 +282,51 @@ def is_uncensored(number: str) -> bool:
 
 def is_amateur(number: str) -> bool:
     return infer_content_type(number) == ContentType.AMATEUR
+
+
+def file_phase_from_path(path: str | Path) -> FilePhase:
+    """从路径抽出要落库的文件相位列."""
+    info = parse_file_info(path)
+    return FilePhase(
+        content_type=info.content_type,
+        mosaic=info.mosaic,
+        has_subtitle=info.has_subtitle,
+        definition=info.definition,
+    )
+
+
+def file_shows_uncensored(mosaic: Mosaic | None, content_type: ContentType | str) -> bool:
+    """无码角标/筛选: 文件名马赛克标记或片种为无码 (HEYZO 等不必带 -U)."""
+    return mosaic == Mosaic.UNCENSORED or content_type == ContentType.UNCENSORED
+
+
+def max_definition(values: Iterable[str | None]) -> str | None:
+    """按 DEFINITION_VALUES 顺序取最高档; 未知值忽略."""
+    rank = {name: index for index, name in enumerate(DEFINITION_VALUES)}
+    best: str | None = None
+    best_rank = len(DEFINITION_VALUES)
+    for value in values:
+        if value is None:
+            continue
+        current = rank.get(value)
+        if current is not None and current < best_rank:
+            best = value
+            best_rank = current
+    return best
+
+
+def summarize_file_phases(phases: Iterable[FilePhase]) -> FilePhaseSummary:
+    """按「任一文件具备」聚合; mosaics 按 MOSAIC_VALUES 去重保序."""
+    items = list(phases)
+    if not items:
+        return FilePhaseSummary()
+    mosaic_present = {phase["mosaic"] for phase in items if phase["mosaic"] is not None}
+    return FilePhaseSummary(
+        has_subtitle=any(phase["has_subtitle"] for phase in items),
+        uncensored=any(file_shows_uncensored(phase["mosaic"], phase["content_type"]) for phase in items),
+        mosaics=tuple(mosaic for mosaic in MOSAIC_VALUES if mosaic in mosaic_present),
+        definition=max_definition(phase["definition"] for phase in items),
+    )
 
 
 # ---------------------------------------------------------------------------
