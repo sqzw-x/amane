@@ -31,6 +31,8 @@
 | `{video_dir}` | 按模板渲染后目标文件所在目录的路径，仅可用于附属资源模板 | — |
 | `{link_dir}` | 链接文件渲染后的父目录 (无链接时等于 video_dir) | — |
 | `{raw_srt_name}` | 字幕原文件名，不含扩展名，仅字幕模板 | `foo.zh.srt` → `foo.zh` |
+| `{video_path}` | 整理后视频的绝对路径，仅 strm 内容模板 | `/test/OD/VC/MIDV-123/MIDV-123.mp4` |
+| `{video_relpath}` | 整理后视频相对库根的路径 (POSIX 分隔符，无前导 `/`)，仅 strm 内容模板 | `OD/VC/MIDV-123/MIDV-123.mp4` |
 
 ### 默认模板
 
@@ -64,8 +66,9 @@ NFO: {link_dir}/{number}.nfo
 
 - **`link_template`**: 链接文件的路径模板 (如 `/本地路径/{number}/{number}`). 为空则不创建链接, `{link_dir}` 等于 `{video_dir}`.
 - **`link_mode`**: 链接类型
-  - `strm`: 创建 `.strm` 文件 (内容为视频绝对路径), Emby/Jellyfin 可识别
+  - `strm`: 创建 `.strm` 文件 (内容默认为视频绝对路径), Emby/Jellyfin 可识别
   - `symlink`: 创建文件系统软链接
+- **`strm_content_template`**: `.strm` 文件的内容模板 (单行), 仅 `link_mode=strm` 生效. 为空则写视频绝对路径.
 
 ### 使用场景
 
@@ -74,6 +77,28 @@ NFO: {link_dir}/{number}.nfo
 - 视频在挂载盘上按模板改名
 - 本地出现 strm 文件或软链接 + NFO/海报
 - 媒体服务器扫描本地路径即可
+
+### strm 内容: 对齐 OpenList / MediaWarp
+
+默认写的是**本地挂载点**上的绝对路径. 用 rclone 挂载 OpenList 时, 这条路径与 OpenList 上的文件路径差一个挂载前缀,
+MediaWarp 的 **AlistStrm** 认不出来. 此时填 `strm_content_template` 把库根前缀换掉:
+
+| 库路径 (rclone 挂载点) | 视频落地 | strm 内容模板 | strm 内容 |
+|---|---|---|---|
+| `/test` (挂 OpenList 根) | `/test/OD/VC/MIDV-123/MIDV-123.mp4` | `/{video_relpath}` | `/OD/VC/MIDV-123/MIDV-123.mp4` |
+| `/test` (挂 OpenList `/OneDrive`) | 同上 | `/OneDrive/{video_relpath}` | `/OneDrive/OD/VC/MIDV-123/MIDV-123.mp4` |
+| `/test` (HTTPStrm 直链) | 同上 | `http://alist:5244/d/{video_relpath}` | `http://alist:5244/d/OD/VC/MIDV-123/MIDV-123.mp4` |
+
+!!! tip
+    优先用 `{video_relpath}` 而不是手写 `/OD/VC/{number}/{number}.{ext}`.
+    `{video_relpath}` 取自视频**实际落地路径**, 自动带上分集后缀 (`-CD1`) 与重名时的 `(1)` 后缀;
+    手写元数据占位符会丢掉这两者, 让 strm 指向不存在的文件.
+
+!!! note
+    改完模板重跑「整理」即可刷新已生成的 strm — 内容不同会直接覆盖重写, 不需要先删文件.
+    模板不能含换行 (strm 是一行路径), 保存时会拒绝.
+    若 `video_template` 用绝对路径把视频放到了库根之外 (多盘分存), `{video_relpath}` 无解,
+    该文件整理会记失败并给出明确错误, 而不是写出一个错的 strm.
 
 !!! note
     链接路径必须在库根之外, 否则会被扫描为新文件. `{link_dir}` 占位符在有链接时指向链接父目录, 默认的 NFO/海报模板已改用 `{link_dir}`, 因此填写链接模板后附属文件自动跟随, 无需修改其他模板.
