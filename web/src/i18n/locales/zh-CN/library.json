@@ -129,7 +129,7 @@
   "fieldLinkMode": "链接方式",
   "fieldLinkModeHint": "strm：写 .strm 文件（内容默认为视频绝对路径，可用下方模板自定义）；软链接：在本地文件系统指向挂载盘上的视频",
   "fieldStrmContentTemplate": "STRM 内容模板",
-  "fieldStrmContentTemplateHint": "仅链接方式为 STRM 时生效。留空则写视频绝对路径；填写后按模板渲染 .strm 的单行内容，用于把 rclone 挂载路径换成 OpenList 等远端路径（MediaWarp AlistStrm）。不能含换行",
+  "fieldStrmContentTemplateHint": "仅链接方式为 STRM 时生效。留空 = 写视频绝对路径。填写后渲染成 .strm 的单行内容，用于对齐 OpenList / MediaWarp AlistStrm。注意 {video_relpath} 剔除的是「库根」而非挂载点，库根比挂载点深时请自行补回缺的层级（库根 /test/OD/VC → 填 /OD/VC/{video_relpath}）。不能含换行",
   "fieldStrmContentTemplatePlaceholder": "例如 /{video_relpath} 或 http://alist:5244/d/OneDrive/{video_relpath}",
   "linkMode": {
     "strm": "STRM 文件",
@@ -152,7 +152,7 @@
       "file": "来自源文件名（整理时检测）",
       "post_video": "视频路径渲染后可用，仅附属资源模板",
       "subtitle": "来自字幕源文件，仅字幕模板",
-      "strm": "整理后真实视频的落地路径，仅 STRM 内容模板"
+      "strm": "整理后真实视频的落地路径（剔除库根前缀），仅 STRM 内容模板"
     },
     "items": {
       "number": "番号",
@@ -173,7 +173,7 @@
       "link_dir": "链接文件所在目录；未设置链接模板时与 {video_dir} 相同",
       "raw_srt_name": "字幕原文件名，不含扩展名。例：A/foo.zh.srt → foo.zh",
       "video_path": "整理后真实视频的绝对路径（含 CD 后缀与碰撞改名），仅 STRM 内容模板",
-      "video_relpath": "整理后真实视频相对库根的路径，POSIX 分隔符、无前导 /，仅 STRM 内容模板。例：库根 /test，视频 /test/OD/VC/ABC-123/ABC-123.mp4 → OD/VC/ABC-123/ABC-123.mp4"
+      "video_relpath": "整理后真实视频的路径，自动剔除「库根」前缀（POSIX 分隔符、无前导 /），仅 STRM 内容模板。例：库根 /test → OD/VC/ABC-123/ABC-123.mp4；库根 /test/OD/VC → 只剩 ABC-123/ABC-123.mp4，需在模板里补 /OD/VC/"
     }
   },
   "tpl": {

@@ -32,7 +32,7 @@
 | `{link_dir}` | 链接文件渲染后的父目录 (无链接时等于 video_dir) | — |
 | `{raw_srt_name}` | 字幕原文件名，不含扩展名，仅字幕模板 | `foo.zh.srt` → `foo.zh` |
 | `{video_path}` | 整理后视频的绝对路径，仅 strm 内容模板 | `/test/OD/VC/MIDV-123/MIDV-123.mp4` |
-| `{video_relpath}` | 整理后视频相对库根的路径 (POSIX 分隔符，无前导 `/`)，仅 strm 内容模板 | `OD/VC/MIDV-123/MIDV-123.mp4` |
+| `{video_relpath}` | 整理后视频路径**自动剔除库根前缀**后的部分 (POSIX 分隔符，无前导 `/`)，仅 strm 内容模板 | 库根 `/test` 时 → `OD/VC/MIDV-123/MIDV-123.mp4` |
 
 ### 默认模板
 
@@ -69,6 +69,7 @@ NFO: {link_dir}/{number}.nfo
   - `strm`: 创建 `.strm` 文件 (内容默认为视频绝对路径), Emby/Jellyfin 可识别
   - `symlink`: 创建文件系统软链接
 - **`strm_content_template`**: `.strm` 文件的内容模板 (单行), 仅 `link_mode=strm` 生效. 为空则写视频绝对路径.
+  `{video_relpath}` 会自动剔除库根前缀, 库根比挂载点深时请在模板里补回缺的层级 (见下).
 
 ### 使用场景
 
@@ -80,17 +81,26 @@ NFO: {link_dir}/{number}.nfo
 
 ### strm 内容: 对齐 OpenList / MediaWarp
 
-默认写的是**本地挂载点**上的绝对路径. 用 rclone 挂载 OpenList 时, 这条路径与 OpenList 上的文件路径差一个挂载前缀,
-MediaWarp 的 **AlistStrm** 认不出来. 此时填 `strm_content_template` 把库根前缀换掉:
+默认写的是**本地**绝对路径. 用 rclone 挂载 OpenList 时, 这条路径与 OpenList 上的文件路径差一个挂载前缀,
+MediaWarp 的 **AlistStrm** 认不出来. 填 `strm_content_template` 换掉这个前缀:
 
-| 库路径 (rclone 挂载点) | 视频落地 | strm 内容模板 | strm 内容 |
-|---|---|---|---|
-| `/test` (挂 OpenList 根) | `/test/OD/VC/MIDV-123/MIDV-123.mp4` | `/{video_relpath}` | `/OD/VC/MIDV-123/MIDV-123.mp4` |
-| `/test` (挂 OpenList `/OneDrive`) | 同上 | `/OneDrive/{video_relpath}` | `/OneDrive/OD/VC/MIDV-123/MIDV-123.mp4` |
-| `/test` (HTTPStrm 直链) | 同上 | `http://alist:5244/d/{video_relpath}` | `http://alist:5244/d/OD/VC/MIDV-123/MIDV-123.mp4` |
+**`{video_relpath}` = 视频落地路径自动剔除「库根」之后的部分.** 剔掉的是**库根**, 不是挂载点 —— 两者相同时直接可用,
+库根更深时少掉的层级要自己在模板里补:
+
+| 库根 (媒体库的「路径」) | `video_template` | 视频落地 | strm 内容模板 | strm 内容 |
+|---|---|---|---|---|
+| `/test` (= 挂载点) | `OD/VC/{number}/{number}.{ext}` | `/test/OD/VC/MIDV-123/MIDV-123.mp4` | `/{video_relpath}` | `/OD/VC/MIDV-123/MIDV-123.mp4` |
+| `/test/OD/VC` (比挂载点深) | `{number}/{number}.{ext}` | 同上 | `/OD/VC/{video_relpath}` | `/OD/VC/MIDV-123/MIDV-123.mp4` |
+| `/test` + Alist 子目录挂载 | `OD/VC/{number}/{number}.{ext}` | 同上 | `/OneDrive/{video_relpath}` | `/OneDrive/OD/VC/MIDV-123/MIDV-123.mp4` |
+| `/test` + HTTPStrm 直链 | `OD/VC/{number}/{number}.{ext}` | 同上 | `http://alist:5244/d/{video_relpath}` | `http://alist:5244/d/OD/VC/MIDV-123/MIDV-123.mp4` |
+
+!!! warning "库根比挂载点深时前缀会连带被剔掉"
+    库根 `/test/OD/VC` 时, `OD/VC` 属于库根的一部分, `{video_relpath}` 只剩 `MIDV-123/MIDV-123.mp4`,
+    strm 内容会变成 `/MIDV-123/MIDV-123.mp4` —— OpenList 上找不到.
+    模板前面补 `/OD/VC/` 即可, 无需改库根 (改库根会连带影响扫描范围, 且 `video_template` 也得跟着改).
 
 !!! tip
-    优先用 `{video_relpath}` 而不是手写 `/OD/VC/{number}/{number}.{ext}`.
+    要拼进文件名时, 优先用 `{video_relpath}` 而不是手写 `/OD/VC/{number}/{number}.{ext}`.
     `{video_relpath}` 取自视频**实际落地路径**, 自动带上分集后缀 (`-CD1`) 与重名时的 `(1)` 后缀;
     手写元数据占位符会丢掉这两者, 让 strm 指向不存在的文件.
 

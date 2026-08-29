@@ -329,8 +329,9 @@ class Library(SQLModel, table=True):
     strm_content_template: StrmContentTemplate = Field(default=None, sa_column=Column(String, nullable=True))
     """strm 文件内容模板 (单行), 仅 link_mode=strm 生效; 空则写视频绝对路径.
 
-    网盘场景用 {video_relpath} (视频相对库根的 POSIX 路径) 拼出远端标识, 使 strm 内容对齐
-    OpenList 上的文件而非 rclone 挂载点路径. 手写 {number} 等元数据占位符会丢 CD 后缀与碰撞改名.
+    网盘场景用 {video_relpath} (视频落地路径剔除**库根**前缀后的部分) 拼出远端标识, 使 strm 内容对齐
+    OpenList 上的文件而非 rclone 挂载点路径. 剔的是库根不是挂载点 — 库根更深时缺的层级要在模板里补回.
+    手写 {number} 等元数据占位符会丢 CD 后缀与碰撞改名.
     """
     cd_suffix_template: CdSuffixTemplate = Field(
         default=CD_SUFFIX_TEMPLATE_DEFAULT,

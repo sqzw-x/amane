@@ -135,7 +135,7 @@
   "fieldLinkMode": "Link Mode",
   "fieldLinkModeHint": "strm: write a .strm file (contents default to the video's absolute path; customizable below); symlink: a filesystem symlink to the mounted video",
   "fieldStrmContentTemplate": "STRM Content Template",
-  "fieldStrmContentTemplateHint": "Only applies when link mode is STRM. Leave empty to write the video's absolute path; when set, renders the single line inside the .strm, e.g. to swap an rclone mount path for the OpenList path (MediaWarp AlistStrm). Must not contain newlines",
+  "fieldStrmContentTemplateHint": "Only applies when link mode is STRM. Empty = write the video's absolute path. Otherwise renders the single line inside the .strm, to match OpenList / MediaWarp AlistStrm. Note {video_relpath} strips the library root, not the mount point — if the root is deeper than the mount point, add the missing segments yourself (root /test/OD/VC → use /OD/VC/{video_relpath}). Must not contain newlines",
   "fieldStrmContentTemplatePlaceholder": "e.g. /{video_relpath} or http://alist:5244/d/OneDrive/{video_relpath}",
   "linkMode": {
     "strm": "STRM file",
@@ -158,7 +158,7 @@
       "file": "From the source file name (detected during organize)",
       "post_video": "Available after video path is rendered; sidecar templates only",
       "subtitle": "From the subtitle source file; subtitle template only",
-      "strm": "Path of the organized video on disk; STRM content template only"
+      "strm": "Organized video path with the library root stripped; STRM content template only"
     },
     "items": {
       "number": "Catalog number",
@@ -179,7 +179,7 @@
       "link_dir": "Directory of the link file; same as {video_dir} when the link template is empty",
       "raw_srt_name": "Subtitle filename without extension. e.g. A/foo.zh.srt → foo.zh",
       "video_path": "Absolute path of the organized video (includes part suffix and collision rename); STRM content template only",
-      "video_relpath": "Organized video path relative to the library root, POSIX separators, no leading /; STRM content template only. e.g. root /test, video /test/OD/VC/ABC-123/ABC-123.mp4 → OD/VC/ABC-123/ABC-123.mp4"
+      "video_relpath": "Organized video path with the library root prefix stripped (POSIX separators, no leading /); STRM content template only. e.g. root /test → OD/VC/ABC-123/ABC-123.mp4; root /test/OD/VC → only ABC-123/ABC-123.mp4, so add /OD/VC/ in your template"
     }
   },
   "tpl": {

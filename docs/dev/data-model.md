@@ -1,6 +1,6 @@
 # 数据模型
 
-> 提交: `e41c7d8`
+> 提交: `e12269a`
 >
 > 表结构、字段类型、便捷属性都在 `src/amane/db/models.py`. 本文只解释**为什么**这么建模、所有权关系、生命周期与已知陷阱.
 
@@ -108,7 +108,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 `link_template` 为空则不创建链接, `{link_dir}` 等于 `{video_dir}`. 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的入口: `link_mode=strm` 写 `.strm` (一行文本, 后缀强制 `.strm`); `symlink` 做文件系统软链接. 链接必须落在库根之外 (否则 REFRESH 会把 strm/软链接再扫成媒体). `{video_dir}` 始终是真实视频父目录; `{link_dir}` 是链接父目录. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO/海报自动跟链接走, 不必改六个附属模板. 想把某类附属文件留在网盘侧, 显式写 `{video_dir}/…`.
 
-`strm_content_template` 决定 `.strm` 里那一行, 仅 `link_mode=strm` 生效, 空则写视频绝对路径 (存量库默认). 渲染在 `render_strm_content`, 独立于 `resolve_paths`: 输入必须是 `execute_organize` 的**实际 dest** 而非计划路径 — CD 后缀与碰撞改名 `(1)` 只体现在 dest 上, 用计划路径会让 strm 指向不存在的文件. 该函数**不走** `_render_template`: 结果是远端标识 (OpenList 路径 / HTTP URL) 而非本地路径, 做 `resolve()` 与库根边界校验只会把合法内容判成逃逸. 独占 `strm` 相位的两个占位符: `{video_path}` (dest 绝对路径) 与 `{video_relpath}` (dest 相对库根, POSIX 分隔符无前导 `/`, 由 `utils.path.relative_posix` 规范化两端后计算, 不用 `Path.relative_to` — 库根含符号链接时它会误判). 视频落在库根之外 (绝对 `video_template` 指向别的盘) 且模板引用了 `{video_relpath}` 时抛 `ValueError`, 由 `execute_file_operations` 转成链接失败 (dest 仍回写); 模板不引用则不报错. 校验只拒绝换行 (strm 是一行), 全空白收敛成 `None`. 内容与磁盘不一致时 `create_video_link` 直接覆盖重写, 所以改模板后重跑 ORGANIZE 即可刷新存量 strm.
+`strm_content_template` 决定 `.strm` 里那一行, 仅 `link_mode=strm` 生效, 空则写视频绝对路径 (存量库默认). 渲染在 `render_strm_content`, 独立于 `resolve_paths`: 输入必须是 `execute_organize` 的**实际 dest** 而非计划路径 — CD 后缀与碰撞改名 `(1)` 只体现在 dest 上, 用计划路径会让 strm 指向不存在的文件. 该函数**不走** `_render_template`: 结果是远端标识 (OpenList 路径 / HTTP URL) 而非本地路径, 做 `resolve()` 与库根边界校验只会把合法内容判成逃逸. 独占 `strm` 相位的两个占位符: `{video_path}` (dest 绝对路径) 与 `{video_relpath}` (dest 相对库根, POSIX 分隔符无前导 `/`, 由 `utils.path.relative_posix` 规范化两端后计算, 不用 `Path.relative_to` — 库根含符号链接时它会误判). **剔掉的是库根, 不是网盘挂载点**: 库根比挂载点深时 (挂载点 `/test`, 库根 `/test/OD/VC`) 中间层会一起被剔掉, 得在模板里补回 (`/OD/VC/{video_relpath}`) — 这是该占位符最常见的踩坑, 不做自动推断 (挂载点不可靠地从库根反推). 视频落在库根之外 (绝对 `video_template` 指向别的盘) 且模板引用了 `{video_relpath}` 时抛 `ValueError`, 由 `execute_file_operations` 转成链接失败 (dest 仍回写); 模板不引用则不报错. 校验只拒绝换行 (strm 是一行), 全空白收敛成 `None`. 内容与磁盘不一致时 `create_video_link` 直接覆盖重写, 所以改模板后重跑 ORGANIZE 即可刷新存量 strm.
 
 模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` (源文件父目录名 / 源文件名不含扩展名) 与 `{mosaic}` / `{definition}` (`parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库 (与 CD 检测同一约定); `{video_dir}` 为视频渲染后的父目录, `{link_dir}` 为链接渲染后的父目录 (未设链接时二者相同), 仅附属资源模板可用. `{raw_srt_name}` 仅字幕模板, 为该字幕原文件名不含扩展名; 字幕模板里的 `{ext}` 是该字幕自己的扩展名. `{mosaic}` 取值: 文件名标记 → 目录名整段词表 (由近到远; `uncensored` / `cracked` / 无码 / 破解 等, 子串不算) → content_type 兜底 `censored` (永不 `Unknown` — 有码/无码是全域语义, 保证目录名稳定). `{definition}` 只看文件名, 无命中回退 `Unknown` (与普通占位符一致). **幂等约束**: `{mosaic}` 放目录段且目录名等于词表时可二次读回; `{definition}` 与 CD 后缀必须仍能从**文件名**反推, 只放目录段会按默认值重排. 占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
 
