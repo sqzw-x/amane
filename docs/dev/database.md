@@ -58,7 +58,7 @@ SQLite 不支持删列、改类型等 ALTER TABLE 操作. Alembic 通过 batch m
 
 ## StrEnum 列
 
-枚举型表列用 `Field(Enum)`: SQLAlchemy 按成员名落库, ORM `select` 得到真正的枚举; FastAPI/Pydantic 对外仍是 value.
+枚举型表列用 `Field(Enum)`: SQLAlchemy 按成员名落库, ORM `select` 得到真正的枚举; FastAPI/Pydantic 对外仍是 value. Python 里成员本身就是字符串, 不要写多余的 `.value`; 注解要 `str` 时用 `str(e)`.
 
 | 层 | 形态 |
 |----|------|
