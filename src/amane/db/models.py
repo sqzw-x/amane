@@ -6,7 +6,11 @@ from sqlalchemy import Column, Index, String, Text, UniqueConstraint, text
 from sqlmodel import JSON, Field, SQLModel
 
 from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, LinkMode, MoveMode
-from amane.organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate
+from amane.organize.path_templates import (
+    VIDEO_TEMPLATE_DEFAULT,
+    OptionalPathTemplate,
+    PathTemplate,
+)
 from amane.utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -321,27 +325,18 @@ class Library(SQLModel, table=True):
     move_mode: MoveMode = Field(default=MoveMode.MOVE, sa_column=Column(String, nullable=False, server_default="move"))
     """整理时如何把源文件放到模板路径."""
     # 路径模板
-    video_template: str = Field(default="{studio}/{number}/{number}.{ext}")
-    link_template: str | None = None
+    video_template: PathTemplate = Field(default=VIDEO_TEMPLATE_DEFAULT)
+    link_template: OptionalPathTemplate = None
     """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或软链接, 必须落在库根之外."""
     link_mode: LinkMode = Field(default=LinkMode.STRM, sa_column=Column(String, nullable=False, server_default="strm"))
     """link_template 非空时: strm 写 .strm 文本 (内容为视频绝对路径); symlink 做文件系统软链接."""
-    cd_suffix_template: CdSuffixTemplate = Field(
-        default=CD_SUFFIX_TEMPLATE_DEFAULT,
-        sa_column=Column(String, nullable=False, server_default=CD_SUFFIX_TEMPLATE_DEFAULT),
-    )
-    """识别到分集文件时追加到视频文件名的后缀模板 (默认 -CD{n}); 空串关闭.
-
-    仅作用于视频文件名 (插在扩展名之前), 附属资源模板基于 {link_dir} 不受影响.
-    渲染格式须保持可被 _detect_cd 反推, 否则二次整理会丢失分集标识.
-    """
-    thumb_template: str | None = None
-    poster_template: str | None = None
-    fanart_template: str | None = None
-    extrafanart_template: str | None = None
-    nfo_template: str | None = None
-    trailer_template: str | None = None
-    subtitle_template: str | None = None
+    thumb_template: OptionalPathTemplate = None
+    poster_template: OptionalPathTemplate = None
+    fanart_template: OptionalPathTemplate = None
+    extrafanart_template: OptionalPathTemplate = None
+    nfo_template: OptionalPathTemplate = None
+    trailer_template: OptionalPathTemplate = None
+    subtitle_template: OptionalPathTemplate = None
     subtitle_extensions: SubtitleExtensions = Field(
         default_factory=lambda: list(DEFAULT_SUBTITLE_EXTENSIONS),
         sa_column=Column(JSON, nullable=False),

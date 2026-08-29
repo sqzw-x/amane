@@ -358,7 +358,7 @@ def _gen_updates(typed_dict: type, seed: int, skip: frozenset[str]) -> dict[str,
     避免裸 dict 生成出反序列化后形状漂移的值, 从而真正测到序列化保真.
 
     ``skip`` 内的字段不参与生成: 外键列 (值须指向真实行, 属 FK 完整性而非序列化保真)
-    与语义校验字段 (域约束如 cd_suffix_template 须含 {cd}, 属校验层职责而非保真,
+    与语义校验字段 (域约束如 video_template 须闭合可选组, 属校验层职责而非保真,
     由各自的校验测试覆盖).
     """
     random.seed(seed)
@@ -408,7 +408,20 @@ _ROUNDTRIP = [
         _make_library,
         "update_library",
         frozenset(),
-        frozenset({"cd_suffix_template", "subtitle_extensions"}),
+        frozenset(
+            {
+                "subtitle_extensions",
+                "video_template",
+                "link_template",
+                "thumb_template",
+                "poster_template",
+                "fanart_template",
+                "extrafanart_template",
+                "nfo_template",
+                "trailer_template",
+                "subtitle_template",
+            }
+        ),
     ),
     (ScheduleUpdates, _make_schedule, "update_schedule", frozenset(), frozenset()),
     (MetadataFields, _make_metadata, "update_metadata", frozenset(), frozenset()),

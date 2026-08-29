@@ -4,7 +4,12 @@ from pydantic import BaseModel, Field
 
 from ...db import Library
 from ...enums import DownloadableResource, LibraryAutomation, LinkMode, MoveMode
-from ...organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate, PlaceholderPhase
+from ...organize.path_templates import (
+    VIDEO_TEMPLATE_DEFAULT,
+    OptionalPathTemplate,
+    PathTemplate,
+    PlaceholderPhase,
+)
 from ...utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -24,17 +29,16 @@ class LibraryCreateRequest(BaseModel):
     recursive: bool = True
     patterns: list[str] = []
     move_mode: MoveMode = MoveMode.MOVE
-    video_template: str = "{studio}/{number}/{number}.{ext}"
-    link_template: str | None = None
+    video_template: PathTemplate = VIDEO_TEMPLATE_DEFAULT
+    link_template: OptionalPathTemplate = None
     link_mode: LinkMode = LinkMode.STRM
-    cd_suffix_template: CdSuffixTemplate = CD_SUFFIX_TEMPLATE_DEFAULT
-    thumb_template: str | None = None
-    poster_template: str | None = None
-    fanart_template: str | None = None
-    extrafanart_template: str | None = None
-    nfo_template: str | None = None
-    trailer_template: str | None = None
-    subtitle_template: str | None = None
+    thumb_template: OptionalPathTemplate = None
+    poster_template: OptionalPathTemplate = None
+    fanart_template: OptionalPathTemplate = None
+    extrafanart_template: OptionalPathTemplate = None
+    nfo_template: OptionalPathTemplate = None
+    trailer_template: OptionalPathTemplate = None
+    subtitle_template: OptionalPathTemplate = None
     subtitle_extensions: SubtitleExtensions = Field(default_factory=lambda: list(DEFAULT_SUBTITLE_EXTENSIONS))
     write_nfo: bool = True
     copy_resources: list[DownloadableResource] = Field(default_factory=lambda: list(DownloadableResource))
@@ -64,7 +68,6 @@ class LibraryResponse(BaseModel):
     video_template: str
     link_template: str | None = None
     link_mode: LinkMode
-    cd_suffix_template: str
     thumb_template: str | None = None
     poster_template: str | None = None
     fanart_template: str | None = None
@@ -93,7 +96,6 @@ class PathTemplateSchemaResponse(BaseModel):
     """路径模板 UI 契约: 占位符相位 + 默认值, 与 resolve_paths 同源."""
 
     video_default: str
-    cd_suffix_default: str
     optional_defaults: dict[str, str]
     placeholders: list[PathTemplatePlaceholder]
     subtitle_extensions_default: list[str]

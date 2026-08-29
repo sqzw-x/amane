@@ -179,7 +179,7 @@ async def test_organize_collision_dest_free(repo: Repository, resource_store: Re
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_organize_appends_cd_suffix(repo: Repository, resource_store: ResourceStore, tmp_path: Path) -> None:
-    """源文件名含分集标记 (CD1) 时, 目标文件名按库的 cd_suffix_template 追加后缀."""
+    """源文件名含分集标记 (CD1) 时, 默认模板可选组写出 -CD1."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
@@ -286,14 +286,19 @@ async def test_organize_cd_pair_no_collision(repo: Repository, resource_store: R
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_organize_custom_cd_suffix(repo: Repository, resource_store: ResourceStore, tmp_path: Path) -> None:
-    """自定义 cd_suffix_template 生效 (模板格式无需可反推, 配置者自行保证幂等)."""
+    """自定义分集可选组生效 (模板格式无需可反推, 配置者自行保证幂等)."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
     src = src_dir / "NSFS-039-CD2.mp4"
     src.write_bytes(b"cd2")
 
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, cd_suffix_template="-第{cd}集")
+    lib = await repo.create_library(
+        name="t",
+        path=str(lib_root),
+        write_nfo=False,
+        video_template="{studio}/{number}/{number}[-第{cd?}集].{ext}",
+    )
     assert lib.id is not None
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
@@ -313,6 +318,46 @@ async def test_organize_custom_cd_suffix(repo: Repository, resource_store: Resou
     updated = await repo.get_media_file(source.id)
     assert updated is not None
     assert updated.path == str(dest)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_writes_subtitle_tag(repo: Repository, resource_store: ResourceStore, tmp_path: Path) -> None:
+    """源文件名含 -C 时, 默认模板可选组写出 -C; 无标记则不写."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    tagged = src_dir / "NSFS-039-C.mp4"
+    tagged.write_bytes(b"sub")
+    bare = src_dir / "NSFS-040.mp4"
+    bare.write_bytes(b"bare")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta_c = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    meta_b = await repo.upsert_metadata(number="NSFS-040", studio="Studio")
+    assert meta_c.id is not None and meta_b.id is not None
+    src_c = await repo.create_media_file(
+        lib.id, path=str(tagged), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta_c.id
+    )
+    src_b = await repo.create_media_file(
+        lib.id, path=str(bare), number="NSFS-040", status=MediaFileStatus.SCRAPED, metadata_id=meta_b.id
+    )
+    assert src_c.id is not None and src_b.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.failed == 0
+
+    dest_c = lib_root / "Studio" / "NSFS-039" / "NSFS-039-C.mp4"
+    dest_b = lib_root / "Studio" / "NSFS-040" / "NSFS-040.mp4"
+    assert dest_c.exists()
+    assert dest_b.exists()
+    updated_c = await repo.get_media_file(src_c.id)
+    updated_b = await repo.get_media_file(src_b.id)
+    assert updated_c is not None and updated_c.path == str(dest_c)
+    assert updated_b is not None and updated_b.path == str(dest_b)
 
 
 @pytest.mark.asyncio(loop_scope="function")

@@ -122,7 +122,7 @@
     "symlink": "符号链接"
   },
   "fieldVideoTemplate": "视频路径模板",
-  "fieldVideoTemplateHint": "相对库根或绝对路径；占位符见下方徽章",
+  "fieldVideoTemplateHint": "相对库根或绝对路径; 带 ? 的占位符可能为空, 用 [..] 包住整段以免留下连字符. 见下方徽章",
   "fieldLinkTemplate": "链接路径模板",
   "fieldLinkTemplateHint": "留空则不创建链接。设置后整理会在此路径写 strm 或软链接，指向库内真实视频；必须是库根之外的绝对路径",
   "fieldLinkTemplatePlaceholder": "例如 /local/emby/{studio}/{number}/{number}.{ext}",
@@ -132,15 +132,13 @@
     "strm": "STRM 文件",
     "symlink": "软链接"
   },
-  "fieldCdSuffixTemplate": "分集后缀模板",
-  "fieldCdSuffixTemplateHint": "分集视频文件名后缀, 使用占位符 {cd} 表示分集序号",
   "fieldInitialRefresh": "创建后立即刷新",
   "advancedTemplates": "附属资源模板",
   "advancedTemplatesHint": "留空则使用后端默认（通常相对 {link_dir}）。绝对路径须落在库根或 safe_dirs 内。",
   "optionalTemplateDefault": "默认: {{default}}",
   "placeholders": {
     "label": "可用占位符",
-    "hint": "点击徽章复制",
+    "hint": "点击徽章复制. 带 ? 的项未检出时为空, 建议放进 [..] 或 [[..]]",
     "copied": "已复制 {{placeholder}} 到剪贴板",
     "copyFailed": "复制失败, 请手动复制",
     "phases": {
@@ -163,8 +161,10 @@
       "ext": "正在放置的文件扩展名，不含点。视频模板为视频扩展名，字幕模板为该字幕扩展名",
       "raw_name": "源视频文件名，不含扩展名。例：A/B.mp4 → B",
       "raw_dir": "源文件父目录名。例：A/B/C.mp4 → B",
-      "mosaic": "有码/无码等，从文件名或目录检测",
-      "definition": "分辨率，从文件名检测",
+      "mosaic?": "有码/无码等, 从文件名或目录检测; 未检出为空",
+      "def?": "分辨率, 从文件名检测; 未检出为空",
+      "cd?": "分集序号; 未检出为空",
+      "sub?": "中字标记, 有则为 C; 未检出为空",
       "video_dir": "按模板渲染后真实视频所在目录，仅可用于附属资源模板",
       "link_dir": "链接文件所在目录；未设置链接模板时与 {video_dir} 相同",
       "raw_srt_name": "字幕原文件名，不含扩展名。例：A/foo.zh.srt → foo.zh"

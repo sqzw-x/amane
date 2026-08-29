@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -7,14 +10,16 @@ from typing import TYPE_CHECKING, Annotated
 from pydantic import AfterValidator
 
 from ..enums import LinkMode
-from ..parsing.file_info import ContentType, FileInfo
+from ..parsing.file_info import FileInfo
 from ..utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
 from ..utils.path import is_any_descendant, is_descendant
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from ..db.models import Library, Metadata
+
+_UNKNOWN = "Unknown"
+_DRIVE = re.compile(r"^[A-Za-z]:")
+_DRIVE_ONLY = re.compile(r"^[A-Za-z]:$")
 
 
 @dataclass
@@ -33,49 +38,7 @@ class ResolvedPaths:
 
 # --- 默认模板 (当对应字段为 None 时使用) ---
 
-VIDEO_TEMPLATE_DEFAULT = "{studio}/{number}/{number}.{ext}"
-
-# CD 分集后缀模板: 识别到分集时追加到视频文件名 (扩展名之前); 空串关闭.
-CD_SUFFIX_TEMPLATE_DEFAULT = "-CD{cd}"
-
-_CD_SUFFIX_RE = re.compile(r"[^{}]*\{cd\}[^{}]*")
-
-
-def validate_cd_suffix_template(value: str) -> str:
-    """校验 CD 后缀模板 (空串合法, 表示关闭).
-
-    非空时必须:
-    - 恰好含 {cd} 这一个占位符 (其余花括号一概拒绝, 渲染时无歧义);
-    - 不含路径分隔符 (只用于文件名段, 不能引入目录层级).
-
-    渲染后的格式应保持可被 _detect_cd 反推 (如 -CD1 / -Part1), 否则二次整理会丢失分集标识;
-    该约束当前不做强制.
-    """
-    stripped = value.strip()
-    if not stripped:
-        return ""
-    if _CD_SUFFIX_RE.fullmatch(stripped) is None:
-        raise ValueError("cd_suffix_template must contain exactly {cd} and no other braces")
-    if "/" in stripped or "\\" in stripped:
-        raise ValueError("cd_suffix_template must not contain path separators")
-    return stripped
-
-
-CdSuffixTemplate = Annotated[str, AfterValidator(validate_cd_suffix_template)]
-
-
-def normalize_link_template(value: str | None) -> str | None:
-    """空白 link_template 视为未设置 (不创建链接)."""
-    if value is None:
-        return None
-    stripped = value.strip()
-    return stripped or None
-
-
-def render_cd_suffix(template: str, cd: int) -> str:
-    """渲染 CD 后缀 (调用前提: cd 非 None 且模板非空; 校验已保证恰好一个 {cd})."""
-    return template.format(cd=cd)
-
+VIDEO_TEMPLATE_DEFAULT = "{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}"
 
 OPTIONAL_TEMPLATE_DEFAULTS: dict[str, str] = {
     "thumb_template": "{link_dir}/thumb.jpg",
@@ -118,8 +81,10 @@ PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
     ("ext", PlaceholderPhase.METADATA),
     ("raw_dir", PlaceholderPhase.SOURCE),
     ("raw_name", PlaceholderPhase.SOURCE),
-    ("mosaic", PlaceholderPhase.FILE),
-    ("definition", PlaceholderPhase.FILE),
+    ("cd?", PlaceholderPhase.FILE),
+    ("sub?", PlaceholderPhase.FILE),
+    ("mosaic?", PlaceholderPhase.FILE),
+    ("def?", PlaceholderPhase.FILE),
     ("video_dir", PlaceholderPhase.POST_VIDEO),
     ("link_dir", PlaceholderPhase.POST_VIDEO),
     ("raw_srt_name", PlaceholderPhase.SUBTITLE),
@@ -130,18 +95,199 @@ def path_template_schema() -> dict[str, object]:
     """供 API/前端消费的路径模板契约 (真源与 resolve_paths 同模块)."""
     return {
         "video_default": VIDEO_TEMPLATE_DEFAULT,
-        "cd_suffix_default": CD_SUFFIX_TEMPLATE_DEFAULT,
         "optional_defaults": dict(OPTIONAL_TEMPLATE_DEFAULTS),
         "placeholders": [{"name": name, "phase": phase} for name, phase in PLACEHOLDERS],
         "subtitle_extensions_default": list(DEFAULT_SUBTITLE_EXTENSIONS),
     }
 
 
-class _SafeDict(dict):
-    """在 format_map() 中对缺失的 key 返回 'Unknown'."""
+def normalize_link_template(value: str | None) -> str | None:
+    """空白 link_template 视为未设置 (不创建链接)."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
 
-    def __missing__(self, key: str) -> str:
-        return "Unknown"
+
+# --- 可选组 DSL ---
+
+
+@dataclass(frozen=True, slots=True)
+class _Literal:
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class _Placeholder:
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class _Group:
+    children: tuple[_Node, ...]
+    wrap: bool
+
+
+type _Node = _Literal | _Placeholder | _Group
+
+
+class _Parser:
+    """`{name}` 占位符 + `[...]` / `[[...]]` 可选组.
+
+    `[...]` 组界不输出; 组内任一占位符为空串则整组丢弃.
+    `[[...]]` 同样, 有值时把结果包一层 ``[]``.
+    名字里的 ``?`` 只是标识符的一部分, 没有运算含义.
+    """
+
+    def __init__(self, src: str) -> None:
+        self.src = src
+        self.i = 0
+
+    def parse(self) -> tuple[_Node, ...]:
+        return tuple(self._parse_nodes(None))
+
+    def _parse_nodes(self, closer: str | None) -> list[_Node]:
+        nodes: list[_Node] = []
+        buf: list[str] = []
+
+        def flush() -> None:
+            if buf:
+                nodes.append(_Literal("".join(buf)))
+                buf.clear()
+
+        while self.i < len(self.src):
+            if closer is not None and self.src.startswith(closer, self.i):
+                flush()
+                self.i += len(closer)
+                return nodes
+            if self.src.startswith("[[", self.i):
+                flush()
+                self.i += 2
+                nodes.append(_Group(tuple(self._parse_nodes("]]")), wrap=True))
+                continue
+            if self.src[self.i] == "[":
+                flush()
+                self.i += 1
+                nodes.append(_Group(tuple(self._parse_nodes("]")), wrap=False))
+                continue
+            if self.src[self.i] == "{":
+                flush()
+                nodes.append(self._parse_placeholder())
+                continue
+            if self.src[self.i] == "]":
+                raise ValueError("unmatched ] in path template")
+            buf.append(self.src[self.i])
+            self.i += 1
+        flush()
+        if closer is not None:
+            raise ValueError("unclosed optional group in path template")
+        return nodes
+
+    def _parse_placeholder(self) -> _Placeholder:
+        self.i += 1
+        start = self.i
+        while self.i < len(self.src) and self.src[self.i] != "}":
+            if self.src[self.i] == "{":
+                raise ValueError("nested braces in path template placeholder")
+            self.i += 1
+        if self.i >= len(self.src):
+            raise ValueError("unclosed placeholder in path template")
+        name = self.src[start : self.i]
+        self.i += 1
+        if not name:
+            raise ValueError("empty placeholder in path template")
+        return _Placeholder(name)
+
+
+def validate_path_template(value: str) -> str:
+    """校验路径模板结构 (未闭合括号 / 占位符). 空串合法 (部分可选模板)."""
+    _Parser(value).parse()
+    return value
+
+
+def validate_optional_path_template(value: str | None) -> str | None:
+    """可选模板: None / 空白不解析; 非空则与主模板同一套结构校验."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return value
+    validate_path_template(value)
+    return value
+
+
+PathTemplate = Annotated[str, AfterValidator(validate_path_template)]
+OptionalPathTemplate = Annotated[str | None, AfterValidator(validate_optional_path_template)]
+
+
+def _placeholder_names(nodes: Sequence[_Node]) -> tuple[str, ...]:
+    names: list[str] = []
+    for node in nodes:
+        if isinstance(node, _Placeholder):
+            names.append(node.name)
+        elif isinstance(node, _Group):
+            names.extend(_placeholder_names(node.children))
+    return tuple(names)
+
+
+def _lookup(name: str, variables: dict[str, str]) -> str:
+    if name in variables:
+        return variables[name]
+    return _UNKNOWN
+
+
+def _render_nodes(nodes: Sequence[_Node], variables: dict[str, str]) -> str:
+    parts: list[str] = []
+    for node in nodes:
+        if isinstance(node, _Literal):
+            parts.append(node.text)
+        elif isinstance(node, _Placeholder):
+            parts.append(_lookup(node.name, variables))
+        else:
+            names = _placeholder_names(node.children)
+            if any(_lookup(name, variables) == "" for name in names):
+                continue
+            inner = _render_nodes(node.children, variables)
+            parts.append(f"[{inner}]" if node.wrap else inner)
+    return "".join(parts)
+
+
+def _template_keeps_absolute(template: str, variables: dict[str, str]) -> bool:
+    """渲染后是否应保留绝对路径 (模板本身以 /、盘符、或绝对占位符开头)."""
+    s = template.lstrip()
+    if s.startswith(("/", "\\")):
+        return True
+    if _DRIVE.match(s):
+        return True
+    if s.startswith("{") and "}" in s:
+        name = s[1 : s.index("}")]
+        val = variables.get(name, "")
+        if val.startswith(("/", "\\")) or _DRIVE.match(val):
+            return True
+    return False
+
+
+def _collapse_empty_segments(rendered: str, *, keep_absolute: bool) -> str:
+    """丢掉空路径段, 避免空占位符把相对模板变成绝对路径."""
+    posix = rendered.replace("\\", "/")
+    parts = posix.split("/")
+    drive = ""
+    if parts and _DRIVE_ONLY.match(parts[0] or ""):
+        drive = parts[0]
+        parts = parts[1:]
+    nonempty = [p for p in parts if p]
+    if drive:
+        return f"{drive}/{'/'.join(nonempty)}"
+    joined = "/".join(nonempty)
+    if keep_absolute:
+        return f"/{joined}" if joined else "/"
+    return joined
+
+
+def render_path_template(template: str, variables: dict[str, str]) -> str:
+    """渲染占位符与可选组, 并折叠空路径段."""
+    rendered = _render_nodes(_Parser(template).parse(), variables)
+    return _collapse_empty_segments(rendered, keep_absolute=_template_keeps_absolute(template, variables))
 
 
 def _safe(value: str | None) -> str | None:
@@ -162,58 +308,44 @@ def _safe(value: str | None) -> str | None:
     )
 
 
-def _mosaic_value(file_info: FileInfo | None) -> str:
-    """{mosaic} 取值: 文件名标记 → 目录名整段词表 → 内容类型推断 → 兜底 censored.
-
-    有码/无码是全域语义, 默认 censored 比占位符失效 (Unknown) 更能保证目录名稳定;
-    file_info 缺失 (未走 ORGANIZE 的调用方) 时与其余占位符一致回退 Unknown.
-    """
-    if file_info is None:
-        return "Unknown"
-    if file_info.mosaic is not None:
-        return file_info.mosaic
-    if file_info.content_type == ContentType.UNCENSORED:
-        return "uncensored"
-    return "censored"
-
-
 def _build_variables(
     metadata: Metadata,
     ext: str = "",
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
+    cd: int | None = None,
 ) -> dict[str, str]:
-    """从元数据构建模板变量字典.
+    """从元数据与源文件解析结果构建模板变量.
 
-    Args:
-        metadata: 元数据对象
-        ext: 文件扩展名 (不含点)
-        source_path: 源文件完整路径, 提供 {raw_dir} (父目录名) 与 {raw_name} (文件名不含扩展名);
-            None 时二者为空串. {dir} 与 {raw_dir} 同值.
-        file_info: 源文件解析结果 (parse_file_info), 提供 {mosaic} 与 {definition}; None 时二者为 Unknown
+    可空 file 相位 (``cd?`` / ``sub?`` / ``mosaic?`` / ``def?``) 未检出时为空串,
+    不是 Unknown. 未声明的 key 在渲染时仍回 Unknown.
     """
     year = metadata.release[:4] if metadata.release and len(metadata.release) >= 4 else None
     actor = metadata.actors[0] if metadata.actors else None
     source_dir = source_path.parent if source_path else None
     raw_dir = source_dir.name if source_dir else ""
     raw_name = source_path.stem if source_path else ""
+    if cd is None and file_info is not None:
+        cd = file_info.cd
 
     return {
         "number": metadata.number,
         "title": _safe(metadata.title) or metadata.number,
-        "actor": _safe(actor) or "Unknown",
-        "actors": ", ".join(metadata.actors) if metadata.actors else "Unknown",
-        "studio": _safe(metadata.studio) or "Unknown",
-        "publisher": _safe(metadata.publisher) or "Unknown",
-        "series": _safe(metadata.series) or "Unknown",
-        "year": year or "Unknown",
-        "release": _safe(metadata.release) or "Unknown",
+        "actor": _safe(actor) or _UNKNOWN,
+        "actors": ", ".join(metadata.actors) if metadata.actors else _UNKNOWN,
+        "studio": _safe(metadata.studio) or _UNKNOWN,
+        "publisher": _safe(metadata.publisher) or _UNKNOWN,
+        "series": _safe(metadata.series) or _UNKNOWN,
+        "year": year or _UNKNOWN,
+        "release": _safe(metadata.release) or _UNKNOWN,
         "ext": ext,
         "raw_dir": raw_dir,
         "raw_name": raw_name,
         "dir": raw_dir,
-        "mosaic": _mosaic_value(file_info),
-        "definition": (file_info.definition if file_info else None) or "Unknown",
+        "cd?": str(cd) if cd is not None else "",
+        "sub?": "C" if file_info is not None and file_info.has_subtitle else "",
+        "mosaic?": file_info.mosaic if file_info is not None and file_info.mosaic else "",
+        "def?": file_info.definition if file_info is not None and file_info.definition else "",
     }
 
 
@@ -236,19 +368,16 @@ def _render_template(
      Raises:
          ValueError: 渲染结果逃逸了允许边界
     """
-    rendered = template.format_map(_SafeDict(variables))
+    rendered = render_path_template(template, variables)
     path = Path(rendered)
     if path.is_absolute():
         resolved = path.resolve()
-        # base_path 始终是可信根 (默认模板的 {video_dir} 即为 base_path 下的绝对路径);
-        # safe_dirs 额外扩展可信集, 用于多盘分存等明确指向其他位置的绝对模板.
         allowed_roots = [base_path, *safe_dirs]
         if not is_any_descendant(resolved, *allowed_roots):
             raise ValueError(
                 f"Path traversal detected: rendered path '{resolved}' escapes base '{base_path}' and safe directories"
             )
         return resolved
-    # 相对路径模板: 必须是 base_path 的后代
     resolved = (base_path / path).resolve()
     if not is_descendant(resolved, base_path):
         raise ValueError(f"Path traversal detected: rendered path '{resolved}' escapes base '{base_path}'")
@@ -270,10 +399,9 @@ def resolve_paths(
         library: 媒体库配置 (含模板字段)
         metadata: 元数据对象 (需有 number, title, actors, studio 等属性)
         ext: 原始文件扩展名 (不含点, 如 "mp4", "mkv")
-        cd: CD/分片编号, 非 None 且库的 cd_suffix_template 非空时按该模板追加后缀到视频文件名 (默认 -CD{n});
-            None 时回退 file_info.cd
+        cd: CD/分片编号; None 时回退 file_info.cd. 写入 ``{cd?}``, 由模板可选组决定是否出现在路径中.
         source_path: 源文件完整路径, 提供 {raw_dir} (源父目录名) 与 {raw_name} (源文件名不含扩展名)
-        file_info: 源文件解析结果 (parse_file_info), 提供 {mosaic} / {definition} 变量
+        file_info: 源文件解析结果 (parse_file_info), 提供 {mosaic?} / {def?} / {sub?} / {cd?}
         safe_dirs: 允许绝对路径模板落地的可信目录集 (多盘分存等). base_path 始终可信, 无需重复列出.
 
     Returns:
@@ -283,20 +411,15 @@ def resolve_paths(
         ValueError: 任一模板渲染后逃逸了 base_path 与 safe_dirs 构成的边界
     """
     base_path = Path(library.path)
-    if cd is None and file_info is not None:
-        cd = file_info.cd
-    variables = _build_variables(metadata, ext, source_path, file_info)
+    variables = _build_variables(metadata, ext, source_path, file_info, cd)
 
-    # 1. 渲染视频路径
-    video = _apply_cd_suffix(_render_template(library.video_template, variables, base_path, safe_dirs), library, cd)
+    video = _render_template(library.video_template, variables, base_path, safe_dirs)
 
-    # 2. 计算 video_dir / link_dir
     video_dir = str(video.parent)
     variables["video_dir"] = video_dir
-    link = _resolve_link_path(library, variables, base_path, safe_dirs, cd)
+    link = _resolve_link_path(library, variables, base_path, safe_dirs)
     variables["link_dir"] = str(link.parent) if link is not None else video_dir
 
-    # 3. 渲染其他路径 (None 时使用默认模板)
     thumb = _render_template(
         library.thumb_template or OPTIONAL_TEMPLATE_DEFAULTS["thumb_template"], variables, base_path, safe_dirs
     )
@@ -331,26 +454,17 @@ def resolve_paths(
     )
 
 
-def _apply_cd_suffix(path: Path, library: Library, cd: int | None) -> Path:
-    """识别到分集且模板非空时, 在扩展名前追加 CD 后缀."""
-    if cd is None or not library.cd_suffix_template:
-        return path
-    return path.with_name(f"{path.stem}{render_cd_suffix(library.cd_suffix_template, cd)}{path.suffix}")
-
-
 def _resolve_link_path(
     library: Library,
     variables: dict[str, str],
     base_path: Path,
     safe_dirs: Sequence[Path],
-    cd: int | None,
 ) -> Path | None:
     """渲染 link_template; 空模板返回 None. 结果必须落在库根之外."""
     template = normalize_link_template(library.link_template)
     if template is None:
         return None
     link = _render_template(template, variables, base_path, safe_dirs)
-    link = _apply_cd_suffix(link, library, cd)
     if library.link_mode == LinkMode.STRM:
         link = link.with_suffix(".strm")
     if is_descendant(link, base_path):

@@ -18,6 +18,7 @@ from amane.db.models import (
 )
 from amane.db.repo_types import _MEDIA_SORT_COLUMNS, _METADATA_SORT_COLUMNS, _TASK_SORT_COLUMNS, ActorBrowseParams
 from amane.enums import LibraryAutomation
+from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
 from tests.helpers import assert_exhaustive_enum
 
 if TYPE_CHECKING:
@@ -964,24 +965,20 @@ class TestLibraryRepo:
         assert result is None
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_cd_suffix_template_roundtrip(self, repo: Repository):
-        """cd_suffix_template 默认值、自定义值与非法值 (repo 层同样拦截)."""
+    async def test_path_template_roundtrip(self, repo: Repository):
+        """video_template 结构校验: 未闭合可选组在 repo 层拦截."""
         lib = await repo.create_library(name="t", path="/media/t")
         assert lib is not None and lib.id is not None
-        assert lib.cd_suffix_template == "-CD{cd}"
+        assert lib.video_template == VIDEO_TEMPLATE_DEFAULT
 
-        updated = await repo.update_library(lib.id, cd_suffix_template="-Part {cd}")
+        updated = await repo.update_library(lib.id, video_template="{number}/{number}[-CD{cd?}].{ext}")
         assert updated is not None
-        assert updated.cd_suffix_template == "-Part {cd}"
+        assert updated.video_template == "{number}/{number}[-CD{cd?}].{ext}"
 
-        cleared = await repo.update_library(lib.id, cd_suffix_template="")
-        assert cleared is not None
-        assert cleared.cd_suffix_template == ""
-
-        with pytest.raises(ValueError):
-            await repo.update_library(lib.id, cd_suffix_template="no-placeholder")
-        with pytest.raises(ValueError):
-            await repo.create_library(name="bad", path="/media/bad", cd_suffix_template="a{cd}b{c}")
+        with pytest.raises(ValueError, match="unclosed"):
+            await repo.update_library(lib.id, video_template="{number}[-CD{cd?}.{ext}")
+        with pytest.raises(ValueError, match="unmatched"):
+            await repo.create_library(name="bad", path="/media/bad", video_template="{number}].{ext}")
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_subtitle_extensions_roundtrip(self, repo: Repository):

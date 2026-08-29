@@ -1223,10 +1223,6 @@ export type LibraryCreateRequest = {
     link_template?: string | null;
     link_mode?: LinkMode;
     /**
-     * Cd Suffix Template
-     */
-    cd_suffix_template?: string;
-    /**
      * Thumb Template
      */
     thumb_template?: string | null;
@@ -1330,10 +1326,6 @@ export type LibraryResponse = {
     link_template?: string | null;
     link_mode: LinkMode;
     /**
-     * Cd Suffix Template
-     */
-    cd_suffix_template: string;
-    /**
      * Thumb Template
      */
     thumb_template?: string | null;
@@ -1418,10 +1410,6 @@ export type LibraryUpdateRequest = {
      */
     link_template?: string | null;
     link_mode?: LinkMode | null;
-    /**
-     * Cd Suffix Template
-     */
-    cd_suffix_template?: string | null;
     /**
      * Thumb Template
      */
@@ -2141,10 +2129,6 @@ export type PathTemplateSchemaResponse = {
      * Video Default
      */
     video_default: string;
-    /**
-     * Cd Suffix Default
-     */
-    cd_suffix_default: string;
     /**
      * Optional Defaults
      */

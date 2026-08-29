@@ -2457,7 +2457,7 @@ export const LibraryCreateRequestSchema = {
         video_template: {
             type: 'string',
             title: 'Video Template',
-            default: '{studio}/{number}/{number}.{ext}'
+            default: '{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}'
         },
         link_template: {
             anyOf: [
@@ -2473,11 +2473,6 @@ export const LibraryCreateRequestSchema = {
         link_mode: {
             $ref: '#/components/schemas/LinkMode',
             default: 'strm'
-        },
-        cd_suffix_template: {
-            type: 'string',
-            title: 'Cd Suffix Template',
-            default: '-CD{cd}'
         },
         thumb_template: {
             anyOf: [
@@ -2673,10 +2668,6 @@ export const LibraryResponseSchema = {
         link_mode: {
             $ref: '#/components/schemas/LinkMode'
         },
-        cd_suffix_template: {
-            type: 'string',
-            title: 'Cd Suffix Template'
-        },
         thumb_template: {
             anyOf: [
                 {
@@ -2798,7 +2789,6 @@ export const LibraryResponseSchema = {
         'move_mode',
         'video_template',
         'link_mode',
-        'cd_suffix_template',
         'subtitle_extensions',
         'write_nfo',
         'copy_resources',
@@ -2909,17 +2899,6 @@ export const LibraryUpdateRequestSchema = {
                     type: 'null'
                 }
             ]
-        },
-        cd_suffix_template: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Cd Suffix Template'
         },
         thumb_template: {
             anyOf: [
@@ -4393,10 +4372,6 @@ export const PathTemplateSchemaResponseSchema = {
             type: 'string',
             title: 'Video Default'
         },
-        cd_suffix_default: {
-            type: 'string',
-            title: 'Cd Suffix Default'
-        },
         optional_defaults: {
             additionalProperties: {
                 type: 'string'
@@ -4422,7 +4397,6 @@ export const PathTemplateSchemaResponseSchema = {
     type: 'object',
     required: [
         'video_default',
-        'cd_suffix_default',
         'optional_defaults',
         'placeholders',
         'subtitle_extensions_default'

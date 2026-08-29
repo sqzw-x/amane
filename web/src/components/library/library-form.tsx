@@ -88,7 +88,6 @@ export interface LibraryFormState {
   min_file_size: number;
   subtitle_extensions: string;
   video_template: string;
-  cd_suffix_template: string;
   thumb_template: string;
   poster_template: string;
   fanart_template: string;
@@ -118,8 +117,7 @@ export function emptyLibraryForm(schema?: PathTemplateSchemaResponse | null): Li
     subtitle_extensions: (
       schema?.subtitle_extensions_default ?? [".srt", ".ass", ".ssa", ".vtt", ".sub"]
     ).join(", "),
-    video_template: schema?.video_default ?? "{studio}/{number}/{number}.{ext}",
-    cd_suffix_template: schema?.cd_suffix_default ?? "-CD{cd}",
+    video_template: schema?.video_default ?? "{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}",
     thumb_template: defaults?.thumb_template ?? "",
     poster_template: defaults?.poster_template ?? "",
     fanart_template: defaults?.fanart_template ?? "",
@@ -148,7 +146,6 @@ export function libraryFormFromResponse(lib: LibraryResponse): LibraryFormState 
     min_file_size: lib.min_file_size ?? 0,
     subtitle_extensions: lib.subtitle_extensions?.join(", ") ?? "",
     video_template: lib.video_template,
-    cd_suffix_template: lib.cd_suffix_template,
     thumb_template: lib.thumb_template ?? "",
     poster_template: lib.poster_template ?? "",
     fanart_template: lib.fanart_template ?? "",
@@ -192,7 +189,6 @@ function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
     min_file_size: form.min_file_size,
     subtitle_extensions: parseLibraryPatterns(form.subtitle_extensions),
     video_template: form.video_template.trim(),
-    cd_suffix_template: form.cd_suffix_template.trim(),
     thumb_template: form.thumb_template.trim(),
     poster_template: form.poster_template.trim(),
     fanart_template: form.fanart_template.trim(),
@@ -350,13 +346,6 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
           ))}
         </Group>
       </Checkbox.Group>
-      <TextInput
-        label={t("fieldCdSuffixTemplate")}
-        description={t("fieldCdSuffixTemplateHint")}
-        placeholder={schema?.cd_suffix_default ?? "-CD{cd}"}
-        value={value.cd_suffix_template}
-        onChange={(e) => onChange({ ...value, cd_suffix_template: e.currentTarget.value })}
-      />
       <TextInput
         label={t("fieldVideoTemplate")}
         description={t("fieldVideoTemplateHint")}

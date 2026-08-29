@@ -533,11 +533,11 @@ def _detect_mosaic(basename: str) -> str | None:
     """从文件名检测马赛克/审查类型."""
     if re.search(r"無碼|无码|UNCENSORED", basename):
         return "uncensored"
+    # -U / -UC 后不能紧跟字母或数字 (否则是 -UNKNOWN、-UC1), 但可跟 -4K / -CD1 等标记段.
+    if re.search(r"-U(C)?(?![A-Z0-9])", basename):
+        return "uncensored"
     if re.search(r"破解|流出|LEAKED", basename):
         return "cracked"
-    # -UC 后不能紧跟字母或数字, 但可跟 -CD1 / -4K 等标记段 (同字幕检测约定).
-    if re.search(r"-UC(?![A-Z0-9])", basename):
-        return "uncensored"
     return None
 
 
