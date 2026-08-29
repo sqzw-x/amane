@@ -27,10 +27,11 @@ def _apply_path_phase(media: MediaFile) -> None:
 
 
 def file_phase_of(media: MediaFile) -> FilePhase:
-    """从已落库列组装 FilePhase (不再解析 path)."""
+    """从已落库列组装 FilePhase (不再解析 path). String 列读出后是 str, 收成枚举."""
+    mosaic = Mosaic(media.mosaic) if media.mosaic is not None else None
     return FilePhase(
-        content_type=media.content_type,
-        mosaic=media.mosaic,
+        content_type=ContentType(media.content_type),
+        mosaic=mosaic,
         has_subtitle=media.has_subtitle,
         definition=media.definition,
     )

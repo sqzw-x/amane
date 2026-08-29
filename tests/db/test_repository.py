@@ -52,7 +52,7 @@ class TestMediaFileRepo:
         fetched = await repo.get_media_file(media.id)
         assert fetched is not None
         assert fetched.path == "/video/ABC-123.mp4"
-        assert fetched.content_type.value == "censored"
+        assert fetched.content_type == ContentType.CENSORED
         assert fetched.has_subtitle is False
 
     @pytest.mark.asyncio(loop_scope="function")
@@ -130,13 +130,13 @@ class TestMediaFileRepo:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_create_media_file_parses_phase_from_path(self, repo: Repository):
         media = await repo.create_media_file(library_id=1, path="/media/MIDV-123-UC-4K.mp4")
-        assert media.content_type.value == "censored"
-        assert media.mosaic is not None and media.mosaic.value == "uncensored"
+        assert media.content_type == ContentType.CENSORED
+        assert media.mosaic == Mosaic.UNCENSORED
         assert media.has_subtitle is True
         assert media.definition == "4K"
 
         heyzo = await repo.create_media_file(library_id=1, path="/media/HEYZO-1234.mp4")
-        assert heyzo.content_type.value == "uncensored"
+        assert heyzo.content_type == ContentType.UNCENSORED
         assert heyzo.mosaic is None
         assert heyzo.has_subtitle is False
 
@@ -147,7 +147,7 @@ class TestMediaFileRepo:
         assert media.mosaic is None
         updated = await repo.update_media_file(media.id, path="/video/MIDV-123-U.mp4")
         assert updated is not None
-        assert updated.mosaic is not None and updated.mosaic.value == "uncensored"
+        assert updated.mosaic == Mosaic.UNCENSORED
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_phase_filters(self, repo: Repository):

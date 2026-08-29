@@ -176,8 +176,12 @@ class MediaFile(SQLModel, table=True):
     number: str | None = Field(default=None, index=True)
     status: MediaFileStatus = Field(default=MediaFileStatus.PENDING, index=True)
     # 文件相位: path 的投影, 随 path 写入/更新; 不进对外 PATCH.
-    content_type: ContentType = Field(default=ContentType.WESTERN, index=True)
-    mosaic: Mosaic | None = Field(default=None, index=True)
+    # 必须 Column(String) 存 value (censored); 默认 SA Enum 会按成员名 (CENSORED) lookup.
+    content_type: ContentType = Field(
+        default=ContentType.WESTERN,
+        sa_column=Column(String, nullable=False, server_default="western", index=True),
+    )
+    mosaic: Mosaic | None = Field(default=None, sa_column=Column(String, index=True))
     has_subtitle: bool = Field(default=False, index=True)
     definition: str | None = Field(default=None, index=True)
     metadata_id: int | None = Field(default=None, foreign_key="metadata.id", index=True)

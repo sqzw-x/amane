@@ -5,6 +5,10 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlmodel import Session, col, select
+
+from amane.db.models import MediaFile
+from amane.parsing import ContentType, Mosaic
 
 
 def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
@@ -29,8 +33,8 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
         conn.execute(
             text(
                 "INSERT INTO media_files (path, status, library_id, created_at, updated_at) VALUES "
-                "('/media/MIDV-123-UC-4K.mp4', 'pending', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00'), "
-                "('/media/HEYZO-1234.mp4', 'pending', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00')"
+                "('/media/MIDV-123-UC-4K.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00'), "
+                "('/media/HEYZO-1234.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00')"
             ),
             {"lib": lib_id},
         )
@@ -56,5 +60,16 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
         assert heyzo.mosaic is None
         assert heyzo.has_subtitle in (0, False)
         assert heyzo.definition is None
+
+    with Session(engine) as session:
+        loaded = {
+            row.path: row for row in session.exec(select(MediaFile).where(col(MediaFile.path).like("/media/%"))).all()
+        }
+        midv_orm = loaded["/media/MIDV-123-UC-4K.mp4"]
+        assert midv_orm.content_type == ContentType.CENSORED
+        assert midv_orm.mosaic == Mosaic.UNCENSORED
+        heyzo_orm = loaded["/media/HEYZO-1234.mp4"]
+        assert heyzo_orm.content_type == ContentType.UNCENSORED
+        assert heyzo_orm.mosaic is None
 
     engine.dispose()
