@@ -1,6 +1,6 @@
 # 数据库
 
-> 提交: `7607485`
+> 提交: `7bd4f6c`
 >
 > Alembic 标准命令直接查 [官方文档](https://alembic.sqlalchemy.org/). 本文只记 Amane 特有的决策与陷阱.
 > 数据模型设计见 [data-model.md](data-model.md).
