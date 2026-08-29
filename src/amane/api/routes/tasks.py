@@ -160,7 +160,7 @@ async def submit_task(req: Annotated[TaskSubmission, Body(...)], repo: RepoDep) 
     task_type, payload = await resolve_submission(req, repo)
     task = await repo.create_task(task_type=task_type, payload=payload)
     # mode="json": 该日志经 WS 广播时会被 json 序列化, payload 中的 set/enum 等需转为原生类型.
-    logger.info("task submitted", task_id=task.id, task_type=task_type.value, payload=payload.model_dump(mode="json"))
+    logger.info("task submitted", task_id=task.id, task_type=task_type, payload=payload.model_dump(mode="json"))
     return await _to_resp(repo, task)
 
 
@@ -211,7 +211,7 @@ async def batch_tasks(
     )
     logger.info(
         "tasks batch",
-        action=req.action.value,
+        action=req.action,
         affected=result.affected,
         skipped=result.skipped,
         missing=result.missing,

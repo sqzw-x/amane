@@ -1810,13 +1810,12 @@ export const FeedUpdateRequestSchema = {
         content_type: {
             anyOf: [
                 {
-                    type: 'string'
+                    $ref: '#/components/schemas/ContentType'
                 },
                 {
                     type: 'null'
                 }
-            ],
-            title: 'Content Type'
+            ]
         },
         use_cache: {
             anyOf: [

@@ -60,7 +60,7 @@ RAW_TO_DB_FIELD: dict[str, str] = {
 }
 
 # SCALAR_FIELDS 的字符串集合 (快速查找)
-SCALAR_FIELD_NAMES: frozenset[str] = frozenset(f.value for f in SCALAR_FIELDS)
+SCALAR_FIELD_NAMES: frozenset[str] = frozenset(SCALAR_FIELDS)
 
 # URL 字段 - 收集所有已 fetch 站点的值. (字段 -> AggregatedMetadata dst 属性名)
 URL_FIELD_MAP: dict[MetadataField, str] = {
@@ -366,7 +366,7 @@ class FetchGraph:
             for node in wave:
                 lines.append(f"  - {node.cache_key}")
                 lines.append("    fallback:")
-                lines.extend(f"      {f.value} -> {n.cache_key}" for f in ALL_FIELDS if (n := node.fallback.get(f)))
+                lines.extend(f"      {f} -> {n.cache_key}" for f in ALL_FIELDS if (n := node.fallback.get(f)))
         return "\n".join(lines)
 
 

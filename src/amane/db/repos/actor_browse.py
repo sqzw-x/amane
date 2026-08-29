@@ -173,7 +173,7 @@ async def browse_actors(
                 id=actor.id,
                 name=actor.name,
                 count=int(cnt or 0),
-                gender=actor.gender if isinstance(actor.gender, ActorGender) else ActorGender(actor.gender),
+                gender=actor.gender,
                 birthday=actor.birthday,
                 birthplace=actor.birthplace,
                 height=actor.height,

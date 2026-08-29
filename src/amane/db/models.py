@@ -321,19 +321,17 @@ class Library(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(nullable=False)
     path: str = Field(nullable=False)
-    automation: LibraryAutomation = Field(
-        default=LibraryAutomation.SCRAPE, sa_column=Column(String, nullable=False, server_default="scrape")
-    )
+    automation: LibraryAutomation = Field(default=LibraryAutomation.SCRAPE)
     """自动化级别: none 不监控 / watch 仅入库 / scrape 入库并自动刮削. 库本身始终有效."""
     recursive: bool = Field(default=True)
     patterns: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
-    move_mode: MoveMode = Field(default=MoveMode.MOVE, sa_column=Column(String, nullable=False, server_default="move"))
+    move_mode: MoveMode = Field(default=MoveMode.MOVE)
     """整理时如何把源文件放到模板路径."""
     # 路径模板
     video_template: PathTemplate = Field(default=VIDEO_TEMPLATE_DEFAULT)
     link_template: PathTemplate | None = None
     """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或软链接, 必须落在库根之外."""
-    link_mode: LinkMode = Field(default=LinkMode.STRM, sa_column=Column(String, nullable=False, server_default="strm"))
+    link_mode: LinkMode = Field(default=LinkMode.STRM)
     """link_template 非空时: strm 写 .strm 文本 (内容为视频绝对路径); symlink 做文件系统软链接."""
     thumb_template: PathTemplate | None = None
     poster_template: PathTemplate | None = None
@@ -402,8 +400,8 @@ class Feed(SQLModel, table=True):
     """拉取间隔 (秒). 范围由 API 校验 60–86400; 表单默认按小时."""
     number_pattern: str | None = None
     """可选正则; 设置后只走该正则, 不回退 extract_number."""
-    content_type: str | None = None
-    """显式 ContentType; None 则 infer_content_type."""
+    content_type: ContentType | None = None
+    """显式片种; None 则 infer_content_type."""
     use_cache: list[str] = Field(default_factory=lambda: ["metadata", "trans"], sa_column=Column(JSON, nullable=False))
     etag: str | None = None
     last_modified: str | None = None
@@ -482,9 +480,7 @@ class Actor(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, nullable=False, index=True)
 
-    gender: ActorGender = Field(
-        default=ActorGender.UNKNOWN, sa_column=Column(String, nullable=False, server_default="unknown", index=True)
-    )
+    gender: ActorGender = Field(default=ActorGender.UNKNOWN, index=True)
     birthday: str | None = None
     birthplace: str | None = None
     height: int | None = None
@@ -585,10 +581,9 @@ class FacetRule(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("kind", "source_name", name="uq_facet_rules_kind_source"),)
 
     id: int | None = Field(default=None, primary_key=True)
-    # 存 FacetKind / FacetRuleAction 的 value 字符串, 避免 SQLite Enum 名值漂移.
-    kind: FacetKind = Field(sa_column=Column(String(), nullable=False, index=True))
+    kind: FacetKind = Field(index=True)
     source_name: str = Field(nullable=False, index=True)
-    action: FacetRuleAction = Field(sa_column=Column(String(), nullable=False))
+    action: FacetRuleAction = Field()
     target_name: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -675,9 +670,7 @@ class AgentSession(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     title: str = Field(default="新会话", nullable=False)
-    status: AgentSessionStatus = Field(
-        default=AgentSessionStatus.ACTIVE, sa_column=Column(String(), nullable=False, index=True)
-    )
+    status: AgentSessionStatus = Field(default=AgentSessionStatus.ACTIVE, index=True)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -690,7 +683,7 @@ class SavedQuery(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(nullable=False)
     sql: str = Field(nullable=False)
-    entity: SavedQueryEntity = Field(sa_column=Column(String(), nullable=False, index=True))
+    entity: SavedQueryEntity = Field(index=True)
     session_id: int | None = Field(default=None, foreign_key="agent_sessions.id", index=True)
     persisted: bool = Field(default=False, index=True)
     created_at: datetime = Field(default_factory=_utcnow)

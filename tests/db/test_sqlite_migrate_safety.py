@@ -383,9 +383,9 @@ class TestProjectAlembicPath:
             # A: 规则入边先, 袋内 x 后, 与展示名相同的 A 剔除; Ghost→NoEntity 建实体
             assert rows == [("A", "旧A"), ("A", "x"), ("NoEntity", "Ghost")]
             remaining = conn.execute(
-                "select source_name, action from facet_rules where kind = 'actor' order by source_name"
+                "select source_name, action from facet_rules where kind = 'ACTOR' order by source_name"
             ).fetchall()
-            assert remaining == [("B", "block")]
+            assert remaining == [("B", "BLOCK")]
             cols = [r[1] for r in conn.execute("PRAGMA table_info(actors)").fetchall()]
             assert "aliases" not in cols
             assert "actor_aliases" in _tables(db)

@@ -6,6 +6,7 @@ import pytest
 
 from amane.api.models.feeds import normalize_feed_group
 from amane.db.repository import Repository
+from amane.parsing import ContentType
 
 if TYPE_CHECKING:
     from httpx2 import AsyncClient
@@ -186,7 +187,7 @@ class TestFeedsCrud:
         feed = await repo.create_feed(
             name="scrape",
             url="https://example.com/scrape-items.xml",
-            content_type="western",
+            content_type=ContentType.WESTERN,
             use_cache=[],
         )
         other = await repo.create_feed(name="other", url="https://example.com/other-scrape.xml")

@@ -16,7 +16,7 @@ _SOURCE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _SEGMENT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 RESERVED_SOURCE_NAMESPACES = frozenset({"amane", "plugin", "official", "builtin"})
-_BLOCKED_NAMESPACES = RESERVED_SOURCE_NAMESPACES | frozenset(site.value for site in SiteName)
+_BLOCKED_NAMESPACES = RESERVED_SOURCE_NAMESPACES | frozenset(SiteName)
 
 
 def validate_external_source_id(source_id: str) -> str:
@@ -61,7 +61,7 @@ class SourceDescriptor(BaseModel):
     name: str = Field(description="Human-readable source name")
     version: str = "builtin"
     api_version: str = PLUGIN_API_VERSION
-    capabilities: frozenset[str] = frozenset({SourceCapability.FILM_METADATA.value})
+    capabilities: frozenset[str] = frozenset({SourceCapability.FILM_METADATA})
     content_types: frozenset[str] = frozenset()
     metadata_fields: frozenset[str] = frozenset()
     languages: frozenset[str] = frozenset()
@@ -88,7 +88,7 @@ class SourceDescriptor(BaseModel):
 
     def supports(self, capability: SourceCapability) -> bool:
         """Return whether the source advertises a core capability."""
-        return capability.value in self.capabilities
+        return capability in self.capabilities
 
 
 class PluginConfig(BaseModel):

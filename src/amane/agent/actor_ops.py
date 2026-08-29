@@ -189,7 +189,7 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
             {
                 "tool": "enqueue_actor_scrape",
                 "actor_ids": actor_ids,
-                "use_cache": sorted(k.value for k in cache_kinds),
+                "use_cache": sorted(cache_kinds),
             },
         )
         if not actor_ids:

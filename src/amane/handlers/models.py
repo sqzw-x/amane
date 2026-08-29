@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from contextlib import suppress
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -106,10 +105,7 @@ class ScrapePayload(BaseModel):
 
 def build_feed_scrape_payload(feed: Feed, number: str) -> ScrapePayload:
     """按 Feed 配置构造番号级 SCRAPE payload."""
-    content_type = infer_content_type(number)
-    if feed.content_type:
-        with suppress(ValueError):
-            content_type = ContentType(feed.content_type)
+    content_type = feed.content_type or infer_content_type(number)
 
     use_cache: set[CacheKind] = set()
     for raw_kind in feed.use_cache:

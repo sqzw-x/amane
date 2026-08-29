@@ -289,9 +289,7 @@ class ScrapingConfig(BaseModel):
     """图片保存 JPEG 质量 (1-100). 越高质量越好但文件越大."""
 
     content_routes: dict[ContentType, list[str]] = Field(
-        default_factory=lambda: {
-            ct: [site.value for site in _DEFAULT_CONTENT_ROUTES.get(ct, [])] for ct in ContentType
-        },
+        default_factory=lambda: {ct: [str(site) for site in _DEFAULT_CONTENT_ROUTES.get(ct, [])] for ct in ContentType},
         json_schema_extra=kv(
             {
                 "x-frozen-keys": True,
@@ -323,7 +321,7 @@ class ScrapingConfig(BaseModel):
     示例: {"title": "zh_cn", "plot": "jp"}"""
 
     site_config: dict[str, SiteConfig] = Field(
-        default_factory=lambda: {site.value: SiteConfig() for site in SiteName},
+        default_factory=lambda: {str(site): SiteConfig() for site in SiteName},
         json_schema_extra={"x-frozen-keys": True},
     )
     """按站点的配置覆盖 (key 为爬虫名称). 含影片站与演员站 (限速/cookie 等)."""
@@ -332,20 +330,18 @@ class ScrapingConfig(BaseModel):
     @classmethod
     def _complete_content_routes(cls, v: Any) -> Any:
         return _complete_frozen_dict(
-            v, {ct.value: [s.value for s in _DEFAULT_CONTENT_ROUTES.get(ct, [])] for ct in ContentType}
+            v, {ct: [str(site) for site in _DEFAULT_CONTENT_ROUTES.get(ct, [])] for ct in ContentType}
         )
 
     @field_validator("field_language", mode="before")
     @classmethod
     def _complete_field_language(cls, v: Any) -> Any:
-        return _complete_frozen_dict(
-            v, {f.value: Language.ZH_CN.value for f in MetadataField if f in LANG_METADATA_FIELD_SET}
-        )
+        return _complete_frozen_dict(v, {f: Language.ZH_CN for f in MetadataField if f in LANG_METADATA_FIELD_SET})
 
     @field_validator("site_config", mode="before")
     @classmethod
     def _complete_site_config(cls, v: Any) -> Any:
-        return _complete_frozen_dict(v, {site.value: {} for site in SiteName})
+        return _complete_frozen_dict(v, {str(site): {} for site in SiteName})
 
     @field_validator("field_priority")
     @classmethod
@@ -355,7 +351,7 @@ class ScrapingConfig(BaseModel):
         for field, sites in v.items():
             if not sites:
                 continue
-            assert_sites_allowed(sites, allowed, field=f"field_priority.{field.value}", allow_external=True)
+            assert_sites_allowed(sites, allowed, field=f"field_priority.{field}", allow_external=True)
             out[field] = sites
         return out
 
@@ -364,7 +360,7 @@ class ScrapingConfig(BaseModel):
     def _film_content_routes(cls, v: dict[ContentType, list[str]]) -> dict[ContentType, list[str]]:
         allowed = frozenset(FILM_METADATA_SITES)
         for ct, sites in v.items():
-            assert_sites_allowed(sites, allowed, field=f"content_routes.{ct.value}", allow_external=True)
+            assert_sites_allowed(sites, allowed, field=f"content_routes.{ct}", allow_external=True)
         return v
 
     @model_validator(mode="before")
@@ -420,14 +416,14 @@ class ScrapingConfig(BaseModel):
         order = [_site_value(s) for s in default_priority]
         routes = data.get("content_routes")
         if not isinstance(routes, dict):
-            routes = {ct.value: [s.value for s in sites] for ct, sites in _DEFAULT_CONTENT_ROUTES.items()}
+            routes = {ct: [str(s) for s in sites] for ct, sites in _DEFAULT_CONTENT_ROUTES.items()}
 
         data["content_routes"] = {ct: _reorder_route(eligible, order) for ct, eligible in routes.items()}
         return data
 
 
 def _site_value(site: Any) -> str:
-    return site.value if isinstance(site, StrEnum) else str(site)
+    return str(site)
 
 
 def _complete_frozen_dict(provided: Any, defaults: dict[str, Any]) -> Any:

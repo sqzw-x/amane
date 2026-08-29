@@ -295,7 +295,7 @@ def file_phase_from_path(path: str | Path) -> FilePhase:
     )
 
 
-def file_shows_uncensored(mosaic: Mosaic | None, content_type: ContentType | str) -> bool:
+def file_shows_uncensored(mosaic: Mosaic | None, content_type: ContentType) -> bool:
     """无码角标/筛选: 文件名马赛克标记或片种为无码 (HEYZO 等不必带 -U)."""
     return mosaic == Mosaic.UNCENSORED or content_type == ContentType.UNCENSORED
 

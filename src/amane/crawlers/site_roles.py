@@ -45,9 +45,9 @@ FILM_METADATA_SITES: tuple[SiteName, ...] = tuple(s for s in SiteName if s in _F
 
 # 消费 FetchOptions.language 的影片站. 聚合引擎只对这些站展开 (site, lang) 节点.
 MULTI_LANGUAGE_SITES: frozenset[SiteName] = frozenset(
-    s for s in FILM_METADATA_SITES if (cls := registry.get(s.value)) is not None and cls.profile().multi_language
+    s for s in FILM_METADATA_SITES if (cls := registry.get(s)) is not None and cls.profile().multi_language
 )
-MULTI_LANGUAGE_SOURCE_IDS: frozenset[str] = frozenset(site.value for site in MULTI_LANGUAGE_SITES)
+MULTI_LANGUAGE_SOURCE_IDS: frozenset[str] = frozenset(MULTI_LANGUAGE_SITES)
 
 _ACTOR_PROFILE_SET = frozenset(ACTOR_PROFILE_SITES)
 _ACTOR_IMAGE_SET = frozenset(ACTOR_IMAGE_SITES)
@@ -64,7 +64,7 @@ def is_actor_image_site(site: SiteName) -> bool:
 def site_list_schema(sites: Sequence[SiteName], *, ordered: bool = True) -> Callable[[JsonDict], None]:
     """把 list[SiteName] 字段的 items 收窄为给定站点枚举 (供设置页只展示可选站)."""
 
-    enum_vals = [s.value for s in sites]
+    enum_vals = list(sites)
 
     def extra(schema: JsonDict) -> None:
         schema["items"] = cast("JsonDict", {"type": "string", "enum": enum_vals})
@@ -76,7 +76,7 @@ def site_list_schema(sites: Sequence[SiteName], *, ordered: bool = True) -> Call
 
 def site_list_value_schema(sites: Sequence[SiteName], *, ordered: bool = True) -> dict[str, Any]:
     """dict[K, list[SiteName]] 的 additionalProperties.items 收窄用."""
-    items: dict[str, Any] = {"type": "string", "enum": [s.value for s in sites]}
+    items: dict[str, Any] = {"type": "string", "enum": list(sites)}
     out: dict[str, Any] = {"items": items}
     if ordered:
         out["x-ordered"] = True
@@ -111,8 +111,8 @@ def assert_sites_allowed(
     allow_external: bool = False,
 ) -> list[str] | list[SiteName]:
     """校验站点列表 ⊆ allowed, 可选放行外部 source ID; 不合法时抛 ValueError."""
-    allowed_values = {s.value if isinstance(s, SiteName) else s for s in allowed}
-    values = [s.value if isinstance(s, SiteName) else s for s in sites]
+    allowed_values = set(allowed)
+    values = list(sites)
     bad = [
         value
         for value in values

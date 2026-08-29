@@ -94,7 +94,7 @@ async def test_create_update_and_trigger_schedule(schedule_deps: AgentDeps) -> N
         ),
     )
     assert created["name"] == "nightly"
-    assert created["task_type"] == RoutineType.CLEANUP.value
+    assert created["task_type"] == RoutineType.CLEANUP
     assert created["payload"] == {
         "type": "cleanup",
         "remove_missing_files": False,
@@ -112,7 +112,7 @@ async def test_create_update_and_trigger_schedule(schedule_deps: AgentDeps) -> N
 
     triggered = await _tool_fn("trigger_schedule")(_Ctx(schedule_deps), schedule_id=schedule_id)
     assert triggered["next_run"] is not None
-    assert triggered["task_type"] == RoutineType.CLEANUP.value
+    assert triggered["task_type"] == RoutineType.CLEANUP
     assert await schedule_deps.repo.get_schedule(schedule_id) is not None
 
 
@@ -124,7 +124,7 @@ async def test_schedule_supports_rescrape_and_rejects_invalid_changes(schedule_d
             cron="*/15 * * * *", submission=RescrapeSubmission(type="rescrape", limit=25, min_age_days=7)
         ),
     )
-    assert created["task_type"] == RoutineType.RESCRAPE.value
+    assert created["task_type"] == RoutineType.RESCRAPE
     assert created["payload"]["limit"] == 25
 
     invalid_cron = await _tool_fn("update_schedule")(

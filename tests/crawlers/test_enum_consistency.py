@@ -21,24 +21,24 @@ class TestEnumConsistency:
     def test_site_name_matches_registry(self):
         """影片 registry 覆盖的 SiteName 须与注册表一致; ACTOR_ONLY_SITES 另计."""
         registered = set(registry.sites())
-        enum_values = {s.value for s in SiteName}
-        film_enum = enum_values - {s.value for s in ACTOR_ONLY_SITES}
+        enum_values = set(SiteName)
+        film_enum = enum_values - set(ACTOR_ONLY_SITES)
         assert film_enum == registered, (
             f"Mismatch: enum_only={film_enum - registered}, registry_only={registered - film_enum}"
         )
-        assert enum_values >= {s.value for s in ACTOR_ONLY_SITES}
-        assert {s.value for s in FILM_METADATA_SITES} == film_enum
+        assert enum_values >= set(ACTOR_ONLY_SITES)
+        assert set(FILM_METADATA_SITES) == film_enum
 
     def test_site_name_enum_is_sorted(self):
         """SiteName 成员应按字母序排列 (方便维护)."""
-        values = [s.value for s in SiteName]
+        values = list(SiteName)
         assert values == sorted(values), "SiteName members are not in alphabetical order"
 
     def test_metadata_field_matches_media_metadata(self):
         """MetadataField 标量+URL 字段必须存在于 MediaMetadata 中."""
         model_fields = set(MediaMetadata.model_fields.keys())
         for field in MetadataField:
-            assert field.value in model_fields, f"MetadataField.{field.name} ('{field.value}') not in MediaMetadata"
+            assert field in model_fields, f"MetadataField.{field.name} ('{field}') not in MediaMetadata"
 
     def test_actor_only_sites_are_site_name_members(self):
         for site in ACTOR_ONLY_SITES:
@@ -58,14 +58,14 @@ class TestEnumConsistency:
         profile = frozenset(ACTOR_PROFILE_SITES)
         image = frozenset(ACTOR_IMAGE_SITES)
         assert not profile & image
-        assert {s.value for s in profile | image} == set(actor_registry.sites())
+        assert set(profile | image) == set(actor_registry.sites())
 
     def test_sites_in_both_registries_are_not_actor_only(self):
         both = set(registry.sites()) & set(actor_registry.sites())
-        actor_lists = {s.value for s in (*ACTOR_PROFILE_SITES, *ACTOR_IMAGE_SITES)}
+        actor_lists = {*ACTOR_PROFILE_SITES, *ACTOR_IMAGE_SITES}
         assert both <= actor_lists
-        assert both <= {s.value for s in FILM_METADATA_SITES}
-        assert both.isdisjoint({s.value for s in ACTOR_ONLY_SITES})
+        assert both <= set(FILM_METADATA_SITES)
+        assert both.isdisjoint(ACTOR_ONLY_SITES)
 
     def test_multi_language_follows_film_profile_flag(self):
         from_profile = frozenset(

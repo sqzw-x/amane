@@ -31,7 +31,7 @@ async def test_offline_record_javdb_search_miss(tmp_path: Path):
         status=TaskStatus.FAILED,
         payload={
             "number": "ZZZZ-999",
-            "content_type": ContentType.CENSORED.value,
+            "content_type": ContentType.CENSORED,
             "use_cache": [],
         },
         error="No metadata found for ZZZZ-999",

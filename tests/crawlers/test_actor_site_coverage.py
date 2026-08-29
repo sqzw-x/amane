@@ -8,7 +8,7 @@ from amane.enums import ActorGender, SiteName
 
 
 def _supported(site: SiteName) -> frozenset[ActorGender]:
-    cls = actor_registry.get(site.value)
+    cls = actor_registry.get(site)
     if cls is None:
         return frozenset()
     return cls.profile().genders or frozenset()

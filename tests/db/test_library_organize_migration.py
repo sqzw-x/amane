@@ -37,7 +37,7 @@ def test_library_organize_columns_backfill_existing_rows(tmp_path: Path) -> None
         assert row.write_nfo in (1, True)
         assert row.trailer_pattern == "(?i)trailer"
         assert row.link_template is None
-        assert row.link_mode == "strm"
+        assert row.link_mode == "STRM"
         resources = json.loads(row.copy_resources) if isinstance(row.copy_resources, str) else row.copy_resources
         assert set(resources) == {"thumb", "poster", "extrafanart", "trailer"}
 
@@ -101,7 +101,7 @@ def test_library_automation_backfills_from_watch_enabled(tmp_path: Path) -> None
             str(row["name"]): str(row["automation"])
             for row in conn.execute(text("SELECT name, automation FROM libraries")).mappings()
         }
-        assert rows == {"on": "scrape", "off": "none"}
+        assert rows == {"on": "SCRAPE", "off": "NONE"}
 
     engine.dispose()
 

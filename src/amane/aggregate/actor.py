@@ -85,20 +85,20 @@ def merge_actor_metadata(
         meta = results.get(site)
         if meta is None:
             continue
-        out.raw[site.value] = meta.model_dump(exclude_none=False)
+        out.raw[site] = meta.model_dump(exclude_none=False)
         for field in _SCALAR_FIELDS:
             current = getattr(out, field)
             value = getattr(meta, field)
             if _scalar_empty(field, current) and not _scalar_empty(field, value):
                 setattr(out, field, value)
-                out.field_sources[field] = site.value
+                out.field_sources[field] = site
         if meta.name or meta.aliases:
             out.aliases = _dedupe_preserve([*out.aliases, *([meta.name] if meta.name else []), *meta.aliases])
         if meta.provider_ids:
             for k, v in meta.provider_ids.items():
                 out.provider_ids.setdefault(k, v)
         if meta.source_url:
-            out.source_urls.setdefault(site.value, meta.source_url)
+            out.source_urls.setdefault(site, meta.source_url)
 
     image_order = [*image_sites, *[s for s in profile_sites if s not in image_sites]]
     images: list[str] = []
@@ -106,10 +106,10 @@ def merge_actor_metadata(
         meta = results.get(site)
         if meta is None:
             continue
-        if site.value not in out.raw:
-            out.raw[site.value] = meta.model_dump(exclude_none=False)
+        if site not in out.raw:
+            out.raw[site] = meta.model_dump(exclude_none=False)
         if meta.source_url:
-            out.source_urls.setdefault(site.value, meta.source_url)
+            out.source_urls.setdefault(site, meta.source_url)
         if meta.image_urls:
             images.extend(meta.image_urls)
     out.image_urls = _dedupe_preserve(images)
@@ -117,7 +117,7 @@ def merge_actor_metadata(
         for site in image_order:
             meta = results.get(site)
             if meta and meta.image_urls:
-                out.field_sources["image_urls"] = site.value
+                out.field_sources["image_urls"] = site
                 break
 
     return out

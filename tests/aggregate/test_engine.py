@@ -27,7 +27,7 @@ from amane.enums import Language, MetadataField, SiteName
 # --- 辅助工具 ---
 
 S1, S2, S3 = SiteName.JAVDB, SiteName.DMM, SiteName.JAVBUS
-K1, K2, K3 = S1.value, S2.value, S3.value
+K1, K2, K3 = str(S1), str(S2), str(S3)
 DB, DMM, BUS, OFF = SiteName.JAVDB, SiteName.DMM, SiteName.JAVBUS, SiteName.OFFICIAL
 
 IQQTV = SiteName.IQQTV

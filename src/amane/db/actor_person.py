@@ -6,14 +6,12 @@
 
 from amane.aggregate.actor import AggregatedActor, merge_actor_rows_fill_empty
 from amane.db.models import Actor
-from amane.enums import ActorGender
 
 
 def actor_to_aggregated(actor: Actor) -> AggregatedActor:
     """DB Actor 行 → AggregatedActor (merge / 回写共用); 不含别名 (见模块说明)."""
-    gender = actor.gender if isinstance(actor.gender, ActorGender) else ActorGender(actor.gender)
     return AggregatedActor(
-        gender=gender,
+        gender=actor.gender,
         birthday=actor.birthday,
         birthplace=actor.birthplace,
         height=actor.height,

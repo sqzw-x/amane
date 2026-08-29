@@ -43,7 +43,7 @@ async def test_organize_resolve_coerces_json_copy_resources(
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
         dumped = payload.model_dump(mode="json")
-    assert dumped["copy_resources"] == [item.value for item in stored]
+    assert dumped["copy_resources"] == list(stored)
 
 
 @pytest.mark.asyncio(loop_scope="function")

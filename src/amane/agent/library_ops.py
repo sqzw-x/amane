@@ -271,7 +271,7 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
             ),
         )
         assert task.id is not None
-        out = {"task_id": task.id, "library_id": library_id, "scan": sorted(m.value for m in scan)}
+        out = {"task_id": task.id, "library_id": library_id, "scan": sorted(scan)}
         trace_tool(ctx, "tool_result", {"tool": "enqueue_library_refresh", "result": out})
         return out
 

@@ -237,7 +237,7 @@ async def _upsert_alias(session: AsyncSession, kind: FacetKind, source: str, tar
     if kind == FacetKind.ACTOR:
         raise ValueError("演员别名规则已由 actor_aliases 表取代")
     if kind not in SCRAPE_FACET_KINDS:
-        raise ValueError(f"facet kind {kind.value} 不支持别名规则")
+        raise ValueError(f"facet kind {kind} 不支持别名规则")
     if source == target:
         raise ValueError("别名源与目标不能相同")
 
@@ -286,7 +286,7 @@ async def _upsert_alias(session: AsyncSession, kind: FacetKind, source: str, tar
 async def _upsert_block(session: AsyncSession, kind: FacetKind, name: str) -> set[str]:
     """写 block 并将指向 name 的 alias 压成 block; 返回全部变为 block 的名字."""
     if kind not in SCRAPE_FACET_KINDS:
-        raise ValueError(f"facet kind {kind.value} 不支持黑名单规则")
+        raise ValueError(f"facet kind {kind} 不支持黑名单规则")
     blocked: set[str] = {name}
     await _set_facet_rule(session, kind, name, FacetRuleAction.BLOCK, None)
 

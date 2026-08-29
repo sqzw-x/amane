@@ -7,7 +7,7 @@ from ..aggregate import merge_actor_metadata, merge_actor_rows_fill_empty
 from ..crawlers.actor import ActorFetcher, ActorMetadata, filter_sites_for_gender
 from ..crawlers.site_roles import is_actor_image_site, is_actor_profile_site
 from ..db.actor_person import actor_to_aggregated, apply_aggregated_to_actor
-from ..enums import ActorGender, SiteName
+from ..enums import SiteName
 from ..net.errors import FailureReason, SourceError
 from ..observability import current, invoke_source
 from ..observability.models import SiteOutcomeKind
@@ -68,18 +68,18 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
             *[s for s in cfg.image_sites if not is_actor_image_site(s)],
         ]
         if ignored:
-            rec.warning("actor scrape ignored sites lacking capability", sites=[s.value for s in ignored])
+            rec.warning("actor scrape ignored sites lacking capability", sites=list(ignored))
         configured = _unique_sites([*profile_sites, *image_sites])
         if not configured:
             return TaskResult(success=False, error="No actor scraping sites configured")
 
-        gender = actor.gender if isinstance(actor.gender, ActorGender) else ActorGender(actor.gender)
+        gender = actor.gender
         sites, skipped_by_gender = filter_sites_for_gender(configured, gender)
         profile_sites = [s for s in profile_sites if s in sites]
         image_sites = [s for s in image_sites if s in sites]
 
         if not sites:
-            return TaskResult(success=False, error=f"No actor scraping sites eligible for gender={gender.value}")
+            return TaskResult(success=False, error=f"No actor scraping sites eligible for gender={gender}")
 
         use_metadata_cache = CacheKind.metadata in payload.use_cache
         # CacheKind.trans 预留演员译文缓存; 翻译接入前无行为差异.
@@ -89,43 +89,43 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         rec.info(
             "actor scrape started",
             name=actor.name,
-            gender=gender.value,
+            gender=gender,
             lookup_names=names,
-            sites=[s.value for s in sites],
-            skipped_sites_by_gender=[s.value for s in skipped_by_gender],
-            use_cache=sorted(k.value for k in payload.use_cache),
+            sites=list(sites),
+            skipped_sites_by_gender=list(skipped_by_gender),
+            use_cache=sorted(payload.use_cache),
         )
 
-        crawlers = await self._factory.get_actor_crawlers([s.value for s in sites])
+        crawlers = await self._factory.get_actor_crawlers(sites)
         results: dict[SiteName, ActorMetadata | None] = {}
         failed_sites: list[str] = []
         progress_total = len(sites) + 2
-        rec.update_summary(eligible_sites=[s.value for s in sites], sites_queried=[s.value for s in sites])
+        rec.update_summary(eligible_sites=list(sites), sites_queried=list(sites))
 
         for i, site in enumerate(sites):
-            cached_payload = raw_cache.get(site.value) if use_metadata_cache else None
+            cached_payload = raw_cache.get(site) if use_metadata_cache else None
             if cached_payload is not None:
                 cached_meta = _actor_from_raw(cached_payload)
                 if cached_meta is not None:
                     results[site] = cached_meta
-                    rec.info("actor site cache hit", site=site.value)
-                    rec.note_cache_hit(site.value)
-                    await self.report_progress(i + 1, progress_total, f"cached {site.value}")
+                    rec.info("actor site cache hit", site=site)
+                    rec.note_cache_hit(site)
+                    await self.report_progress(i + 1, progress_total, f"cached {site}")
                     continue
 
-            crawler = crawlers.get(site.value)
+            crawler = crawlers.get(site)
             if crawler is None:
                 results[site] = None
-                failed_sites.append(site.value)
-                rec.warning("actor crawler unavailable", site=site.value)
+                failed_sites.append(site)
+                rec.warning("actor crawler unavailable", site=site)
                 rec.record_site_outcome(
-                    site=site.value, outcome=SiteOutcomeKind.FAILED, reason=FailureReason.CRAWLER_UNAVAILABLE
+                    site=site, outcome=SiteOutcomeKind.FAILED, reason=FailureReason.CRAWLER_UNAVAILABLE
                 )
-                await self.report_progress(i + 1, progress_total, f"fetched {site.value}")
+                await self.report_progress(i + 1, progress_total, f"fetched {site}")
                 continue
 
             site_crawler = crawler
-            site_key = site.value
+            site_key = site
 
             async def _fetch_actor(
                 crawler: ActorFetcher = site_crawler,
@@ -148,8 +148,8 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
             meta = await invoke_source(site_key, _fetch_actor)
             results[site] = meta
             if meta is None:
-                failed_sites.append(site.value)
-            await self.report_progress(i + 1, progress_total, f"fetched {site.value}")
+                failed_sites.append(site)
+            await self.report_progress(i + 1, progress_total, f"fetched {site}")
 
         site_agg = merge_actor_metadata(results, profile_sites=profile_sites, image_sites=image_sites)
         existing_aliases = await self._repo.get_actor_aliases(payload.actor_id)
@@ -171,7 +171,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
             "actor scrape completed",
             field_sources=merged.field_sources,
             failed_sites=failed_sites,
-            skipped_sites_by_gender=[s.value for s in skipped_by_gender],
+            skipped_sites_by_gender=list(skipped_by_gender),
             image_count=len(merged.image_urls),
         )
         return TaskResult(

@@ -50,7 +50,7 @@ def build_task_ops_capability() -> Capability[AgentDeps]:
             return {"error": str(exc)}
         task = await ctx.deps.repo.create_task(task_type=task_type, payload=payload)
         assert task.id is not None
-        out = {"task_id": task.id, "type": task_type.value, "status": str(task.status)}
+        out = {"task_id": task.id, "type": task_type, "status": str(task.status)}
         trace_tool(ctx, "tool_result", {"tool": "submit_task", "result": out})
         return out
 
@@ -73,7 +73,7 @@ def build_task_ops_capability() -> Capability[AgentDeps]:
             await ctx.deps.repo.fail_task(task_id, error="Cancelled by user")
         else:
             return {"error": f"无法取消状态为 '{task.status}' 的任务"}
-        out = {"task_id": task_id, "cancelled": True, "previous_status": task.status.value}
+        out = {"task_id": task_id, "cancelled": True, "previous_status": task.status}
         trace_tool(ctx, "tool_result", {"tool": "cancel_task", "result": out})
         return out
 

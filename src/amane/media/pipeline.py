@@ -204,7 +204,7 @@ async def materialize_images(
     )
     logger.debug(
         "images materialized",
-        kinds=sorted(k.value for k in kinds),
+        kinds=sorted(kinds),
         poster=out.poster_urls[:1],
         thumb=out.thumb_urls[:1],
         trailer=out.trailer_urls[:1],

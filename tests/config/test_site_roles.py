@@ -16,29 +16,29 @@ class TestSiteCapabilitySchema:
     def test_actor_profile_schema_enum(self):
         schema = ActorScrapingConfig.model_json_schema()
         items = schema["properties"]["profile_sites"]["items"]
-        assert items["enum"] == [s.value for s in ACTOR_PROFILE_SITES]
-        assert SiteName.DMM.value not in items["enum"]
-        assert SiteName.GFRIENDS.value not in items["enum"]
+        assert items["enum"] == list(ACTOR_PROFILE_SITES)
+        assert SiteName.DMM not in items["enum"]
+        assert SiteName.GFRIENDS not in items["enum"]
 
     def test_actor_image_schema_enum(self):
         schema = ActorScrapingConfig.model_json_schema()
         items = schema["properties"]["image_sites"]["items"]
-        assert items["enum"] == [s.value for s in ACTOR_IMAGE_SITES]
-        assert SiteName.MINNANO.value not in items["enum"]
+        assert items["enum"] == list(ACTOR_IMAGE_SITES)
+        assert SiteName.MINNANO not in items["enum"]
 
     def test_film_content_routes_value_items_enum(self):
         schema = ScrapingConfig.model_json_schema()
         props = schema["properties"]["content_routes"]["additionalProperties"]
-        assert set(props["items"]["enum"]) == {s.value for s in FILM_METADATA_SITES}
+        assert set(props["items"]["enum"]) == set(FILM_METADATA_SITES)
         assert props.get("x-ordered") is True
-        assert SiteName.MINNANO.value not in props["items"]["enum"]
-        assert SiteName.WIKIPEDIA.value not in props["items"]["enum"]
-        assert SiteName.GFRIENDS.value not in props["items"]["enum"]
+        assert SiteName.MINNANO not in props["items"]["enum"]
+        assert SiteName.WIKIPEDIA not in props["items"]["enum"]
+        assert SiteName.GFRIENDS not in props["items"]["enum"]
 
     def test_film_field_priority_value_items_enum(self):
         schema = ScrapingConfig.model_json_schema()
         props = schema["properties"]["field_priority"]["additionalProperties"]
-        assert props["items"]["enum"] == [s.value for s in FILM_METADATA_SITES]
+        assert props["items"]["enum"] == list(FILM_METADATA_SITES)
         assert props.get("x-ordered") is True
         assert schema["properties"]["field_priority"].get("x-frozen-keys") is not True
 

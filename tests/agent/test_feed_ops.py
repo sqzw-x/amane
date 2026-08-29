@@ -151,7 +151,7 @@ async def test_list_and_batch_feed_items(feed_deps: AgentDeps) -> None:
     feed = await feed_deps.repo.create_feed(
         name="source",
         url="https://example.com/source-items.xml",
-        content_type="western",
+        content_type=ContentType.WESTERN,
         use_cache=[],
     )
     other = await feed_deps.repo.create_feed(name="other", url="https://example.com/other-items.xml")

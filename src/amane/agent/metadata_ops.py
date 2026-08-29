@@ -185,7 +185,7 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
             {
                 "tool": "enqueue_scrape",
                 "metadata_ids": metadata_ids,
-                "use_cache": sorted(k.value for k in cache_kinds),
+                "use_cache": sorted(cache_kinds),
                 "content_type": content_type,
             },
         )

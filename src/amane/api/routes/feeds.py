@@ -35,7 +35,7 @@ _CACHE_KIND_ORDER = (CacheKind.metadata, CacheKind.trans)
 
 
 def _use_cache_values(use_cache: set[CacheKind]) -> list[str]:
-    return [kind.value for kind in _CACHE_KIND_ORDER if kind in use_cache]
+    return [kind for kind in _CACHE_KIND_ORDER if kind in use_cache]
 
 
 def _item_resp(item: FeedItem, metadata_id: int | None) -> FeedItemResponse:
@@ -75,7 +75,7 @@ async def create_feed(req: FeedCreateRequest, repo: RepoDep, runtime: RuntimeDep
             auto_enqueue=req.auto_enqueue,
             interval_seconds=req.interval_seconds,
             number_pattern=req.number_pattern,
-            content_type=req.content_type.value if req.content_type is not None else None,
+            content_type=req.content_type,
             use_cache=_use_cache_values(req.use_cache),
         )
     except IntegrityError as exc:
@@ -118,7 +118,7 @@ async def list_all_feed_items(
         offset=offset,
         limit=limit,
         search=search.strip() if search is not None else None,
-        state=state.value,
+        state=state,
         group=normalized_group if feed_id is None else None,
     )
     return FeedItemListResponse(items=[_item_resp(item, metadata_id) for item, metadata_id in items], total=total)
@@ -159,8 +159,6 @@ async def update_feed(feed_id: int, req: FeedUpdateRequest, repo: RepoDep) -> Fe
         if interval < 60 or interval > 86400:
             raise HTTPException(status_code=422, detail="interval_seconds 必须在 60 到 86400 之间")
         updates["interval_seconds"] = interval
-    if "content_type" in updates and updates["content_type"] is not None:
-        updates["content_type"] = str(updates["content_type"])
     if "use_cache" in updates:
         raw = updates["use_cache"]
         kinds: set[CacheKind] = set()
@@ -220,7 +218,7 @@ async def list_feed_items(
         offset=offset,
         limit=limit,
         search=search.strip() if search is not None else None,
-        state=state.value,
+        state=state,
     )
     return FeedItemListResponse(items=[_item_resp(item, metadata_id) for item, metadata_id in items], total=total)
 
@@ -269,7 +267,7 @@ async def batch_feed_items(feed_id: int, req: FeedItemBatchRequest, repo: RepoDe
     logger.info(
         "feed items batch action",
         feed_id=feed_id,
-        action=req.action.value,
+        action=req.action,
         affected=response.affected,
         missing=response.missing,
         skipped=response.skipped,

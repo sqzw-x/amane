@@ -188,7 +188,7 @@ class PluginManager:
         """
         known = {descriptor.id: descriptor for descriptor in self.descriptors()}
         for content_type, route in hot.scraping.content_routes.items():
-            field = f"scraping.content_routes.{content_type.value}"
+            field = f"scraping.content_routes.{content_type}"
             for source_id in route:
                 descriptor = self._descriptor_for_route(
                     str(source_id), known, require_available=require_available, field=field
@@ -197,11 +197,11 @@ class PluginManager:
                     continue
                 if not descriptor.supports(SourceCapability.FILM_METADATA):
                     raise ValueError(f"source {source_id!r} cannot provide film metadata")
-                if descriptor.content_types and content_type.value not in descriptor.content_types:
-                    raise ValueError(f"source {source_id!r} does not support content type {content_type.value!r}")
+                if descriptor.content_types and content_type not in descriptor.content_types:
+                    raise ValueError(f"source {source_id!r} does not support content type {content_type!r}")
 
         for meta_field, sources in hot.scraping.field_priority.items():
-            field = f"scraping.field_priority.{meta_field.value}"
+            field = f"scraping.field_priority.{meta_field}"
             for source_id in sources:
                 descriptor = self._descriptor_for_route(
                     str(source_id), known, require_available=require_available, field=field
@@ -210,8 +210,8 @@ class PluginManager:
                     continue
                 if not descriptor.supports(SourceCapability.FILM_METADATA):
                     raise ValueError(f"source {source_id!r} cannot provide film metadata")
-                if descriptor.metadata_fields and meta_field.value not in descriptor.metadata_fields:
-                    raise ValueError(f"source {source_id!r} does not provide metadata field {meta_field.value!r}")
+                if descriptor.metadata_fields and meta_field not in descriptor.metadata_fields:
+                    raise ValueError(f"source {source_id!r} does not provide metadata field {meta_field!r}")
 
         for plugin_id, config in hot.plugins.items():
             if not is_external_source_id(plugin_id):
@@ -269,7 +269,7 @@ class PluginManager:
                     id=source_id,
                     name=source_id,
                     version="builtin",
-                    capabilities=frozenset(cap.value for cap in profile.effective_capabilities()),
+                    capabilities=frozenset(profile.effective_capabilities()),
                     urls=(*profile.urls, profile.base_url),
                     multi_language=profile.multi_language,
                 )

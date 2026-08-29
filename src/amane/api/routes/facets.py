@@ -91,7 +91,7 @@ async def delete_facet_rule(kind: FacetKind, rule_id: int, repo: RepoDep) -> Res
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not ok:
         raise HTTPException(status_code=404, detail="Rule not found")
-    logger.info("facet rule deleted", kind=kind.value, rule_id=rule_id)
+    logger.info("facet rule deleted", kind=kind, rule_id=rule_id)
     return Response(status_code=204)
 
 
@@ -112,7 +112,7 @@ async def merge_facets(kind: FacetKind, req: FacetMergeRequest, repo: RepoDep) -
         raise HTTPException(status_code=400, detail=str(e)) from e
     if item is None:
         raise HTTPException(status_code=404, detail="Facet not found")
-    logger.info("facets merged", kind=kind.value, target_id=req.target_id, source_ids=req.source_ids)
+    logger.info("facets merged", kind=kind, target_id=req.target_id, source_ids=req.source_ids)
     return _facet_response(item)
 
 
@@ -128,7 +128,7 @@ async def rename_facet(kind: FacetKind, facet_id: int, req: FacetRenameRequest, 
         raise HTTPException(status_code=409, detail=str(e)) from e
     if item is None:
         raise HTTPException(status_code=404, detail="Facet not found")
-    logger.info("facet renamed", kind=kind.value, facet_id=facet_id, name=name)
+    logger.info("facet renamed", kind=kind, facet_id=facet_id, name=name)
     return _facet_response(item)
 
 
@@ -141,5 +141,5 @@ async def delete_facet(kind: FacetKind, facet_id: int, repo: RepoDep) -> Respons
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not ok:
         raise HTTPException(status_code=404, detail="Facet not found")
-    logger.info("facet deleted", kind=kind.value, facet_id=facet_id)
+    logger.info("facet deleted", kind=kind, facet_id=facet_id)
     return Response(status_code=204)

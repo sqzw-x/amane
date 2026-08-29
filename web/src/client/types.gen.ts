@@ -1011,10 +1011,7 @@ export type FeedUpdateRequest = {
      * Number Pattern
      */
     number_pattern?: string | null;
-    /**
-     * Content Type
-     */
-    content_type?: string | null;
+    content_type?: ContentType | null;
     /**
      * Use Cache
      */

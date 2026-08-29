@@ -13,7 +13,7 @@ def site_allows_actor_gender(site: SiteName, gender: ActorGender) -> bool:
     - female / male: 站点 ``profile().genders`` 含该性别
     - unknown (保守): 仅双向站 (同时覆盖 female 与 male), 避免误撞女-only 站
     """
-    cls = actor_registry.get(site.value)
+    cls = actor_registry.get(site)
     if cls is None:
         return False
     supported = cls.profile().genders

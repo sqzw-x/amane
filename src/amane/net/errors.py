@@ -73,7 +73,7 @@ class SourceError(Exception):
         self.http_status = http_status
         self.detail = detail
         self.url = url
-        super().__init__(detail or reason.value)
+        super().__init__(detail or reason)
 
 
 class RequestError(SourceError):

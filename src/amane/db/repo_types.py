@@ -35,7 +35,7 @@ def _utcnow() -> datetime:
 
 # ==================== 排序列映射 ====================
 #
-# 显式枚举 -> Column 映射. 不用 getattr(Model, field.value) 反射, 以便:
+# 显式枚举 -> Column 映射. 不用 getattr(Model, field) 反射, 以便:
 #   1. 类型检查器能验证每个 Column 真实存在;
 #   2. 排序字段集合与可排序列严格对应, 新增枚举值忘记映射即 KeyError 而非静默.
 
@@ -342,7 +342,7 @@ class FeedUpdates(TypedDict, total=False):
     auto_enqueue: bool
     interval_seconds: int
     number_pattern: str | None
-    content_type: str | None
+    content_type: ContentType | None
     use_cache: list[str]
     etag: str | None
     last_modified: str | None

@@ -8,6 +8,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 
+from ...parsing import ContentType
 from ..models import Feed, FeedItem, FeedItemState, Metadata
 from ..repo_types import FeedUpdates
 from .base import RepositoryMixinBase
@@ -27,7 +28,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
         auto_enqueue: bool = True,
         interval_seconds: int = 3600,
         number_pattern: str | None = None,
-        content_type: str | None = None,
+        content_type: ContentType | None = None,
         use_cache: list[str] | None = None,
         group: str = "",
     ) -> Feed:

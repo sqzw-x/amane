@@ -355,7 +355,7 @@ async def test_content_type_and_use_cache_per_feed(repo: Repository):
     feed = await repo.create_feed(
         name="t",
         url="https://example.com/rss.xml",
-        content_type=ContentType.WESTERN.value,
+        content_type=ContentType.WESTERN,
         use_cache=[],
     )
     assert feed.id is not None

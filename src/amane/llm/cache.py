@@ -61,7 +61,7 @@ class TranslationCache:
         conn = await self._ensure()
         async with conn.execute(
             "SELECT translation FROM translations WHERE text_hash=? AND target=? AND field=?",
-            (self._hash(text), target.value, field.value),
+            (self._hash(text), target, field),
         ) as cur:
             row = await cur.fetchone()
         return row[0] if row else None
@@ -70,7 +70,7 @@ class TranslationCache:
         conn = await self._ensure()
         await conn.execute(
             "INSERT OR REPLACE INTO translations (text_hash, target, field, translation) VALUES (?, ?, ?, ?)",
-            (self._hash(text), target.value, field.value, translation),
+            (self._hash(text), target, field, translation),
         )
         await conn.commit()
 

@@ -114,7 +114,7 @@ def require_approval(
     meta: dict[str, Any] = {
         "sql": sql,
         "tool": tool,
-        "entity": entity.value if entity is not None else None,
+        "entity": entity if entity is not None else None,
         "name": name,
         "create_view": create_view,
         "extra": dict(extra or {}),
@@ -157,7 +157,7 @@ async def materialize_saved_query(
     entity_ids: list[int] = []
     if entity is not SavedQueryEntity.DATA:
         entity_ids = extract_entity_ids(result.columns, result.rows)
-    display_name = (name or "").strip() or ("数据查询" if entity is SavedQueryEntity.DATA else f"查询 ({entity.value})")
+    display_name = (name or "").strip() or ("数据查询" if entity is SavedQueryEntity.DATA else f"查询 ({entity})")
     saved = await deps.repo.create_saved_query(
         name=display_name,
         sql=sql,

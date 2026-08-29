@@ -312,7 +312,7 @@ class TestFacetRenameMergeDelete:
 
     async def test_rename_and_conflict_list_kinds(self, repo: Repository) -> None:
         for kind, _field in _LIST_KINDS:
-            meta = await _seed_list(repo, f"RN-{kind.value}-1", kind, ["Alice", "Carol"])
+            meta = await _seed_list(repo, f"RN-{kind}-1", kind, ["Alice", "Carol"])
             assert meta.id is not None
             facet_id = await _facet_id(repo, kind, "Alice")
             renamed = await repo.rename_facet(kind, facet_id, "Renamed")
@@ -325,16 +325,16 @@ class TestFacetRenameMergeDelete:
             assert same is not None and same.name == "Renamed"
             assert await repo.rename_facet(kind, 9999, "X") is None
 
-            await _seed_list(repo, f"RN-{kind.value}-2a", kind, ["DupA"])
-            await _seed_list(repo, f"RN-{kind.value}-2b", kind, ["DupB"])
+            await _seed_list(repo, f"RN-{kind}-2a", kind, ["DupA"])
+            await _seed_list(repo, f"RN-{kind}-2b", kind, ["DupB"])
             dup_id = await _facet_id(repo, kind, "DupA")
             with pytest.raises(ValueError):
                 await repo.rename_facet(kind, dup_id, "DupB")
 
     async def test_rename_and_conflict_scalar_kinds(self, repo: Repository) -> None:
         for kind, _field in _SCALAR_KINDS:
-            m1 = await _seed_scalar(repo, f"RS-{kind.value}-1a", kind, "Old")
-            m2 = await _seed_scalar(repo, f"RS-{kind.value}-1b", kind, "Old")
+            m1 = await _seed_scalar(repo, f"RS-{kind}-1a", kind, "Old")
+            m2 = await _seed_scalar(repo, f"RS-{kind}-1b", kind, "Old")
             assert m1.id is not None and m2.id is not None
             facet_id = await _facet_id(repo, kind, "Old")
             renamed = await repo.rename_facet(kind, facet_id, "New")
@@ -343,17 +343,17 @@ class TestFacetRenameMergeDelete:
                 got = await repo.get_metadata(mid)
                 assert got is not None
                 assert _scalar_name(got, kind) == "New"
-            await _seed_scalar(repo, f"RS-{kind.value}-2a", kind, "A")
-            await _seed_scalar(repo, f"RS-{kind.value}-2b", kind, "B")
+            await _seed_scalar(repo, f"RS-{kind}-2a", kind, "A")
+            await _seed_scalar(repo, f"RS-{kind}-2b", kind, "B")
             aid = await _facet_id(repo, kind, "A")
             with pytest.raises(ValueError):
                 await repo.rename_facet(kind, aid, "B")
 
     async def test_merge_list_kinds(self, repo: Repository) -> None:
         for kind, _field in _LIST_KINDS:
-            meta_a = await _seed_list(repo, f"MG-{kind.value}-a", kind, ["A"])
-            meta_b = await _seed_list(repo, f"MG-{kind.value}-b", kind, ["B"])
-            meta_ab = await _seed_list(repo, f"MG-{kind.value}-c", kind, ["A", "B", "Other"])
+            meta_a = await _seed_list(repo, f"MG-{kind}-a", kind, ["A"])
+            meta_b = await _seed_list(repo, f"MG-{kind}-b", kind, ["B"])
+            meta_ab = await _seed_list(repo, f"MG-{kind}-c", kind, ["A", "B", "Other"])
             assert meta_a.id is not None and meta_b.id is not None and meta_ab.id is not None
             target_id = await _facet_id(repo, kind, "A")
             source_id = await _facet_id(repo, kind, "B")
@@ -377,8 +377,8 @@ class TestFacetRenameMergeDelete:
 
     async def test_merge_scalar_kinds(self, repo: Repository) -> None:
         for kind, _field in _SCALAR_KINDS:
-            meta_a = await _seed_scalar(repo, f"MGS-{kind.value}-a", kind, "A")
-            meta_b = await _seed_scalar(repo, f"MGS-{kind.value}-b", kind, "B")
+            meta_a = await _seed_scalar(repo, f"MGS-{kind}-a", kind, "A")
+            meta_b = await _seed_scalar(repo, f"MGS-{kind}-b", kind, "B")
             assert meta_a.id is not None and meta_b.id is not None
             target_id = await _facet_id(repo, kind, "A")
             source_id = await _facet_id(repo, kind, "B")
@@ -392,7 +392,7 @@ class TestFacetRenameMergeDelete:
 
     async def test_delete_blocks_and_alias_chain(self, repo: Repository) -> None:
         for kind, _field in _LIST_KINDS:
-            meta = await _seed_list(repo, f"BL-{kind.value}-1", kind, ["Alice", "Bob"])
+            meta = await _seed_list(repo, f"BL-{kind}-1", kind, ["Alice", "Bob"])
             assert meta.id is not None
             facet_id = await _facet_id(repo, kind, "Alice")
             assert await repo.delete_facet(kind, facet_id) is True
@@ -409,9 +409,9 @@ class TestFacetRenameMergeDelete:
             items, _ = await repo.list_facets(kind, search="Alice")
             assert all(i.name != "Alice" for i in items)
 
-            meta2 = await _seed_list(repo, f"AL-{kind.value}-1", kind, ["ChainA"])
-            await _seed_list(repo, f"AL-{kind.value}-2", kind, ["ChainB"])
-            await _seed_list(repo, f"AL-{kind.value}-3", kind, ["ChainC"])
+            meta2 = await _seed_list(repo, f"AL-{kind}-1", kind, ["ChainA"])
+            await _seed_list(repo, f"AL-{kind}-2", kind, ["ChainB"])
+            await _seed_list(repo, f"AL-{kind}-3", kind, ["ChainC"])
             assert meta2.id is not None
             id_a = await _facet_id(repo, kind, "ChainA")
             id_b = await _facet_id(repo, kind, "ChainB")
@@ -431,8 +431,8 @@ class TestFacetRenameMergeDelete:
             assert after is not None
             assert _list_names(after, kind) == ["ChainC", "Extra"]
 
-            meta3 = await _seed_list(repo, f"BK-{kind.value}-1", kind, ["BlkA"])
-            await _seed_list(repo, f"BK-{kind.value}-2", kind, ["BlkB"])
+            meta3 = await _seed_list(repo, f"BK-{kind}-1", kind, ["BlkA"])
+            await _seed_list(repo, f"BK-{kind}-2", kind, ["BlkB"])
             assert meta3.id is not None
             bid_a = await _facet_id(repo, kind, "BlkA")
             bid_b = await _facet_id(repo, kind, "BlkB")

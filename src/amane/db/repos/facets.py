@@ -306,7 +306,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
 
     async def list_facet_rules(self, kind: FacetKind) -> list[FacetRule]:
         if kind not in SCRAPE_FACET_KINDS:
-            raise ValueError(f"facet kind {kind.value} 不支持规则")
+            raise ValueError(f"facet kind {kind} 不支持规则")
         async with self._session() as session:
             stmt = select(FacetRule).where(col(FacetRule.kind) == kind).order_by(asc(col(FacetRule.source_name)))
             return list((await session.exec(stmt)).all())
@@ -314,7 +314,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
     async def delete_facet_rule(self, kind: FacetKind, rule_id: int) -> bool:
         """删除单条规则; 不回填历史 Metadata. 不存在或 kind 不匹配返回 False."""
         if kind not in SCRAPE_FACET_KINDS:
-            raise ValueError(f"facet kind {kind.value} 不支持规则")
+            raise ValueError(f"facet kind {kind} 不支持规则")
         async with self._session() as session:
             rule = await session.get(FacetRule, rule_id)
             if rule is None or rule.kind != kind:

@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ...db.models import Actor, FacetKind, SavedQueryEntity, TaskType
 from ...db.repo_types import ActorBrowseItem, ActorBrowseParams, ActorPersonFields
-from ...enums import ActorGender
 from ...handlers import ActorScrapePayload
 from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
@@ -20,21 +19,13 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/actors", tags=["actors"])
 
 
-def _gender_of(value: ActorGender | str | None) -> ActorGender:
-    if isinstance(value, ActorGender):
-        return value
-    if value is None:
-        return ActorGender.UNKNOWN
-    return ActorGender(value)
-
-
 def _from_browse(item: ActorBrowseItem) -> ActorResponse:
     """列表只填卡片/表格字段; 简介/别名/源字典见详情."""
     return ActorResponse(
         id=item.id,
         name=item.name,
         count=item.count,
-        gender=_gender_of(item.gender),
+        gender=item.gender,
         birthday=item.birthday,
         birthplace=item.birthplace,
         height=item.height,
@@ -60,7 +51,7 @@ def _from_actor(
         name=actor.name,
         count=count,
         aliases=list(aliases or []),
-        gender=_gender_of(actor.gender),
+        gender=actor.gender,
         birthday=actor.birthday,
         birthplace=actor.birthplace,
         height=actor.height,

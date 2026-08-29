@@ -412,7 +412,7 @@ class OfficialCrawler(Crawler):
         for prefix, manufacturer in routes.items():
             if number.startswith(prefix.upper()):
                 self.logger.debug(
-                    "official route: user config matched", number=number, prefix=prefix, manufacturer=manufacturer.value
+                    "official route: user config matched", number=number, prefix=prefix, manufacturer=manufacturer
                 )
                 return MANUFACTURER_DOMAINS[manufacturer]
 
@@ -425,7 +425,7 @@ class OfficialCrawler(Crawler):
                 "official route: series prefix matched",
                 number=number,
                 prefix=series_prefix,
-                maker=maker.value,
+                maker=maker,
                 domain=domain,
             )
             return domain
@@ -441,7 +441,7 @@ class OfficialCrawler(Crawler):
                     number=number,
                     studio=studio,
                     alias=matched_alias,
-                    maker=maker.value,
+                    maker=maker,
                     domain=domain,
                 )
                 return domain

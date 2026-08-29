@@ -144,7 +144,7 @@ class AgentService:
         """写入会话思考覆盖; thinking=None 表示继承全局默认."""
         store = self.store_for(session_id)
         meta = store.read_meta()
-        meta["thinking"] = thinking.value if thinking is not None else None
+        meta["thinking"] = thinking if thinking is not None else None
         store.write_meta(meta)
 
     async def delete_session(self, session_id: int) -> bool:

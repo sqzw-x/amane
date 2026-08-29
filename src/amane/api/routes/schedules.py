@@ -56,7 +56,7 @@ async def create_schedule(req: ScheduleCreateRequest, repo: RepoDep) -> Schedule
         enabled=req.enabled,
         next_run=next_run,
     )
-    logger.info("schedule created", schedule_id=schedule.id, name=req.name, cron=req.cron, task_type=task_type.value)
+    logger.info("schedule created", schedule_id=schedule.id, name=req.name, cron=req.cron, task_type=task_type)
     return to_resp(ScheduleResponse, schedule)
 
 

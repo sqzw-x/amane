@@ -116,7 +116,7 @@ class FeedBatchResult(BaseModel):
 
 
 def _cache_kinds(raw: list[str]) -> list[CacheKind]:
-    return [kind for kind in _CACHE_KIND_ORDER if kind.value in raw]
+    return [kind for kind in _CACHE_KIND_ORDER if kind in raw]
 
 
 def _feed_info(feed: Feed) -> FeedInfo:
@@ -130,7 +130,7 @@ def _feed_info(feed: Feed) -> FeedInfo:
         auto_enqueue=feed.auto_enqueue,
         interval_seconds=feed.interval_seconds,
         number_pattern=feed.number_pattern,
-        content_type=ContentType(feed.content_type) if feed.content_type is not None else None,
+        content_type=feed.content_type,
         use_cache=_cache_kinds(feed.use_cache),
         next_fetch_at=_as_utc(feed.next_fetch_at),
         last_fetched_at=_as_utc(feed.last_fetched_at),
@@ -163,7 +163,7 @@ def _as_utc(value: datetime | None) -> datetime | None:
 
 
 def _use_cache_values(use_cache: set[CacheKind]) -> list[str]:
-    return [kind.value for kind in _CACHE_KIND_ORDER if kind in use_cache]
+    return [kind for kind in _CACHE_KIND_ORDER if kind in use_cache]
 
 
 def _feed_create_values(req: AgentFeedCreate) -> tuple[str, str, str, str | None, list[str]]:
@@ -207,7 +207,7 @@ def _feed_update_values(req: AgentFeedUpdate) -> dict[str, object]:
     if "number_pattern" in fields:
         updates["number_pattern"] = _validate_number_pattern(req.number_pattern)
     if "content_type" in fields:
-        updates["content_type"] = req.content_type.value if req.content_type is not None else None
+        updates["content_type"] = req.content_type
     if "use_cache" in fields:
         if req.use_cache is None:
             raise ValueError("use_cache 不能为 null")
@@ -270,7 +270,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 auto_enqueue=request.auto_enqueue,
                 interval_seconds=request.interval_seconds,
                 number_pattern=number_pattern,
-                content_type=request.content_type.value if request.content_type is not None else None,
+                content_type=request.content_type,
                 use_cache=use_cache,
             )
         except (IntegrityError, ValueError) as exc:
@@ -382,7 +382,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 "tool": "list_feed_items",
                 "feed_id": feed_id,
                 "search": search,
-                "state": state.value,
+                "state": state,
                 "group": group,
                 "offset": offset,
                 "limit": limit,
@@ -432,7 +432,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 ctx,
                 sql=f"删除订阅源 {feed_id} 的条目 ids={request.ids}",
                 tool="batch_feed_items",
-                extra={"feed_id": feed_id, "action": request.action.value, "ids": list(request.ids)},
+                extra={"feed_id": feed_id, "action": request.action, "ids": list(request.ids)},
             )
 
         if request.action is FeedItemBatchAction.IGNORE:
