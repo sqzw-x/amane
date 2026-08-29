@@ -555,6 +555,8 @@ _MOSAIC_DIR_TOKENS: dict[str, str] = {
     )
 }
 _DIR_BRACKET_STRIP = "[]【】()（）"
+# 路径模板映射校验 / schema 与检测输出同源; 顺序按词表首次出现.
+MOSAIC_VALUES: tuple[str, ...] = tuple(dict.fromkeys(_MOSAIC_DIR_TOKENS.values()))
 
 
 def _detect_mosaic_from_dirs(dir_names: tuple[str, ...]) -> str | None:
@@ -586,6 +588,8 @@ _DEFINITION_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("HD", re.compile(r"\bHD\b(?![.-]\d)")),
     ("SD", re.compile(r"\bSD\b(?![.-]\d)")),
 )
+# 与路径模板映射校验 / schema 同源; 去重后保持检测优先级顺序 (2160p 已归一进 4K).
+DEFINITION_VALUES: tuple[str, ...] = tuple(dict.fromkeys(value for value, _ in _DEFINITION_MARKERS))
 
 
 def _detect_definition(basename: str) -> str | None:

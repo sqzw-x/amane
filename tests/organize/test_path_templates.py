@@ -169,6 +169,32 @@ class TestOptionalGroups:
         assert result.video == media / "ABC-123.mp4"
 
 
+class TestValueMapping:
+    """`{name|k=v}` 值替换: 未列出的 key 保持原值; 空源不映射; 映射成空则省略可选组."""
+
+    def test_unmapped_key_keeps_canonical(self):
+        rendered = render_path_template("{mosaic?|cracked=破解}", {"mosaic?": "uncensored"})
+        assert rendered == "uncensored"
+
+    def test_empty_source_skips_mapping(self):
+        rendered = render_path_template("{mosaic?|uncensored=U}", {"mosaic?": ""})
+        assert rendered == ""
+
+    def test_map_present_to_empty_omits_group(self):
+        rendered = render_path_template("x[{mosaic?|uncensored=}]", {"mosaic?": "uncensored"})
+        assert rendered == "x"
+
+    def test_unknown_metadata_can_be_mapped(self, media: Path):
+        wp = Library(name="t", path=str(media), video_template="{studio|Unknown=未分类}/{number}.{ext}")
+        result = resolve_paths(wp, _meta(studio=None), ext="mp4")
+        assert result.video == media / "未分类" / "ABC-123.mp4"
+
+    def test_cd_unmapped_keeps_number(self, media: Path):
+        wp = Library(name="t", path=str(media), video_template="{number}[-第{cd?|1=一}集].{ext}")
+        result = resolve_paths(wp, _meta(), ext="mp4", cd=2)
+        assert result.video == media / "ABC-123-第2集.mp4"
+
+
 class TestValidatePathTemplate:
     def test_default_is_valid(self):
         assert validate_path_template(VIDEO_TEMPLATE_DEFAULT) == VIDEO_TEMPLATE_DEFAULT
@@ -179,6 +205,39 @@ class TestValidatePathTemplate:
     def test_unclosed_placeholder(self):
         with pytest.raises(ValueError, match="unclosed placeholder"):
             validate_path_template("{number")
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "{mosaic?|uncensored=U,cracked=破解}",
+            "{mosaic?|cracked=破解}",
+            "{sub?|C=中字}",
+            "{def?|4K=2160p,1080p=FHD}",
+            "{cd?|1=一,2=二}",
+            "{studio|Unknown=未分类}",
+            "{mosaic?|uncensored=}",
+        ],
+    )
+    def test_value_mapping_accepted(self, template: str):
+        assert validate_path_template(template) == template
+
+    @pytest.mark.parametrize(
+        ("template", "match"),
+        [
+            ("{mosaic?|}", "empty placeholder mapping"),
+            ("{mosaic?|uncensored}", "invalid placeholder mapping"),
+            ("{mosaic?|=U}", "empty mapping key"),
+            ("{mosaic?|uncensored=U,uncensored=V}", "duplicate mapping key"),
+            ("{mosaic?|uncencored=U}", "unknown mapping key"),
+            ("{mosaic?|censored=有码}", "unknown mapping key"),
+            ("{def?|2160p=4K}", "unknown mapping key"),
+            ("{sub?|CH=中字}", "unknown mapping key"),
+            ("{mosaic?|uncensored=U,}", "invalid placeholder mapping"),
+        ],
+    )
+    def test_value_mapping_rejected(self, template: str, match: str):
+        with pytest.raises(ValueError, match=match):
+            validate_path_template(template)
 
 
 class TestResolvePathsDefaults:
@@ -384,10 +443,24 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
     _RenderCase("MIDV-123-CD1.mp4", "{number}/{number}[-CD{cd?}].{ext}", ("ABC-123", "ABC-123-CD1.mp4")),
     _RenderCase("MIDV-123-C.mp4", "{number}/{number}[-{sub?}].{ext}", ("ABC-123", "ABC-123-C.mp4")),
     _RenderCase(None, "{mosaic?}/{def?}/{number}.{ext}", ("ABC-123.mp4",)),
+    _RenderCase(
+        "MIDV-123-無碼.mp4",
+        "{mosaic?}/{number}[-{mosaic?|uncensored=U,cracked=破解}].{ext}",
+        ("uncensored", "ABC-123-U.mp4"),
+    ),
+    _RenderCase(
+        "[破解]MIDV-123.mp4",
+        "{mosaic?}/{number}[-{mosaic?|uncensored=U,cracked=破解}].{ext}",
+        ("cracked", "ABC-123-破解.mp4"),
+    ),
+    _RenderCase("MIDV-123-C.mp4", "{number}/{number}[-{sub?|C=中字}].{ext}", ("ABC-123", "ABC-123-中字.mp4")),
+    _RenderCase("ABC-123-4K.mp4", "{number}[[{def?|4K=2160p}]].{ext}", ("ABC-123[2160p].mp4",)),
+    _RenderCase("MIDV-123-CD1.mp4", "{number}/{number}[-第{cd?|1=一}集].{ext}", ("ABC-123", "ABC-123-第一集.mp4")),
+    _RenderCase("MIDV-123-無碼.mp4", "{number}[-{mosaic?|uncensored=}].{ext}", ("ABC-123.mp4",)),
 )
 
 
-@pytest.mark.parametrize("case", RENDER_CASES, ids=lambda c: c.source or "no-file-info")
+@pytest.mark.parametrize("case", RENDER_CASES, ids=lambda c: f"{c.source}:{c.template}")
 def test_file_placeholder_render(case: _RenderCase, media: Path) -> None:
     """file 相位占位符 {mosaic?} / {def?} / {cd?} / {sub?}: 未检出为空串, 空段折叠."""
     wp = Library(name="t", path=str(media), video_template=case.template)

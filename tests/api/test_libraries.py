@@ -56,6 +56,12 @@ class TestLibraries:
         assert phases["video_dir"] == "post_video"
         assert phases["link_dir"] == "post_video"
         assert phases["raw_srt_name"] == "subtitle"
+        by_name = {p["name"]: p for p in data["placeholders"]}
+        assert by_name["mosaic?"]["map_keys"] == ["uncensored", "cracked"]
+        assert by_name["def?"]["map_keys"] == ["8K", "4K", "1440p", "1080p", "720p", "480p", "HD", "SD"]
+        assert by_name["sub?"]["map_keys"] == ["C"]
+        assert by_name["cd?"]["map_keys"] == []
+        assert by_name["number"]["map_keys"] == []
         assert data["subtitle_extensions_default"] == list(DEFAULT_SUBTITLE_EXTENSIONS)
 
         target = safe_path / "incoming"
@@ -186,6 +192,9 @@ class TestLibraries:
             await client.post("libraries", json={**base, "video_template": "{number}[-CD{cd?}.{ext}"})
         ).status_code == 422
         assert (await client.post("libraries", json={**base, "video_template": "{number}].{ext}"})).status_code == 422
+        assert (
+            await client.post("libraries", json={**base, "video_template": "{mosaic?|uncencored=U}"})
+        ).status_code == 422
 
         ok_empty_trailer = await client.post("libraries", json={**base, "trailer_pattern": ""})
         assert ok_empty_trailer.status_code == 201

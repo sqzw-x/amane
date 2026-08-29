@@ -144,7 +144,7 @@
   "optionalTemplateDefault": "Default: {{default}}",
   "placeholders": {
     "label": "Placeholders",
-    "hint": "Click a badge to copy. Names ending in ? are empty when undetected; wrap them in [..] or [[..]]",
+    "hint": "Click a badge to copy. Names ending in ? are empty when undetected; wrap them in [..] or [[..]]. {name|old=new} rewrites output; unlisted keys stay canonical",
     "copied": "Copied {{placeholder}} to clipboard",
     "copyFailed": "Copy failed, please copy manually",
     "phases": {
@@ -154,6 +154,7 @@
       "post_video": "Available after video path is rendered; sidecar templates only",
       "subtitle": "From the subtitle source file; subtitle template only"
     },
+    "mapKeys": "Mappable keys: {{keys}}",
     "items": {
       "number": "Catalog number",
       "title": "Title",

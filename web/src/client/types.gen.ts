@@ -2117,12 +2117,18 @@ export type PathTemplatePlaceholder = {
      */
     name: string;
     phase: PlaceholderPhase;
+    /**
+     * Map Keys
+     *
+     * 有闭合取值时列出规范 key, 供 `{name|k=v}` 映射校验与 UI 提示. 空则不校验映射 key.
+     */
+    map_keys?: Array<string>;
 };
 
 /**
  * PathTemplateSchemaResponse
  *
- * 路径模板 UI 契约: 占位符相位 + 默认值, 与 resolve_paths 同源.
+ * 路径模板 UI 契约: 占位符相位、默认值与可映射 key, 与 resolve_paths 同源.
  */
 export type PathTemplateSchemaResponse = {
     /**

@@ -1,6 +1,6 @@
 # 数据模型
 
-> 提交: `eec3c6420`
+> 提交: `247d72d75`
 >
 > 表结构、字段类型、便捷属性都在 `src/amane/db/models.py`. 本文只解释**为什么**这么建模、所有权关系、生命周期与已知陷阱.
 
@@ -110,11 +110,13 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` 与 file 相位 (`{cd?}` `{sub?}` `{mosaic?}` `{def?}`, `parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库; `{video_dir}` / `{link_dir}` 仅附属资源模板; `{raw_srt_name}` 仅字幕模板. file 相位未检出是**空串**, 不是 `Unknown` / `censored`. `{mosaic?}` 只认文件名标记或目录名整段词表 (由近到远; `uncensored` / `cracked` / `-U` / `-UC` / 无码 / 破解 等, 子串不算), 不用 content_type 兜底. `{def?}` 只看文件名. `{sub?}` 有中字标记时为 `C`. 名字里的 `?` 只是提醒可空, 没有运算含义; 写成 `{cd}` 视为未知 key, 回 `Unknown`.
 
-可选组: `[...]` 组界不输出, 组内任一占位符为空则整段丢弃 (AND); `[[...]]` 同样但有值时把结果包一层 `[]`. 组可嵌套; 未闭合在写入时 422. 默认视频模板 `{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}`. 链接模板要分集须自己写 `{cd?}` 组, 不会自动追加. 渲染后丢掉空路径段, 相对模板不会因首段为空变成绝对路径.
+可选组: `[...]` 组界不输出, 组内任一占位符**解析后**为空则整段丢弃 (AND); `[[...]]` 同样但有值时把结果包一层 `[]`. 组可嵌套; 未闭合在写入时 422. 默认视频模板 `{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}`. 链接模板要分集须自己写 `{cd?}` 组, 不会自动追加. 渲染后丢掉空路径段, 相对模板不会因首段为空变成绝对路径.
+
+值映射: `{name|原值=输出,另一=输出}` 在查出占位符值之后替换. 未列出的 key 保持规范值; 源值为空串不走映射 (可选组仍省略). 把已有值映射成空串则该占位符视为空, 可选组省略. 同一占位符在目录与文件名可写不同映射. 闭合取值 (`mosaic?` / `def?` / `sub?`) 的映射 key 必须是规范值, 否则写入 422; `{cd?}` 与其它字段不校验 key. 规范值由同模块 `PLACEHOLDER_MAP_KEYS` 导出, 经 schema `map_keys` 下发. 分隔符是 `|` `=` `,` (不用 `:`); 输出值里不能含逗号.
 
 普通占位符缺失回退 `Unknown`. `{raw_dir}` / `{raw_name}` 无 `source_path` 时为空串, 同样走空段折叠.
 
-占位符相位与默认值由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
+占位符相位、默认值与可映射 key 由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
 
 **逃逸防护**: 相对模板必须是 library 根的后代; 绝对模板 (含展开 `{video_dir}` / `{link_dir}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. 多盘分存要求目标盘在 `safe_dirs` 内. `link_template` 额外要求渲染结果**不是**库根的后代.
 

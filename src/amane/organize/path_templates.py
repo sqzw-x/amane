@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated
 from pydantic import AfterValidator
 
 from ..enums import LinkMode
-from ..parsing.file_info import FileInfo
+from ..parsing.file_info import DEFINITION_VALUES, MOSAIC_VALUES, FileInfo
 from ..utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
 from ..utils.path import is_any_descendant, is_descendant
 
@@ -90,13 +90,27 @@ PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
     ("raw_srt_name", PlaceholderPhase.SUBTITLE),
 )
 
+# 有闭合取值的占位符: 映射表的 key 必须是规范值, 否则写入 422. 未列入的占位符 (如 cd?) 不校验 key.
+PLACEHOLDER_MAP_KEYS: dict[str, tuple[str, ...]] = {
+    "mosaic?": MOSAIC_VALUES,
+    "def?": DEFINITION_VALUES,
+    "sub?": ("C",),
+}
+
 
 def path_template_schema() -> dict[str, object]:
     """供 API/前端消费的路径模板契约 (真源与 resolve_paths 同模块)."""
     return {
         "video_default": VIDEO_TEMPLATE_DEFAULT,
         "optional_defaults": dict(OPTIONAL_TEMPLATE_DEFAULTS),
-        "placeholders": [{"name": name, "phase": phase} for name, phase in PLACEHOLDERS],
+        "placeholders": [
+            {
+                "name": name,
+                "phase": phase,
+                "map_keys": list(PLACEHOLDER_MAP_KEYS.get(name, ())),
+            }
+            for name, phase in PLACEHOLDERS
+        ],
         "subtitle_extensions_default": list(DEFAULT_SUBTITLE_EXTENSIONS),
     }
 
@@ -120,6 +134,7 @@ class _Literal:
 @dataclass(frozen=True, slots=True)
 class _Placeholder:
     name: str
+    mapping: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,12 +146,36 @@ class _Group:
 type _Node = _Literal | _Placeholder | _Group
 
 
-class _Parser:
-    """`{name}` 占位符 + `[...]` / `[[...]]` 可选组.
+def _parse_placeholder_mapping(name: str, spec: str) -> tuple[tuple[str, str], ...]:
+    """解析 `{name|k=v,k2=v2}` 的映射段. 空 spec / 缺 `=` / 空 key / 重复 key / 未知枚举 key 均拒绝."""
+    if not spec.strip():
+        raise ValueError("empty placeholder mapping in path template")
+    pairs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    allowed = PLACEHOLDER_MAP_KEYS.get(name)
+    for item in spec.split(","):
+        if "=" not in item:
+            raise ValueError("invalid placeholder mapping in path template")
+        key, value = item.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError("empty mapping key in path template")
+        if key in seen:
+            raise ValueError(f"duplicate mapping key {key!r} in path template")
+        if allowed is not None and key not in allowed:
+            raise ValueError(f"unknown mapping key {key!r} for {{{name}}}")
+        seen.add(key)
+        pairs.append((key, value.strip()))
+    return tuple(pairs)
 
-    `[...]` 组界不输出; 组内任一占位符为空串则整组丢弃.
+
+class _Parser:
+    """`{name}` 占位符 + 可选 `|k=v` 值映射 + `[...]` / `[[...]]` 可选组.
+
+    `[...]` 组界不输出; 组内任一占位符解析后为空串则整组丢弃.
     `[[...]]` 同样, 有值时把结果包一层 ``[]``.
     名字里的 ``?`` 只是标识符的一部分, 没有运算含义.
+    `{name|原值=输出}` 在查出值之后替换; 空源值不走映射.
     """
 
     def __init__(self, src: str) -> None:
@@ -192,15 +231,20 @@ class _Parser:
             self.i += 1
         if self.i >= len(self.src):
             raise ValueError("unclosed placeholder in path template")
-        name = self.src[start : self.i]
+        body = self.src[start : self.i]
         self.i += 1
+        if not body:
+            raise ValueError("empty placeholder in path template")
+        name_part, sep, map_part = body.partition("|")
+        name = name_part.strip()
         if not name:
             raise ValueError("empty placeholder in path template")
-        return _Placeholder(name)
+        mapping = _parse_placeholder_mapping(name, map_part) if sep else ()
+        return _Placeholder(name, mapping)
 
 
 def validate_path_template(value: str) -> str:
-    """校验路径模板结构 (未闭合括号 / 占位符). 空串合法 (部分可选模板)."""
+    """校验路径模板结构 (括号 / 占位符 / 值映射). 空串合法 (部分可选模板)."""
     _Parser(value).parse()
     return value
 
@@ -220,14 +264,14 @@ PathTemplate = Annotated[str, AfterValidator(validate_path_template)]
 OptionalPathTemplate = Annotated[str | None, AfterValidator(validate_optional_path_template)]
 
 
-def _placeholder_names(nodes: Sequence[_Node]) -> tuple[str, ...]:
-    names: list[str] = []
+def _placeholders(nodes: Sequence[_Node]) -> tuple[_Placeholder, ...]:
+    found: list[_Placeholder] = []
     for node in nodes:
         if isinstance(node, _Placeholder):
-            names.append(node.name)
+            found.append(node)
         elif isinstance(node, _Group):
-            names.extend(_placeholder_names(node.children))
-    return tuple(names)
+            found.extend(_placeholders(node.children))
+    return tuple(found)
 
 
 def _lookup(name: str, variables: dict[str, str]) -> str:
@@ -236,16 +280,24 @@ def _lookup(name: str, variables: dict[str, str]) -> str:
     return _UNKNOWN
 
 
+def _resolve(node: _Placeholder, variables: dict[str, str]) -> str:
+    """查出占位符值再按映射改写. 空串不走映射, 以便可选组省略未检出项."""
+    raw = _lookup(node.name, variables)
+    if raw == "":
+        return ""
+    mapped = dict(node.mapping)
+    return mapped.get(raw, raw)
+
+
 def _render_nodes(nodes: Sequence[_Node], variables: dict[str, str]) -> str:
     parts: list[str] = []
     for node in nodes:
         if isinstance(node, _Literal):
             parts.append(node.text)
         elif isinstance(node, _Placeholder):
-            parts.append(_lookup(node.name, variables))
+            parts.append(_resolve(node, variables))
         else:
-            names = _placeholder_names(node.children)
-            if any(_lookup(name, variables) == "" for name in names):
+            if any(_resolve(item, variables) == "" for item in _placeholders(node.children)):
                 continue
             inner = _render_nodes(node.children, variables)
             parts.append(f"[{inner}]" if node.wrap else inner)
@@ -260,7 +312,7 @@ def _template_keeps_absolute(template: str, variables: dict[str, str]) -> bool:
     if _DRIVE.match(s):
         return True
     if s.startswith("{") and "}" in s:
-        name = s[1 : s.index("}")]
+        name = s[1 : s.index("}")].split("|", 1)[0].strip()
         val = variables.get(name, "")
         if val.startswith(("/", "\\")) or _DRIVE.match(val):
             return True

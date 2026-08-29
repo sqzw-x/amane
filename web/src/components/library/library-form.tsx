@@ -374,27 +374,30 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
             {t("placeholders.label")} · {t("placeholders.hint")}
           </Text>
           <Group gap={4} wrap="wrap">
-            {placeholders.map((p) => (
-              <Tooltip
-                key={p.name}
-                label={t(`placeholders.items.${p.name}`, {
-                  defaultValue: t(`placeholders.phases.${p.phase}`, { defaultValue: p.phase }),
-                })}
-                multiline
-                maw={280}
-              >
-                <Badge
-                  component="button"
-                  type="button"
-                  size="sm"
-                  variant="light"
-                  style={{ cursor: "pointer" }}
-                  onClick={() => void copyPlaceholder(p.name)}
-                >
-                  {`{${p.name}}`}
-                </Badge>
-              </Tooltip>
-            ))}
+            {placeholders.map((p) => {
+              const item = t(`placeholders.items.${p.name}`, {
+                defaultValue: t(`placeholders.phases.${p.phase}`, { defaultValue: p.phase }),
+              });
+              const keys = p.map_keys ?? [];
+              const label =
+                keys.length > 0
+                  ? `${item} · ${t("placeholders.mapKeys", { keys: keys.join(", ") })}`
+                  : item;
+              return (
+                <Tooltip key={p.name} label={label} multiline maw={280}>
+                  <Badge
+                    component="button"
+                    type="button"
+                    size="sm"
+                    variant="light"
+                    style={{ cursor: "pointer" }}
+                    onClick={() => void copyPlaceholder(p.name)}
+                  >
+                    {`{${p.name}}`}
+                  </Badge>
+                </Tooltip>
+              );
+            })}
           </Group>
         </Stack>
       )}

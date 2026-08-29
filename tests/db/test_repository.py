@@ -977,6 +977,8 @@ class TestLibraryRepo:
 
         with pytest.raises(ValueError, match="unclosed"):
             await repo.update_library(lib.id, video_template="{number}[-CD{cd?}.{ext}")
+        with pytest.raises(ValueError, match="unknown mapping key"):
+            await repo.update_library(lib.id, video_template="{mosaic?|uncencored=U}.{ext}")
         with pytest.raises(ValueError, match="unmatched"):
             await repo.create_library(name="bad", path="/media/bad", video_template="{number}].{ext}")
 

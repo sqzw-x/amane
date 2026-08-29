@@ -4356,6 +4356,14 @@ export const PathTemplatePlaceholderSchema = {
         },
         phase: {
             $ref: '#/components/schemas/PlaceholderPhase'
+        },
+        map_keys: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Map Keys',
+            description: '有闭合取值时列出规范 key, 供 `{name|k=v}` 映射校验与 UI 提示. 空则不校验映射 key.'
         }
     },
     type: 'object',
@@ -4402,7 +4410,7 @@ export const PathTemplateSchemaResponseSchema = {
         'subtitle_extensions_default'
     ],
     title: 'PathTemplateSchemaResponse',
-    description: '路径模板 UI 契约: 占位符相位 + 默认值, 与 resolve_paths 同源.'
+    description: '路径模板 UI 契约: 占位符相位、默认值与可映射 key, 与 resolve_paths 同源.'
 } as const;
 
 export const PlaceholderPhaseSchema = {
