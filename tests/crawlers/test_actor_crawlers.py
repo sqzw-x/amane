@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from amane.config import SiteConfig
-from amane.crawlers import registry
 from amane.crawlers.actor import GFriendsActorCrawler, actor_registry
 from amane.crawlers.actor.base import ActorCrawler
 from amane.crawlers.http import HttpClient
@@ -17,10 +16,7 @@ from amane.net.errors import SourceError
 
 from .driven import assert_expected, build_mock, discover_actor_cases, http_client, load_toml
 
-CASES = discover_actor_cases(
-    lambda site: actor_registry.get(site) is not None,
-    is_dual=lambda site: registry.get(site) is not None,
-)
+CASES = discover_actor_cases(lambda site: actor_registry.get(site) is not None)
 
 if not CASES:
     pytest.skip("no test cases found", allow_module_level=True)

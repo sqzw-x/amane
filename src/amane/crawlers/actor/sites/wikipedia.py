@@ -10,6 +10,7 @@ from parsel import Selector
 
 from amane.enums import ActorGender, SiteName
 from amane.net.errors import SourceError
+from amane.plugins.models import SourceCapability
 from amane.utils.dates import normalize_calendar_date
 
 from ...base import CrawlerProfile
@@ -81,6 +82,8 @@ class WikipediaActorCrawler(ActorCrawler):
                 "https://ja.m.wikipedia.org",
                 "https://zh.m.wikipedia.org",
             ],
+            capabilities=frozenset({SourceCapability.ACTOR_PROFILE}),
+            genders=frozenset({ActorGender.FEMALE, ActorGender.MALE}),
         )
 
     async def fetch(self, name: str) -> ActorMetadata | None:

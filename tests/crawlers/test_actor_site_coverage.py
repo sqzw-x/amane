@@ -1,47 +1,35 @@
-"""演员站点性别覆盖单元测试."""
+"""演员站点性别覆盖 — 对照各爬虫 ``profile().genders``, 不维护平行名单."""
 
 from __future__ import annotations
 
-import pytest
-
-from amane.crawlers.actor import filter_sites_for_gender, site_allows_actor_gender
+from amane.crawlers.actor import actor_registry, filter_sites_for_gender, site_allows_actor_gender
+from amane.crawlers.site_roles import ACTOR_IMAGE_SITES, ACTOR_PROFILE_SITES
 from amane.enums import ActorGender, SiteName
 
 
-@pytest.mark.parametrize(
-    ("gender", "site", "allowed"),
-    [
-        (ActorGender.FEMALE, SiteName.MINNANO, True),
-        (ActorGender.FEMALE, SiteName.GFRIENDS, True),
-        (ActorGender.FEMALE, SiteName.JAVDB, True),
-        (ActorGender.FEMALE, SiteName.WIKIPEDIA, True),
-        (ActorGender.FEMALE, SiteName.THEPORNDB, True),
-        (ActorGender.MALE, SiteName.MINNANO, False),
-        (ActorGender.MALE, SiteName.GFRIENDS, False),
-        (ActorGender.MALE, SiteName.JAVDB, True),
-        (ActorGender.MALE, SiteName.WIKIPEDIA, True),
-        (ActorGender.MALE, SiteName.THEPORNDB, True),
-        (ActorGender.UNKNOWN, SiteName.MINNANO, False),
-        (ActorGender.UNKNOWN, SiteName.GFRIENDS, False),
-        (ActorGender.UNKNOWN, SiteName.JAVDB, True),
-        (ActorGender.UNKNOWN, SiteName.WIKIPEDIA, True),
-        (ActorGender.UNKNOWN, SiteName.THEPORNDB, True),
-    ],
-)
-def test_site_allows_actor_gender(gender: ActorGender, site: SiteName, allowed: bool) -> None:
-    assert site_allows_actor_gender(site, gender) is allowed
+def _supported(site: SiteName) -> frozenset[ActorGender]:
+    cls = actor_registry.get(site.value)
+    if cls is None:
+        return frozenset()
+    return cls.profile().genders or frozenset()
+
+
+def test_site_allows_actor_gender_follows_profile() -> None:
+    for name in actor_registry.sites():
+        site = SiteName(name)
+        supported = _supported(site)
+        assert site_allows_actor_gender(site, ActorGender.FEMALE) is (ActorGender.FEMALE in supported)
+        assert site_allows_actor_gender(site, ActorGender.MALE) is (ActorGender.MALE in supported)
+        both = ActorGender.FEMALE in supported and ActorGender.MALE in supported
+        assert site_allows_actor_gender(site, ActorGender.UNKNOWN) is both
+    assert site_allows_actor_gender(SiteName.DMM, ActorGender.FEMALE) is False
 
 
 def test_filter_sites_preserves_order() -> None:
-    configured = [SiteName.MINNANO, SiteName.JAVDB, SiteName.WIKIPEDIA, SiteName.GFRIENDS, SiteName.THEPORNDB]
-    allowed, skipped = filter_sites_for_gender(configured, ActorGender.MALE)
-    assert allowed == [SiteName.JAVDB, SiteName.WIKIPEDIA, SiteName.THEPORNDB]
-    assert skipped == [SiteName.MINNANO, SiteName.GFRIENDS]
-
-    allowed_f, skipped_f = filter_sites_for_gender(configured, ActorGender.FEMALE)
-    assert allowed_f == configured
-    assert skipped_f == []
-
-    allowed_u, skipped_u = filter_sites_for_gender(configured, ActorGender.UNKNOWN)
-    assert allowed_u == [SiteName.JAVDB, SiteName.WIKIPEDIA, SiteName.THEPORNDB]
-    assert skipped_u == [SiteName.MINNANO, SiteName.GFRIENDS]
+    configured = [*ACTOR_PROFILE_SITES, *ACTOR_IMAGE_SITES]
+    for gender in ActorGender:
+        allowed, skipped = filter_sites_for_gender(configured, gender)
+        expected_allowed = [site for site in configured if site_allows_actor_gender(site, gender)]
+        expected_skipped = [site for site in configured if not site_allows_actor_gender(site, gender)]
+        assert allowed == expected_allowed
+        assert skipped == expected_skipped

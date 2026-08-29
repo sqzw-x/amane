@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from ..config.manager import HotSettings
 from ..crawlers import registry
-from ..crawlers.site_roles import FILM_METADATA_SITES, MULTI_LANGUAGE_SITES
+from ..crawlers.site_roles import FILM_METADATA_SITES
 from .api import FilmSourcePlugin, FilmSourceProvider, PluginContext
 from .models import (
     PLUGIN_API_VERSION,
@@ -269,9 +269,9 @@ class PluginManager:
                     id=source_id,
                     name=source_id,
                     version="builtin",
-                    capabilities=frozenset({SourceCapability.FILM_METADATA.value}),
+                    capabilities=frozenset(cap.value for cap in profile.effective_capabilities()),
                     urls=(*profile.urls, profile.base_url),
-                    multi_language=source_id in {str(item) for item in MULTI_LANGUAGE_SITES},
+                    multi_language=profile.multi_language,
                 )
             )
 

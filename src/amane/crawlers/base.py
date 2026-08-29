@@ -5,6 +5,9 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from amane.enums import ActorGender
+from amane.plugins.models import SourceCapability
+
 from .http import HttpClient
 
 if TYPE_CHECKING:
@@ -36,6 +39,15 @@ class CrawlerProfile:
     """爬虫默认 cookies."""
     headers: dict[str, str] = field(default_factory=dict)
     """爬虫默认请求头, 如 Accept-Language 用于绕过地域限制."""
+    capabilities: frozenset[SourceCapability] = field(default_factory=frozenset)
+    """来源能力. 空则影片爬虫视为 film_metadata; 演员爬虫必须显式声明 profile / image."""
+    multi_language: bool = False
+    """是否消费 FetchOptions.language (聚合展开 (site, lang) 节点)."""
+    genders: frozenset[ActorGender] | None = None
+    """演员爬虫的性别覆盖; 影片爬虫为 None."""
+
+    def effective_capabilities(self) -> frozenset[SourceCapability]:
+        return self.capabilities or frozenset({SourceCapability.FILM_METADATA})
 
 
 class Crawler(ABC):

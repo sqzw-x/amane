@@ -21,7 +21,7 @@ _LANG_PREFIX = {
 class IqqtvCrawler(Crawler):
     @classmethod
     def profile(cls) -> CrawlerProfile:
-        return CrawlerProfile(name=SiteName.IQQTV, base_url="https://iqq5.xyz")
+        return CrawlerProfile(name=SiteName.IQQTV, base_url="https://iqq5.xyz", multi_language=True)
 
     def _get_lang_prefix(self, options: FetchOptions | None) -> str:
         """从 FetchOptions.language 获取 URL 路径前缀, 默认 /cn."""

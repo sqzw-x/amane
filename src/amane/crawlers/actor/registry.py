@@ -19,6 +19,10 @@ class ActorCrawlerRegistry:
     def get(self, name: str) -> type[ActorCrawler] | None:
         return self._classes.get(str(name))
 
+    def classes(self) -> tuple[type[ActorCrawler], ...]:
+        """注册顺序 (即默认 profile_sites / image_sites 的推导顺序)."""
+        return tuple(self._classes.values())
+
     def sites(self) -> list[str]:
         return sorted(self._classes)
 

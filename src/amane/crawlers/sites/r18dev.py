@@ -26,7 +26,7 @@ class R18DevCrawler(Crawler):
     @classmethod
     def profile(cls) -> CrawlerProfile:
         # base_url 仅占位 (本爬虫不发 HTTP); 保留以满足注册表/限速器构建约定.
-        return CrawlerProfile(name=SiteName.R18DEV, base_url="https://r18.dev")
+        return CrawlerProfile(name=SiteName.R18DEV, base_url="https://r18.dev", multi_language=True)
 
     def __init__(self, client: HttpClient, config: SiteConfig | None = None, db: R18Database | None = None):
         super().__init__(client, config=config)

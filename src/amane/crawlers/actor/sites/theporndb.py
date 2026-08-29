@@ -6,6 +6,7 @@ import unicodedata
 from typing import Any
 
 from amane.enums import ActorGender, SiteName
+from amane.plugins.models import SourceCapability
 
 from ...base import CrawlerProfile
 from ..base import ActorCrawler
@@ -32,7 +33,12 @@ class ThePornDBActorCrawler(ActorCrawler):
 
     @classmethod
     def profile(cls) -> CrawlerProfile:
-        return CrawlerProfile(name=SiteName.THEPORNDB, base_url="https://theporndb.net/graphql")
+        return CrawlerProfile(
+            name=SiteName.THEPORNDB,
+            base_url="https://theporndb.net/graphql",
+            capabilities=frozenset({SourceCapability.ACTOR_PROFILE}),
+            genders=frozenset({ActorGender.FEMALE, ActorGender.MALE}),
+        )
 
     async def fetch(self, name: str) -> ActorMetadata | None:
         token = self.config.api_token if self.config else None

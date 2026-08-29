@@ -1,6 +1,6 @@
-"""站点角色常量 - 配置 schema 暴露与运行时校验共用 (不进 HotSettings).
+"""站点角色 — 由已注册爬虫的 ``profile()`` 声明推导, 供配置 schema 与运行时校验共用.
 
-内部仍用统一 ``SiteName``; 各配置列表只允许具备对应角色的子集.
+不进 HotSettings. 双料站 = 同一 ``SiteName`` 同时出现在影片 / 演员注册表, 不要手写名单.
 """
 
 from __future__ import annotations
@@ -10,30 +10,43 @@ from typing import Any, cast, overload
 
 from pydantic.config import JsonDict
 
+from amane.crawlers import actor_registry, registry
 from amane.enums import SiteName
-from amane.plugins.models import is_external_source_id
+from amane.plugins.models import SourceCapability, is_external_source_id
 
-# 演员档案站 (标量人物字段 / 简介等). 双料站兼影片; theporndb 垫后 (无 token 空跑).
-ACTOR_PROFILE_SITES: tuple[SiteName, ...] = (
-    SiteName.MINNANO,
-    SiteName.JAVDB,
-    SiteName.WIKIPEDIA,
-    SiteName.THEPORNDB,
+_ACTOR_PROFILE = SourceCapability.ACTOR_PROFILE
+_ACTOR_IMAGE = SourceCapability.ACTOR_IMAGE
+
+
+def _actor_sites(capability: SourceCapability) -> tuple[SiteName, ...]:
+    """演员注册表插入序, 过滤声明了给定能力的爬虫."""
+    sites: list[SiteName] = []
+    for cls in actor_registry.classes():
+        profile = cls.profile()
+        if capability not in profile.capabilities:
+            continue
+        name = profile.name
+        sites.append(name if isinstance(name, SiteName) else SiteName(str(name)))
+    return tuple(sites)
+
+
+# 档案 / 头像列表顺序 = actor_registry.register 顺序 (默认 profile_sites 优先级).
+ACTOR_PROFILE_SITES: tuple[SiteName, ...] = _actor_sites(_ACTOR_PROFILE)
+ACTOR_IMAGE_SITES: tuple[SiteName, ...] = _actor_sites(_ACTOR_IMAGE)
+
+_ACTOR_SITE_SET = frozenset({*ACTOR_PROFILE_SITES, *ACTOR_IMAGE_SITES})
+_FILM_SITE_SET = frozenset(SiteName(s) for s in registry.sites())
+
+# 只挂演员、不进影片 registry 的站. 双料站同时在两边, 不进此集合.
+ACTOR_ONLY_SITES: frozenset[SiteName] = _ACTOR_SITE_SET - _FILM_SITE_SET
+
+# 影片元数据站 = 影片 registry; 成员序跟 SiteName 字母序, 保证 schema enum 稳定.
+FILM_METADATA_SITES: tuple[SiteName, ...] = tuple(s for s in SiteName if s in _FILM_SITE_SET)
+
+# 消费 FetchOptions.language 的影片站. 聚合引擎只对这些站展开 (site, lang) 节点.
+MULTI_LANGUAGE_SITES: frozenset[SiteName] = frozenset(
+    s for s in FILM_METADATA_SITES if (cls := registry.get(s.value)) is not None and cls.profile().multi_language
 )
-
-# 演员头像站
-ACTOR_IMAGE_SITES: tuple[SiteName, ...] = (SiteName.GFRIENDS,)
-
-# 双料站同时出现在 FILM_METADATA_SITES 与 ACTOR_PROFILE_SITES, 不进 ACTOR_ONLY_SITES.
-_DUAL_ROLE_SITES: frozenset[SiteName] = frozenset({SiteName.JAVDB, SiteName.THEPORNDB})
-
-ACTOR_ONLY_SITES: frozenset[SiteName] = frozenset({*ACTOR_PROFILE_SITES, *ACTOR_IMAGE_SITES}) - _DUAL_ROLE_SITES
-
-# 影片元数据站 = SiteName 全集减去演员专用 (与 film registry 对齐, 见 test_enum_consistency)
-FILM_METADATA_SITES: tuple[SiteName, ...] = tuple(s for s in SiteName if s not in ACTOR_ONLY_SITES)
-
-# 爬虫会消费 FetchOptions.language 的站点. 聚合引擎只对这些站展开 (site, lang) 节点.
-MULTI_LANGUAGE_SITES: frozenset[SiteName] = frozenset({SiteName.IQQTV, SiteName.R18DEV})
 MULTI_LANGUAGE_SOURCE_IDS: frozenset[str] = frozenset(site.value for site in MULTI_LANGUAGE_SITES)
 
 _ACTOR_PROFILE_SET = frozenset(ACTOR_PROFILE_SITES)

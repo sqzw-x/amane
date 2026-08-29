@@ -8,8 +8,9 @@ from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 from parsel import Selector
 
-from amane.enums import SiteName
+from amane.enums import ActorGender, SiteName
 from amane.parsing import split_actor_aliases
+from amane.plugins.models import SourceCapability
 from amane.utils.dates import normalize_calendar_date
 
 from ...base import CrawlerProfile
@@ -35,7 +36,12 @@ class MinnanoActorCrawler(ActorCrawler):
 
     @classmethod
     def profile(cls) -> CrawlerProfile:
-        return CrawlerProfile(name=SiteName.MINNANO, base_url="https://www.minnano-av.com")
+        return CrawlerProfile(
+            name=SiteName.MINNANO,
+            base_url="https://www.minnano-av.com",
+            capabilities=frozenset({SourceCapability.ACTOR_PROFILE}),
+            genders=frozenset({ActorGender.FEMALE}),
+        )
 
     async def _search(self, name: str) -> str | None:
         q = quote(name)

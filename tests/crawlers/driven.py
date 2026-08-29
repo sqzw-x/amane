@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from amane.crawlers.http import HttpClient
+from amane.crawlers.registry import registry
 from amane.net.errors import RequestError
 
 CASES_DIR = Path(__file__).parent / "cases"
@@ -41,23 +42,16 @@ def discover_film_cases(is_site: Callable[[str], bool]) -> list[tuple[str, Path]
     return cases
 
 
-def discover_actor_cases(
-    is_site: Callable[[str], bool],
-    *,
-    is_dual: Callable[[str], bool] | None = None,
-    cases_dir: Path | None = None,
-) -> list[tuple[str, Path]]:
+def discover_actor_cases(is_site: Callable[[str], bool]) -> list[tuple[str, Path]]:
     """纯演员站读 ``{site}/``; 双料站只读 ``{site}/actor/``.
 
-    双料站根目录是影片用例. 没有 actor/ 时不能回退到根, 否则影片 TOML 会被演员 runner 吃掉.
+    双料 = 同名也在影片 registry. 没有 actor/ 时不能回退到根, 否则影片 TOML 会被演员 runner 吃掉.
     """
-    root = cases_dir or CASES_DIR
     cases: list[tuple[str, Path]] = []
-    if not root.exists():
+    if not CASES_DIR.exists():
         return cases
-    for site_dir in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
-        dual = is_dual(site_dir.name) if is_dual is not None else (site_dir / "actor").is_dir()
-        if dual:
+    for site_dir in sorted(p for p in CASES_DIR.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        if registry.get(site_dir.name) is not None:
             scoped = site_dir / "actor"
             if not scoped.is_dir():
                 continue
@@ -67,8 +61,7 @@ def discover_actor_cases(
             site = _toml_site(toml_file)
             if site is None or not is_site(site):
                 continue
-            rel = toml_file.relative_to(root).with_suffix("").as_posix()
-            cases.append((rel, toml_file))
+            cases.append((_case_id(toml_file), toml_file))
     return cases
 
 

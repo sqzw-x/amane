@@ -1,4 +1,4 @@
-"""StrEnum 一致性测试 - 确保枚举成员与运行时注册表保持同步."""
+"""StrEnum / 注册表 / profile() 声明一致性 — 站点名单由注册表推导, 不测具名双料站."""
 
 from amane.crawlers import MetadataField, SiteName, actor_registry, registry
 from amane.crawlers.models import MediaMetadata
@@ -10,6 +10,9 @@ from amane.crawlers.site_roles import (
     MULTI_LANGUAGE_SITES,
 )
 from amane.enums import SiteName as SiteNameEnum
+from amane.plugins.models import SourceCapability
+
+_ACTOR_CAPS = frozenset({SourceCapability.ACTOR_PROFILE, SourceCapability.ACTOR_IMAGE})
 
 
 class TestEnumConsistency:
@@ -41,22 +44,34 @@ class TestEnumConsistency:
         for site in ACTOR_ONLY_SITES:
             assert isinstance(site, SiteNameEnum)
 
-    def test_javdb_is_dual_role(self):
-        assert SiteName.JAVDB in FILM_METADATA_SITES
-        assert SiteName.JAVDB in ACTOR_PROFILE_SITES
-        assert SiteName.JAVDB not in ACTOR_ONLY_SITES
+    def test_actor_crawlers_declare_actor_capabilities(self):
+        for name in actor_registry.sites():
+            cls = actor_registry.get(name)
+            assert cls is not None
+            profile = cls.profile()
+            caps = profile.capabilities
+            assert caps & _ACTOR_CAPS, f"{name} must declare actor_profile or actor_image"
+            assert SourceCapability.FILM_METADATA not in caps
+            assert profile.genders, f"{name} must declare genders"
 
-    def test_theporndb_is_dual_role(self):
-        assert SiteName.THEPORNDB in FILM_METADATA_SITES
-        assert SiteName.THEPORNDB in ACTOR_PROFILE_SITES
-        assert SiteName.THEPORNDB not in ACTOR_ONLY_SITES
+    def test_profile_and_image_partition_actor_registry(self):
+        profile = frozenset(ACTOR_PROFILE_SITES)
+        image = frozenset(ACTOR_IMAGE_SITES)
+        assert not profile & image
+        assert {s.value for s in profile | image} == set(actor_registry.sites())
 
-    def test_actor_sites_match_actor_registry(self):
-        registered = set(actor_registry.sites())
-        expected = {s.value for s in (*ACTOR_PROFILE_SITES, *ACTOR_IMAGE_SITES)}
-        assert expected <= registered
+    def test_sites_in_both_registries_are_not_actor_only(self):
+        both = set(registry.sites()) & set(actor_registry.sites())
+        actor_lists = {s.value for s in (*ACTOR_PROFILE_SITES, *ACTOR_IMAGE_SITES)}
+        assert both <= actor_lists
+        assert both <= {s.value for s in FILM_METADATA_SITES}
+        assert both.isdisjoint({s.value for s in ACTOR_ONLY_SITES})
 
-    def test_multi_language_sites_are_film_sites(self):
+    def test_multi_language_follows_film_profile_flag(self):
+        from_profile = frozenset(
+            SiteName(name)
+            for name in registry.sites()
+            if (cls := registry.get(name)) is not None and cls.profile().multi_language
+        )
+        assert from_profile == MULTI_LANGUAGE_SITES
         assert frozenset(FILM_METADATA_SITES) >= MULTI_LANGUAGE_SITES
-        assert SiteName.IQQTV in MULTI_LANGUAGE_SITES
-        assert SiteName.R18DEV in MULTI_LANGUAGE_SITES

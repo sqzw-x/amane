@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
-from amane.enums import SiteName
+from amane.enums import ActorGender, SiteName
+from amane.plugins.models import SourceCapability
 
 from ...base import CrawlerProfile
 from ..base import ActorCrawler
@@ -43,6 +44,8 @@ class GFriendsActorCrawler(ActorCrawler):
                 "https://raw.githubusercontent.com",
                 "https://github.com/gfriends/gfriends",
             ],
+            capabilities=frozenset({SourceCapability.ACTOR_IMAGE}),
+            genders=frozenset({ActorGender.FEMALE}),
         )
 
     async def fetch(self, name: str) -> ActorMetadata | None:
