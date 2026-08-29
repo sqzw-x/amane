@@ -19,7 +19,6 @@
 | 加 API 端点 | [api.md](api.md) |
 | 改前端 / Schema 表单 | [frontend.md](frontend.md) |
 | 改表结构 / 迁移 | [database.md](database.md) |
-| 字符串枚举 (StrEnum / 库内名字) | [enums.md](enums.md) |
 | 翻译 / LLM | [llm.md](llm.md) |
 | 助理 (首页对话) | [agent.md](agent.md) |
 | 排障 / 回放刮削 | [observability.md](observability.md) |

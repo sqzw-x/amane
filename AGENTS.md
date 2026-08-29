@@ -81,6 +81,7 @@ formatter/linter 不通过时优先使用 `just fix` 自动修复, 不要手动�
 - **禁止内部导入**. 所有导入一律放文件顶部 (`if TYPE_CHECKING:` 除外), 如果出现循环导入, 反思结构设计
 - **禁止反射**. 禁止使用 `hasattr/getattr` (动态字段访问除外), 类型检查报错就修类型标注, 不要使用 `getattr` 绕过
 - **禁止全局变量**. 使用 FastAPI 依赖注入, 通过构造函数或参数传递
+- **StrEnum**. 成员本身就是字符串 (`ContentType.CENSORED == "censored"`), 不要写多余的 `.value`; 注解要 `str` 时用 `str(e)`. 表列见 [docs/dev/database.md](docs/dev/database.md)
 - **数据库迁移必须用工具**. 必须通过 `uv run alembic revision [--autogenerate] -m "描述"` 创建, **绝对禁止手写 revision ID** 手动创建迁移文件
 
 ### TypeScript

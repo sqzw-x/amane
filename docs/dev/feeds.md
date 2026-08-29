@@ -49,7 +49,7 @@
 ## 每源刮削配置
 
 - `number_pattern` 一旦设置, **只**走该正则 (title → description → link; 有捕获组用 group 1), 不回退 `extract_number`. 未设置才用 `extract_number` (命中已知模式, **无**文件名「清理后原样」回退).
-- `content_type` 是 `ContentType | None`: 有值原样进 payload, 空则 `infer_content_type`. 列的落盘形态见 [enums.md](enums.md).
+- `content_type` 是 `ContentType | None`: 有值原样进 payload, 空则 `infer_content_type`.
 - `use_cache` 与手动 SCRAPE 同语义; 空集 = 强制刷新.
 
 解析走已下载 bytes + `feedparser.parse`; 禁止把 URL 交给 feedparser (它会自己发 HTTP).
