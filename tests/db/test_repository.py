@@ -19,6 +19,7 @@ from amane.db.models import (
 from amane.db.repo_types import _MEDIA_SORT_COLUMNS, _METADATA_SORT_COLUMNS, _TASK_SORT_COLUMNS, ActorBrowseParams
 from amane.enums import LibraryAutomation
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
+from amane.parsing import ContentType, Mosaic
 from tests.helpers import assert_exhaustive_enum
 
 if TYPE_CHECKING:
@@ -51,6 +52,8 @@ class TestMediaFileRepo:
         fetched = await repo.get_media_file(media.id)
         assert fetched is not None
         assert fetched.path == "/video/ABC-123.mp4"
+        assert fetched.content_type.value == "censored"
+        assert fetched.has_subtitle is False
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_get_by_path(self, repo: Repository):
@@ -123,6 +126,45 @@ class TestMediaFileRepo:
         assert updated.path == "/video/NEW.mp4"
         assert updated.number == "NEW-001"
         assert updated.size == 1024
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_media_file_parses_phase_from_path(self, repo: Repository):
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123-UC-4K.mp4")
+        assert media.content_type.value == "censored"
+        assert media.mosaic is not None and media.mosaic.value == "uncensored"
+        assert media.has_subtitle is True
+        assert media.definition == "4K"
+
+        heyzo = await repo.create_media_file(library_id=1, path="/media/HEYZO-1234.mp4")
+        assert heyzo.content_type.value == "uncensored"
+        assert heyzo.mosaic is None
+        assert heyzo.has_subtitle is False
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_path_recomputes_phase(self, repo: Repository):
+        media = await repo.create_media_file(library_id=1, path="/video/MIDV-123.mp4")
+        assert media.id is not None
+        assert media.mosaic is None
+        updated = await repo.update_media_file(media.id, path="/video/MIDV-123-U.mp4")
+        assert updated is not None
+        assert updated.mosaic is not None and updated.mosaic.value == "uncensored"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_media_files_phase_filters(self, repo: Repository):
+        await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
+        await repo.create_media_file(library_id=1, path="/v/MIDV-002-U.mp4")
+        await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4")
+        await repo.create_media_file(library_id=1, path="/v/MIDV-003-破解.mp4")
+
+        subs = await repo.list_media_files(has_subtitle=True, limit=None)
+        assert {f.path for f in subs} == {"/v/MIDV-001-C.mp4"}
+        uncensored = await repo.list_media_files(uncensored=True, limit=None)
+        assert {f.path for f in uncensored} == {"/v/MIDV-002-U.mp4", "/v/HEYZO-1234.mp4"}
+        cracked = await repo.list_media_files(mosaic=Mosaic.CRACKED, limit=None)
+        assert [f.path for f in cracked] == ["/v/MIDV-003-破解.mp4"]
+        heyzo = await repo.list_media_files(content_type=ContentType.UNCENSORED, limit=None)
+        assert [f.path for f in heyzo] == ["/v/HEYZO-1234.mp4"]
+        assert await repo.count_media_files(uncensored=True) == 2
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_media_file_not_found(self, repo: Repository):
@@ -529,6 +571,42 @@ class TestMetadataRepo:
         counts = await repo.count_media_by_metadata_ids([a.id, b.id, c.id])
         assert counts == {a.id: 1, b.id: 2}
         assert await repo.count_media_by_metadata_ids([]) == {}
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_metadata_file_phase_filters(self, repo: Repository):
+        sub = await repo.upsert_metadata(number="SUB-1")
+        u_file = await repo.upsert_metadata(number="U-1")
+        heyzo = await repo.upsert_metadata(number="HEYZO-1")
+        plain = await repo.upsert_metadata(number="PLAIN-1")
+        assert sub.id and u_file.id and heyzo.id and plain.id
+
+        m_sub = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
+        m_u = await repo.create_media_file(library_id=1, path="/v/MIDV-002-U.mp4")
+        m_h = await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4")
+        m_p = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4")
+        assert m_sub.id and m_u.id and m_h.id and m_p.id
+        await repo.update_media_file(m_sub.id, metadata_id=sub.id)
+        await repo.update_media_file(m_u.id, metadata_id=u_file.id)
+        await repo.update_media_file(m_h.id, metadata_id=heyzo.id)
+        await repo.update_media_file(m_p.id, metadata_id=plain.id)
+
+        items, total = await repo.list_metadata(has_subtitle=True)
+        assert total == 1
+        assert items[0].number == "SUB-1"
+        items, total = await repo.list_metadata(uncensored=True, sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC)
+        assert [m.number for m in items] == ["HEYZO-1", "U-1"]
+        items, total = await repo.list_metadata(uncensored=False, sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC)
+        assert [m.number for m in items] == ["PLAIN-1", "SUB-1"]
+        items, total = await repo.list_metadata(content_type=ContentType.UNCENSORED)
+        assert total == 1
+        assert items[0].number == "HEYZO-1"
+
+        summaries = await repo.summarize_media_by_metadata_ids([sub.id, u_file.id, heyzo.id, plain.id])
+        assert summaries[sub.id].file_count == 1
+        assert summaries[sub.id].phase.has_subtitle is True
+        assert summaries[heyzo.id].phase.uncensored is True
+        assert summaries[u_file.id].phase.uncensored is True
+        assert summaries[plain.id].phase.uncensored is False
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_metadata(self, repo: Repository):

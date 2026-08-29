@@ -27,6 +27,10 @@
 
 `MediaFile` 与 `Metadata` 解耦: **Metadata 是一等公民** (用户直接管理的番号级条目), 有效性不依赖本地文件. `MediaFile` 是磁盘视频的索引; 当文件能对应到某条 Metadata 时挂上 `metadata_id` (多对一). 也可以存在 `metadata_id IS NULL` 的文件 (解析失败 / 尚未刮削), 以及**没有任何 MediaFile 的 Metadata** (by-number 刮削、只囤元数据等) — 二者都是常态, 不是待清理的"孤儿".
 
+文件相位 (`content_type` / `mosaic` / `has_subtitle` / `definition`) 是 **path 的投影**, 只落在 `MediaFile`: 创建与改 path 时用同一次 `parse_file_info` 回填, 不进对外 PATCH. `cd` 仍只用于 ORGANIZE 分集配对, 不落库. `content_type` 是番号/目录片种 (刮削路由); `mosaic` 是这份文件的无码/破解/流出标记. 无码展示与筛选是 `mosaic=uncensored OR content_type=uncensored` (HEYZO 正片不必带 `-U`; 有码号的 `-U` 仍是 censored 片种). `ContentType.chinese` 是国产, 不是中字 — 中字只看 `has_subtitle`. Metadata 列表的角标/筛选走关联 EXISTS / 页级聚合 (`file_phase`): 任一挂载文件具备即亮; `definition` 取最高档. 没有挂载文件的 Metadata 不会命中这些筛选, 也没有角标. `{mosaic?}` 模板不用片种兜底, 避免 HEYZO 被整理出文件名里没有的 `-uncensored`.
+
+ORGANIZE 复制到库路径的 poster/thumb 按**源文件** FileInfo 叠角标 (不改 Resource 原图, 不改 fanart). 列始终跟当前 path: 模板若写出标记, 二次整理仍能反推.
+
 `Metadata.number` 的唯一约束与 `get_metadata_by_number` / `upsert_metadata` 查重均忽略大小写; 命中已有行时不改写库内 `number` 字符串 (保留首次写入的大小写). 新建时按调用方传入原样落库.
 
 ## Library 归属 (强关系)
@@ -108,7 +112,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 `link_template` 为空则不创建链接, `{link_dir}` 等于 `{video_dir}`. 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的入口: `link_mode=strm` 写 `.strm` (内容为一行视频绝对路径, 后缀强制 `.strm`); `symlink` 做文件系统软链接. 链接必须落在库根之外 (否则 REFRESH 会把 strm/软链接再扫成媒体). `{video_dir}` 始终是真实视频父目录; `{link_dir}` 是链接父目录. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO/海报自动跟链接走, 不必改六个附属模板. 想把某类附属文件留在网盘侧, 显式写 `{video_dir}/…`.
 
-模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` 与 file 相位 (`{cd?}` `{sub?}` `{mosaic?}` `{def?}`, `parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库; `{video_dir}` / `{link_dir}` 仅附属资源模板; `{raw_srt_name}` 仅字幕模板. file 相位未检出是**空串**, 不是 `Unknown` / `censored`. `{mosaic?}` 只认文件名标记或目录名整段词表 (由近到远; `uncensored` / `cracked` / `leaked` / `-U` / `-UC` / 无码 / 破解 / 流出, 子串不算), 不用 content_type 兜底. 同名多标记时无码优先于破解、流出, 破解优先于流出. `{def?}` 只看文件名. `{sub?}` 有中字标记时为 `C`. 名字里的 `?` 只是提醒可空, 没有运算含义; 写成 `{cd}` 视为未知 key, 回 `Unknown`.
+模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` 与 file 相位 (`{cd?}` `{sub?}` `{mosaic?}` `{def?}`, `parse_file_info` 从源路径检测, 同时投影到 `MediaFile` 的 `content_type` / `mosaic` / `has_subtitle` / `definition`) 在 ORGANIZE 时注入模板; `{video_dir}` / `{link_dir}` 仅附属资源模板; `{raw_srt_name}` 仅字幕模板. file 相位未检出是**空串**, 不是 `Unknown` / `censored`. `{mosaic?}` 只认文件名标记或目录名整段词表 (由近到远; `uncensored` / `cracked` / `leaked` / `-U` / `-UC` / 无码 / 破解 / 流出, 子串不算), 不用 content_type 兜底 — 无码片商 (HEYZO 等) 靠 `content_type` 列, 不写进文件名. 同名多标记时无码优先于破解、流出, 破解优先于流出. `{def?}` 只看文件名. `{sub?}` 有中字标记时为 `C`. 名字里的 `?` 只是提醒可空, 没有运算含义; 写成 `{cd}` 视为未知 key, 回 `Unknown`.
 
 可选组: `[...]` 组界不输出. 组内**直接**占位符全部为空则整段丢弃; 有一个非空就渲染, 空的那个输出空串 (所以 `[-{mosaic?|uncensored=U}{sub?}]` 可以拼出 `-U` / `-C` / `-UC`). 只有一个占位符时与「空则整段省略」相同, `[-CD{cd?}]` 不会留下裸 `-CD`. 字面量跟着整组走: `[-CD{cd?}{sub?}]` 在仅有中字时仍会带上 `-CD`. 嵌套组各自判断, 不并入外层. `[[...]]` 同样但有值时把结果包一层 `[]`. 未闭合在写入时 422. 默认视频模板 `{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}`. 链接模板要分集须自己写 `{cd?}` 组, 不会自动追加. 渲染后丢掉空路径段, 相对模板不会因首段为空变成绝对路径.
 

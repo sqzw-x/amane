@@ -6,7 +6,9 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 
+from ...parsing import ContentType, Mosaic
 from ..models import (
+    MediaFile,
     Metadata,
     MetadataActor,
     MetadataDirector,
@@ -18,7 +20,14 @@ from ..models import (
     SortOrder,
     Studio,
 )
-from ..repo_types import MetadataFields, _metadata_has_files_clause, _metadata_primary_order, _utcnow
+from ..repo_types import (
+    MetadataFields,
+    _media_file_uncensored_predicate,
+    _metadata_has_files_clause,
+    _metadata_linked_file_exists,
+    _metadata_primary_order,
+    _utcnow,
+)
 from .base import RepositoryMixinBase
 from .facet_helpers import (
     apply_facet_rules_to_metadata,
@@ -46,6 +55,11 @@ class MetadataRepoMixin(RepositoryMixinBase):
         series_ids: Sequence[int] | None = None,
         user_tag_ids: Sequence[int] | None = None,
         has_files: bool | None = None,
+        has_subtitle: bool | None = None,
+        mosaic: Mosaic | None = None,
+        uncensored: bool | None = None,
+        definition: str | None = None,
+        content_type: ContentType | None = None,
         ids: Sequence[int] | None = None,
         id_subquery_sql: str | None = None,
         updated_before: datetime | None = None,
@@ -56,6 +70,8 @@ class MetadataRepoMixin(RepositoryMixinBase):
         标量类 facet (studio/publisher/series): 同 kind 多 id 为 **OR** (命中任一; 未知 id 忽略,
         全部未知则空). 跨 kind 始终 AND.
         has_files: True/False 按是否存在关联 MediaFile 筛选; None 不过滤.
+        has_subtitle / mosaic / uncensored / definition / content_type: 按关联文件相位筛选;
+        布尔项 True=至少一份具备, False=没有任何一份具备; 枚举项为 EXISTS 等值.
         ids: 若给定则限制为这些主键 (显式 id 集).
         id_subquery_sql: 已校验的 ``SELECT id FROM (...)`` 子查询, 与其它筛选项 AND.
         updated_before: 仅返回 updated_at 早于该时刻的条目 (配合 UPDATED_AT ASC 做滚动窗口).
@@ -111,6 +127,20 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 base = base.where(col(Metadata.series).in_(series_names))
             if has_files is not None:
                 base = base.where(_metadata_has_files_clause(has_files=has_files))
+            if has_subtitle is True:
+                base = base.where(_metadata_linked_file_exists(col(MediaFile.has_subtitle).is_(True)))
+            elif has_subtitle is False:
+                base = base.where(~_metadata_linked_file_exists(col(MediaFile.has_subtitle).is_(True)))
+            if mosaic is not None:
+                base = base.where(_metadata_linked_file_exists(col(MediaFile.mosaic) == mosaic))
+            if uncensored is True:
+                base = base.where(_metadata_linked_file_exists(_media_file_uncensored_predicate()))
+            elif uncensored is False:
+                base = base.where(~_metadata_linked_file_exists(_media_file_uncensored_predicate()))
+            if definition is not None:
+                base = base.where(_metadata_linked_file_exists(col(MediaFile.definition) == definition))
+            if content_type is not None:
+                base = base.where(_metadata_linked_file_exists(col(MediaFile.content_type) == content_type))
             if updated_before is not None:
                 base = base.where(col(Metadata.updated_at) < updated_before)
 

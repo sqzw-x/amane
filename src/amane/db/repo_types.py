@@ -2,11 +2,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
-from sqlalchemy import UnaryExpression, asc, desc, exists, func
+from sqlalchemy import UnaryExpression, asc, desc, exists, func, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, select
 
 from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, LinkMode, MoveMode
+from amane.parsing import ContentType, Mosaic
 from amane.utils.dates import normalize_calendar_date
 
 from .models import (
@@ -92,6 +93,42 @@ def _metadata_primary_order(sort_by: MetadataSortField, order: SortOrder) -> Col
 def _metadata_has_files_clause(*, has_files: bool) -> ColumnElement[bool]:
     file_exists = exists().where(col(MediaFile.metadata_id) == col(Metadata.id))
     return file_exists if has_files else ~file_exists
+
+
+def _media_file_uncensored_predicate() -> ColumnElement[bool]:
+    """单文件无码: mosaic 标记或 content_type 片种."""
+    return or_(
+        col(MediaFile.mosaic) == Mosaic.UNCENSORED,
+        col(MediaFile.content_type) == ContentType.UNCENSORED,
+    )
+
+
+def _apply_media_phase_filters(
+    stmt: Any,
+    *,
+    has_subtitle: bool | None = None,
+    mosaic: Mosaic | None = None,
+    uncensored: bool | None = None,
+    definition: str | None = None,
+    content_type: ContentType | None = None,
+) -> Any:
+    """给 MediaFile 查询加上文件相位筛选 (None 表示不过滤)."""
+    if has_subtitle is not None:
+        stmt = stmt.where(col(MediaFile.has_subtitle) == has_subtitle)
+    if mosaic is not None:
+        stmt = stmt.where(col(MediaFile.mosaic) == mosaic)
+    if uncensored is not None:
+        flag = _media_file_uncensored_predicate()
+        stmt = stmt.where(flag if uncensored else ~flag)
+    if definition is not None:
+        stmt = stmt.where(col(MediaFile.definition) == definition)
+    if content_type is not None:
+        stmt = stmt.where(col(MediaFile.content_type) == content_type)
+    return stmt
+
+
+def _metadata_linked_file_exists(*extra: ColumnElement[bool]) -> ColumnElement[bool]:
+    return exists().where(col(MediaFile.metadata_id) == col(Metadata.id), *extra)
 
 
 def _facet_primary_order(sort_by: FacetSortField, order: SortOrder, *, name_col: Any, count_expr: Any) -> Any:

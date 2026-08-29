@@ -10,6 +10,7 @@ from amane.organize.path_templates import (
     VIDEO_TEMPLATE_DEFAULT,
     PathTemplate,
 )
+from amane.parsing import ContentType, Mosaic
 from amane.utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -174,6 +175,11 @@ class MediaFile(SQLModel, table=True):
     codec: str | None = None
     number: str | None = Field(default=None, index=True)
     status: MediaFileStatus = Field(default=MediaFileStatus.PENDING, index=True)
+    # 文件相位: path 的投影, 随 path 写入/更新; 不进对外 PATCH.
+    content_type: ContentType = Field(default=ContentType.WESTERN, index=True)
+    mosaic: Mosaic | None = Field(default=None, index=True)
+    has_subtitle: bool = Field(default=False, index=True)
+    definition: str | None = Field(default=None, index=True)
     metadata_id: int | None = Field(default=None, foreign_key="metadata.id", index=True)
     library_id: int = Field(foreign_key="libraries.id", index=True)
     created_at: datetime = Field(default_factory=_utcnow)
