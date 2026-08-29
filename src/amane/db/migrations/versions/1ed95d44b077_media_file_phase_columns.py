@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import text
 
-from amane.parsing import parse_file_info
+from amane.parsing import ContentType, Mosaic, parse_file_info
 
 # revision identifiers, used by Alembic.
 revision: str = "1ed95d44b077"
@@ -22,8 +22,15 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     with op.batch_alter_table("media_files") as batch_op:
-        batch_op.add_column(sa.Column("content_type", sa.String(), nullable=False, server_default="western"))
-        batch_op.add_column(sa.Column("mosaic", sa.String(), nullable=True))
+        batch_op.add_column(
+            sa.Column(
+                "content_type",
+                sa.Enum(*ContentType.__members__, name="contenttype"),
+                nullable=False,
+                server_default="WESTERN",
+            )
+        )
+        batch_op.add_column(sa.Column("mosaic", sa.Enum(*Mosaic.__members__, name="mosaic"), nullable=True))
         batch_op.add_column(sa.Column("has_subtitle", sa.Boolean(), nullable=False, server_default=sa.false()))
         batch_op.add_column(sa.Column("definition", sa.String(), nullable=True))
         batch_op.create_index(op.f("ix_media_files_content_type"), ["content_type"], unique=False)
@@ -41,8 +48,8 @@ def upgrade() -> None:
                 "has_subtitle = :has_subtitle, definition = :definition WHERE id = :id"
             ),
             {
-                "content_type": info.content_type.value,
-                "mosaic": info.mosaic.value if info.mosaic is not None else None,
+                "content_type": info.content_type.name,
+                "mosaic": info.mosaic.name if info.mosaic is not None else None,
                 "has_subtitle": info.has_subtitle,
                 "definition": info.definition,
                 "id": row_id,

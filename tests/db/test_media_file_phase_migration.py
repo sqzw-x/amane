@@ -51,12 +51,12 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
             ).all()
         }
         midv = rows["/media/MIDV-123-UC-4K.mp4"]
-        assert midv.content_type == "censored"
-        assert midv.mosaic == "uncensored"
+        assert midv.content_type == "CENSORED"
+        assert midv.mosaic == "UNCENSORED"
         assert midv.has_subtitle in (1, True)
         assert midv.definition == "4K"
         heyzo = rows["/media/HEYZO-1234.mp4"]
-        assert heyzo.content_type == "uncensored"
+        assert heyzo.content_type == "UNCENSORED"
         assert heyzo.mosaic is None
         assert heyzo.has_subtitle in (0, False)
         assert heyzo.definition is None
@@ -66,10 +66,10 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
             row.path: row for row in session.exec(select(MediaFile).where(col(MediaFile.path).like("/media/%"))).all()
         }
         midv_orm = loaded["/media/MIDV-123-UC-4K.mp4"]
-        assert midv_orm.content_type == ContentType.CENSORED
-        assert midv_orm.mosaic == Mosaic.UNCENSORED
+        assert midv_orm.content_type is ContentType.CENSORED
+        assert midv_orm.mosaic is Mosaic.UNCENSORED
         heyzo_orm = loaded["/media/HEYZO-1234.mp4"]
-        assert heyzo_orm.content_type == ContentType.UNCENSORED
+        assert heyzo_orm.content_type is ContentType.UNCENSORED
         assert heyzo_orm.mosaic is None
 
     engine.dispose()
