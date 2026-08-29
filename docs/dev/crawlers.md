@@ -1,6 +1,6 @@
 # 爬虫开发
 
-> 提交: `a687b6a`
+> 提交: `6b932a5`
 >
 > 入口: `src/amane/crawlers/`. 本文解释爬虫架构、HTTP 层设计、限速机制, 以及添加新爬虫的完整步骤.
 > 测试约定见 [crawler-testing.md](crawler-testing.md). 默认路由与站点覆盖见 [content-routes.md](content-routes.md).
@@ -24,17 +24,16 @@ CrawlerFactory (缓存实例)
 
 **核心设计:** 爬虫异步并发安全. `SiteConfig` 构造期注入, `__init__` 里 `_resolve_config()` 合并 profile 默认与用户配置 — 子类直接用 `self.base_url` / `self.cookies`; 实例可缓存, 仅配置变化时重建工厂.
 
-- 演员站与影片站共用 HttpClient / 限速; 实现在 `crawlers/actor/`, 只注册 `actor_registry` (可以不在影片 `registry`). **双料站** (javdb / theporndb) 同一 `SiteName` 两套爬虫、共用 `site_config`.
+- 演员站与影片站共用 HttpClient / 限速; 实现在 `crawlers/actor/`, 只注册 `actor_registry` (可以不在影片 `registry`). **双料站** = 同一 `SiteName` 在影片 / 演员注册表各有一个类, 共用 `site_config`; 不要在 `site_roles` 里手写双料名单.
 - gFriends 额外依赖 `data_dir` (Filetree 缓存) 与 `actor_scraping.gfriends_repo`.
-- **性别覆盖** (`crawlers/actor/site_coverage`, 非 HotSettings): minnano/gFriends 仅 female; javdb/wikipedia/theporndb 双向. Handler 按 `Actor.gender` 裁站, 见 [task-system.md](task-system.md).
-- **角色能力** (`site_roles`): 配置 JSON Schema 的站点列表只暴露对应子集; `site_config` 仍含全集. 演员聚合契约见 [config.md](config.md) `actor_scraping`. 聚合引擎只对 `MULTI_LANGUAGE_SITES` (当前 iqqtv / r18dev) 展开带语言的抓取节点, 因为只有这些爬虫消费 `FetchOptions.language`.
+- **能力声明**在 `CrawlerProfile`: 演员爬虫必须显式 `capabilities` (`ACTOR_PROFILE` / `ACTOR_IMAGE`) 与 `genders`; 影片爬虫空 `capabilities` 视为 `film_metadata`, 消费 `FetchOptions.language` 的设 `multi_language=True`. `site_roles` 只从两个注册表推导配置 schema 用的站点列表 (档案序 = `actor_registry.register` 序); 聚合引擎只对推导出的 `MULTI_LANGUAGE_SITES` 展开 `(site, lang)` 节点. Handler 按 `Actor.gender` 对 `profile().genders` 裁站, 见 [task-system.md](task-system.md). 演员聚合契约见 [config.md](config.md) `actor_scraping`.
 - 生日 / 发行日输出均为 `YYYY-MM-DD` (`normalize_calendar_date`); 非法文本丢弃, 不写脏串.
 
 ## Crawler 基类
 
 `crawlers/base.py::Crawler` 是 Template Method: 公开 `fetch()` (日志; HTTP / 拦截失败冒泡 `SourceError`), 子类实现 `_search` (番号 → URL) 与 `_scrape` (URL → `MediaMetadata`). 特殊源 (official / theporndb / r18dev) 可直接 override `fetch()`.
 
-`profile()` 类方法给出内置来源 ID / `base_url` / 可选 cookies 与限速 URL. `__init__` 在 `profile()` 之后自动 `_resolve_config()`, 子类不要再调一次. 外部来源不要求继承 `Crawler`，实现契约见 [plugins.md](plugins.md).
+`profile()` 类方法给出内置来源 ID / `base_url` / 能力与性别 / 可选 cookies 与限速 URL. `__init__` 在 `profile()` 之后自动 `_resolve_config()`, 子类不要再调一次. 外部来源不要求继承 `Crawler`，实现契约见 [plugins.md](plugins.md).
 
 ## HTTP 层
 
@@ -70,8 +69,8 @@ host 优先级高于 site 的原因: 多个站点可能共享同一 host (官方
 ## 添加新爬虫
 
 1. `enums.py` 加 `SiteName` (frozen dict 加载时按代码枚举补默认槽, 见 [config.md](config.md)).
-2. `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`). 参考 `sites/javdb.py`.
-3. 在 `crawlers/sites/__init__.py` 导出, 再 `registry.register(...)`.
+2. 影片: `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`). 演员: `crawlers/actor/sites/{site}.py`, `profile()` 声明 `capabilities` 与 `genders`. 消费 language 的影片爬虫设 `multi_language=True`.
+3. 导出后 `registry.register` / `actor_registry.register`. 双料站两个类同一 `SiteName`, 再 register 一次即可; **不要**改 `site_roles` 常量. 演员 `register` 顺序即默认 `profile_sites` 优先级.
 4. 需要 cookie/token 时给 `SiteConfig` 加字段.
 5. 加 TOML 用例, 见 [crawler-testing.md](crawler-testing.md).
 6. `just test`.

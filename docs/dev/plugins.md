@@ -1,6 +1,6 @@
 # 来源插件
 
-> 提交: `e8b40a9`
+> 提交: `6b932a5`
 >
 > 本文描述当前影片刮削来源插件的边界、发现顺序、配置契约和兼容性要求。通用爬虫实现见 [crawlers.md](crawlers.md)，配置热重载见 [config.md](config.md)。
 
@@ -36,7 +36,7 @@
 
 插件 descriptor 声明来源能力、支持的内容类型、语言、访问 URL、多语言行为和默认速率。路由校验在启动和配置热更新时执行：已安装来源须声明影片元数据能力，且若声明了内容类型集合则必须覆盖所配置的 `ContentType`。尚未安装的第三方来源 ID（合法的 `namespace.local`）可以留在路由里，只记日志，不阻断启动或写入。
 
-`multi_language` 决定聚合器是否按字段语言展开 `(source, language)` 抓取节点。插件不应只在爬虫内部根据配置猜测该行为。
+`multi_language` 决定聚合器是否按字段语言展开 `(source, language)` 抓取节点。插件不应只在爬虫内部根据配置猜测该行为。内置影片来源的 descriptor 从对应爬虫 `profile().effective_capabilities()` / `multi_language` 拷贝, 不另维护名单.
 
 ## 配置
 

@@ -1,6 +1,6 @@
 # 任务系统
 
-> 提交: `a687b6a`
+> 提交: `6b932a5`
 >
 > 入口: `src/amane/handlers/`, `src/amane/scheduler/worker.py`. Payload 结构、handler 步骤都在源码; 本文只解释**为什么**这么编排.
 > 数据所有权见 [data-model.md](data-model.md), 启动顺序见 [architecture.md](architecture.md), 日志隔离见 [observability.md](observability.md).
@@ -170,7 +170,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ## ACTOR_SCRAPE
 
-`ActorScrapeHandler` 按 `HotSettings.actor_scraping` 的档案站 / 头像站顺序抓取 (配置契约见 [config.md](config.md)), **先按 `Actor.gender` 与站点性别覆盖过滤** (女-only 站仅 `female` 可请求; `male`/`unknown` 只打双向站如 javdb / wikipedia / theporndb — 避免男演员误撞 minnano/gFriends; 被裁站不发 HTTP、不消费其 raw 缓存). 站点内按查找名首命中; 聚合是标量填空 (含 `gender`, `unknown` 当空) + 头像优先 (无影片字段 DAG). **`use_cache` 与影片同型** (`CacheKind.metadata` / `trans`): 含 `metadata` 时按**已允许**站复用 `Actor.raw` 快照跳过爬虫 (非法快照降级为重爬); `trans` 预留演员译文, 接入前无行为差. 空集 = 全站强制重爬. 写回时再与库内已有人物字段填空合并, 避免冲掉已填值. 可选 `download_images` 经 ResourceStore `acquire` 缓存头像 (URL 仍存远端 locator). 爬虫实例见 `CrawlerFactory.get_actor*`; gFriends 注入 `data_dir` / `gfriends_repo`.
+`ActorScrapeHandler` 按 `HotSettings.actor_scraping` 的档案站 / 头像站顺序抓取 (配置契约见 [config.md](config.md)), **先按 `Actor.gender` 与各站 `profile().genders` 过滤** (`female`/`male` 须在覆盖内; `unknown` 只打同时覆盖两性的站, 避免误撞女-only 站; 被裁站不发 HTTP、不消费其 raw 缓存). 站点内按查找名首命中; 聚合是标量填空 (含 `gender`, `unknown` 当空) + 头像优先 (无影片字段 DAG). **`use_cache` 与影片同型** (`CacheKind.metadata` / `trans`): 含 `metadata` 时按**已允许**站复用 `Actor.raw` 快照跳过爬虫 (非法快照降级为重爬); `trans` 预留演员译文, 接入前无行为差. 空集 = 全站强制重爬. 写回时再与库内已有人物字段填空合并, 避免冲掉已填值. 可选 `download_images` 经 ResourceStore `acquire` 缓存头像 (URL 仍存远端 locator). 爬虫实例见 `CrawlerFactory.get_actor*`; gFriends 注入 `data_dir` / `gfriends_repo`.
 
 **链式自动触发**: `actor_scraping.auto_scrape` 开启 (默认) 时, 影片 `SCRAPE` 成功后在 `ScrapeHandler` 末尾 (`finalize_media_file` 之后) 按 `meta.actors` (清洗解析后的展示名) 查 Actor 实体, 为 **`Actor.raw` 非空 (已刮过) 跳过**, 其余以 **`priority=-1`** 入队 `ACTOR_SCRAPE` (低于默认 0, 批量 REFRESH 产生的演员任务不抢影片任务). 同 `actor_id` 已有 queued/running 时 `create_task` 复用那条, 不并排出两条去抢同一头像 URL. 链式块整体机会主义: 异常只记 warning, 不阻断刮削主流程; 失败路径 (无数据/无爬虫) 不经过挂点, 天然不链式.
 
