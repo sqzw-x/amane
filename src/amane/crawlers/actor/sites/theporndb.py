@@ -13,19 +13,52 @@ from ..base import ActorCrawler
 from ..models import ActorMetadata
 
 # Stash 客户端 PerformerFragment 子集. 不用顶层 cup_size 等较新字段, 以免旧 stash-box 拒查询.
-_SEARCH_QUERY = """
-query SearchPerformer($term: String!) {
-  searchPerformer(term: $term) {
-    id name aliases gender birth_date country height
+_PERFORMER_FIELDS = """
+    id name aliases gender birth_date country height disambiguation
+    deleted merged_into_id
     measurements { cup_size band_size waist hip }
-    images { url }
-  }
-}"""
+    images { url width height }
+    urls { url type }
+"""
+
+_SEARCH_QUERY = f"""
+query SearchPerformer($term: String!) {{
+  searchPerformer(term: $term) {{
+    {_PERFORMER_FIELDS}
+  }}
+}}"""
+
+_FIND_QUERY = f"""
+query FindPerformer($id: ID!) {{
+  findPerformer(id: $id) {{
+    {_PERFORMER_FIELDS}
+  }}
+}}"""
 
 _GENDER: dict[str, ActorGender] = {
     "FEMALE": ActorGender.FEMALE,
     "MALE": ActorGender.MALE,
 }
+
+# stash-box URL.type → provider_ids 键; 与 wikipedia 已用的 imdb/twitter/instagram 对齐.
+_URL_TYPE_KEYS: dict[str, str] = {
+    "iafd": "iafd",
+    "freeones": "freeones",
+    "indexxx": "indexxx",
+    "twitter": "twitter",
+    "instagram": "instagram",
+    "imdb": "imdb",
+    "wikidata": "wikidata",
+    "wikipedia": "wikipedia",
+    "fanza": "fanza",
+    "manyvids": "manyvids",
+    "onlyfans": "onlyfans",
+    "official homepage": "homepage",
+    "homepage": "homepage",
+    "official": "homepage",
+}
+
+_MERGE_HOPS = 4
 
 
 class ThePornDBActorCrawler(ActorCrawler):
@@ -46,27 +79,56 @@ class ThePornDBActorCrawler(ActorCrawler):
             return None
 
         headers = {"Authorization": f"Bearer {token}"}
-        data = await self.client.post_json(
-            self.base_url,
-            json={"query": _SEARCH_QUERY, "variables": {"term": name}},
-            headers=headers,
-        )
-        if not isinstance(data, dict):
-            return None
-        payload = data.get("data")
-        if not isinstance(payload, dict):
+        payload = await self._gql(_SEARCH_QUERY, {"term": name}, headers)
+        if payload is None:
             return None
         results = payload.get("searchPerformer") or []
         if not isinstance(results, list):
             return None
         hit = pick_performer(results, name)
-        return performer_to_metadata(hit) if hit is not None else None
+        if hit is None:
+            return None
+        resolved = await self._follow_merge(hit, headers)
+        return performer_to_metadata(resolved) if resolved is not None else None
 
     async def _search(self, name: str) -> str | None:
         raise NotImplementedError("ThePornDBActorCrawler overrides fetch()")
 
     async def _scrape(self, url: str) -> ActorMetadata | None:
         raise NotImplementedError("ThePornDBActorCrawler overrides fetch()")
+
+    async def _follow_merge(self, hit: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
+        """deleted 条目跟 merged_into_id; 无合并目标则丢弃. 环/过深视为未命中."""
+        current: dict[str, Any] | None = hit
+        seen: set[str] = set()
+        for _ in range(_MERGE_HOPS):
+            if current is None:
+                return None
+            pid = str(current.get("id") or "").strip()
+            if pid:
+                if pid in seen:
+                    return None
+                seen.add(pid)
+            if current.get("deleted") is not True:
+                return current
+            merge_id = str(current.get("merged_into_id") or "").strip()
+            if not merge_id:
+                return None
+            payload = await self._gql(_FIND_QUERY, {"id": merge_id}, headers)
+            found = payload.get("findPerformer") if payload is not None else None
+            current = found if isinstance(found, dict) else None
+        return None
+
+    async def _gql(self, query: str, variables: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
+        data = await self.client.post_json(
+            self.base_url,
+            json={"query": query, "variables": variables},
+            headers=headers,
+        )
+        if not isinstance(data, dict):
+            return None
+        payload = data.get("data")
+        return payload if isinstance(payload, dict) else None
 
 
 def pick_performer(results: list[Any], name: str) -> dict[str, Any] | None:
@@ -93,11 +155,9 @@ def performer_to_metadata(perf: dict[str, Any]) -> ActorMetadata | None:
     aliases = _dedupe_preserve([a for a in (_norm(str(x)) for x in alias_src if x) if a != name])
     raw_meas = perf.get("measurements")
     meas = raw_meas if isinstance(raw_meas, dict) else {}
-    raw_images = perf.get("images")
-    images = raw_images if isinstance(raw_images, list) else []
-    image_urls = [url for img in images if isinstance(img, dict) for url in [_norm(str(img.get("url") or ""))] if url]
     performer_id = str(perf.get("id") or "").strip()
     birthday = perf.get("birth_date")
+    tagline = _norm(str(perf.get("disambiguation") or "")) or None
 
     return ActorMetadata(
         name=name,
@@ -110,10 +170,49 @@ def performer_to_metadata(perf: dict[str, Any]) -> ActorMetadata | None:
         waist=_positive_int(meas.get("waist")),
         hip=_positive_int(meas.get("hip")),
         cup=_norm(str(meas.get("cup_size") or "")) or None,
-        image_urls=image_urls,
-        provider_ids={"theporndb": performer_id} if performer_id else {},
+        tagline=tagline,
+        image_urls=_image_urls(perf),
+        provider_ids=_provider_ids(perf, performer_id),
         source_url=f"https://theporndb.net/performers/{performer_id}" if performer_id else None,
     )
+
+
+def _image_urls(perf: dict[str, Any]) -> list[str]:
+    raw_images = perf.get("images")
+    images = [img for img in raw_images if isinstance(img, dict)] if isinstance(raw_images, list) else []
+    ranked = sorted(images, key=_image_area, reverse=True)
+    urls: list[str] = []
+    for img in ranked:
+        url = _norm(str(img.get("url") or ""))
+        if url and url not in urls:
+            urls.append(url)
+    return urls
+
+
+def _image_area(img: dict[str, Any]) -> int:
+    width = _positive_int(img.get("width")) or 0
+    height = _positive_int(img.get("height")) or 0
+    return width * height
+
+
+def _provider_ids(perf: dict[str, Any], performer_id: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if performer_id:
+        out["theporndb"] = performer_id
+    raw_urls = perf.get("urls")
+    if not isinstance(raw_urls, list):
+        return out
+    for item in raw_urls:
+        if not isinstance(item, dict):
+            continue
+        url = _norm(str(item.get("url") or ""))
+        if not url or "theporndb.net" in url.casefold():
+            continue
+        key = _URL_TYPE_KEYS.get(_norm(str(item.get("type") or "")).casefold())
+        if key is None or key in out:
+            continue
+        out[key] = url
+    return out
 
 
 def _performer_names(perf: dict[str, Any]) -> list[str]:

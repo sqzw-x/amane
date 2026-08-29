@@ -85,14 +85,15 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
     """配置 mock_web 的 side_effects, 按 URL 模式路由."""
     get_text_map: dict[str, str | dict[str, Any]] = {}
     get_json_map: dict[str, str | dict[str, Any]] = {}
-    post_json_map: dict[str, str | dict[str, Any]] = {}
+    post_json_routes: list[tuple[str, str | None, str | dict[str, Any]]] = []
 
     for resp in responses:
         data = load_response_file(case_dir, resp["file"])
         pattern = resp["url_contains"]
         method = resp.get("method", "get_text")
         if method == "post_json":
-            post_json_map[pattern] = data
+            body = resp.get("body_contains")
+            post_json_routes.append((pattern, body if isinstance(body, str) else None, data))
         elif method == "get_json":
             get_json_map[pattern] = data
         else:
@@ -118,12 +119,17 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
 
         mock_web.get_json.side_effect = get_json_side_effect
 
-    if post_json_map:
+    if post_json_routes:
 
         async def post_json_side_effect(url: str, **kwargs: object) -> object:
-            for pattern, payload in post_json_map.items():
-                if pattern in url:
-                    return payload
+            raw = kwargs.get("json")
+            blob = json.dumps(raw) if isinstance(raw, dict) else str(raw or "")
+            for pattern, needle, payload in post_json_routes:
+                if pattern not in url:
+                    continue
+                if needle and needle not in blob:
+                    continue
+                return payload
             raise RequestError(url, "no mock matched")
 
         mock_web.post_json.side_effect = post_json_side_effect
