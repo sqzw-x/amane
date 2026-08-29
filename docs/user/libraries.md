@@ -24,23 +24,70 @@
 | `{year}` | 发行年份 | `2024` |
 | `{release}` | 发行日期 | `2024-01-15` |
 | `{ext}` | 正在放置的文件扩展名 (不含点); 字幕模板里是该字幕的扩展名 | `mp4` / `srt` |
-| `{mosaic}` | 马赛克类型, 来自源文件路径 | `uncensored` / `cracked` / `censored` |
-| `{definition}` | 分辨率, 来自源文件名 | `4K` / `1080p` / `HD` |
+| `{cd?}` | CD/分集编号 (检测到时为数字如 1, 2; 未检测到为空) | `1` / `2` / 空 |
+| `{sub?}` | 中字标记 (检测到时为 `C`; 未检测到为空) | `C` / 空 |
+| `{mosaic?}` | 有无码标记 (检测到时为如 `uncensored`; 未检测到为空) | `uncensored` / `cracked` / 空 |
+| `{def?}` | 分辨率标记 (检测到时为如 `1080p`; 未检测到为空) | `4K` / `1080p` / `HD` / 空 |
 | `{raw_name}` | 源视频文件名，不含扩展名 | `A/B.mp4` → `B` |
 | `{raw_dir}` | 源文件父目录名 | `A/B/C.mp4` → `B` |
 | `{video_dir}` | 按模板渲染后目标文件所在目录的路径，仅可用于附属资源模板 | — |
 | `{link_dir}` | 链接文件渲染后的父目录 (无链接时等于 video_dir) | — |
 | `{raw_srt_name}` | 字幕原文件名，不含扩展名，仅字幕模板 | `foo.zh.srt` → `foo.zh` |
 
+!!! note
+    占位符名字结尾带 `?` 的项 (`{cd?}` / `{sub?}` / `{mosaic?}` / `{def?}`) 未检测到时会填空字符串, 而不是 `Unknown`. 这些占位符适合配合可选组语法 (见下文) 使用, 未检出时整组省略.
+
 ### 默认模板
 
 ```
-视频: {studio}/{number}/{number}.{ext}
+视频: {studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}
 缩略图: {link_dir}/thumb.jpg
 海报: {link_dir}/poster.jpg
 NFO: {link_dir}/{number}.nfo
 字幕: {link_dir}/{raw_srt_name}.{ext}
 ```
+
+默认视频模板使用了可选组语法 (见下文): 检测到分集时自动追加 `-CD1` / `-CD2`, 检测到中字时追加 `-C`; 两者都未检出时文件名中不会残留连字符.
+
+### 可选组语法
+
+用 `[...]` 将模板中的一段内容包起来, 组内任一占位符为空时整组省略:
+
+```
+{number}[-CD{cd?}][-{sub?}].{ext}
+```
+
+- 源文件 `MIDV-123-CD2-C.mp4` (检测到分集 2 和中字) → `MIDV-123-CD2-C.mp4`
+- 源文件 `MIDV-123-CD1.mp4` (仅检测到分集 1) → `MIDV-123-CD1.mp4`
+- 源文件 `MIDV-123.mp4` (两者都未检出) → `MIDV-123.mp4` (不会残留 `-`)
+
+双层方括号 `[[...]]` 同样省略逻辑, 但有值时结果会被方括号包裹:
+
+```
+{number}[[{def?}]].{ext}
+```
+
+- 检测到 4K → `MIDV-123[4K].mp4`
+- 未检测到 → `MIDV-123.mp4`
+
+### 值映射
+
+占位符支持 `{name|原值=输出,另一值=输出}` 语法, 将规范值改写成自定义输出:
+
+```
+{mosaic?|uncensored=U,cracked=破解}
+{def?|4K=2160p,1080p=FHD}
+```
+
+- 未列出的值保持原样 (如 `{mosaic?|uncensored=U}`, cracked 仍为 cracked)
+- 可以映射成空串 (配合可选组让某个值不出现在路径中)
+- 目录段和文件名段可以分别写映射, 比如目录用规范值便于管理, 文件名用短标记节省字符:
+
+```
+{mosaic?}/{number}[-{mosaic?|uncensored=U,cracked=破解}].{ext}
+```
+
+源文件 `MIDV-123-無碼.mp4` → `uncensored/MIDV-123-U.mp4`
 
 ### 示例
 
@@ -49,14 +96,9 @@ NFO: {link_dir}/{number}.nfo
 ```
 {number}/{number}.mp4          → MIDV-123/MIDV-123.mp4
 {studio}/{number}/{title}.mp4  → Studio Name/MIDV-123/Sample Title.mp4
-{studio}/{number}/{number}-{mosaic}-{definition}.{ext}  → Studio Name/MIDV-123/MIDV-123-uncensored-4K.mp4
+{studio}/{number}/{number}[-{mosaic?}][-{def?}].{ext}  → Studio Name/MIDV-123/MIDV-123.mp4 (未检出有码/分辨率时)
+                                                        → Studio Name/MIDV-123/MIDV-123-uncensored-4K.mp4 (检出时)
 ```
-
-!!! warning
-    `{definition}` 只会从文件名中的 `-4K`/`-HD` 等解析, 无法获取时会变为 `Unknown`.
-    若只把清晰度放在目录段 (如 `{definition}/{number}.mp4`),
-    则后续整理时该字段会无法获取而变为 `Unknown`. 因此若要用 `{definition}` 最好在文件名中同时记录,
-    (如 `{number}-{definition}.{ext}`).
 
 ## 链接模板与模式
 
@@ -90,16 +132,19 @@ NFO: {link_dir}/{number}.nfo
 !!! note
     整理操作不会自动触发, 需要手动执行. 可以通过任务系统排队整理任务.
 
-## 分集 (CD) 后缀
+## 分集 (CD) 识别
 
-Amane 支持自动识别分集文件并添加后缀:
+Amane 支持自动识别分集文件, 通过 `{cd?}` 占位符和可选组在整理后的文件名中保留分集标记:
 
 - `-CD1`, `-CD2` — 标准分集标记
 - `-Part1`, `-Part2` — 替代分集标记
 - `-A`, `-B` — 字母分集
 - `-1` 到 `-9` — 尾部数字分集
 
-分集后缀模板默认为 `-CD{cd}`, 可在库设置中自定义.
+检测到的分集编号通过 `{cd?}` 占位符填入, 在模板中用可选组控制是否出现. 例如默认模板 `{studio}/{number}/{number}[-CD{cd?}].{ext}`:
+
+- 源文件 `MIDV-123-CD2.mp4` → `Studio Name/MIDV-123/MIDV-123-CD2.mp4`
+- 源文件 `MIDV-123.mp4` (无分集) → `Studio Name/MIDV-123/MIDV-123.mp4`
 
 ## 字幕文件
 
