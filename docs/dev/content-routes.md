@@ -73,7 +73,7 @@
 
 **kin8tengoku.com** — 「金髪洋物専門 無修正」. 从任意番号抽数字拼 `/moviepages/{id}/`, 有误伤. 不进默认表.
 
-**theporndb.net** — 未登录跳 `/login`. GraphQL 无 token 时影片/演员爬虫都直接 `None`. 欧美路由第一. uncensored fixture 走 `?type=Scene`. 演员走 `searchPerformer`, 精确匹配 name/aliases, 不回退首条; 与影片共用 `site_config.api_token`.
+**theporndb.net** — 未登录跳 `/login`. GraphQL 无 token 时影片/演员爬虫都直接 `None`. 欧美路由第一. uncensored fixture 走 `?type=Scene`. 演员走 `searchPerformer`, 精确匹配 name/aliases, 不回退首条; `deleted` 且有 `merged_into_id` 则 `findPerformer` 跟随, 无合并目标则丢弃; 头像按宽×高排序; `urls` 填空进 `provider_ids` (iafd / twitter 等, 跳过本站链接); `disambiguation` 填 `tagline`. 与影片共用 `site_config.api_token`. stash-box 还能给 `death_date`、出道/引退年、发色/瞳色、`ethnicity`、`breast_type`、纹身穿孔, 目前不加列.
 
 **official** — Will/Outvision 官网集群. 前缀对不上不发 HTTP, 可以垫在有碼末尾.
 

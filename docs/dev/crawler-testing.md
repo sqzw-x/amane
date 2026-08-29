@@ -40,7 +40,7 @@
 
 ## 仍会影响解析的坑
 
-- **`url_contains` 子串匹配**: 多条都命中时**第一条生效**. 更具体的模式放前面.
+- **`url_contains` 子串匹配**: 多条都命中时**第一条生效**. 更具体的模式放前面. 同一 URL 上不同 GraphQL 操作再用 `body_contains` (匹配 POST JSON 正文).
 - **`live` 不能替代 mock**: `@pytest.mark.live` 在 CI 跳过; 回归必须可重复.
 - **DMM 分类页结构不同**: Mono/DVD 仍是旧版 table (`/mono/dvd/.../cid={short}/`); monthly 已改 div (XPath 失效); digital / Fanza TV 走 GraphQL; rental 404. 全页 `//dt` 会把 monthly 双栏镜像翻倍 — 解析须先 `#multi-column`、再 `#single-column`, 最后才回退 table.
 - **Wikipedia 演员页**: 条目引用里常出现「年齢認証」等词, 不能走 `get_html` 启发式 (会误判 `age_verification`); 维基正文用 `get_text`.
