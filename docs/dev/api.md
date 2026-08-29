@@ -1,6 +1,6 @@
 # API 层
 
-> 提交: `e8b40a9`
+> 提交: `ecbc041`
 >
 > 入口: `src/amane/api/routes/`. 契约在 `api/models/` (与 routes 对齐). 端点签名从源码或 `web/openapi.json` 读 (`just generate`); 本文只写划分、约定与易错点.
 > 启动见 [architecture.md](architecture.md), 模型见 [data-model.md](data-model.md), 任务提交见 [task-system.md](task-system.md).
