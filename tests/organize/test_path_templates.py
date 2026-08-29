@@ -115,6 +115,7 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
     _RenderCase("HEYZO-123-1080p.mp4", "{mosaic?}/{def?}/{number}.{ext}", "1080p/ABC-123.mp4"),
     _RenderCase("ABC-123.mp4", "{mosaic?}/{def?}/{number}.{ext}", "ABC-123.mp4"),
     _RenderCase("[破解]MIDV-123.mp4", "{mosaic?}/{number}.{ext}", "cracked/ABC-123.mp4"),
+    _RenderCase("[流出]MIDV-123.mp4", "{mosaic?}/{number}.{ext}", "leaked/ABC-123.mp4"),
     _RenderCase("MIDV-123_4K_无码.mp4", "{mosaic?}/{def?}/{number}.{ext}", "uncensored/4K/ABC-123.mp4"),
     _RenderCase("/media/uncensored/MIDV-123.mp4", "{mosaic?}/{def?}/{number}.{ext}", "uncensored/ABC-123.mp4"),
     _RenderCase("/media/4K/MIDV-123.mp4", "{mosaic?}/{def?}/{number}.{ext}", "ABC-123.mp4"),
@@ -215,6 +216,7 @@ class TestValidatePathTemplate:
         [
             "{mosaic?|uncensored=U,cracked=破解}",
             "{mosaic?|cracked=破解}",
+            "{mosaic?|leaked=流出}",
             "{sub?|C=中字}",
             "{def?|4K=2160p,1080p=FHD}",
             "{cd?|1=一,2=二}",

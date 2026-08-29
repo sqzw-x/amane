@@ -53,12 +53,13 @@ CASES: list[object] = [
     _Case("[UNCENSORED]ABC-123.mp4", mosaic="uncensored", number="ABC-123"),
     _Case("ABC-123-uncensored.mp4", mosaic="uncensored", number="ABC-123"),
     _Case("[破解]MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
-    _Case("[流出]MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
-    _Case("MIDV-123-LEAKED.mp4", mosaic="cracked", number="MIDV-123"),
-    _Case("MIDV-123流出.mp4", mosaic="cracked", number="MIDV-123"),
-    # 无码标记优先于破解/流出
+    _Case("[流出]MIDV-123.mp4", mosaic="leaked", number="MIDV-123"),
+    _Case("MIDV-123-LEAKED.mp4", mosaic="leaked", number="MIDV-123"),
+    _Case("MIDV-123流出.mp4", mosaic="leaked", number="MIDV-123"),
+    # 同名多标记: 无码优先于破解/流出; 破解优先于流出
     _Case("MIDV-123-無碼流出.mp4", mosaic="uncensored", number="MIDV-123"),
     _Case("MIDV-123-無碼破解.mp4", mosaic="uncensored", number="MIDV-123"),
+    _Case("MIDV-123-破解流出.mp4", mosaic="cracked", number="MIDV-123"),
     # -UC 后面还跟分片或清晰度
     _Case("MIDV-123-UC-CD1.mp4", cd=1, has_subtitle=True, mosaic="uncensored", number="MIDV-123"),
     _Case("MIDV-123-UC-4K.mp4", has_subtitle=True, mosaic="uncensored", definition="4K", number="MIDV-123"),
@@ -176,16 +177,16 @@ CASES: list[object] = [
     _Case("/media/Uncensored/MIDV-123.mp4", mosaic="uncensored", number="MIDV-123"),
     _Case("/media/无码/MIDV-123.mp4", mosaic="uncensored", number="MIDV-123"),
     _Case("/media/無碼/MIDV-123.mp4", mosaic="uncensored", number="MIDV-123"),
-    _Case("/media/LEAKED/MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("/media/LEAKED/MIDV-123.mp4", mosaic="leaked", number="MIDV-123"),
     _Case("/media/破解/MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
-    _Case("/media/流出/MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("/media/流出/MIDV-123.mp4", mosaic="leaked", number="MIDV-123"),
     _Case("/media/[无码]/MIDV-123.mp4", mosaic="uncensored", number="MIDV-123"),
     _Case("/media/【破解】/MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
     # 文件名优先于目录
     _Case("/media/cracked/MIDV-123-无码.mp4", mosaic="uncensored", number="MIDV-123"),
-    _Case("/media/uncensored/MIDV-123-LEAKED.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("/media/uncensored/MIDV-123-LEAKED.mp4", mosaic="leaked", number="MIDV-123"),
     # 近目录优先
-    _Case("/media/uncensored/流出/MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("/media/uncensored/流出/MIDV-123.mp4", mosaic="leaked", number="MIDV-123"),
     _Case("/media/流出/uncensored/MIDV-123.mp4", mosaic="uncensored", number="MIDV-123"),
     # 马赛克目录反例: 子串 / 复合名 / 非词表 / -UC 当目录
     _Case("/media/uncensored-guide/MIDV-123.mp4", number="MIDV-123"),

@@ -1,6 +1,6 @@
 # 数据模型
 
-> 提交: `efdf4219b`
+> 提交: `c1daa86`
 >
 > 表结构、字段类型、便捷属性都在 `src/amane/db/models.py`. 本文只解释**为什么**这么建模、所有权关系、生命周期与已知陷阱.
 
@@ -108,7 +108,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 `link_template` 为空则不创建链接, `{link_dir}` 等于 `{video_dir}`. 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的入口: `link_mode=strm` 写 `.strm` (内容为一行视频绝对路径, 后缀强制 `.strm`); `symlink` 做文件系统软链接. 链接必须落在库根之外 (否则 REFRESH 会把 strm/软链接再扫成媒体). `{video_dir}` 始终是真实视频父目录; `{link_dir}` 是链接父目录. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO/海报自动跟链接走, 不必改六个附属模板. 想把某类附属文件留在网盘侧, 显式写 `{video_dir}/…`.
 
-模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` 与 file 相位 (`{cd?}` `{sub?}` `{mosaic?}` `{def?}`, `parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库; `{video_dir}` / `{link_dir}` 仅附属资源模板; `{raw_srt_name}` 仅字幕模板. file 相位未检出是**空串**, 不是 `Unknown` / `censored`. `{mosaic?}` 只认文件名标记或目录名整段词表 (由近到远; `uncensored` / `cracked` / `-U` / `-UC` / 无码 / 破解 等, 子串不算), 不用 content_type 兜底. `{def?}` 只看文件名. `{sub?}` 有中字标记时为 `C`. 名字里的 `?` 只是提醒可空, 没有运算含义; 写成 `{cd}` 视为未知 key, 回 `Unknown`.
+模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` 与 file 相位 (`{cd?}` `{sub?}` `{mosaic?}` `{def?}`, `parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库; `{video_dir}` / `{link_dir}` 仅附属资源模板; `{raw_srt_name}` 仅字幕模板. file 相位未检出是**空串**, 不是 `Unknown` / `censored`. `{mosaic?}` 只认文件名标记或目录名整段词表 (由近到远; `uncensored` / `cracked` / `leaked` / `-U` / `-UC` / 无码 / 破解 / 流出, 子串不算), 不用 content_type 兜底. 同名多标记时无码优先于破解、流出, 破解优先于流出. `{def?}` 只看文件名. `{sub?}` 有中字标记时为 `C`. 名字里的 `?` 只是提醒可空, 没有运算含义; 写成 `{cd}` 视为未知 key, 回 `Unknown`.
 
 可选组: `[...]` 组界不输出. 组内**直接**占位符全部为空则整段丢弃; 有一个非空就渲染, 空的那个输出空串 (所以 `[-{mosaic?|uncensored=U}{sub?}]` 可以拼出 `-U` / `-C` / `-UC`). 只有一个占位符时与「空则整段省略」相同, `[-CD{cd?}]` 不会留下裸 `-CD`. 字面量跟着整组走: `[-CD{cd?}{sub?}]` 在仅有中字时仍会带上 `-CD`. 嵌套组各自判断, 不并入外层. `[[...]]` 同样但有值时把结果包一层 `[]`. 未闭合在写入时 422. 默认视频模板 `{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}`. 链接模板要分集须自己写 `{cd?}` 组, 不会自动追加. 渲染后丢掉空路径段, 相对模板不会因首段为空变成绝对路径.
 

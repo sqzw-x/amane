@@ -25,6 +25,7 @@ class Mosaic(StrEnum):
 
     UNCENSORED = "uncensored"
     CRACKED = "cracked"
+    LEAKED = "leaked"
 
 
 # --- 常量 ---
@@ -537,14 +538,16 @@ def _detect_subtitle(basename: str) -> bool:
 
 
 def _detect_mosaic(basename: str) -> Mosaic | None:
-    """从文件名检测马赛克/审查类型."""
+    """从文件名检测马赛克/审查类型. 同名多标记时无码优先, 其次破解, 再流出."""
     if re.search(r"無碼|无码|UNCENSORED", basename):
         return Mosaic.UNCENSORED
     # -U / -UC 后不能紧跟字母或数字 (否则是 -UNKNOWN、-UC1), 但可跟 -4K / -CD1 等标记段.
     if re.search(r"-U(C)?(?![A-Z0-9])", basename):
         return Mosaic.UNCENSORED
-    if re.search(r"破解|流出|LEAKED", basename):
+    if re.search(r"破解", basename):
         return Mosaic.CRACKED
+    if re.search(r"流出|LEAKED", basename):
+        return Mosaic.LEAKED
     return None
 
 
@@ -556,9 +559,9 @@ _MOSAIC_DIR_TOKENS: dict[str, Mosaic] = {
         ("無碼", Mosaic.UNCENSORED),
         ("无码", Mosaic.UNCENSORED),
         ("cracked", Mosaic.CRACKED),
-        ("leaked", Mosaic.CRACKED),
         ("破解", Mosaic.CRACKED),
-        ("流出", Mosaic.CRACKED),
+        ("leaked", Mosaic.LEAKED),
+        ("流出", Mosaic.LEAKED),
     )
 }
 _DIR_BRACKET_STRIP = "[]【】()（）"

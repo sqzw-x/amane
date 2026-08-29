@@ -26,7 +26,7 @@
 | `{ext}` | 正在放置的文件扩展名 | `mp4` / `srt` |
 | `{cd?}` | CD/分集编号 | `1` / `2` / 空 |
 | `{sub?}` | 中字标记 | `C` / 空 |
-| `{mosaic?}` | 有无码标记 | `uncensored` / `cracked` / 空 |
+| `{mosaic?}` | 有无码标记 | `uncensored` / `cracked` / `leaked` / 空 |
 | `{def?}` | 分辨率标记 | `4K` / `1080p` / `HD` / 空 |
 | `{raw_name}` | 源视频文件名 | `A/B.mp4` → `B` |
 | `{raw_dir}` | 源文件父目录名 | `A/B/C.mp4` → `B` |
@@ -76,16 +76,16 @@ NFO: {link_dir}/{number}.nfo
 占位符支持 `{name|原值=输出,另一值=输出}` 语法, 将规范值改写成自定义输出:
 
 ```
-{mosaic?|uncensored=U,cracked=破解}
+{mosaic?|uncensored=U,cracked=破解,leaked=流出}
 {def?|4K=2160p,1080p=FHD}
 ```
 
-- 未列出的值保持原样 (如 `{mosaic?|uncensored=U}`, cracked 仍为 cracked)
+- 未列出的值保持原样 (如 `{mosaic?|uncensored=U}`, cracked / leaked 仍为规范值)
 - 可以映射成空串 (配合可选组让某个值不出现在路径中)
 - 目录段和文件名段可以分别写映射, 比如目录用规范值便于管理, 文件名用短标记节省字符:
 
 ```
-{mosaic?}/{number}[-{mosaic?|uncensored=U,cracked=破解}].{ext}
+{mosaic?}/{number}[-{mosaic?|uncensored=U,cracked=破解,leaked=流出}].{ext}
 ```
 
 源文件 `MIDV-123-無碼.mp4` → `uncensored/MIDV-123-U.mp4`
