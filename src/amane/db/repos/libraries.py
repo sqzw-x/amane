@@ -7,7 +7,6 @@ from amane.enums import DownloadableResource, LibraryAutomation, LinkMode, MoveM
 from amane.organize.path_templates import (
     VIDEO_TEMPLATE_DEFAULT,
     normalize_link_template,
-    validate_optional_path_template,
     validate_path_template,
 )
 from amane.utils.extensions import (
@@ -22,6 +21,10 @@ from amane.utils.extensions import (
 from ..models import Library, MediaFile
 from ..repo_types import LibraryUpdates
 from .base import RepositoryMixinBase
+
+
+def _path_template_or_none(value: str | None) -> str | None:
+    return None if value is None else validate_path_template(value)
 
 
 class LibrariesRepoMixin(RepositoryMixinBase):
@@ -52,14 +55,14 @@ class LibrariesRepoMixin(RepositoryMixinBase):
     ) -> Library:
         min_file_size = validate_min_file_size(min_file_size)
         video_template = validate_path_template(video_template)
-        link_template = validate_optional_path_template(normalize_link_template(link_template))
-        thumb_template = validate_optional_path_template(thumb_template)
-        poster_template = validate_optional_path_template(poster_template)
-        fanart_template = validate_optional_path_template(fanart_template)
-        extrafanart_template = validate_optional_path_template(extrafanart_template)
-        nfo_template = validate_optional_path_template(nfo_template)
-        trailer_template = validate_optional_path_template(trailer_template)
-        subtitle_template = validate_optional_path_template(subtitle_template)
+        link_template = _path_template_or_none(normalize_link_template(link_template))
+        thumb_template = _path_template_or_none(thumb_template)
+        poster_template = _path_template_or_none(poster_template)
+        fanart_template = _path_template_or_none(fanart_template)
+        extrafanart_template = _path_template_or_none(extrafanart_template)
+        nfo_template = _path_template_or_none(nfo_template)
+        trailer_template = _path_template_or_none(trailer_template)
+        subtitle_template = _path_template_or_none(subtitle_template)
         async with self._session() as session:
             lib = Library(
                 name=name,
@@ -167,23 +170,23 @@ class LibrariesRepoMixin(RepositoryMixinBase):
             if "video_template" in updates:
                 lib.video_template = validate_path_template(updates["video_template"])
             if "link_template" in updates:
-                lib.link_template = validate_optional_path_template(normalize_link_template(updates["link_template"]))
+                lib.link_template = _path_template_or_none(normalize_link_template(updates["link_template"]))
             if "link_mode" in updates:
                 lib.link_mode = updates["link_mode"]
             if "thumb_template" in updates:
-                lib.thumb_template = validate_optional_path_template(updates["thumb_template"])
+                lib.thumb_template = _path_template_or_none(updates["thumb_template"])
             if "poster_template" in updates:
-                lib.poster_template = validate_optional_path_template(updates["poster_template"])
+                lib.poster_template = _path_template_or_none(updates["poster_template"])
             if "fanart_template" in updates:
-                lib.fanart_template = validate_optional_path_template(updates["fanart_template"])
+                lib.fanart_template = _path_template_or_none(updates["fanart_template"])
             if "extrafanart_template" in updates:
-                lib.extrafanart_template = validate_optional_path_template(updates["extrafanart_template"])
+                lib.extrafanart_template = _path_template_or_none(updates["extrafanart_template"])
             if "nfo_template" in updates:
-                lib.nfo_template = validate_optional_path_template(updates["nfo_template"])
+                lib.nfo_template = _path_template_or_none(updates["nfo_template"])
             if "trailer_template" in updates:
-                lib.trailer_template = validate_optional_path_template(updates["trailer_template"])
+                lib.trailer_template = _path_template_or_none(updates["trailer_template"])
             if "subtitle_template" in updates:
-                lib.subtitle_template = validate_optional_path_template(updates["subtitle_template"])
+                lib.subtitle_template = _path_template_or_none(updates["subtitle_template"])
             if "subtitle_extensions" in updates:
                 extensions = updates["subtitle_extensions"]
                 lib.subtitle_extensions = normalize_subtitle_extensions(

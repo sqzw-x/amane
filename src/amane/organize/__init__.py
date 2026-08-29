@@ -5,7 +5,6 @@ from .link import create_video_link
 from .path_templates import (
     OPTIONAL_TEMPLATE_DEFAULTS,
     VIDEO_TEMPLATE_DEFAULT,
-    OptionalPathTemplate,
     PathTemplate,
     ResolvedPaths,
     normalize_link_template,
@@ -13,7 +12,6 @@ from .path_templates import (
     render_path_template,
     resolve_paths,
     resolve_subtitle_path,
-    validate_optional_path_template,
     validate_path_template,
 )
 from .subtitles import discover_subtitles, place_subtitles
@@ -22,7 +20,6 @@ __all__ = [
     "OPTIONAL_TEMPLATE_DEFAULTS",
     "VIDEO_TEMPLATE_DEFAULT",
     "MoveMode",
-    "OptionalPathTemplate",
     "OrganizeResult",
     "PathTemplate",
     "ResolvedPaths",
@@ -35,6 +32,5 @@ __all__ = [
     "render_path_template",
     "resolve_paths",
     "resolve_subtitle_path",
-    "validate_optional_path_template",
     "validate_path_template",
 ]

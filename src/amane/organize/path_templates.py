@@ -244,24 +244,12 @@ class _Parser:
 
 
 def validate_path_template(value: str) -> str:
-    """校验路径模板结构 (括号 / 占位符 / 值映射). 空串合法 (部分可选模板)."""
+    """校验路径模板结构 (括号 / 占位符 / 值映射). 空串合法."""
     _Parser(value).parse()
     return value
 
 
-def validate_optional_path_template(value: str | None) -> str | None:
-    """可选模板: None / 空白不解析; 非空则与主模板同一套结构校验."""
-    if value is None:
-        return None
-    stripped = value.strip()
-    if not stripped:
-        return value
-    validate_path_template(value)
-    return value
-
-
 PathTemplate = Annotated[str, AfterValidator(validate_path_template)]
-OptionalPathTemplate = Annotated[str | None, AfterValidator(validate_optional_path_template)]
 
 
 def _placeholders(nodes: Sequence[_Node]) -> tuple[_Placeholder, ...]:

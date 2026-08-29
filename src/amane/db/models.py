@@ -8,7 +8,6 @@ from sqlmodel import JSON, Field, SQLModel
 from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, LinkMode, MoveMode
 from amane.organize.path_templates import (
     VIDEO_TEMPLATE_DEFAULT,
-    OptionalPathTemplate,
     PathTemplate,
 )
 from amane.utils.extensions import (
@@ -326,17 +325,17 @@ class Library(SQLModel, table=True):
     """整理时如何把源文件放到模板路径."""
     # 路径模板
     video_template: PathTemplate = Field(default=VIDEO_TEMPLATE_DEFAULT)
-    link_template: OptionalPathTemplate = None
+    link_template: PathTemplate | None = None
     """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或软链接, 必须落在库根之外."""
     link_mode: LinkMode = Field(default=LinkMode.STRM, sa_column=Column(String, nullable=False, server_default="strm"))
     """link_template 非空时: strm 写 .strm 文本 (内容为视频绝对路径); symlink 做文件系统软链接."""
-    thumb_template: OptionalPathTemplate = None
-    poster_template: OptionalPathTemplate = None
-    fanart_template: OptionalPathTemplate = None
-    extrafanart_template: OptionalPathTemplate = None
-    nfo_template: OptionalPathTemplate = None
-    trailer_template: OptionalPathTemplate = None
-    subtitle_template: OptionalPathTemplate = None
+    thumb_template: PathTemplate | None = None
+    poster_template: PathTemplate | None = None
+    fanart_template: PathTemplate | None = None
+    extrafanart_template: PathTemplate | None = None
+    nfo_template: PathTemplate | None = None
+    trailer_template: PathTemplate | None = None
+    subtitle_template: PathTemplate | None = None
     subtitle_extensions: SubtitleExtensions = Field(
         default_factory=lambda: list(DEFAULT_SUBTITLE_EXTENSIONS),
         sa_column=Column(JSON, nullable=False),

@@ -6,7 +6,6 @@ from ...db import Library
 from ...enums import DownloadableResource, LibraryAutomation, LinkMode, MoveMode
 from ...organize.path_templates import (
     VIDEO_TEMPLATE_DEFAULT,
-    OptionalPathTemplate,
     PathTemplate,
     PlaceholderPhase,
 )
@@ -30,15 +29,15 @@ class LibraryCreateRequest(BaseModel):
     patterns: list[str] = []
     move_mode: MoveMode = MoveMode.MOVE
     video_template: PathTemplate = VIDEO_TEMPLATE_DEFAULT
-    link_template: OptionalPathTemplate = None
+    link_template: PathTemplate | None = None
     link_mode: LinkMode = LinkMode.STRM
-    thumb_template: OptionalPathTemplate = None
-    poster_template: OptionalPathTemplate = None
-    fanart_template: OptionalPathTemplate = None
-    extrafanart_template: OptionalPathTemplate = None
-    nfo_template: OptionalPathTemplate = None
-    trailer_template: OptionalPathTemplate = None
-    subtitle_template: OptionalPathTemplate = None
+    thumb_template: PathTemplate | None = None
+    poster_template: PathTemplate | None = None
+    fanart_template: PathTemplate | None = None
+    extrafanart_template: PathTemplate | None = None
+    nfo_template: PathTemplate | None = None
+    trailer_template: PathTemplate | None = None
+    subtitle_template: PathTemplate | None = None
     subtitle_extensions: SubtitleExtensions = Field(default_factory=lambda: list(DEFAULT_SUBTITLE_EXTENSIONS))
     write_nfo: bool = True
     copy_resources: list[DownloadableResource] = Field(default_factory=lambda: list(DownloadableResource))
