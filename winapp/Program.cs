@@ -145,7 +145,7 @@ internal sealed class App
         Environment.SetEnvironmentVariable("AMANE_SUPERVISED", "1");
         SetDefault("AMANE_HOST", "127.0.0.1");
         SetDefault("AMANE_PORT", "18000");
-        SetDefault("AMANE_SAFE_DIRS", DriveRoots());
+        SetDefault("AMANE_SAFE_DIRS", "ALLOW_ALL");
         var data = DataDir();
         var logs = Path.Combine(data, "logs");
         Directory.CreateDirectory(logs);
@@ -170,37 +170,6 @@ internal sealed class App
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Amane"
         );
-    }
-
-    private static string DriveRoots()
-    {
-        var roots = new List<string>();
-        foreach (var drive in DriveInfo.GetDrives())
-        {
-            try
-            {
-                if (!drive.IsReady)
-                {
-                    continue;
-                }
-
-                if (
-                    drive.DriveType
-                    is DriveType.Fixed
-                        or DriveType.Removable
-                        or DriveType.Network
-                )
-                {
-                    roots.Add(drive.RootDirectory.FullName);
-                }
-            }
-            catch (IOException)
-            {
-                // Skip unreadable drives (empty card readers, etc).
-            }
-        }
-
-        return roots.Count > 0 ? string.Join(',', roots) : @"C:\";
     }
 
     private static string? ServerBinary()

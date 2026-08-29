@@ -186,7 +186,7 @@ final class Launcher: NSObject, NSApplicationDelegate {
         setenv("AMANE_SUPERVISED", "1", 1)
         setenv("AMANE_HOST", "127.0.0.1", 0)
         setenv("AMANE_PORT", "18000", 0)
-        setenv("AMANE_SAFE_DIRS", "/", 0)
+        setenv("AMANE_SAFE_DIRS", "ALLOW_ALL", 0)
         let data = dataDir()
         let logs = data.appendingPathComponent("logs", isDirectory: true)
         try? FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)

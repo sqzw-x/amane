@@ -37,9 +37,17 @@ def hot_for_tests(hot: HotSettings | None = None) -> HotSettings:
     )
 
 
-def make_app(hot: HotSettings, data_dir: Path, log_dir: Path, files_dir: Path, *, supervised: bool = False) -> FastAPI:
+def make_app(
+    hot: HotSettings,
+    data_dir: Path,
+    log_dir: Path,
+    files_dir: Path,
+    *,
+    supervised: bool = False,
+    safe_dirs: str | None = None,
+) -> FastAPI:
     os.environ["AMANE_DATA_DIR"] = str(data_dir)
-    os.environ["AMANE_SAFE_DIRS"] = str(files_dir)
+    os.environ["AMANE_SAFE_DIRS"] = str(files_dir) if safe_dirs is None else safe_dirs
     os.environ["AMANE_LOG_DIR"] = str(log_dir)
     os.environ["AMANE_TOKEN"] = "off"
     os.environ["AMANE_SUPERVISED"] = "1" if supervised else "0"
@@ -104,6 +112,30 @@ async def client(app: FastAPI):
         feed_service.set_web_client(_SilentFeedHttp())  # pyright: ignore[reportArgumentType]
 
     transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url=f"http://test{API_PREFIX}/") as c:
+        yield c
+
+    await ctx.__aexit__(None, None, None)
+
+
+@pytest.fixture
+def allow_all_app(tmp_path: Path):
+    """``AMANE_SAFE_DIRS=ALLOW_ALL`` 的应用, 路径不受 files_dir 边界约束."""
+    data_dir = tmp_path / "data"
+    log_dir = tmp_path / "logs"
+    files_dir = tmp_path / "files"
+    return make_app(HotSettings(), data_dir, log_dir, files_dir, safe_dirs="ALLOW_ALL")
+
+
+@pytest_asyncio.fixture
+async def allow_all_client(allow_all_app: FastAPI):
+    ctx = allow_all_app.router.lifespan_context(allow_all_app)
+    await ctx.__aenter__()
+    feed_service = allow_all_app.state.runtime.feed_service
+    if feed_service is not None:
+        feed_service.set_web_client(_SilentFeedHttp())  # pyright: ignore[reportArgumentType]
+
+    transport = ASGITransport(app=allow_all_app)
     async with AsyncClient(transport=transport, base_url=f"http://test{API_PREFIX}/") as c:
         yield c
 

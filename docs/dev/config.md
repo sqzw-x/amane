@@ -1,6 +1,6 @@
 # 配置系统
 
-> 提交: `9330fb5`
+> 提交: `e8b40a9`
 >
 > 入口: `src/amane/config/`. 本文解释分层设计动机、热重载机制和添加新配置的约定.
 > 启动编排见 [architecture.md](architecture.md).
@@ -22,7 +22,7 @@ API 鉴权是冷配置: 中间件在请求路径上, 不能在 rebuild 里热插
 - **`AMANE_TOKEN=off`**: 显式关闭 — 仅当反代已实现等价鉴权时使用. 默认 auto 与反代不必互斥.
 - **`AMANE_TOKEN=<value>`**: 显式 token (自行保证随机性).
 
-信任边界: 持有 token = 用户本人, `safe_dirs` 只作纵深防御; 同机能读 `data_dir/token` 视为已信任. cookie 防 XSS / 跨站; 局域网裸 HTTP 是家庭网络假设. 桌面 argv 如何拿到 token 见 [desktop.md](desktop.md).
+信任边界: 持有 token = 用户本人, `safe_dirs` 只作纵深防御; 同机能读 `data_dir/token` 视为已信任. cookie 防 XSS / 跨站; 局域网裸 HTTP 是家庭网络假设. 桌面 argv 如何拿到 token 见 [desktop.md](desktop.md). `AMANE_SAFE_DIRS=ALLOW_ALL` 关闭路径边界 (桌面壳默认); Docker / 无哨兵时仍按目录名单约束.
 
 ## 热重载
 

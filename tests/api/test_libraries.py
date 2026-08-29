@@ -1,5 +1,6 @@
 """/libraries 端点测试"""
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -8,8 +9,6 @@ from amane.db.models import TaskType
 from amane.organize import VIDEO_TEMPLATE_DEFAULT
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from httpx2 import AsyncClient
 
     from amane.db.repository import Repository
@@ -174,6 +173,14 @@ class TestLibraries:
         off = await client.post("libraries", json={"path": str(off_dir), "subtitle_extensions": [], "scan": False})
         assert off.status_code == 201
         assert off.json()["subtitle_extensions"] == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_allow_all_creates_library_outside_files_dir(self, allow_all_client: AsyncClient, tmp_path: Path):
+        target = tmp_path / "nas-share"
+        target.mkdir()
+        resp = await allow_all_client.post("libraries", json={"path": str(target), "scan": False})
+        assert resp.status_code == 201, resp.text
+        assert Path(resp.json()["path"]).resolve() == target.resolve()
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_path_and_invalid_fields(self, client: AsyncClient, repo: Repository, safe_path: Path):

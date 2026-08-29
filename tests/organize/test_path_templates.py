@@ -464,6 +464,18 @@ class TestPathTraversalProtection:
         with pytest.raises(ValueError, match="Path traversal detected"):
             resolve_paths(wp, meta, ext="mp4", safe_dirs=[other])
 
+    def test_absolute_template_allow_all_skips_extra_boundary(self, media: Path, other: Path):
+        """ALLOW_ALL (safe_dirs=None) 时绝对模板可落在 library 根之外."""
+        wp = Library(name="t", path=str(media), video_template=str(other / "{number}" / "{number}.{ext}"))
+        result = resolve_paths(wp, _meta(), ext="mp4", safe_dirs=None)
+        assert result.video == other / "ABC-123" / "ABC-123.mp4"
+
+    def test_relative_template_still_rejects_escape_when_allow_all(self, media: Path):
+        """相对模板含 .. 时 ALLOW_ALL 仍拒绝逃出 library 根."""
+        wp = Library(name="t", path=str(media / "incoming"), video_template="../../etc/{number}.{ext}")
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            resolve_paths(wp, _meta(), ext="mp4", safe_dirs=None)
+
     def test_absolute_template_within_base_ok(self, media: Path):
         """绝对路径模板落在 base_path 内时无需 safe_dirs"""
         wp = Library(name="t", path=str(media), video_template=str(media / "{number}" / "{number}.{ext}"))

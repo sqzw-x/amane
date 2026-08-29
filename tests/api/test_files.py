@@ -141,3 +141,28 @@ class TestListFiles:
                 "last_modified": None,
             }
         ]
+
+
+class TestListFilesAllowAll:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_lists_path_outside_files_dir(self, allow_all_client: AsyncClient, tmp_path: Path):
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        (outside / "movie").mkdir()
+        resp = await allow_all_client.get("files", params={"path": str(outside)})
+        assert resp.status_code == 200
+        assert resp.json()["path"] == _canonical_path(outside)
+        assert "movie" in {e["name"] for e in resp.json()["items"]}
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_relative_parent_not_forbidden(self, allow_all_client: AsyncClient, tmp_path: Path):
+        nested = tmp_path / "elsewhere" / "nested"
+        nested.mkdir(parents=True)
+        resp = await allow_all_client.get("files", params={"path": "..", "base": str(nested)})
+        assert resp.status_code == 200
+        assert resp.json()["path"] == _canonical_path(nested.parent)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_missing_still_404(self, allow_all_client: AsyncClient, tmp_path: Path):
+        resp = await allow_all_client.get("files", params={"path": str(tmp_path / "nope")})
+        assert resp.status_code == 404

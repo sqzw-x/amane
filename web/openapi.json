@@ -120,7 +120,7 @@
           "files"
         ],
         "summary": "List files and directories at a server path",
-        "description": "列出目录内容. 仅允许访问启动时确定的安全目录内的路径",
+        "description": "列出目录内容. 仅允许访问启动时确定的安全目录内的路径; ``safe_dirs is None`` 时不限制.",
         "operationId": "list_files",
         "parameters": [
           {

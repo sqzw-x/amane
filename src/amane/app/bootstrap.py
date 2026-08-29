@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..agent import AgentService, ResultCache
-from ..config import ColdSettings, ConfigManager
+from ..config import SAFE_DIRS_ALLOW_ALL, ColdSettings, ConfigManager
 from ..config.token import resolve_api_token
 from ..db.engine import create_async_engine_from_path
 from ..db.repository import Repository
@@ -39,13 +39,17 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
-def build_safe_dirs(cold: ColdSettings, repo_watch_paths: list[str]) -> list[Path]:
+def build_safe_dirs(cold: ColdSettings, repo_watch_paths: list[str]) -> list[Path] | None:
     """计算文件浏览器 / 路径模板的可信目录边界.
 
-    优先级: ``AMANE_SAFE_DIRS`` (cold.safe_dirs) > 启动时已有 library 路径.
+    优先级: ``ALLOW_ALL`` (无限制, 返回 None) > ``AMANE_SAFE_DIRS`` 路径列表 > 启动时已有 library 路径.
+    返回空列表表示已配置但没有可用根 (调用方应拒绝路径), 与 None 不同.
     """
-    if cold.safe_dirs:
-        return [d.expanduser().resolve() for d in cold.safe_dirs if d.expanduser().resolve().is_dir()]
+    explicit = cold.safe_dirs
+    if explicit == SAFE_DIRS_ALLOW_ALL:
+        return None
+    if explicit is not None:
+        return [d.expanduser().resolve() for d in explicit if d.expanduser().resolve().is_dir()]
 
     dirs: set[Path] = set()
     for wp_path in repo_watch_paths:
@@ -156,7 +160,10 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
 
     # 5. 信任边界: 安全目录 (路径模板/文件浏览器) + API token (HTTP/WS 鉴权)
     safe_dirs = build_safe_dirs(cold, repo_watch_paths=[lib.path for lib in await repo.list_libraries()])
-    logger.info("safe dirs for file browser", dirs=[str(d) for d in safe_dirs])
+    if safe_dirs is None:
+        logger.info("safe dirs unrestricted", sentinel=SAFE_DIRS_ALLOW_ALL)
+    else:
+        logger.info("safe dirs for file browser", dirs=[str(d) for d in safe_dirs])
     api_token = resolve_api_token(cold.token, cold.data_dir)
     if api_token is not None:
         logger.info("api token auth enabled", token=api_token)
@@ -235,7 +242,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         agent_service=agent_service,
         plugin_manager=plugin_manager,
     )
-    agent_service.bridge.safe_dirs = list(safe_dirs)
+    agent_service.bridge.safe_dirs = None if safe_dirs is None else list(safe_dirs)
     agent_service.bridge.watcher = watcher_service
     agent_service.bridge.cancel_running_task = lambda task_id: runtime.worker.cancel_task(task_id)
     agent_service.bridge.poll_feed = feed_service.poll_one

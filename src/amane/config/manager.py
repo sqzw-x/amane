@@ -29,6 +29,8 @@ from ..plugins.models import PluginConfig
 from ..sr import SrPreset
 from ..utils.model import kv
 
+SAFE_DIRS_ALLOW_ALL: Literal["ALLOW_ALL"] = "ALLOW_ALL"
+
 # --- 配置 UI 元数据 (x-visible-keys, field_language 默认值) ---
 
 #: 支持语言选择的元数据字段子集
@@ -181,8 +183,8 @@ class ColdSettings(BaseSettings):
     log_dir: Path = Path("./logs")
     """日志文件输出目录."""
 
-    safe_dirs: list[Path] | None = None
-    """文件浏览器允许访问的目录列表. 环境变量 AMANE_SAFE_DIRS 用逗号分隔多个路径. 为空时从 watch paths 推导."""
+    safe_dirs: list[Path] | Literal["ALLOW_ALL"] | None = None
+    """文件浏览器 / 库路径允许访问的目录. AMANE_SAFE_DIRS 逗号分隔; 整值 ``ALLOW_ALL`` 关闭边界; 未设置时从 library 路径推导."""
 
     test_log: bool = False
     """启用随机日志发射器, 用于前端开发调试. AMANE_TEST_LOG=1 开启."""
@@ -205,14 +207,27 @@ class ColdSettings(BaseSettings):
 
     @field_validator("safe_dirs", mode="before")
     @classmethod
-    def _parse_safe_dirs(cls, v):
-        """支持从逗号分隔的字符串解析为列表."""
+    def _parse_safe_dirs(cls, v: object) -> list[Path] | Literal["ALLOW_ALL"] | None:
+        """逗号分隔路径; 整段 ``ALLOW_ALL`` 为关闭边界的哨兵 (大小写敏感, 不可混在路径列表里)."""
         if v is None:
             return None
         if isinstance(v, str):
+            stripped = v.strip()
+            if stripped == SAFE_DIRS_ALLOW_ALL:
+                return SAFE_DIRS_ALLOW_ALL
             parts = [p.strip() for p in v.split(",") if p.strip()]
             return [Path(p) for p in parts] if parts else None
-        return v
+        if isinstance(v, (list, tuple)):
+            paths: list[Path] = []
+            for item in v:
+                if isinstance(item, Path):
+                    paths.append(item)
+                elif isinstance(item, str):
+                    paths.append(Path(item))
+                else:
+                    raise ValueError(f"Invalid AMANE_SAFE_DIRS item: {item!r}")
+            return paths
+        raise ValueError(f"Invalid AMANE_SAFE_DIRS value: {v!r}")
 
     @property
     def config_path(self) -> Path:

@@ -124,7 +124,7 @@ export const listFilesQueryKey = (options: Options<ListFilesData>) => createQuer
 /**
  * List files and directories at a server path
  *
- * 列出目录内容. 仅允许访问启动时确定的安全目录内的路径
+ * 列出目录内容. 仅允许访问启动时确定的安全目录内的路径; ``safe_dirs is None`` 时不限制.
  */
 export const listFilesOptions = (options: Options<ListFilesData>) => queryOptions<ListFilesResponse, ListFilesError, ListFilesResponse, ReturnType<typeof listFilesQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {

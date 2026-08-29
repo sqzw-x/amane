@@ -1,6 +1,6 @@
 # API 层
 
-> 提交: `aa50287`
+> 提交: `e8b40a9`
 >
 > 入口: `src/amane/api/routes/`. 契约在 `api/models/` (与 routes 对齐). 端点签名从源码或 `web/openapi.json` 读 (`just generate`); 本文只写划分、约定与易错点.
 > 启动见 [architecture.md](architecture.md), 模型见 [data-model.md](data-model.md), 任务提交见 [task-system.md](task-system.md).
@@ -58,7 +58,7 @@ Starlette WS 不支持 `Depends`, `ws.py` 手动取 `ws.app.state.runtime`. 插�
 
 ## 约定
 
-**错误**: `HTTPException(detail=中文)`. 路径校验收口 `support/path_validation.py` (存在 / 类型 / `safe_dirs` → 400/403/404). `/files`: 路径解析为非严格 (`utils/path.py` 对虚拟/网络挂载盘无法规范化查询时按字面兜底), 相对 `path` 经 `base` 参数解析 (缺省 = 首个安全目录), 不存在 → 404, 不在 `safe_dirs` → 403; `os.scandir` 的 `OSError` (含网络盘挂载失效, macOS errno 6) → 500 + strerror detail; `PermissionError` → 403. 响应含规范 `path` (resolve 后的绝对路径, as_posix 且清 `\\?\` 前缀), 前端文件浏览器以它为面包屑的唯一权威形态, 不做分段拼接. 错误日志统一由 LoggingMiddleware 打点 (见 [observability.md](observability.md)), handler 内不自行 logger 打印.
+**错误**: `HTTPException(detail=中文)`. 路径校验收口 `support/path_validation.py` (存在 / 类型 / `safe_dirs` → 400/403/404; `safe_dirs is None` 即 `ALLOW_ALL` 时跳过边界层). `/files`: 路径解析为非严格 (`utils/path.py` 对虚拟/网络挂载盘无法规范化查询时按字面兜底), 相对 `path` 经 `base` 参数解析 (缺省 = 首个安全目录; `ALLOW_ALL` 时 POSIX `/`、Windows `C:\`), 不存在 → 404, 不在 `safe_dirs` → 403; 空名单 (已配置但无可用根) → 500; `os.scandir` 的 `OSError` (含网络盘挂载失效, macOS errno 6) → 500 + strerror detail; `PermissionError` → 403. 响应含规范 `path` (resolve 后的绝对路径, as_posix 且清 `\\?\` 前缀), 前端文件浏览器以它为面包屑的唯一权威形态, 不做分段拼接. 错误日志统一由 LoggingMiddleware 打点 (见 [observability.md](observability.md)), handler 内不自行 logger 打印.
 
 **列表**: `media` / `metadata` / `tasks` / `facets` / `actors` 同构 `offset`+`limit`+`sort_by`+`order`, 响应 `{items, total}`. `sort_by` 是各资源 `*SortField`, repo 用 enum→Column, 禁止反射列名. `libraries` / `schedules` / `feeds` 全量无分页; `GET /feeds/items` 与 `GET /feeds/{id}/items` 分页. `GET /feeds/items` 必须注册在 `/{feed_id}` 之前, 否则 `items` 会被当成非法整数 id. `GET /actors` 列表项不填简介/别名/源字典/`raw` (详情 `GET /actors/{id}` 仍全量).
 

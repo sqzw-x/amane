@@ -350,15 +350,16 @@ def _render_template(
     template: str,
     variables: dict[str, str],
     base_path: Path,
-    safe_dirs: Sequence[Path],
+    safe_dirs: Sequence[Path] | None,
 ) -> Path:
     """渲染模板并解析为绝对路径, 强制约束在允许的边界内.
 
-     边界规则 (任何情况都不允许逃逸):
-    - 相对路径模板: 相对 base_path 解析, 渲染后必须是 base_path 的后代.
+     边界规则:
+    - 相对路径模板: 相对 base_path 解析, 渲染后必须是 base_path 的后代 (ALLOW_ALL 也不例外).
     - 绝对路径模板: 渲染后必须位于 base_path 或 safe_dirs 任一目录之下.
        base_path 始终可信 (默认模板经 {video_dir} 展开即为 base_path 下的绝对路径);
        safe_dirs 额外允许多盘分存等指向其他可信位置的绝对路径.
+       ``safe_dirs is None`` (``ALLOW_ALL``) 时绝对模板不另加边界.
 
      所有路径都经过 resolve() 消除 .. 等符号后再校验.
 
@@ -369,6 +370,8 @@ def _render_template(
     path = Path(rendered)
     if path.is_absolute():
         resolved = path.resolve()
+        if safe_dirs is None:
+            return resolved
         allowed_roots = [base_path, *safe_dirs]
         if not is_any_descendant(resolved, *allowed_roots):
             raise ValueError(
@@ -388,7 +391,7 @@ def resolve_paths(
     cd: int | None = None,
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
-    safe_dirs: Sequence[Path] = (),
+    safe_dirs: Sequence[Path] | None = (),
 ) -> ResolvedPaths:
     """根据 Library 模板配置和元数据渲染所有输出路径.
 
@@ -400,6 +403,7 @@ def resolve_paths(
         source_path: 源文件完整路径, 提供 {raw_dir} (源父目录名) 与 {raw_name} (源文件名不含扩展名)
         file_info: 源文件解析结果 (parse_file_info), 提供 {mosaic?} / {def?} / {sub?} / {cd?}
         safe_dirs: 允许绝对路径模板落地的可信目录集 (多盘分存等). base_path 始终可信, 无需重复列出.
+            ``None`` 表示不限制绝对模板落点 (相对模板仍须在 base_path 下).
 
     Returns:
         ResolvedPaths 包含视频与刮削产物路径 (字幕按源文件逐条渲染, 见 resolve_subtitle_path).
@@ -442,7 +446,7 @@ def _resolve_link_path(
     library: Library,
     variables: dict[str, str],
     base_path: Path,
-    safe_dirs: Sequence[Path],
+    safe_dirs: Sequence[Path] | None,
 ) -> Path | None:
     """渲染 link_template; 空模板返回 None. 结果必须落在库根之外."""
     template = normalize_link_template(library.link_template)
@@ -465,7 +469,7 @@ def resolve_subtitle_path(
     link_dir: Path | None = None,
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
-    safe_dirs: Sequence[Path] = (),
+    safe_dirs: Sequence[Path] | None = (),
 ) -> Path:
     """按字幕模板渲染单个字幕的目标路径.
 

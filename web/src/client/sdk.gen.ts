@@ -57,7 +57,7 @@ export const getConfigSchema = <ThrowOnError extends boolean = false>(options?: 
 /**
  * List files and directories at a server path
  *
- * 列出目录内容. 仅允许访问启动时确定的安全目录内的路径
+ * 列出目录内容. 仅允许访问启动时确定的安全目录内的路径; ``safe_dirs is None`` 时不限制.
  */
 export const listFiles = <ThrowOnError extends boolean = false>(options: Options<ListFilesData, ThrowOnError>): RequestResult<ListFilesResponses, ListFilesErrors, ThrowOnError> => (options.client ?? client).get<ListFilesResponses, ListFilesErrors, ThrowOnError>({ url: '/api/files', ...options });
 

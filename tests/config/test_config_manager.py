@@ -8,7 +8,16 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from amane.config import ColdSettings, ConfigManager, DownloadableResource, HotSettings, ScrapingConfig, WorkerConfig
+from amane.app.bootstrap import build_safe_dirs
+from amane.config import (
+    SAFE_DIRS_ALLOW_ALL,
+    ColdSettings,
+    ConfigManager,
+    DownloadableResource,
+    HotSettings,
+    ScrapingConfig,
+    WorkerConfig,
+)
 from amane.config.manager import LANG_METADATA_FIELD_SET
 from amane.enums import Language, MetadataField, SiteName
 from amane.parsing import ContentType
@@ -61,6 +70,71 @@ class TestColdSettings:
         with patch.dict(os.environ, {"AMANE_DATA_DIR": str(tmp_path)}, clear=False):
             s = ColdSettings()
             assert s.db_path == tmp_path / "amane.db"
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("ALLOW_ALL", "ALLOW_ALL"),
+            ("  ALLOW_ALL  ", "ALLOW_ALL"),
+            ("", None),
+            ("   ", None),
+            ("allow_all", [Path("allow_all")]),
+            ("ALLOW_ALL,/media", [Path("ALLOW_ALL"), Path("/media")]),
+            ("/media,/data", [Path("/media"), Path("/data")]),
+        ],
+    )
+    def test_parse_safe_dirs(self, raw: str, expected: object):
+        """整段 ALLOW_ALL 才是哨兵; 大小写不同或夹在列表里都当普通路径."""
+        with patch.dict(os.environ, {"AMANE_SAFE_DIRS": raw}):
+            assert ColdSettings().safe_dirs == expected
+
+    def test_parse_safe_dirs_rejects_non_path_value(self):
+        with patch.dict(os.environ, {"AMANE_SAFE_DIRS": ""}), pytest.raises(ValidationError):
+            ColdSettings(safe_dirs=123)  # type: ignore[arg-type]
+
+
+class TestBuildSafeDirs:
+    """build_safe_dirs: ALLOW_ALL / 显式路径 / library 回退."""
+
+    def test_allow_all_is_unrestricted(self, tmp_path: Path):
+        watch = tmp_path / "lib"
+        watch.mkdir()
+        with patch.dict(os.environ, {"AMANE_SAFE_DIRS": SAFE_DIRS_ALLOW_ALL}):
+            assert build_safe_dirs(ColdSettings(), [str(watch)]) is None
+
+    def test_explicit_existing_dirs(self, tmp_path: Path):
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+        a.mkdir()
+        b.mkdir()
+        with patch.dict(os.environ, {"AMANE_SAFE_DIRS": f"{a},{b}"}):
+            got = build_safe_dirs(ColdSettings(), [])
+        assert got is not None
+        assert set(got) == {a.resolve(), b.resolve()}
+
+    def test_explicit_missing_dirs_dropped(self, tmp_path: Path):
+        existing = tmp_path / "ok"
+        existing.mkdir()
+        missing = tmp_path / "gone"
+        with patch.dict(os.environ, {"AMANE_SAFE_DIRS": f"{existing},{missing}"}):
+            got = build_safe_dirs(ColdSettings(), [])
+        assert got == [existing.resolve()]
+
+    def test_explicit_all_missing_is_empty_not_unrestricted(self, tmp_path: Path):
+        missing = tmp_path / "gone"
+        with patch.dict(os.environ, {"AMANE_SAFE_DIRS": str(missing)}):
+            assert build_safe_dirs(ColdSettings(), []) == []
+
+    def test_unset_falls_back_to_library_paths(self, tmp_path: Path):
+        lib = tmp_path / "lib"
+        lib.mkdir()
+        with patch.dict(os.environ, {"AMANE_SAFE_DIRS": ""}):
+            got = build_safe_dirs(ColdSettings(), [str(lib), str(tmp_path / "missing")])
+        assert got == [lib.resolve()]
+
+    def test_unset_no_libraries_is_empty(self):
+        with patch.dict(os.environ, {"AMANE_SAFE_DIRS": ""}):
+            assert build_safe_dirs(ColdSettings(), []) == []
 
 
 # ---------------------------------------------------------------------------

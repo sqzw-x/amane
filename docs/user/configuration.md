@@ -14,7 +14,7 @@ Amane 的配置分为两层:
 | `AMANE_DATA_DIR` | `./data` | 数据库、配置文件、资源的存储位置 |
 | `AMANE_LOG_DIR` | `./logs` | 日志输出位置 |
 | `AMANE_TOKEN` | (自动生成) | API 访问令牌. 设为 `off` 可关闭鉴权 |
-| `AMANE_SAFE_DIRS` | (自动推导) | 文件浏览器允许访问的目录列表, 逗号分隔多个路径 |
+| `AMANE_SAFE_DIRS` | (自动推导) | 文件浏览器 / 库路径允许访问的目录, 逗号分隔. `ALLOW_ALL` 关闭校验 |
 | `AMANE_LOG_LEVEL` | `INFO` | 日志级别: DEBUG / INFO / WARNING / ERROR / CRITICAL |
 
 ### 数据目录结构

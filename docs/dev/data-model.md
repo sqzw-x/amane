@@ -1,6 +1,6 @@
 # 数据模型
 
-> 提交: `c1daa86`
+> 提交: `e8b40a9`
 >
 > 表结构、字段类型、便捷属性都在 `src/amane/db/models.py`. 本文只解释**为什么**这么建模、所有权关系、生命周期与已知陷阱.
 
@@ -118,7 +118,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 附属模板列 `None` 表示未自定义, ORGANIZE 回退写在 `path_templates` 的 `*_TEMPLATE_DEFAULT`. HTTP `optional_defaults` 手写、`@subset_of(Library, covariant=True)`: 缺省是产出, 字段类型协变 (`PathTemplate` <: `PathTemplate | None`). 逆变会要求列值都能写进缺省模型, `None` 进不了非空缺省. `link_template` 空表示不建链接, 不在此列. `{mosaic?}` 闭合值是 `parsing.Mosaic`.
 
-**逃逸防护**: 相对模板必须是 library 根的后代; 绝对模板 (含展开 `{video_dir}` / `{link_dir}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. 多盘分存要求目标盘在 `safe_dirs` 内. `link_template` 额外要求渲染结果**不是**库根的后代.
+**逃逸防护**: 相对模板必须是 library 根的后代 (`ALLOW_ALL` 也不例外); 绝对模板 (含展开 `{video_dir}` / `{link_dir}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. `safe_dirs is None` (`AMANE_SAFE_DIRS=ALLOW_ALL`) 时绝对模板不另加边界. 多盘分存要求目标盘在 `safe_dirs` 内. `link_template` 额外要求渲染结果**不是**库根的后代.
 
 ## Resource (一等存储, 非缓存)
 

@@ -54,7 +54,7 @@ async def execute_file_operations(
     config: HotSettings | None = None,
     library: Library | None = None,
     file_info: FileInfo | None = None,
-    safe_dirs: Sequence[Path] = (),
+    safe_dirs: Sequence[Path] | None = (),
 ) -> FileOperationsResult:
     """
     执行文件后处理: 图片下载, 文件整理, NFO 生成.
@@ -146,7 +146,7 @@ async def apply_file_operations(
     write_nfo: bool = True,
     copy_resources: Sequence[DownloadableResource] | None = None,
     web_client: WebClient | None = None,
-    safe_dirs: Sequence[Path] = (),
+    safe_dirs: Sequence[Path] | None = (),
 ) -> FileOperationsResult | None:
     """ORGANIZE 的 file operations 编排.
 
@@ -297,7 +297,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         config: HotSettings,
         resource_store: ResourceStore,
         web_client: WebClient | None = None,
-        safe_dirs: Sequence[Path] = (),
+        safe_dirs: Sequence[Path] | None = (),
     ):
         super().__init__(payload_t=OrganizePayload, result_t=OrganizeResult)
         self._repo = repo

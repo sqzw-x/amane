@@ -1,6 +1,6 @@
 # 来源插件
 
-> 提交: `fef9c5e`
+> 提交: `e8b40a9`
 >
 > 本文描述当前影片刮削来源插件的边界、发现顺序、配置契约和兼容性要求。通用爬虫实现见 [crawlers.md](crawlers.md)，配置热重载见 [config.md](config.md)。
 
@@ -51,7 +51,7 @@
 插件配置 API：
 
 - `GET /api/plugins`：列出已发现的外部插件、descriptor、当前配置、源码路径和 JSON Schema。
-- `POST /api/plugins`：安装并热加载。`multipart/form-data` 二选一：字段 `file`（浏览器 zip）或 `path`（`safe_dirs` 内的插件目录或 zip）。
+- `POST /api/plugins`：安装并热加载。`multipart/form-data` 二选一：字段 `file`（浏览器 zip）或 `path`（`safe_dirs` 内的插件目录或 zip；`ALLOW_ALL` 时不限目录）。
 - `POST /api/plugins/reload`：只重新扫描 `plugins/sources`（手工拷贝之后用）。必须注册在 `/{plugin_id}` 之前。
 - `GET /api/plugins/{plugin_id}`：读取单个插件。
 - `PATCH /api/plugins/{plugin_id}`：更新启用状态和配置字段，并触发热重载。

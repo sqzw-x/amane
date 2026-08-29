@@ -14,6 +14,11 @@ router = APIRouter(prefix="/files", tags=["files"])
 _MAX_ITEMS = 1000
 
 
+def _default_browse_root() -> Path:
+    """``ALLOW_ALL`` 时相对 path 的缺省根: Windows ``C:\\``, POSIX ``/``."""
+    return Path("C:/") if os.name == "nt" else Path("/")
+
+
 class FileItem(BaseModel):
     """文件或目录条目"""
 
@@ -56,9 +61,9 @@ async def list_files(
     ] = None,
     show_hidden: Annotated[bool, Query(description="Whether to include hidden files (dotfiles).")] = False,
 ) -> FileListResponse:
-    """列出目录内容. 仅允许访问启动时确定的安全目录内的路径"""
+    """列出目录内容. 仅允许访问启动时确定的安全目录内的路径; ``safe_dirs is None`` 时不限制."""
     safe_dirs = runtime.safe_dirs
-    if not safe_dirs:
+    if safe_dirs is not None and not safe_dirs:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="No safe directories configured.")
 
     p = Path(path)
@@ -68,7 +73,12 @@ async def list_files(
         if p.is_absolute():
             target_path = p.resolve()
         else:
-            base_dir = Path(base).resolve() if base else safe_dirs[0]
+            if base:
+                base_dir = Path(base).resolve()
+            elif safe_dirs:
+                base_dir = safe_dirs[0]
+            else:
+                base_dir = _default_browse_root()
             target_path = (base_dir / p).resolve()
     except OSError:
         raise HTTPException(
@@ -76,8 +86,8 @@ async def list_files(
             detail="Path resolution failed — may not exist or lacks access permission.",
         )
 
-    # 安全检查
-    if not is_any_descendant(target_path, *safe_dirs):
+    # 安全检查 (ALLOW_ALL 时 safe_dirs 为 None, 跳过)
+    if safe_dirs is not None and not is_any_descendant(target_path, *safe_dirs):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to this path is not permitted.")
 
     if not target_path.exists():

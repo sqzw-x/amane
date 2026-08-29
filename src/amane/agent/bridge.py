@@ -26,7 +26,7 @@ class LibraryWatcher(Protocol):
 class AgentRuntimeBridge:
     """由 AppRuntime 装配后注入 AgentService / AgentDeps."""
 
-    safe_dirs: list[Path] = field(default_factory=list)
+    safe_dirs: list[Path] | None = field(default_factory=list)
     watcher: LibraryWatcher | None = None
     cancel_running_task: Callable[[int], Awaitable[bool]] | None = None
     poll_feed: Callable[[int], Awaitable[None]] | None = None

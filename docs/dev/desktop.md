@@ -1,6 +1,6 @@
 # 桌面形态: 菜单栏 / 托盘
 
-> 提交: `2f699ab`
+> 提交: `e8b40a9`
 >
 > 本文解释桌面形态的进程边界、IPC 契约与打包方式. UI 相关配置 (路径/开关) 走壳进程环境变量, **不进** [config.md](config.md) 的 Cold/Hot 分层.
 
@@ -88,7 +88,7 @@ Windows 壳是 Per-Monitor V2 (`winapp/app.manifest`). 未声明时系统把 `Tr
 
 - `AMANE_HOST=127.0.0.1` `AMANE_PORT=18000` (可覆盖; 绑回环, 避免防火墙弹窗)
 - `AMANE_DATA_DIR` `AMANE_LOG_DIR` → macOS `~/Library/Application Support/Amane`; Windows `%LOCALAPPDATA%\Amane`
-- `AMANE_SAFE_DIRS` — 认证后的调用方是用户本人. macOS `/`; Windows 为当前就绪的固定/可移动/网络盘根. 想收紧可显式配置. 文件浏览器 / 路径模板 / 库路径仍受 safe_dirs 边界约束.
+- `AMANE_SAFE_DIRS` — 认证后的调用方是用户本人. 桌面默认 `ALLOW_ALL` (关闭路径边界, 含 UNC / 迟到的网络盘). 想收紧可改成逗号分隔的目录名单. Docker 仍用显式名单 (见 compose `AMANE_SAFE_DIRS=/media`). 文件浏览器在 `ALLOW_ALL` 下相对路径缺省根为 POSIX `/`、Windows `C:\`.
 - `AMANE_WEB_DIST` → 包内 `web/dist`
 - `AMANE_SUPERVISED=1` `PYDANTIC_DISABLE_PLUGINS=1`
 - macOS: `AMANE_UI_BINARY` 覆盖 UI 路径; `AMANE_UI_DISABLED=1` 不拉菜单栏 (传给 Python 以防误拉).

@@ -130,6 +130,16 @@ class TestPluginsApi:
         assert response.status_code == 403
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_allow_all_installs_path_outside_files_dir(self, allow_all_client, tmp_path: Path):
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        (outside / "plugin.py").write_text(plugin_source("acme.extra"), encoding="utf-8")
+        response = await allow_all_client.post("plugins", data={"path": str(outside)})
+        assert response.status_code == 201, response.text
+        ids = [item["descriptor"]["id"] for item in response.json()["items"]]
+        assert "acme.extra" in ids
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_install_rejects_non_zip(self, client):
         response = await client.post("plugins", files={"file": ("plugin.py", b"class Plugin: pass\n", "text/plain")})
         assert response.status_code == 422

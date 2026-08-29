@@ -150,7 +150,7 @@ class AppRuntime:
     proxy_failure_cache: ProxyFailureCache
     watcher_service: WatcherService | None = None
     feed_service: FeedService | None = None
-    safe_dirs: list[Path] = field(default_factory=list)
+    safe_dirs: list[Path] | None = field(default_factory=list)
     api_token: str | None = None
     translation_cache: TranslationCache | None = None
     r18_db: R18Database | None = None
@@ -305,7 +305,7 @@ def build_handlers(
     web_client: WebClient,
     resource_store: ResourceStore,
     hot: HotSettings,
-    safe_dirs: Sequence[Path] = (),
+    safe_dirs: Sequence[Path] | None = (),
     translation_cache: TranslationCache | None = None,
     state_dir: Path | None = None,
     plugin_manager: PluginManager | None = None,

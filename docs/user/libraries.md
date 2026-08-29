@@ -101,7 +101,7 @@ NFO: {link_dir}/{number}.nfo
 
 ### 使用场景
 
-网盘库整理时, 库路径指向挂载盘 (如 `/mnt/cloud`), `link_template` 填本地路径 (需在 `safe_dirs` 内):
+网盘库整理时, 库路径指向挂载盘 (如 `/mnt/cloud`), `link_template` 填本地路径 (需落在 `safe_dirs` 内):
 
 - 视频在挂载盘上按模板改名
 - 本地出现 strm 文件或软链接 + NFO/海报
