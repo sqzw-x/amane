@@ -8,12 +8,15 @@ from .path_templates import (
     VIDEO_TEMPLATE_DEFAULT,
     CdSuffixTemplate,
     ResolvedPaths,
+    StrmContentTemplate,
     normalize_link_template,
     path_template_schema,
     render_cd_suffix,
+    render_strm_content,
     resolve_paths,
     resolve_subtitle_path,
     validate_cd_suffix_template,
+    validate_strm_content_template,
 )
 from .subtitles import discover_subtitles, place_subtitles
 
@@ -25,6 +28,7 @@ __all__ = [
     "MoveMode",
     "OrganizeResult",
     "ResolvedPaths",
+    "StrmContentTemplate",
     "create_video_link",
     "discover_subtitles",
     "execute_organize",
@@ -32,7 +36,9 @@ __all__ = [
     "path_template_schema",
     "place_subtitles",
     "render_cd_suffix",
+    "render_strm_content",
     "resolve_paths",
     "resolve_subtitle_path",
     "validate_cd_suffix_template",
+    "validate_strm_content_template",
 ]

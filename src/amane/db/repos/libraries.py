@@ -8,6 +8,7 @@ from amane.organize.path_templates import (
     CD_SUFFIX_TEMPLATE_DEFAULT,
     normalize_link_template,
     validate_cd_suffix_template,
+    validate_strm_content_template,
 )
 from amane.utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
@@ -35,6 +36,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         video_template: str = "{studio}/{number}/{number}.{ext}",
         link_template: str | None = None,
         link_mode: LinkMode = LinkMode.STRM,
+        strm_content_template: str | None = None,
         cd_suffix_template: str | None = None,
         thumb_template: str | None = None,
         poster_template: str | None = None,
@@ -62,6 +64,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 video_template=video_template,
                 link_template=normalize_link_template(link_template),
                 link_mode=link_mode,
+                strm_content_template=validate_strm_content_template(strm_content_template),
                 cd_suffix_template=validate_cd_suffix_template(
                     cd_suffix_template if cd_suffix_template is not None else CD_SUFFIX_TEMPLATE_DEFAULT
                 ),
@@ -164,6 +167,8 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 lib.link_template = normalize_link_template(updates["link_template"])
             if "link_mode" in updates:
                 lib.link_mode = updates["link_mode"]
+            if "strm_content_template" in updates:
+                lib.strm_content_template = validate_strm_content_template(updates["strm_content_template"])
             if "cd_suffix_template" in updates:
                 lib.cd_suffix_template = validate_cd_suffix_template(updates["cd_suffix_template"])
             if "thumb_template" in updates:

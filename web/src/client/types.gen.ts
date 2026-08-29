@@ -1223,6 +1223,10 @@ export type LibraryCreateRequest = {
     link_template?: string | null;
     link_mode?: LinkMode;
     /**
+     * Strm Content Template
+     */
+    strm_content_template?: string | null;
+    /**
      * Cd Suffix Template
      */
     cd_suffix_template?: string;
@@ -1330,6 +1334,10 @@ export type LibraryResponse = {
     link_template?: string | null;
     link_mode: LinkMode;
     /**
+     * Strm Content Template
+     */
+    strm_content_template?: string | null;
+    /**
      * Cd Suffix Template
      */
     cd_suffix_template: string;
@@ -1418,6 +1426,10 @@ export type LibraryUpdateRequest = {
      */
     link_template?: string | null;
     link_mode?: LinkMode | null;
+    /**
+     * Strm Content Template
+     */
+    strm_content_template?: string | null;
     /**
      * Cd Suffix Template
      */
@@ -2171,8 +2183,9 @@ export type PathTemplateSchemaResponse = {
  * - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
  * - ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).
  * - ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).
+ * - ``strm``: 整理后真实视频的落地路径, 仅 strm 内容模板.
  */
-export type PlaceholderPhase = 'metadata' | 'source' | 'file' | 'post_video' | 'subtitle';
+export type PlaceholderPhase = 'metadata' | 'source' | 'file' | 'post_video' | 'subtitle' | 'strm';
 
 /**
  * PluginConfig

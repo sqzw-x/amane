@@ -6,7 +6,7 @@ from sqlalchemy import Column, Index, String, Text, UniqueConstraint, text
 from sqlmodel import JSON, Field, SQLModel
 
 from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, LinkMode, MoveMode
-from amane.organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate
+from amane.organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate, StrmContentTemplate
 from amane.utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -325,7 +325,13 @@ class Library(SQLModel, table=True):
     link_template: str | None = None
     """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或软链接, 必须落在库根之外."""
     link_mode: LinkMode = Field(default=LinkMode.STRM, sa_column=Column(String, nullable=False, server_default="strm"))
-    """link_template 非空时: strm 写 .strm 文本 (内容为视频绝对路径); symlink 做文件系统软链接."""
+    """link_template 非空时: strm 写 .strm 文本 (内容见 strm_content_template); symlink 做文件系统软链接."""
+    strm_content_template: StrmContentTemplate = Field(default=None, sa_column=Column(String, nullable=True))
+    """strm 文件内容模板 (单行), 仅 link_mode=strm 生效; 空则写视频绝对路径.
+
+    网盘场景用 {video_relpath} (视频相对库根的 POSIX 路径) 拼出远端标识, 使 strm 内容对齐
+    OpenList 上的文件而非 rclone 挂载点路径. 手写 {number} 等元数据占位符会丢 CD 后缀与碰撞改名.
+    """
     cd_suffix_template: CdSuffixTemplate = Field(
         default=CD_SUFFIX_TEMPLATE_DEFAULT,
         sa_column=Column(String, nullable=False, server_default=CD_SUFFIX_TEMPLATE_DEFAULT),

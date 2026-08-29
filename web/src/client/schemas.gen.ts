@@ -2474,6 +2474,17 @@ export const LibraryCreateRequestSchema = {
             $ref: '#/components/schemas/LinkMode',
             default: 'strm'
         },
+        strm_content_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Strm Content Template'
+        },
         cd_suffix_template: {
             type: 'string',
             title: 'Cd Suffix Template',
@@ -2672,6 +2683,17 @@ export const LibraryResponseSchema = {
         },
         link_mode: {
             $ref: '#/components/schemas/LinkMode'
+        },
+        strm_content_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Strm Content Template'
         },
         cd_suffix_template: {
             type: 'string',
@@ -2909,6 +2931,17 @@ export const LibraryUpdateRequestSchema = {
                     type: 'null'
                 }
             ]
+        },
+        strm_content_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Strm Content Template'
         },
         cd_suffix_template: {
             anyOf: [
@@ -4438,10 +4471,11 @@ export const PlaceholderPhaseSchema = {
         'source',
         'file',
         'post_video',
-        'subtitle'
+        'subtitle',
+        'strm'
     ],
     title: 'PlaceholderPhase',
-    description: '占位符相位: 值的来源与注入时机.\n\n- ``metadata``: 来自 Metadata 字段;\n- ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);\n- ``file``: 来自源路径 (``parse_file_info``, 整理时检测);\n- ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).\n- ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).'
+    description: '占位符相位: 值的来源与注入时机.\n\n- ``metadata``: 来自 Metadata 字段;\n- ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);\n- ``file``: 来自源路径 (``parse_file_info``, 整理时检测);\n- ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).\n- ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).\n- ``strm``: 整理后真实视频的落地路径, 仅 strm 内容模板.'
 } as const;
 
 export const PluginConfigSchema = {

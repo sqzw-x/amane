@@ -4,7 +4,12 @@ from pydantic import BaseModel, Field
 
 from ...db import Library
 from ...enums import DownloadableResource, LibraryAutomation, LinkMode, MoveMode
-from ...organize.path_templates import CD_SUFFIX_TEMPLATE_DEFAULT, CdSuffixTemplate, PlaceholderPhase
+from ...organize.path_templates import (
+    CD_SUFFIX_TEMPLATE_DEFAULT,
+    CdSuffixTemplate,
+    PlaceholderPhase,
+    StrmContentTemplate,
+)
 from ...utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -27,6 +32,8 @@ class LibraryCreateRequest(BaseModel):
     video_template: str = "{studio}/{number}/{number}.{ext}"
     link_template: str | None = None
     link_mode: LinkMode = LinkMode.STRM
+    strm_content_template: StrmContentTemplate = None
+    """strm 内容模板 (单行), 仅 link_mode=strm 生效; 空则写视频绝对路径."""
     cd_suffix_template: CdSuffixTemplate = CD_SUFFIX_TEMPLATE_DEFAULT
     thumb_template: str | None = None
     poster_template: str | None = None
@@ -64,6 +71,7 @@ class LibraryResponse(BaseModel):
     video_template: str
     link_template: str | None = None
     link_mode: LinkMode
+    strm_content_template: str | None = None
     cd_suffix_template: str
     thumb_template: str | None = None
     poster_template: str | None = None

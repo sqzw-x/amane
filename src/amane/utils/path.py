@@ -40,3 +40,15 @@ def is_descendant(p: str | Path, parent: str | Path) -> bool:
 
 def is_any_descendant(p: str | Path, *parents: str | Path) -> bool:
     return any(is_descendant(p, parent) for parent in parents)
+
+
+def relative_posix(p: str | Path, parent: str | Path) -> str | None:
+    """p 相对 parent 的 POSIX 相对路径 (无前导 ``/``); p 不是 parent 的后代时返回 None.
+
+    与 ``Path.relative_to`` 的区别: 先经 ``_resolve_or_literal`` 规范化两端, 因此库根或目标
+    路径含符号链接、大小写不一致时仍能算出相对段; 且不抛异常, 由调用方决定越界语义.
+    结果恒用 ``/`` 分隔, 供拼接远端 (OpenList / HTTP) 路径.
+    """
+    if not is_descendant(p, parent):
+        return None
+    return os.path.relpath(_resolve_or_literal(p), _resolve_or_literal(parent)).replace(os.sep, "/")

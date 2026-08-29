@@ -9,7 +9,7 @@ from pydantic import AfterValidator
 from ..enums import LinkMode
 from ..parsing.file_info import ContentType, FileInfo
 from ..utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
-from ..utils.path import is_any_descendant, is_descendant
+from ..utils.path import is_any_descendant, is_descendant, relative_posix
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -72,6 +72,28 @@ def normalize_link_template(value: str | None) -> str | None:
     return stripped or None
 
 
+def validate_strm_content_template(value: str | None) -> str | None:
+    """校验 strm 内容模板 (空白视为未设置, 此时写视频绝对路径).
+
+    strm 是一行路径/URL, 因此非空模板拒绝换行: 多行内容会让 Emby / MediaWarp 读出带尾巴的路径.
+    先 strip 再判, 与 validate_cd_suffix_template 一致 — 全空白 (含误粘的换行) 只是「清空」.
+
+    Raises:
+        ValueError: 非空模板含换行
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if "\n" in stripped or "\r" in stripped:
+        raise ValueError("strm_content_template must be a single line")
+    return stripped
+
+
+StrmContentTemplate = Annotated[str | None, AfterValidator(validate_strm_content_template)]
+
+
 def render_cd_suffix(template: str, cd: int) -> str:
     """渲染 CD 后缀 (调用前提: cd 非 None 且模板非空; 校验已保证恰好一个 {cd})."""
     return template.format(cd=cd)
@@ -96,6 +118,7 @@ class PlaceholderPhase(StrEnum):
     - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
     - ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).
     - ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).
+    - ``strm``: 整理后真实视频的落地路径, 仅 strm 内容模板.
     """
 
     METADATA = "metadata"
@@ -103,6 +126,7 @@ class PlaceholderPhase(StrEnum):
     FILE = "file"
     POST_VIDEO = "post_video"
     SUBTITLE = "subtitle"
+    STRM = "strm"
 
 
 PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
@@ -123,6 +147,8 @@ PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
     ("video_dir", PlaceholderPhase.POST_VIDEO),
     ("link_dir", PlaceholderPhase.POST_VIDEO),
     ("raw_srt_name", PlaceholderPhase.SUBTITLE),
+    ("video_path", PlaceholderPhase.STRM),
+    ("video_relpath", PlaceholderPhase.STRM),
 )
 
 
@@ -384,3 +410,45 @@ def resolve_subtitle_path(
     variables["raw_srt_name"] = subtitle_source.stem
     template = library.subtitle_template or OPTIONAL_TEMPLATE_DEFAULTS["subtitle_template"]
     return _render_template(template, variables, base_path, safe_dirs)
+
+
+_VIDEO_RELPATH_TOKEN = "{video_relpath}"
+
+
+def render_strm_content(
+    library: Library,
+    metadata: Metadata,
+    video_path: Path,
+    *,
+    source_path: Path | None = None,
+    file_info: FileInfo | None = None,
+) -> str:
+    """渲染 .strm 的单行内容; 库未配 strm_content_template 时为视频绝对路径.
+
+    `video_path` 必须是 ORGANIZE 落地后的**实际**路径, 而非 `resolve_paths` 的计划路径 —
+    `{video_path}` / `{video_relpath}` 要带上 CD 后缀与碰撞改名, 否则 strm 指向不存在的文件.
+
+    刻意不走 `_render_template`: 结果是远端 (OpenList / HTTP) 标识而非本地路径, 做 `resolve()`
+    与库根边界校验只会把合法内容判成逃逸.
+
+    Raises:
+        ValueError: 模板引用 `{video_relpath}` 但视频不在库根之下 (绝对 video_template 落到别的盘)
+    """
+    template = library.strm_content_template
+    if template is None:
+        return str(video_path)
+
+    variables = _build_variables(
+        metadata, ext=video_path.suffix.lstrip("."), source_path=source_path, file_info=file_info
+    )
+    variables["video_path"] = str(video_path)
+    relpath = relative_posix(video_path, library.path)
+    if relpath is None:
+        if _VIDEO_RELPATH_TOKEN in template:
+            raise ValueError(
+                f"Cannot resolve {_VIDEO_RELPATH_TOKEN}: video '{video_path}' is not under library root "
+                f"'{library.path}'"
+            )
+    else:
+        variables["video_relpath"] = relpath
+    return template.format_map(_SafeDict(variables))

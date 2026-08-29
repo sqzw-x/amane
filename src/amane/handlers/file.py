@@ -14,7 +14,15 @@ from ..media import ResourceStore, crop_poster
 from ..media import write_nfo as write_nfo_file
 from ..media.pipeline import RESOURCE_URL_PREFIX
 from ..net.http import WebClient
-from ..organize import MoveMode, ResolvedPaths, discover_subtitles, execute_organize, place_subtitles, resolve_paths
+from ..organize import (
+    MoveMode,
+    ResolvedPaths,
+    discover_subtitles,
+    execute_organize,
+    place_subtitles,
+    render_strm_content,
+    resolve_paths,
+)
 from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
 from ..utils.extensions import MEDIA_EXTENSIONS, TRASH_DIRNAME, compile_skip_patterns, is_undersized_video
@@ -108,7 +116,16 @@ async def execute_file_operations(
     # 3. 视频就位后写链接 (strm / 软链接); 失败仍带 dest 以便回写 MediaFile.path
     if org_result.success and org_result.dest and paths.link is not None:
         mode = LinkMode(library.link_mode) if library is not None else LinkMode.STRM
-        link_result = create_video_link(org_result.dest, paths.link, mode)
+        strm_content: str | None = None
+        if mode == LinkMode.STRM and library is not None:
+            # 用实际 dest 而非 paths.video: CD 后缀与碰撞改名只体现在 dest 上.
+            try:
+                strm_content = render_strm_content(
+                    library, metadata, org_result.dest, source_path=source_path, file_info=info
+                )
+            except ValueError as e:
+                return FileOperationsResult(success=False, dest=org_result.dest, error=str(e))
+        link_result = create_video_link(org_result.dest, paths.link, mode, strm_content=strm_content)
         if not link_result.success:
             return FileOperationsResult(success=False, dest=org_result.dest, error=link_result.error)
 

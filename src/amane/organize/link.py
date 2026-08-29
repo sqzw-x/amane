@@ -7,23 +7,27 @@ from amane.enums import LinkMode
 from .file import OrganizeResult
 
 
-def create_video_link(target: Path, link_path: Path, mode: LinkMode) -> OrganizeResult:
+def create_video_link(
+    target: Path, link_path: Path, mode: LinkMode, *, strm_content: str | None = None
+) -> OrganizeResult:
     """在 link_path 创建指向 target 的 strm 或软链接.
 
-    strm 内容是 target 的绝对路径 (一行 + 换行). 已就位则成功不改写.
+    strm 内容为 `strm_content` (一行 + 换行), 缺省是 target 的绝对路径; 由库
+    `strm_content_template` 渲染 (见 `path_templates.render_strm_content`), 用于网盘场景把
+    本地挂载路径换成远端标识. 内容一致则成功不改写, 不一致则覆盖 — 改模板后重跑 ORGANIZE 即可刷新.
     占用路径若不是可替换的链接产物 (已有 strm / 软链接) 则拒绝覆盖.
     """
     try:
         link_path.parent.mkdir(parents=True, exist_ok=True)
         if mode == LinkMode.STRM:
-            return _write_strm(target, link_path)
+            return _write_strm(strm_content if strm_content is not None else str(target), link_path)
         return _write_symlink(target, link_path)
     except OSError as e:
         return OrganizeResult(success=False, error=str(e))
 
 
-def _write_strm(target: Path, link_path: Path) -> OrganizeResult:
-    content = f"{target}\n"
+def _write_strm(target_ref: str, link_path: Path) -> OrganizeResult:
+    content = f"{target_ref}\n"
     if link_path.exists() and not link_path.is_symlink():
         if link_path.suffix.lower() == ".strm":
             if link_path.read_text(encoding="utf-8") == content:
