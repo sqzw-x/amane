@@ -15,9 +15,11 @@ from amane.enums import LinkMode
 from amane.organize import (
     CD_SUFFIX_TEMPLATE_DEFAULT,
     normalize_link_template,
+    render_strm_content,
     resolve_paths,
     resolve_subtitle_path,
     validate_cd_suffix_template,
+    validate_strm_content_template,
 )
 from amane.parsing import parse_file_info
 
@@ -559,3 +561,90 @@ class TestResolvePathsLink:
             safe_dirs=[other],
         )
         assert sub == other / "StudioX" / "ABC-123" / "MIDV-123.zh.srt"
+
+
+class TestValidateStrmContentTemplate:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (None, None),
+            ("", None),
+            ("   ", None),
+            ("\t\n ", None),  # 全空白视为清空, 其中的换行不触发拒绝
+            ("/{video_relpath}", "/{video_relpath}"),
+            ("  /OneDrive/{video_relpath}  ", "/OneDrive/{video_relpath}"),
+            ("http://alist:5244/d{video_relpath}", "http://alist:5244/d{video_relpath}"),
+        ],
+    )
+    def test_blank_is_unset_and_stripped(self, raw: str | None, expected: str | None):
+        assert validate_strm_content_template(raw) == expected
+
+    @pytest.mark.parametrize("raw", ["/a\n/b", "/a\r/b", "/a\r\n/b", "/a\nb  "])
+    def test_multiline_rejected(self, raw: str):
+        """strm 是一行路径; 多行会让播放端读出带尾巴的路径."""
+        with pytest.raises(ValueError, match="single line"):
+            validate_strm_content_template(raw)
+
+
+class TestRenderStrmContent:
+    """strm 内容模板: 把本地挂载路径换成远端标识 (OpenList / HTTP)."""
+
+    def _lib(self, media: Path, template: str | None) -> Library:
+        return Library(name="t", path=str(media), strm_content_template=template)
+
+    def test_unset_writes_absolute_video_path(self, media: Path):
+        video = media / "OD" / "VC" / "ABC-123" / "ABC-123.mp4"
+        assert render_strm_content(self._lib(media, None), _meta(), video) == str(video)
+
+    @pytest.mark.parametrize(
+        ("template", "expected"),
+        [
+            ("/{video_relpath}", "/OD/VC/ABC-123/ABC-123.mp4"),
+            ("/OneDrive/{video_relpath}", "/OneDrive/OD/VC/ABC-123/ABC-123.mp4"),
+            ("http://alist:5244/d/{video_relpath}", "http://alist:5244/d/OD/VC/ABC-123/ABC-123.mp4"),
+            ("/OD/VC/{number}/{number}.{ext}", "/OD/VC/ABC-123/ABC-123.mp4"),
+            ("/{studio}/{video_relpath}", "/StudioX/OD/VC/ABC-123/ABC-123.mp4"),
+            ("/fixed/path.mp4", "/fixed/path.mp4"),  # 无占位符原样输出
+            ("/{nope}/{video_relpath}", "/Unknown/OD/VC/ABC-123/ABC-123.mp4"),  # 未知占位符回退 Unknown
+        ],
+    )
+    def test_renders_remote_reference(self, media: Path, template: str, expected: str):
+        video = media / "OD" / "VC" / "ABC-123" / "ABC-123.mp4"
+        assert render_strm_content(self._lib(media, template), _meta(), video) == expected
+
+    def test_video_path_is_absolute_local_path(self, media: Path):
+        video = media / "OD" / "ABC-123.mp4"
+        assert render_strm_content(self._lib(media, "{video_path}"), _meta(), video) == str(video)
+
+    def test_relpath_keeps_cd_suffix_and_collision_rename(self, media: Path):
+        """relpath 取自实际落地路径, 因此 CD 后缀与碰撞改名都保留 (手写元数据模板会丢)."""
+        lib = self._lib(media, "/{video_relpath}")
+        assert render_strm_content(lib, _meta(), media / "ABC-123" / "ABC-123-CD2.mp4") == "/ABC-123/ABC-123-CD2.mp4"
+        assert render_strm_content(lib, _meta(), media / "ABC-123" / "ABC-123(1).mp4") == "/ABC-123/ABC-123(1).mp4"
+
+    def test_ext_comes_from_landed_video(self, media: Path):
+        """{ext} 取实际落地文件的扩展名, 不需要调用方再传一份."""
+        content = render_strm_content(self._lib(media, "/{number}.{ext}"), _meta(), media / "ABC-123.mkv")
+        assert content == "/ABC-123.mkv"
+
+    def test_relpath_outside_library_root_raises(self, media: Path, other: Path):
+        """绝对 video_template 落到别的盘时 relpath 无意义, 宁可报错也不写出错误 strm."""
+        with pytest.raises(ValueError, match="not under library root"):
+            render_strm_content(self._lib(media, "/{video_relpath}"), _meta(), other / "ABC-123.mp4")
+
+    def test_outside_library_root_ok_when_relpath_unused(self, media: Path, other: Path):
+        """模板不引用 {video_relpath} 就不该因为视频在库外而失败."""
+        video = other / "ABC-123.mp4"
+        assert render_strm_content(self._lib(media, "{video_path}"), _meta(), video) == str(video)
+
+    def test_source_placeholders_available(self, media: Path):
+        """metadata / source / file 相位占位符一并可用."""
+        source = Path("/inbox/uncensored/ABC-123-4K.mp4")
+        content = render_strm_content(
+            self._lib(media, "/{mosaic}/{definition}/{raw_name}/{video_relpath}"),
+            _meta(),
+            media / "ABC-123.mp4",
+            source_path=source,
+            file_info=parse_file_info(source),
+        )
+        assert content == "/uncensored/4K/ABC-123-4K/ABC-123.mp4"

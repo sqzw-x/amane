@@ -590,3 +590,94 @@ async def test_organize_writes_strm_and_nfo_next_to_link(
     updated = await repo.get_media_file(media.id)
     assert updated is not None
     assert updated.path == str(dest)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_strm_content_template_writes_remote_path(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """strm 内容按模板渲染成远端路径 (rclone 挂载点 → OpenList), 而不是本地绝对路径."""
+    lib_root = tmp_path / "lib"
+    local = tmp_path / "emby"
+    lib_root.mkdir()
+    local.mkdir()
+    src = lib_root / "incoming" / "NSFS-039.mp4"
+    src.parent.mkdir()
+    src.write_bytes(b"video")
+
+    lib = await repo.create_library(
+        name="t",
+        path=str(lib_root),
+        video_template="OD/VC/{number}/{number}.{ext}",
+        link_template=str(local / "{number}" / "{number}.{ext}"),
+        link_mode=LinkMode.STRM,
+        strm_content_template="/{video_relpath}",
+        copy_resources=[],
+    )
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    media = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert media.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store, safe_dirs=[tmp_path])
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src.parent)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.organized == 1
+    assert result.result.failed == 0
+
+    dest = lib_root / "OD" / "VC" / "NSFS-039" / "NSFS-039.mp4"
+    strm = local / "NSFS-039" / "NSFS-039.strm"
+    assert dest.exists()
+    # 库根前缀被剥掉, 只留库内相对段 -- MediaWarp AlistStrm 需要的形态
+    assert strm.read_text(encoding="utf-8") == "/OD/VC/NSFS-039/NSFS-039.mp4\n"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_strm_relpath_outside_library_root_fails(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """视频经绝对模板落到库根之外时 {video_relpath} 无解: 记失败不写 strm, 但 dest 仍回写."""
+    lib_root = tmp_path / "lib"
+    disk2 = tmp_path / "disk2"
+    local = tmp_path / "emby"
+    for d in (lib_root, disk2, local):
+        d.mkdir()
+    src = lib_root / "incoming" / "NSFS-039.mp4"
+    src.parent.mkdir()
+    src.write_bytes(b"video")
+
+    lib = await repo.create_library(
+        name="t",
+        path=str(lib_root),
+        video_template=str(disk2 / "{number}" / "{number}.{ext}"),
+        link_template=str(local / "{number}" / "{number}.{ext}"),
+        link_mode=LinkMode.STRM,
+        strm_content_template="/{video_relpath}",
+        copy_resources=[],
+    )
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    media = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert media.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store, safe_dirs=[tmp_path])
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src.parent)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.organized == 0
+    assert result.result.failed == 1
+
+    dest = disk2 / "NSFS-039" / "NSFS-039.mp4"
+    assert dest.exists()
+    assert not (local / "NSFS-039" / "NSFS-039.strm").exists()
+    # 视频已搬家, path 仍要回写, 否则索引指向空位
+    updated = await repo.get_media_file(media.id)
+    assert updated is not None
+    assert updated.path == str(dest)

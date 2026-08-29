@@ -51,6 +51,8 @@ class TestLibraries:
         assert phases["video_dir"] == "post_video"
         assert phases["link_dir"] == "post_video"
         assert phases["raw_srt_name"] == "subtitle"
+        assert phases["video_path"] == "strm"
+        assert phases["video_relpath"] == "strm"
         assert data["subtitle_extensions_default"] == list(DEFAULT_SUBTITLE_EXTENSIONS)
 
         target = safe_path / "incoming"
@@ -67,6 +69,7 @@ class TestLibraries:
         assert body["move_mode"] == "move"
         assert body["link_template"] is None
         assert body["link_mode"] == "strm"
+        assert body["strm_content_template"] is None
         assert body["write_nfo"] is True
         assert set(body["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
         assert body["trailer_pattern"] == "(?i)trailer"
@@ -126,6 +129,7 @@ class TestLibraries:
                 "cd_suffix_template": "",
                 "link_template": str(safe_path / "emby" / "{number}" / "{number}.{ext}"),
                 "link_mode": "symlink",
+                "strm_content_template": "  /OD/{video_relpath}  ",
             },
         )
         assert patched.status_code == 200
@@ -140,6 +144,14 @@ class TestLibraries:
         assert pbody["cd_suffix_template"] == ""
         assert pbody["link_mode"] == "symlink"
         assert pbody["link_template"] == str(safe_path / "emby" / "{number}" / "{number}.{ext}")
+        assert pbody["strm_content_template"] == "/OD/{video_relpath}"
+
+        # 空串 = 清空 (前端把空输入编成 null, 后端把空白也收敛成 None)
+        for blank in ("", "   ", None):
+            blanked = await client.patch(f"libraries/{lib_id}", json={"strm_content_template": blank})
+            assert blanked.status_code == 200
+            assert blanked.json()["strm_content_template"] is None
+        assert (await client.patch(f"libraries/{lib_id}", json={"strm_content_template": "/a\n/b"})).status_code == 422
 
         cleared = await client.patch(f"libraries/{lib_id}", json={"patterns": []})
         assert cleared.status_code == 200
@@ -173,6 +185,9 @@ class TestLibraries:
         base = {"path": str(target), "scan": False}
         assert (await client.post("libraries", json={**base, "move_mode": "foobar"})).status_code == 422
         assert (await client.post("libraries", json={**base, "link_mode": "foobar"})).status_code == 422
+        assert (
+            await client.post("libraries", json={**base, "strm_content_template": "/OD/x\n/OD/y"})
+        ).status_code == 422
         assert (await client.post("libraries", json={**base, "trailer_pattern": "[unclosed"})).status_code == 422
         assert (
             await client.post("libraries", json={**base, "blacklist_patterns": ["广告", "(ads"]})

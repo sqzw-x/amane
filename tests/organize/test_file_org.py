@@ -186,6 +186,58 @@ class TestCreateVideoLink:
         assert result.success is False
         assert occupied.read_text() == "nope"
 
+    def test_strm_writes_custom_content(self, tmp_path: Path):
+        """strm_content 覆盖默认的绝对路径 (网盘场景写远端标识)."""
+        target = tmp_path / "lib" / "A.mp4"
+        target.parent.mkdir()
+        target.write_text("video")
+        link = tmp_path / "emby" / "A.strm"
+        result = create_video_link(target, link, LinkMode.STRM, strm_content="/OD/VC/A.mp4")
+        assert result.success is True
+        assert link.read_text(encoding="utf-8") == "/OD/VC/A.mp4\n"
+
+    def test_strm_custom_content_idempotent(self, tmp_path: Path):
+        target = tmp_path / "A.mp4"
+        target.write_text("video")
+        link = tmp_path / "A.strm"
+        assert create_video_link(target, link, LinkMode.STRM, strm_content="/OD/A.mp4").success
+        assert create_video_link(target, link, LinkMode.STRM, strm_content="/OD/A.mp4").success
+        assert link.read_text(encoding="utf-8") == "/OD/A.mp4\n"
+
+    def test_strm_rewrites_when_content_changes(self, tmp_path: Path):
+        """改模板后重跑 ORGANIZE 应刷新存量 strm, 而不是保留旧内容."""
+        target = tmp_path / "A.mp4"
+        target.write_text("video")
+        link = tmp_path / "A.strm"
+        assert create_video_link(target, link, LinkMode.STRM).success
+        assert link.read_text(encoding="utf-8") == f"{target}\n"
+        assert create_video_link(target, link, LinkMode.STRM, strm_content="/OD/A.mp4").success
+        assert link.read_text(encoding="utf-8") == "/OD/A.mp4\n"
+        # 清空模板 (strm_content=None) 回退绝对路径
+        assert create_video_link(target, link, LinkMode.STRM).success
+        assert link.read_text(encoding="utf-8") == f"{target}\n"
+
+    def test_strm_custom_content_still_refuses_regular_file(self, tmp_path: Path):
+        """自定义内容不放宽覆盖保护: 非 strm 的占位文件仍拒绝覆盖."""
+        target = tmp_path / "A.mp4"
+        target.write_text("video")
+        occupied = tmp_path / "A.jpg"
+        occupied.write_text("nope")
+        result = create_video_link(target, occupied, LinkMode.STRM, strm_content="/OD/A.mp4")
+        assert result.success is False
+        assert occupied.read_text() == "nope"
+
+    def test_symlink_ignores_strm_content(self, tmp_path: Path):
+        """软链接没有"内容", strm_content 传了也不该影响链接目标."""
+        target = tmp_path / "lib" / "A.mp4"
+        target.parent.mkdir()
+        target.write_text("video")
+        link = tmp_path / "emby" / "A.mp4"
+        result = create_video_link(target, link, LinkMode.SYMLINK, strm_content="/OD/A.mp4")
+        assert result.success is True
+        assert result.dest is not None
+        assert result.dest.resolve() == target.resolve()
+
     @pytest.mark.skipif(sys.platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_symlink_points_at_target(self, tmp_path: Path):
         target = tmp_path / "lib" / "A.mp4"

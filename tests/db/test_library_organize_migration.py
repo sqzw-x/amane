@@ -201,3 +201,35 @@ def test_library_min_file_size_backfilled_for_existing_rows(tmp_path: Path) -> N
         assert row.min_file_size == 0
 
     engine.dispose()
+
+
+def test_library_strm_content_template_backfilled_for_existing_rows(tmp_path: Path) -> None:
+    """存量行迁移后 strm_content_template 为 NULL (= 写视频绝对路径的原行为)."""
+    db_path = tmp_path / "migrate.db"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    command.upgrade(cfg, "099436e749d6")
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO libraries "
+                "(name, path, automation, recursive, patterns, move_mode, video_template, write_nfo, "
+                "copy_resources, trailer_pattern, blacklist_patterns, subtitle_extensions, link_mode, "
+                "min_file_size) "
+                "VALUES ('t', '/m', 'scrape', 1, '[]', 'move', '{number}.{ext}', 1, '[\"thumb\"]', "
+                "'(?i)trailer', '[]', '[\".srt\"]', 'strm', 0)"
+            )
+        )
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as conn:
+        columns = {column["name"] for column in inspect(conn).get_columns("libraries")}
+        assert "strm_content_template" in columns
+        row = conn.execute(text("SELECT strm_content_template FROM libraries")).one()
+        assert row.strm_content_template is None
+
+    engine.dispose()

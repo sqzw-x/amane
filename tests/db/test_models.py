@@ -152,6 +152,7 @@ class TestLibrary:
         assert lib.move_mode == MoveMode.MOVE
         assert lib.link_template is None
         assert lib.link_mode == LinkMode.STRM
+        assert lib.strm_content_template is None
         assert lib.video_template == "/out/{studio}/{number}/{number}.{ext}"
         assert lib.write_nfo is True
         assert lib.copy_resources == [r for r in DownloadableResource if r != DownloadableResource.trailer]
