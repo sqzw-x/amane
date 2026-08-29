@@ -10,7 +10,7 @@ import structlog
 
 from ..config import HotSettings
 from ..enums import DownloadableResource, LinkMode
-from ..media import ResourceStore, crop_poster
+from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
 from ..media import write_nfo as write_nfo_file
 from ..media.pipeline import RESOURCE_URL_PREFIX
 from ..net.http import WebClient
@@ -82,16 +82,17 @@ async def execute_file_operations(
         logger.warning("source file missing", path=str(source_path))
         return FileOperationsResult(success=False, error=f"Source file not found: {media_file.path}")
 
-    # 1. 下载图片到 paths 指定的位置
+    info = file_info if file_info is not None else parse_file_info(source_path)
+
+    # 1. 下载图片到 paths 指定的位置 (水印打在库路径副本上, 不改 Resource 原图)
     if web_client and download_images:
         image_dir = paths.thumb.parent
         image_dir.mkdir(parents=True, exist_ok=True)
         logger.debug("downloading images via store", number=metadata.number)
         kinds = set(copy_resources) if copy_resources is not None else set(DownloadableResource)
-        await _download_images_via_store(metadata, resource_store, web_client, paths, config, kinds)
+        await _download_images_via_store(metadata, resource_store, web_client, paths, config, kinds, file_info=info)
 
     # 2. 先发现同目录字幕 (视频挪走前), 再移动/复制视频
-    info = file_info if file_info is not None else parse_file_info(source_path)
     subtitles: list[Path] = []
     if library is not None:
         subtitles = discover_subtitles(source_path, library.subtitle_extensions, info.cd)
@@ -228,6 +229,7 @@ async def _download_images_via_store(
     paths: ResolvedPaths,
     config: HotSettings | None,
     kinds: set[DownloadableResource],
+    file_info: FileInfo | None = None,
 ) -> None:
     """把 metadata 引用的资源复制到库路径 (优先用 Resource 已有文件; 缺失则现场 acquire)."""
     thumb_local = None
@@ -273,6 +275,14 @@ async def _download_images_via_store(
                 paths.extrafanart_dir.mkdir(parents=True, exist_ok=True)
                 for i, p in enumerate(downloaded):
                     shutil.copy2(p, paths.extrafanart_dir / f"{i + 1}.jpg")
+
+    # 角标叠在库路径副本上 (fanart 保持干净原图). 裁剪已从无水印 thumb 完成.
+    if file_info is not None:
+        jpeg_quality = config.scraping.jpeg_quality if config is not None else 95
+        if paths.thumb.exists():
+            apply_cover_watermarks_from_info(paths.thumb, file_info, jpeg_quality=jpeg_quality)
+        if paths.poster.exists():
+            apply_cover_watermarks_from_info(paths.poster, file_info, jpeg_quality=jpeg_quality)
 
 
 class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):

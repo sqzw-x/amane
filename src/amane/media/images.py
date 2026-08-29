@@ -9,13 +9,12 @@
 (图片下载已统一由 ResourceStore 承担, 见 media/resource_store.py.)
 """
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import structlog
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
-if TYPE_CHECKING:
-    from pathlib import Path
+from ..parsing import FileInfo, Mosaic, file_shows_uncensored
 
 logger = structlog.get_logger()
 
@@ -158,3 +157,88 @@ def crop_box(
     except Exception as e:
         logger.warning("box crop failed", path=str(src_path), error=str(e))
         return False
+
+
+_FONT_CANDIDATES = (
+    Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    Path(r"C:\Windows\Fonts\arialbd.ttf"),
+)
+
+# (label, fill RGB) 自上而下: 中字 / 无码 / 破解 / 流出 / 清晰度
+_SUBTITLE_BADGE = ("SUB", (220, 90, 40))
+_UNCENSORED_BADGE = ("U", (190, 35, 45))
+_CRACKED_BADGE = ("CRACK", (120, 50, 160))
+_LEAKED_BADGE = ("LEAK", (30, 130, 90))
+_DEFINITION_COLOR = (30, 90, 170)
+
+
+def _badge_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    for candidate in _FONT_CANDIDATES:
+        if candidate.is_file():
+            return ImageFont.truetype(str(candidate), size)
+    return ImageFont.load_default()
+
+
+def apply_cover_watermarks(
+    path: Path,
+    *,
+    has_subtitle: bool,
+    uncensored: bool,
+    mosaic: Mosaic | None,
+    definition: str | None,
+    jpeg_quality: int = _DEFAULT_JPEG_QUALITY,
+) -> bool:
+    """在库路径封面/海报左上角叠角标. 无标记则不动. 不改 Resource 原图."""
+    badges: list[tuple[str, tuple[int, int, int]]] = []
+    if has_subtitle:
+        badges.append(_SUBTITLE_BADGE)
+    if uncensored:
+        badges.append(_UNCENSORED_BADGE)
+    if mosaic is Mosaic.CRACKED:
+        badges.append(_CRACKED_BADGE)
+    elif mosaic is Mosaic.LEAKED:
+        badges.append(_LEAKED_BADGE)
+    if definition:
+        badges.append((definition, _DEFINITION_COLOR))
+    if not badges:
+        return False
+    try:
+        with Image.open(path) as src:
+            img = src.convert("RGBA")
+        width, height = img.size
+        if width <= 0 or height <= 0:
+            return False
+        font_size = max(14, min(width, height) // 16)
+        font = _badge_font(font_size)
+        draw = ImageDraw.Draw(img)
+        pad = max(4, font_size // 5)
+        gap = max(4, font_size // 6)
+        x = pad
+        y = pad
+        for label, color in badges:
+            left, top, right, bottom = draw.textbbox((0, 0), label, font=font)
+            text_w = right - left
+            text_h = bottom - top
+            box = (x, y, x + text_w + pad * 2, y + text_h + pad * 2)
+            draw.rounded_rectangle(box, radius=max(2, pad), fill=(*color, 210))
+            draw.text((x + pad - left, y + pad - top), label, font=font, fill=(255, 255, 255, 255))
+            y = box[3] + gap
+        rgb = img.convert("RGB")
+        rgb.save(path, quality=jpeg_quality)
+        return True
+    except Exception as e:
+        logger.warning("cover watermark failed", path=str(path), error=str(e))
+        return False
+
+
+def apply_cover_watermarks_from_info(path: Path, info: FileInfo, *, jpeg_quality: int = _DEFAULT_JPEG_QUALITY) -> bool:
+    """按 FileInfo 给库路径封面加水印."""
+    return apply_cover_watermarks(
+        path,
+        has_subtitle=info.has_subtitle,
+        uncensored=file_shows_uncensored(info.mosaic, info.content_type),
+        mosaic=info.mosaic,
+        definition=info.definition,
+        jpeg_quality=jpeg_quality,
+    )

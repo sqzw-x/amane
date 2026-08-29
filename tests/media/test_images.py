@@ -6,6 +6,7 @@ import pytest
 from PIL import Image
 
 from amane.media import (
+    apply_cover_watermarks,
     crop_box,
     crop_poster,
     format_crop_box_args,
@@ -14,6 +15,7 @@ from amane.media import (
     should_crop_poster,
     validate_crop_box,
 )
+from amane.parsing import Mosaic
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -157,3 +159,30 @@ class TestNeedsUpscale:
         assert needs_upscale(size, file_bytes, max_dim_threshold=max_dim, max_bytes_threshold=max_bytes) is expected, (
             desc
         )
+
+
+class TestCoverWatermarks:
+    def test_noop_when_no_markers(self, tmp_path: Path):
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (200, 280), "blue").save(dest)
+        before = dest.read_bytes()
+        assert apply_cover_watermarks(dest, has_subtitle=False, uncensored=False, mosaic=None, definition=None) is False
+        assert dest.read_bytes() == before
+
+    def test_paints_when_marked(self, tmp_path: Path):
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (200, 280), "blue").save(dest)
+        before = dest.read_bytes()
+        assert (
+            apply_cover_watermarks(
+                dest,
+                has_subtitle=True,
+                uncensored=True,
+                mosaic=Mosaic.CRACKED,
+                definition="4K",
+            )
+            is True
+        )
+        assert dest.read_bytes() != before
+        with Image.open(dest) as img:
+            assert img.size == (200, 280)
