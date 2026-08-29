@@ -46,6 +46,11 @@ class TestEnumConsistency:
         assert SiteName.JAVDB in ACTOR_PROFILE_SITES
         assert SiteName.JAVDB not in ACTOR_ONLY_SITES
 
+    def test_theporndb_is_dual_role(self):
+        assert SiteName.THEPORNDB in FILM_METADATA_SITES
+        assert SiteName.THEPORNDB in ACTOR_PROFILE_SITES
+        assert SiteName.THEPORNDB not in ACTOR_ONLY_SITES
+
     def test_actor_sites_match_actor_registry(self):
         registered = set(actor_registry.sites())
         expected = {s.value for s in (*ACTOR_PROFILE_SITES, *ACTOR_IMAGE_SITES)}

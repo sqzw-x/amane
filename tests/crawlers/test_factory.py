@@ -116,3 +116,16 @@ async def test_javdb_film_and_actor_are_distinct_instances(http_client):
     assert isinstance(film, JavDBCrawler)
     assert isinstance(actor, JavDBActorCrawler)
     assert film is not actor
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_theporndb_film_and_actor_are_distinct_instances(http_client):
+    from amane.crawlers.actor.sites.theporndb import ThePornDBActorCrawler
+    from amane.crawlers.sites.theporndb import ThePornDBCrawler
+
+    factory = CrawlerFactory(http_client)
+    film = await factory.get("theporndb")
+    actor = await factory.get_actor("theporndb")
+    assert isinstance(film, ThePornDBCrawler)
+    assert isinstance(actor, ThePornDBActorCrawler)
+    assert film is not actor

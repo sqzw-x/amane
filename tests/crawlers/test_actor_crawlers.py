@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from amane.config import SiteConfig
+from amane.crawlers import registry
 from amane.crawlers.actor import GFriendsActorCrawler, actor_registry
 from amane.crawlers.actor.base import ActorCrawler
 from amane.crawlers.http import HttpClient
@@ -15,18 +17,26 @@ from amane.net.errors import SourceError
 
 from .driven import assert_expected, build_mock, discover_actor_cases, http_client, load_toml
 
-CASES = discover_actor_cases(lambda site: actor_registry.get(site) is not None)
+CASES = discover_actor_cases(
+    lambda site: actor_registry.get(site) is not None,
+    is_dual=lambda site: registry.get(site) is not None,
+)
 
 if not CASES:
     pytest.skip("no test cases found", allow_module_level=True)
 
 
-def _actor(site: str, client: HttpClient, *, data_dir: Path) -> ActorCrawler:
+def _site_config(section: dict) -> SiteConfig | None:
+    raw = section.get("config")
+    return SiteConfig(**raw) if isinstance(raw, dict) else None
+
+
+def _actor(site: str, client: HttpClient, *, data_dir: Path, config: SiteConfig | None = None) -> ActorCrawler:
     cls = actor_registry.get(site)
     assert cls is not None, f"Unknown actor crawler site: {site!r}"
     if cls is GFriendsActorCrawler:
-        return GFriendsActorCrawler(client=client, data_dir=data_dir)
-    return cls(client=client)
+        return GFriendsActorCrawler(client=client, data_dir=data_dir, config=config)
+    return cls(client=client, config=config)
 
 
 @pytest.mark.parametrize("case_id,toml_path", CASES, ids=[c[0] for c in CASES])
@@ -38,7 +48,7 @@ async def test_actor_scrape(case_id: str, toml_path: Path, tmp_path: Path) -> No
 
     scrape_cfg = config["scrape"]
     mock_web = AsyncMock()
-    crawler = _actor(config["site"], http_client(mock_web), data_dir=tmp_path)
+    crawler = _actor(config["site"], http_client(mock_web), data_dir=tmp_path, config=_site_config(scrape_cfg))
     build_mock(mock_web, toml_path.parent, scrape_cfg["responses"])
 
     result = await crawler._scrape(scrape_cfg["url"])
@@ -55,7 +65,7 @@ async def test_actor_fetch(case_id: str, toml_path: Path, tmp_path: Path) -> Non
 
     fetch_cfg = config["fetch"]
     mock_web = AsyncMock()
-    crawler = _actor(config["site"], http_client(mock_web), data_dir=tmp_path)
+    crawler = _actor(config["site"], http_client(mock_web), data_dir=tmp_path, config=_site_config(fetch_cfg))
     build_mock(mock_web, toml_path.parent, fetch_cfg["responses"])
 
     result = await crawler.fetch(fetch_cfg["name"])
@@ -75,7 +85,7 @@ async def test_actor_search(case_id: str, toml_path: Path, tmp_path: Path) -> No
 
     search_cfg = config["search"]
     mock_web = AsyncMock()
-    crawler = _actor(config["site"], http_client(mock_web), data_dir=tmp_path)
+    crawler = _actor(config["site"], http_client(mock_web), data_dir=tmp_path, config=_site_config(search_cfg))
     build_mock(mock_web, toml_path.parent, search_cfg["responses"])
 
     try:

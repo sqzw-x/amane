@@ -41,18 +41,34 @@ def discover_film_cases(is_site: Callable[[str], bool]) -> list[tuple[str, Path]
     return cases
 
 
-def discover_actor_cases(is_site: Callable[[str], bool]) -> list[tuple[str, Path]]:
-    """纯演员站读 ``{site}/``; 双料站若有 ``{site}/actor/`` 则只读该子目录."""
+def discover_actor_cases(
+    is_site: Callable[[str], bool],
+    *,
+    is_dual: Callable[[str], bool] | None = None,
+    cases_dir: Path | None = None,
+) -> list[tuple[str, Path]]:
+    """纯演员站读 ``{site}/``; 双料站只读 ``{site}/actor/``.
+
+    双料站根目录是影片用例. 没有 actor/ 时不能回退到根, 否则影片 TOML 会被演员 runner 吃掉.
+    """
+    root = cases_dir or CASES_DIR
     cases: list[tuple[str, Path]] = []
-    if not CASES_DIR.exists():
+    if not root.exists():
         return cases
-    for site_dir in sorted(p for p in CASES_DIR.iterdir() if p.is_dir() and not p.name.startswith(".")):
-        scoped = site_dir / "actor" if (site_dir / "actor").is_dir() else site_dir
+    for site_dir in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        dual = is_dual(site_dir.name) if is_dual is not None else (site_dir / "actor").is_dir()
+        if dual:
+            scoped = site_dir / "actor"
+            if not scoped.is_dir():
+                continue
+        else:
+            scoped = site_dir
         for toml_file in sorted(scoped.rglob("*.toml")):
             site = _toml_site(toml_file)
             if site is None or not is_site(site):
                 continue
-            cases.append((_case_id(toml_file), toml_file))
+            rel = toml_file.relative_to(root).with_suffix("").as_posix()
+            cases.append((rel, toml_file))
     return cases
 
 

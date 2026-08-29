@@ -17,6 +17,7 @@ class TestSiteCapabilitySchema:
         items = schema["properties"]["profile_sites"]["items"]
         assert items["enum"] == [s.value for s in ACTOR_PROFILE_SITES]
         assert SiteName.JAVDB.value in items["enum"]
+        assert SiteName.THEPORNDB.value in items["enum"]
         assert SiteName.DMM.value not in items["enum"]
         assert SiteName.GFRIENDS.value not in items["enum"]
 
@@ -51,6 +52,14 @@ class TestSiteCapabilityValidation:
     def test_actor_profile_accepts_dual_role_javdb(self):
         cfg = ActorScrapingConfig(profile_sites=[SiteName.JAVDB])
         assert cfg.profile_sites == [SiteName.JAVDB]
+
+    def test_actor_profile_accepts_dual_role_theporndb(self):
+        cfg = ActorScrapingConfig(profile_sites=[SiteName.THEPORNDB])
+        assert cfg.profile_sites == [SiteName.THEPORNDB]
+
+    def test_actor_profile_default_pads_theporndb(self):
+        cfg = ActorScrapingConfig()
+        assert cfg.profile_sites[-1] == SiteName.THEPORNDB
 
     def test_actor_image_rejects_profile_site(self):
         with pytest.raises(ValidationError, match="image_sites"):

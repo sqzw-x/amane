@@ -13,18 +13,19 @@ from pydantic.config import JsonDict
 from amane.enums import SiteName
 from amane.plugins.models import is_external_source_id
 
-# 演员档案站 (标量人物字段 / 简介等). javdb 兼影片站, 中文别名 + 男女覆盖.
+# 演员档案站 (标量人物字段 / 简介等). 双料站兼影片; theporndb 垫后 (无 token 空跑).
 ACTOR_PROFILE_SITES: tuple[SiteName, ...] = (
     SiteName.MINNANO,
     SiteName.JAVDB,
     SiteName.WIKIPEDIA,
+    SiteName.THEPORNDB,
 )
 
 # 演员头像站
 ACTOR_IMAGE_SITES: tuple[SiteName, ...] = (SiteName.GFRIENDS,)
 
 # 双料站同时出现在 FILM_METADATA_SITES 与 ACTOR_PROFILE_SITES, 不进 ACTOR_ONLY_SITES.
-_DUAL_ROLE_SITES: frozenset[SiteName] = frozenset({SiteName.JAVDB})
+_DUAL_ROLE_SITES: frozenset[SiteName] = frozenset({SiteName.JAVDB, SiteName.THEPORNDB})
 
 ACTOR_ONLY_SITES: frozenset[SiteName] = frozenset({*ACTOR_PROFILE_SITES, *ACTOR_IMAGE_SITES}) - _DUAL_ROLE_SITES
 

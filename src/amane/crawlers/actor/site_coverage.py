@@ -10,6 +10,7 @@ ACTOR_SITE_GENDERS: dict[SiteName, frozenset[ActorGender]] = {
     SiteName.GFRIENDS: frozenset({ActorGender.FEMALE}),
     SiteName.JAVDB: frozenset({ActorGender.FEMALE, ActorGender.MALE}),
     SiteName.WIKIPEDIA: frozenset({ActorGender.FEMALE, ActorGender.MALE}),
+    SiteName.THEPORNDB: frozenset({ActorGender.FEMALE, ActorGender.MALE}),
 }
 
 

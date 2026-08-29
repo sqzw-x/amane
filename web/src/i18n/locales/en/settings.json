@@ -589,12 +589,14 @@
         "options": {
           "javdb": "javdb",
           "minnano": "minnano",
+          "theporndb": "theporndb",
           "wikipedia": "wikipedia"
         },
         "$": {
           "options": {
             "javdb": "javdb",
             "minnano": "minnano",
+            "theporndb": "theporndb",
             "wikipedia": "wikipedia"
           }
         }

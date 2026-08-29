@@ -272,7 +272,8 @@ export const ActorScrapingConfigSchema = {
                 enum: [
                     'minnano',
                     'javdb',
-                    'wikipedia'
+                    'wikipedia',
+                    'theporndb'
                 ]
             },
             type: 'array',
@@ -2216,7 +2217,8 @@ export const HotSettingsSchema = {
                 profile_sites: [
                     'minnano',
                     'javdb',
-                    'wikipedia'
+                    'wikipedia',
+                    'theporndb'
                 ],
                 image_sites: [
                     'gfriends'

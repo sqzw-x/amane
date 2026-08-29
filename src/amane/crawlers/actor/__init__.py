@@ -7,12 +7,19 @@ from .base import ActorCrawler, ActorFetcher
 from .models import ActorMetadata
 from .registry import actor_registry
 from .site_coverage import ACTOR_SITE_GENDERS, filter_sites_for_gender, site_allows_actor_gender
-from .sites import GFriendsActorCrawler, JavDBActorCrawler, MinnanoActorCrawler, WikipediaActorCrawler
+from .sites import (
+    GFriendsActorCrawler,
+    JavDBActorCrawler,
+    MinnanoActorCrawler,
+    ThePornDBActorCrawler,
+    WikipediaActorCrawler,
+)
 
 actor_registry.register(MinnanoActorCrawler)
 actor_registry.register(JavDBActorCrawler)
 actor_registry.register(WikipediaActorCrawler)
 actor_registry.register(GFriendsActorCrawler)
+actor_registry.register(ThePornDBActorCrawler)
 
 __all__ = [
     "ACTOR_SITE_GENDERS",
@@ -22,6 +29,7 @@ __all__ = [
     "GFriendsActorCrawler",
     "JavDBActorCrawler",
     "MinnanoActorCrawler",
+    "ThePornDBActorCrawler",
     "WikipediaActorCrawler",
     "actor_registry",
     "filter_sites_for_gender",

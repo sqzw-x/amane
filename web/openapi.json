@@ -5158,7 +5158,8 @@
               "enum": [
                 "minnano",
                 "javdb",
-                "wikipedia"
+                "wikipedia",
+                "theporndb"
               ]
             },
             "type": "array",
@@ -7052,7 +7053,8 @@
               "profile_sites": [
                 "minnano",
                 "javdb",
-                "wikipedia"
+                "wikipedia",
+                "theporndb"
               ],
               "image_sites": [
                 "gfriends"

@@ -169,7 +169,7 @@ export type ActorScrapingConfig = {
      *
      * 档案源顺序 (标量填空优先级); 仅演员档案站
      */
-    profile_sites?: Array<'minnano' | 'javdb' | 'wikipedia'>;
+    profile_sites?: Array<'minnano' | 'javdb' | 'wikipedia' | 'theporndb'>;
     /**
      * Image Sites
      *

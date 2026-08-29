@@ -5,6 +5,7 @@ from .actor import (
     GFriendsActorCrawler,
     JavDBActorCrawler,
     MinnanoActorCrawler,
+    ThePornDBActorCrawler,
     WikipediaActorCrawler,
     actor_registry,
 )
@@ -99,6 +100,7 @@ __all__ = [
     "PrestigeCrawler",
     "R18DevCrawler",
     "SiteName",
+    "ThePornDBActorCrawler",
     "ThePornDBCrawler",
     "WikipediaActorCrawler",
     "XCityCrawler",
