@@ -6,15 +6,26 @@ from pydantic import TypeAdapter
 
 from ...aggregate import RAW_TO_DB_FIELD, SCALAR_FIELD_NAMES
 from ...db.models import MetadataSortField, SavedQueryEntity, SortOrder, TaskType
+from ...db.repos.media import file_phase_of
 from ...handlers import ScrapePayload
 from ...media import manual_crop_poster
-from ...parsing import infer_content_type
+from ...parsing import (
+    DEFINITION_VALUES,
+    ContentType,
+    Mosaic,
+    infer_content_type,
+    summarize_file_phases,
+)
+from ...parsing import (
+    FilePhaseSummary as ParsedFilePhase,
+)
 from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
 from ..models import (
     CommentResponse,
     CropPosterRequest,
+    FilePhaseSummary,
     MediaFileResponse,
     MergeRequest,
     MetadataBatchDeleteResponse,
@@ -39,6 +50,23 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/metadata", tags=["metadata"])
 
 
+def _file_phase_resp(summary: ParsedFilePhase) -> FilePhaseSummary:
+    return FilePhaseSummary(
+        has_subtitle=summary.has_subtitle,
+        uncensored=summary.uncensored,
+        mosaics=list(summary.mosaics),
+        definition=summary.definition,
+    )
+
+
+def _require_known_definition(definition: str | None) -> str | None:
+    if definition is None:
+        return None
+    if definition not in DEFINITION_VALUES:
+        raise HTTPException(status_code=422, detail=f"未知清晰度: {definition}")
+    return definition
+
+
 @router.get("/schema")
 async def get_metadata_schema() -> dict:
     """可编辑 metadata 字段的 JSON Schema, 供前端动态表单渲染."""
@@ -61,11 +89,19 @@ async def list_metadata(
     series_id: Annotated[list[int] | None, Query(description="Filter by series facet id(s); OR")] = None,
     user_tag_id: Annotated[list[int] | None, Query(description="Filter by user tag id(s); AND")] = None,
     has_files: Annotated[bool | None, Query(description="Filter by presence of linked MediaFile(s)")] = None,
+    has_subtitle: Annotated[bool | None, Query(description="Filter by linked file subtitle marker")] = None,
+    mosaic: Annotated[Mosaic | None, Query(description="Filter by linked file mosaic marker")] = None,
+    uncensored: Annotated[
+        bool | None, Query(description="Filter by uncensored file (mosaic marker or uncensored content type)")
+    ] = None,
+    definition: Annotated[str | None, Query(description="Filter by linked file definition (8K/4K/1080p/…)")] = None,
+    content_type: Annotated[ContentType | None, Query(description="Filter by linked file content type")] = None,
     saved_query_id: Annotated[
         int | None, Query(description="Saved query preset id; AND with other filters via SQL subquery")
     ] = None,
 ) -> MetadataListResponse:
     """List metadata with optional search, facet filters, pagination, sorting."""
+    definition = _require_known_definition(definition)
     id_subquery_sql = None
     if saved_query_id is not None:
         id_subquery_sql = await resolve_saved_query_id_subquery(repo, saved_query_id, SavedQueryEntity.METADATA)
@@ -83,12 +119,23 @@ async def list_metadata(
         series_ids=series_id,
         user_tag_ids=user_tag_id,
         has_files=has_files,
+        has_subtitle=has_subtitle,
+        mosaic=mosaic,
+        uncensored=uncensored,
+        definition=definition,
+        content_type=content_type,
         id_subquery_sql=id_subquery_sql,
     )
-    counts = await repo.count_media_by_metadata_ids([m.id for m in items if m.id is not None])
+    summaries = await repo.summarize_media_by_metadata_ids([m.id for m in items if m.id is not None])
+    empty = FilePhaseSummary()
     return MetadataListResponse(
         items=[
-            to_resp(MetadataResponse, m).model_copy(update={"file_count": counts.get(m.id, 0) if m.id else 0})
+            to_resp(MetadataResponse, m).model_copy(
+                update={
+                    "file_count": summaries[m.id].file_count if m.id in summaries else 0,
+                    "file_phase": _file_phase_resp(summaries[m.id].phase) if m.id in summaries else empty,
+                }
+            )
             for m in items
         ],
         total=total,
@@ -158,7 +205,12 @@ async def get_metadata(metadata_id: int, repo: RepoDep) -> MetadataDetailRespons
         metadata
     )
     return MetadataDetailResponse(
-        metadata=to_resp(MetadataResponse, metadata).model_copy(update={"file_count": len(files)}),
+        metadata=to_resp(MetadataResponse, metadata).model_copy(
+            update={
+                "file_count": len(files),
+                "file_phase": _file_phase_resp(summarize_file_phases(file_phase_of(f) for f in files)),
+            }
+        ),
         files=[to_resp(MediaFileResponse, f) for f in files],
         user_tags=[to_resp(UserTagResponse, t) for t in user_tags],
         comments=[to_resp(CommentResponse, c) for c in comments],

@@ -1086,6 +1086,30 @@ export type FileListResponse = {
 };
 
 /**
+ * FilePhaseSummary
+ *
+ * 关联文件相位聚合: 任一文件具备即亮; definition 取最高档.
+ */
+export type FilePhaseSummary = {
+    /**
+     * Has Subtitle
+     */
+    has_subtitle?: boolean;
+    /**
+     * Uncensored
+     */
+    uncensored?: boolean;
+    /**
+     * Mosaics
+     */
+    mosaics?: Array<Mosaic>;
+    /**
+     * Definition
+     */
+    definition?: string | null;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -1523,6 +1547,16 @@ export type MediaFileResponse = {
      */
     number?: string | null;
     status: MediaFileStatus;
+    content_type: ContentType;
+    mosaic?: Mosaic | null;
+    /**
+     * Has Subtitle
+     */
+    has_subtitle?: boolean;
+    /**
+     * Definition
+     */
+    definition?: string | null;
     /**
      * Metadata Id
      */
@@ -1988,6 +2022,7 @@ export type MetadataResponse = {
      * File Count
      */
     file_count?: number;
+    file_phase?: FilePhaseSummary;
     /**
      * Created At
      */
@@ -2002,6 +2037,11 @@ export type MetadataResponse = {
  * MetadataSortField
  */
 export type MetadataSortField = 'number' | 'title' | 'studio' | 'release' | 'created_at' | 'updated_at' | 'file_count';
+
+/**
+ * Mosaic
+ */
+export type Mosaic = 'uncensored' | 'cracked' | 'leaked';
 
 /**
  * MoveMode
@@ -3425,6 +3465,36 @@ export type ListMediaData = {
          */
         library_id?: number | null;
         /**
+         * Has Subtitle
+         *
+         * Filter by subtitle marker
+         */
+        has_subtitle?: boolean | null;
+        /**
+         * Mosaic
+         *
+         * Filter by mosaic marker
+         */
+        mosaic?: Mosaic | null;
+        /**
+         * Uncensored
+         *
+         * Filter by uncensored (mosaic marker or uncensored content type)
+         */
+        uncensored?: boolean | null;
+        /**
+         * Definition
+         *
+         * Filter by definition (8K/4K/1080p/…)
+         */
+        definition?: string | null;
+        /**
+         * Content Type
+         *
+         * Filter by content type
+         */
+        content_type?: ContentType | null;
+        /**
          * Limit
          */
         limit?: number;
@@ -3644,6 +3714,36 @@ export type ListMetadataData = {
          * Filter by presence of linked MediaFile(s)
          */
         has_files?: boolean | null;
+        /**
+         * Has Subtitle
+         *
+         * Filter by linked file subtitle marker
+         */
+        has_subtitle?: boolean | null;
+        /**
+         * Mosaic
+         *
+         * Filter by linked file mosaic marker
+         */
+        mosaic?: Mosaic | null;
+        /**
+         * Uncensored
+         *
+         * Filter by uncensored file (mosaic marker or uncensored content type)
+         */
+        uncensored?: boolean | null;
+        /**
+         * Definition
+         *
+         * Filter by linked file definition (8K/4K/1080p/…)
+         */
+        definition?: string | null;
+        /**
+         * Content Type
+         *
+         * Filter by linked file content type
+         */
+        content_type?: ContentType | null;
         /**
          * Saved Query Id
          *

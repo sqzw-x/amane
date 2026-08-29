@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from ...db import MediaFile, MediaFileStatus
+from ...parsing import ContentType, Mosaic
 from ...utils.model import create_partial_model
 
 
@@ -16,6 +17,10 @@ class MediaFileResponse(BaseModel):
     codec: str | None = None
     number: str | None = None
     status: MediaFileStatus
+    content_type: ContentType
+    mosaic: Mosaic | None = None
+    has_subtitle: bool = False
+    definition: str | None = None
     metadata_id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

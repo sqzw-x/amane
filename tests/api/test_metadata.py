@@ -45,6 +45,36 @@ class TestListMetadata:
         assert len(page.json()["items"]) == 2
         assert page.json()["total"] == 7
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_file_phase_and_filters(self, client: AsyncClient, repo: Repository):
+        sub = await repo.upsert_metadata(number="SUB-1", title="Sub")
+        u_meta = await repo.upsert_metadata(number="U-1", title="U")
+        assert sub.id is not None and u_meta.id is not None
+        m_sub = await repo.create_media_file(library_id=1, path="/video/MIDV-001-C.mp4", number="SUB-1")
+        m_u = await repo.create_media_file(library_id=1, path="/video/MIDV-002-U.mp4", number="U-1")
+        assert m_sub.id is not None and m_u.id is not None
+        await repo.update_media_file(m_sub.id, metadata_id=sub.id)
+        await repo.update_media_file(m_u.id, metadata_id=u_meta.id)
+
+        listed = await client.get("metadata?search=SUB")
+        phase = listed.json()["items"][0]["file_phase"]
+        assert listed.json()["items"][0]["file_count"] == 1
+        assert phase["has_subtitle"] is True
+        assert phase["uncensored"] is False
+
+        uncensored = await client.get("metadata?uncensored=true")
+        assert uncensored.json()["total"] == 1
+        assert uncensored.json()["items"][0]["number"] == "U-1"
+        assert uncensored.json()["items"][0]["file_phase"]["uncensored"] is True
+        assert uncensored.json()["items"][0]["file_phase"]["mosaics"] == ["uncensored"]
+
+        detail = await client.get(f"metadata/{u_meta.id}")
+        assert detail.json()["metadata"]["file_phase"]["uncensored"] is True
+        assert detail.json()["files"][0]["mosaic"] == "uncensored"
+
+        bad = await client.get("metadata?definition=bogus")
+        assert bad.status_code == 422
+
 
 class TestGetMetadata:
     @pytest.mark.asyncio(loop_scope="function")

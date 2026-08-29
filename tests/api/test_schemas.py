@@ -23,11 +23,16 @@ class TestMediaFileResponse:
             "number": "MIDV-123",
             "status": "pending",
             "size": 1500000000,
+            "content_type": "censored",
         }
         resp = MediaFileResponse(**data)
         assert resp.id == 1
         assert resp.number == "MIDV-123"
         assert resp.status == "pending"
+        assert resp.content_type == "censored"
+        assert resp.has_subtitle is False
+        assert resp.mosaic is None
+        assert resp.definition is None
 
 
 class Test_LibraryScoped:

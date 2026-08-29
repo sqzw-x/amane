@@ -1925,6 +1925,43 @@ export const FileListResponseSchema = {
     description: '目录列表响应'
 } as const;
 
+export const FilePhaseSummarySchema = {
+    properties: {
+        has_subtitle: {
+            type: 'boolean',
+            title: 'Has Subtitle',
+            default: false
+        },
+        uncensored: {
+            type: 'boolean',
+            title: 'Uncensored',
+            default: false
+        },
+        mosaics: {
+            items: {
+                $ref: '#/components/schemas/Mosaic'
+            },
+            type: 'array',
+            title: 'Mosaics',
+            default: []
+        },
+        definition: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Definition'
+        }
+    },
+    type: 'object',
+    title: 'FilePhaseSummary',
+    description: '关联文件相位聚合: 任一文件具备即亮; definition 取最高档.'
+} as const;
+
 export const HTTPValidationErrorSchema = {
     properties: {
         detail: {
@@ -3197,6 +3234,35 @@ export const MediaFileResponseSchema = {
         status: {
             $ref: '#/components/schemas/MediaFileStatus'
         },
+        content_type: {
+            $ref: '#/components/schemas/ContentType'
+        },
+        mosaic: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/Mosaic'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        has_subtitle: {
+            type: 'boolean',
+            title: 'Has Subtitle',
+            default: false
+        },
+        definition: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Definition'
+        },
         metadata_id: {
             anyOf: [
                 {
@@ -3237,7 +3303,8 @@ export const MediaFileResponseSchema = {
     required: [
         'id',
         'path',
-        'status'
+        'status',
+        'content_type'
     ],
     title: 'MediaFileResponse'
 } as const;
@@ -4122,6 +4189,9 @@ export const MetadataResponseSchema = {
             title: 'File Count',
             default: 0
         },
+        file_phase: {
+            $ref: '#/components/schemas/FilePhaseSummary'
+        },
         created_at: {
             anyOf: [
                 {
@@ -4167,6 +4237,16 @@ export const MetadataSortFieldSchema = {
         'file_count'
     ],
     title: 'MetadataSortField'
+} as const;
+
+export const MosaicSchema = {
+    type: 'string',
+    enum: [
+        'uncensored',
+        'cracked',
+        'leaked'
+    ],
+    title: 'Mosaic'
 } as const;
 
 export const MoveModeSchema = {

@@ -253,6 +253,96 @@
             "description": "Filter by owning library"
           },
           {
+            "name": "has_subtitle",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by subtitle marker",
+              "title": "Has Subtitle"
+            },
+            "description": "Filter by subtitle marker"
+          },
+          {
+            "name": "mosaic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Mosaic"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by mosaic marker",
+              "title": "Mosaic"
+            },
+            "description": "Filter by mosaic marker"
+          },
+          {
+            "name": "uncensored",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by uncensored (mosaic marker or uncensored content type)",
+              "title": "Uncensored"
+            },
+            "description": "Filter by uncensored (mosaic marker or uncensored content type)"
+          },
+          {
+            "name": "definition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by definition (8K/4K/1080p/…)",
+              "title": "Definition"
+            },
+            "description": "Filter by definition (8K/4K/1080p/…)"
+          },
+          {
+            "name": "content_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContentType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by content type",
+              "title": "Content Type"
+            },
+            "description": "Filter by content type"
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -708,6 +798,96 @@
               "title": "Has Files"
             },
             "description": "Filter by presence of linked MediaFile(s)"
+          },
+          {
+            "name": "has_subtitle",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by linked file subtitle marker",
+              "title": "Has Subtitle"
+            },
+            "description": "Filter by linked file subtitle marker"
+          },
+          {
+            "name": "mosaic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Mosaic"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by linked file mosaic marker",
+              "title": "Mosaic"
+            },
+            "description": "Filter by linked file mosaic marker"
+          },
+          {
+            "name": "uncensored",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by uncensored file (mosaic marker or uncensored content type)",
+              "title": "Uncensored"
+            },
+            "description": "Filter by uncensored file (mosaic marker or uncensored content type)"
+          },
+          {
+            "name": "definition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by linked file definition (8K/4K/1080p/…)",
+              "title": "Definition"
+            },
+            "description": "Filter by linked file definition (8K/4K/1080p/…)"
+          },
+          {
+            "name": "content_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContentType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by linked file content type",
+              "title": "Content Type"
+            },
+            "description": "Filter by linked file content type"
           },
           {
             "name": "saved_query_id",
@@ -6763,6 +6943,42 @@
         "title": "FileListResponse",
         "description": "目录列表响应"
       },
+      "FilePhaseSummary": {
+        "properties": {
+          "has_subtitle": {
+            "type": "boolean",
+            "title": "Has Subtitle",
+            "default": false
+          },
+          "uncensored": {
+            "type": "boolean",
+            "title": "Uncensored",
+            "default": false
+          },
+          "mosaics": {
+            "items": {
+              "$ref": "#/components/schemas/Mosaic"
+            },
+            "type": "array",
+            "title": "Mosaics",
+            "default": []
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          }
+        },
+        "type": "object",
+        "title": "FilePhaseSummary",
+        "description": "关联文件相位聚合: 任一文件具备即亮; definition 取最高档."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -8022,6 +8238,35 @@
           "status": {
             "$ref": "#/components/schemas/MediaFileStatus"
           },
+          "content_type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "mosaic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Mosaic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "has_subtitle": {
+            "type": "boolean",
+            "title": "Has Subtitle",
+            "default": false
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          },
           "metadata_id": {
             "anyOf": [
               {
@@ -8062,7 +8307,8 @@
         "required": [
           "id",
           "path",
-          "status"
+          "status",
+          "content_type"
         ],
         "title": "MediaFileResponse"
       },
@@ -8931,6 +9177,9 @@
             "title": "File Count",
             "default": 0
           },
+          "file_phase": {
+            "$ref": "#/components/schemas/FilePhaseSummary"
+          },
           "created_at": {
             "anyOf": [
               {
@@ -8975,6 +9224,15 @@
           "file_count"
         ],
         "title": "MetadataSortField"
+      },
+      "Mosaic": {
+        "type": "string",
+        "enum": [
+          "uncensored",
+          "cracked",
+          "leaked"
+        ],
+        "title": "Mosaic"
       },
       "MoveMode": {
         "type": "string",

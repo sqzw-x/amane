@@ -5,11 +5,20 @@ from pydantic import BaseModel, Field, model_validator
 
 from ...db import Metadata
 from ...handlers import CacheKind
-from ...parsing import ContentType
+from ...parsing import ContentType, Mosaic
 from ...utils.model import anyof_extras, create_partial_model, kv
 from .comments import CommentResponse
 from .media import MediaFileResponse
 from .user_tags import UserTagResponse
+
+
+class FilePhaseSummary(BaseModel):
+    """关联文件相位聚合: 任一文件具备即亮; definition 取最高档."""
+
+    has_subtitle: bool = False
+    uncensored: bool = False
+    mosaics: list[Mosaic] = []
+    definition: str | None = None
 
 
 class MetadataResponse(BaseModel):
@@ -43,6 +52,7 @@ class MetadataResponse(BaseModel):
     field_sources: dict = {}
     raw: dict = {}
     file_count: int = 0
+    file_phase: FilePhaseSummary = Field(default_factory=FilePhaseSummary)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

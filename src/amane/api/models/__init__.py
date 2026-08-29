@@ -35,6 +35,7 @@ from .libraries import (
 from .media import MediaFileResponse, MediaFileUpdateRequest, MediaListResponse
 from .metadata import (
     CropPosterRequest,
+    FilePhaseSummary,
     MergeRequest,
     MetadataBatchDeleteResponse,
     MetadataBatchIdsRequest,
@@ -102,6 +103,7 @@ __all__ = [
     "FeedListResponse",
     "FeedResponse",
     "FeedUpdateRequest",
+    "FilePhaseSummary",
     "HealthResponse",
     "LibraryCreateRequest",
     "LibraryListResponse",

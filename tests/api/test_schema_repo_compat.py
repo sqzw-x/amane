@@ -310,7 +310,12 @@ class TestCreatePartialModel:
 
 # (req model, repo TypedDict, DB 模型, 禁止出现在外部可写面的字段)
 _DISCIPLINE = [
-    (MediaFileUpdateRequest, MediaFileUpdates, MediaFile, {"id", "library_id", "created_at", "updated_at"}),
+    (
+        MediaFileUpdateRequest,
+        MediaFileUpdates,
+        MediaFile,
+        {"id", "library_id", "created_at", "updated_at", "content_type", "mosaic", "has_subtitle", "definition"},
+    ),
     (LibraryUpdateRequest, LibraryUpdates, Library, {"id"}),
     (ScheduleUpdateRequest, ScheduleUpdates, Schedule, {"id", "last_run", "next_run"}),
     (PartialMetadata, MetadataFields, Metadata, {"id", "number", "created_at", "updated_at", "raw", "field_sources"}),

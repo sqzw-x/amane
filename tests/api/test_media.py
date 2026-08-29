@@ -53,6 +53,21 @@ class TestListMedia:
         assert by_num.json()["total"] == 1
         assert by_num.json()["items"][0]["number"] == "ABC-001"
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_phase_filters_and_fields(self, client: AsyncClient, repo: Repository):
+        await repo.create_media_file(library_id=1, path="/video/MIDV-001-C.mp4")
+        await repo.create_media_file(library_id=1, path="/video/HEYZO-1234.mp4")
+        listed = await client.get("media?search=MIDV-001")
+        item = listed.json()["items"][0]
+        assert item["has_subtitle"] is True
+        assert item["content_type"] == "censored"
+        heyzo = await client.get("media?uncensored=true")
+        assert heyzo.json()["total"] == 1
+        assert heyzo.json()["items"][0]["content_type"] == "uncensored"
+        assert heyzo.json()["items"][0]["mosaic"] is None
+        bad = await client.get("media?definition=not-a-def")
+        assert bad.status_code == 422
+
 
 class TestGetMedia:
     @pytest.mark.asyncio(loop_scope="function")
