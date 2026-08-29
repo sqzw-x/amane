@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_va
 from sqlalchemy import UnaryExpression, asc, desc, exists, func, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, select
+from sqlmodel.sql.expression import SelectOfScalar
 
 from amane.enums import ActorGender, DownloadableResource, LibraryAutomation, LinkMode, MoveMode
 from amane.parsing import ContentType, Mosaic
@@ -104,14 +105,14 @@ def _media_file_uncensored_predicate() -> ColumnElement[bool]:
 
 
 def _apply_media_phase_filters(
-    stmt: Any,
+    stmt: SelectOfScalar[MediaFile],
     *,
     has_subtitle: bool | None = None,
     mosaic: Mosaic | None = None,
     uncensored: bool | None = None,
     definition: str | None = None,
     content_type: ContentType | None = None,
-) -> Any:
+) -> SelectOfScalar[MediaFile]:
     """给 MediaFile 查询加上文件相位筛选 (None 表示不过滤)."""
     if has_subtitle is not None:
         stmt = stmt.where(col(MediaFile.has_subtitle) == has_subtitle)
