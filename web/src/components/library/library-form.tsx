@@ -81,6 +81,7 @@ export interface LibraryFormState {
   move_mode: LibraryResponse["move_mode"];
   link_template: string;
   link_mode: LibraryResponse["link_mode"];
+  strm_content_template: string;
   write_nfo: boolean;
   copy_resources: DownloadableResource[];
   trailer_pattern: string;
@@ -110,6 +111,7 @@ export function emptyLibraryForm(schema?: PathTemplateSchemaResponse | null): Li
     move_mode: "move",
     link_template: "",
     link_mode: "strm",
+    strm_content_template: "",
     write_nfo: true,
     copy_resources: DOWNLOADABLE_RESOURCES.filter((r) => r !== "trailer"),
     trailer_pattern: "(?i)trailer",
@@ -141,6 +143,7 @@ export function libraryFormFromResponse(lib: LibraryResponse): LibraryFormState 
     move_mode: lib.move_mode,
     link_template: lib.link_template ?? "",
     link_mode: lib.link_mode,
+    strm_content_template: lib.strm_content_template ?? "",
     write_nfo: lib.write_nfo,
     copy_resources: parseCopyResources(lib.copy_resources),
     trailer_pattern: lib.trailer_pattern,
@@ -185,6 +188,7 @@ function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
     move_mode: form.move_mode,
     link_template: form.link_template.trim(),
     link_mode: form.link_mode,
+    strm_content_template: form.strm_content_template.trim(),
     write_nfo: form.write_nfo,
     copy_resources: form.copy_resources,
     trailer_pattern: form.trailer_pattern,
@@ -378,6 +382,13 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
           getLabel={(mode) => t(`linkMode.${mode}`)}
         />
       </FieldChrome>
+      <TextInput
+        label={t("fieldStrmContentTemplate")}
+        description={t("fieldStrmContentTemplateHint")}
+        placeholder={t("fieldStrmContentTemplatePlaceholder")}
+        value={value.strm_content_template}
+        onChange={(e) => onChange({ ...value, strm_content_template: e.currentTarget.value })}
+      />
 
       {placeholders.length > 0 && (
         <Stack gap={4}>
