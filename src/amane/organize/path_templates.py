@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -11,7 +10,6 @@ from pydantic import AfterValidator
 
 from ..enums import LinkMode
 from ..parsing.file_info import DEFINITION_VALUES, MOSAIC_VALUES, FileInfo
-from ..utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
 from ..utils.path import is_any_descendant, is_descendant
 
 if TYPE_CHECKING:
@@ -39,55 +37,35 @@ class ResolvedPaths:
 # --- 默认模板 (当对应字段为 None 时使用) ---
 
 VIDEO_TEMPLATE_DEFAULT = "{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}"
-
-OPTIONAL_TEMPLATE_DEFAULTS: dict[str, str] = {
-    "thumb_template": "{link_dir}/thumb.jpg",
-    "poster_template": "{link_dir}/poster.jpg",
-    "fanart_template": "{link_dir}/fanart.jpg",
-    "extrafanart_template": "{link_dir}/extrafanart",
-    "nfo_template": "{link_dir}/{number}.nfo",
-    "trailer_template": "{link_dir}/trailer.mp4",
-    "subtitle_template": "{link_dir}/{raw_srt_name}.{ext}",
-}
+THUMB_TEMPLATE_DEFAULT = "{link_dir}/thumb.jpg"
+POSTER_TEMPLATE_DEFAULT = "{link_dir}/poster.jpg"
+FANART_TEMPLATE_DEFAULT = "{link_dir}/fanart.jpg"
+EXTRAFANART_TEMPLATE_DEFAULT = "{link_dir}/extrafanart"
+NFO_TEMPLATE_DEFAULT = "{link_dir}/{number}.nfo"
+TRAILER_TEMPLATE_DEFAULT = "{link_dir}/trailer.mp4"
+SUBTITLE_TEMPLATE_DEFAULT = "{link_dir}/{raw_srt_name}.{ext}"
 
 
-class PlaceholderPhase(StrEnum):
-    """占位符相位: 值的来源与注入时机.
-
-    - ``metadata``: 来自 Metadata 字段;
-    - ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);
-    - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
-    - ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).
-    - ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).
-    """
-
-    METADATA = "metadata"
-    SOURCE = "source"
-    FILE = "file"
-    POST_VIDEO = "post_video"
-    SUBTITLE = "subtitle"
-
-
-PLACEHOLDERS: tuple[tuple[str, PlaceholderPhase], ...] = (
-    ("number", PlaceholderPhase.METADATA),
-    ("title", PlaceholderPhase.METADATA),
-    ("actor", PlaceholderPhase.METADATA),
-    ("actors", PlaceholderPhase.METADATA),
-    ("studio", PlaceholderPhase.METADATA),
-    ("publisher", PlaceholderPhase.METADATA),
-    ("series", PlaceholderPhase.METADATA),
-    ("year", PlaceholderPhase.METADATA),
-    ("release", PlaceholderPhase.METADATA),
-    ("ext", PlaceholderPhase.METADATA),
-    ("raw_dir", PlaceholderPhase.SOURCE),
-    ("raw_name", PlaceholderPhase.SOURCE),
-    ("cd?", PlaceholderPhase.FILE),
-    ("sub?", PlaceholderPhase.FILE),
-    ("mosaic?", PlaceholderPhase.FILE),
-    ("def?", PlaceholderPhase.FILE),
-    ("video_dir", PlaceholderPhase.POST_VIDEO),
-    ("link_dir", PlaceholderPhase.POST_VIDEO),
-    ("raw_srt_name", PlaceholderPhase.SUBTITLE),
+PLACEHOLDERS: tuple[str, ...] = (
+    "number",
+    "title",
+    "actor",
+    "actors",
+    "studio",
+    "publisher",
+    "series",
+    "year",
+    "release",
+    "ext",
+    "raw_dir",
+    "raw_name",
+    "cd?",
+    "sub?",
+    "mosaic?",
+    "def?",
+    "video_dir",
+    "link_dir",
+    "raw_srt_name",
 )
 
 # 有闭合取值的占位符: 映射表的 key 必须是规范值, 否则写入 422. 未列入的占位符 (如 cd?) 不校验 key.
@@ -96,23 +74,6 @@ PLACEHOLDER_MAP_KEYS: dict[str, tuple[str, ...]] = {
     "def?": DEFINITION_VALUES,
     "sub?": ("C",),
 }
-
-
-def path_template_schema() -> dict[str, object]:
-    """供 API/前端消费的路径模板契约 (真源与 resolve_paths 同模块)."""
-    return {
-        "video_default": VIDEO_TEMPLATE_DEFAULT,
-        "optional_defaults": dict(OPTIONAL_TEMPLATE_DEFAULTS),
-        "placeholders": [
-            {
-                "name": name,
-                "phase": phase,
-                "map_keys": list(PLACEHOLDER_MAP_KEYS.get(name, ())),
-            }
-            for name, phase in PLACEHOLDERS
-        ],
-        "subtitle_extensions_default": list(DEFAULT_SUBTITLE_EXTENSIONS),
-    }
 
 
 def normalize_link_template(value: str | None) -> str | None:
@@ -172,7 +133,8 @@ def _parse_placeholder_mapping(name: str, spec: str) -> tuple[tuple[str, str], .
 class _Parser:
     """`{name}` 占位符 + 可选 `|k=v` 值映射 + `[...]` / `[[...]]` 可选组.
 
-    `[...]` 组界不输出; 组内任一占位符解析后为空串则整组丢弃.
+    `[...]` 组界不输出; 组内**直接**占位符全部为空串则整组丢弃, 有一个非空则渲染
+    (空的那个输出空串). 嵌套组各自判断, 不并入外层.
     `[[...]]` 同样, 有值时把结果包一层 ``[]``.
     名字里的 ``?`` 只是标识符的一部分, 没有运算含义.
     `{name|原值=输出}` 在查出值之后替换; 空源值不走映射.
@@ -252,14 +214,8 @@ def validate_path_template(value: str) -> str:
 PathTemplate = Annotated[str, AfterValidator(validate_path_template)]
 
 
-def _placeholders(nodes: Sequence[_Node]) -> tuple[_Placeholder, ...]:
-    found: list[_Placeholder] = []
-    for node in nodes:
-        if isinstance(node, _Placeholder):
-            found.append(node)
-        elif isinstance(node, _Group):
-            found.extend(_placeholders(node.children))
-    return tuple(found)
+def _direct_placeholders(nodes: Sequence[_Node]) -> tuple[_Placeholder, ...]:
+    return tuple(node for node in nodes if isinstance(node, _Placeholder))
 
 
 def _lookup(name: str, variables: dict[str, str]) -> str:
@@ -285,7 +241,8 @@ def _render_nodes(nodes: Sequence[_Node], variables: dict[str, str]) -> str:
         elif isinstance(node, _Placeholder):
             parts.append(_resolve(node, variables))
         else:
-            if any(_resolve(item, variables) == "" for item in _placeholders(node.children)):
+            slots = _direct_placeholders(node.children)
+            if slots and all(_resolve(item, variables) == "" for item in slots):
                 continue
             inner = _render_nodes(node.children, variables)
             parts.append(f"[{inner}]" if node.wrap else inner)
@@ -460,27 +417,14 @@ def resolve_paths(
     link = _resolve_link_path(library, variables, base_path, safe_dirs)
     variables["link_dir"] = str(link.parent) if link is not None else video_dir
 
-    thumb = _render_template(
-        library.thumb_template or OPTIONAL_TEMPLATE_DEFAULTS["thumb_template"], variables, base_path, safe_dirs
-    )
-    poster = _render_template(
-        library.poster_template or OPTIONAL_TEMPLATE_DEFAULTS["poster_template"], variables, base_path, safe_dirs
-    )
-    fanart = _render_template(
-        library.fanart_template or OPTIONAL_TEMPLATE_DEFAULTS["fanart_template"], variables, base_path, safe_dirs
-    )
+    thumb = _render_template(library.thumb_template or THUMB_TEMPLATE_DEFAULT, variables, base_path, safe_dirs)
+    poster = _render_template(library.poster_template or POSTER_TEMPLATE_DEFAULT, variables, base_path, safe_dirs)
+    fanart = _render_template(library.fanart_template or FANART_TEMPLATE_DEFAULT, variables, base_path, safe_dirs)
     extrafanart_dir = _render_template(
-        library.extrafanart_template or OPTIONAL_TEMPLATE_DEFAULTS["extrafanart_template"],
-        variables,
-        base_path,
-        safe_dirs,
+        library.extrafanart_template or EXTRAFANART_TEMPLATE_DEFAULT, variables, base_path, safe_dirs
     )
-    nfo = _render_template(
-        library.nfo_template or OPTIONAL_TEMPLATE_DEFAULTS["nfo_template"], variables, base_path, safe_dirs
-    )
-    trailer = _render_template(
-        library.trailer_template or OPTIONAL_TEMPLATE_DEFAULTS["trailer_template"], variables, base_path, safe_dirs
-    )
+    nfo = _render_template(library.nfo_template or NFO_TEMPLATE_DEFAULT, variables, base_path, safe_dirs)
+    trailer = _render_template(library.trailer_template or TRAILER_TEMPLATE_DEFAULT, variables, base_path, safe_dirs)
 
     return ResolvedPaths(
         video=video,
@@ -536,5 +480,5 @@ def resolve_subtitle_path(
     variables["video_dir"] = str(video_dir)
     variables["link_dir"] = str(link_dir if link_dir is not None else video_dir)
     variables["raw_srt_name"] = subtitle_source.stem
-    template = library.subtitle_template or OPTIONAL_TEMPLATE_DEFAULTS["subtitle_template"]
+    template = library.subtitle_template or SUBTITLE_TEMPLATE_DEFAULT
     return _render_template(template, variables, base_path, safe_dirs)

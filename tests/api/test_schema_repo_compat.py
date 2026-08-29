@@ -6,6 +6,7 @@
    -- req model 全部由它派生, 故只要它正确, req↔DB 的字段/类型兼容性即由构造保证.
 2. 字段纪律 (``TestFieldDiscipline``)
    -- req 字段 ⊆ repo TypedDict 字段 ⊆ DB 列; 只读/内部字段不出现在外部可写面.
+   手写响应子集 ``@subset_of(..., covariant=)`` 导入时校验.
 3. 序列化保真 (``TestRepoRoundTrip``)
    -- repo update 去反射后, 显式赋值的类型兼容性由静态检查保证; 此处用 fuzzy + DB 往返
       验证 JSON 列序列化, enum, datetime/tz 在真实数据库往返中保真 (静态检查覆盖不到的部分).
@@ -31,13 +32,14 @@ from amane.api.models import (
     FeedUpdateRequest,
     LibraryUpdateRequest,
     MediaFileUpdateRequest,
+    OptionalPathTemplateDefaults,
     PartialMetadata,
     ScheduleUpdateRequest,
 )
 from amane.db import Feed, Library, MediaFile, Metadata, Repository, Schedule
 from amane.db.models import RoutineType
 from amane.db.repo_types import FeedUpdates, LibraryUpdates, MediaFileUpdates, MetadataFields, ScheduleUpdates
-from amane.utils.model import create_partial_model
+from amane.utils.model import assert_model_subset, create_partial_model
 from tests.schema_template import copy_schema
 
 # ============================================================================
@@ -320,6 +322,16 @@ _DISCIPLINE = [
     ),
 ]
 _DISCIPLINE_IDS = ["media", "library", "schedule", "metadata", "feed"]
+
+
+class TestCovariantSubsetOfLibrary:
+    def test_optional_path_defaults_are_covariant_not_contravariant(self):
+        """缺省是产出: PathTemplate <: PathTemplate | None; 列上的 None 不能写进非空缺省."""
+        assert_model_subset(OptionalPathTemplateDefaults, Library, covariant=True)
+        with pytest.raises(ValueError, match="contravariant"):
+            assert_model_subset(OptionalPathTemplateDefaults, Library, covariant=False)
+        assert "link_template" not in OptionalPathTemplateDefaults.model_fields
+        assert "video_template" not in OptionalPathTemplateDefaults.model_fields
 
 
 class TestFieldDiscipline:

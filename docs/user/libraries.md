@@ -13,7 +13,7 @@
 ### 常用占位符
 
 | 占位符 | 说明 | 示例值 |
-|--------|------|--------|
+| -------- | ------ | -------- |
 | `{number}` | 番号 | `MIDV-123` |
 | `{title}` | 标题 | `Title Here` |
 | `{actor}` | 第一主演 | `Actor1` |
@@ -23,16 +23,16 @@
 | `{series}` | 系列 | `Series Name` |
 | `{year}` | 发行年份 | `2024` |
 | `{release}` | 发行日期 | `2024-01-15` |
-| `{ext}` | 正在放置的文件扩展名 (不含点); 字幕模板里是该字幕的扩展名 | `mp4` / `srt` |
-| `{cd?}` | CD/分集编号 (检测到时为数字如 1, 2; 未检测到为空) | `1` / `2` / 空 |
-| `{sub?}` | 中字标记 (检测到时为 `C`; 未检测到为空) | `C` / 空 |
-| `{mosaic?}` | 有无码标记 (检测到时为如 `uncensored`; 未检测到为空) | `uncensored` / `cracked` / 空 |
-| `{def?}` | 分辨率标记 (检测到时为如 `1080p`; 未检测到为空) | `4K` / `1080p` / `HD` / 空 |
-| `{raw_name}` | 源视频文件名，不含扩展名 | `A/B.mp4` → `B` |
+| `{ext}` | 正在放置的文件扩展名 | `mp4` / `srt` |
+| `{cd?}` | CD/分集编号 | `1` / `2` / 空 |
+| `{sub?}` | 中字标记 | `C` / 空 |
+| `{mosaic?}` | 有无码标记 | `uncensored` / `cracked` / 空 |
+| `{def?}` | 分辨率标记 | `4K` / `1080p` / `HD` / 空 |
+| `{raw_name}` | 源视频文件名 | `A/B.mp4` → `B` |
 | `{raw_dir}` | 源文件父目录名 | `A/B/C.mp4` → `B` |
 | `{video_dir}` | 按模板渲染后目标文件所在目录的路径，仅可用于附属资源模板 | — |
 | `{link_dir}` | 链接文件渲染后的父目录 (无链接时等于 video_dir) | — |
-| `{raw_srt_name}` | 字幕原文件名，不含扩展名，仅字幕模板 | `foo.zh.srt` → `foo.zh` |
+| `{raw_srt_name}` | 字幕原文件名，不含扩展名，仅字幕模板可用 | `foo.zh.srt` → `foo.zh` |
 
 !!! note
     占位符名字结尾带 `?` 的项 (`{cd?}` / `{sub?}` / `{mosaic?}` / `{def?}`) 未检测到时会填空字符串, 而不是 `Unknown`. 这些占位符适合配合可选组语法 (见下文) 使用, 未检出时整组省略.
@@ -51,15 +51,16 @@ NFO: {link_dir}/{number}.nfo
 
 ### 可选组语法
 
-用 `[...]` 将模板中的一段内容包起来, 组内任一占位符为空时整组省略:
+用 `[...]` 将模板中的一段内容包起来. 组里的所有可空占位符全为空时整组省略:
 
 ```
-{number}[-CD{cd?}][-{sub?}].{ext}
+{number}[-CD{cd?}][-{mosaic?|uncensored=U}{sub?}].{ext}
 ```
 
-- 源文件 `MIDV-123-CD2-C.mp4` (检测到分集 2 和中字) → `MIDV-123-CD2-C.mp4`
-- 源文件 `MIDV-123-CD1.mp4` (仅检测到分集 1) → `MIDV-123-CD1.mp4`
-- 源文件 `MIDV-123.mp4` (两者都未检出) → `MIDV-123.mp4` (不会残留 `-`)
+- 源文件 `MIDV-123-U-C-CD2.mp4` → `MIDV-123-CD2-UC.mp4`
+- 源文件 `MIDV-123-U.mp4` → `MIDV-123-U.mp4`
+- 源文件 `MIDV-123-C.mp4` → `MIDV-123-C.mp4`
+- 源文件 `MIDV-123.mp4` → `MIDV-123.mp4` (不会残留 `-`)
 
 双层方括号 `[[...]]` 同样省略逻辑, 但有值时结果会被方括号包裹:
 
@@ -88,17 +89,6 @@ NFO: {link_dir}/{number}.nfo
 ```
 
 源文件 `MIDV-123-無碼.mp4` → `uncensored/MIDV-123-U.mp4`
-
-### 示例
-
-假设番号为 `MIDV-123`, 标题为 `Sample Title`:
-
-```
-{number}/{number}.mp4          → MIDV-123/MIDV-123.mp4
-{studio}/{number}/{title}.mp4  → Studio Name/MIDV-123/Sample Title.mp4
-{studio}/{number}/{number}[-{mosaic?}][-{def?}].{ext}  → Studio Name/MIDV-123/MIDV-123.mp4 (未检出有码/分辨率时)
-                                                        → Studio Name/MIDV-123/MIDV-123-uncensored-4K.mp4 (检出时)
-```
 
 ## 链接模板与模式
 

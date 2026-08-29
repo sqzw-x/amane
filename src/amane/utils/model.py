@@ -127,6 +127,60 @@ def anyof_extras(extras: JsonDict | Callable[[JsonDict], None]) -> Callable[[Jso
     return inner
 
 
+def _unwrap_annotated(annotation: Any) -> Any:
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        args = get_args(annotation)
+        return _unwrap_annotated(args[0]) if args else annotation
+    return annotation
+
+
+def _is_subtype(src: Any, dest: Any) -> bool:
+    """``src`` 能否用在需要 ``dest`` 的位置 (src <: dest). ``Annotated`` 只作元数据, 按内层比."""
+    src = _unwrap_annotated(src)
+    dest = _unwrap_annotated(dest)
+    if src is dest or src == dest:
+        return True
+    src_origin = get_origin(src)
+    dest_origin = get_origin(dest)
+    if src_origin in (Union, UnionType):
+        return all(_is_subtype(m, dest) for m in get_args(src))
+    if dest_origin in (Union, UnionType):
+        return any(_is_subtype(src, m) for m in get_args(dest))
+    return False
+
+
+def _assert_names_subset(subset: type[BaseModel], base: type[BaseModel]) -> None:
+    extra = set(subset.model_fields) - set(base.model_fields)
+    if extra:
+        raise ValueError(f"{subset.__name__} has fields not on {base.__name__}: {extra}")
+
+
+def assert_model_subset(subset: type[BaseModel], base: type[BaseModel], *, covariant: bool) -> None:
+    """字段名 ⊆ ``base``. ``covariant``: 产出 ``subset.T <: base.T``; 否则消费 ``base.T <: subset.T``."""
+    _assert_names_subset(subset, base)
+    kind = "covariant" if covariant else "contravariant"
+    for name, info in subset.model_fields.items():
+        src = info.annotation
+        dest = base.model_fields[name].annotation
+        if not covariant:
+            src, dest = dest, src
+        if not _is_subtype(src, dest):
+            raise ValueError(
+                f"{subset.__name__}.{name} is not a {kind} subtype of {base.__name__}.{name}: {src!r} <: {dest!r}"
+            )
+
+
+def subset_of[T: BaseModel](base: type[BaseModel], *, covariant: bool) -> Callable[[type[T]], type[T]]:
+    """声明 ``cls`` 是 ``base`` 的字段子集; 导入时按 ``covariant`` 校验."""
+
+    def deco(cls: type[T]) -> type[T]:
+        assert_model_subset(cls, base, covariant=covariant)
+        return cls
+
+    return deco
+
+
 def create_partial_model[T: BaseModel](
     base_cls: type[T],
     fields: tuple[str, ...] = (),

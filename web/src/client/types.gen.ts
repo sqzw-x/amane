@@ -2063,6 +2063,42 @@ export type NetworkConfig = {
 };
 
 /**
+ * OptionalPathTemplateDefaults
+ *
+ * 附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用).
+ */
+export type OptionalPathTemplateDefaults = {
+    /**
+     * Thumb Template
+     */
+    thumb_template: string;
+    /**
+     * Poster Template
+     */
+    poster_template: string;
+    /**
+     * Fanart Template
+     */
+    fanart_template: string;
+    /**
+     * Extrafanart Template
+     */
+    extrafanart_template: string;
+    /**
+     * Nfo Template
+     */
+    nfo_template: string;
+    /**
+     * Trailer Template
+     */
+    trailer_template: string;
+    /**
+     * Subtitle Template
+     */
+    subtitle_template: string;
+};
+
+/**
  * OrganizeSubmission
  */
 export type OrganizeSubmission = {
@@ -2116,7 +2152,6 @@ export type PathTemplatePlaceholder = {
      * Name
      */
     name: string;
-    phase: PlaceholderPhase;
     /**
      * Map Keys
      *
@@ -2128,19 +2163,14 @@ export type PathTemplatePlaceholder = {
 /**
  * PathTemplateSchemaResponse
  *
- * 路径模板 UI 契约: 占位符相位、默认值与可映射 key, 与 resolve_paths 同源.
+ * GET /libraries/path-template-schema: 占位符、默认值与可映射 key, 与 resolve_paths 同源.
  */
 export type PathTemplateSchemaResponse = {
     /**
      * Video Default
      */
     video_default: string;
-    /**
-     * Optional Defaults
-     */
-    optional_defaults: {
-        [key: string]: string;
-    };
+    optional_defaults: OptionalPathTemplateDefaults;
     /**
      * Placeholders
      */
@@ -2150,19 +2180,6 @@ export type PathTemplateSchemaResponse = {
      */
     subtitle_extensions_default: Array<string>;
 };
-
-/**
- * PlaceholderPhase
- *
- * 占位符相位: 值的来源与注入时机.
- *
- * - ``metadata``: 来自 Metadata 字段;
- * - ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);
- * - ``file``: 来自源路径 (``parse_file_info``, 整理时检测);
- * - ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).
- * - ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).
- */
-export type PlaceholderPhase = 'metadata' | 'source' | 'file' | 'post_video' | 'subtitle';
 
 /**
  * PluginConfig

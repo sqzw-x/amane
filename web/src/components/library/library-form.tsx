@@ -23,6 +23,7 @@ import type {
   LibraryCreateRequest,
   LibraryResponse,
   LibraryUpdateRequest,
+  OptionalPathTemplateDefaults,
   PathTemplateSchemaResponse,
 } from "@/client/types.gen";
 import { PathPicker } from "@/components/path-picker";
@@ -50,9 +51,7 @@ const OPTIONAL_TEMPLATE_KEYS = [
   "nfo_template",
   "trailer_template",
   "subtitle_template",
-] as const;
-
-type OptionalTemplateKey = (typeof OPTIONAL_TEMPLATE_KEYS)[number];
+] as const satisfies readonly (keyof OptionalPathTemplateDefaults)[];
 
 const MOVE_MODES: readonly LibraryResponse["move_mode"][] = ["move", "copy", "hardlink", "symlink"];
 
@@ -223,7 +222,7 @@ const TPL_I18N = {
   nfo_template: "tpl.nfo",
   trailer_template: "tpl.trailer",
   subtitle_template: "tpl.subtitle",
-} as const satisfies Record<OptionalTemplateKey, string>;
+} as const satisfies Record<keyof OptionalPathTemplateDefaults, string>;
 
 interface LibraryFormFieldsProps {
   value: LibraryFormState;
@@ -238,7 +237,7 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
   const { data: schema } = useQuery(getPathTemplateSchemaOptions());
 
   const placeholders = schema?.placeholders ?? [];
-  const optionalDefaults = schema?.optional_defaults ?? {};
+  const optionalDefaults = schema?.optional_defaults;
 
   const copyPlaceholder = async (name: string) => {
     const text = `{${name}}`;
@@ -375,9 +374,7 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
           </Text>
           <Group gap={4} wrap="wrap">
             {placeholders.map((p) => {
-              const item = t(`placeholders.items.${p.name}`, {
-                defaultValue: t(`placeholders.phases.${p.phase}`, { defaultValue: p.phase }),
-              });
+              const item = t(`placeholders.items.${p.name}`, { defaultValue: p.name });
               const keys = p.map_keys ?? [];
               const label =
                 keys.length > 0
@@ -416,11 +413,11 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
                     key={key}
                     label={t(TPL_I18N[key])}
                     description={
-                      optionalDefaults[key]
+                      optionalDefaults?.[key]
                         ? t("optionalTemplateDefault", { default: optionalDefaults[key] })
                         : undefined
                     }
-                    placeholder={optionalDefaults[key] ?? undefined}
+                    placeholder={optionalDefaults?.[key]}
                     value={value[key]}
                     onChange={(e) => onChange({ ...value, [key]: e.currentTarget.value })}
                   />

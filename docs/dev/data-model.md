@@ -1,6 +1,6 @@
 # 数据模型
 
-> 提交: `247d72d75`
+> 提交: `efdf4219b`
 >
 > 表结构、字段类型、便捷属性都在 `src/amane/db/models.py`. 本文只解释**为什么**这么建模、所有权关系、生命周期与已知陷阱.
 
@@ -68,7 +68,7 @@
 **安全性如何保证** (无运行时反射):
 
 1. repo update 方法**显式逐字段赋值** (`if "x" in updates: obj.x = updates["x"]`), 不用 `setattr`. 字段名拼写与类型兼容性由静态类型检查保证 —— TypedDict 与 DB 列若漂移会直接编译期报错.
-2. req model 由 DB 模型派生, 故 req↔DB 的字段/类型兼容性由 `create_partial_model` 的构造保证, 只需验证该函数正确 (`tests/api/test_schema_repo_compat.py`). 该文件 `TestRepoRoundTrip` 用独立文件库, 不经 api/conftest 的 `repo` (源自 app lifespan): lifespan 启动的 `FeedService` 会并发 poll 测试新建的 Feed, 其随机 `next_fetch_at` 是历史时刻 (立即到期), 拉取失败后时间列被覆盖为当前时间 — 与 DB 往返断言竞态. 序列化保真与后台服务无关, 必须隔离.
+2. req model 由 DB 模型派生, 故 req↔DB 的字段/类型兼容性由 `create_partial_model` 的构造保证, 只需验证该函数正确 (`tests/api/test_schema_repo_compat.py`). 手写且必须是某表列字段子集的响应模型用 `@subset_of(..., covariant=)` (导入时校验). 该文件 `TestRepoRoundTrip` 用独立文件库, 不经 api/conftest 的 `repo` (源自 app lifespan): lifespan 启动的 `FeedService` 会并发 poll 测试新建的 Feed, 其随机 `next_fetch_at` 是历史时刻 (立即到期), 拉取失败后时间列被覆盖为当前时间 — 与 DB 往返断言竞态. 序列化保真与后台服务无关, 必须隔离.
 3. 端点把窄的 req `model_dump` 结果传入宽的 repo 方法; 二者同源派生, 转换天然安全. 唯一运行时缝隙 (req 键须 ⊆ TypedDict 键, 否则多余键被 repo 静默丢弃) 由字段纪律测试兜底.
 
 PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写入; **显式 `null`** 仅当源列本就可空时表示清空. 源列非 Optional (如 `Library.patterns: list[str]`) 时显式 `null` 由 `create_partial_model` 拒绝 (422). 空 glob 的合法写入是 `[]`.
@@ -110,13 +110,13 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` 与 file 相位 (`{cd?}` `{sub?}` `{mosaic?}` `{def?}`, `parse_file_info` 从源路径检测) 只在 ORGANIZE 时注入, 不落库; `{video_dir}` / `{link_dir}` 仅附属资源模板; `{raw_srt_name}` 仅字幕模板. file 相位未检出是**空串**, 不是 `Unknown` / `censored`. `{mosaic?}` 只认文件名标记或目录名整段词表 (由近到远; `uncensored` / `cracked` / `-U` / `-UC` / 无码 / 破解 等, 子串不算), 不用 content_type 兜底. `{def?}` 只看文件名. `{sub?}` 有中字标记时为 `C`. 名字里的 `?` 只是提醒可空, 没有运算含义; 写成 `{cd}` 视为未知 key, 回 `Unknown`.
 
-可选组: `[...]` 组界不输出, 组内任一占位符**解析后**为空则整段丢弃 (AND); `[[...]]` 同样但有值时把结果包一层 `[]`. 组可嵌套; 未闭合在写入时 422. 默认视频模板 `{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}`. 链接模板要分集须自己写 `{cd?}` 组, 不会自动追加. 渲染后丢掉空路径段, 相对模板不会因首段为空变成绝对路径.
+可选组: `[...]` 组界不输出. 组内**直接**占位符全部为空则整段丢弃; 有一个非空就渲染, 空的那个输出空串 (所以 `[-{mosaic?|uncensored=U}{sub?}]` 可以拼出 `-U` / `-C` / `-UC`). 只有一个占位符时与「空则整段省略」相同, `[-CD{cd?}]` 不会留下裸 `-CD`. 字面量跟着整组走: `[-CD{cd?}{sub?}]` 在仅有中字时仍会带上 `-CD`. 嵌套组各自判断, 不并入外层. `[[...]]` 同样但有值时把结果包一层 `[]`. 未闭合在写入时 422. 默认视频模板 `{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}`. 链接模板要分集须自己写 `{cd?}` 组, 不会自动追加. 渲染后丢掉空路径段, 相对模板不会因首段为空变成绝对路径.
 
 值映射: `{name|原值=输出,另一=输出}` 在查出占位符值之后替换. 未列出的 key 保持规范值; 源值为空串不走映射 (可选组仍省略). 把已有值映射成空串则该占位符视为空, 可选组省略. 同一占位符在目录与文件名可写不同映射. 闭合取值 (`mosaic?` / `def?` / `sub?`) 的映射 key 必须是规范值, 否则写入 422; `{cd?}` 与其它字段不校验 key. 规范值由同模块 `PLACEHOLDER_MAP_KEYS` 导出, 经 schema `map_keys` 下发. 分隔符是 `|` `=` `,` (不用 `:`); 输出值里不能含逗号.
 
 普通占位符缺失回退 `Unknown`. `{raw_dir}` / `{raw_name}` 无 `source_path` 时为空串, 同样走空段折叠.
 
-占位符相位、默认值与可映射 key 由同模块导出, 经 `GET /api/libraries/path-template-schema` 下发, 前端不硬编码变量表.
+附属模板列 `None` 表示未自定义, ORGANIZE 回退写在 `path_templates` 的 `*_TEMPLATE_DEFAULT`. HTTP `optional_defaults` 手写、`@subset_of(Library, covariant=True)`: 缺省是产出, 字段类型协变 (`PathTemplate` <: `PathTemplate | None`). 逆变会要求列值都能写进缺省模型, `None` 进不了非空缺省. `link_template` 空表示不建链接, 不在此列. `{mosaic?}` 闭合值是 `parsing.Mosaic`.
 
 **逃逸防护**: 相对模板必须是 library 根的后代; 绝对模板 (含展开 `{video_dir}` / `{link_dir}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. 多盘分存要求目标盘在 `safe_dirs` 内. `link_template` 额外要求渲染结果**不是**库根的后代.
 

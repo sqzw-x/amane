@@ -27,8 +27,10 @@ from .libraries import (
     LibraryListResponse,
     LibraryResponse,
     LibraryUpdateRequest,
+    OptionalPathTemplateDefaults,
     PathTemplatePlaceholder,
     PathTemplateSchemaResponse,
+    path_template_schema,
 )
 from .media import MediaFileResponse, MediaFileUpdateRequest, MediaListResponse
 from .metadata import (
@@ -118,6 +120,7 @@ __all__ = [
     "MetadataDetailResponse",
     "MetadataListResponse",
     "MetadataResponse",
+    "OptionalPathTemplateDefaults",
     "OrganizeSubmission",
     "PartialMetadata",
     "PathTemplatePlaceholder",
@@ -149,4 +152,5 @@ __all__ = [
     "UpscaleSubmission",
     "UserTagResponse",
     "normalize_feed_group",
+    "path_template_schema",
 ]

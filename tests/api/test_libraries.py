@@ -5,8 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from amane.db.models import TaskType
-from amane.organize import OPTIONAL_TEMPLATE_DEFAULTS, VIDEO_TEMPLATE_DEFAULT
-from amane.utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
+from amane.organize import VIDEO_TEMPLATE_DEFAULT
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,47 +21,6 @@ class TestLibraries:
         empty = await client.get("libraries")
         assert empty.status_code == 200
         assert empty.json()["items"] == []
-
-        schema = await client.get("libraries/path-template-schema")
-        assert schema.status_code == 200
-        data = schema.json()
-        assert data["video_default"] == VIDEO_TEMPLATE_DEFAULT
-        assert "cd_suffix_default" not in data
-        assert data["optional_defaults"] == OPTIONAL_TEMPLATE_DEFAULTS
-        names = {p["name"] for p in data["placeholders"]}
-        assert {
-            "number",
-            "studio",
-            "video_dir",
-            "link_dir",
-            "raw_dir",
-            "raw_name",
-            "ext",
-            "mosaic?",
-            "def?",
-            "cd?",
-            "sub?",
-        } <= names
-        assert "mosaic" not in names and "definition" not in names
-        assert "dir_path" not in names and "dir" not in names
-        phases = {p["name"]: p["phase"] for p in data["placeholders"]}
-        assert phases["number"] == "metadata"
-        assert phases["raw_dir"] == "source"
-        assert phases["raw_name"] == "source"
-        assert phases["mosaic?"] == "file"
-        assert phases["def?"] == "file"
-        assert phases["cd?"] == "file"
-        assert phases["sub?"] == "file"
-        assert phases["video_dir"] == "post_video"
-        assert phases["link_dir"] == "post_video"
-        assert phases["raw_srt_name"] == "subtitle"
-        by_name = {p["name"]: p for p in data["placeholders"]}
-        assert by_name["mosaic?"]["map_keys"] == ["uncensored", "cracked"]
-        assert by_name["def?"]["map_keys"] == ["8K", "4K", "1440p", "1080p", "720p", "480p", "HD", "SD"]
-        assert by_name["sub?"]["map_keys"] == ["C"]
-        assert by_name["cd?"]["map_keys"] == []
-        assert by_name["number"]["map_keys"] == []
-        assert data["subtitle_extensions_default"] == list(DEFAULT_SUBTITLE_EXTENSIONS)
 
         target = safe_path / "incoming"
         target.mkdir()
@@ -85,6 +43,8 @@ class TestLibraries:
         assert body["min_file_size"] == 0
         assert body["subtitle_extensions"] == [".srt", ".ass", ".ssa", ".vtt", ".sub"]
         assert body["video_template"] == VIDEO_TEMPLATE_DEFAULT
+        assert body["thumb_template"] is None
+        assert body["poster_template"] is None
         lib_id = body["id"]
 
         listed = await client.get("libraries")

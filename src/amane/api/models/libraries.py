@@ -5,9 +5,17 @@ from pydantic import BaseModel, Field
 from ...db import Library
 from ...enums import DownloadableResource, LibraryAutomation, LinkMode, MoveMode
 from ...organize.path_templates import (
+    EXTRAFANART_TEMPLATE_DEFAULT,
+    FANART_TEMPLATE_DEFAULT,
+    NFO_TEMPLATE_DEFAULT,
+    PLACEHOLDER_MAP_KEYS,
+    PLACEHOLDERS,
+    POSTER_TEMPLATE_DEFAULT,
+    SUBTITLE_TEMPLATE_DEFAULT,
+    THUMB_TEMPLATE_DEFAULT,
+    TRAILER_TEMPLATE_DEFAULT,
     VIDEO_TEMPLATE_DEFAULT,
     PathTemplate,
-    PlaceholderPhase,
 )
 from ...utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
@@ -17,7 +25,7 @@ from ...utils.extensions import (
     SubtitleExtensions,
     TrailerPattern,
 )
-from ...utils.model import create_partial_model
+from ...utils.model import create_partial_model, subset_of
 
 
 class LibraryCreateRequest(BaseModel):
@@ -86,9 +94,32 @@ class LibraryListResponse(BaseModel):
     items: list[LibraryResponse]
 
 
+@subset_of(Library, covariant=True)
+class OptionalPathTemplateDefaults(BaseModel):
+    """附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用)."""
+
+    thumb_template: PathTemplate
+    poster_template: PathTemplate
+    fanart_template: PathTemplate
+    extrafanart_template: PathTemplate
+    nfo_template: PathTemplate
+    trailer_template: PathTemplate
+    subtitle_template: PathTemplate
+
+
+OPTIONAL_TEMPLATE_DEFAULTS = OptionalPathTemplateDefaults(
+    thumb_template=THUMB_TEMPLATE_DEFAULT,
+    poster_template=POSTER_TEMPLATE_DEFAULT,
+    fanart_template=FANART_TEMPLATE_DEFAULT,
+    extrafanart_template=EXTRAFANART_TEMPLATE_DEFAULT,
+    nfo_template=NFO_TEMPLATE_DEFAULT,
+    trailer_template=TRAILER_TEMPLATE_DEFAULT,
+    subtitle_template=SUBTITLE_TEMPLATE_DEFAULT,
+)
+
+
 class PathTemplatePlaceholder(BaseModel):
     name: str
-    phase: PlaceholderPhase
     map_keys: list[str] = Field(
         default_factory=list,
         description="有闭合取值时列出规范 key, 供 `{name|k=v}` 映射校验与 UI 提示. 空则不校验映射 key.",
@@ -96,9 +127,25 @@ class PathTemplatePlaceholder(BaseModel):
 
 
 class PathTemplateSchemaResponse(BaseModel):
-    """路径模板 UI 契约: 占位符相位、默认值与可映射 key, 与 resolve_paths 同源."""
+    """GET /libraries/path-template-schema: 占位符、默认值与可映射 key, 与 resolve_paths 同源."""
 
     video_default: str
-    optional_defaults: dict[str, str]
+    optional_defaults: OptionalPathTemplateDefaults
     placeholders: list[PathTemplatePlaceholder]
     subtitle_extensions_default: list[str]
+
+
+def path_template_schema() -> PathTemplateSchemaResponse:
+    """组装路径模板契约, 供 GET /libraries/path-template-schema."""
+    return PathTemplateSchemaResponse(
+        video_default=VIDEO_TEMPLATE_DEFAULT,
+        optional_defaults=OPTIONAL_TEMPLATE_DEFAULTS,
+        placeholders=[
+            PathTemplatePlaceholder(
+                name=name,
+                map_keys=list(PLACEHOLDER_MAP_KEYS.get(name, ())),
+            )
+            for name in PLACEHOLDERS
+        ],
+        subtitle_extensions_default=list(DEFAULT_SUBTITLE_EXTENSIONS),
+    )

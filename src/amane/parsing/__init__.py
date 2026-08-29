@@ -2,6 +2,7 @@ from .actor_name import split_actor_aliases
 from .file_info import (
     ContentType,
     FileInfo,
+    Mosaic,
     classify_number,
     detect_cd,
     extract_number,
@@ -15,6 +16,7 @@ from .file_info import (
 __all__ = [
     "ContentType",
     "FileInfo",
+    "Mosaic",
     "classify_number",
     "detect_cd",
     "extract_number",

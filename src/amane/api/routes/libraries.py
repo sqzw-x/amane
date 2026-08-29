@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException, Response
 from ...db.models import TaskType
 from ...enums import LibraryAutomation
 from ...handlers import RefreshPayload, ScanMode
-from ...organize import path_template_schema
 from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
 from ..models import (
@@ -16,6 +15,7 @@ from ..models import (
     LibraryResponse,
     LibraryUpdateRequest,
     PathTemplateSchemaResponse,
+    path_template_schema,
 )
 from ..support.path_validation import validate_directory_path
 
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/libraries", tags=["libraries"])
 @router.get("/path-template-schema")
 async def get_path_template_schema() -> PathTemplateSchemaResponse:
     """路径模板占位符与默认值 (与 resolve_paths 同源, 供前端表单渲染)."""
-    return PathTemplateSchemaResponse.model_validate(path_template_schema())
+    return path_template_schema()
 
 
 @router.get("")

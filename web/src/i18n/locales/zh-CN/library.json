@@ -138,16 +138,9 @@
   "optionalTemplateDefault": "默认: {{default}}",
   "placeholders": {
     "label": "可用占位符",
-    "hint": "点击徽章复制. 带 ? 的项未检出时为空, 建议放进 [..] 或 [[..]]. 可用 {name|原值=字} 改写输出, 未写的 key 保持原值",
+    "hint": "点击徽章复制. 带 ? 的项未检出时为空, 建议放进 [..] 或 [[..]] (一组里多个占位符有一个有值就会留下). 可用 {name|原值=字} 改写输出, 未写的 key 保持原值",
     "copied": "已复制 {{placeholder}} 到剪贴板",
     "copyFailed": "复制失败, 请手动复制",
-    "phases": {
-      "metadata": "来自元数据字段",
-      "source": "来自源文件（整理时注入）",
-      "file": "来自源文件名（整理时检测）",
-      "post_video": "视频路径渲染后可用，仅附属资源模板",
-      "subtitle": "来自字幕源文件，仅字幕模板"
-    },
     "mapKeys": "可映射规范值: {{keys}}",
     "items": {
       "number": "番号",

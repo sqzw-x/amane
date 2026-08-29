@@ -4264,6 +4264,51 @@ export const NetworkConfigSchema = {
     description: '网络配置.'
 } as const;
 
+export const OptionalPathTemplateDefaultsSchema = {
+    properties: {
+        thumb_template: {
+            type: 'string',
+            title: 'Thumb Template'
+        },
+        poster_template: {
+            type: 'string',
+            title: 'Poster Template'
+        },
+        fanart_template: {
+            type: 'string',
+            title: 'Fanart Template'
+        },
+        extrafanart_template: {
+            type: 'string',
+            title: 'Extrafanart Template'
+        },
+        nfo_template: {
+            type: 'string',
+            title: 'Nfo Template'
+        },
+        trailer_template: {
+            type: 'string',
+            title: 'Trailer Template'
+        },
+        subtitle_template: {
+            type: 'string',
+            title: 'Subtitle Template'
+        }
+    },
+    type: 'object',
+    required: [
+        'thumb_template',
+        'poster_template',
+        'fanart_template',
+        'extrafanart_template',
+        'nfo_template',
+        'trailer_template',
+        'subtitle_template'
+    ],
+    title: 'OptionalPathTemplateDefaults',
+    description: '附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用).'
+} as const;
+
 export const OrganizeSubmissionSchema = {
     properties: {
         library_id: {
@@ -4354,9 +4399,6 @@ export const PathTemplatePlaceholderSchema = {
             type: 'string',
             title: 'Name'
         },
-        phase: {
-            $ref: '#/components/schemas/PlaceholderPhase'
-        },
         map_keys: {
             items: {
                 type: 'string'
@@ -4368,8 +4410,7 @@ export const PathTemplatePlaceholderSchema = {
     },
     type: 'object',
     required: [
-        'name',
-        'phase'
+        'name'
     ],
     title: 'PathTemplatePlaceholder'
 } as const;
@@ -4381,11 +4422,7 @@ export const PathTemplateSchemaResponseSchema = {
             title: 'Video Default'
         },
         optional_defaults: {
-            additionalProperties: {
-                type: 'string'
-            },
-            type: 'object',
-            title: 'Optional Defaults'
+            $ref: '#/components/schemas/OptionalPathTemplateDefaults'
         },
         placeholders: {
             items: {
@@ -4410,20 +4447,7 @@ export const PathTemplateSchemaResponseSchema = {
         'subtitle_extensions_default'
     ],
     title: 'PathTemplateSchemaResponse',
-    description: '路径模板 UI 契约: 占位符相位、默认值与可映射 key, 与 resolve_paths 同源.'
-} as const;
-
-export const PlaceholderPhaseSchema = {
-    type: 'string',
-    enum: [
-        'metadata',
-        'source',
-        'file',
-        'post_video',
-        'subtitle'
-    ],
-    title: 'PlaceholderPhase',
-    description: '占位符相位: 值的来源与注入时机.\n\n- ``metadata``: 来自 Metadata 字段;\n- ``source``: 需 ``source_path`` (源文件父目录名 / 文件名);\n- ``file``: 来自源路径 (``parse_file_info``, 整理时检测);\n- ``post_video``: 视频与链接路径渲染后注入 (附属资源模板).\n- ``subtitle``: 字幕源文件, 仅字幕模板 (``{raw_srt_name}``).'
+    description: 'GET /libraries/path-template-schema: 占位符、默认值与可映射 key, 与 resolve_paths 同源.'
 } as const;
 
 export const PluginConfigSchema = {

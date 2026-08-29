@@ -20,6 +20,13 @@ class ContentType(StrEnum):
     HENTAI = "hentai"
 
 
+class Mosaic(StrEnum):
+    """文件相位马赛克标记. 未检出是空, 不是 censored."""
+
+    UNCENSORED = "uncensored"
+    CRACKED = "cracked"
+
+
 # --- 常量 ---
 
 # 已知无码番号前缀
@@ -446,7 +453,7 @@ class FileInfo:
     prefix: str
     cd: int | None = None
     has_subtitle: bool = False
-    mosaic: str | None = None
+    mosaic: Mosaic | None = None
     definition: str | None = None
 
 
@@ -529,37 +536,37 @@ def _detect_subtitle(basename: str) -> bool:
     return bool(re.search(r"[字幕中文]", basename))
 
 
-def _detect_mosaic(basename: str) -> str | None:
+def _detect_mosaic(basename: str) -> Mosaic | None:
     """从文件名检测马赛克/审查类型."""
     if re.search(r"無碼|无码|UNCENSORED", basename):
-        return "uncensored"
+        return Mosaic.UNCENSORED
     # -U / -UC 后不能紧跟字母或数字 (否则是 -UNKNOWN、-UC1), 但可跟 -4K / -CD1 等标记段.
     if re.search(r"-U(C)?(?![A-Z0-9])", basename):
-        return "uncensored"
+        return Mosaic.UNCENSORED
     if re.search(r"破解|流出|LEAKED", basename):
-        return "cracked"
+        return Mosaic.CRACKED
     return None
 
 
-# 目录名整段 (去括号后忽略大小写) 才计入; 不含 censored (那是无标记兜底, 不是检出标记).
-_MOSAIC_DIR_TOKENS: dict[str, str] = {
+# 目录名整段 (去括号后忽略大小写) 才计入; 值必须是 Mosaic (不含 censored: 那是无标记兜底).
+_MOSAIC_DIR_TOKENS: dict[str, Mosaic] = {
     k.casefold(): v
     for k, v in (
-        ("uncensored", "uncensored"),
-        ("無碼", "uncensored"),
-        ("无码", "uncensored"),
-        ("cracked", "cracked"),
-        ("leaked", "cracked"),
-        ("破解", "cracked"),
-        ("流出", "cracked"),
+        ("uncensored", Mosaic.UNCENSORED),
+        ("無碼", Mosaic.UNCENSORED),
+        ("无码", Mosaic.UNCENSORED),
+        ("cracked", Mosaic.CRACKED),
+        ("leaked", Mosaic.CRACKED),
+        ("破解", Mosaic.CRACKED),
+        ("流出", Mosaic.CRACKED),
     )
 }
 _DIR_BRACKET_STRIP = "[]【】()（）"
-# 路径模板映射校验 / schema 与检测输出同源; 顺序按词表首次出现.
-MOSAIC_VALUES: tuple[str, ...] = tuple(dict.fromkeys(_MOSAIC_DIR_TOKENS.values()))
+# 路径模板映射校验 / schema 与 Mosaic 枚举同源, 不从词表 values 再推导.
+MOSAIC_VALUES: tuple[Mosaic, ...] = tuple(Mosaic)
 
 
-def _detect_mosaic_from_dirs(dir_names: tuple[str, ...]) -> str | None:
+def _detect_mosaic_from_dirs(dir_names: tuple[str, ...]) -> Mosaic | None:
     """文件名无标记时, 由近到远认目录名整段. 子串 (uncensored-guide) 不算."""
     for name in reversed(dir_names):
         token = name.strip().strip(_DIR_BRACKET_STRIP).casefold()
