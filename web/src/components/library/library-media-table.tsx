@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Button, Checkbox, Group, Table, Text } from "@mantine/core";
+import { ActionIcon, Badge, Button, Checkbox, Group, Stack, Table, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconRefresh, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,6 +13,7 @@ import type {
   MediaSortField,
   SortOrder,
 } from "@/client/types.gen";
+import { FilePhaseBadges } from "@/components/media/file-phase-badges";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
@@ -277,9 +278,12 @@ export function LibraryMediaTable({
                   )}
                 </Table.Td>
                 <Table.Td style={CELL_OVERFLOW}>
-                  <Text size="sm" ff="monospace" truncate title={rel}>
-                    {rel}
-                  </Text>
+                  <Stack gap={4}>
+                    <Text size="sm" ff="monospace" truncate title={rel}>
+                      {rel}
+                    </Text>
+                    <FilePhaseBadges phase={item} />
+                  </Stack>
                 </Table.Td>
                 <Table.Td style={CELL_OVERFLOW}>
                   <Badge size="sm" variant="light" color={statusColor(item.status)}>

@@ -25,10 +25,20 @@ import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sent
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { SortMenu } from "@/components/common/sort-menu";
 import { FacetBadge } from "@/components/media/facet-badge";
-import { FacetFilterControls, type HasFilesFilter } from "@/components/media/facet-filter-controls";
+import {
+  FacetFilterControls,
+  type FilePhaseFilters,
+  type HasFilesFilter,
+} from "@/components/media/facet-filter-controls";
 import { MetaTable } from "@/components/media/meta-table";
 import { PosterGrid } from "@/components/media/poster-grid";
-import { METADATA_SORT_FIELDS, SORT_ORDERS } from "@/lib/exhaustive-maps";
+import {
+  CONTENT_TYPES,
+  FILE_DEFINITIONS,
+  METADATA_SORT_FIELDS,
+  MOSAICS,
+  SORT_ORDERS,
+} from "@/lib/exhaustive-maps";
 import {
   activeFacetFilters,
   addFacetId,
@@ -67,6 +77,11 @@ const metaSearchSchema = z.object({
   series_id: idListSchema,
   user_tag_id: idListSchema,
   has_files: z.enum(["true", "false"]).optional(),
+  has_subtitle: z.enum(["true", "false"]).optional(),
+  uncensored: z.enum(["true", "false"]).optional(),
+  mosaic: z.enum(MOSAICS).optional(),
+  definition: z.enum(FILE_DEFINITIONS).optional(),
+  content_type: z.enum(CONTENT_TYPES).optional(),
   saved_query_id: z.coerce.number().int().positive().optional(),
 });
 
@@ -90,6 +105,12 @@ function parseHasFiles(value: "true" | "false" | undefined): HasFilesFilter {
   if (value === "true") return true;
   if (value === "false") return false;
   return null;
+}
+
+function triToSearch(value: HasFilesFilter): "true" | "false" | undefined {
+  if (value === true) return "true";
+  if (value === false) return "false";
+  return undefined;
 }
 
 function ActiveFacetChip({
@@ -121,10 +142,17 @@ function ActiveFacetChip({
 function ActiveHasFilesChip({ hasFiles, onClear }: { hasFiles: boolean; onClear: () => void }) {
   const { t } = useTranslation("metadata");
   return (
+    <ActiveTriChip
+      label={`${t("search.hasFiles")}: ${hasFiles ? t("search.hasFilesYes") : t("search.hasFilesNo")}`}
+      onClear={onClear}
+    />
+  );
+}
+
+function ActiveTriChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
     <Group gap={4} wrap="nowrap">
-      <Badge variant="outline">
-        {t("search.hasFiles")}: {hasFiles ? t("search.hasFilesYes") : t("search.hasFilesNo")}
-      </Badge>
+      <Badge variant="outline">{label}</Badge>
       <ActionIcon size="sm" variant="subtle" color="gray" onClick={onClear} aria-label="clear">
         <IconX size={14} />
       </ActionIcon>
@@ -139,8 +167,21 @@ function MetaIndexPage() {
   const listLimit = useUIStore((s) => s.pageSizes.metaList);
 
   const hasFiles = parseHasFiles(search.has_files);
+  const filePhase: FilePhaseFilters = {
+    has_subtitle: parseHasFiles(search.has_subtitle),
+    uncensored: parseHasFiles(search.uncensored),
+    mosaic: search.mosaic ?? null,
+    definition: search.definition ?? null,
+    content_type: search.content_type ?? null,
+  };
+  const phaseActive =
+    filePhase.has_subtitle !== null ||
+    filePhase.uncensored !== null ||
+    filePhase.mosaic != null ||
+    filePhase.definition != null ||
+    filePhase.content_type != null;
   const [searchInput, setSearchInput] = useState(search.q ?? "");
-  const [advancedOpen, setAdvancedOpen] = useState(hasFiles !== null);
+  const [advancedOpen, setAdvancedOpen] = useState(hasFiles !== null || phaseActive);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const filters: FacetFilters = {
@@ -158,6 +199,11 @@ function MetaIndexPage() {
     sort_by: search.sort_by,
     order: search.order,
     has_files: hasFiles === null ? undefined : hasFiles,
+    has_subtitle: filePhase.has_subtitle === null ? undefined : filePhase.has_subtitle,
+    uncensored: filePhase.uncensored === null ? undefined : filePhase.uncensored,
+    mosaic: filePhase.mosaic ?? undefined,
+    definition: filePhase.definition ?? undefined,
+    content_type: filePhase.content_type ?? undefined,
     ...filters,
     ...(search.saved_query_id != null ? { saved_query_id: search.saved_query_id } : {}),
   };
@@ -250,7 +296,21 @@ function MetaIndexPage() {
     void navigate({
       search: (prev) => ({
         ...prev,
-        has_files: value === null ? undefined : value ? "true" : "false",
+        has_files: triToSearch(value),
+        page: 1,
+      }),
+    });
+  }
+
+  function setFilePhaseFilter(value: FilePhaseFilters) {
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        has_subtitle: triToSearch(value.has_subtitle),
+        uncensored: triToSearch(value.uncensored),
+        mosaic: value.mosaic ?? undefined,
+        definition: value.definition ?? undefined,
+        content_type: value.content_type ?? undefined,
         page: 1,
       }),
     });
@@ -269,7 +329,8 @@ function MetaIndexPage() {
   }
 
   const active = activeFacetFilters(filters);
-  const hasActiveFilters = active.length > 0 || hasFiles !== null || search.saved_query_id != null;
+  const hasActiveFilters =
+    active.length > 0 || hasFiles !== null || phaseActive || search.saved_query_id != null;
 
   return (
     <BrowsePageShell
@@ -351,6 +412,8 @@ function MetaIndexPage() {
         onSelect={appendFacet}
         hasFiles={hasFiles}
         onHasFilesChange={setHasFilesFilter}
+        filePhase={filePhase}
+        onFilePhaseChange={setFilePhaseFilter}
       />
 
       {hasActiveFilters && (
@@ -388,6 +451,36 @@ function MetaIndexPage() {
           )}
           {hasFiles !== null && (
             <ActiveHasFilesChip hasFiles={hasFiles} onClear={() => setHasFilesFilter(null)} />
+          )}
+          {filePhase.has_subtitle !== null && (
+            <ActiveTriChip
+              label={`${t("search.hasSubtitle")}: ${filePhase.has_subtitle ? t("search.yes") : t("search.no")}`}
+              onClear={() => setFilePhaseFilter({ ...filePhase, has_subtitle: null })}
+            />
+          )}
+          {filePhase.uncensored !== null && (
+            <ActiveTriChip
+              label={`${t("search.uncensored")}: ${filePhase.uncensored ? t("search.yes") : t("search.no")}`}
+              onClear={() => setFilePhaseFilter({ ...filePhase, uncensored: null })}
+            />
+          )}
+          {filePhase.mosaic != null && (
+            <ActiveTriChip
+              label={`${t("search.mosaic")}: ${t(`search.mosaics.${filePhase.mosaic}`)}`}
+              onClear={() => setFilePhaseFilter({ ...filePhase, mosaic: null })}
+            />
+          )}
+          {filePhase.definition != null && (
+            <ActiveTriChip
+              label={`${t("search.definition")}: ${filePhase.definition}`}
+              onClear={() => setFilePhaseFilter({ ...filePhase, definition: null })}
+            />
+          )}
+          {filePhase.content_type != null && (
+            <ActiveTriChip
+              label={`${t("search.contentType")}: ${t(`search.contentTypes.${filePhase.content_type}`)}`}
+              onClear={() => setFilePhaseFilter({ ...filePhase, content_type: null })}
+            />
           )}
           {active.map(({ kind, id }) => (
             <ActiveFacetChip

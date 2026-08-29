@@ -1,6 +1,6 @@
 /**
  * 片库列表的高级 facet 筛选: 展开后每个 kind 独立短搜索框, 选中即追加到 URL search.
- * 另含关联文件三态筛选 (不限 / 有 / 无).
+ * 另含关联文件与文件相位筛选.
  */
 
 import { Collapse, Select, SimpleGrid, Stack, Text } from "@mantine/core";
@@ -8,14 +8,22 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listFacetsOptions } from "@/client/@tanstack/react-query.gen";
-import type { FacetKind } from "@/client/types.gen";
-import { FACET_KINDS } from "@/lib/exhaustive-maps";
+import type { ContentType, FacetKind, Mosaic } from "@/client/types.gen";
+import { CONTENT_TYPES, FACET_KINDS, FILE_DEFINITIONS, MOSAICS } from "@/lib/exhaustive-maps";
 import { facetIdsOf, type FacetFilters } from "@/lib/facets";
 
 const PICKER_LIMIT = 40;
 
-/** URL / 控件用的关联文件三态; null = 不限. */
+/** URL / 控件用的三态; null = 不限. */
 export type HasFilesFilter = boolean | null;
+
+export type FilePhaseFilters = {
+  has_subtitle: HasFilesFilter;
+  uncensored: HasFilesFilter;
+  mosaic: Mosaic | null;
+  definition: (typeof FILE_DEFINITIONS)[number] | null;
+  content_type: ContentType | null;
+};
 
 interface FacetFilterControlsProps {
   /** 是否展开高级筛选表单. */
@@ -26,6 +34,8 @@ interface FacetFilterControlsProps {
   /** 当前关联文件筛选; null = 不限. */
   hasFiles: HasFilesFilter;
   onHasFilesChange: (value: HasFilesFilter) => void;
+  filePhase: FilePhaseFilters;
+  onFilePhaseChange: (value: FilePhaseFilters) => void;
 }
 
 function KindFacetPicker({
@@ -80,9 +90,36 @@ function KindFacetPicker({
   );
 }
 
-function hasFilesSelectValue(hasFiles: HasFilesFilter): string | null {
-  if (hasFiles === true) return "true";
-  if (hasFiles === false) return "false";
+function triSelectValue(value: HasFilesFilter): string | null {
+  if (value === true) return "true";
+  if (value === false) return "false";
+  return null;
+}
+
+function parseTriSelect(value: string | null): HasFilesFilter {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
+}
+
+function parseMosaic(value: string | null): Mosaic | null {
+  for (const mosaic of MOSAICS) {
+    if (mosaic === value) return mosaic;
+  }
+  return null;
+}
+
+function parseContentType(value: string | null): ContentType | null {
+  for (const contentType of CONTENT_TYPES) {
+    if (contentType === value) return contentType;
+  }
+  return null;
+}
+
+function parseDefinition(value: string | null): (typeof FILE_DEFINITIONS)[number] | null {
+  for (const definition of FILE_DEFINITIONS) {
+    if (definition === value) return definition;
+  }
   return null;
 }
 
@@ -92,8 +129,14 @@ export function FacetFilterControls({
   onSelect,
   hasFiles,
   onHasFilesChange,
+  filePhase,
+  onFilePhaseChange,
 }: FacetFilterControlsProps) {
   const { t } = useTranslation("metadata");
+  const triData = [
+    { value: "true", label: t("search.yes") },
+    { value: "false", label: t("search.no") },
+  ];
 
   return (
     <Collapse expanded={opened}>
@@ -118,12 +161,72 @@ export function FacetFilterControls({
               { value: "true", label: t("search.hasFilesYes") },
               { value: "false", label: t("search.hasFilesNo") },
             ]}
-            value={hasFilesSelectValue(hasFiles)}
-            onChange={(v) => {
-              if (v === "true") onHasFilesChange(true);
-              else if (v === "false") onHasFilesChange(false);
-              else onHasFilesChange(null);
-            }}
+            value={triSelectValue(hasFiles)}
+            onChange={(v) => onHasFilesChange(parseTriSelect(v))}
+            clearable
+            size="sm"
+          />
+          <Select
+            label={t("search.hasSubtitle")}
+            placeholder={t("search.any")}
+            data={triData}
+            value={triSelectValue(filePhase.has_subtitle)}
+            onChange={(v) => onFilePhaseChange({ ...filePhase, has_subtitle: parseTriSelect(v) })}
+            clearable
+            size="sm"
+          />
+          <Select
+            label={t("search.uncensored")}
+            placeholder={t("search.any")}
+            data={triData}
+            value={triSelectValue(filePhase.uncensored)}
+            onChange={(v) => onFilePhaseChange({ ...filePhase, uncensored: parseTriSelect(v) })}
+            clearable
+            size="sm"
+          />
+          <Select
+            label={t("search.mosaic")}
+            placeholder={t("search.any")}
+            data={MOSAICS.map((mosaic) => ({
+              value: mosaic,
+              label: t(`search.mosaics.${mosaic}`),
+            }))}
+            value={filePhase.mosaic}
+            onChange={(v) =>
+              onFilePhaseChange({
+                ...filePhase,
+                mosaic: parseMosaic(v),
+              })
+            }
+            clearable
+            size="sm"
+          />
+          <Select
+            label={t("search.definition")}
+            placeholder={t("search.any")}
+            data={FILE_DEFINITIONS.map((definition) => ({
+              value: definition,
+              label: definition,
+            }))}
+            value={filePhase.definition}
+            onChange={(v) => onFilePhaseChange({ ...filePhase, definition: parseDefinition(v) })}
+            clearable
+            size="sm"
+          />
+          <Select
+            label={t("search.contentType")}
+            placeholder={t("search.any")}
+            data={CONTENT_TYPES.map((contentType) => ({
+              value: contentType,
+              label: t(`search.contentTypes.${contentType}`),
+            }))}
+            value={filePhase.content_type}
+            onChange={(v) =>
+              onFilePhaseChange({
+                ...filePhase,
+                content_type: parseContentType(v),
+              })
+            }
             clearable
             size="sm"
           />

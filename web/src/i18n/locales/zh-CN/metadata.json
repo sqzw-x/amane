@@ -9,7 +9,35 @@
     "hasFiles": "关联文件",
     "hasFilesAny": "不限",
     "hasFilesYes": "有文件",
-    "hasFilesNo": "无文件"
+    "hasFilesNo": "无文件",
+    "hasSubtitle": "中字",
+    "uncensored": "无码",
+    "mosaic": "马赛克标记",
+    "definition": "清晰度",
+    "contentType": "片种",
+    "any": "不限",
+    "yes": "是",
+    "no": "否",
+    "contentTypes": {
+      "censored": "有码",
+      "uncensored": "无码",
+      "chinese": "国产",
+      "western": "欧美",
+      "fc2": "FC2",
+      "amateur": "素人",
+      "hentai": "动漫"
+    },
+    "mosaics": {
+      "uncensored": "无码标记",
+      "cracked": "破解",
+      "leaked": "流出"
+    }
+  },
+  "filePhase": {
+    "subtitle": "中字",
+    "uncensored": "无码",
+    "cracked": "破解",
+    "leaked": "流出"
   },
   "columns": {
     "number": "番号",

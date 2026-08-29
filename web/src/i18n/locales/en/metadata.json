@@ -9,7 +9,35 @@
     "hasFiles": "Linked files",
     "hasFilesAny": "Any",
     "hasFilesYes": "Has files",
-    "hasFilesNo": "No files"
+    "hasFilesNo": "No files",
+    "hasSubtitle": "Chinese subtitles",
+    "uncensored": "Uncensored",
+    "mosaic": "Mosaic mark",
+    "definition": "Definition",
+    "contentType": "Content type",
+    "any": "Any",
+    "yes": "Yes",
+    "no": "No",
+    "contentTypes": {
+      "censored": "Censored",
+      "uncensored": "Uncensored",
+      "chinese": "Chinese",
+      "western": "Western",
+      "fc2": "FC2",
+      "amateur": "Amateur",
+      "hentai": "Hentai"
+    },
+    "mosaics": {
+      "uncensored": "Uncensored mark",
+      "cracked": "Cracked",
+      "leaked": "Leaked"
+    }
+  },
+  "filePhase": {
+    "subtitle": "SUB",
+    "uncensored": "U",
+    "cracked": "CRACK",
+    "leaked": "LEAK"
   },
   "columns": {
     "number": "Number",

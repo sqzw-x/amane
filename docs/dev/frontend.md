@@ -65,7 +65,7 @@ OpenAPI 字符串联合若需运行时迭代, 集中放 `lib/exhaustive-maps.ts`
 
 ## 图片
 
-外站图经 `/api/resources/proxy` (`proxyImageUrl`). `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是 `thumb_urls[0]` 对应的 **Resource 本地文件** (与后端 `acquire` 同一份), 只提交像素坐标, 不上传 blob.
+外站图经 `/api/resources/proxy` (`proxyImageUrl`). `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是 `thumb_urls[0]` 对应的 **Resource 本地文件** (与后端 `acquire` 同一份), 只提交像素坐标, 不上传 blob. 片库海报角标 (中字/无码/破解/流出/清晰度) 是 CSS overlay, 读列表聚合 `file_phase`, 不改 Resource 像素. 无码 = mosaic 标记或片种 uncensored.
 
 **proxy 限流**: 外链 `<img>` 走 `ProxyImage` / `useQueuedImageUrl`. 浏览器对同 host HTTP/1.1 连接有限 (约 6); 慢速外链不限流会占满连接池, API 请求全部排队. 全局信号量限制 4 个并发; 探测到 h2+ 时放行. 本地 `/api/resources/*` 不走队列. **只对邻近视口的 proxy 图抢槽** (`rootMargin` 400px); 排队图一旦拿到 `src` 立即请求, 不用 `loading=lazy` (lazy 会让屏外图占槽不发请求, 视口内头像一直空白).
 

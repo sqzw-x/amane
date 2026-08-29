@@ -20,6 +20,7 @@ import type {
   MediaSortField,
   MetadataField,
   MetadataSortField,
+  Mosaic,
   RoutineType,
   ScanMode,
   SiteOutcomeKind,
@@ -66,6 +67,14 @@ export const CONTENT_TYPES = exhaustiveTuple<ContentType>()(
   "amateur",
   "hentai",
 );
+
+/** `Mosaic` 文件马赛克标记. */
+export const MOSAICS = exhaustiveTuple<Mosaic>()("uncensored", "cracked", "leaked");
+
+/** 文件清晰度闭合值, 顺序即优先级 (高→低). 与后端 DEFINITION_VALUES 对齐. */
+export const FILE_DEFINITIONS = exhaustiveTuple<
+  "8K" | "4K" | "1440p" | "1080p" | "720p" | "480p" | "HD" | "SD"
+>()("8K", "4K", "1440p", "1080p", "720p", "480p", "HD", "SD");
 
 /** `TaskStatus` 的运行时枚举. */
 export const TASK_STATUSES = exhaustiveTuple<TaskStatus>()("queued", "running", "done", "failed");

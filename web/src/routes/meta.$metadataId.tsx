@@ -53,6 +53,7 @@ import { getMetadataSchema } from "@/client/sdk.gen";
 import type { MetadataResponse } from "@/client/types.gen";
 import { FacetBadge } from "@/components/media/facet-badge";
 import { FanartLightbox, FanartStrip } from "@/components/media/fanart-lightbox";
+import { FilePhaseBadges } from "@/components/media/file-phase-badges";
 import { PosterCropDialog } from "@/components/media/poster-crop-dialog";
 import { MergeDialog } from "@/components/metadata/merge-dialog";
 import { type JSONSchemaObject, resolveSchema } from "@/components/schema-form/schema";
@@ -323,6 +324,11 @@ function TitleDetailPage() {
                 }}
                 placeholder={<div style={{ aspectRatio: "16 / 9" }} aria-hidden />}
               />
+            )}
+            {!playingTrailer && (
+              <div style={{ position: "absolute", top: 8, left: 8, zIndex: 1, maxWidth: "70%" }}>
+                <FilePhaseBadges phase={item.file_phase} size="sm" />
+              </div>
             )}
 
             {playingTrailer && item.trailer_url ? (
@@ -623,9 +629,12 @@ function TitleDetailPage() {
           <Stack gap={6}>
             {data.files.map((f) => (
               <Group key={f.id} justify="space-between" gap="xs" wrap="nowrap">
-                <Text size="sm" truncate="end" ff="monospace">
-                  {f.path}
-                </Text>
+                <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
+                  <Text size="sm" truncate="end" ff="monospace">
+                    {f.path}
+                  </Text>
+                  <FilePhaseBadges phase={f} />
+                </Stack>
                 <Badge size="sm" variant="light">
                   {f.status}
                 </Badge>

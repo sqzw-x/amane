@@ -7,6 +7,7 @@ import type { MetadataResponse } from "@/client/types.gen";
 import { ageAtRelease } from "@/lib/format-birthday";
 import { formatReleaseYearMonth } from "@/lib/format-release";
 import { proxyImageUrl } from "@/lib/utils";
+import { FilePhaseBadges } from "@/components/media/file-phase-badges";
 import { ProxyImage } from "@/components/media/proxy-image";
 
 interface PosterCardProps {
@@ -59,6 +60,9 @@ export function PosterCard({ item, actorBirthday }: PosterCardProps) {
               </Center>
             )}
           </AspectRatio>
+          <Box pos="absolute" top={6} left={6} style={{ zIndex: 1, maxWidth: "68%" }}>
+            <FilePhaseBadges phase={item.file_phase} />
+          </Box>
           {item.score != null && (
             <Group
               gap={3}
