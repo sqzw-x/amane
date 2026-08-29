@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.7.0
+
+### ✨ 新功能
+
+- **strm 文件内容支持自定义模板**: 媒体库新增 `strm 内容模板` (仅链接方式为 STRM 时生效), 可把 `.strm` 里的本地挂载路径换成 OpenList 侧路径或 HTTP 直链, 让 MediaWarp 的 AlistStrm / HTTPStrm 正确识别. 留空保持原行为 (写视频绝对路径), 存量库不受影响.
+  - 新增占位符 `{video_relpath}` (视频落地路径剔除**库根**前缀后的部分) 与 `{video_path}` (绝对路径). 二者取自视频**实际落地路径**, 自动带上分集后缀 (`-CD1`) 与重名时的 `(1)` 后缀
+  - 典型写法: 库根即挂载点时填 `/{video_relpath}`; 库根比挂载点深时补回缺的层级, 如 `/OD/VC/{video_relpath}`; Alist 子目录挂载填 `/OneDrive/{video_relpath}`; HTTPStrm 填 `http://alist:5244/d/{video_relpath}`
+  - 改完模板重跑「整理」即可刷新已生成的 strm, 无需先删文件
+
 ## v0.5.0
 
 ### ✨ 新功能

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Amane API",
-    "version": "0.6.0"
+    "version": "0.7.0"
   },
   "paths": {
     "/api/health": {
