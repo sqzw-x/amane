@@ -1,6 +1,6 @@
 # 内容路由与站点特性
 
-> 提交: `a687b6a`
+> 提交: `bcf8d0c`
 >
 > 默认 `content_routes` 的取舍、各源覆盖与怪癖. 资格真值 / `field_priority` 编译见 [config.md](config.md); 建图见 [task-system.md](task-system.md). 成员与顺序以 `src/amane/config/manager.py` `_DEFAULT_CONTENT_ROUTES` 为准, 本文不抄表.
 
@@ -47,7 +47,7 @@
 
 **freejavbt.com** — 显式分有碼 / 無碼 / 歐美 / FC2, 首页还有「國產」「成人動畫」. 覆盖最宽的 BT 向索引, 元数据质量一般, 适合垫后.
 
-**avsox.click** — 日本无码情报站. 同源: AVMOO=有碼 (`avmoo.shop`)、AVSOX=无碼、AVHEAT=欧美 (`avheat.shop`). 项目只接 AVSOX. Vue SPA, 中文入口 `/cn`.
+**avsox.click** — 日本无码情报站. 同源: AVMOO=有碼 (`avmoo.shop`)、AVSOX=无碼、AVHEAT=欧美 (`avheat.shop`). 项目只接 AVSOX. Vue SPA, 中文入口 `/cn`; 壳页 `#javu-site-index` 没有影片 DOM. 元数据走 POST `/javu/data/api/search` 与 `/javu/data/api/getMovie` (Yii CSRF: 先 GET `/cn/` 取 `csrf-token`, body 是 JSON 数组). 详情 URL `/{lang}/movies/{movieId}`. 默认 `lang=cn`. 搜索 API 对 `HEYZO-3607` / `HEYZO3607` 都能命中, 返回的 `movieFanHao` 带短横线; 选取时先大小写精确匹配, 再忽略短横线/空格, **不**把下划线当成短横线 (`010115_001` 与 `010115-001` 是两部). 对不上不取第一条.
 
 **jav321.com** — 标题带 dmm, 导航分 AV / 素人. 像 DMM 目录镜像; 有碼与素人垫后. 无无碼 / FC2 / 欧美入口. 日文标签即メーカー / 配信開始日 / ジャンル.
 

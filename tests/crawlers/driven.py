@@ -123,7 +123,7 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
 
         async def post_json_side_effect(url: str, **kwargs: object) -> object:
             raw = kwargs.get("json")
-            blob = json.dumps(raw) if isinstance(raw, dict) else str(raw or "")
+            blob = json.dumps(raw, ensure_ascii=False) if isinstance(raw, (dict, list)) else str(raw or "")
             for pattern, needle, payload in post_json_routes:
                 if pattern not in url:
                     continue

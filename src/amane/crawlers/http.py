@@ -76,10 +76,10 @@ class HttpClient:
         self,
         url: str,
         *,
-        json: dict,
+        json: Any,
         headers: dict[str, str] | None = None,
-    ) -> dict:
-        """POST JSON 载荷并返回解析后的响应字典."""
+    ) -> Any:
+        """POST JSON 载荷 (object 或 array) 并返回解析后的响应."""
         return await self._web.post_json(url, json=json, headers=headers)
 
     async def get_rendered(

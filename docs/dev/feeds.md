@@ -1,6 +1,6 @@
 # 远程发现源 (RSS/Atom)
 
-> 提交: `5214796`
+> 提交: `bcf8d0c`
 >
 > 与 Watcher / Schedule 的分工、去重真值、每源配置契约. 字段去源码.
 
@@ -48,7 +48,7 @@
 
 ## 每源刮削配置
 
-- `number_pattern` 一旦设置, **只**走该正则 (title → description → link; 有捕获组用 group 1), 不回退 `extract_number`. 未设置才用 `extract_number` (命中已知模式, **无**文件名「清理后原样」回退).
+- `number_pattern` 一旦设置, **只**走该正则 (title → description → link; 有捕获组用 group 1), 不回退 `extract_number`. 未设置才用 `extract_number` (命中已知形态则按 `parse_file_info` 重写, **无**文件名「清理后原样」回退). 重写与爬虫入参契约见 [crawlers.md](crawlers.md).
 - `content_type` 是 `ContentType | None`: 有值原样进 payload, 空则 `infer_content_type`.
 - `use_cache` 与手动 SCRAPE 同语义; 空集 = 强制刷新.
 

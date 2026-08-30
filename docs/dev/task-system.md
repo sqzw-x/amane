@@ -1,6 +1,6 @@
 # 任务系统
 
-> 提交: `b3af0d1`
+> 提交: `bcf8d0c`
 >
 > 入口: `src/amane/handlers/`, `src/amane/scheduler/worker.py`. Payload 结构、handler 步骤都在源码; 本文只解释**为什么**这么编排.
 > 数据所有权见 [data-model.md](data-model.md), 启动顺序见 [architecture.md](architecture.md), 日志隔离见 [observability.md](observability.md).
@@ -169,7 +169,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 两条路径形态不同, 不要混为一谈:
 
-**即时** (`POST /tasks`): 接收 `TaskSubmission` (含全部即时 `type`, 含 `actor_scrape` / `rescrape`), 经 `src/amane/api/support/task_resolve.py::resolve_submission` 得到 `(TaskType, Payload)` 后建 Task. REFRESH/ORGANIZE 只接受 `library_id`, resolve 时由 library 派生 `path`/`recursive`/`patterns` (submission 可显式覆盖); SCRAPE 走 number/media_id, **`content_type` 可空**: 为空时 media_id 按文件路径解析、number 按番号模式推断 (显式给定则覆盖); `ACTOR_SCRAPE` 走 `actor_id` (亦可通过 `POST /actors/{id}/scrape`).
+**即时** (`POST /tasks`): 接收 `TaskSubmission` (含全部即时 `type`, 含 `actor_scrape` / `rescrape`), 经 `src/amane/api/support/task_resolve.py::resolve_submission` 得到 `(TaskType, Payload)` 后建 Task. REFRESH/ORGANIZE 只接受 `library_id`, resolve 时由 library 派生 `path`/`recursive`/`patterns` (submission 可显式覆盖); SCRAPE 走 number/media_id, **`content_type` 可空**: 为空时 media_id 按文件路径解析、number 按番号模式推断 (显式给定则覆盖). **`payload.number` 是否经过 `parse_file_info` 重写** 取决于进路 (路径会改写, 手填 `number` 原样), 爬虫必须两种都能吃, 见 [crawlers.md](crawlers.md) 番号入参. `ACTOR_SCRAPE` 走 `actor_id` (亦可通过 `POST /actors/{id}/scrape`).
 
 **定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape`). 创建时把 submission 的 `model_dump()` 原样写入 `Schedule.payload`; cron/trigger 触发时由 `CronScheduler._execute_task` 从 dict 构造对应 Payload 再建 Task. 编辑只改 name/cron/enabled; 改任务内容需删除重建.
 

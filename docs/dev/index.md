@@ -1,6 +1,6 @@
 # 开发文档
 
-> 提交: `5214796`
+> 提交: `bcf8d0c`
 >
 > 只写跨文件的边界、顺序、契约、取舍与踩坑. 字段、签名、枚举去源码或 `web/openapi.json`.
 
@@ -13,7 +13,7 @@
 
 | 要做的事 | 文档 |
 |---------|------|
-| 加爬虫 / 采集 fixture | [crawlers.md](crawlers.md) · [crawler-testing.md](crawler-testing.md) |
+| 加爬虫 / 采集 fixture | [crawlers.md](crawlers.md) (含番号入参) · [crawler-testing.md](crawler-testing.md) |
 | 改来源插件主机契约 | [plugins.md](plugins.md) · [crawlers.md](crawlers.md) |
 | 查站点覆盖 / 改默认路由 | [content-routes.md](content-routes.md) |
 | 加 API 端点 | [api.md](api.md) |

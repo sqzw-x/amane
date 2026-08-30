@@ -1,6 +1,6 @@
 # 爬虫开发
 
-> 提交: `a7ce29f`
+> 提交: `bcf8d0c`
 >
 > 入口: `src/amane/crawlers/`. 本文解释爬虫架构、HTTP 层设计、限速机制, 以及添加新爬虫的完整步骤.
 > 测试约定见 [crawler-testing.md](crawler-testing.md). 默认路由与站点覆盖见 [content-routes.md](content-routes.md).
@@ -35,12 +35,26 @@ CrawlerFactory (缓存实例)
 
 `profile()` 类方法给出内置来源 ID / `base_url` / 能力与性别 / 可选 cookies 与限速 URL. `__init__` 在 `profile()` 之后自动 `_resolve_config()`, 子类不要再调一次. 外部来源不要求继承 `Crawler`，实现契约见 [plugins.md](plugins.md).
 
+## 番号入参
+
+`SearchQuery.number` 就是 `ScrapePayload.number` (`handlers/scrape.py`). Handler **不再**跑一遍解析. 进路不同则字符串形态不同, 爬虫不能假设「一定已经带短横线、一定是大写」.
+
+| 进路 | 番号从哪来 | 会不会重写 |
+|------|------------|------------|
+| 扫库 / 按 `media_id` 刮削 | `parse_file_info(path).number` (`api/models/tasks.py` `ScrapeRequest.resolve`; REFRESH 同样) | **会.** 路径解析命中已知形态时改写成目录号: 插入 `-` (`HEYZO3607` → `HEYZO-3607`)、DMM 连写拆零 (`midv00123` → `MIDV-123`)、FC2/HEYZO 族规则、字母大写、剥 CD/字幕尾标. 规则只在 `parsing/file_info.py` `_match` / `_prepare`, 本文不抄表. |
+| 用户任务只填 `number` | submission 字符串 | **不会.** 原样进 payload; 空 `content_type` 只调用 `infer_content_type` 猜片种, 猜类型不改字符串. |
+| RSS 自动入队 | `extract_number` (即 `parse_file_info(text=…)` ) | **会** (与路径同一套已知形态). 未命中则没有番号, **不会**把标题原文当番号. 源上若设了 `number_pattern` 则只走该正则, 见 [feeds.md](feeds.md). |
+
+落库 `Metadata.number` 也是这份 payload 原样 (UNIQUE 忽略大小写, 首次写入的大小写保留, 见 [data-model.md](data-model.md)). 因此补刮 / RESCRAPE 可能再次把无横线手填号送进爬虫.
+
+**爬虫侧:** 站点检索和「哪条结果算命中」自己处理分隔符. 站内 ID 带 `-` 时, 入参 `HEYZO-3607` 与 `HEYZO3607` 都应能对上 (精确优先, 再忽略短横线/空格). **不要**把 `_` 收成 `-`, 除非该站把两种当成同一部 (`010115_001` 与 `010115-001` 常是两部). 站点特例写在 [content-routes.md](content-routes.md), 不在这里重复.
+
 ## HTTP 层
 
 `WebClient` (`net/http.py`) 是唯一出站 HTTP 通道: 失败抛 `RequestError` (`SourceError` 子类, `failure` 挂在异常上). `ok_statuses` (如 RSS 304) 仍算成功. `HttpClient` (`crawlers/http.py`) 是薄封装 (`get_rendered` / 浏览器); 爬虫与插件都走它.
 
 - HTML 页用 `get_html`: `get_text` + `classify_block`, 命中拦截/空页抛 `SourceError`
-- JSON API 用 `get_json`, 不跑 HTML 启发式
+- JSON API 用 `get_json` / `post_json`, 不跑 HTML 启发式. `post_json` 载荷可以是 object 或 array (Yii 式 RPC)
 - `download` / `ResourceStore.acquire` 是机会主义的: 调用方 `except RequestError: return None` / 返回 `bool`, 不走第二套错误通道
 
 多 URL 试探 (DMM 搜索、Prestige SKU) 可在子类 `except RequestError: continue`; 一次成功响应都没有则把最后一次异常冒出去, 不要吞成裸 `None`.
@@ -69,7 +83,7 @@ host 优先级高于 site 的原因: 多个站点可能共享同一 host (官方
 ## 添加新爬虫
 
 1. `enums.py` 加 `SiteName` (frozen dict 加载时按代码枚举补默认槽, 见 [config.md](config.md)).
-2. 影片: `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`). 演员: `crawlers/actor/sites/{site}.py`, `profile()` 声明 `capabilities` 与 `genders`. 消费 language 的影片爬虫设 `multi_language=True`.
+2. 影片: `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`). 演员: `crawlers/actor/sites/{site}.py`, `profile()` 声明 `capabilities` 与 `genders`. 消费 language 的影片爬虫设 `multi_language=True`. 番号入参形态见上节, 不要只测带短横线的一种.
 3. 导出后 `registry.register` / `actor_registry.register`. 双料站两个类同一 `SiteName`, 再 register 一次即可; **不要**改 `site_roles` 常量. 演员 `register` 顺序即默认 `profile_sites` 优先级.
 4. 需要 cookie/token 时给 `SiteConfig` 加字段.
 5. 加 TOML 用例, 见 [crawler-testing.md](crawler-testing.md).
