@@ -6,6 +6,7 @@
 """
 
 from pathlib import Path
+from sys import platform
 from typing import NamedTuple
 
 import pytest
@@ -483,6 +484,47 @@ class TestPathTraversalProtection:
         meta = _meta()
         result = resolve_paths(wp, meta, ext="mp4")
         assert result.video == media / "sub" / "dir" / "ABC-123.mp4"
+
+    @pytest.mark.skipif(platform == "win32", reason="符号链接行为在 Windows 下不一致")
+    def test_in_library_file_symlink_keeps_lexical_video_dir(self, media: Path):
+        """dest 已是指向库内源文件的软链接时, {video_dir} 仍是 dest 所在目录."""
+        media.mkdir()
+        src = media / "incoming" / "ABC-123.mp4"
+        src.parent.mkdir()
+        src.write_bytes(b"x")
+        dest_dir = media / "StudioX" / "ABC-123"
+        dest_dir.mkdir(parents=True)
+        dest = dest_dir / "ABC-123.mp4"
+        dest.symlink_to(src)
+        wp = Library(name="t", path=str(media), video_template=VIDEO_TEMPLATE_DEFAULT)
+        result = resolve_paths(wp, _meta(), ext="mp4")
+        assert result.video == dest
+        assert result.thumb == dest_dir / "thumb.jpg"
+        assert result.nfo == dest_dir / "ABC-123.nfo"
+
+    @pytest.mark.skipif(platform == "win32", reason="符号链接行为在 Windows 下不一致")
+    def test_dir_symlink_escaping_library_rejected(self, media: Path, etc: Path):
+        """库内目录项指向库外时, 相对模板跟随后逃逸, 拒绝."""
+        media.mkdir()
+        etc.mkdir()
+        (media / "leak").symlink_to(etc)
+        wp = Library(name="t", path=str(media), video_template="leak/{number}/{number}.{ext}")
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            resolve_paths(wp, _meta(), ext="mp4")
+
+    @pytest.mark.skipif(platform == "win32", reason="符号链接行为在 Windows 下不一致")
+    def test_file_symlink_to_outside_rejected(self, media: Path, etc: Path):
+        """dest 文件软链接指向库外时拒绝."""
+        media.mkdir()
+        etc.mkdir()
+        outside = etc / "secret.mp4"
+        outside.write_bytes(b"x")
+        dest_dir = media / "StudioX" / "ABC-123"
+        dest_dir.mkdir(parents=True)
+        (dest_dir / "ABC-123.mp4").symlink_to(outside)
+        wp = Library(name="t", path=str(media), video_template=VIDEO_TEMPLATE_DEFAULT)
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            resolve_paths(wp, _meta(), ext="mp4")
 
 
 class TestNormalizeLinkTemplate:

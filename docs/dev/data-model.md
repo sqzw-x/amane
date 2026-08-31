@@ -108,7 +108,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 模板**故意按资源类型独立**, 而不是一个 `output_dir` + 后缀拼接 — 用户场景包括: NAS 多盘分存、字幕集中备份、NFO 同目录 vs 集中目录.
 
-`link_template` 为空则不创建链接, `{link_dir}` / `{link_name}` 分别等于 `{video_dir}` / `{video_name}`. 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的入口: `link_mode=strm` 写 `.strm` (内容为一行视频绝对路径, 后缀强制 `.strm`); `symlink` 做文件系统软链接. 链接必须落在库根之外 (否则 REFRESH 会把 strm/软链接再扫成媒体). `{video_dir}` / `{video_name}` 始终是真实视频父目录与文件名 (不含扩展名); `{link_dir}` / `{link_name}` 是链接父目录与文件名. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO/海报自动跟链接走, 不必改六个附属模板. 想把某类附属文件留在网盘侧, 显式写 `{video_dir}/…`. 链接模板可用 `{video_name}` 跟随已渲染视频文件名, 不必再重复填写 `{cd?}` / `{sub?}` 组.
+`link_template` 为空则不创建链接, `{link_dir}` / `{link_name}` 分别等于 `{video_dir}` / `{video_name}`. 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的入口: `link_mode=strm` 写 `.strm` (内容为一行视频绝对路径, 后缀强制 `.strm`); `symlink` 做文件系统软链接. 链接必须落在库根之外 (否则 REFRESH 会把 strm/软链接再扫成媒体). `{video_dir}` 是 dest 的字面父目录 (不跟随 dest 文件软链接); `{video_name}` 是 dest 文件名 (不含扩展名); `{link_dir}` / `{link_name}` 是链接父目录与文件名. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO/海报自动跟链接走, 不必改六个附属模板. 想把某类附属文件留在网盘侧, 显式写 `{video_dir}/…`. 链接模板可用 `{video_name}` 跟随已渲染视频文件名, 不必再重复填写 `{cd?}` / `{sub?}` 组.
 
 模板渲染在 `organize/path_templates.py::resolve_paths`. 占位符分相位: metadata 来自 Metadata 字段; `{raw_dir}` / `{raw_name}` 与 file 相位 (`{cd?}` `{sub?}` `{mosaic?}` `{def?}`, `parse_file_info` 从源路径检测, 同时投影到 `MediaFile` 的 `content_type` / `mosaic` / `has_subtitle` / `definition`) 在 ORGANIZE 时注入模板; `{video_dir}` / `{video_name}` 在视频模板渲染之后注入, 供链接模板与附属模板使用 (写进视频模板自身为 Unknown); `{link_dir}` / `{link_name}` 在链接渲染之后注入, 仅附属模板 (含字幕; strm 强制 `.strm` 后取 stem); `{raw_srt_name}` 仅字幕模板. file 相位未检出是**空串**, 不是 `Unknown` / `censored`. `{mosaic?}` 只认文件名标记或目录名整段词表 (由近到远; `uncensored` / `cracked` / `leaked` / `-U` / `-UC` / 无码 / 破解 / 流出, 子串不算), 不用 content_type 兜底 — 无码片商 (HEYZO 等) 靠 `content_type` 列, 不写进文件名. 同名多标记时无码优先于破解、流出, 破解优先于流出. `{def?}` 只看文件名. `{sub?}` 有中字标记时为 `C`. 名字里的 `?` 只是提醒可空, 没有运算含义; 写成 `{cd}` 视为未知 key, 回 `Unknown`.
 
@@ -120,7 +120,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 附属模板列 `None` 表示未自定义, ORGANIZE 回退写在 `path_templates` 的 `*_TEMPLATE_DEFAULT`. HTTP `optional_defaults` 手写、`@subset_of(Library, covariant=True)`: 缺省是产出, 字段类型协变 (`PathTemplate` <: `PathTemplate | None`). 逆变会要求列值都能写进缺省模型, `None` 进不了非空缺省. `link_template` 空表示不建链接, 不在此列. `{mosaic?}` 闭合值是 `parsing.Mosaic`.
 
-**逃逸防护**: 相对模板必须是 library 根的后代 (`ALLOW_ALL` 也不例外); 绝对模板 (含展开 `{video_dir}` / `{link_dir}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. `safe_dirs is None` (`AMANE_SAFE_DIRS=ALLOW_ALL`) 时绝对模板不另加边界. 多盘分存要求目标盘在 `safe_dirs` 内. `link_template` 额外要求渲染结果**不是**库根的后代.
+**逃逸防护**: 校验对渲染结果做 realpath (跟随符号链接). 相对模板的真实落点必须是 library 根的后代 (`ALLOW_ALL` 也不例外); 绝对模板 (含展开 `{video_dir}` / `{link_dir}` 后变绝对) 必须落在 library 根或 `safe_dirs` 下, 否则 `ValueError`. 返回路径与 `{video_dir}` 用字面绝对路径 (折叠 `..`, 不跟随链接): dest 文件已是库内软链接时附属文件仍写在 dest 所在目录; 库内某级目录项指向库外则拒绝. `safe_dirs is None` (`AMANE_SAFE_DIRS=ALLOW_ALL`) 时绝对模板不另加边界. 多盘分存要求目标盘在 `safe_dirs` 内. `link_template` 额外要求渲染结果**不是**库根的后代.
 
 ## Resource (一等存储, 非缓存)
 

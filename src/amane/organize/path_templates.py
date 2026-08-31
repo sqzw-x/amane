@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -348,22 +349,24 @@ def _build_variables(
     }
 
 
+def _lexical_abs(path: Path) -> Path:
+    """转为绝对路径并消除 ``.`` / ``..``, 但不跟随符号链接."""
+    return Path(os.path.abspath(os.fspath(path)))  # noqa: PTH100
+
+
 def _render_template(
     template: str,
     variables: dict[str, str],
     base_path: Path,
     safe_dirs: Sequence[Path] | None,
 ) -> Path:
-    """渲染模板并解析为绝对路径, 强制约束在允许的边界内.
+    """渲染模板并得到字面绝对路径, 强制约束在允许的边界内.
 
      边界规则:
-    - 相对路径模板: 相对 base_path 解析, 渲染后必须是 base_path 的后代 (ALLOW_ALL 也不例外).
-    - 绝对路径模板: 渲染后必须位于 base_path 或 safe_dirs 任一目录之下.
-       base_path 始终可信 (默认模板经 {video_dir} 展开即为 base_path 下的绝对路径);
-       safe_dirs 额外允许多盘分存等指向其他可信位置的绝对路径.
-       ``safe_dirs is None`` (``ALLOW_ALL``) 时绝对模板不另加边界.
+    - 相对路径模板: 相对 base_path 解析, resolve 后必须是 base_path 的后代 (ALLOW_ALL 也不例外).
+    - 绝对路径模板: resolve 后必须位于 base_path 或 safe_dirs 任一目录之下.
 
-     所有路径都经过 resolve() 消除 .. 等符号后再校验.
+     渲染时用字面路径, 仅折叠 ``.`` / ``..`` 不跟随链接.
 
      Raises:
          ValueError: 渲染结果逃逸了允许边界
@@ -371,19 +374,21 @@ def _render_template(
     rendered = render_path_template(template, variables)
     path = Path(rendered)
     if path.is_absolute():
-        resolved = path.resolve()
+        candidate = _lexical_abs(path)
         if safe_dirs is None:
-            return resolved
+            return candidate
         allowed_roots = [base_path, *safe_dirs]
-        if not is_any_descendant(resolved, *allowed_roots):
+        if not is_any_descendant(candidate, *allowed_roots):
+            followed = candidate.resolve()
             raise ValueError(
-                f"Path traversal detected: rendered path '{resolved}' escapes base '{base_path}' and safe directories"
+                f"Path traversal detected: rendered path '{followed}' escapes base '{base_path}' and safe directories"
             )
-        return resolved
-    resolved = (base_path / path).resolve()
-    if not is_descendant(resolved, base_path):
-        raise ValueError(f"Path traversal detected: rendered path '{resolved}' escapes base '{base_path}'")
-    return resolved
+        return candidate
+    candidate = _lexical_abs(base_path / path)
+    if not is_descendant(candidate, base_path):
+        followed = candidate.resolve()
+        raise ValueError(f"Path traversal detected: rendered path '{followed}' escapes base '{base_path}'")
+    return candidate
 
 
 def resolve_paths(
