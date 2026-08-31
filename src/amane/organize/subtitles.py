@@ -63,6 +63,7 @@ def place_subtitles(
     mode: MoveMode,
     safe_dirs: Sequence[Path] | None = (),
     link_dir: Path | None = None,
+    link_name: str | None = None,
 ) -> None:
     """把已发现的字幕按模板落到 video_dest 侧, 失败只记日志."""
     for sub in sources:
@@ -72,6 +73,8 @@ def place_subtitles(
             sub,
             video_dir=video_dest.parent,
             link_dir=link_dir,
+            video_name=video_dest.stem,
+            link_name=link_name,
             source_path=video_source,
             file_info=file_info,
             safe_dirs=safe_dirs,

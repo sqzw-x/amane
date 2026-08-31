@@ -596,3 +596,78 @@ class TestResolvePathsLink:
             safe_dirs=[other],
         )
         assert sub == other / "StudioX" / "ABC-123" / "MIDV-123.zh.srt"
+
+
+class TestRenderedNamePlaceholders:
+    """{video_name} / {link_name}: 视频渲染后、链接渲染后分相位注入."""
+
+    def test_nfo_follows_video_name_with_cd_and_sub(self, media: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}[-CD{cd?}][-{sub?}].{ext}",
+            nfo_template="{video_dir}/{video_name}.nfo",
+        )
+        source = media / "inbox" / "MIDV-123-CD2-C.mp4"
+        info = parse_file_info(source)
+        result = resolve_paths(wp, _meta(), ext="mp4", source_path=source, file_info=info)
+        assert result.video == media / "ABC-123" / "ABC-123-CD2-C.mp4"
+        assert result.nfo == media / "ABC-123" / "ABC-123-CD2-C.nfo"
+
+    def test_link_template_uses_video_name(self, media: Path, other: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}[-CD{cd?}].{ext}",
+            link_template=str(other / "{number}" / "{video_name}.{ext}"),
+            link_mode=LinkMode.STRM,
+            nfo_template="{link_dir}/{link_name}.nfo",
+        )
+        result = resolve_paths(wp, _meta(), ext="mp4", cd=2, safe_dirs=[other])
+        assert result.video == media / "ABC-123" / "ABC-123-CD2.mp4"
+        assert result.link == other / "ABC-123" / "ABC-123-CD2.strm"
+        assert result.nfo == other / "ABC-123" / "ABC-123-CD2.nfo"
+
+    def test_unset_link_name_matches_video_name(self, media: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}[-CD{cd?}].{ext}",
+            nfo_template="{link_dir}/{link_name}.nfo",
+        )
+        result = resolve_paths(wp, _meta(), ext="mp4", cd=2)
+        assert result.link is None
+        assert result.nfo == media / "ABC-123" / "ABC-123-CD2.nfo"
+
+    def test_video_name_in_video_template_is_unknown(self, media: Path):
+        wp = Library(name="t", path=str(media), video_template="{video_name}/{number}.{ext}")
+        result = resolve_paths(wp, _meta(), ext="mp4")
+        assert result.video == media / "Unknown" / "ABC-123.mp4"
+
+    def test_link_name_in_link_template_is_unknown(self, media: Path, other: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}.{ext}",
+            link_template=str(other / "{link_name}.{ext}"),
+            link_mode=LinkMode.SYMLINK,
+        )
+        result = resolve_paths(wp, _meta(), ext="mp4", safe_dirs=[other])
+        assert result.link == other / "Unknown.mp4"
+
+    def test_subtitle_uses_video_name(self, media: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}[-CD{cd?}].{ext}",
+            subtitle_template="{link_dir}/{video_name}.{ext}",
+        )
+        video = resolve_paths(wp, _meta(), ext="mp4", cd=2)
+        sub = resolve_subtitle_path(
+            wp,
+            _meta(),
+            Path("/inbox/foo.srt"),
+            video_dir=video.video.parent,
+            video_name=video.video.stem,
+        )
+        assert sub == media / "ABC-123" / "ABC-123-CD2.srt"

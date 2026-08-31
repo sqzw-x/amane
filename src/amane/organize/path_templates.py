@@ -64,7 +64,9 @@ PLACEHOLDERS: tuple[str, ...] = (
     "mosaic?",
     "def?",
     "video_dir",
+    "video_name",
     "link_dir",
+    "link_name",
     "raw_srt_name",
 )
 
@@ -416,10 +418,16 @@ def resolve_paths(
 
     video = _render_template(library.video_template, variables, base_path, safe_dirs)
 
-    video_dir = str(video.parent)
-    variables["video_dir"] = video_dir
+    video_name = video.stem
+    variables["video_dir"] = str(video.parent)
+    variables["video_name"] = video_name
     link = _resolve_link_path(library, variables, base_path, safe_dirs)
-    variables["link_dir"] = str(link.parent) if link is not None else video_dir
+    if link is not None:
+        variables["link_dir"] = str(link.parent)
+        variables["link_name"] = link.stem
+    else:
+        variables["link_dir"] = variables["video_dir"]
+        variables["link_name"] = video_name
 
     thumb = _render_template(library.thumb_template or THUMB_TEMPLATE_DEFAULT, variables, base_path, safe_dirs)
     poster = _render_template(library.poster_template or POSTER_TEMPLATE_DEFAULT, variables, base_path, safe_dirs)
@@ -448,7 +456,10 @@ def _resolve_link_path(
     base_path: Path,
     safe_dirs: Sequence[Path] | None,
 ) -> Path | None:
-    """渲染 link_template; 空模板返回 None. 结果必须落在库根之外."""
+    """渲染 link_template; 空模板返回 None. 结果必须落在库根之外.
+
+    此时 `{video_dir}` / `{video_name}` 已注入, `{link_dir}` / `{link_name}` 尚未注入.
+    """
     template = normalize_link_template(library.link_template)
     if template is None:
         return None
@@ -467,6 +478,8 @@ def resolve_subtitle_path(
     *,
     video_dir: Path,
     link_dir: Path | None = None,
+    video_name: str = "",
+    link_name: str | None = None,
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
     safe_dirs: Sequence[Path] | None = (),
@@ -474,7 +487,8 @@ def resolve_subtitle_path(
     """按字幕模板渲染单个字幕的目标路径.
 
     `{ext}` / `{raw_srt_name}` 取自该字幕源文件; `{raw_name}` / `{raw_dir}` 仍是视频源.
-    `{video_dir}` 为已渲染视频父目录; `{link_dir}` 为链接父目录 (未设链接时与 `{video_dir}` 相同).
+    `{video_dir}` / `{video_name}` 为已渲染视频父目录与文件名 (不含扩展名);
+    `{link_dir}` / `{link_name}` 为链接父目录与文件名 (未设链接时分别与视频侧相同).
     默认模板保持原文件名与扩展名.
     """
     base_path = Path(library.path)
@@ -482,7 +496,9 @@ def resolve_subtitle_path(
         metadata, ext=subtitle_source.suffix.lstrip("."), source_path=source_path, file_info=file_info
     )
     variables["video_dir"] = str(video_dir)
+    variables["video_name"] = video_name
     variables["link_dir"] = str(link_dir if link_dir is not None else video_dir)
+    variables["link_name"] = link_name if link_name is not None else video_name
     variables["raw_srt_name"] = subtitle_source.stem
     template = library.subtitle_template or SUBTITLE_TEMPLATE_DEFAULT
     return _render_template(template, variables, base_path, safe_dirs)

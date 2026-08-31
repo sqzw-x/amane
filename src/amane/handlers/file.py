@@ -145,6 +145,7 @@ async def execute_file_operations(
             mode=move_mode,
             safe_dirs=safe_dirs,
             link_dir=paths.link.parent if paths.link is not None else None,
+            link_name=paths.link.stem if paths.link is not None else None,
         )
 
     if org_result.success:

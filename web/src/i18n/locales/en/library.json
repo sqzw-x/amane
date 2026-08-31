@@ -165,8 +165,10 @@
       "def?": "[optional] Resolution (from filename)",
       "cd?": "[optional] Part number",
       "sub?": "[optional] Subtitle status",
-      "video_dir": "Directory of the video. Sidecar templates only",
+      "video_dir": "Directory of the rendered video. Link and sidecar templates",
+      "video_name": "Rendered video filename (no extension). Link and sidecar templates",
       "link_dir": "Directory of the link; same as {video_dir} when the link template is unset",
+      "link_name": "Rendered link filename (no extension); same as {video_name} when the link template is unset",
       "raw_srt_name": "Source subtitle filename. e.g. A/foo.zh.srt → foo.zh"
     }
   },
