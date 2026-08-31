@@ -361,7 +361,9 @@ class TestResolvePathsEdgeCases:
         meta = _meta()
         result = resolve_paths(wp, meta, ext="")
 
-        assert result.video == media / "ABC-123" / "ABC-123."
+        assert result.video.parent == media / "ABC-123"
+        # Windows ntpath.abspath 去掉文件名末尾的点; POSIX 保留 ``ABC-123.``.
+        assert result.video.name == ("ABC-123" if platform == "win32" else "ABC-123.")
 
     def test_video_dir_computed_from_absolute_video(self, media: Path, other: Path):
         wp = Library(name="t", path=str(media), video_template=str(other / "{number}" / "{number}.{ext}"))
