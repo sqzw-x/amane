@@ -10,7 +10,7 @@
 
 路径模板决定整理后文件的存储位置. 模板使用占位符变量:
 
-### 常用占位符
+### 可用占位符
 
 | 占位符 | 说明 | 示例值 |
 | -------- | ------ | -------- |
@@ -45,9 +45,6 @@
 | `{link_dir}` `{link_name}` | 附属、字幕、STRM 内容 |
 | `{raw_srt_name}` | 仅字幕 |
 
-!!! note
-    占位符名字结尾带 `?` 的项 (`{cd?}` / `{sub?}` / `{mosaic?}` / `{def?}`) 未检测到时会填空字符串, 而不是 `Unknown`. 这些占位符适合配合可选组语法 (见下文) 使用, 未检出时整组省略.
-
 ### 默认模板
 
 ```
@@ -58,11 +55,9 @@ NFO: {link_dir}/{number}.nfo
 字幕: {link_dir}/{raw_srt_name}.{ext}
 ```
 
-默认视频模板使用了可选组语法 (见下文): 检测到分集时自动追加 `-CD1` / `-CD2`, 检测到中字时追加 `-C`; 两者都未检出时文件名中不会残留连字符.
-
 ### 可选组语法
 
-用 `[...]` 将模板中的一段内容包起来. 组里的所有可空占位符全为空时整组省略:
+可用 `[...]` 将模板中的一段包裹为组, 组内所有可空占位符全为空时整组省略. 这主要是为了处理分集、中字等可选属性, 例如:
 
 ```
 {number}[-CD{cd?}][-{mosaic?|uncensored=U}{sub?}].{ext}
@@ -105,55 +100,26 @@ NFO: {link_dir}/{number}.nfo
 
 媒体库支持在库外创建指向库内视频的入口, 适用于网盘挂载等场景:
 
-- **`link_template`**: 链接文件的路径模板 (如 `/本地路径/{number}/{video_name}.{ext}`). 为空则不创建链接, `{link_dir}` / `{link_name}` 分别等于 `{video_dir}` / `{video_name}`. `{video_name}` 是整理后视频文件名, 链接模板可用, 不必再重复填写 `{cd?}` 组.
+- **`link_template`**: 链接文件的路径模板 (如 `/本地路径/{number}/{video_name}.{ext}`). 为空则不创建链接, `{link_dir}` / `{link_name}` 分别等于 `{video_dir}` / `{video_name}`.
 - **`link_mode`**: 链接类型
   - `strm`: 创建 `.strm` 文件, Emby/Jellyfin 可识别
   - `symlink`: 创建文件系统软链接
 - **`strm_content_template`**: STRM 内容模板, 仅 `link_mode=strm` 时生效.
 
-### STRM 内容模板
+使用网盘库时, 可以将库路径指向挂载盘 (如 `/mnt/cloud`), `link_template` 填本地路径:
 
-`link_template` 决定 `.strm` 文件放在哪里; `strm_content_template` 指定文件中的路径或地址. 占位符、可选组与值映射与路径模板相同.
+- 视频在挂载盘上按模板整理
+- 本地创建 strm/软链接 + NFO/海报/字幕等
+- 媒体服务器 Emby/Jellyfin 添加本地媒体库即可
 
-留空时写入视频的绝对路径, 本机或局域网直接播放即可, 不必填写.
-
-播放端需要的是网盘 / OpenList 上的路径, 而不是本机挂载路径时, 使用 `{video_relpath}`: 它是整理后的视频相对媒体库根目录的路径. 常见写法:
-
-```
-/{video_relpath}
-```
-
-| | 路径 |
-| --- | --- |
-| 库路径 | `/mnt/cloud` |
-| 视频 | `/mnt/cloud/Studio/ABC-123/ABC-123.mp4` |
-| `.strm` 内容 | `/Studio/ABC-123/ABC-123.mp4` |
-
-库路径比网盘根目录更深时, `{video_relpath}` 只包含库根以下的部分. 在模板前加上网盘上仍需要的上级目录:
+`strm_content_template` 用于设置 STRM 文件的内容模板. 默认情况下, STRM 会写入原视频文件的绝对路径,
+某些场景需要使用网盘 / OpenList URL, 则可手动设置模板, 例如:
 
 ```
-/OD/VC/{video_relpath}
+https://example.com/{video_relpath} -> https://example.com/ABC-123/ABC-123.mp4
 ```
-
-| | 路径 |
-| --- | --- |
-| 库路径 | `/mnt/cloud/OD/VC` |
-| 视频 | `/mnt/cloud/OD/VC/ABC-123/ABC-123.mp4` |
-| `.strm` 内容 | `/OD/VC/ABC-123/ABC-123.mp4` |
-
-需要 HTTP 地址时, 在占位符前加上主机, 例如 `https://example.com/{video_relpath}`.
 
 ### 使用场景
-
-网盘库整理时, 库路径指向挂载盘 (如 `/mnt/cloud`), `link_template` 填本地路径 (需落在 `safe_dirs` 内):
-
-- 视频在挂载盘上按模板改名
-- 本地出现 strm 文件或软链接 + NFO/海报
-- 媒体服务器扫描本地路径即可
-- 播放端认网盘路径时, 在 STRM 内容模板填写 `/{video_relpath}`
-
-!!! note
-    链接路径必须在库根之外, 否则会被扫描为新文件. `{link_dir}` / `{link_name}` 在有链接时指向链接父目录与文件名; 默认的 NFO/海报模板已改用 `{link_dir}`, 因此填写链接模板后附属文件自动跟随. NFO 若要与视频/链接同名, 模板里写 `{video_name}` 或 `{link_name}`.
 
 ## 整理操作
 
@@ -163,18 +129,18 @@ NFO: {link_dir}/{number}.nfo
 2. 系统会根据路径模板计算目标位置
 3. 按放置方式 (移动/复制/硬链接/符号链接) 执行
 4. 如果配置了链接模板, 在库外创建 strm 文件或软链接
-5. 按源文件标记添加封面 / 海报水印 ([配置指南](configuration.md))
+5. 按源文件标记添加封面 / 海报水印
 
 !!! note
-    整理操作不会自动触发, 需要手动执行. 可以通过任务系统排队整理任务.
+    目前整理操作无自动触发途径, 需要手动执行.
 
 ## 分集 (CD) 识别
 
-Amane 支持自动识别分集文件, 通过 `{cd?}` 占位符和可选组在整理后的文件名中保留分集标记:
+Amane 支持自动识别分集文件名, 目前支持以下几种常见标记:
 
 - `-CD1`, `-CD2` — 标准分集标记
 - `-Part1`, `-Part2` — 替代分集标记
-- `-A`, `-B` — 字母分集
+- `-A`, `-B` — 字母分集 (`-C` 与中字冲突, 不支持)
 - `-1` 到 `-9` — 尾部数字分集
 
 检测到的分集编号通过 `{cd?}` 占位符填入, 在模板中用可选组控制是否出现. 例如默认模板 `{studio}/{number}/{number}[-CD{cd?}].{ext}`:
