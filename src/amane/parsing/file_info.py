@@ -148,6 +148,8 @@ _WESTERN_NAMES: dict[str, str] = {
 
 _CATALOG_NUMBER = re.compile(r"[A-Z]{2,}-\d{2,}[Z]?")
 _DMM_CONCAT = re.compile(r"([A-Z]{2,})00(\d{3})")
+_TMA_NUMBER = re.compile(r"T\d{2}-?\d{3,}")
+_SIX_DIGIT_CATALOG = re.compile(r"(?<!\d)\d{6}[-_]\d{2,4}(?!\d)")
 _WESTERN_PROBE = re.compile(r"([A-Z0-9_]{2,})[-.]2?0?(\d{2}[-.]\d{2}[-.]\d{2})")
 _WESTERN_PARSE = re.compile(r"([A-Z0-9-]{2,})[-_.]2?0?(\d{2}[-.]\d{2}[-.]\d{2})")
 
@@ -442,8 +444,9 @@ def _match(basename: str, escape_strings: list[str], *, generic: bool) -> tuple[
         return m.group().replace("TENGOKU", "-").replace("--", "-"), ContentType.UNCENSORED
     if (m := re.search(r"S2M[BD]*-\d{3,}", c)) or (m := re.search(r"MCB3D[BD]*-\d{2,}", c)):
         return m.group(), ContentType.UNCENSORED
-    if m := re.search(r"T28-?\d{3,}", c):
-        return m.group().replace("T2800", "T28-"), ContentType.CENSORED
+    if m := _TMA_NUMBER.search(c):
+        # T28 / T38 等: DMM 连写 Txx00nnn → Txx-nnn; 已有短横线则原样.
+        return re.sub(r"T(\d{2})00", r"T\1-", m.group()), ContentType.CENSORED
     if m := re.search(r"TH101-\d{3,}-\d{5,}", c):
         return m.group().lower(), ContentType.UNCENSORED
     if m := _DMM_CONCAT.search(c):
@@ -458,6 +461,9 @@ def _match(basename: str, escape_strings: list[str], *, generic: bool) -> tuple[
                 file_number = value.replace(key, "") + file_number
                 break
         return file_number, _type_of_catalog_id(file_number)
+    if m := _SIX_DIGIT_CATALOG.search(c):
+        # 六位数字 + 短横线或下划线 + 序号 (010115-001 / 010115_001 是两部). 短于六位的数字号不命中.
+        return m.group(), ContentType.UNCENSORED
     if generic and (
         (m := re.search(r"[A-Z]+-[A-Z]\d+", c))
         or (m := re.search(r"\d{2,}[-_]\d{2,}", c))
@@ -496,7 +502,9 @@ def _fallback(stem: str, escape: list[str]) -> tuple[str, ContentType]:
 
 
 def _type_of_catalog_id(number: str) -> ContentType:
-    """PREFIX-NNN 族: 无码表 / 素人 / 国产 / 有码."""
+    """PREFIX-NNN 族: 无码表 / 六位数字目录号 / 素人 / 国产 / 有码."""
+    if re.fullmatch(r"\d{6}[-_]\d{2,4}", number):
+        return ContentType.UNCENSORED
     if re.match(r"n\d{4}", number) or re.search(r"[^.]+\.\d{2}\.\d{2}\.\d{2}", number):
         return ContentType.UNCENSORED
     upper = number.upper()
@@ -519,7 +527,9 @@ def _prefix(number: str) -> str:
     upper = number.upper()
     if m := re.search(r"([A-Za-z0-9-.]{3,})[-_. ]\d{2}\.\d{2}\.\d{2}", number):
         return m[1].upper()
-    for prefix in ("FC2", "MYWIFE", "KIN8", "S2M", "T28", "TH101", "XXX-AV"):
+    if m := re.match(r"(T\d{2})", upper):
+        return m[1]
+    for prefix in ("FC2", "MYWIFE", "KIN8", "S2M", "TH101", "XXX-AV"):
         if upper.startswith(prefix):
             return prefix
     if m := re.search(r"(MKY-[A-Z]+)-\d{3,}", upper):
