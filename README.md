@@ -32,6 +32,16 @@ just dev     # 启动 API 与前端
 
 开发文档见 [docs/dev/index.md](docs/dev/index.md).
 
+## 社区生态
+
+可与本项目集成的外部工具或插件:
+
+| 类型 | 标签 |
+|------|------|
+| 社区项目 | [`eco:project`](https://github.com/sqzw-x/amane/issues?q=is%3Aissue+label%3Aeco%3Aproject) |
+
+这些项目由社区开发维护, 请自行评估其功能与安全性, 除公共 API 外不提供任何支持与保证.
+
 ## 相关项目
 
 - [yoshiko2/Movie_Data_Capture](https://github.com/yoshiko2/Movie_Data_Capture)
