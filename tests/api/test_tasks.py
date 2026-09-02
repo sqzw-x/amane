@@ -100,6 +100,29 @@ class TestSubmitTask:
         cached = await client.post("tasks", json={"type": "scrape", "media_id": media.id, "use_cache": ["trans"]})
         assert cached.json()["payload"]["use_cache"] == ["trans"]
 
+        override = await client.post("tasks", json={"type": "scrape", "media_id": media.id, "number": "MIDV-123"})
+        assert override.status_code == 202
+        assert override.json()["payload"]["number"] == "MIDV-123"
+        assert override.json()["payload"]["media_file_id"] == media.id
+        assert override.json()["payload"]["content_type"] == "censored"
+        forced_override = await client.post(
+            "tasks",
+            json={
+                "type": "scrape",
+                "media_id": media.id,
+                "number": "MIDV-123",
+                "content_type": "western",
+            },
+        )
+        assert forced_override.json()["payload"]["content_type"] == "western"
+        blank = await client.post("tasks", json={"type": "scrape", "media_id": media.id, "number": "   "})
+        assert blank.status_code == 202
+        assert blank.json()["payload"]["number"] == "MD-0123"
+        assert blank.json()["payload"]["content_type"] == "hentai"
+        missing = await client.post("tasks", json={"type": "scrape", "media_id": 9999, "number": "MIDV-123"})
+        assert missing.status_code == 404
+        assert (await client.post("tasks", json={"type": "scrape", "number": "   "})).status_code == 422
+
         cleanup = await client.post("tasks", json={"type": "cleanup"})
         assert cleanup.status_code == 202
         assert cleanup.json()["payload"]["remove_missing_files"] is True

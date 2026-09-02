@@ -40,7 +40,8 @@ CrawlerFactory (缓存实例)
 | 进路 | 番号从哪来 | 会不会重写 |
 |------|------------|------------|
 | 扫库 / 按 `media_id` 刮削 | `parse_file_info(path).number` (`api/models/tasks.py` `ScrapeRequest.resolve`; REFRESH 同样) | **会.** 路径解析命中已知形态时改写成目录号: 插入 `-` (`HEYZO3607` → `HEYZO-3607`)、DMM 连写拆零 (`midv00123` → `MIDV-123`)、FC2/HEYZO 族规则、字母大写、剥 CD/字幕尾标. 规则只在 `parsing/file_info.py` `_match` / `_prepare`, 本文不抄表. |
-| 用户任务只填 `number` | submission 字符串 | **不会.** 原样进 payload; 空 `content_type` 只调用 `infer_content_type` 猜片种, 猜类型不改字符串. |
+| 用户任务只填 `number` | submission 字符串 | **不会.** 原样进 payload; 空 `content_type` 只调用 `infer_content_type` 推断内容类型, 不改字符串. |
+| 按 `media_id` 同时填写 `number` | submission 字符串 | **不会.** 原样进 payload; `media_id` 只关联文件. 空 `content_type` 按该番号推断, 不看文件路径. 空白 `number` 视为未填写, 回退到只按路径解析. |
 | RSS 自动入队 | `extract_number` (即 `parse_file_info(text=…)` ) | **会** (与路径同一套已知形态). 未命中则没有番号, **不会**把标题原文当番号. 源上若设了 `number_pattern` 则只走该正则, 见 [feeds.md](feeds.md). |
 
 落库 `Metadata.number` 也是这份 payload 原样 (UNIQUE 忽略大小写, 首次写入的大小写保留, 见 [data-model.md](data-model.md)). 因此补刮 / RESCRAPE 可能再次把无横线手填号送进爬虫.

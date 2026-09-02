@@ -46,7 +46,26 @@
   },
   "actions": {
     "scrape": "Scrape",
+    "scrapeWithNumber": "Scrape with number",
     "batchScrape": "Batch Scrape"
+  },
+  "scrapeOverride": {
+    "title": "Scrape with number",
+    "number": "Number",
+    "numberPlaceholder": "e.g. MIDV-123",
+    "contentType": "Content type",
+    "contentTypeHint": "Leave empty to infer from the number you enter. A chosen value is used as-is.",
+    "contentTypeAuto": "Infer automatically",
+    "submit": "Start scrape",
+    "contentTypes": {
+      "censored": "Censored",
+      "uncensored": "Uncensored",
+      "chinese": "Chinese",
+      "western": "Western",
+      "fc2": "FC2",
+      "amateur": "Amateur",
+      "hentai": "Hentai"
+    }
   },
   "batch": {
     "confirmDeleteTitle": "Delete Media Files",

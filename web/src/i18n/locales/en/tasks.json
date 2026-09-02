@@ -218,11 +218,11 @@
     "scrape": {
       "number": {
         "label": "Number",
-        "description": "Content ID (e.g., MIDV-123); mutually exclusive with Media ID."
+        "description": "Content ID (e.g., MIDV-123). May be sent alone, or together with Media ID: both fields scrape this number and attach the file."
       },
       "media_id": {
         "label": "Media ID",
-        "description": "MediaFile ID; server reads the number from it. Mutually exclusive with Number."
+        "description": "MediaFile ID. Alone, the server parses the number from the file path; together with Number, this field only attaches the file."
       },
       "content_type": {
         "label": "Content Type",

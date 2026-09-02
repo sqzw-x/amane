@@ -2665,17 +2665,17 @@ export type ScrapeSubmission = {
     /**
      * Number
      *
-     * 番号 (如 MIDV-123); 与 media_id 互斥
+     * 番号 (如 MIDV-123). 可与 media_id 同时提交: 此时用此字段刮削并关联该文件
      */
     number?: string | null;
     /**
      * Media Id
      *
-     * MediaFile ID; 服务端从中读取 number, 与 number 互斥
+     * MediaFile ID. 单独提交时从文件路径解析番号; 与 number 同时提交时只负责关联文件
      */
     media_id?: number | null;
     /**
-     * 内容类型; None = 服务端推断 (media_id 走文件路径解析, number 走番号模式)
+     * 内容类型; 未给出时: 仅 media_id 按文件路径推断, 有 number 时按番号推断
      */
     content_type?: ContentType | null;
     /**

@@ -23,7 +23,7 @@
 
 ## 列表分页
 
-片库 / 演员 / 分类的 **list**、订阅源、`/libraries/$id` 文件表走 `BrowsePageShell fill`: 标题/搜索不滚, 剩余高度交给 children. 视口高度是 `APP_SHELL_MAIN_HEIGHT` (header + 上下 padding), `/feeds` 阅读器、`/tasks` 与 `/logs` 共用, 不要再手写一份 calc. `/tasks` 页头 (状态/类型筛选) 留在 ListToolbar 外, 表体才走 ListToolbar; 阅读器虚滚自管, 不套 ListToolbar. 库详情的扫描/整理/配置/删除在 ListToolbar `trailing` (表体右上), 与左侧多选批处理相对.
+片库 / 演员 / 分类的 **list**、订阅源、`/libraries/$id` 文件表走 `BrowsePageShell fill`: 标题/搜索不滚, 剩余高度交给 children. 视口高度是 `APP_SHELL_MAIN_HEIGHT` (header + 上下 padding), `/feeds` 阅读器、`/tasks` 与 `/logs` 共用, 不要再手写一份 calc. `/tasks` 页头 (状态/类型筛选) 留在 ListToolbar 外, 表体才走 ListToolbar; 阅读器虚滚自管, 不套 ListToolbar. 库详情的扫描/整理/配置/删除在 ListToolbar `trailing` (表体右上), 与左侧多选批处理相对. 文件表行上的刷新图标只带 `media_id`; 「指定番号刮削」打开对话框, 番号必填、内容类型可选, 与 `media_id` 一同提交.
 
 `ListToolbar` 是表体壳: 顶栏 (多选 / 规则入口) 不滚, 表体内滚, **唯一**分页钉在视口底; 翻页把表体滚回顶部. `grid` / `cloud` 禁止 fill — 演员墙 `VirtuosoGrid` 用 `useWindowScroll`. ListToolbar 的 overflow 区要求父级有界高度; 非 fill 页拿它当壳, `flex` + `minHeight: 0` 会把表高塌成 0.
 

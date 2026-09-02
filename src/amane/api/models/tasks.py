@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Annotated, Literal, Self
 
 from fastapi import HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...db import Repository, TaskStatus, TaskType
 from ...handlers import (
@@ -105,22 +105,35 @@ class TaskWorkerResponse(BaseModel):
 
 
 class ScrapeRequest(BaseModel):
-    number: str | None = Field(default=None, description="番号 (如 MIDV-123); 与 media_id 互斥")
-    media_id: int | None = Field(default=None, description="MediaFile ID; 服务端从中读取 number, 与 number 互斥")
+    number: str | None = Field(
+        default=None,
+        description="番号 (如 MIDV-123). 可与 media_id 同时提交: 此时用此字段刮削并关联该文件",
+    )
+    media_id: int | None = Field(
+        default=None,
+        description="MediaFile ID. 单独提交时从文件路径解析番号; 与 number 同时提交时只负责关联文件",
+    )
     content_type: ContentType | None = Field(
-        default=None, description="内容类型; None = 服务端推断 (media_id 走文件路径解析, number 走番号模式)"
+        default=None,
+        description="内容类型; 未给出时: 仅 media_id 按文件路径推断, 有 number 时按番号推断",
     )
     use_cache: set[CacheKind] = Field(
         default_factory=lambda: {CacheKind.metadata, CacheKind.trans},
         description="启用的缓存种类 (metadata: 复用 DB per-site 快照; trans: 复用译文). 空集 = 全部强制刷新",
     )
 
+    @field_validator("number", mode="before")
+    @classmethod
+    def _normalize_number(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
     @model_validator(mode="after")
-    def _check_one_source(self):
+    def _check_source(self) -> Self:
         if self.number is None and self.media_id is None:
             raise ValueError("Either 'number' or 'media_id' must be provided")
-        if self.number is not None and self.media_id is not None:
-            raise ValueError("'number' and 'media_id' are mutually exclusive")
         return self
 
     async def resolve(self, repo: Repository) -> ScrapePayload:
@@ -129,6 +142,13 @@ class ScrapeRequest(BaseModel):
             media = await repo.get_media_file(self.media_id)
             if media is None:
                 raise HTTPException(status_code=404, detail=f"Media file {self.media_id} not found")
+            if self.number is not None:
+                return ScrapePayload(
+                    number=self.number,
+                    content_type=self.content_type or infer_content_type(self.number),
+                    media_file_id=self.media_id,
+                    use_cache=self.use_cache,
+                )
             parsed = parse_file_info(media.path)
             assert parsed.number is not None
             return ScrapePayload(
@@ -137,7 +157,6 @@ class ScrapeRequest(BaseModel):
                 media_file_id=self.media_id,
                 use_cache=self.use_cache,
             )
-        # number 必有 (validator 保证)
         assert self.number is not None
         return ScrapePayload(
             number=self.number,

@@ -1,6 +1,6 @@
 import { ActionIcon, Badge, Button, Checkbox, Group, Stack, Table, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconRefresh, IconTrash } from "@tabler/icons-react";
+import { IconForms, IconRefresh, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { listMediaQueryKey } from "@/client/@tanstack/react-query.gen";
 import { deleteMedia, submitTask } from "@/client/sdk.gen";
 import type {
+  ContentType,
   MediaFileResponse,
   MediaFileStatus,
   MediaSortField,
@@ -17,6 +18,7 @@ import { FilePhaseBadges } from "@/components/media/file-phase-badges";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
+import { ScrapeOverrideDialog } from "./scrape-override-dialog";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
@@ -103,6 +105,8 @@ export function LibraryMediaTable({
   const { selected, selectedIds, toggleOne, toggleAll, isAllSelected, clear } = useIdSelection();
   const [batchScraping, setBatchScraping] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  const [overrideTarget, setOverrideTarget] = useState<MediaFileResponse | null>(null);
+  const [overrideSaving, setOverrideSaving] = useState(false);
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: listMediaQueryKey() });
 
@@ -154,6 +158,34 @@ export function LibraryMediaTable({
     }
     clear();
     invalidate();
+  }
+
+  async function handleOverrideScrape(number: string, contentType: ContentType | undefined) {
+    if (overrideTarget == null) return;
+    setOverrideSaving(true);
+    try {
+      await submitTask({
+        body: {
+          type: "scrape",
+          media_id: overrideTarget.id,
+          number,
+          ...(contentType != null ? { content_type: contentType } : {}),
+        },
+        throwOnError: true,
+      });
+      notifications.show({
+        message: t("common:toast.scrapeStarted"),
+        color: "blue",
+      });
+      setOverrideTarget(null);
+    } catch (err) {
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      });
+    } finally {
+      setOverrideSaving(false);
+    }
   }
 
   async function handleDeleteOne(mediaId: number) {
@@ -237,7 +269,7 @@ export function LibraryMediaTable({
                 w={COLUMN_WIDTH[field]}
               />
             ))}
-            <Table.Th w={88} ta="right">
+            <Table.Th w={120} ta="right">
               {t("columns.actions")}
             </Table.Th>
           </Table.Tr>
@@ -318,6 +350,13 @@ export function LibraryMediaTable({
                     </ActionIcon>
                     <ActionIcon
                       variant="subtle"
+                      onClick={() => setOverrideTarget(item)}
+                      title={t("actions.scrapeWithNumber")}
+                    >
+                      <IconForms size={16} />
+                    </ActionIcon>
+                    <ActionIcon
+                      variant="subtle"
                       color="red"
                       onClick={() => void handleDeleteOne(item.id)}
                       title={t("common:actions.delete")}
@@ -337,6 +376,14 @@ export function LibraryMediaTable({
           {t("empty")}
         </Text>
       )}
+      <ScrapeOverrideDialog
+        target={overrideTarget}
+        saving={overrideSaving}
+        onClose={() => {
+          if (!overrideSaving) setOverrideTarget(null);
+        }}
+        onSubmit={(number, contentType) => void handleOverrideScrape(number, contentType)}
+      />
     </ListToolbar>
   );
 }
