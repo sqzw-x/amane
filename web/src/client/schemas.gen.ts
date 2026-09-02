@@ -5298,8 +5298,7 @@ export const ScrapeSubmissionSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Number',
-            description: '番号 (如 MIDV-123). 可与 media_id 同时提交: 此时用此字段刮削并关联该文件'
+            title: 'Number'
         },
         media_id: {
             anyOf: [
@@ -5311,7 +5310,7 @@ export const ScrapeSubmissionSchema = {
                 }
             ],
             title: 'Media Id',
-            description: 'MediaFile ID. 单独提交时从文件路径解析番号; 与 number 同时提交时只负责关联文件'
+            description: 'MediaFile ID. 通常仅用于内部提交任务，手动提交无需指定'
         },
         content_type: {
             anyOf: [

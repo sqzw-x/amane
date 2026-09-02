@@ -214,12 +214,11 @@
     },
     "scrape": {
       "number": {
-        "label": "番号",
-        "description": "内容编号（如 MIDV-123）。可只填此项，也可与 Media ID 同时填写：同时填写时用此番号刮削并关联该文件。"
+        "label": "番号"
       },
       "media_id": {
         "label": "Media ID",
-        "description": "MediaFile ID。只填此项时从文件路径解析番号；与番号同时填写时只负责关联文件。"
+        "description": "MediaFile ID. 通常仅用于内部提交任务，手动提交无需指定"
       },
       "content_type": {
         "label": "内容类型",

@@ -105,13 +105,10 @@ class TaskWorkerResponse(BaseModel):
 
 
 class ScrapeRequest(BaseModel):
-    number: str | None = Field(
-        default=None,
-        description="番号 (如 MIDV-123). 可与 media_id 同时提交: 此时用此字段刮削并关联该文件",
-    )
+    number: str | None = Field(default=None)
     media_id: int | None = Field(
         default=None,
-        description="MediaFile ID. 单独提交时从文件路径解析番号; 与 number 同时提交时只负责关联文件",
+        description="MediaFile ID. 通常仅用于内部提交任务，手动提交无需指定",
     )
     content_type: ContentType | None = Field(
         default=None,

@@ -2664,14 +2664,12 @@ export type ScheduleUpdateRequest = {
 export type ScrapeSubmission = {
     /**
      * Number
-     *
-     * 番号 (如 MIDV-123). 可与 media_id 同时提交: 此时用此字段刮削并关联该文件
      */
     number?: string | null;
     /**
      * Media Id
      *
-     * MediaFile ID. 单独提交时从文件路径解析番号; 与 number 同时提交时只负责关联文件
+     * MediaFile ID. 通常仅用于内部提交任务，手动提交无需指定
      */
     media_id?: number | null;
     /**

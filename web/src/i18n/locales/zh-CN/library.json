@@ -52,7 +52,7 @@
     "number": "番号",
     "numberPlaceholder": "例如 MIDV-123",
     "contentType": "内容类型",
-    "contentTypeHint": "留空则根据填写的番号推断。指定后按所选类型刮削。",
+    "contentTypeHint": "留空则根据填写的番号推断",
     "contentTypeAuto": "自动推断",
     "submit": "开始刮削",
     "contentTypes": {

@@ -54,7 +54,7 @@
     "number": "Number",
     "numberPlaceholder": "e.g. MIDV-123",
     "contentType": "Content type",
-    "contentTypeHint": "Leave empty to infer from the number you enter. A chosen value is used as-is.",
+    "contentTypeHint": "Leave empty to infer from the number you enter.",
     "contentTypeAuto": "Infer automatically",
     "submit": "Start scrape",
     "contentTypes": {
