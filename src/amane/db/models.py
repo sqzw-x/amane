@@ -460,7 +460,6 @@ class Resource(SQLModel, table=True):
     """派生/处理追溯. 裁剪: {'op':'crop','src':源url,'args':str};
     任意资源被超分后追加 {'sr': {tool,model,scale}}. 原始未处理图为 {}."""
     downloaded_at: datetime = Field(default_factory=_utcnow)
-    last_accessed_at: datetime | None = None
 
 
 # --- 分类索引 (爬取侧投影) ---

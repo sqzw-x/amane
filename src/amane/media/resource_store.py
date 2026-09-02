@@ -13,7 +13,6 @@ import asyncio
 import hashlib
 import mimetypes
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -110,7 +109,7 @@ class ResourceStore:
         return self._base_dir.parent
 
     async def resolve(self, url: str) -> Path | None:
-        """查缓存, 命中且文件存在则返回路径. 更新 last_accessed_at."""
+        """查缓存, 命中且文件存在则返回路径."""
         async with self._session() as session:
             stmt = select(Resource).where(Resource.url == url)
             result = await session.exec(stmt)
@@ -126,10 +125,6 @@ class ResourceStore:
                 await session.commit()
                 return None
 
-            # 更新访问时间
-            record.last_accessed_at = datetime.now(UTC)
-            session.add(record)
-            await session.commit()
             return full_path
 
     async def acquire(self, url: str, client: WebClient) -> Path | None:
@@ -166,7 +161,7 @@ class ResourceStore:
         return dest
 
     async def get_by_url(self, url: str) -> Resource | None:
-        """按 url (locator key) 取 Resource 记录 (不触碰 last_accessed_at)."""
+        """按 url (locator key) 取 Resource 记录."""
         async with self._session() as session:
             result = await session.exec(select(Resource).where(Resource.url == url))
             return result.first()
