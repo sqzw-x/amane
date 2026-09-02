@@ -98,8 +98,9 @@ NFO: {link_dir}/{number}.nfo
 
 - **`link_template`**: 链接文件的路径模板 (如 `/本地路径/{number}/{video_name}.{ext}`). 为空则不创建链接, `{link_dir}` / `{link_name}` 分别等于 `{video_dir}` / `{video_name}`. `{video_name}` 是已渲染视频文件名, 链接模板可用, 不必再重复填写 `{cd?}` 组.
 - **`link_mode`**: 链接类型
-  - `strm`: 创建 `.strm` 文件 (内容为视频绝对路径), Emby/Jellyfin 可识别
+  - `strm`: 创建 `.strm` 文件, Emby/Jellyfin 可识别
   - `symlink`: 创建文件系统软链接
+- **`strm_content_template`**: 仅 `strm` 生效. 空则写视频绝对路径. `{video_relpath}` 是视频相对库根的 POSIX 路径 (无前导 `/`). 填 `/{video_relpath}` 即可去掉库根前缀, 对接 OpenList / MediaWarp 的 AlistStrm; 前面加字面量可补回库根比挂载点更深时被一起剔掉的中间目录 (如 `/OD/VC/{video_relpath}`), 或写成 URL 给 HTTPStrm. 不要用手写 `{studio}/{number}/…` 拼正文, 对不齐碰撞改名后的真实 dest.
 
 ### 使用场景
 

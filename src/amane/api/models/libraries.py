@@ -17,6 +17,7 @@ from ...organize.path_templates import (
     VIDEO_TEMPLATE_DEFAULT,
     PathTemplate,
 )
+from ...organize.strm_content import StrmContentTemplate
 from ...utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -39,6 +40,7 @@ class LibraryCreateRequest(BaseModel):
     video_template: PathTemplate = VIDEO_TEMPLATE_DEFAULT
     link_template: PathTemplate | None = None
     link_mode: LinkMode = LinkMode.STRM
+    strm_content_template: StrmContentTemplate | None = None
     thumb_template: PathTemplate | None = None
     poster_template: PathTemplate | None = None
     fanart_template: PathTemplate | None = None
@@ -75,6 +77,7 @@ class LibraryResponse(BaseModel):
     video_template: str
     link_template: str | None = None
     link_mode: LinkMode
+    strm_content_template: str | None = None
     thumb_template: str | None = None
     poster_template: str | None = None
     fanart_template: str | None = None

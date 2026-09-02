@@ -27,6 +27,7 @@ _LIBRARY_UPDATE_KEYS = frozenset(
         "video_template",
         "link_template",
         "link_mode",
+        "strm_content_template",
         "thumb_template",
         "poster_template",
         "fanart_template",

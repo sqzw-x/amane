@@ -152,11 +152,14 @@
   "fieldLinkTemplateHint": "Organize creates a strm or symlink at this path; must be an absolute path outside the library root. Leave empty to skip",
   "fieldLinkTemplatePlaceholder": "e.g. /local/emby/{studio}/{number}/{number}.{ext}",
   "fieldLinkMode": "Link Mode",
-  "fieldLinkModeHint": "strm: write a .strm file whose contents are the video's absolute path; symlink: a filesystem symlink to the mounted video",
+  "fieldLinkModeHint": "strm: write a .strm file; symlink: a filesystem symlink to the mounted video",
   "linkMode": {
     "strm": "STRM file",
     "symlink": "Symlink"
   },
+  "fieldStrmContentTemplate": "STRM content template",
+  "fieldStrmContentTemplateHint": "Applies to strm only. Empty writes the video absolute path. {video_relpath} is the POSIX path relative to the library root (no leading /). It strips the library root, not the mount point; if the library root is deeper, prefix the missing segments, e.g. /OD/VC/{video_relpath}",
+  "fieldStrmContentTemplatePlaceholder": "/{video_relpath}",
   "fieldInitialRefresh": "Refresh on Creation",
   "advancedTemplates": "Sidecar Templates",
   "advancedTemplatesHint": "Leave empty to use backend defaults (usually under {link_dir}). Absolute paths must stay under the library root or safe_dirs.",

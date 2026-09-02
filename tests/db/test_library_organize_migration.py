@@ -246,3 +246,34 @@ def test_library_path_template_optional_groups_rewrites_and_drops_cd_suffix(tmp_
         assert by_name["b"].video_template == "{studio}/{number}/{number}[-{sub?}].{ext}"
 
     engine.dispose()
+
+
+def test_library_strm_content_template_backfilled_for_existing_rows(tmp_path: Path) -> None:
+    """存量行迁移后 strm_content_template 为 NULL (写绝对路径)."""
+    db_path = tmp_path / "migrate.db"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    command.upgrade(cfg, "54138fa1c160")
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO libraries "
+                "(name, path, automation, recursive, patterns, move_mode, video_template, write_nfo, "
+                "copy_resources, trailer_pattern, blacklist_patterns, subtitle_extensions, min_file_size) "
+                "VALUES ('t', '/m', 'SCRAPE', 1, '[]', 'MOVE', '{number}.{ext}', 1, "
+                "'[\"thumb\"]', '(?i)trailer', '[]', '[\".srt\"]', 0)"
+            )
+        )
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as conn:
+        columns = {column["name"] for column in inspect(conn).get_columns("libraries")}
+        assert "strm_content_template" in columns
+        row = conn.execute(text("SELECT strm_content_template FROM libraries")).one()
+        assert row.strm_content_template is None
+
+    engine.dispose()

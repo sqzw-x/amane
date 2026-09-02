@@ -1243,6 +1243,10 @@ export type LibraryCreateRequest = {
     link_template?: string | null;
     link_mode?: LinkMode;
     /**
+     * Strm Content Template
+     */
+    strm_content_template?: string | null;
+    /**
      * Thumb Template
      */
     thumb_template?: string | null;
@@ -1346,6 +1350,10 @@ export type LibraryResponse = {
     link_template?: string | null;
     link_mode: LinkMode;
     /**
+     * Strm Content Template
+     */
+    strm_content_template?: string | null;
+    /**
      * Thumb Template
      */
     thumb_template?: string | null;
@@ -1430,6 +1438,10 @@ export type LibraryUpdateRequest = {
      */
     link_template?: string | null;
     link_mode?: LinkMode | null;
+    /**
+     * Strm Content Template
+     */
+    strm_content_template?: string | null;
     /**
      * Thumb Template
      */

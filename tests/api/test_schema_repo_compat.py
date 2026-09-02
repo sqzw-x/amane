@@ -337,6 +337,7 @@ class TestCovariantSubsetOfLibrary:
             assert_model_subset(OptionalPathTemplateDefaults, Library, covariant=False)
         assert "link_template" not in OptionalPathTemplateDefaults.model_fields
         assert "video_template" not in OptionalPathTemplateDefaults.model_fields
+        assert "strm_content_template" not in OptionalPathTemplateDefaults.model_fields
 
 
 class TestFieldDiscipline:
@@ -437,6 +438,7 @@ _ROUNDTRIP = [
                 "nfo_template",
                 "trailer_template",
                 "subtitle_template",
+                "strm_content_template",
             }
         ),
     ),

@@ -305,6 +305,7 @@ class LibraryUpdates(TypedDict, total=False):
     video_template: str
     link_template: str | None
     link_mode: LinkMode
+    strm_content_template: str | None
     thumb_template: str | None
     poster_template: str | None
     fanart_template: str | None

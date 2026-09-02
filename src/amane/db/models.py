@@ -10,6 +10,7 @@ from amane.organize.path_templates import (
     VIDEO_TEMPLATE_DEFAULT,
     PathTemplate,
 )
+from amane.organize.strm_content import StrmContentTemplate
 from amane.parsing import ContentType, Mosaic
 from amane.utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
@@ -332,7 +333,9 @@ class Library(SQLModel, table=True):
     link_template: PathTemplate | None = None
     """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或软链接, 必须落在库根之外."""
     link_mode: LinkMode = Field(default=LinkMode.STRM)
-    """link_template 非空时: strm 写 .strm 文本 (内容为视频绝对路径); symlink 做文件系统软链接."""
+    """link_template 非空时: strm 写 .strm 文本; symlink 做文件系统软链接."""
+    strm_content_template: StrmContentTemplate | None = None
+    """仅 link_mode=strm: .strm 正文模板. 空则写视频绝对路径. 可用 {video_relpath} (相对库根, POSIX, 无前导 /)."""
     thumb_template: PathTemplate | None = None
     poster_template: PathTemplate | None = None
     fanart_template: PathTemplate | None = None

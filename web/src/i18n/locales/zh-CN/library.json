@@ -146,11 +146,14 @@
   "fieldLinkTemplateHint": "整理时在此路径创建 strm 或软链接, 必须是库根之外的绝对路径. 留空则不创建",
   "fieldLinkTemplatePlaceholder": "例如 /local/emby/{studio}/{number}/{number}.{ext}",
   "fieldLinkMode": "链接方式",
-  "fieldLinkModeHint": "strm：写 .strm 文件（内容为视频绝对路径）；软链接：在本地文件系统指向挂载盘上的视频",
+  "fieldLinkModeHint": "strm：写 .strm 文件；软链接：在本地文件系统指向挂载盘上的视频",
   "linkMode": {
     "strm": "STRM 文件",
     "symlink": "软链接"
   },
+  "fieldStrmContentTemplate": "STRM 内容模板",
+  "fieldStrmContentTemplateHint": "仅 strm 生效. 空则写视频绝对路径. {video_relpath} 是视频相对库根的 POSIX 路径 (无前导 /). 剔除的是库根不是挂载点; 库根更深时在模板前补回中间目录, 例如 /OD/VC/{video_relpath}",
+  "fieldStrmContentTemplatePlaceholder": "/{video_relpath}",
   "fieldInitialRefresh": "创建后立即刷新",
   "advancedTemplates": "附属资源模板",
   "advancedTemplatesHint": "留空则使用后端默认（通常相对 {link_dir}）。绝对路径须落在库根或 safe_dirs 内。",

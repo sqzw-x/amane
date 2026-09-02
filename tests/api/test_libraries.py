@@ -35,6 +35,7 @@ class TestLibraries:
         assert body["move_mode"] == "move"
         assert body["link_template"] is None
         assert body["link_mode"] == "strm"
+        assert body["strm_content_template"] is None
         assert body["write_nfo"] is True
         assert set(body["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
         assert body["trailer_pattern"] == "(?i)trailer"
@@ -93,6 +94,7 @@ class TestLibraries:
                 "subtitle_extensions": ["vtt"],
                 "link_template": str(safe_path / "emby" / "{number}" / "{number}.{ext}"),
                 "link_mode": "symlink",
+                "strm_content_template": "/{video_relpath}",
             },
         )
         assert patched.status_code == 200
@@ -106,6 +108,11 @@ class TestLibraries:
         assert pbody["subtitle_extensions"] == [".vtt"]
         assert pbody["link_mode"] == "symlink"
         assert pbody["link_template"] == str(safe_path / "emby" / "{number}" / "{number}.{ext}")
+        assert pbody["strm_content_template"] == "/{video_relpath}"
+
+        cleared_strm = await client.patch(f"libraries/{lib_id}", json={"strm_content_template": "  "})
+        assert cleared_strm.status_code == 200
+        assert cleared_strm.json()["strm_content_template"] is None
 
         cleared = await client.patch(f"libraries/{lib_id}", json={"patterns": []})
         assert cleared.status_code == 200
@@ -154,6 +161,10 @@ class TestLibraries:
         assert (
             await client.post("libraries", json={**base, "video_template": "{mosaic?|uncencored=U}"})
         ).status_code == 422
+        assert (
+            await client.post("libraries", json={**base, "strm_content_template": "/{video_relpath}\n"})
+        ).status_code == 422
+        assert (await client.post("libraries", json={**base, "strm_content_template": "{number}"})).status_code == 422
 
         ok_empty_trailer = await client.post("libraries", json={**base, "trailer_pattern": ""})
         assert ok_empty_trailer.status_code == 201

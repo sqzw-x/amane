@@ -21,6 +21,7 @@ from ..organize import (
     discover_subtitles,
     execute_organize,
     place_subtitles,
+    render_strm_content,
     resolve_paths,
 )
 from ..organize.file import OrganizeResult as DiskOrganizeResult
@@ -126,7 +127,13 @@ async def execute_file_operations(
     # 3. 视频就位后写链接 (strm / 软链接); 失败仍带 dest 以便回写 MediaFile.path
     if org_result.success and org_result.dest and paths.link is not None:
         mode = LinkMode(library.link_mode) if library is not None else LinkMode.STRM
-        link_result = await create_video_link(org_result.dest, paths.link, mode)
+        strm_content: str | None = None
+        if mode == LinkMode.STRM and library is not None:
+            try:
+                strm_content = render_strm_content(library.strm_content_template, org_result.dest, Path(library.path))
+            except ValueError as e:
+                return FileOperationsResult(success=False, dest=org_result.dest, error=str(e))
+        link_result = await create_video_link(org_result.dest, paths.link, mode, content=strm_content)
         if not link_result.success:
             return FileOperationsResult(success=False, dest=org_result.dest, error=link_result.error)
 

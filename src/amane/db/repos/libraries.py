@@ -9,6 +9,10 @@ from amane.organize.path_templates import (
     normalize_link_template,
     validate_path_template,
 )
+from amane.organize.strm_content import (
+    normalize_strm_content_template,
+    validate_strm_content_template,
+)
 from amane.utils.extensions import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -27,6 +31,11 @@ def _path_template_or_none(value: str | None) -> str | None:
     return None if value is None else validate_path_template(value)
 
 
+def _strm_content_or_none(value: str | None) -> str | None:
+    normalized = normalize_strm_content_template(value)
+    return None if normalized is None else validate_strm_content_template(normalized)
+
+
 class LibrariesRepoMixin(RepositoryMixinBase):
     async def create_library(
         self,
@@ -39,6 +48,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         video_template: str = VIDEO_TEMPLATE_DEFAULT,
         link_template: str | None = None,
         link_mode: LinkMode = LinkMode.STRM,
+        strm_content_template: str | None = None,
         thumb_template: str | None = None,
         poster_template: str | None = None,
         fanart_template: str | None = None,
@@ -56,6 +66,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         min_file_size = validate_min_file_size(min_file_size)
         video_template = validate_path_template(video_template)
         link_template = _path_template_or_none(normalize_link_template(link_template))
+        strm_content_template = _strm_content_or_none(strm_content_template)
         thumb_template = _path_template_or_none(thumb_template)
         poster_template = _path_template_or_none(poster_template)
         fanart_template = _path_template_or_none(fanart_template)
@@ -74,6 +85,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 video_template=video_template,
                 link_template=normalize_link_template(link_template),
                 link_mode=link_mode,
+                strm_content_template=strm_content_template,
                 thumb_template=thumb_template,
                 poster_template=poster_template,
                 fanart_template=fanart_template,
@@ -173,6 +185,8 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 lib.link_template = _path_template_or_none(normalize_link_template(updates["link_template"]))
             if "link_mode" in updates:
                 lib.link_mode = updates["link_mode"]
+            if "strm_content_template" in updates:
+                lib.strm_content_template = _strm_content_or_none(updates["strm_content_template"])
             if "thumb_template" in updates:
                 lib.thumb_template = _path_template_or_none(updates["thumb_template"])
             if "poster_template" in updates:

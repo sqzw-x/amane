@@ -673,6 +673,63 @@ async def test_organize_writes_strm_and_nfo_next_to_link(
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_organize_strm_content_template_uses_actual_dest(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """正文用实际 dest 相对库根; 引用 relpath 且 dest 在库外时失败, dest 仍回写."""
+    lib_root = tmp_path / "lib"
+    local = tmp_path / "emby"
+    lib_root.mkdir()
+    local.mkdir()
+    src = lib_root / "incoming" / "NSFS-039.mp4"
+    src.parent.mkdir()
+    src.write_bytes(b"video")
+
+    lib = await repo.create_library(
+        name="t",
+        path=str(lib_root),
+        link_template=str(local / "{number}.{ext}"),
+        link_mode=LinkMode.STRM,
+        strm_content_template="/{video_relpath}",
+        copy_resources=[],
+        write_nfo=False,
+    )
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    media = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert media.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store, safe_dirs=[tmp_path])
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src.parent)))
+    assert result.success is True
+    dest = lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4"
+    strm = local / "NSFS-039.strm"
+    assert dest.exists()
+    assert strm.read_text(encoding="utf-8") == "/Studio/NSFS-039/NSFS-039.mp4\n"
+
+    outside = tmp_path / "other"
+    outside.mkdir()
+    await repo.update_library(
+        lib.id,
+        video_template=str(outside / "{number}.{ext}"),
+        strm_content_template="/{video_relpath}",
+    )
+    src2 = dest
+    result2 = await org.handle(OrganizePayload(library_id=lib.id, path=str(src2.parent)))
+    assert result2.success is True
+    assert result2.result is not None
+    assert result2.result.failed == 1
+    moved = outside / "NSFS-039.mp4"
+    assert moved.exists()
+    updated = await repo.get_media_file(media.id)
+    assert updated is not None
+    assert updated.path == str(moved)
+
+
+@pytest.mark.asyncio(loop_scope="function")
 @pytest.mark.parametrize(
     "kind",
     ["two_files", "empty", "not_a_dir", "missing_library"],

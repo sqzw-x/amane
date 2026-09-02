@@ -2525,6 +2525,17 @@ export const LibraryCreateRequestSchema = {
             $ref: '#/components/schemas/LinkMode',
             default: 'strm'
         },
+        strm_content_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Strm Content Template'
+        },
         thumb_template: {
             anyOf: [
                 {
@@ -2718,6 +2729,17 @@ export const LibraryResponseSchema = {
         },
         link_mode: {
             $ref: '#/components/schemas/LinkMode'
+        },
+        strm_content_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Strm Content Template'
         },
         thumb_template: {
             anyOf: [
@@ -2950,6 +2972,17 @@ export const LibraryUpdateRequestSchema = {
                     type: 'null'
                 }
             ]
+        },
+        strm_content_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Strm Content Template'
         },
         thumb_template: {
             anyOf: [
