@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from amane.db.models import Library
-from amane.utils.extensions import (
+from amane.library.rules import (
     compile_skip_patterns,
     is_in_trash,
     is_skipped_media,

@@ -4,6 +4,14 @@ from pydantic import BaseModel, Field
 
 from ...db import Library
 from ...enums import DownloadableResource, LibraryAutomation, LinkMode, MoveMode
+from ...library import (
+    DEFAULT_SUBTITLE_EXTENSIONS,
+    DEFAULT_TRAILER_PATTERN,
+    BlacklistPattern,
+    MinFileSize,
+    SubtitleExtensions,
+    TrailerPattern,
+)
 from ...organize.path_templates import (
     EXTRAFANART_TEMPLATE_DEFAULT,
     FANART_TEMPLATE_DEFAULT,
@@ -18,14 +26,6 @@ from ...organize.path_templates import (
     PathTemplate,
 )
 from ...organize.strm_content import StrmContentTemplate
-from ...utils.extensions import (
-    DEFAULT_SUBTITLE_EXTENSIONS,
-    DEFAULT_TRAILER_PATTERN,
-    BlacklistPattern,
-    MinFileSize,
-    SubtitleExtensions,
-    TrailerPattern,
-)
 from ...utils.model import create_partial_model, subset_of
 
 

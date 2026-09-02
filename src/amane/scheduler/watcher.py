@@ -1,6 +1,7 @@
 """带防抖与媒体扩展名过滤的目录监控."""
 
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -8,10 +9,10 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
-from ..utils.extensions import MEDIA_EXTENSIONS, compile_skip_patterns, is_in_trash, is_undersized_video
+from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable
 
     from watchdog.observers.api import BaseObserver, ObservedWatch
 
@@ -32,19 +33,13 @@ class _Handler(FileSystemEventHandler):
     def __init__(
         self,
         library_id: int,
-        patterns: list[str] | None,
-        media_extensions: frozenset[str] = MEDIA_EXTENSIONS,
+        scan: LibraryScan | None = None,
         debounce_seconds: float = _DEFAULT_DEBOUNCE_SECONDS,
-        skip_patterns: Sequence[str | None] | None = None,
-        min_file_size: int = 0,
     ):
         super().__init__()
         self.library_id = library_id
-        self._patterns = patterns
-        self._media_extensions = media_extensions
+        self._scan = scan if scan is not None else LibraryScan()
         self._debounce_seconds = debounce_seconds
-        self._skip_res = compile_skip_patterns(skip_patterns)
-        self._min_file_size = min_file_size
         self._pending: dict[str, float] = {}
         self._pending_deletes: dict[str, float] = {}
         self._pending_moves: dict[str, tuple[str, float]] = {}  # dest -> (src, timestamp)
@@ -87,17 +82,7 @@ class _Handler(FileSystemEventHandler):
             self._pending[path_str] = time.time()
 
     def _matches(self, path: Path) -> bool:
-        if is_in_trash(path):
-            return False
-        if self._skip_res is not None and any(r.search(path.name) for r in self._skip_res):
-            return False
-        if self._patterns:
-            matched = any(path.match(p) for p in self._patterns)
-        else:
-            matched = path.suffix.lower() in self._media_extensions
-        if not matched:
-            return False
-        return not is_undersized_video(path, self._min_file_size, media_extensions=self._media_extensions)
+        return self._scan.classify(path) is LibraryFileKind.MEDIA
 
     def get_ready_files(self) -> list[Path]:
         """返回已稳定超过 debounce_seconds 的新文件"""
@@ -209,18 +194,20 @@ class FileWatcher:
             recursive: 是否监控子目录.
             patterns: 可选的 glob 模式 (例如 ["*.mp4", "*.mkv"]).
                      如果为 None, 则使用 MEDIA_EXTENSIONS.
-            skip_patterns: 跳过正则列表 (预告片/黑名单), 命中文件名则忽略;
+            skip_patterns: 跳过正则列表 (预告片/黑名单), 命中则不登记;
                           `.amane_trash` 目录 (回收站) 内路径恒忽略.
             min_file_size: 视频体积下限 (字节); 0 关闭. 只对 media_extensions 判定,
                           `.strm` 指针不参与.
         """
         handler = _Handler(
             library_id,
-            patterns,
-            media_extensions=self._media_extensions,
+            scan=LibraryScan(
+                patterns=patterns,
+                blacklist_patterns=[p for p in skip_patterns if p] if skip_patterns else None,
+                min_file_size=min_file_size,
+                media_extensions=self._media_extensions,
+            ),
             debounce_seconds=self._debounce_seconds,
-            skip_patterns=skip_patterns,
-            min_file_size=min_file_size,
         )
         self._handlers.append(handler)
         self._watching.append((path, recursive, patterns))

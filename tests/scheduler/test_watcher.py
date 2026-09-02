@@ -14,6 +14,7 @@ from watchdog.observers.polling import PollingObserver
 from amane.db.repository import Repository
 from amane.enums import LibraryAutomation
 from amane.events import EventBus
+from amane.library import LibraryScan
 from amane.scheduler.service import WatcherService
 from amane.scheduler.watcher import DEBOUNCE_SECONDS, FileWatcher, _Handler
 from tests.helpers import await_for, wait_for
@@ -23,7 +24,7 @@ class TestHandler:
     """内部 _Handler 类的测试"""
 
     def test_matches_media_extensions(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         assert handler._matches(Path("/tmp/video.mp4")) is True
         assert handler._matches(Path("/tmp/video.mkv")) is True
         assert handler._matches(Path("/tmp/video.avi")) is True
@@ -31,7 +32,7 @@ class TestHandler:
         assert handler._matches(Path("/tmp/video.py")) is False
 
     def test_skips_trailer_pattern(self):
-        handler = _Handler(library_id=1, patterns=None, skip_patterns=["(?i)trailer"])
+        handler = _Handler(library_id=1, scan=LibraryScan(trailer_pattern="(?i)trailer"))
         assert handler._matches(Path("/tmp/trailer.mp4")) is False
         assert handler._matches(Path("/tmp/video.mp4")) is True
         assert handler._matches(Path("/tmp/中文预告片.mp4")) is True  # (?i)trailer 不匹配预告
@@ -44,7 +45,7 @@ class TestHandler:
         large.write_bytes(b"x" * 100)
         nfo = tmp_path / "note.nfo"
         nfo.write_bytes(b"nfo")
-        handler = _Handler(library_id=1, patterns=None, min_file_size=50)
+        handler = _Handler(library_id=1, scan=LibraryScan(min_file_size=50))
         assert handler._matches(small) is False
         assert handler._matches(large) is True
         assert handler._matches(nfo) is False
@@ -52,51 +53,51 @@ class TestHandler:
         assert handler._matches(missing) is True
 
     def test_skips_custom_preview_name(self):
-        handler = _Handler(library_id=1, patterns=None, skip_patterns=["预告"])
+        handler = _Handler(library_id=1, scan=LibraryScan(trailer_pattern="预告"))
         assert handler._matches(Path("/tmp/中文预告片.mp4")) is False
         assert handler._matches(Path("/tmp/video.mp4")) is True
 
     def test_skips_any_blacklist_pattern(self):
         """多个跳过正则任一命中即忽略 (预告片 + 黑名单组合)."""
-        handler = _Handler(library_id=1, patterns=None, skip_patterns=["广告", "(?i)ads"])
+        handler = _Handler(library_id=1, scan=LibraryScan(blacklist_patterns=["广告", "(?i)ads"]))
         assert handler._matches(Path("/tmp/新片广告.mp4")) is False
         assert handler._matches(Path("/tmp/ADS_01.mkv")) is False
         assert handler._matches(Path("/tmp/video.mp4")) is True
 
     def test_trash_dir_always_ignored(self):
         """.amane_trash 内路径恒不匹配 (即使文件名是正常影片)."""
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         assert handler._matches(Path("/lib/.amane_trash/video.mp4")) is False
         assert handler._matches(Path("/lib/.amane_trash/sub/ad.mp4")) is False
 
     def test_move_into_trash_records_src_delete(self):
         """把文件移入 .amane_trash: dest 不匹配 → 记录 src 为删除 (记录清理/归档竞态安全)."""
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler.on_moved(FileMovedEvent(src_path="/lib/incoming/ad.mp4", dest_path="/lib/.amane_trash/ad.mp4"))
         assert "/lib/incoming/ad.mp4" in handler._pending_deletes
         assert handler._pending_moves == {}
 
     def test_move_out_of_trash_triggers_found(self):
         """从 .amane_trash 恢复文件 (移出): dest 匹配 → 记录为移动 (重新入库)."""
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler.on_moved(FileMovedEvent(src_path="/lib/.amane_trash/video.mp4", dest_path="/lib/video.mp4"))
         assert "/lib/video.mp4" in handler._pending_moves
 
     def test_matches_custom_patterns(self):
-        handler = _Handler(library_id=1, patterns=["*.mp4", "*.mkv"])
+        handler = _Handler(library_id=1, scan=LibraryScan(patterns=["*.mp4", "*.mkv"]))
         assert handler._matches(Path("/tmp/video.mp4")) is True
         assert handler._matches(Path("/tmp/video.mkv")) is True
         assert handler._matches(Path("/tmp/video.avi")) is False
 
     def test_debounce_not_ready_immediately(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler._handle("/tmp/video.mp4")
         # 不应立即就绪
         ready = handler.get_ready_files()
         assert ready == []
 
     def test_debounce_ready_after_timeout(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler._handle("/tmp/video.mp4")
         # 模拟时间流逝
         handler._pending["/tmp/video.mp4"] = time.time() - DEBOUNCE_SECONDS - 1
@@ -107,44 +108,44 @@ class TestHandler:
         assert handler.get_ready_files() == []
 
     def test_ignores_non_media_files(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler._handle("/tmp/readme.txt")
         # txt 未被添加到 pending 因为 _handle 通过 _matches 过滤
         assert handler._pending == {}
         assert handler.get_ready_files() == []
 
     def test_on_created_triggers_handle(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
 
         handler.on_created(FileCreatedEvent(src_path="/tmp/video.mp4"))
         assert "/tmp/video.mp4" in handler._pending
 
     def test_on_created_ignores_directories(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
 
         # DirCreatedEvent has is_directory=True
         handler.on_created(DirCreatedEvent(src_path="/tmp/somedir"))
         assert handler._pending == {}
 
     def test_on_moved_triggers_handle(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
 
         handler.on_moved(FileMovedEvent(src_path="/tmp/old.mkv", dest_path="/tmp/movie.mkv"))
         assert "/tmp/movie.mkv" in handler._pending_moves
 
     def test_on_deleted_adds_to_pending_deletes(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler.on_deleted(FileDeletedEvent(src_path="/tmp/video.mp4"))
         assert "/tmp/video.mp4" in handler._pending_deletes
 
     def test_on_deleted_ignores_non_media(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler.on_deleted(FileDeletedEvent(src_path="/tmp/notes.txt"))
         assert handler._pending_deletes == {}
 
     def test_on_deleted_removes_from_pending_creates(self):
         """文件创建后立即删除: 从 pending 中移除, 添加到 pending_deletes"""
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler.on_created(FileCreatedEvent(src_path="/tmp/video.mp4"))
         assert "/tmp/video.mp4" in handler._pending
         handler.on_deleted(FileDeletedEvent(src_path="/tmp/video.mp4"))
@@ -152,7 +153,7 @@ class TestHandler:
         assert "/tmp/video.mp4" in handler._pending_deletes
 
     def test_get_ready_deletes_after_debounce(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler._pending_deletes["/tmp/video.mp4"] = time.time() - DEBOUNCE_SECONDS - 1
         ready = handler.get_ready_deletes()
         assert len(ready) == 1
@@ -161,13 +162,13 @@ class TestHandler:
 
     def test_on_moved_records_src_as_delete_target(self):
         """移动到非媒体路径: src 记录为删除"""
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler.on_moved(FileMovedEvent(src_path="/tmp/video.mp4", dest_path="/tmp/video.txt"))
         assert "/tmp/video.mp4" in handler._pending_deletes
         assert handler._pending_moves == {}
 
     def test_get_ready_moves_after_debounce(self):
-        handler = _Handler(library_id=1, patterns=None)
+        handler = _Handler(library_id=1)
         handler._pending_moves["/tmp/new.mp4"] = ("/tmp/old.mp4", time.time() - DEBOUNCE_SECONDS - 1)
         ready = handler.get_ready_moves()
         assert len(ready) == 1

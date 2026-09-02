@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..db import TaskType
+from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
 from ..parsing import parse_file_info
-from ..utils.extensions import MEDIA_EXTENSIONS
 from ..utils.threads import path_exists, path_is_dir
-from ._common import aiter_media_files, register_media_file
+from ._common import register_media_file, scan_library
 from .models import RefreshPayload, RefreshResult, ScanMode, ScrapePayload
 from .protocol import FollowupTask, TaskHandler, TaskResult
 
@@ -34,8 +34,13 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
             return TaskResult(success=False, error=f"Not a directory: {payload.path}")
 
         library = await self._repo.get_library(payload.library_id)
-        skip_patterns = [library.trailer_pattern, *(library.blacklist_patterns or [])] if library is not None else None
-        min_file_size = library.min_file_size if library is not None else 0
+        scan = LibraryScan(
+            patterns=payload.patterns,
+            trailer_pattern=library.trailer_pattern if library is not None else None,
+            blacklist_patterns=library.blacklist_patterns if library is not None else None,
+            min_file_size=library.min_file_size if library is not None else 0,
+            media_extensions=self._media_extensions,
+        )
 
         added = removed = scrape = 0
 
@@ -52,14 +57,15 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
             if want_add:
                 logger.info("scan walking started", path=payload.path)
                 walked = 0
-                async for file_path in aiter_media_files(
+                hits = await scan_library(
                     scan_dir,
                     recursive=payload.recursive if payload.recursive is not None else True,
-                    patterns=payload.patterns,
-                    skip_patterns=skip_patterns,
-                    min_file_size=min_file_size,
-                    media_extensions=self._media_extensions,
-                ):
+                    scan=scan,
+                )
+                for hit in hits:
+                    if hit.kind is not LibraryFileKind.MEDIA:
+                        continue
+                    file_path = hit.path
                     path_str = str(file_path)
                     walked += 1
                     if seen is not None:

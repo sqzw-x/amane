@@ -371,19 +371,26 @@ async def test_organize_trashes_blacklisted_files(
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
-    ad = src_dir / "新片广告.mp4"
-    ad.write_bytes(b"ad")
+    ads = ["新片广告.mp4", "广告.jpg", "广告.torrent", "广告.url", "广告.html", "新片广告.nfo", "广告"]
+    keep = ["cover.jpg", "note.txt"]
+    for name in (*ads, *keep):
+        (src_dir / name).write_bytes(b"x")
     video = src_dir / "NSFS-039.mp4"
     video.write_bytes(b"video")
     trailer = src_dir / "trailer.mp4"
     trailer.write_bytes(b"trailer")
+    (src_dir / "广告目录").mkdir()
 
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["广告"])
     assert lib.id is not None
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     ad_record = await repo.create_media_file(
-        lib.id, path=str(ad), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src_dir / "新片广告.mp4"),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
     )
     source = await repo.create_media_file(
         lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
@@ -394,14 +401,18 @@ async def test_organize_trashes_blacklisted_files(
     result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
     assert result.success is True
     assert result.result is not None
-    assert result.result.trashed == 1
+    assert result.result.trashed == len(ads)
     assert result.result.organized == 1
     assert result.result.failed == 0
 
-    assert not ad.exists()
-    assert (lib_root / ".amane_trash" / "新片广告.mp4").exists()
+    trash = lib_root / ".amane_trash"
+    for name in ads:
+        assert not (src_dir / name).exists()
+        assert (trash / name).exists()
     assert await repo.get_media_file(ad_record.id) is None
-    # 预告片保留原地 (跳过但不动), 正片落盘
+    for name in keep:
+        assert (src_dir / name).exists()
+    assert (src_dir / "广告目录").is_dir()
     assert trailer.exists()
     assert not video.exists()
     assert (lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4").exists()

@@ -49,7 +49,7 @@
 
 组合示例: `scan={"add"}, scrape=set()` → 仅注册不刮削; `scan={"add"}, scrape={"pending"}` → 注册 + 刮削; `scan={"remove"}` → 仅清理失效记录. 落盘另交 ORGANIZE.
 
-扫描遍历走 `aiter_media_files` (线程池分批 glob/stat), 与库内索引的差集在 Python 做 (`list_media_files` 一次拉齐). 不把整棵树的路径塞进 SQL `IN` / `NOT IN`: `NOT IN` 按批拆会把其它批里真实存在的文件误判为失效. 仅 `remove` 时对库内记录 `exists`, 不扫磁盘树. fan-out 必须 `list_media_files(..., limit=None)`: 默认 50 是 `GET /media` 的列表分页, 不是批量任务上限.
+扫描遍历走 `scan_library` (`@in_thread` glob/stat, 一次分类为跳过 / 归档 / 媒体), 与库内索引的差集在 Python 做 (`list_media_files` 一次拉齐). 不把整棵树的路径塞进 SQL `IN` / `NOT IN`: `NOT IN` 按批拆会把其它批里真实存在的文件误判为失效. 仅 `remove` 时对库内记录 `exists`, 不扫磁盘树. fan-out 必须 `list_media_files(..., limit=None)`: 默认 50 是 `GET /media` 的列表分页, 不是批量任务上限.
 
 文件注册 (watcher 发现与 REFRESH 扫描共用 `register_media_file`) 只写路径, 不算 oshash. 指纹只在 SCRAPE 时按需计算: 本次实例化的爬虫 `profile().uses_file_hash` (ThePornDB) 且 `MediaFile.oshash` 为空, 才 `ensure_oshash`; 失败留 `None`, 不阻断刮削.
 
@@ -91,7 +91,7 @@ Worker 在 `handle()` 前注入 `report_progress` 回调, 经 EventBus 发 `task
 
 **SCRAPE**: 分母 = 标量字段数 + 2 (`materialize` / `persist`). 聚合按波次上报已满足标量字段数 (URL/score/extrafanart 只累积, 不计入); message 为当波站点 `cache_key`. 抓取结束后抬到标量满分, 再走后两步至 `done`.
 
-**ORGANIZE**: 失效索引按本库 MediaFile 条数 (`prune`). 目录遍历一次 (`aiter_media_files` 不应用黑名单与 `min_file_size`, 否则应归档的文件不会出现在结果中). 遍历完成后依次归档 (`trash`) 与落盘 (message 为文件名). glob 进行中 `total=0`. 空目录以 1/1 `done` 收尾.
+**ORGANIZE**: 失效索引按本库 MediaFile 条数 (`prune`). 一次扫库分类后依次归档 (`trash`) 与落盘 (message 为文件名). glob 进行中 `total=0`. 空目录以 1/1 `done` 收尾.
 
 其它任务类型不调用则静默忽略.
 
@@ -105,11 +105,12 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 | 单元 | 位置 | 复用方 | 职责 |
 | ------ | ------ | -------- | ------ |
-| `iter_media_files` / `aiter_media_files` | `handlers/_common.py` | REFRESH / ORGANIZE | 目录遍历 + patterns/扩展名过滤 + 库级 `trailer_pattern` / 黑名单 / `min_file_size`; 异步封装在线程池分批推进 glob/stat, 不堵事件循环 |
+| `LibraryScan` | `library/scan.py` | REFRESH / ORGANIZE / watcher | 单路径分类 (跳过 / 归档 / 媒体); 规则常量与校验在 `library/rules.py`; watcher 只走 `classify` |
+| `scan_library` | `handlers/_common.py` | REFRESH / ORGANIZE | 扫库遍历; `@in_thread` 包 glob/stat |
 | `finalize_media_file` | `handlers/_common.py` | SCRAPE (缓存/主路径) | 标记 SCRAPED + 关联 Metadata |
 | `apply_file_operations` | `handlers/file.py` | ORGANIZE | 取 MediaFile→取 Library→渲染路径→执行 file ops; 库路径 I/O 经 `@in_thread` |
 
-库路径 (含 FUSE/NAS) 与用户浏览路径上的磁盘调用不能跑在事件循环上, 见 [architecture.md](architecture.md). 整段同步 I/O 用 `@in_thread`, 调用方 `await fn(...)`; 已在工作线程内 (例如 `place_subtitles` 里再 `execute_organize`) 用 `.sync`, 不要再进一次线程池. `aiter_media_files` 是生成器, 按批 `to_thread`. Watchdog 的 `stat` 在 observer 线程, 不经过事件循环. Resource / `data_dir` 由进程自己管理, 同步读写.
+库路径 (含 FUSE/NAS) 与用户浏览路径上的磁盘调用不能跑在事件循环上, 见 [architecture.md](architecture.md). 整段同步 I/O 用 `@in_thread`, 调用方 `await fn(...)`; 已在工作线程内 (例如 `place_subtitles` 里再 `execute_organize`) 用 `.sync`, 不要再进一次线程池. Watchdog 的 `stat` 在 observer 线程, 不经过事件循环. Resource / `data_dir` 由进程自己管理, 同步读写.
 
 **分层动机**: `_common.py` 只放无 `execute_file_operations` 依赖的轻量单元 (纯函数, 依赖全参数注入); `apply_file_operations` 因封装 `execute_file_operations` 而与之相邻放在 `file.py`, 避免循环导入. 前置条件不满足时返回 `None` 表示跳过. 图片下载统一经 `ResourceStore` (强制注入).
 

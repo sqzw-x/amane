@@ -5,8 +5,8 @@ from typing import NamedTuple
 
 import pytest
 
+from amane.library import DEFAULT_SUBTITLE_EXTENSIONS
 from amane.organize import discover_subtitles
-from amane.utils.extensions import DEFAULT_SUBTITLE_EXTENSIONS
 
 
 def _touch(path: Path) -> Path:

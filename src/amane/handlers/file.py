@@ -4,13 +4,13 @@ import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from re import Pattern
 from typing import TYPE_CHECKING
 
 import structlog
 
 from ..config import HotSettings, WatermarkConfig
 from ..enums import DownloadableResource, LinkMode
+from ..library import MEDIA_EXTENSIONS, TRASH_DIRNAME, LibraryFileKind, LibraryScan
 from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
 from ..media import write_nfo as write_nfo_file
 from ..media.pipeline import RESOURCE_URL_PREFIX
@@ -27,9 +27,8 @@ from ..organize import (
 from ..organize.file import OrganizeResult as DiskOrganizeResult
 from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
-from ..utils.extensions import MEDIA_EXTENSIONS, TRASH_DIRNAME, compile_skip_patterns, is_undersized_video
 from ..utils.threads import in_thread, path_exists, path_is_dir
-from ._common import aiter_media_files
+from ._common import scan_library
 from .models import CleanupPayload, CleanupResult, OrganizePayload, OrganizeResult
 from .protocol import TaskHandler, TaskResult
 
@@ -371,38 +370,8 @@ async def _download_images_via_store(
 
 
 @in_thread
-def _trash_if_unwanted(
-    file_path: Path,
-    trash_dir: Path,
-    *,
-    blacklisted: bool,
-    is_trailer: bool,
-    min_file_size: int,
-    media_extensions: frozenset[str],
-) -> DiskOrganizeResult | None:
-    undersized = (not is_trailer) and is_undersized_video(file_path, min_file_size, media_extensions=media_extensions)
-    if not blacklisted and not undersized:
-        return None
+def _move_to_trash(file_path: Path, trash_dir: Path) -> DiskOrganizeResult:
     return execute_organize.sync(source=file_path, target_dir=trash_dir, target_stem=file_path.stem, mode=MoveMode.MOVE)
-
-
-def _eligible_for_organize(
-    file_path: Path,
-    *,
-    patterns: list[str] | None,
-    skip_res: list[Pattern[str]] | None,
-    min_file_size: int,
-    media_extensions: frozenset[str],
-) -> bool:
-    """扫描结果中应执行路径模板落盘的路径.
-
-    排除预告片、黑名单命中、小于 `min_file_size` 的视频, 以及不匹配 `patterns` 的路径.
-    """
-    if skip_res is not None and any(r.search(file_path.name) for r in skip_res):
-        return False
-    if patterns and not any(file_path.match(p) for p in patterns):
-        return False
-    return not is_undersized_video(file_path, min_file_size, media_extensions=media_extensions)
 
 
 class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
@@ -410,11 +379,9 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
 
     1. 删除磁盘上已不存在的 MediaFile 记录。名称冲突检测仅依据磁盘文件;
        失效 path 仍占用 UNIQUE 约束, 导致目标路径无法写入。
-    2. 遍历目录中的媒体文件。遍历阶段不应用黑名单与 `min_file_size` 过滤,
-       否则无法将命中文件归档至 `.amane_trash`。
-    3. 将黑名单命中及小于 `min_file_size` 的视频移动至 `.amane_trash`;
-       预告片保留原路径。
-    4. 其余已关联 Metadata 的文件按路径模板落盘; 无 Metadata 则跳过。
+    2. 一次扫库, 按规则分成跳过 / 归档 / 媒体。
+    3. 将归档类文件移动至 `.amane_trash`; 预告片属跳过, 留在原路径。
+    4. 媒体类中已关联 Metadata 的按路径模板落盘; 无 Metadata 则跳过。
     """
 
     def __init__(
@@ -462,29 +429,21 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         failed = 0
 
         await self.report_progress(0, 0, "scan")
-        scanned = [
-            p
-            async for p in aiter_media_files(
-                scan_dir,
-                recursive=recursive,
-                patterns=None,
-                skip_patterns=None,
-                media_extensions=media_extensions,
-            )
-        ]
-        trashed, remaining = await self._trash_unwanted(library, scanned, media_extensions)
-        skip_res = compile_skip_patterns([library.trailer_pattern, *(library.blacklist_patterns or [])])
-        files = [
-            p
-            for p in remaining
-            if _eligible_for_organize(
-                p,
-                patterns=payload.patterns,
-                skip_res=skip_res,
-                min_file_size=library.min_file_size,
-                media_extensions=media_extensions,
-            )
-        ]
+        scan = LibraryScan(
+            patterns=payload.patterns,
+            trailer_pattern=library.trailer_pattern,
+            blacklist_patterns=library.blacklist_patterns,
+            min_file_size=library.min_file_size,
+            media_extensions=media_extensions,
+        )
+        to_trash: list[Path] = []
+        files: list[Path] = []
+        for hit in await scan_library(scan_dir, recursive=recursive, scan=scan):
+            if hit.kind is LibraryFileKind.TRASH:
+                to_trash.append(hit.path)
+            elif hit.kind is LibraryFileKind.MEDIA:
+                files.append(hit.path)
+        trashed = await self._trash_files(library, to_trash)
         total = len(files)
         if total == 0:
             await self.report_progress(1, 1, "done")
@@ -547,48 +506,21 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             True, result=OrganizeResult(organized=organized, skipped=skipped, failed=failed, trashed=trashed)
         )
 
-    async def _trash_unwanted(
-        self,
-        library: Library,
-        files: Sequence[Path],
-        media_extensions: frozenset[str],
-    ) -> tuple[int, list[Path]]:
-        """将黑名单命中及小于 `min_file_size` 的视频移动至库根 `.amane_trash`.
+    async def _trash_files(self, library: Library, files: Sequence[Path]) -> int:
+        """将扫库判定为归档的文件移动至库根 `.amane_trash`.
 
-        返回 `(成功归档数, 未归档路径)`. 预告片不归档. 图片、NFO、字幕、`.strm`
-        不参与文件大小判定. 归档固定为物理移动, 不受 `move_mode` 影响. 失败仅记录日志,
-        路径仍包含在返回列表中, 由后续落盘过滤排除.
+        归档固定为物理移动, 不受 `move_mode` 影响. 失败仅记录日志, 不计入成功数.
         """
-        blacklist = library.blacklist_patterns
-        min_file_size = library.min_file_size
-        if not blacklist and min_file_size <= 0:
-            return 0, list(files)
-        trash_res = compile_skip_patterns(blacklist)
-        trailer_res = compile_skip_patterns([library.trailer_pattern])
+        if not files:
+            return 0
         trash_dir = Path(library.path) / TRASH_DIRNAME
         trashed = 0
-        remaining: list[Path] = []
         trash_total = len(files)
-        if trash_total:
-            await self.report_progress(0, trash_total, "trash")
+        await self.report_progress(0, trash_total, "trash")
         for i, file_path in enumerate(files, start=1):
-            blacklisted = trash_res is not None and any(r.search(file_path.name) for r in trash_res)
-            is_trailer = trailer_res is not None and any(r.search(file_path.name) for r in trailer_res)
-            result = await _trash_if_unwanted(
-                file_path,
-                trash_dir,
-                blacklisted=blacklisted,
-                is_trailer=is_trailer,
-                min_file_size=min_file_size,
-                media_extensions=media_extensions,
-            )
-            if result is None:
-                remaining.append(file_path)
-                await self.report_progress(i, trash_total, "trash")
-                continue
+            result = await _move_to_trash(file_path, trash_dir)
             if not result.success:
                 logger.warning("unwanted file trash failed", path=str(file_path), error=result.error)
-                remaining.append(file_path)
                 await self.report_progress(i, trash_total, "trash")
                 continue
             logger.info("unwanted file trashed", path=str(file_path), dest=str(result.dest))
@@ -598,7 +530,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                 await self._repo.delete_media_file(media_file.id)
             trashed += 1
             await self.report_progress(i, trash_total, "trash")
-        return trashed, remaining
+        return trashed
 
 
 def _add_resource_ref(url: str, live_urls: set[str], live_hashes: set[str]) -> None:

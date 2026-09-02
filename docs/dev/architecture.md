@@ -20,6 +20,7 @@
 | `agent/` | 助理 Agent (产品面 Amane) + Saved Query + 会话 trace | 读=任意只读 SQL; 写=封装工具 + pydantic-ai 渐进披露 (Capability); 与 `llm/` 配置分离 |
 | `sr/` | 超分二进制封装 | 就地覆盖本地资源文件 |
 | `db/` | SQLModel 表 + 异步 Repository (按聚合 mixin 拆分) | 单一数据源; 启动期自动 `alembic upgrade head` |
+| `library/` | 库文件规则与分类 (`LibraryScan.classify`) | 扩展名 / 预告片与黑名单正则 / `.amane_trash` / 体积阈值; handlers 与 scheduler 共用, 不进任何一侧 |
 | `scheduler/` | 队列消费 / cron / 文件监控 / RSS 发现 | 与 api 解耦, 通过 EventBus 上报 |
 | `observability/` | 进程级日志管线 + 单任务 Recorder | 叙事走 structlog; 任务产物落 `{log_dir}/tasks/task-{id}/` |
 | `app/` | 进程组合根 (`AppRuntime` / `build_*` / `start_app`) | HTTP 与 CLI/回放共用; 不依赖 FastAPI; 拥有启停顺序 |

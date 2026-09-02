@@ -1,9 +1,3 @@
-"""媒体文件扩展名与跳过/黑名单正则 (目录监控与扫描共用).
-
-叶子模块: 无任何 amane 内部导入, 供 scheduler 与 handlers 两侧引用,
-避免 handlers._common ↔ scheduler.watcher 的循环导入.
-"""
-
 from __future__ import annotations
 
 import re
@@ -62,11 +56,6 @@ def compile_skip_patterns(patterns: Sequence[str | None] | None) -> list[Pattern
         except re.error:
             continue
     return compiled or None
-
-
-def compile_skip_pattern(pattern: str | None) -> list[Pattern[str]] | None:
-    """编译单个跳过正则 (等价 compile_skip_patterns([pattern]))."""
-    return compile_skip_patterns([pattern])
 
 
 def validate_regex_pattern(pattern: str, field: str) -> str:
