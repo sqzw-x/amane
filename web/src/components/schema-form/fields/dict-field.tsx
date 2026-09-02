@@ -22,6 +22,7 @@ import {
   isSimpleScalar,
   isVisibleForKey,
 } from "../schema";
+import { DictEntryScope, dictEntryForm } from "./dict-entry-form";
 import { FieldRouter } from "./field-router";
 
 export function DictField({
@@ -178,14 +179,16 @@ export function DictField({
                           {getKeyLabel(key)}
                         </Text>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <FieldRouter
-                            name={`${name}.${key}`}
-                            i18nPath={`${i18nPath}.$`}
-                            i18nPrefix={i18nPrefix}
-                            schema={valueSchema}
-                            form={form}
-                            variant="bare"
-                          />
+                          <DictEntryScope parentField={field} entryKey={key} bindEntry>
+                            <FieldRouter
+                              name={`${name}:${key}`}
+                              i18nPath={`${i18nPath}.$`}
+                              i18nPrefix={i18nPrefix}
+                              schema={valueSchema}
+                              form={dictEntryForm}
+                              variant="bare"
+                            />
+                          </DictEntryScope>
                         </div>
                         {canModifyKeys ? (
                           <ActionIcon
@@ -252,34 +255,37 @@ export function DictField({
                       </Group>
 
                       {isObject(valueSchema) && valueSchema.properties ? (
-                        <Stack gap={0} pl="xs">
-                          {Object.entries(valueSchema.properties).map(
-                            ([fieldName, fieldSchema]) =>
-                              isVisibleForKey(fieldSchema, key) && (
-                                <FieldRouter
-                                  key={fieldName}
-                                  // Form binding uses real path with actual dict key
-                                  name={`${name}.${key}.${fieldName}`}
-                                  // i18n lookup uses "$" wildcard so all dict entries share one translation set
-                                  i18nPath={`${i18nPath}.$.${fieldName}`}
-                                  i18nPrefix={i18nPrefix}
-                                  schema={fieldSchema}
-                                  form={form}
-                                />
-                              ),
-                          )}
-                        </Stack>
+                        <DictEntryScope parentField={field} entryKey={key} bindEntry={false}>
+                          <Stack gap={0} pl="xs">
+                            {Object.entries(valueSchema.properties).map(
+                              ([fieldName, fieldSchema]) =>
+                                isVisibleForKey(fieldSchema, key) && (
+                                  <FieldRouter
+                                    key={fieldName}
+                                    name={fieldName}
+                                    // i18n lookup uses "$" wildcard so all dict entries share one translation set
+                                    i18nPath={`${i18nPath}.$.${fieldName}`}
+                                    i18nPrefix={i18nPrefix}
+                                    schema={fieldSchema}
+                                    form={dictEntryForm}
+                                  />
+                                ),
+                            )}
+                          </Stack>
+                        </DictEntryScope>
                       ) : (
-                        <Stack gap={0} pl="xs">
-                          <FieldRouter
-                            name={`${name}.${key}`}
-                            i18nPath={`${i18nPath}.$`}
-                            i18nPrefix={i18nPrefix}
-                            schema={valueSchema}
-                            form={form}
-                            variant={isArray(valueSchema) ? "bare" : "default"}
-                          />
-                        </Stack>
+                        <DictEntryScope parentField={field} entryKey={key} bindEntry>
+                          <Stack gap={0} pl="xs">
+                            <FieldRouter
+                              name={`${name}:${key}`}
+                              i18nPath={`${i18nPath}.$`}
+                              i18nPrefix={i18nPrefix}
+                              schema={valueSchema}
+                              form={dictEntryForm}
+                              variant={isArray(valueSchema) ? "bare" : "default"}
+                            />
+                          </Stack>
+                        </DictEntryScope>
                       )}
                     </Tabs.Panel>
                   ))}
