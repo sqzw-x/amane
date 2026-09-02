@@ -152,7 +152,7 @@
     "symlink": "软链接"
   },
   "fieldStrmContentTemplate": "STRM 内容模板",
-  "fieldStrmContentTemplateHint": "仅 strm 生效. 留空则写入视频绝对路径. 网盘播放填写 /{video_relpath}",
+  "fieldStrmContentTemplateHint": "仅 strm 生效. 留空则写入视频绝对路径. {video_relpath} 为视频相对库根的路径, 网盘播放填写 /{video_relpath}",
   "fieldStrmContentTemplatePlaceholder": "/{video_relpath}",
   "fieldInitialRefresh": "创建后立即刷新",
   "advancedTemplates": "附属资源模板",

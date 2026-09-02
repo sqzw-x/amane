@@ -158,7 +158,7 @@
     "symlink": "Symlink"
   },
   "fieldStrmContentTemplate": "STRM content template",
-  "fieldStrmContentTemplateHint": "Applies to strm only. Leave empty to write the video absolute path. For cloud playback use /{video_relpath}",
+  "fieldStrmContentTemplateHint": "Applies to strm only. Leave empty to write the video absolute path. {video_relpath} is the video path relative to the library root; for cloud playback use /{video_relpath}",
   "fieldStrmContentTemplatePlaceholder": "/{video_relpath}",
   "fieldInitialRefresh": "Refresh on Creation",
   "advancedTemplates": "Sidecar Templates",

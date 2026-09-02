@@ -35,6 +35,7 @@
 | `{link_dir}` | 链接文件所在目录 (无链接时等于 `{video_dir}`) | — |
 | `{link_name}` | 已渲染链接文件名, 不含扩展名 (无链接时等于 `{video_name}`) | — |
 | `{raw_srt_name}` | 字幕原文件名，不含扩展名，仅字幕模板可用 | `foo.zh.srt` → `foo.zh` |
+| `{video_relpath}` | 视频相对库根的路径, 不含开头的 `/`. 仅 STRM 内容模板 | `Studio/ABC-123/ABC-123.mp4` |
 
 !!! note
     占位符名字结尾带 `?` 的项 (`{cd?}` / `{sub?}` / `{mosaic?}` / `{def?}`) 未检测到时会填空字符串, 而不是 `Unknown`. 这些占位符适合配合可选组语法 (见下文) 使用, 未检出时整组省略.
@@ -100,7 +101,39 @@ NFO: {link_dir}/{number}.nfo
 - **`link_mode`**: 链接类型
   - `strm`: 创建 `.strm` 文件, Emby/Jellyfin 可识别
   - `symlink`: 创建文件系统软链接
-- **`strm_content_template`**: 仅 `strm` 时生效, 决定 `.strm` 文件内容. 留空则写入视频的绝对路径.
+- **`strm_content_template`**: STRM 内容模板, 仅 `link_mode=strm` 时生效.
+
+### STRM 内容模板
+
+`link_template` 决定 `.strm` 文件放在哪里; `strm_content_template` 指定文件中的路径或地址.
+
+留空时写入视频的绝对路径, 本机或局域网直接播放即可, 不必填写.
+
+播放端需要的是网盘 / OpenList 上的路径, 而不是本机挂载路径时, 使用 `{video_relpath}`: 它是整理后的视频相对媒体库根目录的路径. 常见写法:
+
+```
+/{video_relpath}
+```
+
+| | 路径 |
+| --- | --- |
+| 库路径 | `/mnt/cloud` |
+| 视频 | `/mnt/cloud/Studio/ABC-123/ABC-123.mp4` |
+| `.strm` 内容 | `/Studio/ABC-123/ABC-123.mp4` |
+
+库路径比网盘根目录更深时, `{video_relpath}` 只包含库根以下的部分. 在模板前加上网盘上仍需要的上级目录:
+
+```
+/OD/VC/{video_relpath}
+```
+
+| | 路径 |
+| --- | --- |
+| 库路径 | `/mnt/cloud/OD/VC` |
+| 视频 | `/mnt/cloud/OD/VC/ABC-123/ABC-123.mp4` |
+| `.strm` 内容 | `/OD/VC/ABC-123/ABC-123.mp4` |
+
+需要 HTTP 地址时, 在占位符前加上主机, 例如 `https://example.com/{video_relpath}`.
 
 ### 使用场景
 
@@ -109,22 +142,7 @@ NFO: {link_dir}/{number}.nfo
 - 视频在挂载盘上按模板改名
 - 本地出现 strm 文件或软链接 + NFO/海报
 - 媒体服务器扫描本地路径即可
-
-`.strm` 默认写入视频绝对路径. 播放端若按网盘路径识别 (OpenList / MediaWarp 等), 填写相对库根:
-
-```
-/{video_relpath}
-```
-
-库路径 `/mnt/cloud`, 视频 `/mnt/cloud/Studio/ABC-123/ABC-123.mp4` → `.strm` 内容为 `/Studio/ABC-123/ABC-123.mp4`.
-
-库根比网盘根目录更深时, 在模板前补上缺少的目录:
-
-```
-/OD/VC/{video_relpath}
-```
-
-也可以使用网址, 例如 `https://example.com/{video_relpath}`.
+- 播放端认网盘路径时, 在 STRM 内容模板填写 `/{video_relpath}`
 
 !!! note
     链接路径必须在库根之外, 否则会被扫描为新文件. `{link_dir}` / `{link_name}` 在有链接时指向链接父目录与文件名; 默认的 NFO/海报模板已改用 `{link_dir}`, 因此填写链接模板后附属文件自动跟随. NFO 若要与视频/链接同名, 模板里写 `{video_name}` 或 `{link_name}`.
