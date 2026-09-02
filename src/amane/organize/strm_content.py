@@ -1,6 +1,6 @@
 """link_mode=strm 时 .strm 正文的库级模板.
 
-与路径模板共用占位符解析与填充, 不折叠路径段、不检查 safe_dirs.
+与路径模板共用 Parser / TemplateContext; 后处理走 StrmEngine (不折叠空段).
 空模板保持默认: 一行视频绝对路径.
 """
 
@@ -11,13 +11,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from pydantic import AfterValidator
 
-from .path_templates import (
-    dest_template_variables,
-    render_content_template,
-    template_uses_placeholder,
-    validate_path_template,
-    video_relpath,
-)
+from .template import Parser, StrmEngine, TemplateContext
 
 if TYPE_CHECKING:
     from ..db.models import Metadata
@@ -36,7 +30,8 @@ def validate_strm_content_template(value: str) -> str:
     """单行; 空白合法; 占位符语法与路径模板相同."""
     if "\n" in value or "\r" in value:
         raise ValueError("strm_content_template must be a single line")
-    return validate_path_template(value)
+    Parser(value).parse()
+    return value
 
 
 StrmContentTemplate = Annotated[str, AfterValidator(validate_strm_content_template)]
@@ -59,10 +54,9 @@ def render_strm_content(
     normalized = normalize_strm_content_template(template)
     if normalized is None:
         return f"{dest}\n"
-    if template_uses_placeholder(normalized, "video_relpath"):
-        video_relpath(dest, library_root)
-    variables = dest_template_variables(
-        metadata, dest, library_root, source_path=source_path, file_info=file_info, link=link
+    ctx = TemplateContext.from_metadata(
+        metadata, ext=dest.suffix.lstrip("."), source_path=source_path, file_info=file_info
     )
-    rendered = render_content_template(normalized, variables)
-    return rendered if rendered.endswith("\n") else f"{rendered}\n"
+    ctx.apply_video(dest, library_root)
+    ctx.apply_link(link)
+    return StrmEngine(normalized).render(ctx)
