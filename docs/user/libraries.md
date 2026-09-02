@@ -100,7 +100,7 @@ NFO: {link_dir}/{number}.nfo
 - **`link_mode`**: 链接类型
   - `strm`: 创建 `.strm` 文件, Emby/Jellyfin 可识别
   - `symlink`: 创建文件系统软链接
-- **`strm_content_template`**: 仅 `strm` 生效. 空则写视频绝对路径. `{video_relpath}` 是视频相对库根的 POSIX 路径 (无前导 `/`). 填 `/{video_relpath}` 即可去掉库根前缀, 对接 OpenList / MediaWarp 的 AlistStrm; 前面加字面量可补回库根比挂载点更深时被一起剔掉的中间目录 (如 `/OD/VC/{video_relpath}`), 或写成 URL 给 HTTPStrm. 不要用手写 `{studio}/{number}/…` 拼正文, 对不齐碰撞改名后的真实 dest.
+- **`strm_content_template`**: 仅 `strm` 时生效, 决定 `.strm` 文件内容. 留空则写入视频的绝对路径.
 
 ### 使用场景
 
@@ -109,6 +109,22 @@ NFO: {link_dir}/{number}.nfo
 - 视频在挂载盘上按模板改名
 - 本地出现 strm 文件或软链接 + NFO/海报
 - 媒体服务器扫描本地路径即可
+
+`.strm` 默认写入视频绝对路径. 播放端若按网盘路径识别 (OpenList / MediaWarp 等), 填写相对库根:
+
+```
+/{video_relpath}
+```
+
+库路径 `/mnt/cloud`, 视频 `/mnt/cloud/Studio/ABC-123/ABC-123.mp4` → `.strm` 内容为 `/Studio/ABC-123/ABC-123.mp4`.
+
+库根比网盘根目录更深时, 在模板前补上缺少的目录:
+
+```
+/OD/VC/{video_relpath}
+```
+
+也可以使用网址, 例如 `https://example.com/{video_relpath}`.
 
 !!! note
     链接路径必须在库根之外, 否则会被扫描为新文件. `{link_dir}` / `{link_name}` 在有链接时指向链接父目录与文件名; 默认的 NFO/海报模板已改用 `{link_dir}`, 因此填写链接模板后附属文件自动跟随. NFO 若要与视频/链接同名, 模板里写 `{video_name}` 或 `{link_name}`.

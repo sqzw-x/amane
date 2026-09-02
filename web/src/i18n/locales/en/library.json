@@ -158,7 +158,7 @@
     "symlink": "Symlink"
   },
   "fieldStrmContentTemplate": "STRM content template",
-  "fieldStrmContentTemplateHint": "Applies to strm only. Empty writes the video absolute path. {video_relpath} is the POSIX path relative to the library root (no leading /). It strips the library root, not the mount point; if the library root is deeper, prefix the missing segments, e.g. /OD/VC/{video_relpath}",
+  "fieldStrmContentTemplateHint": "Applies to strm only. Leave empty to write the video absolute path. For cloud playback use /{video_relpath}",
   "fieldStrmContentTemplatePlaceholder": "/{video_relpath}",
   "fieldInitialRefresh": "Refresh on Creation",
   "advancedTemplates": "Sidecar Templates",

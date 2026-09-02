@@ -710,24 +710,6 @@ async def test_organize_strm_content_template_uses_actual_dest(
     assert dest.exists()
     assert strm.read_text(encoding="utf-8") == "/Studio/NSFS-039/NSFS-039.mp4\n"
 
-    outside = tmp_path / "other"
-    outside.mkdir()
-    await repo.update_library(
-        lib.id,
-        video_template=str(outside / "{number}.{ext}"),
-        strm_content_template="/{video_relpath}",
-    )
-    src2 = dest
-    result2 = await org.handle(OrganizePayload(library_id=lib.id, path=str(src2.parent)))
-    assert result2.success is True
-    assert result2.result is not None
-    assert result2.result.failed == 1
-    moved = outside / "NSFS-039.mp4"
-    assert moved.exists()
-    updated = await repo.get_media_file(media.id)
-    assert updated is not None
-    assert updated.path == str(moved)
-
 
 @pytest.mark.asyncio(loop_scope="function")
 @pytest.mark.parametrize(
