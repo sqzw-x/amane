@@ -130,7 +130,15 @@ async def execute_file_operations(
         strm_content: str | None = None
         if mode == LinkMode.STRM and library is not None:
             try:
-                strm_content = render_strm_content(library.strm_content_template, org_result.dest, Path(library.path))
+                strm_content = render_strm_content(
+                    library.strm_content_template,
+                    org_result.dest,
+                    Path(library.path),
+                    metadata,
+                    source_path=source_path,
+                    file_info=info,
+                    link=paths.link,
+                )
             except ValueError as e:
                 return FileOperationsResult(success=False, dest=org_result.dest, error=str(e))
         link_result = await create_video_link(org_result.dest, paths.link, mode, content=strm_content)

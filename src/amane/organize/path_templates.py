@@ -66,6 +66,7 @@ PLACEHOLDERS: tuple[str, ...] = (
     "def?",
     "video_dir",
     "video_name",
+    "video_relpath",
     "link_dir",
     "link_name",
     "raw_srt_name",
@@ -290,6 +291,25 @@ def render_path_template(template: str, variables: dict[str, str]) -> str:
     return _collapse_empty_segments(rendered, keep_absolute=_template_keeps_absolute(template, variables))
 
 
+def render_content_template(template: str, variables: dict[str, str]) -> str:
+    """填充占位符与可选组, 不折叠路径段. 供 strm 正文等非路径输出."""
+    return _render_nodes(_Parser(template).parse(), variables)
+
+
+def template_uses_placeholder(template: str, name: str) -> bool:
+    """模板是否引用指定占位符 (含可选组内)."""
+    return _nodes_use_placeholder(_Parser(template).parse(), name)
+
+
+def _nodes_use_placeholder(nodes: Sequence[_Node], name: str) -> bool:
+    for node in nodes:
+        if isinstance(node, _Placeholder) and node.name == name:
+            return True
+        if isinstance(node, _Group) and _nodes_use_placeholder(node.children, name):
+            return True
+    return False
+
+
 def _safe(value: str | None) -> str | None:
     """清理字符串以使其可安全用于文件路径."""
     if not value:
@@ -352,6 +372,47 @@ def _build_variables(
 def _lexical_abs(path: Path) -> Path:
     """转为绝对路径并消除 ``.`` / ``..``, 但不跟随符号链接."""
     return Path(os.path.abspath(os.fspath(path)))  # noqa: PTH100
+
+
+def video_relpath(dest: Path, library_root: Path) -> str:
+    """dest 相对 library_root 的 POSIX 路径. dest 必须落在库根下."""
+    dest_abs = _lexical_abs(dest)
+    root_abs = _lexical_abs(library_root)
+    try:
+        rel = dest_abs.relative_to(root_abs)
+    except ValueError as exc:
+        raise ValueError(f"video dest '{dest_abs}' is outside library root '{root_abs}'") from exc
+    return rel.as_posix()
+
+
+def _video_relpath_or_empty(dest: Path, library_root: Path) -> str:
+    try:
+        return video_relpath(dest, library_root)
+    except ValueError:
+        return ""
+
+
+def dest_template_variables(
+    metadata: Metadata,
+    dest: Path,
+    library_root: Path,
+    *,
+    source_path: Path | None = None,
+    file_info: FileInfo | None = None,
+    link: Path | None = None,
+) -> dict[str, str]:
+    """整理完成后的模板变量: metadata + 实际 dest 的 video_* / link_*."""
+    variables = _build_variables(metadata, dest.suffix.lstrip("."), source_path, file_info)
+    variables["video_dir"] = str(dest.parent)
+    variables["video_name"] = dest.stem
+    variables["video_relpath"] = _video_relpath_or_empty(dest, library_root)
+    if link is not None:
+        variables["link_dir"] = str(link.parent)
+        variables["link_name"] = link.stem
+    else:
+        variables["link_dir"] = variables["video_dir"]
+        variables["link_name"] = dest.stem
+    return variables
 
 
 def _render_template(
@@ -426,6 +487,7 @@ def resolve_paths(
     video_name = video.stem
     variables["video_dir"] = str(video.parent)
     variables["video_name"] = video_name
+    variables["video_relpath"] = _video_relpath_or_empty(video, base_path)
     link = _resolve_link_path(library, variables, base_path, safe_dirs)
     if link is not None:
         variables["link_dir"] = str(link.parent)
@@ -463,7 +525,7 @@ def _resolve_link_path(
 ) -> Path | None:
     """渲染 link_template; 空模板返回 None. 结果必须落在库根之外.
 
-    此时 `{video_dir}` / `{video_name}` 已注入, `{link_dir}` / `{link_name}` 尚未注入.
+    此时 `{video_dir}` / `{video_name}` / `{video_relpath}` 已注入, `{link_dir}` / `{link_name}` 尚未注入.
     """
     template = normalize_link_template(library.link_template)
     if template is None:
@@ -484,6 +546,7 @@ def resolve_subtitle_path(
     video_dir: Path,
     link_dir: Path | None = None,
     video_name: str = "",
+    video_dest: Path | None = None,
     link_name: str | None = None,
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
@@ -492,7 +555,8 @@ def resolve_subtitle_path(
     """按字幕模板渲染单个字幕的目标路径.
 
     `{ext}` / `{raw_srt_name}` 取自该字幕源文件; `{raw_name}` / `{raw_dir}` 仍是视频源.
-    `{video_dir}` / `{video_name}` 为已渲染视频父目录与文件名 (不含扩展名);
+    `{video_dir}` / `{video_name}` 为整理后视频父目录与文件名 (不含扩展名);
+    `{video_relpath}` 为整理后视频相对库根的路径 (`video_dest` 未传时为空);
     `{link_dir}` / `{link_name}` 为链接父目录与文件名 (未设链接时分别与视频侧相同).
     默认模板保持原文件名与扩展名.
     """
@@ -502,6 +566,7 @@ def resolve_subtitle_path(
     )
     variables["video_dir"] = str(video_dir)
     variables["video_name"] = video_name
+    variables["video_relpath"] = _video_relpath_or_empty(video_dest, base_path) if video_dest is not None else ""
     variables["link_dir"] = str(link_dir if link_dir is not None else video_dir)
     variables["link_name"] = link_name if link_name is not None else video_name
     variables["raw_srt_name"] = subtitle_source.stem

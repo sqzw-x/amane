@@ -152,7 +152,7 @@
     "symlink": "软链接"
   },
   "fieldStrmContentTemplate": "STRM 内容模板",
-  "fieldStrmContentTemplateHint": "仅 strm 生效. 留空则写入视频绝对路径. {video_relpath} 为视频相对库根的路径, 网盘播放填写 /{video_relpath}",
+  "fieldStrmContentTemplateHint": "仅 strm 生效. 留空则写入视频绝对路径. 占位符与路径模板相同; 网盘播放填写 /{video_relpath}",
   "fieldStrmContentTemplatePlaceholder": "/{video_relpath}",
   "fieldInitialRefresh": "创建后立即刷新",
   "advancedTemplates": "附属资源模板",
@@ -181,10 +181,11 @@
       "def?": "[可空]分辨率(文件名检测)",
       "cd?": "[可空]分集序号",
       "sub?": "[可空]字幕情况",
-      "video_dir": "已渲染视频所在目录. 链接模板与附属资源模板可用",
-      "video_name": "已渲染视频文件名 (不含扩展名). 链接模板与附属资源模板可用",
+      "video_dir": "整理后视频所在目录. 链接模板与附属资源模板可用",
+      "video_name": "整理后视频文件名 (不含扩展名). 链接模板与附属资源模板可用",
+      "video_relpath": "整理后视频相对库根的路径. 链接模板、附属资源模板与 STRM 内容模板可用",
       "link_dir": "链接所在目录; 未设置链接模板时同 {video_dir}",
-      "link_name": "已渲染链接文件名 (不含扩展名); 未设置链接模板时同 {video_name}",
+      "link_name": "整理后链接文件名 (不含扩展名); 未设置链接模板时同 {video_name}",
       "raw_srt_name": "字幕源文件名. 例 A/foo.zh.srt → foo.zh"
     }
   },

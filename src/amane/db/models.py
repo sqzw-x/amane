@@ -335,7 +335,7 @@ class Library(SQLModel, table=True):
     link_mode: LinkMode = Field(default=LinkMode.STRM)
     """link_template 非空时: strm 写 .strm 文本; symlink 做文件系统软链接."""
     strm_content_template: StrmContentTemplate | None = None
-    """仅 link_mode=strm: .strm 正文模板. 空则写视频绝对路径. 可用 {video_relpath} (相对库根, POSIX, 无前导 /)."""
+    """仅 link_mode=strm: .strm 正文模板. 空则写视频绝对路径. 占位符与路径模板相同."""
     thumb_template: PathTemplate | None = None
     poster_template: PathTemplate | None = None
     fanart_template: PathTemplate | None = None

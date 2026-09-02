@@ -30,12 +30,20 @@
 | `{def?}` | 分辨率标记 | `4K` / `1080p` / `HD` / 空 |
 | `{raw_name}` | 源视频文件名 | `A/B.mp4` → `B` |
 | `{raw_dir}` | 源文件父目录名 | `A/B/C.mp4` → `B` |
-| `{video_dir}` | 已渲染视频所在目录. 链接模板与附属模板可用 | — |
-| `{video_name}` | 已渲染视频文件名, 不含扩展名. 链接模板与附属模板可用 | `MIDV-123-CD1-C` |
-| `{link_dir}` | 链接文件所在目录 (无链接时等于 `{video_dir}`) | — |
-| `{link_name}` | 已渲染链接文件名, 不含扩展名 (无链接时等于 `{video_name}`) | — |
-| `{raw_srt_name}` | 字幕原文件名，不含扩展名，仅字幕模板可用 | `foo.zh.srt` → `foo.zh` |
-| `{video_relpath}` | 视频相对库根的路径, 不含开头的 `/`. 仅 STRM 内容模板 | `Studio/ABC-123/ABC-123.mp4` |
+| `{video_dir}` | 整理后视频所在目录 | — |
+| `{video_name}` | 整理后视频文件名, 不含扩展名 | `MIDV-123-CD1-C` |
+| `{video_relpath}` | 整理后视频相对库根的路径 | `Studio/ABC-123/ABC-123.mp4` |
+| `{link_dir}` | 链接文件所在目录 | — |
+| `{link_name}` | 整理后链接文件名, 不含扩展名 | — |
+| `{raw_srt_name}` | 字幕原文件名, 不含扩展名 | `foo.zh.srt` → `foo.zh` |
+
+未列出范围的占位符在各模板与 STRM 内容模板中均可使用. 下表所列占位符有范围限制; 写在不可用的模板中会得到 `Unknown`.
+
+| 占位符 | 可用范围 |
+| -------- | -------- |
+| `{video_dir}` `{video_name}` `{video_relpath}` | 链接、附属、字幕、STRM 内容 |
+| `{link_dir}` `{link_name}` | 附属、字幕、STRM 内容 |
+| `{raw_srt_name}` | 仅字幕 |
 
 !!! note
     占位符名字结尾带 `?` 的项 (`{cd?}` / `{sub?}` / `{mosaic?}` / `{def?}`) 未检测到时会填空字符串, 而不是 `Unknown`. 这些占位符适合配合可选组语法 (见下文) 使用, 未检出时整组省略.
@@ -97,7 +105,7 @@ NFO: {link_dir}/{number}.nfo
 
 媒体库支持在库外创建指向库内视频的入口, 适用于网盘挂载等场景:
 
-- **`link_template`**: 链接文件的路径模板 (如 `/本地路径/{number}/{video_name}.{ext}`). 为空则不创建链接, `{link_dir}` / `{link_name}` 分别等于 `{video_dir}` / `{video_name}`. `{video_name}` 是已渲染视频文件名, 链接模板可用, 不必再重复填写 `{cd?}` 组.
+- **`link_template`**: 链接文件的路径模板 (如 `/本地路径/{number}/{video_name}.{ext}`). 为空则不创建链接, `{link_dir}` / `{link_name}` 分别等于 `{video_dir}` / `{video_name}`. `{video_name}` 是整理后视频文件名, 链接模板可用, 不必再重复填写 `{cd?}` 组.
 - **`link_mode`**: 链接类型
   - `strm`: 创建 `.strm` 文件, Emby/Jellyfin 可识别
   - `symlink`: 创建文件系统软链接
@@ -105,7 +113,7 @@ NFO: {link_dir}/{number}.nfo
 
 ### STRM 内容模板
 
-`link_template` 决定 `.strm` 文件放在哪里; `strm_content_template` 指定文件中的路径或地址.
+`link_template` 决定 `.strm` 文件放在哪里; `strm_content_template` 指定文件中的路径或地址. 占位符、可选组与值映射与路径模板相同.
 
 留空时写入视频的绝对路径, 本机或局域网直接播放即可, 不必填写.
 

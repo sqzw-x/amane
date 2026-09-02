@@ -158,7 +158,7 @@
     "symlink": "Symlink"
   },
   "fieldStrmContentTemplate": "STRM content template",
-  "fieldStrmContentTemplateHint": "Applies to strm only. Leave empty to write the video absolute path. {video_relpath} is the video path relative to the library root; for cloud playback use /{video_relpath}",
+  "fieldStrmContentTemplateHint": "Applies to strm only. Leave empty to write the video absolute path. Same placeholders as path templates; for cloud playback use /{video_relpath}",
   "fieldStrmContentTemplatePlaceholder": "/{video_relpath}",
   "fieldInitialRefresh": "Refresh on Creation",
   "advancedTemplates": "Sidecar Templates",
@@ -189,6 +189,7 @@
       "sub?": "[optional] Subtitle status",
       "video_dir": "Directory of the rendered video. Link and sidecar templates",
       "video_name": "Rendered video filename (no extension). Link and sidecar templates",
+      "video_relpath": "Rendered video path relative to the library root. Link, sidecar, and STRM content templates",
       "link_dir": "Directory of the link; same as {video_dir} when the link template is unset",
       "link_name": "Rendered link filename (no extension); same as {video_name} when the link template is unset",
       "raw_srt_name": "Source subtitle filename. e.g. A/foo.zh.srt → foo.zh"

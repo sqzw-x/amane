@@ -74,6 +74,7 @@ def place_subtitles(
             video_dir=video_dest.parent,
             link_dir=link_dir,
             video_name=video_dest.stem,
+            video_dest=video_dest,
             link_name=link_name,
             source_path=video_source,
             file_info=file_info,

@@ -672,6 +672,18 @@ class TestRenderedNamePlaceholders:
         assert result.link == other / "ABC-123" / "ABC-123-CD2.strm"
         assert result.nfo == other / "ABC-123" / "ABC-123-CD2.nfo"
 
+    def test_link_template_uses_video_relpath(self, media: Path, other: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{studio}/{number}/{number}.{ext}",
+            link_template=str(other / "{video_relpath}"),
+            link_mode=LinkMode.STRM,
+        )
+        result = resolve_paths(wp, _meta(), ext="mp4", safe_dirs=[other])
+        assert result.video == media / "StudioX" / "ABC-123" / "ABC-123.mp4"
+        assert result.link == other / "StudioX" / "ABC-123" / "ABC-123.strm"
+
     def test_unset_link_name_matches_video_name(self, media: Path):
         wp = Library(
             name="t",

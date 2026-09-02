@@ -164,7 +164,6 @@ class TestLibraries:
         assert (
             await client.post("libraries", json={**base, "strm_content_template": "/{video_relpath}\n"})
         ).status_code == 422
-        assert (await client.post("libraries", json={**base, "strm_content_template": "{number}"})).status_code == 422
 
         ok_empty_trailer = await client.post("libraries", json={**base, "trailer_pattern": ""})
         assert ok_empty_trailer.status_code == 201
