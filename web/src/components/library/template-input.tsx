@@ -73,7 +73,25 @@ export function TemplateInput({
     copyInputMetrics(input, highlight);
   }, []);
 
-  useLayoutEffect(sync, [sync, value]);
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    const highlight = highlightRef.current;
+    if (input == null || highlight == null) {
+      return;
+    }
+    const box = input.parentElement;
+    if (box == null) {
+      return;
+    }
+    // Accordion Collapse 从高度 0 展开. 仅在挂载或 value 变化时同步尺寸, 会读到空盒子;
+    // 有值时输入框透明, 着色层 overflow 裁掉文字. 盒子尺寸变化后再同步.
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(box);
+    return () => {
+      observer.disconnect();
+    };
+  }, [sync, value]);
 
   const filled = value.length > 0;
   const tokens = filled ? tokenizeTemplate(value, catalog) : [];
