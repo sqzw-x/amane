@@ -1,5 +1,5 @@
 import type { AnyFieldApi } from "@tanstack/react-form";
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useId, type ReactNode } from "react";
 import { isRecord } from "@/lib/utils";
 import type { SchemaFormInstance } from "../schema";
 
@@ -9,11 +9,15 @@ import type { SchemaFormInstance } from "../schema";
  *
  * `bindEntry`: 值本身是 scalar / array, Field `name` 只作 DOM id.
  * 否则 `name` 是条目内部的 schema 相对路径 (属性名, 可再嵌套).
+ *
+ * Tabs 会同时挂载全部条目, 叶子 `id`/`htmlFor` 必须走 `useFieldDomId`,
+ * 不能只用 schema 相对名, 否则同名 Switch 的 label 会命中第一份控件.
  */
 const DictEntryContext = createContext<{
   parentField: AnyFieldApi;
   entryKey: string;
   bindEntry: boolean;
+  scopeId: string;
 } | null>(null);
 
 export function DictEntryScope({
@@ -27,11 +31,19 @@ export function DictEntryScope({
   bindEntry: boolean;
   children: ReactNode;
 }) {
+  const scopeId = useId();
   return (
-    <DictEntryContext.Provider value={{ parentField, entryKey, bindEntry }}>
+    <DictEntryContext.Provider value={{ parentField, entryKey, bindEntry, scopeId }}>
       {children}
     </DictEntryContext.Provider>
   );
+}
+
+/** 叶子控件 DOM id. 处于 DictEntryScope 时附加本条目前缀, 避免多条目同名碰撞. */
+export function useFieldDomId(name: string): string {
+  const ctx = useContext(DictEntryContext);
+  if (ctx == null) return name;
+  return `${ctx.scopeId}${name}`;
 }
 
 function asDict(value: unknown): Record<string, unknown> {

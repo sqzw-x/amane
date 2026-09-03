@@ -4,6 +4,7 @@ import type { AnyFieldApi } from "@tanstack/react-form";
 import { useState } from "react";
 import type { ArrayFieldProps, JSONSchemaObject } from "../schema";
 import { isOrdered } from "../schema";
+import { useFieldDomId } from "./dict-entry-form";
 import { DraggableChips } from "./draggable-chips";
 import { FieldChrome } from "./field-chrome";
 
@@ -15,6 +16,7 @@ export function SimpleArrayField({
   form,
   variant,
 }: ArrayFieldProps<JSONSchemaObject>) {
+  const id = useFieldDomId(name);
   const ordered = isOrdered(schema);
   const long = schema["x-long"] === true;
 
@@ -28,7 +30,7 @@ export function SimpleArrayField({
         ) : long ? (
           // x-long, unordered: taller textarea, one value per line
           <Textarea
-            id={name}
+            id={id}
             value={value.join("\n")}
             onChange={(e) => {
               const parts = e.target.value
@@ -43,7 +45,7 @@ export function SimpleArrayField({
         ) : (
           // Default: comma-separated input
           <TextInput
-            id={name}
+            id={id}
             value={value.join(", ")}
             onChange={(e) => {
               const parts = e.target.value
@@ -57,7 +59,7 @@ export function SimpleArrayField({
         );
 
         return (
-          <FieldChrome variant={variant} htmlFor={name} label={label} description={description}>
+          <FieldChrome variant={variant} htmlFor={id} label={label} description={description}>
             {control}
           </FieldChrome>
         );

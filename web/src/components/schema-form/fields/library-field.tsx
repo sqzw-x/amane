@@ -2,6 +2,7 @@ import type { AnyFieldApi } from "@tanstack/react-form";
 import { LibraryPicker } from "@/components/library-picker";
 import type { FieldProps, LibraryJSONSchema } from "../schema";
 import { isNullable } from "../schema";
+import { useFieldDomId } from "./dict-entry-form";
 import { FieldChrome } from "./field-chrome";
 import { fieldError } from "./field-error";
 
@@ -13,6 +14,7 @@ export function LibraryField({
   form,
   variant,
 }: FieldProps<LibraryJSONSchema>) {
+  const id = useFieldDomId(name);
   const nullable = isNullable(schema);
 
   return (
@@ -20,7 +22,7 @@ export function LibraryField({
       {(field: AnyFieldApi) => (
         <FieldChrome
           variant={variant}
-          htmlFor={name}
+          htmlFor={id}
           label={label}
           description={description}
           error={fieldError(field)}

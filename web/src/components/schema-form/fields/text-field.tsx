@@ -3,6 +3,7 @@ import type { AnyFieldApi } from "@tanstack/react-form";
 import type { FieldProps } from "../schema";
 import { isNullable } from "../schema";
 import type { TextJSONSchema } from "../schema/types";
+import { useFieldDomId } from "./dict-entry-form";
 import { FieldChrome } from "./field-chrome";
 import { fieldError } from "./field-error";
 
@@ -21,6 +22,7 @@ export function TextField({
   form,
   variant,
 }: FieldProps<TextJSONSchema>) {
+  const id = useFieldDomId(name);
   const nullable = isNullable(schema);
   const long = schema["x-long"] === true;
   const multiline = schema["x-multiline"] === true || long;
@@ -30,7 +32,7 @@ export function TextField({
       {(field: AnyFieldApi) => (
         <FieldChrome
           variant={variant}
-          htmlFor={name}
+          htmlFor={id}
           label={label}
           description={description}
           error={fieldError(field)}
@@ -38,7 +40,7 @@ export function TextField({
           <Group gap="xs" wrap="nowrap" align={multiline ? "flex-start" : "center"}>
             {multiline ? (
               <Input
-                id={name}
+                id={id}
                 component="textarea"
                 rows={long ? 8 : 3}
                 value={(field.state.value as string) ?? ""}
@@ -50,7 +52,7 @@ export function TextField({
               />
             ) : (
               <Input
-                id={name}
+                id={id}
                 value={(field.state.value as string) ?? ""}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   field.handleChange(e.target.value || (nullable ? null : ""))

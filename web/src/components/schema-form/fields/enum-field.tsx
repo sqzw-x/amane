@@ -3,6 +3,7 @@ import type { AnyFieldApi } from "@tanstack/react-form";
 import { useEnumI18n } from "../hooks";
 import type { EnumSchema, FieldProps } from "../schema";
 import { isSimpleEnum } from "../schema";
+import { useFieldDomId } from "./dict-entry-form";
 import { EnumToggleField } from "./enum-toggle-field";
 import { FieldChrome } from "./field-chrome";
 import { fieldError } from "./field-error";
@@ -17,6 +18,7 @@ export function EnumField({
   i18nPrefix,
   variant,
 }: FieldProps<EnumSchema>) {
+  const id = useFieldDomId(name);
   const enumValues = schema.enum;
   const getOptionLabel = useEnumI18n(i18nPath, i18nPrefix);
   const simple = isSimpleEnum(schema);
@@ -48,13 +50,13 @@ export function EnumField({
         return (
           <FieldChrome
             variant={variant}
-            htmlFor={name}
+            htmlFor={id}
             label={label}
             description={description}
             error={fieldError(field)}
           >
             <Select
-              id={name}
+              id={id}
               data={data}
               value={field.state.value == null ? null : String(field.state.value)}
               onChange={(val) => field.handleChange(val)}

@@ -2,6 +2,7 @@ import { NumberInput } from "@mantine/core";
 import type { AnyFieldApi } from "@tanstack/react-form";
 import type { FieldProps, NumericJSONSchema } from "../schema";
 import { getEffectiveType, isNullable } from "../schema";
+import { useFieldDomId } from "./dict-entry-form";
 import { FieldChrome } from "./field-chrome";
 import { fieldError } from "./field-error";
 
@@ -13,6 +14,7 @@ export function NumericField({
   form,
   variant,
 }: FieldProps<NumericJSONSchema>) {
+  const id = useFieldDomId(name);
   const nullable = isNullable(schema);
   const effectiveSchema = getEffectiveType(schema);
   const isInteger = typeof effectiveSchema === "object" && effectiveSchema.type === "integer";
@@ -22,13 +24,13 @@ export function NumericField({
       {(field: AnyFieldApi) => (
         <FieldChrome
           variant={variant}
-          htmlFor={name}
+          htmlFor={id}
           label={label}
           description={description}
           error={fieldError(field)}
         >
           <NumberInput
-            id={name}
+            id={id}
             allowDecimal={!isInteger}
             value={field.state.value == null ? "" : (field.state.value as number)}
             onChange={(value) => {
