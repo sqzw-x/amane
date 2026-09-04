@@ -48,14 +48,14 @@ ORGANIZE 复制到库路径的 poster / thumb 在 `watermark.enabled` 时按**�
 | 字段类型 | 存储方式 | 取舍 |
 |----------|---------|----------|
 | 标量 (`title`, `studio`, `plot`, ...) | 单值, 聚合按字段优先级选首个非空源 | 覆盖大多数场景 |
-| URL (`poster_urls`, `thumb_urls`, ...) | list, 聚合按优先级, 物化后按下载成功重排 (见 [task-system.md](task-system.md)) | 下载时顺序尝试, 某站失效不需重新刮削 |
+| 聚合类: URL (`poster_urls`, `thumb_urls`, ...) | list, 按该字段站点顺序拼接各站非空值, 物化后按下载成功重排 (见 [task-system.md](task-system.md)) | 下载时顺序尝试, 某站失效不需重新刮削 |
 | `extrafanart_urls` | `dict[site, list[url]]` 按站点分组 | 剧照集合是站点特异的, 扁平合并会丢失站点上下文 |
 | `scores` | `dict[site, score]` | 不同评分体系 (5分 vs 100分), 保留来源让前端分别展示 |
 | `raw` | `{site: {field: value}}` 原始快照 | 离线重新聚合: 修改优先级 / 翻译规则不需重爬; 也作 per-site 复用来源 (见 [task-system.md](task-system.md) 站点级复用) |
 
 ### `field_sources`
 
-`{field_name: site_name}` 仅记录**标量字段**的来源. URL / extrafanart / scores 自带来源结构, 不写入. 用途: 调试多源不一致 + 前端展示来源. 不参与业务逻辑, 重新刮削后被覆盖.
+`{field_name: site_name}` 仅记录**标量字段**的来源. 聚合类字段 (URL / extrafanart / scores) 自带来源结构, 不写入. 用途: 调试多源不一致 + 前端展示来源. 不参与业务逻辑, 重新刮削后被覆盖.
 
 `raw` 的字段名 / 类型必须与当前 `MediaMetadata` 一致 — 它会被站点级复用直接反序列化. 模型更改名称或类型时, 结果列与 raw 是两份数据, 需单独的 data migration (见 [database.md](database.md) Autogenerate 盲区).
 

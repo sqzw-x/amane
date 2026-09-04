@@ -1,4 +1,4 @@
-"""字段级多源聚合: 静态抓取图 + 按波次执行 + 沿 fallback 增量合并.
+"""字段级多源聚合: 静态抓取图 + 按波次请求 + 标量当场短路 + 聚合类字段结束时按链拼接.
 
 不在 crawlers 映射中的站点标成已处理空结果, 不写入 failed / sites_queried, 也不调用 invoke_source.
 """
@@ -152,8 +152,6 @@ class ExecutionState:
     sites_queried: list[SourceKey] = _f(default_factory=list)
     result: AggregatedMetadata = _f(default_factory=lambda: AggregatedMetadata(number=""))
 
-    collected: set[tuple[SourceKey, MetadataField]] = _f(default_factory=set)
-
     def __post_init__(self):
         if not self.result.number:
             self.result = AggregatedMetadata(number=self.number)
@@ -166,12 +164,12 @@ async def execute_graph(
     db_cache: Mapping[SourceKey, dict] | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> ExecutionState:
-    """按波次调度, 沿 fallback 边增量合并. URL / 收集类字段只累积, 不计入进度."""
+    """按波次请求; 标量沿 fallback 当场短路. URL / 评分 / 剧照在全部请求结束后按字段链拼接."""
     snapshots = db_cache or {}
     state = ExecutionState(number=query.number)
     field_total = len(SCALAR_FIELDS)
 
-    # 标量满足后移除; URL / 收集字段始终保留.
+    # 标量满足后移除; 聚合类字段始终保留.
     unsatisfied: set[MetadataField] = set(ALL_FIELDS)
 
     # 禁用插件 / 未安装来源 / 构造失败不在 crawlers 中: 标成已处理空结果,
@@ -225,13 +223,14 @@ async def execute_graph(
             if data is None:
                 state.failed.append(ck)
 
-        # 沿 fallback 立即消费本波结果.
-        _collect_after_wave(graph, state, unsatisfied)
+        # 标量沿链当场定值, 供短路与后波 partial 使用.
+        _collect_scalars_after_wave(graph, state, unsatisfied)
 
         if on_progress is not None:
             sites = ", ".join(n.cache_key for n in active_nodes)
             await on_progress(_scalar_progress(unsatisfied), field_total, sites)
 
+    _assemble_aggregate_fields(graph, state)
     _fill_actor_genders(state.result, state.fetched)
     return state
 
@@ -452,66 +451,60 @@ def _fill_scalar(
     result.field_sources[field] = source_key
 
 
-def _collect_after_wave(graph: FetchGraph, state: ExecutionState, unsatisfied: set[MetadataField]) -> None:
-    for field, chain in graph.field_chains.items():
-        if field in URL_FIELD_MAP:
-            for node in chain:
-                ck = node.cache_key
-                if ck not in state.fetched or (ck, field) in state.collected:
-                    continue
-                data = state.fetched[ck]
-                if data is None:
-                    continue
-                value = getattr(data, field, None)
-                if value:
-                    dst = URL_FIELD_MAP[field]
-                    urls = [value] if isinstance(value, str) else value
-                    getattr(state.result, dst).extend(v for v in urls if v)
-                    state.collected.add((ck, field))
-
-        elif field == MetadataField.EXTRAFANART:
-            for node in chain:
-                ck = node.cache_key
-                if ck not in state.fetched or (ck, field) in state.collected:
-                    continue
-                data = state.fetched[ck]
-                if data is not None and data.extrafanart:
-                    state.result.extrafanart_urls[ck] = data.extrafanart
-                    state.collected.add((ck, field))
-
-        elif field == MetadataField.SCORE:
-            for node in chain:
-                ck = node.cache_key
-                if ck not in state.fetched or (ck, field) in state.collected:
-                    continue
-                data = state.fetched[ck]
-                if data is not None and data.score is not None:
-                    state.result.scores.append(SourcedScore(site=ck, score=data.score))
-                    state.collected.add((ck, field))
-
-        elif field in SCALAR_FIELDS:
-            # 同波 fallback 立即消费.
-            if field not in unsatisfied:
+def _collect_scalars_after_wave(graph: FetchGraph, state: ExecutionState, unsatisfied: set[MetadataField]) -> None:
+    """沿字段链定值标量. 尚未请求的节点中断该字段, 不取后面已返回的站."""
+    for field in SCALAR_FIELDS:
+        if field not in unsatisfied:
+            continue
+        for node in graph.field_chains[field]:
+            ck = node.cache_key
+            if ck not in state.fetched:
+                break
+            data = state.fetched[ck]
+            if data is None:
                 continue
-            for node in chain:
-                ck = node.cache_key
-                if ck not in state.fetched:
-                    break
-                data = state.fetched[ck]
-                if data is None:
-                    continue
-                value = getattr(data, field, None)
-                if value:
-                    _fill_scalar(state.result, field, data, ck)
-                    unsatisfied.discard(field)
-                    break
-                if field not in REQUIRED_SCALAR_FIELDS:
-                    # 可选字段: 爬虫成功但值为空 → 接受空值.
-                    _fill_scalar(state.result, field, data, ck)
-                    unsatisfied.discard(field)
-                    break
+            value = getattr(data, field, None)
+            if value:
+                _fill_scalar(state.result, field, data, ck)
+                unsatisfied.discard(field)
+                break
+            if field not in REQUIRED_SCALAR_FIELDS:
+                _fill_scalar(state.result, field, data, ck)
+                unsatisfied.discard(field)
+                break
 
-    # 被动收集 external_id / source_url.
+
+def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None:
+    """按各字段站点顺序拼接已抓结果. 空值与未返回的站跳过, 不改变相对顺序."""
+    for field, dst in URL_FIELD_MAP.items():
+        urls: list[str] = []
+        for node in graph.field_chains[field]:
+            data = state.fetched.get(node.cache_key)
+            if data is None:
+                continue
+            value = getattr(data, field, None)
+            if not value:
+                continue
+            items = [value] if isinstance(value, str) else value
+            urls.extend(v for v in items if v)
+        setattr(state.result, dst, urls)
+
+    extrafanart: dict[str, list[str]] = {}
+    for node in graph.field_chains[MetadataField.EXTRAFANART]:
+        ck = node.cache_key
+        data = state.fetched.get(ck)
+        if data is not None and data.extrafanart:
+            extrafanart[ck] = data.extrafanart
+    state.result.extrafanart_urls = extrafanart
+
+    scores: list[SourcedScore] = []
+    for node in graph.field_chains[MetadataField.SCORE]:
+        ck = node.cache_key
+        data = state.fetched.get(ck)
+        if data is not None and data.score is not None:
+            scores.append(SourcedScore(site=ck, score=data.score))
+    state.result.scores = scores
+
     for ck, data in state.fetched.items():
         if data is None:
             continue

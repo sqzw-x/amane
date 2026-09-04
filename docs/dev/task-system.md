@@ -68,7 +68,7 @@ SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完�
 `aggregate` (`src/amane/aggregate/`) 不取并集全爬再挑值, 而是先把优先级配置编译成**静态抓取图** (`build_graph`), 再按波次执行 (`execute_graph`):
 
 - **建图** (`build_graph` → `compute_waves`): handler 先把 `content_routes[type]` 与稀疏 `field_priority` 编成每字段站点链 (`compile_priority`: prefer ∩ route 前置, 其余 route 保序). `content_routes` 是该类型资格真值, 不在表内的站不会被请求. 站点 + 语言唯一确定一个 `FetchNode` (`cache_key`), 节点按拓扑分层为**波次** (层内可并行). 每个字段沿优先级链回填 `covers` 与 `fallback` 边.
-- **执行** (`execute_graph`): 逐波推进, 每波只激活仍有未满足字段且尚未请求的节点, `asyncio.gather` 并发抓取. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿 fallback 继续, 不调用 `invoke_source` (因此不会记成 unexpected). 波后 `_collect_after_wave` 扫描全部已抓取节点: 标量字段满足即短路; URL / score / extrafanart 始终累积. 前序波结果 (`partial`) 注入后续波的爬虫查询.
+- **执行** (`execute_graph`): 逐波推进, 每波只激活仍有未满足字段且尚未请求的节点, `asyncio.gather` 并发抓取. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿 fallback 继续, 不调用 `invoke_source` (因此不会记成 unexpected). 波后只定值标量 (满足即短路); 后波 `partial` 只携带已定标量. 聚合类字段 (URL / score / extrafanart, 见 [data-model.md](data-model.md)) 在全部请求结束后按该字段 `field_chains` 拼接, 不按返回先后排列. 某站未返回或该字段为空则跳过, 不把后面的站提到前面.
 - **多语言合并**: 若某字段需 (site, lang) 而另一字段仅需 (site, None), `compute_waves` 合并为一次带语言请求.
 
 后果: f1=[s3,s2,s1]、f2 / f3=[s1,s2,s3] 全成功时只请求 s1, s3; 若 s1 失败则沿 fallback 由 s2 接替.
@@ -89,7 +89,7 @@ Worker 在 `handle()` 前注入 `report_progress` 回调, 经 EventBus 发 `task
 
 **契约**: `total > 0` 时前端按 `current/total` 显示百分比; 未上报则 running 态回退 indeterminate. Handler 不调用时静默忽略.
 
-**SCRAPE**: 分母 = 标量字段数 + 2 (`materialize` / `persist`). 聚合按波次上报已满足标量字段数 (URL / score / extrafanart 只累积, 不计入); message 为当波站点 `cache_key`. 抓取结束后抬到标量满分, 再执行后两步至 `done`.
+**SCRAPE**: 分母 = 标量字段数 + 2 (`materialize` / `persist`). 聚合按波次上报已满足标量字段数 (聚合类字段不计入); message 为当波站点 `cache_key`. 抓取结束后抬到标量满分, 再执行后两步至 `done`.
 
 **ORGANIZE**: 失效索引按本库 MediaFile 条数 (`prune`). 一次遍历的结果在内存中分类后分别归档 (`trash`) 与落盘 (message 为文件名). glob 进行中 `total=0`. 空目录以 1/1 `done` 结束.
 

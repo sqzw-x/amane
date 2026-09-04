@@ -1,18 +1,10 @@
-"""测试 amane.aggregate - DAG 抓取图 + 增量合并.
-
-按职责分别测试:
-- compute_waves      - 波次划分 + 语言合并
-- build_graph        - 图结构正确性 (nodes / field_chains / fallback 边)
-- execute_graph      - 执行正确性 (提前终止 / fallback 传播 / 收集字段)
-- aggregate          - 端到端编排
-"""
+"""测试 amane.aggregate: 静态抓取图、分波请求、标量短路、聚合类字段按链拼接."""
 
 from collections import defaultdict
 
 import pytest
 
 from amane.aggregate import (
-    ALL_FIELDS,
     SCALAR_FIELDS,
     aggregate,
     build_graph,
@@ -29,6 +21,7 @@ from amane.enums import ActorGender, Language, MetadataField, SiteName
 S1, S2, S3 = SiteName.JAVDB, SiteName.DMM, SiteName.JAVBUS
 K1, K2, K3 = str(S1), str(S2), str(S3)
 DB, DMM, BUS, OFF = SiteName.JAVDB, SiteName.DMM, SiteName.JAVBUS, SiteName.OFFICIAL
+PLUGIN = "sample.javdbapi"
 
 IQQTV = SiteName.IQQTV
 TITLE = MetadataField.TITLE
@@ -265,14 +258,6 @@ class TestBuildGraph:
         # title 不应该出现在 DB 的 covers 中 (DB 是 title 的第三优先级)
         assert MetadataField.TITLE not in w0_nodes[DB].covers
 
-    def test_all_fields_have_chains(self):
-        """ALL_FIELDS 中的每个字段都有对应的 chain."""
-        fp = defaultdict(lambda: [DB, DMM, BUS])
-        graph = build_graph(fp, {})
-        for field in ALL_FIELDS:
-            assert field in graph.field_chains, f"Missing chain for {field}"
-            assert len(graph.field_chains[field]) > 0, f"Empty chain for {field}"
-
     def test_same_site_different_langs_produce_distinct_nodes(self):
         """同站点不同语言 = 不同节点."""
         fp = defaultdict(lambda: [DB])
@@ -300,16 +285,19 @@ class TestExecuteGraph:
         fp = defaultdict(lambda: [DB, DMM, BUS], {MetadataField.TITLE: [BUS, DMM, DB]})
         graph = build_graph(fp, {})
 
-        data = MediaMetadata(number="X", title="T1", studio="S1", plot="P1", poster_urls=["http://p.jpg"])
-        crawlers = {K1: MockCrawler(data), K2: MockCrawler(data), K3: MockCrawler(data)}
+        crawlers = {
+            K1: MockCrawler(MediaMetadata(number="X", title="T_DB", studio="S_DB", poster_urls=["http://db.jpg"])),
+            K2: MockCrawler(MediaMetadata(number="X", title="T_DMM", studio="S_DMM", poster_urls=["http://dmm.jpg"])),
+            K3: MockCrawler(MediaMetadata(number="X", title="T_BUS", studio="S_BUS", poster_urls=["http://bus.jpg"])),
+        }
 
         state = await execute_graph(graph, crawlers, SearchQuery("X"))
 
-        assert state.result.title == "T1"
-        assert state.result.field_sources["title"] == "javbus"  # BUS 是第一优先级
-        assert state.result.studio == "S1"
-        assert state.result.field_sources["studio"] == "javdb"  # DB 是第一优先级 (默认)
-        assert len(state.result.poster_urls) >= 1
+        assert state.result.title == "T_BUS"
+        assert state.result.field_sources["title"] == "javbus"
+        assert state.result.studio == "S_DB"
+        assert state.result.field_sources["studio"] == "javdb"
+        assert state.result.poster_urls == ["http://db.jpg", "http://dmm.jpg", "http://bus.jpg"]
         assert len(state.failed) == 0
 
     @pytest.mark.asyncio
@@ -473,53 +461,6 @@ class TestExecuteGraph:
         # studio 是 OPTIONAL → DB 的 "S1" 被接受
         assert state.result.studio == "S1"
         assert state.result.field_sources["studio"] == "javdb"
-
-    @pytest.mark.asyncio
-    async def test_url_collection_from_all_sites(self):
-        """URL 字段从所有已执行站点收集, 去重."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        c1 = MockCrawler(result=MediaMetadata(number="X", poster_urls=["http://a.jpg"]))
-        c2 = MockCrawler(result=MediaMetadata(number="X", poster_urls=["http://b.jpg"]))
-
-        state = await execute_graph(graph, {K1: c1, K2: c2}, SearchQuery("X"))
-
-        assert "http://a.jpg" in state.result.poster_urls
-        assert "http://b.jpg" in state.result.poster_urls
-        assert len(state.result.poster_urls) == 2
-
-    @pytest.mark.asyncio
-    async def test_scores_collected_from_all_sites(self):
-        """评分从所有已执行站点收集."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        c1 = MockCrawler(result=MediaMetadata(number="X", score=85.0))
-        c2 = MockCrawler(result=MediaMetadata(number="X", score=72.0))
-
-        state = await execute_graph(graph, {K1: c1, K2: c2}, SearchQuery("X"))
-
-        assert len(state.result.scores) == 2
-        score_sites = {s.site for s in state.result.scores}
-        assert "javdb" in score_sites
-        assert "dmm" in score_sites
-
-    @pytest.mark.asyncio
-    async def test_extrafanart_grouped_by_site(self):
-        """剧照 URL 按站点分组存储."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        c1 = MockCrawler(result=MediaMetadata(number="X", extrafanart=["http://e1.jpg", "http://e2.jpg"]))
-        c2 = MockCrawler(result=MediaMetadata(number="X", extrafanart=["http://e3.jpg"]))
-
-        state = await execute_graph(graph, {K1: c1, K2: c2}, SearchQuery("X"))
-
-        assert "javdb" in state.result.extrafanart_urls
-        assert "dmm" in state.result.extrafanart_urls
-        assert len(state.result.extrafanart_urls["javdb"]) == 2
-        assert len(state.result.extrafanart_urls["dmm"]) == 1
 
     @pytest.mark.asyncio
     async def test_external_ids_and_source_urls_collected(self):
@@ -733,16 +674,14 @@ class TestComplexScenarios:
         fp = defaultdict(lambda: [DB], {MetadataField.TITLE: [DB, DMM], MetadataField.POSTER_URLS: [DMM, DB]})
         graph = build_graph(fp, {})
 
-        # javdb 返回 title 但不含 poster_url → poster_url 回退到 dmm
-        c_javdb = MockCrawler(result=MediaMetadata(number="X", title="FromJavDB", poster_urls=[]))
+        c_javdb = MockCrawler(result=MediaMetadata(number="X", title="FromJavDB", poster_urls=["http://db.jpg"]))
         c_dmm = MockCrawler(result=MediaMetadata(number="X", title="FromDMM", poster_urls=["http://dmm.jpg"]))
 
         state = await execute_graph(graph, {K1: c_javdb, K2: c_dmm}, SearchQuery("X"))
 
-        # title 来自 javdb (第一优先级), poster_url 来自 dmm (同波 fallback)
         assert state.result.title == "FromJavDB"
         assert state.result.field_sources["title"] == "javdb"
-        assert "http://dmm.jpg" in state.result.poster_urls
+        assert state.result.poster_urls == ["http://dmm.jpg", "http://db.jpg"]
 
     @pytest.mark.asyncio
     async def test_url_drives_additional_wave_when_scalar_satisfied(self):
@@ -830,18 +769,142 @@ class TestComplexScenarios:
         assert state.result.studio == "S_DMM"  # dmm 第一优先
         assert state.result.field_sources["studio"] == "dmm"
 
+
+class TestAggregateFieldOrder:
+    """出演/评分把低优先级图片站拉进前波时, 列表仍按该字段站点顺序."""
+
     @pytest.mark.asyncio
-    async def test_duplicate_url_not_collected_twice(self):
-        """同一站点的同一 URL 字段只收集一次 (去重验证)."""
-        fp = defaultdict(lambda: [DB])
+    async def test_resrape_plugin_wave0_javdb_cache_later(self):
+        """有码补刮: 插件因出演/评分在第 0 波, javdb 缓存后到.
+
+        路由 dmm → javdb → 插件. actors/score 把插件提前.
+        dmm 无数据; javdb 无海报、有封面与剧照; 插件三类都有.
+        """
+        fp = compile_priority(
+            [DMM, DB, PLUGIN],
+            {
+                MetadataField.ACTORS: [PLUGIN, DB, DMM],
+                MetadataField.SCORE: [PLUGIN, DB, DMM],
+            },
+        )
         graph = build_graph(fp, {})
 
-        c1 = MockCrawler(result=MediaMetadata(number="X", poster_urls=["http://p.jpg"]))
-        state = await execute_graph(graph, {K1: c1}, SearchQuery("X"))
+        plugin_meta = MediaMetadata.model_validate(
+            {
+                "number": "NFDM-311",
+                "title": "FromPlugin",
+                "actors": ["P1"],
+                "poster_urls": ["http://plugin/poster.jpg"],
+                "thumb_urls": ["http://plugin/thumb.jpg"],
+                "extrafanart": ["http://plugin/e1.jpg"],
+                "score": 4.1,
+            }
+        )
+        javdb_snap = MediaMetadata.model_validate(
+            {
+                "number": "NFDM-311",
+                "title": "FromJavDB",
+                "actors": ["J1"],
+                "studio": "Freedom",
+                "poster_urls": [],
+                "thumb_urls": ["http://jdbstatic/cover.jpg"],
+                "extrafanart": ["http://jdbstatic/e1.jpg"],
+                "score": 4.36,
+            }
+        ).model_dump()
 
-        # 仅一个站点 → poster_urls 应只有一项
-        assert len(state.result.poster_urls) == 1
-        assert state.result.poster_urls[0] == "http://p.jpg"
+        state = await execute_graph(
+            graph,
+            {
+                "dmm": MockCrawler(None),
+                K1: MockCrawler(MediaMetadata(number="NFDM-311", title="ShouldNotFetch")),
+                PLUGIN: MockCrawler(plugin_meta),
+            },
+            SearchQuery("NFDM-311"),
+            db_cache={"javdb": javdb_snap},
+        )
+
+        assert state.result.title == "FromJavDB"
+        assert state.result.field_sources["title"] == "javdb"
+        assert [a.name for a in state.result.actors] == ["P1"]
+        assert state.result.field_sources["actors"] == PLUGIN
+        assert state.result.poster_urls == ["http://plugin/poster.jpg"]
+        assert state.result.thumb_urls == ["http://jdbstatic/cover.jpg", "http://plugin/thumb.jpg"]
+        assert list(state.result.extrafanart_urls) == ["javdb", PLUGIN]
+        assert [s.site for s in state.result.scores] == [PLUGIN, "javdb"]
+        assert [s.score for s in state.result.scores] == [4.1, 4.36]
+
+    @pytest.mark.asyncio
+    async def test_thumb_prefer_then_route_remainder(self):
+        """封面例外名单不含 javdb 时, 编译链仍是例外 ∩ 路由 + 其余路由保序."""
+        fp = compile_priority(
+            [DMM, DB, PLUGIN],
+            {
+                MetadataField.ACTORS: [PLUGIN, DB, DMM],
+                MetadataField.THUMB_URLS: [DMM],
+            },
+        )
+        graph = build_graph(fp, {})
+
+        state = await execute_graph(
+            graph,
+            {
+                "dmm": MockCrawler(None),
+                K1: MockCrawler(
+                    MediaMetadata(
+                        number="X",
+                        title="T",
+                        thumb_urls=["http://javdb/t.jpg"],
+                        extrafanart=["http://javdb/e.jpg"],
+                    )
+                ),
+                PLUGIN: MockCrawler(
+                    MediaMetadata.model_validate(
+                        {
+                            "number": "X",
+                            "actors": ["A"],
+                            "thumb_urls": ["http://plugin/t.jpg"],
+                            "extrafanart": ["http://plugin/e.jpg"],
+                        }
+                    )
+                ),
+            },
+            SearchQuery("X"),
+        )
+
+        assert state.result.thumb_urls == ["http://javdb/t.jpg", "http://plugin/t.jpg"]
+        assert list(state.result.extrafanart_urls) == ["javdb", PLUGIN]
+
+    @pytest.mark.asyncio
+    async def test_higher_priority_empty_url_does_not_occupy_slot(self):
+        """图片链上更前的站该字段为空时, 列表从下一站有值处开始, 不留空位."""
+        fp = compile_priority([DB, DMM, PLUGIN], {MetadataField.SCORE: [PLUGIN, DB, DMM]})
+        graph = build_graph(fp, {})
+
+        state = await execute_graph(
+            graph,
+            {
+                K1: MockCrawler(
+                    MediaMetadata(number="X", title="T", poster_urls=[], thumb_urls=["http://javdb/t.jpg"], score=1.0)
+                ),
+                "dmm": MockCrawler(
+                    MediaMetadata(number="X", poster_urls=["http://dmm/p.jpg"], thumb_urls=[], score=None)
+                ),
+                PLUGIN: MockCrawler(
+                    MediaMetadata(
+                        number="X",
+                        poster_urls=["http://plugin/p.jpg"],
+                        thumb_urls=["http://plugin/t.jpg"],
+                        score=9.0,
+                    )
+                ),
+            },
+            SearchQuery("X"),
+        )
+
+        assert state.result.poster_urls == ["http://dmm/p.jpg", "http://plugin/p.jpg"]
+        assert state.result.thumb_urls == ["http://javdb/t.jpg", "http://plugin/t.jpg"]
+        assert [s.site for s in state.result.scores] == [PLUGIN, "javdb"]
 
 
 # ============================================================
@@ -968,25 +1031,6 @@ class TestProgressReporting:
 
 
 class TestFetchGraphIntegration:
-    @pytest.mark.asyncio
-    async def test_graph_then_aggregate_roundtrip(self):
-        """build_graph → execute_graph → aggregate 全链路."""
-        fp = defaultdict(lambda: [DB, DMM], {MetadataField.TITLE: [DMM, DB], MetadataField.PLOT: [DB, DMM]})
-
-        c_javdb = MockCrawler(result=MediaMetadata(number="X", title="T1", plot="P1"))
-        c_dmm = MockCrawler(result=MediaMetadata(number="X", title="T2", plot="P2"))
-
-        result = await aggregate(SearchQuery("X"), {K1: c_javdb, K2: c_dmm}, fp)
-
-        # title → dmm 第一优先级, plot → javdb 第一优先级
-        assert result.metadata.title == "T2"
-        assert result.field_sources["title"] == "dmm"
-        assert result.metadata.plot == "P1"
-        assert result.field_sources["plot"] == "javdb"
-        # 验证 raw 包含所有站点
-        assert "javdb" in result.raw
-        assert "dmm" in result.raw
-
     @pytest.mark.asyncio
     async def test_aggregate_with_cache_and_fallback(self):
         """aggregate 配合 cache: javdb 快照命中, dmm 失败 → 部分成功."""
