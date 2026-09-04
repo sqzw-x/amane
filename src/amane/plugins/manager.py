@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import logging
-from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -12,7 +11,6 @@ from pydantic import BaseModel
 from ..config.manager import HotSettings
 from ..crawlers import registry
 from ..crawlers.site_roles import FILM_METADATA_SITES
-from ..enums import MetadataField
 from .api import FilmSourcePlugin, FilmSourceProvider, PluginContext
 from .models import (
     PLUGIN_API_VERSION,
@@ -200,18 +198,22 @@ class PluginManager:
                 if descriptor.content_types and content_type not in descriptor.content_types:
                     raise ValueError(f"source {source_id!r} does not support content type {content_type!r}")
 
-        self._validate_field_sources(
-            hot.scraping.field_priority,
-            known,
-            require_available=require_available,
-            prefix="scraping.field_priority",
-        )
-        self._validate_field_sources(
-            hot.scraping.field_blacklist,
-            known,
-            require_available=require_available,
-            prefix="scraping.field_blacklist",
-        )
+        for prefix, mapping in (
+            ("scraping.field_priority", hot.scraping.field_priority),
+            ("scraping.field_blacklist", hot.scraping.field_blacklist),
+        ):
+            for meta_field, sources in mapping.items():
+                field = f"{prefix}.{meta_field}"
+                for source_id in sources:
+                    descriptor = self._descriptor_for_route(
+                        str(source_id), known, require_available=require_available, field=field
+                    )
+                    if descriptor is None:
+                        continue
+                    if not descriptor.supports(SourceCapability.FILM_METADATA):
+                        raise ValueError(f"source {source_id!r} cannot provide film metadata")
+                    if descriptor.metadata_fields and meta_field not in descriptor.metadata_fields:
+                        raise ValueError(f"source {source_id!r} does not provide metadata field {meta_field!r}")
 
         for plugin_id, config in hot.plugins.items():
             if not is_external_source_id(plugin_id):
@@ -222,27 +224,6 @@ class PluginManager:
                 continue
             if config.enabled:
                 self.validate_plugin_config(plugin_id, config)
-
-    def _validate_field_sources(
-        self,
-        mapping: Mapping[MetadataField, Sequence[str]],
-        known: dict[str, SourceDescriptor],
-        *,
-        require_available: bool,
-        prefix: str,
-    ) -> None:
-        for meta_field, sources in mapping.items():
-            field = f"{prefix}.{meta_field}"
-            for source_id in sources:
-                descriptor = self._descriptor_for_route(
-                    str(source_id), known, require_available=require_available, field=field
-                )
-                if descriptor is None:
-                    continue
-                if not descriptor.supports(SourceCapability.FILM_METADATA):
-                    raise ValueError(f"source {source_id!r} cannot provide film metadata")
-                if descriptor.metadata_fields and meta_field not in descriptor.metadata_fields:
-                    raise ValueError(f"source {source_id!r} does not provide metadata field {meta_field!r}")
 
     @staticmethod
     def _descriptor_for_route(
