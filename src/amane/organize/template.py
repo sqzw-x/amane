@@ -19,7 +19,9 @@ _UNKNOWN = "Unknown"
 _DRIVE = re.compile(r"^[A-Za-z]:")
 _DRIVE_ONLY = re.compile(r"^[A-Za-z]:$")
 PATH_FIELD_MAX_BYTES = 200
+PATH_FIELD_ELLIPSIS = "…"
 _CLIP_KEYS = frozenset({"title", "actor", "actors"})
+_ELLIPSIS_BYTES = len(PATH_FIELD_ELLIPSIS.encode("utf-8"))
 
 PLACEHOLDERS: tuple[str, ...] = (
     "number",
@@ -216,17 +218,20 @@ def _nodes_use_placeholder(nodes: Sequence[_Node], name: str) -> bool:
 
 
 def _clip_field(value: str) -> str:
-    """按 UTF-8 字节截断, 不得切开多字节字符. 为番号、分集标记与扩展名留出余量."""
+    """按 UTF-8 字节截断并追加省略号, 不得切开多字节字符. 省略号计入上限."""
     data = value.encode("utf-8")
     if len(data) <= PATH_FIELD_MAX_BYTES:
         return value
-    clipped = data[:PATH_FIELD_MAX_BYTES]
+    budget = PATH_FIELD_MAX_BYTES - _ELLIPSIS_BYTES
+    if budget <= 0:
+        return PATH_FIELD_ELLIPSIS
+    clipped = data[:budget]
     while clipped:
         try:
-            return clipped.decode("utf-8")
+            return clipped.decode("utf-8") + PATH_FIELD_ELLIPSIS
         except UnicodeDecodeError:
             clipped = clipped[:-1]
-    return ""
+    return PATH_FIELD_ELLIPSIS
 
 
 def _safe(value: str | None) -> str | None:
