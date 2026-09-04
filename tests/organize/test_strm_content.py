@@ -38,6 +38,17 @@ def test_render_strm_content(
         assert render_strm_content(template, dest, root, _meta()) == expected
 
 
+def test_strm_content_does_not_clip_title(tmp_path: Path) -> None:
+    """STRM 正文可以是 URL, 不截断 title."""
+    root = tmp_path / "lib"
+    dest = root / "A.mp4"
+    title = "あ" * 90
+    meta = Metadata(number="ABC-123", title=title, actors=["A"], studio="StudioX", release="2024-01-15")
+    body = render_strm_content("https://example.com/{title}", dest, root, meta)
+    assert body == f"https://example.com/{title}\n"
+    assert len(title.encode("utf-8")) > 200
+
+
 def test_relpath_outside_library_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="outside library root"):
         render_strm_content("/{video_relpath}", tmp_path / "outside" / "A.mp4", tmp_path / "lib", _meta())

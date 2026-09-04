@@ -21,6 +21,7 @@ from amane.organize import (
     resolve_subtitle_path,
     validate_path_template,
 )
+from amane.organize.template import PATH_FIELD_MAX_BYTES, PathEngine, TemplateContext
 from amane.parsing import parse_file_info
 
 
@@ -723,3 +724,101 @@ class TestRenderedNamePlaceholders:
             video_name=video.video.stem,
         )
         assert sub == media / "ABC-123" / "ABC-123-CD2.srt"
+
+
+# あ = 3 字节. 66 字 = 198 字节; 67 字 = 201 字节, 超过 PATH_FIELD_MAX_BYTES.
+_JP_66 = "あ" * 66
+_JP_67 = "あ" * 67
+_JP_90 = "あ" * 90
+
+
+class _FieldClipCase(NamedTuple):
+    id: str
+    template: str
+    variables: dict[str, str]
+    expected: str
+
+
+FIELD_CLIP_CASES: tuple[_FieldClipCase, ...] = (
+    _FieldClipCase(
+        "title-cjk-over-clips",
+        "{title}",
+        {"title": _JP_90},
+        _JP_66,
+    ),
+    _FieldClipCase(
+        "title-exact-200-ascii-kept",
+        "{title}",
+        {"title": "A" * PATH_FIELD_MAX_BYTES},
+        "A" * PATH_FIELD_MAX_BYTES,
+    ),
+    _FieldClipCase(
+        "title-201-ascii-clips",
+        "{title}",
+        {"title": "A" * (PATH_FIELD_MAX_BYTES + 1)},
+        "A" * PATH_FIELD_MAX_BYTES,
+    ),
+    _FieldClipCase(
+        "actor-clips",
+        "{actor}",
+        {"actor": _JP_90},
+        _JP_66,
+    ),
+    _FieldClipCase(
+        "actors-joined-clips",
+        "{actors}",
+        {"actors": f"X, {_JP_90}"},
+        f"X, {'あ' * 65}",
+    ),
+    _FieldClipCase(
+        "number-not-clipped",
+        "{number}",
+        {"number": "N" * 250, "title": _JP_90},
+        "N" * 250,
+    ),
+    _FieldClipCase(
+        "studio-not-clipped",
+        "{studio}",
+        {"studio": "S" * 250, "title": _JP_90},
+        "S" * 250,
+    ),
+    _FieldClipCase(
+        "keeps-number-cd-ext-around-clipped-title",
+        "{number}-{title}[-CD{cd?}].{ext}",
+        {"number": "ABC-123", "title": _JP_90, "cd?": "1", "ext": "mp4"},
+        f"ABC-123-{_JP_66}-CD1.mp4",
+    ),
+    _FieldClipCase(
+        "cjk-66-under-limit-kept",
+        "{title}",
+        {"title": _JP_66},
+        _JP_66,
+    ),
+    _FieldClipCase(
+        "cjk-67-clips-to-66",
+        "{title}",
+        {"title": _JP_67},
+        _JP_66,
+    ),
+)
+
+
+@pytest.mark.parametrize("case", FIELD_CLIP_CASES, ids=lambda c: c.id)
+def test_path_engine_clips_title_actor_actors(case: _FieldClipCase) -> None:
+    rendered = PathEngine(case.template).render(TemplateContext.from_mapping(case.variables))
+    assert rendered == case.expected
+
+
+def test_resolve_paths_clips_long_title(media: Path) -> None:
+    """resolve_paths 走 PathEngine.fill, 超长 title 在填值时截断, 分集标记仍在."""
+    wp = Library(
+        name="t",
+        path=str(media),
+        video_template="{actor}/{title}/{number}-{title}[-CD{cd?}].{ext}",
+    )
+    result = resolve_paths(wp, _meta(title=_JP_90, actors=[_JP_90]), ext="mp4", cd=2)
+    assert result.video.parent.name == _JP_66
+    assert result.video.parent.parent.name == _JP_66
+    assert result.video.name == f"ABC-123-{_JP_66}-CD2.mp4"
+    assert len(result.video.parent.name.encode("utf-8")) <= PATH_FIELD_MAX_BYTES
+    assert len(result.video.name.encode("utf-8")) <= 255
