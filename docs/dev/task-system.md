@@ -67,7 +67,7 @@ SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完�
 
 `aggregate` (`src/amane/aggregate/`) 不取并集全爬再挑值, 而是先把优先级配置编译成**静态抓取图** (`build_graph`), 再按波次执行 (`execute_graph`):
 
-- **建图** (`build_graph` → `compute_waves`): handler 先把 `content_routes[type]` 与稀疏 `field_priority` 编成每字段站点链 (`compile_priority`: prefer ∩ route 前置, 其余 route 保序). `content_routes` 是该类型资格真值, 不在表内的站不会被请求. 站点 + 语言唯一确定一个 `FetchNode` (`cache_key`), 节点按拓扑分层为**波次** (层内可并行). 每个字段沿优先级链回填 `covers` 与 `fallback` 边.
+- **建图** (`build_graph` → `compute_waves`): handler 先把 `content_routes[type]`、稀疏 `field_priority` 与稀疏 `field_blacklist` 编成每字段站点链 (`compile_priority`: prefer ∩ route 前置, 其余 route 保序, 再按字段剔除 blacklist). `content_routes` 是该类型资格真值, 不在表内的站不会被请求. 站点 + 语言唯一确定一个 `FetchNode` (`cache_key`), 节点按拓扑分层为**波次** (层内可并行). 每个字段沿优先级链回填 `covers` 与 `fallback` 边.
 - **执行** (`execute_graph`): 逐波推进, 每波只激活仍有未满足字段且尚未请求的节点, `asyncio.gather` 并发抓取. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿 fallback 继续, 不调用 `invoke_source` (因此不会记成 unexpected). 波后只定值标量 (满足即短路); 后波 `partial` 只携带已定标量. 聚合类字段 (URL / score / extrafanart, 见 [data-model.md](data-model.md)) 在全部请求结束后按该字段 `field_chains` 拼接, 不按返回先后排列. 某站未返回或该字段为空则跳过, 不把后面的站提到前面.
 - **多语言合并**: 若某字段需 (site, lang) 而另一字段仅需 (site, None), `compute_waves` 合并为一次带语言请求.
 

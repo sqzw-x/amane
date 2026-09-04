@@ -1,6 +1,6 @@
 # 内容路由与站点特性
 
-> 默认 `content_routes` 的取舍、各源覆盖与站点特例. 资格真值 / `field_priority` 编译见 [config.md](config.md); 建图见 [task-system.md](task-system.md). 成员与顺序以 `src/amane/config/manager.py` `_DEFAULT_CONTENT_ROUTES` 为准, 本文不列出默认表.
+> 默认 `content_routes` 的取舍、各源覆盖与站点特例. 资格真值 / `field_priority` / `field_blacklist` 编译见 [config.md](config.md); 建图见 [task-system.md](task-system.md). 成员与顺序以 `src/amane/config/manager.py` `_DEFAULT_CONTENT_ROUTES` 为准, 本文不列出默认表.
 
 站点可被搜索命中, 不构成纳入默认路由的条件. 默认表与新爬虫的取舍见下文各节.
 

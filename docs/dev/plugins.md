@@ -42,7 +42,7 @@
 
 配置校验顺序是: 构造候选 HotSettings → 由当前插件目录校验路由和插件配置 → 原子写入 TOML → 重建网络栈、Factory 和 Worker. 校验失败不会修改当前配置.
 
-`enabled=false` 只让 Factory 跳过该来源, 不必先从 `content_routes` / `field_priority` 删掉. 路由里的已禁用插件与尚未安装的第三方来源一样: Factory 不将该来源放入 `crawlers` 映射, 聚合执行跳过该节点、沿后续源继续, 不记 unexpected. 配置仍可写入. 更新单个插件配置时, 不会因为路由里还有其它缺失插件而拒绝.
+`enabled=false` 只让 Factory 跳过该来源, 不必先从 `content_routes` / `field_priority` / `field_blacklist` 删掉. 路由里的已禁用插件与尚未安装的第三方来源一样: Factory 不将该来源放入 `crawlers` 映射, 聚合执行跳过该节点、沿后续源继续, 不记 unexpected. 配置仍可写入. 更新单个插件配置时, 不会因为路由里还有其它缺失插件而拒绝.
 
 外部插件配置不复用内置 `SiteConfig`. 内置 `site_config` 仍负责内置来源的 cookie、域名和通用站点参数; 插件应在自己的模型中声明所需字段.
 

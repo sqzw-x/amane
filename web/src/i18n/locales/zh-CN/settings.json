@@ -132,6 +132,87 @@
           }
         }
       },
+      "field_blacklist": {
+        "label": "字段黑名单",
+        "description": "指定字段不采用的站点. 其余字段仍按路由与优先级使用这些站点",
+        "options": {
+          "title": "标题",
+          "actors": "演员",
+          "tags": "标签",
+          "release": "发行日期",
+          "runtime": "时长",
+          "directors": "导演",
+          "series": "系列",
+          "studio": "制作商",
+          "publisher": "发行商",
+          "plot": "简介",
+          "poster_urls": "海报",
+          "thumb_urls": "封面",
+          "trailer_urls": "预告片",
+          "extrafanart": "剧照",
+          "score": "评分"
+        },
+        "$": {
+          "options": {
+            "airav": "airav",
+            "avsox": "avsox",
+            "dahlia": "dahlia",
+            "dmm": "dmm",
+            "faleno": "faleno",
+            "fc2": "fc2",
+            "fc2club": "fc2club",
+            "fc2ppvdb": "fc2ppvdb",
+            "freejavbt": "freejavbt",
+            "getchu": "getchu",
+            "gfriends": "gfriends",
+            "giga": "giga",
+            "iqqtv": "iqqtv",
+            "jav321": "jav321",
+            "javbus": "javbus",
+            "javdb": "javdb",
+            "javlibrary": "javlibrary",
+            "kin8": "kin8",
+            "mgstage": "mgstage",
+            "minnano": "minnano",
+            "official": "official",
+            "prestige": "prestige",
+            "r18dev": "r18dev",
+            "theporndb": "theporndb",
+            "wikipedia": "wikipedia",
+            "xcity": "xcity"
+          },
+          "$": {
+            "options": {
+              "airav": "airav",
+              "avsox": "avsox",
+              "dahlia": "dahlia",
+              "dmm": "dmm",
+              "faleno": "faleno",
+              "fc2": "fc2",
+              "fc2club": "fc2club",
+              "fc2ppvdb": "fc2ppvdb",
+              "freejavbt": "freejavbt",
+              "getchu": "getchu",
+              "gfriends": "gfriends",
+              "giga": "giga",
+              "iqqtv": "iqqtv",
+              "jav321": "jav321",
+              "javbus": "javbus",
+              "javdb": "javdb",
+              "javlibrary": "javlibrary",
+              "kin8": "kin8",
+              "mgstage": "mgstage",
+              "minnano": "minnano",
+              "official": "official",
+              "prestige": "prestige",
+              "r18dev": "r18dev",
+              "theporndb": "theporndb",
+              "wikipedia": "wikipedia",
+              "xcity": "xcity"
+            }
+          }
+        }
+      },
       "field_language": {
         "label": "字段语言偏好",
         "options": {

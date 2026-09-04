@@ -213,6 +213,11 @@ class TestScrapingPriorityMigration:
         assert MetadataField.TITLE not in cfg.field_priority
         assert cfg.field_priority[MetadataField.PLOT] == [SiteName.DMM]
 
+    def test_strips_empty_field_blacklist(self):
+        cfg = ScrapingConfig.model_validate({"field_blacklist": {"title": [], "plot": ["dmm"]}})
+        assert MetadataField.TITLE not in cfg.field_blacklist
+        assert cfg.field_blacklist[MetadataField.PLOT] == [SiteName.DMM]
+
     def test_no_default_priority_keeps_route_order(self):
         cfg = ScrapingConfig.model_validate({"content_routes": {"censored": ["javbus", "javdb"]}})
         assert cfg.content_routes[ContentType.CENSORED] == [SiteName.JAVBUS, SiteName.JAVDB]

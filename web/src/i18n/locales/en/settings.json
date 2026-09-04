@@ -132,6 +132,87 @@
           }
         }
       },
+      "field_blacklist": {
+        "label": "Field Blacklist",
+        "description": "Sites a field must not use. Other fields still follow the route and field priority.",
+        "options": {
+          "title": "Title",
+          "actors": "Actors",
+          "tags": "Tags",
+          "release": "Release Date",
+          "runtime": "Runtime",
+          "directors": "Directors",
+          "series": "Series",
+          "studio": "Studio",
+          "publisher": "Publisher",
+          "plot": "Plot",
+          "poster_urls": "Poster",
+          "thumb_urls": "Cover",
+          "trailer_urls": "Trailer",
+          "extrafanart": "Stills",
+          "score": "Score"
+        },
+        "$": {
+          "options": {
+            "airav": "airav",
+            "avsox": "avsox",
+            "dahlia": "dahlia",
+            "dmm": "dmm",
+            "faleno": "faleno",
+            "fc2": "fc2",
+            "fc2club": "fc2club",
+            "fc2ppvdb": "fc2ppvdb",
+            "freejavbt": "freejavbt",
+            "getchu": "getchu",
+            "gfriends": "gfriends",
+            "giga": "giga",
+            "iqqtv": "iqqtv",
+            "jav321": "jav321",
+            "javbus": "javbus",
+            "javdb": "javdb",
+            "javlibrary": "javlibrary",
+            "kin8": "kin8",
+            "mgstage": "mgstage",
+            "minnano": "minnano",
+            "official": "official",
+            "prestige": "prestige",
+            "r18dev": "r18dev",
+            "theporndb": "theporndb",
+            "wikipedia": "wikipedia",
+            "xcity": "xcity"
+          },
+          "$": {
+            "options": {
+              "airav": "airav",
+              "avsox": "avsox",
+              "dahlia": "dahlia",
+              "dmm": "dmm",
+              "faleno": "faleno",
+              "fc2": "fc2",
+              "fc2club": "fc2club",
+              "fc2ppvdb": "fc2ppvdb",
+              "freejavbt": "freejavbt",
+              "getchu": "getchu",
+              "gfriends": "gfriends",
+              "giga": "giga",
+              "iqqtv": "iqqtv",
+              "jav321": "jav321",
+              "javbus": "javbus",
+              "javdb": "javdb",
+              "javlibrary": "javlibrary",
+              "kin8": "kin8",
+              "mgstage": "mgstage",
+              "minnano": "minnano",
+              "official": "official",
+              "prestige": "prestige",
+              "r18dev": "r18dev",
+              "theporndb": "theporndb",
+              "wikipedia": "wikipedia",
+              "xcity": "xcity"
+            }
+          }
+        }
+      },
       "field_language": {
         "label": "Field Language",
         "options": {

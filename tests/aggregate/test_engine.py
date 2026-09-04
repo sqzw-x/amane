@@ -66,6 +66,39 @@ class TestCompilePriority:
         assert chains[TITLE] == []
         assert chains[PLOT] == []
 
+    @pytest.mark.parametrize(
+        ("desc", "route", "prefer", "exclude", "field", "expected"),
+        [
+            ("仅排除: 从 route 去掉", [DB, DMM, BUS], {}, {TITLE: [BUS]}, TITLE, [DB, DMM]),
+            ("仅排除: 未覆盖字段仍是 route", [DB, DMM, BUS], {}, {TITLE: [BUS]}, PLOT, [DB, DMM, BUS]),
+            ("排除 + 优先: 排除优先", [DB, DMM, BUS], {TITLE: [BUS]}, {TITLE: [BUS]}, TITLE, [DB, DMM]),
+            ("排除 route 外的站无效", [DB, DMM], {}, {TITLE: [IQQTV]}, TITLE, [DB, DMM]),
+            ("空排除忽略", [DB, DMM], {}, {TITLE: []}, TITLE, [DB, DMM]),
+            ("优先前置后再排除", [DB, DMM, BUS], {TITLE: [BUS, DMM]}, {TITLE: [DMM]}, TITLE, [BUS, DB]),
+            ("排除全部 → 空链", [DB, DMM], {}, {TITLE: [DB, DMM]}, TITLE, []),
+        ],
+        ids=[
+            "exclude_from_route",
+            "exclude_uncovered_intact",
+            "exclude_wins_over_prefer",
+            "exclude_outside_noop",
+            "empty_exclude",
+            "prefer_then_exclude",
+            "exclude_all",
+        ],
+    )
+    def test_exclude(
+        self,
+        desc: str,
+        route: list[SiteName],
+        prefer: dict[MetadataField, list[SiteName]],
+        exclude: dict[MetadataField, list[SiteName]],
+        field: MetadataField,
+        expected: list[SiteName],
+    ) -> None:
+        chains = compile_priority(route, prefer, exclude)
+        assert chains[field] == expected, desc
+
 
 class MockCrawler:
     """返回预设结果, 记录调用次数."""
@@ -768,6 +801,23 @@ class TestComplexScenarios:
         assert state.result.field_sources["title"] == "javbus"
         assert state.result.studio == "S_DMM"  # dmm 第一优先
         assert state.result.field_sources["studio"] == "dmm"
+
+    @pytest.mark.asyncio
+    async def test_per_field_blacklist_skips_site(self):
+        """title 排除 javdb 后走下一站; studio 仍可用 javdb."""
+        fp = compile_priority([DB, DMM, BUS], {}, {MetadataField.TITLE: [DB]})
+        graph = build_graph(fp, {})
+
+        c_javdb = MockCrawler(result=MediaMetadata(number="X", title="T_DB", studio="S_DB"))
+        c_dmm = MockCrawler(result=MediaMetadata(number="X", title="T_DMM", studio="S_DMM"))
+        c_bus = MockCrawler(result=MediaMetadata(number="X", title="T_BUS", studio="S_BUS"))
+
+        state = await execute_graph(graph, {K1: c_javdb, K2: c_dmm, K3: c_bus}, SearchQuery("X"))
+
+        assert state.result.title == "T_DMM"
+        assert state.result.field_sources["title"] == "dmm"
+        assert state.result.studio == "S_DB"
+        assert state.result.field_sources["studio"] == "javdb"
 
 
 class TestAggregateFieldOrder:
