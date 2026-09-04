@@ -135,6 +135,7 @@ class Plugin(FilmSourcePlugin):
 - **`descriptor.urls`** 填插件需访问的站点, 会用于请求限速
 - **落盘写 `context.data_dir`**: 插件自己的 `{data_dir}/plugins/<id>/` 目录, 卸载时保留, 适合放缓存
 - **多语言支持**: descriptor 声明 `multi_language=True`, fetch 通过 `options.language` 获取当前语言
+- **出演者**: `actors` 为 `FilmActor` 列表 (`name` + `gender`). 仍可传入字符串列表, 性别视为未识别. 名单能判定性别时写出 `female` / `male`
 
 ### 插件配置
 

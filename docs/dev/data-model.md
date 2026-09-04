@@ -144,7 +144,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 `Metadata` 上的 `actors` / `tags` / `directors` (JSON list) 与 `studio` / `publisher` / `series` (标量) **仍是刮削聚合、NFO、路径模板的真值来源**. 分类实体表 + 关联表是**查询投影**: `upsert_metadata` / `update_metadata` 写入后由 `_sync_metadata_facets` 重建 (按 name get-or-create; list 字段带 `position` 保序).
 
-写入时先清洗 `Metadata.actors` 的 `name(alias1, alias2)` 形式 (`clean_actor_names`, 纯拆分器 `split_actor_aliases`): 展示名留真值, 别名并入对应演员的 `ActorAlias` 行. 每个名字先经 `resolve_actor_by_name` 解析 (展示名精确命中 → 别名唯一命中 → 歧义 / 无命中以名字本身为展示名新建实体) — 站点给的**裸别名**也会折到已认定演员, 不再为别名另建重复实体; block 判定在解析前 (原始名) 与解析后 (展示名) 各执行一次. `Metadata.actors` 存库始终是展示名; 站点 `raw` 快照保留原始带括号形式, 重刮时重新清洗.
+写入时先清洗 `Metadata.actors` 的 `name(alias1, alias2)` 形式 (`clean_actor_names`, 纯拆分器 `split_actor_aliases`): 展示名留真值, 别名并入对应演员的 `ActorAlias` 行. 每个名字先经 `resolve_actor_by_name` 解析 (展示名精确命中 → 别名唯一命中 → 歧义 / 无命中以名字本身为展示名新建实体) — 站点给的**裸别名**也会折到已认定演员, 不再为别名另建重复实体; block 判定在解析前 (原始名) 与解析后 (展示名) 各执行一次. 影片聚合若带 `FilmActor.gender`, 在解析后对 `Actor.gender == unknown` 填空, 不覆盖已有 `female` / `male`, 不写入 `field_sources`. `Metadata.actors` 存库始终是展示名; 站点 `raw` 快照保留原始带括号形式与 `FilmActor` 对象, 重刮时重新清洗.
 
 用户对爬取侧分类的改名 / 合并 / 删除意图落在 `FacetRule` (按 `(kind, source_name)` 唯一), **不**修改投影表本身:
 

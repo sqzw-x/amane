@@ -73,7 +73,7 @@ SQLite 没有原生 enum, 列仍是 VARCHAR. 不能使用 `Column(String)` 或 `
 - **列重命名** — 看作 "删旧列 + 加新列", 数据丢失. 必须手写 batch op.
 - **索引/约束改动** — 部分漏检. 生成完一律审一遍. SQLite 在 SQLAlchemy 2 下无法反射表达式索引, autogenerate 会 skip (如 `ix_feed_items_list_order`), 须手补 `CREATE INDEX`.
 - **已知噪声**: SQLite 无原生 enum, 反射把 SA Enum 列看成 VARCHAR, autogenerate 会报 `modify_type`. 与实际 schema 无关, 忽略.
-- **JSON 列内部结构** — `Metadata.raw` 等 blob 不在 autogenerate 视野里. 爬虫/聚合模型修改字段名或类型时, **结果列与 raw 快照是两份数据**; 只修改列定义不够, 必须另写 data revision 遍历 JSON (见 `c4f17334c3ea`). 站点级复用会把 raw 直接 `MediaMetadata(...)`, 旧 key 会被 Pydantic 静默丢掉.
+- **JSON 列内部结构** — `Metadata.raw` 等 blob 不在 autogenerate 视野里. 爬虫/聚合模型修改字段名或类型时, **结果列与 raw 快照是两份数据**; 只修改列定义不够, 必须另写 data revision 遍历 JSON (见 `c4f17334c3ea`). 站点级复用会把 raw 直接 `MediaMetadata(...)`, 旧 key 会被 Pydantic 静默丢掉. `actors` 允许字符串列表与 `{name, gender}` 对象列表并存, `MediaMetadata` 两种都接受, 已有 raw 行不要求改写.
 - **JSON 列表列** — `Library.patterns` / `copy_resources` 等非空, 空集合存 `[]` 不是 JSON `null`. 改为 NOT NULL 须先 `UPDATE … '[]'` 回填 (含字面量 `'null'`), 再 `batch_alter_table` `nullable=False`.
 - **path 投影列** — `MediaFile.content_type` / `mosaic` 与 `status` 同为枚举列; `definition` 不是枚举. 忽略 `ix_metadata_number` 表达式索引噪声.
 

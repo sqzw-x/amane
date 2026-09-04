@@ -21,8 +21,8 @@ from amane.aggregate import (
     execute_graph,
 )
 from amane.aggregate.engine import ProgressCallback, _cache_key
-from amane.crawlers.models import FetchOptions, MediaMetadata, SearchQuery
-from amane.enums import Language, MetadataField, SiteName
+from amane.crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
+from amane.enums import ActorGender, Language, MetadataField, SiteName
 
 # --- 辅助工具 ---
 
@@ -393,7 +393,9 @@ class TestExecuteGraph:
         graph = build_graph(fp, {})
 
         c1 = MockCrawler(result=MediaMetadata(number="X", title="T1", actors=[], studio="S1"))
-        c2 = MockCrawler(result=MediaMetadata(number="X", title="T2", actors=["A1"], studio="S2"))
+        c2 = MockCrawler(
+            result=MediaMetadata.model_validate({"number": "X", "title": "T2", "actors": ["A1"], "studio": "S2"})
+        )
 
         crawlers = {K1: c1, K2: c2}
         state = await execute_graph(graph, crawlers, SearchQuery("X"))
@@ -447,7 +449,11 @@ class TestExecuteGraph:
         graph = build_graph(fp, {})
 
         c1 = MockCrawler(result=MediaMetadata(number="X", title=None, series=None, actors=[], studio="S1"))
-        c2 = MockCrawler(result=MediaMetadata(number="X", title="T2", series="Ser2", actors=["A2"], studio="S2"))
+        c2 = MockCrawler(
+            result=MediaMetadata.model_validate(
+                {"number": "X", "title": "T2", "series": "Ser2", "actors": ["A2"], "studio": "S2"}
+            )
+        )
 
         crawlers = {K1: c1, K2: c2}
         state = await execute_graph(graph, crawlers, SearchQuery("X"))
@@ -641,7 +647,9 @@ class TestAggregate:
     @pytest.mark.asyncio
     async def test_single_source_fills_fields(self):
         """单源成功 → 所有标量字段来自该源."""
-        data = MediaMetadata(number="MIDV-123", title="Title", actors=["A"], studio="S", score=8.5)
+        data = MediaMetadata.model_validate(
+            {"number": "MIDV-123", "title": "Title", "actors": ["A"], "studio": "S", "score": 8.5}
+        )
         result = await aggregate(SearchQuery("MIDV-123"), {K1: MockCrawler(result=data)}, defaultdict(lambda: [DB]))
         assert result.metadata.title == "Title"
         assert result.field_sources["title"] == "javdb"
@@ -918,18 +926,40 @@ class TestProgressReporting:
         """聚合返回前对 list 标量保序去重."""
         fp = defaultdict(lambda: [DMM])
         c = MockCrawler(
-            result=MediaMetadata(
-                number="X",
-                title="T",
-                actors=["A", "A", "B"],
-                tags=["t1", "t1"],
-                directors=["D", "D"],
+            result=MediaMetadata.model_validate(
+                {
+                    "number": "X",
+                    "title": "T",
+                    "actors": ["A", "A", "B"],
+                    "tags": ["t1", "t1"],
+                    "directors": ["D", "D"],
+                }
             )
         )
         result = await aggregate(SearchQuery("X"), {K2: c}, fp)
-        assert result.metadata.actors == ["A", "B"]
+        assert [a.name for a in result.metadata.actors] == ["A", "B"]
         assert result.metadata.tags == ["t1"]
         assert result.metadata.directors == ["D"]
+
+    @pytest.mark.asyncio
+    async def test_actor_gender_filled_from_other_fetched_source(self):
+        """名单由第一源锁定; 性别由其它已抓源按名填空."""
+        fp = defaultdict(lambda: [DB, DMM])
+        graph = build_graph(fp, {})
+        c1 = MockCrawler(
+            result=MediaMetadata.model_validate({"number": "X", "title": "T", "actors": ["Mei"], "studio": "S"})
+        )
+        c2 = MockCrawler(
+            result=MediaMetadata(
+                number="X",
+                actors=[FilmActor(name="Mei", gender=ActorGender.FEMALE)],
+                poster_urls=["http://p.jpg"],
+            )
+        )
+        state = await execute_graph(graph, {K1: c1, K2: c2}, SearchQuery("X"))
+        assert [a.name for a in state.result.actors] == ["Mei"]
+        assert state.result.actors[0].gender is ActorGender.FEMALE
+        assert state.result.field_sources["actors"] == "javdb"
 
 
 # ============================================================

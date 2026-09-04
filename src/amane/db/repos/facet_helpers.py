@@ -11,6 +11,7 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from ...enums import ActorGender
 from ...parsing import split_actor_aliases
 from ..actor_lookup import list_actor_aliases, resolve_actor_by_name
 from ..actor_person import merge_person_fields_into_target
@@ -585,14 +586,20 @@ def _is_blocked(rules: Mapping[str, RuleEntry], name: str) -> bool:
     return rule is not None and rule.action == FacetRuleAction.BLOCK
 
 
-async def clean_actor_names(session: AsyncSession, meta: Metadata) -> None:
+async def clean_actor_names(
+    session: AsyncSession,
+    meta: Metadata,
+    actor_genders: Mapping[str, ActorGender] | None = None,
+) -> None:
     """拆 ``name(alias1, alias2)``: 展示名留真值, 别名并入 ActorAlias.
     须在 ``apply_facet_rules_to_metadata`` 之前运行. block 在解析前查原始名、解析后查展示名.
-    无括号且名字不变时不做任何写.
+    名单不变时不改 ``Metadata.actors``. ``Actor.gender`` 为 ``unknown`` 且入参给出
+    ``female`` / ``male`` 时填空; 不覆盖已有性别, 不写入 ``field_sources``.
     """
     raw_names = normalize_names(meta.actors)
     if not raw_names:
         return
+    genders = actor_genders or {}
     rules = await _load_rules_by_kind(session)
     actor_rules = rules.get(FacetKind.ACTOR, {})
     seen: set[str] = set()
@@ -606,6 +613,10 @@ async def clean_actor_names(session: AsyncSession, meta: Metadata) -> None:
         assert actor is not None
         if _is_blocked(actor_rules, actor.name):
             continue
+        seed = genders.get(raw) or genders.get(name)
+        if seed is not None and seed != ActorGender.UNKNOWN and actor.gender == ActorGender.UNKNOWN:
+            actor.gender = seed
+            session.add(actor)
         if actor.name not in seen:
             seen.add(actor.name)
             canonical.append(actor.name)

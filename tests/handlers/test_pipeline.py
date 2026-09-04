@@ -43,16 +43,18 @@ class FakeCrawler(Crawler):
 
 @pytest.fixture
 def fake_metadata():
-    return MediaMetadata(
-        number="MIDV-123",
-        title="Test Title",
-        actors=["Actor A"],
-        studio="Studio X",
-        release="2026-01-15",
-        runtime=120,
-        thumb_urls=["https://img.example.com/thumb.jpg"],
-        poster_urls=["https://img.example.com/p1.jpg", "https://img.example.com/p2.jpg"],
-        extrafanart=["https://img.example.com/extra1.jpg"],
+    return MediaMetadata.model_validate(
+        {
+            "number": "MIDV-123",
+            "title": "Test Title",
+            "actors": ["Actor A"],
+            "studio": "Studio X",
+            "release": "2026-01-15",
+            "runtime": 120,
+            "thumb_urls": ["https://img.example.com/thumb.jpg"],
+            "poster_urls": ["https://img.example.com/p1.jpg", "https://img.example.com/p2.jpg"],
+            "extrafanart": ["https://img.example.com/extra1.jpg"],
+        }
     )
 
 

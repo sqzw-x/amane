@@ -6,7 +6,7 @@ This is a documentation and import-path boundary, not a runtime sandbox.
 """
 
 from ..crawlers.http import HttpClient
-from ..crawlers.models import FetchOptions, MediaMetadata, SearchQuery
+from ..crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery, film_actors
 from ..enums import Language
 from ..net.errors import FailureReason, RequestError, SourceError
 from ..net.http import WebClient
@@ -29,6 +29,7 @@ __all__ = [
     "EmptyPluginConfig",
     "FailureReason",
     "FetchOptions",
+    "FilmActor",
     "FilmSourcePlugin",
     "FilmSourceProvider",
     "HttpClient",
@@ -42,6 +43,7 @@ __all__ = [
     "SourceError",
     "SourceId",
     "WebClient",
+    "film_actors",
     "is_external_source_id",
     "validate_external_source_id",
 ]

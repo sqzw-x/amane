@@ -122,17 +122,19 @@ class PassActorHandler(TaskHandler[ActorScrapePayload, dict]):
 @pytest.fixture
 def fake_metadata():
     """由 FakeCrawler 返回的预构建元数据"""
-    return MediaMetadata(
-        number="MIDV-123",
-        title="Test Title",
-        actors=["Actor A", "Actor B"],
-        studio="Test Studio",
-        release="2026-01-15",
-        runtime=120,
-        tags=["tag1", "tag2"],
-        poster_urls=["https://img.example.com/poster.jpg"],
-        thumb_urls=["https://img.example.com/thumb.jpg"],
-        score=8.5,
+    return MediaMetadata.model_validate(
+        {
+            "number": "MIDV-123",
+            "title": "Test Title",
+            "actors": ["Actor A", "Actor B"],
+            "studio": "Test Studio",
+            "release": "2026-01-15",
+            "runtime": 120,
+            "tags": ["tag1", "tag2"],
+            "poster_urls": ["https://img.example.com/poster.jpg"],
+            "thumb_urls": ["https://img.example.com/thumb.jpg"],
+            "score": 8.5,
+        }
     )
 
 

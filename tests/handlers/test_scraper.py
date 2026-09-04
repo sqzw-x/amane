@@ -27,12 +27,14 @@ class MockCrawler:
         self.client = client
 
     async def fetch(self, query, options=None) -> MediaMetadata | None:
-        return MediaMetadata(
-            number="MIDV-123",
-            title="Mock Title",
-            actors=["Actor A"],
-            tags=["Drama"],
-            studio="MockStudio",
+        return MediaMetadata.model_validate(
+            {
+                "number": "MIDV-123",
+                "title": "Mock Title",
+                "actors": ["Actor A"],
+                "tags": ["Drama"],
+                "studio": "MockStudio",
+            }
         )
 
 

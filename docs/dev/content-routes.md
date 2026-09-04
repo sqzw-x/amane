@@ -32,7 +32,7 @@ iqqtv 作为有碼中文标题源时: 加入 **censored** 路由, 再在 `field_
 独立层, 不是 FANZA 的无差别镜像:
 
 - 中文 `current-title` + 隐藏日文 `origin-title` (爬虫只取中文标题, origin 未用)
-- 演员带 ♀ / ♂. 男女位于同一个 `span.value` 里, 现有 xpath (`span[strong.female]/a`) 会把男优也收集进来 (例如同一节点里的女优 + 男优). 注释写「女性出演者」和真实 DOM 不一致
+- 演員栏: `<a>名</a><strong class="symbol female|male">`, 标记在名字之后, 同 `span.value` 内男女并存. 两边都进入 `actors` 并带性别.
 - 社区评分, 不是 FANZA 店评
 - 封面/样品在 `jdbstatic.com` (通常是重编码后的柜台图)
 - 片商名跟官网英文商标 (`S1 NO.1 STYLE`), 不跟 DMM 日文メーカー名

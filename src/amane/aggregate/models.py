@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from ..crawlers.models import FilmActor
+
 
 @dataclass
 class SourcedScore:
@@ -19,7 +21,7 @@ class AggregatedMetadata:
     runtime: int | None = None
     series: str | None = None
     plot: str | None = None
-    actors: list[str] = field(default_factory=list)
+    actors: list[FilmActor] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     directors: list[str] = field(default_factory=list)
 

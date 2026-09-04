@@ -139,26 +139,39 @@ def http_client(mock_web: AsyncMock) -> HttpClient:
     return HttpClient(web=mock_web, browser=None)
 
 
+def _actor_tables(actual: object) -> object:
+    """`FilmActor` 一律摊成 `{name, gender}`; 空名单保持 `[]`."""
+    if not isinstance(actual, list):
+        return actual
+    return [{"name": item.name, "gender": item.gender.value} for item in actual]
+
+
 def assert_expected(result: object, expected: dict[str, Any]) -> None:
     """将 expected 字典中的断言规则应用于 result 对象."""
     for key, value in expected.items():
         if key.endswith("_contains"):
             field = key.removesuffix("_contains")
             actual = getattr(result, field)
+            if field == "actors":
+                actual = _actor_tables(actual)
             if isinstance(value, list):
                 for item in value:
                     if isinstance(actual, str):
                         assert item in actual, f"{field}: expected {item!r} in {actual!r}"
-                    else:
+                    elif isinstance(actual, list):
                         assert any(item in elem for elem in actual), (
                             f"{field}: expected {item!r} in any element of {actual!r}"
                         )
+                    else:
+                        raise AssertionError(f"{field}: expected list or str, got {actual!r}")
             elif isinstance(actual, str):
                 assert value in actual, f"{field}: expected {value!r} in {actual!r}"
-            else:
+            elif isinstance(actual, list):
                 assert any(value in elem for elem in actual), (
                     f"{field}: expected {value!r} in any element of {actual!r}"
                 )
+            else:
+                raise AssertionError(f"{field}: expected list or str, got {actual!r}")
         elif key.endswith("_count"):
             field = key.removesuffix("_count")
             actual = getattr(result, field)
@@ -173,4 +186,6 @@ def assert_expected(result: object, expected: dict[str, Any]) -> None:
             assert actual is None, f"{field}: expected None, got {actual!r}"
         else:
             actual = getattr(result, key)
+            if key == "actors":
+                actual = _actor_tables(actual)
             assert actual == value, f"{key}: expected {value!r}, got {actual!r}"

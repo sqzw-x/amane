@@ -4,7 +4,7 @@ from parsel import Selector
 
 from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
-from ..models import FetchOptions, MediaMetadata, SearchQuery
+from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text
 
 # 排除马赛克破坏版等无有效元数据的条目
@@ -72,7 +72,7 @@ class IqqtvCrawler(Crawler):
         return MediaMetadata(
             number=number,
             title=title or None,
-            actors=actors,
+            actors=film_actors(actors),
             studio=studio or None,
             publisher=studio or None,
             release=release or None,

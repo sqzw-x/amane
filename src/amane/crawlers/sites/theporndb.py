@@ -1,8 +1,13 @@
 from typing import TYPE_CHECKING
 
-from ...enums import SiteName
+from ...enums import ActorGender, SiteName
 from ..base import Crawler, CrawlerProfile
-from ..models import FetchOptions, MediaMetadata, SearchQuery
+from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
+
+_PERFORMER_GENDER: dict[str, ActorGender] = {
+    "FEMALE": ActorGender.FEMALE,
+    "MALE": ActorGender.MALE,
+}
 
 if TYPE_CHECKING:
     from ...parsing.file_info import ContentType
@@ -13,7 +18,7 @@ query Search($term: String!) {
     id title code date duration director details
     studio { name }
     tags { name }
-    performers { as performer { name } }
+    performers { as performer { name gender } }
     images { url }
   }
 }"""
@@ -24,7 +29,7 @@ query Find($hash: String!) {
     id title code date duration director details
     studio { name }
     tags { name }
-    performers { as performer { name } }
+    performers { as performer { name gender } }
     images { url }
   }
 }"""
@@ -35,7 +40,7 @@ query FindByID($id: ID!) {
     id title code date duration director details
     studio { name }
     tags { name }
-    performers { as performer { name } }
+    performers { as performer { name gender } }
     images { url }
   }
 }"""
@@ -186,12 +191,14 @@ class ThePornDBCrawler(Crawler):
         if isinstance(scene.get("studio"), dict):
             studio = scene["studio"].get("name")
 
-        actors = []
+        actors: list[FilmActor] = []
         for pa in scene.get("performers", []) or []:
             perf = (pa or {}).get("performer", {}) or {}
             name = perf.get("name") or pa.get("as", "")
-            if name:
-                actors.append(name)
+            if not name:
+                continue
+            gender = _PERFORMER_GENDER.get(str(perf.get("gender") or ""))
+            actors.append(FilmActor(name=name, gender=gender or ActorGender.UNKNOWN))
 
         tags = [t.get("name", "") for t in (scene.get("tags") or []) if t.get("name")]
 

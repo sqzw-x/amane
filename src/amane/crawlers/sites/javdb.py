@@ -3,10 +3,39 @@ from urllib.parse import urljoin
 
 from parsel import Selector
 
-from ...enums import SiteName
+from ...enums import ActorGender, SiteName
 from ..base import Crawler, CrawlerProfile
-from ..models import FetchOptions, MediaMetadata, SearchQuery
+from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
 from ..parsing import extract_all_texts, extract_text
+
+
+def _parse_actors(html: Selector) -> list[FilmActor]:
+    """演員栏: ``<a>名</a><strong class="symbol female|male">``. 标记在名字之后, 同容器内男女并存."""
+    container = html.xpath('//strong[contains(text(),"演員")]/following-sibling::span[contains(@class,"value")][1]')
+    if not container:
+        return []
+    actors: list[FilmActor] = []
+    pending: str | None = None
+    for node in container[0].xpath("./a | ./strong"):
+        tag = node.root.tag
+        if tag == "a":
+            if pending:
+                actors.append(FilmActor(name=pending))
+            name = (node.xpath("string()").get() or "").strip()
+            pending = name or None
+            continue
+        if tag == "strong" and pending:
+            classes = node.root.get("class") or ""
+            gender = ActorGender.UNKNOWN
+            if "female" in classes.split():
+                gender = ActorGender.FEMALE
+            elif "male" in classes.split():
+                gender = ActorGender.MALE
+            actors.append(FilmActor(name=pending, gender=gender))
+            pending = None
+    if pending:
+        actors.append(FilmActor(name=pending))
+    return actors
 
 
 class JavDBCrawler(Crawler):
@@ -95,8 +124,7 @@ class JavDBCrawler(Crawler):
         )
         tags = [t.strip() for t in tags if t.strip()]
 
-        # 只取女性出演者; 男性列在同页但不入 actors.
-        actors = html.xpath('//span[strong[contains(@class,"female")]]/a/text()').getall()
+        actors = _parse_actors(html)
 
         thumb_url = extract_text(html, "//img[@class='video-cover']/@src")
 

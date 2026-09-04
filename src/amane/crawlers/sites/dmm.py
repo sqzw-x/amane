@@ -6,10 +6,10 @@ from enum import StrEnum
 
 from parsel import Selector
 
-from ...enums import SiteName
+from ...enums import ActorGender, SiteName
 from ..base import Crawler, CrawlerProfile
 from ..http import RequestError
-from ..models import FetchOptions, MediaMetadata, SearchQuery
+from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import CSSSelector, extract_all_texts, extract_text
 from .dmm_api import DigitalResponse, DmmTvResponse, FanzaTvResponse, digital_payload, dmm_tv_payload, fanza_tv_payload
 
@@ -186,7 +186,7 @@ class DmmCrawler(Crawler):
         return MediaMetadata(
             number=number,
             title=data.title or None,
-            actors=[a.name for a in data.actresses if a.name],
+            actors=film_actors(a.name for a in data.actresses if a.name),
             studio=data.maker.name if data.maker else None,
             publisher=data.label.name if data.label else None,
             release=data.deliveryStartDate or None,
@@ -339,7 +339,7 @@ class DmmCrawler(Crawler):
         return MediaMetadata(
             number=number,
             title=title or None,
-            actors=actors,
+            actors=film_actors(actors),
             studio=studio or None,
             publisher=publisher or None,
             release=release,
@@ -392,7 +392,7 @@ class DmmCrawler(Crawler):
         return MediaMetadata(
             number=number,
             title=title or None,
-            actors=actors,
+            actors=film_actors(actors),
             studio=studio or None,
             publisher=publisher or None,
             release=None,  # rental 页无有效发售日.
@@ -435,7 +435,7 @@ class DmmCrawler(Crawler):
         return MediaMetadata(
             number=cid,
             title=data.title,
-            actors=[a.name for a in data.actresses if a.name],
+            actors=film_actors(a.name for a in data.actresses if a.name),
             studio=data.maker.name if data.maker else None,
             publisher=data.label.name if data.label else None,
             release=data.startDeliveryAt or None,
@@ -480,7 +480,7 @@ class DmmCrawler(Crawler):
         return MediaMetadata(
             number="",  # DMM TV 不暴露与其它分类相同的 cid.
             title=data.titleName,
-            actors=[c.actorName for c in data.casts if c.actorName],
+            actors=film_actors((c.actorName for c in data.casts if c.actorName), gender=ActorGender.UNKNOWN),
             studio=studio,
             publisher=studio,
             release=data.startPublicAt or None,

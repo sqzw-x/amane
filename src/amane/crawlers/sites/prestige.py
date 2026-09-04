@@ -9,7 +9,7 @@ from typing import Any
 from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..http import RequestError
-from ..models import FetchOptions, MediaMetadata, SearchQuery
+from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 
 
 class PrestigeCrawler(Crawler):
@@ -138,7 +138,7 @@ class PrestigeCrawler(Crawler):
         return MediaMetadata(
             number=number,
             title=title or None,
-            actors=actors,
+            actors=film_actors(actors),
             studio=studio,
             publisher=label_name or maker_name or None,
             release=release or None,
