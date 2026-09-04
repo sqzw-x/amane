@@ -53,7 +53,7 @@
       },
       "field_priority": {
         "label": "字段优先级",
-        "description": "单独设置特定字段的优先级",
+        "description": "单独设定特定字段的优先级，类型路由中的其他站点仍会请求",
         "options": {
           "title": "标题",
           "actors": "演员",

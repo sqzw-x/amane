@@ -53,7 +53,7 @@
       },
       "field_priority": {
         "label": "Field Priority",
-        "description": "Set priority for specific fields",
+        "description": "Set priority for specific fields. Other sites in the type route are still requested.",
         "options": {
           "title": "Title",
           "actors": "Actors",
