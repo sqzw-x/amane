@@ -1,28 +1,26 @@
 name: 上报 Bug
 description: 使用中文进行 Bug 报告
+title: "[Bug] "
 labels: ["kind:bug"]
 body:
-  - type: checkboxes
-    id: checks
+  - type: markdown
     attributes:
-      label: 在提问之前...
-      options:
-        - label: 我已经搜索了现有的 issues
-          required: true
-        - label: 我在提问题之前至少花费了 5 分钟来思考和准备
-          required: true
+      value: |
+        标题使用陈述句或祈使句, 不要使用问句 (例如「能否…」「是否…」「…吗」).
+        示例: Windows 超分找不到可执行文件.
+        提交前请搜索现有 issues.
   - type: input
     id: os_version
     attributes:
-      label: 操作系统版本
-      description: 例如 Windows 11, macOS 15.6, Ubuntu 22.04
+      label: 操作系统
+      description: 例如 Windows 11, macOS 15.6, Ubuntu 22.04, Docker
+      placeholder: Windows 11
     validations:
       required: true
   - type: input
     id: version
     attributes:
       label: Amane 版本
-      description: 可在主界面左下角找到. 若不是从 release 下载的请说明.
     validations:
       required: true
   - type: input
@@ -33,62 +31,41 @@ body:
     validations:
       required: false
   - type: textarea
-    id: describe
+    id: symptom
     attributes:
-      label: 描述你的问题
-      description: 简要描述你的问题. 不要将日志放在这里.
+      label: 现象
+      description: 实际发生了什么, 以及你期望发生什么. 日志和配置请填下面的栏.
+      placeholder: 例如: 整理时报 File name too long, 期望按模板写出路径.
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
-      label: 如何复现
-      description: 重现该行为的步骤
-      value: |
-        1. 前往 '...'
-        2. 点击 '....'
-        3. 滑动到 '....'
-        4. 出现问题
+      label: 复现
+      description: 可重现该行为的环境及步骤.
+      placeholder: |
+        1. …
     validations:
-      required: false
+      required: true
   - type: textarea
-    id: expected
+    id: logs
     attributes:
-      label: 预期行为
-      description: 简要描述你期望发生的事情
+      label: 日志
+      description: 整段粘贴即可. 删除 token、cookie 等敏感信息.
     validations:
       required: false
   - type: textarea
     id: config
     attributes:
-      label: 相关配置
-      description: 可复现问题的相关配置片段. 如果不清楚哪些配置相关, 可全部贴出, 注意务必删除敏感信息.
-      render: Text
+      label: 配置
+      description: JSON 或 TOML 整段粘贴即可. 删除敏感信息.
     validations:
       required: false
   - type: textarea
-    id: logs
+    id: extra
     attributes:
-      label: 相关 Logs
-      description: 发生问题时相关的日志输出. 注意务必删除敏感信息.
-      render: Text
+      label: 其他
+      description: 截图、链接. 不要在这里贴日志或配置.
     validations:
       required: false
-  - type: textarea
-    id: screenshots
-    attributes:
-      label: 截图
-      description: |
-        如果有，添加屏幕截图以帮助解释你的问题。
-        提示: 可以通过点击这个区域，然后把文件拖进来添加图片或日志文件。
-    validations:
-      required: false
-  - type: textarea
-    id: others
-    attributes:
-      label: 还有别的吗？
-      description: |
-        相关的配置？链接？参考资料？
-        任何能让我们对你所遇到的问题有更多了解的东西。
-    validations:
-      required: false
+

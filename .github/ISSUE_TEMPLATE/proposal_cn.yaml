@@ -1,0 +1,40 @@
+name: 议案
+description: 仅仓库协作者使用. 记录计划实现的功能.
+title: "[Proposal] "
+labels: ["kind:feature", "status:triaged"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        此模板仅供仓库协作者使用. 其他人请改用「功能请求」.
+
+        标题使用陈述句或祈使句, 不要使用问句.
+        示例: 允许自定义 NFO 内容.
+  - type: textarea
+    id: motive
+    attributes:
+      label: 动机
+      description: 为什么要做, 覆盖哪些使用路径.
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: 方案
+      description: 打算做成什么样, 以及主要做法.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: 注意
+      description: 边界、依赖、不做的部分、易回归点.
+    validations:
+      required: false
+  - type: textarea
+    id: related
+    attributes:
+      label: 关联 Issue
+      description: 相关的功能请求或缺陷, 例如 #80.
+    validations:
+      required: false
