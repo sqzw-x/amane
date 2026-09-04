@@ -20,7 +20,7 @@ GET `/config` 全量相等用 `hot_for_tests()`, 不能与裸 `HotSettings()` �
 | 演员字段筛选 / `ActorBrowseParams` 校验 | `tests/db/test_actor_browse.py` | `tests/api/test_actors.py` 列表剥字段、详情/PATCH/刮削 |
 | metadata/media/task 列表筛选、级联删除、任务链 | `tests/db/test_repository.py` / `test_task_links.py` | 空列表、422、响应里的 DTO 字段 (如 `file_phase` / `child_count`) |
 | 来源 merge (`compute_merge_updates`) | `tests/aggregate/test_merge_updates.py` | 400/404/422 与一次写库 |
-| 影片 `FilmActor` / 性别填空 / 建演员写入 | `tests/crawlers/test_film_actor.py` · `test_javdb_actors.py` · `tests/aggregate/test_engine.py` · `tests/db/test_actor_gender_seed.py` | — |
+| 影片 `FilmActor` coerce / 聚合填空 / 建演员写入 | `tests/crawlers/test_film_actor.py` · `tests/aggregate/test_engine.py` · `tests/db/test_actor_gender_seed.py` | — |
 | 任务 batch 计数/跳过链/取消 fallback | `tests/db/test_task_batch.py` (`execute_task_batch`, 无 lifespan) | `POST /tasks/batch` 接线 |
 | feed item 搜索/状态/分组 | `tests/db/test_feeds.py` | CRUD、poll、按 feed 配置入队刮削 |
 

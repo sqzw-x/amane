@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from amane.crawlers.http import HttpClient
+from amane.crawlers.models import FilmActor
 from amane.crawlers.registry import registry
 from amane.net.errors import RequestError
 
@@ -139,14 +140,13 @@ def http_client(mock_web: AsyncMock) -> HttpClient:
     return HttpClient(web=mock_web, browser=None)
 
 
-def _actor_names(actual: object) -> list[object] | object:
-    """TOML 仍写 list[str] 时按展示名比较 FilmActor."""
-    if not isinstance(actual, list) or not actual:
+def _normalize_actors(actual: object, expected: object) -> object:
+    """`[{name, gender}]` 比全字段; 旧 `list[str]` 只比展示名."""
+    if not isinstance(actual, list) or not actual or not isinstance(actual[0], FilmActor):
         return actual
-    first = actual[0]
-    if hasattr(first, "name"):
-        return [item.name for item in actual]
-    return actual
+    if isinstance(expected, list) and expected and isinstance(expected[0], dict):
+        return [{"name": item.name, "gender": item.gender.value} for item in actual]
+    return [item.name for item in actual]
 
 
 def assert_expected(result: object, expected: dict[str, Any]) -> None:
@@ -156,7 +156,7 @@ def assert_expected(result: object, expected: dict[str, Any]) -> None:
             field = key.removesuffix("_contains")
             actual = getattr(result, field)
             if field == "actors":
-                actual = _actor_names(actual)
+                actual = _normalize_actors(actual, value)
             if isinstance(value, list):
                 for item in value:
                     if isinstance(actual, str):
@@ -190,5 +190,5 @@ def assert_expected(result: object, expected: dict[str, Any]) -> None:
         else:
             actual = getattr(result, key)
             if key == "actors":
-                actual = _actor_names(actual)
+                actual = _normalize_actors(actual, value)
             assert actual == value, f"{key}: expected {value!r}, got {actual!r}"
