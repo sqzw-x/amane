@@ -4,6 +4,7 @@ from typing import Unpack
 from sqlalchemy import asc
 from sqlalchemy import delete as sqla_delete
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...enums import ActorGender
 from ..actor_lookup import build_actor_lookup_names, list_actor_aliases, lookup_actors_by_name
@@ -54,6 +55,16 @@ from .facet_helpers import (
 )
 
 
+async def _rows_by_names[T: Actor | Director | Tag | Studio | Publisher | Series](
+    session: AsyncSession, model: type[T], names: Sequence[str]
+) -> list[T]:
+    """按 UNIQUE 展示名批量取回; 空名单不发 ``IN ()``."""
+    unique = list(dict.fromkeys(n for n in names if n))
+    if not unique:
+        return []
+    return list((await session.exec(select(model).where(col(model.name).in_(unique)))).all())
+
+
 class FacetsRepoMixin(RepositoryMixinBase):
     async def resolve_metadata_facet_ids(
         self, meta: Metadata
@@ -70,37 +81,32 @@ class FacetsRepoMixin(RepositoryMixinBase):
         async with self._session() as session:
             actor_ids: dict[str, int] = {}
             actor_genders: dict[str, ActorGender] = {}
-            for name in normalize_names(meta.actors):
-                row = (await session.exec(select(Actor).where(Actor.name == name))).first()
-                if row is not None and row.id is not None:
-                    actor_ids[name] = row.id
-                    actor_genders[name] = row.gender
-            director_ids: dict[str, int] = {}
-            for name in normalize_names(meta.directors):
-                row = (await session.exec(select(Director).where(Director.name == name))).first()
-                if row is not None and row.id is not None:
-                    director_ids[name] = row.id
-            tag_ids: dict[str, int] = {}
-            for name in normalize_names(meta.tags):
-                row = (await session.exec(select(Tag).where(Tag.name == name))).first()
-                if row is not None and row.id is not None:
-                    tag_ids[name] = row.id
-            studio_id: int | None = None
-            if meta.studio:
-                row = (await session.exec(select(Studio).where(Studio.name == meta.studio))).first()
-                if row is not None:
-                    studio_id = row.id
-            publisher_id: int | None = None
-            if meta.publisher:
-                row = (await session.exec(select(Publisher).where(Publisher.name == meta.publisher))).first()
-                if row is not None:
-                    publisher_id = row.id
-            series_id: int | None = None
-            if meta.series:
-                row = (await session.exec(select(Series).where(Series.name == meta.series))).first()
-                if row is not None:
-                    series_id = row.id
-            return actor_ids, actor_genders, director_ids, tag_ids, studio_id, publisher_id, series_id
+            for row in await _rows_by_names(session, Actor, normalize_names(meta.actors)):
+                if row.id is not None:
+                    actor_ids[row.name] = row.id
+                    actor_genders[row.name] = row.gender
+            director_ids = {
+                row.name: row.id
+                for row in await _rows_by_names(session, Director, normalize_names(meta.directors))
+                if row.id is not None
+            }
+            tag_ids = {
+                row.name: row.id
+                for row in await _rows_by_names(session, Tag, normalize_names(meta.tags))
+                if row.id is not None
+            }
+            studio = (await _rows_by_names(session, Studio, [meta.studio] if meta.studio else []))[:1]
+            publisher = (await _rows_by_names(session, Publisher, [meta.publisher] if meta.publisher else []))[:1]
+            series = (await _rows_by_names(session, Series, [meta.series] if meta.series else []))[:1]
+            return (
+                actor_ids,
+                actor_genders,
+                director_ids,
+                tag_ids,
+                studio[0].id if studio else None,
+                publisher[0].id if publisher else None,
+                series[0].id if series else None,
+            )
 
     async def list_facets(
         self,

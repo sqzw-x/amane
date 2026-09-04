@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from amane.db.actor_lookup import build_actor_lookup_names
 from amane.db.models import Actor, FacetKind, FacetRuleAction, FacetSortField, Metadata, MetadataActor, SortOrder
+from amane.enums import ActorGender
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -49,6 +50,42 @@ class TestFacetSync:
         assert actors[0].count == 0
         items, n = await repo.list_metadata(actor_ids=[actors[0].id])
         assert n == 0 and items == []
+
+    async def test_resolve_facet_ids_skips_missing_and_empty(self, repo: Repository) -> None:
+        meta = await repo.upsert_metadata(
+            number="ABC-009",
+            actors=["Alice"],
+            directors=["DirA"],
+            tags=["tag1"],
+            studio="StudioX",
+            actor_genders={"Alice": ActorGender.FEMALE},
+        )
+        (
+            actor_ids,
+            actor_genders,
+            director_ids,
+            tag_ids,
+            studio_id,
+            publisher_id,
+            series_id,
+        ) = await repo.resolve_metadata_facet_ids(meta)
+        assert set(actor_ids) == {"Alice"}
+        assert actor_genders == {"Alice": ActorGender.FEMALE}
+        assert set(director_ids) == {"DirA"}
+        assert set(tag_ids) == {"tag1"}
+        assert studio_id is not None
+        assert publisher_id is None and series_id is None
+
+        meta.actors = ["Alice", "Ghost"]
+        meta.directors = []
+        meta.tags = ["tag1", "missing-tag"]
+        meta.studio = None
+        actor_ids, actor_genders, director_ids, tag_ids, studio_id, _, _ = await repo.resolve_metadata_facet_ids(meta)
+        assert set(actor_ids) == {"Alice"}
+        assert "Ghost" not in actor_ids
+        assert director_ids == {}
+        assert set(tag_ids) == {"tag1"}
+        assert studio_id is None
 
     async def test_unknown_facet_id_returns_empty(self, repo: Repository) -> None:
         await repo.upsert_metadata(number="ABC-003", actors=["Alice"])
