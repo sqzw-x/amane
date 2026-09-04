@@ -1,6 +1,7 @@
 import { Badge, type MantineColor } from "@mantine/core";
 import { Link } from "@tanstack/react-router";
-import type { FacetKind } from "@/client/types.gen";
+import type { ActorGender, FacetKind } from "@/client/types.gen";
+import { GenderMark } from "@/components/media/gender-mark";
 import { metaSearchForFacet } from "@/lib/facets";
 
 const KIND_COLOR: Record<FacetKind, MantineColor> = {
@@ -18,6 +19,8 @@ interface FacetBadgeProps {
   /** Facet id - 未知 (未建立投影索引) 时为 null/undefined, 渲染为不可点击的纯文本徽章. */
   id: number | null | undefined;
   name: string;
+  /** 仅 actor: 来自 Actor 实体. unknown / 缺省不画符号. */
+  gender?: ActorGender | null;
   /** "catalog": 分类实体页 (actor → /actors/$id); "meta": 片库列表并附带该 facet 过滤. @default "catalog" */
   mode?: "meta" | "catalog";
   variant?: "filled" | "light" | "outline" | "dot" | "transparent";
@@ -29,15 +32,20 @@ export function FacetBadge({
   kind,
   id,
   name,
+  gender,
   mode = "catalog",
   variant = "light",
   size = "sm",
 }: FacetBadgeProps) {
   const color = KIND_COLOR[kind];
+  const leftSection =
+    kind === "actor" && (gender === "female" || gender === "male") ? (
+      <GenderMark gender={gender} size={12} />
+    ) : undefined;
 
   if (id == null) {
     return (
-      <Badge color={color} variant={variant} size={size}>
+      <Badge color={color} variant={variant} size={size} leftSection={leftSection}>
         {name}
       </Badge>
     );
@@ -56,6 +64,7 @@ export function FacetBadge({
             color={color}
             variant={variant}
             size={size}
+            leftSection={leftSection}
             style={{ cursor: "pointer" }}
           >
             {name}
@@ -89,6 +98,7 @@ export function FacetBadge({
         color={color}
         variant={variant}
         size={size}
+        leftSection={leftSection}
         style={{ cursor: "pointer" }}
       >
         {name}

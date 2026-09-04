@@ -15,7 +15,7 @@
 
 片库 / 演员 / 分类无独立「管理」路由: `view=grid|list` (分类 `cloud|list`). grid/cloud 只读; list 才有多选与破坏性操作. Feed 相反: 阅读器 (`/feeds`) 与源表 (`/feeds/sources`) 不共用布局, 选中源不在阅读器顶栏展开操作条. 侧栏点条目只筛选阅读器; 源/分组的左侧图标深链源表 (不修改当前选中), 源经由 `?feed=` (按当前筛排定位到该行所在页并高亮, `feed` 不是筛选条件, 修改搜索框会清除该参数), 分组经由 `?q=`. 「全部」与「未分组」没有这条入口. 侧栏 `NavLink` 用 TanStack `Link` 时, Mantine 把 `aria-current=page` 画成选中, 而 Link 默认把子路径也标成当前页; `/feeds` 必须 `activeOptions.exact` 且忽略 search, 否则打开 `/feeds/sources` 时「订阅」也会亮.
 
-**入口分流**: 非演员实体 → `/catalog/$kind/$facetId`; 演员 → `/actors/$actorId`. 结果筛选在 `/meta` (`q` + 各 `*_id`; `saved_query_id` 与其它筛选项 AND, 见 [agent.md](agent.md)). `FacetBadge` 默认 `mode="catalog"` (actor 深链 `/actors/$id`), 筛选深链用 `mode="meta"`. 演员不进入 `/catalog`.
+**入口分流**: 非演员实体 → `/catalog/$kind/$facetId`; 演员 → `/actors/$actorId`. 结果筛选在 `/meta` (`q` + 各 `*_id`; `saved_query_id` 与其它筛选项 AND, 见 [agent.md](agent.md)). `FacetBadge` 默认 `mode="catalog"` (actor 深链 `/actors/$id`), 筛选深链用 `mode="meta"`. 演员不进入 `/catalog`. 详情出演徽章的性别来自同一次 `Actor` 行查找 (`actor_genders`), 不是 `raw` 里的 `FilmActor`; 仅 `female` / `male` 画符号.
 
 分类实体页必须是 `catalog.$kind_.$facetId.tsx` (trailing `_`): `$kind` 是词云叶页而非 layout, 写成 `catalog.$kind.$facetId` 会成为无 `<outlet />` 的父路由的子路由, 子页永不渲染.
 

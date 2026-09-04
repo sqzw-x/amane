@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from ...db import Metadata
+from ...enums import ActorGender
 from ...handlers import CacheKind
 from ...parsing import ContentType, Mosaic
 from ...utils.model import anyof_extras, create_partial_model, kv
@@ -84,6 +85,7 @@ class MetadataDetailResponse(BaseModel):
     user_tags: list[UserTagResponse] = []
     comments: list[CommentResponse] = []
     actor_ids: dict[str, int] = {}
+    actor_genders: dict[str, ActorGender] = {}
     director_ids: dict[str, int] = {}
     tag_ids: dict[str, int] = {}
     studio_id: int | None = None

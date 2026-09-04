@@ -190,9 +190,15 @@ async def get_metadata(metadata_id: int, repo: RepoDep) -> MetadataDetailRespons
     files = await repo.get_media_by_metadata_id(metadata_id)
     user_tags = await repo.list_metadata_user_tags(metadata_id)
     comments = await repo.list_comments(metadata_id)
-    actor_ids, director_ids, tag_ids, studio_id, publisher_id, series_id = await repo.resolve_metadata_facet_ids(
-        metadata
-    )
+    (
+        actor_ids,
+        actor_genders,
+        director_ids,
+        tag_ids,
+        studio_id,
+        publisher_id,
+        series_id,
+    ) = await repo.resolve_metadata_facet_ids(metadata)
     return MetadataDetailResponse(
         metadata=to_resp(MetadataResponse, metadata).model_copy(
             update={
@@ -204,6 +210,7 @@ async def get_metadata(metadata_id: int, repo: RepoDep) -> MetadataDetailRespons
         user_tags=[to_resp(UserTagResponse, t) for t in user_tags],
         comments=[to_resp(CommentResponse, c) for c in comments],
         actor_ids=actor_ids,
+        actor_genders=actor_genders,
         director_ids=director_ids,
         tag_ids=tag_ids,
         studio_id=studio_id,

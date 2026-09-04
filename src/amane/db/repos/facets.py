@@ -5,6 +5,7 @@ from sqlalchemy import asc
 from sqlalchemy import delete as sqla_delete
 from sqlmodel import col, select
 
+from ...enums import ActorGender
 from ..actor_lookup import build_actor_lookup_names, list_actor_aliases, lookup_actors_by_name
 from ..actor_person import actor_to_aggregated, apply_aggregated_to_actor
 from ..models import (
@@ -56,14 +57,24 @@ from .facet_helpers import (
 class FacetsRepoMixin(RepositoryMixinBase):
     async def resolve_metadata_facet_ids(
         self, meta: Metadata
-    ) -> tuple[dict[str, int], dict[str, int], dict[str, int], int | None, int | None, int | None]:
-        """名称 → 分类实体 id; 未投影的名称不出现."""
+    ) -> tuple[
+        dict[str, int],
+        dict[str, ActorGender],
+        dict[str, int],
+        dict[str, int],
+        int | None,
+        int | None,
+        int | None,
+    ]:
+        """名称 → 分类实体 id; 演员额外带已装入行上的 gender. 未投影的名称不出现."""
         async with self._session() as session:
             actor_ids: dict[str, int] = {}
+            actor_genders: dict[str, ActorGender] = {}
             for name in normalize_names(meta.actors):
                 row = (await session.exec(select(Actor).where(Actor.name == name))).first()
                 if row is not None and row.id is not None:
                     actor_ids[name] = row.id
+                    actor_genders[name] = row.gender
             director_ids: dict[str, int] = {}
             for name in normalize_names(meta.directors):
                 row = (await session.exec(select(Director).where(Director.name == name))).first()
@@ -89,7 +100,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
                 row = (await session.exec(select(Series).where(Series.name == meta.series))).first()
                 if row is not None:
                     series_id = row.id
-            return actor_ids, director_ids, tag_ids, studio_id, publisher_id, series_id
+            return actor_ids, actor_genders, director_ids, tag_ids, studio_id, publisher_id, series_id
 
     async def list_facets(
         self,
