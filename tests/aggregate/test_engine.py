@@ -1,4 +1,4 @@
-"""测试 amane.aggregate: 静态抓取图、分波请求、标量短路、收集类字段按链拼接."""
+"""测试 amane.aggregate: 静态抓取图、分波请求、标量短路、聚合类字段按链拼接."""
 
 from collections import defaultdict
 
@@ -770,7 +770,7 @@ class TestComplexScenarios:
         assert state.result.field_sources["studio"] == "dmm"
 
 
-class TestCollectedFieldOrder:
+class TestAggregateFieldOrder:
     """出演/评分把低优先级图片站拉进前波时, 列表仍按该字段站点顺序."""
 
     @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-"""字段级多源聚合: 静态抓取图 + 按波次请求 + 标量当场短路 + 收集类字段结束时按链拼接.
+"""字段级多源聚合: 静态抓取图 + 按波次请求 + 标量当场短路 + 聚合类字段结束时按链拼接.
 
 不在 crawlers 映射中的站点标成已处理空结果, 不写入 failed / sites_queried, 也不调用 invoke_source.
 """
@@ -169,7 +169,7 @@ async def execute_graph(
     state = ExecutionState(number=query.number)
     field_total = len(SCALAR_FIELDS)
 
-    # 标量满足后移除; URL / 收集字段始终保留.
+    # 标量满足后移除; 聚合类字段始终保留.
     unsatisfied: set[MetadataField] = set(ALL_FIELDS)
 
     # 禁用插件 / 未安装来源 / 构造失败不在 crawlers 中: 标成已处理空结果,
@@ -230,7 +230,7 @@ async def execute_graph(
             sites = ", ".join(n.cache_key for n in active_nodes)
             await on_progress(_scalar_progress(unsatisfied), field_total, sites)
 
-    _assemble_collected(graph, state)
+    _assemble_aggregate_fields(graph, state)
     _fill_actor_genders(state.result, state.fetched)
     return state
 
@@ -474,7 +474,7 @@ def _collect_scalars_after_wave(graph: FetchGraph, state: ExecutionState, unsati
                 break
 
 
-def _assemble_collected(graph: FetchGraph, state: ExecutionState) -> None:
+def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None:
     """按各字段站点顺序拼接已抓结果. 空值与未返回的站跳过, 不改变相对顺序."""
     for field, dst in URL_FIELD_MAP.items():
         urls: list[str] = []
