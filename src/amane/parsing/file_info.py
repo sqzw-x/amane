@@ -268,7 +268,7 @@ def infer_content_type(number: str, file_path: str | None = None) -> ContentType
 
 
 def detect_cd(filename: str | Path) -> int | None:
-    """只解析文件名上的分集, 不依据目录. 字幕配对只使用这一层."""
+    """只解析文件名上的分集, 不依据目录."""
     return parse_file_info(text=str(filename)).cd
 
 
