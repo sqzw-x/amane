@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 from pydantic import AfterValidator
 
+from ..enums import ActorGender
 from .template import Parser, StrmEngine, TemplateContext
 
 if TYPE_CHECKING:
@@ -42,6 +44,7 @@ def render_strm_content(
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
     link: Path | None = None,
+    actor_genders: Mapping[str, ActorGender] | None = None,
 ) -> str:
     """空模板写 dest 的字面绝对路径.
     模板引用 `{video_relpath}` 且 dest 不在库根下时抛 ValueError, 不写出错误正文.
@@ -50,7 +53,11 @@ def render_strm_content(
     if normalized is None:
         return f"{dest}\n"
     ctx = TemplateContext.from_metadata(
-        metadata, ext=dest.suffix.lstrip("."), source_path=source_path, file_info=file_info
+        metadata,
+        ext=dest.suffix.lstrip("."),
+        source_path=source_path,
+        file_info=file_info,
+        actor_genders=actor_genders,
     )
     ctx.apply_video(dest, library_root)
     ctx.apply_link(link)

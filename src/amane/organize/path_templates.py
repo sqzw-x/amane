@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 from pydantic import AfterValidator
 
-from ..enums import LinkMode
+from ..enums import ActorGender, LinkMode
 from ..parsing.file_info import FileInfo
 from ..utils.path import is_descendant
 from .template import PLACEHOLDER_MAP_KEYS as PLACEHOLDER_MAP_KEYS
@@ -69,10 +69,18 @@ def resolve_paths(
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
     safe_dirs: Sequence[Path] | None = (),
+    actor_genders: Mapping[str, ActorGender] | None = None,
 ) -> ResolvedPaths:
     """``safe_dirs is None`` 时不限制绝对模板落点; 相对模板仍须在 base_path 下."""
     base_path = Path(library.path)
-    ctx = TemplateContext.from_metadata(metadata, ext=ext, source_path=source_path, file_info=file_info, cd=cd)
+    ctx = TemplateContext.from_metadata(
+        metadata,
+        ext=ext,
+        source_path=source_path,
+        file_info=file_info,
+        cd=cd,
+        actor_genders=actor_genders,
+    )
 
     # 先渲染视频, 注入 `{video_*}` 后再渲染链接与刮削产物.
     video = PathEngine(library.video_template).resolve(ctx, base_path, safe_dirs)
@@ -132,6 +140,7 @@ def resolve_subtitle_path(
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
     safe_dirs: Sequence[Path] | None = (),
+    actor_genders: Mapping[str, ActorGender] | None = None,
 ) -> Path:
     """`{ext}` / `{raw_srt_name}` 取自该字幕源文件; `{raw_name}` / `{raw_dir}` 仍是视频源.
     `{video_dir}` / `{video_name}` 为整理后视频父目录与文件名 (不含扩展名);
@@ -140,7 +149,9 @@ def resolve_subtitle_path(
     默认模板保持原文件名与扩展名.
     """
     base_path = Path(library.path)
-    ctx = TemplateContext.from_metadata(metadata, source_path=source_path, file_info=file_info)
+    ctx = TemplateContext.from_metadata(
+        metadata, source_path=source_path, file_info=file_info, actor_genders=actor_genders
+    )
     if video_dest is not None:
         ctx.apply_video(video_dest, base_path)
     else:

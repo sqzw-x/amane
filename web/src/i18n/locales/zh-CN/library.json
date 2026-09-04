@@ -143,6 +143,8 @@
       "title": "标题",
       "actor": "第一位演员",
       "actors": "全部演员, 逗号分隔",
+      "actress": "第一位女演员",
+      "actresses": "女演员, 逗号分隔",
       "studio": "制作商",
       "publisher": "发行商",
       "series": "系列",

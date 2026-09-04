@@ -1,14 +1,15 @@
-"""路径模板折叠空段并约束落点. 填值时截断 title / actor / actors. STRM 正文不折叠、不截断 (保留 `https://`), 不检查 safe_dirs."""
+"""路径模板折叠空段并约束落点. 填值时截断 title / actor / actors / actress / actresses. STRM 正文不折叠、不截断 (保留 `https://`), 不检查 safe_dirs."""
 
 from __future__ import annotations
 
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..enums import ActorGender
 from ..parsing.file_info import DEFINITION_VALUES, MOSAIC_VALUES, FileInfo
 from ..utils.path import is_any_descendant, is_descendant
 
@@ -20,7 +21,7 @@ _DRIVE = re.compile(r"^[A-Za-z]:")
 _DRIVE_ONLY = re.compile(r"^[A-Za-z]:$")
 PATH_FIELD_MAX_BYTES = 200
 PATH_FIELD_ELLIPSIS = "…"
-_CLIP_KEYS = frozenset({"title", "actor", "actors"})
+_CLIP_KEYS = frozenset({"title", "actor", "actors", "actress", "actresses"})
 _ELLIPSIS_BYTES = len(PATH_FIELD_ELLIPSIS.encode("utf-8"))
 
 PLACEHOLDERS: tuple[str, ...] = (
@@ -28,6 +29,8 @@ PLACEHOLDERS: tuple[str, ...] = (
     "title",
     "actor",
     "actors",
+    "actress",
+    "actresses",
     "studio",
     "publisher",
     "series",
@@ -274,15 +277,27 @@ def _video_relpath_or_empty(dest: Path, library_root: Path) -> str:
         return ""
 
 
+def actress_names(actors: Sequence[str], genders: Mapping[str, ActorGender] | None = None) -> list[str]:
+    """按 ``Metadata.actors`` 顺序排除明确 ``male``; 未入表或 ``unknown`` 保留."""
+    if not actors:
+        return []
+    if genders is None:
+        return list(actors)
+    return [name for name in actors if genders.get(name, ActorGender.UNKNOWN) is not ActorGender.MALE]
+
+
 def _build_variables(
     metadata: Metadata,
     ext: str = "",
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
     cd: int | None = None,
+    actor_genders: Mapping[str, ActorGender] | None = None,
 ) -> dict[str, str]:
     year = metadata.release[:4] if metadata.release and len(metadata.release) >= 4 else None
     actor = metadata.actors[0] if metadata.actors else None
+    actresses = actress_names(metadata.actors, actor_genders)
+    actress = actresses[0] if actresses else None
     source_dir = source_path.parent if source_path else None
     raw_dir = source_dir.name if source_dir else ""
     raw_name = source_path.stem if source_path else ""
@@ -294,6 +309,8 @@ def _build_variables(
         "title": _safe(metadata.title) or metadata.number,
         "actor": _safe(actor) or _UNKNOWN,
         "actors": ", ".join(metadata.actors) if metadata.actors else _UNKNOWN,
+        "actress": _safe(actress) or _UNKNOWN,
+        "actresses": ", ".join(actresses) if actresses else _UNKNOWN,
         "studio": _safe(metadata.studio) or _UNKNOWN,
         "publisher": _safe(metadata.publisher) or _UNKNOWN,
         "series": _safe(metadata.series) or _UNKNOWN,
@@ -331,8 +348,9 @@ class TemplateContext:
         source_path: Path | None = None,
         file_info: FileInfo | None = None,
         cd: int | None = None,
+        actor_genders: Mapping[str, ActorGender] | None = None,
     ) -> TemplateContext:
-        return cls(variables=_build_variables(metadata, ext, source_path, file_info, cd))
+        return cls(variables=_build_variables(metadata, ext, source_path, file_info, cd, actor_genders))
 
     def apply_video(self, dest: Path, library_root: Path) -> None:
         self.dest = dest
@@ -405,7 +423,7 @@ class TemplateEngine:
 
 
 class PathEngine(TemplateEngine):
-    """路径输出: 填值时截断 title / actor / actors, 折叠空段, 再按库根 / safe_dirs 落成字面绝对路径."""
+    """路径输出: 填值时截断 title / actor / actors / actress / actresses, 折叠空段, 再按库根 / safe_dirs 落成字面绝对路径."""
 
     def fill(self, ctx: TemplateContext) -> str:
         variables = {name: _clip_field(value) if name in _CLIP_KEYS else value for name, value in ctx.variables.items()}
@@ -444,7 +462,7 @@ class PathEngine(TemplateEngine):
 
 
 class StrmEngine(TemplateEngine):
-    """STRM 正文: 不折叠空段, 不截断 title / actor / actors. 引用 `{video_relpath}` 时 dest 必须在库根下."""
+    """STRM 正文: 不折叠空段, 不截断 title / actor / actors / actress / actresses. 引用 `{video_relpath}` 时 dest 必须在库根下."""
 
     def clean(self, filled: str, ctx: TemplateContext) -> str:
         return filled if filled.endswith("\n") else f"{filled}\n"
