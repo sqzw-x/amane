@@ -1,4 +1,4 @@
-name: 议案
+name: Proposal
 description: 仅仓库协作者使用. 记录计划实现的功能.
 title: "[Proposal] "
 labels: ["kind:feature", "status:triaged"]
@@ -35,6 +35,6 @@ body:
     id: related
     attributes:
       label: 关联 Issue
-      description: 相关的功能请求或缺陷, 例如 #80.
+      description: "相关的功能请求或缺陷, 例如 #80."
     validations:
       required: false

@@ -35,7 +35,7 @@ body:
     attributes:
       label: 现象
       description: 实际发生了什么, 以及你期望发生什么. 日志和配置请填下面的栏.
-      placeholder: 例如: 整理时报 File name too long, 期望按模板写出路径.
+      placeholder: "例如: 整理时报 File name too long, 期望按模板写出路径."
     validations:
       required: true
   - type: textarea
