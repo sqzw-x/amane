@@ -2,9 +2,9 @@ import re
 
 from parsel import Selector
 
-from ...enums import SiteName
+from ...enums import ActorGender, SiteName
 from ..base import Crawler, CrawlerProfile
-from ..models import FetchOptions, MediaMetadata, SearchQuery
+from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text
 
 
@@ -51,7 +51,7 @@ class FC2ClubCrawler(Crawler):
         return MediaMetadata(
             number=number,
             title=title,
-            actors=actors,
+            actors=film_actors(actors, gender=ActorGender.UNKNOWN),
             release=release,
             tags=tags,
             thumb_urls=[cover] if cover else [],

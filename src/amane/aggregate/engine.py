@@ -14,9 +14,9 @@ from typing import Any, Protocol
 from structlog.contextvars import bind_contextvars
 
 from ..config.manager import LANG_METADATA_FIELD_SET
-from ..crawlers.models import FetchOptions, MediaMetadata, SearchQuery
+from ..crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
 from ..crawlers.site_roles import MULTI_LANGUAGE_SOURCE_IDS
-from ..enums import Language, MetadataField, SiteName
+from ..enums import ActorGender, Language, MetadataField, SiteName
 from ..observability import current, invoke_source
 from .models import AggregatedMetadata, AggregateResult, SourcedScore
 
@@ -232,6 +232,7 @@ async def execute_graph(
             sites = ", ".join(n.cache_key for n in active_nodes)
             await on_progress(_scalar_progress(unsatisfied), field_total, sites)
 
+    _fill_actor_genders(state.result, state.fetched)
     return state
 
 
@@ -400,9 +401,38 @@ def _dedupe_names(names: list[str]) -> list[str]:
     return out
 
 
+def _dedupe_film_actors(actors: list[FilmActor]) -> list[FilmActor]:
+    seen: dict[str, FilmActor] = {}
+    order: list[str] = []
+    for item in actors:
+        if not item.name:
+            continue
+        existing = seen.get(item.name)
+        if existing is None:
+            seen[item.name] = item.model_copy()
+            order.append(item.name)
+        elif existing.gender == ActorGender.UNKNOWN and item.gender != ActorGender.UNKNOWN:
+            seen[item.name] = item.model_copy()
+    return [seen[name] for name in order]
+
+
+def _fill_actor_genders(result: AggregatedMetadata, fetched: Mapping[SourceKey, MediaMetadata | None]) -> None:
+    """名单已锁定后, 按展示名从各源填空性别. 不改名单与顺序."""
+    by_name = {item.name: item for item in result.actors}
+    for data in fetched.values():
+        if data is None:
+            continue
+        for src in data.actors:
+            dest = by_name.get(src.name)
+            if dest is None:
+                continue
+            if dest.gender == ActorGender.UNKNOWN and src.gender != ActorGender.UNKNOWN:
+                dest.gender = src.gender
+
+
 def _sanitize_aggregated_lists(meta: AggregatedMetadata) -> None:
     # 同名重复视为噪声 (源站布局镜像 / 爬虫瑕疵), 不入库存.
-    meta.actors = _dedupe_names(meta.actors)
+    meta.actors = _dedupe_film_actors(meta.actors)
     meta.tags = _dedupe_names(meta.tags)
     meta.directors = _dedupe_names(meta.directors)
 
@@ -415,7 +445,10 @@ def _fill_scalar(
 ) -> None:
     if field in result.field_sources:
         return
-    setattr(result, field, getattr(data, field))
+    if field == MetadataField.ACTORS:
+        result.actors = [item.model_copy() for item in data.actors]
+    else:
+        setattr(result, field, getattr(data, field))
     result.field_sources[field] = source_key
 
 

@@ -8,7 +8,7 @@ from ..crawlers.base import Crawler
 from ..crawlers.models import SearchQuery
 from ..crawlers.site_roles import MULTI_LANGUAGE_SOURCE_IDS
 from ..db.models import TaskType
-from ..enums import MetadataField
+from ..enums import ActorGender, MetadataField
 from ..media import materialize_images
 from ..observability import current
 from ._common import ensure_oshash, finalize_media_file
@@ -157,11 +157,13 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
 
         await self.report_progress(len(SCALAR_FIELDS) + 1, progress_total, "materialize")
 
-        # 写库并关联 MediaFile.
+        # 写库并关联 MediaFile. Metadata.actors 仍是展示名; 性别写入 Actor 空位.
+        cast = result.metadata.actors
         meta = await self._repo.upsert_metadata(
             number=payload.number,
+            actor_genders={item.name: item.gender for item in cast if item.gender != ActorGender.UNKNOWN},
             title=result.metadata.title,
-            actors=result.metadata.actors,
+            actors=[item.name for item in cast],
             studio=result.metadata.studio,
             publisher=result.metadata.publisher,
             release=result.metadata.release,

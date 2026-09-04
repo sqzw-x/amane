@@ -2,7 +2,7 @@
 
 import amane.plugin as sdk
 from amane.crawlers.http import HttpClient
-from amane.crawlers.models import FetchOptions, MediaMetadata, SearchQuery
+from amane.crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery, film_actors
 from amane.enums import Language
 from amane.net.errors import FailureReason, RequestError, SourceError
 from amane.net.http import WebClient
@@ -25,6 +25,7 @@ _REEXPORTS: tuple[tuple[str, object], ...] = (
     ("EmptyPluginConfig", EmptyPluginConfig),
     ("FailureReason", FailureReason),
     ("FetchOptions", FetchOptions),
+    ("FilmActor", FilmActor),
     ("FilmSourcePlugin", FilmSourcePlugin),
     ("FilmSourceProvider", FilmSourceProvider),
     ("HttpClient", HttpClient),
@@ -38,6 +39,7 @@ _REEXPORTS: tuple[tuple[str, object], ...] = (
     ("SourceError", SourceError),
     ("SourceId", SourceId),
     ("WebClient", WebClient),
+    ("film_actors", film_actors),
     ("is_external_source_id", is_external_source_id),
     ("validate_external_source_id", validate_external_source_id),
 )

@@ -7,8 +7,8 @@ digital/video 与 digital/amateur 产出双候选 (aws 高清 → pics 标准); 
 import re
 from typing import TYPE_CHECKING
 
-from ...enums import Language
-from ..models import MediaMetadata
+from ...enums import ActorGender, Language
+from ..models import FilmActor, MediaMetadata
 
 if TYPE_CHECKING:
     from .models import R18VideoDetail
@@ -70,7 +70,10 @@ def to_metadata(detail: R18VideoDetail, number: str, language: Language | None =
         title = v.title_ja or v.title_en
         plot = v.comment_ja or v.comment_en
 
-    actors = [n for p in (*detail.actresses, *detail.actors) if (n := p.best(language))]
+    actors = [
+        *[FilmActor(name=n, gender=ActorGender.FEMALE) for p in detail.actresses if (n := p.best(language))],
+        *[FilmActor(name=n, gender=ActorGender.MALE) for p in detail.actors if (n := p.best(language))],
+    ]
     directors = [n for p in detail.directors if (n := p.best(language))]
     tags = [n for c in detail.categories if (n := c.best(language))]
 

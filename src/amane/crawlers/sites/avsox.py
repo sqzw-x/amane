@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from ...enums import Language, SiteName
 from ..base import Crawler, CrawlerProfile
-from ..models import FetchOptions, MediaMetadata, SearchQuery
+from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 
 _LANG: dict[Language, str] = {
     Language.ZH_CN: "cn",
@@ -148,7 +148,7 @@ class AvsoxCrawler(Crawler):
         return MediaMetadata(
             number=movie.movieFanHao,
             title=_first(movie.title, movie.title_ja, movie.title_en, movie.title_cn, movie.title_tw),
-            actors=[name for star in movie.star if (name := _named(star, "star"))],
+            actors=film_actors(name for star in movie.star if (name := _named(star, "star"))),
             studio=_named(movie.studio, "studio"),
             publisher=_named(movie.label, "label"),
             series=_named(movie.series, "series"),

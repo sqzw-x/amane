@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Unpack
 
@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 
+from ...enums import ActorGender
 from ...parsing import ContentType, Mosaic
 from ..models import (
     MediaFile,
@@ -156,8 +157,16 @@ class MetadataRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             return result.first()
 
-    async def upsert_metadata(self, number: str, **kwargs: Unpack[MetadataFields]) -> Metadata:
-        """查重忽略大小写; 已存在时不改写 number 的原始大小写."""
+    async def upsert_metadata(
+        self,
+        number: str,
+        *,
+        actor_genders: Mapping[str, ActorGender] | None = None,
+        **kwargs: Unpack[MetadataFields],
+    ) -> Metadata:
+        """查重忽略大小写; 已存在时不改写 number 的原始大小写.
+        ``actor_genders`` 只填 ``Actor.gender`` 空位, 不是 Metadata 列.
+        """
         async with self._session() as session:
             stmt = select(Metadata).where(func.lower(Metadata.number) == number.lower())
             result = await session.exec(stmt)
@@ -168,7 +177,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 existing.updated_at = _utcnow()
                 session.add(existing)
                 await session.flush()
-                await clean_actor_names(session, existing)
+                await clean_actor_names(session, existing, actor_genders)
                 await apply_facet_rules_to_metadata(session, existing)
                 await sync_metadata_facets(session, existing)
                 await session.commit()
@@ -177,14 +186,20 @@ class MetadataRepoMixin(RepositoryMixinBase):
             meta = Metadata(number=number, **kwargs)
             session.add(meta)
             await session.flush()
-            await clean_actor_names(session, meta)
+            await clean_actor_names(session, meta, actor_genders)
             await apply_facet_rules_to_metadata(session, meta)
             await sync_metadata_facets(session, meta)
             await session.commit()
             await session.refresh(meta)
             return meta
 
-    async def update_metadata(self, metadata_id: int, **updates: Unpack[MetadataFields]) -> Metadata | None:
+    async def update_metadata(
+        self,
+        metadata_id: int,
+        *,
+        actor_genders: Mapping[str, ActorGender] | None = None,
+        **updates: Unpack[MetadataFields],
+    ) -> Metadata | None:
         """不存在返回 None."""
         async with self._session() as session:
             metadata = await session.get(Metadata, metadata_id)
@@ -232,7 +247,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             metadata.updated_at = _utcnow()
             session.add(metadata)
             await session.flush()
-            await clean_actor_names(session, metadata)
+            await clean_actor_names(session, metadata, actor_genders)
             await apply_facet_rules_to_metadata(session, metadata)
             await sync_metadata_facets(session, metadata)
             await session.commit()

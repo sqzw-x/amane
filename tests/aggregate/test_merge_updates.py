@@ -75,6 +75,25 @@ _IMG_RAW: dict[str, dict[str, object]] = {
                 "extrafanart_urls": {"dmm": ["https://d/e.jpg"]},
             },
         ),
+        (
+            {
+                "javdb": {
+                    "actors": [
+                        {"name": "Mei", "gender": "female"},
+                        {"name": "MaleA", "gender": "male"},
+                    ]
+                }
+            },
+            {},
+            {"actors": "javdb"},
+            {"actors": ["Mei", "MaleA"], "field_sources": {"actors": "javdb"}},
+        ),
+        (
+            {"javdb": {"actors": ["Mei", "MaleA"]}},
+            {},
+            {"actors": "javdb"},
+            {"actors": ["Mei", "MaleA"], "field_sources": {"actors": "javdb"}},
+        ),
     ],
     ids=[
         "scalar_title",
@@ -85,6 +104,8 @@ _IMG_RAW: dict[str, dict[str, object]] = {
         "poster_urls",
         "extrafanart",
         "thumb_and_extrafanart",
+        "actors_film_actor_objects",
+        "actors_string_list",
     ],
 )
 def test_compute_merge_updates(

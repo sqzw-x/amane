@@ -4,7 +4,7 @@
 
 ## 插件边界
 
-插件 API v1 只开放**影片元数据来源**. 插件通过一个窄接口接收 `SearchQuery`, 返回 `MediaMetadata`, 然后进入现有聚合 DAG; 插件不直接访问 Repository、任务 Worker、FastAPI 或前端运行时.
+插件 API v1 只开放**影片元数据来源**. 插件通过一个窄接口接收 `SearchQuery`, 返回 `MediaMetadata`, 然后进入现有聚合 DAG; 插件不直接访问 Repository、任务 Worker、FastAPI 或前端运行时. `MediaMetadata.actors` 为 `list[FilmActor]`; 仍接受 `list[str]`, 性别为 `unknown`. API 版本号不因此递增. 出演者性别契约见 [crawlers.md](crawlers.md).
 
 插件是可信的进程内纯 Python: `importlib` 从数据目录加载 `plugin.py`, 与主机共用解释器. 没有进程隔离. 插件不能声明自己的 pip 依赖或原生扩展, 只使用主机已提供的 API (经 `amane.plugin` 与 `context.http_client`).
 

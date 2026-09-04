@@ -4,7 +4,7 @@ from parsel import Selector
 
 from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
-from ..models import FetchOptions, MediaMetadata, SearchQuery
+from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text
 
 
@@ -48,7 +48,7 @@ class DahliaCrawler(Crawler):
         return MediaMetadata(
             number=slug.upper(),
             title=title,
-            actors=actors,
+            actors=film_actors(actors),
             studio="DAHLIA",
             release=release or None,
             runtime=runtime,
