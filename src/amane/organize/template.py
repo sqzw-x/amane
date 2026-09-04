@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict, cast
 
 from ..enums import ActorGender
 from ..parsing.file_info import DEFINITION_VALUES, MOSAIC_VALUES, FileInfo
@@ -24,32 +24,37 @@ PATH_FIELD_ELLIPSIS = "…"
 _CLIP_KEYS = frozenset({"title", "actor", "actors", "actress", "actresses"})
 _ELLIPSIS_BYTES = len(PATH_FIELD_ELLIPSIS.encode("utf-8"))
 
-PLACEHOLDERS: tuple[str, ...] = (
-    "number",
-    "title",
-    "actor",
-    "actors",
-    "actress",
-    "actresses",
-    "studio",
-    "publisher",
-    "series",
-    "year",
-    "release",
-    "ext",
-    "raw_dir",
-    "raw_name",
-    "cd?",
-    "sub?",
-    "mosaic?",
-    "def?",
-    "video_dir",
-    "video_name",
-    "video_relpath",
-    "link_dir",
-    "link_name",
-    "raw_srt_name",
+# cd? / sub? / mosaic? / def? 不是合法标识符, 只能用函数式 TypedDict.
+TemplateVariables = TypedDict(
+    "TemplateVariables",
+    {
+        "number": str,
+        "title": str,
+        "actor": str,
+        "actors": str,
+        "actress": str,
+        "actresses": str,
+        "studio": str,
+        "publisher": str,
+        "series": str,
+        "year": str,
+        "release": str,
+        "ext": str,
+        "raw_dir": str,
+        "raw_name": str,
+        "cd?": str,
+        "sub?": str,
+        "mosaic?": str,
+        "def?": str,
+        "video_dir": str,
+        "video_name": str,
+        "video_relpath": str,
+        "link_dir": str,
+        "link_name": str,
+        "raw_srt_name": str,
+    },
 )
+PLACEHOLDERS: tuple[str, ...] = tuple(TemplateVariables.__annotations__)
 
 # 有闭合取值的占位符: 映射表的 key 必须是规范值, 否则写入 422. 未列入的占位符 (如 cd?) 不校验 key.
 PLACEHOLDER_MAP_KEYS: dict[str, tuple[str, ...]] = {
@@ -293,7 +298,7 @@ def _build_variables(
     file_info: FileInfo | None = None,
     cd: int | None = None,
     actor_genders: Mapping[str, ActorGender] | None = None,
-) -> dict[str, str]:
+) -> TemplateVariables:
     year = metadata.release[:4] if metadata.release and len(metadata.release) >= 4 else None
     actor = metadata.actors[0] if metadata.actors else None
     actresses = actress_names(metadata.actors, actor_genders)
@@ -319,11 +324,16 @@ def _build_variables(
         "ext": ext,
         "raw_dir": raw_dir,
         "raw_name": raw_name,
-        "dir": raw_dir,
         "cd?": str(cd) if cd is not None else "",
         "sub?": "C" if file_info is not None and file_info.has_subtitle else "",
         "mosaic?": file_info.mosaic if file_info is not None and file_info.mosaic else "",
         "def?": file_info.definition if file_info is not None and file_info.definition else "",
+        "video_dir": _UNKNOWN,
+        "video_name": _UNKNOWN,
+        "video_relpath": _UNKNOWN,
+        "link_dir": _UNKNOWN,
+        "link_name": _UNKNOWN,
+        "raw_srt_name": _UNKNOWN,
     }
 
 
@@ -350,7 +360,11 @@ class TemplateContext:
         cd: int | None = None,
         actor_genders: Mapping[str, ActorGender] | None = None,
     ) -> TemplateContext:
-        return cls(variables=_build_variables(metadata, ext, source_path, file_info, cd, actor_genders))
+        built = _build_variables(metadata, ext, source_path, file_info, cd, actor_genders)
+        variables = cast(dict[str, str], {**built})
+        # {dir} 是 {raw_dir} 的别名, 不下发 schema.
+        variables["dir"] = built["raw_dir"]
+        return cls(variables=variables)
 
     def apply_video(self, dest: Path, library_root: Path) -> None:
         self.dest = dest
