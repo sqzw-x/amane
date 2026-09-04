@@ -19,9 +19,11 @@ import { useMemo, type CSSProperties, type ReactNode } from "react";
 import type { ParseKeys } from "i18next";
 import { useTranslation } from "react-i18next";
 import { mergeMetadataMutation } from "@/client/@tanstack/react-query.gen";
-import type { MetadataField, MetadataResponse } from "@/client/types.gen";
+import type { ActorGender, MetadataField, MetadataResponse } from "@/client/types.gen";
 import { FanartStrip } from "@/components/media/fanart-lightbox";
+import { GenderMark } from "@/components/media/gender-mark";
 import { useResettingState } from "@/hooks/use-resetting-state";
+import { ACTOR_GENDERS } from "@/lib/actors/browse";
 import { extractErrorMessage } from "@/lib/api-error";
 import { assertExhaustive, exhaustiveRecord, isOneOf } from "@/lib/exhaustive";
 import { isRecord } from "@/lib/utils";
@@ -76,6 +78,7 @@ const FIELD_LABEL_KEY = exhaustiveRecord<MetadataField>()({
 
 type TextField = (typeof TEXT_FIELDS)[number];
 type MediaField = (typeof MEDIA_FIELDS)[number];
+type FilmActorValue = { name: string; gender: ActorGender };
 
 function isTextField(field: string): field is TextField {
   return isOneOf(TEXT_FIELDS, field);
@@ -85,18 +88,61 @@ function isMediaField(field: string): field is MediaField {
   return isOneOf(MEDIA_FIELDS, field);
 }
 
-function formatValue(value: unknown): string {
-  if (value == null) return "—";
-  if (Array.isArray(value)) return value.map(String).join(", ");
+/** raw.actors 为 FilmActor (`name` + `gender`) 或展示名字符串; 缺省性别视为 unknown. */
+function asFilmActor(value: unknown): FilmActorValue | undefined {
+  if (typeof value === "string" && value.length > 0) {
+    return { name: value, gender: "unknown" };
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  if (!("name" in value) || typeof value.name !== "string" || value.name.length === 0) {
+    return undefined;
+  }
+  const gender =
+    "gender" in value && isOneOf(ACTOR_GENDERS, value.gender) ? value.gender : "unknown";
+  return { name: value.name, gender };
+}
+
+function formatItem(value: unknown): string {
+  const actor = asFilmActor(value);
+  if (actor) return actor.name;
+  if (value == null) return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 
-function sameValue(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    return a.length === b.length && a.every((v, i) => v === b[i]);
+function formatValue(value: unknown): string {
+  if (value == null) return "—";
+  if (Array.isArray(value)) {
+    const parts = value.map(formatItem).filter((s) => s.length > 0);
+    return parts.length > 0 ? parts.join(", ") : "—";
   }
+  return formatItem(value) || "—";
+}
+
+function filmActorsFromRaw(value: unknown): FilmActorValue[] {
+  if (!Array.isArray(value)) {
+    const one = asFilmActor(value);
+    return one ? [one] : [];
+  }
+  const out: FilmActorValue[] = [];
+  for (const item of value) {
+    const actor = asFilmActor(item);
+    if (actor) out.push(actor);
+  }
+  return out;
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((v, i) => sameValue(v, b[i]));
+  }
+  const fa = asFilmActor(a);
+  const fb = asFilmActor(b);
+  if (fa && fb) return fa.name === fb.name && fa.gender === fb.gender;
   return false;
 }
 
@@ -329,7 +375,14 @@ export function MergeDialog({ metadata, opened, onClose, onMerged }: MergeDialog
                     <ResultTextRow
                       key={field}
                       label={fieldLabel(field)}
-                      value={formatValue(value)}
+                      value={
+                        field === "actors" ? (
+                          <ActorNamesValue actors={filmActorsFromRaw(value)} />
+                        ) : (
+                          formatValue(value)
+                        )
+                      }
+                      tooltip={formatValue(value)}
                       source={src}
                       changed={changed}
                       onRevert={() => revert(field)}
@@ -402,9 +455,15 @@ export function MergeDialog({ metadata, opened, onClose, onMerged }: MergeDialog
                                 <Text size="xs" c="dimmed" w={100} style={{ flexShrink: 0 }}>
                                   {g.sources.join(", ")}
                                 </Text>
-                                <Text size="sm" lineClamp={2} style={{ flex: 1, minWidth: 0 }}>
-                                  {formatValue(g.value)}
-                                </Text>
+                                {field === "actors" ? (
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <ActorNamesValue actors={filmActorsFromRaw(g.value)} />
+                                  </div>
+                                ) : (
+                                  <Text size="sm" lineClamp={2} style={{ flex: 1, minWidth: 0 }}>
+                                    {formatValue(g.value)}
+                                  </Text>
+                                )}
                                 {active && (
                                   <Badge size="xs" color="brand">
                                     ✓
@@ -591,18 +650,21 @@ function Panel({
 function ResultTextRow({
   label,
   value,
+  tooltip,
   source,
   changed,
   onRevert,
   revertLabel,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
+  tooltip?: string;
   source: string | undefined;
   changed: boolean;
   onRevert: () => void;
   revertLabel: string;
 }) {
+  const tip = tooltip ?? (typeof value === "string" ? value : undefined);
   return (
     <Group
       gap="sm"
@@ -616,15 +678,39 @@ function ResultTextRow({
       <Text size="sm" fw={500} w={88} style={{ flexShrink: 0 }}>
         {label}
       </Text>
-      <Tooltip label={value} multiline maw={400} disabled={value.length < 40}>
-        <Text size="sm" lineClamp={2} style={{ flex: 1, minWidth: 0 }}>
-          {value}
-        </Text>
+      <Tooltip label={tip} multiline maw={400} disabled={tip == null || tip.length < 40}>
+        {typeof value === "string" ? (
+          <Text size="sm" lineClamp={2} style={{ flex: 1, minWidth: 0 }}>
+            {value}
+          </Text>
+        ) : (
+          <div style={{ flex: 1, minWidth: 0 }}>{value}</div>
+        )}
       </Tooltip>
       <Badge size="xs" variant={changed ? "filled" : "light"} style={{ flexShrink: 0 }}>
         {source ?? "—"}
       </Badge>
       {changed && <ActionRevert onClick={onRevert} label={revertLabel} />}
+    </Group>
+  );
+}
+
+function ActorNamesValue({ actors }: { actors: FilmActorValue[] }) {
+  if (actors.length === 0) {
+    return (
+      <Text size="sm" c="dimmed">
+        —
+      </Text>
+    );
+  }
+  return (
+    <Group gap={8} wrap="wrap">
+      {actors.map((actor, index) => (
+        <Group key={`${actor.name}:${actor.gender}:${index}`} gap={4} wrap="nowrap">
+          <Text size="sm">{actor.name}</Text>
+          <GenderMark gender={actor.gender} />
+        </Group>
+      ))}
     </Group>
   );
 }

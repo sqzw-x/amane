@@ -485,7 +485,13 @@ function TitleDetailPage() {
             <FieldBlock label={t("detail.fields.actors")}>
               <Group gap={6}>
                 {item.actors.map((a) => (
-                  <FacetBadge key={a} kind="actor" id={data.actor_ids?.[a]} name={a} />
+                  <FacetBadge
+                    key={a}
+                    kind="actor"
+                    id={data.actor_ids?.[a]}
+                    name={a}
+                    gender={data.actor_genders?.[a]}
+                  />
                 ))}
               </Group>
             </FieldBlock>

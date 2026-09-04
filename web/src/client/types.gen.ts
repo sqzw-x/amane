@@ -1746,6 +1746,12 @@ export type MetadataDetailResponse = {
         [key: string]: number;
     };
     /**
+     * Actor Genders
+     */
+    actor_genders?: {
+        [key: string]: ActorGender;
+    };
+    /**
      * Director Ids
      */
     director_ids?: {

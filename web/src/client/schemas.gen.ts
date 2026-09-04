@@ -3657,6 +3657,14 @@ export const MetadataDetailResponseSchema = {
             title: 'Actor Ids',
             default: {}
         },
+        actor_genders: {
+            additionalProperties: {
+                $ref: '#/components/schemas/ActorGender'
+            },
+            type: 'object',
+            title: 'Actor Genders',
+            default: {}
+        },
         director_ids: {
             additionalProperties: {
                 type: 'integer'

@@ -7,6 +7,7 @@ import pytest_asyncio
 from PIL import Image
 
 from amane.db.models import MediaFileStatus
+from amane.enums import ActorGender
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,7 +34,12 @@ class TestMetadataHttp:
         assert empty.json()["total"] == 0
         assert (await client.get("metadata?definition=bogus")).status_code == 422
 
-        meta = await repo.upsert_metadata(number="ABC-001", title="Test")
+        meta = await repo.upsert_metadata(
+            number="ABC-001",
+            title="Test",
+            actors=["Mei", "MaleA"],
+            actor_genders={"Mei": ActorGender.FEMALE},
+        )
         assert meta.id is not None
         media = await repo.create_media_file(library_id=1, path="/video/MIDV-001-C.mp4", number="ABC-001")
         assert media.id is not None
@@ -47,8 +53,11 @@ class TestMetadataHttp:
 
         detail = await client.get(f"metadata/{meta.id}")
         assert detail.status_code == 200
-        assert detail.json()["metadata"]["title"] == "Test"
-        assert len(detail.json()["files"]) == 1
+        body = detail.json()
+        assert body["metadata"]["title"] == "Test"
+        assert len(body["files"]) == 1
+        assert body["actor_genders"] == {"Mei": "female", "MaleA": "unknown"}
+        assert set(body["actor_ids"]) == {"Mei", "MaleA"}
         assert (await client.get("metadata/9999")).status_code == 404
 
         ok = await client.patch(f"metadata/{meta.id}", json={"release": "2020-01-15T00:00:00Z"})
