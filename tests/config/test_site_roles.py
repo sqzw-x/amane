@@ -42,6 +42,13 @@ class TestSiteCapabilitySchema:
         assert props.get("x-ordered") is True
         assert schema["properties"]["field_priority"].get("x-frozen-keys") is not True
 
+    def test_film_field_blacklist_value_items_enum(self):
+        schema = ScrapingConfig.model_json_schema()
+        props = schema["properties"]["field_blacklist"]["additionalProperties"]
+        assert props["items"]["enum"] == list(FILM_METADATA_SITES)
+        assert props.get("x-ordered") is not True
+        assert schema["properties"]["field_blacklist"].get("x-frozen-keys") is not True
+
 
 class TestSiteCapabilityValidation:
     def test_actor_profile_rejects_film_only_site(self):
@@ -65,6 +72,10 @@ class TestSiteCapabilityValidation:
     def test_film_field_priority_rejects_actor_site(self):
         with pytest.raises(ValidationError, match="field_priority"):
             ScrapingConfig(field_priority={MetadataField.TITLE: [SiteName.MINNANO]})
+
+    def test_film_field_blacklist_rejects_actor_site(self):
+        with pytest.raises(ValidationError, match="field_blacklist"):
+            ScrapingConfig(field_blacklist={MetadataField.TITLE: [SiteName.MINNANO]})
 
     def test_content_routes_rejects_actor_site(self):
         with pytest.raises(ValidationError, match="content_routes"):

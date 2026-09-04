@@ -58,7 +58,7 @@ RateLimiters → WebClient → HttpClient → CrawlerFactory
 
 `x-frozen-keys` 全量 dict (`site_config` / `content_routes` / `field_language`): `default_factory` 只在整段缺席时生效; 文件里已有该字段但缺 key 时, 校验按代码枚举补默认并丢弃未知 key. UI 不能加 key, 不补则新项无法配置. `GET /api/config` 始终返回全集.
 
-`content_routes` 与 `field_priority` 的值允许第三方 `namespace.local` 来源 ID; 实际可用性、来源能力和插件配置由 `PluginManager` 校验. 已禁用或当前未安装的第三方来源可以留在路由里, 刮削时跳过, 不阻断启动或配置写入. 插件自己的配置不放入 `site_config`, 而是放入 `plugins.<source_id>`, 并由插件提供的 Pydantic model 校验.
+`content_routes`、`field_priority` 与 `field_blacklist` 的值允许第三方 `namespace.local` 来源 ID; 实际可用性、来源能力和插件配置由 `PluginManager` 校验. 已禁用或当前未安装的第三方来源可以留在路由里, 刮削时跳过, 不阻断启动或配置写入. 插件自己的配置不放入 `site_config`, 而是放入 `plugins.<source_id>`, 并由插件提供的 Pydantic model 校验.
 
 Cold 配置同样加到 `manager.py::ColdSettings`, 无需 UI — 只通过 `AMANE_*` 环境变量设置.
 
@@ -72,13 +72,15 @@ Cold 配置同样加到 `manager.py::ColdSettings`, 无需 UI — 只通过 `AMA
 
 `field_priority` 是稀疏字段例外: 只写需要提前尝试的站. 编译时与该类型路由求交后前置, 其余路由站点保序回退 (`aggregate.compile_priority`). 不在该类型路由中的站无效, 也不额外发请求.
 
-外部影片来源的 descriptor 参与路由校验. 来源声明 `content_types` 时, 路由类型必须在声明集合内; 声明 `metadata_fields` 时, 字段优先级只能选择声明过的字段. 多语言来源通过 descriptor 的 `multi_language` 参与聚合节点展开.
+`field_blacklist` 是稀疏字段排除: 只写该字段不采用的站. 编译时从该字段链上剔除. 与 `field_priority` 同时列出同一站时以黑名单为准. 不在该类型路由中的站无效. 某站仅从部分字段排除时, 其它字段仍会请求该站.
+
+外部影片来源的 descriptor 参与路由校验. 来源声明 `content_types` 时, 路由类型必须在声明集合内; 声明 `metadata_fields` 时, 字段优先级与字段黑名单只能选择声明过的字段. 多语言来源通过 descriptor 的 `multi_language` 参与聚合节点展开.
 
 建图对编译后站点链的消费见 [task-system.md](task-system.md). 默认表取舍、各站覆盖见 [content-routes.md](content-routes.md).
 
 ## `actor_scraping` (Hot)
 
-演员刮削与影片 `scraping` 分 section: 影片管线不读演员站列表, 演员任务也不读 `field_priority`.
+演员刮削与影片 `scraping` 分 section: 影片管线不读演员站列表, 演员任务也不读 `field_priority` / `field_blacklist`.
 
 契约 (实现见 `ActorScrapeHandler` / `aggregate.actor`):
 

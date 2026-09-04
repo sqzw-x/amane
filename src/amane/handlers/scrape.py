@@ -99,7 +99,9 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             payload.content_type,
         )
 
-        field_priority = compile_priority(route, self._config.scraping.field_priority)
+        field_priority = compile_priority(
+            route, self._config.scraping.field_priority, self._config.scraping.field_blacklist
+        )
         field_language = self._config.scraping.field_language
 
         await self.report_progress(0, progress_total, "fetch")

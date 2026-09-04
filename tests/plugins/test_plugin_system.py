@@ -213,6 +213,15 @@ def test_external_source_id_rules(source_id: str, ok: bool) -> None:
             id="disabled-plugin-may-stay-in-field-priority",
         ),
         pytest.param(
+            {
+                "scraping": {"field_blacklist": {"title": ["acme.fake"]}},
+                "plugins": {"acme.fake": {"enabled": False}},
+            },
+            True,
+            None,
+            id="disabled-plugin-may-stay-in-field-blacklist",
+        ),
+        pytest.param(
             {"plugins": {"acme.fake": {"enabled": False, "config": {"unknown": True}}}},
             True,
             None,
@@ -276,6 +285,22 @@ def test_external_source_id_rules(source_id: str, ok: bool) -> None:
             "unavailable source",
             id="missing-plugin-in-field-priority-required",
         ),
+        pytest.param(
+            {
+                "scraping": {"field_blacklist": {"title": ["acme.gone"]}},
+            },
+            False,
+            None,
+            id="missing-plugin-in-field-blacklist-optional",
+        ),
+        pytest.param(
+            {
+                "scraping": {"field_blacklist": {"title": ["acme.gone"]}},
+            },
+            True,
+            "unavailable source",
+            id="missing-plugin-in-field-blacklist-required",
+        ),
     ],
 )
 def test_validate_hot_settings(payload: dict[str, object], require_available: bool, error: str | None) -> None:
@@ -329,6 +354,16 @@ def test_plugin_manager_augments_route_schema() -> None:
     enum = items.get("enum")
     assert isinstance(enum, list)
     assert "acme.fake" in enum
+    for field_name in ("field_priority", "field_blacklist"):
+        field = properties.get(field_name)
+        assert isinstance(field, dict)
+        additional = field.get("additionalProperties")
+        assert isinstance(additional, dict)
+        items = additional.get("items")
+        assert isinstance(items, dict)
+        field_enum = items.get("enum")
+        assert isinstance(field_enum, list)
+        assert "acme.fake" in field_enum
     properties = schema.get("properties")
     assert isinstance(properties, dict)
     plugins = properties.get("plugins")

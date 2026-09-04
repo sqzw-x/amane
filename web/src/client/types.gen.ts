@@ -2698,6 +2698,12 @@ export type ScrapingConfig = {
         [key in MetadataField]?: Array<'airav' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'xcity'>;
     };
     /**
+     * Field Blacklist
+     */
+    field_blacklist?: {
+        [key in MetadataField]?: Array<'airav' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'xcity'>;
+    };
+    /**
      * Field Language
      */
     field_language?: {

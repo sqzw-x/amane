@@ -269,6 +269,17 @@ class ScrapingConfig(BaseModel):
     )
     """只写需要提前尝试的站点. 与该类型 content_routes 求交后前置; 不在路由中的站无效."""
 
+    field_blacklist: dict[MetadataField, list[str]] = Field(
+        default_factory=dict,
+        json_schema_extra=kv(
+            {
+                "v-default": [],
+                **{f"v-{k}": v for k, v in site_list_value_schema(FILM_METADATA_SITES, ordered=False).items()},
+            }
+        ),
+    )
+    """该字段取值时跳过这些站点. 编译时从该字段链上剔除; 不在路由中的站无效."""
+
     field_language: dict[MetadataField, Language] = Field(
         default_factory=lambda: {f: Language.ZH_CN for f in MetadataField if f in LANG_METADATA_FIELD_SET},
         json_schema_extra={"x-frozen-keys": True},
@@ -300,14 +311,12 @@ class ScrapingConfig(BaseModel):
     @field_validator("field_priority")
     @classmethod
     def _film_field_priority(cls, v: dict[MetadataField, list[str]]) -> dict[MetadataField, list[str]]:
-        allowed = frozenset(FILM_METADATA_SITES)
-        out: dict[MetadataField, list[str]] = {}
-        for field, sites in v.items():
-            if not sites:
-                continue
-            assert_sites_allowed(sites, allowed, field=f"field_priority.{field}", allow_external=True)
-            out[field] = sites
-        return out
+        return _validate_film_field_map(v, prefix="field_priority")
+
+    @field_validator("field_blacklist")
+    @classmethod
+    def _film_field_blacklist(cls, v: dict[MetadataField, list[str]]) -> dict[MetadataField, list[str]]:
+        return _validate_film_field_map(v, prefix="field_blacklist")
 
     @field_validator("content_routes")
     @classmethod
@@ -355,13 +364,14 @@ class ScrapingConfig(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_priority(cls, data: Any) -> Any:
-        """default_priority 折叠进 content_routes 顺序; 去掉空 field_priority."""
+        """default_priority 折叠进 content_routes 顺序; 去掉空 field_priority / field_blacklist."""
         if not isinstance(data, dict):
             return data
 
-        fp = data.get("field_priority")
-        if isinstance(fp, dict):
-            data["field_priority"] = {k: v for k, v in fp.items() if v}
+        for key in ("field_priority", "field_blacklist"):
+            mapping = data.get(key)
+            if isinstance(mapping, dict):
+                data[key] = {k: v for k, v in mapping.items() if v}
 
         default_priority = data.pop("default_priority", None)
         if default_priority is None:
@@ -374,6 +384,17 @@ class ScrapingConfig(BaseModel):
 
         data["content_routes"] = {ct: _reorder_route(eligible, order) for ct, eligible in routes.items()}
         return data
+
+
+def _validate_film_field_map(v: dict[MetadataField, list[str]], *, prefix: str) -> dict[MetadataField, list[str]]:
+    allowed = frozenset(FILM_METADATA_SITES)
+    out: dict[MetadataField, list[str]] = {}
+    for field, sites in v.items():
+        if not sites:
+            continue
+        assert_sites_allowed(sites, allowed, field=f"{prefix}.{field}", allow_external=True)
+        out[field] = sites
+    return out
 
 
 def _site_value(site: Any) -> str:

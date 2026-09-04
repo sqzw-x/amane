@@ -222,8 +222,12 @@ class RecordingFactory:
         return {n: self._available[n] for n in names if n in self._available}
 
 
-def _config_with(routes, field_priority=None):
-    scraping = ScrapingConfig(content_routes=routes, field_priority=field_priority or {})
+def _config_with(routes, field_priority=None, field_blacklist=None):
+    scraping = ScrapingConfig(
+        content_routes=routes,
+        field_priority=field_priority or {},
+        field_blacklist=field_blacklist or {},
+    )
     return HotSettings(scraping=scraping)
 
 
@@ -278,6 +282,44 @@ class TestContentRoutesFiltering:
 
         assert list(factory.requested) == [SiteName.JAVDB]
         assert SiteName.IQQTV not in factory.requested
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_title_blacklist_uses_next_site(self, repo: Repository, resource_store):
+        """title 排除 javdb 后取 dmm; studio 仍可用 javdb."""
+
+        class TitledCrawler:
+            def __init__(self, title: str, studio: str):
+                self._title = title
+                self._studio = studio
+
+            async def fetch(self, query, options=None) -> MediaMetadata | None:
+                return MediaMetadata.model_validate(
+                    {"number": "MIDV-123", "title": self._title, "studio": self._studio}
+                )
+
+        factory = RecordingFactory(
+            {
+                "javdb": TitledCrawler("FromJavDB", "StudioJavDB"),
+                "dmm": TitledCrawler("FromDMM", "StudioDMM"),
+            }
+        )
+        config = _config_with(
+            {ContentType.CENSORED: [SiteName.JAVDB, SiteName.DMM]},
+            field_blacklist={MetadataField.TITLE: [SiteName.JAVDB]},
+        )
+        h = ScrapeHandler(repo=repo, factory=factory, resource_store=resource_store, pipeline_config=config)
+
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        result = await h.handle(
+            ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
+        )
+        assert result.success is True
+
+        metadata = await repo.get_metadata_by_number("MIDV-123")
+        assert metadata is not None
+        assert metadata.title == "FromDMM"
+        assert metadata.studio == "StudioJavDB"
+        assert set(factory.requested) == {SiteName.JAVDB, SiteName.DMM}
 
 
 # --- 翻译集成测试 ---

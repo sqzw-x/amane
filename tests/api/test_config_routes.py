@@ -38,7 +38,11 @@ class TestConfigHttp:
             json={
                 "network": {"proxy": "http://new"},
                 "worker": {"concurrency": 8},
-                "scraping": {"crop_poster": False, "field_priority": {"actors": ["javdb", "theporndb"]}},
+                "scraping": {
+                    "crop_poster": False,
+                    "field_priority": {"actors": ["javdb", "theporndb"]},
+                    "field_blacklist": {"title": ["javbus"]},
+                },
             },
         )
         assert patched.status_code == 200
@@ -46,6 +50,7 @@ class TestConfigHttp:
         assert body["worker"]["concurrency"] == 8
         assert body["scraping"]["crop_poster"] is False
         assert body["scraping"]["field_priority"]["actors"] == ["javdb", "theporndb"]
+        assert body["scraping"]["field_blacklist"]["title"] == ["javbus"]
 
         await client.patch("config", json={"network": {"proxy": "socks5://test"}})
         got = await client.get("config")

@@ -2042,6 +2042,7 @@ export const HotSettingsSchema = {
                     ]
                 },
                 field_priority: {},
+                field_blacklist: {},
                 field_language: {
                     actors: 'zh_cn',
                     directors: 'zh_cn',
@@ -5485,6 +5486,45 @@ export const ScrapingConfigSchema = {
             },
             type: 'object',
             title: 'Field Priority'
+        },
+        field_blacklist: {
+            additionalProperties: {
+                items: {
+                    type: 'string',
+                    enum: [
+                        'airav',
+                        'avsox',
+                        'dahlia',
+                        'dmm',
+                        'faleno',
+                        'fc2',
+                        'fc2club',
+                        'fc2ppvdb',
+                        'freejavbt',
+                        'getchu',
+                        'giga',
+                        'iqqtv',
+                        'jav321',
+                        'javbus',
+                        'javdb',
+                        'javlibrary',
+                        'kin8',
+                        'mgstage',
+                        'official',
+                        'prestige',
+                        'r18dev',
+                        'theporndb',
+                        'xcity'
+                    ]
+                },
+                type: 'array',
+                default: []
+            },
+            propertyNames: {
+                $ref: '#/components/schemas/MetadataField'
+            },
+            type: 'object',
+            title: 'Field Blacklist'
         },
         field_language: {
             additionalProperties: {

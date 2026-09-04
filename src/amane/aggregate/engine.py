@@ -68,29 +68,40 @@ type SourceKey = str
 
 
 def compile_priority(
-    route: Sequence[SourceName], prefer: Mapping[MetadataField, Sequence[SourceName]]
+    route: Sequence[SourceName],
+    prefer: Mapping[MetadataField, Sequence[SourceName]],
+    exclude: Mapping[MetadataField, Sequence[SourceName]] | None = None,
 ) -> defaultdict[MetadataField, list[str]]:
     """content_routes[type] 是资格真值: 链上只会出现 route 内的站.
 
-    prefer 与 route 求交后前置, 其余 route 站点保序接上. 未覆盖字段直接使用 route.
+    prefer 与 route 求交后前置, 其余 route 站点保序接上. exclude 从该字段链上剔除;
+    同一站同时出现在 prefer 与 exclude 时以 exclude 为准. 未覆盖字段直接使用 route.
     """
     route_list = [str(site) for site in route]
     route_set = set(route_list)
+    banned: dict[MetadataField, frozenset[str]] = {
+        field: frozenset(str(site) for site in sites) for field, sites in (exclude or {}).items() if sites
+    }
 
-    def chain_for(preferred: Sequence[str]) -> list[str]:
+    def chain_for(preferred: Sequence[str], skip: frozenset[str]) -> list[str]:
         seen: set[str] = set()
         out: list[str] = []
         for site in preferred:
-            if site in route_set and site not in seen:
+            if site in route_set and site not in seen and site not in skip:
                 seen.add(site)
                 out.append(site)
         for site in route_list:
-            if site not in seen:
+            if site not in seen and site not in skip:
                 seen.add(site)
                 out.append(site)
         return out
 
-    overrides = {field: chain_for([str(site) for site in sites]) for field, sites in prefer.items() if sites}
+    fields = set(prefer) | set(banned)
+    overrides = {
+        field: chain_for([str(site) for site in prefer.get(field, ())], banned.get(field, frozenset()))
+        for field in fields
+        if prefer.get(field) or field in banned
+    }
     return defaultdict(lambda: list(route_list), overrides)
 
 
