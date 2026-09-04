@@ -17,9 +17,9 @@
 | `{number}` | 番号 | `MIDV-123` |
 | `{title}` | 标题 | `Title Here` |
 | `{actor}` | 第一主演 | `Actor1` |
-| `{actors}` | 演员 (逗号分隔) | `Actor1, Actor2` |
+| `{actors}` | 演员 (逗号分隔) | `Actor1,Actor2` |
 | `{actress}` | 第一位女演员 | `Actress1` |
-| `{actresses}` | 女演员 (逗号分隔) | `Actress1, Actress2` |
+| `{actresses}` | 女演员 (逗号分隔) | `Actress1,Actress2` |
 | `{studio}` | 制作商 | `Studio Name` |
 | `{publisher}` | 发行商 | `Publisher Name` |
 | `{series}` | 系列 | `Series Name` |

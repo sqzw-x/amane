@@ -775,8 +775,8 @@ FIELD_CLIP_CASES: tuple[_FieldClipCase, ...] = (
     _FieldClipCase(
         "actors-joined-clips",
         "{actors}",
-        {"actors": f"X, {_JP_90}"},
-        f"X, {'あ' * 64}{PATH_FIELD_ELLIPSIS}",
+        {"actors": f"X,{_JP_90}"},
+        f"X,{_JP_65}{PATH_FIELD_ELLIPSIS}",
     ),
     _FieldClipCase(
         "actress-clips",
@@ -787,8 +787,8 @@ FIELD_CLIP_CASES: tuple[_FieldClipCase, ...] = (
     _FieldClipCase(
         "actresses-joined-clips",
         "{actresses}",
-        {"actresses": f"X, {_JP_90}"},
-        f"X, {'あ' * 64}{PATH_FIELD_ELLIPSIS}",
+        {"actresses": f"X,{_JP_90}"},
+        f"X,{_JP_65}{PATH_FIELD_ELLIPSIS}",
     ),
     _FieldClipCase(
         "number-not-clipped",
@@ -877,7 +877,7 @@ def test_actress_names(case: _ActressCase) -> None:
         (["F", "M"], {"F": ActorGender.FEMALE, "M": ActorGender.MALE}, "F", "F"),
         (["M"], {"M": ActorGender.MALE}, "Unknown", "Unknown"),
         ([], None, "Unknown", "Unknown"),
-        (["A", "B"], None, "A", "A, B"),
+        (["A", "B"], None, "A", "A,B"),
     ],
     ids=["drop-male", "all-male", "empty", "unknown-kept"],
 )
