@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..config import HotSettings, WatermarkConfig
-from ..enums import DownloadableResource, LinkMode
+from ..enums import ActorGender, DownloadableResource, LinkMode
 from ..library import MEDIA_EXTENSIONS, TRASH_DIRNAME, LibraryFileKind, LibraryScan
 from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
 from ..media import write_nfo as write_nfo_file
@@ -62,6 +62,7 @@ async def execute_file_operations(
     file_info: FileInfo | None = None,
     safe_dirs: Sequence[Path] | None = (),
     watermark_dir: Path | None = None,
+    actor_genders: dict[str, ActorGender] | None = None,
 ) -> FileOperationsResult:
     source_path = Path(media_file.path)
     if not await path_exists(source_path):
@@ -111,6 +112,7 @@ async def execute_file_operations(
                     source_path=source_path,
                     file_info=info,
                     link=paths.link,
+                    actor_genders=actor_genders,
                 )
             except ValueError as e:
                 return FileOperationsResult(success=False, dest=org_result.dest, error=str(e))
@@ -135,6 +137,7 @@ async def execute_file_operations(
             safe_dirs=safe_dirs,
             link_dir=paths.link.parent if paths.link is not None else None,
             link_name=paths.link.stem if paths.link is not None else None,
+            actor_genders=actor_genders,
         )
 
     if org_result.success:
@@ -172,8 +175,15 @@ async def apply_file_operations(
     # 渲染路径后执行落盘.
     ext = Path(media_file.path).suffix.lstrip(".")
     file_info = parse_file_info(media_file.path)
+    actor_genders = {a.name: a.gender for a in await repo.get_actors_by_names(metadata.actors)}
     paths = resolve_paths(
-        library, metadata, ext=ext, file_info=file_info, source_path=Path(media_file.path), safe_dirs=safe_dirs
+        library,
+        metadata,
+        ext=ext,
+        file_info=file_info,
+        source_path=Path(media_file.path),
+        safe_dirs=safe_dirs,
+        actor_genders=actor_genders,
     )
     return await execute_file_operations(
         media_file=media_file,
@@ -190,6 +200,7 @@ async def apply_file_operations(
         file_info=file_info,
         safe_dirs=safe_dirs,
         watermark_dir=watermark_dir,
+        actor_genders=actor_genders,
     )
 
 

@@ -12,7 +12,7 @@ from typing import NamedTuple
 import pytest
 
 from amane.db.models import Library, Metadata
-from amane.enums import LinkMode
+from amane.enums import ActorGender, LinkMode
 from amane.organize import (
     VIDEO_TEMPLATE_DEFAULT,
     normalize_link_template,
@@ -21,7 +21,13 @@ from amane.organize import (
     resolve_subtitle_path,
     validate_path_template,
 )
-from amane.organize.template import PATH_FIELD_ELLIPSIS, PATH_FIELD_MAX_BYTES, PathEngine, TemplateContext
+from amane.organize.template import (
+    PATH_FIELD_ELLIPSIS,
+    PATH_FIELD_MAX_BYTES,
+    PathEngine,
+    TemplateContext,
+    actress_names,
+)
 from amane.parsing import parse_file_info
 
 
@@ -769,8 +775,20 @@ FIELD_CLIP_CASES: tuple[_FieldClipCase, ...] = (
     _FieldClipCase(
         "actors-joined-clips",
         "{actors}",
-        {"actors": f"X, {_JP_90}"},
-        f"X, {'あ' * 64}{PATH_FIELD_ELLIPSIS}",
+        {"actors": f"X,{_JP_90}"},
+        f"X,{_JP_65}{PATH_FIELD_ELLIPSIS}",
+    ),
+    _FieldClipCase(
+        "actress-clips",
+        "{actress}",
+        {"actress": _JP_90},
+        _CLIPPED_JP,
+    ),
+    _FieldClipCase(
+        "actresses-joined-clips",
+        "{actresses}",
+        {"actresses": f"X,{_JP_90}"},
+        f"X,{_JP_65}{PATH_FIELD_ELLIPSIS}",
     ),
     _FieldClipCase(
         "number-not-clipped",
@@ -824,3 +842,62 @@ def test_resolve_paths_clips_long_title(media: Path) -> None:
     assert result.video.name == f"ABC-123-{_CLIPPED_JP}-CD2.mp4"
     assert len(result.video.parent.name.encode("utf-8")) <= PATH_FIELD_MAX_BYTES
     assert len(result.video.name.encode("utf-8")) <= 255
+
+
+class _ActressCase(NamedTuple):
+    desc: str
+    actors: list[str]
+    genders: dict[str, ActorGender] | None
+    expect: list[str]
+
+
+ACTRESS_CASES: tuple[_ActressCase, ...] = (
+    _ActressCase("空名单", [], None, []),
+    _ActressCase("无性别表视为未识别", ["A", "B"], None, ["A", "B"]),
+    _ActressCase("空性别表同样保留", ["A"], {}, ["A"]),
+    _ActressCase("排除明确男性", ["F", "M", "U"], {"F": ActorGender.FEMALE, "M": ActorGender.MALE}, ["F", "U"]),
+    _ActressCase("全是男性", ["M1", "M2"], {"M1": ActorGender.MALE, "M2": ActorGender.MALE}, []),
+    _ActressCase(
+        "保序",
+        ["M", "F1", "F2"],
+        {"M": ActorGender.MALE, "F1": ActorGender.FEMALE, "F2": ActorGender.FEMALE},
+        ["F1", "F2"],
+    ),
+)
+
+
+@pytest.mark.parametrize("case", ACTRESS_CASES, ids=lambda c: c.desc)
+def test_actress_names(case: _ActressCase) -> None:
+    assert actress_names(case.actors, case.genders) == case.expect
+
+
+@pytest.mark.parametrize(
+    ("actors", "genders", "actress", "actresses"),
+    [
+        (["F", "M"], {"F": ActorGender.FEMALE, "M": ActorGender.MALE}, "F", "F"),
+        (["M"], {"M": ActorGender.MALE}, "Unknown", "Unknown"),
+        ([], None, "Unknown", "Unknown"),
+        (["A", "B"], None, "A", "A,B"),
+    ],
+    ids=["drop-male", "all-male", "empty", "unknown-kept"],
+)
+def test_from_metadata_actress_placeholders(
+    actors: list[str],
+    genders: dict[str, ActorGender] | None,
+    actress: str,
+    actresses: str,
+) -> None:
+    ctx = TemplateContext.from_metadata(_meta(actors=actors), actor_genders=genders)
+    assert ctx.variables["actress"] == actress
+    assert ctx.variables["actresses"] == actresses
+
+
+def test_resolve_paths_uses_actress_placeholder(media: Path) -> None:
+    wp = Library(name="t", path=str(media), video_template="{actresses}/{number}.{ext}")
+    result = resolve_paths(
+        wp,
+        _meta(actors=["F", "M"]),
+        ext="mp4",
+        actor_genders={"F": ActorGender.FEMALE, "M": ActorGender.MALE},
+    )
+    assert result.video == media / "F" / "ABC-123.mp4"

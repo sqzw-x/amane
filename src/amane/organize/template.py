@@ -1,14 +1,15 @@
-"""路径模板折叠空段并约束落点. 填值时截断 title / actor / actors. STRM 正文不折叠、不截断 (保留 `https://`), 不检查 safe_dirs."""
+"""路径模板折叠空段并约束落点. 填值时截断 title / actor / actors / actress / actresses. STRM 正文不折叠、不截断 (保留 `https://`), 不检查 safe_dirs."""
 
 from __future__ import annotations
 
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict, cast
 
+from ..enums import ActorGender
 from ..parsing.file_info import DEFINITION_VALUES, MOSAIC_VALUES, FileInfo
 from ..utils.path import is_any_descendant, is_descendant
 
@@ -20,33 +21,40 @@ _DRIVE = re.compile(r"^[A-Za-z]:")
 _DRIVE_ONLY = re.compile(r"^[A-Za-z]:$")
 PATH_FIELD_MAX_BYTES = 200
 PATH_FIELD_ELLIPSIS = "…"
-_CLIP_KEYS = frozenset({"title", "actor", "actors"})
+_CLIP_KEYS = frozenset({"title", "actor", "actors", "actress", "actresses"})
 _ELLIPSIS_BYTES = len(PATH_FIELD_ELLIPSIS.encode("utf-8"))
 
-PLACEHOLDERS: tuple[str, ...] = (
-    "number",
-    "title",
-    "actor",
-    "actors",
-    "studio",
-    "publisher",
-    "series",
-    "year",
-    "release",
-    "ext",
-    "raw_dir",
-    "raw_name",
-    "cd?",
-    "sub?",
-    "mosaic?",
-    "def?",
-    "video_dir",
-    "video_name",
-    "video_relpath",
-    "link_dir",
-    "link_name",
-    "raw_srt_name",
+# cd? / sub? / mosaic? / def? 不是合法标识符, 只能用函数式 TypedDict.
+TemplateVariables = TypedDict(
+    "TemplateVariables",
+    {
+        "number": str,
+        "title": str,
+        "actor": str,
+        "actors": str,
+        "actress": str,
+        "actresses": str,
+        "studio": str,
+        "publisher": str,
+        "series": str,
+        "year": str,
+        "release": str,
+        "ext": str,
+        "raw_dir": str,
+        "raw_name": str,
+        "cd?": str,
+        "sub?": str,
+        "mosaic?": str,
+        "def?": str,
+        "video_dir": str,
+        "video_name": str,
+        "video_relpath": str,
+        "link_dir": str,
+        "link_name": str,
+        "raw_srt_name": str,
+    },
 )
+PLACEHOLDERS: tuple[str, ...] = tuple(TemplateVariables.__annotations__)
 
 # 有闭合取值的占位符: 映射表的 key 必须是规范值, 否则写入 422. 未列入的占位符 (如 cd?) 不校验 key.
 PLACEHOLDER_MAP_KEYS: dict[str, tuple[str, ...]] = {
@@ -274,15 +282,27 @@ def _video_relpath_or_empty(dest: Path, library_root: Path) -> str:
         return ""
 
 
+def actress_names(actors: Sequence[str], genders: Mapping[str, ActorGender] | None = None) -> list[str]:
+    """按 ``Metadata.actors`` 顺序排除明确 ``male``; 未入表或 ``unknown`` 保留."""
+    if not actors:
+        return []
+    if genders is None:
+        return list(actors)
+    return [name for name in actors if genders.get(name, ActorGender.UNKNOWN) is not ActorGender.MALE]
+
+
 def _build_variables(
     metadata: Metadata,
     ext: str = "",
     source_path: Path | None = None,
     file_info: FileInfo | None = None,
     cd: int | None = None,
-) -> dict[str, str]:
+    actor_genders: Mapping[str, ActorGender] | None = None,
+) -> TemplateVariables:
     year = metadata.release[:4] if metadata.release and len(metadata.release) >= 4 else None
     actor = metadata.actors[0] if metadata.actors else None
+    actresses = actress_names(metadata.actors, actor_genders)
+    actress = actresses[0] if actresses else None
     source_dir = source_path.parent if source_path else None
     raw_dir = source_dir.name if source_dir else ""
     raw_name = source_path.stem if source_path else ""
@@ -293,7 +313,9 @@ def _build_variables(
         "number": metadata.number,
         "title": _safe(metadata.title) or metadata.number,
         "actor": _safe(actor) or _UNKNOWN,
-        "actors": ", ".join(metadata.actors) if metadata.actors else _UNKNOWN,
+        "actors": ",".join(metadata.actors) if metadata.actors else _UNKNOWN,
+        "actress": _safe(actress) or _UNKNOWN,
+        "actresses": ",".join(actresses) if actresses else _UNKNOWN,
         "studio": _safe(metadata.studio) or _UNKNOWN,
         "publisher": _safe(metadata.publisher) or _UNKNOWN,
         "series": _safe(metadata.series) or _UNKNOWN,
@@ -302,11 +324,16 @@ def _build_variables(
         "ext": ext,
         "raw_dir": raw_dir,
         "raw_name": raw_name,
-        "dir": raw_dir,
         "cd?": str(cd) if cd is not None else "",
         "sub?": "C" if file_info is not None and file_info.has_subtitle else "",
         "mosaic?": file_info.mosaic if file_info is not None and file_info.mosaic else "",
         "def?": file_info.definition if file_info is not None and file_info.definition else "",
+        "video_dir": _UNKNOWN,
+        "video_name": _UNKNOWN,
+        "video_relpath": _UNKNOWN,
+        "link_dir": _UNKNOWN,
+        "link_name": _UNKNOWN,
+        "raw_srt_name": _UNKNOWN,
     }
 
 
@@ -331,8 +358,13 @@ class TemplateContext:
         source_path: Path | None = None,
         file_info: FileInfo | None = None,
         cd: int | None = None,
+        actor_genders: Mapping[str, ActorGender] | None = None,
     ) -> TemplateContext:
-        return cls(variables=_build_variables(metadata, ext, source_path, file_info, cd))
+        built = _build_variables(metadata, ext, source_path, file_info, cd, actor_genders)
+        variables = cast(dict[str, str], {**built})
+        # {dir} 是 {raw_dir} 的别名, 不下发 schema.
+        variables["dir"] = built["raw_dir"]
+        return cls(variables=variables)
 
     def apply_video(self, dest: Path, library_root: Path) -> None:
         self.dest = dest
@@ -405,7 +437,7 @@ class TemplateEngine:
 
 
 class PathEngine(TemplateEngine):
-    """路径输出: 填值时截断 title / actor / actors, 折叠空段, 再按库根 / safe_dirs 落成字面绝对路径."""
+    """路径输出: 填值时截断 title / actor / actors / actress / actresses, 折叠空段, 再按库根 / safe_dirs 落成字面绝对路径."""
 
     def fill(self, ctx: TemplateContext) -> str:
         variables = {name: _clip_field(value) if name in _CLIP_KEYS else value for name, value in ctx.variables.items()}
@@ -444,7 +476,7 @@ class PathEngine(TemplateEngine):
 
 
 class StrmEngine(TemplateEngine):
-    """STRM 正文: 不折叠空段, 不截断 title / actor / actors. 引用 `{video_relpath}` 时 dest 必须在库根下."""
+    """STRM 正文: 不折叠空段, 不截断 title / actor / actors / actress / actresses. 引用 `{video_relpath}` 时 dest 必须在库根下."""
 
     def clean(self, filled: str, ctx: TemplateContext) -> str:
         return filled if filled.endswith("\n") else f"{filled}\n"

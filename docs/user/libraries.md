@@ -17,7 +17,9 @@
 | `{number}` | 番号 | `MIDV-123` |
 | `{title}` | 标题 | `Title Here` |
 | `{actor}` | 第一主演 | `Actor1` |
-| `{actors}` | 演员 (逗号分隔) | `Actor1, Actor2` |
+| `{actors}` | 演员 (逗号分隔) | `Actor1,Actor2` |
+| `{actress}` | 第一位女演员 | `Actress1` |
+| `{actresses}` | 女演员 (逗号分隔) | `Actress1,Actress2` |
 | `{studio}` | 制作商 | `Studio Name` |
 | `{publisher}` | 发行商 | `Publisher Name` |
 | `{series}` | 系列 | `Series Name` |
@@ -36,6 +38,8 @@
 | `{link_dir}` | 链接文件所在目录 | — |
 | `{link_name}` | 整理后链接文件名, 不含扩展名 | — |
 | `{raw_srt_name}` | 字幕原文件名, 不含扩展名 | `foo.zh.srt` → `foo.zh` |
+
+`{actress}` / `{actresses}` 排除已标为男性的演员; 女性与尚未识别性别的名字保留. 名单为空时输出 `Unknown`.
 
 未列出范围的占位符在各模板与 STRM 内容模板中均可使用. 下表所列占位符有范围限制; 写在不可用的模板中会得到 `Unknown`.
 

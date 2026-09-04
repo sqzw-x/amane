@@ -1,10 +1,10 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
 
-from ..enums import MoveMode
+from ..enums import ActorGender, MoveMode
 from ..parsing import FileInfo, parse_file_info
 from ..utils.threads import in_thread
 from .file import execute_organize
@@ -55,6 +55,7 @@ def place_subtitles(
     safe_dirs: Sequence[Path] | None = (),
     link_dir: Path | None = None,
     link_name: str | None = None,
+    actor_genders: Mapping[str, ActorGender] | None = None,
 ) -> None:
     """失败只记日志, 不抛异常."""
     for sub in sources:
@@ -70,6 +71,7 @@ def place_subtitles(
             source_path=video_source,
             file_info=file_info,
             safe_dirs=safe_dirs,
+            actor_genders=actor_genders,
         )
         result = execute_organize.sync(
             source=sub,

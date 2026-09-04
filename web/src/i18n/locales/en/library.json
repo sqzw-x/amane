@@ -145,6 +145,8 @@
       "title": "Title",
       "actor": "First actor",
       "actors": "All actors, comma-separated",
+      "actress": "First actress",
+      "actresses": "Actresses, comma-separated",
       "studio": "Studio",
       "publisher": "Publisher",
       "series": "Series",
