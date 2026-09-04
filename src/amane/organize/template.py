@@ -1,4 +1,4 @@
-"""路径模板折叠空段并约束落点. STRM 正文不折叠 (保留 `https://`), 不检查 safe_dirs."""
+"""路径模板折叠空段并约束落点. 填值时截断 title / actor / actors. STRM 正文不折叠、不截断 (保留 `https://`), 不检查 safe_dirs."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 _UNKNOWN = "Unknown"
 _DRIVE = re.compile(r"^[A-Za-z]:")
 _DRIVE_ONLY = re.compile(r"^[A-Za-z]:$")
+PATH_FIELD_MAX_BYTES = 200
+_CLIP_KEYS = frozenset({"title", "actor", "actors"})
 
 PLACEHOLDERS: tuple[str, ...] = (
     "number",
@@ -213,6 +215,20 @@ def _nodes_use_placeholder(nodes: Sequence[_Node], name: str) -> bool:
     return False
 
 
+def _clip_field(value: str) -> str:
+    """按 UTF-8 字节截断, 不得切开多字节字符. 为番号、分集标记与扩展名留出余量."""
+    data = value.encode("utf-8")
+    if len(data) <= PATH_FIELD_MAX_BYTES:
+        return value
+    clipped = data[:PATH_FIELD_MAX_BYTES]
+    while clipped:
+        try:
+            return clipped.decode("utf-8")
+        except UnicodeDecodeError:
+            clipped = clipped[:-1]
+    return ""
+
+
 def _safe(value: str | None) -> str | None:
     if not value:
         return None
@@ -384,7 +400,11 @@ class TemplateEngine:
 
 
 class PathEngine(TemplateEngine):
-    """路径输出: 折叠空段, 再按库根 / safe_dirs 落成字面绝对路径."""
+    """路径输出: 填值时截断 title / actor / actors, 折叠空段, 再按库根 / safe_dirs 落成字面绝对路径."""
+
+    def fill(self, ctx: TemplateContext) -> str:
+        variables = {name: _clip_field(value) if name in _CLIP_KEYS else value for name, value in ctx.variables.items()}
+        return _render_nodes(self.tree, variables)
 
     def clean(self, filled: str, ctx: TemplateContext) -> str:
         return _collapse_empty_segments(filled, keep_absolute=_template_keeps_absolute(self.source, ctx.variables))
@@ -419,7 +439,7 @@ class PathEngine(TemplateEngine):
 
 
 class StrmEngine(TemplateEngine):
-    """STRM 正文: 不折叠空段. 引用 `{video_relpath}` 时 dest 必须在库根下."""
+    """STRM 正文: 不折叠空段, 不截断 title / actor / actors. 引用 `{video_relpath}` 时 dest 必须在库根下."""
 
     def clean(self, filled: str, ctx: TemplateContext) -> str:
         return filled if filled.endswith("\n") else f"{filled}\n"
