@@ -637,6 +637,49 @@ async def test_organize_empty_subtitle_extensions_leaves_subs(
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_organize_pairs_flat_subtitles_by_number(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """平铺目录: 字幕按番号配对, 不会全部进入第一部."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    first = src_dir / "ABC-123.mp4"
+    second = src_dir / "DEF-456.mp4"
+    first.write_bytes(b"a")
+    second.write_bytes(b"b")
+    (src_dir / "ABC-123.srt").write_text("first")
+    (src_dir / "DEF-456.srt").write_text("second")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta_a = await repo.upsert_metadata(number="ABC-123", studio="Studio")
+    meta_b = await repo.upsert_metadata(number="DEF-456", studio="Studio")
+    assert meta_a.id is not None and meta_b.id is not None
+    for src, number, meta_id in (
+        (first, "ABC-123", meta_a.id),
+        (second, "DEF-456", meta_b.id),
+    ):
+        mf = await repo.create_media_file(
+            lib.id, path=str(src), number=number, status=MediaFileStatus.SCRAPED, metadata_id=meta_id
+        )
+        assert mf.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.failed == 0
+
+    dest_a = lib_root / "Studio" / "ABC-123"
+    dest_b = lib_root / "Studio" / "DEF-456"
+    assert (dest_a / "ABC-123.srt").read_text() == "first"
+    assert (dest_b / "DEF-456.srt").read_text() == "second"
+    assert not (dest_a / "DEF-456.srt").exists()
+    assert not (dest_b / "ABC-123.srt").exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_organize_writes_strm_and_nfo_next_to_link(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
