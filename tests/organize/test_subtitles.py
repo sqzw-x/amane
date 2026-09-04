@@ -24,6 +24,20 @@ class _Case(NamedTuple):
     expected: tuple[str, ...]
 
 
+_NUMBER_CD_FILES: tuple[str, ...] = (
+    "ABC-123-CD1.mp4",
+    "ABC-123-CD2.mp4",
+    "DEF-456-CD1.mp4",
+    "DEF-456-CD2.mp4",
+    "ABC-123-CD1.chs.srt",
+    "ABC-123-CD1.en.srt",
+    "ABC-123-CD2.chs.srt",
+    "ABC-123-CD2.en.srt",
+    "DEF-456-CD1.srt",
+    "DEF-456-CD2.ass",
+)
+
+
 CASES: tuple[_Case, ...] = (
     _Case(
         "single-video-keeps-all-names",
@@ -150,6 +164,54 @@ CASES: tuple[_Case, ...] = (
         "MIDV-123.mp4",
         DEFAULT_SUBTITLE_EXTENSIONS,
         ("012.ass",),
+    ),
+    _Case(
+        "number1-cd1-takes-own-langs-not-other-number-or-cd",
+        _NUMBER_CD_FILES,
+        "ABC-123-CD1.mp4",
+        DEFAULT_SUBTITLE_EXTENSIONS,
+        ("ABC-123-CD1.chs.srt", "ABC-123-CD1.en.srt"),
+    ),
+    _Case(
+        "number1-cd2-takes-own-langs-not-cd1",
+        _NUMBER_CD_FILES,
+        "ABC-123-CD2.mp4",
+        DEFAULT_SUBTITLE_EXTENSIONS,
+        ("ABC-123-CD2.chs.srt", "ABC-123-CD2.en.srt"),
+    ),
+    _Case(
+        "number2-cd1-takes-own-not-number1",
+        _NUMBER_CD_FILES,
+        "DEF-456-CD1.mp4",
+        DEFAULT_SUBTITLE_EXTENSIONS,
+        ("DEF-456-CD1.srt",),
+    ),
+    _Case(
+        "number2-cd2-takes-own-not-number1",
+        _NUMBER_CD_FILES,
+        "DEF-456-CD2.mp4",
+        DEFAULT_SUBTITLE_EXTENSIONS,
+        ("DEF-456-CD2.ass",),
+    ),
+    _Case(
+        "same-number-unmarked-follows-cd1-not-cd2-or-other-number",
+        (
+            *_NUMBER_CD_FILES,
+            "ABC-123.srt",
+        ),
+        "ABC-123-CD1.mp4",
+        DEFAULT_SUBTITLE_EXTENSIONS,
+        ("ABC-123-CD1.chs.srt", "ABC-123-CD1.en.srt", "ABC-123.srt"),
+    ),
+    _Case(
+        "same-number-unmarked-rejected-by-cd2",
+        (
+            *_NUMBER_CD_FILES,
+            "ABC-123.srt",
+        ),
+        "ABC-123-CD2.mp4",
+        DEFAULT_SUBTITLE_EXTENSIONS,
+        ("ABC-123-CD2.chs.srt", "ABC-123-CD2.en.srt"),
     ),
 )
 
