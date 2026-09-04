@@ -28,7 +28,11 @@ def get_tool_dir(data_dir: Path) -> Path:
 def get_binary_path(tool: SrTool, data_dir: Path) -> Path:
     """返回指定工具的二进制存储路径."""
     meta = get_tool_meta(tool)
-    return get_tool_dir(data_dir) / tool / meta.binary_name
+    name = meta.binary_name
+    # Windows 官方包是 .exe; CreateProcess 在路径含目录时不会补后缀.
+    if sys.platform == "win32":
+        name = f"{name}.exe"
+    return get_tool_dir(data_dir) / tool / name
 
 
 def is_binary_available(tool: SrTool, data_dir: Path) -> bool:
@@ -36,8 +40,7 @@ def is_binary_available(tool: SrTool, data_dir: Path) -> bool:
     binary_path = get_binary_path(tool, data_dir)
     if not binary_path.is_file():
         return False
-    # Windows 无 POSIX 执行位; os.access 的可执行判断对非 .exe/.bat 等宿主类型不适用,
-    # 文件已存在即视作就绪 (binary_name 也刻意不含平台扩展名).
+    # Windows 无 POSIX 执行位; 文件存在即视作就绪.
     if sys.platform == "win32":
         return True
     return os.access(binary_path, os.X_OK)
