@@ -134,7 +134,7 @@
       },
       "field_blacklist": {
         "label": "字段黑名单",
-        "description": "指定字段不采用的站点. 其余字段仍按路由与优先级使用这些站点",
+        "description": "指定字段不采用的站点",
         "options": {
           "title": "标题",
           "actors": "演员",

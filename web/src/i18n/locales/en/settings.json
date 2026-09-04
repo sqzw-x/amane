@@ -134,7 +134,7 @@
       },
       "field_blacklist": {
         "label": "Field Blacklist",
-        "description": "Sites a field must not use. Other fields still follow the route and field priority.",
+        "description": "Sites a field must not use.",
         "options": {
           "title": "Title",
           "actors": "Actors",
