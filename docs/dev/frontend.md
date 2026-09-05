@@ -41,6 +41,8 @@ Tabs 同时挂载全部条目, 叶子 `id`/`htmlFor` 必须经由 `useFieldDomId
 
 表单空值编码经由 `schema-form/encode.ts` (`encodeFormBody` / `encodeEmptyValue`), 按 **Create / 列 schema** 判空: 可空 string 空串 → `null`, 非空 string 空串 → `""`, 非空 array 空 → `[]`. 不允许对着 PATCH partial schema 编码 — `create_partial_model` 会把非空列标成 `T|null`, 空 glob 会被编成 JSON `null`. 手写 Library / Feed 表单经同一编码器出 body (`libraryFormToCreateBody` / `libraryFormToUpdateBody` 分别用 Create 与 Response schema).
 
+可增减 key 的 dict (无 `x-frozen-keys`): 值为空数组 / 空对象 / `null` 的条目与缺席等价, 编码时删除, 条目控件把值清空时也删除该 key. 新增 key 的空默认值仍留在表单上供继续填写, 在写入值之前不构成变更. `x-frozen-keys` 必须保留全部 key, 空列表原样提交 (`content_routes` 的空列表是关停该类型; 缺席会被校验补回默认路由). dirty 与 PATCH 都比较编码后的值.
+
 `/plugins` 通过 `/api/plugins` 取得插件自带 JSON Schema, 单独渲染每个来源配置; 插件配置不进入核心 HotSettings 表单. 安装用 `PathPicker` 选服务器目录/zip, 或上传本机 zip; 重新扫描 / 卸载经由同一资源的 POST/DELETE, 成功后同时失效插件列表与 config schema (路由 enum 会变).
 
 任务 / 定时提交用 `DiscriminatedSchemaForm`: 外部选 `type` → schema variant → 去掉 const `type` 后交给 `create` 模式. 短枚举共用 `EnumToggle` (`components/common/enum-toggle.tsx`): 项间分隔线 + 滑动指示; `fullWidth` 占据整行 (任务/定时 type、cron 模式、订阅内容类型), 默认按文案宽度 (Schema 表单短枚举、库放置方式/自动化、间隔单位). 片库 grid/list 等页面 view 切换仍用 SegmentedControl. 定时的 cron 用 `CronPicker`: 可视化覆盖间隔/每天/每周/每月, 无法往返的表达式回落「高级」手写; 产出 5-field, 与后端 croniter 一致. 每天/每周/每月的时刻按浏览器本地墙钟填写, 写出时换算为 UTC 字段 (星期与日期随跨日平移); 间隔不换算; 「高级」手写按 UTC.

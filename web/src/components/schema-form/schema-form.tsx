@@ -213,14 +213,16 @@ export function SchemaForm({
         onSave(encodeFormBody(schema, { ...sectionVal }));
         return;
       }
+      const encoded = encodeFormBody(schema, { ...sectionVal });
+      const baseline = encodeFormBody(schema, { ...values });
       const patch: Record<string, unknown> = {};
-      for (const [field, val] of Object.entries(sectionVal)) {
-        if (!deepEqual(val, values[field] ?? null)) {
+      for (const [field, val] of Object.entries(encoded)) {
+        if (!deepEqual(val, baseline[field])) {
           patch[field] = val;
         }
       }
       if (Object.keys(patch).length > 0) {
-        onSave(encodeFormBody(schema, patch));
+        onSave(patch);
       }
     },
   });
@@ -238,7 +240,10 @@ export function SchemaForm({
       selector={(s) => {
         const current = isRecord(s.values) && isRecord(s.values[prefix]) ? s.values[prefix] : {};
         return {
-          dirty: !deepEqual(current, values),
+          dirty: !deepEqual(
+            encodeFormBody(schema, { ...current }),
+            encodeFormBody(schema, { ...values }),
+          ),
           isValid: s.isValid,
         };
       }}

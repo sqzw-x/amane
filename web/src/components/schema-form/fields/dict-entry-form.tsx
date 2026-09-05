@@ -1,6 +1,7 @@
 import type { AnyFieldApi } from "@tanstack/react-form";
 import { createContext, useContext, useId, type ReactNode } from "react";
 import { isRecord } from "@/lib/utils";
+import { isEmptyDictValue } from "../encode";
 import type { SchemaFormInstance } from "../schema";
 
 /**
@@ -17,6 +18,7 @@ const DictEntryContext = createContext<{
   parentField: AnyFieldApi;
   entryKey: string;
   bindEntry: boolean;
+  pruneEmpty: boolean;
   scopeId: string;
 } | null>(null);
 
@@ -24,16 +26,19 @@ export function DictEntryScope({
   parentField,
   entryKey,
   bindEntry,
+  pruneEmpty = false,
   children,
 }: {
   parentField: AnyFieldApi;
   entryKey: string;
   bindEntry: boolean;
+  /** 可增减 key 时, 条目值被清空则删除该 key. `x-frozen-keys` 必须为 false. */
+  pruneEmpty?: boolean;
   children: ReactNode;
 }) {
   const scopeId = useId();
   return (
-    <DictEntryContext.Provider value={{ parentField, entryKey, bindEntry, scopeId }}>
+    <DictEntryContext.Provider value={{ parentField, entryKey, bindEntry, pruneEmpty, scopeId }}>
       {children}
     </DictEntryContext.Provider>
   );
@@ -85,7 +90,7 @@ function DictEntryField({
   if (ctx == null) {
     throw new Error("DictEntryField requires DictEntryScope");
   }
-  const { parentField, entryKey, bindEntry } = ctx;
+  const { parentField, entryKey, bindEntry, pruneEmpty } = ctx;
   const dict = asDict(parentField.state.value);
   const parts = bindEntry ? [] : name.split(".").filter((part) => part.length > 0);
   const value = getAt(dict[entryKey], parts);
@@ -95,6 +100,13 @@ function DictEntryField({
     state: { value, meta: { errors: [] } },
     handleChange: (next: unknown) => {
       const latest = asDict(parentField.state.value);
+      // 仅可增减 key 的 dict 在值被清空时删除该 key; frozen key 的空列表必须保留.
+      if (pruneEmpty && bindEntry && isEmptyDictValue(next)) {
+        const rest = { ...latest };
+        delete rest[entryKey];
+        parentField.handleChange(rest);
+        return;
+      }
       parentField.handleChange({
         ...latest,
         [entryKey]: setAt(latest[entryKey], parts, next),

@@ -56,6 +56,7 @@ export function DictField({
         const dictValue = (field.state.value as Record<string, unknown>) || {};
         const allKeys = Object.keys(dictValue);
         const entries = allKeys.map((k) => [k, dictValue[k]] as const);
+        const resolvedTab = allKeys.includes(activeTab) ? activeTab : (allKeys[0] ?? "");
 
         const handleAdd = () => {
           if (!newKey.trim() || newKey in dictValue) return;
@@ -179,7 +180,12 @@ export function DictField({
                           {getKeyLabel(key)}
                         </Text>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <DictEntryScope parentField={field} entryKey={key} bindEntry>
+                          <DictEntryScope
+                            parentField={field}
+                            entryKey={key}
+                            bindEntry
+                            pruneEmpty={canModifyKeys}
+                          >
                             <FieldRouter
                               name={`${name}:${key}`}
                               i18nPath={`${i18nPath}.$`}
@@ -210,7 +216,7 @@ export function DictField({
               </Paper>
             ) : (
               <Tabs
-                value={activeTab || entries[0]?.[0] || ""}
+                value={resolvedTab}
                 onChange={(val) => setActiveTab(val ?? "")}
                 // Manual activation only: wheel / arrow keys must not steal page scroll
                 // or switch tabs while the pointer is over this widget.
@@ -255,7 +261,12 @@ export function DictField({
                       </Group>
 
                       {isObject(valueSchema) && valueSchema.properties ? (
-                        <DictEntryScope parentField={field} entryKey={key} bindEntry={false}>
+                        <DictEntryScope
+                          parentField={field}
+                          entryKey={key}
+                          bindEntry={false}
+                          pruneEmpty={canModifyKeys}
+                        >
                           <Stack gap={0} pl="xs">
                             {Object.entries(valueSchema.properties).map(
                               ([fieldName, fieldSchema]) =>
@@ -274,7 +285,12 @@ export function DictField({
                           </Stack>
                         </DictEntryScope>
                       ) : (
-                        <DictEntryScope parentField={field} entryKey={key} bindEntry>
+                        <DictEntryScope
+                          parentField={field}
+                          entryKey={key}
+                          bindEntry
+                          pruneEmpty={canModifyKeys}
+                        >
                           <Stack gap={0} pl="xs">
                             <FieldRouter
                               name={`${name}:${key}`}
