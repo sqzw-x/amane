@@ -11,7 +11,7 @@ import {
 } from "@mantine/core";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import type { AnyFieldApi } from "@tanstack/react-form";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useDictKeyI18n } from "../hooks";
 import type { DictFieldProps, JSONSchemaObject } from "../schema";
 import {
@@ -46,6 +46,9 @@ export function DictField({
 
   const [newKey, setNewKey] = useState("");
   const [activeTab, setActiveTab] = useState("");
+  // 标题栏滚轮不得切换条目 (部分浏览器把 tablist 当 radio group).
+  const ignoreWheelTabChange = useRef(false);
+  const ignoreWheelTabTimer = useRef(0);
 
   const keyEnum =
     schema.propertyNames && isEnum(schema.propertyNames) ? schema.propertyNames.enum : null;
@@ -217,23 +220,29 @@ export function DictField({
             ) : (
               <Tabs
                 value={resolvedTab}
-                onChange={(val) => setActiveTab(val ?? "")}
-                // Manual activation only: wheel / arrow keys must not steal page scroll
-                // or switch tabs while the pointer is over this widget.
-                activateTabWithKeyboard={false}
-                onWheel={(e) => {
-                  const focused = document.activeElement;
-                  if (
-                    focused instanceof HTMLElement &&
-                    focused.getAttribute("role") === "tab" &&
-                    e.currentTarget.contains(focused)
-                  ) {
-                    focused.blur();
-                  }
+                onChange={(val) => {
+                  if (ignoreWheelTabChange.current) return;
+                  setActiveTab(val ?? "");
                 }}
+                activateTabWithKeyboard={false}
               >
                 <Paper withBorder radius="md" style={{ overflow: "hidden" }}>
-                  <Tabs.List>
+                  <Tabs.List
+                    onWheel={() => {
+                      ignoreWheelTabChange.current = true;
+                      const focused = document.activeElement;
+                      if (
+                        focused instanceof HTMLElement &&
+                        focused.getAttribute("role") === "tab"
+                      ) {
+                        focused.blur();
+                      }
+                      window.clearTimeout(ignoreWheelTabTimer.current);
+                      ignoreWheelTabTimer.current = window.setTimeout(() => {
+                        ignoreWheelTabChange.current = false;
+                      }, 120);
+                    }}
+                  >
                     {entries.map(([key]) => (
                       <Tabs.Tab key={key} value={key}>
                         {getKeyLabel(key)}

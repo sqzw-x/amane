@@ -33,7 +33,7 @@ Settings、任务提交、定时创建、metadata 编辑共用 `components/schem
 
 Dict 的用户 key 是父级对象上的字面量, 不写入 TanStack 点路径; 叶子读写经由 `DictEntryScope` 写入 `[key]` (主机名等含 `.` / `[` / `]` 的 key 才能原样保存).
 
-Tabs 同时挂载全部条目, 叶子 `id`/`htmlFor` 必须经由 `useFieldDomId` 加上条目前缀, 不能只用 schema 相对名, 否则同名 Switch 会命中第一份控件.
+Tabs 同时挂载全部条目, 叶子 `id`/`htmlFor` 必须经由 `useFieldDomId` 加上条目前缀, 不能只用 schema 相对名, 否则同名 Switch 会命中第一份控件. 标题栏滚轮不得切换条目.
 
 `SchemaForm` 双模式: `patch` (dirty 门控, 只提交 diff) / `create` (完整值). dirty 保存条 (`UnsavedChangesBar`) : 设置页与影片/演员编辑弹窗均采用 `affix` (Portal 固定于视口底, 居中). Affix 默认 z-index 与 Modal 同为 200, 编辑弹窗里必须抬到 300 才能叠在弹窗之上. 不允许将 dirty 条放入 Modal 表单流 — Modal content 是滚动容器, 末尾的条必须滚到底才看见.
 
