@@ -33,13 +33,13 @@ from amane.parsing import parse_file_info
 
 @pytest.fixture
 def media(tmp_path: Path) -> Path:
-    """媒体库根 (tmp_path 已 resolve, 无符号链接残留, 保证 resolve 后路径不变形)."""
+    """媒体库根目录 (tmp_path 已 resolve, 无符号链接残留, 保证 resolve 后路径不变形)."""
     return tmp_path.resolve() / "media"
 
 
 @pytest.fixture
 def other(tmp_path: Path) -> Path:
-    """媒体根之外的目录, 作绝对模板落点 / safe_dirs (多盘分存场景)."""
+    """媒体根之外的目录, 作绝对模板写出路径 / safe_dirs (多盘分存场景)."""
     return tmp_path.resolve() / "out"
 
 
@@ -66,14 +66,14 @@ def _meta(**kwargs) -> Metadata:
 
 
 class _RenderCase(NamedTuple):
-    """引擎核心: 源路径 parse_file_info → 按 template 渲染, expected 为相对库根的 posix 路径."""
+    """引擎核心: 源路径 parse_file_info → 按 template 渲染, expected 为相对库根目录的 posix 路径."""
 
     source: str | None  # None: 不传 file_info
     template: str
     expected: str
 
 
-# 模板 + 源文件 → 整理后相对库根路径. {number}/{studio} 来自 _meta, 标记来自 source.
+# 模板 + 源文件 → 整理后相对库根目录的路径. {number}/{studio} 来自 _meta, 标记来自 source.
 RENDER_CASES: tuple[_RenderCase, ...] = (
     # --- 默认模板: [-CD{cd?}][-{sub?}] 两个并列组 ---
     _RenderCase("MIDV-123.mp4", VIDEO_TEMPLATE_DEFAULT, "StudioX/ABC-123/ABC-123.mp4"),
@@ -135,7 +135,7 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
 
 @pytest.mark.parametrize("case", RENDER_CASES, ids=lambda c: f"{c.source} -> {c.expected}")
 def test_render_from_file(case: _RenderCase, media: Path) -> None:
-    """模板引擎核心表: source → FileInfo → template → 相对库根路径."""
+    """模板引擎核心表: source → FileInfo → template → 相对库根目录的路径."""
     wp = Library(name="t", path=str(media), video_template=case.template)
     file_info = parse_file_info(case.source) if case.source is not None else None
     result = resolve_paths(wp, _meta(), ext="mp4", file_info=file_info)
@@ -451,7 +451,7 @@ class TestPathTraversalProtection:
             resolve_paths(wp, meta, ext="mp4")
 
     def test_absolute_template_allowed_within_safe_dir(self, media: Path, other: Path):
-        """绝对路径模板落在 safe_dirs 内时允许 (多盘分存场景)"""
+        """绝对路径模板位于 safe_dirs 内时允许 (多盘分存场景)"""
         wp = Library(name="t", path=str(media), video_template=str(other / "{number}" / "{number}.{ext}"))
         meta = _meta()
         result = resolve_paths(wp, meta, ext="mp4", safe_dirs=[other])
@@ -465,19 +465,19 @@ class TestPathTraversalProtection:
             resolve_paths(wp, meta, ext="mp4", safe_dirs=[other])
 
     def test_absolute_template_allow_all_skips_extra_boundary(self, media: Path, other: Path):
-        """ALLOW_ALL (safe_dirs=None) 时绝对模板可落在 library 根之外."""
+        """ALLOW_ALL (safe_dirs=None) 时绝对模板可在库外."""
         wp = Library(name="t", path=str(media), video_template=str(other / "{number}" / "{number}.{ext}"))
         result = resolve_paths(wp, _meta(), ext="mp4", safe_dirs=None)
         assert result.video == other / "ABC-123" / "ABC-123.mp4"
 
     def test_relative_template_still_rejects_escape_when_allow_all(self, media: Path):
-        """相对模板含 .. 时 ALLOW_ALL 仍拒绝逃出 library 根."""
+        """相对模板含 .. 时 ALLOW_ALL 仍拒绝逃出本库."""
         wp = Library(name="t", path=str(media / "incoming"), video_template="../../etc/{number}.{ext}")
         with pytest.raises(ValueError, match="Path traversal detected"):
             resolve_paths(wp, _meta(), ext="mp4", safe_dirs=None)
 
     def test_absolute_template_within_base_ok(self, media: Path):
-        """绝对路径模板落在 base_path 内时无需 safe_dirs"""
+        """绝对路径模板位于 base_path 内时无需 safe_dirs"""
         wp = Library(name="t", path=str(media), video_template=str(media / "{number}" / "{number}.{ext}"))
         meta = _meta()
         result = resolve_paths(wp, meta, ext="mp4")

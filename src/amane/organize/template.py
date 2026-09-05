@@ -1,4 +1,4 @@
-"""路径模板折叠空段并约束落点. 填值时截断 title / actor / actors / actress / actresses. STRM 正文不折叠、不截断 (保留 `https://`), 不检查 safe_dirs."""
+"""路径模板折叠空段并约束写出路径. 填值时截断 title / actor / actors / actress / actresses. STRM 正文不折叠、不截断 (保留 `https://`), 不检查 safe_dirs."""
 
 from __future__ import annotations
 
@@ -265,7 +265,7 @@ def _lexical_abs(path: Path) -> Path:
 
 
 def video_relpath(dest: Path, library_root: Path) -> str:
-    """dest 必须落在库根下; 返回相对 library_root 的 POSIX 路径."""
+    """视频必须在本库内; 返回相对库根目录的 POSIX 路径."""
     dest_abs = _lexical_abs(dest)
     root_abs = _lexical_abs(library_root)
     try:
@@ -437,7 +437,7 @@ class TemplateEngine:
 
 
 class PathEngine(TemplateEngine):
-    """路径输出: 填值时截断 title / actor / actors / actress / actresses, 折叠空段, 再按库根 / safe_dirs 落成字面绝对路径."""
+    """路径输出: 填值时截断 title / actor / actors / actress / actresses, 折叠空段, 再按库根目录 / safe_dirs 写成字面绝对路径."""
 
     def fill(self, ctx: TemplateContext) -> str:
         variables = {name: _clip_field(value) if name in _CLIP_KEYS else value for name, value in ctx.variables.items()}
@@ -476,7 +476,7 @@ class PathEngine(TemplateEngine):
 
 
 class StrmEngine(TemplateEngine):
-    """STRM 正文: 不折叠空段, 不截断 title / actor / actors / actress / actresses. 引用 `{video_relpath}` 时 dest 必须在库根下."""
+    """STRM 正文: 不折叠空段, 不截断 title / actor / actors / actress / actresses. 引用 `{video_relpath}` 时视频必须在本库内."""
 
     def clean(self, filled: str, ctx: TemplateContext) -> str:
         return filled if filled.endswith("\n") else f"{filled}\n"

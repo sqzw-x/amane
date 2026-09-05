@@ -34,7 +34,7 @@
 | `{raw_dir}` | 源文件父目录名 | `A/B/C.mp4` → `B` |
 | `{video_dir}` | 整理后视频所在目录 | — |
 | `{video_name}` | 整理后视频文件名, 不含扩展名 | `MIDV-123-CD1-C` |
-| `{video_relpath}` | 整理后视频相对库根的路径 | `Studio/ABC-123/ABC-123.mp4` |
+| `{video_relpath}` | 整理后视频相对库根目录的路径 | `Studio/ABC-123/ABC-123.mp4` |
 | `{link_dir}` | 链接文件所在目录 | — |
 | `{link_name}` | 整理后链接文件名, 不含扩展名 | — |
 | `{raw_srt_name}` | 字幕原文件名, 不含扩展名 | `foo.zh.srt` → `foo.zh` |

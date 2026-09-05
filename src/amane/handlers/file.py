@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..config import HotSettings, WatermarkConfig
+from ..db.models import MediaFile
+from ..db.repo_types import MediaFileUpdates
 from ..enums import ActorGender, DownloadableResource, LinkMode
 from ..library import MEDIA_EXTENSIONS, TRASH_DIRNAME, LibraryFileKind, LibraryScan
 from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
@@ -26,6 +28,7 @@ from ..organize.file import OrganizeResult as DiskOrganizeResult
 from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
 from ..utils.path import existing_disk_path as existing_disk_path_sync
+from ..utils.path import is_descendant
 from ..utils.threads import existing_disk_path, in_thread, path_is_dir
 from ._common import scan_library
 from .models import CleanupPayload, CleanupResult, OrganizePayload, OrganizeResult
@@ -33,7 +36,7 @@ from .protocol import TaskHandler, TaskResult
 
 if TYPE_CHECKING:
     from ..config import HotSettings
-    from ..db.models import Library, MediaFile, Metadata
+    from ..db.models import Library, Metadata
     from ..db.repository import Repository
     from ..media import ResourceStore
     from ..net.http import WebClient
@@ -205,6 +208,42 @@ async def apply_file_operations(
     )
 
 
+async def commit_organized_media_file(
+    repo: Repository,
+    media: MediaFile,
+    placed: Path,
+    library_root: Path,
+) -> None:
+    """整理后的路径仍在本库内才改 path; 已离开本库且源路径不在磁盘上则删行.
+
+    目标路径已被另一行占用时删本行; 占用行缺少刮削字段则从本行补上.
+    """
+    if media.id is None:
+        return
+    if not is_descendant(placed, library_root):
+        if await existing_disk_path(Path(media.path), follow_symlinks=False) is None:
+            await repo.delete_media_file(media.id)
+        return
+
+    occupant = await repo.get_media_file_by_path(str(placed))
+    if occupant is None or occupant.id == media.id:
+        await repo.update_media_file(media.id, path=str(placed))
+        return
+    if occupant.id is None:
+        return
+    occupant_updates: MediaFileUpdates = {}
+    if occupant.metadata_id is None and media.metadata_id is not None:
+        occupant_updates["metadata_id"] = media.metadata_id
+        occupant_updates["status"] = media.status
+    if occupant.oshash is None and media.oshash is not None:
+        occupant_updates["oshash"] = media.oshash
+    if occupant.number is None and media.number is not None:
+        occupant_updates["number"] = media.number
+    if occupant_updates:
+        await repo.update_media_file(occupant.id, **occupant_updates)
+    await repo.delete_media_file(media.id)
+
+
 async def _resolve_local(url: str, store: ResourceStore, client: WebClient) -> Path | None:
     """内部 `/api/resources/{hash}` 查 store 已存文件; 外部 URL 经 store.acquire (命中缓存直出)."""
     if url.startswith(RESOURCE_URL_PREFIX):
@@ -372,14 +411,18 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             return TaskResult(success=False, error=f"Library {payload.library_id} not found")
         assert library.id is not None
 
-        # 删除失效索引: 名称冲突检测仅依据磁盘 dest; 已删除文件的 path 仍占用 UNIQUE.
+        # 删除失效索引: 磁盘上没有 path, 或不在本库内.
         indexed = await self._repo.list_media_files(library_id=library.id, limit=None)
         prune_total = len(indexed)
+        library_root = Path(library.path)
         if prune_total:
             await self.report_progress(0, prune_total, "prune")
             for i, mf in enumerate(indexed, start=1):
-                if mf.id is not None and await existing_disk_path(Path(mf.path), follow_symlinks=False) is None:
-                    await self._repo.delete_media_file(mf.id)
+                if mf.id is not None:
+                    mf_path = Path(mf.path)
+                    missing = await existing_disk_path(mf_path, follow_symlinks=False) is None
+                    if missing or not is_descendant(mf_path, library_root):
+                        await self._repo.delete_media_file(mf.id)
                 await self.report_progress(i, prune_total, "prune")
 
         recursive = payload.recursive if payload.recursive is not None else True
@@ -446,9 +489,8 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                     await self.report_progress(i, total, file_path.name)
                     continue
 
-                # 写库: 回写整理后的 path.
                 if fop_result.dest and media_file.id is not None:
-                    await self._repo.update_media_file(media_file.id, path=str(fop_result.dest))
+                    await commit_organized_media_file(self._repo, media_file, fop_result.dest, library_root)
                 if fop_result.success:
                     organized += 1
                 else:
@@ -471,7 +513,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         )
 
     async def _trash_files(self, library: Library, files: Sequence[Path]) -> int:
-        """移至库根 `.amane_trash`. 固定物理移动, 不受 `move_mode` 影响. 失败不计入成功数."""
+        """移至本库 `.amane_trash`. 固定物理移动, 不受 `move_mode` 影响. 失败不计入成功数."""
         if not files:
             return 0
         trash_dir = Path(library.path) / TRASH_DIRNAME
