@@ -147,6 +147,7 @@ class MediaFile(SQLModel, table=True):
     __tablename__ = "media_files"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
+    # 库内身份为 NFC. 写入与按路径查找只经 Repository (`nfc_path`).
     path: str = Field(unique=True, nullable=False, index=True)
     oshash: str | None = None
     size: int | None = None

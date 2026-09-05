@@ -49,7 +49,7 @@
 
 字段组合: `scan={"add"}, scrape=set()` → 仅注册不刮削; `scan={"add"}, scrape={"pending"}` → 注册 + 刮削; `scan={"remove"}` → 仅删除失效记录. 落盘另交 ORGANIZE.
 
-扫描遍历经由 `scan_library` (`@in_thread` glob / stat, 一次分类为跳过 / 归档 / 媒体), 与库内索引的差集在 Python 计算 (`list_media_files` 一次全部读取). 不允许将整棵树的路径放入 SQL `IN` / `NOT IN`: `NOT IN` 按批拆分会把其它批里真实存在的文件误判为失效. 仅 `remove` 时对库内记录 `exists`, 不遍历磁盘树. fan-out 必须 `list_media_files(..., limit=None)`: 默认 50 是 `GET /media` 的列表分页, 不是批量任务上限.
+扫描遍历经由 `scan_library` (`@in_thread` glob / stat, 一次分类为跳过 / 归档 / 媒体), 与库内索引的差集在 Python 计算 (`list_media_files` 一次全部读取). 不允许将整棵树的路径放入 SQL `IN` / `NOT IN`: `NOT IN` 按批拆分会把其它批里真实存在的文件误判为失效. 仅 `remove` 时对库内记录 `exists`, 不遍历磁盘树. fan-out 必须 `list_media_files(..., limit=None)`: 默认 50 是 `GET /media` 的列表分页, 不是批量任务上限. `MediaFile.path` 的写入、按路径查找、有效 / 失效集合差一律 NFC (`nfc_path`). 从库内路径打开、判断存在、落盘必须经 `existing_disk_path` (先试传入形式, 再试规范等价的 NFC / NFD). 扫描当次列出的原字符串可直接用于 I/O.
 
 文件注册 (watcher 发现与 REFRESH 扫描共用 `register_media_file`) 只写路径, 不计算 oshash. 指纹只在 SCRAPE 时按需计算: 本次实例化的爬虫 `profile().uses_file_hash` (ThePornDB) 且 `MediaFile.oshash` 为空, 才 `ensure_oshash`; 失败留 `None`, 不阻断刮削.
 
@@ -123,7 +123,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 - **海报缺失**: 按 `scraping.crop_poster` 从已落盘 thumb 裁剪兜底.
 - **已就位**: 源与模板 dest 已是同一文件 (含硬链同一 inode) 时视为成功, 不追加 `(1)`; 碰撞改名只用于 dest 被另一文件占用.
 - **链接入口**: `link_template` 非空时, 视频就位后在库根之外写 strm 或软链接, 指向这次的 dest. `link_mode=strm` 时正文按 `strm_content_template` 渲染 (空则绝对路径). `MediaFile.path` 仍是真实视频. 链接写入失败时 dest 仍回写 (视频已搬家), 任务记失败以便重试补链接.
-- **失效索引**: ORGANIZE 落盘前按库删除 path 在磁盘上不存在的 MediaFile. 碰撞改名只检查磁盘; 不先删除磁盘上已不存在、仍保留在库中的 MediaFile 记录, dest(1) 会在 UNIQUE 上与库内旧 path 冲突.
+- **失效索引**: ORGANIZE 落盘前按库删除 path 在磁盘上不存在的 MediaFile (`existing_disk_path`). 碰撞改名只检查磁盘; 不先删除磁盘上已不存在、仍保留在库中的 MediaFile 记录, dest(1) 会在 UNIQUE 上与库内旧 path 冲突.
 
 ## 刮削期资源物化
 

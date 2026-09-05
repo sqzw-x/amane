@@ -94,6 +94,24 @@ class TestExecuteOrganize:
         assert dest.read_text() == "content"
         assert not (target_dir / "MIDV-123(1).mp4").exists()
 
+    def test_move_resolves_nfd_source_from_nfc_path(self, tmp_path: Path):
+        """库内 NFC 路径对应磁盘 NFD 文件时仍能打开并移动."""
+        nfd = "\u3057\u3099"
+        nfc = "\u3058"
+        src_nfd = tmp_path / "src" / f"{nfd}.mp4"
+        src_nfd.parent.mkdir()
+        src_nfd.write_text("video")
+        result = execute_organize.sync(
+            source=tmp_path / "src" / f"{nfc}.mp4",
+            target_dir=tmp_path / "out",
+            target_stem="SSIS-914",
+            mode=MoveMode.MOVE,
+        )
+        assert result.success is True
+        dest = tmp_path / "out" / "SSIS-914.mp4"
+        assert dest.read_text() == "video"
+        assert not src_nfd.exists()
+
     def test_already_hardlinked_dest_is_success(self, tmp_path: Path):
         """源与 dest 不同路径但同一 inode 时也不碰撞改名."""
         src = tmp_path / "src.mp4"

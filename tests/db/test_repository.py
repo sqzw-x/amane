@@ -67,6 +67,27 @@ class TestMediaFileRepo:
         assert await repo.get_media_file_by_path("/nonexistent") is None
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_path_identity_is_nfc(self, repo: Repository):
+        """写入与按路径查找一律 NFC; NFD 查询命中已存的 NFC 行."""
+        nfc = "/video/\u3058.mp4"
+        nfd = "/video/\u3057\u3099.mp4"
+        assert nfc != nfd
+        created = await repo.create_media_file(library_id=1, path=nfd, number="NFC-1")
+        assert created.id is not None
+        assert created.path == nfc
+        found = await repo.get_media_file_by_path(nfd)
+        assert found is not None
+        assert found.id == created.id
+        assert found.path == nfc
+        updated = await repo.update_media_file(created.id, path=nfd)
+        assert updated is not None
+        assert updated.path == nfc
+        valid = await repo.get_valid([nfd])
+        assert {f.id for f in valid} == {created.id}
+        invalid = await repo.get_invalid([nfd], library_id=1)
+        assert all(f.id != created.id for f in invalid)
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_update_status(self, repo: Repository):
         media = await repo.create_media_file(library_id=1, path="/video/X.mp4")
         assert media.id is not None

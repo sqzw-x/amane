@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from amane.utils.path import is_descendant
+from amane.utils.path import existing_disk_path, is_descendant, nfc_path, path_forms
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="此测试不适用于 Windows")
@@ -84,3 +84,46 @@ def test_is_descendant_mixed_forms_fail_closed(monkeypatch):
 
     monkeypatch.setattr(os.path, "realpath", fake_realpath)
     assert is_descendant(r"\\?\C:\Users\Test", r"C:\Users") is False
+
+
+# じ: NFC = U+3058; NFD = し + 组合用浊点.
+_NFC_JI = "\u3058"
+_NFD_JI = "\u3057\u3099"
+
+
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    [
+        (f"/a/{_NFC_JI}.mp4", f"/a/{_NFC_JI}.mp4"),
+        (f"/a/{_NFD_JI}.mp4", f"/a/{_NFC_JI}.mp4"),
+        (f"/a/{_NFD_JI}/{_NFC_JI}.mp4", f"/a/{_NFC_JI}/{_NFC_JI}.mp4"),
+        ("/ascii/foo.mp4", "/ascii/foo.mp4"),
+        ("", ""),
+    ],
+)
+def test_nfc_path(raw: str, want: str) -> None:
+    assert nfc_path(raw) == want
+    assert nfc_path(raw) == nfc_path(nfc_path(raw))
+
+
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    [
+        ("/a/foo.mp4", ("/a/foo.mp4",)),
+        (f"/a/{_NFC_JI}.mp4", (f"/a/{_NFC_JI}.mp4", f"/a/{_NFD_JI}.mp4")),
+        (f"/a/{_NFD_JI}.mp4", (f"/a/{_NFD_JI}.mp4", f"/a/{_NFC_JI}.mp4")),
+    ],
+)
+def test_path_forms(raw: str, want: tuple[str, ...]) -> None:
+    assert tuple(p.as_posix() for p in path_forms(raw)) == want
+
+
+def test_existing_disk_path_tries_nfd(tmp_path: Path) -> None:
+    """磁盘为 NFD 时, 用 NFC 查询仍返回可打开的路径."""
+    nfd = tmp_path / f"{_NFD_JI}.mp4"
+    nfd.write_bytes(b"x")
+    nfc = tmp_path / f"{_NFC_JI}.mp4"
+    found = existing_disk_path(nfc)
+    assert found is not None
+    assert found.read_bytes() == b"x"
+    assert existing_disk_path(tmp_path / "missing.mp4") is None

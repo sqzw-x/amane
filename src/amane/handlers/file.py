@@ -25,7 +25,8 @@ from ..organize import (
 from ..organize.file import OrganizeResult as DiskOrganizeResult
 from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
-from ..utils.threads import in_thread, path_exists, path_is_dir
+from ..utils.path import existing_disk_path as existing_disk_path_sync
+from ..utils.threads import existing_disk_path, in_thread, path_is_dir
 from ._common import scan_library
 from .models import CleanupPayload, CleanupResult, OrganizePayload, OrganizeResult
 from .protocol import TaskHandler, TaskResult
@@ -64,9 +65,9 @@ async def execute_file_operations(
     watermark_dir: Path | None = None,
     actor_genders: dict[str, ActorGender] | None = None,
 ) -> FileOperationsResult:
-    source_path = Path(media_file.path)
-    if not await path_exists(source_path):
-        logger.warning("source file missing", path=str(source_path))
+    source_path = await existing_disk_path(Path(media_file.path))
+    if source_path is None:
+        logger.warning("source file missing", path=media_file.path)
         return FileOperationsResult(success=False, error=f"Source file not found: {media_file.path}")
 
     info = file_info if file_info is not None else parse_file_info(source_path)
@@ -377,7 +378,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         if prune_total:
             await self.report_progress(0, prune_total, "prune")
             for i, mf in enumerate(indexed, start=1):
-                if mf.id is not None and not await path_exists(Path(mf.path), follow_symlinks=False):
+                if mf.id is not None and await existing_disk_path(Path(mf.path), follow_symlinks=False) is None:
                     await self._repo.delete_media_file(mf.id)
                 await self.report_progress(i, prune_total, "prune")
 
@@ -541,7 +542,7 @@ async def _collect_live_resource_refs(repo: Repository) -> tuple[set[str], set[s
 @in_thread
 def _missing_media_ids(rows: Sequence[tuple[int, str]]) -> list[int]:
     """不跟随符号链接判断存在."""
-    return [media_id for media_id, path in rows if not Path(path).exists(follow_symlinks=False)]
+    return [media_id for media_id, path in rows if existing_disk_path_sync(path, follow_symlinks=False) is None]
 
 
 class CleanupHandler(TaskHandler[CleanupPayload, CleanupResult]):

@@ -7,6 +7,7 @@ import structlog
 from ..db import TaskType
 from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
 from ..parsing import parse_file_info
+from ..utils.path import nfc_path
 from ..utils.threads import path_exists, path_is_dir
 from ._common import register_media_file, scan_library
 from .models import RefreshPayload, RefreshResult, ScanMode, ScrapePayload
@@ -43,7 +44,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
         added = removed = scrape = 0
 
         existing = await self._repo.list_media_files(library_id=payload.library_id, limit=None)
-        existing_by_path = {f.path: f for f in existing}
+        existing_by_path = {nfc_path(f.path): f for f in existing}
 
         if payload.scan:
             want_add = ScanMode.add in payload.scan
@@ -63,15 +64,15 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
                     if hit.kind is not LibraryFileKind.MEDIA:
                         continue
                     file_path = hit.path
-                    path_str = str(file_path)
+                    path_key = nfc_path(str(file_path))
                     walked += 1
                     if seen is not None:
-                        seen.add(path_str)
+                        seen.add(path_key)
                     if walked % _WALK_LOG_EVERY == 0:
                         logger.info("scan walking", path=payload.path, seen=walked, added=added)
-                    if path_str not in existing_by_path:
+                    if path_key not in existing_by_path:
                         media = await register_media_file(self._repo, payload.library_id, file_path)
-                        existing_by_path[path_str] = media
+                        existing_by_path[path_key] = media
                         added += 1
                 if added:
                     logger.info("new files discovered", path=payload.path, count=added)
@@ -79,7 +80,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
             # 删除索引中已不存在的记录.
             if want_remove:
                 if seen is not None:
-                    missing = [f for f in existing if f.path not in seen]
+                    missing = [f for f in existing if nfc_path(f.path) not in seen]
                 else:
                     missing = []
                     for f in existing:

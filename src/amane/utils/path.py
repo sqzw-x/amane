@@ -1,8 +1,8 @@
-import os
-from typing import TYPE_CHECKING
+from __future__ import annotations
 
-if TYPE_CHECKING:
-    from pathlib import Path
+import os
+import unicodedata
+from pathlib import Path
 
 
 def _resolve_or_literal(p: str | Path) -> str:
@@ -40,3 +40,32 @@ def is_descendant(p: str | Path, parent: str | Path) -> bool:
 
 def is_any_descendant(p: str | Path, *parents: str | Path) -> bool:
     return any(is_descendant(p, parent) for parent in parents)
+
+
+def nfc_path(path: str) -> str:
+    """库内路径身份一律 NFC.
+
+    MediaFile.path 的写入、按路径查找、与库内路径做集合差必须经过此函数.
+    """
+    return unicodedata.normalize("NFC", path)
+
+
+def path_forms(path: str | Path) -> tuple[Path, ...]:
+    """磁盘 I/O 候选: 传入形式, 再补规范等价的 NFC / NFD (去重, 保序)."""
+    raw = os.fspath(path)
+    forms: list[Path] = []
+    seen: set[str] = set()
+    for text in (raw, nfc_path(raw), unicodedata.normalize("NFD", raw)):
+        if text in seen:
+            continue
+        seen.add(text)
+        forms.append(Path(text))
+    return tuple(forms)
+
+
+def existing_disk_path(path: str | Path, *, follow_symlinks: bool = True) -> Path | None:
+    """返回磁盘上存在的第一种形式. Linux / Windows 上 NFC 与 NFD 是不同文件名."""
+    for candidate in path_forms(path):
+        if candidate.exists(follow_symlinks=follow_symlinks):
+            return candidate
+    return None

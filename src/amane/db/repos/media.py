@@ -6,6 +6,7 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 
 from ...parsing import ContentType, FilePhase, FilePhaseSummary, Mosaic, file_phase_from_path, summarize_file_phases
+from ...utils.path import nfc_path
 from ..models import MediaFile, MediaFileStatus, MediaSortField, SortOrder
 from ..repo_types import _MEDIA_SORT_COLUMNS, MediaFileUpdates, _apply_media_phase_filters, _order_clause, _utcnow
 from .base import RepositoryMixinBase
@@ -40,6 +41,9 @@ class MetadataFilesSummary(NamedTuple):
 
 class MediaRepoMixin(RepositoryMixinBase):
     async def create_media_file(self, library_id: int, **updates: Unpack[MediaFileUpdates]) -> MediaFile:
+        path = updates.get("path")
+        if path is not None:
+            updates["path"] = nfc_path(path)
         async with self._session() as session:
             media = MediaFile(library_id=library_id, **updates)
             _apply_path_phase(media)
@@ -54,13 +58,13 @@ class MediaRepoMixin(RepositoryMixinBase):
 
     async def get_media_file_by_path(self, path: str) -> MediaFile | None:
         async with self._session() as session:
-            stmt = select(MediaFile).where(MediaFile.path == path)
+            stmt = select(MediaFile).where(MediaFile.path == nfc_path(path))
             result = await session.exec(stmt)
             return result.first()
 
     async def get_valid(self, disk_paths: Iterable[str]) -> Sequence[MediaFile]:
-        """路径按 SQL_IN_CHUNK_SIZE 分批 IN, 避开绑定变量上限."""
-        paths = list(disk_paths)
+        """路径按 SQL_IN_CHUNK_SIZE 分批 IN, 避开绑定变量上限. 比较前统一 NFC."""
+        paths = [nfc_path(p) for p in disk_paths]
         if not paths:
             return []
         found: list[MediaFile] = []
@@ -79,10 +83,10 @@ class MediaRepoMixin(RepositoryMixinBase):
         if library_id is None and not disk_paths:
             return []
         files = await self.list_media_files(library_id=library_id, limit=None)
-        disk = frozenset(disk_paths)
+        disk = frozenset(nfc_path(p) for p in disk_paths)
         if not disk:
             return files
-        return [f for f in files if f.path not in disk]
+        return [f for f in files if nfc_path(f.path) not in disk]
 
     async def list_media_files(
         self,
@@ -170,7 +174,7 @@ class MediaRepoMixin(RepositoryMixinBase):
                 return None
             # 显式赋值, 禁止 setattr; 字段集由 MediaFileUpdates 与 MediaFile 静态对齐.
             if "path" in updates:
-                media.path = updates["path"]
+                media.path = nfc_path(updates["path"])
                 _apply_path_phase(media)
             if "number" in updates:
                 media.number = updates["number"]
