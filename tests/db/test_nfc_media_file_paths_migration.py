@@ -37,9 +37,9 @@ def test_nfc_media_file_paths_rewrites_and_merges(tmp_path: Path) -> None:
             text(
                 "INSERT INTO media_files "
                 "(path, status, library_id, created_at, updated_at, content_type, has_subtitle) VALUES "
-                "(:nfd, 'pending', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'WESTERN', 0), "
-                "(:nfc, 'scraped', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'WESTERN', 0), "
-                "(:other, 'pending', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'WESTERN', 0)"
+                "(:nfd, 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'WESTERN', 0), "
+                "(:nfc, 'SCRAPED', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'WESTERN', 0), "
+                "(:other, 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'WESTERN', 0)"
             ),
             {"nfd": nfd, "nfc": nfc, "other": other_nfd, "lib": lib_id},
         )
@@ -49,6 +49,6 @@ def test_nfc_media_file_paths_rewrites_and_merges(tmp_path: Path) -> None:
     with engine.connect() as conn:
         rows = conn.execute(text("SELECT path, status FROM media_files ORDER BY path")).all()
 
-    assert {(row.path, row.status) for row in rows} == {(nfc, "scraped"), (other_nfc, "pending")}
+    assert {(row.path, row.status) for row in rows} == {(nfc, "SCRAPED"), (other_nfc, "PENDING")}
 
     engine.dispose()
