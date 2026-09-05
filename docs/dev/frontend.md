@@ -17,6 +17,8 @@
 
 **入口分流**: 非演员实体 → `/catalog/$kind/$facetId`; 演员 → `/actors/$actorId`. 结果筛选在 `/meta` (`q` + 各 `*_id`; `saved_query_id` 与其它筛选项 AND, 见 [agent.md](agent.md)). `FacetBadge` 默认 `mode="catalog"` (actor 深链 `/actors/$id`), 筛选深链用 `mode="meta"`. 演员不进入 `/catalog`. 详情出演徽章的性别来自同一次 `Actor` 行查找 (`actor_genders`), 不是 `raw` 里的 `FilmActor`; 仅 `female` / `male` 画符号.
 
+影片详情的用户标签与刮削标签分栏. 加减菜单勾选后保持打开, 底部按钮一次提交多名; 绑定/解绑是前端循环单条 API. `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许用来给一部影片一次挂多个标签.
+
 分类实体页必须是 `catalog.$kind_.$facetId.tsx` (trailing `_`): `$kind` 是词云叶页而非 layout, 写成 `catalog.$kind.$facetId` 会成为无 `<outlet />` 的父路由的子路由, 子页永不渲染.
 
 演员浏览经由 `/api/actors`; 身份治理 (rename/merge/delete/rules) 仍调用 `/api/facets/actor`. 清空人物档案是 `PATCH /actors/{id}` 空字段 (保留 name/gender; `raw`/`field_sources` 不在对外可写面, 普通刮削可能从缓存填回), 不是删 facet. 筛选字段单一事实源 `lib/actors/browse.ts` (与 `ActorBrowseParams` 对齐). `/actors` 未带 `gender` 时默认仅女演员 (从 URL 剥掉); 清空性别写入 `gender=[]` 表示不限, 与缺省不是一回事. 批量刮削 / 批量性别 / 批量清空是前端循环, 无独立 batch 端点.

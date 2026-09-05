@@ -14,6 +14,9 @@ const KIND_COLOR: Record<FacetKind, MantineColor> = {
   user_tag: "pink",
 };
 
+/** 去掉锚点行高, 让徽章高度就是 flex 项高度. */
+const BADGE_LINK_STYLE = { textDecoration: "none", display: "inline-flex", lineHeight: 1 } as const;
+
 interface FacetBadgeProps {
   kind: FacetKind;
   /** Facet id - 未知 (未建立投影索引) 时为 null/undefined, 渲染为不可点击的纯文本徽章. */
@@ -54,11 +57,7 @@ export function FacetBadge({
   if (mode === "catalog") {
     if (kind === "actor") {
       return (
-        <Link
-          to="/actors/$actorId"
-          params={{ actorId: String(id) }}
-          style={{ textDecoration: "none" }}
-        >
+        <Link to="/actors/$actorId" params={{ actorId: String(id) }} style={BADGE_LINK_STYLE}>
           <Badge
             component="span"
             color={color}
@@ -76,7 +75,7 @@ export function FacetBadge({
       <Link
         to="/catalog/$kind/$facetId"
         params={{ kind, facetId: String(id) }}
-        style={{ textDecoration: "none" }}
+        style={BADGE_LINK_STYLE}
       >
         <Badge
           component="span"
@@ -92,7 +91,7 @@ export function FacetBadge({
   }
 
   return (
-    <Link to="/meta" search={metaSearchForFacet(kind, id)} style={{ textDecoration: "none" }}>
+    <Link to="/meta" search={metaSearchForFacet(kind, id)} style={BADGE_LINK_STYLE}>
       <Badge
         component="span"
         color={color}

@@ -11,7 +11,6 @@ import {
   Stack,
   Text,
   Textarea,
-  TextInput,
   Title,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
@@ -45,6 +44,7 @@ import {
   getMetadataOptions,
   getMetadataQueryKey,
   listFacetsOptions,
+  listFacetsQueryKey,
   listMetadataQueryKey,
   submitTaskMutation,
   updateMetadataMutation,
@@ -52,6 +52,7 @@ import {
 import { getMetadataSchema } from "@/client/sdk.gen";
 import type { MetadataResponse } from "@/client/types.gen";
 import { FacetBadge } from "@/components/media/facet-badge";
+import { UserTagActions } from "@/components/media/user-tag-add";
 import { FanartLightbox, FanartStrip } from "@/components/media/fanart-lightbox";
 import { FilePhaseBadges, FilePhaseOverlay } from "@/components/media/file-phase-badges";
 import { PosterCropDialog } from "@/components/media/poster-crop-dialog";
@@ -96,7 +97,6 @@ function TitleDetailPage() {
   const [playingTrailer, setPlayingTrailer] = useState(false);
   const [thumbBroken, setThumbBroken] = useState(false);
   const [posterBroken, setPosterBroken] = useState(false);
-  const [newTagName, setNewTagName] = useState("");
   const [newComment, setNewComment] = useState("");
 
   const id = Number(metadataId);
@@ -187,20 +187,8 @@ function TitleDetailPage() {
   });
 
   const createTagMutation = useMutation(createUserTagMutation());
-  const attachTagMutation = useMutation({
-    ...attachUserTagMutation(),
-    onSuccess: () => {
-      notifications.show({ message: t("common:toast.userTagAttached"), color: "blue" });
-      invalidateDetail();
-    },
-  });
-  const detachTagMutation = useMutation({
-    ...detachUserTagMutation(),
-    onSuccess: () => {
-      notifications.show({ message: t("common:toast.userTagDetached"), color: "blue" });
-      invalidateDetail();
-    },
-  });
+  const attachTagMutation = useMutation(attachUserTagMutation());
+  const detachTagMutation = useMutation(detachUserTagMutation());
   const createCommentMut = useMutation({
     ...createCommentMutation(),
     onSuccess: () => {
@@ -217,17 +205,50 @@ function TitleDetailPage() {
     },
   });
 
-  async function handleAddTag() {
-    const name = newTagName.trim();
-    if (!name) return;
-    let tagId = userTagOptions?.items.find((tag) => tag.name === name)?.id;
-    if (tagId == null) {
-      const created = await createTagMutation.mutateAsync({ body: { name } });
-      tagId = created.id;
-      notifications.show({ message: t("common:toast.userTagCreated"), color: "blue" });
+  async function handleAddTags(names: string[]) {
+    const unique = [...new Set(names.map((name) => name.trim()).filter((name) => name.length > 0))];
+    if (unique.length === 0) return;
+    try {
+      let created = 0;
+      for (const name of unique) {
+        let tagId = userTagOptions?.items.find((tag) => tag.name === name)?.id;
+        if (tagId == null) {
+          const createdTag = await createTagMutation.mutateAsync({ body: { name } });
+          tagId = createdTag.id;
+          created += 1;
+        }
+        await attachTagMutation.mutateAsync({ path: { metadata_id: id, user_tag_id: tagId } });
+      }
+      if (created > 0) {
+        void queryClient.invalidateQueries({ queryKey: listFacetsQueryKey(USER_TAG_FACET_LIST) });
+      }
+      notifications.show({
+        message: created > 0 ? t("common:toast.userTagCreated") : t("common:toast.userTagAttached"),
+        color: "blue",
+      });
+      invalidateDetail();
+    } catch (err) {
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      });
     }
-    await attachTagMutation.mutateAsync({ path: { metadata_id: id, user_tag_id: tagId } });
-    setNewTagName("");
+  }
+
+  async function handleDetachTags(ids: number[]) {
+    if (ids.length === 0) return;
+    try {
+      for (const tagId of ids) {
+        await detachTagMutation.mutateAsync({ path: { metadata_id: id, user_tag_id: tagId } });
+      }
+      notifications.show({ message: t("common:toast.userTagDetached"), color: "blue" });
+      invalidateDetail();
+    } catch (err) {
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      });
+    }
   }
 
   if (!validId) {
@@ -507,6 +528,27 @@ function TitleDetailPage() {
             </FieldBlock>
           )}
 
+          <FieldBlock label={t("detail.userTags")}>
+            <Group gap={6} align="center" wrap="wrap">
+              {(data.user_tags ?? []).map((tag) => (
+                <FacetBadge key={tag.id} kind="user_tag" id={tag.id} name={tag.name} />
+              ))}
+              <UserTagActions
+                attached={data.user_tags ?? []}
+                candidates={(userTagOptions?.items ?? []).filter(
+                  (tag) => !(data.user_tags ?? []).some((attached) => attached.id === tag.id),
+                )}
+                onChoose={(names) => void handleAddTags(names)}
+                onDetach={(ids) => void handleDetachTags(ids)}
+                disabled={
+                  createTagMutation.isPending ||
+                  attachTagMutation.isPending ||
+                  detachTagMutation.isPending
+                }
+              />
+            </Group>
+          </FieldBlock>
+
           {item.source_urls && Object.keys(item.source_urls).length > 0 && (
             <FieldBlock label={t("detail.fields.sourceUrls")}>
               <Group gap={6}>
@@ -644,48 +686,6 @@ function TitleDetailPage() {
             ))}
           </Stack>
         )}
-      </Card>
-
-      <Card withBorder radius="md" p="md">
-        <Title order={5} mb="sm">
-          {t("detail.userTags")}
-        </Title>
-        <Group gap="xs" mb="sm" wrap="wrap">
-          {(data.user_tags ?? []).length === 0 && (
-            <Text size="sm" c="dimmed">
-              {t("detail.noUserTags")}
-            </Text>
-          )}
-          {(data.user_tags ?? []).map((tag) => (
-            <Group key={tag.id} gap={2} wrap="nowrap">
-              <FacetBadge kind="user_tag" id={tag.id} name={tag.name} />
-              <ActionIcon
-                size={18}
-                variant="subtle"
-                color="pink"
-                title={t("detail.detachUserTag")}
-                onClick={() =>
-                  detachTagMutation.mutate({ path: { metadata_id: id, user_tag_id: tag.id } })
-                }
-              >
-                <IconX size={12} />
-              </ActionIcon>
-            </Group>
-          ))}
-        </Group>
-        <Group gap="xs">
-          <TextInput
-            value={newTagName}
-            onChange={(e) => setNewTagName(e.currentTarget.value)}
-            placeholder={t("detail.newUserTagPlaceholder")}
-            size="xs"
-            style={{ flex: 1, maxWidth: 240 }}
-            onKeyDown={(e) => e.key === "Enter" && void handleAddTag()}
-          />
-          <Button size="xs" onClick={() => void handleAddTag()} disabled={!newTagName.trim()}>
-            {t("common:actions.add")}
-          </Button>
-        </Group>
       </Card>
 
       <Card withBorder radius="md" p="md">
