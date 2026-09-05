@@ -1,11 +1,13 @@
 /**
  * 5-field cron (minute hour day-of-month month day-of-week).
  * 与后端 croniter 默认格式一致; 只解析可视化选择器能往返的常见模式, 其余视为 custom.
+ *
+ * CronValue 的 hour / minute / days / day 是浏览器本地墙钟.
+ * formatCron 写出 UTC 字段; parseCron 把 UTC 字段换算回本地.
+ * interval 与 custom 不换算 — custom 按 UTC 手写.
  */
 
 import { assertNever, exhaustiveTuple, isOneOf } from "./exhaustive";
-
-export const DEFAULT_CRON = "0 2 * * *";
 
 export type CronKind = "interval" | "daily" | "weekly" | "monthly" | "custom";
 export type IntervalUnit = "minutes" | "hours";
@@ -55,7 +57,7 @@ export function parseCron(expression: string): CronValue {
   if (!trimmed) return { kind: "custom", expression: "" };
 
   const macro = MACROS[trimmed.toLowerCase()];
-  if (macro) return macro;
+  if (macro) return fromUtcValue(macro);
 
   const fields = trimmed.split(/\s+/);
   if (fields.length !== 5) return { kind: "custom", expression: trimmed };
@@ -93,18 +95,18 @@ export function parseCron(expression: string): CronValue {
   if (minute === null || hour === null) return { kind: "custom", expression: trimmed };
 
   if (domF === "*" && dowF === "*") {
-    return { kind: "daily", hour, minute };
+    return fromUtcValue({ kind: "daily", hour, minute });
   }
 
   if (domF === "*") {
     const days = parseDowList(dowF);
-    if (days) return { kind: "weekly", hour, minute, days };
+    if (days) return fromUtcValue({ kind: "weekly", hour, minute, days });
     return { kind: "custom", expression: trimmed };
   }
 
   const day = parseSingle(domF, 1, 31);
   if (day !== null && dowF === "*") {
-    return { kind: "monthly", hour, minute, day };
+    return fromUtcValue({ kind: "monthly", hour, minute, day });
   }
 
   return { kind: "custom", expression: trimmed };
@@ -120,21 +122,42 @@ export function formatCron(value: CronValue): string {
       }
       return every === 1 ? `${minute} * * * *` : `${minute} */${every} * * *`;
     }
-    case "daily":
-      return `${clampInt(value.minute, 0, 59)} ${clampInt(value.hour, 0, 23)} * * *`;
-    case "weekly": {
-      const days = uniqueSortedDays(value.days);
-      const dow = days.length === 0 ? "*" : days.join(",");
-      return `${clampInt(value.minute, 0, 59)} ${clampInt(value.hour, 0, 23)} * * ${dow}`;
+    case "daily": {
+      const utc = toUtcValue({
+        kind: "daily",
+        hour: clampInt(value.hour, 0, 23),
+        minute: clampInt(value.minute, 0, 59),
+      });
+      return `${utc.minute} ${utc.hour} * * *`;
     }
-    case "monthly":
-      return `${clampInt(value.minute, 0, 59)} ${clampInt(value.hour, 0, 23)} ${clampInt(value.day, 1, 31)} * *`;
+    case "weekly": {
+      const utc = toUtcValue({
+        kind: "weekly",
+        hour: clampInt(value.hour, 0, 23),
+        minute: clampInt(value.minute, 0, 59),
+        days: uniqueSortedDays(value.days),
+      });
+      const dow = utc.days.length === 0 ? "*" : utc.days.join(",");
+      return `${utc.minute} ${utc.hour} * * ${dow}`;
+    }
+    case "monthly": {
+      const utc = toUtcValue({
+        kind: "monthly",
+        hour: clampInt(value.hour, 0, 23),
+        minute: clampInt(value.minute, 0, 59),
+        day: clampInt(value.day, 1, 31),
+      });
+      return `${utc.minute} ${utc.hour} ${utc.day} * *`;
+    }
     case "custom":
       return value.expression.trim();
     default:
       return assertNever(value, "CronValue");
   }
 }
+
+/** 每天本地 02:00, 写出时换算为 UTC. */
+export const DEFAULT_CRON = formatCron({ kind: "daily", hour: 2, minute: 0 });
 
 export function toInterval(value: CronValue): IntervalCron {
   if (value.kind === "interval") return value;
@@ -190,6 +213,72 @@ export function isUsableCron(expression: string): boolean {
     return trimmed.startsWith("@") || trimmed.split(/\s+/).length >= 5;
   }
   return true;
+}
+
+function tzOffsetMin(): number {
+  return new Date().getTimezoneOffset();
+}
+
+function shiftClock(
+  hour: number,
+  minute: number,
+  offsetMin: number,
+): { hour: number; minute: number; dayDelta: number } {
+  const total = hour * 60 + minute + offsetMin;
+  const dayDelta = Math.floor(total / (24 * 60));
+  const wrapped = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  return { hour: Math.floor(wrapped / 60), minute: wrapped % 60, dayDelta };
+}
+
+function shiftWeekdays(days: readonly Weekday[], dayDelta: number): Weekday[] {
+  const shifted: Weekday[] = [];
+  for (const day of days) {
+    const next = (((day + dayDelta) % 7) + 7) % 7;
+    if (isOneOf(WEEKDAYS, next)) shifted.push(next);
+  }
+  return uniqueSortedDays(shifted);
+}
+
+function shiftMonthDay(day: number, dayDelta: number): number {
+  return ((((day - 1 + dayDelta) % 31) + 31) % 31) + 1;
+}
+
+function shiftWallClock<T extends DailyCron | WeeklyCron | MonthlyCron>(
+  value: T,
+  offsetMin: number,
+): T {
+  const clock = shiftClock(value.hour, value.minute, offsetMin);
+  switch (value.kind) {
+    case "daily":
+      return { ...value, hour: clock.hour, minute: clock.minute };
+    case "weekly":
+      return {
+        ...value,
+        hour: clock.hour,
+        minute: clock.minute,
+        days: shiftWeekdays(value.days, clock.dayDelta),
+      };
+    case "monthly":
+      return {
+        ...value,
+        hour: clock.hour,
+        minute: clock.minute,
+        day: shiftMonthDay(value.day, clock.dayDelta),
+      };
+    default:
+      return assertNever(value, "wall-clock CronValue");
+  }
+}
+
+function fromUtcValue(value: CronValue): CronValue {
+  if (value.kind === "daily" || value.kind === "weekly" || value.kind === "monthly") {
+    return shiftWallClock(value, -tzOffsetMin());
+  }
+  return value;
+}
+
+function toUtcValue<T extends DailyCron | WeeklyCron | MonthlyCron>(value: T): T {
+  return shiftWallClock(value, tzOffsetMin());
 }
 
 function extractTime(value: CronValue): { hour: number; minute: number } {

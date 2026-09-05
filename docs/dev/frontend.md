@@ -43,7 +43,7 @@ Tabs 同时挂载全部条目, 叶子 `id`/`htmlFor` 必须经由 `useFieldDomId
 
 `/plugins` 通过 `/api/plugins` 取得插件自带 JSON Schema, 单独渲染每个来源配置; 插件配置不进入核心 HotSettings 表单. 安装用 `PathPicker` 选服务器目录/zip, 或上传本机 zip; 重新扫描 / 卸载经由同一资源的 POST/DELETE, 成功后同时失效插件列表与 config schema (路由 enum 会变).
 
-任务 / 定时提交用 `DiscriminatedSchemaForm`: 外部选 `type` → schema variant → 去掉 const `type` 后交给 `create` 模式. 短枚举共用 `EnumToggle` (`components/common/enum-toggle.tsx`): 项间分隔线 + 滑动指示; `fullWidth` 占据整行 (任务/定时 type、cron 模式、订阅内容类型), 默认按文案宽度 (Schema 表单短枚举、库放置方式/自动化、间隔单位). 片库 grid/list 等页面 view 切换仍用 SegmentedControl. 定时的 cron 用 `CronPicker`: 可视化覆盖间隔/每天/每周/每月, 无法往返的表达式回落「高级」手写; 产出 5-field, 与后端 croniter 一致.
+任务 / 定时提交用 `DiscriminatedSchemaForm`: 外部选 `type` → schema variant → 去掉 const `type` 后交给 `create` 模式. 短枚举共用 `EnumToggle` (`components/common/enum-toggle.tsx`): 项间分隔线 + 滑动指示; `fullWidth` 占据整行 (任务/定时 type、cron 模式、订阅内容类型), 默认按文案宽度 (Schema 表单短枚举、库放置方式/自动化、间隔单位). 片库 grid/list 等页面 view 切换仍用 SegmentedControl. 定时的 cron 用 `CronPicker`: 可视化覆盖间隔/每天/每周/每月, 无法往返的表达式回落「高级」手写; 产出 5-field, 与后端 croniter 一致. 每天/每周/每月的时刻按浏览器本地墙钟填写, 写出时换算为 UTC 字段 (星期与日期随跨日平移); 间隔不换算; 「高级」手写按 UTC.
 
 Library 表单仍手写 (create/edit 差 + `scan` 条件字段 + 库级 `automation` / 整理默认与预告片跳过正则); 路径模板占位符与后端 `resolve_paths` 同源, 经由 `GET /api/libraries/path-template-schema` 下发 name+map_keys, 徽章说明在 i18n `placeholders.items` (有闭合取值时 tooltip 附 `map_keys`); 可空占位符名带字面量 `?`, `{name|k=v}` 与可选组语法见 [data-model.md](data-model.md). 模板框是透明输入叠着色层 (`template-input.tsx`), 词法跟 Parser 的 `{name}` / `|k=v` / `[..]` / `[[..]]`; Accordion Collapse 展开时盒子从 0 增至目标高度; 着色层须在尺寸变化后再次与输入框对齐 (有值时输入框透明, overlay 高度为 0 会裁掉文字); 占位符名与有闭合取值的映射 key 对照 `path-template-schema` 标红, 清单未下发时只标语法错误.
 

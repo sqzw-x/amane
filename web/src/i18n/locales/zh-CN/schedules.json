@@ -27,8 +27,9 @@
     "hour": "时",
     "minute": "分",
     "minuteOfHour": "第几分钟",
+    "localTime": "本地时间",
     "customPlaceholder": "分 时 日 月 星期",
-    "customHint": "标准 5 段 Cron, 与 Linux crontab 相同",
+    "customHint": "标准 5 段 Cron, 与 Linux crontab 相同. 时刻按 UTC",
     "dayJoiner": "、",
     "weekdays": {
       "sun": "日",

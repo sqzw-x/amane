@@ -27,8 +27,9 @@
     "hour": "Hour",
     "minute": "Minute",
     "minuteOfHour": "At minute",
+    "localTime": "Local time",
     "customPlaceholder": "minute hour day month weekday",
-    "customHint": "Standard 5-field Cron, same as Linux crontab",
+    "customHint": "Standard 5-field Cron, same as Linux crontab. Times are UTC",
     "dayJoiner": ", ",
     "weekdays": {
       "sun": "Sun",
