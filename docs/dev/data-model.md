@@ -10,7 +10,7 @@
 
 | 实体 | 角色 | 唯一键 |
 |------|------|--------|
-| `MediaFile` | 磁盘上视频文件的索引 | `path` UNIQUE |
+| `MediaFile` | 磁盘上视频文件的索引 | `path` UNIQUE (**NFC**; 目录列出的 NFD 与 NFC 是同一路径) |
 | `Metadata` | 番号级聚合元数据 | `number` UNIQUE (**大小写不敏感**; 存库保留首次写入的原始大小写) |
 | `Resource` | URL 级下载缓存 | `url` UNIQUE |
 | `Task` | 持久化任务队列 | `id` |

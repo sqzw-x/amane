@@ -10,6 +10,7 @@ from amane.crawlers.models import MediaMetadata
 from amane.db.models import MediaFileStatus, TaskType
 from amane.enums import MetadataField, SiteName
 from amane.handlers import RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
+from amane.library import LibraryFileKind, LibraryHit
 from amane.parsing import ContentType
 
 if TYPE_CHECKING:
@@ -554,6 +555,61 @@ class TestRefreshHandler:
         assert result.result.removed == 1
         assert await repo.get_media_file_by_path(str(keep)) is not None
         assert await repo.get_media_file_by_path(str(tmp_path / "missing.mp4")) is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_remove_only_keeps_nfd_file_indexed_as_nfc(self, repo: Repository, tmp_path):
+        """仅 remove 用库内 NFC 判断存在时, 磁盘 NFD 文件不得当作缺失."""
+        nfd = tmp_path / "\u3057\u3099.mp4"
+        nfd.write_bytes(b"\x00" * 100)
+        lib = await repo.create_library(name="t", path=str(tmp_path))
+        assert lib.id is not None
+        media = await repo.create_media_file(lib.id, path=str(nfd))
+        assert media.id is not None
+        assert media.path == str(tmp_path / "\u3058.mp4")
+
+        result = await RefreshHandler(repo=repo).handle(
+            RefreshPayload(library_id=lib.id, path=str(tmp_path), scan={ScanMode.remove}, scrape=set())
+        )
+        assert result.success is True
+        assert result.result is not None
+        assert result.result.removed == 0
+        assert await repo.get_media_file(media.id) is not None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_scan_nfc_identity_does_not_add_or_remove(
+        self, repo: Repository, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """目录列出 NFD、库内已是 NFC 时, add+remove 不新增也不删除."""
+        nfc = "\u3058"
+        nfd = "\u3057\u3099"
+        lib = await repo.create_library(name="t", path=str(tmp_path))
+        assert lib.id is not None
+        stored = tmp_path / f"{nfc}.mp4"
+        stored.write_bytes(b"\x00" * 100)
+        media = await repo.create_media_file(lib.id, path=str(stored))
+        assert media.path == str(stored)
+
+        listed = tmp_path / f"{nfd}.mp4"
+
+        async def fake_scan(*_args: object, **_kwargs: object) -> list[LibraryHit]:
+            return [LibraryHit(listed, LibraryFileKind.MEDIA)]
+
+        monkeypatch.setattr("amane.handlers.refresh.scan_library", fake_scan)
+        result = await RefreshHandler(repo=repo).handle(
+            RefreshPayload(
+                library_id=lib.id,
+                path=str(tmp_path),
+                scan={ScanMode.add, ScanMode.remove},
+                scrape=set(),
+            )
+        )
+        assert result.success is True
+        assert result.result is not None
+        assert result.result.added == 0
+        assert result.result.removed == 0
+        files = await repo.list_media_files(library_id=lib.id, limit=None)
+        assert [f.id for f in files] == [media.id]
+        assert files[0].path == str(stored)
 
     @pytest.mark.parametrize(
         ("scan_modes", "scrape_statuses", "expected_scrape_tasks"),

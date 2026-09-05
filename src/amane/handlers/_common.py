@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from ..db import MediaFileStatus
 from ..library import LibraryHit, LibraryScan
 from ..utils.oshash import compute_oshash
-from ..utils.threads import in_thread
+from ..utils.threads import existing_disk_path, in_thread
 
 if TYPE_CHECKING:
     from ..db.models import MediaFile
@@ -43,7 +43,10 @@ async def ensure_oshash(repo: Repository, media: MediaFile) -> str | None:
     """已有指纹直接返回; 计算失败留 None, 不阻断刮削."""
     if media.oshash is not None:
         return media.oshash
-    media_hash = await compute_oshash(Path(media.path))
+    disk = await existing_disk_path(Path(media.path))
+    if disk is None:
+        return None
+    media_hash = await compute_oshash(disk)
     if media_hash is None or media.id is None:
         return None
     updated = await repo.update_media_file(media.id, oshash=media_hash)

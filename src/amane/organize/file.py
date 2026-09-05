@@ -4,6 +4,7 @@ from pathlib import Path
 import structlog
 
 from ..enums import MoveMode
+from ..utils.path import existing_disk_path
 from ..utils.threads import in_thread
 
 logger = structlog.get_logger()
@@ -25,17 +26,17 @@ def execute_organize(
     *,
     suffix: str | None = None,
 ) -> OrganizeResult:
-    # 校验源文件存在.
-    if not source.exists():
+    disk_source = existing_disk_path(source)
+    if disk_source is None:
         logger.warning("organize source not found", source=str(source))
         return OrganizeResult(success=False, error=f"Source not found: {source}")
 
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
-        dest_suffix = source.suffix if suffix is None else suffix
+        dest_suffix = disk_source.suffix if suffix is None else suffix
         dest = target_dir / f"{target_stem}{dest_suffix}"
         # 已就位则跳过碰撞改名.
-        if _already_at_dest(source, dest):
+        if _already_at_dest(disk_source, dest):
             return OrganizeResult(success=True, dest=dest)
 
         # 目标占用时追加 (1), (2).
@@ -43,13 +44,13 @@ def execute_organize(
 
         match mode:
             case MoveMode.MOVE:
-                source.move(dest)
+                disk_source.move(dest)
             case MoveMode.COPY:
-                source.copy(dest)
+                disk_source.copy(dest)
             case MoveMode.HARDLINK:
-                dest.hardlink_to(source)
+                dest.hardlink_to(disk_source)
             case MoveMode.SYMLINK:
-                dest.symlink_to(source)
+                dest.symlink_to(disk_source)
 
         logger.debug("file organized", source=source.name, dest=str(dest), mode=mode)
         return OrganizeResult(success=True, dest=dest)
@@ -61,16 +62,17 @@ def execute_organize(
 
 def _already_at_dest(source: Path, dest: Path) -> bool:
     """源与模板 dest 已是同一文件 (含硬链) 则视为已整理, 不触发碰撞改名."""
-    if not dest.exists():
+    dest_on_disk = existing_disk_path(dest)
+    if dest_on_disk is None:
         return False
     try:
-        return source.samefile(dest)
+        return source.samefile(dest_on_disk)
     except OSError:
         return False
 
 
 def _resolve_collision(dest: Path) -> Path:
-    if not dest.exists():
+    if existing_disk_path(dest) is None:
         return dest
     stem = dest.stem
     suffix = dest.suffix
@@ -78,6 +80,6 @@ def _resolve_collision(dest: Path) -> Path:
     i = 1
     while True:
         candidate = parent / f"{stem}({i}){suffix}"
-        if not candidate.exists():
+        if existing_disk_path(candidate) is None:
             return candidate
         i += 1
