@@ -122,8 +122,9 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 - **封面角标**: `watermark.enabled` 时 poster / thumb 副本按源文件 FileInfo 叠 PNG; 大小 / 四角见 Hot `watermark`. Resource 原图与 fanart 不修改. 用户 PNG 覆盖见 [data-model.md](data-model.md).
 - **海报缺失**: 按 `scraping.crop_poster` 从已落盘 thumb 裁剪兜底.
 - **已就位**: 源与模板 dest 已是同一文件 (含硬链同一 inode) 时视为成功, 不追加 `(1)`; 碰撞改名只用于 dest 被另一文件占用.
-- **链接入口**: `link_template` 非空时, 视频就位后在库根之外写 strm 或软链接, 指向这次的 dest. `link_mode=strm` 时正文按 `strm_content_template` 渲染 (空则绝对路径). `MediaFile.path` 仍是真实视频. 链接写入失败时 dest 仍回写 (视频已搬家), 任务记失败以便重试补链接.
-- **失效索引**: ORGANIZE 落盘前按库删除 path 在磁盘上不存在的 MediaFile (`existing_disk_path`). 碰撞改名只检查磁盘; 不先删除磁盘上已不存在、仍保留在库中的 MediaFile 记录, dest(1) 会在 UNIQUE 上与库内旧 path 冲突.
+- **链接入口**: `link_template` 非空时, 视频就位后在库外写 strm 或软链接, 指向这次整理后的路径. `link_mode=strm` 时正文按 `strm_content_template` 渲染 (空则绝对路径). `MediaFile.path` 仍是真实视频. 链接写入失败时, 目标路径仍在本库内则回写 path (视频已搬家), 任务记失败以便重试补链接.
+- **索引写回**: 整理后的路径仍在本库内则更新 `MediaFile.path`; 已不在本库内且源路径不在磁盘上则删除该行. 不改 `library_id`, 不写其它库的行. 目标路径已被本库另一行占用时删除本行, 占用行缺少刮削字段则补上.
+- **失效索引**: ORGANIZE 落盘前按库删除 path 在磁盘上不存在、或不在本库内的 MediaFile (`existing_disk_path`). 碰撞改名只检查磁盘; 不先删除磁盘上已不存在、仍保留在库中的 MediaFile 记录, 带编号的目标路径会在 UNIQUE 上与库内旧 path 冲突.
 
 ## 刮削期资源物化
 

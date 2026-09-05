@@ -18,7 +18,7 @@
 
 ## 翻译嵌入点
 
-落点在 `ScrapeHandler.handle`: `aggregate()` 之后、`upsert_metadata()` 之前 (`src/amane/handlers/scrape.py`).
+接入位置在 `ScrapeHandler.handle`: `aggregate()` 之后、`upsert_metadata()` 之前 (`src/amane/handlers/scrape.py`).
 翻译是对 `AggregatedMetadata` 文本字段的**就地变换**, 与 image materialize 并列为聚合后的后处理步骤.
 
 关键约定:

@@ -71,7 +71,7 @@ def resolve_paths(
     safe_dirs: Sequence[Path] | None = (),
     actor_genders: Mapping[str, ActorGender] | None = None,
 ) -> ResolvedPaths:
-    """``safe_dirs is None`` 时不限制绝对模板落点; 相对模板仍须在 base_path 下."""
+    """``safe_dirs is None`` 时不限制绝对模板写出的路径; 相对模板仍须在 base_path 下."""
     base_path = Path(library.path)
     ctx = TemplateContext.from_metadata(
         metadata,
@@ -115,7 +115,7 @@ def _resolve_link_path(
     base_path: Path,
     safe_dirs: Sequence[Path] | None,
 ) -> Path | None:
-    """结果必须落在库根之外. 此时 `{video_dir}` / `{video_name}` / `{video_relpath}` 已注入, `{link_dir}` / `{link_name}` 尚未注入."""
+    """结果必须在库外. 此时 `{video_dir}` / `{video_name}` / `{video_relpath}` 已注入, `{link_dir}` / `{link_name}` 尚未注入."""
     template = normalize_link_template(library.link_template)
     if template is None:
         return None
@@ -144,7 +144,7 @@ def resolve_subtitle_path(
 ) -> Path:
     """`{ext}` / `{raw_srt_name}` 取自该字幕源文件; `{raw_name}` / `{raw_dir}` 仍是视频源.
     `{video_dir}` / `{video_name}` 为整理后视频父目录与文件名 (不含扩展名);
-    `{video_relpath}` 为整理后视频相对库根的路径 (`video_dest` 未传时为空);
+    `{video_relpath}` 为整理后视频相对库根目录的路径 (`video_dest` 未传时为空);
     `{link_dir}` / `{link_name}` 为链接父目录与文件名 (未设置链接时分别与视频侧相同).
     默认模板保持原文件名与扩展名.
     """

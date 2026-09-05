@@ -47,7 +47,7 @@ def render_strm_content(
     actor_genders: Mapping[str, ActorGender] | None = None,
 ) -> str:
     """空模板写 dest 的字面绝对路径.
-    模板引用 `{video_relpath}` 且 dest 不在库根下时抛 ValueError, 不写出错误正文.
+    模板引用 `{video_relpath}` 且整理后的路径不在本库内时抛 ValueError, 不写出错误正文.
     """
     normalized = normalize_strm_content_template(template)
     if normalized is None:

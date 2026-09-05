@@ -53,7 +53,7 @@ class LibraryCreateRequest(BaseModel):
     copy_resources: list[DownloadableResource] = Field(default_factory=lambda: list(DownloadableResource))
     trailer_pattern: TrailerPattern = DEFAULT_TRAILER_PATTERN
     blacklist_patterns: list[BlacklistPattern] = []
-    """文件名正则列表; 命中任一则扫描/监控跳过, ORGANIZE 时移入库根 `.amane_trash`."""
+    """文件名正则列表; 命中任一则扫描/监控跳过, ORGANIZE 时移入本库 `.amane_trash`."""
     min_file_size: MinFileSize = 0
     """视频体积下限 (字节). 小于此值的扫描视频跳过入库, ORGANIZE 时移动至 `.amane_trash`. 0 关闭."""
     scan: bool = True

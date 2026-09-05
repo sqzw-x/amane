@@ -9,7 +9,6 @@ from amane.config import HotSettings, ScrapingConfig
 from amane.crawlers.base import Crawler
 from amane.crawlers.factory import CrawlerFactory
 from amane.crawlers.models import MediaMetadata
-from amane.db.models import MediaFileStatus
 from amane.enums import SiteName
 from amane.handlers import OrganizeHandler, OrganizePayload, ScrapeHandler, ScrapePayload
 from amane.organize import MoveMode
@@ -67,7 +66,7 @@ def fake_factory(fake_metadata):
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_full_pipeline_with_post_processing(repo: Repository, fake_factory, resource_store, tmp_path: Path):
-    """SCRAPE 写元数据, ORGANIZE 落盘 NFO 并移动文件."""
+    """SCRAPE 写元数据, ORGANIZE 落盘 NFO 并移动文件. 目标路径不在本库内时删除索引."""
     src_dir = tmp_path / "incoming"
     src_dir.mkdir()
     src_file = src_dir / "MIDV-123.mp4"
@@ -117,9 +116,9 @@ async def test_full_pipeline_with_post_processing(repo: Repository, fake_factory
     assert not src_file.exists()
 
     assert media.id is not None
-    media_updated = await repo.get_media_file(media.id)
-    assert media_updated is not None
-    assert media_updated.status == MediaFileStatus.SCRAPED
+    assert await repo.get_media_file(media.id) is None
+    kept_meta = await repo.get_metadata(result.result.metadata_id)
+    assert kept_meta is not None
 
 
 @pytest.mark.asyncio(loop_scope="function")

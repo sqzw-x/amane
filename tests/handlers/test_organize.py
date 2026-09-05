@@ -8,8 +8,9 @@ import pytest
 
 from amane.config import HotSettings
 from amane.db.models import MediaFileStatus
-from amane.enums import DownloadableResource, LinkMode
+from amane.enums import DownloadableResource, LinkMode, MoveMode
 from amane.handlers import OrganizeHandler, OrganizePayload
+from amane.handlers.file import commit_organized_media_file
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -364,7 +365,7 @@ async def test_organize_writes_subtitle_tag(repo: Repository, resource_store: Re
 async def test_organize_trashes_blacklisted_files(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
-    """黑名单命中文件: ORGANIZE 时移入库根 .amane_trash 并删除 MediaFile 记录, 正片正常落盘.
+    """黑名单命中文件: ORGANIZE 时移入本库 .amane_trash 并删除 MediaFile 记录, 正片正常落盘.
 
     预告片命中 trailer_pattern: 只跳过不归档.
     """
@@ -787,7 +788,7 @@ async def test_organize_writes_strm_and_nfo_next_to_link(
 async def test_organize_strm_content_template_uses_actual_dest(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
-    """正文用实际 dest 相对库根; 引用 relpath 且 dest 在库外时失败, dest 仍回写."""
+    """正文用实际整理后的路径相对库根目录; 引用 relpath 且目标路径在库外时失败, 目标路径仍回写."""
     lib_root = tmp_path / "lib"
     local = tmp_path / "emby"
     lib_root.mkdir()
@@ -890,3 +891,161 @@ async def test_reports_progress(repo: Repository, resource_store: ResourceStore,
     assert [c for c, _, _ in after] == sorted(c for c, _, _ in after)
     assert any(m == src1.name for _, _, m in after)
     assert any(m == src2.name for _, _, m in after)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(
+    "case",
+    [
+        "inside_update",
+        "inside_occupant",
+        "outside_source_gone",
+        "outside_source_kept",
+    ],
+)
+async def test_commit_organized_media_file(repo: Repository, tmp_path: Path, case: str) -> None:
+    """目标路径在本库内则改 path; 已被占用则删本行; 不在本库内且源不在磁盘则删行."""
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+
+    src = lib_root / "incoming" / "NSFS-039.mp4"
+    src.parent.mkdir()
+    placed = lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4"
+    outside = tmp_path / "other" / "NSFS-039.mp4"
+
+    if case == "inside_update":
+        src.write_bytes(b"v")
+        media = await repo.create_media_file(
+            lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        )
+        assert media.id is not None
+        await commit_organized_media_file(repo, media, placed, lib_root)
+        updated = await repo.get_media_file(media.id)
+        assert updated is not None
+        assert updated.path == str(placed)
+        return
+
+    if case == "inside_occupant":
+        src.write_bytes(b"v")
+        media = await repo.create_media_file(
+            lib.id,
+            path=str(src),
+            number="NSFS-039",
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta.id,
+            oshash="abc",
+        )
+        occupant = await repo.create_media_file(lib.id, path=str(placed), number=None)
+        assert media.id is not None and occupant.id is not None
+        await commit_organized_media_file(repo, media, placed, lib_root)
+        assert await repo.get_media_file(media.id) is None
+        kept = await repo.get_media_file(occupant.id)
+        assert kept is not None
+        assert kept.metadata_id == meta.id
+        assert kept.status == MediaFileStatus.SCRAPED
+        assert kept.oshash == "abc"
+        assert kept.number == "NSFS-039"
+        return
+
+    if case == "outside_source_gone":
+        media = await repo.create_media_file(
+            lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        )
+        assert media.id is not None
+        outside.parent.mkdir()
+        outside.write_bytes(b"v")
+        await commit_organized_media_file(repo, media, outside, lib_root)
+        assert await repo.get_media_file(media.id) is None
+        assert await repo.get_metadata(meta.id) is not None
+        return
+
+    src.write_bytes(b"v")
+    media = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert media.id is not None
+    outside.parent.mkdir()
+    outside.write_bytes(b"copy")
+    await commit_organized_media_file(repo, media, outside, lib_root)
+    kept = await repo.get_media_file(media.id)
+    assert kept is not None
+    assert kept.path == str(src)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize("mode", [MoveMode.MOVE, MoveMode.COPY])
+async def test_organize_placed_outside_library(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path, mode: MoveMode
+) -> None:
+    """目标路径不在本库内: move 删行; copy 保留源路径. 目标路径上已有占用行时不触发 UNIQUE."""
+    lib_root = tmp_path / "download"
+    other = tmp_path / "media"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    other.mkdir()
+    src = src_dir / "NSFS-039.mp4"
+    src.write_bytes(b"video")
+    placed = other / "Studio" / "NSFS-039" / "NSFS-039.mp4"
+
+    lib = await repo.create_library(
+        name="dl",
+        path=str(lib_root),
+        write_nfo=False,
+        copy_resources=[],
+        move_mode=mode,
+        video_template=f"{other.as_posix()}/{{studio}}/{{number}}/{{number}}.{{ext}}",
+    )
+    assert lib.id is not None
+    store_lib = await repo.create_library(name="store", path=str(other), write_nfo=False)
+    assert store_lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    source = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    occupant = await repo.create_media_file(store_lib.id, path=str(placed), number="NSFS-039")
+    assert source.id is not None and occupant.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store, safe_dirs=[tmp_path])
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.failed == 0
+    assert result.result.organized == 1
+    assert placed.exists()
+    assert await repo.get_metadata(meta.id) is not None
+    assert await repo.get_media_file(occupant.id) is not None
+    remaining = await repo.get_media_file(source.id)
+    if mode is MoveMode.MOVE:
+        assert not src.exists()
+        assert remaining is None
+    else:
+        assert src.exists()
+        assert remaining is not None
+        assert remaining.path == str(src)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_prunes_path_outside_library_root(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """落盘前删除不在本库内的索引, 即使该文件仍在磁盘上."""
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    stray = tmp_path / "away" / "NSFS-039.mp4"
+    stray.parent.mkdir()
+    stray.write_bytes(b"out")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    stray_row = await repo.create_media_file(lib.id, path=str(stray), number="NSFS-039")
+    assert stray_row.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root)))
+    assert result.success is True
+    assert await repo.get_media_file(stray_row.id) is None
+    assert stray.exists()

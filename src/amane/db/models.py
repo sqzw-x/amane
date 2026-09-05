@@ -277,7 +277,7 @@ class Library(SQLModel, table=True):
     move_mode: MoveMode = Field(default=MoveMode.MOVE)
     video_template: PathTemplate = Field(default=VIDEO_TEMPLATE_DEFAULT)
     link_template: PathTemplate | None = None
-    """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或软链接, 必须落在库根之外."""
+    """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或软链接, 必须在库外."""
     link_mode: LinkMode = Field(default=LinkMode.STRM)
     """link_template 非空时: strm 写 .strm 文本; symlink 做文件系统软链接."""
     strm_content_template: StrmContentTemplate | None = None
@@ -301,7 +301,7 @@ class Library(SQLModel, table=True):
     trailer_pattern: TrailerPattern = Field(default=DEFAULT_TRAILER_PATTERN, sa_column=Column(String, nullable=False))
     """匹配文件名 (含扩展名) 的正则; 命中则扫描/监控跳过. 空串关闭."""
     blacklist_patterns: list[BlacklistPattern] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
-    """文件名正则列表, 命中任一则扫描/监控跳过, 且 ORGANIZE 时移入库根 `.amane_trash`. 空列表关闭."""
+    """文件名正则列表, 命中任一则扫描/监控跳过, 且 ORGANIZE 时移入本库 `.amane_trash`. 空列表关闭."""
     min_file_size: MinFileSize = Field(default=0)
     """视频体积下限 (字节). 小于此值的扫描视频在 REFRESH/监控跳过, ORGANIZE 时进 `.amane_trash`. 0 关闭.
 
