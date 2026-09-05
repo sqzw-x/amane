@@ -253,40 +253,42 @@ function TimeSelects({
 }) {
   const { t } = useTranslation("schedules");
   return (
-    <Group gap="xs" align="flex-end" wrap="nowrap">
-      {!hourHidden && (
+    <Input.Wrapper description={hourHidden ? undefined : t("cron.localTime")} size="sm">
+      <Group gap="xs" align="flex-end" wrap="nowrap">
+        {!hourHidden && (
+          <Select
+            label={t("cron.hour")}
+            data={HOUR_OPTIONS}
+            value={String(hour)}
+            allowDeselect={false}
+            searchable
+            disabled={disabled}
+            w={88}
+            comboboxProps={SELECT_COMBOBOX}
+            onChange={(v) => {
+              const next = parseClockField(v, 0, 23);
+              if (next === null) return;
+              onChange(next, minute);
+            }}
+          />
+        )}
         <Select
-          label={t("cron.hour")}
-          data={HOUR_OPTIONS}
-          value={String(hour)}
+          label={hourHidden ? t("cron.minuteOfHour") : t("cron.minute")}
+          data={MINUTE_OPTIONS}
+          value={String(minute)}
           allowDeselect={false}
           searchable
           disabled={disabled}
           w={88}
           comboboxProps={SELECT_COMBOBOX}
           onChange={(v) => {
-            const next = parseClockField(v, 0, 23);
+            const next = parseClockField(v, 0, 59);
             if (next === null) return;
-            onChange(next, minute);
+            onChange(hour, next);
           }}
         />
-      )}
-      <Select
-        label={hourHidden ? t("cron.minuteOfHour") : t("cron.minute")}
-        data={MINUTE_OPTIONS}
-        value={String(minute)}
-        allowDeselect={false}
-        searchable
-        disabled={disabled}
-        w={88}
-        comboboxProps={SELECT_COMBOBOX}
-        onChange={(v) => {
-          const next = parseClockField(v, 0, 59);
-          if (next === null) return;
-          onChange(hour, next);
-        }}
-      />
-    </Group>
+      </Group>
+    </Input.Wrapper>
   );
 }
 
