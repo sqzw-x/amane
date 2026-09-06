@@ -44,7 +44,7 @@ CASES: list[object] = [
     _Case("MIDV-123-12.mp4"),
     # --- 字幕 ---
     _Case("MIDV-123-C.mp4", has_subtitle=True, number="MIDV-123"),
-    _Case("MIDV-123-UC.mp4", has_subtitle=True, mosaic="uncensored", number="MIDV-123"),
+    _Case("MIDV-123-UC.mp4", has_subtitle=True, mosaic="cracked", number="MIDV-123"),
     _Case("[字幕]MIDV-123.mp4", has_subtitle=True, number="MIDV-123"),
     _Case("[中文字幕]MIDV-123.mp4", has_subtitle=True, number="MIDV-123"),
     # --- 马赛克: 文件名标记 ---
@@ -53,20 +53,21 @@ CASES: list[object] = [
     _Case("[UNCENSORED]ABC-123.mp4", mosaic="uncensored", number="ABC-123"),
     _Case("ABC-123-uncensored.mp4", mosaic="uncensored", number="ABC-123"),
     _Case("[破解]MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("[克破]MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
     _Case("[流出]MIDV-123.mp4", mosaic="leaked", number="MIDV-123"),
     _Case("MIDV-123-LEAKED.mp4", mosaic="leaked", number="MIDV-123"),
     _Case("MIDV-123流出.mp4", mosaic="leaked", number="MIDV-123"),
-    # 同名多标记: 无码优先于破解/流出; 破解优先于流出
-    _Case("MIDV-123-無碼流出.mp4", mosaic="uncensored", number="MIDV-123"),
-    _Case("MIDV-123-無碼破解.mp4", mosaic="uncensored", number="MIDV-123"),
+    # 同名多标记: 破解优先于流出, 流出优先于无码
+    _Case("MIDV-123-無碼流出.mp4", mosaic="leaked", number="MIDV-123"),
+    _Case("MIDV-123-無碼破解.mp4", mosaic="cracked", number="MIDV-123"),
     _Case("MIDV-123-破解流出.mp4", mosaic="cracked", number="MIDV-123"),
-    # -UC 后面还跟分片或清晰度
-    _Case("MIDV-123-UC-CD1.mp4", cd=1, has_subtitle=True, mosaic="uncensored", number="MIDV-123"),
-    _Case("MIDV-123-UC-4K.mp4", has_subtitle=True, mosaic="uncensored", definition="4K", number="MIDV-123"),
-    _Case("MIDV-123-UC-CD1-4K.mp4", cd=1, has_subtitle=True, mosaic="uncensored", definition="4K", number="MIDV-123"),
-    _Case("MIDV-123-U.mp4", mosaic="uncensored", number="MIDV-123"),
-    _Case("MIDV-123-C-U.mp4", has_subtitle=True, mosaic="uncensored", number="MIDV-123"),
-    _Case("MIDV-123-U-CD1.mp4", cd=1, mosaic="uncensored", number="MIDV-123"),
+    # -U / -UC 是破解; -UC 同时是中字. 后面还可跟分片或清晰度
+    _Case("MIDV-123-UC-CD1.mp4", cd=1, has_subtitle=True, mosaic="cracked", number="MIDV-123"),
+    _Case("MIDV-123-UC-4K.mp4", has_subtitle=True, mosaic="cracked", definition="4K", number="MIDV-123"),
+    _Case("MIDV-123-UC-CD1-4K.mp4", cd=1, has_subtitle=True, mosaic="cracked", definition="4K", number="MIDV-123"),
+    _Case("MIDV-123-U.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("MIDV-123-C-U.mp4", has_subtitle=True, mosaic="cracked", number="MIDV-123"),
+    _Case("MIDV-123-U-CD1.mp4", cd=1, mosaic="cracked", number="MIDV-123"),
     # 无文件名标记: mosaic 为空 (无码片商走 content_type, 不在本字段)
     _Case("HEYZO-123.mp4", number="HEYZO-123"),
     _Case("HEYZO-123-1080p.mp4", definition="1080p", number="HEYZO-123"),
@@ -279,7 +280,7 @@ CASES: list[object] = [
     _Case(
         "/media/videos/MIDV-123-UC.mp4",
         has_subtitle=True,
-        mosaic="uncensored",
+        mosaic="cracked",
         number="MIDV-123",
         content_type=ContentType.CENSORED,
     ),
@@ -293,7 +294,7 @@ CASES: list[object] = [
         "/media/lib/MIDV-123-UC-CD1.mp4",
         cd=1,
         has_subtitle=True,
-        mosaic="uncensored",
+        mosaic="cracked",
         number="MIDV-123",
         content_type=ContentType.CENSORED,
     ),

@@ -39,6 +39,8 @@
 | `{link_name}` | 整理后链接文件名, 不含扩展名 | — |
 | `{raw_srt_name}` | 字幕原文件名, 不含扩展名 | `foo.zh.srt` → `foo.zh` |
 
+文件名 `-U` / `-UC` 解析为破解; `-UC` 同时识别为中字. 无码标记是 `无码` / `UNCENSORED`.
+
 `{actress}` / `{actresses}` 排除已标为男性的演员; 女性与尚未识别性别的名字保留. 名单为空时输出 `Unknown`.
 
 未列出范围的占位符在各模板与 STRM 内容模板中均可使用. 下表所列占位符有范围限制; 写在不可用的模板中会得到 `Unknown`.
@@ -65,7 +67,7 @@ NFO: {link_dir}/{number}.nfo
 可用 `[...]` 将模板中的一段包裹为组, 组内所有可空占位符全为空时整组省略. 这主要是为了处理分集、中字等可选属性, 例如:
 
 ```
-{number}[-CD{cd?}][-{mosaic?|uncensored=U}{sub?}].{ext}
+{number}[-CD{cd?}][-{mosaic?|cracked=U}{sub?}].{ext}
 ```
 
 - 源文件 `MIDV-123-U-C-CD2.mp4` → `MIDV-123-CD2-UC.mp4`
@@ -87,19 +89,19 @@ NFO: {link_dir}/{number}.nfo
 占位符支持 `{name|原值=输出,另一值=输出}` 语法, 将规范值改写成自定义输出:
 
 ```
-{mosaic?|uncensored=U,cracked=破解,leaked=流出}
+{mosaic?|uncensored=无码,cracked=U,leaked=流出}
 {def?|4K=2160p,1080p=FHD}
 ```
 
-- 未列出的值保持原样 (如 `{mosaic?|uncensored=U}`, cracked / leaked 仍为规范值)
+- 未列出的值保持原样 (如 `{mosaic?|cracked=U}`, uncensored / leaked 仍为规范值)
 - 可以映射成空串 (配合可选组让某个值不出现在路径中)
 - 目录段和文件名段可以分别写映射, 比如目录用规范值便于管理, 文件名用短标记节省字符:
 
 ```
-{mosaic?}/{number}[-{mosaic?|uncensored=U,cracked=破解,leaked=流出}].{ext}
+{mosaic?}/{number}[-{mosaic?|uncensored=无码,cracked=U,leaked=流出}].{ext}
 ```
 
-源文件 `MIDV-123-無碼.mp4` → `uncensored/MIDV-123-U.mp4`
+源文件 `MIDV-123-無碼.mp4` → `uncensored/MIDV-123-无码.mp4`
 
 ## 链接模板与模式
 

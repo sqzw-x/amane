@@ -295,7 +295,7 @@ def file_phase_from_path(path: str | Path) -> FilePhase:
 
 
 def file_shows_uncensored(mosaic: Mosaic | None, content_type: ContentType) -> bool:
-    """无码角标/筛选: 文件名马赛克标记或片种为无码 (HEYZO 等不必带 -U)."""
+    """无码角标/筛选: 文件名无码标记或片种为无码 (HEYZO 等不必带文件名无码标记)."""
     return mosaic == Mosaic.UNCENSORED or content_type == ContentType.UNCENSORED
 
 
@@ -589,14 +589,13 @@ def _detect_subtitle(basename: str) -> bool:
 
 
 def _detect_mosaic(basename: str) -> Mosaic | None:
-    if re.search(r"無碼|无码|UNCENSORED", basename):
-        return Mosaic.UNCENSORED
-    if re.search(r"-U(C)?(?![A-Z0-9])", basename):
-        return Mosaic.UNCENSORED
-    if re.search(r"破解", basename):
+    """basename 已大写. `-U` / `-UC` 是破解; 多标记时破解优先于流出, 流出优先于无码."""
+    if re.search(r"破解|克破", basename) or re.search(r"-U(C)?(?![A-Z0-9])", basename):
         return Mosaic.CRACKED
     if re.search(r"流出|LEAKED", basename):
         return Mosaic.LEAKED
+    if re.search(r"無碼|无码|UNCENSORED", basename):
+        return Mosaic.UNCENSORED
     return None
 
 

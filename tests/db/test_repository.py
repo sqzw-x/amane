@@ -176,7 +176,7 @@ class TestMediaFileRepo:
     async def test_create_media_file_parses_phase_from_path(self, repo: Repository):
         media = await repo.create_media_file(library_id=1, path="/media/MIDV-123-UC-4K.mp4")
         assert media.content_type is ContentType.CENSORED
-        assert media.mosaic is Mosaic.UNCENSORED
+        assert media.mosaic is Mosaic.CRACKED
         assert media.has_subtitle is True
         assert media.definition == "4K"
 
@@ -192,21 +192,21 @@ class TestMediaFileRepo:
         assert media.mosaic is None
         updated = await repo.update_media_file(media.id, path="/video/MIDV-123-U.mp4")
         assert updated is not None
-        assert updated.mosaic is Mosaic.UNCENSORED
+        assert updated.mosaic is Mosaic.CRACKED
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_phase_filters(self, repo: Repository):
         await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
-        await repo.create_media_file(library_id=1, path="/v/MIDV-002-U.mp4")
+        await repo.create_media_file(library_id=1, path="/v/MIDV-002-无码.mp4")
         await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4")
-        await repo.create_media_file(library_id=1, path="/v/MIDV-003-破解.mp4")
+        await repo.create_media_file(library_id=1, path="/v/MIDV-003-U.mp4")
 
         subs = await repo.list_media_files(has_subtitle=True, limit=None)
         assert {f.path for f in subs} == {"/v/MIDV-001-C.mp4"}
         uncensored = await repo.list_media_files(uncensored=True, limit=None)
-        assert {f.path for f in uncensored} == {"/v/MIDV-002-U.mp4", "/v/HEYZO-1234.mp4"}
+        assert {f.path for f in uncensored} == {"/v/MIDV-002-无码.mp4", "/v/HEYZO-1234.mp4"}
         cracked = await repo.list_media_files(mosaic=Mosaic.CRACKED, limit=None)
-        assert [f.path for f in cracked] == ["/v/MIDV-003-破解.mp4"]
+        assert [f.path for f in cracked] == ["/v/MIDV-003-U.mp4"]
         heyzo = await repo.list_media_files(content_type=ContentType.UNCENSORED, limit=None)
         assert [f.path for f in heyzo] == ["/v/HEYZO-1234.mp4"]
         assert await repo.count_media_files(uncensored=True) == 2
@@ -626,7 +626,7 @@ class TestMetadataRepo:
         assert sub.id and u_file.id and heyzo.id and plain.id
 
         m_sub = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
-        m_u = await repo.create_media_file(library_id=1, path="/v/MIDV-002-U.mp4")
+        m_u = await repo.create_media_file(library_id=1, path="/v/MIDV-002-无码.mp4")
         m_h = await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4")
         m_p = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4")
         assert m_sub.id and m_u.id and m_h.id and m_p.id

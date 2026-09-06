@@ -21,8 +21,15 @@ def test_file_phase_from_path_heyzo_uncensored_type_without_mosaic() -> None:
     assert file_shows_uncensored(phase["mosaic"], phase["content_type"]) is True
 
 
-def test_file_phase_from_path_midv_u_mosaic_not_content_type() -> None:
+def test_file_phase_from_path_midv_u_is_cracked_not_uncensored() -> None:
     phase = file_phase_from_path("/media/MIDV-123-U.mp4")
+    assert phase["content_type"] is ContentType.CENSORED
+    assert phase["mosaic"] is Mosaic.CRACKED
+    assert file_shows_uncensored(phase["mosaic"], phase["content_type"]) is False
+
+
+def test_file_phase_from_path_midv_uncensored_marker_not_content_type() -> None:
+    phase = file_phase_from_path("/media/MIDV-123-无码.mp4")
     assert phase["content_type"] is ContentType.CENSORED
     assert phase["mosaic"] is Mosaic.UNCENSORED
     assert file_shows_uncensored(phase["mosaic"], phase["content_type"]) is True
