@@ -1,21 +1,26 @@
+from __future__ import annotations
+
 import asyncio
 import contextlib
-from typing import TYPE_CHECKING
+import os
+from collections.abc import Coroutine, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from ..db.models import TaskType
-from ..enums import LibraryAutomation
+from ..db.models import Library, TaskType
+from ..enums import LibraryAutomation, LibraryIngest
 from ..events import EventBus, EventType
-from ..handlers._common import register_media_file
+from ..handlers._common import register_media_file, scan_library
 from ..handlers.models import ScrapePayload
+from ..library import LibraryFileKind, LibraryScan
 from ..parsing import parse_file_info
+from ..utils.path import is_descendant
+from .clouddrive import CloudDriveChange, CloudDriveRoute, local_for, match_route
 from .watcher import FileWatcher
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-    from pathlib import Path
-
     from ..db.repository import Repository
 
 logger = structlog.get_logger()
@@ -23,9 +28,38 @@ logger = structlog.get_logger()
 _CHECK_INTERVAL = 1.0
 
 
+def _same_path(left: Path, right: Path) -> bool:
+    return os.path.normcase(os.path.normpath(left)) == os.path.normcase(os.path.normpath(right))
+
+
+def _file_in_scope(path: Path, route: CloudDriveRoute) -> bool:
+    root = Path(route.local_path)
+    if not is_descendant(path, root):
+        return False
+    if route.recursive:
+        return True
+    return _same_path(path.parent, root)
+
+
+def _dir_in_scope(path: Path, route: CloudDriveRoute) -> bool:
+    root = Path(route.local_path)
+    if not is_descendant(path, root):
+        return False
+    if route.recursive:
+        return True
+    return _same_path(path, root)
+
+
+def _path_under(path: str, root: Path) -> bool:
+    candidate = Path(path)
+    return _same_path(candidate, root) or root in candidate.parents
+
+
 class WatcherService:
     """新文件注册 MediaFile; automation=scrape 时解析番号并提交 SCRAPE.
     删除移除 MediaFile; 移动更新路径.
+
+    ingest=native 的库挂 FileWatcher; ingest=clouddrive 的库只进入 webhook 路由表.
     """
 
     def __init__(
@@ -47,6 +81,7 @@ class WatcherService:
         self._observer_timeout = observer_timeout
         self._watcher: FileWatcher | None = None
         self._debounce_task: asyncio.Task | None = None
+        self._cloud_routes: dict[int, CloudDriveRoute] = {}
         self._running = False
 
     @property
@@ -64,6 +99,36 @@ class WatcherService:
             observer_timeout=self._observer_timeout,
         )
 
+    def _scan_for(self, lib: Library) -> LibraryScan:
+        return LibraryScan(
+            patterns=lib.patterns,
+            trailer_pattern=lib.trailer_pattern,
+            blacklist_patterns=lib.blacklist_patterns,
+            min_file_size=lib.min_file_size,
+            media_extensions=frozenset(self._media_extensions) if self._media_extensions else None,
+        )
+
+    def _register_cloud(self, lib: Library) -> None:
+        assert lib.id is not None
+        if lib.cloud_path is None:
+            logger.warning("clouddrive library missing cloud_path", library_id=lib.id)
+            return
+        self._cloud_routes[lib.id] = CloudDriveRoute(
+            library_id=lib.id,
+            cloud_path=lib.cloud_path,
+            local_path=lib.path,
+            recursive=lib.recursive,
+            scan=self._scan_for(lib),
+        )
+        self._running = True
+        logger.info(
+            "clouddrive watch registered",
+            library_id=lib.id,
+            path=lib.path,
+            cloud_path=lib.cloud_path,
+            recursive=lib.recursive,
+        )
+
     async def start(self) -> None:
         if self._running:
             return
@@ -73,36 +138,47 @@ class WatcherService:
             logger.info("no watch-enabled libraries configured, watcher not started")
             return
 
-        self._watcher = self._new_watcher()
+        native = [lib for lib in libraries if lib.ingest is LibraryIngest.NATIVE]
+        cloud = [lib for lib in libraries if lib.ingest is LibraryIngest.CLOUDDRIVE]
 
-        for lib in libraries:
-            assert lib.id is not None
-            logger.info("watching library", library_id=lib.id, path=lib.path, recursive=lib.recursive)
-            self._watcher.watch(
-                lib.path,
-                library_id=lib.id,
-                recursive=lib.recursive,
-                patterns=lib.patterns,
-                skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
-                min_file_size=lib.min_file_size,
-            )
+        for lib in cloud:
+            self._register_cloud(lib)
 
-        try:
-            self._watcher.start()
-        except OSError as exc:
-            if "inotify" in str(exc).lower() or "watch" in str(exc).lower():
-                logger.error(
-                    "Failed to start file watcher (inotify watch limit may be exceeded). "
-                    "Try increasing /proc/sys/fs/inotify/max_user_watches or set watcher.use_polling = true in config."
+        if native:
+            self._watcher = self._new_watcher()
+            for lib in native:
+                assert lib.id is not None
+                logger.info("watching library", library_id=lib.id, path=lib.path, recursive=lib.recursive)
+                self._watcher.watch(
+                    lib.path,
+                    library_id=lib.id,
+                    recursive=lib.recursive,
+                    patterns=lib.patterns,
+                    skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
+                    min_file_size=lib.min_file_size,
                 )
-            raise
-        self._running = True
+            try:
+                self._watcher.start()
+            except OSError as exc:
+                if "inotify" in str(exc).lower() or "watch" in str(exc).lower():
+                    logger.error(
+                        "Failed to start file watcher (inotify watch limit may be exceeded). "
+                        "Try increasing /proc/sys/fs/inotify/max_user_watches or set "
+                        "watcher.use_polling = true in config."
+                    )
+                raise
+            self._debounce_task = asyncio.create_task(self._debounce_loop())
 
-        self._debounce_task = asyncio.create_task(self._debounce_loop())
-        logger.info("watcher service started", library_count=len(libraries))
+        self._running = True
+        logger.info(
+            "watcher service started",
+            native_count=len(native),
+            clouddrive_count=len(cloud),
+        )
 
     async def stop(self) -> None:
         self._running = False
+        self._cloud_routes.clear()
         if self._debounce_task:
             self._debounce_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -115,6 +191,24 @@ class WatcherService:
 
         logger.info("watcher service stopped")
 
+    def sync_library(self, lib: Library) -> None:
+        """按库当前 automation / ingest 热更新监控."""
+        assert lib.id is not None
+        self.remove_library(lib.id)
+        if lib.automation is LibraryAutomation.NONE:
+            return
+        if lib.ingest is LibraryIngest.CLOUDDRIVE:
+            self._register_cloud(lib)
+            return
+        self.add_library(
+            lib.path,
+            lib.id,
+            recursive=lib.recursive,
+            patterns=lib.patterns,
+            skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
+            min_file_size=lib.min_file_size,
+        )
+
     def add_library(
         self,
         path: str,
@@ -124,9 +218,9 @@ class WatcherService:
         skip_patterns: Sequence[str | None] | None = None,
         min_file_size: int = 0,
     ) -> None:
-        """运行时热添加监控库."""
+        """运行时热添加 native 监控库. clouddrive 库走 sync_library."""
+        self._cloud_routes.pop(library_id, None)
         if self._watcher is None:
-            # 首次添加: 创建 watcher 并启动
             self._watcher = self._new_watcher()
             self._watcher.watch(
                 path,
@@ -142,7 +236,6 @@ class WatcherService:
                 self._debounce_task = asyncio.create_task(self._debounce_loop())
             logger.info("watcher service started for new library", library_id=library_id, path=path)
         else:
-            # 已在监控中: 先 unwatch 再 watch (幂等替换)
             self._watcher.unwatch(library_id)
             self._watcher.watch(
                 path,
@@ -156,21 +249,145 @@ class WatcherService:
 
     def remove_library(self, library_id: int) -> None:
         """运行时热移除监控库; watcher 未启动或该库未监控则为无操作."""
+        self._cloud_routes.pop(library_id, None)
         if self._watcher is None:
             return
         self._watcher.unwatch(library_id)
         logger.info("library watch removed", library_id=library_id)
 
+    def submit_clouddrive(self, changes: Sequence[CloudDriveChange]) -> None:
+        """HTTP 线程已在事件循环上; 后台处理以免 FUSE 扫描堵住 webhook."""
+        self._schedule_async(self.ingest_clouddrive(changes))
+
+    async def ingest_clouddrive(self, changes: Sequence[CloudDriveChange]) -> None:
+        routes = list(self._cloud_routes.values())
+        if not routes:
+            return
+        dir_creates: list[tuple[CloudDriveRoute, Path]] = []
+        for change in changes:
+            await self._apply_cloud_change(change, routes, dir_creates)
+        if not dir_creates:
+            return
+        await asyncio.sleep(self._debounce_seconds)
+        seen: set[tuple[int, str]] = set()
+        for route, local in dir_creates:
+            key = (route.library_id, os.path.normcase(os.path.normpath(local)))
+            if key in seen:
+                continue
+            seen.add(key)
+            await self._scan_cloud_dir(route, local)
+
+    async def _apply_cloud_change(
+        self,
+        change: CloudDriveChange,
+        routes: list[CloudDriveRoute],
+        dir_creates: list[tuple[CloudDriveRoute, Path]],
+    ) -> None:
+        src_route = match_route(change.source_file, routes)
+        dest_route = match_route(change.destination_file, routes) if change.destination_file else None
+
+        if change.action == "create":
+            if src_route is None:
+                return
+            local = local_for(src_route, change.source_file)
+            if change.is_dir:
+                if _dir_in_scope(local, src_route):
+                    dir_creates.append((src_route, local))
+                return
+            if _file_in_scope(local, src_route) and src_route.scan.classify(local) is LibraryFileKind.MEDIA:
+                await self._on_file_found(local, src_route.library_id)
+            return
+
+        if change.action == "delete":
+            if src_route is None:
+                return
+            local = local_for(src_route, change.source_file)
+            if change.is_dir:
+                await self._delete_under(src_route.library_id, local)
+            else:
+                await self._on_file_deleted(local)
+            return
+
+        if change.action == "rename":
+            await self._apply_cloud_rename(change, src_route, dest_route)
+
+    async def _apply_cloud_rename(
+        self,
+        change: CloudDriveChange,
+        src_route: CloudDriveRoute | None,
+        dest_route: CloudDriveRoute | None,
+    ) -> None:
+        if change.is_dir:
+            if src_route is not None and dest_route is None:
+                await self._delete_under(src_route.library_id, local_for(src_route, change.source_file))
+                return
+            if src_route is None and dest_route is not None:
+                local = local_for(dest_route, change.destination_file)
+                if _dir_in_scope(local, dest_route):
+                    await asyncio.sleep(self._debounce_seconds)
+                    await self._scan_cloud_dir(dest_route, local)
+                return
+            if src_route is not None and dest_route is not None:
+                await self._rewrite_prefix(
+                    src_route.library_id,
+                    local_for(src_route, change.source_file),
+                    dest_route.library_id,
+                    local_for(dest_route, change.destination_file),
+                )
+            return
+
+        if dest_route is not None:
+            dest = local_for(dest_route, change.destination_file)
+            if not _file_in_scope(dest, dest_route) or dest_route.scan.classify(dest) is not LibraryFileKind.MEDIA:
+                if src_route is not None:
+                    await self._on_file_deleted(local_for(src_route, change.source_file))
+                return
+            if src_route is None:
+                await self._on_file_found(dest, dest_route.library_id)
+                return
+            await self._on_file_moved(local_for(src_route, change.source_file), dest, dest_route.library_id)
+            return
+        if src_route is not None:
+            await self._on_file_deleted(local_for(src_route, change.source_file))
+
+    async def _scan_cloud_dir(self, route: CloudDriveRoute, local: Path) -> None:
+        nested = not _same_path(local, Path(route.local_path))
+        hits = await scan_library(local, recursive=route.recursive or nested, scan=route.scan)
+        for hit in hits:
+            if hit.kind is LibraryFileKind.MEDIA:
+                await self._on_file_found(hit.path, route.library_id)
+
+    async def _delete_under(self, library_id: int, root: Path) -> None:
+        files = await self._repo.list_media_files(library_id=library_id, limit=None)
+        for media in files:
+            if media.id is None:
+                continue
+            if _path_under(media.path, root):
+                await self._on_file_deleted(Path(media.path))
+
+    async def _rewrite_prefix(self, src_library_id: int, src_root: Path, dest_library_id: int, dest_root: Path) -> None:
+        files = await self._repo.list_media_files(library_id=src_library_id, limit=None)
+        for media in files:
+            if media.id is None or not _path_under(media.path, src_root):
+                continue
+            rel = Path(media.path).relative_to(src_root)
+            dest = dest_root / rel
+            if src_library_id == dest_library_id:
+                await self._repo.update_media_file(media.id, path=str(dest))
+            else:
+                await self._on_file_deleted(Path(media.path))
+                await self._on_file_found(dest, dest_library_id)
+
     def _on_file_found_sync(self, path: Path, library_id: int) -> None:
         self._schedule_async(self._on_file_found(path, library_id))
 
-    def _on_file_deleted_sync(self, path: Path, library_id: int) -> None:
+    def _on_file_deleted_sync(self, path: Path, _library_id: int) -> None:
         self._schedule_async(self._on_file_deleted(path))
 
     def _on_file_moved_sync(self, src: Path, dest: Path, library_id: int) -> None:
         self._schedule_async(self._on_file_moved(src, dest, library_id))
 
-    def _schedule_async(self, coro) -> None:
+    def _schedule_async(self, coro: Coroutine[Any, Any, Any]) -> None:
         try:
             loop = asyncio.get_running_loop()
             loop.call_soon_threadsafe(asyncio.ensure_future, coro)
@@ -185,7 +402,6 @@ class WatcherService:
             logger.debug("file already tracked", path=path_str)
             return
 
-        # 登记 MediaFile; automation=scrape 时再解析番号并入队
         media = await register_media_file(self._repo, library_id, path)
         assert media.id is not None
         logger.info("file discovered", path=path_str, media_file_id=media.id, library_id=library_id)
@@ -228,7 +444,6 @@ class WatcherService:
 
         media = await self._repo.get_media_file_by_path(src_str)
         if media is None:
-            # 源不在索引中则按 dest 所在 library 登记为新文件
             await self._on_file_found(dest, library_id)
             return
 

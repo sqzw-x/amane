@@ -7,7 +7,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, select
 from sqlmodel.sql.expression import SelectOfScalar
 
-from ..enums import ActorGender, DownloadableResource, LibraryAutomation, LinkMode, MoveMode
+from ..enums import ActorGender, DownloadableResource, LibraryAutomation, LibraryIngest, LinkMode, MoveMode
 from ..parsing import ContentType, Mosaic
 from ..utils.dates import normalize_calendar_date
 from .models import (
@@ -275,6 +275,8 @@ class LibraryUpdates(TypedDict, total=False):
     name: str
     path: str
     automation: LibraryAutomation
+    ingest: LibraryIngest
+    cloud_path: str | None
     recursive: bool
     patterns: list[str]
     move_mode: MoveMode

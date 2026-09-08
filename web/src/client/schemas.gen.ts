@@ -915,6 +915,55 @@ export const CleanupSubmissionSchema = {
     title: 'CleanupSubmission'
 } as const;
 
+export const CloudDriveChangeItemSchema = {
+    properties: {
+        action: {
+            type: 'string',
+            enum: [
+                'create',
+                'delete',
+                'rename'
+            ],
+            title: 'Action'
+        },
+        is_dir: {
+            type: 'boolean',
+            title: 'Is Dir'
+        },
+        source_file: {
+            type: 'string',
+            title: 'Source File'
+        },
+        destination_file: {
+            type: 'string',
+            title: 'Destination File',
+            default: ''
+        }
+    },
+    type: 'object',
+    required: [
+        'action',
+        'is_dir',
+        'source_file'
+    ],
+    title: 'CloudDriveChangeItem'
+} as const;
+
+export const CloudDriveNotifyRequestSchema = {
+    properties: {
+        data: {
+            items: {
+                $ref: '#/components/schemas/CloudDriveChangeItem'
+            },
+            type: 'array',
+            title: 'Data'
+        }
+    },
+    type: 'object',
+    title: 'CloudDriveNotifyRequest',
+    description: 'CloudDrive file_system_watcher 模板体. 未知字段忽略.'
+} as const;
+
 export const CommentCreateRequestSchema = {
     properties: {
         body: {
@@ -2486,6 +2535,21 @@ export const LibraryCreateRequestSchema = {
             $ref: '#/components/schemas/LibraryAutomation',
             default: 'scrape'
         },
+        ingest: {
+            $ref: '#/components/schemas/LibraryIngest',
+            default: 'native'
+        },
+        cloud_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cloud Path'
+        },
         recursive: {
             type: 'boolean',
             title: 'Recursive',
@@ -2661,6 +2725,16 @@ export const LibraryCreateRequestSchema = {
     title: 'LibraryCreateRequest'
 } as const;
 
+export const LibraryIngestSchema = {
+    type: 'string',
+    enum: [
+        'native',
+        'clouddrive'
+    ],
+    title: 'LibraryIngest',
+    description: '媒体库文件发现通道. automation=none 时两边都不收事件.'
+} as const;
+
 export const LibraryListResponseSchema = {
     properties: {
         items: {
@@ -2694,6 +2768,20 @@ export const LibraryResponseSchema = {
         },
         automation: {
             $ref: '#/components/schemas/LibraryAutomation'
+        },
+        ingest: {
+            $ref: '#/components/schemas/LibraryIngest'
+        },
+        cloud_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cloud Path'
         },
         recursive: {
             type: 'boolean',
@@ -2856,6 +2944,7 @@ export const LibraryResponseSchema = {
         'name',
         'path',
         'automation',
+        'ingest',
         'recursive',
         'move_mode',
         'video_template',
@@ -2903,6 +2992,27 @@ export const LibraryUpdateRequestSchema = {
                     type: 'null'
                 }
             ]
+        },
+        ingest: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/LibraryIngest'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        cloud_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cloud Path'
         },
         recursive: {
             anyOf: [

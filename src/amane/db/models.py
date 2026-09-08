@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import Column, Index, String, Text, UniqueConstraint, text
 from sqlmodel import JSON, Field, SQLModel
 
-from ..enums import ActorGender, DownloadableResource, LibraryAutomation, LinkMode, MoveMode
+from ..enums import ActorGender, DownloadableResource, LibraryAutomation, LibraryIngest, LinkMode, MoveMode
 from ..library import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -272,6 +272,10 @@ class Library(SQLModel, table=True):
     path: str = Field(nullable=False)
     automation: LibraryAutomation = Field(default=LibraryAutomation.SCRAPE)
     """自动化级别: none 不监控 / watch 仅入库 / scrape 入库并自动刮削. 库本身始终有效."""
+    ingest: LibraryIngest = Field(default=LibraryIngest.NATIVE)
+    """文件发现通道. clouddrive 不 schedule Observer, 由 webhook 按 cloud_path 分流."""
+    cloud_path: str | None = None
+    """CloudDrive 虚拟路径 (POSIX, 如 /115open/云下载). ingest=clouddrive 时必填."""
     recursive: bool = Field(default=True)
     patterns: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     move_mode: MoveMode = Field(default=MoveMode.MOVE)

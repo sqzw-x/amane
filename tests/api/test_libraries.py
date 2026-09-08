@@ -30,6 +30,8 @@ class TestLibraries:
         body = created.json()
         assert body["path"] == str(target)
         assert body["automation"] == "scrape"
+        assert body["ingest"] == "native"
+        assert body["cloud_path"] is None
         assert body["name"] == "incoming"
         assert body["move_mode"] == "move"
         assert body["link_template"] is None

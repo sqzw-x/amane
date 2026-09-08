@@ -7,9 +7,9 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 
 from ..api.support.path_validation import check_directory_path
-from ..db.models import TaskType
+from ..db.models import Library, TaskType
 from ..db.repo_types import LibraryUpdates
-from ..enums import LibraryAutomation
+from ..enums import LibraryAutomation, LibraryIngest
 from ..handlers.models import RefreshPayload, ScanMode
 from .tools import AgentDeps, require_approval, trace_tool
 
@@ -18,6 +18,8 @@ _LIBRARY_UPDATE_KEYS = frozenset(
         "name",
         "path",
         "automation",
+        "ingest",
+        "cloud_path",
         "recursive",
         "patterns",
         "move_mode",
@@ -42,32 +44,10 @@ _LIBRARY_UPDATE_KEYS = frozenset(
 )
 
 
-def _sync_watcher_add(
-    deps: AgentDeps,
-    *,
-    path: str,
-    library_id: int,
-    recursive: bool,
-    patterns: list[str],
-    skip_patterns: list[str],
-    min_file_size: int = 0,
-) -> None:
+def _sync_library(deps: AgentDeps, lib: Library) -> None:
     watcher = deps.bridge.watcher
     if watcher is not None:
-        watcher.add_library(
-            path,
-            library_id,
-            recursive=recursive,
-            patterns=patterns,
-            skip_patterns=skip_patterns,
-            min_file_size=min_file_size,
-        )
-
-
-def _sync_watcher_remove(deps: AgentDeps, library_id: int) -> None:
-    watcher = deps.bridge.watcher
-    if watcher is not None:
-        watcher.remove_library(library_id)
+        watcher.sync_library(lib)
 
 
 def build_library_ops_capability() -> Capability[AgentDeps]:
@@ -116,24 +96,18 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
         except ValueError as exc:
             return {"error": str(exc)}
         display = name or Path(path).name
-        lib = await ctx.deps.repo.create_library(
-            name=display,
-            path=path,
-            automation=automation,
-            recursive=recursive,
-            patterns=patterns,
-        )
-        assert lib.id is not None
-        if automation != LibraryAutomation.NONE:
-            _sync_watcher_add(
-                ctx.deps,
-                path=lib.path,
-                library_id=lib.id,
-                recursive=lib.recursive,
-                patterns=list(lib.patterns or []),
-                skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
-                min_file_size=lib.min_file_size,
+        try:
+            lib = await ctx.deps.repo.create_library(
+                name=display,
+                path=path,
+                automation=automation,
+                recursive=recursive,
+                patterns=patterns,
             )
+        except ValueError as exc:
+            return {"error": str(exc)}
+        assert lib.id is not None
+        _sync_library(ctx.deps, lib)
         task_id: int | None = None
         if scan:
             task = await ctx.deps.repo.create_task(
@@ -167,16 +141,26 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
                 patch["automation"] = LibraryAutomation(patch["automation"])
             except ValueError:
                 return {"error": f"无效的 automation: {patch['automation']}"}
+        if "ingest" in patch:
+            try:
+                patch["ingest"] = LibraryIngest(patch["ingest"])
+            except ValueError:
+                return {"error": f"无效的 ingest: {patch['ingest']}"}
         if "path" in patch and patch["path"] is not None:
             try:
                 await check_directory_path(str(patch["path"]), ctx.deps.bridge.safe_dirs)
             except ValueError as exc:
                 return {"error": str(exc)}
-        lib = await ctx.deps.repo.update_library(library_id, **cast(LibraryUpdates, patch))
+        try:
+            lib = await ctx.deps.repo.update_library(library_id, **cast(LibraryUpdates, patch))
+        except ValueError as exc:
+            return {"error": str(exc)}
         if lib is None:
             return {"error": f"library {library_id} 不存在"}
         watch_fields = {
             "automation",
+            "ingest",
+            "cloud_path",
             "path",
             "recursive",
             "patterns",
@@ -185,18 +169,7 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
             "min_file_size",
         }
         if watch_fields & set(patch):
-            _sync_watcher_remove(ctx.deps, library_id)
-            if lib.automation != LibraryAutomation.NONE:
-                assert lib.id is not None
-                _sync_watcher_add(
-                    ctx.deps,
-                    path=lib.path,
-                    library_id=lib.id,
-                    recursive=lib.recursive,
-                    patterns=list(lib.patterns or []),
-                    skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
-                    min_file_size=lib.min_file_size,
-                )
+            _sync_library(ctx.deps, lib)
         out = {"id": lib.id, "name": lib.name, "path": lib.path, "updated": True}
         trace_tool(ctx, "tool_result", {"tool": "update_library", "result": out})
         return out

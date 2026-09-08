@@ -71,6 +71,16 @@ class LibraryAutomation(StrEnum):
     SCRAPE = "scrape"
 
 
+class LibraryIngest(StrEnum):
+    """媒体库文件发现通道. automation=none 时两边都不收事件."""
+
+    NATIVE = "native"
+    """操作系统文件系统事件 (watchdog Observer / 轮询)."""
+
+    CLOUDDRIVE = "clouddrive"
+    """CloudDrive file_system_watcher webhook; 不 schedule Observer."""
+
+
 class DownloadableResource(StrEnum):
     """影片附属资源类型: 刮削写入 Resource, 整理时按库配置复制到库路径."""
 

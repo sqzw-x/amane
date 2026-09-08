@@ -1,9 +1,9 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ...db import Library
-from ...enums import DownloadableResource, LibraryAutomation, LinkMode, MoveMode
+from ...enums import DownloadableResource, LibraryAutomation, LibraryIngest, LinkMode, MoveMode
 from ...library import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -11,6 +11,7 @@ from ...library import (
     MinFileSize,
     SubtitleExtensions,
     TrailerPattern,
+    resolve_ingest_cloud_path,
 )
 from ...organize.path_templates import (
     EXTRAFANART_TEMPLATE_DEFAULT,
@@ -34,6 +35,9 @@ class LibraryCreateRequest(BaseModel):
     """显示名; 留空则取路径 basename."""
     path: str
     automation: LibraryAutomation = LibraryAutomation.SCRAPE
+    ingest: LibraryIngest = LibraryIngest.NATIVE
+    cloud_path: str | None = None
+    """CloudDrive 虚拟路径 (POSIX, 如 /115open/云下载). ingest=clouddrive 时必填."""
     recursive: bool = True
     patterns: list[str] = []
     move_mode: MoveMode = MoveMode.MOVE
@@ -58,6 +62,11 @@ class LibraryCreateRequest(BaseModel):
     """视频体积下限 (字节). 小于此值的扫描视频跳过入库, ORGANIZE 时移动至 `.amane_trash`. 0 关闭."""
     scan: bool = True
 
+    @model_validator(mode="after")
+    def _cloud_path_for_ingest(self) -> Self:
+        self.cloud_path = resolve_ingest_cloud_path(self.ingest, self.cloud_path)
+        return self
+
 
 if TYPE_CHECKING:
     type LibraryUpdateRequest = Library
@@ -71,6 +80,8 @@ class LibraryResponse(BaseModel):
     name: str
     path: str
     automation: LibraryAutomation
+    ingest: LibraryIngest
+    cloud_path: str | None = None
     recursive: bool
     patterns: list[str] = []
     move_mode: MoveMode

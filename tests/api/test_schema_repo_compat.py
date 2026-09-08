@@ -439,6 +439,8 @@ _ROUNDTRIP = [
                 "trailer_template",
                 "subtitle_template",
                 "strm_content_template",
+                "ingest",
+                "cloud_path",
             }
         ),
     ),

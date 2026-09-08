@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from ..db.models import Library
 
 
 class LibraryWatcher(Protocol):
@@ -18,6 +21,8 @@ class LibraryWatcher(Protocol):
     ) -> None: ...
 
     def remove_library(self, library_id: int) -> None: ...
+
+    def sync_library(self, lib: Library) -> None: ...
 
 
 @dataclass

@@ -5,7 +5,6 @@ import structlog
 from fastapi import APIRouter, HTTPException, Response
 
 from ...db.models import TaskType
-from ...enums import LibraryAutomation
 from ...handlers import RefreshPayload, ScanMode
 from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
@@ -46,45 +45,49 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
 
     name = req.name or Path(req.path).name
 
-    lib = await repo.create_library(
+    try:
+        lib = await repo.create_library(
+            name=name,
+            path=req.path,
+            automation=req.automation,
+            ingest=req.ingest,
+            cloud_path=req.cloud_path,
+            recursive=req.recursive,
+            patterns=req.patterns,
+            move_mode=req.move_mode,
+            video_template=req.video_template,
+            link_template=req.link_template,
+            link_mode=req.link_mode,
+            strm_content_template=req.strm_content_template,
+            thumb_template=req.thumb_template,
+            poster_template=req.poster_template,
+            fanart_template=req.fanart_template,
+            extrafanart_template=req.extrafanart_template,
+            nfo_template=req.nfo_template,
+            trailer_template=req.trailer_template,
+            subtitle_template=req.subtitle_template,
+            subtitle_extensions=req.subtitle_extensions,
+            write_nfo=req.write_nfo,
+            copy_resources=req.copy_resources,
+            trailer_pattern=req.trailer_pattern,
+            blacklist_patterns=req.blacklist_patterns,
+            min_file_size=req.min_file_size,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    assert lib.id is not None
+
+    logger.info(
+        "library created",
+        library_id=lib.id,
         name=name,
         path=req.path,
         automation=req.automation,
-        recursive=req.recursive,
-        patterns=req.patterns,
-        move_mode=req.move_mode,
-        video_template=req.video_template,
-        link_template=req.link_template,
-        link_mode=req.link_mode,
-        strm_content_template=req.strm_content_template,
-        thumb_template=req.thumb_template,
-        poster_template=req.poster_template,
-        fanart_template=req.fanart_template,
-        extrafanart_template=req.extrafanart_template,
-        nfo_template=req.nfo_template,
-        trailer_template=req.trailer_template,
-        subtitle_template=req.subtitle_template,
-        subtitle_extensions=req.subtitle_extensions,
-        write_nfo=req.write_nfo,
-        copy_resources=req.copy_resources,
-        trailer_pattern=req.trailer_pattern,
-        blacklist_patterns=req.blacklist_patterns,
-        min_file_size=req.min_file_size,
+        ingest=req.ingest,
     )
-    assert lib.id is not None
 
-    logger.info("library created", library_id=lib.id, name=name, path=req.path, automation=req.automation)
-
-    # 热添加到文件监控器
-    if req.automation != LibraryAutomation.NONE and runtime.watcher_service:
-        runtime.watcher_service.add_library(
-            path=req.path,
-            library_id=lib.id,
-            recursive=req.recursive,
-            patterns=req.patterns,
-            skip_patterns=[req.trailer_pattern, *req.blacklist_patterns],
-            min_file_size=req.min_file_size,
-        )
+    if runtime.watcher_service:
+        runtime.watcher_service.sync_library(lib)
 
     # 提交初始 Refresh 任务
     if req.scan:
@@ -126,13 +129,18 @@ async def update_library(
     if "path" in updates and updates["path"] is not None:
         await validate_directory_path(updates["path"], runtime.safe_dirs)
 
-    lib = await repo.update_library(library_id, **updates)
+    try:
+        lib = await repo.update_library(library_id, **updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if lib is None:
         raise HTTPException(status_code=404, detail="Library not found")
     logger.info("library updated", library_id=library_id, fields=list(updates.keys()))
 
     watch_fields = {
         "automation",
+        "ingest",
+        "cloud_path",
         "path",
         "recursive",
         "patterns",
@@ -140,19 +148,8 @@ async def update_library(
         "blacklist_patterns",
         "min_file_size",
     }
-    # 监控相关字段变化时, 先移除旧监控再按最新状态重建
     if runtime.watcher_service and watch_fields & updates.keys():
-        runtime.watcher_service.remove_library(library_id)
-        if lib.automation != LibraryAutomation.NONE:
-            assert lib.id is not None
-            runtime.watcher_service.add_library(
-                path=lib.path,
-                library_id=lib.id,
-                recursive=lib.recursive,
-                patterns=lib.patterns,
-                skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
-                min_file_size=lib.min_file_size,
-            )
+        runtime.watcher_service.sync_library(lib)
 
     return to_resp(LibraryResponse, lib)
 

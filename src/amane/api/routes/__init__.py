@@ -16,6 +16,7 @@ from .resources import router as resources_router
 from .schedules import router as schedules_router
 from .system import router as system_router
 from .tasks import router as tasks_router
+from .webhooks import router as webhooks_router
 from .ws import router as ws_router
 
 API_PREFIX = "/api"
@@ -36,5 +37,6 @@ router.include_router(schedules_router)
 router.include_router(system_router)
 router.include_router(tasks_router)
 router.include_router(libraries_router)
+router.include_router(webhooks_router)
 router.include_router(agent_router)
 router.include_router(ws_router)
