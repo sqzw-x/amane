@@ -145,19 +145,19 @@ class WatcherService:
             self._register_cloud(lib)
 
         if native:
-            self._watcher = self._new_watcher()
-            for lib in native:
-                assert lib.id is not None
-                logger.info("watching library", library_id=lib.id, path=lib.path, recursive=lib.recursive)
-                self._watcher.watch(
-                    lib.path,
-                    library_id=lib.id,
-                    recursive=lib.recursive,
-                    patterns=lib.patterns,
-                    skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
-                    min_file_size=lib.min_file_size,
-                )
             try:
+                self._watcher = self._new_watcher()
+                for lib in native:
+                    assert lib.id is not None
+                    logger.info("watching library", library_id=lib.id, path=lib.path, recursive=lib.recursive)
+                    self._watcher.watch(
+                        lib.path,
+                        library_id=lib.id,
+                        recursive=lib.recursive,
+                        patterns=lib.patterns,
+                        skip_patterns=[lib.trailer_pattern, *(lib.blacklist_patterns or [])],
+                        min_file_size=lib.min_file_size,
+                    )
                 self._watcher.start()
             except OSError as exc:
                 if "inotify" in str(exc).lower() or "watch" in str(exc).lower():
@@ -166,14 +166,21 @@ class WatcherService:
                         "Try increasing /proc/sys/fs/inotify/max_user_watches or set "
                         "watcher.use_polling = true in config."
                     )
-                raise
-            self._debounce_task = asyncio.create_task(self._debounce_loop())
+                else:
+                    logger.error("Failed to start file watcher", exc_info=True)
+                if self._watcher is not None:
+                    with contextlib.suppress(Exception):
+                        self._watcher.stop()
+                self._watcher = None
+            else:
+                self._debounce_task = asyncio.create_task(self._debounce_loop())
 
         self._running = True
         logger.info(
             "watcher service started",
             native_count=len(native),
             clouddrive_count=len(cloud),
+            native_observer=self._watcher is not None,
         )
 
     async def stop(self) -> None:
@@ -266,6 +273,9 @@ class WatcherService:
         dir_creates: list[tuple[CloudDriveRoute, Path]] = []
         for change in changes:
             await self._apply_cloud_change(change, routes, dir_creates)
+        await self._scan_collected_dirs(dir_creates)
+
+    async def _scan_collected_dirs(self, dir_creates: list[tuple[CloudDriveRoute, Path]]) -> None:
         if not dir_creates:
             return
         await asyncio.sleep(self._debounce_seconds)
@@ -309,13 +319,14 @@ class WatcherService:
             return
 
         if change.action == "rename":
-            await self._apply_cloud_rename(change, src_route, dest_route)
+            await self._apply_cloud_rename(change, src_route, dest_route, dir_creates)
 
     async def _apply_cloud_rename(
         self,
         change: CloudDriveChange,
         src_route: CloudDriveRoute | None,
         dest_route: CloudDriveRoute | None,
+        dir_creates: list[tuple[CloudDriveRoute, Path]],
     ) -> None:
         if change.is_dir:
             if src_route is not None and dest_route is None:
@@ -324,8 +335,7 @@ class WatcherService:
             if src_route is None and dest_route is not None:
                 local = local_for(dest_route, change.destination_file)
                 if _dir_in_scope(local, dest_route):
-                    await asyncio.sleep(self._debounce_seconds)
-                    await self._scan_cloud_dir(dest_route, local)
+                    dir_creates.append((dest_route, local))
                 return
             if src_route is not None and dest_route is not None:
                 await self._rewrite_prefix(
@@ -343,6 +353,10 @@ class WatcherService:
                     await self._on_file_deleted(local_for(src_route, change.source_file))
                 return
             if src_route is None:
+                await self._on_file_found(dest, dest_route.library_id)
+                return
+            if src_route.library_id != dest_route.library_id:
+                await self._on_file_deleted(local_for(src_route, change.source_file))
                 await self._on_file_found(dest, dest_route.library_id)
                 return
             await self._on_file_moved(local_for(src_route, change.source_file), dest, dest_route.library_id)

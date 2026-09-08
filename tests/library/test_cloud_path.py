@@ -7,6 +7,7 @@ import pytest
 from amane.enums import LibraryIngest
 from amane.library.cloud_path import (
     cloud_covers,
+    cloud_paths_overlap,
     normalize_cloud_path,
     optional_cloud_path,
     resolve_ingest_cloud_path,
@@ -62,6 +63,20 @@ COVER_CASES = [
 @pytest.mark.parametrize(("root", "file_path", "want"), COVER_CASES)
 def test_cloud_covers(root: str, file_path: str, want: bool) -> None:
     assert cloud_covers(root, file_path) is want
+
+
+OVERLAP_CASES = [
+    ("/115open/lib", "/115open/lib", True),
+    ("/115open/lib", "/115open/lib/sub", True),
+    ("/115open/lib/sub", "/115open/lib", True),
+    ("/115open/a", "/115open/b", False),
+    ("/115open/lib", "/115open/liberate", False),
+]
+
+
+@pytest.mark.parametrize(("left", "right", "want"), OVERLAP_CASES)
+def test_cloud_paths_overlap(left: str, right: str, want: bool) -> None:
+    assert cloud_paths_overlap(left, right) is want
 
 
 def test_to_local_path_joins_posix_segments(tmp_path: Path) -> None:

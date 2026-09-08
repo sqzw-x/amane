@@ -1,5 +1,6 @@
 from .cloud_path import (
     cloud_covers,
+    cloud_paths_overlap,
     normalize_cloud_path,
     optional_cloud_path,
     resolve_ingest_cloud_path,
@@ -34,6 +35,7 @@ __all__ = [
     "SubtitleExtensions",
     "TrailerPattern",
     "cloud_covers",
+    "cloud_paths_overlap",
     "normalize_cloud_path",
     "normalize_subtitle_extensions",
     "optional_cloud_path",

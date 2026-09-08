@@ -62,6 +62,7 @@ class TestTokenAuth:
     async def test_bearer_cookie_and_exemptions(self, token_client):
         client, _ = token_client
         assert (await client.get("libraries")).status_code == 401
+        assert (await client.post("webhooks/clouddrive", json={"data": []})).status_code == 401
         assert (await client.get("libraries", headers={"Authorization": "Bearer wrong"})).status_code == 401
         assert (await client.get("system/release")).status_code == 401
         unauthorized = await client.get("libraries")

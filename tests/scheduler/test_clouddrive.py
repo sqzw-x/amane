@@ -1,5 +1,6 @@
 """CloudDrive webhook 分流与入库."""
 
+import time
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from amane.library import LibraryScan
 from amane.library.cloud_path import normalize_cloud_path
 from amane.scheduler.clouddrive import CloudDriveChange, CloudDriveRoute, match_route
 from amane.scheduler.service import WatcherService
+from amane.scheduler.watcher import FileWatcher
 
 
 class TestMatchRoute:
@@ -147,4 +149,161 @@ class TestCloudDriveIngest:
             [CloudDriveChange(action="create", is_dir=False, source_file="/115open/other/a.mp4")]
         )
         assert await repo.list_media_files(library_id=lib.id, limit=None) == []
+        await service.stop()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_native_observer_failure_keeps_cloud_routes(
+        self, service: WatcherService, repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        native_root = tmp_path / "native"
+        cloud_root = tmp_path / "cloud"
+        native_root.mkdir()
+        cloud_root.mkdir()
+        video = cloud_root / "a.mp4"
+        video.write_bytes(b"x" * 32)
+        await repo.create_library(
+            name="native",
+            path=str(native_root),
+            automation=LibraryAutomation.WATCH,
+        )
+        cloud = await repo.create_library(
+            name="cd",
+            path=str(cloud_root),
+            ingest=LibraryIngest.CLOUDDRIVE,
+            cloud_path="/115open/lib",
+            automation=LibraryAutomation.WATCH,
+        )
+
+        def boom(self: FileWatcher) -> None:
+            raise OSError("inotify watch limit may be exceeded")
+
+        monkeypatch.setattr(FileWatcher, "start", boom)
+        await service.start()
+        assert service.is_running
+        assert service._watcher is None
+        assert cloud.id in service._cloud_routes
+        await service.ingest_clouddrive(
+            [CloudDriveChange(action="create", is_dir=False, source_file="/115open/lib/a.mp4")]
+        )
+        assert await repo.get_media_file_by_path(str(video)) is not None
+        await service.stop()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_file_rename_updates_path(self, service: WatcherService, repo: Repository, tmp_path: Path) -> None:
+        src = tmp_path / "a.mp4"
+        dest = tmp_path / "b.mp4"
+        src.write_bytes(b"x" * 32)
+        dest.write_bytes(b"x" * 32)
+        lib = await repo.create_library(
+            name="cd",
+            path=str(tmp_path),
+            ingest=LibraryIngest.CLOUDDRIVE,
+            cloud_path="/115open/lib",
+            automation=LibraryAutomation.WATCH,
+        )
+        assert lib.id is not None
+        await repo.create_media_file(library_id=lib.id, path=str(src))
+        await service.start()
+        await service.ingest_clouddrive(
+            [
+                CloudDriveChange(
+                    action="rename",
+                    is_dir=False,
+                    source_file="/115open/lib/a.mp4",
+                    destination_file="/115open/lib/b.mp4",
+                )
+            ]
+        )
+        assert await repo.get_media_file_by_path(str(src)) is None
+        moved = await repo.get_media_file_by_path(str(dest))
+        assert moved is not None
+        assert moved.library_id == lib.id
+        await service.stop()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_dir_rename_into_library_scans_once(self, repo: Repository, tmp_path: Path) -> None:
+        service = WatcherService(repo, EventBus(), use_polling=True, debounce_seconds=0.3, check_interval=0.05)
+        first = tmp_path / "a"
+        second = tmp_path / "b"
+        first.mkdir()
+        second.mkdir()
+        video_a = first / "a.mp4"
+        video_b = second / "b.mp4"
+        video_a.write_bytes(b"x" * 32)
+        video_b.write_bytes(b"x" * 32)
+        lib = await repo.create_library(
+            name="cd",
+            path=str(tmp_path),
+            ingest=LibraryIngest.CLOUDDRIVE,
+            cloud_path="/115open/lib",
+            automation=LibraryAutomation.WATCH,
+        )
+        await service.start()
+        started = time.monotonic()
+        await service.ingest_clouddrive(
+            [
+                CloudDriveChange(
+                    action="rename",
+                    is_dir=True,
+                    source_file="/115open/other/a",
+                    destination_file="/115open/lib/a",
+                ),
+                CloudDriveChange(
+                    action="rename",
+                    is_dir=True,
+                    source_file="/115open/other/b",
+                    destination_file="/115open/lib/b",
+                ),
+            ]
+        )
+        elapsed = time.monotonic() - started
+        assert elapsed < 0.5
+        assert await repo.get_media_file_by_path(str(video_a)) is not None
+        assert await repo.get_media_file_by_path(str(video_b)) is not None
+        assert lib.id is not None
+        await service.stop()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_file_rename_across_libraries(
+        self, service: WatcherService, repo: Repository, tmp_path: Path
+    ) -> None:
+        src_root = tmp_path / "src"
+        dest_root = tmp_path / "dest"
+        src_root.mkdir()
+        dest_root.mkdir()
+        src = src_root / "a.mp4"
+        dest = dest_root / "a.mp4"
+        src.write_bytes(b"x" * 32)
+        dest.write_bytes(b"x" * 32)
+        src_lib = await repo.create_library(
+            name="src",
+            path=str(src_root),
+            ingest=LibraryIngest.CLOUDDRIVE,
+            cloud_path="/115open/src",
+            automation=LibraryAutomation.WATCH,
+        )
+        dest_lib = await repo.create_library(
+            name="dest",
+            path=str(dest_root),
+            ingest=LibraryIngest.CLOUDDRIVE,
+            cloud_path="/115open/dest",
+            automation=LibraryAutomation.WATCH,
+        )
+        assert src_lib.id is not None
+        await repo.create_media_file(library_id=src_lib.id, path=str(src))
+        await service.start()
+        await service.ingest_clouddrive(
+            [
+                CloudDriveChange(
+                    action="rename",
+                    is_dir=False,
+                    source_file="/115open/src/a.mp4",
+                    destination_file="/115open/dest/a.mp4",
+                )
+            ]
+        )
+        assert await repo.get_media_file_by_path(str(src)) is None
+        moved = await repo.get_media_file_by_path(str(dest))
+        assert moved is not None
+        assert moved.library_id == dest_lib.id
         await service.stop()

@@ -61,6 +61,11 @@ def cloud_covers(root: str, file_path: str) -> bool:
     return file_path.startswith(prefix)
 
 
+def cloud_paths_overlap(left: str, right: str) -> bool:
+    """相同路径或互为前缀. 两侧须已经 ``normalize_cloud_path``."""
+    return cloud_covers(left, right) or cloud_covers(right, left)
+
+
 def to_local_path(local_root: str, cloud_root: str, cloud_file: str) -> Path:
     """把虚拟路径换成 ``Library.path`` 下的本机路径. 用 posix 段拼接, 不解析虚拟路径为 OS Path."""
     root = normalize_cloud_path(cloud_root)

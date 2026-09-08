@@ -98,3 +98,50 @@ class TestCloudDriveWebhook:
         )
         assert posted.status_code == 204
         assert await repo.list_media_files(library_id=lib_id, limit=None) == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_cloud_path_rejects_overlap(self, client: AsyncClient, safe_path: Path) -> None:
+        first_dir = safe_path / "one"
+        second_dir = safe_path / "two"
+        first_dir.mkdir()
+        second_dir.mkdir()
+        created = await client.post(
+            "libraries",
+            json={
+                "path": str(first_dir),
+                "ingest": "clouddrive",
+                "cloud_path": "/115open/lib",
+                "automation": "watch",
+                "scan": False,
+            },
+        )
+        assert created.status_code == 201
+        lib_id = created.json()["id"]
+
+        for cloud_path in ("/115open/lib", "/115open/lib/sub"):
+            conflicted = await client.post(
+                "libraries",
+                json={
+                    "path": str(second_dir),
+                    "ingest": "clouddrive",
+                    "cloud_path": cloud_path,
+                    "automation": "watch",
+                    "scan": False,
+                },
+            )
+            assert conflicted.status_code == 422, cloud_path
+
+        sibling = await client.post(
+            "libraries",
+            json={
+                "path": str(second_dir),
+                "ingest": "clouddrive",
+                "cloud_path": "/115open/other",
+                "automation": "watch",
+                "scan": False,
+            },
+        )
+        assert sibling.status_code == 201
+
+        same = await client.patch(f"libraries/{lib_id}", json={"cloud_path": "/115open/lib"})
+        assert same.status_code == 200
