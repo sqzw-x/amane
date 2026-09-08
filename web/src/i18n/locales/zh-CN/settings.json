@@ -608,6 +608,10 @@
           "xhigh": "最高"
         }
       },
+      "max_tokens": {
+        "label": "最大输出 token",
+        "description": "单次回复的输出上限. 超过模型上限时上游拒绝请求"
+      },
       "rate_limit": {
         "label": "每秒请求上限",
         "description": "参考供应商说明, 过高可能触发限流"

@@ -69,9 +69,9 @@ def test_resolve_model_settings(
     session_thinking: AgentThinkingMode | None,
     expected_thinking: object | None,
 ) -> None:
-    config = AgentConfig(thinking=global_thinking)
+    config = AgentConfig(thinking=global_thinking, max_tokens=65_536)
     settings = resolve_model_settings(config, session_thinking=session_thinking)
-    assert settings.get("max_tokens") == 128_000
+    assert settings.get("max_tokens") == 65_536
     if expected_thinking is None:
         assert "thinking" not in settings
     else:

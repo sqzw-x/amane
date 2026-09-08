@@ -312,6 +312,10 @@ export type AgentConfig = {
     model?: string;
     thinking?: AgentThinkingMode | null;
     /**
+     * Max Tokens
+     */
+    max_tokens?: number;
+    /**
      * Rate Limit
      */
     rate_limit?: number;

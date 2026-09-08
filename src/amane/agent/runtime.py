@@ -23,8 +23,6 @@ from .task_ops import build_task_ops_capability
 from .tool_names import ToolNameAlias
 from .tools import AgentDeps, build_explore_toolset
 
-# 避免使用提供商默认 max_tokens (过小会 length 截断且无正文).
-_AGENT_MAX_TOKENS = 128_000
 # 工具 / 输出校验重试: 框架默认 1, 此处拉高避免早停.
 _AGENT_RETRIES = 10_000
 # 关闭 request / tool_calls / token 等 UsageLimits (框架默认 request_limit=50).
@@ -97,8 +95,8 @@ def thinking_to_level(mode: AgentThinkingMode) -> ThinkingLevel:
 
 
 def resolve_model_settings(config: AgentConfig, *, session_thinking: AgentThinkingMode | None = None) -> ModelSettings:
-    """始终带高 max_tokens. ``session_thinking`` 为 None 表示继承 ``config.thinking``; 有效值仍为 None 时不传 thinking."""
-    settings: ModelSettings = {"max_tokens": _AGENT_MAX_TOKENS}
+    """始终注入 ``config.max_tokens`` (避免提供商默认过小导致 length 截断). ``session_thinking`` 为 None 表示继承 ``config.thinking``; 有效值仍为 None 时不传 thinking."""
+    settings: ModelSettings = {"max_tokens": config.max_tokens}
     effective = config.thinking if session_thinking is None else session_thinking
     if effective is not None:
         settings["thinking"] = thinking_to_level(effective)

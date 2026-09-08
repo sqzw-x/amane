@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from amane.app.bootstrap import build_safe_dirs
 from amane.config import (
     SAFE_DIRS_ALLOW_ALL,
+    AgentConfig,
     ColdSettings,
     ConfigManager,
     DownloadableResource,
@@ -143,6 +144,18 @@ class TestHotSettings:
         """worker.poll_interval > 10.0 被拒绝"""
         with pytest.raises(ValidationError, match=r"less than or equal to 10"):
             HotSettings(worker=WorkerConfig(poll_interval=11.0))
+
+    @pytest.mark.parametrize(
+        ("max_tokens", "match"),
+        [
+            (0, r"greater than or equal to 1"),
+            (-1, r"greater than or equal to 1"),
+            (1_000_001, r"less than or equal to 1000000"),
+        ],
+    )
+    def test_agent_max_tokens_out_of_range(self, max_tokens: int, match: str) -> None:
+        with pytest.raises(ValidationError, match=match):
+            AgentConfig(max_tokens=max_tokens)
 
 
 class TestScrapingDownloadResources:

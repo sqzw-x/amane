@@ -608,6 +608,10 @@
           "xhigh": "Max"
         }
       },
+      "max_tokens": {
+        "label": "Max output tokens",
+        "description": "Per-reply output cap. The provider rejects values above the model's limit"
+      },
       "rate_limit": {
         "label": "Max requests per second",
         "description": "See the provider's docs; too high may trigger rate limiting"
