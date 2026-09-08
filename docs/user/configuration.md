@@ -75,8 +75,8 @@ data/
 
 ### 文件监控 (`watcher`)
 
-- **轮询模式**: 在 NAS/NFS/Docker Desktop/WSL2 等场景下使用轮询替代原生事件
-- **防抖窗口**: 文件变动后等待的时间, 避免重复触发
+- **轮询模式**: 在 NAS/NFS/Docker Desktop/WSL2 等场景下使用轮询替代原生事件. 只作用于发现通道为「文件系统」的库; CloudDrive 库见 [媒体库管理](libraries.md)
+- **防抖窗口**: 文件变动后等待的时间, 避免重复触发; CloudDrive 目录 create 后的子树扫描也使用该窗口
 - **媒体扩展名**: 监控的文件类型白名单
 
 ### AI 助理 (`agent`)

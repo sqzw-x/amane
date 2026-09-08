@@ -197,7 +197,7 @@ Metadata 是一等公民, CLEANUP **从不**因「无关联 MediaFile」删除 M
 ## 调度器与监控
 
 - `CronScheduler`: 每 60s 扫描一次启用的 `Schedule`, 按 `RoutineType` (`CLEANUP` / `UPSCALE` / `R18_IMPORT` / `RESCRAPE`) 入队 (`scheduler/cron.py::_execute_task`).
-- `WatcherService`: 文件系统事件 + 防抖.
+- `WatcherService`: 文件系统事件 + CloudDrive webhook; 契约见 [watcher.md](watcher.md).
 - `FeedService`: 远程 RSS / Atom 发现, 按每源 `next_fetch_at` 到期拉取; `auto_enqueue` 时入队 by-number SCRAPE. **不是** Schedule / Routine. 契约见 [feeds.md](feeds.md).
 
 **UPSCALE 例行任务**: 扫描全部 `Resource`, 对低质且未超分的就地超分; `limit` 限单次批量. 与 scrape 期急切双轨, 见上节.
@@ -206,6 +206,6 @@ Metadata 是一等公民, CLEANUP **从不**因「无关联 MediaFile」删除 M
 
 Watcher、Cron 与 Feed 分属独立循环: 秒级反应、分钟级 routine、每源间隔的远程拉取. 合并到同一循环会互相拖高 latency, 或把 HTTP / RSS 纳入 cron.py.
 
-`watcher.use_polling` 在 NAS / Docker Desktop / WSL2 等 inotify 不可靠场景下打开. `debounce_seconds` 防止大文件写入途中提前刮削. 这三项 HotSettings 在进程启动时注入 WatcherService, 修改 TOML 后须重启才生效 (见 [config.md](config.md)); Library 级 `automation` / 路径 / `trailer_pattern` 则由 libraries 路由热增删监控根. `automation=none` 不监控; `watch` 只登记; `scrape` 登记后入队 SCRAPE. 三者都不自动 ORGANIZE.
+`watcher.use_polling` 在 NAS / Docker Desktop / WSL2 等 inotify 不可靠场景下打开. `debounce_seconds` 防止大文件写入途中提前刮削, 也用于 CloudDrive 目录 create 后的子树扫描. 这三项 HotSettings 在进程启动时注入 WatcherService, 修改 TOML 后须重启才生效 (见 [config.md](config.md)); Library 级 `automation` / `ingest` / `cloud_path` / 路径 / `trailer_pattern` 则由 libraries 路由热更新监控根. `automation=none` 不监控; `watch` 只登记; `scrape` 登记后入队 SCRAPE. 三者都不自动 ORGANIZE. `ingest=clouddrive` 不挂 Observer, 见 [watcher.md](watcher.md).
 
 **归属随事件携带**: 每个监控根的 `_Handler` 绑定 `library_id`; 文件事件回调带上来源库, 新文件以此入库 (见 [data-model.md](data-model.md) Library 归属).

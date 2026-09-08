@@ -21,6 +21,7 @@
 | `health` | `/` | 就绪探测 |
 | `system` | `/system` | 桌面契约 / 重启 (无监督者 403) / 版本检查 |
 | `libraries` | `/libraries` | 库 CRUD; create 可携首刷; 路径模板 schema |
+| `webhooks` | `/webhooks` | CloudDrive `file_system_watcher` 回调; 见 [watcher.md](watcher.md) |
 | `feeds` | `/feeds` | RSS/Atom 源 CRUD + 立即拉取 + 跨源/单源条目历史检索/批量操作/重刮削; 见 [feeds.md](feeds.md) |
 | `media` | `/media` | MediaFile |
 | `metadata` | `/metadata` | 番号条目 + merge / crop / facet 筛选 / user-tag / batch / schema |

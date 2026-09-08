@@ -23,6 +23,7 @@
 | 助理 (首页对话) | [agent.md](agent.md) |
 | 排障 / 回放刮削 | [observability.md](observability.md) |
 | RSS/Atom 远程发现 | [feeds.md](feeds.md) |
+| 文件发现 / CloudDrive webhook | [watcher.md](watcher.md) |
 | 桌面菜单栏 / 托盘 / 打包 | [desktop.md](desktop.md) |
 | 后端测试 | [testing.md](testing.md) |
 

@@ -6,6 +6,22 @@
 
 「媒体库 → 添加」
 
+## 发现通道
+
+每个库选择如何发现新文件. 自动化级别仍决定发现之后是否入库、是否刮削; 整理始终手动触发.
+
+- **文件系统** (默认): 使用操作系统文件事件 (watchdog). 适用于本机磁盘、以及能产生 `FileCreated` 的挂载.
+- **CloudDrive**: 不监视挂载点. 由 CloudDrive `file_system_watcher` 向 `POST /api/webhooks/clouddrive` 推送变更. 适用于 115 等经 CloudDrive 挂载、远端落盘不会在本机产生创建事件的路径.
+
+CloudDrive 库须同时填写:
+
+- **路径**: 本机可扫描的挂载目录 (如 `/Volumes/115/云下载`, 或 Docker bind 后的路径)
+- **CloudDrive 虚拟路径**: 推送体里的 POSIX 前缀 (如 `/115open/云下载`). 不是 `/Volumes/...` 或 Windows 盘符. 多库时按最长前缀匹配.
+
+在 CloudDrive 文件通知模板中, URL 填写 Amane 的 `http(s)://<host>/api/webhooks/clouddrive`, `Authorization` 填写 `Bearer <API Token>`. 目录整树复制或离线完成往往只推送结果目录一条 `create`; Amane 会对该子树扫描. 未推送的变更仍可手动扫描.
+
+`watcher.use_polling` 只作用于文件系统通道, 不能替代 CloudDrive webhook.
+
 ## 路径模板
 
 路径模板决定整理后文件的存储位置. 模板使用占位符变量:
@@ -193,7 +209,7 @@ Amane 支持自动识别分集文件名, 目前支持以下几种常见标记:
 扫描是发现媒体文件并注册到数据库的过程:
 
 - 手动扫描: 在库页面点击「扫描」
-- 自动扫描: 文件监控检测到变化时自动触发
+- 自动扫描: 文件系统通道由文件监控触发; CloudDrive 通道由 webhook 触发
 
 ### 刮削
 

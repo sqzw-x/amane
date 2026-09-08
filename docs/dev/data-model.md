@@ -33,11 +33,11 @@ ORGANIZE 复制到库路径的 poster / thumb 在 `watermark.enabled` 时按**�
 
 ## Library 归属
 
-与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理放置方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 跳过规则 (`trailer_pattern` / `blacklist_patterns` / `min_file_size`). 库始终有效, `automation` 只控制发现侧: 不监控、仅登记、或登记后自动刮削. **自动整理尚未开放**, 落盘只由手动 ORGANIZE. **每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK). 库目录落盘只由 ORGANIZE 执行 — 读 `media_file.library_id` 取模板与放置方式, 是归属的唯一真值来源. SCRAPE 用 `media_file_id` 只作查询输入 (番号 / oshash) 与刮削后回写关联, 不移动文件.
+与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理放置方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 发现通道 (`ingest`: native / clouddrive) + 跳过规则 (`trailer_pattern` / `blacklist_patterns` / `min_file_size`). 库始终有效, `automation` 只控制发现侧: 不监控、仅登记、或登记后自动刮削. `ingest=clouddrive` 时必填 `cloud_path` (CloudDrive 虚拟 POSIX 路径), 且不挂 watchdog Observer; 契约见 [watcher.md](watcher.md). **自动整理尚未开放**, 落盘只由手动 ORGANIZE. **每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK). 库目录落盘只由 ORGANIZE 执行 — 读 `media_file.library_id` 取模板与放置方式, 是归属的唯一真值来源. SCRAPE 用 `media_file_id` 只作查询输入 (番号 / oshash) 与刮削后回写关联, 不移动文件.
 
 归属在文件**入库时确定一次**, 同一文件经任何入口行为一致:
 
-- watcher: 每个监控根绑定 `library_id`, 文件事件携带来源库 (见 `scheduler/watcher.py` 的 `_Handler.library_id`).
+- watcher: native 库每个监控根绑定 `library_id`; clouddrive 库由 webhook 虚拟路径匹配到库后再登记 (见 [watcher.md](watcher.md)).
 - scan: 任务在某个 library 下运行, payload 自带 `library_id`.
 - 手动 by-number scrape / RSS 发现: 与文件无关的纯查询, 无归属.
 
