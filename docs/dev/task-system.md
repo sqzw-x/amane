@@ -209,3 +209,5 @@ Watcher、Cron 与 Feed 分属独立循环: 秒级反应、分钟级 routine、�
 `watcher.use_polling` 在 NAS / Docker Desktop / WSL2 等 inotify 不可靠场景下打开. `debounce_seconds` 防止大文件写入途中提前刮削. 这三项 HotSettings 在进程启动时注入 WatcherService, 修改 TOML 后须重启才生效 (见 [config.md](config.md)); Library 级 `automation` / 路径 / `trailer_pattern` 则由 libraries 路由热增删监控根. `automation=none` 不监控; `watch` 只登记; `scrape` 登记后入队 SCRAPE. 三者都不自动 ORGANIZE.
 
 **归属随事件携带**: 每个监控根的 `_Handler` 绑定 `library_id`; 文件事件回调带上来源库, 新文件以此入库 (见 [data-model.md](data-model.md) Library 归属).
+
+目录移出本 watch 被 watchdog 折成 `DirDeletedEvent`, 与删除目录相同. Handler 处理该事件: 按路径前缀丢掉未过防抖的文件创建 / 删除 / 移动, 防抖后按该库 `MediaFile.path` 前缀删除索引, 不遍历磁盘. 库内目录改名仍是 `DirMovedEvent` 加合成子文件 `FileMovedEvent`, 不按前缀删除. 目录创建仍忽略; 移入靠合成子文件 `FileCreatedEvent`. `.amane_trash` 下的目录事件忽略.

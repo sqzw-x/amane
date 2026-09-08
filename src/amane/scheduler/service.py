@@ -1,5 +1,7 @@
 import asyncio
 import contextlib
+from collections.abc import Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -10,12 +12,10 @@ from ..events import EventBus, EventType
 from ..handlers._common import register_media_file
 from ..handlers.models import ScrapePayload
 from ..parsing import parse_file_info
+from ..utils.path import path_is_under
 from .watcher import FileWatcher
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-    from pathlib import Path
-
     from ..db.repository import Repository
 
 logger = structlog.get_logger()
@@ -57,6 +57,7 @@ class WatcherService:
         return FileWatcher(
             on_file_found=self._on_file_found_sync,
             on_file_deleted=self._on_file_deleted_sync,
+            on_dir_deleted=self._on_dir_deleted_sync,
             on_file_moved=self._on_file_moved_sync,
             use_polling=self._use_polling,
             media_extensions=self._media_extensions,
@@ -167,6 +168,9 @@ class WatcherService:
     def _on_file_deleted_sync(self, path: Path, library_id: int) -> None:
         self._schedule_async(self._on_file_deleted(path))
 
+    def _on_dir_deleted_sync(self, path: Path, library_id: int) -> None:
+        self._schedule_async(self._delete_under(library_id, path))
+
     def _on_file_moved_sync(self, src: Path, dest: Path, library_id: int) -> None:
         self._schedule_async(self._on_file_moved(src, dest, library_id))
 
@@ -221,6 +225,14 @@ class WatcherService:
         logger.info("file removed from db", path=path_str, media_file_id=media.id)
 
         await self._event_bus.emit(EventType.FILE_REMOVED, {"path": path_str, "media_file_id": media.id})
+
+    async def _delete_under(self, library_id: int, root: Path) -> None:
+        files = await self._repo.list_media_files(library_id=library_id, limit=None)
+        for media in files:
+            if media.id is None:
+                continue
+            if path_is_under(media.path, root):
+                await self._on_file_deleted(Path(media.path))
 
     async def _on_file_moved(self, src: Path, dest: Path, library_id: int) -> None:
         src_str = str(src)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from amane.utils.path import existing_disk_path, is_descendant, nfc_path, path_forms
+from amane.utils.path import existing_disk_path, is_descendant, nfc_path, path_forms, path_is_under
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="此测试不适用于 Windows")
@@ -104,6 +104,23 @@ _NFD_JI = "\u3057\u3099"
 def test_nfc_path(raw: str, want: str) -> None:
     assert nfc_path(raw) == want
     assert nfc_path(raw) == nfc_path(nfc_path(raw))
+
+
+@pytest.mark.parametrize(
+    ("path", "root", "want"),
+    [
+        ("/lib/show/a.mp4", "/lib/show", True),
+        ("/lib/show", "/lib/show", True),
+        ("/lib/show/nested/a.mp4", "/lib/show", True),
+        ("/lib/show2/a.mp4", "/lib/show", False),
+        ("/lib/showcase/a.mp4", "/lib/show", False),
+        ("/lib/a.mp4", "/lib/show", False),
+        ("/lib/show", "/lib/show/nested", False),
+        (f"/lib/{_NFD_JI}/a.mp4", f"/lib/{_NFC_JI}", True),
+    ],
+)
+def test_path_is_under(path: str, root: str, want: bool) -> None:
+    assert path_is_under(path, root) is want
 
 
 @pytest.mark.parametrize(
