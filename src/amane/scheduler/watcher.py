@@ -55,6 +55,10 @@ class _Handler(FileSystemEventHandler):
             # 尚未处理的创建事件一并移除
             self._pending.pop(path_str, None)
             self._pending_deletes[path_str] = time.time()
+            return
+        # Windows ReadDirectoryChanges 对目录移出/删除发 FileDeletedEvent.
+        if path.suffix == "":
+            self._record_dir_delete(path_str)
 
     def on_moved(self, event):
         if not event.is_directory:

@@ -24,6 +24,7 @@ from amane.events import EventBus
 from amane.library import LibraryScan
 from amane.scheduler.service import WatcherService
 from amane.scheduler.watcher import DEBOUNCE_SECONDS, FileWatcher, _Handler
+from amane.utils.path import path_is_under
 from tests.helpers import await_for, wait_for
 
 
@@ -195,6 +196,14 @@ class TestHandler:
         handler.on_deleted(DirDeletedEvent(src_path="/lib/show"))
         assert handler._pending_moves == {}
         assert "/lib/show" in handler._pending_dir_deletes
+
+    def test_on_deleted_extensionless_non_media_is_dir_delete(self):
+        """无扩展名且非媒体: 按目录删除 (Windows 对目录发 FileDeletedEvent)."""
+        handler = _Handler(library_id=1)
+        handler.on_created(FileCreatedEvent(src_path="/lib/show/a.mp4"))
+        handler.on_deleted(FileDeletedEvent(src_path="/lib/show"))
+        assert "/lib/show" in handler._pending_dir_deletes
+        assert "/lib/show/a.mp4" not in handler._pending
 
     def test_on_deleted_removes_from_pending_creates(self):
         """文件创建后立即删除: 从 pending 中移除, 添加到 pending_deletes"""
@@ -690,6 +699,8 @@ class TestFileWatcherTmpFiles:
         try:
             shutil.move(str(nested), str(outside / "show"))
             handler = watcher._handlers[0]
-            wait_for(lambda: str(nested) in handler._pending_dir_deletes)
+            wait_for(
+                lambda: any(path_is_under(p, nested) and path_is_under(nested, p) for p in handler._pending_dir_deletes)
+            )
         finally:
             watcher.stop()
