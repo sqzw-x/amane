@@ -594,7 +594,6 @@ export const AgentConfigSchema = {
         },
         max_tokens: {
             type: 'integer',
-            maximum: 1000000,
             minimum: 1,
             title: 'Max Tokens',
             default: 128000

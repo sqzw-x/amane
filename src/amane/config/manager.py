@@ -538,7 +538,7 @@ class AgentConfig(BaseModel):
     thinking: AgentThinkingMode | None = None
     """新建会话的回退默认; None 表示不传 thinking. 会话可在 meta 覆盖."""
 
-    max_tokens: int = Field(default=128_000, ge=1, le=1_000_000)
+    max_tokens: int = Field(default=128_000, ge=1)
     """单次回复的输出上限. 超过模型上限时上游拒绝请求."""
 
     rate_limit: float = Field(default=2.0, ge=0.1, le=100)

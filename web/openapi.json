@@ -5622,7 +5622,6 @@
           },
           "max_tokens": {
             "type": "integer",
-            "maximum": 1000000.0,
             "minimum": 1.0,
             "title": "Max Tokens",
             "default": 128000
