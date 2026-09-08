@@ -14,6 +14,7 @@ import type {
   FacetKind,
   FacetSortField,
   LibraryAutomation,
+  LibraryIngest,
   LinkMode,
   LoggingConfig,
   MediaFileStatus,
@@ -82,6 +83,8 @@ export const DOWNLOADABLE_RESOURCES = exhaustiveTuple<DownloadableResource>()(
 );
 
 export const LIBRARY_AUTOMATIONS = exhaustiveTuple<LibraryAutomation>()("none", "watch", "scrape");
+
+export const LIBRARY_INGESTS = exhaustiveTuple<LibraryIngest>()("native", "clouddrive");
 
 export const LINK_MODES = exhaustiveTuple<LinkMode>()("strm", "symlink");
 

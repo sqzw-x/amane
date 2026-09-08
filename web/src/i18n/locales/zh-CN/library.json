@@ -82,6 +82,14 @@
     "watch": "仅入库",
     "scrape": "入库并刮削"
   },
+  "ingest": {
+    "label": "发现通道",
+    "hint": "CloudDrive 挂载的库不使用操作系统文件事件, 改为接收 webhook",
+    "native": "文件系统",
+    "clouddrive": "CloudDrive",
+    "cloudPath": "CloudDrive 虚拟路径",
+    "cloudPathHint": "与库路径对应的 POSIX 路径, 例如 /115open/云下载. Webhook: POST /api/webhooks/clouddrive, Authorization: Bearer <API token>"
+  },
   "recursive": "递归扫描",
   "nonRecursive": "非递归扫描",
   "emptyList": "未配置媒体库",

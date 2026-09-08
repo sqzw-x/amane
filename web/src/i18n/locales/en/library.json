@@ -84,6 +84,14 @@
     "watch": "Ingest only",
     "scrape": "Ingest and scrape"
   },
+  "ingest": {
+    "label": "Discovery",
+    "hint": "CloudDrive-mounted libraries skip OS file events and take webhooks instead",
+    "native": "Filesystem",
+    "clouddrive": "CloudDrive",
+    "cloudPath": "CloudDrive virtual path",
+    "cloudPathHint": "POSIX path of this library in CloudDrive, e.g. /115open/downloads. Webhook: POST /api/webhooks/clouddrive with Authorization: Bearer <API token>"
+  },
   "recursive": "Recursive",
   "nonRecursive": "Non-recursive",
   "emptyList": "No library configured",

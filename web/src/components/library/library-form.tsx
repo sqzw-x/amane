@@ -25,6 +25,7 @@ import type {
   DownloadableResource,
   LibraryAutomation,
   LibraryCreateRequest,
+  LibraryIngest,
   LibraryResponse,
   LibraryUpdateRequest,
   OptionalPathTemplateDefaults,
@@ -34,7 +35,12 @@ import { PathPicker } from "@/components/path-picker";
 import { encodeFormBody } from "@/components/schema-form/encode";
 import { EnumToggle } from "@/components/common/enum-toggle";
 import { FieldChrome } from "@/components/schema-form/fields/field-chrome";
-import { DOWNLOADABLE_RESOURCES, LIBRARY_AUTOMATIONS, LINK_MODES } from "@/lib/exhaustive-maps";
+import {
+  DOWNLOADABLE_RESOURCES,
+  LIBRARY_AUTOMATIONS,
+  LIBRARY_INGESTS,
+  LINK_MODES,
+} from "@/lib/exhaustive-maps";
 import classes from "./library-form.module.css";
 import { templateCatalogFromPlaceholders } from "./template-highlight";
 import { TemplateInput } from "./template-input";
@@ -102,6 +108,8 @@ export interface LibraryFormState {
   trailer_template: string;
   subtitle_template: string;
   automation: LibraryAutomation;
+  ingest: LibraryIngest;
+  cloud_path: string;
   scan: boolean;
 }
 
@@ -133,6 +141,8 @@ export function emptyLibraryForm(schema?: PathTemplateSchemaResponse | null): Li
     trailer_template: defaults?.trailer_template ?? "",
     subtitle_template: defaults?.subtitle_template ?? "",
     automation: "scrape",
+    ingest: "native",
+    cloud_path: "",
     scan: true,
   };
 }
@@ -162,6 +172,8 @@ export function libraryFormFromResponse(lib: LibraryResponse): LibraryFormState 
     trailer_template: lib.trailer_template ?? "",
     subtitle_template: lib.subtitle_template ?? "",
     automation: lib.automation,
+    ingest: lib.ingest,
+    cloud_path: lib.cloud_path ?? "",
     scan: false,
   };
 }
@@ -206,6 +218,8 @@ function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
     trailer_template: form.trailer_template.trim(),
     subtitle_template: form.subtitle_template.trim(),
     automation: form.automation,
+    ingest: form.ingest,
+    cloud_path: form.ingest === "clouddrive" ? form.cloud_path.trim() : "",
   };
 }
 
@@ -289,6 +303,31 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
         onChange={(path) => onChange({ ...value, path })}
         pathType="directory"
       />
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+        <FieldChrome label={t("ingest.label")} description={t("ingest.hint")}>
+          <EnumToggle
+            options={LIBRARY_INGESTS}
+            value={value.ingest}
+            onChange={(ingest) =>
+              onChange({
+                ...value,
+                ingest,
+                cloud_path: ingest === "native" ? "" : value.cloud_path,
+              })
+            }
+            getLabel={(kind) => t(`ingest.${kind}`)}
+          />
+        </FieldChrome>
+        {value.ingest === "clouddrive" && (
+          <TextInput
+            label={t("ingest.cloudPath")}
+            description={t("ingest.cloudPathHint")}
+            placeholder="/115open/云下载"
+            value={value.cloud_path}
+            onChange={(e) => onChange({ ...value, cloud_path: e.currentTarget.value })}
+          />
+        )}
+      </SimpleGrid>
       <Stack gap="sm">
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
           <TextInput
