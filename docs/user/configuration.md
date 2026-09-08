@@ -85,6 +85,7 @@ data/
 - **API 密钥**: 对应提供商的密钥
 - **模型**: 使用的模型名称
 - **思考强度**: 推理深度 (off / minimal / low / medium / high / xhigh)
+- **最大输出 token** (`max_tokens`): Agent 每回合请求的 token 上限, 默认 128000. 若使用输出上限低于此值的模型 (如 Agnes 2.5 的 65536), 需调整此设置以避免请求被拒绝
 
 ### LLM 翻译 (`llm`)
 
