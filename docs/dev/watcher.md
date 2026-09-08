@@ -22,7 +22,7 @@ Webhook 的 `source_file` / `destination_file` 是 CloudDrive **虚拟路径** (
 
 `mount_point_watcher` 的 `{mount_point}` 是宿主挂载点, 本通道不读.
 
-native Observer 启动失败 (如 inotify 配额) 只停掉 FileWatcher, 已登记的 cloud 路由与 webhook 接收仍保留.
+native Observer 启动失败 (如 inotify 配额) 只停掉 FileWatcher, 已登记的 cloud 路由与 webhook 接收仍保留. `add_library` 热启动失败同样清掉未启动的实例, 不把 `_watcher` 留成半开状态.
 
 ## Webhook 载荷
 
@@ -39,9 +39,11 @@ native Observer 启动失败 (如 inotify 配额) 只停掉 FileWatcher, 已登�
 | 文件 delete | 按本地路径删索引 |
 | 目录 delete | 按路径前缀删该库索引, 不遍历磁盘 |
 | 文件 rename | 更新路径; 源不在索引则按目标登记; 跨库则删源索引并在目标库登记 |
-| 目录 rename | 前缀改写索引路径; 移出库当删除, 移入库与目录 create 同一批防抖后再扫 |
+| 目录 rename | 前缀改写索引路径; 移出库当删除, 移入库与目录 create 同一批防抖后再扫; 跨库按目标库规则重新分类 |
 
-目录事件可能早于目录缓存列出文件, 因此扫描前等待 `watcher.debounce_seconds`. 文件级事件与目录展开重叠时靠路径 UNIQUE 与「已登记则跳过」幂等.
+目录事件可能早于目录缓存列出文件, 因此扫描前等待 `watcher.debounce_seconds`. 防抖结束后按**当前** `_cloud_routes` 重算本地路径: 库已删除、或 `cloud_path` / recursive 已不再覆盖该目录则跳过. 文件级事件与目录展开重叠时靠路径 UNIQUE 与「已登记则跳过」幂等.
+
+目录跨库 rename 按目标库的 recursive / glob / 黑名单 / 预告片 / 体积规则重新判定; 不接受的文件只删源索引、不写入目标库.
 
 本机经 FUSE 写入仍会推文件级 webhook; 该库不挂 Observer, 只走这一条.
 

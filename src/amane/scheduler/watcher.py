@@ -194,7 +194,8 @@ class FileWatcher:
     def stop(self) -> None:
         if self._observer:
             self._observer.stop()
-            self._observer.join(timeout=5.0)
+            if self._observer.is_alive():
+                self._observer.join(timeout=5.0)
             self._observer = None
 
     def check_debounced(self) -> list[Path]:

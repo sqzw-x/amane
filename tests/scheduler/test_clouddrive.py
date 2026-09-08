@@ -1,5 +1,6 @@
 """CloudDrive webhook 分流与入库."""
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -306,4 +307,111 @@ class TestCloudDriveIngest:
         moved = await repo.get_media_file_by_path(str(dest))
         assert moved is not None
         assert moved.library_id == dest_lib.id
+        await service.stop()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_dir_scan_skips_removed_library(self, repo: Repository, tmp_path: Path) -> None:
+        service = WatcherService(repo, EventBus(), use_polling=True, debounce_seconds=0.2, check_interval=0.05)
+        nested = tmp_path / "show"
+        nested.mkdir()
+        video = nested / "a.mp4"
+        video.write_bytes(b"x" * 32)
+        lib = await repo.create_library(
+            name="cd",
+            path=str(tmp_path),
+            ingest=LibraryIngest.CLOUDDRIVE,
+            cloud_path="/115open/lib",
+            automation=LibraryAutomation.WATCH,
+        )
+        assert lib.id is not None
+        await service.start()
+        task = asyncio.create_task(
+            service.ingest_clouddrive([CloudDriveChange(action="create", is_dir=True, source_file="/115open/lib/show")])
+        )
+        await asyncio.sleep(0.05)
+        service.remove_library(lib.id)
+        await repo.delete_library(lib.id)
+        await task
+        assert await repo.get_media_file_by_path(str(video)) is None
+        await service.stop()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_dir_rename_across_libraries_respects_dest_rules(
+        self, service: WatcherService, repo: Repository, tmp_path: Path
+    ) -> None:
+        src_root = tmp_path / "src"
+        dest_root = tmp_path / "dest"
+        src_root.mkdir()
+        dest_root.mkdir()
+        nested = src_root / "show"
+        nested.mkdir()
+        video = nested / "a.mp4"
+        video.write_bytes(b"x" * 32)
+        dest_nested = dest_root / "show"
+        dest_nested.mkdir()
+        dest_video = dest_nested / "a.mp4"
+        dest_video.write_bytes(b"x" * 32)
+        src_lib = await repo.create_library(
+            name="src",
+            path=str(src_root),
+            ingest=LibraryIngest.CLOUDDRIVE,
+            cloud_path="/115open/src",
+            automation=LibraryAutomation.WATCH,
+        )
+        dest_lib = await repo.create_library(
+            name="dest",
+            path=str(dest_root),
+            ingest=LibraryIngest.CLOUDDRIVE,
+            cloud_path="/115open/dest",
+            automation=LibraryAutomation.WATCH,
+            recursive=False,
+        )
+        assert src_lib.id is not None
+        await repo.create_media_file(library_id=src_lib.id, path=str(video))
+        await service.start()
+        await service.ingest_clouddrive(
+            [
+                CloudDriveChange(
+                    action="rename",
+                    is_dir=True,
+                    source_file="/115open/src/show",
+                    destination_file="/115open/dest/show",
+                )
+            ]
+        )
+        assert await repo.get_media_file_by_path(str(video)) is None
+        assert await repo.get_media_file_by_path(str(dest_video)) is None
+        assert dest_lib.id is not None
+        await service.stop()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_add_library_observer_failure_clears_watcher(
+        self, service: WatcherService, repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cloud_root = tmp_path / "cloud"
+        native_root = tmp_path / "native"
+        cloud_root.mkdir()
+        native_root.mkdir()
+        await repo.create_library(
+            name="cd",
+            path=str(cloud_root),
+            ingest=LibraryIngest.CLOUDDRIVE,
+            cloud_path="/115open/lib",
+            automation=LibraryAutomation.WATCH,
+        )
+        await service.start()
+        assert service._watcher is None
+        native = await repo.create_library(
+            name="native",
+            path=str(native_root),
+            automation=LibraryAutomation.WATCH,
+        )
+        assert native.id is not None
+
+        def boom(self: FileWatcher) -> None:
+            raise OSError("inotify watch limit may be exceeded")
+
+        monkeypatch.setattr(FileWatcher, "start", boom)
+        service.add_library(str(native_root), native.id)
+        assert service._watcher is None
         await service.stop()
