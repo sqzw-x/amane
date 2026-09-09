@@ -106,6 +106,6 @@ Windows: `scripts/build_windows_app.ps1` (`just windows-app`). 必须在 Windows
 2. `dotnet publish -r win-x64` Native AOT `Amane.exe`
 3. 目录: `Amane.exe` + `onedir/Amane.Server.exe` + `web/dist`
 
-两边 PyInstaller 都要 `--add-data` 打进 `amane/db/migrations` 与 `amane/media/watermarks` (Docker wheel 靠 hatch `force-include`). httpx2 仅在 `socks5` / `socks5h` 代理 URL 时惰性导入 `socksio`, 静态分析看不到该导入, 必须 `--hidden-import socksio`; 运行时依赖见 `pyproject.toml` 的 `httpx2[socks]`.
+两边 PyInstaller 都要 `--add-data` 打进 `amane/db/migrations` 与 `amane/media/watermarks` (Docker wheel 靠 hatch `force-include`).
 
 开发回路: `just dev` 起服务 + `just bar-run` (macOS) / `just windows-bar` (Windows) 只开托盘.

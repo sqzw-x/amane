@@ -121,3 +121,15 @@ async def test_fetch_missing_tag_empty() -> None:
     with patch("amane.release.httpx.AsyncClient", return_value=fake):
         snap = await ReleaseChecker().fetch()
     assert snap.latest is None
+
+
+@pytest.mark.parametrize("proxy", ["socks5://127.0.0.1:1080", "socks5h://127.0.0.1:1080"])
+@pytest.mark.asyncio(loop_scope="function")
+async def test_socks_proxy_client_constructs(proxy: str) -> None:
+    async with httpx.AsyncClient(proxy=proxy):
+        pass
+
+
+def test_socks4_scheme_rejected() -> None:
+    with pytest.raises(ValueError, match="Unknown scheme"):
+        httpx.AsyncClient(proxy="socks4://127.0.0.1:1080")
