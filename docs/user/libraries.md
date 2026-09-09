@@ -6,21 +6,59 @@
 
 「媒体库 → 添加」
 
-## 发现通道
+## 文件监控
 
 每个库选择如何发现新文件. 自动化级别仍决定发现之后是否入库、是否刮削; 整理始终手动触发.
 
-- **文件系统** (默认): 使用操作系统文件事件 (watchdog). 适用于本机磁盘、以及能产生 `FileCreated` 的挂载.
-- **CloudDrive**: 不监视挂载点. 由 CloudDrive `file_system_watcher` 向 `POST /api/webhooks/clouddrive` 推送变更. 适用于 115 等经 CloudDrive 挂载、远端落盘不会在本机产生创建事件的路径.
+- **本地文件** (默认): 使用操作系统文件事件. 适用于本机磁盘、以及能产生创建事件的挂载.
+- **CD2 webhook**: 接收 CloudDrive2 的文件通知 webhook, 不监听挂载路径. Webhook 需 CloudDrive2 会员; 性能好于监听挂载路径.
 
-CloudDrive 库须同时填写:
+CD2 webhook 库须同时填写:
 
 - **路径**: 本机可扫描的挂载目录 (如 `/Volumes/115/云下载`, 或 Docker bind 后的路径)
-- **CloudDrive 虚拟路径**: 推送体里的 POSIX 前缀 (如 `/115open/云下载`). 不是 `/Volumes/...` 或 Windows 盘符. 多库时按最长前缀匹配. 不允许两个 CloudDrive 库使用相同或互为前缀的虚拟路径.
+- **CloudDrive 路径**: 库路径对应的 CloudDrive2 内路径 (如 `/115open/云下载`). 不是 `/Volumes/...` 或 Windows 盘符. 多库时按最长前缀匹配. 不允许两个 CD2 webhook 库使用相同或互为前缀的 CloudDrive 路径.
 
-在 CloudDrive 文件通知模板中, URL 填写 Amane 的 `http(s)://<host>/api/webhooks/clouddrive`, `Authorization` 填写 `Bearer <API Token>`. 目录整树复制或离线完成往往只推送结果目录一条 `create`; Amane 会对该子树扫描. 未推送的变更仍可手动扫描.
+`watcher.use_polling` 只作用于「本地文件」, 不能替代 CD2 webhook. 目录整树复制或离线完成往往只推送结果目录一条 `create`; Amane 会对该子树扫描. 未推送的变更仍可手动扫描.
 
-`watcher.use_polling` 只作用于文件系统通道, 不能替代 CloudDrive webhook.
+### CloudDrive2 webhook
+
+文件变更 webhook 是 CloudDrive2 的会员功能. Amane 与 CloudDrive2 无隶属、合作或担保关系; 下列菜单名与配置文件名以 CloudDrive2 当前版本为准.
+
+在 CloudDrive2 网页: **设置 → Webhook → 添加 Webhook**.
+
+也可编辑 CloudDrive2 配置目录中的 `webhook.toml` (或 `Configuration.toml` 里的 `[file_system_watcher]`). 对接 Amane 时必要字段:
+
+| 字段 | 值 |
+|------|----|
+| `url` | `http(s)://<Amane 主机>/api/webhooks/clouddrive` |
+| `method` | `POST` |
+| `enabled` | `true` |
+| `Authorization` | `Bearer <Amane API Token>` |
+| `body` | JSON, 含 `data` 数组; 每项含 `action`、`is_dir`、`source_file`, `rename` 时另有 `destination_file` |
+
+示例:
+
+```toml
+[file_system_watcher]
+url = "http://<Amane 主机>/api/webhooks/clouddrive"
+method = "POST"
+enabled = true
+body = '''
+{
+  "data": [
+    {
+      "action": "{action}",
+      "is_dir": "{is_dir}",
+      "source_file": "{source_file}",
+      "destination_file": "{destination_file}"
+    }
+  ]
+}
+'''
+
+[file_system_watcher.headers]
+Authorization = "Bearer <Amane API Token>"
+```
 
 ## 路径模板
 
@@ -209,7 +247,7 @@ Amane 支持自动识别分集文件名, 目前支持以下几种常见标记:
 扫描是发现媒体文件并注册到数据库的过程:
 
 - 手动扫描: 在库页面点击「扫描」
-- 自动扫描: 文件系统通道由文件监控触发; CloudDrive 通道由 webhook 触发
+- 自动扫描: 「本地文件」由操作系统事件触发; 「CD2 webhook」由 webhook 触发
 
 ### 刮削
 

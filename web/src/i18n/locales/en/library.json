@@ -85,12 +85,12 @@
     "scrape": "Ingest and scrape"
   },
   "ingest": {
-    "label": "Discovery",
-    "hint": "CloudDrive-mounted libraries skip OS file events and take webhooks instead",
-    "native": "Filesystem",
-    "clouddrive": "CloudDrive",
-    "cloudPath": "CloudDrive virtual path",
-    "cloudPathHint": "POSIX path of this library in CloudDrive, e.g. /115open/downloads. Webhook: POST /api/webhooks/clouddrive with Authorization: Bearer <API token>"
+    "label": "File watching",
+    "hint": "Webhook requires a CloudDrive2 membership; better than watching the mount",
+    "native": "Local files",
+    "clouddrive": "CD2 webhook",
+    "cloudPath": "CloudDrive path",
+    "cloudPathHint": "Path of this library inside CloudDrive2"
   },
   "recursive": "Recursive",
   "nonRecursive": "Non-recursive",
