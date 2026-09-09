@@ -589,8 +589,8 @@ def _detect_subtitle(basename: str) -> bool:
 
 
 def _detect_mosaic(basename: str) -> Mosaic | None:
-    """basename 已大写. `-U` / `-UC` 是破解; 多标记时破解优先于流出, 流出优先于无码."""
-    if re.search(r"破解|克破", basename) or re.search(r"-U(C)?(?![A-Z0-9])", basename):
+    """basename 已大写. `CRACKED` / `-U` / `-UC` 是破解; 多标记时破解优先于流出, 流出优先于无码."""
+    if re.search(r"破解|克破|CRACKED", basename) or re.search(r"-U(C)?(?![A-Z0-9])", basename):
         return Mosaic.CRACKED
     if re.search(r"流出|LEAKED", basename):
         return Mosaic.LEAKED

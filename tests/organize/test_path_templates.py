@@ -95,6 +95,8 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
     _RenderCase("MIDV-123-C.mp4", "{number}[-{mosaic?|cracked=U}{sub?}].{ext}", "ABC-123-C.mp4"),
     _RenderCase("MIDV-123.mp4", "{number}[-{mosaic?|cracked=U}{sub?}].{ext}", "ABC-123.mp4"),
     _RenderCase("[破解]MIDV-123.mp4", "{number}[-{mosaic?|cracked=U}{sub?}].{ext}", "ABC-123-U.mp4"),
+    _RenderCase("MIDV-123-cracked.mp4", "{number}[-{mosaic?}].{ext}", "ABC-123-cracked.mp4"),
+    _RenderCase("MIDV-123-cracked-C.mp4", "{number}[-{mosaic?}][-{sub?}].{ext}", "ABC-123-cracked-C.mp4"),
     # 字面量跟着整组: 仅中字时仍带上 -CD
     _RenderCase("MIDV-123-C.mp4", "{number}[-CD{cd?}{sub?}].{ext}", "ABC-123-CDC.mp4"),
     _RenderCase("MIDV-123-CD1-C.mp4", "{number}[-CD{cd?}{sub?}].{ext}", "ABC-123-CD1C.mp4"),

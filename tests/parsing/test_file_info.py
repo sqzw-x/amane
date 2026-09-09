@@ -54,6 +54,9 @@ CASES: list[object] = [
     _Case("ABC-123-uncensored.mp4", mosaic="uncensored", number="ABC-123"),
     _Case("[破解]MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
     _Case("[克破]MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("[CRACKED]MIDV-123.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("MIDV-123-cracked.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("MIDV-123-cracked-C.mp4", has_subtitle=True, mosaic="cracked", number="MIDV-123"),
     _Case("[流出]MIDV-123.mp4", mosaic="leaked", number="MIDV-123"),
     _Case("MIDV-123-LEAKED.mp4", mosaic="leaked", number="MIDV-123"),
     _Case("MIDV-123流出.mp4", mosaic="leaked", number="MIDV-123"),
@@ -474,3 +477,18 @@ ESCAPE_STRING_CASES: list[tuple[str, list[str], str]] = [
 @pytest.mark.parametrize(("path", "extra", "number"), ESCAPE_STRING_CASES)
 def test_parse_file_info_escape_strings(path: str, extra: list[str], number: str) -> None:
     assert parse_file_info(path, escape_strings=extra).number == number
+
+
+MOSAIC_CANONICAL_ROUNDTRIP: list[tuple[str, str]] = [
+    ("MIDV-123-U.mp4", "cracked"),
+    ("MIDV-123-無碼.mp4", "uncensored"),
+    ("MIDV-123-流出.mp4", "leaked"),
+]
+
+
+@pytest.mark.parametrize(("source", "canonical"), MOSAIC_CANONICAL_ROUNDTRIP)
+def test_mosaic_canonical_filename_roundtrip(source: str, canonical: str) -> None:
+    info = parse_file_info(source)
+    assert info.mosaic == canonical
+    again = parse_file_info(f"MIDV-123-{canonical}.mp4")
+    assert again.mosaic == canonical
