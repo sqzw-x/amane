@@ -19,21 +19,6 @@
     "c3";
 }
 
-@media (min-width: 48em) {
-  .alignedRow {
-    grid-template-columns: minmax(16rem, 1fr) max-content max-content;
-    grid-template-areas:
-      "l1 l2 l3"
-      "d1 d2 d3"
-      "c1 c2 c3";
-  }
-
-  .l2,
-  .l3 {
-    margin-top: 0;
-  }
-}
-
 .l1 {
   grid-area: l1;
 }
@@ -76,4 +61,33 @@
   display: flex;
   align-items: center;
   min-height: var(--input-height-sm, 36px);
+}
+
+/* SegmentedControl 不是 Input, Wrapper 不会注入 description→控件间距.
+   高度与 TextInput sm 对齐, 切换 ingest 时这一行的行高不变. */
+.ingestControl {
+  margin-top: calc(var(--mantine-spacing-xs) / 2);
+  height: var(--input-height-sm, 36px);
+  display: flex;
+  align-items: stretch;
+}
+
+.ingestControl > :global(*) {
+  height: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 48em) {
+  .alignedRow {
+    grid-template-columns: minmax(16rem, 1fr) max-content max-content;
+    grid-template-areas:
+      "l1 l2 l3"
+      "d1 d2 d3"
+      "c1 c2 c3";
+  }
+
+  .l2,
+  .l3 {
+    margin-top: 0;
+  }
 }

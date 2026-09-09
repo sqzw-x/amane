@@ -304,20 +304,22 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
         pathType="directory"
       />
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-        <FieldChrome label={t("ingest.label")} description={t("ingest.hint")}>
-          <EnumToggle
-            options={LIBRARY_INGESTS}
-            value={value.ingest}
-            onChange={(ingest) =>
-              onChange({
-                ...value,
-                ingest,
-                cloud_path: ingest === "native" ? "" : value.cloud_path,
-              })
-            }
-            getLabel={(kind) => t(`ingest.${kind}`)}
-          />
-        </FieldChrome>
+        <Input.Wrapper label={t("ingest.label")} description={t("ingest.hint")}>
+          <div className={classes.ingestControl}>
+            <EnumToggle
+              options={LIBRARY_INGESTS}
+              value={value.ingest}
+              onChange={(ingest) =>
+                onChange({
+                  ...value,
+                  ingest,
+                  cloud_path: ingest === "native" ? "" : value.cloud_path,
+                })
+              }
+              getLabel={(kind) => t(`ingest.${kind}`)}
+            />
+          </div>
+        </Input.Wrapper>
         {value.ingest === "clouddrive" && (
           <TextInput
             label={t("ingest.cloudPath")}
