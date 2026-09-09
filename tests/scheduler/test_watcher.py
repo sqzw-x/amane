@@ -141,14 +141,16 @@ class TestHandler:
         handler.on_moved(FileMovedEvent(src_path="/tmp/old.mkv", dest_path="/tmp/movie.mkv"))
         assert "/tmp/movie.mkv" in handler._pending_moves
 
-    def test_on_deleted_adds_to_pending_deletes(self):
+    def test_on_deleted_file_records_prefix(self):
         handler = _Handler(library_id=1)
         handler.on_deleted(FileDeletedEvent(src_path="/tmp/video.mp4"))
-        assert "/tmp/video.mp4" in handler._pending_deletes
+        assert "/tmp/video.mp4" in handler._pending_dir_deletes
+        assert handler._pending_deletes == {}
 
-    def test_on_deleted_ignores_non_media(self):
+    def test_on_deleted_non_media_file_records_prefix(self):
         handler = _Handler(library_id=1)
         handler.on_deleted(FileDeletedEvent(src_path="/tmp/notes.txt"))
+        assert "/tmp/notes.txt" in handler._pending_dir_deletes
         assert handler._pending_deletes == {}
 
     def test_on_deleted_directory_records_prefix(self):
@@ -197,22 +199,30 @@ class TestHandler:
         assert handler._pending_moves == {}
         assert "/lib/show" in handler._pending_dir_deletes
 
-    def test_on_deleted_extensionless_non_media_is_dir_delete(self):
-        """无扩展名且非媒体: 按目录删除 (Windows 对目录发 FileDeletedEvent)."""
+    def test_on_deleted_file_event_is_prefix(self):
         handler = _Handler(library_id=1)
         handler.on_created(FileCreatedEvent(src_path="/lib/show/a.mp4"))
         handler.on_deleted(FileDeletedEvent(src_path="/lib/show"))
         assert "/lib/show" in handler._pending_dir_deletes
         assert "/lib/show/a.mp4" not in handler._pending
 
+    def test_on_deleted_file_event_dotted_dir_name_is_prefix(self):
+        """Windows 对目录发 FileDeletedEvent; 目录名带点仍按前缀."""
+        handler = _Handler(library_id=1)
+        handler.on_created(FileCreatedEvent(src_path="/lib/Season1.mkv/a.mp4"))
+        handler.on_deleted(FileDeletedEvent(src_path="/lib/Season1.mkv"))
+        assert "/lib/Season1.mkv" in handler._pending_dir_deletes
+        assert "/lib/Season1.mkv/a.mp4" not in handler._pending
+
     def test_on_deleted_removes_from_pending_creates(self):
-        """文件创建后立即删除: 从 pending 中移除, 添加到 pending_deletes"""
+        """文件创建后立即删除: 从 pending 中移除, 记为前缀删除."""
         handler = _Handler(library_id=1)
         handler.on_created(FileCreatedEvent(src_path="/tmp/video.mp4"))
         assert "/tmp/video.mp4" in handler._pending
         handler.on_deleted(FileDeletedEvent(src_path="/tmp/video.mp4"))
         assert "/tmp/video.mp4" not in handler._pending
-        assert "/tmp/video.mp4" in handler._pending_deletes
+        assert "/tmp/video.mp4" in handler._pending_dir_deletes
+        assert handler._pending_deletes == {}
 
     def test_get_ready_deletes_after_debounce(self):
         handler = _Handler(library_id=1)
@@ -514,6 +524,19 @@ class TestWatcherService:
         assert await repo.get_media_file_by_path(str(video)) is None
         assert await repo.get_media_file_by_path(str(sibling)) is not None
         assert await repo.get_media_file_by_path(str(other_video)) is not None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_delete_under_file_path_only_self(self, service, repo: Repository, tmp_path: Path):
+        """文件路径当前缀时只命中自身, 不碰到兄弟文件."""
+        lib = await repo.create_library(name="t", path=str(tmp_path), automation=LibraryAutomation.WATCH)
+        assert lib.id is not None
+        video = tmp_path / "a.mp4"
+        sibling = tmp_path / "b.mp4"
+        await repo.create_media_file(library_id=lib.id, path=str(video))
+        await repo.create_media_file(library_id=lib.id, path=str(sibling))
+        await service._delete_under(lib.id, video)
+        assert await repo.get_media_file_by_path(str(video)) is None
+        assert await repo.get_media_file_by_path(str(sibling)) is not None
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_dir_delete_flushes_prefixed_index(self, service, repo: Repository, tmp_path: Path):

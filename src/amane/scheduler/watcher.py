@@ -46,19 +46,9 @@ class _Handler(FileSystemEventHandler):
             self._handle(str(event.src_path))
 
     def on_deleted(self, event):
-        path_str = str(event.src_path)
-        if event.is_directory:
-            self._record_dir_delete(path_str)
-            return
-        path = Path(path_str)
-        if self._matches(path):
-            # 尚未处理的创建事件一并移除
-            self._pending.pop(path_str, None)
-            self._pending_deletes[path_str] = time.time()
-            return
-        # Windows ReadDirectoryChanges 对目录移出/删除发 FileDeletedEvent.
-        if path.suffix == "":
-            self._record_dir_delete(path_str)
+        # 前缀含路径自身: 文件删除只命中这一条; 目录删除命中子树.
+        # Windows 删除通知不区分文件与目录, 一律按前缀处理.
+        self._record_prefix_delete(str(event.src_path))
 
     def on_moved(self, event):
         if not event.is_directory:
@@ -79,11 +69,11 @@ class _Handler(FileSystemEventHandler):
                 if self._matches(src):
                     self._pending_deletes[src_str] = time.time()
 
-    def _record_dir_delete(self, dir_str: str) -> None:
-        """目录移出本 watch 与删除目录均为 DirDeletedEvent; 按前缀清未提交事件."""
+    def _record_prefix_delete(self, dir_str: str) -> None:
+        """按路径前缀清未提交事件; 防抖后由服务端按索引前缀删除."""
         if is_in_trash(Path(dir_str)):
             return
-        # 已有更外层目录待删除时不必再记; 同一路径则刷新时间戳.
+        # 已有更外层路径待删除时不必再记; 同一路径则刷新时间戳.
         if any(
             path_is_under(dir_str, existing) and not path_is_under(existing, dir_str)
             for existing in self._pending_dir_deletes
