@@ -8,11 +8,11 @@ from amane.parsing import (
     ContentType,
     detect_cd,
     extract_number,
-    get_prefix,
     infer_content_type,
     is_amateur,
     is_uncensored,
     parse_file_info,
+    split_number,
 )
 
 
@@ -326,21 +326,31 @@ def test_parse_file_info(case: _Case) -> None:
 
 # --- 无路径: 同一 parse_file_info 的字段包装 ---
 
-PREFIX_CASES: list[tuple[str, str]] = [
-    ("MIDV-123", "MIDV"),
-    ("T28-123", "T28"),
-    ("T38-068", "T38"),
-    ("FC2-1234567", "FC2"),
-    ("HEYZO-1234", "HEYZO"),
-    ("vixen.23.04.15", "VIXEN"),
-    ("MKY-HS-001", "MKY-HS"),
-    ("H4610-ki123456", "H4610"),
+PREFIX_SUFFIX_CASES: list[tuple[str, str, str]] = [
+    ("MIDV-123", "MIDV", "123"),
+    ("ABS-001", "ABS", "001"),
+    ("T28-123", "T28", "123"),
+    ("T38-068", "T38", "068"),
+    ("FC2-1234567", "FC2", "1234567"),
+    ("HEYZO-1234", "HEYZO", "1234"),
+    ("vixen.23.04.15", "VIXEN", "23.04.15"),
+    ("MKY-HS-001", "MKY-HS", "001"),
+    ("H4610-ki123456", "H4610", "ki123456"),
+    # 识别不出番号: 前缀与剩余段都是空串
+    ("", "", ""),
+    ("12345", "", ""),
+    ("HELLO", "", ""),
+    ("MIDV", "", ""),
+    ("A-1", "", ""),
+    ("AA-1", "", ""),
+    ("東京-123", "", ""),
+    ("---", "", ""),
 ]
 
 
-@pytest.mark.parametrize(("number", "expected"), PREFIX_CASES)
-def test_get_prefix(number: str, expected: str) -> None:
-    assert get_prefix(number) == expected
+@pytest.mark.parametrize(("number", "prefix", "suffix"), PREFIX_SUFFIX_CASES)
+def test_split_number(number: str, prefix: str, suffix: str) -> None:
+    assert split_number(number) == (prefix, suffix)
 
 
 INFER_CONTENT_TYPE_CASES: list[tuple[str, str | None, ContentType]] = [

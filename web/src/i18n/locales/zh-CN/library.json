@@ -148,6 +148,8 @@
     "mapKeys": "可映射规范值: {{keys}}",
     "items": {
       "number": "番号",
+      "prefix": "番号前缀. 例 MIDV-123 → MIDV",
+      "suffix": "番号去掉前缀后的剩余段. 例 MIDV-123 → 123",
       "title": "标题",
       "actor": "第一位演员",
       "actors": "全部演员, 逗号分隔",

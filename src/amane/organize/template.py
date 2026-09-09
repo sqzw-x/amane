@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, cast
 
 from ..enums import ActorGender
-from ..parsing.file_info import DEFINITION_VALUES, MOSAIC_VALUES, FileInfo
+from ..parsing.file_info import DEFINITION_VALUES, MOSAIC_VALUES, FileInfo, split_number
 from ..utils.path import is_any_descendant, is_descendant
 
 if TYPE_CHECKING:
@@ -29,6 +29,8 @@ TemplateVariables = TypedDict(
     "TemplateVariables",
     {
         "number": str,
+        "prefix": str,
+        "suffix": str,
         "title": str,
         "actor": str,
         "actors": str,
@@ -308,9 +310,12 @@ def _build_variables(
     raw_name = source_path.stem if source_path else ""
     if cd is None and file_info is not None:
         cd = file_info.cd
+    prefix, suffix = split_number(metadata.number) if metadata.number else ("", "")
 
     return {
         "number": metadata.number,
+        "prefix": prefix,
+        "suffix": suffix,
         "title": _safe(metadata.title) or metadata.number,
         "actor": _safe(actor) or _UNKNOWN,
         "actors": ",".join(metadata.actors) if metadata.actors else _UNKNOWN,

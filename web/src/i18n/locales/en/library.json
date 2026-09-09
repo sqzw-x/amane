@@ -150,6 +150,8 @@
     "mapKeys": "Mappable keys: {{keys}}",
     "items": {
       "number": "Catalog number",
+      "prefix": "Catalog prefix. e.g. MIDV-123 → MIDV",
+      "suffix": "Catalog number without the prefix. e.g. MIDV-123 → 123",
       "title": "Title",
       "actor": "First actor",
       "actors": "All actors, comma-separated",

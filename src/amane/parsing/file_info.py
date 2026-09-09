@@ -272,8 +272,17 @@ def detect_cd(filename: str | Path) -> int | None:
     return parse_file_info(text=str(filename)).cd
 
 
-def get_prefix(number: str) -> str:
-    return parse_file_info(text=number).prefix
+def split_number(number: str) -> tuple[str, str]:
+    """番号 → (前缀, 去掉前缀与紧随分隔符后的剩余段)."""
+    prefix = parse_file_info(text=number).prefix
+    if not prefix:
+        return "", ""
+    upper = number.upper()
+    head = prefix.upper()
+    idx = 0 if upper.startswith(head) else upper.find(head)
+    if idx < 0:
+        return prefix, ""
+    return prefix, number[idx + len(prefix) :].lstrip("-_. ")
 
 
 def is_uncensored(number: str) -> bool:

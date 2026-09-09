@@ -71,9 +71,10 @@ class _RenderCase(NamedTuple):
     source: str | None  # None: 不传 file_info
     template: str
     expected: str
+    meta: dict[str, object] | None = None
 
 
-# 模板 + 源文件 → 整理后相对库根目录的路径. {number}/{studio} 来自 _meta, 标记来自 source.
+# 模板 + 源文件 → 整理后相对库根目录的路径. 标记来自 source; metadata 字段来自 _meta, 可由 meta 覆盖.
 RENDER_CASES: tuple[_RenderCase, ...] = (
     # --- 默认模板: [-CD{cd?}][-{sub?}] 两个并列组 ---
     _RenderCase("MIDV-123.mp4", VIDEO_TEMPLATE_DEFAULT, "StudioX/ABC-123/ABC-123.mp4"),
@@ -132,6 +133,13 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
     _RenderCase(None, "{mosaic?}/{def?}/{number}.{ext}", "ABC-123.mp4"),
     # {cd} 不是 {cd?}, 视为未知 key
     _RenderCase("MIDV-123-CD1.mp4", "{number}[-CD{cd}].{ext}", "ABC-123-CDUnknown.mp4"),
+    # metadata 缺省是字面量 Unknown; 映成空串后可选组省略, 路径空段折叠
+    _RenderCase(None, "{studio|Unknown=未分类}/{number}.{ext}", "未分类/ABC-123.mp4", {"studio": None}),
+    _RenderCase(None, "{studio|Unknown=}/{number}.{ext}", "ABC-123.mp4", {"studio": None}),
+    _RenderCase(None, "[{actress|Unknown=}]/{number}.{ext}", "ABC-123.mp4", {"actors": []}),
+    _RenderCase(None, "[{actress|Unknown=}]/{number}.{ext}", "Alice/ABC-123.mp4", {"actors": ["Alice"]}),
+    _RenderCase(None, "A/[{actress|Unknown=}]/B/{number}.{ext}", "A/B/ABC-123.mp4", {"actors": []}),
+    _RenderCase(None, "A/[{actress|Unknown=}]/B/{number}.{ext}", "A/Alice/B/ABC-123.mp4", {"actors": ["Alice"]}),
 )
 
 
@@ -140,7 +148,7 @@ def test_render_from_file(case: _RenderCase, media: Path) -> None:
     """模板引擎核心表: source → FileInfo → template → 相对库根目录的路径."""
     wp = Library(name="t", path=str(media), video_template=case.template)
     file_info = parse_file_info(case.source) if case.source is not None else None
-    result = resolve_paths(wp, _meta(), ext="mp4", file_info=file_info)
+    result = resolve_paths(wp, _meta(**(case.meta or {})), ext="mp4", file_info=file_info)
     assert result.video == media.joinpath(*case.expected.split("/"))
 
 
@@ -197,11 +205,6 @@ class TestValueMapping:
         rendered = render_path_template("x[{mosaic?|uncensored=}]", {"mosaic?": "uncensored"})
         assert rendered == "x"
 
-    def test_unknown_metadata_can_be_mapped(self, media: Path):
-        wp = Library(name="t", path=str(media), video_template="{studio|Unknown=未分类}/{number}.{ext}")
-        result = resolve_paths(wp, _meta(studio=None), ext="mp4")
-        assert result.video == media / "未分类" / "ABC-123.mp4"
-
 
 class TestValidatePathTemplate:
     def test_nested_groups(self):
@@ -221,7 +224,9 @@ class TestValidatePathTemplate:
             "{def?|4K=2160p,1080p=FHD}",
             "{cd?|1=一,2=二}",
             "{studio|Unknown=未分类}",
+            "{studio|Unknown=}",
             "{mosaic?|uncensored=}",
+            "A/[{actress|Unknown=}]/B/{number}.{ext}",
         ],
     )
     def test_value_mapping_accepted(self, template: str):
@@ -892,6 +897,22 @@ def test_from_metadata_actress_placeholders(
     ctx = TemplateContext.from_metadata(_meta(actors=actors), actor_genders=genders)
     assert ctx.variables["actress"] == actress
     assert ctx.variables["actresses"] == actresses
+
+
+@pytest.mark.parametrize(
+    ("number", "prefix", "suffix"),
+    [
+        ("ABC-123", "ABC", "123"),
+        ("ABS-001", "ABS", "001"),
+        ("MKY-HS-001", "MKY-HS", "001"),
+        ("FC2-1234567", "FC2", "1234567"),
+    ],
+    ids=["hyphen", "zero-pad", "compound-prefix", "fc2"],
+)
+def test_prefix_suffix_placeholders(media: Path, number: str, prefix: str, suffix: str) -> None:
+    wp = Library(name="t", path=str(media), video_template="{prefix}/{suffix}/{number}.{ext}")
+    result = resolve_paths(wp, _meta(number=number), ext="mp4")
+    assert result.video == media / prefix / suffix / f"{number}.mp4"
 
 
 def test_resolve_paths_uses_actress_placeholder(media: Path) -> None:

@@ -11,12 +11,12 @@ from .file_info import (
     extract_number,
     file_phase_from_path,
     file_shows_uncensored,
-    get_prefix,
     infer_content_type,
     is_amateur,
     is_uncensored,
     max_definition,
     parse_file_info,
+    split_number,
     summarize_file_phases,
 )
 
@@ -32,12 +32,12 @@ __all__ = [
     "extract_number",
     "file_phase_from_path",
     "file_shows_uncensored",
-    "get_prefix",
     "infer_content_type",
     "is_amateur",
     "is_uncensored",
     "max_definition",
     "parse_file_info",
     "split_actor_aliases",
+    "split_number",
     "summarize_file_phases",
 ]

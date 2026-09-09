@@ -69,6 +69,8 @@ Authorization = "Bearer <Amane API Token>"
 | 占位符 | 说明 | 示例值 |
 | -------- | ------ | -------- |
 | `{number}` | 番号 | `MIDV-123` |
+| `{prefix}` | 番号前缀 | `MIDV` |
+| `{suffix}` | 番号去掉前缀后的剩余段 | `123` |
 | `{title}` | 标题 | `Title Here` |
 | `{actor}` | 第一主演 | `Actor1` |
 | `{actors}` | 演员 (逗号分隔) | `Actor1,Actor2` |
@@ -96,6 +98,8 @@ Authorization = "Bearer <Amane API Token>"
 文件名 `CRACKED` / `-U` / `-UC` 解析为破解; `-UC` 同时识别为中字. 无码标记是 `无码` / `UNCENSORED`.
 
 `{actress}` / `{actresses}` 排除已标为男性的演员; 女性与尚未识别性别的名字保留. 名单为空时输出 `Unknown`.
+
+`{prefix}` / `{suffix}` 从刮削所得 `{number}` 拆出, 不依据源文件名. `MIDV-123` → 前缀 `MIDV`、剩余段 `123`; `MKY-HS-001` → `MKY-HS` / `001`.
 
 未列出范围的占位符在各模板与 STRM 内容模板中均可使用. 下表所列占位符有范围限制; 写在不可用的模板中会得到 `Unknown`.
 
