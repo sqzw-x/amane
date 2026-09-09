@@ -39,7 +39,7 @@
 | `{link_name}` | 整理后链接文件名, 不含扩展名 | — |
 | `{raw_srt_name}` | 字幕原文件名, 不含扩展名 | `foo.zh.srt` → `foo.zh` |
 
-文件名 `-U` / `-UC` 解析为破解; `-UC` 同时识别为中字. 无码标记是 `无码` / `UNCENSORED`.
+文件名 `CRACKED` / `-U` / `-UC` 解析为破解; `-UC` 同时识别为中字. 无码标记是 `无码` / `UNCENSORED`.
 
 `{actress}` / `{actresses}` 排除已标为男性的演员; 女性与尚未识别性别的名字保留. 名单为空时输出 `Unknown`.
 
