@@ -16,7 +16,7 @@ from ..handlers._common import register_media_file, scan_library
 from ..handlers.models import ScrapePayload
 from ..library import LibraryFileKind, LibraryScan
 from ..parsing import parse_file_info
-from ..utils.path import is_descendant
+from ..utils.path import is_descendant, path_is_under
 from .clouddrive import CloudDriveChange, CloudDriveRoute, local_for, match_route
 from .watcher import FileWatcher
 
@@ -48,11 +48,6 @@ def _dir_in_scope(path: Path, route: CloudDriveRoute) -> bool:
     if route.recursive:
         return True
     return _same_path(path, root)
-
-
-def _path_under(path: str, root: Path) -> bool:
-    candidate = Path(path)
-    return _same_path(candidate, root) or root in candidate.parents
 
 
 class WatcherService:
@@ -92,6 +87,7 @@ class WatcherService:
         return FileWatcher(
             on_file_found=self._on_file_found_sync,
             on_file_deleted=self._on_file_deleted_sync,
+            on_dir_deleted=self._on_dir_deleted_sync,
             on_file_moved=self._on_file_moved_sync,
             use_polling=self._use_polling,
             media_extensions=self._media_extensions,
@@ -411,7 +407,7 @@ class WatcherService:
         for media in files:
             if media.id is None:
                 continue
-            if _path_under(media.path, root):
+            if path_is_under(media.path, root):
                 await self._on_file_deleted(Path(media.path))
 
     def _accept_cloud_file(self, route: CloudDriveRoute, path: Path) -> bool:
@@ -428,7 +424,7 @@ class WatcherService:
         dest_root = local_for(dest_route, destination_file)
         files = await self._repo.list_media_files(library_id=src_route.library_id, limit=None)
         for media in files:
-            if media.id is None or not _path_under(media.path, src_root):
+            if media.id is None or not path_is_under(media.path, src_root):
                 continue
             rel = Path(media.path).relative_to(src_root)
             dest = dest_root / rel
@@ -447,6 +443,9 @@ class WatcherService:
 
     def _on_file_deleted_sync(self, path: Path, _library_id: int) -> None:
         self._schedule_async(self._on_file_deleted(path))
+
+    def _on_dir_deleted_sync(self, path: Path, library_id: int) -> None:
+        self._schedule_async(self._delete_under(library_id, path))
 
     def _on_file_moved_sync(self, src: Path, dest: Path, library_id: int) -> None:
         self._schedule_async(self._on_file_moved(src, dest, library_id))

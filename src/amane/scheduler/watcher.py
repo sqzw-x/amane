@@ -8,6 +8,8 @@ from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
 from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
+from ..library.rules import is_in_trash
+from ..utils.path import path_is_under
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -36,6 +38,7 @@ class _Handler(FileSystemEventHandler):
         self._debounce_seconds = debounce_seconds
         self._pending: dict[str, float] = {}
         self._pending_deletes: dict[str, float] = {}
+        self._pending_dir_deletes: dict[str, float] = {}
         self._pending_moves: dict[str, tuple[str, float]] = {}  # dest -> (src, timestamp)
 
     def on_created(self, event):
@@ -43,13 +46,9 @@ class _Handler(FileSystemEventHandler):
             self._handle(str(event.src_path))
 
     def on_deleted(self, event):
-        if not event.is_directory:
-            path_str = str(event.src_path)
-            path = Path(path_str)
-            if self._matches(path):
-                # 尚未处理的创建事件一并移除
-                self._pending.pop(path_str, None)
-                self._pending_deletes[path_str] = time.time()
+        # 前缀含路径自身: 文件删除只命中这一条; 目录删除命中子树.
+        # Windows 删除通知不区分文件与目录, 一律按前缀处理.
+        self._record_prefix_delete(str(event.src_path))
 
     def on_moved(self, event):
         if not event.is_directory:
@@ -69,6 +68,34 @@ class _Handler(FileSystemEventHandler):
                 src = Path(src_str)
                 if self._matches(src):
                     self._pending_deletes[src_str] = time.time()
+
+    def _record_prefix_delete(self, dir_str: str) -> None:
+        """按路径前缀清未提交事件; 防抖后由服务端按索引前缀删除."""
+        if is_in_trash(Path(dir_str)):
+            return
+        # 已有更外层路径待删除时不必再记; 同一路径则刷新时间戳.
+        if any(
+            path_is_under(dir_str, existing) and not path_is_under(existing, dir_str)
+            for existing in self._pending_dir_deletes
+        ):
+            self._drop_pending_under(dir_str)
+            return
+        self._drop_pending_under(dir_str)
+        self._pending_dir_deletes[dir_str] = time.time()
+
+    def _drop_pending_under(self, root: str) -> None:
+        self._pending = {path: ts for path, ts in self._pending.items() if not path_is_under(path, root)}
+        self._pending_deletes = {
+            path: ts for path, ts in self._pending_deletes.items() if not path_is_under(path, root)
+        }
+        self._pending_moves = {
+            dest: src_ts
+            for dest, src_ts in self._pending_moves.items()
+            if not path_is_under(dest, root) and not path_is_under(src_ts[0], root)
+        }
+        self._pending_dir_deletes = {
+            path: ts for path, ts in self._pending_dir_deletes.items() if not path_is_under(path, root)
+        }
 
     def _handle(self, path_str: str) -> None:
         path = Path(path_str)
@@ -102,6 +129,18 @@ class _Handler(FileSystemEventHandler):
         self._pending_deletes = remaining
         return ready
 
+    def get_ready_dir_deletes(self) -> list[Path]:
+        now = time.time()
+        ready = []
+        remaining = {}
+        for path_str, timestamp in self._pending_dir_deletes.items():
+            if now - timestamp >= self._debounce_seconds:
+                ready.append(Path(path_str))
+            else:
+                remaining[path_str] = timestamp
+        self._pending_dir_deletes = remaining
+        return ready
+
     def get_ready_moves(self) -> list[tuple[Path, Path]]:
         now = time.time()
         ready = []
@@ -127,6 +166,7 @@ class FileWatcher:
         self,
         on_file_found: Callable[[Path, int], None],
         on_file_deleted: Callable[[Path, int], None] | None = None,
+        on_dir_deleted: Callable[[Path, int], None] | None = None,
         on_file_moved: Callable[[Path, Path, int], None] | None = None,
         use_polling: bool = False,
         media_extensions: list[str] | None = None,
@@ -135,6 +175,7 @@ class FileWatcher:
     ):
         self._on_file_found = on_file_found
         self._on_file_deleted = on_file_deleted
+        self._on_dir_deleted = on_dir_deleted
         self._on_file_moved = on_file_moved
         self._use_polling = use_polling
         self._media_extensions = frozenset(media_extensions) if media_extensions else MEDIA_EXTENSIONS
@@ -202,13 +243,17 @@ class FileWatcher:
         """刷新已过防抖窗口的事件并调用对应回调."""
         ready_files = []
         for handler in self._handlers:
-            for path in handler.get_ready_files():
-                self._on_file_found(path, handler.library_id)
-                ready_files.append(path)
+            # 目录前缀删除须先于创建: 同窗口内重建的文件应在清索引之后重新登记.
+            if self._on_dir_deleted:
+                for path in handler.get_ready_dir_deletes():
+                    self._on_dir_deleted(path, handler.library_id)
             if self._on_file_deleted:
                 for path in handler.get_ready_deletes():
                     self._on_file_deleted(path, handler.library_id)
             if self._on_file_moved:
                 for src, dest in handler.get_ready_moves():
                     self._on_file_moved(src, dest, handler.library_id)
+            for path in handler.get_ready_files():
+                self._on_file_found(path, handler.library_id)
+                ready_files.append(path)
         return ready_files

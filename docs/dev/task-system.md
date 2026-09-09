@@ -209,3 +209,5 @@ Watcher、Cron 与 Feed 分属独立循环: 秒级反应、分钟级 routine、�
 `watcher.use_polling` 在 NAS / Docker Desktop / WSL2 等 inotify 不可靠场景下打开. `debounce_seconds` 防止大文件写入途中提前刮削, 也用于 CloudDrive 目录 create 后的子树扫描. 这三项 HotSettings 在进程启动时注入 WatcherService, 修改 TOML 后须重启才生效 (见 [config.md](config.md)); Library 级 `automation` / `ingest` / `cloud_path` / 路径 / `trailer_pattern` 则由 libraries 路由热更新监控根. `automation=none` 不监控; `watch` 只登记; `scrape` 登记后入队 SCRAPE. 三者都不自动 ORGANIZE. `ingest=clouddrive` 不挂 Observer, 见 [watcher.md](watcher.md).
 
 **归属随事件携带**: 每个监控根的 `_Handler` 绑定 `library_id`; 文件事件回调带上来源库, 新文件以此入库 (见 [data-model.md](data-model.md) Library 归属).
+
+删除事件一律按该库 `MediaFile.path` 前缀删除索引 (含路径自身, 因此单文件删除只命中这一条), 不遍历磁盘; 未过防抖的创建 / 删除 / 移动按同一前缀丢掉. Windows `ReadDirectoryChanges` 的删除通知不区分文件与目录, 与 `DirDeletedEvent` 同一处理. 库内目录改名仍是 `DirMovedEvent` 加合成子文件 `FileMovedEvent`, 不按前缀删除. 目录创建仍忽略; 移入靠合成子文件 `FileCreatedEvent`. `.amane_trash` 下的路径忽略.

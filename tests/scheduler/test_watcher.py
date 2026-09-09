@@ -8,7 +8,14 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
-from watchdog.events import DirCreatedEvent, FileCreatedEvent, FileDeletedEvent, FileMovedEvent
+from watchdog.events import (
+    DirCreatedEvent,
+    DirDeletedEvent,
+    DirMovedEvent,
+    FileCreatedEvent,
+    FileDeletedEvent,
+    FileMovedEvent,
+)
 from watchdog.observers.polling import PollingObserver
 
 from amane.db.repository import Repository
@@ -17,6 +24,7 @@ from amane.events import EventBus
 from amane.library import LibraryScan
 from amane.scheduler.service import WatcherService
 from amane.scheduler.watcher import DEBOUNCE_SECONDS, FileWatcher, _Handler
+from amane.utils.path import path_is_under
 from tests.helpers import await_for, wait_for
 
 
@@ -133,24 +141,88 @@ class TestHandler:
         handler.on_moved(FileMovedEvent(src_path="/tmp/old.mkv", dest_path="/tmp/movie.mkv"))
         assert "/tmp/movie.mkv" in handler._pending_moves
 
-    def test_on_deleted_adds_to_pending_deletes(self):
+    def test_on_deleted_file_records_prefix(self):
         handler = _Handler(library_id=1)
         handler.on_deleted(FileDeletedEvent(src_path="/tmp/video.mp4"))
-        assert "/tmp/video.mp4" in handler._pending_deletes
-
-    def test_on_deleted_ignores_non_media(self):
-        handler = _Handler(library_id=1)
-        handler.on_deleted(FileDeletedEvent(src_path="/tmp/notes.txt"))
+        assert "/tmp/video.mp4" in handler._pending_dir_deletes
         assert handler._pending_deletes == {}
 
+    def test_on_deleted_non_media_file_records_prefix(self):
+        handler = _Handler(library_id=1)
+        handler.on_deleted(FileDeletedEvent(src_path="/tmp/notes.txt"))
+        assert "/tmp/notes.txt" in handler._pending_dir_deletes
+        assert handler._pending_deletes == {}
+
+    def test_on_deleted_directory_records_prefix(self):
+        handler = _Handler(library_id=1)
+        handler.on_created(FileCreatedEvent(src_path="/lib/show/a.mp4"))
+        handler.on_deleted(DirDeletedEvent(src_path="/lib/show"))
+        assert "/lib/show" in handler._pending_dir_deletes
+        assert "/lib/show/a.mp4" not in handler._pending
+        assert handler._pending_deletes == {}
+
+    def test_on_deleted_directory_keeps_sibling_prefix(self):
+        handler = _Handler(library_id=1)
+        handler.on_created(FileCreatedEvent(src_path="/lib/show2/a.mp4"))
+        handler.on_deleted(DirDeletedEvent(src_path="/lib/show"))
+        assert "/lib/show2/a.mp4" in handler._pending
+        assert "/lib/show" in handler._pending_dir_deletes
+
+    def test_on_deleted_directory_ignores_trash(self):
+        handler = _Handler(library_id=1)
+        handler.on_deleted(DirDeletedEvent(src_path="/lib/.amane_trash/old"))
+        assert handler._pending_dir_deletes == {}
+
+    def test_on_deleted_nested_dir_skipped_if_parent_pending(self):
+        handler = _Handler(library_id=1)
+        handler.on_deleted(DirDeletedEvent(src_path="/lib/show"))
+        handler.on_deleted(DirDeletedEvent(src_path="/lib/show/nested"))
+        assert list(handler._pending_dir_deletes) == ["/lib/show"]
+
+    def test_on_deleted_parent_dir_replaces_nested(self):
+        handler = _Handler(library_id=1)
+        handler.on_deleted(DirDeletedEvent(src_path="/lib/show/nested"))
+        handler.on_deleted(DirDeletedEvent(src_path="/lib/show"))
+        assert "/lib/show" in handler._pending_dir_deletes
+        assert "/lib/show/nested" not in handler._pending_dir_deletes
+
+    def test_on_moved_directory_ignored(self):
+        handler = _Handler(library_id=1)
+        handler.on_moved(DirMovedEvent(src_path="/lib/show", dest_path="/lib/renamed"))
+        assert handler._pending_dir_deletes == {}
+        assert handler._pending_moves == {}
+
+    def test_on_deleted_directory_drops_pending_move(self):
+        handler = _Handler(library_id=1)
+        handler.on_moved(FileMovedEvent(src_path="/lib/show/old.mp4", dest_path="/lib/show/new.mp4"))
+        handler.on_deleted(DirDeletedEvent(src_path="/lib/show"))
+        assert handler._pending_moves == {}
+        assert "/lib/show" in handler._pending_dir_deletes
+
+    def test_on_deleted_file_event_is_prefix(self):
+        handler = _Handler(library_id=1)
+        handler.on_created(FileCreatedEvent(src_path="/lib/show/a.mp4"))
+        handler.on_deleted(FileDeletedEvent(src_path="/lib/show"))
+        assert "/lib/show" in handler._pending_dir_deletes
+        assert "/lib/show/a.mp4" not in handler._pending
+
+    def test_on_deleted_file_event_dotted_dir_name_is_prefix(self):
+        """Windows 对目录发 FileDeletedEvent; 目录名带点仍按前缀."""
+        handler = _Handler(library_id=1)
+        handler.on_created(FileCreatedEvent(src_path="/lib/Season1.mkv/a.mp4"))
+        handler.on_deleted(FileDeletedEvent(src_path="/lib/Season1.mkv"))
+        assert "/lib/Season1.mkv" in handler._pending_dir_deletes
+        assert "/lib/Season1.mkv/a.mp4" not in handler._pending
+
     def test_on_deleted_removes_from_pending_creates(self):
-        """文件创建后立即删除: 从 pending 中移除, 添加到 pending_deletes"""
+        """文件创建后立即删除: 从 pending 中移除, 记为前缀删除."""
         handler = _Handler(library_id=1)
         handler.on_created(FileCreatedEvent(src_path="/tmp/video.mp4"))
         assert "/tmp/video.mp4" in handler._pending
         handler.on_deleted(FileDeletedEvent(src_path="/tmp/video.mp4"))
         assert "/tmp/video.mp4" not in handler._pending
-        assert "/tmp/video.mp4" in handler._pending_deletes
+        assert "/tmp/video.mp4" in handler._pending_dir_deletes
+        assert handler._pending_deletes == {}
 
     def test_get_ready_deletes_after_debounce(self):
         handler = _Handler(library_id=1)
@@ -213,6 +285,20 @@ class TestFileWatcher:
         assert ready[0] == Path(test_file)
         assert len(received) == 1
         assert received[0] == Path(test_file)
+
+    def test_check_debounced_dir_delete_callback(self, tmp_path: Path):
+        deleted: list[tuple[Path, int]] = []
+        watcher = FileWatcher(
+            observer_timeout=0.1,
+            on_file_found=lambda p, _lib: None,
+            on_dir_deleted=lambda p, lib: deleted.append((p, lib)),
+        )
+        watcher.watch(str(tmp_path), library_id=1)
+        handler = watcher._handlers[0]
+        target = tmp_path / "show"
+        handler._pending_dir_deletes[str(target)] = time.time() - DEBOUNCE_SECONDS - 1
+        watcher.check_debounced()
+        assert deleted == [(target, 1)]
 
     def test_multiple_watch_paths(self, tmp_path: Path):
         dir1 = tmp_path / "dir1"
@@ -422,6 +508,54 @@ class TestWatcherService:
         await service._on_file_deleted(test_file)  # 不应抛出
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_delete_under_removes_prefix_only(self, service, repo: Repository, tmp_path: Path):
+        lib = await repo.create_library(name="t", path=str(tmp_path), automation=LibraryAutomation.WATCH)
+        other = await repo.create_library(name="o", path=str(tmp_path / "other"), automation=LibraryAutomation.WATCH)
+        assert lib.id is not None
+        assert other.id is not None
+        nested = tmp_path / "show"
+        video = nested / "a.mp4"
+        sibling = tmp_path / "show2" / "b.mp4"
+        other_video = tmp_path / "other" / "c.mp4"
+        await repo.create_media_file(library_id=lib.id, path=str(video))
+        await repo.create_media_file(library_id=lib.id, path=str(sibling))
+        await repo.create_media_file(library_id=other.id, path=str(other_video))
+        await service._delete_under(lib.id, nested)
+        assert await repo.get_media_file_by_path(str(video)) is None
+        assert await repo.get_media_file_by_path(str(sibling)) is not None
+        assert await repo.get_media_file_by_path(str(other_video)) is not None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_delete_under_file_path_only_self(self, service, repo: Repository, tmp_path: Path):
+        """文件路径当前缀时只命中自身, 不碰到兄弟文件."""
+        lib = await repo.create_library(name="t", path=str(tmp_path), automation=LibraryAutomation.WATCH)
+        assert lib.id is not None
+        video = tmp_path / "a.mp4"
+        sibling = tmp_path / "b.mp4"
+        await repo.create_media_file(library_id=lib.id, path=str(video))
+        await repo.create_media_file(library_id=lib.id, path=str(sibling))
+        await service._delete_under(lib.id, video)
+        assert await repo.get_media_file_by_path(str(video)) is None
+        assert await repo.get_media_file_by_path(str(sibling)) is not None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_dir_delete_flushes_prefixed_index(self, service, repo: Repository, tmp_path: Path):
+        lib = await repo.create_library(name="t", path=str(tmp_path), automation=LibraryAutomation.WATCH)
+        assert lib.id is not None
+        nested = tmp_path / "show"
+        video = nested / "a.mp4"
+        await repo.create_media_file(library_id=lib.id, path=str(video))
+        await service.start()
+        handler = service._watcher._handlers[0]
+        handler._pending_dir_deletes[str(nested)] = time.time() - DEBOUNCE_SECONDS - 1
+
+        async def gone() -> bool:
+            return await repo.get_media_file_by_path(str(video)) is None
+
+        assert await await_for(gone)
+        await service.stop()
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_on_file_moved_updates_path(self, service, repo: Repository, tmp_path: Path):
         """文件移动时更新 DB 中的路径"""
         src = tmp_path / "old.mp4"
@@ -568,5 +702,28 @@ class TestFileWatcherTmpFiles:
             # PollingObserver 通过 on_created 检测新文件;
             # 原生 observer 通过 on_moved 检测 (同文件系统 rename)
             wait_for(lambda: str(dest) in handler._pending)
+        finally:
+            watcher.stop()
+
+    @pytest.mark.parametrize("use_polling", [True, False])
+    def test_moved_out_directory_records_dir_delete(self, tmp_path: Path, use_polling: bool):
+        """目录移出监控根: 源侧记目录删除, 不依赖子文件逐条删除."""
+        watched = tmp_path / "lib"
+        outside = tmp_path / "out"
+        watched.mkdir()
+        outside.mkdir()
+        nested = watched / "show"
+        nested.mkdir()
+        (nested / "a.mp4").write_bytes(b"\x00" * 64)
+
+        watcher = FileWatcher(observer_timeout=0.1, on_file_found=lambda p, _lib: None, use_polling=use_polling)
+        watcher.watch(str(watched), library_id=1)
+        watcher.start()
+        try:
+            shutil.move(str(nested), str(outside / "show"))
+            handler = watcher._handlers[0]
+            wait_for(
+                lambda: any(path_is_under(p, nested) and path_is_under(nested, p) for p in handler._pending_dir_deletes)
+            )
         finally:
             watcher.stop()
