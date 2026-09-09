@@ -54,6 +54,7 @@ mkdir -p "$WORK" "$(dirname "$OUT")"
   --collect-all pydantic_ai \
   --collect-all pydantic_graph \
   --collect-all genai_prices \
+  --hidden-import socksio \
   --copy-metadata genai_prices \
   --copy-metadata pydantic_ai_slim \
   --copy-metadata amane \
