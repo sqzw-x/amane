@@ -120,7 +120,7 @@ def test_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
     engine.dispose()
 
 
-def test_media_file_mosaic_filled_from_uncensored_content_type(tmp_path: Path) -> None:
+def test_media_file_mosaic_filled_from_content_type(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
@@ -149,7 +149,9 @@ def test_media_file_mosaic_filled_from_uncensored_content_type(tmp_path: Path) -
                 "('/media/HEYZO-1234-流出.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
                 "'UNCENSORED', 'LEAKED', 0), "
                 "('/media/MIDV-123.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'CENSORED', NULL, 0)"
+                "'CENSORED', NULL, 0), "
+                "('/media/MD0165-1.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'CHINESE', NULL, 0)"
             ),
             {"lib": lib_id},
         )
@@ -160,6 +162,7 @@ def test_media_file_mosaic_filled_from_uncensored_content_type(tmp_path: Path) -
         rows = {row.path: row for row in conn.execute(text("SELECT path, mosaic FROM media_files")).all()}
         assert rows["/media/HEYZO-1234.mp4"].mosaic == "UNCENSORED"
         assert rows["/media/HEYZO-1234-流出.mp4"].mosaic == "LEAKED"
-        assert rows["/media/MIDV-123.mp4"].mosaic is None
+        assert rows["/media/MIDV-123.mp4"].mosaic == "CENSORED"
+        assert rows["/media/MD0165-1.mp4"].mosaic is None
 
     engine.dispose()

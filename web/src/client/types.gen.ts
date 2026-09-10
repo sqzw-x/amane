@@ -2081,7 +2081,7 @@ export type MetadataSortField = 'number' | 'title' | 'studio' | 'release' | 'cre
 /**
  * Mosaic
  */
-export type Mosaic = 'uncensored' | 'cracked' | 'leaked';
+export type Mosaic = 'censored' | 'uncensored' | 'cracked' | 'leaked';
 
 /**
  * MoveMode

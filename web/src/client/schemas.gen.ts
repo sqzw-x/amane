@@ -4400,6 +4400,7 @@ export const MetadataSortFieldSchema = {
 export const MosaicSchema = {
     type: 'string',
     enum: [
+        'censored',
         'uncensored',
         'cracked',
         'leaked'

@@ -9386,6 +9386,7 @@
       "Mosaic": {
         "type": "string",
         "enum": [
+          "censored",
           "uncensored",
           "cracked",
           "leaked"

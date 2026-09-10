@@ -6,6 +6,7 @@ import pytest
 
 from amane.parsing import (
     ContentType,
+    Mosaic,
     detect_cd,
     extract_number,
     infer_content_type,
@@ -37,7 +38,7 @@ CASES: list[object] = [
     _Case("MIDV-123-2.mp4", cd=2, number="MIDV-123"),
     _Case("MIDV-123-3.mp4", cd=3, number="MIDV-123"),
     _Case("MIDV-123-9.mp4", cd=9, number="MIDV-123"),
-    _Case("MIDV-123.mp4", number="MIDV-123"),
+    _Case("MIDV-123.mp4", mosaic="censored", number="MIDV-123"),
     _Case("MIDV-123-0.mp4"),
     _Case("MIDV-123-01.mp4"),
     _Case("MIDV-123-10.mp4"),
@@ -71,7 +72,7 @@ CASES: list[object] = [
     _Case("MIDV-123-U.mp4", mosaic="cracked", number="MIDV-123"),
     _Case("MIDV-123-C-U.mp4", has_subtitle=True, mosaic="cracked", number="MIDV-123"),
     _Case("MIDV-123-U-CD1.mp4", cd=1, mosaic="cracked", number="MIDV-123"),
-    # 无文件名标记: 无码番号 mosaic=uncensored; 有码号仍为空
+    # 无文件名标记: 有码番号 mosaic=censored; 无码番号 mosaic=uncensored
     _Case("HEYZO-123.mp4", mosaic="uncensored", number="HEYZO-123"),
     _Case("HEYZO-123-1080p.mp4", mosaic="uncensored", definition="1080p", number="HEYZO-123"),
     _Case("HEYZO-123-流出.mp4", mosaic="leaked", number="HEYZO-123"),
@@ -320,7 +321,10 @@ def test_parse_file_info(case: _Case) -> None:
     info = parse_file_info(case.path)
     assert info.cd == case.cd
     assert info.has_subtitle is case.has_subtitle
-    assert info.mosaic == case.mosaic
+    expected_mosaic = case.mosaic
+    if expected_mosaic is None and info.content_type is ContentType.CENSORED:
+        expected_mosaic = Mosaic.CENSORED
+    assert info.mosaic == expected_mosaic
     assert info.definition == case.definition
     if case.number is not None:
         assert info.number == case.number
@@ -495,6 +499,7 @@ def test_parse_file_info_escape_strings(path: str, extra: list[str], number: str
 
 MOSAIC_CANONICAL_ROUNDTRIP: list[tuple[str, str]] = [
     ("MIDV-123-U.mp4", "cracked"),
+    ("MIDV-123.mp4", "censored"),
     ("MIDV-123-無碼.mp4", "uncensored"),
     ("MIDV-123-流出.mp4", "leaked"),
 ]

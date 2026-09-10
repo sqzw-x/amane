@@ -189,7 +189,7 @@ class TestMediaFileRepo:
     async def test_update_path_recomputes_phase(self, repo: Repository):
         media = await repo.create_media_file(library_id=1, path="/video/MIDV-123.mp4")
         assert media.id is not None
-        assert media.mosaic is None
+        assert media.mosaic is Mosaic.CENSORED
         updated = await repo.update_media_file(media.id, path="/video/MIDV-123-U.mp4")
         assert updated is not None
         assert updated.mosaic is Mosaic.CRACKED

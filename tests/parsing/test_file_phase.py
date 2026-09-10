@@ -13,12 +13,25 @@ from amane.parsing import (
 )
 
 
+def test_file_phase_from_path_midv_fills_censored() -> None:
+    phase = file_phase_from_path("/media/MIDV-123.mp4")
+    assert phase["content_type"] is ContentType.CENSORED
+    assert phase["mosaic"] is Mosaic.CENSORED
+    assert file_shows_uncensored(phase["mosaic"], phase["content_type"]) is False
+
+
 def test_file_phase_from_path_heyzo_uncensored_type_fills_mosaic() -> None:
     phase = file_phase_from_path("/media/HEYZO-1234.mp4")
     assert phase["content_type"] is ContentType.UNCENSORED
     assert phase["mosaic"] is Mosaic.UNCENSORED
     assert phase["has_subtitle"] is False
     assert file_shows_uncensored(phase["mosaic"], phase["content_type"]) is True
+
+
+def test_file_phase_from_path_chinese_leaves_mosaic_empty() -> None:
+    phase = file_phase_from_path("/media/MD0165-1.mp4")
+    assert phase["content_type"] is ContentType.CHINESE
+    assert phase["mosaic"] is None
 
 
 def test_file_phase_from_path_midv_u_is_cracked_not_uncensored() -> None:

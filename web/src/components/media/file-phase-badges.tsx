@@ -1,6 +1,7 @@
 import { Badge, Group } from "@mantine/core";
 import {
   IconBadgeHd,
+  IconBlur,
   IconDroplet,
   IconEye,
   IconLockOpen,
@@ -22,7 +23,7 @@ export type FilePhaseLike = {
   content_type?: ContentType;
 };
 
-type PhaseChipKey = "sub" | "u" | "crack" | "leak" | "def";
+type PhaseChipKey = "sub" | "cen" | "u" | "crack" | "leak" | "def";
 
 type PhaseChip = { key: PhaseChipKey; label: string };
 
@@ -31,6 +32,11 @@ const PHASE_CHIP = exhaustiveRecord<PhaseChipKey>()({
     color: "orange",
     Icon: IconSubtitles,
     iconColor: "var(--mantine-color-orange-4)",
+  },
+  cen: {
+    color: "gray",
+    Icon: IconBlur,
+    iconColor: "var(--mantine-color-gray-4)",
   },
   u: {
     color: "red",
@@ -66,6 +72,9 @@ function hasMosaic(phase: FilePhaseLike, mosaic: Mosaic): boolean {
 
 function mosaicChips(phase: FilePhaseLike, t: TFunction<"metadata">): PhaseChip[] {
   const chips: PhaseChip[] = [];
+  if (hasMosaic(phase, "censored")) {
+    chips.push({ key: "cen", label: t("filePhase.censored") });
+  }
   if (showsUncensored(phase)) {
     chips.push({ key: "u", label: t("filePhase.uncensored") });
   }
@@ -107,7 +116,7 @@ interface FilePhaseBadgesProps {
   size?: "xs" | "sm";
 }
 
-/** 表格/详情文件列表: 中字 / 无码 / 破解 / 流出 / 清晰度. 无码看 mosaic 或 content_type. */
+/** 表格/详情文件列表: 中字 / 有码 / 无码 / 破解 / 流出 / 清晰度. 无码看 mosaic 或 content_type. */
 export function FilePhaseBadges({ phase, size = "xs" }: FilePhaseBadgesProps) {
   const { t } = useTranslation("metadata");
   if (phase == null) return null;
