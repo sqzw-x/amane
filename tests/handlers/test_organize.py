@@ -367,7 +367,7 @@ async def test_organize_writes_subtitle_tag(repo: Repository, resource_store: Re
 async def test_organize_does_not_trash_blacklisted(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
-    """整理不扫描磁盘、不归档; 黑名单文件即使在范围内也留在原路径."""
+    """整理不扫描磁盘、不回收; 黑名单文件即使在范围内也留在原路径."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)

@@ -14,7 +14,7 @@ from .base import RepositoryMixinBase
 
 _ACTIVE_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING)
 # 互斥键在 payload 里; 同键已有 queued/running 则复用, 不另建行.
-# ORGANIZE / ARCHIVE 每次新建; 同库串行由 handler 内的锁保证.
+# ORGANIZE / TRASH 每次新建; 同库串行由 handler 内的锁保证.
 _EXCLUSIVE_FIELDS: dict[TaskType, str] = {
     TaskType.ACTOR_SCRAPE: "actor_id",
 }

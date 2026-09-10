@@ -47,7 +47,7 @@ class LibraryScan:
         if is_in_trash(path):
             return None
         name = path.name
-        # 黑名单或体积过小 → 归档; 预告片 → 跳过.
+        # 黑名单或体积过小 → 回收; 预告片 → 跳过.
         if self._blacklist is not None and any(r.search(name) for r in self._blacklist):
             return LibraryFileKind.TRASH
         if self._trailer is not None and any(r.search(name) for r in self._trailer):

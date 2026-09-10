@@ -1,4 +1,4 @@
-"""ARCHIVE: 黑名单与过小视频移入 `.amane_trash`; 不整理正片."""
+"""TRASH: 黑名单与过小视频移入 `.amane_trash`; 不整理正片."""
 
 from typing import TYPE_CHECKING
 
@@ -6,7 +6,7 @@ import pytest
 
 from amane.config import HotSettings
 from amane.db.models import MediaFileStatus
-from amane.handlers import ArchiveHandler, ArchivePayload
+from amane.handlers import TrashHandler, TrashPayload
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -15,10 +15,10 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_archive_trashes_blacklisted_files(repo: Repository, tmp_path: Path) -> None:
-    """黑名单命中文件: ARCHIVE 时移入本库 .amane_trash 并删除 MediaFile 记录.
+async def test_trash_trashes_blacklisted_files(repo: Repository, tmp_path: Path) -> None:
+    """黑名单命中文件: TRASH 时移入本库 .amane_trash 并删除 MediaFile 记录.
 
-    预告片命中 trailer_pattern: 只跳过不归档. 正片不动.
+    预告片命中 trailer_pattern: 只跳过不回收. 正片不动.
     """
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
@@ -49,8 +49,8 @@ async def test_archive_trashes_blacklisted_files(repo: Repository, tmp_path: Pat
     )
     assert ad_record.id is not None and source.id is not None
 
-    handler = ArchiveHandler(repo, HotSettings())
-    result = await handler.handle(ArchivePayload(library_id=lib.id, path=str(src_dir)))
+    handler = TrashHandler(repo, HotSettings())
+    result = await handler.handle(TrashPayload(library_id=lib.id, path=str(src_dir)))
     assert result.success is True
     assert result.result is not None
     assert result.result.trashed == len(ads)
@@ -70,8 +70,8 @@ async def test_archive_trashes_blacklisted_files(repo: Repository, tmp_path: Pat
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_archive_trashes_blacklisted_outside_patterns(repo: Repository, tmp_path: Path) -> None:
-    """黑名单归档不应用 library `patterns`: 即使文件名不匹配 glob, 仍移动至 `.amane_trash`."""
+async def test_trash_trashes_blacklisted_outside_patterns(repo: Repository, tmp_path: Path) -> None:
+    """黑名单回收不应用 library `patterns`: 即使文件名不匹配 glob, 仍移动至 `.amane_trash`."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
@@ -85,8 +85,8 @@ async def test_archive_trashes_blacklisted_outside_patterns(repo: Repository, tm
     )
     assert lib.id is not None
 
-    handler = ArchiveHandler(repo, HotSettings())
-    result = await handler.handle(ArchivePayload(library_id=lib.id, path=str(src_dir), patterns=["*.mkv"]))
+    handler = TrashHandler(repo, HotSettings())
+    result = await handler.handle(TrashPayload(library_id=lib.id, path=str(src_dir), patterns=["*.mkv"]))
     assert result.success is True
     assert result.result is not None
     assert result.result.trashed == 1
@@ -96,8 +96,8 @@ async def test_archive_trashes_blacklisted_outside_patterns(repo: Repository, tm
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_archive_untracked_and_collision(repo: Repository, tmp_path: Path) -> None:
-    """无 MediaFile 记录的黑名单文件同样归档; 同名冲突加 (1); 二次归档幂等."""
+async def test_trash_untracked_and_collision(repo: Repository, tmp_path: Path) -> None:
+    """无 MediaFile 记录的黑名单文件同样回收; 同名冲突加 (1); 二次回收幂等."""
     lib_root = tmp_path / "lib"
     d1 = lib_root / "a"
     d2 = lib_root / "b"
@@ -111,8 +111,8 @@ async def test_archive_untracked_and_collision(repo: Repository, tmp_path: Path)
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["(?i)ad"])
     assert lib.id is not None
 
-    handler = ArchiveHandler(repo, HotSettings())
-    result = await handler.handle(ArchivePayload(library_id=lib.id, path=str(lib_root)))
+    handler = TrashHandler(repo, HotSettings())
+    result = await handler.handle(TrashPayload(library_id=lib.id, path=str(lib_root)))
     assert result.success is True
     assert result.result is not None
     assert result.result.trashed == 2
@@ -122,14 +122,14 @@ async def test_archive_untracked_and_collision(repo: Repository, tmp_path: Path)
     assert (trash / "AD_01.mp4").exists()
     assert (trash / "AD_01(1).mp4").exists()
 
-    again = await handler.handle(ArchivePayload(library_id=lib.id, path=str(lib_root)))
+    again = await handler.handle(TrashPayload(library_id=lib.id, path=str(lib_root)))
     assert again.result is not None
     assert again.result.trashed == 0
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_archive_trashes_undersized_videos_keeps_sidecars(repo: Repository, tmp_path: Path) -> None:
-    """低于 min_file_size 的视频进回收站; 预告片/字幕/nfo 不因体积归档; 正片不动."""
+async def test_trash_trashes_undersized_videos_keeps_sidecars(repo: Repository, tmp_path: Path) -> None:
+    """低于 min_file_size 的视频进回收站; 预告片/字幕/nfo 不因体积回收; 正片不动."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
@@ -154,8 +154,8 @@ async def test_archive_trashes_undersized_videos_keeps_sidecars(repo: Repository
     )
     assert ad_record.id is not None and source.id is not None
 
-    handler = ArchiveHandler(repo, HotSettings())
-    result = await handler.handle(ArchivePayload(library_id=lib.id, path=str(src_dir)))
+    handler = TrashHandler(repo, HotSettings())
+    result = await handler.handle(TrashPayload(library_id=lib.id, path=str(src_dir)))
     assert result.success is True
     assert result.result is not None
     assert result.result.trashed == 1
@@ -171,7 +171,7 @@ async def test_archive_trashes_undersized_videos_keeps_sidecars(repo: Repository
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_archive_path_subdirectory(repo: Repository, tmp_path: Path) -> None:
+async def test_trash_path_subdirectory(repo: Repository, tmp_path: Path) -> None:
     """path 限定子目录时, 范围外的黑名单文件不动."""
     lib_root = tmp_path / "lib"
     inside = lib_root / "incoming"
@@ -186,8 +186,8 @@ async def test_archive_path_subdirectory(repo: Repository, tmp_path: Path) -> No
     lib = await repo.create_library(name="t", path=str(lib_root), blacklist_patterns=["广告"])
     assert lib.id is not None
 
-    handler = ArchiveHandler(repo, HotSettings())
-    result = await handler.handle(ArchivePayload(library_id=lib.id, path=str(inside)))
+    handler = TrashHandler(repo, HotSettings())
+    result = await handler.handle(TrashPayload(library_id=lib.id, path=str(inside)))
     assert result.success is True
     assert result.result is not None
     assert result.result.trashed == 1

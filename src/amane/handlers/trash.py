@@ -1,4 +1,4 @@
-"""ARCHIVE: 扫描范围内的黑名单与过小视频, 移入 `.amane_trash`."""
+"""TRASH: 扫描范围内的黑名单与过小视频, 移入 `.amane_trash`."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from ..organize import MoveMode, execute_organize
 from ..organize.file import OrganizeResult as DiskOrganizeResult
 from ..utils.threads import in_thread, path_is_dir
 from ._common import scan_library
-from .models import ArchivePayload, ArchiveResult
+from .models import TrashPayload, TrashResult
 from .protocol import TaskHandler, TaskResult
 
 if TYPE_CHECKING:
@@ -30,14 +30,14 @@ def _move_to_trash(file_path: Path, trash_dir: Path) -> DiskOrganizeResult:
     return execute_organize.sync(source=file_path, target_dir=trash_dir, target_stem=file_path.stem, mode=MoveMode.MOVE)
 
 
-class ArchiveHandler(TaskHandler[ArchivePayload, ArchiveResult]):
-    """扫描磁盘, 将归档类文件移入 `.amane_trash`; 不整理正片.
+class TrashHandler(TaskHandler[TrashPayload, TrashResult]):
+    """扫描磁盘, 将无效文件移入 `.amane_trash`; 不整理正片.
 
     同库执行期并发度 1; 与 ORGANIZE 互不持锁, 可以并行.
     """
 
     def __init__(self, repo: Repository, config: HotSettings):
-        super().__init__(payload_t=ArchivePayload, result_t=ArchiveResult)
+        super().__init__(payload_t=TrashPayload, result_t=TrashResult)
         self._repo = repo
         self._config = config
         self._library_locks: dict[int, asyncio.Lock] = {}
@@ -51,7 +51,7 @@ class ArchiveHandler(TaskHandler[ArchivePayload, ArchiveResult]):
                 self._library_locks[library_id] = lock
             return lock
 
-    async def handle(self, payload: ArchivePayload) -> TaskResult[ArchiveResult]:
+    async def handle(self, payload: TrashPayload) -> TaskResult[TrashResult]:
         scan_dir = Path(payload.path)
         if not await path_is_dir(scan_dir):
             return TaskResult(success=False, error=f"Not a directory: {payload.path}")
@@ -66,8 +66,8 @@ class ArchiveHandler(TaskHandler[ArchivePayload, ArchiveResult]):
             return await self._handle_unlocked(payload, library, scan_dir)
 
     async def _handle_unlocked(
-        self, payload: ArchivePayload, library: Library, scan_dir: Path
-    ) -> TaskResult[ArchiveResult]:
+        self, payload: TrashPayload, library: Library, scan_dir: Path
+    ) -> TaskResult[TrashResult]:
         recursive = payload.recursive if payload.recursive is not None else True
         media_extensions = frozenset(self._config.watcher.media_extensions) or MEDIA_EXTENSIONS
         await self.report_progress(0, 0, "scan")
@@ -84,8 +84,8 @@ class ArchiveHandler(TaskHandler[ArchivePayload, ArchiveResult]):
             if hit.kind is LibraryFileKind.TRASH
         ]
         trashed, failed = await self._trash_files(library, to_trash)
-        logger.info("archive completed", path=payload.path, trashed=trashed, failed=failed)
-        return TaskResult(True, result=ArchiveResult(trashed=trashed, failed=failed))
+        logger.info("trash completed", path=payload.path, trashed=trashed, failed=failed)
+        return TaskResult(True, result=TrashResult(trashed=trashed, failed=failed))
 
     async def _trash_files(self, library: Library, files: Sequence[Path]) -> tuple[int, int]:
         """移至本库 `.amane_trash`. 固定物理移动, 不受 `move_mode` 影响."""

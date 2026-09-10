@@ -375,7 +375,7 @@ async def _download_images_via_store(
 class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
     """依据已有 Metadata 整理范围内的 MediaFile; 不刮削, 不修改 Metadata, 不扫描磁盘.
 
-    同库执行期并发度 1; 与 ARCHIVE 互不持锁, 可以并行.
+    同库执行期并发度 1; 与 TRASH 互不持锁, 可以并行.
     """
 
     def __init__(

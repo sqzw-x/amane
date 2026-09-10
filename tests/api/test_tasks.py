@@ -139,10 +139,10 @@ class TestSubmitTask:
         assert (await client.post("tasks", json={"type": "refresh"})).status_code == 422
         assert (await client.post("tasks", json={"type": "refresh", "library_id": 9999})).status_code == 404
         assert (await client.post("tasks", json={"type": "organize", "library_id": 9999})).status_code == 404
-        archive = await client.post("tasks", json={"type": "archive", "library_id": lib.id})
-        assert archive.status_code == 202
-        assert archive.json()["type"] == "archive"
-        assert (await client.post("tasks", json={"type": "archive", "library_id": 9999})).status_code == 404
+        trash = await client.post("tasks", json={"type": "trash", "library_id": lib.id})
+        assert trash.status_code == 202
+        assert trash.json()["type"] == "trash"
+        assert (await client.post("tasks", json={"type": "trash", "library_id": 9999})).status_code == 404
         ids_and_path = await client.post(
             "tasks", json={"type": "organize", "library_id": lib.id, "path": str(safe_path), "media_file_ids": [1]}
         )

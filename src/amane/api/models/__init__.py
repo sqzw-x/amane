@@ -53,7 +53,6 @@ from .schedules import ScheduleCreateRequest, ScheduleListResponse, ScheduleResp
 from .system import DesktopResponse, ReleaseResponse
 from .tasks import (
     ActorScrapeSubmission,
-    ArchiveSubmission,
     CleanupSubmission,
     OrganizeSubmission,
     R18ImportSubmission,
@@ -72,6 +71,7 @@ from .tasks import (
     TaskResponse,
     TaskSubmission,
     TaskWorkerResponse,
+    TrashSubmission,
     UpscaleSubmission,
 )
 from .user_tags import UserTagResponse
@@ -82,7 +82,6 @@ __all__ = [
     "ActorScrapeRequest",
     "ActorScrapeSubmission",
     "ActorUpdateRequest",
-    "ArchiveSubmission",
     "CleanupSubmission",
     "CommentCreateRequest",
     "CommentResponse",
@@ -153,6 +152,7 @@ __all__ = [
     "TaskResponse",
     "TaskSubmission",
     "TaskWorkerResponse",
+    "TrashSubmission",
     "UpscaleSubmission",
     "UserTagResponse",
     "normalize_feed_group",

@@ -20,7 +20,7 @@
     }
   },
   "organize": {
-    "tooltip": "Archive junk then organize library files"
+    "tooltip": "Trash invalid files then organize"
   },
   "columns": {
     "number": "Number",
@@ -105,9 +105,9 @@
   "fieldTrailerPattern": "Trailer filename regex",
   "fieldTrailerPatternHint": "Matches are treated as trailers and skipped during scan and watch",
   "fieldBlacklistPatterns": "Blacklist regexes",
-  "fieldBlacklistPatternsHint": "One regex per line; matches are treated as junk, skipped during scan, moved to .amane_trash on archive",
+  "fieldBlacklistPatternsHint": "One regex per line; matches are treated as junk, skipped during scan, moved to .amane_trash by Trash",
   "fieldMinFileSize": "Minimum video size",
-  "fieldMinFileSizeHint": "Videos smaller than this are treated as junk and moved to .amane_trash on archive",
+  "fieldMinFileSizeHint": "Videos smaller than this are treated as junk and moved to .amane_trash by Trash",
   "fieldSubtitleExtensions": "Subtitle extensions",
   "fieldSubtitleExtensionsHint": "Comma-separated",
   "fieldMoveMode": "File Operation Mode",

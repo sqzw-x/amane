@@ -29,7 +29,7 @@
     "failed": "Failed",
     "scrape": "Scrape",
     "organize": "Organize",
-    "archive": "Archive",
+    "trash": "Trash",
     "cleanup": "Cleanup",
     "upscale": "Upscale",
     "refresh": "Refresh",
@@ -142,7 +142,7 @@
     "types": {
       "scrape": "Scrape",
       "organize": "Organize",
-      "archive": "Archive",
+      "trash": "Trash",
       "cleanup": "Cleanup",
       "upscale": "Upscale",
       "refresh": "Refresh",
@@ -202,7 +202,7 @@
         }
       }
     },
-    "archive": {
+    "trash": {
       "library_id": {
         "label": "Library",
         "description": ""
@@ -217,7 +217,7 @@
       },
       "path": {
         "label": "Path",
-        "description": "Archive only a subdirectory of the library"
+        "description": "Trash only a subdirectory of the library"
       }
     },
     "scrape": {

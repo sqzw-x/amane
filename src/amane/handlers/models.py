@@ -151,14 +151,14 @@ class OrganizeResult(BaseModel):
     failed: int
 
 
-# --- ARCHIVE ---
+# --- TRASH ---
 
 
-class ArchivePayload(LibraryBase):
+class TrashPayload(LibraryBase):
     """扫描 path 范围内的黑名单与过小视频, 移入 `.amane_trash`. path 缺省为库根."""
 
 
-class ArchiveResult(BaseModel):
+class TrashResult(BaseModel):
     trashed: int
     failed: int = 0
 

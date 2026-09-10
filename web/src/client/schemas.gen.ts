@@ -846,63 +846,6 @@ export const AgentTraceResponseSchema = {
     title: 'AgentTraceResponse'
 } as const;
 
-export const ArchiveSubmissionSchema = {
-    properties: {
-        library_id: {
-            type: 'integer',
-            title: 'Library Id',
-            description: '所属 Library ID; 扫描/整理在该媒体库下进行',
-            'x-widget': 'LibraryPicker'
-        },
-        recursive: {
-            anyOf: [
-                {
-                    type: 'boolean'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Recursive',
-            description: '覆盖 Library 的 recursive; None 沿用库设置'
-        },
-        patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Patterns',
-            description: '覆盖 Library 的 patterns; None 沿用库设置'
-        },
-        path: {
-            type: 'string',
-            title: 'Path',
-            description: '要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).',
-            default: '',
-            'x-path-type': 'directory',
-            'x-widget': 'PathPicker'
-        },
-        type: {
-            type: 'string',
-            const: 'archive',
-            title: 'Type'
-        }
-    },
-    type: 'object',
-    required: [
-        'library_id',
-        'type'
-    ],
-    title: 'ArchiveSubmission'
-} as const;
-
 export const Body_install_pluginSchema = {
     properties: {
         file: {
@@ -6600,7 +6543,7 @@ export const TaskTypeSchema = {
     enum: [
         'scrape',
         'organize',
-        'archive',
+        'trash',
         'refresh',
         'cleanup',
         'upscale',
@@ -6623,6 +6566,63 @@ export const TaskWorkerResponseSchema = {
         'paused'
     ],
     title: 'TaskWorkerResponse'
+} as const;
+
+export const TrashSubmissionSchema = {
+    properties: {
+        library_id: {
+            type: 'integer',
+            title: 'Library Id',
+            description: '所属 Library ID; 扫描/整理在该媒体库下进行',
+            'x-widget': 'LibraryPicker'
+        },
+        recursive: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Recursive',
+            description: '覆盖 Library 的 recursive; None 沿用库设置'
+        },
+        patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Patterns',
+            description: '覆盖 Library 的 patterns; None 沿用库设置'
+        },
+        path: {
+            type: 'string',
+            title: 'Path',
+            description: '要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).',
+            default: '',
+            'x-path-type': 'directory',
+            'x-widget': 'PathPicker'
+        },
+        type: {
+            type: 'string',
+            const: 'trash',
+            title: 'Type'
+        }
+    },
+    type: 'object',
+    required: [
+        'library_id',
+        'type'
+    ],
+    title: 'TrashSubmission'
 } as const;
 
 export const UpscaleSubmissionSchema = {

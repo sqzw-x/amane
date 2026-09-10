@@ -92,14 +92,14 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 每个 Library 持有整理时的放置方式 (`move_mode`: move / copy / hardlink / symlink)、一组路径模板 (`video_template`, `thumb_template`, `nfo_template`, ...)、以及整理默认 (`write_nfo`、`copy_resources`). 放置方式与默认按库区分, 同一进程里各库可以不同. `copy_resources` 与刮削热配置 `scraping.download_resources` 共用 `DownloadableResource` 枚举, 但互不读写 — 刮削控制写入 Resource 目录, 整理控制复制到库路径. ORGANIZE payload 上对应字段为 `None` 时沿用库设置, 非空则只覆盖该次任务. JSON 列读回是 str 不是 enum; `OrganizePayload.resolve` 沿用库设置时再做成 `DownloadableResource`, 否则 Pydantic 序列化会 UnexpectedValue.
 
-`trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH / ARCHIVE 扫描与 watcher 都不把该文件当正片入库. 空串关闭跳过. 非法正则在写入时拒绝 (422). 默认与预告片模板文件名 `{link_dir}/trailer.mp4` 对齐.
+`trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH / TRASH 扫描与 watcher 都不把该文件当正片入库. 空串关闭跳过. 非法正则在写入时拒绝 (422). 默认与预告片模板文件名 `{link_dir}/trailer.mp4` 对齐.
 
-`min_file_size` (字节, 默认 0 关闭) 只过滤**扫描视频**: 后缀必须属于该次扫描用的视频扩展名白名单 (`watcher.media_extensions`, 缺省 `MEDIA_EXTENSIONS`). 图片、NFO、字幕即使体积很小也不适用该规则. `.strm` 虽在扫描白名单里, 但是路径指针不是视频字节, 不参与体积判定. 软链接跟随目标 (`stat(follow_symlinks=True)`), 比的是真实文件体积 — 库 `move_mode=symlink` 落盘的入口本身只有几个字节, 不允许按入口体积判定, 否则会把已整理的软链接入口当作广告. 低于阈值的视频与黑名单同语义: REFRESH / watcher 不入库, ARCHIVE 移入 `.amane_trash` (预告片仍只跳过不归档). stat 失败 (含悬空链接) 视为不匹配, 避免把读不到的正片当广告排除.
+`min_file_size` (字节, 默认 0 关闭) 只过滤**扫描视频**: 后缀必须属于该次扫描用的视频扩展名白名单 (`watcher.media_extensions`, 缺省 `MEDIA_EXTENSIONS`). 图片、NFO、字幕即使体积很小也不适用该规则. `.strm` 虽在扫描白名单里, 但是路径指针不是视频字节, 不参与体积判定. 软链接跟随目标 (`stat(follow_symlinks=True)`), 比的是真实文件体积 — 库 `move_mode=symlink` 落盘的入口本身只有几个字节, 不允许按入口体积判定, 否则会把已整理的软链接入口当作广告. 低于阈值的视频与黑名单同语义: REFRESH / watcher 不入库, TRASH 移入 `.amane_trash` (预告片仍只跳过不回收). stat 失败 (含悬空链接) 视为不匹配, 避免把读不到的正片当广告排除.
 
-`blacklist_patterns` (正则**列表**) 与预告片同属「文件名匹配即跳过」, 语义差别在 ARCHIVE:
-- 命中文件被 ARCHIVE 移入本库 **`.amane_trash`** (固定保留名, 恒为物理移动, 不受 `move_mode`), 移动后删除其 `MediaFile` 记录; 未纳入索引或不匹配 glob 的文件仍执行归档.
+`blacklist_patterns` (正则**列表**) 与预告片同属「文件名匹配即跳过」, 语义差别在 TRASH:
+- 命中文件被 TRASH 移入本库 **`.amane_trash`** (固定保留名, 恒为物理移动, 不受 `move_mode`), 移动后删除其 `MediaFile` 记录; 未纳入索引或不匹配 glob 的文件仍执行回收.
 - 预告片只跳过不动 — 它是模板产物, 属于库内容.
-- `.amane_trash` 是保留目录: 目录本身与任意深度下级路径在任何扫描 / 监控中都恒被忽略 (否则归档内容会被再次注册), 手动移出 `.amane_trash` 会被当作新文件重新入库.
+- `.amane_trash` 是保留目录: 目录本身与任意深度下级路径在任何扫描 / 监控中都恒被忽略 (否则回收内容会被再次注册), 手动移出 `.amane_trash` 会被当作新文件重新入库.
 - 跳过正则在扫描 / 监控侧**逐条编译、任一命中即跳过**. 不允许用 `|` 拼接: 用户全局旗标 (`(?i)ads`) 拼在联合式中间会触发 re 的 "global flags not at the start". 空列表关闭.
 
 分集 (CD) 检测: ORGANIZE 时 `parse_file_info` 从文件名识别 `-CD{n}` / `-PART{n}` / `-A` / `-B` / 尾部位数 `-1`–`-9` (`-0` 无意义; 零填充与两位尾数 `-01` / `-10` 会与合法番号冲突, 均不识别). 文件名无分集时, 直接父目录整段为 `CDn` / `PARTn` 也可认; 更远的祖先、`CD-1`、`A`、裸数字目录都不算. 裸数字与番号提取一致: `MIDV-123-1` 的番号仍是 `MIDV-123`. 检测只做在 ORGANIZE 时, 不落库. 写回靠路径模板里的 `{cd?}` (见下), 不另开后缀列. **幂等**: 写出的分集 / 中字 / 马赛克 / 分辨率格式须能被同一检测逻辑反推, 否则二次整理会丢失标记 — 当前只文档约束, 不加验证. 文件名 `CRACKED` / `-U` / `-UC` 反推为破解 (`-UC` 同时是中字); `{mosaic?|uncensored=U}` 无法反推无码.

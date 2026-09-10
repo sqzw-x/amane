@@ -21,12 +21,12 @@ def build_task_ops_capability() -> Capability[AgentDeps]:
     cap: Capability[AgentDeps] = Capability(
         id="task-ops",
         description=(
-            "Use to submit tasks (refresh/scrape/organize/archive/…), cancel queued/running tasks, "
+            "Use to submit tasks (refresh/scrape/organize/trash/…), cancel queued/running tasks, "
             "or retry failed ones. Does not execute work inline."
         ),
         instructions=(
             "submit_task body must include discriminator field type "
-            "(refresh|organize|archive|scrape|cleanup|upscale|r18_import|actor_scrape|rescrape) plus that type's fields. "
+            "(refresh|organize|trash|scrape|cleanup|upscale|r18_import|actor_scrape|rescrape) plus that type's fields. "
             "Prefer domain enqueue tools (metadata-ops / actor-ops / library-ops) when they fit; "
             "use task-ops for the unified submission surface or cancel/retry."
         ),

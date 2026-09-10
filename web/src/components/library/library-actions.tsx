@@ -49,7 +49,7 @@ export function LibraryActionButtons({
   const organizeMutation = useMutation({
     mutationFn: async () => {
       await submitTask({
-        body: { type: "archive", library_id: library.id },
+        body: { type: "trash", library_id: library.id },
         throwOnError: true,
       });
       await submitTask({

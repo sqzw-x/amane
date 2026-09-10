@@ -25,7 +25,7 @@ class TestClassify:
         assert scan.classify(Path("/tmp/cover.jpg")) is None
 
     def test_blacklist_before_trailer(self):
-        """同时命中黑名单与预告片时归档."""
+        """同时命中黑名单与预告片时回收."""
         scan = LibraryScan(trailer_pattern="trailer", blacklist_patterns=["trailer"])
         assert scan.classify(Path("/tmp/trailer.mp4")) is LibraryFileKind.TRASH
 

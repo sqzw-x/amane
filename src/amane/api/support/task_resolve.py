@@ -5,18 +5,17 @@ from typing import TYPE_CHECKING, assert_never
 from ...db.models import TaskType
 from ...handlers import (
     ActorScrapePayload,
-    ArchivePayload,
     CleanupPayload,
     OrganizePayload,
     R18ImportPayload,
     RefreshPayload,
     RescrapePayload,
     ScrapePayload,
+    TrashPayload,
     UpscalePayload,
 )
 from ..models import (
     ActorScrapeSubmission,
-    ArchiveSubmission,
     CleanupSubmission,
     OrganizeSubmission,
     R18ImportSubmission,
@@ -24,6 +23,7 @@ from ..models import (
     RescrapeSubmission,
     ScrapeSubmission,
     TaskSubmission,
+    TrashSubmission,
     UpscaleSubmission,
 )
 
@@ -34,7 +34,7 @@ ResolvedPayload = (
     RefreshPayload
     | ScrapePayload
     | OrganizePayload
-    | ArchivePayload
+    | TrashPayload
     | CleanupPayload
     | UpscalePayload
     | R18ImportPayload
@@ -51,9 +51,9 @@ async def resolve_submission(req: TaskSubmission, repo: Repository) -> tuple[Tas
         case OrganizeSubmission():
             await req.resolve(repo)
             return TaskType.ORGANIZE, req
-        case ArchiveSubmission():
+        case TrashSubmission():
             await req.resolve(repo)
-            return TaskType.ARCHIVE, req
+            return TaskType.TRASH, req
         case ScrapeSubmission():
             return TaskType.SCRAPE, await req.resolve(repo)
         case CleanupSubmission():

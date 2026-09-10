@@ -29,7 +29,7 @@
     "failed": "失败",
     "scrape": "刮削",
     "organize": "整理",
-    "archive": "归档",
+    "trash": "回收",
     "cleanup": "清理",
     "upscale": "超分",
     "refresh": "扫描",
@@ -139,7 +139,7 @@
     "types": {
       "scrape": "刮削",
       "organize": "整理",
-      "archive": "归档",
+      "trash": "回收",
       "cleanup": "清理",
       "upscale": "超分",
       "refresh": "扫描",
@@ -199,7 +199,7 @@
         }
       }
     },
-    "archive": {
+    "trash": {
       "library_id": {
         "label": "媒体库",
         "description": ""
@@ -214,7 +214,7 @@
       },
       "path": {
         "label": "路径",
-        "description": "可设置仅归档库的子目录"
+        "description": "可设置仅回收库的子目录"
       }
     },
     "scrape": {

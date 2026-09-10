@@ -79,7 +79,7 @@ class TestHandler:
         assert handler._matches(Path("/lib/.amane_trash/sub/ad.mp4")) is False
 
     def test_move_into_trash_records_src_delete(self):
-        """把文件移入 .amane_trash: dest 不匹配 → 记录 src 为删除 (记录清理/归档竞态安全)."""
+        """把文件移入 .amane_trash: dest 不匹配 → 记录 src 为删除 (记录清理/回收竞态安全)."""
         handler = _Handler(library_id=1)
         handler.on_moved(FileMovedEvent(src_path="/lib/incoming/ad.mp4", dest_path="/lib/.amane_trash/ad.mp4"))
         assert "/lib/incoming/ad.mp4" in handler._pending_deletes

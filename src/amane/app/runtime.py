@@ -17,13 +17,13 @@ from ..db.models import TaskType
 from ..enums import SiteName
 from ..handlers import (
     ActorScrapeHandler,
-    ArchiveHandler,
     CleanupHandler,
     OrganizeHandler,
     R18ImportHandler,
     RefreshHandler,
     RescrapeHandler,
     ScrapeHandler,
+    TrashHandler,
     UpscaleHandler,
 )
 from ..llm import TranslationCache, build_translator
@@ -330,7 +330,7 @@ def build_handlers(
             safe_dirs,
             watermark_dir=user_watermark_dir(state_dir) if state_dir is not None else None,
         ),
-        TaskType.ARCHIVE: ArchiveHandler(repo, hot),
+        TaskType.TRASH: TrashHandler(repo, hot),
         TaskType.CLEANUP: CleanupHandler(repo=repo, resource_store=resource_store),
         TaskType.UPSCALE: UpscaleHandler(resource_store, hot),
         TaskType.RESCRAPE: RescrapeHandler(repo),

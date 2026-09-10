@@ -33,7 +33,7 @@ class MediaFileStatus(StrEnum):
 class TaskType(StrEnum):
     SCRAPE = "scrape"
     ORGANIZE = "organize"
-    ARCHIVE = "archive"
+    TRASH = "trash"
     REFRESH = "refresh"
     CLEANUP = "cleanup"
     UPSCALE = "upscale"
@@ -306,9 +306,9 @@ class Library(SQLModel, table=True):
     trailer_pattern: TrailerPattern = Field(default=DEFAULT_TRAILER_PATTERN, sa_column=Column(String, nullable=False))
     """匹配文件名 (含扩展名) 的正则; 命中则扫描/监控跳过. 空串关闭."""
     blacklist_patterns: list[BlacklistPattern] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
-    """文件名正则列表, 命中任一则扫描/监控跳过, 且 ARCHIVE 时移入本库 `.amane_trash`. 空列表关闭."""
+    """文件名正则列表, 命中任一则扫描/监控跳过, 且 TRASH 时移入本库 `.amane_trash`. 空列表关闭."""
     min_file_size: MinFileSize = Field(default=0)
-    """视频体积下限 (字节). 小于此值的扫描视频在 REFRESH/监控跳过, ARCHIVE 时进 `.amane_trash`. 0 关闭.
+    """视频体积下限 (字节). 小于此值的扫描视频在 REFRESH/监控跳过, TRASH 时进 `.amane_trash`. 0 关闭.
 
     只对扫描视频扩展名生效 (与 watcher.media_extensions / MEDIA_EXTENSIONS 同一套);
     图片、NFO、字幕、`.strm` 指针都不参与.
