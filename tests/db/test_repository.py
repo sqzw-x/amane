@@ -239,6 +239,22 @@ class TestMediaFileRepo:
         assert len(result) == 1
         assert result[0].path == "/other/ABC-456.mp4"
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_media_files_empty_ids(self, repo: Repository):
+        await repo.create_media_file(library_id=1, path="/video/A.mp4")
+        assert await repo.list_media_files(ids=[], limit=None) == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_media_files_ids_chunks(self, repo: Repository, monkeypatch: pytest.MonkeyPatch):
+        """ids 多于 SQL_IN_CHUNK_SIZE 且 limit None 时分批 IN, 并集完整."""
+        from amane.db.repos import media as media_mod
+
+        monkeypatch.setattr(media_mod, "SQL_IN_CHUNK_SIZE", 2)
+        created = [await repo.create_media_file(library_id=1, path=f"/video/{i}.mp4") for i in range(5)]
+        ids = [m.id for m in created if m.id is not None]
+        result = await repo.list_media_files(ids=ids, limit=None)
+        assert {f.path for f in result} == {f"/video/{i}.mp4" for i in range(5)}
+
     @pytest.mark.parametrize(
         "status_filter,search,expected_count",
         [

@@ -163,14 +163,6 @@
         "label": "Library",
         "description": ""
       },
-      "recursive": {
-        "label": "Recursive",
-        "description": "Overrides library setting"
-      },
-      "patterns": {
-        "label": "Patterns",
-        "description": "Overrides library setting"
-      },
       "path": {
         "label": "Path",
         "description": "Organize only a subdirectory of the library"

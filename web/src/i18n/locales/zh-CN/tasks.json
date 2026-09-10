@@ -160,14 +160,6 @@
         "label": "媒体库",
         "description": ""
       },
-      "recursive": {
-        "label": "递归扫描",
-        "description": "覆盖媒体库设置"
-      },
-      "patterns": {
-        "label": "匹配模式",
-        "description": "覆盖媒体库设置"
-      },
       "path": {
         "label": "路径",
         "description": "可设置仅整理库的子目录"

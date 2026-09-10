@@ -52,6 +52,8 @@ class TestSubmitTask:
         assert org.status_code == 202
         assert org.json()["payload"]["write_nfo"] is True
         assert set(org.json()["payload"]["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
+        assert "recursive" not in org.json()["payload"]
+        assert "patterns" not in org.json()["payload"]
 
         lib2 = await repo.create_library(name="o", path=str(safe_path / "o"), write_nfo=True)
         (safe_path / "o").mkdir()
@@ -147,6 +149,15 @@ class TestSubmitTask:
             "tasks", json={"type": "organize", "library_id": lib.id, "path": str(safe_path), "media_file_ids": [1]}
         )
         assert ids_and_path.status_code == 422
+        other_lib = await repo.create_library(name="x", path=str(safe_path / "x"))
+        (safe_path / "x").mkdir()
+        assert other_lib.id is not None
+        foreign = await repo.create_media_file(library_id=other_lib.id, path=str(safe_path / "x" / "a.mp4"))
+        assert foreign.id is not None
+        foreign_ids = await client.post(
+            "tasks", json={"type": "organize", "library_id": lib.id, "media_file_ids": [foreign.id]}
+        )
+        assert foreign_ids.status_code == 422
 
         schema = await client.get("tasks/schema")
         assert schema.status_code == 200

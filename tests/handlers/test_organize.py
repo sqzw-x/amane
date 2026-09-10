@@ -11,8 +11,9 @@ from fastapi import HTTPException
 from amane.config import HotSettings
 from amane.db.models import MediaFileStatus
 from amane.enums import DownloadableResource, LinkMode, MoveMode
-from amane.handlers import OrganizeHandler, OrganizePayload
-from amane.handlers.file import commit_organized_media_file
+from amane.handlers import LibraryTaskLocks, OrganizeHandler, OrganizePayload, TrashHandler, TrashPayload
+from amane.handlers.file import FileOperationsResult, commit_organized_media_file
+from amane.organize.file import OrganizeResult as DiskOrganizeResult
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -474,6 +475,110 @@ async def test_organize_resolve_rejects_ids_and_path(repo: Repository, tmp_path:
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_organize_resolve_rejects_foreign_ids(repo: Repository, tmp_path: Path) -> None:
+    lib_root = tmp_path / "lib"
+    other_root = tmp_path / "other"
+    lib_root.mkdir()
+    other_root.mkdir()
+    lib = await repo.create_library(name="t", path=str(lib_root))
+    other = await repo.create_library(name="o", path=str(other_root))
+    assert lib.id is not None and other.id is not None
+    foreign = await repo.create_media_file(other.id, path=str(other_root / "a.mp4"))
+    assert foreign.id is not None
+    payload = OrganizePayload(library_id=lib.id, media_file_ids=[foreign.id])
+    with pytest.raises(HTTPException) as ei:
+        await payload.resolve(repo)
+    assert ei.value.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_empty_ids_empty_run(repo: Repository, resource_store: ResourceStore, tmp_path: Path) -> None:
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, media_file_ids=[]))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.organized == 0
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_ids_requires_library_root(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """库根不存在时 ids 范围也失败, 不删除选中行."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / "NSFS-039.mp4"
+    src.write_bytes(b"video")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    media = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert media.id is not None
+    lib_root.rename(tmp_path / "gone")
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, media_file_ids=[media.id]))
+    assert result.success is False
+    assert result.error is not None
+    assert "Not a directory" in result.error
+    assert await repo.get_media_file(media.id) is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize("case", ["blacklist", "undersized", "in_trash"])
+async def test_organize_skips_rule_hits(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path, case: str
+) -> None:
+    """已入库但命中黑名单/过小的行跳过落盘; 回收站内的行删除索引, 不整理出回收站."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    if case == "blacklist":
+        src = src_dir / "新片广告.mp4"
+        lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["广告"])
+    elif case == "undersized":
+        src = src_dir / "NSFS-039.mp4"
+        lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, min_file_size=50)
+    else:
+        src = lib_root / ".amane_trash" / "NSFS-039.mp4"
+        src.parent.mkdir(parents=True)
+        lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    src.write_bytes(b"tiny")
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    media = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert media.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root)))
+    assert result.success is True
+    assert result.result is not None
+    dest = lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4"
+    assert not dest.exists()
+    assert src.exists()
+    if case == "in_trash":
+        assert result.result.organized == 0
+        assert await repo.get_media_file(media.id) is None
+    else:
+        assert result.result.organized == 0
+        assert result.result.skipped == 1
+        kept = await repo.get_media_file(media.id)
+        assert kept is not None
+        assert kept.path == str(src)
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_organize_serializes_same_library(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
@@ -500,6 +605,59 @@ async def test_organize_serializes_same_library(
     )
     assert first.success is True and second.success is True
     assert (lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4").exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_and_trash_do_not_overlap(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同库 TRASH 与 ORGANIZE 注入同一把锁时, 落盘与回收不交叠."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    video = src_dir / "NSFS-039.mp4"
+    ad = src_dir / "广告.mp4"
+    video.write_bytes(b"video")
+    ad.write_bytes(b"ad")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["广告"])
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    await repo.create_media_file(
+        lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+
+    inflight = 0
+    max_inflight = 0
+
+    async def tracked_apply(*_args: object, **_kwargs: object) -> FileOperationsResult | None:
+        nonlocal inflight, max_inflight
+        inflight += 1
+        max_inflight = max(max_inflight, inflight)
+        await asyncio.sleep(0.05)
+        inflight -= 1
+        return None
+
+    async def tracked_move(file_path, trash_dir):
+        nonlocal inflight, max_inflight
+        inflight += 1
+        max_inflight = max(max_inflight, inflight)
+        await asyncio.sleep(0.05)
+        inflight -= 1
+        return DiskOrganizeResult(success=True, dest=trash_dir / file_path.name)
+
+    monkeypatch.setattr("amane.handlers.file.apply_file_operations", tracked_apply)
+    monkeypatch.setattr("amane.handlers.trash._move_to_trash", tracked_move)
+
+    locks = LibraryTaskLocks()
+    org = OrganizeHandler(repo, HotSettings(), resource_store, library_locks=locks)
+    trash = TrashHandler(repo, HotSettings(), library_locks=locks)
+    org_result, trash_result = await asyncio.gather(
+        org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root))),
+        trash.handle(TrashPayload(library_id=lib.id, path=str(lib_root))),
+    )
+    assert org_result.success is True and trash_result.success is True
+    assert max_inflight == 1
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -792,7 +950,7 @@ async def test_organize_strm_content_template_uses_actual_dest(
 @pytest.mark.asyncio(loop_scope="function")
 @pytest.mark.parametrize("kind", ["two_files", "empty", "missing_subdir", "missing_library"])
 async def test_reports_progress(repo: Repository, resource_store: ResourceStore, tmp_path: Path, kind: str) -> None:
-    """范围内索引按条数上报 determinate 进度; 跳过的文件仍计入 current. 库不存在不上报."""
+    """范围内索引按条数上报 determinate 进度; 跳过的文件仍计入 current. 库不存在或目录不存在不上报."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
@@ -809,10 +967,10 @@ async def test_reports_progress(repo: Repository, resource_store: ResourceStore,
 
     if kind == "missing_subdir":
         result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir / "missing")))
-        assert result.success is True
-        assert result.result is not None
-        assert result.result.organized == 0
-        assert events[-1] == (1, 1, "done")
+        assert result.success is False
+        assert result.error is not None
+        assert "Not a directory" in result.error
+        assert events == []
         return
 
     if kind == "missing_library":

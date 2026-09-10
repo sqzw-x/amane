@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,22 @@ from ..utils.threads import existing_disk_path, in_thread
 if TYPE_CHECKING:
     from ..db.models import MediaFile
     from ..db.repository import Repository
+
+
+class LibraryTaskLocks:
+    """同库 TRASH 与 ORGANIZE 共用, 执行期串行."""
+
+    def __init__(self) -> None:
+        self._locks: dict[int, asyncio.Lock] = {}
+        self._guard = asyncio.Lock()
+
+    async def get(self, library_id: int) -> asyncio.Lock:
+        async with self._guard:
+            lock = self._locks.get(library_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._locks[library_id] = lock
+            return lock
 
 
 def _maybe_file(f: Path) -> bool:

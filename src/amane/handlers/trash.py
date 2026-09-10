@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,7 +13,7 @@ from ..library import MEDIA_EXTENSIONS, TRASH_DIRNAME, LibraryFileKind, LibraryS
 from ..organize import MoveMode, execute_organize
 from ..organize.file import OrganizeResult as DiskOrganizeResult
 from ..utils.threads import in_thread, path_is_dir
-from ._common import scan_library
+from ._common import LibraryTaskLocks, scan_library
 from .models import TrashPayload, TrashResult
 from .protocol import TaskHandler, TaskResult
 
@@ -33,35 +32,28 @@ def _move_to_trash(file_path: Path, trash_dir: Path) -> DiskOrganizeResult:
 class TrashHandler(TaskHandler[TrashPayload, TrashResult]):
     """扫描磁盘, 将无效文件移入 `.amane_trash`; 不整理正片.
 
-    同库执行期并发度 1; 与 ORGANIZE 互不持锁, 可以并行.
+    同库执行期与 ORGANIZE 共用一把锁.
     """
 
-    def __init__(self, repo: Repository, config: HotSettings):
+    def __init__(self, repo: Repository, config: HotSettings, *, library_locks: LibraryTaskLocks | None = None):
         super().__init__(payload_t=TrashPayload, result_t=TrashResult)
         self._repo = repo
         self._config = config
-        self._library_locks: dict[int, asyncio.Lock] = {}
-        self._locks_guard = asyncio.Lock()
-
-    async def _library_lock(self, library_id: int) -> asyncio.Lock:
-        async with self._locks_guard:
-            lock = self._library_locks.get(library_id)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._library_locks[library_id] = lock
-            return lock
+        self._library_locks = library_locks if library_locks is not None else LibraryTaskLocks()
 
     async def handle(self, payload: TrashPayload) -> TaskResult[TrashResult]:
-        scan_dir = Path(payload.path)
-        if not await path_is_dir(scan_dir):
-            return TaskResult(success=False, error=f"Not a directory: {payload.path}")
-
         library = await self._repo.get_library(payload.library_id)
         if library is None:
             return TaskResult(success=False, error=f"Library {payload.library_id} not found")
         assert library.id is not None
+        library_root = Path(library.path)
+        if not await path_is_dir(library_root):
+            return TaskResult(success=False, error=f"Not a directory: {library.path}")
+        scan_dir = Path(payload.path) if payload.path else library_root
+        if not await path_is_dir(scan_dir):
+            return TaskResult(success=False, error=f"Not a directory: {scan_dir}")
 
-        lock = await self._library_lock(library.id)
+        lock = await self._library_locks.get(library.id)
         async with lock:
             return await self._handle_unlocked(payload, library, scan_dir)
 

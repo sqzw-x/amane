@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from starlette.status import HTTP_403_FORBIDDEN
 
-from ..db import MediaFileStatus, Repository
+from ..db import Library, MediaFileStatus, Repository
 from ..enums import DownloadableResource
 from ..parsing import ContentType, infer_content_type
 from ..utils.path import is_descendant
@@ -17,32 +17,43 @@ if TYPE_CHECKING:
 
 
 class LibraryBase(BaseModel):
-    """覆盖项在 resolve 之前为 None, 不能当最终值读取."""
+    """library_id + path. 覆盖项在 resolve 之前为 None, 不能当最终值读取."""
 
     library_id: int = Field(
         description="所属 Library ID; 扫描/整理在该媒体库下进行", json_schema_extra={"x-widget": "LibraryPicker"}
     )
-    recursive: bool | None = Field(default=None, description="覆盖 Library 的 recursive; None 沿用库设置")
-    patterns: list[str] | None = Field(default=None, description="覆盖 Library 的 patterns; None 沿用库设置")
     path: str = Field(
         default="",
         description="要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).",
         json_schema_extra={"x-widget": "PathPicker", "x-path-type": "directory"},
     )
 
-    async def resolve(self, repo: Repository):
+    async def resolve(self, repo: Repository) -> None:
         """就地写回 Library 默认值与覆盖; path 非库子目录时 403."""
         lib = await repo.get_library(self.library_id)
         if lib is None:
             raise HTTPException(status_code=404, detail=f"Library {self.library_id} not found")
-        self.recursive = self.recursive if self.recursive is not None else lib.recursive
-        self.patterns = self.patterns or lib.patterns
         if self.path and not is_descendant(self.path, lib.path):
             raise HTTPException(
                 status_code=HTTP_403_FORBIDDEN,
                 detail=f"Path {self.path} is not a descendant of library path {lib.path}",
             )
         self.path = self.path or lib.path
+        self._apply_library(lib)
+
+    def _apply_library(self, lib: Library) -> None:
+        return
+
+
+class LibraryScanBase(LibraryBase):
+    """REFRESH / TRASH 扫描范围: 可覆盖库的 recursive / patterns."""
+
+    recursive: bool | None = Field(default=None, description="覆盖 Library 的 recursive; None 沿用库设置")
+    patterns: list[str] | None = Field(default=None, description="覆盖 Library 的 patterns; None 沿用库设置")
+
+    def _apply_library(self, lib: Library) -> None:
+        self.recursive = self.recursive if self.recursive is not None else lib.recursive
+        self.patterns = self.patterns or lib.patterns
 
 
 # --- SCAN ---
@@ -64,7 +75,7 @@ class CacheKind(StrEnum):
     """译文缓存: 命中则跳过 LLM 调用. 不含则强制重译 (并刷新缓存)."""
 
 
-class RefreshPayload(LibraryBase):
+class RefreshPayload(LibraryScanBase):
     scan: set[ScanMode] = {ScanMode.add}
     """空集 = 不扫描."""
     scrape: set[MediaFileStatus] = {MediaFileStatus.PENDING}
@@ -119,7 +130,8 @@ class OrganizePayload(LibraryBase):
     """write_nfo / copy_resources 为 None 时沿用 Library 设置.
 
     范围三选一: 缺省 (resolve 后 path 为库根) 处理该库全部索引; 显式 path 按前缀过滤;
-    `media_file_ids` 为勾选快照. 显式 path 与 `media_file_ids` 不能同时给出.
+    `media_file_ids` 为勾选快照 (空列表空跑). 显式 path 与 `media_file_ids` 不能同时给出.
+    不含 `recursive` / `patterns`.
     """
 
     write_nfo: bool | None = Field(default=None, description="覆盖 Library.write_nfo; None 沿用库设置")
@@ -134,10 +146,13 @@ class OrganizePayload(LibraryBase):
     async def resolve(self, repo: Repository) -> None:
         if self.media_file_ids is not None and self.path:
             raise HTTPException(status_code=422, detail="media_file_ids 与 path 不能同时指定")
+        if self.media_file_ids:
+            found = await repo.list_media_files(ids=self.media_file_ids, limit=None)
+            if any(mf.library_id != self.library_id for mf in found):
+                raise HTTPException(status_code=422, detail="media_file_ids 含其它库的文件")
         await super().resolve(repo)
-        lib = await repo.get_library(self.library_id)
-        if lib is None:
-            return
+
+    def _apply_library(self, lib: Library) -> None:
         if self.write_nfo is None:
             self.write_nfo = lib.write_nfo
         if self.copy_resources is None:
@@ -154,7 +169,7 @@ class OrganizeResult(BaseModel):
 # --- TRASH ---
 
 
-class TrashPayload(LibraryBase):
+class TrashPayload(LibraryScanBase):
     """扫描 path 范围内的黑名单与过小视频, 移入 `.amane_trash`. path 缺省为库根."""
 
 

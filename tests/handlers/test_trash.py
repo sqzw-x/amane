@@ -7,6 +7,7 @@ import pytest
 from amane.config import HotSettings
 from amane.db.models import MediaFileStatus
 from amane.handlers import TrashHandler, TrashPayload
+from amane.organize.file import OrganizeResult as DiskOrganizeResult
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -193,4 +194,92 @@ async def test_trash_path_subdirectory(repo: Repository, tmp_path: Path) -> None
     assert result.result.trashed == 1
     assert not ad_in.exists()
     assert ad_out.exists()
+    assert (lib_root / ".amane_trash" / "广告.mp4").exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize("case", ["not_a_dir", "missing_library"])
+async def test_trash_rejects_invalid_scope(repo: Repository, tmp_path: Path, case: str) -> None:
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    lib = await repo.create_library(name="t", path=str(lib_root), blacklist_patterns=["广告"])
+    assert lib.id is not None
+    handler = TrashHandler(repo, HotSettings())
+    if case == "not_a_dir":
+        result = await handler.handle(TrashPayload(library_id=lib.id, path=str(lib_root / "missing")))
+        assert result.success is False
+        assert result.error is not None
+        assert "Not a directory" in result.error
+        return
+    result = await handler.handle(TrashPayload(library_id=lib.id + 999, path=str(lib_root)))
+    assert result.success is False
+    assert result.error is not None
+    assert "not found" in result.error
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_trash_move_failure_counts_failed(
+    repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    ad = src_dir / "广告.mp4"
+    ad.write_bytes(b"ad")
+    lib = await repo.create_library(name="t", path=str(lib_root), blacklist_patterns=["广告"])
+    assert lib.id is not None
+
+    async def boom(_file_path: Path, _trash_dir: Path) -> DiskOrganizeResult:
+        return DiskOrganizeResult(success=False, error="denied")
+
+    monkeypatch.setattr("amane.handlers.trash._move_to_trash", boom)
+    handler = TrashHandler(repo, HotSettings())
+    result = await handler.handle(TrashPayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.trashed == 0
+    assert result.result.failed == 1
+    assert ad.exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_trash_reports_progress(repo: Repository, tmp_path: Path) -> None:
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    ad = src_dir / "广告.mp4"
+    ad.write_bytes(b"ad")
+    lib = await repo.create_library(name="t", path=str(lib_root), blacklist_patterns=["广告"])
+    assert lib.id is not None
+
+    events: list[tuple[int, int, str]] = []
+
+    async def capture(current: int, total: int, message: str = "") -> None:
+        events.append((current, total, message))
+
+    handler = TrashHandler(repo, HotSettings())
+    handler.set_progress_callback(capture)
+    result = await handler.handle(TrashPayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.trashed == 1
+    assert (0, 0, "scan") in events
+    assert (0, 1, "trash") in events
+    assert events[-1] == (1, 1, "done")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_trash_empty_path_uses_library_root(repo: Repository, tmp_path: Path) -> None:
+    """未 resolve 的空 path 使用库根, 不扫描进程工作目录."""
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    ad = lib_root / "广告.mp4"
+    ad.write_bytes(b"ad")
+    lib = await repo.create_library(name="t", path=str(lib_root), blacklist_patterns=["广告"])
+    assert lib.id is not None
+    handler = TrashHandler(repo, HotSettings())
+    result = await handler.handle(TrashPayload(library_id=lib.id))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.trashed == 1
     assert (lib_root / ".amane_trash" / "广告.mp4").exists()

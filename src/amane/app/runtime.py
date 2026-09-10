@@ -18,6 +18,7 @@ from ..enums import SiteName
 from ..handlers import (
     ActorScrapeHandler,
     CleanupHandler,
+    LibraryTaskLocks,
     OrganizeHandler,
     R18ImportHandler,
     RefreshHandler,
@@ -310,6 +311,7 @@ def build_handlers(
         proxy=hot.network.proxy,
         cache=translation_cache,
     )
+    library_locks = LibraryTaskLocks()
     handlers: dict[TaskType, TaskHandler[Any, Any]] = {
         TaskType.REFRESH: RefreshHandler(repo, media_extensions=hot.watcher.media_extensions),
         TaskType.SCRAPE: ScrapeHandler(
@@ -329,8 +331,9 @@ def build_handlers(
             web_client,
             safe_dirs,
             watermark_dir=user_watermark_dir(state_dir) if state_dir is not None else None,
+            library_locks=library_locks,
         ),
-        TaskType.TRASH: TrashHandler(repo, hot),
+        TaskType.TRASH: TrashHandler(repo, hot, library_locks=library_locks),
         TaskType.CLEANUP: CleanupHandler(repo=repo, resource_store=resource_store),
         TaskType.UPSCALE: UpscaleHandler(resource_store, hot),
         TaskType.RESCRAPE: RescrapeHandler(repo),

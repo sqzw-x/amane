@@ -2185,18 +2185,6 @@ export type OrganizeSubmission = {
      */
     library_id: number;
     /**
-     * Recursive
-     *
-     * 覆盖 Library 的 recursive; None 沿用库设置
-     */
-    recursive?: boolean | null;
-    /**
-     * Patterns
-     *
-     * 覆盖 Library 的 patterns; None 沿用库设置
-     */
-    patterns?: Array<string> | null;
-    /**
      * Path
      *
      * 要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).
@@ -2411,6 +2399,12 @@ export type RefreshSubmission = {
      */
     library_id: number;
     /**
+     * Path
+     *
+     * 要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).
+     */
+    path?: string;
+    /**
      * Recursive
      *
      * 覆盖 Library 的 recursive; None 沿用库设置
@@ -2422,12 +2416,6 @@ export type RefreshSubmission = {
      * 覆盖 Library 的 patterns; None 沿用库设置
      */
     patterns?: Array<string> | null;
-    /**
-     * Path
-     *
-     * 要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).
-     */
-    path?: string;
     /**
      * Scan
      */
@@ -3244,6 +3232,12 @@ export type TrashSubmission = {
      */
     library_id: number;
     /**
+     * Path
+     *
+     * 要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).
+     */
+    path?: string;
+    /**
      * Recursive
      *
      * 覆盖 Library 的 recursive; None 沿用库设置
@@ -3255,12 +3249,6 @@ export type TrashSubmission = {
      * 覆盖 Library 的 patterns; None 沿用库设置
      */
     patterns?: Array<string> | null;
-    /**
-     * Path
-     *
-     * 要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).
-     */
-    path?: string;
     /**
      * Type
      */

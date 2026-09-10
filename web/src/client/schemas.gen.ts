@@ -4555,33 +4555,6 @@ export const OrganizeSubmissionSchema = {
             description: '所属 Library ID; 扫描/整理在该媒体库下进行',
             'x-widget': 'LibraryPicker'
         },
-        recursive: {
-            anyOf: [
-                {
-                    type: 'boolean'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Recursive',
-            description: '覆盖 Library 的 recursive; None 沿用库设置'
-        },
-        patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Patterns',
-            description: '覆盖 Library 的 patterns; None 沿用库设置'
-        },
         path: {
             type: 'string',
             title: 'Path',
@@ -4913,6 +4886,14 @@ export const RefreshSubmissionSchema = {
             description: '所属 Library ID; 扫描/整理在该媒体库下进行',
             'x-widget': 'LibraryPicker'
         },
+        path: {
+            type: 'string',
+            title: 'Path',
+            description: '要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).',
+            default: '',
+            'x-path-type': 'directory',
+            'x-widget': 'PathPicker'
+        },
         recursive: {
             anyOf: [
                 {
@@ -4939,14 +4920,6 @@ export const RefreshSubmissionSchema = {
             ],
             title: 'Patterns',
             description: '覆盖 Library 的 patterns; None 沿用库设置'
-        },
-        path: {
-            type: 'string',
-            title: 'Path',
-            description: '要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).',
-            default: '',
-            'x-path-type': 'directory',
-            'x-widget': 'PathPicker'
         },
         scan: {
             items: {
@@ -6576,6 +6549,14 @@ export const TrashSubmissionSchema = {
             description: '所属 Library ID; 扫描/整理在该媒体库下进行',
             'x-widget': 'LibraryPicker'
         },
+        path: {
+            type: 'string',
+            title: 'Path',
+            description: '要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).',
+            default: '',
+            'x-path-type': 'directory',
+            'x-widget': 'PathPicker'
+        },
         recursive: {
             anyOf: [
                 {
@@ -6602,14 +6583,6 @@ export const TrashSubmissionSchema = {
             ],
             title: 'Patterns',
             description: '覆盖 Library 的 patterns; None 沿用库设置'
-        },
-        path: {
-            type: 'string',
-            title: 'Path',
-            description: '要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).',
-            default: '',
-            'x-path-type': 'directory',
-            'x-widget': 'PathPicker'
         },
         type: {
             type: 'string',

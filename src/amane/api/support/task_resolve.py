@@ -1,4 +1,4 @@
-"""scan/organize 由 library_id 派生 path/recursive/patterns."""
+"""scan / trash / organize 由 library_id 派生 path; REFRESH / TRASH 另派生 recursive / patterns."""
 
 from typing import TYPE_CHECKING, assert_never
 

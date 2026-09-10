@@ -1,4 +1,3 @@
-import asyncio
 import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -11,6 +10,8 @@ from ..config import HotSettings, WatermarkConfig
 from ..db.models import Library, MediaFile
 from ..db.repo_types import MediaFileUpdates
 from ..enums import ActorGender, DownloadableResource, LinkMode
+from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
+from ..library.rules import is_in_trash
 from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
 from ..media import write_nfo as write_nfo_file
 from ..media.pipeline import RESOURCE_URL_PREFIX
@@ -28,7 +29,8 @@ from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
 from ..utils.path import existing_disk_path as existing_disk_path_sync
 from ..utils.path import is_descendant, nfc_path, path_is_under
-from ..utils.threads import existing_disk_path, in_thread
+from ..utils.threads import existing_disk_path, in_thread, path_is_dir
+from ._common import LibraryTaskLocks
 from .models import CleanupPayload, CleanupResult, OrganizePayload, OrganizeResult
 from .protocol import TaskHandler, TaskResult
 
@@ -372,10 +374,15 @@ async def _download_images_via_store(
     )
 
 
+@in_thread
+def _classify_indexed(path: Path, scan: LibraryScan) -> LibraryFileKind | None:
+    return scan.classify(path)
+
+
 class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
     """依据已有 Metadata 整理范围内的 MediaFile; 不刮削, 不修改 Metadata, 不扫描磁盘.
 
-    同库执行期并发度 1; 与 TRASH 互不持锁, 可以并行.
+    同库执行期与 TRASH 共用一把锁.
     """
 
     def __init__(
@@ -386,6 +393,8 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         web_client: WebClient | None = None,
         safe_dirs: Sequence[Path] | None = (),
         watermark_dir: Path | None = None,
+        *,
+        library_locks: LibraryTaskLocks | None = None,
     ):
         super().__init__(payload_t=OrganizePayload, result_t=OrganizeResult)
         self._repo = repo
@@ -394,16 +403,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         self._resource_store = resource_store
         self._safe_dirs = safe_dirs
         self._watermark_dir = watermark_dir
-        self._library_locks: dict[int, asyncio.Lock] = {}
-        self._locks_guard = asyncio.Lock()
-
-    async def _library_lock(self, library_id: int) -> asyncio.Lock:
-        async with self._locks_guard:
-            lock = self._library_locks.get(library_id)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._library_locks[library_id] = lock
-            return lock
+        self._library_locks = library_locks if library_locks is not None else LibraryTaskLocks()
 
     async def _load_scope(self, payload: OrganizePayload, library: Library) -> list[MediaFile]:
         assert library.id is not None
@@ -419,15 +419,30 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         if library is None:
             return TaskResult(success=False, error=f"Library {payload.library_id} not found")
         assert library.id is not None
+        library_root = Path(library.path)
+        if not await path_is_dir(library_root):
+            return TaskResult(success=False, error=f"Not a directory: {library.path}")
+        if payload.media_file_ids is None:
+            scope = Path(payload.path) if payload.path else library_root
+            if nfc_path(str(scope)) != nfc_path(library.path) and not await path_is_dir(scope):
+                return TaskResult(success=False, error=f"Not a directory: {scope}")
 
-        lock = await self._library_lock(library.id)
+        lock = await self._library_locks.get(library.id)
         async with lock:
             return await self._handle_unlocked(payload, library)
 
     async def _handle_unlocked(self, payload: OrganizePayload, library: Library) -> TaskResult[OrganizeResult]:
         indexed = await self._load_scope(payload, library)
         library_root = Path(library.path)
+        media_extensions = frozenset(self._config.watcher.media_extensions) or MEDIA_EXTENSIONS
+        scan = LibraryScan(
+            trailer_pattern=library.trailer_pattern,
+            blacklist_patterns=library.blacklist_patterns,
+            min_file_size=library.min_file_size,
+            media_extensions=media_extensions,
+        )
         live: list[MediaFile] = []
+        skipped = 0
         prune_total = len(indexed)
         if prune_total:
             await self.report_progress(0, prune_total, "prune")
@@ -435,16 +450,21 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                 if mf.id is not None:
                     mf_path = Path(mf.path)
                     missing = await existing_disk_path(mf_path, follow_symlinks=False) is None
-                    if missing or not is_descendant(mf_path, library_root):
+                    if missing or not is_descendant(mf_path, library_root) or is_in_trash(mf_path):
                         await self._repo.delete_media_file(mf.id)
                     else:
-                        live.append(mf)
+                        kind = await _classify_indexed(mf_path, scan)
+                        if kind is LibraryFileKind.TRASH or kind is LibraryFileKind.SKIP:
+                            skipped += 1
+                        else:
+                            # MEDIA, 以及 classify 返回 None 的已索引行 (不在当前扩展名白名单,
+                            # 例如库曾用 patterns 收过 .txt). 仍按索引落盘, 不按扫描 glob 再裁一次.
+                            live.append(mf)
                 await self.report_progress(i, prune_total, "prune")
         else:
             live = indexed
 
         organized = 0
-        skipped = 0
         failed = 0
         total = len(live)
         if total == 0:

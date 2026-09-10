@@ -4,13 +4,19 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from amane.api.models import OrganizeSubmission, RefreshSubmission, ScrapeSubmission, TaskSubmission, TrashSubmission
-from amane.handlers.models import LibraryBase
+from amane.handlers.models import LibraryBase, OrganizePayload
 
 
 class Test_LibraryScoped:
     def test_library_id_required(self):
         with pytest.raises(ValidationError):
             LibraryBase.model_validate({})
+
+    def test_organize_ignores_scan_fields(self):
+        payload = OrganizePayload.model_validate({"library_id": 1, "recursive": False, "patterns": ["*.mkv"]})
+        dumped = payload.model_dump()
+        assert "recursive" not in dumped
+        assert "patterns" not in dumped
 
 
 class TestTaskSubmission:
