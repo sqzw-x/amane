@@ -116,14 +116,24 @@ class ScrapeResult(BaseModel):
 
 
 class OrganizePayload(LibraryBase):
-    """write_nfo / copy_resources 为 None 时沿用 Library 设置."""
+    """write_nfo / copy_resources 为 None 时沿用 Library 设置.
+
+    范围三选一: 缺省 (resolve 后 path 为库根) 处理该库全部索引; 显式 path 按前缀过滤;
+    `media_file_ids` 为勾选快照. 显式 path 与 `media_file_ids` 不能同时给出.
+    """
 
     write_nfo: bool | None = Field(default=None, description="覆盖 Library.write_nfo; None 沿用库设置")
     copy_resources: list[DownloadableResource] | None = Field(
         default=None, description="覆盖 Library.copy_resources; None 沿用库设置"
     )
+    media_file_ids: list[int] | None = Field(
+        default=None,
+        description="勾选快照; 与 path 不能同时指定. None 表示 path 范围内的全部索引",
+    )
 
     async def resolve(self, repo: Repository) -> None:
+        if self.media_file_ids is not None and self.path:
+            raise HTTPException(status_code=422, detail="media_file_ids 与 path 不能同时指定")
         await super().resolve(repo)
         lib = await repo.get_library(self.library_id)
         if lib is None:
@@ -139,8 +149,18 @@ class OrganizeResult(BaseModel):
     organized: int
     skipped: int
     failed: int
-    trashed: int = 0
-    """扫描判定为归档并移入 `.amane_trash` 的文件数."""
+
+
+# --- ARCHIVE ---
+
+
+class ArchivePayload(LibraryBase):
+    """扫描 path 范围内的黑名单与过小视频, 移入 `.amane_trash`. path 缺省为库根."""
+
+
+class ArchiveResult(BaseModel):
+    trashed: int
+    failed: int = 0
 
 
 # --- CLEANUP ---

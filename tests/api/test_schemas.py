@@ -3,7 +3,7 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from amane.api.models import OrganizeSubmission, RefreshSubmission, ScrapeSubmission, TaskSubmission
+from amane.api.models import ArchiveSubmission, OrganizeSubmission, RefreshSubmission, ScrapeSubmission, TaskSubmission
 from amane.handlers.models import LibraryBase
 
 
@@ -26,6 +26,11 @@ class TestTaskSubmission:
     def test_dispatch_organize(self):
         req = self.adapter.validate_python({"type": "organize", "library_id": 7})
         assert isinstance(req, OrganizeSubmission)
+        assert req.library_id == 7
+
+    def test_dispatch_archive(self):
+        req = self.adapter.validate_python({"type": "archive", "library_id": 7})
+        assert isinstance(req, ArchiveSubmission)
         assert req.library_id == 7
 
     def test_dispatch_scrape(self):

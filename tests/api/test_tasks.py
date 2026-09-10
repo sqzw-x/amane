@@ -139,6 +139,14 @@ class TestSubmitTask:
         assert (await client.post("tasks", json={"type": "refresh"})).status_code == 422
         assert (await client.post("tasks", json={"type": "refresh", "library_id": 9999})).status_code == 404
         assert (await client.post("tasks", json={"type": "organize", "library_id": 9999})).status_code == 404
+        archive = await client.post("tasks", json={"type": "archive", "library_id": lib.id})
+        assert archive.status_code == 202
+        assert archive.json()["type"] == "archive"
+        assert (await client.post("tasks", json={"type": "archive", "library_id": 9999})).status_code == 404
+        ids_and_path = await client.post(
+            "tasks", json={"type": "organize", "library_id": lib.id, "path": str(safe_path), "media_file_ids": [1]}
+        )
+        assert ids_and_path.status_code == 422
 
         schema = await client.get("tasks/schema")
         assert schema.status_code == 200
@@ -147,7 +155,7 @@ class TestSubmitTask:
         assert not missing, f"TaskSubmission missing: {missing}. Add submission model to TaskSubmission union."
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_submit_organize_reuses_active(
+    async def test_submit_organize_creates_new_when_active(
         self, client: AsyncClient, repo: Repository, safe_path, stop_worker: None
     ):
         lib = await repo.create_library(name="t", path=str(safe_path))
@@ -155,9 +163,9 @@ class TestSubmitTask:
         second = await client.post("tasks", json={"type": "organize", "library_id": lib.id, "write_nfo": False})
         assert first.status_code == 202
         assert second.status_code == 202
-        assert first.json()["id"] == second.json()["id"]
+        assert first.json()["id"] != second.json()["id"]
         listed = await repo.list_tasks(task_types=[TaskType.ORGANIZE])
-        assert len(listed) == 1
+        assert len(listed) == 2
 
 
 class TestGetTask:

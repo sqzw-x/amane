@@ -53,6 +53,7 @@ from .schedules import ScheduleCreateRequest, ScheduleListResponse, ScheduleResp
 from .system import DesktopResponse, ReleaseResponse
 from .tasks import (
     ActorScrapeSubmission,
+    ArchiveSubmission,
     CleanupSubmission,
     OrganizeSubmission,
     R18ImportSubmission,
@@ -81,6 +82,7 @@ __all__ = [
     "ActorScrapeRequest",
     "ActorScrapeSubmission",
     "ActorUpdateRequest",
+    "ArchiveSubmission",
     "CleanupSubmission",
     "CommentCreateRequest",
     "CommentResponse",

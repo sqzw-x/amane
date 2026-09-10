@@ -457,6 +457,40 @@ export type AgentTraceResponse = {
 };
 
 /**
+ * ArchiveSubmission
+ */
+export type ArchiveSubmission = {
+    /**
+     * Library Id
+     *
+     * 所属 Library ID; 扫描/整理在该媒体库下进行
+     */
+    library_id: number;
+    /**
+     * Recursive
+     *
+     * 覆盖 Library 的 recursive; None 沿用库设置
+     */
+    recursive?: boolean | null;
+    /**
+     * Patterns
+     *
+     * 覆盖 Library 的 patterns; None 沿用库设置
+     */
+    patterns?: Array<string> | null;
+    /**
+     * Path
+     *
+     * 要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).
+     */
+    path?: string;
+    /**
+     * Type
+     */
+    type: 'archive';
+};
+
+/**
  * Body_install_plugin
  */
 export type BodyInstallPlugin = {
@@ -2215,6 +2249,12 @@ export type OrganizeSubmission = {
      */
     copy_resources?: Array<DownloadableResource> | null;
     /**
+     * Media File Ids
+     *
+     * 勾选快照; 与 path 不能同时指定. None 表示 path 范围内的全部索引
+     */
+    media_file_ids?: Array<number> | null;
+    /**
      * Type
      */
     type: 'organize';
@@ -3215,7 +3255,7 @@ export type TaskStatus = 'queued' | 'running' | 'done' | 'failed';
 /**
  * TaskType
  */
-export type TaskType = 'scrape' | 'organize' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape';
+export type TaskType = 'scrape' | 'organize' | 'archive' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape';
 
 /**
  * TaskWorkerResponse
@@ -5478,7 +5518,7 @@ export type SubmitTaskData = {
     /**
      * Req
      */
-    body: RefreshSubmission | OrganizeSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission;
+    body: RefreshSubmission | OrganizeSubmission | ArchiveSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission;
     path?: never;
     query?: never;
     url: '/api/tasks';

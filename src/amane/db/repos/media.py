@@ -98,6 +98,7 @@ class MediaRepoMixin(RepositoryMixinBase):
         sort_by: MediaSortField = MediaSortField.UPDATED_AT,
         order: SortOrder = SortOrder.DESC,
         metadata_ids: Sequence[int] | None = None,
+        ids: Sequence[int] | None = None,
         *,
         has_subtitle: bool | None = None,
         mosaic: Mosaic | None = None,
@@ -105,13 +106,18 @@ class MediaRepoMixin(RepositoryMixinBase):
         definition: str | None = None,
         content_type: ContentType | None = None,
     ) -> list[MediaFile]:
-        """limit None 不分页."""
+        """limit None 不分页. ids 为空列表时直接返回空, 不查库."""
+        id_list = list(ids) if ids is not None else None
+        if id_list is not None and not id_list:
+            return []
         async with self._session() as session:
             stmt = select(MediaFile)
             if status is not None:
                 stmt = stmt.where(col(MediaFile.status).in_(status))
             if library_id is not None:
                 stmt = stmt.where(col(MediaFile.library_id) == library_id)
+            if id_list is not None:
+                stmt = stmt.where(col(MediaFile.id).in_(id_list))
             if metadata_ids is not None:
                 stmt = stmt.where(col(MediaFile.metadata_id).in_(metadata_ids))
             if search:

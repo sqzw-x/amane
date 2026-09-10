@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...db import Repository, TaskStatus, TaskType
 from ...handlers import (
+    ArchivePayload,
     CacheKind,
     CleanupPayload,
     OrganizePayload,
@@ -33,7 +34,7 @@ class TaskResponse(BaseModel):
     type: TaskType
     status: TaskStatus
     title: str | None = None
-    """scrape→番号, actor_scrape→演员名, refresh/organize→库名."""
+    """scrape→番号, actor_scrape→演员名, refresh/organize/archive→库名."""
     payload: dict = Field(default_factory=dict)
     result: dict | None = None
     error: str | None = None
@@ -164,6 +165,10 @@ class OrganizeSubmission(OrganizePayload):
     type: Literal["organize"]
 
 
+class ArchiveSubmission(ArchivePayload):
+    type: Literal["archive"]
+
+
 class ScrapeSubmission(ScrapeRequest):
     type: Literal["scrape"]
 
@@ -196,6 +201,7 @@ class ActorScrapeSubmission(BaseModel):
 TaskSubmission = Annotated[
     RefreshSubmission
     | OrganizeSubmission
+    | ArchiveSubmission
     | ScrapeSubmission
     | CleanupSubmission
     | UpscaleSubmission

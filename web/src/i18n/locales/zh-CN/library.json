@@ -20,7 +20,7 @@
     }
   },
   "organize": {
-    "tooltip": "整理媒体库文件"
+    "tooltip": "归档并整理媒体库文件"
   },
   "columns": {
     "number": "番号",
@@ -34,7 +34,8 @@
   "actions": {
     "scrape": "刮削",
     "scrapeWithNumber": "指定番号刮削",
-    "batchScrape": "批量刮削"
+    "batchScrape": "批量刮削",
+    "batchOrganize": "批量整理"
   },
   "scrapeOverride": {
     "title": "指定番号刮削",
@@ -102,9 +103,9 @@
   "fieldTrailerPattern": "预告片文件名正则",
   "fieldTrailerPatternHint": "匹配则视为预告片, 跳过扫描和监控",
   "fieldBlacklistPatterns": "黑名单正则",
-  "fieldBlacklistPatternsHint": "每行一条正则, 匹配则视为垃圾文件, 扫描时跳过, 整理时移到 .amane_trash",
+  "fieldBlacklistPatternsHint": "每行一条正则, 匹配则视为垃圾文件, 扫描时跳过, 归档时移到 .amane_trash",
   "fieldMinFileSize": "最小视频体积",
-  "fieldMinFileSizeHint": "小于此大小的视频视为垃圾文件, 整理时移到 .amane_trash",
+  "fieldMinFileSizeHint": "小于此大小的视频视为垃圾文件, 归档时移到 .amane_trash",
   "fieldSubtitleExtensions": "字幕扩展名",
   "fieldSubtitleExtensionsHint": "逗号分隔",
   "fieldMoveMode": "文件操作模式",
