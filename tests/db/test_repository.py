@@ -182,14 +182,14 @@ class TestMediaFileRepo:
 
         heyzo = await repo.create_media_file(library_id=1, path="/media/HEYZO-1234.mp4")
         assert heyzo.content_type is ContentType.UNCENSORED
-        assert heyzo.mosaic is None
+        assert heyzo.mosaic is Mosaic.UNCENSORED
         assert heyzo.has_subtitle is False
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_path_recomputes_phase(self, repo: Repository):
         media = await repo.create_media_file(library_id=1, path="/video/MIDV-123.mp4")
         assert media.id is not None
-        assert media.mosaic is None
+        assert media.mosaic is Mosaic.CENSORED
         updated = await repo.update_media_file(media.id, path="/video/MIDV-123-U.mp4")
         assert updated is not None
         assert updated.mosaic is Mosaic.CRACKED

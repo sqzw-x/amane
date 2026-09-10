@@ -27,6 +27,7 @@
       "hentai": "Hentai"
     },
     "mosaics": {
+      "censored": "Censored",
       "uncensored": "Uncensored mark",
       "cracked": "Cracked",
       "leaked": "Leaked"
@@ -34,6 +35,7 @@
   },
   "filePhase": {
     "subtitle": "SUB",
+    "censored": "CEN",
     "uncensored": "U",
     "cracked": "CRACK",
     "leaked": "LEAK"

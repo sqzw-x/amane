@@ -166,6 +166,7 @@
       "raw_name": "Source video filename. e.g. A/B.mp4 → B",
       "raw_dir": "Source parent directory name. e.g. A/B/C.mp4 → B",
       "mosaic?": "[optional] Mosaic",
+      "content_type": "Content type",
       "def?": "[optional] Resolution (from filename)",
       "cd?": "[optional] Part number",
       "sub?": "[optional] Subtitle status",

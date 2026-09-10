@@ -13,7 +13,7 @@
     "uncensored": "无码",
     "mosaic": "马赛克标记",
     "definition": "清晰度",
-    "contentType": "片种",
+    "contentType": "类型",
     "any": "不限",
     "yes": "是",
     "no": "否",
@@ -27,6 +27,7 @@
       "hentai": "动漫"
     },
     "mosaics": {
+      "censored": "有码",
       "uncensored": "无码标记",
       "cracked": "破解",
       "leaked": "流出"
@@ -34,6 +35,7 @@
   },
   "filePhase": {
     "subtitle": "中字",
+    "censored": "有码",
     "uncensored": "无码",
     "cracked": "破解",
     "leaked": "流出"
