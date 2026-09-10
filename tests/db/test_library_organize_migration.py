@@ -297,7 +297,7 @@ def test_library_mosaic_placeholders_gain_censored_mapping(tmp_path: Path) -> No
                 "min_file_size, nfo_template, subtitle_template, strm_content_template) "
                 "VALUES ('a', '/m', 'SCRAPE', 1, '[]', 'MOVE', 'STRM', "
                 "'{mosaic?}/{number}[-{mosaic?|cracked=U}].{ext}', 1, "
-                "'[]', '', '[]', '[]', 0, '{mosaic?|=有码}/{number}.nfo', "
+                "'[]', '', '[]', '[]', 0, '{mosaic?|uncensored=无码}/{number}.nfo', "
                 "'{mosaic?}/{raw_srt_name}.{ext}', '{mosaic?}/{video_relpath}')"
             )
         )
@@ -325,7 +325,7 @@ def test_library_mosaic_placeholders_gain_censored_mapping(tmp_path: Path) -> No
             ).all()
         }
         assert rows["a"].video_template == "{mosaic?|censored=}/{number}[-{mosaic?|cracked=U,censored=}].{ext}"
-        assert rows["a"].nfo_template == "{mosaic?|=有码,censored=有码}/{number}.nfo"
+        assert rows["a"].nfo_template == "{mosaic?|uncensored=无码,censored=}/{number}.nfo"
         assert rows["a"].subtitle_template == "{mosaic?|censored=}/{raw_srt_name}.{ext}"
         assert rows["a"].strm_content_template == "{mosaic?|censored=}/{video_relpath}"
         assert rows["b"].video_template == "{studio}/{number}/{number}.{ext}"

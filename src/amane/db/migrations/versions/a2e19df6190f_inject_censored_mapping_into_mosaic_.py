@@ -4,15 +4,14 @@ Revision ID: a2e19df6190f
 Revises: 0980003004e2
 Create Date: 2026-09-11 03:45:24.684582
 
-存量 `{mosaic?}` 补 censored 映射, 有码号仍按空值输出. 已有空 key 时 censored 使用同一缺省.
+存量 `{mosaic?}` 补 `censored=` 空映射, 有码号仍按空值输出. 已写 `|censored=` / `,censored=` 的不改.
 """
 
+import re
 from collections.abc import Sequence
 
 from alembic import op
 from sqlalchemy import text
-
-from amane.organize.template import inject_censored_mosaic_mapping
 
 # revision identifiers, used by Alembic.
 revision: str = "a2e19df6190f"
@@ -32,6 +31,21 @@ _TEMPLATE_COLUMNS = (
     "trailer_template",
     "subtitle_template",
 )
+_MOSAIC_PLACEHOLDER = re.compile(r"\{mosaic\?(?:\|[^}]*)?\}")
+# 必须紧挨分隔符, 否则 `uncensored=` 含子串 `censored=`.
+_HAS_CENSORED_KEY = re.compile(r"[|,]censored=")
+
+
+def _inject_censored_empty(template: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if _HAS_CENSORED_KEY.search(token):
+            return token
+        if "|" in token:
+            return f"{token[:-1]},censored=}}"
+        return "{mosaic?|censored=}"
+
+    return _MOSAIC_PLACEHOLDER.sub(repl, template)
 
 
 def upgrade() -> None:
@@ -44,7 +58,7 @@ def upgrade() -> None:
             raw = row[column]
             if not raw:
                 continue
-            rewritten = inject_censored_mosaic_mapping(raw)
+            rewritten = _inject_censored_empty(raw)
             if rewritten != raw:
                 updates[column] = rewritten
         if not updates:

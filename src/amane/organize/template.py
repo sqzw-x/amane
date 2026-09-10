@@ -95,9 +95,12 @@ class _Group:
 type _Node = _Literal | _Placeholder | _Group
 
 
-def _split_mapping_spec(spec: str) -> list[tuple[str, str]]:
+def _parse_placeholder_mapping(name: str, spec: str) -> tuple[tuple[str, str], ...]:
+    if not spec.strip():
+        raise ValueError("empty placeholder mapping in path template")
     pairs: list[tuple[str, str]] = []
     seen: set[str] = set()
+    allowed = PLACEHOLDER_MAP_KEYS.get(name)
     for item in spec.split(","):
         if "=" not in item:
             raise ValueError("invalid placeholder mapping in path template")
@@ -105,50 +108,11 @@ def _split_mapping_spec(spec: str) -> list[tuple[str, str]]:
         key = key.strip()
         if key in seen:
             raise ValueError(f"duplicate mapping key {key!r} in path template")
+        if key and allowed is not None and key not in allowed:
+            raise ValueError(f"unknown mapping key {key!r} for {{{name}}}")
         seen.add(key)
         pairs.append((key, value.strip()))
-    return pairs
-
-
-def _parse_placeholder_mapping(name: str, spec: str) -> tuple[tuple[str, str], ...]:
-    if not spec.strip():
-        raise ValueError("empty placeholder mapping in path template")
-    pairs = _split_mapping_spec(spec)
-    allowed = PLACEHOLDER_MAP_KEYS.get(name)
-    if allowed is not None:
-        for key, _value in pairs:
-            if key and key not in allowed:
-                raise ValueError(f"unknown mapping key {key!r} for {{{name}}}")
     return tuple(pairs)
-
-
-_MOSAIC_PLACEHOLDER = re.compile(r"\{mosaic\?(\|[^}]*)?\}")
-
-
-def inject_censored_mosaic_mapping(template: str) -> str:
-    """尚未写 censored 的 `{mosaic?}` 补映射, 使有码号仍按空值输出.
-
-    已有空 key 时 censored 使用同一缺省; 否则映成空串. 已写 censored 的占位符不改.
-    无法解析的片段保持原文.
-    """
-
-    def repl(match: re.Match[str]) -> str:
-        spec = match.group(1)
-        if spec is None:
-            return "{mosaic?|censored=}"
-        body = spec[1:]
-        try:
-            pairs = _split_mapping_spec(body)
-        except ValueError:
-            return match.group(0)
-        keys = {key for key, _value in pairs}
-        if "censored" in keys:
-            return match.group(0)
-        empty_default = next((value for key, value in pairs if key == ""), None)
-        extra = f"censored={empty_default}" if empty_default is not None else "censored="
-        return f"{{mosaic?|{body},{extra}}}"
-
-    return _MOSAIC_PLACEHOLDER.sub(repl, template)
 
 
 class Parser:
