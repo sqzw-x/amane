@@ -4,7 +4,7 @@
 只有字符串则按自由文本 (RSS 标题、已有番号), 未命中则 ``number is None``, 不能把原文冒充番号.
 常用字段投影是同一函数的包装.
 
-文件相位 (cd / 字幕 / 马赛克 / 清晰度) 与类型正交, 只依据文件名; 马赛克还可从目录整段补.
+文件相位 (cd / 字幕 / 马赛克 / 清晰度) 与类型正交: cd / 字幕 / 清晰度只依据文件名; 马赛克先按文件名与目录整段词表, 未命中且片种为无码时补 uncensored.
 """
 
 from __future__ import annotations
@@ -189,6 +189,7 @@ _MOSAIC_DIR_TOKENS: dict[str, Mosaic] = {
     )
 }
 MOSAIC_VALUES: tuple[Mosaic, ...] = tuple(Mosaic)
+CONTENT_TYPE_VALUES: tuple[ContentType, ...] = tuple(ContentType)
 
 # 分辨率: 元组顺序即优先级; 2160p 归一为 4K.
 # 匹配作用于 _normalize_markers 之后的 basename:
@@ -252,7 +253,7 @@ def parse_file_info(
         prefix=_prefix(number) if number else "",
         cd=cd,
         has_subtitle=_detect_subtitle(basename),
-        mosaic=mosaic,
+        mosaic=_fill_mosaic(mosaic, content_type),
         definition=_detect_definition(basename),
     )
 
@@ -595,6 +596,15 @@ def _detect_subtitle(basename: str) -> bool:
     if re.search(r"-U?C(?![A-Z0-9])", basename):
         return True
     return bool(re.search(r"[字幕中文]", basename))
+
+
+def _fill_mosaic(mosaic: Mosaic | None, content_type: ContentType) -> Mosaic | None:
+    """词表未命中且片种为无码时补 uncensored; 已有破解 / 流出 / 无码标记不覆盖."""
+    if mosaic is not None:
+        return mosaic
+    if content_type is ContentType.UNCENSORED:
+        return Mosaic.UNCENSORED
+    return None
 
 
 def _detect_mosaic(basename: str) -> Mosaic | None:

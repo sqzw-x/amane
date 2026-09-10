@@ -10,7 +10,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, cast
 
 from ..enums import ActorGender
-from ..parsing.file_info import DEFINITION_VALUES, MOSAIC_VALUES, FileInfo, split_number
+from ..parsing.file_info import (
+    CONTENT_TYPE_VALUES,
+    DEFINITION_VALUES,
+    MOSAIC_VALUES,
+    FileInfo,
+    parse_file_info,
+    split_number,
+)
 from ..utils.path import is_any_descendant, is_descendant
 
 if TYPE_CHECKING:
@@ -46,6 +53,7 @@ TemplateVariables = TypedDict(
         "raw_name": str,
         "cd?": str,
         "sub?": str,
+        "content_type": str,
         "mosaic?": str,
         "def?": str,
         "video_dir": str,
@@ -60,6 +68,7 @@ PLACEHOLDERS: tuple[str, ...] = tuple(TemplateVariables.__annotations__)
 
 # 有闭合取值的占位符: 映射表的 key 必须是规范值, 否则写入 422. 未列入的占位符 (如 cd?) 不校验 key.
 PLACEHOLDER_MAP_KEYS: dict[str, tuple[str, ...]] = {
+    "content_type": CONTENT_TYPE_VALUES,
     "mosaic?": MOSAIC_VALUES,
     "def?": DEFINITION_VALUES,
     "sub?": ("C",),
@@ -97,11 +106,9 @@ def _parse_placeholder_mapping(name: str, spec: str) -> tuple[tuple[str, str], .
             raise ValueError("invalid placeholder mapping in path template")
         key, value = item.split("=", 1)
         key = key.strip()
-        if not key:
-            raise ValueError("empty mapping key in path template")
         if key in seen:
             raise ValueError(f"duplicate mapping key {key!r} in path template")
-        if allowed is not None and key not in allowed:
+        if key and allowed is not None and key not in allowed:
             raise ValueError(f"unknown mapping key {key!r} for {{{name}}}")
         seen.add(key)
         pairs.append((key, value.strip()))
@@ -115,7 +122,7 @@ class Parser:
     (空的那个输出空串). 嵌套组各自判断, 不并入外层.
     `[[...]]` 同样, 有值时把结果包一层 ``[]``.
     名字里的 ``?`` 只是标识符的一部分, 没有运算含义.
-    `{name|原值=输出}` 在查出值之后替换; 空源值不套用映射.
+    `{name|原值=输出}` 在查出值之后替换; `{name|=缺省}` 将空源值映成缺省.
     """
 
     def __init__(self, src: str) -> None:
@@ -194,10 +201,8 @@ def _lookup(name: str, variables: dict[str, str]) -> str:
 
 
 def _resolve(node: _Placeholder, variables: dict[str, str]) -> str:
-    """空串不套用映射, 以便可选组省略未检出项."""
+    """查出值后按映射改写. 空源只在写出 `{name|=缺省}` 时变成非空, 否则仍为空, 可选组省略."""
     raw = _lookup(node.name, variables)
-    if raw == "":
-        return ""
     mapped = dict(node.mapping)
     return mapped.get(raw, raw)
 
@@ -331,6 +336,11 @@ def _build_variables(
         "raw_name": raw_name,
         "cd?": str(cd) if cd is not None else "",
         "sub?": "C" if file_info is not None and file_info.has_subtitle else "",
+        "content_type": (
+            str(file_info.content_type)
+            if file_info is not None
+            else (str(parse_file_info(text=metadata.number).content_type) if metadata.number else "")
+        ),
         "mosaic?": file_info.mosaic if file_info is not None and file_info.mosaic else "",
         "def?": file_info.definition if file_info is not None and file_info.definition else "",
         "video_dir": _UNKNOWN,

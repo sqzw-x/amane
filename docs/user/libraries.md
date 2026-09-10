@@ -84,7 +84,8 @@ Authorization = "Bearer <Amane API Token>"
 | `{ext}` | 正在放置的文件扩展名 | `mp4` / `srt` |
 | `{cd?}` | CD/分集编号 | `1` / `2` / 空 |
 | `{sub?}` | 中字标记 | `C` / 空 |
-| `{mosaic?}` | 有无码标记 | `uncensored` / `cracked` / `leaked` / 空 |
+| `{content_type}` | 片种 | `censored` / `uncensored` / `chinese` / `western` / `fc2` / `amateur` / `hentai` |
+| `{mosaic?}` | 马赛克标记 | `uncensored` / `cracked` / `leaked` / 空 |
 | `{def?}` | 分辨率标记 | `4K` / `1080p` / `HD` / 空 |
 | `{raw_name}` | 源视频文件名 | `A/B.mp4` → `B` |
 | `{raw_dir}` | 源文件父目录名 | `A/B/C.mp4` → `B` |
@@ -95,7 +96,7 @@ Authorization = "Bearer <Amane API Token>"
 | `{link_name}` | 整理后链接文件名, 不含扩展名 | — |
 | `{raw_srt_name}` | 字幕原文件名, 不含扩展名 | `foo.zh.srt` → `foo.zh` |
 
-文件名 `CRACKED` / `-U` / `-UC` 解析为破解; `-UC` 同时识别为中字. 无码标记是 `无码` / `UNCENSORED`.
+文件名 `CRACKED` / `-U` / `-UC` 解析为破解; `-UC` 同时识别为中字. 无码标记是 `无码` / `UNCENSORED`. 无码片种 (如 HEYZO) 在没有这些标记时 `{mosaic?}` 仍为 `uncensored`. 破解 / 流出标记优先于片种补值. `{content_type}` 为片种规范值, 分目录宜用此占位符, 不要把国产 / FC2 等写进 `{mosaic?}`.
 
 `{actress}` / `{actresses}` 排除已标为男性的演员; 女性与尚未识别性别的名字保留. 名单为空时输出 `Unknown`.
 
@@ -148,10 +149,13 @@ NFO: {link_dir}/{number}.nfo
 
 ```
 {mosaic?|uncensored=无码,cracked=U,leaked=流出}
+{mosaic?|=有码,uncensored=无码,cracked=U,leaked=流出}
+{content_type|censored=有码,uncensored=无码}
 {def?|4K=2160p,1080p=FHD}
 ```
 
 - 未列出的值保持原样 (如 `{mosaic?|cracked=U}`, uncensored / leaked 仍为规范值)
+- `{name|=缺省}` 将空值映成缺省 (如有码号没有马赛克标记时输出 `有码`)
 - 可以映射成空串 (配合可选组让某个值不出现在路径中)
 - 目录段和文件名段可以分别写映射, 比如目录用规范值便于管理, 文件名用短标记节省字符:
 

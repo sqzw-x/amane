@@ -13,10 +13,10 @@ from amane.parsing import (
 )
 
 
-def test_file_phase_from_path_heyzo_uncensored_type_without_mosaic() -> None:
+def test_file_phase_from_path_heyzo_uncensored_type_fills_mosaic() -> None:
     phase = file_phase_from_path("/media/HEYZO-1234.mp4")
     assert phase["content_type"] is ContentType.UNCENSORED
-    assert phase["mosaic"] is None
+    assert phase["mosaic"] is Mosaic.UNCENSORED
     assert phase["has_subtitle"] is False
     assert file_shows_uncensored(phase["mosaic"], phase["content_type"]) is True
 

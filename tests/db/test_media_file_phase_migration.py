@@ -57,7 +57,7 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
         assert midv.definition == "4K"
         heyzo = rows["/media/HEYZO-1234.mp4"]
         assert heyzo.content_type == "UNCENSORED"
-        assert heyzo.mosaic is None
+        assert heyzo.mosaic == "UNCENSORED"
         assert heyzo.has_subtitle in (0, False)
         assert heyzo.definition is None
 
@@ -70,7 +70,7 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
         assert midv_orm.mosaic is Mosaic.CRACKED
         heyzo_orm = loaded["/media/HEYZO-1234.mp4"]
         assert heyzo_orm.content_type is ContentType.UNCENSORED
-        assert heyzo_orm.mosaic is None
+        assert heyzo_orm.mosaic is Mosaic.UNCENSORED
 
     engine.dispose()
 
@@ -116,5 +116,50 @@ def test_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
         assert rows["/media/MIDV-123-U.mp4"].mosaic == "CRACKED"
         assert rows["/media/MIDV-123-无码.mp4"].mosaic == "UNCENSORED"
         assert rows["/media/MIDV-123-無碼破解.mp4"].mosaic == "CRACKED"
+
+    engine.dispose()
+
+
+def test_media_file_mosaic_filled_from_uncensored_content_type(tmp_path: Path) -> None:
+    db_path = tmp_path / "migrate.db"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    command.upgrade(cfg, "668e214b1a76")
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO libraries "
+                "(name, path, automation, recursive, patterns, move_mode, link_mode, video_template, "
+                "write_nfo, copy_resources, trailer_pattern, blacklist_patterns, subtitle_extensions, "
+                "min_file_size) "
+                "VALUES ('t', '/m', 'SCRAPE', 1, '[]', 'MOVE', 'STRM', '{number}.{ext}', 1, "
+                "'[]', '', '[]', '[]', 0)"
+            )
+        )
+        lib_id = conn.execute(text("SELECT id FROM libraries")).scalar_one()
+        conn.execute(
+            text(
+                "INSERT INTO media_files "
+                "(path, status, library_id, created_at, updated_at, content_type, mosaic, has_subtitle) VALUES "
+                "('/media/HEYZO-1234.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'UNCENSORED', NULL, 0), "
+                "('/media/HEYZO-1234-流出.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'UNCENSORED', 'LEAKED', 0), "
+                "('/media/MIDV-123.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'CENSORED', NULL, 0)"
+            ),
+            {"lib": lib_id},
+        )
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as conn:
+        rows = {row.path: row for row in conn.execute(text("SELECT path, mosaic FROM media_files")).all()}
+        assert rows["/media/HEYZO-1234.mp4"].mosaic == "UNCENSORED"
+        assert rows["/media/HEYZO-1234-流出.mp4"].mosaic == "LEAKED"
+        assert rows["/media/MIDV-123.mp4"].mosaic is None
 
     engine.dispose()

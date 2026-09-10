@@ -44,11 +44,11 @@ function mapKeyKind(
   catalog: TemplateCatalog | undefined,
 ): TemplateTokenKind {
   const key = raw.trim();
-  if (key === "") {
-    return "error";
-  }
   const allowed = catalog?.get(placeholder);
   if (allowed == null || allowed.length === 0) {
+    return "mapKey";
+  }
+  if (key === "") {
     return "mapKey";
   }
   return allowed.includes(key) ? "mapKey" : "error";

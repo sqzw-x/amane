@@ -182,7 +182,7 @@ class TestMediaFileRepo:
 
         heyzo = await repo.create_media_file(library_id=1, path="/media/HEYZO-1234.mp4")
         assert heyzo.content_type is ContentType.UNCENSORED
-        assert heyzo.mosaic is None
+        assert heyzo.mosaic is Mosaic.UNCENSORED
         assert heyzo.has_subtitle is False
 
     @pytest.mark.asyncio(loop_scope="function")

@@ -123,7 +123,7 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
     _RenderCase("MIDV-123-無碼.mp4", "{number}[-{mosaic?|uncensored=}].{ext}", "ABC-123.mp4"),
     # --- file 相位未检出为空, 空路径段折叠 ---
     _RenderCase("MIDV-123-4K-無碼.mp4", "{mosaic?}/{def?}/{number}.{ext}", "uncensored/4K/ABC-123.mp4"),
-    _RenderCase("HEYZO-123-1080p.mp4", "{mosaic?}/{def?}/{number}.{ext}", "1080p/ABC-123.mp4"),
+    _RenderCase("HEYZO-123-1080p.mp4", "{mosaic?}/{def?}/{number}.{ext}", "uncensored/1080p/ABC-123.mp4"),
     _RenderCase("ABC-123.mp4", "{mosaic?}/{def?}/{number}.{ext}", "ABC-123.mp4"),
     _RenderCase("[破解]MIDV-123.mp4", "{mosaic?}/{number}.{ext}", "cracked/ABC-123.mp4"),
     _RenderCase("[流出]MIDV-123.mp4", "{mosaic?}/{number}.{ext}", "leaked/ABC-123.mp4"),
@@ -131,6 +131,24 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
     _RenderCase("/media/uncensored/MIDV-123.mp4", "{mosaic?}/{def?}/{number}.{ext}", "uncensored/ABC-123.mp4"),
     _RenderCase("/media/4K/MIDV-123.mp4", "{mosaic?}/{def?}/{number}.{ext}", "ABC-123.mp4"),
     _RenderCase(None, "{mosaic?}/{def?}/{number}.{ext}", "ABC-123.mp4"),
+    _RenderCase("HEYZO-123-流出.mp4", "{mosaic?}/{number}.{ext}", "leaked/ABC-123.mp4"),
+    _RenderCase("MIDV-123.mp4", "{mosaic?|=有码}/{number}.{ext}", "有码/ABC-123.mp4"),
+    _RenderCase("HEYZO-123.mp4", "{mosaic?|=有码}/{number}.{ext}", "uncensored/ABC-123.mp4"),
+    _RenderCase("MIDV-123.mp4", "{number}[-{mosaic?|=有码}].{ext}", "ABC-123-有码.mp4"),
+    _RenderCase("MIDV-123.mp4", "{content_type}/{number}.{ext}", "censored/ABC-123.mp4"),
+    _RenderCase("HEYZO-123.mp4", "{content_type}/{number}.{ext}", "uncensored/ABC-123.mp4"),
+    _RenderCase(
+        "MIDV-123.mp4",
+        "{content_type|censored=有码,uncensored=无码}/{number}.{ext}",
+        "有码/ABC-123.mp4",
+    ),
+    _RenderCase(
+        "HEYZO-123.mp4",
+        "{content_type|censored=有码,uncensored=无码}/{number}.{ext}",
+        "无码/ABC-123.mp4",
+    ),
+    _RenderCase(None, "{content_type}/{number}.{ext}", "censored/ABC-123.mp4"),
+    _RenderCase("FC2-1234567.mp4", "{content_type}/{mosaic?}/{number}.{ext}", "fc2/ABC-123.mp4"),
     # {cd} 不是 {cd?}, 视为未知 key
     _RenderCase("MIDV-123-CD1.mp4", "{number}[-CD{cd}].{ext}", "ABC-123-CDUnknown.mp4"),
     # metadata 缺省是字面量 Unknown; 映成空串后可选组省略, 路径空段折叠
@@ -191,15 +209,23 @@ class TestOptionalGroups:
 
 
 class TestValueMapping:
-    """`{name|k=v}` 值替换: 未列出的 key 保持原值; 空源不映射; 映射成空则省略可选组."""
+    """`{name|k=v}` 值替换: 未列出的 key 保持原值; `{name|=缺省}` 映空源; 映射成空则省略可选组."""
 
     def test_unmapped_key_keeps_canonical(self):
         rendered = render_path_template("{mosaic?|cracked=破解}", {"mosaic?": "uncensored"})
         assert rendered == "uncensored"
 
-    def test_empty_source_skips_mapping(self):
+    def test_empty_source_skips_mapping_without_empty_key(self):
         rendered = render_path_template("{mosaic?|uncensored=U}", {"mosaic?": ""})
         assert rendered == ""
+
+    def test_empty_source_maps_to_default(self):
+        rendered = render_path_template("{mosaic?|=有码}", {"mosaic?": ""})
+        assert rendered == "有码"
+
+    def test_present_source_ignores_empty_key(self):
+        rendered = render_path_template("{mosaic?|=有码}", {"mosaic?": "uncensored"})
+        assert rendered == "uncensored"
 
     def test_map_present_to_empty_omits_group(self):
         rendered = render_path_template("x[{mosaic?|uncensored=}]", {"mosaic?": "uncensored"})
@@ -226,6 +252,9 @@ class TestValidatePathTemplate:
             "{studio|Unknown=未分类}",
             "{studio|Unknown=}",
             "{mosaic?|uncensored=}",
+            "{mosaic?|=有码}",
+            "{mosaic?|=有码,uncensored=无码}",
+            "{content_type|censored=有码,uncensored=无码}",
             "A/[{actress|Unknown=}]/B/{number}.{ext}",
         ],
     )
@@ -237,10 +266,11 @@ class TestValidatePathTemplate:
         [
             ("{mosaic?|}", "empty placeholder mapping"),
             ("{mosaic?|uncensored}", "invalid placeholder mapping"),
-            ("{mosaic?|=U}", "empty mapping key"),
+            ("{mosaic?|=U,=V}", "duplicate mapping key"),
             ("{mosaic?|uncensored=U,uncensored=V}", "duplicate mapping key"),
             ("{mosaic?|uncencored=U}", "unknown mapping key"),
             ("{mosaic?|censored=有码}", "unknown mapping key"),
+            ("{content_type|unknown=x}", "unknown mapping key"),
             ("{def?|2160p=4K}", "unknown mapping key"),
             ("{sub?|CH=中字}", "unknown mapping key"),
             ("{mosaic?|uncensored=U,}", "invalid placeholder mapping"),
