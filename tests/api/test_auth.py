@@ -31,7 +31,8 @@ def make_token_app(tmp_path: Path, token_env: str | None) -> FastAPI:
     os.environ["AMANE_SAFE_DIRS"] = str(tmp_path / "files")
     os.environ["AMANE_LOG_DIR"] = str(tmp_path / "logs")
     if token_env is None:
-        os.environ.pop("AMANE_TOKEN", None)
+        # 空值覆盖 .env.dev 的 off, 走 auto 生成; pop 会让 dotenv 再次生效
+        os.environ["AMANE_TOKEN"] = ""
     else:
         os.environ["AMANE_TOKEN"] = token_env
     (tmp_path / "data").mkdir(parents=True, exist_ok=True)
