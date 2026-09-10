@@ -84,7 +84,7 @@ Authorization = "Bearer <Amane API Token>"
 | `{ext}` | 正在放置的文件扩展名 | `mp4` / `srt` |
 | `{cd?}` | CD/分集编号 | `1` / `2` / 空 |
 | `{sub?}` | 中字标记 | `C` / 空 |
-| `{content_type}` | 片种 | `censored` / `uncensored` / `chinese` / `western` / `fc2` / `amateur` / `hentai` |
+| `{content_type}` | 内容类型 | `censored` / `uncensored` / `chinese` / `western` / `fc2` / `amateur` / `hentai` |
 | `{mosaic?}` | 马赛克标记 | `uncensored` / `cracked` / `leaked` / 空 |
 | `{def?}` | 分辨率标记 | `4K` / `1080p` / `HD` / 空 |
 | `{raw_name}` | 源视频文件名 | `A/B.mp4` → `B` |
@@ -96,7 +96,7 @@ Authorization = "Bearer <Amane API Token>"
 | `{link_name}` | 整理后链接文件名, 不含扩展名 | — |
 | `{raw_srt_name}` | 字幕原文件名, 不含扩展名 | `foo.zh.srt` → `foo.zh` |
 
-文件名 `CRACKED` / `-U` / `-UC` 解析为破解; `-UC` 同时识别为中字. 无码标记是 `无码` / `UNCENSORED`. 无码片种 (如 HEYZO) 在没有这些标记时 `{mosaic?}` 仍为 `uncensored`. 破解 / 流出标记优先于片种补值. `{content_type}` 为片种规范值, 分目录宜用此占位符, 不要把国产 / FC2 等写进 `{mosaic?}`.
+马赛克类型依据关键词与番号解析判定. 文件名 `CRACKED` / `-U` / `-UC` 为破解 (`-UC` 同时为中字); `无码` / `UNCENSORED` 为无码; `流出` / `LEAKED` 为流出. 目录名为整段 `uncensored` / `cracked` / `leaked` / `无码` / `破解` / `流出` 时同样判定.
 
 `{actress}` / `{actresses}` 排除已标为男性的演员; 女性与尚未识别性别的名字保留. 名单为空时输出 `Unknown`.
 

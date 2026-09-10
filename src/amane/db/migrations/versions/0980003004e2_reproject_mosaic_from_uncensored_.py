@@ -4,7 +4,7 @@ Revision ID: 0980003004e2
 Revises: 668e214b1a76
 Create Date: 2026-09-11 02:30:09.990031
 
-按当前 parse_file_info 回填 MediaFile 相位列. 无码片种在无标记时 mosaic=uncensored.
+按当前 parse_file_info 回填 MediaFile 相位列. 无码类型在无标记时 mosaic=uncensored.
 """
 
 from collections.abc import Sequence

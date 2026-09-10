@@ -71,7 +71,7 @@ CASES: list[object] = [
     _Case("MIDV-123-U.mp4", mosaic="cracked", number="MIDV-123"),
     _Case("MIDV-123-C-U.mp4", has_subtitle=True, mosaic="cracked", number="MIDV-123"),
     _Case("MIDV-123-U-CD1.mp4", cd=1, mosaic="cracked", number="MIDV-123"),
-    # 无文件名标记: 无码片种补 mosaic=uncensored; 有码号仍为空
+    # 无文件名标记: 无码番号 mosaic=uncensored; 有码号仍为空
     _Case("HEYZO-123.mp4", mosaic="uncensored", number="HEYZO-123"),
     _Case("HEYZO-123-1080p.mp4", mosaic="uncensored", definition="1080p", number="HEYZO-123"),
     _Case("HEYZO-123-流出.mp4", mosaic="leaked", number="HEYZO-123"),

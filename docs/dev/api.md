@@ -39,7 +39,7 @@
 
 OpenAPI 列出参数, 不表达组合语义:
 
-- metadata 同 kind: 关联类 AND / 标量类 OR; 跨 kind 始终 AND. `saved_query_id` 与其它筛选项 AND; `data` 实体不可作列表筛选 (400). 关联文件相位筛选 (`has_subtitle` / `uncensored` / `mosaic` / `definition` / `content_type`) 与 `has_files` 一样 AND; 布尔项 True=至少一份具备, False=没有任何一份具备; `uncensored` 是 mosaic 标记或片种无码. 列表项带聚合 `file_phase`. 见 [data-model.md](data-model.md) / [agent.md](agent.md).
+- metadata 同 kind: 关联类 AND / 标量类 OR; 跨 kind 始终 AND. `saved_query_id` 与其它筛选项 AND; `data` 实体不可作列表筛选 (400). 关联文件相位筛选 (`has_subtitle` / `uncensored` / `mosaic` / `definition` / `content_type`) 与 `has_files` 一样 AND; 布尔项 True=至少一份具备, False=没有任何一份具备; `uncensored` 是 mosaic 标记或内容类型无码. 列表项带聚合 `file_phase`. 见 [data-model.md](data-model.md) / [agent.md](agent.md).
 - GET `/media` 同一组相位 query 作用在单行列上: 布尔 False 是 `col = false`, 不是 metadata 那种 NOT EXISTS. 未知 `definition` → 422. 相位列不纳入 PATCH.
 - 裁切海报基准是 `thumb_urls[0]` **当前本地文件**像素; 不修改库路径海报 (ORGANIZE 再复制). locator 见 [data-model.md](data-model.md).
 - `/facets/{kind}/rules` 须注册在 `/{facet_id}` 之前. 写规则语义见 [data-model.md](data-model.md).

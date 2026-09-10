@@ -4,7 +4,7 @@
 只有字符串则按自由文本 (RSS 标题、已有番号), 未命中则 ``number is None``, 不能把原文冒充番号.
 常用字段投影是同一函数的包装.
 
-文件相位 (cd / 字幕 / 马赛克 / 清晰度) 与类型正交: cd / 字幕 / 清晰度只依据文件名; 马赛克先按文件名与目录整段词表, 未命中且片种为无码时补 uncensored.
+文件相位 (cd / 字幕 / 马赛克 / 清晰度) 与类型正交: cd / 字幕 / 清晰度只依据文件名; 马赛克依据文件名与目录整段词表, 未命中时再依据番号分类 (无码类型为 uncensored).
 """
 
 from __future__ import annotations
@@ -305,7 +305,7 @@ def file_phase_from_path(path: str | Path) -> FilePhase:
 
 
 def file_shows_uncensored(mosaic: Mosaic | None, content_type: ContentType) -> bool:
-    """无码角标/筛选: 文件名无码标记或片种为无码 (HEYZO 等不必带文件名无码标记)."""
+    """无码角标/筛选: 文件名无码标记或内容类型为无码 (HEYZO 等不必带文件名无码标记)."""
     return mosaic == Mosaic.UNCENSORED or content_type == ContentType.UNCENSORED
 
 
@@ -599,7 +599,7 @@ def _detect_subtitle(basename: str) -> bool:
 
 
 def _fill_mosaic(mosaic: Mosaic | None, content_type: ContentType) -> Mosaic | None:
-    """词表未命中且片种为无码时补 uncensored; 已有破解 / 流出 / 无码标记不覆盖."""
+    """词表未命中且内容类型为无码时补 uncensored; 已有破解 / 流出 / 无码标记不覆盖."""
     if mosaic is not None:
         return mosaic
     if content_type is ContentType.UNCENSORED:
