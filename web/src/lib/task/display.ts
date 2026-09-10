@@ -4,6 +4,7 @@ import {
   IconDatabase,
   IconEraser,
   IconFolder,
+  IconRecycle,
   IconRefresh,
   IconRepeat,
   IconSearch,
@@ -16,6 +17,7 @@ import { assertNever, exhaustiveRecord } from "@/lib/exhaustive";
 export const TASK_ICONS: Record<TaskType, Icon> = exhaustiveRecord<TaskType>()({
   refresh: IconRefresh,
   organize: IconFolder,
+  trash: IconRecycle,
   cleanup: IconEraser,
   scrape: IconSearch,
   upscale: IconArrowsDiagonal,

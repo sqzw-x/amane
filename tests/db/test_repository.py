@@ -239,6 +239,22 @@ class TestMediaFileRepo:
         assert len(result) == 1
         assert result[0].path == "/other/ABC-456.mp4"
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_media_files_empty_ids(self, repo: Repository):
+        await repo.create_media_file(library_id=1, path="/video/A.mp4")
+        assert await repo.list_media_files(ids=[], limit=None) == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_media_files_ids_chunks(self, repo: Repository, monkeypatch: pytest.MonkeyPatch):
+        """ids 多于 SQL_IN_CHUNK_SIZE 且 limit None 时分批 IN, 并集完整."""
+        from amane.db.repos import media as media_mod
+
+        monkeypatch.setattr(media_mod, "SQL_IN_CHUNK_SIZE", 2)
+        created = [await repo.create_media_file(library_id=1, path=f"/video/{i}.mp4") for i in range(5)]
+        ids = [m.id for m in created if m.id is not None]
+        result = await repo.list_media_files(ids=ids, limit=None)
+        assert {f.path for f in result} == {f"/video/{i}.mp4" for i in range(5)}
+
     @pytest.mark.parametrize(
         "status_filter,search,expected_count",
         [
@@ -874,9 +890,10 @@ class TestTaskRepo:
     @pytest.mark.parametrize(
         ("task_type", "first", "second", "same"),
         [
-            (TaskType.ORGANIZE, {"library_id": 1}, {"library_id": 1}, True),
-            (TaskType.ORGANIZE, {"library_id": 1}, {"library_id": 1, "write_nfo": False}, True),
+            (TaskType.ORGANIZE, {"library_id": 1}, {"library_id": 1}, False),
+            (TaskType.ORGANIZE, {"library_id": 1}, {"library_id": 1, "write_nfo": False}, False),
             (TaskType.ORGANIZE, {"library_id": 1}, {"library_id": 2}, False),
+            (TaskType.TRASH, {"library_id": 1}, {"library_id": 1}, False),
             (TaskType.ACTOR_SCRAPE, {"actor_id": 3}, {"actor_id": 3}, True),
             (TaskType.ACTOR_SCRAPE, {"actor_id": 3}, {"actor_id": 3, "use_cache": []}, True),
             (TaskType.ACTOR_SCRAPE, {"actor_id": 3}, {"actor_id": 4}, False),
@@ -914,12 +931,12 @@ class TestTaskRepo:
         assert second.id != first.id
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_create_task_reuses_running(self, repo: Repository):
+    async def test_create_task_does_not_reuse_running_organize(self, repo: Repository):
         first = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         claimed = await repo.claim_next_task()
         assert claimed is not None and claimed.id == first.id
         second = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
-        assert second.id == first.id
+        assert second.id != first.id
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_create_task_concurrent_same_library(self, repo: Repository):
@@ -928,8 +945,8 @@ class TestTaskRepo:
             repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 7}),
         )
         assert first.id is not None and second.id is not None
-        assert first.id == second.id
-        assert await repo.count_tasks(task_types=[TaskType.ORGANIZE]) == 1
+        assert first.id != second.id
+        assert await repo.count_tasks(task_types=[TaskType.ORGANIZE]) == 2
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_complete_followups_concurrent_exclusive(self, repo: Repository):
@@ -955,20 +972,23 @@ class TestTaskRepo:
         assert await repo.count_tasks(task_types=[TaskType.ACTOR_SCRAPE]) == 1
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_create_tasks_batch_reuses_within_session(self, repo: Repository):
+    async def test_create_tasks_batch_does_not_reuse_organize(self, repo: Repository):
         rows = await repo.create_tasks(TaskType.ORGANIZE, [{"library_id": 1}, {"library_id": 1}, {"library_id": 2}])
-        assert rows[0].id == rows[1].id
+        assert rows[0].id != rows[1].id
         assert rows[2].id != rows[0].id
-        assert await repo.count_tasks(task_types=[TaskType.ORGANIZE]) == 2
+        assert await repo.count_tasks(task_types=[TaskType.ORGANIZE]) == 3
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_retry_reuses_active_organize(self, repo: Repository):
+    async def test_retry_creates_new_organize_when_active(self, repo: Repository):
         failed = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         assert failed.id is not None
         await repo.fail_task(failed.id, "boom")
         active = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         retried = await repo.retry_tasks([failed])
-        assert [t.id for t in retried] == [active.id]
+        assert len(retried) == 1
+        assert retried[0].id != active.id
+        assert retried[0].id != failed.id
+        assert await repo.count_tasks(task_types=[TaskType.ORGANIZE]) == 3
 
 
 class TestListSorting:

@@ -4556,33 +4556,6 @@ export const OrganizeSubmissionSchema = {
             description: '所属 Library ID; 扫描/整理在该媒体库下进行',
             'x-widget': 'LibraryPicker'
         },
-        recursive: {
-            anyOf: [
-                {
-                    type: 'boolean'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Recursive',
-            description: '覆盖 Library 的 recursive; None 沿用库设置'
-        },
-        patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Patterns',
-            description: '覆盖 Library 的 patterns; None 沿用库设置'
-        },
         path: {
             type: 'string',
             title: 'Path',
@@ -4617,6 +4590,21 @@ export const OrganizeSubmissionSchema = {
             ],
             title: 'Copy Resources',
             description: '覆盖 Library.copy_resources; None 沿用库设置'
+        },
+        media_file_ids: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'integer'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Media File Ids',
+            description: '勾选快照; 与 path 不能同时指定. None 表示 path 范围内的全部索引'
         },
         type: {
             type: 'string',
@@ -4899,6 +4887,14 @@ export const RefreshSubmissionSchema = {
             description: '所属 Library ID; 扫描/整理在该媒体库下进行',
             'x-widget': 'LibraryPicker'
         },
+        path: {
+            type: 'string',
+            title: 'Path',
+            description: '要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).',
+            default: '',
+            'x-path-type': 'directory',
+            'x-widget': 'PathPicker'
+        },
         recursive: {
             anyOf: [
                 {
@@ -4925,14 +4921,6 @@ export const RefreshSubmissionSchema = {
             ],
             title: 'Patterns',
             description: '覆盖 Library 的 patterns; None 沿用库设置'
-        },
-        path: {
-            type: 'string',
-            title: 'Path',
-            description: '要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).',
-            default: '',
-            'x-path-type': 'directory',
-            'x-widget': 'PathPicker'
         },
         scan: {
             items: {
@@ -6529,6 +6517,7 @@ export const TaskTypeSchema = {
     enum: [
         'scrape',
         'organize',
+        'trash',
         'refresh',
         'cleanup',
         'upscale',
@@ -6551,6 +6540,63 @@ export const TaskWorkerResponseSchema = {
         'paused'
     ],
     title: 'TaskWorkerResponse'
+} as const;
+
+export const TrashSubmissionSchema = {
+    properties: {
+        library_id: {
+            type: 'integer',
+            title: 'Library Id',
+            description: '所属 Library ID; 扫描/整理在该媒体库下进行',
+            'x-widget': 'LibraryPicker'
+        },
+        path: {
+            type: 'string',
+            title: 'Path',
+            description: '要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).',
+            default: '',
+            'x-path-type': 'directory',
+            'x-widget': 'PathPicker'
+        },
+        recursive: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Recursive',
+            description: '覆盖 Library 的 recursive; None 沿用库设置'
+        },
+        patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Patterns',
+            description: '覆盖 Library 的 patterns; None 沿用库设置'
+        },
+        type: {
+            type: 'string',
+            const: 'trash',
+            title: 'Type'
+        }
+    },
+    type: 'object',
+    required: [
+        'library_id',
+        'type'
+    ],
+    title: 'TrashSubmission'
 } as const;
 
 export const UpscaleSubmissionSchema = {

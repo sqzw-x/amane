@@ -29,6 +29,7 @@
     "failed": "Failed",
     "scrape": "Scrape",
     "organize": "Organize",
+    "trash": "Trash",
     "cleanup": "Cleanup",
     "upscale": "Upscale",
     "refresh": "Refresh",
@@ -141,6 +142,7 @@
     "types": {
       "scrape": "Scrape",
       "organize": "Organize",
+      "trash": "Trash",
       "cleanup": "Cleanup",
       "upscale": "Upscale",
       "refresh": "Refresh",
@@ -161,17 +163,13 @@
         "label": "Library",
         "description": ""
       },
-      "recursive": {
-        "label": "Recursive",
-        "description": "Overrides library setting"
-      },
-      "patterns": {
-        "label": "Patterns",
-        "description": "Overrides library setting"
-      },
       "path": {
         "label": "Path",
-        "description": "Scan only a subdirectory of the library"
+        "description": "Organize only a subdirectory of the library"
+      },
+      "media_file_ids": {
+        "label": "File IDs",
+        "description": "Selected snapshot; cannot be combined with path"
       },
       "write_nfo": {
         "label": "Write NFO",
@@ -194,6 +192,24 @@
             "trailer": "Trailer"
           }
         }
+      }
+    },
+    "trash": {
+      "library_id": {
+        "label": "Library",
+        "description": ""
+      },
+      "recursive": {
+        "label": "Recursive",
+        "description": "Overrides library setting"
+      },
+      "patterns": {
+        "label": "Patterns",
+        "description": "Overrides library setting"
+      },
+      "path": {
+        "label": "Path",
+        "description": "Trash only a subdirectory of the library"
       }
     },
     "scrape": {

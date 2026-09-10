@@ -291,6 +291,7 @@ function LibraryDetailPage() {
 
         <LibraryMediaTable
           key={listLimit}
+          libraryId={library.id}
           libraryPath={library.path}
           items={mediaQuery.data?.items ?? []}
           isLoading={mediaQuery.isLoading}

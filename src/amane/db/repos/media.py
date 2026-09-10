@@ -4,6 +4,7 @@ from typing import NamedTuple, Unpack
 from sqlalchemy import func, or_
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
+from sqlmodel.sql.expression import SelectOfScalar
 
 from ...parsing import ContentType, FilePhase, FilePhaseSummary, Mosaic, file_phase_from_path, summarize_file_phases
 from ...utils.path import nfc_path
@@ -98,6 +99,7 @@ class MediaRepoMixin(RepositoryMixinBase):
         sort_by: MediaSortField = MediaSortField.UPDATED_AT,
         order: SortOrder = SortOrder.DESC,
         metadata_ids: Sequence[int] | None = None,
+        ids: Sequence[int] | None = None,
         *,
         has_subtitle: bool | None = None,
         mosaic: Mosaic | None = None,
@@ -105,27 +107,43 @@ class MediaRepoMixin(RepositoryMixinBase):
         definition: str | None = None,
         content_type: ContentType | None = None,
     ) -> list[MediaFile]:
-        """limit None 不分页."""
+        """limit None 不分页. ids 为空列表时直接返回空, 不查库. ids 按 SQL_IN_CHUNK_SIZE 分批 IN."""
+        id_list = list(ids) if ids is not None else None
+        if id_list is not None and not id_list:
+            return []
         async with self._session() as session:
-            stmt = select(MediaFile)
-            if status is not None:
-                stmt = stmt.where(col(MediaFile.status).in_(status))
-            if library_id is not None:
-                stmt = stmt.where(col(MediaFile.library_id) == library_id)
-            if metadata_ids is not None:
-                stmt = stmt.where(col(MediaFile.metadata_id).in_(metadata_ids))
-            if search:
-                pattern = f"%{search}%"
-                stmt = stmt.where(or_(col(MediaFile.path).ilike(pattern), col(MediaFile.number).ilike(pattern)))
-            stmt = _apply_media_phase_filters(
-                stmt,
-                has_subtitle=has_subtitle,
-                mosaic=mosaic,
-                uncensored=uncensored,
-                definition=definition,
-                content_type=content_type,
-            )
-            # 次级排序键 id 保证分页稳定.
+
+            def apply_filters(stmt: SelectOfScalar[MediaFile], chunk: list[int] | None) -> SelectOfScalar[MediaFile]:
+                if status is not None:
+                    stmt = stmt.where(col(MediaFile.status).in_(status))
+                if library_id is not None:
+                    stmt = stmt.where(col(MediaFile.library_id) == library_id)
+                if chunk is not None:
+                    stmt = stmt.where(col(MediaFile.id).in_(chunk))
+                if metadata_ids is not None:
+                    stmt = stmt.where(col(MediaFile.metadata_id).in_(metadata_ids))
+                if search:
+                    pattern = f"%{search}%"
+                    stmt = stmt.where(or_(col(MediaFile.path).ilike(pattern), col(MediaFile.number).ilike(pattern)))
+                return _apply_media_phase_filters(
+                    stmt,
+                    has_subtitle=has_subtitle,
+                    mosaic=mosaic,
+                    uncensored=uncensored,
+                    definition=definition,
+                    content_type=content_type,
+                )
+
+            if id_list is not None and len(id_list) > SQL_IN_CHUNK_SIZE and limit is None:
+                found: list[MediaFile] = []
+                for start in range(0, len(id_list), SQL_IN_CHUNK_SIZE):
+                    chunk = id_list[start : start + SQL_IN_CHUNK_SIZE]
+                    stmt = apply_filters(select(MediaFile), chunk)
+                    result = await session.exec(stmt)
+                    found.extend(result.all())
+                return found
+
+            stmt = apply_filters(select(MediaFile), id_list)
             stmt = (
                 stmt.order_by(_order_clause(_MEDIA_SORT_COLUMNS[sort_by], order), col(MediaFile.id).asc())
                 .offset(offset)

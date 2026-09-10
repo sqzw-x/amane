@@ -20,7 +20,7 @@
     }
   },
   "organize": {
-    "tooltip": "Organize library files"
+    "tooltip": "Trash invalid files then organize"
   },
   "columns": {
     "number": "Number",
@@ -34,7 +34,8 @@
   "actions": {
     "scrape": "Scrape",
     "scrapeWithNumber": "Scrape with number",
-    "batchScrape": "Batch Scrape"
+    "batchScrape": "Batch Scrape",
+    "batchOrganize": "Batch Organize"
   },
   "scrapeOverride": {
     "title": "Scrape with number",
@@ -104,9 +105,9 @@
   "fieldTrailerPattern": "Trailer filename regex",
   "fieldTrailerPatternHint": "Matches are treated as trailers and skipped during scan and watch",
   "fieldBlacklistPatterns": "Blacklist regexes",
-  "fieldBlacklistPatternsHint": "One regex per line; matches are treated as junk, skipped during scan, moved to .amane_trash on organize",
+  "fieldBlacklistPatternsHint": "One regex per line; matches are treated as junk, skipped during scan, moved to .amane_trash by the Trash task",
   "fieldMinFileSize": "Minimum video size",
-  "fieldMinFileSizeHint": "Videos smaller than this are treated as junk and moved to .amane_trash on organize",
+  "fieldMinFileSizeHint": "Videos smaller than this are treated as junk and moved to .amane_trash by the Trash task",
   "fieldSubtitleExtensions": "Subtitle extensions",
   "fieldSubtitleExtensionsHint": "Comma-separated",
   "fieldMoveMode": "File Operation Mode",

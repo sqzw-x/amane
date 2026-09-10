@@ -1,16 +1,19 @@
-"""ORGANIZE: 落盘前清本库失效索引, 避免 dest 碰撞名被幽灵行占用."""
+"""ORGANIZE: 只处理范围内的索引, 落盘前删除本次读到的失效行."""
 
+import asyncio
 import warnings
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
+from fastapi import HTTPException
 
 from amane.config import HotSettings
 from amane.db.models import MediaFileStatus
 from amane.enums import DownloadableResource, LinkMode, MoveMode
-from amane.handlers import OrganizeHandler, OrganizePayload
-from amane.handlers.file import commit_organized_media_file
+from amane.handlers import LibraryTaskLocks, OrganizeHandler, OrganizePayload, TrashHandler, TrashPayload
+from amane.handlers.file import FileOperationsResult, commit_organized_media_file
+from amane.organize.file import OrganizeResult as DiskOrganizeResult
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -116,7 +119,7 @@ async def test_organize_prunes_stale_collision_dest(
     assert first.id is not None and occupant.id is not None and source.id is not None
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
-    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src.parent)))
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root)))
     assert result.success is True
     assert result.result is not None
     assert result.result.failed == 0
@@ -362,79 +365,19 @@ async def test_organize_writes_subtitle_tag(repo: Repository, resource_store: Re
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_organize_trashes_blacklisted_files(
+async def test_organize_does_not_trash_blacklisted(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
-    """黑名单命中文件: ORGANIZE 时移入本库 .amane_trash 并删除 MediaFile 记录, 正片正常落盘.
-
-    预告片命中 trailer_pattern: 只跳过不归档.
-    """
-    lib_root = tmp_path / "lib"
-    src_dir = lib_root / "incoming"
-    src_dir.mkdir(parents=True)
-    ads = ["新片广告.mp4", "广告.jpg", "广告.torrent", "广告.url", "广告.html", "新片广告.nfo", "广告"]
-    keep = ["cover.jpg", "note.txt"]
-    for name in (*ads, *keep):
-        (src_dir / name).write_bytes(b"x")
-    video = src_dir / "NSFS-039.mp4"
-    video.write_bytes(b"video")
-    trailer = src_dir / "trailer.mp4"
-    trailer.write_bytes(b"trailer")
-    (src_dir / "广告目录").mkdir()
-
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["广告"])
-    assert lib.id is not None
-    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
-    assert meta.id is not None
-    ad_record = await repo.create_media_file(
-        lib.id,
-        path=str(src_dir / "新片广告.mp4"),
-        number="NSFS-039",
-        status=MediaFileStatus.SCRAPED,
-        metadata_id=meta.id,
-    )
-    source = await repo.create_media_file(
-        lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
-    )
-    assert ad_record.id is not None and source.id is not None
-
-    org = OrganizeHandler(repo, HotSettings(), resource_store)
-    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
-    assert result.success is True
-    assert result.result is not None
-    assert result.result.trashed == len(ads)
-    assert result.result.organized == 1
-    assert result.result.failed == 0
-
-    trash = lib_root / ".amane_trash"
-    for name in ads:
-        assert not (src_dir / name).exists()
-        assert (trash / name).exists()
-    assert await repo.get_media_file(ad_record.id) is None
-    for name in keep:
-        assert (src_dir / name).exists()
-    assert (src_dir / "广告目录").is_dir()
-    assert trailer.exists()
-    assert not video.exists()
-    assert (lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4").exists()
-
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_organize_trashes_blacklisted_outside_patterns(
-    repo: Repository, resource_store: ResourceStore, tmp_path: Path
-) -> None:
-    """黑名单归档不应用 library `patterns`: 即使文件名不匹配 glob, 仍移动至 `.amane_trash`."""
+    """整理不扫描磁盘、不回收; 黑名单文件即使在范围内也留在原路径."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
     ad = src_dir / "新片广告.mp4"
     ad.write_bytes(b"ad")
-    video = src_dir / "NSFS-039.mkv"
+    video = src_dir / "NSFS-039.mp4"
     video.write_bytes(b"video")
 
-    lib = await repo.create_library(
-        name="t", path=str(lib_root), write_nfo=False, patterns=["*.mkv"], blacklist_patterns=["广告"]
-    )
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["广告"])
     assert lib.id is not None
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
@@ -444,96 +387,277 @@ async def test_organize_trashes_blacklisted_outside_patterns(
     assert source.id is not None
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
-    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir), patterns=["*.mkv"]))
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
     assert result.success is True
     assert result.result is not None
-    assert result.result.trashed == 1
     assert result.result.organized == 1
-    assert not ad.exists()
-    assert (lib_root / ".amane_trash" / "新片广告.mp4").exists()
-    assert (lib_root / "Studio" / "NSFS-039" / "NSFS-039.mkv").exists()
+    assert ad.exists()
+    assert not (lib_root / ".amane_trash").exists()
+    assert (lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4").exists()
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_organize_trash_untracked_and_collision(
+async def test_organize_media_file_ids_only(repo: Repository, resource_store: ResourceStore, tmp_path: Path) -> None:
+    """勾选快照只整理给出的 id; 其它已刮削文件不动."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    keep = src_dir / "KEEP-001.mp4"
+    target = src_dir / "NSFS-039.mp4"
+    keep.write_bytes(b"keep")
+    target.write_bytes(b"video")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta_keep = await repo.upsert_metadata(number="KEEP-001", studio="Studio")
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta_keep.id is not None and meta.id is not None
+    kept = await repo.create_media_file(
+        lib.id, path=str(keep), number="KEEP-001", status=MediaFileStatus.SCRAPED, metadata_id=meta_keep.id
+    )
+    source = await repo.create_media_file(
+        lib.id, path=str(target), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert kept.id is not None and source.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, media_file_ids=[source.id]))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.organized == 1
+    assert keep.exists()
+    assert not target.exists()
+    assert (lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4").exists()
+    remaining = await repo.get_media_file(kept.id)
+    assert remaining is not None and remaining.path == str(keep)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_path_prefix_does_not_prune_outside(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
-    """无 MediaFile 记录的黑名单文件同样归档; 同名冲突加 (1); 二次整理幂等."""
+    """局部整理只探活本次读到的行; 范围外的失效索引保留."""
     lib_root = tmp_path / "lib"
-    d1 = lib_root / "a"
-    d2 = lib_root / "b"
-    d1.mkdir(parents=True)
-    d2.mkdir()
-    ad1 = d1 / "AD_01.mp4"
-    ad2 = d2 / "AD_01.mp4"
-    ad1.write_bytes(b"ad1")
-    ad2.write_bytes(b"ad2")
+    inside = lib_root / "incoming"
+    inside.mkdir(parents=True)
+    video = inside / "NSFS-039.mp4"
+    video.write_bytes(b"video")
+    ghost = lib_root / "other" / "gone.mp4"
 
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["(?i)ad"])
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    source = await repo.create_media_file(
+        lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    stale = await repo.create_media_file(lib.id, path=str(ghost), number="GONE-001")
+    assert source.id is not None and stale.id is not None
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(inside)))
+    assert result.success is True
+    assert await repo.get_media_file(stale.id) is not None
+    assert await repo.get_media_file(source.id) is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_resolve_rejects_ids_and_path(repo: Repository, tmp_path: Path) -> None:
+    """显式 path 与 media_file_ids 不能同时给出."""
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    lib = await repo.create_library(name="t", path=str(lib_root))
+    assert lib.id is not None
+    payload = OrganizePayload(library_id=lib.id, path=str(lib_root), media_file_ids=[1])
+    with pytest.raises(HTTPException) as ei:
+        await payload.resolve(repo)
+    assert ei.value.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_resolve_rejects_foreign_ids(repo: Repository, tmp_path: Path) -> None:
+    lib_root = tmp_path / "lib"
+    other_root = tmp_path / "other"
+    lib_root.mkdir()
+    other_root.mkdir()
+    lib = await repo.create_library(name="t", path=str(lib_root))
+    other = await repo.create_library(name="o", path=str(other_root))
+    assert lib.id is not None and other.id is not None
+    foreign = await repo.create_media_file(other.id, path=str(other_root / "a.mp4"))
+    assert foreign.id is not None
+    payload = OrganizePayload(library_id=lib.id, media_file_ids=[foreign.id])
+    with pytest.raises(HTTPException) as ei:
+        await payload.resolve(repo)
+    assert ei.value.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_empty_ids_empty_run(repo: Repository, resource_store: ResourceStore, tmp_path: Path) -> None:
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, media_file_ids=[]))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.organized == 0
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_ids_requires_library_root(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """库根不存在时 ids 范围也失败, 不删除选中行."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / "NSFS-039.mp4"
+    src.write_bytes(b"video")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    media = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert media.id is not None
+    lib_root.rename(tmp_path / "gone")
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, media_file_ids=[media.id]))
+    assert result.success is False
+    assert result.error is not None
+    assert "Not a directory" in result.error
+    assert await repo.get_media_file(media.id) is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize("case", ["blacklist", "undersized", "in_trash"])
+async def test_organize_skips_rule_hits(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path, case: str
+) -> None:
+    """已入库但命中黑名单/过小的行跳过落盘; 回收站内的行删除索引, 不整理出回收站."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    if case == "blacklist":
+        src = src_dir / "新片广告.mp4"
+        lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["广告"])
+    elif case == "undersized":
+        src = src_dir / "NSFS-039.mp4"
+        lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, min_file_size=50)
+    else:
+        src = lib_root / ".amane_trash" / "NSFS-039.mp4"
+        src.parent.mkdir(parents=True)
+        lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    src.write_bytes(b"tiny")
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    media = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert media.id is not None
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
     result = await org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root)))
     assert result.success is True
     assert result.result is not None
-    assert result.result.trashed == 2
-    assert result.result.organized == 0
-
-    assert not ad1.exists() and not ad2.exists()
-    trash = lib_root / ".amane_trash"
-    assert (trash / "AD_01.mp4").exists()
-    assert (trash / "AD_01(1).mp4").exists()
-
-    # 二次整理: 回收站内容不被再次归档
-    again = await org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root)))
-    assert again.result is not None
-    assert again.result.trashed == 0
+    dest = lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4"
+    assert not dest.exists()
+    assert src.exists()
+    if case == "in_trash":
+        assert result.result.organized == 0
+        assert await repo.get_media_file(media.id) is None
+    else:
+        assert result.result.organized == 0
+        assert result.result.skipped == 1
+        kept = await repo.get_media_file(media.id)
+        assert kept is not None
+        assert kept.path == str(src)
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_organize_trashes_undersized_videos_keeps_sidecars(
+async def test_organize_serializes_same_library(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
-    """低于 min_file_size 的视频进回收站; 预告片/字幕/nfo 不因体积归档; 正片落盘."""
+    """同库两个 ORGANIZE 执行期串行, 两次都能完成."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
-    ad = src_dir / "ad.mp4"
-    ad.write_bytes(b"tiny")
     video = src_dir / "NSFS-039.mp4"
-    video.write_bytes(b"x" * 200)
-    trailer = src_dir / "trailer.mp4"
-    trailer.write_bytes(b"t")
-    (src_dir / "note.nfo").write_bytes(b"nfo")
-    (src_dir / "NSFS-039.srt").write_text("sub")
+    video.write_bytes(b"video")
 
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, min_file_size=50)
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
-    ad_record = await repo.create_media_file(
-        lib.id, path=str(ad), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
-    )
     source = await repo.create_media_file(
         lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
     )
-    assert ad_record.id is not None and source.id is not None
+    assert source.id is not None
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
-    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
-    assert result.success is True
-    assert result.result is not None
-    assert result.result.trashed == 1
-    assert result.result.organized == 1
+    first, second = await asyncio.gather(
+        org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root))),
+        org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root))),
+    )
+    assert first.success is True and second.success is True
+    assert (lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4").exists()
 
-    assert not ad.exists()
-    assert (lib_root / ".amane_trash" / "ad.mp4").exists()
-    assert await repo.get_media_file(ad_record.id) is None
-    assert trailer.exists()
-    assert (src_dir / "note.nfo").exists()
-    dest_dir = lib_root / "Studio" / "NSFS-039"
-    assert (dest_dir / "NSFS-039.mp4").exists()
-    assert (dest_dir / "NSFS-039.srt").exists()
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_and_trash_do_not_overlap(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同库 TRASH 与 ORGANIZE 注入同一把锁时, 落盘与回收不交叠."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    video = src_dir / "NSFS-039.mp4"
+    ad = src_dir / "广告.mp4"
+    video.write_bytes(b"video")
+    ad.write_bytes(b"ad")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["广告"])
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    await repo.create_media_file(
+        lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+
+    inflight = 0
+    max_inflight = 0
+
+    async def tracked_apply(*_args: object, **_kwargs: object) -> FileOperationsResult | None:
+        nonlocal inflight, max_inflight
+        inflight += 1
+        max_inflight = max(max_inflight, inflight)
+        await asyncio.sleep(0.05)
+        inflight -= 1
+        return None
+
+    async def tracked_move(file_path, trash_dir):
+        nonlocal inflight, max_inflight
+        inflight += 1
+        max_inflight = max(max_inflight, inflight)
+        await asyncio.sleep(0.05)
+        inflight -= 1
+        return DiskOrganizeResult(success=True, dest=trash_dir / file_path.name)
+
+    monkeypatch.setattr("amane.handlers.file.apply_file_operations", tracked_apply)
+    monkeypatch.setattr("amane.handlers.trash._move_to_trash", tracked_move)
+
+    locks = LibraryTaskLocks()
+    org = OrganizeHandler(repo, HotSettings(), resource_store, library_locks=locks)
+    trash = TrashHandler(repo, HotSettings(), library_locks=locks)
+    org_result, trash_result = await asyncio.gather(
+        org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root))),
+        trash.handle(TrashPayload(library_id=lib.id, path=str(lib_root))),
+    )
+    assert org_result.success is True and trash_result.success is True
+    assert max_inflight == 1
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -824,9 +948,9 @@ async def test_organize_strm_content_template_uses_actual_dest(
 
 
 @pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.parametrize("kind", ["two_files", "empty", "not_a_dir", "missing_library"])
+@pytest.mark.parametrize("kind", ["two_files", "empty", "missing_subdir", "missing_library"])
 async def test_reports_progress(repo: Repository, resource_store: ResourceStore, tmp_path: Path, kind: str) -> None:
-    """目录遍历完成后按文件总数上报 determinate 进度; 跳过的文件仍计入 current. 非法路径不上报."""
+    """范围内索引按条数上报 determinate 进度; 跳过的文件仍计入 current. 库不存在或目录不存在不上报."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
@@ -841,7 +965,7 @@ async def test_reports_progress(repo: Repository, resource_store: ResourceStore,
     org = OrganizeHandler(repo, HotSettings(), resource_store)
     org.set_progress_callback(capture)
 
-    if kind == "not_a_dir":
+    if kind == "missing_subdir":
         result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir / "missing")))
         assert result.success is False
         assert result.error is not None
@@ -862,7 +986,6 @@ async def test_reports_progress(repo: Repository, resource_store: ResourceStore,
         assert result.success is True
         assert result.result is not None
         assert result.result.organized == 0
-        assert (0, 0, "scan") in events
         assert events[-1] == (1, 1, "done")
         return
 
@@ -875,6 +998,7 @@ async def test_reports_progress(repo: Repository, resource_store: ResourceStore,
     await repo.create_media_file(
         lib.id, path=str(src1), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
     )
+    await repo.create_media_file(lib.id, path=str(src2), number="SKIP-001")
 
     result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
     assert result.success is True
@@ -882,13 +1006,11 @@ async def test_reports_progress(repo: Repository, resource_store: ResourceStore,
     assert result.result.organized == 1
     assert result.result.skipped == 1
 
-    assert (0, 0, "scan") in events
-    scan_at = events.index((0, 0, "scan"))
-    after = events[scan_at + 1 :]
-    assert after[0] == (0, 2, "organize")
+    assert (0, 2, "prune") in events
+    assert (0, 2, "organize") in events
+    organize_at = events.index((0, 2, "organize"))
+    after = events[organize_at:]
     assert after[-1] == (2, 2, "done")
-    assert all(t == 2 for _, t, _ in after)
-    assert [c for c, _, _ in after] == sorted(c for c, _, _ in after)
     assert any(m == src1.name for _, _, m in after)
     assert any(m == src2.name for _, _, m in after)
 

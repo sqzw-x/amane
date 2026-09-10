@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..config import HotSettings, WatermarkConfig
-from ..db.models import MediaFile
+from ..db.models import Library, MediaFile
 from ..db.repo_types import MediaFileUpdates
 from ..enums import ActorGender, DownloadableResource, LinkMode
-from ..library import MEDIA_EXTENSIONS, TRASH_DIRNAME, LibraryFileKind, LibraryScan
+from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
+from ..library.rules import is_in_trash
 from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
 from ..media import write_nfo as write_nfo_file
 from ..media.pipeline import RESOURCE_URL_PREFIX
@@ -24,19 +25,18 @@ from ..organize import (
     render_strm_content,
     resolve_paths,
 )
-from ..organize.file import OrganizeResult as DiskOrganizeResult
 from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
 from ..utils.path import existing_disk_path as existing_disk_path_sync
-from ..utils.path import is_descendant
+from ..utils.path import is_descendant, nfc_path, path_is_under
 from ..utils.threads import existing_disk_path, in_thread, path_is_dir
-from ._common import scan_library
+from ._common import LibraryTaskLocks
 from .models import CleanupPayload, CleanupResult, OrganizePayload, OrganizeResult
 from .protocol import TaskHandler, TaskResult
 
 if TYPE_CHECKING:
     from ..config import HotSettings
-    from ..db.models import Library, Metadata
+    from ..db.models import Metadata
     from ..db.repository import Repository
     from ..media import ResourceStore
     from ..net.http import WebClient
@@ -375,13 +375,14 @@ async def _download_images_via_store(
 
 
 @in_thread
-def _move_to_trash(file_path: Path, trash_dir: Path) -> DiskOrganizeResult:
-    return execute_organize.sync(source=file_path, target_dir=trash_dir, target_stem=file_path.stem, mode=MoveMode.MOVE)
+def _classify_indexed(path: Path, scan: LibraryScan) -> LibraryFileKind | None:
+    return scan.classify(path)
 
 
 class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
-    """依据已有 Metadata 整理至库路径; 不刮削, 不修改 Metadata.
-    预告片属跳过, 留在原路径; 归档类移入 `.amane_trash`.
+    """依据已有 Metadata 整理范围内的 MediaFile; 不刮削, 不修改 Metadata, 不扫描磁盘.
+
+    同库执行期与 TRASH 共用一把锁.
     """
 
     def __init__(
@@ -392,6 +393,8 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         web_client: WebClient | None = None,
         safe_dirs: Sequence[Path] | None = (),
         watermark_dir: Path | None = None,
+        *,
+        library_locks: LibraryTaskLocks | None = None,
     ):
         super().__init__(payload_t=OrganizePayload, result_t=OrganizeResult)
         self._repo = repo
@@ -400,66 +403,78 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         self._resource_store = resource_store
         self._safe_dirs = safe_dirs
         self._watermark_dir = watermark_dir
+        self._library_locks = library_locks if library_locks is not None else LibraryTaskLocks()
+
+    async def _load_scope(self, payload: OrganizePayload, library: Library) -> list[MediaFile]:
+        assert library.id is not None
+        if payload.media_file_ids is not None:
+            return await self._repo.list_media_files(library_id=library.id, ids=payload.media_file_ids, limit=None)
+        indexed = await self._repo.list_media_files(library_id=library.id, limit=None)
+        if nfc_path(payload.path) != nfc_path(library.path):
+            return [mf for mf in indexed if path_is_under(mf.path, payload.path)]
+        return indexed
 
     async def handle(self, payload: OrganizePayload) -> TaskResult[OrganizeResult]:
-        scan_dir = Path(payload.path)
-        if not await path_is_dir(scan_dir):
-            return TaskResult(success=False, error=f"Not a directory: {payload.path}")
-
         library = await self._repo.get_library(payload.library_id)
         if library is None:
             return TaskResult(success=False, error=f"Library {payload.library_id} not found")
         assert library.id is not None
-
-        # 删除失效索引: 磁盘上没有 path, 或不在本库内.
-        indexed = await self._repo.list_media_files(library_id=library.id, limit=None)
-        prune_total = len(indexed)
         library_root = Path(library.path)
+        if not await path_is_dir(library_root):
+            return TaskResult(success=False, error=f"Not a directory: {library.path}")
+        if payload.media_file_ids is None:
+            scope = Path(payload.path) if payload.path else library_root
+            if nfc_path(str(scope)) != nfc_path(library.path) and not await path_is_dir(scope):
+                return TaskResult(success=False, error=f"Not a directory: {scope}")
+
+        lock = await self._library_locks.get(library.id)
+        async with lock:
+            return await self._handle_unlocked(payload, library)
+
+    async def _handle_unlocked(self, payload: OrganizePayload, library: Library) -> TaskResult[OrganizeResult]:
+        indexed = await self._load_scope(payload, library)
+        library_root = Path(library.path)
+        media_extensions = frozenset(self._config.watcher.media_extensions) or MEDIA_EXTENSIONS
+        scan = LibraryScan(
+            trailer_pattern=library.trailer_pattern,
+            blacklist_patterns=library.blacklist_patterns,
+            min_file_size=library.min_file_size,
+            media_extensions=media_extensions,
+        )
+        live: list[MediaFile] = []
+        skipped = 0
+        prune_total = len(indexed)
         if prune_total:
             await self.report_progress(0, prune_total, "prune")
             for i, mf in enumerate(indexed, start=1):
                 if mf.id is not None:
                     mf_path = Path(mf.path)
                     missing = await existing_disk_path(mf_path, follow_symlinks=False) is None
-                    if missing or not is_descendant(mf_path, library_root):
+                    if missing or not is_descendant(mf_path, library_root) or is_in_trash(mf_path):
                         await self._repo.delete_media_file(mf.id)
+                    else:
+                        kind = await _classify_indexed(mf_path, scan)
+                        if kind is LibraryFileKind.TRASH or kind is LibraryFileKind.SKIP:
+                            skipped += 1
+                        else:
+                            # MEDIA, 以及 classify 返回 None 的已索引行 (不在当前扩展名白名单,
+                            # 例如库曾用 patterns 收过 .txt). 仍按索引落盘, 不按扫描 glob 再裁一次.
+                            live.append(mf)
                 await self.report_progress(i, prune_total, "prune")
-
-        recursive = payload.recursive if payload.recursive is not None else True
-        media_extensions = frozenset(self._config.watcher.media_extensions) or MEDIA_EXTENSIONS
+        else:
+            live = indexed
 
         organized = 0
-        skipped = 0
         failed = 0
-
-        await self.report_progress(0, 0, "scan")
-        scan = LibraryScan(
-            patterns=payload.patterns,
-            trailer_pattern=library.trailer_pattern,
-            blacklist_patterns=library.blacklist_patterns,
-            min_file_size=library.min_file_size,
-            media_extensions=media_extensions,
-        )
-        # 扫描并分类: 归档移入回收站, 媒体进入整理, 预告片跳过.
-        to_trash: list[Path] = []
-        files: list[Path] = []
-        for hit in await scan_library(scan_dir, recursive=recursive, scan=scan):
-            if hit.kind is LibraryFileKind.TRASH:
-                to_trash.append(hit.path)
-            elif hit.kind is LibraryFileKind.MEDIA:
-                files.append(hit.path)
-        trashed = await self._trash_files(library, to_trash)
-        total = len(files)
+        total = len(live)
         if total == 0:
             await self.report_progress(1, 1, "done")
         else:
             await self.report_progress(0, total, "organize")
-            for i, file_path in enumerate(files, start=1):
-                path_str = str(file_path)
-
-                media_file = await self._repo.get_media_file_by_path(path_str)
-                # 无 MediaFile 或未关联 Metadata 则跳过.
-                if media_file is None or media_file.metadata_id is None:
+            for i, media_file in enumerate(live, start=1):
+                path_str = media_file.path
+                file_path = Path(path_str)
+                if media_file.metadata_id is None:
                     skipped += 1
                     await self.report_progress(i, total, file_path.name)
                     continue
@@ -505,35 +520,9 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             organized=organized,
             skipped=skipped,
             failed=failed,
-            trashed=trashed,
         )
 
-        return TaskResult(
-            True, result=OrganizeResult(organized=organized, skipped=skipped, failed=failed, trashed=trashed)
-        )
-
-    async def _trash_files(self, library: Library, files: Sequence[Path]) -> int:
-        """移至本库 `.amane_trash`. 固定物理移动, 不受 `move_mode` 影响. 失败不计入成功数."""
-        if not files:
-            return 0
-        trash_dir = Path(library.path) / TRASH_DIRNAME
-        trashed = 0
-        trash_total = len(files)
-        await self.report_progress(0, trash_total, "trash")
-        for i, file_path in enumerate(files, start=1):
-            result = await _move_to_trash(file_path, trash_dir)
-            if not result.success:
-                logger.warning("unwanted file trash failed", path=str(file_path), error=result.error)
-                await self.report_progress(i, trash_total, "trash")
-                continue
-            logger.info("unwanted file trashed", path=str(file_path), dest=str(result.dest))
-            media_file = await self._repo.get_media_file_by_path(str(file_path))
-            if media_file is not None:
-                assert media_file.id is not None
-                await self._repo.delete_media_file(media_file.id)
-            trashed += 1
-            await self.report_progress(i, trash_total, "trash")
-        return trashed
+        return TaskResult(True, result=OrganizeResult(organized=organized, skipped=skipped, failed=failed))
 
 
 def _add_resource_ref(url: str, live_urls: set[str], live_hashes: set[str]) -> None:

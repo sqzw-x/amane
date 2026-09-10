@@ -5,21 +5,24 @@
 
 ## 任务职责边界
 
-元数据是中心, 文件系统是派生. 影片侧三种主任务互不内嵌:
+元数据是中心, 文件系统是派生. 影片侧主任务互不内嵌:
 
 | 任务 | 职责 | 排除范围 |
 | ------ | ------ | ------ |
 | `REFRESH` | 扫描增删、注册 MediaFile、fan-out SCRAPE (`use_cache` 原样转发) | 移动文件、写 NFO |
 | `SCRAPE` | 联网聚合 → DB → Resource; `media_file_id` 只作查询输入 (番号 / oshash) 与回写关联 | 库内移动 / NFO |
-| `ORGANIZE` | 路径模板 + Library.`move_mode` + 库级整理默认 (payload 可覆盖); 缺资源时 `acquire` 可出站 HTTP | 运行爬虫、修改 Metadata、记录站点结果 |
+| `TRASH` | 扫描范围内的黑名单与过小视频, 移入 `.amane_trash` (物理移动, 不受 `move_mode`) | 整理正片、写 NFO、注册 MediaFile |
+| `ORGANIZE` | 范围内已有 Metadata 的 MediaFile 按路径模板落盘; Library.`move_mode` 与库级整理默认 (payload 可覆盖); 缺资源时 `acquire` 可出站 HTTP | 扫描磁盘、回收、运行爬虫、修改 Metadata、记录站点结果 |
 
 `CLEANUP` / `UPSCALE` 扫描 DB / Resource; `ACTOR_SCRAPE` 刮人物; `R18_IMPORT` 导入 dump. 上述类型均不执行影片落盘.
 
-不允许 ScrapeHandler 或 Watcher 提交 ORGANIZE. Watcher 只注册文件并入队 SCRAPE. 完整的扫描、刮削与落盘须提交两个任务 (REFRESH + ORGANIZE); 媒体库 UI 将扫描与整理分为独立按钮. ORGANIZE 可用 `priority=-1` 跟在刮削之后; 该优先级不使 ORGANIZE 等待刮削完成: 当时尚未刮削完成的文件会被跳过, 须再次运行 ORGANIZE.
+不允许 ScrapeHandler 或 Watcher 提交 ORGANIZE / TRASH. Watcher 只注册文件并入队 SCRAPE. 完整的扫描、刮削与落盘须提交 REFRESH, 再提交 TRASH + ORGANIZE; 媒体库 UI 将扫描与整理分为独立按钮, 整理按钮依次入队 TRASH、ORGANIZE. ORGANIZE 可用 `priority=-1` 跟在刮削之后; 该优先级不使 ORGANIZE 等待刮削完成: 当时尚未刮削完成的文件会被跳过, 须再次运行 ORGANIZE.
+
+ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引; 显式 `path` 按前缀过滤 (成员关系以开始执行为准); `media_file_ids` 为勾选快照 (空列表空跑; 含其它库的 id 则 422). 显式 `path` 与 `media_file_ids` 同时给出则 422. 库根必须是已存在的目录, 否则失败 (ids 范围同样适用, 避免网络盘掉线时把选中行当失效索引删掉). `media_file_ids` 未给出且 path 为子目录时, 该子目录也必须存在. 无 Metadata 的行、以及命中黑名单 / 过小 / 预告片规则的行跳过落盘. 路径落在 `.amane_trash` 内的行删除索引, 不整理出回收站. TRASH 的 `path` 同样可限定子目录; 空 path 使用库根. ORGANIZE payload 不含 `recursive` / `patterns`.
 
 整理默认 (`write_nfo` / `copy_resources`) 与预告片跳过正则在 Library 上, 见 [data-model.md](data-model.md). ORGANIZE payload 对应字段为 `None` 时沿用库设置.
 
-入队互斥在 `create_task`. queued / running 的 ORGANIZE 按 payload.`library_id`、ACTOR_SCRAPE 按 payload.`actor_id` 复用已有行, 不新建. API、Agent、链式入队、retry 都经由该入口, Worker 不按类型加锁. 不同库 / 不同演员仍并行. 终态 (DONE / FAILED) 之后允许再入队. 互斥不比较 payload 其它字段 (`write_nfo` / `use_cache` 不同仍复用). SQLite 默认 DEFERRED 事务里, 两个 session 的 SELECT 都会在写锁前看到空表, 因此检查与插入须在 Repository 上串行化 (单进程).
+入队互斥在 `create_task`. queued / running 的 ACTOR_SCRAPE 按 payload.`actor_id` 复用已有行, 不新建. ORGANIZE 与 TRASH 每次提交都新建行, 禁止复用; 同库的 ORGANIZE 与 TRASH 共用 `build_handlers` 注入的 `LibraryTaskLocks`, 执行期串行 (两者都在同一棵树上搬文件). 不同库 / 不同演员仍并行. API、Agent、链式入队、retry 都经由 `create_task`. Worker 不按类型加锁. 终态 (DONE / FAILED) 之后允许再入队. 互斥不比较 payload 其它字段 (`use_cache` 不同仍复用). SQLite 默认 DEFERRED 事务里, 两个 session 的 SELECT 都会在写锁前看到空表, 因此检查与插入须在 Repository 上串行化 (单进程).
 
 ## 任务图 (TaskLink)
 
@@ -49,7 +52,7 @@
 
 字段组合: `scan={"add"}, scrape=set()` → 仅注册不刮削; `scan={"add"}, scrape={"pending"}` → 注册 + 刮削; `scan={"remove"}` → 仅删除失效记录. 落盘另交 ORGANIZE.
 
-扫描遍历经由 `scan_library` (`@in_thread` glob / stat, 一次分类为跳过 / 归档 / 媒体), 与库内索引的差集在 Python 计算 (`list_media_files` 一次全部读取). 不允许将整棵树的路径放入 SQL `IN` / `NOT IN`: `NOT IN` 按批拆分会把其它批里真实存在的文件误判为失效. 仅 `remove` 时对库内记录 `exists`, 不遍历磁盘树. fan-out 必须 `list_media_files(..., limit=None)`: 默认 50 是 `GET /media` 的列表分页, 不是批量任务上限. `MediaFile.path` 的写入、按路径查找、有效 / 失效集合差一律 NFC (`nfc_path`). 从库内路径打开、判断存在、落盘必须经 `existing_disk_path` (先试传入形式, 再试规范等价的 NFC / NFD). 扫描当次列出的原字符串可直接用于 I/O.
+扫描遍历经由 `scan_library` (`@in_thread` glob / stat, 一次分类为跳过 / 回收 / 媒体), 与库内索引的差集在 Python 计算 (`list_media_files` 一次全部读取). 不允许将整棵树的路径放入 SQL `IN` / `NOT IN`: `NOT IN` 按批拆分会把其它批里真实存在的文件误判为失效. 仅 `remove` 时对库内记录 `exists`, 不遍历磁盘树. fan-out 必须 `list_media_files(..., limit=None)`: 默认 50 是 `GET /media` 的列表分页, 不是批量任务上限. `MediaFile.path` 的写入、按路径查找、有效 / 失效集合差一律 NFC (`nfc_path`). 从库内路径打开、判断存在、落盘必须经 `existing_disk_path` (先试传入形式, 再试规范等价的 NFC / NFD). 扫描当次列出的原字符串可直接用于 I/O.
 
 文件注册 (watcher 发现与 REFRESH 扫描共用 `register_media_file`) 只写路径, 不计算 oshash. 指纹只在 SCRAPE 时按需计算: 本次实例化的爬虫 `profile().uses_file_hash` (ThePornDB) 且 `MediaFile.oshash` 为空, 才 `ensure_oshash`; 失败留 `None`, 不阻断刮削.
 
@@ -91,7 +94,9 @@ Worker 在 `handle()` 前注入 `report_progress` 回调, 经 EventBus 发 `task
 
 **SCRAPE**: 分母 = 标量字段数 + 2 (`materialize` / `persist`). 聚合按波次上报已满足标量字段数 (聚合类字段不计入); message 为当波站点 `cache_key`. 抓取结束后抬到标量满分, 再执行后两步至 `done`.
 
-**ORGANIZE**: 失效索引按本库 MediaFile 条数 (`prune`). 一次遍历的结果在内存中分类后分别归档 (`trash`) 与落盘 (message 为文件名). glob 进行中 `total=0`. 空目录以 1/1 `done` 结束.
+**ORGANIZE**: 失效索引与回收站行按本次读到的 MediaFile 条数 (`prune`). 随后按仍有效的行落盘 (message 为文件名). 空范围以 1/1 `done` 结束.
+
+**TRASH**: glob 进行中 `total=0` (`scan`); 随后按待回收文件数上报 (`trash`). 无可回收文件时 1/1 `done`.
 
 其它任务类型不调用则静默忽略.
 
@@ -105,8 +110,9 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 | 单元 | 位置 | 复用方 | 职责 |
 | ------ | ------ | -------- | ------ |
-| `LibraryScan` | `library/scan.py` | REFRESH / ORGANIZE / watcher | 单路径分类 (跳过 / 归档 / 媒体); 规则常量与校验在 `library/rules.py`; watcher 只调用 `classify` |
-| `scan_library` | `handlers/_common.py` | REFRESH / ORGANIZE | 库目录遍历; `@in_thread` 包装 glob / stat |
+| `LibraryScan` | `library/scan.py` | REFRESH / TRASH / watcher / ORGANIZE | 单路径分类 (跳过 / 回收 / 媒体); 规则常量与校验在 `library/rules.py`; watcher 只调用 `classify`; ORGANIZE 对已索引行套同一分类, 跳过回收/预告片命中 |
+| `scan_library` | `handlers/_common.py` | REFRESH / TRASH | 库目录遍历; `@in_thread` 包装 glob / stat |
+| `LibraryTaskLocks` | `handlers/_common.py` | ORGANIZE / TRASH | `build_handlers` 构造一份注入两端; 同库执行期串行. 测试里未注入时各 handler 自建, 互不共享 |
 | `finalize_media_file` | `handlers/_common.py` | SCRAPE (缓存 / 主路径) | 标记 SCRAPED + 关联 Metadata |
 | `apply_file_operations` | `handlers/file.py` | ORGANIZE | 读取 MediaFile→读取 Library→渲染路径→执行 file ops; 库路径 I/O 经 `@in_thread` |
 
@@ -124,7 +130,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 - **已就位**: 源与模板 dest 已是同一文件 (含硬链同一 inode) 时视为成功, 不追加 `(1)`; 碰撞改名只用于 dest 被另一文件占用.
 - **链接入口**: `link_template` 非空时, 视频就位后在库外写 strm 或软链接, 指向这次整理后的路径. `link_mode=strm` 时正文按 `strm_content_template` 渲染 (空则绝对路径). `MediaFile.path` 仍是真实视频. 链接写入失败时, 目标路径仍在本库内则回写 path (视频已搬家), 任务记失败以便重试补链接.
 - **索引写回**: 整理后的路径仍在本库内则更新 `MediaFile.path`; 已不在本库内且源路径不在磁盘上则删除该行. 不改 `library_id`, 不写其它库的行. 目标路径已被本库另一行占用时删除本行, 占用行缺少刮削字段则补上.
-- **失效索引**: ORGANIZE 落盘前按库删除 path 在磁盘上不存在、或不在本库内的 MediaFile (`existing_disk_path`). 碰撞改名只检查磁盘; 不先删除磁盘上已不存在、仍保留在库中的 MediaFile 记录, 带编号的目标路径会在 UNIQUE 上与库内旧 path 冲突.
+- **失效索引**: ORGANIZE 落盘前只对本次读到的行探活: path 在磁盘上不存在、或不在本库内则删除该 `MediaFile` (`existing_disk_path`). 范围外的行不读取、不探活. 碰撞改名只检查磁盘; 范围内未删除的幽灵行仍会与带编号的目标路径在 UNIQUE 上冲突.
 
 ## 刮削期资源物化
 
@@ -173,7 +179,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 两条路径的对象与后果不同.
 
-**即时** (`POST /tasks`): 接收 `TaskSubmission` (含全部即时 `type`, 含 `actor_scrape` / `rescrape`), 经 `src/amane/api/support/task_resolve.py::resolve_submission` 得到 `(TaskType, Payload)` 后建 Task. REFRESH / ORGANIZE 只接受 `library_id`, resolve 时由 library 派生 `path` / `recursive` / `patterns` (submission 可显式覆盖); SCRAPE 采用 number / media_id, 二者可同时提交. **`content_type` 可空**: 为空时仅 media_id 按文件路径解析、有 number 时按番号推断 (显式给定则覆盖). **`payload.number` 是否经过 `parse_file_info` 重写**取决于进路 (只按路径会改写, 手填 `number` 原样, 与 media_id 同时填写时仍原样), 爬虫必须同时接受两种入参, 见 [crawlers.md](crawlers.md) 番号入参. 覆盖只作用于这一次 `POST /tasks`; 库表一键刮削与 REFRESH 仍按路径解析. `ACTOR_SCRAPE` 采用 `actor_id` (亦可通过 `POST /actors/{id}/scrape`).
+**即时** (`POST /tasks`): 接收 `TaskSubmission` (含全部即时 `type`, 含 `actor_scrape` / `rescrape` / `trash`), 经 `src/amane/api/support/task_resolve.py::resolve_submission` 得到 `(TaskType, Payload)` 后建 Task. REFRESH / ORGANIZE / TRASH 只接受 `library_id`, resolve 时由 library 派生 `path` (submission 可显式覆盖); REFRESH / TRASH 另派生 `recursive` / `patterns`; ORGANIZE 还可带 `media_file_ids`, 与显式 `path` 互斥. ORGANIZE payload 不含扫描字段. SCRAPE 采用 number / media_id, 二者可同时提交. **`content_type` 可空**: 为空时仅 media_id 按文件路径解析、有 number 时按番号推断 (显式给定则覆盖). **`payload.number` 是否经过 `parse_file_info` 重写**取决于进路 (只按路径会改写, 手填 `number` 原样, 与 media_id 同时填写时仍原样), 爬虫必须同时接受两种入参, 见 [crawlers.md](crawlers.md) 番号入参. 覆盖只作用于这一次 `POST /tasks`; 库表一键刮削与 REFRESH 仍按路径解析. `ACTOR_SCRAPE` 采用 `actor_id` (亦可通过 `POST /actors/{id}/scrape`).
 
 **定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape`). 创建时把 submission 的 `model_dump()` 原样写入 `Schedule.payload`; cron / trigger 触发时由 `CronScheduler._execute_task` 从 dict 构造对应 Payload 再建 Task. 编辑只修改 name / cron / enabled; 修改任务内容须删除后重建.
 
@@ -206,7 +212,7 @@ Metadata 是一等公民, CLEANUP **从不**因「无关联 MediaFile」删除 M
 
 Watcher、Cron 与 Feed 分属独立循环: 秒级反应、分钟级 routine、每源间隔的远程拉取. 合并到同一循环会互相拖高 latency, 或把 HTTP / RSS 纳入 cron.py.
 
-`watcher.use_polling` 在 NAS / Docker Desktop / WSL2 等 inotify 不可靠场景下打开. `debounce_seconds` 防止大文件写入途中提前刮削, 也用于 CloudDrive 目录 create 后的子树扫描. 这三项 HotSettings 在进程启动时注入 WatcherService, 修改 TOML 后须重启才生效 (见 [config.md](config.md)); Library 级 `automation` / `ingest` / `cloud_path` / 路径 / `trailer_pattern` 则由 libraries 路由热更新监控根. `automation=none` 不监控; `watch` 只登记; `scrape` 登记后入队 SCRAPE. 三者都不自动 ORGANIZE. `ingest=clouddrive` 不挂 Observer, 见 [watcher.md](watcher.md).
+`watcher.use_polling` 在 NAS / Docker Desktop / WSL2 等 inotify 不可靠场景下打开. `debounce_seconds` 防止大文件写入途中提前刮削, 也用于 CloudDrive 目录 create 后的子树扫描. 这三项 HotSettings 在进程启动时注入 WatcherService, 修改 TOML 后须重启才生效 (见 [config.md](config.md)); Library 级 `automation` / `ingest` / `cloud_path` / 路径 / `trailer_pattern` 则由 libraries 路由热更新监控根. `automation=none` 不监控; `watch` 只登记; `scrape` 登记后入队 SCRAPE. 三者都不自动 ORGANIZE / TRASH. `ingest=clouddrive` 不挂 Observer, 见 [watcher.md](watcher.md).
 
 **归属随事件携带**: 每个监控根的 `_Handler` 绑定 `library_id`; 文件事件回调带上来源库, 新文件以此入库 (见 [data-model.md](data-model.md) Library 归属).
 

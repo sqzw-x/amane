@@ -14,6 +14,7 @@ from ...handlers import (
     RefreshPayload,
     RescrapePayload,
     ScrapePayload,
+    TrashPayload,
     UpscalePayload,
 )
 from ...parsing import ContentType, infer_content_type, parse_file_info
@@ -33,7 +34,7 @@ class TaskResponse(BaseModel):
     type: TaskType
     status: TaskStatus
     title: str | None = None
-    """scrape→番号, actor_scrape→演员名, refresh/organize→库名."""
+    """scrape→番号, actor_scrape→演员名, refresh/organize/trash→库名."""
     payload: dict = Field(default_factory=dict)
     result: dict | None = None
     error: str | None = None
@@ -164,6 +165,10 @@ class OrganizeSubmission(OrganizePayload):
     type: Literal["organize"]
 
 
+class TrashSubmission(TrashPayload):
+    type: Literal["trash"]
+
+
 class ScrapeSubmission(ScrapeRequest):
     type: Literal["scrape"]
 
@@ -196,6 +201,7 @@ class ActorScrapeSubmission(BaseModel):
 TaskSubmission = Annotated[
     RefreshSubmission
     | OrganizeSubmission
+    | TrashSubmission
     | ScrapeSubmission
     | CleanupSubmission
     | UpscaleSubmission

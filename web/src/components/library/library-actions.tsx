@@ -13,6 +13,7 @@ import {
   listLibrariesQueryKey,
   submitTaskMutation,
 } from "@/client/@tanstack/react-query.gen";
+import { submitTask } from "@/client/sdk.gen";
 import type { LibraryResponse } from "@/client/types.gen";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
@@ -46,7 +47,16 @@ export function LibraryActionButtons({
       }),
   });
   const organizeMutation = useMutation({
-    ...submitTaskMutation(),
+    mutationFn: async () => {
+      await submitTask({
+        body: { type: "trash", library_id: library.id },
+        throwOnError: true,
+      });
+      await submitTask({
+        body: { type: "organize", library_id: library.id },
+        throwOnError: true,
+      });
+    },
     onSuccess: () =>
       notifications.show({ message: t("common:toast.organizeStarted"), color: "blue" }),
     onError: (err) =>
@@ -130,9 +140,7 @@ export function LibraryActionButtons({
           variant="light"
           loading={organizeMutation.isPending}
           aria-label={t("organize.tooltip")}
-          onClick={() =>
-            organizeMutation.mutate({ body: { type: "organize", library_id: library.id } })
-          }
+          onClick={() => void organizeMutation.mutate()}
         >
           <IconFolderDown size={16} />
         </ActionIcon>

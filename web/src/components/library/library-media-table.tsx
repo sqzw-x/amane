@@ -1,6 +1,6 @@
 import { ActionIcon, Badge, Button, Checkbox, Group, Stack, Table, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconForms, IconRefresh, IconTrash } from "@tabler/icons-react";
+import { IconFolderDown, IconForms, IconRefresh, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -75,6 +75,7 @@ const COLUMN_WIDTH: Record<SortableColumn, number | undefined> = {
 const CELL_OVERFLOW = { overflow: "hidden", maxWidth: 0 } as const;
 
 export interface LibraryMediaTableProps {
+  libraryId: number;
   libraryPath: string;
   items: MediaFileResponse[];
   isLoading: boolean;
@@ -88,6 +89,7 @@ export interface LibraryMediaTableProps {
 }
 
 export function LibraryMediaTable({
+  libraryId,
   libraryPath,
   items,
   isLoading,
@@ -104,6 +106,7 @@ export function LibraryMediaTable({
   const limit = useUIStore((s) => s.pageSizes.libraryMedia);
   const { selected, selectedIds, toggleOne, toggleAll, isAllSelected, clear } = useIdSelection();
   const [batchScraping, setBatchScraping] = useState(false);
+  const [batchOrganizing, setBatchOrganizing] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
   const [overrideTarget, setOverrideTarget] = useState<MediaFileResponse | null>(null);
   const [overrideSaving, setOverrideSaving] = useState(false);
@@ -132,6 +135,29 @@ export function LibraryMediaTable({
       });
     }
     clear();
+  }
+
+  async function handleBatchOrganize() {
+    const ids = selectedIds;
+    setBatchOrganizing(true);
+    try {
+      await submitTask({
+        body: { type: "organize", library_id: libraryId, media_file_ids: ids },
+        throwOnError: true,
+      });
+      notifications.show({
+        message: t("common:toast.organizeStarted"),
+        color: "blue",
+      });
+      clear();
+    } catch (err) {
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      });
+    } finally {
+      setBatchOrganizing(false);
+    }
   }
 
   async function handleBatchDelete() {
@@ -205,7 +231,7 @@ export function LibraryMediaTable({
   const allSelected = isAllSelected(pageIds);
   const effectiveSortBy = sortBy ?? "updated_at";
   const effectiveOrder = order ?? "desc";
-  const busy = batchScraping || batchDeleting;
+  const busy = batchScraping || batchOrganizing || batchDeleting;
 
   function handlePageChange(p: number) {
     clear();
@@ -228,6 +254,16 @@ export function LibraryMediaTable({
             onClick={() => void handleBatchScrape()}
           >
             {t("actions.batchScrape")}
+          </Button>
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconFolderDown size={14} />}
+            loading={busy}
+            disabled={selected.size === 0}
+            onClick={() => void handleBatchOrganize()}
+          >
+            {t("actions.batchOrganize")}
           </Button>
           <Button
             size="xs"

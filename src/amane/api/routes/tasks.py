@@ -29,7 +29,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 async def _task_titles(repo: RepoDep, tasks: Sequence[Task]) -> dict[int, str | None]:
-    """scrape→番号, actor_scrape→演员名, refresh/organize→库名. 批量查库, 避免列表 N+1."""
+    """scrape→番号, actor_scrape→演员名, refresh/organize/trash→库名. 批量查库, 避免列表 N+1."""
     actor_ids = {
         int(p["actor_id"])
         for t in tasks
@@ -38,7 +38,8 @@ async def _task_titles(repo: RepoDep, tasks: Sequence[Task]) -> dict[int, str | 
     library_ids = {
         int(p["library_id"])
         for t in tasks
-        if t.type in (TaskType.REFRESH, TaskType.ORGANIZE) and isinstance((p := t.payload or {}).get("library_id"), int)
+        if t.type in (TaskType.REFRESH, TaskType.ORGANIZE, TaskType.TRASH)
+        and isinstance((p := t.payload or {}).get("library_id"), int)
     }
     actor_names = await repo.get_actor_names(list(actor_ids))
     library_names = await repo.get_library_names(list(library_ids))
@@ -54,7 +55,7 @@ async def _task_titles(repo: RepoDep, tasks: Sequence[Task]) -> dict[int, str | 
         elif t.type == TaskType.ACTOR_SCRAPE:
             actor_id = payload.get("actor_id")
             title = actor_names.get(int(actor_id)) if isinstance(actor_id, int) else None
-        elif t.type in (TaskType.REFRESH, TaskType.ORGANIZE):
+        elif t.type in (TaskType.REFRESH, TaskType.ORGANIZE, TaskType.TRASH):
             library_id = payload.get("library_id")
             title = library_names.get(int(library_id)) if isinstance(library_id, int) else None
         out[t.id] = title
