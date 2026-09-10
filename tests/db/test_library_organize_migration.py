@@ -241,8 +241,8 @@ def test_library_path_template_optional_groups_rewrites_and_drops_cd_suffix(tmp_
         assert "cd_suffix_template" not in columns
         rows = conn.execute(text("SELECT name, video_template, nfo_template FROM libraries ORDER BY name")).all()
         by_name = {row.name: row for row in rows}
-        assert by_name["a"].video_template == "{mosaic?}/{def?}/{number}[-Part {cd?}][-{sub?}].{ext}"
-        assert by_name["a"].nfo_template == "{mosaic?}/{number}.nfo"
+        assert by_name["a"].video_template == "{mosaic?|censored=}/{def?}/{number}[-Part {cd?}][-{sub?}].{ext}"
+        assert by_name["a"].nfo_template == "{mosaic?|censored=}/{number}.nfo"
         assert by_name["b"].video_template == "{studio}/{number}/{number}[-{sub?}].{ext}"
 
     engine.dispose()
@@ -275,5 +275,60 @@ def test_library_strm_content_template_backfilled_for_existing_rows(tmp_path: Pa
         assert "strm_content_template" in columns
         row = conn.execute(text("SELECT strm_content_template FROM libraries")).one()
         assert row.strm_content_template is None
+
+    engine.dispose()
+
+
+def test_library_mosaic_placeholders_gain_censored_mapping(tmp_path: Path) -> None:
+    """存量 `{mosaic?}` 补 censored 映射; 已写 censored 或无该占位符的模板不改."""
+    db_path = tmp_path / "migrate.db"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    command.upgrade(cfg, "0980003004e2")
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO libraries "
+                "(name, path, automation, recursive, patterns, move_mode, link_mode, video_template, "
+                "write_nfo, copy_resources, trailer_pattern, blacklist_patterns, subtitle_extensions, "
+                "min_file_size, nfo_template, subtitle_template, strm_content_template) "
+                "VALUES ('a', '/m', 'SCRAPE', 1, '[]', 'MOVE', 'STRM', "
+                "'{mosaic?}/{number}[-{mosaic?|cracked=U}].{ext}', 1, "
+                "'[]', '', '[]', '[]', 0, '{mosaic?|=有码}/{number}.nfo', "
+                "'{mosaic?}/{raw_srt_name}.{ext}', '{mosaic?}/{video_relpath}')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO libraries "
+                "(name, path, automation, recursive, patterns, move_mode, link_mode, video_template, "
+                "write_nfo, copy_resources, trailer_pattern, blacklist_patterns, subtitle_extensions, "
+                "min_file_size, nfo_template) "
+                "VALUES ('b', '/n', 'SCRAPE', 1, '[]', 'MOVE', 'STRM', "
+                "'{studio}/{number}/{number}.{ext}', 1, "
+                "'[]', '', '[]', '[]', 0, '{mosaic?|censored=有码}/{number}.nfo')"
+            )
+        )
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as conn:
+        rows = {
+            row.name: row
+            for row in conn.execute(
+                text(
+                    "SELECT name, video_template, nfo_template, subtitle_template, strm_content_template FROM libraries"
+                )
+            ).all()
+        }
+        assert rows["a"].video_template == "{mosaic?|censored=}/{number}[-{mosaic?|cracked=U,censored=}].{ext}"
+        assert rows["a"].nfo_template == "{mosaic?|=有码,censored=有码}/{number}.nfo"
+        assert rows["a"].subtitle_template == "{mosaic?|censored=}/{raw_srt_name}.{ext}"
+        assert rows["a"].strm_content_template == "{mosaic?|censored=}/{video_relpath}"
+        assert rows["b"].video_template == "{studio}/{number}/{number}.{ext}"
+        assert rows["b"].nfo_template == "{mosaic?|censored=有码}/{number}.nfo"
 
     engine.dispose()

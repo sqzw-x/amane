@@ -27,6 +27,7 @@ from amane.organize.template import (
     PathEngine,
     TemplateContext,
     actress_names,
+    inject_censored_mosaic_mapping,
 )
 from amane.parsing import parse_file_info
 
@@ -232,6 +233,32 @@ class TestValueMapping:
     def test_map_present_to_empty_omits_group(self):
         rendered = render_path_template("x[{mosaic?|uncensored=}]", {"mosaic?": "uncensored"})
         assert rendered == "x"
+
+
+INJECT_CENSORED_CASES: list[tuple[str, str]] = [
+    ("{studio}/{number}.{ext}", "{studio}/{number}.{ext}"),
+    ("{mosaic?}/{number}.{ext}", "{mosaic?|censored=}/{number}.{ext}"),
+    ("{number}[-{mosaic?|cracked=U}{sub?}].{ext}", "{number}[-{mosaic?|cracked=U,censored=}{sub?}].{ext}"),
+    ("{mosaic?|=有码}/{number}.{ext}", "{mosaic?|=有码,censored=有码}/{number}.{ext}"),
+    (
+        "{mosaic?|=有码,uncensored=无码,cracked=U}",
+        "{mosaic?|=有码,uncensored=无码,cracked=U,censored=有码}",
+    ),
+    ("{mosaic?|censored=有码}/{number}.{ext}", "{mosaic?|censored=有码}/{number}.{ext}"),
+    ("{mosaic?|cracked=U,censored=}", "{mosaic?|cracked=U,censored=}"),
+    (
+        "{mosaic?}/{number}[-{mosaic?|uncensored=无码}].{ext}",
+        "{mosaic?|censored=}/{number}[-{mosaic?|uncensored=无码,censored=}].{ext}",
+    ),
+    ("{mosaic?|}", "{mosaic?|}"),
+]
+
+
+@pytest.mark.parametrize(("source", "expected"), INJECT_CENSORED_CASES)
+def test_inject_censored_mosaic_mapping(source: str, expected: str) -> None:
+    assert inject_censored_mosaic_mapping(source) == expected
+    if expected != "{mosaic?|}":
+        assert validate_path_template(expected) == expected
 
 
 class TestValidatePathTemplate:
