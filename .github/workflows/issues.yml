@@ -1,0 +1,97 @@
+# Issue 分诊.
+# 网页模板选择器对 CLI / REST API 不生效; 模板提交由 GitHub 写入 kind:* label.
+# 无 label 视为未走模板. status:needs-info / kind:question 等待回复, 无活动则标记再关闭.
+
+name: Issues
+
+on:
+  issues:
+    types: [opened, reopened]
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+
+jobs:
+  reject-blank:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Close unlabeled issues
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const association = issue.author_association;
+            const privileged = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            if (privileged.includes(association)) {
+              core.info(`skip privileged author_association=${association}`);
+              return;
+            }
+            if (issue.user?.type === 'Bot') {
+              core.info('skip bot');
+              return;
+            }
+
+            const labels = (issue.labels || []).map((label) =>
+              typeof label === 'string' ? label : label.name,
+            );
+            if (labels.length > 0) {
+              core.info(`skip labeled: ${labels.join(', ')}`);
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const number = issue.number;
+            const body = [
+              '**❗ 此 Issue 疑似由 AI 创建**',
+              '',
+              '此 Issue 无任何 label, 疑似通过 GitHub CLI 或 API 创建, 这是 AI Agent 的典型行为特征, 此类 Issue 将被直接关闭',
+              '',
+              `本仓库仅受理由真实用户通过网页端模板创建撰写的 Issue. [详情查看本项目 AI policy](https://github.com/${owner}/${repo}/blob/main/AI_POLICY.md)`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: number,
+              body,
+            });
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: number,
+              labels: ['status:invalid'],
+            });
+            await github.rest.issues.update({
+              owner,
+              repo,
+              issue_number: number,
+              state: 'closed',
+              state_reason: 'not_planned',
+            });
+            core.info(`closed #${number} (unlabeled)`);
+
+  stale:
+    if: github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Stale needs-info and questions
+        uses: actions/stale@v11
+        with:
+          days-before-issue-stale: 14
+          days-before-issue-close: 7
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          any-of-issue-labels: "status:needs-info,kind:question"
+          stale-issue-label: "status:stale"
+          exempt-issue-labels: "pinned,security"
+          ascending: true
+          close-issue-reason: not_planned
+          stale-issue-message: |
+            此 Issue 带有 `status:needs-info` 或 `kind:question`, 且已超过 14 天无活动. 7 天内仍无回复将自动关闭. 回复或补充信息后将移除过期标记.
+          close-issue-message: |
+            此 Issue 因持续无活动已自动关闭. 仍需处理请重新打开, 并补充此前要求的信息.
