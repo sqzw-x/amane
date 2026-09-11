@@ -328,16 +328,16 @@
     "number": "番号",
     "rescrape": {
       "limit": {
-        "label": "单次补刮数量",
-        "description": "每个已选对象各自最多补刮的条数, 选取最久未更新的条目"
+        "label": "数量上限",
+        "description": ""
       },
       "min_age_days": {
         "label": "最小间隔（天）",
         "description": "仅处理超过此间隔未更新的条目"
       },
       "targets": {
-        "label": "补刮对象",
-        "description": "影片与演员各自按最久未更新取上述条数",
+        "label": "范围",
+        "description": "各类型分别计数",
         "$": {
           "options": {
             "metadata": "影片",
