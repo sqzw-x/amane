@@ -49,6 +49,29 @@
       "monthly": "每月 {{day}} 日 {{time}}"
     }
   },
+  "payload": {
+    "title": "任务内容",
+    "joiner": " · ",
+    "listJoiner": "、",
+    "unset": "沿用配置",
+    "yes": "是",
+    "no": "否",
+    "cleanup": {
+      "none": "两项均关闭"
+    },
+    "upscale": {
+      "limit": "每次最多 {{limit}}",
+      "maxDim": "最长边低于 {{value}}",
+      "maxBytes": "文件小于 {{value}} 字节"
+    },
+    "r18_import": {
+      "skipUnchanged": "远程未变化则跳过"
+    },
+    "rescrape": {
+      "limit": "每类 {{limit}} 条",
+      "minAge": "超过 {{days}} 天未更新"
+    }
+  },
   "labels": {
     "nextRun": "下次执行",
     "never": "从未执行"

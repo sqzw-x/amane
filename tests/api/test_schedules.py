@@ -33,6 +33,8 @@ class TestSchedules:
         assert data["task_type"] == "cleanup"
         assert data["enabled"] is True
         assert data["payload"]["remove_missing_files"] is False
+        assert data["payload"]["type"] == "cleanup"
+        assert data["payload"]["remove_unreferenced_resources"] is True
         fetched = await client.get(f"schedules/{data['id']}")
         assert fetched.status_code == 200
         assert fetched.json()["id"] == data["id"]
@@ -73,6 +75,12 @@ class TestSchedules:
         assert listed.json()["total"] == 4
 
         sched = await repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={}, name="old")
+        sparse = await client.get(f"schedules/{sched.id}")
+        assert sparse.json()["payload"] == {
+            "type": "cleanup",
+            "remove_missing_files": True,
+            "remove_unreferenced_resources": True,
+        }
         patched = await client.patch(f"schedules/{sched.id}", json={"name": "updated", "enabled": False})
         assert patched.json()["name"] == "updated"
         assert patched.json()["enabled"] is False

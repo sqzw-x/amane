@@ -5358,9 +5358,30 @@ export const ScheduleResponseSchema = {
             $ref: '#/components/schemas/RoutineType'
         },
         payload: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Payload'
+            oneOf: [
+                {
+                    $ref: '#/components/schemas/CleanupSubmission'
+                },
+                {
+                    $ref: '#/components/schemas/UpscaleSubmission'
+                },
+                {
+                    $ref: '#/components/schemas/R18ImportSubmission'
+                },
+                {
+                    $ref: '#/components/schemas/RescrapeSubmission'
+                }
+            ],
+            title: 'Payload',
+            discriminator: {
+                propertyName: 'type',
+                mapping: {
+                    cleanup: '#/components/schemas/CleanupSubmission',
+                    r18_import: '#/components/schemas/R18ImportSubmission',
+                    rescrape: '#/components/schemas/RescrapeSubmission',
+                    upscale: '#/components/schemas/UpscaleSubmission'
+                }
+            }
         },
         enabled: {
             type: 'boolean',
@@ -5396,6 +5417,7 @@ export const ScheduleResponseSchema = {
         'id',
         'cron',
         'task_type',
+        'payload',
         'enabled'
     ],
     title: 'ScheduleResponse'

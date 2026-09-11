@@ -2661,9 +2661,15 @@ export type ScheduleResponse = {
     /**
      * Payload
      */
-    payload?: {
-        [key: string]: unknown;
-    };
+    payload: ({
+        type: 'cleanup';
+    } & CleanupSubmission) | ({
+        type: 'upscale';
+    } & UpscaleSubmission) | ({
+        type: 'r18_import';
+    } & R18ImportSubmission) | ({
+        type: 'rescrape';
+    } & RescrapeSubmission);
     /**
      * Enabled
      */

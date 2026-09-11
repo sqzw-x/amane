@@ -8,9 +8,11 @@ from pydantic import BaseModel
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 
+from ..api.models.schedules import ScheduleListResponse, ScheduleResponse
 from ..api.models.tasks import RoutineSubmission
 from ..db.models import RoutineType, Schedule
 from ..db.repo_types import ScheduleUpdates
+from ..utils.model import to_resp
 from .tools import AgentDeps, require_approval, trace_tool
 
 
@@ -31,40 +33,8 @@ class AgentScheduleUpdate(BaseModel):
     enabled: bool | None = None
 
 
-class ScheduleInfo(BaseModel):
-    id: int
-    name: str | None
-    cron: str
-    task_type: RoutineType
-    payload: dict[str, object]
-    enabled: bool
-    last_run: datetime | None
-    next_run: datetime | None
-
-
-class ScheduleListResult(BaseModel):
-    items: list[ScheduleInfo]
-    total: int
-
-
-def _as_utc(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-
-
-def _schedule_info(schedule: Schedule) -> ScheduleInfo:
-    assert schedule.id is not None
-    return ScheduleInfo(
-        id=schedule.id,
-        name=schedule.name,
-        cron=schedule.cron,
-        task_type=RoutineType(schedule.task_type),
-        payload=dict(schedule.payload or {}),
-        enabled=schedule.enabled,
-        last_run=_as_utc(schedule.last_run),
-        next_run=_as_utc(schedule.next_run),
-    )
+def _schedule_info(schedule: Schedule) -> ScheduleResponse:
+    return to_resp(ScheduleResponse, schedule)
 
 
 def build_schedule_ops_capability() -> Capability[AgentDeps]:
@@ -89,7 +59,7 @@ def build_schedule_ops_capability() -> Capability[AgentDeps]:
         """List all routine schedules."""
         trace_tool(ctx, "tool_call", {"tool": "list_schedules"})
         schedules = await ctx.deps.repo.list_schedules()
-        out = ScheduleListResult(items=[_schedule_info(schedule) for schedule in schedules], total=len(schedules))
+        out = ScheduleListResponse(items=[_schedule_info(schedule) for schedule in schedules], total=len(schedules))
         result = out.model_dump(mode="json")
         trace_tool(ctx, "tool_result", {"tool": "list_schedules", "result": result})
         return result
