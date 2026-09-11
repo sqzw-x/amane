@@ -9,8 +9,8 @@ import {
   Stack,
   Switch,
   Table,
-  TagsInput,
   Text,
+  Textarea,
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -30,6 +30,7 @@ import { useIdSelection } from "@/hooks/use-id-selection";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import { feedDisplayName, feedGroup, type FeedSourceSortField } from "@/lib/feeds/groups";
+import { parseIgnoreKeywordsText } from "@/lib/feeds/keywords";
 import { useUIStore } from "@/stores/ui";
 
 const CELL_OVERFLOW = { overflow: "hidden", maxWidth: 0 } as const;
@@ -110,7 +111,7 @@ export function FeedSourcesTable({
   const [batchKind, setBatchKind] = useState<BatchKind | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [keywordOpen, setKeywordOpen] = useState(false);
-  const [keywordDraft, setKeywordDraft] = useState<string[]>([]);
+  const [keywordDraft, setKeywordDraft] = useState("");
   const [keywordReplace, setKeywordReplace] = useState(false);
   const busy = batchKind != null || togglingId != null;
 
@@ -188,7 +189,7 @@ export function FeedSourcesTable({
     if (ids.length === 0) {
       return;
     }
-    const extra = keywordDraft.map((item) => item.trim()).filter((item) => item !== "");
+    const extra = parseIgnoreKeywordsText(keywordDraft);
     setBatchKind("keywords");
     try {
       showBatchResult(
@@ -269,14 +270,15 @@ export function FeedSourcesTable({
         centered
       >
         <Stack gap="md">
-          <TagsInput
+          <Textarea
             label={t("fields.ignoreKeywords")}
             description={t("fields.ignoreKeywordsHint")}
             placeholder={t("fields.ignoreKeywordsPlaceholder")}
             value={keywordDraft}
-            onChange={setKeywordDraft}
-            splitChars={[",", "，", "\n"]}
-            clearable
+            onChange={(event) => setKeywordDraft(event.currentTarget.value)}
+            autosize
+            minRows={3}
+            maxRows={10}
           />
           <Switch
             label={t("keywordDialog.replace")}
@@ -357,7 +359,7 @@ export function FeedSourcesTable({
               loading={batchKind === "keywords"}
               disabled={selectedIds.length === 0 || busy}
               onClick={() => {
-                setKeywordDraft([]);
+                setKeywordDraft("");
                 setKeywordReplace(false);
                 setKeywordOpen(true);
               }}

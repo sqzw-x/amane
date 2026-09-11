@@ -7,7 +7,7 @@ import {
   NumberInput,
   Stack,
   Switch,
-  TagsInput,
+  Textarea,
   TextInput,
 } from "@mantine/core";
 import { useTranslation } from "react-i18next";
@@ -17,6 +17,7 @@ import { EnumToggle } from "@/components/common/enum-toggle";
 import { encodeFormBody } from "@/components/schema-form/encode";
 import { CACHE_KINDS, CONTENT_TYPES } from "@/lib/exhaustive-maps";
 import { feedGroup, tryNormalizeFeedGroup } from "@/lib/feeds/groups";
+import { formatIgnoreKeywordsText, parseIgnoreKeywordsText } from "@/lib/feeds/keywords";
 
 export { feedDisplayName } from "@/lib/feeds/groups";
 
@@ -37,7 +38,7 @@ export type FeedFormState = {
   useCache: CacheKind[];
   enabled: boolean;
   autoEnqueue: boolean;
-  ignoreKeywords: string[];
+  ignoreKeywords: string;
 };
 
 export function toSeconds(value: number, unit: IntervalUnit): number {
@@ -114,7 +115,7 @@ export function emptyFeedForm(): FeedFormState {
     useCache: [...CACHE_KINDS],
     enabled: true,
     autoEnqueue: true,
-    ignoreKeywords: [],
+    ignoreKeywords: "",
   };
 }
 
@@ -131,7 +132,7 @@ export function feedFormFromResponse(feed: FeedResponse): FeedFormState {
     useCache: feed.use_cache ?? [],
     enabled: feed.enabled,
     autoEnqueue: feed.auto_enqueue,
-    ignoreKeywords: feed.ignore_keywords ?? [],
+    ignoreKeywords: formatIgnoreKeywordsText(feed.ignore_keywords ?? []),
   };
 }
 
@@ -148,7 +149,7 @@ export function feedFormToBody(form: FeedFormState): FeedCreateRequest {
     use_cache: form.useCache,
     enabled: form.enabled,
     auto_enqueue: form.autoEnqueue,
-    ignore_keywords: form.ignoreKeywords,
+    ignore_keywords: parseIgnoreKeywordsText(form.ignoreKeywords),
   }) as FeedCreateRequest;
 }
 
@@ -249,14 +250,15 @@ export function FeedFormFields({
           ))}
         </Group>
       </Checkbox.Group>
-      <TagsInput
+      <Textarea
         label={t("fields.ignoreKeywords")}
         description={t("fields.ignoreKeywordsHint")}
         placeholder={t("fields.ignoreKeywordsPlaceholder")}
         value={form.ignoreKeywords}
-        onChange={(ignoreKeywords) => patch({ ignoreKeywords })}
-        splitChars={[",", "，", "\n"]}
-        clearable
+        onChange={(event) => patch({ ignoreKeywords: event.currentTarget.value })}
+        autosize
+        minRows={3}
+        maxRows={10}
       />
       <Switch
         label={t("fields.enabled")}
