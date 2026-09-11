@@ -1,0 +1,58 @@
+/* 未读用品牌色左边线 / 浅底 / 阴影与已读平铺行区分; 勾选叠一层品牌浅底. */
+
+.row {
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.row[data-unread="true"] {
+  border-bottom-color: transparent;
+  padding: 4px 8px;
+}
+
+.card {
+  position: relative;
+}
+
+.row[data-unread="true"] .card {
+  background: light-dark(
+    color-mix(in srgb, var(--mantine-color-brand-1) 78%, var(--mantine-color-body)),
+    color-mix(in srgb, var(--mantine-color-brand-8) 22%, var(--mantine-color-body))
+  );
+  border-radius: var(--mantine-radius-md);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--mantine-color-brand-6) 22%, transparent);
+}
+
+.row[data-unread="true"] .card::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: light-dark(var(--mantine-color-brand-6), var(--mantine-color-brand-4));
+}
+
+.row[data-selected="true"]:not([data-unread="true"]) .card {
+  background: var(--mantine-color-brand-light);
+}
+
+.row[data-unread="true"][data-selected="true"] .card {
+  background: light-dark(
+    var(--mantine-color-brand-1),
+    color-mix(in srgb, var(--mantine-color-brand-8) 28%, var(--mantine-color-body))
+  );
+  box-shadow:
+    0 0 0 1px var(--mantine-color-brand-4),
+    0 4px 14px color-mix(in srgb, var(--mantine-color-brand-6) 22%, transparent);
+}
+
+.row[data-unread="true"][data-expanded="true"] .card {
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--mantine-color-brand-6) 28%, transparent);
+}
+
+.row[data-unread="true"][data-selected="true"][data-expanded="true"] .card {
+  box-shadow:
+    0 0 0 1px var(--mantine-color-brand-4),
+    0 8px 20px color-mix(in srgb, var(--mantine-color-brand-6) 28%, transparent);
+}

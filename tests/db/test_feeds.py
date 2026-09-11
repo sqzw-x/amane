@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from amane.db.models import FeedItemState, TaskType
+from amane.db.models import FeedItemReadState, FeedItemState, TaskType
 from amane.db.repository import Repository
 
 
@@ -76,6 +76,49 @@ async def test_list_feed_items_rejects_unknown_state(repo: Repository) -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(
+    ("state", "read", "expected_keys"),
+    [
+        (FeedItemState.ACTIVE, FeedItemReadState.ALL, ["read-active", "unread-active"]),
+        (FeedItemState.ACTIVE, FeedItemReadState.UNREAD, ["unread-active"]),
+        (FeedItemState.ACTIVE, FeedItemReadState.READ, ["read-active"]),
+        (FeedItemState.IGNORED, FeedItemReadState.UNREAD, ["unread-ignored"]),
+        (FeedItemState.IGNORED, FeedItemReadState.READ, ["read-ignored"]),
+        (FeedItemState.ALL, FeedItemReadState.UNREAD, ["unread-ignored", "unread-active"]),
+        (FeedItemState.ALL, FeedItemReadState.READ, ["read-ignored", "read-active"]),
+        (FeedItemState.ALL, FeedItemReadState.ALL, ["read-ignored", "unread-ignored", "read-active", "unread-active"]),
+    ],
+)
+async def test_list_feed_items_read_filters(
+    repo: Repository, state: FeedItemState, read: FeedItemReadState, expected_keys: list[str]
+) -> None:
+    feed = await repo.create_feed(name="feed", url="https://example.com/read.xml")
+    assert feed.id is not None
+    unread_active = await repo.create_feed_item(feed.id, "unread-active")
+    read_active = await repo.create_feed_item(feed.id, "read-active")
+    unread_ignored = await repo.create_feed_item(feed.id, "unread-ignored")
+    read_ignored = await repo.create_feed_item(feed.id, "read-ignored")
+    assert read_active.id is not None and unread_ignored.id is not None and read_ignored.id is not None
+    await repo.mark_feed_items_read(feed.id, [read_active.id, read_ignored.id])
+    await repo.ignore_feed_items(feed.id, [unread_ignored.id, read_ignored.id])
+
+    rows, total = await repo.list_feed_items(feed.id, state=state, read=read)
+
+    assert total == len(expected_keys)
+    assert [item.item_key for item, _ in rows] == expected_keys
+    assert unread_active.read_at is None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_list_feed_items_rejects_unknown_read_state(repo: Repository) -> None:
+    feed = await repo.create_feed(name="feed", url="https://example.com/read-state.xml")
+    assert feed.id is not None
+
+    with pytest.raises(ValueError, match="Unknown feed item read state"):
+        await repo.list_feed_items(feed.id, read="unexpected")
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_feed_item_batch_actions_are_scoped_and_idempotent(repo: Repository) -> None:
     feed = await repo.create_feed(name="feed", url="https://example.com/actions.xml")
     other_feed = await repo.create_feed(name="other", url="https://example.com/other.xml")
@@ -107,6 +150,39 @@ async def test_feed_item_batch_actions_are_scoped_and_idempotent(repo: Repositor
     other_rows, other_total = await repo.list_feed_items(other_feed.id, state=FeedItemState.ALL)
     assert other_total == 1
     assert other_rows[0][0].id == foreign.id
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_feed_item_read_actions_are_scoped_and_idempotent(repo: Repository) -> None:
+    feed = await repo.create_feed(name="feed", url="https://example.com/read-actions.xml")
+    other_feed = await repo.create_feed(name="other", url="https://example.com/read-other.xml")
+    assert feed.id is not None and other_feed.id is not None
+    first = await repo.create_feed_item(feed.id, "first")
+    second = await repo.create_feed_item(feed.id, "second")
+    foreign = await repo.create_feed_item(other_feed.id, "foreign")
+    assert first.id is not None and second.id is not None and foreign.id is not None
+
+    affected, missing = await repo.mark_feed_items_read(feed.id, [first.id, first.id, foreign.id, 9999])
+    assert (affected, missing) == (1, 2)
+
+    rows, _ = await repo.list_feed_items(feed.id, state=FeedItemState.ALL, read=FeedItemReadState.READ)
+    assert len(rows) == 1
+    assert rows[0][0].id == first.id
+    assert rows[0][0].read_at is not None
+
+    affected, missing = await repo.mark_feed_items_read(feed.id, [first.id])
+    assert (affected, missing) == (1, 0)
+
+    affected, missing = await repo.mark_feed_items_unread(feed.id, [first.id, second.id])
+    assert (affected, missing) == (2, 0)
+    rows, total = await repo.list_feed_items(feed.id, state=FeedItemState.ALL, read=FeedItemReadState.UNREAD)
+    assert total == 2
+    assert {item.item_key for item, _ in rows} == {"first", "second"}
+    _, other_total = await repo.list_feed_items(other_feed.id, state=FeedItemState.ALL, read=FeedItemReadState.READ)
+    assert other_total == 0
+    remaining_rows, _ = await repo.list_feed_items(other_feed.id, state=FeedItemState.ALL)
+    assert remaining_rows[0][0].id == foreign.id
+    assert remaining_rows[0][0].read_at is None
 
 
 @pytest.mark.asyncio(loop_scope="function")

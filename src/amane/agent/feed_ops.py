@@ -9,7 +9,7 @@ from pydantic_ai.capabilities import Capability
 from sqlalchemy.exc import IntegrityError
 
 from ..api.models.feeds import FeedItemBatchAction, _validate_http_url, _validate_number_pattern, normalize_feed_group
-from ..db.models import Feed, FeedItem, FeedItemState, TaskType
+from ..db.models import Feed, FeedItem, FeedItemReadState, FeedItemState, TaskType
 from ..db.repo_types import FeedUpdates
 from ..handlers.models import CacheKind, ScrapePayload, build_feed_scrape_payload
 from ..parsing import ContentType
@@ -79,6 +79,7 @@ class FeedItemInfo(BaseModel):
     published_at: datetime | None
     created_at: datetime
     ignored_at: datetime | None
+    read_at: datetime | None
     metadata_id: int | None
 
 
@@ -140,6 +141,7 @@ def _feed_item_info(item: FeedItem, metadata_id: int | None) -> FeedItemInfo:
         published_at=_as_utc(item.published_at),
         created_at=_as_utc(item.created_at) or datetime.now(UTC),
         ignored_at=_as_utc(item.ignored_at),
+        read_at=_as_utc(item.read_at),
         metadata_id=metadata_id,
     )
 
@@ -209,7 +211,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         id="feed-ops",
         description=(
             "Use for managing RSS/Atom feeds and their item history: create, update, poll, "
-            "delete feeds, browse items, and batch ignore/unignore/delete/scrape items."
+            "delete feeds, browse items, and batch ignore/unignore/read/unread/delete/scrape items."
         ),
         instructions=(
             "Feed polling discovers items and may enqueue low-priority SCRAPE tasks according to "
@@ -346,6 +348,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         feed_id: int | None = None,
         search: str | None = None,
         state: FeedItemState = FeedItemState.ACTIVE,
+        read: FeedItemReadState = FeedItemReadState.ALL,
         group: str | None = None,
         offset: int = 0,
         limit: int = 50,
@@ -370,6 +373,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 "feed_id": feed_id,
                 "search": search,
                 "state": state,
+                "read": read,
                 "group": group,
                 "offset": offset,
                 "limit": limit,
@@ -382,6 +386,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 limit=limit,
                 search=search.strip() if search is not None else None,
                 state=state,
+                read=read,
                 group=group if feed_id is None else None,
             )
         except ValueError as exc:
@@ -400,7 +405,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
     async def batch_feed_items(
         ctx: RunContext[AgentDeps], feed_id: int, request: AgentFeedItemBatch
     ) -> dict[str, object]:
-        """Batch ignore, unignore, delete, or scrape feed items."""
+        """Batch ignore, unignore, read, unread, delete, or scrape feed items."""
         trace_tool(
             ctx,
             "tool_call",
@@ -427,6 +432,12 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
             out = FeedBatchResult(action=request.action, affected=affected, missing=missing)
         elif request.action is FeedItemBatchAction.UNIGNORE:
             affected, missing = await ctx.deps.repo.unignore_feed_items(feed_id, request.ids)
+            out = FeedBatchResult(action=request.action, affected=affected, missing=missing)
+        elif request.action is FeedItemBatchAction.READ:
+            affected, missing = await ctx.deps.repo.mark_feed_items_read(feed_id, request.ids)
+            out = FeedBatchResult(action=request.action, affected=affected, missing=missing)
+        elif request.action is FeedItemBatchAction.UNREAD:
+            affected, missing = await ctx.deps.repo.mark_feed_items_unread(feed_id, request.ids)
             out = FeedBatchResult(action=request.action, affected=affected, missing=missing)
         elif request.action is FeedItemBatchAction.DELETE:
             affected, missing = await ctx.deps.repo.delete_feed_items(feed_id, request.ids)

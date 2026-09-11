@@ -820,7 +820,7 @@ export type FeedCreateRequest = {
 /**
  * FeedItemBatchAction
  */
-export type FeedItemBatchAction = 'ignore' | 'unignore' | 'delete' | 'scrape';
+export type FeedItemBatchAction = 'ignore' | 'unignore' | 'read' | 'unread' | 'delete' | 'scrape';
 
 /**
  * FeedItemBatchRequest
@@ -874,6 +874,11 @@ export type FeedItemListResponse = {
 };
 
 /**
+ * FeedItemReadState
+ */
+export type FeedItemReadState = 'unread' | 'read' | 'all';
+
+/**
  * FeedItemResponse
  */
 export type FeedItemResponse = {
@@ -917,6 +922,10 @@ export type FeedItemResponse = {
      * Ignored At
      */
     ignored_at?: string | null;
+    /**
+     * Read At
+     */
+    read_at?: string | null;
     /**
      * Metadata Id
      */
@@ -4854,6 +4863,7 @@ export type ListAllFeedItemsData = {
          */
         search?: string | null;
         state?: FeedItemState;
+        read?: FeedItemReadState;
         /**
          * Feed Id
          */
@@ -5026,6 +5036,7 @@ export type ListFeedItemsData = {
          */
         search?: string | null;
         state?: FeedItemState;
+        read?: FeedItemReadState;
         /**
          * Offset
          */

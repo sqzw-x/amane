@@ -222,4 +222,18 @@ class TestFeedGroup:
         assert listed.status_code == 200
         jav_item = next(item for item in listed.json()["items"] if item["item_key"] == "j1")
         assert jav_item["description"] == "<p>hello</p>"
+        assert jav_item["read_at"] is None
+        marked = await client.post(f"feeds/{jav.id}/items/batch", json={"action": "read", "ids": [jav_item["id"]]})
+        assert marked.status_code == 200
+        assert marked.json()["affected"] == 1
+        unread = await client.get("feeds/items", params={"state": "all", "read": "unread"})
+        assert unread.status_code == 200
+        assert all(item["item_key"] != "j1" for item in unread.json()["items"])
+        seen = await client.get("feeds/items", params={"state": "all", "read": "read"})
+        assert seen.status_code == 200
+        read_item = next(item for item in seen.json()["items"] if item["item_key"] == "j1")
+        assert read_item["read_at"] is not None
+        restored = await client.post(f"feeds/{jav.id}/items/batch", json={"action": "unread", "ids": [jav_item["id"]]})
+        assert restored.status_code == 200
+        assert (await client.get("feeds/items", params={"read": "nope"})).status_code == 422
         assert (await client.get("feeds/items", params={"feed_id": 9999})).status_code == 404

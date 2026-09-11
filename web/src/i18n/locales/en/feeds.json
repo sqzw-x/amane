@@ -13,6 +13,11 @@
     "ignored": "Ignored",
     "all": "All"
   },
+  "historyReadStates": {
+    "unread": "Unread",
+    "read": "Read",
+    "all": "All"
+  },
   "sidebar": {
     "title": "Feeds",
     "all": "All feeds",
@@ -32,7 +37,14 @@
     "selectPage": "Select page",
     "itemCount": "{{count}} items",
     "itemCount_one": "{{count}} item",
-    "itemCount_other": "{{count}} items"
+    "itemCount_other": "{{count}} items",
+    "shortcutHint": "← → switch article",
+    "dateBuckets": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "thisWeek": "This week",
+      "lastWeek": "Last week"
+    }
   },
   "importOpml": "Import OPML",
   "importTitle": "Import from OPML",
@@ -135,7 +147,9 @@
     "disableAutoEnqueueSelected": "Discover only",
     "rescrape": "Rescrape",
     "ignore": "Ignore",
-    "unignore": "Restore"
+    "unignore": "Restore",
+    "markRead": "Mark as read",
+    "markUnread": "Mark as unread"
   },
   "confirm": {
     "deleteTitle": "Delete feed",

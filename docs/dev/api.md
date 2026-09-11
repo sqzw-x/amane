@@ -70,7 +70,7 @@ Starlette WS 不支持 `Depends`, `ws.py` 手动取 `ws.app.state.runtime`. 插�
 
 `POST /tasks/batch` 选择集互斥: `task_ids` **或** 与列表同形的 `status`/`type` (未传则不限). `cancel` 把排队/运行中标 `failed` + `error="Cancelled by user"`, 不删行; `delete` 只动终态并清除磁盘产物; `retry` 只对 `failed` 按原 type/payload/priority 再入队 (返回新 `task_ids`). 筛选范围与 action 允许状态求交后为空 → `affected=0`. Worker 暂停是进程内标志, 不写 HotSettings; 只停 `claim_next_task`, 已认领的继续运行. 见 [task-system.md](task-system.md).
 
-FeedItem 的批量命令是单一 `POST /feeds/{feed_id}/items/batch`: 一个请求只携带一个 action (`ignore` / `unignore` / `delete` / `scrape`), 跨 Feed ID 计入 `missing`. `scrape` 从 Feed 表读取当前刮削配置并批量创建 SCRAPE Task; 无番号计入 `skipped`, 重复番号只创建一个任务. 详细状态语义见 [feeds.md](feeds.md). 源本身没有 batch 端点; 管理页循环 `POST /feeds/{id}/poll` / `PATCH` / `DELETE`.
+FeedItem 的批量命令是单一 `POST /feeds/{feed_id}/items/batch`: 一个请求只携带一个 action (`ignore` / `unignore` / `read` / `unread` / `delete` / `scrape`), 跨 Feed ID 计入 `missing`. `scrape` 从 Feed 表读取当前刮削配置并批量创建 SCRAPE Task; 无番号计入 `skipped`, 重复番号只创建一个任务. 详细状态语义见 [feeds.md](feeds.md). 源本身没有 batch 端点; 管理页循环 `POST /feeds/{id}/poll` / `PATCH` / `DELETE`.
 
 ## WebSocket
 

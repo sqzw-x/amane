@@ -131,6 +131,7 @@ class FeedItemResponse(BaseModel):
     published_at: datetime | None = None
     created_at: datetime
     ignored_at: datetime | None = None
+    read_at: datetime | None = None
     metadata_id: int | None = None
     """当前库里同番号 Metadata 的 id; 无则空. 列表 JOIN, 不是 FeedItem 列."""
 
@@ -143,6 +144,8 @@ class FeedItemListResponse(BaseModel):
 class FeedItemBatchAction(StrEnum):
     IGNORE = "ignore"
     UNIGNORE = "unignore"
+    READ = "read"
+    UNREAD = "unread"
     DELETE = "delete"
     SCRAPE = "scrape"
 

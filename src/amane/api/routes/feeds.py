@@ -4,7 +4,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.exc import IntegrityError
 
-from ...db import FeedItem, FeedItemState, TaskType
+from ...db import FeedItem, FeedItemReadState, FeedItemState, TaskType
 from ...handlers.models import CacheKind, ScrapePayload, build_feed_scrape_payload
 from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
@@ -51,6 +51,7 @@ def _item_resp(item: FeedItem, metadata_id: int | None) -> FeedItemResponse:
         published_at=item.published_at,
         created_at=item.created_at,
         ignored_at=item.ignored_at,
+        read_at=item.read_at,
         metadata_id=metadata_id,
     )
 
@@ -95,6 +96,7 @@ async def list_all_feed_items(
     repo: RepoDep,
     search: Annotated[str | None, Query()] = None,
     state: Annotated[FeedItemState, Query()] = FeedItemState.ACTIVE,
+    read: Annotated[FeedItemReadState, Query()] = FeedItemReadState.ALL,
     feed_id: Annotated[int | None, Query()] = None,
     group: Annotated[str | None, Query()] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -119,6 +121,7 @@ async def list_all_feed_items(
         limit=limit,
         search=search.strip() if search is not None else None,
         state=state,
+        read=read,
         group=normalized_group if feed_id is None else None,
     )
     return FeedItemListResponse(items=[_item_resp(item, metadata_id) for item, metadata_id in items], total=total)
@@ -207,6 +210,7 @@ async def list_feed_items(
     repo: RepoDep,
     search: Annotated[str | None, Query()] = None,
     state: Annotated[FeedItemState, Query()] = FeedItemState.ACTIVE,
+    read: Annotated[FeedItemReadState, Query()] = FeedItemReadState.ALL,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> FeedItemListResponse:
@@ -219,6 +223,7 @@ async def list_feed_items(
         limit=limit,
         search=search.strip() if search is not None else None,
         state=state,
+        read=read,
     )
     return FeedItemListResponse(items=[_item_resp(item, metadata_id) for item, metadata_id in items], total=total)
 
@@ -236,6 +241,12 @@ async def batch_feed_items(feed_id: int, req: FeedItemBatchRequest, repo: RepoDe
             response = FeedItemBatchResponse(affected=affected, missing=missing)
         case FeedItemBatchAction.UNIGNORE:
             affected, missing = await repo.unignore_feed_items(feed_id, req.ids)
+            response = FeedItemBatchResponse(affected=affected, missing=missing)
+        case FeedItemBatchAction.READ:
+            affected, missing = await repo.mark_feed_items_read(feed_id, req.ids)
+            response = FeedItemBatchResponse(affected=affected, missing=missing)
+        case FeedItemBatchAction.UNREAD:
+            affected, missing = await repo.mark_feed_items_unread(feed_id, req.ids)
             response = FeedItemBatchResponse(affected=affected, missing=missing)
         case FeedItemBatchAction.DELETE:
             affected, missing = await repo.delete_feed_items(feed_id, req.ids)

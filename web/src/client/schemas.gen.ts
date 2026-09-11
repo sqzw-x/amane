@@ -1437,6 +1437,8 @@ export const FeedItemBatchActionSchema = {
     enum: [
         'ignore',
         'unignore',
+        'read',
+        'unread',
         'delete',
         'scrape'
     ],
@@ -1521,6 +1523,16 @@ export const FeedItemListResponseSchema = {
         'total'
     ],
     title: 'FeedItemListResponse'
+} as const;
+
+export const FeedItemReadStateSchema = {
+    type: 'string',
+    enum: [
+        'unread',
+        'read',
+        'all'
+    ],
+    title: 'FeedItemReadState'
 } as const;
 
 export const FeedItemResponseSchema = {
@@ -1609,6 +1621,18 @@ export const FeedItemResponseSchema = {
                 }
             ],
             title: 'Ignored At'
+        },
+        read_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Read At'
         },
         metadata_id: {
             anyOf: [

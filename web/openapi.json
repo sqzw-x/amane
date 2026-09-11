@@ -2676,6 +2676,15 @@
             }
           },
           {
+            "name": "read",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FeedItemReadState",
+              "default": "all"
+            }
+          },
+          {
             "name": "feed_id",
             "in": "query",
             "required": false,
@@ -2962,6 +2971,15 @@
             "schema": {
               "$ref": "#/components/schemas/FeedItemState",
               "default": "active"
+            }
+          },
+          {
+            "name": "read",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FeedItemReadState",
+              "default": "all"
             }
           },
           {
@@ -6470,6 +6488,8 @@
         "enum": [
           "ignore",
           "unignore",
+          "read",
+          "unread",
           "delete",
           "scrape"
         ],
@@ -6551,6 +6571,15 @@
           "total"
         ],
         "title": "FeedItemListResponse"
+      },
+      "FeedItemReadState": {
+        "type": "string",
+        "enum": [
+          "unread",
+          "read",
+          "all"
+        ],
+        "title": "FeedItemReadState"
       },
       "FeedItemResponse": {
         "properties": {
@@ -6638,6 +6667,18 @@
               }
             ],
             "title": "Ignored At"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
           },
           "metadata_id": {
             "anyOf": [

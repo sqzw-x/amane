@@ -13,6 +13,8 @@ import type {
   DownloadableResource,
   FacetKind,
   FacetSortField,
+  FeedItemReadState,
+  FeedItemState,
   LibraryAutomation,
   LibraryIngest,
   LinkMode,
@@ -124,6 +126,10 @@ export const FACET_KINDS = exhaustiveTuple<FacetKind>()(
   "series",
   "user_tag",
 );
+
+export const FEED_ITEM_STATES = exhaustiveTuple<FeedItemState>()("active", "ignored", "all");
+
+export const FEED_ITEM_READ_STATES = exhaustiveTuple<FeedItemReadState>()("unread", "read", "all");
 
 /** 分类浏览页 kind (演员已独立为 /actors). */
 export const CATALOG_FACET_KINDS = exhaustiveTuple<Exclude<FacetKind, "actor">>()(
