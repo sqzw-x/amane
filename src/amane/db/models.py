@@ -355,6 +355,8 @@ class Feed(SQLModel, table=True):
     content_type: ContentType | None = None
     """显式内容类型; None 则 infer_content_type."""
     use_cache: list[str] = Field(default_factory=lambda: ["metadata", "trans"], sa_column=Column(JSON, nullable=False))
+    ignore_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    """字面量关键词; 新条目或保存后命中则写入 ignored_at, 不入队 SCRAPE."""
     etag: str | None = None
     last_modified: str | None = None
     next_fetch_at: datetime | None = None

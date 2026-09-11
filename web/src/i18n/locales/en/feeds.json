@@ -82,6 +82,9 @@
     "contentTypeAuto": "Infer automatically",
     "useCache": "Use Cache",
     "useCacheHint": "Checked uses that cache; otherwise refetch",
+    "ignoreKeywords": "Ignore keywords",
+    "ignoreKeywordsHint": "New items whose title, number, or body match are stored as ignored and not scraped. Saving also ignores matching items that are still active.",
+    "ignoreKeywordsPlaceholder": "compilation, omnibus",
     "cacheMetadata": "Metadata Cache",
     "cacheTrans": "Translation Cache",
     "enabled": "Enabled",
@@ -149,7 +152,8 @@
     "ignore": "Ignore",
     "unignore": "Restore",
     "markRead": "Mark as read",
-    "markUnread": "Mark as unread"
+    "markUnread": "Mark as unread",
+    "setIgnoreKeywords": "Set ignore keywords"
   },
   "confirm": {
     "deleteTitle": "Delete feed",
@@ -164,6 +168,12 @@
     "deleteItemsMessage_other": "Delete the selected {{count}} history entries? If the source returns them again, they will be treated as new items.",
     "deleteItemTitle": "Delete history",
     "deleteItemMessage": "Delete this history entry? If the source returns it again, it will be treated as a new item."
+  },
+  "keywordDialog": {
+    "title": "Set ignore keywords",
+    "replace": "Replace existing keywords",
+    "replaceHint": "Off appends to each feed’s current list; on replaces it with the list above.",
+    "apply": "Apply to selected feeds"
   },
   "batchActionResult": "Processed {{affected}} entries",
   "batchActionResultWithMissing": "Processed {{affected}}, {{missing}} no longer exist",

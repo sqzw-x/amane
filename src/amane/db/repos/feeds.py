@@ -7,8 +7,10 @@ from sqlalchemy import func, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...parsing import ContentType
+from ..feed_keywords import item_matches_ignore_keywords
 from ..models import Feed, FeedItem, FeedItemReadState, FeedItemState, Metadata
 from ..repo_types import FeedUpdates
 from .base import RepositoryMixinBase
@@ -30,6 +32,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
         number_pattern: str | None = None,
         content_type: ContentType | None = None,
         use_cache: list[str] | None = None,
+        ignore_keywords: list[str] | None = None,
         group: str = "",
     ) -> Feed:
         async with self._session() as session:
@@ -43,6 +46,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 number_pattern=number_pattern,
                 content_type=content_type,
                 use_cache=list(use_cache) if use_cache is not None else ["metadata", "trans"],
+                ignore_keywords=list(ignore_keywords) if ignore_keywords is not None else [],
             )
             session.add(feed)
             await session.commit()
@@ -97,6 +101,8 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 feed.content_type = updates["content_type"]
             if "use_cache" in updates:
                 feed.use_cache = updates["use_cache"]
+            if "ignore_keywords" in updates:
+                feed.ignore_keywords = updates["ignore_keywords"]
             if "etag" in updates:
                 feed.etag = updates["etag"]
             if "last_modified" in updates:
@@ -109,10 +115,40 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 feed.last_error = updates["last_error"]
             if "last_enqueued" in updates:
                 feed.last_enqueued = updates["last_enqueued"]
+            if "ignore_keywords" in updates and feed.ignore_keywords:
+                await self._ignore_matching_items(session, feed_id, feed.ignore_keywords or [])
             session.add(feed)
             await session.commit()
             await session.refresh(feed)
             return feed
+
+    async def _ignore_matching_items(self, session: AsyncSession, feed_id: int, keywords: list[str]) -> None:
+        result = await session.exec(
+            select(FeedItem).where(col(FeedItem.feed_id) == feed_id, col(FeedItem.ignored_at).is_(None))
+        )
+        now = datetime.now(UTC)
+        for item in result.all():
+            if item_matches_ignore_keywords(
+                keywords,
+                title=item.title,
+                number=item.number,
+                description=item.description,
+                item_key=item.item_key,
+            ):
+                item.ignored_at = now
+                session.add(item)
+
+    async def count_unread_feed_items(self, feed_id: int | None = None) -> dict[int, int]:
+        """未忽略且未读的条目数, 按 feed_id 分组."""
+        async with self._session() as session:
+            stmt = (
+                select(col(FeedItem.feed_id), count())
+                .where(col(FeedItem.ignored_at).is_(None), col(FeedItem.read_at).is_(None))
+                .group_by(col(FeedItem.feed_id))
+            )
+            if feed_id is not None:
+                stmt = stmt.where(col(FeedItem.feed_id) == feed_id)
+            return {fid: int(n) for fid, n in (await session.exec(stmt)).all() if fid is not None}
 
     async def delete_feed(self, feed_id: int) -> bool:
         """须同时删除 FeedItem, 否则留下悬空 FK."""
@@ -157,6 +193,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
         description: str | None = None,
         number: str | None = None,
         published_at: datetime | None = None,
+        ignored: bool = False,
     ) -> FeedItem:
         async with self._session() as session:
             item = FeedItem(
@@ -167,6 +204,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 description=description,
                 number=number,
                 published_at=published_at,
+                ignored_at=datetime.now(UTC) if ignored else None,
             )
             session.add(item)
             await session.commit()

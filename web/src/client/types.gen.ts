@@ -815,6 +815,10 @@ export type FeedCreateRequest = {
      * Use Cache
      */
     use_cache?: Array<CacheKind>;
+    /**
+     * Ignore Keywords
+     */
+    ignore_keywords?: Array<string>;
 };
 
 /**
@@ -993,6 +997,10 @@ export type FeedResponse = {
      */
     use_cache?: Array<CacheKind>;
     /**
+     * Ignore Keywords
+     */
+    ignore_keywords?: Array<string>;
+    /**
      * Next Fetch At
      */
     next_fetch_at?: string | null;
@@ -1008,6 +1016,10 @@ export type FeedResponse = {
      * Last Enqueued
      */
     last_enqueued?: number;
+    /**
+     * Unread Count
+     */
+    unread_count?: number;
 };
 
 /**
@@ -1047,6 +1059,10 @@ export type FeedUpdateRequest = {
      * Use Cache
      */
     use_cache?: Array<string> | null;
+    /**
+     * Ignore Keywords
+     */
+    ignore_keywords?: Array<string> | null;
 };
 
 /**

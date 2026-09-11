@@ -338,6 +338,7 @@ export function FeedReader({
       batchAcrossFeeds(items, ids, action),
     onSuccess: (result, vars) => {
       patchReadAt(vars.ids, vars.action === "read");
+      void queryClient.invalidateQueries({ queryKey: listFeedsQueryKey() });
       if (vars.notify === false) {
         return;
       }

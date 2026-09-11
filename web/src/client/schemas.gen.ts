@@ -1423,6 +1423,13 @@ export const FeedCreateRequestSchema = {
             type: 'array',
             uniqueItems: true,
             title: 'Use Cache'
+        },
+        ignore_keywords: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Ignore Keywords'
         }
     },
     type: 'object',
@@ -1747,6 +1754,13 @@ export const FeedResponseSchema = {
             type: 'array',
             title: 'Use Cache'
         },
+        ignore_keywords: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Ignore Keywords'
+        },
         next_fetch_at: {
             anyOf: [
                 {
@@ -1785,6 +1799,11 @@ export const FeedResponseSchema = {
         last_enqueued: {
             type: 'integer',
             title: 'Last Enqueued',
+            default: 0
+        },
+        unread_count: {
+            type: 'integer',
+            title: 'Unread Count',
             default: 0
         }
     },
@@ -1902,6 +1921,20 @@ export const FeedUpdateRequestSchema = {
                 }
             ],
             title: 'Use Cache'
+        },
+        ignore_keywords: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Ignore Keywords'
         }
     },
     type: 'object',

@@ -201,7 +201,7 @@ export function FeedArticle({
             <Tooltip label={unread ? t("actions.markRead") : t("actions.markUnread")}>
               <ActionIcon
                 variant={unread ? "light" : "subtle"}
-                color={unread ? "brand" : undefined}
+                color={unread ? "violet" : undefined}
                 disabled={busy}
                 onClick={unread ? onMarkRead : onMarkUnread}
               >

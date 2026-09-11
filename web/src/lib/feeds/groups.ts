@@ -64,6 +64,7 @@ export type FeedFolderNode = {
   name: string;
   children: FeedTreeNode[];
   feedCount: number;
+  unreadCount: number;
 };
 
 export type FeedLeafNode = {
@@ -100,6 +101,9 @@ function freezeFolder(node: MutableFolder): FeedFolderNode {
     name: node.name,
     children: [...folderChildren, ...feedChildren],
     feedCount: node.feeds.length + folderChildren.reduce((sum, child) => sum + child.feedCount, 0),
+    unreadCount:
+      node.feeds.reduce((sum, feed) => sum + (feed.unread_count ?? 0), 0) +
+      folderChildren.reduce((sum, child) => sum + child.unreadCount, 0),
   };
 }
 
@@ -216,6 +220,10 @@ export function sortFeedSources(
 ): FeedResponse[] {
   const dir = order === "asc" ? 1 : -1;
   return [...feeds].toSorted((a, b) => dir * compareFeedSources(a, b, sortBy));
+}
+
+export function sumFeedUnread(feeds: readonly FeedResponse[]): number {
+  return feeds.reduce((sum, feed) => sum + (feed.unread_count ?? 0), 0);
 }
 
 export function uniqueFeedGroups(feeds: readonly FeedResponse[]): string[] {

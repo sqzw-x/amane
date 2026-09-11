@@ -319,6 +319,7 @@ class FeedUpdates(TypedDict, total=False):
     number_pattern: str | None
     content_type: ContentType | None
     use_cache: list[str]
+    ignore_keywords: list[str]
     etag: str | None
     last_modified: str | None
     next_fetch_at: datetime | None

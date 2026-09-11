@@ -39,6 +39,8 @@ class TestFeedsCrud:
         assert set(data["use_cache"]) == {"metadata", "trans"}
         assert data["content_type"] is None
         assert data["group"] == ""
+        assert data["ignore_keywords"] == []
+        assert data["unread_count"] == 0
         off = await client.post("feeds", json=_body(url="https://example.com/manual.xml", auto_enqueue=False))
         assert off.status_code == 201
         assert off.json()["auto_enqueue"] is False
@@ -85,6 +87,12 @@ class TestFeedsCrud:
         empty_cache = await client.patch(f"feeds/{feed_id}", json={"use_cache": []})
         assert empty_cache.status_code == 200
         assert empty_cache.json()["use_cache"] == []
+
+        keywords = await client.patch(f"feeds/{feed_id}", json={"ignore_keywords": [" 合集 ", "合集", "総集編"]})
+        assert keywords.status_code == 200
+        assert keywords.json()["ignore_keywords"] == ["合集", "総集編"]
+        too_long = await client.patch(f"feeds/{feed_id}", json={"ignore_keywords": ["x" * 65]})
+        assert too_long.status_code == 422
 
         bad_interval = await client.patch(f"feeds/{feed_id}", json={"interval_seconds": 1})
         assert bad_interval.status_code == 422
@@ -237,3 +245,28 @@ class TestFeedGroup:
         assert restored.status_code == 200
         assert (await client.get("feeds/items", params={"read": "nope"})).status_code == 422
         assert (await client.get("feeds/items", params={"feed_id": 9999})).status_code == 404
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_ignore_keywords_and_unread_count(self, client: AsyncClient, repo: Repository):
+        created = (await client.post("feeds", json=_body(url="https://example.com/kw.xml"))).json()
+        feed_id = created["id"]
+        await repo.create_feed_item(feed_id, "keep", title="Regular")
+        await repo.create_feed_item(feed_id, "hit", title="超豪华合集 VOL.1")
+        listed = await client.get("feeds")
+        assert next(item for item in listed.json()["items"] if item["id"] == feed_id)["unread_count"] == 2
+        patched = await client.patch(f"feeds/{feed_id}", json={"ignore_keywords": ["合集"]})
+        assert patched.status_code == 200
+        assert patched.json()["ignore_keywords"] == ["合集"]
+        ignored = await client.get(f"feeds/{feed_id}/items", params={"state": "ignored"})
+        assert ignored.status_code == 200
+        assert ignored.json()["total"] == 1
+        assert ignored.json()["items"][0]["item_key"] == "hit"
+        active = await client.get(f"feeds/{feed_id}/items")
+        assert {item["item_key"] for item in active.json()["items"]} == {"keep"}
+        assert (await client.get(f"feeds/{feed_id}")).json()["unread_count"] == 1
+        created_with = await client.post(
+            "feeds",
+            json=_body(url="https://example.com/kw-create.xml", ignore_keywords=[" 合集 ", "合集"]),
+        )
+        assert created_with.status_code == 201
+        assert created_with.json()["ignore_keywords"] == ["合集"]

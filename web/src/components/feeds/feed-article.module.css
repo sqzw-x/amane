@@ -1,4 +1,4 @@
-/* 未读用品牌色左边线 / 浅底 / 阴影与已读平铺行区分; 勾选叠一层品牌浅底. */
+/* 未读条目使用紫色强调, 与主色选中与导航分开; 勾选已读行仍使用主色浅底. */
 
 .row {
   border-bottom: 1px solid var(--mantine-color-default-border);
@@ -15,11 +15,11 @@
 
 .row[data-unread="true"] .card {
   background: light-dark(
-    color-mix(in srgb, var(--mantine-color-brand-1) 78%, var(--mantine-color-body)),
-    color-mix(in srgb, var(--mantine-color-brand-8) 22%, var(--mantine-color-body))
+    color-mix(in srgb, var(--mantine-color-violet-1) 78%, var(--mantine-color-body)),
+    color-mix(in srgb, var(--mantine-color-violet-8) 22%, var(--mantine-color-body))
   );
   border-radius: var(--mantine-radius-md);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--mantine-color-brand-6) 22%, transparent);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--mantine-color-violet-6) 22%, transparent);
 }
 
 .row[data-unread="true"] .card::before {
@@ -30,7 +30,7 @@
   left: 0;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: light-dark(var(--mantine-color-brand-6), var(--mantine-color-brand-4));
+  background: light-dark(var(--mantine-color-violet-6), var(--mantine-color-violet-4));
 }
 
 .row[data-selected="true"]:not([data-unread="true"]) .card {
@@ -39,20 +39,20 @@
 
 .row[data-unread="true"][data-selected="true"] .card {
   background: light-dark(
-    var(--mantine-color-brand-1),
-    color-mix(in srgb, var(--mantine-color-brand-8) 28%, var(--mantine-color-body))
+    var(--mantine-color-violet-1),
+    color-mix(in srgb, var(--mantine-color-violet-8) 28%, var(--mantine-color-body))
   );
   box-shadow:
-    0 0 0 1px var(--mantine-color-brand-4),
-    0 4px 14px color-mix(in srgb, var(--mantine-color-brand-6) 22%, transparent);
+    0 0 0 1px var(--mantine-color-violet-4),
+    0 4px 14px color-mix(in srgb, var(--mantine-color-violet-6) 22%, transparent);
 }
 
 .row[data-unread="true"][data-expanded="true"] .card {
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--mantine-color-brand-6) 28%, transparent);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--mantine-color-violet-6) 28%, transparent);
 }
 
 .row[data-unread="true"][data-selected="true"][data-expanded="true"] .card {
   box-shadow:
-    0 0 0 1px var(--mantine-color-brand-4),
-    0 8px 20px color-mix(in srgb, var(--mantine-color-brand-6) 28%, transparent);
+    0 0 0 1px var(--mantine-color-violet-4),
+    0 8px 20px color-mix(in srgb, var(--mantine-color-violet-6) 28%, transparent);
 }

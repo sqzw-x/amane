@@ -82,6 +82,9 @@
     "contentTypeAuto": "自动推断",
     "useCache": "使用缓存",
     "useCacheHint": "勾选则使用对应缓存, 否则重新抓取",
+    "ignoreKeywords": "过滤关键词",
+    "ignoreKeywordsHint": "命中标题、番号或正文的新条目写入忽略, 不入队刮削. 保存后也会忽略当前未忽略的匹配条目.",
+    "ignoreKeywordsPlaceholder": "合集, 総集編",
     "cacheMetadata": "元数据缓存",
     "cacheTrans": "译文缓存",
     "enabled": "启用",
@@ -149,7 +152,8 @@
     "ignore": "忽略",
     "unignore": "恢复",
     "markRead": "标为已读",
-    "markUnread": "标为未读"
+    "markUnread": "标为未读",
+    "setIgnoreKeywords": "设置过滤关键词"
   },
   "confirm": {
     "deleteTitle": "删除订阅源",
@@ -160,6 +164,12 @@
     "deleteItemsMessage": "确定删除选中的 {{count}} 条历史？删除后，远程源再次返回时会重新视为新条目。",
     "deleteItemTitle": "删除历史",
     "deleteItemMessage": "确定删除这条历史？远程源再次返回时会重新视为新条目。"
+  },
+  "keywordDialog": {
+    "title": "设置过滤关键词",
+    "replace": "覆盖已有关键词",
+    "replaceHint": "关闭时追加到各源现有列表; 打开时用上面的列表替换.",
+    "apply": "应用到选中源"
   },
   "batchActionResult": "已处理 {{affected}} 条",
   "batchActionResultWithMissing": "已处理 {{affected}} 条, {{missing}} 条已不存在",

@@ -106,6 +106,8 @@ async def test_create_update_and_poll_feed(feed_deps: AgentDeps) -> None:
     assert create["name"] == "source"
     assert create["group"] == "jav/rsshub"
     assert create["interval_seconds"] == 600
+    assert create["ignore_keywords"] == []
+    assert create["unread_count"] == 0
     feed_id = int(create["id"])
     assert polled == [feed_id]
 
@@ -117,12 +119,14 @@ async def test_create_update_and_poll_feed(feed_deps: AgentDeps) -> None:
             auto_enqueue=False,
             content_type=ContentType.FC2,
             use_cache=set(),
+            ignore_keywords=[" 合集 ", "合集"],
         ),
     )
     assert updated["enabled"] is False
     assert updated["auto_enqueue"] is False
     assert updated["content_type"] == "fc2"
     assert updated["use_cache"] == []
+    assert updated["ignore_keywords"] == ["合集"]
 
     polled_now = await _tool_fn("poll_feed")(_Ctx(feed_deps), feed_id=feed_id)
     assert polled_now["id"] == feed_id

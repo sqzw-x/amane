@@ -7,6 +7,7 @@ import {
   NumberInput,
   Stack,
   Switch,
+  TagsInput,
   TextInput,
 } from "@mantine/core";
 import { useTranslation } from "react-i18next";
@@ -36,6 +37,7 @@ export type FeedFormState = {
   useCache: CacheKind[];
   enabled: boolean;
   autoEnqueue: boolean;
+  ignoreKeywords: string[];
 };
 
 export function toSeconds(value: number, unit: IntervalUnit): number {
@@ -112,6 +114,7 @@ export function emptyFeedForm(): FeedFormState {
     useCache: [...CACHE_KINDS],
     enabled: true,
     autoEnqueue: true,
+    ignoreKeywords: [],
   };
 }
 
@@ -128,6 +131,7 @@ export function feedFormFromResponse(feed: FeedResponse): FeedFormState {
     useCache: feed.use_cache ?? [],
     enabled: feed.enabled,
     autoEnqueue: feed.auto_enqueue,
+    ignoreKeywords: feed.ignore_keywords ?? [],
   };
 }
 
@@ -144,6 +148,7 @@ export function feedFormToBody(form: FeedFormState): FeedCreateRequest {
     use_cache: form.useCache,
     enabled: form.enabled,
     auto_enqueue: form.autoEnqueue,
+    ignore_keywords: form.ignoreKeywords,
   }) as FeedCreateRequest;
 }
 
@@ -244,6 +249,15 @@ export function FeedFormFields({
           ))}
         </Group>
       </Checkbox.Group>
+      <TagsInput
+        label={t("fields.ignoreKeywords")}
+        description={t("fields.ignoreKeywordsHint")}
+        placeholder={t("fields.ignoreKeywordsPlaceholder")}
+        value={form.ignoreKeywords}
+        onChange={(ignoreKeywords) => patch({ ignoreKeywords })}
+        splitChars={[",", "，", "\n"]}
+        clearable
+      />
       <Switch
         label={t("fields.enabled")}
         description={t("fields.enabledHint")}

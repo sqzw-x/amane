@@ -9,8 +9,10 @@ from pydantic_ai.capabilities import Capability
 from sqlalchemy.exc import IntegrityError
 
 from ..api.models.feeds import FeedItemBatchAction, _validate_http_url, _validate_number_pattern, normalize_feed_group
+from ..db.feed_keywords import normalize_ignore_keywords
 from ..db.models import Feed, FeedItem, FeedItemReadState, FeedItemState, TaskType
 from ..db.repo_types import FeedUpdates
+from ..db.repos.feeds import FeedsRepoMixin
 from ..handlers.models import CacheKind, ScrapePayload, build_feed_scrape_payload
 from ..parsing import ContentType
 from .tools import AgentDeps, require_approval, trace_tool
@@ -28,6 +30,7 @@ class AgentFeedCreate(BaseModel):
     number_pattern: str | None = None
     content_type: ContentType | None = None
     use_cache: set[CacheKind] = Field(default_factory=lambda: {CacheKind.metadata, CacheKind.trans})
+    ignore_keywords: list[str] = Field(default_factory=list)
 
     model_config = {"str_strip_whitespace": True}
 
@@ -44,6 +47,7 @@ class AgentFeedUpdate(BaseModel):
     number_pattern: str | None = None
     content_type: ContentType | None = None
     use_cache: set[CacheKind] | None = None
+    ignore_keywords: list[str] | None = None
 
 
 class AgentFeedItemBatch(BaseModel):
@@ -62,10 +66,12 @@ class FeedInfo(BaseModel):
     number_pattern: str | None
     content_type: ContentType | None
     use_cache: list[CacheKind]
+    ignore_keywords: list[str]
     next_fetch_at: datetime | None
     last_fetched_at: datetime | None
     last_error: str | None
     last_enqueued: int
+    unread_count: int
 
 
 class FeedItemInfo(BaseModel):
@@ -108,7 +114,7 @@ def _cache_kinds(raw: list[str]) -> list[CacheKind]:
     return [kind for kind in _CACHE_KIND_ORDER if kind in raw]
 
 
-def _feed_info(feed: Feed) -> FeedInfo:
+def _feed_info(feed: Feed, unread_count: int = 0) -> FeedInfo:
     assert feed.id is not None
     return FeedInfo(
         id=feed.id,
@@ -121,11 +127,19 @@ def _feed_info(feed: Feed) -> FeedInfo:
         number_pattern=feed.number_pattern,
         content_type=feed.content_type,
         use_cache=_cache_kinds(feed.use_cache),
+        ignore_keywords=list(feed.ignore_keywords or []),
         next_fetch_at=_as_utc(feed.next_fetch_at),
         last_fetched_at=_as_utc(feed.last_fetched_at),
         last_error=feed.last_error,
         last_enqueued=feed.last_enqueued,
+        unread_count=unread_count,
     )
+
+
+async def _feed_json(repo: FeedsRepoMixin, feed: Feed) -> dict[str, object]:
+    assert feed.id is not None
+    counts = await repo.count_unread_feed_items(feed.id)
+    return _feed_info(feed, counts.get(feed.id, 0)).model_dump(mode="json")
 
 
 def _feed_item_info(item: FeedItem, metadata_id: int | None) -> FeedItemInfo:
@@ -156,13 +170,14 @@ def _use_cache_values(use_cache: set[CacheKind]) -> list[str]:
     return [kind for kind in _CACHE_KIND_ORDER if kind in use_cache]
 
 
-def _feed_create_values(req: AgentFeedCreate) -> tuple[str, str, str, str | None, list[str]]:
+def _feed_create_values(req: AgentFeedCreate) -> tuple[str, str, str, str | None, list[str], list[str]]:
     return (
         req.name.strip(),
         _validate_http_url(req.url),
         normalize_feed_group(req.group),
         _validate_number_pattern(req.number_pattern),
         _use_cache_values(req.use_cache),
+        normalize_ignore_keywords(req.ignore_keywords),
     )
 
 
@@ -202,6 +217,10 @@ def _feed_update_values(req: AgentFeedUpdate) -> dict[str, object]:
         if req.use_cache is None:
             raise ValueError("use_cache 不能为 null")
         updates["use_cache"] = _use_cache_values(req.use_cache)
+    if "ignore_keywords" in fields:
+        if req.ignore_keywords is None:
+            raise ValueError("ignore_keywords 不能为 null")
+        updates["ignore_keywords"] = normalize_ignore_keywords(req.ignore_keywords)
     return updates
 
 
@@ -216,6 +235,8 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         instructions=(
             "Feed polling discovers items and may enqueue low-priority SCRAPE tasks according to "
             "the feed's auto_enqueue setting; it does not run scraping inline. "
+            "ignore_keywords are literal substrings; matching new items are stored as ignored and "
+            "are not enqueued. Saving keywords also ignores matching existing active items. "
             "Feed item scrape uses the feed's current content_type and cache settings. "
             "Deleting a feed or feed items requires user approval because it removes history."
         ),
@@ -227,7 +248,11 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         """List all RSS/Atom feeds."""
         trace_tool(ctx, "tool_call", {"tool": "list_feeds"})
         feeds = await ctx.deps.repo.list_feeds()
-        out = FeedListResult(items=[_feed_info(feed) for feed in feeds], total=len(feeds))
+        counts = await ctx.deps.repo.count_unread_feed_items()
+        out = FeedListResult(
+            items=[_feed_info(feed, counts.get(feed.id or 0, 0)) for feed in feeds],
+            total=len(feeds),
+        )
         result = out.model_dump(mode="json")
         trace_tool(ctx, "tool_result", {"tool": "list_feeds", "result": result})
         return result
@@ -239,7 +264,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         feed = await ctx.deps.repo.get_feed(feed_id)
         if feed is None:
             return {"error": f"feed {feed_id} 不存在"}
-        result = _feed_info(feed).model_dump(mode="json")
+        result = await _feed_json(ctx.deps.repo, feed)
         trace_tool(ctx, "tool_result", {"tool": "get_feed", "result": result})
         return result
 
@@ -248,7 +273,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         """Create a feed and poll it once when the FeedService bridge is available."""
         trace_tool(ctx, "tool_call", {"tool": "create_feed", "request": request.model_dump(mode="json")})
         try:
-            name, url, group, number_pattern, use_cache = _feed_create_values(request)
+            name, url, group, number_pattern, use_cache, ignore_keywords = _feed_create_values(request)
             if await ctx.deps.repo.get_feed_by_url(url) is not None:
                 return {"error": "该订阅源 URL 已存在"}
             feed = await ctx.deps.repo.create_feed(
@@ -261,6 +286,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 number_pattern=number_pattern,
                 content_type=request.content_type,
                 use_cache=use_cache,
+                ignore_keywords=ignore_keywords,
             )
         except (IntegrityError, ValueError) as exc:
             return {"error": str(exc)}
@@ -274,12 +300,12 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 if refreshed is not None:
                     feed = refreshed
             except Exception as exc:
-                result = _feed_info(feed).model_dump(mode="json")
+                result = await _feed_json(ctx.deps.repo, feed)
                 result["poll_error"] = str(exc)
                 trace_tool(ctx, "tool_result", {"tool": "create_feed", "result": result})
                 return result
 
-        result = _feed_info(feed).model_dump(mode="json")
+        result = await _feed_json(ctx.deps.repo, feed)
         trace_tool(ctx, "tool_result", {"tool": "create_feed", "result": result})
         return result
 
@@ -304,7 +330,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
             return {"error": str(exc)}
         if updated is None:
             return {"error": f"feed {feed_id} 不存在"}
-        result = _feed_info(updated).model_dump(mode="json")
+        result = await _feed_json(ctx.deps.repo, updated)
         trace_tool(ctx, "tool_result", {"tool": "update_feed", "result": result})
         return result
 
@@ -325,7 +351,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         refreshed = await ctx.deps.repo.get_feed(feed_id)
         if refreshed is None:
             return {"error": f"feed {feed_id} 不存在"}
-        result = _feed_info(refreshed).model_dump(mode="json")
+        result = await _feed_json(ctx.deps.repo, refreshed)
         trace_tool(ctx, "tool_result", {"tool": "poll_feed", "result": result})
         return result
 
