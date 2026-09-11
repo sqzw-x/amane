@@ -10,31 +10,18 @@ from ..parsing import extract_all_texts, extract_text
 
 
 def _parse_actors(html: Selector) -> list[FilmActor]:
-    """演員栏: ``<a>名</a><strong class="symbol female|male">``. 标记在名字之后, 同容器内男女并存."""
+    """演員栏: ``a.actor-female`` 为女优; 同栏无该 class 的 ``a`` 为男优."""
     container = html.xpath('//strong[contains(text(),"演員")]/following-sibling::span[contains(@class,"value")][1]')
     if not container:
         return []
     actors: list[FilmActor] = []
-    pending: str | None = None
-    for node in container[0].xpath("./a | ./strong"):
-        tag = node.root.tag
-        if tag == "a":
-            if pending:
-                actors.append(FilmActor(name=pending))
-            name = (node.xpath("string()").get() or "").strip()
-            pending = name or None
+    for node in container[0].xpath("./a"):
+        name = (node.xpath("string()").get() or "").strip()
+        if not name:
             continue
-        if tag == "strong" and pending:
-            classes = node.root.get("class") or ""
-            gender = ActorGender.UNKNOWN
-            if "female" in classes.split():
-                gender = ActorGender.FEMALE
-            elif "male" in classes.split():
-                gender = ActorGender.MALE
-            actors.append(FilmActor(name=pending, gender=gender))
-            pending = None
-    if pending:
-        actors.append(FilmActor(name=pending))
+        classes = (node.root.get("class") or "").split()
+        gender = ActorGender.FEMALE if "actor-female" in classes else ActorGender.MALE
+        actors.append(FilmActor(name=name, gender=gender))
     return actors
 
 
