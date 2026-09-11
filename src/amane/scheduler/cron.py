@@ -93,9 +93,6 @@ class CronScheduler:
             case RoutineType.R18_IMPORT:
                 await self._repo.create_task(TaskType.R18_IMPORT, R18ImportPayload(force=payload.get("force", False)))
             case RoutineType.RESCRAPE:
-                await self._repo.create_task(
-                    TaskType.RESCRAPE,
-                    RescrapePayload(limit=payload.get("limit", 100), min_age_days=payload.get("min_age_days")),
-                )
+                await self._repo.create_task(TaskType.RESCRAPE, RescrapePayload.model_validate(payload))
             case _:
                 logger.warning("unknown task type", task_type=task_type)

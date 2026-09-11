@@ -28,7 +28,7 @@ ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引; 显
 
 任务完成后产生的后继由任务图层描述与实例化. 后继任务只经 `TaskResult.followups` 进入完成事务:
 
-- **动态后继**: handler 在执行期间才确定后继数量与 payload, 经 `TaskResult.followups` 返回 (`FollowupTask` = key + 类型 + 已完成绑定的 payload + priority). REFRESH→SCRAPE、RESCRAPE→SCRAPE、SCRAPE→ACTOR_SCRAPE 都是这一形态.
+- **动态后继**: handler 在执行期间才确定后继数量与 payload, 经 `TaskResult.followups` 返回 (`FollowupTask` = key + 类型 + 已完成绑定的 payload + priority). REFRESH→SCRAPE、RESCRAPE→SCRAPE / ACTOR_SCRAPE、SCRAPE→ACTOR_SCRAPE 都是这一形态.
 - **统一完成事务**: worker 成功路径调用 `Repository.complete_task_with_followups` — 一个事务内完成父任务、创建子任务 (复用 `create_task` 的入队互斥)、写 `TaskLink` 边. 父完成与子创建原子; 失败路径不产生后继. 完成事务与 `create_task` 同一把入队锁串行化 — 两个父任务并发派生同一互斥键 (如同 actor) 时只会复用同一行.
 - **`TaskLink`** 是父子边真值: `(parent_task_id, key)` 唯一. `key` 须在父节点内区分后继 (fan-out 带实体 id, 如 `scrape:{media_file_id}` / `actor-scrape:{actor_id}`). 完成事务对同 key 只留第一条. 删除任务时清理其边, 不删除另一端任务.
 - **链聚合**: `tasks.root_task_id` 记录链根 (根指向自己, 在完成事务内写入), 一棵链一次 `list_tasks_by_root` 取回. 任务列表默认只显示链根 (子任务按需展开). `child_count` / `child_status` 是直接后继的数量与状态分布 — 折叠节点据此显示数量、失败 / 运行数, 不必先展开.
@@ -181,7 +181,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 **即时** (`POST /tasks`): 接收 `TaskSubmission` (含全部即时 `type`, 含 `actor_scrape` / `rescrape` / `trash`), 经 `src/amane/api/support/task_resolve.py::resolve_submission` 得到 `(TaskType, Payload)` 后建 Task. REFRESH / ORGANIZE / TRASH 只接受 `library_id`, resolve 时由 library 派生 `path` (submission 可显式覆盖); REFRESH / TRASH 另派生 `recursive` / `patterns`; ORGANIZE 还可带 `media_file_ids`, 与显式 `path` 互斥. ORGANIZE payload 不含扫描字段. SCRAPE 采用 number / media_id, 二者可同时提交. **`content_type` 可空**: 为空时仅 media_id 按文件路径解析、有 number 时按番号推断 (显式给定则覆盖). **`payload.number` 是否经过 `parse_file_info` 重写**取决于进路 (只按路径会改写, 手填 `number` 原样, 与 media_id 同时填写时仍原样), 爬虫必须同时接受两种入参, 见 [crawlers.md](crawlers.md) 番号入参. 覆盖只作用于这一次 `POST /tasks`; 库表一键刮削与 REFRESH 仍按路径解析. `ACTOR_SCRAPE` 采用 `actor_id` (亦可通过 `POST /actors/{id}/scrape`).
 
-**定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape`). 创建时把 submission 的 `model_dump()` 原样写入 `Schedule.payload`; cron / trigger 触发时由 `CronScheduler._execute_task` 从 dict 构造对应 Payload 再建 Task. 编辑只修改 name / cron / enabled; 修改任务内容须删除后重建.
+**定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape`). 创建时把 submission 的 `model_dump(mode="json")` 写入 `Schedule.payload` (JSON 列不能存 Python `set`; `set[Enum]` 必须写成数组). cron / trigger 触发时由 `CronScheduler._execute_task` 用对应 Payload 的 `model_validate` 入队, 既有 payload 缺新字段时走模型默认值. 编辑只修改 name / cron / enabled; 修改任务内容须删除后重建.
 
 ## ACTOR_SCRAPE
 
@@ -208,7 +208,7 @@ Metadata 是一等公民, CLEANUP **从不**因「无关联 MediaFile」删除 M
 
 **UPSCALE 例行任务**: 扫描全部 `Resource`, 对低质且未超分的就地超分; `limit` 限单次批量. 与 scrape 期急切双轨, 见上节.
 
-**RESCRAPE (元数据级滚动补刮)**: 与 `RefreshHandler` 同构的 fan-out — 批量任务只选目标并下发 SCRAPE, 重活经由既有 SCRAPE. 按 `updated_at ASC` 取最久未更新的 `limit` 条 Metadata (可选 `min_age_days` 门槛), 逐条以 `priority=-1` 入队非 force SCRAPE: 复用 per-site raw 快照仅补缺失站点, 聚合阶段重放当前配置 — 因此同时承担「配置变更后再次运行生效」. **content_type 不存表, 运行时推断**: `infer_content_type` — 有挂载文件传路径 (路径关键词 → 番号), 无文件只传番号文本 (未命中则欧美; 路径关键词类如里番 / 欧美目录名在无文件时不可推断).
+**RESCRAPE (滚动补刮)**: 与 `RefreshHandler` 同构的 fan-out — 批量任务只选目标并下发既有刮削, 重活不另写一套. `targets` (`metadata` / `actor`, 缺省仅 `metadata`) 每个已选项各自按 `updated_at ASC` 取 `limit` 条 (可选 `min_age_days` 门槛), 以 `priority=-1` 入队非 force 任务: 影片 → SCRAPE, 演员 → ACTOR_SCRAPE. 均复用 per-site raw 快照仅补缺失站点, 聚合阶段重放当前配置 — 因此同时承担「配置变更后再次运行生效」. 这与影片 SCRAPE 成功后的链式 ACTOR_SCRAPE 正交: 链式跳过 `Actor.raw` 已非空的演员; 滚动补刮会再入队已有档案. 同 `actor_id` 仍走入队互斥. **影片 content_type 不存表, 运行时推断**: `infer_content_type` — 有挂载文件传路径 (路径关键词 → 番号), 无文件只传番号文本 (未命中则欧美; 路径关键词类如里番 / 欧美目录名在无文件时不可推断).
 
 Watcher、Cron 与 Feed 分属独立循环: 秒级反应、分钟级 routine、每源间隔的远程拉取. 合并到同一循环会互相拖高 latency, 或把 HTTP / RSS 纳入 cron.py.
 

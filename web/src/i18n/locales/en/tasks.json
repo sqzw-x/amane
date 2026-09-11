@@ -331,11 +331,21 @@
     "rescrape": {
       "limit": {
         "label": "Batch size",
-        "description": "Max entries per run, least recently updated first"
+        "description": "Max entries per selected target, least recently updated first"
       },
       "min_age_days": {
         "label": "Min age (days)",
-        "description": "Only process metadata not updated within this interval"
+        "description": "Only process entries not updated within this interval"
+      },
+      "targets": {
+        "label": "Targets",
+        "description": "Movies and actors each take up to the batch size, oldest first",
+        "$": {
+          "options": {
+            "metadata": "Movies",
+            "actor": "Actors"
+          }
+        }
       }
     }
   },

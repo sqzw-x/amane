@@ -43,7 +43,7 @@ async def create_schedule(req: ScheduleCreateRequest, repo: RepoDep) -> Schedule
 
     next_run = croniter(req.cron, datetime.now(UTC)).get_next(datetime)
     task_type = RoutineType(req.submission.type)
-    payload = req.submission.model_dump()
+    payload = req.submission.model_dump(mode="json")
 
     schedule = await repo.create_schedule(
         name=req.name,

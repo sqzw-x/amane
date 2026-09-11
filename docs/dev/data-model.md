@@ -187,4 +187,4 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 - SQLite + batch mode 修改大表会重建表 → 数百万行时表重建耗时不可接受. 个人规模可接受, 超过须切换至 PostgreSQL.
 - `Task.payload` / `Task.result` 是 JSON dict, 无 schema 强制 — 由 handler 的 Pydantic 模型在反序列化时校验 (见 [task-system.md](task-system.md)).
-- `Schedule.payload` 存的是 `RoutineSubmission` 的 JSON (`cleanup` / `upscale` / `r18_import` / `rescrape`); cron 触发时再构造对应 Payload 入队. 不允许在线修改任务内容 — 修改 type / payload 须删除后重建. 详见 [task-system.md](task-system.md).
+- `Schedule.payload` 存的是 `RoutineSubmission` 的 JSON (`cleanup` / `upscale` / `r18_import` / `rescrape`); 写入须 `model_dump(mode="json")`. cron 触发时 `model_validate` 为对应 Payload 入队. 不允许在线修改任务内容 — 修改 type / payload 须删除后重建. 详见 [task-system.md](task-system.md).

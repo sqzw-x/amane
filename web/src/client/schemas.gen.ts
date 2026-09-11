@@ -5020,7 +5020,7 @@ export const RescrapeSubmissionSchema = {
             maximum: 1000,
             minimum: 1,
             title: 'Limit',
-            description: '单次最多补刮的元数据数 (避免长占 worker 队列)',
+            description: '每个已选目标单次最多补刮的条数 (避免长占 worker 队列)',
             default: 100
         },
         min_age_days: {
@@ -5036,6 +5036,19 @@ export const RescrapeSubmissionSchema = {
             title: 'Min Age Days',
             description: '仅补刮 updated_at 距今超过该天数的条目; None 不设门槛'
         },
+        targets: {
+            items: {
+                $ref: '#/components/schemas/RescrapeTarget'
+            },
+            type: 'array',
+            minItems: 1,
+            uniqueItems: true,
+            title: 'Targets',
+            description: '补刮对象; 每个已选项各自选取 limit 条. 缺省仅影片, 兼容既有 Schedule.payload',
+            default: [
+                'metadata'
+            ]
+        },
         type: {
             type: 'string',
             const: 'rescrape',
@@ -5047,6 +5060,16 @@ export const RescrapeSubmissionSchema = {
         'type'
     ],
     title: 'RescrapeSubmission'
+} as const;
+
+export const RescrapeTargetSchema = {
+    type: 'string',
+    enum: [
+        'metadata',
+        'actor'
+    ],
+    title: 'RescrapeTarget',
+    description: '滚动补刮选取的实体种类. 每个已选项各自选取 limit 条.'
 } as const;
 
 export const RoutineTypeSchema = {
