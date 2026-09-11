@@ -25,13 +25,10 @@ CrawlerFactory (缓存实例)
 - 演员站与影片站共用 HttpClient / 限速; 实现位于 `crawlers/actor/`, 只注册 `actor_registry` (可以不在影片 `registry`). **双料站**指同一 `SiteName` 在影片 / 演员注册表各有一个类, 共用 `site_config`. 不允许在 `site_roles` 中手写双料名单.
 - gFriends 额外依赖 `data_dir` (Filetree 缓存) 与 `actor_scraping.gfriends_repo`.
 - **能力声明**位于 `CrawlerProfile`: 演员爬虫必须显式给出 `capabilities` (`ACTOR_PROFILE` / `ACTOR_IMAGE`) 与 `genders`; 影片爬虫空 `capabilities` 视为 `film_metadata`, 消费 `FetchOptions.language` 的设置 `multi_language=True`. Stash 指纹匹配站设置 `uses_file_hash=True`, 刮削前才计算 oshash, 扫描不读取文件内容. `site_roles` 只从两个注册表推导配置 schema 用的站点列表 (档案序 = `actor_registry.register` 序); 聚合引擎只对推导出的 `MULTI_LANGUAGE_SITES` 展开 `(site, lang)` 节点. Handler 按 `Actor.gender` 对 `profile().genders` 裁站, 见 [task-system.md](task-system.md). 演员聚合契约见 [config.md](config.md) `actor_scraping`.
-- 生日 / 发行日输出均为 `YYYY-MM-DD` (`normalize_calendar_date`); 非法文本丢弃, 不写入脏串.
 
 ## 影片出演者
 
-`MediaMetadata.actors` 是 `list[FilmActor]` (`name` + `gender`). 旧 `list[str]` 与站点级 raw 快照经 validator 收成 `gender=unknown`. 名单语义能判定性别时爬虫必须写出 `female` / `male`: JAV 出演 / 女優 / star / idol 栏即女优; JavDB 按名字后的 `symbol female|male`; r18dev 按 `actresses` / `actors` 表; ThePornDB 按 `performer.gender`. FC2Club 幻灯片标题、DMM TV `casts`、Getchu 无出演栏保持 `unknown`.
-
-聚合仍由第一成功源锁定名单与顺序; 锁定后按展示名从本轮其它已抓源填空性别. 写入 `Metadata.actors` 仍是展示名列表; 性别只填 `Actor.gender` 空位, 不写入 `Actor.field_sources`. 见 [data-model.md](data-model.md).
+`MediaMetadata.actors` 是 `list[FilmActor]` (`name` + `gender`). 旧 `list[str]` 与站点级 raw 快照经 validator 收成 `gender=unknown`. 名单语义能判定性别时爬虫必须写出 `female` / `male`; 栏位无法判定则保持 `unknown`. 聚合锁定与落库填空见 [data-model.md](data-model.md).
 
 ## Crawler 基类
 
@@ -52,7 +49,7 @@ CrawlerFactory (缓存实例)
 
 落库 `Metadata.number` 也是这份 payload 原样 (UNIQUE 忽略大小写, 首次写入的大小写保留, 见 [data-model.md](data-model.md)). 因此补刮 / RESCRAPE 可能再次把无横线手填号送入爬虫.
 
-站点检索和「哪条结果算命中」由爬虫自行处理分隔符. 站内 ID 带 `-` 时, 入参 `HEYZO-3607` 与 `HEYZO3607` 都应能对上 (精确优先, 再忽略短横线/空格). 不允许将 `_` 改写为 `-`, 除非该站把两种当成同一部 (`010115_001` 与 `010115-001` 常是两部). 站点特例写在 [content-routes.md](content-routes.md), 不在这里重复.
+站点检索和「哪条结果算命中」由爬虫自行处理分隔符. 站内 ID 带 `-` 时, 入参 `HEYZO-3607` 与 `HEYZO3607` 都应能对上 (精确优先, 再忽略短横线/空格). 不允许将 `_` 改写为 `-`, 除非该站把两种当成同一部. 站点特例见 [content-routes.md](content-routes.md).
 
 ## HTTP 层
 

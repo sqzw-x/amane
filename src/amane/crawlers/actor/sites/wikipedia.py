@@ -163,7 +163,7 @@ class WikipediaActorCrawler(ActorCrawler):
         birthplace: str | None = None
         source_url: str | None = None
         wiki_url = _prefer_wiki_url(sitelinks)
-        # 维基百科页补充简介与出生地.
+        # 维基正文用 get_text: 引用里「年齢認証」等词会让 get_html 误判拦截.
         if wiki_url:
             source_url = wiki_url
             page = await self.client.get_text(wiki_url, cookies=self.cookies)
