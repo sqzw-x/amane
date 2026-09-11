@@ -32,7 +32,7 @@
 
 ## Ground truth
 
-`[scrape.expected]` / `[fetch.expected]` 每个字段默认 `==` 全等 (含 list 顺序与完整 URL). `actors` 必须写 `[{ name, gender }]` 表 (性别可为 `unknown`), 与 `FilmActor` 全等. 宽松断言 (`field_contains` 等) **仅特殊情况**, 且必须在该键旁注释为何不能全等 (如签名 CDN). `responses[].url_contains` 是 mock 路由键, 不是 ground truth.
+`[scrape.expected]` / `[fetch.expected]` 每个字段默认 `==` 全等 (含 list 顺序与完整 URL). `actors` 必须写 `[{ name, gender }]` 表 (性别可为 `unknown`), 与 `FilmActor` 全等. 社区评分随评价人数漂移, 用 `score_between = [low, high]` (闭区间, 填该站量表), 不写具体值. 其它宽松断言 (`field_contains` 等) **仅特殊情况**, 且必须在该键旁注释为何不能全等 (如签名 CDN). `responses[].url_contains` 是 mock 路由键, 不是 ground truth.
 
 每个站点的 `[search]` **必须有空结果用例** (`expected_none = true`): `_search` 对不存在的番号须返回 `None`, 否则筛选 bug 会被首页/推广链接掩盖.
 
@@ -40,8 +40,7 @@
 
 - **`url_contains` 子串匹配**: 多条都命中时**第一条生效**. 更具体的模式放前面. 同一 URL 上不同 GraphQL 操作再用 `body_contains` (匹配 POST JSON 正文).
 - **`live` 不能替代 mock**: `@pytest.mark.live` 在 CI 跳过; 回归必须可重复.
-- **DMM 分类页结构不同**: Mono/DVD 仍是旧版 table (`/mono/dvd/.../cid={short}/`); monthly 已改 div (XPath 失效); digital / Fanza TV 经由 GraphQL; rental 404. 全页 `//dt` 会把 monthly 双栏镜像翻倍 — 解析须先 `#multi-column`、再 `#single-column`, 最后才回退 table.
-- **Wikipedia 演员页**: 条目引用里常出现「年齢認証」等词, 不能经由 `get_html` 启发式 (会误判 `age_verification`); 维基正文用 `get_text`.
+- **Wikipedia 演员页**: 维基正文必须 `get_text`, 不能走 `get_html` (引用里的「年齢認証」会误判拦截).
 
 许多站点长期 CF / DNS / 关站, 不能为「测得到」而编造 fixture. 采集失败则 skip, 并在 TOML 注释里记下当时用的方法.
 

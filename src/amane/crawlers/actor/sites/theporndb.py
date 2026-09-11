@@ -1,4 +1,9 @@
-"""Stash-box searchPerformer; 与影片爬虫共用 api_token."""
+"""Stash-box searchPerformer; 与影片爬虫共用 api_token.
+
+精确匹配 name / aliases, 不回退首条. deleted 跟随 merged_into_id, 无目标则丢弃.
+头像按宽×高排序. urls 写入 provider_ids (跳过本站). disambiguation 为 tagline.
+stash-box 的 death_date / 出道年 / 发色瞳色 / ethnicity / breast_type / 纹身穿孔不写入列.
+"""
 
 from __future__ import annotations
 

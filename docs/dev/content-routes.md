@@ -20,7 +20,7 @@ iqqtv 作为有碼中文标题源时: 加入 **censored** 路由, 再在 `field_
 | censored | 中文索引 → FANZA 权威图文 → 稳定镜像 → 可空返回的官网 / r18 | 单厂牌 API (Prestige 等对每个候选 SKU 都请求); iqqtv (见上) |
 | uncensored | 有独立无碼区的索引 + 无碼专站 | kin8 (从任意番号抽数字拼详情, `HEYZO-3363` 会命中 kin8 的 3363) |
 | fc2 | javdb 分类 + 专用索引 + 官方电子市场 + BT 垫后 | fc2club (跳转镜像不稳定) |
-| chinese | 有國產区的中文站第一, 综合/BT 兜底 | javdb 当第一源 (它没有国产分区, 见下) |
+| chinese | 有國產区的中文站第一, 综合/BT 兜底 | javdb 当第一源 (见综合索引) |
 | amateur | MGS 第一; FANZA 有素人频道; javbus 首页能见到 `300MIUM-*` | MGS 不纳入有碼默认, 否则 MIDV 会请求 MGS |
 | western | TPDB 第一 (需 token 才真正请求); 有歐美分类的索引垫后 | javbus 欧美域 (见下, 目录空); 不实现该域爬虫 |
 | hentai | getchu 对路径关键词分类的里番第一; DMM 动画/同人; javdb 兜底 | getchu 商品是数字 id 不是 JAV 番号, 仅因路径分类而纳入此链 |
@@ -31,8 +31,7 @@ iqqtv 作为有碼中文标题源时: 加入 **censored** 路由, 再在 `field_
 
 独立层, 不是 FANZA 的无差别镜像:
 
-- 中文 `current-title` + 隐藏日文 `origin-title` (爬虫只取中文标题, origin 未用)
-- 演員栏: `<a>名</a><strong class="symbol female|male">`, 标记在名字之后, 同 `span.value` 内男女并存. 两边都进入 `actors` 并带性别.
+- 中文 `current-title`; 隐藏 `origin-title` 来自零售目录 (可带碟片特典后缀), 爬虫不取
 - 社区评分, 不是 FANZA 店评
 - 封面/样品在 `jdbstatic.com` (通常是重编码后的柜台图)
 - 片商名跟官网英文商标 (`S1 NO.1 STYLE`), 不跟 DMM 日文メーカー名
@@ -45,7 +44,7 @@ iqqtv 作为有碼中文标题源时: 加入 **censored** 路由, 再在 `field_
 
 **freejavbt.com** — 显式分有碼 / 無碼 / 歐美 / FC2, 首页还有「國產」「成人動畫」. 覆盖最宽的 BT 向索引, 元数据质量一般, 适合垫后.
 
-**avsox.click** — 日本无码情报站. 同源: AVMOO=有碼 (`avmoo.shop`)、AVSOX=无碼、AVHEAT=欧美 (`avheat.shop`). 项目只接入 AVSOX. Vue SPA, 中文入口 `/cn`; 壳页 `#javu-site-index` 没有影片 DOM. 元数据经由 POST `/javu/data/api/search` 与 `/javu/data/api/getMovie` (Yii CSRF: 先 GET `/cn/` 取 `csrf-token`, body 是 JSON 数组). 详情 URL `/{lang}/movies/{movieId}`. 默认 `lang=cn`. 搜索 API 对 `HEYZO-3607` / `HEYZO3607` 都能命中, 返回的 `movieFanHao` 带短横线; 选取时先大小写精确匹配, 再忽略短横线/空格, **不**把下划线当成短横线 (`010115_001` 与 `010115-001` 是两部). 对不上不取第一条.
+**avsox.click** — 日本无码情报站. 同源: AVMOO=有碼 (`avmoo.shop`)、AVSOX=无碼、AVHEAT=欧美 (`avheat.shop`). 项目只接入 AVSOX. 搜索对有无短横线都能命中; `_` 与 `-` 是两部 (`010115_001` 与 `010115-001`). 对不上不取第一条.
 
 **jav321.com** — 标题带 dmm, 导航分 AV / 素人. 属于 DMM 目录镜像; 有碼与素人垫后. 无无碼 / FC2 / 欧美入口. 日文标签即メーカー / 配信開始日 / ジャンル.
 
@@ -71,7 +70,7 @@ iqqtv 作为有碼中文标题源时: 加入 **censored** 路由, 再在 `field_
 
 **kin8tengoku.com** — 「金髪洋物専門 無修正」. 从任意番号抽数字拼 `/moviepages/{id}/`, 会误匹配其它番号. 不纳入默认表.
 
-**theporndb.net** — 未登录跳转 `/login`. GraphQL 无 token 时影片/演员爬虫都直接 `None`. 欧美路由第一. uncensored fixture 经由 `?type=Scene`. 演员经由 `searchPerformer`, 精确匹配 name/aliases, 不回退首条; `deleted` 且有 `merged_into_id` 则 `findPerformer` 跟随, 无合并目标则丢弃; 头像按宽×高排序; `urls` 写入 `provider_ids` (iafd / twitter 等, 跳过本站链接); `disambiguation` 填 `tagline`. 与影片共用 `site_config.api_token`. stash-box 响应中的 `death_date`、出道/引退年、发色/瞳色、`ethnicity`、`breast_type`、纹身穿孔不写入列.
+**theporndb.net** — 未登录跳转 `/login`. GraphQL 无 token 时影片/演员爬虫都直接 `None`. 欧美路由第一. 与影片共用 `site_config.api_token`.
 
 **official** — Will/Outvision 官网集群. 前缀对不上不发 HTTP, 可以垫在有碼末尾.
 
@@ -90,7 +89,7 @@ iqqtv 作为有碼中文标题源时: 加入 **censored** 路由, 再在 `field_
 1. **厂牌官网** (Will/Outvision CMS). 营销页: 日文标题、女优、ジャンル、発売日、自家 CDN 摄影. 只有横版封面, 无竖版海报; 常见缺口: 导演、剧情、评分、sample gallery.
 2. **FANZA (DMM)** 最大数字分发柜台. 同一段日文标题会再出现, 另叠零售层: 配信開始日 (通常早于発売日)、用户评分、独占/4K 柜台标签、竖版包装封面、`pics.dmm.co.jp` 样品、预告、plot. 导演也在柜台页.
 
-同一番号的日期是 SKU 分层: DMM/javbus 用配信開始日, official 用発売日, javdb 自选一个零售日, 三者不必相等. javdb 隐藏的 `origin-title` 可能带 FANZA/mono 碟片特典后缀 (官网作品页标题没有), 所以 javdb「原标题」来自零售目录.
+同一番号的日期是 SKU 分层: DMM/javbus 用配信開始日, official 用発売日, javdb 自选一个零售日, 三者不必相等.
 
 FANZA 覆盖几乎全部有碼厂, 图片可热链, 字段齐全 (含 plot). 官网按前缀路由数十个域, 且缺少 plot / 海报 / 导演. **权威图文采用 DMM; 官网在需要厂牌摄影或発売日时具有独立价值.**
 
@@ -104,6 +103,6 @@ FANZA 覆盖几乎全部有碼厂, 图片可热链, 字段齐全 (含 plot). 官
 
 ## 覆盖缺口
 
-**javdb 国产.** 没有分区. 麻豆是置顶片商 + 热搜词. 爱豆 / 杏吧不会作为分区出现. 国产路由以 iqqtv 为第一源, javdb 只当「搜得到就用」的兜底.
+**javdb 国产.** 国产路由以 iqqtv 为第一源, javdb 只当搜得到就用的兜底.
 
 **javdb 欧美.** 导航和排行 `t=western` 仍在, 但欧美不是主库存; 编号 (studio.YY.MM.DD) 与 JAV 番号不同. 地域拦截时无法核列表. **欧美默认第一源为 theporndb** (Stash-box). javbus 欧美域空, 不实现该域爬虫. AVSOX 家族的 AVHEAT (`avheat.shop`) 是未接入的欧美索引, 优先级仍低于 TPDB.

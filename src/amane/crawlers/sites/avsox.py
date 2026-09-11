@@ -1,4 +1,4 @@
-"""Vue SPA; 元数据经 Yii JSON API, 不解析前端 HTML."""
+"""Vue SPA, 壳页无影片 DOM. 元数据经 Yii JSON API: 先 GET 取 csrf-token, POST search / getMovie, body 为 JSON 数组."""
 
 from __future__ import annotations
 

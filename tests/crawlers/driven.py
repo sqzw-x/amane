@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
@@ -139,6 +140,10 @@ def http_client(mock_web: AsyncMock) -> HttpClient:
     return HttpClient(web=mock_web, browser=None)
 
 
+def _is_finite_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
 def _actor_tables(actual: object) -> object:
     """`FilmActor` 一律摊成 `{name, gender}`; 空名单保持 `[]`."""
     if not isinstance(actual, list):
@@ -184,6 +189,17 @@ def assert_expected(result: object, expected: dict[str, Any]) -> None:
             field = key.removesuffix("_is_none")
             actual = getattr(result, field)
             assert actual is None, f"{field}: expected None, got {actual!r}"
+        elif key.endswith("_between"):
+            field = key.removesuffix("_between")
+            actual = getattr(result, field)
+            if not isinstance(value, list) or len(value) != 2:
+                raise AssertionError(f"{key}: expected [low, high], got {value!r}")
+            low, high = value
+            if not _is_finite_number(low) or not _is_finite_number(high):
+                raise AssertionError(f"{key}: expected [low, high], got {value!r}")
+            if not _is_finite_number(actual):
+                raise AssertionError(f"{field}: expected number in [{low}, {high}], got {actual!r}")
+            assert low <= actual <= high, f"{field}: expected {actual!r} in [{low}, {high}]"
         else:
             actual = getattr(result, key)
             if key == "actors":

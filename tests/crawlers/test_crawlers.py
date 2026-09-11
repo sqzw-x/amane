@@ -22,6 +22,7 @@ TOML 格式:
     field_count = N                       # len(field) == N
     field_not_empty = true                # 真值检查
     field_is_none = true                  # None 检查
+    field_between = [low, high]           # 数值闭区间
 """
 
 from pathlib import Path
