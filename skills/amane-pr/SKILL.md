@@ -1,13 +1,35 @@
 ---
 name: amane-pr
 description: >-
-  Amane PR 规范: 跟踪并修复 CI、用 Close/Fix 关联 Issue、squash/rebase
+  Amane PR 规范: 正文组织、跟踪并修复 CI、用 Close/Fix 关联 Issue、squash/rebase
   合入并清理、以及 Alembic migration 的 multi-head 处理.
   Use when creating, updating, or merging a pull request, 开 PR, 更新 PR,
-  合并 PR, 处理 CI 失败, or when a PR adds an Alembic migration.
+  写 PR 正文, 合并 PR, 处理 CI 失败, or when a PR adds an Alembic migration.
 ---
 
 # PR 规范
+
+## 正文
+
+顺序: Summary → Implementation → Test plan → Close/Fix 或 Related.
+
+**Summary** 为无序列表, 写本 PR 对外交付的能力或解决的缺陷. 此节需简洁清晰, 高度抽象且提纲挈领, 意在快速告知读者此 PR 「做了什么」
+
+限制每条为**无标点单句**, 简明扼要的描述一个新功能或 bug 修复
+
+严禁:
+
+- 源码标识符 (字段、类、函数、API 参数)
+- 对调用链/控制流/状态转移等进行纯粹描述
+- 实现细节 (如边界条件、约束等)
+
+这些内容如对审查有帮助可写入 Implementation.
+
+**Implementation** 也为无序列表, 写实现方案与契约, 可省略
+
+**Test plan** 为 check-list
+
+**标题** 是 Summary 的再压缩, 使用约定式提交格式, 提交信息为短句, 要求直击核心
 
 ## CI
 
@@ -27,7 +49,8 @@ PR 有相关 Issue 时, 按是否彻底解决区分, 写在正文**末尾**:
 
 ```markdown
 <!-- other content -->
-## Related:
+## Related
+
 - #56
 - #78
 
@@ -47,7 +70,7 @@ Fix #34
 
 ## Alembic
 
-PR 含数据库 schema 变更 / 新 migration 时, **正文最前面** (Summary 等之前) 固定放:
+PR 含数据库 schema 变更 / 新 migration 时, **正文最前面** (各节之前) 固定放:
 
 ```
 > ❗ **此 PR 包含 DB migration**
