@@ -6,7 +6,7 @@ import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { listFeedsOptions } from "@/client/@tanstack/react-query.gen";
-import type { FeedItemState } from "@/client/types.gen";
+import type { FeedItemReadState, FeedItemState } from "@/client/types.gen";
 import { FeedReader } from "@/components/feeds/feed-reader";
 import { FeedSidebar } from "@/components/feeds/feed-sidebar";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
@@ -17,13 +17,14 @@ const feedsSearchSchema = z.object({
   group: z.string().optional(),
   q: z.string().optional(),
   state: z.enum(["active", "ignored", "all"]).catch("active").default("active"),
+  read: z.enum(["unread", "read", "all"]).catch("unread").default("unread"),
   page: z.coerce.number().int().min(1).catch(1).default(1),
   nodedupe: z.union([z.literal("1"), z.literal("true"), z.literal(true)]).optional(),
 });
 
 export const Route = createFileRoute("/feeds/")({
   validateSearch: feedsSearchSchema,
-  search: { middlewares: [stripSearchParams({ page: 1, state: "active" })] },
+  search: { middlewares: [stripSearchParams({ page: 1, state: "active", read: "unread" })] },
   component: FeedsPage,
 });
 
@@ -41,6 +42,7 @@ function FeedsPage() {
       group: string | undefined;
       q: string | undefined;
       state: FeedItemState;
+      read: FeedItemReadState;
       page: number;
       nodedupe: true | undefined;
     }>,
@@ -108,10 +110,12 @@ function FeedsPage() {
               group={search.group}
               q={search.q}
               state={search.state}
+              read={search.read}
               page={search.page}
               dedupe={search.nodedupe == null}
               onQueryChange={(q) => patchSearch({ q, page: 1 })}
               onStateChange={(state) => patchSearch({ state, page: 1 })}
+              onReadChange={(read) => patchSearch({ read, page: 1 })}
               onPageChange={(page) => patchSearch({ page })}
               onDedupeChange={(dedupe) => patchSearch({ nodedupe: dedupe ? undefined : true })}
               onOpenFeed={(feed) => patchSearch({ feed: feed.id, group: undefined, page: 1 })}

@@ -815,12 +815,16 @@ export type FeedCreateRequest = {
      * Use Cache
      */
     use_cache?: Array<CacheKind>;
+    /**
+     * Ignore Keywords
+     */
+    ignore_keywords?: Array<string>;
 };
 
 /**
  * FeedItemBatchAction
  */
-export type FeedItemBatchAction = 'ignore' | 'unignore' | 'delete' | 'scrape';
+export type FeedItemBatchAction = 'ignore' | 'unignore' | 'read' | 'unread' | 'delete' | 'scrape';
 
 /**
  * FeedItemBatchRequest
@@ -874,6 +878,11 @@ export type FeedItemListResponse = {
 };
 
 /**
+ * FeedItemReadState
+ */
+export type FeedItemReadState = 'unread' | 'read' | 'all';
+
+/**
  * FeedItemResponse
  */
 export type FeedItemResponse = {
@@ -917,6 +926,10 @@ export type FeedItemResponse = {
      * Ignored At
      */
     ignored_at?: string | null;
+    /**
+     * Read At
+     */
+    read_at?: string | null;
     /**
      * Metadata Id
      */
@@ -984,6 +997,10 @@ export type FeedResponse = {
      */
     use_cache?: Array<CacheKind>;
     /**
+     * Ignore Keywords
+     */
+    ignore_keywords?: Array<string>;
+    /**
      * Next Fetch At
      */
     next_fetch_at?: string | null;
@@ -999,6 +1016,10 @@ export type FeedResponse = {
      * Last Enqueued
      */
     last_enqueued?: number;
+    /**
+     * Unread Count
+     */
+    unread_count?: number;
 };
 
 /**
@@ -1038,6 +1059,10 @@ export type FeedUpdateRequest = {
      * Use Cache
      */
     use_cache?: Array<string> | null;
+    /**
+     * Ignore Keywords
+     */
+    ignore_keywords?: Array<string> | null;
 };
 
 /**
@@ -4854,6 +4879,7 @@ export type ListAllFeedItemsData = {
          */
         search?: string | null;
         state?: FeedItemState;
+        read?: FeedItemReadState;
         /**
          * Feed Id
          */
@@ -5026,6 +5052,7 @@ export type ListFeedItemsData = {
          */
         search?: string | null;
         state?: FeedItemState;
+        read?: FeedItemReadState;
         /**
          * Offset
          */

@@ -4,7 +4,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.exc import IntegrityError
 
-from ...db import FeedItem, FeedItemState, TaskType
+from ...db import Feed, FeedItem, FeedItemReadState, FeedItemState, TaskType
 from ...handlers.models import CacheKind, ScrapePayload, build_feed_scrape_payload
 from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
@@ -21,6 +21,7 @@ from ..models.feeds import (
     _validate_http_url,
     _validate_number_pattern,
     normalize_feed_group,
+    normalize_ignore_keywords,
 )
 
 if TYPE_CHECKING:
@@ -38,6 +39,16 @@ def _use_cache_values(use_cache: set[CacheKind]) -> list[str]:
     return [kind for kind in _CACHE_KIND_ORDER if kind in use_cache]
 
 
+def _with_unread(feed: Feed, unread_count: int) -> FeedResponse:
+    return to_resp(FeedResponse, feed).model_copy(update={"unread_count": unread_count})
+
+
+async def _feed_resp(repo: RepoDep, feed: Feed) -> FeedResponse:
+    assert feed.id is not None
+    counts = await repo.count_unread_feed_items(feed.id)
+    return _with_unread(feed, counts.get(feed.id, 0))
+
+
 def _item_resp(item: FeedItem, metadata_id: int | None) -> FeedItemResponse:
     assert item.id is not None
     return FeedItemResponse(
@@ -51,6 +62,7 @@ def _item_resp(item: FeedItem, metadata_id: int | None) -> FeedItemResponse:
         published_at=item.published_at,
         created_at=item.created_at,
         ignored_at=item.ignored_at,
+        read_at=item.read_at,
         metadata_id=metadata_id,
     )
 
@@ -58,7 +70,11 @@ def _item_resp(item: FeedItem, metadata_id: int | None) -> FeedItemResponse:
 @router.get("")
 async def list_feeds(repo: RepoDep) -> FeedListResponse:
     items = await repo.list_feeds()
-    return FeedListResponse(items=[to_resp(FeedResponse, feed) for feed in items], total=len(items))
+    counts = await repo.count_unread_feed_items()
+    return FeedListResponse(
+        items=[_with_unread(feed, counts.get(feed.id or 0, 0)) for feed in items],
+        total=len(items),
+    )
 
 
 @router.post("", status_code=201)
@@ -77,6 +93,7 @@ async def create_feed(req: FeedCreateRequest, repo: RepoDep, runtime: RuntimeDep
             number_pattern=req.number_pattern,
             content_type=req.content_type,
             use_cache=_use_cache_values(req.use_cache),
+            ignore_keywords=req.ignore_keywords,
         )
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="该订阅源 URL 已存在") from exc
@@ -87,7 +104,7 @@ async def create_feed(req: FeedCreateRequest, repo: RepoDep, runtime: RuntimeDep
         refreshed = await repo.get_feed(feed.id)
         if refreshed is not None:
             feed = refreshed
-    return to_resp(FeedResponse, feed)
+    return await _feed_resp(repo, feed)
 
 
 @router.get("/items")
@@ -95,6 +112,7 @@ async def list_all_feed_items(
     repo: RepoDep,
     search: Annotated[str | None, Query()] = None,
     state: Annotated[FeedItemState, Query()] = FeedItemState.ACTIVE,
+    read: Annotated[FeedItemReadState, Query()] = FeedItemReadState.ALL,
     feed_id: Annotated[int | None, Query()] = None,
     group: Annotated[str | None, Query()] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -119,6 +137,7 @@ async def list_all_feed_items(
         limit=limit,
         search=search.strip() if search is not None else None,
         state=state,
+        read=read,
         group=normalized_group if feed_id is None else None,
     )
     return FeedItemListResponse(items=[_item_resp(item, metadata_id) for item, metadata_id in items], total=total)
@@ -129,7 +148,7 @@ async def get_feed(feed_id: int, repo: RepoDep) -> FeedResponse:
     feed = await repo.get_feed(feed_id)
     if feed is None:
         raise HTTPException(status_code=404, detail="订阅源不存在")
-    return to_resp(FeedResponse, feed)
+    return await _feed_resp(repo, feed)
 
 
 @router.patch("/{feed_id}")
@@ -168,6 +187,14 @@ async def update_feed(feed_id: int, req: FeedUpdateRequest, repo: RepoDep) -> Fe
             except TypeError, ValueError:
                 continue
         updates["use_cache"] = _use_cache_values(kinds)
+    if "ignore_keywords" in updates:
+        raw_keywords = updates["ignore_keywords"]
+        if not isinstance(raw_keywords, list) or any(not isinstance(item, str) for item in raw_keywords):
+            raise HTTPException(status_code=422, detail="ignore_keywords 必须是字符串列表")
+        try:
+            updates["ignore_keywords"] = normalize_ignore_keywords(raw_keywords)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         updated = await repo.update_feed(feed_id, **updates)
     except IntegrityError as exc:
@@ -175,7 +202,7 @@ async def update_feed(feed_id: int, req: FeedUpdateRequest, repo: RepoDep) -> Fe
     if updated is None:
         raise HTTPException(status_code=404, detail="订阅源不存在")
     logger.info("feed updated", feed_id=feed_id, fields=list(updates.keys()))
-    return to_resp(FeedResponse, updated)
+    return await _feed_resp(repo, updated)
 
 
 @router.delete("/{feed_id}", status_code=204)
@@ -198,7 +225,7 @@ async def poll_feed(feed_id: int, repo: RepoDep, runtime: RuntimeDep) -> FeedRes
     refreshed = await repo.get_feed(feed_id)
     assert refreshed is not None
     logger.info("feed polled manually", feed_id=feed_id)
-    return to_resp(FeedResponse, refreshed)
+    return await _feed_resp(repo, refreshed)
 
 
 @router.get("/{feed_id}/items")
@@ -207,6 +234,7 @@ async def list_feed_items(
     repo: RepoDep,
     search: Annotated[str | None, Query()] = None,
     state: Annotated[FeedItemState, Query()] = FeedItemState.ACTIVE,
+    read: Annotated[FeedItemReadState, Query()] = FeedItemReadState.ALL,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> FeedItemListResponse:
@@ -219,6 +247,7 @@ async def list_feed_items(
         limit=limit,
         search=search.strip() if search is not None else None,
         state=state,
+        read=read,
     )
     return FeedItemListResponse(items=[_item_resp(item, metadata_id) for item, metadata_id in items], total=total)
 
@@ -236,6 +265,12 @@ async def batch_feed_items(feed_id: int, req: FeedItemBatchRequest, repo: RepoDe
             response = FeedItemBatchResponse(affected=affected, missing=missing)
         case FeedItemBatchAction.UNIGNORE:
             affected, missing = await repo.unignore_feed_items(feed_id, req.ids)
+            response = FeedItemBatchResponse(affected=affected, missing=missing)
+        case FeedItemBatchAction.READ:
+            affected, missing = await repo.mark_feed_items_read(feed_id, req.ids)
+            response = FeedItemBatchResponse(affected=affected, missing=missing)
+        case FeedItemBatchAction.UNREAD:
+            affected, missing = await repo.mark_feed_items_unread(feed_id, req.ids)
             response = FeedItemBatchResponse(affected=affected, missing=missing)
         case FeedItemBatchAction.DELETE:
             affected, missing = await repo.delete_feed_items(feed_id, req.ids)

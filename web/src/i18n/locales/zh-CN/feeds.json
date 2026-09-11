@@ -13,6 +13,11 @@
     "ignored": "已忽略",
     "all": "全部"
   },
+  "historyReadStates": {
+    "unread": "未读",
+    "read": "已读",
+    "all": "全部"
+  },
   "sidebar": {
     "title": "订阅",
     "all": "全部订阅",
@@ -32,7 +37,12 @@
     "selectPage": "全选本页",
     "itemCount": "{{count}} 条",
     "itemCount_one": "{{count}} 条",
-    "itemCount_other": "{{count}} 条"
+    "itemCount_other": "{{count}} 条",
+    "shortcutHint": "← → 切换条目",
+    "dateBuckets": {
+      "today": "今天",
+      "yesterday": "昨天"
+    }
   },
   "importOpml": "导入 OPML",
   "importTitle": "从 OPML 导入",
@@ -70,6 +80,9 @@
     "contentTypeAuto": "自动推断",
     "useCache": "使用缓存",
     "useCacheHint": "勾选则使用对应缓存, 否则重新抓取",
+    "ignoreKeywords": "过滤关键词",
+    "ignoreKeywordsHint": "每行一个. 标题或番号包含任一关键词则忽略该条目. 历史条目同样生效.",
+    "ignoreKeywordsPlaceholder": "合集\n総集編",
     "cacheMetadata": "元数据缓存",
     "cacheTrans": "译文缓存",
     "enabled": "启用",
@@ -135,7 +148,10 @@
     "disableAutoEnqueueSelected": "不自动入队",
     "rescrape": "重新刮削",
     "ignore": "忽略",
-    "unignore": "恢复"
+    "unignore": "恢复",
+    "markRead": "标为已读",
+    "markUnread": "标为未读",
+    "setIgnoreKeywords": "设置过滤关键词"
   },
   "confirm": {
     "deleteTitle": "删除订阅源",
@@ -146,6 +162,12 @@
     "deleteItemsMessage": "确定删除选中的 {{count}} 条历史？删除后，远程源再次返回时会重新视为新条目。",
     "deleteItemTitle": "删除历史",
     "deleteItemMessage": "确定删除这条历史？远程源再次返回时会重新视为新条目。"
+  },
+  "keywordDialog": {
+    "title": "设置过滤关键词",
+    "replace": "覆盖已有关键词",
+    "replaceHint": "关闭时追加到各源现有列表; 打开时用上面的列表替换.",
+    "apply": "应用到选中源"
   },
   "batchActionResult": "已处理 {{affected}} 条",
   "batchActionResultWithMissing": "已处理 {{affected}} 条, {{missing}} 条已不存在",

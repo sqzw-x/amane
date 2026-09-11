@@ -62,6 +62,12 @@ class FeedItemState(StrEnum):
     ALL = "all"
 
 
+class FeedItemReadState(StrEnum):
+    UNREAD = "unread"
+    READ = "read"
+    ALL = "all"
+
+
 # 列表排序字段显式枚举, 禁止 getattr 反射任意列名; 未映射的枚举值须在 repository 报错.
 
 
@@ -349,6 +355,8 @@ class Feed(SQLModel, table=True):
     content_type: ContentType | None = None
     """显式内容类型; None 则 infer_content_type."""
     use_cache: list[str] = Field(default_factory=lambda: ["metadata", "trans"], sa_column=Column(JSON, nullable=False))
+    ignore_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    """字面量关键词; 标题或番号命中则写入 ignored_at, 不入队 SCRAPE."""
     etag: str | None = None
     last_modified: str | None = None
     next_fetch_at: datetime | None = None
@@ -376,6 +384,8 @@ class FeedItem(SQLModel, table=True):
     """条目正文 (RSS description / Atom content), 供阅读器渲染. 首次写入后不随源更新."""
     number: str | None = None
     ignored_at: datetime | None = Field(default=None, index=True)
+    read_at: datetime | None = Field(default=None, index=True)
+    """用户已读时间. 与 ignored_at 正交, 不改变去重, 不随源更新."""
     published_at: datetime | None = None
     """源给出的发布时间 (RSS pubDate / Atom published, 否则 updated). 列表按此新→旧; 空则回退 created_at."""
     created_at: datetime = Field(default_factory=_utcnow)

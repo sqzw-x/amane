@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field, field_validator
 
 from ...db import Feed
+from ...db.feed_keywords import normalize_ignore_keywords
 from ...handlers.models import CacheKind
 from ...parsing import ContentType
 from ...utils.model import create_partial_model
@@ -63,6 +64,7 @@ class FeedCreateRequest(BaseModel):
     number_pattern: str | None = None
     content_type: ContentType | None = None
     use_cache: set[CacheKind] = Field(default_factory=lambda: set(_DEFAULT_USE_CACHE))
+    ignore_keywords: list[str] = Field(default_factory=list)
 
     @field_validator("url")
     @classmethod
@@ -78,6 +80,11 @@ class FeedCreateRequest(BaseModel):
     @classmethod
     def _group(cls, value: str) -> str:
         return normalize_feed_group(value)
+
+    @field_validator("ignore_keywords")
+    @classmethod
+    def _ignore_keywords(cls, value: list[str]) -> list[str]:
+        return normalize_ignore_keywords(value)
 
 
 if TYPE_CHECKING:
@@ -109,10 +116,12 @@ class FeedResponse(BaseModel):
     number_pattern: str | None = None
     content_type: ContentType | None = None
     use_cache: list[CacheKind] = Field(default_factory=list)
+    ignore_keywords: list[str] = Field(default_factory=list)
     next_fetch_at: datetime | None = None
     last_fetched_at: datetime | None = None
     last_error: str | None = None
     last_enqueued: int = 0
+    unread_count: int = 0
 
 
 class FeedListResponse(BaseModel):
@@ -131,6 +140,7 @@ class FeedItemResponse(BaseModel):
     published_at: datetime | None = None
     created_at: datetime
     ignored_at: datetime | None = None
+    read_at: datetime | None = None
     metadata_id: int | None = None
     """当前库里同番号 Metadata 的 id; 无则空. 列表 JOIN, 不是 FeedItem 列."""
 
@@ -143,6 +153,8 @@ class FeedItemListResponse(BaseModel):
 class FeedItemBatchAction(StrEnum):
     IGNORE = "ignore"
     UNIGNORE = "unignore"
+    READ = "read"
+    UNREAD = "unread"
     DELETE = "delete"
     SCRAPE = "scrape"
 

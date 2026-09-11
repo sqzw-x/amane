@@ -23,8 +23,17 @@ export function sanitizeFeedHtml(html: string): string {
   });
 }
 
+/** 块级标签与 br 收成空格, 避免多行正文在缩略里粘连. */
 export function feedHtmlPlainText(html: string): string {
   const clean = sanitizeFeedHtml(html);
   const doc = new DOMParser().parseFromString(clean, "text/html");
+  for (const node of doc.body.querySelectorAll("br")) {
+    node.replaceWith(" ");
+  }
+  for (const node of doc.body.querySelectorAll(
+    "p, div, li, h1, h2, h3, h4, h5, h6, tr, blockquote, pre",
+  )) {
+    node.append(" ");
+  }
   return (doc.body.textContent ?? "").replace(/\s+/g, " ").trim();
 }

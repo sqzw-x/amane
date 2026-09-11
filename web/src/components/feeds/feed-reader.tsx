@@ -14,14 +14,16 @@ import {
   IconArchiveOff,
   IconArrowsDiagonal,
   IconArrowsDiagonalMinimize,
+  IconMail,
+  IconMailOpened,
   IconRefresh,
   IconSearch,
   IconTrash,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Virtuoso } from "react-virtuoso";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
   listAllFeedItemsOptions,
   listAllFeedItemsQueryKey,
@@ -31,6 +33,8 @@ import { batchFeedItems } from "@/client/sdk.gen";
 import type {
   FeedItemBatchAction,
   FeedItemBatchResponse,
+  FeedItemListResponse,
+  FeedItemReadState,
   FeedItemResponse,
   FeedItemState,
   FeedResponse,
@@ -42,13 +46,26 @@ import { useIdSelection } from "@/hooks/use-id-selection";
 import { useResettingState } from "@/hooks/use-resetting-state";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
+import { FEED_ITEM_READ_STATES, FEED_ITEM_STATES } from "@/lib/exhaustive-maps";
 import { type DedupedFeedItem, dedupeFeedItems } from "@/lib/feeds/dedupe";
 import { UNGROUPED_GROUP } from "@/lib/feeds/groups";
+import { feedNavDelta, nextFeedItemIndex, shouldIgnoreFeedNavHotkey } from "@/lib/feeds/keyboard";
+import { feedDateBucket, feedDateBucketKey, feedDateBucketLabel } from "@/lib/feeds/time";
 import { useUIStore } from "@/stores/ui";
 import { FeedArticle } from "./feed-article";
 
+type DateGroup = { key: string; label: string; items: DedupedFeedItem[] };
+
+type FeedListEntry =
+  | { kind: "header"; key: string; label: string }
+  | { kind: "item"; key: string; row: DedupedFeedItem };
+
 function isFeedItemState(value: string): value is FeedItemState {
   return value === "active" || value === "ignored" || value === "all";
+}
+
+function isFeedItemReadState(value: string): value is FeedItemReadState {
+  return value === "unread" || value === "read" || value === "all";
 }
 
 function emptyBatch(): FeedItemBatchResponse {
@@ -103,6 +120,8 @@ function FeedReaderRow({
   onScrape,
   onIgnore,
   onUnignore,
+  onMarkRead,
+  onMarkUnread,
   onDelete,
   onOpenFeed,
 }: {
@@ -117,6 +136,8 @@ function FeedReaderRow({
   onScrape: (id: number) => void;
   onIgnore: (id: number) => void;
   onUnignore: (id: number) => void;
+  onMarkRead: (id: number) => void;
+  onMarkUnread: (id: number) => void;
   onDelete: (id: number) => void;
   onOpenFeed: (feed: FeedResponse) => void;
 }) {
@@ -134,6 +155,8 @@ function FeedReaderRow({
       onScrape={() => onScrape(row.item.id)}
       onIgnore={() => onIgnore(row.item.id)}
       onUnignore={() => onUnignore(row.item.id)}
+      onMarkRead={() => onMarkRead(row.item.id)}
+      onMarkUnread={() => onMarkUnread(row.item.id)}
       onDelete={() => onDelete(row.item.id)}
       onOpenFeed={onOpenFeed}
     />
@@ -146,10 +169,12 @@ export function FeedReader({
   group,
   q,
   state,
+  read,
   page,
   dedupe,
   onQueryChange,
   onStateChange,
+  onReadChange,
   onPageChange,
   onDedupeChange,
   onOpenFeed,
@@ -159,21 +184,27 @@ export function FeedReader({
   group: string | undefined;
   q: string | undefined;
   state: FeedItemState;
+  read: FeedItemReadState;
   page: number;
   dedupe: boolean;
   onQueryChange: (q: string | undefined) => void;
   onStateChange: (state: FeedItemState) => void;
+  onReadChange: (read: FeedItemReadState) => void;
   onPageChange: (page: number) => void;
   onDedupeChange: (dedupe: boolean) => void;
   onOpenFeed: (feed: FeedResponse) => void;
 }) {
-  const { t } = useTranslation(["feeds", "common"]);
+  const { t, i18n } = useTranslation(["feeds", "common"]);
   const queryClient = useQueryClient();
   const limit = useUIStore((s) => s.pageSizes.feedItems);
   const [searchInput, setSearchInput] = useResettingState(() => q ?? "", q);
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const [collapsed, setCollapsed] = useState<Set<number>>(() => new Set());
   const [expandAll, setExpandAll] = useState(false);
+  const [cursorId, setCursorId] = useState<number | null>(null);
+  const [navSeq, setNavSeq] = useState(0);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const pendingScrollIndex = useRef<number | null>(null);
   const { selected, selectedIds, toggleOne, toggleAll, isAllSelected, clear } = useIdSelection();
 
   const feedsById = useMemo(() => new Map(feeds.map((feed) => [feed.id, feed])), [feeds]);
@@ -183,6 +214,7 @@ export function FeedReader({
       offset: number;
       limit: number;
       state: FeedItemState;
+      read: FeedItemReadState;
       search?: string;
       feed_id?: number;
       group?: string;
@@ -190,6 +222,7 @@ export function FeedReader({
       offset: (page - 1) * limit,
       limit,
       state,
+      read,
     };
     if (q != null && q !== "") {
       query.search = q;
@@ -202,7 +235,7 @@ export function FeedReader({
       query.group = group;
     }
     return query;
-  }, [feedId, group, limit, page, q, state]);
+  }, [feedId, group, limit, page, q, read, state]);
 
   const { data, isLoading } = useQuery(listAllFeedItemsOptions({ query: itemQuery }));
   const items = data?.items ?? [];
@@ -216,6 +249,48 @@ export function FeedReader({
         : (data?.items ?? []).map((item) => ({ item, duplicates: [] })),
     [dedupe, data?.items],
   );
+  const groups = useMemo(() => {
+    const labels = {
+      today: t("reader.dateBuckets.today"),
+      yesterday: t("reader.dateBuckets.yesterday"),
+    };
+    const result: DateGroup[] = [];
+    for (const row of rows) {
+      const bucket = feedDateBucket(row.item.published_at ?? row.item.created_at);
+      const key = feedDateBucketKey(bucket);
+      const last = result.at(-1);
+      if (last == null || last.key !== key) {
+        result.push({
+          key,
+          label: feedDateBucketLabel(bucket, labels, i18n.language),
+          items: [row],
+        });
+      } else {
+        last.items.push(row);
+      }
+    }
+    return result;
+  }, [i18n.language, rows, t]);
+  const listEntries = useMemo((): FeedListEntry[] => {
+    const entries: FeedListEntry[] = [];
+    for (const section of groups) {
+      entries.push({ kind: "header", key: `h:${section.key}`, label: section.label });
+      for (const row of section.items) {
+        entries.push({ kind: "item", key: `i:${row.item.id}`, row });
+      }
+    }
+    return entries;
+  }, [groups]);
+  const virtuosoIndexByItemId = useMemo(() => {
+    const map = new Map<number, number>();
+    listEntries.forEach((entry, index) => {
+      if (entry.kind === "item") {
+        map.set(entry.row.item.id, index);
+      }
+    });
+    return map;
+  }, [listEntries]);
+  const flatItems = useMemo(() => groups.flatMap((section) => section.items), [groups]);
   const visibleIds = rows.map((row) => row.item.id);
   const allSelected = isAllSelected(visibleIds);
 
@@ -224,12 +299,40 @@ export function FeedReader({
     void queryClient.invalidateQueries({ queryKey: listFeedsQueryKey() });
   }
 
+  const patchReadAt = useCallback(
+    (ids: readonly number[], nextRead: boolean) => {
+      const idSet = new Set(ids);
+      const stamp = new Date().toISOString();
+      queryClient.setQueryData<FeedItemListResponse>(
+        listAllFeedItemsQueryKey({ query: itemQuery }),
+        (current) => {
+          if (current == null) {
+            return current;
+          }
+          return {
+            ...current,
+            items: current.items.map((item) => {
+              if (!idSet.has(item.id)) {
+                return item;
+              }
+              if (nextRead) {
+                return item.read_at != null ? item : { ...item, read_at: stamp };
+              }
+              return { ...item, read_at: null };
+            }),
+          };
+        },
+      );
+    },
+    [itemQuery, queryClient],
+  );
+
   const batchMutation = useMutation({
     mutationFn: ({
       action,
       ids,
     }: {
-      action: Exclude<FeedItemBatchAction, "scrape">;
+      action: Exclude<FeedItemBatchAction, "scrape" | "read" | "unread">;
       ids: number[];
     }) => batchAcrossFeeds(items, ids, action),
     onSuccess: (result) => {
@@ -249,6 +352,33 @@ export function FeedReader({
         message: extractErrorMessage(error, t("common:toast.operationFailed")),
         color: "red",
       }),
+  });
+  const readMutation = useMutation({
+    mutationFn: ({ action, ids }: { action: "read" | "unread"; ids: number[]; notify?: boolean }) =>
+      batchAcrossFeeds(items, ids, action),
+    onSuccess: (result, vars) => {
+      patchReadAt(vars.ids, vars.action === "read");
+      void queryClient.invalidateQueries({ queryKey: listFeedsQueryKey() });
+      if (vars.notify === false) {
+        return;
+      }
+      const message =
+        result.missing > 0
+          ? t("batchActionResultWithMissing", {
+              affected: result.affected,
+              missing: result.missing,
+            })
+          : t("batchActionResult", { affected: result.affected });
+      notifications.show({ message, color: "blue" });
+      clear();
+    },
+    onError: (error) => {
+      invalidate();
+      notifications.show({
+        message: extractErrorMessage(error, t("common:toast.operationFailed")),
+        color: "red",
+      });
+    },
   });
   const scrapeMutation = useMutation({
     mutationFn: (ids: number[]) => batchAcrossFeeds(items, ids, "scrape"),
@@ -271,9 +401,11 @@ export function FeedReader({
       }),
   });
 
-  const busy = scrapeMutation.isPending || batchMutation.isPending;
+  const busy = scrapeMutation.isPending || batchMutation.isPending || readMutation.isPending;
   const showIgnore = state !== "ignored";
   const showUnignore = state !== "active";
+  const showMarkRead = read !== "read";
+  const showMarkUnread = read !== "unread";
 
   function applySearch() {
     clear();
@@ -286,6 +418,14 @@ export function FeedReader({
     }
     clear();
     onStateChange(next);
+  }
+
+  function changeRead(next: string) {
+    if (!isFeedItemReadState(next)) {
+      return;
+    }
+    clear();
+    onReadChange(next);
   }
 
   const deleteIds = useCallback(
@@ -310,6 +450,7 @@ export function FeedReader({
 
   const toggleExpand = useCallback(
     (id: number) => {
+      setCursorId(id);
       if (expandAll) {
         setCollapsed((prev) => {
           const next = new Set(prev);
@@ -335,24 +476,138 @@ export function FeedReader({
     [expandAll],
   );
 
-  const renderItem = useCallback(
-    (_index: number, row: DedupedFeedItem) => (
-      <FeedReaderRow
-        row={row}
-        feed={feedsById.get(row.item.feed_id)}
-        expanded={expandAll ? !collapsed.has(row.item.id) : expanded.has(row.item.id)}
-        selected={selected.has(row.item.id)}
-        showFeedName={feedId == null}
-        busy={busy}
-        onToggleExpand={toggleExpand}
-        onToggleSelect={toggleOne}
-        onScrape={(id) => scrapeMutation.mutate([id])}
-        onIgnore={(id) => batchMutation.mutate({ action: "ignore", ids: [id] })}
-        onUnignore={(id) => batchMutation.mutate({ action: "unignore", ids: [id] })}
-        onDelete={(id) => void deleteIds([id])}
-        onOpenFeed={onOpenFeed}
-      />
-    ),
+  const markReadOnExpand = useCallback(
+    (id: number, unread: boolean) => {
+      const isExpanded = expandAll ? !collapsed.has(id) : expanded.has(id);
+      if (!isExpanded && unread) {
+        readMutation.mutate({ action: "read", ids: [id], notify: false });
+      }
+      toggleExpand(id);
+    },
+    [collapsed, expandAll, expanded, readMutation, toggleExpand],
+  );
+
+  const currentItemIndex = useCallback((): number => {
+    if (cursorId != null) {
+      const indexed = flatItems.findIndex((row) => row.item.id === cursorId);
+      if (indexed >= 0) {
+        return indexed;
+      }
+    }
+    for (let index = 0; index < flatItems.length; index += 1) {
+      const id = flatItems[index]?.item.id;
+      if (id == null) {
+        continue;
+      }
+      const isOpen = expandAll ? !collapsed.has(id) : expanded.has(id);
+      if (isOpen) {
+        return index;
+      }
+    }
+    return -1;
+  }, [collapsed, cursorId, expandAll, expanded, flatItems]);
+
+  const openItemAt = useCallback(
+    (index: number) => {
+      const row = flatItems[index];
+      if (row == null) {
+        return;
+      }
+      const id = row.item.id;
+      pendingScrollIndex.current = virtuosoIndexByItemId.get(id) ?? null;
+      setCursorId(id);
+      setNavSeq((seq) => seq + 1);
+      setExpandAll(false);
+      setCollapsed(new Set());
+      setExpanded(new Set([id]));
+      if (row.item.read_at == null) {
+        readMutation.mutate({ action: "read", ids: [id], notify: false });
+      }
+    },
+    [flatItems, readMutation, virtuosoIndexByItemId],
+  );
+
+  const moveExpanded = useCallback(
+    (delta: number) => {
+      const next = nextFeedItemIndex(currentItemIndex(), delta, flatItems.length);
+      if (next == null) {
+        return;
+      }
+      openItemAt(next);
+    },
+    [currentItemIndex, flatItems.length, openItemAt],
+  );
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) {
+        return;
+      }
+      const delta = feedNavDelta(event.key);
+      if (delta == null || shouldIgnoreFeedNavHotkey(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      moveExpanded(delta);
+    }
+    document.documentElement.addEventListener("keydown", onKeyDown);
+    return () => document.documentElement.removeEventListener("keydown", onKeyDown);
+  }, [moveExpanded]);
+
+  useEffect(() => {
+    if (navSeq === 0) {
+      return;
+    }
+    const index = pendingScrollIndex.current;
+    if (index == null) {
+      return;
+    }
+    let cancelled = false;
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) {
+          return;
+        }
+        pendingScrollIndex.current = null;
+        virtuosoRef.current?.scrollIntoView({ index, align: "start", behavior: "auto" });
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [navSeq]);
+
+  const renderListEntry = useCallback(
+    (_index: number, entry: FeedListEntry) => {
+      if (entry.kind === "header") {
+        return (
+          <Text size="xs" tt="uppercase" c="dimmed" fw={600} pt="sm" pb={4}>
+            {entry.label}
+          </Text>
+        );
+      }
+      const row = entry.row;
+      return (
+        <FeedReaderRow
+          row={row}
+          feed={feedsById.get(row.item.feed_id)}
+          expanded={expandAll ? !collapsed.has(row.item.id) : expanded.has(row.item.id)}
+          selected={selected.has(row.item.id)}
+          showFeedName={feedId == null}
+          busy={busy}
+          onToggleExpand={(id) => markReadOnExpand(id, row.item.read_at == null)}
+          onToggleSelect={toggleOne}
+          onScrape={(id) => scrapeMutation.mutate([id])}
+          onIgnore={(id) => batchMutation.mutate({ action: "ignore", ids: [id] })}
+          onUnignore={(id) => batchMutation.mutate({ action: "unignore", ids: [id] })}
+          onMarkRead={(id) => readMutation.mutate({ action: "read", ids: [id] })}
+          onMarkUnread={(id) => readMutation.mutate({ action: "unread", ids: [id] })}
+          onDelete={(id) => void deleteIds([id])}
+          onOpenFeed={onOpenFeed}
+        />
+      );
+    },
     [
       batchMutation,
       busy,
@@ -362,10 +617,11 @@ export function FeedReader({
       expanded,
       feedId,
       feedsById,
+      markReadOnExpand,
       onOpenFeed,
+      readMutation,
       scrapeMutation,
       selected,
-      toggleExpand,
       toggleOne,
     ],
   );
@@ -377,11 +633,18 @@ export function FeedReader({
           <SegmentedControl
             value={state}
             onChange={changeState}
-            data={[
-              { value: "active", label: t("historyStates.active") },
-              { value: "ignored", label: t("historyStates.ignored") },
-              { value: "all", label: t("historyStates.all") },
-            ]}
+            data={FEED_ITEM_STATES.map((value) => ({
+              value,
+              label: t(`historyStates.${value}`),
+            }))}
+          />
+          <SegmentedControl
+            value={read}
+            onChange={changeRead}
+            data={FEED_ITEM_READ_STATES.map((value) => ({
+              value,
+              label: t(`historyReadStates.${value}`),
+            }))}
           />
           <TextInput
             value={searchInput}
@@ -433,6 +696,30 @@ export function FeedReader({
       </Group>
 
       <SelectionBar count={selectedIds.length}>
+        {showMarkRead && (
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconMailOpened size={14} />}
+            loading={readMutation.isPending}
+            disabled={selectedIds.length === 0 || busy}
+            onClick={() => readMutation.mutate({ action: "read", ids: selectedIds })}
+          >
+            {t("actions.markRead")}
+          </Button>
+        )}
+        {showMarkUnread && (
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconMail size={14} />}
+            loading={readMutation.isPending}
+            disabled={selectedIds.length === 0 || busy}
+            onClick={() => readMutation.mutate({ action: "unread", ids: selectedIds })}
+          >
+            {t("actions.markUnread")}
+          </Button>
+        )}
         {showIgnore && (
           <Button
             size="xs"
@@ -490,6 +777,11 @@ export function FeedReader({
         <Text size="sm" c="dimmed">
           {t("reader.itemCount", { count: total })}
         </Text>
+        {flatItems.length > 0 && (
+          <Text size="sm" c="dimmed">
+            {t("reader.shortcutHint")}
+          </Text>
+        )}
       </Group>
 
       <div style={{ flex: 1, minHeight: 0 }}>
@@ -499,10 +791,12 @@ export function FeedReader({
           </Text>
         ) : (
           <Virtuoso
+            ref={virtuosoRef}
+            key={`${itemQuery.offset}:${itemQuery.state}:${itemQuery.read}:${itemQuery.search ?? ""}:${itemQuery.feed_id ?? ""}:${itemQuery.group ?? ""}`}
             style={{ height: "100%" }}
-            data={rows}
-            computeItemKey={(_index, row) => row.item.id}
-            itemContent={renderItem}
+            data={listEntries}
+            computeItemKey={(_index, entry) => entry.key}
+            itemContent={renderListEntry}
           />
         )}
       </div>

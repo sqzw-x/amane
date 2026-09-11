@@ -2676,6 +2676,15 @@
             }
           },
           {
+            "name": "read",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FeedItemReadState",
+              "default": "all"
+            }
+          },
+          {
             "name": "feed_id",
             "in": "query",
             "required": false,
@@ -2962,6 +2971,15 @@
             "schema": {
               "$ref": "#/components/schemas/FeedItemState",
               "default": "active"
+            }
+          },
+          {
+            "name": "read",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FeedItemReadState",
+              "default": "all"
             }
           },
           {
@@ -6457,6 +6475,13 @@
             "type": "array",
             "uniqueItems": true,
             "title": "Use Cache"
+          },
+          "ignore_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ignore Keywords"
           }
         },
         "type": "object",
@@ -6470,6 +6495,8 @@
         "enum": [
           "ignore",
           "unignore",
+          "read",
+          "unread",
           "delete",
           "scrape"
         ],
@@ -6551,6 +6578,15 @@
           "total"
         ],
         "title": "FeedItemListResponse"
+      },
+      "FeedItemReadState": {
+        "type": "string",
+        "enum": [
+          "unread",
+          "read",
+          "all"
+        ],
+        "title": "FeedItemReadState"
       },
       "FeedItemResponse": {
         "properties": {
@@ -6638,6 +6674,18 @@
               }
             ],
             "title": "Ignored At"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
           },
           "metadata_id": {
             "anyOf": [
@@ -6749,6 +6797,13 @@
             "type": "array",
             "title": "Use Cache"
           },
+          "ignore_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ignore Keywords"
+          },
           "next_fetch_at": {
             "anyOf": [
               {
@@ -6787,6 +6842,11 @@
           "last_enqueued": {
             "type": "integer",
             "title": "Last Enqueued",
+            "default": 0
+          },
+          "unread_count": {
+            "type": "integer",
+            "title": "Unread Count",
             "default": 0
           }
         },
@@ -6903,6 +6963,20 @@
               }
             ],
             "title": "Use Cache"
+          },
+          "ignore_keywords": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ignore Keywords"
           }
         },
         "type": "object",

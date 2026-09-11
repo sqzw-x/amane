@@ -13,6 +13,11 @@
     "ignored": "Ignored",
     "all": "All"
   },
+  "historyReadStates": {
+    "unread": "Unread",
+    "read": "Read",
+    "all": "All"
+  },
   "sidebar": {
     "title": "Feeds",
     "all": "All feeds",
@@ -32,7 +37,12 @@
     "selectPage": "Select page",
     "itemCount": "{{count}} items",
     "itemCount_one": "{{count}} item",
-    "itemCount_other": "{{count}} items"
+    "itemCount_other": "{{count}} items",
+    "shortcutHint": "← → switch article",
+    "dateBuckets": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    }
   },
   "importOpml": "Import OPML",
   "importTitle": "Import from OPML",
@@ -70,6 +80,9 @@
     "contentTypeAuto": "Infer automatically",
     "useCache": "Use Cache",
     "useCacheHint": "Checked uses that cache; otherwise refetch",
+    "ignoreKeywords": "Ignore keywords",
+    "ignoreKeywordsHint": "One per line. An item is ignored if its title or number contains a keyword. Existing history is included.",
+    "ignoreKeywordsPlaceholder": "compilation\nomnibus",
     "cacheMetadata": "Metadata Cache",
     "cacheTrans": "Translation Cache",
     "enabled": "Enabled",
@@ -135,7 +148,10 @@
     "disableAutoEnqueueSelected": "Discover only",
     "rescrape": "Rescrape",
     "ignore": "Ignore",
-    "unignore": "Restore"
+    "unignore": "Restore",
+    "markRead": "Mark as read",
+    "markUnread": "Mark as unread",
+    "setIgnoreKeywords": "Set ignore keywords"
   },
   "confirm": {
     "deleteTitle": "Delete feed",
@@ -150,6 +166,12 @@
     "deleteItemsMessage_other": "Delete the selected {{count}} history entries? If the source returns them again, they will be treated as new items.",
     "deleteItemTitle": "Delete history",
     "deleteItemMessage": "Delete this history entry? If the source returns it again, it will be treated as a new item."
+  },
+  "keywordDialog": {
+    "title": "Set ignore keywords",
+    "replace": "Replace existing keywords",
+    "replaceHint": "Off appends to each feed’s current list; on replaces it with the list above.",
+    "apply": "Apply to selected feeds"
   },
   "batchActionResult": "Processed {{affected}} entries",
   "batchActionResultWithMissing": "Processed {{affected}}, {{missing}} no longer exist",

@@ -22,7 +22,7 @@ GET `/config` 全量相等用 `hot_for_tests()`, 不能与裸 `HotSettings()` �
 | 来源 merge (`compute_merge_updates`) | `tests/aggregate/test_merge_updates.py` | 400/404/422 与一次写库 |
 | 影片 `FilmActor` coerce / 聚合填空 / 建演员写入 | `tests/crawlers/test_film_actor.py` · `tests/aggregate/test_engine.py` · `tests/db/test_actor_gender_seed.py` | — |
 | 任务 batch 计数/跳过链/取消 fallback | `tests/db/test_task_batch.py` (`execute_task_batch`, 无 lifespan) | `POST /tasks/batch` 接线 |
-| feed item 搜索/状态/分组 | `tests/db/test_feeds.py` | CRUD、poll、按 feed 配置入队刮削 |
+| feed item 搜索/忽略状态/已读/分组/关键词忽略 | `tests/db/test_feeds.py` · `tests/db/test_feed_keywords.py` | CRUD、poll、按 feed 配置入队刮削 |
 
 `client` 每次进入都付一次 FastAPI lifespan. 同一资源的 CRUD / 校验 / 空列表放入**同一个**测试函数, 用循环执行表测试, 不能用 `@pytest.mark.parametrize` 乘 `client`. 建库默认会入队 REFRESH, 不测扫描时显式 `scan=False`. 必须独占 worker 的 (claim、复用活跃任务) 才用 `stop_worker`. 解析 / 爬虫 / 纯函数测试不经由 lifespan, 不必为墙钟去合并.
 

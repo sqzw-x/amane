@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from ..db.feed_keywords import item_matches_ignore_keywords
 from ..db.models import TaskType
 from ..handlers.models import build_feed_scrape_payload
 from ..net.errors import RequestError
@@ -192,7 +193,13 @@ class FeedService:
                     title=entry.title,
                 )
 
+        ignored_keys: set[str] = set()
         for entry, number in reversed(new_entries):
+            ignored = item_matches_ignore_keywords(
+                feed.ignore_keywords or [],
+                title=entry.title,
+                number=number,
+            )
             await self._repo.create_feed_item(
                 feed_id,
                 entry.item_key,
@@ -201,13 +208,16 @@ class FeedService:
                 description=entry.description,
                 number=number,
                 published_at=entry.published_at,
+                ignored=ignored,
             )
+            if ignored:
+                ignored_keys.add(entry.item_key)
 
         enqueued_numbers: set[str] = set()
         enqueued = 0
         if feed.auto_enqueue:
             for _entry, number in new_entries:
-                if number is None or number in enqueued_numbers:
+                if number is None or number in enqueued_numbers or _entry.item_key in ignored_keys:
                     continue
                 enqueued_numbers.add(number)
                 await self._repo.create_task(

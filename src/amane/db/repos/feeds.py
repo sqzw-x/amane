@@ -4,12 +4,15 @@ from typing import Unpack
 
 from sqlalchemy import delete as sqla_delete
 from sqlalchemy import func, or_
+from sqlalchemy import update as sqla_update
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...parsing import ContentType
-from ..models import Feed, FeedItem, FeedItemState, Metadata
+from ..feed_keywords import item_matches_ignore_keywords
+from ..models import Feed, FeedItem, FeedItemReadState, FeedItemState, Metadata
 from ..repo_types import FeedUpdates
 from .base import RepositoryMixinBase
 
@@ -30,6 +33,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
         number_pattern: str | None = None,
         content_type: ContentType | None = None,
         use_cache: list[str] | None = None,
+        ignore_keywords: list[str] | None = None,
         group: str = "",
     ) -> Feed:
         async with self._session() as session:
@@ -43,6 +47,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 number_pattern=number_pattern,
                 content_type=content_type,
                 use_cache=list(use_cache) if use_cache is not None else ["metadata", "trans"],
+                ignore_keywords=list(ignore_keywords) if ignore_keywords is not None else [],
             )
             session.add(feed)
             await session.commit()
@@ -97,6 +102,8 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 feed.content_type = updates["content_type"]
             if "use_cache" in updates:
                 feed.use_cache = updates["use_cache"]
+            if "ignore_keywords" in updates:
+                feed.ignore_keywords = updates["ignore_keywords"]
             if "etag" in updates:
                 feed.etag = updates["etag"]
             if "last_modified" in updates:
@@ -109,10 +116,39 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 feed.last_error = updates["last_error"]
             if "last_enqueued" in updates:
                 feed.last_enqueued = updates["last_enqueued"]
+            if "ignore_keywords" in updates and feed.ignore_keywords:
+                await self._ignore_matching_items(session, feed_id, feed.ignore_keywords or [])
             session.add(feed)
             await session.commit()
             await session.refresh(feed)
             return feed
+
+    async def _ignore_matching_items(self, session: AsyncSession, feed_id: int, keywords: list[str]) -> None:
+        result = await session.exec(
+            select(FeedItem.id, FeedItem.title, FeedItem.number).where(
+                col(FeedItem.feed_id) == feed_id, col(FeedItem.ignored_at).is_(None)
+            )
+        )
+        ids = [
+            item_id
+            for item_id, title, number in result.all()
+            if item_id is not None and item_matches_ignore_keywords(keywords, title=title, number=number)
+        ]
+        if not ids:
+            return
+        await session.exec(sqla_update(FeedItem).where(col(FeedItem.id).in_(ids)).values(ignored_at=datetime.now(UTC)))
+
+    async def count_unread_feed_items(self, feed_id: int | None = None) -> dict[int, int]:
+        """未忽略且未读的条目数, 按 feed_id 分组."""
+        async with self._session() as session:
+            stmt = (
+                select(col(FeedItem.feed_id), count())
+                .where(col(FeedItem.ignored_at).is_(None), col(FeedItem.read_at).is_(None))
+                .group_by(col(FeedItem.feed_id))
+            )
+            if feed_id is not None:
+                stmt = stmt.where(col(FeedItem.feed_id) == feed_id)
+            return {fid: int(n) for fid, n in (await session.exec(stmt)).all() if fid is not None}
 
     async def delete_feed(self, feed_id: int) -> bool:
         """须同时删除 FeedItem, 否则留下悬空 FK."""
@@ -157,6 +193,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
         description: str | None = None,
         number: str | None = None,
         published_at: datetime | None = None,
+        ignored: bool = False,
     ) -> FeedItem:
         async with self._session() as session:
             item = FeedItem(
@@ -167,6 +204,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 description=description,
                 number=number,
                 published_at=published_at,
+                ignored_at=datetime.now(UTC) if ignored else None,
             )
             session.add(item)
             await session.commit()
@@ -215,6 +253,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
         *,
         search: str | None = None,
         state: FeedItemState | str = FeedItemState.ACTIVE,
+        read: FeedItemReadState | str = FeedItemReadState.ALL,
         group: str | None = None,
     ) -> tuple[list[tuple[FeedItem, int | None]], int]:
         async with self._session() as session:
@@ -222,6 +261,10 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 normalized_state = state if isinstance(state, FeedItemState) else FeedItemState(state)
             except ValueError as exc:
                 raise ValueError(f"Unknown feed item state: {state}") from exc
+            try:
+                normalized_read = read if isinstance(read, FeedItemReadState) else FeedItemReadState(read)
+            except ValueError as exc:
+                raise ValueError(f"Unknown feed item read state: {read}") from exc
 
             filters: list[ColumnElement[bool]] = []
             join_feed = False
@@ -239,6 +282,11 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 filters.append(col(FeedItem.ignored_at).is_(None))
             elif normalized_state is FeedItemState.IGNORED:
                 filters.append(col(FeedItem.ignored_at).is_not(None))
+
+            if normalized_read is FeedItemReadState.UNREAD:
+                filters.append(col(FeedItem.read_at).is_(None))
+            elif normalized_read is FeedItemReadState.READ:
+                filters.append(col(FeedItem.read_at).is_not(None))
 
             normalized_search = search.strip() if search is not None else None
             if normalized_search:
@@ -298,6 +346,14 @@ class FeedsRepoMixin(RepositoryMixinBase):
         """只处理属于该 Feed 的行; 未忽略则幂等."""
         return await self._set_feed_items_ignored(feed_id, item_ids, ignored=False)
 
+    async def mark_feed_items_read(self, feed_id: int, item_ids: list[int]) -> tuple[int, int]:
+        """只处理属于该 Feed 的行; 已读则幂等."""
+        return await self._set_feed_items_read(feed_id, item_ids, read=True)
+
+    async def mark_feed_items_unread(self, feed_id: int, item_ids: list[int]) -> tuple[int, int]:
+        """只处理属于该 Feed 的行; 未读则幂等."""
+        return await self._set_feed_items_read(feed_id, item_ids, read=False)
+
     async def _set_feed_items_ignored(self, feed_id: int, item_ids: list[int], *, ignored: bool) -> tuple[int, int]:
         ids = _unique_item_ids(item_ids)
         if not ids:
@@ -315,6 +371,27 @@ class FeedsRepoMixin(RepositoryMixinBase):
                     session.add(item)
                 elif not ignored and item.ignored_at is not None:
                     item.ignored_at = None
+                    session.add(item)
+            await session.commit()
+            return len(items), len(ids) - len(items)
+
+    async def _set_feed_items_read(self, feed_id: int, item_ids: list[int], *, read: bool) -> tuple[int, int]:
+        ids = _unique_item_ids(item_ids)
+        if not ids:
+            return 0, 0
+
+        async with self._session() as session:
+            result = await session.exec(
+                select(FeedItem).where(col(FeedItem.feed_id) == feed_id, col(FeedItem.id).in_(ids))
+            )
+            items = list(result.all())
+            now = datetime.now(UTC) if read else None
+            for item in items:
+                if read and item.read_at is None:
+                    item.read_at = now
+                    session.add(item)
+                elif not read and item.read_at is not None:
+                    item.read_at = None
                     session.add(item)
             await session.commit()
             return len(items), len(ids) - len(items)

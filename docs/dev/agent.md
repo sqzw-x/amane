@@ -37,7 +37,7 @@
 
 `PATCH /config` **不**暴露为工具.
 
-`feed-ops` 只通过 `FeedService.poll_one` 触发远程拉取; 拉取发现的新条目是否入队 `SCRAPE` 由 Feed 的 `auto_enqueue` 决定, Agent 不在工具内解析 RSS 或直接运行刮削. FeedItem 的 `ignore` / `unignore` / `scrape` 为批量操作; 删除源或删除条目历史须批准. 条目 `scrape` 沿用该 Feed 当前 `content_type` / `use_cache`, 同批番号大小写不敏感去重, 无番号计入 `skipped`.
+`feed-ops` 只通过 `FeedService.poll_one` 触发远程拉取; 拉取发现的新条目是否入队 `SCRAPE` 由 Feed 的 `auto_enqueue` 决定, Agent 不在工具内解析 RSS 或直接运行刮削. `ignore_keywords` 命中标题或番号的新条目写入忽略且不入队; 保存关键词会忽略当前未忽略的匹配条目. FeedItem 的 `ignore` / `unignore` / `read` / `unread` / `scrape` 为批量操作; 删除源或删除条目历史须批准. 条目 `scrape` 沿用该 Feed 当前 `content_type` / `use_cache`, 同批番号大小写不敏感去重, 无番号计入 `skipped`.
 
 `schedule-ops` 创建时只接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape`); 更新只允许 `name` / `cron` / `enabled`, 任务类型或 payload 变化须删除后重建. `trigger_schedule` 只将 `next_run` 设置为当前时间, 实际 Task 由 `CronScheduler` 下一次 tick 创建, 不是同步执行. 删除 Schedule 须批准.
 

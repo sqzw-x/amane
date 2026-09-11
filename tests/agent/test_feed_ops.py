@@ -19,7 +19,7 @@ from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.tools import AgentDeps
 from amane.agent.trace import TraceEvent
 from amane.api.models.feeds import FeedItemBatchAction
-from amane.db.models import FeedItemState
+from amane.db.models import FeedItemReadState, FeedItemState
 from amane.db.repository import Repository
 from amane.parsing import ContentType
 
@@ -106,6 +106,8 @@ async def test_create_update_and_poll_feed(feed_deps: AgentDeps) -> None:
     assert create["name"] == "source"
     assert create["group"] == "jav/rsshub"
     assert create["interval_seconds"] == 600
+    assert create["ignore_keywords"] == []
+    assert create["unread_count"] == 0
     feed_id = int(create["id"])
     assert polled == [feed_id]
 
@@ -117,12 +119,14 @@ async def test_create_update_and_poll_feed(feed_deps: AgentDeps) -> None:
             auto_enqueue=False,
             content_type=ContentType.FC2,
             use_cache=set(),
+            ignore_keywords=[" 合集 ", "合集"],
         ),
     )
     assert updated["enabled"] is False
     assert updated["auto_enqueue"] is False
     assert updated["content_type"] == "fc2"
     assert updated["use_cache"] == []
+    assert updated["ignore_keywords"] == ["合集"]
 
     polled_now = await _tool_fn("poll_feed")(_Ctx(feed_deps), feed_id=feed_id)
     assert polled_now["id"] == feed_id
@@ -167,6 +171,37 @@ async def test_list_and_batch_feed_items(feed_deps: AgentDeps) -> None:
     )
     assert listed["total"] == 1
     assert listed["items"][0]["item_key"] == "first"
+    assert listed["items"][0]["read_at"] is None
+
+    read = await _tool_fn("batch_feed_items")(
+        _Ctx(feed_deps),
+        feed_id=feed.id,
+        request=AgentFeedItemBatch(action=FeedItemBatchAction.READ, ids=[first.id, first.id, foreign.id, 9999]),
+    )
+    assert read == {
+        "action": "read",
+        "affected": 1,
+        "missing": 2,
+        "skipped": 0,
+        "submitted": 0,
+        "task_ids": [],
+    }
+    unread_list = await _tool_fn("list_feed_items")(
+        _Ctx(feed_deps),
+        feed_id=feed.id,
+        state=FeedItemState.ALL,
+        read=FeedItemReadState.UNREAD,
+    )
+    assert unread_list["total"] == 2
+    seen_list = await _tool_fn("list_feed_items")(
+        _Ctx(feed_deps),
+        feed_id=feed.id,
+        state=FeedItemState.ALL,
+        read=FeedItemReadState.READ,
+    )
+    assert seen_list["total"] == 1
+    assert seen_list["items"][0]["item_key"] == "first"
+    assert seen_list["items"][0]["read_at"] is not None
 
     ignored = await _tool_fn("batch_feed_items")(
         _Ctx(feed_deps),

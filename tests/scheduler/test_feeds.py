@@ -251,6 +251,31 @@ async def test_poll_enqueues_unique_numbers(repo: Repository):
 
 
 @pytest.mark.asyncio
+async def test_poll_ignores_keyword_matches_and_skips_enqueue(repo: Repository):
+    feed = await repo.create_feed(
+        name="t",
+        url="https://example.com/rss.xml",
+        ignore_keywords=["MIDV"],
+    )
+    assert feed.id is not None
+    service = _service(repo, FakeWeb(FakeResp(200, RSS_TWO_ITEMS)))
+    await service.poll_one(feed.id)
+
+    tasks = [task for task in await repo.list_tasks() if task.type == TaskType.SCRAPE]
+    assert tasks == []
+    rows, _ = await repo.list_feed_items(feed.id, state="all")
+    by_key = {item.item_key: item for item, _ in rows}
+    assert by_key["g-midv"].ignored_at is not None
+    assert by_key["g-dup"].ignored_at is not None
+    assert by_key["g-none"].ignored_at is None
+    _, active_total = await repo.list_feed_items(feed.id)
+    assert active_total == 1
+    polled = await repo.get_feed(feed.id)
+    assert polled is not None
+    assert polled.last_enqueued == 0
+
+
+@pytest.mark.asyncio
 async def test_poll_skips_seen_item_keys(repo: Repository):
     feed = await repo.create_feed(name="t", url="https://example.com/rss.xml")
     assert feed.id is not None
