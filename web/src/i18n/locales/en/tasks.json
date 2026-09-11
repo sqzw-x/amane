@@ -13,6 +13,8 @@
   },
   "empty": "No tasks",
   "total": "{{count}} total",
+  "total_one": "{{count}} total",
+  "total_other": "{{count}} total",
   "childrenCount": "{{count}} subtasks",
   "loadMoreChildren": "Load more ({{count}})",
   "tree": {
@@ -37,8 +39,6 @@
     "actor_scrape": "Actor Scrape",
     "rescrape": "Rescrape"
   },
-  "total_one": "tasks:total",
-  "total_other": "tasks:total",
   "detail": {
     "status": "Status",
     "priority": "Priority",

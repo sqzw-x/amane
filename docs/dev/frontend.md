@@ -104,7 +104,7 @@ OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-ma
 `just generate` → OpenAPI + TS client; SPA 产物 `web/dist` 由 `api/spa.py` 挂载.
 
 - **禁止** `as never` / `as any` 绕过可推断位置. `as const satisfies` 用于收窄字面量.
-- i18next 已接入资源类型: 缺 key 补翻译, 不允许 `as never`.
+- i18next 已接入资源类型: 缺 key 补翻译, 不允许 `as never`. extract 给 en 补的 `_one` / `_other` 必须写成译文, 不允许留下 `ns:key` 占位 (带 `count` 时英文会命中后缀 key, 界面会显示路径本身).
 - 跨页相同文案放入 `common` (或该能力所属 namespace); 页面 namespace 只留本域特有文案.
 - `useTranslation` 声明 namespace 后, 默认 ns 的 `t()` 不允许写 `ns:` 前缀; 跨 ns 才加 (`t("common:actions.save")`).
 - **例外**: `schema-form/` 内动态 path / 运行时 schema 分组允许显式断言并注释原因.
