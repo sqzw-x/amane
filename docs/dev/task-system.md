@@ -181,7 +181,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 **即时** (`POST /tasks`): 接收 `TaskSubmission` (含全部即时 `type`, 含 `actor_scrape` / `rescrape` / `trash`), 经 `src/amane/api/support/task_resolve.py::resolve_submission` 得到 `(TaskType, Payload)` 后建 Task. REFRESH / ORGANIZE / TRASH 只接受 `library_id`, resolve 时由 library 派生 `path` (submission 可显式覆盖); REFRESH / TRASH 另派生 `recursive` / `patterns`; ORGANIZE 还可带 `media_file_ids`, 与显式 `path` 互斥. ORGANIZE payload 不含扫描字段. SCRAPE 采用 number / media_id, 二者可同时提交. **`content_type` 可空**: 为空时仅 media_id 按文件路径解析、有 number 时按番号推断 (显式给定则覆盖). 番号入参是否重写见 [crawlers.md](crawlers.md). 覆盖只作用于这一次 `POST /tasks`; 库表一键刮削与 REFRESH 仍按路径解析. `ACTOR_SCRAPE` 采用 `actor_id` (亦可通过 `POST /actors/{id}/scrape`).
 
-**定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape`). 创建时把 submission 的 `model_dump(mode="json")` 写入 `Schedule.payload` (JSON 列不能存 Python `set`; `set[Enum]` 必须写成数组). cron / trigger 触发时由 `CronScheduler._execute_task` 用对应 Payload 的 `model_validate` 入队, 既有 payload 缺新字段时走模型默认值. 编辑只修改 name / cron / enabled; 修改任务内容须删除后重建.
+**定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape`). 创建时把 submission 的 `model_dump(mode="json")` 写入 `Schedule.payload` (JSON 列不能存 Python `set`; `set[Enum]` 必须写成数组). 列表 / 详情把该 JSON 校验为 `RoutineSubmission` (缺 `type` 用 `task_type`, 缺字段走模型默认值). cron / trigger 触发时由 `CronScheduler._execute_task` 用对应 Payload 的 `model_validate` 入队, 既有 payload 缺新字段时走模型默认值. 编辑只修改 name / cron / enabled; 修改任务内容须删除后重建.
 
 ## ACTOR_SCRAPE
 

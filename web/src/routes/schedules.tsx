@@ -228,7 +228,7 @@ function SchedulesPage() {
               <Badge size="sm" variant="light">
                 {t(`tasks:filters.${schedule.task_type}`)}
               </Badge>
-              <SchedulePayloadSummary taskType={schedule.task_type} payload={schedule.payload} />
+              <SchedulePayloadSummary payload={schedule.payload} />
             </Group>
           </Paper>
         ))}
@@ -300,7 +300,7 @@ function SchedulesPage() {
           {editing != null && (
             <>
               <Divider />
-              <SchedulePayloadFacts taskType={editing.task_type} payload={editing.payload} />
+              <SchedulePayloadFacts payload={editing.payload} />
             </>
           )}
           <Group justify="flex-end">
