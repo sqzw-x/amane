@@ -2,6 +2,7 @@ import {
   ActionIcon,
   Alert,
   Badge,
+  Box,
   Button,
   Card,
   Group,
@@ -12,6 +13,7 @@ import {
   Text,
   Textarea,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -437,16 +439,19 @@ function TitleDetailPage() {
               </div>
             )}
           </div>
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<IconCrop size={14} />}
-            disabled={!thumbSrc}
-            title={!thumbSrc ? t("detail.cropPoster.noThumb") : undefined}
-            onClick={() => setCropOpen(true)}
-          >
-            {t("detail.cropPoster.action")}
-          </Button>
+          <Tooltip label={t("detail.cropPoster.noThumb")} disabled={thumbSrc != null}>
+            <Box display="inline-block">
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<IconCrop size={14} />}
+                disabled={!thumbSrc}
+                onClick={() => setCropOpen(true)}
+              >
+                {t("detail.cropPoster.action")}
+              </Button>
+            </Box>
+          </Tooltip>
         </Stack>
 
         <Stack gap="sm" style={{ flex: "2 1 280px", minWidth: 260 }}>

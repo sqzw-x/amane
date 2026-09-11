@@ -1,14 +1,4 @@
-import {
-  ActionIcon,
-  Badge,
-  Box,
-  Group,
-  NavLink,
-  ScrollArea,
-  Text,
-  TextInput,
-  Tooltip,
-} from "@mantine/core";
+import { ActionIcon, Badge, Box, Group, NavLink, ScrollArea, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconChevronDown,
@@ -25,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { listAllFeedItemsQueryKey, listFeedsQueryKey } from "@/client/@tanstack/react-query.gen";
 import { pollFeed } from "@/client/sdk.gen";
 import type { FeedResponse } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { extractErrorMessage } from "@/lib/api-error";
 import {
   ancestorGroupPaths,
@@ -85,21 +76,19 @@ function ManageIconButton({
   children: ReactNode;
 }) {
   return (
-    <Tooltip label={label} withArrow>
-      <ActionIcon
-        variant="subtle"
-        size="sm"
-        color="gray"
-        aria-label={label}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onClick();
-        }}
-      >
-        {children}
-      </ActionIcon>
-    </Tooltip>
+    <HintedActionIcon
+      label={label}
+      variant="subtle"
+      size="sm"
+      color="gray"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      {children}
+    </HintedActionIcon>
   );
 }
 
@@ -149,22 +138,20 @@ function FeedLeafNav({
       rightSection={
         <Group gap={6} wrap="nowrap">
           <UnreadCountBadge count={unread} />
-          <Tooltip label={t("actions.poll")} withArrow>
-            <ActionIcon
-              variant="subtle"
-              size="sm"
-              color="gray"
-              loading={polling}
-              aria-label={t("actions.poll")}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onPoll(feed);
-              }}
-            >
-              <IconRefresh size={14} />
-            </ActionIcon>
-          </Tooltip>
+          <HintedActionIcon
+            variant="subtle"
+            size="sm"
+            color="gray"
+            loading={polling}
+            label={t("actions.poll")}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onPoll(feed);
+            }}
+          >
+            <IconRefresh size={14} />
+          </HintedActionIcon>
         </Group>
       }
       disableRightSectionRotation

@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Alert,
   Anchor,
   Button,
@@ -11,12 +10,12 @@ import {
   Stack,
   Text,
   Title,
-  Tooltip,
 } from "@mantine/core";
 import { IconAlertCircle, IconUpload } from "@tabler/icons-react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { PathPicker } from "@/components/path-picker";
 import { PluginCard } from "@/components/plugins/plugin-card";
 import { useInstallPlugin, usePlugins, useReloadPlugins } from "@/hooks/use-plugins";
@@ -125,17 +124,15 @@ function PluginCatalogActions() {
           </Button>
           <FileButton resetRef={resetRef} onChange={submitZip} accept=".zip,application/zip">
             {(props) => (
-              <Tooltip label={t("pickZip")}>
-                <ActionIcon
-                  {...props}
-                  variant="default"
-                  size="lg"
-                  aria-label={t("pickZip")}
-                  disabled={pending}
-                >
-                  <IconUpload size={16} />
-                </ActionIcon>
-              </Tooltip>
+              <HintedActionIcon
+                {...props}
+                variant="default"
+                size="lg"
+                label={t("pickZip")}
+                disabled={pending}
+              >
+                <IconUpload size={16} />
+              </HintedActionIcon>
             )}
           </FileButton>
           <Button

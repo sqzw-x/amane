@@ -1,10 +1,11 @@
-import { ActionIcon, Badge, Button, Group, Modal, Stack, Table, Text } from "@mantine/core";
+import { Badge, Button, Group, Modal, Stack, Table, Text } from "@mantine/core";
 import { IconListCheck, IconTrash } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listFacetRulesOptions } from "@/client/@tanstack/react-query.gen";
 import type { FacetKind } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 
 export interface FacetRulesPanelProps {
   kind: FacetKind;
@@ -74,14 +75,14 @@ export function FacetRulesPanel({ kind, onDeleteRule }: FacetRulesPanelProps) {
                     <Table.Td>{rule.target_name ?? "—"}</Table.Td>
                     <Table.Td>
                       <Group justify="flex-end">
-                        <ActionIcon
+                        <HintedActionIcon
                           variant="subtle"
                           color="red"
-                          title={t("manage.ruleRemove")}
+                          label={t("manage.ruleRemove")}
                           onClick={() => onDeleteRule(rule.id)}
                         >
                           <IconTrash size={16} />
-                        </ActionIcon>
+                        </HintedActionIcon>
                       </Group>
                     </Table.Td>
                   </Table.Tr>

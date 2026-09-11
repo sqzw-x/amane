@@ -8,6 +8,7 @@ import {
   Stack,
   Text,
   TextInput,
+  Tooltip,
   UnstyledButton,
 } from "@mantine/core";
 import { IconChevronRight, IconEye, IconEyeOff, IconFile, IconFolder } from "@tabler/icons-react";
@@ -180,15 +181,17 @@ export function FileBrowser({
             placeholder="Enter path..."
             style={{ flex: 1, minWidth: 0 }}
           />
-          <Button
-            type="button"
-            variant={showHidden ? "light" : "outline"}
-            size="sm"
-            onClick={() => setShowHidden(!showHidden)}
-            title={t("toggleHidden")}
-          >
-            {showHidden ? <IconEye size={16} /> : <IconEyeOff size={16} />}
-          </Button>
+          <Tooltip label={t("toggleHidden")}>
+            <Button
+              type="button"
+              variant={showHidden ? "light" : "outline"}
+              size="sm"
+              onClick={() => setShowHidden(!showHidden)}
+              aria-label={t("toggleHidden")}
+            >
+              {showHidden ? <IconEye size={16} /> : <IconEyeOff size={16} />}
+            </Button>
+          </Tooltip>
           <Button type="submit" size="sm">
             Go
           </Button>

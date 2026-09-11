@@ -1,14 +1,4 @@
-import {
-  ActionIcon,
-  Badge,
-  Button,
-  Group,
-  Modal,
-  Text,
-  TextInput,
-  Title,
-  Tooltip,
-} from "@mantine/core";
+import { ActionIcon, Badge, Button, Group, Modal, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconFilter, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,6 +15,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import type { FeedResponse } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import {
   emptyFeedForm,
@@ -255,16 +246,14 @@ function FeedSourcesPage() {
           />
         }
         extras={
-          <Tooltip label={t("filter.title")}>
-            <ActionIcon
-              variant={advancedOpen || hasFilters ? "filled" : "default"}
-              size={36}
-              onClick={() => setAdvancedOpen((open) => !open)}
-              aria-label={t("filter.title")}
-            >
-              <IconFilter size={16} />
-            </ActionIcon>
-          </Tooltip>
+          <HintedActionIcon
+            variant={advancedOpen || hasFilters ? "filled" : "default"}
+            size={36}
+            onClick={() => setAdvancedOpen((open) => !open)}
+            label={t("filter.title")}
+          >
+            <IconFilter size={16} />
+          </HintedActionIcon>
         }
         pageSize={
           <PageSizeSelect sizeKey="feedSources" onChanged={() => patchSearch({ page: 1 })} />

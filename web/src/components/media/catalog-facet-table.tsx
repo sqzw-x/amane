@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Badge,
   Button,
   Checkbox,
@@ -19,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import { createUserTagMutation, listFacetsQueryKey } from "@/client/@tanstack/react-query.gen";
 import type { FacetKind, FacetResponse, FacetSortField, SortOrder } from "@/client/types.gen";
 import { FacetRulesPanel } from "./facet-rules-panel";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { SelectionBar } from "@/components/common/selection-bar";
 import { SortableTh } from "@/components/common/sortable-th";
@@ -174,28 +174,28 @@ export function CatalogFacetTable({
                 </Table.Td>
                 <Table.Td>
                   <Group gap={4} justify="flex-end">
-                    <ActionIcon
+                    <HintedActionIcon
                       variant="subtle"
-                      title={t("common:actions.edit")}
+                      label={t("common:actions.edit")}
                       onClick={() => identity.openRename({ id: facet.id, name: facet.name })}
                     >
                       <IconPencil size={16} />
-                    </ActionIcon>
-                    <ActionIcon
+                    </HintedActionIcon>
+                    <HintedActionIcon
                       variant="subtle"
-                      title={t("manage.merge", { defaultValue: "合并到此项" })}
+                      label={t("manage.merge", { defaultValue: "合并到此项" })}
                       onClick={() => void identity.openMerge(facet.id, selected)}
                     >
                       <IconArrowMerge size={16} />
-                    </ActionIcon>
-                    <ActionIcon
+                    </HintedActionIcon>
+                    <HintedActionIcon
                       variant="subtle"
                       color="red"
-                      title={t("common:actions.delete")}
+                      label={t("common:actions.delete")}
                       onClick={() => void identity.openDelete({ id: facet.id, name: facet.name })}
                     >
                       <IconTrash size={16} />
-                    </ActionIcon>
+                    </HintedActionIcon>
                   </Group>
                 </Table.Td>
               </Table.Tr>

@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Button, Checkbox, Group, Stack, Table, Text } from "@mantine/core";
+import { Badge, Button, Checkbox, Group, Stack, Table, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconFolderDown, IconForms, IconRefresh, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,6 +14,7 @@ import type {
   MediaSortField,
   SortOrder,
 } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { FilePhaseBadges } from "@/components/media/file-phase-badges";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { SortableTh } from "@/components/common/sortable-th";
@@ -370,8 +371,9 @@ export function LibraryMediaTable({
                 </Table.Td>
                 <Table.Td>
                   <Group gap={4} justify="flex-end" wrap="nowrap">
-                    <ActionIcon
+                    <HintedActionIcon
                       variant="subtle"
+                      label={t("actions.scrape")}
                       onClick={() =>
                         submitTask({ body: { type: "scrape", media_id: item.id } }).then(() =>
                           notifications.show({
@@ -380,25 +382,24 @@ export function LibraryMediaTable({
                           }),
                         )
                       }
-                      title={t("actions.scrape")}
                     >
                       <IconRefresh size={16} />
-                    </ActionIcon>
-                    <ActionIcon
+                    </HintedActionIcon>
+                    <HintedActionIcon
                       variant="subtle"
+                      label={t("actions.scrapeWithNumber")}
                       onClick={() => setOverrideTarget(item)}
-                      title={t("actions.scrapeWithNumber")}
                     >
                       <IconForms size={16} />
-                    </ActionIcon>
-                    <ActionIcon
+                    </HintedActionIcon>
+                    <HintedActionIcon
                       variant="subtle"
                       color="red"
+                      label={t("common:actions.delete")}
                       onClick={() => void handleDeleteOne(item.id)}
-                      title={t("common:actions.delete")}
                     >
                       <IconTrash size={16} />
-                    </ActionIcon>
+                    </HintedActionIcon>
                   </Group>
                 </Table.Td>
               </Table.Tr>

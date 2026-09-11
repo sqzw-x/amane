@@ -10,7 +10,6 @@ import {
   Text,
   TextInput,
   Title,
-  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconClockPlay, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
@@ -188,17 +187,15 @@ function SchedulesPage() {
                     })
                   }
                 />
-                <Tooltip label={t("actions.trigger")}>
-                  <Button
-                    size="xs"
-                    variant="light"
-                    leftSection={<IconClockPlay size={14} />}
-                    loading={triggerMutation.isPending}
-                    onClick={() => triggerMutation.mutate({ path: { schedule_id: schedule.id } })}
-                  >
-                    {t("actions.trigger")}
-                  </Button>
-                </Tooltip>
+                <Button
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconClockPlay size={14} />}
+                  loading={triggerMutation.isPending}
+                  onClick={() => triggerMutation.mutate({ path: { schedule_id: schedule.id } })}
+                >
+                  {t("actions.trigger")}
+                </Button>
                 <Button
                   size="xs"
                   variant="light"

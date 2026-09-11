@@ -1,3 +1,4 @@
+import { Tooltip } from "@mantine/core";
 import { IconGenderFemale, IconGenderMale } from "@tabler/icons-react";
 import type { ParseKeys } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -22,5 +23,14 @@ export function GenderMark({
   const Icon = gender === "female" ? IconGenderFemale : IconGenderMale;
   const color = gender === "female" ? "var(--mantine-color-pink-5)" : "var(--mantine-color-blue-5)";
   const label = t(GENDER_LABEL_KEY[gender]);
-  return <Icon size={size} color={color} aria-label={label} title={label} />;
+  return (
+    <Tooltip label={label}>
+      <span
+        style={{ display: "inline-flex", lineHeight: 0, verticalAlign: "middle" }}
+        aria-label={label}
+      >
+        <Icon size={size} color={color} aria-hidden />
+      </span>
+    </Tooltip>
+  );
 }

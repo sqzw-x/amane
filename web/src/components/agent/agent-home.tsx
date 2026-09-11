@@ -12,7 +12,6 @@ import {
   Text,
   TextInput,
   Title,
-  Tooltip,
   UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -33,6 +32,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import { cancelAgentTurn, getSavedQueryResult } from "@/client/sdk.gen";
 import { ChatComposer, parseThinking, type ThinkingValue } from "@/components/agent/chat-composer";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import {
   type AssistantBlock,
   type ChatMessage,
@@ -755,15 +755,14 @@ export function AgentHome() {
           </Text>
           <Group gap={4}>
             <SavedQueryManager sessionId={sessionId} />
-            <Tooltip label={t("newSession")}>
-              <ActionIcon
-                variant="light"
-                loading={createSession.isPending}
-                onClick={() => void handleNewSession()}
-              >
-                <IconPlus size={16} />
-              </ActionIcon>
-            </Tooltip>
+            <HintedActionIcon
+              variant="light"
+              loading={createSession.isPending}
+              label={t("newSession")}
+              onClick={() => void handleNewSession()}
+            >
+              <IconPlus size={16} />
+            </HintedActionIcon>
           </Group>
         </Group>
         <ScrollArea style={{ flex: 1, minHeight: 0 }} offsetScrollbars>

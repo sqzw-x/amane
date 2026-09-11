@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Badge,
   Button,
   Checkbox,
@@ -11,7 +10,6 @@ import {
   Table,
   Text,
   Textarea,
-  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconClockPlay, IconFilter, IconPencil, IconTrash } from "@tabler/icons-react";
@@ -22,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import { listAllFeedItemsQueryKey, listFeedsQueryKey } from "@/client/@tanstack/react-query.gen";
 import { deleteFeed, pollFeed, updateFeed } from "@/client/sdk.gen";
 import type { FeedResponse, SortOrder } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { SelectionBar } from "@/components/common/selection-bar";
 import { SortableTh } from "@/components/common/sortable-th";
@@ -537,30 +536,31 @@ export function FeedSourcesTable({
                 </Table.Td>
                 <Table.Td>
                   <Group gap={4} justify="flex-end" wrap="nowrap">
-                    <Tooltip label={t("actions.poll")}>
-                      <ActionIcon
-                        variant="subtle"
-                        disabled={busy}
-                        onClick={() => void handlePoll([feed.id])}
-                      >
-                        <IconClockPlay size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label={t("common:actions.edit")}>
-                      <ActionIcon variant="subtle" disabled={busy} onClick={() => onEdit(feed)}>
-                        <IconPencil size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label={t("common:actions.delete")}>
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        disabled={busy}
-                        onClick={() => void handleDelete([feed.id])}
-                      >
-                        <IconTrash size={16} />
-                      </ActionIcon>
-                    </Tooltip>
+                    <HintedActionIcon
+                      variant="subtle"
+                      disabled={busy}
+                      label={t("actions.poll")}
+                      onClick={() => void handlePoll([feed.id])}
+                    >
+                      <IconClockPlay size={16} />
+                    </HintedActionIcon>
+                    <HintedActionIcon
+                      variant="subtle"
+                      disabled={busy}
+                      label={t("common:actions.edit")}
+                      onClick={() => onEdit(feed)}
+                    >
+                      <IconPencil size={16} />
+                    </HintedActionIcon>
+                    <HintedActionIcon
+                      variant="subtle"
+                      color="red"
+                      disabled={busy}
+                      label={t("common:actions.delete")}
+                      onClick={() => void handleDelete([feed.id])}
+                    >
+                      <IconTrash size={16} />
+                    </HintedActionIcon>
                   </Group>
                 </Table.Td>
               </Table.Tr>

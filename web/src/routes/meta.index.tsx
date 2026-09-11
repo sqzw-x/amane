@@ -1,13 +1,4 @@
-import {
-  ActionIcon,
-  Badge,
-  Group,
-  SegmentedControl,
-  Text,
-  TextInput,
-  Title,
-  Tooltip,
-} from "@mantine/core";
+import { ActionIcon, Badge, Group, SegmentedControl, Text, TextInput, Title } from "@mantine/core";
 import { IconFilter, IconSearch, IconTable, IconX } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
@@ -21,6 +12,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import type { FacetKind, MetadataSortField } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { SortMenu } from "@/components/common/sort-menu";
@@ -370,16 +362,14 @@ function MetaIndexPage() {
       }
       extras={
         <>
-          <Tooltip label={t("search.advanced")}>
-            <ActionIcon
-              variant={advancedOpen || hasFiles !== null ? "filled" : "default"}
-              size={36}
-              onClick={() => setAdvancedOpen((v) => !v)}
-              aria-label={t("search.advanced")}
-            >
-              <IconFilter size={16} />
-            </ActionIcon>
-          </Tooltip>
+          <HintedActionIcon
+            variant={advancedOpen || hasFiles !== null ? "filled" : "default"}
+            size={36}
+            onClick={() => setAdvancedOpen((v) => !v)}
+            label={t("search.advanced")}
+          >
+            <IconFilter size={16} />
+          </HintedActionIcon>
           {!isList && (
             <SortMenu
               options={SORT_FIELDS.map((f) => ({

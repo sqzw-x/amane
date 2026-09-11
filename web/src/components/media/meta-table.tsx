@@ -1,15 +1,4 @@
-import {
-  ActionIcon,
-  Badge,
-  Button,
-  Checkbox,
-  Group,
-  Modal,
-  Select,
-  Stack,
-  Table,
-  Text,
-} from "@mantine/core";
+import { Badge, Button, Checkbox, Group, Modal, Select, Stack, Table, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconRefresh, IconTag, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,6 +15,7 @@ import {
   submitTaskMutation,
 } from "@/client/@tanstack/react-query.gen";
 import type { MetadataResponse, MetadataSortField, SortOrder } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { ResizableTh, SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
@@ -358,23 +348,23 @@ export function MetaTable({
                 </Table.Td>
                 <Table.Td>
                   <Group gap={4} justify="flex-end" wrap="nowrap">
-                    <ActionIcon
+                    <HintedActionIcon
                       variant="subtle"
+                      label={t("actions.scrape")}
                       onClick={() =>
                         scrapeOne.mutate({ body: { type: "scrape", number: item.number } })
                       }
-                      title={t("actions.scrape")}
                     >
                       <IconRefresh size={16} />
-                    </ActionIcon>
-                    <ActionIcon
+                    </HintedActionIcon>
+                    <HintedActionIcon
                       variant="subtle"
                       color="red"
+                      label={t("common:actions.delete")}
                       onClick={() => void handleDeleteOne(item.id)}
-                      title={t("common:actions.delete")}
                     >
                       <IconTrash size={16} />
-                    </ActionIcon>
+                    </HintedActionIcon>
                   </Group>
                 </Table.Td>
               </Table.Tr>

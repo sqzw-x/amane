@@ -12,7 +12,6 @@ import {
   Text,
   TextInput,
   Title,
-  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconArrowLeft, IconFilter, IconSearch, IconX } from "@tabler/icons-react";
@@ -29,6 +28,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import type { MediaFileStatus, MediaSortField } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { LibraryActionButtons } from "@/components/library/library-actions";
 import {
@@ -245,16 +245,14 @@ function LibraryDetailPage() {
           />
         }
         extras={
-          <Tooltip label={t("filters.title")}>
-            <ActionIcon
-              variant={advancedOpen || hasStatusFilter ? "filled" : "default"}
-              size={36}
-              onClick={() => setAdvancedOpen((v) => !v)}
-              aria-label={t("filters.title")}
-            >
-              <IconFilter size={16} />
-            </ActionIcon>
-          </Tooltip>
+          <HintedActionIcon
+            variant={advancedOpen || hasStatusFilter ? "filled" : "default"}
+            size={36}
+            onClick={() => setAdvancedOpen((v) => !v)}
+            label={t("filters.title")}
+          >
+            <IconFilter size={16} />
+          </HintedActionIcon>
         }
         pageSize={
           <PageSizeSelect

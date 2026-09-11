@@ -1,14 +1,4 @@
-import {
-  ActionIcon,
-  Anchor,
-  Badge,
-  Box,
-  Checkbox,
-  Group,
-  Stack,
-  Text,
-  Tooltip,
-} from "@mantine/core";
+import { Anchor, Badge, Box, Checkbox, Group, Stack, Text } from "@mantine/core";
 import {
   IconArchive,
   IconArchiveOff,
@@ -24,6 +14,7 @@ import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { FeedItemResponse, FeedResponse } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { feedDisplayName } from "@/lib/feeds/groups";
 import { feedHtmlPlainText } from "@/lib/feeds/html";
 import classes from "./feed-article.module.css";
@@ -192,35 +183,40 @@ export function FeedArticle({
           </Stack>
           <Group gap={2} wrap="nowrap" onClick={(event) => event.stopPropagation()}>
             {number != null && (
-              <Tooltip label={t("actions.rescrape")}>
-                <ActionIcon variant="subtle" disabled={busy} onClick={onScrape}>
-                  <IconRefresh size={16} />
-                </ActionIcon>
-              </Tooltip>
+              <HintedActionIcon
+                variant="subtle"
+                disabled={busy}
+                label={t("actions.rescrape")}
+                onClick={onScrape}
+              >
+                <IconRefresh size={16} />
+              </HintedActionIcon>
             )}
-            <Tooltip label={unread ? t("actions.markRead") : t("actions.markUnread")}>
-              <ActionIcon
-                variant="subtle"
-                disabled={busy}
-                onClick={unread ? onMarkRead : onMarkUnread}
-              >
-                {unread ? <IconMailOpened size={16} /> : <IconMail size={16} />}
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label={item.ignored_at == null ? t("actions.ignore") : t("actions.unignore")}>
-              <ActionIcon
-                variant="subtle"
-                disabled={busy}
-                onClick={item.ignored_at == null ? onIgnore : onUnignore}
-              >
-                {item.ignored_at == null ? <IconArchive size={16} /> : <IconArchiveOff size={16} />}
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label={t("common:actions.delete")}>
-              <ActionIcon variant="subtle" color="red" disabled={busy} onClick={onDelete}>
-                <IconTrash size={16} />
-              </ActionIcon>
-            </Tooltip>
+            <HintedActionIcon
+              variant="subtle"
+              disabled={busy}
+              label={unread ? t("actions.markRead") : t("actions.markUnread")}
+              onClick={unread ? onMarkRead : onMarkUnread}
+            >
+              {unread ? <IconMailOpened size={16} /> : <IconMail size={16} />}
+            </HintedActionIcon>
+            <HintedActionIcon
+              variant="subtle"
+              disabled={busy}
+              label={item.ignored_at == null ? t("actions.ignore") : t("actions.unignore")}
+              onClick={item.ignored_at == null ? onIgnore : onUnignore}
+            >
+              {item.ignored_at == null ? <IconArchive size={16} /> : <IconArchiveOff size={16} />}
+            </HintedActionIcon>
+            <HintedActionIcon
+              variant="subtle"
+              color="red"
+              disabled={busy}
+              label={t("common:actions.delete")}
+              onClick={onDelete}
+            >
+              <IconTrash size={16} />
+            </HintedActionIcon>
           </Group>
         </Group>
         {expanded ? (

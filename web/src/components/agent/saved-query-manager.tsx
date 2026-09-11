@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Badge,
   Box,
   Button,
@@ -12,7 +11,6 @@ import {
   SegmentedControl,
   Stack,
   Text,
-  Tooltip,
   UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -35,6 +33,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import { getSavedQueryResult } from "@/client/sdk.gen";
 import type { SavedQueryResponse } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { confirm } from "@/lib/confirm";
 import {
   savedQueryBrowseHref,
@@ -236,11 +235,9 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
       closeOnItemClick={false}
     >
       <Menu.Target>
-        <Tooltip label={t("presets")}>
-          <ActionIcon variant="light" size="md" aria-label={t("presets")}>
-            <IconBookmark size={16} />
-          </ActionIcon>
-        </Tooltip>
+        <HintedActionIcon variant="light" size="md" label={t("presets")}>
+          <IconBookmark size={16} />
+        </HintedActionIcon>
       </Menu.Target>
       <Menu.Dropdown p="md">
         <Stack gap="md">

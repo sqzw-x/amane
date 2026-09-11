@@ -42,6 +42,7 @@ import type { ParseKeys } from "i18next";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { APP_SHELL_HEADER_HEIGHT } from "@/components/layout/app-shell-metrics";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { VersionMenu } from "@/components/layout/version-menu";
 import { APP_NAME, GITHUB_URL } from "@/lib/app";
 import { useConnectionStore } from "@/stores/connection";
@@ -134,17 +135,15 @@ function ThemeToggle() {
     );
 
   return (
-    <Tooltip label={t(`theme.${theme}`)}>
-      <ActionIcon
-        variant="subtle"
-        color="gray"
-        size="lg"
-        onClick={() => setTheme(next)}
-        aria-label="toggle theme"
-      >
-        {icon}
-      </ActionIcon>
-    </Tooltip>
+    <HintedActionIcon
+      variant="subtle"
+      color="gray"
+      size="lg"
+      onClick={() => setTheme(next)}
+      label={t(`theme.${theme}`)}
+    >
+      {icon}
+    </HintedActionIcon>
   );
 }
 
@@ -193,20 +192,18 @@ function ConnectionIndicator() {
         : "status.disconnected";
 
   return (
-    <Tooltip label={t(labelKey)}>
-      <ActionIcon variant="subtle" color="gray" size="lg" aria-label={t(labelKey)}>
-        <Box
-          w={10}
-          h={10}
-          bg={`${color}.5`}
-          style={{
-            borderRadius: "50%",
-            boxShadow:
-              status === "reconnecting" ? `0 0 0 3px var(--mantine-color-${color}-2)` : undefined,
-          }}
-        />
-      </ActionIcon>
-    </Tooltip>
+    <HintedActionIcon variant="subtle" color="gray" size="lg" label={t(labelKey)}>
+      <Box
+        w={10}
+        h={10}
+        bg={`${color}.5`}
+        style={{
+          borderRadius: "50%",
+          boxShadow:
+            status === "reconnecting" ? `0 0 0 3px var(--mantine-color-${color}-2)` : undefined,
+        }}
+      />
+    </HintedActionIcon>
   );
 }
 

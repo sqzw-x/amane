@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Badge,
   Button,
   Checkbox,
@@ -36,6 +35,7 @@ import type {
   CacheKind,
   SortOrder,
 } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { ResizableTh, SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
@@ -528,37 +528,37 @@ export function ActorTable({
                 })}
                 <Table.Td>
                   <Group gap={4} justify="flex-end" wrap="nowrap">
-                    <ActionIcon
+                    <HintedActionIcon
                       variant="subtle"
-                      title={t("common:actions.edit")}
+                      label={t("common:actions.edit")}
                       onClick={() => identity.openRename({ id: actor.id, name: actor.name })}
                     >
                       <IconPencil size={16} />
-                    </ActionIcon>
-                    <ActionIcon
+                    </HintedActionIcon>
+                    <HintedActionIcon
                       variant="subtle"
-                      title={t("manage.merge")}
+                      label={t("manage.merge")}
                       disabled={identity.mergePending}
                       onClick={() => void identity.openMerge(actor.id, selected)}
                     >
                       <IconArrowMerge size={16} />
-                    </ActionIcon>
-                    <ActionIcon
+                    </HintedActionIcon>
+                    <HintedActionIcon
                       variant="subtle"
-                      title={t("actors.clearPerson")}
+                      label={t("actors.clearPerson")}
                       disabled={batchClearing}
                       onClick={() => void handleClearPerson([actor.id], { name: actor.name })}
                     >
                       <IconEraser size={16} />
-                    </ActionIcon>
-                    <ActionIcon
+                    </HintedActionIcon>
+                    <HintedActionIcon
                       variant="subtle"
                       color="red"
-                      title={t("common:actions.delete")}
+                      label={t("common:actions.delete")}
                       onClick={() => void identity.openDelete({ id: actor.id, name: actor.name })}
                     >
                       <IconTrash size={16} />
-                    </ActionIcon>
+                    </HintedActionIcon>
                   </Group>
                 </Table.Td>
               </Table.Tr>

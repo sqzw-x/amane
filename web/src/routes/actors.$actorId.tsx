@@ -551,7 +551,6 @@ function AliasTags({
   values: string[];
   onSetDisplay: (alias: string) => void;
 }) {
-  const { t } = useTranslation(["metadata", "common"]);
   return (
     <Group gap={6}>
       {values.map((value) => (
@@ -560,7 +559,6 @@ function AliasTags({
           variant="light"
           size="compact-sm"
           style={{ textTransform: "none", fontWeight: 500 }}
-          title={t("actors.setDisplayName")}
           rightSection={<IconStar size={12} />}
           onClick={() => onSetDisplay(value)}
         >

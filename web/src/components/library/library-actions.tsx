@@ -1,4 +1,4 @@
-import { ActionIcon, Group, Menu, Text, Tooltip } from "@mantine/core";
+import { Group, Menu, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustmentsHorizontal,
@@ -15,6 +15,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import { submitTask } from "@/client/sdk.gen";
 import type { LibraryResponse } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 
@@ -93,15 +94,13 @@ export function LibraryActionButtons({
     <Group gap={4} wrap="nowrap">
       <Menu shadow="md" position="bottom-end">
         <Menu.Target>
-          <Tooltip label={t("scan.menuLabel")}>
-            <ActionIcon
-              variant="light"
-              loading={scanMutation.isPending}
-              aria-label={t("scan.menuLabel")}
-            >
-              <IconScan size={16} />
-            </ActionIcon>
-          </Tooltip>
+          <HintedActionIcon
+            variant="light"
+            loading={scanMutation.isPending}
+            label={t("scan.menuLabel")}
+          >
+            <IconScan size={16} />
+          </HintedActionIcon>
         </Menu.Target>
         <Menu.Dropdown>
           <Menu.Item
@@ -135,32 +134,26 @@ export function LibraryActionButtons({
           </Menu.Item>
         </Menu.Dropdown>
       </Menu>
-      <Tooltip label={t("organize.tooltip")}>
-        <ActionIcon
-          variant="light"
-          loading={organizeMutation.isPending}
-          aria-label={t("organize.tooltip")}
-          onClick={() => void organizeMutation.mutate()}
-        >
-          <IconFolderDown size={16} />
-        </ActionIcon>
-      </Tooltip>
-      <Tooltip label={t("configureLibrary")}>
-        <ActionIcon variant="light" onClick={onConfigure} aria-label={t("configureLibrary")}>
-          <IconAdjustmentsHorizontal size={16} />
-        </ActionIcon>
-      </Tooltip>
-      <Tooltip label={t("deleteLibrary.tooltip")}>
-        <ActionIcon
-          variant="light"
-          color="red"
-          loading={deleteMutation.isPending}
-          onClick={() => void handleDelete()}
-          aria-label={t("deleteLibrary.tooltip")}
-        >
-          <IconTrash size={16} />
-        </ActionIcon>
-      </Tooltip>
+      <HintedActionIcon
+        variant="light"
+        loading={organizeMutation.isPending}
+        label={t("organize.tooltip")}
+        onClick={() => void organizeMutation.mutate()}
+      >
+        <IconFolderDown size={16} />
+      </HintedActionIcon>
+      <HintedActionIcon variant="light" onClick={onConfigure} label={t("configureLibrary")}>
+        <IconAdjustmentsHorizontal size={16} />
+      </HintedActionIcon>
+      <HintedActionIcon
+        variant="light"
+        color="red"
+        loading={deleteMutation.isPending}
+        onClick={() => void handleDelete()}
+        label={t("deleteLibrary.tooltip")}
+      >
+        <IconTrash size={16} />
+      </HintedActionIcon>
     </Group>
   );
 }

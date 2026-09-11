@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Badge,
   Button,
   Code,
@@ -9,7 +8,6 @@ import {
   ScrollArea,
   Stack,
   Text,
-  Tooltip,
   UnstyledButton,
 } from "@mantine/core";
 import {
@@ -24,6 +22,7 @@ import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { client } from "@/client/client.gen";
 import type { TaskResponse } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { TaskLogView } from "@/components/log/task-log-view";
 import { TaskReportPanel } from "@/components/task/task-report-panel";
 import { formatDuration, statusColor } from "@/lib/task/display";
@@ -224,39 +223,36 @@ export function TaskRowActions({
       onKeyDown={(e) => e.stopPropagation()}
     >
       {(task.status === "queued" || task.status === "running") && (
-        <Tooltip label={t("actions.cancelTask")}>
-          <ActionIcon
-            variant="subtle"
-            color="orange"
-            loading={actions.pending}
-            onClick={() => actions.onCancel(task.id)}
-          >
-            <IconPlayerStop size={16} />
-          </ActionIcon>
-        </Tooltip>
+        <HintedActionIcon
+          variant="subtle"
+          color="orange"
+          loading={actions.pending}
+          label={t("actions.cancelTask")}
+          onClick={() => actions.onCancel(task.id)}
+        >
+          <IconPlayerStop size={16} />
+        </HintedActionIcon>
       )}
       {task.status === "failed" && (
-        <Tooltip label={t("common:actions.retry")}>
-          <ActionIcon
-            variant="subtle"
-            loading={actions.pending}
-            onClick={() => actions.onRetry(task.id)}
-          >
-            <IconRefresh size={16} />
-          </ActionIcon>
-        </Tooltip>
+        <HintedActionIcon
+          variant="subtle"
+          loading={actions.pending}
+          label={t("common:actions.retry")}
+          onClick={() => actions.onRetry(task.id)}
+        >
+          <IconRefresh size={16} />
+        </HintedActionIcon>
       )}
       {isTerminal && (
-        <Tooltip label={t("common:actions.delete")}>
-          <ActionIcon
-            variant="subtle"
-            color="red"
-            loading={actions.pending}
-            onClick={() => void actions.onDelete(task.id)}
-          >
-            <IconTrash size={16} />
-          </ActionIcon>
-        </Tooltip>
+        <HintedActionIcon
+          variant="subtle"
+          color="red"
+          loading={actions.pending}
+          label={t("common:actions.delete")}
+          onClick={() => void actions.onDelete(task.id)}
+        >
+          <IconTrash size={16} />
+        </HintedActionIcon>
       )}
     </Group>
   );

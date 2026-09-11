@@ -29,6 +29,8 @@
 
 `ListToolbar` 是表体壳: 顶栏 (多选 / 规则入口) 不滚, 表体内滚, **唯一**分页固定于视口底; 翻页把表体滚回顶部. `grid` / `cloud` 禁止 fill — 演员墙 `VirtuosoGrid` 用 `useWindowScroll`. ListToolbar 的 overflow 区要求父级有界高度; 非 fill 页将其作为壳时, `flex` + `minHeight: 0` 会把表高收缩为 0.
 
+图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip). 不允许 HTML `title`: 浏览器原生提示延迟出现、贴指针、深色小字. 截断文本的溢出全文仍可用 `title`. 带可见文案的控件不包 Tooltip, 除非说明与可见文案不同 (例如禁用原因). disabled 控件须再包一层可接收指针事件的元素.
+
 ## Schema 表单
 
 Settings、任务提交、定时创建、metadata 编辑共用 `components/schema-form/`: Pydantic → OpenAPI → FieldRouter. `x-*` 清单见 `schema/types.ts`.
