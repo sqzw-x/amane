@@ -1,11 +1,8 @@
-/* 未读条目以左边线为主指示, 底色只作极淡罩色; 勾选已读行仍使用主色浅底. */
+/* 未读条目以左边线为主指示, 底色只作极淡罩色; 勾选已读行仍使用主色浅底.
+   所有行共用同一内边距, 避免标已读后主体左移. */
 
 .row {
   border-bottom: 1px solid var(--mantine-color-default-border);
-}
-
-.row[data-unread="true"] {
-  border-bottom-color: transparent;
   padding: 4px 8px;
 }
 

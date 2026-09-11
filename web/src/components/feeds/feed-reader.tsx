@@ -23,7 +23,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { GroupedVirtuoso, type GroupedVirtuosoHandle } from "react-virtuoso";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
   listAllFeedItemsOptions,
   listAllFeedItemsQueryKey,
@@ -55,6 +55,10 @@ import { useUIStore } from "@/stores/ui";
 import { FeedArticle } from "./feed-article";
 
 type DateGroup = { key: string; label: string; items: DedupedFeedItem[] };
+
+type FeedListEntry =
+  | { kind: "header"; key: string; label: string }
+  | { kind: "item"; key: string; row: DedupedFeedItem };
 
 function isFeedItemState(value: string): value is FeedItemState {
   return value === "active" || value === "ignored" || value === "all";
@@ -199,7 +203,7 @@ export function FeedReader({
   const [expandAll, setExpandAll] = useState(false);
   const [cursorId, setCursorId] = useState<number | null>(null);
   const [navSeq, setNavSeq] = useState(0);
-  const virtuosoRef = useRef<GroupedVirtuosoHandle>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const pendingScrollIndex = useRef<number | null>(null);
   const { selected, selectedIds, toggleOne, toggleAll, isAllSelected, clear } = useIdSelection();
 
@@ -249,8 +253,6 @@ export function FeedReader({
     const labels = {
       today: t("reader.dateBuckets.today"),
       yesterday: t("reader.dateBuckets.yesterday"),
-      thisWeek: t("reader.dateBuckets.thisWeek"),
-      lastWeek: t("reader.dateBuckets.lastWeek"),
     };
     const result: DateGroup[] = [];
     for (const row of rows) {
@@ -269,7 +271,25 @@ export function FeedReader({
     }
     return result;
   }, [i18n.language, rows, t]);
-  const groupCounts = useMemo(() => groups.map((section) => section.items.length), [groups]);
+  const listEntries = useMemo((): FeedListEntry[] => {
+    const entries: FeedListEntry[] = [];
+    for (const section of groups) {
+      entries.push({ kind: "header", key: `h:${section.key}`, label: section.label });
+      for (const row of section.items) {
+        entries.push({ kind: "item", key: `i:${row.item.id}`, row });
+      }
+    }
+    return entries;
+  }, [groups]);
+  const virtuosoIndexByItemId = useMemo(() => {
+    const map = new Map<number, number>();
+    listEntries.forEach((entry, index) => {
+      if (entry.kind === "item") {
+        map.set(entry.row.item.id, index);
+      }
+    });
+    return map;
+  }, [listEntries]);
   const flatItems = useMemo(() => groups.flatMap((section) => section.items), [groups]);
   const visibleIds = rows.map((row) => row.item.id);
   const allSelected = isAllSelected(visibleIds);
@@ -494,7 +514,7 @@ export function FeedReader({
         return;
       }
       const id = row.item.id;
-      pendingScrollIndex.current = index;
+      pendingScrollIndex.current = virtuosoIndexByItemId.get(id) ?? null;
       setCursorId(id);
       setNavSeq((seq) => seq + 1);
       setExpandAll(false);
@@ -504,7 +524,7 @@ export function FeedReader({
         readMutation.mutate({ action: "read", ids: [id], notify: false });
       }
     },
-    [flatItems, readMutation],
+    [flatItems, readMutation, virtuosoIndexByItemId],
   );
 
   const moveExpanded = useCallback(
@@ -558,12 +578,16 @@ export function FeedReader({
     };
   }, [navSeq]);
 
-  const renderItem = useCallback(
-    (index: number) => {
-      const row = flatItems[index];
-      if (row == null) {
-        return null;
+  const renderListEntry = useCallback(
+    (_index: number, entry: FeedListEntry) => {
+      if (entry.kind === "header") {
+        return (
+          <Text size="xs" tt="uppercase" c="dimmed" fw={600} pt="sm" pb={4}>
+            {entry.label}
+          </Text>
+        );
       }
+      const row = entry.row;
       return (
         <FeedReaderRow
           row={row}
@@ -593,7 +617,6 @@ export function FeedReader({
       expanded,
       feedId,
       feedsById,
-      flatItems,
       markReadOnExpand,
       onOpenFeed,
       readMutation,
@@ -601,15 +624,6 @@ export function FeedReader({
       selected,
       toggleOne,
     ],
-  );
-
-  const renderGroup = useCallback(
-    (groupIndex: number) => (
-      <Text size="xs" tt="uppercase" c="dimmed" fw={600} pt="sm" pb={4}>
-        {groups[groupIndex]?.label}
-      </Text>
-    ),
-    [groups],
   );
 
   return (
@@ -776,12 +790,13 @@ export function FeedReader({
             {t("historyEmpty")}
           </Text>
         ) : (
-          <GroupedVirtuoso
+          <Virtuoso
             ref={virtuosoRef}
+            key={`${itemQuery.offset}:${itemQuery.state}:${itemQuery.read}:${itemQuery.search ?? ""}:${itemQuery.feed_id ?? ""}:${itemQuery.group ?? ""}`}
             style={{ height: "100%" }}
-            groupCounts={groupCounts}
-            groupContent={renderGroup}
-            itemContent={renderItem}
+            data={listEntries}
+            computeItemKey={(_index, entry) => entry.key}
+            itemContent={renderListEntry}
           />
         )}
       </div>

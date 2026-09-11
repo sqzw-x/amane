@@ -41,9 +41,7 @@
     "shortcutHint": "← → switch article",
     "dateBuckets": {
       "today": "Today",
-      "yesterday": "Yesterday",
-      "thisWeek": "This week",
-      "lastWeek": "Last week"
+      "yesterday": "Yesterday"
     }
   },
   "importOpml": "Import OPML",

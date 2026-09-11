@@ -29,7 +29,7 @@
 
 `published_at` 是源给出的发布时间 (RSS `pubDate` / Atom `published`, 没有再用 `updated`). 读 Atom `updated` 经由 `dict.get(entry, "updated_parsed")`, 不经由 FeedParserDict 在缺键时映射到 `published_parsed` 的回退. 历史列表按它新→旧; 没有才回退 `created_at`, 再按 `id`. `created_at` 只是首次写入历史的时间, 同一次拉取里多条可能落在同一秒, 不能当主排序. 无日期条目按旧→新写入, 让 `id` 与源文档时间线同向. `ignored_at` 非空表示用户忽略该条目; 它不改变 `(feed_id, item_key)` 去重关系. `read_at` 非空表示用户已读; 与忽略正交, 不改变去重, 也不随源更新. `description` 与 `published_at` 都只在首次写入或当时为空时回填, 不随源更新.
 
-历史列表默认只返回未忽略条目; `state=active|ignored|all` 可切换忽略视图. `read=unread|read|all` 可切换已读视图, **默认 `all`** (调用方不传时结果集不变). 两项同时生效. `search` 同时检索标题、番号、正文、链接和 `item_key`. 响应保留 `ignored_at` / `read_at` / `published_at`, 由前端据此展示状态与时间; 阅读器不重排. 日期分段标题 (今天 / 昨天 / 本周 / 上周 / 更早按本地年月) 是前端显示层, 按 `published_at` (空则 `created_at`) 的本地日历计算, 不改 API 排序.
+历史列表默认只返回未忽略条目; `state=active|ignored|all` 可切换忽略视图. `read=unread|read|all` 可切换已读视图, **默认 `all`** (调用方不传时结果集不变). 两项同时生效. `search` 同时检索标题、番号、正文、链接和 `item_key`. 响应保留 `ignored_at` / `read_at` / `published_at`, 由前端据此展示状态与时间; 阅读器不重排. 日期分段标题 (今天 / 昨天 / 更早按本地日历日) 是前端显示层, 按 `published_at` (空则 `created_at`) 的本地日历计算, 不改 API 排序.
 
 阅读器 URL 默认 `read=unread`. 展开一条未读正文时前端提交 `read` 并只改当前页缓存, 不立刻按筛选刷新列表, 避免条目从「未读」视图消失; 翻页或改筛选后才按新条件取. 「全部展开」不批量标已读. 未读条目使用紫色左边线与极淡底色强调, 与主色选中/导航分开. 方向键左右在当前页切换展开条目 (不循环、不允许自定义绑定); 输入框、对话框与分段控件占用焦点时不响应. 若已启用「全部展开」, 方向键改为只展开当前条. 键盘展开未读与单击相同, 提交 `read`. 源列表 `unread_count` 只计未忽略且未读; 侧栏徽章只在大于 0 时显示, 分组为子树合计. 标已读/未读会刷新源列表缓存以更新徽章, 不刷新条目页. 缩略预览把 HTML 块级标签与 `br` 收成空格, 不把多行正文直接粘连.
 

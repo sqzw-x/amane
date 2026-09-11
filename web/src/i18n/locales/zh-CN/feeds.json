@@ -41,9 +41,7 @@
     "shortcutHint": "← → 切换条目",
     "dateBuckets": {
       "today": "今天",
-      "yesterday": "昨天",
-      "thisWeek": "本周",
-      "lastWeek": "上周"
+      "yesterday": "昨天"
     }
   },
   "importOpml": "导入 OPML",
