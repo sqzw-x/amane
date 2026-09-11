@@ -199,8 +199,6 @@ class FeedService:
                 feed.ignore_keywords or [],
                 title=entry.title,
                 number=number,
-                description=entry.description,
-                item_key=entry.item_key,
             )
             await self._repo.create_feed_item(
                 feed_id,

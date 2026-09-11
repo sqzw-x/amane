@@ -200,12 +200,11 @@ export function FeedArticle({
             )}
             <Tooltip label={unread ? t("actions.markRead") : t("actions.markUnread")}>
               <ActionIcon
-                variant={unread ? "light" : "subtle"}
-                color={unread ? "violet" : undefined}
+                variant="subtle"
                 disabled={busy}
                 onClick={unread ? onMarkRead : onMarkUnread}
               >
-                {unread ? <IconMail size={16} /> : <IconMailOpened size={16} />}
+                {unread ? <IconMailOpened size={16} /> : <IconMail size={16} />}
               </ActionIcon>
             </Tooltip>
             <Tooltip label={item.ignored_at == null ? t("actions.ignore") : t("actions.unignore")}>

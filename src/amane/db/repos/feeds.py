@@ -4,6 +4,7 @@ from typing import Unpack
 
 from sqlalchemy import delete as sqla_delete
 from sqlalchemy import func, or_
+from sqlalchemy import update as sqla_update
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
@@ -124,19 +125,18 @@ class FeedsRepoMixin(RepositoryMixinBase):
 
     async def _ignore_matching_items(self, session: AsyncSession, feed_id: int, keywords: list[str]) -> None:
         result = await session.exec(
-            select(FeedItem).where(col(FeedItem.feed_id) == feed_id, col(FeedItem.ignored_at).is_(None))
+            select(FeedItem.id, FeedItem.title, FeedItem.number).where(
+                col(FeedItem.feed_id) == feed_id, col(FeedItem.ignored_at).is_(None)
+            )
         )
-        now = datetime.now(UTC)
-        for item in result.all():
-            if item_matches_ignore_keywords(
-                keywords,
-                title=item.title,
-                number=item.number,
-                description=item.description,
-                item_key=item.item_key,
-            ):
-                item.ignored_at = now
-                session.add(item)
+        ids = [
+            item_id
+            for item_id, title, number in result.all()
+            if item_id is not None and item_matches_ignore_keywords(keywords, title=title, number=number)
+        ]
+        if not ids:
+            return
+        await session.exec(sqla_update(FeedItem).where(col(FeedItem.id).in_(ids)).values(ignored_at=datetime.now(UTC)))
 
     async def count_unread_feed_items(self, feed_id: int | None = None) -> dict[int, int]:
         """未忽略且未读的条目数, 按 feed_id 分组."""

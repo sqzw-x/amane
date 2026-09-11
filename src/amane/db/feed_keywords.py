@@ -1,11 +1,9 @@
-"""Feed 忽略关键词: 字面量子串, 大小写不敏感."""
+"""Feed 忽略关键词: 字面量子串, 大小写不敏感; 只匹配标题与番号."""
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 
-_TAG = re.compile(r"<[^>]+>")
 _MAX_KEYWORD_LEN = 64
 _MAX_KEYWORDS = 50
 
@@ -37,22 +35,12 @@ def item_matches_ignore_keywords(
     *,
     title: str | None = None,
     number: str | None = None,
-    description: str | None = None,
-    item_key: str | None = None,
 ) -> bool:
-    """任一关键词命中标题、番号、正文或 item_key 即为忽略. 空列表不命中."""
-    if not keywords:
+    """任一关键词命中标题或番号即为忽略. 空列表不命中. 不匹配正文."""
+    folded = [keyword.casefold() for keyword in keywords if keyword]
+    if not folded:
         return False
-    haystack = "\n".join(
-        part
-        for part in (
-            title or "",
-            number or "",
-            _TAG.sub(" ", description or ""),
-            item_key or "",
-        )
-        if part
-    ).casefold()
-    if not haystack:
+    haystack = f"{title or ''}\n{number or ''}".casefold()
+    if haystack == "\n":
         return False
-    return any(keyword.casefold() in haystack for keyword in keywords if keyword)
+    return any(keyword in haystack for keyword in folded)

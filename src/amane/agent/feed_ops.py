@@ -235,8 +235,9 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         instructions=(
             "Feed polling discovers items and may enqueue low-priority SCRAPE tasks according to "
             "the feed's auto_enqueue setting; it does not run scraping inline. "
-            "ignore_keywords are literal substrings; matching new items are stored as ignored and "
-            "are not enqueued. Saving keywords also ignores matching existing active items. "
+            "ignore_keywords are literal substrings matched against title and number only, "
+            "not the item body; matching new items are stored as ignored and are not enqueued. "
+            "Saving keywords also ignores matching existing active items. "
             "Feed item scrape uses the feed's current content_type and cache settings. "
             "Deleting a feed or feed items requires user approval because it removes history."
         ),

@@ -1,4 +1,4 @@
-/* 未读条目使用紫色强调, 与主色选中与导航分开; 勾选已读行仍使用主色浅底. */
+/* 未读条目以左边线为主指示, 底色只作极淡罩色; 勾选已读行仍使用主色浅底. */
 
 .row {
   border-bottom: 1px solid var(--mantine-color-default-border);
@@ -15,11 +15,10 @@
 
 .row[data-unread="true"] .card {
   background: light-dark(
-    color-mix(in srgb, var(--mantine-color-violet-1) 78%, var(--mantine-color-body)),
-    color-mix(in srgb, var(--mantine-color-violet-8) 22%, var(--mantine-color-body))
+    color-mix(in srgb, var(--mantine-color-violet-6) 6%, var(--mantine-color-body)),
+    color-mix(in srgb, var(--mantine-color-violet-5) 7%, var(--mantine-color-body))
   );
   border-radius: var(--mantine-radius-md);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--mantine-color-violet-6) 22%, transparent);
 }
 
 .row[data-unread="true"] .card::before {
@@ -39,20 +38,7 @@
 
 .row[data-unread="true"][data-selected="true"] .card {
   background: light-dark(
-    var(--mantine-color-violet-1),
-    color-mix(in srgb, var(--mantine-color-violet-8) 28%, var(--mantine-color-body))
+    color-mix(in srgb, var(--mantine-color-violet-6) 11%, var(--mantine-color-body)),
+    color-mix(in srgb, var(--mantine-color-violet-5) 12%, var(--mantine-color-body))
   );
-  box-shadow:
-    0 0 0 1px var(--mantine-color-violet-4),
-    0 4px 14px color-mix(in srgb, var(--mantine-color-violet-6) 22%, transparent);
-}
-
-.row[data-unread="true"][data-expanded="true"] .card {
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--mantine-color-violet-6) 28%, transparent);
-}
-
-.row[data-unread="true"][data-selected="true"][data-expanded="true"] .card {
-  box-shadow:
-    0 0 0 1px var(--mantine-color-violet-4),
-    0 8px 20px color-mix(in srgb, var(--mantine-color-violet-6) 28%, transparent);
 }

@@ -334,6 +334,7 @@ async def test_updating_ignore_keywords_ignores_matching_active_items(repo: Repo
     assert feed.id is not None
     keep = await repo.create_feed_item(feed.id, "keep", title="Regular title")
     hit = await repo.create_feed_item(feed.id, "hit", title="超豪华合集 VOL.1")
+    await repo.create_feed_item(feed.id, "body", title="Regular", description="超豪华合集 VOL.1")
     already = await repo.create_feed_item(feed.id, "already", title="另一部合集")
     assert hit.id is not None and already.id is not None
     await repo.ignore_feed_items(feed.id, [already.id])
@@ -346,5 +347,6 @@ async def test_updating_ignore_keywords_ignores_matching_active_items(repo: Repo
     by_key = {item.item_key: item for item, _ in rows}
     assert by_key["keep"].ignored_at is None
     assert by_key["hit"].ignored_at is not None
+    assert by_key["body"].ignored_at is None
     assert by_key["already"].ignored_at is not None
     assert keep.ignored_at is None

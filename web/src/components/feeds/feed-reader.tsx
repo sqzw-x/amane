@@ -686,7 +686,7 @@ export function FeedReader({
           <Button
             size="xs"
             variant="light"
-            leftSection={<IconMail size={14} />}
+            leftSection={<IconMailOpened size={14} />}
             loading={readMutation.isPending}
             disabled={selectedIds.length === 0 || busy}
             onClick={() => readMutation.mutate({ action: "read", ids: selectedIds })}
@@ -698,7 +698,7 @@ export function FeedReader({
           <Button
             size="xs"
             variant="light"
-            leftSection={<IconMailOpened size={14} />}
+            leftSection={<IconMail size={14} />}
             loading={readMutation.isPending}
             disabled={selectedIds.length === 0 || busy}
             onClick={() => readMutation.mutate({ action: "unread", ids: selectedIds })}

@@ -83,7 +83,7 @@
     "useCache": "使用缓存",
     "useCacheHint": "勾选则使用对应缓存, 否则重新抓取",
     "ignoreKeywords": "过滤关键词",
-    "ignoreKeywordsHint": "命中标题、番号或正文的新条目写入忽略, 不入队刮削. 保存后也会忽略当前未忽略的匹配条目.",
+    "ignoreKeywordsHint": "逗号分隔. 标题或番号包含任一关键词则忽略该条目. 历史条目同样生效.",
     "ignoreKeywordsPlaceholder": "合集, 総集編",
     "cacheMetadata": "元数据缓存",
     "cacheTrans": "译文缓存",

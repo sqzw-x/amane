@@ -28,18 +28,9 @@ def test_item_matches_ignore_keywords_table() -> None:
         (["合集"], {"title": "Regular title"}, False),
         (["best"], {"title": "The BEST of 2024"}, True),
         (["midv"], {"number": "MIDV-123"}, True),
-        (["cover"], {"description": "<p>Cover <b>shot</b></p>"}, True),
-        (["g-key"], {"item_key": "g-key"}, True),
-        (["合集"], {"title": None, "number": None, "description": None, "item_key": None}, False),
+        (["合集"], {"title": None, "number": None}, False),
     ]
     for keywords, fields, expected in cases:
         assert (
-            item_matches_ignore_keywords(
-                keywords,
-                title=fields.get("title"),
-                number=fields.get("number"),
-                description=fields.get("description"),
-                item_key=fields.get("item_key"),
-            )
-            is expected
+            item_matches_ignore_keywords(keywords, title=fields.get("title"), number=fields.get("number")) is expected
         )

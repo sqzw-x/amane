@@ -83,7 +83,7 @@
     "useCache": "Use Cache",
     "useCacheHint": "Checked uses that cache; otherwise refetch",
     "ignoreKeywords": "Ignore keywords",
-    "ignoreKeywordsHint": "New items whose title, number, or body match are stored as ignored and not scraped. Saving also ignores matching items that are still active.",
+    "ignoreKeywordsHint": "Comma-separated. An item is ignored if its title or number contains a keyword. Existing history is included.",
     "ignoreKeywordsPlaceholder": "compilation, omnibus",
     "cacheMetadata": "Metadata Cache",
     "cacheTrans": "Translation Cache",
