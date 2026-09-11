@@ -22,6 +22,7 @@ import type {
   MetadataField,
   MetadataSortField,
   Mosaic,
+  RescrapeTarget,
   RoutineType,
   ScanMode,
   SiteOutcomeKind,
@@ -44,6 +45,8 @@ export type LogLevel = NonNullable<LoggingConfig["level"]>;
 export const SCAN_MODES = exhaustiveTuple<ScanMode>()("add", "remove");
 
 export const CACHE_KINDS = exhaustiveTuple<CacheKind>()("metadata", "trans");
+
+export const RESCRAPE_TARGETS = exhaustiveTuple<RescrapeTarget>()("metadata", "actor");
 
 export const CONTENT_TYPES = exhaustiveTuple<ContentType>()(
   "censored",

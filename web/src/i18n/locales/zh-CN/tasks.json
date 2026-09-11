@@ -328,12 +328,22 @@
     "number": "番号",
     "rescrape": {
       "limit": {
-        "label": "单次补刮数量",
-        "description": "单次最多补刮数量, 取最久未更新的"
+        "label": "数量上限",
+        "description": ""
       },
       "min_age_days": {
         "label": "最小间隔（天）",
-        "description": "仅处理超过此间隔未更新的元数据"
+        "description": "仅处理超过此间隔未更新的条目"
+      },
+      "targets": {
+        "label": "范围",
+        "description": "各类型分别计数",
+        "$": {
+          "options": {
+            "metadata": "影片",
+            "actor": "演员"
+          }
+        }
       }
     }
   }

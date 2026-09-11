@@ -248,16 +248,32 @@ class ActorScrapeResult(BaseModel):
 # --- RESCRAPE ---
 
 
+class RescrapeTarget(StrEnum):
+    """滚动补刮选取的实体种类. 每个已选项各自选取 limit 条."""
+
+    metadata = "metadata"
+    """影片 Metadata."""
+    actor = "actor"
+    """演员 Actor."""
+
+
 class RescrapePayload(BaseModel):
-    """按 updated_at 取最久未更新的 Metadata, 派生 priority=-1 的非 force SCRAPE.
-    content_type 不存表, 运行时按挂载文件路径或番号推断.
+    """按 updated_at 选取最久未更新的目标, 派生 priority=-1 的非 force 刮削.
+    影片 content_type 不存表, 运行时按挂载文件路径或番号推断.
     """
 
-    limit: int = Field(default=100, ge=1, le=1000, description="单次最多补刮的元数据数 (避免长占 worker 队列)")
+    limit: int = Field(default=100, ge=1, le=1000, description="每个已选目标单次最多补刮的条数 (避免长占 worker 队列)")
     min_age_days: int | None = Field(
         default=None, ge=1, description="仅补刮 updated_at 距今超过该天数的条目; None 不设门槛"
+    )
+    targets: set[RescrapeTarget] = Field(
+        default={RescrapeTarget.metadata},
+        min_length=1,
+        description="补刮对象; 每个已选项各自选取 limit 条. 缺省仅影片, 兼容既有 Schedule.payload",
     )
 
 
 class RescrapeResult(BaseModel):
     submitted: int
+    metadata: int = 0
+    actors: int = 0

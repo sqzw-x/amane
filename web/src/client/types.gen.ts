@@ -2463,7 +2463,7 @@ export type RescrapeSubmission = {
     /**
      * Limit
      *
-     * 单次最多补刮的元数据数 (避免长占 worker 队列)
+     * 每个已选目标单次最多补刮的条数 (避免长占 worker 队列)
      */
     limit?: number;
     /**
@@ -2473,10 +2473,23 @@ export type RescrapeSubmission = {
      */
     min_age_days?: number | null;
     /**
+     * Targets
+     *
+     * 补刮对象; 每个已选项各自选取 limit 条. 缺省仅影片, 兼容既有 Schedule.payload
+     */
+    targets?: Array<RescrapeTarget>;
+    /**
      * Type
      */
     type: 'rescrape';
 };
+
+/**
+ * RescrapeTarget
+ *
+ * 滚动补刮选取的实体种类. 每个已选项各自选取 limit 条.
+ */
+export type RescrapeTarget = 'metadata' | 'actor';
 
 /**
  * RoutineType

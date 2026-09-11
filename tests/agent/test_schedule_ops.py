@@ -123,6 +123,7 @@ async def test_schedule_supports_rescrape_and_rejects_invalid_changes(schedule_d
     )
     assert created["task_type"] == RoutineType.RESCRAPE
     assert created["payload"]["limit"] == 25
+    assert created["payload"]["targets"] == ["metadata"]
 
     invalid_cron = await _tool_fn("update_schedule")(
         _Ctx(schedule_deps), schedule_id=int(created["id"]), patch=AgentScheduleUpdate(cron="not cron")

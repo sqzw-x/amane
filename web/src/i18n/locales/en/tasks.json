@@ -330,12 +330,22 @@
     "number": "",
     "rescrape": {
       "limit": {
-        "label": "Batch size",
-        "description": "Max entries per run, least recently updated first"
+        "label": "Limit",
+        "description": ""
       },
       "min_age_days": {
         "label": "Min age (days)",
-        "description": "Only process metadata not updated within this interval"
+        "description": "Only process entries not updated within this interval"
+      },
+      "targets": {
+        "label": "Scope",
+        "description": "Counted separately per type",
+        "$": {
+          "options": {
+            "metadata": "Movies",
+            "actor": "Actors"
+          }
+        }
       }
     }
   },

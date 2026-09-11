@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Unpack
 
 from sqlalchemy import asc
@@ -12,6 +13,7 @@ from ..actor_person import actor_to_aggregated, apply_aggregated_to_actor
 from ..models import (
     SCRAPE_FACET_KINDS,
     Actor,
+    ActorSortField,
     Comment,
     Director,
     FacetKind,
@@ -156,11 +158,24 @@ class FacetsRepoMixin(RepositoryMixinBase):
                 return None
             return await build_actor_lookup_names(session, actor)
 
-    async def list_actors(self, *, offset: int = 0, limit: int = 500) -> list[Actor]:
-        """按 id 升序分页; 无筛选."""
+    async def list_actors(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 500,
+        sort_by: ActorSortField | None = None,
+        updated_before: datetime | None = None,
+    ) -> list[Actor]:
+        """默认按 id 升序分页. ``sort_by`` 指定时改用该列; ``updated_before`` 过滤 updated_at."""
         async with self._session() as session:
-            stmt = select(Actor).offset(offset).limit(limit).order_by(asc(col(Actor.id)))
-            return list((await session.exec(stmt)).all())
+            stmt = select(Actor)
+            if updated_before is not None:
+                stmt = stmt.where(col(Actor.updated_at) < updated_before)
+            if sort_by == ActorSortField.UPDATED_AT:
+                stmt = stmt.order_by(asc(col(Actor.updated_at)), asc(col(Actor.id)))
+            else:
+                stmt = stmt.order_by(asc(col(Actor.id)))
+            return list((await session.exec(stmt.offset(offset).limit(limit))).all())
 
     async def browse_actors(
         self, params: ActorBrowseParams, *, id_subquery_sql: str | None = None

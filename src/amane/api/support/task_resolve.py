@@ -70,6 +70,8 @@ async def resolve_submission(req: TaskSubmission, repo: Repository) -> tuple[Tas
         case ActorScrapeSubmission():
             return TaskType.ACTOR_SCRAPE, ActorScrapePayload(actor_id=req.actor_id, use_cache=req.use_cache)
         case RescrapeSubmission():
-            return TaskType.RESCRAPE, RescrapePayload(limit=req.limit, min_age_days=req.min_age_days)
+            return TaskType.RESCRAPE, RescrapePayload(
+                limit=req.limit, min_age_days=req.min_age_days, targets=req.targets
+            )
         case _:
             assert_never(req)
