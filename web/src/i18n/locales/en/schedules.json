@@ -49,6 +49,29 @@
       "monthly": "Day {{day}} of each month at {{time}}"
     }
   },
+  "payload": {
+    "title": "Routine",
+    "joiner": " · ",
+    "listJoiner": ", ",
+    "unset": "Use configured default",
+    "yes": "Yes",
+    "no": "No",
+    "cleanup": {
+      "none": "Neither action enabled"
+    },
+    "upscale": {
+      "limit": "Up to {{limit}} per run",
+      "maxDim": "Longest side below {{value}}",
+      "maxBytes": "Smaller than {{value}} bytes"
+    },
+    "r18_import": {
+      "skipUnchanged": "Skip if remote unchanged"
+    },
+    "rescrape": {
+      "limit": "{{limit}} per target",
+      "minAge": "Not updated for {{days}} days"
+    }
+  },
   "labels": {
     "nextRun": "Next",
     "never": "Never"
