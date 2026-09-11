@@ -108,7 +108,7 @@ function UnreadCountBadge({ count }: { count: number }) {
     return null;
   }
   return (
-    <Badge size="xs" variant="filled" color="violet">
+    <Badge size="xs" variant="light" color="violet">
       {count}
     </Badge>
   );
