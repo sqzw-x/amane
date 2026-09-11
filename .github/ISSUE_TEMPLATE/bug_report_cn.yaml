@@ -9,6 +9,7 @@ body:
         标题使用陈述句或祈使句, 不要使用问句 (例如「能否…」「是否…」「…吗」).
         示例: Windows 超分找不到可执行文件.
         提交前请搜索现有 issues.
+        使用 AI 时须遵守 [AI 使用政策](https://github.com/sqzw-x/amane/blob/main/AI_POLICY.md), 并在正文披露使用程度.
   - type: input
     id: os_version
     attributes:

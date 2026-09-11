@@ -21,6 +21,10 @@ AI 时代的私人影库
 
 更多说明见 [用户文档](https://sqzw-x.github.io/amane/).
 
+## 反馈
+
+缺陷与功能请求请使用 [Issue 模板](https://github.com/sqzw-x/amane/issues/new/choose). AI 使用见 [AI_POLICY.md](AI_POLICY.md).
+
 ## 参与开发
 
 前置依赖: [uv](https://github.com/astral-sh/uv), [pnpm](https://pnpm.io/), [just](https://github.com/casey/just)
@@ -30,7 +34,7 @@ just setup   # 同步依赖
 just dev     # 启动 API 与前端
 ```
 
-开发文档见 [docs/dev/index.md](docs/dev/index.md).
+开发入口见 [AGENTS.md](AGENTS.md).
 
 ## 社区生态
 

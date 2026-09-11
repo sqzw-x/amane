@@ -13,6 +13,10 @@
 
 技术栈: FastAPI · React + Mantine · SQLite (SQLModel + Alembic) · Docker · PyInstaller + 原生桌面 APP (swift / .NET AOT)
 
+## Issue 与 Pull Request
+
+外部贡献必须遵守 [`AI_POLICY.md`](AI_POLICY.md). 开 Issue 须经网页端模板; 禁止经 GitHub CLI 或 REST API 创建无模板 Issue. PR 须经人工 review, 并按该政策披露 AI 使用程度.
+
 ## 代码知识库
 
 位置: `docs/dev/` — 导航见 [`docs/dev/index.md`](docs/dev/index.md).
