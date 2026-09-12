@@ -107,12 +107,15 @@ class TestPlaybackHttp:
         assert items[0]["media_file_id"] == file_id
         assert items[0]["href"] == f"/api/playback/local/{meta_id}/files/{file_id}"
         etag = listed.headers["etag"]
-        cached = await client.get(
-            "playback/sources",
-            params={"metadata_id": meta_id},
-            headers={"If-None-Match": etag},
-        )
-        assert cached.status_code == 304
+        assert listed.headers["cache-control"] == "private, no-cache"
+        for validator in (etag, f"W/{etag}", f'"other", {etag}', "*"):
+            cached = await client.get(
+                "playback/sources",
+                params={"metadata_id": meta_id},
+                headers={"If-None-Match": validator},
+            )
+            assert cached.status_code == 304
+            assert cached.headers["cache-control"] == "private, no-cache"
 
         stream = f"playback/local/{meta_id}"
         full = await client.get(stream)

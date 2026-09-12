@@ -82,13 +82,15 @@
 
 探测预算 1.5 秒. 超时由主机标记为不可用并从列表排除, 不是插件返回 `None`. 网络失败抛 `SourceError`. `probe` 内访问网络可能耗尽预算; 短探测、把取流留到 `resolve`.
 
-探测结果可附带 WebVTT 轨道; 内置 `local` 先在入库字面路径同目录查找同 stem 的 `.vtt` / `.srt`, 未命中再查规范路径目录. `.srt` 在响应前转换为 WebVTT. 字幕文件解析后遵守与正片相同的字面路径 / 解析目标约束, 且所在目录必须是正片字面目录或规范目录, 不允许经符号链接转到其它目录. 插件通过 `subtitle` 返回正文或上游 VTT. 上游字幕只接受 `text/vtt` (及缺省类型).
+探测结果可附带 WebVTT 轨道; 内置 `local` 先在入库字面路径同目录查找同 stem 的 `.vtt` / `.srt`, 未命中再查规范路径目录. 字幕正文按 UTF-8 与 GBK 顺序解码, 两种都失败时不声明该轨道 — 探测阶段即可判定不可用, 避免列出轨道而加载必定失败. `.srt` 在响应前转换为 WebVTT, 三位小时数的时间轴同样转换. 字幕文件解析后遵守与正片相同的字面路径 / 解析目标约束, 且所在目录必须是正片字面目录或规范目录, 不允许经符号链接转到其它目录. 插件通过 `subtitle` 返回正文或上游 VTT. 上游字幕只接受 `text/vtt` (及缺省类型).
 
 **不允许在 Amane 主机内对码流做实时转码.** 浏览器无法直接播放时, 由上游提供 HLS 清单; 主机只改写 URI 并代理分片.
 
-内置 `local` 在关联文件存在、不是 `.strm`、字面路径在库根内、路径可打开, 且解析目标落在库根或 `safe_dirs` (有名单时; `ALLOW_ALL` 不另限解析目标) 时出现在列表中. 多文件时缺省选择体积最大的正片. 无本地文件的条目只依赖外部播放源.
+内置 `local` 在关联文件存在、不是 `.strm`、字面路径在库根内、路径可打开, 且解析目标落在库根或 `safe_dirs` (二者为「或」; `ALLOW_ALL` 不另限解析目标; 名单为空时只放行库根) 时出现在列表中. 多文件时缺省选择体积最大的正片. 无本地文件的条目只依赖外部播放源.
 
-码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止跟随 301/302/303/307/308, 上游 304 原样返回且不写 `immutable`, 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
+码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止跟随 301/302/303/307/308, 上游 304 与 416 原样返回 (304 不写 `immutable`), 其余 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 上游声明非 identity 的 `Content-Encoding` 时丢弃 `Content-Length` — 主机转发的是 httpx 解码后的正文, 该值不再成立. 畸形上游 URL 归为 502, 且任何失败路径都必须归还出口额度. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
+
+清单内分片允许 `video/*`、`audio/*`、`application/octet-stream` 与文本类 `text/vtt` / `text/plain`; `text/vtt` 是清单内字幕分片的类型, `text/plain` 是文本型 AES 密钥的常见默认类型, 二者与 `nosniff` 一起使用不会被浏览器执行. 分片缓存按类型区分: 媒体分片与初始化段可用不可变缓存, 文本类只用 `no-cache`, 因为同一 URI 的密钥与字幕会轮换. `SourceError.detail` 会原样进入 502 响应体并展示给终端用户, 不允许在其中写入上游 URL、密钥或签名参数.
 
 `RelativeHlsLocator` 的 `http_client` 是刮削客户端 (跟随刮削侧重定向、重试与任务 HTTP 记录). 正式插件应传入已读取的 `playlist_text`; 分片由主机代理.
 

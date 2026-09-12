@@ -36,6 +36,14 @@ def _etag_for(items: list[PlaybackSourceItem]) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
+def _etag_matches(header: str | None, etag: str) -> bool:
+    """按 ``If-None-Match`` 语义比较: 逗号分隔的多值, 弱校验前缀 ``W/``, 以及 ``*``."""
+    if header is None:
+        return False
+    candidates = [part.strip() for part in header.split(",")]
+    return any(candidate == "*" or candidate.removeprefix("W/") == etag for candidate in candidates)
+
+
 async def _load_query(
     repo: RepoDep,
     metadata_id: int,
@@ -97,10 +105,11 @@ async def list_playback_sources(
         if row.available
     ]
     etag = _etag_for(items)
-    if request.headers.get("if-none-match") == etag:
-        return Response(status_code=304, headers={"ETag": etag})
+    cache_headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=cache_headers)
     body = PlaybackSourceListResponse(items=items)
-    return JSONResponse(content=body.model_dump(mode="json"), headers={"ETag": etag})
+    return JSONResponse(content=body.model_dump(mode="json"), headers=cache_headers)
 
 
 @router.get("/{source_id}/{metadata_id}/index.m3u8")
