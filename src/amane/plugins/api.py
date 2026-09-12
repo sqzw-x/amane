@@ -10,10 +10,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, Annotated, ClassVar, Literal
 from urllib.parse import urljoin
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 from ..net.errors import FailureReason, SourceError
 from ..parsing.file_info import ContentType, Mosaic
@@ -101,14 +102,29 @@ class PlaybackOffer(BaseModel):
     subtitles: tuple[SubtitleTrack, ...] = ()
 
 
-class FilePlaybackTarget(BaseModel):
+# 解析结果的可复用时长 (秒): 有穷正数. ``None`` 表示不缓存.
+CacheTtl = Annotated[float, Field(gt=0, allow_inf_nan=False)]
+
+
+class _PlaybackTargetBase(BaseModel):
+    """播放目标的公共字段.
+
+    ``cache_ttl`` 由插件逐次声明: 主机在这么多秒内复用这一次 ``resolve`` 的结果, 超过宿主上限
+    (``RESOLVE_TTL_MAX_SECONDS``) 的声明按上限截断, 不声明即不缓存 (每次取流都调用 ``resolve``).
+    签名 URL 与会话令牌必须声明不超过其实际有效期的值, 过长的值会让播放器拿到已失效的地址.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cache_ttl: CacheTtl | None = None
+
+
+class FilePlaybackTarget(_PlaybackTargetBase):
     """Indexed file served by the host.
 
     The host opens the declared path only when it resolves to a file indexed for
     the entry being played; any other path is rejected.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     kind: Literal["file"] = "file"
     path: Path
@@ -116,10 +132,8 @@ class FilePlaybackTarget(BaseModel):
     media_file_id: int
 
 
-class UpstreamPlaybackTarget(BaseModel):
+class UpstreamPlaybackTarget(_PlaybackTargetBase):
     """HTTP origin fetched by the host reverse proxy."""
-
-    model_config = ConfigDict(extra="forbid")
 
     kind: Literal["upstream"] = "upstream"
     url: str
@@ -199,12 +213,17 @@ class RelativeHlsLocator(HlsLocator):
         )
 
 
-@dataclass(frozen=True, slots=True)
+@pydantic_dataclass(frozen=True, slots=True, config=ConfigDict(arbitrary_types_allowed=True))
 class HlsPlaybackTarget:
-    """HLS presentation. Host rewrites the playlist; the locator finds each URI."""
+    """HLS presentation. Host rewrites the playlist; the locator finds each URI.
+
+    Pydantic dataclass: 位置参数与 ``dataclasses`` 工具照旧, ``cache_ttl`` 与另外两种目标走同一
+    套字段校验. ``locator`` 是插件侧对象, 只做 ``isinstance`` 核对.
+    """
 
     locator: HlsLocator
     kind: Literal["hls"] = "hls"
+    cache_ttl: CacheTtl | None = None
 
 
 PlaybackTarget = FilePlaybackTarget | UpstreamPlaybackTarget | HlsPlaybackTarget

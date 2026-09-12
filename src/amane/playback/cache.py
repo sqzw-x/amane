@@ -1,4 +1,4 @@
-"""Process-local TTL + singleflight for playback probe and open failures."""
+"""Process-local TTL + singleflight for probe, open failures, and resolved targets."""
 
 from __future__ import annotations
 
@@ -8,22 +8,31 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from typing import TypeVar, cast
 
+from ..plugins.api import PlaybackTarget
+
 T = TypeVar("T")
 
 OPEN_FAIL_TTL_SECONDS = 3.0
 PROBE_FAIL_TTL_SECONDS = 15.0
 PROBE_NONE_TTL_SECONDS = 60.0
 PROBE_HIT_TTL_SECONDS = 30.0
+RESOLVE_TTL_MAX_SECONDS = 300.0
 MAX_ENTRIES = 4096
 
 
-class _TtlMap:
+class _TtlMap[ValueT]:
+    """按 key 的 TTL 表.
+
+    ``ttl_seconds`` 是这张表的缺省档位; ``put(..., ttl=...)`` 可给单条记录自己的有效期 ——
+    解析结果的有效期逐条由插件声明, 钉不到固定档位上.
+    """
+
     def __init__(self, *, ttl_seconds: float, max_entries: int = MAX_ENTRIES) -> None:
         self._ttl = ttl_seconds
         self._max_entries = max_entries
-        self._items: OrderedDict[str, tuple[float, object]] = OrderedDict()
+        self._items: OrderedDict[str, tuple[float, ValueT]] = OrderedDict()
 
-    def get(self, key: str) -> object | None:
+    def get(self, key: str) -> ValueT | None:
         item = self._items.get(key)
         if item is None:
             return None
@@ -34,12 +43,12 @@ class _TtlMap:
         self._items.move_to_end(key)
         return value
 
-    def put(self, key: str, value: object) -> None:
+    def put(self, key: str, value: ValueT, *, ttl: float | None = None) -> None:
         now = time.monotonic()
         expired = [k for k, (exp, _) in self._items.items() if now >= exp]
         for k in expired:
             del self._items[k]
-        self._items[key] = (now + self._ttl, value)
+        self._items[key] = (now + (self._ttl if ttl is None else ttl), value)
         self._items.move_to_end(key)
         while len(self._items) > self._max_entries:
             self._items.popitem(last=False)
@@ -52,13 +61,15 @@ class _TtlMap:
 
 
 class PlaybackCaches:
-    """Independent TTLs for probe hits, probe none, probe errors, and open failures."""
+    """Independent TTLs for probe hits, probe none, probe errors, open failures, resolved targets."""
 
     def __init__(self) -> None:
-        self.probe_hits = _TtlMap(ttl_seconds=PROBE_HIT_TTL_SECONDS)
-        self.probe_none = _TtlMap(ttl_seconds=PROBE_NONE_TTL_SECONDS)
-        self.probe_fail = _TtlMap(ttl_seconds=PROBE_FAIL_TTL_SECONDS)
-        self.open_fail = _TtlMap(ttl_seconds=OPEN_FAIL_TTL_SECONDS)
+        self.probe_hits: _TtlMap[object] = _TtlMap(ttl_seconds=PROBE_HIT_TTL_SECONDS)
+        self.probe_none: _TtlMap[object] = _TtlMap(ttl_seconds=PROBE_NONE_TTL_SECONDS)
+        self.probe_fail: _TtlMap[object] = _TtlMap(ttl_seconds=PROBE_FAIL_TTL_SECONDS)
+        self.open_fail: _TtlMap[object] = _TtlMap(ttl_seconds=OPEN_FAIL_TTL_SECONDS)
+        # 解析结果的有效期逐条由插件声明 (上限 RESOLVE_TTL_MAX_SECONDS), 缺省档位只用于兜底.
+        self.resolve_hits: _TtlMap[PlaybackTarget] = _TtlMap(ttl_seconds=RESOLVE_TTL_MAX_SECONDS)
         self._inflight: dict[str, asyncio.Future[object]] = {}
         self._lock = asyncio.Lock()
 
@@ -68,6 +79,7 @@ class PlaybackCaches:
         self.probe_none.clear()
         self.probe_fail.clear()
         self.open_fail.clear()
+        self.resolve_hits.clear()
 
     async def coalesce(self, key: str, factory: Callable[[], Awaitable[T]]) -> T:
         async with self._lock:

@@ -1,5 +1,6 @@
 """Playback HTTP: upstream streams, plugin sources, route identity."""
 
+import asyncio
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
@@ -181,6 +182,114 @@ class Plugin(PlaybackPlugin):
     def build_playback(self, context: PluginContext, config: BaseModel) -> PlaybackProvider:
         return _Provider(context.data_dir)
 """
+
+# ``resolve`` 调用次数落在插件自己的运行数据目录; ``cache_ttl`` 由插件按配置逐次声明.
+_CACHING_PLUGIN = """
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict
+
+from amane.plugin import (
+    HlsPlaybackTarget,
+    PlaybackOffer,
+    PlaybackPlugin,
+    PlaybackProvider,
+    PlaybackQuery,
+    PluginContext,
+    RelativeHlsLocator,
+    SourceCapability,
+    SourceDescriptor,
+    UpstreamPlaybackTarget,
+)
+
+COUNT_FILE = "resolve-count.txt"
+
+
+class _Config(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    behavior: str = "upstream"
+    url: str = "http://127.0.0.1:9/"
+    playlist: str | None = None
+    cache_ttl: float | None = None
+
+
+class _Provider(PlaybackProvider):
+    def __init__(self, data_dir: Path, config: _Config) -> None:
+        self._data_dir = data_dir
+        self._config = config
+
+    def _record_resolve(self) -> None:
+        path = self._data_dir / COUNT_FILE
+        count = int(path.read_text(encoding="utf-8")) if path.exists() else 0
+        path.write_text(str(count + 1), encoding="utf-8")
+
+    async def probe(self, query: PlaybackQuery) -> PlaybackOffer | None:
+        if self._config.behavior == "hls":
+            return PlaybackOffer(name="Cached", content_type="application/vnd.apple.mpegurl", seekable=False)
+        return PlaybackOffer(name="Cached", content_type="video/mp4", seekable=True)
+
+    async def resolve(self, query: PlaybackQuery):
+        self._record_resolve()
+        if self._config.behavior == "hls":
+            return HlsPlaybackTarget(
+                locator=RelativeHlsLocator(self._config.url, playlist_text=self._config.playlist),
+                cache_ttl=self._config.cache_ttl,
+            )
+        return UpstreamPlaybackTarget(
+            url=self._config.url,
+            content_type="video/mp4",
+            cache_ttl=self._config.cache_ttl,
+        )
+
+
+class Plugin(PlaybackPlugin):
+    config_model = _Config
+
+    @classmethod
+    def descriptor(cls) -> SourceDescriptor:
+        return SourceDescriptor(
+            id="acme.cached",
+            name="Cached playback",
+            version="0.1.0",
+            capabilities=frozenset({SourceCapability.PLAYBACK}),
+            urls=("https://play.example.test",),
+        )
+
+    def build_playback(self, context: PluginContext, config: BaseModel) -> PlaybackProvider:
+        assert isinstance(config, _Config)
+        return _Provider(context.data_dir, config)
+"""
+
+_CACHED_SOURCE = "acme.cached"
+_CACHED_PLAYLIST = "#EXTM3U\n#EXTINF:1.0,\nseg.ts\n#EXT-X-ENDLIST\n"
+
+
+async def _install_cached_plugin(client: AsyncClient, app: FastAPI) -> None:
+    write_plugin(app.state.runtime.config.cold.data_dir, _CACHED_SOURCE, body=_CACHING_PLUGIN)
+    reloaded = await client.post("plugins/reload")
+    assert reloaded.status_code == 200, reloaded.text
+
+
+async def _configure_cached(client: AsyncClient, *, behavior: str, url: str, cache_ttl: float | None) -> None:
+    config: dict[str, object] = {"behavior": behavior, "url": url}
+    if behavior == "hls":
+        config["playlist"] = _CACHED_PLAYLIST
+    if cache_ttl is not None:
+        config["cache_ttl"] = cache_ttl
+    configured = await client.patch(f"plugins/{_CACHED_SOURCE}", json={"enabled": True, "config": config})
+    assert configured.status_code == 200, configured.text
+
+
+def _resolve_count(app: FastAPI) -> int:
+    counter = app.state.runtime.config.cold.data_dir / "plugins" / _CACHED_SOURCE / "resolve-count.txt"
+    return int(counter.read_text(encoding="utf-8"))
+
+
+def _stream_path(behavior: str, metadata_id: int) -> str:
+    """逐字节码流走码流端点, HLS 走清单端点: 两条路径都以 ``resolve`` 为入口."""
+    if behavior == "hls":
+        return f"playback/{_CACHED_SOURCE}/{metadata_id}/index.m3u8"
+    return f"playback/{_CACHED_SOURCE}/{metadata_id}"
 
 
 def _hls_part_tokens(playlist: str) -> list[str]:
@@ -827,3 +936,148 @@ class TestPlaybackHttp:
         assert manifest.status_code == 502
         assert manifest.json()["detail"] == detail
         assert "evil.example" not in manifest.text
+
+
+class TestResolveCache:
+    """``cache_ttl``: 只有插件声明了有效期, 主机才复用 ``resolve`` 的结果."""
+
+    @pytest.mark.parametrize("behavior", ["upstream", "hls"])
+    @pytest.mark.parametrize(("cache_ttl", "expected_resolves"), [(30.0, "1"), (None, "3")])
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_declared_ttl_reuses_resolution(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+        behavior: str,
+        cache_ttl: float | None,
+        expected_resolves: str,
+    ) -> None:
+        """TTL 内多次取流只解析一次; 不声明时逐字节码流与清单各自每次都解析."""
+        payload = b"CLIPBYTES"
+        server, origin = _start_hls_origin({"/clip.mp4": ("video/mp4", payload)})
+        try:
+            await _install_cached_plugin(client, app)
+            metadata_id = await _seed_title(repo, number="PLAY-CACHE")
+            await _configure_cached(client, behavior=behavior, url=f"{origin}/clip.mp4", cache_ttl=cache_ttl)
+
+            for _ in range(3):
+                response = await client.get(_stream_path(behavior, metadata_id))
+                assert response.status_code == 200, response.text
+                if behavior == "upstream":
+                    assert response.content == payload
+                else:
+                    assert response.text.startswith("#EXTM3U")
+            assert str(_resolve_count(app)) == expected_resolves
+        finally:
+            server.shutdown()
+
+    @pytest.mark.parametrize("behavior", ["upstream", "hls"])
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_declared_ttl_expires(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+        behavior: str,
+    ) -> None:
+        """有效期一过必须重新解析, 不能一直把旧目标交给播放器."""
+        server, origin = _start_hls_origin({"/clip.mp4": ("video/mp4", b"CLIPBYTES")})
+        try:
+            await _install_cached_plugin(client, app)
+            metadata_id = await _seed_title(repo, number="PLAY-CACHE-EXPIRE")
+            await _configure_cached(client, behavior=behavior, url=f"{origin}/clip.mp4", cache_ttl=0.05)
+            assert (await client.get(_stream_path(behavior, metadata_id))).status_code == 200
+            assert _resolve_count(app) == 1
+
+            await asyncio.sleep(0.2)
+            assert (await client.get(_stream_path(behavior, metadata_id))).status_code == 200
+            assert _resolve_count(app) == 2
+        finally:
+            server.shutdown()
+
+    @pytest.mark.parametrize("behavior", ["upstream", "hls"])
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_declared_ttl_truncated_by_host_cap(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+        behavior: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """声明超过宿主上限时按上限生效: 插件无法把目标钉死得比上限更久."""
+        monkeypatch.setattr("amane.playback.factory.RESOLVE_TTL_MAX_SECONDS", 0.05)
+        server, origin = _start_hls_origin({"/clip.mp4": ("video/mp4", b"CLIPBYTES")})
+        try:
+            await _install_cached_plugin(client, app)
+            metadata_id = await _seed_title(repo, number="PLAY-CACHE-CAP")
+            await _configure_cached(client, behavior=behavior, url=f"{origin}/clip.mp4", cache_ttl=600.0)
+            assert (await client.get(_stream_path(behavior, metadata_id))).status_code == 200
+            assert _resolve_count(app) == 1
+
+            await asyncio.sleep(0.2)
+            assert (await client.get(_stream_path(behavior, metadata_id))).status_code == 200
+            assert _resolve_count(app) == 2
+        finally:
+            server.shutdown()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_declared_ttl_is_per_entry(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        """缓存键含条目: 另一个条目仍各自解析, 回到原条目仍命中."""
+        server, origin = _start_hls_origin({"/clip.mp4": ("video/mp4", b"CLIPBYTES")})
+        try:
+            await _install_cached_plugin(client, app)
+            first_id = await _seed_title(repo, number="PLAY-CACHE-A")
+            second_id = await _seed_title(repo, number="PLAY-CACHE-B")
+            await _configure_cached(client, behavior="upstream", url=f"{origin}/clip.mp4", cache_ttl=300.0)
+
+            for _ in range(2):
+                assert (await client.get(_stream_path("upstream", first_id))).status_code == 200
+            assert _resolve_count(app) == 1
+            assert (await client.get(_stream_path("upstream", second_id))).status_code == 200
+            assert _resolve_count(app) == 2
+            assert (await client.get(_stream_path("upstream", first_id))).status_code == 200
+            assert _resolve_count(app) == 2
+        finally:
+            server.shutdown()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_config_rebuild_invalidates_resolution(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        """配置变更触发 rebuild: 解析缓存清空, 再次取流重新解析并采用新配置的目标."""
+        server, origin = _start_hls_origin(
+            {
+                "/clip.mp4": ("video/mp4", b"CLIPBYTES"),
+                "/other.mp4": ("video/mp4", b"OTHERBYTES"),
+            }
+        )
+        try:
+            await _install_cached_plugin(client, app)
+            metadata_id = await _seed_title(repo, number="PLAY-CACHE-REBUILD")
+            await _configure_cached(client, behavior="upstream", url=f"{origin}/clip.mp4", cache_ttl=300.0)
+
+            first = await client.get(_stream_path("upstream", metadata_id))
+            assert first.status_code == 200
+            assert first.content == b"CLIPBYTES"
+            assert _resolve_count(app) == 1
+            cached = await client.get(_stream_path("upstream", metadata_id))
+            assert cached.content == b"CLIPBYTES"
+            assert _resolve_count(app) == 1
+
+            await _configure_cached(client, behavior="upstream", url=f"{origin}/other.mp4", cache_ttl=300.0)
+            rebuilt = await client.get(_stream_path("upstream", metadata_id))
+            assert rebuilt.status_code == 200
+            assert rebuilt.content == b"OTHERBYTES"
+            assert _resolve_count(app) == 2
+        finally:
+            server.shutdown()

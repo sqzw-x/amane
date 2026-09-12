@@ -82,13 +82,15 @@
 
 `probe.content_type` 必须与随后 `resolve` 的目标种类一致: HLS 用 `mpegurl`, 逐字节码流用 `video/*` / `audio/*`. 列表 `href` 按探测类型指向清单或码流; 不一致时前端会按错误方式初始化, 清单端点对非 HLS 目标返回 502.
 
-探测预算 1.5 秒. 超时由主机标记为不可用, 列表以 `available=false` 与 `detail="探测超时"` 呈现, 不是插件返回 `None`. 网络失败抛 `SourceError`. `probe` 内访问网络可能耗尽预算; 短探测、把取流留到 `resolve`.
+`resolve` 的结果默认不缓存: 主机每次真正取流都调用插件的 `resolve` (逐字节码流是每个 HTTP 请求一次, 清单是每次取清单一次). 播放目标上的 `cache_ttl` (秒, 必须为正数) 声明本次结果的可复用时长, 主机按「来源 + 条目 + 所选文件」在这段时间内复用, 宿主上限 `RESOLVE_TTL_MAX_SECONDS` (300 秒) 截断过长的声明. 不声明即不缓存, 与没有这个字段时完全一致. 签名 URL 与会话令牌必须声明不超过其实际有效期的值: 声明过长会让主机把已失效的地址继续交给播放器, 表现为播放失败; 声明短了只多解析一次. 只有成功解析出的目标进这条缓存, `SourceError` 与 `None` 仍走打开失败与探测的负缓存.
+
+探测预算 2 秒. 超时由主机标记为不可用, 列表以 `available=false` 与 `detail="探测超时"` 呈现, 不是插件返回 `None`. 网络失败抛 `SourceError`. `probe` 内访问网络可能耗尽预算; 短探测、把取流留到 `resolve`.
 
 探测结果可附带 WebVTT 轨道. 插件通过 `subtitle` 返回 VTT 正文或上游 VTT 地址; 正文由插件自行准备, 主机不转换字幕格式, 也不读取本机字幕文件. 上游字幕只接受 `text/vtt` (及缺省类型).
 
 **不允许在 Amane 主机内对码流做实时转码.** 浏览器无法直接播放时, 由上游提供 HLS 清单; 主机只改写 URI 并代理分片.
 
-码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止跟随 301/302/303/307/308, 上游 304 与 416 原样返回 (304 不写 `immutable`), 其余 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 上游声明非 identity 的 `Content-Encoding` 时丢弃 `Content-Length` — 主机转发的是 httpx 解码后的正文, 该值不再成立. 畸形上游 URL 归为 502, 且任何失败路径都必须归还出口额度. token 表与探测缓存跨 rebuild 存活 (所有权在 `AppRuntime`), 只在插件集合变化 (安装 / 卸载 / 重载 / 启停) 时清空 — 播放中修改任意热配置不得让在播 HLS 会话的分片失效. 被替换的流式客户端等在途请求结束后关闭 (30 秒兜底), 分片读超时 30 秒, 避免卡死的上游长期占用出口额度. 单个长响应 (非 HLS 的上游码流, 浏览器一次 Range 拉完整段) 在 rebuild 后最多再续 30 秒, 之后由播放器重新发起 Range 请求; token 跨 rebuild 存活, 重连可直接成功. HLS 分片请求短, 不受影响. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
+码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止跟随 301/302/303/307/308, 上游 304 与 416 原样返回 (304 不写 `immutable`), 其余 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 上游声明非 identity 的 `Content-Encoding` 时丢弃 `Content-Length` — 主机转发的是 httpx 解码后的正文, 该值不再成立. 畸形上游 URL 归为 502, 且任何失败路径都必须归还出口额度. token 表与探测缓存跨 rebuild 存活 (所有权在 `AppRuntime`), 只在插件集合变化 (安装 / 卸载 / 重载 / 启停) 时清空 — 播放中修改任意热配置不得让在播 HLS 会话的分片失效. 解析结果缓存相反, 每次 rebuild 都清空: 配置改动可能更换凭据与签名参数, 旧目标不再可信; 于是「改热配置不中断在播会话」与「改热配置后重新解析」并存, `cache_ttl` 只在同一份配置内生效. 被替换的流式客户端等在途请求结束后关闭 (30 秒兜底), 分片读超时 30 秒, 避免卡死的上游长期占用出口额度. 单个长响应 (非 HLS 的上游码流, 浏览器一次 Range 拉完整段) 在 rebuild 后最多再续 30 秒, 之后由播放器重新发起 Range 请求; token 跨 rebuild 存活, 重连可直接成功. HLS 分片请求短, 不受影响. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
 
 清单内分片允许 `video/*`、`audio/*`、`application/octet-stream` 与文本类 `text/vtt` / `text/plain`; `text/vtt` 是清单内字幕分片的类型, `text/plain` 是文本型 AES 密钥的常见默认类型, 二者与 `nosniff` 一起使用不会被浏览器执行. 分片缓存按用途区分: 媒体分片与初始化段可用不可变缓存; 来自 `#EXT-X-KEY` / `#EXT-X-SESSION-KEY` 的 URI 一律 `no-store` (同一 URI 的密钥内容会轮换), 其余文本类用 `no-cache`. `SourceError.detail` 会原样进入 502 响应体并展示给终端用户, 不允许在其中写入上游 URL、密钥或签名参数.
 

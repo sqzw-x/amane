@@ -27,7 +27,7 @@ from ..plugins.api import (
 )
 from ..plugins.models import PluginConfig, SourceCapability
 from ..utils.threads import in_thread
-from .cache import PlaybackCaches
+from .cache import RESOLVE_TTL_MAX_SECONDS, PlaybackCaches
 from .hls import (
     HLS_CONTENT_TYPE,
     PLAYLIST_CACHE_CONTROL,
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-PROBE_BUDGET_SECONDS = 1.5
+PROBE_BUDGET_SECONDS = 2.0
 SOURCE_ID_MAX_LEN = 128
 
 
@@ -108,6 +108,10 @@ class PlaybackState:
     token 表与探测缓存的所有权在 ``AppRuntime`` 上. 若它们随 ``PlaybackFactory`` 每次 rebuild
     一起丢弃, 播放中修改任意热配置都会让在播 HLS 会话的分片 token 失效. 只有插件集合变化
     (安装 / 卸载 / 重载 / 启停) 时才 ``reset()``, 此时旧 token 必须失效.
+
+    解析结果缓存 (``caches.resolve_hits``) 的失效时机不同: 它每次 rebuild 都清空. 配置改动可能
+    更换凭据与签名参数, 上一份配置解析出的目标不再可信; token 表跨 rebuild 存活是为了不打断
+    在播会话. 两者的失效时机相反, 不要合并.
     """
 
     hls: HlsUriMap = field(default_factory=HlsUriMap)
@@ -116,6 +120,10 @@ class PlaybackState:
     def reset(self) -> None:
         self.hls.reset()
         self.caches.reset()
+
+    def invalidate_resolved(self) -> None:
+        """丢弃已解析的播放目标; 每次 rebuild 调用. token 表与探测缓存不受影响."""
+        self.caches.resolve_hits.clear()
 
 
 class PlaybackFactory:
@@ -137,6 +145,9 @@ class PlaybackFactory:
         self._data_dir = data_dir
         self._stream = StreamClient(proxy=proxy)
         shared = state if state is not None else PlaybackState()
+        # 每个 Factory 实例对应一份热配置快照: 配置改动可能更换凭据, 上一份配置解析出的目标
+        # 必须失效. token 表与探测缓存不在这里清 (见 PlaybackState).
+        shared.invalidate_resolved()
         self._caches = shared.caches
         self._providers: dict[str, PlaybackProvider] = {}
         self._hls = shared.hls
@@ -341,7 +352,16 @@ class PlaybackFactory:
         source_id: str,
         query: PlaybackQuery,
     ) -> PlaybackTarget:
+        """解析出由主机执行的播放目标, 复用插件声明的有效期.
+
+        命中缓存的前提是插件在上一次结果里声明了 ``cache_ttl``; 未声明时每次都调用插件的
+        ``resolve``. 只有成功的解析结果进缓存: 抛 ``SourceError`` 与返回 ``None`` 仍走
+        ``open_fail`` 负缓存. 过长的声明由宿主上限 ``RESOLVE_TTL_MAX_SECONDS`` 截断.
+        """
         open_key = f"{source_id}:{query.metadata_id}:{query.selected_file_id}"
+        cached = self._caches.resolve_hits.get(open_key)
+        if cached is not None:
+            return cached
         if self._caches.open_fail.is_blocked(open_key):
             raise SourceError(FailureReason.NETWORK, detail="上游暂时不可用")
         provider = self.provider(source_id)
@@ -363,6 +383,9 @@ class PlaybackFactory:
             if detail is not None:
                 logger.warning("playback file target rejected", source=source_id, detail=detail)
                 raise SourceError(FailureReason.NO_USABLE_METADATA, detail=detail)
+        ttl = target.cache_ttl
+        if ttl is not None:
+            self._caches.resolve_hits.put(open_key, target, ttl=min(ttl, RESOLVE_TTL_MAX_SECONDS))
         return target
 
     def _map_hls_uri(

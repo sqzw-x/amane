@@ -218,6 +218,8 @@ class AppRuntime:
             self.agent_service.rebuild(hot.agent)
 
         previous_playback = self.playback_factory
+        # 新的 Factory 构造时丢弃解析结果缓存 (配置改动可能更换凭据); token 表与探测缓存仍在
+        # ``playback_state`` 里, 只有插件集合变化才 reset().
         current_playback = PlaybackFactory(
             plugin_manager=self.plugin_manager,
             plugin_configs=hot.plugins,
