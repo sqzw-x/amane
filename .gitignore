@@ -197,3 +197,6 @@ winapp/obj/
 
 # git worktrees created by tooling — never track
 .claude/worktrees/
+
+# parley discussion workspaces created by tooling — never track
+.parley/
