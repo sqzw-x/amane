@@ -379,6 +379,7 @@ class PlaybackFactory:
         if target is None:
             raise LookupError(source_id)
         if isinstance(target, FilePlaybackTarget):
+            # 磁盘核对进入线程池: 库根位于网盘挂载时, 事件循环上的 stat 会阻塞其它来源的探测.
             detail = await _file_target_error(target.path, tuple(item.path for item in query.files))
             if detail is not None:
                 logger.warning("playback file target rejected", source=source_id, detail=detail)

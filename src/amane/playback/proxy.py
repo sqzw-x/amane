@@ -23,6 +23,7 @@ HLS_PART_CACHE_CONTROL = "private, max-age=31536000, immutable"
 HLS_TEXT_CACHE_CONTROL = "private, no-cache"
 HLS_KEY_CACHE_CONTROL = "private, no-store"
 _HLS_TEXT_TYPES = frozenset({"text/plain", "text/vtt"})
+HLS_PART_MEDIA_TYPE = "application/octet-stream"
 PLAYLIST_MEDIA_TYPE = "application/vnd.apple.mpegurl"
 PLAYLIST_CACHE_CONTROL = "private, no-cache"
 
@@ -76,19 +77,25 @@ def is_allowed_media_type(content_type: str) -> bool:
 
 
 def is_allowed_hls_part(content_type: str) -> bool:
-    """清单内分片允许的 Content-Type.
+    """清单内分片允许的 Content-Type: 非播放列表即放行.
 
-    ``text/vtt`` 是清单内字幕分片的实际类型, ``text/plain`` 是文本型 AES 密钥的常见默认
-    类型. 两者与 ``X-Content-Type-Options: nosniff`` 一起使用, 不会被浏览器当作脚本执行.
+    上游 CDN 普遍伪装分片的扩展名与类型, 分片常被声明成 ``text/css``、``image/*`` 甚至
+    ``text/html``; 按类型白名单拒绝会让整条流无法播放. 放行不代表按该类型输出: 转发时一律
+    中和为 ``application/octet-stream``, 见 ``neutralized_hls_part_type``.
+    """
+    return not is_playlist_type(content_type)
+
+
+def neutralized_hls_part_type(content_type: str) -> str:
+    """分片转发给浏览器时使用的 Content-Type.
+
+    ``text/vtt`` 是清单内字幕分片的语义类型, ``text/plain`` 是文本型 AES 密钥的常见默认
+    类型, 两者保留原类型; 其余类型 (含上游伪装成的可执行 / 可渲染类型与空类型) 一律中和为
+    ``application/octet-stream``. 与 ``X-Content-Type-Options: nosniff`` 一起, 上游即使返回
+    可执行类型也不会被浏览器按该类型处理.
     """
     lowered = content_type.casefold().split(";", 1)[0].strip()
-    if is_playlist_type(lowered):
-        return False
-    if not lowered:
-        return True
-    if lowered.startswith(("video/", "audio/")):
-        return True
-    return lowered in {"application/octet-stream", "binary/octet-stream"} or lowered in _HLS_TEXT_TYPES
+    return content_type if lowered in _HLS_TEXT_TYPES else HLS_PART_MEDIA_TYPE
 
 
 def hls_part_cache_control(content_type: str) -> str:
@@ -208,6 +215,16 @@ def _safe_headers(headers: Mapping[str, str], secrets: set[str]) -> dict[str, st
     for key in [key for key in out if key.casefold() in secrets]:
         del out[key]
     return out
+
+
+def _override_header(headers: dict[str, str], name: str, value: str) -> None:
+    """按大小写无关替换响应头.
+
+    ``dict`` 的键区分大小写, 直接赋值会与上游透传的同名头并存, 客户端只会读到先出现的那份.
+    """
+    for key in [key for key in headers if key.casefold() == name.casefold()]:
+        del headers[key]
+    headers[name] = value
 
 
 def _length_range_consistent(headers: Mapping[str, str]) -> bool:
@@ -481,10 +498,19 @@ class StreamClient:
             raise
 
         filtered = _safe_headers(response.headers, secrets)
-        if cache_control is not None:
-            filtered["Cache-Control"] = cache_control
-        elif allow == "hls_part":
-            filtered["Cache-Control"] = hls_part_cache_control(response.headers.get("content-type", ""))
+        # 分片的类型判定与缓存判定都依据上游声明的类型, 输出给浏览器的则是中和后的类型.
+        # 密钥 URI 由 token 的 ``is_key`` 标记传入 ``cache_control`` (no-store); 其余文本类
+        # 分片按 no-cache, 媒体分片与初始化段按不可变缓存.
+        upstream_type = response.headers.get("content-type", "")
+        if allow == "hls_part":
+            _override_header(filtered, "content-type", neutralized_hls_part_type(upstream_type))
+            _override_header(
+                filtered,
+                "cache-control",
+                cache_control if cache_control is not None else hls_part_cache_control(upstream_type),
+            )
+        elif cache_control is not None:
+            _override_header(filtered, "cache-control", cache_control)
 
         async def body() -> AsyncGenerator[bytes]:
             try:

@@ -435,11 +435,15 @@ class TestPlaybackHttp:
         assert full.content == payload
         assert full.headers.get("content-type", "").startswith("video/")
         assert full.headers.get("x-content-type-options") == "nosniff"
+        assert full.headers["accept-ranges"] == "bytes"
+        assert full.headers["cache-control"] == "private"
         assert "attachment" not in full.headers.get("content-disposition", "").casefold()
 
         head = await client.head(stream)
         assert head.status_code == 200
         assert head.content == b""
+        assert head.headers["content-length"] == str(len(payload))
+        assert head.headers["accept-ranges"] == "bytes"
 
         partial = await client.get(stream, headers={"Range": "bytes=0-9"})
         assert partial.status_code == 206
@@ -449,6 +453,9 @@ class TestPlaybackHttp:
         unsatisfiable = await client.get(stream, headers={"Range": "bytes=999999-"})
         assert unsatisfiable.status_code == 416
         assert unsatisfiable.headers["content-range"] == f"bytes */{len(payload)}"
+
+        multi = await client.get(stream, headers={"Range": "bytes=0-1,2-3"})
+        assert multi.status_code == 400
 
         foreign_meta = await repo.upsert_metadata(number="PLAY-FILE-FOREIGN", title="Play")
         assert foreign_meta.id is not None
@@ -728,6 +735,72 @@ class TestPlaybackHttp:
 
             missing = await client.get(f"playback/acme.play/{metadata_id}/hls/{'a' * 32}")
             assert missing.status_code == 404
+        finally:
+            server.shutdown()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_hls_part_disguised_type_is_neutralized(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        """上游把分片声明成 text/css 时照常转发, 响应类型中和为 octet-stream.
+
+        缓存策略按上游原始类型判定: 密钥由 token 的 is_key 标记固定 no-store, 普通分片仍写
+        不可变缓存.
+        """
+        server, origin = _start_hls_origin(
+            {
+                "/seg.ts": ("text/css", b"SEGMENTDATA"),
+                "/enc.key": ("text/css", b"KEYBYTES"),
+            }
+        )
+        try:
+            data_dir = app.state.runtime.config.cold.data_dir
+            write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+            reloaded = await client.post("plugins/reload")
+            assert reloaded.status_code == 200, reloaded.text
+            metadata_id = await _seed_title(repo, number="PLAY-HLS-DISGUISED")
+            playlist = (
+                "#EXTM3U\n"
+                "#EXT-X-VERSION:3\n"
+                '#EXT-X-KEY:METHOD=AES-128,URI="enc.key"\n'
+                "#EXTINF:1.0,\n"
+                "seg.ts\n"
+                "#EXT-X-ENDLIST\n"
+            )
+            configured = await client.patch(
+                "plugins/acme.play",
+                json={
+                    "enabled": True,
+                    "config": {
+                        "behavior": "hls",
+                        "url": f"{origin}/index.m3u8",
+                        "headers": {"Authorization": "Bearer secret"},
+                        "playlist": playlist,
+                    },
+                },
+            )
+            assert configured.status_code == 200, configured.text
+
+            manifest = await client.get(f"playback/acme.play/{metadata_id}/index.m3u8")
+            assert manifest.status_code == 200
+            key_token, segment_token = _hls_part_tokens(manifest.text)
+
+            segment = await client.get(f"playback/acme.play/{metadata_id}/hls/{segment_token}")
+            assert segment.status_code == 200
+            assert segment.content == b"SEGMENTDATA"
+            assert segment.headers["content-type"] == "application/octet-stream"
+            assert segment.headers.get("x-content-type-options") == "nosniff"
+            assert "immutable" in segment.headers["cache-control"].casefold()
+            assert "authorization" not in {key.casefold() for key in segment.headers}
+
+            key = await client.get(f"playback/acme.play/{metadata_id}/hls/{key_token}")
+            assert key.status_code == 200
+            assert key.content == b"KEYBYTES"
+            assert key.headers["content-type"] == "application/octet-stream"
+            assert key.headers["cache-control"] == "private, no-store"
         finally:
             server.shutdown()
 

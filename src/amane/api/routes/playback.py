@@ -6,10 +6,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
 from fastapi.responses import JSONResponse
-from starlette.responses import FileResponse
 
 from ...net.errors import SourceError
 from ...playback.factory import SOURCE_ID_MAX_LEN, PlaybackFactory
+from ...playback.file_response import IndexedFileResponse
 from ...playback.hls import PLAYLIST_CACHE_CONTROL, is_hls_content_type
 from ...playback.href import playlist_href, stream_href, subtitle_href
 from ...playback.proxy import NOSNIFF
@@ -370,8 +370,9 @@ async def _play(
         raise _playback_http_error(exc) from exc
     if isinstance(target, FilePlaybackTarget):
         # 目标路径已由 ``PlaybackFactory.resolve`` 核对为条目索引内的文件.
-        return FileResponse(
-            path=target.path,
+        return IndexedFileResponse(
+            request,
+            target.path,
             media_type=target.content_type,
             headers={**NOSNIFF, "Cache-Control": "private"},
         )

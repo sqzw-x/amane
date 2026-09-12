@@ -29,6 +29,7 @@ from amane.playback.proxy import (
     is_allowed_media_type,
     is_allowed_subtitle_type,
     is_playlist_type,
+    neutralized_hls_part_type,
 )
 from amane.plugins.api import UpstreamPlaybackTarget
 
@@ -59,15 +60,39 @@ def test_allowed_media_type(content_type: str, allowed: bool) -> None:
         ("audio/aac", True),
         ("application/octet-stream", True),
         ("", True),
-        ("text/html", False),
-        ("text/vtt", True),
-        ("text/plain", True),
+        ("text/html", True),
+        ("text/css", True),
+        ("image/webp", True),
+        ("image/svg+xml", True),
+        ("application/json", True),
         ("application/vnd.apple.mpegurl", False),
-        ("application/json", False),
+        ("application/x-mpegurl", False),
+        ("application/dash+xml", False),
     ],
 )
 def test_allowed_hls_part(content_type: str, allowed: bool) -> None:
+    """上游 CDN 普遍伪装分片类型, 因此按「非播放列表即放行」判定, 不设类型白名单."""
     assert is_allowed_hls_part(content_type) is allowed
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        ("text/css", "application/octet-stream"),
+        ("image/webp", "application/octet-stream"),
+        ("image/svg+xml", "application/octet-stream"),
+        ("text/html", "application/octet-stream"),
+        ("application/json", "application/octet-stream"),
+        ("video/mp2t", "application/octet-stream"),
+        ("", "application/octet-stream"),
+        ("Text/Plain; charset=utf-8", "Text/Plain; charset=utf-8"),
+        ("text/vtt", "text/vtt"),
+        ("text/plain", "text/plain"),
+    ],
+)
+def test_neutralized_hls_part_type(content_type: str, expected: str) -> None:
+    """只有字幕与文本密钥保留原类型, 其余类型一律中和, 避免本机端点发出可执行类型."""
+    assert neutralized_hls_part_type(content_type) == expected
 
 
 @pytest.mark.parametrize(
@@ -314,20 +339,62 @@ async def test_proxy_passes_304_without_immutable() -> None:
 
 
 @pytest.mark.asyncio
-async def test_proxy_hls_part_rejects_4xx_and_html() -> None:
+async def test_proxy_hls_part_rejects_4xx_and_playlist() -> None:
+    """播放列表类型仍被拒绝: 分片位置返回清单说明定位错误, 不允许按分片转发."""
     missing, _c1, _ = _serve(status=404)
-    html, _c2, _ = _serve(media_type="text/html", body=b"<html>x</html>")
+    playlist, _c2, _ = _serve(media_type="application/vnd.apple.mpegurl", body=b"#EXTM3U\n")
     try:
-        for server in (missing, html):
+        cases = [(missing, "上游失败"), (playlist, "上游不是可播放的媒体")]
+        for server, detail in cases:
             app = _app(_origin(server), allow="hls_part")
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/p")
                 assert resp.status_code == 502
+                assert resp.json()["detail"] == detail
                 assert "immutable" not in resp.headers.get("cache-control", "").casefold()
     finally:
         missing.shutdown()
-        html.shutdown()
+        playlist.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("upstream_type", "expected_type", "expected_cache"),
+    [
+        ("text/css", "application/octet-stream", HLS_PART_CACHE_CONTROL),
+        ("image/webp", "application/octet-stream", HLS_PART_CACHE_CONTROL),
+        ("image/svg+xml", "application/octet-stream", HLS_PART_CACHE_CONTROL),
+        ("text/html", "application/octet-stream", HLS_PART_CACHE_CONTROL),
+        ("application/json", "application/octet-stream", HLS_PART_CACHE_CONTROL),
+        ("video/mp2t", "application/octet-stream", HLS_PART_CACHE_CONTROL),
+        ("text/vtt", "text/vtt", HLS_TEXT_CACHE_CONTROL),
+        ("text/plain", "text/plain", HLS_TEXT_CACHE_CONTROL),
+    ],
+)
+async def test_proxy_hls_part_neutralizes_disguised_type(
+    upstream_type: str,
+    expected_type: str,
+    expected_cache: str,
+) -> None:
+    """伪装类型的分片照常转发, 但发往浏览器的类型被中和; 字幕与文本密钥保留原类型.
+
+    缓存策略按上游声明的类型判定: 中和后的 ``application/octet-stream`` 不参与判定, 否则
+    文本类分片会被错误地写入不可变缓存.
+    """
+    server, _captured, _cancelled = _serve(media_type=upstream_type, body=b"part-bytes")
+    try:
+        app = _app(_origin(server), allow="hls_part")
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/p")
+            assert resp.status_code == 200
+            assert resp.content == b"part-bytes"
+            assert resp.headers["content-type"] == expected_type
+            assert resp.headers["x-content-type-options"] == "nosniff"
+            assert resp.headers["cache-control"] == expected_cache
+    finally:
+        server.shutdown()
 
 
 @pytest.mark.asyncio
@@ -618,8 +685,11 @@ async def test_gate_body_releases_without_iteration() -> None:
 
 @pytest.mark.asyncio
 async def test_proxy_cache_control_override() -> None:
-    """按用途覆盖分片缓存策略: 密钥类分片不得写入不可变缓存."""
-    server, _captured, _cancelled = _serve(media_type="application/octet-stream", body=b"key-bytes")
+    """按用途覆盖分片缓存策略: 密钥类分片不得写入不可变缓存.
+
+    上游把密钥声明成 ``text/css``: 缓存判定依据 token 的 ``is_key`` 标记, 类型中和照常执行.
+    """
+    server, _captured, _cancelled = _serve(media_type="text/css", body=b"key-bytes")
     stream = StreamClient()
     target = UpstreamPlaybackTarget(url=_origin(server))
 
@@ -650,8 +720,10 @@ async def test_proxy_cache_control_override() -> None:
             overridden = await client.get("/override")
             assert overridden.status_code == 200
             assert overridden.headers["cache-control"] == "private, no-store"
+            assert overridden.headers["content-type"] == "application/octet-stream"
             fallback = await client.get("/default")
             assert fallback.status_code == 200
             assert fallback.headers["cache-control"] == HLS_PART_CACHE_CONTROL
+            assert fallback.headers["content-type"] == "application/octet-stream"
     finally:
         server.shutdown()

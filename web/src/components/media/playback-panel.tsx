@@ -1,5 +1,7 @@
 import { Alert, Group, Select, Stack, Text } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
+import type { ErrorData } from "hls.js";
+import type { TFunction } from "i18next";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listPlaybackSourcesOptions } from "@/client/@tanstack/react-query.gen";
@@ -39,9 +41,50 @@ function nativeHlsSupported(): boolean {
   return document.createElement("video").canPlayType(HLS_TYPE) !== "";
 }
 
+// hls.js 致命错误中构成提示文案的字段, 后端没有给出 detail 时使用.
+type HlsFailure = {
+  details: string;
+  status: number | null;
+  target: string;
+};
+
+// 失败地址取自分片或错误数据本身; 两者都缺失时使用播放源地址, 该地址仍属于当前来源.
+function hlsFailure(data: ErrorData, href: string): HlsFailure {
+  return {
+    details: data.details,
+    status: data.response?.code ?? null,
+    target: data.frag?.url ?? data.url ?? href,
+  };
+}
+
+function hlsFailureMessage(failure: HlsFailure, t: TFunction<"metadata">): string {
+  return failure.status == null
+    ? t("detail.playbackFailedHls", { details: failure.details, url: failure.target })
+    : t("detail.playbackFailedHlsWithStatus", {
+        details: failure.details,
+        status: failure.status,
+        url: failure.target,
+      });
+}
+
+// 后端 detail 缺失时的提示来源: hls.js 错误原因优先, 其次为探测响应的 HTTP 状态码, 最后为基础文案.
+type PlaybackFallback = {
+  plain: string;
+  withStatus: (status: number) => string;
+  hlsReason: string | null;
+};
+
+function fallbackMessage(fallback: PlaybackFallback, status: number | null): string {
+  if (fallback.hlsReason != null) {
+    return fallback.hlsReason;
+  }
+  return status == null ? fallback.plain : fallback.withStatus(status);
+}
+
+// 提示的取值顺序: 后端 detail 优先, 后端没有给出 detail 时采用 fallback 说明的原因或状态码.
 async function readPlaybackDetail(
   href: string,
-  fallback: string,
+  fallback: PlaybackFallback,
   options: { ranged: boolean },
 ): Promise<string> {
   try {
@@ -49,8 +92,9 @@ async function readPlaybackDetail(
       href,
       options.ranged ? { headers: { Range: "bytes=0-0" } } : undefined,
     );
+    // 2xx 表示探测本身成功, 该响应的状态码不含失败信息.
     if (response.ok || response.status === 206) {
-      return fallback;
+      return fallbackMessage(fallback, null);
     }
     const body: unknown = await response.json().catch(() => null);
     if (
@@ -62,9 +106,9 @@ async function readPlaybackDetail(
     ) {
       return body.detail;
     }
-    return fallback;
+    return fallbackMessage(fallback, response.status);
   } catch (error) {
-    return extractErrorMessage(error, fallback);
+    return fallback.hlsReason ?? extractErrorMessage(error, fallback.plain);
   }
 }
 
@@ -90,7 +134,7 @@ function PlaybackVideo({
   href: string;
   kind: "video" | "hls";
   tracks: PlaybackSubtitleItem[];
-  onFailed: () => void;
+  onFailed: (failure: HlsFailure | null) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const onFailedRef = useLatestRef(onFailed);
@@ -112,7 +156,7 @@ function PlaybackVideo({
       }
       const Hls = module.default;
       if (!Hls.isSupported()) {
-        onFailedRef.current();
+        onFailedRef.current(null);
         return;
       }
       const hls = new Hls({
@@ -128,7 +172,7 @@ function PlaybackVideo({
       hls.attachMedia(video);
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
-          onFailedRef.current();
+          onFailedRef.current(hlsFailure(data, href));
         }
       });
       destroy = () => {
@@ -149,7 +193,8 @@ function PlaybackVideo({
       playsInline
       preload="metadata"
       style={{ width: "100%", maxHeight: 480, background: "#000", borderRadius: 8 }}
-      onError={onFailed}
+      // 原生播放路径没有 hls.js 错误数据, 失败原因由探测结果说明.
+      onError={() => onFailed(null)}
     >
       <SubtitleTracks tracks={tracks} />
     </video>
@@ -231,10 +276,16 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
             href={selected.href}
             kind={kind}
             tracks={selected.subtitles ?? []}
-            onFailed={() => {
-              void readPlaybackDetail(selected.href, t("detail.playbackFailed"), {
-                ranged: kind === "video",
-              }).then((message) => setError({ href: selected.href, message }));
+            onFailed={(failure) => {
+              void readPlaybackDetail(
+                selected.href,
+                {
+                  plain: t("detail.playbackFailed"),
+                  withStatus: (status) => t("detail.playbackFailedWithStatus", { status }),
+                  hlsReason: failure == null ? null : hlsFailureMessage(failure, t),
+                },
+                { ranged: kind === "video" },
+              ).then((message) => setError({ href: selected.href, message }));
             }}
           />
         )
