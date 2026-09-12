@@ -6,7 +6,8 @@ import pytest
 
 from amane.net.errors import SourceError
 from amane.playback.factory import _absolute_hls_uri
-from amane.playback.hls import rewrite_playlist, should_map_uri
+from amane.playback.hls import FailedHlsUri, HlsUriMap, rewrite_playlist, should_map_uri
+from amane.plugins.api import PlaybackQuery
 
 
 def _map(uri: str, is_key: bool = False) -> str:
@@ -137,3 +138,54 @@ def test_absolute_hls_uri_accepts(base: str, uri: str) -> None:
 def test_absolute_hls_uri_rejects(base: str, uri: str, detail: str) -> None:
     with pytest.raises(SourceError, match=detail):
         _absolute_hls_uri(base, uri)
+
+
+def _playback_query(metadata_id: int = 7, selected_file_id: int | None = None) -> PlaybackQuery:
+    return PlaybackQuery(metadata_id=metadata_id, number="PLAY-001", selected_file_id=selected_file_id)
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected"),
+    [
+        ("播放列表 URI 跨源", "播放列表 URI 跨源"),
+        ("", "播放列表 URI 不可用"),
+        (None, "播放列表 URI 不可用"),
+    ],
+)
+def test_hls_uri_map_records_failed_uri_reason(detail: str | None, expected: str) -> None:
+    """无法定位的 URI 在原位置登记一个必定失败的 token; 原因原样保留, 上游未给出原因时用中文兜底."""
+    table = HlsUriMap()
+    token = table.register_failed(
+        source_id="acme.play",
+        query=_playback_query(),
+        uri="//other.example/seg.ts",
+        detail=detail,
+    )
+    entry = table.get(token)
+    assert isinstance(entry, FailedHlsUri)
+    assert entry.detail == expected
+
+
+def test_hls_uri_map_failed_token_is_bound_to_its_owner() -> None:
+    """失败 token 与普通 token 一样绑定来源 / 条目 / 文件.
+
+    同一 URI 在同一来源条目下的 token 稳定 (浏览器手里的清单始终指向同一个地址), 条目保留登记
+    时的标量供归属校验比对; 其它来源或条目得到另一个 token.
+    """
+    table = HlsUriMap()
+    uri = "file:///etc/passwd"
+    token = table.register_failed(
+        source_id="acme.play", query=_playback_query(), uri=uri, detail="播放列表 URI 不受支持"
+    )
+    again = table.register_failed(
+        source_id="acme.play", query=_playback_query(), uri=uri, detail="播放列表 URI 不受支持"
+    )
+    other_entry = table.register_failed(
+        source_id="acme.play", query=_playback_query(metadata_id=8), uri=uri, detail="x"
+    )
+    other_source = table.register_failed(source_id="beta.play", query=_playback_query(), uri=uri, detail="x")
+    entry = table.get(token)
+    assert isinstance(entry, FailedHlsUri)
+    assert (entry.source_id, entry.query.metadata_id, entry.query.selected_file_id) == ("acme.play", 7, None)
+    assert len({token, again, other_entry, other_source}) == 3
+    assert table.get("0" * 32) is None

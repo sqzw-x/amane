@@ -552,32 +552,117 @@ class TestPlaybackHttp:
             html_server.shutdown()
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_hls_rejects_protocol_relative_cross_origin(
+    async def test_hls_bad_uri_fails_only_that_uri(
         self,
         client: AsyncClient,
         repo: Repository,
         app: FastAPI,
+        safe_path: Path,
     ) -> None:
+        """清单里一条无法定位的 URI 只作废自己: 其余分片照常可播.
+
+        无法定位的 URI 仍然改写到本机 (上游 Origin 不得因此漏进清单), 请求它的 token 时返回 502
+        与原始原因; 归属校验不变, 其它条目 / 文件 / 来源请求同一个 token 一律 404.
+        """
+        server, origin = _start_hls_origin({"/good.ts": ("video/mp4", b"GOODSEG")})
+        try:
+            data_dir = app.state.runtime.config.cold.data_dir
+            write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+            reloaded = await client.post("plugins/reload")
+            assert reloaded.status_code == 200, reloaded.text
+            metadata_id = await _seed_title(repo, number="PLAY-HLS-BAD")
+            playlist = (
+                "#EXTM3U\n"
+                '#EXT-X-MAP:URI="//evil.example/init.mp4"\n'
+                "#EXTINF:1.0,\n"
+                "//evil.example/seg.ts\n"
+                "#EXTINF:1.0,\n"
+                "file:///etc/passwd\n"
+                "#EXTINF:1.0,\n"
+                "http://[::1\n"
+                "#EXTINF:1.0,\n"
+                "good.ts\n"
+                "#EXT-X-ENDLIST\n"
+            )
+            configured = await client.patch(
+                "plugins/acme.play",
+                json={
+                    "enabled": True,
+                    "config": {"behavior": "hls", "url": f"{origin}/index.m3u8", "playlist": playlist},
+                },
+            )
+            assert configured.status_code == 200, configured.text
+
+            manifest = await client.get(f"playback/acme.play/{metadata_id}/index.m3u8")
+            assert manifest.status_code == 200
+            assert "evil.example" not in manifest.text
+            assert "/etc/passwd" not in manifest.text
+            assert "[::1" not in manifest.text
+            map_token, cross_token, scheme_token, malformed_token, good_token = _hls_part_tokens(manifest.text)
+
+            for token, detail in (
+                (map_token, "播放列表 URI 跨源"),
+                (cross_token, "播放列表 URI 跨源"),
+                (scheme_token, "播放列表 URI 不受支持"),
+                (malformed_token, "播放列表 URI 不受支持"),
+            ):
+                broken = await client.get(f"playback/acme.play/{metadata_id}/hls/{token}")
+                assert broken.status_code == 502
+                assert broken.json()["detail"] == detail
+                assert "evil.example" not in broken.text
+
+            segment = await client.get(f"playback/acme.play/{metadata_id}/hls/{good_token}")
+            assert segment.status_code == 200
+            assert segment.content == b"GOODSEG"
+
+            other_id = await _seed_title(repo, number="PLAY-HLS-BAD-OTHER")
+            file_id = await _attach_file(repo, metadata_id, safe_path / "clip.mp4", payload=b"video-bytes")
+            foreign_entry = await client.get(f"playback/acme.play/{other_id}/hls/{cross_token}")
+            assert foreign_entry.status_code == 404
+            foreign_file = await client.get(f"playback/acme.play/{metadata_id}/files/{file_id}/hls/{cross_token}")
+            assert foreign_file.status_code == 404
+            foreign_source = await client.get(f"playback/local/{metadata_id}/hls/{cross_token}")
+            assert foreign_source.status_code == 404
+        finally:
+            server.shutdown()
+
+    @pytest.mark.parametrize(
+        ("tag", "uri", "detail"),
+        [
+            ("EXT-X-KEY", "//evil.example/enc.key", "播放列表 URI 跨源"),
+            ("EXT-X-KEY", "file:///etc/passwd", "播放列表 URI 不受支持"),
+            ("EXT-X-SESSION-KEY", "//evil.example/enc.key", "播放列表 URI 跨源"),
+        ],
+    )
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_hls_bad_key_uri_fails_whole_playlist(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+        tag: str,
+        uri: str,
+        detail: str,
+    ) -> None:
+        """密钥 URI 无法定位时整份清单直接 502: 缺密钥整份都播不了, 提前给出原因比逐个分片失败更利于排查."""
         data_dir = app.state.runtime.config.cold.data_dir
         write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
         reloaded = await client.post("plugins/reload")
         assert reloaded.status_code == 200, reloaded.text
-        metadata_id = await _seed_title(repo, number="PLAY-HLS-PROTO")
+        metadata_id = await _seed_title(repo, number="PLAY-HLS-KEY")
+        playlist = f'#EXTM3U\n#{tag}:METHOD=AES-128,URI="{uri}"\n#EXTINF:1.0,\nseg.ts\n#EXT-X-ENDLIST\n'
         configured = await client.patch(
             "plugins/acme.play",
             json={
                 "enabled": True,
-                "config": {
-                    "behavior": "hls",
-                    "url": "http://cdn.example/index.m3u8",
-                    "playlist": "#EXTM3U\n#EXTINF:1.0,\n//evil.example/seg.ts\n#EXT-X-ENDLIST\n",
-                },
+                "config": {"behavior": "hls", "url": "http://cdn.example/index.m3u8", "playlist": playlist},
             },
         )
         assert configured.status_code == 200, configured.text
         manifest = await client.get(f"playback/acme.play/{metadata_id}/index.m3u8")
         assert manifest.status_code == 502
-        assert "跨源" in str(manifest.json()["detail"])
+        assert manifest.json()["detail"] == detail
+        assert "evil.example" not in manifest.text
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_local_symlink_to_inbox_inside_safe_dirs(

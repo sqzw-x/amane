@@ -15,6 +15,8 @@ from .proxy import is_playlist_type
 MAX_HLS_TOKENS = 8192
 HLS_CONTENT_TYPE = "application/vnd.apple.mpegurl"
 PLAYLIST_CACHE_CONTROL = "private, no-cache"
+# 失败 token 的兜底原因: 上游未给出 ``detail`` 时, 502 响应体仍必须带一句可展示的中文原因.
+HLS_URI_FAILURE_DETAIL = "播放列表 URI 不可用"
 
 _URI_ATTR = re.compile(r'(URI=)(["\'])([^"\']*)\2', re.IGNORECASE)
 _HLS_TYPES = frozenset({"application/vnd.apple.mpegurl", "application/x-mpegurl"})
@@ -100,6 +102,27 @@ class MappedHlsUri:
     is_key: bool
 
 
+@dataclass(frozen=True, slots=True)
+class FailedHlsUri:
+    """一条无法定位的清单 URI: 请求它必定失败, 不必再访问上游.
+
+    一条无法定位的 URI 只作废自己, 清单其余部分照常可播; 因此仍然登记 token, 并保留来源与条目
+    供归属校验比对. 不保留 URI: 它没有可定位的地址, 失败原因也不允许带上游地址.
+    """
+
+    detail: str
+    query: PlaybackQuery
+    source_id: str
+
+
+HlsEntry = MappedHlsUri | FailedHlsUri
+
+
+def _token_for(source_id: str, query: PlaybackQuery, uri: str) -> str:
+    payload = f"{source_id}\0{query.metadata_id}\0{query.selected_file_id}\0{uri}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:32]
+
+
 class HlsUriMap:
     """Process-local token table.
 
@@ -108,7 +131,7 @@ class HlsUriMap:
     """
 
     def __init__(self) -> None:
-        self._items: OrderedDict[str, MappedHlsUri] = OrderedDict()
+        self._items: OrderedDict[str, HlsEntry] = OrderedDict()
 
     def reset(self) -> None:
         self._items.clear()
@@ -122,24 +145,44 @@ class HlsUriMap:
         uri: str,
         is_key: bool,
     ) -> str:
-        token = hashlib.sha256(
-            f"{source_id}\0{query.metadata_id}\0{query.selected_file_id}\0{uri}".encode()
-        ).hexdigest()[:32]
-        self._items[token] = MappedHlsUri(
+        entry = MappedHlsUri(
             uri=uri,
             locator=locator,
             query=query,
             source_id=source_id,
             is_key=is_key,
         )
-        self._items.move_to_end(token)
-        while len(self._items) > MAX_HLS_TOKENS:
-            self._items.popitem(last=False)
-        return token
+        return self._store(_token_for(source_id, query, uri), entry)
 
-    def get(self, token: str) -> MappedHlsUri | None:
+    def register_failed(
+        self,
+        *,
+        source_id: str,
+        query: PlaybackQuery,
+        uri: str,
+        detail: str | None,
+    ) -> str:
+        """登记一条无法定位的 URI. ``uri`` 只用于派生 token, 不参与定位.
+
+        同一个 URI 每次得到同一个 token, 因此浏览器手里的清单始终指向同一个必定失败的地址.
+        """
+        entry = FailedHlsUri(
+            detail=detail or HLS_URI_FAILURE_DETAIL,
+            query=query,
+            source_id=source_id,
+        )
+        return self._store(_token_for(source_id, query, uri), entry)
+
+    def get(self, token: str) -> HlsEntry | None:
         item = self._items.get(token)
         if item is not None:
             # 被请求的 token 仍在会话中使用, 刷新顺序以免被新注册的 token 挤出上限.
             self._items.move_to_end(token)
         return item
+
+    def _store(self, token: str, entry: HlsEntry) -> str:
+        self._items[token] = entry
+        self._items.move_to_end(token)
+        while len(self._items) > MAX_HLS_TOKENS:
+            self._items.popitem(last=False)
+        return token

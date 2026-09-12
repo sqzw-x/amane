@@ -29,6 +29,7 @@ from .cache import PlaybackCaches
 from .hls import (
     HLS_CONTENT_TYPE,
     PLAYLIST_CACHE_CONTROL,
+    FailedHlsUri,
     HlsUriMap,
     rewrite_playlist,
     uri_looks_like_playlist,
@@ -353,13 +354,31 @@ class PlaybackFactory:
         base_url: str,
         is_key: bool,
     ) -> str:
-        token = self._hls.register(
-            source_id=source_id,
-            query=query,
-            locator=locator,
-            uri=_absolute_hls_uri(base_url, uri),
-            is_key=is_key,
-        )
+        """把一条清单 URI 登记成 token.
+
+        无法定位的 URI 只作废自己: 清单其余部分照常可播, 浏览器请求它时返回原始失败原因. 密钥
+        例外 —— 缺密钥整份清单都播不了, 在这里失败比让浏览器取得清单后逐个分片收到 502 更利于
+        排查. ``SourceError.detail`` 会展示给终端用户, 不允许带上游地址.
+        """
+        try:
+            absolute = _absolute_hls_uri(base_url, uri)
+        except SourceError as exc:
+            if is_key:
+                raise
+            token = self._hls.register_failed(
+                source_id=source_id,
+                query=query,
+                uri=uri,
+                detail=exc.detail,
+            )
+        else:
+            token = self._hls.register(
+                source_id=source_id,
+                query=query,
+                locator=locator,
+                uri=absolute,
+                is_key=is_key,
+            )
         return hls_part_href(source_id, query.metadata_id, query.selected_file_id, token)
 
     async def hls_playlist_text(
@@ -406,7 +425,7 @@ class PlaybackFactory:
         """转发一条清单内 URI.
 
         只按三个标量核对 token 归属, 不重建查询快照: 分片请求每秒数次, 而定位所需的一切都在
-        ``mapped`` 里.
+        ``mapped`` 里. 归属校验先于失败 token 的 502: 其它来源或其它条目请求同一个 token 一律 404.
         """
         mapped = self._hls.get(token)
         if (
@@ -416,6 +435,8 @@ class PlaybackFactory:
             or mapped.query.selected_file_id != media_file_id
         ):
             raise LookupError(token)
+        if isinstance(mapped, FailedHlsUri):
+            raise SourceError(FailureReason.NO_USABLE_METADATA, detail=mapped.detail)
         located = await mapped.locator.locate(mapped.query, mapped.uri)
         base_url = located.url
 
