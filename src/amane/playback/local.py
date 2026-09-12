@@ -14,7 +14,7 @@ from ..plugins.api import (
     SubtitleTrack,
     UpstreamPlaybackTarget,
 )
-from ..utils.path import existing_disk_path, is_any_descendant
+from ..utils.path import existing_disk_path, is_any_descendant, path_is_under
 from ..utils.threads import in_thread
 from .subtitles import to_webvtt
 
@@ -48,19 +48,27 @@ def _pick_default(files: list[PlaybackMediaFile]) -> PlaybackMediaFile:
     return max(files, key=lambda item: (item.size or 0, item.id))
 
 
-def _within_roots(resolved: Path, item: PlaybackMediaFile, safe_dirs: list[Path] | None) -> bool:
-    if item.library_path:
-        library_root = Path(item.library_path).resolve()
-        if not is_any_descendant(resolved, library_root):
-            return False
-    elif safe_dirs is None:
+def _literal_in_library(item: PlaybackMediaFile) -> bool:
+    if not item.library_path:
         return False
-    if safe_dirs is not None:
-        if not safe_dirs:
-            return False
-        if not is_any_descendant(resolved, *safe_dirs):
-            return False
-    return True
+    return path_is_under(item.path, item.library_path)
+
+
+def _resolved_allowed(resolved: Path, item: PlaybackMediaFile, safe_dirs: list[Path] | None) -> bool:
+    if safe_dirs is None:
+        return True
+    if not safe_dirs:
+        return False
+    roots: list[Path] = list(safe_dirs)
+    if item.library_path:
+        roots.append(Path(item.library_path).resolve())
+    return is_any_descendant(resolved, *roots)
+
+
+def _within_roots(resolved: Path, item: PlaybackMediaFile, safe_dirs: list[Path] | None) -> bool:
+    if not _literal_in_library(item):
+        return False
+    return _resolved_allowed(resolved, item, safe_dirs)
 
 
 def _sidecar_anchor_dirs(item: PlaybackMediaFile, video: Path) -> tuple[Path, ...]:
