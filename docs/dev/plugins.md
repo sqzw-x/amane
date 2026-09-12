@@ -91,6 +91,8 @@
 
 **不允许在 Amane 主机内对码流做实时转码.** 浏览器无法直接播放时, 由上游提供 HLS 清单; 主机只改写 URI 并代理分片.
 
+**断连不在 `Request` 上探测**: 本项目的中间件栈让 `Request.is_disconnected()` 恒为 `False` (原因见 [api.md](api.md)). 响应在自己的 `__call__` 里启动 `DisconnectSignal` (`playback/disconnect.py`) 的等待任务, 本机文件读循环与上游正文生成器只查这个标记, 客户端离开后不再读取、不再拉取上游. 中间件已缓冲的分块仍会送出, 但读取不会越过当前这一块.
+
 码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止跟随 301/302/303/307/308, 上游 304 与 416 原样返回 (304 不写 `immutable`), 其余 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 上游声明非 identity 的 `Content-Encoding` 时丢弃 `Content-Length` — 主机转发的是 httpx 解码后的正文, 该值不再成立. 畸形上游 URL 归为 502, 且任何失败路径都必须归还出口额度. token 表与探测缓存跨 rebuild 存活 (所有权在 `AppRuntime`), 只在插件集合变化 (安装 / 卸载 / 重载 / 启停) 时清空 — 播放中修改任意热配置不得让在播 HLS 会话的分片失效. 解析结果缓存相反, 每次 rebuild 都清空: 配置改动可能更换凭据与签名参数, 旧目标不再可信; 于是「改热配置不中断在播会话」与「改热配置后重新解析」并存, `cache_ttl` 只在同一份配置内生效. 被替换的流式客户端等在途请求结束后关闭 (30 秒兜底), 分片读超时 30 秒, 避免卡死的上游长期占用出口额度. 单个长响应 (非 HLS 的上游码流, 浏览器一次 Range 拉完整段) 在 rebuild 后最多再续 30 秒, 之后由播放器重新发起 Range 请求; token 跨 rebuild 存活, 重连可直接成功. HLS 分片请求短, 不受影响. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
 
 清单内分片按「非播放列表即放行」处理, 不设媒体类型白名单: 上游 CDN 普遍伪装分片的扩展名与 `Content-Type`, 按类型拒绝会让整条流无法播放. 转发时响应类型一律中和为 `application/octet-stream`, 只有 `text/vtt` (清单内字幕分片) 与 `text/plain` (文本型 AES 密钥的常见默认类型) 保留原类型; 与 `nosniff` 一起, 上游即使返回可执行类型也不会被浏览器按该类型处理. 播放列表类型仍拒绝. 分片缓存按用途区分, 判定依据是上游声明的类型: 媒体分片与初始化段可用不可变缓存; 来自 `#EXT-X-KEY` / `#EXT-X-SESSION-KEY` 的 URI 一律 `no-store` (同一 URI 的密钥内容会轮换), 其余文本类用 `no-cache`. `SourceError.detail` 会原样进入 502 响应体并展示给终端用户, 不允许在其中写入上游 URL、密钥或签名参数.

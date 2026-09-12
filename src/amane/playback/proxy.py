@@ -14,6 +14,7 @@ from starlette.responses import Response, StreamingResponse
 from starlette.types import Receive, Scope, Send
 
 from ..plugins.api import UpstreamPlaybackTarget
+from .disconnect import DisconnectSignal
 
 logger = structlog.get_logger()
 
@@ -288,16 +289,20 @@ class _GateStreamingResponse(StreamingResponse):
         content: AsyncIterator[bytes],
         *,
         release: Callable[[], Awaitable[None]],
+        disconnect: DisconnectSignal,
         status_code: int,
         headers: Mapping[str, str],
         media_type: str | None,
     ) -> None:
         self._release = release
+        self._disconnect = disconnect
         super().__init__(content, status_code=status_code, headers=dict(headers), media_type=media_type)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         try:
-            await super().__call__(scope, receive, send)
+            # 断连标记由响应置位: 正文生成器手里没有 ``receive``, 只能查标记.
+            async with self._disconnect.watch(receive):
+                await super().__call__(scope, receive, send)
         finally:
             await self._release()
 
@@ -512,10 +517,12 @@ class StreamClient:
         elif cache_control is not None:
             _override_header(filtered, "cache-control", cache_control)
 
+        disconnect = DisconnectSignal()
+
         async def body() -> AsyncGenerator[bytes]:
             try:
                 async for chunk in response.aiter_bytes():
-                    if await request.is_disconnected():
+                    if disconnect.disconnected:
                         break
                     yield chunk
             finally:
@@ -528,6 +535,7 @@ class StreamClient:
         return _GateStreamingResponse(
             _GateBody(body(), release),
             release=release,
+            disconnect=disconnect,
             status_code=response.status_code,
             headers=filtered,
             media_type=filtered.get("content-type"),

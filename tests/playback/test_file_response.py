@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI, Request, Response
 from httpx2 import ASGITransport, AsyncClient
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.types import Message, Scope
 
 from amane.playback.file_response import IndexedFileResponse
@@ -191,11 +193,18 @@ def _receive(script: list[Message]) -> Callable[[], Awaitable[Message]]:
 
 
 def _connected_receive() -> Callable[[], Awaitable[Message]]:
-    """始终报告请求正文已读取完毕, 即客户端没有断开."""
+    """给出请求正文后一直挂起 (无人置位), 即客户端没有断开."""
 
     async def receive() -> Message:
-        return {"type": "http.request", "body": b"", "more_body": False}
+        nonlocal body_sent
+        if not body_sent:
+            body_sent = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        await released.wait()
+        return {"type": "http.disconnect"}
 
+    released = asyncio.Event()
+    body_sent = False
     return receive
 
 
@@ -205,10 +214,10 @@ def _body_chunks(messages: list[Message]) -> list[bytes]:
 
 @pytest.mark.asyncio
 async def test_file_response_stops_reading_after_disconnect(tmp_path: Path) -> None:
-    """客户端断开后不再读取文件.
+    """断开消息已经等在通道里时不再输出正文.
 
     ASGI 服务器在客户端离开后让 ``send`` 静默成功, 读取循环只看 ``send`` 不会停止; 这里让
-    ``receive`` 在首个分块之后报告断连, 断言文件只被读取一次并已关闭.
+    ``receive`` 一开始就报告断连, 断言正文一块都不发, 句柄已关闭, 且至多提交了一次已在途的读取.
     """
     path = tmp_path / "clip.mp4"
     path.write_bytes(PAYLOAD)
@@ -226,9 +235,9 @@ async def test_file_response_stops_reading_after_disconnect(tmp_path: Path) -> N
 
     await response(scope, receive, send)
 
-    assert [message["type"] for message in sent] == ["http.response.start", "http.response.body"]
-    assert _body_chunks(sent) == [PAYLOAD[:8]]
-    assert response.reads == [8]
+    assert [message["type"] for message in sent] == ["http.response.start"]
+    assert _body_chunks(sent) == []
+    assert len(response.reads) <= 1
     assert response.closed is True
 
 
@@ -251,3 +260,67 @@ async def test_file_response_reads_whole_file_without_disconnect(tmp_path: Path)
     assert response.closed is True
     assert b"".join(_body_chunks(sent)) == PAYLOAD
     assert sent[-1]["type"] == "http.response.body"
+
+
+class _MidStreamDisconnectReceive:
+    """正文消息之后挂起, 由首块 ``send`` 触发断开: 断连在流式过程中异步到达."""
+
+    def __init__(self) -> None:
+        self._disconnected = asyncio.Event()
+        self._body_sent = False
+
+    async def __call__(self) -> Message:
+        if not self._body_sent:
+            self._body_sent = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        await self._disconnected.wait()
+        return {"type": "http.disconnect"}
+
+    def disconnect(self) -> None:
+        self._disconnected.set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wrapped", [True, False])
+async def test_file_response_stops_reading_on_midstream_disconnect(tmp_path: Path, wrapped: bool) -> None:
+    """断开在流式过程中异步到达时停止读取并关闭句柄, 不再读完整份文件.
+
+    生产栈最外层是 ``BaseHTTPMiddleware``: 它包装出的 ``receive`` 必须真正挂起才会收到
+    ``http.disconnect``, 因此 ``Request.is_disconnected`` 那种立刻取消的探测看不到断开. 这里让
+    首块发出之后才断开, 断言读循环远早于文件末尾停下 (中间件已缓冲的分块可能仍被送出).
+    """
+    payload = PAYLOAD * 4
+    chunks = len(payload) // 8
+    path = tmp_path / "clip.mp4"
+    path.write_bytes(payload)
+    responses: list[_CountingResponse] = []
+
+    async def dispatch(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        return await call_next(request)
+
+    app = FastAPI()
+    if wrapped:
+        app.add_middleware(BaseHTTPMiddleware, dispatch=dispatch)
+
+    @app.api_route("/f", methods=["GET", "HEAD"])
+    async def serve(request: Request) -> Response:
+        response = _CountingResponse(request, path, payload)
+        responses.append(response)
+        return response
+
+    scope = _scope()
+    receive = _MidStreamDisconnectReceive()
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+        if message["type"] == "http.response.body" and len(_body_chunks(sent)) == 1:
+            receive.disconnect()
+            # 断连消息的唤醒回调先入队, 让等待任务在恢复发送前跑完
+            await asyncio.sleep(0)
+
+    await app(scope, receive, send)
+
+    assert len(responses[0].reads) < chunks
+    assert len(_body_chunks(sent)) < chunks
+    assert responses[0].closed is True

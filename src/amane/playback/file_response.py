@@ -2,8 +2,9 @@
 
 ``starlette.responses.FileResponse`` 不监听 ``http.disconnect``: ASGI 服务器在客户端离开后
 让 ``send`` 静默返回, 读取循环因此读到文件末尾. 文件位于网盘挂载时, 用户已经离开页面, 这些
-读取仍持续消耗上游流量. 本模块在每次读取之前检查断连, 断开即结束循环并在 ``finally`` 中关闭
-文件句柄.
+读取仍持续消耗上游流量. 本模块用 :class:`~amane.playback.disconnect.DisconnectSignal` 观察
+断连 (``Request.is_disconnected`` 在本项目的中间件栈下不生效, 原因见该模块), 每次读取前后都
+查标记, 断开即结束循环并在 ``finally`` 中关闭文件句柄.
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from typing import BinaryIO
 from fastapi import HTTPException, Request
 from starlette.responses import Response
 from starlette.types import Receive, Scope, Send
+
+from .disconnect import DisconnectSignal
 
 CHUNK_SIZE = 256 * 1024
 _UNREADABLE_DETAIL = "条目索引的文件当前无法读取"
@@ -150,28 +153,30 @@ class IndexedFileResponse(Response):
 
         header_only = scope["type"] == "http" and scope["method"].upper() == "HEAD"
         handle = None if header_only or length == 0 else await self._open()
+        signal = DisconnectSignal()
         await send({"type": "http.response.start", "status": status, "headers": _raw_headers(headers)})
         try:
             if handle is None:
                 await send({"type": "http.response.body", "body": b"", "more_body": False})
             else:
-                await self._stream(handle, start, length, send)
+                async with signal.watch(receive):
+                    await self._stream(handle, start, length, send, signal)
         finally:
             if handle is not None:
                 await asyncio.to_thread(handle.close)
         if self.background is not None:
             await self.background()
 
-    async def _stream(self, handle: BinaryIO, start: int, length: int, send: Send) -> None:
+    async def _stream(self, handle: BinaryIO, start: int, length: int, send: Send, signal: DisconnectSignal) -> None:
         """按块发送正文; 客户端断开或文件提前结束时立即返回."""
         await asyncio.to_thread(handle.seek, start)
         remaining = length
         while remaining > 0:
-            # 断开后不再向网盘发起读取: 每次读取之前检查.
-            if await self._request.is_disconnected():
+            # 断开后不再向网盘发起读取, 也不再发送已经读出的块.
+            if signal.disconnected:
                 return
             chunk = await asyncio.to_thread(handle.read, min(self.chunk_size, remaining))
-            if not chunk:
+            if not chunk or signal.disconnected:
                 return
             remaining -= len(chunk)
             await send({"type": "http.response.body", "body": chunk, "more_body": remaining > 0})

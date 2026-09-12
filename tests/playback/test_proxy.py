@@ -1,5 +1,6 @@
 """Upstream reverse-proxy constraints: Range, secrets, playlist, redirects, cancel."""
 
+import asyncio
 import gzip
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
@@ -282,6 +283,11 @@ async def test_proxy_rejects_redirect_playlist_and_mismatch() -> None:
 
 @pytest.mark.asyncio
 async def test_proxy_cancels_upstream_on_disconnect() -> None:
+    """客户端在流式过程中离开时停止拉取上游.
+
+    断连由响应的 ``__call__`` 置位: 正文生成器手里没有 ``receive``, 且 ``Request`` 上的探测在
+    ``BaseHTTPMiddleware`` 栈下看不到断开.
+    """
     server, _captured, cancelled = _serve(slow=True)
     stream = StreamClient()
     try:
@@ -289,30 +295,38 @@ async def test_proxy_cancels_upstream_on_disconnect() -> None:
             url=_origin(server),
             headers={"Authorization": "Bearer secret"},
         )
+        scope: Scope = {
+            "type": "http",
+            "asgi": {"spec_version": "2.4", "version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/p",
+            "raw_path": b"/p",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 123),
+            "server": ("test", 80),
+        }
+        disconnected = asyncio.Event()
 
-        async def receive() -> dict[str, str]:
+        async def receive() -> Message:
+            await disconnected.wait()
             return {"type": "http.disconnect"}
 
-        request = Request(
-            {
-                "type": "http",
-                "asgi": {"version": "3.0"},
-                "http_version": "1.1",
-                "method": "GET",
-                "scheme": "http",
-                "path": "/p",
-                "raw_path": b"/p",
-                "query_string": b"",
-                "headers": [],
-                "client": ("127.0.0.1", 123),
-                "server": ("test", 80),
-            },
-            receive,
-        )
-        response = await stream.proxy(request, source_id="acme.play", target=target)
+        response = await stream.proxy(Request(scope, receive), source_id="acme.play", target=target)
         assert isinstance(response, StreamingResponse)
-        async for _chunk in response.body_iterator:
-            break
+
+        sent: list[Message] = []
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+            if message["type"] == "http.response.body":
+                disconnected.set()
+                await asyncio.sleep(0)
+
+        await response(scope, receive, send)
+
         assert cancelled.wait(timeout=2)
     finally:
         await stream.aclose()

@@ -58,6 +58,8 @@ Starlette WS 不支持 `Depends`, `ws.py` 手动取 `ws.app.state.runtime`. 插�
 
 `create_app`: 先 `include_router` 再 `mount_spa` (SPA catch-all 会吞 `/api`), 最后注册 `LoggingMiddleware`. `add_middleware` 后注册者在栈外层 (insert(0)), 故 LoggingMiddleware 包住 TokenAuth / CORS / SPA fallback — 401/403 直返与内层中间件自身异常也进入请求日志. 新端点不依赖中间件注册顺序; 新增自定义中间件时 LoggingMiddleware 必须仍为最外层.
 
+`TokenAuthMiddleware` 与 `LoggingMiddleware` 都是 `BaseHTTPMiddleware`: 它交给下游的是包装过的 `receive`, 必须真正挂起等待才会收到 `http.disconnect`. 因此 `Request.is_disconnected()` (立刻取消式探测) 在本栈内恒为 `False`, 需要感知客户端离开的长响应改用 `playback/disconnect.py` 的 `DisconnectSignal` (见 [plugins.md](plugins.md)).
+
 ## 约定
 
 **错误**: `HTTPException(detail=中文)`. 路径校验位于 `support/path_validation.py` (存在 / 类型 / `safe_dirs` → 400/403/404; `safe_dirs is None` 即 `ALLOW_ALL` 时跳过边界层). `/files`: 路径解析为非严格 (`utils/path.py` 对虚拟/网络挂载盘无法规范化查询时按字面兜底), 相对 `path` 经由 `base` 参数解析 (缺省 = 首个安全目录; `ALLOW_ALL` 时 POSIX `/`、Windows `C:\`), 不存在 → 404, 不在 `safe_dirs` → 403; 空名单 (已配置但无可用根) → 500; `os.scandir` 的 `OSError` (含网络盘挂载失效, macOS errno 6) → 500 + strerror detail; `PermissionError` → 403. 响应含规范 `path` (resolve 后的绝对路径, as_posix 且清除 `\\?\` 前缀), 前端文件浏览器以它为面包屑的唯一权威形态, 不做分段拼接. 错误日志统一由 LoggingMiddleware 打点 (见 [observability.md](observability.md)), handler 内不自行 logger 打印.
