@@ -52,9 +52,11 @@ def test_rewrite_playlist_maps_uris(source: str, check: Callable[[str], bool]) -
     assert check(rewritten)
 
 
-def test_rewrite_playlist_does_not_map_host_paths() -> None:
+def test_rewrite_playlist_maps_host_looking_paths() -> None:
+    """上游正文里的主机路径同样必须改写, 否则浏览器改为请求本机的播放路由."""
     source = "#EXTM3U\n#EXTINF:1,\n/api/playback/acme.play/1/hls/already\n"
-    assert rewrite_playlist(source, _map) == source
+    rewritten = rewrite_playlist(source, _map)
+    assert rewritten.splitlines()[2] == "/api/playback/acme.play/1/hls/_api_playback_acme.play_1_hls_already"
 
 
 def test_rewrite_playlist_strips_bom_and_crlf() -> None:
@@ -68,7 +70,7 @@ def test_rewrite_playlist_strips_bom_and_crlf() -> None:
 def test_should_map_uri() -> None:
     assert should_map_uri("seg.ts") is True
     assert should_map_uri("https://cdn.example/seg.ts") is True
-    assert should_map_uri("/api/playback/x/1/hls/ab") is False
+    assert should_map_uri("/api/playback/x/1/hls/ab") is True
     assert should_map_uri("data:text/plain,x") is False
     assert should_map_uri("") is False
 
@@ -103,6 +105,7 @@ def test_absolute_hls_uri_accepts(base: str, uri: str) -> None:
         ("http://cdn.example/a/index.m3u8", "file:///etc/passwd", "不受支持"),
         ("http://cdn.example/a/index.m3u8", "ftp://cdn.example/seg.ts", "不受支持"),
         ("http://cdn.example/a/index.m3u8", "data:text/plain,x", "不受支持"),
+        ("http://cdn.example/a/index.m3u8", "http://[::1", "不受支持"),
     ],
 )
 def test_absolute_hls_uri_rejects(base: str, uri: str, detail: str) -> None:

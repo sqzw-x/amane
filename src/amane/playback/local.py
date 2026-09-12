@@ -16,7 +16,7 @@ from ..plugins.api import (
 )
 from ..utils.path import existing_disk_path, is_any_descendant, path_is_under
 from ..utils.threads import in_thread
-from .subtitles import to_webvtt
+from .subtitles import decode_subtitle, to_webvtt
 
 LOCAL_SOURCE_ID = "local"
 _STRM_SUFFIX = ".strm"
@@ -55,13 +55,18 @@ def _literal_in_library(item: PlaybackMediaFile) -> bool:
 
 
 def _resolved_allowed(resolved: Path, item: PlaybackMediaFile, safe_dirs: list[Path] | None) -> bool:
+    """判断解析后的路径是否允许打开.
+
+    ``safe_dirs`` 为 ``None`` 表示 ``ALLOW_ALL`` (不另限解析目标); 为列表时库根与名单是
+    「或」的关系, 因此空名单仍放行库根内的文件, 只在库根也未知时拒绝.
+    """
     if safe_dirs is None:
         return True
-    if not safe_dirs:
-        return False
     roots: list[Path] = list(safe_dirs)
     if item.library_path:
         roots.append(Path(item.library_path).resolve())
+    if not roots:
+        return False
     return is_any_descendant(resolved, *roots)
 
 
@@ -115,13 +120,24 @@ def _find_sidecar(item: PlaybackMediaFile, video: Path, safe_dirs: list[Path] | 
                 continue
             if resolved.parent not in _sidecar_anchor_dirs(item, video):
                 continue
+            if _decode_sidecar(resolved) is None:
+                continue
             return resolved
     return None
 
 
+def _decode_sidecar(path: Path) -> str | None:
+    """读取并解码同目录字幕. 解码失败返回 ``None``, 该轨道被判定为不可用."""
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    return decode_subtitle(raw)
+
+
 @in_thread
-def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+def _read_sidecar(path: Path) -> str | None:
+    return _decode_sidecar(path)
 
 
 class LocalPlaybackProvider(PlaybackProvider):
@@ -175,5 +191,7 @@ class LocalPlaybackProvider(PlaybackProvider):
         sidecar = await _find_sidecar(_media_file, path, self._safe_dirs)
         if sidecar is None:
             return None
-        text = await _read_text(sidecar)
+        text = await _read_sidecar(sidecar)
+        if text is None:
+            return None
         return to_webvtt(text, suffix=sidecar.suffix)

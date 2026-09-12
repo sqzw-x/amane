@@ -18,6 +18,8 @@ logger = structlog.get_logger()
 ProxyAllow = Literal["media", "hls_part", "subtitle"]
 PLAYLIST_MAX_BYTES = 2 * 1024 * 1024
 HLS_PART_CACHE_CONTROL = "private, max-age=31536000, immutable"
+HLS_TEXT_CACHE_CONTROL = "private, no-cache"
+_HLS_TEXT_TYPES = frozenset({"text/plain", "text/vtt"})
 PLAYLIST_MEDIA_TYPE = "application/vnd.apple.mpegurl"
 PLAYLIST_CACHE_CONTROL = "private, no-cache"
 
@@ -69,6 +71,11 @@ def is_allowed_media_type(content_type: str) -> bool:
 
 
 def is_allowed_hls_part(content_type: str) -> bool:
+    """清单内分片允许的 Content-Type.
+
+    ``text/vtt`` 是清单内字幕分片的实际类型, ``text/plain`` 是文本型 AES 密钥的常见默认
+    类型. 两者与 ``X-Content-Type-Options: nosniff`` 一起使用, 不会被浏览器当作脚本执行.
+    """
     lowered = content_type.casefold().split(";", 1)[0].strip()
     if is_playlist_type(lowered):
         return False
@@ -76,7 +83,17 @@ def is_allowed_hls_part(content_type: str) -> bool:
         return True
     if lowered.startswith(("video/", "audio/")):
         return True
-    return lowered in {"application/octet-stream", "binary/octet-stream"}
+    return lowered in {"application/octet-stream", "binary/octet-stream"} or lowered in _HLS_TEXT_TYPES
+
+
+def hls_part_cache_control(content_type: str) -> str:
+    """清单内分片的缓存策略.
+
+    密钥与字幕按 URI 复用但内容可能轮换, 因此文本类不做不可变缓存; 只有媒体分片与初始化段
+    按 URI 长期不变, 才允许写入浏览器不可变缓存.
+    """
+    lowered = content_type.casefold().split(";", 1)[0].strip()
+    return HLS_TEXT_CACHE_CONTROL if lowered in _HLS_TEXT_TYPES else HLS_PART_CACHE_CONTROL
 
 
 def is_allowed_subtitle_type(content_type: str) -> bool:
@@ -99,6 +116,22 @@ def _is_multi_range(range_header: str) -> bool:
     if not spec.lower().startswith("bytes="):
         return False
     return "," in spec.split("=", 1)[1]
+
+
+def _upstream_url(url: str) -> str:
+    """校验并归一化上游 URL.
+
+    ``httpx.InvalidURL`` 直接继承 ``Exception``, 不是 ``RequestError``; 畸形 URL 若不在入口
+    拦下, 会绕过 ``except httpx.RequestError`` 的归还分支漏掉出口额度, 并被路由记成未处理
+    异常返回 500. 只接受主机可代理的绝对 http(s) 地址.
+    """
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL as exc:
+        raise HTTPException(status_code=502, detail="上游地址无效") from exc
+    if parsed.scheme not in {"http", "https"} or not parsed.host:
+        raise HTTPException(status_code=502, detail="上游地址无效")
+    return str(parsed)
 
 
 class UpstreamGate:
@@ -136,14 +169,40 @@ class UpstreamGate:
         self._global.release()
 
 
+def _secret_keys(target: UpstreamPlaybackTarget) -> set[str]:
+    return {key.casefold() for key in target.headers}
+
+
 def _filter_response_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    """透传播放需要的上游响应头, 丢弃 hop-by-hop 与 cookie.
+
+    ``Content-Length`` 描述的是上游编码后的正文字节数; 正文经 httpx 解码后长度会改变, 因此
+    上游声明了非 identity 的 ``Content-Encoding`` 时不允许再透传该值, 否则浏览器按错误的
+    长度截断或挂起.
+    """
+    encoding = headers.get("content-encoding", "").casefold().strip()
+    encoded = encoding not in {"", "identity"}
     out: dict[str, str] = {}
     for key, value in headers.items():
         lower = key.lower()
         if lower in _HOP_BY_HOP:
             continue
+        if encoded and lower == "content-length":
+            continue
         if lower in _PASSTHROUGH:
             out[key] = value
+    return out
+
+
+def _safe_headers(headers: Mapping[str, str], secrets: set[str]) -> dict[str, str]:
+    """过滤后的响应头, 并删除与上游请求头同名的项.
+
+    上游回显请求头时会把主机发出的凭据交给浏览器, 因此按名字逐一比对并删除.
+    """
+    out = _filter_response_headers(headers)
+    out.update(NOSNIFF)
+    for key in [key for key in out if key.casefold() in secrets]:
+        del out[key]
     return out
 
 
@@ -194,15 +253,21 @@ class StreamClient:
         target: UpstreamPlaybackTarget,
         max_bytes: int = PLAYLIST_MAX_BYTES,
     ) -> bytes:
+        url = _upstream_url(target.url)
         outbound: dict[str, str] = {**target.headers, "Accept-Encoding": "identity"}
         await self._gate.acquire(source_id)
         try:
-            upstream_req = self._client.build_request("GET", target.url, headers=outbound)
+            upstream_req = self._client.build_request("GET", url, headers=outbound)
             response = await self._client.send(upstream_req, stream=True)
         except httpx.RequestError as exc:
             self._gate.release(source_id)
             logger.warning("playback upstream request failed", source=source_id, error=str(exc))
             raise HTTPException(status_code=502, detail="上游不可达") from exc
+        except BaseException:
+            # 归还出口额度: 非 RequestError 的异常 (例如客户端已被 rebuild 关闭) 不能漏掉额度,
+            # 否则额度随请求次数单调减少, 最终整个进程的播放固定返回 503.
+            self._gate.release(source_id)
+            raise
         try:
             if 300 <= response.status_code < 400:
                 raise HTTPException(status_code=502, detail="上游重定向被拒绝")
@@ -247,28 +312,36 @@ class StreamClient:
             outbound["If-None-Match"] = if_none_match
 
         method = "HEAD" if request.method == "HEAD" else "GET"
+        url = _upstream_url(target.url)
         await self._gate.acquire(source_id)
         try:
-            upstream_req = self._client.build_request(method, target.url, headers=outbound)
+            upstream_req = self._client.build_request(method, url, headers=outbound)
             response = await self._client.send(upstream_req, stream=True)
         except httpx.RequestError as exc:
             self._gate.release(source_id)
             logger.warning("playback upstream request failed", source=source_id, error=str(exc))
             raise HTTPException(status_code=502, detail="上游不可达") from exc
+        except BaseException:
+            # 同 fetch_bytes: 任何异常都必须归还出口额度.
+            self._gate.release(source_id)
+            raise
 
+        secrets = _secret_keys(target)
         try:
             if response.status_code == 304:
-                filtered = _filter_response_headers(response.headers)
-                filtered.update(NOSNIFF)
-                secret_keys = {key.casefold() for key in target.headers}
+                filtered = _safe_headers(response.headers, secrets)
                 for key in list(filtered):
-                    if key.casefold() in secret_keys:
-                        del filtered[key]
-                    elif key.casefold() == "cache-control" and "immutable" in filtered[key].casefold():
+                    if key.casefold() == "cache-control" and "immutable" in filtered[key].casefold():
                         filtered[key] = "private, no-cache"
                 await response.aclose()
                 self._gate.release(source_id)
                 return Response(status_code=304, headers=filtered)
+            if response.status_code == 416:
+                # 客户端 Range 不可满足属于请求本身的问题, 与上游故障区分, 原样返回状态码.
+                filtered = _safe_headers(response.headers, secrets)
+                await response.aclose()
+                self._gate.release(source_id)
+                return Response(status_code=416, headers=filtered)
             if 300 <= response.status_code < 400:
                 raise HTTPException(status_code=502, detail="上游重定向被拒绝")
             if response.status_code >= 400:
@@ -304,14 +377,9 @@ class StreamClient:
             self._gate.release(source_id)
             raise
 
-        filtered = _filter_response_headers(response.headers)
-        filtered.update(NOSNIFF)
-        secret_keys = {key.casefold() for key in target.headers}
-        for key in list(filtered):
-            if key.casefold() in secret_keys:
-                del filtered[key]
+        filtered = _safe_headers(response.headers, secrets)
         if allow == "hls_part":
-            filtered["Cache-Control"] = HLS_PART_CACHE_CONTROL
+            filtered["Cache-Control"] = hls_part_cache_control(response.headers.get("content-type", ""))
 
         async def body() -> AsyncIterator[bytes]:
             try:

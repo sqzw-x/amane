@@ -1,5 +1,6 @@
 """Upstream reverse-proxy constraints: Range, secrets, playlist, redirects, cancel."""
 
+import gzip
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -7,13 +8,18 @@ from threading import Event, Thread
 from typing import Any
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from httpx2 import ASGITransport, AsyncClient
 from starlette.responses import StreamingResponse
 
 from amane.playback.proxy import (
+    GLOBAL_CONCURRENCY,
+    HLS_PART_CACHE_CONTROL,
+    HLS_TEXT_CACHE_CONTROL,
     ProxyAllow,
     StreamClient,
+    _filter_response_headers,
+    hls_part_cache_control,
     is_allowed_hls_part,
     is_allowed_media_type,
     is_allowed_subtitle_type,
@@ -49,13 +55,28 @@ def test_allowed_media_type(content_type: str, allowed: bool) -> None:
         ("application/octet-stream", True),
         ("", True),
         ("text/html", False),
-        ("text/vtt", False),
+        ("text/vtt", True),
+        ("text/plain", True),
         ("application/vnd.apple.mpegurl", False),
         ("application/json", False),
     ],
 )
 def test_allowed_hls_part(content_type: str, allowed: bool) -> None:
     assert is_allowed_hls_part(content_type) is allowed
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        ("video/mp2t", HLS_PART_CACHE_CONTROL),
+        ("application/octet-stream", HLS_PART_CACHE_CONTROL),
+        ("text/plain", HLS_TEXT_CACHE_CONTROL),
+        ("text/vtt; charset=utf-8", HLS_TEXT_CACHE_CONTROL),
+    ],
+)
+def test_hls_part_cache_control(content_type: str, expected: str) -> None:
+    """密钥与字幕按 URI 复用但内容会轮换, 不允许写不可变缓存."""
+    assert hls_part_cache_control(content_type) == expected
 
 
 @pytest.mark.parametrize(
@@ -302,3 +323,94 @@ async def test_proxy_hls_part_rejects_4xx_and_html() -> None:
     finally:
         missing.shutdown()
         html.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_proxy_passes_416_range_not_satisfiable() -> None:
+    """客户端 Range 不可满足属于请求本身的问题, 不与上游故障一起折叠为 502."""
+    server, _captured, _cancelled = _serve(status=416)
+    try:
+        app = _app(_origin(server), allow="hls_part")
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/p", headers={"Range": "bytes=999-1000"})
+            assert resp.status_code == 416
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("headers", "keeps_length"),
+    [
+        ({"content-type": "video/mp4", "content-length": "120"}, True),
+        ({"content-type": "video/mp4", "content-length": "120", "content-encoding": "identity"}, True),
+        ({"content-type": "video/mp4", "content-length": "40", "content-encoding": "gzip"}, False),
+    ],
+)
+def test_filter_response_headers_drops_stale_length(headers: dict[str, str], keeps_length: bool) -> None:
+    """正文经 httpx 解码后长度不等于上游声明值, 编码过的响应不得透传 Content-Length."""
+    filtered = _filter_response_headers(headers)
+    assert ("content-length" in filtered) is keeps_length
+
+
+@pytest.mark.asyncio
+async def test_proxy_decodes_encoded_upstream_without_stale_length() -> None:
+    original = b"abcdef" * 20
+    server, _captured, _cancelled = _serve(body=gzip.compress(original), extra={"Content-Encoding": "gzip"})
+    try:
+        app = _app(_origin(server))
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/p")
+            assert resp.status_code == 200
+            assert resp.content == original
+            assert "content-length" not in {key.casefold() for key in resp.headers}
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_upstream_failures_do_not_leak_gate_permits() -> None:
+    """畸形上游 URL 必须归为上游失败, 且任何失败路径都归还出口额度.
+
+    ``httpx.InvalidURL`` 直接继承 ``Exception`` 而不是 ``RequestError``. 额度一旦在异常路径
+    漏掉, 累积到全局上限 (``GLOBAL_CONCURRENCY``) 之后所有播放请求固定 503. 这里先发起远多于
+    上限的失败请求, 再确认同一客户端仍能完成正常请求.
+    """
+    server, _captured, _cancelled = _serve()
+    stream = StreamClient()
+    bad = UpstreamPlaybackTarget(url="http://upstream.example:bad/video")
+    good = UpstreamPlaybackTarget(url=_origin(server), headers={"Authorization": "Bearer secret"})
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        await stream.aclose()
+
+    app = FastAPI(lifespan=lifespan)
+
+    @app.get("/bad")
+    async def bad_route(request: Request):
+        return await stream.proxy(request, source_id="acme.play", target=bad)
+
+    @app.get("/good")
+    async def good_route(request: Request):
+        return await stream.proxy(request, source_id="acme.play", target=good)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for _ in range(GLOBAL_CONCURRENCY + 4):
+                with pytest.raises(HTTPException) as failure:
+                    await stream.fetch_bytes(source_id="acme.play", target=bad)
+                assert failure.value.status_code == 502
+                assert failure.value.detail == "上游地址无效"
+                resp = await client.get("/bad")
+                assert resp.status_code == 502
+                assert resp.json()["detail"] == "上游地址无效"
+
+            assert await stream.fetch_bytes(source_id="acme.play", target=good) == b"abcdef" * 20
+            ok = await client.get("/good")
+            assert ok.status_code == 200
+    finally:
+        server.shutdown()

@@ -26,10 +26,13 @@ def is_hls_content_type(content_type: str) -> bool:
 
 
 def should_map_uri(uri: str) -> bool:
+    """判断清单内的一条 URI 是否需要改写为本机路径.
+
+    只跳过空值与非定位 scheme. 不允许按路径前缀放行: 上游正文里出现的 ``/api/playback/...``
+    会因此绕过改写, 浏览器改为请求主机的播放路由, 把上游内容与主机端点接通.
+    """
     stripped = uri.strip()
-    if not stripped or stripped.startswith(("data:", "urn:", "#")):
-        return False
-    return not stripped.startswith("/api/playback/")
+    return bool(stripped) and not stripped.startswith(("data:", "urn:", "#"))
 
 
 def rewrite_playlist(text: str, map_uri: Callable[[str], str]) -> str:
@@ -112,4 +115,8 @@ class HlsUriMap:
         return token
 
     def get(self, token: str) -> MappedHlsUri | None:
-        return self._items.get(token)
+        item = self._items.get(token)
+        if item is not None:
+            # 被请求的 token 仍在会话中使用, 刷新顺序以免被新注册的 token 挤出上限.
+            self._items.move_to_end(token)
+        return item

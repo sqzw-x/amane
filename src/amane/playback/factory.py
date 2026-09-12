@@ -49,8 +49,16 @@ SOURCE_ID_MAX_LEN = 128
 
 
 def _absolute_hls_uri(base_url: str, uri: str) -> str:
-    absolute = urljoin(base_url, uri)
-    parsed = urlparse(absolute)
+    """把清单内的 URI 解析为绝对地址.
+
+    只接受主机可代理的绝对 http(s) 地址. ``urljoin`` / ``urlparse`` 对 ``http://[::1`` 这类
+    畸形输入抛 ``ValueError``, 必须转成 ``SourceError``, 否则会作为未处理异常返回 500.
+    """
+    try:
+        absolute = urljoin(base_url, uri)
+        parsed = urlparse(absolute)
+    except ValueError as exc:
+        raise SourceError(FailureReason.NO_USABLE_METADATA, detail="播放列表 URI 不受支持") from exc
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise SourceError(FailureReason.NO_USABLE_METADATA, detail="播放列表 URI 不受支持")
     stripped = uri.strip()
