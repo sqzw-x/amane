@@ -449,6 +449,8 @@ class _Provider(PlaybackProvider):
     async def probe(self, query: PlaybackQuery) -> PlaybackOffer | None:
         if self._config.behavior == "none":
             return None
+        if self._config.behavior == "denied":
+            raise SourceError(FailureReason.NO_USABLE_METADATA, detail="该条目索引的文件不存在: gone.mp4")
         if self._config.behavior == "error":
             raise SourceError(FailureReason.NETWORK, detail="上游失败")
         if self._config.behavior in {"hls", "hls-offer"}:
@@ -462,6 +464,8 @@ class _Provider(PlaybackProvider):
     async def resolve(self, query: PlaybackQuery):
         if self._config.behavior == "none":
             return None
+        if self._config.behavior == "denied":
+            raise SourceError(FailureReason.NO_USABLE_METADATA, detail="该条目索引的文件不存在: gone.mp4")
         if self._config.behavior == "error":
             raise SourceError(FailureReason.NETWORK, detail="上游失败")
         if self._config.behavior == "hls":

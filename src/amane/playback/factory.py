@@ -219,6 +219,26 @@ class PlaybackFactory:
             if descriptor.supports(SourceCapability.PLAYBACK) and self.enabled(descriptor.id)
         ]
 
+    def _listed_name(self, source_id: str) -> str:
+        """来源在列表里的显示名: 插件声明过就用 descriptor 的名字, 否则退回来源 ID.
+
+        探测失败时没有 offer 可取名字, 退回 ID 会让用户看到内部标识 (``sqzw.local``).
+        """
+        descriptor = self._plugin_manager.descriptor(source_id) if self._plugin_manager is not None else None
+        return descriptor.name if descriptor is not None else source_id
+
+    def _unavailable(self, source_id: str, *, detail: str | None = None) -> ListedSource:
+        """构造一条不可用记录; ``detail`` 是给终端用户的原因, 缺省表示无从解释."""
+        return ListedSource(
+            source_id=source_id,
+            name=self._listed_name(source_id),
+            content_type="video/mp4",
+            seekable=False,
+            available=False,
+            media_file_id=None,
+            detail=detail,
+        )
+
     async def list_sources(self, query: PlaybackQuery) -> list[ListedSource]:
         ids = self.playback_source_ids()
         tasks = [asyncio.create_task(self._probe_one(source_id, query)) for source_id in ids]
@@ -232,33 +252,13 @@ class PlaybackFactory:
         results: list[ListedSource] = []
         for task, source_id in zip(tasks, ids, strict=True):
             if task in timed_out:
-                results.append(
-                    ListedSource(
-                        source_id=source_id,
-                        name=source_id,
-                        content_type="video/mp4",
-                        seekable=False,
-                        available=False,
-                        media_file_id=None,
-                        detail="探测超时",
-                    )
-                )
+                results.append(self._unavailable(source_id, detail="探测超时"))
                 continue
             try:
                 results.append(task.result())
             except Exception:
                 logger.exception("playback probe task failed", source=source_id)
-                results.append(
-                    ListedSource(
-                        source_id=source_id,
-                        name=source_id,
-                        content_type="video/mp4",
-                        seekable=False,
-                        available=False,
-                        media_file_id=None,
-                        detail="探测失败",
-                    )
-                )
+                results.append(self._unavailable(source_id, detail="探测失败"))
         return results
 
     async def _probe_one(self, source_id: str, query: PlaybackQuery) -> ListedSource:
@@ -266,73 +266,35 @@ class PlaybackFactory:
         hit = self._caches.probe_hits.get(cache_key)
         if isinstance(hit, ListedSource):
             return hit
-        if self._caches.probe_none.is_blocked(cache_key):
-            return ListedSource(
-                source_id=source_id,
-                name=source_id,
-                content_type="video/mp4",
-                seekable=False,
-                available=False,
-                media_file_id=None,
-            )
+        denied = self._caches.probe_none.get(cache_key)
+        if isinstance(denied, ListedSource):
+            return denied
         if self._caches.probe_fail.is_blocked(cache_key):
-            return ListedSource(
-                source_id=source_id,
-                name=source_id,
-                content_type="video/mp4",
-                seekable=False,
-                available=False,
-                media_file_id=None,
-                detail="上游暂时不可用",
-            )
+            return self._unavailable(source_id, detail="上游暂时不可用")
 
         async def _run() -> ListedSource:
             provider = self.provider(source_id)
             if provider is None:
-                return ListedSource(
-                    source_id=source_id,
-                    name=source_id,
-                    content_type="video/mp4",
-                    seekable=False,
-                    available=False,
-                    media_file_id=None,
-                )
+                return self._unavailable(source_id)
             try:
                 offer = await provider.probe(query)
             except SourceError as exc:
+                if exc.reason is FailureReason.NO_USABLE_METADATA:
+                    # 「本条目在此来源没有可播流」不是上游故障: 原因原样给用户, 走 None 那条负缓存.
+                    listed = self._unavailable(source_id, detail=exc.detail or "没有可播放的流")
+                    self._caches.probe_none.put(cache_key, listed)
+                    return listed
                 logger.warning("playback probe failed", source=source_id, error=str(exc))
                 self._caches.probe_fail.put(cache_key, True)
-                return ListedSource(
-                    source_id=source_id,
-                    name=source_id,
-                    content_type="video/mp4",
-                    seekable=False,
-                    available=False,
-                    media_file_id=None,
-                    detail="上游失败",
-                )
+                return self._unavailable(source_id, detail="上游失败")
             except Exception:
                 logger.exception("playback probe crashed", source=source_id)
                 self._caches.probe_fail.put(cache_key, True)
-                return ListedSource(
-                    source_id=source_id,
-                    name=source_id,
-                    content_type="video/mp4",
-                    seekable=False,
-                    available=False,
-                    media_file_id=None,
-                    detail="探测失败",
-                )
+                return self._unavailable(source_id, detail="探测失败")
             if offer is None:
-                self._caches.probe_none.put(cache_key, True)
-                return ListedSource(
-                    source_id=source_id,
-                    name=source_id,
-                    content_type="video/mp4",
-                    seekable=False,
-                    available=False,
-                    media_file_id=None,
-                )
+                listed = self._unavailable(source_id)
+                self._caches.probe_none.put(cache_key, listed)
+                return listed
             listed = ListedSource(
                 source_id=source_id,
                 name=offer.name,

@@ -631,7 +631,10 @@ class TestPlaybackHttp:
 
         first = await client.get("playback/sources", params={"metadata_id": metadata_id})
         assert first.status_code == 200
-        assert [(row["source_id"], row["available"]) for row in first.json()["items"]] == [("acme.count", False)]
+        # 不可用项用插件的展示名, 不是内部来源 ID; ``None`` 不带原因.
+        assert [(row["source_id"], row["name"], row["available"], row["detail"]) for row in first.json()["items"]] == [
+            ("acme.count", "Counting playback", False, None)
+        ]
         assert counter.read_text(encoding="utf-8") == "1"
 
         second = await client.get("playback/sources", params={"metadata_id": metadata_id})
@@ -643,6 +646,48 @@ class TestPlaybackHttp:
         third = await client.get("playback/sources", params={"metadata_id": other_id})
         assert third.status_code == 200
         assert counter.read_text(encoding="utf-8") == "2"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_probe_denial_reports_reason(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        """插件用 ``NO_USABLE_METADATA`` 说明本条目没有可播流时, 原因进列表也进播放响应.
+
+        没有原因时用户只知道「当前不可用」; 走这条路径的失败不是上游故障, 因此不打「上游失败」
+        的负缓存, 与 ``probe`` 返回 ``None`` 同一条记录.
+        """
+        data_dir = app.state.runtime.config.cold.data_dir
+        write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+        reloaded = await client.post("plugins/reload")
+        assert reloaded.status_code == 200, reloaded.text
+        metadata_id = await _seed_title(repo, number="PLAY-DENIED")
+        configured = await client.patch(
+            "plugins/acme.play",
+            json={"enabled": True, "config": {"behavior": "denied"}},
+        )
+        assert configured.status_code == 200, configured.text
+
+        listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
+        assert listed.status_code == 200
+        assert [
+            (row["source_id"], row["name"], row["available"], row["detail"], row["href"])
+            for row in listed.json()["items"]
+        ] == [
+            (
+                "acme.play",
+                "Fake playback",
+                False,
+                "该条目索引的文件不存在: gone.mp4",
+                f"/api/playback/acme.play/{metadata_id}",
+            )
+        ]
+
+        stream = await client.get(f"playback/acme.play/{metadata_id}")
+        assert stream.status_code == 502
+        assert stream.json()["detail"] == "该条目索引的文件不存在: gone.mp4"
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_hls_playlist_rewrite_and_parts(
