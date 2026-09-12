@@ -15,6 +15,12 @@ function sourceKey(item: PlaybackSourceItem): string {
   return `${item.source_id}:${item.media_file_id ?? ""}`;
 }
 
+// 探测超时、上游失败等故障由非空 detail 说明; 为空表示条目没有内容或来源已停用, 不属于故障.
+function failureReason(item: PlaybackSourceItem): string | null {
+  const detail = item.detail;
+  return detail == null || detail === "" ? null : detail;
+}
+
 function mediaKind(contentType: string): "video" | "hls" | "other" {
   const type = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   if (type === HLS_TYPE || type === "application/x-mpegurl" || type.includes("mpegurl")) {
@@ -160,12 +166,15 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
   const [selectedKey, setSelectedKey] = useState<string>("");
   const [error, setError] = useState<{ href: string; message: string } | null>(null);
 
-  // 列表含不可用项: 无显式选择时选中首个可用项; 全部不可用时回退到首项, 用于展示不可用原因.
+  // 列表含不可用项: 无显式选择时选中首个可用项; 全部不可用时选中首个给出故障原因的项, 用于展示不可用原因.
+  const failed = items.find((item) => failureReason(item) != null);
   const selected =
     items.find((item) => sourceKey(item) === selectedKey) ??
     items.find((item) => item.available) ??
+    failed ??
     items[0];
-  if (items.length === 0 || selected == null) {
+  // 全部不可用且没有故障原因, 表示条目没有内容, 此时不渲染区块, 与没有可播源时一致.
+  if (selected == null || (!items.some((item) => item.available) && failed == null)) {
     return null;
   }
 
@@ -174,7 +183,7 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
   // 不可用项不渲染播放器, 其 href 上的失败记录来自该源此前仍可用的状态, 故探测原因优先.
   const notice = selected.available
     ? shownError
-    : (selected.detail ?? t("detail.playbackUnavailable"));
+    : (failureReason(selected) ?? t("detail.playbackUnavailable"));
 
   return (
     <Stack gap="xs">

@@ -33,9 +33,10 @@ function PluginsPage() {
     const capabilities = plugin.descriptor.capabilities ?? ["film_metadata"];
     return capabilities.includes("film_metadata");
   });
+  // 播放源分区按 playback 能力筛选: 同时声明影片元数据能力的插件在两个分区都列出.
   const playbackPlugins = plugins.filter((plugin) => {
     const capabilities = plugin.descriptor.capabilities ?? [];
-    return capabilities.includes("playback") && !capabilities.includes("film_metadata");
+    return capabilities.includes("playback");
   });
 
   return (
