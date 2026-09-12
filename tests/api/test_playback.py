@@ -1,4 +1,4 @@
-"""Playback HTTP: Range, local files, plugin resolve, route identity."""
+"""Playback HTTP: upstream streams, plugin sources, route identity."""
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from amane.db.repository import Repository
 
 
-async def _seed_title(repo: Repository, *, number: str = "PLAY-001", library_path: str = "/") -> int:
+async def _seed_title(repo: Repository, *, number: str = "PLAY-001") -> int:
     if await repo.get_library(1) is None:
-        await repo.create_library(name="default", path=library_path)
+        await repo.create_library(name="default", path="/")
     meta = await repo.upsert_metadata(number=number, title="Play")
     assert meta.id is not None
     return meta.id
@@ -57,17 +57,42 @@ class _HlsOriginHandler(BaseHTTPRequestHandler):
     origin_files: ClassVar[dict[str, tuple[str, bytes]]] = {}
 
     def do_GET(self) -> None:
+        self._send(with_body=True)
+
+    def do_HEAD(self) -> None:
+        self._send(with_body=False)
+
+    def _send(self, *, with_body: bool) -> None:
         item = self.origin_files.get(urlparse(self.path).path)
         if item is None:
             self.send_error(404)
             return
         media_type, body = item
-        self.send_response(200)
+        header = self.headers.get("Range")
+        content_range: str | None = None
+        status = 200
+        payload = body
+        if header is not None and header.startswith("bytes="):
+            first, _, last = header.removeprefix("bytes=").partition("-")
+            start = int(first)
+            if start >= len(body):
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{len(body)}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            stop = min(int(last) if last else len(body) - 1, len(body) - 1)
+            status, payload = 206, body[start : stop + 1]
+            content_range = f"bytes {start}-{stop}/{len(body)}"
+        self.send_response(status)
         self.send_header("Content-Type", media_type)
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(len(payload)))
+        if content_range is not None:
+            self.send_header("Content-Range", content_range)
         self.send_header("Authorization", "Bearer leaked")
         self.end_headers()
-        self.wfile.write(body)
+        if with_body:
+            self.wfile.write(payload)
 
     def log_message(self, format: str, *args: object) -> None:
         return
@@ -174,47 +199,138 @@ def _hls_part_tokens(playlist: str) -> list[str]:
 
 class TestPlaybackHttp:
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_local_range_identity_and_errors(
+    async def test_plugin_stream_range_and_route_identity(
         self,
         client: AsyncClient,
         repo: Repository,
-        safe_path: Path,
+        app: FastAPI,
     ) -> None:
-        meta_id = await _seed_title(repo, library_path=str(safe_path))
+        """码流端点转发单段 Range; 列表 ETag 与路由身份沿用同一契约."""
         payload = bytes(range(256)) * 4
-        file_id = await _attach_file(repo, meta_id, safe_path / "clip.mp4", payload=payload)
-
-        listed = await client.get("playback/sources", params={"metadata_id": meta_id})
-        assert listed.status_code == 200
-        items = listed.json()["items"]
-        assert len(items) == 1
-        assert items[0]["source_id"] == "local"
-        assert items[0]["media_file_id"] == file_id
-        assert items[0]["href"] == f"/api/playback/local/{meta_id}/files/{file_id}"
-        etag = listed.headers["etag"]
-        assert listed.headers["cache-control"] == "private, no-cache"
-        for validator in (etag, f"W/{etag}", f'"other", {etag}', "*"):
-            cached = await client.get(
-                "playback/sources",
-                params={"metadata_id": meta_id},
-                headers={"If-None-Match": validator},
+        server, origin = _start_hls_origin({"/clip.mp4": ("video/mp4", payload)})
+        try:
+            data_dir = app.state.runtime.config.cold.data_dir
+            write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+            reloaded = await client.post("plugins/reload")
+            assert reloaded.status_code == 200, reloaded.text
+            meta_id = await _seed_title(repo)
+            configured = await client.patch(
+                "plugins/acme.play",
+                json={"enabled": True, "config": {"behavior": "upstream", "url": f"{origin}/clip.mp4"}},
             )
-            assert cached.status_code == 304
-            assert cached.headers["cache-control"] == "private, no-cache"
+            assert configured.status_code == 200, configured.text
 
-        stream = f"playback/local/{meta_id}"
+            listed = await client.get("playback/sources", params={"metadata_id": meta_id})
+            assert listed.status_code == 200
+            items = listed.json()["items"]
+            assert [(row["source_id"], row["available"]) for row in items] == [("acme.play", True)]
+            assert items[0]["media_file_id"] is None
+            assert items[0]["href"] == f"/api/playback/acme.play/{meta_id}"
+            etag = listed.headers["etag"]
+            assert listed.headers["cache-control"] == "private, no-cache"
+            for validator in (etag, f"W/{etag}", f'"other", {etag}', "*"):
+                cached = await client.get(
+                    "playback/sources",
+                    params={"metadata_id": meta_id},
+                    headers={"If-None-Match": validator},
+                )
+                assert cached.status_code == 304
+                assert cached.headers["cache-control"] == "private, no-cache"
+
+            stream = f"playback/acme.play/{meta_id}"
+            full = await client.get(stream)
+            assert full.status_code == 200
+            assert full.content == payload
+            assert "attachment" not in full.headers.get("content-disposition", "").casefold()
+            assert full.headers.get("content-type", "").startswith("video/")
+            assert full.headers.get("x-content-type-options") == "nosniff"
+            assert "authorization" not in {key.casefold() for key in full.headers}
+
+            head = await client.head(stream)
+            assert head.status_code == 200
+            assert head.content == b""
+
+            partial = await client.get(stream, headers={"Range": "bytes=0-9"})
+            assert partial.status_code == 206
+            assert partial.headers["content-range"].startswith("bytes 0-9/")
+            assert partial.content == payload[:10]
+
+            unsatisfiable = await client.get(stream, headers={"Range": "bytes=999999-"})
+            assert unsatisfiable.status_code == 416
+
+            multi = await client.get(stream, headers={"Range": "bytes=0-1,2-3"})
+            assert multi.status_code == 400
+
+            assert (await client.get(f"playback/acme.play/{meta_id}/files/999999")).status_code == 404
+            assert (await client.get("playback/sources", params={"metadata_id": 999999})).status_code == 404
+            assert (await client.get(f"playback/missing.play/{meta_id}")).status_code == 404
+            assert (await client.get(f"playback/{'a' * (SOURCE_ID_MAX_LEN + 1)}/{meta_id}")).status_code == 404
+            assert (await client.get(f"playback/NOTVALID/{meta_id}")).status_code == 404
+            assert (await client.get("playback/sources")).status_code == 422
+            assert (await client.get("playback/sources", params={"metadata_id": 0})).status_code == 422
+        finally:
+            server.shutdown()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_plugin_file_target_streams_indexed_file(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+        safe_path: Path,
+        tmp_path: Path,
+    ) -> None:
+        """插件声明条目索引内的文件时主机自行输出, 索引外的路径一律拒绝.
+
+        符号链接指向库外 (收件目录) 照常可播: 主机打开的就是索引里的那条字面路径.
+        """
+        lib_root = safe_path / "lib"
+        inbox = tmp_path / "inbox"
+        lib_root.mkdir()
+        inbox.mkdir()
+        library = await repo.create_library(name="files", path=str(lib_root))
+        assert library.id is not None
+
+        data_dir = app.state.runtime.config.cold.data_dir
+        write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+        reloaded = await client.post("plugins/reload")
+        assert reloaded.status_code == 200, reloaded.text
+
+        payload = bytes(range(256)) * 4
+        meta_id = await repo.upsert_metadata(number="PLAY-FILE", title="Play")
+        assert meta_id.id is not None
+        real = inbox / "clip.mp4"
+        real.write_bytes(payload)
+        alias = lib_root / "alias.mp4"
+        alias.symlink_to(real)
+        media = await repo.create_media_file(
+            library_id=library.id,
+            path=str(alias),
+            size=len(payload),
+            metadata_id=meta_id.id,
+        )
+        assert media.id is not None
+        configured = await client.patch(
+            "plugins/acme.play",
+            json={"enabled": True, "config": {"behavior": "file"}},
+        )
+        assert configured.status_code == 200, configured.text
+
+        listed = await client.get("playback/sources", params={"metadata_id": meta_id.id})
+        assert listed.status_code == 200
+        assert [(row["source_id"], row["available"]) for row in listed.json()["items"]] == [("acme.play", True)]
+
+        stream = f"playback/acme.play/{meta_id.id}"
         full = await client.get(stream)
         assert full.status_code == 200
         assert full.content == payload
-        assert "attachment" not in full.headers.get("content-disposition", "").casefold()
         assert full.headers.get("content-type", "").startswith("video/")
         assert full.headers.get("x-content-type-options") == "nosniff"
-        assert "private" in full.headers.get("cache-control", "").casefold()
+        assert "attachment" not in full.headers.get("content-disposition", "").casefold()
 
         head = await client.head(stream)
         assert head.status_code == 200
         assert head.content == b""
-        assert "attachment" not in head.headers.get("content-disposition", "").casefold()
 
         partial = await client.get(stream, headers={"Range": "bytes=0-9"})
         assert partial.status_code == 206
@@ -225,93 +341,45 @@ class TestPlaybackHttp:
         assert unsatisfiable.status_code == 416
         assert unsatisfiable.headers["content-range"] == f"bytes */{len(payload)}"
 
-        malformed = await client.get(stream, headers={"Range": "bytes=abc"})
-        assert malformed.status_code == 400
+        foreign_meta = await repo.upsert_metadata(number="PLAY-FILE-FOREIGN", title="Play")
+        assert foreign_meta.id is not None
+        foreign_path = tmp_path / "foreign.mp4"
+        await _attach_file(repo, foreign_meta.id, foreign_path, payload=b"foreign-bytes")
 
-        ignored = await client.get(
-            stream,
-            headers={"Range": "bytes=0-9", "If-Range": '"not-the-etag"'},
+        configured = await client.patch(
+            "plugins/acme.play",
+            json={"enabled": True, "config": {"behavior": "file", "file_path": str(foreign_path)}},
         )
-        assert ignored.status_code == 200
-        assert ignored.content == payload
+        assert configured.status_code == 200, configured.text
+        # 同一路径在所属条目下可以播放, 在其它条目下属于插件侧错误.
+        own = await client.get(f"playback/acme.play/{foreign_meta.id}")
+        assert own.status_code == 200
+        assert own.content == b"foreign-bytes"
+        foreign_entry = await client.get(stream)
+        assert foreign_entry.status_code == 502
+        assert "索引" in str(foreign_entry.json().get("detail"))
 
-        other = await _seed_title(repo, number="PLAY-002")
-        foreign = await _attach_file(repo, other, safe_path / "other.mp4", payload=b"xxxx")
-        assert (await client.get(f"playback/local/{meta_id}/files/{foreign}")).status_code == 404
-        assert (await client.get(f"playback/local/{meta_id}/files/999999")).status_code == 404
-        assert (await client.get("playback/sources", params={"metadata_id": 999999})).status_code == 404
-        assert (await client.get(f"playback/missing.play/{meta_id}")).status_code == 404
-        assert (await client.get(f"playback/{'a' * (SOURCE_ID_MAX_LEN + 1)}/{meta_id}")).status_code == 404
-        assert (await client.get(f"playback/NOTVALID/{meta_id}")).status_code == 404
-        assert (await client.get("playback/sources")).status_code == 422
-        assert (await client.get("playback/sources", params={"metadata_id": 0})).status_code == 422
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_local_skips_unreadable_and_picks_default(
-        self,
-        client: AsyncClient,
-        repo: Repository,
-        safe_path: Path,
-        tmp_path: Path,
-    ) -> None:
-        empty_id = await _seed_title(repo, number="PLAY-EMPTY", library_path=str(safe_path))
-        empty = await client.get("playback/sources", params={"metadata_id": empty_id})
-        assert empty.status_code == 200
-        assert [(row["source_id"], row["available"]) for row in empty.json()["items"]] == [("local", False)]
-        assert (await client.get(f"playback/local/{empty_id}")).status_code == 404
-
-        strm_id = await _seed_title(repo, number="PLAY-STRM")
-        strm = await _attach_file(repo, strm_id, safe_path / "clip.strm", payload=b"http://example.test/a.mp4")
-        strm_list = await client.get("playback/sources", params={"metadata_id": strm_id})
-        assert [(row["source_id"], row["available"]) for row in strm_list.json()["items"]] == [("local", False)]
-        assert (await client.get(f"playback/local/{strm_id}/files/{strm}")).status_code == 404
-
-        missing_id = await _seed_title(repo, number="PLAY-GONE")
-        missing = await repo.create_media_file(
-            library_id=1,
-            path=str((safe_path / "gone.mp4").resolve()),
-            size=10,
-            metadata_id=missing_id,
-        )
-        assert missing.id is not None
-        gone = await client.get("playback/sources", params={"metadata_id": missing_id})
-        assert [(row["source_id"], row["available"]) for row in gone.json()["items"]] == [("local", False)]
-
-        outside_id = await _seed_title(repo, number="PLAY-OUT")
         outside = tmp_path / "outside.mp4"
-        outside_file = await _attach_file(repo, outside_id, outside, payload=b"outside-bytes")
-        outside_list = await client.get("playback/sources", params={"metadata_id": outside_id})
-        assert [(row["source_id"], row["available"]) for row in outside_list.json()["items"]] == [("local", False)]
-        assert (await client.get(f"playback/local/{outside_id}/files/{outside_file}")).status_code == 404
-
-        multi_id = await _seed_title(repo, number="PLAY-MULTI")
-        small = await _attach_file(repo, multi_id, safe_path / "small.mp4", payload=b"s" * 20)
-        large = await _attach_file(repo, multi_id, safe_path / "large.mp4", payload=b"L" * 80)
-        picked = await client.get("playback/sources", params={"metadata_id": multi_id})
-        assert picked.json()["items"][0]["media_file_id"] == large
-        default_body = await client.get(f"playback/local/{multi_id}")
-        assert default_body.content == b"L" * 80
-        explicit = await client.get(f"playback/local/{multi_id}/files/{small}")
-        assert explicit.status_code == 200
-        assert explicit.content == b"s" * 20
-
-        linked_id = await _seed_title(repo, number="PLAY-LINK")
-        real = safe_path / "real.mp4"
-        real.write_bytes(b"linked-bytes")
-        alias = safe_path / "alias.mp4"
-        alias.symlink_to(real)
-        linked_file = await repo.create_media_file(
-            library_id=1,
-            path=str(alias),
-            size=len(b"linked-bytes"),
-            metadata_id=linked_id,
+        outside.write_bytes(b"outside-bytes")
+        configured = await client.patch(
+            "plugins/acme.play",
+            json={"enabled": True, "config": {"behavior": "file", "file_path": str(outside)}},
         )
-        assert linked_file.id is not None
-        linked_list = await client.get("playback/sources", params={"metadata_id": linked_id})
-        assert linked_list.json()["items"][0]["media_file_id"] == linked_file.id
-        linked_body = await client.get(f"playback/local/{linked_id}/files/{linked_file.id}")
-        assert linked_body.status_code == 200
-        assert linked_body.content == b"linked-bytes"
+        assert configured.status_code == 200, configured.text
+        not_indexed = await client.get(stream)
+        assert not_indexed.status_code == 502
+        assert "索引" in str(not_indexed.json().get("detail"))
+        assert b"outside-bytes" not in not_indexed.content
+
+        configured = await client.patch(
+            "plugins/acme.play",
+            json={"enabled": True, "config": {"behavior": "file", "file_path": str(alias)}},
+        )
+        assert configured.status_code == 200, configured.text
+        real.unlink()
+        gone = await client.get(stream)
+        assert gone.status_code == 502
+        assert "不存在" in str(gone.json().get("detail"))
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_playback_plugin_resolve_and_routes(
@@ -342,9 +410,8 @@ class TestPlaybackHttp:
         none_cfg = await client.patch("plugins/acme.play", json={"enabled": True, "config": {"behavior": "none"}})
         assert none_cfg.status_code == 200, none_cfg.text
         none_list = await client.get("playback/sources", params={"metadata_id": none_id})
-        assert [(row["source_id"], row["available"]) for row in none_list.json()["items"]] == [
-            ("local", False),
-            ("acme.play", False),
+        assert [(row["source_id"], row["available"], row["detail"]) for row in none_list.json()["items"]] == [
+            ("acme.play", False, None)
         ]
         assert (await client.get(f"playback/acme.play/{none_id}")).status_code == 404
 
@@ -352,16 +419,19 @@ class TestPlaybackHttp:
         assert error_status == 502
         assert error_body.get("detail") == "上游失败"
 
+        error_id = await _seed_title(repo, number="PLAY-ERR-LIST")
+        error_list = await client.get("playback/sources", params={"metadata_id": error_id})
+        assert [(row["source_id"], row["available"], row["detail"]) for row in error_list.json()["items"]] == [
+            ("acme.play", False, "上游失败")
+        ]
+        assert (await client.get(f"playback/acme.play/{error_id}")).status_code == 502
+
         hls_status, _hls_body = await play(
             "hls",
             "PLAY-HLS",
             playlist="#EXTM3U\n#EXT-X-ENDLIST\n",
         )
         assert hls_status == 200
-
-        file_status, file_body = await play("file", "PLAY-FILE")
-        assert file_status == 502
-        assert "本地文件" in str(file_body.get("detail"))
 
         lie_id = await _seed_title(repo, number="PLAY-HLS-LIE")
         lie_cfg = await client.patch(
@@ -423,7 +493,7 @@ class TestPlaybackHttp:
         listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
         assert listed.status_code == 200
         rows = listed.json()["items"]
-        assert [row["source_id"] for row in rows] == ["local", "acme.broken"]
+        assert [row["source_id"] for row in rows] == ["acme.broken"]
         assert all(row["available"] is False for row in rows)
 
     @pytest.mark.asyncio(loop_scope="function")
@@ -445,10 +515,7 @@ class TestPlaybackHttp:
 
         first = await client.get("playback/sources", params={"metadata_id": metadata_id})
         assert first.status_code == 200
-        assert [(row["source_id"], row["available"]) for row in first.json()["items"]] == [
-            ("local", False),
-            ("acme.count", False),
-        ]
+        assert [(row["source_id"], row["available"]) for row in first.json()["items"]] == [("acme.count", False)]
         assert counter.read_text(encoding="utf-8") == "1"
 
         second = await client.get("playback/sources", params={"metadata_id": metadata_id})
@@ -554,73 +621,6 @@ class TestPlaybackHttp:
             assert missing.status_code == 404
         finally:
             server.shutdown()
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_local_sidecar_subtitle(
-        self,
-        client: AsyncClient,
-        repo: Repository,
-        safe_path: Path,
-    ) -> None:
-        meta_id = await _seed_title(repo, number="PLAY-SUB", library_path=str(safe_path))
-        file_id = await _attach_file(repo, meta_id, safe_path / "clip.mp4", payload=b"video-bytes")
-        (safe_path / "clip.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n", encoding="utf-8")
-
-        listed = await client.get("playback/sources", params={"metadata_id": meta_id})
-        item = listed.json()["items"][0]
-        assert item["source_id"] == "local"
-        assert len(item["subtitles"]) == 1
-        track = item["subtitles"][0]
-        assert track["id"] == "sidecar"
-        assert track["href"] == f"/api/playback/local/{meta_id}/files/{file_id}/subtitles/sidecar"
-
-        vtt = await client.get(f"playback/local/{meta_id}/files/{file_id}/subtitles/sidecar")
-        assert vtt.status_code == 200
-        assert vtt.headers.get("content-type", "").startswith("text/vtt")
-        assert "WEBVTT" in vtt.text
-        assert "00:00:01.000 --> 00:00:02.000" in vtt.text
-        assert (await client.get(f"playback/local/{meta_id}/files/{file_id}/subtitles/missing")).status_code == 404
-
-        linked_id = await _seed_title(repo, number="PLAY-SUB-LINK")
-        real = safe_path / "real.mp4"
-        real.write_bytes(b"linked-bytes")
-        alias = safe_path / "alias.mp4"
-        alias.symlink_to(real)
-        (safe_path / "alias.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n", encoding="utf-8")
-        linked_file = await repo.create_media_file(
-            library_id=1,
-            path=str(alias),
-            size=len(b"linked-bytes"),
-            metadata_id=linked_id,
-        )
-        assert linked_file.id is not None
-        linked_list = await client.get("playback/sources", params={"metadata_id": linked_id})
-        linked_item = linked_list.json()["items"][0]
-        assert any(track["id"] == "sidecar" for track in linked_item["subtitles"])
-        linked_vtt = await client.get(f"playback/local/{linked_id}/files/{linked_file.id}/subtitles/sidecar")
-        assert linked_vtt.status_code == 200
-        assert "WEBVTT" in linked_vtt.text
-
-        escaped_id = await _seed_title(repo, number="PLAY-SUB-ESC")
-        nested = safe_path / "nested"
-        nested.mkdir()
-        (nested / "leaked.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nNo\n", encoding="utf-8")
-        clip = safe_path / "stay.mp4"
-        clip.write_bytes(b"stay-bytes")
-        leaked_link = safe_path / "stay.srt"
-        leaked_link.symlink_to(nested / "leaked.srt")
-        escaped_file = await repo.create_media_file(
-            library_id=1,
-            path=str(clip),
-            size=len(b"stay-bytes"),
-            metadata_id=escaped_id,
-        )
-        assert escaped_file.id is not None
-        escaped_list = await client.get("playback/sources", params={"metadata_id": escaped_id})
-        assert escaped_list.json()["items"][0]["subtitles"] == []
-        assert (
-            await client.get(f"playback/local/{escaped_id}/files/{escaped_file.id}/subtitles/sidecar")
-        ).status_code == 404
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_hls_nested_subdirectory_segments(
@@ -777,11 +777,15 @@ class TestPlaybackHttp:
 
             other_id = await _seed_title(repo, number="PLAY-HLS-BAD-OTHER")
             file_id = await _attach_file(repo, metadata_id, safe_path / "clip.mp4", payload=b"video-bytes")
+            write_plugin(data_dir, "acme.other", body=playback_plugin_source("acme.other"))
+            assert (await client.post("plugins/reload")).status_code == 200
+            enabled_other = await client.patch("plugins/acme.other", json={"enabled": True, "config": {}})
+            assert enabled_other.status_code == 200, enabled_other.text
             foreign_entry = await client.get(f"playback/acme.play/{other_id}/hls/{cross_token}")
             assert foreign_entry.status_code == 404
             foreign_file = await client.get(f"playback/acme.play/{metadata_id}/files/{file_id}/hls/{cross_token}")
             assert foreign_file.status_code == 404
-            foreign_source = await client.get(f"playback/local/{metadata_id}/hls/{cross_token}")
+            foreign_source = await client.get(f"playback/acme.other/{metadata_id}/hls/{cross_token}")
             assert foreign_source.status_code == 404
         finally:
             server.shutdown()
@@ -823,128 +827,3 @@ class TestPlaybackHttp:
         assert manifest.status_code == 502
         assert manifest.json()["detail"] == detail
         assert "evil.example" not in manifest.text
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_local_symlink_to_inbox_inside_safe_dirs(
-        self,
-        client: AsyncClient,
-        repo: Repository,
-        safe_path: Path,
-        tmp_path: Path,
-    ) -> None:
-        lib_root = safe_path / "lib"
-        inbox = safe_path / "inbox"
-        lib_root.mkdir()
-        inbox.mkdir()
-        library = await repo.create_library(name="sym", path=str(lib_root))
-        assert library.id is not None
-
-        meta = await repo.upsert_metadata(number="PLAY-INBOX", title="Play")
-        assert meta.id is not None
-        real = inbox / "clip.mp4"
-        real.write_bytes(b"inbox-bytes")
-        alias = lib_root / "alias.mp4"
-        alias.symlink_to(real)
-        (lib_root / "alias.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n", encoding="utf-8")
-        media = await repo.create_media_file(
-            library_id=library.id,
-            path=str(alias),
-            size=len(b"inbox-bytes"),
-            metadata_id=meta.id,
-        )
-        assert media.id is not None
-        listed = await client.get("playback/sources", params={"metadata_id": meta.id})
-        item = listed.json()["items"][0]
-        assert item["source_id"] == "local"
-        assert any(track["id"] == "sidecar" for track in item["subtitles"])
-        body = await client.get(f"playback/local/{meta.id}/files/{media.id}")
-        assert body.status_code == 200
-        assert body.content == b"inbox-bytes"
-        vtt = await client.get(f"playback/local/{meta.id}/files/{media.id}/subtitles/sidecar")
-        assert vtt.status_code == 200
-        assert "WEBVTT" in vtt.text
-
-        foreign_meta = await repo.upsert_metadata(number="PLAY-INBOX-OUT", title="Play")
-        assert foreign_meta.id is not None
-        foreign = tmp_path / "foreign.mp4"
-        foreign.write_bytes(b"foreign-bytes")
-        escape = lib_root / "escape.mp4"
-        escape.symlink_to(foreign)
-        escape_file = await repo.create_media_file(
-            library_id=library.id,
-            path=str(escape),
-            size=len(b"foreign-bytes"),
-            metadata_id=foreign_meta.id,
-        )
-        assert escape_file.id is not None
-        foreign_list = await client.get("playback/sources", params={"metadata_id": foreign_meta.id})
-        assert [(row["source_id"], row["available"]) for row in foreign_list.json()["items"]] == [("local", False)]
-        assert (await client.get(f"playback/local/{foreign_meta.id}/files/{escape_file.id}")).status_code == 404
-
-        stray_meta = await repo.upsert_metadata(number="PLAY-INBOX-STRAY", title="Play")
-        assert stray_meta.id is not None
-        stray = tmp_path / "stray.mp4"
-        stray.write_bytes(b"stray-bytes")
-        stray_file = await repo.create_media_file(
-            library_id=library.id,
-            path=str(stray),
-            size=len(b"stray-bytes"),
-            metadata_id=stray_meta.id,
-        )
-        assert stray_file.id is not None
-        stray_list = await client.get("playback/sources", params={"metadata_id": stray_meta.id})
-        assert [(row["source_id"], row["available"]) for row in stray_list.json()["items"]] == [("local", False)]
-        assert (await client.get(f"playback/local/{stray_meta.id}/files/{stray_file.id}")).status_code == 404
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_allow_all_plays_library_symlink_to_inbox(
-        self,
-        allow_all_client: AsyncClient,
-        allow_all_app: FastAPI,
-        tmp_path: Path,
-    ) -> None:
-        repo = allow_all_app.state.runtime.repo
-        library_root = tmp_path / "lib"
-        library_root.mkdir()
-        library = await repo.create_library(name="default", path=str(library_root))
-        assert library.id is not None
-        meta = await repo.upsert_metadata(number="PLAY-ALLOW", title="Play")
-        assert meta.id is not None
-        outside = tmp_path / "inbox" / "clip.mp4"
-        outside.parent.mkdir()
-        outside.write_bytes(b"inbox-bytes")
-        alias = library_root / "alias.mp4"
-        alias.symlink_to(outside)
-        (library_root / "alias.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n", encoding="utf-8")
-        media = await repo.create_media_file(
-            library_id=library.id,
-            path=str(alias),
-            size=len(b"inbox-bytes"),
-            metadata_id=meta.id,
-        )
-        assert media.id is not None
-        listed = await allow_all_client.get("playback/sources", params={"metadata_id": meta.id})
-        item = listed.json()["items"][0]
-        assert item["source_id"] == "local"
-        assert any(track["id"] == "sidecar" for track in item["subtitles"])
-        streamed = await allow_all_client.get(f"playback/local/{meta.id}/files/{media.id}")
-        assert streamed.status_code == 200
-        assert streamed.content == b"inbox-bytes"
-        vtt = await allow_all_client.get(f"playback/local/{meta.id}/files/{media.id}/subtitles/sidecar")
-        assert vtt.status_code == 200
-        assert "WEBVTT" in vtt.text
-
-        stray_meta = await repo.upsert_metadata(number="PLAY-ALLOW-STRAY", title="Play")
-        assert stray_meta.id is not None
-        stray = tmp_path / "stray.mp4"
-        stray.write_bytes(b"stray-bytes")
-        stray_file = await repo.create_media_file(
-            library_id=library.id,
-            path=str(stray),
-            size=len(b"stray-bytes"),
-            metadata_id=stray_meta.id,
-        )
-        assert stray_file.id is not None
-        stray_list = await allow_all_client.get("playback/sources", params={"metadata_id": stray_meta.id})
-        assert [(row["source_id"], row["available"]) for row in stray_list.json()["items"]] == [("local", False)]
-        assert (await allow_all_client.get(f"playback/local/{stray_meta.id}/files/{stray_file.id}")).status_code == 404

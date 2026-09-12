@@ -19,7 +19,7 @@
 
 影片详情的用户标签与刮削标签分栏. 加减菜单勾选后保持打开, 底部按钮一次提交多名; 绑定/解绑是前端循环单条 API. `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许用来给一部影片一次挂多个标签.
 
-影片详情在封面预告片之外播放正片. 可播放源由 `GET /api/playback/sources` 探测; 列表含已启用的全部源, 当前不可播的源在选择器中标记为不可用并展示主机给出的 `detail`; 仅当至少一个源可用, 或至少一个源带非空 `detail` 时渲染播放区块, 其余情况整块不渲染. `video` 的媒体地址只使用列表给出的本机路径; 多于一个源时提供选择. 码流与字幕均为同源 `/api/playback/...`, 原生 `<video>` 不设置 `crossOrigin` (凭据模式与 `Access-Control-Allow-Origin: *` 不能同时成立). `video/*` 使用原生控件; HLS (`mpegurl`) 在 Safari 等可原生播放的浏览器采用 `<video src>`, 其它浏览器用 `hls.js` 且 XHR `withCredentials`. 列表给出的 WebVTT 渲染为 `<track>`. 不允许把上游 URL 或密钥写入前端状态. 播放失败展示主机返回的中文 `detail`.
+影片详情在封面预告片之外播放正片. 可播放源由 `GET /api/playback/sources` 探测; 列表含已启用的全部源, 当前不可播的源在选择器中标记为不可用并展示主机给出的 `detail`; 仅当至少一个源可用, 或至少一个源带非空 `detail` 时渲染播放区块, 其余情况整块不渲染. `video` 的媒体地址只使用列表给出的本机端点; 多于一个源时提供选择. 码流与字幕均为同源 `/api/playback/...`, 原生 `<video>` 不设置 `crossOrigin` (凭据模式与 `Access-Control-Allow-Origin: *` 不能同时成立). `video/*` 使用原生控件; HLS (`mpegurl`) 在 Safari 等可原生播放的浏览器采用 `<video src>`, 其它浏览器用 `hls.js` 且 XHR `withCredentials`. 列表给出的 WebVTT 渲染为 `<track>`. 不允许把上游 URL 或密钥写入前端状态. 播放失败展示主机返回的中文 `detail`.
 
 分类实体页必须是 `catalog.$kind_.$facetId.tsx` (trailing `_`): `$kind` 是词云叶页而非 layout, 写成 `catalog.$kind.$facetId` 会成为无 `<outlet />` 的父路由的子路由, 子页永不渲染.
 

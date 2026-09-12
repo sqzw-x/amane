@@ -102,7 +102,11 @@ class PlaybackOffer(BaseModel):
 
 
 class FilePlaybackTarget(BaseModel):
-    """Local indexed file. Only the builtin ``local`` source may produce this."""
+    """Indexed file served by the host.
+
+    The host opens the declared path only when it resolves to a file indexed for
+    the entry being played; any other path is rejected.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

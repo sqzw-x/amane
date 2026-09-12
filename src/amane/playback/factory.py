@@ -1,4 +1,4 @@
-"""PlaybackFactory: builtin local + enabled playback plugins."""
+"""PlaybackFactory: enabled playback plugins."""
 
 from __future__ import annotations
 
@@ -20,11 +20,13 @@ from ..plugins.api import (
     HlsPlaybackTarget,
     PlaybackProvider,
     PlaybackQuery,
+    PlaybackTarget,
     PluginContext,
     SubtitleTrack,
     UpstreamPlaybackTarget,
 )
 from ..plugins.models import PluginConfig, SourceCapability
+from ..utils.threads import in_thread
 from .cache import PlaybackCaches
 from .hls import (
     HLS_CONTENT_TYPE,
@@ -35,7 +37,6 @@ from .hls import (
     uri_looks_like_playlist,
 )
 from .href import hls_part_href
-from .local import LOCAL_SOURCE_ID, LocalPlaybackProvider
 from .proxy import HLS_KEY_CACHE_CONTROL, NOSNIFF, StreamClient
 
 if TYPE_CHECKING:
@@ -69,6 +70,23 @@ def _absolute_hls_uri(base_url: str, uri: str) -> str:
     if (parsed.scheme, parsed.netloc.casefold()) != (base.scheme, base.netloc.casefold()):
         raise SourceError(FailureReason.NO_USABLE_METADATA, detail="播放列表 URI 跨源")
     return absolute
+
+
+@in_thread
+def _file_target_error(candidate: Path, indexed: tuple[str, ...]) -> str | None:
+    """核对插件声明的文件目标, 返回给终端用户的中文原因; ``None`` 表示可以打开.
+
+    两侧都执行 ``resolve()``: 索引里的路径与插件回送的地址互为等价形式 (符号链接、``..``、
+    重复分隔符) 时视为同一个文件, 因此指向库外的符号链接照常可播 —— 打开的就是索引里的那条
+    路径. 比较只针对条目索引, 不检查库根、``safe_dirs`` 或解析目标 (那是文件浏览器与路径模板
+    的配置). 条目没有已索引文件时任何路径都不在索引中, 一律拒绝.
+    """
+    resolved = candidate.resolve()
+    if not any(resolved == Path(item).resolve() for item in indexed):
+        return "插件返回的文件不在该条目的索引中"
+    if not resolved.is_file():
+        return "该条目索引的文件不存在"
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +127,6 @@ class PlaybackFactory:
         http_client: HttpClient,
         web_client: WebClient,
         data_dir: Path,
-        safe_dirs: list[Path] | None,
         proxy: str | None,
         state: PlaybackState | None = None,
     ) -> None:
@@ -118,12 +135,10 @@ class PlaybackFactory:
         self._http_client = http_client
         self._web_client = web_client
         self._data_dir = data_dir
-        self._safe_dirs = safe_dirs
         self._stream = StreamClient(proxy=proxy)
         shared = state if state is not None else PlaybackState()
         self._caches = shared.caches
         self._providers: dict[str, PlaybackProvider] = {}
-        self._local = LocalPlaybackProvider(safe_dirs)
         self._hls = shared.hls
 
     async def aclose(self) -> None:
@@ -140,13 +155,9 @@ class PlaybackFactory:
     def known_source(self, source_id: str) -> bool:
         if len(source_id) > SOURCE_ID_MAX_LEN:
             return False
-        if source_id == LOCAL_SOURCE_ID:
-            return True
         return self._plugin_manager is not None and self._plugin_manager.has_playback_plugin(source_id)
 
     def enabled(self, source_id: str) -> bool:
-        if source_id == LOCAL_SOURCE_ID:
-            return True
         if self._plugin_manager is None or not self._plugin_manager.has_playback_plugin(source_id):
             return False
         return self._plugin_configs.get(source_id, PluginConfig()).enabled
@@ -164,9 +175,6 @@ class PlaybackFactory:
         cached = self._providers.get(source_id)
         if cached is not None:
             return cached
-        if source_id == LOCAL_SOURCE_ID:
-            self._providers[source_id] = self._local
-            return self._local
         if self._plugin_manager is None:
             return None
         config = self._plugin_configs.get(source_id, PluginConfig())
@@ -192,15 +200,13 @@ class PlaybackFactory:
         return built
 
     def playback_source_ids(self) -> list[str]:
-        ids = [LOCAL_SOURCE_ID]
         if self._plugin_manager is None:
-            return ids
-        ids.extend(
+            return []
+        return [
             descriptor.id
             for descriptor in self._plugin_manager.plugin_descriptors()
             if descriptor.supports(SourceCapability.PLAYBACK) and self.enabled(descriptor.id)
-        )
-        return ids
+        ]
 
     async def list_sources(self, query: PlaybackQuery) -> list[ListedSource]:
         ids = self.playback_source_ids()
@@ -334,7 +340,7 @@ class PlaybackFactory:
         self,
         source_id: str,
         query: PlaybackQuery,
-    ) -> FilePlaybackTarget | UpstreamPlaybackTarget | HlsPlaybackTarget:
+    ) -> PlaybackTarget:
         open_key = f"{source_id}:{query.metadata_id}:{query.selected_file_id}"
         if self._caches.open_fail.is_blocked(open_key):
             raise SourceError(FailureReason.NETWORK, detail="上游暂时不可用")
@@ -353,9 +359,10 @@ class PlaybackFactory:
         if target is None:
             raise LookupError(source_id)
         if isinstance(target, FilePlaybackTarget):
-            if source_id != LOCAL_SOURCE_ID:
-                raise SourceError(FailureReason.NO_USABLE_METADATA, detail="插件不得返回本地文件")
-            return target
+            detail = await _file_target_error(target.path, tuple(item.path for item in query.files))
+            if detail is not None:
+                logger.warning("playback file target rejected", source=source_id, detail=detail)
+                raise SourceError(FailureReason.NO_USABLE_METADATA, detail=detail)
         return target
 
     def _map_hls_uri(

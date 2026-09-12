@@ -224,7 +224,6 @@ class AppRuntime:
             http_client=self.http_client,
             web_client=self.web_client,
             data_dir=self.config.cold.data_dir,
-            safe_dirs=self.safe_dirs,
             proxy=hot.network.proxy,
             state=self.playback_state,
         )

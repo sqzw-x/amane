@@ -439,6 +439,7 @@ class _Config(BaseModel):
     url: str = "http://127.0.0.1:9/"
     headers: dict[str, str] = Field(default_factory=dict)
     playlist: str | None = None
+    file_path: str | None = None
 
 
 class _Provider(PlaybackProvider):
@@ -472,7 +473,14 @@ class _Provider(PlaybackProvider):
                 )
             )
         if self._config.behavior == "file":
-            return FilePlaybackTarget(path="/tmp/x.mp4", content_type="video/mp4", media_file_id=1)
+            path = self._config.file_path or (query.files[0].path if query.files else None)
+            if path is None:
+                return None
+            return FilePlaybackTarget(
+                path=path,
+                content_type="video/mp4",
+                media_file_id=query.files[0].id if query.files else 0,
+            )
         return UpstreamPlaybackTarget(
             url=self._config.url,
             headers=self._config.headers,

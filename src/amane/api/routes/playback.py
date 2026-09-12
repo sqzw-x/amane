@@ -12,10 +12,9 @@ from ...net.errors import SourceError
 from ...playback.factory import SOURCE_ID_MAX_LEN, PlaybackFactory
 from ...playback.hls import PLAYLIST_CACHE_CONTROL, is_hls_content_type
 from ...playback.href import playlist_href, stream_href, subtitle_href
-from ...playback.local import LOCAL_SOURCE_ID
 from ...playback.proxy import NOSNIFF
 from ...playback.query import playback_query
-from ...plugins.api import FilePlaybackTarget, HlsPlaybackTarget, PlaybackQuery, UpstreamPlaybackTarget
+from ...plugins.api import FilePlaybackTarget, PlaybackQuery, UpstreamPlaybackTarget
 from ..deps import RepoDep, RuntimeDep
 from ..models.playback import PlaybackSourceItem, PlaybackSourceListResponse, PlaybackSubtitleItem
 
@@ -370,8 +369,7 @@ async def _play(
     except SourceError as exc:
         raise _playback_http_error(exc) from exc
     if isinstance(target, FilePlaybackTarget):
-        if source_id != LOCAL_SOURCE_ID:
-            raise HTTPException(status_code=502, detail="插件不得返回本地文件")
+        # 目标路径已由 ``PlaybackFactory.resolve`` 核对为条目索引内的文件.
         return FileResponse(
             path=target.path,
             media_type=target.content_type,
@@ -379,10 +377,8 @@ async def _play(
         )
     if isinstance(target, UpstreamPlaybackTarget):
         return await factory.stream.proxy(request, source_id=source_id, target=target)
-    if isinstance(target, HlsPlaybackTarget):
-        try:
-            text = await factory.hls_playlist_text(source_id, query, target)
-        except SourceError as exc:
-            raise _playback_http_error(exc) from exc
-        return factory.playlist_response(text, head=request.method == "HEAD")
-    raise HTTPException(status_code=502, detail="不支持的播放目标")
+    try:
+        text = await factory.hls_playlist_text(source_id, query, target)
+    except SourceError as exc:
+        raise _playback_http_error(exc) from exc
+    return factory.playlist_response(text, head=request.method == "HEAD")

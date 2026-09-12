@@ -235,7 +235,6 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
             http_client=http_client,
             web_client=web_client,
             data_dir=cold.data_dir,
-            safe_dirs=safe_dirs,
             proxy=hot.network.proxy,
             state=playback_state,
         ),
