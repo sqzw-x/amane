@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin, urlparse
@@ -35,7 +35,7 @@ from .hls import (
 )
 from .href import hls_part_href
 from .local import LOCAL_SOURCE_ID, LocalPlaybackProvider
-from .proxy import NOSNIFF, StreamClient
+from .proxy import HLS_KEY_CACHE_CONTROL, NOSNIFF, StreamClient
 
 if TYPE_CHECKING:
     from ..crawlers.http import HttpClient
@@ -82,6 +82,23 @@ class ListedSource:
     subtitles: tuple[SubtitleTrack, ...] = ()
 
 
+@dataclass(slots=True)
+class PlaybackState:
+    """跨 rebuild 存活的进程内播放状态.
+
+    token 表与探测缓存的所有权在 ``AppRuntime`` 上. 若它们随 ``PlaybackFactory`` 每次 rebuild
+    一起丢弃, 播放中修改任意热配置都会让在播 HLS 会话的分片 token 失效. 只有插件集合变化
+    (安装 / 卸载 / 重载 / 启停) 时才 ``reset()``, 此时旧 token 必须失效.
+    """
+
+    hls: HlsUriMap = field(default_factory=HlsUriMap)
+    caches: PlaybackCaches = field(default_factory=PlaybackCaches)
+
+    def reset(self) -> None:
+        self.hls.reset()
+        self.caches.reset()
+
+
 class PlaybackFactory:
     def __init__(
         self,
@@ -93,6 +110,7 @@ class PlaybackFactory:
         data_dir: Path,
         safe_dirs: list[Path] | None,
         proxy: str | None,
+        state: PlaybackState | None = None,
     ) -> None:
         self._plugin_manager = plugin_manager
         self._plugin_configs = plugin_configs
@@ -101,10 +119,11 @@ class PlaybackFactory:
         self._data_dir = data_dir
         self._safe_dirs = safe_dirs
         self._stream = StreamClient(proxy=proxy)
-        self._caches = PlaybackCaches()
+        shared = state if state is not None else PlaybackState()
+        self._caches = shared.caches
         self._providers: dict[str, PlaybackProvider] = {}
         self._local = LocalPlaybackProvider(safe_dirs)
-        self._hls = HlsUriMap()
+        self._hls = shared.hls
 
     async def aclose(self) -> None:
         await self._stream.aclose()
@@ -332,12 +351,14 @@ class PlaybackFactory:
         locator: HlsLocator,
         uri: str,
         base_url: str,
+        is_key: bool,
     ) -> str:
         token = self._hls.register(
             source_id=source_id,
             query=query,
             locator=locator,
             uri=_absolute_hls_uri(base_url, uri),
+            is_key=is_key,
         )
         return hls_part_href(source_id, query.metadata_id, query.selected_file_id, token)
 
@@ -353,7 +374,14 @@ class PlaybackFactory:
         playlist = await resolved.locator.load_playlist(query)
         return rewrite_playlist(
             playlist.text,
-            lambda uri: self._map_hls_uri(source_id, query, resolved.locator, uri, playlist.base_url),
+            lambda uri, is_key: self._map_hls_uri(
+                source_id,
+                query,
+                resolved.locator,
+                uri,
+                playlist.base_url,
+                is_key,
+            ),
         )
 
     def playlist_response(self, text: str, *, head: bool) -> Response:
@@ -371,22 +399,28 @@ class PlaybackFactory:
         request: Request,
         *,
         source_id: str,
-        query: PlaybackQuery,
+        metadata_id: int,
+        media_file_id: int | None,
         token: str,
     ) -> Response:
+        """转发一条清单内 URI.
+
+        只按三个标量核对 token 归属, 不重建查询快照: 分片请求每秒数次, 而定位所需的一切都在
+        ``mapped`` 里.
+        """
         mapped = self._hls.get(token)
         if (
             mapped is None
             or mapped.source_id != source_id
-            or mapped.query.metadata_id != query.metadata_id
-            or mapped.query.selected_file_id != query.selected_file_id
+            or mapped.query.metadata_id != metadata_id
+            or mapped.query.selected_file_id != media_file_id
         ):
             raise LookupError(token)
         located = await mapped.locator.locate(mapped.query, mapped.uri)
         base_url = located.url
 
-        def map_uri(uri: str) -> str:
-            return self._map_hls_uri(source_id, mapped.query, mapped.locator, uri, base_url)
+        def map_uri(uri: str, is_key: bool) -> str:
+            return self._map_hls_uri(source_id, mapped.query, mapped.locator, uri, base_url, is_key)
 
         def rewriter(text: str) -> str:
             return rewrite_playlist(text, map_uri)
@@ -404,6 +438,8 @@ class PlaybackFactory:
             target=located,
             allow="hls_part",
             rewrite_playlist=rewriter,
+            # 密钥内容会轮换, 不允许写入浏览器不可变缓存.
+            cache_control=HLS_KEY_CACHE_CONTROL if mapped.is_key else None,
         )
 
     async def load_subtitle(

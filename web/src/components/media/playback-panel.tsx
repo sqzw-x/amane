@@ -160,13 +160,21 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
   const [selectedKey, setSelectedKey] = useState<string>("");
   const [error, setError] = useState<{ href: string; message: string } | null>(null);
 
-  const selected = items.find((item) => sourceKey(item) === selectedKey) ?? items[0];
+  // 列表含不可用项: 无显式选择时选中首个可用项; 全部不可用时回退到首项, 用于展示不可用原因.
+  const selected =
+    items.find((item) => sourceKey(item) === selectedKey) ??
+    items.find((item) => item.available) ??
+    items[0];
   if (items.length === 0 || selected == null) {
     return null;
   }
 
   const kind = mediaKind(selected.content_type);
   const shownError = error?.href === selected.href ? error.message : null;
+  // 不可用项不渲染播放器, 其 href 上的失败记录来自该源此前仍可用的状态, 故探测原因优先.
+  const notice = selected.available
+    ? shownError
+    : (selected.detail ?? t("detail.playbackUnavailable"));
 
   return (
     <Stack gap="xs">
@@ -179,7 +187,13 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
             size="xs"
             w={220}
             value={sourceKey(selected)}
-            data={items.map((item) => ({ value: sourceKey(item), label: item.name }))}
+            data={items.map((item) => ({
+              value: sourceKey(item),
+              label: item.available
+                ? item.name
+                : t("detail.playbackUnavailableOption", { name: item.name }),
+              disabled: !item.available,
+            }))}
             onChange={(value) => {
               if (value == null) return;
               setSelectedKey(value);
@@ -192,28 +206,30 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
           </Text>
         )}
       </Group>
-      {shownError ? (
+      {notice ? (
         <Alert color="red" variant="light">
-          {shownError}
+          {notice}
         </Alert>
       ) : null}
-      {kind === "other" ? (
-        <Text size="sm" c="dimmed">
-          {t("detail.playbackUnsupported")}
-        </Text>
-      ) : (
-        <PlaybackVideo
-          key={selected.href}
-          href={selected.href}
-          kind={kind}
-          tracks={selected.subtitles ?? []}
-          onFailed={() => {
-            void readPlaybackDetail(selected.href, t("detail.playbackFailed"), {
-              ranged: kind === "video",
-            }).then((message) => setError({ href: selected.href, message }));
-          }}
-        />
-      )}
+      {selected.available ? (
+        kind === "other" ? (
+          <Text size="sm" c="dimmed">
+            {t("detail.playbackUnsupported")}
+          </Text>
+        ) : (
+          <PlaybackVideo
+            key={selected.href}
+            href={selected.href}
+            kind={kind}
+            tracks={selected.subtitles ?? []}
+            onFailed={() => {
+              void readPlaybackDetail(selected.href, t("detail.playbackFailed"), {
+                ranged: kind === "video",
+              }).then((message) => setError({ href: selected.href, message }));
+            }}
+          />
+        )
+      ) : null}
     </Stack>
   );
 }

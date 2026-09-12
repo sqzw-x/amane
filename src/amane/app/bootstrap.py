@@ -19,7 +19,7 @@ from ..events import EventBus
 from ..llm import TranslationCache
 from ..media import ResourceStore
 from ..observability import setup_logging
-from ..playback import PlaybackFactory
+from ..playback import PlaybackFactory, PlaybackState
 from ..plugins.manager import PluginManager
 from ..release import ReleaseChecker
 from ..scheduler.cron import CronScheduler
@@ -208,6 +208,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         watcher_service = None
         logger.warning("watcher service not started", exc_info=True)
 
+    playback_state = PlaybackState()
     runtime = AppRuntime(
         repo=repo,
         config=config,
@@ -227,6 +228,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         r18_db=r18_db,
         agent_service=agent_service,
         plugin_manager=plugin_manager,
+        playback_state=playback_state,
         playback_factory=PlaybackFactory(
             plugin_manager=plugin_manager,
             plugin_configs=hot.plugins,
@@ -235,6 +237,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
             data_dir=cold.data_dir,
             safe_dirs=safe_dirs,
             proxy=hot.network.proxy,
+            state=playback_state,
         ),
     )
     agent_service.bridge.safe_dirs = None if safe_dirs is None else list(safe_dirs)

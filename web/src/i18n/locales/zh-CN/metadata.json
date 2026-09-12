@@ -106,6 +106,8 @@
     "playback": "播放",
     "playbackFailed": "无法播放此码流",
     "playbackUnsupported": "此播放源的媒体类型无法在页面内播放",
+    "playbackUnavailable": "该播放源当前不可用",
+    "playbackUnavailableOption": "{{name}}（当前不可用）",
     "cropPoster": {
       "action": "裁切海报",
       "title": "裁切海报",

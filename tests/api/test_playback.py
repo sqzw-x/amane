@@ -172,13 +172,13 @@ class TestPlaybackHttp:
         empty_id = await _seed_title(repo, number="PLAY-EMPTY", library_path=str(safe_path))
         empty = await client.get("playback/sources", params={"metadata_id": empty_id})
         assert empty.status_code == 200
-        assert empty.json()["items"] == []
+        assert [(row["source_id"], row["available"]) for row in empty.json()["items"]] == [("local", False)]
         assert (await client.get(f"playback/local/{empty_id}")).status_code == 404
 
         strm_id = await _seed_title(repo, number="PLAY-STRM")
         strm = await _attach_file(repo, strm_id, safe_path / "clip.strm", payload=b"http://example.test/a.mp4")
         strm_list = await client.get("playback/sources", params={"metadata_id": strm_id})
-        assert strm_list.json()["items"] == []
+        assert [(row["source_id"], row["available"]) for row in strm_list.json()["items"]] == [("local", False)]
         assert (await client.get(f"playback/local/{strm_id}/files/{strm}")).status_code == 404
 
         missing_id = await _seed_title(repo, number="PLAY-GONE")
@@ -190,13 +190,13 @@ class TestPlaybackHttp:
         )
         assert missing.id is not None
         gone = await client.get("playback/sources", params={"metadata_id": missing_id})
-        assert gone.json()["items"] == []
+        assert [(row["source_id"], row["available"]) for row in gone.json()["items"]] == [("local", False)]
 
         outside_id = await _seed_title(repo, number="PLAY-OUT")
         outside = tmp_path / "outside.mp4"
         outside_file = await _attach_file(repo, outside_id, outside, payload=b"outside-bytes")
         outside_list = await client.get("playback/sources", params={"metadata_id": outside_id})
-        assert outside_list.json()["items"] == []
+        assert [(row["source_id"], row["available"]) for row in outside_list.json()["items"]] == [("local", False)]
         assert (await client.get(f"playback/local/{outside_id}/files/{outside_file}")).status_code == 404
 
         multi_id = await _seed_title(repo, number="PLAY-MULTI")
@@ -257,7 +257,10 @@ class TestPlaybackHttp:
         none_cfg = await client.patch("plugins/acme.play", json={"enabled": True, "config": {"behavior": "none"}})
         assert none_cfg.status_code == 200, none_cfg.text
         none_list = await client.get("playback/sources", params={"metadata_id": none_id})
-        assert all(item["source_id"] != "acme.play" for item in none_list.json()["items"])
+        assert [(row["source_id"], row["available"]) for row in none_list.json()["items"]] == [
+            ("local", False),
+            ("acme.play", False),
+        ]
         assert (await client.get(f"playback/acme.play/{none_id}")).status_code == 404
 
         error_status, error_body = await play("error", "PLAY-ERR")
@@ -630,7 +633,7 @@ class TestPlaybackHttp:
         )
         assert escape_file.id is not None
         foreign_list = await client.get("playback/sources", params={"metadata_id": foreign_meta.id})
-        assert foreign_list.json()["items"] == []
+        assert [(row["source_id"], row["available"]) for row in foreign_list.json()["items"]] == [("local", False)]
         assert (await client.get(f"playback/local/{foreign_meta.id}/files/{escape_file.id}")).status_code == 404
 
         stray_meta = await repo.upsert_metadata(number="PLAY-INBOX-STRAY", title="Play")
@@ -645,7 +648,7 @@ class TestPlaybackHttp:
         )
         assert stray_file.id is not None
         stray_list = await client.get("playback/sources", params={"metadata_id": stray_meta.id})
-        assert stray_list.json()["items"] == []
+        assert [(row["source_id"], row["available"]) for row in stray_list.json()["items"]] == [("local", False)]
         assert (await client.get(f"playback/local/{stray_meta.id}/files/{stray_file.id}")).status_code == 404
 
     @pytest.mark.asyncio(loop_scope="function")
@@ -698,5 +701,5 @@ class TestPlaybackHttp:
         )
         assert stray_file.id is not None
         stray_list = await allow_all_client.get("playback/sources", params={"metadata_id": stray_meta.id})
-        assert stray_list.json()["items"] == []
+        assert [(row["source_id"], row["available"]) for row in stray_list.json()["items"]] == [("local", False)]
         assert (await allow_all_client.get(f"playback/local/{stray_meta.id}/files/{stray_file.id}")).status_code == 404

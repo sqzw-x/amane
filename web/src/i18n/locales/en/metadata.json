@@ -105,6 +105,8 @@
     "playback": "Playback",
     "playbackFailed": "This stream could not be played",
     "playbackUnsupported": "This source's media type cannot play on this page",
+    "playbackUnavailable": "This source is currently unavailable",
+    "playbackUnavailableOption": "{{name}} (currently unavailable)",
     "cropPoster": {
       "action": "Crop poster",
       "title": "Crop poster",

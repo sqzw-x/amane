@@ -9,8 +9,34 @@ from amane.playback.factory import _absolute_hls_uri
 from amane.playback.hls import rewrite_playlist, should_map_uri
 
 
-def _map(uri: str) -> str:
+def _map(uri: str, is_key: bool = False) -> str:
     return f"/api/playback/acme.play/1/hls/{uri.replace('/', '_')}"
+
+
+def test_rewrite_playlist_marks_key_uris() -> None:
+    """密钥 URI 必须被标记: 它按 URI 复用但内容会轮换, 缓存策略需要与媒体分片区分."""
+    kinds: dict[str, bool] = {}
+
+    def record(uri: str, is_key: bool) -> str:
+        kinds[uri] = is_key
+        return f"/api/playback/acme.play/1/hls/{uri}"
+
+    source = (
+        "#EXTM3U\n"
+        '#EXT-X-KEY:METHOD=AES-128,URI="enc.key"\n'
+        '#EXT-X-SESSION-KEY:METHOD=AES-128,URI="session.key"\n'
+        '#EXT-X-MAP:URI="init.mp4"\n'
+        "#EXTINF:1,\nseg.ts\n"
+        '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="zh",URI="subs.m3u8"\n'
+    )
+    rewrite_playlist(source, record)
+    assert kinds == {
+        "enc.key": True,
+        "session.key": True,
+        "init.mp4": False,
+        "seg.ts": False,
+        "subs.m3u8": False,
+    }
 
 
 @pytest.mark.parametrize(
@@ -77,7 +103,7 @@ def test_should_map_uri() -> None:
 
 def test_rewrite_playlist_strips_upstream_origin() -> None:
     source = "#EXTM3U\n#EXTINF:1.0,\nhttp://cdn.example/path/seg.ts\n"
-    rewritten = rewrite_playlist(source, lambda _uri: "/api/playback/acme.play/1/hls/deadbeef")
+    rewritten = rewrite_playlist(source, lambda _uri, _is_key: "/api/playback/acme.play/1/hls/deadbeef")
     assert "cdn.example" not in rewritten
     assert rewritten.splitlines()[2] == "/api/playback/acme.play/1/hls/deadbeef"
 

@@ -23,7 +23,7 @@
   "playbackSection": "播放源",
   "routeHint": "刮削插件安装后需在类型路由中添加才会参与刮削",
   "routeLink": "打开影片刮削设置",
-  "playbackHint": "启用后在影片详情页作为播放源出现，不写入内容路由",
+  "playbackHint": "安装后即在影片详情页作为播放源出现，可在本页停用；不写入内容路由",
   "capabilities": {
     "film_metadata": "影片元数据",
     "playback": "播放",

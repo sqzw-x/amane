@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Mapping
+import contextlib
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping
 from typing import Literal
 
 import httpx2 as httpx
 import structlog
 from fastapi import HTTPException, Request
 from starlette.responses import Response, StreamingResponse
+from starlette.types import Receive, Scope, Send
 
 from ..plugins.api import UpstreamPlaybackTarget
 
@@ -19,6 +21,7 @@ ProxyAllow = Literal["media", "hls_part", "subtitle"]
 PLAYLIST_MAX_BYTES = 2 * 1024 * 1024
 HLS_PART_CACHE_CONTROL = "private, max-age=31536000, immutable"
 HLS_TEXT_CACHE_CONTROL = "private, no-cache"
+HLS_KEY_CACHE_CONTROL = "private, no-store"
 _HLS_TEXT_TYPES = frozenset({"text/plain", "text/vtt"})
 PLAYLIST_MEDIA_TYPE = "application/vnd.apple.mpegurl"
 PLAYLIST_CACHE_CONTROL = "private, no-cache"
@@ -55,6 +58,8 @@ _PLAYLIST_MARKERS = ("mpegurl", "dash+xml", "x-mpegurl")
 GLOBAL_CONCURRENCY = 16
 PER_SOURCE_CONCURRENCY = 8
 ACQUIRE_TIMEOUT_SECONDS = 2.0
+PLAYBACK_READ_TIMEOUT_SECONDS = 30.0
+DRAIN_TIMEOUT_SECONDS = 30.0
 NOSNIFF = {"X-Content-Type-Options": "nosniff"}
 
 
@@ -176,9 +181,8 @@ def _secret_keys(target: UpstreamPlaybackTarget) -> set[str]:
 def _filter_response_headers(headers: Mapping[str, str]) -> dict[str, str]:
     """透传播放需要的上游响应头, 丢弃 hop-by-hop 与 cookie.
 
-    ``Content-Length`` 描述的是上游编码后的正文字节数; 正文经 httpx 解码后长度会改变, 因此
-    上游声明了非 identity 的 ``Content-Encoding`` 时不允许再透传该值, 否则浏览器按错误的
-    长度截断或挂起.
+    ``Content-Length`` 与 ``Content-Range`` 描述的是上游编码后的字节; 正文经 httpx 解码后
+    长度与范围都会改变, 因此上游声明了非 identity 的 ``Content-Encoding`` 时不允许再透传.
     """
     encoding = headers.get("content-encoding", "").casefold().strip()
     encoded = encoding not in {"", "identity"}
@@ -187,7 +191,7 @@ def _filter_response_headers(headers: Mapping[str, str]) -> dict[str, str]:
         lower = key.lower()
         if lower in _HOP_BY_HOP:
             continue
-        if encoded and lower == "content-length":
+        if encoded and lower in {"content-length", "content-range"}:
             continue
         if lower in _PASSTHROUGH:
             out[key] = value
@@ -231,20 +235,136 @@ def _length_range_consistent(headers: Mapping[str, str]) -> bool:
     return declared == (end - start + 1)
 
 
+class _GateBody:
+    """包装流式正文, 使未迭代就被关闭时同样释放上游请求.
+
+    未启动过的异步生成器 ``aclose()`` 不执行自身的 ``finally``, 因此释放必须在包装层再做一次.
+    """
+
+    def __init__(self, chunks: AsyncGenerator[bytes], release: Callable[[], Awaitable[None]]) -> None:
+        self._chunks = chunks
+        self._release = release
+
+    def __aiter__(self) -> AsyncIterator[bytes]:
+        return self
+
+    async def __anext__(self) -> bytes:
+        return await self._chunks.__anext__()
+
+    async def aclose(self) -> None:
+        try:
+            await self._chunks.aclose()
+        finally:
+            await self._release()
+
+
+class _GateStreamingResponse(StreamingResponse):
+    """在响应生命周期结束时兜底释放上游请求.
+
+    ``body()`` 的 ``finally`` 只在生成器被迭代过时执行: 首块 ``send`` 抛 ``ClientDisconnect``
+    (播放器切换码率或 seek 会主动中止在途分片) 时生成器从未启动, 只有 ``__call__`` 能观察到
+    结束. 释放函数幂等, 两处都调用不会重复归还.
+    """
+
+    def __init__(
+        self,
+        content: AsyncIterator[bytes],
+        *,
+        release: Callable[[], Awaitable[None]],
+        status_code: int,
+        headers: Mapping[str, str],
+        media_type: str | None,
+    ) -> None:
+        self._release = release
+        super().__init__(content, status_code=status_code, headers=dict(headers), media_type=media_type)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._release()
+
+
 class StreamClient:
     """Long-lived streaming HTTP client. Not the scrape WebClient."""
 
     def __init__(self, *, proxy: str | None = None) -> None:
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0),
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=PLAYBACK_READ_TIMEOUT_SECONDS,
+                write=30.0,
+                pool=10.0,
+            ),
             follow_redirects=False,
             proxy=proxy,
             headers={"Accept-Encoding": "identity"},
         )
         self._gate = UpstreamGate()
+        self._in_flight = 0
+        self._idle = asyncio.Event()
+        self._idle.set()
+
+    def _enter(self) -> None:
+        self._in_flight += 1
+        self._idle.clear()
+
+    def _exit(self) -> None:
+        self._in_flight -= 1
+        if self._in_flight <= 0:
+            self._idle.set()
 
     async def aclose(self) -> None:
+        """等在途请求结束后再关闭连接池.
+
+        重建时立即关闭会掐断正在传输的分片; 卡死的上游由读超时与 ``DRAIN_TIMEOUT_SECONDS``
+        兜底, 不让被替换的客户端无限期存活.
+        """
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._idle.wait(), timeout=DRAIN_TIMEOUT_SECONDS)
         await self._client.aclose()
+
+    async def _open_upstream(
+        self,
+        *,
+        source_id: str,
+        method: str,
+        url: str,
+        headers: Mapping[str, str],
+    ) -> tuple[httpx.Response, Callable[[], Awaitable[None]]]:
+        """发出上游请求, 同时返回一个幂等的一次性释放函数.
+
+        释放函数负责关闭上游响应并归还出口额度, 入口段与 post-send 段都必须调用它:
+        ``httpx.InvalidURL`` 不是 ``RequestError``, ``aread()`` 的 ``ReadTimeout`` 与清单改写
+        的 ``SourceError`` 也不属于 ``HTTPException``; 只按单一异常类型释放会漏掉额度, 累积到
+        全局上限后整个进程的播放固定返回 503.
+        """
+        await self._gate.acquire(source_id)
+        self._enter()
+        released = False
+        response: httpx.Response | None = None
+
+        async def release() -> None:
+            nonlocal released
+            if released:
+                return
+            released = True
+            if response is not None:
+                await response.aclose()
+            self._exit()
+            self._gate.release(source_id)
+
+        try:
+            upstream_req = self._client.build_request(method, url, headers=dict(headers))
+            response = await self._client.send(upstream_req, stream=True)
+        except httpx.RequestError as exc:
+            await release()
+            logger.warning("playback upstream request failed", source=source_id, error=str(exc))
+            raise HTTPException(status_code=502, detail="上游不可达") from exc
+        except BaseException:
+            await release()
+            raise
+        return response, release
 
     async def fetch_bytes(
         self,
@@ -255,19 +375,12 @@ class StreamClient:
     ) -> bytes:
         url = _upstream_url(target.url)
         outbound: dict[str, str] = {**target.headers, "Accept-Encoding": "identity"}
-        await self._gate.acquire(source_id)
-        try:
-            upstream_req = self._client.build_request("GET", url, headers=outbound)
-            response = await self._client.send(upstream_req, stream=True)
-        except httpx.RequestError as exc:
-            self._gate.release(source_id)
-            logger.warning("playback upstream request failed", source=source_id, error=str(exc))
-            raise HTTPException(status_code=502, detail="上游不可达") from exc
-        except BaseException:
-            # 归还出口额度: 非 RequestError 的异常 (例如客户端已被 rebuild 关闭) 不能漏掉额度,
-            # 否则额度随请求次数单调减少, 最终整个进程的播放固定返回 503.
-            self._gate.release(source_id)
-            raise
+        response, release = await self._open_upstream(
+            source_id=source_id,
+            method="GET",
+            url=url,
+            headers=outbound,
+        )
         try:
             if 300 <= response.status_code < 400:
                 raise HTTPException(status_code=502, detail="上游重定向被拒绝")
@@ -281,11 +394,8 @@ class StreamClient:
                     raise HTTPException(status_code=502, detail="播放列表过大")
                 chunks.append(chunk)
             return b"".join(chunks)
-        except HTTPException:
-            raise
         finally:
-            await response.aclose()
-            self._gate.release(source_id)
+            await release()
 
     async def proxy(
         self,
@@ -295,6 +405,7 @@ class StreamClient:
         target: UpstreamPlaybackTarget,
         allow: ProxyAllow = "media",
         rewrite_playlist: Callable[[str], str] | None = None,
+        cache_control: str | None = None,
     ) -> Response:
         range_header = request.headers.get("range")
         if range_header is not None and _is_multi_range(range_header):
@@ -313,18 +424,12 @@ class StreamClient:
 
         method = "HEAD" if request.method == "HEAD" else "GET"
         url = _upstream_url(target.url)
-        await self._gate.acquire(source_id)
-        try:
-            upstream_req = self._client.build_request(method, url, headers=outbound)
-            response = await self._client.send(upstream_req, stream=True)
-        except httpx.RequestError as exc:
-            self._gate.release(source_id)
-            logger.warning("playback upstream request failed", source=source_id, error=str(exc))
-            raise HTTPException(status_code=502, detail="上游不可达") from exc
-        except BaseException:
-            # 同 fetch_bytes: 任何异常都必须归还出口额度.
-            self._gate.release(source_id)
-            raise
+        response, release = await self._open_upstream(
+            source_id=source_id,
+            method=method,
+            url=url,
+            headers=outbound,
+        )
 
         secrets = _secret_keys(target)
         try:
@@ -333,14 +438,12 @@ class StreamClient:
                 for key in list(filtered):
                     if key.casefold() == "cache-control" and "immutable" in filtered[key].casefold():
                         filtered[key] = "private, no-cache"
-                await response.aclose()
-                self._gate.release(source_id)
+                await release()
                 return Response(status_code=304, headers=filtered)
             if response.status_code == 416:
                 # 客户端 Range 不可满足属于请求本身的问题, 与上游故障区分, 原样返回状态码.
                 filtered = _safe_headers(response.headers, secrets)
-                await response.aclose()
-                self._gate.release(source_id)
+                await release()
                 return Response(status_code=416, headers=filtered)
             if 300 <= response.status_code < 400:
                 raise HTTPException(status_code=502, detail="上游重定向被拒绝")
@@ -356,8 +459,7 @@ class StreamClient:
                 except UnicodeDecodeError as exc:
                     raise HTTPException(status_code=502, detail="播放列表不是文本") from exc
                 text = rewrite_playlist(decoded)
-                await response.aclose()
-                self._gate.release(source_id)
+                await release()
                 return Response(
                     content=text.encode("utf-8"),
                     media_type=PLAYLIST_MEDIA_TYPE,
@@ -372,32 +474,34 @@ class StreamClient:
                 raise HTTPException(status_code=502, detail="上游不是可播放的媒体")
             if not _length_range_consistent({k.lower(): v for k, v in response.headers.items()}):
                 raise HTTPException(status_code=502, detail="上游长度与 Range 不一致")
-        except HTTPException:
-            await response.aclose()
-            self._gate.release(source_id)
+        except BaseException:
+            # post-send 段: aread() 的 ReadTimeout 与清单改写的 SourceError 都不属于
+            # HTTPException, 只捕 HTTPException 会漏掉出口额度.
+            await release()
             raise
 
         filtered = _safe_headers(response.headers, secrets)
-        if allow == "hls_part":
+        if cache_control is not None:
+            filtered["Cache-Control"] = cache_control
+        elif allow == "hls_part":
             filtered["Cache-Control"] = hls_part_cache_control(response.headers.get("content-type", ""))
 
-        async def body() -> AsyncIterator[bytes]:
+        async def body() -> AsyncGenerator[bytes]:
             try:
                 async for chunk in response.aiter_bytes():
                     if await request.is_disconnected():
                         break
                     yield chunk
             finally:
-                await response.aclose()
-                self._gate.release(source_id)
+                await release()
 
         if method == "HEAD":
-            await response.aclose()
-            self._gate.release(source_id)
+            await release()
             return Response(status_code=response.status_code, headers=filtered)
 
-        return StreamingResponse(
-            body(),
+        return _GateStreamingResponse(
+            _GateBody(body(), release),
+            release=release,
             status_code=response.status_code,
             headers=filtered,
             media_type=filtered.get("content-type"),

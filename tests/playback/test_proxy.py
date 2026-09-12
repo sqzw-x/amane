@@ -1,7 +1,7 @@
 """Upstream reverse-proxy constraints: Range, secrets, playlist, redirects, cancel."""
 
 import gzip
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread
@@ -10,8 +10,11 @@ from typing import Any
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from httpx2 import ASGITransport, AsyncClient
+from starlette.requests import ClientDisconnect
 from starlette.responses import StreamingResponse
+from starlette.types import Message, Scope
 
+from amane.net.errors import FailureReason, SourceError
 from amane.playback.proxy import (
     GLOBAL_CONCURRENCY,
     HLS_PART_CACHE_CONTROL,
@@ -19,6 +22,7 @@ from amane.playback.proxy import (
     ProxyAllow,
     StreamClient,
     _filter_response_headers,
+    _GateBody,
     hls_part_cache_control,
     is_allowed_hls_part,
     is_allowed_media_type,
@@ -345,12 +349,19 @@ async def test_proxy_passes_416_range_not_satisfiable() -> None:
         ({"content-type": "video/mp4", "content-length": "120"}, True),
         ({"content-type": "video/mp4", "content-length": "120", "content-encoding": "identity"}, True),
         ({"content-type": "video/mp4", "content-length": "40", "content-encoding": "gzip"}, False),
+        ({"content-type": "video/mp4", "content-range": "bytes 0-9/100", "content-encoding": "gzip"}, None),
     ],
 )
-def test_filter_response_headers_drops_stale_length(headers: dict[str, str], keeps_length: bool) -> None:
-    """正文经 httpx 解码后长度不等于上游声明值, 编码过的响应不得透传 Content-Length."""
+def test_filter_response_headers_drops_stale_length(
+    headers: dict[str, str],
+    keeps_length: bool | None,
+) -> None:
+    """正文经 httpx 解码后长度与范围都会改变, 编码过的响应不得透传这两个声明."""
     filtered = _filter_response_headers(headers)
-    assert ("content-length" in filtered) is keeps_length
+    if keeps_length is None:
+        assert "content-range" not in filtered
+    else:
+        assert ("content-length" in filtered) is keeps_length
 
 
 @pytest.mark.asyncio
@@ -412,5 +423,147 @@ async def test_upstream_failures_do_not_leak_gate_permits() -> None:
             assert await stream.fetch_bytes(source_id="acme.play", target=good) == b"abcdef" * 20
             ok = await client.get("/good")
             assert ok.status_code == 200
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_gate_released_when_playlist_rewrite_fails() -> None:
+    """post-send 段的异常同样必须归还出口额度.
+
+    清单改写抛 ``SourceError`` (以及 ``aread()`` 抛 ``ReadTimeout``) 都不属于 ``HTTPException``,
+    只捕获 ``HTTPException`` 会让额度随失败次数单调减少.
+    """
+    playlist = b"#EXTM3U\n#EXTINF:1,\nseg.ts\n"
+    server, _captured, _cancelled = _serve(media_type="application/vnd.apple.mpegurl", body=playlist)
+    stream = StreamClient()
+    target = UpstreamPlaybackTarget(url=_origin(server))
+
+    def refuse(_text: str) -> str:
+        raise SourceError(FailureReason.NO_USABLE_METADATA, detail="播放列表 URI 不受支持")
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        await stream.aclose()
+
+    app = FastAPI(lifespan=lifespan)
+
+    @app.get("/p")
+    async def play(request: Request):
+        return await stream.proxy(
+            request,
+            source_id="acme.play",
+            target=target,
+            rewrite_playlist=refuse,
+        )
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for _ in range(GLOBAL_CONCURRENCY + 2):
+                with pytest.raises(SourceError):
+                    await client.get("/p")
+            assert await stream.fetch_bytes(source_id="acme.play", target=target) == playlist
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_gate_released_when_stream_response_never_sends() -> None:
+    """响应在首块送出前被丢弃时必须归还出口额度.
+
+    首块 ``send`` 抛 ``OSError`` 时 Starlette 转 ``ClientDisconnect``, 正文生成器从未启动,
+    其 ``finally`` 不会执行; 释放只能由响应生命周期层兜底.
+    """
+    body = b"abcdef" * 20
+    server, _captured, _cancelled = _serve(body=body)
+    stream = StreamClient()
+    target = UpstreamPlaybackTarget(url=_origin(server))
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.4", "version": "3.0"},
+        "method": "GET",
+        "path": "/p",
+        "headers": [],
+        "query_string": b"",
+        "scheme": "http",
+        "http_version": "1.1",
+        "server": ("testserver", 80),
+    }
+
+    async def receive() -> Message:
+        return {"type": "http.disconnect"}
+
+    async def send(_message: Message) -> None:
+        raise OSError("客户端已断开")
+
+    try:
+        for _ in range(GLOBAL_CONCURRENCY + 2):
+            response = await stream.proxy(Request(scope), source_id="acme.play", target=target)
+            with pytest.raises(ClientDisconnect):
+                await response(scope, receive, send)
+        assert await stream.fetch_bytes(source_id="acme.play", target=target) == body
+    finally:
+        await stream.aclose()
+        server.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_gate_body_releases_without_iteration() -> None:
+    """未迭代即关闭的正文同样释放: 未启动的异步生成器不执行自身 ``finally``."""
+    released: list[str] = []
+
+    async def chunks() -> AsyncGenerator[bytes]:
+        try:
+            yield b"chunk"
+        finally:
+            released.append("generator")
+
+    async def release() -> None:
+        released.append("release")
+
+    body = _GateBody(chunks(), release)
+    await body.aclose()
+    assert released == ["release"]
+
+
+@pytest.mark.asyncio
+async def test_proxy_cache_control_override() -> None:
+    """按用途覆盖分片缓存策略: 密钥类分片不得写入不可变缓存."""
+    server, _captured, _cancelled = _serve(media_type="application/octet-stream", body=b"key-bytes")
+    stream = StreamClient()
+    target = UpstreamPlaybackTarget(url=_origin(server))
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        await stream.aclose()
+
+    app = FastAPI(lifespan=lifespan)
+
+    @app.get("/override")
+    async def override(request: Request):
+        return await stream.proxy(
+            request,
+            source_id="acme.play",
+            target=target,
+            allow="hls_part",
+            cache_control="private, no-store",
+        )
+
+    @app.get("/default")
+    async def default(request: Request):
+        return await stream.proxy(request, source_id="acme.play", target=target, allow="hls_part")
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            overridden = await client.get("/override")
+            assert overridden.status_code == 200
+            assert overridden.headers["cache-control"] == "private, no-store"
+            fallback = await client.get("/default")
+            assert fallback.status_code == 200
+            assert fallback.headers["cache-control"] == HLS_PART_CACHE_CONTROL
     finally:
         server.shutdown()

@@ -47,6 +47,9 @@ class _TtlMap:
     def is_blocked(self, key: str) -> bool:
         return self.get(key) is not None
 
+    def clear(self) -> None:
+        self._items.clear()
+
 
 class PlaybackCaches:
     """Independent TTLs for probe hits, probe none, probe errors, and open failures."""
@@ -58,6 +61,13 @@ class PlaybackCaches:
         self.open_fail = _TtlMap(ttl_seconds=OPEN_FAIL_TTL_SECONDS)
         self._inflight: dict[str, asyncio.Future[object]] = {}
         self._lock = asyncio.Lock()
+
+    def reset(self) -> None:
+        """丢弃全部 TTL 记录; 插件集合变化时调用. 在途合并由 ``_inflight`` 自行结束."""
+        self.probe_hits.clear()
+        self.probe_none.clear()
+        self.probe_fail.clear()
+        self.open_fail.clear()
 
     async def coalesce(self, key: str, factory: Callable[[], Awaitable[T]]) -> T:
         async with self._lock:

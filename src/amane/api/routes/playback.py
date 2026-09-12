@@ -102,7 +102,6 @@ async def list_playback_sources(
             ],
         )
         for row in listed
-        if row.available
     ]
     etag = _etag_for(items)
     cache_headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
@@ -164,10 +163,9 @@ async def play_metadata_hls_part(
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
     token: Annotated[str, Path(pattern=_TOKEN_PATTERN)],
-    repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
-    return await _hls_part(request, source_id, metadata_id, None, token, repo, runtime)
+    return await _hls_part(request, source_id, metadata_id, None, token, runtime)
 
 
 @router.head("/{source_id}/{metadata_id}/hls/{token}", include_in_schema=False)
@@ -176,10 +174,9 @@ async def play_metadata_hls_part_head(
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
     token: Annotated[str, Path(pattern=_TOKEN_PATTERN)],
-    repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
-    return await _hls_part(request, source_id, metadata_id, None, token, repo, runtime)
+    return await _hls_part(request, source_id, metadata_id, None, token, runtime)
 
 
 @router.get("/{source_id}/{metadata_id}/files/{media_file_id}/hls/{token}")
@@ -189,10 +186,9 @@ async def play_file_hls_part(
     metadata_id: Annotated[int, Path(ge=1)],
     media_file_id: Annotated[int, Path(ge=1)],
     token: Annotated[str, Path(pattern=_TOKEN_PATTERN)],
-    repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
-    return await _hls_part(request, source_id, metadata_id, media_file_id, token, repo, runtime)
+    return await _hls_part(request, source_id, metadata_id, media_file_id, token, runtime)
 
 
 @router.head("/{source_id}/{metadata_id}/files/{media_file_id}/hls/{token}", include_in_schema=False)
@@ -202,10 +198,9 @@ async def play_file_hls_part_head(
     metadata_id: Annotated[int, Path(ge=1)],
     media_file_id: Annotated[int, Path(ge=1)],
     token: Annotated[str, Path(pattern=_TOKEN_PATTERN)],
-    repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
-    return await _hls_part(request, source_id, metadata_id, media_file_id, token, repo, runtime)
+    return await _hls_part(request, source_id, metadata_id, media_file_id, token, runtime)
 
 
 @router.get("/{source_id}/{metadata_id}/subtitles/{track_id}")
@@ -315,13 +310,17 @@ async def _hls_part(
     metadata_id: int,
     media_file_id: int | None,
     token: str,
-    repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
     factory = await _require_factory(source_id, runtime)
-    query = await _load_query(repo, metadata_id, media_file_id)
     try:
-        return await factory.serve_hls_part(request, source_id=source_id, query=query, token=token)
+        return await factory.serve_hls_part(
+            request,
+            source_id=source_id,
+            metadata_id=metadata_id,
+            media_file_id=media_file_id,
+            token=token,
+        )
     except LookupError:
         raise HTTPException(status_code=404, detail="播放片段不存在") from None
     except SourceError as exc:

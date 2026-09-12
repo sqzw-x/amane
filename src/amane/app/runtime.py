@@ -30,7 +30,7 @@ from ..handlers import (
 from ..llm import TranslationCache, build_translator
 from ..media.watermarks import user_watermark_dir
 from ..net.http import RateLimiters, WebClient
-from ..playback import PlaybackFactory
+from ..playback import PlaybackFactory, PlaybackState
 from ..plugins.manager import PluginManager
 from ..plugins.packaging import install_plugin_path, install_plugin_zip, uninstall_plugin_tree
 from ..scheduler.worker import AsyncWorker
@@ -150,6 +150,7 @@ class AppRuntime:
     agent_service: AgentService | None = None
     plugin_manager: PluginManager | None = None
     playback_factory: PlaybackFactory | None = None
+    playback_state: PlaybackState = field(default_factory=PlaybackState)
 
     _r18_config: R18Config | None = field(default=None, repr=False)
     _old_r18_db: R18Database | None = field(default=None, repr=False)
@@ -216,7 +217,8 @@ class AppRuntime:
         if self.agent_service is not None:
             self.agent_service.rebuild(hot.agent)
 
-        self.playback_factory = PlaybackFactory(
+        previous_playback = self.playback_factory
+        current_playback = PlaybackFactory(
             plugin_manager=self.plugin_manager,
             plugin_configs=hot.plugins,
             http_client=self.http_client,
@@ -224,7 +226,14 @@ class AppRuntime:
             data_dir=self.config.cold.data_dir,
             safe_dirs=self.safe_dirs,
             proxy=hot.network.proxy,
+            state=self.playback_state,
         )
+        if previous_playback is not None and set(previous_playback.playback_source_ids()) != set(
+            current_playback.playback_source_ids()
+        ):
+            # 插件集合变化 (安装 / 卸载 / 重载 / 启停): 已签发的 token 与探测缓存必须失效.
+            self.playback_state.reset()
+        self.playback_factory = current_playback
 
         return old_worker
 

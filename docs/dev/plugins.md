@@ -76,11 +76,11 @@
 
 - `file`: 已入库文件. **仅内置 `local` 可以产出**. 主机打开解析后的规范路径. 入库字面路径必须是所属库根的后代 (目录登记的是库内入口, 含 `move_mode=symlink`). 解析目标: 配置了 `safe_dirs` 时必须是库根或名单的后代 (二者为「或」); `ALLOW_ALL` 不另用库根限制解析目标. 不允许要求解析后的字符串与入库字面量全等 (macOS `/var` 与符号链接会改变字面量). 库根未知时拒绝打开.
 - `upstream`: 上游 URL 与仅服务端使用的请求头. 主机反向代理, 转发单段 Range, 密钥不得出现在响应头或重定向 Location. 指向播放列表的 `upstream` 仍拒绝; 清单必须经由 `hls`.
-- `hls`: 插件提供 locator. 主机用「包含该 URI 的那份清单」的 base 做 `urljoin` 后再调用 `locate`, 因此 `locate` 收到绝对 URL. 相对 URI (含协议相对 `//host/...`) 解析后必须与该份清单 Origin 相同; 清单内已写出的绝对 `http`/`https` URL 由插件承担, 主机仍会代理. 其它 scheme 拒绝. 主机把清单 URI 改写到本机前缀并反向代理分片、密钥与子清单. 清单内不得残留上游 Origin.
+- `hls`: 插件提供 locator. 主机用「包含该 URI 的那份清单」的 base 做 `urljoin` 后再调用 `locate`, 因此 `locate` 收到绝对 URL. 相对 URI (含协议相对 `//host/...`) 解析后必须与该份清单 Origin 相同; 清单内已写出的绝对 `http`/`https` URL 由插件承担, 主机仍会代理. 其它 scheme 拒绝. 主机把清单 URI 改写到本机前缀并反向代理分片、密钥与子清单. 清单内不得残留上游 Origin. 主机不自行推导新的 Origin, 只跟随清单里已声明的绝对地址: 需要跨源时写绝对 URL, 协议相对形式一律拒绝.
 
 `probe.content_type` 必须与随后 `resolve` 的目标种类一致: HLS 用 `mpegurl`, 逐字节码流用 `video/*` / `audio/*`. 列表 `href` 按探测类型指向清单或码流; 不一致时前端会按错误方式初始化, 清单端点对非 HLS 目标返回 502.
 
-探测预算 1.5 秒. 超时由主机标记为不可用并从列表排除, 不是插件返回 `None`. 网络失败抛 `SourceError`. `probe` 内访问网络可能耗尽预算; 短探测、把取流留到 `resolve`.
+探测预算 1.5 秒. 超时由主机标记为不可用, 列表以 `available=false` 与 `detail="探测超时"` 呈现, 不是插件返回 `None`. 网络失败抛 `SourceError`. `probe` 内访问网络可能耗尽预算; 短探测、把取流留到 `resolve`.
 
 探测结果可附带 WebVTT 轨道; 内置 `local` 先在入库字面路径同目录查找同 stem 的 `.vtt` / `.srt`, 未命中再查规范路径目录. 字幕正文按 UTF-8 与 GBK 顺序解码, 两种都失败时不声明该轨道 — 探测阶段即可判定不可用, 避免列出轨道而加载必定失败. `.srt` 在响应前转换为 WebVTT, 三位小时数的时间轴同样转换. 字幕文件解析后遵守与正片相同的字面路径 / 解析目标约束, 且所在目录必须是正片字面目录或规范目录, 不允许经符号链接转到其它目录. 插件通过 `subtitle` 返回正文或上游 VTT. 上游字幕只接受 `text/vtt` (及缺省类型).
 
@@ -88,9 +88,9 @@
 
 内置 `local` 在关联文件存在、不是 `.strm`、字面路径在库根内、路径可打开, 且解析目标落在库根或 `safe_dirs` (二者为「或」; `ALLOW_ALL` 不另限解析目标; 名单为空时只放行库根) 时出现在列表中. 多文件时缺省选择体积最大的正片. 无本地文件的条目只依赖外部播放源.
 
-码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止跟随 301/302/303/307/308, 上游 304 与 416 原样返回 (304 不写 `immutable`), 其余 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 上游声明非 identity 的 `Content-Encoding` 时丢弃 `Content-Length` — 主机转发的是 httpx 解码后的正文, 该值不再成立. 畸形上游 URL 归为 502, 且任何失败路径都必须归还出口额度. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
+码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止跟随 301/302/303/307/308, 上游 304 与 416 原样返回 (304 不写 `immutable`), 其余 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 上游声明非 identity 的 `Content-Encoding` 时丢弃 `Content-Length` — 主机转发的是 httpx 解码后的正文, 该值不再成立. 畸形上游 URL 归为 502, 且任何失败路径都必须归还出口额度. token 表与探测缓存跨 rebuild 存活 (所有权在 `AppRuntime`), 只在插件集合变化 (安装 / 卸载 / 重载 / 启停) 时清空 — 播放中修改任意热配置不得让在播 HLS 会话的分片失效. 被替换的流式客户端等在途请求结束后关闭 (30 秒兜底), 分片读超时 30 秒, 避免卡死的上游长期占用出口额度. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
 
-清单内分片允许 `video/*`、`audio/*`、`application/octet-stream` 与文本类 `text/vtt` / `text/plain`; `text/vtt` 是清单内字幕分片的类型, `text/plain` 是文本型 AES 密钥的常见默认类型, 二者与 `nosniff` 一起使用不会被浏览器执行. 分片缓存按类型区分: 媒体分片与初始化段可用不可变缓存, 文本类只用 `no-cache`, 因为同一 URI 的密钥与字幕会轮换. `SourceError.detail` 会原样进入 502 响应体并展示给终端用户, 不允许在其中写入上游 URL、密钥或签名参数.
+清单内分片允许 `video/*`、`audio/*`、`application/octet-stream` 与文本类 `text/vtt` / `text/plain`; `text/vtt` 是清单内字幕分片的类型, `text/plain` 是文本型 AES 密钥的常见默认类型, 二者与 `nosniff` 一起使用不会被浏览器执行. 分片缓存按用途区分: 媒体分片与初始化段可用不可变缓存; 来自 `#EXT-X-KEY` / `#EXT-X-SESSION-KEY` 的 URI 一律 `no-store` (同一 URI 的密钥内容会轮换), 其余文本类用 `no-cache`. `SourceError.detail` 会原样进入 502 响应体并展示给终端用户, 不允许在其中写入上游 URL、密钥或签名参数.
 
 `RelativeHlsLocator` 的 `http_client` 是刮削客户端 (跟随刮削侧重定向、重试与任务 HTTP 记录). 正式插件应传入已读取的 `playlist_text`; 分片由主机代理.
 

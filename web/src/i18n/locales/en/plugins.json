@@ -23,7 +23,7 @@
   "playbackSection": "Playback",
   "routeHint": "After installing a scrape plugin, add it in Type Routes before it is used",
   "routeLink": "Open movie scraping settings",
-  "playbackHint": "Once enabled, the source appears on title pages. It is not added to content routes.",
+  "playbackHint": "Installed sources appear on title pages immediately and can be disabled here. They are not added to content routes.",
   "capabilities": {
     "film_metadata": "Film metadata",
     "playback": "Playback",

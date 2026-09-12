@@ -35,8 +35,12 @@ def should_map_uri(uri: str) -> bool:
     return bool(stripped) and not stripped.startswith(("data:", "urn:", "#"))
 
 
-def rewrite_playlist(text: str, map_uri: Callable[[str], str]) -> str:
-    """Replace playlist URIs with host paths. Independent URI lines and ``URI=`` attributes."""
+def rewrite_playlist(text: str, map_uri: Callable[[str, bool], str]) -> str:
+    """Replace playlist URIs with host paths. Independent URI lines and ``URI=`` attributes.
+
+    ``map_uri`` 的第二个参数表示该 URI 是否来自密钥标签 (``#EXT-X-KEY`` /
+    ``#EXT-X-SESSION-KEY``): 密钥按 URI 复用但内容会轮换, 缓存策略必须与媒体分片区分.
+    """
     body = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
     lines = body.split("\n")
     out: list[str] = []
@@ -51,7 +55,7 @@ def rewrite_playlist(text: str, map_uri: Callable[[str], str]) -> str:
                 out.append(_rewrite_uri_attrs(line, map_uri) if "URI=" in stripped.upper() else line)
                 continue
             expect_uri = False
-            out.append(map_uri(stripped) if should_map_uri(stripped) else stripped)
+            out.append(map_uri(stripped, False) if should_map_uri(stripped) else stripped)
             continue
         upper = stripped.upper()
         if upper.startswith(("#EXTINF", "#EXT-X-STREAM-INF")):
@@ -65,12 +69,14 @@ def rewrite_playlist(text: str, map_uri: Callable[[str], str]) -> str:
     return "\n".join(out)
 
 
-def _rewrite_uri_attrs(line: str, map_uri: Callable[[str], str]) -> str:
+def _rewrite_uri_attrs(line: str, map_uri: Callable[[str, bool], str]) -> str:
+    is_key = line.strip().upper().startswith(("#EXT-X-KEY", "#EXT-X-SESSION-KEY"))
+
     def repl(match: re.Match[str]) -> str:
         uri = match.group(3)
         if not should_map_uri(uri):
             return match.group(0)
-        return f"{match.group(1)}{match.group(2)}{map_uri(uri)}{match.group(2)}"
+        return f"{match.group(1)}{match.group(2)}{map_uri(uri, is_key)}{match.group(2)}"
 
     return _URI_ATTR.sub(repl, line)
 
@@ -91,15 +97,31 @@ class MappedHlsUri:
     locator: HlsLocator
     query: PlaybackQuery
     source_id: str
+    is_key: bool
 
 
 class HlsUriMap:
-    """Process-local token table. Rebuild of PlaybackFactory discards entries."""
+    """Process-local token table.
+
+    跨 rebuild 存活 (所有权在 ``PlaybackState``), 只在插件集合变化时 ``reset()``: 播放中改任意
+    热配置不应让在播会话的 token 全部失效.
+    """
 
     def __init__(self) -> None:
         self._items: OrderedDict[str, MappedHlsUri] = OrderedDict()
 
-    def register(self, *, source_id: str, query: PlaybackQuery, locator: HlsLocator, uri: str) -> str:
+    def reset(self) -> None:
+        self._items.clear()
+
+    def register(
+        self,
+        *,
+        source_id: str,
+        query: PlaybackQuery,
+        locator: HlsLocator,
+        uri: str,
+        is_key: bool,
+    ) -> str:
         token = hashlib.sha256(
             f"{source_id}\0{query.metadata_id}\0{query.selected_file_id}\0{uri}".encode()
         ).hexdigest()[:32]
@@ -108,6 +130,7 @@ class HlsUriMap:
             locator=locator,
             query=query,
             source_id=source_id,
+            is_key=is_key,
         )
         self._items.move_to_end(token)
         while len(self._items) > MAX_HLS_TOKENS:

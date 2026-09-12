@@ -154,11 +154,14 @@ class HlsLocator(ABC):
 
 
 class RelativeHlsLocator(HlsLocator):
-    """Resolve playlist URIs with ``urljoin`` against ``playlist_url``.
+    """Resolve playlist URIs with ``urljoin`` against the playlist's own address.
 
-    Pass ``playlist_text`` when the plugin already loaded the manifest. ``http_client``
-    is the scrape client: it follows scrape redirects and retries, and records task
-    HTTP. Prefer ``playlist_text``; nested segments are fetched by the host proxy.
+    Pass ``playlist_text`` when the plugin already loaded the manifest. ``http_client`` is the
+    scrape client: it follows scrape redirects and retries, and records task HTTP. Prefer
+    ``playlist_text``; nested segments are fetched by the host proxy.
+
+    相对 URI 的基准是**最终响应地址**: 上游 302 到别的目录 (签名 CDN 常见) 时, 用请求前的地址
+    会把子清单与分片解析到错误路径.
     """
 
     def __init__(
@@ -179,8 +182,12 @@ class RelativeHlsLocator(HlsLocator):
             return HlsPlaylist(text=self._playlist_text, base_url=self._playlist_url)
         if self._http_client is None:
             raise SourceError(FailureReason.NETWORK, detail="播放列表缺少内容")
-        text = await self._http_client.get_text(self._playlist_url, headers=self._headers or None)
-        return HlsPlaylist(text=text, base_url=self._playlist_url)
+        response = await self._http_client.web_client.request(
+            "GET",
+            self._playlist_url,
+            headers=self._headers or None,
+        )
+        return HlsPlaylist(text=response.text, base_url=str(response.url))
 
     async def locate(self, query: PlaybackQuery, uri: str) -> UpstreamPlaybackTarget:
         return UpstreamPlaybackTarget(
