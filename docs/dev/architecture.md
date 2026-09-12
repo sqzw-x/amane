@@ -13,7 +13,7 @@
 | `crawlers/` | 番号 → `MediaMetadata`; 演员名 → `ActorMetadata` | 无状态; HTTP 与配置构造期注入; 影片/演员分 registry |
 | `plugin/` | 第三方来源作者 SDK（再导出契约类型） | 插件只导入这里; 主机不导入 |
 | `plugins/` | 来源插件主机（发现 / 落盘 / Factory） | 作者不导入; 契约见 [plugins.md](plugins.md) |
-| `playback/` | 内置本地播放与上游反向代理 | 浏览器只请求本机媒体端点; 码流不经刮削 HTTP 客户端 |
+| `playback/` | 内置本地播放、上游反向代理与 HLS 清单改写 | 浏览器只请求本机媒体端点; 码流不经刮削 HTTP 客户端; 不允许主机实时转码 |
 | `aggregate/` | 多源优先级 → `AggregatedMetadata` / `AggregatedActor` | 影片按抓取图波次执行; 演员为档案填空 + 头像优先; 不写 DB |
 | `handlers/` | DB Task → 副作用 (写 metadata / 移动文件 / 排队) | 编排层, 不实现解析/爬取/IO 细节 |
 | `media/` `organize/` | 元数据 + 路径模板 → 磁盘文件 | 调用方传配置, 自身不读 `HotSettings` 全局 |

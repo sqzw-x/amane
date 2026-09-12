@@ -4781,6 +4781,13 @@ export const PlaybackSourceItemSchema = {
         href: {
             type: 'string',
             title: 'Href'
+        },
+        subtitles: {
+            items: {
+                $ref: '#/components/schemas/PlaybackSubtitleItem'
+            },
+            type: 'array',
+            title: 'Subtitles'
         }
     },
     additionalProperties: false,
@@ -4809,6 +4816,42 @@ export const PlaybackSourceListResponseSchema = {
     additionalProperties: false,
     type: 'object',
     title: 'PlaybackSourceListResponse'
+} as const;
+
+export const PlaybackSubtitleItemSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            title: 'Id'
+        },
+        label: {
+            type: 'string',
+            title: 'Label'
+        },
+        language: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Language'
+        },
+        href: {
+            type: 'string',
+            title: 'Href'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'id',
+        'label',
+        'href'
+    ],
+    title: 'PlaybackSubtitleItem'
 } as const;
 
 export const PluginConfigSchema = {

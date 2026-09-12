@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from httpx2 import ASGITransport, AsyncClient
 from starlette.responses import StreamingResponse
 
-from amane.playback.proxy import StreamClient, is_allowed_media_type, is_playlist_type
+from amane.playback.proxy import StreamClient, is_allowed_hls_part, is_allowed_media_type, is_playlist_type
 from amane.plugins.api import UpstreamPlaybackTarget
 
 
@@ -32,6 +32,21 @@ def test_allowed_media_type(content_type: str, allowed: bool) -> None:
     assert is_allowed_media_type(content_type) is allowed
     if "mpegurl" in content_type or "dash+xml" in content_type:
         assert is_playlist_type(content_type) is True
+
+
+@pytest.mark.parametrize(
+    ("content_type", "allowed"),
+    [
+        ("video/mp2t", True),
+        ("audio/aac", True),
+        ("application/octet-stream", True),
+        ("", True),
+        ("application/vnd.apple.mpegurl", False),
+        ("application/json", False),
+    ],
+)
+def test_allowed_hls_part(content_type: str, allowed: bool) -> None:
+    assert is_allowed_hls_part(content_type) is allowed
 
 
 class _Upstream(BaseHTTPRequestHandler):

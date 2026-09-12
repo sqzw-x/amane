@@ -139,6 +139,8 @@ class Plugin(FilmSourcePlugin):
 - **多语言支持**: descriptor 声明 `multi_language=True`, fetch 通过 `options.language` 获取当前语言
 - **出演者**: `actors` 为 `FilmActor` 列表 (`name` + `gender`). 仍可传入字符串列表, 性别视为未识别. 名单能判定性别时写出 `female` / `male`
 - **仅播放插件**: descriptor 必须显式声明 `playback`. 不允许返回本地文件目标; 本地读盘只由内置源执行
+- **HLS**: 返回带 locator 的 HLS 目标. locator 负责读取清单, 并把清单里的原始 URI 定位成上游地址. 主机改写清单并代理分片与密钥. 不允许要求本机转码
+- **字幕**: `probe` 声明轨道; `subtitle` 返回 WebVTT 正文或上游 VTT 地址
 
 ### 插件配置
 

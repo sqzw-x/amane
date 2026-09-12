@@ -45,7 +45,7 @@ OpenAPI 列出参数, 不表达组合语义:
 - 裁切海报基准是 `thumb_urls[0]` **当前本地文件**像素; 不修改库路径海报 (ORGANIZE 再复制). locator 见 [data-model.md](data-model.md).
 - `/facets/{kind}/rules` 须注册在 `/{facet_id}` 之前. 写规则语义见 [data-model.md](data-model.md).
 - `/plugins/reload` 须注册在 `/plugins/{plugin_id}` 之前, 否则 `reload` 会被当成插件 ID. 安装/卸载契约见 [plugins.md](plugins.md).
-- `/playback/sources` 须注册在 `/{source_id}` 之前. 列表只含当前条目可解析且已启用的源; 码流 `HEAD`/`GET` 支持单段 Range. `media_file_id` 必须属于路径中的 `metadata_id`, 否则 404. 超长 `source_id` 与未启用、未安装同样 404. 上游失败 502. 契约见 [plugins.md](plugins.md).
+- `/playback/sources` 须注册在 `/{source_id}` 之前. 列表只含当前条目可解析且已启用的源; HLS 项的 `href` 指向 `index.m3u8`. 码流 `HEAD`/`GET` 支持单段 Range. 清单改写后的分片经由 `hls/{token}`; 字幕经由 `subtitles/{track_id}` (`text/vtt`). `media_file_id` 必须属于路径中的 `metadata_id`, 否则 404. 超长 `source_id` 与未启用、未安装同样 404. 上游失败 502. 码流 `upstream` 拒绝播放列表类型. 契约见 [plugins.md](plugins.md).
 - `/tasks/batch` 与 `/tasks/worker*` 须注册在 `/{task_id}` 之前, 否则会被当成非法整数 id.
 
 ## 依赖注入

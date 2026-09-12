@@ -2312,6 +2312,10 @@ export type PlaybackSourceItem = {
      * Href
      */
     href: string;
+    /**
+     * Subtitles
+     */
+    subtitles?: Array<PlaybackSubtitleItem>;
 };
 
 /**
@@ -2322,6 +2326,28 @@ export type PlaybackSourceListResponse = {
      * Items
      */
     items?: Array<PlaybackSourceItem>;
+};
+
+/**
+ * PlaybackSubtitleItem
+ */
+export type PlaybackSubtitleItem = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Language
+     */
+    language?: string | null;
+    /**
+     * Href
+     */
+    href: string;
 };
 
 /**
@@ -4267,6 +4293,226 @@ export type ListPlaybackSourcesResponses = {
 };
 
 export type ListPlaybackSourcesResponse = ListPlaybackSourcesResponses[keyof ListPlaybackSourcesResponses];
+
+export type PlayMetadataPlaylistData = {
+    body?: never;
+    path: {
+        /**
+         * Source Id
+         */
+        source_id: string;
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+    };
+    query?: never;
+    url: '/api/playback/{source_id}/{metadata_id}/index.m3u8';
+};
+
+export type PlayMetadataPlaylistErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PlayMetadataPlaylistError = PlayMetadataPlaylistErrors[keyof PlayMetadataPlaylistErrors];
+
+export type PlayMetadataPlaylistResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type PlayFilePlaylistData = {
+    body?: never;
+    path: {
+        /**
+         * Source Id
+         */
+        source_id: string;
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+        /**
+         * Media File Id
+         */
+        media_file_id: number;
+    };
+    query?: never;
+    url: '/api/playback/{source_id}/{metadata_id}/files/{media_file_id}/index.m3u8';
+};
+
+export type PlayFilePlaylistErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PlayFilePlaylistError = PlayFilePlaylistErrors[keyof PlayFilePlaylistErrors];
+
+export type PlayFilePlaylistResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type PlayMetadataHlsPartData = {
+    body?: never;
+    path: {
+        /**
+         * Source Id
+         */
+        source_id: string;
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+        /**
+         * Token
+         */
+        token: string;
+    };
+    query?: never;
+    url: '/api/playback/{source_id}/{metadata_id}/hls/{token}';
+};
+
+export type PlayMetadataHlsPartErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PlayMetadataHlsPartError = PlayMetadataHlsPartErrors[keyof PlayMetadataHlsPartErrors];
+
+export type PlayMetadataHlsPartResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type PlayFileHlsPartData = {
+    body?: never;
+    path: {
+        /**
+         * Source Id
+         */
+        source_id: string;
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+        /**
+         * Media File Id
+         */
+        media_file_id: number;
+        /**
+         * Token
+         */
+        token: string;
+    };
+    query?: never;
+    url: '/api/playback/{source_id}/{metadata_id}/files/{media_file_id}/hls/{token}';
+};
+
+export type PlayFileHlsPartErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PlayFileHlsPartError = PlayFileHlsPartErrors[keyof PlayFileHlsPartErrors];
+
+export type PlayFileHlsPartResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type PlayMetadataSubtitleData = {
+    body?: never;
+    path: {
+        /**
+         * Source Id
+         */
+        source_id: string;
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+        /**
+         * Track Id
+         */
+        track_id: string;
+    };
+    query?: never;
+    url: '/api/playback/{source_id}/{metadata_id}/subtitles/{track_id}';
+};
+
+export type PlayMetadataSubtitleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PlayMetadataSubtitleError = PlayMetadataSubtitleErrors[keyof PlayMetadataSubtitleErrors];
+
+export type PlayMetadataSubtitleResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type PlayFileSubtitleData = {
+    body?: never;
+    path: {
+        /**
+         * Source Id
+         */
+        source_id: string;
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+        /**
+         * Media File Id
+         */
+        media_file_id: number;
+        /**
+         * Track Id
+         */
+        track_id: string;
+    };
+    query?: never;
+    url: '/api/playback/{source_id}/{metadata_id}/files/{media_file_id}/subtitles/{track_id}';
+};
+
+export type PlayFileSubtitleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PlayFileSubtitleError = PlayFileSubtitleErrors[keyof PlayFileSubtitleErrors];
+
+export type PlayFileSubtitleResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type PlayMetadataData = {
     body?: never;

@@ -1,6 +1,15 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class PlaybackSubtitleItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    label: str
+    language: str | None = None
+    href: str
+
+
 class PlaybackSourceItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -12,6 +21,7 @@ class PlaybackSourceItem(BaseModel):
     media_file_id: int | None = None
     detail: str | None = None
     href: str
+    subtitles: list[PlaybackSubtitleItem] = Field(default_factory=list)
 
 
 class PlaybackSourceListResponse(BaseModel):

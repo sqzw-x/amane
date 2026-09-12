@@ -1,7 +1,10 @@
 """Playback HTTP: Range, local files, plugin resolve, route identity."""
 
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING
+from threading import Thread
+from typing import TYPE_CHECKING, ClassVar
+from urllib.parse import urlparse
 
 import pytest
 
@@ -39,6 +42,49 @@ async def _attach_file(
     )
     assert media.id is not None
     return media.id
+
+
+def _start_hls_origin(files: dict[str, tuple[str, bytes]]) -> tuple[ThreadingHTTPServer, str]:
+    handler = type("HlsOrigin", (_HlsOriginHandler,), {"origin_files": files})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address[0], server.server_address[1]
+    return server, f"http://{host}:{port}"
+
+
+class _HlsOriginHandler(BaseHTTPRequestHandler):
+    origin_files: ClassVar[dict[str, tuple[str, bytes]]] = {}
+
+    def do_GET(self) -> None:
+        item = self.origin_files.get(urlparse(self.path).path)
+        if item is None:
+            self.send_error(404)
+            return
+        media_type, body = item
+        self.send_response(200)
+        self.send_header("Content-Type", media_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Authorization", "Bearer leaked")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: object) -> None:
+        return
+
+
+def _hls_part_tokens(playlist: str) -> list[str]:
+    tokens: list[str] = []
+    needle = "/hls/"
+    start = 0
+    while True:
+        index = playlist.find(needle, start)
+        if index < 0:
+            break
+        token = playlist[index + len(needle) : index + len(needle) + 32]
+        tokens.append(token)
+        start = index + len(needle) + 32
+    return tokens
 
 
 class TestPlaybackHttp:
@@ -195,8 +241,12 @@ class TestPlaybackHttp:
         assert error_status == 502
         assert error_body.get("detail") == "上游失败"
 
-        hls_status, _hls_body = await play("hls", "PLAY-HLS")
-        assert hls_status == 502
+        hls_status, _hls_body = await play(
+            "hls",
+            "PLAY-HLS",
+            playlist="#EXTM3U\n#EXT-X-ENDLIST\n",
+        )
+        assert hls_status == 200
 
         file_status, file_body = await play("file", "PLAY-FILE")
         assert file_status == 502
@@ -211,3 +261,122 @@ class TestPlaybackHttp:
         disabled = await client.patch("plugins/acme.play", json={"enabled": False, "config": {}})
         assert disabled.status_code == 200
         assert (await client.get(f"playback/acme.play/{none_id}")).status_code == 404
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_hls_playlist_rewrite_and_parts(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        server, origin = _start_hls_origin(
+            {
+                "/seg.ts": ("video/mp4", b"SEGMENTDATA"),
+                "/enc.key": ("application/octet-stream", b"KEYBYTES"),
+                "/child.m3u8": (
+                    "application/vnd.apple.mpegurl",
+                    b"#EXTM3U\n#EXTINF:1.0,\nseg.ts\n#EXT-X-ENDLIST\n",
+                ),
+            }
+        )
+        try:
+            data_dir = app.state.runtime.config.cold.data_dir
+            write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+            reloaded = await client.post("plugins/reload")
+            assert reloaded.status_code == 200, reloaded.text
+            metadata_id = await _seed_title(repo, number="PLAY-HLS-FULL")
+            playlist = (
+                "#EXTM3U\n"
+                "#EXT-X-VERSION:3\n"
+                '#EXT-X-KEY:METHOD=AES-128,URI="enc.key"\n'
+                "#EXTINF:1.0,\n"
+                "seg.ts\n"
+                "#EXT-X-STREAM-INF:BANDWIDTH=800000\n"
+                "child.m3u8\n"
+            )
+            configured = await client.patch(
+                "plugins/acme.play",
+                json={
+                    "enabled": True,
+                    "config": {
+                        "behavior": "hls",
+                        "url": f"{origin}/index.m3u8",
+                        "headers": {"Authorization": "Bearer secret"},
+                        "playlist": playlist,
+                    },
+                },
+            )
+            assert configured.status_code == 200, configured.text
+
+            listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
+            assert listed.status_code == 200
+            item = next(row for row in listed.json()["items"] if row["source_id"] == "acme.play")
+            assert item["href"] == f"/api/playback/acme.play/{metadata_id}/index.m3u8"
+            assert item["content_type"] == "application/vnd.apple.mpegurl"
+
+            manifest = await client.get(f"playback/acme.play/{metadata_id}/index.m3u8")
+            assert manifest.status_code == 200
+            text = manifest.text
+            assert origin not in text
+            assert "enc.key" not in text
+            assert "\nseg.ts\n" not in text
+            assert "child.m3u8" not in text
+            assert "private" in manifest.headers.get("cache-control", "").casefold()
+            assert "public" not in manifest.headers.get("cache-control", "").casefold()
+            assert "authorization" not in {key.casefold() for key in manifest.headers}
+
+            tokens = _hls_part_tokens(text)
+            assert len(tokens) == 3
+            key_token, segment_token, child_token = tokens
+            segment = await client.get(f"playback/acme.play/{metadata_id}/hls/{segment_token}")
+            assert segment.status_code == 200
+            assert segment.content == b"SEGMENTDATA"
+            cache = segment.headers.get("cache-control", "").casefold()
+            assert "private" in cache
+            assert "immutable" in cache
+            assert "public" not in cache
+            assert "authorization" not in {key.casefold() for key in segment.headers}
+
+            key = await client.get(f"playback/acme.play/{metadata_id}/hls/{key_token}")
+            assert key.status_code == 200
+            assert key.content == b"KEYBYTES"
+
+            child = await client.get(f"playback/acme.play/{metadata_id}/hls/{child_token}")
+            assert child.status_code == 200
+            assert origin not in child.text
+            child_tokens = _hls_part_tokens(child.text)
+            assert child_tokens[0] == segment_token
+            nested = await client.get(f"playback/acme.play/{metadata_id}/hls/{child_tokens[0]}")
+            assert nested.status_code == 200
+            assert nested.content == b"SEGMENTDATA"
+
+            missing = await client.get(f"playback/acme.play/{metadata_id}/hls/{'a' * 32}")
+            assert missing.status_code == 404
+        finally:
+            server.shutdown()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_local_sidecar_subtitle(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        safe_path: Path,
+    ) -> None:
+        meta_id = await _seed_title(repo, number="PLAY-SUB")
+        file_id = await _attach_file(repo, meta_id, safe_path / "clip.mp4", payload=b"video-bytes")
+        (safe_path / "clip.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n", encoding="utf-8")
+
+        listed = await client.get("playback/sources", params={"metadata_id": meta_id})
+        item = listed.json()["items"][0]
+        assert item["source_id"] == "local"
+        assert len(item["subtitles"]) == 1
+        track = item["subtitles"][0]
+        assert track["id"] == "sidecar"
+        assert track["href"] == f"/api/playback/local/{meta_id}/files/{file_id}/subtitles/sidecar"
+
+        vtt = await client.get(f"playback/local/{meta_id}/files/{file_id}/subtitles/sidecar")
+        assert vtt.status_code == 200
+        assert vtt.headers.get("content-type", "").startswith("text/vtt")
+        assert "WEBVTT" in vtt.text
+        assert "00:00:01.000 --> 00:00:02.000" in vtt.text
+        assert (await client.get(f"playback/local/{meta_id}/files/{file_id}/subtitles/missing")).status_code == 404

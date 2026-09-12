@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
+from typing import Literal
 
 import httpx2 as httpx
 import structlog
@@ -13,6 +14,12 @@ from starlette.responses import Response, StreamingResponse
 from ..plugins.api import UpstreamPlaybackTarget
 
 logger = structlog.get_logger()
+
+ProxyAllow = Literal["media", "hls_part", "subtitle"]
+PLAYLIST_MAX_BYTES = 2 * 1024 * 1024
+HLS_PART_CACHE_CONTROL = "private, max-age=31536000, immutable"
+PLAYLIST_MEDIA_TYPE = "application/vnd.apple.mpegurl"
+PLAYLIST_CACHE_CONTROL = "private, no-cache"
 
 _HOP_BY_HOP = frozenset(
     {
@@ -57,6 +64,32 @@ def is_allowed_media_type(content_type: str) -> bool:
     if is_playlist_type(lowered):
         return False
     return lowered.startswith(("video/", "audio/"))
+
+
+def is_allowed_hls_part(content_type: str) -> bool:
+    lowered = content_type.casefold().split(";", 1)[0].strip()
+    if is_playlist_type(lowered):
+        return False
+    if not lowered:
+        return True
+    if lowered.startswith(("video/", "audio/", "text/", "image/")):
+        return True
+    return lowered in {"application/octet-stream", "binary/octet-stream"}
+
+
+def is_allowed_subtitle_type(content_type: str) -> bool:
+    lowered = content_type.casefold().split(";", 1)[0].strip()
+    if not lowered:
+        return True
+    return lowered.startswith("text/") or lowered in {"application/octet-stream", "binary/octet-stream"}
+
+
+def _content_type_allowed(allow: ProxyAllow, content_type: str) -> bool:
+    if allow == "media":
+        return is_allowed_media_type(content_type)
+    if allow == "hls_part":
+        return is_allowed_hls_part(content_type)
+    return is_allowed_subtitle_type(content_type)
 
 
 def _is_multi_range(range_header: str) -> bool:
@@ -151,12 +184,51 @@ class StreamClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    async def fetch_bytes(
+        self,
+        *,
+        source_id: str,
+        target: UpstreamPlaybackTarget,
+        max_bytes: int = PLAYLIST_MAX_BYTES,
+    ) -> bytes:
+        outbound: dict[str, str] = {**target.headers, "Accept-Encoding": "identity"}
+        await self._gate.acquire(source_id)
+        try:
+            upstream_req = self._client.build_request("GET", target.url, headers=outbound)
+            response = await self._client.send(upstream_req, stream=True)
+        except httpx.RequestError as exc:
+            self._gate.release(source_id)
+            logger.warning("playback upstream request failed", source=source_id, error=str(exc))
+            raise HTTPException(status_code=502, detail="上游不可达") from exc
+        try:
+            if 300 <= response.status_code < 400:
+                raise HTTPException(status_code=502, detail="上游重定向被拒绝")
+            if response.status_code >= 500:
+                raise HTTPException(status_code=502, detail="上游失败")
+            if response.status_code >= 400:
+                raise HTTPException(status_code=502, detail="上游失败")
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in response.aiter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise HTTPException(status_code=502, detail="播放列表过大")
+                chunks.append(chunk)
+            return b"".join(chunks)
+        except HTTPException:
+            raise
+        finally:
+            await response.aclose()
+            self._gate.release(source_id)
+
     async def proxy(
         self,
         request: Request,
         *,
         source_id: str,
         target: UpstreamPlaybackTarget,
+        allow: ProxyAllow = "media",
+        rewrite_playlist: Callable[[str], str] | None = None,
     ) -> Response:
         range_header = request.headers.get("range")
         if range_header is not None and _is_multi_range(range_header):
@@ -189,7 +261,23 @@ class StreamClient:
             if response.status_code >= 500:
                 raise HTTPException(status_code=502, detail="上游失败")
             content_type = response.headers.get("content-type", "")
-            if not is_allowed_media_type(content_type):
+            if is_playlist_type(content_type) and rewrite_playlist is not None and method == "GET":
+                raw = await response.aread()
+                if len(raw) > PLAYLIST_MAX_BYTES:
+                    raise HTTPException(status_code=502, detail="播放列表过大")
+                try:
+                    decoded = raw.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise HTTPException(status_code=502, detail="播放列表不是文本") from exc
+                text = rewrite_playlist(decoded)
+                await response.aclose()
+                self._gate.release(source_id)
+                return Response(
+                    content=text.encode("utf-8"),
+                    media_type=PLAYLIST_MEDIA_TYPE,
+                    headers={"Cache-Control": PLAYLIST_CACHE_CONTROL},
+                )
+            if not _content_type_allowed(allow, content_type):
                 logger.warning(
                     "playback upstream content-type rejected",
                     source=source_id,
@@ -208,6 +296,8 @@ class StreamClient:
         for key in list(filtered):
             if key.casefold() in secret_keys:
                 del filtered[key]
+        if allow == "hls_part":
+            filtered["Cache-Control"] = HLS_PART_CACHE_CONTROL
 
         async def body() -> AsyncIterator[bytes]:
             try:

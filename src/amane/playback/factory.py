@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
+from fastapi import Request
+from starlette.responses import Response
 
 from ..net.errors import FailureReason, SourceError
 from ..plugins.api import (
@@ -17,10 +19,19 @@ from ..plugins.api import (
     PlaybackProvider,
     PlaybackQuery,
     PluginContext,
+    SubtitleTrack,
     UpstreamPlaybackTarget,
 )
 from ..plugins.models import PluginConfig, SourceCapability
 from .cache import PlaybackCaches
+from .hls import (
+    HLS_CONTENT_TYPE,
+    PLAYLIST_CACHE_CONTROL,
+    HlsUriMap,
+    rewrite_playlist,
+    uri_looks_like_playlist,
+)
+from .href import hls_part_href
 from .local import LOCAL_SOURCE_ID, LocalPlaybackProvider
 from .proxy import StreamClient
 
@@ -44,6 +55,7 @@ class ListedSource:
     available: bool
     media_file_id: int | None
     detail: str | None = None
+    subtitles: tuple[SubtitleTrack, ...] = ()
 
 
 class PlaybackFactory:
@@ -68,6 +80,7 @@ class PlaybackFactory:
         self._caches = PlaybackCaches()
         self._providers: dict[str, PlaybackProvider] = {}
         self._local = LocalPlaybackProvider(safe_dirs)
+        self._hls = HlsUriMap()
 
     async def aclose(self) -> None:
         await self._stream.aclose()
@@ -253,6 +266,7 @@ class PlaybackFactory:
                 seekable=offer.seekable,
                 available=True,
                 media_file_id=offer.media_file_id,
+                subtitles=offer.subtitles,
             )
             self._caches.probe_hits.put(cache_key, listed)
             return listed
@@ -263,7 +277,7 @@ class PlaybackFactory:
         self,
         source_id: str,
         query: PlaybackQuery,
-    ) -> FilePlaybackTarget | UpstreamPlaybackTarget:
+    ) -> FilePlaybackTarget | UpstreamPlaybackTarget | HlsPlaybackTarget:
         open_key = f"{source_id}:{query.metadata_id}:{query.selected_file_id}"
         if self._caches.open_fail.is_blocked(open_key):
             raise SourceError(FailureReason.NETWORK, detail="上游暂时不可用")
@@ -281,10 +295,107 @@ class PlaybackFactory:
             raise SourceError(FailureReason.NETWORK, detail="解析播放源失败") from None
         if target is None:
             raise LookupError(source_id)
-        if isinstance(target, HlsPlaybackTarget):
-            raise SourceError(FailureReason.NO_USABLE_METADATA, detail="此播放源尚未支持 HLS")
         if isinstance(target, FilePlaybackTarget):
             if source_id != LOCAL_SOURCE_ID:
                 raise SourceError(FailureReason.NO_USABLE_METADATA, detail="插件不得返回本地文件")
             return target
         return target
+
+    def _map_hls_uri(self, source_id: str, query: PlaybackQuery, target: HlsPlaybackTarget, uri: str) -> str:
+        token = self._hls.register(source_id=source_id, query=query, locator=target.locator, uri=uri)
+        return hls_part_href(source_id, query.metadata_id, query.selected_file_id, token)
+
+    async def hls_playlist_text(
+        self,
+        source_id: str,
+        query: PlaybackQuery,
+        target: HlsPlaybackTarget | None = None,
+    ) -> str:
+        resolved = target if target is not None else await self.resolve(source_id, query)
+        if not isinstance(resolved, HlsPlaybackTarget):
+            raise SourceError(FailureReason.NO_USABLE_METADATA, detail="不是 HLS 播放源")
+        playlist = await resolved.locator.load_playlist(query)
+        return rewrite_playlist(
+            playlist.text,
+            lambda uri: self._map_hls_uri(source_id, query, resolved, uri),
+        )
+
+    def playlist_response(self, text: str, *, head: bool) -> Response:
+        headers = {"Cache-Control": PLAYLIST_CACHE_CONTROL}
+        if head:
+            return Response(status_code=200, headers=headers, media_type=HLS_CONTENT_TYPE)
+        return Response(
+            content=text.encode("utf-8"),
+            media_type=HLS_CONTENT_TYPE,
+            headers=headers,
+        )
+
+    async def serve_hls_part(
+        self,
+        request: Request,
+        *,
+        source_id: str,
+        query: PlaybackQuery,
+        token: str,
+    ) -> Response:
+        mapped = self._hls.get(token)
+        if (
+            mapped is None
+            or mapped.source_id != source_id
+            or mapped.query.metadata_id != query.metadata_id
+            or mapped.query.selected_file_id != query.selected_file_id
+        ):
+            raise LookupError(token)
+        located = await mapped.locator.locate(mapped.query, mapped.uri)
+
+        def map_uri(uri: str) -> str:
+            child = self._hls.register(
+                source_id=source_id,
+                query=mapped.query,
+                locator=mapped.locator,
+                uri=uri,
+            )
+            return hls_part_href(
+                source_id,
+                mapped.query.metadata_id,
+                mapped.query.selected_file_id,
+                child,
+            )
+
+        def rewriter(text: str) -> str:
+            return rewrite_playlist(text, map_uri)
+
+        if uri_looks_like_playlist(mapped.uri, located):
+            raw = await self._stream.fetch_bytes(source_id=source_id, target=located)
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise SourceError(FailureReason.NETWORK, detail="播放列表不是文本") from exc
+            return self.playlist_response(rewriter(text), head=request.method == "HEAD")
+        return await self._stream.proxy(
+            request,
+            source_id=source_id,
+            target=located,
+            allow="hls_part",
+            rewrite_playlist=rewriter,
+        )
+
+    async def load_subtitle(
+        self,
+        source_id: str,
+        query: PlaybackQuery,
+        track_id: str,
+    ) -> str | UpstreamPlaybackTarget:
+        provider = self.provider(source_id)
+        if provider is None:
+            raise LookupError(source_id)
+        try:
+            result = await provider.subtitle(query, track_id)
+        except SourceError:
+            raise
+        except Exception:
+            logger.exception("playback subtitle crashed", source=source_id)
+            raise SourceError(FailureReason.NETWORK, detail="读取字幕失败") from None
+        if result is None:
+            raise LookupError(track_id)
+        return result

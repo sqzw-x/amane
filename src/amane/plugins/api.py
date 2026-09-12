@@ -11,9 +11,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
+from urllib.parse import urljoin
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..net.errors import FailureReason, SourceError
 from ..parsing.file_info import ContentType, Mosaic
 from .models import PluginConfig, SourceDescriptor
 
@@ -76,6 +78,16 @@ class PlaybackQuery(BaseModel):
     selected_file_id: int | None = None
 
 
+class SubtitleTrack(BaseModel):
+    """WebVTT track advertised next to a playback offer or HLS presentation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9._-]+$")
+    label: str
+    language: str | None = None
+
+
 class PlaybackOffer(BaseModel):
     """Result of ``probe``: whether this source can play the query."""
 
@@ -85,6 +97,7 @@ class PlaybackOffer(BaseModel):
     content_type: str
     seekable: bool = True
     media_file_id: int | None = None
+    subtitles: tuple[SubtitleTrack, ...] = ()
 
 
 class FilePlaybackTarget(BaseModel):
@@ -110,12 +123,76 @@ class UpstreamPlaybackTarget(BaseModel):
     content_type: str | None = None
 
 
-class HlsPlaybackTarget(BaseModel):
-    """HLS presentation. Host rejects this until playlist rewrite lands."""
+class HlsPlaylist(BaseModel):
+    """Raw playlist text plus the URL used to resolve relative URIs."""
 
     model_config = ConfigDict(extra="forbid")
 
+    text: str
+    base_url: str
+
+
+class HlsLocator(ABC):
+    """Plugin-supplied playlist fetch and per-URI location.
+
+    The host rewrites every playlist URI onto its own prefix. Segment names are
+    not assumed to be sequential; ``locate`` receives the URI exactly as it
+    appeared in the playlist.
+    """
+
+    @abstractmethod
+    async def load_playlist(self, query: PlaybackQuery) -> HlsPlaylist:
+        """Return the current playlist. Raise ``SourceError`` when it cannot be loaded."""
+        ...
+
+    @abstractmethod
+    async def locate(self, query: PlaybackQuery, uri: str) -> UpstreamPlaybackTarget:
+        """Turn one playlist URI into an upstream fetch the host will proxy."""
+        ...
+
+
+class RelativeHlsLocator(HlsLocator):
+    """Resolve playlist URIs with ``urljoin`` against ``playlist_url``.
+
+    Pass ``playlist_text`` when the plugin already loaded the manifest. Otherwise
+    pass ``http_client`` so each ``load_playlist`` refetches.
+    """
+
+    def __init__(
+        self,
+        playlist_url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        playlist_text: str | None = None,
+        http_client: HttpClient | None = None,
+    ) -> None:
+        self._playlist_url = playlist_url
+        self._headers = dict(headers or {})
+        self._playlist_text = playlist_text
+        self._http_client = http_client
+
+    async def load_playlist(self, query: PlaybackQuery) -> HlsPlaylist:
+        if self._playlist_text is not None:
+            return HlsPlaylist(text=self._playlist_text, base_url=self._playlist_url)
+        if self._http_client is None:
+            raise SourceError(FailureReason.NETWORK, detail="播放列表缺少内容")
+        text = await self._http_client.get_text(self._playlist_url, headers=self._headers or None)
+        return HlsPlaylist(text=text, base_url=self._playlist_url)
+
+    async def locate(self, query: PlaybackQuery, uri: str) -> UpstreamPlaybackTarget:
+        return UpstreamPlaybackTarget(
+            url=urljoin(self._playlist_url, uri),
+            headers=self._headers,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class HlsPlaybackTarget:
+    """HLS presentation. Host rewrites the playlist; the locator finds each URI."""
+
+    locator: HlsLocator
     kind: Literal["hls"] = "hls"
+    subtitles: tuple[SubtitleTrack, ...] = ()
 
 
 PlaybackTarget = FilePlaybackTarget | UpstreamPlaybackTarget | HlsPlaybackTarget
@@ -133,6 +210,10 @@ class PlaybackProvider(ABC):
     async def resolve(self, query: PlaybackQuery) -> PlaybackTarget | None:
         """Return the host-executed playback target. ``None`` = no stream."""
         ...
+
+    async def subtitle(self, query: PlaybackQuery, track_id: str) -> str | UpstreamPlaybackTarget | None:
+        """Return WebVTT text, an upstream VTT URL, or ``None`` if the track is absent."""
+        return None
 
 
 @dataclass(frozen=True, slots=True)

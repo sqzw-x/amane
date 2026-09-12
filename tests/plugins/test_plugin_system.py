@@ -425,6 +425,7 @@ from amane.plugin import (
     PlaybackProvider,
     PlaybackQuery,
     PluginContext,
+    RelativeHlsLocator,
     SourceCapability,
     SourceDescriptor,
     SourceError,
@@ -437,6 +438,7 @@ class _Config(BaseModel):
     behavior: str = "upstream"
     url: str = "http://127.0.0.1:9/"
     headers: dict[str, str] = Field(default_factory=dict)
+    playlist: str | None = None
 
 
 class _Provider(PlaybackProvider):
@@ -448,6 +450,12 @@ class _Provider(PlaybackProvider):
             return None
         if self._config.behavior == "error":
             raise SourceError(FailureReason.NETWORK, detail="上游失败")
+        if self._config.behavior == "hls":
+            return PlaybackOffer(
+                name="Remote",
+                content_type="application/vnd.apple.mpegurl",
+                seekable=False,
+            )
         return PlaybackOffer(name="Remote", content_type="video/mp4", seekable=True)
 
     async def resolve(self, query: PlaybackQuery):
@@ -456,7 +464,13 @@ class _Provider(PlaybackProvider):
         if self._config.behavior == "error":
             raise SourceError(FailureReason.NETWORK, detail="上游失败")
         if self._config.behavior == "hls":
-            return HlsPlaybackTarget()
+            return HlsPlaybackTarget(
+                locator=RelativeHlsLocator(
+                    self._config.url,
+                    headers=self._config.headers,
+                    playlist_text=self._config.playlist,
+                )
+            )
         if self._config.behavior == "file":
             return FilePlaybackTarget(path="/tmp/x.mp4", content_type="video/mp4", media_file_id=1)
         return UpstreamPlaybackTarget(
