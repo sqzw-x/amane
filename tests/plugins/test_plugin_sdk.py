@@ -77,16 +77,19 @@ _REEXPORTS: tuple[tuple[str, object], ...] = (
 )
 
 
-@pytest.mark.parametrize("value", ["2230", "a.b-c_d", "A1", "x" * 64])
+@pytest.mark.parametrize("value", ["2230", "a.b-c_d", "A1", "x" * 64, ".hidden", "_zh", "-en", "..."])
 def test_path_segment_ids_accept_path_safe_values(value: str) -> None:
-    """流标识与轨道 id 进路径, 首字符必须是字母或数字."""
+    """流标识与轨道 id 进路径: 字符集合法且不是整值 ``.`` / ``..`` 的一律放行.
+
+    以标点开头的值 (``.zh`` / ``_default``) 是普通路径段, 字幕轨道 id 在旧版本里就允许它们.
+    """
     assert PlaybackOffer(key=value, name="n", content_type="video/mp4").key == value
     assert SubtitleTrack(id=value, label="l").id == value
 
 
-@pytest.mark.parametrize("value", ["", ".", "..", ".hidden", "../up", "a/b", "a b", "x" * 65])
+@pytest.mark.parametrize("value", ["", ".", "..", "../up", "a/b", "a b", "x" * 65])
 def test_path_segment_ids_reject_unsafe_values(value: str) -> None:
-    """``.`` 与 ``..`` 会被浏览器与服务器归一化, 选中这条流的意图随之丢失, 必须在契约层拒绝."""
+    """整值 ``.`` 与 ``..`` 会被 URL 归一化, 请求落到别的地址上, 必须在契约层拒绝."""
     with pytest.raises(ValidationError):
         PlaybackOffer(key=value, name="n", content_type="video/mp4")
     with pytest.raises(ValidationError):

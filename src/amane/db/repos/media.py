@@ -256,7 +256,12 @@ class MediaRepoMixin(RepositoryMixinBase):
             }
 
     async def get_media_by_metadata_id(self, metadata_id: int) -> list[MediaFile]:
+        """按入库顺序 (id 升序) 返回条目的文件.
+
+        顺序是契约的一部分: 组装给播放源的快照按这个顺序排列, 来源据此决定列表顺序与默认选中的
+        那一条. 不排序时得到的是 SQLite 的扫描顺序, 同一个条目可能换一条默认流.
+        """
         async with self._session() as session:
-            stmt = select(MediaFile).where(MediaFile.metadata_id == metadata_id)
+            stmt = select(MediaFile).where(MediaFile.metadata_id == metadata_id).order_by(col(MediaFile.id))
             result = await session.exec(stmt)
             return list(result.all())

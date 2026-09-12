@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, ClassVar, Literal
 from urllib.parse import urljoin
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 from ..net.errors import FailureReason, SourceError
@@ -82,10 +82,26 @@ class PlaybackQuery(BaseModel):
     selected_key: str | None = None
 
 
-#: 进路径的标识 (流的 key, 字幕轨道 id) 的形状: 首字符必须是字母或数字.
-#: 只允许 ``[a-zA-Z0-9._-]`` 会放行 ``.`` 与 ``..``, 而这两个段在浏览器与 ASGI 服务器上会被
-#: 归一化掉 —— 请求落到别的地址, 选中这条流的意图随之丢失.
-_PATH_SEGMENT_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$"
+#: 进路径的标识 (流的 key, 字幕轨道 id) 的字符集. 路由层用同一个常量, 两处不允许各写一份.
+PATH_SEGMENT_PATTERN = r"^[a-zA-Z0-9._-]{1,64}$"
+
+
+def validate_path_segment(value: str) -> str:
+    """拒绝会被 URL 归一化掉的整值段.
+
+    只有整值 ``.`` 与 ``..`` 会被浏览器与 ASGI 服务器吃掉 (``.hidden`` / ``...`` / ``_default``
+    都是普通段), 而它们被吃掉时请求会落到别的地址上, 选中这条流的意图随之丢失. 用校验器而不是
+    收紧正则: 进路径的标识允许以标点开头 (``_zh``), 收紧会破坏已发布的字幕轨道 id.
+    """
+    if value in {".", ".."}:
+        raise ValueError("进路径的标识不允许是 . 或 ..")
+    return value
+
+
+#: 进路径的标识类型: 字符集由正则约束, 整值 ``.`` / ``..`` 由校验器拒绝.
+PathSegment = Annotated[
+    str, Field(min_length=1, max_length=64, pattern=PATH_SEGMENT_PATTERN), AfterValidator(validate_path_segment)
+]
 
 
 class SubtitleTrack(BaseModel):
@@ -93,7 +109,7 @@ class SubtitleTrack(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1, max_length=64, pattern=_PATH_SEGMENT_PATTERN)
+    id: PathSegment
     label: str
     language: str | None = None
 
@@ -116,7 +132,7 @@ class PlaybackOffer(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    key: str = Field(min_length=1, max_length=64, pattern=_PATH_SEGMENT_PATTERN)
+    key: PathSegment
     name: str = Field(min_length=1)
     content_type: str
     seekable: bool = True

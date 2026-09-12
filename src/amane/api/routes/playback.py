@@ -14,18 +14,15 @@ from ...playback.hls import PLAYLIST_CACHE_CONTROL, is_hls_content_type
 from ...playback.href import playlist_href, stream_href, subtitle_href
 from ...playback.proxy import NOSNIFF
 from ...playback.query import playback_query
-from ...plugins.api import FilePlaybackTarget, PlaybackQuery, UpstreamPlaybackTarget
+from ...plugins.api import PATH_SEGMENT_PATTERN, FilePlaybackTarget, PlaybackQuery, UpstreamPlaybackTarget
 from ..deps import RepoDep, RuntimeDep
 from ..models.playback import PlaybackSourceItem, PlaybackSourceListResponse, PlaybackSubtitleItem
 
 router = APIRouter(prefix="/playback", tags=["playback"])
 
 _TOKEN_PATTERN = r"^[0-9a-f]{32}$"
-#: 进路径的标识 (流的 key, 字幕轨道 id) 与 ``PlaybackOffer.key`` 同一形状: 首字符是字母或数字,
-#: 于是 ``.`` 与 ``..`` 这类会被归一化的段不可能出现.
-_PATH_SEGMENT_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$"
-_TRACK_PATTERN = _PATH_SEGMENT_PATTERN
-_KEY_PATTERN = _PATH_SEGMENT_PATTERN
+#: 进路径的标识 (流的 key, 字幕轨道 id) 的形状由插件契约声明, 路由不与它各写一份.
+_PATH_SEGMENT_PATTERN = PATH_SEGMENT_PATTERN
 
 
 def _source_href(source_id: str, metadata_id: int, key: str | None, content_type: str) -> str:
@@ -144,7 +141,7 @@ async def play_stream_playlist(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
+    key: Annotated[str, Path(pattern=_PATH_SEGMENT_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
@@ -156,7 +153,7 @@ async def play_stream_playlist_head(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
+    key: Annotated[str, Path(pattern=_PATH_SEGMENT_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
@@ -190,7 +187,7 @@ async def play_stream_hls_part(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
+    key: Annotated[str, Path(pattern=_PATH_SEGMENT_PATTERN)],
     token: Annotated[str, Path(pattern=_TOKEN_PATTERN)],
     runtime: RuntimeDep,
 ) -> Response:
@@ -202,7 +199,7 @@ async def play_stream_hls_part_head(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
+    key: Annotated[str, Path(pattern=_PATH_SEGMENT_PATTERN)],
     token: Annotated[str, Path(pattern=_TOKEN_PATTERN)],
     runtime: RuntimeDep,
 ) -> Response:
@@ -214,7 +211,7 @@ async def play_metadata_subtitle(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    track_id: Annotated[str, Path(pattern=_TRACK_PATTERN)],
+    track_id: Annotated[str, Path(pattern=_PATH_SEGMENT_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
@@ -226,8 +223,8 @@ async def play_stream_subtitle(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
-    track_id: Annotated[str, Path(pattern=_TRACK_PATTERN)],
+    key: Annotated[str, Path(pattern=_PATH_SEGMENT_PATTERN)],
+    track_id: Annotated[str, Path(pattern=_PATH_SEGMENT_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
@@ -261,7 +258,7 @@ async def play_stream(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
+    key: Annotated[str, Path(pattern=_PATH_SEGMENT_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
@@ -273,7 +270,7 @@ async def play_stream_head(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
+    key: Annotated[str, Path(pattern=_PATH_SEGMENT_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
