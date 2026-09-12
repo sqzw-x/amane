@@ -109,7 +109,6 @@ class FilePlaybackTarget(BaseModel):
     kind: Literal["file"] = "file"
     path: Path
     content_type: str
-    size: int | None = None
     media_file_id: int
 
 
@@ -202,7 +201,6 @@ class HlsPlaybackTarget:
 
     locator: HlsLocator
     kind: Literal["hls"] = "hls"
-    subtitles: tuple[SubtitleTrack, ...] = ()
 
 
 PlaybackTarget = FilePlaybackTarget | UpstreamPlaybackTarget | HlsPlaybackTarget

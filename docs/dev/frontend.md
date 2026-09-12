@@ -19,7 +19,7 @@
 
 影片详情的用户标签与刮削标签分栏. 加减菜单勾选后保持打开, 底部按钮一次提交多名; 绑定/解绑是前端循环单条 API. `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许用来给一部影片一次挂多个标签.
 
-影片详情在封面预告片之外播放正片. 可播放源由 `GET /api/playback/sources` 探测; 列表含已启用的全部源, 当前不可播的源在选择器中标记为不可用并展示主机给出的 `detail`, 无可播源时不渲染播放器. `video` 的媒体地址只使用列表给出的本机路径; 多于一个源时提供选择. 码流与字幕均为同源 `/api/playback/...`, 原生 `<video>` 不设置 `crossOrigin` (凭据模式与 `Access-Control-Allow-Origin: *` 不能同时成立). `video/*` 使用原生控件; HLS (`mpegurl`) 在 Safari 等可原生播放的浏览器采用 `<video src>`, 其它浏览器用 `hls.js` 且 XHR `withCredentials`. 列表给出的 WebVTT 渲染为 `<track>`. 不允许把上游 URL 或密钥写入前端状态. 播放失败展示主机返回的中文 `detail`.
+影片详情在封面预告片之外播放正片. 可播放源由 `GET /api/playback/sources` 探测; 列表含已启用的全部源, 当前不可播的源在选择器中标记为不可用并展示主机给出的 `detail`; 仅当至少一个源可用, 或至少一个源带非空 `detail` 时渲染播放区块, 其余情况整块不渲染. `video` 的媒体地址只使用列表给出的本机路径; 多于一个源时提供选择. 码流与字幕均为同源 `/api/playback/...`, 原生 `<video>` 不设置 `crossOrigin` (凭据模式与 `Access-Control-Allow-Origin: *` 不能同时成立). `video/*` 使用原生控件; HLS (`mpegurl`) 在 Safari 等可原生播放的浏览器采用 `<video src>`, 其它浏览器用 `hls.js` 且 XHR `withCredentials`. 列表给出的 WebVTT 渲染为 `<track>`. 不允许把上游 URL 或密钥写入前端状态. 播放失败展示主机返回的中文 `detail`.
 
 分类实体页必须是 `catalog.$kind_.$facetId.tsx` (trailing `_`): `$kind` 是词云叶页而非 layout, 写成 `catalog.$kind.$facetId` 会成为无 `<outlet />` 的父路由的子路由, 子页永不渲染.
 
@@ -49,7 +49,7 @@ Tabs 同时挂载全部条目, 叶子 `id`/`htmlFor` 必须经由 `useFieldDomId
 
 可增减 key 的 dict (无 `x-frozen-keys`): 值为空数组 / 空对象 / `null` 的条目与缺席等价, 编码时删除, 条目控件把值清空时也删除该 key. 新增 key 的空默认值仍留在表单上供继续填写, 在写入值之前不构成变更. `x-frozen-keys` 必须保留全部 key, 空列表原样提交 (`content_routes` 的空列表是关停该类型; 缺席会被校验补回默认路由). dirty 与 PATCH 都比较编码后的值.
 
-`/plugins` 通过 `/api/plugins` 取得插件自带 JSON Schema, 单独渲染每个来源配置; 插件配置不进入核心 HotSettings 表单. 页面按能力分为影片刮削与播放源: 刮削区链到内容路由设置, 播放源不进入该表单. 安装用 `PathPicker` 选服务器目录/zip, 或上传本机 zip; 重新扫描 / 卸载经由同一资源的 POST/DELETE, 成功后同时失效插件列表与 config schema (路由 enum 会变).
+`/plugins` 通过 `/api/plugins` 取得插件自带 JSON Schema, 单独渲染每个来源配置; 插件配置不进入核心 HotSettings 表单. 页面按能力分区: 声明 `film_metadata` 的进入影片刮削区 (该区链到内容路由设置), 声明 `playback` 的进入播放源区; 同时声明两者的插件在两个分区都列出, 配置仍只有一份, 不进入内容路由. 安装用 `PathPicker` 选服务器目录/zip, 或上传本机 zip; 重新扫描 / 卸载经由同一资源的 POST/DELETE, 成功后同时失效插件列表与 config schema (路由 enum 会变).
 
 任务 / 定时提交用 `DiscriminatedSchemaForm`: 外部选 `type` → schema variant → 去掉 const `type` 后交给 `create` 模式. 短枚举共用 `EnumToggle` (`components/common/enum-toggle.tsx`): 项间分隔线 + 滑动指示; `fullWidth` 占据整行 (任务/定时 type、cron 模式、订阅内容类型), 默认按文案宽度 (Schema 表单短枚举、库放置方式/自动化、间隔单位). 片库 grid/list 等页面 view 切换仍用 SegmentedControl. 定时的 cron 用 `CronPicker`: 可视化覆盖间隔/每天/每周/每月, 无法往返的表达式回落「高级」手写; 产出 5-field, 与后端 croniter 一致. 每天/每周/每月的时刻按浏览器本地墙钟填写, 写出时换算为 UTC 字段 (星期与日期随跨日平移); 间隔不换算; 「高级」手写按 UTC. 定时列表与编辑弹窗按响应里的 `RoutineSubmission` 展示 payload; PATCH 仍只改 name / cron / enabled.
 

@@ -90,15 +90,14 @@ def _sidecar_anchor_dirs(item: PlaybackMediaFile, video: Path) -> tuple[Path, ..
 def _resolve_local_file(
     item: PlaybackMediaFile,
     safe_dirs: list[Path] | None,
-) -> tuple[Path, int] | None:
+) -> Path | None:
     on_disk = existing_disk_path(Path(item.path))
     if on_disk is None or not on_disk.is_file():
         return None
     resolved = on_disk.resolve()
     if not _within_roots(resolved, item, safe_dirs):
         return None
-    size = resolved.stat().st_size
-    return resolved, size
+    return resolved
 
 
 @in_thread
@@ -148,7 +147,7 @@ class LocalPlaybackProvider(PlaybackProvider):
         chosen = await self._choose(query)
         if chosen is None:
             return None
-        media_file, path, _size = chosen
+        media_file, path = chosen
         sidecar = await _find_sidecar(media_file, path, self._safe_dirs)
         return PlaybackOffer(
             name="本地文件",
@@ -162,15 +161,14 @@ class LocalPlaybackProvider(PlaybackProvider):
         chosen = await self._choose(query)
         if chosen is None:
             return None
-        media_file, path, size = chosen
+        media_file, path = chosen
         return FilePlaybackTarget(
             path=path,
             content_type=media_type_for_path(path),
-            size=size,
             media_file_id=media_file.id,
         )
 
-    async def _choose(self, query: PlaybackQuery) -> tuple[PlaybackMediaFile, Path, int] | None:
+    async def _choose(self, query: PlaybackQuery) -> tuple[PlaybackMediaFile, Path] | None:
         files = _playable_files(query)
         if not files:
             return None
@@ -178,8 +176,7 @@ class LocalPlaybackProvider(PlaybackProvider):
         resolved = await _resolve_local_file(target, self._safe_dirs)
         if resolved is None:
             return None
-        path, size = resolved
-        return target, path, size
+        return target, resolved
 
     async def subtitle(self, query: PlaybackQuery, track_id: str) -> str | UpstreamPlaybackTarget | None:
         if track_id != _SIDECAR_TRACK_ID:
@@ -187,8 +184,8 @@ class LocalPlaybackProvider(PlaybackProvider):
         chosen = await self._choose(query)
         if chosen is None:
             return None
-        _media_file, path, _size = chosen
-        sidecar = await _find_sidecar(_media_file, path, self._safe_dirs)
+        media_file, path = chosen
+        sidecar = await _find_sidecar(media_file, path, self._safe_dirs)
         if sidecar is None:
             return None
         text = await _read_sidecar(sidecar)

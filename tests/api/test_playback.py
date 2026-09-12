@@ -73,6 +73,91 @@ class _HlsOriginHandler(BaseHTTPRequestHandler):
         return
 
 
+_BROKEN_PLUGIN = """
+from pydantic import BaseModel
+
+from amane.plugin import (
+    PlaybackPlugin,
+    PlaybackProvider,
+    PluginContext,
+    SourceCapability,
+    SourceDescriptor,
+)
+
+
+class Plugin(PlaybackPlugin):
+    @classmethod
+    def descriptor(cls) -> SourceDescriptor:
+        return SourceDescriptor(
+            id="acme.broken",
+            name="Broken playback",
+            version="0.1.0",
+            capabilities=frozenset({SourceCapability.PLAYBACK}),
+            urls=("https://play.example.test",),
+        )
+
+    def build_playback(self, context: PluginContext, config: BaseModel) -> PlaybackProvider:
+        raise RuntimeError("插件构造失败")
+"""
+
+# 探测调用次数落在插件自己的运行数据目录, 断言不依赖主机内部状态.
+_COUNTING_PLUGIN = """
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict
+
+from amane.plugin import (
+    PlaybackOffer,
+    PlaybackPlugin,
+    PlaybackProvider,
+    PlaybackQuery,
+    PluginContext,
+    SourceCapability,
+    SourceDescriptor,
+)
+
+COUNT_FILE = "probe-count.txt"
+
+
+class _Config(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class _Provider(PlaybackProvider):
+    def __init__(self, data_dir: Path) -> None:
+        self._data_dir = data_dir
+
+    def _record_probe(self) -> None:
+        path = self._data_dir / COUNT_FILE
+        count = int(path.read_text(encoding="utf-8")) if path.exists() else 0
+        path.write_text(str(count + 1), encoding="utf-8")
+
+    async def probe(self, query: PlaybackQuery) -> PlaybackOffer | None:
+        self._record_probe()
+        return None
+
+    async def resolve(self, query: PlaybackQuery) -> None:
+        return None
+
+
+class Plugin(PlaybackPlugin):
+    config_model = _Config
+
+    @classmethod
+    def descriptor(cls) -> SourceDescriptor:
+        return SourceDescriptor(
+            id="acme.count",
+            name="Counting playback",
+            version="0.1.0",
+            capabilities=frozenset({SourceCapability.PLAYBACK}),
+            urls=("https://play.example.test",),
+        )
+
+    def build_playback(self, context: PluginContext, config: BaseModel) -> PlaybackProvider:
+        return _Provider(context.data_dir)
+"""
+
+
 def _hls_part_tokens(playlist: str) -> list[str]:
     tokens: list[str] = []
     needle = "/hls/"
@@ -300,6 +385,81 @@ class TestPlaybackHttp:
         disabled = await client.patch("plugins/acme.play", json={"enabled": False, "config": {}})
         assert disabled.status_code == 200
         assert (await client.get(f"playback/acme.play/{none_id}")).status_code == 404
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_plugin_build_failure_is_502_not_500(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        """插件构造期异常归 502 (插件侧失败), 未启用与未安装仍是 404.
+
+        ``build_playback`` 抛错时异常不得冒到路由变成 500; 三个调用点 (码流 / 清单 / 字幕) 共用
+        ``PlaybackFactory.provider``, 返回值与错误语义必须一致.
+        """
+        data_dir = app.state.runtime.config.cold.data_dir
+        write_plugin(data_dir, "acme.broken", body=_BROKEN_PLUGIN)
+        reloaded = await client.post("plugins/reload")
+        assert reloaded.status_code == 200, reloaded.text
+        metadata_id = await _seed_title(repo, number="PLAY-BUILD")
+
+        assert (await client.get(f"playback/acme.missing/{metadata_id}")).status_code == 404
+        disabled = await client.patch("plugins/acme.broken", json={"enabled": False, "config": {}})
+        assert disabled.status_code == 200, disabled.text
+        assert (await client.get(f"playback/acme.broken/{metadata_id}")).status_code == 404
+
+        enabled = await client.patch("plugins/acme.broken", json={"enabled": True, "config": {}})
+        assert enabled.status_code == 200, enabled.text
+        for path in (
+            f"playback/acme.broken/{metadata_id}",
+            f"playback/acme.broken/{metadata_id}/index.m3u8",
+            f"playback/acme.broken/{metadata_id}/subtitles/vtt",
+        ):
+            response = await client.get(path)
+            assert response.status_code == 502, path
+            assert response.json()["detail"] == "构建播放源失败"
+
+        listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
+        assert listed.status_code == 200
+        rows = listed.json()["items"]
+        assert [row["source_id"] for row in rows] == ["local", "acme.broken"]
+        assert all(row["available"] is False for row in rows)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_probe_none_is_negatively_cached(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        """``probe`` 返回 ``None`` 单独缓存: 同一条目再次探测不再调用插件的 ``probe``."""
+        data_dir = app.state.runtime.config.cold.data_dir
+        write_plugin(data_dir, "acme.count", body=_COUNTING_PLUGIN)
+        reloaded = await client.post("plugins/reload")
+        assert reloaded.status_code == 200, reloaded.text
+        metadata_id = await _seed_title(repo, number="PLAY-NONE-CACHE")
+        enabled = await client.patch("plugins/acme.count", json={"enabled": True, "config": {}})
+        assert enabled.status_code == 200, enabled.text
+        counter = data_dir / "plugins" / "acme.count" / "probe-count.txt"
+
+        first = await client.get("playback/sources", params={"metadata_id": metadata_id})
+        assert first.status_code == 200
+        assert [(row["source_id"], row["available"]) for row in first.json()["items"]] == [
+            ("local", False),
+            ("acme.count", False),
+        ]
+        assert counter.read_text(encoding="utf-8") == "1"
+
+        second = await client.get("playback/sources", params={"metadata_id": metadata_id})
+        assert second.status_code == 200
+        assert second.json()["items"] == first.json()["items"]
+        assert counter.read_text(encoding="utf-8") == "1"
+
+        other_id = await _seed_title(repo, number="PLAY-NONE-CACHE-OTHER")
+        third = await client.get("playback/sources", params={"metadata_id": other_id})
+        assert third.status_code == 200
+        assert counter.read_text(encoding="utf-8") == "2"
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_hls_playlist_rewrite_and_parts(

@@ -152,6 +152,13 @@ class PlaybackFactory:
         return self._plugin_configs.get(source_id, PluginConfig()).enabled
 
     def provider(self, source_id: str) -> PlaybackProvider | None:
+        """构造并缓存来源的 provider.
+
+        ``None`` 表示该来源当前不可用 (未安装或未启用), 调用点按 404 处理. 构造期异常来自插件
+        侧 (``build_playback`` 抛错、运行数据目录创建失败等), 必须在这里归为 ``SourceError``,
+        否则会作为未处理异常从路由返回 500. ``LookupError`` 例外: 插件管理器认不出该来源等同于
+        「未安装」, 仍沿 404 语义向上传递.
+        """
         if not self.enabled(source_id):
             return None
         cached = self._providers.get(source_id)
@@ -164,17 +171,23 @@ class PlaybackFactory:
             return None
         config = self._plugin_configs.get(source_id, PluginConfig())
         plugin_dir = self._data_dir / "plugins" / source_id
-        plugin_dir.mkdir(parents=True, exist_ok=True)
-        built = self._plugin_manager.build_playback_provider(
-            source_id,
-            context=PluginContext(
-                source_id=source_id,
-                http_client=self._http_client,
-                web_client=self._web_client,
-                data_dir=plugin_dir,
-            ),
-            config=config,
-        )
+        try:
+            plugin_dir.mkdir(parents=True, exist_ok=True)
+            built = self._plugin_manager.build_playback_provider(
+                source_id,
+                context=PluginContext(
+                    source_id=source_id,
+                    http_client=self._http_client,
+                    web_client=self._web_client,
+                    data_dir=plugin_dir,
+                ),
+                config=config,
+            )
+        except LookupError:
+            raise
+        except Exception as exc:
+            logger.exception("playback provider build failed", source=source_id)
+            raise SourceError(FailureReason.NETWORK, detail="构建播放源失败") from exc
         self._providers[source_id] = built
         return built
 

@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread
 from typing import Any
 
+import httpx2 as httpx
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from httpx2 import ASGITransport, AsyncClient
@@ -381,28 +382,23 @@ async def test_proxy_decodes_encoded_upstream_without_stale_length() -> None:
 
 
 @pytest.mark.asyncio
-async def test_upstream_failures_do_not_leak_gate_permits() -> None:
-    """畸形上游 URL 必须归为上游失败, 且任何失败路径都归还出口额度.
+async def test_upstream_request_errors_do_not_leak_gate_permits() -> None:
+    """上游连接失败必须归还出口额度.
 
-    ``httpx.InvalidURL`` 直接继承 ``Exception`` 而不是 ``RequestError``. 额度一旦在异常路径
-    漏掉, 累积到全局上限 (``GLOBAL_CONCURRENCY``) 之后所有播放请求固定 503. 这里先发起远多于
-    上限的失败请求, 再确认同一客户端仍能完成正常请求.
+    连接被拒时 httpx 抛 ``RequestError``. 额度一旦在该分支漏掉, 累积到全局上限
+    (``GLOBAL_CONCURRENCY``) 之后所有播放请求固定 503. 这里先发起远多于上限的失败请求,
+    再确认同一客户端仍能完成正常请求.
     """
     server, _captured, _cancelled = _serve()
     stream = StreamClient()
-    bad = UpstreamPlaybackTarget(url="http://upstream.example:bad/video")
+    refused = UpstreamPlaybackTarget(url="http://127.0.0.1:9/video")
     good = UpstreamPlaybackTarget(url=_origin(server), headers={"Authorization": "Bearer secret"})
 
-    @asynccontextmanager
-    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        yield
-        await stream.aclose()
+    app = FastAPI()
 
-    app = FastAPI(lifespan=lifespan)
-
-    @app.get("/bad")
-    async def bad_route(request: Request):
-        return await stream.proxy(request, source_id="acme.play", target=bad)
+    @app.get("/refused")
+    async def refused_route(request: Request):
+        return await stream.proxy(request, source_id="acme.play", target=refused)
 
     @app.get("/good")
     async def good_route(request: Request):
@@ -413,26 +409,59 @@ async def test_upstream_failures_do_not_leak_gate_permits() -> None:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             for _ in range(GLOBAL_CONCURRENCY + 4):
                 with pytest.raises(HTTPException) as failure:
-                    await stream.fetch_bytes(source_id="acme.play", target=bad)
+                    await stream.fetch_bytes(source_id="acme.play", target=refused)
                 assert failure.value.status_code == 502
-                assert failure.value.detail == "上游地址无效"
-                resp = await client.get("/bad")
+                assert failure.value.detail == "上游不可达"
+                resp = await client.get("/refused")
                 assert resp.status_code == 502
-                assert resp.json()["detail"] == "上游地址无效"
+                assert resp.json()["detail"] == "上游不可达"
 
             assert await stream.fetch_bytes(source_id="acme.play", target=good) == b"abcdef" * 20
             ok = await client.get("/good")
             assert ok.status_code == 200
     finally:
+        await stream.aclose()
         server.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_malformed_upstream_url_rejected_before_gate() -> None:
+    """畸形上游 URL 在取得出口额度之前即被拒绝, 归为 502.
+
+    ``httpx.InvalidURL`` 直接继承 ``Exception`` 而不是 ``RequestError``; 该路径不进入
+    ``_open_upstream``, 因此不覆盖任何额度归还分支 (归还由连接失败与 post-send 两条用例覆盖).
+    """
+    stream = StreamClient()
+    bad = UpstreamPlaybackTarget(url="http://upstream.example:bad/video")
+
+    app = FastAPI()
+
+    @app.get("/bad")
+    async def bad_route(request: Request):
+        return await stream.proxy(request, source_id="acme.play", target=bad)
+
+    try:
+        with pytest.raises(HTTPException) as failure:
+            await stream.fetch_bytes(source_id="acme.play", target=bad)
+        assert failure.value.status_code == 502
+        assert failure.value.detail == "上游地址无效"
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/bad")
+            assert resp.status_code == 502
+            assert resp.json()["detail"] == "上游地址无效"
+    finally:
+        await stream.aclose()
 
 
 @pytest.mark.asyncio
 async def test_gate_released_when_playlist_rewrite_fails() -> None:
     """post-send 段的异常同样必须归还出口额度.
 
-    清单改写抛 ``SourceError`` (以及 ``aread()`` 抛 ``ReadTimeout``) 都不属于 ``HTTPException``,
-    只捕获 ``HTTPException`` 会让额度随失败次数单调减少.
+    清单改写抛 ``SourceError`` 不属于 ``HTTPException``, 只捕获 ``HTTPException`` 会让额度随
+    失败次数单调减少. ``aread()`` 的 ``ReadTimeout`` 走同一个兜底分支, 见
+    ``test_gate_released_when_playlist_read_times_out``.
     """
     playlist = b"#EXTM3U\n#EXTINF:1,\nseg.ts\n"
     server, _captured, _cancelled = _serve(media_type="application/vnd.apple.mpegurl", body=playlist)
@@ -467,6 +496,65 @@ async def test_gate_released_when_playlist_rewrite_fails() -> None:
             assert await stream.fetch_bytes(source_id="acme.play", target=target) == playlist
     finally:
         server.shutdown()
+
+
+class _StalledPlaylist(httpx.AsyncByteStream):
+    """交出首个分块后停止发送, 由 httpx 在读超时处抛 ``ReadTimeout``."""
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield b"#EXTM3U\n"
+        raise httpx.ReadTimeout("上游停止发送")
+
+    async def aclose(self) -> None:
+        return
+
+
+@pytest.mark.asyncio
+async def test_gate_released_when_playlist_read_times_out() -> None:
+    """``aread()`` 抛 ``ReadTimeout`` 时同样归还出口额度.
+
+    上游在响应头之后停止发送正文, 读超时由 httpx 在正文迭代中抛出, 不属于 ``HTTPException``;
+    只在该类型上释放会让额度随失败次数单调减少, 累积到全局上限后播放请求固定 503. 读超时按秒
+    计时, 这里用 ``MockTransport`` 直接在正文流上抛出, 不等待真实超时.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/stall.m3u8":
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/vnd.apple.mpegurl"},
+                stream=_StalledPlaylist(),
+            )
+        return httpx.Response(200, headers={"content-type": "video/mp4"}, content=b"ok")
+
+    stream = StreamClient()
+    # StreamClient 自建连接池; 替换为 MockTransport 才能在正文首块之后立即抛出读超时.
+    original = stream._client
+    stream._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    stalled = UpstreamPlaybackTarget(url="http://cdn.example/stall.m3u8")
+    healthy = UpstreamPlaybackTarget(url="http://cdn.example/ok.mp4")
+
+    app = FastAPI()
+
+    @app.get("/p")
+    async def play(request: Request):
+        return await stream.proxy(
+            request,
+            source_id="acme.play",
+            target=stalled,
+            rewrite_playlist=lambda text: text,
+        )
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for _ in range(GLOBAL_CONCURRENCY + 2):
+                with pytest.raises(httpx.ReadTimeout):
+                    await client.get("/p")
+            assert await stream.fetch_bytes(source_id="acme.play", target=healthy) == b"ok"
+    finally:
+        await stream.aclose()
+        await original.aclose()
 
 
 @pytest.mark.asyncio
