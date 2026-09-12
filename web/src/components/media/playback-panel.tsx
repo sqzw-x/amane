@@ -212,6 +212,7 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
   const [error, setError] = useState<{ href: string; message: string } | null>(null);
 
   // 列表含不可用项: 无显式选择时选中首个可用项; 全部不可用时选中首个给出故障原因的项, 用于展示不可用原因.
+  // 不可用项同样可以选中: 选中后不渲染播放器, 未在标签里说明的原因显示在下方的提示里.
   const failed = items.find((item) => failureReason(item) != null);
   const selected =
     items.find((item) => sourceKey(item) === selectedKey) ??
@@ -246,7 +247,6 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
               label: item.available
                 ? item.name
                 : t("detail.playbackUnavailableOption", { name: item.name }),
-              disabled: !item.available,
             }))}
             onChange={(value) => {
               if (value == null) return;

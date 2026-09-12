@@ -35,41 +35,63 @@ def _client(app: FastAPI) -> AsyncClient:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("range_header", "status", "body", "content_range"),
+    ("range_header", "status", "body", "content_range", "detail"),
     [
-        (None, 200, PAYLOAD, None),
-        ("bytes=0-9", 206, PAYLOAD[:10], "bytes 0-9/64"),
-        ("bytes=8-", 206, PAYLOAD[8:], "bytes 8-63/64"),
-        ("bytes=-8", 206, PAYLOAD[-8:], "bytes 56-63/64"),
-        ("bytes=64-", 416, b"", "bytes */64"),
-        ("bytes=10-2", 416, b"", "bytes */64"),
+        (None, 200, PAYLOAD, None, None),
+        ("bytes=0-9", 206, PAYLOAD[:10], "bytes 0-9/64", None),
+        ("bytes=8-", 206, PAYLOAD[8:], "bytes 8-63/64", None),
+        ("bytes=-8", 206, PAYLOAD[-8:], "bytes 56-63/64", None),
+        ("bytes=64-", 416, None, "bytes */64", "请求的字节范围无法满足"),
+        ("bytes=10-2", 416, None, "bytes */64", "请求的字节范围无法满足"),
     ],
 )
 async def test_file_response_range_contract(
     tmp_path: Path,
     range_header: str | None,
     status: int,
-    body: bytes,
+    body: bytes | None,
     content_range: str | None,
+    detail: str | None,
 ) -> None:
-    """单段 Range 返回 206, 不可满足的范围返回 416; 响应头保持码流端点契约."""
+    """单段 Range 返回 206, 不可满足的范围返回 416; 响应头保持码流端点契约.
+
+    416 的正文是 ``detail``: 前端报错时读的是响应体, 只给状态码等于让用户看到「HTTP 416」.
+    """
     path = tmp_path / "clip.mp4"
     path.write_bytes(PAYLOAD)
     headers = {"Range": range_header} if range_header is not None else None
     async with _client(_app(path)) as client:
         response = await client.get("/f", headers=headers)
         assert response.status_code == status
-        assert response.content == body
-        assert response.headers["content-length"] == str(len(body))
+        if body is None:
+            assert detail is not None
+            assert response.json() == {"detail": detail}
+            assert response.headers["content-type"] == "application/json"
+        else:
+            assert detail is None
+            assert response.content == body
+            assert response.headers["content-length"] == str(len(body))
+            assert response.headers["content-type"] == "video/mp4"
         if content_range is None:
             assert "content-range" not in response.headers
         else:
             assert response.headers["content-range"] == content_range
-        assert response.headers["content-type"] == "video/mp4"
         assert response.headers["accept-ranges"] == "bytes"
         assert response.headers.get("x-content-type-options") == "nosniff"
         assert response.headers["cache-control"] == "private"
         assert "content-disposition" not in response.headers
+
+
+@pytest.mark.asyncio
+async def test_empty_file_range_is_416_with_detail(tmp_path: Path) -> None:
+    """0 字节文件的任何 Range 都不可满足, 416 要说明是空文件而不是越界范围."""
+    path = tmp_path / "clip.mp4"
+    path.write_bytes(b"")
+    async with _client(_app(path)) as client:
+        response = await client.get("/f", headers={"Range": "bytes=0-"})
+        assert response.status_code == 416
+        assert response.headers["content-range"] == "bytes */0"
+        assert response.json() == {"detail": "条目索引的文件为空"}
 
 
 @pytest.mark.asyncio

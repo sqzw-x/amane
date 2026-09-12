@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import stat
 from collections.abc import Mapping
 from email.utils import formatdate
@@ -92,9 +93,9 @@ class IndexedFileResponse(Response):
     """输出条目已索引的本机文件.
 
     发往浏览器的响应带 ``Accept-Ranges: bytes``; 单段 ``Range`` 返回 206 与 ``Content-Range``,
-    不可满足的范围返回 416 与 ``Content-Range: bytes */<size>``, 多段 ``Range`` 与语法无法解析
-    的 ``Range`` 返回 400, ``HEAD`` 只发送响应头. 不写 ``Content-Disposition: attachment`` ——
-    浏览器会因此下载而不是播放.
+    不可满足的范围返回 416 (``Content-Range: bytes */<size>``, 响应体带 ``detail``), 多段
+    ``Range`` 与语法无法解析的 ``Range`` 返回 400, ``HEAD`` 只发送响应头. 不写
+    ``Content-Disposition: attachment`` —— 浏览器会因此下载而不是播放.
 
     路径合法性由调用方在 ``PlaybackFactory.resolve`` 中核对, 这里只处理读取期失效: 文件消失
     或不再是普通文件时返回 502, 而不是 500.
@@ -138,9 +139,17 @@ class IndexedFileResponse(Response):
             except _MalformedRange as exc:
                 raise HTTPException(status_code=400, detail="Range 无法解析") from exc
             except _UnsatisfiableRange:
+                # 416 也带 detail: 前端探测失败原因时读的是响应体, 只有状态码时用户看到的是
+                # 「无法播放此码流（HTTP 416）」, 分不出是空文件还是越界范围.
+                detail = "条目索引的文件为空" if size <= 0 else "请求的字节范围无法满足"
                 unsatisfiable = Response(
                     status_code=416,
-                    headers={**base, "content-range": f"bytes */{size}", "content-length": "0"},
+                    content=json.dumps({"detail": detail}, ensure_ascii=False).encode(),
+                    headers={
+                        **base,
+                        "content-type": "application/json",
+                        "content-range": f"bytes */{size}",
+                    },
                 )
                 await unsatisfiable(scope, receive, send)
                 return
