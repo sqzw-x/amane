@@ -735,13 +735,63 @@ class TestPlaybackHttp:
                 ),
             ]
 
-            # 每条流各自可取, 没有 key 的形式表示由插件自己挑一条.
-            for path in (f"playback/acme.play/{metadata_id}/streams/first", f"playback/acme.play/{metadata_id}"):
+            # 每条流各自可取, 没有 key 的形式表示由插件自己挑一条; 插件看到的就是地址里的那个 key.
+            key_file = data_dir / "plugins" / "acme.play" / "selected-key.txt"
+            for path, seen in (
+                (f"playback/acme.play/{metadata_id}/streams/first", "first"),
+                (f"playback/acme.play/{metadata_id}/streams/second", "second"),
+                (f"playback/acme.play/{metadata_id}", "-"),
+            ):
                 response = await client.get(path)
                 assert response.status_code == 200, path
                 assert response.content == payload
+                assert key_file.read_text(encoding="utf-8") == seen
+
+            # 插件认不出来的 key 由插件以自身原因拒绝, 主机原样变成 502.
+            rejected = await client.get(f"playback/acme.play/{metadata_id}/streams/broken")
+            assert rejected.status_code == 502
+            assert rejected.json()["detail"] == "所选文件不在该条目的索引中"
+
+            head = await client.head(f"playback/acme.play/{metadata_id}/streams/first")
+            assert head.status_code == 200
+            assert head.content == b""
         finally:
             server.shutdown()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_probe_timeout_collapses_source_to_one_row(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """探测超时的来源塌成一行不可用, 名字取 descriptor 名; 同一次请求里其它来源的多行不受影响."""
+        monkeypatch.setattr("amane.playback.factory.PROBE_BUDGET_SECONDS", 0.05)
+        data_dir = app.state.runtime.config.cold.data_dir
+        write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+        write_plugin(data_dir, "acme.slow", body=playback_plugin_source("acme.slow"))
+        reloaded = await client.post("plugins/reload")
+        assert reloaded.status_code == 200, reloaded.text
+        metadata_id = await _seed_title(repo, number="PLAY-TIMEOUT")
+        for source_id, behavior in (("acme.play", "multi"), ("acme.slow", "slow")):
+            configured = await client.patch(
+                f"plugins/{source_id}",
+                json={"enabled": True, "config": {"behavior": behavior}},
+            )
+            assert configured.status_code == 200, configured.text
+
+        listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
+        assert listed.status_code == 200
+        assert [
+            (row["source_id"], row["key"], row["name"], row["available"], row["detail"])
+            for row in listed.json()["items"]
+        ] == [
+            ("acme.play", "first", "Fake playback · First", True, None),
+            ("acme.play", "second", "Fake playback · Second", True, None),
+            ("acme.play", "broken", "Fake playback · Broken", False, "该条目索引的文件为空: broken.mp4"),
+            ("acme.slow", None, "Fake playback", False, "探测超时"),
+        ]
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_hls_playlist_rewrite_and_parts(
@@ -1216,6 +1266,40 @@ class TestResolveCache:
             assert _resolve_count(app) == 2
             assert (await client.get(_stream_path("upstream", first_id))).status_code == 200
             assert _resolve_count(app) == 2
+        finally:
+            server.shutdown()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_declared_ttl_is_per_stream_key(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        """缓存键含流标识: 换一条流要重新解析, 回到原流仍命中.
+
+        键里必须能区分「没有选中」与「选中了一条 key 恰为 ``None`` 的流」, 否则插件为前者解析出的
+        目标会顶替后者.
+        """
+        server, origin = _start_hls_origin({"/clip.mp4": ("video/mp4", b"CLIPBYTES")})
+        try:
+            await _install_cached_plugin(client, app)
+            metadata_id = await _seed_title(repo, number="PLAY-CACHE-KEY")
+            await _configure_cached(client, behavior="upstream", url=f"{origin}/clip.mp4", cache_ttl=300.0)
+            base = f"playback/{_CACHED_SOURCE}/{metadata_id}"
+
+            assert (await client.get(f"{base}/streams/alpha")).status_code == 200
+            assert _resolve_count(app) == 1
+            assert (await client.get(f"{base}/streams/alpha")).status_code == 200
+            assert _resolve_count(app) == 1
+            assert (await client.get(f"{base}/streams/beta")).status_code == 200
+            assert _resolve_count(app) == 2
+            assert (await client.get(base)).status_code == 200
+            assert _resolve_count(app) == 3
+            assert (await client.get(f"{base}/streams/None")).status_code == 200
+            assert _resolve_count(app) == 4
+            assert (await client.get(base)).status_code == 200
+            assert _resolve_count(app) == 4
         finally:
             server.shutdown()
 

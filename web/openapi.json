@@ -1491,7 +1491,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
               "title": "Key"
             }
           }
@@ -1611,7 +1611,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
               "title": "Key"
             }
           },
@@ -1681,7 +1681,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
               "title": "Track Id"
             }
           }
@@ -1741,7 +1741,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
               "title": "Key"
             }
           },
@@ -1751,7 +1751,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
               "title": "Track Id"
             }
           }
@@ -1861,7 +1861,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
               "title": "Key"
             }
           }

@@ -77,7 +77,15 @@ class PlaybackQuery(BaseModel):
     source_urls: dict[str, str] = Field(default_factory=dict)
     external_ids: dict[str, str] = Field(default_factory=dict)
     files: tuple[PlaybackMediaFile, ...] = ()
+    #: 用户选中的流; 只有 ``resolve`` / ``subtitle`` 会拿到它. 列表与选择无关, 因此 ``probe``
+    #: 收到的恒为 ``None`` —— 在 ``probe`` 里读这个字段等于读一个永远是 ``None`` 的值.
     selected_key: str | None = None
+
+
+#: 进路径的标识 (流的 key, 字幕轨道 id) 的形状: 首字符必须是字母或数字.
+#: 只允许 ``[a-zA-Z0-9._-]`` 会放行 ``.`` 与 ``..``, 而这两个段在浏览器与 ASGI 服务器上会被
+#: 归一化掉 —— 请求落到别的地址, 选中这条流的意图随之丢失.
+_PATH_SEGMENT_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$"
 
 
 class SubtitleTrack(BaseModel):
@@ -85,7 +93,7 @@ class SubtitleTrack(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9._-]+$")
+    id: str = Field(min_length=1, max_length=64, pattern=_PATH_SEGMENT_PATTERN)
     label: str
     language: str | None = None
 
@@ -94,24 +102,25 @@ class PlaybackOffer(BaseModel):
     """``probe`` 结果里的一条流.
 
     ``key`` 是这条流在该来源与条目内的标识, 由插件声明并保证稳定: 浏览器地址、解析结果缓存、
-    HLS 分片 token 的归属都按它区分. 它只用于标识, 不是路径 —— 主机不解释它的含义, 也不核对它
-    是否对应该条目的某个文件, 认不出来的 key 由插件自己拒绝.
+    HLS 分片 token 的归属都按它区分, 改动它等于让在播地址失效. 它只用于标识, 不是路径 —— 主机
+    不解释它的含义, 也不核对它是否对应该条目的某个文件, 认不出来的 key 由插件自己拒绝. 同一
+    来源的同一个条目内不允许出现重复的 key.
 
     ``name`` 是这条流在来源内的展示名 (本地文件用文件名, 上游源用版本或清晰度). 列表里的每一行
     由主机拼成「来源名 · 流的展示名」, 因此插件不要在 ``name`` 里重复来源名.
 
-    条目里列出来的候选都可以出现在这里, 不可播的候选以 ``available=False`` 与 ``detail`` 说明
-    原因: 用户看得到「这个文件在库里, 但它现在是空的」, 而不是只剩一个能播的.
+    条目里列出来的候选都可以出现在这里, 不可播的候选以 ``unavailable`` 说明原因: 用户看得到
+    「这个文件在库里, 但它现在是空的」, 而不是只剩一个能播的. 不需要这个字段就说明这条流现在
+    可播 —— 「列出来但没写原因」会让整块播放区消失, 比列出来并说明原因更差.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9._-]+$")
+    key: str = Field(min_length=1, max_length=64, pattern=_PATH_SEGMENT_PATTERN)
     name: str = Field(min_length=1)
     content_type: str
     seekable: bool = True
-    available: bool = True
-    detail: str | None = None
+    unavailable: str | None = Field(default=None, min_length=1)
     subtitles: tuple[SubtitleTrack, ...] = ()
 
 

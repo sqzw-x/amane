@@ -119,7 +119,8 @@ HlsEntry = MappedHlsUri | FailedHlsUri
 
 
 def _token_for(source_id: str, query: PlaybackQuery, uri: str) -> str:
-    payload = f"{source_id}\0{query.metadata_id}\0{query.selected_key}\0{uri}"
+    # ``selected_key or ''``: key 由插件自选, ``"None"`` 是合法取值, 不能与「没有选中」同形.
+    payload = f"{source_id}\0{query.metadata_id}\0{query.selected_key or ''}\0{uri}"
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 

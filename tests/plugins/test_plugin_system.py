@@ -414,6 +414,9 @@ def playback_plugin_source(plugin_id: str, *, capabilities: str | None = "playba
     else:
         caps_arg = "capabilities=frozenset({SourceCapability.PLAYBACK}),"
     return f"""
+import asyncio
+from pathlib import Path
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from amane.plugin import (
@@ -442,13 +445,24 @@ class _Config(BaseModel):
     file_path: str | None = None
 
 
+KEY_FILE = "selected-key.txt"
+KNOWN_KEYS = frozenset({"first", "second"})
+
+
 class _Provider(PlaybackProvider):
-    def __init__(self, config: _Config) -> None:
+    def __init__(self, config: _Config, data_dir: Path) -> None:
         self._config = config
+        self._data_dir = data_dir
+
+    def _record_key(self, query: PlaybackQuery) -> None:
+        # 把宿主送来的选中项落到插件自己的运行数据目录, 供集成断言使用.
+        (self._data_dir / KEY_FILE).write_text(query.selected_key or "-", encoding="utf-8")
 
     async def probe(self, query: PlaybackQuery) -> tuple[PlaybackOffer, ...]:
         if self._config.behavior == "none":
             return ()
+        if self._config.behavior == "slow":
+            await asyncio.sleep(3600)
         if self._config.behavior == "denied":
             raise SourceError(FailureReason.NO_USABLE_METADATA, detail="该条目索引的文件不存在: gone.mp4")
         if self._config.behavior == "error":
@@ -470,13 +484,20 @@ class _Provider(PlaybackProvider):
                     key="broken",
                     name="Broken",
                     content_type="video/mp4",
-                    available=False,
-                    detail="该条目索引的文件为空: broken.mp4",
+                    unavailable="该条目索引的文件为空: broken.mp4",
                 ),
+                # 重复 key 是插件侧缺陷: 宿主丢弃后一条并记日志.
+                PlaybackOffer(key="second", name="Duplicate", content_type="video/mp4"),
             )
         return (PlaybackOffer(key="main", name="Remote", content_type="video/mp4", seekable=True),)
 
     async def resolve(self, query: PlaybackQuery):
+        if self._config.behavior == "multi":
+            # 按选中项定位: 认不出来的 key 一律拒绝, 不允许静默换成另一条流.
+            self._record_key(query)
+            if query.selected_key is not None and query.selected_key not in KNOWN_KEYS:
+                raise SourceError(FailureReason.NO_USABLE_METADATA, detail="所选文件不在该条目的索引中")
+            return UpstreamPlaybackTarget(url=self._config.url, content_type="video/mp4")
         if self._config.behavior == "none":
             return None
         if self._config.behavior == "denied":
@@ -529,7 +550,7 @@ class Plugin(PlaybackPlugin):
 
     def build_playback(self, context: PluginContext, config: BaseModel) -> PlaybackProvider:
         assert isinstance(config, _Config)
-        return _Provider(config)
+        return _Provider(config, context.data_dir)
 """
 
 

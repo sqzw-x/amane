@@ -21,9 +21,11 @@ from ..models.playback import PlaybackSourceItem, PlaybackSourceListResponse, Pl
 router = APIRouter(prefix="/playback", tags=["playback"])
 
 _TOKEN_PATTERN = r"^[0-9a-f]{32}$"
-_TRACK_PATTERN = r"^[a-zA-Z0-9._-]{1,64}$"
-#: 流的标识由插件声明, 与轨道 id 同一形状: 进路径的段必须无分隔符.
-_KEY_PATTERN = r"^[a-zA-Z0-9._-]{1,64}$"
+#: 进路径的标识 (流的 key, 字幕轨道 id) 与 ``PlaybackOffer.key`` 同一形状: 首字符是字母或数字,
+#: 于是 ``.`` 与 ``..`` 这类会被归一化的段不可能出现.
+_PATH_SEGMENT_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$"
+_TRACK_PATTERN = _PATH_SEGMENT_PATTERN
+_KEY_PATTERN = _PATH_SEGMENT_PATTERN
 
 
 def _source_href(source_id: str, metadata_id: int, key: str | None, content_type: str) -> str:

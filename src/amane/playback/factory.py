@@ -250,17 +250,37 @@ class PlaybackFactory:
         )
 
     def _listed(self, source_id: str, offer: PlaybackOffer) -> ListedSource:
-        """把一条流映射成列表行: 行名由主机拼成「来源名 · 流的展示名」."""
+        """把一条流映射成列表行: 行名由主机拼成「来源名 · 流的展示名」.
+
+        ``available`` 由 ``unavailable`` 派生: 分开两个字段会多出「不可播但没原因」与「可播却带
+        原因」两种无意义组合, 前者会让整块播放区消失.
+        """
         return ListedSource(
             source_id=source_id,
             key=offer.key,
             name=f"{self._listed_name(source_id)} · {offer.name}",
             content_type=offer.content_type,
             seekable=offer.seekable,
-            available=offer.available,
-            detail=offer.detail,
+            available=offer.unavailable is None,
+            detail=offer.unavailable,
             subtitles=offer.subtitles,
         )
+
+    def _listed_all(self, source_id: str, offers: tuple[PlaybackOffer, ...]) -> list[ListedSource]:
+        """把一次探测的结果列成行, 丢弃重复的 key.
+
+        重复 key 会让两条流共用同一个地址与缓存桶, 前端的下拉里也会出现两个同值选项. 这是插件
+        侧的缺陷, 记日志并保留第一条, 不因此让整个来源消失.
+        """
+        listed: list[ListedSource] = []
+        seen: set[str] = set()
+        for offer in offers:
+            if offer.key in seen:
+                logger.warning("playback duplicate stream key", source=source_id, key=offer.key)
+                continue
+            seen.add(offer.key)
+            listed.append(self._listed(source_id, offer))
+        return listed
 
     async def list_sources(self, query: PlaybackQuery) -> list[ListedSource]:
         """列出全部启用来源的流; 每个来源贡献 1..N 行, 顺序即来源顺序与插件给的流顺序."""
@@ -286,7 +306,7 @@ class PlaybackFactory:
         return results
 
     async def _probe_one(self, source_id: str, query: PlaybackQuery) -> list[ListedSource]:
-        cache_key = f"{source_id}:{query.metadata_id}"
+        cache_key = f"{source_id}\0{query.metadata_id}"
         hit = self._caches.probe_hits.get(cache_key)
         if isinstance(hit, list):
             return hit
@@ -315,7 +335,7 @@ class PlaybackFactory:
                 logger.exception("playback probe crashed", source=source_id)
                 self._caches.probe_fail.put(cache_key, True)
                 return [self._unavailable(source_id, detail="探测失败")]
-            listed = [self._listed(source_id, offer) for offer in offers]
+            listed = self._listed_all(source_id, offers)
             if not listed:
                 negative = self._unavailable(source_id)
                 self._caches.probe_none.put(cache_key, negative)
@@ -336,7 +356,9 @@ class PlaybackFactory:
         ``resolve``. 只有成功的解析结果进缓存: 抛 ``SourceError`` 与返回 ``None`` 仍走
         ``open_fail`` 负缓存. 过长的声明由宿主上限 ``RESOLVE_TTL_MAX_SECONDS`` 截断.
         """
-        open_key = f"{source_id}:{query.metadata_id}:{query.selected_key}"
+        # key 由插件自选, ``"None"`` 是合法取值: 直接插值会让「没有选中」与「选中了该 key」
+        # 共用一份缓存. 插入分隔符并把缺省落成空串, 字符串 key 无 ``\0``.
+        open_key = f"{source_id}\0{query.metadata_id}\0{query.selected_key or ''}"
         cached = self._caches.resolve_hits.get(open_key)
         if cached is not None:
             return cached

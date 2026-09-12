@@ -166,6 +166,17 @@ def test_hls_uri_map_records_failed_uri_reason(detail: str | None, expected: str
     assert entry.detail == expected
 
 
+def test_hls_token_distinguishes_missing_key_from_literal_none() -> None:
+    """``key`` 由插件自选, ``"None"`` 是合法取值: 不能与「没有选中」落到同一个 token."""
+    table = HlsUriMap()
+    uri = "seg.ts"
+    unselected = table.register_failed(source_id="acme.play", query=_playback_query(), uri=uri, detail="x")
+    literal = table.register_failed(
+        source_id="acme.play", query=_playback_query(selected_key="None"), uri=uri, detail="x"
+    )
+    assert unselected != literal
+
+
 def test_hls_uri_map_failed_token_is_bound_to_its_owner() -> None:
     """失败 token 与普通 token 一样绑定来源 / 条目 / 流.
 
