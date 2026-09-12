@@ -7,6 +7,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin
 
 import structlog
 from fastapi import Request
@@ -15,6 +16,7 @@ from starlette.responses import Response
 from ..net.errors import FailureReason, SourceError
 from ..plugins.api import (
     FilePlaybackTarget,
+    HlsLocator,
     HlsPlaybackTarget,
     PlaybackProvider,
     PlaybackQuery,
@@ -33,7 +35,7 @@ from .hls import (
 )
 from .href import hls_part_href
 from .local import LOCAL_SOURCE_ID, LocalPlaybackProvider
-from .proxy import StreamClient
+from .proxy import NOSNIFF, StreamClient
 
 if TYPE_CHECKING:
     from ..crawlers.http import HttpClient
@@ -301,8 +303,20 @@ class PlaybackFactory:
             return target
         return target
 
-    def _map_hls_uri(self, source_id: str, query: PlaybackQuery, target: HlsPlaybackTarget, uri: str) -> str:
-        token = self._hls.register(source_id=source_id, query=query, locator=target.locator, uri=uri)
+    def _map_hls_uri(
+        self,
+        source_id: str,
+        query: PlaybackQuery,
+        locator: HlsLocator,
+        uri: str,
+        base_url: str,
+    ) -> str:
+        token = self._hls.register(
+            source_id=source_id,
+            query=query,
+            locator=locator,
+            uri=urljoin(base_url, uri),
+        )
         return hls_part_href(source_id, query.metadata_id, query.selected_file_id, token)
 
     async def hls_playlist_text(
@@ -317,11 +331,11 @@ class PlaybackFactory:
         playlist = await resolved.locator.load_playlist(query)
         return rewrite_playlist(
             playlist.text,
-            lambda uri: self._map_hls_uri(source_id, query, resolved, uri),
+            lambda uri: self._map_hls_uri(source_id, query, resolved.locator, uri, playlist.base_url),
         )
 
     def playlist_response(self, text: str, *, head: bool) -> Response:
-        headers = {"Cache-Control": PLAYLIST_CACHE_CONTROL}
+        headers = {**NOSNIFF, "Cache-Control": PLAYLIST_CACHE_CONTROL}
         if head:
             return Response(status_code=200, headers=headers, media_type=HLS_CONTENT_TYPE)
         return Response(
@@ -347,20 +361,10 @@ class PlaybackFactory:
         ):
             raise LookupError(token)
         located = await mapped.locator.locate(mapped.query, mapped.uri)
+        base_url = located.url
 
         def map_uri(uri: str) -> str:
-            child = self._hls.register(
-                source_id=source_id,
-                query=mapped.query,
-                locator=mapped.locator,
-                uri=uri,
-            )
-            return hls_part_href(
-                source_id,
-                mapped.query.metadata_id,
-                mapped.query.selected_file_id,
-                child,
-            )
+            return self._map_hls_uri(source_id, mapped.query, mapped.locator, uri, base_url)
 
         def rewriter(text: str) -> str:
             return rewrite_playlist(text, map_uri)

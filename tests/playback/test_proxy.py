@@ -11,7 +11,14 @@ from fastapi import FastAPI, Request
 from httpx2 import ASGITransport, AsyncClient
 from starlette.responses import StreamingResponse
 
-from amane.playback.proxy import StreamClient, is_allowed_hls_part, is_allowed_media_type, is_playlist_type
+from amane.playback.proxy import (
+    ProxyAllow,
+    StreamClient,
+    is_allowed_hls_part,
+    is_allowed_media_type,
+    is_allowed_subtitle_type,
+    is_playlist_type,
+)
 from amane.plugins.api import UpstreamPlaybackTarget
 
 
@@ -41,12 +48,28 @@ def test_allowed_media_type(content_type: str, allowed: bool) -> None:
         ("audio/aac", True),
         ("application/octet-stream", True),
         ("", True),
+        ("text/html", False),
+        ("text/vtt", False),
         ("application/vnd.apple.mpegurl", False),
         ("application/json", False),
     ],
 )
 def test_allowed_hls_part(content_type: str, allowed: bool) -> None:
     assert is_allowed_hls_part(content_type) is allowed
+
+
+@pytest.mark.parametrize(
+    ("content_type", "allowed"),
+    [
+        ("text/vtt", True),
+        ("text/plain", True),
+        ("", True),
+        ("text/html", False),
+        ("video/mp4", False),
+    ],
+)
+def test_allowed_subtitle_type(content_type: str, allowed: bool) -> None:
+    assert is_allowed_subtitle_type(content_type) is allowed
 
 
 class _Upstream(BaseHTTPRequestHandler):
@@ -136,7 +159,7 @@ def _origin(server: ThreadingHTTPServer) -> str:
     return f"http://{host}:{port}/video"
 
 
-def _app(url: str, headers: dict[str, str] | None = None) -> FastAPI:
+def _app(url: str, headers: dict[str, str] | None = None, *, allow: ProxyAllow = "media") -> FastAPI:
     stream = StreamClient()
     target = UpstreamPlaybackTarget(url=url, headers=headers or {"Authorization": "Bearer secret"})
 
@@ -149,7 +172,7 @@ def _app(url: str, headers: dict[str, str] | None = None) -> FastAPI:
 
     @app.api_route("/p", methods=["GET", "HEAD"])
     async def play(request: Request):
-        return await stream.proxy(request, source_id="acme.play", target=target)
+        return await stream.proxy(request, source_id="acme.play", target=target, allow=allow)
 
     return app
 
@@ -235,3 +258,20 @@ async def test_proxy_cancels_upstream_on_disconnect() -> None:
     finally:
         await stream.aclose()
         server.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_proxy_hls_part_rejects_4xx_and_html() -> None:
+    missing, _c1, _ = _serve(status=404)
+    html, _c2, _ = _serve(media_type="text/html", body=b"<html>x</html>")
+    try:
+        for server in (missing, html):
+            app = _app(_origin(server), allow="hls_part")
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/p")
+                assert resp.status_code == 502
+                assert "immutable" not in resp.headers.get("cache-control", "").casefold()
+    finally:
+        missing.shutdown()
+        html.shutdown()

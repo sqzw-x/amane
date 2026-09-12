@@ -13,6 +13,7 @@ from ...playback.factory import SOURCE_ID_MAX_LEN, PlaybackFactory
 from ...playback.hls import PLAYLIST_CACHE_CONTROL, is_hls_content_type
 from ...playback.href import playlist_href, stream_href, subtitle_href
 from ...playback.local import LOCAL_SOURCE_ID
+from ...playback.proxy import NOSNIFF
 from ...playback.query import playback_query
 from ...plugins.api import FilePlaybackTarget, HlsPlaybackTarget, PlaybackQuery, UpstreamPlaybackTarget
 from ..deps import RepoDep, RuntimeDep
@@ -332,7 +333,7 @@ async def _subtitle(
         return Response(
             content=result.encode("utf-8"),
             media_type="text/vtt; charset=utf-8",
-            headers={"Cache-Control": PLAYLIST_CACHE_CONTROL},
+            headers={**NOSNIFF, "Cache-Control": PLAYLIST_CACHE_CONTROL},
         )
     return await factory.stream.proxy(request, source_id=source_id, target=result, allow="subtitle")
 
@@ -359,6 +360,7 @@ async def _play(
         return FileResponse(
             path=target.path,
             media_type=target.content_type,
+            headers={**NOSNIFF, "Cache-Control": "private"},
         )
     if isinstance(target, UpstreamPlaybackTarget):
         return await factory.stream.proxy(request, source_id=source_id, target=target)

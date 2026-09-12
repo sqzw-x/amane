@@ -14,7 +14,7 @@ from ..plugins.api import (
     SubtitleTrack,
     UpstreamPlaybackTarget,
 )
-from ..utils.path import existing_disk_path, is_any_descendant, nfc_path
+from ..utils.path import existing_disk_path, is_any_descendant
 from ..utils.threads import in_thread
 from .subtitles import to_webvtt
 
@@ -23,9 +23,6 @@ _STRM_SUFFIX = ".strm"
 _SIDECAR_TRACK_ID = "sidecar"
 _SIDECAR_SUFFIXES = (".vtt", ".srt")
 _LOCAL_SUBTITLE = SubtitleTrack(id=_SIDECAR_TRACK_ID, label="字幕")
-
-LOCAL_SOURCE_ID = "local"
-_STRM_SUFFIX = ".strm"
 
 
 def media_type_for_path(path: Path) -> str:
@@ -60,8 +57,6 @@ def _resolve_local_file(
     if on_disk is None or not on_disk.is_file():
         return None
     resolved = on_disk.resolve()
-    if nfc_path(str(resolved)) != nfc_path(item.path):
-        return None
     if safe_dirs is not None:
         if not safe_dirs:
             return None

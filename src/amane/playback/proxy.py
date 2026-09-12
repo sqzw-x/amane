@@ -51,7 +51,9 @@ _PASSTHROUGH = frozenset(
 _PLAYLIST_MARKERS = ("mpegurl", "dash+xml", "x-mpegurl")
 
 GLOBAL_CONCURRENCY = 16
-PER_SOURCE_CONCURRENCY = 4
+PER_SOURCE_CONCURRENCY = 8
+ACQUIRE_TIMEOUT_SECONDS = 2.0
+NOSNIFF = {"X-Content-Type-Options": "nosniff"}
 
 
 def is_playlist_type(content_type: str) -> bool:
@@ -72,7 +74,7 @@ def is_allowed_hls_part(content_type: str) -> bool:
         return False
     if not lowered:
         return True
-    if lowered.startswith(("video/", "audio/", "text/", "image/")):
+    if lowered.startswith(("video/", "audio/")):
         return True
     return lowered in {"application/octet-stream", "binary/octet-stream"}
 
@@ -81,7 +83,7 @@ def is_allowed_subtitle_type(content_type: str) -> bool:
     lowered = content_type.casefold().split(";", 1)[0].strip()
     if not lowered:
         return True
-    return lowered.startswith("text/") or lowered in {"application/octet-stream", "binary/octet-stream"}
+    return lowered in {"text/vtt", "text/plain"}
 
 
 def _content_type_allowed(allow: ProxyAllow, content_type: str) -> bool:
@@ -117,14 +119,15 @@ class UpstreamGate:
             if source_sem is None:
                 source_sem = asyncio.Semaphore(self._per_source_limit)
                 self._per_source[source_id] = source_sem
-        if self._global.locked() or source_sem.locked():
-            raise HTTPException(status_code=503, detail="播放出口繁忙")
-        await self._global.acquire()
         try:
-            await source_sem.acquire()
-        except BaseException:
+            await asyncio.wait_for(self._global.acquire(), timeout=ACQUIRE_TIMEOUT_SECONDS)
+        except TimeoutError:
+            raise HTTPException(status_code=503, detail="播放出口繁忙") from None
+        try:
+            await asyncio.wait_for(source_sem.acquire(), timeout=ACQUIRE_TIMEOUT_SECONDS)
+        except TimeoutError:
             self._global.release()
-            raise
+            raise HTTPException(status_code=503, detail="播放出口繁忙") from None
 
     def release(self, source_id: str) -> None:
         source_sem = self._per_source.get(source_id)
@@ -203,8 +206,6 @@ class StreamClient:
         try:
             if 300 <= response.status_code < 400:
                 raise HTTPException(status_code=502, detail="上游重定向被拒绝")
-            if response.status_code >= 500:
-                raise HTTPException(status_code=502, detail="上游失败")
             if response.status_code >= 400:
                 raise HTTPException(status_code=502, detail="上游失败")
             chunks: list[bytes] = []
@@ -258,7 +259,7 @@ class StreamClient:
         try:
             if 300 <= response.status_code < 400:
                 raise HTTPException(status_code=502, detail="上游重定向被拒绝")
-            if response.status_code >= 500:
+            if response.status_code >= 400:
                 raise HTTPException(status_code=502, detail="上游失败")
             content_type = response.headers.get("content-type", "")
             if is_playlist_type(content_type) and rewrite_playlist is not None and method == "GET":
@@ -275,7 +276,7 @@ class StreamClient:
                 return Response(
                     content=text.encode("utf-8"),
                     media_type=PLAYLIST_MEDIA_TYPE,
-                    headers={"Cache-Control": PLAYLIST_CACHE_CONTROL},
+                    headers={**NOSNIFF, "Cache-Control": PLAYLIST_CACHE_CONTROL},
                 )
             if not _content_type_allowed(allow, content_type):
                 logger.warning(
@@ -292,6 +293,7 @@ class StreamClient:
             raise
 
         filtered = _filter_response_headers(response.headers)
+        filtered.update(NOSNIFF)
         secret_keys = {key.casefold() for key in target.headers}
         for key in list(filtered):
             if key.casefold() in secret_keys:

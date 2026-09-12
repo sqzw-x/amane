@@ -120,6 +120,8 @@ class TestPlaybackHttp:
         assert full.content == payload
         assert "attachment" not in full.headers.get("content-disposition", "").casefold()
         assert full.headers.get("content-type", "").startswith("video/")
+        assert full.headers.get("x-content-type-options") == "nosniff"
+        assert "private" in full.headers.get("cache-control", "").casefold()
 
         head = await client.head(stream)
         assert head.status_code == 200
@@ -204,6 +206,24 @@ class TestPlaybackHttp:
         explicit = await client.get(f"playback/local/{multi_id}/files/{small}")
         assert explicit.status_code == 200
         assert explicit.content == b"s" * 20
+
+        linked_id = await _seed_title(repo, number="PLAY-LINK")
+        real = safe_path / "real.mp4"
+        real.write_bytes(b"linked-bytes")
+        alias = safe_path / "alias.mp4"
+        alias.symlink_to(real)
+        linked_file = await repo.create_media_file(
+            library_id=1,
+            path=str(alias),
+            size=len(b"linked-bytes"),
+            metadata_id=linked_id,
+        )
+        assert linked_file.id is not None
+        linked_list = await client.get("playback/sources", params={"metadata_id": linked_id})
+        assert linked_list.json()["items"][0]["media_file_id"] == linked_file.id
+        linked_body = await client.get(f"playback/local/{linked_id}/files/{linked_file.id}")
+        assert linked_body.status_code == 200
+        assert linked_body.content == b"linked-bytes"
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_playback_plugin_resolve_and_routes(
@@ -336,6 +356,7 @@ class TestPlaybackHttp:
             assert "immutable" in cache
             assert "public" not in cache
             assert "authorization" not in {key.casefold() for key in segment.headers}
+            assert segment.headers.get("x-content-type-options") == "nosniff"
 
             key = await client.get(f"playback/acme.play/{metadata_id}/hls/{key_token}")
             assert key.status_code == 200
@@ -380,3 +401,92 @@ class TestPlaybackHttp:
         assert "WEBVTT" in vtt.text
         assert "00:00:01.000 --> 00:00:02.000" in vtt.text
         assert (await client.get(f"playback/local/{meta_id}/files/{file_id}/subtitles/missing")).status_code == 404
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_hls_nested_subdirectory_segments(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        child_playlist = b"#EXTM3U\n#EXTINF:1.0,\nseg.ts\n#EXT-X-ENDLIST\n"
+        server, origin = _start_hls_origin(
+            {
+                "/video/480p/index.m3u8": ("application/vnd.apple.mpegurl", child_playlist),
+                "/video/480p/seg.ts": ("video/mp4", b"NESTEDSEG"),
+                "/video/seg.ts": ("video/mp4", b"WRONGDIR"),
+            }
+        )
+        try:
+            data_dir = app.state.runtime.config.cold.data_dir
+            write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+            reloaded = await client.post("plugins/reload")
+            assert reloaded.status_code == 200, reloaded.text
+            metadata_id = await _seed_title(repo, number="PLAY-HLS-NEST")
+            configured = await client.patch(
+                "plugins/acme.play",
+                json={
+                    "enabled": True,
+                    "config": {
+                        "behavior": "hls",
+                        "url": f"{origin}/video/master.m3u8",
+                        "playlist": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\n480p/index.m3u8\n",
+                    },
+                },
+            )
+            assert configured.status_code == 200, configured.text
+            manifest = await client.get(f"playback/acme.play/{metadata_id}/index.m3u8")
+            assert manifest.status_code == 200
+            assert origin not in manifest.text
+            child_token = _hls_part_tokens(manifest.text)[0]
+            child = await client.get(f"playback/acme.play/{metadata_id}/hls/{child_token}")
+            assert child.status_code == 200
+            assert origin not in child.text
+            seg_token = _hls_part_tokens(child.text)[0]
+            segment = await client.get(f"playback/acme.play/{metadata_id}/hls/{seg_token}")
+            assert segment.status_code == 200
+            assert segment.content == b"NESTEDSEG"
+        finally:
+            server.shutdown()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_plugin_subtitle_text_and_upstream(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        server, origin = _start_hls_origin({"/sub.vtt": ("text/vtt", b"WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nUp\n")})
+        html_server, html_origin = _start_hls_origin({"/sub.vtt": ("text/html", b"<html>no</html>")})
+        try:
+            data_dir = app.state.runtime.config.cold.data_dir
+            write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+            reloaded = await client.post("plugins/reload")
+            assert reloaded.status_code == 200, reloaded.text
+            metadata_id = await _seed_title(repo, number="PLAY-SUB-PLUGIN")
+            enabled = await client.patch(
+                "plugins/acme.play",
+                json={"enabled": True, "config": {"behavior": "upstream", "url": f"{origin}/sub.vtt"}},
+            )
+            assert enabled.status_code == 200, enabled.text
+            inline = await client.get(f"playback/acme.play/{metadata_id}/subtitles/vtt")
+            assert inline.status_code == 200
+            assert inline.headers.get("content-type", "").startswith("text/vtt")
+            assert "WEBVTT" in inline.text
+            assert inline.headers.get("x-content-type-options") == "nosniff"
+            assert (await client.get(f"playback/acme.play/{metadata_id}/subtitles/missing")).status_code == 404
+
+            remote = await client.get(f"playback/acme.play/{metadata_id}/subtitles/remote")
+            assert remote.status_code == 200
+            assert b"WEBVTT" in remote.content
+
+            html_cfg = await client.patch(
+                "plugins/acme.play",
+                json={"enabled": True, "config": {"behavior": "upstream", "url": f"{html_origin}/sub.vtt"}},
+            )
+            assert html_cfg.status_code == 200, html_cfg.text
+            rejected = await client.get(f"playback/acme.play/{metadata_id}/subtitles/remote")
+            assert rejected.status_code == 502
+        finally:
+            server.shutdown()
+            html_server.shutdown()

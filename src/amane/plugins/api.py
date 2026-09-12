@@ -135,9 +135,10 @@ class HlsPlaylist(BaseModel):
 class HlsLocator(ABC):
     """Plugin-supplied playlist fetch and per-URI location.
 
-    The host rewrites every playlist URI onto its own prefix. Segment names are
-    not assumed to be sequential; ``locate`` receives the URI exactly as it
-    appeared in the playlist.
+    The host rewrites every playlist URI onto its own prefix. Before ``locate``,
+    the host joins each URI against the playlist that contained it (top-level
+    ``HlsPlaylist.base_url``, nested playlists the upstream URL of that playlist).
+    ``locate`` therefore receives an absolute URL.
     """
 
     @abstractmethod
@@ -154,8 +155,9 @@ class HlsLocator(ABC):
 class RelativeHlsLocator(HlsLocator):
     """Resolve playlist URIs with ``urljoin`` against ``playlist_url``.
 
-    Pass ``playlist_text`` when the plugin already loaded the manifest. Otherwise
-    pass ``http_client`` so each ``load_playlist`` refetches.
+    Pass ``playlist_text`` when the plugin already loaded the manifest. ``http_client``
+    is the scrape client: it follows scrape redirects and retries, and records task
+    HTTP. Prefer ``playlist_text``; nested segments are fetched by the host proxy.
     """
 
     def __init__(

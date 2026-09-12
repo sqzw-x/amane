@@ -142,7 +142,6 @@ function PlaybackVideo({
       controls
       playsInline
       preload="metadata"
-      crossOrigin="use-credentials"
       style={{ width: "100%", maxHeight: 480, background: "#000", borderRadius: 8 }}
       onError={onFailed}
     >

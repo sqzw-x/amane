@@ -479,6 +479,17 @@ class _Provider(PlaybackProvider):
             content_type="video/mp4",
         )
 
+    async def subtitle(self, query: PlaybackQuery, track_id: str):
+        if track_id == "vtt":
+            return "WEBVTT\\n\\n00:00:00.000 --> 00:00:01.000\\nHi\\n"
+        if track_id == "remote":
+            return UpstreamPlaybackTarget(
+                url=self._config.url,
+                headers=self._config.headers,
+                content_type="text/vtt",
+            )
+        return None
+
 
 class Plugin(PlaybackPlugin):
     config_model = _Config
