@@ -1,4 +1,4 @@
-import { Alert, Group, Select, Stack, Text } from "@mantine/core";
+import { Alert, CheckIcon, Group, Select, Stack, Text } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import type { ErrorData } from "hls.js";
 import type { TFunction } from "i18next";
@@ -255,7 +255,13 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
             }}
             allowDeselect={false}
             // 行名可能很长 (来源名 · 文件名), 区分不同流的那一段恰在末尾: 截断处用原生提示补全名.
-            renderOption={({ option }) => <span title={option.label}>{option.label}</span>}
+            // 自定义选项内容会替掉默认渲染, 选中项的勾必须自己画回来.
+            renderOption={({ option, checked }) => (
+              <Group gap={6} wrap="nowrap">
+                {checked ? <CheckIcon size={12} /> : null}
+                <span title={option.label}>{option.label}</span>
+              </Group>
+            )}
           />
         ) : (
           <Text size="xs" c="dimmed">
