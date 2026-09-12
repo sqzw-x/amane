@@ -77,7 +77,7 @@ class PlaybackQuery(BaseModel):
     source_urls: dict[str, str] = Field(default_factory=dict)
     external_ids: dict[str, str] = Field(default_factory=dict)
     files: tuple[PlaybackMediaFile, ...] = ()
-    selected_file_id: int | None = None
+    selected_key: str | None = None
 
 
 class SubtitleTrack(BaseModel):
@@ -91,14 +91,27 @@ class SubtitleTrack(BaseModel):
 
 
 class PlaybackOffer(BaseModel):
-    """Result of ``probe``: whether this source can play the query."""
+    """``probe`` 结果里的一条流.
+
+    ``key`` 是这条流在该来源与条目内的标识, 由插件声明并保证稳定: 浏览器地址、解析结果缓存、
+    HLS 分片 token 的归属都按它区分. 它只用于标识, 不是路径 —— 主机不解释它的含义, 也不核对它
+    是否对应该条目的某个文件, 认不出来的 key 由插件自己拒绝.
+
+    ``name`` 是这条流在来源内的展示名 (本地文件用文件名, 上游源用版本或清晰度). 列表里的每一行
+    由主机拼成「来源名 · 流的展示名」, 因此插件不要在 ``name`` 里重复来源名.
+
+    条目里列出来的候选都可以出现在这里, 不可播的候选以 ``available=False`` 与 ``detail`` 说明
+    原因: 用户看得到「这个文件在库里, 但它现在是空的」, 而不是只剩一个能播的.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str
+    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9._-]+$")
+    name: str = Field(min_length=1)
     content_type: str
     seekable: bool = True
-    media_file_id: int | None = None
+    available: bool = True
+    detail: str | None = None
     subtitles: tuple[SubtitleTrack, ...] = ()
 
 
@@ -129,7 +142,6 @@ class FilePlaybackTarget(_PlaybackTargetBase):
     kind: Literal["file"] = "file"
     path: Path
     content_type: str
-    media_file_id: int
 
 
 class UpstreamPlaybackTarget(_PlaybackTargetBase):
@@ -233,13 +245,21 @@ class PlaybackProvider(ABC):
     """Runtime contract consumed by the playback factory."""
 
     @abstractmethod
-    async def probe(self, query: PlaybackQuery) -> PlaybackOffer | None:
-        """Return an offer without transferring media body. ``None`` = no stream."""
+    async def probe(self, query: PlaybackQuery) -> tuple[PlaybackOffer, ...]:
+        """列出本来源在这个条目上能提供的流, 不传输媒体正文.
+
+        返回空元组表示「没有内容且无从解释」; 条目上确实有候选但没有一条可播 (文件已从磁盘消失,
+        长度为 0) 时仍把候选列出来并逐条说明原因. 整个来源都没有东西可列时抛
+        ``SourceError(NO_USABLE_METADATA)``, 原因展示给终端用户.
+        """
         ...
 
     @abstractmethod
     async def resolve(self, query: PlaybackQuery) -> PlaybackTarget | None:
-        """Return the host-executed playback target. ``None`` = no stream."""
+        """返回主机要执行的那条流的目标; ``None`` = 没有流.
+
+        ``query.selected_key`` 是用户在列表里选中的流; ``None`` 表示没有指定, 由插件自己挑一条.
+        """
         ...
 
     async def subtitle(self, query: PlaybackQuery, track_id: str) -> str | UpstreamPlaybackTarget | None:

@@ -22,12 +22,14 @@ router = APIRouter(prefix="/playback", tags=["playback"])
 
 _TOKEN_PATTERN = r"^[0-9a-f]{32}$"
 _TRACK_PATTERN = r"^[a-zA-Z0-9._-]{1,64}$"
+#: 流的标识由插件声明, 与轨道 id 同一形状: 进路径的段必须无分隔符.
+_KEY_PATTERN = r"^[a-zA-Z0-9._-]{1,64}$"
 
 
-def _source_href(source_id: str, metadata_id: int, media_file_id: int | None, content_type: str) -> str:
+def _source_href(source_id: str, metadata_id: int, key: str | None, content_type: str) -> str:
     if is_hls_content_type(content_type):
-        return playlist_href(source_id, metadata_id, media_file_id)
-    return stream_href(source_id, metadata_id, media_file_id)
+        return playlist_href(source_id, metadata_id, key)
+    return stream_href(source_id, metadata_id, key)
 
 
 def _etag_for(items: list[PlaybackSourceItem]) -> str:
@@ -46,14 +48,17 @@ def _etag_matches(header: str | None, etag: str) -> bool:
 async def _load_query(
     repo: RepoDep,
     metadata_id: int,
-    media_file_id: int | None,
+    selected_key: str | None,
 ) -> PlaybackQuery:
+    """装配查询快照.
+
+    ``selected_key`` 逐字交给插件: 主机不解释它, 也不核对它对应哪个文件 (那是插件的标识), 认不出来
+    的 key 由插件以自身原因拒绝.
+    """
     metadata = await repo.get_metadata(metadata_id)
     if metadata is None:
         raise HTTPException(status_code=404, detail="元数据不存在")
     files = await repo.get_media_by_metadata_id(metadata_id)
-    if media_file_id is not None and not any(item.id == media_file_id for item in files):
-        raise HTTPException(status_code=404, detail="文件不属于该元数据")
     library_paths: dict[int, str] = {}
     for item in files:
         if item.library_id in library_paths:
@@ -61,7 +66,7 @@ async def _load_query(
         library = await repo.get_library(item.library_id)
         if library is not None:
             library_paths[item.library_id] = library.path
-    return playback_query(metadata, files, selected_file_id=media_file_id, library_paths=library_paths)
+    return playback_query(metadata, files, selected_key=selected_key, library_paths=library_paths)
 
 
 def _playback_http_error(exc: SourceError) -> HTTPException:
@@ -87,15 +92,15 @@ async def list_playback_sources(
             content_type=row.content_type,
             seekable=row.seekable,
             available=row.available,
-            media_file_id=row.media_file_id,
+            key=row.key,
             detail=row.detail,
-            href=_source_href(row.source_id, metadata_id, row.media_file_id, row.content_type),
+            href=_source_href(row.source_id, metadata_id, row.key, row.content_type),
             subtitles=[
                 PlaybackSubtitleItem(
                     id=track.id,
                     label=track.label,
                     language=track.language,
-                    href=subtitle_href(row.source_id, metadata_id, row.media_file_id, track.id),
+                    href=subtitle_href(row.source_id, metadata_id, row.key, track.id),
                 )
                 for track in row.subtitles
             ],
@@ -132,28 +137,28 @@ async def play_metadata_playlist_head(
     return await _playlist(request, source_id, metadata_id, None, repo, runtime)
 
 
-@router.get("/{source_id}/{metadata_id}/files/{media_file_id}/index.m3u8")
-async def play_file_playlist(
+@router.get("/{source_id}/{metadata_id}/streams/{key}/index.m3u8")
+async def play_stream_playlist(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    media_file_id: Annotated[int, Path(ge=1)],
+    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
-    return await _playlist(request, source_id, metadata_id, media_file_id, repo, runtime)
+    return await _playlist(request, source_id, metadata_id, key, repo, runtime)
 
 
-@router.head("/{source_id}/{metadata_id}/files/{media_file_id}/index.m3u8", include_in_schema=False)
-async def play_file_playlist_head(
+@router.head("/{source_id}/{metadata_id}/streams/{key}/index.m3u8", include_in_schema=False)
+async def play_stream_playlist_head(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    media_file_id: Annotated[int, Path(ge=1)],
+    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
-    return await _playlist(request, source_id, metadata_id, media_file_id, repo, runtime)
+    return await _playlist(request, source_id, metadata_id, key, repo, runtime)
 
 
 @router.get("/{source_id}/{metadata_id}/hls/{token}")
@@ -178,28 +183,28 @@ async def play_metadata_hls_part_head(
     return await _hls_part(request, source_id, metadata_id, None, token, runtime)
 
 
-@router.get("/{source_id}/{metadata_id}/files/{media_file_id}/hls/{token}")
-async def play_file_hls_part(
+@router.get("/{source_id}/{metadata_id}/streams/{key}/hls/{token}")
+async def play_stream_hls_part(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    media_file_id: Annotated[int, Path(ge=1)],
+    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
     token: Annotated[str, Path(pattern=_TOKEN_PATTERN)],
     runtime: RuntimeDep,
 ) -> Response:
-    return await _hls_part(request, source_id, metadata_id, media_file_id, token, runtime)
+    return await _hls_part(request, source_id, metadata_id, key, token, runtime)
 
 
-@router.head("/{source_id}/{metadata_id}/files/{media_file_id}/hls/{token}", include_in_schema=False)
-async def play_file_hls_part_head(
+@router.head("/{source_id}/{metadata_id}/streams/{key}/hls/{token}", include_in_schema=False)
+async def play_stream_hls_part_head(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    media_file_id: Annotated[int, Path(ge=1)],
+    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
     token: Annotated[str, Path(pattern=_TOKEN_PATTERN)],
     runtime: RuntimeDep,
 ) -> Response:
-    return await _hls_part(request, source_id, metadata_id, media_file_id, token, runtime)
+    return await _hls_part(request, source_id, metadata_id, key, token, runtime)
 
 
 @router.get("/{source_id}/{metadata_id}/subtitles/{track_id}")
@@ -214,17 +219,17 @@ async def play_metadata_subtitle(
     return await _subtitle(request, source_id, metadata_id, None, track_id, repo, runtime)
 
 
-@router.get("/{source_id}/{metadata_id}/files/{media_file_id}/subtitles/{track_id}")
-async def play_file_subtitle(
+@router.get("/{source_id}/{metadata_id}/streams/{key}/subtitles/{track_id}")
+async def play_stream_subtitle(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    media_file_id: Annotated[int, Path(ge=1)],
+    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
     track_id: Annotated[str, Path(pattern=_TRACK_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
-    return await _subtitle(request, source_id, metadata_id, media_file_id, track_id, repo, runtime)
+    return await _subtitle(request, source_id, metadata_id, key, track_id, repo, runtime)
 
 
 @router.get("/{source_id}/{metadata_id}")
@@ -249,28 +254,28 @@ async def play_metadata_head(
     return await _play(request, source_id, metadata_id, None, repo, runtime)
 
 
-@router.get("/{source_id}/{metadata_id}/files/{media_file_id}")
-async def play_metadata_file(
+@router.get("/{source_id}/{metadata_id}/streams/{key}")
+async def play_stream(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    media_file_id: Annotated[int, Path(ge=1)],
+    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
-    return await _play(request, source_id, metadata_id, media_file_id, repo, runtime)
+    return await _play(request, source_id, metadata_id, key, repo, runtime)
 
 
-@router.head("/{source_id}/{metadata_id}/files/{media_file_id}", include_in_schema=False)
-async def play_metadata_file_head(
+@router.head("/{source_id}/{metadata_id}/streams/{key}", include_in_schema=False)
+async def play_stream_head(
     request: Request,
     source_id: str,
     metadata_id: Annotated[int, Path(ge=1)],
-    media_file_id: Annotated[int, Path(ge=1)],
+    key: Annotated[str, Path(pattern=_KEY_PATTERN)],
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
-    return await _play(request, source_id, metadata_id, media_file_id, repo, runtime)
+    return await _play(request, source_id, metadata_id, key, repo, runtime)
 
 
 async def _require_factory(source_id: str, runtime: RuntimeDep) -> PlaybackFactory:
@@ -288,12 +293,12 @@ async def _playlist(
     request: Request,
     source_id: str,
     metadata_id: int,
-    media_file_id: int | None,
+    selected_key: str | None,
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
     factory = await _require_factory(source_id, runtime)
-    query = await _load_query(repo, metadata_id, media_file_id)
+    query = await _load_query(repo, metadata_id, selected_key)
     try:
         text = await factory.hls_playlist_text(source_id, query)
     except LookupError:
@@ -307,7 +312,7 @@ async def _hls_part(
     request: Request,
     source_id: str,
     metadata_id: int,
-    media_file_id: int | None,
+    selected_key: str | None,
     token: str,
     runtime: RuntimeDep,
 ) -> Response:
@@ -317,7 +322,7 @@ async def _hls_part(
             request,
             source_id=source_id,
             metadata_id=metadata_id,
-            media_file_id=media_file_id,
+            selected_key=selected_key,
             token=token,
         )
     except LookupError:
@@ -330,13 +335,13 @@ async def _subtitle(
     request: Request,
     source_id: str,
     metadata_id: int,
-    media_file_id: int | None,
+    selected_key: str | None,
     track_id: str,
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
     factory = await _require_factory(source_id, runtime)
-    query = await _load_query(repo, metadata_id, media_file_id)
+    query = await _load_query(repo, metadata_id, selected_key)
     try:
         result = await factory.load_subtitle(source_id, query, track_id)
     except LookupError:
@@ -356,12 +361,12 @@ async def _play(
     request: Request,
     source_id: str,
     metadata_id: int,
-    media_file_id: int | None,
+    selected_key: str | None,
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> Response:
     factory = await _require_factory(source_id, runtime)
-    query = await _load_query(repo, metadata_id, media_file_id)
+    query = await _load_query(repo, metadata_id, selected_key)
     try:
         target = await factory.resolve(source_id, query)
     except LookupError:

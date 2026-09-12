@@ -140,8 +140,8 @@ def test_absolute_hls_uri_rejects(base: str, uri: str, detail: str) -> None:
         _absolute_hls_uri(base, uri)
 
 
-def _playback_query(metadata_id: int = 7, selected_file_id: int | None = None) -> PlaybackQuery:
-    return PlaybackQuery(metadata_id=metadata_id, number="PLAY-001", selected_file_id=selected_file_id)
+def _playback_query(metadata_id: int = 7, selected_key: str | None = None) -> PlaybackQuery:
+    return PlaybackQuery(metadata_id=metadata_id, number="PLAY-001", selected_key=selected_key)
 
 
 @pytest.mark.parametrize(
@@ -167,7 +167,7 @@ def test_hls_uri_map_records_failed_uri_reason(detail: str | None, expected: str
 
 
 def test_hls_uri_map_failed_token_is_bound_to_its_owner() -> None:
-    """失败 token 与普通 token 一样绑定来源 / 条目 / 文件.
+    """失败 token 与普通 token 一样绑定来源 / 条目 / 流.
 
     同一 URI 在同一来源条目下的 token 稳定 (浏览器手里的清单始终指向同一个地址), 条目保留登记
     时的标量供归属校验比对; 其它来源或条目得到另一个 token.
@@ -186,6 +186,6 @@ def test_hls_uri_map_failed_token_is_bound_to_its_owner() -> None:
     other_source = table.register_failed(source_id="beta.play", query=_playback_query(), uri=uri, detail="x")
     entry = table.get(token)
     assert isinstance(entry, FailedHlsUri)
-    assert (entry.source_id, entry.query.metadata_id, entry.query.selected_file_id) == ("acme.play", 7, None)
+    assert (entry.source_id, entry.query.metadata_id, entry.query.selected_key) == ("acme.play", 7, None)
     assert len({token, again, other_entry, other_source}) == 3
     assert table.get("0" * 32) is None

@@ -2278,12 +2278,20 @@ export type PathTemplateSchemaResponse = {
 
 /**
  * PlaybackSourceItem
+ *
+ * 列表里的一条流. ``name`` 是主机拼好的展示名 (来源名 · 流的展示名).
+ *
+ * ``key`` 是这条流的标识, 同时出现在 ``href`` 里; 来源整个不可用时为 ``None``.
  */
 export type PlaybackSourceItem = {
     /**
      * Source Id
      */
     source_id: string;
+    /**
+     * Key
+     */
+    key?: string | null;
     /**
      * Name
      */
@@ -2300,10 +2308,6 @@ export type PlaybackSourceItem = {
      * Available
      */
     available: boolean;
-    /**
-     * Media File Id
-     */
-    media_file_id?: number | null;
     /**
      * Detail
      */
@@ -4326,7 +4330,7 @@ export type PlayMetadataPlaylistResponses = {
     200: unknown;
 };
 
-export type PlayFilePlaylistData = {
+export type PlayStreamPlaylistData = {
     body?: never;
     path: {
         /**
@@ -4338,24 +4342,24 @@ export type PlayFilePlaylistData = {
          */
         metadata_id: number;
         /**
-         * Media File Id
+         * Key
          */
-        media_file_id: number;
+        key: string;
     };
     query?: never;
-    url: '/api/playback/{source_id}/{metadata_id}/files/{media_file_id}/index.m3u8';
+    url: '/api/playback/{source_id}/{metadata_id}/streams/{key}/index.m3u8';
 };
 
-export type PlayFilePlaylistErrors = {
+export type PlayStreamPlaylistErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type PlayFilePlaylistError = PlayFilePlaylistErrors[keyof PlayFilePlaylistErrors];
+export type PlayStreamPlaylistError = PlayStreamPlaylistErrors[keyof PlayStreamPlaylistErrors];
 
-export type PlayFilePlaylistResponses = {
+export type PlayStreamPlaylistResponses = {
     /**
      * Successful Response
      */
@@ -4398,7 +4402,7 @@ export type PlayMetadataHlsPartResponses = {
     200: unknown;
 };
 
-export type PlayFileHlsPartData = {
+export type PlayStreamHlsPartData = {
     body?: never;
     path: {
         /**
@@ -4410,28 +4414,28 @@ export type PlayFileHlsPartData = {
          */
         metadata_id: number;
         /**
-         * Media File Id
+         * Key
          */
-        media_file_id: number;
+        key: string;
         /**
          * Token
          */
         token: string;
     };
     query?: never;
-    url: '/api/playback/{source_id}/{metadata_id}/files/{media_file_id}/hls/{token}';
+    url: '/api/playback/{source_id}/{metadata_id}/streams/{key}/hls/{token}';
 };
 
-export type PlayFileHlsPartErrors = {
+export type PlayStreamHlsPartErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type PlayFileHlsPartError = PlayFileHlsPartErrors[keyof PlayFileHlsPartErrors];
+export type PlayStreamHlsPartError = PlayStreamHlsPartErrors[keyof PlayStreamHlsPartErrors];
 
-export type PlayFileHlsPartResponses = {
+export type PlayStreamHlsPartResponses = {
     /**
      * Successful Response
      */
@@ -4474,7 +4478,7 @@ export type PlayMetadataSubtitleResponses = {
     200: unknown;
 };
 
-export type PlayFileSubtitleData = {
+export type PlayStreamSubtitleData = {
     body?: never;
     path: {
         /**
@@ -4486,28 +4490,28 @@ export type PlayFileSubtitleData = {
          */
         metadata_id: number;
         /**
-         * Media File Id
+         * Key
          */
-        media_file_id: number;
+        key: string;
         /**
          * Track Id
          */
         track_id: string;
     };
     query?: never;
-    url: '/api/playback/{source_id}/{metadata_id}/files/{media_file_id}/subtitles/{track_id}';
+    url: '/api/playback/{source_id}/{metadata_id}/streams/{key}/subtitles/{track_id}';
 };
 
-export type PlayFileSubtitleErrors = {
+export type PlayStreamSubtitleErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type PlayFileSubtitleError = PlayFileSubtitleErrors[keyof PlayFileSubtitleErrors];
+export type PlayStreamSubtitleError = PlayStreamSubtitleErrors[keyof PlayStreamSubtitleErrors];
 
-export type PlayFileSubtitleResponses = {
+export type PlayStreamSubtitleResponses = {
     /**
      * Successful Response
      */
@@ -4546,7 +4550,7 @@ export type PlayMetadataResponses = {
     200: unknown;
 };
 
-export type PlayMetadataFileData = {
+export type PlayStreamData = {
     body?: never;
     path: {
         /**
@@ -4558,24 +4562,24 @@ export type PlayMetadataFileData = {
          */
         metadata_id: number;
         /**
-         * Media File Id
+         * Key
          */
-        media_file_id: number;
+        key: string;
     };
     query?: never;
-    url: '/api/playback/{source_id}/{metadata_id}/files/{media_file_id}';
+    url: '/api/playback/{source_id}/{metadata_id}/streams/{key}';
 };
 
-export type PlayMetadataFileErrors = {
+export type PlayStreamErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type PlayMetadataFileError = PlayMetadataFileErrors[keyof PlayMetadataFileErrors];
+export type PlayStreamError = PlayStreamErrors[keyof PlayStreamErrors];
 
-export type PlayMetadataFileResponses = {
+export type PlayStreamResponses = {
     /**
      * Successful Response
      */

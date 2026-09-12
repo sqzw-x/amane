@@ -24,12 +24,7 @@ _QUERY = PlaybackQuery(metadata_id=1, number="TEST-001")
 
 def _target(kind: str, cache_ttl: float | None) -> PlaybackTargetT:
     if kind == "file":
-        return FilePlaybackTarget(
-            path=Path("/tmp/clip.mp4"),
-            content_type="video/mp4",
-            media_file_id=1,
-            cache_ttl=cache_ttl,
-        )
+        return FilePlaybackTarget(path=Path("/tmp/clip.mp4"), content_type="video/mp4", cache_ttl=cache_ttl)
     if kind == "upstream":
         return UpstreamPlaybackTarget(url="http://cdn.example/clip.mp4", cache_ttl=cache_ttl)
     return HlsPlaybackTarget(_LOCATOR, cache_ttl=cache_ttl)

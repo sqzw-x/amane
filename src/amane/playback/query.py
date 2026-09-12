@@ -10,7 +10,7 @@ def playback_query(
     metadata: Metadata,
     files: list[MediaFile],
     *,
-    selected_file_id: int | None = None,
+    selected_key: str | None = None,
     library_paths: dict[int, str] | None = None,
 ) -> PlaybackQuery:
     if metadata.id is None:
@@ -49,5 +49,5 @@ def playback_query(
         source_urls=dict(metadata.source_urls),
         external_ids=dict(metadata.external_ids),
         files=tuple(snapshots),
-        selected_file_id=selected_file_id,
+        selected_key=selected_key,
     )

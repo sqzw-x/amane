@@ -4740,6 +4740,17 @@ export const PlaybackSourceItemSchema = {
             type: 'string',
             title: 'Source Id'
         },
+        key: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Key'
+        },
         name: {
             type: 'string',
             title: 'Name'
@@ -4755,17 +4766,6 @@ export const PlaybackSourceItemSchema = {
         available: {
             type: 'boolean',
             title: 'Available'
-        },
-        media_file_id: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Media File Id'
         },
         detail: {
             anyOf: [
@@ -4800,7 +4800,8 @@ export const PlaybackSourceItemSchema = {
         'available',
         'href'
     ],
-    title: 'PlaybackSourceItem'
+    title: 'PlaybackSourceItem',
+    description: '列表里的一条流. ``name`` 是主机拼好的展示名 (来源名 · 流的展示名).\n\n``key`` 是这条流的标识, 同时出现在 ``href`` 里; 来源整个不可用时为 ``None``.'
 } as const;
 
 export const PlaybackSourceListResponseSchema = {

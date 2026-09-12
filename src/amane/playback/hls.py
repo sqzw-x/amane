@@ -119,7 +119,7 @@ HlsEntry = MappedHlsUri | FailedHlsUri
 
 
 def _token_for(source_id: str, query: PlaybackQuery, uri: str) -> str:
-    payload = f"{source_id}\0{query.metadata_id}\0{query.selected_file_id}\0{uri}"
+    payload = f"{source_id}\0{query.metadata_id}\0{query.selected_key}\0{uri}"
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 

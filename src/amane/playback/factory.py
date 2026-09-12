@@ -18,6 +18,7 @@ from ..plugins.api import (
     FilePlaybackTarget,
     HlsLocator,
     HlsPlaybackTarget,
+    PlaybackOffer,
     PlaybackProvider,
     PlaybackQuery,
     PlaybackTarget,
@@ -91,12 +92,18 @@ def _file_target_error(candidate: Path, indexed: tuple[str, ...]) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class ListedSource:
+    """列表里的一行 = 一条流 (或一条不可用记录).
+
+    ``key`` 为 ``None`` 表示这一行没有可播的流: 来源整个不可用. ``name`` 是主机拼好的展示名
+    (来源名 · 流的展示名), 前端直接渲染.
+    """
+
     source_id: str
+    key: str | None
     name: str
     content_type: str
     seekable: bool
     available: bool
-    media_file_id: int | None
     detail: str | None = None
     subtitles: tuple[SubtitleTrack, ...] = ()
 
@@ -228,18 +235,35 @@ class PlaybackFactory:
         return descriptor.name if descriptor is not None else source_id
 
     def _unavailable(self, source_id: str, *, detail: str | None = None) -> ListedSource:
-        """构造一条不可用记录; ``detail`` 是给终端用户的原因, 缺省表示无从解释."""
+        """构造一条不可用记录: 来源整个没有可播的流, 因此没有 key.
+
+        ``detail`` 是给终端用户的原因, 缺省表示无从解释.
+        """
         return ListedSource(
             source_id=source_id,
+            key=None,
             name=self._listed_name(source_id),
             content_type="video/mp4",
             seekable=False,
             available=False,
-            media_file_id=None,
             detail=detail,
         )
 
+    def _listed(self, source_id: str, offer: PlaybackOffer) -> ListedSource:
+        """把一条流映射成列表行: 行名由主机拼成「来源名 · 流的展示名」."""
+        return ListedSource(
+            source_id=source_id,
+            key=offer.key,
+            name=f"{self._listed_name(source_id)} · {offer.name}",
+            content_type=offer.content_type,
+            seekable=offer.seekable,
+            available=offer.available,
+            detail=offer.detail,
+            subtitles=offer.subtitles,
+        )
+
     async def list_sources(self, query: PlaybackQuery) -> list[ListedSource]:
+        """列出全部启用来源的流; 每个来源贡献 1..N 行, 顺序即来源顺序与插件给的流顺序."""
         ids = self.playback_source_ids()
         tasks = [asyncio.create_task(self._probe_one(source_id, query)) for source_id in ids]
         _done, pending = await asyncio.wait(tasks, timeout=PROBE_BUDGET_SECONDS)
@@ -255,55 +279,47 @@ class PlaybackFactory:
                 results.append(self._unavailable(source_id, detail="探测超时"))
                 continue
             try:
-                results.append(task.result())
+                results.extend(task.result())
             except Exception:
                 logger.exception("playback probe task failed", source=source_id)
                 results.append(self._unavailable(source_id, detail="探测失败"))
         return results
 
-    async def _probe_one(self, source_id: str, query: PlaybackQuery) -> ListedSource:
-        cache_key = f"{source_id}:{query.metadata_id}:{query.selected_file_id}"
+    async def _probe_one(self, source_id: str, query: PlaybackQuery) -> list[ListedSource]:
+        cache_key = f"{source_id}:{query.metadata_id}"
         hit = self._caches.probe_hits.get(cache_key)
-        if isinstance(hit, ListedSource):
+        if isinstance(hit, list):
             return hit
         denied = self._caches.probe_none.get(cache_key)
         if isinstance(denied, ListedSource):
-            return denied
+            return [denied]
         if self._caches.probe_fail.is_blocked(cache_key):
-            return self._unavailable(source_id, detail="上游暂时不可用")
+            return [self._unavailable(source_id, detail="上游暂时不可用")]
 
-        async def _run() -> ListedSource:
+        async def _run() -> list[ListedSource]:
             provider = self.provider(source_id)
             if provider is None:
-                return self._unavailable(source_id)
+                return [self._unavailable(source_id)]
             try:
-                offer = await provider.probe(query)
+                offers = await provider.probe(query)
             except SourceError as exc:
                 if exc.reason is FailureReason.NO_USABLE_METADATA:
-                    # 「本条目在此来源没有可播流」不是上游故障: 原因原样给用户, 走 None 那条负缓存.
+                    # 「本条目在此来源没有可播流」不是上游故障: 原因原样给用户, 走空结果那条负缓存.
                     listed = self._unavailable(source_id, detail=exc.detail or "没有可播放的流")
                     self._caches.probe_none.put(cache_key, listed)
-                    return listed
+                    return [listed]
                 logger.warning("playback probe failed", source=source_id, error=str(exc))
                 self._caches.probe_fail.put(cache_key, True)
-                return self._unavailable(source_id, detail="上游失败")
+                return [self._unavailable(source_id, detail="上游失败")]
             except Exception:
                 logger.exception("playback probe crashed", source=source_id)
                 self._caches.probe_fail.put(cache_key, True)
-                return self._unavailable(source_id, detail="探测失败")
-            if offer is None:
-                listed = self._unavailable(source_id)
-                self._caches.probe_none.put(cache_key, listed)
-                return listed
-            listed = ListedSource(
-                source_id=source_id,
-                name=offer.name,
-                content_type=offer.content_type,
-                seekable=offer.seekable,
-                available=True,
-                media_file_id=offer.media_file_id,
-                subtitles=offer.subtitles,
-            )
+                return [self._unavailable(source_id, detail="探测失败")]
+            listed = [self._listed(source_id, offer) for offer in offers]
+            if not listed:
+                negative = self._unavailable(source_id)
+                self._caches.probe_none.put(cache_key, negative)
+                return [negative]
             self._caches.probe_hits.put(cache_key, listed)
             return listed
 
@@ -320,7 +336,7 @@ class PlaybackFactory:
         ``resolve``. 只有成功的解析结果进缓存: 抛 ``SourceError`` 与返回 ``None`` 仍走
         ``open_fail`` 负缓存. 过长的声明由宿主上限 ``RESOLVE_TTL_MAX_SECONDS`` 截断.
         """
-        open_key = f"{source_id}:{query.metadata_id}:{query.selected_file_id}"
+        open_key = f"{source_id}:{query.metadata_id}:{query.selected_key}"
         cached = self._caches.resolve_hits.get(open_key)
         if cached is not None:
             return cached
@@ -385,7 +401,7 @@ class PlaybackFactory:
                 uri=absolute,
                 is_key=is_key,
             )
-        return hls_part_href(source_id, query.metadata_id, query.selected_file_id, token)
+        return hls_part_href(source_id, query.metadata_id, query.selected_key, token)
 
     async def hls_playlist_text(
         self,
@@ -425,7 +441,7 @@ class PlaybackFactory:
         *,
         source_id: str,
         metadata_id: int,
-        media_file_id: int | None,
+        selected_key: str | None,
         token: str,
     ) -> Response:
         """转发一条清单内 URI.
@@ -438,7 +454,7 @@ class PlaybackFactory:
             mapped is None
             or mapped.source_id != source_id
             or mapped.query.metadata_id != metadata_id
-            or mapped.query.selected_file_id != media_file_id
+            or mapped.query.selected_key != selected_key
         ):
             raise LookupError(token)
         if isinstance(mapped, FailedHlsUri):

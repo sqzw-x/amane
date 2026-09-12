@@ -1458,13 +1458,13 @@
         }
       }
     },
-    "/api/playback/{source_id}/{metadata_id}/files/{media_file_id}/index.m3u8": {
+    "/api/playback/{source_id}/{metadata_id}/streams/{key}/index.m3u8": {
       "get": {
         "tags": [
           "playback"
         ],
-        "summary": "Play File Playlist",
-        "operationId": "play_file_playlist",
+        "summary": "Play Stream Playlist",
+        "operationId": "play_stream_playlist",
         "parameters": [
           {
             "name": "source_id",
@@ -1486,13 +1486,13 @@
             }
           },
           {
-            "name": "media_file_id",
+            "name": "key",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "title": "Media File Id"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "title": "Key"
             }
           }
         ],
@@ -1578,13 +1578,13 @@
         }
       }
     },
-    "/api/playback/{source_id}/{metadata_id}/files/{media_file_id}/hls/{token}": {
+    "/api/playback/{source_id}/{metadata_id}/streams/{key}/hls/{token}": {
       "get": {
         "tags": [
           "playback"
         ],
-        "summary": "Play File Hls Part",
-        "operationId": "play_file_hls_part",
+        "summary": "Play Stream Hls Part",
+        "operationId": "play_stream_hls_part",
         "parameters": [
           {
             "name": "source_id",
@@ -1606,13 +1606,13 @@
             }
           },
           {
-            "name": "media_file_id",
+            "name": "key",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "title": "Media File Id"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "title": "Key"
             }
           },
           {
@@ -1708,13 +1708,13 @@
         }
       }
     },
-    "/api/playback/{source_id}/{metadata_id}/files/{media_file_id}/subtitles/{track_id}": {
+    "/api/playback/{source_id}/{metadata_id}/streams/{key}/subtitles/{track_id}": {
       "get": {
         "tags": [
           "playback"
         ],
-        "summary": "Play File Subtitle",
-        "operationId": "play_file_subtitle",
+        "summary": "Play Stream Subtitle",
+        "operationId": "play_stream_subtitle",
         "parameters": [
           {
             "name": "source_id",
@@ -1736,13 +1736,13 @@
             }
           },
           {
-            "name": "media_file_id",
+            "name": "key",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "title": "Media File Id"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "title": "Key"
             }
           },
           {
@@ -1828,13 +1828,13 @@
         }
       }
     },
-    "/api/playback/{source_id}/{metadata_id}/files/{media_file_id}": {
+    "/api/playback/{source_id}/{metadata_id}/streams/{key}": {
       "get": {
         "tags": [
           "playback"
         ],
-        "summary": "Play Metadata File",
-        "operationId": "play_metadata_file",
+        "summary": "Play Stream",
+        "operationId": "play_stream",
         "parameters": [
           {
             "name": "source_id",
@@ -1856,13 +1856,13 @@
             }
           },
           {
-            "name": "media_file_id",
+            "name": "key",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "title": "Media File Id"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+              "title": "Key"
             }
           }
         ],
@@ -10262,6 +10262,17 @@
             "type": "string",
             "title": "Source Id"
           },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -10277,17 +10288,6 @@
           "available": {
             "type": "boolean",
             "title": "Available"
-          },
-          "media_file_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Media File Id"
           },
           "detail": {
             "anyOf": [
@@ -10322,7 +10322,8 @@
           "available",
           "href"
         ],
-        "title": "PlaybackSourceItem"
+        "title": "PlaybackSourceItem",
+        "description": "列表里的一条流. ``name`` 是主机拼好的展示名 (来源名 · 流的展示名).\n\n``key`` 是这条流的标识, 同时出现在 ``href`` 里; 来源整个不可用时为 ``None``."
       },
       "PlaybackSourceListResponse": {
         "properties": {

@@ -13,8 +13,9 @@ import { apiFetch } from "@/lib/api-token";
 const EMPTY_SOURCES: PlaybackSourceItem[] = [];
 const HLS_TYPE = "application/vnd.apple.mpegurl";
 
+// 一个来源可以给出多条流: 选择器按「来源 + 流的 key」区分, 整个来源不可用时没有 key.
 function sourceKey(item: PlaybackSourceItem): string {
-  return `${item.source_id}:${item.media_file_id ?? ""}`;
+  return `${item.source_id}:${item.key ?? ""}`;
 }
 
 // 探测超时、上游失败等故障由非空 detail 说明; 为空表示条目没有内容或来源已停用, 不属于故障.

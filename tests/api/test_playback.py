@@ -158,9 +158,9 @@ class _Provider(PlaybackProvider):
         count = int(path.read_text(encoding="utf-8")) if path.exists() else 0
         path.write_text(str(count + 1), encoding="utf-8")
 
-    async def probe(self, query: PlaybackQuery) -> PlaybackOffer | None:
+    async def probe(self, query: PlaybackQuery) -> tuple[PlaybackOffer, ...]:
         self._record_probe()
-        return None
+        return ()
 
     async def resolve(self, query: PlaybackQuery) -> None:
         return None
@@ -332,9 +332,10 @@ class TestPlaybackHttp:
             listed = await client.get("playback/sources", params={"metadata_id": meta_id})
             assert listed.status_code == 200
             items = listed.json()["items"]
-            assert [(row["source_id"], row["available"]) for row in items] == [("acme.play", True)]
-            assert items[0]["media_file_id"] is None
-            assert items[0]["href"] == f"/api/playback/acme.play/{meta_id}"
+            assert [(row["source_id"], row["key"], row["available"]) for row in items] == [("acme.play", "main", True)]
+            # 行名由主机拼成「来源名 · 流的展示名」.
+            assert items[0]["name"] == "Fake playback · Remote"
+            assert items[0]["href"] == f"/api/playback/acme.play/{meta_id}/streams/main"
             etag = listed.headers["etag"]
             assert listed.headers["cache-control"] == "private, no-cache"
             for validator in (etag, f"W/{etag}", f'"other", {etag}', "*"):
@@ -370,7 +371,8 @@ class TestPlaybackHttp:
             multi = await client.get(stream, headers={"Range": "bytes=0-1,2-3"})
             assert multi.status_code == 400
 
-            assert (await client.get(f"playback/acme.play/{meta_id}/files/999999")).status_code == 404
+            # 主机不解释 key: 形状不合法的 key 由路径校验拒绝, 形状合法的未知 key 交给插件自己认.
+            assert (await client.get(f"playback/acme.play/{meta_id}/streams/{'a' * 65}")).status_code == 422
             assert (await client.get("playback/sources", params={"metadata_id": 999999})).status_code == 404
             assert (await client.get(f"playback/missing.play/{meta_id}")).status_code == 404
             assert (await client.get(f"playback/{'a' * (SOURCE_ID_MAX_LEN + 1)}/{meta_id}")).status_code == 404
@@ -557,8 +559,8 @@ class TestPlaybackHttp:
         assert lie_cfg.status_code == 200, lie_cfg.text
         lie_list = await client.get("playback/sources", params={"metadata_id": lie_id})
         lie_item = next(row for row in lie_list.json()["items"] if row["source_id"] == "acme.play")
-        assert lie_item["href"] == f"/api/playback/acme.play/{lie_id}/index.m3u8"
-        lie = await client.get(f"playback/acme.play/{lie_id}/index.m3u8")
+        assert lie_item["href"] == f"/api/playback/acme.play/{lie_id}/streams/main/index.m3u8"
+        lie = await client.get(f"playback/acme.play/{lie_id}/streams/main/index.m3u8")
         assert lie.status_code == 502
         assert lie.json()["detail"] == "不是 HLS 播放源"
 
@@ -690,6 +692,58 @@ class TestPlaybackHttp:
         assert stream.json()["detail"] == "该条目索引的文件不存在: gone.mp4"
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_source_lists_multiple_streams(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        """一个来源可以给出多条流: 每行一个 key 与自己的地址, 不可播的流也列出来带原因.
+
+        没有 key 的地址仍然可用, 表示「由插件自己挑一条」.
+        """
+        data_dir = app.state.runtime.config.cold.data_dir
+        write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+        reloaded = await client.post("plugins/reload")
+        assert reloaded.status_code == 200, reloaded.text
+        metadata_id = await _seed_title(repo, number="PLAY-MULTI")
+        payload = b"MULTI-STREAM"
+        server, origin = _start_hls_origin({"/clip.mp4": ("video/mp4", payload)})
+        try:
+            configured = await client.patch(
+                "plugins/acme.play",
+                json={"enabled": True, "config": {"behavior": "multi", "url": f"{origin}/clip.mp4"}},
+            )
+            assert configured.status_code == 200, configured.text
+
+            listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
+            assert listed.status_code == 200
+            base = f"/api/playback/acme.play/{metadata_id}"
+            assert [
+                (row["source_id"], row["key"], row["name"], row["available"], row["detail"], row["href"])
+                for row in listed.json()["items"]
+            ] == [
+                ("acme.play", "first", "Fake playback · First", True, None, f"{base}/streams/first"),
+                ("acme.play", "second", "Fake playback · Second", True, None, f"{base}/streams/second"),
+                (
+                    "acme.play",
+                    "broken",
+                    "Fake playback · Broken",
+                    False,
+                    "该条目索引的文件为空: broken.mp4",
+                    f"{base}/streams/broken",
+                ),
+            ]
+
+            # 每条流各自可取, 没有 key 的形式表示由插件自己挑一条.
+            for path in (f"playback/acme.play/{metadata_id}/streams/first", f"playback/acme.play/{metadata_id}"):
+                response = await client.get(path)
+                assert response.status_code == 200, path
+                assert response.content == payload
+        finally:
+            server.shutdown()
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_hls_playlist_rewrite_and_parts(
         self,
         client: AsyncClient,
@@ -738,7 +792,7 @@ class TestPlaybackHttp:
             listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
             assert listed.status_code == 200
             item = next(row for row in listed.json()["items"] if row["source_id"] == "acme.play")
-            assert item["href"] == f"/api/playback/acme.play/{metadata_id}/index.m3u8"
+            assert item["href"] == f"/api/playback/acme.play/{metadata_id}/streams/main/index.m3u8"
             assert item["content_type"] == "application/vnd.apple.mpegurl"
 
             manifest = await client.get(f"playback/acme.play/{metadata_id}/index.m3u8")
@@ -1003,15 +1057,15 @@ class TestPlaybackHttp:
             assert segment.content == b"GOODSEG"
 
             other_id = await _seed_title(repo, number="PLAY-HLS-BAD-OTHER")
-            file_id = await _attach_file(repo, metadata_id, safe_path / "clip.mp4", payload=b"video-bytes")
             write_plugin(data_dir, "acme.other", body=playback_plugin_source("acme.other"))
             assert (await client.post("plugins/reload")).status_code == 200
             enabled_other = await client.patch("plugins/acme.other", json={"enabled": True, "config": {}})
             assert enabled_other.status_code == 200, enabled_other.text
             foreign_entry = await client.get(f"playback/acme.play/{other_id}/hls/{cross_token}")
             assert foreign_entry.status_code == 404
-            foreign_file = await client.get(f"playback/acme.play/{metadata_id}/files/{file_id}/hls/{cross_token}")
-            assert foreign_file.status_code == 404
+            # 这份 token 是按「没有指定流」的地址签发的, 换成某条流的地址同样不能用.
+            foreign_stream = await client.get(f"playback/acme.play/{metadata_id}/streams/main/hls/{cross_token}")
+            assert foreign_stream.status_code == 404
             foreign_source = await client.get(f"playback/acme.other/{metadata_id}/hls/{cross_token}")
             assert foreign_source.status_code == 404
         finally:

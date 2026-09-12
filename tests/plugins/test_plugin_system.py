@@ -446,20 +446,35 @@ class _Provider(PlaybackProvider):
     def __init__(self, config: _Config) -> None:
         self._config = config
 
-    async def probe(self, query: PlaybackQuery) -> PlaybackOffer | None:
+    async def probe(self, query: PlaybackQuery) -> tuple[PlaybackOffer, ...]:
         if self._config.behavior == "none":
-            return None
+            return ()
         if self._config.behavior == "denied":
             raise SourceError(FailureReason.NO_USABLE_METADATA, detail="该条目索引的文件不存在: gone.mp4")
         if self._config.behavior == "error":
             raise SourceError(FailureReason.NETWORK, detail="上游失败")
         if self._config.behavior in {"hls", "hls-offer"}:
-            return PlaybackOffer(
-                name="Remote",
-                content_type="application/vnd.apple.mpegurl",
-                seekable=False,
+            return (
+                PlaybackOffer(
+                    key="main",
+                    name="Remote",
+                    content_type="application/vnd.apple.mpegurl",
+                    seekable=False,
+                ),
             )
-        return PlaybackOffer(name="Remote", content_type="video/mp4", seekable=True)
+        if self._config.behavior == "multi":
+            return (
+                PlaybackOffer(key="first", name="First", content_type="video/mp4"),
+                PlaybackOffer(key="second", name="Second", content_type="video/mp4"),
+                PlaybackOffer(
+                    key="broken",
+                    name="Broken",
+                    content_type="video/mp4",
+                    available=False,
+                    detail="该条目索引的文件为空: broken.mp4",
+                ),
+            )
+        return (PlaybackOffer(key="main", name="Remote", content_type="video/mp4", seekable=True),)
 
     async def resolve(self, query: PlaybackQuery):
         if self._config.behavior == "none":
@@ -480,11 +495,7 @@ class _Provider(PlaybackProvider):
             path = self._config.file_path or (query.files[0].path if query.files else None)
             if path is None:
                 return None
-            return FilePlaybackTarget(
-                path=path,
-                content_type="video/mp4",
-                media_file_id=query.files[0].id if query.files else 0,
-            )
+            return FilePlaybackTarget(path=path, content_type="video/mp4")
         return UpstreamPlaybackTarget(
             url=self._config.url,
             headers=self._config.headers,
