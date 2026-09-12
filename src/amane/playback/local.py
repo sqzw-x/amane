@@ -48,6 +48,31 @@ def _pick_default(files: list[PlaybackMediaFile]) -> PlaybackMediaFile:
     return max(files, key=lambda item: (item.size or 0, item.id))
 
 
+def _within_roots(resolved: Path, item: PlaybackMediaFile, safe_dirs: list[Path] | None) -> bool:
+    if item.library_path:
+        library_root = Path(item.library_path).resolve()
+        if not is_any_descendant(resolved, library_root):
+            return False
+    elif safe_dirs is None:
+        return False
+    if safe_dirs is not None:
+        if not safe_dirs:
+            return False
+        if not is_any_descendant(resolved, *safe_dirs):
+            return False
+    return True
+
+
+def _sidecar_anchor_dirs(item: PlaybackMediaFile, video: Path) -> tuple[Path, ...]:
+    anchors = [video.parent]
+    disk = existing_disk_path(Path(item.path).parent)
+    if disk is not None:
+        parent = disk.resolve()
+        if parent not in anchors:
+            anchors.append(parent)
+    return tuple(anchors)
+
+
 @in_thread
 def _resolve_local_file(
     item: PlaybackMediaFile,
@@ -57,31 +82,32 @@ def _resolve_local_file(
     if on_disk is None or not on_disk.is_file():
         return None
     resolved = on_disk.resolve()
-    if safe_dirs is not None:
-        if not safe_dirs:
-            return None
-        if not is_any_descendant(resolved, *safe_dirs):
-            return None
+    if not _within_roots(resolved, item, safe_dirs):
+        return None
     size = resolved.stat().st_size
     return resolved, size
 
 
 @in_thread
-def _find_sidecar(video: Path, safe_dirs: list[Path] | None) -> Path | None:
-    for suffix in _SIDECAR_SUFFIXES:
-        candidate = video.with_suffix(suffix)
-        on_disk = existing_disk_path(candidate)
-        if on_disk is None or not on_disk.is_file():
-            continue
-        resolved = on_disk.resolve()
-        if resolved.parent != video.parent:
-            continue
-        if safe_dirs is not None:
-            if not safe_dirs:
-                return None
-            if not is_any_descendant(resolved, *safe_dirs):
+def _find_sidecar(item: PlaybackMediaFile, video: Path, safe_dirs: list[Path] | None) -> Path | None:
+    seen: set[str] = set()
+    bases = (Path(item.path), video)
+    for base in bases:
+        for suffix in _SIDECAR_SUFFIXES:
+            candidate = base.with_suffix(suffix)
+            key = str(candidate)
+            if key in seen:
                 continue
-        return resolved
+            seen.add(key)
+            on_disk = existing_disk_path(candidate)
+            if on_disk is None or not on_disk.is_file():
+                continue
+            resolved = on_disk.resolve()
+            if not _within_roots(resolved, item, safe_dirs):
+                continue
+            if resolved.parent not in _sidecar_anchor_dirs(item, video):
+                continue
+            return resolved
     return None
 
 
@@ -99,7 +125,7 @@ class LocalPlaybackProvider(PlaybackProvider):
         if chosen is None:
             return None
         media_file, path, _size = chosen
-        sidecar = await _find_sidecar(path, self._safe_dirs)
+        sidecar = await _find_sidecar(media_file, path, self._safe_dirs)
         return PlaybackOffer(
             name="本地文件",
             content_type=media_type_for_path(path),
@@ -138,7 +164,7 @@ class LocalPlaybackProvider(PlaybackProvider):
         if chosen is None:
             return None
         _media_file, path, _size = chosen
-        sidecar = await _find_sidecar(path, self._safe_dirs)
+        sidecar = await _find_sidecar(_media_file, path, self._safe_dirs)
         if sidecar is None:
             return None
         text = await _read_text(sidecar)

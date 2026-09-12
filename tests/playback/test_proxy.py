@@ -62,7 +62,7 @@ def test_allowed_hls_part(content_type: str, allowed: bool) -> None:
     ("content_type", "allowed"),
     [
         ("text/vtt", True),
-        ("text/plain", True),
+        ("text/plain", False),
         ("", True),
         ("text/html", False),
         ("video/mp4", False),
@@ -95,6 +95,14 @@ class _Upstream(BaseHTTPRequestHandler):
         self.captured["range"] = self.headers.get("Range")
         self.captured["authorization"] = self.headers.get("Authorization")
         self.captured["accept_encoding"] = self.headers.get("Accept-Encoding")
+        self.captured["if_none_match"] = self.headers.get("If-None-Match")
+        if self.status == 304:
+            self.send_response(304)
+            self.send_header("ETag", '"seg"')
+            for key, value in self.extra.items():
+                self.send_header(key, value)
+            self.end_headers()
+            return
         if self.status >= 300 and self.status < 400:
             self.send_response(self.status)
             self.send_header("Location", "https://upstream.example/video")
@@ -257,6 +265,25 @@ async def test_proxy_cancels_upstream_on_disconnect() -> None:
         assert cancelled.wait(timeout=2)
     finally:
         await stream.aclose()
+        server.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_proxy_passes_304_without_immutable() -> None:
+    server, captured, _cancelled = _serve(
+        status=304,
+        extra={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
+    try:
+        app = _app(_origin(server), allow="hls_part")
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/p", headers={"If-None-Match": '"seg"'})
+            assert resp.status_code == 304
+            assert captured["if_none_match"] == '"seg"'
+            assert "immutable" not in resp.headers.get("cache-control", "").casefold()
+            assert "authorization" not in {k.casefold() for k in resp.headers}
+    finally:
         server.shutdown()
 
 

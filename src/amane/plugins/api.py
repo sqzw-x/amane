@@ -53,6 +53,7 @@ class PlaybackMediaFile(BaseModel):
     has_subtitle: bool = False
     definition: str | None = None
     library_id: int
+    library_path: str | None = None
 
 
 class PlaybackQuery(BaseModel):

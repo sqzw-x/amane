@@ -74,21 +74,21 @@
 
 播放目标由主机执行, 插件只声明:
 
-- `file`: 已入库文件. **仅内置 `local` 可以产出**. 主机打开解析后的规范路径, 必须落在 `safe_dirs` 内. 不允许要求解析后的字符串与入库字面量全等 (macOS `/var` 与符号链接会改变字面量). `ALLOW_ALL` 不取消目录边界以外的存在性检查.
+- `file`: 已入库文件. **仅内置 `local` 可以产出**. 主机打开解析后的规范路径. 解析目标必须是该文件所属库根的后代; 配置了 `safe_dirs` 时还须落在名单内. 不允许要求解析后的字符串与入库字面量全等 (macOS `/var` 与符号链接会改变字面量). `ALLOW_ALL` 只放宽 `safe_dirs`, 不放宽库根. 库根未知且 `ALLOW_ALL` 时拒绝打开.
 - `upstream`: 上游 URL 与仅服务端使用的请求头. 主机反向代理, 转发单段 Range, 密钥不得出现在响应头或重定向 Location. 指向播放列表的 `upstream` 仍拒绝; 清单必须经由 `hls`.
-- `hls`: 插件提供 locator. 主机用「包含该 URI 的那份清单」的 base 做 `urljoin` 后再调用 `locate`, 因此 `locate` 收到绝对 URL. 主机把清单 URI 改写到本机前缀并反向代理分片、密钥与子清单. 清单内不得残留上游 Origin.
+- `hls`: 插件提供 locator. 主机用「包含该 URI 的那份清单」的 base 做 `urljoin` 后再调用 `locate`, 因此 `locate` 收到绝对 URL. 相对 URI (含协议相对 `//host/...`) 解析后必须与该份清单 Origin 相同; 清单内已写出的绝对 `http`/`https` URL 由插件承担, 主机仍会代理. 其它 scheme 拒绝. 主机把清单 URI 改写到本机前缀并反向代理分片、密钥与子清单. 清单内不得残留上游 Origin.
 
 `probe.content_type` 必须与随后 `resolve` 的目标种类一致: HLS 用 `mpegurl`, 逐字节码流用 `video/*` / `audio/*`. 列表 `href` 按探测类型指向清单或码流; 不一致时前端会按错误方式初始化, 清单端点对非 HLS 目标返回 502.
 
 探测预算 1.5 秒. 超时由主机标记为不可用并从列表排除, 不是插件返回 `None`. 网络失败抛 `SourceError`. `probe` 内访问网络可能耗尽预算; 短探测、把取流留到 `resolve`.
 
-探测结果可附带 WebVTT 轨道; 内置 `local` 读取正片同 stem 的 `.vtt` / `.srt` (`.srt` 在响应前转换为 WebVTT). 插件通过 `subtitle` 返回正文或上游 VTT. 上游字幕只接受 `text/vtt` (及缺省类型).
+探测结果可附带 WebVTT 轨道; 内置 `local` 先在入库字面路径同目录查找同 stem 的 `.vtt` / `.srt`, 未命中再查规范路径目录. `.srt` 在响应前转换为 WebVTT. 字幕文件解析后必须落在库根 (以及有名单时的 `safe_dirs`) 内, 且所在目录必须是正片字面目录或规范目录, 不允许经符号链接转到其它目录. 插件通过 `subtitle` 返回正文或上游 VTT. 上游字幕只接受 `text/vtt` (及缺省类型).
 
 **不允许在 Amane 主机内对码流做实时转码.** 浏览器无法直接播放时, 由上游提供 HLS 清单; 主机只改写 URI 并代理分片.
 
-内置 `local` 在关联文件存在、不是 `.strm`、路径可打开且未越出 `safe_dirs` 时出现在列表中. 多文件时缺省选择体积最大的正片. 无本地文件的条目只依赖外部播放源.
+内置 `local` 在关联文件存在、不是 `.strm`、路径可打开、解析目标在库根内, 且未越出 `safe_dirs` (有名单时) 时出现在列表中. 多文件时缺省选择体积最大的正片. 无本地文件的条目只依赖外部播放源.
 
-码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止 3xx 到上游 Origin, 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
+码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止跟随 301/302/303/307/308, 上游 304 原样返回且不写 `immutable`, 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
 
 `RelativeHlsLocator` 的 `http_client` 是刮削客户端 (跟随刮削侧重定向、重试与任务 HTTP 记录). 正式插件应传入已读取的 `playlist_text`; 分片由主机代理.
 

@@ -450,7 +450,7 @@ class _Provider(PlaybackProvider):
             return None
         if self._config.behavior == "error":
             raise SourceError(FailureReason.NETWORK, detail="上游失败")
-        if self._config.behavior == "hls":
+        if self._config.behavior in {"hls", "hls-offer"}:
             return PlaybackOffer(
                 name="Remote",
                 content_type="application/vnd.apple.mpegurl",

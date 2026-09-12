@@ -11,9 +11,11 @@ def playback_query(
     files: list[MediaFile],
     *,
     selected_file_id: int | None = None,
+    library_paths: dict[int, str] | None = None,
 ) -> PlaybackQuery:
     if metadata.id is None:
         raise ValueError("metadata id is required")
+    paths = library_paths or {}
     snapshots: list[PlaybackMediaFile] = []
     for item in files:
         if item.id is None:
@@ -28,6 +30,7 @@ def playback_query(
                 has_subtitle=item.has_subtitle,
                 definition=item.definition,
                 library_id=item.library_id,
+                library_path=paths.get(item.library_id),
             )
         )
     return PlaybackQuery(

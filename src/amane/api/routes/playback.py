@@ -47,7 +47,14 @@ async def _load_query(
     files = await repo.get_media_by_metadata_id(metadata_id)
     if media_file_id is not None and not any(item.id == media_file_id for item in files):
         raise HTTPException(status_code=404, detail="文件不属于该元数据")
-    return playback_query(metadata, files, selected_file_id=media_file_id)
+    library_paths: dict[int, str] = {}
+    for item in files:
+        if item.library_id in library_paths:
+            continue
+        library = await repo.get_library(item.library_id)
+        if library is not None:
+            library_paths[item.library_id] = library.path
+    return playback_query(metadata, files, selected_file_id=media_file_id, library_paths=library_paths)
 
 
 def _playback_http_error(exc: SourceError) -> HTTPException:

@@ -7,7 +7,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import structlog
 from fastapi import Request
@@ -46,6 +46,20 @@ logger = structlog.get_logger()
 
 PROBE_BUDGET_SECONDS = 1.5
 SOURCE_ID_MAX_LEN = 128
+
+
+def _absolute_hls_uri(base_url: str, uri: str) -> str:
+    absolute = urljoin(base_url, uri)
+    parsed = urlparse(absolute)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise SourceError(FailureReason.NO_USABLE_METADATA, detail="播放列表 URI 不受支持")
+    stripped = uri.strip()
+    if stripped.casefold().startswith(("http://", "https://")):
+        return absolute
+    base = urlparse(base_url)
+    if (parsed.scheme, parsed.netloc.casefold()) != (base.scheme, base.netloc.casefold()):
+        raise SourceError(FailureReason.NO_USABLE_METADATA, detail="播放列表 URI 跨源")
+    return absolute
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,7 +329,7 @@ class PlaybackFactory:
             source_id=source_id,
             query=query,
             locator=locator,
-            uri=urljoin(base_url, uri),
+            uri=_absolute_hls_uri(base_url, uri),
         )
         return hls_part_href(source_id, query.metadata_id, query.selected_file_id, token)
 

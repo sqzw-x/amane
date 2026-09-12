@@ -83,7 +83,7 @@ def is_allowed_subtitle_type(content_type: str) -> bool:
     lowered = content_type.casefold().split(";", 1)[0].strip()
     if not lowered:
         return True
-    return lowered in {"text/vtt", "text/plain"}
+    return lowered == "text/vtt"
 
 
 def _content_type_allowed(allow: ProxyAllow, content_type: str) -> bool:
@@ -257,6 +257,18 @@ class StreamClient:
             raise HTTPException(status_code=502, detail="上游不可达") from exc
 
         try:
+            if response.status_code == 304:
+                filtered = _filter_response_headers(response.headers)
+                filtered.update(NOSNIFF)
+                secret_keys = {key.casefold() for key in target.headers}
+                for key in list(filtered):
+                    if key.casefold() in secret_keys:
+                        del filtered[key]
+                    elif key.casefold() == "cache-control" and "immutable" in filtered[key].casefold():
+                        filtered[key] = "private, no-cache"
+                await response.aclose()
+                self._gate.release(source_id)
+                return Response(status_code=304, headers=filtered)
             if 300 <= response.status_code < 400:
                 raise HTTPException(status_code=502, detail="上游重定向被拒绝")
             if response.status_code >= 400:

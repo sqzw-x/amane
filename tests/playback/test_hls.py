@@ -4,6 +4,8 @@ from collections.abc import Callable
 
 import pytest
 
+from amane.net.errors import SourceError
+from amane.playback.factory import _absolute_hls_uri
 from amane.playback.hls import rewrite_playlist, should_map_uri
 
 
@@ -76,3 +78,33 @@ def test_rewrite_playlist_strips_upstream_origin() -> None:
     rewritten = rewrite_playlist(source, lambda _uri: "/api/playback/acme.play/1/hls/deadbeef")
     assert "cdn.example" not in rewritten
     assert rewritten.splitlines()[2] == "/api/playback/acme.play/1/hls/deadbeef"
+
+
+@pytest.mark.parametrize(
+    ("base", "uri"),
+    [
+        ("http://cdn.example/a/index.m3u8", "seg.ts"),
+        ("http://cdn.example/a/index.m3u8", "/abs/seg.ts"),
+        ("http://cdn.example/a/index.m3u8", "//cdn.example/seg.ts"),
+        ("http://cdn.example/a/index.m3u8", "https://cdn.example/seg.ts"),
+        ("http://cdn.example/a/index.m3u8", "https://other.example/seg.ts"),
+        ("http://cdn.example/a/index.m3u8", "HTTP://OTHER.EXAMPLE/seg.ts"),
+    ],
+)
+def test_absolute_hls_uri_accepts(base: str, uri: str) -> None:
+    absolute = _absolute_hls_uri(base, uri)
+    assert absolute.startswith(("http://", "https://"))
+
+
+@pytest.mark.parametrize(
+    ("base", "uri", "detail"),
+    [
+        ("http://cdn.example/a/index.m3u8", "//other.example/seg.ts", "跨源"),
+        ("http://cdn.example/a/index.m3u8", "file:///etc/passwd", "不受支持"),
+        ("http://cdn.example/a/index.m3u8", "ftp://cdn.example/seg.ts", "不受支持"),
+        ("http://cdn.example/a/index.m3u8", "data:text/plain,x", "不受支持"),
+    ],
+)
+def test_absolute_hls_uri_rejects(base: str, uri: str, detail: str) -> None:
+    with pytest.raises(SourceError, match=detail):
+        _absolute_hls_uri(base, uri)
