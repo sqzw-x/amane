@@ -33,7 +33,7 @@
   },
   "nav": {
     "library": "Library",
-    "plugins": "Scrape plugins",
+    "plugins": "Plugins",
     "tasks": "Tasks",
     "schedules": "Schedules",
     "settings": "Settings",

@@ -103,6 +103,9 @@
     "playTrailer": "播放预告片",
     "closeTrailer": "关闭预告片",
     "coverUnavailable": "封面不可用",
+    "playback": "播放",
+    "playbackFailed": "无法播放此码流",
+    "playbackUnsupported": "此播放源的媒体类型无法在页面内播放",
     "cropPoster": {
       "action": "裁切海报",
       "title": "裁切海报",

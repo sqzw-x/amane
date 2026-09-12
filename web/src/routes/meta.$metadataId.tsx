@@ -66,6 +66,7 @@ import { confirm } from "@/lib/confirm";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { proxyImageUrl } from "@/lib/utils";
 import { ProxyImage } from "@/components/media/proxy-image";
+import { PlaybackPanel } from "@/components/media/playback-panel";
 
 export const Route = createFileRoute("/meta/$metadataId")({ component: TitleDetailPage });
 
@@ -665,6 +666,8 @@ function TitleDetailPage() {
           </Group>
         </Stack>
       </Group>
+
+      <PlaybackPanel metadataId={id} />
 
       <Card withBorder radius="md" p="md">
         <Title order={5} mb="sm">

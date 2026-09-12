@@ -1365,6 +1365,159 @@
         }
       }
     },
+    "/api/playback/sources": {
+      "get": {
+        "tags": [
+          "playback"
+        ],
+        "summary": "List Playback Sources",
+        "operationId": "list_playback_sources",
+        "parameters": [
+          {
+            "name": "metadata_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Metadata Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackSourceListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/playback/{source_id}/{metadata_id}": {
+      "get": {
+        "tags": [
+          "playback"
+        ],
+        "summary": "Play Metadata",
+        "operationId": "play_metadata",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "metadata_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Metadata Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/playback/{source_id}/{metadata_id}/files/{media_file_id}": {
+      "get": {
+        "tags": [
+          "playback"
+        ],
+        "summary": "Play Metadata File",
+        "operationId": "play_metadata_file",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "metadata_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Metadata Id"
+            }
+          },
+          {
+            "name": "media_file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Media File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/plugins": {
       "get": {
         "tags": [
@@ -9732,6 +9885,81 @@
         ],
         "title": "PathTemplateSchemaResponse",
         "description": "与 resolve_paths 同源."
+      },
+      "PlaybackSourceItem": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "seekable": {
+            "type": "boolean",
+            "title": "Seekable"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "media_file_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media File Id"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "href": {
+            "type": "string",
+            "title": "Href"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_id",
+          "name",
+          "content_type",
+          "seekable",
+          "available",
+          "href"
+        ],
+        "title": "PlaybackSourceItem"
+      },
+      "PlaybackSourceListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlaybackSourceItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PlaybackSourceListResponse"
       },
       "PluginConfig": {
         "properties": {

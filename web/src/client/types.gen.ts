@@ -2277,6 +2277,54 @@ export type PathTemplateSchemaResponse = {
 };
 
 /**
+ * PlaybackSourceItem
+ */
+export type PlaybackSourceItem = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Content Type
+     */
+    content_type: string;
+    /**
+     * Seekable
+     */
+    seekable: boolean;
+    /**
+     * Available
+     */
+    available: boolean;
+    /**
+     * Media File Id
+     */
+    media_file_id?: number | null;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Href
+     */
+    href: string;
+};
+
+/**
+ * PlaybackSourceListResponse
+ */
+export type PlaybackSourceListResponse = {
+    /**
+     * Items
+     */
+    items?: Array<PlaybackSourceItem>;
+};
+
+/**
  * PluginConfig
  *
  * Persisted configuration envelope for one external plugin.
@@ -4189,6 +4237,104 @@ export type MergeMetadataResponses = {
 };
 
 export type MergeMetadataResponse = MergeMetadataResponses[keyof MergeMetadataResponses];
+
+export type ListPlaybackSourcesData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+    };
+    url: '/api/playback/sources';
+};
+
+export type ListPlaybackSourcesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListPlaybackSourcesError = ListPlaybackSourcesErrors[keyof ListPlaybackSourcesErrors];
+
+export type ListPlaybackSourcesResponses = {
+    /**
+     * Successful Response
+     */
+    200: PlaybackSourceListResponse;
+};
+
+export type ListPlaybackSourcesResponse = ListPlaybackSourcesResponses[keyof ListPlaybackSourcesResponses];
+
+export type PlayMetadataData = {
+    body?: never;
+    path: {
+        /**
+         * Source Id
+         */
+        source_id: string;
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+    };
+    query?: never;
+    url: '/api/playback/{source_id}/{metadata_id}';
+};
+
+export type PlayMetadataErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PlayMetadataError = PlayMetadataErrors[keyof PlayMetadataErrors];
+
+export type PlayMetadataResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type PlayMetadataFileData = {
+    body?: never;
+    path: {
+        /**
+         * Source Id
+         */
+        source_id: string;
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+        /**
+         * Media File Id
+         */
+        media_file_id: number;
+    };
+    query?: never;
+    url: '/api/playback/{source_id}/{metadata_id}/files/{media_file_id}';
+};
+
+export type PlayMetadataFileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PlayMetadataFileError = PlayMetadataFileErrors[keyof PlayMetadataFileErrors];
+
+export type PlayMetadataFileResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type ListPluginsData = {
     body?: never;

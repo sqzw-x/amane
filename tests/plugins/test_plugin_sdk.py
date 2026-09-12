@@ -7,7 +7,20 @@ from amane.enums import Language
 from amane.net.errors import FailureReason, RequestError, SourceError
 from amane.net.http import WebClient
 from amane.parsing.file_info import ContentType
-from amane.plugins.api import EmptyPluginConfig, FilmSourcePlugin, FilmSourceProvider, PluginContext
+from amane.plugins.api import (
+    EmptyPluginConfig,
+    FilePlaybackTarget,
+    FilmSourcePlugin,
+    FilmSourceProvider,
+    HlsPlaybackTarget,
+    PlaybackMediaFile,
+    PlaybackOffer,
+    PlaybackPlugin,
+    PlaybackProvider,
+    PlaybackQuery,
+    PluginContext,
+    UpstreamPlaybackTarget,
+)
 from amane.plugins.models import (
     PLUGIN_API_VERSION,
     RESERVED_SOURCE_NAMESPACES,
@@ -25,12 +38,19 @@ _REEXPORTS: tuple[tuple[str, object], ...] = (
     ("EmptyPluginConfig", EmptyPluginConfig),
     ("FailureReason", FailureReason),
     ("FetchOptions", FetchOptions),
+    ("FilePlaybackTarget", FilePlaybackTarget),
     ("FilmActor", FilmActor),
     ("FilmSourcePlugin", FilmSourcePlugin),
     ("FilmSourceProvider", FilmSourceProvider),
+    ("HlsPlaybackTarget", HlsPlaybackTarget),
     ("HttpClient", HttpClient),
     ("Language", Language),
     ("MediaMetadata", MediaMetadata),
+    ("PlaybackMediaFile", PlaybackMediaFile),
+    ("PlaybackOffer", PlaybackOffer),
+    ("PlaybackPlugin", PlaybackPlugin),
+    ("PlaybackProvider", PlaybackProvider),
+    ("PlaybackQuery", PlaybackQuery),
     ("PluginContext", PluginContext),
     ("RequestError", RequestError),
     ("SearchQuery", SearchQuery),
@@ -38,6 +58,7 @@ _REEXPORTS: tuple[tuple[str, object], ...] = (
     ("SourceDescriptor", SourceDescriptor),
     ("SourceError", SourceError),
     ("SourceId", SourceId),
+    ("UpstreamPlaybackTarget", UpstreamPlaybackTarget),
     ("WebClient", WebClient),
     ("film_actors", film_actors),
     ("is_external_source_id", is_external_source_id),

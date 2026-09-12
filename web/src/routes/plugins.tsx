@@ -29,19 +29,19 @@ function PluginsPage() {
   const query = usePlugins();
   const plugins = query.data?.items ?? [];
   const failures = query.data?.failures ?? [];
+  const scrapePlugins = plugins.filter((plugin) => {
+    const capabilities = plugin.descriptor.capabilities ?? ["film_metadata"];
+    return capabilities.includes("film_metadata");
+  });
+  const playbackPlugins = plugins.filter((plugin) => {
+    const capabilities = plugin.descriptor.capabilities ?? [];
+    return capabilities.includes("playback") && !capabilities.includes("film_metadata");
+  });
 
   return (
     <Stack gap="md">
       <div>
         <Title order={2}>{t("title")}</Title>
-        <Text size="sm" c="dimmed" mt={4}>
-          {t("routeHint")}{" "}
-          <Link to="/settings" search={{ section: "scraping" }}>
-            <Anchor component="span" size="sm">
-              {t("routeLink")}
-            </Anchor>
-          </Link>
-        </Text>
       </div>
 
       <PluginCatalogActions />
@@ -67,9 +67,35 @@ function PluginsPage() {
       {!query.isLoading && !query.error && plugins.length === 0 ? (
         <Text c="dimmed">{t("empty")}</Text>
       ) : null}
-      {plugins.map((plugin) => (
-        <PluginCard key={plugin.descriptor.id} plugin={plugin} />
-      ))}
+      {!query.isLoading && !query.error && plugins.length > 0 ? (
+        <>
+          <div>
+            <Title order={4}>{t("scrapeSection")}</Title>
+            <Text size="sm" c="dimmed" mt={4}>
+              {t("routeHint")}{" "}
+              <Link to="/settings" search={{ section: "scraping" }}>
+                <Anchor component="span" size="sm">
+                  {t("routeLink")}
+                </Anchor>
+              </Link>
+            </Text>
+          </div>
+          {scrapePlugins.length === 0 ? <Text c="dimmed">{t("emptyScrape")}</Text> : null}
+          {scrapePlugins.map((plugin) => (
+            <PluginCard key={plugin.descriptor.id} plugin={plugin} />
+          ))}
+          <div>
+            <Title order={4}>{t("playbackSection")}</Title>
+            <Text size="sm" c="dimmed" mt={4}>
+              {t("playbackHint")}
+            </Text>
+          </div>
+          {playbackPlugins.length === 0 ? <Text c="dimmed">{t("emptyPlayback")}</Text> : null}
+          {playbackPlugins.map((plugin) => (
+            <PluginCard key={plugin.descriptor.id} plugin={plugin} />
+          ))}
+        </>
+      ) : null}
     </Stack>
   );
 }

@@ -76,7 +76,7 @@ class CrawlerFactory:
             return self._instances[name]
 
         cls = registry.get(name)
-        if cls is None and self._plugin_manager is not None and self._plugin_manager.has_plugin(name):
+        if cls is None and self._plugin_manager is not None and self._plugin_manager.has_film_plugin(name):
             return await self._get_plugin(name)
         if cls is None:
             logger.error("crawler not registered", name=name)

@@ -13,6 +13,8 @@ from amane.crawlers.models import FetchOptions, MediaMetadata, SearchQuery
 from amane.plugin import (
     FilmSourcePlugin,
     FilmSourceProvider,
+    PlaybackPlugin,
+    PlaybackProvider,
     PluginContext,
     SourceCapability,
     SourceDescriptor,
@@ -149,7 +151,7 @@ def test_plugin_manager_discovers_dropins(tmp_path: Path) -> None:
     assert Path(origin.path).name == "acme.fake"
     names = {failure.name for failure in manager.failures}
     assert names == {"acme.broken", "acme.old", "fakesource", "plugin.squat"}
-    assert any("FilmSourcePlugin" in failure.error for failure in manager.failures)
+    assert any("FilmSourcePlugin or PlaybackPlugin" in failure.error for failure in manager.failures)
     assert any("unsupported plugin API version" in failure.error for failure in manager.failures)
     assert any("namespace.local" in failure.error for failure in manager.failures)
     assert any("reserved" in failure.error for failure in manager.failures)
@@ -402,3 +404,149 @@ async def test_disabled_plugin_is_not_available(tmp_path: Path) -> None:
         plugin_configs={"acme.fake": PluginConfig(enabled=False)},
     )
     assert await factory.get("acme.fake") is None
+
+
+def playback_plugin_source(plugin_id: str, *, capabilities: str | None = "playback") -> str:
+    if capabilities is None:
+        caps_arg = ""
+    elif capabilities == "both":
+        caps_arg = "capabilities=frozenset({SourceCapability.FILM_METADATA, SourceCapability.PLAYBACK}),"
+    else:
+        caps_arg = "capabilities=frozenset({SourceCapability.PLAYBACK}),"
+    return f"""
+from pydantic import BaseModel, ConfigDict, Field
+
+from amane.plugin import (
+    FailureReason,
+    FilePlaybackTarget,
+    HlsPlaybackTarget,
+    PlaybackOffer,
+    PlaybackPlugin,
+    PlaybackProvider,
+    PlaybackQuery,
+    PluginContext,
+    SourceCapability,
+    SourceDescriptor,
+    SourceError,
+    UpstreamPlaybackTarget,
+)
+
+
+class _Config(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    behavior: str = "upstream"
+    url: str = "http://127.0.0.1:9/"
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+class _Provider(PlaybackProvider):
+    def __init__(self, config: _Config) -> None:
+        self._config = config
+
+    async def probe(self, query: PlaybackQuery) -> PlaybackOffer | None:
+        if self._config.behavior == "none":
+            return None
+        if self._config.behavior == "error":
+            raise SourceError(FailureReason.NETWORK, detail="上游失败")
+        return PlaybackOffer(name="Remote", content_type="video/mp4", seekable=True)
+
+    async def resolve(self, query: PlaybackQuery):
+        if self._config.behavior == "none":
+            return None
+        if self._config.behavior == "error":
+            raise SourceError(FailureReason.NETWORK, detail="上游失败")
+        if self._config.behavior == "hls":
+            return HlsPlaybackTarget()
+        if self._config.behavior == "file":
+            return FilePlaybackTarget(path="/tmp/x.mp4", content_type="video/mp4", media_file_id=1)
+        return UpstreamPlaybackTarget(
+            url=self._config.url,
+            headers=self._config.headers,
+            content_type="video/mp4",
+        )
+
+
+class Plugin(PlaybackPlugin):
+    config_model = _Config
+
+    @classmethod
+    def descriptor(cls) -> SourceDescriptor:
+        return SourceDescriptor(
+            id={plugin_id!r},
+            name="Fake playback",
+            version="0.1.0",
+            {caps_arg}
+            urls=("https://play.example.test",),
+        )
+
+    def build_playback(self, context: PluginContext, config: BaseModel) -> PlaybackProvider:
+        assert isinstance(config, _Config)
+        return _Provider(config)
+"""
+
+
+class FakePlaybackPlugin(PlaybackPlugin):
+    @classmethod
+    def descriptor(cls) -> SourceDescriptor:
+        return SourceDescriptor(
+            id="acme.play",
+            name="Fake playback",
+            version="0.1.0",
+            capabilities=frozenset({SourceCapability.PLAYBACK}),
+            urls=("https://play.example.test",),
+        )
+
+    def build_playback(self, context: PluginContext, config: BaseModel) -> PlaybackProvider:
+        raise NotImplementedError
+
+
+def test_discover_accepts_playback_only_plugin(tmp_path: Path) -> None:
+    write_plugin(tmp_path, "acme.play", body=playback_plugin_source("acme.play"))
+    write_plugin(tmp_path, "acme.default", body=playback_plugin_source("acme.default", capabilities=None))
+
+    manager = PluginManager.discover(tmp_path)
+    assert manager.has_plugin("acme.play")
+    assert manager.has_playback_plugin("acme.play")
+    assert not manager.has_film_plugin("acme.play")
+    names = {failure.name for failure in manager.failures}
+    assert "acme.default" in names
+    assert any("film_metadata" in failure.error or "PlaybackPlugin" in failure.error for failure in manager.failures)
+
+
+def test_playback_plugin_cannot_enter_content_routes() -> None:
+    manager = PluginManager({"acme.play": FakePlaybackPlugin()}, [])
+    hot = HotSettings.model_validate({"scraping": {"content_routes": {"censored": ["acme.play"]}}})
+    with pytest.raises(ValueError, match="cannot provide film metadata"):
+        manager.validate_hot_settings(hot)
+
+
+def test_playback_plugin_not_in_route_schema() -> None:
+    manager = PluginManager({"acme.play": FakePlaybackPlugin()}, [])
+    schema = manager.augment_config_schema(HotSettings.model_json_schema())
+    defs = schema.get("$defs")
+    assert isinstance(defs, dict)
+    scraping = defs.get("ScrapingConfig")
+    assert isinstance(scraping, dict)
+    properties = scraping.get("properties")
+    assert isinstance(properties, dict)
+    content_routes = properties.get("content_routes")
+    assert isinstance(content_routes, dict)
+    additional = content_routes.get("additionalProperties")
+    assert isinstance(additional, dict)
+    items = additional.get("items")
+    assert isinstance(items, dict)
+    enum = items.get("enum")
+    assert isinstance(enum, list)
+    assert "acme.play" not in enum
+
+
+@pytest.mark.asyncio
+async def test_crawler_factory_skips_playback_only_plugin(tmp_path: Path) -> None:
+    manager = PluginManager({"acme.play": FakePlaybackPlugin()}, [])
+    factory = CrawlerFactory(
+        cast(HttpClient, _FakeHttp()),
+        data_dir=tmp_path,
+        plugin_manager=manager,
+        plugin_configs={"acme.play": PluginConfig()},
+    )
+    assert await factory.get("acme.play") is None

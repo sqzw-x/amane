@@ -102,6 +102,9 @@
     "playTrailer": "Play trailer",
     "closeTrailer": "Close trailer",
     "coverUnavailable": "Cover unavailable",
+    "playback": "Playback",
+    "playbackFailed": "This stream could not be played",
+    "playbackUnsupported": "This source's media type cannot play on this page",
     "cropPoster": {
       "action": "Crop poster",
       "title": "Crop poster",

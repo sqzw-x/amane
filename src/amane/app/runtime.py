@@ -30,6 +30,7 @@ from ..handlers import (
 from ..llm import TranslationCache, build_translator
 from ..media.watermarks import user_watermark_dir
 from ..net.http import RateLimiters, WebClient
+from ..playback import PlaybackFactory
 from ..plugins.manager import PluginManager
 from ..plugins.packaging import install_plugin_path, install_plugin_zip, uninstall_plugin_tree
 from ..scheduler.worker import AsyncWorker
@@ -148,6 +149,7 @@ class AppRuntime:
     r18_db: R18Database | None = None
     agent_service: AgentService | None = None
     plugin_manager: PluginManager | None = None
+    playback_factory: PlaybackFactory | None = None
 
     _r18_config: R18Config | None = field(default=None, repr=False)
     _old_r18_db: R18Database | None = field(default=None, repr=False)
@@ -214,6 +216,16 @@ class AppRuntime:
         if self.agent_service is not None:
             self.agent_service.rebuild(hot.agent)
 
+        self.playback_factory = PlaybackFactory(
+            plugin_manager=self.plugin_manager,
+            plugin_configs=hot.plugins,
+            http_client=self.http_client,
+            web_client=self.web_client,
+            data_dir=self.config.cold.data_dir,
+            safe_dirs=self.safe_dirs,
+            proxy=hot.network.proxy,
+        )
+
         return old_worker
 
     async def apply_rebuild(self) -> None:
@@ -258,10 +270,13 @@ class AppRuntime:
 
     async def _apply_rebuild_unlocked(self) -> None:
         """必须持有 ``_rebuild_lock``."""
+        old_playback = self.playback_factory
         old_worker = self.rebuild()
         await old_worker.stop()
         self.worker.start()
         await self.dispose_old_r18()
+        if old_playback is not None:
+            await old_playback.aclose()
 
     def _replace_plugin_manager(self, discovered: PluginManager) -> None:
         discovered.validate_hot_settings(self.config.hot, require_available=False)

@@ -4734,6 +4734,83 @@ export const PathTemplateSchemaResponseSchema = {
     description: '与 resolve_paths 同源.'
 } as const;
 
+export const PlaybackSourceItemSchema = {
+    properties: {
+        source_id: {
+            type: 'string',
+            title: 'Source Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        content_type: {
+            type: 'string',
+            title: 'Content Type'
+        },
+        seekable: {
+            type: 'boolean',
+            title: 'Seekable'
+        },
+        available: {
+            type: 'boolean',
+            title: 'Available'
+        },
+        media_file_id: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Media File Id'
+        },
+        detail: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Detail'
+        },
+        href: {
+            type: 'string',
+            title: 'Href'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'source_id',
+        'name',
+        'content_type',
+        'seekable',
+        'available',
+        'href'
+    ],
+    title: 'PlaybackSourceItem'
+} as const;
+
+export const PlaybackSourceListResponseSchema = {
+    properties: {
+        items: {
+            items: {
+                $ref: '#/components/schemas/PlaybackSourceItem'
+            },
+            type: 'array',
+            title: 'Items'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'PlaybackSourceListResponse'
+} as const;
+
 export const PluginConfigSchema = {
     properties: {
         enabled: {
