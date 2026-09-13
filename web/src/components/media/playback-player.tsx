@@ -240,6 +240,10 @@ function contextMenuAnchor(
  *
  * 复制的秒数在点按条目时读取, 不是展开菜单时的那一秒 —— 菜单展开期间画面仍在播放.
  *
+ * 展开期间在菜单下面盖一层透明遮罩, 菜单之外的点击都由它接住: 这次点击的 target 不是视频,
+ * 因此画面不会切换播放/暂停 (画面点击只认视频与控制器自身), 控制条也不会被误触. 收起判断
+ * 因此只看"点在不在菜单里", 不依赖事件传播次序.
+ *
  * 不可寻址的流没有可复制的跳转目标, 两项都禁用.
  */
 function ContextMenu({
@@ -296,36 +300,45 @@ function ContextMenu({
   };
 
   return (
-    <div
-      ref={menuRef}
-      className={classes.contextMenu}
-      role="menu"
-      data-upward={anchor.upward ? "true" : undefined}
-      style={{ left: anchor.left, top: anchor.top }}
-      // 菜单上的右键不改写落点, 也不允许浏览器原生菜单叠上来. 这是普通元素, 合成事件正常触发.
-      onContextMenu={(event) => event.preventDefault()}
-    >
-      <button
-        type="button"
-        role="menuitem"
-        className={classes.contextMenuItem}
-        disabled={!seekable}
-        onClick={() => void copy(formatClock(readSeconds()))}
+    <>
+      {/* 遮罩占满播放器: 菜单之外的点击落在它身上, 不会落到画面或控制条上; 点击只用于收起菜单. */}
+      <div
+        className={classes.contextMenuBackdrop}
+        aria-hidden="true"
+        onClick={() => onClose(false)}
+        onContextMenu={(event) => event.preventDefault()}
+      />
+      <div
+        ref={menuRef}
+        className={classes.contextMenu}
+        role="menu"
+        data-upward={anchor.upward ? "true" : undefined}
+        style={{ left: anchor.left, top: anchor.top }}
+        // 菜单上的右键不改写落点, 也不允许浏览器原生菜单叠上来. 这是普通元素, 合成事件正常触发.
+        onContextMenu={(event) => event.preventDefault()}
       >
-        <IconClock size={16} aria-hidden />
-        {t("detail.playbackCopyTimestamp")}
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        className={classes.contextMenuItem}
-        disabled={!seekable}
-        onClick={() => void copy(shareableTimeUrl(readSeconds()))}
-      >
-        <IconLink size={16} aria-hidden />
-        {t("detail.playbackCopyLink")}
-      </button>
-    </div>
+        <button
+          type="button"
+          role="menuitem"
+          className={classes.contextMenuItem}
+          disabled={!seekable}
+          onClick={() => void copy(formatClock(readSeconds()))}
+        >
+          <IconClock size={16} aria-hidden />
+          {t("detail.playbackCopyTimestamp")}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className={classes.contextMenuItem}
+          disabled={!seekable}
+          onClick={() => void copy(shareableTimeUrl(readSeconds()))}
+        >
+          <IconLink size={16} aria-hidden />
+          {t("detail.playbackCopyLink")}
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -446,8 +459,6 @@ function usePlayerKeys(
 
 /** 拖动进度条或音量条期间置位的属性: 手势层与画面点击都不再响应. */
 const GESTURES_DISABLED_ATTRIBUTE = "gesturesdisabled";
-/** 右键菜单展开期间置位的属性: 画面点击只用于收起菜单, 不切换播放/暂停. */
-const CONTEXT_MENU_OPEN_ATTRIBUTE = "contextmenuopen";
 /** 双击的判定窗口 (毫秒). 单击的动作须等过整个窗口, 才能确定没有第二次点击. */
 const DOUBLE_CLICK_MS = 250;
 
@@ -566,13 +577,6 @@ function useClickGestures(
         return;
       }
       if (pointerType === "touch" || controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE)) {
-        return;
-      }
-      // 菜单展开期间画面不响应点击: 收起菜单的那一次点击只用于收起, 不切换播放/暂停.
-      // 状态取自控制器上的属性而不是 React 状态 —— 收起菜单的那次点击与属性置位之间的次序,
-      // 以及事件在各层之间的传播次序, 都不该影响这一条.
-      if (controller.hasAttribute(CONTEXT_MENU_OPEN_ATTRIBUTE)) {
-        cancelPendingClickRef.current();
         return;
       }
       // 手势层的 click 监听挂在控制器上; 捕获阶段拦下它, 这次点击才不会同时被它当成单击.
@@ -729,15 +733,13 @@ export function PlaybackPlayer({
   // 画面的单击、双击与它们的排队状态: 菜单开合都要能撤掉排队中的那次单击.
   const cancelPendingClickRef = useClickGestures(controllerRef, videoRef, fullscreenButtonRef);
 
-  // 展开状态同时写在控制器属性上: 画面点击的判定读它, 因此不依赖 React 状态更新的时机.
   const openContextMenu = useCallback(
     (anchor: ContextMenuAnchor) => {
       // 右键之前若已经有一次左键单击在排队 (先左键后右键的连击), 它不该在菜单展开后切播放状态.
       cancelPendingClickRef.current();
-      controllerRef.current?.setAttribute(CONTEXT_MENU_OPEN_ATTRIBUTE, "");
       setContextMenu(anchor);
     },
-    [cancelPendingClickRef, controllerRef],
+    [cancelPendingClickRef],
   );
   useVideoContextMenu(controllerRef, videoRef, openContextMenu);
 
@@ -748,7 +750,6 @@ export function PlaybackPlayer({
   const closeContextMenu = useCallback(
     (restoreFocus: boolean) => {
       cancelPendingClickRef.current();
-      controllerRef.current?.removeAttribute(CONTEXT_MENU_OPEN_ATTRIBUTE);
       setContextMenu(null);
       if (restoreFocus) {
         focusPlayer(controllerRef);

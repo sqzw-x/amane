@@ -231,7 +231,7 @@
 */
 .contextMenu {
   position: absolute;
-  z-index: 4;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   min-width: 220px;
@@ -278,4 +278,16 @@
 .contextMenuItem svg {
   flex: none;
   opacity: 0.85;
+}
+
+/*
+  右键菜单的遮罩: 占满播放器, 层级低于菜单、高于画面与控制条.
+  菜单之外的点击落在它身上, 因此不会命中画面 (不切换播放/暂停) 或控制条按钮; 它只负责收起菜单.
+  全屏时同样覆盖整个播放器. 这里不能用 Portal —— 全屏下只渲染控制器子树.
+*/
+.contextMenuBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: transparent;
 }
