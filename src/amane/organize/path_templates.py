@@ -35,7 +35,8 @@ THUMB_TEMPLATE_DEFAULT = "{link_dir}/thumb.jpg"
 POSTER_TEMPLATE_DEFAULT = "{link_dir}/poster.jpg"
 FANART_TEMPLATE_DEFAULT = "{link_dir}/fanart.jpg"
 EXTRAFANART_TEMPLATE_DEFAULT = "{link_dir}/extrafanart"
-NFO_TEMPLATE_DEFAULT = "{link_dir}/{number}.nfo"
+# 媒体服务器按视频文件名匹配 NFO, 所以默认跟随 {video_name} (含 CD / 中字段).
+NFO_TEMPLATE_DEFAULT = "{link_dir}/{video_name}.nfo"
 TRAILER_TEMPLATE_DEFAULT = "{link_dir}/trailer.mp4"
 SUBTITLE_TEMPLATE_DEFAULT = "{link_dir}/{raw_srt_name}.{ext}"
 

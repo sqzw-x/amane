@@ -198,12 +198,13 @@ class TestResolvePathsBasic:
 
 
 class TestOptionalGroups:
-    """路径解析边界: 可选组不改附属默认; 结构错误在写入时拒绝."""
+    """路径解析边界: 可选组输出经 `{video_name}` 进入 NFO 默认; 结构错误在写入时拒绝."""
 
-    def test_group_does_not_affect_nfo(self, media: Path):
+    def test_optional_group_reaches_nfo_default(self, media: Path):
         wp = Library(name="t", path=str(media), video_template="{number}/{number}[-CD{cd?}].{ext}")
         result = resolve_paths(wp, _meta(), ext="mp4", cd=1)
-        assert result.nfo == media / "ABC-123" / "ABC-123.nfo"
+        assert result.video == media / "ABC-123" / "ABC-123-CD1.mp4"
+        assert result.nfo == media / "ABC-123" / "ABC-123-CD1.nfo"
 
     def test_unclosed_group_rejected(self):
         with pytest.raises(ValueError, match="unclosed optional group"):
@@ -315,12 +316,23 @@ class TestResolvePathsDefaults:
 
         assert result.extrafanart_dir == media / "StudioX" / "ABC-123" / "extrafanart"
 
-    def test_nfo_default(self, media: Path):
-        wp = Library(name="t", path=str(media), video_template="{studio}/{number}/{number}.{ext}")
-        meta = _meta()
-        result = resolve_paths(wp, meta, ext="mp4")
+    @pytest.mark.parametrize(
+        ("source", "stem"),
+        [
+            (None, "ABC-123"),
+            ("MIDV-123-CD2.mp4", "ABC-123-CD2"),
+            ("MIDV-123-CD2-C.mp4", "ABC-123-CD2-C"),
+        ],
+        ids=["plain", "cd", "cd-and-sub"],
+    )
+    def test_nfo_default_follows_video_name(self, media: Path, source: str | None, stem: str):
+        """NFO 默认与整理后视频同名 (含 CD / 中字段), 媒体服务器按视频文件名匹配."""
+        wp = Library(name="t", path=str(media), video_template=VIDEO_TEMPLATE_DEFAULT)
+        file_info = parse_file_info(source) if source is not None else None
+        result = resolve_paths(wp, _meta(), ext="mp4", file_info=file_info)
 
-        assert result.nfo == media / "StudioX" / "ABC-123" / "ABC-123.nfo"
+        assert result.video == media / "StudioX" / "ABC-123" / f"{stem}.mp4"
+        assert result.nfo == result.video.parent / f"{stem}.nfo"
 
     def test_trailer_default(self, media: Path):
         wp = Library(name="t", path=str(media), video_template="{studio}/{number}/{number}.{ext}")
