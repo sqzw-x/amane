@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+    from pathlib import Path
 
     from amane.db.models import TaskType
     from amane.db.repository import Repository
@@ -15,6 +16,18 @@ if TYPE_CHECKING:
 def patch_path(obj: object) -> str:
     """根据对象动态生成 patch 路径"""
     return f"{obj.__module__}.{obj.__qualname__}"
+
+
+def write_spa_dist(dist: Path, *, asset_bytes: bytes) -> Path:
+    """造一份最小 SPA 产物 (index.html + 一个带 hash 的静态资源), 供挂载路径的测试使用."""
+    assets = dist / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    (assets / "index-test.js").write_bytes(asset_bytes)
+    (dist / "index.html").write_text(
+        '<!doctype html>\n<html lang="zh-CN"><head><title>Amane</title></head><body></body></html>\n',
+        encoding="utf-8",
+    )
+    return dist
 
 
 def assert_exhaustive_enum[T: Enum](v: Iterable[T], e: type[T], msg: str = "", allow_extra: bool = False) -> None:

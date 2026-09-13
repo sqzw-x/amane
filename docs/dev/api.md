@@ -56,7 +56,9 @@ Starlette WS 不支持 `Depends`, `ws.py` 手动取 `ws.app.state.runtime`. 插�
 
 ## 中间件顺序
 
-`create_app`: 先 `include_router` 再 `mount_spa` (SPA catch-all 会吞 `/api`), 最后注册 `LoggingMiddleware`. `add_middleware` 后注册者在栈外层 (insert(0)), 故 LoggingMiddleware 包住 TokenAuth / CORS / SPA fallback — 401/403 直返与内层中间件自身异常也进入请求日志. 新端点不依赖中间件注册顺序; 新增自定义中间件时 LoggingMiddleware 必须仍为最外层.
+`create_app`: 先 `include_router` 再 `mount_spa` (SPA catch-all 会吞 `/api`), 最后注册 `LoggingMiddleware`, 再注册 `GZipMiddleware`. `add_middleware` 后注册者在栈外层 (insert(0)), 故栈自外向内是 GZip → Logging → CORS → TokenAuth → SPA fallback — 401/403 直返与内层中间件自身异常也进入请求日志. 新端点不依赖中间件注册顺序; 新增自定义中间件时须注册在 GZip 之内, 以便内层异常仍被日志层捕获.
+
+**响应压缩**: `GZipMiddleware` 注册在栈最外层. 内层中间件都是 `BaseHTTPMiddleware`, 正文以分块消息交出, 压缩只能"边流边压": 分块正文同样被压且 `content-length` 被改写 —— 因此 `minimum_size` 对本栈内的响应实际不生效, 几十字节的响应也会被压 (实测约 4 微秒, 不值得为它加一层缓冲正文的中间件). 真正受益的是几百 KiB 的 SPA 产物与 `just build` 前的首屏包, 以及大 JSON. 图片、视频、`text/event-stream` 命中 `GZipMiddleware` 自带排除表而保持原样 —— SSE 逐条送达依赖这一点.
 
 `TokenAuthMiddleware` 与 `LoggingMiddleware` 都是 `BaseHTTPMiddleware`: 它交给下游的是包装过的 `receive`, 必须真正挂起等待才会收到 `http.disconnect`. 因此 `Request.is_disconnected()` (立刻取消式探测) 在本栈内恒为 `False`, 需要感知客户端离开的长响应改用 `playback/disconnect.py` 的 `DisconnectSignal` (见 [plugins.md](plugins.md)).
 
