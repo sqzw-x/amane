@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -81,20 +82,87 @@ class TestCommentsApi:
         meta = await repo.upsert_metadata(number="CM-API-1")
         assert meta.id is not None
 
-        resp = await client.post(f"metadata/{meta.id}/comments", json={"body": "nice"})
+        resp = await client.post(f"metadata/{meta.id}/comments", json={"body": "  nice  "})
         assert resp.status_code == 201
-        comment_id = resp.json()["id"]
+        created = resp.json()
+        assert created["body"] == "nice"
+        assert created["created_at"] == created["updated_at"]
+        comment_id = created["id"]
 
         detail = await client.get(f"metadata/{meta.id}")
         assert detail.status_code == 200
-        assert len(detail.json()["comments"]) == 1
+        assert [c["id"] for c in detail.json()["comments"]] == [comment_id]
 
         resp = await client.patch(f"comments/{comment_id}", json={"body": "updated"})
         assert resp.status_code == 200
-        assert resp.json()["body"] == "updated"
+        edited = resp.json()
+        assert edited["body"] == "updated"
+        assert datetime.fromisoformat(edited["updated_at"]) > datetime.fromisoformat(created["updated_at"])
+
+        # 与库中一致的正文不构成编辑, 不刷新编辑时间.
+        resp = await client.patch(f"comments/{comment_id}", json={"body": "updated"})
+        assert resp.status_code == 200
+        assert resp.json()["updated_at"] == edited["updated_at"]
 
         resp = await client.delete(f"comments/{comment_id}")
         assert resp.status_code == 204
 
         detail = await client.get(f"metadata/{meta.id}")
         assert detail.json()["comments"] == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("number", "body", "status"),
+        [
+            ("CM-VALID-EMPTY", "", 422),
+            ("CM-VALID-BLANK", "   ", 422),
+            ("CM-VALID-WS", "\n\t ", 422),
+            ("CM-VALID-MAX", "x" * 10000, 201),
+            ("CM-VALID-OVER", "x" * 10001, 422),
+        ],
+    )
+    async def test_create_body_validation(
+        self, client: AsyncClient, repo: Repository, number: str, body: str, status: int
+    ) -> None:
+        meta = await repo.upsert_metadata(number=number)
+        assert meta.id is not None
+
+        resp = await client.post(f"metadata/{meta.id}/comments", json={"body": body})
+        assert resp.status_code == status
+        if status == 201:
+            assert resp.json()["body"] == body
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("body", "status"),
+        [
+            ("", 422),
+            ("   ", 422),
+            ("x" * 10001, 422),
+        ],
+    )
+    async def test_update_body_validation(self, client: AsyncClient, repo: Repository, body: str, status: int) -> None:
+        meta = await repo.upsert_metadata(number="CM-API-2")
+        assert meta.id is not None
+        created = (await client.post(f"metadata/{meta.id}/comments", json={"body": "keep me"})).json()
+
+        resp = await client.patch(f"comments/{created['id']}", json={"body": body})
+        assert resp.status_code == status
+
+        detail = await client.get(f"metadata/{meta.id}")
+        assert [c["body"] for c in detail.json()["comments"]] == ["keep me"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("method", "url", "payload"),
+        [
+            ("post", "metadata/999999/comments", {"body": "orphan"}),
+            ("patch", "comments/999999", {"body": "orphan"}),
+            ("delete", "comments/999999", None),
+        ],
+    )
+    async def test_missing_target(
+        self, client: AsyncClient, method: str, url: str, payload: dict[str, str] | None
+    ) -> None:
+        resp = await client.request(method, url, json=payload)
+        assert resp.status_code == 404

@@ -995,27 +995,13 @@ export const CommentResponseSchema = {
             title: 'Body'
         },
         created_at: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
+            type: 'string',
+            format: 'date-time',
             title: 'Created At'
         },
         updated_at: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
+            type: 'string',
+            format: 'date-time',
             title: 'Updated At'
         }
     },
@@ -1023,7 +1009,9 @@ export const CommentResponseSchema = {
     required: [
         'id',
         'metadata_id',
-        'body'
+        'body',
+        'created_at',
+        'updated_at'
     ],
     title: 'CommentResponse'
 } as const;

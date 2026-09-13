@@ -153,8 +153,15 @@ class TestUserTagsAndComments:
         assert meta.id is not None
         c = await repo.create_comment(meta.id, "body1")
         assert c is not None and c.id is not None
+        assert c.created_at == c.updated_at
+
+        same = await repo.update_comment(c.id, body="body1")
+        assert same is not None and same.updated_at == c.updated_at
+
         updated = await repo.update_comment(c.id, body="body2")
         assert updated is not None and updated.body == "body2"
+        assert updated.updated_at > c.created_at
+
         assert await repo.delete_comment(c.id) is True
         assert await repo.create_comment(99999, "x") is None
 

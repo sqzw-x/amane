@@ -455,31 +455,30 @@ class FacetsRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             return list(result.all())
 
-    async def get_comment(self, comment_id: int) -> Comment | None:
-        async with self._session() as session:
-            return await session.get(Comment, comment_id)
-
     async def create_comment(self, metadata_id: int, body: str) -> Comment | None:
         async with self._session() as session:
             if await session.get(Metadata, metadata_id) is None:
                 return None
-            comment = Comment(metadata_id=metadata_id, body=body)
+            # 两个时间列取同一个值: ``updated_at`` 晚于 ``created_at`` 是正文被编辑过的唯一依据.
+            now = _utcnow()
+            comment = Comment(metadata_id=metadata_id, body=body, created_at=now, updated_at=now)
             session.add(comment)
             await session.commit()
             await session.refresh(comment)
             return comment
 
     async def update_comment(self, comment_id: int, **updates: Unpack[CommentUpdates]) -> Comment | None:
+        """正文与库中一致时不写库, ``updated_at`` 保持原值."""
         async with self._session() as session:
             comment = await session.get(Comment, comment_id)
             if comment is None:
                 return None
-            if "body" in updates:
+            if "body" in updates and updates["body"] != comment.body:
                 comment.body = updates["body"]
-            comment.updated_at = _utcnow()
-            session.add(comment)
-            await session.commit()
-            await session.refresh(comment)
+                comment.updated_at = _utcnow()
+                session.add(comment)
+                await session.commit()
+                await session.refresh(comment)
             return comment
 
     async def delete_comment(self, comment_id: int) -> bool:

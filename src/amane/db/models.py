@@ -572,6 +572,8 @@ class MetadataUserTag(SQLModel, table=True):
 
 
 class Comment(SQLModel, table=True):
+    """``updated_at`` 晚于 ``created_at`` 表示正文被编辑过; 未编辑时两列相等."""
+
     __tablename__ = "comments"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
