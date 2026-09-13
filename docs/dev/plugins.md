@@ -12,7 +12,7 @@
 
 插件是可信的进程内纯 Python: `importlib` 从数据目录加载 `plugin.py`, 与主机共用解释器. 没有进程隔离. 插件不能声明自己的 pip 依赖或原生扩展, 只使用主机已提供的 API (经 `amane.plugin` 与 `context.http_client`).
 
-桌面打包版 (PyInstaller onedir) 不保证标准库完整: 打包只收集主机静态导入图里的标准库模块, 插件在运行时动态加载, 它引用的模块可能不在包里 (`html.parser` 即此类). 这类插件在 `just dev` 与 Docker 里正常, 只在桌面版加载失败. 因此两个构建脚本把标准库整包收进 onedir (`scripts/stdlib_modules.py`, 代价见 [desktop.md](desktop.md)); 仍缺失的模块在安装期以可读的 422 报出, 在发现期进入 `failures`.
+**插件可以放心 import 标准库**: 桌面打包版按平台收集整个标准库, 只排除依赖包外产物的 GUI 与安装器 (`tkinter`、`turtle`、`idlelib`、`turtledemo`、`ensurepip`, 做法与体积见 [desktop.md](desktop.md)); Docker 与源码运行用的是完整标准库. 不可用的仍是第三方包与原生扩展: 安装时导入失败的模块以可读的 422 报出, 已放好的目录在发现期进入 `failures`.
 
 ## 发现与身份
 
