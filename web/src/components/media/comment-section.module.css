@@ -1,0 +1,32 @@
+/*
+  评论区: 卡片底色在浅色下抬到 gray-1, 与页面 body (#fff) 分开.
+  深色下沿用卡片默认底色 (dark-6), 再抬高一档会削弱正文对比.
+*/
+.card {
+  --comment-rule: light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-6));
+}
+
+.item {
+  padding: var(--mantine-spacing-sm) 0;
+}
+
+.item + .item {
+  border-top: 1px solid var(--comment-rule);
+}
+
+/* 最后一条与发表区分开. */
+.item:last-child {
+  border-bottom: 1px solid var(--comment-rule);
+}
+
+/* 楼号: 与相对时间同一行, 用弱底色把序号与文案分开. */
+.floor {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
+  color: var(--mantine-color-dimmed);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.6;
+}

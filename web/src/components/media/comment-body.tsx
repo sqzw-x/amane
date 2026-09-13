@@ -21,7 +21,7 @@ export function CommentBody({
 }) {
   const { t } = useTranslation("metadata");
   return (
-    <Text size="sm">
+    <Text size="sm" className={classes.body}>
       {splitCommentTimestamps(body).map((segment, index) =>
         segment.kind === "text" ? (
           <Fragment key={index}>{segment.text}</Fragment>

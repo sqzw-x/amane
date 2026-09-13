@@ -119,6 +119,7 @@
     "facetDeleted": "Facet deleted and blocklisted",
     "facetRuleDeleted": "Rule removed",
     "commentCreated": "Comment posted",
+    "commentUpdated": "Comment saved",
     "commentDeleted": "Comment deleted"
   },
   "batch": {

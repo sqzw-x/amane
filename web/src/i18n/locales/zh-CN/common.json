@@ -113,6 +113,7 @@
     "facetDeleted": "分类已删除并加入黑名单",
     "facetRuleDeleted": "规则已移除",
     "commentCreated": "评论已发表",
+    "commentUpdated": "评论已保存",
     "commentDeleted": "评论已删除"
   },
   "batch": {

@@ -1,23 +1,38 @@
-/* 评论里的时间戳: 与正文同字号同行高, 只加下划线, 点击跳到该位置. */
+/* 正文: 保留用户输入的换行, 长串 (URL 等) 不撑破卡片. */
+.body {
+  margin-top: 6px;
+  color: var(--mantine-color-text);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 时间戳是正文里的跳转入口, 用浅色胶囊与正文分开; 颜色取品牌色的两端, 深色下比正文底色亮一档. */
 .timestamp {
-  padding: 0;
+  padding: 0 4px;
   border: 0;
-  background: none;
+  border-radius: 4px;
+  background: light-dark(var(--mantine-color-brand-0), rgb(26 113 255 / 0.18));
   font: inherit;
-  color: var(--mantine-primary-color-filled);
+  font-weight: 600;
+  color: light-dark(var(--mantine-color-brand-8), var(--mantine-color-brand-3));
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 .timestamp:hover {
-  text-decoration-thickness: 2px;
+  background: light-dark(var(--mantine-color-brand-1), rgb(26 113 255 / 0.32));
+}
+
+.timestamp:focus-visible {
+  outline: 2px solid var(--mantine-color-brand-5);
+  outline-offset: 1px;
 }
 
 /* 当前没有可跳转的播放时保留时间戳的样子, 但不给点击. */
 .disabledTimestamp {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-5));
   color: var(--mantine-color-dimmed);
   cursor: not-allowed;
-  text-decoration: underline dashed;
-  text-underline-offset: 2px;
 }

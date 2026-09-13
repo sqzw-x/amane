@@ -11,7 +11,6 @@ import {
   Modal,
   Stack,
   Text,
-  Textarea,
   Title,
   Tooltip,
 } from "@mantine/core";
@@ -26,7 +25,6 @@ import {
   IconPhotoOff,
   IconPlayerPlay,
   IconRefresh,
-  IconSend,
   IconStar,
   IconTrash,
   IconX,
@@ -39,9 +37,7 @@ import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import {
   attachUserTagMutation,
-  createCommentMutation,
   createUserTagMutation,
-  deleteCommentMutation,
   deleteMetadataMutation,
   detachUserTagMutation,
   getMetadataOptions,
@@ -67,7 +63,7 @@ import { confirm } from "@/lib/confirm";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { proxyImageUrl } from "@/lib/utils";
 import { ProxyImage } from "@/components/media/proxy-image";
-import { CommentBody } from "@/components/media/comment-body";
+import { CommentSection } from "@/components/media/comment-section";
 import { PlaybackPanel } from "@/components/media/playback-panel";
 import type { SeekRequest } from "@/components/media/playback-player";
 
@@ -114,7 +110,6 @@ function TitleDetailPage() {
   const [playingTrailer, setPlayingTrailer] = useState(false);
   const [thumbBroken, setThumbBroken] = useState(false);
   const [posterBroken, setPosterBroken] = useState(false);
-  const [newComment, setNewComment] = useState("");
   // 评论时间戳的跳转: 本地请求负责即时响应 (同一秒连点也要重新触发), 地址栏的 `t` 负责分享与刷新定位.
   const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
   const [canSeek, setCanSeek] = useState(false);
@@ -234,21 +229,6 @@ function TitleDetailPage() {
   const createTagMutation = useMutation(createUserTagMutation());
   const attachTagMutation = useMutation(attachUserTagMutation());
   const detachTagMutation = useMutation(detachUserTagMutation());
-  const createCommentMut = useMutation({
-    ...createCommentMutation(),
-    onSuccess: () => {
-      notifications.show({ message: t("common:toast.commentCreated"), color: "blue" });
-      setNewComment("");
-      invalidateDetail();
-    },
-  });
-  const deleteCommentMut = useMutation({
-    ...deleteCommentMutation(),
-    onSuccess: () => {
-      notifications.show({ message: t("common:toast.commentDeleted"), color: "blue" });
-      invalidateDetail();
-    },
-  });
 
   async function handleAddTags(names: string[]) {
     const unique = [...new Set(names.map((name) => name.trim()).filter((name) => name.length > 0))];
@@ -743,54 +723,12 @@ function TitleDetailPage() {
         )}
       </Card>
 
-      <Card withBorder radius="md" p="md">
-        <Title order={5} mb="sm">
-          {t("detail.comments")}
-        </Title>
-        {(data.comments ?? []).length === 0 ? (
-          <Text size="sm" c="dimmed" mb="sm">
-            {t("detail.noComments")}
-          </Text>
-        ) : (
-          <Stack gap="xs" mb="sm">
-            {(data.comments ?? []).map((c) => (
-              <Group key={c.id} justify="space-between" align="flex-start" wrap="nowrap">
-                <CommentBody body={c.body} canSeek={canSeek} onSeek={requestSeek} />
-                <ActionIcon
-                  size="sm"
-                  variant="subtle"
-                  color="red"
-                  onClick={() => deleteCommentMut.mutate({ path: { comment_id: c.id } })}
-                >
-                  <IconTrash size={14} />
-                </ActionIcon>
-              </Group>
-            ))}
-          </Stack>
-        )}
-        <Group gap="xs" align="flex-end">
-          <Textarea
-            value={newComment}
-            onChange={(e) => setNewComment(e.currentTarget.value)}
-            placeholder={t("detail.commentPlaceholder")}
-            style={{ flex: 1 }}
-            rows={2}
-          />
-          <Button
-            size="xs"
-            leftSection={<IconSend size={14} />}
-            disabled={!newComment.trim()}
-            onClick={() =>
-              createCommentMut.mutate({
-                path: { metadata_id: id },
-                body: { body: newComment.trim() },
-              })
-            }
-          >
-            {t("detail.addComment")}
-          </Button>
-        </Group>
-      </Card>
+      <CommentSection
+        metadataId={id}
+        comments={data.comments ?? []}
+        canSeek={canSeek}
+        onSeek={requestSeek}
+      />
 
       <Modal
         opened={editOpen}
