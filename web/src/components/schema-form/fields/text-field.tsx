@@ -1,4 +1,4 @@
-import { Button, Group, Input } from "@mantine/core";
+import { Button, Group, Input, Textarea } from "@mantine/core";
 import type { AnyFieldApi } from "@tanstack/react-form";
 import type { FieldProps } from "../schema";
 import { isNullable } from "../schema";
@@ -13,6 +13,10 @@ import { fieldError } from "./field-error";
  *
  * `x-long` renders a taller textarea even when `x-multiline` isn't set - for
  * long-form text (notes, logs, body text) that benefits from more vertical space.
+ *
+ * The multiline branch must use `Textarea`: a bare `Input component="textarea"`
+ * inherits Input's fixed height (`--input-size` = `--input-height`), so `rows`
+ * has no effect and overflowing content only shows a scrollbar.
  */
 export function TextField({
   name,
@@ -39,9 +43,8 @@ export function TextField({
         >
           <Group gap="xs" wrap="nowrap" align={multiline ? "flex-start" : "center"}>
             {multiline ? (
-              <Input
+              <Textarea
                 id={id}
-                component="textarea"
                 rows={long ? 8 : 3}
                 value={(field.state.value as string) ?? ""}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
