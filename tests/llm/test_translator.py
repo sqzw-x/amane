@@ -4,12 +4,16 @@
 - 跨语系走 LLM, 中文走 zhconv, 已是目标语言不动 的分流
 - 后端失败 (返回 None / 抛异常) 下的健壮性
 - build_translator 的装配开关
+- 自定义提示词进入后端, 以及提示词变化后的缓存失效
 """
 
+import aiosqlite
 import pytest
 
 from amane.enums import Language, MetadataField
-from amane.llm import LLMTranslator, TranslationCache, build_translator
+from amane.llm import LLMTranslator, TranslationCache, build_system_prompt, build_translator
+
+_SYSTEM_ZH = build_system_prompt(Language.ZH_CN, MetadataField.TITLE)
 
 
 class _FakeBackend:
@@ -133,19 +137,57 @@ def cache(tmp_path):
 
 @pytest.mark.asyncio
 async def test_cache_roundtrip(cache):
-    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE) is None
-    await cache.put("Hello", Language.ZH_CN, MetadataField.TITLE, "你好")
-    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE) == "你好"
+    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) is None
+    await cache.put("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH, "你好")
+    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "你好"
     await cache.close()
 
 
 @pytest.mark.asyncio
 async def test_cache_key_components(cache):
-    """target 与 field 都参与键: 任一不同即为独立条目."""
-    await cache.put("Hello", Language.ZH_CN, MetadataField.TITLE, "标题译")
-    assert await cache.get("Hello", Language.ZH_TW, MetadataField.TITLE) is None  # target 不同
-    assert await cache.get("Hello", Language.ZH_CN, MetadataField.PLOT) is None  # field 不同
-    assert await cache.get("World", Language.ZH_CN, MetadataField.TITLE) is None  # 文本不同
+    """target / field / 提示词 都参与键: 任一不同即为独立条目."""
+    await cache.put("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH, "标题译")
+    assert await cache.get("Hello", Language.ZH_TW, MetadataField.TITLE, _SYSTEM_ZH) is None  # target 不同
+    assert await cache.get("Hello", Language.ZH_CN, MetadataField.PLOT, _SYSTEM_ZH) is None  # field 不同
+    assert await cache.get("World", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) is None  # 文本不同
+    # 提示词不同: 同一文本在另一份提示词下没有可用译文
+    other = build_system_prompt(Language.ZH_CN, MetadataField.TITLE, system_prompt="只用中性词汇.")
+    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, other) is None
+    await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_cache_separates_prompts_for_same_key(cache):
+    """同一 (文本, 语言, 字段) 下两份提示词的译文互不覆盖."""
+    other = build_system_prompt(Language.ZH_CN, MetadataField.TITLE, system_prompt="只用中性词汇.")
+    await cache.put("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH, "内置译文")
+    await cache.put("Hello", Language.ZH_CN, MetadataField.TITLE, other, "自定义译文")
+    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "内置译文"
+    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, other) == "自定义译文"
+    await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_cache_schema_reset(tmp_path):
+    """旧版表不含提示词列: 打开时整表重建, 不因缺列报错."""
+    path = tmp_path / "translations.db"
+    conn = await aiosqlite.connect(path)
+    await conn.execute(
+        "CREATE TABLE translations ("
+        " text_hash TEXT NOT NULL, target TEXT NOT NULL, field TEXT NOT NULL,"
+        " translation TEXT NOT NULL, PRIMARY KEY (text_hash, target, field))"
+    )
+    await conn.execute(
+        "INSERT INTO translations (text_hash, target, field, translation) VALUES (?, ?, ?, ?)",
+        ("deadbeef", Language.ZH_CN, MetadataField.TITLE, "旧译文"),
+    )
+    await conn.commit()
+    await conn.close()
+
+    cache = TranslationCache(path)
+    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) is None
+    await cache.put("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH, "新译文")
+    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "新译文"
     await cache.close()
 
 
@@ -154,10 +196,10 @@ async def test_cache_persists_across_connections(tmp_path):
     """缓存落盘: 新建连接 (模拟重启) 仍可命中."""
     path = tmp_path / "translations.db"
     c1 = TranslationCache(path)
-    await c1.put("Hello", Language.ZH_CN, MetadataField.TITLE, "你好")
+    await c1.put("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH, "你好")
     await c1.close()
     c2 = TranslationCache(path)
-    assert await c2.get("Hello", Language.ZH_CN, MetadataField.TITLE) == "你好"
+    assert await c2.get("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "你好"
     await c2.close()
 
 
@@ -174,6 +216,46 @@ async def test_translator_uses_cache_on_repeat(cache):
 
 
 @pytest.mark.asyncio
+async def test_translator_custom_prompt_reaches_backend(cache):
+    """自定义指令与字段说明进入 system 提示词, 原文仍作 user 提示词."""
+    backend = _FakeBackend("译文")
+    t = LLMTranslator(
+        backend,
+        system_prompt="只用中性词汇.",
+        field_prompts={MetadataField.TITLE: "标题不超过 30 字."},
+    )
+    await t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE)
+    system, user = backend.calls[0]
+    assert system == build_system_prompt(
+        Language.ZH_CN,
+        MetadataField.TITLE,
+        system_prompt="只用中性词汇.",
+        field_prompts={MetadataField.TITLE: "标题不超过 30 字."},
+    )
+    assert "只用中性词汇." in system
+    assert "标题不超过 30 字." in system
+    assert user == "Hello world"
+
+
+@pytest.mark.asyncio
+async def test_translator_prompt_change_invalidates_cache(cache):
+    """改提示词后同一文本重译: 旧译文不再命中, 新译文写入缓存."""
+    backend = _FakeBackend("译文")
+    before = LLMTranslator(backend, cache)
+    assert await before.translate("Hello world", Language.ZH_CN, MetadataField.TITLE) == "译文"
+    assert len(backend.calls) == 1
+
+    after = LLMTranslator(backend, cache, system_prompt="只用中性词汇.")
+    assert await after.translate("Hello world", Language.ZH_CN, MetadataField.TITLE) == "译文"
+    assert len(backend.calls) == 2
+
+    # 变回内置提示词: 旧条目仍在, 不重复调用后端
+    assert await before.translate("Hello world", Language.ZH_CN, MetadataField.TITLE) == "译文"
+    assert len(backend.calls) == 2
+    await cache.close()
+
+
+@pytest.mark.asyncio
 async def test_zhconv_path_skips_cache(cache):
     """中文简繁转换不经缓存 (zhconv 本身廉价且确定)."""
     backend = _FakeBackend()
@@ -181,7 +263,7 @@ async def test_zhconv_path_skips_cache(cache):
     assert await t.translate("後愛上你", Language.ZH_CN, MetadataField.TITLE) == "后爱上你"
     assert not backend.calls
     # 缓存中不应留下中文转换条目
-    assert await cache.get("後愛上你", Language.ZH_CN, MetadataField.TITLE) is None
+    assert await cache.get("後愛上你", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) is None
     await cache.close()
 
 
@@ -191,14 +273,14 @@ async def test_failed_translation_not_cached(cache):
     backend = _FakeBackend(None)
     t = LLMTranslator(backend, cache)
     assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) is None
-    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE) is None
+    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) is None
     await cache.close()
 
 
 @pytest.mark.asyncio
 async def test_use_cache_false_bypasses_read_but_refreshes(cache):
     """use_cache=False: 跳过缓存读取强制重译, 但仍回写刷新缓存."""
-    await cache.put("Hello world", Language.ZH_CN, MetadataField.TITLE, "旧译文")
+    await cache.put("Hello world", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH, "旧译文")
     backend = _FakeBackend("新译文")
     t = LLMTranslator(backend, cache)
     # 强制重译: 忽略缓存里的"旧译文", 调后端
@@ -206,5 +288,5 @@ async def test_use_cache_false_bypasses_read_but_refreshes(cache):
     assert result == "新译文"
     assert len(backend.calls) == 1
     # 缓存被刷新为新译文
-    assert await cache.get("Hello world", Language.ZH_CN, MetadataField.TITLE) == "新译文"
+    assert await cache.get("Hello world", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "新译文"
     await cache.close()

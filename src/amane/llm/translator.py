@@ -99,16 +99,17 @@ class LLMTranslator:
                 field_prompts=self._field_prompts,
             )
             # 缓存命中即跳过 LLM: 全缓存重刮, 配置不变时不重复翻译, 也避免 temperature 漂移.
-            # use_cache=False 时跳过读取 (强制重译), 但仍回写以刷新缓存.
+            # 键含 system 提示词, 改提示词后旧译文不再命中. use_cache=False 时跳过读取
+            # (强制重译), 但仍回写以刷新缓存.
             if self._cache is not None and use_cache:
-                cached = await self._cache.get(text, target, field)
+                cached = await self._cache.get(text, target, field, system)
                 if cached is not None:
                     return cached
             result = await self._backend.ask(system_prompt=system, user_prompt=text)
             if not result:
                 return None
             if self._cache is not None:
-                await self._cache.put(text, target, field, result)
+                await self._cache.put(text, target, field, system, result)
             return result
 
         # 中文文本: 简繁字形转换 (幂等); 共用字/已是目标变体则结果等于原文 → 返回 None 省去写回.
