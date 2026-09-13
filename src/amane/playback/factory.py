@@ -234,7 +234,7 @@ class PlaybackFactory:
     def _listed_name(self, source_id: str) -> str:
         """来源在列表里的显示名: 插件声明过就用 descriptor 的名字, 否则退回来源 ID.
 
-        探测失败时没有 offer 可取名字, 退回 ID 会让用户看到内部标识 (``sqzw.local``).
+        探测失败时没有 offer 可取名字, 退回 ID 会让用户看到内部标识 (``namespace.plugin`` 之类的来源 ID).
         """
         descriptor = self._plugin_manager.descriptor(source_id) if self._plugin_manager is not None else None
         return descriptor.name if descriptor is not None else source_id
