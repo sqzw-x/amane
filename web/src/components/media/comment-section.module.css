@@ -30,3 +30,20 @@
   font-size: var(--mantine-font-size-xs);
   line-height: 1.6;
 }
+
+/*
+  行内操作只在指针悬浮该条或焦点进入该条时出现, 避免每行都挂着两个图标.
+  只在 (hover: hover) 下隐藏 —— 触摸设备没有悬浮态, 隐藏会让按钮永远点不到.
+  opacity 为 0 的元素仍可聚焦, 因此键盘 Tab 进来时由 :focus-within 显示.
+*/
+@media (hover: hover) {
+  .actions {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+
+  .item:hover .actions,
+  .item:focus-within .actions {
+    opacity: 1;
+  }
+}

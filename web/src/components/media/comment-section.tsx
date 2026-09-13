@@ -197,7 +197,7 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
                       })}`}
                   </Text>
                 </Group>
-                <Group gap={2} align="center" wrap="nowrap">
+                <Group gap={2} align="center" wrap="nowrap" className={classes.actions}>
                   <HintedActionIcon
                     size="sm"
                     variant="subtle"

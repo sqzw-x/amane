@@ -9,6 +9,7 @@ import {
   Loader,
   Menu,
   Modal,
+  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -696,39 +697,42 @@ function TitleDetailPage() {
         onCanSeekChange={setCanSeek}
       />
 
-      <Card withBorder radius="md" p="md">
-        <Title order={5} mb="sm">
-          {t("detail.connections")}
-        </Title>
-        {data.files.length === 0 ? (
-          <Text size="sm" c="dimmed">
-            {t("detail.noFiles")}
-          </Text>
-        ) : (
-          <Stack gap={6}>
-            {data.files.map((f) => (
-              <Group key={f.id} justify="space-between" gap="xs" wrap="nowrap">
-                <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
-                  <Text size="sm" truncate="end" ff="monospace">
-                    {f.path}
-                  </Text>
-                  <FilePhaseBadges phase={f} />
-                </Stack>
-                <Badge size="sm" variant="light">
-                  {f.status}
-                </Badge>
-              </Group>
-            ))}
-          </Stack>
-        )}
-      </Card>
+      {/* 宽屏下并排, 窄屏落回上下叠放; 各自保持自然高度, 拉平会把空白挪进较短的一栏. */}
+      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md" style={{ alignItems: "start" }}>
+        <Card withBorder radius="md" p="md">
+          <Title order={5} mb="sm">
+            {t("detail.connections")}
+          </Title>
+          {data.files.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              {t("detail.noFiles")}
+            </Text>
+          ) : (
+            <Stack gap={6}>
+              {data.files.map((f) => (
+                <Group key={f.id} justify="space-between" gap="xs" wrap="nowrap">
+                  <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
+                    <Text size="sm" truncate="end" ff="monospace">
+                      {f.path}
+                    </Text>
+                    <FilePhaseBadges phase={f} />
+                  </Stack>
+                  <Badge size="sm" variant="light">
+                    {f.status}
+                  </Badge>
+                </Group>
+              ))}
+            </Stack>
+          )}
+        </Card>
 
-      <CommentSection
-        metadataId={id}
-        comments={data.comments ?? []}
-        canSeek={canSeek}
-        onSeek={requestSeek}
-      />
+        <CommentSection
+          metadataId={id}
+          comments={data.comments ?? []}
+          canSeek={canSeek}
+          onSeek={requestSeek}
+        />
+      </SimpleGrid>
 
       <Modal
         opened={editOpen}
