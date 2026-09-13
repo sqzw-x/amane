@@ -240,9 +240,6 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
                     }}
                   />
                   <Group justify="space-between" align="center" gap="sm">
-                    <Text size="xs" c="dimmed">
-                      {editBody.length} / {MAX_BODY_LENGTH}
-                    </Text>
                     <Group gap="xs" align="center">
                       <Button
                         size="compact-sm"
@@ -261,6 +258,9 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
                         {t("common:actions.save")}
                       </Button>
                     </Group>
+                    <Text size="xs" c="dimmed">
+                      {editBody.length} / {MAX_BODY_LENGTH}
+                    </Text>
                   </Group>
                 </Stack>
               ) : (
