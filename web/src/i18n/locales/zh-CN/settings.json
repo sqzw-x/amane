@@ -577,12 +577,10 @@
         }
       },
       "system_prompt": {
-        "label": "自定义提示词",
-        "description": "替换内置系统提示词的指令部分; 留空使用内置. 可用 {target_lang} 引用目标语言名"
+        "label": "系统提示词"
       },
       "field_prompts": {
         "label": "字段提示词",
-        "description": "逐字段覆盖内置字段说明; 留空使用内置. 可用 {target_lang} 引用目标语言名",
         "$": {
           "label": "提示词"
         },

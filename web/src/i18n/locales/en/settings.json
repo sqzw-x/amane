@@ -577,12 +577,10 @@
         }
       },
       "system_prompt": {
-        "label": "Custom System Prompt",
-        "description": "Replaces the instruction part of the built-in system prompt; leave empty to use the built-in. Use {target_lang} to insert the target language name"
+        "label": "System Prompt"
       },
       "field_prompts": {
         "label": "Field Prompts",
-        "description": "Overrides the built-in field instruction per field; leave empty to use the built-in. Use {target_lang} to insert the target language name",
         "$": {
           "label": "Prompt"
         },
