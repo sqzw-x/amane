@@ -3,8 +3,8 @@
 import { type DefaultError, type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { attachUserTag, batchDeleteMetadata, batchFeedItems, batchMetadataUserTags, batchScrapeMetadata, batchTasks, cancelAgentTurn, clouddriveNotify, createAgentSession, createComment, createFeed, createLibrary, createSchedule, createUserTag, cropPosterFromThumb, deleteAgentSession, deleteComment, deleteFacet, deleteFacetRule, deleteFeed, deleteLibrary, deleteMedia, deleteMetadata, deleteSavedQuery, deleteSchedule, desktopInfo, detachUserTag, getActor, getAgentTrace, getConfig, getConfigSchema, getFacet, getFeed, getLibrary, getMedia, getMetadata, getMetadataSchema, getPathTemplateSchema, getPlugin, getRelease, getSavedQuery, getSavedQueryResult, getSchedule, getScheduleSchema, getTask, getTaskChildren, getTaskRecord, getTaskReport, getTaskSchema, getTaskWorker, healthCheck, installPlugin, listActors, listAgentSessions, listAllFeedItems, listFacetRules, listFacets, listFeedItems, listFeeds, listFiles, listLibraries, listMedia, listMetadata, listPlugins, listSavedQueries, listSchedules, listTasks, mergeFacets, mergeMetadata, type Options, pauseTaskWorker, pollFeed, proxyImage, reloadPlugins, renameFacet, restartServer, resumeTaskWorker, scrapeActor, serveResource, streamAgentEvents, streamAgentMessage, streamApproveAgentSql, streamRejectAgentApproval, submitTask, triggerSchedule, uninstallPlugin, updateActor, updateAgentSession, updateComment, updateConfig, updateFeed, updateLibrary, updateMedia, updateMetadata, updatePlugin, updateSavedQuery, updateSchedule } from '../sdk.gen';
-import type { AttachUserTagData, AttachUserTagError, AttachUserTagResponse, BatchDeleteMetadataData, BatchDeleteMetadataError, BatchDeleteMetadataResponse, BatchFeedItemsData, BatchFeedItemsError, BatchFeedItemsResponse, BatchMetadataUserTagsData, BatchMetadataUserTagsError, BatchMetadataUserTagsResponse, BatchScrapeMetadataData, BatchScrapeMetadataError, BatchScrapeMetadataResponse, BatchTasksData, BatchTasksError, BatchTasksResponse, CancelAgentTurnData, CancelAgentTurnError, CancelAgentTurnResponse, ClouddriveNotifyData, ClouddriveNotifyError, ClouddriveNotifyResponse, CreateAgentSessionData, CreateAgentSessionError, CreateAgentSessionResponse, CreateCommentData, CreateCommentError, CreateCommentResponse, CreateFeedData, CreateFeedError, CreateFeedResponse, CreateLibraryData, CreateLibraryError, CreateLibraryResponse, CreateScheduleData, CreateScheduleError, CreateScheduleResponse, CreateUserTagData, CreateUserTagError, CreateUserTagResponse, CropPosterFromThumbData, CropPosterFromThumbError, CropPosterFromThumbResponse, DeleteAgentSessionData, DeleteAgentSessionError, DeleteAgentSessionResponse, DeleteCommentData, DeleteCommentError, DeleteCommentResponse, DeleteFacetData, DeleteFacetError, DeleteFacetResponse, DeleteFacetRuleData, DeleteFacetRuleError, DeleteFacetRuleResponse, DeleteFeedData, DeleteFeedError, DeleteFeedResponse, DeleteLibraryData, DeleteLibraryError, DeleteLibraryResponse, DeleteMediaData, DeleteMediaError, DeleteMediaResponse, DeleteMetadataData, DeleteMetadataError, DeleteMetadataResponse, DeleteSavedQueryData, DeleteSavedQueryError, DeleteSavedQueryResponse, DeleteScheduleData, DeleteScheduleError, DeleteScheduleResponse, DesktopInfoData, DesktopInfoResponse, DetachUserTagData, DetachUserTagError, DetachUserTagResponse, GetActorData, GetActorError, GetActorResponse, GetAgentTraceData, GetAgentTraceError, GetAgentTraceResponse, GetConfigData, GetConfigResponse, GetConfigSchemaData, GetConfigSchemaResponse, GetFacetData, GetFacetError, GetFacetResponse, GetFeedData, GetFeedError, GetFeedResponse, GetLibraryData, GetLibraryError, GetLibraryResponse, GetMediaData, GetMediaError, GetMediaResponse, GetMetadataData, GetMetadataError, GetMetadataResponse, GetMetadataSchemaData, GetMetadataSchemaResponse, GetPathTemplateSchemaData, GetPathTemplateSchemaResponse, GetPluginData, GetPluginError, GetPluginResponse, GetReleaseData, GetReleaseResponse, GetSavedQueryData, GetSavedQueryError, GetSavedQueryResponse, GetSavedQueryResultData, GetSavedQueryResultError, GetSavedQueryResultResponse, GetScheduleData, GetScheduleError, GetScheduleResponse, GetScheduleSchemaData, GetScheduleSchemaResponse, GetTaskChildrenData, GetTaskChildrenError, GetTaskChildrenResponse, GetTaskData, GetTaskError, GetTaskRecordData, GetTaskRecordError, GetTaskReportData, GetTaskReportError, GetTaskReportResponse, GetTaskResponse, GetTaskSchemaData, GetTaskSchemaResponse, GetTaskWorkerData, GetTaskWorkerResponse, HealthCheckData, HealthCheckResponse, InstallPluginData, InstallPluginError, InstallPluginResponse, ListActorsData, ListActorsError, ListActorsResponse, ListAgentSessionsData, ListAgentSessionsResponse, ListAllFeedItemsData, ListAllFeedItemsError, ListAllFeedItemsResponse, ListFacetRulesData, ListFacetRulesError, ListFacetRulesResponse, ListFacetsData, ListFacetsError, ListFacetsResponse, ListFeedItemsData, ListFeedItemsError, ListFeedItemsResponse, ListFeedsData, ListFeedsResponse, ListFilesData, ListFilesError, ListFilesResponse, ListLibrariesData, ListLibrariesResponse, ListMediaData, ListMediaError, ListMediaResponse, ListMetadataData, ListMetadataError, ListMetadataResponse, ListPluginsData, ListPluginsResponse, ListSavedQueriesData, ListSavedQueriesError, ListSavedQueriesResponse, ListSchedulesData, ListSchedulesResponse, ListTasksData, ListTasksError, ListTasksResponse, MergeFacetsData, MergeFacetsError, MergeFacetsResponse, MergeMetadataData, MergeMetadataError, MergeMetadataResponse, PauseTaskWorkerData, PauseTaskWorkerResponse, PollFeedData, PollFeedError, PollFeedResponse, ProxyImageData, ProxyImageError, ReloadPluginsData, ReloadPluginsResponse, RenameFacetData, RenameFacetError, RenameFacetResponse, RestartServerData, ResumeTaskWorkerData, ResumeTaskWorkerResponse, ScrapeActorData, ScrapeActorError, ScrapeActorResponse, ServeResourceData, ServeResourceError, StreamAgentEventsData, StreamAgentEventsError, StreamAgentMessageData, StreamAgentMessageError, StreamApproveAgentSqlData, StreamApproveAgentSqlError, StreamRejectAgentApprovalData, StreamRejectAgentApprovalError, SubmitTaskData, SubmitTaskError, SubmitTaskResponse, TriggerScheduleData, TriggerScheduleError, TriggerScheduleResponse, UninstallPluginData, UninstallPluginError, UninstallPluginResponse, UpdateActorData, UpdateActorError, UpdateActorResponse, UpdateAgentSessionData, UpdateAgentSessionError, UpdateAgentSessionResponse, UpdateCommentData, UpdateCommentError, UpdateCommentResponse, UpdateConfigData, UpdateConfigError, UpdateConfigResponse, UpdateFeedData, UpdateFeedError, UpdateFeedResponse, UpdateLibraryData, UpdateLibraryError, UpdateLibraryResponse, UpdateMediaData, UpdateMediaError, UpdateMediaResponse, UpdateMetadataData, UpdateMetadataError, UpdateMetadataResponse, UpdatePluginData, UpdatePluginError, UpdatePluginResponse, UpdateSavedQueryData, UpdateSavedQueryError, UpdateSavedQueryResponse, UpdateScheduleData, UpdateScheduleError, UpdateScheduleResponse } from '../types.gen';
+import { attachUserTag, batchDeleteMetadata, batchFeedItems, batchMetadataUserTags, batchScrapeMetadata, batchTasks, cancelAgentTurn, clouddriveNotify, createAgentSession, createComment, createFeed, createLibrary, createSchedule, createUserTag, cropPosterFromThumb, deleteAgentSession, deleteComment, deleteFacet, deleteFacetRule, deleteFeed, deleteLibrary, deleteMedia, deleteMetadata, deleteSavedQuery, deleteSchedule, desktopInfo, detachUserTag, getActor, getAgentTrace, getConfig, getConfigSchema, getFacet, getFeed, getLibrary, getMedia, getMetadata, getMetadataSchema, getPathTemplateSchema, getPlugin, getRelease, getSavedQuery, getSavedQueryResult, getSchedule, getScheduleSchema, getTask, getTaskChildren, getTaskRecord, getTaskReport, getTaskSchema, getTaskWorker, healthCheck, installPlugin, listActors, listAgentSessions, listAllFeedItems, listFacetRules, listFacets, listFeedItems, listFeeds, listFiles, listLibraries, listMedia, listMetadata, listPlaybackSources, listPlaybackStreams, listPlugins, listSavedQueries, listSchedules, listTasks, mergeFacets, mergeMetadata, type Options, pauseTaskWorker, playMetadata, playMetadataHlsPart, playMetadataPlaylist, playMetadataSubtitle, playStream, playStreamHlsPart, playStreamPlaylist, playStreamSubtitle, pollFeed, proxyImage, reloadPlugins, renameFacet, restartServer, resumeTaskWorker, scrapeActor, serveResource, streamAgentEvents, streamAgentMessage, streamApproveAgentSql, streamRejectAgentApproval, submitTask, triggerSchedule, uninstallPlugin, updateActor, updateAgentSession, updateComment, updateConfig, updateFeed, updateLibrary, updateMedia, updateMetadata, updatePlugin, updateSavedQuery, updateSchedule } from '../sdk.gen';
+import type { AttachUserTagData, AttachUserTagError, AttachUserTagResponse, BatchDeleteMetadataData, BatchDeleteMetadataError, BatchDeleteMetadataResponse, BatchFeedItemsData, BatchFeedItemsError, BatchFeedItemsResponse, BatchMetadataUserTagsData, BatchMetadataUserTagsError, BatchMetadataUserTagsResponse, BatchScrapeMetadataData, BatchScrapeMetadataError, BatchScrapeMetadataResponse, BatchTasksData, BatchTasksError, BatchTasksResponse, CancelAgentTurnData, CancelAgentTurnError, CancelAgentTurnResponse, ClouddriveNotifyData, ClouddriveNotifyError, ClouddriveNotifyResponse, CreateAgentSessionData, CreateAgentSessionError, CreateAgentSessionResponse, CreateCommentData, CreateCommentError, CreateCommentResponse, CreateFeedData, CreateFeedError, CreateFeedResponse, CreateLibraryData, CreateLibraryError, CreateLibraryResponse, CreateScheduleData, CreateScheduleError, CreateScheduleResponse, CreateUserTagData, CreateUserTagError, CreateUserTagResponse, CropPosterFromThumbData, CropPosterFromThumbError, CropPosterFromThumbResponse, DeleteAgentSessionData, DeleteAgentSessionError, DeleteAgentSessionResponse, DeleteCommentData, DeleteCommentError, DeleteCommentResponse, DeleteFacetData, DeleteFacetError, DeleteFacetResponse, DeleteFacetRuleData, DeleteFacetRuleError, DeleteFacetRuleResponse, DeleteFeedData, DeleteFeedError, DeleteFeedResponse, DeleteLibraryData, DeleteLibraryError, DeleteLibraryResponse, DeleteMediaData, DeleteMediaError, DeleteMediaResponse, DeleteMetadataData, DeleteMetadataError, DeleteMetadataResponse, DeleteSavedQueryData, DeleteSavedQueryError, DeleteSavedQueryResponse, DeleteScheduleData, DeleteScheduleError, DeleteScheduleResponse, DesktopInfoData, DesktopInfoResponse, DetachUserTagData, DetachUserTagError, DetachUserTagResponse, GetActorData, GetActorError, GetActorResponse, GetAgentTraceData, GetAgentTraceError, GetAgentTraceResponse, GetConfigData, GetConfigResponse, GetConfigSchemaData, GetConfigSchemaResponse, GetFacetData, GetFacetError, GetFacetResponse, GetFeedData, GetFeedError, GetFeedResponse, GetLibraryData, GetLibraryError, GetLibraryResponse, GetMediaData, GetMediaError, GetMediaResponse, GetMetadataData, GetMetadataError, GetMetadataResponse, GetMetadataSchemaData, GetMetadataSchemaResponse, GetPathTemplateSchemaData, GetPathTemplateSchemaResponse, GetPluginData, GetPluginError, GetPluginResponse, GetReleaseData, GetReleaseResponse, GetSavedQueryData, GetSavedQueryError, GetSavedQueryResponse, GetSavedQueryResultData, GetSavedQueryResultError, GetSavedQueryResultResponse, GetScheduleData, GetScheduleError, GetScheduleResponse, GetScheduleSchemaData, GetScheduleSchemaResponse, GetTaskChildrenData, GetTaskChildrenError, GetTaskChildrenResponse, GetTaskData, GetTaskError, GetTaskRecordData, GetTaskRecordError, GetTaskReportData, GetTaskReportError, GetTaskReportResponse, GetTaskResponse, GetTaskSchemaData, GetTaskSchemaResponse, GetTaskWorkerData, GetTaskWorkerResponse, HealthCheckData, HealthCheckResponse, InstallPluginData, InstallPluginError, InstallPluginResponse, ListActorsData, ListActorsError, ListActorsResponse, ListAgentSessionsData, ListAgentSessionsResponse, ListAllFeedItemsData, ListAllFeedItemsError, ListAllFeedItemsResponse, ListFacetRulesData, ListFacetRulesError, ListFacetRulesResponse, ListFacetsData, ListFacetsError, ListFacetsResponse, ListFeedItemsData, ListFeedItemsError, ListFeedItemsResponse, ListFeedsData, ListFeedsResponse, ListFilesData, ListFilesError, ListFilesResponse, ListLibrariesData, ListLibrariesResponse, ListMediaData, ListMediaError, ListMediaResponse, ListMetadataData, ListMetadataError, ListMetadataResponse, ListPlaybackSourcesData, ListPlaybackSourcesResponse, ListPlaybackStreamsData, ListPlaybackStreamsError, ListPlaybackStreamsResponse, ListPluginsData, ListPluginsResponse, ListSavedQueriesData, ListSavedQueriesError, ListSavedQueriesResponse, ListSchedulesData, ListSchedulesResponse, ListTasksData, ListTasksError, ListTasksResponse, MergeFacetsData, MergeFacetsError, MergeFacetsResponse, MergeMetadataData, MergeMetadataError, MergeMetadataResponse, PauseTaskWorkerData, PauseTaskWorkerResponse, PlayMetadataData, PlayMetadataError, PlayMetadataHlsPartData, PlayMetadataHlsPartError, PlayMetadataPlaylistData, PlayMetadataPlaylistError, PlayMetadataSubtitleData, PlayMetadataSubtitleError, PlayStreamData, PlayStreamError, PlayStreamHlsPartData, PlayStreamHlsPartError, PlayStreamPlaylistData, PlayStreamPlaylistError, PlayStreamSubtitleData, PlayStreamSubtitleError, PollFeedData, PollFeedError, PollFeedResponse, ProxyImageData, ProxyImageError, ReloadPluginsData, ReloadPluginsResponse, RenameFacetData, RenameFacetError, RenameFacetResponse, RestartServerData, ResumeTaskWorkerData, ResumeTaskWorkerResponse, ScrapeActorData, ScrapeActorError, ScrapeActorResponse, ServeResourceData, ServeResourceError, StreamAgentEventsData, StreamAgentEventsError, StreamAgentMessageData, StreamAgentMessageError, StreamApproveAgentSqlData, StreamApproveAgentSqlError, StreamRejectAgentApprovalData, StreamRejectAgentApprovalError, SubmitTaskData, SubmitTaskError, SubmitTaskResponse, TriggerScheduleData, TriggerScheduleError, TriggerScheduleResponse, UninstallPluginData, UninstallPluginError, UninstallPluginResponse, UpdateActorData, UpdateActorError, UpdateActorResponse, UpdateAgentSessionData, UpdateAgentSessionError, UpdateAgentSessionResponse, UpdateCommentData, UpdateCommentError, UpdateCommentResponse, UpdateConfigData, UpdateConfigError, UpdateConfigResponse, UpdateFeedData, UpdateFeedError, UpdateFeedResponse, UpdateLibraryData, UpdateLibraryError, UpdateLibraryResponse, UpdateMediaData, UpdateMediaError, UpdateMediaResponse, UpdateMetadataData, UpdateMetadataError, UpdateMetadataResponse, UpdatePluginData, UpdatePluginError, UpdatePluginResponse, UpdateSavedQueryData, UpdateSavedQueryError, UpdateSavedQueryResponse, UpdateScheduleData, UpdateScheduleError, UpdateScheduleResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -503,6 +503,193 @@ export const mergeMetadataMutation = (options?: Partial<Options<MergeMetadataDat
     };
     return mutationOptions;
 };
+
+export const listPlaybackSourcesQueryKey = (options?: Options<ListPlaybackSourcesData>) => createQueryKey('listPlaybackSources', options);
+
+/**
+ * List Playback Sources
+ *
+ * 列出可选的播放源; 不调用插件, 因此不发任何上游请求.
+ */
+export const listPlaybackSourcesOptions = (options?: Options<ListPlaybackSourcesData>) => queryOptions<ListPlaybackSourcesResponse, DefaultError, ListPlaybackSourcesResponse, ReturnType<typeof listPlaybackSourcesQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listPlaybackSources({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listPlaybackSourcesQueryKey(options)
+});
+
+export const listPlaybackStreamsQueryKey = (options: Options<ListPlaybackStreamsData>) => createQueryKey('listPlaybackStreams', options);
+
+/**
+ * List Playback Streams
+ *
+ * 探测一个来源在这个条目上的流.
+ *
+ * 由前端在切到该来源时调用, 因此没有人工预算: 慢就慢在用户等待的那一次, 结果按来源与条目缓存
+ * 一小段时间, 来回切换不重复探测. 探测失败也是一行不可用记录, 前端按 ``detail`` 显示原因.
+ */
+export const listPlaybackStreamsOptions = (options: Options<ListPlaybackStreamsData>) => queryOptions<ListPlaybackStreamsResponse, ListPlaybackStreamsError, ListPlaybackStreamsResponse, ReturnType<typeof listPlaybackStreamsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listPlaybackStreams({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listPlaybackStreamsQueryKey(options)
+});
+
+export const playMetadataPlaylistQueryKey = (options: Options<PlayMetadataPlaylistData>) => createQueryKey('playMetadataPlaylist', options);
+
+/**
+ * Play Metadata Playlist
+ */
+export const playMetadataPlaylistOptions = (options: Options<PlayMetadataPlaylistData>) => queryOptions<unknown, PlayMetadataPlaylistError, unknown, ReturnType<typeof playMetadataPlaylistQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await playMetadataPlaylist({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: playMetadataPlaylistQueryKey(options)
+});
+
+export const playStreamPlaylistQueryKey = (options: Options<PlayStreamPlaylistData>) => createQueryKey('playStreamPlaylist', options);
+
+/**
+ * Play Stream Playlist
+ */
+export const playStreamPlaylistOptions = (options: Options<PlayStreamPlaylistData>) => queryOptions<unknown, PlayStreamPlaylistError, unknown, ReturnType<typeof playStreamPlaylistQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await playStreamPlaylist({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: playStreamPlaylistQueryKey(options)
+});
+
+export const playMetadataHlsPartQueryKey = (options: Options<PlayMetadataHlsPartData>) => createQueryKey('playMetadataHlsPart', options);
+
+/**
+ * Play Metadata Hls Part
+ */
+export const playMetadataHlsPartOptions = (options: Options<PlayMetadataHlsPartData>) => queryOptions<unknown, PlayMetadataHlsPartError, unknown, ReturnType<typeof playMetadataHlsPartQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await playMetadataHlsPart({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: playMetadataHlsPartQueryKey(options)
+});
+
+export const playStreamHlsPartQueryKey = (options: Options<PlayStreamHlsPartData>) => createQueryKey('playStreamHlsPart', options);
+
+/**
+ * Play Stream Hls Part
+ */
+export const playStreamHlsPartOptions = (options: Options<PlayStreamHlsPartData>) => queryOptions<unknown, PlayStreamHlsPartError, unknown, ReturnType<typeof playStreamHlsPartQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await playStreamHlsPart({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: playStreamHlsPartQueryKey(options)
+});
+
+export const playMetadataSubtitleQueryKey = (options: Options<PlayMetadataSubtitleData>) => createQueryKey('playMetadataSubtitle', options);
+
+/**
+ * Play Metadata Subtitle
+ */
+export const playMetadataSubtitleOptions = (options: Options<PlayMetadataSubtitleData>) => queryOptions<unknown, PlayMetadataSubtitleError, unknown, ReturnType<typeof playMetadataSubtitleQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await playMetadataSubtitle({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: playMetadataSubtitleQueryKey(options)
+});
+
+export const playStreamSubtitleQueryKey = (options: Options<PlayStreamSubtitleData>) => createQueryKey('playStreamSubtitle', options);
+
+/**
+ * Play Stream Subtitle
+ */
+export const playStreamSubtitleOptions = (options: Options<PlayStreamSubtitleData>) => queryOptions<unknown, PlayStreamSubtitleError, unknown, ReturnType<typeof playStreamSubtitleQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await playStreamSubtitle({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: playStreamSubtitleQueryKey(options)
+});
+
+export const playMetadataQueryKey = (options: Options<PlayMetadataData>) => createQueryKey('playMetadata', options);
+
+/**
+ * Play Metadata
+ */
+export const playMetadataOptions = (options: Options<PlayMetadataData>) => queryOptions<unknown, PlayMetadataError, unknown, ReturnType<typeof playMetadataQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await playMetadata({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: playMetadataQueryKey(options)
+});
+
+export const playStreamQueryKey = (options: Options<PlayStreamData>) => createQueryKey('playStream', options);
+
+/**
+ * Play Stream
+ */
+export const playStreamOptions = (options: Options<PlayStreamData>) => queryOptions<unknown, PlayStreamError, unknown, ReturnType<typeof playStreamQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await playStream({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: playStreamQueryKey(options)
+});
 
 export const listPluginsQueryKey = (options?: Options<ListPluginsData>) => createQueryKey('listPlugins', options);
 

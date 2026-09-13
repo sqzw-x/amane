@@ -4,7 +4,11 @@
 
 ## 插件边界
 
-插件 API v1 只开放**影片元数据来源**. 插件通过一个窄接口接收 `SearchQuery`, 返回 `MediaMetadata`, 然后进入现有聚合 DAG; 插件不直接访问 Repository、任务 Worker、FastAPI 或前端运行时. `MediaMetadata.actors` 为 `list[FilmActor]`; 仍接受 `list[str]`, 性别为 `unknown`. API 版本号不因此递增. 出演者性别契约见 [crawlers.md](crawlers.md).
+插件 API v1 开放**影片元数据来源**与**播放源**. 二者共用 `{cold.data_dir}/plugins/sources/<id>/` 与 HotSettings `plugins.<id>` 信封; 调用路径、输入输出与 Factory 分离. 插件不直接访问 Repository、任务 Worker、FastAPI 或前端运行时.
+
+影片来源通过一个窄接口接收 `SearchQuery`, 返回 `MediaMetadata`, 然后进入现有聚合 DAG. `MediaMetadata.actors` 为 `list[FilmActor]`; 仍接受 `list[str]`, 性别为 `unknown`. API 版本号不因此递增. 出演者性别契约见 [crawlers.md](crawlers.md).
+
+播放源接收主机装配的当前 Metadata 与关联文件快照, 返回探测结果或由主机执行的播放目标. 浏览器只请求 Amane 同源、已鉴权的固定媒体端点; 上游查找、鉴权、跨域与会话留在后端. HTTP 形状见 [api.md](api.md).
 
 插件是可信的进程内纯 Python: `importlib` 从数据目录加载 `plugin.py`, 与主机共用解释器. 没有进程隔离. 插件不能声明自己的 pip 依赖或原生扩展, 只使用主机已提供的 API (经 `amane.plugin` 与 `context.http_client`).
 
@@ -12,13 +16,15 @@
 
 插件作者只从 `amane.plugin` 导入类型与契约. 主机实现在 `amane.plugins.*` (发现、落盘安装、Factory), 内部代码不允许导入 `amane.plugin`. 这是导入路径上的分层, 不是运行时沙箱. 包内相对导入与绝对导入约定见 [architecture.md](architecture.md).
 
-第三方来源是 `{cold.data_dir}/plugins/sources/<id>/` 下一棵源码树. 目录名就是来源 ID; 其中必须有 `plugin.py`, 并导出名为 `Plugin` 的 `FilmSourcePlugin` 子类. 同目录其它 `.py` 可作为包内相对导入. 启动、安装、卸载和显式重新扫描时按目录名排序加载; 单个插件加载、descriptor 校验或 API 版本不兼容只使该插件不可用, 不阻断其它来源, 失败写入日志并出现在 `GET /api/plugins` 的 `failures` 里.
+第三方来源是 `{cold.data_dir}/plugins/sources/<id>/` 下一棵源码树. 目录名就是来源 ID; 其中必须有 `plugin.py`, 并导出名为 `Plugin` 的类: `FilmSourcePlugin`、`PlaybackPlugin`, 或同时继承二者. 同目录其它 `.py` 可作为包内相对导入. 启动、安装、卸载和显式重新扫描时按目录名排序加载; 单个插件加载、descriptor 校验或 API 版本不兼容只使该插件不可用, 不阻断其它来源, 失败写入日志并出现在 `GET /api/plugins` 的 `failures` 里.
+
+仅声明播放能力的插件必须显式写出 `playback`. descriptor 的能力集合缺省为影片元数据, 缺省值会使纯播放插件在发现期失败. 仅影片元数据的 drop-in 行为不变. `PLUGIN_API_VERSION` 仍为 `"1"`.
 
 官方 / 内置来源使用单段 ID (`javdb`、`dmm`). 第三方来源 ID 必须是 `namespace.local`: 第一段是开发者声明的命名空间, 其后是该命名空间下的来源名, 可再分段 (`alice.javxyz`、`alice.foo.bar`). 命名空间不能是 `amane` / `plugin` / `official` / `builtin`, 也不能是任何内置 `SiteName`. ID 是持久化数据中的稳定 key, 出现在路由、`raw`、`source_urls`、`field_sources`、任务摘要和缓存 key 中; 显示名称不能代替 ID. descriptor 里的 `id` 必须与目录名一致, 否则该目录记为失败. 作者导入 `amane.plugin`, 主机经由 `amane.plugins.*` 与 `/api/plugins`; 来源 ID 本身不带 `plugin.` 前缀.
 
 运行时数据仍在 `{cold.data_dir}/plugins/<id>/` (`PluginContext.data_dir`). 源码树在 `plugins/sources/<id>/`, 卸载只删源码树, 不删运行时数据.
 
-内置来源仍使用原有字符串 ID. 插件来源与内置来源进入同一个 `CrawlerFactory`、HTTP 客户端、Host 限速器、聚合器和任务记录管线.
+内置影片来源仍使用原有字符串 ID, 与插件影片来源进入同一个 `CrawlerFactory`、HTTP 客户端、Host 限速器、聚合器和任务记录管线. 仅声明播放能力的插件不进入 `CrawlerFactory`, 也不允许写入 `content_routes` / `field_priority` / `field_blacklist`. 内容路由校验只检查路由里出现的 ID 是否具备影片元数据能力; 配置里只有 `plugins.<id>` 不触发该检查.
 
 ## 进程内重建
 
@@ -55,6 +61,57 @@
 - `PATCH /api/plugins/{plugin_id}`: 更新启用状态和配置字段, 并触发进程内 rebuild.
 - `DELETE /api/plugins/{plugin_id}`: 删除源码树并进程内重建目录.
 
+## 播放源
+
+刮削继续使用 `build` 返回影片 provider. 播放使用独立方法 `build_playback`, 避免同一类同时继承两种基类时返回类型冲突. 同一 zip 可以同时声明两种能力, 配置仍只有一份 `plugins.<id>`.
+
+主机在**用户切到某个来源时**装配查询并调用该来源:
+
+- 播放源列表 (`GET /api/playback/sources`) 不调用插件: 只列出已启用的来源名 (取 descriptor), 因此打开详情页不产生任何上游请求. 用户切到某个来源时才探测它 (`GET /api/playback/{source_id}/{metadata_id}/streams`), 慢就慢在那一次; 探测结果按「来源 + 条目」缓存一小段时间, 来回切换不重复探测. 同一个来源的同一份结果在一次探测里成型, 不存在「按时间截断成子集」的形态.
+
+- `probe`: 列出本源在这个条目上能提供的流, 一条流一项: 稳定标识 `key`、在来源内的展示名 `name`、媒体类型、是否可按字节寻址, 以及不可播时的原因 `unavailable`. 一个来源可以给出多条流 (多个搜索结果、多个已入库文件), 顺序即列表顺序; 条目里没有一条可播时仍把候选列出来并逐条说明原因. 列表与用户的选择无关, 因此这里拿到的选中项恒为 `None`.
+- `probe` 的两种否定回答必须分清: 返回**空元组**表示「这个来源没有内容, 也没什么可解释的」, 列表里那一行不带原因; 抛 `SourceError(NO_USABLE_METADATA, detail=中文原因)` 表示「没有内容, 但原因值得告诉用户」, 列表以 `available=false` 与这条 `detail` 呈现. 两种都不缓存: 用户下次切过来会重新探测.
+- `resolve`: 打开码流前的目标. 按 `query.selected_key` 定位用户选中的那条流; `selected_key` 为 `None` 表示没有指定, 由插件自己挑一条. 返回 `None` 与 probe 的空元组相同语义.
+- `subtitle`: 按轨道 id 返回 WebVTT 正文或上游 VTT. 缺省 `None`.
+- 上游 / 网络 / 可分类失败抛 `SourceError`. 不允许把失败写成 `None`.
+- 三个钩子都在事件循环上被调用, 不允许执行阻塞 I/O (`stat`、读取文件、同步 HTTP). 需要读盘的钩子用 `asyncio.to_thread` 提交到线程池: 阻塞事件循环会让整个服务端停止推进, 其它来源的探测一并超时. 探测预算由主机计时, 无法中断已经进入事件循环的阻塞调用.
+
+主机不提供内置播放源: 播放源只来自插件. 本地文件播放由插件声明 `file` 目标实现, 主机只打开条目已索引的文件.
+
+播放目标由主机执行, 插件只声明:
+
+- `file`: 已入库文件. 插件回送快照 `query.files` 里的路径, 主机自行打开并输出. 主机只接受该条目已索引文件之一: 两侧都执行 `resolve()` 后逐条比较, 索引里的符号链接与插件回送的等价形式视为同一个文件, 因此指向库外的符号链接照常可播 — 打开的就是索引里的那条路径. 不检查库根、`safe_dirs` 与解析目标 (那是文件浏览器与路径模板的配置). 路径不在该条目索引中时返回 502 与可读原因, 这是插件侧的失败; 索引里的文件已从磁盘消失同样返回 502. 条目没有已索引文件时一律拒绝. 主机按单段 Range 输出 (206), 不可满足的范围返回 416 (响应体带 `detail`, 空文件与越界范围分开说明), 多段 Range 返回 400; 客户端断开后停止读取, 不再继续消耗网盘流量. 长度为 0 的文件由插件在探测阶段拒绝: 主机对它发出的任何 Range 都不可满足, 放行只会把失败推迟到播放时.
+- `upstream`: 上游 URL 与仅服务端使用的请求头. 主机反向代理, 转发单段 Range, 密钥不得出现在响应头或重定向 Location. 指向播放列表的 `upstream` 仍拒绝; 清单必须经由 `hls`.
+- `hls`: 插件提供 locator. 主机用「包含该 URI 的那份清单」的 base 做 `urljoin` 后再调用 `locate`, 因此 `locate` 收到绝对 URL. 相对 URI (含协议相对 `//host/...`) 解析后必须与该份清单 Origin 相同; 清单内已写出的绝对 `http`/`https` URL 由插件承担, 主机仍会代理. 其它 scheme 拒绝. 主机把清单 URI 改写到本机前缀并反向代理分片、密钥与子清单. 清单内不得残留上游 Origin. 主机不自行推导新的 Origin, 只跟随清单里已声明的绝对地址: 需要跨源时写绝对 URL, 协议相对形式一律拒绝. 无法定位的 URI 只作废自己: 主机在原位置登记一个必定失败的 token 并记录原因, 清单其余部分照常可播, 请求该 token 时返回 502 与该原因; 该 token 与普通 token 一样绑定来源 / 条目 / 流, 其它来源、条目或流请求一律 404. 密钥标签 (`#EXT-X-KEY` / `#EXT-X-SESSION-KEY`) 的 URI 例外: 缺密钥整份清单都播不了, 它在改写阶段直接让整份清单 502.
+
+`key` 由插件声明并保证在同一来源与条目内**稳定且唯一**: 浏览器地址、解析结果缓存、HLS 分片 token 的归属都按它区分, 改动它等于让在播地址失效, 重复则两条流共用同一个地址与缓存桶 (主机丢弃后一条并记日志). 形状是 `^[a-zA-Z0-9._-]{1,64}$`, 但整值 `.` 与 `..` 被拒绝 —— 这两个段会被浏览器与服务器归一化掉, 请求落到别的地址上. 主机不解释 `key` 的含义, 也不核对它是否对应该条目的某个文件 —— 认不出来的 `key` 由插件自己拒绝 (`SourceError(NO_USABLE_METADATA)`, 如「所选文件不在该条目的索引中」); 只有进路径的形状由主机校验. 列表每一行的展示名是 `来源名 · 流的展示名`, 因此 `name` 里不要重复来源名. 列表顺序由插件决定 —— 主机按来源拼接、原样输出, 不二次排序; 主机给插件的快照按入库顺序排列, 插件不改顺序时列表就是入库顺序. 前端默认选中第一条可播的, 因此这个顺序对用户可见.
+
+`probe` 的 `unavailable` 是**探测时已知不可播** (文件为空、已从磁盘消失), 原因原样展示给用户, 且只写用户能据以行动的信息 (哪个文件怎么了), 不写完整路径与上游地址. 省略它表示探测时未发现不可播, **不是点播保证**: 可播性只是探测瞬间的观测, `resolve` 仍可能以自己的原因 502 (文件在探测后消失, 或上游此时取不到流), 由前端按 `detail` 呈现. 「列出来但没写原因」会让整块播放区消失, 比说明原因更差.
+
+`probe.content_type` 必须与随后 `resolve` 的目标种类一致: HLS 用 `mpegurl`, 逐字节码流用 `video/*` / `audio/*`. 列表 `href` 按探测类型指向清单或码流; 不一致时前端会按错误方式初始化, 清单端点对非 HLS 目标返回 502.
+
+`resolve` 的结果默认不缓存: 主机每次真正取流都调用插件的 `resolve` (逐字节码流是每个 HTTP 请求一次, 清单是每次取清单一次). 播放目标上的 `cache_ttl` (秒, 必须为正数) 声明本次结果的可复用时长, 主机按「来源 + 条目 + 所选流」在这段时间内复用, 宿主上限 `RESOLVE_TTL_MAX_SECONDS` (300 秒) 截断过长的声明. 不声明即不缓存, 与没有这个字段时完全一致. 签名 URL 与会话令牌必须声明不超过其实际有效期的值: 声明过长会让主机把已失效的地址继续交给播放器, 表现为播放失败; 声明短了只多解析一次. 只有成功解析出的目标进这条缓存, `SourceError` 与 `None` 仍走打开失败负缓存.
+
+**主机不给探测设时限**: 探测发生在用户切到该来源时, 慢就是他在等, 因此插件不必为了迁就一个预算而砍掉候选或返回半截结果. 只有两点要求: 探测要么给出完整结果, 要么整条来源报不可用并说明原因; 一次请求挂住时插件要自己收尾 (抛 `SourceError`, 宿主按 reason 显示「探测超时」) 而不是永久挂住. 抛错时该来源在列表里只剩一行不可用 (名字取 descriptor 的展示名), 以 `detail="探测超时"` / `"上游失败"` / `"探测失败"` 呈现. 需要按候选逐个访问上游的清单只能在 `resolve` 做.
+
+探测结果可附带 WebVTT 轨道. 插件通过 `subtitle` 返回 VTT 正文或上游 VTT 地址; 正文由插件自行准备, 主机不转换字幕格式, 也不读取本机字幕文件. 上游字幕只接受 `text/vtt` (及缺省类型).
+
+**不允许在 Amane 主机内对码流做实时转码.** 浏览器无法直接播放时, 由上游提供 HLS 清单; 主机只改写 URI 并代理分片.
+
+**断连不在 `Request` 上探测**: 本项目的中间件栈让 `Request.is_disconnected()` 恒为 `False` (原因见 [api.md](api.md)). 响应在自己的 `__call__` 里启动 `DisconnectSignal` (`playback/disconnect.py`) 的等待任务, 本机文件读循环与上游正文生成器只查这个标记, 客户端离开后不再读取、不再拉取上游. 中间件已缓冲的分块仍会送出, 但读取不会越过当前这一块.
+
+码流 I/O 不复用刮削 `HttpClient` / `WebClient`. 反向代理使用独立流式客户端: 禁止缓冲完整正文, 浏览器断开则取消上游, 每源与全局有出口并发上限 (满载时短等待后 503), 请求上游时 `Accept-Encoding: identity`, 禁止跟随 301/302/303/307/308, 上游 304 与 416 原样返回 (304 不写 `immutable`), 其余 4xx/5xx 不得写入不可变缓存, 剥离 hop-by-hop 与 `Set-Cookie`. 上游声明非 identity 的 `Content-Encoding` 时丢弃 `Content-Length` — 主机转发的是 httpx 解码后的正文, 该值不再成立. 畸形上游 URL 归为 502, 且任何失败路径都必须归还出口额度. token 表与探测缓存跨 rebuild 存活 (所有权在 `AppRuntime`), 只在插件集合变化 (安装 / 卸载 / 重载 / 启停) 时清空 — 播放中修改任意热配置不得让在播 HLS 会话的分片失效. 解析结果缓存相反, 每次 rebuild 都清空: 配置改动可能更换凭据与签名参数, 旧目标不再可信; 于是「改热配置不中断在播会话」与「改热配置后重新解析」并存, `cache_ttl` 只在同一份配置内生效. 被替换的流式客户端等在途请求结束后关闭 (30 秒兜底), 分片读超时 30 秒, 避免卡死的上游长期占用出口额度. 单个长响应 (非 HLS 的上游码流, 浏览器一次 Range 拉完整段) 在 rebuild 后最多再续 30 秒, 之后由播放器重新发起 Range 请求; token 跨 rebuild 存活, 重连可直接成功. HLS 分片请求短, 不受影响. 播放响应带 `X-Content-Type-Options: nosniff`. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`. `probe` 返回 `None` 与探测失败分条缓存.
+
+清单内分片按「非播放列表即放行」处理, 不设媒体类型白名单: 上游 CDN 普遍伪装分片的扩展名与 `Content-Type`, 按类型拒绝会让整条流无法播放. 转发时响应类型一律中和为 `application/octet-stream`, 只有 `text/vtt` (清单内字幕分片) 与 `text/plain` (文本型 AES 密钥的常见默认类型) 保留原类型; 与 `nosniff` 一起, 上游即使返回可执行类型也不会被浏览器按该类型处理. 播放列表类型仍拒绝. 分片缓存按用途区分, 判定依据是上游声明的类型: 媒体分片与初始化段可用不可变缓存; 来自 `#EXT-X-KEY` / `#EXT-X-SESSION-KEY` 的 URI 一律 `no-store` (同一 URI 的密钥内容会轮换), 其余文本类用 `no-cache`. `SourceError.detail` 会原样进入 502 响应体并展示给终端用户, 不允许在其中写入上游 URL、密钥或签名参数.
+
+`RelativeHlsLocator` 的 `http_client` 是刮削客户端 (跟随刮削侧重定向、重试与任务 HTTP 记录). 正式插件应传入已读取的 `playlist_text`; 分片由主机代理.
+
+`file` 目标由主机输出, 响应不写 `Content-Disposition: attachment` — 浏览器会因此下载而不是播放.
+
+路由层的 `source_id` 只限制长度, 不重复校验字符集: 第三方 ID 的命名空间规则只在 descriptor 加载期执行.
+
+插件短 JSON (如查询媒体库条目) 仍经由 `context.http_client`. 需要输出本机文件时声明 `file` 目标, 由主机打开; 插件不自行读盘, 也不把文件正文交给主机.
+
 ## 网络和运行时
 
 插件通过 `PluginContext` 得到共享 `HttpClient`、`WebClient` 和 `data_dir`. 使用共享客户端是契约的一部分, 确保插件请求遵守 Amane 的代理、重试、Host 限速和任务 HTTP 记录. HTML 用 `http_client.get_html` (拦截页抛 `SourceError`), JSON API 用 `get_json`. `data_dir` 是 `{cold.data_dir}/plugins/<plugin_id>`, 创建 provider 时确保目录存在; 插件不允许写入该目录之外.
@@ -71,4 +128,4 @@
 
 面向社区作者的开发步骤见 [用户文档](../user/plugins.md). 本文只写本仓库主机侧契约.
 
-当前不支持插件自定义任务、数据库迁移、API 路由、React 页面、演员来源、进程隔离或插件自带第三方依赖. 需要这些能力时应先扩展插件 API 版本和对应的权限边界.
+当前不支持插件自定义任务、数据库迁移、API 路由、React 页面、演员来源、进程隔离、插件自带第三方依赖. 不允许主机实时转码. 需要其它能力时应先扩展插件 API 版本和对应的权限边界.

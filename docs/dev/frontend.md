@@ -9,7 +9,7 @@
 | 域 | 路由重心 |
 |----|---------|
 | **Browse** | `/` 对话; `/meta` 片库; `/actors` 演员; `/catalog/...` 分类词云; `/saved-queries/$queryId` 查询结果; `/feeds` 阅读器 (`?feed=` / `?group=`) |
-| **Manage** | `/libraries` `/libraries/$id`; `/plugins` 刮削插件; `/feeds/sources` 订阅源 |
+| **Manage** | `/libraries` `/libraries/$id`; `/plugins` 来源插件; `/feeds/sources` 订阅源 |
 | **Ops** | `/tasks` `/schedules` `/logs` |
 | **Settings** | `/settings` (`?section=` 分组; Schema 表单) |
 
@@ -18,6 +18,8 @@
 **入口分流**: 非演员实体 → `/catalog/$kind/$facetId`; 演员 → `/actors/$actorId`. 结果筛选在 `/meta` (`q` + 各 `*_id`; `saved_query_id` 与其它筛选项 AND, 见 [agent.md](agent.md)). `FacetBadge` 默认 `mode="catalog"` (actor 深链 `/actors/$id`), 筛选深链用 `mode="meta"`. 演员不进入 `/catalog`. 详情出演徽章的性别来自同一次 `Actor` 行查找 (`actor_genders`), 不是 `raw` 里的 `FilmActor`; 仅 `female` / `male` 画符号.
 
 影片详情的用户标签与刮削标签分栏. 加减菜单勾选后保持打开, 底部按钮一次提交多名; 绑定/解绑是前端循环单条 API. `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许用来给一部影片一次挂多个标签.
+
+影片详情在封面预告片之外播放正片. 面板先只取来源列表 (`GET /api/playback/sources`, 主机不调用插件, 因此立刻渲染), 当前来源的流 (`GET /api/playback/{source_id}/{metadata_id}/streams`) 在挂载时与切换来源时按需加载, 加载期间显示加载态. 一个来源可以给出多条流, 因此有两级选择: 来源选择器常驻, 流选择器只在所选来源多于一条流时出现 (切换来源要重置流的选择, 否则会指向另一个来源的 key). 当前不可播的行在选择器中标记为不可用; 不可用项同样可以选中, 选中后不渲染播放器, 原因 (主机给出的 `detail`, 缺失时是通用文案) 显示在红色提示里. 来源列表为空 (没有已启用的播放源) 时整块不渲染; 来源列表或流列表查询失败时在面板内以红色提示显示错误, 不向页面外抛出. `video` 的媒体地址只使用列表给出的本机端点. 码流与字幕均为同源 `/api/playback/...`, 原生 `<video>` 不设置 `crossOrigin` (凭据模式与 `Access-Control-Allow-Origin: *` 不能同时成立). `video/*` 使用原生控件; HLS (`mpegurl`) 在 Safari 等可原生播放的浏览器采用 `<video src>`, 其它浏览器用 `hls.js` 且 XHR `withCredentials`. 列表给出的 WebVTT 渲染为 `<track>`. 不允许把上游 URL 或密钥写入前端状态. 播放失败优先展示主机返回的中文 `detail`; 主机没有给出 `detail` 时展示 `hls.js` 致命错误的错误类型、HTTP 状态码与失败地址, 该错误不存在时展示探测响应的 HTTP 状态码. 探测响应为 2xx 时不展示其状态码, 该状态码不含失败信息.
 
 分类实体页必须是 `catalog.$kind_.$facetId.tsx` (trailing `_`): `$kind` 是词云叶页而非 layout, 写成 `catalog.$kind.$facetId` 会成为无 `<outlet />` 的父路由的子路由, 子页永不渲染.
 
@@ -47,7 +49,7 @@ Tabs 同时挂载全部条目, 叶子 `id`/`htmlFor` 必须经由 `useFieldDomId
 
 可增减 key 的 dict (无 `x-frozen-keys`): 值为空数组 / 空对象 / `null` 的条目与缺席等价, 编码时删除, 条目控件把值清空时也删除该 key. 新增 key 的空默认值仍留在表单上供继续填写, 在写入值之前不构成变更. `x-frozen-keys` 必须保留全部 key, 空列表原样提交 (`content_routes` 的空列表是关停该类型; 缺席会被校验补回默认路由). dirty 与 PATCH 都比较编码后的值.
 
-`/plugins` 通过 `/api/plugins` 取得插件自带 JSON Schema, 单独渲染每个来源配置; 插件配置不进入核心 HotSettings 表单. 安装用 `PathPicker` 选服务器目录/zip, 或上传本机 zip; 重新扫描 / 卸载经由同一资源的 POST/DELETE, 成功后同时失效插件列表与 config schema (路由 enum 会变).
+`/plugins` 通过 `/api/plugins` 取得插件自带 JSON Schema, 单独渲染每个来源配置; 插件配置不进入核心 HotSettings 表单. 页面按能力分区: 声明 `film_metadata` 的进入影片刮削区 (该区链到内容路由设置), 声明 `playback` 的进入播放源区; 同时声明两者的插件在两个分区都列出, 配置仍只有一份, 不进入内容路由. 安装用 `PathPicker` 选服务器目录/zip, 或上传本机 zip; 重新扫描 / 卸载经由同一资源的 POST/DELETE, 成功后同时失效插件列表与 config schema (路由 enum 会变).
 
 任务 / 定时提交用 `DiscriminatedSchemaForm`: 外部选 `type` → schema variant → 去掉 const `type` 后交给 `create` 模式. 短枚举共用 `EnumToggle` (`components/common/enum-toggle.tsx`): 项间分隔线 + 滑动指示; `fullWidth` 占据整行 (任务/定时 type、cron 模式、订阅内容类型), 默认按文案宽度 (Schema 表单短枚举、库放置方式/自动化、间隔单位). 片库 grid/list 等页面 view 切换仍用 SegmentedControl. 定时的 cron 用 `CronPicker`: 可视化覆盖间隔/每天/每周/每月, 无法往返的表达式回落「高级」手写; 产出 5-field, 与后端 croniter 一致. 每天/每周/每月的时刻按浏览器本地墙钟填写, 写出时换算为 UTC 字段 (星期与日期随跨日平移); 间隔不换算; 「高级」手写按 UTC. 定时列表与编辑弹窗按响应里的 `RoutineSubmission` 展示 payload; PATCH 仍只改 name / cron / enabled.
 

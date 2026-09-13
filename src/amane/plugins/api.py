@@ -1,9 +1,8 @@
-"""Host-side film-source plugin contract.
+"""Host-side plugin contracts.
 
 Plugin authors should import these types from ``amane.plugin``, not this module.
-The first API version exposes only the film metadata boundary: a plugin receives
-the shared HTTP clients and returns an object implementing ``fetch``; it does not
-receive the repository, task worker, or FastAPI application.
+The first API version exposes film metadata sources and playback sources. A plugin
+does not receive the repository, task worker, or FastAPI application.
 """
 
 from __future__ import annotations
@@ -11,10 +10,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Annotated, ClassVar, Literal
+from urllib.parse import urljoin
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
+from ..net.errors import FailureReason, SourceError
+from ..parsing.file_info import ContentType, Mosaic
 from .models import PluginConfig, SourceDescriptor
 
 if TYPE_CHECKING:
@@ -38,6 +41,259 @@ class FilmSourceProvider(ABC):
         ...
 
 
+class PlaybackMediaFile(BaseModel):
+    """Indexed video attached to the metadata entry being played."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    path: str
+    size: int | None = None
+    content_type: ContentType
+    mosaic: Mosaic | None = None
+    has_subtitle: bool = False
+    definition: str | None = None
+    library_id: int
+    library_path: str | None = None
+
+
+class PlaybackQuery(BaseModel):
+    """Host-assembled snapshot passed to a playback provider."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metadata_id: int
+    number: str
+    title: str | None = None
+    actors: list[str] = Field(default_factory=list)
+    studio: str | None = None
+    publisher: str | None = None
+    release: str | None = None
+    runtime: int | None = None
+    tags: list[str] = Field(default_factory=list)
+    series: str | None = None
+    plot: str | None = None
+    directors: list[str] = Field(default_factory=list)
+    source_urls: dict[str, str] = Field(default_factory=dict)
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    files: tuple[PlaybackMediaFile, ...] = ()
+    #: 用户选中的流; 只有 ``resolve`` / ``subtitle`` 会拿到它. 列表与选择无关, 因此 ``probe``
+    #: 收到的恒为 ``None`` —— 在 ``probe`` 里读这个字段等于读一个永远是 ``None`` 的值.
+    selected_key: str | None = None
+
+
+#: 进路径的标识 (流的 key, 字幕轨道 id) 的字符集. 路由层用同一个常量, 两处不允许各写一份.
+PATH_SEGMENT_PATTERN = r"^[a-zA-Z0-9._-]{1,64}$"
+
+
+def validate_path_segment(value: str) -> str:
+    """拒绝会被 URL 归一化掉的整值段.
+
+    只有整值 ``.`` 与 ``..`` 会被浏览器与 ASGI 服务器吃掉 (``.hidden`` / ``...`` / ``_default``
+    都是普通段), 而它们被吃掉时请求会落到别的地址上, 选中这条流的意图随之丢失. 用校验器而不是
+    收紧正则: 进路径的标识允许以标点开头 (``_zh``), 收紧会破坏已发布的字幕轨道 id.
+    """
+    if value in {".", ".."}:
+        raise ValueError("进路径的标识不允许是 . 或 ..")
+    return value
+
+
+#: 进路径的标识类型: 字符集由正则约束, 整值 ``.`` / ``..`` 由校验器拒绝.
+PathSegment = Annotated[
+    str, Field(min_length=1, max_length=64, pattern=PATH_SEGMENT_PATTERN), AfterValidator(validate_path_segment)
+]
+
+
+class SubtitleTrack(BaseModel):
+    """WebVTT track advertised next to a playback offer or HLS presentation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: PathSegment
+    label: str
+    language: str | None = None
+
+
+class PlaybackOffer(BaseModel):
+    """``probe`` 结果里的一条流.
+
+    ``key`` 是这条流在该来源与条目内的标识, 由插件声明并保证稳定: 浏览器地址、解析结果缓存、
+    HLS 分片 token 的归属都按它区分, 改动它等于让在播地址失效. 它只用于标识, 不是路径 —— 主机
+    不解释它的含义, 也不核对它是否对应该条目的某个文件, 认不出来的 key 由插件自己拒绝. 同一
+    来源的同一个条目内不允许出现重复的 key.
+
+    ``name`` 是这条流在来源内的展示名 (本地文件用文件名, 上游源用版本或清晰度). 列表里的每一行
+    由主机拼成「来源名 · 流的展示名」, 因此插件不要在 ``name`` 里重复来源名.
+
+    条目里列出来的候选都可以出现在这里, 不可播的候选以 ``unavailable`` 说明原因: 用户看得到
+    「这个文件在库里, 但它现在是空的」, 而不是只剩一个能播的. 省略 ``unavailable`` 表示探测时
+    未发现不可播, 但**不保证点播一定成功** —— 文件可能在探测之后消失, 上游也可能此时取不到流,
+    那种失败由 ``resolve`` 以自己的原因报出. 「列出来但没写原因」会让整块播放区消失, 比列出来并
+    说明原因更差.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: PathSegment
+    name: str = Field(min_length=1)
+    content_type: str
+    seekable: bool = True
+    unavailable: str | None = Field(default=None, min_length=1)
+    subtitles: tuple[SubtitleTrack, ...] = ()
+
+
+# 解析结果的可复用时长 (秒): 有穷正数. ``None`` 表示不缓存.
+CacheTtl = Annotated[float, Field(gt=0, allow_inf_nan=False)]
+
+
+class _PlaybackTargetBase(BaseModel):
+    """播放目标的公共字段.
+
+    ``cache_ttl`` 由插件逐次声明: 主机在这么多秒内复用这一次 ``resolve`` 的结果, 超过宿主上限
+    (``RESOLVE_TTL_MAX_SECONDS``) 的声明按上限截断, 不声明即不缓存 (每次取流都调用 ``resolve``).
+    签名 URL 与会话令牌必须声明不超过其实际有效期的值, 过长的值会让播放器拿到已失效的地址.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cache_ttl: CacheTtl | None = None
+
+
+class FilePlaybackTarget(_PlaybackTargetBase):
+    """Indexed file served by the host.
+
+    The host opens the declared path only when it resolves to a file indexed for
+    the entry being played; any other path is rejected.
+    """
+
+    kind: Literal["file"] = "file"
+    path: Path
+    content_type: str
+
+
+class UpstreamPlaybackTarget(_PlaybackTargetBase):
+    """HTTP origin fetched by the host reverse proxy."""
+
+    kind: Literal["upstream"] = "upstream"
+    url: str
+    headers: dict[str, str] = Field(default_factory=dict)
+    content_type: str | None = None
+
+
+class HlsPlaylist(BaseModel):
+    """Raw playlist text plus the URL used to resolve relative URIs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    base_url: str
+
+
+class HlsLocator(ABC):
+    """Plugin-supplied playlist fetch and per-URI location.
+
+    The host rewrites every playlist URI onto its own prefix. Before ``locate``,
+    the host joins each URI against the playlist that contained it (top-level
+    ``HlsPlaylist.base_url``, nested playlists the upstream URL of that playlist).
+    ``locate`` therefore receives an absolute URL.
+    """
+
+    @abstractmethod
+    async def load_playlist(self, query: PlaybackQuery) -> HlsPlaylist:
+        """Return the current playlist. Raise ``SourceError`` when it cannot be loaded."""
+        ...
+
+    @abstractmethod
+    async def locate(self, query: PlaybackQuery, uri: str) -> UpstreamPlaybackTarget:
+        """Turn one playlist URI into an upstream fetch the host will proxy."""
+        ...
+
+
+class RelativeHlsLocator(HlsLocator):
+    """Resolve playlist URIs with ``urljoin`` against the playlist's own address.
+
+    Pass ``playlist_text`` when the plugin already loaded the manifest. ``http_client`` is the
+    scrape client: it follows scrape redirects and retries, and records task HTTP. Prefer
+    ``playlist_text``; nested segments are fetched by the host proxy.
+
+    相对 URI 的基准是**最终响应地址**: 上游 302 到别的目录 (签名 CDN 常见) 时, 用请求前的地址
+    会把子清单与分片解析到错误路径.
+    """
+
+    def __init__(
+        self,
+        playlist_url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        playlist_text: str | None = None,
+        http_client: HttpClient | None = None,
+    ) -> None:
+        self._playlist_url = playlist_url
+        self._headers = dict(headers or {})
+        self._playlist_text = playlist_text
+        self._http_client = http_client
+
+    async def load_playlist(self, query: PlaybackQuery) -> HlsPlaylist:
+        if self._playlist_text is not None:
+            return HlsPlaylist(text=self._playlist_text, base_url=self._playlist_url)
+        if self._http_client is None:
+            raise SourceError(FailureReason.NETWORK, detail="播放列表缺少内容")
+        response = await self._http_client.web_client.request(
+            "GET",
+            self._playlist_url,
+            headers=self._headers or None,
+        )
+        return HlsPlaylist(text=response.text, base_url=str(response.url))
+
+    async def locate(self, query: PlaybackQuery, uri: str) -> UpstreamPlaybackTarget:
+        return UpstreamPlaybackTarget(
+            url=urljoin(self._playlist_url, uri),
+            headers=self._headers,
+        )
+
+
+@pydantic_dataclass(frozen=True, slots=True, config=ConfigDict(arbitrary_types_allowed=True))
+class HlsPlaybackTarget:
+    """HLS presentation. Host rewrites the playlist; the locator finds each URI.
+
+    Pydantic dataclass: 位置参数与 ``dataclasses`` 工具照旧, ``cache_ttl`` 与另外两种目标走同一
+    套字段校验. ``locator`` 是插件侧对象, 只做 ``isinstance`` 核对.
+    """
+
+    locator: HlsLocator
+    kind: Literal["hls"] = "hls"
+    cache_ttl: CacheTtl | None = None
+
+
+PlaybackTarget = FilePlaybackTarget | UpstreamPlaybackTarget | HlsPlaybackTarget
+
+
+class PlaybackProvider(ABC):
+    """Runtime contract consumed by the playback factory."""
+
+    @abstractmethod
+    async def probe(self, query: PlaybackQuery) -> tuple[PlaybackOffer, ...]:
+        """列出本来源在这个条目上能提供的流, 不传输媒体正文.
+
+        返回空元组表示「没有内容且无从解释」; 条目上确实有候选但没有一条可播 (文件已从磁盘消失,
+        长度为 0) 时仍把候选列出来并逐条说明原因. 整个来源都没有东西可列时抛
+        ``SourceError(NO_USABLE_METADATA)``, 原因展示给终端用户.
+        """
+        ...
+
+    @abstractmethod
+    async def resolve(self, query: PlaybackQuery) -> PlaybackTarget | None:
+        """返回主机要执行的那条流的目标; ``None`` = 没有流.
+
+        ``query.selected_key`` 是用户在列表里选中的流; ``None`` 表示没有指定, 由插件自己挑一条.
+        """
+        ...
+
+    async def subtitle(self, query: PlaybackQuery, track_id: str) -> str | UpstreamPlaybackTarget | None:
+        """Return WebVTT text, an upstream VTT URL, or ``None`` if the track is absent."""
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class PluginContext:
     """Core services intentionally available to an in-process plugin.
@@ -52,15 +308,8 @@ class PluginContext:
     data_dir: Path
 
 
-class FilmSourcePlugin(ABC):
-    """Base class implemented by third-party film metadata plugins.
-
-    Each drop-in directory ``{data_dir}/plugins/sources/<id>/`` must contain
-    ``plugin.py`` exporting a subclass of this class named ``Plugin``.
-    Authors import the subclass from ``amane.plugin``. The class is instantiated
-    when the source catalog is discovered (startup, install, uninstall, or reload);
-    providers are then cached by ``CrawlerFactory`` until the next rebuild.
-    """
+class _ConfiguredPlugin(ABC):
+    """Shared descriptor and configuration surface for drop-in plugins."""
 
     config_model: ClassVar[type[BaseModel]] = EmptyPluginConfig
 
@@ -75,12 +324,39 @@ class FilmSourcePlugin(ABC):
         """Return the Pydantic model used to validate the plugin ``config`` object."""
         return cls.config_model
 
-    @abstractmethod
-    def build(self, context: PluginContext, config: BaseModel) -> FilmSourceProvider:
-        """Build a provider using core services and validated plugin configuration."""
-        ...
-
     def validate_config(self, value: dict[str, object]) -> BaseModel:
         """Validate a persisted plugin config envelope and return the typed settings."""
         envelope = PluginConfig.model_validate(value)
         return self.configuration_model().model_validate(envelope.config)
+
+
+class FilmSourcePlugin(_ConfiguredPlugin):
+    """Base class implemented by third-party film metadata plugins.
+
+    Each drop-in directory ``{data_dir}/plugins/sources/<id>/`` must contain
+    ``plugin.py`` exporting a subclass of this class named ``Plugin``.
+    Authors import the subclass from ``amane.plugin``. The class is instantiated
+    when the source catalog is discovered (startup, install, uninstall, or reload);
+    providers are then cached by ``CrawlerFactory`` until the next rebuild.
+    """
+
+    @abstractmethod
+    def build(self, context: PluginContext, config: BaseModel) -> FilmSourceProvider:
+        """Build a film metadata provider using core services and validated configuration."""
+        ...
+
+
+class PlaybackPlugin(_ConfiguredPlugin):
+    """Base class implemented by third-party playback source plugins.
+
+    Same drop-in layout as film sources. ``build_playback`` is a distinct method
+    so a class may inherit both bases without colliding return types.
+    """
+
+    @abstractmethod
+    def build_playback(self, context: PluginContext, config: BaseModel) -> PlaybackProvider:
+        """Build a playback provider using core services and validated configuration."""
+        ...
+
+
+InstalledPlugin = FilmSourcePlugin | PlaybackPlugin

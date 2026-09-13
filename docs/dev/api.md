@@ -31,7 +31,8 @@
 | `tasks` | `/tasks` | 队列; `POST /batch` (`cancel`/`delete`/`retry`); worker 暂停领队; 终态 `report` / `record` |
 | `schedules` | `/schedules` | cron CRUD + trigger |
 | `config` | `/config` | HotSettings + schema |
-| `plugins` | `/plugins` | 外部影片来源插件目录、安装/卸载/热扫描、配置 schema 与启用状态 |
+| `plugins` | `/plugins` | 外部来源插件目录、安装/卸载/热扫描、配置 schema 与启用状态 |
+| `playback` | `/playback` | 可播放源列表与码流; `GET /sources` 须注册在 `/{source_id}` 之前 |
 | `files` | `/files` | 目录浏览 (`?path=`); resolve/scandir/stat 经由 `@in_thread`, 避免 FUSE 阻塞事件循环 |
 | `resources` | `/resources` | 本地资源 + `GET /proxy` |
 | `agent` | `/agent`, `/saved-queries` | 见 [agent.md](agent.md) |
@@ -44,6 +45,7 @@ OpenAPI 列出参数, 不表达组合语义:
 - 裁切海报基准是 `thumb_urls[0]` **当前本地文件**像素; 不修改库路径海报 (ORGANIZE 再复制). locator 见 [data-model.md](data-model.md).
 - `/facets/{kind}/rules` 须注册在 `/{facet_id}` 之前. 写规则语义见 [data-model.md](data-model.md).
 - `/plugins/reload` 须注册在 `/plugins/{plugin_id}` 之前, 否则 `reload` 会被当成插件 ID. 安装/卸载契约见 [plugins.md](plugins.md).
+- `/playback/sources` 须注册在 `/{source_id}` 之前, 只列已启用的播放源 (`source_id` 与 descriptor 里的展示名), 不调用插件也不碰条目; 某个来源的流由 `/{source_id}/{metadata_id}/streams` 在用户切到它时才探测. 流的一行是一条流: `key` 是流的标识, `name` 是主机拼好的展示名 (来源名 · 流的展示名), HLS 行的 `href` 指向 `index.m3u8`. **来源**整个不可用时 `available=false`、`key` 为空, `detail` 可有可无 (空结果就是没有原因); **这一条流**探测时不可播时仍带 `key`, `available=false` 且 `detail` 必然非空 (它只说明探测那一刻的观测, 点播仍可能失败). 流列表 `Cache-Control: no-store`, 来源列表 `private, no-cache`. 码流地址是 `/{source_id}/{metadata_id}/streams/{key}`, 去掉 `streams/{key}` 一段表示由插件自己挑一条. `HEAD`/`GET` 支持单段 Range. 清单改写后的分片经由 `hls/{token}`; 字幕经由 `subtitles/{track_id}` (`text/vtt`). `key` 由插件解释, 主机只校验它进路径的形状 (形状不合法由路径校验拒绝, 整值 `.` 与 `..` 也被拒; 含 `/` 的 key 在路由匹配前就被拆段, 得到 404), 认不出来的 `key` 由插件以 502 与自身原因拒绝. 超长 `source_id` 与未启用、未安装同样 404. 上游失败与畸形上游 URL 均为 502, 上游 416 原样返回. 码流 `upstream` 拒绝播放列表类型. 插件声明的 `file` 目标不属于该条目索引时也是 502. 契约见 [plugins.md](plugins.md).
 - `/tasks/batch` 与 `/tasks/worker*` 须注册在 `/{task_id}` 之前, 否则会被当成非法整数 id.
 
 ## 依赖注入
@@ -55,6 +57,8 @@ Starlette WS 不支持 `Depends`, `ws.py` 手动取 `ws.app.state.runtime`. 插�
 ## 中间件顺序
 
 `create_app`: 先 `include_router` 再 `mount_spa` (SPA catch-all 会吞 `/api`), 最后注册 `LoggingMiddleware`. `add_middleware` 后注册者在栈外层 (insert(0)), 故 LoggingMiddleware 包住 TokenAuth / CORS / SPA fallback — 401/403 直返与内层中间件自身异常也进入请求日志. 新端点不依赖中间件注册顺序; 新增自定义中间件时 LoggingMiddleware 必须仍为最外层.
+
+`TokenAuthMiddleware` 与 `LoggingMiddleware` 都是 `BaseHTTPMiddleware`: 它交给下游的是包装过的 `receive`, 必须真正挂起等待才会收到 `http.disconnect`. 因此 `Request.is_disconnected()` (立刻取消式探测) 在本栈内恒为 `False`, 需要感知客户端离开的长响应改用 `playback/disconnect.py` 的 `DisconnectSignal` (见 [plugins.md](plugins.md)).
 
 ## 约定
 

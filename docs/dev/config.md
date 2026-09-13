@@ -29,6 +29,7 @@ API 鉴权是冷配置: 中间件在请求路径上, 不能在进程内 rebuild 
 ```
 RateLimiters → WebClient → HttpClient → CrawlerFactory
   → Handlers (含 Translator / R18ImportHandler) → AsyncWorker
+  → PlaybackFactory (独立码流客户端)
   → AgentService.rebuild (仅换 Agent 工厂 / 缓存参数)
 ```
 

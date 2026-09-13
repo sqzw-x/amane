@@ -19,6 +19,7 @@ from ..events import EventBus
 from ..llm import TranslationCache
 from ..media import ResourceStore
 from ..observability import setup_logging
+from ..playback import PlaybackFactory, PlaybackState
 from ..plugins.manager import PluginManager
 from ..release import ReleaseChecker
 from ..scheduler.cron import CronScheduler
@@ -83,6 +84,8 @@ class AppSession:
         with suppress(asyncio.CancelledError):
             await self._cron_task
         await self.runtime.worker.stop()
+        if self.runtime.playback_factory is not None:
+            await self.runtime.playback_factory.aclose()
         await self.runtime.web_client.close()
         if self.runtime.r18_db is not None:
             await self.runtime.r18_db.close()
@@ -205,6 +208,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         watcher_service = None
         logger.warning("watcher service not started", exc_info=True)
 
+    playback_state = PlaybackState()
     runtime = AppRuntime(
         repo=repo,
         config=config,
@@ -224,6 +228,16 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         r18_db=r18_db,
         agent_service=agent_service,
         plugin_manager=plugin_manager,
+        playback_state=playback_state,
+        playback_factory=PlaybackFactory(
+            plugin_manager=plugin_manager,
+            plugin_configs=hot.plugins,
+            http_client=http_client,
+            web_client=web_client,
+            data_dir=cold.data_dir,
+            proxy=hot.network.proxy,
+            state=playback_state,
+        ),
     )
     agent_service.bridge.safe_dirs = None if safe_dirs is None else list(safe_dirs)
     agent_service.bridge.watcher = watcher_service

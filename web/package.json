@@ -28,6 +28,7 @@
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "dompurify": "^3.4.15",
+    "hls.js": "^1.7.2",
     "i18next": "^26.4.2",
     "i18next-browser-languagedetector": "^8.2.1",
     "liqe": "^3.8.7",

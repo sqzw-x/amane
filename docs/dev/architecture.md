@@ -13,6 +13,7 @@
 | `crawlers/` | 番号 → `MediaMetadata`; 演员名 → `ActorMetadata` | 无状态; HTTP 与配置构造期注入; 影片/演员分 registry |
 | `plugin/` | 第三方来源作者 SDK（再导出契约类型） | 插件只导入这里; 主机不导入 |
 | `plugins/` | 来源插件主机（发现 / 落盘 / Factory） | 作者不导入; 契约见 [plugins.md](plugins.md) |
+| `playback/` | 上游反向代理与 HLS 清单改写 | 浏览器只请求本机媒体端点; 码流不经刮削 HTTP 客户端; 不允许主机实时转码 |
 | `aggregate/` | 多源优先级 → `AggregatedMetadata` / `AggregatedActor` | 影片按抓取图波次执行; 演员为档案填空 + 头像优先; 不写 DB |
 | `handlers/` | DB Task → 副作用 (写 metadata / 移动文件 / 排队) | 编排层, 不实现解析/爬取/IO 细节 |
 | `media/` `organize/` | 元数据 + 路径模板 → 磁盘文件 | 调用方传配置, 自身不读 `HotSettings` 全局 |
@@ -50,6 +51,7 @@ EventBus → 日志 → 来源插件发现 → 主 DB engine + Repository → r1
 - **来源插件在网络栈之前发现**: descriptor 提供来源 URL、多语言能力和默认速率；配置中的外部来源 ID 要先经过当前插件目录校验，再构造 `CrawlerFactory`. 安装 / 卸载 / 重新扫描会在进程内替换该目录并执行同一套 `rebuild()`（排空旧 Worker），不重启进程；见 [plugins.md](plugins.md).
 - **CrawlerFactory 缓存爬虫实例**. 配置在构造函数注入并立即合并 (`_resolve_config`). 重建工厂只在 `HttpClient` 换了之后才有必要.
 - **Handlers 在 Worker 之前**, Worker 启动后会立即开始 claim 任务 — handler map 必须就位.
+- **PlaybackFactory 在网络栈与来源插件目录之后**: 播放源只来自插件; 上游反代使用独立流式客户端, 不复用刮削 `HttpClient`. rebuild 时替换并关闭旧客户端. 契约见 [plugins.md](plugins.md) / [api.md](api.md).
 - **CronScheduler / FeedService / WatcherService 在 Worker 之后**: 三者都会派生/触发任务, worker 须已就绪. Feed 间隔在源上, 见 [feeds.md](feeds.md).
 
 停机时 lifespan `aclose` **先** `EventBus.close_all()` 再停 worker: 常驻 WS 否则会拖死 uvicorn graceful. 重启不是进程内 exec — 服务以退出码 3 退出 (避开 argparse 的 2), 由进程外再次启动 (桌面监督循环, Docker `unless-stopped`). Docker 不区分退出码: 容器内 `exit 3` 仍会再次启动; `docker stop` 发送 SIGTERM → `exit 0`. 仅 `AMANE_SUPERVISED=1` 时重启端点可用, 见 [desktop.md](desktop.md) / [config.md](config.md).

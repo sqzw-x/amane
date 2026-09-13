@@ -1,7 +1,9 @@
 {
-  "title": "Scrape plugins",
+  "title": "Plugins",
   "loadError": "Failed to load plugins",
-  "empty": "No external scrape plugins installed",
+  "empty": "No external plugins installed",
+  "emptyScrape": "No film metadata plugins installed",
+  "emptyPlayback": "No playback plugins installed",
   "save": "Save plugin configuration",
   "sourceId": "Source ID",
   "version": "Version",
@@ -17,6 +19,15 @@
   "installed": "Plugin installed",
   "uninstalled": "Plugin uninstalled",
   "reloaded": "Plugin catalog reloaded",
-  "routeHint": "After install, add it in Type Routes to enable",
-  "routeLink": "Open movie scraping settings"
+  "scrapeSection": "Film metadata",
+  "playbackSection": "Playback",
+  "routeHint": "After installing a scrape plugin, add it in Type Routes before it is used",
+  "routeLink": "Open movie scraping settings",
+  "playbackHint": "Installed sources appear on title pages immediately and can be disabled here. They are not added to content routes.",
+  "capabilities": {
+    "film_metadata": "Film metadata",
+    "playback": "Playback",
+    "actor_profile": "Actor profile",
+    "actor_image": "Actor image"
+  }
 }

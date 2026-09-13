@@ -33,7 +33,7 @@
   },
   "nav": {
     "library": "媒体库",
-    "plugins": "刮削插件",
+    "plugins": "插件",
     "tasks": "任务",
     "schedules": "定时任务",
     "settings": "设置",

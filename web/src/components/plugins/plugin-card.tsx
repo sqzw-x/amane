@@ -94,7 +94,7 @@ export function PluginCard({ plugin }: { plugin: PluginResponse }) {
           </Badge>
           {plugin.descriptor.capabilities?.map((capability) => (
             <Badge key={capability} variant="light" color="blue">
-              {capability}
+              {t(`capabilities.${capability}`, { defaultValue: capability })}
             </Badge>
           ))}
         </Group>

@@ -1,4 +1,4 @@
-"""Author-facing film-source plugin SDK.
+"""Author-facing plugin SDK.
 
 Plugin drop-ins should import only from this module. Host code uses
 ``amane.plugins.*`` implementation modules and must not import ``amane.plugin``.
@@ -11,7 +11,24 @@ from ..enums import Language
 from ..net.errors import FailureReason, RequestError, SourceError
 from ..net.http import WebClient
 from ..parsing.file_info import ContentType
-from ..plugins.api import EmptyPluginConfig, FilmSourcePlugin, FilmSourceProvider, PluginContext
+from ..plugins.api import (
+    EmptyPluginConfig,
+    FilePlaybackTarget,
+    FilmSourcePlugin,
+    FilmSourceProvider,
+    HlsLocator,
+    HlsPlaybackTarget,
+    HlsPlaylist,
+    PlaybackMediaFile,
+    PlaybackOffer,
+    PlaybackPlugin,
+    PlaybackProvider,
+    PlaybackQuery,
+    PluginContext,
+    RelativeHlsLocator,
+    SubtitleTrack,
+    UpstreamPlaybackTarget,
+)
 from ..plugins.models import (
     PLUGIN_API_VERSION,
     RESERVED_SOURCE_NAMESPACES,
@@ -29,19 +46,31 @@ __all__ = [
     "EmptyPluginConfig",
     "FailureReason",
     "FetchOptions",
+    "FilePlaybackTarget",
     "FilmActor",
     "FilmSourcePlugin",
     "FilmSourceProvider",
+    "HlsLocator",
+    "HlsPlaybackTarget",
+    "HlsPlaylist",
     "HttpClient",
     "Language",
     "MediaMetadata",
+    "PlaybackMediaFile",
+    "PlaybackOffer",
+    "PlaybackPlugin",
+    "PlaybackProvider",
+    "PlaybackQuery",
     "PluginContext",
+    "RelativeHlsLocator",
     "RequestError",
     "SearchQuery",
     "SourceCapability",
     "SourceDescriptor",
     "SourceError",
     "SourceId",
+    "SubtitleTrack",
+    "UpstreamPlaybackTarget",
     "WebClient",
     "film_actors",
     "is_external_source_id",

@@ -22,7 +22,7 @@ from amane.plugins.packaging import (
     sources_root,
     uninstall_plugin_tree,
 )
-from tests.plugins.test_plugin_system import plugin_source, write_plugin
+from tests.plugins.test_plugin_system import playback_plugin_source, plugin_source, write_plugin
 
 
 def _zip_bytes(entries: dict[str, str]) -> bytes:
@@ -40,6 +40,15 @@ def test_install_zip_at_root(tmp_path: Path) -> None:
     assert (sources_root(tmp_path) / "acme.fake" / PLUGIN_ENTRY).is_file()
     manager = PluginManager.discover(tmp_path)
     assert manager.has_plugin("acme.fake")
+
+
+def test_install_zip_playback_only(tmp_path: Path) -> None:
+    payload = _zip_bytes({PLUGIN_ENTRY: playback_plugin_source("acme.play")})
+    plugin_id = install_plugin_zip(tmp_path, payload)
+    assert plugin_id == "acme.play"
+    manager = PluginManager.discover(tmp_path)
+    assert manager.has_playback_plugin("acme.play")
+    assert not manager.has_film_plugin("acme.play")
 
 
 def test_install_zip_nested_folder(tmp_path: Path) -> None:
