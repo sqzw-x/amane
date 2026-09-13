@@ -1,8 +1,6 @@
 """大模型构造: 翻译与助理 (agent) 共用同一套 provider 映射, 各自的凭据与配置仍分离."""
 
 import httpx2
-from anthropic import AsyncAnthropic
-from openai import AsyncOpenAI
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
@@ -19,48 +17,23 @@ def build_model(
     api_key: str | None,
     model: str,
     http_client: httpx2.AsyncClient | None = None,
-    max_retries: int | None = None,
 ) -> Model:
-    """按 ``api_type`` 构造 ``Model``. ``base_url`` / ``api_key`` / ``model`` 原样交给上游, 不做改写.
+    """按 ``api_type`` 构造 ``Model``. ``base_url`` / ``api_key`` / ``model`` 原样交给 provider, 不做改写.
 
-    指定 ``max_retries`` 时自建 SDK 客户端以便把次数直通 SDK: 重试哪些状态码、退避方式与是否尊重
-    ``Retry-After`` 都属 SDK 策略. ``None`` 表示不指定 (沿用 SDK 默认重试), 此时不接管客户端构造,
-    由 provider 构造并托管客户端, 超时 / User-Agent / 重定向行为保持 pydantic-ai 默认.
-    传入 ``http_client`` 时由调用方持有其生命周期; 不检查 ``api_key``: 为空时由 provider 回退环境变量.
+    ``http_client`` 决定传输客户端归属: 传入时 provider 用它构造 SDK 客户端 (翻译路径由此携带
+    proxy 与超时, 生命周期归调用方); 不传时由 pydantic-ai 构造并托管默认客户端 (助理路径).
+    不检查 ``api_key``: 为空时由 provider 回退环境变量.
     """
     match api_type:
         case ApiType.CHAT:
-            return OpenAIChatModel(model, provider=_openai_provider(base_url, api_key, http_client, max_retries))
+            return OpenAIChatModel(
+                model, provider=OpenAIProvider(base_url=base_url, api_key=api_key, http_client=http_client)
+            )
         case ApiType.RESPONSE:
-            return OpenAIResponsesModel(model, provider=_openai_provider(base_url, api_key, http_client, max_retries))
+            return OpenAIResponsesModel(
+                model, provider=OpenAIProvider(base_url=base_url, api_key=api_key, http_client=http_client)
+            )
         case ApiType.ANTHROPIC:
-            return AnthropicModel(model, provider=_anthropic_provider(base_url, api_key, http_client, max_retries))
-
-
-def _openai_provider(
-    base_url: str, api_key: str | None, http_client: httpx2.AsyncClient | None, max_retries: int | None
-) -> OpenAIProvider:
-    """未指定重试次数时不接管客户端: 由 pydantic-ai 构造并托管; 指定时自建 SDK 客户端以直通次数.
-
-    自建客户端与 provider 的参数互斥 (provider 要求 ``base_url`` / ``api_key`` / ``http_client`` 全为空),
-    因此两条路径分开构造. 另外 SDK 运行期签名只接受 ``int``: 显式传 ``NOT_GIVEN`` 会在请求时以
-    ``NotGiven + int`` 失败, 不能用它代替「不下发该参数」.
-    """
-    if max_retries is None:
-        return OpenAIProvider(base_url=base_url, api_key=api_key, http_client=http_client)
-    return OpenAIProvider(
-        openai_client=AsyncOpenAI(base_url=base_url, api_key=api_key, http_client=http_client, max_retries=max_retries)
-    )
-
-
-def _anthropic_provider(
-    base_url: str, api_key: str | None, http_client: httpx2.AsyncClient | None, max_retries: int | None
-) -> AnthropicProvider:
-    """未指定重试次数时不接管客户端; 指定时自建 SDK 客户端. 取舍同 ``_openai_provider``."""
-    if max_retries is None:
-        return AnthropicProvider(api_key=api_key, base_url=base_url, http_client=http_client)
-    return AnthropicProvider(
-        anthropic_client=AsyncAnthropic(
-            base_url=base_url, api_key=api_key, http_client=http_client, max_retries=max_retries
-        )
-    )
+            return AnthropicModel(
+                model, provider=AnthropicProvider(api_key=api_key, base_url=base_url, http_client=http_client)
+            )

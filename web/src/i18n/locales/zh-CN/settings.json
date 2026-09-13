@@ -555,9 +555,6 @@
       "model": {
         "label": "模型"
       },
-      "max_retries": {
-        "label": "最大重试次数"
-      },
       "rate_limit": {
         "label": "每秒请求上限"
       },

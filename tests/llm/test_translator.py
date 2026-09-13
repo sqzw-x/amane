@@ -17,7 +17,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from amane.enums import ApiType, Language, MetadataField
-from amane.llm import LLMTranslator, TranslationCache, build_model, build_system_prompt, build_translator
+from amane.llm import LLMTranslator, TranslationCache, build_system_prompt, build_translator
 from amane.llm import translator as translator_module
 
 _SYSTEM_ZH = build_system_prompt(Language.ZH_CN, MetadataField.TITLE)
@@ -120,27 +120,30 @@ async def test_empty_model_result_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_retries_exhausted_returns_none():
-    """SDK 重试耗尽后抛出的异常由翻译器吸收: 返回 None (调用方保留原值), 不向上抛."""
-    requests: list[httpx2.Request] = []
+async def test_request_failure_returns_none(monkeypatch):
+    """请求持续失败时 translate 返回 None (调用方保留原值), 不向上抛异常."""
 
     def handler(request: httpx2.Request) -> httpx2.Response:
-        requests.append(request)
-        return httpx2.Response(500, json={"error": {"message": "blocked"}})
+        # retry-after 让 SDK 不需要真实退避等待.
+        return httpx2.Response(500, json={"error": {"message": "blocked"}}, headers={"retry-after": "0.01"})
 
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        model = build_model(
-            ApiType.CHAT,
-            base_url="https://api.example/v1",
-            api_key="test-key",
-            model="test-model",
-            http_client=client,
-            max_retries=0,  # 不重试: 一次失败即结束
-        )
-        t = _translator(model)
-        assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) is None
+    def mock_client(
+        *, proxy: str | None = None, timeout: httpx2.Timeout | None = None, follow_redirects: bool = False
+    ) -> httpx2.AsyncClient:
+        """顶替翻译自建的传输客户端: 请求由 MockTransport 承载, 不触网."""
+        return httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
 
-    assert len(requests) == 1
+    monkeypatch.setattr(translator_module, "AsyncClient", mock_client)
+    t = build_translator(
+        enabled=True,
+        api_type=ApiType.CHAT,
+        api_key="test-key",
+        base_url="https://api.example/v1",
+        model="test-model",
+        rate_limit=100.0,
+    )
+    assert t is not None
+    assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) is None
 
 
 @pytest.mark.asyncio
@@ -166,7 +169,6 @@ def test_build_translator_gating(enabled, api_key, expected_none):
         api_key=api_key,
         base_url="https://api.openai.com/v1",
         model="gpt-4o-mini",
-        max_retries=3,
         rate_limit=2.0,
     )
     assert (t is None) == expected_none
@@ -174,7 +176,7 @@ def test_build_translator_gating(enabled, api_key, expected_none):
 
 @pytest.mark.asyncio
 async def test_build_translator_builds_proxy_client(monkeypatch):
-    """proxy / 超时 / 重试次数都交给共享 model 工厂; 客户端丢失会让 LLM 端点无法经代理访问."""
+    """proxy 与超时进入翻译自建的传输客户端, 并作为 ``http_client`` 交给共享 model 工厂."""
     captured: dict[str, object] = {}
     real_client = httpx2.AsyncClient
 
@@ -192,9 +194,8 @@ async def test_build_translator_builds_proxy_client(monkeypatch):
         api_key: str | None,
         model: str,
         http_client: httpx2.AsyncClient | None = None,
-        max_retries: int | None = None,
     ) -> FunctionModel:
-        captured.update(api_type=api_type, http_client=http_client, max_retries=max_retries)
+        captured.update(api_type=api_type, http_client=http_client)
         return _recording_model()[0]
 
     monkeypatch.setattr(translator_module, "AsyncClient", recording_client)
@@ -205,7 +206,6 @@ async def test_build_translator_builds_proxy_client(monkeypatch):
         api_key="key",
         base_url="https://api.example/v1",
         model="test-model",
-        max_retries=1,
         rate_limit=2.0,
         proxy="http://proxy.example:8080",
     )
@@ -216,7 +216,6 @@ async def test_build_translator_builds_proxy_client(monkeypatch):
     assert client.timeout == httpx2.Timeout(60.0)
     assert captured["api_type"] is ApiType.ANTHROPIC
     assert captured["http_client"] is client
-    assert captured["max_retries"] == 1
     await client.aclose()
 
 

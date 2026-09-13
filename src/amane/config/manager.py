@@ -532,7 +532,6 @@ class LLMConfig(BaseModel):
     api_type: ApiType = ApiType.CHAT
     base_url: str = "https://api.openai.com/v1"
     model: str = ""
-    max_retries: int = Field(default=3, ge=0, le=10)
     rate_limit: float = Field(default=2.0, ge=0.1, le=100)
     """与站点限速隔离."""
 

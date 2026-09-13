@@ -101,7 +101,7 @@ def resolve_model_settings(config: AgentConfig, *, session_thinking: AgentThinki
 
 
 def build_model(config: AgentConfig) -> Model:
-    """不检查 api_key. 不接代理客户端, 与翻译共用 ``llm.model`` 的协议映射."""
+    """不检查 api_key. 不传 ``http_client``: 传输客户端由 pydantic-ai 构造并托管, 与翻译共用协议映射."""
     return build_llm_model(config.api_type, base_url=config.base_url, api_key=config.api_key, model=config.model)
 
 

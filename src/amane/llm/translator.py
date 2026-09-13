@@ -22,7 +22,7 @@ from .model import build_model
 logger = structlog.get_logger()
 
 _TIMEOUT = 60.0
-"""LLM 请求超时 (秒). 重试由 SDK 客户端承担, 此客户端只承载超时与代理."""
+"""LLM 请求超时 (秒). 重试由 SDK 按其默认策略承担, 翻译器不配置次数."""
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 """去除提供商写进正文的思维链, 仅保留最终答案. ``ModelResponse.text`` 已排除 ``ThinkingPart``."""
@@ -157,7 +157,6 @@ def build_translator(
     api_key: str | None,
     base_url: str,
     model: str,
-    max_retries: int,
     rate_limit: float,
     proxy: str | None = None,
     system_prompt: str | None = None,
@@ -167,16 +166,10 @@ def build_translator(
     """未启用或缺密钥时返回 ``None``. ``cache`` 热重载时复用同一实例."""
     if not enabled or not api_key:
         return None
+    # 翻译路径自建传输客户端 (proxy + 超时) 并交给 provider; 助理不传, 由 pydantic-ai 构造默认客户端.
     http_client = AsyncClient(proxy=proxy, timeout=Timeout(_TIMEOUT), follow_redirects=True)
     return LLMTranslator(
-        build_model(
-            api_type,
-            base_url=base_url,
-            api_key=api_key,
-            model=model,
-            http_client=http_client,
-            max_retries=max_retries,
-        ),
+        build_model(api_type, base_url=base_url, api_key=api_key, model=model, http_client=http_client),
         cache,
         rate_limit=rate_limit,
         system_prompt=system_prompt,

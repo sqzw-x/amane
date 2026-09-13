@@ -1236,10 +1236,6 @@ export type LlmConfig = {
      */
     model?: string;
     /**
-     * Max Retries
-     */
-    max_retries?: number;
-    /**
      * Rate Limit
      */
     rate_limit?: number;

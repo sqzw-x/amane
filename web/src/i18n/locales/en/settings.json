@@ -555,9 +555,6 @@
       "model": {
         "label": "Model"
       },
-      "max_retries": {
-        "label": "Max Retries"
-      },
       "rate_limit": {
         "label": "Max requests per second"
       },

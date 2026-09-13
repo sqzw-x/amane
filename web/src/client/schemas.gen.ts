@@ -2434,7 +2434,6 @@ export const HotSettingsSchema = {
                 api_type: 'chat',
                 base_url: 'https://api.openai.com/v1',
                 model: '',
-                max_retries: 3,
                 rate_limit: 2
             }
         },
@@ -2559,13 +2558,6 @@ export const LLMConfigSchema = {
             type: 'string',
             title: 'Model',
             default: ''
-        },
-        max_retries: {
-            type: 'integer',
-            maximum: 10,
-            minimum: 0,
-            title: 'Max Retries',
-            default: 3
         },
         rate_limit: {
             type: 'number',

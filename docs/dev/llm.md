@@ -10,12 +10,10 @@
 
 - **单轮调用不使用 Agent**: 请求经 `pydantic_ai.direct.model_request` 发出, 取 `ModelResponse.text`. 该属性只拼接文本部分,
   推理模型写在 `ThinkingPart` 的思维链天然排除; 写进正文的 `<think>` 块由翻译器剥离.
-- **传输层参数**: 翻译自建 `httpx2.AsyncClient` (超时 60 秒, 代理取 `network.proxy`), 工厂把它交给 SDK 客户端后再交给 provider.
-  指定了 `llm.max_retries` 时客户端由工厂自建 (否则无法把次数直通 SDK); 助理不指定次数, 客户端仍由 provider 构造并托管,
-  超时与 User-Agent 保持 pydantic-ai 默认.
-- **重试由 SDK 承担**: `llm.max_retries` 直通 SDK 客户端的 `max_retries` —— 重试哪些状态码、退避方式与是否尊重
-  `Retry-After` 都属 SDK 策略, Amane 不再持有退避与逐次尝试的日志. SDK 重试结束后仍失败, 或正文为空时,
-  翻译器返回 `None` 且不抛出 —— 调用方保留原值.
+- **传输客户端归属**: 翻译路径自建 `httpx2.AsyncClient` (超时 60 秒, 代理取 `network.proxy`) 并交给 provider;
+  助理不传, 由 pydantic-ai 构造默认客户端.
+- **重试由 SDK 按其默认策略承担**: Amane 不配置重试次数, 重试哪些状态码、退避方式与是否尊重 `Retry-After`
+  都属 SDK 策略; SDK 重试结束后仍失败, 或正文为空时, 翻译器返回 `None` 且不抛出 —— 调用方保留原值.
 - **限速在翻译器内**: `AsyncLimiter` 按 `llm.rate_limit` 限速, 包住一次翻译调用 (其内部的重试由 SDK 承担) 的节奏.
 - **`Translator` 协议**是管线唯一依赖的翻译面 (`translate`), `ScrapeHandler` 仅依赖此协议; 测试可用结构化替身实现该协议.
 

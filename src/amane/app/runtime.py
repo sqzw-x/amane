@@ -332,7 +332,6 @@ def build_handlers(
         api_key=hot.llm.api_key,
         base_url=hot.llm.base_url,
         model=hot.llm.model,
-        max_retries=hot.llm.max_retries,
         rate_limit=hot.llm.rate_limit,
         proxy=hot.network.proxy,
         system_prompt=hot.llm.system_prompt,
