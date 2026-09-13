@@ -527,3 +527,41 @@ class TestConfigManagerLoad:
         assert mgr2.hot.worker.poll_interval == 5.0
         assert mgr2.hot.scraping.crop_poster is False
         assert mgr2.hot.watcher.use_polling is True
+
+
+class TestLLMPromptConfig:
+    """llm 自定义提示词的持久化、清空与空白归一."""
+
+    @pytest.fixture
+    def mgr(self, tmp_path: Path) -> ConfigManager:
+        with patch.dict(os.environ, {"AMANE_DATA_DIR": str(tmp_path)}, clear=False):
+            cold = ColdSettings()
+        return ConfigManager.with_cold(cold)
+
+    def test_round_trip_preserves_prompts(self, mgr: ConfigManager):
+        mgr.update({"llm": {"system_prompt": "只用中性词汇.", "field_prompts": {"title": "标题不超过 30 字."}}})
+
+        reloaded = ConfigManager.with_cold(mgr.cold)
+
+        assert reloaded.hot.llm.system_prompt == "只用中性词汇."
+        assert reloaded.hot.llm.field_prompts == {MetadataField.TITLE: "标题不超过 30 字."}
+
+    def test_clearing_prompts_restores_builtin(self, mgr: ConfigManager):
+        mgr.update({"llm": {"system_prompt": "只用中性词汇.", "field_prompts": {"title": "标题不超过 30 字."}}})
+        mgr.update({"llm": {"system_prompt": None, "field_prompts": {}}})
+
+        reloaded = ConfigManager.with_cold(mgr.cold)
+
+        assert reloaded.hot.llm.system_prompt is None
+        assert reloaded.hot.llm.field_prompts == {}
+
+    def test_blank_prompts_not_persisted(self, mgr: ConfigManager):
+        """空白提示词归一为未配置, 配置段回到全默认时不写入 TOML."""
+        mgr.update({"llm": {"system_prompt": "   ", "field_prompts": {"plot": "  "}}})
+
+        with open(mgr.cold.config_path, "rb") as f:
+            data = tomllib.load(f)
+
+        assert data == {}
+        assert mgr.hot.llm.system_prompt is None
+        assert mgr.hot.llm.field_prompts == {}

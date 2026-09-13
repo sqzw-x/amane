@@ -2430,6 +2430,7 @@ export const HotSettingsSchema = {
                     'title',
                     'plot'
                 ],
+                field_prompts: {},
                 base_url: 'https://api.openai.com/v1',
                 model: '',
                 max_retries: 3,
@@ -2507,6 +2508,31 @@ export const LLMConfigSchema = {
             },
             type: 'array',
             title: 'Translate Fields'
+        },
+        system_prompt: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 2000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'System Prompt',
+            'x-long': true
+        },
+        field_prompts: {
+            additionalProperties: {
+                type: 'string',
+                maxLength: 2000,
+                'x-multiline': true
+            },
+            propertyNames: {
+                $ref: '#/components/schemas/MetadataField'
+            },
+            type: 'object',
+            title: 'Field Prompts'
         },
         api_key: {
             anyOf: [

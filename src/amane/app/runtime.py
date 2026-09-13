@@ -334,6 +334,8 @@ def build_handlers(
         max_retries=hot.llm.max_retries,
         rate_limit=hot.llm.rate_limit,
         proxy=hot.network.proxy,
+        system_prompt=hot.llm.system_prompt,
+        field_prompts=hot.llm.field_prompts,
         cache=translation_cache,
     )
     library_locks = LibraryTaskLocks()

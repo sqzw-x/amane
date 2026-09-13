@@ -575,6 +575,34 @@
             "score": "评分"
           }
         }
+      },
+      "system_prompt": {
+        "label": "自定义提示词",
+        "description": "替换内置系统提示词的指令部分; 留空使用内置. 可用 {target_lang} 引用目标语言名"
+      },
+      "field_prompts": {
+        "label": "字段提示词",
+        "description": "逐字段覆盖内置字段说明; 留空使用内置. 可用 {target_lang} 引用目标语言名",
+        "$": {
+          "label": "提示词"
+        },
+        "options": {
+          "title": "标题",
+          "actors": "演员",
+          "tags": "标签",
+          "release": "发行日期",
+          "runtime": "时长",
+          "directors": "导演",
+          "series": "系列",
+          "studio": "制作商",
+          "publisher": "发行商",
+          "plot": "简介",
+          "poster_urls": "海报",
+          "thumb_urls": "封面",
+          "trailer_urls": "预告片",
+          "extrafanart": "剧照",
+          "score": "评分"
+        }
       }
     },
     "agent": {

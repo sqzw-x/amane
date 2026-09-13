@@ -1213,6 +1213,16 @@ export type LlmConfig = {
      */
     translate_fields?: Array<MetadataField>;
     /**
+     * System Prompt
+     */
+    system_prompt?: string | null;
+    /**
+     * Field Prompts
+     */
+    field_prompts?: {
+        [key in MetadataField]?: string;
+    };
+    /**
      * Api Key
      */
     api_key?: string | null;

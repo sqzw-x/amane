@@ -575,6 +575,34 @@
             "score": "Score"
           }
         }
+      },
+      "system_prompt": {
+        "label": "Custom System Prompt",
+        "description": "Replaces the instruction part of the built-in system prompt; leave empty to use the built-in. Use {target_lang} to insert the target language name"
+      },
+      "field_prompts": {
+        "label": "Field Prompts",
+        "description": "Overrides the built-in field instruction per field; leave empty to use the built-in. Use {target_lang} to insert the target language name",
+        "$": {
+          "label": "Prompt"
+        },
+        "options": {
+          "title": "Title",
+          "actors": "Actors",
+          "tags": "Tags",
+          "release": "Release Date",
+          "runtime": "Runtime",
+          "directors": "Directors",
+          "series": "Series",
+          "studio": "Studio",
+          "publisher": "Publisher",
+          "plot": "Plot",
+          "poster_urls": "Poster",
+          "thumb_urls": "Cover",
+          "trailer_urls": "Trailer",
+          "extrafanart": "Stills",
+          "score": "Score"
+        }
       }
     },
     "agent": {
