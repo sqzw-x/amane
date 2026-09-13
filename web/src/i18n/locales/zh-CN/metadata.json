@@ -101,6 +101,7 @@
     "addComment": "发表评论",
     "editComment": "编辑评论",
     "commentEditedAt": "（已编辑 {{time}}）",
+    "commentJustNow": "刚刚",
     "commentSortLabel": "按编辑时间",
     "commentSortNewest": "新 → 旧",
     "commentSortOldest": "旧 → 新",

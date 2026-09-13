@@ -1,10 +1,10 @@
 /*
-  评论区: 卡片底色在浅色下抬到 gray-1, 与页面 body (#fff) 分开.
-  深色下沿用卡片默认底色 (dark-6), 再抬高一档会削弱正文对比.
+  评论区: 卡片底色抬高一档 (浅色 gray-1, 深色 dark-5), 与页面底色分开 —— 深色下卡片默认
+  底色 dark-6 与页面 dark-7 只差一档, 整块读不出来.
 */
 .card {
   --comment-rule: light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
-  background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-6));
+  background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-5));
 }
 
 .item {
@@ -20,12 +20,12 @@
   border-bottom: 1px solid var(--comment-rule);
 }
 
-/* 楼号: 与相对时间同一行, 用弱底色把序号与文案分开. */
+/* 楼号: 与相对时间同一行, 用中性胶囊把序号与文案分开; 不用品牌色, 避免与时间戳胶囊混淆. */
 .floor {
   padding: 0 5px;
   border-radius: 4px;
-  background: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
-  color: var(--mantine-color-dimmed);
+  background: light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  color: light-dark(var(--mantine-color-gray-8), var(--mantine-color-dark-1));
   font-family: var(--mantine-font-family-monospace);
   font-size: var(--mantine-font-size-xs);
   line-height: 1.6;

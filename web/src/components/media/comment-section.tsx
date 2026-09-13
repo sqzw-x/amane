@@ -186,10 +186,14 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
                 <Group gap={8} align="center" wrap="nowrap">
                   <span className={classes.floor}>#{floor}</span>
                   <Text size="xs" c="dimmed">
-                    {formatRelativeTime(comment.created_at, locale)}
+                    {formatRelativeTime(comment.created_at, locale, t("detail.commentJustNow"))}
                     {isEdited(comment) &&
                       ` ${t("detail.commentEditedAt", {
-                        time: formatRelativeTime(comment.updated_at, locale),
+                        time: formatRelativeTime(
+                          comment.updated_at,
+                          locale,
+                          t("detail.commentJustNow"),
+                        ),
                       })}`}
                   </Text>
                 </Group>
@@ -197,6 +201,7 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
                   <HintedActionIcon
                     size="sm"
                     variant="subtle"
+                    color="gray"
                     label={t("detail.editComment")}
                     onClick={() => {
                       setEditingId(comment.id);

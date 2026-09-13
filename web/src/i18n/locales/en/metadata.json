@@ -100,6 +100,7 @@
     "addComment": "Post comment",
     "editComment": "Edit comment",
     "commentEditedAt": "(edited {{time}})",
+    "commentJustNow": "just now",
     "commentSortLabel": "By edit time",
     "commentSortNewest": "Newest first",
     "commentSortOldest": "Oldest first",
