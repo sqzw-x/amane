@@ -13,8 +13,6 @@ from ..plugins.api import PlaybackTarget
 T = TypeVar("T")
 
 OPEN_FAIL_TTL_SECONDS = 3.0
-PROBE_FAIL_TTL_SECONDS = 15.0
-PROBE_NONE_TTL_SECONDS = 60.0
 PROBE_HIT_TTL_SECONDS = 30.0
 RESOLVE_TTL_MAX_SECONDS = 300.0
 MAX_ENTRIES = 4096
@@ -61,12 +59,14 @@ class _TtlMap[ValueT]:
 
 
 class PlaybackCaches:
-    """Independent TTLs for probe hits, probe none, probe errors, open failures, resolved targets."""
+    """Independent TTLs for probe hits, open failures, and resolved targets.
+
+    没有探测失败的负缓存: 探测由用户切到某个来源时触发, 每次点击最多一次插件调用, 而负缓存会让
+    「刚修好又点一次」拿到过期的不可用结论.
+    """
 
     def __init__(self) -> None:
         self.probe_hits: _TtlMap[object] = _TtlMap(ttl_seconds=PROBE_HIT_TTL_SECONDS)
-        self.probe_none: _TtlMap[object] = _TtlMap(ttl_seconds=PROBE_NONE_TTL_SECONDS)
-        self.probe_fail: _TtlMap[object] = _TtlMap(ttl_seconds=PROBE_FAIL_TTL_SECONDS)
         self.open_fail: _TtlMap[object] = _TtlMap(ttl_seconds=OPEN_FAIL_TTL_SECONDS)
         # 解析结果的有效期逐条由插件声明 (上限 RESOLVE_TTL_MAX_SECONDS), 缺省档位只用于兜底.
         self.resolve_hits: _TtlMap[PlaybackTarget] = _TtlMap(ttl_seconds=RESOLVE_TTL_MAX_SECONDS)
@@ -76,8 +76,6 @@ class PlaybackCaches:
     def reset(self) -> None:
         """丢弃全部 TTL 记录; 插件集合变化时调用. 在途合并由 ``_inflight`` 自行结束."""
         self.probe_hits.clear()
-        self.probe_none.clear()
-        self.probe_fail.clear()
         self.open_fail.clear()
         self.resolve_hits.clear()
 

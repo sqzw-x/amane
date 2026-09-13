@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Path, Request, Response
 from fastapi.responses import JSONResponse
 
 from ...net.errors import SourceError
-from ...playback.factory import SOURCE_ID_MAX_LEN, PlaybackFactory
+from ...playback.factory import SOURCE_ID_MAX_LEN, ListedSource, PlaybackFactory
 from ...playback.file_response import IndexedFileResponse
 from ...playback.hls import PLAYLIST_CACHE_CONTROL, is_hls_content_type
 from ...playback.href import playlist_href, stream_href, subtitle_href
@@ -16,7 +14,13 @@ from ...playback.proxy import NOSNIFF
 from ...playback.query import playback_query
 from ...plugins.api import PATH_SEGMENT_PATTERN, FilePlaybackTarget, PlaybackQuery, UpstreamPlaybackTarget
 from ..deps import RepoDep, RuntimeDep
-from ..models.playback import PlaybackSourceItem, PlaybackSourceListResponse, PlaybackSubtitleItem
+from ..models.playback import (
+    PlaybackSourceListResponse,
+    PlaybackSourceOption,
+    PlaybackStreamItem,
+    PlaybackStreamListResponse,
+    PlaybackSubtitleItem,
+)
 
 router = APIRouter(prefix="/playback", tags=["playback"])
 
@@ -29,19 +33,6 @@ def _source_href(source_id: str, metadata_id: int, key: str | None, content_type
     if is_hls_content_type(content_type):
         return playlist_href(source_id, metadata_id, key)
     return stream_href(source_id, metadata_id, key)
-
-
-def _etag_for(items: list[PlaybackSourceItem]) -> str:
-    payload = json.dumps([item.model_dump(mode="json") for item in items], sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(payload.encode()).hexdigest()[:32]
-
-
-def _etag_matches(header: str | None, etag: str) -> bool:
-    """按 ``If-None-Match`` 语义比较: 逗号分隔的多值, 弱校验前缀 ``W/``, 以及 ``*``."""
-    if header is None:
-        return False
-    candidates = [part.strip() for part in header.split(",")]
-    return any(candidate == "*" or candidate.removeprefix("W/") == etag for candidate in candidates)
 
 
 async def _load_query(
@@ -68,50 +59,63 @@ async def _load_query(
     return playback_query(metadata, files, selected_key=selected_key, library_paths=library_paths)
 
 
+def _stream_item(row: ListedSource, metadata_id: int) -> PlaybackStreamItem:
+    return PlaybackStreamItem(
+        source_id=row.source_id,
+        key=row.key,
+        name=row.name,
+        content_type=row.content_type,
+        seekable=row.seekable,
+        available=row.available,
+        detail=row.detail,
+        href=_source_href(row.source_id, metadata_id, row.key, row.content_type),
+        subtitles=[
+            PlaybackSubtitleItem(
+                id=track.id,
+                label=track.label,
+                language=track.language,
+                href=subtitle_href(row.source_id, metadata_id, row.key, track.id),
+            )
+            for track in row.subtitles
+        ],
+    )
+
+
 def _playback_http_error(exc: SourceError) -> HTTPException:
     return HTTPException(status_code=502, detail=exc.detail or "上游失败")
 
 
 @router.get("/sources", response_model=PlaybackSourceListResponse)
-async def list_playback_sources(
-    request: Request,
-    repo: RepoDep,
-    runtime: RuntimeDep,
-    metadata_id: Annotated[int, Query(ge=1)],
-) -> Response:
+async def list_playback_sources(runtime: RuntimeDep) -> Response:
+    """列出可选的播放源; 不调用插件, 因此不发任何上游请求."""
     factory = runtime.playback_factory
     if factory is None:
         raise HTTPException(status_code=503, detail="播放源未初始化")
+    body = PlaybackSourceListResponse(
+        items=[
+            PlaybackSourceOption(source_id=option.source_id, name=option.name) for option in factory.source_options()
+        ]
+    )
+    return JSONResponse(content=body.model_dump(mode="json"), headers={"Cache-Control": "private, no-cache"})
+
+
+@router.get("/{source_id}/{metadata_id}/streams", response_model=PlaybackStreamListResponse)
+async def list_playback_streams(
+    source_id: str,
+    metadata_id: Annotated[int, Path(ge=1)],
+    repo: RepoDep,
+    runtime: RuntimeDep,
+) -> Response:
+    """探测一个来源在这个条目上的流.
+
+    由前端在切到该来源时调用, 因此没有人工预算: 慢就慢在用户等待的那一次, 结果按来源与条目缓存
+    一小段时间, 来回切换不重复探测. 探测失败也是一行不可用记录, 前端按 ``detail`` 显示原因.
+    """
+    factory = await _require_factory(source_id, runtime)
     query = await _load_query(repo, metadata_id, None)
-    listed = await factory.list_sources(query)
-    items = [
-        PlaybackSourceItem(
-            source_id=row.source_id,
-            name=row.name,
-            content_type=row.content_type,
-            seekable=row.seekable,
-            available=row.available,
-            key=row.key,
-            detail=row.detail,
-            href=_source_href(row.source_id, metadata_id, row.key, row.content_type),
-            subtitles=[
-                PlaybackSubtitleItem(
-                    id=track.id,
-                    label=track.label,
-                    language=track.language,
-                    href=subtitle_href(row.source_id, metadata_id, row.key, track.id),
-                )
-                for track in row.subtitles
-            ],
-        )
-        for row in listed
-    ]
-    etag = _etag_for(items)
-    cache_headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
-    if _etag_matches(request.headers.get("if-none-match"), etag):
-        return Response(status_code=304, headers=cache_headers)
-    body = PlaybackSourceListResponse(items=items)
-    return JSONResponse(content=body.model_dump(mode="json"), headers=cache_headers)
+    listed = await factory.list_streams(source_id, query)
+    body = PlaybackStreamListResponse(items=[_stream_item(row, metadata_id) for row in listed])
+    return JSONResponse(content=body.model_dump(mode="json"), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/{source_id}/{metadata_id}/index.m3u8")

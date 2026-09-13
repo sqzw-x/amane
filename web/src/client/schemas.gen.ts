@@ -4734,7 +4734,43 @@ export const PathTemplateSchemaResponseSchema = {
     description: '与 resolve_paths 同源.'
 } as const;
 
-export const PlaybackSourceItemSchema = {
+export const PlaybackSourceListResponseSchema = {
+    properties: {
+        items: {
+            items: {
+                $ref: '#/components/schemas/PlaybackSourceOption'
+            },
+            type: 'array',
+            title: 'Items'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'PlaybackSourceListResponse'
+} as const;
+
+export const PlaybackSourceOptionSchema = {
+    properties: {
+        source_id: {
+            type: 'string',
+            title: 'Source Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'source_id',
+        'name'
+    ],
+    title: 'PlaybackSourceOption',
+    description: '一个可选的播放源. 只有名字, 不含探测结果: 切到它时才去问它有哪些流.'
+} as const;
+
+export const PlaybackStreamItemSchema = {
     properties: {
         source_id: {
             type: 'string',
@@ -4800,15 +4836,15 @@ export const PlaybackSourceItemSchema = {
         'available',
         'href'
     ],
-    title: 'PlaybackSourceItem',
-    description: '列表里的一条流. ``name`` 是主机拼好的展示名 (来源名 · 流的展示名).\n\n``key`` 是这条流的标识, 同时出现在 ``href`` 里; 来源整个不可用时为 ``None``.'
+    title: 'PlaybackStreamItem',
+    description: '某个来源的一条流. ``name`` 是主机拼好的展示名 (来源名 · 流的展示名).\n\n``key`` 是这条流的标识, 同时出现在 ``href`` 里; 来源整个不可用时为 ``None``.'
 } as const;
 
-export const PlaybackSourceListResponseSchema = {
+export const PlaybackStreamListResponseSchema = {
     properties: {
         items: {
             items: {
-                $ref: '#/components/schemas/PlaybackSourceItem'
+                $ref: '#/components/schemas/PlaybackStreamItem'
             },
             type: 'array',
             title: 'Items'
@@ -4816,7 +4852,7 @@ export const PlaybackSourceListResponseSchema = {
     },
     additionalProperties: false,
     type: 'object',
-    title: 'PlaybackSourceListResponse'
+    title: 'PlaybackStreamListResponse'
 } as const;
 
 export const PlaybackSubtitleItemSchema = {

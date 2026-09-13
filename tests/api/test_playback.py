@@ -45,6 +45,35 @@ async def _attach_file(
     return media.id
 
 
+class _Listing:
+    def __init__(self, items: list[dict[str, object]]) -> None:
+        self._items = items
+
+    def json(self) -> dict[str, list[dict[str, object]]]:
+        return {"items": self._items}
+
+
+async def _listing(client: AsyncClient, metadata_id: int) -> _Listing:
+    """旧「一次列出所有来源的流」的断言形状: 逐个来源探测再拼起来.
+
+    端点已经拆成「来源列表 + 按来源取流」两步, 这里只为复用既有断言; 端点形状本身由 sources 用例钉住.
+    """
+    items: list[dict[str, object]] = []
+    for source_id in (row["source_id"] for row in (await client.get("playback/sources")).json()["items"]):
+        response = await client.get(f"playback/{source_id}/{metadata_id}/streams")
+        if response.status_code != 200:
+            continue
+        items.extend(response.json()["items"])
+    return _Listing(items)
+
+
+async def _streams(client: AsyncClient, source_id: str, metadata_id: int) -> list[dict[str, object]]:
+    """切到某个来源时前端调用的那一步: 探测该来源在这个条目上的流."""
+    response = await client.get(f"playback/{source_id}/{metadata_id}/streams")
+    assert response.status_code == 200, response.text
+    return response.json()["items"]
+
+
 def _start_hls_origin(files: dict[str, tuple[str, bytes]]) -> tuple[ThreadingHTTPServer, str]:
     handler = type("HlsOrigin", (_HlsOriginHandler,), {"origin_files": files})
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -159,8 +188,11 @@ class _Provider(PlaybackProvider):
         path.write_text(str(count + 1), encoding="utf-8")
 
     async def probe(self, query: PlaybackQuery) -> tuple[PlaybackOffer, ...]:
+        # 番号含 CACHED 时报一条流 (可用于断言命中缓存), 否则报空结果 (不该被缓存).
         self._record_probe()
-        return ()
+        if "CACHED" not in query.number:
+            return ()
+        return (PlaybackOffer(key="main", name="Counted", content_type="video/mp4"),)
 
     async def resolve(self, query: PlaybackQuery) -> None:
         return None
@@ -329,23 +361,17 @@ class TestPlaybackHttp:
             )
             assert configured.status_code == 200, configured.text
 
-            listed = await client.get("playback/sources", params={"metadata_id": meta_id})
-            assert listed.status_code == 200
-            items = listed.json()["items"]
+            sources = await client.get("playback/sources")
+            assert sources.status_code == 200
+            # 来源列表不调用插件: 打开详情页只读一遍插件目录, 与条目无关.
+            assert sources.json()["items"] == [{"source_id": "acme.play", "name": "Fake playback"}]
+            assert sources.headers["cache-control"] == "private, no-cache"
+
+            items = await _streams(client, "acme.play", meta_id)
             assert [(row["source_id"], row["key"], row["available"]) for row in items] == [("acme.play", "main", True)]
             # 行名由主机拼成「来源名 · 流的展示名」.
             assert items[0]["name"] == "Fake playback · Remote"
             assert items[0]["href"] == f"/api/playback/acme.play/{meta_id}/streams/main"
-            etag = listed.headers["etag"]
-            assert listed.headers["cache-control"] == "private, no-cache"
-            for validator in (etag, f"W/{etag}", f'"other", {etag}', "*"):
-                cached = await client.get(
-                    "playback/sources",
-                    params={"metadata_id": meta_id},
-                    headers={"If-None-Match": validator},
-                )
-                assert cached.status_code == 304
-                assert cached.headers["cache-control"] == "private, no-cache"
 
             stream = f"playback/acme.play/{meta_id}"
             full = await client.get(stream)
@@ -373,12 +399,12 @@ class TestPlaybackHttp:
 
             # 主机不解释 key: 形状不合法的 key 由路径校验拒绝, 形状合法的未知 key 交给插件自己认.
             assert (await client.get(f"playback/acme.play/{meta_id}/streams/{'a' * 65}")).status_code == 422
-            assert (await client.get("playback/sources", params={"metadata_id": 999999})).status_code == 404
+            assert (await client.get("playback/acme.play/999999/streams")).status_code == 404
+            assert (await client.get("playback/missing.play/1/streams")).status_code == 404
             assert (await client.get(f"playback/missing.play/{meta_id}")).status_code == 404
             assert (await client.get(f"playback/{'a' * (SOURCE_ID_MAX_LEN + 1)}/{meta_id}")).status_code == 404
             assert (await client.get(f"playback/NOTVALID/{meta_id}")).status_code == 404
-            assert (await client.get("playback/sources")).status_code == 422
-            assert (await client.get("playback/sources", params={"metadata_id": 0})).status_code == 422
+            assert (await client.get("playback/acme.play/0/streams")).status_code == 422
         finally:
             server.shutdown()
 
@@ -427,9 +453,8 @@ class TestPlaybackHttp:
         )
         assert configured.status_code == 200, configured.text
 
-        listed = await client.get("playback/sources", params={"metadata_id": meta_id.id})
-        assert listed.status_code == 200
-        assert [(row["source_id"], row["available"]) for row in listed.json()["items"]] == [("acme.play", True)]
+        items = await _streams(client, "acme.play", meta_id.id)
+        assert [(row["source_id"], row["available"]) for row in items] == [("acme.play", True)]
 
         stream = f"playback/acme.play/{meta_id.id}"
         full = await client.get(stream)
@@ -527,7 +552,7 @@ class TestPlaybackHttp:
         none_id = await _seed_title(repo, number="PLAY-NONE")
         none_cfg = await client.patch("plugins/acme.play", json={"enabled": True, "config": {"behavior": "none"}})
         assert none_cfg.status_code == 200, none_cfg.text
-        none_list = await client.get("playback/sources", params={"metadata_id": none_id})
+        none_list = await _listing(client, none_id)
         assert [(row["source_id"], row["available"], row["detail"]) for row in none_list.json()["items"]] == [
             ("acme.play", False, None)
         ]
@@ -538,7 +563,7 @@ class TestPlaybackHttp:
         assert error_body.get("detail") == "上游失败"
 
         error_id = await _seed_title(repo, number="PLAY-ERR-LIST")
-        error_list = await client.get("playback/sources", params={"metadata_id": error_id})
+        error_list = await _listing(client, error_id)
         assert [(row["source_id"], row["available"], row["detail"]) for row in error_list.json()["items"]] == [
             ("acme.play", False, "上游失败")
         ]
@@ -557,7 +582,7 @@ class TestPlaybackHttp:
             json={"enabled": True, "config": {"behavior": "hls-offer", "url": "http://127.0.0.1:9/video"}},
         )
         assert lie_cfg.status_code == 200, lie_cfg.text
-        lie_list = await client.get("playback/sources", params={"metadata_id": lie_id})
+        lie_list = await _listing(client, lie_id)
         lie_item = next(row for row in lie_list.json()["items"] if row["source_id"] == "acme.play")
         assert lie_item["href"] == f"/api/playback/acme.play/{lie_id}/streams/main/index.m3u8"
         lie = await client.get(f"playback/acme.play/{lie_id}/streams/main/index.m3u8")
@@ -608,46 +633,50 @@ class TestPlaybackHttp:
             assert response.status_code == 502, path
             assert response.json()["detail"] == "构建播放源失败"
 
-        listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
-        assert listed.status_code == 200
+        listed = await _listing(client, metadata_id)
         rows = listed.json()["items"]
         assert [row["source_id"] for row in rows] == ["acme.broken"]
         assert all(row["available"] is False for row in rows)
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_probe_none_is_negatively_cached(
+    async def test_stream_listing_caches_success_but_not_empty(
         self,
         client: AsyncClient,
         repo: Repository,
         app: FastAPI,
     ) -> None:
-        """``probe`` 返回 ``None`` 单独缓存: 同一条目再次探测不再调用插件的 ``probe``."""
+        """成功的流列表按来源与条目缓存一小段时间; 空结果不缓存.
+
+        探测由用户切到该来源时触发, 每次点击最多一次插件调用; 缓存成功结果让来回切换不重复探测,
+        而不缓存空结果是为了不把过期的「不可用」结论端给刚修好文件的用户.
+        """
         data_dir = app.state.runtime.config.cold.data_dir
         write_plugin(data_dir, "acme.count", body=_COUNTING_PLUGIN)
         reloaded = await client.post("plugins/reload")
         assert reloaded.status_code == 200, reloaded.text
-        metadata_id = await _seed_title(repo, number="PLAY-NONE-CACHE")
         enabled = await client.patch("plugins/acme.count", json={"enabled": True, "config": {}})
         assert enabled.status_code == 200, enabled.text
         counter = data_dir / "plugins" / "acme.count" / "probe-count.txt"
 
-        first = await client.get("playback/sources", params={"metadata_id": metadata_id})
-        assert first.status_code == 200
-        # 不可用项用插件的展示名, 不是内部来源 ID; ``None`` 不带原因.
-        assert [(row["source_id"], row["name"], row["available"], row["detail"]) for row in first.json()["items"]] == [
-            ("acme.count", "Counting playback", False, None)
-        ]
+        cached_id = await _seed_title(repo, number="PLAY-CACHED")
+        first = await _streams(client, "acme.count", cached_id)
+        # 不可用项的展示名取 descriptor, 不是内部来源 ID.
+        assert [(row["name"], row["available"]) for row in first] == [("Counting playback · Counted", True)]
+        assert counter.read_text(encoding="utf-8") == "1"
+        assert (await _streams(client, "acme.count", cached_id))[0]["key"] == "main"
         assert counter.read_text(encoding="utf-8") == "1"
 
-        second = await client.get("playback/sources", params={"metadata_id": metadata_id})
-        assert second.status_code == 200
-        assert second.json()["items"] == first.json()["items"]
-        assert counter.read_text(encoding="utf-8") == "1"
-
-        other_id = await _seed_title(repo, number="PLAY-NONE-CACHE-OTHER")
-        third = await client.get("playback/sources", params={"metadata_id": other_id})
-        assert third.status_code == 200
+        other_id = await _seed_title(repo, number="PLAY-CACHED-OTHER")
+        assert await _streams(client, "acme.count", other_id) != []
         assert counter.read_text(encoding="utf-8") == "2"
+
+        empty_id = await _seed_title(repo, number="PLAY-EMPTY")
+        assert [(row["available"], row["detail"]) for row in await _streams(client, "acme.count", empty_id)] == [
+            (False, None)
+        ]
+        assert counter.read_text(encoding="utf-8") == "3"
+        await _streams(client, "acme.count", empty_id)
+        assert counter.read_text(encoding="utf-8") == "4"
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_probe_denial_reports_reason(
@@ -672,8 +701,7 @@ class TestPlaybackHttp:
         )
         assert configured.status_code == 200, configured.text
 
-        listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
-        assert listed.status_code == 200
+        listed = await _listing(client, metadata_id)
         assert [
             (row["source_id"], row["name"], row["available"], row["detail"], row["href"])
             for row in listed.json()["items"]
@@ -716,8 +744,7 @@ class TestPlaybackHttp:
             )
             assert configured.status_code == 200, configured.text
 
-            listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
-            assert listed.status_code == 200
+            listed = await _listing(client, metadata_id)
             base = f"/api/playback/acme.play/{metadata_id}"
             assert [
                 (row["source_id"], row["key"], row["name"], row["available"], row["detail"], row["href"])
@@ -780,28 +807,29 @@ class TestPlaybackHttp:
         )
         assert configured.status_code == 200, configured.text
 
-        listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
-        assert listed.status_code == 200
+        listed = await _listing(client, metadata_id)
         assert [(row["source_id"], row["key"], row["available"], row["detail"]) for row in listed.json()["items"]] == [
             ("acme.play", None, False, "探测超时")
         ]
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_probe_timeout_collapses_source_to_one_row(
+    async def test_slow_source_does_not_block_others(
         self,
         client: AsyncClient,
         repo: Repository,
         app: FastAPI,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """探测超时的来源塌成一行不可用, 名字取 descriptor 名; 同一次请求里其它来源的多行不受影响."""
-        monkeypatch.setattr("amane.playback.factory.PROBE_BUDGET_SECONDS", 0.05)
+        """一个卡住的来源不影响别的来源, 也不影响来源列表.
+
+        探测现在由用户切到某个来源时触发, 因此没有「一次探测所有来源」的超时可言: 来源列表不调用
+        插件 (卡住的插件也拦不住它), 另一个来源照常探测.
+        """
         data_dir = app.state.runtime.config.cold.data_dir
         write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
         write_plugin(data_dir, "acme.slow", body=playback_plugin_source("acme.slow"))
         reloaded = await client.post("plugins/reload")
         assert reloaded.status_code == 200, reloaded.text
-        metadata_id = await _seed_title(repo, number="PLAY-TIMEOUT")
+        metadata_id = await _seed_title(repo, number="PLAY-SLOW-SOURCE")
         for source_id, behavior in (("acme.play", "multi"), ("acme.slow", "slow")):
             configured = await client.patch(
                 f"plugins/{source_id}",
@@ -809,17 +837,12 @@ class TestPlaybackHttp:
             )
             assert configured.status_code == 200, configured.text
 
-        listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
-        assert listed.status_code == 200
-        assert [
-            (row["source_id"], row["key"], row["name"], row["available"], row["detail"])
-            for row in listed.json()["items"]
-        ] == [
-            ("acme.play", "first", "Fake playback · First", True, None),
-            ("acme.play", "second", "Fake playback · Second", True, None),
-            ("acme.play", "broken", "Fake playback · Broken", False, "该条目索引的文件为空: broken.mp4"),
-            ("acme.slow", None, "Fake playback", False, "探测超时"),
-        ]
+        sources = await client.get("playback/sources")
+        assert sources.status_code == 200
+        assert [row["source_id"] for row in sources.json()["items"]] == ["acme.play", "acme.slow"]
+
+        rows = await _streams(client, "acme.play", metadata_id)
+        assert [row["key"] for row in rows] == ["first", "second", "broken"]
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_hls_playlist_rewrite_and_parts(
@@ -867,8 +890,7 @@ class TestPlaybackHttp:
             )
             assert configured.status_code == 200, configured.text
 
-            listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
-            assert listed.status_code == 200
+            listed = await _listing(client, metadata_id)
             item = next(row for row in listed.json()["items"] if row["source_id"] == "acme.play")
             assert item["href"] == f"/api/playback/acme.play/{metadata_id}/streams/main/index.m3u8"
             assert item["content_type"] == "application/vnd.apple.mpegurl"

@@ -2277,13 +2277,39 @@ export type PathTemplateSchemaResponse = {
 };
 
 /**
- * PlaybackSourceItem
+ * PlaybackSourceListResponse
+ */
+export type PlaybackSourceListResponse = {
+    /**
+     * Items
+     */
+    items?: Array<PlaybackSourceOption>;
+};
+
+/**
+ * PlaybackSourceOption
  *
- * 列表里的一条流. ``name`` 是主机拼好的展示名 (来源名 · 流的展示名).
+ * 一个可选的播放源. 只有名字, 不含探测结果: 切到它时才去问它有哪些流.
+ */
+export type PlaybackSourceOption = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * PlaybackStreamItem
+ *
+ * 某个来源的一条流. ``name`` 是主机拼好的展示名 (来源名 · 流的展示名).
  *
  * ``key`` 是这条流的标识, 同时出现在 ``href`` 里; 来源整个不可用时为 ``None``.
  */
-export type PlaybackSourceItem = {
+export type PlaybackStreamItem = {
     /**
      * Source Id
      */
@@ -2323,13 +2349,13 @@ export type PlaybackSourceItem = {
 };
 
 /**
- * PlaybackSourceListResponse
+ * PlaybackStreamListResponse
  */
-export type PlaybackSourceListResponse = {
+export type PlaybackStreamListResponse = {
     /**
      * Items
      */
-    items?: Array<PlaybackSourceItem>;
+    items?: Array<PlaybackStreamItem>;
 };
 
 /**
@@ -4271,23 +4297,9 @@ export type MergeMetadataResponse = MergeMetadataResponses[keyof MergeMetadataRe
 export type ListPlaybackSourcesData = {
     body?: never;
     path?: never;
-    query: {
-        /**
-         * Metadata Id
-         */
-        metadata_id: number;
-    };
+    query?: never;
     url: '/api/playback/sources';
 };
-
-export type ListPlaybackSourcesErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ListPlaybackSourcesError = ListPlaybackSourcesErrors[keyof ListPlaybackSourcesErrors];
 
 export type ListPlaybackSourcesResponses = {
     /**
@@ -4297,6 +4309,40 @@ export type ListPlaybackSourcesResponses = {
 };
 
 export type ListPlaybackSourcesResponse = ListPlaybackSourcesResponses[keyof ListPlaybackSourcesResponses];
+
+export type ListPlaybackStreamsData = {
+    body?: never;
+    path: {
+        /**
+         * Source Id
+         */
+        source_id: string;
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+    };
+    query?: never;
+    url: '/api/playback/{source_id}/{metadata_id}/streams';
+};
+
+export type ListPlaybackStreamsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListPlaybackStreamsError = ListPlaybackStreamsErrors[keyof ListPlaybackStreamsErrors];
+
+export type ListPlaybackStreamsResponses = {
+    /**
+     * Successful Response
+     */
+    200: PlaybackStreamListResponse;
+};
+
+export type ListPlaybackStreamsResponse = ListPlaybackStreamsResponses[keyof ListPlaybackStreamsResponses];
 
 export type PlayMetadataPlaylistData = {
     body?: never;

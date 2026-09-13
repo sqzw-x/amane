@@ -1,27 +1,85 @@
-import { Alert, CheckIcon, Group, Select, Stack, Text } from "@mantine/core";
+import { Alert, CheckIcon, Group, Loader, Select, Stack, Text } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import type { ErrorData } from "hls.js";
 import type { TFunction } from "i18next";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listPlaybackSourcesOptions } from "@/client/@tanstack/react-query.gen";
-import type { PlaybackSourceItem, PlaybackSubtitleItem } from "@/client/types.gen";
+import {
+  listPlaybackSourcesOptions,
+  listPlaybackStreamsOptions,
+} from "@/client/@tanstack/react-query.gen";
+import type {
+  PlaybackSourceOption,
+  PlaybackStreamItem,
+  PlaybackSubtitleItem,
+} from "@/client/types.gen";
 import { useLatestRef } from "@/hooks/use-latest-ref";
 import { extractErrorMessage } from "@/lib/api-error";
 import { apiFetch } from "@/lib/api-token";
 
-const EMPTY_SOURCES: PlaybackSourceItem[] = [];
+const EMPTY_SOURCES: PlaybackSourceOption[] = [];
+const EMPTY_STREAMS: PlaybackStreamItem[] = [];
 const HLS_TYPE = "application/vnd.apple.mpegurl";
 
-// 一个来源可以给出多条流: 选择器按「来源 + 流的 key」区分, 整个来源不可用时没有 key.
-function sourceKey(item: PlaybackSourceItem): string {
-  return `${item.source_id}:${item.key ?? ""}`;
+// 流的 key 在来源内唯一; 来源整个不可用的那一行没有 key, 用空串占位, 此时选择器只有这一行, 不渲染.
+function streamKey(item: PlaybackStreamItem): string {
+  return item.key ?? "";
 }
 
 // 探测超时、上游失败等故障由非空 detail 说明; 为空表示条目没有内容或来源已停用, 不属于故障.
-function failureReason(item: PlaybackSourceItem): string | null {
+function failureReason(item: PlaybackStreamItem): string | null {
   const detail = item.detail;
   return detail == null || detail === "" ? null : detail;
+}
+
+// 无显式选择时选中第一条可用流; 全部不可用时选中第一条带原因的流, 用于展示不可用原因.
+// 不可用项同样可以选中: 选中后不渲染播放器, 未在标签里说明的原因显示在下方的提示里.
+function pickStream(
+  items: PlaybackStreamItem[],
+  pickedKey: string | null,
+): PlaybackStreamItem | undefined {
+  const explicit = pickedKey == null ? undefined : items.find((item) => item.key === pickedKey);
+  return (
+    explicit ??
+    items.find((item) => item.available) ??
+    items.find((item) => failureReason(item) != null) ??
+    items[0]
+  );
+}
+
+// 选项名可能很长 (来源名 · 文件名), 区分不同流的那一段恰在末尾: 截断处用原生提示补全名.
+// 自定义选项内容会替掉默认渲染, 选中项的勾必须自己画回来.
+function NameSelect({
+  value,
+  data,
+  width,
+  onChange,
+}: {
+  value: string;
+  data: Array<{ value: string; label: string }>;
+  width: number;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Select
+      size="xs"
+      w={width}
+      value={value}
+      data={data}
+      onChange={(next) => {
+        if (next != null) {
+          onChange(next);
+        }
+      }}
+      allowDeselect={false}
+      renderOption={({ option, checked }) => (
+        <Group gap={6} wrap="nowrap">
+          {checked ? <CheckIcon size={12} /> : null}
+          <span title={option.label}>{option.label}</span>
+        </Group>
+      )}
+    />
+  );
 }
 
 function mediaKind(contentType: string): "video" | "hls" | "other" {
@@ -204,77 +262,111 @@ function PlaybackVideo({
 
 export function PlaybackPanel({ metadataId }: { metadataId: number }) {
   const { t } = useTranslation("metadata");
-  const query = useQuery({
-    ...listPlaybackSourcesOptions({ query: { metadata_id: metadataId } }),
+  // 来源列表不调用插件, 因此打开面板就能渲染; 探测推迟到用户切到某个来源时.
+  const sourcesQuery = useQuery({
+    ...listPlaybackSourcesOptions(),
     enabled: metadataId > 0,
   });
-  const items = query.data?.items ?? EMPTY_SOURCES;
-  const [selectedKey, setSelectedKey] = useState<string>("");
+  const sources = sourcesQuery.data?.items ?? EMPTY_SOURCES;
+  const [pickedSourceId, setPickedSourceId] = useState<string | null>(null);
+  const [pickedStream, setPickedStream] = useState<{ sourceId: string; key: string } | null>(null);
   const [error, setError] = useState<{ href: string; message: string } | null>(null);
 
-  // 列表含不可用项: 无显式选择时选中首个可用项; 全部不可用时选中首个给出故障原因的项, 用于展示不可用原因.
-  // 不可用项同样可以选中: 选中后不渲染播放器, 未在标签里说明的原因显示在下方的提示里.
-  const failed = items.find((item) => failureReason(item) != null);
-  const selected =
-    items.find((item) => sourceKey(item) === selectedKey) ??
-    items.find((item) => item.available) ??
-    failed ??
-    items[0];
-  // 全部不可用且没有故障原因, 表示条目没有内容, 此时不渲染区块, 与没有可播源时一致.
-  if (selected == null || (!items.some((item) => item.available) && failed == null)) {
+  // 来源列表变化后原选择可能不存在 (来源被停用或卸载), 回落到第一个来源.
+  const source = sources.find((item) => item.source_id === pickedSourceId) ?? sources[0];
+  // 当前来源的流在挂载时与切换来源时加载; 没有来源时查询不启用, 不发请求.
+  const streamsQuery = useQuery({
+    ...listPlaybackStreamsOptions({
+      path: { source_id: source?.source_id ?? "", metadata_id: metadataId },
+    }),
+    enabled: metadataId > 0 && source != null,
+  });
+  const streams = streamsQuery.data?.items ?? EMPTY_STREAMS;
+  // 流的选择连同所属来源一起记: 切换来源后 key 不属于新来源, 选择回到该来源的默认值, 不会指向另一个来源的流.
+  const pickedKey =
+    pickedStream != null && pickedStream.sourceId === source?.source_id ? pickedStream.key : null;
+  const selected = pickStream(streams, pickedKey);
+
+  const sourceError = sourcesQuery.isError
+    ? extractErrorMessage(sourcesQuery.error, t("detail.playbackSourcesFailed"))
+    : null;
+  const title = (
+    <Text size="sm" fw={600}>
+      {t("detail.playback")}
+    </Text>
+  );
+  if (sourceError != null) {
+    return (
+      <Stack gap="xs">
+        {title}
+        <Alert color="red" variant="light">
+          {sourceError}
+        </Alert>
+      </Stack>
+    );
+  }
+  // 来源列表为空表示没有已启用的播放源, 此时无从选择, 整块不渲染.
+  if (source == null) {
     return null;
   }
 
-  const kind = mediaKind(selected.content_type);
-  const shownError = error?.href === selected.href ? error.message : null;
+  const streamError = streamsQuery.isError
+    ? extractErrorMessage(streamsQuery.error, t("detail.playbackStreamsFailed"))
+    : null;
+  const kind = selected == null ? "other" : mediaKind(selected.content_type);
+  const shownError = selected != null && error?.href === selected.href ? error.message : null;
   // 不可用项不渲染播放器, 其 href 上的失败记录来自该源此前仍可用的状态, 故探测原因优先.
-  const notice = selected.available
-    ? shownError
-    : (failureReason(selected) ?? t("detail.playbackUnavailable"));
+  const notice =
+    streamError ??
+    (selected == null
+      ? null
+      : selected.available
+        ? shownError
+        : (failureReason(selected) ?? t("detail.playbackUnavailable")));
+
+  // 当前来源的流正在探测: 用加载态占位, 不新增文案.
+  const streamPicker = streamsQuery.isPending ? (
+    <Loader size="xs" />
+  ) : streams.length > 1 && selected != null ? (
+    <NameSelect
+      value={streamKey(selected)}
+      data={streams.map((item) => ({
+        value: streamKey(item),
+        label: item.available
+          ? item.name
+          : t("detail.playbackUnavailableOption", { name: item.name }),
+      }))}
+      width={240}
+      onChange={(key) => setPickedStream({ sourceId: source.source_id, key })}
+    />
+  ) : null;
 
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="flex-end" wrap="wrap">
-        <Text size="sm" fw={600}>
-          {t("detail.playback")}
-        </Text>
-        {items.length > 1 ? (
-          <Select
-            size="xs"
-            w={220}
-            value={sourceKey(selected)}
-            data={items.map((item) => ({
-              value: sourceKey(item),
-              label: item.available
-                ? item.name
-                : t("detail.playbackUnavailableOption", { name: item.name }),
-            }))}
-            onChange={(value) => {
-              if (value == null) return;
-              setSelectedKey(value);
-            }}
-            allowDeselect={false}
-            // 行名可能很长 (来源名 · 文件名), 区分不同流的那一段恰在末尾: 截断处用原生提示补全名.
-            // 自定义选项内容会替掉默认渲染, 选中项的勾必须自己画回来.
-            renderOption={({ option, checked }) => (
-              <Group gap={6} wrap="nowrap">
-                {checked ? <CheckIcon size={12} /> : null}
-                <span title={option.label}>{option.label}</span>
-              </Group>
-            )}
-          />
-        ) : (
-          <Text size="xs" c="dimmed">
-            {selected.name}
-          </Text>
-        )}
+        {title}
+        <Group gap="xs" wrap="wrap" align="center">
+          {sources.length > 1 ? (
+            <NameSelect
+              value={source.source_id}
+              data={sources.map((item) => ({ value: item.source_id, label: item.name }))}
+              width={160}
+              onChange={setPickedSourceId}
+            />
+          ) : (
+            <Text size="xs" c="dimmed">
+              {source.name}
+            </Text>
+          )}
+          {streamPicker}
+        </Group>
       </Group>
       {notice ? (
         <Alert color="red" variant="light">
           {notice}
         </Alert>
       ) : null}
-      {selected.available ? (
+      {selected != null && selected.available ? (
         kind === "other" ? (
           <Text size="sm" c="dimmed">
             {t("detail.playbackUnsupported")}

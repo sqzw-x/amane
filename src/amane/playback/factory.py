@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -47,7 +45,6 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-PROBE_BUDGET_SECONDS = 2.0
 SOURCE_ID_MAX_LEN = 128
 
 
@@ -88,6 +85,14 @@ def _file_target_error(candidate: Path, indexed: tuple[str, ...]) -> str | None:
     if not resolved.is_file():
         return "该条目索引的文件不存在"
     return None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceOption:
+    """一个已启用的播放源, 供前端列出可选项; 不含任何探测结果."""
+
+    source_id: str
+    name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,69 +287,52 @@ class PlaybackFactory:
             listed.append(self._listed(source_id, offer))
         return listed
 
-    async def list_sources(self, query: PlaybackQuery) -> list[ListedSource]:
-        """列出全部启用来源的流; 每个来源贡献 1..N 行, 顺序即来源顺序与插件给的流顺序."""
-        ids = self.playback_source_ids()
-        tasks = [asyncio.create_task(self._probe_one(source_id, query)) for source_id in ids]
-        _done, pending = await asyncio.wait(tasks, timeout=PROBE_BUDGET_SECONDS)
-        timed_out = set(pending)
-        for task in pending:
-            task.cancel()
-        for task in pending:
-            with suppress(asyncio.CancelledError):
-                await task
-        results: list[ListedSource] = []
-        for task, source_id in zip(tasks, ids, strict=True):
-            if task in timed_out:
-                results.append(self._unavailable(source_id, detail="探测超时"))
-                continue
-            try:
-                results.extend(task.result())
-            except Exception:
-                logger.exception("playback probe task failed", source=source_id)
-                results.append(self._unavailable(source_id, detail="探测失败"))
-        return results
+    def source_options(self) -> list[SourceOption]:
+        """列出已启用的播放源, 不调用插件.
 
-    async def _probe_one(self, source_id: str, query: PlaybackQuery) -> list[ListedSource]:
+        名字取自 descriptor, 因此打开详情页只是读一遍插件目录, 不产生任何上游请求: 某个来源到底
+        能给出哪些流, 要等用户切到它时才探测.
+        """
+        return [
+            SourceOption(source_id=source_id, name=self._listed_name(source_id))
+            for source_id in self.playback_source_ids()
+        ]
+
+    async def list_streams(self, source_id: str, query: PlaybackQuery) -> list[ListedSource]:
+        """探测单个来源在这个条目上的流.
+
+        没有人工预算: 这次探测由用户切到这个来源时触发, 允许它把该做的请求做完 (慢就慢在用户自己
+        等待的那一次). 失败一律变成一行不可用记录, 由路由原样返回, 前端据此显示原因.
+        """
         cache_key = f"{source_id}\0{query.metadata_id}"
         hit = self._caches.probe_hits.get(cache_key)
         if isinstance(hit, list):
             return hit
-        denied = self._caches.probe_none.get(cache_key)
-        if isinstance(denied, ListedSource):
-            return [denied]
-        if self._caches.probe_fail.is_blocked(cache_key):
-            return [self._unavailable(source_id, detail="上游暂时不可用")]
 
         async def _run() -> list[ListedSource]:
-            provider = self.provider(source_id)
-            if provider is None:
-                return [self._unavailable(source_id)]
+            # provider 构造失败 (插件侧异常) 与探测失败一样, 都变成一行带原因的不可用, 不从端点冒出去.
             try:
+                provider = self.provider(source_id)
+                if provider is None:
+                    return [self._unavailable(source_id)]
                 offers = await provider.probe(query)
             except SourceError as exc:
+                # 插件的 detail 可能带上游信息, 因此按插件给出的 reason 决定文案, 不直接展示插件文本.
                 if exc.reason is FailureReason.NO_USABLE_METADATA:
-                    # 「本条目在此来源没有可播流」不是上游故障: 原因原样给用户, 走空结果那条负缓存.
-                    listed = self._unavailable(source_id, detail=exc.detail or "没有可播放的流")
-                    self._caches.probe_none.put(cache_key, listed)
-                    return [listed]
+                    return [self._unavailable(source_id, detail=exc.detail or "没有可播放的流")]
                 logger.warning("playback probe failed", source=source_id, error=str(exc))
-                self._caches.probe_fail.put(cache_key, True)
-                # 插件侧的探测超时与宿主的预算超时给用户看同一句话: 插件的 detail 可能带上游信息,
-                # 因此按插件给出的 reason 决定文案, 不直接展示插件文本.
                 detail = "探测超时" if exc.reason is FailureReason.TIMEOUT else "上游失败"
                 return [self._unavailable(source_id, detail=detail)]
             except Exception:
                 logger.exception("playback probe crashed", source=source_id)
-                self._caches.probe_fail.put(cache_key, True)
                 return [self._unavailable(source_id, detail="探测失败")]
             listed = self._listed_all(source_id, offers)
             if not listed:
-                negative = self._unavailable(source_id)
-                self._caches.probe_none.put(cache_key, negative)
-                return [negative]
+                return [self._unavailable(source_id)]
             self._caches.probe_hits.put(cache_key, listed)
             return listed
+
+        return await self._caches.coalesce(f"probe:{cache_key}", _run)
 
         return await self._caches.coalesce(f"probe:{cache_key}", _run)
 
