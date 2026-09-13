@@ -131,8 +131,8 @@
       "success": "Poster updated",
       "noThumb": "A cover image is required to crop a poster"
     },
-    "playbackCopyTimestamp": "Copy timestamp {{time}}",
-    "playbackCopyLink": "Copy link",
+    "playbackCopyTimestamp": "Copy timestamp",
+    "playbackCopyLink": "Copy link to current time",
     "playbackCopied": "Copied to clipboard",
     "playbackCopyFailed": "Copy failed"
   },

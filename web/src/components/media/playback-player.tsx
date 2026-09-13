@@ -1,5 +1,6 @@
 import { Slider } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { IconClock, IconLink } from "@tabler/icons-react";
 import type { ErrorData } from "hls.js";
 import "media-chrome/lang/zh-CN.js";
 import type {
@@ -182,7 +183,7 @@ function SubtitleTracks({ tracks }: { tracks: PlaybackSubtitleItem[] }) {
 function useVideoContextMenu(
   controllerRef: RefObject<MediaControllerElement | null>,
   videoRef: RefObject<HTMLVideoElement | null>,
-  onOpen: (anchor: ContextMenuAnchor, seconds: number) => void,
+  onOpen: (anchor: ContextMenuAnchor) => void,
 ) {
   const openRef = useLatestRef(onOpen);
   useEffect(() => {
@@ -197,7 +198,7 @@ function useVideoContextMenu(
         return;
       }
       event.preventDefault();
-      openRef.current(contextMenuAnchor(controller, event), video.currentTime);
+      openRef.current(contextMenuAnchor(controller, event));
     };
     controller.addEventListener("contextmenu", handle);
     return () => controller.removeEventListener("contextmenu", handle);
@@ -237,29 +238,33 @@ function contextMenuAnchor(
  * 菜单必须留在控制器内部: 控制器的容器带 `overflow: hidden`, 挂到控制器外会被裁掉; 全屏时也只有控制器
  * 的子树可见 (Mantine 的 Portal 挂到 `document.body`, 全屏下不可见).
  *
+ * 复制的秒数在点按条目时读取, 不是展开菜单时的那一秒 —— 菜单展开期间画面仍在播放.
+ *
  * 不可寻址的流没有可复制的跳转目标, 两项都禁用.
  */
 function ContextMenu({
   anchor,
-  seconds,
   seekable,
+  readSeconds,
   onClose,
-  frameRef,
 }: {
   anchor: ContextMenuAnchor;
-  seconds: number;
   seekable: boolean;
+  /** 读取当前播放位置, 在点按条目时调用. */
+  readSeconds: () => number;
   /** 收起菜单; 参数为真时把焦点交还播放器 (复制之后焦点留在菜单项上). */
   onClose: (restoreFocus: boolean) => void;
-  /** 点击窗口之外即收起, 控制器内部的事件不在此列. */
-  frameRef: RefObject<MediaControllerElement | null>;
 }) {
   const { t } = useTranslation("metadata");
 
+  const menuRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
+    const handleClick = (event: MouseEvent) => {
       const target = event.target;
-      if (target instanceof Node && frameRef.current?.contains(target)) {
+      // 菜单自己的点击由条目收起; 其余任何点击 (含画面、控制条、页面别处) 都收起. 这次点击照常
+      // 生效, 因此点画面同时会切换播放/暂停.
+      if (target instanceof Node && menuRef.current?.contains(target)) {
         return;
       }
       onClose(false);
@@ -269,17 +274,16 @@ function ContextMenu({
         onClose(false);
       }
     };
-    // 只监听窗口: 播放器内部的点击由菜单项自己收起. 捕获阶段之外另加冒泡阶段, 页面其它层的
-    // 阻止传播不会让菜单留在画面上.
-    window.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
+    // 捕获阶段之外另加冒泡阶段: 页面其它层的阻止传播不会让菜单留在画面上.
+    document.addEventListener("click", handleClick, true);
+    document.addEventListener("click", handleClick);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener("pointerdown", handlePointerDown, true);
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("click", handleClick, true);
+      document.removeEventListener("click", handleClick);
+      document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [frameRef, onClose]);
+  }, [onClose]);
 
   const copy = async (text: string) => {
     try {
@@ -293,11 +297,11 @@ function ContextMenu({
 
   return (
     <div
+      ref={menuRef}
       className={classes.contextMenu}
       role="menu"
       data-upward={anchor.upward ? "true" : undefined}
       style={{ left: anchor.left, top: anchor.top }}
-      onPointerDown={(event) => event.stopPropagation()}
       // 菜单上的右键不改写落点, 也不允许浏览器原生菜单叠上来. 这是普通元素, 合成事件正常触发.
       onContextMenu={(event) => event.preventDefault()}
     >
@@ -306,17 +310,19 @@ function ContextMenu({
         role="menuitem"
         className={classes.contextMenuItem}
         disabled={!seekable}
-        onClick={() => void copy(formatClock(seconds))}
+        onClick={() => void copy(formatClock(readSeconds()))}
       >
-        {t("detail.playbackCopyTimestamp", { time: formatClock(seconds) })}
+        <IconClock size={16} aria-hidden />
+        {t("detail.playbackCopyTimestamp")}
       </button>
       <button
         type="button"
         role="menuitem"
         className={classes.contextMenuItem}
         disabled={!seekable}
-        onClick={() => void copy(shareableTimeUrl(seconds))}
+        onClick={() => void copy(shareableTimeUrl(readSeconds()))}
       >
+        <IconLink size={16} aria-hidden />
         {t("detail.playbackCopyLink")}
       </button>
     </div>
@@ -682,20 +688,17 @@ export function PlaybackPlayer({
   // 菜单里的勾选态只在展开时需要, 因此在展开时读取一次, 不订阅 ratechange.
   const [playbackRate, setPlaybackRate] = useState(1);
 
-  // 右键菜单: 落点与按下的位置、以及那一刻的播放位置. 与倍速菜单同理, 只在展开时读一次当前时间,
-  // 不订阅 timeupdate (订阅会让整个播放器每秒重渲染).
-  const [contextMenu, setContextMenu] = useState<(ContextMenuAnchor & { seconds: number }) | null>(
-    null,
-  );
+  // 右键菜单: 只记落点. 复制的秒数在点按条目时读取, 因此不订阅 timeupdate (订阅会让整个播放器
+  // 每秒重渲染).
+  const [contextMenu, setContextMenu] = useState<ContextMenuAnchor | null>(null);
 
-  const openContextMenu = useCallback(
-    (anchor: ContextMenuAnchor, seconds: number) => setContextMenu({ ...anchor, seconds }),
-    [],
-  );
+  const openContextMenu = useCallback((anchor: ContextMenuAnchor) => setContextMenu(anchor), []);
   useVideoContextMenu(controllerRef, videoRef, openContextMenu);
 
+  const readSeconds = useCallback(() => videoRef.current?.currentTime ?? 0, [videoRef]);
+
   // 收起时交还焦点: 复制之后焦点落在菜单项上, 不交还的话方向键等快捷键不再生效 (与倍速菜单同理).
-  // 点击窗口之外收起时不夺回焦点 —— 那次点击已经把焦点给了别的元素.
+  // 点击别处收起时不夺回焦点 —— 那次点击已经把焦点给了别的元素.
   const closeContextMenu = useCallback((restoreFocus: boolean) => {
     setContextMenu(null);
     if (restoreFocus) {
@@ -1038,10 +1041,9 @@ export function PlaybackPlayer({
         {contextMenu != null ? (
           <ContextMenu
             anchor={contextMenu}
-            seconds={contextMenu.seconds}
             seekable={seekable}
+            readSeconds={readSeconds}
             onClose={closeContextMenu}
-            frameRef={controllerRef}
           />
         ) : null}
       </MediaController>
