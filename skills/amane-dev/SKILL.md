@@ -24,3 +24,12 @@ Web: http://localhost:5173
 ```
 
 `AMANE_PORT` 或 Vite 占用顺延时, 按实际端口写.
+
+## 让用户验证时
+
+凡请用户手测、复验、确认现象, 回复里必须再打印一次地址 (加上要打开的具体页面), 不允许只写「刷新页面」「再试一次」:
+
+```
+API: http://localhost:8000
+Web: http://localhost:5173/meta/1393
+```

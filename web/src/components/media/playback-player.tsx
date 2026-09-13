@@ -446,6 +446,8 @@ function usePlayerKeys(
 
 /** 拖动进度条或音量条期间置位的属性: 手势层与画面点击都不再响应. */
 const GESTURES_DISABLED_ATTRIBUTE = "gesturesdisabled";
+/** 右键菜单展开期间置位的属性: 画面点击只用于收起菜单, 不切换播放/暂停. */
+const CONTEXT_MENU_OPEN_ATTRIBUTE = "contextmenuopen";
 /** 双击的判定窗口 (毫秒). 单击的动作须等过整个窗口, 才能确定没有第二次点击. */
 const DOUBLE_CLICK_MS = 250;
 
@@ -511,6 +513,16 @@ function useFullscreenScrollRestore(controllerRef: RefObject<MediaControllerElem
 }
 
 /**
+ * 把焦点交还播放器, 但不让浏览器为此滚动页面.
+ *
+ * 播放器在视口里只露出一部分时, 聚焦会让浏览器把它整个滚进来 —— 收起菜单或倍速菜单之后页面
+ * 会突然跳到播放器顶端. 焦点只影响快捷键, 不需要改变滚动位置.
+ */
+function focusPlayer(controllerRef: RefObject<MediaControllerElement | null>): void {
+  controllerRef.current?.focus({ preventScroll: true });
+}
+
+/**
  * 画面的单击与双击.
  *
  * media-chrome 的手势层对每次 click 立即切换播放/暂停, 双击因此会先暂停再恢复, 画面停顿一次.
@@ -530,10 +542,8 @@ function useClickGestures(
   controllerRef: RefObject<MediaControllerElement | null>,
   videoRef: RefObject<HTMLVideoElement | null>,
   fullscreenButtonRef: RefObject<MediaFullscreenButtonElement | null>,
-  suspended: boolean,
 ) {
-  const suspendedRef = useLatestRef(suspended);
-  // 已排队但还没执行的那次单击; 挂起时撤掉它, 那次点击只用于收起菜单.
+  // 已排队但还没执行的那次单击; 菜单展开时撤掉它, 那次点击只用于收起菜单.
   const cancelPendingClickRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
@@ -558,9 +568,10 @@ function useClickGestures(
       if (pointerType === "touch" || controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE)) {
         return;
       }
-      // 菜单展开期间画面不响应点击: 收起菜单的那一次点击只用于收起, 不切换播放/暂停. 这一条不能
-      // 只靠「收起时撤掉已排队的单击」—— 哪个监听先跑取决于浏览器对捕获阶段与合成事件的次序.
-      if (suspendedRef.current) {
+      // 菜单展开期间画面不响应点击: 收起菜单的那一次点击只用于收起, 不切换播放/暂停.
+      // 状态取自控制器上的属性而不是 React 状态 —— 收起菜单的那次点击与属性置位之间的次序,
+      // 以及事件在各层之间的传播次序, 都不该影响这一条.
+      if (controller.hasAttribute(CONTEXT_MENU_OPEN_ATTRIBUTE)) {
         cancelPendingClickRef.current();
         return;
       }
@@ -604,7 +615,7 @@ function useClickGestures(
         window.clearTimeout(pendingClick);
       }
     };
-  }, [controllerRef, fullscreenButtonRef, suspendedRef, videoRef]);
+  }, [controllerRef, fullscreenButtonRef, videoRef]);
 
   return cancelPendingClickRef;
 }
@@ -716,20 +727,17 @@ export function PlaybackPlayer({
   const [contextMenu, setContextMenu] = useState<ContextMenuAnchor | null>(null);
 
   // 画面的单击、双击与它们的排队状态: 菜单开合都要能撤掉排队中的那次单击.
-  const cancelPendingClickRef = useClickGestures(
-    controllerRef,
-    videoRef,
-    fullscreenButtonRef,
-    contextMenu != null,
-  );
+  const cancelPendingClickRef = useClickGestures(controllerRef, videoRef, fullscreenButtonRef);
 
+  // 展开状态同时写在控制器属性上: 画面点击的判定读它, 因此不依赖 React 状态更新的时机.
   const openContextMenu = useCallback(
     (anchor: ContextMenuAnchor) => {
       // 右键之前若已经有一次左键单击在排队 (先左键后右键的连击), 它不该在菜单展开后切播放状态.
       cancelPendingClickRef.current();
+      controllerRef.current?.setAttribute(CONTEXT_MENU_OPEN_ATTRIBUTE, "");
       setContextMenu(anchor);
     },
-    [cancelPendingClickRef],
+    [cancelPendingClickRef, controllerRef],
   );
   useVideoContextMenu(controllerRef, videoRef, openContextMenu);
 
@@ -740,12 +748,13 @@ export function PlaybackPlayer({
   const closeContextMenu = useCallback(
     (restoreFocus: boolean) => {
       cancelPendingClickRef.current();
+      controllerRef.current?.removeAttribute(CONTEXT_MENU_OPEN_ATTRIBUTE);
       setContextMenu(null);
       if (restoreFocus) {
-        controllerRef.current?.focus();
+        focusPlayer(controllerRef);
       }
     },
-    [cancelPendingClickRef],
+    [cancelPendingClickRef, controllerRef],
   );
 
   const cancelRateClose = useCallback(() => {
@@ -760,7 +769,7 @@ export function PlaybackPlayer({
     if (menu != null && !menu.hidden) {
       rateButtonRef.current?.handleClick();
       // 菜单展开时会把焦点拿到自己身上, 收起后交还播放器, 否则方向键等快捷键不再生效.
-      controllerRef.current?.focus();
+      focusPlayer(controllerRef);
     }
   }, []);
 
