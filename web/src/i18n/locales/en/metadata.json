@@ -134,7 +134,7 @@
     "playbackCopyTimestamp": "Copy timestamp {{time}}",
     "playbackCopyLink": "Copy link",
     "playbackCopied": "Copied to clipboard",
-    "playbackCopyFailed": "Copy failed, copy manually"
+    "playbackCopyFailed": "Copy failed"
   },
   "browse": {
     "title": "Browse",

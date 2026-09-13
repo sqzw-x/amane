@@ -135,7 +135,7 @@
     "playbackCopyTimestamp": "复制时间戳 {{time}}",
     "playbackCopyLink": "复制链接",
     "playbackCopied": "已复制到剪贴板",
-    "playbackCopyFailed": "复制失败, 请手动复制"
+    "playbackCopyFailed": "复制失败"
   },
   "browse": {
     "title": "分类浏览",

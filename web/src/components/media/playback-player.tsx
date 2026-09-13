@@ -35,7 +35,6 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -84,11 +83,16 @@ const ARROW_HOTKEYS_OFF = "noarrowleft noarrowright noarrowup noarrowdown";
  */
 const VOLUME_PREF_KEY = "amane-playback-volume";
 
-/** 读取存储的音量; 缺失、损坏或越界时回到满音量. */
+/** 读取存储的音量; 未存储、损坏或越界时回到满音量. */
 function readStoredVolume(): number {
   try {
-    const stored = Number(window.localStorage.getItem(VOLUME_PREF_KEY));
-    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 1;
+    // 必须先判空: `Number(null)` 为 0, 直接转换会把「没有存储」当成静音.
+    const stored = window.localStorage.getItem(VOLUME_PREF_KEY);
+    if (stored == null) {
+      return 1;
+    }
+    const parsed = Number(stored);
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 1;
   } catch {
     return 1;
   }
@@ -168,6 +172,38 @@ function SubtitleTracks({ tracks }: { tracks: PlaybackSubtitleItem[] }) {
   ));
 }
 
+/**
+ * 画面的右键菜单.
+ *
+ * 监听挂在控制器上而不是走 React 的 `onContextMenu`: 该事件不会派发到自定义元素上的 React 监听
+ * (普通元素正常), 控制器收不到回调. 判定与画面的单击、双击一致 —— 只有视频与控制器自身算数,
+ * 控制条与菜单保留浏览器原生右键菜单.
+ */
+function useVideoContextMenu(
+  controllerRef: RefObject<MediaControllerElement | null>,
+  videoRef: RefObject<HTMLVideoElement | null>,
+  onOpen: (anchor: ContextMenuAnchor, seconds: number) => void,
+) {
+  const openRef = useLatestRef(onOpen);
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller == null) {
+      return;
+    }
+    const handle = (event: MouseEvent) => {
+      const video = videoRef.current;
+      const target = event.composedPath()[0];
+      if (video == null || (target !== video && target !== controller)) {
+        return;
+      }
+      event.preventDefault();
+      openRef.current(contextMenuAnchor(controller, event), video.currentTime);
+    };
+    controller.addEventListener("contextmenu", handle);
+    return () => controller.removeEventListener("contextmenu", handle);
+  }, [controllerRef, openRef, videoRef]);
+}
+
 /** 右键菜单在播放窗口内的落点: 相对控制器的坐标, 以及展开的方向. */
 type ContextMenuAnchor = {
   left: number;
@@ -213,7 +249,8 @@ function ContextMenu({
   anchor: ContextMenuAnchor;
   seconds: number;
   seekable: boolean;
-  onClose: () => void;
+  /** 收起菜单; 参数为真时把焦点交还播放器 (复制之后焦点留在菜单项上). */
+  onClose: (restoreFocus: boolean) => void;
   /** 点击窗口之外即收起, 控制器内部的事件不在此列. */
   frameRef: RefObject<MediaControllerElement | null>;
 }) {
@@ -225,11 +262,11 @@ function ContextMenu({
       if (target instanceof Node && frameRef.current?.contains(target)) {
         return;
       }
-      onClose();
+      onClose(false);
     };
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
-        onClose();
+        onClose(false);
       }
     };
     // 只监听窗口: 播放器内部的点击由菜单项自己收起. 捕获阶段之外另加冒泡阶段, 页面其它层的
@@ -251,7 +288,7 @@ function ContextMenu({
     } catch {
       notifications.show({ message: t("detail.playbackCopyFailed"), color: "red" });
     }
-    onClose();
+    onClose(true);
   };
 
   return (
@@ -261,6 +298,8 @@ function ContextMenu({
       data-upward={anchor.upward ? "true" : undefined}
       style={{ left: anchor.left, top: anchor.top }}
       onPointerDown={(event) => event.stopPropagation()}
+      // 菜单上的右键不改写落点, 也不允许浏览器原生菜单叠上来. 这是普通元素, 合成事件正常触发.
+      onContextMenu={(event) => event.preventDefault()}
     >
       <button
         type="button"
@@ -299,6 +338,7 @@ function ContextMenu({
  * 不可寻址的流 (列表给出 `seekable` 为假) 不接管左右键, 避免出现能按但跳不动的操作.
  */
 function usePlayerKeys(
+  controllerRef: RefObject<MediaControllerElement | null>,
   videoRef: RefObject<HTMLVideoElement | null>,
   seekable: boolean,
   onVolumeStep: (delta: number) => void,
@@ -322,14 +362,22 @@ function usePlayerKeys(
   }, [videoRef]);
 
   useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller == null) {
+      return;
+    }
     window.addEventListener("blur", releaseHold);
     document.addEventListener("visibilitychange", releaseHold);
+    // 焦点离开播放器后 keyup 不会再回到控制器, 长按状态必须在这里复位, 否则下一次按方向键
+    // 会被当成「已有键按住」而忽略, 其松开时又按短按跳转.
+    controller.addEventListener("blur", releaseHold);
     return () => {
       window.removeEventListener("blur", releaseHold);
       document.removeEventListener("visibilitychange", releaseHold);
+      controller.removeEventListener("blur", releaseHold);
       releaseHold();
     };
-  }, [releaseHold]);
+  }, [controllerRef, releaseHold]);
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
@@ -640,25 +688,20 @@ export function PlaybackPlayer({
     null,
   );
 
-  const closeContextMenu = useCallback(() => setContextMenu(null), []);
-
-  const handleContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLElement>) => {
-      const video = videoRef.current;
-      const controller = controllerRef.current;
-      const target = event.nativeEvent.composedPath()[0];
-      // 与画面的单击、双击同一套判定: 只有画面与控制器自身算数, 控制条与菜单保留浏览器原生右键菜单.
-      if (video == null || controller == null || (target !== video && target !== controller)) {
-        return;
-      }
-      event.preventDefault();
-      setContextMenu({
-        ...contextMenuAnchor(controller, event.nativeEvent),
-        seconds: video.currentTime,
-      });
-    },
-    [videoRef],
+  const openContextMenu = useCallback(
+    (anchor: ContextMenuAnchor, seconds: number) => setContextMenu({ ...anchor, seconds }),
+    [],
   );
+  useVideoContextMenu(controllerRef, videoRef, openContextMenu);
+
+  // 收起时交还焦点: 复制之后焦点落在菜单项上, 不交还的话方向键等快捷键不再生效 (与倍速菜单同理).
+  // 点击窗口之外收起时不夺回焦点 —— 那次点击已经把焦点给了别的元素.
+  const closeContextMenu = useCallback((restoreFocus: boolean) => {
+    setContextMenu(null);
+    if (restoreFocus) {
+      controllerRef.current?.focus();
+    }
+  }, []);
 
   const cancelRateClose = useCallback(() => {
     if (rateCloseTimerRef.current != null) {
@@ -812,7 +855,7 @@ export function PlaybackPlayer({
     };
   }, [toggleMute]);
 
-  const { onKeyDown, onKeyUp } = usePlayerKeys(videoRef, seekable, stepVolume);
+  const { onKeyDown, onKeyUp } = usePlayerKeys(controllerRef, videoRef, seekable, stepVolume);
 
   useClickGestures(controllerRef, videoRef, fullscreenButtonRef);
   useFullscreenScrollRestore(controllerRef);
@@ -920,7 +963,6 @@ export function PlaybackPlayer({
         noMutedPref
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
-        onContextMenu={handleContextMenu}
       >
         <video
           slot="media"
