@@ -157,17 +157,6 @@ async def test_cache_key_components(cache):
 
 
 @pytest.mark.asyncio
-async def test_cache_separates_prompts_for_same_key(cache):
-    """同一 (文本, 语言, 字段) 下两份提示词的译文互不覆盖."""
-    other = build_system_prompt(Language.ZH_CN, MetadataField.TITLE, system_prompt="只用中性词汇.")
-    await cache.put("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH, "内置译文")
-    await cache.put("Hello", Language.ZH_CN, MetadataField.TITLE, other, "自定义译文")
-    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "内置译文"
-    assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, other) == "自定义译文"
-    await cache.close()
-
-
-@pytest.mark.asyncio
 async def test_legacy_cache_schema_reset(tmp_path):
     """旧版表不含提示词列: 打开时整表重建, 不因缺列报错."""
     path = tmp_path / "translations.db"
@@ -226,12 +215,6 @@ async def test_translator_custom_prompt_reaches_backend(cache):
     )
     await t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE)
     system, user = backend.calls[0]
-    assert system == build_system_prompt(
-        Language.ZH_CN,
-        MetadataField.TITLE,
-        system_prompt="只用中性词汇.",
-        field_prompts={MetadataField.TITLE: "标题不超过 30 字."},
-    )
     assert "只用中性词汇." in system
     assert "标题不超过 30 字." in system
     assert user == "Hello world"

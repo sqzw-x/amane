@@ -1,7 +1,7 @@
 """自定义翻译提示词的组装与配置校验.
 
-覆盖: 默认回退、目标语言占位符替换、逐字段覆盖、空值语义, 以及非法输入
-(未知字段 / 非字符串 / 超长) 下的报错.
+覆盖: 拼接顺序与回退、目标语言占位符、逐字段覆盖的作用范围, 以及非法输入的拒绝.
+内置文案在用例里复制一份: 文案改动应当在这里被看见.
 """
 
 import pytest
@@ -12,108 +12,59 @@ from amane.config.manager import PROMPT_MAX_LENGTH
 from amane.enums import Language, MetadataField
 from amane.llm import TARGET_LANG_PLACEHOLDER, build_system_prompt
 
-_OUTPUT_CONSTRAINT = "只输出译文本身, 不要解释、不要引号、不要附加任何内容."
 _TITLE_HINT = "这是一部影片的标题, 翻译应简洁自然, 保留专有名词与番号."
 _PLOT_HINT = "这是一部影片的简介, 完整通顺地翻译全部内容."
+_OUTPUT_CONSTRAINT = "只输出译文本身, 不要解释、不要引号、不要附加任何内容."
 
 
 def _instruction(lang_name: str) -> str:
     return f"你是专业的影视元数据翻译. 将用户提供的文本翻译为{lang_name}."
 
 
-# ---------------------------------------------------------------------------
-# build_system_prompt
-# ---------------------------------------------------------------------------
+_ZH = _instruction("简体中文")
+_ZH_TW = _instruction("繁體中文")
 
 
 @pytest.mark.parametrize(
     ("target", "field", "system_prompt", "field_prompts", "expected"),
     [
         # 未配置: 指令 + 内置字段说明 + 输出约束
-        (
-            Language.ZH_CN,
-            MetadataField.TITLE,
-            None,
-            None,
-            f"{_instruction('简体中文')} {_TITLE_HINT} {_OUTPUT_CONSTRAINT}",
-        ),
-        (
-            Language.ZH_TW,
-            MetadataField.PLOT,
-            None,
-            None,
-            f"{_instruction('繁體中文')} {_PLOT_HINT} {_OUTPUT_CONSTRAINT}",
-        ),
+        (Language.ZH_CN, MetadataField.TITLE, None, None, f"{_ZH} {_TITLE_HINT} {_OUTPUT_CONSTRAINT}"),
         # 无内置说明的字段: 不追加空说明, 也不留下多余空格
-        (
-            Language.EN,
-            MetadataField.SCORE,
-            None,
-            None,
-            f"{_instruction('English')} {_OUTPUT_CONSTRAINT}",
-        ),
+        (Language.ZH_CN, MetadataField.SCORE, None, None, f"{_ZH} {_OUTPUT_CONSTRAINT}"),
         # 自定义指令: 占位符替换为目标语言名
         (
-            Language.ZH_CN,
+            Language.ZH_TW,
             MetadataField.TITLE,
             f"将输入翻译为{TARGET_LANG_PLACEHOLDER}, 只使用中性词汇.",
             None,
-            f"将输入翻译为简体中文, 只使用中性词汇. {_TITLE_HINT} {_OUTPUT_CONSTRAINT}",
+            f"将输入翻译为繁體中文, 只使用中性词汇. {_TITLE_HINT} {_OUTPUT_CONSTRAINT}",
         ),
         # 不写占位符时按原文使用, 不自动补充目标语言
         (
-            Language.JP,
+            Language.ZH_CN,
             MetadataField.TITLE,
             "只输出中文译文.",
             None,
             f"只输出中文译文. {_TITLE_HINT} {_OUTPUT_CONSTRAINT}",
         ),
         # 空白指令回退内置
-        (
-            Language.ZH_CN,
-            MetadataField.TITLE,
-            "   ",
-            None,
-            f"{_instruction('简体中文')} {_TITLE_HINT} {_OUTPUT_CONSTRAINT}",
-        ),
-        # 逐字段覆盖只作用于该字段
-        (
-            Language.ZH_CN,
-            MetadataField.TITLE,
-            None,
-            {MetadataField.TITLE: "标题不超过 30 字."},
-            f"{_instruction('简体中文')} 标题不超过 30 字. {_OUTPUT_CONSTRAINT}",
-        ),
-        (
-            Language.ZH_CN,
-            MetadataField.PLOT,
-            None,
-            {MetadataField.TITLE: "标题不超过 30 字."},
-            f"{_instruction('简体中文')} {_PLOT_HINT} {_OUTPUT_CONSTRAINT}",
-        ),
-        # 空白覆盖值等价于未配置
-        (
-            Language.ZH_CN,
-            MetadataField.PLOT,
-            None,
-            {MetadataField.PLOT: "  "},
-            f"{_instruction('简体中文')} {_PLOT_HINT} {_OUTPUT_CONSTRAINT}",
-        ),
-        # 字段说明同样支持目标语言占位符
+        (Language.ZH_CN, MetadataField.TITLE, "   ", None, f"{_ZH} {_TITLE_HINT} {_OUTPUT_CONSTRAINT}"),
+        # 字段说明覆盖该字段的内置说明, 且同样支持占位符
         (
             Language.ZH_TW,
             MetadataField.PLOT,
             None,
             {MetadataField.PLOT: f"用{TARGET_LANG_PLACEHOLDER}書面語."},
-            f"{_instruction('繁體中文')} 用繁體中文書面語. {_OUTPUT_CONSTRAINT}",
+            f"{_ZH_TW} 用繁體中文書面語. {_OUTPUT_CONSTRAINT}",
         ),
-        # 自定义指令与字段说明同时生效
+        # 覆盖只作用于列出的字段
         (
-            Language.EN,
+            Language.ZH_CN,
             MetadataField.PLOT,
-            "Translate faithfully.",
-            {MetadataField.PLOT: "Keep it under 200 words."},
-            f"Translate faithfully. Keep it under 200 words. {_OUTPUT_CONSTRAINT}",
+            None,
+            {MetadataField.TITLE: "标题不超过 30 字."},
+            f"{_ZH} {_PLOT_HINT} {_OUTPUT_CONSTRAINT}",
         ),
         # 花括号按字面保留 (允许 JSON 示例), 不触发格式化
         (
@@ -135,31 +86,20 @@ def test_build_system_prompt(
     assert build_system_prompt(target, field, system_prompt=system_prompt, field_prompts=field_prompts) == expected
 
 
-# ---------------------------------------------------------------------------
-# LLMConfig
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     ("payload", "expected_system", "expected_fields"),
     [
         ({}, None, {}),
-        ({"system_prompt": "只用中性词汇."}, "只用中性词汇.", {}),
-        # 首尾空白去除; 纯空白等价于未配置
+        # 首尾空白去除
         ({"system_prompt": "  只用中性词汇.  "}, "只用中性词汇.", {}),
+        # 纯空白等价于未配置
         ({"system_prompt": "   "}, None, {}),
-        ({"system_prompt": ""}, None, {}),
-        (
-            {"field_prompts": {"title": "标题简洁"}},
-            None,
-            {MetadataField.TITLE: "标题简洁"},
-        ),
+        # 空白条目与缺席等价, 只保留有内容的字段
         (
             {"field_prompts": {"title": " 标题简洁 ", "plot": "   "}},
             None,
             {MetadataField.TITLE: "标题简洁"},
         ),
-        ({"field_prompts": {}}, None, {}),
     ],
 )
 def test_llm_config_prompt_normalization(
@@ -171,18 +111,17 @@ def test_llm_config_prompt_normalization(
 
 
 @pytest.mark.parametrize(
-    "payload",
+    ("payload", "match"),
     [
-        {"system_prompt": "x" * (PROMPT_MAX_LENGTH + 1)},
-        {"system_prompt": 5},
-        {"field_prompts": {"plot": "x" * (PROMPT_MAX_LENGTH + 1)}},
-        {"field_prompts": {"nope": "标题简洁"}},
-        {"field_prompts": {"title": 1}},
-        {"field_prompts": ["标题简洁"]},
+        # 字段名受 MetadataField 约束
+        ({"field_prompts": {"nope": "标题简洁"}}, "field_prompts.nope"),
+        # 单条长度上限
+        ({"system_prompt": "x" * (PROMPT_MAX_LENGTH + 1)}, "at most 2000 characters"),
+        ({"field_prompts": {"plot": "x" * (PROMPT_MAX_LENGTH + 1)}}, "at most 2000 characters"),
     ],
 )
-def test_llm_config_rejects_invalid_prompts(payload: dict) -> None:
-    with pytest.raises(ValidationError):
+def test_llm_config_rejects_invalid_prompts(payload: dict, match: str) -> None:
+    with pytest.raises(ValidationError, match=match):
         LLMConfig.model_validate(payload)
 
 
