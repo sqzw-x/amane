@@ -162,6 +162,7 @@ class LLMTranslator:
 def build_translator(
     *,
     enabled: bool,
+    api_type: ApiType,
     api_key: str | None,
     base_url: str,
     model: str,
@@ -177,7 +178,7 @@ def build_translator(
         return None
     http_client = AsyncClient(proxy=proxy, timeout=Timeout(_TIMEOUT), follow_redirects=True)
     return LLMTranslator(
-        build_model(ApiType.CHAT, base_url=base_url, api_key=api_key, model=model, http_client=http_client),
+        build_model(api_type, base_url=base_url, api_key=api_key, model=model, http_client=http_client),
         cache,
         max_retries=max_retries,
         rate_limit=rate_limit,

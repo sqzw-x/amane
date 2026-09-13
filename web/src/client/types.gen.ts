@@ -1226,6 +1226,7 @@ export type LlmConfig = {
      * Api Key
      */
     api_key?: string | null;
+    api_type?: ApiType;
     /**
      * Base Url
      */

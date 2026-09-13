@@ -529,6 +529,7 @@ class LLMConfig(BaseModel):
     api_key: str | None = None
     """为空时即使 enabled 也不翻译."""
 
+    api_type: ApiType = ApiType.CHAT
     base_url: str = "https://api.openai.com/v1"
     model: str = ""
     max_retries: int = Field(default=3, ge=0, le=10)

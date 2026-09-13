@@ -540,6 +540,14 @@
         "label": "API 密钥",
         "description": ""
       },
+      "api_type": {
+        "label": "API 类型",
+        "options": {
+          "chat": "Chat",
+          "response": "Responses",
+          "anthropic": "Anthropic"
+        }
+      },
       "base_url": {
         "label": "API 端点",
         "description": "OpenAI 兼容 API BASE URL"

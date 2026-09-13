@@ -175,6 +175,7 @@ async def test_think_block_stripped():
 def test_build_translator_gating(enabled, api_key, expected_none):
     t = build_translator(
         enabled=enabled,
+        api_type=ApiType.CHAT,
         api_key=api_key,
         base_url="https://api.openai.com/v1",
         model="gpt-4o-mini",
@@ -212,6 +213,7 @@ async def test_build_translator_builds_proxy_client(monkeypatch):
     monkeypatch.setattr(translator_module, "build_model", fake_build_model)
     t = build_translator(
         enabled=True,
+        api_type=ApiType.ANTHROPIC,
         api_key="key",
         base_url="https://api.example/v1",
         model="test-model",
@@ -224,7 +226,7 @@ async def test_build_translator_builds_proxy_client(monkeypatch):
     assert isinstance(client, httpx2.AsyncClient)
     assert captured["proxy"] == "http://proxy.example:8080"
     assert client.timeout == httpx2.Timeout(60.0)
-    assert captured["api_type"] is ApiType.CHAT
+    assert captured["api_type"] is ApiType.ANTHROPIC
     assert captured["http_client"] is client
     await client.aclose()
 

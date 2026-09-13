@@ -2431,6 +2431,7 @@ export const HotSettingsSchema = {
                     'plot'
                 ],
                 field_prompts: {},
+                api_type: 'chat',
                 base_url: 'https://api.openai.com/v1',
                 model: '',
                 max_retries: 3,
@@ -2544,6 +2545,10 @@ export const LLMConfigSchema = {
                 }
             ],
             title: 'Api Key'
+        },
+        api_type: {
+            $ref: '#/components/schemas/ApiType',
+            default: 'chat'
         },
         base_url: {
             type: 'string',
