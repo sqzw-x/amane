@@ -151,8 +151,7 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
   }
 
   return (
-    // 下沿留白比其余三边大: 发表框贴着卡片底边会让最后一排操作显得被切掉.
-    <Card withBorder radius="md" p="md" pb="3.5rem" className={classes.card}>
+    <Card withBorder radius="md" p="md" className={classes.card}>
       <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
         <Group gap="xs" align="center" wrap="nowrap">
           <Title order={5}>{t("detail.comments")}</Title>
