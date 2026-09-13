@@ -27,7 +27,7 @@
 | `metadata` | `/metadata` | 番号条目 + merge / crop / facet 筛选 / user-tag / batch / schema |
 | `actors` | `/actors` | 演员浏览、人物 PATCH、刮削; 身份治理经由 facets |
 | `facets` | `/facets` | 分类目录与规则; `POST /user_tag` 创建用户标签 |
-| `comments` | `/comments` | 评论修改与删除; 新建经由 metadata; 列表随详情 |
+| `comments` | `/comments` | 评论修改与删除; 新建经由 metadata; 列表随详情, 固定按创建时间倒序 |
 | `tasks` | `/tasks` | 队列; `POST /batch` (`cancel`/`delete`/`retry`); worker 暂停领队; 终态 `report` / `record` |
 | `schedules` | `/schedules` | cron CRUD + trigger |
 | `config` | `/config` | HotSettings + schema |
@@ -47,6 +47,7 @@ OpenAPI 列出参数, 不表达组合语义:
 - `/plugins/reload` 须注册在 `/plugins/{plugin_id}` 之前, 否则 `reload` 会被当成插件 ID. 安装/卸载契约见 [plugins.md](plugins.md).
 - `/playback/sources` 须注册在 `/{source_id}` 之前, 只列已启用的播放源 (`source_id` 与 descriptor 里的展示名), 不调用插件也不碰条目; 某个来源的流由 `/{source_id}/{metadata_id}/streams` 在用户切到它时才探测. 流的一行是一条流: `key` 是流的标识, `name` 是主机拼好的展示名 (来源名 · 流的展示名), HLS 行的 `href` 指向 `index.m3u8`. **来源**整个不可用时 `available=false`、`key` 为空, `detail` 可有可无 (空结果就是没有原因); **这一条流**探测时不可播时仍带 `key`, `available=false` 且 `detail` 必然非空 (它只说明探测那一刻的观测, 点播仍可能失败). 流列表 `Cache-Control: no-store`, 来源列表 `private, no-cache`. 码流地址是 `/{source_id}/{metadata_id}/streams/{key}`, 去掉 `streams/{key}` 一段表示由插件自己挑一条. `HEAD`/`GET` 支持单段 Range. 清单改写后的分片经由 `hls/{token}`; 字幕经由 `subtitles/{track_id}` (`text/vtt`). `key` 由插件解释, 主机只校验它进路径的形状 (形状不合法由路径校验拒绝, 整值 `.` 与 `..` 也被拒; 含 `/` 的 key 在路由匹配前就被拆段, 得到 404), 认不出来的 `key` 由插件以 502 与自身原因拒绝. 超长 `source_id` 与未启用、未安装同样 404. 上游失败与畸形上游 URL 均为 502, 上游 416 原样返回. 码流 `upstream` 拒绝播放列表类型. 插件声明的 `file` 目标不属于该条目索引时也是 502. 契约见 [plugins.md](plugins.md).
 - `/tasks/batch` 与 `/tasks/worker*` 须注册在 `/{task_id}` 之前, 否则会被当成非法整数 id.
+- 评论正文先去除首尾空白再校验长度, 全空白与超过 10000 字符均为 422. `updated_at` 晚于 `created_at` 表示正文被编辑过: PATCH 提交与库中一致的正文不写库, 也不刷新 `updated_at`, 前端据此判定「已编辑」. 排序则由前端在详情响应上完成, 端点不提供 order 参数.
 
 ## 依赖注入
 
