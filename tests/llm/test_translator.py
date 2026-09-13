@@ -1,109 +1,166 @@
 """LLM 翻译器单元测试.
 
-后端用 fake 注入, 不触网. 覆盖:
+请求经 pydantic-ai ``FunctionModel`` 驱动, 不触网. 覆盖:
 - 跨语系走 LLM, 中文走 zhconv, 已是目标语言不动 的分流
-- 后端失败 (返回 None / 抛异常) 下的健壮性
-- build_translator 的装配开关
-- 自定义提示词进入后端, 以及提示词变化后的缓存失效
+- 重试耗尽返回 None (不抛异常), 思维链剥离, 空结果
+- build_translator 的装配开关与代理客户端
+- 自定义提示词进入请求, 以及提示词变化后的缓存失效
 """
 
-import aiosqlite
-import pytest
+import asyncio
+from collections.abc import Mapping, Sequence
 
-from amane.enums import Language, MetadataField
+import aiosqlite
+import httpx2
+import pytest
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
+from pydantic_ai.models import Model
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+from amane.enums import ApiType, Language, MetadataField
 from amane.llm import LLMTranslator, TranslationCache, build_system_prompt, build_translator
+from amane.llm import translator as translator_module
 
 _SYSTEM_ZH = build_system_prompt(Language.ZH_CN, MetadataField.TITLE)
 
 
-class _FakeBackend:
-    """记录调用并返回预置结果的 fake 后端."""
+def _prompts(messages: Sequence[ModelMessage]) -> tuple[str, str]:
+    """取出最后一次请求的 system 与 user 文本."""
+    request = messages[-1]
+    assert isinstance(request, ModelRequest)
+    system = "".join(part.content for part in request.parts if isinstance(part, SystemPromptPart))
+    user = "".join(
+        part.content for part in request.parts if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+    )
+    return system, user
 
-    def __init__(self, result: str | None = "TRANSLATED") -> None:
-        self.result = result
-        self.calls: list[tuple[str, str]] = []
 
-    async def ask(self, *, system_prompt: str, user_prompt: str) -> str | None:
-        self.calls.append((system_prompt, user_prompt))
-        return self.result
+def _recording_model(result: str | None = "TRANSLATED") -> tuple[FunctionModel, list[tuple[str, str]]]:
+    """记录请求内容并返回固定正文的模型."""
+    calls: list[tuple[str, str]] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls.append(_prompts(messages))
+        return ModelResponse(parts=[TextPart(result or "")])
+
+    return FunctionModel(respond), calls
 
 
-class _RaisingBackend:
-    async def ask(self, *, system_prompt: str, user_prompt: str) -> str | None:
-        raise RuntimeError("boom")
+def _raising_model(exc: Exception) -> FunctionModel:
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        raise exc
+
+    return FunctionModel(respond)
+
+
+def _translator(
+    model: Model,
+    cache: TranslationCache | None = None,
+    *,
+    max_retries: int = 0,
+    system_prompt: str | None = None,
+    field_prompts: Mapping[MetadataField, str] | None = None,
+) -> LLMTranslator:
+    """rate_limit 拉高: 用例内的连续调用不等待限速."""
+    return LLMTranslator(
+        model,
+        cache,
+        max_retries=max_retries,
+        rate_limit=100.0,
+        system_prompt=system_prompt,
+        field_prompts=field_prompts,
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "text,target,backend_called",
+    "text,target,model_called",
     [
-        # 跨语系 → 调后端
+        # 跨语系 → 调模型
         ("こんにちは世界", Language.ZH_CN, True),
         ("Hello world", Language.ZH_CN, True),
-        # 中文内部 → zhconv, 不调后端
+        # 中文内部 → zhconv, 不调模型
         ("後愛上你", Language.ZH_CN, False),
         ("你好世界", Language.ZH_CN, False),
-        # 中文源 + 非中文目标: 设计不覆盖该方向 (现实目标皆中文), 不调后端
+        # 中文源 + 非中文目标: 设计不覆盖该方向 (现实目标皆中文), 不调模型
         ("你好世界", Language.JP, False),
-        # 已是目标语言 → 不调后端
+        # 已是目标语言 → 不调模型
         ("Hello world", Language.EN, False),
         ("こんにちは", Language.JP, False),
-        # 空串 → 不调后端
+        # 空串 → 不调模型
         ("", Language.ZH_CN, False),
         ("   ", Language.ZH_CN, False),
     ],
 )
-async def test_translate_routing(text, target, backend_called):
-    backend = _FakeBackend()
-    t = LLMTranslator(backend)
+async def test_translate_routing(text, target, model_called):
+    model, calls = _recording_model()
+    t = _translator(model)
     await t.translate(text, target, MetadataField.TITLE)
-    assert bool(backend.calls) == backend_called
+    assert bool(calls) == model_called
 
 
 @pytest.mark.asyncio
 async def test_zhconv_conversion():
-    """繁→简由 zhconv 完成, 不经后端."""
-    backend = _FakeBackend()
-    t = LLMTranslator(backend)
+    """繁→简由 zhconv 完成, 不经模型."""
+    model, calls = _recording_model()
+    t = _translator(model)
     assert await t.translate("後愛上你", Language.ZH_CN, MetadataField.TITLE) == "后爱上你"
-    assert not backend.calls
+    assert not calls
 
 
 @pytest.mark.asyncio
 async def test_common_chars_return_none():
     """共用字 (简繁同形): 转换后等于原文 → None (调用方保留原值)."""
-    t = LLMTranslator(_FakeBackend())
+    t = _translator(_recording_model()[0])
     assert await t.translate("你好世界", Language.ZH_CN, MetadataField.TITLE) is None
 
 
 @pytest.mark.asyncio
 async def test_already_target_lang_returns_none():
-    t = LLMTranslator(_FakeBackend())
+    t = _translator(_recording_model()[0])
     assert await t.translate("Hello world", Language.EN, MetadataField.TITLE) is None
     assert await t.translate("こんにちは", Language.JP, MetadataField.PLOT) is None
 
 
 @pytest.mark.asyncio
-async def test_llm_path_returns_backend_result():
-    t = LLMTranslator(_FakeBackend("译文"))
+async def test_llm_path_returns_model_result():
+    t = _translator(_recording_model("译文")[0])
     assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) == "译文"
 
 
 @pytest.mark.asyncio
-async def test_backend_none_result_returns_none():
-    """后端返回 None/空 → translate 返回 None, 不抛."""
-    t = LLMTranslator(_FakeBackend(None))
+async def test_empty_model_result_returns_none():
+    """模型返回空正文 → translate 返回 None, 不抛."""
+    t = _translator(_recording_model("")[0])
     assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) is None
-    t2 = LLMTranslator(_FakeBackend(""))
-    assert await t2.translate("Hello", Language.ZH_CN, MetadataField.TITLE) is None
 
 
 @pytest.mark.asyncio
-async def test_backend_exception_propagates():
-    """后端抛异常时 translate 不吞 (由管线层做机会主义降级)."""
-    t = LLMTranslator(_RaisingBackend())
-    with pytest.raises(RuntimeError):
-        await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE)
+async def test_retries_exhausted_returns_none(monkeypatch):
+    """请求持续抛异常: 按指数退避重试 max_retries 次后返回 None (调用方保留原值), 不向上抛."""
+    attempts = 0
+    delays: list[float] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("boom")
+
+    async def recording_sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", recording_sleep)
+    t = _translator(FunctionModel(respond), max_retries=2)
+    assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) is None
+    assert attempts == 3
+    assert delays == [1.0, 2.0]
+
+
+@pytest.mark.asyncio
+async def test_think_block_stripped():
+    """思维链写在正文里 (不是 ``ThinkingPart``) 时剥离, 只留译文."""
+    t = _translator(_recording_model("<think>先分析</think> 译文 ")[0])
+    assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) == "译文"
 
 
 @pytest.mark.parametrize(
@@ -125,6 +182,51 @@ def test_build_translator_gating(enabled, api_key, expected_none):
         rate_limit=2.0,
     )
     assert (t is None) == expected_none
+
+
+@pytest.mark.asyncio
+async def test_build_translator_builds_proxy_client(monkeypatch):
+    """proxy 与超时进入请求客户端, 该实例再交给共享 model 工厂; 丢失会让 LLM 端点无法经代理访问."""
+    captured: dict[str, object] = {}
+    real_client = httpx2.AsyncClient
+
+    def recording_client(
+        *, proxy: str | None = None, timeout: httpx2.Timeout | None = None, follow_redirects: bool = False
+    ) -> httpx2.AsyncClient:
+        client = real_client(proxy=proxy, timeout=timeout, follow_redirects=follow_redirects)
+        captured.update(proxy=proxy, client=client)
+        return client
+
+    def fake_build_model(
+        api_type: ApiType,
+        *,
+        base_url: str,
+        api_key: str | None,
+        model: str,
+        http_client: httpx2.AsyncClient | None = None,
+    ) -> FunctionModel:
+        captured.update(api_type=api_type, http_client=http_client)
+        return _recording_model()[0]
+
+    monkeypatch.setattr(translator_module, "AsyncClient", recording_client)
+    monkeypatch.setattr(translator_module, "build_model", fake_build_model)
+    t = build_translator(
+        enabled=True,
+        api_key="key",
+        base_url="https://api.example/v1",
+        model="test-model",
+        max_retries=1,
+        rate_limit=2.0,
+        proxy="http://proxy.example:8080",
+    )
+    assert t is not None
+    client = captured["client"]
+    assert isinstance(client, httpx2.AsyncClient)
+    assert captured["proxy"] == "http://proxy.example:8080"
+    assert client.timeout == httpx2.Timeout(60.0)
+    assert captured["api_type"] is ApiType.CHAT
+    assert captured["http_client"] is client
+    await client.aclose()
 
 
 # --- 译文缓存 ---
@@ -194,27 +296,27 @@ async def test_cache_persists_across_connections(tmp_path):
 
 @pytest.mark.asyncio
 async def test_translator_uses_cache_on_repeat(cache):
-    """重复翻译同一文本只调一次后端 - 这是全缓存重刮不重译的核心保证."""
-    backend = _FakeBackend("译文")
-    t = LLMTranslator(backend, cache)
+    """重复翻译同一文本只调一次模型 - 这是全缓存重刮不重译的核心保证."""
+    model, calls = _recording_model("译文")
+    t = _translator(model, cache)
     first = await t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE)
     second = await t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE)
     assert first == second == "译文"
-    assert len(backend.calls) == 1  # 第二次命中缓存
+    assert len(calls) == 1  # 第二次命中缓存
     await cache.close()
 
 
 @pytest.mark.asyncio
-async def test_translator_custom_prompt_reaches_backend(cache):
+async def test_translator_custom_prompt_reaches_model(cache):
     """自定义指令与字段说明进入 system 提示词, 原文仍作 user 提示词."""
-    backend = _FakeBackend("译文")
-    t = LLMTranslator(
-        backend,
+    model, calls = _recording_model("译文")
+    t = _translator(
+        model,
         system_prompt="只用中性词汇.",
         field_prompts={MetadataField.TITLE: "标题不超过 30 字."},
     )
     await t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE)
-    system, user = backend.calls[0]
+    system, user = calls[0]
     assert "只用中性词汇." in system
     assert "标题不超过 30 字." in system
     assert user == "Hello world"
@@ -223,28 +325,28 @@ async def test_translator_custom_prompt_reaches_backend(cache):
 @pytest.mark.asyncio
 async def test_translator_prompt_change_invalidates_cache(cache):
     """改提示词后同一文本重译: 旧译文不再命中, 新译文写入缓存."""
-    backend = _FakeBackend("译文")
-    before = LLMTranslator(backend, cache)
+    model, calls = _recording_model("译文")
+    before = _translator(model, cache)
     assert await before.translate("Hello world", Language.ZH_CN, MetadataField.TITLE) == "译文"
-    assert len(backend.calls) == 1
+    assert len(calls) == 1
 
-    after = LLMTranslator(backend, cache, system_prompt="只用中性词汇.")
+    after = _translator(model, cache, system_prompt="只用中性词汇.")
     assert await after.translate("Hello world", Language.ZH_CN, MetadataField.TITLE) == "译文"
-    assert len(backend.calls) == 2
+    assert len(calls) == 2
 
-    # 变回内置提示词: 旧条目仍在, 不重复调用后端
+    # 变回内置提示词: 旧条目仍在, 不重复调用模型
     assert await before.translate("Hello world", Language.ZH_CN, MetadataField.TITLE) == "译文"
-    assert len(backend.calls) == 2
+    assert len(calls) == 2
     await cache.close()
 
 
 @pytest.mark.asyncio
 async def test_zhconv_path_skips_cache(cache):
     """中文简繁转换不经缓存 (zhconv 本身廉价且确定)."""
-    backend = _FakeBackend()
-    t = LLMTranslator(backend, cache)
+    model, calls = _recording_model()
+    t = _translator(model, cache)
     assert await t.translate("後愛上你", Language.ZH_CN, MetadataField.TITLE) == "后爱上你"
-    assert not backend.calls
+    assert not calls
     # 缓存中不应留下中文转换条目
     assert await cache.get("後愛上你", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) is None
     await cache.close()
@@ -252,9 +354,9 @@ async def test_zhconv_path_skips_cache(cache):
 
 @pytest.mark.asyncio
 async def test_failed_translation_not_cached(cache):
-    """后端返回空 → 不写缓存, 下次仍会重试."""
-    backend = _FakeBackend(None)
-    t = LLMTranslator(backend, cache)
+    """模型返回空 → 不写缓存, 下次仍会重试."""
+    model, _ = _recording_model(None)
+    t = _translator(model, cache)
     assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) is None
     assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) is None
     await cache.close()
@@ -264,12 +366,12 @@ async def test_failed_translation_not_cached(cache):
 async def test_use_cache_false_bypasses_read_but_refreshes(cache):
     """use_cache=False: 跳过缓存读取强制重译, 但仍回写刷新缓存."""
     await cache.put("Hello world", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH, "旧译文")
-    backend = _FakeBackend("新译文")
-    t = LLMTranslator(backend, cache)
-    # 强制重译: 忽略缓存里的"旧译文", 调后端
+    model, calls = _recording_model("新译文")
+    t = _translator(model, cache)
+    # 强制重译: 忽略缓存里的"旧译文", 调模型
     result = await t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE, use_cache=False)
     assert result == "新译文"
-    assert len(backend.calls) == 1
+    assert len(calls) == 1
     # 缓存被刷新为新译文
     assert await cache.get("Hello world", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "新译文"
     await cache.close()

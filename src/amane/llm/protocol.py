@@ -1,15 +1,8 @@
-"""``LLMBackend``: 原始问答. ``Translator``: 管线依赖的翻译面."""
+"""``Translator``: 管线依赖的翻译面."""
 
 from typing import Protocol, runtime_checkable
 
 from ..enums import Language, MetadataField
-
-
-@runtime_checkable
-class LLMBackend(Protocol):
-    """失败返回 ``None``, 不抛异常."""
-
-    async def ask(self, *, system_prompt: str, user_prompt: str) -> str | None: ...
 
 
 @runtime_checkable
