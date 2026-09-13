@@ -116,17 +116,10 @@ Authorization = "Bearer <Amane API Token>"
 视频: {studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}
 缩略图: {link_dir}/thumb.jpg
 海报: {link_dir}/poster.jpg
-NFO: {link_dir}/{video_name}.nfo
+NFO: {link_dir}/{number}.nfo
 预告片: {link_dir}/trailer.mp4
 字幕: {link_dir}/{raw_srt_name}.{ext}
 ```
-
-附属模板留空时使用上列默认值, 默认值随版本更新; 显式填写过的库保持所填内容, 需要采用默认值时清空该项.
-
-NFO 与整理后视频同名, 分集与中字标记包含在内: `ABC-123-CD2-C.mp4` 对应 `ABC-123-CD2-C.nfo`. Emby / Jellyfin 按视频文件名匹配 NFO, 不同名时不会读取该文件.
-
-!!! note
-    整理只写出新路径上的 NFO, 不删除先前整理产生的旧 NFO; 旧 NFO 也不会自动清理, 需要时手动删除.
 
 ### 可选组语法
 

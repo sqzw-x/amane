@@ -183,14 +183,14 @@ async def test_organize_collision_dest_free(repo: Repository, resource_store: Re
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_organize_appends_cd_suffix(repo: Repository, resource_store: ResourceStore, tmp_path: Path) -> None:
-    """源文件名含分集标记 (CD1) 时, 默认模板可选组写出 -CD1, 默认 NFO 与视频同名."""
+    """源文件名含分集标记 (CD1) 时, 默认模板可选组写出 -CD1."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
     src = src_dir / "NSFS-039-CD1.mp4"
     src.write_bytes(b"cd1")
 
-    lib = await repo.create_library(name="t", path=str(lib_root))
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
@@ -207,8 +207,6 @@ async def test_organize_appends_cd_suffix(repo: Repository, resource_store: Reso
 
     dest = lib_root / "Studio" / "NSFS-039" / "NSFS-039-CD1.mp4"
     assert dest.exists()
-    assert (dest.parent / "NSFS-039-CD1.nfo").exists()
-    assert not (dest.parent / "NSFS-039.nfo").exists()
     assert not src.exists()
     updated = await repo.get_media_file(source.id)
     assert updated is not None
