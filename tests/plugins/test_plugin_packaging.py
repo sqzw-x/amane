@@ -85,6 +85,15 @@ def test_install_rejects_missing_entry(tmp_path: Path) -> None:
         install_plugin_zip(tmp_path, _zip_bytes({"readme.txt": "nope"}))
 
 
+def test_install_reports_unimportable_module_as_payload_error(tmp_path: Path) -> None:
+    """插件 import 不到的模块是载荷错误 (路由据此报 422), 不是未处理异常."""
+    source = plugin_source("acme.fake") + "\nimport amane_missing_test_dependency\n"
+    with pytest.raises(ValueError, match=r"导入失败.*amane_missing_test_dependency"):
+        install_plugin_zip(tmp_path, _zip_bytes({PLUGIN_ENTRY: source}))
+    assert not (sources_root(tmp_path) / "acme.fake").exists()
+    assert not (sources_root(tmp_path) / ".staging").exists()
+
+
 def test_install_path_copies_directory(tmp_path: Path) -> None:
     source = tmp_path / "incoming" / "acme.fake"
     source.mkdir(parents=True)

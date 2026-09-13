@@ -11,10 +11,10 @@ from tests.api.conftest import make_app
 from tests.plugins.test_plugin_system import plugin_source, write_plugin
 
 
-def _plugin_zip(plugin_id: str) -> bytes:
+def _plugin_zip(plugin_id: str, *, extra: str = "") -> bytes:
     buf = BytesIO()
     with ZipFile(buf, "w") as archive:
-        archive.writestr("plugin.py", plugin_source(plugin_id))
+        archive.writestr("plugin.py", plugin_source(plugin_id) + extra)
     return buf.getvalue()
 
 
@@ -104,6 +104,19 @@ class TestPluginsApi:
         assert (
             await client.post("plugins", files={"file": ("empty.zip", buf.getvalue(), "application/zip")})
         ).status_code == 422
+
+        unimportable = await client.post(
+            "plugins",
+            files={
+                "file": (
+                    "unimportable.zip",
+                    _plugin_zip("acme.broken", extra="\nimport amane_missing_test_dependency\n"),
+                    "application/zip",
+                )
+            },
+        )
+        assert unimportable.status_code == 422, unimportable.text
+        assert "amane_missing_test_dependency" in unimportable.json()["detail"]
 
         write_plugin(tmp_path / "data", "acme.dropin")
         reloaded = await client.post("plugins/reload")
