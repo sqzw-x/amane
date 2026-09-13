@@ -282,9 +282,6 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
           onKeyDown={(event) => submitOnShortcut(event, submitComment)}
         />
         <Group justify="space-between" align="center" gap="sm">
-          <Text size="xs" c="dimmed">
-            {body.length} / {MAX_BODY_LENGTH}
-          </Text>
           <Button
             size="compact-sm"
             leftSection={<IconSend size={14} />}
@@ -294,6 +291,9 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
           >
             {t("detail.addComment")}
           </Button>
+          <Text size="xs" c="dimmed">
+            {body.length} / {MAX_BODY_LENGTH}
+          </Text>
         </Group>
       </Stack>
     </Card>
