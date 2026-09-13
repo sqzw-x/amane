@@ -204,6 +204,67 @@ const GESTURES_DISABLED_ATTRIBUTE = "gesturesdisabled";
 const DOUBLE_CLICK_MS = 250;
 
 /**
+ * 全屏前后保持页面的滚动位置.
+ *
+ * 浏览器在进入全屏时会改写页面的滚动位置, 退出时未必写回 (Chromium 与 WebKit 都出现过这里的回归), 页
+ * 面于是停在顶部. 因此进入前记下位置, 退出后写回: 事件里写一次, 下一帧再写一次 —— 浏览器自己的写入落
+ * 在退出过程中, 只有晚于它才不会被覆盖.
+ *
+ * 记下的位置取自用户可见的状态: 全屏期间浏览器写入的值不能作为还原目标, 因此只在非全屏时更新; 指针与
+ * 按键事件也一并更新, 覆盖「浏览器先改写滚动位置, 再进入全屏」的次序. 由其它元素发起的全屏不介入.
+ */
+function useFullscreenScrollRestore(controllerRef: RefObject<MediaControllerElement | null>) {
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller == null) {
+      return;
+    }
+    let visibleScroll = window.scrollY;
+    // 非空表示这次全屏由本播放器发起, 退出时需要还原.
+    let anchor: number | null = null;
+    let restoreFrame: number | null = null;
+
+    const rememberScroll = () => {
+      if (document.fullscreenElement == null) {
+        visibleScroll = window.scrollY;
+      }
+    };
+
+    const handleFullscreenChange = () => {
+      const fullscreen = document.fullscreenElement;
+      if (fullscreen != null) {
+        anchor = fullscreen === controller ? visibleScroll : null;
+        return;
+      }
+      if (anchor == null) {
+        return;
+      }
+      const top = anchor;
+      anchor = null;
+      window.scrollTo({ top, behavior: "instant" });
+      restoreFrame = window.requestAnimationFrame(() => {
+        restoreFrame = null;
+        window.scrollTo({ top, behavior: "instant" });
+      });
+    };
+
+    window.addEventListener("scroll", rememberScroll, true);
+    window.addEventListener("pointerdown", rememberScroll, true);
+    window.addEventListener("keydown", rememberScroll, true);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      window.removeEventListener("scroll", rememberScroll, true);
+      window.removeEventListener("pointerdown", rememberScroll, true);
+      window.removeEventListener("keydown", rememberScroll, true);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      if (restoreFrame != null) {
+        window.cancelAnimationFrame(restoreFrame);
+      }
+    };
+  }, [controllerRef]);
+}
+
+/**
  * 画面的单击与双击.
  *
  * media-chrome 的手势层对每次 click 立即切换播放/暂停, 双击因此会先暂停再恢复, 画面停顿一次.
@@ -487,6 +548,7 @@ export function PlaybackPlayer({
   const { onKeyDown, onKeyUp } = usePlayerKeys(videoRef, seekable, stepVolume);
 
   useClickGestures(controllerRef, videoRef, fullscreenButtonRef);
+  useFullscreenScrollRestore(controllerRef);
 
   const applyPlaybackRate = useCallback(
     (rate: number) => {
