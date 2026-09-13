@@ -3,7 +3,6 @@
 已是目标语言返回 ``None``. ``build_translator`` 在 enabled=False 或缺 api_key 时返回 ``None``.
 """
 
-import asyncio
 import re
 from collections.abc import Mapping
 
@@ -23,7 +22,7 @@ from .model import build_model
 logger = structlog.get_logger()
 
 _TIMEOUT = 60.0
-"""LLM 请求超时 (秒). 重试与限速由翻译器负责, 客户端只承载超时与代理."""
+"""LLM 请求超时 (秒). 重试由 SDK 客户端承担, 此客户端只承载超时与代理."""
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 """去除提供商写进正文的思维链, 仅保留最终答案. ``ModelResponse.text`` 已排除 ``ThinkingPart``."""
@@ -88,15 +87,14 @@ class LLMTranslator:
         model: Model,
         cache: TranslationCache | None = None,
         *,
-        max_retries: int = 3,
         rate_limit: float = 2.0,
         system_prompt: str | None = None,
         field_prompts: Mapping[MetadataField, str] | None = None,
     ) -> None:
         self._model = model
         self._cache = cache
-        self._max_retries = max_retries
         # LLM 端点独立限速, 与站点 host 限速隔离: 桶容量 1, 严格平滑.
+        # 包住一次翻译调用; 该调用内部的重试由 SDK 客户端承担.
         self._limiter = AsyncLimiter(1, 1 / rate_limit)
         self._system_prompt = system_prompt
         self._field_prompts: Mapping[MetadataField, str] = field_prompts or {}
@@ -138,25 +136,18 @@ class LLMTranslator:
         return None
 
     async def _ask(self, *, system_prompt: str, user_prompt: str) -> str | None:
-        """单轮请求. 重试耗尽或无内容时返回 ``None``, 不抛异常; 结果剥离思维链."""
+        """单轮请求. 重试由 SDK 客户端承担; 无内容或抛异常时返回 ``None``, 不抛异常."""
         messages: list[ModelMessage] = [
             ModelRequest(parts=[SystemPromptPart(content=system_prompt), UserPromptPart(content=user_prompt)])
         ]
-        wait = 1.0
         async with self._limiter:
-            for attempt in range(self._max_retries + 1):
-                try:
-                    response = await model_request(self._model, messages)
-                    text = response.text
-                    return _THINK.sub("", text).strip() if text else None
-                except Exception as e:
-                    if attempt == self._max_retries:
-                        logger.warning("LLM request failed, retries exhausted", error=str(e))
-                        return None
-                    logger.debug("LLM request failed, retrying", error=str(e), wait=wait)
-                    await asyncio.sleep(wait)
-                    wait *= 2
-        return None
+            try:
+                response = await model_request(self._model, messages)
+            except Exception as e:
+                logger.warning("LLM request failed, retries exhausted", error=str(e))
+                return None
+        text = response.text
+        return _THINK.sub("", text).strip() if text else None
 
 
 def build_translator(
@@ -178,9 +169,15 @@ def build_translator(
         return None
     http_client = AsyncClient(proxy=proxy, timeout=Timeout(_TIMEOUT), follow_redirects=True)
     return LLMTranslator(
-        build_model(api_type, base_url=base_url, api_key=api_key, model=model, http_client=http_client),
+        build_model(
+            api_type,
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            http_client=http_client,
+            max_retries=max_retries,
+        ),
         cache,
-        max_retries=max_retries,
         rate_limit=rate_limit,
         system_prompt=system_prompt,
         field_prompts=field_prompts,

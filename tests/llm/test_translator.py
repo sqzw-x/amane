@@ -1,13 +1,12 @@
 """LLM 翻译器单元测试.
 
-请求经 pydantic-ai ``FunctionModel`` 驱动, 不触网. 覆盖:
+请求经 pydantic-ai ``FunctionModel`` 或 SDK 客户端的 MockTransport 驱动, 不触网. 覆盖:
 - 跨语系走 LLM, 中文走 zhconv, 已是目标语言不动 的分流
-- 重试耗尽返回 None (不抛异常), 思维链剥离, 空结果
+- 重试次数直通 SDK, 重试耗尽返回 None (不抛异常), 思维链剥离, 空结果
 - build_translator 的装配开关与代理客户端
 - 自定义提示词进入请求, 以及提示词变化后的缓存失效
 """
 
-import asyncio
 from collections.abc import Mapping, Sequence
 
 import aiosqlite
@@ -18,7 +17,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from amane.enums import ApiType, Language, MetadataField
-from amane.llm import LLMTranslator, TranslationCache, build_system_prompt, build_translator
+from amane.llm import LLMTranslator, TranslationCache, build_model, build_system_prompt, build_translator
 from amane.llm import translator as translator_module
 
 _SYSTEM_ZH = build_system_prompt(Language.ZH_CN, MetadataField.TITLE)
@@ -46,30 +45,15 @@ def _recording_model(result: str | None = "TRANSLATED") -> tuple[FunctionModel, 
     return FunctionModel(respond), calls
 
 
-def _raising_model(exc: Exception) -> FunctionModel:
-    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        raise exc
-
-    return FunctionModel(respond)
-
-
 def _translator(
     model: Model,
     cache: TranslationCache | None = None,
     *,
-    max_retries: int = 0,
     system_prompt: str | None = None,
     field_prompts: Mapping[MetadataField, str] | None = None,
 ) -> LLMTranslator:
     """rate_limit 拉高: 用例内的连续调用不等待限速."""
-    return LLMTranslator(
-        model,
-        cache,
-        max_retries=max_retries,
-        rate_limit=100.0,
-        system_prompt=system_prompt,
-        field_prompts=field_prompts,
-    )
+    return LLMTranslator(model, cache, rate_limit=100.0, system_prompt=system_prompt, field_prompts=field_prompts)
 
 
 @pytest.mark.asyncio
@@ -136,24 +120,27 @@ async def test_empty_model_result_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_retries_exhausted_returns_none(monkeypatch):
-    """请求持续抛异常: 按指数退避重试 max_retries 次后返回 None (调用方保留原值), 不向上抛."""
-    attempts = 0
-    delays: list[float] = []
+async def test_retries_exhausted_returns_none():
+    """SDK 重试耗尽后抛出的异常由翻译器吸收: 返回 None (调用方保留原值), 不向上抛."""
+    requests: list[httpx2.Request] = []
 
-    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        nonlocal attempts
-        attempts += 1
-        raise RuntimeError("boom")
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(500, json={"error": {"message": "blocked"}})
 
-    async def recording_sleep(seconds: float) -> None:
-        delays.append(seconds)
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        model = build_model(
+            ApiType.CHAT,
+            base_url="https://api.example/v1",
+            api_key="test-key",
+            model="test-model",
+            http_client=client,
+            max_retries=0,  # 不重试: 一次失败即结束
+        )
+        t = _translator(model)
+        assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) is None
 
-    monkeypatch.setattr(asyncio, "sleep", recording_sleep)
-    t = _translator(FunctionModel(respond), max_retries=2)
-    assert await t.translate("Hello", Language.ZH_CN, MetadataField.TITLE) is None
-    assert attempts == 3
-    assert delays == [1.0, 2.0]
+    assert len(requests) == 1
 
 
 @pytest.mark.asyncio
@@ -187,7 +174,7 @@ def test_build_translator_gating(enabled, api_key, expected_none):
 
 @pytest.mark.asyncio
 async def test_build_translator_builds_proxy_client(monkeypatch):
-    """proxy 与超时进入请求客户端, 该实例再交给共享 model 工厂; 丢失会让 LLM 端点无法经代理访问."""
+    """proxy / 超时 / 重试次数都交给共享 model 工厂; 客户端丢失会让 LLM 端点无法经代理访问."""
     captured: dict[str, object] = {}
     real_client = httpx2.AsyncClient
 
@@ -205,8 +192,9 @@ async def test_build_translator_builds_proxy_client(monkeypatch):
         api_key: str | None,
         model: str,
         http_client: httpx2.AsyncClient | None = None,
+        max_retries: int | None = None,
     ) -> FunctionModel:
-        captured.update(api_type=api_type, http_client=http_client)
+        captured.update(api_type=api_type, http_client=http_client, max_retries=max_retries)
         return _recording_model()[0]
 
     monkeypatch.setattr(translator_module, "AsyncClient", recording_client)
@@ -228,6 +216,7 @@ async def test_build_translator_builds_proxy_client(monkeypatch):
     assert client.timeout == httpx2.Timeout(60.0)
     assert captured["api_type"] is ApiType.ANTHROPIC
     assert captured["http_client"] is client
+    assert captured["max_retries"] == 1
     await client.aclose()
 
 

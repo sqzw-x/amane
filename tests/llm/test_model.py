@@ -1,8 +1,9 @@
-"""共享 ``Model`` 工厂: 协议映射, 以及调用方注入的 HTTP 客户端."""
+"""共享 ``Model`` 工厂: 协议映射, 调用方注入的 HTTP 客户端, 以及重试次数直通 SDK."""
 
 import httpx2
 import pytest
 from pydantic_ai.direct import model_request
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
@@ -56,3 +57,32 @@ async def test_build_model_request_uses_injected_client() -> None:
 
     assert [str(request.url) for request in requests] == ["https://api.example/v1/chat/completions"]
     assert response.text == "OK"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_retries,expected_requests", [(0, 1), (1, 2), (None, 3)])
+async def test_max_retries_forwarded_to_sdk(max_retries: int | None, expected_requests: int) -> None:
+    """``max_retries`` 直通 SDK: 上游持续返回 500 时请求次数为 1 + max_retries.
+
+    ``None`` 不下发该参数 (助理走这条), 因此是 SDK 默认的 2 次重试.
+    """
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        # retry-after 让 SDK 不需要真实退避等待.
+        return httpx2.Response(500, json={"error": {"message": "boom"}}, headers={"retry-after": "0.01"})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        model = build_model(
+            ApiType.CHAT,
+            base_url="https://api.example/v1",
+            api_key="test-key",
+            model="test-model",
+            http_client=client,
+            max_retries=max_retries,
+        )
+        with pytest.raises(ModelHTTPError, match="status_code: 500"):
+            await model_request(model, [ModelRequest(parts=[UserPromptPart(content="hi")])])
+
+    assert len(requests) == expected_requests
