@@ -264,10 +264,27 @@ export type PlaybackPlayerProps = {
   kind: "video" | "hls";
   seekable: boolean;
   tracks: PlaybackSubtitleItem[];
+  /** 评论时间戳的跳转请求; `nonce` 让同一秒数的重复点击也能重新触发. */
+  seekRequest: SeekRequest | null;
+  /** 已经按请求定位之后回调, 由调用方清掉请求. */
+  onSeekHandled: () => void;
   onFailed: (failure: HlsFailure | null) => void;
 };
 
-export function PlaybackPlayer({ href, kind, seekable, tracks, onFailed }: PlaybackPlayerProps) {
+export type SeekRequest = {
+  seconds: number;
+  nonce: number;
+};
+
+export function PlaybackPlayer({
+  href,
+  kind,
+  seekable,
+  tracks,
+  seekRequest,
+  onSeekHandled,
+  onFailed,
+}: PlaybackPlayerProps) {
   const { t } = useTranslation("metadata");
   const videoRef = useRef<HTMLVideoElement>(null);
   const onFailedRef = useLatestRef(onFailed);
@@ -317,6 +334,24 @@ export function PlaybackPlayer({ href, kind, seekable, tracks, onFailed }: Playb
   }, [cancelRateClose, closeRateMenu]);
 
   useEffect(() => cancelRateClose, [cancelRateClose]);
+
+  // 评论时间戳的跳转: 定位后立即播放, 与主流播放器点击时间戳的行为一致.
+  // 同一秒数可能被连点, 因此按 nonce 判重, 不按内容判重.
+  const handledSeekRef = useRef(0);
+  useEffect(() => {
+    if (seekRequest == null || seekRequest.nonce === handledSeekRef.current) {
+      return;
+    }
+    const video = videoRef.current;
+    if (video == null) {
+      return;
+    }
+    handledSeekRef.current = seekRequest.nonce;
+    video.currentTime = Math.max(seekRequest.seconds, 0);
+    // 自动播放可能被浏览器拒绝; 那时位置已经跳过去了, 不额外提示.
+    void video.play().catch(() => undefined);
+    onSeekHandled();
+  }, [onSeekHandled, seekRequest]);
 
   // 音量提示由 React 状态控制显隐, 放在播放器盒子内、控制器之外, 因此不受控件自动隐藏的影响.
   const [volumeIndicator, setVolumeIndicator] = useState<{ level: number; muted: boolean } | null>(

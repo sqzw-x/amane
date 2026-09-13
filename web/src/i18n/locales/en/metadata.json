@@ -116,6 +116,7 @@
     "playbackStreamLabel": "Stream",
     "playbackVolume": "Volume",
     "playbackMuted": "Muted",
+    "commentSeek": "Seek to {{time}}",
     "cropPoster": {
       "action": "Crop poster",
       "title": "Crop poster",

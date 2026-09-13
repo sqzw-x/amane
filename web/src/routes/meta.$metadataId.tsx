@@ -34,8 +34,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { z } from "zod";
 import {
   attachUserTagMutation,
   createCommentMutation,
@@ -66,9 +67,22 @@ import { confirm } from "@/lib/confirm";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { proxyImageUrl } from "@/lib/utils";
 import { ProxyImage } from "@/components/media/proxy-image";
+import { CommentBody } from "@/components/media/comment-body";
 import { PlaybackPanel } from "@/components/media/playback-panel";
+import type { SeekRequest } from "@/components/media/playback-player";
 
-export const Route = createFileRoute("/meta/$metadataId")({ component: TitleDetailPage });
+/**
+ * `t` 是评论时间戳跳转的目标秒数: 写进地址栏以便分享与刷新后定位, 因此可以非整数以外的任何值
+ * 都按未提供处理.
+ */
+const metaDetailSearchSchema = z.object({
+  t: z.coerce.number().int().min(0).optional().catch(undefined),
+});
+
+export const Route = createFileRoute("/meta/$metadataId")({
+  validateSearch: metaDetailSearchSchema,
+  component: TitleDetailPage,
+});
 
 function formatRuntime(minutes?: number | null): string | null {
   if (!minutes) return null;
@@ -101,6 +115,34 @@ function TitleDetailPage() {
   const [thumbBroken, setThumbBroken] = useState(false);
   const [posterBroken, setPosterBroken] = useState(false);
   const [newComment, setNewComment] = useState("");
+  // 评论时间戳的跳转: 本地请求负责即时响应 (同一秒连点也要重新触发), 地址栏的 `t` 负责分享与刷新定位.
+  const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
+  const [canSeek, setCanSeek] = useState(false);
+  const seekFromUrlRef = useRef<number | null>(null);
+  const { t: urlSeekSeconds } = Route.useSearch();
+
+  useEffect(() => {
+    if (urlSeekSeconds == null || seekFromUrlRef.current === urlSeekSeconds) {
+      return;
+    }
+    seekFromUrlRef.current = urlSeekSeconds;
+    setSeekRequest((prev) => ({ seconds: urlSeekSeconds, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, [urlSeekSeconds]);
+
+  const requestSeek = useCallback(
+    (seconds: number) => {
+      seekFromUrlRef.current = seconds;
+      setSeekRequest((prev) => ({ seconds, nonce: (prev?.nonce ?? 0) + 1 }));
+      // replace: 时间戳是定位而不是导航, 不该在历史里堆一串记录.
+      void navigate({
+        to: "/meta/$metadataId",
+        params: { metadataId },
+        search: (prev) => ({ ...prev, t: seconds }),
+        replace: true,
+      });
+    },
+    [metadataId, navigate],
+  );
 
   const id = Number(metadataId);
   const validId = Number.isInteger(id) && id > 0;
@@ -667,7 +709,12 @@ function TitleDetailPage() {
         </Stack>
       </Group>
 
-      <PlaybackPanel metadataId={id} />
+      <PlaybackPanel
+        metadataId={id}
+        seekRequest={seekRequest}
+        onSeekHandled={() => setSeekRequest(null)}
+        onCanSeekChange={setCanSeek}
+      />
 
       <Card withBorder radius="md" p="md">
         <Title order={5} mb="sm">
@@ -708,7 +755,7 @@ function TitleDetailPage() {
           <Stack gap="xs" mb="sm">
             {(data.comments ?? []).map((c) => (
               <Group key={c.id} justify="space-between" align="flex-start" wrap="nowrap">
-                <Text size="sm">{c.body}</Text>
+                <CommentBody body={c.body} canSeek={canSeek} onSeek={requestSeek} />
                 <ActionIcon
                   size="sm"
                   variant="subtle"

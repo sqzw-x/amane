@@ -1,0 +1,23 @@
+/* 评论里的时间戳: 与正文同字号同行高, 只加下划线, 点击跳到该位置. */
+.timestamp {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--mantine-primary-color-filled);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.timestamp:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* 当前没有可跳转的播放时保留时间戳的样子, 但不给点击. */
+.disabledTimestamp {
+  color: var(--mantine-color-dimmed);
+  cursor: not-allowed;
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+}

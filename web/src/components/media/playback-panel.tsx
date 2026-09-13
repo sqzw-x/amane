@@ -15,7 +15,7 @@ import {
 import { IconChevronDown } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -24,7 +24,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import type { PlaybackSourceOption, PlaybackStreamItem } from "@/client/types.gen";
 import { EnumToggle } from "@/components/common/enum-toggle";
-import type { HlsFailure } from "@/components/media/playback-player";
+import type { HlsFailure, SeekRequest } from "@/components/media/playback-player";
 import { extractErrorMessage } from "@/lib/api-error";
 import { apiFetch } from "@/lib/api-token";
 
@@ -192,9 +192,15 @@ function PickerMenu({
  * 切换来源时流列表要按新的 key 重新探测, 期间用同一外框占位: 否则播放器一收一放会让页面高度骤变,
  * 已经滚下去的位置会被浏览器夹回顶部. 底色与播放器一致, 提示直接落在窗口里.
  */
-function PlayerFrame({ children }: { children: ReactNode }) {
+function PlayerFrame({
+  children,
+  frameRef,
+}: {
+  children: ReactNode;
+  frameRef?: Ref<HTMLDivElement>;
+}) {
   return (
-    <Box w="100%" maw={PLAYER_MAX_WIDTH} mx="auto" bg="#000">
+    <Box ref={frameRef} w="100%" maw={PLAYER_MAX_WIDTH} mx="auto" bg="#000">
       <AspectRatio ratio={16 / 9}>{children}</AspectRatio>
     </Box>
   );
@@ -244,7 +250,20 @@ function PlayerMessage({
   );
 }
 
-export function PlaybackPanel({ metadataId }: { metadataId: number }) {
+export function PlaybackPanel({
+  metadataId,
+  seekRequest,
+  onSeekHandled,
+  onCanSeekChange,
+}: {
+  metadataId: number;
+  /** 评论时间戳的跳转请求; 为空表示没有待处理的跳转. */
+  seekRequest: SeekRequest | null;
+  /** 播放器已经按请求定位之后回调, 由调用方清掉请求. */
+  onSeekHandled: () => void;
+  /** 当前能否跳转, 供评论里的时间戳决定是否可点. */
+  onCanSeekChange: (canSeek: boolean) => void;
+}) {
   const { t } = useTranslation("metadata");
   // 来源列表不调用插件, 因此打开面板就能渲染; 探测推迟到用户切到某个来源时.
   const sourcesQuery = useQuery({
@@ -274,6 +293,42 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
   const sourceError = sourcesQuery.isError
     ? extractErrorMessage(sourcesQuery.error, t("detail.playbackSourcesFailed"))
     : null;
+  const streamError = streamsQuery.isError
+    ? extractErrorMessage(streamsQuery.error, t("detail.playbackStreamsFailed"))
+    : null;
+  const kind = selected == null ? "other" : mediaKind(selected.content_type);
+  const shownError = selected != null && error?.href === selected.href ? error.message : null;
+  // 不可用项不渲染播放器, 其 href 上的失败记录来自该源此前仍可用的状态, 故探测原因优先.
+  const notice =
+    streamError ??
+    (selected == null
+      ? null
+      : selected.available
+        ? shownError
+        : (failureReason(selected) ?? t("detail.playbackUnavailable")));
+
+  // 评论里的时间戳能否跳转, 与这里能否渲染播放器是同一个条件.
+  const canSeek =
+    notice == null &&
+    selected != null &&
+    selected.available &&
+    selected.seekable &&
+    kind !== "other";
+
+  const playerFrameRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    onCanSeekChange(canSeek);
+  }, [canSeek, onCanSeekChange]);
+
+  // 评论在播放窗口下方: 跳转时把它滚进视野, 否则看不到跳转结果.
+  useEffect(() => {
+    if (seekRequest == null) {
+      return;
+    }
+    playerFrameRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [seekRequest]);
+
   const title = (
     <Text size="sm" fw={600}>
       {t("detail.playback")}
@@ -295,20 +350,6 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
   if (source == null) {
     return null;
   }
-
-  const streamError = streamsQuery.isError
-    ? extractErrorMessage(streamsQuery.error, t("detail.playbackStreamsFailed"))
-    : null;
-  const kind = selected == null ? "other" : mediaKind(selected.content_type);
-  const shownError = selected != null && error?.href === selected.href ? error.message : null;
-  // 不可用项不渲染播放器, 其 href 上的失败记录来自该源此前仍可用的状态, 故探测原因优先.
-  const notice =
-    streamError ??
-    (selected == null
-      ? null
-      : selected.available
-        ? shownError
-        : (failureReason(selected) ?? t("detail.playbackUnavailable")));
 
   // 当前来源的流正在探测: 用与控件等宽的占位, 避免控件出现时行高跳动.
   const streamPicker = streamsQuery.isPending ? (
@@ -349,7 +390,7 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
           </Group>
         </Group>
         {/* 播放窗口常驻: 探测中、出错、类型不支持都在同一外框内呈现, 页面高度不随状态突变. */}
-        <PlayerFrame>
+        <PlayerFrame frameRef={playerFrameRef}>
           {streamsQuery.isPending ? (
             <Skeleton height="100%" />
           ) : notice != null ? (
@@ -366,6 +407,8 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
                 kind={kind}
                 seekable={selected.seekable}
                 tracks={selected.subtitles ?? []}
+                seekRequest={seekRequest}
+                onSeekHandled={onSeekHandled}
                 onFailed={(failure) => {
                   void readPlaybackDetail(
                     selected.href,
