@@ -39,6 +39,13 @@ class Language(StrEnum):
     EN = "en"
 
 
+# 大模型上游协议: chat = OpenAI Chat Completions, response = OpenAI Responses, anthropic = Anthropic Messages.
+class ApiType(StrEnum):
+    CHAT = "chat"
+    RESPONSE = "response"
+    ANTHROPIC = "anthropic"
+
+
 class ActorGender(StrEnum):
     """演员性别 - 用于展示与按站裁剪刮削源."""
 

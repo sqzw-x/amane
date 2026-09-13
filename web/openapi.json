@@ -6146,15 +6146,6 @@
         "type": "object",
         "title": "ActorUpdateRequest"
       },
-      "AgentApiType": {
-        "type": "string",
-        "enum": [
-          "chat",
-          "response",
-          "anthropic"
-        ],
-        "title": "AgentApiType"
-      },
       "AgentApproveRequest": {
         "properties": {
           "approval_ids": {
@@ -6197,7 +6188,7 @@
       "AgentConfig": {
         "properties": {
           "api_type": {
-            "$ref": "#/components/schemas/AgentApiType",
+            "$ref": "#/components/schemas/ApiType",
             "default": "response"
           },
           "api_key": {
@@ -6474,6 +6465,15 @@
           "events"
         ],
         "title": "AgentTraceResponse"
+      },
+      "ApiType": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "response",
+          "anthropic"
+        ],
+        "title": "ApiType"
       },
       "Body_install_plugin": {
         "properties": {

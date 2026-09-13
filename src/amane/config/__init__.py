@@ -1,7 +1,6 @@
 from .manager import (
     SAFE_DIRS_ALLOW_ALL,
     ActorScrapingConfig,
-    AgentApiType,
     AgentConfig,
     AgentThinkingMode,
     ColdSettings,
@@ -24,7 +23,6 @@ from .manager import (
 __all__ = [
     "SAFE_DIRS_ALLOW_ALL",
     "ActorScrapingConfig",
-    "AgentApiType",
     "AgentConfig",
     "AgentThinkingMode",
     "ColdSettings",

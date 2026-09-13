@@ -261,11 +261,6 @@ export type ActorUpdateRequest = {
 };
 
 /**
- * AgentApiType
- */
-export type AgentApiType = 'chat' | 'response' | 'anthropic';
-
-/**
  * AgentApproveRequest
  *
  * 一次可批多项; 服务端顺序执行后只开一轮模型 follow-up.
@@ -297,7 +292,7 @@ export type AgentCancelResponse = {
  * 与 llm 翻译 section 分离: 凭据/模型/限速各自独立.
  */
 export type AgentConfig = {
-    api_type?: AgentApiType;
+    api_type?: ApiType;
     /**
      * Api Key
      */
@@ -455,6 +450,11 @@ export type AgentTraceResponse = {
      */
     last_seq?: number;
 };
+
+/**
+ * ApiType
+ */
+export type ApiType = 'chat' | 'response' | 'anthropic';
 
 /**
  * Body_install_plugin

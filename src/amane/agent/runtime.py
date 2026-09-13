@@ -4,14 +4,11 @@ from typing import Any
 
 from pydantic_ai import Agent, DeferredToolRequests
 from pydantic_ai.models import Model
-from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
-from pydantic_ai.providers.anthropic import AnthropicProvider
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings, ThinkingLevel
 from pydantic_ai.usage import UsageLimits
 
-from ..config import AgentApiType, AgentConfig, AgentThinkingMode
+from ..config import AgentConfig, AgentThinkingMode
+from ..llm import build_model as build_llm_model
 from .actor_ops import build_actor_ops_capability
 from .facet_identity import build_facet_identity_capability
 from .feed_ops import build_feed_ops_capability
@@ -104,20 +101,8 @@ def resolve_model_settings(config: AgentConfig, *, session_thinking: AgentThinki
 
 
 def build_model(config: AgentConfig) -> Model:
-    """不检查 api_key."""
-    match config.api_type:
-        case AgentApiType.CHAT:
-            return OpenAIChatModel(
-                config.model, provider=OpenAIProvider(base_url=config.base_url, api_key=config.api_key)
-            )
-        case AgentApiType.RESPONSE:
-            return OpenAIResponsesModel(
-                config.model, provider=OpenAIProvider(base_url=config.base_url, api_key=config.api_key)
-            )
-        case AgentApiType.ANTHROPIC:
-            return AnthropicModel(
-                config.model, provider=AnthropicProvider(api_key=config.api_key, base_url=config.base_url)
-            )
+    """不检查 api_key. 不接代理客户端, 与翻译共用 ``llm.model`` 的协议映射."""
+    return build_llm_model(config.api_type, base_url=config.base_url, api_key=config.api_key, model=config.model)
 
 
 def build_agent(config: AgentConfig) -> Agent[AgentDeps, str | DeferredToolRequests] | None:

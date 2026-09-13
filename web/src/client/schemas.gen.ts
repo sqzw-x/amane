@@ -504,16 +504,6 @@ export const ActorUpdateRequestSchema = {
     title: 'ActorUpdateRequest'
 } as const;
 
-export const AgentApiTypeSchema = {
-    type: 'string',
-    enum: [
-        'chat',
-        'response',
-        'anthropic'
-    ],
-    title: 'AgentApiType'
-} as const;
-
 export const AgentApproveRequestSchema = {
     properties: {
         approval_ids: {
@@ -558,7 +548,7 @@ export const AgentCancelResponseSchema = {
 export const AgentConfigSchema = {
     properties: {
         api_type: {
-            $ref: '#/components/schemas/AgentApiType',
+            $ref: '#/components/schemas/ApiType',
             default: 'response'
         },
         api_key: {
@@ -844,6 +834,16 @@ export const AgentTraceResponseSchema = {
         'events'
     ],
     title: 'AgentTraceResponse'
+} as const;
+
+export const ApiTypeSchema = {
+    type: 'string',
+    enum: [
+        'chat',
+        'response',
+        'anthropic'
+    ],
+    title: 'ApiType'
 } as const;
 
 export const Body_install_pluginSchema = {
