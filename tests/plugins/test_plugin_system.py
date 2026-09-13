@@ -467,6 +467,8 @@ class _Provider(PlaybackProvider):
             raise SourceError(FailureReason.NO_USABLE_METADATA, detail="该条目索引的文件不存在: gone.mp4")
         if self._config.behavior == "error":
             raise SourceError(FailureReason.NETWORK, detail="上游失败")
+        if self._config.behavior == "timeout":
+            raise SourceError(FailureReason.TIMEOUT, detail="上游探测超时")
         if self._config.behavior in {"hls", "hls-offer"}:
             return (
                 PlaybackOffer(

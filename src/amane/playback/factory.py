@@ -330,7 +330,10 @@ class PlaybackFactory:
                     return [listed]
                 logger.warning("playback probe failed", source=source_id, error=str(exc))
                 self._caches.probe_fail.put(cache_key, True)
-                return [self._unavailable(source_id, detail="上游失败")]
+                # 插件侧的探测超时与宿主的预算超时给用户看同一句话: 插件的 detail 可能带上游信息,
+                # 因此按插件给出的 reason 决定文案, 不直接展示插件文本.
+                detail = "探测超时" if exc.reason is FailureReason.TIMEOUT else "上游失败"
+                return [self._unavailable(source_id, detail=detail)]
             except Exception:
                 logger.exception("playback probe crashed", source=source_id)
                 self._caches.probe_fail.put(cache_key, True)

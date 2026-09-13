@@ -759,6 +759,34 @@ class TestPlaybackHttp:
             server.shutdown()
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_plugin_probe_timeout_uses_host_wording(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        app: FastAPI,
+    ) -> None:
+        """插件自己判定探测超时时, 列表显示宿主的「探测超时」而不是通用的「上游失败」.
+
+        插件给的 detail 可能带上游地址, 因此文案由插件给出的 reason 决定, 不直接展示插件文本.
+        """
+        data_dir = app.state.runtime.config.cold.data_dir
+        write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
+        reloaded = await client.post("plugins/reload")
+        assert reloaded.status_code == 200, reloaded.text
+        metadata_id = await _seed_title(repo, number="PLAY-PLUGIN-TIMEOUT")
+        configured = await client.patch(
+            "plugins/acme.play",
+            json={"enabled": True, "config": {"behavior": "timeout"}},
+        )
+        assert configured.status_code == 200, configured.text
+
+        listed = await client.get("playback/sources", params={"metadata_id": metadata_id})
+        assert listed.status_code == 200
+        assert [(row["source_id"], row["key"], row["available"], row["detail"]) for row in listed.json()["items"]] == [
+            ("acme.play", None, False, "探测超时")
+        ]
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_probe_timeout_collapses_source_to_one_row(
         self,
         client: AsyncClient,
