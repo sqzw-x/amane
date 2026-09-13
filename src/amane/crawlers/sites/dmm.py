@@ -5,8 +5,10 @@ import re
 from enum import StrEnum
 
 from parsel import Selector
+from pydantic import ValidationError
 
 from ...enums import ActorGender, SiteName
+from ...net.errors import FailureReason, SourceError, parse_detail
 from ..base import Crawler, CrawlerProfile
 from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
@@ -169,9 +171,9 @@ class DmmCrawler(Crawler):
 
         try:
             resp = DigitalResponse.model_validate(response)
-        except (ValueError, TypeError) as e:
+        except ValidationError as e:
             self.logger.debug("digital response parse failed", error=str(e))
-            return None
+            raise SourceError(FailureReason.PARSE_ERROR, detail=parse_detail(e)) from e
 
         data = resp.data.ppvContent
         if data is None or not data.title:
@@ -425,9 +427,9 @@ class DmmCrawler(Crawler):
 
         try:
             resp = FanzaTvResponse.model_validate(response)
-        except (ValueError, TypeError) as e:
+        except ValidationError as e:
             self.logger.debug("fanza tv response parse failed", error=str(e))
-            return None
+            raise SourceError(FailureReason.PARSE_ERROR, detail=parse_detail(e)) from e
 
         plus = resp.data.fanzaTvPlus
         if plus is None:
@@ -476,9 +478,9 @@ class DmmCrawler(Crawler):
 
         try:
             resp = DmmTvResponse.model_validate(response)
-        except (ValueError, TypeError) as e:
+        except ValidationError as e:
             self.logger.debug("dmm tv response parse failed", error=str(e))
-            return None
+            raise SourceError(FailureReason.PARSE_ERROR, detail=parse_detail(e)) from e
 
         data = resp.data.video
         if data is None or not data.titleName:

@@ -20,6 +20,8 @@ async def invoke_source[T](source_id: str, fetch: Callable[[], Awaitable[T | Non
             http_status=exc.http_status,
             detail=exc.detail,
         )
+        # SourceError 是刻意上报的原因, 不冒泡到任务; 若不在此记日志, 原因只剩 summary.json 可见.
+        rec.warning("source failed", source=source_id, reason=exc.reason.value, detail=exc.detail)
         return None
     except Exception:
         rec.exception("source fetch failed", source=source_id)

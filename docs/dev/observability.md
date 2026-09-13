@@ -73,7 +73,7 @@ Feed 失败记在源的 `last_error`, 不写入站点 outcome 表.
 
 站点级结果 (成功 / 失败 / 缓存命中) 是任务事实的一手结构化数据. `Recorder.record_site_outcome` 是落盘 API; **来源 fetch 的记账只发生在** `invoke_source` (`observability/source.py`):
 
-- 有数据 → OK; `None` → `no_usable_metadata`; `SourceError` → 异常上的 `reason` / `http_status` / `detail`; 其它 `Exception` → `unexpected` (继续其它源)
+- 有数据 → OK; `None` → `no_usable_metadata`; `SourceError` → 异常上的 `reason` / `http_status` / `detail`; 其它 `Exception` → `unexpected` (继续其它源). 响应结构不符合读模型属 `parse_error`, 必须抛 `SourceError` 并带字段路径 (`net/errors.py::parse_detail`); 返回 `None` 会被记成 `no_usable_metadata`, 具体原因随之丢失
 - 影片 `_fetch_one` 与演员 Handler 均经由它. 爬虫和插件不 import Recorder
 - HTML 拦截由 `HttpClient.get_html` 抛出 `SourceError`; HTTP 失败由 `WebClient` 抛出 `RequestError` (`SourceError` 子类, 构造时 `classify_request_error`)
 - 同站点多次上报按语义合并: outcome 取更差 (`cache_hit < ok < failed`); 已写入的 `reason` / `http_status` / `detail` 不被后续兜底覆盖

@@ -10,6 +10,7 @@ from parsel import Selector
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ...enums import Language, SiteName
+from ...net.errors import FailureReason, SourceError, parse_detail
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 
@@ -140,8 +141,8 @@ class AvsoxCrawler(Crawler):
             return None
         try:
             movie = AvsoxMovie.model_validate(data)
-        except ValidationError:
-            return None
+        except ValidationError as e:
+            raise SourceError(FailureReason.PARSE_ERROR, detail=parse_detail(e)) from e
         if not movie.movieFanHao:
             return None
         director = _named(movie.director, "director")

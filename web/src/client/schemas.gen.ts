@@ -1355,6 +1355,7 @@ export const FailureReasonSchema = {
         'age_verification',
         'empty_response',
         'no_usable_metadata',
+        'parse_error',
         'crawler_unavailable',
         'unexpected'
     ],

@@ -85,6 +85,7 @@
       "age_verification": "Age verification required",
       "empty_response": "Empty response",
       "no_usable_metadata": "No usable metadata",
+      "parse_error": "Failed to parse the site response",
       "crawler_unavailable": "Source unavailable",
       "unexpected": "Unexpected error"
     }

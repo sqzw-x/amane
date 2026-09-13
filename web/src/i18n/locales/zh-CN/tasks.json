@@ -83,6 +83,7 @@
       "age_verification": "年龄验证拦截",
       "empty_response": "空响应",
       "no_usable_metadata": "无可用元数据",
+      "parse_error": "站点响应解析失败",
       "crawler_unavailable": "来源不可用",
       "unexpected": "意外错误"
     }

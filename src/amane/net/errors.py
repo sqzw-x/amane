@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from pydantic import ValidationError
+
 
 class FailureKind(StrEnum):
     """语义在 kind/status, message 仅供展示."""
@@ -50,6 +52,8 @@ class FailureReason(StrEnum):
     EMPTY_RESPONSE = "empty_response"
     NO_USABLE_METADATA = "no_usable_metadata"
     """请求成功但未解析出元数据; 区别于 NOT_FOUND 的 HTTP 404."""
+    PARSE_ERROR = "parse_error"
+    """响应与读模型不符 (字段缺失/类型变化); 通常意味着站点 schema 已变更."""
     CRAWLER_UNAVAILABLE = "crawler_unavailable"
     """演员侧爬虫实例缺失."""
     UNEXPECTED = "unexpected"
@@ -88,6 +92,15 @@ class RequestError(SourceError):
             http_status = None
         super().__init__(reason, http_status=http_status, detail=self.message, url=url)
         Exception.__init__(self, f"{url}: {self.message}")
+
+
+def parse_detail(exc: ValidationError) -> str:
+    """把读模型校验失败压成字段路径 (如 ``data.ppvContent.sample2DMovie``).
+
+    站点响应是外部输入, 只暴露定位所需的位置, 不把 pydantic 全文与内部类名写入 detail.
+    """
+    paths = [".".join(str(part) for part in error["loc"]) for error in exc.errors()]
+    return ", ".join(dict.fromkeys(path for path in paths if path)) or "unknown"
 
 
 def _status_reason(status: int) -> FailureReason:
