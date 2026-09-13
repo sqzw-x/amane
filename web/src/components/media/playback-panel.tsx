@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   Card,
+  Center,
   CheckIcon,
   Group,
   Menu,
@@ -14,7 +15,7 @@ import {
 import { IconChevronDown } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -186,8 +187,37 @@ function PickerMenu({
   );
 }
 
-/** 一级选择: 少量选项平铺 (EnumToggle), 过多则回退为下拉菜单. */
-function LevelPicker({
+/**
+ * 播放器的固定比例外框, 也是出错时的播放窗口.
+ * 切换来源时流列表要按新的 key 重新探测, 期间用同一外框占位: 否则播放器一收一放会让页面高度骤变,
+ * 已经滚下去的位置会被浏览器夹回顶部. 底色与播放器一致, 提示直接落在窗口里.
+ */
+function PlayerFrame({ children }: { children: ReactNode }) {
+  return (
+    <Box w="100%" maw={PLAYER_MAX_WIDTH} mx="auto" bg="#000">
+      <AspectRatio ratio={16 / 9}>{children}</AspectRatio>
+    </Box>
+  );
+}
+
+/** 播放窗口内的提示: 探测失败、播放失败与不支持的媒体类型都在窗口里居中显示. */
+function PlayerMessage({
+  tone = "error",
+  children,
+}: {
+  tone?: "error" | "neutral";
+  children: ReactNode;
+}) {
+  return (
+    <Center h="100%" w="100%" p="md">
+      <Alert color={tone === "error" ? "red" : "gray"} variant="light" maw={520}>
+        {children}
+      </Alert>
+    </Center>
+  );
+}
+
+/** 一级选择: 少量选项平铺 (EnumToggle), 过多则回退为下拉菜单. */ function LevelPicker({
   label,
   options,
   value,
@@ -318,43 +348,39 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
             {streamPicker}
           </Group>
         </Group>
-        {notice ? (
-          <Alert color="red" variant="light">
-            {notice}
-          </Alert>
-        ) : null}
-        {selected != null && selected.available ? (
-          kind === "other" ? (
-            <Text size="sm" c="dimmed">
-              {t("detail.playbackUnsupported")}
-            </Text>
+        {/* 播放窗口常驻: 探测中、出错、类型不支持都在同一外框内呈现, 页面高度不随状态突变. */}
+        <PlayerFrame>
+          {streamsQuery.isPending ? (
+            <Skeleton height="100%" />
+          ) : notice != null ? (
+            <PlayerMessage>{notice}</PlayerMessage>
+          ) : selected == null ? (
+            <PlayerMessage>{t("detail.playbackUnavailable")}</PlayerMessage>
+          ) : kind === "other" ? (
+            <PlayerMessage tone="neutral">{t("detail.playbackUnsupported")}</PlayerMessage>
           ) : (
-            <Box w="100%" maw={PLAYER_MAX_WIDTH} mx="auto">
-              <AspectRatio ratio={16 / 9}>
-                <Suspense fallback={<Skeleton height="100%" />}>
-                  <PlaybackPlayer
-                    key={selected.href}
-                    href={selected.href}
-                    kind={kind}
-                    seekable={selected.seekable}
-                    tracks={selected.subtitles ?? []}
-                    onFailed={(failure) => {
-                      void readPlaybackDetail(
-                        selected.href,
-                        {
-                          plain: t("detail.playbackFailed"),
-                          withStatus: (status) => t("detail.playbackFailedWithStatus", { status }),
-                          hlsReason: failure == null ? null : hlsFailureMessage(failure, t),
-                        },
-                        { ranged: kind === "video" },
-                      ).then((message) => setError({ href: selected.href, message }));
-                    }}
-                  />
-                </Suspense>
-              </AspectRatio>
-            </Box>
-          )
-        ) : null}
+            <Suspense fallback={<Skeleton height="100%" />}>
+              <PlaybackPlayer
+                key={selected.href}
+                href={selected.href}
+                kind={kind}
+                seekable={selected.seekable}
+                tracks={selected.subtitles ?? []}
+                onFailed={(failure) => {
+                  void readPlaybackDetail(
+                    selected.href,
+                    {
+                      plain: t("detail.playbackFailed"),
+                      withStatus: (status) => t("detail.playbackFailedWithStatus", { status }),
+                      hlsReason: failure == null ? null : hlsFailureMessage(failure, t),
+                    },
+                    { ranged: kind === "video" },
+                  ).then((message) => setError({ href: selected.href, message }));
+                }}
+              />
+            </Suspense>
+          )}
+        </PlayerFrame>
       </Stack>
     </Card>
   );
