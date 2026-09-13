@@ -21,7 +21,7 @@ from amane.enums import ActorGender, Language, MetadataField, SiteName
 S1, S2, S3 = SiteName.JAVDB, SiteName.DMM, SiteName.JAVBUS
 K1, K2, K3 = str(S1), str(S2), str(S3)
 DB, DMM, BUS, OFF = SiteName.JAVDB, SiteName.DMM, SiteName.JAVBUS, SiteName.OFFICIAL
-PLUGIN = "sample.javdbapi"
+PLUGIN = "example.source"
 
 IQQTV = SiteName.IQQTV
 TITLE = MetadataField.TITLE
@@ -572,7 +572,7 @@ class TestExecuteGraph:
         expect_failed: list[str],
     ) -> None:
         """路由里有但 crawlers 映射没有的来源 (禁用插件等) 跳过, 不记失败, 沿 fallback 继续."""
-        plugin = "sample.javdbapi"
+        plugin = "example.source"
         fp = defaultdict(lambda: [plugin, DB, DMM])
         graph = build_graph(fp, {})
         crawlers = {
@@ -655,7 +655,7 @@ class TestAggregate:
     @pytest.mark.asyncio
     async def test_unavailable_source_skipped_not_failed(self):
         """禁用/缺失来源不写入 failed_sites, 后续源仍可聚合."""
-        plugin = "sample.javdbapi"
+        plugin = "example.source"
         result = await aggregate(
             SearchQuery("X"),
             {K1: MockCrawler(MediaMetadata(number="X", title="FromJavDB"))},
