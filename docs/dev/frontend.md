@@ -106,6 +106,8 @@ OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-ma
 
 `just generate` → OpenAPI + TS client; SPA 产物 `web/dist` 由 `api/spa.py` 挂载.
 
+路由组件经 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk, 首屏只加载入口与当前路由. 只服务单个路由的重型依赖留在该路由的 chunk (liquidjs 在 `/tasks`, liqe 在 `/logs`); 从共享模块导入会把该依赖移回入口 chunk. `hls.js` 由播放面板动态导入. `tanstackRouter()` 必须排在 JSX 转换插件之前 — 顺序颠倒时构建失败.
+
 - **禁止** `as never` / `as any` 绕过可推断位置. `as const satisfies` 用于收窄字面量.
 - i18next 已接入资源类型: 缺 key 补翻译, 不允许 `as never`. extract 给 en 补的 `_one` / `_other` 必须写成译文, 不允许留下 `ns:key` 占位 (带 `count` 时英文会命中后缀 key, 界面会显示路径本身).
 - 跨页相同文案放入 `common` (或该能力所属 namespace); 页面 namespace 只留本域特有文案.
