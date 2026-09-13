@@ -114,6 +114,8 @@
     "playbackStreamsFailed": "Could not load the stream list",
     "playbackSourceLabel": "Playback source",
     "playbackStreamLabel": "Stream",
+    "playbackVolume": "Volume",
+    "playbackMuted": "Muted",
     "cropPoster": {
       "action": "Crop poster",
       "title": "Crop poster",

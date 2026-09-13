@@ -115,6 +115,8 @@
     "playbackStreamsFailed": "无法加载流列表",
     "playbackSourceLabel": "播放源",
     "playbackStreamLabel": "码流",
+    "playbackVolume": "音量",
+    "playbackMuted": "静音",
     "cropPoster": {
       "action": "裁切海报",
       "title": "裁切海报",
