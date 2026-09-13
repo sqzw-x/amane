@@ -20,7 +20,7 @@ from amane.config import (
     WorkerConfig,
 )
 from amane.config.manager import LANG_METADATA_FIELD_SET
-from amane.enums import Language, MetadataField, SiteName, WatermarkCorner, WatermarkKind
+from amane.enums import ApiType, Language, MetadataField, SiteName, WatermarkCorner, WatermarkKind
 from amane.parsing import ContentType
 
 # ---------------------------------------------------------------------------
@@ -565,3 +565,23 @@ class TestLLMPromptConfig:
         assert data == {}
         assert mgr.hot.llm.system_prompt is None
         assert mgr.hot.llm.field_prompts == {}
+
+
+class TestLLMApiType:
+    """llm.api_type: 默认 chat (与原先固定走 Chat Completions 的语义一致)."""
+
+    @pytest.fixture
+    def mgr(self, tmp_path: Path) -> ConfigManager:
+        with patch.dict(os.environ, {"AMANE_DATA_DIR": str(tmp_path)}, clear=False):
+            cold = ColdSettings()
+        return ConfigManager.with_cold(cold)
+
+    def test_default_value(self, mgr: ConfigManager):
+        assert mgr.hot.llm.api_type is ApiType.CHAT
+
+    def test_round_trip_and_unknown_protocol_rejected(self, mgr: ConfigManager):
+        mgr.update({"llm": {"api_type": "anthropic"}})
+        assert ConfigManager.with_cold(mgr.cold).hot.llm.api_type is ApiType.ANTHROPIC
+
+        with pytest.raises(ValidationError, match=r"Input should be 'chat', 'response' or 'anthropic'"):
+            mgr.update({"llm": {"api_type": "bogus"}})
