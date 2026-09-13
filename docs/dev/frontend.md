@@ -25,7 +25,7 @@
 | `/catalog/...` | `routes/catalog.tsx` + `catalog.index.tsx` + `catalog.$kind.tsx` + `catalog.$kind_.$facetId.tsx` | `components/media/catalog-facet-table.tsx`, `facet-rules-panel.tsx` |
 | `/saved-queries/$queryId` | `routes/saved-queries.$queryId.tsx` | `lib/agent/saved-query.ts` |
 | `/libraries` | `routes/libraries.tsx` + `libraries.index.tsx` | `components/library/library-form.tsx` |
-| `/libraries/$libraryId` | `routes/libraries.$libraryId.tsx` | `components/library/` (文件表与扫描/整理入口) |
+| `/libraries/$libraryId` | `routes/libraries.$libraryId.tsx` | `components/library/` (文件表与扫描 / 整理入口) |
 | `/plugins` | `routes/plugins.tsx` | `components/plugins/`, `components/path-picker/` |
 | `/feeds` | `routes/feeds.tsx` + `feeds.index.tsx` | `components/feeds/feed-reader.tsx` / `feed-sidebar.tsx`, `lib/feeds/` |
 | `/feeds/sources` | `routes/feeds.sources.tsx` | `components/feeds/feed-sources-table.tsx`, `lib/feeds/opml.ts` |
@@ -34,39 +34,33 @@
 | `/logs` | `routes/logs.tsx` | `components/log/`, `stores/logs.ts` |
 | `/settings` | `routes/settings.tsx` | `components/schema-form/`, `hooks/use-config.ts` |
 
-路由由 `@tanstack/router-vite-plugin` 从 `routes/` 生成 (`routeTree.gen.ts` 不手改): 文件名的点号即路径层级, 需要独立 URL 又共享布局的一层写成 `xxx.tsx` + `xxx.index.tsx`, 叶页与父级同段时用尾随 `_` (写成父级会让子页永不渲染).
+路由由 `@tanstack/router-vite-plugin` 从 `routes/` 生成 (`routeTree.gen.ts` 不手改): 文件名的点号即路径层级, 需要独立 URL 又共享布局的一层写成 `xxx.tsx` + `xxx.index.tsx`, 叶页与父级同段时用尾随 `_`.
 
 片库 / 演员 / 分类无独立「管理」路由, list 视图才有多选与破坏性操作; Feed 相反, 阅读器与源表不共用布局. 侧栏「全部 / 未分组」不经深链进入. `/feeds` 的选中态必须 `activeOptions.exact` 且忽略 search, 否则打开 `/feeds/sources` 时「订阅」也会亮.
 
-**入口分流**: 非演员实体进 `/catalog/$kind/$facetId`, 演员进 `/actors/$actorId`, 演员不进入 `/catalog`. `FacetBadge` 默认深链分类, 筛选深链 `/meta`. 结果筛选在 `/meta` (`q` + 各 `*_id`; `saved_query_id` 与其它筛选项 AND, 见 [agent.md](agent.md)).
+**入口分流**: 非演员实体进 `/catalog/$kind/$facetId`, 演员进 `/actors/$actorId` (演员不进入 `/catalog`); `FacetBadge` 默认深链分类, 筛选深链 `/meta`.
 
-**评论**: 排序与编辑态只在组件内, 不写地址栏; 楼号按创建顺序固定, 不随排序翻转或编辑变化. 正文用 `pre-wrap`, 时间戳是浅色胶囊 (下划线在中文正文里与着重号混淆, 且品牌填充色在深色卡片上对比不足). 行内操作紧跟时间之后, 只在悬浮该条或焦点进入该条时出现 — 只在 `@media (hover: hover)` 内隐藏, 触摸设备常显, 用 `opacity` 隐藏以免显隐时重排. 评论与关联文件在 `lg`(1200px) 以上并排各占一半, 断点不能降到 `md`, 再窄文件路径会明显截断; 两栏各自保持自然高度, 拉平只会把空白挪进较短的一栏. 详情页内容栈底部留 `10dvh`: 滚到底时末尾的卡片不贴视口底边.
+**评论**: 排序与编辑态只在组件内, 不写地址栏; 楼号按创建顺序固定. 行内操作只在悬浮该条或焦点进入时出现 — 只在 `@media (hover: hover)` 内隐藏, 触摸设备常显, 用 `opacity` 隐藏以免显隐时重排. 评论与关联文件在 `lg` (1200px) 以上并排各占一半 (断点不能降到 `md`, 再窄文件路径会明显截断), 两栏各自保持自然高度. 详情页内容栈底部留 `10dvh`, 否则滚到底时末尾卡片贴住视口底边.
 
-影片详情: 用户标签与刮削标签分栏, 加减菜单一次提交多名 — `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许一次挂多个.
+影片详情: 用户标签与刮削标签分栏; 加减菜单一次提交多名 — `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许一次挂多个. 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`.
 
-演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`; 筛选字段的单一事实源是 `lib/actors/browse.ts`.
-
-**播放**: 面板先取来源列表 (`GET /api/playback/sources`, 不调用插件因此立刻渲染), 流列表按需加载; 一个来源可给多条流, 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择. 不可用项可选中但不渲染播放器, 原因写在窗口内的提示里; 来源列表为空时整块不渲染. 播放窗口常驻且尺寸由比例决定, 探测中、失败与类型不支持都在同一外框内呈现 — 状态变化不得改变外框尺寸, 否则页面高度突变会把滚动位置夹回顶部. 播放器组件 (`components/media/playback-player.tsx`) 的约定集中在文件注释里: 控制条与菜单的挂载位置、四个方向键与画面手势的接管、音量与静音的单一状态、右键菜单的遮罩与复制入口、全屏前后的滚动还原. 评论时间戳的识别与 `?t=` 跳转见 `lib/media/comment-timestamps.ts` 与路由里的 seek 请求.
+**播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择. 播放窗口常驻且尺寸由比例决定 — 探测中、失败与类型不支持都在同一外框内呈现, 状态变化不得改变外框尺寸, 否则页面高度突变会把滚动位置夹回顶部. 播放器组件的约定集中在 `components/media/playback-player.tsx` 的文件注释里.
 
 ## 列表分页
 
-**list** 视图与订阅源、库文件表采用 `BrowsePageShell fill`: 标题/搜索不滚, 剩余高度交给 children. 视口高度取 `APP_SHELL_MAIN_HEIGHT` (`components/layout/app-shell-metrics.ts`), 不允许再手写一份 calc.
+**list** 视图与订阅源、库文件表采用 `BrowsePageShell fill`: 标题 / 搜索不滚, 剩余高度交给 children; 视口高度取 `APP_SHELL_MAIN_HEIGHT` (`components/layout/app-shell-metrics.ts`), 不允许再手写一份 calc.
 
 `ListToolbar` 是表体壳: 顶栏不滚, 表体内滚, **唯一**分页固定于视口底, 翻页把表体滚回顶部; 它的 overflow 区要求父级有界高度. `grid` / `cloud` 禁止 fill — 演员墙用 `VirtuosoGrid` + `useWindowScroll`.
 
-图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素. 列表各页的批处理、排序与多选入口见对应路由与 `components/common/` 的壳.
+图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素.
 
 ## Schema 表单
 
-Settings、任务提交、定时创建、metadata 编辑共用 `components/schema-form/`: Pydantic → OpenAPI → FieldRouter. `x-*` 清单见 `schema/types.ts`, 字段控件的细节见该目录与字段注释.
+Settings、任务提交、定时创建、metadata 编辑共用 `components/schema-form/`: Pydantic → OpenAPI → FieldRouter; `x-*` 清单见 `schema/types.ts`, 字段控件细节见该目录与字段注释.
 
-dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `DictEntryScope` 写入 `[key]` — 含 `.` / `[` / `]` 的 key 才能原样保存. Tabs 同时挂载全部条目, 叶子 `id` / `htmlFor` 必须经 `useFieldDomId` 加条目前缀, 否则同名控件互相命中.
+dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `DictEntryScope` 写入 `[key]`, 含 `.` / `[` / `]` 的 key 才能原样保存. Tabs 同时挂载全部条目, 叶子 `id` / `htmlFor` 必须经 `useFieldDomId` 加条目前缀, 否则同名控件互相命中.
 
-`SchemaForm` 双模式 `patch` (dirty 门控, 只提交 diff) / `create` (完整值); dirty 保存条用 `affix` 固定于视口底, 编辑弹窗里必须抬到 Modal 之上, 不允许放进 Modal 表单流 (Modal content 是滚动容器, 末尾的条要滚到底才可见).
-
-空值编码统一经 `schema-form/encode.ts`: 按 Create / 列 schema 判空. 可增减 key 的 dict 与缺席等价, `x-frozen-keys` 必须保留全部 key. 不允许对着 PATCH partial schema 编码; 手写 Library / Feed 表单经同一个编码器出 body.
-
-任务与定时提交用 `DiscriminatedSchemaForm`; 短枚举共用 `EnumToggle`, 定时 cron 用 `CronPicker` (产出 5-field, 与后端 croniter 一致), 其时刻换算与回落约定见该组件注释.
+`SchemaForm` 双模式 `patch` (dirty 门控, 只提交 diff) / `create` (完整值); dirty 保存条用 `affix` 固定于视口底, 编辑弹窗里必须抬到 Modal 之上, 不允许放进 Modal 表单流. 空值编码统一经 `schema-form/encode.ts` (按 Create / 列 schema 判空), 可增减 key 的 dict 与缺席等价, `x-frozen-keys` 必须保留全部 key; 不允许对着 PATCH partial schema 编码, 手写 Library / Feed 表单经同一个编码器出 body. 任务与定时提交用 `DiscriminatedSchemaForm`; 短枚举共用 `EnumToggle`, 定时 cron 用 `CronPicker` (产出 5-field, 与后端 croniter 一致).
 
 ## 对话通道
 
@@ -102,6 +96,4 @@ dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `
 
 `just generate` → OpenAPI 导出 + TS client 生成 (`web/src/client/` 为产物, 不手改); SPA 产物 `web/dist` 由 `src/amane/api/spa.py` 挂载.
 
-路由组件由 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk: 只服务单个路由的重型依赖必须留在该路由的 chunk, 从共享模块导入会把它移回入口 chunk. `tanstackRouter()` 必须排在 JSX 转换插件之前, 顺序颠倒时构建失败.
-
-类型、i18n 与 lint 的硬性约束由 `pnpm check` (tsc / oxlint / oxfmt / i18next extract) 把关.
+路由组件由 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk: 只服务单个路由的重型依赖必须留在该路由的 chunk, 从共享模块导入会把它移回入口 chunk. `tanstackRouter()` 必须排在 JSX 转换插件之前, 顺序颠倒时构建失败. 类型、i18n 与 lint 的硬性约束由 `pnpm check` (tsc / oxlint / oxfmt / i18next extract) 把关.

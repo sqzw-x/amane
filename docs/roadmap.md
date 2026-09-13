@@ -5,7 +5,7 @@
 - 数据库与数据模型
   - [ ] 反思: 导演和演员分开是否有意义, 感觉可以将相关概念合并为 person, 加一个 role 字段
 - 任务系统
-  - [x] 任务后继图基础设施: TaskLink、`TaskResult.followups`、Worker 完成阶段统一派生子任务. 设计见 [plan/task-graph.md](plan/task-graph.md)
+  - [x] 任务后继图基础设施: TaskLink、`TaskResult.followups`、Worker 完成阶段统一派生子任务
     - [x] 现有 fan-out (REFRESH/RESCRAPE→SCRAPE, SCRAPE→ACTOR_SCRAPE) 迁入图
     - [x] 任务树视图 (前端嵌套树 + `children` API)
     - [ ] 静态后继声明 (Feed 刮削成功后挂 UserTag 等)
@@ -16,7 +16,7 @@
     - 低优先级; 采集方法见 [crawler-testing.md](dev/crawler-testing.md)
 - 定时任务
 - 资源管理
-- [ ] RSS Feed: 刮削成功后按来源自动为入库元数据添加 UserTag (任务后继设计见 [task-graph.md](plan/task-graph.md))
+- [ ] RSS Feed: 刮削成功后按来源自动为入库元数据添加 UserTag
 
 ## 前端
 
