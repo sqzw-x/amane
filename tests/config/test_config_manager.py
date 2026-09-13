@@ -332,13 +332,6 @@ class TestWatermarkConfig:
 class TestConfigManagerUpdate:
     """ConfigManager.update() - patch 合并语义"""
 
-    @pytest.fixture
-    def mgr(self, tmp_path: Path) -> ConfigManager:
-        """使用 tmp_path 作为 data_dir 的新 ConfigManager"""
-        with patch.dict(os.environ, {"AMANE_DATA_DIR": str(tmp_path)}, clear=False):
-            cold = ColdSettings()
-        return ConfigManager.with_cold(cold)
-
     def test_single_field(self, mgr: ConfigManager):
         """更新单个字段"""
         mgr.update({"network": {"proxy": "socks5://localhost:1080"}})
@@ -529,14 +522,8 @@ class TestConfigManagerLoad:
         assert mgr2.hot.watcher.use_polling is True
 
 
-class TestLLMPromptConfig:
-    """llm 自定义提示词的持久化、清空与空白归一."""
-
-    @pytest.fixture
-    def mgr(self, tmp_path: Path) -> ConfigManager:
-        with patch.dict(os.environ, {"AMANE_DATA_DIR": str(tmp_path)}, clear=False):
-            cold = ColdSettings()
-        return ConfigManager.with_cold(cold)
+class TestLLMConfig:
+    """llm 配置: 自定义提示词的持久化与归一, api_type 的默认值与往返."""
 
     def test_round_trip_preserves_prompts(self, mgr: ConfigManager):
         mgr.update({"llm": {"system_prompt": "只用中性词汇.", "field_prompts": {"title": "标题不超过 30 字."}}})
@@ -566,20 +553,10 @@ class TestLLMPromptConfig:
         assert mgr.hot.llm.system_prompt is None
         assert mgr.hot.llm.field_prompts == {}
 
-
-class TestLLMApiType:
-    """llm.api_type: 默认 chat (与原先固定走 Chat Completions 的语义一致)."""
-
-    @pytest.fixture
-    def mgr(self, tmp_path: Path) -> ConfigManager:
-        with patch.dict(os.environ, {"AMANE_DATA_DIR": str(tmp_path)}, clear=False):
-            cold = ColdSettings()
-        return ConfigManager.with_cold(cold)
-
-    def test_default_value(self, mgr: ConfigManager):
+    def test_api_type_default_and_round_trip(self, mgr: ConfigManager):
+        """默认 chat 与原先固定走 Chat Completions 的语义一致; 未知协议拒绝."""
         assert mgr.hot.llm.api_type is ApiType.CHAT
 
-    def test_round_trip_and_unknown_protocol_rejected(self, mgr: ConfigManager):
         mgr.update({"llm": {"api_type": "anthropic"}})
         assert ConfigManager.with_cold(mgr.cold).hot.llm.api_type is ApiType.ANTHROPIC
 
