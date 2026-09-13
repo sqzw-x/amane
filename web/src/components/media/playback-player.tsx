@@ -1,4 +1,5 @@
 import { Slider } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import type { ErrorData } from "hls.js";
 import "media-chrome/lang/zh-CN.js";
 import type {
@@ -34,6 +35,7 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -65,6 +67,9 @@ const PLAYBACK_RATES = [2, 1.5, 1.25, 1, 0.75, 0.5];
 const HOVER_CLOSE_DELAY_MS = 160;
 /** 倍速菜单的 id: 菜单按钮经 `invoketarget` 找它, 不再依赖 media-chrome 自带的倍速菜单. */
 const RATE_MENU_ID = "amane-playback-rate-menu";
+/** 右键菜单的尺寸下限估算, 只用于把菜单夹在播放窗口内; 实际宽度由条目文案决定. */
+const CONTEXT_MENU_MIN_WIDTH = 200;
+const CONTEXT_MENU_MAX_HEIGHT = 96;
 /**
  * 关掉 media-chrome 自带的四个方向键.
  * 它在松开按键时才执行且只执行一次: 左右键因此与「短按跳 5 秒, 按住加速」冲突, 上下键则无法按住连续调节音量.
@@ -95,6 +100,32 @@ function writeStoredVolume(volume: number): void {
   } catch {
     // 无痕模式等场景下存储不可用, 音量只在本次会话内生效.
   }
+}
+
+/**
+ * 秒数写成时间戳, 与评论里可点击的时间戳同形 (`mm:ss`, 满一小时才带小时).
+ * 向下取整: 复制或跳转回到当前正在播放的这一秒.
+ */
+function formatClock(seconds: number): string {
+  const total = Math.max(Math.floor(seconds), 0);
+  const mm = String(Math.floor(total / 60) % 60).padStart(2, "0");
+  const ss = String(total % 60).padStart(2, "0");
+  const hours = Math.floor(total / 3600);
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
+ * 播放位置的分享地址: 在现有地址上换掉 `t` 参数, 其余参数 (来源、流等) 原样保留.
+ * 位置不足一秒时不写 `t` —— `0` 与缺省等价, 写上去只是噪声.
+ */
+function shareableTimeUrl(seconds: number): string {
+  const current = new URL(window.location.href);
+  if (Math.floor(seconds) <= 0) {
+    current.searchParams.delete("t");
+  } else {
+    current.searchParams.set("t", String(Math.floor(seconds)));
+  }
+  return current.toString();
 }
 
 // media-chrome 的控制条文案来自其自带语言包, 语言与 i18next 保持一致.
@@ -135,6 +166,122 @@ function SubtitleTracks({ tracks }: { tracks: PlaybackSubtitleItem[] }) {
       default={index === 0}
     />
   ));
+}
+
+/** 右键菜单在播放窗口内的落点: 相对控制器的坐标, 以及展开的方向. */
+type ContextMenuAnchor = {
+  left: number;
+  top: number;
+  /** 下方放不下时向上展开: 锚点改取底边 (右键处的指针). */
+  upward: boolean;
+};
+
+/** 右键菜单在指针处展开, 越出播放窗口的部分夹回窗口内. */
+function contextMenuAnchor(
+  controller: MediaControllerElement,
+  event: MouseEvent,
+): ContextMenuAnchor {
+  const rect = controller.getBoundingClientRect();
+  const left = Math.min(
+    event.clientX - rect.left,
+    Math.max(rect.width - CONTEXT_MENU_MIN_WIDTH, 0),
+  );
+  const bottom = event.clientY - rect.top;
+  const upward = bottom > rect.height - CONTEXT_MENU_MAX_HEIGHT;
+  return {
+    left: Math.max(left, 0),
+    top: upward ? bottom : Math.min(bottom, Math.max(rect.height - CONTEXT_MENU_MAX_HEIGHT, 0)),
+    upward,
+  };
+}
+
+/**
+ * 画面上的右键菜单: 复制当前时间戳与带时间参数的分享地址.
+ *
+ * 菜单必须留在控制器内部: 控制器的容器带 `overflow: hidden`, 挂到控制器外会被裁掉; 全屏时也只有控制器
+ * 的子树可见 (Mantine 的 Portal 挂到 `document.body`, 全屏下不可见).
+ *
+ * 不可寻址的流没有可复制的跳转目标, 两项都禁用.
+ */
+function ContextMenu({
+  anchor,
+  seconds,
+  seekable,
+  onClose,
+  frameRef,
+}: {
+  anchor: ContextMenuAnchor;
+  seconds: number;
+  seekable: boolean;
+  onClose: () => void;
+  /** 点击窗口之外即收起, 控制器内部的事件不在此列. */
+  frameRef: RefObject<MediaControllerElement | null>;
+}) {
+  const { t } = useTranslation("metadata");
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && frameRef.current?.contains(target)) {
+        return;
+      }
+      onClose();
+    };
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    // 只监听窗口: 播放器内部的点击由菜单项自己收起. 捕获阶段之外另加冒泡阶段, 页面其它层的
+    // 阻止传播不会让菜单留在画面上.
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [frameRef, onClose]);
+
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      notifications.show({ message: t("detail.playbackCopied"), color: "blue" });
+    } catch {
+      notifications.show({ message: t("detail.playbackCopyFailed"), color: "red" });
+    }
+    onClose();
+  };
+
+  return (
+    <div
+      className={classes.contextMenu}
+      role="menu"
+      data-upward={anchor.upward ? "true" : undefined}
+      style={{ left: anchor.left, top: anchor.top }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className={classes.contextMenuItem}
+        disabled={!seekable}
+        onClick={() => void copy(formatClock(seconds))}
+      >
+        {t("detail.playbackCopyTimestamp", { time: formatClock(seconds) })}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className={classes.contextMenuItem}
+        disabled={!seekable}
+        onClick={() => void copy(shareableTimeUrl(seconds))}
+      >
+        {t("detail.playbackCopyLink")}
+      </button>
+    </div>
+  );
 }
 
 /**
@@ -487,6 +634,32 @@ export function PlaybackPlayer({
   // 菜单里的勾选态只在展开时需要, 因此在展开时读取一次, 不订阅 ratechange.
   const [playbackRate, setPlaybackRate] = useState(1);
 
+  // 右键菜单: 落点与按下的位置、以及那一刻的播放位置. 与倍速菜单同理, 只在展开时读一次当前时间,
+  // 不订阅 timeupdate (订阅会让整个播放器每秒重渲染).
+  const [contextMenu, setContextMenu] = useState<(ContextMenuAnchor & { seconds: number }) | null>(
+    null,
+  );
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  const handleContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      const video = videoRef.current;
+      const controller = controllerRef.current;
+      const target = event.nativeEvent.composedPath()[0];
+      // 与画面的单击、双击同一套判定: 只有画面与控制器自身算数, 控制条与菜单保留浏览器原生右键菜单.
+      if (video == null || controller == null || (target !== video && target !== controller)) {
+        return;
+      }
+      event.preventDefault();
+      setContextMenu({
+        ...contextMenuAnchor(controller, event.nativeEvent),
+        seconds: video.currentTime,
+      });
+    },
+    [videoRef],
+  );
+
   const cancelRateClose = useCallback(() => {
     if (rateCloseTimerRef.current != null) {
       window.clearTimeout(rateCloseTimerRef.current);
@@ -747,6 +920,7 @@ export function PlaybackPlayer({
         noMutedPref
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
+        onContextMenu={handleContextMenu}
       >
         <video
           slot="media"
@@ -819,6 +993,15 @@ export function PlaybackPlayer({
           {tracks.length > 0 ? <MediaCaptionsMenu hidden /> : null}
         </MediaControlBar>
         {seekable ? <MediaTimeRange onPointerDown={handleDragStart} /> : null}
+        {contextMenu != null ? (
+          <ContextMenu
+            anchor={contextMenu}
+            seconds={contextMenu.seconds}
+            seekable={seekable}
+            onClose={closeContextMenu}
+            frameRef={controllerRef}
+          />
+        ) : null}
       </MediaController>
       {/* 音量提示: 键盘调音量与静音时显示, 放在控制器之外因此不参与控件的自动隐藏. 音量为 0 即静音. */}
       {volumeIndicator != null ? (

@@ -223,3 +223,47 @@
   right: 4px;
   bottom: calc(100% + 20px);
 }
+
+/*
+  右键菜单: 在指针处展开, 落在控制器内部.
+  控制器等宽高由容器决定, 因此坐标用相对控制器的像素值; 下方放不下时向上展开, 由 top 翻到底边.
+*/
+.contextMenu {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 4px;
+  border-radius: var(--mantine-radius-md);
+  background: var(--amane-player-panel-background);
+  box-shadow: var(--mantine-shadow-md);
+  font-family: var(--mantine-font-family);
+}
+
+.contextMenu[data-upward] {
+  transform: translateY(-100%);
+}
+
+.contextMenuItem {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--mantine-radius-sm);
+  background: transparent;
+  color: #fff;
+  font-family: inherit;
+  font-size: var(--mantine-font-size-sm);
+  text-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.contextMenuItem:hover:not(:disabled),
+.contextMenuItem:focus-visible:not(:disabled) {
+  background: rgb(255 255 255 / 0.16);
+}
+
+.contextMenuItem:disabled {
+  color: rgb(255 255 255 / 0.4);
+  cursor: default;
+}
