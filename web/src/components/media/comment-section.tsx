@@ -182,21 +182,19 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
         <Stack gap={0} mt="xs">
           {rows.map(({ comment, floor }) => (
             <div key={comment.id} className={classes.item}>
-              <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
-                <Group gap={8} align="center" wrap="nowrap">
-                  <span className={classes.floor}>#{floor}</span>
-                  <Text size="xs" c="dimmed">
-                    {formatRelativeTime(comment.created_at, locale, t("detail.commentJustNow"))}
-                    {isEdited(comment) &&
-                      ` ${t("detail.commentEditedAt", {
-                        time: formatRelativeTime(
-                          comment.updated_at,
-                          locale,
-                          t("detail.commentJustNow"),
-                        ),
-                      })}`}
-                  </Text>
-                </Group>
+              <Group gap={8} align="center" wrap="nowrap">
+                <span className={classes.floor}>#{floor}</span>
+                <Text size="xs" c="dimmed">
+                  {formatRelativeTime(comment.created_at, locale, t("detail.commentJustNow"))}
+                  {isEdited(comment) &&
+                    ` ${t("detail.commentEditedAt", {
+                      time: formatRelativeTime(
+                        comment.updated_at,
+                        locale,
+                        t("detail.commentJustNow"),
+                      ),
+                    })}`}
+                </Text>
                 <Group gap={2} align="center" wrap="nowrap" className={classes.actions}>
                   <HintedActionIcon
                     size="sm"
