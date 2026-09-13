@@ -1,18 +1,114 @@
-/* media-chrome 的控制条在 shadow DOM 内, 颜色与字体只能经 CSS 变量对接 Mantine 主题. */
+/*
+  media-chrome 的控件在 shadow DOM 内, 颜色、尺寸与字体只能经 CSS 变量对接 Mantine 主题.
+  这里按主流播放器的形态组织: 贴底的渐变遮罩承载控件, 进度条独占一行, 按钮不各自画底色.
+*/
 .controller {
   --media-primary-color: #fff;
-  --media-secondary-color: rgb(20 20 30 / 0.7);
-  --media-control-hover-background: rgb(255 255 255 / 0.25);
-  --media-range-track-background: rgb(255 255 255 / 0.3);
-  --media-range-bar-color: var(--mantine-color-brand-4);
-  --media-range-thumb-background: var(--mantine-color-brand-4);
+  /* 逐按钮画深色底会让控件在任何画面下都像一块块补丁, 底色交给遮罩. */
+  --media-secondary-color: transparent;
+  --media-control-background: transparent;
+  --media-control-hover-background: rgb(255 255 255 / 0.18);
+  --media-icon-color: #fff;
+  --media-button-padding: 6px 10px;
+  --media-button-icon-width: 22px;
+  --media-button-icon-height: 22px;
   --media-font-family: var(--mantine-font-family);
   --media-font-size: 13px;
+  --media-focus-box-shadow: 0 0 0 2px var(--mantine-color-brand-5);
+
+  --media-range-track-height: 3px;
+  --media-range-track-background: rgb(255 255 255 / 0.32);
+  --media-range-track-border-radius: 999px;
+  --media-range-bar-color: var(--mantine-color-brand-4);
+  --media-range-thumb-width: 13px;
+  --media-range-thumb-height: 13px;
+  --media-range-thumb-border-radius: 50%;
+  --media-range-thumb-background: var(--mantine-color-brand-4);
+  --media-range-thumb-box-shadow: 0 0 0 4px rgb(255 255 255 / 0.16);
+  --media-range-thumb-transform: scale(0);
+  --media-range-thumb-transition: transform 0.15s ease-out;
+  --media-time-range-buffered-color: rgb(255 255 255 / 0.4);
+
+  --media-tooltip-background: rgb(24 24 27 / 0.92);
+  --media-tooltip-border-radius: var(--mantine-radius-sm);
+  --media-tooltip-padding: 4px 8px;
 
   display: block;
   width: 100%;
   height: 100%;
   background: #000;
+}
+
+/* 遮罩独立成层: 控件在播放中会被 media-chrome 淡出, 遮罩随之淡出才不留下一条黑带. */
+.scrim {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 140px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.78), rgb(0 0 0 / 0.32) 42%, rgb(0 0 0 / 0));
+}
+
+.controller media-control-bar {
+  position: relative;
+  z-index: 1;
+  height: 48px;
+  padding-inline: 8px;
+  align-items: center;
+}
+
+/* 把右侧控件推到角落. */
+.barSpacer {
+  flex: 1;
+  pointer-events: none;
+}
+
+/* 进度条独占一行, 铺满播放器宽度并贴在控制条上方. */
+.controller media-time-range {
+  position: absolute;
+  inset-inline: 12px;
+  bottom: 52px;
+  z-index: 1;
+  height: 16px;
+  /* 控件本身带 `width: 100px` 的默认值, 脱离控制条后必须交回给左右定位决定宽度. */
+  width: auto;
+  min-height: 0;
+}
+
+.controller media-time-range:hover,
+.controller media-time-range:focus-visible {
+  --media-range-track-height: 5px;
+  --media-range-thumb-transform: scale(1);
+}
+
+.controller media-volume-range {
+  width: 88px;
+  height: 32px;
+  min-height: 0;
+}
+
+.controller media-time-display {
+  color: rgb(255 255 255 / 0.9);
+  font-variant-numeric: tabular-nums;
+}
+
+.controller media-control-bar media-play-button,
+.controller media-control-bar media-mute-button,
+.controller media-control-bar media-fullscreen-button,
+.controller media-control-bar media-playback-rate-menu-button,
+.controller media-control-bar media-captions-menu-button {
+  border-radius: var(--mantine-radius-sm);
+}
+
+/* 画面明亮时图标仍要看得清. */
+.controller media-control-bar media-play-button,
+.controller media-control-bar media-mute-button,
+.controller media-control-bar media-playback-rate-menu-button,
+.controller media-control-bar media-captions-menu-button,
+.controller media-control-bar media-fullscreen-button,
+.controller media-time-display {
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.6));
 }
 
 /*
@@ -21,17 +117,15 @@
   浏览器不保证这次重新 observe 会再投递一次回调 —— 实测控制器与菜单都不会收到, 菜单因此停在
   静态位置 (控制条行内), 大部分被控制器的 overflow: hidden 裁掉. 这里改为固定贴在控制条上方.
 */
-.controller media-control-bar {
-  position: relative;
-}
-
 .controller media-playback-rate-menu,
 .controller media-captions-menu {
-  right: 0;
-  bottom: 100%;
+  right: 4px;
+  /* 落在进度条上方: 48px 控制条 + 进度条占位. */
+  bottom: calc(100% + 20px);
   left: auto;
   top: auto;
-  margin-bottom: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-md);
+  box-shadow: var(--mantine-shadow-md);
   /* 菜单自身可滚动; 上限取控制条上方的可用高度, 短播放器下也不越出画面. */
   max-height: min(300px, 55dvh);
 }

@@ -236,10 +236,11 @@ export function PlaybackPlayer({ href, kind, seekable, tracks, onFailed }: Playb
         <SubtitleTracks tracks={tracks} />
       </video>
       <MediaLoadingIndicator slot="centered-chrome" />
+      <div className={classes.scrim} aria-hidden="true" />
       <MediaControlBar>
         <MediaPlayButton />
-        {seekable ? <MediaTimeRange /> : null}
         <MediaTimeDisplay showDuration />
+        <div className={classes.barSpacer} aria-hidden="true" />
         <MediaMuteButton />
         <MediaVolumeRange />
         <MediaPlaybackRateMenuButton />
@@ -249,6 +250,7 @@ export function PlaybackPlayer({ href, kind, seekable, tracks, onFailed }: Playb
         <MediaPlaybackRateMenu rates={PLAYBACK_RATES} hidden />
         {tracks.length > 0 ? <MediaCaptionsMenu hidden /> : null}
       </MediaControlBar>
+      {seekable ? <MediaTimeRange /> : null}
     </MediaController>
   );
 }
