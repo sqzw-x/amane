@@ -1,0 +1,37 @@
+/* media-chrome 的控制条在 shadow DOM 内, 颜色与字体只能经 CSS 变量对接 Mantine 主题. */
+.controller {
+  --media-primary-color: #fff;
+  --media-secondary-color: rgb(20 20 30 / 0.7);
+  --media-control-hover-background: rgb(255 255 255 / 0.25);
+  --media-range-track-background: rgb(255 255 255 / 0.3);
+  --media-range-bar-color: var(--mantine-color-brand-4);
+  --media-range-thumb-background: var(--mantine-color-brand-4);
+  --media-font-family: var(--mantine-font-family);
+  --media-font-size: 13px;
+
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+/*
+  菜单由控制条定位.
+  media-chrome 只在 ResizeObserver 回调里计算菜单位置, 而它在展开时重新 observe 目标元素,
+  浏览器不保证这次重新 observe 会再投递一次回调 —— 实测控制器与菜单都不会收到, 菜单因此停在
+  静态位置 (控制条行内), 大部分被控制器的 overflow: hidden 裁掉. 这里改为固定贴在控制条上方.
+*/
+.controller media-control-bar {
+  position: relative;
+}
+
+.controller media-playback-rate-menu,
+.controller media-captions-menu {
+  right: 0;
+  bottom: 100%;
+  left: auto;
+  top: auto;
+  margin-bottom: var(--mantine-spacing-xs);
+  /* 菜单自身可滚动; 上限取控制条上方的可用高度, 短播放器下也不越出画面. */
+  max-height: min(300px, 55dvh);
+}

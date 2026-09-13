@@ -113,6 +113,8 @@
     "playbackUnavailableOption": "{{name}}（当前不可用）",
     "playbackSourcesFailed": "无法加载播放源",
     "playbackStreamsFailed": "无法加载流列表",
+    "playbackSourceLabel": "播放源",
+    "playbackStreamLabel": "码流",
     "cropPoster": {
       "action": "裁切海报",
       "title": "裁切海报",

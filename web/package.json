@@ -33,6 +33,7 @@
     "i18next-browser-languagedetector": "^8.2.1",
     "liqe": "^3.8.7",
     "liquidjs": "^10.29.0",
+    "media-chrome": "^4.19.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-i18next": "^17.0.13",

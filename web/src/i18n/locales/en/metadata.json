@@ -112,6 +112,8 @@
     "playbackUnavailableOption": "{{name}} (currently unavailable)",
     "playbackSourcesFailed": "Could not load playback sources",
     "playbackStreamsFailed": "Could not load the stream list",
+    "playbackSourceLabel": "Playback source",
+    "playbackStreamLabel": "Stream",
     "cropPoster": {
       "action": "Crop poster",
       "title": "Crop poster",

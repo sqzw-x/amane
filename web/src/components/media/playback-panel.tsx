@@ -1,25 +1,49 @@
-import { Alert, CheckIcon, Group, Loader, Select, Stack, Text } from "@mantine/core";
+import {
+  Alert,
+  AspectRatio,
+  Box,
+  Button,
+  Card,
+  CheckIcon,
+  Group,
+  Menu,
+  Skeleton,
+  Stack,
+  Text,
+} from "@mantine/core";
+import { IconChevronDown } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import type { ErrorData } from "hls.js";
 import type { TFunction } from "i18next";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
+
 import {
   listPlaybackSourcesOptions,
   listPlaybackStreamsOptions,
 } from "@/client/@tanstack/react-query.gen";
-import type {
-  PlaybackSourceOption,
-  PlaybackStreamItem,
-  PlaybackSubtitleItem,
-} from "@/client/types.gen";
-import { useLatestRef } from "@/hooks/use-latest-ref";
+import type { PlaybackSourceOption, PlaybackStreamItem } from "@/client/types.gen";
+import { EnumToggle } from "@/components/common/enum-toggle";
+import type { HlsFailure } from "@/components/media/playback-player";
 import { extractErrorMessage } from "@/lib/api-error";
 import { apiFetch } from "@/lib/api-token";
 
+// 播放器只在选中可播的流之后才需要, 单独成块懒加载, 与 hls.js 一样不进入主包.
+const PlaybackPlayer = lazy(() =>
+  import("@/components/media/playback-player").then((module) => ({
+    default: module.PlaybackPlayer,
+  })),
+);
+
 const EMPTY_SOURCES: PlaybackSourceOption[] = [];
 const EMPTY_STREAMS: PlaybackStreamItem[] = [];
-const HLS_TYPE = "application/vnd.apple.mpegurl";
+/**
+ * 视频宽度上限.
+ * 只限制高度会让替换元素的盒子比例宽于素材比例, `object-fit: contain` 于是在左右留黑边;
+ * 这里改为限制宽度, 让盒子比例由 16:9 决定, 并把播放器压在一屏之内.
+ */
+const PLAYER_MAX_WIDTH = "min(100%, calc(72dvh * 16 / 9))";
+/** 短枚举平铺展示; 超过该数量时换行难以阅读, 回退为下拉菜单. */
+const MAX_TOGGLE_ITEMS = 4;
 
 // 流的 key 在来源内唯一; 来源整个不可用的那一行没有 key, 用空串占位, 此时选择器只有这一行, 不渲染.
 function streamKey(item: PlaybackStreamItem): string {
@@ -47,73 +71,15 @@ function pickStream(
   );
 }
 
-// 选项名可能很长 (来源名 · 文件名), 区分不同流的那一段恰在末尾: 截断处用原生提示补全名.
-// 自定义选项内容会替掉默认渲染, 选中项的勾必须自己画回来.
-function NameSelect({
-  value,
-  data,
-  width,
-  onChange,
-}: {
-  value: string;
-  data: Array<{ value: string; label: string }>;
-  width: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Select
-      size="xs"
-      w={width}
-      value={value}
-      data={data}
-      onChange={(next) => {
-        if (next != null) {
-          onChange(next);
-        }
-      }}
-      allowDeselect={false}
-      renderOption={({ option, checked }) => (
-        <Group gap={6} wrap="nowrap">
-          {checked ? <CheckIcon size={12} /> : null}
-          <span title={option.label}>{option.label}</span>
-        </Group>
-      )}
-    />
-  );
-}
-
 function mediaKind(contentType: string): "video" | "hls" | "other" {
   const type = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-  if (type === HLS_TYPE || type === "application/x-mpegurl" || type.includes("mpegurl")) {
+  if (type.includes("mpegurl")) {
     return "hls";
   }
   if (type.startsWith("video/")) {
     return "video";
   }
   return "other";
-}
-
-function nativeHlsSupported(): boolean {
-  if (typeof document === "undefined") {
-    return false;
-  }
-  return document.createElement("video").canPlayType(HLS_TYPE) !== "";
-}
-
-// hls.js 致命错误中构成提示文案的字段, 后端没有给出 detail 时使用.
-type HlsFailure = {
-  details: string;
-  status: number | null;
-  target: string;
-};
-
-// 失败地址取自分片或错误数据本身; 两者都缺失时使用播放源地址, 该地址仍属于当前来源.
-function hlsFailure(data: ErrorData, href: string): HlsFailure {
-  return {
-    details: data.details,
-    status: data.response?.code ?? null,
-    target: data.frag?.url ?? data.url ?? href,
-  };
 }
 
 function hlsFailureMessage(failure: HlsFailure, t: TFunction<"metadata">): string {
@@ -171,92 +137,80 @@ async function readPlaybackDetail(
   }
 }
 
-function SubtitleTracks({ tracks }: { tracks: PlaybackSubtitleItem[] }) {
-  return tracks.map((track, index) => (
-    <track
-      key={track.id}
-      kind="subtitles"
-      src={track.href}
-      label={track.label}
-      srcLang={track.language ?? undefined}
-      default={index === 0}
-    />
-  ));
+type PickerOption = {
+  value: string;
+  label: string;
+};
+
+// 选项过多时用下拉菜单: 标签是主机拼好的完整名称, 菜单给长名称留出宽度.
+function PickerMenu({
+  options,
+  value,
+  onChange,
+}: {
+  options: PickerOption[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const current = options.find((option) => option.value === value);
+  return (
+    <Menu shadow="md" position="bottom-end" withinPortal>
+      <Menu.Target>
+        <Button
+          size="compact-sm"
+          variant="default"
+          maw={260}
+          rightSection={<IconChevronDown size={14} />}
+        >
+          <Text size="sm" truncate="end" title={current?.label}>
+            {current?.label ?? ""}
+          </Text>
+        </Button>
+      </Menu.Target>
+      <Menu.Dropdown maw={360}>
+        {options.map((option) => (
+          <Menu.Item
+            key={option.value}
+            leftSection={option.value === value ? <CheckIcon size={14} /> : <Box w={14} />}
+            onClick={() => {
+              if (option.value !== value) {
+                onChange(option.value);
+              }
+            }}
+          >
+            <Text size="sm">{option.label}</Text>
+          </Menu.Item>
+        ))}
+      </Menu.Dropdown>
+    </Menu>
+  );
 }
 
-function PlaybackVideo({
-  href,
-  kind,
-  tracks,
-  onFailed,
+/** 一级选择: 少量选项平铺 (EnumToggle), 过多则回退为下拉菜单. */
+function LevelPicker({
+  label,
+  options,
+  value,
+  onChange,
 }: {
-  href: string;
-  kind: "video" | "hls";
-  tracks: PlaybackSubtitleItem[];
-  onFailed: (failure: HlsFailure | null) => void;
+  label: string;
+  options: PickerOption[];
+  value: string;
+  onChange: (value: string) => void;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const onFailedRef = useLatestRef(onFailed);
-  const useNativeSrc = kind === "video" || nativeHlsSupported();
-
-  useEffect(() => {
-    if (useNativeSrc) {
-      return;
-    }
-    const video = videoRef.current;
-    if (video == null) {
-      return;
-    }
-    let cancelled = false;
-    let destroy: (() => void) | undefined;
-    void import("hls.js").then((module) => {
-      if (cancelled || videoRef.current == null) {
-        return;
-      }
-      const Hls = module.default;
-      if (!Hls.isSupported()) {
-        onFailedRef.current(null);
-        return;
-      }
-      const hls = new Hls({
-        xhrSetup(xhr) {
-          xhr.withCredentials = true;
-        },
-      });
-      if (cancelled) {
-        hls.destroy();
-        return;
-      }
-      hls.loadSource(href);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) {
-          onFailedRef.current(hlsFailure(data, href));
-        }
-      });
-      destroy = () => {
-        hls.destroy();
-      };
-    });
-    return () => {
-      cancelled = true;
-      destroy?.();
-    };
-  }, [href, useNativeSrc, onFailedRef]);
-
   return (
-    <video
-      ref={videoRef}
-      src={useNativeSrc ? href : undefined}
-      controls
-      playsInline
-      preload="metadata"
-      style={{ width: "100%", maxHeight: 480, background: "#000", borderRadius: 8 }}
-      // 原生播放路径没有 hls.js 错误数据, 失败原因由探测结果说明.
-      onError={() => onFailed(null)}
-    >
-      <SubtitleTracks tracks={tracks} />
-    </video>
+    <Box role="group" aria-label={label}>
+      {options.length > MAX_TOGGLE_ITEMS ? (
+        <PickerMenu options={options} value={value} onChange={onChange} />
+      ) : (
+        <EnumToggle
+          options={options.map((option) => option.value)}
+          getLabel={(option) => options.find((item) => item.value === option)?.label ?? option}
+          value={value}
+          onChange={onChange}
+        />
+      )}
+    </Box>
   );
 }
 
@@ -297,12 +251,14 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
   );
   if (sourceError != null) {
     return (
-      <Stack gap="xs">
-        {title}
-        <Alert color="red" variant="light">
-          {sourceError}
-        </Alert>
-      </Stack>
+      <Card withBorder radius="md" p="md">
+        <Stack gap="xs">
+          {title}
+          <Alert color="red" variant="light">
+            {sourceError}
+          </Alert>
+        </Stack>
+      </Card>
     );
   }
   // 来源列表为空表示没有已启用的播放源, 此时无从选择, 整块不渲染.
@@ -324,73 +280,82 @@ export function PlaybackPanel({ metadataId }: { metadataId: number }) {
         ? shownError
         : (failureReason(selected) ?? t("detail.playbackUnavailable")));
 
-  // 当前来源的流正在探测: 用加载态占位, 不新增文案.
+  // 当前来源的流正在探测: 用与控件等宽的占位, 避免控件出现时行高跳动.
   const streamPicker = streamsQuery.isPending ? (
-    <Loader size="xs" />
+    <Skeleton height={30} width={200} radius="sm" />
   ) : streams.length > 1 && selected != null ? (
-    <NameSelect
-      value={streamKey(selected)}
-      data={streams.map((item) => ({
+    <LevelPicker
+      label={t("detail.playbackStreamLabel")}
+      options={streams.map((item) => ({
         value: streamKey(item),
         label: item.available
           ? item.name
           : t("detail.playbackUnavailableOption", { name: item.name }),
       }))}
-      width={240}
+      value={streamKey(selected)}
       onChange={(key) => setPickedStream({ sourceId: source.source_id, key })}
     />
   ) : null;
 
   return (
-    <Stack gap="xs">
-      <Group justify="space-between" align="flex-end" wrap="wrap">
-        {title}
-        <Group gap="xs" wrap="wrap" align="center">
-          {sources.length > 1 ? (
-            <NameSelect
-              value={source.source_id}
-              data={sources.map((item) => ({ value: item.source_id, label: item.name }))}
-              width={160}
-              onChange={setPickedSourceId}
-            />
-          ) : (
-            <Text size="xs" c="dimmed">
-              {source.name}
-            </Text>
-          )}
-          {streamPicker}
+    <Card withBorder radius="md" p="md">
+      <Stack gap="xs">
+        <Group justify="space-between" align="flex-end" wrap="wrap">
+          {title}
+          <Group gap="xs" wrap="wrap" align="center">
+            {sources.length > 1 ? (
+              <LevelPicker
+                label={t("detail.playbackSourceLabel")}
+                options={sources.map((item) => ({ value: item.source_id, label: item.name }))}
+                value={source.source_id}
+                onChange={setPickedSourceId}
+              />
+            ) : (
+              <Text size="xs" c="dimmed">
+                {source.name}
+              </Text>
+            )}
+            {streamPicker}
+          </Group>
         </Group>
-      </Group>
-      {notice ? (
-        <Alert color="red" variant="light">
-          {notice}
-        </Alert>
-      ) : null}
-      {selected != null && selected.available ? (
-        kind === "other" ? (
-          <Text size="sm" c="dimmed">
-            {t("detail.playbackUnsupported")}
-          </Text>
-        ) : (
-          <PlaybackVideo
-            key={selected.href}
-            href={selected.href}
-            kind={kind}
-            tracks={selected.subtitles ?? []}
-            onFailed={(failure) => {
-              void readPlaybackDetail(
-                selected.href,
-                {
-                  plain: t("detail.playbackFailed"),
-                  withStatus: (status) => t("detail.playbackFailedWithStatus", { status }),
-                  hlsReason: failure == null ? null : hlsFailureMessage(failure, t),
-                },
-                { ranged: kind === "video" },
-              ).then((message) => setError({ href: selected.href, message }));
-            }}
-          />
-        )
-      ) : null}
-    </Stack>
+        {notice ? (
+          <Alert color="red" variant="light">
+            {notice}
+          </Alert>
+        ) : null}
+        {selected != null && selected.available ? (
+          kind === "other" ? (
+            <Text size="sm" c="dimmed">
+              {t("detail.playbackUnsupported")}
+            </Text>
+          ) : (
+            <Box w="100%" maw={PLAYER_MAX_WIDTH} mx="auto">
+              <AspectRatio ratio={16 / 9}>
+                <Suspense fallback={<Skeleton height="100%" />}>
+                  <PlaybackPlayer
+                    key={selected.href}
+                    href={selected.href}
+                    kind={kind}
+                    seekable={selected.seekable}
+                    tracks={selected.subtitles ?? []}
+                    onFailed={(failure) => {
+                      void readPlaybackDetail(
+                        selected.href,
+                        {
+                          plain: t("detail.playbackFailed"),
+                          withStatus: (status) => t("detail.playbackFailedWithStatus", { status }),
+                          hlsReason: failure == null ? null : hlsFailureMessage(failure, t),
+                        },
+                        { ranged: kind === "video" },
+                      ).then((message) => setError({ href: selected.href, message }));
+                    }}
+                  />
+                </Suspense>
+              </AspectRatio>
+            </Box>
+          )
+        ) : null}
+      </Stack>
+    </Card>
   );
 }
