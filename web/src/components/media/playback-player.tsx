@@ -67,9 +67,35 @@ const HOVER_CLOSE_DELAY_MS = 160;
 const RATE_MENU_ID = "amane-playback-rate-menu";
 /**
  * 关掉 media-chrome 自带的四个方向键.
- * 它在松开按键时才执行且只执行一次: 左右键因此与「按下即跳 5 秒, 按住加速」冲突, 上下键则无法按住连续调节音量.
+ * 它在松开按键时才执行且只执行一次: 左右键因此与「短按跳 5 秒, 按住加速」冲突, 上下键则无法按住连续调节音量.
  */
 const ARROW_HOTKEYS_OFF = "noarrowleft noarrowright noarrowup noarrowdown";
+/**
+ * 音量偏好的存储键.
+ *
+ * media-chrome 自带一份音量与静音偏好 (`media-chrome-pref-volume` / `-muted`), 两者互相独立,
+ * 与本播放器的音量模型冲突, 因此由控制器上的 `novolumepref` / `nomutedpref` 关掉, 只留这一份.
+ * 静音就是音量 0, 不单独记录.
+ */
+const VOLUME_PREF_KEY = "amane-playback-volume";
+
+/** 读取存储的音量; 缺失、损坏或越界时回到满音量. */
+function readStoredVolume(): number {
+  try {
+    const stored = Number(window.localStorage.getItem(VOLUME_PREF_KEY));
+    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function writeStoredVolume(volume: number): void {
+  try {
+    window.localStorage.setItem(VOLUME_PREF_KEY, String(volume));
+  } catch {
+    // 无痕模式等场景下存储不可用, 音量只在本次会话内生效.
+  }
+}
 
 // media-chrome 的控制条文案来自其自带语言包, 语言与 i18next 保持一致.
 // 该模块随播放器一起懒加载, 因此界面语言切换后需要重新挂载播放器才会生效.
@@ -519,17 +545,11 @@ export function PlaybackPlayer({
   }, [onSeekHandled, seekRequest]);
 
   // 音量提示由 React 状态控制显隐, 放在播放器盒子内、控制器之外, 因此不受控件自动隐藏的影响.
-  const [volumeIndicator, setVolumeIndicator] = useState<{ level: number; muted: boolean } | null>(
-    null,
-  );
+  const [volumeIndicator, setVolumeIndicator] = useState<number | null>(null);
   const volumeIndicatorTimerRef = useRef<number | null>(null);
 
-  const showVolumeIndicator = useCallback(() => {
-    const video = videoRef.current;
-    if (video == null) {
-      return;
-    }
-    setVolumeIndicator({ level: video.volume, muted: video.muted });
+  const showVolumeIndicator = useCallback((level: number) => {
+    setVolumeIndicator(level);
     if (volumeIndicatorTimerRef.current != null) {
       window.clearTimeout(volumeIndicatorTimerRef.current);
     }
@@ -537,7 +557,7 @@ export function PlaybackPlayer({
       volumeIndicatorTimerRef.current = null;
       setVolumeIndicator(null);
     }, VOLUME_INDICATOR_MS);
-  }, [videoRef]);
+  }, []);
 
   useEffect(
     () => () => {
@@ -548,21 +568,76 @@ export function PlaybackPlayer({
     [],
   );
 
-  const stepVolume = useCallback(
-    (delta: number) => {
+  // 音量是唯一的音量状态: 静音即音量 0, 媒体元素的 `muted` 始终为假.
+  // 值随存储初始化, 因此装载时滑杆与图标直接落在上次的音量上; 写入存储只由用户操作触发.
+  const [volume, setVolume] = useState(readStoredVolume);
+  // 取消静音要回到的音量. 存储里只有当前音量, 0 之后无从取回, 因此这份记忆只保留在本次会话内.
+  const lastNonZeroVolumeRef = useRef(volume === 0 ? 1 : volume);
+
+  const applyVolume = useCallback(
+    (next: number) => {
       const video = videoRef.current;
-      if (video == null) {
-        return;
+      if (video != null) {
+        video.volume = next;
       }
-      const next = Math.min(Math.max(video.volume + delta, 0), 1);
-      video.volume = next;
-      // 从静音往上调即恢复声音, 与主流播放器一致.
-      if (next > 0 && video.muted) {
-        video.muted = false;
+      if (next > 0) {
+        lastNonZeroVolumeRef.current = next;
       }
+      setVolume(next);
     },
     [videoRef],
   );
+
+  // 音量变化只由用户操作发起 (滑杆、方向键、静音按钮), 因此提示与存储都在操作处处理, 不订阅 volumechange:
+  // 订阅会把装载时的恢复也当成一次调整.
+  const setVolumeFromUser = useCallback(
+    (next: number) => {
+      applyVolume(next);
+      showVolumeIndicator(next);
+      writeStoredVolume(next);
+    },
+    [applyVolume, showVolumeIndicator],
+  );
+
+  // 恢复存储的音量. 滑杆与提示的取值来自 React 状态, 这里只写媒体元素; 存在存储里的音量为 0 时即为静音.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video != null) {
+      video.volume = readStoredVolume();
+    }
+  }, []);
+
+  // 从 0 起调与从任何音量起调同形: 逐级加减一档, 不做「恢复上次音量」的特例.
+  const stepVolume = useCallback(
+    (delta: number) => {
+      const next = Math.min(Math.max(Math.round((volume + delta) * 100) / 100, 0), 1);
+      setVolumeFromUser(next);
+    },
+    [setVolumeFromUser, volume],
+  );
+
+  // 静音按钮与 `m` 快捷键都请求静音位; 本播放器把静音实现为音量 0, 因此在控制器上就地截下这两条请求,
+  // 换成音量请求再重新派发. 必须用 stopImmediatePropagation: 控制器自己的监听挂在同一元素上.
+  const toggleMute = useCallback(() => {
+    setVolumeFromUser(volume === 0 ? lastNonZeroVolumeRef.current : 0);
+  }, [setVolumeFromUser, volume]);
+
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller == null) {
+      return;
+    }
+    const handle = (event: Event) => {
+      event.stopImmediatePropagation();
+      toggleMute();
+    };
+    controller.addEventListener("mediamuterequest", handle, true);
+    controller.addEventListener("mediaunmuterequest", handle, true);
+    return () => {
+      controller.removeEventListener("mediamuterequest", handle, true);
+      controller.removeEventListener("mediaunmuterequest", handle, true);
+    };
+  }, [toggleMute]);
 
   const { onKeyDown, onKeyUp } = usePlayerKeys(videoRef, seekable, stepVolume);
 
@@ -585,11 +660,6 @@ export function PlaybackPlayer({
   // 拖动期间即使指针移出浮层也保持展开, 否则滑杆会拖到一半消失.
   const [volumeDragging, setVolumeDragging] = useState(false);
 
-  // 音量条自己画: media-chrome 的 range 只按 clientX 取值, 旋转成竖向会拖不准.
-  // 取值与 media-chrome 的 MEDIA_VOLUME_REQUEST 走同一条路径 (都写媒体元素), 键盘调音量不受影响.
-  // 初始值不能假定为 1: media-chrome 把音量与静音偏好写进 localStorage, 装载时就可能不是 1.
-  const [volume, setVolume] = useState(1);
-
   const endVolumeDrag = useCallback(() => setVolumeDragging(false), []);
   const dragGuard = useDragGestureGuard(controllerRef, endVolumeDrag);
   const handleDragStart = dragGuard.onDragStart;
@@ -599,13 +669,7 @@ export function PlaybackPlayer({
     handleDragStart();
   }, [handleDragStart]);
 
-  const openVolumePanel = useCallback(() => {
-    const video = videoRef.current;
-    if (video != null) {
-      setVolume(video.volume);
-    }
-    setVolumePanelOpen(true);
-  }, [videoRef]);
+  const openVolumePanel = useCallback(() => setVolumePanelOpen(true), []);
 
   // 只认键盘焦点: 程序化交还的焦点 (例如倍速菜单收起时把焦点还给音量条) 不该把浮层带出来.
   const handleVolumeFocus = useCallback(
@@ -626,35 +690,6 @@ export function PlaybackPlayer({
     }
     setVolumePanelOpen(false);
   }, []);
-
-  // 音量或静音变化都走这里: 滑杆取值、音量提示、持久化的偏好都由它对齐.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video == null) {
-      return;
-    }
-    const sync = () => {
-      setVolume(video.volume);
-      showVolumeIndicator();
-    };
-    video.addEventListener("volumechange", sync);
-    return () => video.removeEventListener("volumechange", sync);
-  }, [showVolumeIndicator, videoRef]);
-
-  const applyVolume = useCallback(
-    (next: number) => {
-      const video = videoRef.current;
-      if (video != null) {
-        video.volume = next;
-        // 从静音往上拖即恢复声音, 与主流播放器一致.
-        if (next > 0 && video.muted) {
-          video.muted = false;
-        }
-      }
-      setVolume(next);
-    },
-    [videoRef],
-  );
 
   useEffect(() => {
     if (useNativeSrc) {
@@ -707,6 +742,9 @@ export function PlaybackPlayer({
         ref={controllerRef}
         className={classes.controller}
         hotkeys={ARROW_HOTKEYS_OFF}
+        // 音量与静音偏好只留本播放器自己的一份, 见 VOLUME_PREF_KEY.
+        noVolumePref
+        noMutedPref
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
       >
@@ -748,7 +786,7 @@ export function PlaybackPlayer({
                 max={1}
                 step={0.05}
                 value={volume}
-                onChange={applyVolume}
+                onChange={setVolumeFromUser}
                 label={(value) => `${Math.round(value * 100)}%`}
                 aria-label={t("detail.playbackVolume")}
                 color="brand"
@@ -782,22 +820,20 @@ export function PlaybackPlayer({
         </MediaControlBar>
         {seekable ? <MediaTimeRange onPointerDown={handleDragStart} /> : null}
       </MediaController>
-      {/* 音量提示: 键盘调音量与静音时显示, 放在控制器之外因此不参与控件的自动隐藏. */}
+      {/* 音量提示: 键盘调音量与静音时显示, 放在控制器之外因此不参与控件的自动隐藏. 音量为 0 即静音. */}
       {volumeIndicator != null ? (
         <div className={classes.volumeIndicatorLayer}>
           <div className={classes.volumeIndicator} role="status" aria-live="polite">
             <div className={classes.volumeIndicatorBar}>
               <div
                 className={classes.volumeIndicatorFill}
-                style={{
-                  width: `${volumeIndicator.muted ? 0 : Math.round(volumeIndicator.level * 100)}%`,
-                }}
+                style={{ width: `${Math.round(volumeIndicator * 100)}%` }}
               />
             </div>
             <span>
-              {volumeIndicator.muted
+              {volumeIndicator === 0
                 ? t("detail.playbackMuted")
-                : `${Math.round(volumeIndicator.level * 100)}%`}
+                : `${Math.round(volumeIndicator * 100)}%`}
             </span>
           </div>
         </div>
