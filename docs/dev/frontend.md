@@ -1,45 +1,105 @@
 # 前端架构
 
-> 入口: `web/src/`. 本文只负责定位: 改哪一块该看哪些文件. 契约与约束写在对应文件的注释里, 本文不重复.
+> 入口: `web/src/`. 本文只写信息架构、跨模块约定与易回归点; 段内细节见所指向的文件与注释.
 
-## 路由 → 文件
+## 信息架构
+
+导航按域拆分, 不是扁平功能列表. 首页 `/` 是产品对话 (Amane), 不是片库.
+
+| 域 | 路由重心 |
+|----|---------|
+| **Browse** | `/` 对话; `/meta` 片库; `/actors` 演员; `/catalog/...` 分类词云; `/saved-queries/$queryId` 查询结果; `/feeds` 阅读器 (`?feed=` / `?group=`) |
+| **Manage** | `/libraries` `/libraries/$id`; `/plugins` 来源插件; `/feeds/sources` 订阅源 |
+| **Ops** | `/tasks` `/schedules` `/logs` |
+| **Settings** | `/settings` (`?section=` 分组; Schema 表单) |
+
+路由组件与协作文件的对应见下表.
 
 | 路由 | 页面文件 | 主要协作文件 |
 |----|---------|------|
 | `/` | `routes/index.tsx` | `components/agent/` (`agent-home.tsx` 为对话主体), `lib/agent/` |
-| `/meta` | `routes/meta.tsx` + `routes/meta.index.tsx` | `components/media/` (`poster-grid` / `meta-table` / `facet-filter-controls`) |
+| `/meta` | `routes/meta.tsx` + `meta.index.tsx` | `components/media/` (`poster-grid` / `meta-table` / `facet-filter-controls`) |
 | `/meta/$metadataId` | `routes/meta.$metadataId.tsx` | `components/media/playback-panel.tsx` → `playback-player.tsx`, `comment-body.tsx`, `lib/media/comment-timestamps.ts` |
-| `/actors` | `routes/actors.tsx` + `routes/actors.index.tsx` | `components/media/actor-grid.tsx` / `actor-table.tsx`, `lib/actors/browse.ts` |
-| `/actors/$actorId` | `routes/actors.$actorId.tsx` | `components/media/actor-card.tsx` / `actor-edit-dialog.tsx` / `meta-table.tsx`, `hooks/use-facet-identity-actions.ts` |
+| `/actors` | `routes/actors.tsx` + `actors.index.tsx` | `components/media/actor-grid.tsx` / `actor-table.tsx`, `lib/actors/browse.ts` |
+| `/actors/$actorId` | `routes/actors.$actorId.tsx` | `components/media/actor-card.tsx` / `actor-edit-dialog.tsx`, `hooks/use-facet-identity-actions.ts` |
 | `/catalog/...` | `routes/catalog.tsx` + `catalog.index.tsx` + `catalog.$kind.tsx` + `catalog.$kind_.$facetId.tsx` | `components/media/catalog-facet-table.tsx`, `facet-rules-panel.tsx` |
 | `/saved-queries/$queryId` | `routes/saved-queries.$queryId.tsx` | `lib/agent/saved-query.ts` |
-| `/libraries` | `routes/libraries.tsx` + `routes/libraries.index.tsx` | `components/library/library-form.tsx` |
+| `/libraries` | `routes/libraries.tsx` + `libraries.index.tsx` | `components/library/library-form.tsx` |
 | `/libraries/$libraryId` | `routes/libraries.$libraryId.tsx` | `components/library/` (文件表与扫描/整理入口) |
 | `/plugins` | `routes/plugins.tsx` | `components/plugins/`, `components/path-picker/` |
-| `/feeds` | `routes/feeds.tsx` + `routes/feeds.index.tsx` | `components/feeds/feed-reader.tsx` / `feed-sidebar.tsx`, `lib/feeds/` |
+| `/feeds` | `routes/feeds.tsx` + `feeds.index.tsx` | `components/feeds/feed-reader.tsx` / `feed-sidebar.tsx`, `lib/feeds/` |
 | `/feeds/sources` | `routes/feeds.sources.tsx` | `components/feeds/feed-sources-table.tsx`, `lib/feeds/opml.ts` |
 | `/tasks` | `routes/tasks.tsx` | `components/task/task-tree.tsx`, `lib/task/` |
 | `/schedules` | `routes/schedules.tsx` | `components/cron-picker/`, `lib/cron.ts` |
 | `/logs` | `routes/logs.tsx` | `components/log/`, `stores/logs.ts` |
 | `/settings` | `routes/settings.tsx` | `components/schema-form/`, `hooks/use-config.ts` |
 
-路由由 `@tanstack/router-vite-plugin` 从 `routes/` 生成 (`routeTree.gen.ts` 不手改). 文件名的点号即路径层级; 需要独立 URL 又共享布局的一层写成 `xxx.tsx` + `xxx.index.tsx`, 叶页与父级同段时用尾随 `_`.
+路由由 `@tanstack/router-vite-plugin` 从 `routes/` 生成 (`routeTree.gen.ts` 不手改): 文件名的点号即路径层级, 需要独立 URL 又共享布局的一层写成 `xxx.tsx` + `xxx.index.tsx`, 叶页与父级同段时用尾随 `_` (写成父级会让子页永不渲染).
 
-## 跨页共用
+片库 / 演员 / 分类无独立「管理」路由, list 视图才有多选与破坏性操作; Feed 相反, 阅读器与源表不共用布局. 侧栏「全部 / 未分组」不经深链进入. `/feeds` 的选中态必须 `activeOptions.exact` 且忽略 search, 否则打开 `/feeds/sources` 时「订阅」也会亮.
 
-- 组件按产品域分目录 (`components/<domain>/`), 跨域复用件放 `components/common/`: 列表壳 (`browse-page-shell` / `list-toolbar` / `list-pagination` / `selection-bar` / `sortable-th` / `sort-menu` / `page-size-select`)、通用控件 (`enum-toggle` / `hinted-action-icon` / `unsaved-changes-bar` / `infinite-scroll-sentinel`).
-- 布局与视口高度: `components/layout/app-shell.tsx` + `app-shell-metrics.ts`.
-- 列表与详情走 TanStack Query (`client/` 为 generate 产物); 高频流 (进度 / 日志) 与界面偏好走 Zustand (`stores/`); 导航态 (筛选 / 排序 / page / view) 在 URL search, schema 定义在各自路由文件.
-- `lib/` 分层: 根目录只放跨域工具, 单域模块进 `lib/<domain>/`. 不设 barrel, 调用方直引文件.
+**入口分流**: 非演员实体进 `/catalog/$kind/$facetId`, 演员进 `/actors/$actorId`, 演员不进入 `/catalog`. `FacetBadge` 默认深链分类, 筛选深链 `/meta`. 结果筛选在 `/meta` (`q` + 各 `*_id`; `saved_query_id` 与其它筛选项 AND, 见 [agent.md](agent.md)).
+
+影片详情: 用户标签与刮削标签分栏, 加减菜单一次提交多名 — `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许一次挂多个.
+
+演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`; 筛选字段的单一事实源是 `lib/actors/browse.ts`.
+
+**播放**: 面板先取来源列表 (`GET /api/playback/sources`, 不调用插件因此立刻渲染), 流列表按需加载; 一个来源可给多条流, 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择. 不可用项可选中但不渲染播放器, 原因写在窗口内的提示里; 来源列表为空时整块不渲染. 播放窗口常驻且尺寸由比例决定, 探测中、失败与类型不支持都在同一外框内呈现 — 状态变化不得改变外框尺寸, 否则页面高度突变会把滚动位置夹回顶部. 播放器组件 (`components/media/playback-player.tsx`) 的约定集中在文件注释里: 控制条与菜单的挂载位置、四个方向键与画面手势的接管、音量与静音的单一状态、右键菜单的遮罩与复制入口、全屏前后的滚动还原. 评论时间戳的识别与 `?t=` 跳转见 `lib/media/comment-timestamps.ts` 与路由里的 seek 请求.
+
+## 列表分页
+
+**list** 视图与订阅源、库文件表采用 `BrowsePageShell fill`: 标题/搜索不滚, 剩余高度交给 children. 视口高度取 `APP_SHELL_MAIN_HEIGHT` (`components/layout/app-shell-metrics.ts`), 不允许再手写一份 calc.
+
+`ListToolbar` 是表体壳: 顶栏不滚, 表体内滚, **唯一**分页固定于视口底, 翻页把表体滚回顶部; 它的 overflow 区要求父级有界高度. `grid` / `cloud` 禁止 fill — 演员墙用 `VirtuosoGrid` + `useWindowScroll`.
+
+图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素. 列表各页的批处理、排序与多选入口见对应路由与 `components/common/` 的壳.
+
+## Schema 表单
+
+Settings、任务提交、定时创建、metadata 编辑共用 `components/schema-form/`: Pydantic → OpenAPI → FieldRouter. `x-*` 清单见 `schema/types.ts`, 字段控件的细节见该目录与字段注释.
+
+dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `DictEntryScope` 写入 `[key]` — 含 `.` / `[` / `]` 的 key 才能原样保存. Tabs 同时挂载全部条目, 叶子 `id` / `htmlFor` 必须经 `useFieldDomId` 加条目前缀, 否则同名控件互相命中.
+
+`SchemaForm` 双模式 `patch` (dirty 门控, 只提交 diff) / `create` (完整值); dirty 保存条用 `affix` 固定于视口底, 编辑弹窗里必须抬到 Modal 之上, 不允许放进 Modal 表单流 (Modal content 是滚动容器, 末尾的条要滚到底才可见).
+
+空值编码统一经 `schema-form/encode.ts`: 按 Create / 列 schema 判空. 可增减 key 的 dict 与缺席等价, `x-frozen-keys` 必须保留全部 key. 不允许对着 PATCH partial schema 编码; 手写 Library / Feed 表单经同一个编码器出 body.
+
+任务与定时提交用 `DiscriminatedSchemaForm`; 短枚举共用 `EnumToggle`, 定时 cron 用 `CronPicker` (产出 5-field, 与后端 croniter 一致), 其时刻换算与回落约定见该组件注释.
+
+## 对话通道
+
+`/` 的实现边界见 [agent.md](agent.md). 前端两点: 对话经由 `lib/agent/sse.ts` 手写 SSE, 不经 hey-api 也不经 `/ws`; 请求统一经由 `lib/api-token.ts` 的 `apiFetch` — **纯透传**, 只把 401 转成登录门, 鉴权用 HttpOnly cookie. 不允许在包装里重建 headers: 传入单个 `Request` 时 `init.headers` 会整体替换, 丢掉 `Content-Type` 后 FastAPI 会 422.
+
+## 实时与状态
+
+`lib/connection.ts` 是模块级 WS 单例 (指数退避 + 断连轮询降级), 入站经 `parseWSEvent` 窄化, 不识别的 type 丢弃. 任务查询的失效必须用同形对象前缀 (`[{ _id: "getTaskChildren" }]`), hey-api 生成的 query key 不是字符串前缀.
+
+| 数据 | 存储位置 |
+|------|--------|
+| 列表 / 详情 | TanStack Query (invalidate) |
+| 高频流 (进度 / 日志) | Zustand |
+| 对话增量 | SSE (与 WS 正交) |
+| 导航态 (筛选 / 排序 / page / view) | URL search |
+| 列表密度 / 列宽 / 主题 | Zustand (`amane-web`) |
+
+虚拟滚动的落底、短列表排布与 `followOutput` 约定见 `/logs` 与 `/tasks` 路由及其组件注释. OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-maps.ts`, 禁止在路由里再手抄一份.
+
+## 图片
+
+外站图经由 `/api/resources/proxy` (`proxyImageUrl`); `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是 `thumb_urls[0]` 对应的 Resource 本地文件, 只提交像素坐标, 不上传 blob.
+
+相位水印是 CSS overlay (`FilePhaseOverlay`), 读列表聚合的 `file_phase`, 不修改 Resource 像素; 表格与文件列表仍用 `FilePhaseBadges`. `FanartLightbox` 必须 Portal 到 `document.body` — Modal 打开态的 `transform` 会把 `position: fixed` 的包含块变成弹窗, 大图被 content 的 `overflow-y: auto` 裁切.
+
+外链图片的并发限流 (为什么限、阈值与观测判据) 见 `components/media/proxy-image.tsx` 与 `lib/image-loader.ts` 的注释.
+
+## `lib/` 分层
+
+根目录只放跨域工具 (`confirm` / `exhaustive*` / `api-token` / `connection` / `utils` 等); 只服务一个产品域的模块纳入 `lib/<domain>/` (`actors` / `feeds` / `agent` / `task`), 不允许再往根上堆叠带域前缀的文件. 不设根 barrel, 调用方直引文件.
 
 ## 工程入口
 
-- `just generate` → OpenAPI 导出 + TS client 生成 (`web/src/client/`, 不手改); SPA 产物 `web/dist` 由 `src/amane/api/spa.py` 挂载.
-- 类型、i18n 与 lint 的硬性约束由 `pnpm check` (tsc / oxlint / oxfmt / i18next extract) 把关, 规则出处见 `web/package.json` 的脚本.
+`just generate` → OpenAPI 导出 + TS client 生成 (`web/src/client/` 为产物, 不手改); SPA 产物 `web/dist` 由 `src/amane/api/spa.py` 挂载.
 
-## 相关文档
+路由组件由 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk: 只服务单个路由的重型依赖必须留在该路由的 chunk, 从共享模块导入会把它移回入口 chunk. `tanstackRouter()` 必须排在 JSX 转换插件之前, 顺序颠倒时构建失败.
 
-- 后端与 API 契约: [index.md](index.md)
-- 对话通道后端: [agent.md](agent.md)
-- 订阅源数据流: [feeds.md](feeds.md)
-- 路径模板语法: [data-model.md](data-model.md)
+类型、i18n 与 lint 的硬性约束由 `pnpm check` (tsc / oxlint / oxfmt / i18next extract) 把关.
