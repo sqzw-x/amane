@@ -88,7 +88,7 @@ SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完�
 
 ### 进度上报
 
-Worker 在 `handle()` 前注入 `report_progress` 回调, 经 EventBus 发 `task.progress` (`{task_id, current, total, message}`); 前端写 `stores/progress.ts` 渲染 determinate 条 (见 [frontend.md](frontend.md)).
+Worker 在 `handle()` 前注入 `report_progress` 回调, 经 EventBus 发 `task.progress` (`{task_id, current, total, message}`); 前端写 `web/src/stores/progress.ts` 渲染 determinate 条.
 
 **契约**: `total > 0` 时前端按 `current/total` 显示百分比; 未上报则 running 态回退 indeterminate. Handler 不调用时静默忽略.
 

@@ -52,7 +52,7 @@ RateLimiters → WebClient → HttpClient → CrawlerFactory
 ## 配置项增补规范
 
 1. 在 `src/amane/config/manager.py` 对应的 section model 中加字段 (给默认值). 所有配置 model (Cold / Hot / 各 section) 都集中在 `manager.py`.
-2. 需要 UI 展示时添加 `json_schema_extra` 中的 `x-*` 扩展 (见 [frontend.md](frontend.md)). 站点列表字段用 `site_roles.site_list_schema` / `site_list_value_schema` 收窄 `items.enum` (影片 / 演员档案 / 演员头像分列), 不允许直接暴露完整 `SiteName`.
+2. 需要 UI 展示时添加 `json_schema_extra` 中的 `x-*` 扩展 (`x-*` 清单见 `web/src/components/schema-form/schema/types.ts`). 站点列表字段用 `site_roles.site_list_schema` / `site_list_value_schema` 收窄 `items.enum` (影片 / 演员档案 / 演员头像分列), 不允许直接暴露完整 `SiteName`.
 3. 如果新字段影响限速 / HTTP / 爬虫 / LLM / handler 行为, 确认 `rebuild()` 链能传播变更; 若影响 WatcherService 构造参数, 须标明「重启生效」.
 4. 运行 `just generate` 同步前端 schema.
 5. 补翻译 (`web/src/i18n/`), 否则构建失败.

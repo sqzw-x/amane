@@ -78,4 +78,4 @@ FeedItem 的批量命令是单一 `POST /feeds/{feed_id}/items/batch`: 一个请
 
 ## WebSocket
 
-`/ws` 只接收不发送, 协议层 PING/PONG. 事件分发见 [frontend.md](frontend.md); EventBus 须最先初始化见 [architecture.md](architecture.md).
+`/ws` 只接收不发送, 协议层 PING/PONG. 前端入站收口在 `web/src/lib/connection.ts`, 各 store 的消费见 `web/src/stores/`; EventBus 须最先初始化见 [architecture.md](architecture.md).

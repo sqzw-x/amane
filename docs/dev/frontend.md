@@ -1,118 +1,45 @@
 # 前端架构
 
-> 入口: `web/src/`. 组件清单从源码可见; 本文只写信息架构、跨模块约定与易回归点.
+> 入口: `web/src/`. 本文只负责定位: 改哪一块该看哪些文件. 契约与约束写在对应文件的注释里, 本文不重复.
 
-## 信息架构
+## 路由 → 文件
 
-导航按域拆分, 不是扁平功能列表. 首页 `/` 是产品对话 (Amane), 不是片库.
+| 路由 | 页面文件 | 主要协作文件 |
+|----|---------|------|
+| `/` | `routes/index.tsx` | `components/agent/` (`agent-home.tsx` 为对话主体), `lib/agent/` |
+| `/meta` | `routes/meta.tsx` + `routes/meta.index.tsx` | `components/media/` (`poster-grid` / `meta-table` / `facet-filter-controls`) |
+| `/meta/$metadataId` | `routes/meta.$metadataId.tsx` | `components/media/playback-panel.tsx` → `playback-player.tsx`, `comment-body.tsx`, `lib/media/comment-timestamps.ts` |
+| `/actors` | `routes/actors.tsx` + `routes/actors.index.tsx` | `components/media/actor-grid.tsx` / `actor-table.tsx`, `lib/actors/browse.ts` |
+| `/actors/$actorId` | `routes/actors.$actorId.tsx` | `components/media/actor-card.tsx` / `actor-edit-dialog.tsx` / `meta-table.tsx`, `hooks/use-facet-identity-actions.ts` |
+| `/catalog/...` | `routes/catalog.tsx` + `catalog.index.tsx` + `catalog.$kind.tsx` + `catalog.$kind_.$facetId.tsx` | `components/media/catalog-facet-table.tsx`, `facet-rules-panel.tsx` |
+| `/saved-queries/$queryId` | `routes/saved-queries.$queryId.tsx` | `lib/agent/saved-query.ts` |
+| `/libraries` | `routes/libraries.tsx` + `routes/libraries.index.tsx` | `components/library/library-form.tsx` |
+| `/libraries/$libraryId` | `routes/libraries.$libraryId.tsx` | `components/library/` (文件表与扫描/整理入口) |
+| `/plugins` | `routes/plugins.tsx` | `components/plugins/`, `components/path-picker/` |
+| `/feeds` | `routes/feeds.tsx` + `routes/feeds.index.tsx` | `components/feeds/feed-reader.tsx` / `feed-sidebar.tsx`, `lib/feeds/` |
+| `/feeds/sources` | `routes/feeds.sources.tsx` | `components/feeds/feed-sources-table.tsx`, `lib/feeds/opml.ts` |
+| `/tasks` | `routes/tasks.tsx` | `components/task/task-tree.tsx`, `lib/task/` |
+| `/schedules` | `routes/schedules.tsx` | `components/cron-picker/`, `lib/cron.ts` |
+| `/logs` | `routes/logs.tsx` | `components/log/`, `stores/logs.ts` |
+| `/settings` | `routes/settings.tsx` | `components/schema-form/`, `hooks/use-config.ts` |
 
-| 域 | 路由重心 |
-|----|---------|
-| **Browse** | `/` 对话; `/meta` 片库; `/actors` 演员; `/catalog/...` 分类词云; `/saved-queries/$queryId` 查询结果; `/feeds` 阅读器 (`?feed=` / `?group=`) |
-| **Manage** | `/libraries` `/libraries/$id`; `/plugins` 来源插件; `/feeds/sources` 订阅源 |
-| **Ops** | `/tasks` `/schedules` `/logs` |
-| **Settings** | `/settings` (`?section=` 分组; Schema 表单) |
+路由由 `@tanstack/router-vite-plugin` 从 `routes/` 生成 (`routeTree.gen.ts` 不手改). 文件名的点号即路径层级; 需要独立 URL 又共享布局的一层写成 `xxx.tsx` + `xxx.index.tsx`, 叶页与父级同段时用尾随 `_`.
 
-片库 / 演员 / 分类无独立「管理」路由: `view=grid|list` (分类 `cloud|list`). grid/cloud 只读; list 才有多选与破坏性操作. Feed 相反: 阅读器 (`/feeds`) 与源表 (`/feeds/sources`) 不共用布局, 选中源不在阅读器顶栏展开操作条. 侧栏点条目只筛选阅读器; 源/分组的左侧图标深链源表 (不修改当前选中), 源经由 `?feed=` (按当前筛排定位到该行所在页并高亮, `feed` 不是筛选条件, 修改搜索框会清除该参数), 分组经由 `?q=`. 「全部」与「未分组」没有这条入口. 侧栏 `NavLink` 用 TanStack `Link` 时, Mantine 把 `aria-current=page` 画成选中, 而 Link 默认把子路径也标成当前页; `/feeds` 必须 `activeOptions.exact` 且忽略 search, 否则打开 `/feeds/sources` 时「订阅」也会亮.
+## 跨页共用
 
-**入口分流**: 非演员实体 → `/catalog/$kind/$facetId`; 演员 → `/actors/$actorId`. 结果筛选在 `/meta` (`q` + 各 `*_id`; `saved_query_id` 与其它筛选项 AND, 见 [agent.md](agent.md)). `FacetBadge` 默认 `mode="catalog"` (actor 深链 `/actors/$id`), 筛选深链用 `mode="meta"`. 演员不进入 `/catalog`. 详情出演徽章的性别来自同一次 `Actor` 行查找 (`actor_genders`), 不是 `raw` 里的 `FilmActor`; 仅 `female` / `male` 画符号.
-
-影片详情的用户标签与刮削标签分栏. 加减菜单勾选后保持打开, 底部按钮一次提交多名; 绑定/解绑是前端循环单条 API. `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许用来给一部影片一次挂多个标签.
-
-影片详情在封面预告片之外播放正片. 面板先只取来源列表 (`GET /api/playback/sources`, 主机不调用插件, 因此立刻渲染), 当前来源的流 (`GET /api/playback/{source_id}/{metadata_id}/streams`) 在挂载时与切换来源时按需加载, 加载期间以等宽占位显示. 一个来源可以给出多条流, 因此有两级选择: 两级都经 `EnumToggle` 平铺 (来源选择器常驻, 流选择器只在所选来源多于一条流时出现), 一级超过 4 项时该级回退为下拉菜单; 切换来源要重置流的选择, 否则会指向另一个来源的 key; 流的名称由主机拼成「来源名 · 流名」, 前端不拆分. 当前不可播的行在选择器中标记为不可用; 不可用项同样可以选中, 选中后不渲染播放器, 原因 (主机给出的 `detail`, 缺失时是通用文案) 显示在红色提示里. 来源列表为空 (没有已启用的播放源) 时整块不渲染; 不向页面外抛出错误. 播放窗口常驻且尺寸由比例决定: 探测中显示占位, 流列表查询失败、选中不可用的流、播放失败与媒体类型不支持都在窗口内居中提示 —— 状态变化不得改变外框尺寸, 否则切换来源时页面高度突变会把滚动位置夹回顶部. `video` 的媒体地址只使用列表给出的本机端点. 码流与字幕均为同源 `/api/playback/...`, 原生 `<video>` 不设置 `crossOrigin` (凭据模式与 `Access-Control-Allow-Origin: *` 不能同时成立). `video/*` 与 HLS 都由 media-chrome 的控制条驱动: HLS (`mpegurl`) 在 Safari 等可原生播放的浏览器采用 `<video src>`, 其它浏览器用 `hls.js` 且 XHR `withCredentials`; 列表给出的 WebVTT 渲染为 `<track>`. 播放器模块经 `React.lazy` 懒加载, 与 `hls.js` 一样不进入主包. 视频区由 `AspectRatio` 固定 16:9, 宽度上限为 `min(100%, calc(72dvh * 16 / 9))` 并居中: 只限制高度会让替换元素的盒子比例宽于素材比例, `object-fit: contain` 于是在左右留黑边. media-chrome 的菜单必须是控制条的子元素并初始带 `hidden`; 位置由前端 CSS 固定在控制条上方 (media-chrome 只在 ResizeObserver 回调里计算位置, 而展开时重新 observe 目标元素不保证再收到回调, 菜单会停在与控制条同一行的静态位置并被 `overflow: hidden` 裁掉). 四个方向键都由前端接管 (media-chrome 的按键处理在松手时才执行一次, 无法按住连续调节): 左右键的跳转在松手时执行, 短按跳 5 秒, 长按不跳转 —— 按下即跳会让长按必然先跳一次. 按住右键 400ms 后把倍速提到 2 倍, 松开、失焦或切换标签页恢复; 加速归属按下时记下的键, 松开另一个方向键不打断长按. 左键长按没有动作: 倒放无法用倍速实现 (`playbackRate` 不接受非正值). 上下按住可连续调节音量, 并在画面中央显示音量提示. 因此控制器的 `hotkeys` 关掉这四个键, 其余快捷键仍由 media-chrome 提供. 拖动进度条或音量条期间置 `gesturesdisabled`: 指针若松在画面上, 浏览器会把随后的 click 目标定为控制器 (按下与松开的最近公共祖先), 手势层据此切换播放/暂停. 画面的单击与双击也由前端判定: 手势层对每次 click 立即切换播放/暂停, 双击会因此先暂停再恢复, 所以鼠标与触控笔的点击改由前端接管 —— 第一次单击等过 250ms 才执行, 窗口内的第二次点击改为切换全屏 (进入还是退出复用全屏按钮的判定). 触摸的点击仍交给手势层即时处理, 也就不支持双击全屏. 接管后这次点击在控制器处停止传播, 判定目标须为视频或控制器自身, `gesturesdisabled` 期间同样不计数. 浏览器在进入全屏时会改写页面的滚动位置, 退出时未必写回, 页面会停回顶部; 前端因此在进入前记下位置, 退出后写回 (事件里一次, 下一帧再一次). 记下的值只在非全屏时更新 —— 全屏期间浏览器写入的值不能作为还原目标 —— 指针与按键事件也一并更新; 由其它元素发起的全屏不介入. 音量只有一个状态: 静音实现为音量 0, 媒体元素的 `muted` 始终为假, 取消静音回到本次会话内记下的上次非零音量 (这份记忆不落存储). 存储里只有音量本身 (`amane-playback-volume`, 0–1), media-chrome 自带的音量与静音偏好 (两份互相独立的 `localStorage` 值) 由控制器上的 `novolumepref` / `nomutedpref` 关掉, 静音按钮与 `m` 快捷键的静音请求在控制器上截下并改写为音量请求. 装载时恢复音量不弹音量提示; 方向键从 0 起与从任何音量起同形, 逐级加减一档. 存储音量为 0 时装载即静音, 滑杆与图标按 0 显示. 倍速与音量收在按钮上方的悬停浮层里: 指针进入按钮即展开, 离开后收起, 浮层用实心底色. 倍速条目由前端渲染 (media-chrome 自带的倍速菜单固定升序, 与「快的在上」相反, 而用 `column-reverse` 反转会让方向键与视觉顺序错位), 菜单按钮经 `invoketarget` 指向它. 音量条是自绘的竖向 Mantine Slider: media-chrome 的 range 只按 `clientX` 取值, 旋转成竖向会拖不准; 浮层内的焦点落在其 shadow DOM, `:focus-within` 在 WebKit 下不匹配宿主, 因此展开由指针与焦点事件驱动. 播放器控件不显示悬浮说明, 无障碍名称仍由 media-chrome 自带的 `aria-label` 提供. 控制条文案取自 media-chrome 自带语言包, 语言在播放器模块加载时与 i18next 对齐, 界面语言切换后要重新挂载播放器才生效. `seekable` 为假的流不渲染进度条, 也不接管方向键. 不允许把上游 URL 或密钥写入前端状态. 播放失败优先展示主机返回的中文 `detail`; 主机没有给出 `detail` 时展示 `hls.js` 致命错误的错误类型、HTTP 状态码与失败地址, 该错误不存在时展示探测响应的 HTTP 状态码. 探测响应为 2xx 时不展示其状态码, 该状态码不含失败信息.
-评论正文里的时间戳是跳转入口: 识别 `mm:ss` 与 `h:mm:ss`, 秒必须是两位 —— 这一条让 `16:9`、`3:2` 这类比例与比分不成为链接. 点击后经路由的 seek 请求传给播放器 (同一秒连点靠请求里的自增序号重新触发), 播放窗口滚进视野, 播放器定位并开始播放; 目标秒数同时写进地址栏 `?t=` (replace, 不堆历史记录), 带该参数打开页面时按它定位. 当前没有可跳转的播放 (没有可播的流、流不可寻址、已出错) 时时间戳置灰, 悬浮说明给出原因.
-
-画面上的右键菜单给出两个复制入口: 当前时间戳, 以及在现有地址上换掉 `t` 参数的分享地址 (其余参数原样保留, 落点在 0 秒时删掉该参数). 时间戳格式与评论里可点击的时间戳同形, 复制出来可直接粘回评论. 复制的秒数在点按条目时读取, 不是展开菜单时的那一秒 —— 展开期间画面仍在播放, 因此不订阅 `timeupdate`. 菜单展开期间在它下面盖一层占满播放器的透明遮罩 (层级低于菜单, 高于画面与控制条): 菜单之外的点击落在遮罩上, 因此既不会切换播放/暂停, 也不会误触控制条按钮, 只负责收起菜单. 收起判定只看「点在不在菜单里」, 不依赖事件传播次序. 菜单必须渲染在控制器内部: 容器带 `overflow: hidden`, 挂到控制器外会被裁掉, 全屏时也只有控制器的子树可见 (Mantine 的 Portal 挂在 `document.body`). 右键不走 React 的合成事件 —— `contextmenu` 不派发到自定义元素上的 React 监听 —— 监听挂在控制器上. 判定与控制条一致: 只有画面与控制器自身响应, 控制条与菜单保留浏览器原生右键菜单; 不可寻址的流两项置灰.
-
-分类实体页必须是 `catalog.$kind_.$facetId.tsx` (trailing `_`): `$kind` 是词云叶页而非 layout, 写成 `catalog.$kind.$facetId` 会成为无 `<outlet />` 的父路由的子路由, 子页永不渲染.
-
-演员浏览经由 `/api/actors`; 身份治理 (rename/merge/delete/rules) 仍调用 `/api/facets/actor`. 清空人物档案是 `PATCH /actors/{id}` 空字段 (保留 name/gender; `raw`/`field_sources` 不在对外可写面, 普通刮削可能从缓存填回), 不是删 facet. 筛选字段单一事实源 `lib/actors/browse.ts` (与 `ActorBrowseParams` 对齐). `/actors` 未带 `gender` 时默认仅女演员 (从 URL 剥掉); 清空性别写入 `gender=[]` 表示不限, 与缺省不是一回事. 批量刮削 / 批量性别 / 批量清空是前端循环, 无独立 batch 端点.
-
-## 列表分页
-
-片库 / 演员 / 分类的 **list**、订阅源、`/libraries/$id` 文件表采用 `BrowsePageShell fill`: 标题/搜索不滚, 剩余高度交给 children. 视口高度是 `APP_SHELL_MAIN_HEIGHT` (header + 上下 padding), `/feeds` 阅读器、`/tasks` 与 `/logs` 共用, 不允许再手写一份 calc. `/tasks` 页头 (状态/类型筛选) 留在 ListToolbar 外, 表体才采用 ListToolbar; 阅读器虚滚自管, 不套 ListToolbar. 日期分段标题是列表行, 随列表滚动, 不吸顶. 库详情的扫描/整理/配置/删除在 ListToolbar `trailing` (表体右上), 与左侧多选批处理相对. 整理按钮依次入队 TRASH、ORGANIZE (同库执行期共用一把锁; ORGANIZE 跳过黑名单 / 过小 / 回收站行, 入队先后不把垃圾落盘). 文件表多选「批量整理」提交一个 ORGANIZE, payload `media_file_ids` 为勾选的索引行 id (不是目录), 不拆任务、不回收. 路径列在 `task.completed` 时经 `listMedia` 失效刷新. 文件表行上的刷新图标只带 `media_id`; 「指定番号刮削」打开对话框, 番号必填、内容类型可选, 与 `media_id` 一同提交.
-
-`ListToolbar` 是表体壳: 顶栏 (多选 / 规则入口) 不滚, 表体内滚, **唯一**分页固定于视口底; 翻页把表体滚回顶部. `grid` / `cloud` 禁止 fill — 演员墙 `VirtuosoGrid` 用 `useWindowScroll`. ListToolbar 的 overflow 区要求父级有界高度; 非 fill 页将其作为壳时, `flex` + `minHeight: 0` 会把表高收缩为 0.
-
-图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip). 不允许 HTML `title`: 浏览器原生提示延迟出现、贴指针、深色小字. 截断文本的溢出全文仍可用 `title`. 带可见文案的控件不包 Tooltip, 除非说明与可见文案不同 (例如禁用原因). disabled 控件须再包一层可接收指针事件的元素.
-
-## Schema 表单
-
-Settings、任务提交、定时创建、metadata 编辑共用 `components/schema-form/`: Pydantic → OpenAPI → FieldRouter. `x-*` 清单见 `schema/types.ts`.
-
-Dict 的用户 key 是父级对象上的字面量, 不写入 TanStack 点路径; 叶子读写经由 `DictEntryScope` 写入 `[key]` (主机名等含 `.` / `[` / `]` 的 key 才能原样保存).
-
-Tabs 同时挂载全部条目, 叶子 `id`/`htmlFor` 必须经由 `useFieldDomId` 加上条目前缀, 不能只用 schema 相对名, 否则同名 Switch 会命中第一份控件. 标题栏滚轮不得切换条目.
-
-`SchemaForm` 双模式: `patch` (dirty 门控, 只提交 diff) / `create` (完整值). dirty 保存条 (`UnsavedChangesBar`) : 设置页与影片/演员编辑弹窗均采用 `affix` (Portal 固定于视口底, 居中). Affix 默认 z-index 与 Modal 同为 200, 编辑弹窗里必须抬到 300 才能叠在弹窗之上. 不允许将 dirty 条放入 Modal 表单流 — Modal content 是滚动容器, 末尾的条必须滚到底才看见.
-
-`fieldLayout="grid"` 把连续短 scalar 排列为两列 (`sm+`); title/plot 类长文本与 array/dict 仍整行 — 仅 metadata 编辑开启.
-
-表单空值编码经由 `schema-form/encode.ts` (`encodeFormBody` / `encodeEmptyValue`), 按 **Create / 列 schema** 判空: 可空 string 空串 → `null`, 非空 string 空串 → `""`, 非空 array 空 → `[]`. 不允许对着 PATCH partial schema 编码 — `create_partial_model` 会把非空列标成 `T|null`, 空 glob 会被编成 JSON `null`. 手写 Library / Feed 表单经同一编码器出 body (`libraryFormToCreateBody` / `libraryFormToUpdateBody` 分别用 Create 与 Response schema).
-
-可增减 key 的 dict (无 `x-frozen-keys`): 值为空数组 / 空对象 / `null` 的条目与缺席等价, 编码时删除, 条目控件把值清空时也删除该 key. 新增 key 的空默认值仍留在表单上供继续填写, 在写入值之前不构成变更. `x-frozen-keys` 必须保留全部 key, 空列表原样提交 (`content_routes` 的空列表是关停该类型; 缺席会被校验补回默认路由). dirty 与 PATCH 都比较编码后的值.
-
-`/plugins` 通过 `/api/plugins` 取得插件自带 JSON Schema, 单独渲染每个来源配置; 插件配置不进入核心 HotSettings 表单. 页面按能力分区: 声明 `film_metadata` 的进入影片刮削区 (该区链到内容路由设置), 声明 `playback` 的进入播放源区; 同时声明两者的插件在两个分区都列出, 配置仍只有一份, 不进入内容路由. 安装用 `PathPicker` 选服务器目录/zip, 或上传本机 zip; 重新扫描 / 卸载经由同一资源的 POST/DELETE, 成功后同时失效插件列表与 config schema (路由 enum 会变).
-
-任务 / 定时提交用 `DiscriminatedSchemaForm`: 外部选 `type` → schema variant → 去掉 const `type` 后交给 `create` 模式. 短枚举共用 `EnumToggle` (`components/common/enum-toggle.tsx`): 项间分隔线 + 滑动指示; `fullWidth` 占据整行 (任务/定时 type、cron 模式、订阅内容类型), 默认按文案宽度 (Schema 表单短枚举、库放置方式/自动化、间隔单位). 片库 grid/list 等页面 view 切换仍用 SegmentedControl. 定时的 cron 用 `CronPicker`: 可视化覆盖间隔/每天/每周/每月, 无法往返的表达式回落「高级」手写; 产出 5-field, 与后端 croniter 一致. 每天/每周/每月的时刻按浏览器本地墙钟填写, 写出时换算为 UTC 字段 (星期与日期随跨日平移); 间隔不换算; 「高级」手写按 UTC. 定时列表与编辑弹窗按响应里的 `RoutineSubmission` 展示 payload; PATCH 仍只改 name / cron / enabled.
-
-Library 表单仍手写 (create/edit 差 + `scan` 条件字段 + 库级 `automation` / `ingest` / `cloud_path` / 整理默认与预告片跳过正则); 路径模板占位符与后端 `resolve_paths` 同源, 经由 `GET /api/libraries/path-template-schema` 下发 name+map_keys, 徽章说明在 i18n `placeholders.items` (有闭合取值时 tooltip 附 `map_keys`); 可空占位符名带字面量 `?`, `{name|k=v}` 与可选组语法见 [data-model.md](data-model.md). 模板框是透明输入叠着色层 (`template-input.tsx`), 词法跟 Parser 的 `{name}` / `|k=v` / `[..]` / `[[..]]`; Accordion Collapse 展开时盒子从 0 增至目标高度; 着色层须在尺寸变化后再次与输入框对齐 (有值时输入框透明, overlay 高度为 0 会裁掉文字); 占位符名与有闭合取值的映射 key 对照 `path-template-schema` 标红, 清单未下发时只标语法错误.
-
-Feed 表单手写 (分组伪路径 / 间隔默认小时 / 正则 / content_type / use_cache / 过滤关键词每行一项), 只出现在 `/feeds/sources`. `/feeds` 是侧栏目录 + 条目阅读器. 导航态在 URL (`feed` / `group` / `q` / `state` / `read` / `page` / `nodedupe`). 阅读器默认 `read=unread` (与列表 API 默认 `all` 不同). 侧栏徽章是 `unread_count` (未忽略未读), 0 不显示; 分组为子树合计, 不是源个数. `/feeds/sources` 复用 BrowsePageShell `fill` / ListToolbar / SelectionBar / SortableTh; 源列表无分页 API, 前端筛选、排序、分页. 排序仅经由表头; 搜索旁是启用/自动入队筛选按钮 (URL `enabled` / `auto_enqueue`). 阅读器侧栏源/分组左侧图标深链源表, 见上文信息架构. 条目 HTML 经由 DOMPurify 后渲染, 同番号折叠与日期分段标题是前端显示层. 条目批量按 `feed_id` 分组经由现有 batch. 源级批量 (拉取 / 启用 / 停用 / 自动入队 / 过滤关键词 / 删除) 是前端循环现有单源端点, 无独立 batch. OPML 把无 xmlUrl 的 outline 写成 `group`; 导入时可加分组前缀 (拼在 outline 路径前) 与 `auto_enqueue` (默认关). 番号是否已在库由 items 列表 JOIN 的 `metadata_id` 判断, 见 [feeds.md](feeds.md).
-
-破坏性确认经由 `lib/confirm.tsx`, 不用 `window.confirm`.
-
-`/tasks` 无行多选. 筛选批量按钮固定于 ListToolbar 顶栏, 按当前 URL `status`/`type` 调用 `POST /tasks/batch` (与列表筛选同形); 与该 action 不允许的状态求交后为空则隐藏按钮. 行级/详情操作同一端点, 只带 `task_ids`. Worker 暂停按钮只切换进程内领队开关, 文案暂停/恢复, 不解释执行器.
-
-任务树 (`components/task/task-tree.tsx`) 不是 Table 缩进. 点击整行展开/收起该节点 — 子任务与详情是同一动作, 箭头只是状态指示不是第二套操作. 行是全宽网格: 只有名称列按深度画 ├/└ 导线, 错误/状态/耗时/编号/操作列对齐; 状态色只出现在当前层导线和有后继时的展开脊线上, 无后继不画向下脊线. 多级展开时祖先导线以虚线贯穿详情, 避免外侧断掉. 全部展开/收起固定于 ListToolbar `trailing`, 不随表体滚. 展开面板是独立滚动盒, 高度封在最近滚动容器的剩余视口; 用户点开时外侧把该行滚到容器顶部附近 (全部展开不抢焦点). 列表项带 `child_count` / `child_status`; 展开后 `/children` 带 `link_key`.
-
-## 对话通道
-
-`/` 的实现边界见 [agent.md](agent.md). 前端要点:
-
-- 对话经由 **SSE** (`lib/agent/sse.ts` 手写 `fetch` + `ReadableStream`), 不经由 hey-api、也不经由 `/ws`.
-- 请求统一经由 `lib/api-token.ts` 的 `apiFetch`: **纯透传**, 不注入 header, 只把 401 转成登录门. 鉴权采用 HttpOnly cookie, 见 [config.md](config.md).
-- 不允许在包装里重建 headers (`fetch(input, { headers })`): 传入单个 `Request` 时 init.headers 会整体替换, 丢掉 `Content-Type`, FastAPI `strict_content_type` 下 JSON 会 422.
-
-## 实时与状态
-
-`lib/connection.ts`: 模块级 WS 单例 + 指数退避 + 断连轮询降级. 入站经由 `parseWSEvent` 窄化, 不识别的 type 丢弃. 任务列表与已展开子节点经由 `invalidateTaskQueries`: hey-api 生成的 query key 是 `[{ _id, baseUrl, path, query }]`, `invalidateQueries({ queryKey: ["getTaskChildren"] })` 对不上, 必须用同形对象前缀 `[{ _id: "getTaskChildren" }]`.
-
-| 数据 | 存储位置 |
-|------|--------|
-| 列表 / 详情 | TanStack Query (invalidate) |
-| 高频流 (进度 / 日志) | Zustand |
-| 对话增量 | SSE (与 WS 正交) |
-| 导航态 (筛选 / 排序 / page / view) | URL search |
-| 列表密度 / 列宽 / 主题 | Zustand (`amane-web`) |
-
-`/logs` 进入后滚到 scroller 真正的底 (`scrollTo` MAX, 不是 `scrollToIndex` LAST+end — 单行末项 align end 会把下边距裁掉). `initialTopMostItemIndex` 只用末项下标. 内容不足一屏时从顶部排布 (`alignToBottom` 会把短列表贴底, 禁止启用). `followOutput` 开着时回调恒返回 `auto`, 不用 `smooth`.
-
-OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-maps.ts`, 禁止在路由里再手抄一份.
-
-## 图片
-
-外站图经由 `/api/resources/proxy` (`proxyImageUrl`). `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是 `thumb_urls[0]` 对应的 **Resource 本地文件** (与后端 `acquire` 同一份), 只提交像素坐标, 不上传 blob. 片库海报 / 详情封面相位水印是 CSS overlay (`FilePhaseOverlay`), 读列表聚合 `file_phase`, 不修改 Resource 像素. 无码 = mosaic 标记或内容类型 uncensored. 四角: 左上马赛克 (有码/无码/破解/流出), 右上评分, 左下中字+清晰度 (出演墙还叠当时年龄), 右下发行日. 表格/文件列表仍用彩色 `FilePhaseBadges`, 不采用 overlay.
-
-`FanartLightbox` 必须 `Portal` 到 `document.body`. Modal 打开态带 `transform` (`fade-down` 的 `translateY(0)`), 会把 `position: fixed` 的包含块变为弹窗本身, 大图被 content `overflow-y: auto` 裁切. Lightbox 拦截 mousedown/click 冒泡, 避免点预览被 Modal 当成 click-outside.
-
-**proxy 限流**: 外链 `<img>` 经由 `ProxyImage` / `useQueuedImageUrl`. 浏览器对同 host HTTP/1.1 连接有限 (约 6); 慢速外链不限流会占满连接池, API 请求全部排队. 全局信号量限制 4 个并发; 探测到 h2+ 时放行. 本地 `/api/resources/*` 不经由队列. Intersection Observer 仅对邻近视口的 proxy 图申请信号量 (`rootMargin` 400px); 排队图一旦取得 `src` 立即请求, 不使用 `loading=lazy` (`lazy` 会让屏外图占用信号量却不发出请求, 视口内头像一直空白).
-
-演员头像墙 (`/actors` grid): `VirtuosoGrid` + `useWindowScroll`, 每批 30; grid 模式不预先拉取 list 查询.
-
-## `lib/` 分层
-
-根目录只放置跨域工具 (`confirm` / `exhaustive*` / `api-token` / `connection` / `utils` 等). 只服务一个产品域的模块纳入 `lib/<domain>/` (`actors` / `feeds` / `agent`), 不允许再往根上堆叠带域前缀的文件. 不设根 barrel, 调用方直引文件.
+- 组件按产品域分目录 (`components/<domain>/`), 跨域复用件放 `components/common/`: 列表壳 (`browse-page-shell` / `list-toolbar` / `list-pagination` / `selection-bar` / `sortable-th` / `sort-menu` / `page-size-select`)、通用控件 (`enum-toggle` / `hinted-action-icon` / `unsaved-changes-bar` / `infinite-scroll-sentinel`).
+- 布局与视口高度: `components/layout/app-shell.tsx` + `app-shell-metrics.ts`.
+- 列表与详情走 TanStack Query (`client/` 为 generate 产物); 高频流 (进度 / 日志) 与界面偏好走 Zustand (`stores/`); 导航态 (筛选 / 排序 / page / view) 在 URL search, schema 定义在各自路由文件.
+- `lib/` 分层: 根目录只放跨域工具, 单域模块进 `lib/<domain>/`. 不设 barrel, 调用方直引文件.
 
 ## 工程入口
 
-`just generate` → OpenAPI + TS client; SPA 产物 `web/dist` 由 `api/spa.py` 挂载.
+- `just generate` → OpenAPI 导出 + TS client 生成 (`web/src/client/`, 不手改); SPA 产物 `web/dist` 由 `src/amane/api/spa.py` 挂载.
+- 类型、i18n 与 lint 的硬性约束由 `pnpm check` (tsc / oxlint / oxfmt / i18next extract) 把关, 规则出处见 `web/package.json` 的脚本.
 
-路由组件经 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk, 首屏只加载入口与当前路由. 只服务单个路由的重型依赖留在该路由的 chunk (liquidjs 在 `/tasks`, liqe 在 `/logs`); 从共享模块导入会把该依赖移回入口 chunk. `hls.js` 由播放面板动态导入. `tanstackRouter()` 必须排在 JSX 转换插件之前 — 顺序颠倒时构建失败.
+## 相关文档
 
-- **禁止** `as never` / `as any` 绕过可推断位置. `as const satisfies` 用于收窄字面量.
-- i18next 已接入资源类型: 缺 key 补翻译, 不允许 `as never`. extract 给 en 补的 `_one` / `_other` 必须写成译文, 不允许留下 `ns:key` 占位 (带 `count` 时英文会命中后缀 key, 界面会显示路径本身).
-- 跨页相同文案放入 `common` (或该能力所属 namespace); 页面 namespace 只留本域特有文案.
-- `useTranslation` 声明 namespace 后, 默认 ns 的 `t()` 不允许写 `ns:` 前缀; 跨 ns 才加 (`t("common:actions.save")`).
-- **例外**: `schema-form/` 内动态 path / 运行时 schema 分组允许显式断言并注释原因.
-- oxlint `correctness` 含 React Compiler 推荐规则. 用 props/key 重置本地 state 采用渲染期调整 (`useResettingState`), 不允许 `useEffect` + `setState`. 事件/观察者回调里要读「最新值」用 `useLatestRef`, 不允许在 render 里写 `ref.current`.
+- 后端与 API 契约: [index.md](index.md)
+- 对话通道后端: [agent.md](agent.md)
+- 订阅源数据流: [feeds.md](feeds.md)
+- 路径模板语法: [data-model.md](data-model.md)
