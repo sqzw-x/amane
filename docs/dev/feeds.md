@@ -46,7 +46,7 @@
 - `delete`: 永久删除历史行, 不影响已有 Task / Metadata / Resource; 远程源再次返回相同 `item_key` 时重新视为新条目.
 - `scrape`: 按当前 Feed 的 `content_type` / `use_cache` 配置为有番号条目创建番号级 SCRAPE; 同批次番号大小写不敏感去重, 无番号计入 `skipped`, 手动任务优先级为 `0`, 返回 `submitted` 与 `task_ids`. 配置在任务创建时写入 payload, 后续修改 Feed 不影响已入队任务.
 
-阅读器 (`/feeds`) 只消费条目, 源 CRUD 在 `/feeds/sources`. 阅读器复用 SelectionBar / ListPagination / PageSizeSelect; 多选条目可执行忽略、恢复、已读、未读、删除和重刮削. 被忽略条目仍允许手动刮削; 无番号仍可参与批量操作, 但由后端计入 `skipped`. 历史重刮削使用该条所属 Feed 当前配置, 是用户触发, 用默认优先级, 不是自动发现的 `priority=-1`. FeedItem 没有独立于 batch action 的手动刮削端点. 源级批量见 [frontend.md](frontend.md).
+阅读器 (`/feeds`) 只消费条目, 源 CRUD 在 `/feeds/sources`. 阅读器复用 SelectionBar / ListPagination / PageSizeSelect; 多选条目可执行忽略、恢复、已读、未读、删除和重刮削. 被忽略条目仍允许手动刮削; 无番号仍可参与批量操作, 但由后端计入 `skipped`. 历史重刮削使用该条所属 Feed 当前配置, 是用户触发, 用默认优先级, 不是自动发现的 `priority=-1`. FeedItem 没有独立于 batch action 的手动刮削端点. 源级批量在前端循环单源端点, 见 `web/src/components/feeds/feed-sources-table.tsx`.
 
 ## 每源刮削配置
 

@@ -223,3 +223,71 @@
   right: 4px;
   bottom: calc(100% + 20px);
 }
+
+/*
+  右键菜单: 在指针处展开, 落在控制器内部.
+  控制器等宽高由容器决定, 因此坐标用相对控制器的像素值; 下方放不下时向上展开, 由 top 翻到底边.
+  条目按应用内的菜单密度排布 (14px 字号, 36px 行高), 在深色画面上用描边把面板与画面分开.
+*/
+.contextMenu {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: var(--mantine-radius-md);
+  background: var(--amane-player-panel-background);
+  box-shadow: var(--mantine-shadow-lg);
+  font-family: var(--mantine-font-family);
+}
+
+.contextMenu[data-upward] {
+  transform: translateY(-100%);
+}
+
+.contextMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--mantine-radius-sm);
+  background: transparent;
+  color: rgb(255 255 255 / 0.92);
+  font-family: inherit;
+  font-size: var(--mantine-font-size-sm);
+  text-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.contextMenuItem:hover:not(:disabled),
+.contextMenuItem:focus-visible:not(:disabled) {
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
+}
+
+.contextMenuItem:disabled {
+  color: rgb(255 255 255 / 0.38);
+  cursor: default;
+}
+
+.contextMenuItem svg {
+  flex: none;
+  opacity: 0.85;
+}
+
+/*
+  右键菜单的遮罩: 占满播放器, 层级低于菜单、高于画面与控制条.
+  菜单之外的点击落在它身上, 因此不会命中画面 (不切换播放/暂停) 或控制条按钮; 它只负责收起菜单.
+  全屏时同样覆盖整个播放器. 这里不能用 Portal —— 全屏下只渲染控制器子树.
+*/
+.contextMenuBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: transparent;
+}

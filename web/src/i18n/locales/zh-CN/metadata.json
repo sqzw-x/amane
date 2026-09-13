@@ -138,7 +138,11 @@
       "needSelection": "请先框选有效区域",
       "success": "海报已更新",
       "noThumb": "需要封面图才能裁切海报"
-    }
+    },
+    "playbackCopyTimestamp": "复制时间戳",
+    "playbackCopyLink": "复制当前时间的链接",
+    "playbackCopied": "已复制到剪贴板",
+    "playbackCopyFailed": "复制失败"
   },
   "browse": {
     "title": "分类浏览",

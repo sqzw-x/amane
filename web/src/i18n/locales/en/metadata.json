@@ -137,7 +137,11 @@
       "needSelection": "Select a valid region first",
       "success": "Poster updated",
       "noThumb": "A cover image is required to crop a poster"
-    }
+    },
+    "playbackCopyTimestamp": "Copy timestamp",
+    "playbackCopyLink": "Copy link to current time",
+    "playbackCopied": "Copied to clipboard",
+    "playbackCopyFailed": "Copy failed"
   },
   "browse": {
     "title": "Browse",
