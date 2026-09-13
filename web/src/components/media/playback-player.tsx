@@ -52,7 +52,7 @@ const SEEK_STEP_SECONDS = 5;
 const VOLUME_STEP = 0.05;
 /** 音量提示在最后一次调整后保留的毫秒数. */
 const VOLUME_INDICATOR_MS = 900;
-/** 按住方向键多久之后进入加速 (毫秒). */
+/** 按住右键多久之后进入加速 (毫秒). 短于该时长的按键在松开时跳转. */
 const HOLD_SEEK_DELAY_MS = 400;
 /** 长按期间使用的播放倍速. */
 const HOLD_SEEK_RATE = 2;
@@ -114,9 +114,12 @@ function SubtitleTracks({ tracks }: { tracks: PlaybackSubtitleItem[] }) {
 /**
  * 四个方向键.
  *
- * 左右: 按下即跳 `SEEK_STEP_SECONDS` 秒; 按住超过 `HOLD_SEEK_DELAY_MS` 之后把播放倍速提到
- * `HOLD_SEEK_RATE`, 倍速按钮会同步显示该值. 松开按键、窗口失焦、切换标签页时恢复用户
- * 设定的倍速 — 后两种时机用于兜住丢失的 keyup.
+ * 左右: 跳转在松开按键时执行, 因此短按跳 `SEEK_STEP_SECONDS` 秒, 长按不跳转. 按住右键超过
+ * `HOLD_SEEK_DELAY_MS` 之后把播放倍速提到 `HOLD_SEEK_RATE`, 倍速按钮会同步显示该值. 松开按键、
+ * 窗口失焦、切换标签页时恢复用户设定的倍速 — 后两种时机用于兜住丢失的 keyup.
+ *
+ * 加速只属于右键: 倒放无法用倍速实现 (`HTMLMediaElement.playbackRate` 不接受非正值), 左键长按
+ * 因此没有动作. 加速归属按下时记下的键, 松开另一个键不打断长按.
  *
  * 上下: 每次 keydown 调整一次音量, 按住时浏览器持续派发 keydown, 因此可以连续调节.
  *
@@ -129,6 +132,8 @@ function usePlayerKeys(
 ) {
   const holdTimerRef = useRef<number | null>(null);
   const savedRateRef = useRef<number | null>(null);
+  // 长按按下的方向键; 为空表示这次按住还没到加速的时机, 松开时按短按处理.
+  const heldKeyRef = useRef<"ArrowLeft" | "ArrowRight" | null>(null);
 
   const releaseHold = useCallback(() => {
     if (holdTimerRef.current != null) {
@@ -140,6 +145,7 @@ function usePlayerKeys(
       video.playbackRate = savedRateRef.current;
       savedRateRef.current = null;
     }
+    heldKeyRef.current = null;
   }, [videoRef]);
 
   useEffect(() => {
@@ -163,17 +169,18 @@ function usePlayerKeys(
         return;
       }
       event.preventDefault();
-      if (event.repeat) {
+      // 按住期间浏览器持续派发 keydown; 已经有按下的键时不重新计时, 也不改归属.
+      if (event.repeat || heldKeyRef.current != null) {
         return;
       }
-      const video = videoRef.current;
-      if (video == null) {
-        return;
-      }
-      const offset = event.key === "ArrowRight" ? SEEK_STEP_SECONDS : -SEEK_STEP_SECONDS;
-      video.currentTime = Math.max(video.currentTime + offset, 0);
+      const key = event.key;
+      heldKeyRef.current = key;
       holdTimerRef.current = window.setTimeout(() => {
         holdTimerRef.current = null;
+        // 只有右键有长按动作.
+        if (heldKeyRef.current !== "ArrowRight") {
+          return;
+        }
         const held = videoRef.current;
         if (held == null) {
           return;
@@ -190,9 +197,21 @@ function usePlayerKeys(
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
         return;
       }
+      // 两个方向键同时按住时, 松开另一个键不改变长按归属.
+      if (heldKeyRef.current !== event.key) {
+        return;
+      }
+      const video = videoRef.current;
+      // 已经进入加速的长按不跳转; 只有短按才跳.
+      const shortPress = holdTimerRef.current != null;
       releaseHold();
+      if (!shortPress || video == null) {
+        return;
+      }
+      const offset = event.key === "ArrowRight" ? SEEK_STEP_SECONDS : -SEEK_STEP_SECONDS;
+      video.currentTime = Math.max(video.currentTime + offset, 0);
     },
-    [releaseHold],
+    [releaseHold, videoRef],
   );
 
   return { onKeyDown, onKeyUp };
