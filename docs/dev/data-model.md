@@ -4,7 +4,7 @@
 
 ## 数据所有权
 
-**SQLite 是唯一数据源**, NFO / 海报 / fanart 等磁盘文件都是从 DB 派生的副产物 (兼容 Emby / Jellyfin / Kodi). 重建顺序为 DB → 派生文件, 不反向. 不允许从 NFO 反推 Metadata.
+**SQLite 是唯一数据源**, NFO / 海报 / fanart 等磁盘文件是从 DB 派生的副产物 (兼容 Emby / Jellyfin / Kodi). 重建顺序为 DB → 派生文件, 不反向; 不允许从 NFO 反推 Metadata.
 
 实体边界:
 
@@ -14,7 +14,7 @@
 | `Metadata` | 番号级聚合元数据 | `number` UNIQUE (**大小写不敏感**; 存库保留首次写入的原始大小写) |
 | `Resource` | URL 级下载缓存 | `url` UNIQUE |
 | `Task` | 持久化任务队列 | `id` |
-| `Library` | 媒体库: 单根目录 + 路径模板 + 整理放置方式 + 自动化级别 | `id` |
+| `Library` | 媒体库: 根目录 + 路径模板 + 整理放置方式 + 自动化级别 | `id` |
 | `Feed` | 远程 RSS / Atom 发现源 (间隔与刮削属性按源绑定; 分组是字符串伪路径, 不建目录表) | `url` UNIQUE |
 | `FeedItem` | 某源曾见过的条目 (去重 + 历史 + 阅读器正文快照) | `(feed_id, item_key)` UNIQUE |
 | `Schedule` | cron 触发器 | `id` |
@@ -23,59 +23,53 @@
 | `UserTag` | 用户自定义标签 (与爬取 `Tag` 隔离) | `name` UNIQUE |
 | `Comment` | 绑定于 Metadata 的用户评论 | `id` |
 
-`MediaFile` 与 `Metadata` 解耦: **Metadata 是一等公民** (用户直接管理的番号级条目), 有效性不依赖本地文件. `MediaFile` 是磁盘视频的索引; 当文件能对应到某条 Metadata 时绑定 `metadata_id` (多对一). 也可以存在 `metadata_id IS NULL` 的文件 (解析失败 / 尚未刮削), 以及**没有任何 MediaFile 的 Metadata** (by-number 刮削、只囤元数据等) — 二者都是常态, 不是待清理的对象.
+`MediaFile` 与 `Metadata` 解耦: **Metadata 是一等公民** (用户直接管理的番号级条目), 有效性不依赖本地文件; `MediaFile` 是磁盘视频的索引, 能对应到某条 Metadata 时以多对一绑定 `metadata_id`. `metadata_id IS NULL` 的文件 (解析失败 / 尚未刮削) 与**没有任何 MediaFile 的 Metadata** (by-number 刮削、只囤元数据) 都是常态, 不是待清理的对象.
 
-文件相位 (`content_type` / `mosaic` / `has_subtitle` / `definition`) 是 **path 的投影**, 只落在 `MediaFile`: 创建与修改 path 时用同一次 `parse_file_info` 回填, 不纳入对外 PATCH. `cd` 仍只用于 ORGANIZE 分集配对, 不落库. `content_type` 是番号 / 目录的内容类型 (刮削路由); `mosaic` 是这份文件的马赛克标记 (有码 / 无码 / 破解 / 流出). 词表未命中时: 内容类型为有码则 `mosaic` 为 `censored`, 为无码则 `uncensored`; 国产 / FC2 / 欧美等保持空. 已有破解 / 流出 / 无码标记不覆盖. 无码展示与筛选是 `mosaic=uncensored OR content_type=uncensored`. 有码号的 `-U` / `-UC` 是破解, 内容类型仍是 censored. `ContentType.chinese` 是国产, 不是中字 — 中字只依据 `has_subtitle`. Metadata 列表的角标 / 筛选经由关联 EXISTS / 页级聚合 (`file_phase`): 任一挂载文件具备即亮; `definition` 取最高档. 没有挂载文件的 Metadata 不会命中这些筛选, 也没有角标. `{mosaic?}` 输出判定后的 mosaic; `{content_type}` 输出内容类型.
+文件相位 (`content_type` / `mosaic` / `has_subtitle` / `definition`) 是 **path 的投影**, 只落在 `MediaFile`: 创建与修改 path 时用同一次 `parse_file_info` 回填, 不纳入对外 PATCH; `cd` 只用于 ORGANIZE 分集配对, 不落库. `content_type` 是番号 / 目录的内容类型 (决定刮削路由), `mosaic` 是这份文件的马赛克标记 (有码 / 无码 / 破解 / 流出); 词表未命中时按内容类型兜底 (有码 → `censored`, 无码 → `uncensored`, 国产 / FC2 / 欧美保持空), 已有的破解 / 流出 / 无码标记不覆盖. 无码展示与筛选是 `mosaic=uncensored OR content_type=uncensored`. `ContentType.chinese` 是国产, 不是中字 — 中字只依据 `has_subtitle`. Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase`): 任一挂载文件具备即亮, `definition` 取最高档; 没有挂载文件的 Metadata 不命中这些筛选. `{mosaic?}` 输出判定后的 mosaic, `{content_type}` 输出内容类型.
 
-ORGANIZE 复制到库路径的 poster / thumb 在 `watermark.enabled` 时按**源文件** FileInfo 叠 PNG 角标 (不修改 Resource 原图, 不修改 fanart). 高度 = 图高 × `watermark.scale`; 各类别贴 `watermark.corners` 指定的角, 同角向内叠. 包内置 `subtitle` / `uncensored` / `cracked` / `leaked` / `4k` / `8k`; `{data_dir}/watermarks/{stem}.png` 同名覆盖, 损坏则回退内置, 缺文件跳过该枚 (清晰度 stem = `definition.casefold()`, 用户可自行放置 `1080p.png`). 列始终跟当前 path: 模板若写出标记, 二次整理仍能反推.
-
-`Metadata.number` 的唯一约束与 `get_metadata_by_number` / `upsert_metadata` 查重均忽略大小写; 命中已有行时不改写库内 `number` 字符串 (保留首次写入的大小写). 新建时按调用方传入原样落库. 调用方那份字符串是否已经过路径解析重写, 见 [crawlers.md](crawlers.md) 番号入参.
+ORGANIZE 复制到库路径的 poster / thumb 在 `watermark.enabled` 时按**源文件** FileInfo 叠 PNG 角标, 不修改 Resource 原图与 fanart; 尺寸与角位见 [config.md](config.md) `watermark`.
 
 ## Library 归属
 
-与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理放置方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 发现通道 (`ingest`: native / clouddrive) + 跳过规则 (`trailer_pattern` / `blacklist_patterns` / `min_file_size`). 库始终有效, `automation` 只控制发现侧: 不监控、仅登记、或登记后自动刮削. `ingest=clouddrive` 时必填 `cloud_path` (CloudDrive 虚拟 POSIX 路径), 且不挂 watchdog Observer; 契约见 [watcher.md](watcher.md). **自动整理尚未开放**, 落盘只由手动 ORGANIZE. **每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK). 库目录落盘只由 ORGANIZE 执行 — 读 `media_file.library_id` 取模板与放置方式, 是归属的唯一真值来源. SCRAPE 用 `media_file_id` 只作查询输入 (番号 / oshash) 与刮削后回写关联, 不移动文件.
+与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理放置方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 发现通道 (`ingest`: native / clouddrive) + 跳过规则. `automation` 只控制发现侧 (不监控 / 仅登记 / 登记后自动刮削); `ingest=clouddrive` 必填 `cloud_path` 且不挂 watchdog Observer, 契约见 [watcher.md](watcher.md). **自动整理尚未开放**, 落盘只由手动 ORGANIZE 执行.
 
-归属在文件**入库时确定一次**, 同一文件经任何入口行为一致:
+**每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK). 归属在文件**入库时确定一次**, 入口行为一致: watcher 按监控根绑定的 `library_id`, scan 按 payload 自带, 手动 by-number scrape / RSS 发现与文件无关因而无归属. 库目录落盘只由 ORGANIZE 执行 — 读 `media_file.library_id` 取模板与放置方式, 是归属的唯一真值来源; SCRAPE 用 `media_file_id` 只作查询输入与回写关联, 不移动文件.
 
-- watcher: native 库每个监控根绑定 `library_id`; clouddrive 库由 webhook 虚拟路径匹配到库后再登记 (见 [watcher.md](watcher.md)).
-- scan: 任务在某个 library 下运行, payload 自带 `library_id`.
-- 手动 by-number scrape / RSS 发现: 与文件无关的纯查询, 无归属.
-
-一库一根目录, 目录不重叠由用户保证 (不强制校验). 正常不会在父子目录各建一个 library. 当前不提供一库多目录; 多根须另建子表.
+一库一根目录, 目录不重叠由用户保证 (不强制校验); 不提供一库多目录, 多根须另建子表.
 
 ## 多源字段保留策略
 
 | 字段类型 | 存储方式 | 取舍 |
 |----------|---------|----------|
 | 标量 (`title`, `studio`, `plot`, ...) | 单值, 聚合按字段优先级选首个非空源 | 覆盖大多数场景 |
-| 聚合类: URL (`poster_urls`, `thumb_urls`, ...) | list, 按该字段站点顺序拼接各站非空值, 物化后按下载成功重排 (见 [task-system.md](task-system.md)) | 下载时顺序尝试, 某站失效不需重新刮削 |
+| 聚合类 URL (`poster_urls`, `thumb_urls`, ...) | list, 按字段站点顺序拼接各站非空值, 物化后按下载成功重排 (见 [task-system.md](task-system.md)) | 下载时顺序尝试, 某站失效不需重新刮削 |
 | `extrafanart_urls` | `dict[site, list[url]]` 按站点分组 | 剧照集合是站点特异的, 扁平合并会丢失站点上下文 |
-| `scores` | `dict[site, score]` | 不同评分体系 (5分 vs 100分), 保留来源让前端分别展示 |
-| `raw` | `{site: {field: value}}` 原始快照 | 离线重新聚合: 修改优先级 / 翻译规则不需重爬; 也作 per-site 复用来源 (见 [task-system.md](task-system.md) 站点级复用) |
+| `scores` | `dict[site, score]` | 不同评分体系 (5 分 vs 100 分) 需保留来源供前端分列展示 |
+| `raw` | `{site: {field: value}}` 原始快照 | 支持离线重新聚合与站点级复用 (见 [task-system.md](task-system.md)) |
 
 ### `field_sources`
 
-`{field_name: site_name}` 仅记录**标量字段**的来源. 聚合类字段 (URL / extrafanart / scores) 自带来源结构, 不写入. 用途: 调试多源不一致 + 前端展示来源. 不参与业务逻辑, 重新刮削后被覆盖.
+`{field_name: site_name}`, 仅记录**标量字段**的来源; 聚合类字段自带来源结构, 不写入. 用途是调试多源不一致与前端展示来源, 不参与业务逻辑, 重新刮削后被覆盖.
 
-`raw` 的字段名 / 类型必须与当前 `MediaMetadata` 一致 — 它会被站点级复用直接反序列化. 模型更改名称或类型时, 结果列与 raw 是两份数据, 需单独的 data migration (见 [database.md](database.md) Autogenerate 盲区).
+`raw` 的字段名 / 类型必须与当前 `MediaMetadata` 一致 — 站点级复用会把它直接反序列化. 模型改名或改类型时, 结果列与 raw 是两份数据, 需单独的 data migration (见 [database.md](database.md) Autogenerate 盲区).
 
 ## 可写面与 req↔repo 兼容性
 
 更新一条记录时存在三个模型, 字段集呈包含关系: **req model (对外) ⊆ repo 入参 TypedDict (对内) ⊆ DB 列**.
 
 - **DB 列**: ground truth, 全部可持久化字段.
-- **repo 入参 TypedDict** (`MetadataFields` / `MediaFileUpdates` / `LibraryUpdates` / `ScheduleUpdates`, 在 `src/amane/db/repo_types.py`): repo update 方法接受的内部可写面. 比 DB 列窄 (排除主键 / 时间戳), 但比对外面宽 — 含仅后端可写字段 (如 `Metadata.raw` / `field_sources` 由刮削写入, `Schedule.next_run` / `last_run` 由调度器维护).
-- **req model** (`src/amane/api/models/`): 对外可写面, 经 `create_partial_model(DBModel, ignore_fields=...)` 从 DB 模型派生. `ignore_fields` 排除只读列与仅后端可写字段, 从模型上**彻底移除**这些字段, 阻断外部经 API 越权赋值 (如 POST `id` / `raw`). 非 DB 列的可写字段 (如 `Actor.aliases` 别名行) 经 `extra_fields` 显式纳入, 同样 partial 化且显式 `null` 被拒.
+- **repo 入参 TypedDict** (`src/amane/db/repo_types.py`): repo update 方法接受的内部可写面. 比 DB 列窄 (排除主键 / 时间戳), 但比对外面宽 — 含仅后端可写字段 (`Metadata.raw` / `field_sources` 由刮削写入, `Schedule.next_run` / `last_run` 由调度器维护).
+- **req model** (`src/amane/api/models/`): 对外可写面, 经 `create_partial_model(DBModel, ignore_fields=...)` 从 DB 模型派生. `ignore_fields` 把只读列与仅后端可写字段从模型上**彻底移除**, 阻断外部经 API 越权赋值; 非 DB 列的可写字段 (如 `Actor.aliases` 别名行) 经 `extra_fields` 显式纳入, 同样 partial 化且显式 `null` 被拒.
 
 **可写面约束** (无运行时反射):
 
-1. repo update 方法**显式逐字段赋值** (`if "x" in updates: obj.x = updates["x"]`), 不用 `setattr`. 字段名拼写与类型兼容性由静态类型检查保证 — TypedDict 与 DB 列若漂移会直接编译期报错.
-2. req model 由 DB 模型派生, 故 req↔DB 的字段 / 类型兼容性由 `create_partial_model` 的构造保证, 只需验证该函数正确 (`tests/api/test_schema_repo_compat.py`). 手写且必须是某表列字段子集的响应模型用 `@subset_of(..., covariant=)` (导入时校验). 该文件 `TestRepoRoundTrip` 用独立文件库, 不经 api / conftest 的 `repo` (源自 app lifespan): lifespan 启动的 `FeedService` 会并发 poll 测试新建的 Feed, 其随机 `next_fetch_at` 若为过去时刻则立即到期, 拉取失败后时间列被覆盖为当前时间, 与 DB 往返断言竞态. 序列化保真与后台服务无关, 必须隔离.
-3. 端点把窄的 req `model_dump` 结果传入宽的 repo 方法; 二者同源派生, 转换在类型上安全. 唯一运行时缝隙 (req 键须 ⊆ TypedDict 键, 否则多余键被 repo 静默丢弃) 由字段纪律测试兜底.
+1. repo update 方法**显式逐字段赋值**, 不用 `setattr`; 字段名与类型兼容性由静态类型检查保证, TypedDict 与 DB 列漂移会直接编译期报错.
+2. req↔DB 的字段 / 类型兼容性由 `create_partial_model` 的构造保证, 只需验证该函数正确 (`tests/api/test_schema_repo_compat.py`). 手写且必须是某表列字段子集的响应模型用 `@subset_of(..., covariant=)` 在导入时校验.
+3. 端点把窄的 req `model_dump` 结果传入宽的 repo 方法; 唯一运行时缝隙 (req 键须 ⊆ TypedDict 键, 否则多余键被 repo 静默丢弃) 由字段纪律测试兜底.
 
-PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写入; **显式 `null`** 仅当源列本就可空时表示清空. 源列非 Optional (如 `Library.patterns: list[str]`) 时显式 `null` 由 `create_partial_model` 拒绝 (422). 空 glob 的合法写入是 `[]`.
+PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写入; **显式 `null`** 仅当源列本就可空时表示清空. 源列非 Optional 时显式 `null` 由 `create_partial_model` 拒绝 (422). 空 glob 的合法写入是 `[]`.
 
-`create_partial_model` 的 `ignore_fields` 依赖「生成模型不继承源字段」才能真正移除字段, 因此仅对 `table=True` 的 SQLModel 有效 (派生时基类换为 `SQLModel`, 断开 `InstrumentedAttribute` 继承); 对普通 `BaseModel` 传 `ignore_fields` 会显式报错, 以免被忽略字段经继承泄漏. 源字段上的 Annotated 校验器 (如 `AfterValidator`) 会带到 PATCH 模型; 未提供的字段保持 `None`, 不执行源校验.
+`create_partial_model` 的 `ignore_fields` 依赖「生成模型不继承源字段」才能真正移除字段, 因此仅对 `table=True` 的 SQLModel 有效; 对普通 `BaseModel` 传 `ignore_fields` 会显式报错, 以免被忽略字段经继承泄漏.
 
 ## 删除级联
 
@@ -83,69 +77,47 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 |------|---------|------|
 | `MediaFile` 删除 | 不级联 Metadata | Metadata 是一等公民; 文件索引消失不影响元数据条目 |
 | `Metadata` 删除 | **nullify** `MediaFile.metadata_id`, 状态回 `PENDING` | 应用层级联 (`delete_metadata`); 文件本身保留, 可再刮削 |
-| `Library` 删除 | **级联删除** `MediaFile` | 应用层级联 (`delete_library` 先 flush 删子表再删库, 无 ORM relationship). 仅删 DB 索引, 不动磁盘文件. 路由层同时 `remove_library` 停止监控 |
-| `Feed` 删除 | **级联删除** `FeedItem` | 应用层级联 (`delete_feed`). 已入队的 SCRAPE / Metadata 不受影响 |
-| `Resource` 清理 | CLEANUP 回收未引用 | 扫描全部 Metadata 的媒体 URL 字段, 删不被引用的 Resource (文件 + 行). 非 LRU |
-| 文件 move / hardlink 后 | 整理后的路径仍在本库内则 ORGANIZE 更新 `MediaFile.path`; 目标路径已不在本库内且源路径不在磁盘上则删除该行 | 外部直接挪文件不触发更新, 由 watcher 检测. ORGANIZE 落盘前只删除本次读到且磁盘已不存在、或不在本库内的索引, 见 [task-system.md](task-system.md) 落盘执行 |
+| `Library` 删除 | **级联删除** `MediaFile` | 应用层级联 (`delete_library` 先 flush 删子表再删库, 无 ORM relationship). 仅删 DB 索引, 不动磁盘文件; 路由层同时 `remove_library` 停止监控 |
+| `Feed` 删除 | **级联删除** `FeedItem` | 应用层级联; 已入队的 SCRAPE / Metadata 不受影响 |
+| `Resource` 清理 | CLEANUP 回收未引用 | 扫描全部 Metadata 媒体 URL 字段与 `Actor.image_urls`, 删不被引用的 Resource (文件 + 行). 非 LRU |
+| 文件 move / hardlink 后 | 路径仍在本库内则 ORGANIZE 更新 `MediaFile.path`; 已不在本库内且源路径不在磁盘上则删除该行 | 外部直接挪文件不触发更新, 由 watcher 检测. 见 [task-system.md](task-system.md) 落盘执行 |
 
 ## Library 整理布局
 
-每个 Library 持有整理时的放置方式 (`move_mode`: move / copy / hardlink / symlink)、一组路径模板 (`video_template`, `thumb_template`, `nfo_template`, ...)、以及整理默认 (`write_nfo`、`copy_resources`). 放置方式与默认按库区分, 同一进程里各库可以不同. `copy_resources` 与刮削热配置 `scraping.download_resources` 共用 `DownloadableResource` 枚举, 但互不读写 — 刮削控制写入 Resource 目录, 整理控制复制到库路径. ORGANIZE payload 上对应字段为 `None` 时沿用库设置, 非空则只覆盖该次任务. JSON 列读回是 str 不是 enum; `OrganizePayload.resolve` 沿用库设置时再做成 `DownloadableResource`, 否则 Pydantic 序列化会 UnexpectedValue.
+每个 Library 持有 `move_mode` (move / copy / hardlink / symlink)、一组按资源类型独立的路径模板与整理默认 (`write_nfo` / `copy_resources`), 因此同一进程里各库可以不同. `copy_resources` 与刮削热配置 `scraping.download_resources` 共用 `DownloadableResource` 枚举但互不读写 — 前者控制复制到库路径, 后者控制写入 Resource 目录. ORGANIZE payload 上对应字段为 `None` 时沿用库设置, 非空则只覆盖该次任务.
 
-`trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH / TRASH 扫描与 watcher 都不把该文件当正片入库. 空串关闭跳过. 非法正则在写入时拒绝 (422). 默认与预告片模板文件名 `{link_dir}/trailer.mp4` 对齐.
+`trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH / TRASH 扫描与 watcher 都不把该文件当正片入库; 空串关闭. `min_file_size` (字节, 默认 0 关闭) 只过滤**扫描视频**: 后缀须属于该次扫描的视频扩展名白名单; 图片 / NFO / 字幕不适用, `.strm` 是路径指针也不参与判定; 软链接跟随目标比较真实体积, 否则已整理的入口会被当作广告. 低于阈值与黑名单同语义: REFRESH / watcher 不入库, TRASH 移入 `.amane_trash`; stat 失败 (含悬空链接) 视为不匹配.
 
-`min_file_size` (字节, 默认 0 关闭) 只过滤**扫描视频**: 后缀必须属于该次扫描用的视频扩展名白名单 (`watcher.media_extensions`, 缺省 `MEDIA_EXTENSIONS`). 图片、NFO、字幕即使体积很小也不适用该规则. `.strm` 虽在扫描白名单里, 但是路径指针不是视频字节, 不参与体积判定. 软链接跟随目标 (`stat(follow_symlinks=True)`), 比的是真实文件体积 — 库 `move_mode=symlink` 落盘的入口本身只有几个字节, 不允许按入口体积判定, 否则会把已整理的软链接入口当作广告. 低于阈值的视频与黑名单同语义: REFRESH / watcher 不入库, TRASH 移入 `.amane_trash` (预告片仍只跳过不回收). stat 失败 (含悬空链接) 视为不匹配, 避免把读不到的正片当广告排除.
+`blacklist_patterns` (正则列表) 与预告片同属「文件名匹配即跳过」, 语义差别在 TRASH:
 
-`blacklist_patterns` (正则**列表**) 与预告片同属「文件名匹配即跳过」, 语义差别在 TRASH:
 - 命中文件被 TRASH 移入本库 **`.amane_trash`** (固定保留名, 恒为物理移动, 不受 `move_mode`), 移动后删除其 `MediaFile` 记录; 未纳入索引或不匹配 glob 的文件仍执行回收.
 - 预告片只跳过不动 — 它是模板产物, 属于库内容.
-- `.amane_trash` 是保留目录: 目录本身与任意深度下级路径在任何扫描 / 监控中都恒被忽略 (否则回收内容会被再次注册), 手动移出 `.amane_trash` 会被当作新文件重新入库.
-- ORGANIZE 对范围内已有索引套同一套分类: 黑名单 / 过小 / 预告片跳过落盘 (行保留给 TRASH); 路径已在 `.amane_trash` 内则删除该行, 不整理出回收站.
-- 跳过正则在扫描 / 监控侧**逐条编译、任一命中即跳过**. 不允许用 `|` 拼接: 用户全局旗标 (`(?i)ads`) 拼在联合式中间会触发 re 的 "global flags not at the start". 空列表关闭.
+- `.amane_trash` 是保留目录: 目录本身与任意深度下级路径在任何扫描 / 监控中都恒被忽略, 否则回收内容会被再次注册; 手动移出则被当作新文件重新入库.
+- 跳过正则在扫描 / 监控侧**逐条编译、任一命中即跳过**; 不允许用 `|` 拼接 (用户全局旗标拼在联合式中间会触发 re 的 "global flags not at the start"). 空列表关闭.
 
-分集 (CD) 检测: ORGANIZE 时 `parse_file_info` 从文件名识别 `-CD{n}` / `-PART{n}` / `-A` / `-B` / 尾部位数 `-1`–`-9` (`-0` 无意义; 零填充与两位尾数 `-01` / `-10` 会与合法番号冲突, 均不识别). 文件名无分集时, 直接父目录整段为 `CDn` / `PARTn` 也可认; 更远的祖先、`CD-1`、`A`、裸数字目录都不算. 裸数字与番号提取一致: `MIDV-123-1` 的番号仍是 `MIDV-123`. 检测只做在 ORGANIZE 时, 不落库. 写回靠路径模板里的 `{cd?}` (见下), 不另开后缀列. **幂等**: 写出的分集 / 中字 / 马赛克 / 分辨率格式须能被同一检测逻辑反推, 否则二次整理会丢失标记 — 当前只文档约束, 不加验证. 文件名 `CRACKED` / `-U` / `-UC` 反推为破解 (`-UC` 同时是中字); `{mosaic?|uncensored=U}` 无法反推无码.
+分集 (CD) 检测只做在 ORGANIZE 时, 不落库, 写回靠路径模板里的 `{cd?}`. 文件名无分集时, 直接父目录整段为 `CDn` / `PARTn` 也可认. **幂等**: 写出的分集 / 中字 / 马赛克 / 分辨率格式须能被同一检测逻辑反推, 否则二次整理会丢失标记 — 当前只文档约束, 不加验证.
 
-字幕文件: ORGANIZE 在视频**挪走前**扫描其同目录 (不递归、不入库). 扩展名由库 `subtitle_extensions` 配置 (默认 `.srt` `.ass` `.ssa` `.vtt` `.sub`; 写入时规范化为小写带点; 空列表关闭). 多个字幕全部搬走, 不挑主字幕. 不扫描同目录其它视频. 字幕采用同一套 `parse_file_info` (只解析**文件名**, `text=` 入参, 不依据目录、不使用路径回退 — 否则 `chs.srt` 会被当成番号). 解析出番号时必须与当前视频 `FileInfo.number` 相同 (忽略大小写), 再按分集配对; 解析不出番号时回退独立目录规则: 只依据分集, 有标记的跟当前视频同号, 解析不出的跟无分集或 CD1 的视频 (无分集是同分集, CD1 额外收集未标记). 放置采用与视频相同的 `move_mode`. 路径由 `resolve_subtitle_path` 逐文件渲染, 默认 `{link_dir}/{raw_srt_name}.{ext}` 保持原文件名与扩展名.
+字幕: ORGANIZE 在视频**挪走前**扫描其同目录 (不递归、不入库、不扫描同目录其它视频), 扩展名由库 `subtitle_extensions` 配置; 多个字幕全部搬走不挑主字幕, 放置采用与视频相同的 `move_mode`. 字幕采用同一套 `parse_file_info`, 但只解析**文件名** (`text=` 入参), 否则 `chs.srt` 会被当成番号; 解析出番号时必须与当前视频相同, 再按分集配对, 解析不出时才回退独立目录规则.
 
-模板按资源类型独立, 而不是一个 `output_dir` + 后缀拼接. 适用场景包括: NAS 多盘分存、字幕集中备份、NFO 同目录 vs 集中目录.
+`link_template` 为空则不创建链接, 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的入口 (`link_mode=strm` 写 `.strm`, `symlink` 做软链接). 链接必须在库外, 否则 REFRESH 会把入口再扫描为媒体. `.strm` 正文由库级 `strm_content_template` 决定 (空则写一行视频绝对路径); 模板引用 `{video_relpath}` 且整理后路径不在本库内时失败, 不写出错误正文. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO / 海报自动跟随链接.
 
-`link_template` 为空则不创建链接, `{link_dir}` / `{link_name}` 分别等于 `{video_dir}` / `{video_name}`. 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的入口: `link_mode=strm` 写 `.strm` (后缀强制 `.strm`); `symlink` 做文件系统软链接. 链接必须在库外 (否则 REFRESH 会把 strm / 软链接再扫描为媒体). `.strm` 正文由库级 `strm_content_template` 决定: 空则写一行视频绝对路径; 非空时与路径模板共用 `Parser` / `TemplateContext`, 后处理经由 `StrmEngine` (不折叠空段、不检查 `safe_dirs`, 正文可以是 `https://…`). `{video_relpath}` 用 `execute_organize` 的实际整理后的路径相对库根目录, 碰撞改名后的文件名会带上; metadata 字段仍经由 `TemplateContext` 的路径安全清理. 模板引用 `{video_relpath}` 且整理后的路径不在本库内时失败, 不写出错误正文; 未引用则允许目标路径在库外. 覆盖已有 `.strm` 即按新正文重写. `{video_relpath}` 剔除的是库根目录不是挂载点, 中间目录须写在模板字面量里. `{video_dir}` 是 dest 的字面父目录 (不跟随 dest 文件软链接); `{video_name}` 是 dest 文件名 (不含扩展名); `{link_dir}` / `{link_name}` 是链接父目录与文件名. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO / 海报自动跟随链接, 不必修改六个附属模板. 附属文件留在网盘侧时, 显式写 `{video_dir}/…`. 链接模板可用 `{video_name}` 跟随整理后视频文件名, 不必再重复填写 `{cd?}` / `{sub?}` 组.
+模板语言在 `organize/template.py`, 只约束以下几点: 占位符分相位注入 (`metadata` → file 相位 → `apply_video` → `apply_link`), file 相位未检出是**空串**不是 `Unknown`; 渲染时把 `{title}` / `{actor}` 等分量截到 200 UTF-8 字节 (不切开多字节字符), 但不截断渲染后的路径分量; 可选组 `[...]` 内直接占位符全空则整段丢弃, 有一个非空时其余输出空串. 普通占位符缺失回退 `Unknown`.
 
-模板语言在 `organize/template.py`: `Parser` 产出树; `TemplateContext` 按相位组装取值 (metadata / file → `apply_video` → `apply_link`); `TemplateEngine.render` 填树后 `clean`. `PathEngine` 在填值时将 `{title}` / `{actor}` / `{actors}` / `{actress}` / `{actresses}` 截到 200 UTF-8 字节 (不得切开多字节字符; 超限追加 `…`, 省略号计入上限; 为同一分量里的番号、分集标记与扩展名留出余量), 再折叠空段并按 `safe_dirs` 约束写出路径 (`resolve_paths` 编排各资源模板). 不截断渲染后的路径分量. `{number}` / `{studio}` / file 相位与其它占位符不截断. `StrmEngine` 不折叠、不截断. `{actress}` / `{actresses}` 按 `Metadata.actors` 顺序排除 `Actor.gender == male`, 保留 `female` 与 `unknown`; 整理时按展示名查 Actor, 无对应实体视为 `unknown`. 占位符分相位: metadata 来自 Metadata 字段 (`{prefix}` / `{suffix}` 从 `Metadata.number` 拆出, 与 `{number}` 同源, 不依据源文件名); `{raw_dir}` / `{raw_name}` 与 file 相位 (`{cd?}` `{sub?}` `{mosaic?}` `{def?}` `{content_type}`, `parse_file_info` 从源路径检测, 同时投影到 `MediaFile` 的 `content_type` / `mosaic` / `has_subtitle` / `definition`) 在 ORGANIZE 时注入模板; `{video_dir}` / `{video_name}` / `{video_relpath}` 在视频模板渲染之后注入, 供链接模板、附属模板与 STRM 内容模板使用 (写进视频模板自身为 Unknown; 整理后的路径不在本库内时 `{video_relpath}` 在路径模板中为空串); `{link_dir}` / `{link_name}` 在链接渲染之后注入, 供附属模板与 STRM 内容模板 (含字幕; strm 强制 `.strm` 后取 stem); `{raw_srt_name}` 仅字幕模板. file 相位未检出是**空串**, 不是 `Unknown`. `{content_type}` 有 `file_info` 时用其内容类型, 否则按 `{number}` 推断. `{mosaic?}` 先认文件名标记或目录名整段词表 (由近到远; 目录词表 `uncensored` / `cracked` / `leaked` / 无码 / 破解 / 流出, 子串与复合名不算), 未命中时有码类型为 `censored`, 无码类型为 `uncensored`, 其它类型为空. 文件名 `CRACKED` / `-U` / `-UC` 是破解 (`-UC` 同时是中字); 无码标记是 `无码` / `UNCENSORED`. 同名多标记时破解优先于流出, 流出优先于无码. `{def?}` 只依据文件名. `{sub?}` 有中字标记时为 `C`. 名字里的 `?` 只是提醒可空, 没有运算含义; 写成 `{cd}` 视为未知 key, 回 `Unknown`.
-
-可选组: `[...]` 组界不输出. 组内**直接**占位符全部为空则整段丢弃; 有一个非空就渲染, 空的那个输出空串 (所以 `[-{mosaic?|cracked=U}{sub?}]` 可以拼出 `-U` / `-C` / `-UC`). 只有一个占位符时与「空则整段省略」相同, `[-CD{cd?}]` 不会留下裸 `-CD`. 字面量随整组输出: `[-CD{cd?}{sub?}]` 在仅有中字时仍会带上 `-CD`. 嵌套组各自判断, 不并入外层. `[[...]]` 同样但有值时把结果包一层 `[]`. 未闭合在写入时 422. 默认视频模板 `{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}`. 链接模板可用 `{video_name}` 跟随视频文件名, 或自己写 `{cd?}` 组. 渲染后删除空路径段, 相对模板不会因首段为空变成绝对路径.
-
-值映射: `{name|原值=输出,另一=输出}` 在查出占位符值之后替换. 未列出的 key 保持规范值; `{name|=缺省}` 将空源映成缺省 (可选组不再省略). 未写空 key 时空源仍为空, 可选组省略. 把已有值映射成空串则该占位符视为空, 可选组省略. 同一占位符在目录与文件名可写不同映射. 闭合取值 (`content_type` / `mosaic?` / `def?` / `sub?`) 的映射 key 必须是规范值或空 key, 否则写入 422; `{cd?}` 与其它字段不校验 key. 规范值由 `organize/template.py` 的 `PLACEHOLDER_MAP_KEYS` 导出, 经 schema `map_keys` 下发. 分隔符是 `|` `=` `,` (不用 `:`); 输出值里不能含逗号.
-
-普通占位符缺失回退 `Unknown`. `{raw_dir}` / `{raw_name}` 无 `source_path` 时为空串, 同样执行空段折叠.
-
-附属模板列 `None` 表示未自定义, ORGANIZE 回退写在 `path_templates` 的 `*_TEMPLATE_DEFAULT`. HTTP `optional_defaults` 手写、`@subset_of(Library, covariant=True)`: 缺省是产出, 字段类型协变 (`PathTemplate` <: `PathTemplate | None`). 逆变会要求列值都能写进缺省模型, `None` 无法写入非空缺省. `link_template` 空表示不建链接, 不在此列. `{mosaic?}` 闭合值是 `parsing.Mosaic`; `{content_type}` 闭合值是 `parsing.ContentType`. 空映射 key 始终允许.
-
-**逃逸防护**: 校验对渲染结果做 realpath (跟随符号链接). 相对模板的真实写出路径必须在本库内 (`ALLOW_ALL` 也不例外); 绝对模板 (含展开 `{video_dir}` / `{link_dir}` 后变绝对) 必须位于本库或 `safe_dirs` 内, 否则 `ValueError`. 返回路径与 `{video_dir}` 用字面绝对路径 (折叠 `..`, 不跟随链接): 整理后的路径已是库内软链接时附属文件仍写在该文件所在目录; 库内某级目录项指向库外则拒绝. `safe_dirs is None` (`AMANE_SAFE_DIRS=ALLOW_ALL`) 时绝对模板不另加边界. 多盘分存要求目标盘在 `safe_dirs` 内. `link_template` 额外要求渲染结果不在本库内.
+**逃逸防护**: 校验对渲染结果做 realpath (跟随符号链接). 相对模板的真实写出路径必须在本库内 (`ALLOW_ALL` 也不例外); 绝对模板 (含展开 `{video_dir}` / `{link_dir}` 后变绝对) 必须位于本库或 `safe_dirs` 内, 否则 `ValueError`. 返回路径与 `{video_dir}` 用字面绝对路径 (折叠 `..`, 不跟随链接), 库内某级目录项指向库外则拒绝. 多盘分存要求目标盘在 `safe_dirs` 内.
 
 ## Resource (一等存储, 非缓存)
 
-`Resource.url` UNIQUE, 作**通用 locator key**:
-- 原始外部图: `url` = 真实外部 URL (由 UNIQUE 去重), `meta` 默认为 `{}`.
-- 派生裁剪: `url` = 合成串 `derived:{sha256(src_url)}:crop:{args}` (两层 hash, `resource_store.derived_locator`).
-  `args` 两种形态共存于同一 `op=crop`: 自动右侧比 (如 `0.7000`) 与手动像素框 (`box:L,T,R,B`, 相对源图**当前**文件像素, 含就地超分后; right / bottom 不含).
-  外部不存在, metadata 以 `/api/resources/{url_hash}` 引用. 手动裁切写入派生 Resource 并替换 `poster_urls`, **不**修改库路径海报 (ORGANIZE 再复制).
+`Resource.url` UNIQUE, 作**通用 locator key**: 原始外部图用真实外部 URL, 派生裁剪用合成串 `derived:{sha256(src_url)}:crop:{args}`. 手动裁切写入派生 Resource 并替换 `poster_urls`, **不**修改库路径海报 (ORGANIZE 再复制). `file_path` 是相对于 `{data_dir}/resources/` 的两级散列路径.
 
-`file_path` 是相对于 `{data_dir}/resources/` 的两级散列路径 (`a3/a3f1c2....jpg`) — 文件名即 `sha256(url)[:16]`.
+`meta` (JSON, 默认 `{}`) 在派生 / 被处理资源上记录可逆来源与处理标记: 裁剪记 `{'op':'crop','src':源url,'args':str}`; 任意资源被超分后追加 `{'sr':{tool,model,scale}}` — 超分**就地覆盖**文件 (URL 不变), `'sr' in meta` 即去重依据.
 
-`meta` (JSON, 默认 `{}`) 在派生 / 被处理资源上记录可逆来源 + 处理标记:
-- 裁剪: `{'op':'crop','src':源url,'args':str}` (`args` 即 locator 中的参数串).
-- 任意资源被超分后追加 `{'sr':{tool,model,scale}}` — 超分**就地覆盖**文件 (URL 不变), `'sr' in meta` 即去重依据.
-
-**一等存储, 按引用回收**: Resource 不是 LRU 缓存. 刮削换 URL / 修改裁剪参数后, 旧条目会留在库里直到 CLEANUP 的 `remove_unreferenced_resources` 扫描 Metadata 媒体 URL 字段并删除未引用项 (含派生). 要原始像素须 invalidate 重下 (就地超分后原像素不可恢复). MediaFile 失效索引与 Metadata 保留规则见 [task-system.md](task-system.md) CLEANUP.
-
-`content_hash` (SHA-256) 完整性校验, 就地超分后更新; 作 ETag 的约定见 [api.md](api.md).
+**一等存储, 按引用回收**: Resource 不是 LRU 缓存. 刮削换 URL / 修改裁剪参数后旧条目会留在库里, 直到 CLEANUP 的 `remove_unreferenced_resources` 扫描 Metadata 媒体 URL 字段并删除未引用项 (含派生). 要原始像素须 invalidate 重下 (就地超分后原像素不可恢复). 其它保留规则见 [task-system.md](task-system.md) CLEANUP. `content_hash` (SHA-256) 作完整性校验与 ETag, 约定见 [api.md](api.md).
 
 ## 分类索引 (爬取侧投影)
 
 `Metadata` 上的 `actors` / `tags` / `directors` (JSON list) 与 `studio` / `publisher` / `series` (标量) **仍是刮削聚合、NFO、路径模板的真值来源**. 分类实体表 + 关联表是**查询投影**: `upsert_metadata` / `update_metadata` 写入后由 `_sync_metadata_facets` 重建 (按 name get-or-create; list 字段带 `position` 保序).
 
-写入时先清洗 `Metadata.actors` 的 `name(alias1, alias2)` 形式 (`clean_actor_names`, 纯拆分器 `split_actor_aliases`): 展示名留真值, 别名并入对应演员的 `ActorAlias` 行. 每个名字先经 `resolve_actor_by_name` 解析 (展示名精确命中 → 别名唯一命中 → 歧义 / 无命中以名字本身为展示名新建实体) — 站点给的**裸别名**也会折到已认定演员, 不再为别名另建重复实体; block 判定在解析前 (原始名) 与解析后 (展示名) 各执行一次. 影片名单由第一成功源锁定顺序, 其后已抓源按展示名填空性别. 写入时若带 `FilmActor.gender`, 对 `Actor.gender == unknown` 填空, 不覆盖已有 `female` / `male`, 不写入 `field_sources`. `Metadata.actors` 存库始终是展示名; 站点 `raw` 快照保留原始带括号形式与 `FilmActor` 对象, 重刮时重新清洗.
+写入时先清洗 `Metadata.actors` 的 `name(alias1, alias2)` 形式: 展示名留真值, 别名并入对应演员的 `ActorAlias` 行. 每个名字经 `resolve_actor_by_name` 解析 (展示名精确命中 → 别名唯一命中 → 歧义 / 无命中以名字本身为展示名新建实体), 因此站点给的**裸别名**会折到已认定演员, 不再另建重复实体; block 判定在解析前后各执行一次. 影片名单顺序由第一成功源锁定, 其后已抓源按展示名填空性别. 写入时若带 `FilmActor.gender`, 只对 `Actor.gender == unknown` 填空, 不覆盖已有值, 不写入 `field_sources`. `Metadata.actors` 存库始终是展示名, 站点 `raw` 快照保留原始带括号形式.
 
 用户对爬取侧分类的改名 / 合并 / 删除意图落在 `FacetRule` (按 `(kind, source_name)` 唯一), **不**修改投影表本身:
 
@@ -154,30 +126,24 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 | `alias` | 源名映射到目标名; **表内保持单跳规范形** (写入时压缩入边, apply 不递归). 演员不使用该规则, 由 `ActorAlias` 行承担 |
 | `block` | 源名永久剔除; 指向该名的 alias 入边一并压成 block |
 
-`upsert_metadata` / `update_metadata` 在 `_sync_metadata_facets` 之前对六个分类真值字段执行规则 (不修改 `raw`); 演员只有 block 会命中. 目录 API: rename / merge 对非演员写 alias 并修改已有 Metadata; 演员 rename = 展示名切换 (见下节). delete 写 block、从真值剔除后删实体. `user_tag` 与刮削隔离, 硬删且不写入规则表.
-
-- 名称大小写敏感, 与源站原样一致, 不做模糊合并.
-- `Actor` / `Director` 为一等实体: 无影片关联时**不自动删除**. 用户显式删除时实体删除并写入 block.
-- 删 `Metadata` 时清理关联 / 评论 / 用户 tag 挂载; 人物与目录实体本身保留.
+规则在 `_sync_metadata_facets` 之前对六个分类真值字段执行 (不修改 `raw`); 演员只有 block 会命中. 目录 API 的 rename / merge 对非演员写 alias 并修改已有 Metadata, delete 写 block 后从真值剔除再删实体. `user_tag` 与刮削隔离, 硬删且不写入规则表. 名称大小写敏感, 与源站原样一致, 不做模糊合并. `Actor` / `Director` 为一等实体, 无影片关联时**不自动删除**, 用户显式删除时删除实体并写 block. 删 `Metadata` 时清理关联 / 评论 / 用户 tag 挂载, 人物与目录实体保留.
 
 ### 演员身份与人物元数据
 
-身份是 **ID 锚定的名字映射**, 不是独立身份图. 四层分工:
+身份是 **ID 锚定的名字映射**, 不是独立身份图:
 
 | 层 | 角色 |
 |----|------|
 | `Metadata.actors` | 影片刮削 / NFO 真值 (解析后的展示名) |
 | `Actor.id` | 人物宿主 (任务、关联、人物字段); `name` UNIQUE **展示名** |
-| `ActorAlias` | ID→名称一对多映射: 别名行 (查找 / 搜索 / 展示); `(actor_id, name)` 唯一, `name` 列**不全局唯一** — 两个演员可共享同一别名 |
-| `FacetRule(actor, block)` | 名字永久剔除 (演员仅此一种规则; 别名由 `ActorAlias` 行承担) |
+| `ActorAlias` | ID→名称一对多映射 (查找 / 搜索 / 展示); `(actor_id, name)` 唯一, `name` 列**不全局唯一** |
+| `FacetRule(actor, block)` | 名字永久剔除 (演员仅此一种规则) |
 
-展示名**不写入** `ActorAlias` 表 (恒等约束); 切换展示名 = `rename_facet` 语义: 旧展示名入表 (追加末尾), 被选中的别名行出表, 存量 `Metadata.actors` 批量改写为新的展示名 — 一次操作, 无需维护任何映射规则.
+展示名**不写入** `ActorAlias` 表 (恒等约束); 切换展示名 = 旧展示名入表 (追加末尾)、被选中的别名行出表、存量 `Metadata.actors` 批量改写为新展示名 — 一次操作, 无需维护映射规则.
 
-名字→演员解析 (`resolve_actor_by_name`, `db/actor_lookup.py`) 三态: 展示名精确命中 > 别名唯一命中 > **歧义 (多演员共享该别名且无展示名命中) 时以该名字本身为展示名新建实体** — 确定性且可由后续 merge 合并, 搜索 / 目录列表则同时命中所有共享演员.
+`Actor` 另存人物元数据 (`gender` / 生日 / 身材 / 简介 / `image_urls` / `provider_ids` / `source_urls` / `raw`). `gender` 的 `unknown` 视为标量空位, 可被刮削填空或手动修改覆盖; `birthday` 与 `Metadata.release` 同为 `YYYY-MM-DD`; `image_urls[0]` 是主图 (详情 / 头像墙), 用户可编辑次序.
 
-`Actor` 另存人物元数据 (`gender` / 生日 / 身材 / 简介 / `image_urls` / `provider_ids` / `source_urls` / `raw` 等). **`gender`**: `female` / `male` / `unknown` (默认); `unknown` 视为标量空位, 可被刮削填空或手动修改覆盖. **`birthday`** 与影片 **`Metadata.release`** 同为日历日字符串 **`YYYY-MM-DD`** (爬虫与 `PATCH` 写入前规范化; 源站 ISO 日期时间只保留日). **`image_urls[0]` 为主图** (详情 / 头像墙); 列表与各站 `raw` 并存, 用户可编辑规范列表次序.
-
-刮削查找键: 展示名 → 别名行 (position 保序), 一条索引查询; 站内首命中即用. 档案刮削**不修改** `Actor.name`: 各站 `ActorMetadata.name` 与 `aliases` 并入别名行并集, 写回时排除与展示名相同的项 (站点中文显示名如 javdb `筧純` 不会盖掉已认定的 `鷲尾めい`). 多站 `source_url` 聚合为 `source_urls` (site→url, 先到先得), 与影片 `Metadata.source_urls` 同形. 实体 merge 删源前先把源演员的名字并入 target 别名行 (`move_actor_alias_rows`, 已有行在前、源展示名 / 源别名行依次追加), 再把人物字段填空并入 target (`merge_person_fields_into_target`: 标量填空; image_urls / provider_ids / raw 并集), 保留 target id. 实体 delete 会对展示名与其**独有**别名写 block 行 (被其它演员引用为别名 / 展示名的共享名不写入 block, 避免误伤); 别名行随实体显式删除, 不依赖 SQLite FK pragma. 刮削发请求前按 `Actor.gender` 与站点性别覆盖裁站 (见 [crawlers.md](crawlers.md) / [task-system.md](task-system.md)). CLEANUP 扫描 Resource 存活引用时, 除 Metadata 媒体 URL 外还计入 `Actor.image_urls`.
+档案刮削**不修改** `Actor.name`: 各站 `ActorMetadata.name` 与 `aliases` 并入别名行并集, 写回时排除与展示名相同的项, 因此站点的中文显示名不会盖掉已认定的展示名. 多站 `source_url` 聚合为 `source_urls` (site→url, 先到先得). 实体 merge 保留 target id: 先把源演员的名字并入 target 别名行, 再把人物字段填空并入. 实体 delete 对展示名与其**独有**别名写 block 行 (被其它演员引用的共享名不写, 避免误伤), 别名行随实体显式删除, 不依赖 SQLite FK pragma.
 
 ## 用户注解 (与爬取隔离)
 
@@ -185,6 +151,6 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 ## 当前限制
 
-- SQLite + batch mode 修改大表会重建表 → 数百万行时表重建耗时不可接受. 个人规模可接受, 超过须切换至 PostgreSQL.
+- SQLite + batch mode 修改大表会重建表, 数百万行时耗时不可接受; 个人规模可接受, 超过须切换至 PostgreSQL.
 - `Task.payload` / `Task.result` 是 JSON dict, 无 schema 强制 — 由 handler 的 Pydantic 模型在反序列化时校验 (见 [task-system.md](task-system.md)).
-- `Schedule.payload` 存的是 `RoutineSubmission` 的 JSON (`cleanup` / `upscale` / `r18_import` / `rescrape`); 写入须 `model_dump(mode="json")`. cron 触发时 `model_validate` 为对应 Payload 入队. 不允许在线修改任务内容 — 修改 type / payload 须删除后重建. 详见 [task-system.md](task-system.md).
+- `Schedule.payload` 存 `RoutineSubmission` 的 JSON; 不允许在线修改任务内容, 修改 type / payload 须删除后重建. 详见 [task-system.md](task-system.md).
