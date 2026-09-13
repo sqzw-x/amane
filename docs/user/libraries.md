@@ -116,7 +116,7 @@ Authorization = "Bearer <Amane API Token>"
 视频: {studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}
 缩略图: {link_dir}/thumb.jpg
 海报: {link_dir}/poster.jpg
-NFO: {link_dir}/{number}.nfo
+NFO: {link_dir}/{video_name}.nfo
 预告片: {link_dir}/trailer.mp4
 字幕: {link_dir}/{raw_srt_name}.{ext}
 ```
