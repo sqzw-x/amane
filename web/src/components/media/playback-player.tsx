@@ -1,7 +1,10 @@
 import { Slider } from "@mantine/core";
 import type { ErrorData } from "hls.js";
 import "media-chrome/lang/zh-CN.js";
-import type { MediaController as MediaControllerElement } from "media-chrome";
+import type {
+  MediaController as MediaControllerElement,
+  MediaFullscreenButton as MediaFullscreenButtonElement,
+} from "media-chrome";
 import type {
   MediaChromeMenu as MediaChromeMenuElement,
   MediaPlaybackRateMenuButton as MediaPlaybackRateMenuButtonElement,
@@ -195,6 +198,87 @@ function usePlayerKeys(
   return { onKeyDown, onKeyUp };
 }
 
+/** 拖动进度条或音量条期间置位的属性: 手势层与画面点击都不再响应. */
+const GESTURES_DISABLED_ATTRIBUTE = "gesturesdisabled";
+/** 双击的判定窗口 (毫秒). 单击的动作须等过整个窗口, 才能确定没有第二次点击. */
+const DOUBLE_CLICK_MS = 250;
+
+/**
+ * 画面的单击与双击.
+ *
+ * media-chrome 的手势层对每次 click 立即切换播放/暂停, 双击因此会先暂停再恢复, 画面停顿一次.
+ * 鼠标与触控笔的点击改由这里接管: 第一次单击等过 `DOUBLE_CLICK_MS` 再执行, 窗口内出现第二次点击则
+ * 改为切换全屏. 触摸的点击不接管, 仍由手势层即时切换 — 以双击切换全屏会与触摸平台的连击手势冲突.
+ *
+ * 判定与手势层保持一致, 否则会出现一边响应而另一边不响应的分歧: 目标须为视频或控制器自身 (画面上的
+ * 控件各自处理点击; 拖动进度条后在画面上松手时, 浏览器把 click 的目标定为两者的最近公共祖先, 即控制
+ * 器), 拖动期间 (`gesturesdisabled`) 不计数.
+ *
+ * 接管后这些点击在控制器处停止传播: 手势层挂在控制器上的监听与更外层的冒泡阶段监听都收不到. 控制条
+ * 按钮、菜单与浮层的点击目标不是画面, 不进入这条路径.
+ */
+function useClickGestures(
+  controllerRef: RefObject<MediaControllerElement | null>,
+  videoRef: RefObject<HTMLVideoElement | null>,
+  fullscreenButtonRef: RefObject<MediaFullscreenButtonElement | null>,
+) {
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller == null) {
+      return;
+    }
+    // 指针类型取自 pointerdown: click 事件在部分浏览器里不带该信息; 缺省值与手势层相同, 都按鼠标处理.
+    let pointerType = "mouse";
+    let pendingClick: number | null = null;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      pointerType = event.pointerType;
+    };
+
+    const handleClick = (event: MouseEvent) => {
+      const video = videoRef.current;
+      const target = event.composedPath()[0];
+      if (video == null || (target !== video && target !== controller)) {
+        return;
+      }
+      if (pointerType === "touch" || controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE)) {
+        return;
+      }
+      // 手势层的 click 监听挂在控制器上; 捕获阶段拦下它, 这次点击才不会同时被它当成单击.
+      event.stopPropagation();
+      if (pendingClick != null) {
+        window.clearTimeout(pendingClick);
+        pendingClick = null;
+        // 进入还是退出全屏由全屏按钮判定, 它按自身的全屏状态发出请求.
+        fullscreenButtonRef.current?.handleClick(event);
+        return;
+      }
+      pendingClick = window.setTimeout(() => {
+        pendingClick = null;
+        const current = videoRef.current;
+        if (current == null) {
+          return;
+        }
+        if (current.paused) {
+          void current.play().catch(() => undefined);
+        } else {
+          current.pause();
+        }
+      }, DOUBLE_CLICK_MS);
+    };
+
+    controller.addEventListener("pointerdown", handlePointerDown, true);
+    controller.addEventListener("click", handleClick, true);
+    return () => {
+      controller.removeEventListener("pointerdown", handlePointerDown, true);
+      controller.removeEventListener("click", handleClick, true);
+      if (pendingClick != null) {
+        window.clearTimeout(pendingClick);
+      }
+    };
+  }, [controllerRef, fullscreenButtonRef, videoRef]);
+}
+
 /**
  * 拖动进度条或音量条期间关掉媒体手势层.
  *
@@ -224,7 +308,7 @@ function useDragGestureGuard(
       window.clearTimeout(restoreTimerRef.current);
       restoreTimerRef.current = null;
     }
-    controllerRef.current?.removeAttribute("gesturesdisabled");
+    controllerRef.current?.removeAttribute(GESTURES_DISABLED_ATTRIBUTE);
   }, [controllerRef]);
 
   const finishDrag = useCallback(() => {
@@ -253,7 +337,7 @@ function useDragGestureGuard(
 
   const onDragStart = useCallback(() => {
     draggingRef.current = true;
-    controllerRef.current?.setAttribute("gesturesdisabled", "");
+    controllerRef.current?.setAttribute(GESTURES_DISABLED_ATTRIBUTE, "");
   }, [controllerRef]);
 
   return { onDragStart };
@@ -290,6 +374,7 @@ export function PlaybackPlayer({
   const onFailedRef = useLatestRef(onFailed);
   const useNativeSrc = kind === "video" || nativeHlsSupported();
   const controllerRef = useRef<MediaControllerElement>(null);
+  const fullscreenButtonRef = useRef<MediaFullscreenButtonElement>(null);
   const rateButtonRef = useRef<MediaPlaybackRateMenuButtonElement>(null);
   const rateMenuRef = useRef<MediaChromeMenuElement>(null);
   const rateCloseTimerRef = useRef<number | null>(null);
@@ -400,6 +485,8 @@ export function PlaybackPlayer({
   );
 
   const { onKeyDown, onKeyUp } = usePlayerKeys(videoRef, seekable, stepVolume);
+
+  useClickGestures(controllerRef, videoRef, fullscreenButtonRef);
 
   const applyPlaybackRate = useCallback(
     (rate: number) => {
@@ -609,7 +696,7 @@ export function PlaybackPlayer({
             </MediaChromeMenu>
           </div>
           {tracks.length > 0 ? <MediaCaptionsMenuButton /> : null}
-          <MediaFullscreenButton />
+          <MediaFullscreenButton ref={fullscreenButtonRef} />
           {tracks.length > 0 ? <MediaCaptionsMenu hidden /> : null}
         </MediaControlBar>
         {seekable ? <MediaTimeRange onPointerDown={handleDragStart} /> : null}
