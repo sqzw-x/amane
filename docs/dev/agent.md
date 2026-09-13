@@ -85,6 +85,6 @@ SQL 非法或 SQLite 运行时错误 → 工具返回 `error` 字符串, **不**
 
 `AgentService` 挂载于 `AppRuntime`: `rebuild` 按 `hot.agent` 重建工厂并裁剪 history 热缓存, **不清除** ResultCache. bootstrap 装配 `bridge` (safe_dirs / watcher / 动态 Worker 取消 / FeedService.poll_one).
 
-上游协议由 `hot.agent.api_type` 选择 (`runtime.build_model`): `chat` → Chat Completions; `response` → Responses; `anthropic` → Anthropic Messages. `base_url` / `api_key` / `model` 原样交给对应 Provider (Anthropic 需填 Anthropic 端点, 无隐式改写).
+上游协议由 `hot.agent.api_type` 选择 (`chat` → Chat Completions; `response` → Responses; `anthropic` → Anthropic Messages), 模型构造与翻译共用 `src/amane/llm/model.py::build_model`. `base_url` / `api_key` / `model` 原样交给对应 Provider (Anthropic 需填 Anthropic 端点, 无隐式改写).
 
 思考强度: 全局 `hot.agent.thinking` 为默认 (`None` = 不传); 会话覆盖在 `meta.json`. 每回合经由 `model_settings` 注入 thinking 与 `hot.agent.max_tokens` (默认 128000, 避免提供商默认过小导致 length 截断; 超过模型上限时上游拒绝请求). 运行使用无上限的 `UsageLimits`.

@@ -17,7 +17,7 @@
 | `aggregate/` | 多源优先级 → `AggregatedMetadata` / `AggregatedActor` | 影片按抓取图波次执行; 演员为档案填空 + 头像优先; 不写 DB |
 | `handlers/` | DB Task → 副作用 (写 metadata / 移动文件 / 排队) | 编排层, 不实现解析/爬取/IO 细节 |
 | `media/` `organize/` | 元数据 + 路径模板 → 磁盘文件 | 调用方传配置, 自身不读 `HotSettings` 全局 |
-| `llm/` | LLM 后端 + 翻译协议 + 译文缓存 | 管线只依赖协议, 不耦合具体 SDK |
+| `llm/` | 大模型接入 (`Model` 工厂) + 翻译协议 + 译文缓存 | 管线只依赖 `Translator` 协议; provider 映射与 `agent/` 共用, 配置分离 |
 | `agent/` | 助理 Agent (产品面 Amane) + Saved Query + 会话 trace | 读=任意只读 SQL; 写=封装工具 + pydantic-ai 渐进披露 (Capability); 与 `llm/` 配置分离 |
 | `sr/` | 超分二进制封装 | 就地覆盖本地资源文件 |
 | `db/` | SQLModel 表 + 异步 Repository (按聚合 mixin 拆分) | 单一数据源; 启动期自动 `alembic upgrade head` |

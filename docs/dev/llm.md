@@ -1,20 +1,24 @@
 # LLM 能力
 
-> 入口: `src/amane/llm/`. 本文记录 LLM 端口、dspy 边界, 以及翻译在刮削管线中的位置.
+> 入口: `src/amane/llm/`. 本文记录 LLM 接入层、dspy 边界, 以及翻译在刮削管线中的位置.
 > 配置分层见 [config.md](config.md), 刮削管线见 [task-system.md](task-system.md).
 
 ## 端口抽象
 
-`src/amane/llm/` 暴露两层协议, 管线只依赖协议, 不耦合具体 SDK:
+翻译经 pydantic-ai 接入上游: `src/amane/llm/model.py::build_model` 按 `ApiType` (chat / response / anthropic) 构造 `Model`,
+与助理共用同一套 provider 映射, 两边的凭据与配置仍各自独立 (见 [agent.md](agent.md)).
 
-- `LLMBackend` — 原始 chat 能力 (`ask`), 无业务语义. 翻译以外的未来用途 (分类/抽取) 复用同一后端.
-- `Translator` — 翻译业务能力 (`translate`). `ScrapeHandler` 仅依赖此协议.
-
-当前后端是 OpenAI 兼容实现 (`OpenAIBackend`, 复用已有 `openai` 依赖). 翻译只需一次 chat completion, 管线只依赖协议; 新增后端时管线不必修改.
+- **单轮调用不使用 Agent**: 请求经 `pydantic_ai.direct.model_request` 发出, 取 `ModelResponse.text`. 该属性只拼接文本部分,
+  推理模型写在 `ThinkingPart` 的思维链天然排除; 写进正文的 `<think>` 块由翻译器剥离.
+- **传输层参数**: 翻译自建 `httpx2.AsyncClient` (超时 60 秒, 代理取 `network.proxy`) 并交给 provider, provider 不关闭该客户端;
+  助理不接此客户端.
+- **限速与重试在翻译器内**: `AsyncLimiter` 按 `llm.rate_limit` 限速, 失败按指数退避重试 `llm.max_retries` 次;
+  重试耗尽、正文为空或异常一律返回 `None` 且不抛出 —— 调用方保留原值.
+- **`Translator` 协议**是管线唯一依赖的翻译面 (`translate`), `ScrapeHandler` 仅依赖此协议; 测试可用结构化替身实现该协议.
 
 ### dspy 边界
 
-翻译不使用 dspy. dspy 依赖 `dspy.configure` **全局状态**, 与 DI / `AppRuntime.rebuild` 冲突, 须用 `dspy.context` 逐调用绕开; 并引入 litellm / pandas / numpy, 对 Docker 部署偏重. 其价值在 prompt 优化 (MIPRO)、签名化结构抽取与带 metric 的编译式评估, 翻译用不到. 需要上述能力时再作为协议后端接入.
+翻译不使用 dspy. dspy 依赖 `dspy.configure` **全局状态**, 与 DI / `AppRuntime.rebuild` 冲突, 须用 `dspy.context` 逐调用绕开; 并引入 litellm / pandas / numpy, 对 Docker 部署偏重. 其价值在 prompt 优化 (MIPRO)、签名化结构抽取与带 metric 的编译式评估, 翻译用不到. 需要上述能力时再作为独立调用路径接入.
 
 ## 翻译嵌入点
 
@@ -52,13 +56,13 @@
 
 - **键 = `(源文本 sha256, 目标语言, 字段, system 提示词 sha256)`**. 不含 number —— 翻译输出只取决于文本, 跨番号天然去重
   (系列共用简介/相同标语只译一次). 含 field —— 因不同字段用不同字段说明, 输出与字段相关.
-  含 system 提示词指纹 —— 实际发给后端的 system 内容 (含自定义提示词) 变化即失效. 不含 model/temperature.
+  含 system 提示词指纹 —— 实际发给模型的 system 内容 (含自定义提示词) 变化即失效. 不含 model/temperature.
 - **独立 SQLite 文件** (`data_dir/translations.db`), **不纳入主 `amane.db`、不经由 Alembic**: 纯缓存, 仅
   `CREATE TABLE IF NOT EXISTS`, 可安全直接删除, 下次自动重建. 故意绕开 [database.md](database.md) 的迁移体系.
   现有表的列集合与当前 schema 不符时整表 `DROP` 重建, 首次翻译重新落缓存.
 - **会话级注入**: `start_app` 创建 → `AppRuntime.translation_cache` → 穿过 `build_handlers`/`build_translator`.
   与 `ResourceStore` 同属"不随热重载重建"的对象; `rebuild()` 复用同一实例 (改 LLM 配置不丢缓存).
-- **只缓存 LLM 路径**: 中文简繁 (zhconv) 廉价且确定, 不进缓存; 后端返回空也不写, 下次重试.
+- **只缓存 LLM 路径**: 中文简繁 (zhconv) 廉价且确定, 不进缓存; 模型返回空也不写, 下次重试.
 
 刮削 `use_cache` 的 `trans` 档控制是否读此缓存 (仍回写); 与 `metadata` 档的分工见 [task-system.md](task-system.md). 前端「强制刮削」发 `use_cache=["trans"]` — 重爬元数据、源文本不变则零 token.
 
