@@ -1,6 +1,6 @@
 import { Badge, Button, Card, Group, Stack, Text, Textarea, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconDeviceFloppy, IconPencil, IconSend, IconTrash } from "@tabler/icons-react";
+import { IconPencil, IconSend, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -250,7 +250,6 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
                       </Button>
                       <Button
                         size="compact-sm"
-                        leftSection={<IconDeviceFloppy size={14} />}
                         loading={updateComment.isPending}
                         disabled={editBody.trim().length === 0 || editBody.trim() === comment.body}
                         onClick={() => saveEdit(comment)}
