@@ -44,6 +44,12 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
 Remove-Item -Recurse -Force $Work, $Out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Work, $Out | Out-Null
 
+$StdlibArgs = @()
+& (Join-Path $Root ".venv\Scripts\python.exe") (Join-Path $Root "scripts\stdlib_modules.py") | ForEach-Object {
+    if ($_ -ne "") { $StdlibArgs += @("--collect-submodules", $_) }
+}
+
+# 插件在运行时才被加载, 打包器看不见它们引用的标准库模块; 这里整包收进来 (实测 +1 MiB).
 & $PyInstaller `
     --noconfirm --clean --onedir --console `
     --name "Amane.Server" `
@@ -59,6 +65,7 @@ New-Item -ItemType Directory -Force -Path $Work, $Out | Out-Null
     --collect-all pydantic_graph `
     --collect-all genai_prices `
     --hidden-import socksio `
+    @StdlibArgs `
     --copy-metadata genai_prices `
     --copy-metadata pydantic_ai_slim `
     --copy-metadata amane `

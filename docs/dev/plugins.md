@@ -12,6 +12,8 @@
 
 插件是可信的进程内纯 Python: `importlib` 从数据目录加载 `plugin.py`, 与主机共用解释器. 没有进程隔离. 插件不能声明自己的 pip 依赖或原生扩展, 只使用主机已提供的 API (经 `amane.plugin` 与 `context.http_client`).
 
+桌面打包版 (PyInstaller onedir) 不保证标准库完整: 打包只收集主机静态导入图里的标准库模块, 插件在运行时动态加载, 它引用的模块可能不在包里 (`html.parser` 即此类). 这类插件在 `just dev` 与 Docker 里正常, 只在桌面版加载失败. 因此两个构建脚本把标准库整包收进 onedir (`scripts/stdlib_modules.py`, 代价见 [desktop.md](desktop.md)); 仍缺失的模块在安装期以可读的 422 报出, 在发现期进入 `failures`.
+
 ## 发现与身份
 
 插件作者只从 `amane.plugin` 导入类型与契约. 主机实现在 `amane.plugins.*` (发现、落盘安装、Factory), 内部代码不允许导入 `amane.plugin`. 这是导入路径上的分层, 不是运行时沙箱. 包内相对导入与绝对导入约定见 [architecture.md](architecture.md).

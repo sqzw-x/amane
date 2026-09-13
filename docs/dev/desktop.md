@@ -108,4 +108,6 @@ Windows: `scripts/build_windows_app.ps1` (`just windows-app`). 必须在 Windows
 
 两边 PyInstaller 都要 `--add-data` 打进 `amane/db/migrations` 与 `amane/media/watermarks` (Docker wheel 靠 hatch `force-include`).
 
+两边还要把整个标准库收进 onedir: `scripts/stdlib_modules.py` 列出当前平台的标准库顶层模块 (只排除 `tkinter` / `turtle` / `idlelib` / `turtledemo` / `ensurepip` 这些依赖包外产物的 GUI 与安装器), 构建脚本为每个名字加 `--collect-submodules`. 插件是运行时从数据目录动态加载的, PyInstaller 的静态导入图看不见它们引用什么; 不整包收集就会出现「插件在 `just dev` 与 Docker 里能用, 装进桌面版报 `ModuleNotFoundError`」. 代价比预想小: 实测 onedir 由 100.4 MiB 涨到 101.4 MiB —— PYZ 只多 69 个模块 (依赖树本来就把大部分标准库拖了进来), C 扩展由 55 个涨到 61 个 (`_curses`、`_dbm`、`_lsprof`、`cmath` 等, `lib-dynload` 合计 +0.6 MiB).
+
 开发回路: `just dev` 起服务 + `just bar-run` (macOS) / `just windows-bar` (Windows) 只开托盘.

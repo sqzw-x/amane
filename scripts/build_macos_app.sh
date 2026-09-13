@@ -38,6 +38,12 @@ fi
 rm -rf "$WORK" "$OUT"
 mkdir -p "$WORK" "$(dirname "$OUT")"
 
+# 插件在运行时才被加载, 打包器看不见它们引用的标准库模块; 这里整包收进来 (实测 +1 MiB).
+STDLIB_ARGS=()
+while IFS= read -r name; do
+  STDLIB_ARGS+=(--collect-submodules "$name")
+done < <(.venv/bin/python scripts/stdlib_modules.py)
+
 # Excludes: patchright (lazy browser import in net/http.py) and IPython
 # (python-dotenv -> dotenv.ipython -> IPython.core.magic).
 .venv/bin/pyinstaller \
@@ -55,6 +61,7 @@ mkdir -p "$WORK" "$(dirname "$OUT")"
   --collect-all pydantic_graph \
   --collect-all genai_prices \
   --hidden-import socksio \
+  "${STDLIB_ARGS[@]}" \
   --copy-metadata genai_prices \
   --copy-metadata pydantic_ai_slim \
   --copy-metadata amane \
