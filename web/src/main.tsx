@@ -31,7 +31,12 @@ client.setConfig({
 });
 initConnection(queryClient);
 
-const router = createRouter({ routeTree, scrollRestoration: true });
+// 路由组件按路由拆分, 悬停/聚焦时预取对应 chunk, 点击后无需等待下载.
+const router = createRouter({
+  routeTree,
+  scrollRestoration: true,
+  defaultPreload: "intent",
+});
 
 declare module "@tanstack/react-router" {
   interface Register {
