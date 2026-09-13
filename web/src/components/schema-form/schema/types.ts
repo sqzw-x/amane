@@ -23,8 +23,7 @@ export interface AmaneBaseExtensions {
 
 /** 仅用于 type: "string" (非 enum, 非 path) */
 export interface AmaneTextExtensions extends AmaneBaseExtensions {
-  "x-multiline"?: boolean;
-  /** 更高多行框; 未设置 x-multiline 也按长文本渲染. */
+  /** 多行文本框 (rows=8); 顶层字段与 dict 值共用同一控制符. */
   "x-long"?: boolean;
 }
 

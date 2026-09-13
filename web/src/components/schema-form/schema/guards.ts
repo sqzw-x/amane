@@ -111,7 +111,7 @@ export function isEnum(
  */
 export function isSimpleScalar(schema: JSONSchemaObject): boolean {
   // Multiline text expands vertically - don't squeeze it into a KV row
-  if (isText(schema) && schema["x-multiline"] === true) return false;
+  if (isText(schema) && schema["x-long"] === true) return false;
   return (
     isText(schema) ||
     isPath(schema) ||

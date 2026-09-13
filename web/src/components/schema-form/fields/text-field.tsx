@@ -11,8 +11,8 @@ import { fieldError } from "./field-error";
  * Generic text input field. Also serves as the fallback for unrecognized schema types.
  * Accepts the broad SchemaFieldProps since it may receive composed or untyped schemas.
  *
- * `x-long` renders a taller textarea even when `x-multiline` isn't set - for
- * long-form text (notes, logs, body text) that benefits from more vertical space.
+ * `x-long` renders a taller textarea (rows=8) for long-form text (notes, logs,
+ * body text) that benefits from more vertical space.
  *
  * The multiline branch must use `Textarea`: a bare `Input component="textarea"`
  * inherits Input's fixed height (`--input-size` = `--input-height`), so `rows`
@@ -28,8 +28,7 @@ export function TextField({
 }: FieldProps<TextJSONSchema>) {
   const id = useFieldDomId(name);
   const nullable = isNullable(schema);
-  const long = schema["x-long"] === true;
-  const multiline = schema["x-multiline"] === true || long;
+  const multiline = schema["x-long"] === true;
 
   return (
     <form.Field name={name}>
@@ -45,7 +44,7 @@ export function TextField({
             {multiline ? (
               <Textarea
                 id={id}
-                rows={long ? 8 : 3}
+                rows={8}
                 value={(field.state.value as string) ?? ""}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                   field.handleChange(e.target.value || (nullable ? null : ""))

@@ -62,7 +62,7 @@ function isCompactFormField(key: string, schema: JSONSchemaObject): boolean {
   ) {
     return false;
   }
-  if (isText(schema) && (schema["x-multiline"] === true || schema["x-long"] === true)) {
+  if (isText(schema) && schema["x-long"] === true) {
     return false;
   }
   if (WIDE_TEXT_KEYS.has(key)) return false;

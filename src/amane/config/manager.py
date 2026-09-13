@@ -501,8 +501,8 @@ class SrConfig(BaseModel):
 PROMPT_MAX_LENGTH = 2000
 """单条提示词长度上限, 避免超长文本撑大 TOML 与设置表单."""
 
-PromptText = Annotated[str, Field(max_length=PROMPT_MAX_LENGTH, json_schema_extra={"x-multiline": True})]
-"""dict 值必须用 ``x-multiline``: DictField 只认它来放弃紧凑键值行, 改用分页布局. ``x-long`` 只加高文本框, 会被挤在一行里."""
+PromptText = Annotated[str, Field(max_length=PROMPT_MAX_LENGTH, json_schema_extra={"x-long": True})]
+"""提示词文本框: ``x-long`` 声明多行, 顶层字段与 dict 值共用同一控制符."""
 
 
 class LLMConfig(BaseModel):

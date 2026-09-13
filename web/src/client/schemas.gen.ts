@@ -2527,7 +2527,7 @@ export const LLMConfigSchema = {
             additionalProperties: {
                 type: 'string',
                 maxLength: 2000,
-                'x-multiline': true
+                'x-long': true
             },
             propertyNames: {
                 $ref: '#/components/schemas/MetadataField'
