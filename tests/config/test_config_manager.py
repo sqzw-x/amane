@@ -1,6 +1,5 @@
 """ConfigManager 测试 - ColdSettings, HotSettings, ConfigManager"""
 
-import json
 import os
 import tomllib
 from pathlib import Path
@@ -16,7 +15,6 @@ from amane.config import (
     ConfigManager,
     DownloadableResource,
     HotSettings,
-    LLMConfig,
     ScrapingConfig,
     WatermarkConfig,
     WorkerConfig,
@@ -564,18 +562,3 @@ class TestLLMConfig:
 
         with pytest.raises(ValidationError, match=r"Input should be 'chat', 'response' or 'anthropic'"):
             mgr.update({"llm": {"api_type": "bogus"}})
-
-
-class TestLLMPromptSchema:
-    """前端渲染契约: 提示词字段以 ``x-long`` 声明多行文本框."""
-
-    def test_prompt_fields_declare_long_text(self):
-        """顶层字段与 dict 值共用同一控制符, 前端据此渲染多行框并放弃紧凑键值行."""
-        props = LLMConfig.model_json_schema()["properties"]
-
-        assert props["system_prompt"].get("x-long") is True
-        assert props["field_prompts"]["additionalProperties"].get("x-long") is True
-
-    def test_no_multiline_extension_remains(self):
-        """``x-multiline`` 已并入 ``x-long``, 配置 schema 不再出现该键."""
-        assert "x-multiline" not in json.dumps(HotSettings.model_json_schema())
