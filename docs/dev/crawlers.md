@@ -82,6 +82,10 @@ CrawlerFactory (缓存实例)
 
 `WebClient` 基于 curl_cffi, 每次请求从预设列表 (`chrome123`, `chrome124`, `chrome131`, `chrome136`, `firefox133`, `firefox135`) 轮换指纹. 可选 Patchright 无头浏览器用于 JS 渲染页面 (`get_rendered`).
 
+## 外部 API 读模型
+
+外部站点的 schema 不受本项目控制, 对象字段必须声明为 `T | None = None`, 标量与列表保留空默认值. 漏标可空时单个 null 会让整条响应解析失败, 而 `_scrape*` 对解析失败与来源无内容都返回 `None`, 该错误只有 `debug` 级日志.
+
 ## 新爬虫接入
 
 1. `enums.py` 加 `SiteName` (frozen dict 加载时按代码枚举补默认槽, 见 [config.md](config.md)).

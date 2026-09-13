@@ -174,12 +174,19 @@ class DmmCrawler(Crawler):
             return None
 
         data = resp.data.ppvContent
-        if not data.title:
+        if data is None or not data.title:
             return None
 
         runtime = int(data.duration / 60) if data.duration else None
 
         extrafanart = [si.largeImageUrl for si in data.sampleImages if si.largeImageUrl]
+
+        sample_movie = data.sample2DMovie
+        trailer_urls = [sample_movie.highestMovieUrl] if sample_movie and sample_movie.highestMovieUrl else []
+
+        package_image = data.packageImage
+        thumb_urls = [package_image.largeUrl] if package_image and package_image.largeUrl else []
+        poster_urls = [package_image.mediumUrl] if package_image and package_image.mediumUrl else []
 
         number = self._cid_to_number(cid)
 
@@ -194,9 +201,9 @@ class DmmCrawler(Crawler):
             tags=[g.name for g in data.genres if g.name],
             series=data.series.name if data.series else None,
             plot=data.description or None,
-            thumb_urls=[data.packageImage.largeUrl] if data.packageImage.largeUrl else [],
-            poster_urls=[data.packageImage.mediumUrl] if data.packageImage.mediumUrl else [],
-            trailer_urls=[data.sample2DMovie.highestMovieUrl] if data.sample2DMovie.highestMovieUrl else [],
+            thumb_urls=thumb_urls,
+            poster_urls=poster_urls,
+            trailer_urls=trailer_urls,
             score=resp.data.reviewSummary.average if resp.data.reviewSummary else None,
             directors=[d.name for d in data.directors if d.name],
             extrafanart=extrafanart,
@@ -422,13 +429,19 @@ class DmmCrawler(Crawler):
             self.logger.debug("fanza tv response parse failed", error=str(e))
             return None
 
-        data = resp.data.fanzaTvPlus.content
-        if not data.title:
+        plus = resp.data.fanzaTvPlus
+        if plus is None:
             return None
 
-        trailer_url = self._derive_fanza_trailer(data.sampleMovie.url)
+        data = plus.content
+        if data is None or not data.title:
+            return None
 
-        runtime = int(data.playInfo.duration / 60) if data.playInfo.duration else None
+        sample_movie = data.sampleMovie
+        trailer_url = self._derive_fanza_trailer(sample_movie.url) if sample_movie else None
+
+        play_info = data.playInfo
+        runtime = int(play_info.duration / 60) if play_info and play_info.duration else None
 
         extrafanart = [sp.imageLarge for sp in data.samplePictures if sp.imageLarge]
 
@@ -468,7 +481,7 @@ class DmmCrawler(Crawler):
             return None
 
         data = resp.data.video
-        if not data.titleName:
+        if data is None or not data.titleName:
             return None
 
         directors = [s.staffName for s in data.staffs if s.roleName == "監督"]

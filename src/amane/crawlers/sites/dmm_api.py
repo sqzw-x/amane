@@ -65,7 +65,8 @@ class FanzaTvContent(BaseModel):
     packageImage: str = ""
     packageLargeImage: str = ""
     startDeliveryAt: str = ""
-    sampleMovie: _SampleMovie = Field(default_factory=_SampleMovie)
+    # GraphQL 在无预览片时返回 null
+    sampleMovie: _SampleMovie | None = None
     samplePictures: list[_SamplePicture] = Field(default_factory=list)
     actresses: list[_NameItem] = Field(default_factory=list)
     directors: list[_NameItem] = Field(default_factory=list)
@@ -74,15 +75,18 @@ class FanzaTvContent(BaseModel):
     label: _NameItem | None = None
     genres: list[_NameItem] = Field(default_factory=list)
     reviewSummary: _ReviewSummary | None = None
-    playInfo: _PlayInfo = Field(default_factory=_PlayInfo)
+    # GraphQL 在无播放信息时返回 null
+    playInfo: _PlayInfo | None = None
 
 
 class _FanzaTvPlus(BaseModel):
-    content: FanzaTvContent = Field(default_factory=FanzaTvContent)
+    # GraphQL 在内容不存在时返回 null
+    content: FanzaTvContent | None = None
 
 
 class _FanzaData(BaseModel):
-    fanzaTvPlus: _FanzaTvPlus = Field(default_factory=_FanzaTvPlus)
+    # GraphQL 在内容不存在时返回 null
+    fanzaTvPlus: _FanzaTvPlus | None = None
 
 
 class FanzaTvResponse(BaseModel):
@@ -147,7 +151,8 @@ class DmmTvVideo(BaseModel):
 
 
 class _DmmTvData(BaseModel):
-    video: DmmTvVideo = Field(default_factory=DmmTvVideo)
+    # GraphQL 在内容不存在时返回 null
+    video: DmmTvVideo | None = None
 
 
 class DmmTvResponse(BaseModel):
@@ -215,13 +220,16 @@ class DigitalContent(BaseModel):
     maker: _NameItem | None = None
     label: _NameItem | None = None
     genres: list[_NameItem] = Field(default_factory=list)
-    packageImage: _DigitalPackageImage = Field(default_factory=_DigitalPackageImage)
+    # GraphQL 在无封面图时返回 null
+    packageImage: _DigitalPackageImage | None = None
     sampleImages: list[_DigitalSampleImage] = Field(default_factory=list)
-    sample2DMovie: _DigitalSampleMovie = Field(default_factory=_DigitalSampleMovie)
+    # GraphQL 在无预览片时返回 null
+    sample2DMovie: _DigitalSampleMovie | None = None
 
 
 class _DigitalData(BaseModel):
-    ppvContent: DigitalContent = Field(default_factory=DigitalContent)
+    # GraphQL 在内容不存在时返回 null
+    ppvContent: DigitalContent | None = None
     # GraphQL 在无评分时返回 null
     reviewSummary: _DigitalReviewSummary | None = None
 
