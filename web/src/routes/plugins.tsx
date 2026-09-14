@@ -7,6 +7,7 @@ import {
   Group,
   Loader,
   Paper,
+  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -24,25 +25,30 @@ export const Route = createFileRoute("/plugins")({
   component: PluginsPage,
 });
 
+/** 列数随容器宽度调整; 不按能力分区 — 同一插件可同时提供多项能力. */
+const PLUGIN_GRID_COLS = { base: 1, xs: 2, md: 3, lg: 4 } as const;
+
+/** 插件页信息量小于片库类页面, 宽屏下限制内容宽度并居中. */
+const PAGE_MAX_WIDTH = 1120;
+
 function PluginsPage() {
   const { t } = useTranslation("plugins");
   const query = usePlugins();
   const plugins = query.data?.items ?? [];
   const failures = query.data?.failures ?? [];
-  const scrapePlugins = plugins.filter((plugin) => {
-    const capabilities = plugin.descriptor.capabilities ?? ["film_metadata"];
-    return capabilities.includes("film_metadata");
-  });
-  // 播放源分区按 playback 能力筛选: 同时声明影片元数据能力的插件在两个分区都列出.
-  const playbackPlugins = plugins.filter((plugin) => {
-    const capabilities = plugin.descriptor.capabilities ?? [];
-    return capabilities.includes("playback");
-  });
 
   return (
-    <Stack gap="md">
+    <Stack gap="md" maw={PAGE_MAX_WIDTH} mx="auto" w="100%">
       <div>
         <Title order={2}>{t("title")}</Title>
+        <Text size="sm" c="dimmed" mt={4}>
+          {t("routeHint")}{" "}
+          <Link to="/settings" search={{ section: "scraping" }}>
+            <Anchor component="span" size="sm">
+              {t("routeLink")}
+            </Anchor>
+          </Link>
+        </Text>
       </div>
 
       <PluginCatalogActions />
@@ -69,33 +75,11 @@ function PluginsPage() {
         <Text c="dimmed">{t("empty")}</Text>
       ) : null}
       {!query.isLoading && !query.error && plugins.length > 0 ? (
-        <>
-          <div>
-            <Title order={4}>{t("scrapeSection")}</Title>
-            <Text size="sm" c="dimmed" mt={4}>
-              {t("routeHint")}{" "}
-              <Link to="/settings" search={{ section: "scraping" }}>
-                <Anchor component="span" size="sm">
-                  {t("routeLink")}
-                </Anchor>
-              </Link>
-            </Text>
-          </div>
-          {scrapePlugins.length === 0 ? <Text c="dimmed">{t("emptyScrape")}</Text> : null}
-          {scrapePlugins.map((plugin) => (
+        <SimpleGrid cols={PLUGIN_GRID_COLS} spacing="md">
+          {plugins.map((plugin) => (
             <PluginCard key={plugin.descriptor.id} plugin={plugin} />
           ))}
-          <div>
-            <Title order={4}>{t("playbackSection")}</Title>
-            <Text size="sm" c="dimmed" mt={4}>
-              {t("playbackHint")}
-            </Text>
-          </div>
-          {playbackPlugins.length === 0 ? <Text c="dimmed">{t("emptyPlayback")}</Text> : null}
-          {playbackPlugins.map((plugin) => (
-            <PluginCard key={plugin.descriptor.id} plugin={plugin} />
-          ))}
-        </>
+        </SimpleGrid>
       ) : null}
     </Stack>
   );

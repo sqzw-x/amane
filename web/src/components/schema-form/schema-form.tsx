@@ -192,6 +192,13 @@ export function SchemaForm({
     return { [prefix]: fields };
   }, [prefix, properties, values]);
 
+  // patch 模式的 diff 基准必须与表单初值同源: 缺失字段在表单里按 schema 默认值展开,
+  // 若基准取原始 `values`, 空值字段会被判成改动, 未编辑也弹出保存条.
+  const baseline = useMemo(
+    () => encodeFormBody(schema, { ...defaultValues[prefix] }),
+    [schema, defaultValues, prefix],
+  );
+
   // JSON Schema 约束校验器 - 投影逐字段错误到 TanStack Form 的 field.meta.errors.
   // i18next 的 t 只接受字面量 key, 校验消息 key 是动态拼接的, 故经 as never 适配
   // (与 use-schema-i18n.ts 的既有约定一致).
@@ -214,7 +221,6 @@ export function SchemaForm({
         return;
       }
       const encoded = encodeFormBody(schema, { ...sectionVal });
-      const baseline = encodeFormBody(schema, { ...values });
       const patch: Record<string, unknown> = {};
       for (const [field, val] of Object.entries(encoded)) {
         if (!deepEqual(val, baseline[field])) {
@@ -240,10 +246,7 @@ export function SchemaForm({
       selector={(s) => {
         const current = isRecord(s.values) && isRecord(s.values[prefix]) ? s.values[prefix] : {};
         return {
-          dirty: !deepEqual(
-            encodeFormBody(schema, { ...current }),
-            encodeFormBody(schema, { ...values }),
-          ),
+          dirty: !deepEqual(encodeFormBody(schema, { ...current }), baseline),
           isValid: s.isValid,
         };
       }}

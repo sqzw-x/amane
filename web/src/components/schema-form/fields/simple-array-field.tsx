@@ -28,34 +28,10 @@ export function SimpleArrayField({
         const control = ordered ? (
           <OrderedArrayBody value={value} onChange={field.handleChange} long={long} />
         ) : long ? (
-          // x-long, unordered: taller textarea, one value per line
-          <Textarea
-            id={id}
-            value={value.join("\n")}
-            onChange={(e) => {
-              const parts = e.target.value
-                .split("\n")
-                .map((s: string) => s.trim())
-                .filter(Boolean);
-              field.handleChange(parts);
-            }}
-            placeholder="One value per line"
-            rows={8}
-          />
+          // x-long, unordered: 多行文本域, 一行一个值
+          <MultilineArrayInput id={id} value={value} onChange={field.handleChange} />
         ) : (
-          // Default: comma-separated input
-          <TextInput
-            id={id}
-            value={value.join(", ")}
-            onChange={(e) => {
-              const parts = e.target.value
-                .split(",")
-                .map((s: string) => s.trim())
-                .filter(Boolean);
-              field.handleChange(parts);
-            }}
-            placeholder="Comma-separated values"
-          />
+          <CommaArrayInput id={id} value={value} onChange={field.handleChange} />
         );
 
         return (
@@ -65,6 +41,100 @@ export function SimpleArrayField({
         );
       }}
     </form.Field>
+  );
+}
+
+/** 按行拆分并规范化; 空行与首尾空白不算值. */
+function parseLines(text: string): string[] {
+  return text
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** 按逗号或换行拆分并规范化; 空项与首尾空白不算值. */
+function parseCommas(text: string): string[] {
+  return text
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function sameItems(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((item, i) => item === b[i]);
+}
+
+interface ArrayInputProps {
+  id: string;
+  value: string[];
+  onChange: (value: string[]) => void;
+}
+
+/**
+ * 逗号分隔的列表输入.
+ *
+ * 输入框持有原始文本, 只在失焦时解析并写回表单. 每次按键都解析会把末尾的 `,` 与空格
+ * 立刻吃掉 (`"a, "` → `["a"]` → 显示 `"a"`), 导致无法在尾部继续追加.
+ */
+function CommaArrayInput({ id, value, onChange }: ArrayInputProps) {
+  const [draft, setDraft] = useState(() => value.join(", "));
+  const [synced, setSynced] = useState(value);
+
+  // 表单值由外部改变 (重置 / 加载) 时重新同步文本.
+  if (synced !== value) {
+    setSynced(value);
+    setDraft(value.join(", "));
+  }
+
+  const commit = () => {
+    const items = parseCommas(draft);
+    if (!sameItems(items, value)) {
+      onChange(items);
+      return;
+    }
+    // 值没变也可能只是末尾多了 `,` / 空格, 提交后回到规范化文本.
+    setDraft(items.join(", "));
+  };
+
+  return (
+    <TextInput
+      id={id}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      placeholder="Comma-separated values"
+    />
+  );
+}
+
+/** x-long 的多行列表输入, 同样保留原始文本直到失焦. */
+function MultilineArrayInput({ id, value, onChange }: ArrayInputProps) {
+  const [draft, setDraft] = useState(() => value.join("\n"));
+  const [synced, setSynced] = useState(value);
+
+  if (synced !== value) {
+    setSynced(value);
+    setDraft(value.join("\n"));
+  }
+
+  const commit = () => {
+    const items = parseLines(draft);
+    if (!sameItems(items, value)) {
+      onChange(items);
+      return;
+    }
+    setDraft(items.join("\n"));
+  };
+
+  return (
+    <Textarea
+      id={id}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      placeholder="One value per line"
+      rows={8}
+    />
   );
 }
 
@@ -117,6 +187,7 @@ function OrderedArrayBody({ value, onChange, long }: OrderedArrayBodyProps) {
               handleAdd();
             }
           }}
+          onBlur={handleAdd}
           placeholder="Add item..."
           style={{ flex: 1 }}
         />
