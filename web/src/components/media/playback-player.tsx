@@ -693,13 +693,18 @@ export type PlaybackPlayerProps = {
   kind: "video" | "hls";
   seekable: boolean;
   tracks: PlaybackSubtitleItem[];
-  /** 评论时间戳的跳转请求; `nonce` 让同一秒数的重复点击也能重新触发. */
+  /** 评论时间戳的跳转请求; 同一秒数的重复点击靠新请求重新触发. */
   seekRequest: SeekRequest | null;
   /** 已经按请求定位之后回调, 由调用方清掉请求. */
   onSeekHandled: () => void;
   onFailed: (failure: HlsFailure | null) => void;
 };
 
+/**
+ * 跳转请求.
+ * `nonce` 必须由调用方严格递增: 播放器按它与已处理的请求判重, 复用同一个值会被当成已处理而忽略,
+ * 请求被清空后重新从 1 计数就会命中这种情况.
+ */
 export type SeekRequest = {
   seconds: number;
   nonce: number;
@@ -799,21 +804,47 @@ export function PlaybackPlayer({
 
   // 评论时间戳的跳转: 定位后立即播放, 与主流播放器点击时间戳的行为一致.
   // 同一秒数可能被连点, 因此按 nonce 判重, 不按内容判重.
+  //
+  // 元素尚未拿到媒体资源 (readyState 为 HAVE_NOTHING) 时写 currentTime 只记下默认播放起点, 不产生
+  // seeking 事件; hls.js 的起点只来自 seeking 事件与自身配置, 于是它从片头开始加载, 这一次跳转不生效.
+  // 目标因此先记下, 等元素能定位 (loadedmetadata / canplay) 时再写入.
   const handledSeekRef = useRef(0);
-  useEffect(() => {
-    if (seekRequest == null || seekRequest.nonce === handledSeekRef.current) {
+  const pendingSeekRef = useRef<number | null>(null);
+
+  const applyPendingSeek = useCallback(() => {
+    const video = videoRef.current;
+    const seconds = pendingSeekRef.current;
+    if (video == null || seconds == null || video.readyState === HTMLMediaElement.HAVE_NOTHING) {
       return;
     }
+    pendingSeekRef.current = null;
+    video.currentTime = Math.max(seconds, 0);
+    // 自动播放可能被浏览器拒绝; 那时位置已经跳过去了, 不额外提示.
+    void video.play().catch(() => undefined);
+  }, [videoRef]);
+
+  useEffect(() => {
     const video = videoRef.current;
     if (video == null) {
       return;
     }
+    video.addEventListener("loadedmetadata", applyPendingSeek);
+    video.addEventListener("canplay", applyPendingSeek);
+    return () => {
+      video.removeEventListener("loadedmetadata", applyPendingSeek);
+      video.removeEventListener("canplay", applyPendingSeek);
+    };
+  }, [applyPendingSeek, videoRef]);
+
+  useEffect(() => {
+    if (seekRequest == null || seekRequest.nonce === handledSeekRef.current) {
+      return;
+    }
     handledSeekRef.current = seekRequest.nonce;
-    video.currentTime = Math.max(seekRequest.seconds, 0);
-    // 自动播放可能被浏览器拒绝; 那时位置已经跳过去了, 不额外提示.
-    void video.play().catch(() => undefined);
+    pendingSeekRef.current = seekRequest.seconds;
+    applyPendingSeek();
     onSeekHandled();
-  }, [onSeekHandled, seekRequest]);
+  }, [applyPendingSeek, onSeekHandled, seekRequest]);
 
   // 音量提示由 React 状态控制显隐, 放在播放器盒子内、控制器之外, 因此不受控件自动隐藏的影响.
   const [volumeIndicator, setVolumeIndicator] = useState<number | null>(null);

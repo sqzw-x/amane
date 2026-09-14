@@ -115,6 +115,9 @@ function TitleDetailPage() {
   const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
   const [canSeek, setCanSeek] = useState(false);
   const seekFromUrlRef = useRef<number | null>(null);
+  // 跳转请求在处理之后会被清空, 因此 nonce 不能取自请求本身: 每次都从 1 重新计数时, 播放器会把
+  // 新请求当成已处理的那一条而忽略. 计数只增不减, 见 `SeekRequest`.
+  const seekNonceRef = useRef(0);
   const { t: urlSeekSeconds } = Route.useSearch();
 
   useEffect(() => {
@@ -122,13 +125,15 @@ function TitleDetailPage() {
       return;
     }
     seekFromUrlRef.current = urlSeekSeconds;
-    setSeekRequest((prev) => ({ seconds: urlSeekSeconds, nonce: (prev?.nonce ?? 0) + 1 }));
+    seekNonceRef.current += 1;
+    setSeekRequest({ seconds: urlSeekSeconds, nonce: seekNonceRef.current });
   }, [urlSeekSeconds]);
 
   const requestSeek = useCallback(
     (seconds: number) => {
       seekFromUrlRef.current = seconds;
-      setSeekRequest((prev) => ({ seconds, nonce: (prev?.nonce ?? 0) + 1 }));
+      seekNonceRef.current += 1;
+      setSeekRequest({ seconds, nonce: seekNonceRef.current });
       // replace: 时间戳是定位而不是导航, 不该在历史里堆一串记录.
       // resetScroll: 路由默认在位置提交后把页面滚动到顶部, 与定位的语义冲突; 滚动由播放器按需调整.
       void navigate({
