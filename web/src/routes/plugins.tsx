@@ -14,12 +14,16 @@ import {
 } from "@mantine/core";
 import { IconAlertCircle, IconUpload } from "@tabler/icons-react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { PluginResponse } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { PathPicker } from "@/components/path-picker";
 import { PluginCard } from "@/components/plugins/plugin-card";
+import { DraggableChips } from "@/components/schema-form/fields/draggable-chips";
 import { useInstallPlugin, usePlugins, useReloadPlugins } from "@/hooks/use-plugins";
+import { orderPlaybackSources } from "@/lib/media/source-order";
+import { useUIStore } from "@/stores/ui";
 
 export const Route = createFileRoute("/plugins")({
   component: PluginsPage,
@@ -53,6 +57,8 @@ function PluginsPage() {
 
       <PluginCatalogActions />
 
+      <PlaybackOrderSection plugins={plugins} />
+
       {query.isLoading ? (
         <Center py="xl">
           <Loader size="sm" />
@@ -82,6 +88,51 @@ function PluginsPage() {
         </SimpleGrid>
       ) : null}
     </Stack>
+  );
+}
+
+/**
+ * 播放源的用户顺序, 决定详情页面板列出与默认探测的先后.
+ *
+ * 只列已启用的播放源, 与后端 `PlaybackFactory.playback_source_ids` 同判据, 因此这里排的正是详情页
+ * 会列出的那些. 拖动结果写入 UI store (仅本浏览器); 刮削源与混合能力插件的刮削面都不参与, 卡片
+ * 位置也不随这里的顺序变化.
+ */
+function PlaybackOrderSection({ plugins }: { plugins: PluginResponse[] }) {
+  const { t } = useTranslation("plugins");
+  const order = useUIStore((state) => state.playbackSourceOrder);
+  const setOrder = useUIStore((state) => state.setPlaybackSourceOrder);
+  const playbackPlugins = plugins.filter(
+    (plugin) =>
+      (plugin.config.enabled ?? true) &&
+      (plugin.descriptor.capabilities ?? []).includes("playback"),
+  );
+
+  const handleChange = useCallback(
+    (reordered: PluginResponse[]) => {
+      setOrder(reordered.map((plugin) => plugin.descriptor.id));
+    },
+    [setOrder],
+  );
+
+  if (playbackPlugins.length < 2) {
+    return null;
+  }
+
+  return (
+    <Paper withBorder p="md">
+      <Stack gap="xs">
+        <Text fw={600} size="sm">
+          {t("playbackOrder")}
+        </Text>
+        <DraggableChips
+          items={orderPlaybackSources(playbackPlugins, order, (plugin) => plugin.descriptor.id)}
+          getKey={(plugin) => plugin.descriptor.id}
+          getLabel={(plugin) => plugin.descriptor.name}
+          onChange={handleChange}
+        />
+      </Stack>
+    </Paper>
   );
 }
 

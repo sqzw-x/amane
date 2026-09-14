@@ -44,7 +44,7 @@
 
 影片详情: 用户标签与刮削标签分栏; 加减菜单一次提交多名 — `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许一次挂多个. 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`.
 
-**播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择, 否则会按旧 `key` 探测. 播放窗口常驻且尺寸由比例决定 — **状态变化不得改变外框尺寸**, 否则页面高度突变会把滚动位置夹回顶部. 播放器组件的其余约定集中在 `components/media/playback-player.tsx` 的文件注释里.
+**播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择, 否则会按旧 `key` 探测. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 播放窗口常驻且尺寸由比例决定 — **状态变化不得改变外框尺寸**, 否则页面高度突变会把滚动位置夹回顶部. 播放器组件的其余约定集中在 `components/media/playback-player.tsx` 的文件注释里.
 
 ## 列表分页
 
@@ -76,7 +76,7 @@ dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `
 | 高频流 (进度 / 日志) | Zustand |
 | 对话增量 | SSE (与 WS 正交) |
 | 导航态 (筛选 / 排序 / page / view) | URL search |
-| 列表密度 / 列宽 / 主题 | Zustand (`amane-web`) |
+| 列表密度 / 列宽 / 主题 / 播放源顺序 | Zustand (`amane-web`) |
 
 虚拟滚动的落底、短列表排布与 `followOutput` 约定见 `/logs` 与 `/tasks` 路由及其组件注释. OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-maps.ts`, 禁止在路由里再手抄一份.
 
@@ -90,7 +90,7 @@ dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `
 
 ## `lib/` 分层
 
-根目录只放跨域工具 (`confirm` / `exhaustive*` / `api-token` / `connection` / `utils` 等); 只服务一个产品域的模块纳入 `lib/<domain>/` (`actors` / `feeds` / `agent` / `task`), 不允许再往根上堆叠带域前缀的文件. 不设根 barrel, 调用方直引文件.
+根目录只放跨域工具 (`confirm` / `exhaustive*` / `api-token` / `connection` / `utils` 等); 只服务一个产品域的模块纳入 `lib/<domain>/` (`actors` / `feeds` / `agent` / `task` / `media`), 不允许再往根上堆叠带域前缀的文件. 不设根 barrel, 调用方直引文件.
 
 ## 工程入口
 

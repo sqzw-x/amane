@@ -49,6 +49,13 @@ interface UIState {
   metaColumnWidths: ColumnWidths<MetaTableColumnKey>;
   /** 演员 list 列宽覆盖. */
   actorColumnWidths: ColumnWidths<ActorTableColumnKey>;
+  /**
+   * 播放源的用户顺序, 元素是来源 ID.
+   *
+   * 顺序只影响展示: 后端仍按来源 ID 返回, 详情页面板与插件页都按这里排. 不在表里的来源保持
+   * 后端顺序追加在后, 因此新装与重装的来源落末位; 卸载不清理, 装回来仍在原位.
+   */
+  playbackSourceOrder: string[];
   toggleNavbar: () => void;
   setNavbarCollapsed: (collapsed: boolean) => void;
   setTheme: (theme: Theme) => void;
@@ -58,6 +65,7 @@ interface UIState {
   setPageSize: (key: PageSizeKey, size: PageSize) => void;
   setMetaColumnWidths: (widths: ColumnWidths<MetaTableColumnKey>) => void;
   setActorColumnWidths: (widths: ColumnWidths<ActorTableColumnKey>) => void;
+  setPlaybackSourceOrder: (order: string[]) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -71,6 +79,7 @@ export const useUIStore = create<UIState>()(
       pageSizes: { ...DEFAULT_PAGE_SIZES },
       metaColumnWidths: {},
       actorColumnWidths: {},
+      playbackSourceOrder: [],
       toggleNavbar: () => set((s) => ({ navbarCollapsed: !s.navbarCollapsed })),
       setNavbarCollapsed: (collapsed) => set({ navbarCollapsed: collapsed }),
       setTheme: (theme) => set({ theme }),
@@ -83,6 +92,7 @@ export const useUIStore = create<UIState>()(
         })),
       setMetaColumnWidths: (widths) => set({ metaColumnWidths: widths }),
       setActorColumnWidths: (widths) => set({ actorColumnWidths: widths }),
+      setPlaybackSourceOrder: (order) => set({ playbackSourceOrder: order }),
     }),
     {
       name: STORAGE_KEY,
@@ -102,6 +112,7 @@ export const useUIStore = create<UIState>()(
           pageSizes,
           metaColumnWidths: p?.metaColumnWidths ?? {},
           actorColumnWidths: p?.actorColumnWidths ?? {},
+          playbackSourceOrder: p?.playbackSourceOrder ?? [],
         };
       },
     },

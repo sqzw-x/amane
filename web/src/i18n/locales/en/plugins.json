@@ -18,6 +18,7 @@
   "installed": "Plugin installed",
   "uninstalled": "Plugin uninstalled",
   "reloaded": "Plugin catalog reloaded",
+  "playbackOrder": "Playback source order",
   "routeHint": "After installing a scrape plugin, add it in Type Routes before it is used",
   "routeLink": "Open movie scraping settings",
   "capabilities": {

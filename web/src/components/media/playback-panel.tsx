@@ -28,6 +28,8 @@ import { APP_SHELL_HEADER_HEIGHT } from "@/components/layout/app-shell-metrics";
 import type { HlsFailure, SeekRequest } from "@/components/media/playback-player";
 import { extractErrorMessage } from "@/lib/api-error";
 import { apiFetch } from "@/lib/api-token";
+import { orderPlaybackSources } from "@/lib/media/source-order";
+import { useUIStore } from "@/stores/ui";
 
 // 播放器只在选中可播的流之后才需要, 单独成块懒加载, 与 hls.js 一样不进入主包.
 const PlaybackPlayer = lazy(() =>
@@ -279,7 +281,13 @@ export function PlaybackPanel({
     ...listPlaybackSourcesOptions(),
     enabled: metadataId > 0,
   });
-  const sources = sourcesQuery.data?.items ?? EMPTY_SOURCES;
+  // 后端按来源 ID 返回; 用户顺序在插件页维护, 位置 0 即本面板默认探测的来源.
+  const sourceOrder = useUIStore((state) => state.playbackSourceOrder);
+  const sources = orderPlaybackSources(
+    sourcesQuery.data?.items ?? EMPTY_SOURCES,
+    sourceOrder,
+    (item) => item.source_id,
+  );
   const [pickedSourceId, setPickedSourceId] = useState<string | null>(null);
   const [pickedStream, setPickedStream] = useState<{ sourceId: string; key: string } | null>(null);
   const [error, setError] = useState<{ href: string; message: string } | null>(null);
