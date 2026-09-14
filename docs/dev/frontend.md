@@ -40,7 +40,7 @@
 
 **入口分流**: 非演员实体进 `/catalog/$kind/$facetId`, 演员进 `/actors/$actorId` (演员不进入 `/catalog`); `FacetBadge` 默认深链分类, 筛选深链 `/meta`.
 
-**评论**: 排序与编辑态只在组件内, 不写地址栏. 评论与关联文件在 `lg` (1200px) 以上并排各占一半 — **断点不能降到 `md`**, 再窄时文件路径会明显截断. 其余样式理由见 `components/media/comment-section.module.css` 的注释.
+**评论**: 排序与编辑态只在组件内, 不写地址栏; 时间戳跳转把秒数写进 `t`, 该次导航必须 `resetScroll: false` — 路由默认在位置提交后把页面滚动到顶部. 评论与关联文件在 `lg` (1200px) 以上并排各占一半 — **断点不能降到 `md`**, 再窄时文件路径会明显截断. 其余样式理由见 `components/media/comment-section.module.css` 的注释.
 
 影片详情: 用户标签与刮削标签分栏; 加减菜单一次提交多名 — `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许一次挂多个. 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`.
 

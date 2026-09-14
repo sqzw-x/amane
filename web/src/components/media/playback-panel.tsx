@@ -24,6 +24,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import type { PlaybackSourceOption, PlaybackStreamItem } from "@/client/types.gen";
 import { EnumToggle } from "@/components/common/enum-toggle";
+import { APP_SHELL_HEADER_HEIGHT } from "@/components/layout/app-shell-metrics";
 import type { HlsFailure, SeekRequest } from "@/components/media/playback-player";
 import { extractErrorMessage } from "@/lib/api-error";
 import { apiFetch } from "@/lib/api-token";
@@ -191,6 +192,7 @@ function PickerMenu({
  * 播放器的固定比例外框, 也是出错时的播放窗口.
  * 切换来源时流列表要按新的 key 重新探测, 期间用同一外框占位: 否则播放器一收一放会让页面高度骤变,
  * 已经滚下去的位置会被浏览器夹回顶部. 底色与播放器一致, 提示直接落在窗口里.
+ * 顶端固定头部会盖住对齐到视口上沿的元素, 因此外框带走头部高度的滚动边距.
  */
 function PlayerFrame({
   children,
@@ -200,7 +202,14 @@ function PlayerFrame({
   frameRef?: Ref<HTMLDivElement>;
 }) {
   return (
-    <Box ref={frameRef} w="100%" maw={PLAYER_MAX_WIDTH} mx="auto" bg="#000">
+    <Box
+      ref={frameRef}
+      w="100%"
+      maw={PLAYER_MAX_WIDTH}
+      mx="auto"
+      bg="#000"
+      style={{ scrollMarginTop: APP_SHELL_HEADER_HEIGHT }}
+    >
       <AspectRatio ratio={16 / 9}>{children}</AspectRatio>
     </Box>
   );
@@ -321,13 +330,23 @@ export function PlaybackPanel({
     onCanSeekChange(canSeek);
   }, [canSeek, onCanSeekChange]);
 
-  // 评论在播放窗口下方: 跳转时把它滚进视野, 否则看不到跳转结果.
+  // 评论就在播放窗口下方, 点时间戳通常不必移动页面: 窗口还有一部分在视野里就不滚动, 完全滑出视野时才
+  // 把它带回屏幕, 并对齐上沿而不是居中 —— 居中会把刚点的那条评论一起挪出视野.
+  // 依赖流的选择: 流列表到位之前播放窗口尚未渲染, 带 `t` 的地址要在这里补一次.
   useEffect(() => {
-    if (seekRequest == null) {
+    if (seekRequest == null || selected == null) {
       return;
     }
-    playerFrameRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [seekRequest]);
+    const frame = playerFrameRef.current;
+    if (frame == null) {
+      return;
+    }
+    const rect = frame.getBoundingClientRect();
+    if (rect.bottom > 0 && rect.top < window.innerHeight) {
+      return;
+    }
+    frame.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [seekRequest, selected]);
 
   const title = (
     <Text size="sm" fw={600}>

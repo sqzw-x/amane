@@ -130,11 +130,13 @@ function TitleDetailPage() {
       seekFromUrlRef.current = seconds;
       setSeekRequest((prev) => ({ seconds, nonce: (prev?.nonce ?? 0) + 1 }));
       // replace: 时间戳是定位而不是导航, 不该在历史里堆一串记录.
+      // resetScroll: 路由默认在位置提交后把页面滚动到顶部, 与定位的语义冲突; 滚动由播放器按需调整.
       void navigate({
         to: "/meta/$metadataId",
         params: { metadataId },
         search: (prev) => ({ ...prev, t: seconds }),
         replace: true,
+        resetScroll: false,
       });
     },
     [metadataId, navigate],
