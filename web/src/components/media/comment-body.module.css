@@ -36,3 +36,14 @@
   color: var(--mantine-color-dimmed);
   cursor: not-allowed;
 }
+
+/* 链接用品牌色加下划线同正文分开; 深色下取偏亮的一档, 断行交给 .body 的 overflow-wrap. */
+.link {
+  color: light-dark(var(--mantine-color-brand-7), var(--mantine-color-brand-4));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: light-dark(var(--mantine-color-brand-9), var(--mantine-color-brand-2));
+}
