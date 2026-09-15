@@ -6,14 +6,14 @@ import json
 from pathlib import Path
 
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+
+from tests.helpers import alembic_config
 
 
 def test_library_organize_columns_backfill_existing_rows(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "e08b11d79fbb")
 
@@ -46,8 +46,7 @@ def test_library_organize_columns_backfill_existing_rows(tmp_path: Path) -> None
 
 def test_library_patterns_json_null_backfilled(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "27c1cec6341f")
 
@@ -75,8 +74,7 @@ def test_library_patterns_json_null_backfilled(tmp_path: Path) -> None:
 def test_library_automation_backfills_from_watch_enabled(tmp_path: Path) -> None:
     """watch_enabled True→scrape, False→none; 新列非空, 旧列删除."""
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "1159ff536a74")
 
@@ -109,8 +107,7 @@ def test_library_automation_backfills_from_watch_enabled(tmp_path: Path) -> None
 def test_library_blacklist_patterns_backfilled_for_existing_rows(tmp_path: Path) -> None:
     """存量行迁移后 blacklist_patterns 非空且为 [] (关闭状态)."""
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "5abbb79b1ae6")
 
@@ -142,8 +139,7 @@ def test_library_blacklist_patterns_backfilled_for_existing_rows(tmp_path: Path)
 def test_library_subtitle_extensions_backfilled_for_existing_rows(tmp_path: Path) -> None:
     """存量行迁移后 subtitle_extensions 为默认扩展名列表."""
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "cbede59bbb9e")
 
@@ -175,8 +171,7 @@ def test_library_subtitle_extensions_backfilled_for_existing_rows(tmp_path: Path
 def test_library_min_file_size_backfilled_for_existing_rows(tmp_path: Path) -> None:
     """存量行迁移后 min_file_size 为 0 (关闭)."""
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "1702cd5270c9")
 
@@ -206,8 +201,7 @@ def test_library_min_file_size_backfilled_for_existing_rows(tmp_path: Path) -> N
 def test_library_path_template_optional_groups_rewrites_and_drops_cd_suffix(tmp_path: Path) -> None:
     """v0.5.0 存量: mosaic/definition 改名, 分集后缀并进 video_template, 并补 subtitle 可选组."""
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "099436e749d6")
 
@@ -251,8 +245,7 @@ def test_library_path_template_optional_groups_rewrites_and_drops_cd_suffix(tmp_
 def test_library_strm_content_template_backfilled_for_existing_rows(tmp_path: Path) -> None:
     """存量行迁移后 strm_content_template 为 NULL (写绝对路径)."""
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "54138fa1c160")
 
@@ -282,8 +275,7 @@ def test_library_strm_content_template_backfilled_for_existing_rows(tmp_path: Pa
 def test_library_mosaic_placeholders_gain_censored_mapping(tmp_path: Path) -> None:
     """存量 `{mosaic?}` 补 censored 映射; 已写 censored 或无该占位符的模板不改."""
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "0980003004e2")
 

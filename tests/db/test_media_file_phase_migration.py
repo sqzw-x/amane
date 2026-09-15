@@ -3,18 +3,17 @@
 from pathlib import Path
 
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlmodel import Session, col, select
 
 from amane.db.models import MediaFile
 from amane.parsing import ContentType, Mosaic
+from tests.helpers import alembic_config
 
 
 def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "c3d8f95d2198")
 
@@ -77,8 +76,7 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
 
 def test_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "c1334030b9f1")
 
@@ -122,8 +120,7 @@ def test_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
 
 def test_media_file_mosaic_filled_from_content_type(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "668e214b1a76")
 

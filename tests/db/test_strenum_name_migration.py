@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
 
@@ -21,12 +20,12 @@ from amane.db.models import (
 )
 from amane.enums import ActorGender, LibraryAutomation, LinkMode, MoveMode
 from amane.parsing import ContentType
+from tests.helpers import alembic_config
 
 
 def test_strenum_columns_value_to_name(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "1ed95d44b077")
 

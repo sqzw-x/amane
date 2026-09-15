@@ -10,13 +10,12 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
+from tests.helpers import alembic_config
+
 
 @pytest.fixture
 def alembic_cfg(tmp_path: Path) -> Config:
-    db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
-    return cfg
+    return alembic_config(tmp_path / "migrate.db")
 
 
 def test_feed_item_ignore_state_migration_preserves_history(alembic_cfg: Config) -> None:

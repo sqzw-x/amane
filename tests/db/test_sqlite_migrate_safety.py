@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine, text
 
 from amane.db.sqlite_migrate import (
@@ -19,6 +18,7 @@ from amane.db.sqlite_migrate import (
     prune_migrate_backups,
     upgrade_sqlite_database,
 )
+from tests.helpers import alembic_config
 
 
 def _write_mini_alembic(root: Path) -> Path:
@@ -338,8 +338,7 @@ class TestProjectAlembicPath:
 
     def test_upgrade_head_from_previous_makes_backup(self, tmp_path: Path) -> None:
         db = tmp_path / "amane.db"
-        cfg = Config("alembic.ini")
-        cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
+        cfg = alembic_config(db)
         # 先升到 facet_rules 之前
         command.upgrade(cfg, "b058160ffee4")
         assert needs_upgrade(db)
@@ -354,8 +353,7 @@ class TestProjectAlembicPath:
     def test_actor_alias_migration_rows_out_bag_and_rules(self, tmp_path: Path) -> None:
         """别名袋与 actor alias 规则行化进 actor_aliases, 规则行删除 (block 保留)."""
         db = tmp_path / "amane.db"
-        cfg = Config("alembic.ini")
-        cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
+        cfg = alembic_config(db)
         command.upgrade(cfg, "5abbb79b1ae6")
 
         now = "2026-01-01 00:00:00.000000"
@@ -397,8 +395,7 @@ class TestProjectAlembicPath:
         from amane.db.engine import create_async_engine_from_path
 
         db = tmp_path / "amane.db"
-        cfg = Config("alembic.ini")
-        cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
+        cfg = alembic_config(db)
         command.upgrade(cfg, "b058160ffee4")
 
         engine = await create_async_engine_from_path(db)

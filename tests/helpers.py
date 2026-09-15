@@ -2,7 +2,12 @@ import asyncio
 import time
 from collections.abc import Iterable
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from alembic.config import Config
+
+from amane.db.sqlite_migrate import migrations_dir
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -10,6 +15,17 @@ if TYPE_CHECKING:
     from amane.db.models import TaskType
     from amane.db.repository import Repository
     from amane.handlers.protocol import TaskHandler
+
+
+def alembic_config(db_path: Path) -> Config:
+    """迁移用例的配置: 与生产同源 (程序化指定脚本目录与 URL), 不加载 ``alembic.ini``.
+
+    加载 ini 会让 ``env.py`` 执行 ``fileConfig``, 按其默认值关闭进程内已存在的 logger.
+    """
+    cfg = Config()
+    cfg.set_main_option("script_location", str(migrations_dir()))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    return cfg
 
 
 def patch_path(obj: object) -> str:

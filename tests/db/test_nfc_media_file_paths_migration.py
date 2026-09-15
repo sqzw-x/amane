@@ -3,14 +3,14 @@
 from pathlib import Path
 
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine, text
+
+from tests.helpers import alembic_config
 
 
 def test_nfc_media_file_paths_rewrites_and_merges(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
-    cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    cfg = alembic_config(db_path)
 
     command.upgrade(cfg, "9d6cb1706ad1")
 
