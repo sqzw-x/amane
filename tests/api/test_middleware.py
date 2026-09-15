@@ -20,11 +20,17 @@ if TYPE_CHECKING:
 
 @pytest.fixture(autouse=True)
 def _reset_logging():
-    """每个测试前清理 logging 和 structlog 状态 (同 test_logging.py)."""
+    """每个测试前清理 logging 和 structlog 状态 (同 test_logging.py).
+
+    其它用例 (迁移) 会经 ``fileConfig`` 改动全局 logging, 因此这里连 ``disabled`` 一并复位:
+    用例之间不允许通过进程级日志状态相互影响.
+    """
     root = logging.getLogger("amane")
     root.handlers.clear()
+    root.disabled = False
     req = logging.getLogger("amane.request")
     req.handlers.clear()
+    req.disabled = False
     structlog.contextvars.clear_contextvars()
     structlog.reset_defaults()
     yield
@@ -95,84 +101,49 @@ def _capture(handler: _CaptureHandler) -> list[dict]:
 
 
 class TestFailedRequestLogging:
+    """一次请求恰好一条记录; 异常与内层中间件短路都不允许漏记."""
+
+    @pytest.mark.parametrize(
+        ("path", "inner", "status", "event", "exception_contains"),
+        [
+            ("/boom", None, 500, "request failed", "RuntimeError: boom"),
+            ("/api/guard", None, 403, "request completed", None),
+            ("/api/health", _Direct401Middleware, 401, "request completed", None),
+            ("/api/health", _RaisingMiddleware, 500, "request failed", "RuntimeError: inner middleware boom"),
+        ],
+        ids=["route-exception", "http-exception", "inner-direct-401", "inner-exception"],
+    )
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_unhandled_exception_logged_to_request_log(self, tmp_path: Path):
-        """端点抛未捕获异常 → 返回 500, 且 request.log 有 error 级 `request failed` + traceback."""
+    async def test_request_logged_exactly_once(
+        self,
+        tmp_path: Path,
+        path: str,
+        inner: type[BaseHTTPMiddleware] | None,
+        status: int,
+        event: str,
+        exception_contains: str | None,
+    ):
         setup_logging(level="INFO", log_dir=tmp_path)
         handler = _CaptureHandler()
         logging.getLogger("amane.request").addHandler(handler)
         try:
-            async with _client(_make_app()) as client:
-                resp = await client.get("/boom")
-            assert resp.status_code == 500
+            async with _client(_make_app(inner=inner)) as client:
+                resp = await client.get(path)
+            assert resp.status_code == status
         finally:
             logging.getLogger("amane.request").removeHandler(handler)
 
         records = _capture(handler)
         assert len(records) == 1
         payload = records[0]
-        assert payload["event"] == "request failed"
-        assert payload["status"] == 500
-        assert payload["path"] == "/boom"
+        assert payload["event"] == event
+        assert payload["status"] == status
+        assert payload["path"] == path
         assert payload["method"] == "GET"
-        assert "RuntimeError: boom" in payload["exception"]
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_http_exception_logged_exactly_once(self, tmp_path: Path):
-        """HTTPException 由 FastAPI ExceptionMiddleware 转换为响应, 只打一条 request completed."""
-        setup_logging(level="INFO", log_dir=tmp_path)
-        handler = _CaptureHandler()
-        logging.getLogger("amane.request").addHandler(handler)
-        try:
-            async with _client(_make_app()) as client:
-                resp = await client.get("/api/guard")
-            assert resp.status_code == 403
-        finally:
-            logging.getLogger("amane.request").removeHandler(handler)
-
-        records = _capture(handler)
-        assert len(records) == 1
-        assert records[0]["event"] == "request completed"
-        assert records[0]["status"] == 403
-        assert "exception" not in records[0]
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_inner_middleware_direct_response_logged(self, tmp_path: Path):
-        """LoggingMiddleware 最外层: 内层中间件直接返回的 401 (不走路由) 也被记录."""
-        setup_logging(level="INFO", log_dir=tmp_path)
-        handler = _CaptureHandler()
-        logging.getLogger("amane.request").addHandler(handler)
-        try:
-            async with _client(_make_app(inner=_Direct401Middleware)) as client:
-                resp = await client.get("/api/health")
-            assert resp.status_code == 401
-        finally:
-            logging.getLogger("amane.request").removeHandler(handler)
-
-        records = _capture(handler)
-        assert len(records) == 1
-        assert records[0]["event"] == "request completed"
-        assert records[0]["status"] == 401
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_inner_middleware_exception_logged(self, tmp_path: Path):
-        """LoggingMiddleware 最外层: 内层中间件自身异常 (未达路由) 也被 request failed 兜住."""
-        setup_logging(level="INFO", log_dir=tmp_path)
-        handler = _CaptureHandler()
-        logging.getLogger("amane.request").addHandler(handler)
-        try:
-            async with _client(_make_app(inner=_RaisingMiddleware)) as client:
-                resp = await client.get("/api/health")
-            assert resp.status_code == 500
-        finally:
-            logging.getLogger("amane.request").removeHandler(handler)
-
-        records = _capture(handler)
-        assert len(records) == 1
-        payload = records[0]
-        assert payload["event"] == "request failed"
-        assert payload["status"] == 500
-        assert "RuntimeError: inner middleware boom" in payload["exception"]
+        if exception_contains is None:
+            assert "exception" not in payload
+        else:
+            assert exception_contains in payload["exception"]
 
 
 class TestNoisyPaths:
