@@ -62,6 +62,8 @@
 
 钉高页面必须让顶栏 chrome 可折叠: 筛选与批量操作在窄屏收进 `Menu` / `Drawer`, 滚动区给出下界, 外层容器纵向可滚动 — 否则表体被压成 0 高且分页被裁掉. 窄屏侧栏统一采用 `routes/feeds.index.tsx` 的 Drawer 范式: 内容侧 `hiddenFrom`, 抽屉与触发按钮取同一断点.
 
+HTML5 拖拽排序在触屏设备不可用, 有序列表必须在窄屏提供等价入口 (`DraggableChips` 的 `onMove` 渲染上移 / 下移按钮), 拖动只作 `md` 以上的增强.
+
 ## Schema 表单
 
 Settings、任务提交、定时创建、metadata 编辑共用 `components/schema-form/`: Pydantic → OpenAPI → FieldRouter; `x-*` 清单见 `schema/types.ts`, 字段控件细节见该目录与字段注释.

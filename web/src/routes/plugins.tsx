@@ -22,6 +22,7 @@ import { PathPicker } from "@/components/path-picker";
 import { PluginCard } from "@/components/plugins/plugin-card";
 import { DraggableChips } from "@/components/schema-form/fields/draggable-chips";
 import { useInstallPlugin, usePlugins, useReloadPlugins } from "@/hooks/use-plugins";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { orderPlaybackSources } from "@/lib/media/source-order";
 import { useUIStore } from "@/stores/ui";
 
@@ -102,6 +103,8 @@ function PlaybackOrderSection({ plugins }: { plugins: PluginResponse[] }) {
   const { t } = useTranslation("plugins");
   const order = useUIStore((state) => state.playbackSourceOrder);
   const setOrder = useUIStore((state) => state.setPlaybackSourceOrder);
+  // 触屏设备无法执行 HTML5 拖拽, 窄屏改由上移 / 下移按钮调整来源顺序.
+  const narrow = useNarrowViewport();
   const playbackPlugins = plugins.filter(
     (plugin) =>
       (plugin.config.enabled ?? true) &&
@@ -130,6 +133,7 @@ function PlaybackOrderSection({ plugins }: { plugins: PluginResponse[] }) {
           getKey={(plugin) => plugin.descriptor.id}
           getLabel={(plugin) => plugin.descriptor.name}
           onChange={handleChange}
+          onMove={narrow ? handleChange : undefined}
         />
       </Stack>
     </Paper>
