@@ -182,7 +182,8 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
         <Stack gap={0} mt="xs">
           {rows.map(({ comment, floor }) => (
             <div key={comment.id} className={classes.item}>
-              <Group gap={8} align="center" wrap="nowrap">
+              {/* 相对时间与「已编辑」在窄屏折行, 否则英文文案会把行内操作顶出卡片. */}
+              <Group gap={8} align="center" wrap="wrap">
                 <span className={classes.floor}>#{floor}</span>
                 <Text size="xs" c="dimmed">
                   {formatRelativeTime(comment.created_at, locale, t("detail.commentJustNow"))}

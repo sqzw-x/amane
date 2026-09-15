@@ -80,6 +80,7 @@ export function FeedArticle({
           wrap="nowrap"
           align="flex-start"
           gap="sm"
+          className={classes.head}
           style={{ cursor: "pointer" }}
           onClick={onToggleExpand}
         >
@@ -181,7 +182,12 @@ export function FeedArticle({
               </Text>
             )}
           </Stack>
-          <Group gap={2} wrap="nowrap" onClick={(event) => event.stopPropagation()}>
+          <Group
+            gap={2}
+            wrap="nowrap"
+            className={classes.actions}
+            onClick={(event) => event.stopPropagation()}
+          >
             {number != null && (
               <HintedActionIcon
                 variant="subtle"
@@ -220,7 +226,7 @@ export function FeedArticle({
           </Group>
         </Group>
         {expanded ? (
-          <div style={{ paddingLeft: 52 }}>
+          <div className={classes.body}>
             <FeedHtml html={item.description} />
           </div>
         ) : null}

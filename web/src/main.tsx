@@ -84,7 +84,7 @@ function Root() {
       <Notifications position="top-right" />
       <ConfirmHost />
       {authed === null ? (
-        <Center h="100vh">
+        <Center h="100dvh">
           <Loader size="sm" />
         </Center>
       ) : authed ? (

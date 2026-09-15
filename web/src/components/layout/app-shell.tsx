@@ -220,7 +220,10 @@ function HeaderSearch() {
   }
 
   return (
-    <form
+    // 窄屏顶栏放不下搜索框, 入口回落到片库页内搜索.
+    <Box
+      component="form"
+      visibleFrom="sm"
       style={{ flex: 1, minWidth: 0, maxWidth: 480, marginLeft: 24 }}
       onSubmit={(e) => {
         e.preventDefault();
@@ -236,7 +239,7 @@ function HeaderSearch() {
         leftSection={<IconSearch size={16} />}
         radius="md"
       />
-    </form>
+    </Box>
   );
 }
 
@@ -256,15 +259,13 @@ function HeaderBrand() {
           <Title order={4}>{APP_NAME}</Title>
         </Group>
       </Link>
-      {/* 窄屏顶栏只保留品牌与图标动作, 版本号在侧栏内呈现. */}
-      <Box visibleFrom="sm">
-        <VersionMenu />
-      </Box>
+      {/* 窄屏顶栏只保留品牌与图标动作, 版本号在侧栏内呈现; 不加包装元素, 避免改变宽屏下的行内基线. */}
+      <VersionMenu visibleFrom="sm" />
     </Group>
   );
 }
 
-function GithubLink() {
+function GithubLink({ visibleFrom }: { visibleFrom?: "sm" }) {
   const { t } = useTranslation("common");
 
   return (
@@ -277,6 +278,7 @@ function GithubLink() {
         variant="subtle"
         color="gray"
         size="lg"
+        visibleFrom={visibleFrom}
         aria-label={t("about.github")}
       >
         <IconBrandGithub size={18} />
@@ -319,17 +321,13 @@ export function AppShellLayout(): ReactNode {
             )}
           </ActionIcon>
           <HeaderBrand />
-          {/* 顶栏搜索与片库页内搜索重复, 窄屏不呈现, 入口留在侧栏的片库导航. */}
-          <Box visibleFrom="sm" style={{ flex: 1, minWidth: 0, display: "flex" }}>
-            <HeaderSearch />
-          </Box>
+          <HeaderSearch />
           <Group ml="auto" gap="xs" wrap="nowrap">
             <ConnectionIndicator />
             <ThemeToggle />
             <LanguageMenu />
-            <Box visibleFrom="sm">
-              <GithubLink />
-            </Box>
+            {/* 窄屏顶栏放不下外链, 该入口收进侧栏底部. */}
+            <GithubLink visibleFrom="sm" />
           </Group>
         </Group>
       </AppShell.Header>

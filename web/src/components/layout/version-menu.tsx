@@ -17,7 +17,7 @@ function displayTag(tag: string): string {
   return tag.replace(/^v/i, "");
 }
 
-export function VersionMenu() {
+export function VersionMenu({ visibleFrom }: { visibleFrom?: "sm" }) {
   const { t } = useTranslation("common");
   const [opened, setOpened] = useState(false);
   const health = useQuery({ ...healthCheckOptions(), staleTime: 60_000 });
@@ -64,7 +64,7 @@ export function VersionMenu() {
   return (
     <Menu opened={opened} onChange={setOpened} position="bottom-start" shadow="md" width={240}>
       <Menu.Target>
-        <UnstyledButton aria-label={t("about.menu")}>
+        <UnstyledButton visibleFrom={visibleFrom} aria-label={t("about.menu")}>
           <Text
             size="xs"
             c={newer ? "blue" : "dimmed"}

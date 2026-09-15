@@ -174,7 +174,8 @@ export function OpmlImportButton({
             onChange={(event) => setAutoEnqueue(event.currentTarget.checked)}
           />
           <Checkbox.Group value={selected} onChange={setSelected}>
-            <ScrollArea.Autosize mah={360}>
+            {/* 窄屏降低列表高度, 避免弹窗自身滚动与列表滚动形成双层. */}
+            <ScrollArea.Autosize mah={{ base: 180, sm: 360 }} scrollbars="y">
               <Stack gap="xs">
                 {items.map((item) => {
                   const exists = existingUrls.has(item.url);
@@ -199,7 +200,12 @@ export function OpmlImportButton({
                               </Badge>
                             )}
                           </Group>
-                          <Text size="xs" c="dimmed" ff="monospace">
+                          <Text
+                            size="xs"
+                            c="dimmed"
+                            ff="monospace"
+                            style={{ overflowWrap: "anywhere" }}
+                          >
                             {item.url}
                           </Text>
                         </Stack>

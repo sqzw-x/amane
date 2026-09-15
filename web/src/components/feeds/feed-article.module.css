@@ -10,6 +10,26 @@
   position: relative;
 }
 
+/* 展开正文与左侧勾选/箭头对齐. */
+.body {
+  padding-left: 52px;
+}
+
+/* 窄屏: 勾选/展开/动作图标与标题同行时, 标题只剩一百来像素; 动作组换到下一行, 标题占满整行. */
+@media (max-width: 47.99em) {
+  .head {
+    flex-wrap: wrap;
+  }
+
+  .head .actions {
+    margin-left: auto;
+  }
+
+  .body {
+    padding-left: 12px;
+  }
+}
+
 .row[data-unread="true"] .card {
   background: light-dark(
     color-mix(in srgb, var(--mantine-color-violet-6) 6%, var(--mantine-color-body)),

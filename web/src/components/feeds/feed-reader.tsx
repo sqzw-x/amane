@@ -657,7 +657,7 @@ export function FeedReader({
             onBlur={applySearch}
             placeholder={t("historySearchPlaceholder")}
             leftSection={<IconSearch size={16} />}
-            w={240}
+            w={{ base: "100%", sm: 240 }}
           />
           <Switch
             size="sm"
@@ -784,7 +784,8 @@ export function FeedReader({
         )}
       </Group>
 
-      <div style={{ flex: 1, minHeight: 0 }}>
+      {/* 列表下界: 窄屏筛选行与批量条折行后, 缺下界时列表会被压成 0 高. */}
+      <div style={{ flex: 1, minHeight: 160 }}>
         {!isLoading && rows.length === 0 ? (
           <Text c="dimmed" size="sm" ta="center" py="xl">
             {t("historyEmpty")}

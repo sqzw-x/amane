@@ -4,7 +4,8 @@ import { VirtuosoGrid, type GridItemProps, type GridListProps } from "react-virt
 import type { ActorResponse } from "@/client/types.gen";
 import { ActorCard } from "./actor-card";
 
-const GRID_COLS = { base: 2, xs: 3, sm: 4, md: 5, lg: 6, xl: 7 } as const;
+// sm/md 收窄一列: 48em 起导航栏展开, 内容区反而变窄, 沿用桌面列数会让缩略图小一档.
+const GRID_COLS = { base: 2, xs: 3, sm: 3, md: 4, lg: 6, xl: 7 } as const;
 
 interface ActorGridProps {
   items: ActorResponse[];

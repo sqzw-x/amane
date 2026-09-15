@@ -6,6 +6,7 @@ import {
   Loader,
   NavLink,
   Paper,
+  Select,
   Stack,
   Text,
   Title,
@@ -18,6 +19,7 @@ import { z } from "zod";
 import { isHidden, resolveSchema } from "@/components/schema-form/schema";
 import { SchemaForm } from "@/components/schema-form/schema-form";
 import { useConfig, useConfigSchema, useUpdateConfig } from "@/hooks/use-config";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { extractErrorMessage } from "@/lib/api-error";
 
 const settingsSearchSchema = z.object({
@@ -33,6 +35,7 @@ function SettingsPage() {
   const { t } = useTranslation("settings");
   const { section } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const narrow = useNarrowViewport("md");
   const { data: schema, isLoading: schemaLoading, error: schemaError } = useConfigSchema();
   const { data: values, isLoading: valuesLoading, error: valuesError } = useConfig();
   const saveMutation = useUpdateConfig();
@@ -69,22 +72,39 @@ function SettingsPage() {
       )}
 
       {!loading && !error && resolvedSchema && values && currentSection && (
-        <Group align="flex-start" gap="lg" wrap="nowrap">
-          <Paper withBorder p="xs" w={220} style={{ position: "sticky", top: 12, flexShrink: 0 }}>
-            <Stack gap={4}>
-              {sectionKeys.map((key) => (
-                <NavLink
-                  key={key}
-                  // Schema 顶层分组名运行时才知, 动态表单例外.
-                  label={t(`tabs.${key}` as never, { defaultValue: key })}
-                  active={currentSection === key}
-                  onClick={() => void navigate({ search: { section: key } })}
-                  variant="filled"
-                  style={{ borderRadius: "var(--mantine-radius-md)" }}
-                />
-              ))}
-            </Stack>
-          </Paper>
+        <Group align="flex-start" gap="lg" wrap={narrow ? "wrap" : "nowrap"}>
+          {narrow ? (
+            // 窄屏侧栏与表单无法并排: 220px 固定导航会把字段压到几十像素宽.
+            <Select
+              w="100%"
+              allowDeselect={false}
+              value={currentSection}
+              onChange={(key) => {
+                if (key) void navigate({ search: { section: key } });
+              }}
+              data={sectionKeys.map((key) => ({
+                value: key,
+                // Schema 顶层分组名运行时才知, 动态表单例外.
+                label: t(`tabs.${key}` as never, { defaultValue: key }),
+              }))}
+            />
+          ) : (
+            <Paper withBorder p="xs" w={220} style={{ position: "sticky", top: 12, flexShrink: 0 }}>
+              <Stack gap={4}>
+                {sectionKeys.map((key) => (
+                  <NavLink
+                    key={key}
+                    // Schema 顶层分组名运行时才知, 动态表单例外.
+                    label={t(`tabs.${key}` as never, { defaultValue: key })}
+                    active={currentSection === key}
+                    onClick={() => void navigate({ search: { section: key } })}
+                    variant="filled"
+                    style={{ borderRadius: "var(--mantine-radius-md)" }}
+                  />
+                ))}
+              </Stack>
+            </Paper>
+          )}
 
           <Box style={{ flex: 1, minWidth: 0 }}>
             {sectionKeys.map((key) => {

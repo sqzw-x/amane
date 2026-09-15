@@ -72,12 +72,15 @@ function FeedsPage() {
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
+        // 高度钉在 Main 内容区; 窄屏 chrome 折行超出时改为页面内滚动, 避免内容溢出到内容区之外.
+        overflowY: "auto",
+        overflowX: "hidden",
       }}
     >
       <Group justify="space-between" wrap="wrap" mb="sm">
         <Group gap="sm">
           <Button
-            hiddenFrom="sm"
+            hiddenFrom="md"
             variant="default"
             size="sm"
             leftSection={<IconList size={16} />}
@@ -100,10 +103,11 @@ function FeedsPage() {
         </Box>
       ) : (
         <Group align="stretch" gap={0} wrap="nowrap" style={{ flex: 1, minHeight: 0 }}>
-          <Box visibleFrom="sm" w={260} style={{ minHeight: 0, flexShrink: 0 }}>
+          {/* md 而非 sm: 768px 时导航栏同时展开, 260px 侧栏会把阅读列压到 460px. */}
+          <Box visibleFrom="md" w={260} style={{ minHeight: 0, flexShrink: 0 }}>
             {sidebar}
           </Box>
-          <Box style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex" }} pl={{ sm: "md" }}>
+          <Box style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex" }} pl={{ md: "md" }}>
             <FeedReader
               feeds={feeds}
               feedId={search.feed}
@@ -129,7 +133,7 @@ function FeedsPage() {
         onClose={mobileNavHandlers.close}
         title={t("sidebar.title")}
         size="xs"
-        hiddenFrom="sm"
+        hiddenFrom="md"
       >
         {sidebar}
       </Drawer>

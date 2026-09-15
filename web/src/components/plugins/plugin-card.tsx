@@ -55,7 +55,7 @@ export function PluginCard({ plugin }: { plugin: PluginResponse }) {
       <Stack gap="xs" h="100%">
         <Group justify="space-between" align="flex-start" gap="xs" wrap="nowrap">
           <Stack gap={2} style={{ minWidth: 0 }}>
-            <Text fw={600} lineClamp={1}>
+            <Text fw={600} lineClamp={2}>
               {plugin.descriptor.name}
               {plugin.descriptor.version ? (
                 <Text span size="xs" c="dimmed" ml={6}>

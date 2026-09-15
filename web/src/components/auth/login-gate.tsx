@@ -51,8 +51,9 @@ export function LoginGate({ onAuthed }: LoginGateProps) {
   }
 
   return (
-    <Center h="100vh">
-      <Paper withBorder p="xl" radius="md" w={380} shadow="sm">
+    // dvh 而非 vh: 移动浏览器地址栏收起前 100vh 高于可视区, 卡片重心下移.
+    <Center h="100dvh" px="md">
+      <Paper withBorder p="xl" radius="md" w={380} maw="100%" shadow="sm">
         <form
           onSubmit={(e) => {
             e.preventDefault();

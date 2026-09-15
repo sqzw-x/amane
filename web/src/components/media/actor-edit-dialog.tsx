@@ -383,7 +383,10 @@ function RawSiteSummary({ site, payload }: { site: string; payload: unknown }) {
               {row.value}
             </Anchor>
           ) : (
-            <Text size="xs" style={{ whiteSpace: "pre-wrap" }}>
+            <Text
+              size="xs"
+              style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", minWidth: 0 }}
+            >
               {row.value}
             </Text>
           )}
