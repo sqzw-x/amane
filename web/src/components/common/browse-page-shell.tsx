@@ -55,7 +55,10 @@ export function BrowsePageShell({
       gap="md"
       style={{
         minWidth: 0,
-        ...(fill ? { height: APP_SHELL_MAIN_HEIGHT, overflow: "hidden" } : undefined),
+        // fill: 高度钉在 Main 内容区; 纵向仍可滚动, 避免 chrome 过高时把分页裁掉.
+        ...(fill
+          ? { height: APP_SHELL_MAIN_HEIGHT, overflowY: "auto", overflowX: "hidden" }
+          : undefined),
       }}
     >
       <Box
@@ -67,8 +70,9 @@ export function BrowsePageShell({
         }}
       >
         <Stack gap="md" style={{ minWidth: 0 }}>
+          {/* 三列标题行需要 md: sm 断点上导航栏刚展开, 内容宽度反而收窄. */}
           <Box
-            visibleFrom="sm"
+            visibleFrom="md"
             style={{
               display: "grid",
               gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
@@ -85,7 +89,7 @@ export function BrowsePageShell({
           </Box>
 
           {/* 小屏: 标题全宽, 视图切换/右侧动作换行到下 */}
-          <Stack hiddenFrom="sm" gap="sm" style={{ minWidth: 0 }}>
+          <Stack hiddenFrom="md" gap="sm" style={{ minWidth: 0 }}>
             <Box style={{ minWidth: 0 }}>{title}</Box>
             {viewSwitch != null && <Box style={{ minWidth: 0 }}>{viewSwitch}</Box>}
             {actions != null && (
@@ -95,13 +99,13 @@ export function BrowsePageShell({
             )}
           </Stack>
 
-          {/* 小屏: 总数单独一行, 避免与居中组抢宽 */}
-          {summary != null && <Box hiddenFrom="sm">{summary}</Box>}
+          {/* 居中控件组在 lg 以下占满整行, 总数只能单独成行, 否则与搜索框重叠 */}
+          {summary != null && <Box hiddenFrom="lg">{summary}</Box>}
 
           <Box pos="relative" w="100%" style={{ minWidth: 0 }}>
             {summary != null && (
               <Box
-                visibleFrom="sm"
+                visibleFrom="lg"
                 style={{
                   position: "absolute",
                   left: 0,

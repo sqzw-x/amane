@@ -10,7 +10,14 @@ export interface ListToolbarProps extends ListPaginationProps {
   children: ReactNode;
 }
 
-const FILL: { flex: 1; minHeight: 0; minWidth: 0 } = { flex: 1, minHeight: 0, minWidth: 0 };
+const FILL: { flex: 1; minHeight: number; minWidth: number } = {
+  flex: 1,
+  minHeight: 0,
+  minWidth: 0,
+};
+
+/** 表体下界: 顶栏与分页都不可压缩, 缺下界时窄屏会把表体压成 0 高且无从滚动. */
+const SCROLL_MIN_HEIGHT = 128;
 
 /**
  * 列表体: 顶栏 chrome + 内部滚动的 children + 视口底部锚定分页.
@@ -56,7 +63,7 @@ export function ListToolbar({
           <Box style={{ flexShrink: 0 }}>{header}</Box>
         ))}
 
-      <Box ref={scrollRef} style={{ ...FILL, overflow: "auto" }}>
+      <Box ref={scrollRef} style={{ ...FILL, minHeight: SCROLL_MIN_HEIGHT, overflow: "auto" }}>
         {children}
       </Box>
 
