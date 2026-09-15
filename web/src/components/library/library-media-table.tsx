@@ -1,6 +1,18 @@
-import { Badge, Button, Checkbox, Group, Stack, Table, Text } from "@mantine/core";
+import {
+  ActionIcon,
+  Badge,
+  Box,
+  Button,
+  Checkbox,
+  Group,
+  Menu,
+  Stack,
+  Table,
+  Text,
+  type MantineBreakpoint,
+} from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconFolderDown, IconForms, IconRefresh, IconTrash } from "@tabler/icons-react";
+import { IconDots, IconFolderDown, IconForms, IconRefresh, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -26,6 +38,7 @@ import { confirm } from "@/lib/confirm";
 import { assertNever } from "@/lib/exhaustive";
 import { formatFileSize } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui";
+import classes from "./library-media-table.module.css";
 
 function statusColor(status: MediaFileStatus): string {
   switch (status) {
@@ -74,6 +87,18 @@ const COLUMN_WIDTH: Record<SortableColumn, number | undefined> = {
 };
 
 const CELL_OVERFLOW = { overflow: "hidden", maxWidth: 0 } as const;
+
+/**
+ * 各列的隐藏断点: 可见列宽之和超出容器时表格横向滚动, 路径列随之移出首屏.
+ * 该映射同时决定表头与单元格的显隐, 任一处缺失即列错位.
+ */
+const COLUMN_VISIBLE_FROM: Partial<Record<SortableColumn, MantineBreakpoint>> = {
+  size: "sm",
+  updated_at: "sm",
+};
+
+/** 元数据列不可排序, 与 size / updated 同在 sm 以下隐藏. */
+const METADATA_VISIBLE_FROM: MantineBreakpoint = "sm";
 
 export interface LibraryMediaTableProps {
   libraryId: number;
@@ -246,37 +271,74 @@ export function LibraryMediaTable({
       onChange={handlePageChange}
       header={
         <SelectionBar count={selected.size}>
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<IconRefresh size={14} />}
-            loading={busy}
-            disabled={selected.size === 0}
-            onClick={() => void handleBatchScrape()}
-          >
-            {t("actions.batchScrape")}
-          </Button>
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<IconFolderDown size={14} />}
-            loading={busy}
-            disabled={selected.size === 0}
-            onClick={() => void handleBatchOrganize()}
-          >
-            {t("actions.batchOrganize")}
-          </Button>
-          <Button
-            size="xs"
-            variant="light"
-            color="red"
-            leftSection={<IconTrash size={14} />}
-            loading={busy}
-            disabled={selected.size === 0}
-            onClick={() => void handleBatchDelete()}
-          >
-            {t("common:actions.delete")}
-          </Button>
+          {/* 窄屏三个批量按钮分成多行, 占用表体高度: sm 以下改由菜单提供, 选中数仍由 Badge 常驻呈现. */}
+          <Group gap="xs" wrap="wrap" visibleFrom="sm">
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<IconRefresh size={14} />}
+              loading={busy}
+              disabled={selected.size === 0}
+              onClick={() => void handleBatchScrape()}
+            >
+              {t("actions.batchScrape")}
+            </Button>
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<IconFolderDown size={14} />}
+              loading={busy}
+              disabled={selected.size === 0}
+              onClick={() => void handleBatchOrganize()}
+            >
+              {t("actions.batchOrganize")}
+            </Button>
+            <Button
+              size="xs"
+              variant="light"
+              color="red"
+              leftSection={<IconTrash size={14} />}
+              loading={busy}
+              disabled={selected.size === 0}
+              onClick={() => void handleBatchDelete()}
+            >
+              {t("common:actions.delete")}
+            </Button>
+          </Group>
+          <Box hiddenFrom="sm">
+            <Menu position="bottom-start" withinPortal>
+              <Menu.Target>
+                <Button size="xs" variant="light" loading={busy} disabled={selected.size === 0}>
+                  {t("columns.actions")}
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  leftSection={<IconRefresh size={14} />}
+                  disabled={busy}
+                  onClick={() => void handleBatchScrape()}
+                >
+                  {t("actions.batchScrape")}
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconFolderDown size={14} />}
+                  disabled={busy}
+                  onClick={() => void handleBatchOrganize()}
+                >
+                  {t("actions.batchOrganize")}
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item
+                  color="red"
+                  leftSection={<IconTrash size={14} />}
+                  disabled={busy}
+                  onClick={() => void handleBatchDelete()}
+                >
+                  {t("common:actions.delete")}
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Box>
         </SelectionBar>
       }
       trailing={trailing}
@@ -287,14 +349,16 @@ export function LibraryMediaTable({
         verticalSpacing="sm"
         layout="fixed"
         w="100%"
-        style={{ minWidth: 720 }}
+        className={classes.table}
       >
         <Table.Thead>
           <Table.Tr>
             <Table.Th w={40}>
               <Checkbox checked={allSelected} onChange={() => toggleAll(pageIds)} />
             </Table.Th>
-            <Table.Th w={120}>{t("columns.metadata")}</Table.Th>
+            <Table.Th w={120} visibleFrom={METADATA_VISIBLE_FROM}>
+              {t("columns.metadata")}
+            </Table.Th>
             {SORTABLE_COLUMNS.map((field) => (
               <SortableTh
                 key={field}
@@ -304,9 +368,10 @@ export function LibraryMediaTable({
                 order={effectiveOrder}
                 onSort={onSort}
                 w={COLUMN_WIDTH[field]}
+                visibleFrom={COLUMN_VISIBLE_FROM[field]}
               />
             ))}
-            <Table.Th w={120} ta="right">
+            <Table.Th ta="right" className={classes.actionsColumn}>
               {t("columns.actions")}
             </Table.Th>
           </Table.Tr>
@@ -322,7 +387,7 @@ export function LibraryMediaTable({
                 <Table.Td>
                   <Checkbox checked={selected.has(item.id)} onChange={() => toggleOne(item.id)} />
                 </Table.Td>
-                <Table.Td style={CELL_OVERFLOW}>
+                <Table.Td style={CELL_OVERFLOW} visibleFrom={METADATA_VISIBLE_FROM}>
                   {item.metadata_id != null ? (
                     <Link
                       to="/meta/$metadataId"
@@ -359,18 +424,19 @@ export function LibraryMediaTable({
                     {t(`filters.${item.status}`)}
                   </Badge>
                 </Table.Td>
-                <Table.Td style={CELL_OVERFLOW}>
+                <Table.Td style={CELL_OVERFLOW} visibleFrom={COLUMN_VISIBLE_FROM.size}>
                   <Text size="sm" truncate>
                     {formatFileSize(item.size)}
                   </Text>
                 </Table.Td>
-                <Table.Td style={CELL_OVERFLOW}>
+                <Table.Td style={CELL_OVERFLOW} visibleFrom={COLUMN_VISIBLE_FROM.updated_at}>
                   <Text size="sm" truncate>
                     {item.updated_at ? item.updated_at.slice(0, 10) : "—"}
                   </Text>
                 </Table.Td>
                 <Table.Td>
-                  <Group gap={4} justify="flex-end" wrap="nowrap">
+                  {/* 窄屏动作列只容得下一个按钮, 三个动作移入菜单. */}
+                  <Group gap={4} justify="flex-end" wrap="nowrap" visibleFrom="sm">
                     <HintedActionIcon
                       variant="subtle"
                       label={t("actions.scrape")}
@@ -401,6 +467,45 @@ export function LibraryMediaTable({
                       <IconTrash size={16} />
                     </HintedActionIcon>
                   </Group>
+                  {/* Menu 不接受 visibleFrom / hiddenFrom, 显隐由外层 Box 承担. */}
+                  <Box hiddenFrom="sm" style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <Menu position="bottom-end" withinPortal>
+                      <Menu.Target>
+                        <ActionIcon size="sm" variant="subtle" aria-label={t("columns.actions")}>
+                          <IconDots size={14} />
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item
+                          leftSection={<IconRefresh size={14} />}
+                          onClick={() =>
+                            submitTask({ body: { type: "scrape", media_id: item.id } }).then(() =>
+                              notifications.show({
+                                message: t("common:toast.scrapeStarted"),
+                                color: "blue",
+                              }),
+                            )
+                          }
+                        >
+                          {t("actions.scrape")}
+                        </Menu.Item>
+                        <Menu.Item
+                          leftSection={<IconForms size={14} />}
+                          onClick={() => setOverrideTarget(item)}
+                        >
+                          {t("actions.scrapeWithNumber")}
+                        </Menu.Item>
+                        <Menu.Divider />
+                        <Menu.Item
+                          color="red"
+                          leftSection={<IconTrash size={14} />}
+                          onClick={() => void handleDeleteOne(item.id)}
+                        >
+                          {t("common:actions.delete")}
+                        </Menu.Item>
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Box>
                 </Table.Td>
               </Table.Tr>
             );

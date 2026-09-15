@@ -1,0 +1,22 @@
+/* 表格最小宽度: 固定列与动作列的默认宽度之和超过该值时, 自适应列 title 被压到 0 宽而完全不可见. */
+.table {
+  min-width: 720px;
+}
+
+/* 行内动作列宽度: 窄屏动作移入菜单后, 该列只须容纳一个触发按钮. */
+.actionsColumn {
+  width: 88px;
+}
+
+/* lg 以下次要列已隐藏, 最小宽度同步下调: 沿用宽屏取值会顶破容器宽度. */
+@media (max-width: 74.99em) {
+  .table {
+    min-width: 320px;
+  }
+}
+
+@media (max-width: 47.99em) {
+  .actionsColumn {
+    width: 48px;
+  }
+}

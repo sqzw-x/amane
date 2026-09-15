@@ -52,43 +52,46 @@ export function FacetRulesPanel({ kind, onDeleteRule }: FacetRulesPanelProps) {
               {t("manage.rulesEmpty")}
             </Text>
           ) : (
-            <Table highlightOnHover verticalSpacing="xs">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>{t("manage.ruleSource")}</Table.Th>
-                  <Table.Th>{t("manage.ruleAction")}</Table.Th>
-                  <Table.Th>{t("manage.ruleTarget")}</Table.Th>
-                  <Table.Th ta="right" w={80}>
-                    {t("columns.actions")}
-                  </Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {rules.map((rule) => (
-                  <Table.Tr key={rule.id}>
-                    <Table.Td>{rule.source_name}</Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color={rule.action === "block" ? "red" : "blue"}>
-                        {rule.action === "block" ? t("manage.ruleBlock") : t("manage.ruleAlias")}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>{rule.target_name ?? "—"}</Table.Td>
-                    <Table.Td>
-                      <Group justify="flex-end">
-                        <HintedActionIcon
-                          variant="subtle"
-                          color="red"
-                          label={t("manage.ruleRemove")}
-                          onClick={() => onDeleteRule(rule.id)}
-                        >
-                          <IconTrash size={16} />
-                        </HintedActionIcon>
-                      </Group>
-                    </Table.Td>
+            // 四列宽度之和超过 375px 视口下的弹窗内容区; 交由滚动容器承担横向滚动, 避免列被压窄后逐字换行.
+            <Table.ScrollContainer minWidth={320}>
+              <Table highlightOnHover verticalSpacing="xs">
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>{t("manage.ruleSource")}</Table.Th>
+                    <Table.Th>{t("manage.ruleAction")}</Table.Th>
+                    <Table.Th>{t("manage.ruleTarget")}</Table.Th>
+                    <Table.Th ta="right" w={80}>
+                      {t("columns.actions")}
+                    </Table.Th>
                   </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+                </Table.Thead>
+                <Table.Tbody>
+                  {rules.map((rule) => (
+                    <Table.Tr key={rule.id}>
+                      <Table.Td>{rule.source_name}</Table.Td>
+                      <Table.Td>
+                        <Badge variant="light" color={rule.action === "block" ? "red" : "blue"}>
+                          {rule.action === "block" ? t("manage.ruleBlock") : t("manage.ruleAlias")}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>{rule.target_name ?? "—"}</Table.Td>
+                      <Table.Td>
+                        <Group justify="flex-end">
+                          <HintedActionIcon
+                            variant="subtle"
+                            color="red"
+                            label={t("manage.ruleRemove")}
+                            onClick={() => onDeleteRule(rule.id)}
+                          >
+                            <IconTrash size={16} />
+                          </HintedActionIcon>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
           )}
         </Stack>
       </Modal>

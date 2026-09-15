@@ -1,4 +1,4 @@
-import { Box, Group, Table, Text, UnstyledButton } from "@mantine/core";
+import { Box, Group, Table, Text, UnstyledButton, type MantineBreakpoint } from "@mantine/core";
 import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
@@ -16,6 +16,8 @@ interface SortableThProps<T extends string> {
   w?: number | string;
   /** 列宽拖拽柄; 传入后 th 相对定位并渲染右侧把手. */
   resizeHandle?: ResizeHandleProps;
+  /** 该断点以下隐藏本列; 同一列的 `Table.Td` 必须传入同一断点, 任一处缺失即列错位. */
+  visibleFrom?: MantineBreakpoint;
 }
 
 function ColumnResizeHandle({ onMouseDown, onDoubleClick }: ResizeHandleProps) {
@@ -48,12 +50,18 @@ export function SortableTh<T extends string>({
   onSort,
   w,
   resizeHandle,
+  visibleFrom,
 }: SortableThProps<T>) {
   const active = sortBy === field;
   const Icon = !active ? IconSelector : order === "asc" ? IconChevronUp : IconChevronDown;
 
   return (
-    <Table.Th w={w} pos={resizeHandle ? "relative" : undefined} style={{ overflow: "hidden" }}>
+    <Table.Th
+      w={w}
+      visibleFrom={visibleFrom}
+      pos={resizeHandle ? "relative" : undefined}
+      style={{ overflow: "hidden" }}
+    >
       <UnstyledButton onClick={() => onSort(field)} style={{ display: "block", width: "100%" }}>
         <Group gap={4} wrap="nowrap" style={{ minWidth: 0 }}>
           <Text span size="sm" fw={active ? 700 : 500} truncate>
@@ -72,14 +80,17 @@ interface StaticThProps {
   w?: number | string;
   ta?: "left" | "right" | "center";
   resizeHandle?: ResizeHandleProps;
+  /** 该断点以下隐藏本列; 同一列的 `Table.Td` 必须传入同一断点, 任一处缺失即列错位. */
+  visibleFrom?: MantineBreakpoint;
 }
 
 /** 不可排序表头, 可选列宽拖拽. */
-export function ResizableTh({ children, w, ta, resizeHandle }: StaticThProps) {
+export function ResizableTh({ children, w, ta, resizeHandle, visibleFrom }: StaticThProps) {
   return (
     <Table.Th
       w={w}
       ta={ta}
+      visibleFrom={visibleFrom}
       pos={resizeHandle ? "relative" : undefined}
       style={{ overflow: "hidden" }}
     >

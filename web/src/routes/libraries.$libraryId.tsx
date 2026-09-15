@@ -7,6 +7,7 @@ import {
   Group,
   Modal,
   SegmentedControl,
+  Select,
   Skeleton,
   Stack,
   Text,
@@ -41,6 +42,7 @@ import {
 } from "@/components/library/library-form";
 import { LibraryMediaTable } from "@/components/library/library-media-table";
 import { useResettingState } from "@/hooks/use-resetting-state";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { extractErrorMessage } from "@/lib/api-error";
 import { isOneOf } from "@/lib/exhaustive";
 import { MEDIA_FILE_STATUSES, MEDIA_SORT_FIELDS, SORT_ORDERS } from "@/lib/exhaustive-maps";
@@ -90,6 +92,7 @@ function LibraryDetailPage() {
   const routeNavigate = Route.useNavigate();
   const { t } = useTranslation(["library", "common"]);
   const navigate = useNavigate();
+  const narrow = useNarrowViewport();
   const queryClient = useQueryClient();
   const listLimit = useUIStore((s) => s.pageSizes.libraryMedia);
 
@@ -262,12 +265,24 @@ function LibraryDetailPage() {
         }
       >
         <Collapse expanded={advancedOpen}>
-          <SegmentedControl
-            size="sm"
-            value={search.status ?? ""}
-            onChange={setStatusFilter}
-            data={statusOptions}
-          />
+          {narrow ? (
+            // 窄屏 SegmentedControl 宽度不足, 右侧选项被裁剪且无法滚动; 改用下拉完整列出.
+            <Select
+              size="sm"
+              allowDeselect={false}
+              value={search.status ?? ""}
+              onChange={setStatusFilter}
+              data={statusOptions}
+              aria-label={t("filters.title")}
+            />
+          ) : (
+            <SegmentedControl
+              size="sm"
+              value={search.status ?? ""}
+              onChange={setStatusFilter}
+              data={statusOptions}
+            />
+          )}
         </Collapse>
 
         {search.status != null && (

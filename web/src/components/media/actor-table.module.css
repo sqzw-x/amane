@@ -1,0 +1,22 @@
+/* 表格最小宽度: 固定列宽之和超过表格宽度时, 各列被压窄而内容重叠. */
+.table {
+  min-width: 1100px;
+}
+
+/* 行内动作列宽度: 窄屏动作移入菜单后, 该列只须容纳一个触发按钮. */
+.actionsColumn {
+  width: 152px;
+}
+
+/* lg 以下次要列已隐藏, 最小宽度同步下调: 沿用宽屏取值会使容器出现数百像素横向滚动. */
+@media (max-width: 74.99em) {
+  .table {
+    min-width: 320px;
+  }
+}
+
+@media (max-width: 47.99em) {
+  .actionsColumn {
+    width: 48px;
+  }
+}

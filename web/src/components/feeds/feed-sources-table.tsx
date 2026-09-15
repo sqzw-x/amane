@@ -1,8 +1,11 @@
 import {
+  ActionIcon,
   Badge,
+  Box,
   Button,
   Checkbox,
   Group,
+  Menu,
   Modal,
   Skeleton,
   Stack,
@@ -10,9 +13,10 @@ import {
   Table,
   Text,
   Textarea,
+  type MantineBreakpoint,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconClockPlay, IconFilter, IconPencil, IconTrash } from "@tabler/icons-react";
+import { IconClockPlay, IconDots, IconFilter, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -31,8 +35,20 @@ import { confirm } from "@/lib/confirm";
 import { feedDisplayName, feedGroup, type FeedSourceSortField } from "@/lib/feeds/groups";
 import { parseIgnoreKeywordsText } from "@/lib/feeds/keywords";
 import { useUIStore } from "@/stores/ui";
+import classes from "./feed-sources-table.module.css";
 
 const CELL_OVERFLOW = { overflow: "hidden", maxWidth: 0 } as const;
+
+/**
+ * 各列的隐藏断点: 可见列宽之和超出容器时表格横向滚动, 名称列随之移出首屏.
+ * 该映射同时决定表头与单元格的显隐, 任一处缺失即列错位.
+ */
+const COLUMN_VISIBLE_FROM: Partial<Record<FeedSourceSortField, MantineBreakpoint>> = {
+  group: "lg",
+  interval: "lg",
+  last_fetch: "lg",
+  url: "sm",
+};
 
 type BatchKind = "poll" | "enable" | "disable" | "enqueue" | "discover" | "keywords" | "delete";
 
@@ -301,81 +317,159 @@ export function FeedSourcesTable({
         onChange={handlePageChange}
         header={
           <SelectionBar count={selectedIds.length}>
-            <Button
-              size="xs"
-              variant="light"
-              leftSection={<IconClockPlay size={14} />}
-              loading={batchKind === "poll"}
-              disabled={selectedIds.length === 0 || busy}
-              onClick={() => void handlePoll(selectedIds)}
-            >
-              {t("actions.pollSelected")}
-            </Button>
-            <Button
-              size="xs"
-              variant="light"
-              loading={batchKind === "enable"}
-              disabled={selectedIds.length === 0 || busy}
-              onClick={() => void handlePatchSelected(selectedIds, "enable", { enabled: true })}
-            >
-              {t("actions.enableSelected")}
-            </Button>
-            <Button
-              size="xs"
-              variant="light"
-              loading={batchKind === "disable"}
-              disabled={selectedIds.length === 0 || busy}
-              onClick={() => void handlePatchSelected(selectedIds, "disable", { enabled: false })}
-            >
-              {t("actions.disableSelected")}
-            </Button>
-            <Button
-              size="xs"
-              variant="light"
-              loading={batchKind === "enqueue"}
-              disabled={selectedIds.length === 0 || busy}
-              onClick={() =>
-                void handlePatchSelected(selectedIds, "enqueue", { auto_enqueue: true })
-              }
-            >
-              {t("actions.enableAutoEnqueueSelected")}
-            </Button>
-            <Button
-              size="xs"
-              variant="light"
-              loading={batchKind === "discover"}
-              disabled={selectedIds.length === 0 || busy}
-              onClick={() =>
-                void handlePatchSelected(selectedIds, "discover", { auto_enqueue: false })
-              }
-            >
-              {t("actions.disableAutoEnqueueSelected")}
-            </Button>
-            <Button
-              size="xs"
-              variant="light"
-              leftSection={<IconFilter size={14} />}
-              loading={batchKind === "keywords"}
-              disabled={selectedIds.length === 0 || busy}
-              onClick={() => {
-                setKeywordDraft("");
-                setKeywordReplace(false);
-                setKeywordOpen(true);
-              }}
-            >
-              {t("actions.setIgnoreKeywords")}
-            </Button>
-            <Button
-              size="xs"
-              variant="light"
-              color="red"
-              leftSection={<IconTrash size={14} />}
-              loading={batchKind === "delete"}
-              disabled={selectedIds.length === 0 || busy}
-              onClick={() => void handleDelete(selectedIds)}
-            >
-              {t("common:actions.delete")}
-            </Button>
+            {/* 窄屏七个批量按钮分成多行, 占用表体高度: sm 以下改由菜单提供, 选中数仍由 Badge 常驻呈现. */}
+            <Group gap="xs" wrap="wrap" visibleFrom="sm">
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<IconClockPlay size={14} />}
+                loading={batchKind === "poll"}
+                disabled={selectedIds.length === 0 || busy}
+                onClick={() => void handlePoll(selectedIds)}
+              >
+                {t("actions.pollSelected")}
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                loading={batchKind === "enable"}
+                disabled={selectedIds.length === 0 || busy}
+                onClick={() => void handlePatchSelected(selectedIds, "enable", { enabled: true })}
+              >
+                {t("actions.enableSelected")}
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                loading={batchKind === "disable"}
+                disabled={selectedIds.length === 0 || busy}
+                onClick={() => void handlePatchSelected(selectedIds, "disable", { enabled: false })}
+              >
+                {t("actions.disableSelected")}
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                loading={batchKind === "enqueue"}
+                disabled={selectedIds.length === 0 || busy}
+                onClick={() =>
+                  void handlePatchSelected(selectedIds, "enqueue", { auto_enqueue: true })
+                }
+              >
+                {t("actions.enableAutoEnqueueSelected")}
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                loading={batchKind === "discover"}
+                disabled={selectedIds.length === 0 || busy}
+                onClick={() =>
+                  void handlePatchSelected(selectedIds, "discover", { auto_enqueue: false })
+                }
+              >
+                {t("actions.disableAutoEnqueueSelected")}
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<IconFilter size={14} />}
+                loading={batchKind === "keywords"}
+                disabled={selectedIds.length === 0 || busy}
+                onClick={() => {
+                  setKeywordDraft("");
+                  setKeywordReplace(false);
+                  setKeywordOpen(true);
+                }}
+              >
+                {t("actions.setIgnoreKeywords")}
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                color="red"
+                leftSection={<IconTrash size={14} />}
+                loading={batchKind === "delete"}
+                disabled={selectedIds.length === 0 || busy}
+                onClick={() => void handleDelete(selectedIds)}
+              >
+                {t("common:actions.delete")}
+              </Button>
+            </Group>
+            <Box hiddenFrom="sm">
+              <Menu position="bottom-start" withinPortal>
+                <Menu.Target>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    loading={busy}
+                    disabled={selectedIds.length === 0}
+                  >
+                    {t("columns.actions")}
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item
+                    leftSection={<IconClockPlay size={14} />}
+                    disabled={busy}
+                    onClick={() => void handlePoll(selectedIds)}
+                  >
+                    {t("actions.pollSelected")}
+                  </Menu.Item>
+                  <Menu.Item
+                    disabled={busy}
+                    onClick={() =>
+                      void handlePatchSelected(selectedIds, "enable", { enabled: true })
+                    }
+                  >
+                    {t("actions.enableSelected")}
+                  </Menu.Item>
+                  <Menu.Item
+                    disabled={busy}
+                    onClick={() =>
+                      void handlePatchSelected(selectedIds, "disable", { enabled: false })
+                    }
+                  >
+                    {t("actions.disableSelected")}
+                  </Menu.Item>
+                  <Menu.Item
+                    disabled={busy}
+                    onClick={() =>
+                      void handlePatchSelected(selectedIds, "enqueue", { auto_enqueue: true })
+                    }
+                  >
+                    {t("actions.enableAutoEnqueueSelected")}
+                  </Menu.Item>
+                  <Menu.Item
+                    disabled={busy}
+                    onClick={() =>
+                      void handlePatchSelected(selectedIds, "discover", { auto_enqueue: false })
+                    }
+                  >
+                    {t("actions.disableAutoEnqueueSelected")}
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<IconFilter size={14} />}
+                    disabled={busy}
+                    onClick={() => {
+                      setKeywordDraft("");
+                      setKeywordReplace(false);
+                      setKeywordOpen(true);
+                    }}
+                  >
+                    {t("actions.setIgnoreKeywords")}
+                  </Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Item
+                    color="red"
+                    leftSection={<IconTrash size={14} />}
+                    disabled={busy}
+                    onClick={() => void handleDelete(selectedIds)}
+                  >
+                    {t("common:actions.delete")}
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Box>
           </SelectionBar>
         }
       >
@@ -385,7 +479,7 @@ export function FeedSourcesTable({
           verticalSpacing="sm"
           layout="fixed"
           w="100%"
-          style={{ minWidth: 960 }}
+          className={classes.table}
         >
           <Table.Thead>
             <Table.Tr>
@@ -411,6 +505,7 @@ export function FeedSourcesTable({
                 order={order}
                 onSort={onSort}
                 w={140}
+                visibleFrom={COLUMN_VISIBLE_FROM.group}
               />
               <SortableTh
                 field="url"
@@ -418,6 +513,7 @@ export function FeedSourcesTable({
                 sortBy={sortBy}
                 order={order}
                 onSort={onSort}
+                visibleFrom={COLUMN_VISIBLE_FROM.url}
               />
               <SortableTh
                 field="interval"
@@ -426,6 +522,7 @@ export function FeedSourcesTable({
                 order={order}
                 onSort={onSort}
                 w={110}
+                visibleFrom={COLUMN_VISIBLE_FROM.interval}
               />
               <SortableTh
                 field="last_fetch"
@@ -434,6 +531,7 @@ export function FeedSourcesTable({
                 order={order}
                 onSort={onSort}
                 w={180}
+                visibleFrom={COLUMN_VISIBLE_FROM.last_fetch}
               />
               <SortableTh
                 field="enabled"
@@ -443,7 +541,7 @@ export function FeedSourcesTable({
                 onSort={onSort}
                 w={88}
               />
-              <Table.Th ta="right" w={120}>
+              <Table.Th ta="right" className={classes.actionsColumn}>
                 {t("columns.actions")}
               </Table.Th>
             </Table.Tr>
@@ -491,7 +589,7 @@ export function FeedSourcesTable({
                     )}
                   </Group>
                 </Table.Td>
-                <Table.Td style={CELL_OVERFLOW}>
+                <Table.Td style={CELL_OVERFLOW} visibleFrom={COLUMN_VISIBLE_FROM.group}>
                   <Text
                     size="sm"
                     truncate
@@ -501,19 +599,19 @@ export function FeedSourcesTable({
                     {feedGroup(feed) === "" ? t("sidebar.ungrouped") : feedGroup(feed)}
                   </Text>
                 </Table.Td>
-                <Table.Td style={CELL_OVERFLOW}>
+                <Table.Td style={CELL_OVERFLOW} visibleFrom={COLUMN_VISIBLE_FROM.url}>
                   <Text size="xs" ff="monospace" truncate title={feed.url}>
                     {feed.url}
                   </Text>
                 </Table.Td>
-                <Table.Td>
+                <Table.Td visibleFrom={COLUMN_VISIBLE_FROM.interval}>
                   <Text size="sm">
                     {t(intervalLabelKey(feed.interval_seconds), {
                       count: intervalLabelCount(feed.interval_seconds),
                     })}
                   </Text>
                 </Table.Td>
-                <Table.Td style={CELL_OVERFLOW}>
+                <Table.Td style={CELL_OVERFLOW} visibleFrom={COLUMN_VISIBLE_FROM.last_fetch}>
                   <Stack gap={2}>
                     <Text size="sm" truncate>
                       {feed.last_fetched_at
@@ -535,7 +633,8 @@ export function FeedSourcesTable({
                   />
                 </Table.Td>
                 <Table.Td>
-                  <Group gap={4} justify="flex-end" wrap="nowrap">
+                  {/* 窄屏动作列只容得下一个按钮, 三个动作移入菜单. */}
+                  <Group gap={4} justify="flex-end" wrap="nowrap" visibleFrom="sm">
                     <HintedActionIcon
                       variant="subtle"
                       disabled={busy}
@@ -562,6 +661,41 @@ export function FeedSourcesTable({
                       <IconTrash size={16} />
                     </HintedActionIcon>
                   </Group>
+                  {/* Menu 不接受 visibleFrom / hiddenFrom, 显隐由外层 Box 承担. */}
+                  <Box hiddenFrom="sm" style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <Menu position="bottom-end" withinPortal>
+                      <Menu.Target>
+                        <ActionIcon size="sm" variant="subtle" aria-label={t("columns.actions")}>
+                          <IconDots size={14} />
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item
+                          leftSection={<IconClockPlay size={14} />}
+                          disabled={busy}
+                          onClick={() => void handlePoll([feed.id])}
+                        >
+                          {t("actions.poll")}
+                        </Menu.Item>
+                        <Menu.Item
+                          leftSection={<IconPencil size={14} />}
+                          disabled={busy}
+                          onClick={() => onEdit(feed)}
+                        >
+                          {t("common:actions.edit")}
+                        </Menu.Item>
+                        <Menu.Divider />
+                        <Menu.Item
+                          color="red"
+                          leftSection={<IconTrash size={14} />}
+                          disabled={busy}
+                          onClick={() => void handleDelete([feed.id])}
+                        >
+                          {t("common:actions.delete")}
+                        </Menu.Item>
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Box>
                 </Table.Td>
               </Table.Tr>
             ))}
@@ -575,16 +709,16 @@ export function FeedSourcesTable({
                   <Table.Td>
                     <Skeleton h={14} w="70%" />
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td visibleFrom={COLUMN_VISIBLE_FROM.group}>
                     <Skeleton h={14} w={80} />
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td visibleFrom={COLUMN_VISIBLE_FROM.url}>
                     <Skeleton h={14} w="90%" />
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td visibleFrom={COLUMN_VISIBLE_FROM.interval}>
                     <Skeleton h={14} w={64} />
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td visibleFrom={COLUMN_VISIBLE_FROM.last_fetch}>
                     <Skeleton h={14} w={120} />
                   </Table.Td>
                   <Table.Td>

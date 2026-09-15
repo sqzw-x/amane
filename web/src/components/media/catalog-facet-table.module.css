@@ -1,0 +1,15 @@
+/* 行内动作列宽度: 窄屏动作移入菜单后, 该列只须容纳一个触发按钮. */
+.actionsColumn {
+  width: 160px;
+}
+
+@media (max-width: 47.99em) {
+  .actionsColumn {
+    width: 48px;
+  }
+
+  /* 名称列自适应: 视口低于 352px 时设置最小宽度, 名称列下界 136px, 溢出由外层滚动容器承担. */
+  .table {
+    min-width: 320px;
+  }
+}

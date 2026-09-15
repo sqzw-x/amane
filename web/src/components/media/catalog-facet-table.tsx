@@ -1,8 +1,11 @@
 import {
+  ActionIcon,
   Badge,
+  Box,
   Button,
   Checkbox,
   Group,
+  Menu,
   Modal,
   Stack,
   Table,
@@ -10,7 +13,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowMerge, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconArrowMerge, IconDots, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -26,6 +29,7 @@ import { useFacetIdentityActions } from "@/hooks/use-facet-identity-actions";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { extractErrorMessage } from "@/lib/api-error";
 import { useUIStore } from "@/stores/ui";
+import classes from "./catalog-facet-table.module.css";
 
 export interface CatalogFacetTableProps {
   kind: FacetKind;
@@ -126,7 +130,7 @@ export function CatalogFacetTable({
           ) : undefined
         }
       >
-        <Table stickyHeader highlightOnHover verticalSpacing="sm">
+        <Table stickyHeader highlightOnHover verticalSpacing="sm" className={classes.table}>
           <Table.Thead>
             <Table.Tr>
               <Table.Th w={36}>
@@ -147,7 +151,7 @@ export function CatalogFacetTable({
                 onSort={onSort}
                 w={100}
               />
-              <Table.Th ta="right" w={160}>
+              <Table.Th ta="right" className={classes.actionsColumn}>
                 {t("columns.actions")}
               </Table.Th>
             </Table.Tr>
@@ -173,7 +177,8 @@ export function CatalogFacetTable({
                   <Badge variant="light">{facet.count}</Badge>
                 </Table.Td>
                 <Table.Td>
-                  <Group gap={4} justify="flex-end">
+                  {/* 窄屏动作列只容得下一个按钮, 三个动作移入菜单. */}
+                  <Group gap={4} justify="flex-end" wrap="nowrap" visibleFrom="sm">
                     <HintedActionIcon
                       variant="subtle"
                       label={t("common:actions.edit")}
@@ -197,6 +202,40 @@ export function CatalogFacetTable({
                       <IconTrash size={16} />
                     </HintedActionIcon>
                   </Group>
+                  {/* Menu 不接受 visibleFrom / hiddenFrom, 显隐由外层 Box 承担. */}
+                  <Box hiddenFrom="sm" style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <Menu position="bottom-end" withinPortal>
+                      <Menu.Target>
+                        <ActionIcon size="sm" variant="subtle" aria-label={t("columns.actions")}>
+                          <IconDots size={14} />
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item
+                          leftSection={<IconPencil size={14} />}
+                          onClick={() => identity.openRename({ id: facet.id, name: facet.name })}
+                        >
+                          {t("common:actions.edit")}
+                        </Menu.Item>
+                        <Menu.Item
+                          leftSection={<IconArrowMerge size={14} />}
+                          onClick={() => void identity.openMerge(facet.id, selected)}
+                        >
+                          {t("manage.merge", { defaultValue: "合并到此项" })}
+                        </Menu.Item>
+                        <Menu.Divider />
+                        <Menu.Item
+                          color="red"
+                          leftSection={<IconTrash size={14} />}
+                          onClick={() =>
+                            void identity.openDelete({ id: facet.id, name: facet.name })
+                          }
+                        >
+                          {t("common:actions.delete")}
+                        </Menu.Item>
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Box>
                 </Table.Td>
               </Table.Tr>
             ))}
