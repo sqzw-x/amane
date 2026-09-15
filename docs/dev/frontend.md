@@ -48,11 +48,19 @@
 
 ## 列表分页
 
-**list** 视图与订阅源、库文件表采用 `BrowsePageShell fill`: 标题 / 搜索不滚, 剩余高度交给 children; 视口高度取 `APP_SHELL_MAIN_HEIGHT` (`components/layout/app-shell-metrics.ts`), 不允许再手写一份 calc.
+**list** 视图与订阅源、库文件表采用 `BrowsePageShell fill`: 标题 / 搜索不滚, 剩余高度交给 children; 视口高度取 `APP_SHELL_MAIN_HEIGHT` (`components/layout/app-shell-metrics.ts`), 不允许再手写一份 calc — 该常量由 AppShell 写入 `:root` 的 `--app-shell-header-height` 与 `--app-shell-padding` 推导.
 
 `ListToolbar` 是表体壳: 顶栏不滚, 表体内滚, **唯一**分页固定于视口底, 翻页把表体滚回顶部; 它的 overflow 区要求父级有界高度. `grid` / `cloud` 禁止 fill — 演员墙用 `VirtuosoGrid` + `useWindowScroll`.
 
 图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素.
+
+## 窄屏
+
+导航栏在 `sm` (768px) 折叠, 页面内部布局 (三列标题行、并排分栏、内容侧栏) 一律用 `md` (992px): 768px 上导航栏刚展开, 内容宽度反而收窄, 跟随 `sm` 会同时触发挤压与换行. 新增断点只允许落在 `base` 至 `md`, `lg` 以上是已验收的宽屏基线, 不得改动.
+
+显隐用 `visibleFrom` / `hiddenFrom` (生成 `display: none !important`, `Table.Th` / `Table.Td` 同样支持); 必须更换控件形态时用 `useNarrowViewport()` (`hooks/use-narrow-viewport.ts`), 例如枚举超过 4 项回退 `Select`、行内操作收进 `Menu`. `Group` 的 `wrap` 与 `gap` 是 CSS 变量, 不接受响应式对象, 换行写 CSS Module 的 `@media (max-width: 47.99em)`.
+
+钉高页面必须让顶栏 chrome 可折叠: 筛选与批量操作在窄屏收进 `Menu` / `Drawer`, 滚动区给出下界, 外层容器纵向可滚动 — 否则表体被压成 0 高且分页被裁掉. 窄屏侧栏统一采用 `routes/feeds.index.tsx` 的 Drawer 范式: 内容侧 `hiddenFrom`, 抽屉与触发按钮取同一断点.
 
 ## Schema 表单
 
@@ -60,7 +68,7 @@ Settings、任务提交、定时创建、metadata 编辑共用 `components/schem
 
 dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `DictEntryScope` 写入 `[key]`, 含 `.` / `[` / `]` 的 key 才能原样保存. Tabs 同时挂载全部条目, 叶子 `id` / `htmlFor` 必须经 `useFieldDomId` 加条目前缀, 否则同名控件互相命中.
 
-`SchemaForm` 双模式 `patch` (dirty 门控, 只提交 diff) / `create` (完整值); dirty 保存条用 `affix` 固定于视口底, 编辑弹窗里必须抬到 Modal 之上, 不允许放进 Modal 表单流. 空值编码统一经 `schema-form/encode.ts` (按 Create / 列 schema 判空), 可增减 key 的 dict 与缺席等价, `x-frozen-keys` 必须保留全部 key; 不允许对着 PATCH partial schema 编码, 手写 Library / Feed 表单经同一个编码器出 body. 任务与定时提交用 `DiscriminatedSchemaForm`; 短枚举共用 `EnumToggle`, 定时 cron 用 `CronPicker` (产出 5-field, 与后端 croniter 一致).
+`SchemaForm` 双模式 `patch` (dirty 门控, 只提交 diff) / `create` (完整值); dirty 保存条用 `affix` 固定于视口底, 编辑弹窗里必须抬到 Modal 之上, 不允许放进 Modal 表单流. 空值编码统一经 `schema-form/encode.ts` (按 Create / 列 schema 判空), 可增减 key 的 dict 与缺席等价, `x-frozen-keys` 必须保留全部 key; 不允许对着 PATCH partial schema 编码, 手写 Library / Feed 表单经同一个编码器出 body. 任务与定时提交用 `DiscriminatedSchemaForm`; 短枚举共用 `EnumToggle` (窄屏超过 4 项自动回退 `Select`), 定时 cron 用 `CronPicker` (产出 5-field, 与后端 croniter 一致).
 
 ## 对话通道
 
