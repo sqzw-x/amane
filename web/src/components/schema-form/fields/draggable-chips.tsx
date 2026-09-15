@@ -1,6 +1,8 @@
 import { ActionIcon, Badge, Box, Group } from "@mantine/core";
-import { IconGripVertical, IconX } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowUp, IconGripVertical, IconX } from "@tabler/icons-react";
 import { Fragment, type DragEvent, useCallback, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 
 interface DraggableChipsProps<T> {
   items: T[];
@@ -8,6 +10,11 @@ interface DraggableChipsProps<T> {
   getLabel: (item: T, index: number) => string;
   onChange: (newItems: T[]) => void;
   onDelete?: (item: T, index: number) => void;
+  /**
+   * 提供后每个条目显示上移 / 下移按钮, 用于触屏设备无法执行 HTML5 拖拽的场景.
+   * 数组顺序即优先级, 位置 0 即默认探测来源, 移动后同样经 `onChange` 写回.
+   */
+  onMove?: (newItems: T[]) => void;
   disabled?: boolean;
 }
 
@@ -17,8 +24,10 @@ export function DraggableChips<T>({
   getLabel,
   onChange,
   onDelete,
+  onMove,
   disabled,
 }: DraggableChipsProps<T>) {
+  const { t } = useTranslation("common");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -77,6 +86,16 @@ export function DraggableChips<T>({
     },
     [dragIndex, items.length],
   );
+
+  /** 与相邻条目交换位置; 越界时保持原顺序. */
+  const moveItem = (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (!onMove || target < 0 || target >= items.length) return;
+    const newItems = [...items];
+    const [moved] = newItems.splice(index, 1);
+    newItems.splice(target, 0, moved);
+    onMove(newItems);
+  };
 
   const renderChip = (item: T, index: number, draggable: boolean) => {
     const key = getKey(item, index);
@@ -139,6 +158,32 @@ export function DraggableChips<T>({
     );
   };
 
+  const renderMoveControls = (index: number) => (
+    // 与条目同一行. 容器声明不可拖拽, 避免从按钮上按下时启动条目的 HTML5 拖拽.
+    <Group gap={2} wrap="nowrap" draggable={false}>
+      <HintedActionIcon
+        size={18}
+        variant="subtle"
+        color="gray"
+        label={t("actions.moveUp")}
+        disabled={index === 0}
+        onClick={() => moveItem(index, -1)}
+      >
+        <IconArrowUp size={12} />
+      </HintedActionIcon>
+      <HintedActionIcon
+        size={18}
+        variant="subtle"
+        color="gray"
+        label={t("actions.moveDown")}
+        disabled={index === items.length - 1}
+        onClick={() => moveItem(index, 1)}
+      >
+        <IconArrowDown size={12} />
+      </HintedActionIcon>
+    </Group>
+  );
+
   if (disabled) {
     return (
       <Group gap={6} wrap="wrap">
@@ -158,7 +203,14 @@ export function DraggableChips<T>({
         return (
           <Fragment key={key}>
             {showIndicatorBefore && <DropIndicator />}
-            {renderChip(item, index, true)}
+            {onMove ? (
+              <Group gap={0} wrap="nowrap">
+                {renderChip(item, index, true)}
+                {renderMoveControls(index)}
+              </Group>
+            ) : (
+              renderChip(item, index, true)
+            )}
           </Fragment>
         );
       })}

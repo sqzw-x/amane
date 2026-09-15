@@ -1,0 +1,10 @@
+/*
+  label / value 事实行: 窄屏允许换行.
+  单行且 `nowrap` 时, 长标签把右侧值压成逐字断行; 换行后值占满下一行, 保持右对齐.
+  宽度不小于 sm 的窗口命中不到媒体查询, 仍为单行 `nowrap`.
+*/
+@media (max-width: 47.99em) {
+  .factRow {
+    flex-wrap: wrap;
+  }
+}

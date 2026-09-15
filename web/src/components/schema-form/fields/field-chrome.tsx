@@ -1,6 +1,7 @@
 import { Group, Input, Stack, Text } from "@mantine/core";
 import type * as React from "react";
 import type { FieldVariant } from "../schema";
+import classes from "./field-chrome.module.css";
 
 /**
  * Layout direction of the label/description relative to the control.
@@ -9,6 +10,7 @@ import type { FieldVariant } from "../schema";
  *   Used by text/numeric/enum/path fields.
  * - `horizontal` - label + description on the left, control on the right.
  *   Used by bool field (Switch is small enough to share a row).
+ *   窄屏 (<sm) 纵向排列, 见 `field-chrome.module.css`.
  */
 export type FieldChromeLayout = "vertical" | "horizontal";
 
@@ -60,7 +62,14 @@ export function FieldChrome({
 
   if (layout === "horizontal") {
     return (
-      <Group justify="space-between" align="center" wrap="nowrap" gap="md" py="xs">
+      <Group
+        className={classes.horizontalRow}
+        justify="space-between"
+        align="center"
+        wrap="nowrap"
+        gap="md"
+        py="xs"
+      >
         <Stack gap={2}>
           <Input.Label htmlFor={htmlFor} size="sm" fw={500}>
             {label}
@@ -71,7 +80,7 @@ export function FieldChrome({
             </Text>
           )}
         </Stack>
-        <Stack gap={4} align="flex-end">
+        <Stack gap={4} align="flex-end" className={classes.controlRow}>
           {children}
           {error && <Input.Error size="xs">{error}</Input.Error>}
         </Stack>

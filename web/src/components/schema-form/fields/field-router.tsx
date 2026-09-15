@@ -19,6 +19,7 @@ import { BoolField } from "./bool-field";
 import { DictField } from "./dict-field";
 import { EnumArrayField } from "./enum-array-field";
 import { EnumField } from "./enum-field";
+import classes from "./field-router.module.css";
 import { LibraryField } from "./library-field";
 import { NumericField } from "./numeric-field";
 import { ObjectArrayField } from "./object-array-field";
@@ -121,7 +122,12 @@ export function FieldRouter({
     }
     devLog.info(TAG, `→ Object (inline children): ${name}`, { keys: Object.keys(properties) });
     return (
-      <Box pl="sm" py="xs" style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}>
+      <Box
+        className={classes.nest}
+        pl="sm"
+        py="xs"
+        style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}
+      >
         {schema.title && (
           <Text size="sm" fw={500} mb="xs">
             {label}

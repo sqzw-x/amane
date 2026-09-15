@@ -1,0 +1,15 @@
+/*
+  横向布局 (bool 行): 窄屏改为纵向.
+  标签与控件同排且 `nowrap`, 长标签在窄屏把 Switch 挤出可视区域; 纵向排列后两者各占一行.
+  宽度不小于 sm 的窗口命中不到媒体查询, 原内联的 `--group-align` / `--group-wrap` 保持不变.
+*/
+@media (max-width: 47.99em) {
+  .horizontalRow {
+    flex-direction: column;
+  }
+
+  /* 纵向排列后横轴对齐不再区分标签与控件, 控件堆栈改为靠行首对齐. */
+  .controlRow {
+    align-items: flex-start !important;
+  }
+}

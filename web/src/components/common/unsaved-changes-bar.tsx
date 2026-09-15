@@ -1,5 +1,6 @@
 import { Affix, Box, Button, Group, Paper, Text, Transition } from "@mantine/core";
 import { useTranslation } from "react-i18next";
+import classes from "./unsaved-changes-bar.module.css";
 
 export type UnsavedChangesBarPlacement = "affix" | "sticky";
 
@@ -37,8 +38,10 @@ export function UnsavedChangesBar({
   const bar = (
     <Paper withBorder shadow="md" px="md" py="sm" radius="md">
       <Group gap="md" wrap="nowrap" justify="space-between">
-        <Text size="sm">{t("status.unsavedChanges")}</Text>
-        <Group gap="sm" wrap="nowrap">
+        <Text size="sm" className={classes.label}>
+          {t("status.unsavedChanges")}
+        </Text>
+        <Group gap="sm" wrap="nowrap" className={classes.actions}>
           <Button type="button" variant="default" onClick={onDiscard} disabled={saving}>
             {t("actions.discard")}
           </Button>

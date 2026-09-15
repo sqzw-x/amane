@@ -20,7 +20,9 @@
     "scrapeNormal": "Scrape",
     "scrapeNormalDesc": "Do not re-fetch cached data",
     "scrapeForce": "Force Scrape",
-    "scrapeForceDesc": "Re-fetch all sources (overwrite cache)"
+    "scrapeForceDesc": "Re-fetch all sources (overwrite cache)",
+    "moveUp": "Move up",
+    "moveDown": "Move down"
   },
   "status": {
     "loading": "Loading...",

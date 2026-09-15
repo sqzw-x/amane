@@ -1,6 +1,7 @@
 import { Button, Checkbox, Group, Stack } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import type { AnyFieldApi } from "@tanstack/react-form";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { useEnumI18n } from "../hooks";
 import type { ArrayFieldProps, EnumSchema } from "../schema";
 import { isOrdered } from "../schema";
@@ -21,6 +22,8 @@ export function EnumArrayField({
   const enumValues: (string | number)[] = itemSchema.enum;
   const ordered = isOrdered(schema);
   const getOptionLabel = useEnumI18n(i18nPath, i18nPrefix);
+  // 触屏设备无法执行 HTML5 拖拽, 窄屏改由上移 / 下移按钮调整顺序.
+  const narrow = useNarrowViewport();
 
   return (
     <form.Field name={name}>
@@ -40,6 +43,7 @@ export function EnumArrayField({
               }}
               onChange={(newItems) => field.handleChange(newItems)}
               onDelete={(item) => field.handleChange(selected.filter((v) => v !== item))}
+              onMove={narrow ? (newItems) => field.handleChange(newItems) : undefined}
             />
             {enumValues.some((v) => !selectedSet.has(v)) && (
               <Group gap={6} wrap="wrap">

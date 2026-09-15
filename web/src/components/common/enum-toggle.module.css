@@ -1,0 +1,10 @@
+/*
+  多选分支: 窄屏允许换行.
+  宽屏保持单行 —— Button.Group 自身为 `display: flex`, 无换行声明.
+  换行后首尾按钮的圆角拼接规则仍按首末子元素命中, 中间按钮保持直角.
+*/
+@media (max-width: 47.99em) {
+  .group {
+    flex-wrap: wrap;
+  }
+}

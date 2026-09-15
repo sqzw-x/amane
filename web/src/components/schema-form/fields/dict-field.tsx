@@ -22,6 +22,7 @@ import {
   isSimpleScalar,
   isVisibleForKey,
 } from "../schema";
+import classes from "./dict-field.module.css";
 import { DictEntryScope, dictEntryForm } from "./dict-entry-form";
 import { FieldRouter } from "./field-router";
 
@@ -91,7 +92,7 @@ export function DictField({
         return (
           <Stack gap="xs" py="xs">
             <Group justify="space-between" align="flex-start" wrap="nowrap">
-              <Stack gap={2}>
+              <Stack gap={2} miw={0}>
                 <Text size="sm" fw={500}>
                   {label}
                 </Text>
@@ -106,7 +107,7 @@ export function DictField({
                   {keyEnum ? (
                     <Select
                       size="xs"
-                      w={160}
+                      w={{ base: 110, sm: 160 }}
                       placeholder="Select..."
                       value={newKey || null}
                       onChange={(val) => setNewKey(val ?? "")}
@@ -118,7 +119,7 @@ export function DictField({
                   ) : (
                     <TextInput
                       size="xs"
-                      w={160}
+                      w={{ base: 110, sm: 160 }}
                       placeholder="New key..."
                       value={newKey}
                       onChange={(e) => setNewKey(e.target.value)}
@@ -157,6 +158,7 @@ export function DictField({
                     {entries.map(([key], idx) => (
                       <Group
                         key={key}
+                        className={classes.kvRow}
                         justify="space-between"
                         wrap="nowrap"
                         gap="sm"

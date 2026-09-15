@@ -20,7 +20,9 @@
     "scrapeNormal": "刮削",
     "scrapeNormalDesc": "不重新抓取已缓存数据",
     "scrapeForce": "强制刮削",
-    "scrapeForceDesc": "重新抓取全部来源(覆盖缓存)"
+    "scrapeForceDesc": "重新抓取全部来源(覆盖缓存)",
+    "moveUp": "上移",
+    "moveDown": "下移"
   },
   "status": {
     "loading": "加载中...",

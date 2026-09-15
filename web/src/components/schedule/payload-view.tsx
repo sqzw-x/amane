@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { RescrapeTarget, RoutineType, ScheduleResponse } from "@/client/types.gen";
 import { assertNever } from "@/lib/exhaustive";
+import classes from "./payload-view.module.css";
 
 type Translate = TFunction<["schedules", "tasks"]>;
 type SchedulePayload = ScheduleResponse["payload"];
@@ -185,7 +186,14 @@ export function SchedulePayloadFacts({ payload }: { payload: SchedulePayload }) 
       </Badge>
       <Stack gap={6}>
         {factRows(payload, t).map((row) => (
-          <Group key={row.label} justify="space-between" wrap="nowrap" gap="md" align="flex-start">
+          <Group
+            key={row.label}
+            className={classes.factRow}
+            justify="space-between"
+            wrap="nowrap"
+            gap="md"
+            align="flex-start"
+          >
             <Text size="sm">{row.label}</Text>
             <Text size="sm" c="dimmed" ta="right">
               {row.value}

@@ -1,0 +1,18 @@
+/*
+  未保存提示条: 窄屏文字截断.
+  文案与操作按钮同排且 `nowrap`; 英文 / 德文文案在窄屏把按钮挤出条外. 文字改为省略号截断后,
+  按钮保持原宽度. 截断以 `overflow: hidden` 与 `min-width: 0` 为前提 —— 内联的 flex 子项最小尺寸为 `auto`.
+  宽度不小于 sm 的窗口命中不到媒体查询.
+*/
+@media (max-width: 47.99em) {
+  .label {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .actions {
+    flex-shrink: 0;
+  }
+}

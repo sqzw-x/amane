@@ -2,6 +2,7 @@ import { ActionIcon, Group, ScrollArea, Textarea, TextInput } from "@mantine/cor
 import { IconPlus } from "@tabler/icons-react";
 import type { AnyFieldApi } from "@tanstack/react-form";
 import { useState } from "react";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import type { ArrayFieldProps, JSONSchemaObject } from "../schema";
 import { isOrdered } from "../schema";
 import { useFieldDomId } from "./dict-entry-form";
@@ -148,6 +149,8 @@ interface OrderedArrayBodyProps {
 /** x-ordered mode body: draggable chips + add input. Chrome handled by parent. */
 function OrderedArrayBody({ value, onChange, long }: OrderedArrayBodyProps) {
   const [newItem, setNewItem] = useState("");
+  // 触屏设备无法执行 HTML5 拖拽, 窄屏改由上移 / 下移按钮调整顺序.
+  const narrow = useNarrowViewport();
 
   const handleAdd = () => {
     const trimmed = newItem.trim();
@@ -164,6 +167,7 @@ function OrderedArrayBody({ value, onChange, long }: OrderedArrayBodyProps) {
       getLabel={(item) => item}
       onChange={onChange}
       onDelete={(item) => onChange(value.filter((v) => v !== item))}
+      onMove={narrow ? onChange : undefined}
     />
   );
 

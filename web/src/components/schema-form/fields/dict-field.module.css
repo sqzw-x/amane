@@ -1,0 +1,12 @@
+/*
+  KV 行: 窄屏收窄键列.
+  键列宽由内联样式固定 (min-width 140 / max-width 200), 窗口宽约 305px 时值列只剩约 90px.
+  内联样式不受媒体查询约束, 窄屏覆盖须写入样式表并声明 `!important`;
+  宽度不小于 sm 的窗口命中不到媒体查询, 仍采用原内联宽度.
+*/
+@media (max-width: 47.99em) {
+  .kvRow > :first-child {
+    min-width: 72px !important;
+    max-width: 104px !important;
+  }
+}

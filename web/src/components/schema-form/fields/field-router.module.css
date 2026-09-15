@@ -1,0 +1,10 @@
+/*
+  嵌套对象缩进: 窄屏减小.
+  缩进经 `pl` 属性写为内联样式, 每层累加; 窗口宽约 305px 时三层之后控件只剩约 270px.
+  内联样式不受媒体查询约束, 窄屏覆盖必须声明 `!important`; 宽度不小于 sm 的窗口命中的仍是原内联 `pl`.
+*/
+@media (max-width: 47.99em) {
+  .nest {
+    padding-left: var(--mantine-spacing-xs) !important;
+  }
+}
