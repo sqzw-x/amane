@@ -29,6 +29,10 @@ CrawlerFactory (缓存实例)
 
 `MediaMetadata.actors` 是 `list[FilmActor]` (`name` + `gender`); 旧 `list[str]` 与站点级 raw 快照经 validator 收成 `gender=unknown`. 名单语义能判定性别时爬虫必须写出 `female` / `male`, 栏位无法判定则保持 `unknown`. 聚合锁定与落库填空见 [data-model.md](data-model.md).
 
+## 片商与发行商
+
+`studio` 是片商 (メーカー), `publisher` 是发行商 (レーベル); DMM 侧即 メーカー 与 レーベル 两栏. 集团旗下的多个厂牌站必须按作品写出真实发行商 (faleno.jp 兼发 maryGOLD / JimmyScandal), 不允许用站点名或集团名顶替.
+
 ## Crawler 基类
 
 `crawlers/base.py::Crawler` 是 Template Method: 公开 `fetch()` (负责日志; HTTP / 拦截失败冒泡 `SourceError`), 子类实现 `_search` (番号 → URL) 与 `_scrape` (URL → `MediaMetadata`); 特殊源可直接 override `fetch()`. `profile()` 类方法给出内置来源 ID / `base_url` / 能力与性别 / 可选 cookies 与限速 URL; `__init__` 在 `profile()` 之后自动合并配置, 子类不得再次调用. 外部来源不要求继承 `Crawler`, 契约见 [plugins.md](plugins.md).

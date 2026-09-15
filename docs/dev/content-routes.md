@@ -65,13 +65,13 @@ iqqtv 作为有碼中文标题源时: 加入 **censored** 路由, 再在 `field_
 
 **r18dev** — 未配 PG 直接 skip; dump 图片补全后是 DMM CDN, 见 [crawlers.md](crawlers.md).
 
-**prestige / faleno / dahlia / giga** — 单厂牌, 对每个候选 SKU 都发 API 请求, 不纳入默认表. **xcity.jp** 与 DMM 重叠且年龄墙严格, 同样不纳入.
+**prestige / faleno / dahlia / giga** — 单厂牌, 对每个候选 SKU 都发 API 请求, 不纳入默认表; faleno / dahlia 同属一个 WordPress `works` 主题 (共用 `sites/wp_works.py`), faleno.jp 兼发 maryGOLD 与 JimmyScandal, 发行商按番号前缀判定. **xcity.jp** 与 DMM 重叠且年龄墙严格, 同样不纳入.
 
 ## 官网与 FANZA
 
 制作委员会把包装文案 (日文标题、女优、类型、时长) 同时送到厂牌官网与 FANZA, 两套都不是从对方爬来的, 也不是超集:
 
-- **厂牌官网** 是营销页: 只有横版封面, 无竖版海报; 常见缺口是导演、剧情、评分、sample gallery.
+- **厂牌官网** 是营销页: Will / Outvision 官网只有横版封面, faleno / dahlia 另给竖版海报; 常见缺口是导演、剧情、评分、sample gallery.
 - **FANZA (DMM)** 是最大数字分发柜台, 另叠零售层: 配信開始日、用户评分、独占 / 4K 柜台标签、竖版封面、样品图、预告、plot、导演.
 
 同一番号的日期是 SKU 分层 (DMM / javbus 用配信開始日, official 用発売日, javdb 自选一个零售日), 三者不必相等. **权威图文采用 DMM; 官网在需要厂牌摄影或発売日时具有独立价值.**
