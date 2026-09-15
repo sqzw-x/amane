@@ -64,13 +64,7 @@ import {
 } from "@/lib/agent/trace";
 import { confirm } from "@/lib/confirm";
 import { extractErrorMessage } from "@/lib/api-error";
-
-/**
- * 对话区高度与落地态居中盒高度.
- * 必须用 dvh: 移动端 100vh 高于可视区, 输入区会落到首屏以下.
- */
-const CHAT_AREA_HEIGHT = "calc(100dvh - 120px)";
-const LANDING_MIN_HEIGHT = "calc(100dvh - 140px)";
+import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
 
 async function downloadSavedQueryResult(queryId: number) {
   const { data, error } = await getSavedQueryResult({
@@ -714,7 +708,7 @@ export function AgentHome() {
 
   if (!sessionsReady && sessionId == null) {
     return (
-      <Center style={{ minHeight: LANDING_MIN_HEIGHT }}>
+      <Center style={{ minHeight: APP_SHELL_MAIN_HEIGHT }}>
         <Loader />
       </Center>
     );
@@ -722,7 +716,7 @@ export function AgentHome() {
 
   if (showLanding) {
     return (
-      <Center style={{ minHeight: LANDING_MIN_HEIGHT }}>
+      <Center style={{ minHeight: APP_SHELL_MAIN_HEIGHT }}>
         <Stack gap="xl" maw={640} w="100%" px="md" align="stretch">
           <Stack gap={6} align="center">
             <Title order={1} style={{ letterSpacing: "-0.03em" }}>
@@ -863,7 +857,7 @@ export function AgentHome() {
   );
 
   return (
-    <Stack gap="sm" style={{ height: CHAT_AREA_HEIGHT, minHeight: 0 }}>
+    <Stack gap="sm" style={{ height: APP_SHELL_MAIN_HEIGHT, minHeight: 0 }}>
       {/* 窄屏会话入口; md 以上侧栏内联, 该行不参与布局. */}
       <Group hiddenFrom="md" style={{ flexShrink: 0 }}>
         <Button
