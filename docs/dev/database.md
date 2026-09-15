@@ -83,7 +83,7 @@ SQLite 没有原生 enum, 列仍是 VARCHAR. 不能使用 `Column(String)` 或 `
 
 ## 路径与配置
 
-`alembic.ini` 中 `sqlalchemy.url` 默认 `sqlite:///data/amane.db`, 与 `AMANE_DATA_DIR=./data` 对齐; `env.py` 读取环境变量覆盖 URL. 修改 `data_dir` 后手动执行 alembic 命令须显式传 `AMANE_DATA_DIR=<path>`.
+`alembic.ini` 只提供 `script_location`; CLI 迁移所需的库路径由 `env.py` 按 `AMANE_DATA_DIR` (默认 `./data`) 计算, 该目录不存在时先创建. 应用启动不读 ini, 脚本目录与 URL 由 `sqlite_migrate.upgrade_sqlite_database` 直接给出.
 
 ## 迁移工作流
 

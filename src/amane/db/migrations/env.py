@@ -1,4 +1,6 @@
+import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, event, pool
@@ -10,7 +12,21 @@ from amane.db.sqlite_migrate import enable_sqlite_transactional_ddl
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # 迁移只是进程内的一步, 不允许按 fileConfig 默认值关闭调用方已配置好的 logger.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
+
+
+def _database_url() -> str:
+    """CLI 模式的库路径: 与生产同源, 取 ``AMANE_DATA_DIR`` (默认 ``./data``)."""
+    data_dir = Path(os.environ.get("AMANE_DATA_DIR", "data"))
+    # 生产路径建库前会先建目录 (upgrade_sqlite_database), CLI 同样需要.
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{data_dir / 'amane.db'}"
+
+
+# 应用启动经 config.attributes 传入连接, 无需 URL; 只有 CLI 在此取.
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", _database_url())
 
 target_metadata = SQLModel.metadata
 
