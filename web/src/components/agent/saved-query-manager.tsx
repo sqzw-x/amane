@@ -229,7 +229,8 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
       onChange={setOpened}
       position="bottom-start"
       withinPortal
-      width={420}
+      // 面板宽度受视口限制: 固定 420px 在窄屏会越出右缘, 行内操作无法点击.
+      width="min(420px, calc(100vw - 32px))"
       shadow="lg"
       radius="md"
       closeOnItemClick={false}

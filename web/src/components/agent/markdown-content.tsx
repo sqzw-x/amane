@@ -94,6 +94,19 @@ const components: Components = {
       }}
     />
   ),
+  // 模型输出的图片宽度不受控, 缺宽度上限时宽图撑破气泡; Mantine 始终不设置 img 的宽度.
+  img: ({ src, alt }) => (
+    <img
+      src={src}
+      alt={alt ?? ""}
+      style={{
+        display: "block",
+        maxWidth: "100%",
+        height: "auto",
+        marginBottom: "var(--mantine-spacing-xs)",
+      }}
+    />
+  ),
 };
 
 export function MarkdownContent({

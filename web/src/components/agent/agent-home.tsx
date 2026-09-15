@@ -3,6 +3,7 @@ import {
   Box,
   Button,
   Center,
+  Drawer,
   Group,
   Loader,
   Menu,
@@ -14,8 +15,9 @@ import {
   Title,
   UnstyledButton,
 } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconDots, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconDots, IconList, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -62,6 +64,13 @@ import {
 } from "@/lib/agent/trace";
 import { confirm } from "@/lib/confirm";
 import { extractErrorMessage } from "@/lib/api-error";
+
+/**
+ * 对话区高度与落地态居中盒高度.
+ * 必须用 dvh: 移动端 100vh 高于可视区, 输入区会落到首屏以下.
+ */
+const CHAT_AREA_HEIGHT = "calc(100dvh - 120px)";
+const LANDING_MIN_HEIGHT = "calc(100dvh - 140px)";
 
 async function downloadSavedQueryResult(queryId: number) {
   const { data, error } = await getSavedQueryResult({
@@ -264,6 +273,8 @@ export function AgentHome() {
   const [renameValue, setRenameValue] = useState("");
   /** 会话思考覆盖; null = 继承全局默认. */
   const [sessionThinking, setSessionThinking] = useState<ThinkingValue | null>(null);
+  /** 窄屏会话抽屉; md 以上侧栏内联, 该状态不参与呈现. */
+  const [sessionsDrawer, sessionsDrawerHandlers] = useDisclosure(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const skipTraceLoad = useRef(false);
   const lastSeqRef = useRef(0);
@@ -430,6 +441,8 @@ export function AgentHome() {
   }, [sessionId, messages, streaming]);
 
   function openSession(id: number) {
+    // 抽屉在窄屏覆盖消息区, 选定会话后必须关闭.
+    sessionsDrawerHandlers.close();
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(false);
@@ -453,6 +466,8 @@ export function AgentHome() {
       const session = await createSession.mutateAsync({
         body: { title: t("newSession") },
       });
+      // 抽屉在窄屏覆盖消息区, 新会话建立后必须关闭.
+      sessionsDrawerHandlers.close();
       skipTraceLoad.current = true;
       lastSeqRef.current = 0;
       setMessages([]);
@@ -699,7 +714,7 @@ export function AgentHome() {
 
   if (!sessionsReady && sessionId == null) {
     return (
-      <Center style={{ minHeight: "calc(100vh - 140px)" }}>
+      <Center style={{ minHeight: LANDING_MIN_HEIGHT }}>
         <Loader />
       </Center>
     );
@@ -707,7 +722,7 @@ export function AgentHome() {
 
   if (showLanding) {
     return (
-      <Center style={{ minHeight: "calc(100vh - 140px)" }}>
+      <Center style={{ minHeight: LANDING_MIN_HEIGHT }}>
         <Stack gap="xl" maw={640} w="100%" px="md" align="stretch">
           <Stack gap={6} align="center">
             <Title order={1} style={{ letterSpacing: "-0.03em" }}>
@@ -731,214 +746,239 @@ export function AgentHome() {
     );
   }
 
-  return (
-    <Group
-      align="stretch"
-      gap="md"
-      wrap="nowrap"
-      style={{
-        height: "calc(100vh - 120px)",
-        minHeight: 0,
-        overflow: "hidden",
-      }}
+  // 会话面板在两处呈现: md 以上的内联侧栏, 与窄屏的抽屉; 抽屉内宽度占满.
+  const sessionsPanel = (
+    <Paper
+      withBorder
+      radius="md"
+      p="sm"
+      w={{ base: "100%", md: 260 }}
+      style={{ flexShrink: 0, display: "flex", flexDirection: "column", minHeight: 0 }}
     >
-      <Paper
-        withBorder
-        radius="md"
-        p="sm"
-        w={260}
-        style={{ flexShrink: 0, display: "flex", flexDirection: "column", minHeight: 0 }}
-      >
-        <Group justify="space-between" mb="sm" style={{ flexShrink: 0 }}>
-          <Text fw={600} size="sm">
-            {t("sessions")}
-          </Text>
-          <Group gap={4}>
-            <SavedQueryManager sessionId={sessionId} />
-            <HintedActionIcon
-              variant="light"
-              loading={createSession.isPending}
-              label={t("newSession")}
-              onClick={() => void handleNewSession()}
-            >
-              <IconPlus size={16} />
-            </HintedActionIcon>
-          </Group>
+      <Group justify="space-between" mb="sm" style={{ flexShrink: 0 }}>
+        {/* 抽屉由 Drawer 标题呈现「会话」, 面板标题只在内联侧栏呈现. */}
+        <Text fw={600} size="sm" visibleFrom="md">
+          {t("sessions")}
+        </Text>
+        <Group gap={4}>
+          <SavedQueryManager sessionId={sessionId} />
+          <HintedActionIcon
+            variant="light"
+            loading={createSession.isPending}
+            label={t("newSession")}
+            onClick={() => void handleNewSession()}
+          >
+            <IconPlus size={16} />
+          </HintedActionIcon>
         </Group>
-        <ScrollArea style={{ flex: 1, minHeight: 0 }} offsetScrollbars>
-          <Stack gap={6}>
-            {sessions.map((s) => (
-              <Box
-                key={s.id}
-                p="xs"
-                style={{
-                  borderRadius: "var(--mantine-radius-md)",
-                  border:
-                    sessionId === s.id
-                      ? "1px solid var(--mantine-color-default-border)"
-                      : "1px solid transparent",
-                  background: sessionId === s.id ? "var(--mantine-color-default-hover)" : undefined,
-                }}
-              >
-                {renamingId === s.id ? (
-                  <Stack gap={6}>
-                    <TextInput
-                      size="sm"
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.currentTarget.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          commitRename();
-                        }
-                        if (e.key === "Escape") setRenamingId(null);
-                      }}
-                      autoFocus
-                      aria-label={t("renamePrompt")}
-                    />
-                    <Group gap={6} justify="flex-end">
-                      <Button
-                        size="compact-xs"
-                        variant="default"
-                        onClick={() => setRenamingId(null)}
-                      >
-                        {t("common:actions.cancel")}
-                      </Button>
-                      <Button
-                        size="compact-xs"
-                        loading={renameSession.isPending}
-                        onClick={() => commitRename()}
-                      >
-                        {t("common:actions.save")}
-                      </Button>
-                    </Group>
-                  </Stack>
-                ) : (
-                  <Group gap={4} wrap="nowrap" align="flex-start">
-                    <UnstyledButton
-                      onClick={() => openSession(s.id)}
-                      style={{ flex: 1, minWidth: 0, textAlign: "left" }}
+      </Group>
+      <ScrollArea style={{ flex: 1, minHeight: 0 }} offsetScrollbars>
+        <Stack gap={6}>
+          {sessions.map((s) => (
+            <Box
+              key={s.id}
+              p="xs"
+              style={{
+                borderRadius: "var(--mantine-radius-md)",
+                border:
+                  sessionId === s.id
+                    ? "1px solid var(--mantine-color-default-border)"
+                    : "1px solid transparent",
+                background: sessionId === s.id ? "var(--mantine-color-default-hover)" : undefined,
+              }}
+            >
+              {renamingId === s.id ? (
+                <Stack gap={6}>
+                  <TextInput
+                    size="sm"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitRename();
+                      }
+                      if (e.key === "Escape") setRenamingId(null);
+                    }}
+                    autoFocus
+                    aria-label={t("renamePrompt")}
+                  />
+                  <Group gap={6} justify="flex-end">
+                    <Button size="compact-xs" variant="default" onClick={() => setRenamingId(null)}>
+                      {t("common:actions.cancel")}
+                    </Button>
+                    <Button
+                      size="compact-xs"
+                      loading={renameSession.isPending}
+                      onClick={() => commitRename()}
                     >
-                      <Text size="sm" fw={sessionId === s.id ? 600 : 400} lineClamp={2}>
-                        {s.title}
-                      </Text>
-                    </UnstyledButton>
-                    <Menu position="bottom-end" withinPortal>
-                      <Menu.Target>
-                        <ActionIcon
-                          size="sm"
-                          variant="subtle"
-                          aria-label={t("sessions")}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <IconDots size={14} />
-                        </ActionIcon>
-                      </Menu.Target>
-                      <Menu.Dropdown>
-                        <Menu.Item
-                          leftSection={<IconPencil size={14} />}
-                          onClick={() => startRename(s.id, s.title)}
-                        >
-                          {t("renameSession")}
-                        </Menu.Item>
-                        <Menu.Item
-                          color="red"
-                          leftSection={<IconTrash size={14} />}
-                          onClick={() => void handleDelete(s.id)}
-                        >
-                          {t("deleteSession")}
-                        </Menu.Item>
-                      </Menu.Dropdown>
-                    </Menu>
+                      {t("common:actions.save")}
+                    </Button>
                   </Group>
-                )}
-              </Box>
-            ))}
-          </Stack>
-        </ScrollArea>
-      </Paper>
+                </Stack>
+              ) : (
+                <Group gap={4} wrap="nowrap" align="flex-start">
+                  <UnstyledButton
+                    onClick={() => openSession(s.id)}
+                    style={{ flex: 1, minWidth: 0, textAlign: "left" }}
+                  >
+                    <Text size="sm" fw={sessionId === s.id ? 600 : 400} lineClamp={2}>
+                      {s.title}
+                    </Text>
+                  </UnstyledButton>
+                  <Menu position="bottom-end" withinPortal>
+                    <Menu.Target>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        aria-label={t("sessions")}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <IconDots size={14} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item
+                        leftSection={<IconPencil size={14} />}
+                        onClick={() => startRename(s.id, s.title)}
+                      >
+                        {t("renameSession")}
+                      </Menu.Item>
+                      <Menu.Item
+                        color="red"
+                        leftSection={<IconTrash size={14} />}
+                        onClick={() => void handleDelete(s.id)}
+                      >
+                        {t("deleteSession")}
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
+                </Group>
+              )}
+            </Box>
+          ))}
+        </Stack>
+      </ScrollArea>
+    </Paper>
+  );
 
-      <Stack style={{ flex: 1, minWidth: 0, minHeight: 0, height: "100%" }} gap="sm">
-        <Paper
-          withBorder
-          radius="md"
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-          }}
+  return (
+    <Stack gap="sm" style={{ height: CHAT_AREA_HEIGHT, minHeight: 0 }}>
+      {/* 窄屏会话入口; md 以上侧栏内联, 该行不参与布局. */}
+      <Group hiddenFrom="md" style={{ flexShrink: 0 }}>
+        <Button
+          variant="default"
+          size="sm"
+          leftSection={<IconList size={16} />}
+          onClick={sessionsDrawerHandlers.open}
         >
-          <Box
-            ref={scrollRef}
+          {t("sessions")}
+        </Button>
+      </Group>
+
+      <Group
+        align="stretch"
+        gap="md"
+        wrap="nowrap"
+        style={{ flex: 1, minHeight: 0, overflow: "hidden" }}
+      >
+        {/* 行向 flex 使面板拉伸到侧栏高度, 列向只拉伸宽度, 面板会退回内容高度. */}
+        <Box visibleFrom="md" style={{ display: "flex", flexShrink: 0, minHeight: 0 }}>
+          {sessionsPanel}
+        </Box>
+
+        <Stack style={{ flex: 1, minWidth: 0, minHeight: 0, height: "100%" }} gap="sm">
+          <Paper
+            withBorder
+            radius="md"
             style={{
               flex: 1,
               minHeight: 0,
-              overflow: "auto",
-              padding: "var(--mantine-spacing-md)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
             }}
           >
-            <Stack gap="lg">
-              {sessionId == null && (
-                <Text c="dimmed" size="sm">
-                  {t("selectSessionHint")}
-                </Text>
-              )}
-              {loadingHistory && (
-                <Group gap="xs">
-                  <Loader size="sm" />
+            <Box
+              ref={scrollRef}
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflow: "auto",
+                padding: "var(--mantine-spacing-md)",
+              }}
+            >
+              <Stack gap="lg">
+                {sessionId == null && (
                   <Text c="dimmed" size="sm">
-                    {t("loadingHistory")}
+                    {t("selectSessionHint")}
                   </Text>
-                </Group>
-              )}
-              {sessionId != null && !loadingHistory && messages.length === 0 && (
-                <Text c="dimmed" size="sm">
-                  {t("continueHint")}
-                </Text>
-              )}
-              {messages.map((m, i) => (
-                <MessageBubble
-                  key={`${m.role}-${i}`}
-                  message={m}
-                  approvalBusy={streaming}
-                  onApprovalAction={(approval, action) => {
-                    void handleApprovalAction(approval, action);
-                  }}
-                  onDownload={downloadSavedQueryResult}
-                  onPersist={(id) =>
-                    persistQuery.mutate({ path: { query_id: id }, body: { persisted: true } })
-                  }
-                />
-              ))}
-            </Stack>
-          </Box>
-        </Paper>
+                )}
+                {loadingHistory && (
+                  <Group gap="xs">
+                    <Loader size="sm" />
+                    <Text c="dimmed" size="sm">
+                      {t("loadingHistory")}
+                    </Text>
+                  </Group>
+                )}
+                {sessionId != null && !loadingHistory && messages.length === 0 && (
+                  <Text c="dimmed" size="sm">
+                    {t("continueHint")}
+                  </Text>
+                )}
+                {messages.map((m, i) => (
+                  <MessageBubble
+                    key={`${m.role}-${i}`}
+                    message={m}
+                    approvalBusy={streaming}
+                    onApprovalAction={(approval, action) => {
+                      void handleApprovalAction(approval, action);
+                    }}
+                    onDownload={downloadSavedQueryResult}
+                    onPersist={(id) =>
+                      persistQuery.mutate({ path: { query_id: id }, body: { persisted: true } })
+                    }
+                  />
+                ))}
+              </Stack>
+            </Box>
+          </Paper>
 
-        <Box style={{ flexShrink: 0 }}>
-          <ChatComposer
-            value={input}
-            onChange={setInput}
-            onSubmit={() => void handleSend()}
-            onStop={() => void handleStop()}
-            loading={streaming}
-            thinking={sessionId != null ? sessionThinking : undefined}
-            onThinkingChange={
-              sessionId != null
-                ? (next) => {
-                    setSessionThinking(next);
-                    updateThinking.mutate({
-                      path: { session_id: sessionId },
-                      body: { thinking: next },
-                    });
-                  }
-                : undefined
-            }
-            thinkingDisabled={streaming || updateThinking.isPending}
-          />
-        </Box>
-      </Stack>
-    </Group>
+          <Box style={{ flexShrink: 0 }}>
+            <ChatComposer
+              value={input}
+              onChange={setInput}
+              onSubmit={() => void handleSend()}
+              onStop={() => void handleStop()}
+              loading={streaming}
+              thinking={sessionId != null ? sessionThinking : undefined}
+              onThinkingChange={
+                sessionId != null
+                  ? (next) => {
+                      setSessionThinking(next);
+                      updateThinking.mutate({
+                        path: { session_id: sessionId },
+                        body: { thinking: next },
+                      });
+                    }
+                  : undefined
+              }
+              thinkingDisabled={streaming || updateThinking.isPending}
+            />
+          </Box>
+        </Stack>
+      </Group>
+
+      <Drawer
+        opened={sessionsDrawer}
+        onClose={sessionsDrawerHandlers.close}
+        title={t("sessions")}
+        size="xs"
+        hiddenFrom="md"
+      >
+        {sessionsPanel}
+      </Drawer>
+    </Stack>
   );
 }

@@ -2,10 +2,18 @@ import { ActionIcon, Box, Group, Menu, Text, Textarea, UnstyledButton } from "@m
 import { IconBrain, IconChevronDown, IconPlayerStopFilled, IconSend } from "@tabler/icons-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
+import classes from "./chat-composer.module.css";
 
 export type ThinkingValue = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export const THINKING_MODES: ThinkingValue[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
+/**
+ * 窄屏输入框行数下限.
+ * 一屏高度扣除顶栏与消息区后余量有限, 桌面行数会把发送键推到首屏之外.
+ */
+const NARROW_MIN_ROWS = 2;
 
 export function parseThinking(raw: unknown): ThinkingValue | null {
   if (typeof raw !== "string") return null;
@@ -73,7 +81,8 @@ export function ChatComposer({
   const { t } = useTranslation("agent");
   const composingRef = useRef(false);
   const [focused, setFocused] = useState(false);
-  const minRows = large ? 5 : autosizeMinRows;
+  const narrow = useNarrowViewport();
+  const minRows = narrow ? NARROW_MIN_ROWS : large ? 5 : autosizeMinRows;
   const showThinking = onThinkingChange != null;
 
   return (
@@ -129,7 +138,16 @@ export function ChatComposer({
         }}
       />
 
-      <Group justify="space-between" align="center" px="sm" pb="sm" pt={2} wrap="nowrap" gap="xs">
+      <Group
+        className={classes.footer}
+        justify="space-between"
+        align="center"
+        px="sm"
+        pb="sm"
+        pt={2}
+        wrap="nowrap"
+        gap="xs"
+      >
         {showThinking ? (
           <Menu position="top-start" withinPortal shadow="md" width={168}>
             <Menu.Target>

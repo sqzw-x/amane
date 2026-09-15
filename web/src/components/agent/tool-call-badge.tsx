@@ -68,7 +68,8 @@ export function ToolCallBadge({
       </UnstyledButton>
       {pending && approval && onApprovalAction && (
         <Stack gap={6} pl={4}>
-          <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
+          {/* SQL 可能不含空格, 只按空白折行会撑破气泡并让消息区出现横向滚动. */}
+          <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {approval.sql}
           </Text>
           <Group gap="xs">
