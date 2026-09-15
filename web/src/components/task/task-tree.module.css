@@ -15,6 +15,13 @@
   --task-accent: var(--mantine-color-gray-5);
 }
 
+/* 窄屏隐藏 error / 时长 / #id 三列, 网格随之只保留 identity / 状态 / 行内操作. */
+@media (max-width: 47.99em) {
+  .forest {
+    --row-cols: minmax(0, 1fr) auto auto;
+  }
+}
+
 .node {
   position: relative;
   list-style: none;
@@ -25,13 +32,19 @@
   grid-template-columns: var(--row-cols);
   column-gap: 10px;
   align-items: center;
-  min-width: 42rem;
   height: 3rem;
   padding: 0 8px 0 6px;
   border-bottom: 1px solid var(--row-rule);
   cursor: pointer;
   user-select: none;
   position: relative;
+}
+
+/* 六列出行的宽度下界只在 sm 及以上成立: 窄屏无此下界, 行宽随容器收敛. */
+@media (min-width: 48em) {
+  .row {
+    min-width: 42rem;
+  }
 }
 
 .row[data-status="queued"] {

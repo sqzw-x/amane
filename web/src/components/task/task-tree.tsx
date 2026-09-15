@@ -10,6 +10,7 @@ import {
   type TaskNodeActions,
   TaskRowActions,
 } from "@/components/task/task-detail-panel";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
 import {
   childCountOf,
@@ -26,9 +27,19 @@ const CHILD_PAGE_SIZE = 200;
 const TREE_INDENT = 28;
 const TREE_LINE_INSET = 8;
 const ROW_PAD_LEFT = 6;
+/** 窄屏脊线横坐标上限: 深度继续增加时, 详情内容与脊线不再左移. */
+const NARROW_SPINE_MAX = 24;
+/** 详情内容与脊线的间距. */
+const DETAIL_GAP = 12;
 
 function spineLeft(depth: number): number {
   return ROW_PAD_LEFT + depth * TREE_INDENT + TREE_LINE_INSET;
+}
+
+/** 脊线横坐标; 窄屏封顶, 避免深层节点的详情内容宽度被缩进占用. */
+function spineLeftAt(depth: number, narrow: boolean): number {
+  const left = spineLeft(depth);
+  return narrow ? Math.min(left, NARROW_SPINE_MAX) : left;
 }
 
 function TreePaneRails({
@@ -37,12 +48,14 @@ function TreePaneRails({
   isLast,
   hasChildren,
   status,
+  narrow,
 }: {
   depth: number;
   continuations: readonly boolean[];
   isLast: boolean;
   hasChildren: boolean;
   status: TaskResponse["status"];
+  narrow: boolean;
 }) {
   // 根节点不把森林兄弟画进树; 更深的节点把「自己不是末子」并进祖先贯通线.
   const rails = depth === 0 ? continuations : [...continuations, !isLast];
@@ -50,14 +63,19 @@ function TreePaneRails({
     <>
       {rails.map((cont, i) =>
         cont ? (
-          <span key={i} className={classes.paneRiser} style={{ left: spineLeft(i) }} aria-hidden />
+          <span
+            key={i}
+            className={classes.paneRiser}
+            style={{ left: spineLeftAt(i, narrow) }}
+            aria-hidden
+          />
         ) : null,
       )}
       {hasChildren ? (
         <span
           className={classes.spine}
           data-status={status}
-          style={{ left: spineLeft(depth) }}
+          style={{ left: spineLeftAt(depth, narrow) }}
           aria-hidden
         />
       ) : null}
@@ -82,6 +100,7 @@ export function TaskTree({
   focusId,
   onToggle,
 }: TaskTreeProps) {
+  const narrow = useNarrowViewport();
   return (
     <ul className={classes.forest} role="tree">
       {tasks.map((task, index) => (
@@ -97,6 +116,7 @@ export function TaskTree({
           focusId={focusId}
           progressByTask={progressByTask}
           actions={actions}
+          narrow={narrow}
         />
       ))}
     </ul>
@@ -114,6 +134,8 @@ interface TaskTreeNodeProps {
   focusId: number | null;
   progressByTask: Readonly<Record<number, TaskProgress | undefined>>;
   actions: TaskNodeActions;
+  /** 窄屏: 隐藏次要列并给详情缩进封顶. */
+  narrow: boolean;
 }
 
 function TaskTreeNode({
@@ -127,6 +149,7 @@ function TaskTreeNode({
   focusId,
   progressByTask,
   actions,
+  narrow,
 }: TaskTreeNodeProps) {
   const { t } = useTranslation("tasks");
   const open = opened.has(task.id);
@@ -238,6 +261,7 @@ function TaskTreeNode({
           c="red"
           lineClamp={1}
           title={task.error ?? undefined}
+          visibleFrom="sm"
         >
           {task.error ?? ""}
         </Text>
@@ -246,10 +270,22 @@ function TaskTreeNode({
             {t(`status.${task.status}`)}
           </Badge>
         </div>
-        <Text className={`${classes.cell} ${classes.cellNum}`} size="xs" c="dimmed" ff="monospace">
+        <Text
+          className={`${classes.cell} ${classes.cellNum}`}
+          size="xs"
+          c="dimmed"
+          ff="monospace"
+          visibleFrom="sm"
+        >
           {duration ?? ""}
         </Text>
-        <Text className={`${classes.cell} ${classes.cellNum}`} size="xs" c="dimmed" ff="monospace">
+        <Text
+          className={`${classes.cell} ${classes.cellNum}`}
+          size="xs"
+          c="dimmed"
+          ff="monospace"
+          visibleFrom="sm"
+        >
           #{task.id}
         </Text>
         <div className={classes.cellEnd}>
@@ -267,13 +303,17 @@ function TaskTreeNode({
 
       {open ? (
         <div ref={paneRef} className={classes.pane} role="none">
-          <div className={classes.detail} style={{ paddingLeft: spineLeft(depth) + 12 }}>
+          <div
+            className={classes.detail}
+            style={{ paddingLeft: spineLeftAt(depth, narrow) + DETAIL_GAP }}
+          >
             <TreePaneRails
               depth={depth}
               continuations={continuations}
               isLast={isLast}
               hasChildren={childCount > 0}
               status={task.status}
+              narrow={narrow}
             />
             <TaskDetailPanel task={task} linkKey={linkKey} actions={actions} />
           </div>
@@ -281,7 +321,10 @@ function TaskTreeNode({
             <ul className={classes.kids} role="group">
               {childrenQuery.isLoading ? (
                 <li className={classes.node}>
-                  <div className={classes.ghost} style={{ paddingLeft: spineLeft(depth + 1) }}>
+                  <div
+                    className={classes.ghost}
+                    style={{ paddingLeft: spineLeftAt(depth + 1, narrow) }}
+                  >
                     <Loader size="xs" />
                     <Text size="xs" c="dimmed">
                       {t("tree.loading")}
@@ -291,7 +334,10 @@ function TaskTreeNode({
               ) : null}
               {childrenQuery.isError ? (
                 <li className={classes.node}>
-                  <div className={classes.ghost} style={{ paddingLeft: spineLeft(depth + 1) }}>
+                  <div
+                    className={classes.ghost}
+                    style={{ paddingLeft: spineLeftAt(depth + 1, narrow) }}
+                  >
                     <Text size="xs" c="red">
                       {t("tree.loadError")}
                     </Text>
@@ -318,11 +364,15 @@ function TaskTreeNode({
                   focusId={focusId}
                   progressByTask={progressByTask}
                   actions={actions}
+                  narrow={narrow}
                 />
               ))}
               {remaining > 0 && childrenQuery.hasNextPage ? (
                 <li className={classes.node}>
-                  <div className={classes.ghost} style={{ paddingLeft: spineLeft(depth + 1) }}>
+                  <div
+                    className={classes.ghost}
+                    style={{ paddingLeft: spineLeftAt(depth + 1, narrow) }}
+                  >
                     <Button
                       size="compact-xs"
                       variant="subtle"

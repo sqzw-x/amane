@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Virtuoso } from "react-virtuoso";
 import { LogKvPairs } from "@/components/log/log-kv";
+import { LogTimestamp } from "@/components/log/log-timestamp";
 import { type LogEntry, logLevelMantineColor, useLogStore } from "@/stores/logs";
 
 interface TaskLogViewProps {
@@ -65,9 +66,7 @@ function TaskLogRow({ entry }: { entry: LogEntry }) {
       align="flex-start"
       style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
     >
-      <Text size="xs" c="dimmed" ff="monospace" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
-        {new Date(entry.timestamp).toLocaleTimeString()}
-      </Text>
+      <LogTimestamp timestamp={entry.timestamp} />
       <Badge
         size="xs"
         color={logLevelMantineColor(entry.level)}
@@ -76,7 +75,7 @@ function TaskLogRow({ entry }: { entry: LogEntry }) {
       >
         {entry.level}
       </Badge>
-      <Text size="xs" style={{ flex: 1, wordBreak: "break-word" }}>
+      <Text size="xs" style={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>
         <Text component="span" fw={700}>
           {entry.message}
         </Text>

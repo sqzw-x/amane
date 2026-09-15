@@ -18,7 +18,9 @@ import { useTranslation } from "react-i18next";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
 import { exhaustiveRecord } from "@/lib/exhaustive";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { LogKvPairs } from "@/components/log/log-kv";
+import { LogTimestamp } from "@/components/log/log-timestamp";
 import {
   LOG_LEVELS,
   type LogEntry,
@@ -68,6 +70,14 @@ function renderLogRow(_index: number, entry: LogEntry) {
   return <LogRow entry={entry} />;
 }
 
+/**
+ * 判定「已滚到底」的余量.
+ * 宽屏行高约 40px, 200px 相当于未滑过数行仍判定在底部;
+ * 窄屏行高随消息换行涨到 100px 以上, 沿用该值会使上滑阅读被 `followOutput` 重新滚到底端.
+ */
+const AT_BOTTOM_THRESHOLD = 200;
+const NARROW_AT_BOTTOM_THRESHOLD = 40;
+
 function LogVirtuoso({
   data,
   autoScroll,
@@ -77,13 +87,14 @@ function LogVirtuoso({
   autoScroll: boolean;
   virtuosoRef: RefObject<VirtuosoHandle | null>;
 }) {
+  const narrow = useNarrowViewport();
   const didPinBottom = useRef(false);
   return (
     <Virtuoso
       ref={virtuosoRef}
       style={{ height: "100%" }}
       data={data}
-      atBottomThreshold={200}
+      atBottomThreshold={narrow ? NARROW_AT_BOTTOM_THRESHOLD : AT_BOTTOM_THRESHOLD}
       initialTopMostItemIndex={data.length - 1}
       followOutput={autoScroll ? () => "auto" : false}
       components={LOG_VIRTUOSO_COMPONENTS}
@@ -107,9 +118,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
       align="flex-start"
       style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
     >
-      <Text size="xs" c="dimmed" ff="monospace" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
-        {new Date(entry.timestamp).toLocaleTimeString()}
-      </Text>
+      <LogTimestamp timestamp={entry.timestamp} />
       <Badge
         size="xs"
         color={logLevelMantineColor(entry.level)}
@@ -124,10 +133,11 @@ function LogRow({ entry }: { entry: LogEntry }) {
         ff="monospace"
         style={{ flexShrink: 0, minWidth: 90 }}
         lineClamp={1}
+        visibleFrom="sm"
       >
         {entry.source}
       </Text>
-      <Text size="sm" style={{ flex: 1, wordBreak: "break-word" }}>
+      <Text size="sm" style={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>
         <Text component="span" fw={700}>
           {entry.message}
         </Text>
