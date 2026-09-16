@@ -1,10 +1,12 @@
 """测试 ResourceStore 的派生资源 (裁剪) 与就地超分能力."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import pytest
 
 from amane.media import ResourceStore, derived_locator
+from amane.media.resource_store import _is_placeholder_url
+from amane.net.http import RateLimiters, WebClient
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -147,3 +149,72 @@ class TestGetByUrlHash:
     @pytest.mark.asyncio
     async def test_missing_hash_returns_none(self, resource_store: ResourceStore):
         assert await resource_store.get_by_url_hash("deadbeefdeadbeef") is None
+
+
+class _StubResponse:
+    status_code = 200
+    headers: ClassVar[dict[str, str]] = {}
+
+    def __init__(self, *, url: str, content: bytes = b"") -> None:
+        self.url = url
+        self.content = content
+
+
+class _StubSession:
+    """替换 ``WebClient._session``: 按方法返回预设应答, 记录出站方法."""
+
+    def __init__(self, *, final_url: str, content: bytes = b"") -> None:
+        self.methods: list[str] = []
+        self._response = _StubResponse(url=final_url, content=content)
+
+    async def request(self, method: str, url: str, **kwargs: Any) -> _StubResponse:
+        self.methods.append(method)
+        return self._response
+
+
+def _stub_client(
+    monkeypatch: pytest.MonkeyPatch, *, final_url: str, content: bytes = b""
+) -> tuple[WebClient, _StubSession]:
+    client = WebClient(limiters=RateLimiters(default_rate=100))
+    session = _StubSession(final_url=final_url, content=content)
+    monkeypatch.setattr(client, "_session", session)
+    return client, session
+
+
+_REQUEST = "https://pics.dmm.co.jp/digital/video/mide00030/mide00030pl.jpg"
+_PLACEHOLDER = "https://pics.dmm.com/mono/movie/n/now_printing/now_printing.jpg"
+
+
+class TestPlaceholderRedirect:
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (_PLACEHOLDER, True),
+            ("https://imgsrc.dmm.com/pics/mono/movie/n/now_printing/now_printing.jpg?h=800&w=800", True),
+            (_REQUEST, False),
+            # 只匹配路径, 查询串里的同名字样不算
+            ("https://pics.dmm.com/redirect?to=/now_printing/now_printing.jpg", False),
+        ],
+    )
+    def test_detects_placeholder_path(self, url: str, expected: bool):
+        assert _is_placeholder_url(url) is expected
+
+    @pytest.mark.asyncio
+    async def test_acquire_rejects_placeholder_redirect(
+        self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch
+    ):
+        client, session = _stub_client(monkeypatch, final_url=_PLACEHOLDER, content=b"placeholder-bytes")
+
+        assert await resource_store.acquire(_REQUEST, client) is None
+        assert session.methods == ["HEAD"]  # 只探测, 不下载
+        assert await resource_store.get_by_url(_REQUEST) is None
+
+    @pytest.mark.asyncio
+    async def test_acquire_keeps_plain_redirect(self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch):
+        client, session = _stub_client(monkeypatch, final_url=_REQUEST, content=b"jpeg-bytes")
+
+        path = await resource_store.acquire(_REQUEST, client)
+
+        assert path is not None and path.read_bytes() == b"jpeg-bytes"
+        assert session.methods[0] == "HEAD" and "GET" in session.methods
+        assert await resource_store.get_by_url(_REQUEST) is not None

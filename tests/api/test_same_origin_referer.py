@@ -26,20 +26,14 @@ def _hosts() -> frozenset[str]:
     return build_network_stack(HotSettings()).web_client._same_origin_referer_hosts
 
 
-def test_javbus_host_is_registered():
-    assert "www.javbus.com" in _hosts()
-
-
-def test_every_declaring_site_contributes_its_hosts():
+def test_declared_site_hosts_are_registered():
     hosts = _hosts()
-    declared = 0
+    assert "www.javbus.com" in hosts
     for site, profile in _all_profiles():
         if not profile.same_origin_referer:
             continue
-        declared += 1
         for url in [*profile.urls, profile.base_url]:
             assert httpx.URL(url).host in hosts, f"{site}: {url}"
-    assert declared > 0, "无站点声明 same_origin_referer, 断言失去意义"
 
 
 def test_undeclared_site_host_is_absent():

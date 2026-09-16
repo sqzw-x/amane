@@ -10,6 +10,7 @@ import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 import structlog
 from sqlmodel import col, select
@@ -25,6 +26,15 @@ if TYPE_CHECKING:
     from ..net.http import WebClient
 
 logger = structlog.get_logger()
+
+# 上游把已下架资源重定向到 200 的占位图 (DMM 的 now_printing) 时不能算获取成功:
+# 否则该 URL 会被判为可用并前置, 前端最终显示占位图本身.
+_PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/",)
+
+
+def _is_placeholder_url(url: str) -> bool:
+    path = urlsplit(url).path.lower()
+    return any(marker in path for marker in _PLACEHOLDER_PATH_MARKERS)
 
 
 def _url_hash(url: str) -> str:
@@ -103,6 +113,12 @@ class ResourceStore:
         cached = await self.resolve(url)
         if cached:
             return cached
+
+        # 上游改派占位图时跳过, 不占用 dest 也不写记录.
+        final_url = await client.resolve_final_url(url)
+        if _is_placeholder_url(final_url):
+            logger.warning("resource is upstream placeholder", url=url, final_url=final_url)
+            return None
 
         dest = self._compute_path(url)
         dest.parent.mkdir(parents=True, exist_ok=True)

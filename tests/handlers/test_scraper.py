@@ -189,6 +189,9 @@ class TestScrapeHandler:
             async def get_filesize(self, url, **kwargs):
                 return None
 
+            async def resolve_final_url(self, url, **kwargs) -> str:
+                return url
+
         h = ScrapeHandler(
             repo=repo,
             factory=FakeFactory({"javdb": ImgCrawler()}),

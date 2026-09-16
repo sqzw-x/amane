@@ -32,6 +32,9 @@ class FakeClient:
     async def get_filesize(self, url: str, **kwargs):
         return None
 
+    async def resolve_final_url(self, url: str, **kwargs) -> str:
+        return url
+
 
 def _paths(base: Path) -> ResolvedPaths:
     return ResolvedPaths(

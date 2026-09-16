@@ -164,6 +164,10 @@ class ReplayWebClient:
             return None
         return len(resp.content)
 
+    async def resolve_final_url(self, url: str, *, use_proxy: bool = True) -> str:
+        # 录制只存请求 URL, 不含重定向终址; 回放按原 URL 处理.
+        return url
+
     async def download(self, url: str, dest: Path, **kwargs: Any) -> bool:
         try:
             data = await self.get_bytes(url)

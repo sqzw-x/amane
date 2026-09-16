@@ -39,6 +39,9 @@ class FakeClient:
     async def get_filesize(self, url: str, **kwargs) -> int | None:
         return None
 
+    async def resolve_final_url(self, url: str, **kwargs) -> str:
+        return url
+
 
 @pytest.mark.asyncio
 async def test_poster_cropped_when_candidate_small(resource_store: ResourceStore, tmp_path: Path):

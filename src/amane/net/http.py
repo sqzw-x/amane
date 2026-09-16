@@ -389,18 +389,32 @@ class WebClient:
                 url, RequestFailure(kind=FailureKind.UNEXPECTED, message=f"JSON parse error: {e}")
             ) from e
 
-    async def get_filesize(self, url: str, *, use_proxy: bool = True) -> int | None:
+    async def _probe(self, url: str, *, use_proxy: bool) -> tuple[int | None, str]:
+        """HEAD 探测 Content-Length 与重定向终址; 探测失败时终址回退为 ``url``."""
         try:
             resp = await self.request("HEAD", url, use_proxy=use_proxy)
         except RequestError:
-            return None
+            return None, url
+        final_url = str(resp.url) if resp.url else url
         if resp.status_code >= 400:
-            return None
+            return None, final_url
+        cl = resp.headers.get("Content-Length")
         try:
-            cl = resp.headers.get("Content-Length")
-            return int(cl) if cl else None
+            return (int(cl) if cl else None), final_url
         except ValueError, TypeError:
-            return None
+            return None, final_url
+
+    async def get_filesize(self, url: str, *, use_proxy: bool = True) -> int | None:
+        size, _ = await self._probe(url, use_proxy=use_proxy)
+        return size
+
+    async def resolve_final_url(self, url: str, *, use_proxy: bool = True) -> str:
+        """跟随重定向后的终址; 探测失败时返回 ``url``.
+
+        调用方据此判定上游是否改派了别的资源 (如占位图).
+        """
+        _, final_url = await self._probe(url, use_proxy=use_proxy)
+        return final_url
 
     async def download(
         self,
@@ -413,7 +427,7 @@ class WebClient:
         download_concurrency: int = 10,
     ) -> bool:
         """大于 chunked_threshold 时分块并发下载. 失败返回 False."""
-        file_size = await self.get_filesize(url, use_proxy=use_proxy)
+        file_size, _ = await self._probe(url, use_proxy=use_proxy)
 
         if file_size and file_size > chunked_threshold:
             return await self._download_chunked(

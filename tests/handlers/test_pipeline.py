@@ -80,13 +80,14 @@ async def test_full_pipeline_with_post_processing(repo: Repository, fake_factory
 
     pipeline_config = HotSettings(scraping=ScrapingConfig(field_priority={}))
 
-    async def _fake_download(url: str, dest: Path) -> bool:
+    async def _fake_download(url: str, dest: Path, **_: object) -> bool:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(b"fake image data")
         return True
 
     mock_web_client = AsyncMock()
     mock_web_client.download = AsyncMock(side_effect=_fake_download)
+    mock_web_client.resolve_final_url = AsyncMock(side_effect=lambda url, **_: url)
 
     scrape = ScrapeHandler(
         repo=repo,
@@ -138,13 +139,14 @@ async def test_pipeline_copy_mode_keeps_source(repo: Repository, fake_factory, r
     assert lib.id is not None
     media = await repo.create_media_file(library_id=lib.id, path=str(src_file))
 
-    async def _fake_download(url: str, dest: Path) -> bool:
+    async def _fake_download(url: str, dest: Path, **_: object) -> bool:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(b"fake image data")
         return True
 
     mock_web_client = AsyncMock()
     mock_web_client.download = AsyncMock(side_effect=_fake_download)
+    mock_web_client.resolve_final_url = AsyncMock(side_effect=lambda url, **_: url)
 
     scrape = ScrapeHandler(
         repo=repo,
@@ -203,7 +205,7 @@ async def test_dead_poster_url_reordered_before_persist(repo: Repository, fake_f
 
     pipeline_config = HotSettings(scraping=ScrapingConfig(field_priority={}))
 
-    async def _fake_download(url: str, dest: Path) -> bool:
+    async def _fake_download(url: str, dest: Path, **_: object) -> bool:
         if url == "https://img.example.com/p1.jpg":
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -212,6 +214,7 @@ async def test_dead_poster_url_reordered_before_persist(repo: Repository, fake_f
 
     mock_web_client = AsyncMock()
     mock_web_client.download = AsyncMock(side_effect=_fake_download)
+    mock_web_client.resolve_final_url = AsyncMock(side_effect=lambda url, **_: url)
 
     handler = ScrapeHandler(
         repo=repo,

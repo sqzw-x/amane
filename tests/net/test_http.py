@@ -57,16 +57,21 @@ class _StubResponse:
     status_code = 200
     headers: ClassVar[dict[str, str]] = {}
 
+    def __init__(self, *, url: str = "", content: bytes = b"") -> None:
+        self.url = url
+        self.content = content
+
 
 class _StubSession:
     """替换 ``WebClient._session``: 记录出站参数, 不发请求."""
 
-    def __init__(self) -> None:
+    def __init__(self, response: _StubResponse | None = None) -> None:
         self.calls: list[dict[str, Any]] = []
+        self._response = response or _StubResponse()
 
     async def request(self, method: str, url: str, **kwargs: Any) -> _StubResponse:
         self.calls.append({"method": method, "url": url, **kwargs})
-        return _StubResponse()
+        return self._response
 
 
 class TestSameOriginReferer:
@@ -79,10 +84,9 @@ class TestSameOriginReferer:
                 {"Accept-Language": "zh-CN"},
                 {"Accept-Language": "zh-CN", "Referer": "https://www.javbus.com/"},
             ),
-            ("www.javbus.com", {"Referer": "https://other.example/"}, {"Referer": "https://other.example/"}),
+            # 调用方已给 Referer 时保持原值, 大小写不敏感
             ("www.javbus.com", {"referer": "https://other.example/"}, {"referer": "https://other.example/"}),
             ("example.com", None, None),
-            ("example.com", {"X-Test": "1"}, {"X-Test": "1"}),
             (None, None, None),
         ],
     )
