@@ -136,6 +136,20 @@ def _failure_body(resp: Response | None) -> bytes | None:
 _FAILURE_BODY_LIMIT = 64 * 1024
 
 
+def _with_same_origin_referer(
+    host: str | None, headers: dict[str, str] | None, hosts: frozenset[str]
+) -> dict[str, str] | None:
+    """host 命中 ``hosts`` 且调用方未给出 Referer 时补同源 Referer; 已有则保持原值.
+
+    站点按 Referer 前缀匹配, 结尾斜杠属于匹配条件, 不可省略. 不修改传入的字典.
+    """
+    if host is None or host not in hosts:
+        return headers
+    if headers is not None and any(k.lower() == "referer" for k in headers):
+        return headers
+    return {**(headers or {}), "Referer": f"https://{host}/"}
+
+
 class WebClient:
     def __init__(
         self,
@@ -145,11 +159,13 @@ class WebClient:
         max_retries: int = 3,
         max_clients: int = 50,
         limiters: RateLimiters,
+        same_origin_referer_hosts: frozenset[str] = frozenset(),
     ):
         self._proxy = proxy
         self._timeout = timeout
         self._max_retries = max_retries
         self._limiters = limiters
+        self._same_origin_referer_hosts = same_origin_referer_hosts
         self._session = AsyncSession(
             max_clients=max_clients,
             verify=False,
@@ -174,6 +190,7 @@ class WebClient:
     ) -> Response:
         """``ok_statuses`` 额外视为成功 (例如 RSS 304), 不重试、不当失败. 重试用尽后抛 ``RequestError``."""
         host = httpx.URL(url).host
+        headers = _with_same_origin_referer(host, headers, self._same_origin_referer_hosts)
         await self._limiters.get(host).acquire()
 
         t0 = time.monotonic()

@@ -18,6 +18,7 @@ class JavBusCrawler(Crawler):
             base_url="https://www.javbus.com",
             cookies={"dv": "1"},
             headers={"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"},
+            same_origin_referer=True,
         )
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:

@@ -29,7 +29,7 @@ iqqtv 作为有碼中文标题源时: 加入 **censored** 路由, 再在 `field_
 
 **javdb.com** — 导航分有碼 / 無碼 / 歐美 / FC2 / 動漫, **没有国产分区** (个别国产厂当日本片商收录, 热搜有「麻豆」, 不是独立目录). 搜索带 `locale=zh`; 几乎所有类型的默认成员; 默认 `use_proxy=True`, 部分网络会命中版权地域拦截页. 它是独立层而非 FANZA 的镜像: 中文 `current-title`, 隐藏 `origin-title` 来自零售目录 (爬虫不取); 社区评分非 FANZA 店评; 封面在 `jdbstatic.com` (通常重编码); 片商名跟官网英文商标. **不解析 plot.**
 
-**javbus.com** — 有碼首页、無碼 `/uncensored` (日期番号风格); 有碼首页会混素人号. 搜索回退带 `parent=ce`, 无碼主要靠 `/{number}` 直达. 有碼详情 `extrafanart` 热链 `pics.dmm.co.jp`, 发行日与 DMM 配信日相同, 片商用 DMM 日文名. **不解析 plot**; 无碼是另一套目录. 欧美入口指向 `javbus.org`, 该域正文可以是字面 `404`, 关公告后没有影片网格, `javbus.hair` 证书无效 — **欧美目录不可用**, 不允许放入欧美默认路由.
+**javbus.com** — 有碼首页、無碼 `/uncensored` (日期番号风格); 有碼首页会混素人号. 搜索回退带 `parent=ce`, 无碼主要靠 `/{number}` 直达. 有碼详情 `extrafanart` 热链 `pics.dmm.co.jp`, 发行日与 DMM 配信日相同, 片商用 DMM 日文名. 图片 (`/pics/`) 校验同源 Referer (见 [crawlers.md](crawlers.md)). **不解析 plot**; 无碼是另一套目录. 欧美入口指向 `javbus.org`, 该域正文可以是字面 `404`, 关公告后没有影片网格, `javbus.hair` 证书无效 — **欧美目录不可用**, 不允许放入欧美默认路由.
 
 **freejavbt.com** — 显式分有碼 / 無碼 / 歐美 / FC2, 首页还有「國產」「成人動畫」. 覆盖最宽的 BT 向索引, 元数据质量一般, 适合垫后.
 

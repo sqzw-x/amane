@@ -6,10 +6,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import httpx2 as httpx
 import structlog
 
 from ..config import R18Config
 from ..crawlers import actor_registry, registry
+from ..crawlers.base import CrawlerProfile
 from ..crawlers.factory import CrawlerFactory
 from ..crawlers.http import HttpClient
 from ..crawlers.r18dev import R18Database
@@ -70,15 +72,29 @@ def build_network_stack(
 ) -> NetworkStack:
     """bootstrap 与热重载共用. r18_db 为会话级只读引擎, 热重载时复用同一实例, 不随配置重建."""
     site_urls: dict[str, list[str]] = {}
+    referer_hosts: set[str] = set()
+    site_config = hot.scraping.site_config
+
+    def _register_site(site: str, profile: CrawlerProfile) -> None:
+        urls = [*profile.urls, profile.base_url]
+        site_urls[site] = urls
+        if not profile.same_origin_referer:
+            return
+        # 用户配置的镜像域同样纳入, 否则图片仍按裸请求发出.
+        configured = site_config.get(site)
+        for raw in (configured.base_url if configured else None, *urls):
+            host = httpx.URL(raw).host if raw else None
+            if host is not None:
+                referer_hosts.add(host)
+
     for site in registry.sites():
         crawler_cls = registry.get(site)
         if crawler_cls:
-            site_urls[str(site)] = [*crawler_cls.profile().urls, crawler_cls.profile().base_url]
+            _register_site(site, crawler_cls.profile())
     for name in actor_registry.sites():
         crawler_cls = actor_registry.get(name)
         if crawler_cls:
-            site = SiteName(name)
-            site_urls[str(site)] = [*crawler_cls.profile().urls, crawler_cls.profile().base_url]
+            _register_site(str(SiteName(name)), crawler_cls.profile())
 
     plugin_rates: dict[str, float | None] = {}
     if plugin_manager is not None:
@@ -100,6 +116,7 @@ def build_network_stack(
         max_retries=hot.network.max_retries,
         max_clients=hot.network.max_clients,
         limiters=limiters,
+        same_origin_referer_hosts=frozenset(referer_hosts),
     )
     http_client = HttpClient(web=web_client, browser=None)
     factory = CrawlerFactory(

@@ -28,6 +28,8 @@ class CrawlerProfile:
     urls: list[str] = field(default_factory=list)
     cookies: dict[str, str] = field(default_factory=dict)
     headers: dict[str, str] = field(default_factory=dict)
+    # 该站静态资源校验同源 Referer 时置 True: 下载图片按 host 注入 ``https://{host}/``.
+    same_origin_referer: bool = False
     # 空则影片爬虫视为 film_metadata; 演员爬虫必须显式声明 profile / image.
     capabilities: frozenset[SourceCapability] = field(default_factory=frozenset)
     # True 时聚合展开 (site, lang) 节点.
