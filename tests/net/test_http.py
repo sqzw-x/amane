@@ -1,9 +1,11 @@
-"""HTTP 限速器缓存 / 覆盖; RequestError 状态分类."""
+"""HTTP 限速器缓存 / 覆盖; RequestError 状态分类; 同源 Referer 注入."""
+
+from typing import Any, ClassVar
 
 import pytest
 
 from amane.net.errors import FailureKind, FailureReason, RequestError, RequestFailure
-from amane.net.http import RateLimiters
+from amane.net.http import RateLimiters, WebClient, _with_same_origin_referer
 
 
 class TestRequestError:
@@ -46,3 +48,61 @@ class TestRateLimiters:
         rl = RateLimiters.from_config({"api.example.com": 20.0}, {}, {}, default_rate=5)
         assert rl.get("api.example.com").time_period == pytest.approx(1 / 20.0)
         assert rl.get("other.com").time_period == pytest.approx(1 / 5)
+
+
+_JAVBUS = frozenset({"www.javbus.com"})
+
+
+class _StubResponse:
+    status_code = 200
+    headers: ClassVar[dict[str, str]] = {}
+
+
+class _StubSession:
+    """替换 ``WebClient._session``: 记录出站参数, 不发请求."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def request(self, method: str, url: str, **kwargs: Any) -> _StubResponse:
+        self.calls.append({"method": method, "url": url, **kwargs})
+        return _StubResponse()
+
+
+class TestSameOriginReferer:
+    @pytest.mark.parametrize(
+        ("host", "headers", "expected"),
+        [
+            ("www.javbus.com", None, {"Referer": "https://www.javbus.com/"}),
+            (
+                "www.javbus.com",
+                {"Accept-Language": "zh-CN"},
+                {"Accept-Language": "zh-CN", "Referer": "https://www.javbus.com/"},
+            ),
+            ("www.javbus.com", {"Referer": "https://other.example/"}, {"Referer": "https://other.example/"}),
+            ("www.javbus.com", {"referer": "https://other.example/"}, {"referer": "https://other.example/"}),
+            ("example.com", None, None),
+            ("example.com", {"X-Test": "1"}, {"X-Test": "1"}),
+            (None, None, None),
+        ],
+    )
+    def test_injects_only_on_declared_host_without_referer(
+        self, host: str | None, headers: dict[str, str] | None, expected: dict[str, str] | None
+    ):
+        assert _with_same_origin_referer(host, headers, _JAVBUS) == expected
+
+    def test_keeps_caller_headers_intact(self):
+        headers = {"Accept-Language": "zh-CN"}
+        result = _with_same_origin_referer("www.javbus.com", headers, _JAVBUS)
+        assert headers == {"Accept-Language": "zh-CN"}
+        assert result is not headers
+
+    @pytest.mark.asyncio
+    async def test_request_applies_injection(self, monkeypatch):
+        client = WebClient(limiters=RateLimiters(default_rate=100), same_origin_referer_hosts=_JAVBUS)
+        session = _StubSession()
+        monkeypatch.setattr(client, "_session", session)
+
+        await client.request("GET", "https://www.javbus.com/pics/cover/1.jpg")
+
+        assert session.calls[0]["headers"] == {"Referer": "https://www.javbus.com/"}
