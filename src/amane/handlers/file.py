@@ -13,7 +13,7 @@ from ..db.repos.media import file_phase_of
 from ..enums import ActorGender, DownloadableResource, LinkMode
 from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
 from ..library.rules import is_in_trash
-from ..media import ResourceStore, apply_cover_watermarks_from_summary, crop_poster
+from ..media import ResourceStore, apply_cover_watermarks_from_summary, crop_poster, normalize_poster_aspect
 from ..media import write_nfo as write_nfo_file
 from ..media.pipeline import RESOURCE_URL_PREFIX
 from ..net.http import WebClient
@@ -307,6 +307,13 @@ def _place_library_images(
                 paths.thumb,
                 paths.poster,
                 poster_ratio=config.scraping.poster_ratio,
+                jpeg_quality=config.scraping.jpeg_quality,
+            )
+        # 必须在叠角标之前归一化, 否则裁剪会切掉刚贴上的角标.
+        if config is not None and paths.poster.exists():
+            normalize_poster_aspect(
+                paths.poster,
+                target_ratio=config.scraping.poster_ratio,
                 jpeg_quality=config.scraping.jpeg_quality,
             )
 

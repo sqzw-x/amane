@@ -12,6 +12,7 @@ from amane.media import (
     crop_box,
     crop_poster,
     needs_upscale,
+    normalize_poster_aspect,
     probe_size,
     should_crop_poster,
     validate_crop_box,
@@ -420,3 +421,49 @@ class TestCoverWatermarksFromSummary:
     def test_missing_cover_returns_false(self, tmp_path: Path):
         summary = FilePhaseSummary(has_subtitle=True)
         assert apply_cover_watermarks_from_summary(tmp_path / "missing.jpg", summary) is False
+
+
+class TestNormalizePosterAspect:
+    """Emby / Jellyfin 按固定宽高比渲染海报, 偏宽的图会被客户端裁掉两侧."""
+
+    @pytest.mark.parametrize(
+        ("size", "target", "changed", "expected_size", "desc"),
+        [
+            ((1032, 1468), 2 / 3, True, (979, 1468), "偏宽 → 居中裁到 2:3"),
+            ((800, 538), 2 / 3, True, (359, 538), "横图按高度裁出竖版"),
+            ((979, 1468), 2 / 3, False, (979, 1468), "已是目标比 → 不改写"),
+            ((984, 1468), 2 / 3, False, (984, 1468), "差异在容差内 → 不改写"),
+            ((600, 1000), 2 / 3, False, (600, 1000), "比目标窄 → 无法裁剪, 保持原样"),
+            ((1032, 1468), 0.0, False, (1032, 1468), "非法目标比 0 → 拒绝"),
+            ((1032, 1468), -0.5, False, (1032, 1468), "非法目标比负数 → 拒绝"),
+        ],
+    )
+    def test_normalize(self, tmp_path: Path, size, target, changed, expected_size, desc):
+        dest = tmp_path / "poster.jpg"
+        Image.new("RGB", size, "blue").save(dest)
+        assert normalize_poster_aspect(dest, target_ratio=target) is changed, desc
+        with Image.open(dest) as img:
+            assert img.size == expected_size, desc
+
+    def test_missing_file_returns_false(self, tmp_path: Path):
+        assert normalize_poster_aspect(tmp_path / "missing.jpg", target_ratio=2 / 3) is False
+
+    def test_crop_is_centered(self, tmp_path: Path):
+        """左右等量裁剪: 竖条标记应留在中央."""
+        dest = tmp_path / "poster.jpg"
+        img = Image.new("RGB", (1000, 1000), "blue")
+        # 标记须足够宽, 1px 竖线经 JPEG 色度子采样后不可辨.
+        for x in range(490, 510):
+            for y in range(1000):
+                img.putpixel((x, y), (255, 0, 0))
+        img.save(dest, quality=100)
+
+        assert normalize_poster_aspect(dest, target_ratio=0.5, jpeg_quality=100) is True
+        with Image.open(dest) as out:
+            assert out.size == (500, 1000)
+            px = out.convert("RGB").load()
+            assert px is not None
+            reds = [x for x in range(out.width) if px[x, 500][0] > 150]
+            assert reds, "标记列应仍在图内"
+            # 原标记中心 x=499.5, 左右各裁 250 后应落在 249.5.
+            assert abs(sum(reds) / len(reds) - 249.5) <= 2, "标记应位于裁剪后的中央"

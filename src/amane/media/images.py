@@ -131,6 +131,43 @@ def crop_box(
         return False
 
 
+# 与目标比差异小于该值时不改写, 避免无谓的再编码.
+_ASPECT_TOLERANCE = 0.005
+
+
+def normalize_poster_aspect(
+    path: Path,
+    *,
+    target_ratio: float = _DEFAULT_POSTER_RATIO,
+    jpeg_quality: int = _DEFAULT_JPEG_QUALITY,
+) -> bool:
+    """把库路径海报居中裁剪到 target_ratio; 只裁两侧, 不补边, 不放大.
+
+    Emby / Jellyfin 以固定宽高比渲染海报, 偏宽的图由客户端裁掉两侧, 叠在上角的
+    角标会连同边距一起被切除. 落盘时归一化可使客户端无需裁剪.
+    比目标窄的图无法通过裁剪达到目标比, 保持原样.
+    """
+    if target_ratio <= 0:
+        return False
+    try:
+        with Image.open(path) as src:
+            img = src.convert("RGB")
+        width, height = img.size
+        if width <= 0 or height <= 0:
+            return False
+        if width / height - target_ratio <= _ASPECT_TOLERANCE:
+            return False
+        new_width = max(1, min(width, round(height * target_ratio)))
+        if new_width >= width:
+            return False
+        left = (width - new_width) // 2
+        img.crop((left, 0, left + new_width, height)).save(path, quality=jpeg_quality)
+        return True
+    except Exception as e:
+        logger.warning("poster aspect normalize failed", path=str(path), error=str(e))
+        return False
+
+
 # 按图高缩放, 海报与封面同高时一样大.
 _DEFAULT_SCALE = 0.08
 _SCALE_MIN = 0.03
