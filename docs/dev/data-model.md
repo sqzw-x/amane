@@ -27,7 +27,9 @@
 
 文件相位 (`content_type` / `mosaic` / `has_subtitle` / `definition`) 是 **path 的投影**, 只落在 `MediaFile`: 创建与修改 path 时用同一次 `parse_file_info` 回填, 不纳入对外 PATCH; `cd` 只用于 ORGANIZE 分集配对, 不落库. `content_type` 是番号 / 目录的内容类型 (决定刮削路由), `mosaic` 是这份文件的马赛克标记 (有码 / 无码 / 破解 / 流出); 词表未命中时按内容类型兜底 (有码 → `censored`, 无码 → `uncensored`, 国产 / FC2 / 欧美保持空), 已有的破解 / 流出 / 无码标记不覆盖. 无码展示与筛选是 `mosaic=uncensored OR content_type=uncensored`. `ContentType.chinese` 是国产, 不是中字 — 中字只依据 `has_subtitle`. Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase`): 任一挂载文件具备即亮, `definition` 取最高档; 没有挂载文件的 Metadata 不命中这些筛选. `{mosaic?}` 输出判定后的 mosaic, `{content_type}` 输出内容类型.
 
-ORGANIZE 复制到库路径的 poster / thumb 在 `watermark.enabled` 时按**源文件** FileInfo 叠 PNG 角标, 不修改 Resource 原图与 fanart; 尺寸与角位见 [config.md](config.md) `watermark`.
+ORGANIZE 复制到库路径的 poster / thumb 在 `watermark.enabled` 时按**该 Metadata 下同库全部文件的聚合相位** (`summarize_file_phases`) 叠 PNG 角标 (不修改 Resource 原图, 不修改 fanart). 库路径封面按 Metadata 共用一份, 多版本逐个落盘时每个文件都会重新复制一次封面: 禁止按单文件 FileInfo 叠加, 否则只有最后落盘那个文件的角标留存. 高度 = 图高 × `watermark.scale`; 各类别贴 `watermark.corners` 指定的角, 同角向内叠. 包内置 `subtitle` / `uncensored` / `cracked` / `leaked` / `4k` / `8k`; `{data_dir}/watermarks/{stem}.png` 同名覆盖, 损坏则回退内置, 缺文件跳过该枚 (清晰度 stem = `definition.casefold()`, 用户可自行放置 `1080p.png`). 列始终跟当前 path: 模板若写出标记, 二次整理仍能反推.
+
+`Metadata.number` 的唯一约束与 `get_metadata_by_number` / `upsert_metadata` 查重均忽略大小写; 命中已有行时不改写库内 `number` 字符串 (保留首次写入的大小写). 新建时按调用方传入原样落库. 调用方那份字符串是否已经过路径解析重写, 见 [crawlers.md](crawlers.md) 番号入参.
 
 ## Library 归属
 

@@ -9,10 +9,11 @@ import structlog
 from ..config import HotSettings, WatermarkConfig
 from ..db.models import Library, MediaFile
 from ..db.repo_types import MediaFileUpdates
+from ..db.repos.media import file_phase_of
 from ..enums import ActorGender, DownloadableResource, LinkMode
 from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
 from ..library.rules import is_in_trash
-from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
+from ..media import ResourceStore, apply_cover_watermarks_from_summary, crop_poster
 from ..media import write_nfo as write_nfo_file
 from ..media.pipeline import RESOURCE_URL_PREFIX
 from ..net.http import WebClient
@@ -26,7 +27,13 @@ from ..organize import (
     resolve_paths,
 )
 from ..organize.link import create_video_link
-from ..parsing import FileInfo, parse_file_info
+from ..parsing import (
+    FileInfo,
+    FilePhaseSummary,
+    file_phase_of_info,
+    parse_file_info,
+    summarize_file_phases,
+)
 from ..utils.path import existing_disk_path as existing_disk_path_sync
 from ..utils.path import is_descendant, nfc_path, path_is_under
 from ..utils.threads import existing_disk_path, in_thread, path_is_dir
@@ -64,6 +71,7 @@ async def execute_file_operations(
     config: HotSettings | None = None,
     library: Library | None = None,
     file_info: FileInfo | None = None,
+    cover_phase: FilePhaseSummary | None = None,
     safe_dirs: Sequence[Path] | None = (),
     watermark_dir: Path | None = None,
     actor_genders: dict[str, ActorGender] | None = None,
@@ -74,6 +82,8 @@ async def execute_file_operations(
         return FileOperationsResult(success=False, error=f"Source file not found: {media_file.path}")
 
     info = file_info if file_info is not None else parse_file_info(source_path)
+    # 调用方未提供聚合相位时退化为当前文件, 保持既有单文件行为.
+    cover = cover_phase if cover_phase is not None else summarize_file_phases([file_phase_of_info(info)])
 
     # 下载图片; 水印打在库路径副本上, 不能修改 Resource 原图.
     if web_client and download_images:
@@ -86,7 +96,7 @@ async def execute_file_operations(
             paths,
             config,
             kinds,
-            file_info=info,
+            cover_phase=cover,
             watermark_dir=watermark_dir,
         )
 
@@ -189,6 +199,10 @@ async def apply_file_operations(
         safe_dirs=safe_dirs,
         actor_genders=actor_genders,
     )
+    # 库路径封面按 Metadata 共用一份, 角标须覆盖该 Metadata 下同库的全部文件.
+    siblings = await repo.get_media_by_metadata_id(metadata.id) if metadata.id is not None else []
+    phases = [file_phase_of(m) for m in siblings if m.library_id == media_file.library_id]
+
     return await execute_file_operations(
         media_file=media_file,
         metadata=metadata,
@@ -202,6 +216,7 @@ async def apply_file_operations(
         config=config,
         library=library,
         file_info=file_info,
+        cover_phase=summarize_file_phases(phases) if phases else None,
         safe_dirs=safe_dirs,
         watermark_dir=watermark_dir,
         actor_genders=actor_genders,
@@ -271,7 +286,7 @@ def _place_library_images(
     extrafanart: Sequence[Path],
     kinds: set[DownloadableResource],
     config: HotSettings | None,
-    file_info: FileInfo | None,
+    cover_phase: FilePhaseSummary | None,
     watermark_dir: Path | None,
 ) -> None:
     # 复制封面 / 海报 / 预告片 / extrafanart 到库路径.
@@ -306,21 +321,21 @@ def _place_library_images(
 
     # 叠加水印 (thumb / poster).
     wm = config.watermark if config is not None else WatermarkConfig()
-    if wm.enabled and file_info is not None:
+    if wm.enabled and cover_phase is not None:
         jpeg_quality = config.scraping.jpeg_quality if config is not None else 95
         if paths.thumb.exists():
-            apply_cover_watermarks_from_info(
+            apply_cover_watermarks_from_summary(
                 paths.thumb,
-                file_info,
+                cover_phase,
                 jpeg_quality=jpeg_quality,
                 watermark_dir=watermark_dir,
                 scale=wm.scale,
                 corners=wm.corners,
             )
         if paths.poster.exists():
-            apply_cover_watermarks_from_info(
+            apply_cover_watermarks_from_summary(
                 paths.poster,
-                file_info,
+                cover_phase,
                 jpeg_quality=jpeg_quality,
                 watermark_dir=watermark_dir,
                 scale=wm.scale,
@@ -335,7 +350,7 @@ async def _download_images_via_store(
     paths: ResolvedPaths,
     config: HotSettings | None,
     kinds: set[DownloadableResource],
-    file_info: FileInfo | None = None,
+    cover_phase: FilePhaseSummary | None = None,
     watermark_dir: Path | None = None,
 ) -> None:
     """优先用 Resource 已有文件; 缺失则现场 acquire."""
@@ -369,7 +384,7 @@ async def _download_images_via_store(
         extrafanart=extrafanart,
         kinds=kinds,
         config=config,
-        file_info=file_info,
+        cover_phase=cover_phase,
         watermark_dir=watermark_dir,
     )
 

@@ -8,6 +8,7 @@ from PIL import Image
 from amane.enums import WatermarkCorner, WatermarkKind
 from amane.media import (
     apply_cover_watermarks,
+    apply_cover_watermarks_from_summary,
     crop_box,
     crop_poster,
     needs_upscale,
@@ -15,7 +16,8 @@ from amane.media import (
     should_crop_poster,
     validate_crop_box,
 )
-from amane.parsing import Mosaic
+from amane.media.images import _stamp_stems
+from amane.parsing import FilePhaseSummary, Mosaic
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -161,7 +163,7 @@ class TestCoverWatermarks:
         dest = tmp_path / "cover.jpg"
         Image.new("RGB", (200, 280), "blue").save(dest)
         before = dest.read_bytes()
-        assert apply_cover_watermarks(dest, has_subtitle=False, uncensored=False, mosaic=None, definition=None) is False
+        assert apply_cover_watermarks(dest, has_subtitle=False, uncensored=False, mosaics=(), definition=None) is False
         assert dest.read_bytes() == before
 
     def test_paints_when_marked(self, tmp_path: Path):
@@ -173,7 +175,7 @@ class TestCoverWatermarks:
                 dest,
                 has_subtitle=True,
                 uncensored=True,
-                mosaic=Mosaic.CRACKED,
+                mosaics=(Mosaic.CRACKED,),
                 definition="4K",
             )
             is True
@@ -187,7 +189,7 @@ class TestCoverWatermarks:
         Image.new("RGB", (200, 280), "blue").save(dest)
         before = dest.read_bytes()
         assert (
-            apply_cover_watermarks(dest, has_subtitle=False, uncensored=False, mosaic=None, definition="1080p") is False
+            apply_cover_watermarks(dest, has_subtitle=False, uncensored=False, mosaics=(), definition="1080p") is False
         )
         assert dest.read_bytes() == before
 
@@ -198,7 +200,7 @@ class TestCoverWatermarks:
         user_dir.mkdir()
         Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(user_dir / "subtitle.png")
         assert apply_cover_watermarks(
-            dest, has_subtitle=True, uncensored=False, mosaic=None, definition=None, watermark_dir=user_dir
+            dest, has_subtitle=True, uncensored=False, mosaics=(), definition=None, watermark_dir=user_dir
         )
         with Image.open(dest) as img:
             pixel = img.convert("RGB").getpixel((6, 6))
@@ -213,14 +215,14 @@ class TestCoverWatermarks:
         user_dir.mkdir()
         (user_dir / "subtitle.png").write_bytes(b"not a png")
         assert apply_cover_watermarks(
-            dest, has_subtitle=True, uncensored=False, mosaic=None, definition=None, watermark_dir=user_dir
+            dest, has_subtitle=True, uncensored=False, mosaics=(), definition=None, watermark_dir=user_dir
         )
         assert dest.read_bytes() != before
 
     def test_missing_cover_returns_false(self, tmp_path: Path):
         assert (
             apply_cover_watermarks(
-                tmp_path / "missing.jpg", has_subtitle=True, uncensored=False, mosaic=None, definition=None
+                tmp_path / "missing.jpg", has_subtitle=True, uncensored=False, mosaics=(), definition=None
             )
             is False
         )
@@ -238,7 +240,7 @@ class TestCoverWatermarks:
                 dest,
                 has_subtitle=True,
                 uncensored=False,
-                mosaic=None,
+                mosaics=(),
                 definition=None,
                 watermark_dir=user_dir,
                 scale=scale,
@@ -267,7 +269,7 @@ class TestCoverWatermarks:
                 dest,
                 has_subtitle=True,
                 uncensored=False,
-                mosaic=None,
+                mosaics=(),
                 definition=None,
                 watermark_dir=user_dir,
                 scale=0.2,
@@ -296,7 +298,7 @@ class TestCoverWatermarks:
             dest,
             has_subtitle=True,
             uncensored=False,
-            mosaic=None,
+            mosaics=(),
             definition=None,
             watermark_dir=user_dir,
             scale=0.2,
@@ -320,7 +322,7 @@ class TestCoverWatermarks:
             dest,
             has_subtitle=True,
             uncensored=False,
-            mosaic=None,
+            mosaics=(),
             definition=None,
             watermark_dir=user_dir,
             scale=0.2,
@@ -333,3 +335,88 @@ class TestCoverWatermarks:
             assert isinstance(top, tuple) and isinstance(bottom, tuple)
             assert top[2] > 180 and top[0] < 80
             assert bottom[0] > 180 and bottom[2] < 80
+
+
+class TestStampStems:
+    """mosaics 是同一 Metadata 下多个文件的聚合, 可同时含多个取值."""
+
+    @pytest.mark.parametrize(
+        ("has_subtitle", "uncensored", "mosaics", "definition", "expected", "desc"),
+        [
+            (False, False, (), None, [], "无任何相位"),
+            (True, False, (), None, ["subtitle"], "仅中字"),
+            (False, True, (), None, ["uncensored"], "仅无码"),
+            (False, False, (Mosaic.CRACKED,), None, ["cracked"], "仅破解"),
+            (False, False, (Mosaic.LEAKED,), None, ["leaked"], "仅流出"),
+            (
+                False,
+                False,
+                (Mosaic.CRACKED, Mosaic.LEAKED),
+                None,
+                ["cracked", "leaked"],
+                "破解与流出并存时各贴一枚",
+            ),
+            (
+                True,
+                True,
+                (Mosaic.UNCENSORED,),
+                "4K",
+                ["subtitle", "uncensored", "4k"],
+                "UNCENSORED 只经 uncensored 位反映, 不额外出主干",
+            ),
+            (True, False, (), "1080P", ["subtitle", "1080p"], "清晰度主干转小写"),
+        ],
+    )
+    def test_stems(self, has_subtitle, uncensored, mosaics, definition, expected, desc):
+        stems = _stamp_stems(has_subtitle=has_subtitle, uncensored=uncensored, mosaics=mosaics, definition=definition)
+        assert stems == expected, desc
+
+
+class TestCoverWatermarksFromSummary:
+    """库路径封面按 Metadata 共用一份, 角标取全部文件的聚合相位."""
+
+    def test_empty_summary_is_noop(self, tmp_path: Path):
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (200, 280), "blue").save(dest)
+        before = dest.read_bytes()
+        assert apply_cover_watermarks_from_summary(dest, FilePhaseSummary()) is False
+        assert dest.read_bytes() == before
+
+    def test_union_of_versions_paints_every_marker(self, tmp_path: Path):
+        """原版 + 中字 + 无码三个文件聚合后, 单张封面须同时带中字与无码角标."""
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (200, 280), "blue").save(dest)
+        summary = FilePhaseSummary(has_subtitle=True, uncensored=True, mosaics=(Mosaic.UNCENSORED,))
+        assert (
+            apply_cover_watermarks_from_summary(
+                dest,
+                summary,
+                corners={
+                    WatermarkKind.SUBTITLE: WatermarkCorner.TOP_LEFT,
+                    WatermarkKind.UNCENSORED: WatermarkCorner.TOP_RIGHT,
+                },
+            )
+            is True
+        )
+        with Image.open(dest) as img:
+            pixels = img.convert("RGB").load()
+            assert pixels is not None
+
+            def painted(x0: int, y0: int, x1: int, y1: int) -> int:
+                # JPEG 有损, 以阈值判定是否仍为底色; 角标为圆角图形, 只统计区域内数量.
+                n = 0
+                for x in range(x0, x1):
+                    for y in range(y0, y1):
+                        r, g, b = pixels[x, y]
+                        if not (r < 16 and g < 16 and b > 239):
+                            n += 1
+                return n
+
+            # 中字贴左上, 无码贴右上, 两侧都须着色; 下半幅保持底色.
+            assert painted(0, 0, 100, 40) > 0
+            assert painted(100, 0, 200, 40) > 0
+            assert painted(0, 240, 200, 280) == 0
+
+    def test_missing_cover_returns_false(self, tmp_path: Path):
+        summary = FilePhaseSummary(has_subtitle=True)
+        assert apply_cover_watermarks_from_summary(tmp_path / "missing.jpg", summary) is False

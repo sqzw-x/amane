@@ -1,13 +1,13 @@
 """海报裁剪与封面角标. 判定函数只依赖尺寸与阈值, 无 I/O."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import structlog
 from PIL import Image
 
 from ..enums import WatermarkCorner, WatermarkKind
-from ..parsing import FileInfo, Mosaic, file_shows_uncensored
+from ..parsing import FileInfo, FilePhaseSummary, Mosaic, file_shows_uncensored
 from .watermarks import load_stamp
 
 logger = structlog.get_logger()
@@ -148,18 +148,21 @@ def _stamp_stems(
     *,
     has_subtitle: bool,
     uncensored: bool,
-    mosaic: Mosaic | None,
+    mosaics: Sequence[Mosaic],
     definition: str | None,
 ) -> list[str]:
-    """相位 → PNG 主干, 顺序: 中字 / 无码 / 破解 / 流出 / 清晰度."""
+    """相位 → PNG 主干, 顺序: 中字 / 无码 / 破解 / 流出 / 清晰度.
+
+    mosaics 聚合同一 Metadata 的多个文件时可同时含破解与流出, 各贴一枚.
+    """
     stems: list[str] = []
     if has_subtitle:
         stems.append("subtitle")
     if uncensored:
         stems.append("uncensored")
-    if mosaic is Mosaic.CRACKED:
+    if Mosaic.CRACKED in mosaics:
         stems.append("cracked")
-    elif mosaic is Mosaic.LEAKED:
+    if Mosaic.LEAKED in mosaics:
         stems.append("leaked")
     if definition:
         stems.append(definition.casefold())
@@ -229,7 +232,7 @@ def apply_cover_watermarks(
     *,
     has_subtitle: bool,
     uncensored: bool,
-    mosaic: Mosaic | None,
+    mosaics: Sequence[Mosaic],
     definition: str | None,
     jpeg_quality: int = _DEFAULT_JPEG_QUALITY,
     watermark_dir: Path | None = None,
@@ -237,7 +240,7 @@ def apply_cover_watermarks(
     corners: Mapping[WatermarkKind, WatermarkCorner] | None = None,
 ) -> bool:
     """叠到库路径封面/海报. 无标记或无图则不动. 不修改 Resource 原图."""
-    stems = _stamp_stems(has_subtitle=has_subtitle, uncensored=uncensored, mosaic=mosaic, definition=definition)
+    stems = _stamp_stems(has_subtitle=has_subtitle, uncensored=uncensored, mosaics=mosaics, definition=definition)
     if not stems:
         return False
     try:
@@ -283,8 +286,34 @@ def apply_cover_watermarks_from_info(
         path,
         has_subtitle=info.has_subtitle,
         uncensored=file_shows_uncensored(info.mosaic, info.content_type),
-        mosaic=info.mosaic,
+        mosaics=() if info.mosaic is None else (info.mosaic,),
         definition=info.definition,
+        jpeg_quality=jpeg_quality,
+        watermark_dir=watermark_dir,
+        scale=scale,
+        corners=corners,
+    )
+
+
+def apply_cover_watermarks_from_summary(
+    path: Path,
+    summary: FilePhaseSummary,
+    *,
+    jpeg_quality: int = _DEFAULT_JPEG_QUALITY,
+    watermark_dir: Path | None = None,
+    scale: float = _DEFAULT_SCALE,
+    corners: Mapping[WatermarkKind, WatermarkCorner] | None = None,
+) -> bool:
+    """按同一 Metadata 下全部文件的聚合相位加水印.
+
+    库路径封面按 Metadata 共用一份, 单个文件的相位不足以描述它.
+    """
+    return apply_cover_watermarks(
+        path,
+        has_subtitle=summary.has_subtitle,
+        uncensored=summary.uncensored,
+        mosaics=summary.mosaics,
+        definition=summary.definition,
         jpeg_quality=jpeg_quality,
         watermark_dir=watermark_dir,
         scale=scale,

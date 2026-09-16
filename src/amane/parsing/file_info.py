@@ -295,14 +295,18 @@ def is_amateur(number: str) -> bool:
     return infer_content_type(number) == ContentType.AMATEUR
 
 
-def file_phase_from_path(path: str | Path) -> FilePhase:
-    info = parse_file_info(path)
+def file_phase_of_info(info: FileInfo) -> FilePhase:
+    """FileInfo 投影为持久化相位, 与 MediaFile 的相位列一一对应."""
     return FilePhase(
         content_type=info.content_type,
         mosaic=info.mosaic,
         has_subtitle=info.has_subtitle,
         definition=info.definition,
     )
+
+
+def file_phase_from_path(path: str | Path) -> FilePhase:
+    return file_phase_of_info(parse_file_info(path))
 
 
 def file_shows_uncensored(mosaic: Mosaic | None, content_type: ContentType) -> bool:

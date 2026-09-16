@@ -1,6 +1,7 @@
 from .images import (
     apply_cover_watermarks,
     apply_cover_watermarks_from_info,
+    apply_cover_watermarks_from_summary,
     crop_box,
     crop_poster,
     format_crop_box_args,
@@ -19,6 +20,7 @@ __all__ = [
     "ResourceStore",
     "apply_cover_watermarks",
     "apply_cover_watermarks_from_info",
+    "apply_cover_watermarks_from_summary",
     "crop_box",
     "crop_poster",
     "derived_locator",

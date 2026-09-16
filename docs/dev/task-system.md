@@ -94,8 +94,8 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 `execute_file_operations` 是落盘执行单元, 仅 ORGANIZE 经 `apply_file_operations` 调用. 不变量:
 
-- **整理 = 复制到库路径**: 优先用 Resource 已有文件, 缺失才现场 `acquire`; 复制哪些类型由 `Library.copy_resources` (或 payload 覆盖) 决定, 不由 `scraping.download_resources` 控制.
-- **封面角标**: `watermark.enabled` 时 poster / thumb 副本按源文件 FileInfo 叠 PNG; Resource 原图与 fanart 不修改.
+- **整理 = 复制到库路径**: 优先用 Resource 已有文件; 缺失才现场 `acquire`. 复制哪些类型由 Library.`copy_resources` (或 ORGANIZE payload 覆盖) 决定, 不由 `scraping.download_resources` 控制.
+- **封面角标**: `watermark.enabled` 时 poster / thumb 副本按该 Metadata 下同库全部文件的聚合相位叠 PNG; 大小 / 四角见 Hot `watermark`. Resource 原图与 fanart 不修改. 用户 PNG 覆盖见 [data-model.md](data-model.md).
 - **海报缺失**: 按 `scraping.crop_poster` 从已落盘 thumb 裁剪兜底.
 - **已就位**: 源与模板 dest 已是同一文件 (含硬链同一 inode) 时视为成功, 不追加 `(1)`; 碰撞改名只用于 dest 被另一文件占用.
 - **链接入口**: `link_template` 非空时视频就位后在库外写 strm 或软链接, 指向这次整理后的路径; `MediaFile.path` 仍是真实视频. 链接写入失败时, 目标路径仍在本库内则回写 path, 任务记失败以便重试补链接.
