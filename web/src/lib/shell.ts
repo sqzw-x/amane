@@ -15,12 +15,10 @@
 interface AmaneShellBridge {
   /** 打开壳的服务器设置页. */
   switchServer(): void;
-  /** 清除本机保存的登录态并回到服务器设置页; 服务器地址列表保留. */
-  signOut(): void;
   /** 壳的版本号, 与 APK 的 `versionName` 一致. */
   shellVersion(): string;
-  /** 系统 WebView 的版本号 (如 `126.0.6478.122`); 取不到时为空串. */
-  webViewVersion(): string;
+  /** 系统 WebView 的提供方与包版本, 厂商包版本; 取不到时为空串. */
+  webViewPackage(): string;
 }
 
 declare global {
@@ -30,16 +28,19 @@ declare global {
 }
 
 /**
- * 壳渲染所需的最低 WebView 主版本.
+ * 壳渲染所需的最低 WebView 主版本, 按 **Chromium** 计.
  *
- * 取实测最低值 (实测最低内核), 与 `vite.config.ts` 的
- * 运行期下限同一条线; 更低的内核达不到这个下限, 须由用户更新「Android System WebView」.
+ * 取实测最低值 (UA 里是 `Chrome/99.0.4844.88`), 与 `vite.config.ts`
+ * 的运行期下限同一条线; 更低的内核须由用户更新系统 WebView.
  */
-export const MIN_WEBVIEW_MAJOR = 99;
+export const MIN_CHROMIUM_MAJOR = 99;
 
-/** Android System WebView 的应用商店页, 供版本过低时跳转. */
-export const WEBVIEW_STORE_URL =
-  "https://play.google.com/store/apps/details?id=com.google.android.webview";
+/** 只在提供方是 Google 发行的包时给出商店链接: 厂商自带的 WebView 在 Play 上没有条目. */
+export function webViewStoreUrl(packageName: string): string | null {
+  const google =
+    packageName.startsWith("com.google.android.webview") || packageName === "com.android.chrome";
+  return google ? `https://play.google.com/store/apps/details?id=${packageName}` : null;
+}
 
 const SHELL_MARKER = /\bAmaneShell\/(\S+)/;
 const CHROME_VERSION = /\bChrome\/([0-9.]+)/;
@@ -47,42 +48,50 @@ const CHROME_VERSION = /\bChrome\/([0-9.]+)/;
 export interface ShellEnvironment {
   /** 壳的版本号, 取自 UA 标记. */
   version: string;
-  /** 系统 WebView 的版本串; 桥不可用时退回 UA 里的 Chrome 版本. */
-  webViewVersion: string;
-  /** 系统 WebView 的主版本; 解析不出时为 null. */
-  webViewMajor: number | null;
-  /** WebView 低于前端下限: 页面可能渲染残缺. */
-  webViewOutdated: boolean;
-  /** JS 桥是否可用: 服务器切换与退出登录依赖它. */
+  /** 系统 WebView 的提供方与包版本, 厂商包版本; 桥不可用时为空串. */
+  packageLabel: string;
+  /** 渲染内核 (Chromium) 版本, 取自 UA 的 `Chrome/<版本>`; 解析不出时为空串. */
+  chromiumVersion: string;
+  /** 渲染内核主版本; 解析不出时为 null. */
+  chromiumMajor: number | null;
+  /** 渲染内核低于前端下限: 页面可能渲染残缺. */
+  chromiumOutdated: boolean;
+  /** JS 桥是否可用: 服务器切换依赖它. */
   bridgeAvailable: boolean;
 }
 
-/** 壳内的运行环境; 不在壳内 (普通浏览器 / Docker) 时返回 null. */
+/**
+ * 壳内的运行环境; 不在壳内 (普通浏览器 / Docker) 时返回 null.
+ *
+ * 内核版本只认 UA: `WebViewCompat.getCurrentWebViewPackage` 的版本号是**厂商包版本** (
+ * 就是 `14`), 与 Chromium 版本没有对应关系, 拿它比较下限会误报.
+ */
 export function shellEnvironment(): ShellEnvironment | null {
   const marker = SHELL_MARKER.exec(navigator.userAgent);
   if (!marker) return null;
 
-  const bridge = window.amaneshell;
-  let bridged = "";
+  let packageLabel = "";
   let bridgeAvailable = false;
+  const bridge = window.amaneshell;
   if (bridge) {
-    // 读版本失败不应影响"是否在壳内"的判断, 因此单独兜住.
+    // 读包信息失败不应影响"是否在壳内"的判断, 因此单独兜住.
     try {
-      bridged = bridge.webViewVersion();
+      packageLabel = bridge.webViewPackage();
       bridgeAvailable = true;
     } catch {
       bridgeAvailable = false;
     }
   }
 
-  const webViewVersion = bridged || CHROME_VERSION.exec(navigator.userAgent)?.[1] || "";
-  const major = Number.parseInt(webViewVersion, 10);
-  const webViewMajor = Number.isNaN(major) ? null : major;
+  const chromiumVersion = CHROME_VERSION.exec(navigator.userAgent)?.[1] ?? "";
+  const major = Number.parseInt(chromiumVersion, 10);
+  const chromiumMajor = Number.isNaN(major) ? null : major;
   return {
     version: marker[1],
-    webViewVersion,
-    webViewMajor,
-    webViewOutdated: webViewMajor !== null && webViewMajor < MIN_WEBVIEW_MAJOR,
+    packageLabel,
+    chromiumVersion,
+    chromiumMajor,
+    chromiumOutdated: chromiumMajor !== null && chromiumMajor < MIN_CHROMIUM_MAJOR,
     bridgeAvailable,
   };
 }
@@ -91,12 +100,5 @@ export function shellEnvironment(): ShellEnvironment | null {
 export function shellSwitchServer(): boolean {
   if (!window.amaneshell) return false;
   window.amaneshell.switchServer();
-  return true;
-}
-
-/** 退出登录 (清本机登录态并回服务器页); 桥不可用时返回 false. */
-export function shellSignOut(): boolean {
-  if (!window.amaneshell) return false;
-  window.amaneshell.signOut();
   return true;
 }

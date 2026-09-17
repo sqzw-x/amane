@@ -337,7 +337,12 @@ export function AppShellLayout(): ReactNode {
       </AppShell.Header>
 
       <AppShell.Navbar p="sm">
-        <ScrollArea style={{ flex: 1 }} offsetScrollbars>
+        <ScrollArea
+          style={{ flex: 1 }}
+          offsetScrollbars
+          // 侧栏滚到尽头时不许把滚动传给底下的页面 (触屏上尤其明显).
+          viewportProps={{ style: { overscrollBehavior: "contain" } }}
+        >
           {NAV_GROUPS.map((group) => (
             <div key={group.key} style={{ marginBottom: 16 }}>
               <Text

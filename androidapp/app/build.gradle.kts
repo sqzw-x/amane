@@ -74,6 +74,8 @@ dependencies {
     implementation(libs.androidx.activity)
     // WebSettingsCompat.setAlgorithmicDarkeningAllowed: 让 prefers-color-scheme 跟随系统深色.
     implementation(libs.androidx.webkit)
+    // 下拉刷新: WebView 自身没有该手势.
+    implementation(libs.androidx.swiperefreshlayout)
 
     testImplementation(libs.junit)
 }

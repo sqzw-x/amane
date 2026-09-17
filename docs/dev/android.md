@@ -37,16 +37,17 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 
 ## 界面归属与桥
 
-壳不渲染工具栏: 页面自带头部, 壳只保留加载进度条与两个原生兜底界面. 服务器切换、退出登录与 WebView 版本提示都在**与「设置」平级的「客户端设置」页** (`web/src/routes/client.tsx` + `components/shell/client-settings.tsx`).
+壳不渲染工具栏: 页面自带头部, 壳只保留加载进度条与两个原生兜底界面. 服务器切换与运行期信息都在**与「设置」平级的「客户端设置」页** (`web/src/routes/client.tsx` + `components/shell/client-settings.tsx`). 不提供单独的「退出登录」: 切换服务器保留既有会话, 登录态失效由页面的 401 拦截送回服务器页, 单独的退出登录没有额外作用.
 
 是否在壳内由 **UA 标记**判定 (`WebSettings.userAgentString` 追加的 `AmaneShell/<version>`, 每个请求都带), 不是 JS 桥: 桥只承载动作, 缺了它页面仍列出入口并提示重装. 以桥作为判据会让入口在部分加载下整块消失 — 这正是"有时显示有时不显示"的来源. 桌面浏览器与 Docker 部署没有该标记, 入口不出现.
 
 | 桥方法 | 实现 |
 |---------|------|
 | `switchServer()` | 打开 `SetupActivity`, 与错误界面的「切换服务器」同一入口 |
-| `signOut()` | 清除 WebView 的 cookie 罐后打开 `SetupActivity`; 服务器地址列表保留 |
 | `shellVersion()` | APK 的 `versionName` |
-| `webViewVersion()` | `WebViewCompat.getCurrentWebViewPackage`, 取不到时为空串 |
+| `webViewPackage()` | `WebViewCompat.getCurrentWebViewPackage` 的包名与厂商版本 , 取不到时为空串 |
+
+**内核版本只认 UA 里的 `Chrome/<版本>`**: 厂商包版本 () 与 Chromium 版本没有对应关系, 拿它比较前端下限会误报. 商店链接也只在提供方是 Google 发行的包 (`com.google.android.webview` / `com.android.chrome`) 时给出 — 厂商自带的 WebView 在 Play 上没有条目.
 
 `addJavascriptInterface` 对 WebView 加载的文档全部可见, 因此站外链接必须交给系统浏览器, 桥也只做上表这几件事、不接受参数.
 
@@ -57,9 +58,11 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 | 场景 | 处理方式 |
 |------|---------|
 | 主文档加载失败 | 原生错误页 (重试 / 换服务器), 不显示 WebView 自带的错误页 — 局域网服务器关机会经常遇到 |
+| 页面脚本未挂载 | 启动看门狗给出同一个原生错误页, 见下 |
+| 下拉刷新 | `SwipeRefreshLayout` 包住 WebView (WebView 自身没有该手势), 松开即 `reload()`; 加载结束或失败时收起指示器, 全屏播放期间禁用 |
 | 下载 (`Content-Disposition: attachment`) | `DownloadManager`; 它在独立进程, 不共享 cookie 罐, 因此显式写入 `Cookie` 请求头 |
 | `window.open` | 附件交给下载监听器 (任务记录导出即此类), 真页面才另起 `PopupActivity` |
-| 全屏视频 | `onShowCustomView` 的自定义视图; 返回键先请求页面退出全屏, 超时未退出则按原生方式收起 |
+| 全屏视频 | `onShowCustomView` 的自定义视图, 同时把方向锁到传感器横屏 (竖屏全屏会把画面挤在中间); 返回键先请求页面退出全屏, 超时未退出则按原生方式收起, 退出时把方向交还系统 |
 | 按 Home 键 | 全屏视频转画中画 (`PictureInPictureParams` 的宽高取自自定义视图) |
 | 站外链接 | 交给系统浏览器, 不留在 WebView 内 |
 | 浅色/深色 | `WebSettingsCompat.setAlgorithmicDarkeningAllowed`, 让 `prefers-color-scheme` 跟随系统 |

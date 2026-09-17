@@ -44,7 +44,9 @@
 
 影片详情: 用户标签与刮削标签分栏; 加减菜单一次提交多名 — `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许一次挂多个. 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`.
 
-**播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择, 否则会按旧 `key` 探测. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 播放窗口常驻且尺寸由比例决定 — **状态变化不得改变外框尺寸**, 否则页面高度突变会把滚动位置夹回顶部. 播放器组件的其余约定集中在 `components/media/playback-player.tsx` 的文件注释里.
+**播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择, 否则会按旧 `key` 探测. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 播放窗口常驻且尺寸由比例决定 — **状态变化不得改变外框尺寸**, 否则页面高度突变会把滚动位置夹回顶部. **触屏**: 按住加速、横滑拖进度、双击播放 / 暂停由 `playback-player.tsx` 的 `useTouchGestures` 承担, 它只认 `pointerType === "touch"` — 鼠标的单击 / 双击 / 右键原样保留. 控制器声明 `touch-action: pan-y`, 纵向手势留给页面滚动 (音量与亮度留给后续, 需要系统权限). 长按在 Chromium 里会同时派发 `contextmenu`, 该钩子在捕获阶段拦掉那一次, 右键菜单因此不会被长按带出来. 手势提示 (倍速或目标时间) 与音量提示同层, 放在控制器之外以免随控件自动隐藏.
+
+播放器组件的其余约定集中在 `components/media/playback-player.tsx` 的文件注释里.
 
 ## 列表分页
 
@@ -61,6 +63,8 @@
 显隐用 `visibleFrom` / `hiddenFrom` (生成 `display: none !important`, `Table.Th` / `Table.Td` 同样支持); 必须更换控件形态时用 `useNarrowViewport()` (`hooks/use-narrow-viewport.ts`), 例如枚举超过 4 项回退 `Select`、行内操作收进 `Menu`. `Group` 的 `wrap` 与 `gap` 是 CSS 变量, 不接受响应式对象, 换行写 CSS Module 的 `@media (max-width: 47.99em)`.
 
 钉高页面必须让顶栏 chrome 可折叠: 筛选与批量操作在窄屏收进 `Menu` / `Drawer`, 滚动区给出下界, 外层容器纵向可滚动 — 否则表体被压成 0 高且分页被裁掉. 窄屏侧栏统一采用 `routes/feeds.index.tsx` 的 Drawer 范式: 内容侧 `hiddenFrom`, 抽屉与触发按钮取同一断点.
+
+导航侧栏的 `ScrollArea` 视口必须声明 `overscroll-behavior: contain`: 滚到尽头时不允许把滚动传给底下的页面 (触屏上尤其明显).
 
 HTML5 拖拽排序在触屏设备不可用, 有序列表必须在窄屏提供等价入口 (`DraggableChips` 的 `onMove` 渲染上移 / 下移按钮), 拖动只作 `md` 以上的增强.
 

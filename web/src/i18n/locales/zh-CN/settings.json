@@ -22,14 +22,12 @@
     "server": "服务器",
     "switchServer": "切换服务器",
     "switchServerHint": "选择另一个 Amane 服务器。页面会带着该服务器的会话重新加载。",
-    "session": "登录状态",
-    "signOut": "退出登录",
-    "signOutHint": "清除本机保存的登录态，已保存的服务器保留；之后回到服务器页重新登录。",
     "shellVersion": "外壳版本",
     "webView": "系统 WebView",
+    "chromium": "渲染内核",
     "webViewUnknown": "未知",
-    "webViewOutdated": "版本 {{version}} 低于前端需要的 {{min}}。请更新「Android System WebView」，否则布局与样式会残缺。",
-    "updateWebView": "更新 Android System WebView"
+    "chromiumOutdated": "渲染内核 Chromium {{major}} 低于前端需要的 {{min}}。请更新系统 WebView，否则布局与样式会残缺。",
+    "updateWebView": "打开 WebView 的商店页"
   },
   "fields": {
     "scraping": {

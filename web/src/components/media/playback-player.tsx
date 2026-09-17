@@ -461,6 +461,13 @@ function usePlayerKeys(
 const GESTURES_DISABLED_ATTRIBUTE = "gesturesdisabled";
 /** 双击的判定窗口 (毫秒). 单击的动作须等过整个窗口, 才能确定没有第二次点击. */
 const DOUBLE_CLICK_MS = 250;
+/** 触屏长按多久算"按住加速" (毫秒). 与键盘按住右键的延时同源. */
+const TOUCH_LONG_PRESS_MS = 450;
+/** 触屏手势的起手位移阈值 (像素): 超过它就不再是点按. */
+const TOUCH_MOVE_THRESHOLD_PX = 10;
+/** 横向滑过整个播放窗口对应的跳转秒数, 以及单次手势的跳转上限. */
+const TOUCH_SEEK_SPAN_SECONDS = 120;
+const TOUCH_SEEK_MAX_SECONDS = 90;
 
 /**
  * 全屏前后保持页面的滚动位置.
@@ -531,6 +538,164 @@ function useFullscreenScrollRestore(controllerRef: RefObject<MediaControllerElem
  */
 function focusPlayer(controllerRef: RefObject<MediaControllerElement | null>): void {
   controllerRef.current?.focus({ preventScroll: true });
+}
+
+/**
+ * 触屏手势: 按住加速, 横向滑动拖进度, 双击播放 / 暂停.
+ *
+ * 只认 `pointerType === "touch"`: 鼠标的单击 / 双击 / 右键保持原样. 纵向手势不消费 — 视频上的
+ * `touch-action: pan-y` 把它留给页面滚动, 音量与亮度留给后续 (需要系统权限).
+ *
+ * 长按在 Chromium 里同时会派发 `contextmenu`, 这里在捕获阶段拦掉那一次, 不打开右键菜单.
+ */
+function useTouchGestures(
+  controllerRef: RefObject<MediaControllerElement | null>,
+  videoRef: RefObject<HTMLVideoElement | null>,
+  seekable: boolean,
+  onSpeedHold: (holding: boolean) => void,
+  onSeekPreview: (seconds: number | null) => void,
+) {
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller == null) {
+      return;
+    }
+
+    let pointerId: number | null = null;
+    let startX = 0;
+    let startY = 0;
+    let baseSeconds = 0;
+    let deltaSeconds = 0;
+    let rateBeforeHold = 1;
+    let mode: "idle" | "seek" | "speed" = "idle";
+    let longPressTimer: number | null = null;
+    let lastTapAt = 0;
+    let lastPointerType = "mouse";
+
+    const clearLongPress = () => {
+      if (longPressTimer != null) {
+        window.clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      lastPointerType = event.pointerType;
+      if (event.pointerType !== "touch" || controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE)) {
+        return;
+      }
+      const video = videoRef.current;
+      if (video == null) {
+        return;
+      }
+      pointerId = event.pointerId;
+      startX = event.clientX;
+      startY = event.clientY;
+      baseSeconds = video.currentTime;
+      deltaSeconds = 0;
+      mode = "idle";
+      clearLongPress();
+      longPressTimer = window.setTimeout(() => {
+        longPressTimer = null;
+        const current = videoRef.current;
+        if (current == null) {
+          return;
+        }
+        mode = "speed";
+        rateBeforeHold = current.playbackRate;
+        current.playbackRate = HOLD_SEEK_RATE;
+        onSpeedHold(true);
+      }, TOUCH_LONG_PRESS_MS);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId || mode === "speed") {
+        return;
+      }
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (mode === "idle") {
+        if (Math.hypot(dx, dy) < TOUCH_MOVE_THRESHOLD_PX) {
+          return;
+        }
+        clearLongPress();
+        // 纵向手势交给页面滚动; 不可定位的流 (直播 / 上游不声明) 也不做进度.
+        if (!seekable || Math.abs(dx) <= Math.abs(dy)) {
+          pointerId = null;
+          return;
+        }
+        mode = "seek";
+      }
+      const span = Math.max(controller.clientWidth, 1);
+      const raw = (dx / span) * TOUCH_SEEK_SPAN_SECONDS;
+      deltaSeconds = Math.min(Math.max(raw, -TOUCH_SEEK_MAX_SECONDS), TOUCH_SEEK_MAX_SECONDS);
+      onSeekPreview(Math.max(baseSeconds + deltaSeconds, 0));
+    };
+
+    const handlePointerEnd = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) {
+        return;
+      }
+      clearLongPress();
+      const video = videoRef.current;
+      const ended = mode;
+      mode = "idle";
+      pointerId = null;
+      if (video == null) {
+        onSpeedHold(false);
+        onSeekPreview(null);
+        return;
+      }
+      if (ended === "speed") {
+        video.playbackRate = rateBeforeHold;
+        onSpeedHold(false);
+        return;
+      }
+      if (ended === "seek") {
+        const duration = Number.isFinite(video.duration)
+          ? video.duration
+          : Number.POSITIVE_INFINITY;
+        video.currentTime = Math.min(Math.max(baseSeconds + deltaSeconds, 0), duration);
+        onSeekPreview(null);
+        return;
+      }
+      // 点按: 两次落在双击窗口内就切换播放状态; 单击仍由 media-chrome 切换控件显隐.
+      const now = event.timeStamp;
+      if (now - lastTapAt < DOUBLE_CLICK_MS) {
+        lastTapAt = 0;
+        if (video.paused) {
+          void video.play().catch(() => undefined);
+        } else {
+          video.pause();
+        }
+        return;
+      }
+      lastTapAt = now;
+    };
+
+    const handleContextMenu = (event: MouseEvent) => {
+      if (lastPointerType !== "touch") {
+        return;
+      }
+      // 捕获阶段拦下: 事件因此不会到达画面, 视频右键菜单的监听不会展开.
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    controller.addEventListener("pointerdown", handlePointerDown, true);
+    controller.addEventListener("pointermove", handlePointerMove, true);
+    controller.addEventListener("pointerup", handlePointerEnd, true);
+    controller.addEventListener("pointercancel", handlePointerEnd, true);
+    controller.addEventListener("contextmenu", handleContextMenu, true);
+    return () => {
+      clearLongPress();
+      controller.removeEventListener("pointerdown", handlePointerDown, true);
+      controller.removeEventListener("pointermove", handlePointerMove, true);
+      controller.removeEventListener("pointerup", handlePointerEnd, true);
+      controller.removeEventListener("pointercancel", handlePointerEnd, true);
+      controller.removeEventListener("contextmenu", handleContextMenu, true);
+    };
+  }, [controllerRef, onSeekPreview, onSpeedHold, seekable, videoRef]);
 }
 
 /**
@@ -737,6 +902,11 @@ export function PlaybackPlayer({
 
   // 画面的单击、双击与它们的排队状态: 菜单开合都要能撤掉排队中的那次单击.
   const cancelPendingClickRef = useClickGestures(controllerRef, videoRef, fullscreenButtonRef);
+
+  // 触屏手势的提示: 长按加速与横滑拖进度, 与音量提示同形 (控制器之外, 不受控件自动隐藏影响).
+  const [speedHold, setSpeedHold] = useState(false);
+  const [seekPreview, setSeekPreview] = useState<number | null>(null);
+  useTouchGestures(controllerRef, videoRef, seekable, setSpeedHold, setSeekPreview);
 
   const openContextMenu = useCallback(
     (anchor: ContextMenuAnchor) => {
@@ -1144,6 +1314,18 @@ export function PlaybackPlayer({
                 ? t("detail.playbackMuted")
                 : `${Math.round(volumeIndicator * 100)}%`}
             </span>
+          </div>
+        </div>
+      ) : null}
+      {/* 触屏手势提示: 按住加速显示倍速, 横滑显示目标时间. */}
+      {speedHold || seekPreview != null ? (
+        <div className={classes.volumeIndicatorLayer}>
+          <div
+            className={`${classes.volumeIndicator} ${classes.gestureIndicator}`}
+            role="status"
+            aria-live="polite"
+          >
+            {speedHold ? `${HOLD_SEEK_RATE}×` : formatClock(seekPreview ?? 0)}
           </div>
         </div>
       ) : null}

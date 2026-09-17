@@ -1,14 +1,13 @@
 import { Alert, Anchor, Button, Code, Group, Stack, Text } from "@mantine/core";
-import { IconAlertTriangle, IconLogout, IconServer } from "@tabler/icons-react";
+import { IconAlertTriangle, IconServer } from "@tabler/icons-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  MIN_WEBVIEW_MAJOR,
+  MIN_CHROMIUM_MAJOR,
   shellEnvironment,
-  shellSignOut,
   shellSwitchServer,
-  WEBVIEW_STORE_URL,
+  webViewStoreUrl,
 } from "@/lib/shell";
 
 /**
@@ -26,6 +25,9 @@ export function ClientSettings() {
   const run = (action: () => boolean) => {
     if (!action()) setBridgeFailure(true);
   };
+
+  // 厂商自带的 WebView () 在 Play 上没有条目, 只有 Google 发行的包才给链接.
+  const storeUrl = webViewStoreUrl(shell.packageLabel.split(" ")[0] ?? "");
 
   return (
     <Stack gap="lg">
@@ -54,43 +56,34 @@ export function ClientSettings() {
       </Stack>
 
       <Stack gap={4}>
-        <Text fw={600}>{t("client.session")}</Text>
-        <Text size="xs" c="dimmed">
-          {t("client.signOutHint")}
-        </Text>
-        <Group>
-          <Button
-            size="xs"
-            variant="light"
-            color="red"
-            leftSection={<IconLogout size={14} />}
-            onClick={() => run(shellSignOut)}
-          >
-            {t("client.signOut")}
-          </Button>
-        </Group>
-      </Stack>
-
-      <Stack gap={4}>
         <Text fw={600}>{t("client.shellVersion")}</Text>
         <Code>{shell.version}</Code>
       </Stack>
 
       <Stack gap={4}>
         <Text fw={600}>{t("client.webView")}</Text>
-        <Code>{shell.webViewVersion || t("client.webViewUnknown")}</Code>
-        {shell.webViewOutdated ? (
+        <Code>{shell.packageLabel || t("client.webViewUnknown")}</Code>
+      </Stack>
+
+      <Stack gap={4}>
+        <Text fw={600}>{t("client.chromium")}</Text>
+        <Code>
+          {shell.chromiumVersion ? `Chromium ${shell.chromiumVersion}` : t("client.webViewUnknown")}
+        </Code>
+        {shell.chromiumOutdated ? (
           <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />} mt="xs">
             <Stack gap="xs">
               <Text size="sm">
-                {t("client.webViewOutdated", {
-                  version: shell.webViewMajor,
-                  min: MIN_WEBVIEW_MAJOR,
+                {t("client.chromiumOutdated", {
+                  major: shell.chromiumMajor,
+                  min: MIN_CHROMIUM_MAJOR,
                 })}
               </Text>
-              <Anchor href={WEBVIEW_STORE_URL} target="_blank" rel="noreferrer" size="sm">
-                {t("client.updateWebView")}
-              </Anchor>
+              {storeUrl ? (
+                <Anchor href={storeUrl} target="_blank" rel="noreferrer" size="sm">
+                  {t("client.updateWebView")}
+                </Anchor>
+              ) : null}
             </Stack>
           </Alert>
         ) : null}

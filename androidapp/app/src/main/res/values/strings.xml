@@ -22,7 +22,6 @@
     <string name="error_no_app">No app can open %1$s</string>
 
     <string name="menu_switch_server">Servers</string>
-    <string name="signed_out">Signed out</string>
 
     <string name="download_started">Download started</string>
     <string name="download_failed">Download failed: %1$s</string>

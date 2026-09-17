@@ -19,21 +19,19 @@ class ShellBridge(private val activity: BrowserActivity) {
         activity.runOnUiThread { activity.openSetup() }
     }
 
-    @JavascriptInterface
-    fun signOut() {
-        activity.runOnUiThread { activity.signOut() }
-    }
-
     /** 壳的版本号, 与 APK 的 `versionName` 一致. */
     @JavascriptInterface
     fun shellVersion(): String = BuildConfig.VERSION_NAME
 
     /**
-     * 系统 WebView 的版本号 (`126.0.6478.122` 形式); 取不到时返回空串.
+     * 系统 WebView 的提供方与包版本 ; 取不到时为空串.
      *
-     * 页面据此判断是否低于前端下限并提示更新 — 壳不携带内核, 这个版本由设备决定.
+     * 包版本是厂商自己的编号 (), 与 Chromium 版本无关 — 页面判断内核下限时只用
+     * UA 里的 `Chrome/<版本>`. 这里的值只用于展示"谁在渲染"以及给出更新入口.
      */
     @JavascriptInterface
-    fun webViewVersion(): String =
-        WebViewCompat.getCurrentWebViewPackage(activity)?.versionName.orEmpty()
+    fun webViewPackage(): String {
+        val info = WebViewCompat.getCurrentWebViewPackage(activity) ?: return ""
+        return "${info.packageName} ${info.versionName.orEmpty()}".trim()
+    }
 }

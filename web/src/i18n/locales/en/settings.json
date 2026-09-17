@@ -22,14 +22,12 @@
     "server": "Server",
     "switchServer": "Switch server",
     "switchServerHint": "Pick another Amane server. The page reloads with that server's session.",
-    "session": "Sign-in state",
-    "signOut": "Sign out",
-    "signOutHint": "Clears the sign-in state stored on this device. Saved servers stay; you return to the server page to sign in again.",
     "shellVersion": "Shell version",
     "webView": "System WebView",
+    "chromium": "Rendering engine",
     "webViewUnknown": "Unknown",
-    "webViewOutdated": "Version {{version}} is below the {{min}} this frontend needs. Update \"Android System WebView\", otherwise the layout and styles will be incomplete.",
-    "updateWebView": "Update Android System WebView"
+    "chromiumOutdated": "Rendering engine Chromium {{major}} is below the {{min}} this frontend needs. Update the system WebView, otherwise the layout and styles will be incomplete.",
+    "updateWebView": "Open the WebView store page"
   },
   "fields": {
     "scraping": {

@@ -37,6 +37,9 @@
   /* 菜单条目自己渲染, 取不到 media-chrome 给自动生成条目用的默认选中底色. */
   --media-menu-item-checked-background: rgb(255 255 255 / 0.18);
 
+  /* 触屏: 纵向手势留给页面滚动, 横向由播放器接管 (拖进度). 声明在控制器上即覆盖内部所有层. */
+  touch-action: pan-y;
+
   display: block;
   width: 100%;
   height: 100%;
@@ -95,6 +98,13 @@
   font-family: var(--mantine-font-family);
   font-size: var(--mantine-font-size-sm);
   font-variant-numeric: tabular-nums;
+}
+
+/* 触屏手势提示沿用音量提示的外观, 只把数字放大 (内容是倍速或目标时间). */
+.gestureIndicator {
+  font-size: var(--mantine-font-size-lg);
+  font-weight: 600;
+  padding: 12px 18px;
 }
 
 .volumeIndicatorBar {

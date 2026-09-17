@@ -6,6 +6,7 @@ import android.app.PictureInPictureParams
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
@@ -73,6 +74,8 @@ open class BrowserActivity : AppCompatActivity() {
         origin = normalized
 
         configureWebView(binding.webView)
+        // 下拉刷新 = 浏览器里的重新加载; 指示器由页面加载结束时收起.
+        binding.swipeRefresh.setOnRefreshListener { binding.webView.reload() }
         binding.errorRetry.setOnClickListener { binding.webView.reload() }
         binding.errorSwitch.setOnClickListener { openSetup() }
         onBackPressedDispatcher.addCallback(this) { handleBack() }
@@ -131,6 +134,9 @@ open class BrowserActivity : AppCompatActivity() {
             binding.customViewContainer.visibility = View.VISIBLE
             binding.progress.visibility = View.GONE
             binding.webView.visibility = View.INVISIBLE
+            // 全屏播放转横屏: 竖屏全屏会让画面挤在中间一条, 主流播放器也是这个行为.
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            binding.swipeRefresh.isEnabled = false
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
 
@@ -174,6 +180,9 @@ open class BrowserActivity : AppCompatActivity() {
         binding.customViewContainer.removeView(view)
         binding.customViewContainer.visibility = View.GONE
         binding.webView.visibility = View.VISIBLE
+        // 交还方向控制权给系统 (跟随自动旋转与用户设置).
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        binding.swipeRefresh.isEnabled = true
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         customView = null
         customViewCallback?.onCustomViewHidden()
@@ -237,6 +246,7 @@ open class BrowserActivity : AppCompatActivity() {
 
         override fun onPageFinished(view: WebView, url: String?) {
             binding.progress.visibility = View.GONE
+            binding.swipeRefresh.isRefreshing = false
             scheduleBootCheck()
         }
 
@@ -246,6 +256,7 @@ open class BrowserActivity : AppCompatActivity() {
             error: WebResourceError,
         ) {
             if (!request.isForMainFrame) return
+            binding.swipeRefresh.isRefreshing = false
             showError(getString(R.string.error_unreachable, error.description?.toString().orEmpty()))
         }
 
@@ -256,6 +267,7 @@ open class BrowserActivity : AppCompatActivity() {
         ) {
             // 站内子资源失败由页面自己呈现; 只有主文档 5xx 才覆盖页面
             if (!request.isForMainFrame || errorResponse.statusCode < 500) return
+            binding.swipeRefresh.isRefreshing = false
             showError(getString(R.string.error_status, errorResponse.statusCode))
         }
     }
@@ -285,17 +297,6 @@ open class BrowserActivity : AppCompatActivity() {
     /** 打开壳的服务器设置页; 同时是错误界面的「切换服务器」与桥 `switchServer()` 的实现. */
     internal fun openSetup() {
         startActivity(Intent(this, SetupActivity::class.java))
-    }
-
-    /**
-     * 退出登录: 清除 WebView 的 cookie 罐 (登录态就是它), 然后回到服务器页而不是停在页面的登录门 —
-     * token 由服务器页校验并换取 cookie, 在那里重新登录才是完整路径. 服务器地址列表保留.
-     */
-    internal fun signOut() {
-        CookieManager.getInstance().removeAllCookies(null)
-        CookieManager.getInstance().flush()
-        Toast.makeText(this, R.string.signed_out, Toast.LENGTH_SHORT).show()
-        openSetup()
     }
 
     private fun handleBack() {

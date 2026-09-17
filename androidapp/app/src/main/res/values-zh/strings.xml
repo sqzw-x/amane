@@ -22,7 +22,6 @@
     <string name="error_no_app">没有可以打开 %1$s 的应用</string>
 
     <string name="menu_switch_server">切换服务器</string>
-    <string name="signed_out">已退出登录</string>
 
     <string name="download_started">已开始下载</string>
     <string name="download_failed">下载失败: %1$s</string>
