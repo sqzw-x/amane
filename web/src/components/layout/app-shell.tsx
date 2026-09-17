@@ -183,6 +183,29 @@ function LanguageMenu() {
   );
 }
 
+/**
+ * 客户端设置入口: 只在 APP 内出现 — 服务器与登录态属于客户端, 不属于服务端配置.
+ * 放在顶栏语言切换旁而不是侧栏: 手机上侧栏要先展开才能点到.
+ */
+function ClientSettingsLink({ available }: { available: boolean }) {
+  const { t } = useTranslation("common");
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  if (!available) return null;
+
+  return (
+    <HintedActionIcon
+      variant="subtle"
+      color={isNavActive(pathname, "/client") ? "brand" : "gray"}
+      size="lg"
+      onClick={() => void navigate({ to: "/client" })}
+      label={t("nav.client")}
+    >
+      <IconDeviceMobile size={18} />
+    </HintedActionIcon>
+  );
+}
+
 function ConnectionIndicator() {
   const status = useConnectionStore((s) => s.status);
   const { t } = useTranslation("common");
@@ -330,6 +353,7 @@ export function AppShellLayout(): ReactNode {
             <ConnectionIndicator />
             <ThemeToggle />
             <LanguageMenu />
+            <ClientSettingsLink available={shell != null} />
             {/* 窄屏顶栏放不下外链, 该入口收进侧栏底部. */}
             <GithubLink visibleFrom="sm" />
           </Group>
@@ -366,13 +390,6 @@ export function AppShellLayout(): ReactNode {
           item={{ to: "/settings", labelKey: "nav.settings", icon: IconSettings }}
           onNavigate={closeMobile}
         />
-        {/* 客户端设置: 只在壳内列出 — 服务器与登录态属于客户端, 不属于服务端配置. */}
-        {shell ? (
-          <NavItemLink
-            item={{ to: "/client", labelKey: "nav.client", icon: IconDeviceMobile }}
-            onNavigate={closeMobile}
-          />
-        ) : null}
         {/* 窄屏顶栏放不下版本与外链, 收进侧栏底部. */}
         <Group hiddenFrom="sm" gap="xs" px="xs" pt="sm" wrap="nowrap">
           <VersionMenu />

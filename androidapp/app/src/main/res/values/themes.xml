@@ -1,7 +1,93 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 无 ActionBar: 页面自带头部, 壳只在 Toolbar 上提供服务器菜单. -->
+    <!-- 无 ActionBar: 页面自带头部. 主题颜色统一取 colors.xml 里的语义色 (深色见 values-night). -->
     <style name="Theme.Amane" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">?android:attr/colorBackground</item>
+        <item name="colorAccent">@color/brand</item>
+    </style>
+
+    <!-- 主按钮: 48dp 高, 自带圆角背景, 取消 AppCompat 的阴影与全大写. -->
+    <style name="Widget.Amane.Button.Primary" parent="Widget.AppCompat.Button">
+        <item name="android:background">@drawable/bg_button_primary</item>
+        <item name="android:textColor">@color/on_brand</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <!-- 次要按钮: 无底色, 只用品牌色文字. -->
+    <style name="Widget.Amane.Button.Quiet" parent="Widget.AppCompat.Button.Borderless">
+        <item name="android:textColor">@color/brand</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+
+    <!-- 右滑露出的操作: 与卡片等高 (高度由 SetupActivity 按卡片实测值同步). -->
+    <style name="Widget.Amane.Button.Action" parent="Widget.AppCompat.Button">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+
+    <style name="Widget.Amane.Button.Action.Edit" parent="Widget.Amane.Button.Action">
+        <item name="android:background">@drawable/bg_action_edit</item>
+        <item name="android:textColor">@color/brand</item>
+    </style>
+
+    <style name="Widget.Amane.Button.Action.Delete" parent="Widget.Amane.Button.Action">
+        <item name="android:background">@drawable/bg_action_delete</item>
+        <item name="android:textColor">@color/on_danger_container</item>
+    </style>
+
+    <!-- 输入框: 圆角填充底, 高度与内边距固定, 不随字号跳动. -->
+    <style name="Widget.Amane.Field" parent="Widget.AppCompat.EditText">
+        <item name="android:background">@drawable/bg_field</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColorHint">@color/text_secondary</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textCursorDrawable">@null</item>
+    </style>
+
+    <style name="Widget.Amane.Card" parent="">
+        <item name="android:background">@drawable/bg_card</item>
+        <item name="android:padding">16dp</item>
+    </style>
+
+    <style name="Widget.Amane.Title" parent="">
+        <item name="android:textSize">24sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <!-- 字段名与分组标题: 次要色小字. -->
+    <style name="Widget.Amane.Label" parent="">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <style name="Widget.Amane.RowName" parent="">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="Widget.Amane.RowUrl" parent="">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
     </style>
 </resources>

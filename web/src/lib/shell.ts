@@ -15,8 +15,6 @@
 interface AmaneShellBridge {
   /** 打开壳的服务器设置页. */
   switchServer(): void;
-  /** 壳的版本号, 与 APK 的 `versionName` 一致. */
-  shellVersion(): string;
   /** 系统 WebView 的提供方与包版本, 厂商包版本; 取不到时为空串. */
   webViewPackage(): string;
   /** 报告触点处是否还有可以向上滚的内容, 供壳决定下拉刷新是否接管手势; 旧版壳没有这个方法. */
@@ -48,7 +46,7 @@ const SHELL_MARKER = /\bAmaneShell\/(\S+)/;
 const CHROME_VERSION = /\bChrome\/([0-9.]+)/;
 
 export interface ShellEnvironment {
-  /** 壳的版本号, 取自 UA 标记. */
+  /** APP 版本号, 取自 UA 标记. */
   version: string;
   /** 系统 WebView 的提供方与包版本, 厂商包版本; 桥不可用时为空串. */
   packageLabel: string;

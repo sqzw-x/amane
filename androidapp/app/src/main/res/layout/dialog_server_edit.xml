@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 编辑已保存的服务器: 名字、地址与 token 都可改; 地址改掉后原地址不再保留 (见 ServerStore.update). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="8dp">
+
+    <TextView
+        style="@style/Widget.Amane.Label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/setup_name_label" />
+
+    <EditText
+        android:id="@+id/edit_name"
+        style="@style/Widget.Amane.Field"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:hint="@string/setup_name_hint"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        android:singleLine="true" />
+
+    <TextView
+        style="@style/Widget.Amane.Label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="@string/setup_server_label" />
+
+    <EditText
+        android:id="@+id/edit_server"
+        style="@style/Widget.Amane.Field"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:hint="@string/setup_server_hint"
+        android:importantForAutofill="no"
+        android:inputType="textUri"
+        android:singleLine="true" />
+
+    <TextView
+        style="@style/Widget.Amane.Label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="@string/setup_token_label" />
+
+    <EditText
+        android:id="@+id/edit_token"
+        style="@style/Widget.Amane.Field"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:fontFamily="monospace"
+        android:importantForAutofill="no"
+        android:inputType="textVisiblePassword"
+        android:singleLine="true" />
+</LinearLayout>

@@ -1,9 +1,11 @@
 name: Android app
 
+# 只由 `app-` 前缀的 tag 触发, 与本体 (服务端 / 桌面端) 的 `v*` 发版完全独立:
+# 本体每次发版都附一份没变过的 APK, 只会让下载 Release 的人以为 APP 也更新了.
 on:
   push:
     tags:
-      - "v*"
+      - "app-*"
   workflow_dispatch:
 
 permissions:
@@ -32,11 +34,6 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v9.0.0
-        with:
-          enable-cache: true
-
       - name: Setup just
         uses: extractions/setup-just@v4
 
@@ -63,7 +60,7 @@ jobs:
       - name: Collect APK
         id: apk
         run: |
-          APK="$(ls -1 dist/Amane-*-android.apk | head -1)"
+          APK="$(ls -1 dist/Amane-app-*.apk | head -1)"
           test -n "$APK"
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
           ls -lh "$APK"
@@ -71,18 +68,15 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Amane-android-${{ github.ref_name }}
+          name: Amane-app-${{ github.ref_name }}
           path: ${{ steps.apk.outputs.apk }}
           if-no-files-found: error
 
-      - name: Release notes from CHANGELOG
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: uv run python scripts/changelog.py extract "$GITHUB_REF_NAME" > release-notes.md
-
+      # 只有 tag 触发的运行才发布; 手动运行 (workflow_dispatch) 到这里就结束, 只留产物.
       - name: Upload to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/app-')
         uses: softprops/action-gh-release@v3
         with:
-          body_path: release-notes.md
+          generate_release_notes: true
           files: ${{ steps.apk.outputs.apk }}
           fail_on_unmatched_files: true

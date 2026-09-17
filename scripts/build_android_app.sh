@@ -5,7 +5,7 @@
 # Prefer: just android-app
 #
 # Env:
-#   AMANE_ANDROID_OUT   output APK path (default: dist/Amane-<version>-android.apk)
+#   AMANE_ANDROID_OUT   output APK path (default: dist/Amane-app-<version>.apk)
 #   AMANE_ANDROID_TASK  gradle task (default: assembleRelease when
 #                       androidapp/keystore.properties exists, otherwise assembleDebug)
 set -euo pipefail
@@ -26,16 +26,9 @@ if [[ -z "${ANDROID_SDK_ROOT:-}${ANDROID_HOME:-}" && ! -f "$APP_DIR/local.proper
   exit 1
 fi
 
-VERSION="$(uv run python -c 'from amane.version import get_version; print(get_version())')"
-# versionCode 必须随版本单调递增, 否则 Android 拒绝覆盖安装; semver 三段各占两位十进制.
-VERSION_CODE="$(python3 - "$VERSION" <<'PY'
-import sys
-
-parts = (sys.argv[1].split("-")[0].split("+")[0].split(".") + ["0", "0", "0"])[:3]
-major, minor, patch = (int(p) for p in parts)
-print(major * 10000 + minor * 100 + patch)
-PY
-)"
+# APP 版本独立于服务端与桌面端: 唯一来源是 androidapp/version.txt, versionCode 由 Gradle 按它推导.
+VERSION="$(tr -d '[:space:]' < "$APP_DIR/version.txt")"
+[[ -n "$VERSION" ]] || { echo "empty androidapp/version.txt" >&2; exit 1; }
 
 TASK="${AMANE_ANDROID_TASK:-}"
 if [[ -z "$TASK" ]]; then
@@ -47,8 +40,7 @@ if [[ -z "$TASK" ]]; then
   fi
 fi
 
-(cd "$APP_DIR" && ./gradlew --console=plain \
-  -PamaneVersion="$VERSION" -PamaneVersionCode="$VERSION_CODE" "$TASK")
+(cd "$APP_DIR" && ./gradlew --console=plain "$TASK")
 
 if [[ "$TASK" == "assembleRelease" ]]; then
   APK="$APP_DIR/app/build/outputs/apk/release/app-release.apk"
@@ -57,7 +49,7 @@ else
 fi
 [[ -f "$APK" ]] || { echo "APK missing: $APK" >&2; exit 1; }
 
-OUT="${AMANE_ANDROID_OUT:-$ROOT/dist/Amane-$VERSION-android.apk}"
+OUT="${AMANE_ANDROID_OUT:-$ROOT/dist/Amane-app-$VERSION.apk}"
 mkdir -p "$(dirname "$OUT")"
 /bin/cp -f "$APK" "$OUT"
 

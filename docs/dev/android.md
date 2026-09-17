@@ -15,8 +15,8 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 | `ShellBridge` | 暴露给页面的 `window.amaneshell` |
 | `MainActivity` | `BrowserActivity` 的 `singleTask` 入口 |
 | `PopupActivity` | `window.open` 的目标窗口, 每个弹窗一个实例 |
-| `SetupActivity` | 服务器地址列表与首次登录 |
-| `ServerStore` / `ServerUrl.kt` | 地址持久化与归一化 (`ServerUrlTest` 覆盖) |
+| `SetupActivity` | 服务器列表 (卡片 + 左滑操作)、连接与编辑 |
+| `ServerStore` / `ServerUrl.kt` | 条目持久化 (名字 / 地址 / token, 兼容只存地址的旧格式) 与地址归一化 (`ServerStoreTest` / `ServerUrlTest` 覆盖) |
 
 ## origin 契约
 
@@ -29,22 +29,27 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 
 ## 登录
 
-首次连接的 token 只在 `SetupActivity` 里用于向 `/api/system/desktop` 发一次 Bearer 请求; 中间件随之下发 `amane_token` cookie, 壳把响应头里的 `Set-Cookie` 手工写入 `CookieManager` (原生请求的响应头 WebView 不可见), 之后一切与浏览器一致. token 不落盘, 登录态就是 WebView 的 cookie 罐. cookie 失效时由 SPA 自己的登录门接管.
+首次连接的 token 只在 `SetupActivity` 里用于向 `/api/system/desktop` 发一次 Bearer 请求; 中间件随之下发 `amane_token` cookie, 壳把响应头里的 `Set-Cookie` 手工写入 `CookieManager` (原生请求的响应头 WebView 不可见), 之后一切与浏览器一致. token 随服务器条目一起保存在应用私有存储里 (编辑页明文显示、可改: 同一份存储里本就是原文, 掩码不构成保护), 但登录态仍然只是 WebView 的 cookie 罐 — 打开页面不会自动重发 token. cookie 失效时由 SPA 自己的登录门接管.
 
 服务端关闭鉴权 (`AMANE_TOKEN=off`) 或用户留空 token 时, 探活返回 401 也直接打开页面.
 
 **壳内不显示页面的登录门**: 页面无从区分「服务端换了 token」与「地址填错」, 而 token 的正确入口是服务器页 (它校验 Bearer 并换取 cookie). 因此入口处发现未认证 (挂载探活失败, 或任何请求 401 触发失效事件) 时跳回 `SetupActivity` 一次 — 每次页面加载只跳一次, 用户从那里返回后落在登录门, 门内另给一条「服务器设置」入口. `signOut()` 走同一条路径, 只是先清掉 cookie 罐.
 
+## 服务器列表
+
+条目是卡片: 第一行名字 (留空时取主机名与端口), 第二行地址, 当前服务器另带「当前」标记. 点击卡片直接打开; 卡片左滑露出贴右边的「编辑」与「删除」, 同一时刻只展开一行, 展开时点卡片是收起而不是打开. 编辑弹窗改名字、地址与 token, 地址或 token 有改动时用新值在后台重新换取 cookie — 失败只提示, 编辑结果已经保存.
+
+左滑在方向确定为横向之后才 `requestDisallowInterceptTouchEvent(true)`: 手指落下时就要返回 `true` 才能拿到后续事件, 那时禁用父级拦截会让列表再也滚不动. 纵向手势由外层 ScrollView 接管, 这里随 `ACTION_CANCEL` 复位. 条目的容器是 `SwipeRowLayout`: 卡片与下层的操作区要完全重叠且等高, 框架的现成布局都做不到 — FrameLayout 只在多于一个 `match_parent` 子节点时才按自己测出的高度重测子节点, 而行高来自 `wrap_content` 的卡片; 在布局回调里改 `layoutParams` 又会在布局过程中再发起一次布局. 因此由它自己测量: 先量卡片, 再按卡片高度量操作区. 两个按钮紧邻、无间隔, 只有外侧两角是圆的.
+
 ## 界面归属与桥
 
-壳不渲染工具栏: 页面自带头部, 壳只保留加载进度条与两个原生兜底界面. 服务器切换与运行期信息都在**与「设置」平级的「客户端设置」页** (`web/src/routes/client.tsx` + `components/shell/client-settings.tsx`). 不提供单独的「退出登录」: 切换服务器保留既有会话, 登录态失效由页面的 401 拦截送回服务器页, 单独的退出登录没有额外作用.
+壳不渲染工具栏: 页面自带头部, 壳只保留加载进度条与两个原生兜底界面. 服务器切换与运行期信息都在**「客户端设置」页** (`web/src/routes/client.tsx` + `components/shell/client-settings.tsx`), 入口是顶栏语言切换旁的手机图标 (只在 APP 内出现). 不提供单独的「退出登录」: 切换服务器保留既有会话, 登录态失效由页面的 401 拦截送回服务器页, 单独的退出登录没有额外作用.
 
 是否在壳内由 **UA 标记**判定 (`WebSettings.userAgentString` 追加的 `AmaneShell/<version>`, 每个请求都带), 不是 JS 桥: 桥只承载动作, 缺了它页面仍列出入口并提示重装. 以桥作为判据会让入口在部分加载下整块消失 — 这正是"有时显示有时不显示"的来源. 桌面浏览器与 Docker 部署没有该标记, 入口不出现.
 
 | 桥方法 | 实现 |
 |---------|------|
 | `switchServer()` | 打开 `SetupActivity`, 与错误界面的「切换服务器」同一入口 |
-| `shellVersion()` | APK 的 `versionName` |
 | `webViewPackage()` | `WebViewCompat.getCurrentWebViewPackage` 的包名与厂商版本 , 取不到时为空串 |
 
 **内核版本只认 UA 里的 `Chrome/<版本>`**: 厂商包版本 () 与 Chromium 版本没有对应关系, 拿它比较前端下限会误报. 商店链接也只在提供方是 Google 发行的包 (`com.google.android.webview` / `com.android.chrome`) 时给出 — 厂商自带的 WebView 在 Play 上没有条目.
@@ -85,14 +90,14 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 ## 打包与分发
 
 ```
-just android-app                     # → dist/Amane-<version>-android.apk
+just android-app                     # → dist/Amane-app-<version>.apk
 ```
 
-`scripts/build_android_app.sh` 从 `amane.version` 取版本写入 `versionName`, 并按 semver 推导单调递增的 `versionCode` (Android 拒绝降级覆盖安装). `androidapp/keystore.properties` 存在时构建 `assembleRelease` (签名密钥相对 `androidapp/`), 否则退回 debug 包.
+**APP 版本独立于服务端与桌面端**: 唯一来源是 `androidapp/version.txt`, 构建脚本与 Gradle 都读它, `versionName` 与 `versionCode` 由它推导 (三段各占两位十进制, 必须单调递增 — Android 拒绝降级覆盖安装). 起始版本取 `1.0.0`, 它的 `versionCode` 10000 高于共用版本号时期最后发布的 `0.15.0` (1500), 因此可以直接覆盖安装. `androidapp/keystore.properties` 存在时构建 `assembleRelease` (签名密钥相对 `androidapp/`), 否则退回 debug 包.
 
-CI 见 `.github/workflows/android-app.yml`: 提供 `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` 四个 secret 才会产出正式签名包, 否则产物是 debug 包. 分发方式是 GitHub Release 上的 APK 侧载; 应用商店对本项目的媒体内容域不可行, 因此不引入 Play 相关的签名托管与更新机制.
+CI 见 `.github/workflows/android-app.yml`: 提供 `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` 四个 secret 才会产出正式签名包, 否则产物是 debug 包. 发版**完全独立**: 只有 `app-` 前缀的 tag 触发这里的构建与 Release (发布说明按提交生成), `v*` 不再产出 APK — 本体连续发几个版本时 APP 往往没变过, 每次都附一份 APK 会让下载的人以为 APP 也更新了. 发版步骤: 改 `androidapp/version.txt` → 提交 → `git tag app-<version>` → push. 这些 tag 解析不出版本, 本体的更新检查会跳过它们 (检查读发布列表而不是 `/releases/latest`, 见 `src/amane/release.py`). 分发方式是 GitHub Release 上的 APK 侧载; 应用商店对本项目的媒体内容域不可行, 因此不引入 Play 相关的签名托管与更新机制.
 
-PR 门禁由 `.github/workflows/ci.yaml` 的 `android` job 执行 `just android-check` (编译 debug 包 + 单元测试).
+PR 门禁由 `.github/workflows/ci.yaml` 的 `android` job 执行 `just android-check` (编译 debug 包 + 单元测试); 它前面有一个轻量 job 先判断这次改动有没有碰到 APP (`androidapp/**`、构建脚本、Justfile 与两个工作流), 没碰到就整块跳过 — 该 job 要装 JDK 与 Android SDK 再跑 Gradle, 一次一两分钟, 而 APP 的改动很少. 这里用 job 级条件而不是工作流级 `paths`: 后者会让整个工作流不触发, 被设为必需的门禁检查会一直停在 pending.
 
 最低支持 Android 10 (`minSdk 29`): 该版本起 `DownloadManager` 写公共目录不需要存储权限, 边缘到边缘与 WebView 行为也是当前设计所依据的基线.
 

@@ -42,26 +42,37 @@
             android:padding="24dp"
             android:visibility="gone">
 
-            <TextView
-                android:id="@+id/error_message"
+            <LinearLayout
+                style="@style/Widget.Amane.Card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center"
-                android:textAppearance="?android:attr/textAppearanceMedium" />
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="20dp">
 
-            <Button
-                android:id="@+id/error_retry"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="@string/error_retry" />
+                <TextView
+                    android:id="@+id/error_message"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textSize="15sp" />
 
-            <Button
-                android:id="@+id/error_switch"
-                style="?android:attr/borderlessButtonStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/menu_switch_server" />
+                <Button
+                    android:id="@+id/error_retry"
+                    style="@style/Widget.Amane.Button.Primary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:text="@string/error_retry" />
+
+                <Button
+                    android:id="@+id/error_switch"
+                    style="@style/Widget.Amane.Button.Quiet"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/menu_switch_server" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- 全屏视频 (chrome client 的自定义视图) 的宿主 -->

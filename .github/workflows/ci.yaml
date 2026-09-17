@@ -79,8 +79,45 @@ jobs:
       - name: just ci-windows
         run: just ci-windows
 
+  # APP 的编译与单测要装 JDK 与 Android SDK 再跑 Gradle, 一次一两分钟 (冷缓存更久), 而 APP 的改动很少:
+  # 先判这次改动有没有碰到 APP, 没碰到就让下面的 job 整块跳过.
+  # 这里不用工作流级的 `paths` 过滤: 那样整个工作流不触发, 被设为必需的门禁检查会一直停在 pending.
+  android-app-changes:
+    name: Android app changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 三点 diff 需要与 base 的共同祖先, 浅克隆取不到.
+          fetch-depth: 0
+
+      - name: Check for app changes
+        id: filter
+        env:
+          # PR 用 base 分支的提交; push 用推送前的提交 (新建分支时为全零, 那时一律跑).
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet "$BASE_SHA...$GITHUB_SHA" -- \
+            androidapp \
+            scripts/build_android_app.sh \
+            Justfile \
+            .github/workflows/ci.yaml \
+            .github/workflows/android-app.yml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   android:
-    name: Android shell compile + unit test
+    name: Android app compile + unit test
+    needs: android-app-changes
+    if: needs.android-app-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -97,6 +134,9 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      # 壳不依赖 web/dist, 也不依赖 Python 依赖: 只要 JDK 与 Android SDK
+      - name: Setup just
+        uses: extractions/setup-just@v4
+
+      # APP 不依赖 web/dist, 也不依赖 Python 依赖: 只要 JDK 与 Android SDK
       - name: just android-check
         run: just android-check

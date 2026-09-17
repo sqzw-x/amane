@@ -1,4 +1,4 @@
-"""GitHub latest 检查: 版本比较与 ETag 缓存."""
+"""GitHub 发布检查: 版本比较, 非版本 tag 的跳过与 ETag 缓存."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import patch
 import httpx2 as httpx
 import pytest
 
-from amane.release import GITHUB_LATEST_URL, ReleaseChecker, is_newer
+from amane.release import GITHUB_RELEASES_URL, ReleaseChecker, is_newer
 
 
 @pytest.mark.parametrize(
@@ -18,7 +18,9 @@ from amane.release import GITHUB_LATEST_URL, ReleaseChecker, is_newer
         ("1.0.1", "v1.0.0", True),
         ("v1.0.0", "1.0.0", False),
         ("v1.0.0", "1.0.1", False),
-        ("not-a-version", "1.0.0", True),
+        # 其它发布线的 tag 不能变成更新提示
+        ("not-a-version", "1.0.0", False),
+        ("app-1.0.0", "0.15.0", False),
         ("1.0.0", "1.0.0", False),
     ],
 )
@@ -27,12 +29,12 @@ def test_is_newer(latest: str, current: str, expected: bool) -> None:
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, body: dict[str, Any] | None = None, etag: str | None = None) -> None:
+    def __init__(self, status_code: int, body: Any = None, etag: str | None = None) -> None:
         self.status_code = status_code
         self._body = body or {}
         self.headers = {"etag": etag} if etag else {}
 
-    def json(self) -> dict[str, Any]:
+    def json(self) -> Any:
         return self._body
 
 
@@ -56,7 +58,15 @@ class _FakeClient:
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_fetch_parses_latest_and_caches() -> None:
-    fake = _FakeClient([_FakeResponse(200, {"tag_name": "v1.2.0", "html_url": "https://example.com/r"}, etag='"abc"')])
+    fake = _FakeClient(
+        [
+            _FakeResponse(
+                200,
+                [{"tag_name": "v1.2.0", "html_url": "https://example.com/r"}],
+                etag='"abc"',
+            )
+        ]
+    )
     with patch("amane.release.httpx.AsyncClient", return_value=fake):
         checker = ReleaseChecker()
         first = await checker.fetch()
@@ -65,7 +75,7 @@ async def test_fetch_parses_latest_and_caches() -> None:
     assert first.html_url == "https://example.com/r"
     assert second.latest == "v1.2.0"
     assert len(fake.calls) == 1
-    assert fake.urls == [GITHUB_LATEST_URL]
+    assert fake.urls == [GITHUB_RELEASES_URL]
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -93,6 +103,35 @@ async def test_fetch_sends_etag_after_ttl(monkeypatch: pytest.MonkeyPatch) -> No
         snap = await checker.fetch()
     assert snap.latest == "v1.0.0"
     assert fake.calls[1].get("If-None-Match") == '"e1"'
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_fetch_skips_other_release_lines() -> None:
+    """APP 的发布会排在列表最前 (按创建时间), 但它不是本体的更新."""
+    fake = _FakeClient(
+        [
+            _FakeResponse(
+                200,
+                [
+                    {"tag_name": "app-1.0.0", "html_url": "https://example.com/app"},
+                    {"tag_name": "v0.16.0", "html_url": "https://example.com/server"},
+                    {"tag_name": "v0.15.0", "html_url": "https://example.com/old"},
+                ],
+            )
+        ]
+    )
+    with patch("amane.release.httpx.AsyncClient", return_value=fake):
+        snap = await ReleaseChecker().fetch()
+    assert snap.latest == "v0.16.0"
+    assert snap.html_url == "https://example.com/server"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_fetch_only_other_release_lines_is_empty() -> None:
+    fake = _FakeClient([_FakeResponse(200, [{"tag_name": "app-1.0.0", "html_url": "https://example.com/app"}])])
+    with patch("amane.release.httpx.AsyncClient", return_value=fake):
+        snap = await ReleaseChecker().fetch()
+    assert snap.latest is None
 
 
 @pytest.mark.asyncio(loop_scope="function")

@@ -30,10 +30,6 @@ class ShellBridge(private val activity: BrowserActivity) {
         activity.setPageScrollableUp(scrollableUp)
     }
 
-    /** 壳的版本号, 与 APK 的 `versionName` 一致. */
-    @JavascriptInterface
-    fun shellVersion(): String = BuildConfig.VERSION_NAME
-
     /**
      * 系统 WebView 的提供方与包版本 ; 取不到时为空串.
      *

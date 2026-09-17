@@ -1,34 +1,41 @@
 package com.github.sqzwx.amane.android
 
 import android.content.Intent
-import android.graphics.Typeface
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.webkit.CookieManager
-import android.widget.Button
-import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import com.github.sqzwx.amane.android.databinding.ActivitySetupBinding
+import com.github.sqzwx.amane.android.databinding.DialogServerEditBinding
+import com.github.sqzwx.amane.android.databinding.RowServerBinding
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
+import kotlin.math.abs
 
 /**
  * 服务器地址与首次登录.
  *
- * 这里不保存 token: 填进来的 token 只用于向 `/api/system/desktop` 换取服务端下发的
- * HttpOnly cookie, 之后登录态由 WebView 自己的 cookie 罐维持 (与浏览器一致, 30 天).
+ * 填进来的 token 只用于向 `/api/system/desktop` 换取服务端下发的 HttpOnly cookie, 之后登录态由 WebView
+ * 自己的 cookie 罐维持 (与浏览器一致, 30 天). token 随服务器一起保存, 列表里可查看与修改 (见 [SavedServer]);
  * 留空直接连接也成立 — 服务端若开了鉴权, SPA 会显示自己的登录门.
  */
 class SetupActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySetupBinding
     private val store by lazy { ServerStore(this) }
+    private val touchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop }
+
+    /** 当前露出操作按钮的那一行; 同一时刻只允许一行. */
+    private var revealedCard: View? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -39,7 +46,11 @@ class SetupActivity : AppCompatActivity() {
 
         binding.version.text = getString(R.string.setup_version, BuildConfig.VERSION_NAME)
         binding.connect.setOnClickListener { connect() }
-        binding.serverInput.setText(store.active().orEmpty())
+        // 表单预填当前服务器: token 已经保存, cookie 过期后不必再翻服务端日志.
+        val active = store.activeServer()
+        binding.nameInput.setText(active?.name.orEmpty())
+        binding.serverInput.setText(active?.url.orEmpty())
+        binding.tokenInput.setText(active?.token.orEmpty())
         renderServers()
     }
 
@@ -50,6 +61,7 @@ class SetupActivity : AppCompatActivity() {
             return
         }
         val token = binding.tokenInput.text.toString().trim()
+        val name = binding.nameInput.text.toString().trim().ifEmpty { defaultServerName(url) }
         binding.error.visibility = View.GONE
         setBusy(true)
         // 探活是阻塞 IO; 为了一个请求引入协程依赖不值得, 用线程加 runOnUiThread.
@@ -57,7 +69,7 @@ class SetupActivity : AppCompatActivity() {
             val failure = probe(url, token)
             runOnUiThread {
                 setBusy(false)
-                if (failure == null) open(url) else showError(failure)
+                if (failure == null) open(SavedServer(name, url, token)) else showError(failure)
             }
         }
     }
@@ -101,10 +113,11 @@ class SetupActivity : AppCompatActivity() {
         manager.flush()
     }
 
-    private fun open(url: String) {
-        store.activate(url)
+    private fun open(server: SavedServer) {
+        store.activate(server)
         startActivity(
-            Intent(this, MainActivity::class.java).putExtra(BrowserActivity.EXTRA_URL, "$url/"),
+            Intent(this, MainActivity::class.java)
+                .putExtra(BrowserActivity.EXTRA_URL, "${server.url}/"),
         )
         finish()
     }
@@ -113,18 +126,152 @@ class SetupActivity : AppCompatActivity() {
         val servers = store.list()
         binding.savedGroup.visibility = if (servers.isEmpty()) View.GONE else View.VISIBLE
         binding.savedList.removeAllViews()
-        for (url in servers) {
-            val row = layoutInflater.inflate(R.layout.row_server, binding.savedList, false)
-            val label = row.findViewById<TextView>(R.id.server_label)
-            label.text = url
-            if (url == store.active()) label.setTypeface(null, Typeface.BOLD)
-            row.findViewById<Button>(R.id.server_open).setOnClickListener { open(url) }
-            row.findViewById<Button>(R.id.server_remove).setOnClickListener {
-                store.remove(url)
+        revealedCard = null
+        val activeUrl = store.active()
+        for (server in servers) {
+            val row = RowServerBinding.inflate(layoutInflater, binding.savedList, false)
+            row.serverName.text = server.name
+            row.serverUrl.text = server.url
+            row.serverActive.visibility = if (server.url == activeUrl) View.VISIBLE else View.GONE
+            // 展开时点卡片是收起, 不打开服务器: 滑动之后的一次误触不该切换会话.
+            row.serverCard.setOnClickListener {
+                if (row.serverCard.translationX < 0f) closeReveal() else open(server)
+            }
+            row.serverEdit.setOnClickListener {
+                closeReveal()
+                showEditDialog(server)
+            }
+            row.serverRemove.setOnClickListener {
+                closeReveal()
+                confirmRemove(server)
+            }
+            bindSwipe(row)
+            binding.savedList.addView(row.root)
+        }
+    }
+
+    /**
+     * 卡片的横向手势: 左滑露出贴右边的编辑与删除.
+     *
+     * 手指落下即返回 true 才能拿到后续事件, 但此时不能禁用父级拦截, 否则列表再也滚不动; 方向确定为横向后
+     * 才 `requestDisallowInterceptTouchEvent(true)`. 纵向由外层 ScrollView 接管, 这里随 CANCEL 复位.
+     */
+    private fun bindSwipe(row: RowServerBinding) {
+        val card = row.serverCard
+        val actions = row.serverActions
+        var downX = 0f
+        var downY = 0f
+        var startX = 0f
+        var dragging = false
+
+        card.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX
+                    downY = event.rawY
+                    startX = card.translationX
+                    dragging = false
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downX
+                    if (!dragging) {
+                        val dy = event.rawY - downY
+                        if (abs(dx) <= touchSlop || abs(dx) <= abs(dy)) {
+                            return@setOnTouchListener false
+                        }
+                        dragging = true
+                        reveal(card)
+                    }
+                    card.translationX = (startX + dx).coerceIn(-actions.width.toFloat(), 0f)
+                    true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (dragging) {
+                        dragging = false
+                        settle(card, actions)
+                        true
+                    } else {
+                        card.performClick()
+                        false
+                    }
+                }
+
+                else -> false
+            }
+        }
+    }
+
+    private fun reveal(card: View) {
+        val revealed = revealedCard
+        if (revealed !== card) closeReveal()
+        revealedCard = card
+        // 上一次的吸附动画若还在跑, 会与这次拖动抢 translationX.
+        card.animate().cancel()
+    }
+
+    private fun closeReveal() {
+        val card = revealedCard ?: return
+        revealedCard = null
+        card.animate().translationX(0f).setDuration(ANIMATION_MS).start()
+    }
+
+    private fun settle(card: View, actions: View) {
+        val width = actions.width.toFloat()
+        val open = card.translationX < -width / 2f
+        if (!open) revealedCard = null
+        card.animate().translationX(if (open) -width else 0f).setDuration(ANIMATION_MS).start()
+    }
+
+    private fun showEditDialog(server: SavedServer) {
+        val form = DialogServerEditBinding.inflate(layoutInflater)
+        form.editName.setText(server.name)
+        form.editServer.setText(server.url)
+        form.editToken.setText(server.token)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.setup_edit_title)
+            .setView(form.root)
+            .setNegativeButton(R.string.setup_cancel, null)
+            .setPositiveButton(R.string.setup_save) { _, _ -> saveEdited(server, form) }
+            .show()
+    }
+
+    private fun saveEdited(server: SavedServer, form: DialogServerEditBinding) {
+        val url = normalizeServerUrl(form.editServer.text.toString())
+        if (url == null) {
+            showError(getString(R.string.error_invalid_url))
+            return
+        }
+        val token = form.editToken.text.toString().trim()
+        val name = form.editName.text.toString().trim().ifEmpty { defaultServerName(url) }
+        store.update(server.url, SavedServer(name, url, token))
+        renderServers()
+        if (url != server.url || token != server.token) refreshSession(url, token)
+    }
+
+    /**
+     * 地址或 token 改过就重新换取 cookie: 新 origin 上还没有会话, 旧 cookie 也不再对应当前配置.
+     * 在后台进行, 失败只提示 — 编辑结果已经保存, 不因一次探活失败而回退.
+     */
+    private fun refreshSession(url: String, token: String) {
+        if (token.isEmpty()) return
+        thread {
+            val failure = probe(url, token) ?: return@thread
+            runOnUiThread { showError(failure) }
+        }
+    }
+
+    private fun confirmRemove(server: SavedServer) {
+        AlertDialog.Builder(this)
+            .setMessage(getString(R.string.setup_remove_confirm, server.name))
+            .setNegativeButton(R.string.setup_cancel, null)
+            .setPositiveButton(R.string.setup_remove) { _, _ ->
+                store.remove(server.url)
                 renderServers()
             }
-            binding.savedList.addView(row)
-        }
+            .show()
     }
 
     private fun setBusy(busy: Boolean) {
@@ -156,5 +303,6 @@ class SetupActivity : AppCompatActivity() {
     private companion object {
         const val TIMEOUT_MS = 5_000
         const val TOKEN_COOKIE = "amane_token"
+        const val ANIMATION_MS = 160L
     }
 }

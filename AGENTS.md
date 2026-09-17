@@ -82,6 +82,7 @@ just bump-dry patch          # 预览下一版本
 
 formatter/linter 不通过时优先使用 `just fix` 自动修复, 不要手动改
 发版前更新 `CHANGELOG.md`, 只用 `just bump`, 不要手改版本或手打 tag
+Android APP 的版本与发版都独立 (`androidapp/version.txt`, 只由 `app-` 前缀的 tag 发布), 见 [android.md](docs/dev/android.md)
 
 ## 开发规范
 

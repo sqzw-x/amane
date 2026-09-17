@@ -2,16 +2,22 @@
 <resources>
     <string name="app_name">Amane</string>
 
-    <string name="setup_help">填写 Amane 服务器地址. API token 在服务端启动日志或数据目录里; 留空也可以, 之后用 Web UI 的登录页输入.</string>
+    <string name="setup_name_label">名字</string>
+    <string name="setup_name_hint">客厅的服务器</string>
     <string name="setup_server_label">服务器地址</string>
     <string name="setup_server_hint">192.168.1.10:8000</string>
     <string name="setup_token_label">API Token</string>
-    <string name="setup_token_hint">可留空</string>
     <string name="setup_connect">连接</string>
     <string name="setup_saved">已保存的服务器</string>
-    <string name="setup_open">打开</string>
+    <string name="setup_swipe_hint">左滑条目可编辑或删除</string>
+    <string name="setup_edit">编辑</string>
     <string name="setup_remove">删除</string>
-    <string name="setup_version">外壳 %1$s</string>
+    <string name="setup_active">当前</string>
+    <string name="setup_edit_title">编辑服务器</string>
+    <string name="setup_save">保存</string>
+    <string name="setup_cancel">取消</string>
+    <string name="setup_remove_confirm">删除 %1$s?</string>
+    <string name="setup_version">APP 版本 %1$s</string>
 
     <string name="error_invalid_url">请填写有效的地址</string>
     <string name="error_invalid_token">token 无效</string>
@@ -20,6 +26,7 @@
     <string name="error_boot_failed">页面未能启动: 系统 WebView 可能版本过低, 请更新「Android System WebView」后重试.</string>
     <string name="error_retry">重试</string>
     <string name="error_no_app">没有可以打开 %1$s 的应用</string>
+    <string name="error_no_picker">没有可用的文件选择器</string>
 
     <string name="menu_switch_server">切换服务器</string>
 

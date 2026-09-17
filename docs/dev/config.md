@@ -61,7 +61,7 @@ RateLimiters → WebClient → HttpClient → CrawlerFactory
 
 `AMANE_SUPERVISED=1` 声明进程外监督者在场 (compose 与桌面壳设置). 不允许在无监督循环的 `amane.server` 内设置该变量, 否则 `exit 3` 会使进程退出且无人再次启动. 为真时 `POST /api/system/restart` 可用. 不探测 cgroup, 以免在 K8s 里误开应用内重启.
 
-`AMANE_UPDATE_URL` 覆盖 GitHub `/releases/latest` (空 = 官方 API).
+`AMANE_UPDATE_URL` 覆盖版本检查的 GitHub 地址 (空 = 官方 API 的发布列表; 指向镜像的 `/releases/latest` 也可以, 单条发布的响应同样接受).
 
 ## `scraping` 影片路由 (Hot)
 

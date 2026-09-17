@@ -19,15 +19,14 @@
     "title": "客户端设置",
     "unavailable": "此页面只在 Android 壳内可用。",
     "bridgeMissing": "壳没有响应页面请求，请重新安装或更新 APP。",
-    "server": "服务器",
+    "server": "当前服务器",
     "switchServer": "切换服务器",
-    "switchServerHint": "选择另一个 Amane 服务器。页面会带着该服务器的会话重新加载。",
-    "shellVersion": "外壳版本",
     "webView": "系统 WebView",
     "chromium": "渲染内核",
     "webViewUnknown": "未知",
     "chromiumOutdated": "渲染内核 Chromium {{major}} 低于前端需要的 {{min}}。请更新系统 WebView，否则布局与样式会残缺。",
-    "updateWebView": "打开 WebView 的商店页"
+    "updateWebView": "打开 WebView 的商店页",
+    "appVersion": "APP 版本"
   },
   "fields": {
     "scraping": {

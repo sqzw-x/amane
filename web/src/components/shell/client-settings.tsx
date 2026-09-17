@@ -39,10 +39,7 @@ export function ClientSettings() {
       <Stack gap={4}>
         <Text fw={600}>{t("client.server")}</Text>
         <Code block>{window.location.origin}</Code>
-        <Text size="xs" c="dimmed">
-          {t("client.switchServerHint")}
-        </Text>
-        <Group>
+        <Group mt="xs">
           <Button
             size="xs"
             variant="light"
@@ -55,7 +52,7 @@ export function ClientSettings() {
       </Stack>
 
       <Stack gap={4}>
-        <Text fw={600}>{t("client.shellVersion")}</Text>
+        <Text fw={600}>{t("client.appVersion")}</Text>
         <Code>{shell.version}</Code>
       </Stack>
 

@@ -19,15 +19,14 @@
     "title": "Client settings",
     "unavailable": "This page is only available inside the Android shell.",
     "bridgeMissing": "The shell is not responding to page requests. Reinstall or update the app.",
-    "server": "Server",
+    "server": "Current server",
     "switchServer": "Switch server",
-    "switchServerHint": "Pick another Amane server. The page reloads with that server's session.",
-    "shellVersion": "Shell version",
     "webView": "System WebView",
     "chromium": "Rendering engine",
     "webViewUnknown": "Unknown",
     "chromiumOutdated": "Rendering engine Chromium {{major}} is below the {{min}} this frontend needs. Update the system WebView, otherwise the layout and styles will be incomplete.",
-    "updateWebView": "Open the WebView store page"
+    "updateWebView": "Open the WebView store page",
+    "appVersion": "APP version"
   },
   "fields": {
     "scraping": {

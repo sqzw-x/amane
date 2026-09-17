@@ -6,9 +6,16 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
-// 版本由 scripts/build_android_app.sh 从 amane.version 注入; 直接用 Gradle 构建时留占位值.
-val amaneVersion = providers.gradleProperty("amaneVersion").getOrElse("0.0.0")
-val amaneVersionCode = providers.gradleProperty("amaneVersionCode").getOrElse("1").toInt()
+/**
+ * APP 版本独立于服务端与桌面端: 唯一来源是 androidapp/version.txt (见 docs/dev/android.md).
+ * versionCode 由 semver 推导 (三段各占两位十进制), 必须随版本单调递增 —— Android 拒绝降级覆盖安装.
+ */
+val appVersionName = rootProject.file("version.txt").readText().trim()
+val appVersionCode = run {
+    val parts = appVersionName.substringBefore('-').substringBefore('+')
+        .split('.').map { it.toIntOrNull() ?: 0 }
+    (parts.getOrElse(0) { 0 } * 10_000) + (parts.getOrElse(1) { 0 } * 100) + parts.getOrElse(2) { 0 }
+}
 
 // 签名配置就地读 androidapp/keystore.properties (不入库, 见 .gitignore); 缺席时 release 不签名.
 val keystoreProperties = Properties().apply {
@@ -26,8 +33,8 @@ android {
         // 29 起 DownloadManager 写公共目录不再需要存储权限, 边缘到边缘与 Cookie 行为也一致.
         minSdk = 29
         targetSdk = 36
-        versionCode = amaneVersionCode
-        versionName = amaneVersion
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     signingConfigs {
@@ -78,4 +85,5 @@ dependencies {
     implementation(libs.androidx.swiperefreshlayout)
 
     testImplementation(libs.junit)
+    testImplementation(libs.json)
 }

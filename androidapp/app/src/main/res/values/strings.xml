@@ -2,16 +2,22 @@
 <resources>
     <string name="app_name">Amane</string>
 
-    <string name="setup_help">Point this shell at your Amane server. The API token is printed in the server log or kept in the server\'s data directory; leave it empty to sign in from the web UI instead.</string>
+    <string name="setup_name_label">Name</string>
+    <string name="setup_name_hint">Living room server</string>
     <string name="setup_server_label">Server address</string>
     <string name="setup_server_hint">192.168.1.10:8000</string>
     <string name="setup_token_label">API token</string>
-    <string name="setup_token_hint">optional</string>
     <string name="setup_connect">Connect</string>
     <string name="setup_saved">Saved servers</string>
-    <string name="setup_open">Open</string>
-    <string name="setup_remove">Remove</string>
-    <string name="setup_version">Shell %1$s</string>
+    <string name="setup_swipe_hint">Swipe a row left to edit or delete</string>
+    <string name="setup_edit">Edit</string>
+    <string name="setup_remove">Delete</string>
+    <string name="setup_active">Current</string>
+    <string name="setup_edit_title">Edit server</string>
+    <string name="setup_save">Save</string>
+    <string name="setup_cancel">Cancel</string>
+    <string name="setup_remove_confirm">Delete %1$s?</string>
+    <string name="setup_version">APP version %1$s</string>
 
     <string name="error_invalid_url">Enter a valid address</string>
     <string name="error_invalid_token">Wrong API token</string>
