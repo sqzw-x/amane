@@ -1,6 +1,6 @@
 # 桌面形态: 菜单栏 / 托盘
 
-> 本文记录桌面形态的进程边界、IPC 契约与打包方式. UI 相关配置 (路径 / 开关) 经由壳进程环境变量, 不纳入 [config.md](config.md) 的 Cold/Hot 分层.
+> 本文记录桌面形态的进程边界、IPC 契约与打包方式. 桌面形态的环境变量由壳的设置文件给出, 不纳入 [config.md](config.md) 的 Cold/Hot 分层.
 
 ## 品牌标
 
@@ -8,7 +8,7 @@
 
 ## 进程模型
 
-Python 只运行 HTTP (与 Docker / `just start` 同一入口 `amane.server`), 不含监督、不含 UI. 壳是原生进程, 设置桌面环境变量、监督 Python、绘制菜单栏 / 托盘. UI 与服务之间**只有 HTTP**, 无专用通道.
+Python 只运行 HTTP (与 Docker / `just start` 同一入口 `amane.server`), 不含监督、不含 UI. 壳是原生进程, 求解桌面环境变量并注入 Python 子进程、监督 Python、绘制菜单栏 / 托盘. UI 与服务之间**只有 HTTP**, 无专用通道.
 
 **macOS** 三个进程, Swift 是 App 入口, 菜单栏是兄弟进程而非服务的孩子:
 
@@ -47,9 +47,19 @@ macOS UI argv (`AmaneUI --base-url http://127.0.0.1:PORT [--token <token>] [--wa
 
 **Windows**: 打开 exe 时先抢 Mutex, 已有实例则立刻退出. 菜单「退出」置 stopping、停 Python、卸托盘、结束消息循环; 「重启服务器」同 macOS. Python 崩溃退避后再次启动, 托盘不拆; 任务管理器结束 `Amane.exe` 时 Job Object 结束 Python; explorer.exe 重启后收到 `TaskbarCreated` 再 `NIM_ADD`.
 
-壳设置的环境变量: `AMANE_HOST=127.0.0.1` `AMANE_PORT=18000` (绑定回环, 避免防火墙弹窗)、`AMANE_DATA_DIR` / `AMANE_LOG_DIR` (macOS `~/Library/Application Support/Amane`, Windows `%LOCALAPPDATA%\Amane`)、`AMANE_WEB_DIST`、`AMANE_SUPERVISED=1`、`PYDANTIC_DISABLE_PLUGINS=1`, 以及 macOS 的 `AMANE_UI_BINARY` / `AMANE_UI_DISABLED=1` 与 Windows 的 `AMANE_BIN` / `AMANE_UI_ONLY=1`.
+## 桌面设置文件
 
-`AMANE_SAFE_DIRS` 桌面默认 `ALLOW_ALL` (认证后的调用方是用户本人; 含 UNC 与迟到的网络盘). 想收紧可改成逗号分隔的目录名单; Docker 仍用显式名单. 文件浏览器在 `ALLOW_ALL` 下相对路径缺省根为 POSIX `/`、Windows `C:\`.
+壳注入的环境变量来自数据目录旁的 `desktop.env` (macOS `~/Library/Application Support/Amane/desktop.env`, Windows `%LOCALAPPDATA%\Amane\desktop.env`), 每行 `KEY=VALUE`, 首次启动写入注释模板. 该路径取默认数据目录, 不随 `AMANE_DATA_DIR` 变动 — 读取它必须早于确定数据目录.
+
+- **优先级**: 真实环境变量 > 设置文件 > 壳内置默认值; 空值按未设置处理.
+- **可写入的键**: `AMANE_HOST` (默认 `127.0.0.1`, 绑定回环以避免防火墙弹窗)、`AMANE_PORT`、`AMANE_DATA_DIR` / `AMANE_LOG_DIR` (默认数据目录及其 `logs`)、`AMANE_SAFE_DIRS` (默认 `ALLOW_ALL` 关闭边界校验)、`AMANE_TOKEN`.
+- **生效时机**: 壳在每次启动 Python 前重新求解, 因此修改后经菜单「重启服务器」即生效. `AMANE_HOST` / `AMANE_PORT` 变化会改变 UI 兄弟进程的 `--base-url`, macOS 壳须同时重建该进程; Windows 的轮询地址由壳自身重算, 无需重建.
+- **非法键**: 白名单之外的键在启动时提示一次并忽略, 服务仍以内置默认值启动.
+- **同步要求**: 两个壳各自解析同一契约 (文件名、键列表、模板、解析规则), 新增环境变量时必须同步两侧白名单与模板.
+
+壳自行设置且不允许经设置文件改写: `AMANE_SUPERVISED=1`、`PYDANTIC_DISABLE_PLUGINS=1`、`AMANE_WEB_DIST`, 以及 macOS 的 `AMANE_UI_BINARY` / `AMANE_UI_DISABLED=1` 与 Windows 的 `AMANE_BIN` / `AMANE_UI_ONLY=1` (后两组仅供开发回路).
+
+`AMANE_SAFE_DIRS` 收紧为目录名单时按逗号分隔; Docker 仍用显式名单. 文件浏览器在 `ALLOW_ALL` 下相对路径缺省根为 POSIX `/`、Windows `C:\`, 认证后的调用方视为用户本人 (含 UNC 与迟到的网络盘).
 
 ## 打包
 
