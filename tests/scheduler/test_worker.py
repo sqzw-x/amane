@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from amane.db.models import TaskStatus, TaskType
 from amane.handlers.protocol import FollowupTask, TaskHandler, TaskResult
@@ -220,6 +221,45 @@ async def test_worker_idle_when_no_tasks(repo: Repository):
     await worker.stop()
 
     assert worker._done_queue.empty()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_worker_stop_waits_for_inflight_claim(repo: Repository, monkeypatch: pytest.MonkeyPatch) -> None:
+    """stop() 不得取消进行中的认领.
+
+    认领的 commit 被打断, 事务就不会正常结束: SQLite 写锁留在池里的连接上 (Windows 上前一连接持有的锁必须显式释放),
+    紧随其后的 fail_all_running_tasks() 写入会以 database is locked 超时.
+    """
+    await repo.create_task(TaskType.SCRAPE, payload={"i": 0})
+
+    claim_commit_started = asyncio.Event()
+    release_claim_commit = asyncio.Event()
+    real_commit = AsyncSession.commit
+    armed = True
+
+    async def _commit(self: AsyncSession) -> None:
+        nonlocal armed
+        if armed:
+            armed = False
+            claim_commit_started.set()
+            await release_claim_commit.wait()
+        await real_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", _commit)
+
+    worker = AsyncWorker(repo=repo, handlers={TaskType.SCRAPE: SuccessHandler()}, poll_interval=0.05)
+    worker.start()
+    await asyncio.wait_for(claim_commit_started.wait(), timeout=5)
+
+    stop_task = asyncio.create_task(worker.stop())
+    await asyncio.sleep(0.05)
+    assert not stop_task.done(), "stop() 提前返回: 进行中的认领被取消"
+
+    release_claim_commit.set()
+    await asyncio.wait_for(stop_task, timeout=5)
+
+    # 事务已结束, 写锁释放: 后续写入不能撞上锁超时.
+    await asyncio.wait_for(repo.create_task(TaskType.SCRAPE, payload={"i": 1}), timeout=5)
 
 
 @pytest.mark.asyncio(loop_scope="function")

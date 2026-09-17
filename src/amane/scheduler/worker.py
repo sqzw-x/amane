@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 _DEFAULT_SHUTDOWN_TIMEOUT = 0
+# 主循环卡死 (认领迟迟不返回) 时的兜底取消阈值, 正常路径只等它自己退出.
+_MAIN_LOOP_STOP_TIMEOUT = 5.0
 
 
 class AsyncWorker:
@@ -46,8 +48,8 @@ class AsyncWorker:
         self._shutdown_timeout = shutdown_timeout
         self._semaphore = asyncio.Semaphore(concurrency)
         self._running = False
-        # stop() 必须取消并等待主循环退出, 否则尚未完成的 claim 会在 stop() 返回后
-        # 继续认领之后新入队的任务.
+        # stop() 等主循环自己退出, 否则尚未完成的 claim 会在 stop() 返回后继续认领之后新入队的任务.
+        self._stop_signal = asyncio.Event()
         self._main_task: asyncio.Task[None] | None = None
         self._active_tasks: set[asyncio.Task] = set()
         self._running_tasks: dict[int, asyncio.Task] = {}  # 按 task_id 取消正在执行的任务
@@ -74,16 +76,26 @@ class AsyncWorker:
         logger.info("worker paused" if paused else "worker resumed")
 
     def start(self) -> None:
+        # 同步置位: 任务首次调度前就已 stop() 时, _run_loop 不得把 _running 覆盖回 True.
+        self._running = True
+        self._stop_signal.clear()
         self._main_task = asyncio.create_task(self._run_loop())
 
     async def stop(self) -> None:
         self._running = False
-        # 先取消主循环, 避免 stop() 返回后仍认领新任务.
-        if self._main_task is not None and not self._main_task.done():
-            self._main_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._main_task
+        self._stop_signal.set()  # 唤醒轮询中的主循环, 立即退出
+        # 等主循环自己退出, 不取消它: 取消可能落在 claim 的 commit 之间, 事务就此不结束,
+        # SQLite 写锁留在池里的连接上, 紧接着的 fail_all_running_tasks() 会以 database is locked 超时.
+        if self._main_task is not None:
+            main_task = self._main_task
             self._main_task = None
+            try:
+                await asyncio.wait_for(main_task, timeout=_MAIN_LOOP_STOP_TIMEOUT)
+            except TimeoutError:
+                logger.warning("worker main loop stuck, cancelling", timeout=_MAIN_LOOP_STOP_TIMEOUT)
+                main_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await main_task
         # 等待活跃任务; 超时则强制取消.
         await self._shutdown_active_tasks()
         failed = await self._repo.fail_all_running_tasks()
@@ -93,7 +105,6 @@ class AsyncWorker:
         logger.info("worker stopped", marked_failed=failed)
 
     async def _run_loop(self) -> None:
-        self._running = True
         logger.info("worker started", concurrency=self._concurrency, poll_interval=self._poll_interval)
 
         while self._running:
@@ -106,7 +117,9 @@ class AsyncWorker:
                     t.add_done_callback(self._active_tasks.discard)
                     continue  # 立即检查更多任务, 不等待 poll_interval
 
-            await asyncio.sleep(self._poll_interval)
+            # 可被 stop() 立刻唤醒, 不必等满 poll_interval.
+            with suppress(TimeoutError):
+                await asyncio.wait_for(self._stop_signal.wait(), self._poll_interval)
 
     async def cancel_task(self, task_id: int) -> bool:
         asyncio_task = self._running_tasks.get(task_id)
