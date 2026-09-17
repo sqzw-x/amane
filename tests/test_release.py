@@ -127,6 +127,51 @@ async def test_fetch_skips_other_release_lines() -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_fetch_skips_prerelease_and_draft() -> None:
+    """旧实现读的 `/releases/latest` 本身不返回草稿与预发布, 改读列表后必须自己跳过."""
+    fake = _FakeClient(
+        [
+            _FakeResponse(
+                200,
+                [
+                    {"tag_name": "v0.17.0-rc1", "prerelease": True, "html_url": "https://example.com/rc"},
+                    {"tag_name": "v0.18.0", "draft": True, "html_url": "https://example.com/draft"},
+                    {"tag_name": "v0.16.0", "html_url": "https://example.com/stable"},
+                ],
+            )
+        ]
+    )
+    with patch("amane.release.httpx.AsyncClient", return_value=fake):
+        snap = await ReleaseChecker().fetch()
+    assert snap.latest == "v0.16.0"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_fetch_only_prerelease_is_empty() -> None:
+    fake = _FakeClient([_FakeResponse(200, [{"tag_name": "v0.17.0-rc1", "prerelease": True}])])
+    with patch("amane.release.httpx.AsyncClient", return_value=fake):
+        snap = await ReleaseChecker().fetch()
+    assert snap.latest is None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_fetch_keeps_etag_per_url() -> None:
+    """镜像与官方 API 各记一份 ETag: 不能把 A 的条件请求发给 B."""
+    fake = _FakeClient(
+        [
+            _FakeResponse(200, [{"tag_name": "v1.0.0"}], etag='"mirror"'),
+            _FakeResponse(200, [{"tag_name": "v1.0.0"}], etag='"official"'),
+        ]
+    )
+    mirror = "http://127.0.0.1:18765/releases"
+    with patch("amane.release.httpx.AsyncClient", return_value=fake):
+        checker = ReleaseChecker()
+        await checker.fetch(url=mirror)
+        await checker.fetch()
+    assert "If-None-Match" not in fake.calls[1]
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_fetch_only_other_release_lines_is_empty() -> None:
     fake = _FakeClient([_FakeResponse(200, [{"tag_name": "app-1.0.0", "html_url": "https://example.com/app"}])])
     with patch("amane.release.httpx.AsyncClient", return_value=fake):

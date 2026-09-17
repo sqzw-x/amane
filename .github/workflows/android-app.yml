@@ -38,6 +38,16 @@ jobs:
         uses: extractions/setup-just@v4
 
       # 没有签名密钥时脚本退回 debug 包 (可侧载, 但不能作为正式产物).
+      # tag 与 version.txt 是两份东西: 不一致时打出来的包会带着另一个版本号发布, 用户装不上或装到同名旧版本.
+      - name: Check tag matches version.txt
+        if: startsWith(github.ref, 'refs/tags/app-')
+        run: |
+          EXPECTED="app-$(tr -d '[:space:]' < androidapp/version.txt)"
+          if [ "$GITHUB_REF_NAME" != "$EXPECTED" ]; then
+            echo "tag $GITHUB_REF_NAME 与 androidapp/version.txt ($EXPECTED) 不一致" >&2
+            exit 1
+          fi
+
       - name: Write keystore
         if: env.ANDROID_KEYSTORE_BASE64 != ''
         env:
