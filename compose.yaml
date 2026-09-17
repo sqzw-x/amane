@@ -14,7 +14,6 @@ services:
       - AMANE_DATA_DIR=/data
       # 需包含所有映射的媒体库路径. 若有多个以逗号分隔 (如 /media,/media2)
       - AMANE_SAFE_DIRS=/media
-      - AMANE_LOG_LEVEL=INFO
       - AMANE_SUPERVISED=1
     restart: unless-stopped
     healthcheck:
