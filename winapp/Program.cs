@@ -49,6 +49,7 @@ internal sealed class App
     private const uint IdUpdate = 1004;
     private const uint IdRestart = 1005;
     private const uint IdQuit = 1006;
+    private const uint IdSettings = 1007;
     private const uint StatusControlCExit = 0xC000013A;
     private const int ExitRestart = 3;
     private const nuint PollTimerId = 1;
@@ -62,6 +63,17 @@ internal sealed class App
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
     private readonly bool _uiOnly;
     private readonly TimeSpan _restartDelay;
+
+    /// 用户真实环境变量快照. 设置文件与内置默认值都不覆盖它.
+    private static readonly Dictionary<string, string> LaunchEnv = CaptureLaunchEnv();
+
+    /// 求解出的数据目录 (真实环境变量优先于设置文件).
+    private static string _resolvedDataDir = DesktopSettings.DefaultDataDir;
+
+    /// 已提示过的非法键.
+    private IReadOnlyList<string> _warnedKeys = Array.Empty<string>();
+
+    private bool _tokenWatcherStarted;
 
     private nint _hwnd;
     private nint _hIcon;
@@ -103,15 +115,7 @@ internal sealed class App
         // Manifest is the real declaration; this is a Native AOT fallback before any HWND.
         Native.SetProcessDpiAwarenessContext(Native.DpiAwarenessContextPerMonitorAwareV2);
 
-        if (!_uiOnly)
-        {
-            PrepareDesktopEnv();
-        }
-
-        var host = Env("AMANE_HOST") ?? "127.0.0.1";
-        var port = Env("AMANE_PORT") ?? (_uiOnly ? "8000" : "18000");
-        _baseUrl = $"http://{host}:{port}";
-        ResolveTokenAtStart();
+        ApplyDesktopEnv();
 
         if (!CreateUi())
         {
@@ -139,38 +143,90 @@ internal sealed class App
 
     // MARK: - Env / paths
 
-    private static void PrepareDesktopEnv()
+    /// 求解桌面环境变量的生效值并导出到本进程环境 (Python 子进程继承).
+    /// 真实环境变量 > 设置文件 > 内置默认值; 每次启动 Python 前调用, 因此修改设置文件后
+    /// 经菜单「重启服务器」即生效.
+    private void ApplyDesktopEnv()
     {
-        SetDefault("PYDANTIC_DISABLE_PLUGINS", "1");
-        Environment.SetEnvironmentVariable("AMANE_SUPERVISED", "1");
-        SetDefault("AMANE_HOST", "127.0.0.1");
-        SetDefault("AMANE_PORT", "18000");
-        SetDefault("AMANE_SAFE_DIRS", "ALLOW_ALL");
-        var data = DataDir();
-        var logs = Path.Combine(data, "logs");
-        Directory.CreateDirectory(logs);
-        SetDefault("AMANE_DATA_DIR", data);
-        SetDefault("AMANE_LOG_DIR", logs);
-        var web = Path.Combine(AppContext.BaseDirectory, "web", "dist", "index.html");
-        if (File.Exists(web))
+        DesktopSettings.CreateIfMissing();
+        var parsed = DesktopSettings.Parse(ReadSettingsFile());
+        var data = Resolve(parsed, "AMANE_DATA_DIR") ?? DesktopSettings.DefaultDataDir;
+        var logs = Resolve(parsed, "AMANE_LOG_DIR") ?? Path.Combine(data, "logs");
+        var host = Resolve(parsed, "AMANE_HOST") ?? "127.0.0.1";
+        var port = Resolve(parsed, "AMANE_PORT") ?? (_uiOnly ? "8000" : "18000");
+        _resolvedDataDir = data;
+
+        if (!_uiOnly)
         {
-            Environment.SetEnvironmentVariable("AMANE_WEB_DIST", Path.GetDirectoryName(web));
+            Directory.CreateDirectory(logs);
+            Export("AMANE_DATA_DIR", data);
+            Export("AMANE_LOG_DIR", logs);
+            Export("AMANE_HOST", host);
+            Export("AMANE_PORT", port);
+            Export("AMANE_SAFE_DIRS", Resolve(parsed, "AMANE_SAFE_DIRS") ?? "ALLOW_ALL");
+            Export("AMANE_TOKEN", Resolve(parsed, "AMANE_TOKEN"));
+            Export("PYDANTIC_DISABLE_PLUGINS", Env("PYDANTIC_DISABLE_PLUGINS") ?? "1");
+            Export("AMANE_SUPERVISED", "1");
+            var web = Path.Combine(AppContext.BaseDirectory, "web", "dist", "index.html");
+            if (File.Exists(web))
+            {
+                Export("AMANE_WEB_DIST", Path.GetDirectoryName(web));
+            }
+        }
+
+        _baseUrl = $"http://{host}:{port}";
+        var previousToken = _token;
+        ResolveTokenAtStart(Resolve(parsed, "AMANE_TOKEN"));
+        if (_hwnd != 0 && _token != previousToken)
+        {
+            OnUi(RebuildMenu);
+        }
+
+        WarnUnknownKeys(parsed.UnknownKeys);
+    }
+
+    /// 真实环境变量优先, 其次设置文件; 空值按未设置处理.
+    private static string? Resolve(DesktopSettings.Parsed parsed, string key)
+    {
+        if (LaunchEnv.TryGetValue(key, out var explicitValue) && explicitValue.Length > 0)
+        {
+            return explicitValue;
+        }
+
+        return parsed.Values.TryGetValue(key, out var configured) && configured.Length > 0
+            ? configured
+            : null;
+    }
+
+    /// 导出到本进程环境; null 清除 (调用方已按优先级求解).
+    private static void Export(string key, string? value) =>
+        Environment.SetEnvironmentVariable(key, value);
+
+    private static string ReadSettingsFile()
+    {
+        try
+        {
+            return File.ReadAllText(DesktopSettings.SettingsPath);
+        }
+        catch (Exception)
+        {
+            // 文件缺失或不可读时按无设置处理.
+            return "";
         }
     }
 
-    private static string DataDir()
+    private static Dictionary<string, string> CaptureLaunchEnv()
     {
-        var overrideDir = Env("AMANE_DATA_DIR");
-        if (!string.IsNullOrEmpty(overrideDir))
+        var snapshot = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
         {
-            return overrideDir;
+            snapshot[(string)entry.Key] = entry.Value as string ?? "";
         }
 
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Amane"
-        );
+        return snapshot;
     }
+
+    private static string DataDir() => _resolvedDataDir;
 
     private static string? ServerBinary()
     {
@@ -193,34 +249,34 @@ internal sealed class App
         return null;
     }
 
-    private void ResolveTokenAtStart()
+    private void ResolveTokenAtStart(string? token)
     {
-        var envToken = Env("AMANE_TOKEN");
-        if (envToken == "off")
+        if (token == "off")
         {
             _token = "";
             return;
         }
 
-        if (!string.IsNullOrEmpty(envToken))
+        if (!string.IsNullOrEmpty(token))
         {
-            _token = envToken;
+            _token = token;
             return;
         }
 
-        if (_uiOnly)
+        if (_uiOnly || _tokenWatcherStarted)
         {
             return;
         }
 
+        _tokenWatcherStarted = true;
         _ = Task.Run(WaitForTokenFile);
     }
 
     private void WaitForTokenFile()
     {
-        var path = Path.Combine(DataDir(), "token");
         while (!IsStopping)
         {
+            var path = Path.Combine(DataDir(), "token");
             try
             {
                 if (File.Exists(path))
@@ -268,6 +324,7 @@ internal sealed class App
             Process proc;
             try
             {
+                ApplyDesktopEnv();
                 proc = StartPython(bin);
             }
             catch (Exception ex)
@@ -543,6 +600,7 @@ internal sealed class App
             IdDataDir,
             Tr("打开数据目录", "Open Data Directory")
         );
+        Native.AppendMenu(_hMenu, Native.MfString, IdSettings, Tr("打开设置文件", "Open Settings File"));
         var copyFlags = Native.MfString;
         if (string.IsNullOrEmpty(_token))
         {
@@ -641,6 +699,9 @@ internal sealed class App
                 break;
             case IdDataDir:
                 OpenDataDirectory();
+                break;
+            case IdSettings:
+                OpenSettingsFile();
                 break;
             case IdCopy:
                 CopyToken();
@@ -747,6 +808,30 @@ internal sealed class App
         try
         {
             Process.Start(new ProcessStartInfo(_dataDir) { UseShellExecute = true });
+        }
+        catch (Exception)
+        {
+            // ignore
+        }
+    }
+
+    /// 打开设置文件; 未关联 .env 时回退到系统记事本.
+    private static void OpenSettingsFile()
+    {
+        DesktopSettings.CreateIfMissing();
+        try
+        {
+            Process.Start(new ProcessStartInfo(DesktopSettings.SettingsPath) { UseShellExecute = true });
+            return;
+        }
+        catch (Exception)
+        {
+            // 无 .env 关联; 换用记事本.
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo("notepad.exe", DesktopSettings.SettingsPath));
         }
         catch (Exception)
         {
@@ -912,6 +997,27 @@ internal sealed class App
         }
     }
 
+    /// 白名单之外的键提示一次; 设置文件再次引入新键时重新提示.
+    private void WarnUnknownKeys(IReadOnlyList<string> keys)
+    {
+        if (keys.Count == 0 || _warnedKeys.SequenceEqual(keys))
+        {
+            return;
+        }
+
+        _warnedKeys = keys.ToArray();
+        var list = string.Join("\n", keys);
+        OnUi(() =>
+            Alert(
+                Tr("设置文件包含无法识别的键", "Unknown keys in the settings file"),
+                Tr(
+                    $"以下键将被忽略:\n{list}\n\n文件: {DesktopSettings.SettingsPath}",
+                    $"These keys are ignored:\n{list}\n\nFile: {DesktopSettings.SettingsPath}"
+                )
+            )
+        );
+    }
+
     private void Alert(string title, string message)
     {
         Native.MessageBox(_hwnd, message, title, Native.MbOk | Native.MbIconInformation);
@@ -991,14 +1097,6 @@ internal sealed class App
     }
 
     private static string? Env(string key) => Environment.GetEnvironmentVariable(key);
-
-    private static void SetDefault(string key, string value)
-    {
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(key)))
-        {
-            Environment.SetEnvironmentVariable(key, value);
-        }
-    }
 
     private static string Tr(string zh, string en) => Zh ? zh : en;
 }

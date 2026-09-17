@@ -5,7 +5,8 @@ let package = Package(
     name: "Amane",
     platforms: [.macOS(.v13)],
     targets: [
-        .executableTarget(name: "Amane"),
-        .executableTarget(name: "AmaneUI"),
+        .target(name: "AmaneShared"),
+        .executableTarget(name: "Amane", dependencies: ["AmaneShared"]),
+        .executableTarget(name: "AmaneUI", dependencies: ["AmaneShared"]),
     ]
 )

@@ -2,9 +2,13 @@
 // Launch Services 身份 (com.github.sqzw-x.amane) + 监督 onedir Python (amane.server)
 // + 菜单栏 UI 兄弟进程 (AmaneUI.app, bundle id 不同, 服务重启时 UI 不必跟着死).
 
+import AmaneShared
 import AppKit
 import Darwin
 import Foundation
+
+/// 用户真实环境变量快照. 设置文件与内置默认值都不覆盖它.
+private let launchEnvironment = ProcessInfo.processInfo.environment
 
 private let restartDelay: TimeInterval = {
     if let raw = ProcessInfo.processInfo.environment["AMANE_RESTART_DELAY"],
@@ -15,15 +19,81 @@ private let restartDelay: TimeInterval = {
     return 2
 }()
 
+/// 桌面环境变量的生效值. 每次启动 Python 前重新求解 真实环境变量 > 设置文件 > 内置默认值,
+/// 因此菜单「重启服务器」即可应用设置文件的修改. 求解幂等, 不修改本进程环境.
+private struct DesktopEnvironment {
+    let host: String
+    let port: String
+    let dataDir: URL
+    let token: String?
+    /// 注入 Python 子进程的键值, 含壳内部键.
+    let pythonEnv: [String: String]
+    /// 设置文件中白名单之外的键.
+    let unknownKeys: [String]
+
+    var baseURL: String { "http://\(host):\(port)" }
+    /// UI 兄弟进程的身份; 它的 argv 在启动时固定, 身份变化时须重建该进程.
+    var uiIdentity: String { "\(baseURL)|\(token ?? "")" }
+
+    static func resolve() -> DesktopEnvironment {
+        DesktopSettings.createIfMissing()
+        let text = (try? String(contentsOf: DesktopSettings.url, encoding: .utf8)) ?? ""
+        let parsed = DesktopSettings.parse(text)
+        let host = value("AMANE_HOST", parsed) ?? "127.0.0.1"
+        let port = value("AMANE_PORT", parsed) ?? "18000"
+        let dataDir = URL(
+            fileURLWithPath: value("AMANE_DATA_DIR", parsed) ?? DesktopSettings.defaultDataDir.path,
+            isDirectory: true)
+        let logDir = URL(
+            fileURLWithPath: value("AMANE_LOG_DIR", parsed)
+                ?? dataDir.appendingPathComponent("logs", isDirectory: true).path,
+            isDirectory: true)
+        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+        let token = value("AMANE_TOKEN", parsed)
+        var pythonEnv = [
+            "AMANE_HOST": host,
+            "AMANE_PORT": port,
+            "AMANE_DATA_DIR": dataDir.path,
+            "AMANE_LOG_DIR": logDir.path,
+            "AMANE_SAFE_DIRS": value("AMANE_SAFE_DIRS", parsed) ?? "ALLOW_ALL",
+            "AMANE_SUPERVISED": "1",
+            // 菜单栏由本进程拉起; 子进程带此标记, 避免 Python 再 spawn 一份.
+            "AMANE_UI_DISABLED": "1",
+            "PYDANTIC_DISABLE_PLUGINS": launchEnvironment["PYDANTIC_DISABLE_PLUGINS"] ?? "1",
+        ]
+        if let token { pythonEnv["AMANE_TOKEN"] = token }
+        if let web = webDist() { pythonEnv["AMANE_WEB_DIST"] = web }
+        return DesktopEnvironment(
+            host: host, port: port, dataDir: dataDir, token: token, pythonEnv: pythonEnv,
+            unknownKeys: parsed.unknownKeys)
+    }
+
+    /// 真实环境变量优先, 其次设置文件; 空值按未设置处理.
+    private static func value(_ key: String, _ parsed: DesktopSettings.Parsed) -> String? {
+        if let explicit = launchEnvironment[key], !explicit.isEmpty { return explicit }
+        if let configured = parsed.values[key], !configured.isEmpty { return configured }
+        return nil
+    }
+
+    private static func webDist() -> String? {
+        guard
+            let web = Bundle.main.resourceURL?.appendingPathComponent("web/dist/index.html"),
+            FileManager.default.isReadableFile(atPath: web.path)
+        else { return nil }
+        return web.deletingLastPathComponent().path
+    }
+}
+
 final class Launcher: NSObject, NSApplicationDelegate {
     private let lock = NSLock()
     private var python: Process?
     private var ui: Process?
     private var stopping = false
+    /// 已提示过的非法键, 仅在主队列读写.
+    private var warnedKeys: [String] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        Self.prepareDesktopEnv()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.supervisePython()
             DispatchQueue.main.async { NSApp.terminate(nil) }
@@ -43,13 +113,16 @@ final class Launcher: NSObject, NSApplicationDelegate {
         guard let bin = Self.serverBinary() else { exit(1) }
         while true {
             if isStopping { return }
+            let desktop = DesktopEnvironment.resolve()
+            warnUnknownKeys(desktop.unknownKeys)
             let proc = Process()
             proc.executableURL = bin
             proc.arguments = Array(CommandLine.arguments.dropFirst())
             proc.currentDirectoryURL = bin.deletingLastPathComponent()
-            // 菜单栏由本进程拉起; 子进程带此标记, 避免 Python 再 spawn 一份.
             var env = ProcessInfo.processInfo.environment
-            env["AMANE_UI_DISABLED"] = "1"
+            for (key, value) in desktop.pythonEnv {
+                env[key] = value
+            }
             proc.environment = env
             do {
                 try proc.run()
@@ -80,8 +153,15 @@ final class Launcher: NSObject, NSApplicationDelegate {
         guard Self.uiBinary() != nil else { return }
         var failures = 0
         let backoff: [TimeInterval] = [1, 3, 10]
+        var identity: String?
         while !isStopping {
-            spawnUI()
+            let desktop = DesktopEnvironment.resolve()
+            if let previous = identity, previous != desktop.uiIdentity {
+                // base-url 或 token 变化: 旧 UI 的 argv 已失效, 结束后由本轮循环重启.
+                stopUI(killAfter: 5)
+            }
+            identity = desktop.uiIdentity
+            spawnUI(desktop)
             lock.lock()
             let proc = ui
             lock.unlock()
@@ -100,22 +180,19 @@ final class Launcher: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func spawnUI() {
+    private func spawnUI(_ desktop: DesktopEnvironment) {
         lock.lock()
         let already = ui?.isRunning == true
         lock.unlock()
         if already { return }
         guard let bin = Self.uiBinary() else { return }
         if isStopping { return }
-        let env = ProcessInfo.processInfo.environment
-        let host = env["AMANE_HOST"] ?? "127.0.0.1"
-        let port = env["AMANE_PORT"] ?? "18000"
-        var argv = ["--base-url", "http://\(host):\(port)", "--watch-parent", String(getpid())]
-        if env["AMANE_TOKEN"] == "off" {
+        var argv = ["--base-url", desktop.baseURL, "--watch-parent", String(getpid())]
+        if desktop.token == "off" {
             // 关鉴权: 不带 --token
-        } else if let explicit = env["AMANE_TOKEN"], !explicit.isEmpty {
+        } else if let explicit = desktop.token {
             argv += ["--token", explicit]
-        } else if let token = waitForTokenFile() {
+        } else if let token = waitForTokenFile(desktop.dataDir) {
             argv += ["--token", token]
         } else {
             return
@@ -134,8 +211,8 @@ final class Launcher: NSObject, NSApplicationDelegate {
     }
 
     /// bootstrap 把 token 写到 data_dir/token; 未写入前阻塞, 停机则 nil.
-    private func waitForTokenFile() -> String? {
-        let path = Self.dataDir().appendingPathComponent("token")
+    private func waitForTokenFile(_ dataDir: URL) -> String? {
+        let path = dataDir.appendingPathComponent("token")
         while !isStopping {
             if let raw = try? String(contentsOf: path, encoding: .utf8) {
                 let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -179,34 +256,43 @@ final class Launcher: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Paths / env
-
-    private static func prepareDesktopEnv() {
-        setenv("PYDANTIC_DISABLE_PLUGINS", "1", 0)
-        setenv("AMANE_SUPERVISED", "1", 1)
-        setenv("AMANE_HOST", "127.0.0.1", 0)
-        setenv("AMANE_PORT", "18000", 0)
-        setenv("AMANE_SAFE_DIRS", "ALLOW_ALL", 0)
-        let data = dataDir()
-        let logs = data.appendingPathComponent("logs", isDirectory: true)
-        try? FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
-        setenv("AMANE_DATA_DIR", data.path, 0)
-        setenv("AMANE_LOG_DIR", logs.path, 0)
-        if let web = Bundle.main.resourceURL?
-            .appendingPathComponent("web/dist/index.html"),
-            FileManager.default.isReadableFile(atPath: web.path)
-        {
-            setenv("AMANE_WEB_DIST", web.deletingLastPathComponent().path, 1)
+    /// 结束 UI 兄弟进程并等待退出; 调用方随后以新 argv 重启它.
+    private func stopUI(killAfter seconds: TimeInterval) {
+        lock.lock()
+        let proc = ui
+        lock.unlock()
+        guard let proc, proc.isRunning else { return }
+        proc.terminate()
+        let deadline = Date().addingTimeInterval(seconds)
+        while proc.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if proc.isRunning {
+            kill(proc.processIdentifier, SIGKILL)
         }
     }
 
-    private static func dataDir() -> URL {
-        if let override = ProcessInfo.processInfo.environment["AMANE_DATA_DIR"], !override.isEmpty {
-            return URL(fileURLWithPath: override, isDirectory: true)
+    // MARK: - Warnings
+
+    /// 白名单之外的键提示一次; 设置文件再次引入新键时重新提示.
+    private func warnUnknownKeys(_ keys: [String]) {
+        guard !keys.isEmpty else { return }
+        DispatchQueue.main.async {
+            guard keys != self.warnedKeys else { return }
+            self.warnedKeys = keys
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = localized(
+                "桌面设置文件包含无法识别的键", "Unknown keys in the desktop settings file")
+            alert.informativeText = localized(
+                "以下键将被忽略:\n\(keys.joined(separator: "\n"))\n\n文件: \(DesktopSettings.url.path)",
+                "These keys are ignored:\n\(keys.joined(separator: "\n"))\n\nFile: \(DesktopSettings.url.path)"
+            )
+            alert.runModal()
         }
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Amane", isDirectory: true)
     }
+
+    // MARK: - Paths
 
     private static func serverBinary() -> URL? {
         if let override = ProcessInfo.processInfo.environment["AMANE_BIN"], !override.isEmpty {
