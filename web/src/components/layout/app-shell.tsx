@@ -184,8 +184,7 @@ function LanguageMenu() {
 }
 
 /**
- * 客户端设置入口: 只在 APP 内出现 — 服务器与登录态属于客户端, 不属于服务端配置.
- * 放在顶栏语言切换旁而不是侧栏: 手机上侧栏要先展开才能点到.
+ * 客户端设置入口: 服务器与登录态属于客户端, 不并入服务端配置. 只在壳内渲染 (判据见 lib/shell.ts).
  */
 function ClientSettingsLink({ available }: { available: boolean }) {
   const { t } = useTranslation("common");
@@ -317,7 +316,6 @@ export function AppShellLayout(): ReactNode {
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure(false);
   const desktopCollapsed = useUIStore((s) => s.navbarCollapsed);
   const toggleDesktop = useUIStore((s) => s.toggleNavbar);
-  // 壳内多一个客户端设置入口; 判据是 UA 标记, 见 lib/shell.ts.
   const shell = shellEnvironment();
 
   return (

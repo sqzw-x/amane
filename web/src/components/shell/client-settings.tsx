@@ -12,8 +12,7 @@ import {
 
 /**
  * 客户端设置: 服务器、登录状态与壳的运行期版本.
- * 只在壳内渲染 (导航项与 `/client` 路由同样按 UA 标记判断). 这些是客户端自身的状态, 与服务端配置无关,
- * 因此不进入 `SchemaForm`, 也不放在设置页的分组里.
+ * 只在壳内渲染; 这些是客户端自身的状态, 与服务端配置无关, 因此不进入 `SchemaForm`.
  */
 export function ClientSettings() {
   const { t } = useTranslation("settings");
@@ -25,7 +24,6 @@ export function ClientSettings() {
     if (!action()) setBridgeFailure(true);
   };
 
-  // 厂商自带的 WebView 在 Play 上没有条目, 只有 Google 发行的包才给链接.
   const storeUrl = webViewStoreUrl(shell.packageLabel.split(" ")[0] ?? "");
 
   return (

@@ -26,9 +26,9 @@ import { useUIStore } from "@/stores/ui";
 import { routeTree } from "./routeTree.gen";
 import { theme } from "./theme";
 
-// 视口高度单位: 老内核 (Chromium < 108 的 WebView) 不认 dvh, 此时 --amane-vh 保持 global.css 的 vh 默认值.
-// 用实测布局判断而不是 `CSS.supports`: 厂商自带的 WebView 可能在特性查询里声称支持 dvh 却算不出高度,
-// 那种情况下把变量换成 dvh 会让所有依赖它的声明失效 (弹窗上限、AppShell 高度).
+// 支持 dvh 时替换 --amane-vh 的取值 (变量与默认值见 global.css).
+// 判定用实测布局而不是 `CSS.supports`: 厂商自带的 WebView 可能在特性查询里声称支持 dvh 却算不出高度,
+// 换过去会让依赖它的声明失效.
 const viewportProbe = document.createElement("div");
 viewportProbe.style.cssText = "position:absolute;height:100dvh;width:0;visibility:hidden";
 document.body.appendChild(viewportProbe);
@@ -37,8 +37,7 @@ if (viewportProbe.offsetHeight > 0) {
 }
 viewportProbe.remove();
 
-// 壳内给根元素盖个标记: 内核在系统深色 + 应用深色主题时会给页面再叠一层算法深色, 而本页自己渲染深浅两套,
-// 需要在样式里声明这一点 (见 global.css). 桌面浏览器不加标记, 规则不生效.
+// 壳内标记根元素: global.css 据此抑制内核的算法深色叠加. 桌面浏览器不加标记, 该规则不生效.
 if (shellEnvironment() !== null) {
   document.documentElement.dataset.amaneShell = "";
 }
@@ -68,9 +67,8 @@ if (!rootEl) throw new Error("Root element not found");
 /** 认证经 HttpOnly cookie: 挂载时探活 /api/system/desktop 判断 cookie 是否有效,
  * 之后任何请求 401 (cookie 过期/被重置) 由 apiFetch 发事件切换回登录门.
  *
- * 壳内不显示登录门: token 由壳的服务器页 (SetupActivity) 校验并换取 cookie, 页面的登录门没有
- * 报错信息可依据 (服务端换了 token 与地址填错在这里长得一样). 因此未认证时跳回服务器页一次,
- * 用户从那里返回仍未登录才留在登录门 — 页内粘 token 与服务器页的 token 输入框等效. */
+ * 壳内不显示登录门: 未认证时跳回壳的服务器页一次, 用户从那里返回后仍留在登录门
+ * (理由见 docs/dev/android.md). */
 function Root() {
   const colorScheme = useUIStore((s) => s.theme);
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -83,7 +81,7 @@ function Root() {
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
   }, []);
 
-  // 每次页面加载只跳一次, 避免用户返回时再次被弹走.
+  // 每次页面加载只跳转一次, 用户从服务器页返回后不再跳转.
   useEffect(() => {
     if (authed !== false || !shell || redirectedToSetup.current) return;
     redirectedToSetup.current = true;

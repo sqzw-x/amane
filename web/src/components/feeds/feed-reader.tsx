@@ -713,7 +713,7 @@ export function FeedReader({
   return (
     <Stack gap="sm" style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
       {narrowViewport ? (
-        // 窄屏: 筛选与每页条数收进面板 — 列表页的高度花在列表上才合理.
+        // 窄屏: 筛选与每页条数收进底部面板.
         <Group gap="xs" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
           {selectAllCheckbox}
           <Text size="sm" c="dimmed" truncate style={{ flex: 1, minWidth: 0 }}>

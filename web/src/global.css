@@ -1,21 +1,14 @@
 /*
-  移动视口单位: `dvh` 在 Chromium < 108 的 WebView 上不被识别, 用到它的**整条声明**会作废 — 受影响的不只是
-  样式细节: Mantine 的弹窗 max-height 与 AppShell 高度、本站的钉高页面 (app-shell-metrics.ts) 都靠它, 失效后
-  弹窗没有上限也不滚、侧栏高度算不出来.
-
-  自己的代码统一经 --amane-vh 取值, 默认 vh; 支持 dvh 时由 `main.tsx` 在入口替换成 dvh — 特性检测放在 JS,
-  因为构建期替换分不清 `@supports` 预查与普通声明. 第三方样式里的 dvh 由构建期替换, 见 vite.config.ts 的
-  viewportUnitFallback. 壳的 WebView 由设备提供 (实测最低 Chromium 99), 这个兜底是必需项而不是可选项.
+  视口高度单位: 默认 vh, 支持 dvh 的引擎由 main.tsx 在入口替换成 dvh.
+  自己的代码一律取该变量; 取值理由与第三方样式的兜底见 docs/dev/frontend.md.
 */
 :root {
   --amane-vh: 100vh;
 }
 
 /*
-  壳内声明本页自己渲染深浅两套: Android WebView 在系统深色 + 应用主题为深色时会给页面再叠一层算法深色
-  (自动反转颜色), 浅色主题因此变成一种与本站深色主题不同的深色. 用色方案在深色系统下钉在 dark 上, 内核
-  就不再叠加; 页面自身仍按用户设置在深浅之间切换, 与内核认为的用色方案无关.
-  只在壳内生效: 桌面浏览器没有这层叠加, 保留 Mantine 按主题给的用色方案.
+  壳内声明本页自己渲染深浅两套, 使内核不再叠加算法深色 (来由见 docs/dev/android.md).
+  桌面浏览器没有这层叠加, 保留 Mantine 按主题给的用色方案.
 */
 @media (prefers-color-scheme: dark) {
   html[data-amane-shell] {

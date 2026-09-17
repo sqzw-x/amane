@@ -117,14 +117,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 触屏手势提示沿用音量提示的外观, 只把数字放大 (内容是目标时间 / 总长度). */
+/* 手势提示沿用音量提示的外观, 内容是目标时间 / 总长度. */
 .gestureIndicator {
   font-size: var(--mantine-font-size-lg);
   font-weight: 600;
   padding: 15px 20px;
 }
 
-/* 按住加速的标记: 水平居中、靠上, 比调整提示更小, 不遮挡画面中央. */
+/* 按住加速的标记: 靠上居中, 不遮挡画面中央. */
 .speedBadgeLayer {
   position: absolute;
   inset: 0;
@@ -149,8 +149,8 @@
 }
 
 /*
-  窄屏倍速的滑出面板: 从右侧进来, 只覆盖画面右侧一条, 左侧仍看得到当前画面.
-  面板留在控制器内, 因此全屏下同样可见; 自身可滚动, 所以声明 `pan-y` 抵消控制器的 `touch-action: none`.
+  触屏倍速的滑出面板: 留在控制器内, 因此全屏下同样可见; 自身可滚动, 因此声明 `pan-y` 抵消控制器的
+  `touch-action: none`.
 */
 .sheetBackdrop {
   position: absolute;
@@ -223,9 +223,8 @@
 }
 
 /*
-  触屏手势进行中不出现控制条与进度条.
-  媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入; 横滑跳转时不需要它, 提示由悬浮层给.
-  触摸按下时就置位, 松手时撤掉: 移出显示的那一瞬正好是浏览器派发 click 之前, 点击切换显隐因此不受影响.
+  触屏手势进行中: 控制条与进度条不出现. 媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入,
+  横滑跳转时不需要它, 提示由悬浮层给. 属性由 playback-player.tsx 置位.
 */
 .controller[data-amane-gesture] media-control-bar,
 .controller[data-amane-gesture] media-time-range,
@@ -236,7 +235,6 @@
 
 /*
   触屏上的居中大按钮: 控制条里的播放键只有 32px, 手机上不好按.
-  它是控制器的子节点, 因此与控制条一起被 media-chrome 淡出 —— 出现时机天然一致, 不需要单独的状态.
   淡出后必须让出指针: 画面中央那一片仍要留给"点按切换控件显隐", 否则会变成点按切换播放.
 */
 .centerPlayLayer {
@@ -274,7 +272,6 @@
   display: flex;
 }
 
-/* 播放中显示暂停图标, 暂停时显示播放图标. */
 .controller:not([mediapaused]) .centerPlayIcon,
 .controller[mediapaused] .centerPauseIcon {
   display: none;
@@ -289,7 +286,7 @@
   height: 16px;
   /* 控件本身带 `width: 100px` 的默认值, 脱离控制条后必须交回给左右定位决定宽度. */
   width: auto;
-  /* 目标时间的预览盒默认不显示, 只在拖动与悬停时出现: 触屏拖动进度条时它同时给出精确落点. */
+  /* 触屏拖动进度条时, 目标时间的预览盒给出精确落点. */
   --media-preview-box-display: none;
   min-height: 0;
 }

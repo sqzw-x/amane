@@ -7,7 +7,7 @@ import { shellEnvironment } from "@/lib/shell";
 
 export const Route = createFileRoute("/client")({ component: ClientSettingsPage });
 
-/** 客户端设置页: 与「设置」平级的入口, 只在 Android 壳内出现 (导航项同样如此). */
+/** 客户端设置页: 只在壳内出现 (导航项同样如此). */
 function ClientSettingsPage() {
   const { t } = useTranslation("settings");
   return (

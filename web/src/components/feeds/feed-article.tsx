@@ -71,7 +71,7 @@ export function FeedArticle({
   const inLibrary = item.metadata_id != null;
   const unread = item.read_at == null;
   const stamp = item.published_at ?? item.created_at;
-  // 窄屏的时间戳省掉年份与秒: 日期行换行会把条目标题挤成一行.
+  // 窄屏的时间戳省掉年份与秒: 长日期会把元信息行挤成两行.
   const stampText = narrowViewport
     ? new Date(stamp).toLocaleString(undefined, {
         month: "2-digit",
@@ -85,7 +85,7 @@ export function FeedArticle({
   const actions = narrowViewport ? (
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>
-        {/* 头部是展开/收起的热区, 菜单目标必须拦住冒泡, 否则点"..."会连带展开条目. */}
+        {/* 头部是展开/收起的热区, 菜单目标必须拦住冒泡, 否则点击会连带展开条目. */}
         <HintedActionIcon
           variant="subtle"
           disabled={busy}
@@ -215,7 +215,7 @@ export function FeedArticle({
                   {feedDisplayName(feed)}
                 </Anchor>
               )}
-              {/* 窄屏不占位说明"无番号": 那一行只为了标签对齐, 空间比对齐值钱. */}
+              {/* 窄屏省略"无番号"占位: 该占位只用于标签对齐. */}
               {number == null ? (
                 narrowViewport ? null : (
                   <Text size="xs" c="dimmed">

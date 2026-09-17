@@ -44,9 +44,8 @@ export interface BrowsePageShellProps {
  * 1. 标题 | **居中视图切换** | 右侧动作
  * 2. 左侧摘要 | **(搜索+排序/筛选/每页条数) 整体居中**
  *
- * 窄屏只剩一行 (标题 + 视图切换 + 筛选入口), 摘要 / 搜索 / 高级筛选面板 / 附属控件 / 右侧动作全进底部面板 —
- * 列表页的高度花在列表上才合理. 开关与它控制的面板必须同处一地, 否则会出现"开关在面板里、面板在主屏上".
- * 同一批控件只渲染一处: 两个断点各一份会让搜索框在 DOM 里存在两个.
+ * 窄屏只剩一行 (标题 + 视图切换 + 筛选入口), 其余控件全进底部面板 (见 docs/dev/frontend.md).
+ * 因此调用方必须把高级筛选面板经 `filterPanel` 传进来, 不能自行放进 children; 同一批控件只渲染一处.
  *
  * 搜索宽度为 min(480px, 可用宽), 控件组 max-width:100% + min-width:0, 避免小屏横向滚动.
  * fill 时高度钉在 Main 内容区, 标题/搜索不滚, children 必须自己消化剩余高度.
@@ -105,10 +104,6 @@ export function BrowsePageShell({
             </Group>
           </Box>
 
-          {/*
-            窄屏: 标题 + 视图切换 + 一个筛选入口就占满一行, 其余控件收进面板.
-            列表页的高度都花在列表上才合理 — 搜索 / 筛选 / 每页条数 / 摘要常驻会吃掉四五行的可视区域.
-          */}
           <Group hiddenFrom="md" gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
             <Box style={{ flex: 1, minWidth: 0 }}>{title}</Box>
             {viewSwitch != null && <Box style={{ minWidth: 0 }}>{viewSwitch}</Box>}

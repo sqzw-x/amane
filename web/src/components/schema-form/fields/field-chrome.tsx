@@ -63,8 +63,8 @@ export function FieldChrome({
     );
   }
 
-  // 对齐只能经 `align` 属性给: Mantine 的 Group/Stack 把 align (含默认值) 写成内联样式, 样式表压不过它
-  // (除非 `!important`). 断点与 field-chrome.module.css 的媒体查询同源, 都由 sm 决定.
+  // 对齐只能经 `align` 属性给, 样式表压不过 Mantine 写出的内联值 (除非 `!important`).
+  // 断点与 field-chrome.module.css 的媒体查询同源, 都由 sm 决定.
   if (layout === "horizontal") {
     return (
       <Group

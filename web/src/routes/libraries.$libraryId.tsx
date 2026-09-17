@@ -248,7 +248,7 @@ function LibraryDetailPage() {
           />
         }
         extras={
-          /* 窄屏的高级筛选在底部面板里始终展开, 这个开关只在宽屏有意义. */
+          /* 窄屏的筛选在底部面板里常驻展开, 该开关只在宽屏有意义. */
           narrow ? null : (
             <HintedActionIcon
               variant={advancedOpen || hasStatusFilter ? "filled" : "default"}

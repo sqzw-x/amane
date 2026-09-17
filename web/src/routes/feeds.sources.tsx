@@ -103,7 +103,6 @@ function FeedSourcesPage() {
   };
   const hasFilters = hasActiveFeedSourceFilters(filters);
   const [advancedOpen, setAdvancedOpen] = useState(hasFilters);
-  // 窄屏把高级筛选搬进壳的底部面板, 因此这里要知道当前形态.
   const narrowViewport = useNarrowViewport("md");
 
   const filtered = useMemo(() => {
@@ -249,7 +248,7 @@ function FeedSourcesPage() {
           />
         }
         extras={
-          /* 窄屏的高级筛选在底部面板里始终展开, 这个开关只在宽屏有意义. */
+          /* 窄屏的筛选在底部面板里常驻展开, 该开关只在宽屏有意义. */
           narrowViewport ? null : (
             <HintedActionIcon
               variant={advancedOpen || hasFilters ? "filled" : "default"}

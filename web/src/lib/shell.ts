@@ -1,15 +1,11 @@
 /**
  * Android 壳的运行环境.
  *
- * 判据是壳写在 User-Agent 上的标记 `AmaneShell/<版本>` (`WebSettings.userAgentString`, 每个请求都带),
- * **不是** JS 桥对象: 桥只承载动作, 缺了它不该让入口整块消失 — 那正是"有时显示有时不显示"的来源.
- * 桌面浏览器与 Docker 部署没有该标记, 相关入口整块不渲染.
+ * 是否在壳内只依据 User-Agent 上的 `AmaneShell/<版本>` 标记 (`WebSettings.userAgentString`, 每个请求都带),
+ * 不依据 JS 桥: 桥只承载动作, 桥不可用不代表不在壳内, 入口不该整块消失. 桌面浏览器与 Docker 部署没有该标记,
+ * 相关入口整块不渲染.
  *
- * 鉴权失效时壳内不显示页面的登录门: token 由壳的服务器页校验并换取 cookie (见 `docs/dev/android.md`),
- * 因此未认证时跳回该页, 登录门只作为用户返回后的兜底.
- *
- * 安全边界: `addJavascriptInterface` 对 WebView 加载的文档全部可见, 因此壳只让服务端自身
- * origin 留在 WebView 内, 站外链接交给系统浏览器 (见 `androidapp/.../BrowserActivity.kt`).
+ * 鉴权与 origin 契约见 `docs/dev/android.md`: 壳内不显示页面的登录门, 未认证时跳回壳的服务器页一次.
  */
 
 interface AmaneShellBridge {
@@ -28,10 +24,8 @@ declare global {
 }
 
 /**
- * 壳渲染所需的最低 WebView 主版本, 按 **Chromium** 计.
- *
- * 下限的来源与取舍见 `docs/dev/android.md`; 与 `vite.config.ts` 的 `MODERN_TARGETS` 必须同源,
- * 更低的内核须由用户更新系统 WebView.
+ * 壳渲染所需的最低 WebView 主版本, 按 **Chromium** 计; 与 `vite.config.ts` 的 `MODERN_TARGETS` 必须同源.
+ * 下限的依据与更新方式见 `docs/dev/android.md`.
  */
 export const MIN_CHROMIUM_MAJOR = 99;
 
@@ -50,7 +44,7 @@ export interface ShellEnvironment {
   version: string;
   /** 系统 WebView 的提供方与包版本; 桥不可用时为空串. */
   packageLabel: string;
-  /** 渲染内核 (Chromium) 版本, 取自 UA 的 `Chrome/<版本>`; 解析不出时为空串. */
+  /** 渲染内核 (Chromium) 版本; 解析不出时为空串. */
   chromiumVersion: string;
   /** 渲染内核主版本; 解析不出时为 null. */
   chromiumMajor: number | null;
@@ -63,8 +57,7 @@ export interface ShellEnvironment {
 /**
  * 壳内的运行环境; 不在壳内 (普通浏览器 / Docker) 时返回 null.
  *
- * 内核版本只认 UA 里的 `Chrome/<版本>`: `WebViewCompat.getCurrentWebViewPackage` 的版本号是厂商包版本,
- * 拿它比较下限会误报 (依据见 `docs/dev/android.md`).
+ * 内核版本取 UA 的 `Chrome/<版本>` 而非厂商包版本, 理由见 `docs/dev/android.md`.
  */
 export function shellEnvironment(): ShellEnvironment | null {
   const marker = SHELL_MARKER.exec(navigator.userAgent);

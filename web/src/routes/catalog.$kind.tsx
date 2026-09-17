@@ -168,8 +168,7 @@ function CatalogKindPage() {
           <Text component={Link} to="/catalog" size="xs" c="dimmed">
             {t("browse.title")}
           </Text>
-          {/* 窄屏不渲染种类切换: 六项放不进一行, 换行会把标题区撑成好几行; 上面的分类浏览入口
-              本身就是用来换种类的. */}
+          {/* 窄屏不渲染种类切换: 六项放不进一行; 换种类改由上面的分类浏览入口完成. */}
           {narrow ? null : (
             <Tabs
               value={kind}

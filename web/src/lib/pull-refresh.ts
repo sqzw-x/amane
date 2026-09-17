@@ -1,12 +1,12 @@
 /**
  * 下拉刷新只在页面内部已经没有可向上滚的内容时才响应.
  *
- * 壳用 SwipeRefreshLayout 包住 WebView, 它只看得到 WebView 自身的滚动位置; 而 SPA 的滚动都在内部容器
- * (AppShell 主体、Mantine ScrollArea、弹窗正文) 里, 那个位置恒为 0 — 于是内层列表与弹窗里的下滑会被当成
- * 下拉刷新. 这里在触摸开始时实测触点处还有没有可向上滚的内容, 把结论推给壳, 由它在手势起点判断.
+ * 壳用 SwipeRefreshLayout 包住 WebView, 它只看得到 WebView 自身的滚动位置; 而 SPA 的滚动都在内部容器里,
+ * 那个位置恒为 0 — 于是内层列表与弹窗里的下滑会被当成下拉刷新. 这里在触摸开始时实测触点处还有没有可向上滚的
+ * 内容, 把结论推给壳, 由它在手势起点判断.
  *
  * 判据是沿触点元素向上找第一个 `scrollTop > 0` 的祖先: 不必判断谁是真滚动容器 — 不可滚动的元素恒为 0,
- * 而浏览器本身就是按"离触点最近且还能动的那个"链式滚动的. 自己消费纵向拖动的地方 (播放器) 另算.
+ * 而浏览器本身就是按"离触点最近且还能动的那个"链式滚动的.
  */
 
 /** 最近一次触摸的落点; 惯性滑动会在手指抬起后继续, 需要靠它继续更新结论. */
@@ -38,7 +38,7 @@ function report(): void {
   bridge.setPageScrollableUp(value);
 }
 
-/** 装上监听; 桥不可用时为空操作. 返回卸载函数. */
+/** 装上监听; 桥不可用时为空操作. */
 export function installPullRefreshGate(): () => void {
   const onTouchStart = (event: TouchEvent) => {
     touched = event.target instanceof Element ? event.target : null;

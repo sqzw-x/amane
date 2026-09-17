@@ -1,7 +1,7 @@
 /*
   KV 行: 键列宽固定, 窄屏收窄.
   约 305px 宽时值列只剩约 90px, 因此窄屏把键列压到 72–104px.
-  宽度写在样式表而不是内联 style 里: 内联值不受媒体查询约束, 只能靠 `!important` 覆盖.
+  宽度不能写在 `style` 属性里: 内联值只在加了 `!important` 时才受媒体查询约束.
 */
 .kvRow > :first-child {
   min-width: 140px;

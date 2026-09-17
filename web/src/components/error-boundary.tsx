@@ -51,7 +51,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             >
               重试
             </Button>
-            {/* 壳内页面渲染失败时, 服务器入口本身也点不到 — 这里给出唯一的出口. */}
+            {/* 壳内渲染失败时页面入口点不到, 这里是唯一的出口. */}
             {shellEnvironment() ? (
               <Button
                 size="xs"

@@ -52,8 +52,7 @@ function KindFacetPicker({
   const { t } = useTranslation("metadata");
   const [search, setSearch] = useState("");
   // 浮层保持默认 portal, 不因"面板在抽屉里"而改成 `withinPortal: false`:
-  // 实测 (Mantine 9.6, 视口 768-991px, 打开抽屉后点搜索框与 Select) 浮层挂到 body 上不会关掉抽屉 —
-  // 上游的"点击外部"只由 overlay 的 onClick 触发, 而浮层 z-index 更高, 碰不到它.
+  // 实测浮层挂到 body 上不会关掉抽屉 (依据见 docs/dev/frontend.md).
 
   const { data, isFetching } = useQuery({
     ...listFacetsOptions({

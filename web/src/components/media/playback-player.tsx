@@ -481,7 +481,7 @@ const GESTURES_DISABLED_ATTRIBUTE = "gesturesdisabled";
 const GESTURE_ATTRIBUTE = "data-amane-gesture";
 /** 双击的判定窗口 (毫秒). 单击的动作须等过整个窗口, 才能确定没有第二次点击. */
 const DOUBLE_CLICK_MS = 250;
-/** 触屏长按多久算"按住加速" (毫秒). 与键盘按住右键的延时同源. */
+/** 触屏长按多久算"按住加速" (毫秒); 走的是键盘 `HOLD_SEEK_DELAY_MS` 那条动作. */
 const TOUCH_LONG_PRESS_MS = 450;
 /** 触屏手势的起手位移阈值 (像素): 超过它就不再是点按. */
 const TOUCH_MOVE_THRESHOLD_PX = 10;
@@ -602,7 +602,7 @@ function useFullscreenLandscape(controllerRef: RefObject<MediaControllerElement 
 }
 
 /**
- * 把焦点交还播放器, 但不让浏览器为此滚动页面。
+ * 把焦点交还播放器, 但不让浏览器为此滚动页面.
  *
  * 播放器在视口里只露出一部分时, 聚焦会让浏览器把它整个滚进来 —— 收起菜单或倍速菜单之后页面
  * 会突然跳到播放器顶端. 焦点只影响快捷键, 不需要改变滚动位置.
@@ -1041,7 +1041,7 @@ export function PlaybackPlayer({
   // 画面的单击、双击与它们的排队状态: 菜单开合都要能撤掉排队中的那次单击.
   const cancelPendingClickRef = useClickGestures(controllerRef, videoRef, fullscreenButtonRef);
 
-  // 触屏手势的提示: 长按加速与横滑拖进度, 与音量提示同形 (控制器之外, 不受控件自动隐藏影响).
+  // 触屏手势的提示: 长按加速与横滑拖进度, 与音量提示同形 (渲染位置见下方提示层).
   const [speedHold, setSpeedHold] = useState(false);
   const [seekPreview, setSeekPreview] = useState<{ target: number; total: number | null } | null>(
     null,
@@ -1186,7 +1186,7 @@ export function PlaybackPlayer({
     onSeekHandled();
   }, [applyPendingSeek, onSeekHandled, seekRequest]);
 
-  // 音量与亮度的调整提示由 React 状态控制显隐, 放在播放器盒子内、控制器之外, 因此不受控件自动隐藏的影响.
+  // 调整提示 (音量 / 亮度) 由 React 状态控制显隐, 不随控件自动隐藏, 见渲染处的提示层.
   const [hud, setHud] = useState<{ kind: HudKind; level: number } | null>(null);
   const hudTimerRef = useRef<number | null>(null);
 
@@ -1448,7 +1448,7 @@ export function PlaybackPlayer({
           <SubtitleTracks tracks={tracks} />
         </video>
         <MediaLoadingIndicator slot="centered-chrome" />
-        {/* 亮度是叠加层: 透明度 = 1 - 亮度, 由竖直滑动写入. */}
+        {/* 亮度是叠加层, 由竖直滑动写入. */}
         <div className={classes.dim} style={{ opacity: 1 - brightness }} aria-hidden="true" />
         <div className={classes.scrim} aria-hidden="true" />
         {/* 触屏上的居中大按钮: 与控制条同进同出 (media-chrome 把控制器内的非媒体子节点一起淡出). */}
@@ -1483,10 +1483,8 @@ export function PlaybackPlayer({
             onBlur={handleVolumeBlur}
           >
             <MediaMuteButton />
-            {/* 窄屏不弹拖动的音量条: 音量与亮度由竖直滑动调 (见 useTouchGestures), 按钮只管静音.
-                滑块是 Mantine 控件, 隐藏时不能靠 CSS 之外的手段 — 它是媒体面板里唯一的持焦点元素. */}
-            {/* 触屏上不铺拖动的滑杆: 音量走竖直滑动 (见 useTouchGestures). 判据是指针类型而不是宽度 —
-                鼠标在窄窗口里既没有滑杆也没有触屏手势, 用宽度判定会让他两头落空. */}
+            {/* 触屏上不铺拖动的滑杆: 音量走竖直滑动 (见 useTouchGestures), 按钮只管静音.
+                判据是指针类型而不是宽度 — 鼠标在窄窗口里既没有滑杆也没有触屏手势, 用宽度判定会让他两头落空. */}
             {coarsePointer ? null : (
               <div className={classes.volumePanel} onPointerDown={startVolumeDrag}>
                 <Slider
@@ -1536,7 +1534,7 @@ export function PlaybackPlayer({
           {tracks.length > 0 ? <MediaCaptionsMenu hidden /> : null}
         </MediaControlBar>
         {seekable ? <MediaTimeRange onPointerDown={handleDragStart} /> : null}
-        {/* 窄屏倍速: 右侧滑出面板. 放在控制器内, 因此全屏下同样可见 (全屏只有控制器子树有画面). */}
+        {/* 触屏倍速: 右侧滑出面板. 放在控制器内, 因此全屏下同样可见 (全屏只渲染控制器子树). */}
         {rateSheetVisible ? (
           <>
             <button
@@ -1574,9 +1572,9 @@ export function PlaybackPlayer({
             onClose={closeContextMenu}
           />
         ) : null}
-        {/* 调整提示: 键盘调音量 / 静音与触屏竖直滑动 (音量或亮度) 时显示。
-          三个提示层都留在控制器内: 全屏只渲染控制器子树, 放在外面整层会随全屏消失; 它们不是 media-chrome
-          控件, 控件自动隐藏与它们无关。 */}
+        {/* 调整提示: 键盘调音量 / 静音与触屏竖直滑动 (音量或亮度) 时显示.
+          三个提示层都留在控制器内: 全屏只渲染控制器子树, 放在外面会随全屏消失; 它们不是 media-chrome
+          控件, 控件自动隐藏与它们无关. */}
         {hud != null ? (
           <div className={classes.volumeIndicatorLayer}>
             <div className={classes.volumeIndicator} role="status" aria-live="polite">
@@ -1603,7 +1601,7 @@ export function PlaybackPlayer({
             </div>
           </div>
         ) : null}
-        {/* 按住加速的标记: 触屏长按与键盘按住右键同源; 从菜单里选的倍速不显示 (它不是"正在按住"). */}
+        {/* 按住加速的标记: 触屏长按与键盘按住都会置位, 从菜单里选的倍速不显示. */}
         {speedHold ? (
           <div className={classes.speedBadgeLayer}>
             <div className={classes.speedBadge} role="status" aria-live="polite">

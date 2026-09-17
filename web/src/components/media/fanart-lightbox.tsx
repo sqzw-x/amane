@@ -19,7 +19,7 @@ import { ProxyImage } from "@/components/media/proxy-image";
 
 /** 触屏切换的判定: 水平位移超过它, 且明显偏水平 (纵向留给页面滚动). */
 const SWIPE_MIN_DISTANCE_PX = 48;
-/** 滑动结束后多久内的 click 视为该次滑动的余波, 不当作点击遮罩关闭. */
+/** 滑动结束后这段时间内的 click 视为该次滑动带来的, 不当作点击遮罩关闭. */
 const SWIPE_CLICK_SUPPRESS_MS = 500;
 
 interface FanartLightboxProps {
@@ -38,8 +38,8 @@ export function FanartLightbox({ images, initialIndex = 0, onClose }: FanartLigh
   const [resolution, setResolution] = useState<{ w: number; h: number } | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // 触屏滑动切换: 起手点与"这次滑动已经切换过"的时刻. 横向拖动在 touch-action: pan-y 下不会被浏览器
-  // 当成滚动手势, 因此它后面仍可能补一次 click — 那个 click 不能把预览关掉.
+  // 触屏滑动切换: 起手点与"这次滑动已经切换过"的时刻. 横向拖动不算页面的滚动手势, 浏览器随后仍可能补一次
+  // click, 那次不能把预览关掉.
   const swipeStartRef = useRef<{ id: number; x: number; y: number } | null>(null);
   const swipeHandledAtRef = useRef(0);
 
@@ -218,7 +218,6 @@ export function FanartLightbox({ images, initialIndex = 0, onClose }: FanartLigh
             alt={`fanart-${index}`}
             referrerPolicy="no-referrer"
             style={{
-              // 视口高度取 --amane-vh: 移动端 100vh 含地址栏区域, 大图会被裁掉一截.
               maxHeight: "calc(var(--amane-vh) * 0.9)",
               maxWidth: "90vw",
               objectFit: "contain",

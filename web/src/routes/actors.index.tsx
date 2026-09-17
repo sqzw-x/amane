@@ -99,7 +99,6 @@ function ActorsIndexPage() {
 
   const [searchInput, setSearchInput] = useState(search.q ?? "");
   const [advancedOpen, setAdvancedOpen] = useState(hasNonDefaultFilters);
-  // 窄屏把高级筛选搬进壳的底部面板, 因此这里要知道当前形态.
   const narrowViewport = useNarrowViewport("md");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -224,7 +223,7 @@ function ActorsIndexPage() {
       }
       extras={
         <>
-          {/* 窄屏的高级筛选在底部面板里始终展开, 这个开关只在宽屏有意义. */}
+          {/* 窄屏的筛选在底部面板里常驻展开, 该开关只在宽屏有意义. */}
           {narrowViewport ? null : (
             <HintedActionIcon
               variant={advancedOpen || hasNonDefaultFilters ? "filled" : "default"}

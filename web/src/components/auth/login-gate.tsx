@@ -52,8 +52,6 @@ export function LoginGate({ onAuthed }: LoginGateProps) {
   }
 
   return (
-    // 高度经 --amane-vh: 支持的引擎取 dvh (移动浏览器地址栏收起前 100vh 高于可视区, 卡片重心下移),
-    // 老内核退回 vh — 见 global.css.
     <Center h="var(--amane-vh)" px="md">
       <Paper withBorder p="xl" radius="md" w={380} maw="100%" shadow="sm">
         <form
@@ -75,7 +73,7 @@ export function LoginGate({ onAuthed }: LoginGateProps) {
             />
             {error && <Alert color="red">{error}</Alert>}
             <Group justify="space-between">
-              {/* 壳内 token 由服务器页校验, 这里给一条回到那里的路径 (跳转已在入口自动发生过一次). */}
+              {/* 壳内 token 由服务器页校验: 入口跳转过一次后仍未认证时, 这里给出回到那里的路径. */}
               {shellEnvironment() ? (
                 <Button
                   type="button"
