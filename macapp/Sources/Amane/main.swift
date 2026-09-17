@@ -32,8 +32,8 @@ private struct DesktopEnvironment {
     let unknownKeys: [String]
 
     var baseURL: String { "http://\(host):\(port)" }
-    /// UI 兄弟进程的身份; 它的 argv 在启动时固定, 身份变化时须重建该进程.
-    var uiIdentity: String { "\(baseURL)|\(token ?? "")" }
+    /// UI 兄弟进程的身份: base-url、token 与 token 文件所在的数据目录都在它启动时固定.
+    var uiIdentity: String { "\(baseURL)|\(token ?? "")|\(dataDir.path)" }
 
     static func resolve() -> DesktopEnvironment {
         DesktopSettings.createIfMissing()
@@ -88,6 +88,8 @@ final class Launcher: NSObject, NSApplicationDelegate {
     private let lock = NSLock()
     private var python: Process?
     private var ui: Process?
+    /// 运行中的 UI 进程的身份; 与最新求解结果不一致时须重建该进程.
+    private var uiIdentity: String?
     private var stopping = false
     /// 已提示过的非法键, 仅在主队列读写.
     private var warnedKeys: [String] = []
@@ -115,6 +117,9 @@ final class Launcher: NSObject, NSApplicationDelegate {
             if isStopping { return }
             let desktop = DesktopEnvironment.resolve()
             warnUnknownKeys(desktop.unknownKeys)
+            // 设置文件改了 base-url / token 来源时, 运行中的 UI 仍带着旧 argv: 结束它, 由 babysitUI
+            // 以新 argv 重启. 菜单的「打开 Web UI」与「复制 API Token」读的都是那里的值.
+            terminateUIIfStale(desktop)
             let proc = Process()
             proc.executableURL = bin
             proc.arguments = Array(CommandLine.arguments.dropFirst())
@@ -153,15 +158,8 @@ final class Launcher: NSObject, NSApplicationDelegate {
         guard Self.uiBinary() != nil else { return }
         var failures = 0
         let backoff: [TimeInterval] = [1, 3, 10]
-        var identity: String?
         while !isStopping {
-            let desktop = DesktopEnvironment.resolve()
-            if let previous = identity, previous != desktop.uiIdentity {
-                // base-url 或 token 变化: 旧 UI 的 argv 已失效, 结束后由本轮循环重启.
-                stopUI(killAfter: 5)
-            }
-            identity = desktop.uiIdentity
-            spawnUI(desktop)
+            spawnUI(DesktopEnvironment.resolve())
             lock.lock()
             let proc = ui
             lock.unlock()
@@ -207,6 +205,7 @@ final class Launcher: NSObject, NSApplicationDelegate {
         }
         lock.lock()
         ui = proc
+        uiIdentity = desktop.uiIdentity
         lock.unlock()
     }
 
@@ -253,6 +252,16 @@ final class Launcher: NSObject, NSApplicationDelegate {
             if proc.isRunning {
                 kill(proc.processIdentifier, SIGKILL)
             }
+        }
+    }
+
+    /// 求解结果与运行中的 UI 身份不一致时结束该进程; 由 babysitUI 以新 argv 重启.
+    private func terminateUIIfStale(_ desktop: DesktopEnvironment) {
+        lock.lock()
+        let stale = uiIdentity != nil && uiIdentity != desktop.uiIdentity
+        lock.unlock()
+        if stale {
+            stopUI(killAfter: 5)
         }
     }
 
