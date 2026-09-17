@@ -22,6 +22,17 @@ fun upsertServer(servers: List<SavedServer>, incoming: SavedServer): List<SavedS
     listOf(incoming) + servers.filterNot { it.url == incoming.url }
 
 /**
+ * 编辑保存后的列表: 摘掉旧条目, 新条目按 [upsertServer] 的规则写回.
+ *
+ * 编辑可能把地址改成另一条已有的地址, 那时只留一条 (否则两行同地址, 两行都显示"当前"), 因此顺序是置顶.
+ */
+fun replaceServer(
+    servers: List<SavedServer>,
+    previousUrl: String,
+    updated: SavedServer,
+): List<SavedServer> = upsertServer(servers.filterNot { it.url == previousUrl }, updated)
+
+/**
  * 读取存储.
  *
  * 现格式是对象数组; 旧版本存的是纯地址的字符串数组, 那种条目按主机名补出名字与空 token — 升级不该丢掉
@@ -85,13 +96,10 @@ class ServerStore(context: Context) {
         write(upsertServer(list(), server), active = server.url)
     }
 
-    /**
-     * 编辑保存. 改地址可能改到另一条已有的地址, 因此先摘掉旧条目再按"同一地址只留一条"写回 (与 [activate]
-     * 同一条不变量, 顺序因此置顶); 若改的正是当前服务器, 当前项跟着改到新地址.
-     */
+    /** 编辑保存 (见 [replaceServer] 的去重规则); 若改的正是当前服务器, 当前项跟着改到新地址. */
     fun update(previousUrl: String, server: SavedServer) {
-        val next = upsertServer(list().filterNot { it.url == previousUrl }, server)
-        write(next, if (active() == previousUrl) server.url else active())
+        val active = if (active() == previousUrl) server.url else active()
+        write(replaceServer(list(), previousUrl, server), active)
     }
 
     fun remove(url: String) {

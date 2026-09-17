@@ -21,11 +21,20 @@ class ServerStoreTest {
     }
 
     @Test
-    fun `编辑保持位置且旧地址不再存在`() {
+    fun `编辑改地址后旧地址不再存在`() {
         val existing = listOf(server("A", "http://a:8000"), server("B", "http://b:8000"))
         val next = replaceServer(existing, "http://a:8000", server("A", "http://c:8000"))
 
         assertEquals(listOf("http://c:8000", "http://b:8000"), next.map { it.url })
+    }
+
+    @Test
+    fun `编辑改成另一条已有的地址时只留一条`() {
+        val existing = listOf(server("A", "http://a:8000"), server("B", "http://b:8000"))
+        val next = replaceServer(existing, "http://a:8000", server("A", "http://b:8000"))
+
+        assertEquals(listOf("http://b:8000"), next.map { it.url })
+        assertEquals("A", next.first().name)
     }
 
     @Test
