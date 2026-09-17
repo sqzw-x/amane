@@ -1,4 +1,6 @@
 allowBuilds:
   "@swc/core": true
+  # core-js 的 postinstall 只打印赞助信息, 不需要执行
+  core-js: false
   msw: true
 minimumReleaseAge: 1440

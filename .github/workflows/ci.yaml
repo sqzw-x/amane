@@ -78,3 +78,25 @@ jobs:
 
       - name: just ci-windows
         run: just ci-windows
+
+  android:
+    name: Android shell compile + unit test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # 壳不依赖 web/dist, 也不依赖 Python 依赖: 只要 JDK 与 Android SDK
+      - name: just android-check
+        run: just android-check

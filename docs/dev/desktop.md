@@ -68,3 +68,5 @@ macOS: `scripts/build_macos_app.sh` (`just macos-app`), 需要 Swift 工具链 �
 两边 PyInstaller 都要 `--add-data` 打进 `amane/db/migrations` 与 `amane/media/watermarks` (Docker wheel 靠 hatch `force-include`), 并按平台收集整个标准库 (`scripts/stdlib_modules.py` 列出顶层模块, 只排除依赖包外产物的 `tkinter` / `turtle` / `idlelib` / `turtledemo` / `ensurepip`, 构建脚本为每个名字加 `--collect-submodules`). **插件是运行时从数据目录动态加载的**, PyInstaller 的静态导入图看不见它们引用什么; 不整包收集就会出现「插件在 `just dev` 与 Docker 里能用, 装进桌面版报 `ModuleNotFoundError`」.
 
 开发回路: `just dev` 起服务 + `just bar-run` (macOS) / `just windows-bar` (Windows) 只开托盘.
+
+Android 端不监督本机服务, 而是加载服务端 origin 的 WebView 壳 (服务端无法打包进 APK), 见 [android.md](android.md).

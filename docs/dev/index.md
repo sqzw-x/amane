@@ -26,6 +26,7 @@
 | RSS/Atom 远程发现 | [feeds.md](feeds.md) |
 | 文件发现 / CloudDrive webhook | [watcher.md](watcher.md) |
 | 桌面菜单栏 / 托盘 / 打包 | [desktop.md](desktop.md) |
+| Android 壳 (WebView / APK) | [android.md](android.md) |
 | 后端测试 | [testing.md](testing.md) |
 
 同一事实只出现在一个文档; 其它位置用相对链接.

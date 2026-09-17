@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 品牌渐变的下端 (assets/logo.svg). 自适应图标的前景就是 logo 本身, 铺满整个画布,
+         因此背景色只在裁切边缘的抗锯齿处露出. -->
+    <color name="ic_launcher_background">#0F4FC4</color>
+</resources>

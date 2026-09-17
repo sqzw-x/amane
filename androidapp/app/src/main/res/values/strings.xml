@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Amane</string>
+
+    <string name="setup_help">Point this shell at your Amane server. The API token is printed in the server log or kept in the server\'s data directory; leave it empty to sign in from the web UI instead.</string>
+    <string name="setup_server_label">Server address</string>
+    <string name="setup_server_hint">192.168.1.10:8000</string>
+    <string name="setup_token_label">API token</string>
+    <string name="setup_token_hint">optional</string>
+    <string name="setup_connect">Connect</string>
+    <string name="setup_saved">Saved servers</string>
+    <string name="setup_open">Open</string>
+    <string name="setup_remove">Remove</string>
+    <string name="setup_version">Shell %1$s</string>
+
+    <string name="error_invalid_url">Enter a valid address</string>
+    <string name="error_invalid_token">Wrong API token</string>
+    <string name="error_status">Server returned HTTP %1$d</string>
+    <string name="error_unreachable">Cannot reach the server: %1$s</string>
+    <string name="error_retry">Retry</string>
+    <string name="error_no_app">No app can open %1$s</string>
+
+    <string name="menu_reload">Reload</string>
+    <string name="menu_switch_server">Servers</string>
+    <string name="menu_clear_session">Sign out</string>
+    <string name="session_cleared">Signed out</string>
+
+    <string name="download_started">Download started</string>
+    <string name="download_failed">Download failed: %1$s</string>
+</resources>

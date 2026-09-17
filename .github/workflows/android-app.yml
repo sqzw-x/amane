@@ -1,0 +1,88 @@
+name: Android app
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  JAVA_VERSION: "21"
+
+jobs:
+  android-app:
+    name: Build Amane APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Setup just
+        uses: extractions/setup-just@v4
+
+      # 没有签名密钥时脚本退回 debug 包 (可侧载, 但不能作为正式产物).
+      - name: Write keystore
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > androidapp/release.jks
+          cat > androidapp/keystore.properties <<EOF
+          storeFile=release.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: just android-app
+        run: just android-app
+
+      - name: Collect APK
+        id: apk
+        run: |
+          APK="$(ls -1 dist/Amane-*-android.apk | head -1)"
+          test -n "$APK"
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          ls -lh "$APK"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Amane-android-${{ github.ref_name }}
+          path: ${{ steps.apk.outputs.apk }}
+          if-no-files-found: error
+
+      - name: Release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: uv run python scripts/changelog.py extract "$GITHUB_REF_NAME" > release-notes.md
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: release-notes.md
+          files: ${{ steps.apk.outputs.apk }}
+          fail_on_unmatched_files: true

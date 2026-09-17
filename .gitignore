@@ -195,6 +195,15 @@ macapp/.build/
 winapp/bin/
 winapp/obj/
 
+# Android shell (androidapp/)
+androidapp/.gradle/
+androidapp/build/
+androidapp/app/build/
+androidapp/local.properties
+androidapp/keystore.properties
+androidapp/*.jks
+androidapp/*.keystore
+
 # git worktrees created by tooling — never track
 .claude/worktrees/
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 无 ActionBar: 页面自带头部, 壳只在 Toolbar 上提供服务器菜单. -->
+    <style name="Theme.Amane" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">?android:attr/colorBackground</item>
+    </style>
+</resources>

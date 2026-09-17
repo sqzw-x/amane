@@ -104,6 +104,6 @@ dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `
 
 ## 工程入口
 
-`just generate` → OpenAPI 导出 + TS client 生成 (`web/src/client/` 为产物, 不手改); SPA 产物 `web/dist` 由 `src/amane/api/spa.py` 挂载.
+`just generate` → OpenAPI 导出 + TS client 生成 (`web/src/client/` 为产物, 不手改); SPA 产物 `web/dist` 由 `src/amane/api/spa.py` 挂载. `vite.config.ts` 的 `legacy()` 声明运行期下限 (语法目标 + core-js polyfill), 面向版本落后的 Android WebView — 下限取舍见 [android.md](android.md).
 
 路由组件由 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk: 只服务单个路由的重型依赖必须留在该路由的 chunk, 从共享模块导入会把它移回入口 chunk. `tanstackRouter()` 必须排在 JSX 转换插件之前, 顺序颠倒时构建失败. 类型、i18n 与 lint 的硬性约束由 `pnpm check` (tsc / oxlint / oxfmt / i18next extract) 把关.

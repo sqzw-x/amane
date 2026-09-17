@@ -4,4 +4,7 @@
 # binary 文件由 text=auto 自动识别, 不做行尾转换.
 * text=auto eol=lf
 
+# Windows 批处理按 CRLF 检出: cmd.exe 解析 goto 标签依赖行尾.
+androidapp/gradlew.bat text eol=crlf
+
 .github/workflows/*.lock.yml linguist-generated=true

@@ -51,6 +51,7 @@
     "@types/node": "^26.5.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-legacy": "^8.2.3",
     "@vitejs/plugin-react": "^6.1.1",
     "i18next-cli": "^1.73.1",
     "npm-check-updates": "^23.1.0",

@@ -6,6 +6,7 @@ Source of truth is assets/logo.svg. This writes:
 - web/public/favicon.svg (byte-identical copy)
 - assets/app.ico (Windows exe + tray)
 - assets/app.icns (macOS .app; requires iconutil)
+- androidapp/.../mipmap-*/ic_launcher_foreground.png (Android launcher icon)
 
 rsvg-convert (librsvg) is required. iconutil is macOS-only; other
 platforms still produce favicon + ico.
@@ -31,6 +32,11 @@ ICO_SIZES = (16, 24, 32, 48, 64, 256)
 
 # iconutil slots: base size → @1x and @2x pixel sizes.
 ICNS_SLOTS = (16, 32, 128, 256, 512)
+
+# Android adaptive icon: the foreground canvas is 108dp, rendered per density.
+ANDROID_RES = ROOT / "androidapp" / "app" / "src" / "main" / "res"
+ANDROID_DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0, "xxxhdpi": 4.0}
+ANDROID_ICON_DP = 108
 
 
 def pack_ico(images: list[tuple[int, bytes]]) -> bytes:
@@ -91,6 +97,14 @@ def write_icns(rsvg: str) -> None:
         subprocess.run([iconutil, "-c", "icns", "-o", str(ICNS), str(iconset)], check=True)
 
 
+def write_android_foreground(rsvg: str) -> None:
+    """Android 自适应图标的前景: logo 铺满 108dp 画布, 形状由启动器的遮罩决定."""
+    for density, scale in ANDROID_DENSITIES.items():
+        dest = ANDROID_RES / f"mipmap-{density}" / "ic_launcher_foreground.png"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        render_png(rsvg, round(ANDROID_ICON_DP * scale), dest)
+
+
 def main() -> int:
     if not LOGO.is_file():
         raise SystemExit(f"missing {LOGO}")
@@ -98,10 +112,12 @@ def main() -> int:
     write_favicon()
     write_ico(rsvg)
     write_icns(rsvg)
+    write_android_foreground(rsvg)
     print(f"FAVICON={FAVICON}")  # noqa: T201
     print(f"ICO={ICO}")  # noqa: T201
     if ICNS.is_file():
         print(f"ICNS={ICNS}")  # noqa: T201
+    print(f"ANDROID_MIPMAPS={ANDROID_RES}")  # noqa: T201
     return 0
 
 

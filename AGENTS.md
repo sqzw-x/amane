@@ -11,7 +11,7 @@
 
 **Amane** — 影片元数据管理服务. 监控媒体目录, 多源刮削, 与 Emby/Jellyfin 集成, 作为流媒体服务的元数据补充.
 
-技术栈: FastAPI · React + Mantine · SQLite (SQLModel + Alembic) · Docker · PyInstaller + 原生桌面 APP (swift / .NET AOT)
+技术栈: FastAPI · React + Mantine · SQLite (SQLModel + Alembic) · Docker · PyInstaller + 原生桌面 APP (swift / .NET AOT) · Android 壳 (Kotlin WebView)
 
 ## Issue 与 Pull Request
 

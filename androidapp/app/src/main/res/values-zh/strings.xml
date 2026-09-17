@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Amane</string>
+
+    <string name="setup_help">填写 Amane 服务器地址. API token 在服务端启动日志或数据目录里; 留空也可以, 之后用 Web UI 的登录页输入.</string>
+    <string name="setup_server_label">服务器地址</string>
+    <string name="setup_server_hint">192.168.1.10:8000</string>
+    <string name="setup_token_label">API Token</string>
+    <string name="setup_token_hint">可留空</string>
+    <string name="setup_connect">连接</string>
+    <string name="setup_saved">已保存的服务器</string>
+    <string name="setup_open">打开</string>
+    <string name="setup_remove">删除</string>
+    <string name="setup_version">外壳 %1$s</string>
+
+    <string name="error_invalid_url">请填写有效的地址</string>
+    <string name="error_invalid_token">token 无效</string>
+    <string name="error_status">服务器返回 HTTP %1$d</string>
+    <string name="error_unreachable">无法连接服务器: %1$s</string>
+    <string name="error_retry">重试</string>
+    <string name="error_no_app">没有可以打开 %1$s 的应用</string>
+
+    <string name="menu_reload">重新加载</string>
+    <string name="menu_switch_server">切换服务器</string>
+    <string name="menu_clear_session">清除登录状态</string>
+    <string name="session_cleared">已清除登录状态</string>
+
+    <string name="download_started">已开始下载</string>
+    <string name="download_failed">下载失败: %1$s</string>
+</resources>

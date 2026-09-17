@@ -1,0 +1,19 @@
+[versions]
+agp = "8.13.2"
+kotlin = "2.2.20"
+coreKtx = "1.17.0"
+appcompat = "1.7.1"
+activity = "1.10.1"
+webkit = "1.14.0"
+junit = "4.13.2"
+
+[libraries]
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+androidx-activity = { module = "androidx.activity:activity-ktx", version.ref = "activity" }
+androidx-webkit = { module = "androidx.webkit:webkit", version.ref = "webkit" }
+junit = { module = "junit:junit", version.ref = "junit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
