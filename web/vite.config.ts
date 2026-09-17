@@ -14,7 +14,7 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
  * `modernTargets` 同时充当语法目标与 `@babel/preset-env` 的收集目标, polyfill 按 bundle 的实际使用自动挑,
  * 因此新增依赖或新增调用不需要维护清单.
  *
- * Chromium 取实测最低值 (实测最低内核); 样式表依赖的 `dvh` (108) /
+ * Chromium 取 `web/src/lib/shell.ts` 的 `MIN_CHROMIUM_MAJOR` (同一实测下限); 样式表依赖的 `dvh` (108) /
  * `:has()` 与 `@container` (105) / `color-mix()` (111) 在更低内核上会整体失效, CSS 不能由 core-js 补 —
  * 因此这个下限首先是"JS 不崩"的保证, 低于它的内核须由用户更新「Android System WebView」.
  */

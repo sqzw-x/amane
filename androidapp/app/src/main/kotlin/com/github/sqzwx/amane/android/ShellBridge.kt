@@ -31,10 +31,10 @@ class ShellBridge(private val activity: BrowserActivity) {
     }
 
     /**
-     * 系统 WebView 的提供方与包版本 ; 取不到时为空串.
+     * 系统 WebView 的提供方与包版本; 取不到时为空串.
      *
-     * 包版本是厂商自己的编号 (), 与 Chromium 版本无关 — 页面判断内核下限时只用
-     * UA 里的 `Chrome/<版本>`. 这里的值只用于展示"谁在渲染"以及给出更新入口.
+     * 包版本是厂商自己的编号, 与 Chromium 版本无关 — 页面判断内核下限时只用 UA 里的 `Chrome/<版本>`.
+     * 这里的值只用于展示"谁在渲染"以及给出更新入口.
      */
     @JavascriptInterface
     fun webViewPackage(): String {

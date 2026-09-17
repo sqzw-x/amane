@@ -15,7 +15,7 @@
 interface AmaneShellBridge {
   /** 打开壳的服务器设置页. */
   switchServer(): void;
-  /** 系统 WebView 的提供方与包版本, 厂商包版本; 取不到时为空串. */
+  /** 系统 WebView 的提供方与包版本; 取不到时为空串. */
   webViewPackage(): string;
   /** 报告触点处是否还有可以向上滚的内容, 供壳决定下拉刷新是否接管手势; 旧版壳没有这个方法. */
   setPageScrollableUp?(scrollableUp: boolean): void;
@@ -30,8 +30,8 @@ declare global {
 /**
  * 壳渲染所需的最低 WebView 主版本, 按 **Chromium** 计.
  *
- * 取实测最低值 (UA 里是 `Chrome/99.0.4844.88`), 与 `vite.config.ts`
- * 的运行期下限同一条线; 更低的内核须由用户更新系统 WebView.
+ * 下限的来源与取舍见 `docs/dev/android.md`; 与 `vite.config.ts` 的 `MODERN_TARGETS` 必须同源,
+ * 更低的内核须由用户更新系统 WebView.
  */
 export const MIN_CHROMIUM_MAJOR = 99;
 
@@ -48,7 +48,7 @@ const CHROME_VERSION = /\bChrome\/([0-9.]+)/;
 export interface ShellEnvironment {
   /** APP 版本号, 取自 UA 标记. */
   version: string;
-  /** 系统 WebView 的提供方与包版本, 厂商包版本; 桥不可用时为空串. */
+  /** 系统 WebView 的提供方与包版本; 桥不可用时为空串. */
   packageLabel: string;
   /** 渲染内核 (Chromium) 版本, 取自 UA 的 `Chrome/<版本>`; 解析不出时为空串. */
   chromiumVersion: string;
@@ -63,8 +63,8 @@ export interface ShellEnvironment {
 /**
  * 壳内的运行环境; 不在壳内 (普通浏览器 / Docker) 时返回 null.
  *
- * 内核版本只认 UA: `WebViewCompat.getCurrentWebViewPackage` 的版本号是**厂商包版本** (
- * 就是 `14`), 与 Chromium 版本没有对应关系, 拿它比较下限会误报.
+ * 内核版本只认 UA 里的 `Chrome/<版本>`: `WebViewCompat.getCurrentWebViewPackage` 的版本号是厂商包版本,
+ * 拿它比较下限会误报 (依据见 `docs/dev/android.md`).
  */
 export function shellEnvironment(): ShellEnvironment | null {
   const marker = SHELL_MARKER.exec(navigator.userAgent);

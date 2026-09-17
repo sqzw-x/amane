@@ -25,7 +25,7 @@ export function ClientSettings() {
     if (!action()) setBridgeFailure(true);
   };
 
-  // 厂商自带的 WebView () 在 Play 上没有条目, 只有 Google 发行的包才给链接.
+  // 厂商自带的 WebView 在 Play 上没有条目, 只有 Google 发行的包才给链接.
   const storeUrl = webViewStoreUrl(shell.packageLabel.split(" ")[0] ?? "");
 
   return (

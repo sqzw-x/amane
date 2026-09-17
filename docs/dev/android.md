@@ -50,9 +50,9 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 | 桥方法 | 实现 |
 |---------|------|
 | `switchServer()` | 打开 `SetupActivity`, 与错误界面的「切换服务器」同一入口 |
-| `webViewPackage()` | `WebViewCompat.getCurrentWebViewPackage` 的包名与厂商版本 , 取不到时为空串 |
+| `webViewPackage()` | `WebViewCompat.getCurrentWebViewPackage` 的包名与厂商版本, 取不到时为空串 |
 
-**内核版本只认 UA 里的 `Chrome/<版本>`**: 厂商包版本 () 与 Chromium 版本没有对应关系, 拿它比较前端下限会误报. 商店链接也只在提供方是 Google 发行的包 (`com.google.android.webview` / `com.android.chrome`) 时给出 — 厂商自带的 WebView 在 Play 上没有条目.
+**内核版本只认 UA 里的 `Chrome/<版本>`**: 厂商包版本与 Chromium 版本没有对应关系, 拿它比较前端下限会误报. 商店链接也只在提供方是 Google 发行的包 (`com.google.android.webview` / `com.android.chrome`) 时给出 — 厂商自带的 WebView 在 Play 上没有条目.
 
 `addJavascriptInterface` 对 WebView 加载的文档全部可见, 因此站外链接必须交给系统浏览器, 桥也只做上表这几件事、不接受参数. 弹窗与 `window.open` 的过渡 WebView 都可能落到站外文档 (SPA 里多处 `target="_blank"` 的外链), 因此它们不装桥, 并与主窗口共用同一条站内判据.
 
