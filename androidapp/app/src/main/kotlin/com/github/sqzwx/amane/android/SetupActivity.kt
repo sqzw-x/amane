@@ -24,9 +24,8 @@ import kotlin.math.abs
 /**
  * 服务器地址与首次登录.
  *
- * 填进来的 token 只用于向 `/api/system/desktop` 换取服务端下发的 HttpOnly cookie, 之后登录态由 WebView
- * 自己的 cookie 罐维持 (与浏览器一致, 30 天). token 随服务器一起保存, 列表里可查看与修改 (见 [SavedServer]);
- * 留空直接连接也成立 — 服务端若开了鉴权, SPA 会显示自己的登录门.
+ * 这里填的 token 只用于向 `/api/system/desktop` 换取服务端下发的 cookie, 之后登录态由 WebView 自己的
+ * cookie 罐维持 (见 docs/dev/android.md 的登录一节); 留空直接连接也成立, 那时由 SPA 的登录门接管.
  */
 class SetupActivity : AppCompatActivity() {
 
@@ -46,7 +45,7 @@ class SetupActivity : AppCompatActivity() {
 
         binding.version.text = getString(R.string.setup_version, BuildConfig.VERSION_NAME)
         binding.connect.setOnClickListener { connect() }
-        // 表单预填当前服务器: token 已经保存, cookie 过期后不必再翻服务端日志.
+        // 表单预填当前服务器: token 已随条目保存, cookie 过期后不必再查服务端日志.
         val active = store.activeServer()
         binding.nameInput.setText(active?.name.orEmpty())
         binding.serverInput.setText(active?.url.orEmpty())
@@ -64,7 +63,7 @@ class SetupActivity : AppCompatActivity() {
         val name = binding.nameInput.text.toString().trim().ifEmpty { defaultServerName(url) }
         binding.error.visibility = View.GONE
         setBusy(true)
-        // 探活是阻塞 IO; 为了一个请求引入协程依赖不值得, 用线程加 runOnUiThread.
+        // 探活是阻塞 IO; 为一次请求引入协程依赖不值得.
         thread {
             val failure = probe(url, token)
             runOnUiThread {
@@ -88,7 +87,7 @@ class SetupActivity : AppCompatActivity() {
                     adoptCookies(connection, url)
                     null
                 }
-                // 服务端开了鉴权而这里没填 token: 交给 SPA 的登录门, 不在这里拦住用户
+                // 服务端开了鉴权而这里没填 token: 交给 SPA 的登录门, 不在这里拦截用户.
                 HttpURLConnection.HTTP_UNAUTHORIZED ->
                     if (token.isEmpty()) null else getString(R.string.error_invalid_token)
                 else -> getString(R.string.error_status, code)
@@ -101,8 +100,8 @@ class SetupActivity : AppCompatActivity() {
     }
 
     /**
-     * 中间件在 Bearer 认证成功时会下发 `amane_token` cookie; 原生请求收到的响应头对 WebView
-     * 不可见, 因此手工写入它的 cookie 罐, 否则打开后仍会停在登录门.
+     * 中间件在 Bearer 认证成功时下发 `amane_token` cookie; 原生请求收到的响应头对 WebView 不可见,
+     * 因此必须手工写入 WebView 的 cookie 罐, 否则打开页面后仍停在登录门.
      */
     private fun adoptCookies(connection: HttpURLConnection, url: String) {
         val manager = CookieManager.getInstance()
@@ -153,11 +152,11 @@ class SetupActivity : AppCompatActivity() {
     /**
      * 卡片的横向手势: 左滑露出贴右边的编辑与删除.
      *
-     * 手指落下即返回 true 才能拿到后续事件, 但此时不能禁用父级拦截, 否则列表再也滚不动; 方向确定为横向后
-     * 才 `requestDisallowInterceptTouchEvent(true)`, 纵向因此仍归外层 ScrollView.
+     * 手指落下必须返回 true 才能拿到后续事件, 但此时不能禁用父级拦截, 否则列表无法滚动; 方向确定为横向
+     * 之后才 `requestDisallowInterceptTouchEvent(true)`.
      *
-     * UP 与 CANCEL 必须分开: 父级把这次触摸拿去滚动列表时补发的是 CANCEL, 那次不是点击 — 若在这里
-     * `performClick()`, 用户滚动列表就会打开服务器、切走会话并关掉本页.
+     * UP 与 CANCEL 必须分开: 父级把这次触摸拿去滚动列表时补发的是 CANCEL, 那一次不是点击 — 在这里
+     * `performClick()` 会让用户滚动列表时打开服务器、切走会话并关闭本页.
      */
     private fun bindSwipe(row: RowServerBinding) {
         val card = row.serverCard
@@ -222,7 +221,7 @@ class SetupActivity : AppCompatActivity() {
         val revealed = revealedCard
         if (revealed !== card) closeReveal()
         revealedCard = card
-        // 上一次的吸附动画若还在跑, 会与这次拖动抢 translationX.
+        // 上一次的吸附动画未结束时会与这次拖动争用 translationX.
         card.animate().cancel()
     }
 
@@ -250,7 +249,7 @@ class SetupActivity : AppCompatActivity() {
             .setNegativeButton(R.string.setup_cancel, null)
             .setPositiveButton(R.string.setup_save, null)
             .create()
-        // 正面按钮自己接管: 默认实现在点击后立刻关闭弹窗, 地址写错时输入与报错会一起消失, 只能重新点"编辑".
+        // 正面按钮自行接管: 默认实现点击后立即关闭弹窗, 地址写错时输入与报错一起消失, 只能重新点击「编辑」.
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (saveEdited(server, form)) dialog.dismiss()

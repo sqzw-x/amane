@@ -26,7 +26,6 @@ if [[ -z "${ANDROID_SDK_ROOT:-}${ANDROID_HOME:-}" && ! -f "$APP_DIR/local.proper
   exit 1
 fi
 
-# APP 版本独立于服务端与桌面端: 唯一来源是 androidapp/version.txt, versionCode 由 Gradle 按它推导.
 VERSION="$(tr -d '[:space:]' < "$APP_DIR/version.txt")"
 [[ -n "$VERSION" ]] || { echo "empty androidapp/version.txt" >&2; exit 1; }
 

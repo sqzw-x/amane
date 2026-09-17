@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 服务器设置: 连接表单 + 已保存服务器列表. 页面自带头部, 不依赖 ActionBar. -->
+<!-- 服务器设置: 连接表单 + 已保存服务器列表. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"

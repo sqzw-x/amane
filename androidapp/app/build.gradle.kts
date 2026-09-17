@@ -7,12 +7,12 @@ plugins {
 }
 
 /**
- * APP 版本独立于服务端与桌面端: 唯一来源是 androidapp/version.txt (见 docs/dev/android.md).
- * versionCode 由 semver 推导 (三段各占两位十进制), 必须随版本单调递增 —— Android 拒绝降级覆盖安装.
+ * APP 版本独立于服务端与桌面端: 唯一来源是 androidapp/version.txt, versionCode 由它推导并必须单调
+ * 递增 —— Android 拒绝降级覆盖安装 (见 docs/dev/android.md).
  */
 val appVersionName = rootProject.file("version.txt").readText().trim()
 val appVersionCode = run {
-    // 版本必须写成三段十进制且每段 0-99: code 由它们拼出来, 解析失败悄悄退化成 0 会让包装不上或无法覆盖安装.
+    // 必须写成三段十进制且每段 0-99: code 由它们拼出, 格式不对时宁可构建失败, 不产出无法覆盖安装的包.
     val parts = appVersionName.split('.')
     require(parts.size == 3 && parts.all { part -> part.length in 1..2 && part.all(Char::isDigit) }) {
         "androidapp/version.txt 必须是 <major>.<minor>.<patch>, 每段 0-99; 当前: $appVersionName"
@@ -34,7 +34,7 @@ android {
     defaultConfig {
         // 桌面壳的 bundle id 是 com.github.sqzw-x.amane; Android 的 applicationId 不允许连字符.
         applicationId = "com.github.sqzwx.amane"
-        // 29 起 DownloadManager 写公共目录不再需要存储权限, 边缘到边缘与 Cookie 行为也一致.
+        // DownloadManager 从 29 起写公共目录不需要存储权限 (见 docs/dev/android.md).
         minSdk = 29
         targetSdk = 36
         versionCode = appVersionCode
@@ -55,7 +55,7 @@ android {
 
     buildTypes {
         release {
-            // 壳只有几个 Activity, 混淆省下的体积不及读崩溃栈的代价.
+            // 混淆省下的体积不足以抵消崩溃栈可读性的损失.
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
@@ -83,7 +83,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity)
-    // WebSettingsCompat.setAlgorithmicDarkeningAllowed: 让 prefers-color-scheme 跟随系统深色.
+    // WebSettingsCompat.setAlgorithmicDarkeningAllowed: 关闭内核的算法深色.
     implementation(libs.androidx.webkit)
     // 下拉刷新: WebView 自身没有该手势.
     implementation(libs.androidx.swiperefreshlayout)

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 深色下的同一组语义色: 卡片比窗口背景亮一档, 描边改用白色低透明度. -->
+    <!-- 深色下同一组语义色: 卡片比窗口背景更亮, 描边改用白色低透明度. -->
     <color name="brand">#FF5A9CFF</color>
     <color name="on_brand">#FF0B1220</color>
     <color name="brand_container">#2E3385FF</color>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 左滑露出的「编辑」: 品牌色淡底. 两个操作按钮连成一条, 因此只有外侧两角是圆的. -->
+<!-- 左滑露出的「编辑」: 品牌色淡底; 与删除连成一条操作区, 因此两者都只有外侧两角是圆的. -->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
     android:color="?android:attr/colorControlHighlight">
     <item>

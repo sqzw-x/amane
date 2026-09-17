@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 卡片: 服务器条目与表单分组共用, 描边在深色下改由 values-night 的色值给出. -->
+<!-- 卡片: 服务器条目与表单分组共用. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="@color/surface_card" />

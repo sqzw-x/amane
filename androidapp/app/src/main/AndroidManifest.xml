@@ -3,9 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- usesCleartextTraffic: 自建服务器默认是 http://<host>:8000 (AMANE_HOST 默认 0.0.0.0).
-         Android 的网络策略不能按用户在运行时填写的地址放开明文, 因此这里整体允许;
-         地址完全由用户输入, 非局域网部署应自备 HTTPS 反代. 详见 docs/dev/android.md. -->
+    <!-- 明文流量整体允许: 网络策略不能按用户在运行时填写的地址放开明文, 而自建服务默认是 http://<host>:8000.
+         地址完全由用户输入, 非局域网部署应自备 HTTPS 反代 (见 docs/dev/android.md). -->
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -20,7 +19,7 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- window.open 的目标窗口; 每个弹窗一个实例 -->
+        <!-- window.open 的目标窗口; 每个弹窗一个实例. -->
         <activity
             android:name=".PopupActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|layoutDirection"
@@ -28,7 +27,7 @@
             android:supportsPictureInPicture="true" />
 
         <!-- 入口. 不声明 orientation: WebView 旋转不重建, 播放中的画面与页面状态因此不丢.
-             深色切换 (uiMode) 与字体缩放不在 configChanges 里, 重建时按 onSaveInstanceState 里的地址恢复. -->
+             深色切换 (uiMode) 与字体缩放不在 configChanges 内, 那两种变更下按保存的地址重建. -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|layoutDirection"

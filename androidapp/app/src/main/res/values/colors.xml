@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 品牌渐变的两端 (assets/logo.svg). 界面主色与自适应图标的背景层
-         (drawable/ic_launcher_background.xml) 都引用它们. -->
+    <!-- 品牌渐变的两端, 取自 assets/logo.svg; 界面主色与自适应图标的背景层都引用它们. -->
     <color name="ic_launcher_gradient_start">#3385FF</color>
     <color name="ic_launcher_gradient_end">#0F4FC4</color>
 
-    <!-- 界面配色, 深色见 values-night/colors.xml. 只在此处维护, 布局里不再写死色值. -->
+    <!-- 界面配色, 深色一套见 values-night/colors.xml; 只在此处维护, 布局里不写死色值. -->
     <color name="brand">#FF3385FF</color>
     <color name="on_brand">#FFFFFFFF</color>
     <color name="brand_container">#1F3385FF</color>

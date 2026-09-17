@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 主按钮: 圆角实心加按压涟漪, 取消 AppCompat 的按钮阴影 (stateListAnimator 在样式里置空). -->
+<!-- 主按钮: 圆角实心加按压涟漪, 按钮阴影在样式里置空. -->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
     android:color="?android:attr/colorControlHighlight">
     <item>

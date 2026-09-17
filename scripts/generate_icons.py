@@ -38,8 +38,8 @@ ICNS_SLOTS = (16, 32, 128, 256, 512)
 ANDROID_RES = ROOT / "androidapp" / "app" / "src" / "main" / "res"
 ANDROID_DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0, "xxxhdpi": 4.0}
 ANDROID_ICON_DP = 108
-# logo.svg 的原始视口; 前景把它放宽到 48 单位, 字形因此缩到画布的 2/3 并落在中间.
-# y 方向偏移 1 单位: 字形包围盒中心在 (16 15), 而 32 单位画布的中心是 (16 16).
+# logo.svg 的原始视口; 前景把视口放宽到 48 单位, 字形因此缩到画布的 2/3 并居中.
+# y 方向偏移 1 单位: 字形包围盒中心在 (16 15), 32 单位画布的中心是 (16 16).
 LOGO_VIEWBOX = "0 0 32 32"
 ANDROID_VIEWBOX = "-8 -9 48 48"
 
@@ -103,12 +103,11 @@ def write_icns(rsvg: str) -> None:
 
 
 def write_android_foreground(rsvg: str) -> None:
-    """Android 自适应图标的前景: 只保留白色字形, 并用视口留白收进安全区.
+    """Android 自适应图标的前景: 只保留白色字形, 视口留白把它收进安全区.
 
     自适应图标会被启动器按圆形 / 圆角遮罩裁切 (108dp 画布只有中间 72dp 保证可见), 因此前景不画徽标底色:
     渐变由 `drawable/ic_launcher_background.xml` 铺满整层. 字形中间的播放三角改为**镂空** (遮罩挖洞),
-    透出的正是背景层 — 与 logo.svg 里"三角填徽标渐变"的观感一致, 且不必复制品牌色或几何.
-    视口从 32 单位放宽到 48 单位: 字形缩到画布的 2/3 左右, 外接角到画布中心的距离含描边仍在安全圆半径内.
+    透出的正是背景层, 与 logo.svg 里三角填品牌渐变的做法一致, 且不必复制品牌色或几何.
     """
     src = LOGO.read_text(encoding="utf-8")
     badge_pattern = r"\s*<rect\b[^>]*fill=\"url\(#g\)\"[^>]*/>"

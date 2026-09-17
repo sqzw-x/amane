@@ -9,10 +9,9 @@ import android.widget.FrameLayout
  *
  * 两个子节点的顺序固定为 [操作区, 卡片]: 卡片后绘制因此盖住操作区, 左滑把卡片移开才露出按钮.
  *
- * 高度必须自己量, 框架的现成布局都做不到: FrameLayout 只在**多于一个** `match_parent` 子节点时才按自己
- * 测出的高度重测它们 (见 AOSP `FrameLayout.onMeasure` 的 `count > 1`), 而这里行高来自 `wrap_content` 的
- * 卡片; 在布局回调里改 `layoutParams` 会在布局过程中再发起一次布局请求. 所以这里做一次明确的测量:
- * 先量卡片, 再按卡片的高度量操作区.
+ * 高度必须自行测量, 框架的现成布局都做不到: FrameLayout 只在**多于一个** `match_parent` 子节点时才按
+ * 自己测出的高度重测它们 (见 AOSP `FrameLayout.onMeasure` 的 `count > 1`), 而这里行高来自 `wrap_content`
+ * 的卡片; 在布局回调里修改 `layoutParams` 又会在布局过程中再发起一次布局.
  */
 class SwipeRowLayout @JvmOverloads constructor(
     context: Context,

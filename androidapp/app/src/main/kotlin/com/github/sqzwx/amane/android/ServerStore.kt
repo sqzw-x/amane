@@ -7,13 +7,13 @@ import org.json.JSONObject
 /**
  * 一台已保存的服务器.
  *
- * `name` 只用于列表展示, 留空时取主机名. `token` 与地址一起落盘: 它是用户自己填进来的凭据, 与地址同处
- * 应用私有存储, 因此编辑页明文显示、允许修改 — 磁盘上本来就能读到原文, 掩码不构成保护. 首次连接用它向
- * `/api/system/desktop` 换取 cookie 后, 登录态以 WebView 的 cookie 罐为准 (见 docs/dev/android.md).
+ * `token` 与地址一起保存: 它是用户自己填进来的凭据, 与地址同处应用私有存储, 掩码不构成保护 — 编辑页
+ * 因此明文显示. 首次连接用它向 `/api/system/desktop` 换取 cookie 后, 登录态以 WebView 的 cookie 罐
+ * 为准 (见 docs/dev/android.md).
  */
 data class SavedServer(val name: String, val url: String, val token: String)
 
-/** 名字留空时用主机名与端口: 列表第一行必须有东西可读. */
+/** 名字留空时取主机名与端口: 列表首行必须有内容可读. */
 fun defaultServerName(url: String): String =
     url.substringAfter("://", missingDelimiterValue = url).substringBefore('/').ifEmpty { url }
 
@@ -24,7 +24,7 @@ fun upsertServer(servers: List<SavedServer>, incoming: SavedServer): List<SavedS
 /**
  * 编辑保存后的列表: 摘掉旧条目, 新条目按 [upsertServer] 的规则写回.
  *
- * 编辑可能把地址改成另一条已有的地址, 那时只留一条 (否则两行同地址, 两行都显示"当前"), 因此顺序是置顶.
+ * 编辑可能把地址改成另一条已有的地址, 那时只留一条, 否则两行同地址、两行都显示「当前」.
  */
 fun replaceServer(
     servers: List<SavedServer>,
@@ -35,8 +35,8 @@ fun replaceServer(
 /**
  * 读取存储.
  *
- * 现格式是对象数组; 旧版本存的是纯地址的字符串数组, 那种条目按主机名补出名字与空 token — 升级不该丢掉
- * 用户已经填过的地址. 存储损坏时视为空列表, 由用户重新填写, 而不是让启动路径崩溃.
+ * 兼容只存地址的字符串数组条目: 那种条目按主机名补出名字与空 token, 升级不丢弃用户已填过的地址.
+ * 存储损坏时视为空列表, 由用户重新填写, 启动路径不因此崩溃.
  */
 fun parseSavedServers(raw: String?): List<SavedServer> = runCatching {
     val array = JSONArray(raw ?: "[]")

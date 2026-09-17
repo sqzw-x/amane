@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 编辑已保存的服务器: 名字、地址与 token 都可改; 地址改掉后原地址不再保留 (见 ServerStore.update). -->
+<!-- 编辑已保存的服务器; 地址改掉后原地址不再保留 (见 ServerStore.update). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -61,7 +61,7 @@
         android:inputType="textVisiblePassword"
         android:singleLine="true" />
 
-    <!-- 校验失败的提示留在弹窗里: 关闭弹窗再报错等于让用户重填一遍. -->
+    <!-- 校验失败的提示留在弹窗里: 关闭后再报错, 用户必须重新填写. -->
     <TextView
         android:id="@+id/edit_error"
         android:layout_width="match_parent"

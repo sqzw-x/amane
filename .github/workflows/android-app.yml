@@ -1,7 +1,7 @@
 name: Android app
 
-# 只由 `app-` 前缀的 tag 触发, 与本体 (服务端 / 桌面端) 的 `v*` 发版完全独立:
-# 本体每次发版都附一份没变过的 APK, 只会让下载 Release 的人以为 APP 也更新了.
+# 只由 `app-` 前缀的 tag 触发, 与本体 (服务端 / 桌面端) 的 `v*` 发版相互独立:
+# 本体每次发版会附上同一份 APK, 被误认为 APP 也随版本更新.
 on:
   push:
     tags:
@@ -37,8 +37,8 @@ jobs:
       - name: Setup just
         uses: extractions/setup-just@v4
 
-      # 没有签名密钥时脚本退回 debug 包 (可侧载, 但不能作为正式产物).
-      # tag 与 version.txt 是两份东西: 不一致时打出来的包会带着另一个版本号发布, 用户装不上或装到同名旧版本.
+      # tag 与 version.txt 是两个独立的版本来源: 不一致时产物会带着另一个版本号发布, 用户无法覆盖安装,
+      # 或装到同名的旧版本.
       - name: Check tag matches version.txt
         if: startsWith(github.ref, 'refs/tags/app-')
         run: |
@@ -64,6 +64,7 @@ jobs:
           keyPassword=$ANDROID_KEY_PASSWORD
           EOF
 
+      # 没有签名密钥时脚本退回 debug 包 (可侧载, 但不是正式产物).
       - name: just android-app
         run: just android-app
 

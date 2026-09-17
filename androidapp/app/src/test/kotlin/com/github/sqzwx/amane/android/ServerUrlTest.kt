@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** 地址归一化是壳里唯一有多分支的纯逻辑, 用表测试覆盖可接受输入与不可用输入. */
+/** 地址归一化是壳里唯一有多分支的纯逻辑, 因此用表测试覆盖. */
 class ServerUrlTest {
 
     @Test

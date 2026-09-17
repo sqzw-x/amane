@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 自适应图标背景层: 铺满 108dp 画布的竖向渐变, 让遮罩裁切后不出现色块拼接.
+<!-- 自适应图标背景层: 铺满画布的竖向渐变, 遮罩裁切后不出现色块拼接.
      字形与其镂空由 mipmap-*/ic_launcher_foreground.png 提供 (见 scripts/generate_icons.py). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"

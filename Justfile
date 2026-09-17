@@ -143,12 +143,12 @@ macos-app: sync build
 windows-app: sync build
     pwsh -NoProfile -File scripts/build_windows_app.ps1
 
-# Android-only: 构建 WebView 壳的 APK (需 JDK 17+ 与 Android SDK)
-# 无 androidapp/keystore.properties 时退回 debug 包; 不依赖 web/dist — SPA 由服务端提供
+# SPA 由服务端提供, 不依赖 web/dist; 无 androidapp/keystore.properties 时退回 debug 包
+# 构建 Android 壳的 APK (需 JDK 17+ 与 Android SDK)
 android-app:
     bash scripts/build_android_app.sh
 
-# Android: 编译壳并运行单元测试 (CI 门禁; 需 JDK 17+ 与 Android SDK)
+# 编译 Android 壳并运行单元测试 (CI 门禁; 需 JDK 17+ 与 Android SDK)
 android-check:
     ./androidapp/gradlew -p androidapp --console=plain :app:assembleDebug :app:testDebugUnitTest
 

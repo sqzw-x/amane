@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 输入框: 自带圆角与内边距, 因此布局里的 EditText 不再依赖内核默认下划线. -->
+<!-- 输入框底: 布局里的 EditText 因此不依赖内核默认的下划线. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="@color/surface_field" />
