@@ -7,6 +7,7 @@
 import AmaneShared
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 // MARK: - Localization
 // 菜单字符串按系统语言 (macOS 惯例), 不跟随前端浏览器语言.
@@ -256,7 +257,15 @@ final class MenuController: NSObject, NSApplicationDelegate {
     @objc private func openSettingsFile() {
         // 应用进程在首次启动时写好模板; 此处兜底覆盖「先点菜单」的时序.
         DesktopSettings.createIfMissing()
-        NSWorkspace.shared.open(DesktopSettings.url)
+        let file = DesktopSettings.url
+        if NSWorkspace.shared.open(file) { return }
+        // .env 在 macOS 没有注册的 UTI, 未安装可打开任意文件的编辑器时它没有默认应用,
+        // open 返回 false. 回退到默认文本编辑器, 最后 TextEdit.
+        let editor =
+            NSWorkspace.shared.urlForApplication(toOpen: UTType.plainText)
+            ?? URL(fileURLWithPath: "/System/Applications/TextEdit.app")
+        NSWorkspace.shared.open(
+            [file], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
     }
 
     @objc private func checkUpdate() {
