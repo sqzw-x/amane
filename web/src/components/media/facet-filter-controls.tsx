@@ -52,9 +52,10 @@ function KindFacetPicker({
 }) {
   const { t } = useTranslation("metadata");
   const [search, setSearch] = useState("");
-  // 这块面板在底部面板 (Mantine Drawer) 里: 浮层若继续 portal 到 body, 抽屉会把那次点击判成"点击外部"
-  // 而立刻关掉 — 于是下拉打不开且每点一下整块消失. 关掉 portal 后浮层留在抽屉内.
+  // 这块面板在底部面板 (Mantine Drawer) 里, 浮层因此留在这里渲染而不 portal 到 body.
   // 断点必须与打开抽屉的外壳 (browse-page-shell) 一致, 否则 768-991px 上面板在抽屉里而浮层又 portal 出去.
+  // 未复现: 上游 9.6 的"点击外部"只由 overlay 的 onClick 触发, portal 出去是否真会关掉抽屉没有验证过;
+  // 确认不需要时可以删掉这两处 `withinPortal: false` — 它本身有代价, 浮层会被抽屉的内容容器裁切.
   const inSheet = useNarrowViewport("md");
 
   const { data, isFetching } = useQuery({
