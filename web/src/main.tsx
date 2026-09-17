@@ -1,7 +1,7 @@
 import "@/i18n";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
-
+import "@/global.css";
 import {
   ColorSchemeScript,
   Center,
@@ -25,6 +25,17 @@ import { shellEnvironment, shellSwitchServer } from "@/lib/shell";
 import { useUIStore } from "@/stores/ui";
 import { routeTree } from "./routeTree.gen";
 import { theme } from "./theme";
+
+// 视口高度单位: 老内核 (Chromium < 108 的 WebView) 不认 dvh, 此时 --amane-vh 保持 global.css 的 vh 默认值.
+// 用实测布局判断而不是 `CSS.supports`: 厂商自带的 WebView 可能在特性查询里声称支持 dvh 却算不出高度,
+// 那种情况下把变量换成 dvh 会让所有依赖它的声明失效 (弹窗上限、AppShell 高度).
+const viewportProbe = document.createElement("div");
+viewportProbe.style.cssText = "position:absolute;height:100dvh;width:0;visibility:hidden";
+document.body.appendChild(viewportProbe);
+if (viewportProbe.offsetHeight > 0) {
+  document.documentElement.style.setProperty("--amane-vh", "100dvh");
+}
+viewportProbe.remove();
 
 client.setConfig({
   baseUrl: import.meta.env.VITE_API_URL || "",
@@ -98,7 +109,7 @@ function Root() {
       <Notifications position="top-right" />
       <ConfirmHost />
       {authed === null ? (
-        <Center h="100dvh">
+        <Center h="var(--amane-vh)">
           <Loader size="sm" />
         </Center>
       ) : authed ? (

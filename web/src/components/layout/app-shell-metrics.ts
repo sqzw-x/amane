@@ -7,4 +7,4 @@ export const APP_SHELL_HEADER_HEIGHT = 60;
  * 手写像素值会让钉高页面超出 Main 内容区并被裁掉.
  */
 export const APP_SHELL_MAIN_HEIGHT =
-  "calc(100dvh - var(--app-shell-header-height) - 2 * var(--app-shell-padding))" as const;
+  "calc(var(--amane-vh) - var(--app-shell-header-height) - 2 * var(--app-shell-padding))" as const;

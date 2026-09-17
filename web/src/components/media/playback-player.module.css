@@ -221,7 +221,7 @@
   /* 条目自带悬停与选中底色, 实心底色之上仍需区分. */
   --media-menu-item-hover-background: rgb(255 255 255 / 0.16);
   /* 菜单自身可滚动; 上限取播放器内的可用高度, 短播放器下也不越出画面. */
-  max-height: min(300px, 55dvh);
+  max-height: min(300px, calc(var(--amane-vh) * 0.55));
 }
 
 .popupHost media-chrome-menu {

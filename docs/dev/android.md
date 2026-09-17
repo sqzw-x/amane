@@ -75,7 +75,7 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 
 壳不携带浏览器内核, 页面运行在设备自带的 WebView 上, 版本由用户设备决定. 前端因此声明一个运行期下限 (Chromium 99 / Safari 16.4, 见 `web/vite.config.ts` 的 `MODERN_TARGETS`; 99 是实测最低内核), 兼容由 `@vitejs/plugin-legacy` 承担: `modernTargets` 同时充当语法目标与 `@babel/preset-env` 的收集目标, polyfill 从 core-js 按 bundle 的实际使用自动挑选, 不需要维护方法清单. `renderLegacyChunks` 关闭 — 下限内核都支持 ESM, 不需要 SystemJS 包.
 
-下限只保证 JS 不崩, 样式仍按样式表自身的要求退化: `dvh` (108), `:has()` 与 `@container` (105), `color-mix()` (111) 在更低内核上整体失效, 而 CSS 不能由 core-js 补. 需要兼顾更低内核时必须逐个给出 CSS 回退 (例如在 `dvh` 之前声明 `vh`); 否则低于下限的设备须更新「Android System WebView」.
+下限只保证 JS 不崩, 样式仍按样式表自身的要求退化: `dvh` (108), `:has()` 与 `@container` (105), `color-mix()` (111) 在更低内核上整体失效, 而 CSS 不能由 core-js 补. 视口高度这一项已用 `--amane-vh` 兜住 (见 [frontend.md](frontend.md)); 其余特性需要时逐个给出回退, 否则低于下限的设备须更新系统 WebView.
 
 `build.target` 只降语法: 内建方法 (`Array.prototype.toSorted` 等) 不会被降级, 缺失时只能由 polyfill 提供 — 因此「降低构建目标」不能替代这里的配置.
 

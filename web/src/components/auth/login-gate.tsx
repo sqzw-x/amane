@@ -52,8 +52,9 @@ export function LoginGate({ onAuthed }: LoginGateProps) {
   }
 
   return (
-    // dvh 而非 vh: 移动浏览器地址栏收起前 100vh 高于可视区, 卡片重心下移.
-    <Center h="100dvh" px="md">
+    // 高度经 --amane-vh: 支持的引擎取 dvh (移动浏览器地址栏收起前 100vh 高于可视区, 卡片重心下移),
+    // 老内核退回 vh — 见 global.css.
+    <Center h="var(--amane-vh)" px="md">
       <Paper withBorder p="xl" radius="md" w={380} maw="100%" shadow="sm">
         <form
           onSubmit={(e) => {

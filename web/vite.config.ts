@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import legacy from "@vitejs/plugin-legacy";
 import { tanstackRouter } from "@tanstack/router-vite-plugin";
@@ -27,6 +27,41 @@ const MODERN_TARGETS = [
   "ios_saf >= 16.4",
 ];
 
+/**
+ * 把 `dvh` 换成 `--amane-vh` (定义见 `src/global.css`, 老内核为 `100vh`).
+ *
+ * 需要它的是**第三方代码**: Mantine 的 AppShell 高度、弹窗上限用 `100dvh`, 弹窗的 `yOffset` 默认值更是
+ * `5dvh` — 后者由 JS 写进内联样式, 只改 CSS 覆盖不到. Chromium < 108 的 WebView 会整条丢弃含 `dvh` 的声明,
+ * 后果是弹窗没有上限也不滚、侧栏高度算不出来. 自己写的代码直接用 `var(--amane-vh)`, 不依赖这一步.
+ */
+function viewportUnitFallback(): Plugin {
+  const SUPPORTS = /@supports[^{]*\{/g;
+  // 前面必须有数字才是长度单位: hls.js 的编解码器名 (`dvh1` / `dvhe`) 与 CSS 单位清单里的裸 `dvh` 都不匹配.
+  const DVH_LENGTH = /([\d.]+)dvh\b/g;
+  return {
+    name: "amane-viewport-unit-fallback",
+    enforce: "post",
+    transform(code, id) {
+      if (!id.includes("node_modules") || id.endsWith(".css")) return null;
+      const next = code.replace(DVH_LENGTH, (_match, size: string) => `${size}vh`);
+      return next === code ? null : { code: next, map: null };
+    },
+    generateBundle(_options, bundle) {
+      for (const file of Object.values(bundle)) {
+        if (file.type !== "asset" || !file.fileName.endsWith(".css")) continue;
+        const css = String(file.source);
+        // 先把 @supports 的预查段落保护起来, 再替换其余 dvh, 最后还原.
+        const shielded = css.replace(SUPPORTS, (at) => at.replaceAll("dvh", "\u0000dvh\u0000"));
+        file.source = shielded
+          .replace(DVH_LENGTH, (_match, size: string) =>
+            size === "100" ? "var(--amane-vh)" : `calc(var(--amane-vh) * ${size} / 100)`,
+          )
+          .replaceAll("\u0000dvh\u0000", "dvh");
+      }
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     tanstackRouter({ autoCodeSplitting: true }),
@@ -37,6 +72,7 @@ export default defineConfig({
       modernPolyfills: true,
       renderLegacyChunks: false,
     }),
+    viewportUnitFallback(),
   ],
   resolve: {
     alias: {

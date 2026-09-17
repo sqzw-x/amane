@@ -96,6 +96,13 @@ export function shellEnvironment(): ShellEnvironment | null {
   };
 }
 
+/** 当前生效的视口高度单位 (由入口的布局探测写入 --amane-vh). */
+export function viewportUnit(): string {
+  return (
+    getComputedStyle(document.documentElement).getPropertyValue("--amane-vh").trim() || "100vh"
+  );
+}
+
 /** 打开壳的服务器设置页; 桥不可用时返回 false, 由调用方提示而不是静默失败. */
 export function shellSwitchServer(): boolean {
   if (!window.amaneshell) return false;

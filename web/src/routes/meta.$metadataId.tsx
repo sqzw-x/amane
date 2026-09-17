@@ -348,7 +348,7 @@ function TitleDetailPage() {
 
   return (
     // 下沿留出的空白比其余三边大得多: 滚到底时末尾的卡片不贴视口底边, 还能再滚一截.
-    <Stack gap="md" pb="10dvh">
+    <Stack gap="md" pb="calc(var(--amane-vh) * 0.1)">
       <Group align="flex-start" wrap="wrap" gap="lg" style={{ flexDirection: "row-reverse" }}>
         <Stack gap="xs" style={{ flex: "3 1 360px", minWidth: 280 }}>
           <div

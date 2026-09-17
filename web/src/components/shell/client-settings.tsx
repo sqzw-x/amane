@@ -3,10 +3,12 @@ import { IconAlertTriangle, IconServer } from "@tabler/icons-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { LayoutCheck } from "@/components/shell/layout-check";
 import {
   MIN_CHROMIUM_MAJOR,
   shellEnvironment,
   shellSwitchServer,
+  viewportUnit,
   webViewStoreUrl,
 } from "@/lib/shell";
 
@@ -70,6 +72,11 @@ export function ClientSettings() {
         <Code>
           {shell.chromiumVersion ? `Chromium ${shell.chromiumVersion}` : t("client.webViewUnknown")}
         </Code>
+        {/* 布局排查用: 视口单位由 --amane-vh 决定, 这两项直接决定弹窗与钉高页面能否正确收缩. */}
+        <Text size="xs" c="dimmed">
+          {t("client.viewportUnits", { unit: viewportUnit(), height: window.innerHeight })}
+        </Text>
+        <LayoutCheck />
         {shell.chromiumOutdated ? (
           <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />} mt="xs">
             <Stack gap="xs">

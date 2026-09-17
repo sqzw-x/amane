@@ -124,7 +124,6 @@ export function FieldRouter({
     return (
       <Box
         className={classes.nest}
-        pl="sm"
         py="xs"
         style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}
       >

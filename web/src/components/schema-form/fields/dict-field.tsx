@@ -170,18 +170,7 @@ export function DictField({
                             : { borderTop: "1px solid var(--mantine-color-default-border)" }
                         }
                       >
-                        <Text
-                          size="sm"
-                          fw={500}
-                          title={getKeyLabel(key)}
-                          style={{
-                            minWidth: 140,
-                            maxWidth: 200,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                        <Text size="sm" fw={500} title={getKeyLabel(key)}>
                           {getKeyLabel(key)}
                         </Text>
                         <div style={{ flex: 1, minWidth: 0 }}>

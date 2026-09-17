@@ -1,5 +1,6 @@
 import { Group, Input, Stack, Text } from "@mantine/core";
 import type * as React from "react";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import type { FieldVariant } from "../schema";
 import classes from "./field-chrome.module.css";
 
@@ -47,6 +48,8 @@ export function FieldChrome({
   children,
   error,
 }: FieldChromeProps) {
+  const narrow = useNarrowViewport();
+
   if (variant === "bare") {
     return (
       <>
@@ -60,12 +63,14 @@ export function FieldChrome({
     );
   }
 
+  // 对齐只能经 `align` 属性给: Mantine 的 Group/Stack 把 align (含默认值) 写成内联样式, 样式表压不过它
+  // (除非 `!important`). 断点与 field-chrome.module.css 的媒体查询同源, 都由 sm 决定.
   if (layout === "horizontal") {
     return (
       <Group
         className={classes.horizontalRow}
         justify="space-between"
-        align="center"
+        align={narrow ? "flex-start" : "center"}
         wrap="nowrap"
         gap="md"
         py="xs"
@@ -80,7 +85,7 @@ export function FieldChrome({
             </Text>
           )}
         </Stack>
-        <Stack gap={4} align="flex-end" className={classes.controlRow}>
+        <Stack gap={4} align={narrow ? "flex-start" : "flex-end"} className={classes.controlRow}>
           {children}
           {error && <Input.Error size="xs">{error}</Input.Error>}
         </Stack>

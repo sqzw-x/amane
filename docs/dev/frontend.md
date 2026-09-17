@@ -58,6 +58,7 @@
 
 ## 窄屏
 
+**视口高度统一经 `--amane-vh`**: 默认 `100vh` (`src/global.css`), 入口检测到 `dvh` 时替换成 `100dvh`. 禁止在样式或组件属性里写死 `dvh` — Chromium < 108 的 WebView 会整条丢弃含它的声明, 而弹窗上限、AppShell 高度与钉高页面都靠它 (失效时弹窗没有上限也不滚). 第三方样式 (Mantine) 里的 `dvh` 由 `vite.config.ts` 的 `viewportUnitFallback` 在构建期换成同一变量, 因此不必逐个改 Mantine 的类名.
 导航栏在 `sm` (768px) 折叠, 页面内部布局 (三列标题行、并排分栏、内容侧栏) 一律用 `md` (992px): 768px 上导航栏刚展开, 内容宽度反而收窄, 跟随 `sm` 会同时触发挤压与换行. 新增断点只允许落在 `base` 至 `md`, `lg` 以上是已验收的宽屏基线, 不得改动.
 
 显隐用 `visibleFrom` / `hiddenFrom` (生成 `display: none !important`, `Table.Th` / `Table.Td` 同样支持); 必须更换控件形态时用 `useNarrowViewport()` (`hooks/use-narrow-viewport.ts`), 例如枚举超过 4 项回退 `Select`、行内操作收进 `Menu`. `Group` 的 `wrap` 与 `gap` 是 CSS 变量, 不接受响应式对象, 换行写 CSS Module 的 `@media (max-width: 47.99em)`.

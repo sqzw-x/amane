@@ -1,0 +1,12 @@
+/*
+  移动视口单位: `dvh` 在 Chromium < 108 的 WebView 上不被识别, 用到它的**整条声明**会作废 — 受影响的不只是
+  样式细节: Mantine 的弹窗 max-height 与 AppShell 高度、本站的钉高页面 (app-shell-metrics.ts) 都靠它, 失效后
+  弹窗没有上限也不滚、侧栏高度算不出来.
+
+  自己的代码统一经 --amane-vh 取值, 默认 vh; 支持 dvh 时由 `main.tsx` 在入口替换成 dvh — 特性检测放在 JS,
+  因为构建期替换分不清 `@supports` 预查与普通声明. 第三方样式里的 dvh 由构建期替换, 见 vite.config.ts 的
+  viewportUnitFallback. 壳的 WebView 由设备提供 (实测最低 Chromium 99), 这个兜底是必需项而不是可选项.
+*/
+:root {
+  --amane-vh: 100vh;
+}

@@ -45,7 +45,7 @@ const EMPTY_STREAMS: PlaybackStreamItem[] = [];
  * 只限制高度会让替换元素的盒子比例宽于素材比例, `object-fit: contain` 于是在左右留黑边;
  * 这里改为限制宽度, 让盒子比例由 16:9 决定, 并把播放器压在一屏之内.
  */
-const PLAYER_MAX_WIDTH = "min(100%, calc(72dvh * 16 / 9))";
+const PLAYER_MAX_WIDTH = "min(100%, calc(var(--amane-vh) * 0.72 * 16 / 9))";
 /** 短枚举平铺展示; 超过该数量时换行难以阅读, 回退为下拉菜单. */
 const MAX_TOGGLE_ITEMS = 4;
 
