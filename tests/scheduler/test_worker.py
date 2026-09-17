@@ -227,8 +227,8 @@ async def test_worker_idle_when_no_tasks(repo: Repository):
 async def test_worker_stop_waits_for_inflight_claim(repo: Repository, monkeypatch: pytest.MonkeyPatch) -> None:
     """stop() 不得取消进行中的认领.
 
-    认领的 commit 被打断, 事务就不会正常结束: SQLite 写锁留在池里的连接上 (Windows 上前一连接持有的锁必须显式释放),
-    紧随其后的 fail_all_running_tasks() 写入会以 database is locked 超时.
+    认领的 commit 被打断, 事务就不会正常结束: SQLite 写锁留在池里的连接上,
+    紧随其后的 fail_all_running_tasks() 写入在 Windows CI 上就以 database is locked 超时.
     """
     await repo.create_task(TaskType.SCRAPE, payload={"i": 0})
 

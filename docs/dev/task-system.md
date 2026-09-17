@@ -138,7 +138,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ### 关闭
 
-`stop()` 先置 `_running=False` 并发停止信号, **等主循环自己退出, 不取消它** — 取消可能落在 claim 的 commit 之间, 事务不结束, SQLite 写锁会留在池里的连接上, 紧随的 `fail_all_running_tasks()` 会以 `database is locked` 超时 (Windows 必现, POSIX 上因锁随进程内任一 fd 关闭而释放, 只在 CI 偶发); 认领卡死超过兜底阈值才取消. 之后处置活跃任务: `worker.shutdown_timeout` (默认 `0`, 上限 120) 是等待活跃任务自然完成的秒数, `0` 表示立即超时并 cancel. 主循环若不被终止, 停在 DB 往返中的 claim 会在 `stop()` 返回后认领**之后**入队的任务, 因此 API 测试停 worker 必须在此语义下才不竞态.
+`stop()` 先置 `_running=False` 并发停止信号, **等主循环自己退出, 不取消它** — 取消可能落在 claim 的 commit 之间, 事务不结束, SQLite 写锁会留在池里的连接上, 紧随的 `fail_all_running_tasks()` 会以 `database is locked` 超时 (Windows CI 上必现, POSIX 上未复现); 认领卡死超过兜底阈值才取消. 之后处置活跃任务 (handler 在 `handle()` 内直接写 repo, 立即取消同样可能打断其写事务): `worker.shutdown_timeout` (默认 `0`, 上限 120) 是等待活跃任务自然完成的秒数, `0` 表示立即超时并 cancel. 主循环若不被终止, 停在 DB 往返中的 claim 会在 `stop()` 返回后认领**之后**入队的任务, 因此 API 测试停 worker 必须在此语义下才不竞态.
 
 ## 即时提交与定时提交
 
