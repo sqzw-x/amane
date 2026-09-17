@@ -11,7 +11,6 @@ import { listFacetsOptions } from "@/client/@tanstack/react-query.gen";
 import type { ContentType, FacetKind, Mosaic } from "@/client/types.gen";
 import { CONTENT_TYPES, FACET_KINDS, FILE_DEFINITIONS, MOSAICS } from "@/lib/exhaustive-maps";
 import { facetIdsOf, type FacetFilters } from "@/lib/facets";
-import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 
 const PICKER_LIMIT = 40;
 
@@ -52,11 +51,9 @@ function KindFacetPicker({
 }) {
   const { t } = useTranslation("metadata");
   const [search, setSearch] = useState("");
-  // 这块面板在底部面板 (Mantine Drawer) 里, 浮层因此留在这里渲染而不 portal 到 body.
-  // 断点必须与打开抽屉的外壳 (browse-page-shell) 一致, 否则 768-991px 上面板在抽屉里而浮层又 portal 出去.
-  // 未复现: 上游 9.6 的"点击外部"只由 overlay 的 onClick 触发, portal 出去是否真会关掉抽屉没有验证过;
-  // 确认不需要时可以删掉这两处 `withinPortal: false` — 它本身有代价, 浮层会被抽屉的内容容器裁切.
-  const inSheet = useNarrowViewport("md");
+  // 浮层保持默认 portal, 不因"面板在抽屉里"而改成 `withinPortal: false`:
+  // 实测 (Mantine 9.6, 视口 768-991px, 打开抽屉后点搜索框与 Select) 浮层挂到 body 上不会关掉抽屉 —
+  // 上游的"点击外部"只由 overlay 的 onClick 触发, 而浮层 z-index 更高, 碰不到它.
 
   const { data, isFetching } = useQuery({
     ...listFacetsOptions({
@@ -92,7 +89,6 @@ function KindFacetPicker({
       }}
       clearable
       size="sm"
-      comboboxProps={{ withinPortal: !inSheet }}
     />
   );
 }
@@ -140,9 +136,6 @@ export function FacetFilterControls({
   onFilePhaseChange,
 }: FacetFilterControlsProps) {
   const { t } = useTranslation("metadata");
-  // 窄屏这块面板在底部面板 (Mantine Drawer) 里, 浮层不能 portal 出去 — 见 KindFacetPicker 的注释.
-  const inSheet = useNarrowViewport("md");
-  const comboboxProps = { withinPortal: !inSheet };
   const triData = [
     { value: "true", label: t("search.yes") },
     { value: "false", label: t("search.no") },
@@ -175,7 +168,6 @@ export function FacetFilterControls({
             onChange={(v) => onHasFilesChange(parseTriSelect(v))}
             clearable
             size="sm"
-            comboboxProps={comboboxProps}
           />
           <Select
             label={t("search.hasSubtitle")}
@@ -185,7 +177,6 @@ export function FacetFilterControls({
             onChange={(v) => onFilePhaseChange({ ...filePhase, has_subtitle: parseTriSelect(v) })}
             clearable
             size="sm"
-            comboboxProps={comboboxProps}
           />
           <Select
             label={t("search.uncensored")}
@@ -195,7 +186,6 @@ export function FacetFilterControls({
             onChange={(v) => onFilePhaseChange({ ...filePhase, uncensored: parseTriSelect(v) })}
             clearable
             size="sm"
-            comboboxProps={comboboxProps}
           />
           <Select
             label={t("search.mosaic")}
@@ -213,7 +203,6 @@ export function FacetFilterControls({
             }
             clearable
             size="sm"
-            comboboxProps={comboboxProps}
           />
           <Select
             label={t("search.definition")}
@@ -226,7 +215,6 @@ export function FacetFilterControls({
             onChange={(v) => onFilePhaseChange({ ...filePhase, definition: parseDefinition(v) })}
             clearable
             size="sm"
-            comboboxProps={comboboxProps}
           />
           <Select
             label={t("search.contentType")}
@@ -244,7 +232,6 @@ export function FacetFilterControls({
             }
             clearable
             size="sm"
-            comboboxProps={comboboxProps}
           />
         </SimpleGrid>
       </Stack>
