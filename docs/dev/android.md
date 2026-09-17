@@ -11,7 +11,8 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 
 | 组件 | 职责 |
 |------|------|
-| `BrowserActivity` | WebView 宿主: 工具栏菜单、下载、自定义视图 (全屏视频)、画中画、窗口 inset |
+| `BrowserActivity` | WebView 宿主: 下载、自定义视图 (全屏视频)、画中画、窗口 inset、启动看门狗、JS 桥 |
+| `ShellBridge` | 暴露给页面的 `window.amaneshell` |
 | `MainActivity` | `BrowserActivity` 的 `singleTask` 入口 |
 | `PopupActivity` | `window.open` 的目标窗口, 每个弹窗一个实例 |
 | `SetupActivity` | 服务器地址列表与首次登录 |
@@ -32,6 +33,25 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 
 服务端关闭鉴权 (`AMANE_TOKEN=off`) 或用户留空 token 时, 探活返回 401 也直接打开页面.
 
+**壳内不显示页面的登录门**: 页面无从区分「服务端换了 token」与「地址填错」, 而 token 的正确入口是服务器页 (它校验 Bearer 并换取 cookie). 因此入口处发现未认证 (挂载探活失败, 或任何请求 401 触发失效事件) 时跳回 `SetupActivity` 一次 — 每次页面加载只跳一次, 用户从那里返回后落在登录门, 门内另给一条「服务器设置」入口. `signOut()` 走同一条路径, 只是先清掉 cookie 罐.
+
+## 界面归属与桥
+
+壳不渲染工具栏: 页面自带头部, 壳只保留加载进度条与两个原生兜底界面. 服务器切换、退出登录与 WebView 版本提示都在**与「设置」平级的「客户端设置」页** (`web/src/routes/client.tsx` + `components/shell/client-settings.tsx`).
+
+是否在壳内由 **UA 标记**判定 (`WebSettings.userAgentString` 追加的 `AmaneShell/<version>`, 每个请求都带), 不是 JS 桥: 桥只承载动作, 缺了它页面仍列出入口并提示重装. 以桥作为判据会让入口在部分加载下整块消失 — 这正是"有时显示有时不显示"的来源. 桌面浏览器与 Docker 部署没有该标记, 入口不出现.
+
+| 桥方法 | 实现 |
+|---------|------|
+| `switchServer()` | 打开 `SetupActivity`, 与错误界面的「切换服务器」同一入口 |
+| `signOut()` | 清除 WebView 的 cookie 罐后打开 `SetupActivity`; 服务器地址列表保留 |
+| `shellVersion()` | APK 的 `versionName` |
+| `webViewVersion()` | `WebViewCompat.getCurrentWebViewPackage`, 取不到时为空串 |
+
+`addJavascriptInterface` 对 WebView 加载的文档全部可见, 因此站外链接必须交给系统浏览器, 桥也只做上表这几件事、不接受参数.
+
+**启动看门狗**: 主文档加载成功不等于页面能用. 页面在挂载前抛异常时 (例如 WebView 低于前端下限), 页面自己的错误界面不会出现, 用户看到的只是一张空白页. 壳在 `onPageFinished` 后检查 `#root` 是否有子节点, 两次检查仍为空则显示原生错误界面 — 这是这种情况下唯一的重试与换服务器出口.
+
 ## 平台功能
 
 | 场景 | 处理方式 |
@@ -44,15 +64,15 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 | 站外链接 | 交给系统浏览器, 不留在 WebView 内 |
 | 浅色/深色 | `WebSettingsCompat.setAlgorithmicDarkeningAllowed`, 让 `prefers-color-scheme` 跟随系统 |
 
-窗口 inset 以原生 padding 施加在容器上, 页面不使用 `env(safe-area-inset-*)`: WebView 的视口因此等于安全区, SPA 既有的 `100dvh` 高度计算 (`web/src/components/layout/app-shell-metrics.ts`) 无需改动.
+窗口 inset 以原生 padding 施加在根容器上, 页面不使用 `env(safe-area-inset-*)`: WebView 的视口因此等于安全区, SPA 既有的 `100dvh` 高度计算 (`web/src/components/layout/app-shell-metrics.ts`) 无需改动. 壳没有自己的栏, 状态栏区域显示系统背景 (跟随 DayNight), 页面头部不会被状态栏压住.
 
 `usesCleartextTraffic="true"` 是刻意的: 网络策略不能按用户在运行时填写的地址放开明文, 而自建服务默认是 `http://<host>:8000`. 非局域网部署应自备 HTTPS 反代.
 
 ## WebView 运行期
 
-壳不携带浏览器内核, 页面运行在设备自带的 WebView 上, 版本由用户设备决定. 前端因此声明一个运行期下限 (Chromium 108 / Safari 16.4, 见 `web/vite.config.ts` 的 `MODERN_TARGETS`), 兼容由 `@vitejs/plugin-legacy` 承担: `modernTargets` 同时充当语法目标与 `@babel/preset-env` 的收集目标, polyfill 从 core-js 按 bundle 的实际使用自动挑选, 不需要维护方法清单. `renderLegacyChunks` 关闭 — 下限内核都支持 ESM, 不需要 SystemJS 包.
+壳不携带浏览器内核, 页面运行在设备自带的 WebView 上, 版本由用户设备决定. 前端因此声明一个运行期下限 (Chromium 99 / Safari 16.4, 见 `web/vite.config.ts` 的 `MODERN_TARGETS`; 99 是实测最低内核), 兼容由 `@vitejs/plugin-legacy` 承担: `modernTargets` 同时充当语法目标与 `@babel/preset-env` 的收集目标, polyfill 从 core-js 按 bundle 的实际使用自动挑选, 不需要维护方法清单. `renderLegacyChunks` 关闭 — 下限内核都支持 ESM, 不需要 SystemJS 包.
 
-下限由样式表决定, 不由 JS 决定: 构建产物用到 `dvh` (108) / `:has()` 与 `@container` (105) / `color-mix()` (111), 而 CSS 不能由 core-js 补. 把下限声明得低于样式表的真实下限, 只会把「明确报错」换成「能渲染但残缺」; 下调下限必须同时处理 CSS. 低于下限的设备须更新「Android System WebView」.
+下限只保证 JS 不崩, 样式仍按样式表自身的要求退化: `dvh` (108), `:has()` 与 `@container` (105), `color-mix()` (111) 在更低内核上整体失效, 而 CSS 不能由 core-js 补. 需要兼顾更低内核时必须逐个给出 CSS 回退 (例如在 `dvh` 之前声明 `vh`); 否则低于下限的设备须更新「Android System WebView」.
 
 `build.target` 只降语法: 内建方法 (`Array.prototype.toSorted` 等) 不会被降级, 缺失时只能由 polyfill 提供 — 因此「降低构建目标」不能替代这里的配置.
 

@@ -17,13 +17,12 @@
     <string name="error_invalid_token">token 无效</string>
     <string name="error_status">服务器返回 HTTP %1$d</string>
     <string name="error_unreachable">无法连接服务器: %1$s</string>
+    <string name="error_boot_failed">页面未能启动: 系统 WebView 可能版本过低, 请更新「Android System WebView」后重试.</string>
     <string name="error_retry">重试</string>
     <string name="error_no_app">没有可以打开 %1$s 的应用</string>
 
-    <string name="menu_reload">重新加载</string>
     <string name="menu_switch_server">切换服务器</string>
-    <string name="menu_clear_session">清除登录状态</string>
-    <string name="session_cleared">已清除登录状态</string>
+    <string name="signed_out">已退出登录</string>
 
     <string name="download_started">已开始下载</string>
     <string name="download_failed">下载失败: %1$s</string>

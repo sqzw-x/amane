@@ -39,6 +39,7 @@
     "tasks": "任务",
     "schedules": "定时任务",
     "settings": "设置",
+    "client": "客户端设置",
     "logs": "日志",
     "meta": "片库",
     "actors": "演员",
@@ -139,6 +140,7 @@
     "title": "需要登录",
     "description": "桌面端可点击菜单栏/任务栏图标 - 复制 API Token, 容器端可在数据目录的 token 文件中查看",
     "tokenPlaceholder": "粘贴令牌",
+    "serverSettings": "服务器设置",
     "invalidToken": "令牌无效，请检查后重试。",
     "connectionFailed": "无法连接服务器，请确认服务已启动。"
   }

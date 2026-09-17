@@ -6,15 +6,12 @@ import android.app.PictureInPictureParams
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
 import android.util.Rational
-import android.view.Menu
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -55,12 +52,14 @@ open class BrowserActivity : AppCompatActivity() {
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
 
+    /** 页面每次开始加载都自增, 用来作废上一次的启动检查. */
+    private var bootCheckGeneration = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         binding = ActivityBrowserBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        setSupportActionBar(binding.toolbar)
         applyWindowInsets()
 
         // 弹窗由 EXTRA_URL 指定具体页面; 入口窗口没有 EXTRA_URL 时用当前选中的服务器.
@@ -105,28 +104,6 @@ open class BrowserActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.browser, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
-        R.id.action_reload -> {
-            showProgress()
-            binding.webView.reload()
-            true
-        }
-        R.id.action_switch_server -> {
-            openSetup()
-            true
-        }
-        R.id.action_clear_session -> {
-            clearSession()
-            true
-        }
-        else -> super.onOptionsItemSelected(item)
-    }
-
     // region 全屏视频与画中画
 
     /**
@@ -152,7 +129,6 @@ open class BrowserActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
             binding.customViewContainer.visibility = View.VISIBLE
-            binding.toolbar.visibility = View.GONE
             binding.progress.visibility = View.GONE
             binding.webView.visibility = View.INVISIBLE
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -198,7 +174,6 @@ open class BrowserActivity : AppCompatActivity() {
         binding.customViewContainer.removeView(view)
         binding.customViewContainer.visibility = View.GONE
         binding.webView.visibility = View.VISIBLE
-        if (!isInPictureInPictureMode) binding.toolbar.visibility = View.VISIBLE
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         customView = null
         customViewCallback?.onCustomViewHidden()
@@ -215,15 +190,6 @@ open class BrowserActivity : AppCompatActivity() {
             .setAspectRatio(Rational(width, height))
             .build()
         runCatching { enterPictureInPictureMode(params) }
-    }
-
-    override fun onPictureInPictureModeChanged(
-        isInPictureInPictureMode: Boolean,
-        newConfig: Configuration,
-    ) {
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        binding.toolbar.visibility =
-            if (isInPictureInPictureMode || customView != null) View.GONE else View.VISIBLE
     }
 
     // endregion
@@ -246,6 +212,8 @@ open class BrowserActivity : AppCompatActivity() {
             WebSettingsCompat.setAlgorithmicDarkeningAllowed(web.settings, true)
         }
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
+        // 页面经 window.amaneshell 发起服务器切换与登录清除; 其余原生入口已全部移入 SPA 界面.
+        web.addJavascriptInterface(ShellBridge(this), BRIDGE_NAME)
         web.webChromeClient = ShellChromeClient()
         web.webViewClient = ShellWebViewClient()
         web.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
@@ -262,12 +230,14 @@ open class BrowserActivity : AppCompatActivity() {
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+            bootCheckGeneration += 1
             hideError()
             showProgress()
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             binding.progress.visibility = View.GONE
+            scheduleBootCheck()
         }
 
         override fun onReceivedError(
@@ -312,16 +282,20 @@ open class BrowserActivity : AppCompatActivity() {
         binding.webView.visibility = View.VISIBLE
     }
 
-    private fun openSetup() {
+    /** 打开壳的服务器设置页; 同时是错误界面的「切换服务器」与桥 `switchServer()` 的实现. */
+    internal fun openSetup() {
         startActivity(Intent(this, SetupActivity::class.java))
     }
 
-    /** 只清除 cookie: token 保存在 WebView 的 cookie 罐里, SPA 自己的偏好 (localStorage) 不应一并删除. */
-    private fun clearSession() {
+    /**
+     * 退出登录: 清除 WebView 的 cookie 罐 (登录态就是它), 然后回到服务器页而不是停在页面的登录门 —
+     * token 由服务器页校验并换取 cookie, 在那里重新登录才是完整路径. 服务器地址列表保留.
+     */
+    internal fun signOut() {
         CookieManager.getInstance().removeAllCookies(null)
         CookieManager.getInstance().flush()
-        Toast.makeText(this, R.string.session_cleared, Toast.LENGTH_SHORT).show()
-        binding.webView.reload()
+        Toast.makeText(this, R.string.signed_out, Toast.LENGTH_SHORT).show()
+        openSetup()
     }
 
     private fun handleBack() {
@@ -344,6 +318,43 @@ open class BrowserActivity : AppCompatActivity() {
             { if (customView != null) hideCustomView() },
             FULLSCREEN_EXIT_GRACE_MS,
         )
+    }
+
+    // endregion
+
+    // region 启动看门狗
+
+    /**
+     * 主文档加载成功不等于页面能用: 壳不携带浏览器内核, WebView 版本由设备决定, 脚本在挂载前抛异常时
+     * 页面会停在空白上, 而页面自己的错误界面不会出现 — 只有原生层能给出重试与换服务器的出口.
+     */
+    private fun scheduleBootCheck() {
+        if (binding.errorView.visibility == View.VISIBLE) return
+        bootCheckGeneration += 1
+        val generation = bootCheckGeneration
+        binding.root.postDelayed(
+            { if (generation == bootCheckGeneration) checkBoot(generation, BOOT_CHECK_ATTEMPTS) },
+            BOOT_CHECK_DELAY_MS,
+        )
+    }
+
+    private fun checkBoot(generation: Int, attemptsLeft: Int) {
+        binding.webView.evaluateJavascript(BOOT_PROBE_JS) { result ->
+            if (generation != bootCheckGeneration) return@evaluateJavascript
+            if (result?.trim('"') == "true") return@evaluateJavascript
+            if (attemptsLeft > 1) {
+                binding.root.postDelayed(
+                    {
+                        if (generation == bootCheckGeneration) {
+                            checkBoot(generation, attemptsLeft - 1)
+                        }
+                    },
+                    BOOT_CHECK_RETRY_MS,
+                )
+                return@evaluateJavascript
+            }
+            showError(getString(R.string.error_boot_failed))
+        }
     }
 
     // endregion
@@ -386,21 +397,20 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     /**
-     * 窗口 inset 用原生 padding 落在容器上, 而不是让页面自己用 `env(safe-area-inset-*)`.
-     * 这样 WebView 的视口就等于安全区, SPA 现有的 `100dvh` 高度计算 (`app-shell-metrics.ts`)
-     * 自动成立, 前端不必为壳再维护一套断点.
+     * 窗口 inset 用原生 padding 落在根容器上, 而不是让页面自己用 `env(safe-area-inset-*)`.
+     * 这样 WebView 的视口等于安全区, SPA 现有的 `100dvh` 高度计算 (`app-shell-metrics.ts`) 自动成立,
+     * 前端不必为壳再维护一套断点; 状态栏区域因此由系统背景填充, 页面自己的头部不会与状态栏叠在一起.
      */
     private fun applyWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime(),
             )
-            binding.toolbar.updatePadding(top = bars.top, left = bars.left, right = bars.right)
-            binding.progress.updatePadding(left = bars.left, right = bars.right)
-            binding.webContainer.updatePadding(
+            binding.root.updatePadding(
+                top = bars.top,
+                bottom = bars.bottom,
                 left = bars.left,
                 right = bars.right,
-                bottom = bars.bottom,
             )
             insets
         }
@@ -411,10 +421,18 @@ open class BrowserActivity : AppCompatActivity() {
         const val EXTRA_URL = "com.github.sqzwx.amane.android.extra.URL"
 
         private const val STATE_URL = "amane:url"
+        private const val BRIDGE_NAME = "amaneshell"
         private const val FULLSCREEN_EXIT_GRACE_MS = 400L
+        private const val BOOT_CHECK_DELAY_MS = 1_500L
+        private const val BOOT_CHECK_RETRY_MS = 4_000L
+        private const val BOOT_CHECK_ATTEMPTS = 2
         private const val TOKEN_COOKIE = "amane_token"
         private val HTTP_SCHEMES = listOf("http", "https")
         private val DEFAULT_ASPECT = 16 to 9
+
+        /** 页面挂载完成的判据: `#root` 有子节点. */
+        private const val BOOT_PROBE_JS =
+            "(function(){var r=document.getElementById('root');return !!(r&&r.childElementCount>0);})()"
 
         private val EXIT_FULLSCREEN_JS = String.format(
             Locale.ROOT,

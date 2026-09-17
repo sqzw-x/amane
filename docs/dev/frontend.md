@@ -11,7 +11,7 @@
 | **Browse** | `/` 对话; `/meta` 片库; `/actors` 演员; `/catalog/...` 分类词云; `/saved-queries/$queryId` 查询结果; `/feeds` 阅读器 (`?feed=` / `?group=`) |
 | **Manage** | `/libraries` `/libraries/$id`; `/plugins` 来源插件; `/feeds/sources` 订阅源 |
 | **Ops** | `/tasks` `/schedules` `/logs` |
-| **Settings** | `/settings` (`?section=` 分组; Schema 表单) |
+| **Settings** | `/settings` (`?section=` 分组; Schema 表单); `/client` (壳内的客户端设置, 见 [android.md](android.md)) |
 
 路由组件与协作文件的对应见下表.
 
@@ -100,7 +100,9 @@ dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `
 
 ## `lib/` 分层
 
-根目录只放跨域工具 (`confirm` / `exhaustive*` / `api-token` / `connection` / `utils` 等); 只服务一个产品域的模块纳入 `lib/<domain>/` (`actors` / `feeds` / `agent` / `task` / `media`), 不允许再往根上堆叠带域前缀的文件. 不设根 barrel, 调用方直引文件.
+根目录只放跨域工具 (`confirm` / `exhaustive*` / `api-token` / `connection` / `shell` / `utils` 等); 只服务一个产品域的模块纳入 `lib/<domain>/` (`actors` / `feeds` / `agent` / `task` / `media`), 不允许再往根上堆叠带域前缀的文件. 不设根 barrel, 调用方直引文件.
+
+`lib/shell.ts` 判定是否在 Android 壳内 (UA 标记 `AmaneShell/<version>`, 不依赖 JS 桥 — 桥只承载动作) 并给出壳的动作. 壳内多一个与「设置」平级的 `/client` 页 (`routes/client.tsx` → `components/shell/client-settings.tsx`), 登录门 (`components/auth/login-gate.tsx`) 与错误边界 (`components/error-boundary.tsx`) 也据此给出「切换服务器」入口; 非壳环境下这些整块不渲染. 契约见 [android.md](android.md).
 
 ## 工程入口
 

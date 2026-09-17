@@ -13,6 +13,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { apiFetch } from "@/lib/api-token";
+import { shellEnvironment, shellSwitchServer } from "@/lib/shell";
 
 /**
  * API token 登录门. 首次访问 (无 cookie) 时整页替换 App; 提交后用
@@ -72,7 +73,20 @@ export function LoginGate({ onAuthed }: LoginGateProps) {
               autoFocus
             />
             {error && <Alert color="red">{error}</Alert>}
-            <Group justify="flex-end">
+            <Group justify="space-between">
+              {/* 壳内 token 由服务器页校验, 这里给一条回到那里的路径 (跳转已在入口自动发生过一次). */}
+              {shellEnvironment() ? (
+                <Button
+                  type="button"
+                  variant="subtle"
+                  size="xs"
+                  onClick={() => shellSwitchServer()}
+                >
+                  {t("auth.serverSettings")}
+                </Button>
+              ) : (
+                <span />
+              )}
               <Button type="submit" loading={submitting}>
                 {t("actions.submit")}
               </Button>

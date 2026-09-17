@@ -1,6 +1,8 @@
-import { Alert, Button, Code, Stack, Text } from "@mantine/core";
-import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
+import { Alert, Button, Code, Group, Stack, Text } from "@mantine/core";
+import { IconAlertTriangle, IconRefresh, IconServer } from "@tabler/icons-react";
 import { Component, type ErrorInfo, type ReactNode } from "react";
+
+import { shellEnvironment, shellSwitchServer } from "@/lib/shell";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -40,14 +42,28 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         <Stack gap="sm">
           <Text size="sm">渲染此页面时抛出了未捕获的异常, 详情见下方.</Text>
           <Code block>{error.message}</Code>
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<IconRefresh size={14} />}
-            onClick={this.reset}
-          >
-            重试
-          </Button>
+          <Group gap="xs">
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<IconRefresh size={14} />}
+              onClick={this.reset}
+            >
+              重试
+            </Button>
+            {/* 壳内页面渲染失败时, 服务器入口本身也点不到 — 这里给出唯一的出口. */}
+            {shellEnvironment() ? (
+              <Button
+                size="xs"
+                variant="light"
+                color="gray"
+                leftSection={<IconServer size={14} />}
+                onClick={() => shellSwitchServer()}
+              >
+                切换服务器
+              </Button>
+            ) : null}
+          </Group>
         </Stack>
       </Alert>
     );

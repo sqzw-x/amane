@@ -1,18 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 壳不提供工具栏: 页面自带头部, 服务器与登录入口由 SPA 经 window.amaneshell 发起.
+     这里只剩加载进度条、页面本体与两个原生兜底界面 (加载失败 / 全屏视频). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
-
-    <androidx.appcompat.widget.Toolbar
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorPrimary"
-        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
-        app:popupTheme="@style/ThemeOverlay.AppCompat.Light"
-        app:title="@string/app_name" />
 
     <ProgressBar
         android:id="@+id/progress"
@@ -33,7 +26,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- 主文档加载失败时的替代界面: 局域网里的服务器会关机或更换地址, 必须提供重试与切换地址的入口 -->
+        <!-- 主文档加载失败或页面脚本没跑起来时的替代界面: 局域网里的服务器会关机或更换地址 -->
         <LinearLayout
             android:id="@+id/error_view"
             android:layout_width="match_parent"

@@ -12,7 +12,7 @@ import {
 import { Notifications } from "@mantine/notifications";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { client } from "@/client/client.gen";
@@ -21,6 +21,7 @@ import { ConfirmHost } from "@/lib/confirm";
 import { apiFetch, AUTH_EXPIRED_EVENT } from "@/lib/api-token";
 import { initConnection } from "@/lib/connection";
 import { queryClient } from "@/lib/query-client";
+import { shellEnvironment, shellSwitchServer } from "@/lib/shell";
 import { useUIStore } from "@/stores/ui";
 import { routeTree } from "./routeTree.gen";
 import { theme } from "./theme";
@@ -48,16 +49,29 @@ const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Root element not found");
 
 /** 认证经 HttpOnly cookie: 挂载时探活 /api/system/desktop 判断 cookie 是否有效,
- * 之后任何请求 401 (cookie 过期/被重置) 由 apiFetch 发事件切换回登录门. */
+ * 之后任何请求 401 (cookie 过期/被重置) 由 apiFetch 发事件切换回登录门.
+ *
+ * 壳内不显示登录门: token 由壳的服务器页 (SetupActivity) 校验并换取 cookie, 页面的登录门没有
+ * 报错信息可依据 (服务端换了 token 与地址填错在这里长得一样). 因此未认证时跳回服务器页一次,
+ * 用户从那里返回仍未登录才留在登录门 — 页内粘 token 与服务器页的 token 输入框等效. */
 function Root() {
   const colorScheme = useUIStore((s) => s.theme);
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const shell = shellEnvironment() !== null;
+  const redirectedToSetup = useRef(false);
 
   useEffect(() => {
     const onExpired = () => setAuthed(false);
     window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
   }, []);
+
+  // 每次页面加载只跳一次, 避免用户返回时再次被弹走.
+  useEffect(() => {
+    if (authed !== false || !shell || redirectedToSetup.current) return;
+    redirectedToSetup.current = true;
+    shellSwitchServer();
+  }, [authed, shell]);
 
   // 挂载探活: cookie 有效则直接进入应用, 无 cookie 则等登录门引导.
   useEffect(() => {

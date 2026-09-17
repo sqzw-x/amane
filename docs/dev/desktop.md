@@ -4,7 +4,7 @@
 
 ## 品牌标
 
-单一源 `assets/logo.svg`; 修改后执行 `just icons` 并提交衍生文件: WebUI favicon (`web/public/favicon.svg`)、macOS `assets/app.icns`、Windows `assets/app.ico` (托盘从 exe 抽同一份)、macOS 菜单栏模板字形 (只取 alpha 由系统着色 — 彩色徽标在菜单栏会糊成色块). `just icons` 需要 `rsvg-convert` 与 macOS `iconutil`; 衍生文件入库, 打包机不必装 librsvg.
+单一源 `assets/logo.svg`; 修改后执行 `just icons` 并提交衍生文件: WebUI favicon (`web/public/favicon.svg`)、macOS `assets/app.icns`、Windows `assets/app.ico` (托盘从 exe 抽同一份)、macOS 菜单栏模板字形 (只取 alpha 由系统着色 — 彩色徽标在菜单栏会糊成色块)、Android 自适应图标 (`androidapp/app/src/main/res/`: 渐变背景层 `drawable/ic_launcher_background.xml` + 白色字形 `mipmap-*/ic_launcher_foreground.png`). Android 拆两层是因为启动器会按圆形 / 圆角遮罩裁切, 只有中间 72dp 保证可见: 徽标底色留在背景层, 字形缩到安全区内, 中间的播放三角用遮罩镂空透出背景. `just icons` 需要 `rsvg-convert` 与 macOS `iconutil`; 衍生文件入库, 打包机不必装 librsvg.
 
 ## 进程模型
 

@@ -14,14 +14,14 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
  * `modernTargets` 同时充当语法目标与 `@babel/preset-env` 的收集目标, polyfill 按 bundle 的实际使用自动挑,
  * 因此新增依赖或新增调用不需要维护清单.
  *
- * 下限取 Chromium 108 / Safari 16.4 — 与样式表实际依赖的特性一致 (`dvh` 108, `:has()` 与 `@container` 105,
- * `color-mix()` 111). CSS 不能由 core-js 补, 把下限声明得低于样式表的真实下限, 只会把"明确报错"换成
- * "能渲染但残缺".
+ * Chromium 取实测最低值 (实测最低内核); 样式表依赖的 `dvh` (108) /
+ * `:has()` 与 `@container` (105) / `color-mix()` (111) 在更低内核上会整体失效, CSS 不能由 core-js 补 —
+ * 因此这个下限首先是"JS 不崩"的保证, 低于它的内核须由用户更新「Android System WebView」.
  */
 const MODERN_TARGETS = [
-  "chrome >= 108",
-  "chromeAndroid >= 108",
-  "edge >= 108",
+  "chrome >= 99",
+  "chromeAndroid >= 99",
+  "edge >= 99",
   "firefox >= 115",
   "safari >= 16.4",
   "ios_saf >= 16.4",

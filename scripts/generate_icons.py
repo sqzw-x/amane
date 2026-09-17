@@ -14,6 +14,7 @@ platforms still produce favicon + ico.
 
 from __future__ import annotations
 
+import re
 import shutil
 import struct
 import subprocess
@@ -37,6 +38,10 @@ ICNS_SLOTS = (16, 32, 128, 256, 512)
 ANDROID_RES = ROOT / "androidapp" / "app" / "src" / "main" / "res"
 ANDROID_DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0, "xxxhdpi": 4.0}
 ANDROID_ICON_DP = 108
+# logo.svg 的原始视口; 前景把它放宽到 48 单位, 字形因此缩到画布的 2/3 并落在中间.
+# y 方向偏移 1 单位: 字形包围盒中心在 (16 15), 而 32 单位画布的中心是 (16 16).
+LOGO_VIEWBOX = "0 0 32 32"
+ANDROID_VIEWBOX = "-8 -9 48 48"
 
 
 def pack_ico(images: list[tuple[int, bytes]]) -> bytes:
@@ -98,11 +103,47 @@ def write_icns(rsvg: str) -> None:
 
 
 def write_android_foreground(rsvg: str) -> None:
-    """Android 自适应图标的前景: logo 铺满 108dp 画布, 形状由启动器的遮罩决定."""
-    for density, scale in ANDROID_DENSITIES.items():
-        dest = ANDROID_RES / f"mipmap-{density}" / "ic_launcher_foreground.png"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        render_png(rsvg, round(ANDROID_ICON_DP * scale), dest)
+    """Android 自适应图标的前景: 只保留白色字形, 并用视口留白收进安全区.
+
+    自适应图标会被启动器按圆形 / 圆角遮罩裁切 (108dp 画布只有中间 72dp 保证可见), 因此前景不画徽标底色:
+    渐变由 `drawable/ic_launcher_background.xml` 铺满整层. 字形中间的播放三角改为**镂空** (遮罩挖洞),
+    透出的正是背景层 — 与 logo.svg 里"三角填徽标渐变"的观感一致, 且不必复制品牌色或几何.
+    视口从 32 单位放宽到 48 单位: 字形缩到画布的 2/3 左右, 外接角到画布中心的距离含描边仍在安全圆半径内.
+    """
+    src = LOGO.read_text(encoding="utf-8")
+    badge_pattern = r"\s*<rect\b[^>]*fill=\"url\(#g\)\"[^>]*/>"
+    counter_pattern = r"<path\b[^>]*fill=\"url\(#g\)\"[^>]*/>"
+    counter = re.search(counter_pattern, src)
+    if counter is None:
+        raise SystemExit("logo.svg changed: the play-triangle counter is missing")
+    trimmed = re.sub(badge_pattern, "", src, count=1)
+    trimmed, removed = re.subn(counter_pattern, "", trimmed, count=1)
+    if removed != 1 or f'viewBox="{LOGO_VIEWBOX}"' not in trimmed:
+        raise SystemExit("logo.svg changed: cannot build the Android foreground")
+
+    # 遮罩里的三角与原图同坐标 (作用于白色字形的局部坐标系), 只是改成黑色即挖洞.
+    hole = counter.group(0).replace('fill="url(#g)"', 'fill="#000"').replace('stroke="url(#g)"', 'stroke="#000"')
+    mask = f'<mask id="glyph-hole"><rect x="-2" y="-2" width="22" height="22" fill="#fff"/>{hole}</mask>'
+    glyph, masked = re.subn(r'(<path\b[^>]*fill="#fff")', r'\1 mask="url(#glyph-hole)"', trimmed, count=1)
+    if masked != 1:
+        raise SystemExit("logo.svg changed: the letterform path is missing")
+    scaled = glyph.replace(
+        f'viewBox="{LOGO_VIEWBOX}"',
+        f'viewBox="{ANDROID_VIEWBOX}"',
+        1,
+    ).replace("</defs>", f"{mask}</defs>", 1)
+
+    with tempfile.TemporaryDirectory(prefix="amane-android-") as tmp:
+        foreground = Path(tmp) / "foreground.svg"
+        foreground.write_text(scaled, encoding="utf-8")
+        for density, scale in ANDROID_DENSITIES.items():
+            dest = ANDROID_RES / f"mipmap-{density}" / "ic_launcher_foreground.png"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            size = round(ANDROID_ICON_DP * scale)
+            subprocess.run(
+                [rsvg, "-w", str(size), "-h", str(size), "-o", str(dest), str(foreground)],
+                check=True,
+            )
 
 
 def main() -> int:

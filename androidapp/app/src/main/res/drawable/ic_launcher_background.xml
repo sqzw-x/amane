@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标背景层: 铺满 108dp 画布的竖向渐变, 让遮罩裁切后不出现色块拼接.
+     字形与其镂空由 mipmap-*/ic_launcher_foreground.png 提供 (见 scripts/generate_icons.py). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="0"
+                android:endY="108"
+                android:startColor="@color/ic_launcher_gradient_start"
+                android:endColor="@color/ic_launcher_gradient_end" />
+        </aapt:attr>
+    </path>
+</vector>

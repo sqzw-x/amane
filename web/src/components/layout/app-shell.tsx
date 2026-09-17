@@ -18,6 +18,7 @@ import {
   IconBrandGithub,
   IconCategory,
   IconClock,
+  IconDeviceMobile,
   IconFileText,
   IconFolders,
   IconLanguage,
@@ -45,6 +46,7 @@ import { APP_SHELL_HEADER_HEIGHT } from "@/components/layout/app-shell-metrics";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { VersionMenu } from "@/components/layout/version-menu";
 import { APP_NAME, GITHUB_URL } from "@/lib/app";
+import { shellEnvironment } from "@/lib/shell";
 import { useConnectionStore } from "@/stores/connection";
 import { useUIStore } from "@/stores/ui";
 
@@ -292,6 +294,8 @@ export function AppShellLayout(): ReactNode {
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure(false);
   const desktopCollapsed = useUIStore((s) => s.navbarCollapsed);
   const toggleDesktop = useUIStore((s) => s.toggleNavbar);
+  // 壳内多一个客户端设置入口; 判据是 UA 标记, 见 lib/shell.ts.
+  const shell = shellEnvironment();
 
   return (
     <AppShell
@@ -357,6 +361,13 @@ export function AppShellLayout(): ReactNode {
           item={{ to: "/settings", labelKey: "nav.settings", icon: IconSettings }}
           onNavigate={closeMobile}
         />
+        {/* 客户端设置: 只在壳内列出 — 服务器与登录态属于客户端, 不属于服务端配置. */}
+        {shell ? (
+          <NavItemLink
+            item={{ to: "/client", labelKey: "nav.client", icon: IconDeviceMobile }}
+            onNavigate={closeMobile}
+          />
+        ) : null}
         {/* 窄屏顶栏放不下版本与外链, 收进侧栏底部. */}
         <Group hiddenFrom="sm" gap="xs" px="xs" pt="sm" wrap="nowrap">
           <VersionMenu />
