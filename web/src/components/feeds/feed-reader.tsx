@@ -1,6 +1,8 @@
 import {
+  ActionIcon,
   Button,
   Checkbox,
+  Drawer,
   Group,
   SegmentedControl,
   Stack,
@@ -8,8 +10,10 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
+  IconAdjustmentsHorizontal,
   IconArchive,
   IconArchiveOff,
   IconArrowsDiagonal,
@@ -43,6 +47,7 @@ import { ListPagination } from "@/components/common/list-pagination";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { SelectionBar } from "@/components/common/selection-bar";
 import { useIdSelection } from "@/hooks/use-id-selection";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { useResettingState } from "@/hooks/use-resetting-state";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
@@ -196,6 +201,8 @@ export function FeedReader({
 }) {
   const { t, i18n } = useTranslation(["feeds", "common"]);
   const queryClient = useQueryClient();
+  const narrowViewport = useNarrowViewport();
+  const [filtersOpened, { open: openFilters, close: closeFilters }] = useDisclosure(false);
   const limit = useUIStore((s) => s.pageSizes.feedItems);
   const [searchInput, setSearchInput] = useResettingState(() => q ?? "", q);
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
@@ -626,74 +633,126 @@ export function FeedReader({
     ],
   );
 
+  // 筛选控件只在窄屏的面板与宽屏的标题行之间渲染一处: 两处都渲染会让同一个输入框在 DOM 里存在两个.
+  const filters = (
+    <>
+      <SegmentedControl
+        value={state}
+        onChange={changeState}
+        data={FEED_ITEM_STATES.map((value) => ({
+          value,
+          label: t(`historyStates.${value}`),
+        }))}
+      />
+      <SegmentedControl
+        value={read}
+        onChange={changeRead}
+        data={FEED_ITEM_READ_STATES.map((value) => ({
+          value,
+          label: t(`historyReadStates.${value}`),
+        }))}
+      />
+      <TextInput
+        value={searchInput}
+        onChange={(event) => setSearchInput(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            applySearch();
+          }
+        }}
+        onBlur={applySearch}
+        placeholder={t("historySearchPlaceholder")}
+        leftSection={<IconSearch size={16} />}
+        w={{ base: "100%", sm: 240 }}
+      />
+      <Switch
+        size="sm"
+        checked={dedupe}
+        onChange={(event) => onDedupeChange(event.currentTarget.checked)}
+        label={t("reader.dedupe")}
+      />
+    </>
+  );
+
+  const expandButton = (
+    <Button
+      size="xs"
+      variant="light"
+      leftSection={
+        expandAll ? <IconArrowsDiagonalMinimize size={14} /> : <IconArrowsDiagonal size={14} />
+      }
+      onClick={() => {
+        setExpandAll((prev) => !prev);
+        setExpanded(new Set());
+        setCollapsed(new Set());
+      }}
+    >
+      {expandAll ? t("reader.collapseAll") : t("reader.expandAll")}
+    </Button>
+  );
+
+  const pageSizeSelect = (
+    <PageSizeSelect
+      sizeKey="feedItems"
+      onChanged={() => {
+        clear();
+        onPageChange(1);
+      }}
+    />
+  );
+
+  const selectAllCheckbox = (
+    <Checkbox
+      checked={allSelected}
+      disabled={visibleIds.length === 0 || busy}
+      onChange={() => toggleAll(visibleIds)}
+      label={t("reader.selectPage")}
+    />
+  );
+
   return (
     <Stack gap="sm" style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
-      <Group justify="space-between" wrap="wrap" align="flex-end">
-        <Group gap="xs" wrap="wrap">
-          <SegmentedControl
-            value={state}
-            onChange={changeState}
-            data={FEED_ITEM_STATES.map((value) => ({
-              value,
-              label: t(`historyStates.${value}`),
-            }))}
-          />
-          <SegmentedControl
-            value={read}
-            onChange={changeRead}
-            data={FEED_ITEM_READ_STATES.map((value) => ({
-              value,
-              label: t(`historyReadStates.${value}`),
-            }))}
-          />
-          <TextInput
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                applySearch();
-              }
-            }}
-            onBlur={applySearch}
-            placeholder={t("historySearchPlaceholder")}
-            leftSection={<IconSearch size={16} />}
-            w={{ base: "100%", sm: 240 }}
-          />
-          <Switch
-            size="sm"
-            checked={dedupe}
-            onChange={(event) => onDedupeChange(event.currentTarget.checked)}
-            label={t("reader.dedupe")}
-          />
-        </Group>
-        <Group gap="xs">
-          <Button
-            size="xs"
+      {narrowViewport ? (
+        // 窄屏: 筛选与每页条数收进面板 — 列表页的高度花在列表上才合理.
+        <Group gap="xs" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+          {selectAllCheckbox}
+          <Text size="sm" c="dimmed" truncate style={{ flex: 1, minWidth: 0 }}>
+            {t("reader.itemCount", { count: total })}
+          </Text>
+          <ActionIcon
             variant="light"
-            leftSection={
-              expandAll ? (
-                <IconArrowsDiagonalMinimize size={14} />
-              ) : (
-                <IconArrowsDiagonal size={14} />
-              )
-            }
-            onClick={() => {
-              setExpandAll((prev) => !prev);
-              setExpanded(new Set());
-              setCollapsed(new Set());
-            }}
+            size="lg"
+            aria-label={t("common:actions.filters")}
+            onClick={openFilters}
           >
-            {expandAll ? t("reader.collapseAll") : t("reader.expandAll")}
-          </Button>
-          <PageSizeSelect
-            sizeKey="feedItems"
-            onChanged={() => {
-              clear();
-              onPageChange(1);
-            }}
-          />
+            <IconAdjustmentsHorizontal size={18} />
+          </ActionIcon>
         </Group>
-      </Group>
+      ) : (
+        <>
+          <Group justify="space-between" wrap="wrap" align="flex-end">
+            <Group gap="xs" wrap="wrap">
+              {filters}
+            </Group>
+            <Group gap="xs">
+              {expandButton}
+              {pageSizeSelect}
+            </Group>
+          </Group>
+
+          <Group gap="xs">
+            {selectAllCheckbox}
+            <Text size="sm" c="dimmed">
+              {t("reader.itemCount", { count: total })}
+            </Text>
+            {flatItems.length > 0 && (
+              <Text size="sm" c="dimmed">
+                {t("reader.shortcutHint")}
+              </Text>
+            )}
+          </Group>
+        </>
+      )}
 
       <SelectionBar count={selectedIds.length}>
         {showMarkRead && (
@@ -767,22 +826,23 @@ export function FeedReader({
         </Button>
       </SelectionBar>
 
-      <Group gap="xs">
-        <Checkbox
-          checked={allSelected}
-          disabled={visibleIds.length === 0 || busy}
-          onChange={() => toggleAll(visibleIds)}
-          label={t("reader.selectPage")}
-        />
-        <Text size="sm" c="dimmed">
-          {t("reader.itemCount", { count: total })}
-        </Text>
-        {flatItems.length > 0 && (
-          <Text size="sm" c="dimmed">
-            {t("reader.shortcutHint")}
-          </Text>
-        )}
-      </Group>
+      <Drawer
+        opened={filtersOpened && narrowViewport}
+        onClose={closeFilters}
+        position="bottom"
+        size="65%"
+        title={t("common:actions.filters")}
+      >
+        <Stack gap="md" style={{ minWidth: 0 }}>
+          <Group gap="xs" wrap="wrap">
+            {filters}
+          </Group>
+          <Group gap="xs" wrap="wrap">
+            {expandButton}
+            {pageSizeSelect}
+          </Group>
+        </Stack>
+      </Drawer>
 
       {/* 列表下界: 窄屏筛选行与批量条折行后, 缺下界时列表会被压成 0 高. */}
       <div style={{ flex: 1, minHeight: 160 }}>

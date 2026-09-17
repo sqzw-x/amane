@@ -1,4 +1,4 @@
-"""LoggingMiddleware 行为: 未捕获异常留痕 + 高频路径降噪."""
+"""LoggingMiddleware 行为: 未捕获异常留痕 + 高频路径降噪; SPA 回退的缓存策略."""
 
 import logging
 from typing import TYPE_CHECKING
@@ -12,6 +12,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from amane.api.middleware import LoggingMiddleware
+from amane.api.spa import mount_spa
 from amane.observability import setup_logging
 
 if TYPE_CHECKING:
@@ -184,3 +185,51 @@ class TestNoisyPaths:
         payload = record.msg
         assert isinstance(payload, dict)
         assert payload["path"] == "/api/system/desktop"
+
+
+def _make_dist(root: Path) -> Path:
+    """最小 dist: 入口文档 + 一个带 hash 的资源."""
+    dist = root / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><div id=root></div>", encoding="utf-8")
+    (assets / "app-abc123.js").write_text("console.log(1)", encoding="utf-8")
+    return dist
+
+
+class TestSpaCacheHeaders:
+    """入口文档每次校验, 带 hash 的资源长期缓存.
+
+    入口文档不带 hash: 让它被直接缓存会让客户端停在旧的那一份. 同一批断言里钉住条件请求 — 只说"重新校验"
+    而不回 304, 每个响应都会整份重传, 那正是这套头要避免的.
+    """
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_entry_document_revalidates(self, tmp_path: Path) -> None:
+        dist = _make_dist(tmp_path)
+        (dist / "favicon.svg").write_text("<svg/>", encoding="utf-8")
+        app = FastAPI()
+        mount_spa(app, dist)
+        async with _client(app) as client:
+            for path in ("/", "/meta/42", "/favicon.svg"):
+                response = await client.get(path)
+                assert response.status_code == 200
+                assert response.headers["cache-control"] == "public, no-cache"
+
+                # 内容没变时必须 304 (而不是 200 + 整份 body).
+                again = await client.get(path, headers={"If-None-Match": response.headers["etag"]})
+                assert again.status_code == 304
+
+                # HEAD 的头部与 GET 一致 (RFC 9110 §9.3.2).
+                head = await client.head(path)
+                assert head.status_code == 200
+                assert head.headers["cache-control"] == "public, no-cache"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_hashed_assets_are_immutable(self, tmp_path: Path) -> None:
+        app = FastAPI()
+        mount_spa(app, _make_dist(tmp_path))
+        async with _client(app) as client:
+            response = await client.get("/assets/app-abc123.js")
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "public, max-age=31536000, immutable"

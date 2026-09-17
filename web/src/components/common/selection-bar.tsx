@@ -1,6 +1,7 @@
 import { Badge, Group, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 
 export interface SelectionBarProps {
   count: number;
@@ -12,10 +13,16 @@ export interface SelectionBarProps {
 
 /**
  * 列表多选工具条 - 按钮常驻, 选中数以 Badge 跟在按钮后;
- * 不因选中态增删整行, 避免把下方表格顶下去.
+ * 不因选中态增删整行, 避免把下方表格顶下去 (窄屏是例外: 无选中时整条不渲染).
  */
 export function SelectionBar({ count, hint, children }: SelectionBarProps) {
   const { t } = useTranslation("common");
+  const narrowViewport = useNarrowViewport();
+
+  // 没有选中时不占位置: 按钮在无选中时本就全部禁用, 那一行在窄屏上是纯损耗.
+  if (narrowViewport && count === 0) {
+    return null;
+  }
 
   return (
     <Group gap="xs" align="center" wrap="wrap">

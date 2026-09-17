@@ -764,7 +764,8 @@ function TasksPage() {
             opened={filterOpen}
             onClose={() => setFilterOpen(false)}
             title={t("feeds:filter.title")}
-            size="xs"
+            position="bottom"
+            size="65%"
           >
             <Stack gap="md">
               <Stack gap="xs">
@@ -794,7 +795,8 @@ function TasksPage() {
             opened={batchOpen}
             onClose={() => setBatchOpen(false)}
             title={t("batchScrape.toggle")}
-            size="xs"
+            position="bottom"
+            size="65%"
           >
             {renderBatchPanel(false)}
           </Drawer>

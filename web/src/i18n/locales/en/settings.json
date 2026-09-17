@@ -26,12 +26,6 @@
     "webView": "System WebView",
     "chromium": "Rendering engine",
     "webViewUnknown": "Unknown",
-    "viewportUnits": "Viewport unit {{unit}}, height {{height}}px",
-    "layoutCheck": "Layout self-check",
-    "layoutCheckHint": "Opens a modal with long content and shows the values that decide its height and scrolling.",
-    "layoutCheckRun": "Run check",
-    "layoutCheckPending": "Reading…",
-    "layoutCheckBottom": "Seeing this line means the modal scrolled.",
     "chromiumOutdated": "Rendering engine Chromium {{major}} is below the {{min}} this frontend needs. Update the system WebView, otherwise the layout and styles will be incomplete.",
     "updateWebView": "Open the WebView store page"
   },

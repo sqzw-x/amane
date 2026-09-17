@@ -26,12 +26,6 @@
     "webView": "系统 WebView",
     "chromium": "渲染内核",
     "webViewUnknown": "未知",
-    "viewportUnits": "视口单位 {{unit}}，高度 {{height}}px",
-    "layoutCheck": "布局自检",
-    "layoutCheckHint": "打开一个带长内容的弹窗，显示决定其高度与滚动的计算值。",
-    "layoutCheckRun": "运行自检",
-    "layoutCheckPending": "读取中…",
-    "layoutCheckBottom": "看到这一行说明弹窗可以滚动。",
     "chromiumOutdated": "渲染内核 Chromium {{major}} 低于前端需要的 {{min}}。请更新系统 WebView，否则布局与样式会残缺。",
     "updateWebView": "打开 WebView 的商店页"
   },

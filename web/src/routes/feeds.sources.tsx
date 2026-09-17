@@ -28,6 +28,7 @@ import {
 import { FeedSourceFilterControls } from "@/components/feeds/feed-source-filters";
 import { FeedSourcesTable } from "@/components/feeds/feed-sources-table";
 import { OpmlImportButton } from "@/components/feeds/opml-import";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { useResettingState } from "@/hooks/use-resetting-state";
 import { extractErrorMessage } from "@/lib/api-error";
 import { SORT_ORDERS } from "@/lib/exhaustive-maps";
@@ -102,6 +103,8 @@ function FeedSourcesPage() {
   };
   const hasFilters = hasActiveFeedSourceFilters(filters);
   const [advancedOpen, setAdvancedOpen] = useState(hasFilters);
+  // 窄屏把高级筛选搬进壳的底部面板, 因此这里要知道当前形态.
+  const narrowViewport = useNarrowViewport();
 
   const filtered = useMemo(() => {
     const matched = filterFeedSources(feeds, search.q ?? "", {
@@ -246,27 +249,31 @@ function FeedSourcesPage() {
           />
         }
         extras={
-          <HintedActionIcon
-            variant={advancedOpen || hasFilters ? "filled" : "default"}
-            size={36}
-            onClick={() => setAdvancedOpen((open) => !open)}
-            label={t("filter.title")}
-          >
-            <IconFilter size={16} />
-          </HintedActionIcon>
+          /* 窄屏的高级筛选在底部面板里始终展开, 这个开关只在宽屏有意义. */
+          narrowViewport ? null : (
+            <HintedActionIcon
+              variant={advancedOpen || hasFilters ? "filled" : "default"}
+              size={36}
+              onClick={() => setAdvancedOpen((open) => !open)}
+              label={t("filter.title")}
+            >
+              <IconFilter size={16} />
+            </HintedActionIcon>
+          )
         }
         pageSize={
           <PageSizeSelect sizeKey="feedSources" onChanged={() => patchSearch({ page: 1 })} />
         }
+        filterPanel={
+          <FeedSourceFilterControls
+            opened={narrowViewport || advancedOpen}
+            values={filters}
+            onChange={(next) =>
+              patchSearch({ enabled: next.enabled, auto_enqueue: next.auto_enqueue, page: 1 })
+            }
+          />
+        }
       >
-        <FeedSourceFilterControls
-          opened={advancedOpen}
-          values={filters}
-          onChange={(next) =>
-            patchSearch({ enabled: next.enabled, auto_enqueue: next.auto_enqueue, page: 1 })
-          }
-        />
-
         {hasFilters && (
           <Group gap="xs">
             {filters.enabled != null && (

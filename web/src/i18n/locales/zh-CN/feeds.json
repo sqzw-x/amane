@@ -28,6 +28,7 @@
   "reader": {
     "noContent": "没有正文",
     "openLink": "原文",
+    "itemActions": "条目操作",
     "dedupe": "合并相同番号",
     "duplicates": "另 {{count}} 条重复",
     "duplicates_one": "另 {{count}} 条重复",

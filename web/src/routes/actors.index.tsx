@@ -32,6 +32,7 @@ import {
   rangeValue,
   replaceActorFilters,
 } from "@/lib/actors/browse";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 import { ACTOR_SORT_FIELDS } from "@/lib/exhaustive-maps";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
@@ -98,6 +99,8 @@ function ActorsIndexPage() {
 
   const [searchInput, setSearchInput] = useState(search.q ?? "");
   const [advancedOpen, setAdvancedOpen] = useState(hasNonDefaultFilters);
+  // 窄屏把高级筛选搬进壳的底部面板, 因此这里要知道当前形态.
+  const narrowViewport = useNarrowViewport();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const isList = search.view === "list";
@@ -221,14 +224,17 @@ function ActorsIndexPage() {
       }
       extras={
         <>
-          <HintedActionIcon
-            variant={advancedOpen || hasNonDefaultFilters ? "filled" : "default"}
-            size={36}
-            onClick={() => setAdvancedOpen((v) => !v)}
-            label={t("search.advanced")}
-          >
-            <IconFilter size={16} />
-          </HintedActionIcon>
+          {/* 窄屏的高级筛选在底部面板里始终展开, 这个开关只在宽屏有意义. */}
+          {narrowViewport ? null : (
+            <HintedActionIcon
+              variant={advancedOpen || hasNonDefaultFilters ? "filled" : "default"}
+              size={36}
+              onClick={() => setAdvancedOpen((v) => !v)}
+              label={t("search.advanced")}
+            >
+              <IconFilter size={16} />
+            </HintedActionIcon>
+          )}
           {!isList && (
             <SortMenu
               options={ACTOR_SORT_FIELDS.map((f) => ({
@@ -261,9 +267,14 @@ function ActorsIndexPage() {
           />
         ) : undefined
       }
+      filterPanel={
+        <ActorFilterControls
+          opened={narrowViewport || advancedOpen}
+          committed={filters}
+          onApply={applyFilters}
+        />
+      }
     >
-      <ActorFilterControls opened={advancedOpen} committed={filters} onApply={applyFilters} />
-
       {hasActiveFilters && (
         <Group gap="xs">
           {search.saved_query_id != null && (

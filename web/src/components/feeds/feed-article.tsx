@@ -1,9 +1,10 @@
-import { Anchor, Badge, Box, Checkbox, Group, Stack, Text } from "@mantine/core";
+import { Anchor, Badge, Box, Checkbox, Group, Menu, Stack, Text } from "@mantine/core";
 import {
   IconArchive,
   IconArchiveOff,
   IconChevronDown,
   IconChevronRight,
+  IconDots,
   IconExternalLink,
   IconMail,
   IconMailOpened,
@@ -15,6 +16,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { FeedItemResponse, FeedResponse } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { feedDisplayName } from "@/lib/feeds/groups";
 import { feedHtmlPlainText } from "@/lib/feeds/html";
 import classes from "./feed-article.module.css";
@@ -63,10 +65,99 @@ export function FeedArticle({
   onOpenFeed: (feed: FeedResponse) => void;
 }) {
   const { t } = useTranslation(["feeds", "common"]);
+  const narrowViewport = useNarrowViewport();
   const number = itemNumber(item);
   const preview = useMemo(() => feedHtmlPlainText(item.description ?? ""), [item.description]);
   const inLibrary = item.metadata_id != null;
   const unread = item.read_at == null;
+  const stamp = item.published_at ?? item.created_at;
+  // 窄屏的时间戳省掉年份与秒: 日期行换行会把条目标题挤成一行.
+  const stampText = narrowViewport
+    ? new Date(stamp).toLocaleString(undefined, {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : new Date(stamp).toLocaleString();
+
+  // 窄屏把四个图标收进一个菜单: 图标并排会把标题挤到只剩一百来像素.
+  const actions = narrowViewport ? (
+    <Menu position="bottom-end" withinPortal>
+      <Menu.Target>
+        <HintedActionIcon variant="subtle" disabled={busy} label={t("reader.itemActions")}>
+          <IconDots size={16} />
+        </HintedActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown>
+        {number != null && (
+          <Menu.Item leftSection={<IconRefresh size={14} />} onClick={onScrape}>
+            {t("actions.rescrape")}
+          </Menu.Item>
+        )}
+        <Menu.Item
+          leftSection={unread ? <IconMailOpened size={14} /> : <IconMail size={14} />}
+          onClick={unread ? onMarkRead : onMarkUnread}
+        >
+          {unread ? t("actions.markRead") : t("actions.markUnread")}
+        </Menu.Item>
+        <Menu.Item
+          leftSection={
+            item.ignored_at == null ? <IconArchive size={14} /> : <IconArchiveOff size={14} />
+          }
+          onClick={item.ignored_at == null ? onIgnore : onUnignore}
+        >
+          {item.ignored_at == null ? t("actions.ignore") : t("actions.unignore")}
+        </Menu.Item>
+        <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={onDelete}>
+          {t("common:actions.delete")}
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  ) : (
+    <Group
+      gap={2}
+      wrap="nowrap"
+      className={classes.actions}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {number != null && (
+        <HintedActionIcon
+          variant="subtle"
+          disabled={busy}
+          label={t("actions.rescrape")}
+          onClick={onScrape}
+        >
+          <IconRefresh size={16} />
+        </HintedActionIcon>
+      )}
+      <HintedActionIcon
+        variant="subtle"
+        disabled={busy}
+        label={unread ? t("actions.markRead") : t("actions.markUnread")}
+        onClick={unread ? onMarkRead : onMarkUnread}
+      >
+        {unread ? <IconMailOpened size={16} /> : <IconMail size={16} />}
+      </HintedActionIcon>
+      <HintedActionIcon
+        variant="subtle"
+        disabled={busy}
+        label={item.ignored_at == null ? t("actions.ignore") : t("actions.unignore")}
+        onClick={item.ignored_at == null ? onIgnore : onUnignore}
+      >
+        {item.ignored_at == null ? <IconArchive size={16} /> : <IconArchiveOff size={16} />}
+      </HintedActionIcon>
+      <HintedActionIcon
+        variant="subtle"
+        color="red"
+        disabled={busy}
+        label={t("common:actions.delete")}
+        onClick={onDelete}
+      >
+        <IconTrash size={16} />
+      </HintedActionIcon>
+    </Group>
+  );
 
   return (
     <Box
@@ -118,10 +209,13 @@ export function FeedArticle({
                   {feedDisplayName(feed)}
                 </Anchor>
               )}
+              {/* 窄屏不占位说明"无番号": 那一行只为了标签对齐, 空间比对齐值钱. */}
               {number == null ? (
-                <Text size="xs" c="dimmed">
-                  {t("labels.noNumber")}
-                </Text>
+                narrowViewport ? null : (
+                  <Text size="xs" c="dimmed">
+                    {t("labels.noNumber")}
+                  </Text>
+                )
               ) : inLibrary && item.metadata_id != null ? (
                 <Link
                   to="/meta/$metadataId"
@@ -159,7 +253,7 @@ export function FeedArticle({
                 </Badge>
               )}
               <Text size="xs" c="dimmed">
-                {new Date(item.published_at ?? item.created_at).toLocaleString()}
+                {stampText}
               </Text>
               {item.link != null && item.link !== "" && (
                 <Anchor
@@ -168,10 +262,12 @@ export function FeedArticle({
                   rel="noreferrer"
                   size="xs"
                   onClick={(event) => event.stopPropagation()}
+                  aria-label={narrowViewport ? t("reader.openLink") : undefined}
                 >
                   <Group gap={4} wrap="nowrap">
                     <IconExternalLink size={12} />
-                    {t("reader.openLink")}
+                    {/* 窄屏只留图标: 文案会把元信息行撑到第二行. */}
+                    {narrowViewport ? null : t("reader.openLink")}
                   </Group>
                 </Anchor>
               )}
@@ -182,48 +278,7 @@ export function FeedArticle({
               </Text>
             )}
           </Stack>
-          <Group
-            gap={2}
-            wrap="nowrap"
-            className={classes.actions}
-            onClick={(event) => event.stopPropagation()}
-          >
-            {number != null && (
-              <HintedActionIcon
-                variant="subtle"
-                disabled={busy}
-                label={t("actions.rescrape")}
-                onClick={onScrape}
-              >
-                <IconRefresh size={16} />
-              </HintedActionIcon>
-            )}
-            <HintedActionIcon
-              variant="subtle"
-              disabled={busy}
-              label={unread ? t("actions.markRead") : t("actions.markUnread")}
-              onClick={unread ? onMarkRead : onMarkUnread}
-            >
-              {unread ? <IconMailOpened size={16} /> : <IconMail size={16} />}
-            </HintedActionIcon>
-            <HintedActionIcon
-              variant="subtle"
-              disabled={busy}
-              label={item.ignored_at == null ? t("actions.ignore") : t("actions.unignore")}
-              onClick={item.ignored_at == null ? onIgnore : onUnignore}
-            >
-              {item.ignored_at == null ? <IconArchive size={16} /> : <IconArchiveOff size={16} />}
-            </HintedActionIcon>
-            <HintedActionIcon
-              variant="subtle"
-              color="red"
-              disabled={busy}
-              label={t("common:actions.delete")}
-              onClick={onDelete}
-            >
-              <IconTrash size={16} />
-            </HintedActionIcon>
-          </Group>
+          {actions}
         </Group>
         {expanded ? (
           <div className={classes.body}>

@@ -44,7 +44,7 @@
 
 影片详情: 用户标签与刮削标签分栏; 加减菜单一次提交多名 — `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许一次挂多个. 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`.
 
-**播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择, 否则会按旧 `key` 探测. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 播放窗口常驻且尺寸由比例决定 — **状态变化不得改变外框尺寸**, 否则页面高度突变会把滚动位置夹回顶部. **触屏**: 按住加速、横滑拖进度、双击播放 / 暂停由 `playback-player.tsx` 的 `useTouchGestures` 承担, 它只认 `pointerType === "touch"` — 鼠标的单击 / 双击 / 右键原样保留. 控制器声明 `touch-action: pan-y`, 纵向手势留给页面滚动 (音量与亮度留给后续, 需要系统权限). 长按在 Chromium 里会同时派发 `contextmenu`, 该钩子在捕获阶段拦掉那一次, 右键菜单因此不会被长按带出来. 手势提示 (倍速或目标时间) 与音量提示同层, 放在控制器之外以免随控件自动隐藏.
+**播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择, 否则会按旧 `key` 探测. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 播放窗口常驻且尺寸由比例决定 — **状态变化不得改变外框尺寸**, 否则页面高度突变会把滚动位置夹回顶部. **触屏**: 按住加速、横滑拖进度、双击播放 / 暂停、竖直滑动调音量 (右半屏) 与亮度 (左半屏) 由 `playback-player.tsx` 的 `useTouchGestures` 承担, 它只认 `pointerType === "touch"` — 鼠标的单击 / 双击 / 右键原样保留. 音量取媒体元素自己的音量, 亮度是叠加层的透明度 (网页拿不到系统音量与亮度), 二者都不需要系统权限. 控制器声明 `touch-action: none`、纵向拖动因此归播放器; 菜单与倍速面板各自声明 `pan-y` 保住内部滚动, 壳的下拉刷新也据此让位 (`lib/pull-refresh.ts` 把播放器区域算作"可滚动"). 按住加速的徽标与横滑的 `目标时间 / 总长度` 提示放在控制器之外, 因此不随控件自动隐藏; 从菜单选的倍速不显示徽标. 窄屏下音量按钮只切换静音 (不弹滑杆), 倍速是右侧滑出面板. 长按在 Chromium 里会同时派发 `contextmenu`, 该钩子在捕获阶段拦掉那一次, 右键菜单因此不会被长按带出来.
 
 播放器组件的其余约定集中在 `components/media/playback-player.tsx` 的文件注释里.
 
@@ -53,6 +53,8 @@
 **list** 视图与订阅源、库文件表采用 `BrowsePageShell fill`: 标题 / 搜索不滚, 剩余高度交给 children; 视口高度取 `APP_SHELL_MAIN_HEIGHT` (`components/layout/app-shell-metrics.ts`), 不允许再手写一份 calc — 该常量由 AppShell 写入 `:root` 的 `--app-shell-header-height` 与 `--app-shell-padding` 推导.
 
 `ListToolbar` 是表体壳: 顶栏不滚, 表体内滚, **唯一**分页固定于视口底, 翻页把表体滚回顶部; 它的 overflow 区要求父级有界高度. `grid` / `cloud` 禁止 fill — 演员墙用 `VirtuosoGrid` + `useWindowScroll`.
+
+窄屏 (md 以下) 的 `BrowsePageShell` 只剩一行: 标题 + 视图切换 + 筛选入口, 摘要 / 搜索 / 高级筛选面板 / 附属控件 / 右侧动作全进底部面板. **每个带高级筛选的列表页都必须把面板经 `filterPanel` 槽传进来, 不能把 `<Collapse>` 放在 children 里** — 否则窄屏会出现"开关在面板里、面板在主屏上", 点了开关主屏凭空多出一块. 面板里带浮层的控件 (`Select` 及其 `searchable` 形态) 在窄屏必须 `withinPortal: false`: 浮层 portal 到 `body` 后落在抽屉之外, Mantine 把它当成"点击外部", 一次点击就关掉整块面板 (表现为下拉打不开、每点一下面板消失). 同一批控件只渲染一处: 两个断点各一份会让搜索框在 DOM 里存在两个. `SelectionBar` 无选中时在窄屏整条不渲染 (按钮在无选中时本就全部禁用). 订阅浏览页的 `FeedReader` 用同一形态, 条目 (`FeedArticle`) 在窄屏把行内图标操作收进菜单并压缩元信息.
 
 图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素.
 
@@ -111,6 +113,6 @@ dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `
 
 ## 工程入口
 
-`just generate` → OpenAPI 导出 + TS client 生成 (`web/src/client/` 为产物, 不手改); SPA 产物 `web/dist` 由 `src/amane/api/spa.py` 挂载. `vite.config.ts` 的 `legacy()` 声明运行期下限 (语法目标 + core-js polyfill), 面向版本落后的 Android WebView — 下限取舍见 [android.md](android.md).
+`just generate` → OpenAPI 导出 + TS client 生成 (`web/src/client/` 为产物, 不手改); SPA 产物 `web/dist` 由 `src/amane/api/spa.py` 挂载. 入口文档与 dist 里未改名的文件回 `public, no-cache` (每次加载重新校验, 未变则 304), `/assets` 下的带 hash 产物回 `immutable`. 前者关掉的是"响应没有显式缓存指令时, 缓存可以按 `Last-Modified` 自行推算新鲜度"那个窗口 — 窗口内客户端一个请求都不发; 后者省掉的是每次加载对几十个资源的条件请求. 两条都由 `tests/api/test_middleware.py` 钉住 (含条件请求必须回 304 — 只用 `FileResponse` 发这些响应的话, 条件请求会被整份重传). `vite.config.ts` 的 `legacy()` 声明运行期下限 (语法目标 + core-js polyfill), 面向版本落后的 Android WebView — 下限取舍见 [android.md](android.md).
 
 路由组件由 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk: 只服务单个路由的重型依赖必须留在该路由的 chunk, 从共享模块导入会把它移回入口 chunk. `tanstackRouter()` 必须排在 JSX 转换插件之前, 顺序颠倒时构建失败. 类型、i18n 与 lint 的硬性约束由 `pnpm check` (tsc / oxlint / oxfmt / i18next extract) 把关.

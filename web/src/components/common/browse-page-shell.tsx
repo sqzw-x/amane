@@ -1,6 +1,10 @@
-import { Box, Group, Stack } from "@mantine/core";
+import { ActionIcon, Box, Drawer, Group, Stack } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+import { IconAdjustmentsHorizontal } from "@tabler/icons-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 
 export interface BrowsePageShellProps {
   /** 标题区 (可含面包屑). */
@@ -21,6 +25,11 @@ export interface BrowsePageShellProps {
   /** 搜索右侧末尾 (分页大小). */
   pageSize?: ReactNode;
   /**
+   * 高级筛选面板 (通常是受控 `Collapse`).
+   * 宽屏按原样渲染在 children 之前; 窄屏进底部面板, 与它的开关同处一地.
+   */
+  filterPanel?: ReactNode;
+  /**
    * 撑满 AppShell.Main 剩余高度, children 吃掉标题/搜索之下的空间.
    * 给 list + ListToolbar; 不要给依赖 window 滚动的 grid/cloud.
    */
@@ -31,10 +40,13 @@ export interface BrowsePageShellProps {
 /**
  * 片库 / 分类共用的浏览页壳.
  *
- * 标头层级:
+ * 宽屏标头层级:
  * 1. 标题 | **居中视图切换** | 右侧动作
  * 2. 左侧摘要 | **(搜索+排序/筛选/每页条数) 整体居中**
- * 内容区不限宽.
+ *
+ * 窄屏只剩一行 (标题 + 视图切换 + 筛选入口), 摘要 / 搜索 / 高级筛选面板 / 附属控件 / 右侧动作全进底部面板 —
+ * 列表页的高度花在列表上才合理. 开关与它控制的面板必须同处一地, 否则会出现"开关在面板里、面板在主屏上".
+ * 同一批控件只渲染一处: 两个断点各一份会让搜索框在 DOM 里存在两个.
  *
  * 搜索宽度为 min(480px, 可用宽), 控件组 max-width:100% + min-width:0, 避免小屏横向滚动.
  * fill 时高度钉在 Main 内容区, 标题/搜索不滚, children 必须自己消化剩余高度.
@@ -47,9 +59,14 @@ export function BrowsePageShell({
   search,
   extras,
   pageSize,
+  filterPanel,
   fill = false,
   children,
 }: BrowsePageShellProps) {
+  const { t } = useTranslation("common");
+  const narrowViewport = useNarrowViewport();
+  const [filtersOpened, { open: openFilters, close: closeFilters }] = useDisclosure(false);
+
   return (
     <Stack
       gap="md"
@@ -88,61 +105,93 @@ export function BrowsePageShell({
             </Group>
           </Box>
 
-          {/* 小屏: 标题全宽, 视图切换/右侧动作换行到下 */}
-          <Stack hiddenFrom="md" gap="sm" style={{ minWidth: 0 }}>
-            <Box style={{ minWidth: 0 }}>{title}</Box>
+          {/*
+            窄屏: 标题 + 视图切换 + 一个筛选入口就占满一行, 其余控件收进面板.
+            列表页的高度都花在列表上才合理 — 搜索 / 筛选 / 每页条数 / 摘要常驻会吃掉四五行的可视区域.
+          */}
+          <Group hiddenFrom="md" gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+            <Box style={{ flex: 1, minWidth: 0 }}>{title}</Box>
             {viewSwitch != null && <Box style={{ minWidth: 0 }}>{viewSwitch}</Box>}
-            {actions != null && (
-              <Group justify="flex-end" gap="sm" wrap="wrap">
-                {actions}
-              </Group>
-            )}
-          </Stack>
-
-          {/* 居中控件组在 lg 以下占满整行, 总数只能单独成行, 否则与搜索框重叠 */}
-          {summary != null && <Box hiddenFrom="lg">{summary}</Box>}
-
-          <Box pos="relative" w="100%" style={{ minWidth: 0 }}>
-            {summary != null && (
-              <Box
-                visibleFrom="lg"
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  zIndex: 1,
-                }}
-              >
-                {summary}
-              </Box>
-            )}
-            <Group
-              justify="center"
-              align="center"
-              gap="xs"
-              wrap="wrap"
-              w="100%"
-              style={{ minWidth: 0 }}
+            <ActionIcon
+              variant="light"
+              size="lg"
+              aria-label={t("actions.filters")}
+              onClick={openFilters}
             >
-              <Box
-                style={{
-                  flex: "1 1 12rem",
-                  maxWidth: 480,
-                  minWidth: 0,
-                  width: "100%",
-                }}
-              >
-                {search}
+              <IconAdjustmentsHorizontal size={18} />
+            </ActionIcon>
+          </Group>
+
+          {narrowViewport ? null : (
+            <Stack gap="md" style={{ minWidth: 0 }}>
+              {/* 居中控件组在 lg 以下占满整行, 总数只能单独成行, 否则与搜索框重叠 */}
+              {summary != null && <Box hiddenFrom="lg">{summary}</Box>}
+
+              <Box pos="relative" w="100%" style={{ minWidth: 0 }}>
+                {summary != null && (
+                  <Box
+                    visibleFrom="lg"
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      zIndex: 1,
+                    }}
+                  >
+                    {summary}
+                  </Box>
+                )}
+                <Group
+                  justify="center"
+                  align="center"
+                  gap="xs"
+                  wrap="wrap"
+                  w="100%"
+                  style={{ minWidth: 0 }}
+                >
+                  <Box
+                    style={{
+                      flex: "1 1 12rem",
+                      maxWidth: 480,
+                      minWidth: 0,
+                      width: "100%",
+                    }}
+                  >
+                    {search}
+                  </Box>
+                  {extras}
+                  {pageSize}
+                </Group>
               </Box>
-              {extras}
-              {pageSize}
-            </Group>
-          </Box>
+            </Stack>
+          )}
         </Stack>
       </Box>
 
+      <Drawer
+        opened={filtersOpened && narrowViewport}
+        onClose={closeFilters}
+        position="bottom"
+        size="60%"
+        title={t("actions.filters")}
+      >
+        <Stack gap="md" style={{ minWidth: 0 }}>
+          {summary}
+          <Box style={{ minWidth: 0 }}>{search}</Box>
+          {filterPanel}
+          {extras}
+          {pageSize}
+          {actions != null && (
+            <Group justify="flex-end" gap="sm" wrap="wrap">
+              {actions}
+            </Group>
+          )}
+        </Stack>
+      </Drawer>
+
       <Stack gap="md" style={{ minWidth: 0, ...(fill ? { flex: 1, minHeight: 0 } : undefined) }}>
+        {narrowViewport ? null : filterPanel}
         {children}
       </Stack>
     </Stack>

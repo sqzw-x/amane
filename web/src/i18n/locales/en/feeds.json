@@ -42,7 +42,8 @@
     "dateBuckets": {
       "today": "Today",
       "yesterday": "Yesterday"
-    }
+    },
+    "itemActions": "Item actions"
   },
   "importOpml": "Import OPML",
   "importTitle": "Import from OPML",
