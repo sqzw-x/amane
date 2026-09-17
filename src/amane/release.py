@@ -7,6 +7,7 @@ APP 发布之后就会拿到 APP 的 tag, 解析不出版本, 更新提示随之
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -17,6 +18,8 @@ from .version import get_version
 
 GITHUB_RELEASES_URL = "https://api.github.com/repos/sqzw-x/amane/releases?per_page=100"
 GITHUB_RELEASES_PAGE = "https://github.com/sqzw-x/amane/releases"
+logger = logging.getLogger(__name__)
+
 _CACHE_TTL_S = 3600.0
 _TIMEOUT_S = 10.0
 
@@ -127,6 +130,8 @@ class ReleaseChecker:
             entry.cached_at = now
             return entry.snapshot
         if resp.status_code != 200:
+            # "拉不到" 与 "没有更新" 对调用方是同一个空快照, 因此在这里留一条日志区分两者.
+            logger.info("release check: %s answered HTTP %s", target, resp.status_code)
             return entry.stale_or_empty()
         try:
             body = resp.json()
@@ -134,6 +139,8 @@ class ReleaseChecker:
             return entry.stale_or_empty()
         selected = pick_latest_release(body)
         if selected is None:
+            entries = len(body) if isinstance(body, list) else 1
+            logger.info("release check: %s has no version tag (%d entries)", target, entries)
             return entry.stale_or_empty()
         tag, html_url = selected
         etag = resp.headers.get("etag")
