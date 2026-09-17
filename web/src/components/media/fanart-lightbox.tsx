@@ -1,18 +1,26 @@
 import { ActionIcon, Box, Group, Loader, Portal, Text } from "@mantine/core";
 import { useDisclosure, useHotkeys } from "@mantine/hooks";
 import { IconChevronLeft, IconChevronRight, IconX } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
   type MouseEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import { proxyImageUrl } from "@/lib/utils";
 import { useQueuedImageUrl } from "@/lib/image-loader";
 import { ProxyImage } from "@/components/media/proxy-image";
+
+/** 触屏切换的判定: 水平位移超过它, 且明显偏水平 (纵向留给页面滚动). */
+const SWIPE_MIN_DISTANCE_PX = 48;
+/** 滑动结束后多久内的 click 视为该次滑动的余波, 不当作点击遮罩关闭. */
+const SWIPE_CLICK_SUPPRESS_MS = 500;
 
 interface FanartLightboxProps {
   images: string[];
@@ -22,12 +30,49 @@ interface FanartLightboxProps {
 
 /** Fullscreen image viewer with keyboard prev/next/escape and intrinsic resolution. */
 export function FanartLightbox({ images, initialIndex = 0, onClose }: FanartLightboxProps) {
+  const { t } = useTranslation("common");
   const [index, setIndex] = useState(() =>
     Math.min(Math.max(initialIndex, 0), Math.max(images.length - 1, 0)),
   );
   const [loading, setLoading] = useState(true);
   const [resolution, setResolution] = useState<{ w: number; h: number } | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+
+  // 触屏滑动切换: 起手点与"这次滑动已经切换过"的时刻. 横向拖动在 touch-action: pan-y 下不会被浏览器
+  // 当成滚动手势, 因此它后面仍可能补一次 click — 那个 click 不能把预览关掉.
+  const swipeStartRef = useRef<{ id: number; x: number; y: number } | null>(null);
+  const swipeHandledAtRef = useRef(0);
+
+  const goTo = useCallback(
+    (step: number) => {
+      setIndex((i) => {
+        const next = i + step;
+        if (next < 0) return images.length - 1;
+        if (next > images.length - 1) return 0;
+        return next;
+      });
+    },
+    [images.length],
+  );
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // 鼠标的按钮与方向键原样保留, 只接管触摸.
+    swipeStartRef.current =
+      event.pointerType === "touch"
+        ? { id: event.pointerId, x: event.clientX, y: event.clientY }
+        : null;
+  };
+
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (start == null || start.id !== event.pointerId) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_MIN_DISTANCE_PX || Math.abs(dx) <= Math.abs(dy)) return;
+    swipeHandledAtRef.current = Date.now();
+    goTo(dx < 0 ? 1 : -1);
+  };
 
   const src = images.length > 0 ? (proxyImageUrl(images[index]) ?? images[index]) : "";
   const { src: queuedSrc, release } = useQueuedImageUrl(src);
@@ -61,8 +106,8 @@ export function FanartLightbox({ images, initialIndex = 0, onClose }: FanartLigh
   }, [onClose]);
 
   useHotkeys([
-    ["ArrowLeft", () => setIndex((i) => (i > 0 ? i - 1 : images.length - 1))],
-    ["ArrowRight", () => setIndex((i) => (i < images.length - 1 ? i + 1 : 0))],
+    ["ArrowLeft", () => goTo(-1)],
+    ["ArrowRight", () => goTo(1)],
   ]);
 
   if (images.length === 0 || !src) return null;
@@ -77,10 +122,17 @@ export function FanartLightbox({ images, initialIndex = 0, onClose }: FanartLigh
       <Box
         pos="fixed"
         inset={0}
-        style={{ zIndex: 500, background: "rgba(0,0,0,0.92)" }}
+        style={{ zIndex: 500, background: "rgba(0,0,0,0.92)", touchAction: "pan-y" }}
         onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={() => {
+          swipeStartRef.current = null;
+        }}
         onClick={(e) => {
           e.stopPropagation();
+          // 刚结束的滑动不算点击: 横向拖动之后浏览器可能仍补一次 click.
+          if (Date.now() - swipeHandledAtRef.current < SWIPE_CLICK_SUPPRESS_MS) return;
           onClose();
         }}
       >
@@ -93,7 +145,7 @@ export function FanartLightbox({ images, initialIndex = 0, onClose }: FanartLigh
           right={16}
           style={{ zIndex: 1 }}
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t("actions.close")}
         >
           <IconX size={20} />
         </ActionIcon>
@@ -127,7 +179,7 @@ export function FanartLightbox({ images, initialIndex = 0, onClose }: FanartLigh
             style={{ transform: "translateY(-50%)", zIndex: 1 }}
             onClick={(e) => {
               e.stopPropagation();
-              setIndex((i) => (i > 0 ? i - 1 : images.length - 1));
+              goTo(-1);
             }}
           >
             <IconChevronLeft size={28} />
@@ -145,7 +197,7 @@ export function FanartLightbox({ images, initialIndex = 0, onClose }: FanartLigh
             style={{ transform: "translateY(-50%)", zIndex: 1 }}
             onClick={(e) => {
               e.stopPropagation();
-              setIndex((i) => (i < images.length - 1 ? i + 1 : 0));
+              goTo(1);
             }}
           >
             <IconChevronRight size={28} />
@@ -166,7 +218,8 @@ export function FanartLightbox({ images, initialIndex = 0, onClose }: FanartLigh
             alt={`fanart-${index}`}
             referrerPolicy="no-referrer"
             style={{
-              maxHeight: "90vh",
+              // 视口高度取 --amane-vh: 移动端 100vh 含地址栏区域, 大图会被裁掉一截.
+              maxHeight: "calc(var(--amane-vh) * 0.9)",
               maxWidth: "90vw",
               objectFit: "contain",
               pointerEvents: "auto",

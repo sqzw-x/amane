@@ -19,6 +19,8 @@ interface AmaneShellBridge {
   shellVersion(): string;
   /** 系统 WebView 的提供方与包版本, 厂商包版本; 取不到时为空串. */
   webViewPackage(): string;
+  /** 报告触点处是否还有可以向上滚的内容, 供壳决定下拉刷新是否接管手势; 旧版壳没有这个方法. */
+  setPageScrollableUp?(scrollableUp: boolean): void;
 }
 
 declare global {

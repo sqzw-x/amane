@@ -9,6 +9,7 @@
     "reset": "Reset",
     "discard": "Discard",
     "retry": "Retry",
+    "close": "Close",
     "confirm": "Confirm",
     "browse": "Browse",
     "saving": "Saving...",

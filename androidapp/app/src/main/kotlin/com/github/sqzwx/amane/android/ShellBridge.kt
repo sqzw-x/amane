@@ -19,6 +19,17 @@ class ShellBridge(private val activity: BrowserActivity) {
         activity.runOnUiThread { activity.openSetup() }
     }
 
+    /**
+     * 页面报告"触点处是否还有可以向上滚的内容", 决定下拉刷新能否接管这次手势.
+     *
+     * 手势是在 MOVE 越过阈值时才判定的, 因此页面在 `touchstart` 里推来的值来得及生效. 这是状态推送而不是
+     * 动作, 直接写在 `@Volatile` 字段上即可, 不必切回 UI 线程.
+     */
+    @JavascriptInterface
+    fun setPageScrollableUp(scrollableUp: Boolean) {
+        activity.setPageScrollableUp(scrollableUp)
+    }
+
     /** 壳的版本号, 与 APK 的 `versionName` 一致. */
     @JavascriptInterface
     fun shellVersion(): String = BuildConfig.VERSION_NAME

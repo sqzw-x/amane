@@ -56,6 +56,13 @@ open class BrowserActivity : AppCompatActivity() {
     /** 页面每次开始加载都自增, 用来作废上一次的启动检查. */
     private var bootCheckGeneration = 0
 
+    /**
+     * 页面报告的"触点处还有可以向上滚的内容", 由 SPA 在触摸开始时推送
+     * (见 [ShellBridge.setPageScrollableUp]). JavaBridge 线程写、UI 线程读, 因此是 `@Volatile`.
+     */
+    @Volatile
+    private var pageScrollableUp = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -76,6 +83,11 @@ open class BrowserActivity : AppCompatActivity() {
         configureWebView(binding.webView)
         // 下拉刷新 = 浏览器里的重新加载; 指示器由页面加载结束时收起.
         binding.swipeRefresh.setOnRefreshListener { binding.webView.reload() }
+        // 内部滚动优先: SwipeRefreshLayout 只看 WebView 自身的滚动位置, 而 SPA 的滚动都在内部容器里 (那里恒为 0),
+        // 于是内层列表与弹窗里的下滑会被当成下拉刷新. 这里再问一句页面 — 触点处还能向上滚时不接管手势.
+        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+            pageScrollableUp || binding.webView.canScrollVertically(-1)
+        }
         binding.errorRetry.setOnClickListener { binding.webView.reload() }
         binding.errorSwitch.setOnClickListener { openSetup() }
         onBackPressedDispatcher.addCallback(this) { handleBack() }
@@ -240,6 +252,8 @@ open class BrowserActivity : AppCompatActivity() {
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             bootCheckGeneration += 1
+            // 新文档还没报过自己的滚动状态, 先按"没有可向上滚的内容"算.
+            pageScrollableUp = false
             hideError()
             showProgress()
         }
@@ -286,6 +300,8 @@ open class BrowserActivity : AppCompatActivity() {
         binding.errorMessage.text = message
         binding.errorView.visibility = View.VISIBLE
         binding.webView.visibility = View.INVISIBLE
+        // 兜底界面是原生的, 页面留下的滚动状态在这里没有意义, 否则下拉刷新会一直被拦掉.
+        pageScrollableUp = false
     }
 
     private fun hideError() {
@@ -297,6 +313,11 @@ open class BrowserActivity : AppCompatActivity() {
     /** 打开壳的服务器设置页; 同时是错误界面的「切换服务器」与桥 `switchServer()` 的实现. */
     internal fun openSetup() {
         startActivity(Intent(this, SetupActivity::class.java))
+    }
+
+    /** 由 [ShellBridge] 从 JavaBridge 线程调用; 字段是 `@Volatile`, UI 线程随后读到的就是新值. */
+    internal fun setPageScrollableUp(scrollableUp: Boolean) {
+        pageScrollableUp = scrollableUp
     }
 
     private fun handleBack() {

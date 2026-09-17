@@ -123,6 +123,9 @@
     "playbackSourceLabel": "播放源",
     "playbackStreamLabel": "码流",
     "playbackVolume": "音量",
+    "playbackBrightness": "亮度",
+    "playbackRate": "倍速",
+    "playbackClose": "关闭",
     "playbackMuted": "静音",
     "commentSeek": "跳转到 {{time}}",
     "cropPoster": {

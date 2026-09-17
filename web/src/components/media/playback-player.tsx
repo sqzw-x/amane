@@ -1,6 +1,6 @@
 import { Slider } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconClock, IconLink } from "@tabler/icons-react";
+import { IconClock, IconLink, IconSun, IconVolume, IconVolumeOff } from "@tabler/icons-react";
 import type { ErrorData } from "hls.js";
 import "media-chrome/lang/zh-CN.js";
 import type {
@@ -36,12 +36,14 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { PlaybackSubtitleItem } from "@/client/types.gen";
 import { useLatestRef } from "@/hooks/use-latest-ref";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import i18n from "@/i18n";
 
 import classes from "./playback-player.module.css";
@@ -361,6 +363,7 @@ function usePlayerKeys(
   videoRef: RefObject<HTMLVideoElement | null>,
   seekable: boolean,
   onVolumeStep: (delta: number) => void,
+  onSpeedHold: (holding: boolean) => void,
 ) {
   const holdTimerRef = useRef<number | null>(null);
   const savedRateRef = useRef<number | null>(null);
@@ -378,7 +381,9 @@ function usePlayerKeys(
       savedRateRef.current = null;
     }
     heldKeyRef.current = null;
-  }, [videoRef]);
+    // 按住加速的标记与触屏长按同源: 键盘松开也要撤掉.
+    onSpeedHold(false);
+  }, [onSpeedHold, videoRef]);
 
   useEffect(() => {
     const controller = controllerRef.current;
@@ -427,9 +432,10 @@ function usePlayerKeys(
         }
         savedRateRef.current = held.playbackRate;
         held.playbackRate = Math.max(held.playbackRate, HOLD_SEEK_RATE);
+        onSpeedHold(true);
       }, HOLD_SEEK_DELAY_MS);
     },
-    [onVolumeStep, seekable, videoRef],
+    [onSpeedHold, onVolumeStep, seekable, videoRef],
   );
 
   const onKeyUp = useCallback(
@@ -468,6 +474,12 @@ const TOUCH_MOVE_THRESHOLD_PX = 10;
 /** 横向滑过整个播放窗口对应的跳转秒数, 以及单次手势的跳转上限. */
 const TOUCH_SEEK_SPAN_SECONDS = 120;
 const TOUCH_SEEK_MAX_SECONDS = 90;
+/** 竖直滑动走完音量 (右半屏) 或亮度 (左半屏) 全量程所需的像素数, 向上为增. */
+const TOUCH_LEVEL_FULL_SPAN_PX = 220;
+/** 亮度下限: 全黑既没有意义也回不来. */
+const MIN_BRIGHTNESS = 0.2;
+/** 调整提示的类型: 音量与亮度共用同一套提示. */
+type HudKind = "volume" | "brightness";
 
 /**
  * 全屏前后保持页面的滚动位置.
@@ -541,19 +553,23 @@ function focusPlayer(controllerRef: RefObject<MediaControllerElement | null>): v
 }
 
 /**
- * 触屏手势: 按住加速, 横向滑动拖进度, 双击播放 / 暂停.
+ * 触屏手势, 只认 `pointerType === "touch"`: 鼠标的单击 / 双击 / 右键保持原样.
  *
- * 只认 `pointerType === "touch"`: 鼠标的单击 / 双击 / 右键保持原样. 纵向手势不消费 — 视频上的
- * `touch-action: pan-y` 把它留给页面滚动, 音量与亮度留给后续 (需要系统权限).
+ * 长按加速; 横滑拖进度; 双击播放 / 暂停; 竖直滑动调亮度或音量 — 按起手的半屏分派, 左半屏亮度, 右半屏音量.
+ * 视频区域因此不再把纵向手势留给页面滚动, 音量取媒体元素自己的音量 (不是系统音量), 亮度是画面滤镜.
  *
  * 长按在 Chromium 里同时会派发 `contextmenu`, 这里在捕获阶段拦掉那一次, 不打开右键菜单.
+ *
+ * 三个回调与 `readLevel` 必须都是稳定引用: 引用变化会重建监听, 正在进行的手势会丢.
  */
 function useTouchGestures(
   controllerRef: RefObject<MediaControllerElement | null>,
   videoRef: RefObject<HTMLVideoElement | null>,
   seekable: boolean,
   onSpeedHold: (holding: boolean) => void,
-  onSeekPreview: (seconds: number | null) => void,
+  onSeekPreview: (preview: { target: number; total: number | null } | null) => void,
+  onLevelChange: (kind: HudKind, value: number) => void,
+  readLevel: (kind: HudKind) => number,
 ) {
   useEffect(() => {
     const controller = controllerRef.current;
@@ -567,7 +583,9 @@ function useTouchGestures(
     let baseSeconds = 0;
     let deltaSeconds = 0;
     let rateBeforeHold = 1;
-    let mode: "idle" | "seek" | "speed" = "idle";
+    let mode: "idle" | "seek" | "speed" | "level" = "idle";
+    let levelKind: HudKind = "volume";
+    let baseLevel = 0;
     let longPressTimer: number | null = null;
     let lastTapAt = 0;
     let lastPointerType = "mouse";
@@ -619,17 +637,35 @@ function useTouchGestures(
           return;
         }
         clearLongPress();
-        // 纵向手势交给页面滚动; 不可定位的流 (直播 / 上游不声明) 也不做进度.
-        if (!seekable || Math.abs(dx) <= Math.abs(dy)) {
+        if (Math.abs(dy) > Math.abs(dx)) {
+          // 竖直: 左半屏调亮度, 右半屏调音量. 基值在手势起点读一次, 之后不再跟着状态走.
+          const rect = controller.getBoundingClientRect();
+          levelKind = event.clientX < rect.left + rect.width / 2 ? "brightness" : "volume";
+          baseLevel = readLevel(levelKind);
+          mode = "level";
+        } else if (seekable) {
+          mode = "seek";
+        } else {
+          // 不可定位的流 (直播 / 上游不声明) 不做进度, 这次手势作废.
           pointerId = null;
           return;
         }
-        mode = "seek";
+      }
+      if (mode === "level") {
+        const delta = -dy / TOUCH_LEVEL_FULL_SPAN_PX;
+        onLevelChange(levelKind, Math.min(Math.max(baseLevel + delta, 0), 1));
+        return;
       }
       const span = Math.max(controller.clientWidth, 1);
       const raw = (dx / span) * TOUCH_SEEK_SPAN_SECONDS;
       deltaSeconds = Math.min(Math.max(raw, -TOUCH_SEEK_MAX_SECONDS), TOUCH_SEEK_MAX_SECONDS);
-      onSeekPreview(Math.max(baseSeconds + deltaSeconds, 0));
+      // 总长度在这里读: 它随媒体加载出现, 订阅它会让整个播放器跟着重渲染.
+      const live = videoRef.current;
+      const total =
+        live != null && Number.isFinite(live.duration) && live.duration > 0 ? live.duration : null;
+      const target = Math.max(baseSeconds + deltaSeconds, 0);
+      // 提示里的目标时间与落点一致: 超过总长时按总长显示.
+      onSeekPreview({ target: total == null ? target : Math.min(target, total), total });
     };
 
     const handlePointerEnd = (event: PointerEvent) => {
@@ -641,6 +677,10 @@ function useTouchGestures(
       const ended = mode;
       mode = "idle";
       pointerId = null;
+      if (ended === "level") {
+        // 亮度与音量都是实时生效的, 松开不再做事.
+        return;
+      }
       if (video == null) {
         onSpeedHold(false);
         onSeekPreview(null);
@@ -695,7 +735,7 @@ function useTouchGestures(
       controller.removeEventListener("pointercancel", handlePointerEnd, true);
       controller.removeEventListener("contextmenu", handleContextMenu, true);
     };
-  }, [controllerRef, onSeekPreview, onSpeedHold, seekable, videoRef]);
+  }, [controllerRef, onLevelChange, onSeekPreview, onSpeedHold, readLevel, seekable, videoRef]);
 }
 
 /**
@@ -896,6 +936,11 @@ export function PlaybackPlayer({
   // 菜单里的勾选态只在展开时需要, 因此在展开时读取一次, 不订阅 ratechange.
   const [playbackRate, setPlaybackRate] = useState(1);
 
+  // 窄屏下倍速是右侧滑出菜单 (B 站手机端的形态): 面板留在控制器内, 全屏下同样可见.
+  const narrowViewport = useNarrowViewport();
+  const [rateSheetOpen, setRateSheetOpen] = useState(false);
+  const rateSheetVisible = narrowViewport && rateSheetOpen;
+
   // 右键菜单: 只记落点. 复制的秒数在点按条目时读取, 因此不订阅 timeupdate (订阅会让整个播放器
   // 每秒重渲染).
   const [contextMenu, setContextMenu] = useState<ContextMenuAnchor | null>(null);
@@ -905,8 +950,9 @@ export function PlaybackPlayer({
 
   // 触屏手势的提示: 长按加速与横滑拖进度, 与音量提示同形 (控制器之外, 不受控件自动隐藏影响).
   const [speedHold, setSpeedHold] = useState(false);
-  const [seekPreview, setSeekPreview] = useState<number | null>(null);
-  useTouchGestures(controllerRef, videoRef, seekable, setSpeedHold, setSeekPreview);
+  const [seekPreview, setSeekPreview] = useState<{ target: number; total: number | null } | null>(
+    null,
+  );
 
   const openContextMenu = useCallback(
     (anchor: ContextMenuAnchor) => {
@@ -952,6 +998,8 @@ export function PlaybackPlayer({
   // media-chrome 的菜单只响应点击, 这里在指针进入按钮时展开.
   const openRateMenu = useCallback(() => {
     cancelRateClose();
+    // 宽屏形态下不会渲染滑出菜单, 顺手清掉它可能留下的展开态.
+    setRateSheetOpen(false);
     const video = videoRef.current;
     if (video != null) {
       setPlaybackRate(video.playbackRate);
@@ -961,6 +1009,29 @@ export function PlaybackPlayer({
       rateButtonRef.current?.handleClick();
     }
   }, [cancelRateClose, videoRef]);
+
+  const openRateSheet = useCallback(() => {
+    const video = videoRef.current;
+    if (video != null) {
+      setPlaybackRate(video.playbackRate);
+    }
+    setRateSheetOpen(true);
+  }, [videoRef]);
+
+  const closeRateSheet = useCallback(() => setRateSheetOpen(false), []);
+
+  // 窄屏下倍速按钮的点击改开滑出菜单: 在捕获阶段截下, media-chrome 的菜单不会展开.
+  const interceptRateButtonClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (!narrowViewport) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      openRateSheet();
+    },
+    [narrowViewport, openRateSheet],
+  );
 
   const scheduleRateClose = useCallback(() => {
     cancelRateClose();
@@ -1016,25 +1087,25 @@ export function PlaybackPlayer({
     onSeekHandled();
   }, [applyPendingSeek, onSeekHandled, seekRequest]);
 
-  // 音量提示由 React 状态控制显隐, 放在播放器盒子内、控制器之外, 因此不受控件自动隐藏的影响.
-  const [volumeIndicator, setVolumeIndicator] = useState<number | null>(null);
-  const volumeIndicatorTimerRef = useRef<number | null>(null);
+  // 音量与亮度的调整提示由 React 状态控制显隐, 放在播放器盒子内、控制器之外, 因此不受控件自动隐藏的影响.
+  const [hud, setHud] = useState<{ kind: HudKind; level: number } | null>(null);
+  const hudTimerRef = useRef<number | null>(null);
 
-  const showVolumeIndicator = useCallback((level: number) => {
-    setVolumeIndicator(level);
-    if (volumeIndicatorTimerRef.current != null) {
-      window.clearTimeout(volumeIndicatorTimerRef.current);
+  const showHud = useCallback((subject: HudKind, level: number) => {
+    setHud({ kind: subject, level });
+    if (hudTimerRef.current != null) {
+      window.clearTimeout(hudTimerRef.current);
     }
-    volumeIndicatorTimerRef.current = window.setTimeout(() => {
-      volumeIndicatorTimerRef.current = null;
-      setVolumeIndicator(null);
+    hudTimerRef.current = window.setTimeout(() => {
+      hudTimerRef.current = null;
+      setHud(null);
     }, VOLUME_INDICATOR_MS);
   }, []);
 
   useEffect(
     () => () => {
-      if (volumeIndicatorTimerRef.current != null) {
-        window.clearTimeout(volumeIndicatorTimerRef.current);
+      if (hudTimerRef.current != null) {
+        window.clearTimeout(hudTimerRef.current);
       }
     },
     [],
@@ -1043,6 +1114,16 @@ export function PlaybackPlayer({
   // 音量是唯一的音量状态: 静音即音量 0, 媒体元素的 `muted` 始终为假.
   // 值随存储初始化, 因此装载时滑杆与图标直接落在上次的音量上; 写入存储只由用户操作触发.
   const [volume, setVolume] = useState(readStoredVolume);
+  // 亮度是画面叠加层的透明度 (网页拿不到系统亮度): 0.2 ~ 1 相对原片, 只在本次会话内有效.
+  const [brightness, setBrightness] = useState(1);
+  // 手势的基值来自这两个 ref: 手势回调必须是稳定引用, 不能跟着 state 变.
+  const volumeRef = useRef(volume);
+  const brightnessRef = useRef(brightness);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+    brightnessRef.current = brightness;
+  }, [brightness, volume]);
   // 取消静音要回到的音量. 存储里只有当前音量, 0 之后无从取回, 因此这份记忆只保留在本次会话内.
   const lastNonZeroVolumeRef = useRef(volume === 0 ? 1 : volume);
 
@@ -1065,10 +1146,10 @@ export function PlaybackPlayer({
   const setVolumeFromUser = useCallback(
     (next: number) => {
       applyVolume(next);
-      showVolumeIndicator(next);
+      showHud("volume", next);
       writeStoredVolume(next);
     },
-    [applyVolume, showVolumeIndicator],
+    [applyVolume, showHud],
   );
 
   // 恢复存储的音量. 滑杆与提示的取值来自 React 状态, 这里只写媒体元素; 存在存储里的音量为 0 时即为静音.
@@ -1111,7 +1192,43 @@ export function PlaybackPlayer({
     };
   }, [toggleMute]);
 
-  const { onKeyDown, onKeyUp } = usePlayerKeys(controllerRef, videoRef, seekable, stepVolume);
+  const { onKeyDown, onKeyUp } = usePlayerKeys(
+    controllerRef,
+    videoRef,
+    seekable,
+    stepVolume,
+    setSpeedHold,
+  );
+
+  // 手势的基值读取与写入都走稳定引用: 它们变化会重建手势监听, 正在进行的那次手势会丢.
+  const readLevel = useCallback(
+    (level: HudKind) => (level === "volume" ? volumeRef.current : brightnessRef.current),
+    [],
+  );
+  const handleLevelChange = useCallback(
+    (level: HudKind, value: number) => {
+      if (level === "volume") {
+        // 与滑杆同一条路径: 提示与存储都在里面处理.
+        setVolumeFromUser(value);
+        return;
+      }
+      // 亮度留 20% 的地板: 全黑没有意义, 也回不来.
+      const next = Math.max(value, MIN_BRIGHTNESS);
+      setBrightness(next);
+      showHud("brightness", next);
+    },
+    [setVolumeFromUser, showHud],
+  );
+
+  useTouchGestures(
+    controllerRef,
+    videoRef,
+    seekable,
+    setSpeedHold,
+    setSeekPreview,
+    handleLevelChange,
+    readLevel,
+  );
 
   useFullscreenScrollRestore(controllerRef);
 
@@ -1231,6 +1348,8 @@ export function PlaybackPlayer({
           <SubtitleTracks tracks={tracks} />
         </video>
         <MediaLoadingIndicator slot="centered-chrome" />
+        {/* 亮度是叠加层: 透明度 = 1 - 亮度, 由竖直滑动写入. */}
+        <div className={classes.dim} style={{ opacity: 1 - brightness }} aria-hidden="true" />
         <div className={classes.scrim} aria-hidden="true" />
         <MediaControlBar>
           <MediaPlayButton />
@@ -1246,50 +1365,87 @@ export function PlaybackPlayer({
             onBlur={handleVolumeBlur}
           >
             <MediaMuteButton />
-            <div className={classes.volumePanel} onPointerDown={startVolumeDrag}>
-              <Slider
-                orientation="vertical"
-                size="sm"
-                w={16}
-                h={96}
-                thumbSize={14}
-                min={0}
-                max={1}
-                step={0.05}
-                value={volume}
-                onChange={setVolumeFromUser}
-                label={(value) => `${Math.round(value * 100)}%`}
-                aria-label={t("detail.playbackVolume")}
-                color="brand"
-                styles={{ track: { backgroundColor: "rgb(255 255 255 / 0.32)" } }}
-              />
-            </div>
+            {/* 窄屏不弹拖动的音量条: 音量与亮度由竖直滑动调 (见 useTouchGestures), 按钮只管静音.
+                滑块是 Mantine 控件, 隐藏时不能靠 CSS 之外的手段 — 它是媒体面板里唯一的持焦点元素. */}
+            {narrowViewport ? null : (
+              <div className={classes.volumePanel} onPointerDown={startVolumeDrag}>
+                <Slider
+                  orientation="vertical"
+                  size="sm"
+                  w={16}
+                  h={96}
+                  thumbSize={14}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  onChange={setVolumeFromUser}
+                  label={(value) => `${Math.round(value * 100)}%`}
+                  aria-label={t("detail.playbackVolume")}
+                  color="brand"
+                  styles={{ track: { backgroundColor: "rgb(255 255 255 / 0.32)" } }}
+                />
+              </div>
+            )}
           </div>
           <div
             className={classes.popupHost}
+            onClickCapture={interceptRateButtonClick}
             onPointerEnter={openRateMenu}
             onPointerLeave={scheduleRateClose}
           >
             <MediaPlaybackRateMenuButton ref={rateButtonRef} invokeTarget={RATE_MENU_ID} />
-            <MediaChromeMenu id={RATE_MENU_ID} ref={rateMenuRef} hidden>
-              {PLAYBACK_RATES.map((rate) => (
-                <MediaChromeMenuItem
-                  key={rate}
-                  value={String(rate)}
-                  type="radio"
-                  checked={rate === playbackRate}
-                  onClick={() => applyPlaybackRate(rate)}
-                >
-                  {`${rate}x`}
-                </MediaChromeMenuItem>
-              ))}
-            </MediaChromeMenu>
+            {narrowViewport ? null : (
+              <MediaChromeMenu id={RATE_MENU_ID} ref={rateMenuRef} hidden>
+                {PLAYBACK_RATES.map((rate) => (
+                  <MediaChromeMenuItem
+                    key={rate}
+                    value={String(rate)}
+                    type="radio"
+                    checked={rate === playbackRate}
+                    onClick={() => applyPlaybackRate(rate)}
+                  >
+                    {`${rate}x`}
+                  </MediaChromeMenuItem>
+                ))}
+              </MediaChromeMenu>
+            )}
           </div>
           {tracks.length > 0 ? <MediaCaptionsMenuButton /> : null}
           <MediaFullscreenButton ref={fullscreenButtonRef} />
           {tracks.length > 0 ? <MediaCaptionsMenu hidden /> : null}
         </MediaControlBar>
         {seekable ? <MediaTimeRange onPointerDown={handleDragStart} /> : null}
+        {/* 窄屏倍速: 右侧滑出面板. 放在控制器内, 因此全屏下同样可见 (全屏只有控制器子树有画面). */}
+        {rateSheetVisible ? (
+          <>
+            <button
+              type="button"
+              className={classes.sheetBackdrop}
+              onClick={closeRateSheet}
+              aria-label={t("detail.playbackClose")}
+            />
+            <div className={classes.rateSheet} role="menu" aria-label={t("detail.playbackRate")}>
+              <div className={classes.rateSheetTitle}>{t("detail.playbackRate")}</div>
+              {PLAYBACK_RATES.map((rate) => (
+                <button
+                  key={rate}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={rate === playbackRate}
+                  className={classes.rateSheetItem}
+                  data-active={rate === playbackRate ? "true" : undefined}
+                  onClick={() => {
+                    applyPlaybackRate(rate);
+                    closeRateSheet();
+                  }}
+                >
+                  {`${rate}x`}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
         {contextMenu != null ? (
           <ContextMenu
             anchor={contextMenu}
@@ -1299,33 +1455,52 @@ export function PlaybackPlayer({
           />
         ) : null}
       </MediaController>
-      {/* 音量提示: 键盘调音量与静音时显示, 放在控制器之外因此不参与控件的自动隐藏. 音量为 0 即静音. */}
-      {volumeIndicator != null ? (
+      {/* 调整提示: 键盘调音量 / 静音与触屏竖直滑动 (音量或亮度) 时显示, 放在控制器之外因此不参与控件的自动隐藏. */}
+      {hud != null ? (
         <div className={classes.volumeIndicatorLayer}>
           <div className={classes.volumeIndicator} role="status" aria-live="polite">
+            {hud.kind === "volume" ? (
+              hud.level === 0 ? (
+                <IconVolumeOff size={16} />
+              ) : (
+                <IconVolume size={16} />
+              )
+            ) : (
+              <IconSun size={16} />
+            )}
             <div className={classes.volumeIndicatorBar}>
               <div
                 className={classes.volumeIndicatorFill}
-                style={{ width: `${Math.round(volumeIndicator * 100)}%` }}
+                style={{ width: `${Math.round(hud.level * 100)}%` }}
               />
             </div>
             <span>
-              {volumeIndicator === 0
+              {hud.kind === "volume" && hud.level === 0
                 ? t("detail.playbackMuted")
-                : `${Math.round(volumeIndicator * 100)}%`}
+                : `${Math.round(hud.level * 100)}%`}
             </span>
           </div>
         </div>
       ) : null}
-      {/* 触屏手势提示: 按住加速显示倍速, 横滑显示目标时间. */}
-      {speedHold || seekPreview != null ? (
+      {/* 按住加速的标记: 触屏长按与键盘按住右键同源; 从菜单里选的倍速不显示 (它不是"正在按住"). */}
+      {speedHold ? (
+        <div className={classes.speedBadgeLayer}>
+          <div className={classes.speedBadge} role="status" aria-live="polite">
+            {`${HOLD_SEEK_RATE}×`}
+          </div>
+        </div>
+      ) : null}
+      {/* 横滑拖进度: 目标时间 / 总长度. */}
+      {seekPreview != null ? (
         <div className={classes.volumeIndicatorLayer}>
           <div
             className={`${classes.volumeIndicator} ${classes.gestureIndicator}`}
             role="status"
             aria-live="polite"
           >
-            {speedHold ? `${HOLD_SEEK_RATE}×` : formatClock(seekPreview ?? 0)}
+            {seekPreview.total == null
+              ? formatClock(seekPreview.target)
+              : `${formatClock(seekPreview.target)} / ${formatClock(seekPreview.total)}`}
           </div>
         </div>
       ) : null}

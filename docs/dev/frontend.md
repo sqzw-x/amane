@@ -107,7 +107,7 @@ dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `
 
 根目录只放跨域工具 (`confirm` / `exhaustive*` / `api-token` / `connection` / `shell` / `utils` 等); 只服务一个产品域的模块纳入 `lib/<domain>/` (`actors` / `feeds` / `agent` / `task` / `media`), 不允许再往根上堆叠带域前缀的文件. 不设根 barrel, 调用方直引文件.
 
-`lib/shell.ts` 判定是否在 Android 壳内 (UA 标记 `AmaneShell/<version>`, 不依赖 JS 桥 — 桥只承载动作) 并给出壳的动作. 壳内多一个与「设置」平级的 `/client` 页 (`routes/client.tsx` → `components/shell/client-settings.tsx`), 登录门 (`components/auth/login-gate.tsx`) 与错误边界 (`components/error-boundary.tsx`) 也据此给出「切换服务器」入口; 非壳环境下这些整块不渲染. 契约见 [android.md](android.md).
+`lib/shell.ts` 判定是否在 Android 壳内 (UA 标记 `AmaneShell/<version>`, 不依赖 JS 桥 — 桥只承载动作) 并给出壳的动作. 壳内多一个与「设置」平级的 `/client` 页 (`routes/client.tsx` → `components/shell/client-settings.tsx`), 登录门 (`components/auth/login-gate.tsx`) 与错误边界 (`components/error-boundary.tsx`) 也据此给出「切换服务器」入口; 非壳环境下这些整块不渲染. `lib/pull-refresh.ts` 在根上装一次, 把"触点处还有没有可向上滚的内容"推给壳, 让下拉刷新不抢走内部滚动. 契约见 [android.md](android.md).
 
 ## 工程入口
 

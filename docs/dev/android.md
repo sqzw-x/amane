@@ -59,7 +59,7 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 |------|---------|
 | 主文档加载失败 | 原生错误页 (重试 / 换服务器), 不显示 WebView 自带的错误页 — 局域网服务器关机会经常遇到 |
 | 页面脚本未挂载 | 启动看门狗给出同一个原生错误页, 见下 |
-| 下拉刷新 | `SwipeRefreshLayout` 包住 WebView (WebView 自身没有该手势), 松开即 `reload()`; 加载结束或失败时收起指示器, 全屏播放期间禁用 |
+| 下拉刷新 | `SwipeRefreshLayout` 包住 WebView (WebView 自身没有该手势), 松开即 `reload()`; 加载结束或失败时收起指示器, 全屏播放期间禁用. 手势优先级低于页面内部滚动: `SwipeRefreshLayout` 只看得到 WebView 自身的滚动位置, 而 SPA 的滚动多在内部容器里 (弹窗正文、侧栏、列表, 播放器还自己消费纵向拖动), 因此页面在 `touchstart` 实测"触点处还有没有可向上滚的内容"并经桥的 `setPageScrollableUp` 推给壳, 由它在手势起点决定是否接管 (`web/src/lib/pull-refresh.ts`); 页面加载开始与原生错误页显示时该状态复位 |
 | 下载 (`Content-Disposition: attachment`) | `DownloadManager`; 它在独立进程, 不共享 cookie 罐, 因此显式写入 `Cookie` 请求头 |
 | `window.open` | 附件交给下载监听器 (任务记录导出即此类), 真页面才另起 `PopupActivity` |
 | 全屏视频 | `onShowCustomView` 的自定义视图, 同时把方向锁到传感器横屏 (竖屏全屏会把画面挤在中间); 返回键先请求页面退出全屏, 超时未退出则按原生方式收起, 退出时把方向交还系统 |
