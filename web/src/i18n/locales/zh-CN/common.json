@@ -70,7 +70,8 @@
     "totalItems": "(共 {{count}} 条)",
     "range": "第 {{start}}–{{end}} 条，共 {{total}} 条",
     "pageSizeShort": "{{size}}/页",
-    "loadedOfTotal": "已加载 {{loaded}} / {{total}}"
+    "loadedOfTotal": "已加载 {{loaded}} / {{total}}",
+    "pageOf": "第 {{page}} / {{total}} 页"
   },
   "validation": {
     "invalid": "无效值",

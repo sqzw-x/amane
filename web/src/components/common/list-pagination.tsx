@@ -1,4 +1,6 @@
 import { Pagination } from "@mantine/core";
+import { useElementSize } from "@mantine/hooks";
+import { useTranslation } from "react-i18next";
 
 export interface ListPaginationProps {
   totalPages: number;
@@ -6,21 +8,38 @@ export interface ListPaginationProps {
   onChange: (page: number) => void;
 }
 
+/** 收合阈值, 与 Mantine 收合用的容器查询同宽. */
+const COMPACT_MAX_WIDTH = 400;
+
 /**
  * 列表底部分页; 单页时自动隐藏. 锚定视口底由 ListToolbar / 阅读器布局负责.
- * `layout="responsive"` 用容器查询测量自身宽度, 而查询容器作为 flex 行内的项会被收缩为零宽,
- * 故根元素撑满可用宽度并自行居中: 容器不足 400px 时只保留「当前页 / 总页数」, 页码按钮不折行.
+ * 根元素撑满可用宽度并自行居中 (flex 行内的项会被收缩为零宽), 宽度不足收合阈值时只保留「当前页 / 总页数」.
+ *
+ * 收合判定由这里按实测宽度写成内联样式, 而不是交给 `layout="responsive"` 的容器查询: 容器查询在
+ * Chromium 105 之前整条不生效, 旧内核上分页会一直摊开页码按钮, 与浏览器不一致 (见 docs/dev/frontend.md).
  */
 export function ListPagination({ totalPages, page, onChange }: ListPaginationProps) {
+  const { t } = useTranslation("common");
+  const { ref, width } = useElementSize<HTMLDivElement>();
   if (totalPages <= 1) return null;
+  const compact = width > 0 && width <= COMPACT_MAX_WIDTH;
+
   return (
     <Pagination
+      ref={ref}
       total={totalPages}
       value={page}
       onChange={onChange}
       layout="responsive"
+      formatLabel={({ page: active, totalPages: total }) =>
+        t("pagination.pageOf", { page: active, total })
+      }
       w="100%"
-      styles={{ root: { display: "flex", justifyContent: "center" } }}
+      styles={{
+        root: { display: "flex", justifyContent: "center" },
+        items: compact ? { display: "none" } : undefined,
+        label: compact ? { display: "flex" } : undefined,
+      }}
     />
   );
 }

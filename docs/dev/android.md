@@ -60,12 +60,13 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 | 主文档加载失败 | 原生错误页 (重试 / 换服务器), 不显示 WebView 自带的错误页 — 局域网服务器关机会经常遇到 |
 | 页面脚本未挂载 | 启动看门狗给出同一个原生错误页, 见下 |
 | 下拉刷新 | `SwipeRefreshLayout` 包住 WebView (WebView 自身没有该手势), 松开即 `reload()`; 加载结束或失败时收起指示器, 全屏播放期间禁用. 手势优先级低于页面内部滚动: `SwipeRefreshLayout` 只看得到 WebView 自身的滚动位置, 而 SPA 的滚动多在内部容器里 (弹窗正文、侧栏、列表, 播放器还自己消费纵向拖动), 因此页面在 `touchstart` 实测"触点处还有没有可向上滚的内容"并经桥的 `setPageScrollableUp` 推给壳, 由它在手势起点决定是否接管 (`web/src/lib/pull-refresh.ts`); 页面加载开始与原生错误页显示时该状态复位 |
+| 文件选择 (`<input type="file">`) | WebView 自身不实现文件选择器, 必须由 `onShowFileChooser` 交给系统选择器 (`FileChooserParams.createIntent()`, 带页面的类型过滤与多选开关), 结果经 `ActivityResultContracts` 回给同一份回调; 取消与异常回 `null`, 否则页面上的输入一直停在等待状态 |
 | 下载 (`Content-Disposition: attachment`) | `DownloadManager`; 它在独立进程, 不共享 cookie 罐, 因此显式写入 `Cookie` 请求头 |
 | `window.open` | 附件交给下载监听器 (任务记录导出即此类), 真页面才另起 `PopupActivity` |
-| 全屏视频 | `onShowCustomView` 的自定义视图, 同时把方向锁到传感器横屏 (竖屏全屏会把画面挤在中间); 返回键先请求页面退出全屏, 超时未退出则按原生方式收起, 退出时把方向交还系统 |
+| 全屏视频 | `onShowCustomView` 的自定义视图 (`<video>` 与页面自己的 Fullscreen API 都走这条路), 同时收起状态栏与导航栏 (`WindowInsetsControllerCompat`, 划出时临时显示) 并把方向锁到传感器横屏 (竖屏全屏会把画面挤在中间), 页面侧另有同一用途的方向锁用于浏览器 (见 docs/dev/frontend.md); 期间根容器的 inset 内边距归零, 否则画面被让出的状态栏高度顶下去; 返回键先请求页面退出全屏, 超时未退出则按原生方式收起, 退出时恢复系统栏并把方向交还系统 |
 | 按 Home 键 | 全屏视频转画中画 (`PictureInPictureParams` 的宽高取自自定义视图) |
 | 站外链接 | 交给系统浏览器, 不留在 WebView 内 |
-| 浅色/深色 | `WebSettingsCompat.setAlgorithmicDarkeningAllowed`, 让 `prefers-color-scheme` 跟随系统 |
+| 浅色/深色 | 算法深色 (强深色) 必须关掉: 页面自己按用户设置在深浅两套之间切换, 内核在系统深色时再叠一层会把浅色主题反转成另一种深色. `prefers-color-scheme` 由应用主题 (DayNight) 决定, 与这个开关无关, 因此「跟随系统」这一档不受影响 |
 
 窗口 inset 以原生 padding 施加在根容器上, 页面不使用 `env(safe-area-inset-*)`: WebView 的视口因此等于安全区, SPA 既有的 `100dvh` 高度计算 (`web/src/components/layout/app-shell-metrics.ts`) 无需改动. 壳没有自己的栏, 状态栏区域显示系统背景 (跟随 DayNight), 页面头部不会被状态栏压住.
 
@@ -78,6 +79,8 @@ Android 端是**远程客户端**, 不是桌面壳的同类: 服务端 (FastAPI 
 下限只保证 JS 不崩, 样式仍按样式表自身的要求退化: `dvh` (108), `:has()` 与 `@container` (105), `color-mix()` (111) 在更低内核上整体失效, 而 CSS 不能由 core-js 补. 视口高度这一项已用 `--amane-vh` 兜住 (见 [frontend.md](frontend.md)); 其余特性需要时逐个给出回退, 否则低于下限的设备须更新系统 WebView.
 
 `build.target` 只降语法: 内建方法 (`Array.prototype.toSorted` 等) 不会被降级, 缺失时只能由 polyfill 提供 — 因此「降低构建目标」不能替代这里的配置.
+
+算法深色要在两侧都关掉. 页面侧: 壳内的根元素带 `data-amane-shell` (`web/src/main.tsx` 按 UA 标记盖上), `global.css` 在 `prefers-color-scheme: dark` 下把它的 `color-scheme` 钉成 `dark` — 内核只对"用色方案为浅色"的页面叠加算法深色, 换掉这一项它就不再动手, 而页面自身仍按用户设置渲染. 壳侧: `setAlgorithmicDarkeningAllowed(false)`, 旧内核退回 `setForceDark(FORCE_DARK_OFF)`. 两处都要有 — Android 13 以上且 targetSdk ≥ 33 时旧的 `setForceDark` 是空操作, 而低于 Chromium 105 的 WebView 不支持前者, 只靠任何一侧都会漏.
 
 ## 打包与分发
 

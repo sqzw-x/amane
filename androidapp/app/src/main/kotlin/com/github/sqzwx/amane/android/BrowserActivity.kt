@@ -23,13 +23,17 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.webkit.ValueCallback
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updatePadding
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
@@ -52,6 +56,23 @@ open class BrowserActivity : AppCompatActivity() {
 
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    /** 正在等待系统选择器的 `<input type="file">` 回调; 页面并发发起多次时只保留最后一次. */
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+
+    /**
+     * 页面里的文件选择. 选择结果按 `parseResult` 转回 URI 数组 (多选由选择器决定), 取消或失败回 null —
+     * 不回的话页面上的输入会一直停在等待状态.
+     */
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val callback = pendingFileChooser ?: return@registerForActivityResult
+        pendingFileChooser = null
+        callback.onReceiveValue(
+            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data),
+        )
+    }
 
     /** 页面每次开始加载都自增, 用来作废上一次的启动检查. */
     private var bootCheckGeneration = 0
@@ -114,6 +135,8 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
         binding.webContainer.removeView(binding.webView)
         binding.webView.destroy()
         super.onDestroy()
@@ -122,8 +145,8 @@ open class BrowserActivity : AppCompatActivity() {
     // region 全屏视频与画中画
 
     /**
-     * 页面请求全屏时, WebView 把画面交给 chrome client 的自定义视图: 由外壳铺满窗口,
-     * WebView 自身没有可用的 Fullscreen API.
+     * 页面请求全屏时, WebView 把画面交给 chrome client 的自定义视图: 由外壳铺满窗口 (`<video>` 与
+     * 页面自己的 Fullscreen API 都走这条路), 系统栏同时收起.
      */
     private inner class ShellChromeClient : WebChromeClient() {
         override fun onProgressChanged(view: WebView, newProgress: Int) {
@@ -150,6 +173,7 @@ open class BrowserActivity : AppCompatActivity() {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             binding.swipeRefresh.isEnabled = false
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            setSystemBarsVisible(false)
         }
 
         override fun onHideCustomView() {
@@ -185,6 +209,30 @@ open class BrowserActivity : AppCompatActivity() {
         override fun onCloseWindow(window: WebView) {
             window.destroy()
         }
+
+        /**
+         * `<input type="file">`: WebView 自身不实现文件选择器, 必须由外壳交给系统.
+         * 用 `FileChooserParams.createIntent()` 而不是自己拼 Intent — 它带上了页面声明的类型过滤与多选开关.
+         */
+        override fun onShowFileChooser(
+            view: WebView,
+            filePathCallback: ValueCallback<Array<Uri>>,
+            fileChooserParams: FileChooserParams,
+        ): Boolean {
+            pendingFileChooser?.onReceiveValue(null)
+            pendingFileChooser = filePathCallback
+            val intent = fileChooserParams.createIntent()
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            return try {
+                fileChooserLauncher.launch(intent)
+                true
+            } catch (_: ActivityNotFoundException) {
+                pendingFileChooser = null
+                filePathCallback.onReceiveValue(null)
+                Toast.makeText(this@BrowserActivity, R.string.error_no_picker, Toast.LENGTH_SHORT).show()
+                false
+            }
+        }
     }
 
     private fun hideCustomView() {
@@ -196,9 +244,29 @@ open class BrowserActivity : AppCompatActivity() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         binding.swipeRefresh.isEnabled = true
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        setSystemBarsVisible(true)
         customView = null
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
+    }
+
+    /**
+     * 全屏播放期间收起状态栏与导航栏, 退出时交还.
+     *
+     * WebView 只负责把画面交出来, 系统栏归外壳管: 不收起时状态栏会一直压在画面上. 隐藏后窗口 inset 归零,
+     * 但根容器的内边距要靠 `requestApplyInsets` 重新算一次, 否则画面仍被让出的高度顶下去.
+     */
+    private fun setSystemBarsVisible(visible: Boolean) {
+        val controller = WindowInsetsControllerCompat(window, binding.root)
+        if (visible) {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        } else {
+            // 划出时临时显示, 不永久顶掉用户的手势导航.
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        }
+        ViewCompat.requestApplyInsets(binding.root)
     }
 
     /** 全屏视频时按 Home 转画中画: 后者让 WebView 的合成器继续出帧, 直接退到后台会停掉画面. */
@@ -228,9 +296,17 @@ open class BrowserActivity : AppCompatActivity() {
             setSupportZoom(false)
             userAgentString = "$userAgentString AmaneShell/${BuildConfig.VERSION_NAME}"
         }
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            // 让 prefers-color-scheme 跟随系统深色, SPA 的 Mantine 主题据此切换
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(web.settings, true)
+        // 内核自带的算法深色必须关掉: 页面自己按用户设置在深浅两套之间切换, 内核在系统深色时再叠一层
+        // 会把浅色主题反转成另一种深色. `prefers-color-scheme` 由应用主题 (DayNight) 决定, 与这个开关无关,
+        // 因此关掉它不影响"跟随系统"这一档.
+        when {
+            WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING) ->
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(web.settings, false)
+
+            WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK) -> {
+                @Suppress("DEPRECATION")
+                WebSettingsCompat.setForceDark(web.settings, WebSettingsCompat.FORCE_DARK_OFF)
+            }
         }
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         // 页面经 window.amaneshell 发起服务器切换与登录清除; 其余原生入口已全部移入 SPA 界面.
@@ -425,9 +501,14 @@ open class BrowserActivity : AppCompatActivity() {
      */
     private fun applyWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime(),
-            )
+            // 全屏播放时系统栏已收起, 内边距必须归零, 否则画面被让出的状态栏高度顶下去.
+            val bars = if (customView == null) {
+                insets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime(),
+                )
+            } else {
+                Insets.NONE
+            }
             binding.root.updatePadding(
                 top = bars.top,
                 bottom = bars.bottom,

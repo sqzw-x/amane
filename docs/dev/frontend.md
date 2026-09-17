@@ -44,7 +44,9 @@
 
 影片详情: 用户标签与刮削标签分栏; 加减菜单一次提交多名 — `POST /api/metadata/batch/user-tags` 是多影片 × 单标签, 不允许一次挂多个. 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`.
 
-**播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择, 否则会按旧 `key` 探测. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 播放窗口常驻且尺寸由比例决定 — **状态变化不得改变外框尺寸**, 否则页面高度突变会把滚动位置夹回顶部. **触屏**: 按住加速、横滑拖进度、双击播放 / 暂停、竖直滑动调音量 (右半屏) 与亮度 (左半屏) 由 `playback-player.tsx` 的 `useTouchGestures` 承担, 它只认 `pointerType === "touch"` — 鼠标的单击 / 双击 / 右键原样保留. 音量取媒体元素自己的音量, 亮度是叠加层的透明度 (网页拿不到系统音量与亮度), 二者都不需要系统权限. 控制器声明 `touch-action: none`、纵向拖动因此归播放器; 菜单与倍速面板各自声明 `pan-y` 保住内部滚动, 壳的下拉刷新也据此让位 (`lib/pull-refresh.ts` 把播放器区域算作"可滚动"). 按住加速的徽标与横滑的 `目标时间 / 总长度` 提示放在控制器之外, 因此不随控件自动隐藏; 从菜单选的倍速不显示徽标. 窄屏下音量按钮只切换静音 (不弹滑杆), 倍速是右侧滑出面板. 长按在 Chromium 里会同时派发 `contextmenu`, 该钩子在捕获阶段拦掉那一次, 右键菜单因此不会被长按带出来.
+**播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺 (超过 4 项回落下拉菜单), 切换来源要重置流的选择, 否则会按旧 `key` 探测. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 播放窗口常驻且尺寸由比例决定 — **状态变化不得改变外框尺寸**, 否则页面高度突变会把滚动位置夹回顶部. **触屏**: 按住加速、横滑拖进度、双击播放 / 暂停、竖直滑动调音量 (右半屏) 与亮度 (左半屏) 由 `playback-player.tsx` 的 `useTouchGestures` 承担, 它只认 `pointerType === "touch"` — 鼠标的单击 / 双击 / 右键原样保留. 音量取媒体元素自己的音量, 亮度是叠加层的透明度 (网页拿不到系统音量与亮度), 二者都不需要系统权限. 控制器声明 `touch-action: none`、纵向拖动因此归播放器; 菜单与倍速面板各自声明 `pan-y` 保住内部滚动, 壳的下拉刷新也据此让位 (`lib/pull-refresh.ts` 把播放器区域算作"可滚动"). 按住加速的徽标、横滑的 `目标时间 / 总长度` 提示与音量 / 亮度提示都留在控制器内 — **全屏只渲染控制器子树**, 放在外面整层会随全屏消失; 它们不是 media-chrome 控件, 控件自动隐藏与它们无关. 从菜单选的倍速不显示徽标. 进度条拖动与悬停时的目标时间由 media-chrome 的预览盒给出 (默认隐藏, 由 CSS 在 `:hover` / `[dragging]` 时打开). 拖动进度条期间媒体手势必须停手: 控件的 `pointerdown` 在冒泡阶段置位拖动标记, 晚于手势层挂在控制器上的捕获监听, 因此让位判定要放到移动与松手时. 手势期间控制器带 `data-amane-gesture` (触摸按下即置位, 松手撤掉), 控制条、进度条、底部渐变遮罩与居中大按钮由样式整段隐藏: 媒体的手势接收层把任何指针活动都当成用户在操作, 控件随之淡入, 而横滑跳转只需要悬浮提示. 遮罩必须跟着隐藏 — 它按 media-chrome 的自动隐藏规则淡入, 横滑时画面底部会平白压暗一条; 亮度叠加层不受影响 (它的透明度是用户设置, 由内联样式写入, 自动隐藏覆盖不到). 粗指针 (`pointer: coarse`) 上额外给一个居中大播放键 (控制条里的播放键只有 32 像素宽), 鼠标端不渲染 — 判定按指针类型而不是视口宽度, 因为全屏播放是横屏, 手机上视口同样很宽. 大按钮是控制器的子节点, 因此随控制条一起淡入淡出, 不需要单独的状态; 淡出后它必须让出指针 (画面中央那一片要留给"点按切换控件显隐"), 让位条件取控制器上的 `userinactive` 与 `mediapaused` — `userinactive` 在播放与暂停时都存在, 只有 `mediapaused` 能区分两者, 只按前者会让按钮在暂停时可见却点不动. 窄屏下音量按钮只切换静音 (不弹滑杆). 长按在 Chromium 里会同时派发 `contextmenu`, 该钩子在捕获阶段拦掉那一次, 右键菜单因此不会被长按带出来. 全屏播放转横屏由页面自己锁 (`screen.orientation.lock('landscape')`, 只在播放器自己的全屏期间), 退出时交还系统: 壳里原生层也锁方向, 浏览器里没有别的地方可锁; 不支持该 API 的浏览器 (iOS Safari、桌面浏览器) 与锁失败都忽略, 系统旋转仍然生效.
+
+控制器内部的行高是 0 (media-chrome 给自身 chrome 用的), 放在控制器里的提示与面板必须自己声明 `line-height`: 否则行盒高度为 0, 文字看着正常但盒子只剩内边距, 比文字还矮.
 
 播放器组件的其余约定集中在 `components/media/playback-player.tsx` 的文件注释里.
 
@@ -52,9 +54,9 @@
 
 **list** 视图与订阅源、库文件表采用 `BrowsePageShell fill`: 标题 / 搜索不滚, 剩余高度交给 children; 视口高度取 `APP_SHELL_MAIN_HEIGHT` (`components/layout/app-shell-metrics.ts`), 不允许再手写一份 calc — 该常量由 AppShell 写入 `:root` 的 `--app-shell-header-height` 与 `--app-shell-padding` 推导.
 
-`ListToolbar` 是表体壳: 顶栏不滚, 表体内滚, **唯一**分页固定于视口底, 翻页把表体滚回顶部; 它的 overflow 区要求父级有界高度. `grid` / `cloud` 禁止 fill — 演员墙用 `VirtuosoGrid` + `useWindowScroll`.
+`ListToolbar` 是表体壳: 顶栏不滚, 表体内滚, **唯一**分页固定于视口底, 翻页把表体滚回顶部; 它的 overflow 区要求父级有界高度. 分页宽度不足 400 像素时收成「第 N / M 页」, 判定由 `components/common/list-pagination.tsx` 实测宽度后写成内联样式 — Mantine 的收合走容器查询, 而旧内核 (Chromium 105 之前) 整条丢弃, 分页在壳里会一直摊开页码按钮, 与浏览器不一致; 收合文案由该组件经 i18n 给出, 不用 Mantine 的英文默认值. `grid` / `cloud` 禁止 fill — 演员墙用 `VirtuosoGrid` + `useWindowScroll`.
 
-窄屏 (md 以下) 的 `BrowsePageShell` 只剩一行: 标题 + 视图切换 + 筛选入口, 摘要 / 搜索 / 高级筛选面板 / 附属控件 / 右侧动作全进底部面板. **每个带高级筛选的列表页都必须把面板经 `filterPanel` 槽传进来, 不能把 `<Collapse>` 放在 children 里** — 否则窄屏会出现"开关在面板里、面板在主屏上", 点了开关主屏凭空多出一块. 面板里带浮层的控件 (`Select` 及其 `searchable` 形态) 在窄屏必须 `withinPortal: false`: 浮层 portal 到 `body` 后落在抽屉之外, Mantine 把它当成"点击外部", 一次点击就关掉整块面板 (表现为下拉打不开、每点一下面板消失). 同一批控件只渲染一处: 两个断点各一份会让搜索框在 DOM 里存在两个. `SelectionBar` 无选中时在窄屏整条不渲染 (按钮在无选中时本就全部禁用). 订阅浏览页的 `FeedReader` 用同一形态, 条目 (`FeedArticle`) 在窄屏把行内图标操作收进菜单并压缩元信息.
+窄屏 (md 以下) 的 `BrowsePageShell` 只剩一行: 标题 + 视图切换 + 筛选入口, 摘要 / 搜索 / 高级筛选面板 / 附属控件 / 右侧动作全进底部面板. **每个带高级筛选的列表页都必须把面板经 `filterPanel` 槽传进来, 不能把 `<Collapse>` 放在 children 里** — 否则窄屏会出现"开关在面板里、面板在主屏上", 点了开关主屏凭空多出一块. 面板里带浮层的控件 (`Select` 及其 `searchable` 形态) 在窄屏必须 `withinPortal: false`: 浮层 portal 到 `body` 后落在抽屉之外, Mantine 把它当成"点击外部", 一次点击就关掉整块面板 (表现为下拉打不开、每点一下面板消失). 同一批控件只渲染一处: 两个断点各一份会让搜索框在 DOM 里存在两个. 标题行的枚举选择器 (如分类页的种类) 在窄屏整块不渲染: 六项放不进一行, 换行会把标题区撑成好几行, 而分类浏览入口本身就是用来换种类的. `SelectionBar` 无选中时在窄屏整条不渲染 (按钮在无选中时本就全部禁用). 订阅浏览页的 `FeedReader` 用同一形态, 条目 (`FeedArticle`) 在窄屏把行内图标操作收进菜单并压缩元信息.
 
 图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素.
 
@@ -109,7 +111,7 @@ dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `
 
 根目录只放跨域工具 (`confirm` / `exhaustive*` / `api-token` / `connection` / `shell` / `utils` 等); 只服务一个产品域的模块纳入 `lib/<domain>/` (`actors` / `feeds` / `agent` / `task` / `media`), 不允许再往根上堆叠带域前缀的文件. 不设根 barrel, 调用方直引文件.
 
-`lib/shell.ts` 判定是否在 Android 壳内 (UA 标记 `AmaneShell/<version>`, 不依赖 JS 桥 — 桥只承载动作) 并给出壳的动作. 壳内多一个与「设置」平级的 `/client` 页 (`routes/client.tsx` → `components/shell/client-settings.tsx`), 登录门 (`components/auth/login-gate.tsx`) 与错误边界 (`components/error-boundary.tsx`) 也据此给出「切换服务器」入口; 非壳环境下这些整块不渲染. `lib/pull-refresh.ts` 在根上装一次, 把"触点处还有没有可向上滚的内容"推给壳, 让下拉刷新不抢走内部滚动. 契约见 [android.md](android.md).
+`lib/shell.ts` 判定是否在 Android 壳内 (UA 标记 `AmaneShell/<version>`, 不依赖 JS 桥 — 桥只承载动作) 并给出壳的动作. 壳内多一个与「设置」平级的 `/client` 页 (`routes/client.tsx` → `components/shell/client-settings.tsx`), 登录门 (`components/auth/login-gate.tsx`) 与错误边界 (`components/error-boundary.tsx`) 也据此给出「切换服务器」入口; 非壳环境下这些整块不渲染. `lib/pull-refresh.ts` 在根上装一次, 把"触点处还有没有可以向上滚的内容"推给壳, 让下拉刷新不抢走内部滚动. 壳内还会在根元素上盖 `data-amane-shell`, 供样式区分壳环境; 两处契约见 [android.md](android.md).
 
 ## 工程入口
 

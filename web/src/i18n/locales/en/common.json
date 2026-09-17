@@ -72,7 +72,8 @@
     "totalItems_other": "({{count}} total)",
     "range": "{{start}}–{{end}} of {{total}}",
     "pageSizeShort": "{{size}}/page",
-    "loadedOfTotal": "Loaded {{loaded}} / {{total}}"
+    "loadedOfTotal": "Loaded {{loaded}} / {{total}}",
+    "pageOf": "Page {{page}} of {{total}}"
   },
   "validation": {
     "invalid": "Invalid value",

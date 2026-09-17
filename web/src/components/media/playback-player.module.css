@@ -34,6 +34,8 @@
 
   /* 音量浮层与倍速菜单共用的实心底色. */
   --amane-player-panel-background: rgb(24 24 27);
+  /* 悬浮提示压在画面上, 底色半透明: 遮住画面又不必让整块变黑. */
+  --amane-player-indicator-background: rgb(24 24 27 / 0.6);
   /* 菜单条目自己渲染, 取不到 media-chrome 给自动生成条目用的默认选中底色. */
   --media-menu-item-checked-background: rgb(255 255 255 / 0.18);
 
@@ -97,13 +99,18 @@
   pointer-events: none;
 }
 
+/*
+  控制器内部的行高是 0 (media-chrome 给它的 chrome 用的), 提示与面板里的文字必须自己带行高,
+  否则行盒高度为 0: 文字看起来正常, 但盒子只剩内边距, 比文字还矮.
+*/
 .volumeIndicator {
+  line-height: var(--mantine-line-height);
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 13px 16px;
   border-radius: var(--mantine-radius-md);
-  background: var(--amane-player-panel-background);
+  background: var(--amane-player-indicator-background);
   color: #fff;
   font-family: var(--mantine-font-family);
   font-size: var(--mantine-font-size-sm);
@@ -114,7 +121,7 @@
 .gestureIndicator {
   font-size: var(--mantine-font-size-lg);
   font-weight: 600;
-  padding: 12px 18px;
+  padding: 15px 20px;
 }
 
 /* 按住加速的标记: 水平居中、靠上, 比调整提示更小, 不遮挡画面中央. */
@@ -130,9 +137,10 @@
 }
 
 .speedBadge {
-  padding: 6px 12px;
+  line-height: var(--mantine-line-height);
+  padding: 8px 14px;
   border-radius: var(--mantine-radius-md);
-  background: var(--amane-player-panel-background);
+  background: var(--amane-player-indicator-background);
   color: #fff;
   font-family: var(--mantine-font-family);
   font-size: var(--mantine-font-size-md);
@@ -154,6 +162,7 @@
 }
 
 .rateSheet {
+  line-height: var(--mantine-line-height);
   position: absolute;
   top: 0;
   right: 0;
@@ -213,6 +222,64 @@
   transition: width 0.08s linear;
 }
 
+/*
+  触屏手势进行中不出现控制条与进度条.
+  媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入; 横滑跳转时不需要它, 提示由悬浮层给.
+  触摸按下时就置位, 松手时撤掉: 移出显示的那一瞬正好是浏览器派发 click 之前, 点击切换显隐因此不受影响.
+*/
+.controller[data-amane-gesture] media-control-bar,
+.controller[data-amane-gesture] media-time-range,
+.controller[data-amane-gesture] .scrim,
+.controller[data-amane-gesture] .centerPlayLayer {
+  display: none;
+}
+
+/*
+  触屏上的居中大按钮: 控制条里的播放键只有 32px, 手机上不好按.
+  它是控制器的子节点, 因此与控制条一起被 media-chrome 淡出 —— 出现时机天然一致, 不需要单独的状态.
+  淡出后必须让出指针: 画面中央那一片仍要留给"点按切换控件显隐", 否则会变成点按切换播放.
+*/
+.centerPlayLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* 属性名取自 media-chrome 写出的实际状态: 暂停时控制器带 `mediapaused`, 而 `userinactive` 两种状态下都在. */
+.controller[userinactive]:not([mediapaused]) .centerPlay {
+  pointer-events: none;
+}
+
+.centerPlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--amane-player-indicator-background);
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.6));
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.centerPlayIcon,
+.centerPauseIcon {
+  display: flex;
+}
+
+/* 播放中显示暂停图标, 暂停时显示播放图标. */
+.controller:not([mediapaused]) .centerPlayIcon,
+.controller[mediapaused] .centerPauseIcon {
+  display: none;
+}
+
 /* 进度条独占一行, 铺满播放器宽度并贴在控制条上方. */
 .controller media-time-range {
   position: absolute;
@@ -222,13 +289,22 @@
   height: 16px;
   /* 控件本身带 `width: 100px` 的默认值, 脱离控制条后必须交回给左右定位决定宽度. */
   width: auto;
+  /* 目标时间的预览盒默认不显示, 只在拖动与悬停时出现: 触屏拖动进度条时它同时给出精确落点. */
+  --media-preview-box-display: none;
   min-height: 0;
 }
 
 .controller media-time-range:hover,
-.controller media-time-range:focus-visible {
+.controller media-time-range:focus-visible,
+.controller media-time-range[dragging] {
   --media-range-track-height: 5px;
   --media-range-thumb-transform: scale(1);
+}
+
+.controller media-time-range:hover,
+.controller media-time-range:focus-visible,
+.controller media-time-range[dragging] {
+  --media-preview-box-display: flex;
 }
 
 /*
@@ -333,6 +409,7 @@
   条目按应用内的菜单密度排布 (14px 字号, 36px 行高), 在深色画面上用描边把面板与画面分开.
 */
 .contextMenu {
+  line-height: var(--mantine-line-height);
   position: absolute;
   z-index: 5;
   display: flex;

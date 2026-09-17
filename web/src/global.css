@@ -10,3 +10,15 @@
 :root {
   --amane-vh: 100vh;
 }
+
+/*
+  壳内声明本页自己渲染深浅两套: Android WebView 在系统深色 + 应用主题为深色时会给页面再叠一层算法深色
+  (自动反转颜色), 浅色主题因此变成一种与本站深色主题不同的深色. 用色方案在深色系统下钉在 dark 上, 内核
+  就不再叠加; 页面自身仍按用户设置在深浅之间切换, 与内核认为的用色方案无关.
+  只在壳内生效: 桌面浏览器没有这层叠加, 保留 Mantine 按主题给的用色方案.
+*/
+@media (prefers-color-scheme: dark) {
+  html[data-amane-shell] {
+    color-scheme: dark;
+  }
+}

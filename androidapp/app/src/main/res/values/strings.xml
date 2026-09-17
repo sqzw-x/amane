@@ -20,6 +20,7 @@
     <string name="error_boot_failed">The page did not start. The system WebView may be too old — update \"Android System WebView\".</string>
     <string name="error_retry">Retry</string>
     <string name="error_no_app">No app can open %1$s</string>
+    <string name="error_no_picker">No file picker available</string>
 
     <string name="menu_switch_server">Servers</string>
 

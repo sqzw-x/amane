@@ -1,14 +1,4 @@
-import {
-  Alert,
-  Badge,
-  Group,
-  Pagination,
-  SegmentedControl,
-  Stack,
-  Tabs,
-  Text,
-  TextInput,
-} from "@mantine/core";
+import { Alert, Badge, Group, SegmentedControl, Stack, Tabs, Text, TextInput } from "@mantine/core";
 import { IconAlertCircle, IconSearch } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router";
@@ -18,12 +8,14 @@ import { z } from "zod";
 import { listFacetsOptions } from "@/client/@tanstack/react-query.gen";
 import type { FacetKind, FacetResponse, FacetSortField } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
+import { ListPagination } from "@/components/common/list-pagination";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { SortMenu } from "@/components/common/sort-menu";
 import { CatalogFacetTable } from "@/components/media/catalog-facet-table";
 import { isOneOf } from "@/lib/exhaustive";
 import { CATALOG_FACET_KINDS, FACET_SORT_FIELDS, SORT_ORDERS } from "@/lib/exhaustive-maps";
 import { FACET_KIND_ICON } from "@/lib/facets";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { useUIStore } from "@/stores/ui";
 
 const catalogKindSearchSchema = z.object({
@@ -91,6 +83,7 @@ function CatalogKindPage() {
   const { t } = useTranslation(["metadata", "common"]);
   const cloudLimit = useUIStore((s) => s.pageSizes.catalogKind);
   const listLimit = useUIStore((s) => s.pageSizes.catalogList);
+  const narrow = useNarrowViewport();
 
   const [searchInput, setSearchInput] = useState(search.q ?? "");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -175,23 +168,27 @@ function CatalogKindPage() {
           <Text component={Link} to="/catalog" size="xs" c="dimmed">
             {t("browse.title")}
           </Text>
-          <Tabs
-            value={kind}
-            onChange={handleKindChange}
-            variant="pills"
-            styles={{ list: { flexWrap: "wrap" } }}
-          >
-            <Tabs.List>
-              {CATALOG_FACET_KINDS.map((k) => {
-                const Icon = FACET_KIND_ICON[k];
-                return (
-                  <Tabs.Tab key={k} value={k} leftSection={<Icon size={16} stroke={1.5} />}>
-                    {t(`browse.kinds.${k}`)}
-                  </Tabs.Tab>
-                );
-              })}
-            </Tabs.List>
-          </Tabs>
+          {/* 窄屏不渲染种类切换: 六项放不进一行, 换行会把标题区撑成好几行; 上面的分类浏览入口
+              本身就是用来换种类的. */}
+          {narrow ? null : (
+            <Tabs
+              value={kind}
+              onChange={handleKindChange}
+              variant="pills"
+              styles={{ list: { flexWrap: "wrap" } }}
+            >
+              <Tabs.List>
+                {CATALOG_FACET_KINDS.map((k) => {
+                  const Icon = FACET_KIND_ICON[k];
+                  return (
+                    <Tabs.Tab key={k} value={k} leftSection={<Icon size={16} stroke={1.5} />}>
+                      {t(`browse.kinds.${k}`)}
+                    </Tabs.Tab>
+                  );
+                })}
+              </Tabs.List>
+            </Tabs>
+          )}
         </Stack>
       }
       viewSwitch={
@@ -281,9 +278,9 @@ function CatalogKindPage() {
 
           {totalPages > 1 && (
             <Group justify="center" mt="md">
-              <Pagination
-                total={totalPages}
-                value={search.page}
+              <ListPagination
+                totalPages={totalPages}
+                page={search.page}
                 onChange={(page) => void navigate({ search: (prev) => ({ ...prev, page }) })}
               />
             </Group>

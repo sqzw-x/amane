@@ -37,6 +37,12 @@ if (viewportProbe.offsetHeight > 0) {
 }
 viewportProbe.remove();
 
+// 壳内给根元素盖个标记: 内核在系统深色 + 应用深色主题时会给页面再叠一层算法深色, 而本页自己渲染深浅两套,
+// 需要在样式里声明这一点 (见 global.css). 桌面浏览器不加标记, 规则不生效.
+if (shellEnvironment() !== null) {
+  document.documentElement.dataset.amaneShell = "";
+}
+
 client.setConfig({
   baseUrl: import.meta.env.VITE_API_URL || "",
   fetch: apiFetch,

@@ -5,7 +5,6 @@ import {
   Code,
   Collapse,
   Group,
-  Pagination,
   ScrollArea,
   Stack,
   Table,
@@ -32,6 +31,7 @@ import {
   updateSavedQueryMutation,
 } from "@/client/@tanstack/react-query.gen";
 import { getSavedQueryResult } from "@/client/sdk.gen";
+import { ListPagination } from "@/components/common/list-pagination";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { confirm } from "@/lib/confirm";
 import {
@@ -287,9 +287,9 @@ function SavedQueryDataPage() {
           </ScrollArea>
           {totalPages > 1 && (
             <Group justify="center">
-              <Pagination
-                total={totalPages}
-                value={search.page}
+              <ListPagination
+                totalPages={totalPages}
+                page={search.page}
                 onChange={(page) => void navigate({ search: (prev) => ({ ...prev, page }) })}
               />
             </Group>
