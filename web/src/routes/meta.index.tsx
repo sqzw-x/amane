@@ -159,7 +159,7 @@ function MetaIndexPage() {
   const navigate = Route.useNavigate();
   const listLimit = useUIStore((s) => s.pageSizes.metaList);
   // 窄屏把高级筛选搬进壳的底部面板, 因此这里要知道当前形态.
-  const narrowViewport = useNarrowViewport();
+  const narrowViewport = useNarrowViewport("md");
 
   const hasFiles = parseHasFiles(search.has_files);
   const filePhase: FilePhaseFilters = {

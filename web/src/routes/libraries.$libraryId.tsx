@@ -92,7 +92,7 @@ function LibraryDetailPage() {
   const routeNavigate = Route.useNavigate();
   const { t } = useTranslation(["library", "common"]);
   const navigate = useNavigate();
-  const narrow = useNarrowViewport();
+  const narrow = useNarrowViewport("md");
   const queryClient = useQueryClient();
   const listLimit = useUIStore((s) => s.pageSizes.libraryMedia);
 

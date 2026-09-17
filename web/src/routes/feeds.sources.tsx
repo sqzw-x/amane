@@ -104,7 +104,7 @@ function FeedSourcesPage() {
   const hasFilters = hasActiveFeedSourceFilters(filters);
   const [advancedOpen, setAdvancedOpen] = useState(hasFilters);
   // 窄屏把高级筛选搬进壳的底部面板, 因此这里要知道当前形态.
-  const narrowViewport = useNarrowViewport();
+  const narrowViewport = useNarrowViewport("md");
 
   const filtered = useMemo(() => {
     const matched = filterFeedSources(feeds, search.q ?? "", {

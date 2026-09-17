@@ -759,6 +759,17 @@ function useTouchGestures(
       const ended = mode;
       mode = "idle";
       pointerId = null;
+      // 系统撤销这次触摸 (通知栏下拉, 系统手势, 窗口失焦): 跳转不落地, 也不能被记成一次点按 —
+      // 否则紧随其后的一次真点按会凑成双击, 意外切换播放状态.
+      if (event.type === "pointercancel") {
+        if (ended === "speed" && video != null) {
+          video.playbackRate = rateBeforeHold;
+        }
+        lastTapAt = 0;
+        onSpeedHold(false);
+        onSeekPreview(null);
+        return;
+      }
       if (gesturesDisabled()) {
         // 控件接管了这次触摸 (拖动进度条 / 音量条): 已生效的加速要还回去, 跳转与提示都不做.
         if (ended === "speed" && video != null) {
@@ -1017,7 +1028,7 @@ export function PlaybackPlayer({
   const [playbackRate, setPlaybackRate] = useState(1);
 
   // 窄屏下音量条不铺在画面上, 音量与亮度走竖直滑动 (见 useTouchGestures).
-  const narrowViewport = useNarrowViewport();
+  const narrowViewport = useNarrowViewport("md");
   /**
    * 粗指针 (触屏) 上倍速改成右侧滑出面板: 悬浮菜单靠指针进入展开, 触屏既没有悬停也没有离开 —
    * 全屏播放是横屏, 视口很宽, 靠宽度判断会退回鼠标形态, 因此按指针类型判定.

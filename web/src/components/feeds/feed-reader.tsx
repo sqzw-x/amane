@@ -201,7 +201,7 @@ export function FeedReader({
 }) {
   const { t, i18n } = useTranslation(["feeds", "common"]);
   const queryClient = useQueryClient();
-  const narrowViewport = useNarrowViewport();
+  const narrowViewport = useNarrowViewport("md");
   const [filtersOpened, { open: openFilters, close: closeFilters }] = useDisclosure(false);
   const limit = useUIStore((s) => s.pageSizes.feedItems);
   const [searchInput, setSearchInput] = useResettingState(() => q ?? "", q);

@@ -83,7 +83,7 @@ function CatalogKindPage() {
   const { t } = useTranslation(["metadata", "common"]);
   const cloudLimit = useUIStore((s) => s.pageSizes.catalogKind);
   const listLimit = useUIStore((s) => s.pageSizes.catalogList);
-  const narrow = useNarrowViewport();
+  const narrow = useNarrowViewport("md");
 
   const [searchInput, setSearchInput] = useState(search.q ?? "");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

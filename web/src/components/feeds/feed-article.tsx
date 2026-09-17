@@ -65,7 +65,7 @@ export function FeedArticle({
   onOpenFeed: (feed: FeedResponse) => void;
 }) {
   const { t } = useTranslation(["feeds", "common"]);
-  const narrowViewport = useNarrowViewport();
+  const narrowViewport = useNarrowViewport("md");
   const number = itemNumber(item);
   const preview = useMemo(() => feedHtmlPlainText(item.description ?? ""), [item.description]);
   const inLibrary = item.metadata_id != null;
@@ -85,7 +85,13 @@ export function FeedArticle({
   const actions = narrowViewport ? (
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>
-        <HintedActionIcon variant="subtle" disabled={busy} label={t("reader.itemActions")}>
+        {/* 头部是展开/收起的热区, 菜单目标必须拦住冒泡, 否则点"..."会连带展开条目. */}
+        <HintedActionIcon
+          variant="subtle"
+          disabled={busy}
+          label={t("reader.itemActions")}
+          onClick={(event) => event.stopPropagation()}
+        >
           <IconDots size={16} />
         </HintedActionIcon>
       </Menu.Target>

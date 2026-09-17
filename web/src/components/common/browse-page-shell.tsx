@@ -64,7 +64,7 @@ export function BrowsePageShell({
   children,
 }: BrowsePageShellProps) {
   const { t } = useTranslation("common");
-  const narrowViewport = useNarrowViewport();
+  const narrowViewport = useNarrowViewport("md");
   const [filtersOpened, { open: openFilters, close: closeFilters }] = useDisclosure(false);
 
   return (

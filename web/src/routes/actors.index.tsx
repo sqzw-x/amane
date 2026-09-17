@@ -100,7 +100,7 @@ function ActorsIndexPage() {
   const [searchInput, setSearchInput] = useState(search.q ?? "");
   const [advancedOpen, setAdvancedOpen] = useState(hasNonDefaultFilters);
   // 窄屏把高级筛选搬进壳的底部面板, 因此这里要知道当前形态.
-  const narrowViewport = useNarrowViewport();
+  const narrowViewport = useNarrowViewport("md");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const isList = search.view === "list";
