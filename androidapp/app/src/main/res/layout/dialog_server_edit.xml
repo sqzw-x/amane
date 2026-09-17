@@ -60,4 +60,14 @@
         android:importantForAutofill="no"
         android:inputType="textVisiblePassword"
         android:singleLine="true" />
+
+    <!-- 校验失败的提示留在弹窗里: 关闭弹窗再报错等于让用户重填一遍. -->
+    <TextView
+        android:id="@+id/edit_error"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:textColor="@color/on_danger_container"
+        android:textSize="14sp"
+        android:visibility="gone" />
 </LinearLayout>

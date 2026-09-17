@@ -2,8 +2,10 @@
 <!--
   服务器条目: 操作区在下层贴右边, 卡片覆盖其上. 左滑把卡片整体左移, 露出编辑与删除 (见 SetupActivity).
   两个子节点的顺序与 [SwipeRowLayout] 的约定一致, 高度也由它统一测量.
+  layoutDirection 固定为 ltr: 左滑是物理方向, 而 layout_gravity="end" 在 RTL 下会贴到左边, 操作区就再也滑不出来.
 -->
 <com.github.sqzwx.amane.android.SwipeRowLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layoutDirection="ltr"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="10dp">

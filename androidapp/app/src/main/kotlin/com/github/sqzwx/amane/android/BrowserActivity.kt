@@ -210,11 +210,20 @@ open class BrowserActivity : AppCompatActivity() {
                     return true
                 }
 
+                /**
+                 * 两条回调哪条先到都给出可感知的结果: 站内页面开弹窗, 站外交给系统浏览器.
+                 * 只认 `shouldOverrideUrlLoading` 时, 若新窗口的首次导航不走那条回调, 外链会落在这只不可见
+                 * 的过渡 WebView 上 — 用户看到的是"点了没反应".
+                 */
                 override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                    if (url == null || !isServerUrl(Uri.parse(url))) return
-                    startActivity(
-                        Intent(this@BrowserActivity, PopupActivity::class.java).putExtra(EXTRA_URL, url),
-                    )
+                    val target = url?.let(Uri::parse) ?: return
+                    if (isServerUrl(target)) {
+                        startActivity(
+                            Intent(this@BrowserActivity, PopupActivity::class.java).putExtra(EXTRA_URL, url),
+                        )
+                    } else {
+                        openExternally(target)
+                    }
                     dropPopup(view)
                 }
             }

@@ -244,25 +244,35 @@ class SetupActivity : AppCompatActivity() {
         form.editName.setText(server.name)
         form.editServer.setText(server.url)
         form.editToken.setText(server.token)
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.setup_edit_title)
             .setView(form.root)
             .setNegativeButton(R.string.setup_cancel, null)
-            .setPositiveButton(R.string.setup_save) { _, _ -> saveEdited(server, form) }
-            .show()
+            .setPositiveButton(R.string.setup_save, null)
+            .create()
+        // 正面按钮自己接管: 默认实现在点击后立刻关闭弹窗, 地址写错时输入与报错会一起消失, 只能重新点"编辑".
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (saveEdited(server, form)) dialog.dismiss()
+            }
+        }
+        dialog.show()
     }
 
-    private fun saveEdited(server: SavedServer, form: DialogServerEditBinding) {
+    /** 返回是否保存成功; 地址非法时把错误留在弹窗里, 不关闭. */
+    private fun saveEdited(server: SavedServer, form: DialogServerEditBinding): Boolean {
         val url = normalizeServerUrl(form.editServer.text.toString())
         if (url == null) {
-            showError(getString(R.string.error_invalid_url))
-            return
+            form.editError.text = getString(R.string.error_invalid_url)
+            form.editError.visibility = View.VISIBLE
+            return false
         }
         val token = form.editToken.text.toString().trim()
         val name = form.editName.text.toString().trim().ifEmpty { defaultServerName(url) }
         store.update(server.url, SavedServer(name, url, token))
         renderServers()
         if (url != server.url || token != server.token) refreshSession(url, token)
+        return true
     }
 
     /**

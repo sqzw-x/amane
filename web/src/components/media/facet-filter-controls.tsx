@@ -52,9 +52,10 @@ function KindFacetPicker({
 }) {
   const { t } = useTranslation("metadata");
   const [search, setSearch] = useState("");
-  // 窄屏这块面板在底部面板 (Mantine Drawer) 里: 浮层若继续 portal 到 body, 抽屉会把那次点击判成"点击外部"
+  // 这块面板在底部面板 (Mantine Drawer) 里: 浮层若继续 portal 到 body, 抽屉会把那次点击判成"点击外部"
   // 而立刻关掉 — 于是下拉打不开且每点一下整块消失. 关掉 portal 后浮层留在抽屉内.
-  const inSheet = useNarrowViewport();
+  // 断点必须与打开抽屉的外壳 (browse-page-shell) 一致, 否则 768-991px 上面板在抽屉里而浮层又 portal 出去.
+  const inSheet = useNarrowViewport("md");
 
   const { data, isFetching } = useQuery({
     ...listFacetsOptions({
@@ -139,7 +140,7 @@ export function FacetFilterControls({
 }: FacetFilterControlsProps) {
   const { t } = useTranslation("metadata");
   // 窄屏这块面板在底部面板 (Mantine Drawer) 里, 浮层不能 portal 出去 — 见 KindFacetPicker 的注释.
-  const inSheet = useNarrowViewport();
+  const inSheet = useNarrowViewport("md");
   const comboboxProps = { withinPortal: !inSheet };
   const triData = [
     { value: "true", label: t("search.yes") },

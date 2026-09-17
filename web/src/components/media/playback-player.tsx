@@ -53,7 +53,6 @@ import { useTranslation } from "react-i18next";
 
 import type { PlaybackSubtitleItem } from "@/client/types.gen";
 import { useLatestRef } from "@/hooks/use-latest-ref";
-import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import i18n from "@/i18n";
 
 import classes from "./playback-player.module.css";
@@ -1027,8 +1026,6 @@ export function PlaybackPlayer({
   // 菜单里的勾选态只在展开时需要, 因此在展开时读取一次, 不订阅 ratechange.
   const [playbackRate, setPlaybackRate] = useState(1);
 
-  // 窄屏下音量条不铺在画面上, 音量与亮度走竖直滑动 (见 useTouchGestures).
-  const narrowViewport = useNarrowViewport("md");
   /**
    * 粗指针 (触屏) 上倍速改成右侧滑出面板: 悬浮菜单靠指针进入展开, 触屏既没有悬停也没有离开 —
    * 全屏播放是横屏, 视口很宽, 靠宽度判断会退回鼠标形态, 因此按指针类型判定.
@@ -1488,7 +1485,9 @@ export function PlaybackPlayer({
             <MediaMuteButton />
             {/* 窄屏不弹拖动的音量条: 音量与亮度由竖直滑动调 (见 useTouchGestures), 按钮只管静音.
                 滑块是 Mantine 控件, 隐藏时不能靠 CSS 之外的手段 — 它是媒体面板里唯一的持焦点元素. */}
-            {narrowViewport ? null : (
+            {/* 触屏上不铺拖动的滑杆: 音量走竖直滑动 (见 useTouchGestures). 判据是指针类型而不是宽度 —
+                鼠标在窄窗口里既没有滑杆也没有触屏手势, 用宽度判定会让他两头落空. */}
+            {coarsePointer ? null : (
               <div className={classes.volumePanel} onPointerDown={startVolumeDrag}>
                 <Slider
                   orientation="vertical"
