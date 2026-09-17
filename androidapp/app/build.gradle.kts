@@ -12,9 +12,13 @@ plugins {
  */
 val appVersionName = rootProject.file("version.txt").readText().trim()
 val appVersionCode = run {
-    val parts = appVersionName.substringBefore('-').substringBefore('+')
-        .split('.').map { it.toIntOrNull() ?: 0 }
-    (parts.getOrElse(0) { 0 } * 10_000) + (parts.getOrElse(1) { 0 } * 100) + parts.getOrElse(2) { 0 }
+    // 版本必须写成三段十进制且每段 0-99: code 由它们拼出来, 解析失败悄悄退化成 0 会让包装不上或无法覆盖安装.
+    val parts = appVersionName.split('.')
+    require(parts.size == 3 && parts.all { part -> part.length in 1..2 && part.all(Char::isDigit) }) {
+        "androidapp/version.txt 必须是 <major>.<minor>.<patch>, 每段 0-99; 当前: $appVersionName"
+    }
+    val (major, minor, patch) = parts.map(String::toInt)
+    major * 10_000 + minor * 100 + patch
 }
 
 // 签名配置就地读 androidapp/keystore.properties (不入库, 见 .gitignore); 缺席时 release 不签名.

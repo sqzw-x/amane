@@ -21,13 +21,6 @@ fun defaultServerName(url: String): String =
 fun upsertServer(servers: List<SavedServer>, incoming: SavedServer): List<SavedServer> =
     listOf(incoming) + servers.filterNot { it.url == incoming.url }
 
-/** 编辑保存: 原位置替换, 列表顺序不因编辑而改变. */
-fun replaceServer(
-    servers: List<SavedServer>,
-    previousUrl: String,
-    updated: SavedServer,
-): List<SavedServer> = servers.map { if (it.url == previousUrl) updated else it }
-
 /**
  * 读取存储.
  *
@@ -92,10 +85,13 @@ class ServerStore(context: Context) {
         write(upsertServer(list(), server), active = server.url)
     }
 
-    /** 编辑保存: 若改的正是当前服务器, 当前项跟着改到新地址. */
+    /**
+     * 编辑保存. 改地址可能改到另一条已有的地址, 因此先摘掉旧条目再按"同一地址只留一条"写回 (与 [activate]
+     * 同一条不变量, 顺序因此置顶); 若改的正是当前服务器, 当前项跟着改到新地址.
+     */
     fun update(previousUrl: String, server: SavedServer) {
-        val active = if (active() == previousUrl) server.url else active()
-        write(replaceServer(list(), previousUrl, server), active)
+        val next = upsertServer(list().filterNot { it.url == previousUrl }, server)
+        write(next, if (active() == previousUrl) server.url else active())
     }
 
     fun remove(url: String) {

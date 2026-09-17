@@ -24,7 +24,8 @@
         <activity
             android:name=".PopupActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|layoutDirection"
-            android:exported="false" />
+            android:exported="false"
+            android:supportsPictureInPicture="true" />
 
         <!-- 入口. 不声明 orientation: WebView 旋转不重建, 播放中的画面与页面状态因此不丢.
              深色切换 (uiMode) 与字体缩放不在 configChanges 里, 重建时按 onSaveInstanceState 里的地址恢复. -->

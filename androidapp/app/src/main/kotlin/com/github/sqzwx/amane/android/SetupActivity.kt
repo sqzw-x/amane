@@ -154,7 +154,10 @@ class SetupActivity : AppCompatActivity() {
      * 卡片的横向手势: 左滑露出贴右边的编辑与删除.
      *
      * 手指落下即返回 true 才能拿到后续事件, 但此时不能禁用父级拦截, 否则列表再也滚不动; 方向确定为横向后
-     * 才 `requestDisallowInterceptTouchEvent(true)`. 纵向由外层 ScrollView 接管, 这里随 CANCEL 复位.
+     * 才 `requestDisallowInterceptTouchEvent(true)`, 纵向因此仍归外层 ScrollView.
+     *
+     * UP 与 CANCEL 必须分开: 父级把这次触摸拿去滚动列表时补发的是 CANCEL, 那次不是点击 — 若在这里
+     * `performClick()`, 用户滚动列表就会打开服务器、切走会话并关掉本页.
      */
     private fun bindSwipe(row: RowServerBinding) {
         val card = row.serverCard
@@ -182,21 +185,32 @@ class SetupActivity : AppCompatActivity() {
                             return@setOnTouchListener false
                         }
                         dragging = true
+                        card.parent?.requestDisallowInterceptTouchEvent(true)
                         reveal(card)
                     }
                     card.translationX = (startX + dx).coerceIn(-actions.width.toFloat(), 0f)
                     true
                 }
 
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                MotionEvent.ACTION_UP -> {
                     if (dragging) {
                         dragging = false
+                        card.parent?.requestDisallowInterceptTouchEvent(false)
                         settle(card, actions)
                         true
                     } else {
                         card.performClick()
                         false
                     }
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    if (dragging) {
+                        dragging = false
+                        card.parent?.requestDisallowInterceptTouchEvent(false)
+                        settle(card, actions)
+                    }
+                    false
                 }
 
                 else -> false

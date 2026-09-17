@@ -57,6 +57,12 @@ open class BrowserActivity : AppCompatActivity() {
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
 
+    /**
+     * `window.open` 的过渡 WebView: 它只用来让请求落地, 内容由 [PopupActivity] 加载.
+     * 页面不主动关闭窗口时 `onCloseWindow` 不会触发, 因此这里兜住它的生命周期.
+     */
+    private var pendingPopup: WebView? = null
+
     /** 正在等待系统选择器的 `<input type="file">` 回调; 页面并发发起多次时只保留最后一次. */
     private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
 
@@ -137,6 +143,8 @@ open class BrowserActivity : AppCompatActivity() {
     override fun onDestroy() {
         pendingFileChooser?.onReceiveValue(null)
         pendingFileChooser = null
+        pendingPopup?.destroy()
+        pendingPopup = null
         binding.webContainer.removeView(binding.webView)
         binding.webView.destroy()
         super.onDestroy()
@@ -192,22 +200,33 @@ open class BrowserActivity : AppCompatActivity() {
             resultMsg: Message,
         ): Boolean {
             val popup = WebView(this@BrowserActivity)
-            configureWebView(popup)
+            // 过渡 WebView 与弹窗都可能落到站外文档 (订阅条目、评论、Markdown 里的链接), 因此两者都不给桥.
+            configureWebView(popup, withBridge = false)
             popup.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    if (isServerUrl(request.url)) return false
+                    openExternally(request.url)
+                    dropPopup(view)
+                    return true
+                }
+
                 override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                    if (url == null) return
+                    if (url == null || !isServerUrl(Uri.parse(url))) return
                     startActivity(
                         Intent(this@BrowserActivity, PopupActivity::class.java).putExtra(EXTRA_URL, url),
                     )
+                    dropPopup(view)
                 }
             }
+            pendingPopup?.destroy()
+            pendingPopup = popup
             (resultMsg.obj as WebView.WebViewTransport).webView = popup
             resultMsg.sendToTarget()
             return true
         }
 
         override fun onCloseWindow(window: WebView) {
-            window.destroy()
+            dropPopup(window)
         }
 
         /**
@@ -285,8 +304,14 @@ open class BrowserActivity : AppCompatActivity() {
 
     // region WebView
 
+    /**
+     * 壳内 WebView 的统一配置.
+     *
+     * `withBridge` 只在承载服务端自身页面的窗口上为真: `addJavascriptInterface` 对加载的文档全部可见,
+     * 而弹窗与 `window.open` 的过渡 WebView 可能落到站外文档 (SPA 里多处 `target="_blank"` 的外链).
+     */
     @SuppressLint("SetJavaScriptEnabled")
-    private fun configureWebView(web: WebView) {
+    private fun configureWebView(web: WebView, withBridge: Boolean = true) {
         web.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -309,8 +334,8 @@ open class BrowserActivity : AppCompatActivity() {
             }
         }
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
-        // 页面经 window.amaneshell 发起服务器切换与登录清除; 其余原生入口已全部移入 SPA 界面.
-        web.addJavascriptInterface(ShellBridge(this), BRIDGE_NAME)
+        // 页面经 window.amaneshell 发起服务器切换; 其余原生入口已全部移入 SPA 界面.
+        if (withBridge) web.addJavascriptInterface(ShellBridge(this), BRIDGE_NAME)
         web.webChromeClient = ShellChromeClient()
         web.webViewClient = ShellWebViewClient()
         web.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
@@ -318,10 +343,24 @@ open class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 站内判据: scheme 与 authority 都与当前服务器一致.
+     * 主窗口与弹窗共用同一条边界 — 弹窗没有地址栏, 站外文档不能在它里面打开.
+     */
+    private fun isServerUrl(url: Uri): Boolean =
+        url.scheme in HTTP_SCHEMES && url.authority == Uri.parse(origin).authority
+
+    /** 过渡 WebView 只服务于一次 `window.open`: 内容交给 [PopupActivity] 之后即可销毁. */
+    private fun dropPopup(web: WebView) {
+        if (pendingPopup === web) pendingPopup = null
+        web.stopLoading()
+        web.post { web.destroy() }
+    }
+
     private inner class ShellWebViewClient : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url
-            if (url.scheme in HTTP_SCHEMES && url.authority == Uri.parse(origin).authority) return false
+            if (isServerUrl(url)) return false
             openExternally(url)
             return true
         }
@@ -529,7 +568,6 @@ open class BrowserActivity : AppCompatActivity() {
         private const val BOOT_CHECK_DELAY_MS = 1_500L
         private const val BOOT_CHECK_RETRY_MS = 4_000L
         private const val BOOT_CHECK_ATTEMPTS = 2
-        private const val TOKEN_COOKIE = "amane_token"
         private val HTTP_SCHEMES = listOf("http", "https")
         private val DEFAULT_ASPECT = 16 to 9
 
