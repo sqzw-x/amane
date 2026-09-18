@@ -59,12 +59,16 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def attach_user_tag(ctx: RunContext[AgentDeps], metadata_id: int, user_tag_id: int) -> str | dict[str, Any]:
-        """Attach a user tag to one metadata row."""
+        """Attach a user tag to one metadata row (already attached → OK)."""
         trace_tool(
             ctx, "tool_call", {"tool": "attach_user_tag", "metadata_id": metadata_id, "user_tag_id": user_tag_id}
         )
+        if await ctx.deps.repo.get_metadata(metadata_id) is None:
+            return {"error": f"metadata {metadata_id} 不存在"}
+        if await ctx.deps.repo.get_user_tag(user_tag_id) is None:
+            return {"error": f"user_tag {user_tag_id} 不存在"}
         if not await ctx.deps.repo.attach_user_tag(metadata_id, user_tag_id):
-            return {"error": "挂载失败 (元数据或标签不存在, 或已挂载)"}
+            return {"error": f"挂载失败: metadata {metadata_id} / user_tag {user_tag_id}"}
         trace_tool(ctx, "tool_result", {"tool": "attach_user_tag", "result": TOOL_OK})
         return TOOL_OK
 
@@ -75,7 +79,7 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
             ctx, "tool_call", {"tool": "detach_user_tag", "metadata_id": metadata_id, "user_tag_id": user_tag_id}
         )
         if not await ctx.deps.repo.detach_user_tag(metadata_id, user_tag_id):
-            return {"error": "取消挂载失败 (关联不存在)"}
+            return {"error": f"metadata {metadata_id} 未挂载 user_tag {user_tag_id}"}
         trace_tool(ctx, "tool_result", {"tool": "detach_user_tag", "result": TOOL_OK})
         return TOOL_OK
 
