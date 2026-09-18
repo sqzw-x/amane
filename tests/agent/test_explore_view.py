@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import aiosqlite
 import pytest
 import pytest_asyncio
+from pydantic_ai import RunContext
 
 from amane.agent.cache import ResultCache
 from amane.agent.executor import QueryExecutor
 from amane.agent.sql import ReadonlySqlSandbox
-from amane.agent.tools import AgentDeps, materialize_saved_query
+from amane.agent.tools import AgentDeps, build_explore_toolset, materialize_saved_query
 from amane.agent.trace import TraceEvent
 from amane.db.models import SavedQueryEntity
 from amane.db.repository import Repository
@@ -140,3 +144,28 @@ async def test_explore_without_view_truncates_sample(explore_env: tuple[AgentDep
     )
     assert len(result.rows) == 5
     assert result.row_count == -1
+
+
+def _deliver_fn() -> Callable[..., Awaitable[dict[str, Any]]]:
+    toolset = build_explore_toolset()
+    return cast(Callable[..., Awaitable[dict[str, Any]]], toolset.tools["sql_deliver"].function)
+
+
+@pytest.mark.asyncio
+async def test_sql_deliver_reports_row_count_not_id_count(explore_env: tuple[AgentDeps, Path]) -> None:
+    """交付的是行集: 重复 id 时计数取行数, 不取去重后的 id 数."""
+    deps, db = explore_env
+    async with aiosqlite.connect(db) as conn:
+        await conn.execute("CREATE TABLE links (metadata_id INTEGER)")
+        await conn.executemany("INSERT INTO links (metadata_id) VALUES (?)", [(1,), (1,), (2,)])
+        await conn.commit()
+
+    ctx = cast(RunContext[AgentDeps], SimpleNamespace(deps=deps, tool_call_approved=False))
+    out = await _deliver_fn()(
+        ctx,
+        sql="SELECT m.id FROM metadata m JOIN links l ON l.metadata_id = m.id",
+        entity=SavedQueryEntity.METADATA,
+    )
+
+    assert out["row_count"] == 3
+    assert out["saved_query_id"] in deps.last_saved_query_ids

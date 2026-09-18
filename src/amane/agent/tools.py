@@ -270,7 +270,7 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
             return {"error": str(exc)}
 
         try:
-            view_id, display_name, entity_ids = await materialize_saved_query(
+            view_id, display_name, _ = await materialize_saved_query(
                 ctx.deps,
                 sql=sql,
                 entity=entity,
@@ -284,7 +284,7 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
         out = DeliverResult(
             saved_query_id=view_id,
             name=display_name,
-            row_count=len(entity_ids) or len(result.rows),
+            row_count=len(result.rows),
         )
         trace_tool(ctx, "tool_result", {"tool": "sql_deliver", "result": out.model_dump(mode="json")})
         return out.model_dump(mode="json")
