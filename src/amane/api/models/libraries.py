@@ -71,7 +71,7 @@ class LibraryCreateRequest(BaseModel):
 if TYPE_CHECKING:
     type LibraryUpdateRequest = Library
 
-# 外部可写面: 除主键 id 外的全部库配置列.
+# 外部可写字段: 除主键 id 外的全部库配置列.
 LibraryUpdateRequest = create_partial_model(Library, ignore_fields=("id",), partial_cls_name="LibraryUpdateRequest")
 
 

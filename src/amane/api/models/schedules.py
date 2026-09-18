@@ -18,7 +18,7 @@ class ScheduleCreateRequest(BaseModel):
 if TYPE_CHECKING:
     type ScheduleUpdateRequest = Schedule
 
-# 外部可写面: 仅 name/cron/enabled; 修改 task_type/payload 须删除后重建, last_run/next_run 由调度器维护, id 只读.
+# 外部可写字段: 仅 name/cron/enabled; 修改 task_type/payload 须删除后重建, last_run/next_run 由调度器维护, id 只读.
 ScheduleUpdateRequest = create_partial_model(
     Schedule, fields=("name", "cron", "enabled"), partial_cls_name="ScheduleUpdateRequest"
 )

@@ -1,6 +1,6 @@
 # 数据模型
 
-> 表结构、字段类型、便捷属性见 `src/amane/db/models.py`. 本文记录所有权、生命周期、可写面与仍生效的禁止事项.
+> 表结构、字段类型、便捷属性见 `src/amane/db/models.py`. 本文记录所有权、生命周期、可写字段与仍生效的禁止事项.
 
 ## 数据所有权
 
@@ -53,15 +53,15 @@ ORGANIZE 复制到库路径的 poster / thumb 在 `watermark.enabled` 时按**�
 
 `raw` 的字段名 / 类型必须与当前 `MediaMetadata` 一致 — 站点级复用会把它直接反序列化. 模型改名或改类型时, 结果列与 raw 是两份数据, 需单独的 data migration (见 [database.md](database.md) Autogenerate 盲区).
 
-## 可写面与 req↔repo 兼容性
+## 可写字段与 req↔repo 兼容性
 
 更新一条记录时存在三个模型, 字段集呈包含关系: **req model (对外) ⊆ repo 入参 TypedDict (对内) ⊆ DB 列**.
 
 - **DB 列**: ground truth, 全部可持久化字段.
-- **repo 入参 TypedDict** (`src/amane/db/repo_types.py`): repo update 方法接受的内部可写面. 比 DB 列窄 (排除主键 / 时间戳), 但比对外面宽 — 含仅后端可写字段 (`Metadata.raw` / `field_sources` 由刮削写入, `Schedule.next_run` / `last_run` 由调度器维护).
-- **req model** (`src/amane/api/models/`): 对外可写面, 经 `create_partial_model(DBModel, ignore_fields=...)` 从 DB 模型派生. `ignore_fields` 把只读列与仅后端可写字段从模型上**彻底移除**, 阻断外部经 API 越权赋值; 非 DB 列的可写字段 (如 `Actor.aliases` 别名行) 经 `extra_fields` 显式纳入, 同样 partial 化且显式 `null` 被拒.
+- **repo 入参 TypedDict** (`src/amane/db/repo_types.py`): repo update 方法接受的内部可写字段. 比 DB 列窄 (排除主键 / 时间戳), 但比外部可写字段宽 — 含仅后端可写字段 (`Metadata.raw` / `field_sources` 由刮削写入, `Schedule.next_run` / `last_run` 由调度器维护).
+- **req model** (`src/amane/api/models/`): 对外可写字段, 经 `create_partial_model(DBModel, ignore_fields=...)` 从 DB 模型派生. `ignore_fields` 把只读列与仅后端可写字段从模型上**彻底移除**, 阻断外部经 API 越权赋值; 非 DB 列的可写字段 (如 `Actor.aliases` 别名行) 经 `extra_fields` 显式纳入, 同样 partial 化且显式 `null` 被拒.
 
-**可写面约束** (无运行时反射):
+**可写字段约束** (无运行时反射):
 
 1. repo update 方法**显式逐字段赋值**, 不用 `setattr`; 字段名与类型兼容性由静态类型检查保证, TypedDict 与 DB 列漂移会直接编译期报错.
 2. req↔DB 的字段 / 类型兼容性由 `create_partial_model` 的构造保证, 只需验证该函数正确 (`tests/api/test_schema_repo_compat.py`). 手写且必须是某表列字段子集的响应模型用 `@subset_of(..., covariant=)` 在导入时校验.

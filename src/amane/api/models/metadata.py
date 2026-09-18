@@ -58,7 +58,7 @@ class MetadataResponse(BaseModel):
 if TYPE_CHECKING:
     type PartialMetadata = Metadata
 
-# 外部可写面: 排除只读列 (id/number/时间戳) 与仅后端可写字段 (raw/field_sources 由刮削写入, 前端只读展示).
+# 外部可写字段: 排除只读列 (id/number/时间戳) 与仅后端可写字段 (raw/field_sources 由刮削写入, 前端只读展示).
 PartialMetadata = create_partial_model(
     Metadata,
     ignore_fields=("id", "number", "created_at", "updated_at", "raw", "field_sources"),
