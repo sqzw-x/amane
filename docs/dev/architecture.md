@@ -52,7 +52,7 @@ EventBus → 日志 → 来源插件发现 → 主 DB engine + Repository → r1
 - **PlaybackFactory 在插件目录之后**: 播放源只来自插件, 反代走独立流式客户端, rebuild 时替换并关闭旧客户端.
 - **CronScheduler / FeedService / WatcherService 在 Worker 之后**: 三者都会派生任务.
 
-停机时 lifespan `aclose` **先** `EventBus.close_all()` 再停 worker, 否则常驻 WS 会拖死 uvicorn graceful. 重启不是进程内 exec: 服务以退出码 3 退出 (避开 argparse 的 2), 由进程外监督者再次启动 (桌面壳的监督循环, Docker `unless-stopped`). Docker 不区分退出码, 容器内 `exit 3` 仍会再次启动, `docker stop` 发送 SIGTERM 则 `exit 0`. 仅 `AMANE_SUPERVISED=1` 时重启端点可用, 见 [desktop.md](desktop.md) / [config.md](config.md).
+停机时 lifespan `aclose` **先** `EventBus.close_all()` 再停 worker, 否则常驻 WS 会拖死 uvicorn graceful. 重启不是进程内 exec: 服务以退出码 3 退出 (避开 argparse 的 2), 由进程外监督者再次启动 (桌面壳的监督循环, Docker `unless-stopped`). uvicorn 的启动失败码同为 3, `amane.server.main` 将其改写为 4 供监督者区分启动失败与请求重启. Docker 不区分退出码, 容器内两种退出仍会再次启动, `docker stop` 发送 SIGTERM 则 `exit 0`. 仅 `AMANE_SUPERVISED=1` 时重启端点可用, 见 [desktop.md](desktop.md) / [config.md](config.md).
 
 ## 跨切面
 
