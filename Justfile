@@ -152,13 +152,6 @@ android-app:
 android-check:
     ./androidapp/gradlew -p androidapp --console=plain :app:assembleDebug :app:testDebugUnitTest
 
-# Tray-only against a running dev server (Windows; no supervisor)
-[env('AMANE_UI_ONLY', '1')]
-[env('AMANE_HOST', host)]
-[env('AMANE_PORT', port)]
-windows-bar:
-    dotnet run --project winapp
-
 # Full local gate: generate → fix → check → build
 all: generate fix check build
 
