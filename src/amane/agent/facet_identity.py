@@ -6,7 +6,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 
 from ..db.models import SCRAPE_FACET_KINDS, FacetKind
-from .tools import AgentDeps, require_approval, trace_tool
+from .tools import TOOL_OK, AgentDeps, require_approval, trace_tool
 
 
 def build_facet_identity_capability() -> Capability[AgentDeps]:
@@ -21,7 +21,9 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
     )
 
     @cap.tool
-    async def rename_facet(ctx: RunContext[AgentDeps], kind: FacetKind, facet_id: int, name: str) -> dict[str, Any]:
+    async def rename_facet(
+        ctx: RunContext[AgentDeps], kind: FacetKind, facet_id: int, name: str
+    ) -> str | dict[str, Any]:
         """Rename a facet. Conflicting name → error (use merge_facets)."""
         cleaned = name.strip()
         trace_tool(ctx, "tool_call", {"tool": "rename_facet", "kind": kind, "facet_id": facet_id, "name": cleaned})
@@ -33,14 +35,13 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
             return {"error": str(exc)}
         if item is None:
             return {"error": f"{kind} {facet_id} 不存在"}
-        out = {"id": item.id, "kind": kind, "name": item.name, "count": item.count}
-        trace_tool(ctx, "tool_result", {"tool": "rename_facet", "result": out})
-        return out
+        trace_tool(ctx, "tool_result", {"tool": "rename_facet", "result": TOOL_OK})
+        return TOOL_OK
 
     @cap.tool
     async def merge_facets(
         ctx: RunContext[AgentDeps], kind: FacetKind, target_id: int, source_ids: list[int]
-    ) -> dict[str, Any]:
+    ) -> str | dict[str, Any]:
         """Merge source facet ids into target; sources are deleted."""
         if not source_ids:
             return {"error": "source_ids 为空"}
@@ -54,22 +55,13 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
             tool="merge_facets",
             extra={"kind": kind, "target_id": target_id, "source_ids": list(source_ids)},
         )
-        item = await ctx.deps.repo.merge_facets(kind, target_id, source_ids)
-        if item is None:
-            return {"error": "目标分类不存在", "tool": "merge_facets"}
-        out = {
-            "tool": "merge_facets",
-            "kind": kind,
-            "id": item.id,
-            "name": item.name,
-            "count": item.count,
-            "source_ids": list(source_ids),
-        }
-        trace_tool(ctx, "tool_result", {"tool": "merge_facets", "result": out})
-        return out
+        if await ctx.deps.repo.merge_facets(kind, target_id, source_ids) is None:
+            return {"error": "目标分类不存在"}
+        trace_tool(ctx, "tool_result", {"tool": "merge_facets", "result": TOOL_OK})
+        return TOOL_OK
 
     @cap.tool
-    async def delete_facet(ctx: RunContext[AgentDeps], kind: FacetKind, facet_id: int) -> dict[str, Any]:
+    async def delete_facet(ctx: RunContext[AgentDeps], kind: FacetKind, facet_id: int) -> str | dict[str, Any]:
         """Delete a facet (scrape kinds → block rule)."""
         detail = f"删除分类 {kind} id={facet_id}"
         trace_tool(ctx, "tool_call", {"tool": "delete_facet", "kind": kind, "facet_id": facet_id})
@@ -79,17 +71,10 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
             tool="delete_facet",
             extra={"kind": kind, "facet_id": facet_id},
         )
-        ok = await ctx.deps.repo.delete_facet(kind, facet_id)
-        out: dict[str, Any] = {
-            "tool": "delete_facet",
-            "kind": kind,
-            "facet_id": facet_id,
-            "deleted": ok,
-        }
-        if not ok:
-            out["error"] = f"{kind} {facet_id} 不存在"
-        trace_tool(ctx, "tool_result", {"tool": "delete_facet", "result": out})
-        return out
+        if not await ctx.deps.repo.delete_facet(kind, facet_id):
+            return {"error": f"{kind} {facet_id} 不存在"}
+        trace_tool(ctx, "tool_result", {"tool": "delete_facet", "result": TOOL_OK})
+        return TOOL_OK
 
     @cap.tool
     async def list_facet_rules(ctx: RunContext[AgentDeps], kind: FacetKind) -> dict[str, Any]:
@@ -104,19 +89,18 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
         items = [
             {
                 "id": r.id,
-                "kind": str(r.kind),
                 "source_name": r.source_name,
                 "action": str(r.action),
                 "target_name": r.target_name,
             }
             for r in rules
         ]
-        out = {"kind": kind, "items": items, "total": len(items)}
-        trace_tool(ctx, "tool_result", {"tool": "list_facet_rules", "result": {"total": out["total"]}})
+        out = {"items": items}
+        trace_tool(ctx, "tool_result", {"tool": "list_facet_rules", "result": {"total": len(items)}})
         return out
 
     @cap.tool
-    async def delete_facet_rule(ctx: RunContext[AgentDeps], kind: FacetKind, rule_id: int) -> dict[str, Any]:
+    async def delete_facet_rule(ctx: RunContext[AgentDeps], kind: FacetKind, rule_id: int) -> str | dict[str, Any]:
         """Delete one facet rule (does not backfill metadata)."""
         if kind not in SCRAPE_FACET_KINDS:
             return {"error": "该分类不支持规则"}
@@ -128,16 +112,9 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
             tool="delete_facet_rule",
             extra={"kind": kind, "rule_id": rule_id},
         )
-        ok = await ctx.deps.repo.delete_facet_rule(kind, rule_id)
-        out: dict[str, Any] = {
-            "tool": "delete_facet_rule",
-            "kind": kind,
-            "rule_id": rule_id,
-            "deleted": ok,
-        }
-        if not ok:
-            out["error"] = f"规则 {rule_id} 不存在"
-        trace_tool(ctx, "tool_result", {"tool": "delete_facet_rule", "result": out})
-        return out
+        if not await ctx.deps.repo.delete_facet_rule(kind, rule_id):
+            return {"error": f"规则 {rule_id} 不存在"}
+        trace_tool(ctx, "tool_result", {"tool": "delete_facet_rule", "result": TOOL_OK})
+        return TOOL_OK
 
     return cap

@@ -11,7 +11,7 @@ from ..db.models import Library, TaskType
 from ..db.repo_types import LibraryUpdates
 from ..enums import LibraryAutomation, LibraryIngest
 from ..handlers.models import RefreshPayload, ScanMode
-from .tools import AgentDeps, require_approval, trace_tool
+from .tools import TOOL_OK, AgentDeps, require_approval, trace_tool, unknown_field_error
 
 _LIBRARY_UPDATE_KEYS = frozenset(
     {
@@ -102,7 +102,7 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
             return {"error": str(exc)}
         assert lib.id is not None
         _sync_library(ctx.deps, lib)
-        task_id: int | None = None
+        out: dict[str, Any] = {"library_id": lib.id}
         if scan:
             task = await ctx.deps.repo.create_task(
                 TaskType.REFRESH,
@@ -116,20 +116,21 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
                 ),
             )
             assert task.id is not None
-            task_id = task.id
-        out = {"id": lib.id, "name": lib.name, "path": lib.path, "refresh_task_id": task_id}
+            out["refresh_task_id"] = task.id
         trace_tool(ctx, "tool_result", {"tool": "create_library", "result": out})
         return out
 
     @cap.tool
-    async def update_library(ctx: RunContext[AgentDeps], library_id: int, patch: dict[str, Any]) -> dict[str, Any]:
+    async def update_library(
+        ctx: RunContext[AgentDeps], library_id: int, patch: dict[str, Any]
+    ) -> str | dict[str, Any]:
         """Patch library config fields."""
         trace_tool(ctx, "tool_call", {"tool": "update_library", "library_id": library_id, "patch": patch})
         if not patch:
             return {"error": "patch 为空"}
         unknown = sorted(set(patch) - _LIBRARY_UPDATE_KEYS)
         if unknown:
-            return {"error": f"不允许的字段: {', '.join(unknown)}"}
+            return unknown_field_error(unknown, _LIBRARY_UPDATE_KEYS)
         if "automation" in patch:
             try:
                 patch["automation"] = LibraryAutomation(patch["automation"])
@@ -164,12 +165,11 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
         }
         if watch_fields & set(patch):
             _sync_library(ctx.deps, lib)
-        out = {"id": lib.id, "name": lib.name, "path": lib.path, "updated": True}
-        trace_tool(ctx, "tool_result", {"tool": "update_library", "result": out})
-        return out
+        trace_tool(ctx, "tool_result", {"tool": "update_library", "result": TOOL_OK})
+        return TOOL_OK
 
     @cap.tool
-    async def delete_library(ctx: RunContext[AgentDeps], library_id: int) -> dict[str, Any]:
+    async def delete_library(ctx: RunContext[AgentDeps], library_id: int) -> str | dict[str, Any]:
         """Delete a library and its MediaFile index rows."""
         detail = f"删除媒体库 id={library_id} (仅索引, 不动磁盘文件)"
         trace_tool(ctx, "tool_call", {"tool": "delete_library", "library_id": library_id})
@@ -181,20 +181,12 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
         )
         existing = await ctx.deps.repo.list_libraries()
         if not any(lib.id == library_id for lib in existing):
-            out = {"tool": "delete_library", "library_id": library_id, "deleted": False, "error": "不存在"}
-            trace_tool(ctx, "tool_result", {"tool": "delete_library", "result": out})
-            return out
+            return {"error": f"library {library_id} 不存在"}
         if ctx.deps.bridge.watcher is not None:
             ctx.deps.bridge.watcher.remove_library(library_id)
-        deleted_media = await ctx.deps.repo.delete_library(library_id)
-        out = {
-            "tool": "delete_library",
-            "library_id": library_id,
-            "deleted": True,
-            "deleted_media": deleted_media,
-        }
-        trace_tool(ctx, "tool_result", {"tool": "delete_library", "result": out})
-        return out
+        await ctx.deps.repo.delete_library(library_id)
+        trace_tool(ctx, "tool_result", {"tool": "delete_library", "result": TOOL_OK})
+        return TOOL_OK
 
     @cap.tool
     async def enqueue_library_refresh(
@@ -236,7 +228,7 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
             ),
         )
         assert task.id is not None
-        out = {"task_id": task.id, "library_id": library_id, "scan": sorted(scan)}
+        out = {"task_id": task.id}
         trace_tool(ctx, "tool_result", {"tool": "enqueue_library_refresh", "result": out})
         return out
 

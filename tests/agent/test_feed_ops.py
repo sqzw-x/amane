@@ -16,7 +16,7 @@ from amane.agent.cache import ResultCache
 from amane.agent.executor import QueryExecutor
 from amane.agent.feed_ops import AgentFeedCreate, AgentFeedItemBatch, AgentFeedUpdate, build_feed_ops_capability
 from amane.agent.sql import ReadonlySqlSandbox
-from amane.agent.tools import AgentDeps
+from amane.agent.tools import TOOL_OK, AgentDeps
 from amane.agent.trace import TraceEvent
 from amane.api.models.feeds import FeedItemBatchAction
 from amane.db.models import FeedItemReadState, FeedItemState
@@ -103,13 +103,14 @@ async def test_create_update_and_poll_feed(feed_deps: AgentDeps) -> None:
             interval_seconds=600,
         ),
     )
-    assert create["name"] == "source"
-    assert create["group"] == "jav/rsshub"
-    assert create["interval_seconds"] == 600
-    assert create["ignore_keywords"] == []
-    assert create["unread_count"] == 0
-    feed_id = int(create["id"])
+    feed_id = int(create["feed_id"])
     assert polled == [feed_id]
+    stored = await feed_deps.repo.get_feed(feed_id)
+    assert stored is not None
+    assert stored.name == "source"
+    assert stored.group == "jav/rsshub"
+    assert stored.interval_seconds == 600
+    assert stored.ignore_keywords == []
 
     updated = await _tool_fn("update_feed")(
         _Ctx(feed_deps),
@@ -122,15 +123,31 @@ async def test_create_update_and_poll_feed(feed_deps: AgentDeps) -> None:
             ignore_keywords=[" 合集 ", "合集"],
         ),
     )
-    assert updated["enabled"] is False
-    assert updated["auto_enqueue"] is False
-    assert updated["content_type"] == "fc2"
-    assert updated["use_cache"] == []
-    assert updated["ignore_keywords"] == ["合集"]
+    assert updated == TOOL_OK
+    stored = await feed_deps.repo.get_feed(feed_id)
+    assert stored is not None
+    assert stored.enabled is False
+    assert stored.auto_enqueue is False
+    assert stored.content_type == ContentType.FC2
+    assert stored.use_cache == []
+    assert stored.ignore_keywords == ["合集"]
 
     polled_now = await _tool_fn("poll_feed")(_Ctx(feed_deps), feed_id=feed_id)
-    assert polled_now["id"] == feed_id
+    assert polled_now == TOOL_OK
     assert polled == [feed_id, feed_id]
+
+
+@pytest.mark.asyncio
+async def test_poll_feed_surfaces_fetch_error(feed_deps: AgentDeps) -> None:
+    """FeedService 把抓取失败写进 last_error 而不是抛出, 工具须把它当失败回报."""
+
+    async def poll(feed_id: int) -> None:
+        await feed_deps.repo.update_feed(feed_id, last_error="connection reset")
+
+    feed = await feed_deps.repo.create_feed(name="source", url="https://example.com/broken.xml")
+    assert feed.id is not None
+    feed_deps.bridge.poll_feed = poll
+    assert await _tool_fn("poll_feed")(_Ctx(feed_deps), feed_id=feed.id) == {"error": "拉取失败: connection reset"}
 
 
 @pytest.mark.asyncio
@@ -170,22 +187,16 @@ async def test_list_and_batch_feed_items(feed_deps: AgentDeps) -> None:
         search="First",
     )
     assert listed["total"] == 1
-    assert listed["items"][0]["item_key"] == "first"
-    assert listed["items"][0]["read_at"] is None
+    assert listed["items"][0]["number"] == "ABC-001"
+    assert listed["items"][0]["read"] is False
+    assert listed["items"][0]["ignored"] is False
 
     read = await _tool_fn("batch_feed_items")(
         _Ctx(feed_deps),
         feed_id=feed.id,
         request=AgentFeedItemBatch(action=FeedItemBatchAction.READ, ids=[first.id, first.id, foreign.id, 9999]),
     )
-    assert read == {
-        "action": "read",
-        "affected": 1,
-        "missing": 2,
-        "skipped": 0,
-        "submitted": 0,
-        "task_ids": [],
-    }
+    assert read == {"affected": 1, "missing": 2}
     unread_list = await _tool_fn("list_feed_items")(
         _Ctx(feed_deps),
         feed_id=feed.id,
@@ -200,33 +211,22 @@ async def test_list_and_batch_feed_items(feed_deps: AgentDeps) -> None:
         read=FeedItemReadState.READ,
     )
     assert seen_list["total"] == 1
-    assert seen_list["items"][0]["item_key"] == "first"
-    assert seen_list["items"][0]["read_at"] is not None
+    assert seen_list["items"][0]["number"] == "ABC-001"
+    assert seen_list["items"][0]["read"] is True
 
     ignored = await _tool_fn("batch_feed_items")(
         _Ctx(feed_deps),
         feed_id=feed.id,
         request=AgentFeedItemBatch(action=FeedItemBatchAction.IGNORE, ids=[first.id, first.id, foreign.id, 9999]),
     )
-    assert ignored == {
-        "action": "ignore",
-        "affected": 1,
-        "missing": 2,
-        "skipped": 0,
-        "submitted": 0,
-        "task_ids": [],
-    }
+    assert ignored == {"affected": 1, "missing": 2}
 
     scraped = await _tool_fn("batch_feed_items")(
         _Ctx(feed_deps),
         feed_id=feed.id,
         request=AgentFeedItemBatch(action=FeedItemBatchAction.SCRAPE, ids=[first.id, duplicate.id, no_number.id]),
     )
-    assert scraped["affected"] == 3
-    assert scraped["missing"] == 0
-    assert scraped["skipped"] == 1
-    assert scraped["submitted"] == 1
-    assert len(scraped["task_ids"]) == 1
+    assert scraped == {"affected": 3, "missing": 0, "skipped": 1, "submitted": 1}
     tasks = await feed_deps.repo.list_tasks()
     assert len(tasks) == 1
     assert tasks[0].payload == {
@@ -257,11 +257,12 @@ async def test_delete_feed_and_items_require_approval(feed_deps: AgentDeps) -> N
         feed_id=feed.id,
         request=AgentFeedItemBatch(action=FeedItemBatchAction.DELETE, ids=[item.id]),
     )
-    assert deleted_item["affected"] == 1
+    assert deleted_item == {"affected": 1, "missing": 0}
 
     with pytest.raises(ApprovalRequired):
         await _tool_fn("delete_feed")(_Ctx(feed_deps, tool_call_id="tc-feed"), feed_id=feed.id)
     deleted_feed = await _tool_fn("delete_feed")(
         _Ctx(feed_deps, tool_call_id="tc-feed", tool_call_approved=True), feed_id=feed.id
     )
-    assert deleted_feed["deleted"] is True
+    assert deleted_feed == TOOL_OK
+    assert await feed_deps.repo.get_feed(feed.id) is None

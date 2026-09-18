@@ -17,7 +17,7 @@ from amane.agent.executor import QueryExecutor
 from amane.agent.metadata_ops import build_metadata_ops_capability
 from amane.agent.runtime import build_agent
 from amane.agent.sql import ReadonlySqlSandbox
-from amane.agent.tools import AgentDeps, build_explore_toolset
+from amane.agent.tools import TOOL_OK, AgentDeps, build_explore_toolset
 from amane.agent.trace import TraceEvent
 from amane.config import AgentConfig
 from amane.db.repository import Repository
@@ -106,11 +106,21 @@ async def test_update_metadata_tool(write_deps: AgentDeps) -> None:
     mid = items[0].id
     assert mid is not None
     out = await _tool_fn("update_metadata")(_Ctx(write_deps), metadata_id=mid, patch={"title": "Patched"})
-    assert out.get("updated") is True
-    assert out.get("title") == "Patched"
+    assert out == TOOL_OK
     row = await write_deps.repo.get_metadata(mid)
     assert row is not None
     assert row.title == "Patched"
+
+
+@pytest.mark.asyncio
+async def test_update_metadata_rejects_unknown_field_with_writable_list(write_deps: AgentDeps) -> None:
+    """拒绝未知字段时须一并回可写字段, 否则模型只能反复试探."""
+    items, _total = await write_deps.repo.list_metadata(limit=10)
+    mid = items[0].id
+    assert mid is not None
+    out = await _tool_fn("update_metadata")(_Ctx(write_deps), metadata_id=mid, patch={"nope": 1})
+    assert out["error"].startswith("不允许的字段: nope; 可写字段: ")
+    assert "title" in out["error"]
 
 
 @pytest.mark.asyncio
@@ -124,6 +134,5 @@ async def test_delete_metadata_registers_approval(write_deps: AgentDeps) -> None
     result = await _tool_fn("delete_metadata")(
         _Ctx(write_deps, tool_call_id="tc-del-md", tool_call_approved=True), metadata_id=1
     )
-    assert result.get("tool") == "delete_metadata"
-    assert result.get("metadata_id") == 1
-    assert "deleted" in result
+    assert result == TOOL_OK
+    assert await write_deps.repo.get_metadata(1) is None

@@ -35,6 +35,16 @@
 
 指令只保留域特有约束. 全局约定 (id 一律取自 `sql_explore` / `sql_deliver`、破坏性操作批准、失败返回 `{error}`、入参先取 schema) 集中在系统提示, 不逐工具重复; capability id 不再对模型可见, 指令中不得引用.
 
+### 返回值
+
+工具返回值是模型上下文的一部分, 每个 token 都要付钱, 因此只回**下一步需要的观测**:
+
+- 成功且无后续依赖 → `tools.py::TOOL_OK` (纯回执); 创建 → 新对象 id (键名用入参口径, 如 `feed_id`); 批量 → 计数 (`affected` / `missing` / `submitted` / `skipped`).
+- 不回入参与工具名回显、时间戳、耗时 (`elapsed_ms`)、以及能由返回值本身算出的字段 — `total` 只在分页列表里回, 因为它是翻页的依据.
+- 列表工具只回识别与筛选所需字段 (id / 名称 / 归属 / 状态 / 计数), 细节留给 `get_*` 或 `sql_explore`; `get_*` 回该行当前状态, 是详情视图.
+- 失败只回 `{"error": ...}`, 文案须自足且可行动: 点名出错输入, 并给出下一步 (可写字段清单、可用类型及其字段定义).
+- 大块结果保持"列名 + 行数组"结构, 列名只回一次, 不按行重复键名.
+
 执行前只修改实际调用与落入 `messages.json` 的 `tool_name`: `__` 最后一段恰好是当前可调用名时裁成该段; 名字已在可调用集合里或后缀对不上则原样交给框架 (未知工具仍 `ModelRetry`). 流式 SSE 徽章仍可能显示模型原始名.
 
 `actor-ops` 的别名工具对应别名模型 (见 [data-model.md](data-model.md) 演员身份): 别名是一对多行, `resolve_actor_name` 多命中即歧义, 应交由用户决定; `set_actor_display_name` 与 `facet-identity.rename_facet(kind=actor)` 等价, 二者任一即可, 不允许重复调用. `PATCH /config` **不**暴露为工具.

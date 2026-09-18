@@ -12,7 +12,7 @@ from pydantic_ai.capabilities import Capability
 from ..api.support.task_resolve import resolve_submission
 from ..db.models import TaskStatus
 from .payload_schema import TASK_SUBMISSION, TaskSubmissionType
-from .tools import AgentDeps, trace_tool
+from .tools import TOOL_OK, AgentDeps, trace_tool
 
 
 def build_task_ops_capability() -> Capability[AgentDeps]:
@@ -31,7 +31,7 @@ def build_task_ops_capability() -> Capability[AgentDeps]:
     ) -> dict[str, Any]:
         """Return the accepted fields for one task submission type."""
         trace_tool(ctx, "tool_call", {"tool": "get_task_submission_schema", "type": submission_type})
-        out = {"submission_type": submission_type, "schema": TASK_SUBMISSION.schema(submission_type)}
+        out = TASK_SUBMISSION.schema(submission_type)
         trace_tool(ctx, "tool_result", {"tool": "get_task_submission_schema", "type": submission_type})
         return out
 
@@ -50,12 +50,12 @@ def build_task_ops_capability() -> Capability[AgentDeps]:
             return {"error": str(exc)}
         task = await ctx.deps.repo.create_task(task_type=task_type, payload=payload)
         assert task.id is not None
-        out = {"task_id": task.id, "type": task_type, "status": str(task.status)}
+        out = {"task_id": task.id}
         trace_tool(ctx, "tool_result", {"tool": "submit_task", "result": out})
         return out
 
     @cap.tool
-    async def cancel_task(ctx: RunContext[AgentDeps], task_id: int) -> dict[str, Any]:
+    async def cancel_task(ctx: RunContext[AgentDeps], task_id: int) -> str | dict[str, Any]:
         """Cancel a queued or running task."""
         trace_tool(ctx, "tool_call", {"tool": "cancel_task", "task_id": task_id})
         task = await ctx.deps.repo.get_task(task_id)
@@ -73,9 +73,8 @@ def build_task_ops_capability() -> Capability[AgentDeps]:
             await ctx.deps.repo.fail_task(task_id, error="Cancelled by user")
         else:
             return {"error": f"无法取消状态为 '{task.status}' 的任务"}
-        out = {"task_id": task_id, "cancelled": True, "previous_status": task.status}
-        trace_tool(ctx, "tool_result", {"tool": "cancel_task", "result": out})
-        return out
+        trace_tool(ctx, "tool_result", {"tool": "cancel_task", "result": TOOL_OK})
+        return TOOL_OK
 
     @cap.tool
     async def retry_task(ctx: RunContext[AgentDeps], task_id: int) -> dict[str, Any]:
@@ -88,7 +87,7 @@ def build_task_ops_capability() -> Capability[AgentDeps]:
             return {"error": "仅失败任务可重试"}
         new_task = await ctx.deps.repo.create_task(task_type=task.type, payload=task.payload, priority=task.priority)
         assert new_task.id is not None
-        out = {"original_task_id": task_id, "task_id": new_task.id, "type": str(new_task.type)}
+        out = {"task_id": new_task.id}
         trace_tool(ctx, "tool_result", {"tool": "retry_task", "result": out})
         return out
 

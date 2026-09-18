@@ -8,12 +8,12 @@ from pydantic import BaseModel, ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 
-from ..api.models.schedules import ScheduleListResponse, ScheduleResponse
+from ..api.models.schedules import ScheduleResponse
 from ..db.models import RoutineType, Schedule
 from ..db.repo_types import ScheduleUpdates
 from ..utils.model import to_resp
 from .payload_schema import ROUTINE_SUBMISSION, RoutineSubmissionType
-from .tools import AgentDeps, require_approval, trace_tool
+from .tools import TOOL_OK, AgentDeps, require_approval, trace_tool
 
 
 class AgentScheduleUpdate(BaseModel):
@@ -24,8 +24,31 @@ class AgentScheduleUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class ScheduleSummary(BaseModel):
+    """列表视图 (`list_schedules`): 不带 routine payload, 细节走 get_schedule."""
+
+    id: int
+    name: str | None
+    cron: str
+    task_type: RoutineType
+    enabled: bool
+    next_run: datetime | None
+
+
 def _schedule_info(schedule: Schedule) -> ScheduleResponse:
     return to_resp(ScheduleResponse, schedule)
+
+
+def _schedule_summary(schedule: Schedule) -> ScheduleSummary:
+    assert schedule.id is not None
+    return ScheduleSummary(
+        id=schedule.id,
+        name=schedule.name,
+        cron=schedule.cron,
+        task_type=schedule.task_type,
+        enabled=schedule.enabled,
+        next_run=schedule.next_run,
+    )
 
 
 def build_schedule_ops_capability() -> Capability[AgentDeps]:
@@ -43,8 +66,9 @@ def build_schedule_ops_capability() -> Capability[AgentDeps]:
         """List all routine schedules."""
         trace_tool(ctx, "tool_call", {"tool": "list_schedules"})
         schedules = await ctx.deps.repo.list_schedules()
-        out = ScheduleListResponse(items=[_schedule_info(schedule) for schedule in schedules], total=len(schedules))
-        result = out.model_dump(mode="json")
+        result: dict[str, object] = {
+            "items": [_schedule_summary(schedule).model_dump(mode="json") for schedule in schedules]
+        }
         trace_tool(ctx, "tool_result", {"tool": "list_schedules", "result": result})
         return result
 
@@ -65,7 +89,7 @@ def build_schedule_ops_capability() -> Capability[AgentDeps]:
     ) -> dict[str, Any]:
         """Return the accepted fields for one routine submission type."""
         trace_tool(ctx, "tool_call", {"tool": "get_routine_submission_schema", "type": submission_type})
-        out = {"submission_type": submission_type, "schema": ROUTINE_SUBMISSION.schema(submission_type)}
+        out = ROUTINE_SUBMISSION.schema(submission_type)
         trace_tool(ctx, "tool_result", {"tool": "get_routine_submission_schema", "type": submission_type})
         return out
 
@@ -99,14 +123,15 @@ def build_schedule_ops_capability() -> Capability[AgentDeps]:
             enabled=enabled,
             next_run=next_run,
         )
-        result = _schedule_info(schedule).model_dump(mode="json")
+        assert schedule.id is not None
+        result: dict[str, object] = {"schedule_id": schedule.id}
         trace_tool(ctx, "tool_result", {"tool": "create_schedule", "result": result})
         return result
 
     @cap.tool
     async def update_schedule(
         ctx: RunContext[AgentDeps], schedule_id: int, patch: AgentScheduleUpdate
-    ) -> dict[str, object]:
+    ) -> str | dict[str, object]:
         """Patch schedule name, cron, or enabled state."""
         trace_tool(
             ctx,
@@ -136,12 +161,11 @@ def build_schedule_ops_capability() -> Capability[AgentDeps]:
         updated = await ctx.deps.repo.update_schedule(schedule_id, **cast(ScheduleUpdates, updates))
         if updated is None:
             return {"error": f"schedule {schedule_id} 不存在"}
-        result = _schedule_info(updated).model_dump(mode="json")
-        trace_tool(ctx, "tool_result", {"tool": "update_schedule", "result": result})
-        return result
+        trace_tool(ctx, "tool_result", {"tool": "update_schedule", "result": TOOL_OK})
+        return TOOL_OK
 
     @cap.tool
-    async def trigger_schedule(ctx: RunContext[AgentDeps], schedule_id: int) -> dict[str, object]:
+    async def trigger_schedule(ctx: RunContext[AgentDeps], schedule_id: int) -> str | dict[str, object]:
         """Mark a schedule due for execution on the next CronScheduler tick."""
         trace_tool(ctx, "tool_call", {"tool": "trigger_schedule", "schedule_id": schedule_id})
         schedule = await ctx.deps.repo.get_schedule(schedule_id)
@@ -151,21 +175,18 @@ def build_schedule_ops_capability() -> Capability[AgentDeps]:
         updated = await ctx.deps.repo.update_schedule(schedule.id, next_run=datetime.now(UTC))
         if updated is None:
             return {"error": f"schedule {schedule_id} 不存在"}
-        result = _schedule_info(updated).model_dump(mode="json")
-        trace_tool(ctx, "tool_result", {"tool": "trigger_schedule", "result": result})
-        return result
+        trace_tool(ctx, "tool_result", {"tool": "trigger_schedule", "result": TOOL_OK})
+        return TOOL_OK
 
     @cap.tool
-    async def delete_schedule(ctx: RunContext[AgentDeps], schedule_id: int) -> dict[str, object]:
+    async def delete_schedule(ctx: RunContext[AgentDeps], schedule_id: int) -> str | dict[str, object]:
         """Delete a routine schedule."""
         detail = f"删除定时任务 id={schedule_id}"
         trace_tool(ctx, "tool_call", {"tool": "delete_schedule", "schedule_id": schedule_id})
         require_approval(ctx, sql=detail, tool="delete_schedule", extra={"schedule_id": schedule_id})
-        deleted = await ctx.deps.repo.delete_schedule(schedule_id)
-        result: dict[str, object] = {"tool": "delete_schedule", "schedule_id": schedule_id, "deleted": deleted}
-        if not deleted:
-            result["error"] = f"schedule {schedule_id} 不存在"
-        trace_tool(ctx, "tool_result", {"tool": "delete_schedule", "result": result})
-        return result
+        if not await ctx.deps.repo.delete_schedule(schedule_id):
+            return {"error": f"schedule {schedule_id} 不存在"}
+        trace_tool(ctx, "tool_result", {"tool": "delete_schedule", "result": TOOL_OK})
+        return TOOL_OK
 
     return cap

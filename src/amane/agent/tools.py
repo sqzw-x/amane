@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -28,34 +29,34 @@ class NeedsApprovalPayload(BaseModel):
     reason: str = "allow_slow"
 
 
+TOOL_OK = "OK"
+"""成功回执: 模型下一步不需要任何观测的写操作只回它. 见 docs/dev/agent.md 返回值契约."""
+
+
+def unknown_field_error(unknown: Iterable[str], allowed: Iterable[str]) -> dict[str, Any]:
+    """patch 拒绝未知字段时一并回可写字段, 省掉一轮试探."""
+    return {"error": f"不允许的字段: {', '.join(sorted(unknown))}; 可写字段: {', '.join(sorted(allowed))}"}
+
+
 class ExploreResult(BaseModel):
     columns: list[str]
     sample_rows: list[list[Any]]
     row_count: int
-    elapsed_ms: float
     truncated: bool = False
     saved_query_id: int | None = None
     """create_view 时物化的会话视图 id."""
-    id_count: int | None = None
 
 
 class DeliverResult(BaseModel):
     saved_query_id: int
     name: str
-    entity: SavedQueryEntity
-    id_count: int
-    columns: list[str]
-    sample_rows: list[list[Any]]
-    elapsed_ms: float
+    row_count: int
 
 
 class InspectResult(BaseModel):
-    saved_query_id: int
     columns: list[str]
     rows: list[list[Any]]
-    offset: int
-    limit: int
-    total_ids: int
+    total: int
 
 
 @dataclass
@@ -223,17 +224,14 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
                 columns=result.columns,
                 sample_rows=result.rows[: ctx.deps.sample_limit],
                 row_count=len(result.rows),
-                elapsed_ms=result.elapsed_ms,
                 truncated=False,
                 saved_query_id=view_id,
-                id_count=len(result.rows),
             )
         else:
             out = ExploreResult(
                 columns=result.columns,
                 sample_rows=result.rows[: ctx.deps.sample_limit],
                 row_count=result.row_count if result.row_count >= 0 else len(result.rows),
-                elapsed_ms=result.elapsed_ms,
                 truncated=result.row_count < 0,
             )
         trace_tool(ctx, "tool_result", {"tool": "sql_explore", "result": out.model_dump(mode="json")})
@@ -286,11 +284,7 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
         out = DeliverResult(
             saved_query_id=view_id,
             name=display_name,
-            entity=entity or SavedQueryEntity.DATA,
-            id_count=len(entity_ids) or len(result.rows),
-            columns=result.columns,
-            sample_rows=result.rows[: ctx.deps.sample_limit],
-            elapsed_ms=result.elapsed_ms,
+            row_count=len(entity_ids) or len(result.rows),
         )
         trace_tool(ctx, "tool_result", {"tool": "sql_deliver", "result": out.model_dump(mode="json")})
         return out.model_dump(mode="json")
@@ -319,12 +313,9 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
             return {"error": str(exc)}
 
         out = InspectResult(
-            saved_query_id=saved_query_id,
             columns=cached.columns,
             rows=cached.rows[offset : offset + limit],
-            offset=offset,
-            limit=limit,
-            total_ids=len(cached.rows),
+            total=len(cached.rows),
         )
         trace_tool(ctx, "tool_result", {"tool": "inspect_result", "result": out.model_dump(mode="json")})
         return out.model_dump(mode="json")

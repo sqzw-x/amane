@@ -16,7 +16,7 @@ from amane.agent.cache import ResultCache
 from amane.agent.executor import QueryExecutor
 from amane.agent.schedule_ops import AgentScheduleUpdate, build_schedule_ops_capability
 from amane.agent.sql import ReadonlySqlSandbox
-from amane.agent.tools import AgentDeps
+from amane.agent.tools import TOOL_OK, AgentDeps
 from amane.agent.trace import TraceEvent
 from amane.db.models import RoutineType
 from amane.db.repository import Repository
@@ -89,27 +89,32 @@ async def test_create_update_and_trigger_schedule(schedule_deps: AgentDeps) -> N
         cron="0 3 * * *",
         submission={"type": "cleanup", "remove_missing_files": False},
     )
-    assert created["name"] == "nightly"
-    assert created["task_type"] == RoutineType.CLEANUP
-    assert created["payload"] == {
+    schedule_id = int(created["schedule_id"])
+    stored = await schedule_deps.repo.get_schedule(schedule_id)
+    assert stored is not None
+    assert stored.name == "nightly"
+    assert stored.task_type == RoutineType.CLEANUP
+    assert stored.payload == {
         "type": "cleanup",
         "remove_missing_files": False,
         "remove_unreferenced_resources": True,
     }
-    schedule_id = int(created["id"])
 
     updated = await _tool_fn("update_schedule")(
         _Ctx(schedule_deps), schedule_id=schedule_id, patch=AgentScheduleUpdate(cron="0 4 * * *", enabled=False)
     )
-    assert updated["cron"] == "0 4 * * *"
-    assert updated["enabled"] is False
-    assert updated["next_run"] is not None
-    assert updated["payload"] == created["payload"]
+    assert updated == TOOL_OK
+    stored = await schedule_deps.repo.get_schedule(schedule_id)
+    assert stored is not None
+    assert stored.cron == "0 4 * * *"
+    assert stored.enabled is False
+    assert stored.next_run is not None
 
     triggered = await _tool_fn("trigger_schedule")(_Ctx(schedule_deps), schedule_id=schedule_id)
-    assert triggered["next_run"] is not None
-    assert triggered["task_type"] == RoutineType.CLEANUP
-    assert await schedule_deps.repo.get_schedule(schedule_id) is not None
+    assert triggered == TOOL_OK
+    stored = await schedule_deps.repo.get_schedule(schedule_id)
+    assert stored is not None and stored.next_run is not None
+    assert stored.task_type == RoutineType.CLEANUP
 
 
 @pytest.mark.asyncio
@@ -119,17 +124,20 @@ async def test_schedule_supports_rescrape_and_rejects_invalid_changes(schedule_d
         cron="*/15 * * * *",
         submission={"type": "rescrape", "limit": 25, "min_age_days": 7},
     )
-    assert created["task_type"] == RoutineType.RESCRAPE
-    assert created["payload"]["limit"] == 25
-    assert created["payload"]["targets"] == ["metadata"]
+    schedule_id = int(created["schedule_id"])
+    stored = await schedule_deps.repo.get_schedule(schedule_id)
+    assert stored is not None
+    assert stored.task_type == RoutineType.RESCRAPE
+    assert stored.payload["limit"] == 25
+    assert stored.payload["targets"] == ["metadata"]
 
     invalid_cron = await _tool_fn("update_schedule")(
-        _Ctx(schedule_deps), schedule_id=int(created["id"]), patch=AgentScheduleUpdate(cron="not cron")
+        _Ctx(schedule_deps), schedule_id=schedule_id, patch=AgentScheduleUpdate(cron="not cron")
     )
     assert invalid_cron == {"error": "Invalid cron expression"}
 
     invalid_enabled = await _tool_fn("update_schedule")(
-        _Ctx(schedule_deps), schedule_id=int(created["id"]), patch=AgentScheduleUpdate(enabled=None)
+        _Ctx(schedule_deps), schedule_id=schedule_id, patch=AgentScheduleUpdate(enabled=None)
     )
     assert invalid_enabled == {"error": "enabled 不能为 null"}
 
@@ -156,4 +164,5 @@ async def test_delete_schedule_requires_approval(schedule_deps: AgentDeps) -> No
     deleted = await _tool_fn("delete_schedule")(
         _Ctx(schedule_deps, tool_call_id="tc-schedule", tool_call_approved=True), schedule_id=schedule.id
     )
-    assert deleted["deleted"] is True
+    assert deleted == TOOL_OK
+    assert await schedule_deps.repo.get_schedule(schedule.id) is None

@@ -43,6 +43,5 @@ async def test_schema_tool_covers_union_types(builder: Callable[[], Any], tool_n
     ctx = SimpleNamespace(deps=SimpleNamespace(persist_tool_trace=False))
     for submission_type in sorted(enum):
         out = await _tool_fn(cap, tool_name)(ctx, submission_type=submission_type)
-        assert out["submission_type"] == submission_type
         # 返回的只含该类型自身字段, 且 type 固定为它
-        assert out["schema"]["properties"]["type"]["const"] == submission_type
+        assert out["properties"]["type"]["const"] == submission_type
