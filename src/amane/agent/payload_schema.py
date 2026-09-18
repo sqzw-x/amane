@@ -59,18 +59,18 @@ _ROUTINE_MEMBERS: dict[str, type[BaseModel]] = {
 
 
 @dataclass(frozen=True)
-class SubmissionSpec:
+class SubmissionSpec[T]:
     """一类入参: 联合体校验入口, 以及按类型取字段定义."""
 
-    union: TypeAdapter[Any]
+    union: TypeAdapter[T]
     members: dict[str, type[BaseModel]]
 
     def schema(self, submission_type: str) -> dict[str, Any]:
         """该类型的字段定义, 与提交时的校验来源相同."""
         return TypeAdapter(self.members[submission_type]).json_schema()
 
-    def validate(self, data: dict[str, Any]) -> Any:
-        """校验入参; 失败时抛出 ``ValidationError``."""
+    def validate(self, data: dict[str, Any]) -> T:
+        """校验入参, 保留联合体类型; 失败时抛出 ``ValidationError``."""
         return self.union.validate_python(data)
 
     def error(self, data: dict[str, Any], exc: ValidationError) -> dict[str, Any]:
@@ -84,5 +84,9 @@ class SubmissionSpec:
         return out
 
 
-TASK_SUBMISSION = SubmissionSpec(union=TypeAdapter(TaskSubmission), members=_TASK_MEMBERS)
-ROUTINE_SUBMISSION = SubmissionSpec(union=TypeAdapter(RoutineSubmission), members=_ROUTINE_MEMBERS)
+TASK_SUBMISSION: SubmissionSpec[TaskSubmission] = SubmissionSpec(
+    union=TypeAdapter(TaskSubmission), members=_TASK_MEMBERS
+)
+ROUTINE_SUBMISSION: SubmissionSpec[RoutineSubmission] = SubmissionSpec(
+    union=TypeAdapter(RoutineSubmission), members=_ROUTINE_MEMBERS
+)
