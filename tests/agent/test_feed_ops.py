@@ -151,6 +151,24 @@ async def test_poll_feed_surfaces_fetch_error(feed_deps: AgentDeps) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["last_error", "raise"])
+async def test_create_feed_reports_initial_poll_failure(feed_deps: AgentDeps, failure: str) -> None:
+    """首次拉取失败不得掩盖创建成功: 仍回新 feed id, 失败原因单列 ``poll_error``."""
+
+    async def poll(feed_id: int) -> None:
+        if failure == "raise":
+            raise RuntimeError("connection reset")
+        await feed_deps.repo.update_feed(feed_id, last_error="connection reset")
+
+    feed_deps.bridge.poll_feed = poll
+    out = await _tool_fn("create_feed")(
+        _Ctx(feed_deps), request=AgentFeedCreate(name=f"src-{failure}", url=f"https://example.com/{failure}.xml")
+    )
+    assert out["poll_error"] == "订阅源已创建, 但首次拉取失败: connection reset"
+    assert await feed_deps.repo.get_feed(int(out["feed_id"])) is not None
+
+
+@pytest.mark.asyncio
 async def test_feed_validation_and_missing_ids(feed_deps: AgentDeps) -> None:
     invalid = await _tool_fn("create_feed")(_Ctx(feed_deps), request=AgentFeedCreate(url="ftp://example.com/feed.xml"))
     assert "error" in invalid

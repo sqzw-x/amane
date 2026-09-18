@@ -138,6 +138,11 @@ def _feed_summary(feed: Feed, unread_count: int = 0) -> FeedSummary:
     )
 
 
+def _created_with_poll_error(feed_id: int, detail: str) -> dict[str, object]:
+    """创建成功而首次拉取失败: 返回新 id, 失败原因单列, 不与创建失败混同."""
+    return {"feed_id": feed_id, "poll_error": f"订阅源已创建, 但首次拉取失败: {detail}"}
+
+
 def _feed_item_info(item: FeedItem, metadata_id: int | None) -> FeedItemInfo:
     assert item.id is not None
     return FeedItemInfo(
@@ -254,7 +259,10 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def create_feed(ctx: RunContext[AgentDeps], request: AgentFeedCreate) -> dict[str, object]:
-        """Create a feed and poll it once when the FeedService bridge is available."""
+        """Create a feed and poll it once when the FeedService bridge is available.
+
+        A failed first poll keeps the feed; the result then carries ``poll_error``.
+        """
         trace_tool(ctx, "tool_call", {"tool": "create_feed", "request": request.model_dump(mode="json")})
         try:
             name, url, group, number_pattern, use_cache, ignore_keywords = _feed_create_values(request)
@@ -278,14 +286,21 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         assert feed.id is not None
         poll = ctx.deps.bridge.poll_feed
         if poll is not None:
+            fetch_error: str | None = None
             try:
                 await poll(feed.id)
             except Exception as exc:
-                out: dict[str, object] = {"feed_id": feed.id, "poll_error": str(exc)}
+                fetch_error = str(exc)
+            else:
+                # FeedService 把抓取失败记进 last_error 而非抛出, 只回 feed_id 会把失败报成成功
+                refreshed = await ctx.deps.repo.get_feed(feed.id)
+                fetch_error = refreshed.last_error if refreshed is not None else None
+            if fetch_error is not None:
+                out = _created_with_poll_error(feed.id, fetch_error)
                 trace_tool(ctx, "tool_result", {"tool": "create_feed", "result": out})
                 return out
 
-        out = {"feed_id": feed.id}
+        out: dict[str, object] = {"feed_id": feed.id}
         trace_tool(ctx, "tool_result", {"tool": "create_feed", "result": out})
         return out
 
