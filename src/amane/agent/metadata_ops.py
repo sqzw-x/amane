@@ -44,7 +44,7 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
     async def update_metadata(
         ctx: RunContext[AgentDeps], metadata_id: int, patch: dict[str, Any]
     ) -> str | dict[str, Any]:
-        """Patch metadata fields (title, tags, plot, urls, ...). Omits id/number/raw."""
+        """Patch metadata fields (title, tags, plot, urls, ...). Omits id/number/raw/field_sources."""
         trace_tool(ctx, "tool_call", {"tool": "update_metadata", "metadata_id": metadata_id, "patch": patch})
         if not patch:
             return {"error": "patch 为空"}
