@@ -35,20 +35,12 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
     """身份合并经 facet-identity."""
     cap: Capability[AgentDeps] = Capability(
         id="actor-ops",
-        description=(
-            "Use for actor person fields, alias rows (list / resolve / add / remove), "
-            "display-name switching, and enqueueing actor scrape tasks. "
-            "For rename/merge/delete of identity facets, load facet-identity instead."
-        ),
         instructions=(
-            "Mutate actors only via these tools — never raw SQL. "
-            "Prefer actor ids from sql_deliver / explore views. "
-            "Aliases are rows on the actor (one-to-many); one alias may belong to several actors — "
-            "when resolve_actor_name returns multiple matches, ask the user which one is meant. "
-            "The display name is not an alias row; switching it via set_actor_display_name. "
-            "facet-identity.rename_facet also works for actor kind (same display switch)."
+            "Alias rows are one-to-many and one alias may be shared by several actors; when "
+            "resolve_actor_name returns several matches, ask the user which one is meant. "
+            "The display name is not an alias row — switch it with set_actor_display_name, which is "
+            "equivalent to rename_facet with kind=actor; call only one of the two."
         ),
-        defer_loading=True,
     )
 
     @cap.tool

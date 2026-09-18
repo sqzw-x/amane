@@ -5,43 +5,45 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 
-from ..api.models.tasks import TaskSubmission
 from ..api.support.task_resolve import resolve_submission
 from ..db.models import TaskStatus
+from .payload_schema import TASK_SUBMISSION, TaskSubmissionType
 from .tools import AgentDeps, trace_tool
-
-_TASK_SUBMISSION_ADAPTER: TypeAdapter[TaskSubmission] = TypeAdapter(TaskSubmission)
 
 
 def build_task_ops_capability() -> Capability[AgentDeps]:
     cap: Capability[AgentDeps] = Capability(
         id="task-ops",
-        description=(
-            "Use to submit tasks (refresh/scrape/organize/trash/…), cancel queued/running tasks, "
-            "or retry failed ones. Does not execute work inline."
-        ),
         instructions=(
-            "submit_task body must include discriminator field type "
-            "(refresh|organize|trash|scrape|cleanup|upscale|r18_import|actor_scrape|rescrape) plus that type's fields. "
-            "Prefer domain enqueue tools (metadata-ops / actor-ops / library-ops) when they fit; "
-            "use task-ops for the unified submission surface or cancel/retry."
+            "Prefer the domain enqueue tools (enqueue_scrape / enqueue_actor_scrape / "
+            "enqueue_library_refresh) when one covers the request; submit_task is the unified "
+            "surface for the rest and does not execute work inline."
         ),
-        defer_loading=True,
     )
 
     @cap.tool
+    async def get_task_submission_schema(
+        ctx: RunContext[AgentDeps], submission_type: TaskSubmissionType
+    ) -> dict[str, Any]:
+        """Return the accepted fields for one task submission type."""
+        trace_tool(ctx, "tool_call", {"tool": "get_task_submission_schema", "type": submission_type})
+        out = {"submission_type": submission_type, "schema": TASK_SUBMISSION.schema(submission_type)}
+        trace_tool(ctx, "tool_result", {"tool": "get_task_submission_schema", "type": submission_type})
+        return out
+
+    @cap.tool
     async def submit_task(ctx: RunContext[AgentDeps], submission: dict[str, Any]) -> dict[str, Any]:
-        """Enqueue a task from a TaskSubmission-shaped dict (type discriminator required)."""
+        """Enqueue a task; the body shape comes from get_task_submission_schema."""
         trace_tool(ctx, "tool_call", {"tool": "submit_task", "submission": submission})
         try:
-            req = _TASK_SUBMISSION_ADAPTER.validate_python(submission)
+            req = TASK_SUBMISSION.validate(submission)
             task_type, payload = await resolve_submission(req, ctx.deps.repo)
         except ValidationError as exc:
-            return {"error": f"提交体无效: {exc.errors()[0].get('msg', str(exc))}"}
+            return TASK_SUBMISSION.error(submission, exc)
         except HTTPException as exc:
             return {"error": str(exc.detail)}
         except ValueError as exc:

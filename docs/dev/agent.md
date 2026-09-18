@@ -9,9 +9,9 @@
 
 能力: 只读 SQL 探查库; 交付结果写入可引用的 **Saved Query** 再被 Browse / 下载消费; 写变更只经由封装领域工具 (Repository / Handler 语义), **禁止**裸 DML / DDL. 与 `llm/` 翻译管线并行, **不共用** Hot section.
 
-## 工具面
+## 工具
 
-读面始终在场:
+只读工具始终可用:
 
 | 工具 | 契约 |
 |------|------|
@@ -19,7 +19,7 @@
 | `sql_deliver` | 面向用户的结果 → `saved_query` + 内存结果缓存. `entity=metadata\|actor` 交付须含主键列 `id`, 可作片库 / 演员筛选并深链; 省略 entity (或 `data`) 交付任意只读结果, 只进入数据页 |
 | `inspect_result` | 按 `saved_query_id` 窥行 (交付或探查视图) |
 
-写面按域 `Capability(defer_loading=True)`, 模型先 `load_capability` 再调用工具; 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务.
+写操作工具按域分组为 `Capability`, **不做延迟载入**: 每个请求都声明全部工具. 兼容端点 (DeepSeek 等) 没有"声明了但不开放"的通道, 逐次载入只能通过修改 `tools` 实现, 而工具定义渲染在 system 之后、对话之前, 每载入一次即重读整段对话前缀; 全量声明的固定前缀实测 8302 token (system 6.9k 字符 / 指令 1.3k 字符 / 46 个工具 21.6k 字符), 恒定不变故首轮即命中缓存. 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务.
 
 | `id` | 覆盖 |
 |------|------|
@@ -31,7 +31,11 @@
 | `schedule-ops` | CLEANUP / UPSCALE / R18_IMPORT / RESCRAPE 定时 CRUD 与触发 |
 | `task-ops` | 统一提交 / 取消 / 重试 (入队, 不代为运行) |
 
-执行前只修改实际调用与落入 `messages.json` 的 `tool_name`: 当前不可调用、且 `__` 最后一段恰好是当前可调用名时裁成该段; 名字已在可调用集合里或后缀对不上则原样交给框架 (未知工具仍 `ModelRetry`). 流式 SSE 徽章仍可能显示模型原始名.
+任务与定时任务的入参 (即 `submit_task` / `create_schedule` 的 `submission`) **不随工具签名内联**: 联合体体积远大于其余工具定义, 改为 `get_task_submission_schema` / `get_routine_submission_schema` 按需返回, 与提交时的校验共用同一个 `TypeAdapter`; 校验失败以 `{error, types, schema}` 返回出错字段、可用类型与该类型的字段定义, 模型无需再次试探形状.
+
+指令只保留域特有约束. 全局约定 (id 一律取自 `sql_explore` / `sql_deliver`、破坏性操作批准、失败返回 `{error}`、入参先取 schema) 集中在系统提示, 不逐工具重复; capability id 不再对模型可见, 指令中不得引用.
+
+执行前只修改实际调用与落入 `messages.json` 的 `tool_name`: `__` 最后一段恰好是当前可调用名时裁成该段; 名字已在可调用集合里或后缀对不上则原样交给框架 (未知工具仍 `ModelRetry`). 流式 SSE 徽章仍可能显示模型原始名.
 
 `actor-ops` 的别名工具对应别名模型 (见 [data-model.md](data-model.md) 演员身份): 别名是一对多行, `resolve_actor_name` 多命中即歧义, 应交由用户决定; `set_actor_display_name` 与 `facet-identity.rename_facet(kind=actor)` 等价, 二者任一即可, 不允许重复调用. `PATCH /config` **不**暴露为工具.
 
@@ -75,4 +79,4 @@
 
 `AgentService` 挂载于 `AppRuntime`: `rebuild` 按 `hot.agent` 重建工厂并裁剪 history 热缓存, **不清除** ResultCache; bootstrap 装配 `bridge` (safe_dirs / watcher / 动态 Worker 取消 / `FeedService.poll_one`).
 
-上游协议由 `hot.agent.api_type` 选择, 模型构造与翻译共用 `llm/model.py::build_model`; `base_url` / `api_key` / `model` 原样交给对应 Provider (Anthropic 需填 Anthropic 端点, 无隐式改写). 思考强度: 全局 `hot.agent.thinking` 为默认 (`None` = 不传), 会话覆盖在 `meta.json`; 每回合经由 `model_settings` 注入 thinking 与 `hot.agent.max_tokens` (默认 128000, 避免提供商默认过小导致 length 截断). 运行使用无上限的 `UsageLimits`.
+上游协议由 `hot.agent.api_type` 选择, 模型构造与翻译共用 `llm/model.py::build_model`; `base_url` / `api_key` / `model` 原样交给对应 Provider (Anthropic 需填 Anthropic 端点, 无隐式改写). 身份与规则经 agent `instructions` 注入而**不是** `system_prompt`: Responses 协议把 agent instructions 放在 API 顶层 `instructions` 字段, 服务端插在 `input` 之前; `system_prompt` 会变成 `input` 里的 system 消息, 于是各 capability 的注意事项反而排在身份定位之前. Responses 模型对非 OpenAI 自家端点经 `llm/model.py::_responses_profile` 关掉 `additional_tools` 追加通道: 该通道只有 OpenAI 实现, 兼容端点静默丢弃, 中途追加的工具就到不了模型; 关掉后追加的工具改在 `tools` 里声明. 思考强度: 全局 `hot.agent.thinking` 为默认 (`None` = 不传), 会话覆盖在 `meta.json`; 每回合经由 `model_settings` 注入 thinking 与 `hot.agent.max_tokens` (默认 128000, 避免提供商默认过小导致 length 截断). 运行使用无上限的 `UsageLimits`.

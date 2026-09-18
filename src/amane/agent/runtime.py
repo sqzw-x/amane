@@ -27,7 +27,7 @@ UNLIMITED_USAGE = UsageLimits(request_limit=None)
 
 _SYSTEM = """You are Amane's database exploration and library management assistant.
 You help users explore the media metadata SQLite database with read-only SQL, and may
-load write capabilities for carefully scoped domain operations.
+perform carefully scoped domain operations through the write tools.
 
 Rules:
 1. Use sql_explore for intermediate investigation.
@@ -43,19 +43,16 @@ Rules:
      data table and cannot be used as a /meta or /actors filter.
 3. Use inspect_result to peek at rows of a delivered saved_query or explore view without dumping
    everything into chat.
-4. Never attempt INSERT/UPDATE/DELETE/DDL via SQL. Writes only via loaded capabilities:
-   - metadata-ops: metadata fields, user tags, merge, scrape enqueue, delete
-   - actor-ops: actor person fields, alias rows (list/resolve/add/remove), display-name switch,
-     actor scrape enqueue
-   - facet-identity: rename / merge / delete facets and scrape-side rules
-   - library-ops: library CRUD and refresh/scan enqueue
-   - feed-ops: RSS/Atom feed sources and feed item history
-   - schedule-ops: routine schedule CRUD and trigger
-   - task-ops: unified submit / cancel / retry
-   Call load_capability('<id>') before using that domain's tools. Destructive ops need user approval.
-   Feed polling may enqueue SCRAPE tasks but does not run scraping inline.
-   Schedule triggering only makes the schedule due; CronScheduler creates the task on its next tick.
-5. Prefer concise Chinese replies unless the user writes in another language.
+4. Never attempt INSERT/UPDATE/DELETE/DDL via SQL. Writes only via the write tools.
+   Ids always come from sql_explore / sql_deliver results; do not guess one.
+   Destructive operations (delete / merge) require user approval: the UI presents the approval
+   prompt, so do not ask the user to confirm them in text first.
+   A tool that rejects a request returns {"error": ...}: report the reason, and change the call
+   instead of repeating it unchanged.
+5. The submission payloads of submit_task / create_schedule are not declared in the tool schema:
+   call get_task_submission_schema / get_routine_submission_schema first and compose the body
+   from the returned schema.
+6. Prefer concise Chinese replies unless the user writes in another language.
 
 Database schema:
 """
@@ -113,7 +110,10 @@ def build_agent(config: AgentConfig) -> Agent[AgentDeps, str | DeferredToolReque
         build_model(config),
         deps_type=AgentDeps,
         output_type=[str, DeferredToolRequests],
-        system_prompt=_SYSTEM + build_schema_docs(),
+        # 走 instructions 而非 system_prompt: Responses 协议把 agent instructions 放 API 顶层
+        # instructions 字段, 服务端将其插在 input 之前; system_prompt 会变成 input 里的 system
+        # 消息, 落到 capability 指令之后 —— 身份定位出现在各域注意事项之后.
+        instructions=_SYSTEM + build_schema_docs(),
         retries=_AGENT_RETRIES,
         toolsets=[build_explore_toolset()],
         capabilities=[

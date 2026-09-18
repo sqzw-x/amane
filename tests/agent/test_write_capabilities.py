@@ -1,12 +1,14 @@
-"""写面 Capability 表测试: actor / facet / library / task."""
+"""写操作 Capability 表测试: actor / facet / library / task."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, cast
 
 import aiosqlite
+import httpx2
 import pytest
 import pytest_asyncio
 from pydantic_ai import ApprovalRequired
@@ -17,8 +19,11 @@ from amane.agent.bridge import AgentRuntimeBridge
 from amane.agent.cache import ResultCache
 from amane.agent.executor import QueryExecutor
 from amane.agent.facet_identity import build_facet_identity_capability
+from amane.agent.feed_ops import build_feed_ops_capability
 from amane.agent.library_ops import build_library_ops_capability
+from amane.agent.metadata_ops import build_metadata_ops_capability
 from amane.agent.runtime import build_agent
+from amane.agent.schedule_ops import build_schedule_ops_capability
 from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.task_ops import build_task_ops_capability
 from amane.agent.tools import AgentDeps
@@ -26,7 +31,9 @@ from amane.agent.trace import TraceEvent
 from amane.config import AgentConfig
 from amane.db.models import FacetKind, TaskStatus, TaskType
 from amane.db.repository import Repository
+from amane.enums import ApiType
 from amane.handlers.models import ScrapePayload
+from amane.llm import build_model
 
 
 class _MemTrace:
@@ -230,7 +237,10 @@ async def test_task_submit_cancel_retry(write_deps: AgentDeps) -> None:
 @pytest.mark.asyncio
 async def test_task_submit_invalid_body(write_deps: AgentDeps) -> None:
     out = await _tool_fn(build_task_ops_capability(), "submit_task")(_Ctx(write_deps), submission={"type": "scrape"})
-    assert "error" in out
+    # 失败时返回出错字段, 可用类型, 以及该类型的字段定义
+    assert out["error"].startswith("参数无效: scrape:")
+    assert "rescrape" in out["types"]
+    assert out["schema"]["properties"]["type"]["const"] == "scrape"
 
 
 @pytest.mark.asyncio
@@ -239,3 +249,93 @@ async def test_task_retry_rejects_non_failed(write_deps: AgentDeps) -> None:
     assert task.id is not None
     out = await _tool_fn(build_task_ops_capability(), "retry_task")(_Ctx(write_deps), task_id=task.id)
     assert "error" in out
+
+
+def _tool_names(payload: dict[str, Any]) -> list[str]:
+    """Responses 用 ``name``, Chat Completions 嵌在 ``function`` 里."""
+    return [tool.get("name") or tool["function"]["name"] for tool in payload.get("tools") or []]
+
+
+_RESPONSES_USAGE = {
+    "input_tokens": 1,
+    "output_tokens": 1,
+    "total_tokens": 2,
+    "input_tokens_details": {"cached_tokens": 0},
+    "output_tokens_details": {"reasoning_tokens": 0},
+}
+_DONE: dict[ApiType, dict[str, Any]] = {
+    ApiType.RESPONSE: {
+        "id": "resp_1",
+        "object": "response",
+        "created_at": 0,
+        "status": "completed",
+        "model": "deepseek-v4-flash",
+        "output": [
+            {
+                "id": "msg_1",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "好", "annotations": []}],
+            }
+        ],
+        "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
+        "usage": _RESPONSES_USAGE,
+    },
+    ApiType.CHAT: {
+        "id": "chatcmpl-1",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "deepseek-v4-flash",
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": "好"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    },
+}
+
+
+def _write_tool_names() -> set[str]:
+    caps = [
+        build_metadata_ops_capability(),
+        build_actor_ops_capability(),
+        build_facet_identity_capability(),
+        build_library_ops_capability(),
+        build_feed_ops_capability(),
+        build_schedule_ops_capability(),
+        build_task_ops_capability(),
+    ]
+    return {name for cap in caps for name in _cap_toolset(cap).tools}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_type", [ApiType.CHAT, ApiType.RESPONSE])
+async def test_write_tools_declared_up_front(write_deps: AgentDeps, api_type: ApiType) -> None:
+    """写操作工具必须在第一个请求就全部声明, 且不存在 ``load_capability``.
+
+    兼容端点没有"声明了但不开放"的通道 (见 docs/dev/agent.md), 一旦某域重新延迟载入, 工具就会
+    只在载入后的请求里出现 —— 这条断言会失败.
+    """
+    payloads: list[dict[str, Any]] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        payloads.append(json.loads(request.content))
+        return httpx2.Response(200, json=_DONE[api_type])
+
+    agent = build_agent(AgentConfig(api_key="sk-test", model="deepseek-flash", base_url="https://api.deepseek.com"))
+    assert agent is not None
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        model = build_model(
+            api_type,
+            base_url="https://api.deepseek.com",
+            api_key="sk-test",
+            model="deepseek-flash",
+            http_client=client,
+        )
+        result = await agent.run("列出来源", deps=write_deps, model=model)
+
+    assert result.output == "好"
+    names = set(_tool_names(payloads[0]))
+    assert "load_capability" not in names
+    assert _write_tool_names() <= names
+    assert {"sql_explore", "sql_deliver", "inspect_result"} <= names

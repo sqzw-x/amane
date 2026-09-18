@@ -38,16 +38,6 @@ _AGENT_PATCH_KEYS = frozenset(
 def build_metadata_ops_capability() -> Capability[AgentDeps]:
     cap: Capability[AgentDeps] = Capability(
         id="metadata-ops",
-        description=(
-            "Use for editing metadata fields, user tags, merge from raw sources, "
-            "enqueue scrape tasks, or deleting metadata. Load before write tools."
-        ),
-        instructions=(
-            "You may mutate metadata only via these tools — never raw SQL writes. "
-            "Prefer ids from sql_deliver / explore views. "
-            "delete_metadata and batch_delete_metadata require user approval."
-        ),
-        defer_loading=True,
     )
 
     @cap.tool
@@ -181,7 +171,7 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_metadata(ctx: RunContext[AgentDeps], metadata_id: int) -> dict[str, Any]:
-        """Delete one metadata row. Requires user approval."""
+        """Delete one metadata row."""
         detail = f"删除元数据 id={metadata_id}"
         trace_tool(ctx, "tool_call", {"tool": "delete_metadata", "metadata_id": metadata_id})
         require_approval(
@@ -199,7 +189,7 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def batch_delete_metadata(ctx: RunContext[AgentDeps], metadata_ids: list[int]) -> dict[str, Any]:
-        """Delete many metadata rows. Requires user approval."""
+        """Delete many metadata rows."""
         if not metadata_ids:
             return {"error": "metadata_ids 为空"}
         detail = f"批量删除元数据 ids={metadata_ids}"

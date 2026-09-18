@@ -54,16 +54,10 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
     """删除须批准."""
     cap: Capability[AgentDeps] = Capability(
         id="library-ops",
-        description=(
-            "Use for creating/updating/deleting media libraries and enqueueing refresh/scan tasks. "
-            "Paths must stay inside configured safe directories."
-        ),
         instructions=(
-            "Library paths must exist and lie under safe_dirs. "
-            "delete_library requires user approval (removes MediaFile index rows, not disk files). "
-            "Prefer enqueue_library_refresh after create when the user wants an initial scan."
+            "A library path must exist and lie under safe_dirs; create_library rejects anything else. "
+            "After create, prefer enqueue_library_refresh when the user wants an initial scan."
         ),
-        defer_loading=True,
     )
 
     @cap.tool
@@ -176,7 +170,7 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_library(ctx: RunContext[AgentDeps], library_id: int) -> dict[str, Any]:
-        """Delete a library and its MediaFile index rows. Requires approval."""
+        """Delete a library and its MediaFile index rows."""
         detail = f"删除媒体库 id={library_id} (仅索引, 不动磁盘文件)"
         trace_tool(ctx, "tool_call", {"tool": "delete_library", "library_id": library_id})
         require_approval(

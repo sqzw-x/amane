@@ -14,11 +14,10 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from amane.agent.cache import ResultCache
 from amane.agent.executor import QueryExecutor
-from amane.agent.schedule_ops import AgentScheduleCreate, AgentScheduleUpdate, build_schedule_ops_capability
+from amane.agent.schedule_ops import AgentScheduleUpdate, build_schedule_ops_capability
 from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.tools import AgentDeps
 from amane.agent.trace import TraceEvent
-from amane.api.models.tasks import CleanupSubmission, RescrapeSubmission
 from amane.db.models import RoutineType
 from amane.db.repository import Repository
 
@@ -86,9 +85,9 @@ def test_schedule_ops_capability_contract() -> None:
 async def test_create_update_and_trigger_schedule(schedule_deps: AgentDeps) -> None:
     created = await _tool_fn("create_schedule")(
         _Ctx(schedule_deps),
-        request=AgentScheduleCreate(
-            name="nightly", cron="0 3 * * *", submission=CleanupSubmission(type="cleanup", remove_missing_files=False)
-        ),
+        name="nightly",
+        cron="0 3 * * *",
+        submission={"type": "cleanup", "remove_missing_files": False},
     )
     assert created["name"] == "nightly"
     assert created["task_type"] == RoutineType.CLEANUP
@@ -117,9 +116,8 @@ async def test_create_update_and_trigger_schedule(schedule_deps: AgentDeps) -> N
 async def test_schedule_supports_rescrape_and_rejects_invalid_changes(schedule_deps: AgentDeps) -> None:
     created = await _tool_fn("create_schedule")(
         _Ctx(schedule_deps),
-        request=AgentScheduleCreate(
-            cron="*/15 * * * *", submission=RescrapeSubmission(type="rescrape", limit=25, min_age_days=7)
-        ),
+        cron="*/15 * * * *",
+        submission={"type": "rescrape", "limit": 25, "min_age_days": 7},
     )
     assert created["task_type"] == RoutineType.RESCRAPE
     assert created["payload"]["limit"] == 25
@@ -137,6 +135,14 @@ async def test_schedule_supports_rescrape_and_rejects_invalid_changes(schedule_d
 
     missing = await _tool_fn("get_schedule")(_Ctx(schedule_deps), schedule_id=9999)
     assert missing == {"error": "schedule 9999 不存在"}
+
+    invalid_submission = await _tool_fn("create_schedule")(
+        _Ctx(schedule_deps), cron="0 3 * * *", submission={"type": "cleanup", "remove_missing_files": "x"}
+    )
+    # 失败时返回出错字段, 可用类型, 以及该类型的字段定义
+    assert invalid_submission["error"].startswith("参数无效: cleanup.remove_missing_files:")
+    assert "rescrape" in invalid_submission["types"]
+    assert invalid_submission["schema"]["properties"]["type"]["const"] == "cleanup"
 
 
 @pytest.mark.asyncio

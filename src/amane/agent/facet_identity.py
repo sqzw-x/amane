@@ -13,20 +13,11 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
     """合并 / 删除 / 删规则须用户批准."""
     cap: Capability[AgentDeps] = Capability(
         id="facet-identity",
-        description=(
-            "Use for facet rename, merge, delete, and scrape-side rule listing/deletion. "
-            "Load before identity governance tools."
-        ),
         instructions=(
-            "Facet kinds: actor, director, tag, studio, publisher, series, user_tag. "
-            "Rename fails with conflict if another facet already has the name — use merge instead. "
-            "For actor kind, rename_facet switches the display name (old name becomes an alias row); "
-            "alias rows themselves belong in actor-ops. "
-            "Deleting a scrape-side facet writes a block rule and strips names from metadata. "
-            "merge_facets / delete_facet / delete_facet_rule require user approval. "
-            "Actor person field edits belong in actor-ops, not here."
+            "Rename fails when another facet already holds the name — merge_facets is how two "
+            "facets are combined. Deleting a scrape-side facet writes a block rule and removes "
+            "that name from metadata."
         ),
-        defer_loading=True,
     )
 
     @cap.tool
@@ -50,7 +41,7 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
     async def merge_facets(
         ctx: RunContext[AgentDeps], kind: FacetKind, target_id: int, source_ids: list[int]
     ) -> dict[str, Any]:
-        """Merge source facet ids into target; sources are deleted. Requires approval."""
+        """Merge source facet ids into target; sources are deleted."""
         if not source_ids:
             return {"error": "source_ids 为空"}
         detail = f"合并 {kind}: sources={source_ids} → target={target_id}"
@@ -79,7 +70,7 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_facet(ctx: RunContext[AgentDeps], kind: FacetKind, facet_id: int) -> dict[str, Any]:
-        """Delete a facet (scrape kinds → block rule). Requires approval."""
+        """Delete a facet (scrape kinds → block rule)."""
         detail = f"删除分类 {kind} id={facet_id}"
         trace_tool(ctx, "tool_call", {"tool": "delete_facet", "kind": kind, "facet_id": facet_id})
         require_approval(
@@ -126,7 +117,7 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_facet_rule(ctx: RunContext[AgentDeps], kind: FacetKind, rule_id: int) -> dict[str, Any]:
-        """Delete one facet rule (does not backfill metadata). Requires approval."""
+        """Delete one facet rule (does not backfill metadata)."""
         if kind not in SCRAPE_FACET_KINDS:
             return {"error": "该分类不支持规则"}
         detail = f"删除分类规则 {kind} rule_id={rule_id}"
