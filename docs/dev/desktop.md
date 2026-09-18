@@ -12,7 +12,7 @@ Python 只运行 HTTP (与 Docker / `just start` 同一入口 `amane.server`), �
 
 **macOS** 三个进程, Swift 是 App 入口, 菜单栏是兄弟进程而非服务的孩子:
 
-- **应用进程**: `macapp/Sources/Amane` → `Contents/MacOS/Amane`; Launch Services 登记为 `com.github.sqzw-x.amane` (必须是 NSApplication, 第二次打开才走系统单实例). 本进程设置环境、监督 Python、启动与回收菜单栏. 服务退出码 **0 / 130 / 143** 结束 App, **3** 立刻再次启动 Python (UI 继续活着), **126 / 127** exec 失败退出, 其它退避 2s; TERM 时先停两个子进程. Info.plist 含 `LSUIElement` + `LSMultipleInstancesProhibited`, 并设置 `AMANE_SUPERVISED=1`.
+- **应用进程**: `macapp/Sources/Amane` → `Contents/MacOS/Amane`; Launch Services 登记为 `com.github.sqzw-x.amane` (必须是 NSApplication, 第二次打开才走系统单实例). 本进程设置环境、监督 Python、启动与回收菜单栏. 服务退出码 **0 / 130 / 143** 结束 App, **3** 立刻再次启动 Python (UI 继续活着), **4** 启动失败 (退避后重试, 原因写入状态文件), **126 / 127** exec 失败退出, 其它退避 2s; TERM 时先停两个子进程. Info.plist 含 `LSUIElement` + `LSMultipleInstancesProhibited`, 并设置 `AMANE_SUPERVISED=1`.
 - **服务进程**: PyInstaller onedir, 入口与导入约束见 [architecture.md](architecture.md).
 - **UI 进程**: 嵌套 `Contents/Resources/AmaneUI.app` (`com.github.sqzw-x.amane.ui`). 独立 bundle id 以免和主进程抢 NSApplication; 无状态, 只轮询 HTTP; `--watch-parent` 指向**应用进程** PID. `NSStatusItem` 只能在 `applicationDidFinishLaunching` 里创建 — 更早碰菜单栏时 WindowServer / CGS 尚未就绪, SkyLight 会断言退出.
 
@@ -20,7 +20,7 @@ UI 不嵌进服务进程: 原生菜单 / 通知需要它独立, 嵌进 Python �
 
 **Windows** 两个进程; 监督与托盘在同一个 `WinExe` 里 (没有 Launch Services / bundle id 可抢, `NotifyIcon` 必须跟消息循环同进程):
 
-- **应用进程**: `winapp/` → `Amane.exe`. 命名 Mutex `Local\com.github.sqzw-x.amane` 单实例; 隐藏窗口泵消息 + 托盘, 后台线程监督 Python. Python 放入 Job Object (`KILL_ON_JOB_CLOSE`), 任务管理器杀掉壳时服务一起结束. 退出码 **0 / 130 / 143 / 0xC000013A** 结束 App, **3** 立刻再次启动 Python (托盘还在), `Process.Start` 失败结束 App, 其它退避 2s; 设置 `AMANE_SUPERVISED=1`.
+- **应用进程**: `winapp/` → `Amane.exe`. 命名 Mutex `Local\com.github.sqzw-x.amane` 单实例; 隐藏窗口泵消息 + 托盘, 后台线程监督 Python. Python 放入 Job Object (`KILL_ON_JOB_CLOSE`), 任务管理器杀掉壳时服务一起结束. 退出码 **0 / 130 / 143 / 0xC000013A** 结束 App, **3** 立刻再次启动 Python (托盘还在), **4** 启动失败 (退避后重试, 原因展示在托盘菜单), `Process.Start` 失败结束 App, 其它退避 2s; 设置 `AMANE_SUPERVISED=1`.
 - **服务进程**: PyInstaller onedir `onedir/Amane.Server.exe`, 由壳 `CreateNoWindow` 启动.
 
 Windows 壳是 Per-Monitor V2 (`winapp/app.manifest`): 未声明时系统把 `TrackPopupMenu` 整张位图按缩放拉伸, 高分屏上菜单字发糊; 菜单跟的是**属主 HWND 的 DPI**, 因此弹出前必须先把隐藏窗口移到光标处.
@@ -40,6 +40,11 @@ Windows 壳是 Per-Monitor V2 (`winapp/app.manifest`): 未声明时系统把 `Tr
 bar 的静态信息**不走** `/api/health` — 后者是就绪契约 (Docker healthcheck); `/api/system/desktop` 是 bar 专属. 菜单字符串按系统 UI 语言 (zh / en), 不跟随前端浏览器语言. 壳等 bootstrap 写入 `data_dir/token` 后再带 `Authorization`.
 
 macOS UI argv (`AmaneUI --base-url http://127.0.0.1:PORT [--token <token>] [--watch-parent [pid]]`): `--base-url` 必传; `--token` 仅用于轮询 `Authorization`, 不进打开 Web UI 的 URL; `--watch-parent` 省略时回退 `getppid()`, pid ≤ 1 视为未监视. Windows 无独立 UI 进程与这组 argv; `AMANE_UI_ONLY=1` 只开托盘、不启动 Python, 对已有服务轮询.
+
+两个壳共用的契约, 均涉及跨进程边界:
+
+- **访问地址**: `AMANE_HOST` 是 bind 语义 — 通配地址 (`0.0.0.0` / `::` / 空) 与 IPv6 字面量都不能直接拼进 URL, Swift 的 `URLSession` 对 `0.0.0.0` 直接报错. 壳据此推导访问主机: 通配 → `localhost`, 含 `:` → 加方括号 (zone id 的 `%` 转义为 `%25`), 其余保持原值; 注入 Python 的始终是用户填写的原值. 推导结果用于轮询、UI 兄弟进程的 `--base-url` 与「打开 Web UI」.
+- **启动失败状态**: 服务以 **4** 退出时, 原因 (服务输出的最后一条 `ERROR` 行) 由应用进程写入设置文件旁的 `server-status`; 菜单栏在轮询失败时读取该文件替代「未连接」. 应用进程每次启动服务前删除该文件, 因此文件存在即表示最近一次启动失败. 菜单栏是独立进程, 两个进程之间没有其它通道; Windows 的托盘与监督同进程, 原因直接留在内存.
 
 ## 生命周期
 

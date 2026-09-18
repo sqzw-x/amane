@@ -40,6 +40,9 @@ public enum DesktopSettings {
         # 数据目录 (数据库、资源、插件). 修改后不会迁移已有数据.
         # AMANE_DATA_DIR=\(defaultDataDir.path)
         #
+        # API 监听地址. 默认只接受本机连接; 0.0.0.0 或 :: 使局域网可访问, 菜单栏仍访问本机地址.
+        # AMANE_HOST=127.0.0.1
+        #
         # API 监听端口. 与其它服务冲突时修改.
         # AMANE_PORT=18000
         #

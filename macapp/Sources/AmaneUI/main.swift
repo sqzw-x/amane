@@ -223,6 +223,12 @@ final class MenuController: NSObject, NSApplicationDelegate {
             statusLine?.title = tr("运行中 · v\(version)", "Running · v\(version)")
             statusItem?.button?.toolTip = tr(
                 "Amane 运行中 · v\(version)", "Amane running · v\(version)")
+        } else if let reason = DesktopRuntime.readStatus() {
+            // 原因由应用进程在服务启动失败时写入设置文件旁.
+            let short = reason.count > 60 ? String(reason.prefix(60)) + "…" : reason
+            statusLine?.title = tr("启动失败 · \(short)", "Startup failed · \(short)")
+            statusItem?.button?.toolTip = tr(
+                "Amane 服务启动失败\n\(reason)", "Amane server failed to start\n\(reason)")
         } else {
             statusLine?.title = tr("未连接", "Disconnected")
             statusItem?.button?.toolTip = tr("Amane 服务未连接", "Amane not connected")

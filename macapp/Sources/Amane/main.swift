@@ -31,7 +31,7 @@ private struct DesktopEnvironment {
     /// 设置文件中白名单之外的键.
     let unknownKeys: [String]
 
-    var baseURL: String { "http://\(host):\(port)" }
+    var baseURL: String { "http://\(DesktopRuntime.accessHost(host)):\(port)" }
     /// UI 兄弟进程的身份: base-url、token 与 token 文件所在的数据目录都在它启动时固定.
     var uiIdentity: String { "\(baseURL)|\(token ?? "")|\(dataDir.path)" }
 
@@ -84,6 +84,68 @@ private struct DesktopEnvironment {
     }
 }
 
+/// 服务进程的语义退出码, 取值与 `amane.server` 一致 (POSIX 的 130 / 143 / 126 / 127 不在此列).
+private enum ServerExit {
+    /// 请求重启: 由 `POST /api/system/restart` 触发, UI 进程继续存活.
+    static let restart: Int32 = 3
+    /// 启动失败: 地址无法绑定、端口被占用、配置非法. 原因取自服务输出.
+    static let startupFailed: Int32 = 4
+}
+
+/// 服务子进程的输出: 读到即转发到本进程标准输出, 并保留末尾若干行.
+/// 启动失败时服务只留一行 uvicorn 错误, 退出码本身不携带原因.
+private final class ProcessOutput {
+    private let pipe = Pipe()
+    private let lock = NSLock()
+    private var pending = Data()
+    private var lines: [String] = []
+    private let limit = 40
+
+    func attach(to proc: Process) {
+        proc.standardOutput = pipe
+        proc.standardError = pipe
+    }
+
+    func startReading() {
+        let handle = pipe.fileHandleForReading
+        DispatchQueue.global(qos: .utility).async { [self] in
+            while true {
+                let chunk = handle.availableData
+                if chunk.isEmpty { break }
+                FileHandle.standardOutput.write(chunk)
+                consume(chunk)
+            }
+            try? handle.close()
+        }
+    }
+
+    /// 关闭本进程持有的写端: 服务退出后读取线程才能读到 EOF, 否则每次重启残留一个线程.
+    func closeParentWriteEnd() {
+        try? pipe.fileHandleForWriting.close()
+    }
+
+    /// 失败原因: 末尾最后一条 ERROR 行; 没有 ERROR 行时取最后一条非空行.
+    func failureReason() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        let trimmed = lines.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return trimmed.last { $0.contains("ERROR") } ?? trimmed.last
+    }
+
+    private func consume(_ chunk: Data) {
+        var complete: [String] = []
+        lock.lock()
+        pending.append(chunk)
+        while let index = pending.firstIndex(of: 0x0A) {
+            complete.append(String(decoding: pending[pending.startIndex..<index], as: UTF8.self))
+            pending.removeSubrange(pending.startIndex...index)
+        }
+        lines.append(contentsOf: complete)
+        if lines.count > limit { lines.removeFirst(lines.count - limit) }
+        lock.unlock()
+    }
+}
+
 final class Launcher: NSObject, NSApplicationDelegate {
     private let lock = NSLock()
     private var python: Process?
@@ -129,20 +191,31 @@ final class Launcher: NSObject, NSApplicationDelegate {
                 env[key] = value
             }
             proc.environment = env
+            let output = ProcessOutput()
+            output.attach(to: proc)
+            // 清除上一次的失败原因; 菜单栏在轮询失败时才读取该文件.
+            DesktopRuntime.writeStatus(nil)
             do {
                 try proc.run()
             } catch {
                 exit(127)
             }
+            output.startReading()
+            output.closeParentWriteEnd()
             setPython(proc)
             proc.waitUntilExit()
             setPython(nil)
             if isStopping { return }
             switch proc.terminationStatus {
             case 0, 130, 143: return
-            case 3: continue
+            case ServerExit.restart: continue
             case 126, 127: exit(proc.terminationStatus)
             default:
+                // 启动失败与其它异常退出都退避后重试; 前者把原因留在设置文件旁供菜单栏展示.
+                if proc.terminationStatus == ServerExit.startupFailed {
+                    let reason = output.failureReason() ?? localized("无输出", "no output")
+                    DesktopRuntime.writeStatus(reason)
+                }
                 let deadline = Date().addingTimeInterval(restartDelay)
                 while !isStopping && Date() < deadline {
                     Thread.sleep(forTimeInterval: 0.05)

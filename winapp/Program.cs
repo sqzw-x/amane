@@ -52,6 +52,9 @@ internal sealed class App
     private const uint IdSettings = 1007;
     private const uint StatusControlCExit = 0xC000013A;
     private const int ExitRestart = 3;
+
+    /// 启动失败: 地址无法绑定、端口被占用、配置非法 (与 amane.server 一致).
+    private const int ExitStartupFailed = 4;
     private const nuint PollTimerId = 1;
 
     private static readonly bool Zh = Native.IsChineseUi();
@@ -89,6 +92,9 @@ internal sealed class App
     private string _dataDir = "";
     private string _version = "";
     private bool _connected;
+
+    /// 最近一次服务启动失败的原因; 为空表示无待展示的失败.
+    private string _failure = "";
     private bool _supervised;
     private bool _trayAdded;
     private bool _unwinding;
@@ -174,7 +180,7 @@ internal sealed class App
             }
         }
 
-        _baseUrl = $"http://{host}:{port}";
+        _baseUrl = $"http://{AccessHost(host)}:{port}";
         var previousToken = _token;
         ResolveTokenAtStart(Resolve(parsed, "AMANE_TOKEN"));
         if (_hwnd != 0 && _token != previousToken)
@@ -183,6 +189,23 @@ internal sealed class App
         }
 
         WarnUnknownKeys(parsed.UnknownKeys);
+    }
+
+    /// 访问地址的主机部分: 通配地址不是可访问地址; IPv6 字面量在 URL 中必须加方括号,
+    /// 其中的 zone id 分隔符按 URL 语法转义 (RFC 3986).
+    private static string AccessHost(string host)
+    {
+        var trimmed = host.Trim();
+        var bare =
+            trimmed.StartsWith('[') && trimmed.EndsWith(']')
+                ? trimmed[1..^1]
+                : trimmed;
+        if (bare.Length == 0 || bare == "0.0.0.0" || bare == "::")
+        {
+            return "localhost";
+        }
+
+        return bare.Contains(':') ? $"[{bare.Replace("%", "%25")}]" : bare;
     }
 
     /// 真实环境变量优先, 其次设置文件; 空值按未设置处理.
@@ -322,10 +345,12 @@ internal sealed class App
             }
 
             Process proc;
+            var log = new ProcessLog();
             try
             {
                 ApplyDesktopEnv();
-                proc = StartPython(bin);
+                OnUi(ClearFailure);
+                proc = StartPython(bin, log);
             }
             catch (Exception ex)
             {
@@ -366,6 +391,13 @@ internal sealed class App
                 continue;
             }
 
+            // 启动失败与其它异常退出都退避后重试; 前者把原因展示在托盘菜单.
+            if (code == ExitStartupFailed)
+            {
+                var reason = log.FailureReason() ?? Tr("无输出", "no output");
+                OnUi(() => SetFailure(reason));
+            }
+
             var deadline = DateTime.UtcNow + _restartDelay;
             while (!IsStopping && DateTime.UtcNow < deadline)
             {
@@ -374,7 +406,7 @@ internal sealed class App
         }
     }
 
-    private Process StartPython(string bin)
+    private Process StartPython(string bin, ProcessLog log)
     {
         var psi = new ProcessStartInfo
         {
@@ -382,6 +414,8 @@ internal sealed class App
             WorkingDirectory = Path.GetDirectoryName(bin) ?? AppContext.BaseDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
         };
         psi.Environment["AMANE_UI_DISABLED"] = "1";
         foreach (var arg in Environment.GetCommandLineArgs().Skip(1))
@@ -390,10 +424,14 @@ internal sealed class App
         }
 
         var proc = new Process { StartInfo = psi };
+        log.Attach(proc);
         if (!proc.Start())
         {
             throw new InvalidOperationException("CreateProcess failed");
         }
+
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
 
         if (_hJob != 0)
         {
@@ -638,9 +676,7 @@ internal sealed class App
             return;
         }
 
-        var status = _connected
-            ? Tr($"运行中 · v{_version}", $"Running · v{_version}")
-            : Tr("未连接", "Disconnected");
+        var status = StatusText();
         Native.ModifyMenu(
             _hMenu,
             0,
@@ -658,9 +694,7 @@ internal sealed class App
         Enable(IdCopy, _token.Length > 0);
         Enable(IdUpdate, _connected);
         Enable(IdRestart, _connected && _supervised && !_uiOnly);
-        _nid.szTip = _connected
-            ? Tr($"Amane 运行中 · v{_version}", $"Amane running · v{_version}")
-            : Tr("Amane 服务未连接", "Amane not connected");
+        _nid.szTip = TrayTip();
         if (_trayAdded)
         {
             Native.ShellNotifyIcon(Native.NimModify, ref _nid);
@@ -781,8 +815,51 @@ internal sealed class App
         _version = snap.Version;
         _dataDir = snap.DataDir;
         _supervised = snap.Supervised;
+        if (snap.Connected)
+        {
+            _failure = "";
+        }
+
         ApplyMenuState();
     }
+
+    private void SetFailure(string reason)
+    {
+        _failure = reason;
+        ApplyMenuState();
+    }
+
+    private void ClearFailure()
+    {
+        if (_failure.Length == 0)
+        {
+            return;
+        }
+
+        _failure = "";
+        ApplyMenuState();
+    }
+
+    /// 状态行宽度有限, 原因超出时截断.
+    private static string Shorten(string text, int max) =>
+        text.Length > max ? string.Concat(text.AsSpan(0, max), "…") : text;
+
+    private string StatusText() =>
+        _connected
+            ? Tr($"运行中 · v{_version}", $"Running · v{_version}")
+            : _failure.Length > 0
+                ? Tr(
+                    $"启动失败 · {Shorten(_failure, 60)}",
+                    $"Startup failed · {Shorten(_failure, 60)}"
+                )
+                : Tr("未连接", "Disconnected");
+
+    private string TrayTip() =>
+        _connected
+            ? Tr($"Amane 运行中 · v{_version}", $"Amane running · v{_version}")
+            : _failure.Length > 0
+                ? Tr("Amane 服务启动失败", "Amane server failed to start")
+                : Tr("Amane 服务未连接", "Amane not connected");
 
     // MARK: - Actions
 
@@ -1099,4 +1176,48 @@ internal sealed class App
     private static string? Env(string key) => Environment.GetEnvironmentVariable(key);
 
     private static string Tr(string zh, string en) => Zh ? zh : en;
+}
+
+/// 服务进程输出: 转发到本进程标准输出, 并保留末尾若干行.
+/// 启动失败时服务只留一行 uvicorn 错误, 退出码本身不携带原因.
+internal sealed class ProcessLog
+{
+    private const int Limit = 40;
+    private readonly object _gate = new();
+    private readonly List<string> _lines = [];
+
+    internal void Attach(Process proc)
+    {
+        proc.OutputDataReceived += (_, e) => Consume(e.Data);
+        proc.ErrorDataReceived += (_, e) => Consume(e.Data);
+    }
+
+    /// 失败原因: 末尾最后一条 ERROR 行; 没有 ERROR 行时取最后一条非空行.
+    internal string? FailureReason()
+    {
+        lock (_gate)
+        {
+            var lines = _lines.Select(line => line.Trim()).Where(line => line.Length > 0).ToList();
+            return lines.LastOrDefault(line => line.Contains("ERROR")) ?? lines.LastOrDefault();
+        }
+    }
+
+    private void Consume(string? line)
+    {
+        if (line is null)
+        {
+            return;
+        }
+
+        // WinExe 通常没有控制台, 该输出被丢弃; dotnet run 等开发回路仍可看到服务日志.
+        Console.WriteLine(line);
+        lock (_gate)
+        {
+            _lines.Add(line);
+            if (_lines.Count > Limit)
+            {
+                _lines.RemoveRange(0, _lines.Count - Limit);
+            }
+        }
+    }
 }
