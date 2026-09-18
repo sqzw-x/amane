@@ -74,14 +74,28 @@ class SubmissionSpec[T]:
         return self.union.validate_python(data)
 
     def error(self, data: dict[str, Any], exc: ValidationError) -> dict[str, Any]:
-        """把校验失败整理为工具返回值: 出错字段, 可用类型, 以及类型已知时的字段定义."""
-        first = exc.errors()[0]
-        loc = ".".join(str(part) for part in first["loc"]) or "(root)"
-        out: dict[str, Any] = {"error": f"参数无效: {loc}: {first['msg']}", "types": sorted(self.members)}
+        """把校验失败整理为工具返回值: 出错字段 (最多三条), 可用类型, 以及类型已知时的字段定义."""
+        details = _error_details(exc)
+        out: dict[str, Any] = {
+            "error": f"参数无效: {details[0]}",
+            "errors": details[:3],
+            "types": sorted(self.members),
+        }
         declared = data.get("type")
         if isinstance(declared, str) and declared in self.members:
             out["schema"] = self.schema(declared)
         return out
+
+
+def _error_details(exc: ValidationError) -> list[str]:
+    """逐条列出 ``loc`` 与原因; 一次提交多处出错时模型无需逐轮修正."""
+    details: list[str] = []
+    for item in exc.errors():
+        loc = ".".join(str(part) for part in item["loc"]) or "(root)"
+        text = f"{loc}: {item['msg']}"
+        if text not in details:
+            details.append(text)
+    return details
 
 
 TASK_SUBMISSION: SubmissionSpec[TaskSubmission] = SubmissionSpec(
