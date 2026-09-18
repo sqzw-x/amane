@@ -65,7 +65,7 @@
 | `events.jsonl` | UI 事件流 (单调 `seq`); 回放气泡 / 工具 / usage; SSE 续订 |
 | `meta.json` | 附属文件 (`turn_running`、会话 `thinking` 覆盖等) |
 
-`agent_sessions` 表只做索引. 删会话清理目录与未 persist 的 Saved Query. 进程内 history / pending 有 TTL + LRU, 逐出后从 `messages.json` 重新装入; 装载时丢弃已失效内容 —— `SystemPromptPart` (身份与规则只经 `instructions` 注入, 留在历史里会逐回合重复送出) 与旧版延迟载入的 `capability-load` 调用及返回 (机制已移除, 其返回还带着当时那版域内指令). `ResultCache` 独立 TTL.
+`agent_sessions` 表只做索引. 删会话清理目录与未 persist 的 Saved Query. 进程内 history / pending 有 TTL + LRU, 逐出后从 `messages.json` 重新装入; `ResultCache` 独立 TTL.
 
 ## 对话通道
 

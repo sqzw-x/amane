@@ -5,7 +5,7 @@ import contextlib
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,15 +16,10 @@ from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
-    ModelRequestPart,
     ModelResponse,
-    ModelResponsePart,
     PartDeltaEvent,
-    RetryPromptPart,
-    SystemPromptPart,
     TextPart,
     TextPartDelta,
-    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
@@ -78,47 +73,6 @@ class _TurnStreamState:
     reply_parts: list[str] = field(default_factory=list)
     show_user_message: bool = True
     deferred_tool_results: DeferredToolResults | None = None
-
-
-_STALE_TOOL_KINDS = frozenset({"capability-load"})
-"""旧版 capability 延迟载入留在历史里的调用与返回.
-
-该机制已移除, 其返回体还带着当时那版域内指令; 调用与返回成对丢弃, 避免模型读到已不存在的工具.
-"""
-
-
-def _is_stale_part(part: ModelRequestPart | ModelResponsePart) -> bool:
-    if isinstance(part, SystemPromptPart):
-        return True
-    if isinstance(part, (ToolCallPart, ToolReturnPart)):
-        return part.tool_kind in _STALE_TOOL_KINDS
-    # RetryPromptPart 没有 tool_kind, 只能按工具名判定
-    return isinstance(part, RetryPromptPart) and part.tool_name == "load_capability"
-
-
-def _drop_stale_parts[T: ModelRequest | ModelResponse](message: T) -> T | None:
-    """剔除该消息中已失效的部分; 全部失效则返回 None, 整条丢弃."""
-    parts = [part for part in message.parts if not _is_stale_part(part)]
-    if not parts:
-        return None
-    return replace(message, parts=parts) if len(parts) != len(message.parts) else message
-
-
-def _clean_history(messages: list[ModelMessage]) -> list[ModelMessage]:
-    """丢弃历史中已失效的部分, 只保留当前工具面仍能解释的内容.
-
-    身份与规则只经 agent ``instructions`` 注入, 不写入历史; 历史里若留有 ``SystemPromptPart``,
-    它会与 instructions 同时送出, 同一段提示词每回合重复计费.
-    """
-    out: list[ModelMessage] = []
-    for message in messages:
-        if isinstance(message, (ModelRequest, ModelResponse)):
-            cleaned = _drop_stale_parts(message)
-            if cleaned is not None:
-                out.append(cleaned)
-        else:
-            out.append(message)
-    return out
 
 
 @dataclass
@@ -240,7 +194,6 @@ class AgentService:
         loaded = self.store_for(session_id).load_messages()
         if loaded is None:
             return []
-        loaded = _clean_history(loaded)
         self._touch_history(session_id, loaded)
         return list(loaded)
 
