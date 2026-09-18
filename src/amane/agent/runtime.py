@@ -48,7 +48,8 @@ Rules:
    Destructive operations (delete / merge) require user approval: the UI presents the approval
    prompt, so do not ask the user to confirm them in text first.
    A tool that rejects a request returns {"error": ...}: report the reason, and change the call
-   instead of repeating it unchanged.
+   instead of repeating it unchanged. A creation whose follow-up fetch failed still returns the new
+   id, with `poll_error` carrying the failure: report the fetch as failed, not the creation.
 5. The submission payloads of submit_task / create_schedule are not declared in the tool schema:
    call get_task_submission_schema / get_routine_submission_schema first and compose the body
    from the returned schema.
