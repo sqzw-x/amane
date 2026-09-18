@@ -92,6 +92,7 @@ def _is_stale_part(part: ModelRequestPart | ModelResponsePart) -> bool:
         return True
     if isinstance(part, (ToolCallPart, ToolReturnPart)):
         return part.tool_kind in _STALE_TOOL_KINDS
+    # RetryPromptPart 没有 tool_kind, 只能按工具名判定
     return isinstance(part, RetryPromptPart) and part.tool_name == "load_capability"
 
 
