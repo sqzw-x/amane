@@ -530,6 +530,18 @@ class TestPathTraversalProtection:
         result = resolve_paths(wp, meta, ext="mp4")
         assert result.video == media / "sub" / "dir" / "ABC-123.mp4"
 
+    @pytest.mark.skipif(platform == "win32", reason="Windows 上 ``//`` 前的两段是 UNC 主机与共享, 需真实网络路径")
+    def test_double_separator_root_not_flattened(self, tmp_path: Path):
+        """库根带 ``//`` 时, 折叠空段不得把前缀压成单个 ``/``, 否则附属产物被判成逃逸."""
+        media = Path(f"//{tmp_path.resolve().relative_to('/')}") / "media"
+        media.mkdir(parents=True)
+        wp = Library(name="t", path=str(media), video_template=VIDEO_TEMPLATE_DEFAULT)
+        result = resolve_paths(wp, _meta(), ext="mp4")
+
+        assert result.video == media / "StudioX" / "ABC-123" / "ABC-123.mp4"
+        assert result.thumb == media / "StudioX" / "ABC-123" / "thumb.jpg"
+        assert result.nfo == media / "StudioX" / "ABC-123" / "ABC-123.nfo"
+
     @pytest.mark.skipif(platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_in_library_file_symlink_keeps_lexical_video_dir(self, media: Path):
         """dest 已是指向库内源文件的软链接时, {video_dir} 仍是 dest 所在目录."""
@@ -882,6 +894,66 @@ def test_resolve_paths_clips_long_title(media: Path) -> None:
     assert result.video.name == f"ABC-123-{_CLIPPED_JP}-CD2.mp4"
     assert len(result.video.parent.name.encode("utf-8")) <= PATH_FIELD_MAX_BYTES
     assert len(result.video.name.encode("utf-8")) <= 255
+
+
+class _AnchorCase(NamedTuple):
+    id: str
+    template: str
+    variables: dict[str, str]
+    expected: str
+
+
+ANCHOR_CASES: tuple[_AnchorCase, ...] = (
+    _AnchorCase(
+        "unc-value-keeps-share-anchor",
+        "{link_dir}/thumb.jpg",
+        {"link_dir": r"\\mio_NAS\CloudNAS\115media\JAV\EBWH-353-C 小花のん"},
+        "//mio_NAS/CloudNAS/115media/JAV/EBWH-353-C 小花のん/thumb.jpg",
+    ),
+    _AnchorCase(
+        "unc-template-keeps-share-anchor",
+        r"\\mio_NAS\CloudNAS\115media\{number}\{number}.{ext}",
+        {"number": "ABC-123", "ext": "mp4"},
+        "//mio_NAS/CloudNAS/115media/ABC-123/ABC-123.mp4",
+    ),
+    _AnchorCase(
+        "unc-anchor-collapses-empty-segment",
+        "{link_dir}/{video_relpath}/thumb.jpg",
+        {"link_dir": r"\\mio_NAS\CloudNAS\media\ABC-123", "video_relpath": ""},
+        "//mio_NAS/CloudNAS/media/ABC-123/thumb.jpg",
+    ),
+    _AnchorCase(
+        "extended-unc-prefix-kept",
+        r"\\?\UNC\mio_NAS\CloudNAS\{number}\{number}.strm",
+        {"number": "ABC-123"},
+        "//?/UNC/mio_NAS/CloudNAS/ABC-123/ABC-123.strm",
+    ),
+    _AnchorCase(
+        "drive-anchor-kept",
+        r"C:\media\{number}\{number}.{ext}",
+        {"number": "ABC-123", "ext": "mp4"},
+        "C:/media/ABC-123/ABC-123.mp4",
+    ),
+    _AnchorCase(
+        "root-anchor-collapses-empty-segments",
+        "/media//{number}//{number}.{ext}",
+        {"number": "ABC-123", "ext": "mp4"},
+        "/media/ABC-123/ABC-123.mp4",
+    ),
+    _AnchorCase(
+        "empty-placeholder-keeps-relative",
+        "{studio}/{number}.{ext}",
+        {"studio": "", "number": "ABC-123", "ext": "mp4"},
+        "ABC-123.mp4",
+    ),
+)
+
+
+@pytest.mark.parametrize("case", ANCHOR_CASES, ids=lambda c: c.id)
+def test_path_engine_keeps_path_anchor(case: _AnchorCase) -> None:
+    """锚 (UNC 共享 / 盘符 / 根) 原样保留, 只折叠锚之后的空段."""
+    rendered = PathEngine(case.template).render(TemplateContext.from_mapping(case.variables))
+    assert rendered == case.expected
 
 
 class _ActressCase(NamedTuple):

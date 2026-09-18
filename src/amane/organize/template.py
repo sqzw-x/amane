@@ -6,7 +6,7 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, TypedDict, cast
 
 from ..enums import ActorGender
@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 
 _UNKNOWN = "Unknown"
 _DRIVE = re.compile(r"^[A-Za-z]:")
-_DRIVE_ONLY = re.compile(r"^[A-Za-z]:$")
 PATH_FIELD_MAX_BYTES = 200
 PATH_FIELD_ELLIPSIS = "…"
 _CLIP_KEYS = frozenset({"title", "actor", "actors", "actress", "actresses"})
@@ -417,20 +416,18 @@ def _template_keeps_absolute(template: str, variables: dict[str, str]) -> bool:
 
 
 def _collapse_empty_segments(rendered: str, *, keep_absolute: bool) -> str:
-    """丢弃空路径段: 空占位符不能把相对模板变成绝对路径."""
+    """丢弃空路径段: 空占位符不能把相对模板变成绝对路径.
+
+    锚 (UNC 共享 / 盘符 / 根) 由 ``PureWindowsPath`` 从渲染结果切出并原样保留, 空段折叠只作用于锚之后.
+    逐段重拼会把 UNC 的 ``\\\\`` 压成单个 ``/``, 而该结果在 Windows 上无盘符, 会被当成相对路径重新拼回
+    库根, 触发误报的逃逸.
+    """
     posix = rendered.replace("\\", "/")
-    parts = posix.split("/")
-    drive = ""
-    if parts and _DRIVE_ONLY.match(parts[0] or ""):
-        drive = parts[0]
-        parts = parts[1:]
-    nonempty = [p for p in parts if p]
-    if drive:
-        return f"{drive}/{'/'.join(nonempty)}"
-    joined = "/".join(nonempty)
-    if keep_absolute:
-        return f"/{joined}" if joined else "/"
-    return joined
+    anchor = PureWindowsPath(rendered).anchor if keep_absolute else ""
+    parts = [part for part in posix[len(anchor) :].split("/") if part]
+    if not anchor:
+        return "/".join(parts)
+    return PureWindowsPath(anchor, *parts).as_posix()
 
 
 class TemplateEngine:
