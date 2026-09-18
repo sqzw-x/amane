@@ -5,7 +5,7 @@ import contextlib
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     PartDeltaEvent,
+    SystemPromptPart,
     TextPart,
     TextPartDelta,
     ToolReturnPart,
@@ -73,6 +74,23 @@ class _TurnStreamState:
     reply_parts: list[str] = field(default_factory=list)
     show_user_message: bool = True
     deferred_tool_results: DeferredToolResults | None = None
+
+
+def _without_system_prompts(messages: list[ModelMessage]) -> list[ModelMessage]:
+    """丢弃历史中的 ``SystemPromptPart``.
+
+    身份与规则只经 agent ``instructions`` 注入, 不写入历史; 历史里若留有该部分, 它会与 instructions
+    同时送出, 同一段提示词每回合重复计费 (且可能是已失效的旧内容).
+    """
+    out: list[ModelMessage] = []
+    for message in messages:
+        if isinstance(message, ModelRequest) and any(isinstance(part, SystemPromptPart) for part in message.parts):
+            parts = [part for part in message.parts if not isinstance(part, SystemPromptPart)]
+            if not parts:
+                continue
+            message = replace(message, parts=parts)
+        out.append(message)
+    return out
 
 
 @dataclass
@@ -194,6 +212,7 @@ class AgentService:
         loaded = self.store_for(session_id).load_messages()
         if loaded is None:
             return []
+        loaded = _without_system_prompts(loaded)
         self._touch_history(session_id, loaded)
         return list(loaded)
 

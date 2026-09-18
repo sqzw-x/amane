@@ -6,9 +6,13 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
 
+from amane.agent.cache import ResultCache
+from amane.agent.service import AgentService
 from amane.agent.trace import SessionStore
+from amane.config import AgentConfig
+from amane.db.repository import Repository
 
 
 def test_session_store_roundtrip_messages(tmp_path: Path) -> None:
@@ -36,3 +40,39 @@ async def test_session_store_seq_and_follow(tmp_path: Path) -> None:
     got = [str(ev["text"]) async for ev in store.follow(0) if ev["type"] == "text_delta"]
     await task
     assert got == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_load_history_drops_system_prompt_parts(tmp_path: Path, repo: Repository) -> None:
+    """历史里的 SystemPromptPart 不得随请求送出: 身份与规则只经 agent instructions 注入."""
+    service = AgentService(
+        db_path=tmp_path / "amane.db",
+        data_dir=tmp_path / "data",
+        repo=repo,
+        cache=ResultCache(ttl_s=60, max_entries=8),
+        config=AgentConfig(api_key="sk-test", model="test-model"),
+    )
+    session = await repo.create_agent_session(title="legacy")
+    assert session.id is not None
+    service.store_for(session.id).save_messages(
+        [
+            ModelRequest(parts=[SystemPromptPart(content="旧身份与规则"), UserPromptPart(content="旧问题")]),
+            ModelResponse(parts=[TextPart(content="旧答复")]),
+            ModelRequest(parts=[SystemPromptPart(content="孤立的系统提示")]),
+            ModelRequest(parts=[UserPromptPart(content="新问题")]),
+        ]
+    )
+
+    loaded = service._load_history(session.id)
+
+    assert len(loaded) == 3
+    first, last = loaded[0], loaded[-1]
+    assert isinstance(first, ModelRequest) and isinstance(last, ModelRequest)
+    assert [part.content for part in first.parts if isinstance(part, UserPromptPart)] == ["旧问题"]
+    assert not any(
+        isinstance(part, SystemPromptPart)
+        for message in loaded
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+    )
+    assert [part.content for part in last.parts if isinstance(part, UserPromptPart)] == ["新问题"]
