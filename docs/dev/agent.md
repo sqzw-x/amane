@@ -31,7 +31,7 @@
 | `schedule-ops` | CLEANUP / UPSCALE / R18_IMPORT / RESCRAPE 定时 CRUD 与触发 |
 | `task-ops` | 统一提交 / 取消 / 重试 (入队, 不代为运行) |
 
-任务与定时任务的入参 (即 `submit_task` / `create_schedule` 的 `submission`) **不随工具签名内联**: 联合体体积远大于其余工具定义, 改为 `get_task_submission_schema` / `get_routine_submission_schema` 按需返回, 与提交时的校验共用同一个 `TypeAdapter`; 校验失败以 `{error, types, schema}` 返回出错字段、可用类型与该类型的字段定义, 模型无需再次试探形状.
+任务与定时任务的入参 (即 `submit_task` / `create_schedule` 的 `submission`) **不随工具签名内联**: 联合体体积远大于其余工具定义, 改为 `get_task_submission_schema` / `get_routine_submission_schema` 按需返回, 与提交时的校验共用同一个 `TypeAdapter`; 校验失败以 `{error, errors, types, schema}` 返回出错字段 (最多三条)、可用类型与该类型的字段定义, 模型无需再次试探形状.
 
 指令只保留域特有约束. 全局约定 (id 一律取自 `sql_explore` / `sql_deliver`、破坏性操作批准、失败返回 `{error}`、入参先取 schema) 集中在系统提示, 不逐工具重复; capability id 不再对模型可见, 指令中不得引用.
 
@@ -42,7 +42,7 @@
 - 成功且无后续依赖 → `tools.py::TOOL_OK` (纯回执); 创建 → 新对象 id (键名用入参口径, 如 `feed_id`); 批量 → 计数 (`affected` / `missing` / `submitted` / `skipped`).
 - 不回入参与工具名回显、时间戳、耗时 (`elapsed_ms`)、以及能由返回值本身算出的字段 — `total` 只在分页列表里回, 因为它是翻页的依据.
 - 列表工具只回识别与筛选所需字段 (id / 名称 / 归属 / 状态 / 计数), 细节留给 `get_*` 或 `sql_explore`; `get_*` 回该行当前状态, 是详情视图.
-- 失败只回 `{"error": ...}`, 文案须自足且可行动: 点名出错输入, 并给出下一步 (可写字段清单、可用类型及其字段定义). 创建后立即触发的外呼失败属部分成功: 仍回新 id, 原因单列 `poll_error`, 不并入 `error`.
+- 失败只回 `{"error": ...}` (多字段出错另附 `errors`, 最多三条), 文案须自足且可行动: 点名出错输入, 并给出下一步 (可写字段清单、可用类型及其字段定义). 创建后立即触发的外呼失败属部分成功: 仍回新 id, 原因单列 `poll_error`, 不并入 `error`.
 - 大块结果保持"列名 + 行数组"结构, 列名只回一次, 不按行重复键名.
 
 执行前只修改实际调用与落入 `messages.json` 的 `tool_name`: `__` 最后一段恰好是当前可调用名时裁成该段; 名字已在可调用集合里或后缀对不上则原样交给框架 (未知工具仍 `ModelRetry`). 流式 SSE 徽章仍可能显示模型原始名.
@@ -65,7 +65,7 @@
 | `events.jsonl` | UI 事件流 (单调 `seq`); 回放气泡 / 工具 / usage; SSE 续订 |
 | `meta.json` | 附属文件 (`turn_running`、会话 `thinking` 覆盖等) |
 
-`agent_sessions` 表只做索引. 删会话清理目录与未 persist 的 Saved Query. 进程内 history / pending 有 TTL + LRU, 逐出后从 `messages.json` 重新装入; `ResultCache` 独立 TTL.
+`agent_sessions` 表只做索引. 删会话清理目录与未 persist 的 Saved Query. 进程内 history / pending 有 TTL + LRU, 逐出后从 `messages.json` 重新装入; 装载时丢弃 `SystemPromptPart` —— 身份与规则只经 `instructions` 注入, 留在历史里会逐回合重复送出. `ResultCache` 独立 TTL.
 
 ## 对话通道
 
@@ -89,4 +89,4 @@
 
 `AgentService` 挂载于 `AppRuntime`: `rebuild` 按 `hot.agent` 重建工厂并裁剪 history 热缓存, **不清除** ResultCache; bootstrap 装配 `bridge` (safe_dirs / watcher / 动态 Worker 取消 / `FeedService.poll_one`).
 
-上游协议由 `hot.agent.api_type` 选择, 模型构造与翻译共用 `llm/model.py::build_model`; `base_url` / `api_key` / `model` 原样交给对应 Provider (Anthropic 需填 Anthropic 端点, 无隐式改写). 身份与规则经 agent `instructions` 注入而**不是** `system_prompt`: Responses 协议把 agent instructions 放在 API 顶层 `instructions` 字段, 服务端插在 `input` 之前; `system_prompt` 会变成 `input` 里的 system 消息, 于是各 capability 的注意事项反而排在身份定位之前. Responses 模型对非 OpenAI 自家端点经 `llm/model.py::_responses_profile` 关掉 `additional_tools` 追加通道: 该通道只有 OpenAI 实现, 兼容端点静默丢弃, 中途追加的工具就到不了模型; 关掉后追加的工具改在 `tools` 里声明. 思考强度: 全局 `hot.agent.thinking` 为默认 (`None` = 不传), 会话覆盖在 `meta.json`; 每回合经由 `model_settings` 注入 thinking 与 `hot.agent.max_tokens` (默认 128000, 避免提供商默认过小导致 length 截断). 运行使用无上限的 `UsageLimits`.
+上游协议由 `hot.agent.api_type` 选择, 模型构造与翻译共用 `llm/model.py::build_model`; `base_url` / `api_key` / `model` 原样交给对应 Provider (Anthropic 需填 Anthropic 端点, 无隐式改写). 身份与规则经 agent `instructions` 注入而**不是** `system_prompt`: Responses 协议把 agent instructions 放在 API 顶层 `instructions` 字段, 服务端插在 `input` 之前; `system_prompt` 会变成 `input` 里的 system 消息, 于是各 capability 的注意事项反而排在身份定位之前. Responses 模型对非 OpenAI 自家端点经 `llm/model.py::_responses_profile` 关闭 `additional_tools` 追加通道: 该通道只有 OpenAI 实现, 兼容端点静默丢弃, 中途追加的工具就到不了模型. 工具面现已全量声明, 无追加产生者; 该 profile 保留以备重新引入延迟载入. 思考强度: 全局 `hot.agent.thinking` 为默认 (`None` = 不传), 会话覆盖在 `meta.json`; 每回合经由 `model_settings` 注入 thinking 与 `hot.agent.max_tokens` (默认 128000, 避免提供商默认过小导致 length 截断). 运行使用无上限的 `UsageLimits`.

@@ -13,12 +13,13 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from ..enums import ApiType
 
 _RESPONSES_PROFILE = OpenAIModelProfile(tool_addition_mode=None)
-"""``additional_tools`` 是 OpenAI 自家 Responses 端点专有: 兼容端点 (DeepSeek 等) 静默丢弃它,
-延迟载入的 capability 工具就此永远到不了模型. 关掉后追加的工具改在 ``tools`` 里声明."""
+"""``additional_tools`` 是 OpenAI 自家 Responses 端点专有的追加通道: 兼容端点 (DeepSeek 等) 静默
+丢弃它, 工具就此到不了模型. 工具面现已全量声明, 无追加产生者; 保留该 profile 是为了重新引入延迟
+载入时不必依赖端点实现该通道."""
 
 
 def _responses_profile(base_url: str) -> OpenAIModelProfile | None:
-    """只在非自家端点关掉 ``additional_tools``; 自家端点保留该追加通道 (不扰动 prompt 前缀缓存)."""
+    """只在非自家端点关闭 ``additional_tools``; 自家端点保留该通道, 无需改写前缀缓存."""
     return None if urlsplit(base_url).hostname == "api.openai.com" else _RESPONSES_PROFILE
 
 
