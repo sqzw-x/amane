@@ -50,7 +50,7 @@
 
 **list** 视图与订阅源、库文件表采用 `BrowsePageShell fill`: 标题 / 搜索不滚, 剩余高度交给 children; 视口高度取 `APP_SHELL_MAIN_HEIGHT` (`components/layout/app-shell-metrics.ts`), 不允许再手写一份 calc — 该常量由 AppShell 写入 `:root` 的 `--app-shell-header-height` 与 `--app-shell-padding` 推导.
 
-`ListToolbar` 是表体壳: 顶栏不滚, 表体内滚, **唯一**分页固定于视口底, 翻页把表体滚回顶部; 它的 overflow 区要求父级有界高度. 分页宽度不足收合阈值时只保留「第 N / M 页」, 判定由 `components/common/list-pagination.tsx` 按实测宽度写成内联样式 — Mantine 的收合经由容器查询, 旧内核整条丢弃, 分页在壳里会一直显示页码按钮; 收合文案经 i18n 给出, 不用 Mantine 的英文默认值. `grid` / `cloud` 禁止 fill — 演员墙用 `VirtuosoGrid` + `useWindowScroll`.
+`ListToolbar` 是表体壳: 顶栏不滚, 表体内滚, **唯一**分页固定于视口底, 翻页把表体滚回顶部; 它的 overflow 区要求父级有界高度. 分页宽度不足收合阈值时只保留「第 N / M 页」, 判定由 `components/common/list-pagination.tsx` 按实测宽度写成内联样式 — Mantine 的收合经由容器查询, 旧内核整条丢弃, 分页在壳里会一直显示页码按钮; 收合文案经 i18n 给出, 不用 Mantine 的英文默认值. `grid` / `cloud` 禁止 fill — 演员墙用 `VirtuosoGrid` + `useWindowScroll`, 并按历史条目缓存虚拟化快照: 路由器复位窗口滚动时虚拟列表尚未产生高度, 复位会被夹回顶部, 位置还原由挂载后应用快照完成.
 
 窄屏 (md 以下) 的 `BrowsePageShell` 只剩一行: 标题 + 视图切换 + 筛选入口, 摘要 / 搜索 / 高级筛选面板 / 附属控件 / 右侧动作全进底部面板. **带高级筛选的列表页必须把面板经 `filterPanel` 槽传进来, 不允许把 `<Collapse>` 放进 children** — 否则窄屏上开关与面板会分处两地: 开关在面板里, 面板渲染在主屏上. 面板里的浮层控件 (`Select` 及其 `searchable` 形态) 保持默认 portal, 不允许因为面板在抽屉里就改成 `withinPortal: false` — 后者会让浮层交给抽屉的内容容器裁切. 浮层挂载到 body 上不会关掉抽屉 (实测范围: Mantine 9.6, 窄屏断点) — 上游的"点击外部"只由 overlay 的 `onClick` 触发, 浮层的 z-index 更高, 碰不到它. 同一批控件只渲染一处: 两个断点各一份会让搜索框在 DOM 里存在两个. 标题行的枚举选择器在窄屏整块不渲染: 放不进一行, 换行会把标题区撑成好几行, 而分类浏览入口本身就是用来换种类的. `SelectionBar` 无选中时在窄屏整条不渲染. 订阅浏览页的 `FeedReader` 用同一形态, 条目在窄屏把行内图标操作收进菜单.
 
