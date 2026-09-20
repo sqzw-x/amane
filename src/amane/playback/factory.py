@@ -334,8 +334,6 @@ class PlaybackFactory:
 
         return await self._caches.coalesce(f"probe:{cache_key}", _run)
 
-        return await self._caches.coalesce(f"probe:{cache_key}", _run)
-
     async def resolve(
         self,
         source_id: str,
