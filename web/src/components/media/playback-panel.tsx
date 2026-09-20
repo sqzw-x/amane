@@ -12,7 +12,7 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
-import { IconChevronDown } from "@tabler/icons-react";
+import { IconChevronDown, IconRefresh } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
@@ -217,18 +217,44 @@ function PlayerFrame({
   );
 }
 
-/** 播放窗口内的提示: 探测失败、播放失败与不支持的媒体类型都在窗口里居中显示. */
+/**
+ * 播放窗口内的提示: 探测失败、播放失败与不支持的媒体类型都在窗口里居中显示.
+ *
+ * 失败提示带重试入口; 媒体类型不支持属于内容本身的限制, 重试不会改变结果, 因此不给入口.
+ */
 function PlayerMessage({
   tone = "error",
+  onRetry,
+  retrying = false,
   children,
 }: {
   tone?: "error" | "neutral";
+  onRetry?: () => void;
+  /** 重试请求在途: 流列表重取期间为真, 播放器重挂无从观察, 恒为假. */
+  retrying?: boolean;
   children: ReactNode;
 }) {
+  const { t } = useTranslation("metadata");
   return (
     <Center h="100%" w="100%" p="md">
       <Alert color={tone === "error" ? "red" : "gray"} variant="light" maw={520}>
-        {children}
+        <Group gap="sm" wrap="wrap" align="center">
+          <Text size="sm" style={{ flex: 1, minWidth: 0 }}>
+            {children}
+          </Text>
+          {onRetry != null && (
+            <Button
+              size="xs"
+              variant="light"
+              color="red"
+              leftSection={<IconRefresh size={14} />}
+              loading={retrying}
+              onClick={onRetry}
+            >
+              {t("detail.playbackRetry")}
+            </Button>
+          )}
+        </Group>
       </Alert>
     </Center>
   );
@@ -291,6 +317,8 @@ export function PlaybackPanel({
   const [pickedSourceId, setPickedSourceId] = useState<string | null>(null);
   const [pickedStream, setPickedStream] = useState<{ sourceId: string; key: string } | null>(null);
   const [error, setError] = useState<{ href: string; message: string } | null>(null);
+  // 播放失败的重试计数: 地址不变时播放器不会重新装载, 由它换掉 key 触发重挂.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   // 来源列表变化后原选择可能不存在 (来源被停用或卸载), 回落到第一个来源.
   const source = sources.find((item) => item.source_id === pickedSourceId) ?? sources[0];
@@ -323,6 +351,21 @@ export function PlaybackPanel({
       : selected.available
         ? shownError
         : (failureReason(selected) ?? t("detail.playbackUnavailable")));
+
+  /**
+   * 失败重试: 探测与列表失败重新探测该来源, 播放失败只重新挂载播放器.
+   *
+   * 探测失败不写入后端探测缓存, 重取必定重新调用插件; 播放失败不重取流列表 —— 重取会让已失效
+   * 的选择静默回退到另一条流. 两处都先清除失败记录: 它按 href 记住, 不清除时播放器不会重新渲染.
+   */
+  const retryStreams = () => {
+    setError(null);
+    void streamsQuery.refetch();
+  };
+  const retryPlayback = () => {
+    setError(null);
+    setReloadNonce((nonce) => nonce + 1);
+  };
 
   // 评论里的时间戳能否跳转, 与这里能否渲染播放器是同一个条件.
   const canSeek =
@@ -421,15 +464,23 @@ export function PlaybackPanel({
           {streamsQuery.isPending ? (
             <Skeleton height="100%" />
           ) : notice != null ? (
-            <PlayerMessage>{notice}</PlayerMessage>
+            <PlayerMessage
+              onRetry={shownError != null ? retryPlayback : retryStreams}
+              retrying={shownError == null && streamsQuery.isFetching}
+            >
+              {notice}
+            </PlayerMessage>
           ) : selected == null ? (
-            <PlayerMessage>{t("detail.playbackUnavailable")}</PlayerMessage>
+            <PlayerMessage onRetry={retryStreams} retrying={streamsQuery.isFetching}>
+              {t("detail.playbackUnavailable")}
+            </PlayerMessage>
           ) : kind === "other" ? (
             <PlayerMessage tone="neutral">{t("detail.playbackUnsupported")}</PlayerMessage>
           ) : (
             <Suspense fallback={<Skeleton height="100%" />}>
               <PlaybackPlayer
-                key={selected.href}
+                // 地址不变时 hls.js 不会重新装载, 重试必须换掉 key 才会重挂.
+                key={`${selected.href}#${reloadNonce}`}
                 href={selected.href}
                 kind={kind}
                 seekable={selected.seekable}

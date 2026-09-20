@@ -119,6 +119,7 @@
     "playbackUnavailableOption": "{{name}} (currently unavailable)",
     "playbackSourcesFailed": "Could not load playback sources",
     "playbackStreamsFailed": "Could not load the stream list",
+    "playbackRetry": "Retry",
     "playbackSourceLabel": "Playback source",
     "playbackStreamLabel": "Stream",
     "playbackVolume": "Volume",
