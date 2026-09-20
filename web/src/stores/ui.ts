@@ -2,6 +2,16 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ColumnWidths } from "@/hooks/use-resizable-columns";
 import {
+  actorListDefaultsSchema,
+  feedsListDefaultsSchema,
+  type NavListDefaults,
+  type NavListDefaultsUpdate,
+  type NavListKey,
+  metaListDefaultsSchema,
+  withoutListDefault,
+  withListDefault,
+} from "@/lib/nav-defaults";
+import {
   clampPageSize,
   DEFAULT_PAGE_SIZES,
   type PageSize,
@@ -56,6 +66,12 @@ interface UIState {
    * 后端顺序追加在后, 因此新装与重装的来源落末位; 卸载不清理, 装回来仍在原位.
    */
   playbackSourceOrder: string[];
+  /**
+   * 侧栏「片库 / 演员 / 订阅」条目携带的默认列表参数.
+   *
+   * 只在从侧栏进入时注入 URL, 页面内不再引用; 读取经 `lib/nav-defaults.ts` 的 schema 校验, 非法项丢弃.
+   */
+  listDefaults: Partial<NavListDefaults>;
   toggleNavbar: () => void;
   setNavbarCollapsed: (collapsed: boolean) => void;
   setTheme: (theme: Theme) => void;
@@ -66,6 +82,8 @@ interface UIState {
   setMetaColumnWidths: (widths: ColumnWidths<MetaTableColumnKey>) => void;
   setActorColumnWidths: (widths: ColumnWidths<ActorTableColumnKey>) => void;
   setPlaybackSourceOrder: (order: string[]) => void;
+  setListDefault: (update: NavListDefaultsUpdate) => void;
+  clearListDefault: (key: NavListKey) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -80,6 +98,7 @@ export const useUIStore = create<UIState>()(
       metaColumnWidths: {},
       actorColumnWidths: {},
       playbackSourceOrder: [],
+      listDefaults: {},
       toggleNavbar: () => set((s) => ({ navbarCollapsed: !s.navbarCollapsed })),
       setNavbarCollapsed: (collapsed) => set({ navbarCollapsed: collapsed }),
       setTheme: (theme) => set({ theme }),
@@ -93,6 +112,10 @@ export const useUIStore = create<UIState>()(
       setMetaColumnWidths: (widths) => set({ metaColumnWidths: widths }),
       setActorColumnWidths: (widths) => set({ actorColumnWidths: widths }),
       setPlaybackSourceOrder: (order) => set({ playbackSourceOrder: order }),
+      setListDefault: (update) =>
+        set((state) => ({ listDefaults: withListDefault(state.listDefaults, update) })),
+      clearListDefault: (key) =>
+        set((state) => ({ listDefaults: withoutListDefault(state.listDefaults, key) })),
     }),
     {
       name: STORAGE_KEY,
@@ -113,6 +136,12 @@ export const useUIStore = create<UIState>()(
           metaColumnWidths: p?.metaColumnWidths ?? {},
           actorColumnWidths: p?.actorColumnWidths ?? {},
           playbackSourceOrder: p?.playbackSourceOrder ?? [],
+          // 持久化值未经校验: 逐项过 schema, 非法项丢弃.
+          listDefaults: {
+            meta: metaListDefaultsSchema.safeParse(p?.listDefaults?.meta).data,
+            actors: actorListDefaultsSchema.safeParse(p?.listDefaults?.actors).data,
+            feeds: feedsListDefaultsSchema.safeParse(p?.listDefaults?.feeds).data,
+          },
         };
       },
     },

@@ -10,6 +10,7 @@ import type { ActorGender, ActorSortField } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
+import { ListDefaultButton } from "@/components/common/list-default-button";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { SortMenu } from "@/components/common/sort-menu";
 import { ActorFilterControls } from "@/components/media/actor-filter-controls";
@@ -36,6 +37,7 @@ import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 import { ACTOR_SORT_FIELDS } from "@/lib/exhaustive-maps";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
+import { actorListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
 
 const ACTOR_SORT_I18N_KEY = exhaustiveRecord<ActorSortField>()({
@@ -189,6 +191,7 @@ function ActorsIndexPage() {
     <BrowsePageShell
       fill={isList}
       title={<Title order={2}>{t("actors.title")}</Title>}
+      actions={<ListDefaultButton update={{ key: "actors", value: actorListDefaults(search) }} />}
       viewSwitch={
         <SegmentedControl
           value={search.view}

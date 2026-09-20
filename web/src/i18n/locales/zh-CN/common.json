@@ -56,6 +56,13 @@
       "ops": "运行"
     }
   },
+  "navDefaults": {
+    "title": "侧栏默认",
+    "set": "将当前参数设为侧栏默认",
+    "clear": "清除侧栏默认",
+    "saved": "已设为侧栏默认",
+    "cleared": "已清除侧栏默认"
+  },
   "theme": {
     "light": "浅色",
     "dark": "深色",

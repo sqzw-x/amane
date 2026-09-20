@@ -4,23 +4,15 @@ import { IconList } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { z } from "zod";
 import { listFeedsOptions } from "@/client/@tanstack/react-query.gen";
 import type { FeedItemReadState, FeedItemState } from "@/client/types.gen";
+import { ListDefaultButton } from "@/components/common/list-default-button";
 import { FeedReader } from "@/components/feeds/feed-reader";
 import { FeedSidebar } from "@/components/feeds/feed-sidebar";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
+import { feedsSearchSchema } from "@/lib/feeds/browse";
 import { UNGROUPED_GROUP } from "@/lib/feeds/groups";
-
-const feedsSearchSchema = z.object({
-  feed: z.coerce.number().int().positive().optional(),
-  group: z.string().optional(),
-  q: z.string().optional(),
-  state: z.enum(["active", "ignored", "all"]).catch("active").default("active"),
-  read: z.enum(["unread", "read", "all"]).catch("unread").default("unread"),
-  page: z.coerce.number().int().min(1).catch(1).default(1),
-  nodedupe: z.union([z.literal("1"), z.literal("true"), z.literal(true)]).optional(),
-});
+import { feedListDefaults } from "@/lib/nav-defaults";
 
 export const Route = createFileRoute("/feeds/")({
   validateSearch: feedsSearchSchema,
@@ -90,6 +82,7 @@ function FeedsPage() {
           </Button>
           <Title order={2}>{t("title")}</Title>
         </Group>
+        <ListDefaultButton update={{ key: "feeds", value: feedListDefaults(search) }} />
       </Group>
 
       {!isLoading && feeds.length === 0 ? (

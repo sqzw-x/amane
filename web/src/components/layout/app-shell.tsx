@@ -46,6 +46,7 @@ import { APP_SHELL_HEADER_HEIGHT } from "@/components/layout/app-shell-metrics";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { VersionMenu } from "@/components/layout/version-menu";
 import { APP_NAME, GITHUB_URL } from "@/lib/app";
+import { navItemClick } from "@/lib/nav-defaults";
 import { shellEnvironment } from "@/lib/shell";
 import { useConnectionStore } from "@/stores/connection";
 import { useUIStore } from "@/stores/ui";
@@ -106,18 +107,74 @@ function isNavActive(pathname: string, to: string, end = false): boolean {
 function NavItemLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
   const { t } = useTranslation("common");
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const listDefaults = useUIStore((state) => state.listDefaults);
   const Icon = item.icon;
+  const shell = {
+    label: t(item.labelKey),
+    leftSection: <Icon size={18} stroke={1.6} />,
+    active: isNavActive(pathname, item.to, item.end),
+    variant: "filled" as const,
+    style: { borderRadius: "var(--mantine-radius-md)" },
+  };
+  // 列表条目携带该页的默认参数: 入口地址不残留搜索词、页码与 agent 深链.
+  // 路由的参数类型各不相同, 因此按 `to` 分支给字面量目标. 分类入口是种类索引页, 没有可承载的参数.
+  if (item.to === "/meta") {
+    return (
+      <NavLink
+        component={Link}
+        to="/meta"
+        onClick={(event) =>
+          navItemClick(
+            event,
+            onNavigate,
+            () => void navigate({ to: "/meta", search: listDefaults.meta ?? {} }),
+          )
+        }
+        {...shell}
+      />
+    );
+  }
+  if (item.to === "/actors") {
+    return (
+      <NavLink
+        component={Link}
+        to="/actors"
+        onClick={(event) =>
+          navItemClick(
+            event,
+            onNavigate,
+            () => void navigate({ to: "/actors", search: listDefaults.actors ?? {} }),
+          )
+        }
+        {...shell}
+      />
+    );
+  }
+  if (item.to === "/feeds") {
+    return (
+      <NavLink
+        component={Link}
+        to="/feeds"
+        onClick={(event) =>
+          navItemClick(
+            event,
+            onNavigate,
+            () => void navigate({ to: "/feeds", search: listDefaults.feeds ?? {} }),
+          )
+        }
+        {...shell}
+        activeOptions={{ exact: true, includeSearch: false }}
+      />
+    );
+  }
   return (
     <NavLink
       component={Link}
       to={item.to}
-      activeOptions={item.end ? { exact: true, includeSearch: false } : undefined}
-      label={t(item.labelKey)}
-      leftSection={<Icon size={18} stroke={1.6} />}
-      active={isNavActive(pathname, item.to, item.end)}
-      variant="filled"
       onClick={onNavigate}
-      style={{ borderRadius: "var(--mantine-radius-md)" }}
+      {...shell}
+      activeOptions={item.end ? { exact: true, includeSearch: false } : undefined}
     />
   );
 }
