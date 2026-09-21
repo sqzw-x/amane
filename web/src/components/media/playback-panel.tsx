@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Alert,
   AspectRatio,
   Box,
@@ -234,25 +235,23 @@ function PlayerMessage({
   retrying?: boolean;
   children: ReactNode;
 }) {
-  const { t } = useTranslation("metadata");
   return (
     <Center h="100%" w="100%" p="md">
       <Alert color={tone === "error" ? "red" : "gray"} variant="light" maw={520}>
-        <Group gap="sm" wrap="wrap" align="center">
+        <Group gap="xs" wrap="nowrap" align="center">
           <Text size="sm" style={{ flex: 1, minWidth: 0 }}>
             {children}
           </Text>
           {onRetry != null && (
-            <Button
-              size="xs"
-              variant="light"
+            <ActionIcon
+              variant="transparent"
               color="red"
-              leftSection={<IconRefresh size={14} />}
+              size="sm"
               loading={retrying}
               onClick={onRetry}
             >
-              {t("detail.playbackRetry")}
-            </Button>
+              <IconRefresh size={16} />
+            </ActionIcon>
           )}
         </Group>
       </Alert>

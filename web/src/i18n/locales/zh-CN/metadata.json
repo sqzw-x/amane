@@ -120,7 +120,6 @@
     "playbackUnavailableOption": "{{name}}（当前不可用）",
     "playbackSourcesFailed": "无法加载播放源",
     "playbackStreamsFailed": "无法加载流列表",
-    "playbackRetry": "重试",
     "playbackSourceLabel": "播放源",
     "playbackStreamLabel": "码流",
     "playbackVolume": "音量",
