@@ -56,12 +56,11 @@
       "ops": "Run"
     }
   },
-  "navDefaults": {
-    "title": "Sidebar default",
-    "set": "Use current filters as sidebar default",
-    "clear": "Clear sidebar default",
-    "saved": "Saved as sidebar default",
-    "cleared": "Sidebar default cleared"
+  "defaults": {
+    "set": "Set as default",
+    "clear": "Clear default",
+    "saved": "Saved as default",
+    "cleared": "Default cleared"
   },
   "theme": {
     "light": "Light",

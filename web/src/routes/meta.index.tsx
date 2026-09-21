@@ -13,7 +13,7 @@ import type { FacetKind, MetadataSortField } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
-import { ListDefaultButton } from "@/components/common/list-default-button";
+import { ListDefaultActions } from "@/components/common/list-default-actions";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { SortMenu } from "@/components/common/sort-menu";
 import { FacetBadge } from "@/components/media/facet-badge";
@@ -295,7 +295,7 @@ function MetaIndexPage() {
     <BrowsePageShell
       fill={isList}
       title={<Title order={2}>{t("common:nav.meta")}</Title>}
-      actions={<ListDefaultButton update={{ key: "meta", value: metaListDefaults(search) }} />}
+      actions={<ListDefaultActions update={{ key: "meta", value: metaListDefaults(search) }} />}
       viewSwitch={
         <SegmentedControl
           value={search.view}

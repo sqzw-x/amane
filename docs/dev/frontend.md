@@ -38,7 +38,7 @@
 
 片库 / 演员 / 分类无独立「管理」路由, list 视图才有多选与破坏性操作; Feed 相反, 阅读器与源表不共用布局. 侧栏「全部 / 未分组」不经深链进入. `/feeds` 的选中态必须 `activeOptions.exact` 且忽略 search, 否则打开 `/feeds/sources` 时「订阅」也会亮.
 
-**侧栏默认参数**: 侧栏「片库 / 演员 / 订阅」按钮携带 `lib/nav-defaults.ts` 白名单内的默认参数 (排序、筛选、视图; 存于 ui store), 点击时经路由跳转整体替换 search, 因此 URL 仍是列表态的唯一事实来源 —— 页面内清除的筛选不会被默认重新写入. Mantine 的多态 props 把 `component={Link}` 的 `search` 收窄成 `never`, 参数只能这样送入; 中键与修饰键保留浏览器行为, 打开的地址因此不带默认参数. 参数按各页的 search schema 逐项校验, 非法项丢弃 (后端枚举或排序字段变化后旧值即失效).
+**列表默认**: 侧栏「片库 / 演员 / 订阅」按钮携带 `lib/nav-defaults.ts` 白名单内的默认列表参数 (排序、筛选、视图; 存于 ui store), 点击时经路由跳转整体替换 search, 因此 URL 仍是列表态的唯一事实来源 —— 页面内清除的筛选不会被默认重新写入. Mantine 的多态 props 把 `component={Link}` 的 `search` 收窄成 `never`, 参数只能这样送入; 中键与修饰键保留浏览器行为, 打开的地址因此不带默认参数. 参数按各页的 search schema 逐项校验, 非法项丢弃 (后端枚举或排序字段变化后旧值即失效). 存取入口用行内按钮, **不使用浮层菜单**: 窄屏底部面板会在浮层交互后关闭.
 
 **入口分流**: 非演员实体进 `/catalog/$kind/$facetId`, 演员进 `/actors/$actorId` (演员不进入 `/catalog`); `FacetBadge` 默认深链分类, 筛选深链 `/meta`.
 
@@ -91,7 +91,7 @@ dict 的用户 key 是字面量, 不写入 TanStack 点路径, 叶子读写经 `
 | 高频流 (进度 / 日志) | Zustand |
 | 对话增量 | SSE (与 WS 正交) |
 | 导航态 (筛选 / 排序 / page / view) | URL search |
-| 列表密度 / 列宽 / 主题 / 播放源顺序 / 侧栏条目默认参数 | Zustand (`amane-web`) |
+| 列表密度 / 列宽 / 主题 / 播放源顺序 / 列表默认参数 | Zustand (`amane-web`) |
 
 虚拟滚动的落底、短列表排布与 `followOutput` 约定见 `/logs` 与 `/tasks` 路由及其组件注释. OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-maps.ts`, 禁止在路由里再手抄一份.
 

@@ -6,7 +6,7 @@ import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router
 import { useTranslation } from "react-i18next";
 import { listFeedsOptions } from "@/client/@tanstack/react-query.gen";
 import type { FeedItemReadState, FeedItemState } from "@/client/types.gen";
-import { ListDefaultButton } from "@/components/common/list-default-button";
+import { ListDefaultActions } from "@/components/common/list-default-actions";
 import { FeedReader } from "@/components/feeds/feed-reader";
 import { FeedSidebar } from "@/components/feeds/feed-sidebar";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
@@ -82,7 +82,7 @@ function FeedsPage() {
           </Button>
           <Title order={2}>{t("title")}</Title>
         </Group>
-        <ListDefaultButton update={{ key: "feeds", value: feedListDefaults(search) }} />
+        <ListDefaultActions update={{ key: "feeds", value: feedListDefaults(search) }} />
       </Group>
 
       {!isLoading && feeds.length === 0 ? (
