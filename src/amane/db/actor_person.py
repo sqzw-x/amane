@@ -1,6 +1,7 @@
 """人物字段读写与实体 merge. 别名不在此层, 由 ``repos.facet_helpers`` 的行写入函数处理."""
 
 from ..aggregate.actor import AggregatedActor, merge_actor_rows_fill_empty
+from ..utils.text import normalize_long_text
 from .models import Actor
 
 
@@ -35,7 +36,7 @@ def apply_aggregated_to_actor(actor: Actor, data: AggregatedActor) -> None:
     actor.waist = data.waist
     actor.hip = data.hip
     actor.cup = data.cup
-    actor.overview = data.overview
+    actor.overview = normalize_long_text(data.overview)
     actor.tagline = data.tagline
     actor.image_urls = list(data.image_urls)
     actor.provider_ids = dict(data.provider_ids)

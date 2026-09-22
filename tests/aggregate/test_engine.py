@@ -684,6 +684,27 @@ class TestAggregate:
         assert result.metadata.studio == "CS"
         assert "javdb" in result.raw
 
+    @pytest.mark.asyncio
+    async def test_plot_normalized_on_fetch(self):
+        """长文本在聚合出口收成纯文本, raw 快照与字段值一致."""
+        crawler = MockCrawler(result=MediaMetadata(number="X", title="T", plot="前戏<br>高潮<br><br>尾声 &amp; 至此"))
+
+        result = await aggregate(SearchQuery("X"), {K1: crawler}, defaultdict(lambda: [DB]))
+
+        assert result.metadata.plot == "前戏\n高潮\n\n尾声 & 至此"
+        assert result.raw["javdb"]["plot"] == result.metadata.plot
+
+    @pytest.mark.asyncio
+    async def test_plot_normalized_on_cache_hit(self):
+        """快照复用同样过归一: 旧快照里的 HTML 不会绕过出口."""
+        crawler = MockCrawler(result=_full_metadata(number="X"))
+        snapshot = _full_metadata(number="X", title="Cached", plot="旧<br>快照").model_dump()
+
+        result = await aggregate(SearchQuery("X"), {K1: crawler}, defaultdict(lambda: [DB]), cache={"javdb": snapshot})
+
+        assert len(crawler.fetch_calls) == 0
+        assert result.metadata.plot == "旧\n快照"
+
 
 # ============================================================
 # MediaMetadata asdict 往返一致性 (cache 复用基础)

@@ -18,6 +18,7 @@ from ..crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuer
 from ..crawlers.site_roles import MULTI_LANGUAGE_SOURCE_IDS
 from ..enums import ActorGender, Language, MetadataField, SiteName
 from ..observability import current, invoke_source
+from ..utils.text import normalize_long_text
 from .models import AggregatedMetadata, AggregateResult, SourcedScore
 
 type ProgressCallback = Callable[[int, int, str], Coroutine[Any, Any, None]]
@@ -525,6 +526,16 @@ def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None
             state.result.source_urls[ck] = data.source_url
 
 
+def _normalize_source_text(meta: MediaMetadata) -> MediaMetadata:
+    """长文本在进入聚合前收成纯文本.
+
+    出口只有一个, 因此字段选择、``raw`` 快照与 merge 拿到的都是同一份规范值;
+    函数幂等, 与落库钩子重复调用安全.
+    """
+    meta.plot = normalize_long_text(meta.plot)
+    return meta
+
+
 async def _fetch_one(
     node: FetchNode,
     query: SearchQuery,
@@ -555,7 +566,7 @@ async def _fetch_one(
         try:
             meta = MediaMetadata(**cached)
             current().note_cache_hit(node.cache_key)
-            return node, meta
+            return node, _normalize_source_text(meta)
         except TypeError:
             current().warning("reuse snapshot failed, refetch", site=site, lang=lang)
 
@@ -566,4 +577,7 @@ async def _fetch_one(
     async def _fetch() -> MediaMetadata | None:
         return await crawler.fetch(q, options)
 
-    return node, await invoke_source(node.cache_key, _fetch)
+    fetched = await invoke_source(node.cache_key, _fetch)
+    if fetched is None:
+        return node, None
+    return node, _normalize_source_text(fetched)

@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Unpack
+from typing import Unpack, cast
 
 from sqlalchemy import func, or_, text
 from sqlalchemy.sql.functions import count
@@ -8,6 +8,7 @@ from sqlmodel import col, select
 
 from ...enums import ActorGender
 from ...parsing import ContentType, Mosaic
+from ...utils.text import normalize_long_text
 from ..models import (
     MediaFile,
     Metadata,
@@ -38,6 +39,17 @@ from .facet_helpers import (
     sync_metadata_facets,
     unique_ids,
 )
+
+
+def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
+    """长文本列在落库前归一 (与聚合出口同一函数, 幂等).
+
+    覆盖面是全部写库路径: 首刮 / 补刮 / merge / REST PATCH / Agent 工具都走这两个写方法.
+    """
+    plot = fields.get("plot")
+    if not isinstance(plot, str):
+        return fields
+    return cast("MetadataFields", {**fields, "plot": normalize_long_text(plot)})
 
 
 class MetadataRepoMixin(RepositoryMixinBase):
@@ -167,12 +179,13 @@ class MetadataRepoMixin(RepositoryMixinBase):
         """查重忽略大小写; 已存在时不改写 number 的原始大小写.
         ``actor_genders`` 只填 ``Actor.gender`` 空位, 不是 Metadata 列.
         """
+        fields = _normalize_text_fields(kwargs)
         async with self._session() as session:
             stmt = select(Metadata).where(func.lower(Metadata.number) == number.lower())
             result = await session.exec(stmt)
             existing = result.first()
             if existing:
-                for key, value in kwargs.items():
+                for key, value in fields.items():
                     setattr(existing, key, value)
                 existing.updated_at = _utcnow()
                 session.add(existing)
@@ -183,7 +196,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 await session.commit()
                 await session.refresh(existing)
                 return existing
-            meta = Metadata(number=number, **kwargs)
+            meta = Metadata(number=number, **fields)
             session.add(meta)
             await session.flush()
             await clean_actor_names(session, meta, actor_genders)
@@ -201,6 +214,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         **updates: Unpack[MetadataFields],
     ) -> Metadata | None:
         """不存在返回 None."""
+        updates = _normalize_text_fields(updates)
         async with self._session() as session:
             metadata = await session.get(Metadata, metadata_id)
             if metadata is None:

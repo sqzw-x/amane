@@ -190,6 +190,7 @@ class Metadata(SQLModel, table=True):
     runtime: int | None = None
     tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     series: str | None = Field(default=None, index=True)
+    # 长文本存纯文本, 上游 HTML/实体在入库前经 utils.text 归一, 见 docs/dev/data-model.md.
     plot: str | None = None
     directors: list[str] = Field(default_factory=list, sa_column=Column(JSON))
 

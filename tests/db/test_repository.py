@@ -680,6 +680,17 @@ class TestMetadataRepo:
         assert updated.plot == "A plot"
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_plot_plain_text_on_write(self, repo: Repository):
+        """长文本入库归一: upsert (刮削) 与 update_metadata (PATCH / merge) 两条写路径都覆盖."""
+        meta = await repo.upsert_metadata(number="ABC-002", plot="前戏<br>高潮 &amp; 尾声")
+        assert meta.plot == "前戏\n高潮 & 尾声"
+        assert meta.id is not None
+
+        updated = await repo.update_metadata(meta.id, plot="改<br>写")
+        assert updated is not None
+        assert updated.plot == "改\n写"
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_update_metadata_not_found(self, repo: Repository):
         result = await repo.update_metadata(9999, title="X")
         assert result is None

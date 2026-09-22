@@ -8,6 +8,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...enums import ActorGender
+from ...utils.text import normalize_long_text
 from ..actor_lookup import build_actor_lookup_names, list_actor_aliases, lookup_actors_by_name
 from ..actor_person import actor_to_aggregated, apply_aggregated_to_actor
 from ..models import (
@@ -257,7 +258,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
             if "cup" in updates:
                 actor.cup = updates["cup"]
             if "overview" in updates:
-                actor.overview = updates["overview"]
+                actor.overview = normalize_long_text(updates["overview"])
             if "tagline" in updates:
                 actor.tagline = updates["tagline"]
             if "image_urls" in updates:
