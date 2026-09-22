@@ -360,6 +360,18 @@ class TestMetadataRepo:
         assert await repo.get_actor_aliases(actors[0].id) == ["Mikami Yua", "河北彩伽"]
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_actor_normalizes_overview(self, repo: Repository):
+        """演员简介与影片简介同一处理: HTML 片段与实体在落库时收成纯文本."""
+        await repo.upsert_metadata(number="MIDV-003", actors=["简介 太郎"])
+        actors = await repo.get_actors_by_names(["简介 太郎"])
+        assert actors[0].id is not None
+
+        updated = await repo.update_actor(actors[0].id, overview="前戏<br>高潮 &amp; 尾声")
+
+        assert updated is not None
+        assert updated.overview == "前戏\n高潮 & 尾声"
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_update_metadata_cleans_actor_alias_names(self, repo: Repository):
         meta = await repo.upsert_metadata(number="MIDV-123", title="X")
         assert meta.id is not None
