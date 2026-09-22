@@ -1,5 +1,6 @@
 """测试 NFO 附属文件生成"""
 
+import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING
 
 import pytest
@@ -46,3 +47,21 @@ async def test_write_nfo_has_required_fields(tmp_path: Path, metadata: Metadata)
     assert "<series>Series Y</series>" in content
     assert "<set>" in content
     assert "<name>Series Y</name>" in content
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_write_nfo_plot_is_plain_text(tmp_path: Path):
+    """长文本按纯文本写出: 无 CDATA, HTML 转义, 非法字符剥离, 换行原样保留."""
+    plot = "结尾 ]]> 之后 & <标签>\n\n第二段\x0b"
+    nfo_path = tmp_path / "PLOT-1.nfo"
+
+    assert await write_nfo(Metadata(number="PLOT-1", title="T", plot=plot), nfo_path) is True
+
+    content = nfo_path.read_text(encoding="utf-8")
+    assert "<![CDATA[" not in content
+    assert "]]>" not in content
+    assert "\x0b" not in content
+
+    root = ET.fromstring(content)
+    assert root.findtext("plot") == "结尾 ]]> 之后 & <标签>\n\n第二段"
+    assert root.findtext("outline") == root.findtext("plot")

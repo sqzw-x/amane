@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import aiofiles
 import structlog
 
+from ..utils.text import strip_illegal_xml_chars
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -26,9 +28,11 @@ _XML_ESCAPE_MAP: dict[str, str] = {
 
 
 def _escape_xml(text: str) -> str:
+    """写进 XML 文本节点: 先剥非法字符 (存量脏数据兜底), 再转义; 换行原样保留."""
+    escaped = strip_illegal_xml_chars(text)
     for char, entity in _XML_ESCAPE_MAP.items():
-        text = text.replace(char, entity)
-    return text
+        escaped = escaped.replace(char, entity)
+    return escaped
 
 
 async def write_nfo(metadata: Metadata, nfo_path: Path) -> bool:
@@ -40,8 +44,9 @@ async def write_nfo(metadata: Metadata, nfo_path: Path) -> bool:
         code.write("<movie>\n")
 
         if metadata.plot:
+            # 长文本按纯文本写出: 转义后 "]]>" 不可能出现, CDATA 只带来非法 XML 的风险.
             plot_escaped = _escape_xml(metadata.plot)
-            code.write(f"  <plot><![CDATA[{metadata.plot}]]></plot>\n")
+            code.write(f"  <plot>{plot_escaped}</plot>\n")
             code.write(f"  <outline>{plot_escaped}</outline>\n")
 
         if metadata.release:
