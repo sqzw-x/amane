@@ -47,6 +47,8 @@ ORGANIZE 复制到库路径的 poster / thumb 在 `watermark.enabled` 时按**�
 | `scores` | `dict[site, score]` | 不同评分体系 (5 分 vs 100 分) 需保留来源供前端分列展示 |
 | `raw` | `{site: {field: value}}` 原始快照 | 支持离线重新聚合与站点级复用 (见 [task-system.md](task-system.md)) |
 
+长文本 (`plot` / 演员 `overview`) 存**纯文本**: 上游的 HTML 片段、HTML 实体、异体空白 (NBSP / 全角空格)、XML 非法字符在入库前由 `utils.text::normalize_long_text` 收成一种表示 — HTML 换行与段落变成 `\n` 与空行. 归一在两处发生且必须幂等: 聚合出口 (`aggregate/engine.py::_fetch_one`, 含快照复用分支) 与落库写入 (`db/repos/metadata.py` 的两个写方法, 覆盖 merge / REST PATCH / Agent 工具). 因此 `raw` 快照、merge 输入与库内值是同一份规范文本; 消费端 (NFO 写出、前端) 不识别 HTML. 存量行在下次写入时被清理.
+
 ### `field_sources`
 
 `{field_name: site_name}`, 仅记录**标量字段**的来源; 聚合类字段自带来源结构, 不写入. 用途是调试多源不一致与前端展示来源, 不参与业务逻辑, 重新刮削后被覆盖.

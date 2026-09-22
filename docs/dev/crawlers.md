@@ -85,6 +85,8 @@ CrawlerFactory (缓存实例)
 3. 导出后 `registry.register` / `actor_registry.register`. 双料站两个类用同一 `SiteName` 各注册一次; 不允许修改 `site_roles` 常量. 演员 `register` 顺序即默认 `profile_sites` 优先级. 需要 cookie / token 时给 `SiteConfig` 加字段.
 4. 加 TOML 用例 (见 [crawler-testing.md](crawler-testing.md)) 并 `just test`.
 
+长文本字段 (`plot` / 演员 `overview`) 直接返回上游原文: HTML 片段、实体、异体空白由聚合出口统一归一, 契约见 [data-model.md](data-model.md). **爬虫不得自行 unescape / 转义 / 转换行** — 自行处理会让归一退化成二次解码.
+
 ## 特殊数据源: r18.dev 离线 PG 镜像
 
 `src/amane/crawlers/r18dev/` + `sites/r18dev.py`. r18.dev 不提供逐番号 HTTP 接口, 而是发布完整 **PostgreSQL dump**; dump 是 PG 专用 (COPY / Identity / 角色系统), 无法转为 SQLite, 因此使用独立的只读 PG 镜像: 用户自备 PG 实例并提供连接串 (`hot.r18.dsn`, 需 CREATEDB / CREATEROLE), 项目负责建库 / 导入 / 原子换名 / 创建只读角色. 该库不纳入 Alembic (外部只读镜像, 定位同 `TranslationCache`, 见 [database.md](database.md)); 配置在 Hot, 修改 dsn 经由 `AppRuntime.rebuild()`.
