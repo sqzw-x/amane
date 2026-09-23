@@ -1,4 +1,4 @@
-"""从 parsel Selector 提取文本. 字符串视为 XPath, ``CSSSelector`` 视为 CSS, ``Pattern`` 视为正则."""
+"""爬虫共用的小工具: 从 parsel Selector 提取文本, 以及番号归一."""
 
 import re
 from re import Pattern
@@ -52,3 +52,11 @@ def extract_all_texts(html: Selector, *selectors: SelectorType) -> list[str]:
         except AttributeError, TypeError, IndexError:
             continue
     return []
+
+
+def fold_number(number: str) -> str:
+    """大小写、短横线、空格视为同一番号, 供来源比对检索结果.
+
+    不允许把 ``_`` 当作 ``-``: 010115_001 与 010115-001 是两部片.
+    """
+    return number.casefold().replace("-", "").replace(" ", "")

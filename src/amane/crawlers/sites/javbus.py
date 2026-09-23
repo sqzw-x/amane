@@ -7,7 +7,7 @@ from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text
+from ..parsing import extract_all_texts, extract_text, fold_number
 
 
 class JavBusCrawler(Crawler):
@@ -36,13 +36,24 @@ class JavBusCrawler(Crawler):
             if title:
                 return direct_url
 
-        # 未命中则回退搜索.
+        # 未命中则回退搜索. 站内检索为模糊匹配, 会返回番号相近的条目, 因此逐条比对结果
+        # <date> 中的番号: 精确优先, 再忽略短横线与空格; 全不相符视为来源无此番号.
         search_url = f"{self.base_url}/search/{number}&type=&parent=ce"
         text = await self.client.get_html(search_url, cookies=self.cookies, headers=self.headers)
         html = Selector(text=text)
-        results = html.xpath("//a[@class='movie-box']/@href").getall()
-        urls = [urljoin(self.base_url, r) for r in results]
-        return urls[0] if urls else None
+        folded = fold_number(number)
+        folded_hit: str | None = None
+        for item in html.xpath("//a[@class='movie-box']"):
+            href = item.xpath("./@href").get()
+            found = extract_text(item, "div[@class='photo-info']//date[1]/text()")
+            if not href or not found:
+                continue
+            url = urljoin(self.base_url, href)
+            if found.casefold() == number.casefold():
+                return url
+            if folded_hit is None and fold_number(found) == folded:
+                folded_hit = url
+        return folded_hit
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         text = await self.client.get_html(url, cookies=self.cookies, headers=self.headers)

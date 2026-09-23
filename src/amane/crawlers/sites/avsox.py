@@ -13,6 +13,7 @@ from ...enums import Language, SiteName
 from ...net.errors import FailureReason, SourceError, parse_detail
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
+from ..parsing import fold_number
 
 _LANG: dict[Language, str] = {
     Language.ZH_CN: "cn",
@@ -172,14 +173,9 @@ class AvsoxCrawler(Crawler):
         )
 
 
-def _fold_number(number: str) -> str:
-    """大小写、短横线、空格视为同一番号. 不允许把 ``_`` 当作 ``-``: 010115_001 与 010115-001 是两部片."""
-    return number.casefold().replace("-", "").replace(" ", "")
-
-
 def _pick_movie_id(movies: list[object], number: str) -> str | None:
     exact = number.casefold()
-    folded = _fold_number(number)
+    folded = fold_number(number)
     folded_hit: str | None = None
     for item in movies:
         if not isinstance(item, dict):
@@ -192,7 +188,7 @@ def _pick_movie_id(movies: list[object], number: str) -> str | None:
         if fanhao.casefold() == exact:
             return movie_id
         # 折叠分隔符后的回退命中.
-        if folded_hit is None and _fold_number(fanhao) == folded:
+        if folded_hit is None and fold_number(fanhao) == folded:
             folded_hit = movie_id
     return folded_hit
 
