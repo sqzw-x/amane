@@ -103,9 +103,17 @@ safe-outputs:
   staged: ${{ inputs.dry_run }}
   # 默认会在 run 失败时自动开 issue (如 "produced no safe outputs"), 这里关掉.
   report-failure-as-issue: false
+  # 两个白名单是正文全部标签动作的权限边界: gh-aw 丢弃未列入的标签, 只记录
+  # "No labels to add", 消息仍计为成功, 整条 run 保持绿色. 正文新增标签动作时
+  # 必须同步这里.
   add-labels:
     allowed:
+      - kind:bug
+      - kind:feature
+      - kind:enhancement
+      - kind:docs
       - kind:question
+      - eco:project
       - priority:critical
       - priority:high
       - priority:medium
@@ -113,8 +121,6 @@ safe-outputs:
       - status:needs-info
       - status:duplicate
       - status:invalid
-      - good first issue
-      - help wanted
     max: 3
   remove-labels:
     allowed:
@@ -122,6 +128,8 @@ safe-outputs:
       - kind:feature
       - kind:enhancement
       - kind:docs
+      - kind:question
+      - eco:project
       - retriage
     max: 3
   update-issue:
@@ -228,8 +236,12 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 | 报的是 bug, 实际是需求 | `kind:feature` |
 | 报的是 feature, 实际是现有功能的改进 | `kind:enhancement` |
 | 内容只涉及文档 | `kind:docs` |
+| 分享自建的插件或外部工具, 而非要求本仓库改动 | `eco:project` |
 
 处理: 用 `remove-labels` 移除原有 `kind:*`, 再用 `add-labels` 打上正确的那个, 并在评论里用一句话说明改判理由.
+
+判为 `eco:project` 时移除原有 `kind:*`, 只保留该标签; 误收录时用 `remove-labels` 摘掉它.
+该标签是 README 社区生态章节的汇总依据.
 
 改判要以内容为准, 不要因为用户自己选了某个类型就沿用.
 
