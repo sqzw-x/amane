@@ -111,6 +111,13 @@ CASES: list[object] = [
     # 帧率后缀仍识别清晰度
     _Case("ABC-123.1080p60.mp4", definition="1080p", number="ABC-123"),
     _Case("ABC-123.2160p30.mp4", definition="4K", number="ABC-123"),
+    # 分辨率数字不得被番号规则吸走: 无短横线的日期号 + 分辨率
+    _Case("120115_318-mura-1080p.mp4", definition="1080p", mosaic="uncensored", number="120115_318"),
+    _Case("120115_318-mura-720p.mp4", definition="720p", mosaic="uncensored", number="120115_318"),
+    _Case("120115_318-mura-2160p.mp4", definition="4K", mosaic="uncensored", number="120115_318"),
+    _Case("120115_318-mura-1440p.mp4", definition="1440p", mosaic="uncensored", number="120115_318"),
+    _Case("120115_318-mura-480p.mp4", definition="480p", mosaic="uncensored", number="120115_318"),
+    _Case("112912_776-mura-whole1_hd.wmv", definition="HD", mosaic="uncensored", number="112912_776"),
     # 分集 + 清晰度
     _Case("MIDV-123-4K-CD1.mp4", cd=1, definition="4K", number="MIDV-123"),
     # --- 清晰度误报: 番号/编码里的字母数字不当作独立标记 ---
@@ -119,6 +126,9 @@ CASES: list[object] = [
     _Case("ABC-123.4KS.mp4", number="ABC-123"),
     _Case("ABC-2160.mp4"),
     _Case("ABC-123.1080.mp4", number="ABC-123"),
+    # 带 p 的分辨率片段整段剥除, 数字不并入番号
+    _Case("ABC-2160p.mp4", definition="4K", number="ABC"),
+    _Case("natsume-1080p.mp4", definition="1080p", number="NATSUME"),
     _Case("ABC-123.mp4", number="ABC-123"),
     _Case("HD-123.mp4"),
     _Case("SD-123.mp4"),
