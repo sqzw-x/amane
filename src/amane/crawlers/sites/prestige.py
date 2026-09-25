@@ -119,12 +119,13 @@ class PrestigeCrawler(Crawler):
                 return None
             return f"{self.base_url}/api/media/{path}" if not path.startswith("http") else path
 
-        thumb_path = (data.get("thumbnail") or {}).get("path") if isinstance(data.get("thumbnail"), dict) else None
-        package_path = (
+        # thumbnail 是竖版前封, packageImage 是横版整幅; 槽位按朝向取 (poster 竖版 / thumb 横版), 故两字段交叉使用.
+        front_path = (data.get("thumbnail") or {}).get("path") if isinstance(data.get("thumbnail"), dict) else None
+        spread_path = (
             (data.get("packageImage") or {}).get("path") if isinstance(data.get("packageImage"), dict) else None
         )
-        thumb_url = _image_url(thumb_path)
-        poster_url = _image_url(package_path)
+        poster_url = _image_url(front_path)
+        thumb_url = _image_url(spread_path)
 
         extrafanart: list[str] = []
         for img_list_key in ("media",):
