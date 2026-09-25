@@ -144,6 +144,10 @@ class TestActorsApi:
             "actors/batch/user-tags", json={"ids": [tag_me], "user_tag_ids": [9999], "action": "attach"}
         )
         assert unknown.status_code == 404
+        # 空入参两条都显式带 action, 否则 422 可能来自缺失字段而非长度约束
         assert (
-            await client.post("actors/batch/user-tags", json={"ids": [], "user_tag_ids": [tag_id]})
+            await client.post("actors/batch/user-tags", json={"ids": [], "user_tag_ids": [tag_id], "action": "attach"})
+        ).status_code == 422
+        assert (
+            await client.post("actors/batch/user-tags", json={"ids": [tag_me], "user_tag_ids": [], "action": "attach"})
         ).status_code == 422
