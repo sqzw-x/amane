@@ -7,7 +7,7 @@ import {
   Group,
   Menu,
   Modal,
-  Select,
+  MultiSelect,
   Stack,
   Table,
   Text,
@@ -147,7 +147,7 @@ export function MetaTable({
   const pageIds = items.map((i) => i.id);
   const { selected, selectedIds, toggleOne, toggleAll, isAllSelected, clear } = useIdSelection();
   const [tagModalOpen, setTagModalOpen] = useState(false);
-  const [tagId, setTagId] = useState<string | null>(null);
+  const [tagIds, setTagIds] = useState<string[]>([]);
 
   const { data: userTags } = useQuery(listFacetsOptions(USER_TAG_FACET_LIST));
 
@@ -228,13 +228,11 @@ export function MetaTable({
     ...batchMetadataUserTagsMutation(),
     onSuccess: (res) => {
       notifications.show({
-        message: t("common:toast.metadataUpdated", {
-          defaultValue: `已更新 ${res.affected} 条`,
-        }),
+        message: t("common:toast.metadataUpdated", { count: res.changed }),
         color: "blue",
       });
       setTagModalOpen(false);
-      setTagId(null);
+      setTagIds([]);
       invalidate();
     },
     onError: (err) =>
@@ -451,24 +449,24 @@ export function MetaTable({
         centered
       >
         <Stack gap="md">
-          <Select
+          <MultiSelect
             data={tagOptions}
-            value={tagId}
-            onChange={setTagId}
+            value={tagIds}
+            onChange={setTagIds}
             searchable
             placeholder={t("detail.selectUserTag")}
           />
           <Group justify="flex-end">
             <Button
               variant="light"
-              disabled={!tagId}
+              disabled={tagIds.length === 0}
               loading={batchTags.isPending}
               onClick={() =>
-                tagId &&
+                tagIds.length > 0 &&
                 batchTags.mutate({
                   body: {
                     ids: selectedIds,
-                    user_tag_id: Number(tagId),
+                    user_tag_ids: tagIds.map(Number),
                     action: "attach",
                   },
                 })
@@ -479,14 +477,14 @@ export function MetaTable({
             <Button
               variant="light"
               color="red"
-              disabled={!tagId}
+              disabled={tagIds.length === 0}
               loading={batchTags.isPending}
               onClick={() =>
-                tagId &&
+                tagIds.length > 0 &&
                 batchTags.mutate({
                   body: {
                     ids: selectedIds,
-                    user_tag_id: Number(tagId),
+                    user_tag_ids: tagIds.map(Number),
                     action: "detach",
                   },
                 })

@@ -138,12 +138,7 @@ class MetadataBatchScrapeResponse(BaseModel):
     task_ids: list[int] = Field(description="提交的任务 id 列表")
 
 
-class MetadataBatchUserTagsRequest(BaseModel):
+class MetadataUserTagsRequest(BaseModel):
     ids: list[int] = Field(min_length=1, description="Metadata ID 列表")
-    user_tag_id: int
-    action: Literal["attach", "detach"]
-
-
-class MetadataBatchUserTagsResponse(BaseModel):
-    affected: int = Field(description="成功挂载/取消挂载的数量")
-    missing: int = Field(description="不存在的 metadata id (或用户 tag 不存在时的全部 id) 数量")
+    user_tag_ids: list[int] = Field(min_length=1, description="用户标签 ID 列表")
+    action: Literal["attach", "detach"] = Field(description="attach 为并入, detach 为移除; 两者均幂等")

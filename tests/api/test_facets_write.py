@@ -91,7 +91,7 @@ async def test_facet_http_user_tag_and_validation(client: AsyncClient, repo: Rep
     assert target.id is not None and source.id is not None
     meta = await repo.upsert_metadata(number="HTTP-UT-1")
     assert meta.id is not None
-    await repo.attach_user_tag(meta.id, source.id)
+    await repo.apply_metadata_user_tags([meta.id], [source.id], action="attach")
     merged = await client.post("facets/user_tag/merge", json={"target_id": target.id, "source_ids": [source.id]})
     assert merged.status_code == 200
     assert merged.json()["name"] == "target"

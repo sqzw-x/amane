@@ -80,20 +80,40 @@ class TestMetadataBatchHttp:
         m2 = await repo.upsert_metadata(number="BT-002")
         assert m1.id is not None and m2.id is not None
         resp = await client.post(
-            "metadata/batch/user-tags", json={"ids": [m1.id, m2.id, 9999], "user_tag_id": tag.id, "action": "attach"}
+            "metadata/batch/user-tags",
+            json={"ids": [m1.id, m2.id, 9999], "user_tag_ids": [tag.id], "action": "attach"},
         )
         assert resp.status_code == 200
-        assert resp.json() == {"affected": 2, "missing": 1}
+        assert resp.json() == {"changed": 2, "unchanged": 0, "missing": 1}
         detail = await client.get(f"metadata/{m1.id}")
         assert any(t["name"] == "watched" for t in detail.json()["user_tags"])
 
         detach = await client.post(
-            "metadata/batch/user-tags", json={"ids": [m1.id, m2.id], "user_tag_id": tag.id, "action": "detach"}
+            "metadata/batch/user-tags",
+            json={"ids": [m1.id, m2.id], "user_tag_ids": [tag.id], "action": "detach"},
         )
-        assert detach.json() == {"affected": 2, "missing": 0}
+        assert detach.json() == {"changed": 2, "unchanged": 0, "missing": 0}
+        # 未挂载的条目在 detach 时计入 unchanged, 不是错误
         assert (
-            await client.post("metadata/batch/user-tags", json={"ids": [m1.id], "user_tag_id": 1, "action": "bogus"})
+            await client.post(
+                "metadata/batch/user-tags", json={"ids": [m1.id], "user_tag_ids": [tag.id], "action": "detach"}
+            )
+        ).json() == {"changed": 0, "unchanged": 1, "missing": 0}
+        # 未知标签是请求级错误, 整请求不生效
+        unknown = await client.post(
+            "metadata/batch/user-tags", json={"ids": [m1.id], "user_tag_ids": [9999], "action": "attach"}
+        )
+        assert unknown.status_code == 404
+        assert (
+            await client.post("metadata/batch/user-tags", json={"ids": [m1.id], "user_tag_ids": [], "action": "attach"})
         ).status_code == 422
         assert (
-            await client.post("metadata/batch/user-tags", json={"ids": [], "user_tag_id": 1, "action": "attach"})
+            await client.post(
+                "metadata/batch/user-tags", json={"ids": [m1.id], "user_tag_ids": [tag.id], "action": "bogus"}
+            )
+        ).status_code == 422
+        assert (
+            await client.post(
+                "metadata/batch/user-tags", json={"ids": [], "user_tag_ids": [tag.id], "action": "attach"}
+            )
         ).status_code == 422

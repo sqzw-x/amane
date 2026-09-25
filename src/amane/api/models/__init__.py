@@ -41,11 +41,10 @@ from .metadata import (
     MetadataBatchIdsRequest,
     MetadataBatchScrapeRequest,
     MetadataBatchScrapeResponse,
-    MetadataBatchUserTagsRequest,
-    MetadataBatchUserTagsResponse,
     MetadataDetailResponse,
     MetadataListResponse,
     MetadataResponse,
+    MetadataUserTagsRequest,
     PartialMetadata,
 )
 from .playback import (
@@ -81,7 +80,7 @@ from .tasks import (
     TrashSubmission,
     UpscaleSubmission,
 )
-from .user_tags import UserTagResponse
+from .user_tags import UserTagLinksResponse, UserTagResponse
 
 __all__ = [
     "ActorListResponse",
@@ -125,11 +124,10 @@ __all__ = [
     "MetadataBatchIdsRequest",
     "MetadataBatchScrapeRequest",
     "MetadataBatchScrapeResponse",
-    "MetadataBatchUserTagsRequest",
-    "MetadataBatchUserTagsResponse",
     "MetadataDetailResponse",
     "MetadataListResponse",
     "MetadataResponse",
+    "MetadataUserTagsRequest",
     "OptionalPathTemplateDefaults",
     "OrganizeSubmission",
     "PartialMetadata",
@@ -165,6 +163,7 @@ __all__ = [
     "TaskWorkerResponse",
     "TrashSubmission",
     "UpscaleSubmission",
+    "UserTagLinksResponse",
     "UserTagResponse",
     "normalize_feed_group",
     "path_template_schema",

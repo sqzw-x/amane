@@ -57,7 +57,8 @@ export function UserTagActions({
 }: {
   attached: ReadonlyArray<{ id: number; name: string }>;
   candidates: ReadonlyArray<{ id: number; name: string }>;
-  onChoose: (names: string[]) => void;
+  /** 已存在的标签按 id 回传, 仅名称不在候选中的按名称回传待创建. */
+  onChoose: (selection: { tagIds: number[]; createNames: string[] }) => void;
   onDetach: (ids: number[]) => void;
   disabled?: boolean;
 }) {
@@ -119,13 +120,11 @@ export function UserTagActions({
   }
 
   function applyAdd() {
-    const names = [
-      ...candidates.filter((tag) => addIds.has(tag.id)).map((tag) => tag.name),
-      ...createNames,
-    ];
-    if (names.length === 0) return;
+    const tagIds = candidates.filter((tag) => addIds.has(tag.id)).map((tag) => tag.id);
+    const names = [...createNames];
+    if (tagIds.length === 0 && names.length === 0) return;
     addBox.closeDropdown();
-    onChoose(names);
+    onChoose({ tagIds, createNames: names });
   }
 
   function applyRemove() {

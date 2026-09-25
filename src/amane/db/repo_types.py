@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypedDict
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 from sqlalchemy import UnaryExpression, asc, desc, exists, func, or_
@@ -355,3 +355,18 @@ class CommentUpdates(TypedDict, total=False):
 
 class UserTagUpdates(TypedDict, total=False):
     name: str
+
+
+type UserTagLinkAction = Literal["attach", "detach"]
+
+
+class UserTagLinkResult(NamedTuple):
+    """用户标签挂载/卸载的结果计数, 三个字段均以条目 id 为单位.
+
+    ``changed`` 为至少一处挂载关系发生变更的条目数, ``unchanged`` 为已处于目标态的条目数,
+    ``missing`` 为不存在的条目 id 数; 三者之和等于去重后的条目数.
+    """
+
+    changed: int
+    unchanged: int
+    missing: int

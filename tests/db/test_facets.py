@@ -12,6 +12,7 @@ from amane.db.models import Actor, FacetKind, FacetRuleAction, FacetSortField, M
 from amane.enums import ActorGender
 
 if TYPE_CHECKING:
+    from amane.db.repo_types import UserTagLinkAction
     from amane.db.repository import Repository
 
 pytestmark = pytest.mark.asyncio
@@ -99,7 +100,7 @@ class TestFacetSync:
         assert meta.id is not None
         tag = await repo.create_user_tag("watched")
         assert tag.id is not None
-        await repo.attach_user_tag(meta.id, tag.id)
+        await repo.apply_metadata_user_tags([meta.id], [tag.id], action="attach")
         await repo.create_comment(meta.id, "hello")
 
         await repo.upsert_metadata(number="ABC-004", actors=["Bob"], tags=["new"])
@@ -132,12 +133,16 @@ class TestUserTagsAndComments:
         assert meta.id is not None
         tag = await repo.create_user_tag("fav")
         assert tag.id is not None
-        assert await repo.attach_user_tag(meta.id, tag.id) is True
-        assert await repo.attach_user_tag(meta.id, tag.id) is True  # 幂等
+
+        first = await repo.apply_metadata_user_tags([meta.id], [tag.id], action="attach")
+        assert first == (1, 0, 0)
+        # 已挂载是幂等命中, 计入 unchanged, 不是错误
+        again = await repo.apply_metadata_user_tags([meta.id], [tag.id], action="attach")
+        assert again == (0, 1, 0)
+
         _, n = await repo.list_metadata(user_tag_ids=[tag.id])
         assert n == 1
-        assert await repo.detach_user_tag(meta.id, tag.id) is True
-        assert await repo.detach_user_tag(meta.id, tag.id) is False
+
         await repo.update_user_tag(tag.id, name="favorite")
         updated = await repo.get_user_tag(tag.id)
         assert updated is not None and updated.name == "favorite"
@@ -165,28 +170,47 @@ class TestUserTagsAndComments:
         assert await repo.delete_comment(c.id) is True
         assert await repo.create_comment(99999, "x") is None
 
-    async def test_attach_missing_returns_false(self, repo: Repository) -> None:
-        assert await repo.attach_user_tag(1, 1) is False
-
-    async def test_batch_attach_detach_user_tag(self, repo: Repository) -> None:
-        tag = await repo.create_user_tag("watched")
+    async def test_apply_unknown_tag_raises(self, repo: Repository) -> None:
+        """未知标签 id 是请求级错误: 整请求不生效, 错误信息点名标签 id."""
+        meta = await repo.upsert_metadata(number="UT-UNKNOWN")
+        assert meta.id is not None
+        tag = await repo.create_user_tag("known")
         assert tag.id is not None
-        m1 = await repo.upsert_metadata(number="BT-001")
-        m2 = await repo.upsert_metadata(number="BT-002")
+        with pytest.raises(ValueError, match="用户标签不存在"):
+            await repo.apply_metadata_user_tags([meta.id], [tag.id, 9999], action="attach")
+        assert await repo.list_metadata_user_tags(meta.id) == []
+
+    @pytest.mark.parametrize(
+        ("ids", "action", "expected"),
+        [
+            ([9999], "attach", (0, 0, 1)),
+            ([9999], "detach", (0, 0, 1)),
+            ([], "attach", (0, 0, 0)),
+        ],
+    )
+    async def test_apply_user_tags_missing_targets(
+        self, repo: Repository, ids: list[int], action: UserTagLinkAction, expected: tuple[int, int, int]
+    ) -> None:
+        tag = await repo.create_user_tag("edge")
+        assert tag.id is not None
+        assert await repo.apply_metadata_user_tags(ids, [tag.id], action=action) == expected
+
+    async def test_apply_many_tags_many_metadata(self, repo: Repository) -> None:
+        """一行挂多个标签, 多行同挂: 计数以条目为单位."""
+        t1 = await repo.create_user_tag("multi-1")
+        t2 = await repo.create_user_tag("multi-2")
+        assert t1.id is not None and t2.id is not None
+        m1 = await repo.upsert_metadata(number="UT-MULTI-1")
+        m2 = await repo.upsert_metadata(number="UT-MULTI-2")
         assert m1.id is not None and m2.id is not None
 
-        affected, missing = await repo.batch_attach_user_tag([m1.id, m2.id, 9999], tag.id)
-        assert (affected, missing) == (2, 1)
-        again, _ = await repo.batch_attach_user_tag([m1.id], tag.id)
-        assert again == 1
-        none, all_miss = await repo.batch_attach_user_tag([m1.id], 9999)
-        assert (none, all_miss) == (0, 1)
-
-        det_ok, det_miss = await repo.batch_detach_user_tag([m1.id, m2.id], tag.id)
-        assert (det_ok, det_miss) == (2, 0)
-        # m2 已卸下, 再卸一次计入 missing
-        _, again_miss = await repo.batch_detach_user_tag([m2.id], tag.id)
-        assert again_miss == 1
+        assert await repo.apply_metadata_user_tags([m1.id, m2.id, 9999], [t1.id, t2.id], action="attach") == (2, 0, 1)
+        assert [t.name for t in await repo.list_metadata_user_tags(m1.id)] == ["multi-1", "multi-2"]
+        # 两行均已挂 t1, 因此都计入 unchanged
+        assert await repo.apply_metadata_user_tags([m1.id, m2.id], [t1.id], action="attach") == (0, 2, 0)
+        await repo.apply_metadata_user_tags([m1.id], [t1.id], action="detach")
+        assert await repo.apply_metadata_user_tags([m1.id, m2.id], [t1.id], action="detach") == (1, 1, 0)
+        assert [t.name for t in await repo.list_metadata_user_tags(m1.id)] == ["multi-2"]
 
 
 class TestFacetFilterCombine:
@@ -531,8 +555,8 @@ class TestFacetRenameMergeDelete:
         meta_a = await repo.upsert_metadata(number="MGU-1a")
         meta_b = await repo.upsert_metadata(number="MGU-1b")
         assert meta_a.id is not None and meta_b.id is not None
-        await repo.attach_user_tag(meta_a.id, target.id)
-        await repo.attach_user_tag(meta_b.id, source.id)
+        await repo.apply_metadata_user_tags([meta_a.id], [target.id], action="attach")
+        await repo.apply_metadata_user_tags([meta_b.id], [source.id], action="attach")
         merged = await repo.merge_facets(FacetKind.USER_TAG, target.id, [source.id])
         assert merged is not None and merged.name == "target" and merged.count == 2
         tags_b = await repo.list_metadata_user_tags(meta_b.id)
@@ -544,8 +568,7 @@ class TestFacetRenameMergeDelete:
         assert t2.id is not None and s2.id is not None
         meta = await repo.upsert_metadata(number="MGU-2")
         assert meta.id is not None
-        await repo.attach_user_tag(meta.id, t2.id)
-        await repo.attach_user_tag(meta.id, s2.id)
+        await repo.apply_metadata_user_tags([meta.id], [t2.id, s2.id], action="attach")
         dup = await repo.merge_facets(FacetKind.USER_TAG, t2.id, [s2.id])
         assert dup is not None and dup.count == 1
         assert [t.name for t in await repo.list_metadata_user_tags(meta.id)] == ["t"]

@@ -3754,60 +3754,6 @@ export const MetadataBatchScrapeResponseSchema = {
     title: 'MetadataBatchScrapeResponse'
 } as const;
 
-export const MetadataBatchUserTagsRequestSchema = {
-    properties: {
-        ids: {
-            items: {
-                type: 'integer'
-            },
-            type: 'array',
-            minItems: 1,
-            title: 'Ids',
-            description: 'Metadata ID 列表'
-        },
-        user_tag_id: {
-            type: 'integer',
-            title: 'User Tag Id'
-        },
-        action: {
-            type: 'string',
-            enum: [
-                'attach',
-                'detach'
-            ],
-            title: 'Action'
-        }
-    },
-    type: 'object',
-    required: [
-        'ids',
-        'user_tag_id',
-        'action'
-    ],
-    title: 'MetadataBatchUserTagsRequest'
-} as const;
-
-export const MetadataBatchUserTagsResponseSchema = {
-    properties: {
-        affected: {
-            type: 'integer',
-            title: 'Affected',
-            description: '成功挂载/取消挂载的数量'
-        },
-        missing: {
-            type: 'integer',
-            title: 'Missing',
-            description: '不存在的 metadata id (或用户 tag 不存在时的全部 id) 数量'
-        }
-    },
-    type: 'object',
-    required: [
-        'affected',
-        'missing'
-    ],
-    title: 'MetadataBatchUserTagsResponse'
-} as const;
-
 export const MetadataDetailResponseSchema = {
     properties: {
         metadata: {
@@ -4464,6 +4410,45 @@ export const MetadataSortFieldSchema = {
         'file_count'
     ],
     title: 'MetadataSortField'
+} as const;
+
+export const MetadataUserTagsRequestSchema = {
+    properties: {
+        ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Ids',
+            description: 'Metadata ID 列表'
+        },
+        user_tag_ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'User Tag Ids',
+            description: '用户标签 ID 列表'
+        },
+        action: {
+            type: 'string',
+            enum: [
+                'attach',
+                'detach'
+            ],
+            title: 'Action',
+            description: 'attach 为并入, detach 为移除; 两者均幂等'
+        }
+    },
+    type: 'object',
+    required: [
+        'ids',
+        'user_tag_ids',
+        'action'
+    ],
+    title: 'MetadataUserTagsRequest'
 } as const;
 
 export const MosaicSchema = {
@@ -6910,6 +6895,34 @@ export const UpscaleSubmissionSchema = {
         'type'
     ],
     title: 'UpscaleSubmission'
+} as const;
+
+export const UserTagLinksResponseSchema = {
+    properties: {
+        changed: {
+            type: 'integer',
+            title: 'Changed',
+            description: '至少一处挂载关系发生变更的条目数'
+        },
+        unchanged: {
+            type: 'integer',
+            title: 'Unchanged',
+            description: '已处于目标态、未修改的条目数'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing',
+            description: '不存在的条目 id 数'
+        }
+    },
+    type: 'object',
+    required: [
+        'changed',
+        'unchanged',
+        'missing'
+    ],
+    title: 'UserTagLinksResponse',
+    description: '用户标签挂载/卸载的结果计数; 三个字段均以条目 id 为单位, 之和等于去重后的条目数.'
 } as const;
 
 export const UserTagResponseSchema = {

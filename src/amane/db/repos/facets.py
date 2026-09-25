@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Unpack
+from typing import Literal, Unpack
 
 from sqlalchemy import asc
 from sqlalchemy import delete as sqla_delete
@@ -35,6 +35,7 @@ from ..repo_types import (
     ActorPersonFields,
     CommentUpdates,
     FacetItem,
+    UserTagLinkResult,
     UserTagUpdates,
     _utcnow,
 )
@@ -391,60 +392,67 @@ class FacetsRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             return list(result.all())
 
-    async def attach_user_tag(self, metadata_id: int, user_tag_id: int) -> bool:
-        """metadata/tag 不存在返回 False; 已存在则幂等成功."""
-        async with self._session() as session:
-            if await session.get(Metadata, metadata_id) is None:
-                return False
-            if await session.get(UserTag, user_tag_id) is None:
-                return False
-            existing = await session.get(MetadataUserTag, (metadata_id, user_tag_id))
-            if existing is None:
-                session.add(MetadataUserTag(metadata_id=metadata_id, user_tag_id=user_tag_id))
-                await session.commit()
-            return True
+    async def apply_metadata_user_tags(
+        self,
+        ids: Sequence[int],
+        user_tag_ids: Sequence[int],
+        *,
+        action: Literal["attach", "detach"],
+    ) -> UserTagLinkResult:
+        """把一组用户标签应用到一组影片: attach 为并入, detach 为移除, 两者均幂等.
 
-    async def detach_user_tag(self, metadata_id: int, user_tag_id: int) -> bool:
+        未知标签 id 抛 ``ValueError`` (请求级错误); 不存在的影片 id 计入 ``missing``, 其余照常处理.
+        """
+        metadata_ids = list(dict.fromkeys(ids))
+        tag_ids = list(dict.fromkeys(user_tag_ids))
         async with self._session() as session:
-            link = await session.get(MetadataUserTag, (metadata_id, user_tag_id))
-            if link is None:
-                return False
-            await session.delete(link)
+            if tag_ids:
+                known_tags = set((await session.exec(select(UserTag.id).where(col(UserTag.id).in_(tag_ids)))).all())
+            else:
+                known_tags = set()
+            unknown = [tag_id for tag_id in tag_ids if tag_id not in known_tags]
+            if unknown:
+                raise ValueError(f"用户标签不存在: {', '.join(str(tag_id) for tag_id in unknown)}")
+            known_metadata: set[int] = set()
+            if metadata_ids:
+                metadata_rows = (
+                    await session.exec(select(Metadata.id).where(col(Metadata.id).in_(metadata_ids)))
+                ).all()
+                known_metadata = {row for row in metadata_rows if row is not None}
+            rows: list[MetadataUserTag] = []
+            if known_metadata and tag_ids:
+                rows = list(
+                    (
+                        await session.exec(
+                            select(MetadataUserTag).where(
+                                col(MetadataUserTag.metadata_id).in_(list(known_metadata)),
+                                col(MetadataUserTag.user_tag_id).in_(tag_ids),
+                            )
+                        )
+                    ).all()
+                )
+            if action == "detach":
+                for row in rows:
+                    await session.delete(row)
+                changed = len({row.metadata_id for row in rows})
+            else:
+                linked = {(row.metadata_id, row.user_tag_id) for row in rows}
+                changed = 0
+                for metadata_id in known_metadata:
+                    added = False
+                    for tag_id in tag_ids:
+                        if (metadata_id, tag_id) in linked:
+                            continue
+                        session.add(MetadataUserTag(metadata_id=metadata_id, user_tag_id=tag_id))
+                        added = True
+                    if added:
+                        changed += 1
             await session.commit()
-            return True
-
-    async def batch_attach_user_tag(self, ids: list[int], user_tag_id: int) -> tuple[int, int]:
-        """幂等. user_tag 不存在则全部计入 missing."""
-        async with self._session() as session:
-            if await session.get(UserTag, user_tag_id) is None:
-                return 0, len(ids)
-            affected = 0
-            missing = 0
-            for metadata_id in ids:
-                if await session.get(Metadata, metadata_id) is None:
-                    missing += 1
-                    continue
-                existing = await session.get(MetadataUserTag, (metadata_id, user_tag_id))
-                if existing is None:
-                    session.add(MetadataUserTag(metadata_id=metadata_id, user_tag_id=user_tag_id))
-                affected += 1
-            await session.commit()
-            return affected, missing
-
-    async def batch_detach_user_tag(self, ids: list[int], user_tag_id: int) -> tuple[int, int]:
-        """missing 为未挂载, 或 metadata/tag 不存在的数量."""
-        async with self._session() as session:
-            affected = 0
-            missing = 0
-            for metadata_id in ids:
-                link = await session.get(MetadataUserTag, (metadata_id, user_tag_id))
-                if link is None:
-                    missing += 1
-                    continue
-                await session.delete(link)
-                affected += 1
-            await session.commit()
-            return affected, missing
+            return UserTagLinkResult(
+                changed=changed,
+                unchanged=len(known_metadata) - changed,
+                missing=len(metadata_ids) - len(known_metadata),
+            )
 
     async def list_comments(self, metadata_id: int) -> list[Comment]:
         async with self._session() as session:

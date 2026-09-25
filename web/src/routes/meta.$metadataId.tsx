@@ -37,10 +37,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import {
-  attachUserTagMutation,
+  batchMetadataUserTagsMutation,
   createUserTagMutation,
   deleteMetadataMutation,
-  detachUserTagMutation,
   getMetadataOptions,
   getMetadataQueryKey,
   listFacetsOptions,
@@ -235,28 +234,33 @@ function TitleDetailPage() {
   });
 
   const createTagMutation = useMutation(createUserTagMutation());
-  const attachTagMutation = useMutation(attachUserTagMutation());
-  const detachTagMutation = useMutation(detachUserTagMutation());
+  const applyTagsMutation = useMutation(batchMetadataUserTagsMutation());
 
-  async function handleAddTags(names: string[]) {
-    const unique = [...new Set(names.map((name) => name.trim()).filter((name) => name.length > 0))];
-    if (unique.length === 0) return;
+  async function handleAddTags(selection: { tagIds: number[]; createNames: string[] }) {
+    const names = [
+      ...new Set(
+        selection.createNames.map((name) => name.trim()).filter((name) => name.length > 0),
+      ),
+    ];
+    if (selection.tagIds.length === 0 && names.length === 0) return;
     try {
-      let created = 0;
-      for (const name of unique) {
-        let tagId = userTagOptions?.items.find((tag) => tag.name === name)?.id;
-        if (tagId == null) {
-          const createdTag = await createTagMutation.mutateAsync({ body: { name } });
-          tagId = createdTag.id;
-          created += 1;
-        }
-        await attachTagMutation.mutateAsync({ path: { metadata_id: id, user_tag_id: tagId } });
+      const createdIds: number[] = [];
+      for (const name of names) {
+        const createdTag = await createTagMutation.mutateAsync({ body: { name } });
+        createdIds.push(createdTag.id);
       }
-      if (created > 0) {
+      // 单条写入与批量同形: 两个维度都是集合
+      await applyTagsMutation.mutateAsync({
+        body: { ids: [id], user_tag_ids: [...selection.tagIds, ...createdIds], action: "attach" },
+      });
+      if (createdIds.length > 0) {
         void queryClient.invalidateQueries({ queryKey: listFacetsQueryKey(USER_TAG_FACET_LIST) });
       }
       notifications.show({
-        message: created > 0 ? t("common:toast.userTagCreated") : t("common:toast.userTagAttached"),
+        message:
+          createdIds.length > 0
+            ? t("common:toast.userTagCreated")
+            : t("common:toast.userTagAttached"),
         color: "blue",
       });
       invalidateDetail();
@@ -268,12 +272,12 @@ function TitleDetailPage() {
     }
   }
 
-  async function handleDetachTags(ids: number[]) {
-    if (ids.length === 0) return;
+  async function handleDetachTags(tagIds: number[]) {
+    if (tagIds.length === 0) return;
     try {
-      for (const tagId of ids) {
-        await detachTagMutation.mutateAsync({ path: { metadata_id: id, user_tag_id: tagId } });
-      }
+      await applyTagsMutation.mutateAsync({
+        body: { ids: [id], user_tag_ids: tagIds, action: "detach" },
+      });
       notifications.show({ message: t("common:toast.userTagDetached"), color: "blue" });
       invalidateDetail();
     } catch (err) {
@@ -575,13 +579,9 @@ function TitleDetailPage() {
                 candidates={(userTagOptions?.items ?? []).filter(
                   (tag) => !(data.user_tags ?? []).some((attached) => attached.id === tag.id),
                 )}
-                onChoose={(names) => void handleAddTags(names)}
+                onChoose={(selection) => void handleAddTags(selection)}
                 onDetach={(ids) => void handleDetachTags(ids)}
-                disabled={
-                  createTagMutation.isPending ||
-                  attachTagMutation.isPending ||
-                  detachTagMutation.isPending
-                }
+                disabled={createTagMutation.isPending || applyTagsMutation.isPending}
               />
             </Group>
           </FieldBlock>

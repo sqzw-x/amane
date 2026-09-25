@@ -51,23 +51,39 @@ class TestFacetsApi:
 
 class TestUserTagsApi:
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_crud_and_attach(self, client: AsyncClient, repo: Repository) -> None:
+    async def test_crud_and_apply(self, client: AsyncClient, repo: Repository) -> None:
         meta = await repo.upsert_metadata(number="UT-API-1")
         assert meta.id is not None
 
         resp = await client.post("facets/user_tag", json={"name": "watched"})
         assert resp.status_code == 201
         tag_id = resp.json()["id"]
+        other_id = (await client.post("facets/user_tag", json={"name": "later"})).json()["id"]
 
-        resp = await client.put(f"metadata/{meta.id}/user-tags/{tag_id}")
-        assert resp.status_code == 204
-
-        resp = await client.get(f"metadata/{meta.id}")
+        # 单条写入是 1×1 的批量: 两个维度都是集合
+        resp = await client.post(
+            "metadata/batch/user-tags",
+            json={"ids": [meta.id], "user_tag_ids": [tag_id, other_id], "action": "attach"},
+        )
         assert resp.status_code == 200
-        assert any(t["name"] == "watched" for t in resp.json()["user_tags"])
+        assert resp.json() == {"changed": 1, "unchanged": 0, "missing": 0}
 
-        resp = await client.delete(f"metadata/{meta.id}/user-tags/{tag_id}")
-        assert resp.status_code == 204
+        data = (await client.get(f"metadata/{meta.id}")).json()
+        assert {t["name"] for t in data["user_tags"]} == {"watched", "later"}
+
+        # 已处于目标态计入 unchanged, 不报错
+        again = await client.post(
+            "metadata/batch/user-tags",
+            json={"ids": [meta.id], "user_tag_ids": [tag_id], "action": "attach"},
+        )
+        assert again.json() == {"changed": 0, "unchanged": 1, "missing": 0}
+
+        removed = await client.post(
+            "metadata/batch/user-tags",
+            json={"ids": [meta.id], "user_tag_ids": [tag_id, other_id], "action": "detach"},
+        )
+        assert removed.json() == {"changed": 1, "unchanged": 0, "missing": 0}
+        assert (await client.get(f"metadata/{meta.id}")).json()["user_tags"] == []
 
         resp = await client.post("facets/user_tag", json={"name": "watched"})
         assert resp.status_code == 409

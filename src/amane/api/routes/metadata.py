@@ -24,12 +24,12 @@ from ..models import (
     MetadataBatchIdsRequest,
     MetadataBatchScrapeRequest,
     MetadataBatchScrapeResponse,
-    MetadataBatchUserTagsRequest,
-    MetadataBatchUserTagsResponse,
     MetadataDetailResponse,
     MetadataListResponse,
     MetadataResponse,
+    MetadataUserTagsRequest,
     PartialMetadata,
+    UserTagLinksResponse,
     UserTagResponse,
 )
 from .agent import resolve_saved_query_id_subquery
@@ -172,13 +172,20 @@ async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) 
 
 
 @router.post("/batch/user-tags")
-async def batch_metadata_user_tags(req: MetadataBatchUserTagsRequest, repo: RepoDep) -> MetadataBatchUserTagsResponse:
-    if req.action == "attach":
-        affected, missing = await repo.batch_attach_user_tag(req.ids, req.user_tag_id)
-    else:
-        affected, missing = await repo.batch_detach_user_tag(req.ids, req.user_tag_id)
-    logger.info("metadata batch user tags", action=req.action, affected=affected, missing=missing)
-    return MetadataBatchUserTagsResponse(affected=affected, missing=missing)
+async def batch_metadata_user_tags(req: MetadataUserTagsRequest, repo: RepoDep) -> UserTagLinksResponse:
+    """把一组用户标签应用到一组影片; 未知标签 id 返回 404, 不存在的影片 id 计入 missing."""
+    try:
+        result = await repo.apply_metadata_user_tags(req.ids, req.user_tag_ids, action=req.action)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    logger.info(
+        "metadata user tags applied",
+        action=req.action,
+        changed=result.changed,
+        unchanged=result.unchanged,
+        missing=result.missing,
+    )
+    return UserTagLinksResponse(changed=result.changed, unchanged=result.unchanged, missing=result.missing)
 
 
 @router.get("/{metadata_id}")
@@ -217,20 +224,6 @@ async def get_metadata(metadata_id: int, repo: RepoDep) -> MetadataDetailRespons
         publisher_id=publisher_id,
         series_id=series_id,
     )
-
-
-@router.put("/{metadata_id}/user-tags/{user_tag_id}", status_code=204)
-async def attach_user_tag(metadata_id: int, user_tag_id: int, repo: RepoDep) -> None:
-    ok = await repo.attach_user_tag(metadata_id, user_tag_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Metadata or user tag not found")
-
-
-@router.delete("/{metadata_id}/user-tags/{user_tag_id}", status_code=204)
-async def detach_user_tag(metadata_id: int, user_tag_id: int, repo: RepoDep) -> None:
-    ok = await repo.detach_user_tag(metadata_id, user_tag_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="User tag attachment not found")
 
 
 @router.patch("/{metadata_id}")

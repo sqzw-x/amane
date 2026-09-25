@@ -98,6 +98,7 @@ def test_metadata_ops_capability_tools() -> None:
     assert "update_metadata" in names
     assert "delete_metadata" in names
     assert "enqueue_scrape" in names
+    assert "batch_user_tags" in names
 
 
 @pytest.mark.asyncio
@@ -139,26 +140,34 @@ async def test_delete_metadata_registers_approval(write_deps: AgentDeps) -> None
 
 
 @pytest.mark.asyncio
-async def test_user_tag_tools_name_the_missing_input(write_deps: AgentDeps) -> None:
-    """挂载 / 取消挂载的失败须点名出错输入: 混在一句里模型无法判断该改哪个参数."""
+async def test_user_tag_tool_reports_counts_and_names_unknown_tag(write_deps: AgentDeps) -> None:
+    """请求级失败须点名出错输入; 已是目标态是幂等命中, 不是第三种失败成因."""
     items, _total = await write_deps.repo.list_metadata(limit=1)
     metadata_id = items[0].id
     assert metadata_id is not None
     tag = await write_deps.repo.create_user_tag("标签")
     assert tag.id is not None
 
-    assert await _tool_fn("attach_user_tag")(_Ctx(write_deps), metadata_id=9999, user_tag_id=tag.id) == {
-        "error": "metadata 9999 不存在"
+    tool = _tool_fn("batch_user_tags")
+    assert await tool(_Ctx(write_deps), metadata_ids=[metadata_id], user_tag_ids=[9999]) == {
+        "error": "用户标签不存在: 9999"
     }
-    assert await _tool_fn("attach_user_tag")(_Ctx(write_deps), metadata_id=metadata_id, user_tag_id=9999) == {
-        "error": "user_tag 9999 不存在"
-    }
+    assert await tool(_Ctx(write_deps), metadata_ids=[], user_tag_ids=[tag.id]) == {"error": "metadata_ids 为空"}
+    assert await tool(_Ctx(write_deps), metadata_ids=[metadata_id], user_tag_ids=[]) == {"error": "user_tag_ids 为空"}
 
-    assert await _tool_fn("attach_user_tag")(_Ctx(write_deps), metadata_id=metadata_id, user_tag_id=tag.id) == TOOL_OK
+    assert await tool(_Ctx(write_deps), metadata_ids=[metadata_id], user_tag_ids=[tag.id]) == {
+        "changed": 1,
+        "unchanged": 0,
+        "missing": 0,
+    }
     # 已挂载是幂等成功, 不是第三种失败成因
-    assert await _tool_fn("attach_user_tag")(_Ctx(write_deps), metadata_id=metadata_id, user_tag_id=tag.id) == TOOL_OK
-
-    assert await _tool_fn("detach_user_tag")(_Ctx(write_deps), metadata_id=metadata_id, user_tag_id=tag.id) == TOOL_OK
-    assert await _tool_fn("detach_user_tag")(_Ctx(write_deps), metadata_id=metadata_id, user_tag_id=tag.id) == {
-        "error": f"metadata {metadata_id} 未挂载 user_tag {tag.id}"
+    assert await tool(_Ctx(write_deps), metadata_ids=[metadata_id], user_tag_ids=[tag.id]) == {
+        "changed": 0,
+        "unchanged": 1,
+        "missing": 0,
+    }
+    assert await tool(_Ctx(write_deps), metadata_ids=[metadata_id, 9999], user_tag_ids=[tag.id], action="detach") == {
+        "changed": 1,
+        "unchanged": 0,
+        "missing": 1,
     }

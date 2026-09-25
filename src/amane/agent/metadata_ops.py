@@ -58,56 +58,35 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
         return TOOL_OK
 
     @cap.tool
-    async def attach_user_tag(ctx: RunContext[AgentDeps], metadata_id: int, user_tag_id: int) -> str | dict[str, Any]:
-        """Attach a user tag to one metadata row (already attached → OK)."""
-        trace_tool(
-            ctx, "tool_call", {"tool": "attach_user_tag", "metadata_id": metadata_id, "user_tag_id": user_tag_id}
-        )
-        if await ctx.deps.repo.get_metadata(metadata_id) is None:
-            return {"error": f"metadata {metadata_id} 不存在"}
-        if await ctx.deps.repo.get_user_tag(user_tag_id) is None:
-            return {"error": f"user_tag {user_tag_id} 不存在"}
-        if not await ctx.deps.repo.attach_user_tag(metadata_id, user_tag_id):
-            return {"error": f"挂载失败: metadata {metadata_id} / user_tag {user_tag_id}"}
-        trace_tool(ctx, "tool_result", {"tool": "attach_user_tag", "result": TOOL_OK})
-        return TOOL_OK
-
-    @cap.tool
-    async def detach_user_tag(ctx: RunContext[AgentDeps], metadata_id: int, user_tag_id: int) -> str | dict[str, Any]:
-        """Detach a user tag from one metadata row."""
-        trace_tool(
-            ctx, "tool_call", {"tool": "detach_user_tag", "metadata_id": metadata_id, "user_tag_id": user_tag_id}
-        )
-        if not await ctx.deps.repo.detach_user_tag(metadata_id, user_tag_id):
-            return {"error": f"metadata {metadata_id} 未挂载 user_tag {user_tag_id}"}
-        trace_tool(ctx, "tool_result", {"tool": "detach_user_tag", "result": TOOL_OK})
-        return TOOL_OK
-
-    @cap.tool
     async def batch_user_tags(
         ctx: RunContext[AgentDeps],
         metadata_ids: list[int],
-        user_tag_id: int,
+        user_tag_ids: list[int],
         action: Literal["attach", "detach"] = "attach",
-    ) -> dict[str, Any]:
-        """Batch attach/detach a user tag on many metadata ids."""
+    ) -> str | dict[str, Any]:
+        """Apply user tags to metadata rows: attach = union, detach = remove; both idempotent.
+
+        Counts are per metadata row (changed / unchanged / missing). Unknown tag ids → error.
+        """
         trace_tool(
             ctx,
             "tool_call",
             {
                 "tool": "batch_user_tags",
                 "metadata_ids": metadata_ids,
-                "user_tag_id": user_tag_id,
+                "user_tag_ids": user_tag_ids,
                 "action": action,
             },
         )
         if not metadata_ids:
             return {"error": "metadata_ids 为空"}
-        if action == "attach":
-            affected, missing = await ctx.deps.repo.batch_attach_user_tag(metadata_ids, user_tag_id)
-        else:
-            affected, missing = await ctx.deps.repo.batch_detach_user_tag(metadata_ids, user_tag_id)
-        out = {"affected": affected, "missing": missing}
+        if not user_tag_ids:
+            return {"error": "user_tag_ids 为空"}
+        try:
+            result = await ctx.deps.repo.apply_metadata_user_tags(metadata_ids, user_tag_ids, action=action)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        out = {"changed": result.changed, "unchanged": result.unchanged, "missing": result.missing}
         trace_tool(ctx, "tool_result", {"tool": "batch_user_tags", "result": out})
         return out
 

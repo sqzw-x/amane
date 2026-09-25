@@ -1777,44 +1777,6 @@ export type MetadataBatchScrapeResponse = {
 };
 
 /**
- * MetadataBatchUserTagsRequest
- */
-export type MetadataBatchUserTagsRequest = {
-    /**
-     * Ids
-     *
-     * Metadata ID 列表
-     */
-    ids: Array<number>;
-    /**
-     * User Tag Id
-     */
-    user_tag_id: number;
-    /**
-     * Action
-     */
-    action: 'attach' | 'detach';
-};
-
-/**
- * MetadataBatchUserTagsResponse
- */
-export type MetadataBatchUserTagsResponse = {
-    /**
-     * Affected
-     *
-     * 成功挂载/取消挂载的数量
-     */
-    affected: number;
-    /**
-     * Missing
-     *
-     * 不存在的 metadata id (或用户 tag 不存在时的全部 id) 数量
-     */
-    missing: number;
-};
-
-/**
  * MetadataDetailResponse
  */
 export type MetadataDetailResponse = {
@@ -2109,6 +2071,30 @@ export type MetadataResponse = {
  * MetadataSortField
  */
 export type MetadataSortField = 'number' | 'title' | 'studio' | 'release' | 'created_at' | 'updated_at' | 'file_count';
+
+/**
+ * MetadataUserTagsRequest
+ */
+export type MetadataUserTagsRequest = {
+    /**
+     * Ids
+     *
+     * Metadata ID 列表
+     */
+    ids: Array<number>;
+    /**
+     * User Tag Ids
+     *
+     * 用户标签 ID 列表
+     */
+    user_tag_ids: Array<number>;
+    /**
+     * Action
+     *
+     * attach 为并入, detach 为移除; 两者均幂等
+     */
+    action: 'attach' | 'detach';
+};
 
 /**
  * Mosaic
@@ -3433,6 +3419,32 @@ export type UpscaleSubmission = {
 };
 
 /**
+ * UserTagLinksResponse
+ *
+ * 用户标签挂载/卸载的结果计数; 三个字段均以条目 id 为单位, 之和等于去重后的条目数.
+ */
+export type UserTagLinksResponse = {
+    /**
+     * Changed
+     *
+     * 至少一处挂载关系发生变更的条目数
+     */
+    changed: number;
+    /**
+     * Unchanged
+     *
+     * 已处于目标态、未修改的条目数
+     */
+    unchanged: number;
+    /**
+     * Missing
+     *
+     * 不存在的条目 id 数
+     */
+    missing: number;
+};
+
+/**
  * UserTagResponse
  */
 export type UserTagResponse = {
@@ -4059,7 +4071,7 @@ export type BatchScrapeMetadataResponses = {
 export type BatchScrapeMetadataResponse = BatchScrapeMetadataResponses[keyof BatchScrapeMetadataResponses];
 
 export type BatchMetadataUserTagsData = {
-    body: MetadataBatchUserTagsRequest;
+    body: MetadataUserTagsRequest;
     path?: never;
     query?: never;
     url: '/api/metadata/batch/user-tags';
@@ -4078,7 +4090,7 @@ export type BatchMetadataUserTagsResponses = {
     /**
      * Successful Response
      */
-    200: MetadataBatchUserTagsResponse;
+    200: UserTagLinksResponse;
 };
 
 export type BatchMetadataUserTagsResponse = BatchMetadataUserTagsResponses[keyof BatchMetadataUserTagsResponses];
@@ -4172,74 +4184,6 @@ export type UpdateMetadataResponses = {
 };
 
 export type UpdateMetadataResponse = UpdateMetadataResponses[keyof UpdateMetadataResponses];
-
-export type DetachUserTagData = {
-    body?: never;
-    path: {
-        /**
-         * Metadata Id
-         */
-        metadata_id: number;
-        /**
-         * User Tag Id
-         */
-        user_tag_id: number;
-    };
-    query?: never;
-    url: '/api/metadata/{metadata_id}/user-tags/{user_tag_id}';
-};
-
-export type DetachUserTagErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type DetachUserTagError = DetachUserTagErrors[keyof DetachUserTagErrors];
-
-export type DetachUserTagResponses = {
-    /**
-     * Successful Response
-     */
-    204: void;
-};
-
-export type DetachUserTagResponse = DetachUserTagResponses[keyof DetachUserTagResponses];
-
-export type AttachUserTagData = {
-    body?: never;
-    path: {
-        /**
-         * Metadata Id
-         */
-        metadata_id: number;
-        /**
-         * User Tag Id
-         */
-        user_tag_id: number;
-    };
-    query?: never;
-    url: '/api/metadata/{metadata_id}/user-tags/{user_tag_id}';
-};
-
-export type AttachUserTagErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type AttachUserTagError = AttachUserTagErrors[keyof AttachUserTagErrors];
-
-export type AttachUserTagResponses = {
-    /**
-     * Successful Response
-     */
-    204: void;
-};
-
-export type AttachUserTagResponse = AttachUserTagResponses[keyof AttachUserTagResponses];
 
 export type CropPosterFromThumbData = {
     body: CropPosterRequest;
