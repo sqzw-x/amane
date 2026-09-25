@@ -72,7 +72,6 @@
     "en": "English"
   },
   "pagination": {
-    "next": "Next",
     "totalItems": "({{count}} total)",
     "totalItems_one": "({{count}} total)",
     "totalItems_other": "({{count}} total)",

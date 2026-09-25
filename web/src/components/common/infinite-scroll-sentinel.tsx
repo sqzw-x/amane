@@ -1,13 +1,16 @@
 import { Center, Loader, Text } from "@mantine/core";
 import { useEffect, useRef } from "react";
-import { useTranslation } from "react-i18next";
 import { useLatestRef } from "@/hooks/use-latest-ref";
 
 interface InfiniteScrollSentinelProps {
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => unknown;
-  /** 已加载条数 / 总条数文案; 无更多页时也展示. */
+  /**
+   * 还有更多页时展示的进度文案; 全部加载完不渲染任何文案.
+   *
+   * 总条数在列表页顶部已有展示, 列表末尾再报一次总数没有信息量.
+   */
   loadedLabel?: string;
 }
 
@@ -17,7 +20,6 @@ export function InfiniteScrollSentinel({
   fetchNextPage,
   loadedLabel,
 }: InfiniteScrollSentinelProps) {
-  const { t } = useTranslation("common");
   const ref = useRef<HTMLDivElement>(null);
   const fetchingRef = useLatestRef(isFetchingNextPage);
   const fetchRef = useLatestRef(fetchNextPage);
@@ -42,13 +44,9 @@ export function InfiniteScrollSentinel({
     <Center ref={ref} py="md">
       {isFetchingNextPage ? (
         <Loader size="sm" />
-      ) : loadedLabel ? (
+      ) : hasNextPage && loadedLabel ? (
         <Text size="sm" c="dimmed">
           {loadedLabel}
-        </Text>
-      ) : hasNextPage ? (
-        <Text size="sm" c="dimmed">
-          {t("pagination.next")}
         </Text>
       ) : null}
     </Center>
