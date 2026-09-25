@@ -188,7 +188,9 @@
       "images": "头像",
       "cm": "{{value}} cm",
       "birthdayFormat": "格式: 2000-01-01 或 2000/1/1 或 2000年1月1日"
-    }
+    },
+    "tagFilms": "影片",
+    "tagActors": "演员"
   },
   "view": {
     "grid": "海报",
@@ -246,7 +248,8 @@
     "reorderImage": "拖拽排序头像",
     "removeImage": "删除这张头像",
     "rawSources": "刮削来源快照",
-    "rawSourcesHint": ""
+    "rawSourcesHint": "",
+    "viewAll": "查看全部 {{count}} 位"
   },
   "notFound": "未找到元数据",
   "invalidId": "无效的元数据 ID",

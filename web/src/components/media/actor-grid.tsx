@@ -72,6 +72,21 @@ const ActorGridItem = forwardRef<HTMLDivElement, GridItemProps>(function ActorGr
 
 const GRID_COMPONENTS = { List: ActorGridList, Item: ActorGridItem };
 
+/**
+ * 非虚拟化的演员网格, 给数量有界且与其它内容同页的场景使用 (虚拟化会接管窗口滚动).
+ * 列数与演员墙同源, 不要另写一份断点.
+ */
+export function ActorCardGrid({ items }: { items: ActorResponse[] }) {
+  const cols = useMatches(GRID_COLS);
+  return (
+    <SimpleGrid cols={cols} spacing="md">
+      {items.map((item) => (
+        <ActorCard key={item.id} item={item} />
+      ))}
+    </SimpleGrid>
+  );
+}
+
 function renderActorCard(_index: number, item: ActorResponse) {
   return <ActorCard item={item} />;
 }

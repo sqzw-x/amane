@@ -188,7 +188,9 @@
       "images": "Photos",
       "cm": "{{value}} cm",
       "birthdayFormat": "Format: 2000-01-01, 2000/1/1, or 2000年1月1日"
-    }
+    },
+    "tagFilms": "Titles",
+    "tagActors": "Actors"
   },
   "view": {
     "grid": "Grid",
@@ -258,7 +260,10 @@
     "rawSources": "Scrape source snapshots",
     "rawSourcesHint": "",
     "filmography_one": "Filmography ({{count}})",
-    "filmography_other": "Filmography ({{count}})"
+    "filmography_other": "Filmography ({{count}})",
+    "viewAll": "View all {{count}}",
+    "viewAll_one": "View all {{count}}",
+    "viewAll_other": "View all {{count}}"
   },
   "notFound": "Metadata not found",
   "invalidId": "Invalid metadata ID",
