@@ -114,9 +114,10 @@ class PrestigeCrawler(Crawler):
         series_name = _extract_name(data.get("series"))
 
         def _image_url(path: str | None) -> str | None:
+            # 图片在站点自身的 /api/media/ 下: 新片为 {x}/{y}/{uuid}.jpg, 老片为 goods/prestige/...
             if not path:
                 return None
-            return f"https://image.prestige-av.com/{path}" if not path.startswith("http") else path
+            return f"{self.base_url}/api/media/{path}" if not path.startswith("http") else path
 
         thumb_path = (data.get("thumbnail") or {}).get("path") if isinstance(data.get("thumbnail"), dict) else None
         package_path = (
