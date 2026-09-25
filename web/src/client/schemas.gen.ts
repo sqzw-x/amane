@@ -1120,23 +1120,6 @@ export const DownloadableResourceSchema = {
     description: '影片附属资源类型: 刮削写入 Resource, 整理时按库配置复制到库路径.'
 } as const;
 
-export const FacetCreateRequestSchema = {
-    properties: {
-        name: {
-            type: 'string',
-            maxLength: 200,
-            minLength: 1,
-            title: 'Name'
-        }
-    },
-    type: 'object',
-    required: [
-        'name'
-    ],
-    title: 'FacetCreateRequest',
-    description: '仅 kind=user_tag 可创建.'
-} as const;
-
 export const FacetKindSchema = {
     type: 'string',
     enum: [
@@ -6966,6 +6949,50 @@ export const UserTagResponseSchema = {
         'name'
     ],
     title: 'UserTagResponse'
+} as const;
+
+export const UserTagsCreateRequestSchema = {
+    properties: {
+        names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Names',
+            description: '用户标签名称列表'
+        }
+    },
+    type: 'object',
+    required: [
+        'names'
+    ],
+    title: 'UserTagsCreateRequest',
+    description: '批量取回或新建用户标签; 名称去重, 已存在的名称直接复用.'
+} as const;
+
+export const UserTagsCreateResponseSchema = {
+    properties: {
+        items: {
+            items: {
+                $ref: '#/components/schemas/UserTagResponse'
+            },
+            type: 'array',
+            title: 'Items',
+            description: '与入参同序的标签'
+        },
+        created: {
+            type: 'integer',
+            title: 'Created',
+            description: '本次新建的数量; 其余为已存在的名称'
+        }
+    },
+    type: 'object',
+    required: [
+        'items',
+        'created'
+    ],
+    title: 'UserTagsCreateResponse'
 } as const;
 
 export const ValidationErrorSchema = {

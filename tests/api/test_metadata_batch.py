@@ -74,7 +74,8 @@ class TestMetadataBatchHttp:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_batch_user_tags(self, client: AsyncClient, repo: Repository):
-        tag = await repo.create_user_tag("watched")
+        tags, _created = await repo.ensure_user_tags(["watched"])
+        tag = tags[0]
         assert tag.id is not None
         m1 = await repo.upsert_metadata(number="BT-001")
         m2 = await repo.upsert_metadata(number="BT-002")

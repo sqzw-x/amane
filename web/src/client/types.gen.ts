@@ -646,18 +646,6 @@ export type DesktopResponse = {
 export type DownloadableResource = 'thumb' | 'poster' | 'extrafanart' | 'trailer';
 
 /**
- * FacetCreateRequest
- *
- * 仅 kind=user_tag 可创建.
- */
-export type FacetCreateRequest = {
-    /**
-     * Name
-     */
-    name: string;
-};
-
-/**
  * FacetKind
  */
 export type FacetKind = 'actor' | 'director' | 'tag' | 'studio' | 'publisher' | 'series' | 'user_tag';
@@ -3467,6 +3455,38 @@ export type UserTagResponse = {
 };
 
 /**
+ * UserTagsCreateRequest
+ *
+ * 批量取回或新建用户标签; 名称去重, 已存在的名称直接复用.
+ */
+export type UserTagsCreateRequest = {
+    /**
+     * Names
+     *
+     * 用户标签名称列表
+     */
+    names: Array<string>;
+};
+
+/**
+ * UserTagsCreateResponse
+ */
+export type UserTagsCreateResponse = {
+    /**
+     * Items
+     *
+     * 与入参同序的标签
+     */
+    items: Array<UserTagResponse>;
+    /**
+     * Created
+     *
+     * 本次新建的数量; 其余为已存在的名称
+     */
+    created: number;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -4971,30 +4991,30 @@ export type ScrapeActorResponses = {
 
 export type ScrapeActorResponse = ScrapeActorResponses[keyof ScrapeActorResponses];
 
-export type CreateUserTagData = {
-    body: FacetCreateRequest;
+export type CreateUserTagsData = {
+    body: UserTagsCreateRequest;
     path?: never;
     query?: never;
     url: '/api/facets/user_tag';
 };
 
-export type CreateUserTagErrors = {
+export type CreateUserTagsErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type CreateUserTagError = CreateUserTagErrors[keyof CreateUserTagErrors];
+export type CreateUserTagsError = CreateUserTagsErrors[keyof CreateUserTagsErrors];
 
-export type CreateUserTagResponses = {
+export type CreateUserTagsResponses = {
     /**
      * Successful Response
      */
-    201: FacetResponse;
+    200: UserTagsCreateResponse;
 };
 
-export type CreateUserTagResponse = CreateUserTagResponses[keyof CreateUserTagResponses];
+export type CreateUserTagsResponse = CreateUserTagsResponses[keyof CreateUserTagsResponses];
 
 export type ListFacetsData = {
     body?: never;

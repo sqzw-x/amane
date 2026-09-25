@@ -145,7 +145,8 @@ async def test_user_tag_tool_reports_counts_and_names_unknown_tag(write_deps: Ag
     items, _total = await write_deps.repo.list_metadata(limit=1)
     metadata_id = items[0].id
     assert metadata_id is not None
-    tag = await write_deps.repo.create_user_tag("标签")
+    tags, _created = await write_deps.repo.ensure_user_tags(["标签"])
+    tag = tags[0]
     assert tag.id is not None
 
     tool = _tool_fn("batch_user_tags")

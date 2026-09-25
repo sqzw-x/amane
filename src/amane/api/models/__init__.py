@@ -1,13 +1,14 @@
 from .actors import ActorListResponse, ActorResponse, ActorScrapeRequest, ActorUpdateRequest
 from .comments import CommentCreateRequest, CommentResponse, CommentUpdateRequest
 from .facets import (
-    FacetCreateRequest,
     FacetListResponse,
     FacetMergeRequest,
     FacetRenameRequest,
     FacetResponse,
     FacetRuleListResponse,
     FacetRuleResponse,
+    UserTagsCreateRequest,
+    UserTagsCreateResponse,
 )
 from .feeds import (
     FeedCreateRequest,
@@ -94,7 +95,6 @@ __all__ = [
     "CommentUpdateRequest",
     "CropPosterRequest",
     "DesktopResponse",
-    "FacetCreateRequest",
     "FacetListResponse",
     "FacetMergeRequest",
     "FacetRenameRequest",
@@ -165,6 +165,8 @@ __all__ = [
     "UpscaleSubmission",
     "UserTagLinksResponse",
     "UserTagResponse",
+    "UserTagsCreateRequest",
+    "UserTagsCreateResponse",
     "normalize_feed_group",
     "path_template_schema",
 ]

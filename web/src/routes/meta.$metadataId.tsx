@@ -38,7 +38,7 @@ import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import {
   batchMetadataUserTagsMutation,
-  createUserTagMutation,
+  createUserTagsMutation,
   deleteMetadataMutation,
   getMetadataOptions,
   getMetadataQueryKey,
@@ -233,7 +233,7 @@ function TitleDetailPage() {
       }),
   });
 
-  const createTagMutation = useMutation(createUserTagMutation());
+  const ensureTagsMutation = useMutation(createUserTagsMutation());
   const applyTagsMutation = useMutation(batchMetadataUserTagsMutation());
 
   async function handleAddTags(selection: { tagIds: number[]; createNames: string[] }) {
@@ -244,23 +244,22 @@ function TitleDetailPage() {
     ];
     if (selection.tagIds.length === 0 && names.length === 0) return;
     try {
-      const createdIds: number[] = [];
-      for (const name of names) {
-        const createdTag = await createTagMutation.mutateAsync({ body: { name } });
-        createdIds.push(createdTag.id);
+      // 新建与挂载各一次请求: 名称 → id 由批量创建端点取回, 已存在的名称直接复用
+      let createdIds: number[] = [];
+      let created = 0;
+      if (names.length > 0) {
+        const ensured = await ensureTagsMutation.mutateAsync({ body: { names } });
+        createdIds = ensured.items.map((tag) => tag.id);
+        created = ensured.created;
       }
-      // 单条写入与批量同形: 两个维度都是集合
       await applyTagsMutation.mutateAsync({
         body: { ids: [id], user_tag_ids: [...selection.tagIds, ...createdIds], action: "attach" },
       });
-      if (createdIds.length > 0) {
+      if (created > 0) {
         void queryClient.invalidateQueries({ queryKey: listFacetsQueryKey(USER_TAG_FACET_LIST) });
       }
       notifications.show({
-        message:
-          createdIds.length > 0
-            ? t("common:toast.userTagCreated")
-            : t("common:toast.userTagAttached"),
+        message: created > 0 ? t("common:toast.userTagCreated") : t("common:toast.userTagAttached"),
         color: "blue",
       });
       invalidateDetail();
@@ -581,7 +580,7 @@ function TitleDetailPage() {
                 )}
                 onChoose={(selection) => void handleAddTags(selection)}
                 onDetach={(ids) => void handleDetachTags(ids)}
-                disabled={createTagMutation.isPending || applyTagsMutation.isPending}
+                disabled={ensureTagsMutation.isPending || applyTagsMutation.isPending}
               />
             </Group>
           </FieldBlock>

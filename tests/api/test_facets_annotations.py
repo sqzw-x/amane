@@ -55,10 +55,22 @@ class TestUserTagsApi:
         meta = await repo.upsert_metadata(number="UT-API-1")
         assert meta.id is not None
 
-        resp = await client.post("facets/user_tag", json={"name": "watched"})
-        assert resp.status_code == 201
-        tag_id = resp.json()["id"]
-        other_id = (await client.post("facets/user_tag", json={"name": "later"})).json()["id"]
+        created = await client.post("facets/user_tag", json={"names": ["watched", "later"]})
+        assert created.status_code == 200
+        assert created.json()["created"] == 2
+        tag_id, other_id = [tag["id"] for tag in created.json()["items"]]
+
+        # 名称已存在时复用原行, 不再 409
+        again = await client.post("facets/user_tag", json={"names": ["watched"]})
+        assert again.status_code == 200
+        assert again.json()["created"] == 0
+        assert again.json()["items"][0]["id"] == tag_id
+
+        # 去重与去空白后为空 → 422
+        deduped = await client.post("facets/user_tag", json={"names": ["dup", " dup ", "dup"]})
+        assert deduped.json()["created"] == 1
+        assert (await client.post("facets/user_tag", json={"names": []})).status_code == 422
+        assert (await client.post("facets/user_tag", json={"names": ["   "]})).status_code == 422
 
         # 单条写入是 1×1 的批量: 两个维度都是集合
         resp = await client.post(
@@ -84,9 +96,6 @@ class TestUserTagsApi:
         )
         assert removed.json() == {"changed": 1, "unchanged": 0, "missing": 0}
         assert (await client.get(f"metadata/{meta.id}")).json()["user_tags"] == []
-
-        resp = await client.post("facets/user_tag", json={"name": "watched"})
-        assert resp.status_code == 409
 
         denied = await client.post("facets/studio", json={"name": "Nope"})
         assert denied.status_code == 405

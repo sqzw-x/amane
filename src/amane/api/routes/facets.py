@@ -2,19 +2,21 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Response
-from sqlalchemy.exc import IntegrityError
 
 from ...db.models import SCRAPE_FACET_KINDS, FacetKind, FacetSortField, SortOrder
 from ...db.repo_types import FacetItem
+from ...utils.model import to_resp
 from ..deps import RepoDep
 from ..models import (
-    FacetCreateRequest,
     FacetListResponse,
     FacetMergeRequest,
     FacetRenameRequest,
     FacetResponse,
     FacetRuleListResponse,
     FacetRuleResponse,
+    UserTagResponse,
+    UserTagsCreateRequest,
+    UserTagsCreateResponse,
 )
 
 logger = structlog.get_logger()
@@ -26,17 +28,12 @@ def _facet_response(item: FacetItem) -> FacetResponse:
     return FacetResponse(id=item.id, name=item.name, count=item.count)
 
 
-@router.post("/user_tag", status_code=201)
-async def create_user_tag(req: FacetCreateRequest, repo: RepoDep) -> FacetResponse:
-    name = req.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="名称不能为空")
-    try:
-        tag = await repo.create_user_tag(name)
-    except IntegrityError as e:
-        raise HTTPException(status_code=409, detail="用户标签名称已存在") from e
-    assert tag.id is not None
-    return FacetResponse(id=tag.id, name=tag.name, count=0)
+@router.post("/user_tag")
+async def create_user_tags(req: UserTagsCreateRequest, repo: RepoDep) -> UserTagsCreateResponse:
+    """按名称取回或新建用户标签; 已存在的名称直接复用, 响应与入参同序."""
+    tags, created = await repo.ensure_user_tags(req.names)
+    logger.info("user tags ensured", requested=len(req.names), created=created)
+    return UserTagsCreateResponse(items=[to_resp(UserTagResponse, tag) for tag in tags], created=created)
 
 
 @router.get("/{kind}")

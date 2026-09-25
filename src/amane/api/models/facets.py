@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from .user_tags import UserTagResponse
 
 
 class FacetResponse(BaseModel):
@@ -14,10 +16,23 @@ class FacetListResponse(BaseModel):
     total: int
 
 
-class FacetCreateRequest(BaseModel):
-    """仅 kind=user_tag 可创建."""
+class UserTagsCreateRequest(BaseModel):
+    """批量取回或新建用户标签; 名称去重, 已存在的名称直接复用."""
 
-    name: str = Field(min_length=1, max_length=200)
+    names: list[str] = Field(min_length=1, description="用户标签名称列表")
+
+    @field_validator("names")
+    @classmethod
+    def _normalize(cls, value: list[str]) -> list[str]:
+        unique = list(dict.fromkeys(name.strip() for name in value if name.strip()))
+        if not unique:
+            raise ValueError("名称不能为空")
+        return unique
+
+
+class UserTagsCreateResponse(BaseModel):
+    items: list[UserTagResponse] = Field(description="与入参同序的标签")
+    created: int = Field(description="本次新建的数量; 其余为已存在的名称")
 
 
 class FacetRenameRequest(BaseModel):

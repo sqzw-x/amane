@@ -5,10 +5,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 
 from amane.db.actor_lookup import build_actor_lookup_names
-from amane.db.models import Actor, FacetKind, FacetRuleAction, FacetSortField, Metadata, MetadataActor, SortOrder
+from amane.db.models import (
+    Actor,
+    FacetKind,
+    FacetRuleAction,
+    FacetSortField,
+    Metadata,
+    MetadataActor,
+    SortOrder,
+    UserTag,
+)
 from amane.enums import ActorGender
 
 if TYPE_CHECKING:
@@ -16,6 +24,12 @@ if TYPE_CHECKING:
     from amane.db.repository import Repository
 
 pytestmark = pytest.mark.asyncio
+
+
+async def _tag(repo: Repository, name: str) -> UserTag:
+    """测试便捷入口: 按名称取回或新建单个用户标签."""
+    tags, _created = await repo.ensure_user_tags([name])
+    return tags[0]
 
 
 class TestFacetSync:
@@ -98,7 +112,7 @@ class TestFacetSync:
     async def test_scrape_upsert_preserves_user_tags_and_comments(self, repo: Repository) -> None:
         meta = await repo.upsert_metadata(number="ABC-004", actors=["Alice"], tags=["old"])
         assert meta.id is not None
-        tag = await repo.create_user_tag("watched")
+        tag = await _tag(repo, "watched")
         assert tag.id is not None
         await repo.apply_metadata_user_tags([meta.id], [tag.id], action="attach")
         await repo.create_comment(meta.id, "hello")
@@ -131,7 +145,7 @@ class TestUserTagsAndComments:
     async def test_user_tag_crud_and_attach(self, repo: Repository) -> None:
         meta = await repo.upsert_metadata(number="UT-001")
         assert meta.id is not None
-        tag = await repo.create_user_tag("fav")
+        tag = await _tag(repo, "fav")
         assert tag.id is not None
 
         first = await repo.apply_metadata_user_tags([meta.id], [tag.id], action="attach")
@@ -148,10 +162,14 @@ class TestUserTagsAndComments:
         assert updated is not None and updated.name == "favorite"
         assert await repo.delete_user_tag(tag.id) is True
 
-    async def test_duplicate_user_tag_name_raises(self, repo: Repository) -> None:
-        await repo.create_user_tag("dup")
-        with pytest.raises(IntegrityError):
-            await repo.create_user_tag("dup")
+    async def test_ensure_user_tags_reuses_existing(self, repo: Repository) -> None:
+        """名称已存在时复用原行, 不新建也不报错; 返回与入参同序."""
+        first, created = await repo.ensure_user_tags(["dup", "other"])
+        assert created == 2
+        again, created_again = await repo.ensure_user_tags(["other", "dup", "other"])
+        assert created_again == 0
+        assert [tag.id for tag in again] == [first[1].id, first[0].id]
+        assert len(await repo.list_user_tags()) == 2
 
     async def test_comment_crud(self, repo: Repository) -> None:
         meta = await repo.upsert_metadata(number="CM-001")
@@ -174,7 +192,7 @@ class TestUserTagsAndComments:
         """未知标签 id 是请求级错误: 整请求不生效, 错误信息点名标签 id."""
         meta = await repo.upsert_metadata(number="UT-UNKNOWN")
         assert meta.id is not None
-        tag = await repo.create_user_tag("known")
+        tag = await _tag(repo, "known")
         assert tag.id is not None
         with pytest.raises(ValueError, match="用户标签不存在"):
             await repo.apply_metadata_user_tags([meta.id], [tag.id, 9999], action="attach")
@@ -191,14 +209,14 @@ class TestUserTagsAndComments:
     async def test_apply_user_tags_missing_targets(
         self, repo: Repository, ids: list[int], action: UserTagLinkAction, expected: tuple[int, int, int]
     ) -> None:
-        tag = await repo.create_user_tag("edge")
+        tag = await _tag(repo, "edge")
         assert tag.id is not None
         assert await repo.apply_metadata_user_tags(ids, [tag.id], action=action) == expected
 
     async def test_apply_many_tags_many_metadata(self, repo: Repository) -> None:
         """一行挂多个标签, 多行同挂: 计数以条目为单位."""
-        t1 = await repo.create_user_tag("multi-1")
-        t2 = await repo.create_user_tag("multi-2")
+        t1 = await _tag(repo, "multi-1")
+        t2 = await _tag(repo, "multi-2")
         assert t1.id is not None and t2.id is not None
         m1 = await repo.upsert_metadata(number="UT-MULTI-1")
         m2 = await repo.upsert_metadata(number="UT-MULTI-2")
@@ -538,19 +556,19 @@ class TestFacetRenameMergeDelete:
         assert await repo.delete_facet(FacetKind.ACTOR, 9999) is False
 
     async def test_user_tag_rename_merge_delete(self, repo: Repository) -> None:
-        tag = await repo.create_user_tag("old")
+        tag = await _tag(repo, "old")
         assert tag.id is not None
         renamed = await repo.rename_facet(FacetKind.USER_TAG, tag.id, "new")
         assert renamed is not None and renamed.name == "new"
-        await repo.create_user_tag("taken")
-        mine = await repo.create_user_tag("mine")
+        await _tag(repo, "taken")
+        mine = await _tag(repo, "mine")
         assert mine.id is not None
         with pytest.raises(ValueError):
             await repo.rename_facet(FacetKind.USER_TAG, mine.id, "taken")
         assert await repo.rename_facet(FacetKind.USER_TAG, 9999, "x") is None
 
-        target = await repo.create_user_tag("target")
-        source = await repo.create_user_tag("source")
+        target = await _tag(repo, "target")
+        source = await _tag(repo, "source")
         assert target.id is not None and source.id is not None
         meta_a = await repo.upsert_metadata(number="MGU-1a")
         meta_b = await repo.upsert_metadata(number="MGU-1b")
@@ -563,8 +581,8 @@ class TestFacetRenameMergeDelete:
         assert any(t.name == "target" for t in tags_b)
         assert await repo.get_facet(FacetKind.USER_TAG, source.id) is None
 
-        t2 = await repo.create_user_tag("t")
-        s2 = await repo.create_user_tag("s")
+        t2 = await _tag(repo, "t")
+        s2 = await _tag(repo, "s")
         assert t2.id is not None and s2.id is not None
         meta = await repo.upsert_metadata(number="MGU-2")
         assert meta.id is not None
@@ -573,15 +591,15 @@ class TestFacetRenameMergeDelete:
         assert dup is not None and dup.count == 1
         assert [t.name for t in await repo.list_metadata_user_tags(meta.id)] == ["t"]
 
-        only = await repo.create_user_tag("only")
+        only = await _tag(repo, "only")
         assert only.id is not None
         with pytest.raises(ValueError):
             await repo.merge_facets(FacetKind.USER_TAG, only.id, [9999])
-        orphan = await repo.create_user_tag("orphan-source")
+        orphan = await _tag(repo, "orphan-source")
         assert orphan.id is not None
         assert await repo.merge_facets(FacetKind.USER_TAG, 9999, [orphan.id]) is None
 
-        doomed = await repo.create_user_tag("doomed")
+        doomed = await _tag(repo, "doomed")
         assert doomed.id is not None
         assert await repo.delete_facet(FacetKind.USER_TAG, doomed.id) is True
         with pytest.raises(ValueError):

@@ -68,7 +68,7 @@ OpenAPI 列出参数, 不表达组合语义:
 
 **资源缓存**: `/resources/{hash}` 与 `/proxy` 因就地超分 URL 不变, 不可 immutable — `Cache-Control: public, no-cache` + `content_hash` ETag. proxy 上游失败 502, 进程内负缓存 15 分钟 (不纳入配置), 同 URL singleflight; 刮削下载不经由该缓存.
 
-**批量**: 不存在的 id 计入 `missing` / `skipped`, 存在的照常处理 (非事务 all-or-nothing). `POST /tasks/batch` 的选择集是 `task_ids` **或**与列表同形的 `status` / `type` (未传则不限): `cancel` 把排队 / 运行中标 `failed` + `error="Cancelled by user"` 而不删行, `delete` 只动终态并清除磁盘产物, `retry` 只对 `failed` 按原 type / payload / priority 再入队并返回新 `task_ids`; 筛选范围与 action 允许状态求交后为空则 `affected=0`. FeedItem 的批量是单一 `POST /feeds/{feed_id}/items/batch`, 一个请求只携带一个 action, 语义见 [feeds.md](feeds.md). 用户标签挂载同样只有批量入口 (`POST /api/metadata/batch/user-tags`, 影片与标签两个维度都是集合, `action` 决定并入或移除): 未知标签 id 属请求级错误返回 404, 不存在的影片 id 计入 `missing`, 已处于目标态的影片计入 `unchanged`.
+**批量**: 不存在的 id 计入 `missing` / `skipped`, 存在的照常处理 (非事务 all-or-nothing). `POST /tasks/batch` 的选择集是 `task_ids` **或**与列表同形的 `status` / `type` (未传则不限): `cancel` 把排队 / 运行中标 `failed` + `error="Cancelled by user"` 而不删行, `delete` 只动终态并清除磁盘产物, `retry` 只对 `failed` 按原 type / payload / priority 再入队并返回新 `task_ids`; 筛选范围与 action 允许状态求交后为空则 `affected=0`. FeedItem 的批量是单一 `POST /feeds/{feed_id}/items/batch`, 一个请求只携带一个 action, 语义见 [feeds.md](feeds.md). 用户标签挂载同样只有批量入口 (`POST /api/metadata/batch/user-tags`, 影片与标签两个维度都是集合, `action` 决定并入或移除): 未知标签 id 属请求级错误返回 404, 不存在的影片 id 计入 `missing`, 已处于目标态的影片计入 `unchanged`. 标签新建也是单一批量入口 (`POST /api/facets/user_tag`): 按名称取回或新建, 已存在的名称直接复用而不报错, 响应与入参同序.
 
 ## WebSocket
 

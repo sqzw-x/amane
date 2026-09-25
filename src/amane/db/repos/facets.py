@@ -349,13 +349,28 @@ class FacetsRepoMixin(RepositoryMixinBase):
         async with self._session() as session:
             return await session.get(UserTag, user_tag_id)
 
-    async def create_user_tag(self, name: str) -> UserTag:
+    async def ensure_user_tags(self, names: Sequence[str]) -> tuple[list[UserTag], int]:
+        """按名称取回或新建用户标签; 返回与入参同序的行与新建数量."""
+        unique = list(dict.fromkeys(names))
+        if not unique:
+            return [], 0
         async with self._session() as session:
-            tag = UserTag(name=name)
-            session.add(tag)
+            existing = {
+                row.name: row
+                for row in (await session.exec(select(UserTag).where(col(UserTag.name).in_(unique)))).all()
+            }
+            created = 0
+            for name in unique:
+                if name in existing:
+                    continue
+                tag = UserTag(name=name)
+                session.add(tag)
+                existing[name] = tag
+                created += 1
+            await session.flush()
+            tags = [existing[name] for name in unique]
             await session.commit()
-            await session.refresh(tag)
-            return tag
+            return tags, created
 
     async def update_user_tag(self, user_tag_id: int, **updates: Unpack[UserTagUpdates]) -> UserTag | None:
         async with self._session() as session:
