@@ -71,8 +71,13 @@ export function CatalogFacetTable({
 
   const createMutation = useMutation({
     ...createUserTagsMutation(),
-    onSuccess: () => {
-      notifications.show({ message: t("common:toast.userTagCreated"), color: "blue" });
+    onSuccess: (res) => {
+      // 名称已存在时端点复用原行而不报错, 说「已创建」不成立
+      notifications.show({
+        message:
+          res.created > 0 ? t("common:toast.userTagCreated") : t("common:toast.userTagExists"),
+        color: "blue",
+      });
       setNewTagName("");
       identity.invalidate();
     },

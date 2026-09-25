@@ -228,7 +228,7 @@ export function MetaTable({
     ...batchMetadataUserTagsMutation(),
     onSuccess: (res) => {
       notifications.show({
-        message: t("common:toast.metadataUpdated", { count: res.changed }),
+        message: t("common:toast.userTagBatchUpdated", { count: res.changed }),
         color: "blue",
       });
       setTagModalOpen(false);
