@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Unpack
 
 from sqlalchemy import asc
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -71,6 +72,25 @@ async def _rows_by_names[T: Actor | Director | Tag | Studio | Publisher | Series
     if not unique:
         return []
     return list((await session.exec(select(model).where(col(model.name).in_(unique)))).all())
+
+
+async def _ensure_user_tags_once(session: AsyncSession, names: Sequence[str]) -> tuple[list[UserTag], int]:
+    """一次尝试: 按名称取回已存在的行, 其余插入; 撞唯一索引由调用方回滚重试."""
+    existing = {
+        row.name: row for row in (await session.exec(select(UserTag).where(col(UserTag.name).in_(names)))).all()
+    }
+    created = 0
+    for name in names:
+        if name in existing:
+            continue
+        tag = UserTag(name=name)
+        session.add(tag)
+        existing[name] = tag
+        created += 1
+    await session.flush()
+    tags = [existing[name] for name in names]
+    await session.commit()
+    return tags, created
 
 
 class FacetsRepoMixin(RepositoryMixinBase):
@@ -359,22 +379,13 @@ class FacetsRepoMixin(RepositoryMixinBase):
         if not unique:
             return [], 0
         async with self._session() as session:
-            existing = {
-                row.name: row
-                for row in (await session.exec(select(UserTag).where(col(UserTag.name).in_(unique)))).all()
-            }
-            created = 0
-            for name in unique:
-                if name in existing:
-                    continue
-                tag = UserTag(name=name)
-                session.add(tag)
-                existing[name] = tag
-                created += 1
-            await session.flush()
-            tags = [existing[name] for name in unique]
-            await session.commit()
-            return tags, created
+            try:
+                return await _ensure_user_tags_once(session, unique)
+            except IntegrityError:
+                # 并发同名创建: 双方的 SELECT 都在对方提交前未命中, 后者撞唯一索引.
+                # 回滚重查即可取回对方刚提交的行, 不必把冲突暴露成 500.
+                await session.rollback()
+                return await _ensure_user_tags_once(session, unique)
 
     async def update_user_tag(self, user_tag_id: int, **updates: Unpack[UserTagUpdates]) -> UserTag | None:
         async with self._session() as session:
