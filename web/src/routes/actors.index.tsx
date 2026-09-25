@@ -5,7 +5,11 @@ import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
 import type { ParseKeys } from "i18next";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listActorsInfiniteOptions, listActorsOptions } from "@/client/@tanstack/react-query.gen";
+import {
+  getFacetOptions,
+  listActorsInfiniteOptions,
+  listActorsOptions,
+} from "@/client/@tanstack/react-query.gen";
 import type { ActorGender, ActorSortField } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
@@ -86,6 +90,15 @@ function ActiveFilterChip({ label, onClear }: { label: string; onClear: () => vo
         <IconX size={14} />
       </ActionIcon>
     </Group>
+  );
+}
+
+/** 标签名走单条分类查询, 与片库的芯片同形. */
+function ActiveUserTagChip({ tagId, onClear }: { tagId: number; onClear: () => void }) {
+  const { t } = useTranslation("metadata");
+  const { data } = useQuery(getFacetOptions({ path: { kind: "user_tag", facet_id: tagId } }));
+  return (
+    <ActiveFilterChip label={`${t("detail.userTags")}: ${data?.name ?? tagId}`} onClear={onClear} />
   );
 }
 
@@ -325,6 +338,12 @@ function ActorsIndexPage() {
             <ActiveFilterChip
               label={`${t("browse.person.birthplace")}: ${filters.birthplace}`}
               onClear={() => clearFilterKeys(["birthplace"])}
+            />
+          )}
+          {filters.user_tag_id != null && (
+            <ActiveUserTagChip
+              tagId={filters.user_tag_id}
+              onClear={() => applyFilterPatch({ user_tag_id: undefined })}
             />
           )}
           {filters.has_person != null && (

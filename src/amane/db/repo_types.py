@@ -179,6 +179,7 @@ class ActorBrowseParams(BaseModel):
     cup_max: str | None = Field(default=None, description="罩杯上界")
     birthplace: str | None = Field(default=None, description="出生地包含匹配")
     ids: list[int] | None = Field(default=None, description="限制为这些演员主键")
+    user_tag_ids: list[int] | None = Field(default=None, description="按用户标签筛选; 多值为 AND")
     saved_query_id: int | None = Field(
         default=None, description="Saved query preset id; AND with other filters via SQL subquery"
     )

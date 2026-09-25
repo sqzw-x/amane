@@ -572,6 +572,15 @@ class MetadataUserTag(SQLModel, table=True):
     user_tag_id: int = Field(foreign_key="user_tags.id", primary_key=True, ondelete="CASCADE")
 
 
+class ActorUserTag(SQLModel, table=True):
+    """演员与用户标签的挂载关系; 与 ``MetadataUserTag`` 同形, 不保序."""
+
+    __tablename__ = "actor_user_tags"  # type: ignore[assignment]
+
+    actor_id: int = Field(foreign_key="actors.id", primary_key=True, ondelete="CASCADE")
+    user_tag_id: int = Field(foreign_key="user_tags.id", primary_key=True, ondelete="CASCADE")
+
+
 class Comment(SQLModel, table=True):
     """``updated_at`` 晚于 ``created_at`` 表示正文被编辑过; 未编辑时两列相等."""
 

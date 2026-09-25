@@ -20,6 +20,7 @@ from ..models import (
     SCRAPE_FACET_KINDS,
     Actor,
     ActorAlias,
+    ActorUserTag,
     Comment,
     Director,
     FacetKind,
@@ -40,7 +41,7 @@ from ..models import (
     Tag,
     UserTag,
 )
-from ..repo_types import FacetItem, _facet_primary_order, _utcnow
+from ..repo_types import FacetItem, UserTagLinkAction, UserTagLinkResult, _facet_primary_order, _utcnow
 
 # 关联表投影: Metadata list JSON 为真值 (actor/director/tag), 或纯挂载 (user_tag).
 # 标量投影: Metadata.studio/publisher/series 字符串为真值, 实体表按 name 对齐.
@@ -151,6 +152,195 @@ SCALAR_FACETS: dict[FacetKind, _ScalarFacetSpec] = {
         label="系列",
     ),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class _UserTagLinkSpec:
+    """用户标签挂载的目标实体与关联表.
+
+    影片与演员的挂载关系结构相同, 差异只在实体模型、关联模型与对应列.
+    """
+
+    entity: type[Metadata] | type[Actor]
+    link: type[MetadataUserTag] | type[ActorUserTag]
+    entity_col: Any
+    build: Callable[[int, int], MetadataUserTag | ActorUserTag]
+
+
+_METADATA_USER_TAG_LINK = _UserTagLinkSpec(
+    entity=Metadata,
+    link=MetadataUserTag,
+    entity_col=col(MetadataUserTag.metadata_id),
+    build=lambda entity_id, tag_id: MetadataUserTag(metadata_id=entity_id, user_tag_id=tag_id),
+)
+
+_ACTOR_USER_TAG_LINK = _UserTagLinkSpec(
+    entity=Actor,
+    link=ActorUserTag,
+    entity_col=col(ActorUserTag.actor_id),
+    build=lambda entity_id, tag_id: ActorUserTag(actor_id=entity_id, user_tag_id=tag_id),
+)
+
+
+async def purge_user_tag_links(session: AsyncSession, user_tag_id: int) -> None:
+    """按标签显式删除两张关联表的挂载行, 不依赖 SQLite FK pragma."""
+    await session.exec(sqla_delete(MetadataUserTag).where(col(MetadataUserTag.user_tag_id) == user_tag_id))
+    await session.exec(sqla_delete(ActorUserTag).where(col(ActorUserTag.user_tag_id) == user_tag_id))
+
+
+async def _apply_user_tags(
+    session: AsyncSession,
+    spec: _UserTagLinkSpec,
+    ids: Sequence[int],
+    user_tag_ids: Sequence[int],
+    action: UserTagLinkAction,
+) -> UserTagLinkResult:
+    """把一组用户标签应用到一组条目: attach 为并入, detach 为移除, 两者均幂等.
+
+    未知标签 id 抛 ``ValueError`` (请求级错误); 不存在的条目 id 计入 ``missing``, 其余照常处理.
+    """
+    entity_ids = list(dict.fromkeys(ids))
+    tag_ids = list(dict.fromkeys(user_tag_ids))
+    known_tags: set[int] = set()
+    if tag_ids:
+        tag_rows = (await session.exec(select(UserTag.id).where(col(UserTag.id).in_(tag_ids)))).all()
+        known_tags = {row for row in tag_rows if row is not None}
+    unknown = [tag_id for tag_id in tag_ids if tag_id not in known_tags]
+    if unknown:
+        raise ValueError(f"用户标签不存在: {', '.join(str(tag_id) for tag_id in unknown)}")
+
+    known_entities: set[int] = set()
+    if entity_ids:
+        entity_rows = (await session.exec(select(spec.entity.id).where(col(spec.entity.id).in_(entity_ids)))).all()
+        known_entities = {row for row in entity_rows if row is not None}
+
+    linked: set[tuple[int, int]] = set()
+    if known_entities and tag_ids:
+        link_rows = (
+            await session.exec(
+                select(col(spec.entity_col), col(spec.link.user_tag_id)).where(
+                    col(spec.entity_col).in_(list(known_entities)),
+                    col(spec.link.user_tag_id).in_(tag_ids),
+                )
+            )
+        ).all()
+        linked = {(entity_id, tag_id) for entity_id, tag_id in link_rows}
+
+    if action == "detach":
+        if linked:
+            # 已取回的行覆盖了该筛选的全部组合, 因此按两列投影删除不会多删.
+            await session.exec(
+                sqla_delete(spec.link).where(
+                    col(spec.entity_col).in_([entity_id for entity_id, _tag_id in linked]),
+                    col(spec.link.user_tag_id).in_([tag_id for _entity_id, tag_id in linked]),
+                )
+            )
+        changed = len({entity_id for entity_id, _tag_id in linked})
+    else:
+        changed = 0
+        for entity_id in known_entities:
+            added = False
+            for tag_id in tag_ids:
+                if (entity_id, tag_id) in linked:
+                    continue
+                session.add(spec.build(entity_id, tag_id))
+                added = True
+            if added:
+                changed += 1
+
+    await session.commit()
+    return UserTagLinkResult(
+        changed=changed,
+        unchanged=len(known_entities) - changed,
+        missing=len(entity_ids) - len(known_entities),
+    )
+
+
+async def apply_user_tags_to_metadata(
+    session: AsyncSession,
+    metadata_ids: Sequence[int],
+    user_tag_ids: Sequence[int],
+    action: UserTagLinkAction,
+) -> UserTagLinkResult:
+    return await _apply_user_tags(session, _METADATA_USER_TAG_LINK, metadata_ids, user_tag_ids, action)
+
+
+async def apply_user_tags_to_actors(
+    session: AsyncSession,
+    actor_ids: Sequence[int],
+    user_tag_ids: Sequence[int],
+    action: UserTagLinkAction,
+) -> UserTagLinkResult:
+    return await _apply_user_tags(session, _ACTOR_USER_TAG_LINK, actor_ids, user_tag_ids, action)
+
+
+async def _move_links_for_target_tag(
+    session: AsyncSession,
+    spec: _UserTagLinkSpec,
+    target_tag_id: int,
+    source_tag_ids: set[int],
+) -> None:
+    """源标签的挂载行并入 target 并按条目去重; 源行删除."""
+    target_entities = set(
+        (await session.exec(select(spec.entity_col).where(col(spec.link.user_tag_id) == target_tag_id))).all()
+    )
+    rows = (
+        await session.exec(
+            select(col(spec.entity_col), col(spec.link.user_tag_id)).where(
+                col(spec.link.user_tag_id).in_(source_tag_ids)
+            )
+        )
+    ).all()
+    for entity_id, _tag_id in rows:
+        if entity_id in target_entities:
+            continue
+        session.add(spec.build(entity_id, target_tag_id))
+        target_entities.add(entity_id)
+    if rows:
+        await session.exec(sqla_delete(spec.link).where(col(spec.link.user_tag_id).in_(source_tag_ids)))
+    await session.flush()
+
+
+async def move_user_tag_links(
+    session: AsyncSession,
+    target_tag_id: int,
+    source_tag_ids: set[int],
+) -> None:
+    """合并用户标签时迁移两张关联表的挂载行; 调用方须在删除源标签实体之前执行."""
+    await _move_links_for_target_tag(session, _METADATA_USER_TAG_LINK, target_tag_id, source_tag_ids)
+    await _move_links_for_target_tag(session, _ACTOR_USER_TAG_LINK, target_tag_id, source_tag_ids)
+
+
+async def move_actor_user_tag_links(
+    session: AsyncSession,
+    target_actor_id: int,
+    source_actor_ids: set[int],
+) -> None:
+    """合并演员时迁移标签挂载: 源演员的每个标签并入 target 并按标签去重, 源行删除.
+
+    调用方须在删除源演员实体之前执行.
+    """
+    spec = _ACTOR_USER_TAG_LINK
+    target_tag_ids = {
+        row
+        for row in (
+            await session.exec(select(spec.link.user_tag_id).where(col(spec.entity_col) == target_actor_id))
+        ).all()
+        if row is not None
+    }
+    rows = (
+        await session.exec(
+            select(col(spec.link.user_tag_id), col(spec.entity_col)).where(col(spec.entity_col).in_(source_actor_ids))
+        )
+    ).all()
+    for tag_id, _actor_id in rows:
+        if tag_id in target_tag_ids:
+            continue
+        session.add(spec.build(target_actor_id, tag_id))
+        target_tag_ids.add(tag_id)
+    if rows:
+        await session.exec(sqla_delete(spec.link).where(col(spec.entity_col).in_(source_actor_ids)))
+    await session.flush()
 
 
 async def _get_or_create_named[T: _NamedEntity](session: AsyncSession, model: type[T], name: str) -> T:
@@ -393,8 +583,9 @@ async def delete_link_facet(session: AsyncSession, spec: _LinkFacetSpec, facet_i
         await _strip_names_from_link_metadata(session, spec, blocked)
     await session.exec(sqla_delete(spec.link).where(col(spec.link_fk) == facet_id))
     if spec.kind == FacetKind.ACTOR:
-        # 显式删除别名行, 不依赖 FK pragma.
+        # 显式删除别名行与用户标签挂载, 不依赖 FK pragma.
         await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == facet_id))
+        await session.exec(sqla_delete(ActorUserTag).where(col(ActorUserTag.actor_id) == facet_id))
     await session.delete(entity)
     await session.commit()
     return True
@@ -776,17 +967,7 @@ async def _merge_user_tag_facets(session: AsyncSession, target_id: int, source_i
     if target is None:
         return None
     sources = await _load_named_sources(session, UserTag, source_id_set, "标签")
-    target_metadata_ids = set(
-        (await session.exec(select(MetadataUserTag.metadata_id).where(MetadataUserTag.user_tag_id == target_id))).all()
-    )
-    stmt = select(MetadataUserTag).where(col(MetadataUserTag.user_tag_id).in_(source_id_set))
-    links = list((await session.exec(stmt)).all())
-    for link in links:
-        if link.metadata_id not in target_metadata_ids:
-            session.add(MetadataUserTag(metadata_id=link.metadata_id, user_tag_id=target_id))
-            target_metadata_ids.add(link.metadata_id)
-        await session.delete(link)
-    await session.flush()
+    await move_user_tag_links(session, target_id, source_id_set)
     for src in sources:
         await session.delete(src)
     item = await get_facet(session, FacetKind.USER_TAG, target_id)
@@ -834,7 +1015,8 @@ async def merge_link_facets(
         target.updated_at = _utcnow()
         session.add(target)
         await session.flush()
-        # 源别名行已并入 target, 须显式删除 (不依赖 FK pragma).
+        # 源标签挂载与别名行已并入 target, 须显式删除 (不依赖 FK pragma).
+        await move_actor_user_tag_links(session, target_id, {s.id for s in actor_sources if s.id is not None})
         for src in actor_sources:
             await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == src.id))
         await session.flush()

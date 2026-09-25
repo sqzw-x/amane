@@ -10,11 +10,14 @@ import {
   Input,
   NumberInput,
   SegmentedControl,
+  Select,
   Stack,
   Text,
   TextInput,
 } from "@mantine/core";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { listFacetsOptions } from "@/client/@tanstack/react-query.gen";
 import type { ActorGender } from "@/client/types.gen";
 import { useResettingState } from "@/hooks/use-resetting-state";
 import {
@@ -30,6 +33,7 @@ import {
   normalizeActorFilterValues,
   rangeValue,
 } from "@/lib/actors/browse";
+import { USER_TAG_FACET_LIST } from "@/lib/facets";
 
 export type { ActorFilterPatch, ActorFilterValues };
 
@@ -244,6 +248,7 @@ function applyPatch(prev: ActorFilterValues, patch: ActorFilterPatch): ActorFilt
 
 export function ActorFilterControls({ opened, committed, onApply }: ActorFilterControlsProps) {
   const { t } = useTranslation(["metadata", "common"]);
+  const { data: userTags } = useQuery(listFacetsOptions(USER_TAG_FACET_LIST));
   const committedKey = actorFilterFingerprint(committed);
   const [draft, setDraft] = useResettingState(
     () => cloneActorFilterValues(committed),
@@ -299,6 +304,23 @@ export function ActorFilterControls({ opened, committed, onApply }: ActorFilterC
             noLabel={t("actors.filterNoImage")}
             onChange={(has_image) => patchDraft({ has_image })}
           />
+          <Input.Wrapper label={t("detail.userTags")} size="sm">
+            <Select
+              size="sm"
+              w={160}
+              clearable
+              searchable
+              placeholder={t("search.hasFilesAny")}
+              data={(userTags?.items ?? []).map((tag) => ({
+                value: String(tag.id),
+                label: tag.name,
+              }))}
+              value={draft.user_tag_id != null ? String(draft.user_tag_id) : null}
+              onChange={(value) =>
+                patchDraft({ user_tag_id: value != null ? Number(value) : undefined })
+              }
+            />
+          </Input.Wrapper>
         </Group>
 
         <Group gap="md" align="flex-end" wrap="wrap">

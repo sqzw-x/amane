@@ -43,6 +43,7 @@ import type { ActorResponse, CacheKind } from "@/client/types.gen";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
 import { SortMenu } from "@/components/common/sort-menu";
 import { ActorEditDialog } from "@/components/media/actor-edit-dialog";
+import { ActorUserTags } from "@/components/media/actor-user-tags";
 import { FanartLightbox } from "@/components/media/fanart-lightbox";
 import { PosterGrid } from "@/components/media/poster-grid";
 import { extractErrorMessage } from "@/lib/api-error";
@@ -499,6 +500,10 @@ function ActorHero({
             </Text>
           </FieldBlock>
         )}
+
+        <FieldBlock label={t("detail.userTags")}>
+          <ActorUserTags actorId={actor.id} attached={actor.user_tags ?? []} />
+        </FieldBlock>
 
         <Group gap="xs" pt="xs">
           <Menu shadow="md" position="bottom-start">

@@ -1,4 +1,4 @@
-from .actors import ActorListResponse, ActorResponse, ActorScrapeRequest, ActorUpdateRequest
+from .actors import ActorListResponse, ActorResponse, ActorScrapeRequest, ActorUpdateRequest, ActorUserTagsRequest
 from .comments import CommentCreateRequest, CommentResponse, CommentUpdateRequest
 from .facets import (
     FacetListResponse,
@@ -89,6 +89,7 @@ __all__ = [
     "ActorScrapeRequest",
     "ActorScrapeSubmission",
     "ActorUpdateRequest",
+    "ActorUserTagsRequest",
     "CleanupSubmission",
     "CommentCreateRequest",
     "CommentResponse",

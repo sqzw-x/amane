@@ -69,6 +69,7 @@ def test_facet_backfill_from_metadata_json(alembic_cfg: Config, tmp_path: Path) 
         assert [r[0] for r in studios] == ["StudioM"]
         # 用户注解表存在且为空
         assert conn.execute(text("SELECT COUNT(*) FROM user_tags")).scalar() == 0
+        assert conn.execute(text("SELECT COUNT(*) FROM actor_user_tags")).scalar() == 0
         assert conn.execute(text("SELECT COUNT(*) FROM comments")).scalar() == 0
 
     engine.dispose()

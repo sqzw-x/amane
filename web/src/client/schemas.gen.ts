@@ -56,6 +56,14 @@ export const ActorResponseSchema = {
             title: 'Aliases',
             description: '别名行 (保序; 不含展示名)'
         },
+        user_tags: {
+            items: {
+                $ref: '#/components/schemas/UserTagResponse'
+            },
+            type: 'array',
+            title: 'User Tags',
+            description: '用户标签 (仅详情)'
+        },
         gender: {
             $ref: '#/components/schemas/ActorGender',
             default: 'unknown'
@@ -214,7 +222,7 @@ export const ActorResponseSchema = {
         'name'
     ],
     title: 'ActorResponse',
-    description: '详情填全量; 列表 (`GET /actors`) 只填卡片/表格字段, 简介/别名/源字典/raw 为空.'
+    description: '详情填全量; 列表 (`GET /actors`) 只填卡片/表格字段, 简介/别名/标签/源字典/raw 为空.'
 } as const;
 
 export const ActorScrapeRequestSchema = {
@@ -502,6 +510,45 @@ export const ActorUpdateRequestSchema = {
     },
     type: 'object',
     title: 'ActorUpdateRequest'
+} as const;
+
+export const ActorUserTagsRequestSchema = {
+    properties: {
+        ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Ids',
+            description: '演员 ID 列表'
+        },
+        user_tag_ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'User Tag Ids',
+            description: '用户标签 ID 列表'
+        },
+        action: {
+            type: 'string',
+            enum: [
+                'attach',
+                'detach'
+            ],
+            title: 'Action',
+            description: 'attach 为并入, detach 为移除; 两者均幂等'
+        }
+    },
+    type: 'object',
+    required: [
+        'ids',
+        'user_tag_ids',
+        'action'
+    ],
+    title: 'ActorUserTagsRequest'
 } as const;
 
 export const AgentApproveRequestSchema = {

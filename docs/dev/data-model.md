@@ -81,6 +81,8 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 | `Metadata` 删除 | **nullify** `MediaFile.metadata_id`, 状态回 `PENDING` | 应用层级联 (`delete_metadata`); 文件本身保留, 可再刮削 |
 | `Library` 删除 | **级联删除** `MediaFile` | 应用层级联 (`delete_library` 先 flush 删子表再删库, 无 ORM relationship). 仅删 DB 索引, 不动磁盘文件; 路由层同时 `remove_library` 停止监控 |
 | `Feed` 删除 | **级联删除** `FeedItem` | 应用层级联; 已入队的 SCRAPE / Metadata 不受影响 |
+| `UserTag` 删除 | **级联删除**两张关联表的挂载行 | 应用层级联 (不依赖 FK pragma); 合并用户标签时源标签的挂载先迁入 target 再删实体 |
+| `Actor` 删除 / 合并 | 删除其标签挂载行; 合并时源演员的挂载并入 target | 应用层级联, 与别名行同处处理 |
 | `Resource` 清理 | CLEANUP 回收未引用 | 扫描全部 Metadata 媒体 URL 字段与 `Actor.image_urls`, 删不被引用的 Resource (文件 + 行). 非 LRU |
 | 文件 move / hardlink 后 | 路径仍在本库内则 ORGANIZE 更新 `MediaFile.path`; 已不在本库内且源路径不在磁盘上则删除该行 | 外部直接挪文件不触发更新, 由 watcher 检测. 见 [task-system.md](task-system.md) 落盘执行 |
 
@@ -149,7 +151,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 ## 用户注解 (与爬取隔离)
 
-`UserTag` + `MetadataUserTag`、`Comment` 绑定于 Metadata. 刮削路径**绝不触碰**.
+`UserTag` 经 `MetadataUserTag` / `ActorUserTag` 分别挂载到影片与演员, 两张关联表结构相同、均不保序; `Comment` 绑定于 Metadata. 挂载与卸载都只经批量端点, 语义见 [api.md](api.md). `FacetKind.USER_TAG` 的 count 恒为**关联 Metadata 数**, 演员挂载不参与 (与其它分类的 count 口径一致). 刮削路径**绝不触碰**这些表.
 
 ## 当前限制
 

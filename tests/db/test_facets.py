@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlmodel import col, select
 
 from amane.db.actor_lookup import build_actor_lookup_names
 from amane.db.models import (
     Actor,
+    ActorUserTag,
     FacetKind,
     FacetRuleAction,
     FacetSortField,
@@ -17,6 +19,7 @@ from amane.db.models import (
     SortOrder,
     UserTag,
 )
+from amane.db.repo_types import ActorBrowseParams
 from amane.enums import ActorGender
 
 if TYPE_CHECKING:
@@ -30,6 +33,14 @@ async def _tag(repo: Repository, name: str) -> UserTag:
     """测试便捷入口: 按名称取回或新建单个用户标签."""
     tags, _created = await repo.ensure_user_tags([name])
     return tags[0]
+
+
+async def _tag_ids(repo: Repository, *names: str) -> list[int]:
+    """按名称取回或新建标签并返回 id (测试里反复要非空 id)."""
+    tags, _created = await repo.ensure_user_tags(list(names))
+    ids = [tag.id for tag in tags]
+    assert all(tag_id is not None for tag_id in ids)
+    return [tag_id for tag_id in ids if tag_id is not None]
 
 
 class TestFacetSync:
@@ -667,3 +678,83 @@ class TestFacetRenameMergeDelete:
         assert await repo.get_actor_aliases(target_id) == ["OtherName", "Roma"]
         rules = await repo.list_facet_rules(FacetKind.ACTOR)
         assert not any(r.action == FacetRuleAction.ALIAS for r in rules)
+
+
+class TestActorUserTags:
+    async def test_apply_list_and_filter(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="AUT-001", actors=["Alice", "Bob", "Carol"])
+        alice = await _facet_id(repo, FacetKind.ACTOR, "Alice")
+        bob = await _facet_id(repo, FacetKind.ACTOR, "Bob")
+        carol = await _facet_id(repo, FacetKind.ACTOR, "Carol")
+        fav_id, later_id = await _tag_ids(repo, "收藏", "稍后看")
+
+        assert await repo.apply_actor_user_tags([alice, bob, 9999], [fav_id, later_id], action="attach") == (2, 0, 1)
+        assert [t.name for t in await repo.list_actor_user_tags(alice)] == ["收藏", "稍后看"]
+        # 挂载后即成为演员列表的筛选条件, 多值为 AND
+        items, total = await repo.browse_actors(ActorBrowseParams(user_tag_ids=[fav_id]))
+        assert total == 2 and {i.name for i in items} == {"Alice", "Bob"}
+        items, total = await repo.browse_actors(ActorBrowseParams(user_tag_ids=[fav_id, later_id]))
+        assert total == 2
+        await repo.apply_actor_user_tags([bob], [later_id], action="detach")
+        items, total = await repo.browse_actors(ActorBrowseParams(user_tag_ids=[fav_id, later_id]))
+        assert total == 1 and items[0].name == "Alice"
+        assert await repo.list_actor_user_tags(carol) == []
+
+    async def test_apply_unknown_tag_raises(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="AUT-002", actors=["Alice"])
+        alice = await _facet_id(repo, FacetKind.ACTOR, "Alice")
+        (tag_id,) = await _tag_ids(repo, "收藏")
+        with pytest.raises(ValueError, match="用户标签不存在"):
+            await repo.apply_actor_user_tags([alice], [tag_id, 9999], action="attach")
+        assert await repo.list_actor_user_tags(alice) == []
+
+    async def test_delete_user_tag_clears_actor_links(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="AUT-003", actors=["Alice"])
+        alice = await _facet_id(repo, FacetKind.ACTOR, "Alice")
+        (tag_id,) = await _tag_ids(repo, "收藏")
+        await repo.apply_actor_user_tags([alice], [tag_id], action="attach")
+        assert await repo.delete_user_tag(tag_id) is True
+        assert await repo.list_actor_user_tags(alice) == []
+
+    async def test_delete_actor_clears_links(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="AUT-004", actors=["Alice"])
+        alice = await _facet_id(repo, FacetKind.ACTOR, "Alice")
+        (tag_id,) = await _tag_ids(repo, "收藏")
+        await repo.apply_actor_user_tags([alice], [tag_id], action="attach")
+        assert await repo.delete_facet(FacetKind.ACTOR, alice) is True
+        async with repo._session() as session:
+            remaining = (await session.exec(select(ActorUserTag).where(col(ActorUserTag.actor_id) == alice))).all()
+            assert list(remaining) == []
+
+    async def test_merge_user_tags_carries_actor_links(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="AUT-005", actors=["Alice", "Bob"])
+        alice = await _facet_id(repo, FacetKind.ACTOR, "Alice")
+        bob = await _facet_id(repo, FacetKind.ACTOR, "Bob")
+        target_id, source_id = await _tag_ids(repo, "target", "source")
+        await repo.apply_actor_user_tags([alice], [target_id], action="attach")
+        await repo.apply_actor_user_tags([bob], [source_id], action="attach")
+
+        merged = await repo.merge_facets(FacetKind.USER_TAG, target_id, [source_id])
+        assert merged is not None
+        # 源标签的挂载迁入 target; 两个演员各有一条
+        assert [t.name for t in await repo.list_actor_user_tags(bob)] == ["target"]
+
+        # 同一个演员同时挂着两个待合并的标签时只保留一条
+        t2_id, s2_id = await _tag_ids(repo, "t", "s")
+        await repo.apply_actor_user_tags([alice], [t2_id, s2_id], action="attach")
+        await repo.merge_facets(FacetKind.USER_TAG, t2_id, [s2_id])
+        assert [t.name for t in await repo.list_actor_user_tags(alice)] == ["t", "target"]
+
+    async def test_merge_actors_carries_user_tag_links(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="AUT-006", actors=["Canonical", "Other"])
+        target_id = await _facet_id(repo, FacetKind.ACTOR, "Canonical")
+        source_id = await _facet_id(repo, FacetKind.ACTOR, "Other")
+        shared_id, extra_id = await _tag_ids(repo, "shared", "extra")
+        await repo.apply_actor_user_tags([target_id], [shared_id], action="attach")
+        await repo.apply_actor_user_tags([source_id], [shared_id, extra_id], action="attach")
+
+        assert await repo.merge_facets(FacetKind.ACTOR, target_id, [source_id]) is not None
+        assert [t.name for t in await repo.list_actor_user_tags(target_id)] == ["extra", "shared"]
+        async with repo._session() as session:
+            orphans = (await session.exec(select(ActorUserTag).where(col(ActorUserTag.actor_id) == source_id))).all()
+            assert list(orphans) == []

@@ -11,7 +11,16 @@ from ...handlers import ActorScrapePayload
 from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
 from ..deps import RepoDep
-from ..models import ActorListResponse, ActorResponse, ActorScrapeRequest, ActorUpdateRequest, TaskResponse
+from ..models import (
+    ActorListResponse,
+    ActorResponse,
+    ActorScrapeRequest,
+    ActorUpdateRequest,
+    ActorUserTagsRequest,
+    TaskResponse,
+    UserTagLinksResponse,
+    UserTagResponse,
+)
 from .agent import resolve_saved_query_id_subquery
 
 logger = structlog.get_logger()
@@ -20,7 +29,7 @@ router = APIRouter(prefix="/actors", tags=["actors"])
 
 
 def _from_browse(item: ActorBrowseItem) -> ActorResponse:
-    """列表只填卡片/表格字段; 简介/别名/源字典见详情."""
+    """列表只填卡片/表格字段; 简介/别名/标签/源字典见详情."""
     return ActorResponse(
         id=item.id,
         name=item.name,
@@ -43,6 +52,7 @@ def _from_actor(
     *,
     count: int,
     aliases: list[str] | None = None,
+    user_tags: list[UserTagResponse] | None = None,
     include_raw: bool = False,
 ) -> ActorResponse:
     assert actor.id is not None
@@ -51,6 +61,7 @@ def _from_actor(
         name=actor.name,
         count=count,
         aliases=list(aliases or []),
+        user_tags=list(user_tags or []),
         gender=actor.gender,
         birthday=actor.birthday,
         birthplace=actor.birthplace,
@@ -70,6 +81,10 @@ def _from_actor(
     )
 
 
+async def _actor_user_tags(repo: RepoDep, actor_id: int) -> list[UserTagResponse]:
+    return [to_resp(UserTagResponse, tag) for tag in await repo.list_actor_user_tags(actor_id)]
+
+
 @router.get("")
 async def list_actors(repo: RepoDep, params: Annotated[ActorBrowseParams, Query()]) -> ActorListResponse:
     id_subquery_sql = None
@@ -77,6 +92,23 @@ async def list_actors(repo: RepoDep, params: Annotated[ActorBrowseParams, Query(
         id_subquery_sql = await resolve_saved_query_id_subquery(repo, params.saved_query_id, SavedQueryEntity.ACTOR)
     items, total = await repo.browse_actors(params, id_subquery_sql=id_subquery_sql)
     return ActorListResponse(items=[_from_browse(i) for i in items], total=total)
+
+
+@router.post("/batch/user-tags")
+async def batch_actor_user_tags(req: ActorUserTagsRequest, repo: RepoDep) -> UserTagLinksResponse:
+    """把一组用户标签应用到一组演员; 未知标签 id 返回 404, 不存在的演员 id 计入 missing."""
+    try:
+        result = await repo.apply_actor_user_tags(req.ids, req.user_tag_ids, action=req.action)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    logger.info(
+        "actor user tags applied",
+        action=req.action,
+        changed=result.changed,
+        unchanged=result.unchanged,
+        missing=result.missing,
+    )
+    return UserTagLinksResponse(changed=result.changed, unchanged=result.unchanged, missing=result.missing)
 
 
 @router.get("/{actor_id}")
@@ -87,7 +119,8 @@ async def get_actor(actor_id: int, repo: RepoDep) -> ActorResponse:
         raise HTTPException(status_code=404, detail="Actor not found")
     assert actor.id is not None
     aliases = await repo.get_actor_aliases(actor.id)
-    return _from_actor(actor, count=item.count, aliases=aliases, include_raw=True)
+    user_tags = await _actor_user_tags(repo, actor.id)
+    return _from_actor(actor, count=item.count, aliases=aliases, user_tags=user_tags, include_raw=True)
 
 
 @router.patch("/{actor_id}")
@@ -114,7 +147,8 @@ async def update_actor(actor_id: int, req: ActorUpdateRequest, repo: RepoDep) ->
     count = item.count if item is not None else 0
     assert actor.id is not None
     aliases = await repo.get_actor_aliases(actor.id)
-    return _from_actor(actor, count=count, aliases=aliases, include_raw=True)
+    user_tags = await _actor_user_tags(repo, actor.id)
+    return _from_actor(actor, count=count, aliases=aliases, user_tags=user_tags, include_raw=True)
 
 
 @router.post("/{actor_id}/scrape", status_code=202)

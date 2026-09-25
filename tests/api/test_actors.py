@@ -94,3 +94,56 @@ class TestActorsApi:
 
         inverted = await client.get("actors", params={"height_min": 200, "height_max": 150})
         assert inverted.status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_user_tags(self, client: AsyncClient, repo: Repository) -> None:
+        """演员标签的挂载 / 卸载 / 筛选与详情响应; 未知标签是请求级 404."""
+        await repo.upsert_metadata(number="ACT-UT-1", actors=["TagMe", "Other"])
+        actors, _ = await repo.list_facets(FacetKind.ACTOR)
+        tag_me = next(a.id for a in actors if a.name == "TagMe")
+        other = next(a.id for a in actors if a.name == "Other")
+        assert tag_me is not None and other is not None
+        created = await client.post("facets/user_tag", json={"names": ["收藏", "稍后看"]})
+        assert created.status_code == 200
+        tag_id, later_id = [tag["id"] for tag in created.json()["items"]]
+
+        attached = await client.post(
+            "actors/batch/user-tags",
+            json={"ids": [tag_me, other, 9999], "user_tag_ids": [tag_id, later_id], "action": "attach"},
+        )
+        assert attached.status_code == 200
+        assert attached.json() == {"changed": 2, "unchanged": 0, "missing": 1}
+
+        # 详情携带标签; 列表不携带
+        detail = await client.get(f"actors/{tag_me}")
+        assert detail.status_code == 200
+        assert [t["name"] for t in detail.json()["user_tags"]] == ["收藏", "稍后看"]
+        listed = await client.get("actors", params={"user_tag_ids": [tag_id]})
+        assert listed.status_code == 200
+        assert {i["name"] for i in listed.json()["items"]} == {"TagMe", "Other"}
+        # 列表行不带标签 (与简介 / 别名同为一律留空, 标签只在详情填充)
+        assert listed.json()["items"][0]["user_tags"] == []
+
+        # PATCH 之后响应仍带标签
+        patched = await client.patch(f"actors/{tag_me}", json={"overview": "bio"})
+        assert [t["name"] for t in patched.json()["user_tags"]] == ["收藏", "稍后看"]
+
+        # 已处于目标态计入 unchanged; 未挂载的卸载同样是 unchanged
+        again = await client.post(
+            "actors/batch/user-tags", json={"ids": [tag_me], "user_tag_ids": [tag_id], "action": "attach"}
+        )
+        assert again.json() == {"changed": 0, "unchanged": 1, "missing": 0}
+        removed = await client.post(
+            "actors/batch/user-tags",
+            json={"ids": [tag_me, other], "user_tag_ids": [tag_id, later_id], "action": "detach"},
+        )
+        assert removed.json() == {"changed": 2, "unchanged": 0, "missing": 0}
+        assert (await client.get(f"actors/{tag_me}")).json()["user_tags"] == []
+
+        unknown = await client.post(
+            "actors/batch/user-tags", json={"ids": [tag_me], "user_tag_ids": [9999], "action": "attach"}
+        )
+        assert unknown.status_code == 404
+        assert (
+            await client.post("actors/batch/user-tags", json={"ids": [], "user_tag_ids": [tag_id]})
+        ).status_code == 422

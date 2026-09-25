@@ -1,9 +1,8 @@
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Literal, Unpack
+from typing import Unpack
 
 from sqlalchemy import asc
-from sqlalchemy import delete as sqla_delete
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -15,6 +14,7 @@ from ..models import (
     SCRAPE_FACET_KINDS,
     Actor,
     ActorSortField,
+    ActorUserTag,
     Comment,
     Director,
     FacetKind,
@@ -35,6 +35,7 @@ from ..repo_types import (
     ActorPersonFields,
     CommentUpdates,
     FacetItem,
+    UserTagLinkAction,
     UserTagLinkResult,
     UserTagUpdates,
     _utcnow,
@@ -45,6 +46,8 @@ from .facet_helpers import (
     LINK_FACETS,
     SCALAR_FACETS,
     add_one_actor_alias,
+    apply_user_tags_to_actors,
+    apply_user_tags_to_metadata,
     delete_link_facet,
     delete_scalar_facet,
     get_facet,
@@ -52,6 +55,7 @@ from .facet_helpers import (
     merge_link_facets,
     merge_scalar_facets,
     normalize_names,
+    purge_user_tag_links,
     remove_one_actor_alias,
     rename_link_facet,
     rename_scalar_facet,
@@ -311,7 +315,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
                 tag = await session.get(UserTag, facet_id)
                 if tag is None:
                     return False
-                await session.exec(sqla_delete(MetadataUserTag).where(col(MetadataUserTag.user_tag_id) == facet_id))
+                await purge_user_tag_links(session, facet_id)
                 await session.delete(tag)
                 await session.commit()
                 return True
@@ -391,7 +395,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
             if tag is None:
                 return False
             # 显式删除挂载, 不依赖 SQLite FK pragma
-            await session.exec(sqla_delete(MetadataUserTag).where(col(MetadataUserTag.user_tag_id) == user_tag_id))
+            await purge_user_tag_links(session, user_tag_id)
             await session.delete(tag)
             await session.commit()
             return True
@@ -407,67 +411,38 @@ class FacetsRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             return list(result.all())
 
+    async def list_actor_user_tags(self, actor_id: int) -> list[UserTag]:
+        async with self._session() as session:
+            stmt = (
+                select(UserTag)
+                .join(ActorUserTag, col(ActorUserTag.user_tag_id) == col(UserTag.id))
+                .where(col(ActorUserTag.actor_id) == actor_id)
+                .order_by(col(UserTag.name).asc())
+            )
+            result = await session.exec(stmt)
+            return list(result.all())
+
     async def apply_metadata_user_tags(
         self,
         ids: Sequence[int],
         user_tag_ids: Sequence[int],
         *,
-        action: Literal["attach", "detach"],
+        action: UserTagLinkAction,
     ) -> UserTagLinkResult:
-        """把一组用户标签应用到一组影片: attach 为并入, detach 为移除, 两者均幂等.
-
-        未知标签 id 抛 ``ValueError`` (请求级错误); 不存在的影片 id 计入 ``missing``, 其余照常处理.
-        """
-        metadata_ids = list(dict.fromkeys(ids))
-        tag_ids = list(dict.fromkeys(user_tag_ids))
+        """把一组用户标签应用到一组影片."""
         async with self._session() as session:
-            if tag_ids:
-                known_tags = set((await session.exec(select(UserTag.id).where(col(UserTag.id).in_(tag_ids)))).all())
-            else:
-                known_tags = set()
-            unknown = [tag_id for tag_id in tag_ids if tag_id not in known_tags]
-            if unknown:
-                raise ValueError(f"用户标签不存在: {', '.join(str(tag_id) for tag_id in unknown)}")
-            known_metadata: set[int] = set()
-            if metadata_ids:
-                metadata_rows = (
-                    await session.exec(select(Metadata.id).where(col(Metadata.id).in_(metadata_ids)))
-                ).all()
-                known_metadata = {row for row in metadata_rows if row is not None}
-            rows: list[MetadataUserTag] = []
-            if known_metadata and tag_ids:
-                rows = list(
-                    (
-                        await session.exec(
-                            select(MetadataUserTag).where(
-                                col(MetadataUserTag.metadata_id).in_(list(known_metadata)),
-                                col(MetadataUserTag.user_tag_id).in_(tag_ids),
-                            )
-                        )
-                    ).all()
-                )
-            if action == "detach":
-                for row in rows:
-                    await session.delete(row)
-                changed = len({row.metadata_id for row in rows})
-            else:
-                linked = {(row.metadata_id, row.user_tag_id) for row in rows}
-                changed = 0
-                for metadata_id in known_metadata:
-                    added = False
-                    for tag_id in tag_ids:
-                        if (metadata_id, tag_id) in linked:
-                            continue
-                        session.add(MetadataUserTag(metadata_id=metadata_id, user_tag_id=tag_id))
-                        added = True
-                    if added:
-                        changed += 1
-            await session.commit()
-            return UserTagLinkResult(
-                changed=changed,
-                unchanged=len(known_metadata) - changed,
-                missing=len(metadata_ids) - len(known_metadata),
-            )
+            return await apply_user_tags_to_metadata(session, ids, user_tag_ids, action)
+
+    async def apply_actor_user_tags(
+        self,
+        ids: Sequence[int],
+        user_tag_ids: Sequence[int],
+        *,
+        action: UserTagLinkAction,
+    ) -> UserTagLinkResult:
+        """把一组用户标签应用到一组演员."""
+        async with self._session() as session:
+            return await apply_user_tags_to_actors(session, ids, user_tag_ids, action)
 
     async def list_comments(self, metadata_id: int) -> list[Comment]:
         async with self._session() as session:

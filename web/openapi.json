@@ -2426,6 +2426,27 @@
             "description": "限制为这些演员主键"
           },
           {
+            "name": "user_tag_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按用户标签筛选; 多值为 AND",
+              "title": "User Tag Ids"
+            },
+            "description": "按用户标签筛选; 多值为 AND"
+          },
+          {
             "name": "saved_query_id",
             "in": "query",
             "required": false,
@@ -2451,6 +2472,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ActorListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/actors/batch/user-tags": {
+      "post": {
+        "tags": [
+          "actors"
+        ],
+        "summary": "Batch Actor User Tags",
+        "description": "把一组用户标签应用到一组演员; 未知标签 id 返回 404, 不存在的演员 id 计入 missing.",
+        "operationId": "batch_actor_user_tags",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorUserTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTagLinksResponse"
                 }
               }
             }
@@ -5620,6 +5683,14 @@
             "title": "Aliases",
             "description": "别名行 (保序; 不含展示名)"
           },
+          "user_tags": {
+            "items": {
+              "$ref": "#/components/schemas/UserTagResponse"
+            },
+            "type": "array",
+            "title": "User Tags",
+            "description": "用户标签 (仅详情)"
+          },
           "gender": {
             "$ref": "#/components/schemas/ActorGender",
             "default": "unknown"
@@ -5778,7 +5849,7 @@
           "name"
         ],
         "title": "ActorResponse",
-        "description": "详情填全量; 列表 (`GET /actors`) 只填卡片/表格字段, 简介/别名/源字典/raw 为空."
+        "description": "详情填全量; 列表 (`GET /actors`) 只填卡片/表格字段, 简介/别名/标签/源字典/raw 为空."
       },
       "ActorScrapeRequest": {
         "properties": {
@@ -6061,6 +6132,44 @@
         },
         "type": "object",
         "title": "ActorUpdateRequest"
+      },
+      "ActorUserTagsRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Ids",
+            "description": "演员 ID 列表"
+          },
+          "user_tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "User Tag Ids",
+            "description": "用户标签 ID 列表"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "attach",
+              "detach"
+            ],
+            "title": "Action",
+            "description": "attach 为并入, detach 为移除; 两者均幂等"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids",
+          "user_tag_ids",
+          "action"
+        ],
+        "title": "ActorUserTagsRequest"
       },
       "AgentApproveRequest": {
         "properties": {

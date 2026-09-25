@@ -9,7 +9,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...enums import ActorGender
-from ..models import Actor, ActorAlias, ActorSortField, MetadataActor, SortOrder
+from ..models import Actor, ActorAlias, ActorSortField, ActorUserTag, MetadataActor, SortOrder
 from ..repo_types import ActorBrowseItem, ActorBrowseParams
 
 
@@ -111,6 +111,10 @@ def _build_browse_filters(
         filters.append(_has_person_expr())
     elif params.has_person is False:
         filters.append(~_has_person_expr())
+    filters.extend(
+        col(Actor.id).in_(select(ActorUserTag.actor_id).where(col(ActorUserTag.user_tag_id) == user_tag_id))
+        for user_tag_id in dict.fromkeys(params.user_tag_ids or [])
+    )
     if params.has_image is True:
         filters.append(_has_image_expr())
     elif params.has_image is False:

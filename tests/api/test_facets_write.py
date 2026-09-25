@@ -129,3 +129,23 @@ async def test_facet_http_scalar_rename(client: AsyncClient, repo: Repository) -
     for meta in (m1, m2):
         detail = await client.get(f"metadata/{meta.id}")
         assert detail.json()["metadata"]["studio"] == "New"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_merge_via_http_carries_user_tags(client: AsyncClient, repo: Repository) -> None:
+    """演员合并经 HTTP: 源演员的标签挂载并入 target, 不留悬挂行."""
+    await repo.upsert_metadata(number="HTTP-AM-1", actors=["Canonical"])
+    await repo.upsert_metadata(number="HTTP-AM-2", actors=["Other"])
+    listed = (await client.get("facets/actor")).json()["items"]
+    target = next(i["id"] for i in listed if i["name"] == "Canonical")
+    source = next(i["id"] for i in listed if i["name"] == "Other")
+    created = await client.post("facets/user_tag", json={"names": ["收藏", "稍后看"]})
+    tag_id, later_id = [tag["id"] for tag in created.json()["items"]]
+    await repo.apply_actor_user_tags([target, source], [tag_id, later_id], action="attach")
+    assert (await client.delete(f"facets/user_tag/{later_id}")).status_code == 204
+
+    merged = await client.post("facets/actor/merge", json={"target_id": target, "source_ids": [source]})
+    assert merged.status_code == 200
+    tags = (await client.get(f"actors/{target}")).json()["user_tags"]
+    assert [t["name"] for t in tags] == ["收藏"]
+    assert (await client.get(f"actors/{source}")).status_code == 404

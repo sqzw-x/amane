@@ -28,7 +28,7 @@ export type ActorListResponse = {
 /**
  * ActorResponse
  *
- * 详情填全量; 列表 (`GET /actors`) 只填卡片/表格字段, 简介/别名/源字典/raw 为空.
+ * 详情填全量; 列表 (`GET /actors`) 只填卡片/表格字段, 简介/别名/标签/源字典/raw 为空.
  */
 export type ActorResponse = {
     /**
@@ -49,6 +49,12 @@ export type ActorResponse = {
      * 别名行 (保序; 不含展示名)
      */
     aliases?: Array<string>;
+    /**
+     * User Tags
+     *
+     * 用户标签 (仅详情)
+     */
+    user_tags?: Array<UserTagResponse>;
     gender?: ActorGender;
     /**
      * Birthday
@@ -258,6 +264,30 @@ export type ActorUpdateRequest = {
      * 别名行 (保序), 整表替换
      */
     aliases?: Array<string> | null;
+};
+
+/**
+ * ActorUserTagsRequest
+ */
+export type ActorUserTagsRequest = {
+    /**
+     * Ids
+     *
+     * 演员 ID 列表
+     */
+    ids: Array<number>;
+    /**
+     * User Tag Ids
+     *
+     * 用户标签 ID 列表
+     */
+    user_tag_ids: Array<number>;
+    /**
+     * Action
+     *
+     * attach 为并入, detach 为移除; 两者均幂等
+     */
+    action: 'attach' | 'detach';
 };
 
 /**
@@ -4871,6 +4901,12 @@ export type ListActorsData = {
          */
         ids?: Array<number> | null;
         /**
+         * User Tag Ids
+         *
+         * 按用户标签筛选; 多值为 AND
+         */
+        user_tag_ids?: Array<number> | null;
+        /**
          * Saved Query Id
          *
          * Saved query preset id; AND with other filters via SQL subquery
@@ -4897,6 +4933,31 @@ export type ListActorsResponses = {
 };
 
 export type ListActorsResponse = ListActorsResponses[keyof ListActorsResponses];
+
+export type BatchActorUserTagsData = {
+    body: ActorUserTagsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/actors/batch/user-tags';
+};
+
+export type BatchActorUserTagsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BatchActorUserTagsError = BatchActorUserTagsErrors[keyof BatchActorUserTagsErrors];
+
+export type BatchActorUserTagsResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserTagLinksResponse;
+};
+
+export type BatchActorUserTagsResponse = BatchActorUserTagsResponses[keyof BatchActorUserTagsResponses];
 
 export type GetActorData = {
     body?: never;

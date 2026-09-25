@@ -7,6 +7,7 @@ import {
   Group,
   Menu,
   Modal,
+  MultiSelect,
   rem,
   Skeleton,
   Stack,
@@ -22,15 +23,20 @@ import {
   IconEraser,
   IconPencil,
   IconRefresh,
+  IconTag,
   IconTrash,
   IconUser,
 } from "@tabler/icons-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ParseKeys } from "i18next";
 import { useTranslation } from "react-i18next";
-import { listActorsQueryKey } from "@/client/@tanstack/react-query.gen";
+import {
+  batchActorUserTagsMutation,
+  listActorsQueryKey,
+  listFacetsOptions,
+} from "@/client/@tanstack/react-query.gen";
 import { scrapeActor, updateActor } from "@/client/sdk.gen";
 import type {
   ActorGender,
@@ -48,7 +54,9 @@ import { useFacetIdentityActions } from "@/hooks/use-facet-identity-actions";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { useResizableColumns } from "@/hooks/use-resizable-columns";
 import { CLEARED_ACTOR_PERSON_PATCH } from "@/lib/actors/person";
+import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
+import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 import { ageFromBirthday } from "@/lib/format-birthday";
 import { proxyImageUrl } from "@/lib/utils";
@@ -204,6 +212,34 @@ export function ActorTable({
   const [batchScraping, setBatchScraping] = useState(false);
   const [batchGendering, setBatchGendering] = useState(false);
   const [batchClearing, setBatchClearing] = useState(false);
+  const [tagModalOpen, setTagModalOpen] = useState(false);
+  const [tagIds, setTagIds] = useState<string[]>([]);
+
+  const { data: userTags } = useQuery(listFacetsOptions(USER_TAG_FACET_LIST));
+  const tagOptions = (userTags?.items ?? []).map((tag) => ({
+    value: String(tag.id),
+    label: tag.name,
+  }));
+
+  const batchTags = useMutation({
+    ...batchActorUserTagsMutation(),
+    onSuccess: (_res, variables) => {
+      const attached = variables.body.action === "attach";
+      notifications.show({
+        message: attached ? t("common:toast.userTagAttached") : t("common:toast.userTagDetached"),
+        color: "blue",
+      });
+      setTagModalOpen(false);
+      setTagIds([]);
+      clear();
+      void queryClient.invalidateQueries({ queryKey: listActorsQueryKey() });
+    },
+    onError: (err) =>
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      }),
+  });
 
   async function scrapeIds(ids: number[], useCache: CacheKind[]) {
     if (ids.length === 0) return;
@@ -325,7 +361,8 @@ export function ActorTable({
   const effectiveSortBy = sortBy ?? "name";
   const effectiveOrder = order ?? "asc";
   const allSelected = isAllSelected(pageIds);
-  const busy = batchScraping || batchGendering || batchClearing || identity.busy;
+  const busy =
+    batchScraping || batchGendering || batchClearing || identity.busy || batchTags.isPending;
 
   function handlePageChange(p: number) {
     clear();
@@ -412,6 +449,16 @@ export function ActorTable({
                 ))}
               </Menu.Dropdown>
             </Menu>
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<IconTag size={14} />}
+              loading={batchTags.isPending}
+              disabled={selected.size === 0}
+              onClick={() => setTagModalOpen(true)}
+            >
+              {t("detail.userTags")}
+            </Button>
             <Button
               size="xs"
               variant="light"
@@ -667,6 +714,58 @@ export function ActorTable({
           </Text>
         )}
       </ListToolbar>
+
+      <Modal
+        opened={tagModalOpen}
+        onClose={() => setTagModalOpen(false)}
+        title={t("detail.userTags")}
+        centered
+      >
+        <Stack gap="md">
+          <MultiSelect
+            data={tagOptions}
+            value={tagIds}
+            onChange={setTagIds}
+            searchable
+            placeholder={t("detail.selectUserTag")}
+          />
+          <Group justify="flex-end">
+            <Button
+              variant="light"
+              disabled={tagIds.length === 0}
+              loading={batchTags.isPending}
+              onClick={() =>
+                batchTags.mutate({
+                  body: {
+                    ids: selectedIds,
+                    user_tag_ids: tagIds.map(Number),
+                    action: "attach",
+                  },
+                })
+              }
+            >
+              {t("common:actions.add")}
+            </Button>
+            <Button
+              variant="light"
+              color="red"
+              disabled={tagIds.length === 0}
+              loading={batchTags.isPending}
+              onClick={() =>
+                batchTags.mutate({
+                  body: {
+                    ids: selectedIds,
+                    user_tag_ids: tagIds.map(Number),
+                    action: "detach",
+                  },
+                })
+              }
+            >
+              {t("common:actions.remove")}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <Modal
         opened={identity.renameTarget != null}
