@@ -65,15 +65,18 @@ function FacetDetailPage() {
   const total = data?.pages[0]?.total ?? 0;
 
   // 用户标签可挂在影片与演员两侧, 标签详情页同时列出两类; 某一类为空时整段不渲染.
+  // 两个条数在各自查询 resolve 前都是 0, 因此加载期不能据此判定为空: 影片分区照常渲染
+  // (PosterGrid 自带骨架), 空状态须等两侧都加载完, 否则冷加载会先闪一行「空」再被内容替换.
   const isUserTag = kind === "user_tag";
-  const { data: actorData } = useQuery({
+  const { data: actorData, isLoading: actorLoading } = useQuery({
     ...listActorsOptions({ query: { limit: ACTOR_PREVIEW, user_tag_ids: [id] } }),
     enabled: isUserTag && validId,
   });
   const actorItems = actorData?.items ?? [];
   const actorTotal = actorData?.total ?? 0;
-  const showFilms = !isUserTag || total > 0;
+  const showFilms = !isUserTag || isLoading || total > 0;
   const showActors = isUserTag && actorTotal > 0;
+  const showEmpty = isUserTag && !isLoading && !actorLoading && total === 0 && actorTotal === 0;
 
   if (!validKind || !validId) {
     return (
@@ -117,7 +120,7 @@ function FacetDetailPage() {
           {isUserTag && (
             <Group gap="xs" align="center">
               <Title order={3}>{t("browse.tagFilms")}</Title>
-              <Badge variant="light">{total}</Badge>
+              {!isLoading && <Badge variant="light">{total}</Badge>}
             </Group>
           )}
           <PosterGrid
@@ -157,7 +160,7 @@ function FacetDetailPage() {
         </Stack>
       )}
 
-      {isUserTag && !showFilms && !showActors && (
+      {showEmpty && (
         <Text c="dimmed" size="sm">
           {t("common:status.empty")}
         </Text>
