@@ -251,13 +251,12 @@ function TitleDetailPage() {
         const ensured = await ensureTagsMutation.mutateAsync({ body: { names } });
         createdIds = ensured.items.map((tag) => tag.id);
         created = ensured.created;
+        // 标签此刻已落库; created 为 0 也可能是别人刚建的同名行落在候选之外, 故一律重取
+        void queryClient.invalidateQueries({ queryKey: listFacetsQueryKey(USER_TAG_FACET_LIST) });
       }
       await applyTagsMutation.mutateAsync({
         body: { ids: [id], user_tag_ids: [...selection.tagIds, ...createdIds], action: "attach" },
       });
-      if (created > 0) {
-        void queryClient.invalidateQueries({ queryKey: listFacetsQueryKey(USER_TAG_FACET_LIST) });
-      }
       notifications.show({
         message: created > 0 ? t("common:toast.userTagCreated") : t("common:toast.userTagAttached"),
         color: "blue",
