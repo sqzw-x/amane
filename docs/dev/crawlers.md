@@ -37,6 +37,10 @@ CrawlerFactory (缓存实例)
 
 `crawlers/base.py::Crawler` 是 Template Method: 公开 `fetch()` (负责日志; HTTP / 拦截失败冒泡 `SourceError`), 子类实现 `_search` (番号 → URL) 与 `_scrape` (URL → `MediaMetadata`); 特殊源可直接 override `fetch()`. `profile()` 类方法给出内置来源 ID / `base_url` / 能力与性别 / 可选 cookies 与限速 URL; `__init__` 在 `profile()` 之后自动合并配置, 子类不得再次调用. 外部来源不要求继承 `Crawler`, 契约见 [plugins.md](plugins.md).
 
+## 连通性探测
+
+`Crawler.check_connectivity` / `ActorCrawler.check_connectivity` 是「网络检测」页的逐来源探测点, 缺省 GET `base_url` 并带上已合并的 cookies 与 headers, 与刮削同用一条 HTTP 通道 (代理 / 指纹 / 限速 / 同源 Referer), 判定复用 `net/errors.py` 的拦截分类. **实际入口不是 `base_url` 的来源必须覆盖它**, 否则会把「入口 404 / 是 API 端点」误报成不可达: `theporndb` 发一次 GraphQL, `official` 取一个厂牌站代表集群, `gfriends` 探仓库根下的 `Filetree.json`, `r18dev` 报 `skipped` (本源不经 HTTP), 需要凭据而凭据缺失的来源也报 `skipped`. 探测是单次尝试 (重试只会把同一个结论拖长), 编排与端点见 [api.md](api.md) 的 `/network/check`.
+
 ## 番号入参
 
 `SearchQuery.number` 就是 `ScrapePayload.number`; Handler 不解析番号. 来源路径不同则字符串形态不同, 爬虫不能假设「一定已经带短横线、一定是大写」:

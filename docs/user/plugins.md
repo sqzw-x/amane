@@ -135,6 +135,7 @@ class Plugin(FilmSourcePlugin):
 - **网络失败抛 `SourceError`**: 交给 Amane 分类记录, 任务不会崩溃, 报告里能看到原因. 不要 `except Exception` 吞掉异常
 - **网络请求走 `context.http_client`**: 共享 Amane 的代理、重试、限速, 并记入任务记录, 不要自建客户端. 播放码流由主机反向代理, 插件只返回上游 URL 与服务端请求头
 - **`descriptor.urls`** 填插件需访问的站点, 会用于请求限速
+- **连通性检测**: 可选的 `check_connectivity` 供 Amane 的「网络检测」页探测本源. 不实现时主机探测 `descriptor.urls` 的第一个地址; 入口不同 (登录页 / 需要 token 的 API) 或凭据缺失就实现它, 后者返回 `ConnectivityOutcome.skipped("原因")` 把原因告诉用户. 请求照旧走 `context.http_client`
 - **落盘写 `context.data_dir`**: 插件自己的 `{data_dir}/plugins/<id>/` 目录, 卸载时保留, 适合放缓存
 - **多语言支持**: descriptor 声明 `multi_language=True`, fetch 通过 `options.language` 获取当前语言
 - **出演者**: `actors` 为 `FilmActor` 列表 (`name` + `gender`). 仍可传入字符串列表, 性别视为未识别. 名单能判定性别时写出 `female` / `male`
