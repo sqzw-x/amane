@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
@@ -181,6 +182,20 @@ class TestUserTagsAndComments:
         assert created_again == 0
         assert [tag.id for tag in again] == [first[1].id, first[0].id]
         assert len(await repo.list_user_tags()) == 2
+
+    async def test_ensure_user_tags_reuses_row_committed_by_concurrent_writer(self, repo: Repository) -> None:
+        """他人先读到「不存在」、随后提交同名行时, 调用方复用该行而不是撞唯一索引."""
+        async with repo._session() as other:
+            other.add(UserTag(name="same"))
+            await other.flush()  # 尚未提交: 并发调用方的 SELECT 看不到这一行
+            task = asyncio.create_task(repo.ensure_user_tags(["same"]))
+            await asyncio.sleep(0.1)  # 让调用方走完 SELECT 并卡在 INSERT 的写锁上
+            await other.commit()
+            tags, created = await task
+
+        assert created == 0
+        assert [tag.name for tag in tags] == ["same"]
+        assert len(await repo.list_user_tags()) == 1
 
     async def test_comment_crud(self, repo: Repository) -> None:
         meta = await repo.upsert_metadata(number="CM-001")
