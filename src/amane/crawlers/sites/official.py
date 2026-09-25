@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, override
 from parsel import Selector
 
 from ...enums import SiteName
+from ...net.connectivity import ConnectivityOutcome, probe_get
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text
@@ -277,6 +278,15 @@ class OfficialCrawler(Crawler):
         return CrawlerProfile(
             name=SiteName.OFFICIAL, base_url="", urls=[f"https://{d}" for d in MANUFACTURER_DOMAINS.values()]
         )
+
+    @override
+    async def check_connectivity(self) -> ConnectivityOutcome:
+        """集群没有总入口, 只探默认表里的首个厂牌站作代表.
+
+        结论只代表该厂牌域的可达性; 不同集团用各自的 CMS, 一个站通不代表其它站通.
+        """
+        domain = next(iter(MANUFACTURER_DOMAINS.values()))
+        return await probe_get(self.client.web_client, f"https://{domain}", cookies=self.cookies, headers=self.headers)
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
         domain = self._resolve_domain(query, self.config)

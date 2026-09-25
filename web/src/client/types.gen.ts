@@ -614,6 +614,73 @@ export type CommentUpdateRequest = {
 };
 
 /**
+ * ConnectivityCheckRequest
+ *
+ * 缺省或空 ``source_ids`` = 探测当前配置真正会请求的全部来源.
+ */
+export type ConnectivityCheckRequest = {
+    /**
+     * Source Ids
+     */
+    source_ids?: Array<string> | null;
+};
+
+/**
+ * ConnectivityItemResponse
+ *
+ * 一个来源的探测结果.
+ *
+ * ``reason`` 是失败原因枚举, 本地化由前端按它完成; ``detail`` 是补充说明, 只在 skipped 与无法归类的
+ * 失败上出现 (例如未配置 API token); ``elapsed_ms`` 只在真正探测过时有值.
+ */
+export type ConnectivityItemResponse = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    kind: SourceKind;
+    status: ConnectivityStatus;
+    /**
+     * Url
+     */
+    url?: string | null;
+    /**
+     * Http Status
+     */
+    http_status?: number | null;
+    reason?: FailureReason | null;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Elapsed Ms
+     */
+    elapsed_ms?: number | null;
+};
+
+/**
+ * ConnectivityReportResponse
+ */
+export type ConnectivityReportResponse = {
+    /**
+     * Items
+     */
+    items?: Array<ConnectivityItemResponse>;
+};
+
+/**
+ * ConnectivityStatus
+ *
+ * 一次探测的结论. ``SKIPPED`` 是该来源本次不探测, 不是失败.
+ */
+export type ConnectivityStatus = 'ok' | 'failed' | 'skipped';
+
+/**
  * ContentType
  */
 export type ContentType = 'censored' | 'uncensored' | 'chinese' | 'western' | 'fc2' | 'amateur' | 'hentai';
@@ -3064,6 +3131,13 @@ export type SourceDescriptor = {
 };
 
 /**
+ * SourceKind
+ *
+ * 来源类别, 供展示分组用. 插件来源的 ID 由插件命名空间决定, 不能从名字反推.
+ */
+export type SourceKind = 'film' | 'actor' | 'plugin';
+
+/**
  * SrConfig
  */
 export type SrConfig = {
@@ -4294,6 +4368,34 @@ export type MergeMetadataResponses = {
 };
 
 export type MergeMetadataResponse = MergeMetadataResponses[keyof MergeMetadataResponses];
+
+export type CheckConnectivityData = {
+    /**
+     * Req
+     */
+    body?: ConnectivityCheckRequest | null;
+    path?: never;
+    query?: never;
+    url: '/api/network/check';
+};
+
+export type CheckConnectivityErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CheckConnectivityError = CheckConnectivityErrors[keyof CheckConnectivityErrors];
+
+export type CheckConnectivityResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConnectivityReportResponse;
+};
+
+export type CheckConnectivityResponse = CheckConnectivityResponses[keyof CheckConnectivityResponses];
 
 export type ListPlaybackSourcesData = {
     body?: never;

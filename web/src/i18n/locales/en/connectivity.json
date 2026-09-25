@@ -1,0 +1,35 @@
+{
+  "title": "Source Connectivity",
+  "description": "Probes the connectivity of scraping sources, to confirm that the proxy and network settings take effect.",
+  "settingsLink": "Network settings",
+  "run": "Run check",
+  "running": "Checking...",
+  "neverChecked": "Not checked yet",
+  "lastChecked": "Last checked: {{time}}",
+  "empty": {
+    "title": "No check has run yet",
+    "hint": "Select \"Run check\" to probe every source the current configuration requests. The probe reads public pages and does not scrape, so no metadata cache is written."
+  },
+  "summary": "{{total}} sources in total, {{failed}} unreachable, {{skipped}} not probed.",
+  "columns": {
+    "source": "Source",
+    "status": "Result",
+    "reason": "Reason",
+    "elapsed": "Time",
+    "actions": "Actions"
+  },
+  "status": {
+    "ok": "Reachable",
+    "failed": "Unreachable",
+    "skipped": "Not probed"
+  },
+  "kind": {
+    "film": "Film",
+    "actor": "Actor",
+    "plugin": "Plugin"
+  },
+  "retry": "Retry",
+  "retrying": "Retrying...",
+  "elapsedMs": "{{value}} ms",
+  "emptyValue": "—"
+}

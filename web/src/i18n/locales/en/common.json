@@ -43,6 +43,7 @@
     "settings": "Settings",
     "client": "Client",
     "logs": "Logs",
+    "connectivity": "Source Connectivity",
     "meta": "Library",
     "actors": "Actors",
     "catalog": "Catalog",

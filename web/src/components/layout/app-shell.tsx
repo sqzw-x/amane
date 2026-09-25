@@ -30,6 +30,7 @@ import {
   IconMoonStars,
   IconMovie,
   IconPuzzle,
+  IconRadar,
   IconRss,
   IconSearch,
   IconSettings,
@@ -94,6 +95,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/tasks", labelKey: "nav.tasks", icon: IconListDetails },
       { to: "/schedules", labelKey: "nav.schedules", icon: IconClock },
       { to: "/logs", labelKey: "nav.logs", icon: IconFileText },
+      { to: "/connectivity", labelKey: "nav.connectivity", icon: IconRadar },
     ],
   },
 ];

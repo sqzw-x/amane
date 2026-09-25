@@ -1079,6 +1079,138 @@ export const CommentUpdateRequestSchema = {
     title: 'CommentUpdateRequest'
 } as const;
 
+export const ConnectivityCheckRequestSchema = {
+    properties: {
+        source_ids: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Source Ids'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'ConnectivityCheckRequest',
+    description: '缺省或空 ``source_ids`` = 探测当前配置真正会请求的全部来源.'
+} as const;
+
+export const ConnectivityItemResponseSchema = {
+    properties: {
+        source_id: {
+            type: 'string',
+            title: 'Source Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        kind: {
+            $ref: '#/components/schemas/SourceKind'
+        },
+        status: {
+            $ref: '#/components/schemas/ConnectivityStatus'
+        },
+        url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Url'
+        },
+        http_status: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Http Status'
+        },
+        reason: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/FailureReason'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        detail: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Detail'
+        },
+        elapsed_ms: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Elapsed Ms'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'source_id',
+        'name',
+        'kind',
+        'status'
+    ],
+    title: 'ConnectivityItemResponse',
+    description: '一个来源的探测结果.\n\n``reason`` 是失败原因枚举, 本地化由前端按它完成; ``detail`` 是补充说明, 只在 skipped 与无法归类的\n失败上出现 (例如未配置 API token); ``elapsed_ms`` 只在真正探测过时有值.'
+} as const;
+
+export const ConnectivityReportResponseSchema = {
+    properties: {
+        items: {
+            items: {
+                $ref: '#/components/schemas/ConnectivityItemResponse'
+            },
+            type: 'array',
+            title: 'Items'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'ConnectivityReportResponse'
+} as const;
+
+export const ConnectivityStatusSchema = {
+    type: 'string',
+    enum: [
+        'ok',
+        'failed',
+        'skipped'
+    ],
+    title: 'ConnectivityStatus',
+    description: '一次探测的结论. ``SKIPPED`` 是该来源本次不探测, 不是失败.'
+} as const;
+
 export const ContentTypeSchema = {
     type: 'string',
     enum: [
@@ -6216,6 +6348,17 @@ export const SourceDescriptorSchema = {
     ],
     title: 'SourceDescriptor',
     description: 'Stable, serializable description of a metadata source.'
+} as const;
+
+export const SourceKindSchema = {
+    type: 'string',
+    enum: [
+        'film',
+        'actor',
+        'plugin'
+    ],
+    title: 'SourceKind',
+    description: '来源类别, 供展示分组用. 插件来源的 ID 由插件命名空间决定, 不能从名字反推.'
 } as const;
 
 export const SrConfigSchema = {

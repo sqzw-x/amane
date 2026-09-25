@@ -1,6 +1,8 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 from ...enums import ActorGender, SiteName
+from ...net.connectivity import ConnectivityOutcome, assess_response
+from ...net.errors import FailureReason, RequestError
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
 
@@ -61,6 +63,39 @@ class ThePornDBCrawler(Crawler):
     @classmethod
     def profile(cls) -> CrawlerProfile:
         return CrawlerProfile(name=SiteName.THEPORNDB, base_url="https://theporndb.net/graphql", uses_file_hash=True)
+
+    @override
+    async def check_connectivity(self) -> ConnectivityOutcome:
+        """真发一次 GraphQL 请求: 本源只有带 token 才会请求, 探测必须同样验证凭据与连通性.
+
+        查一个不存在的 id: 应答便宜, 且能区分「token 被拒」与「站点不可达」.
+        """
+        token = self.config.api_token if self.config else None
+        if not token:
+            return ConnectivityOutcome.skipped("未配置 API token, 刮削时会跳过")
+        try:
+            resp = await self.client.web_client.request(
+                "POST",
+                self.base_url,
+                json={"query": _FIND_BY_ID_QUERY, "variables": {"id": "0"}},
+                headers={"Authorization": f"Bearer {token}"},
+                max_attempts=1,
+            )
+        except RequestError as exc:
+            return ConnectivityOutcome.failed(exc.reason, url=self.base_url, http_status=exc.http_status)
+
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and payload.get("errors") and not payload.get("data"):
+            return ConnectivityOutcome.failed(
+                FailureReason.HTTP_ERROR,
+                url=self.base_url,
+                http_status=resp.status_code,
+                detail="GraphQL 返回错误, 通常是 API token 无效",
+            )
+        return assess_response(self.base_url, resp)
 
     async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:
         token = self.config.api_token if self.config else None

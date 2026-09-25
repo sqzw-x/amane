@@ -7,6 +7,7 @@ import amane.plugin as sdk
 from amane.crawlers.http import HttpClient
 from amane.crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery, film_actors
 from amane.enums import Language
+from amane.net.connectivity import ConnectivityOutcome, ConnectivityStatus
 from amane.net.errors import FailureReason, RequestError, SourceError
 from amane.net.http import WebClient
 from amane.parsing.file_info import ContentType
@@ -41,6 +42,8 @@ from amane.plugins.models import (
 _REEXPORTS: tuple[tuple[str, object], ...] = (
     ("PLUGIN_API_VERSION", PLUGIN_API_VERSION),
     ("RESERVED_SOURCE_NAMESPACES", RESERVED_SOURCE_NAMESPACES),
+    ("ConnectivityOutcome", ConnectivityOutcome),
+    ("ConnectivityStatus", ConnectivityStatus),
     ("ContentType", ContentType),
     ("EmptyPluginConfig", EmptyPluginConfig),
     ("FailureReason", FailureReason),

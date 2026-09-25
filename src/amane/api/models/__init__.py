@@ -48,6 +48,7 @@ from .metadata import (
     MetadataUserTagsRequest,
     PartialMetadata,
 )
+from .network import ConnectivityCheckRequest, ConnectivityItemResponse, ConnectivityReportResponse
 from .playback import (
     PlaybackSourceListResponse,
     PlaybackSourceOption,
@@ -94,6 +95,9 @@ __all__ = [
     "CommentCreateRequest",
     "CommentResponse",
     "CommentUpdateRequest",
+    "ConnectivityCheckRequest",
+    "ConnectivityItemResponse",
+    "ConnectivityReportResponse",
     "CropPosterRequest",
     "DesktopResponse",
     "FacetListResponse",

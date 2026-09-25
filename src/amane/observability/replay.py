@@ -61,6 +61,7 @@ class ReplayWebClient:
         timeout: float | None = None,
         allow_redirects: bool = True,
         ok_statuses: frozenset[int] | None = None,
+        max_attempts: int | None = None,
     ) -> _ReplayResponse:
         entry = self._match(method, url)
         if entry is None:

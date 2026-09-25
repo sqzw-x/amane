@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Protocol
 
 import structlog
 
+from ...net.connectivity import ConnectivityOutcome, probe_get
 from .models import ActorMetadata
 
 if TYPE_CHECKING:
@@ -57,6 +58,10 @@ class ActorCrawler(ABC):
         if not url:
             return None
         return await self._scrape(url)
+
+    async def check_connectivity(self) -> ConnectivityOutcome:
+        """连通性自检: 缺省 GET ``base_url``. 覆盖点与影片爬虫相同."""
+        return await probe_get(self.client.web_client, self.base_url, cookies=self.cookies, headers=self.headers)
 
     async def _search(self, name: str) -> str | None:
         raise NotImplementedError

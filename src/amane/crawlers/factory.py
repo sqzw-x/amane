@@ -8,9 +8,10 @@ import structlog
 
 from ..crawlers.models import FetchOptions, MediaMetadata, SearchQuery
 from ..enums import SiteName
+from ..net.connectivity import ConnectivityOutcome, probe_get
 from ..plugins.api import FilmSourceProvider, PluginContext
 from ..plugins.manager import PluginManager
-from ..plugins.models import PluginConfig
+from ..plugins.models import PluginConfig, SourceDescriptor
 from .actor import ActorFetcher, GFriendsActorCrawler, actor_registry
 from .base import Crawler
 from .registry import registry
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
     from ..aggregate import CrawlerLike
     from ..config import SiteConfig
     from .actor import ActorCrawler
-    from .base import Crawler
     from .http import HttpClient
     from .r18dev import R18Database
 
@@ -32,14 +32,32 @@ logger = structlog.get_logger()
 class _PluginProviderAdapter(FilmSourceProvider):
     """Validate plugin fetch results as MediaMetadata; errors bubble to invoke_source."""
 
-    def __init__(self, provider: FilmSourceProvider) -> None:
+    def __init__(
+        self,
+        provider: FilmSourceProvider,
+        *,
+        http_client: HttpClient,
+        descriptor: SourceDescriptor | None = None,
+    ) -> None:
         self._provider = provider
+        self._http = http_client
+        self._descriptor = descriptor
 
     async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:
         result = await self._provider.fetch(query, options)
         if result is None or isinstance(result, MediaMetadata):
             return result
         return MediaMetadata.model_validate(result)
+
+    async def check_connectivity(self) -> ConnectivityOutcome:
+        """插件可自定探测入口; 未声明 (``None``) 时按 descriptor 的首个 URL 探."""
+        outcome = await self._provider.check_connectivity()
+        if outcome is not None:
+            return outcome
+        urls = self._descriptor.urls if self._descriptor is not None else ()
+        if not urls:
+            return ConnectivityOutcome.skipped("插件未声明探测方式, 也未声明来源 URL")
+        return await probe_get(self._http.web_client, urls[0])
 
 
 class CrawlerFactory:
@@ -115,7 +133,11 @@ class CrawlerFactory:
             ),
             config=config,
         )
-        adapter = _PluginProviderAdapter(provider)
+        adapter = _PluginProviderAdapter(
+            provider,
+            http_client=self._http,
+            descriptor=self._plugin_manager.descriptor(name),
+        )
         self._plugin_instances[name] = adapter
         return adapter
 

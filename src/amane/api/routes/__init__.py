@@ -11,6 +11,7 @@ from .health import router as health_router
 from .libraries import router as libraries_router
 from .media import router as media_router
 from .metadata import router as metadata_router
+from .network import router as network_router
 from .playback import router as playback_router
 from .plugins import router as plugins_router
 from .resources import router as resources_router
@@ -28,6 +29,7 @@ router.include_router(config_router)
 router.include_router(files_router)
 router.include_router(media_router)
 router.include_router(metadata_router)
+router.include_router(network_router)
 router.include_router(playback_router)
 router.include_router(plugins_router)
 router.include_router(actors_router)

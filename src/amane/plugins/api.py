@@ -16,6 +16,7 @@ from urllib.parse import urljoin
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
+from ..net.connectivity import ConnectivityOutcome
 from ..net.errors import FailureReason, SourceError
 from ..parsing.file_info import ContentType, Mosaic
 from .models import PluginConfig, SourceDescriptor
@@ -39,6 +40,18 @@ class FilmSourceProvider(ABC):
     async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:
         """Fetch metadata for one structured search query."""
         ...
+
+    async def check_connectivity(self) -> ConnectivityOutcome | None:
+        """Probe this source's own endpoints for the connectivity report.
+
+        Override when the reachable entry point is not the first URL declared in the
+        descriptor (login pages, token-gated APIs), when a credential is missing
+        (return ``ConnectivityOutcome.skipped(...)``), or when the source never uses
+        HTTP. Raising ``SourceError`` / ``RequestError`` is also accepted: the host
+        reports the reason attached to the exception. Returning ``None`` means
+        "not declared" and lets the host probe the descriptor's first URL.
+        """
+        return None
 
 
 class PlaybackMediaFile(BaseModel):
