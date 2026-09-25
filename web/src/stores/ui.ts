@@ -2,6 +2,11 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ColumnWidths } from "@/hooks/use-resizable-columns";
 import {
+  DEFAULT_METADATA_SORT_PREFERENCE,
+  type MetadataSortPreference,
+  metadataSortPreferenceSchema,
+} from "@/lib/media/browse";
+import {
   actorListDefaultsSchema,
   feedsListDefaultsSchema,
   type NavListDefaults,
@@ -72,6 +77,12 @@ interface UIState {
    * 只在从侧栏进入时注入 URL, 页面内不再引用; 读取经 `lib/nav-defaults.ts` 的 schema 校验, 非法项丢弃.
    */
   listDefaults: Partial<NavListDefaults>;
+  /**
+   * 演员详情页出演作品的排序记忆.
+   *
+   * 该页没有其它导航态, 排序不写地址栏, 由这里在会话之间保留; 片库排序仍以 URL 为准.
+   */
+  actorWorksSort: MetadataSortPreference;
   toggleNavbar: () => void;
   setNavbarCollapsed: (collapsed: boolean) => void;
   setTheme: (theme: Theme) => void;
@@ -84,6 +95,7 @@ interface UIState {
   setPlaybackSourceOrder: (order: string[]) => void;
   setListDefault: (update: NavListDefaultsUpdate) => void;
   clearListDefault: (key: NavListKey) => void;
+  setActorWorksSort: (sort: MetadataSortPreference) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -99,6 +111,7 @@ export const useUIStore = create<UIState>()(
       actorColumnWidths: {},
       playbackSourceOrder: [],
       listDefaults: {},
+      actorWorksSort: { ...DEFAULT_METADATA_SORT_PREFERENCE },
       toggleNavbar: () => set((s) => ({ navbarCollapsed: !s.navbarCollapsed })),
       setNavbarCollapsed: (collapsed) => set({ navbarCollapsed: collapsed }),
       setTheme: (theme) => set({ theme }),
@@ -116,6 +129,7 @@ export const useUIStore = create<UIState>()(
         set((state) => ({ listDefaults: withListDefault(state.listDefaults, update) })),
       clearListDefault: (key) =>
         set((state) => ({ listDefaults: withoutListDefault(state.listDefaults, key) })),
+      setActorWorksSort: (sort) => set({ actorWorksSort: sort }),
     }),
     {
       name: STORAGE_KEY,
@@ -141,6 +155,9 @@ export const useUIStore = create<UIState>()(
             meta: metaListDefaultsSchema.safeParse(p?.listDefaults?.meta).data,
             actors: actorListDefaultsSchema.safeParse(p?.listDefaults?.actors).data,
             feeds: feedsListDefaultsSchema.safeParse(p?.listDefaults?.feeds).data,
+          },
+          actorWorksSort: metadataSortPreferenceSchema.safeParse(p?.actorWorksSort).data ?? {
+            ...DEFAULT_METADATA_SORT_PREFERENCE,
           },
         };
       },

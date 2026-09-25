@@ -41,6 +41,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import type { ActorResponse, CacheKind } from "@/client/types.gen";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
+import { SortMenu } from "@/components/common/sort-menu";
 import { ActorEditDialog } from "@/components/media/actor-edit-dialog";
 import { FanartLightbox } from "@/components/media/fanart-lightbox";
 import { PosterGrid } from "@/components/media/poster-grid";
@@ -50,8 +51,10 @@ import { confirm } from "@/lib/confirm";
 import { metaSearchForFacet } from "@/lib/facets";
 import { ageFromBirthday } from "@/lib/format-birthday";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
+import { DEFAULT_METADATA_SORT_PREFERENCE, METADATA_SORT_OPTIONS } from "@/lib/media/browse";
 import { proxyImageUrl } from "@/lib/utils";
 import { ProxyImage } from "@/components/media/proxy-image";
+import { useUIStore } from "@/stores/ui";
 
 const CHUNK = 30;
 const AVATAR_WIDTH = 240;
@@ -86,6 +89,8 @@ function ActorDetailPage() {
   const validId = Number.isInteger(id) && id > 0;
 
   const [editOpen, setEditOpen] = useState(false);
+  const actorWorksSort = useUIStore((state) => state.actorWorksSort);
+  const setActorWorksSort = useUIStore((state) => state.setActorWorksSort);
 
   const { data: actor, isLoading: actorLoading } = useQuery({
     ...getActorOptions({ path: { actor_id: id } }),
@@ -94,7 +99,12 @@ function ActorDetailPage() {
 
   const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery({
     ...listMetadataInfiniteOptions({
-      query: { limit: CHUNK, actor_id: [id] },
+      query: {
+        limit: CHUNK,
+        actor_id: [id],
+        sort_by: actorWorksSort.sort_by,
+        order: actorWorksSort.order,
+      },
     }),
     enabled: validId,
     initialPageParam: 0,
@@ -250,7 +260,24 @@ function ActorDetailPage() {
         />
       ) : null}
 
-      <Divider label={t("actors.filmography", { count: total })} labelPosition="left" />
+      <Group gap="sm" align="center" wrap="wrap" style={{ minWidth: 0 }}>
+        <Divider
+          label={t("actors.filmography", { count: total })}
+          labelPosition="left"
+          style={{ flex: "1 1 12rem" }}
+        />
+        <SortMenu
+          options={METADATA_SORT_OPTIONS.map((option) => ({
+            value: option.value,
+            label: t(option.labelKey),
+          }))}
+          sortBy={actorWorksSort.sort_by}
+          order={actorWorksSort.order}
+          defaultSortBy={DEFAULT_METADATA_SORT_PREFERENCE.sort_by}
+          defaultOrder={DEFAULT_METADATA_SORT_PREFERENCE.order}
+          onChange={(sortBy, order) => setActorWorksSort({ sort_by: sortBy, order })}
+        />
+      </Group>
 
       <PosterGrid
         items={items}

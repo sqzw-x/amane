@@ -7,7 +7,9 @@
  * 并入入口 chunk.
  */
 
+import type { ParseKeys } from "i18next";
 import { z } from "zod";
+import type { MetadataSortField } from "@/client/types.gen";
 import {
   CONTENT_TYPES,
   FILE_DEFINITIONS,
@@ -18,6 +20,34 @@ import {
 import { coerceIdList } from "@/lib/facets";
 
 const idListSchema = z.preprocess(coerceIdList, z.array(z.number().int().positive()).optional());
+
+/** 片库与演员详情出演作品共用的排序项; 数组顺序即菜单显示顺序. */
+export const METADATA_SORT_OPTIONS = [
+  { value: "updated_at", labelKey: "columns.updated" },
+  { value: "created_at", labelKey: "columns.created" },
+  { value: "number", labelKey: "columns.number" },
+  { value: "title", labelKey: "columns.title" },
+  { value: "studio", labelKey: "columns.studio" },
+  { value: "release", labelKey: "columns.release" },
+  { value: "file_count", labelKey: "columns.fileCount" },
+] as const satisfies readonly {
+  value: MetadataSortField;
+  labelKey: ParseKeys<"metadata">;
+}[];
+
+/** 排序记忆值: 演员详情页的作品排序存于 ui store, 读取时经此校验, 非法整值丢弃. */
+export const metadataSortPreferenceSchema = z.object({
+  sort_by: z.enum(METADATA_SORT_FIELDS),
+  order: z.enum(SORT_ORDERS),
+});
+
+export type MetadataSortPreference = z.infer<typeof metadataSortPreferenceSchema>;
+
+/** 与后端列表默认一致: 无记忆时出演作品的顺序不变. */
+export const DEFAULT_METADATA_SORT_PREFERENCE: MetadataSortPreference = {
+  sort_by: "updated_at",
+  order: "desc",
+};
 
 export const metaSearchSchema = z.object({
   q: z.string().optional(),

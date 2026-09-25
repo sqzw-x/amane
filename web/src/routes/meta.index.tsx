@@ -27,37 +27,17 @@ import { PosterGrid } from "@/components/media/poster-grid";
 import { activeFacetFilters, addFacetId, type FacetFilters, removeFacetId } from "@/lib/facets";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
-import { metaSearchSchema } from "@/lib/media/browse";
+import { metaSearchSchema, METADATA_SORT_OPTIONS } from "@/lib/media/browse";
 import { metaListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
 
 const CHUNK = 30;
-
-const SORT_FIELDS = [
-  "updated_at",
-  "created_at",
-  "number",
-  "title",
-  "studio",
-  "release",
-  "file_count",
-] as const satisfies readonly MetadataSortField[];
 
 export const Route = createFileRoute("/meta/")({
   validateSearch: metaSearchSchema,
   search: { middlewares: [stripSearchParams({ view: "grid", page: 1 })] },
   component: MetaIndexPage,
 });
-
-const SORT_FIELD_COLUMN_KEY = {
-  updated_at: "updated",
-  created_at: "created",
-  number: "number",
-  title: "title",
-  studio: "studio",
-  release: "release",
-  file_count: "fileCount",
-} as const satisfies Record<MetadataSortField, string>;
 
 function parseHasFiles(value: "true" | "false" | undefined): HasFilesFilter {
   if (value === "true") return true;
@@ -343,9 +323,9 @@ function MetaIndexPage() {
           )}
           {!isList && (
             <SortMenu
-              options={SORT_FIELDS.map((f) => ({
-                value: f,
-                label: t(`columns.${SORT_FIELD_COLUMN_KEY[f]}`),
+              options={METADATA_SORT_OPTIONS.map((option) => ({
+                value: option.value,
+                label: t(option.labelKey),
               }))}
               sortBy={search.sort_by}
               order={search.order}
