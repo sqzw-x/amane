@@ -22,7 +22,8 @@ export interface NetworkCheckState {
  * 端点始终返回 200, 单个来源的失败体现在条目里; 只有请求本身失败 (网络中断 / 鉴权失效) 才走 onError,
  * 此时保留上一次的结果并弹出提示 — 清空会让用户失去已经拿到的逐来源结论.
  *
- * 状态写在 `stores/network-check`: 本 hook 随路由卸载, 而结论要在离开页面再回来时仍在.
+ * 状态写在 `stores/network-check`: 本 hook 随路由卸载, 而在途标记必须在离开页面再回来时仍然是
+ * 「检测中」 —— 请求没有随卸载停止, 丢掉标记会让用户以为可以再发一次. 结论同理.
  */
 export function useNetworkCheck(): NetworkCheckState {
   const { t } = useTranslation("common");

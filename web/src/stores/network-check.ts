@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { ConnectivityItemResponse } from "@/client/types.gen";
+import type { ConnectivityItemResponse, ConnectivityStatus } from "@/client/types.gen";
 
 /** 全量检测与行内重试互斥, 因此同一时刻只记录一个在途目标. */
 export type NetworkCheckRun = { kind: "all" } | { kind: "source"; sourceId: string };
@@ -27,6 +27,24 @@ interface NetworkCheckStore {
 }
 
 const STORAGE_KEY = "amane-network-check";
+const STATUSES: readonly ConnectivityStatus[] = ["ok", "failed", "skipped"];
+
+/**
+ * 存储里的形状校验.
+ * 反序列化不校验时, 旧形状 (API 字段改名后仍开着的标签页) 会让状态的图标与排序取到 undefined,
+ * 前者被当成组件渲染, 后者让比较函数返回 NaN. 校验不过就按未检测处理, 比让页面崩掉便宜.
+ */
+function isStoredReport(value: unknown): value is NetworkCheckReport {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const report = value as Partial<NetworkCheckReport>;
+  return (
+    typeof report.checkedAt === "number" &&
+    Array.isArray(report.items) &&
+    report.items.every((item) => STATUSES.includes(item.status))
+  );
+}
 
 /**
  * 网络检测的结论.
@@ -35,7 +53,8 @@ const STORAGE_KEY = "amane-network-check";
  * 因此不放在路由组件的 state 里. 但它同时随配置与网络变化, 长期留存会让过期结论继续以结论的
  * 样子出现 —— 折中是 `sessionStorage`: 路由切换与刷新都保留, 标签页关掉即消失, 不跨会话.
  *
- * `run` 不入存储: 重载后没有请求会回来清掉在途标记, 页面会永久停在「检测中」.
+ * 在途标记同样不持久化, 但归 store 管: 它要跨组件卸载存在 —— 离开页面再回来时请求仍在飞, 只有
+ * store 能继续把它显示为「检测中」并挡住第二个请求; 页面重载后没有请求会回来清掉它, 因此不入存储.
  */
 export const useNetworkCheckStore = create<NetworkCheckStore>()(
   persist(
@@ -66,6 +85,10 @@ export const useNetworkCheckStore = create<NetworkCheckStore>()(
       name: STORAGE_KEY,
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({ report: state.report }),
+      merge: (persisted, current) => {
+        const stored = (persisted as { report?: unknown } | undefined)?.report;
+        return isStoredReport(stored) ? { ...current, report: stored } : current;
+      },
     },
   ),
 );

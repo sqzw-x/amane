@@ -29,6 +29,13 @@
     "failed": "不可访问",
     "skipped": "无法探测"
   },
+  "skip": {
+    "unknown_source": "来源不存在或未启用",
+    "no_http_upstream": "本源不经 HTTP 取数据 (离线镜像)",
+    "missing_credential": "缺少凭据, 刮削时会跳过",
+    "undeclared": "该来源未声明探测方式",
+    "no_url": "插件未声明来源 URL"
+  },
   "kind": {
     "film": "影片",
     "actor": "演员",

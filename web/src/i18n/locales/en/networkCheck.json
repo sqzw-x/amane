@@ -29,6 +29,13 @@
     "failed": "Unreachable",
     "skipped": "Not probed"
   },
+  "skip": {
+    "unknown_source": "Source is unknown or disabled",
+    "no_http_upstream": "This source reads from an offline mirror, not over HTTP",
+    "missing_credential": "No credential configured; scraping skips this source",
+    "undeclared": "This source declares no probe entry",
+    "no_url": "The plugin declares no source URL"
+  },
   "kind": {
     "film": "Film",
     "actor": "Actor",

@@ -5,6 +5,7 @@ import type { ConnectivityItemResponse, ConnectivityStatus } from "@/client/type
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import {
   KIND_LABEL_KEY,
+  SKIP_LABEL_KEY,
   STATUS_COLOR,
   STATUS_ICON,
   STATUS_LABEL_KEY,
@@ -248,8 +249,14 @@ function ElapsedLabel({ item }: { item: ConnectivityItemResponse }) {
 function ReasonCell({ item }: { item: ConnectivityItemResponse }) {
   const { t } = useTranslation("networkCheck");
   const { t: tTasks } = useTranslation("tasks");
-  // 原因与状态码均为结构化字段, 不解析文本; 失败原因文案复用任务报告 (tasks:report.reason.*).
-  const reason = item.reason != null ? tTasks(`report.reason.${item.reason}`) : null;
+  // 原因与状态码均为结构化字段, 不解析文本; 失败原因文案复用任务报告 (tasks:report.reason.*),
+  // 未探测的原因只在本页 (networkCheck:skip.*) — 它在任务报告里没有对应语义.
+  const reason =
+    item.reason != null
+      ? tTasks(`report.reason.${item.reason}`)
+      : item.skip_reason != null
+        ? t(SKIP_LABEL_KEY[item.skip_reason])
+        : null;
   const httpStatus = item.http_status != null ? `HTTP ${item.http_status}` : null;
 
   return (

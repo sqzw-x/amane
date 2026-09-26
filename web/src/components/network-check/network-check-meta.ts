@@ -1,6 +1,6 @@
 import { IconAlertTriangle, IconCircleCheck, IconHelpCircle, type Icon } from "@tabler/icons-react";
 import type { ParseKeys } from "i18next";
-import type { ConnectivityStatus, SourceKind } from "@/client/types.gen";
+import type { ConnectivityStatus, SkipReason, SourceKind } from "@/client/types.gen";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 
 /**
@@ -37,6 +37,15 @@ export const KIND_LABEL_KEY = exhaustiveRecord<SourceKind>()({
   actor: "kind.actor",
   plugin: "kind.plugin",
 } as const satisfies Record<SourceKind, ParseKeys<"networkCheck">>);
+
+/** 未探测的原因不走任务报告 (它不是失败), 文案在本页的 `skip.*`. */
+export const SKIP_LABEL_KEY = exhaustiveRecord<SkipReason>()({
+  unknown_source: "skip.unknown_source",
+  no_http_upstream: "skip.no_http_upstream",
+  missing_credential: "skip.missing_credential",
+  undeclared: "skip.undeclared",
+  no_url: "skip.no_url",
+} as const satisfies Record<SkipReason, ParseKeys<"networkCheck">>);
 
 /** 汇总区的三块数字与结果行按同一组状态取值, 所以筛选态直接复用该联合. */
 export type StatusFilter = ConnectivityStatus;

@@ -50,7 +50,10 @@ export function NetworkCheckSummary({
   const { t } = useTranslation("networkCheck");
   // Mantine 的条纹进度与 loader 是 JS 驱动的动画, CSS media query 管不到, 只能显式关闭.
   const reducedMotion = useReducedMotion();
-  const ratio = counts.total === 0 ? 0 : Math.round((counts.ok / counts.total) * 100);
+  // 分子分母都只取真正探测过的来源: skipped 不是「不可访问」, 计入分母会把可用的来源报成不可用.
+  // 一个都没探测到时不给比例 — 显示 0% 会把「没探」说成「全不可用」.
+  const probed = counts.ok + counts.failed;
+  const ratio = probed === 0 ? null : Math.round((counts.ok / probed) * 100);
   // 圆环只画有来源的状态: 传 0 的段会留下 0 长度的曲线, 既无信息也让圆角端点叠成一坨.
   const sections = SUMMARY_STATUSES.filter((status) => counts[status] > 0).map((status) => ({
     value: (counts[status] / counts.total) * 100,
@@ -69,11 +72,13 @@ export function NetworkCheckSummary({
           transitionDuration={reducedMotion ? 0 : 400}
           sections={sections}
           role="img"
-          aria-label={t("summary.ratioAria", { value: ratio })}
+          aria-label={
+            ratio == null ? t("summary.ratioLabel") : t("summary.ratioAria", { value: ratio })
+          }
           label={
             <Stack gap={0} align="center">
               <Text className={classes.ratioValue} fw={700} size="lg" lh={1.1}>
-                {t("summary.ratio", { value: ratio })}
+                {ratio == null ? t("emptyValue") : t("summary.ratio", { value: ratio })}
               </Text>
               <Text size="xs" c="dimmed" lh={1.2}>
                 {t("summary.ratioLabel")}
