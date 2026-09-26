@@ -4,18 +4,28 @@
 站点限定日本 IP: 非日本 IP 下 curl_cffi 得 CloudFront 403, 系统 curl 得地域限制文案.
 """
 
-from typing import Any
+from typing import Any, override
 
 from ...enums import SiteName
+from ...net.connectivity import ConnectivityOutcome, probe_get
 from ..base import Crawler, CrawlerProfile
 from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
+
+# 探测用的在售番号: 不存在的 SKU 站点返回 404, 探测结论会落成失败.
+_PROBE_SKU = "ABW-350"
 
 
 class PrestigeCrawler(Crawler):
     @classmethod
     def profile(cls) -> CrawlerProfile:
         return CrawlerProfile(name=SiteName.PRESTIGE, base_url="https://www.prestige-av.com")
+
+    @override
+    async def check_connectivity(self) -> ConnectivityOutcome:
+        """真实入口是 SKU JSON API; 首页带年龄墙, 探测首页会把可用的来源报成不可达."""
+        url = f"{self.base_url}/api/sku/item/{_PROBE_SKU}"
+        return await probe_get(self.client.web_client, url, cookies=self.cookies, headers=self.headers)
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
         number = query.number.upper()
