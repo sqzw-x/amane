@@ -100,6 +100,19 @@
 }
 
 /*
+  画面内浮层 (调整与跳转提示、倍速徽标、右键菜单): 显隐只由组件状态决定, 不随控制条的自动隐藏消失.
+  media-chrome 在 `userinactive` 时给控制器的每个子节点写 `opacity`. 本文档的规则与它写在 shadow 内的
+  `::slotted` 规则相比属于外层声明, 普通声明之间外层优先, 因此不需要 `!important`.
+  层仍留在控制器内 — 全屏只渲染控制器子树, 放在外面会随全屏消失.
+*/
+.controller .volumeIndicatorLayer,
+.controller .speedBadgeLayer,
+.controller .contextMenu,
+.controller .contextMenuBackdrop {
+  opacity: 1;
+}
+
+/*
   控制器内部的行高是 0 (media-chrome 给它的 chrome 用的), 提示与面板里的文字必须自己带行高,
   否则行盒高度为 0: 文字看起来正常, 但盒子只剩内边距, 比文字还矮.
 */
@@ -117,7 +130,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 手势提示沿用音量提示的外观, 内容是目标时间 / 总长度. */
+/* 手势提示沿用音量提示的外观, 内容是目标时间 (偏移) / 总长度. */
 .gestureIndicator {
   font-size: var(--mantine-font-size-lg);
   font-weight: 600;
@@ -138,6 +151,9 @@
 
 .speedBadge {
   line-height: var(--mantine-line-height);
+  display: flex;
+  align-items: center;
+  gap: 7px;
   padding: 8px 14px;
   border-radius: var(--mantine-radius-md);
   background: var(--amane-player-indicator-background);
@@ -146,6 +162,38 @@
   font-size: var(--mantine-font-size-md);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/*
+  徽标里两个向右的箭头: 在灰与白之间交替闪烁, 表示画面正在加速.
+  第二个箭头错开半个周期, 两个箭头因此一亮一暗; 灰比徽标文本浅一档.
+*/
+.speedBadgeArrows {
+  display: flex;
+  align-items: center;
+}
+
+.speedBadgeArrow {
+  color: rgb(255 255 255 / 0.45);
+  animation: speedBadgeArrow 0.9s ease-in-out infinite;
+}
+
+.speedBadgeArrow + .speedBadgeArrow {
+  animation-delay: -0.45s;
+}
+
+@keyframes speedBadgeArrow {
+  50% {
+    color: rgb(255 255 255 / 0.95);
+  }
+}
+
+/* 闪烁是装饰, 关掉动效时改成常亮. */
+@media (prefers-reduced-motion: reduce) {
+  .speedBadgeArrow {
+    color: rgb(255 255 255 / 0.8);
+    animation: none;
+  }
 }
 
 /*
@@ -223,8 +271,11 @@
 }
 
 /*
-  触屏手势进行中: 控制条与进度条不出现. 媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入,
+  触屏手势进行中: 控制条与进度条都不出现. 媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入,
   横滑跳转时不需要它, 提示由悬浮层给. 属性由 playback-player.tsx 置位.
+  进度条同样在清单内: 隐藏会让它的盒子塌成 0, 因此起手落在它上面的触摸不得置位该属性, 见 `startsOnSeekBar`.
+  清单内必须同形: 这里用 `display: none` 立即隐藏, 不受该属性约束的元素只随 media-chrome 的 `userinactive`
+  淡出 (1s), 出现与消失都比其余的慢.
 */
 .controller[data-amane-gesture] media-control-bar,
 .controller[data-amane-gesture] media-time-range,
@@ -275,6 +326,18 @@
 .controller:not([mediapaused]) .centerPlayIcon,
 .controller[mediapaused] .centerPauseIcon {
   display: none;
+}
+
+/*
+  触屏暂停态: 只留居中大按钮, 控制条、进度条与底部渐变遮罩都不出现.
+  鼠标端不适用 — 那边没有居中大按钮, 收起控制条会让暂停态失去全部入口.
+*/
+@media (pointer: coarse) {
+  .controller[mediapaused] media-control-bar,
+  .controller[mediapaused] media-time-range,
+  .controller[mediapaused] .scrim {
+    display: none;
+  }
 }
 
 /* 进度条独占一行, 铺满播放器宽度并贴在控制条上方. */
