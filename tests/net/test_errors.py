@@ -1,8 +1,9 @@
 """失败原因分类与 parse_detail 的展示契约."""
 
+import pytest
 from pydantic import BaseModel, ValidationError
 
-from amane.net.errors import classify_request_error, parse_detail
+from amane.net.errors import FailureKind, FailureReason, RequestFailure, classify_request_error, parse_detail
 
 
 class _Leaf(BaseModel):
@@ -48,3 +49,16 @@ class TestParseDetail:
 class TestClassifyRequestError:
     def test_none_failure_is_network(self):
         assert classify_request_error(None).value == "network"
+
+    @pytest.mark.parametrize(
+        ("failure", "expected"),
+        [
+            (RequestFailure(kind=FailureKind.TIMEOUT, message="timeout"), FailureReason.TIMEOUT),
+            (RequestFailure(kind=FailureKind.CURL, message="curl error"), FailureReason.NETWORK),
+            (RequestFailure(kind=FailureKind.UNEXPECTED, message="unexpected"), FailureReason.UNEXPECTED),
+            # HTTP_STATUS 且正文无拦截信号时按状态码分类 (正文优先于状态的规则见 test_base.py).
+            (RequestFailure(kind=FailureKind.HTTP_STATUS, status=404, message="HTTP 404"), FailureReason.NOT_FOUND),
+        ],
+    )
+    def test_kind_and_status_mapping(self, failure: RequestFailure, expected: FailureReason):
+        assert classify_request_error(failure) == expected

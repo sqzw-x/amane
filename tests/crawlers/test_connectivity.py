@@ -40,14 +40,17 @@ _URL = "https://probe.example.test/"
 class _Resp:
     """WebClient 响应的最小替身: 探测只读 ``text`` / ``status_code``."""
 
-    def __init__(self, text: str, status: int = 200, url: str = _URL) -> None:
+    def __init__(self, text: str, status: int = 200, *, unreadable: bool = False) -> None:
         self._text = text
+        self._unreadable = unreadable
         self.status_code = status
-        self.url = url
+        self.url = _URL
         self.headers: dict[str, str] = {}
 
     @property
     def text(self) -> str:
+        if self._unreadable:
+            raise RuntimeError("undecodable body")
         return self._text
 
 
@@ -163,101 +166,102 @@ def _hot(
     return hot
 
 
-_BODY_CASES: list[tuple[str, ConnectivityStatus, FailureReason | None]] = [
-    ("<html><body>hello</body></html>", ConnectivityStatus.OK, None),
-    ("This content is not available in your region.", ConnectivityStatus.FAILED, FailureReason.GEO_RESTRICTED),
-    ("<title>Just a moment...</title> cloudflare", ConnectivityStatus.FAILED, FailureReason.CLOUDFLARE_CHALLENGE),
-    ("<div class='cf-error'>Ray-ID: 8f2a</div>", ConnectivityStatus.FAILED, FailureReason.CLOUDFLARE_BLOCKED),
-    ("<div id='driver-verify'></div>", ConnectivityStatus.FAILED, FailureReason.AGE_VERIFICATION),
-    ("", ConnectivityStatus.FAILED, FailureReason.EMPTY_RESPONSE),
+# 探测层的判定: 只钉「2xx 也要看正文」与「正文读不出来按空响应」两处 probe 自己的逻辑,
+# 正文模式与状态码的分类规则见 test_base.py.
+_PROBE_CASES: list[tuple[str, bool, ConnectivityStatus, FailureReason | None]] = [
+    ("<html><body>hello</body></html>", False, ConnectivityStatus.OK, None),
+    ("<div id='driver-verify'></div>", False, ConnectivityStatus.FAILED, FailureReason.AGE_VERIFICATION),
+    ("", True, ConnectivityStatus.FAILED, FailureReason.EMPTY_RESPONSE),
 ]
 
 
 @pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.parametrize(("body", "status", "reason"), _BODY_CASES)
-async def test_probe_get_classifies_body(body: str, status: ConnectivityStatus, reason: FailureReason | None) -> None:
-    web = _FakeWeb({_URL: _Resp(body)})
+@pytest.mark.parametrize(("body", "unreadable", "status", "reason"), _PROBE_CASES)
+async def test_probe_get_outcome(
+    body: str, unreadable: bool, status: ConnectivityStatus, reason: FailureReason | None
+) -> None:
+    web = _FakeWeb({_URL: _Resp(body, unreadable=unreadable)})
 
     outcome = await probe_get(cast("WebClient", web), _URL)
 
     assert (outcome.status, outcome.reason) == (status, reason)
-    assert outcome.url == _URL
-    assert outcome.http_status == 200
-    assert web.calls == [("GET", _URL, {"cookies": None, "headers": None, "timeout": None, "max_attempts": 1})]
+    assert (outcome.url, outcome.http_status) == (_URL, 200)
+    # 探测是单次尝试: 重试只会把同一个结论拖长.
+    assert [call[2]["max_attempts"] for call in web.calls] == [1]
+
+
+# 探测只透传 RequestError 上的原因与状态码; 原因映射本身见 tests/net/test_errors.py.
+_FAILURE_CASES: list[tuple[RequestFailure, FailureReason, int | None]] = [
+    (RequestFailure(kind=FailureKind.HTTP_STATUS, status=404, message="HTTP 404"), FailureReason.NOT_FOUND, 404),
+    (RequestFailure(kind=FailureKind.CURL, message="curl error"), FailureReason.NETWORK, None),
+]
 
 
 @pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.parametrize(
-    ("failure", "reason"),
-    [
-        (RequestFailure(kind=FailureKind.TIMEOUT, message="timeout"), FailureReason.TIMEOUT),
-        (RequestFailure(kind=FailureKind.CURL, message="curl error"), FailureReason.NETWORK),
-        (
-            RequestFailure(kind=FailureKind.HTTP_STATUS, status=404, message="HTTP 404"),
-            FailureReason.NOT_FOUND,
-        ),
-        (
-            RequestFailure(
-                kind=FailureKind.HTTP_STATUS,
-                status=403,
-                message="HTTP 403",
-                body=b"banned your access",
-            ),
-            FailureReason.IP_BANNED,
-        ),
-    ],
-)
-async def test_probe_get_maps_request_failure(failure: RequestFailure, reason: FailureReason) -> None:
+@pytest.mark.parametrize(("failure", "reason", "http_status"), _FAILURE_CASES)
+async def test_probe_get_forwards_request_failure(
+    failure: RequestFailure, reason: FailureReason, http_status: int | None
+) -> None:
     web = _FakeWeb({_URL: RequestError(_URL, failure)})
 
     outcome = await probe_get(cast("WebClient", web), _URL)
 
-    assert (outcome.status, outcome.reason) == (ConnectivityStatus.FAILED, reason)
-    assert outcome.http_status == failure.status
+    assert (outcome.status, outcome.reason, outcome.http_status) == (ConnectivityStatus.FAILED, reason, http_status)
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_checker_uses_configured_sources_and_dedupes() -> None:
+async def test_default_probe_targets_base_url_with_cookies() -> None:
+    """缺省探测点: GET ``base_url``, 带上合并后的 cookies."""
+    web = _FakeWeb({_URL: _Resp("<html>ok</html>")})
+    crawler = _FakeCrawler(HttpClient(web=cast("WebClient", web)))
+
+    outcome = await crawler.check_connectivity()
+
+    assert outcome.status is ConnectivityStatus.OK
+    assert [(call[1], call[2]["cookies"]) for call in web.calls] == [(_URL, {"a": "b"})]
+
+
+# ``source_ids`` 为 None 时取当前热配置会真正请求的来源, 显式传入时只探这些 (界面单点重试).
+_SCOPE_CASES: list[tuple[list[str] | None, list[str], list[SourceKind]]] = [
+    (None, ["probe_film", "probe_actor"], [SourceKind.FILM, SourceKind.ACTOR]),
+    (["probe_actor"], ["probe_actor"], [SourceKind.ACTOR]),
+]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(("source_ids", "expected_ids", "expected_kinds"), _SCOPE_CASES)
+async def test_checker_scope(
+    source_ids: list[str] | None, expected_ids: list[str], expected_kinds: list[SourceKind]
+) -> None:
     web = _FakeWeb({_URL: _Resp("<html>ok</html>")})
     hot = _hot(routes=["probe_film", "probe_actor", "probe_film"], profile_sites=[cast("SiteName", "probe_actor")])
     checker = ConnectivityChecker(_factory(web), hot)
 
-    checks = await checker.check()
+    checks = await checker.check(source_ids)
 
-    assert [check.source_id for check in checks] == ["probe_film", "probe_actor"]
-    assert [(check.kind, check.outcome.status) for check in checks] == [
-        (SourceKind.FILM, ConnectivityStatus.OK),
-        (SourceKind.ACTOR, ConnectivityStatus.OK),
-    ]
-    assert web.calls[0][2]["cookies"] == {"a": "b"}
+    assert [check.source_id for check in checks] == expected_ids
+    assert [check.kind for check in checks] == expected_kinds
+    assert {check.outcome.status for check in checks} == {ConnectivityStatus.OK}
 
 
-@pytest.mark.asyncio(loop_scope="function")
-async def test_checker_explicit_ids_only() -> None:
-    web = _FakeWeb({_URL: _Resp("<html>ok</html>")})
-    checker = ConnectivityChecker(_factory(web), _hot(routes=["probe_film"]))
-
-    checks = await checker.check(["probe_actor"])
-
-    assert [check.source_id for check in checks] == ["probe_actor"]
+_RECOVERY_CASES: list[tuple[str, ConnectivityStatus, FailureReason | None, str]] = [
+    # 来源不存在: 报 skipped, 不计入失败.
+    ("nope", ConnectivityStatus.SKIPPED, None, "来源不存在或未启用"),
+    # 来源自己抛异常: 结果里只写类型名, 全文只进日志.
+    ("probe_raising", ConnectivityStatus.FAILED, FailureReason.UNEXPECTED, "RuntimeError"),
+]
 
 
 @pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.parametrize(
-    ("source_id", "detail"),
-    [
-        ("nope", "来源不存在或未启用"),
-        ("probe_raising", "RuntimeError"),
-    ],
-)
-async def test_checker_reports_unknown_and_unexpected(source_id: str, detail: str) -> None:
+@pytest.mark.parametrize(("source_id", "status", "reason", "detail"), _RECOVERY_CASES)
+async def test_checker_reports_unknown_and_unexpected(
+    source_id: str, status: ConnectivityStatus, reason: FailureReason | None, detail: str
+) -> None:
     checker = ConnectivityChecker(_factory(_FakeWeb({})), _hot(routes=["probe_film"]))
 
     (check,) = await checker.check([source_id])
 
-    assert check.outcome.status is ConnectivityStatus.FAILED or check.outcome.status is ConnectivityStatus.SKIPPED
-    assert check.outcome.detail == detail
-    assert check.outcome.reason in (None, FailureReason.UNEXPECTED)
+    assert (check.outcome.status, check.outcome.reason, check.outcome.detail) == (status, reason, detail)
 
 
 @pytest.mark.asyncio(loop_scope="function")
