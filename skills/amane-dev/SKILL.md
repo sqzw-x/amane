@@ -1,57 +1,43 @@
 ---
 name: amane-dev
 description: >-
-  Starts Amane local API + Vite via `just dev`, or the built SPA served by the
-  backend for mobile / LAN access. Use when the user asks to just dev,
-  启动开发服务器, 起前端, start the dev servers, 手机端检查, or 局域网访问.
+  Amane 开发流程入口: 受理需求与 Issue, 选定 worktree, 实现并提交, 准备验证数据,
+  启动本地服务供用户复核, 起草 PR 待批准后推送.
+  Use when 开始开发、实现功能、修复缺陷、处理 Issue、继续未完成的实现, or when asked
+  how a development task should be carried out.
 ---
 
-# 开发服务器
+# 开发流程
 
-`just dev` 先 `generate` 再并行起 API 与 Vite. 后台启动. 禁止等待 Vite 的 `Local:` / `ready in` — just 并行输出经常没有这两行.
+## 流程
 
-就绪以 HTTP 为准. 探测一律用 `localhost`, 禁止 `127.0.0.1` (进程不一定监听 IPv4).
+本 skill 只描述开发过程的流程规范, 不涉及项目的具体内容.
 
-| 进程 | 就绪 |
-|------|------|
-| API | `GET http://localhost:${AMANE_PORT:-8000}/api/health` 返回 200; 日志 `amane service ready` 亦可 |
-| Web | `GET http://localhost:5173/` 返回 200 |
+开发需求来源多样, 以最典型的 Issue 为例, 其处理流程如下:
 
-已在监听则禁止再启动一份. `AMANE_PORT` 或 Vite 占用顺延时, 按实际端口写.
+1. 获取内容: 用 `gh issue view <编号> --comments` 读取正文与全部评论. `status:triaged` 表示维护者已确认, 未带该标签时不得开始实现, 把判断报告给用户
+2. 评估: 简要评估 Issue 的可行性、必要性、预计工作量等, 给出 要不要做 的判断
+3. 方案准备: 复杂任务需使用 `amane-parley` 修正方案. 经用户确认后, 进入实现阶段. 如果任务足够简单或用户要求直接执行或用户给出了确定方案, 则无需确认直接执行
+4. 实现阶段: 除简单任务和非代码任务(如文档修改/样式调整/typo)外, 所有变更都需按 `amane-pr` 在 worktree 中进行, 过程中及时提交, 但不创建 PR
+5. 用户验收: 实现完成后, 如有必要则 准备验证数据, 然后按 `amane-serve` 启动本地服务供用户复核.
+6. 起草 PR: 用户批准后推送; 后续合并/清理等参考 `amane-pr`, 不再赘述.
 
-## 地址的输出
+严禁(NEVER)未经批准执行远程操作: 推送分支, 创建或更新 PR, 回复或关闭 Issue.
 
-**只输出 Web 地址**, 且**只以纯文本给出**, 不放进代码块 —— 代码块内的 URL 不会渲染成可点击链接, 纯文本才会.
+## 验收
 
-就绪后输出一行 `Web: http://localhost:5173` (行内代码只是本文件的排版, 实际回复里是裸文本).
+**何时需要验收**:
 
-API 地址只在探测就绪时使用, 不写给用户: 用户经浏览器访问前端, 请求由 Vite 代理到 `/api`.
+- 前端样式变更
+- 用户可见的行为变更
+- 难以通过测试验证
+以上情况需要验收, 其他情况不需要验收. 例如修复了某个爬虫解析器, 测试已经能验证其正确性, 不需要验收.
+无需验收的情况通常在 PR 后用户直接 review 代码
 
-要用户打开某个页面时, 给出带路径的完整地址, 同样纯文本, 例如 `Web: http://localhost:5173/meta/1393`.
+目标是用户打开页面即可验证效果, 不需要自己插入数据或修改配置.
 
-## 手机 APP 访问
+- **数据库**: 界面所需对象 (库、影片、订阅等) 由你准备; 如果涉及数据库迁移, 简单空库插入无法满足需求时, 可以复制开发或本机生产环境的库
+- **配置**: 当功能需要配置项才能生效时, 把该项置为生效态. Hot 配置写入 `data/config.toml`, 环境变量写入 `.env.dev`
+- **临时代码**: 仅当真实数据无法构造所需状态时使用. 此类改动不提交, PR 合并后清理时一并移除. 例如为验证报错情况下的行为起一个固定返回错误的临时服务器等
 
-当涉及到移动端 APP 内验证时, **禁止用 `just dev`** 启动
-
-这是因为 APP 使用安卓内置 webview, 版本一般较低, 需 `@vitejs/plugin-legacy` 的语法降级与 polyfill, 而二者只在 `vite build` 时生效
-
-一律走构建 + 后端托管:
-
-```bash
-just build                          # generate + 前端构建 (降级产物在此生成)
-AMANE_HOST=0.0.0.0 just start       # 后端托管 web/dist, 监听 0.0.0.0:8000
-```
-
-端口只有 8000: 前后端同源, `/api` 由后端自身处理. 就绪探测仍走 `localhost`, 对用户输出的是局域网 IP 形式:
-
-```
-Web: http://<en0/en1 的 IP>:8000
-```
-
-IP 取 `ipconfig getifaddr en1` (或 en0, 取有值的那个).
-
-`dist` 不随源码热更新: 改动前端后必须重新 `just build`.
-
-## 让用户验证时
-
-凡请用户手测、复验、确认现象, 回复里必须再打印一次 Web 地址与要打开的具体页面, 不允许只写「刷新页面」「再试一次」. 是否已在运行都要打印.
+数据准备完成后直接按 `amane-serve` 启动, 不再询问用户.
