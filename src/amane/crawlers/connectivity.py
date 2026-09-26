@@ -1,7 +1,7 @@
 """来源连通性探测的编排.
 
 探测目标与判定都由来源自己声明 (``Crawler.check_connectivity`` / ``ActorCrawler.check_connectivity`` /
-插件 provider 的同名方法), 本模块不认识任何具体站点, 只做三件事: 取来源清单 → 并发调用 → 收口异常.
+插件 provider 的同名方法), 本模块不认识任何具体站点, 只做三件事: 读取来源清单 → 并发调用 → 捕获异常.
 结果类型与传输原语见 ``amane.net.connectivity``.
 
 目标清单默认取当前热配置**会真正请求**的来源 (各类型路由的并集 + 演员档案 / 头像来源), 因此探测范围与
@@ -112,13 +112,13 @@ class ConnectivityChecker:
         return None, SourceKind.FILM, source_id
 
     async def _run(self, probe: ConnectivityProbe) -> ConnectivityOutcome:
-        """收口来源抛出的异常. 未声明的 ``None`` 按「该插件不探测」报, 不当作失败."""
+        """捕获来源抛出的异常. 未声明的 ``None`` 表示该插件不探测, 不计入失败."""
         try:
             outcome = await probe.check_connectivity()
         except SourceError as exc:
             return ConnectivityOutcome.failed(exc.reason, url=exc.url, http_status=exc.http_status)
         except Exception as exc:
-            # 异常全文可能带上游地址或密钥, 只进日志; 结果里只报类型名.
+            # 异常全文可能带上游地址或密钥, 只写入日志; 结果里只报告类型名.
             logger.exception("connectivity check failed", error=type(exc).__name__)
             return ConnectivityOutcome.failed(FailureReason.UNEXPECTED, detail=type(exc).__name__)
         if outcome is None:
