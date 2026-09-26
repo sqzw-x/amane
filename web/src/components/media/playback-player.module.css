@@ -130,7 +130,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 手势提示沿用音量提示的外观, 内容是目标时间 / 总长度. */
+/* 手势提示沿用音量提示的外观, 内容是目标时间 (偏移) / 总长度. */
 .gestureIndicator {
   font-size: var(--mantine-font-size-lg);
   font-weight: 600;
@@ -151,6 +151,9 @@
 
 .speedBadge {
   line-height: var(--mantine-line-height);
+  display: flex;
+  align-items: center;
+  gap: 7px;
   padding: 8px 14px;
   border-radius: var(--mantine-radius-md);
   background: var(--amane-player-indicator-background);
@@ -159,6 +162,38 @@
   font-size: var(--mantine-font-size-md);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/*
+  徽标里两个向右的箭头: 在灰与白之间交替闪烁, 表示画面正在加速.
+  第二个箭头错开半个周期, 两个箭头因此一亮一暗; 灰比徽标文本浅一档.
+*/
+.speedBadgeArrows {
+  display: flex;
+  align-items: center;
+}
+
+.speedBadgeArrow {
+  color: rgb(255 255 255 / 0.45);
+  animation: speedBadgeArrow 0.9s ease-in-out infinite;
+}
+
+.speedBadgeArrow + .speedBadgeArrow {
+  animation-delay: -0.45s;
+}
+
+@keyframes speedBadgeArrow {
+  50% {
+    color: rgb(255 255 255 / 0.95);
+  }
+}
+
+/* 闪烁是装饰, 关掉动效时改成常亮. */
+@media (prefers-reduced-motion: reduce) {
+  .speedBadgeArrow {
+    color: rgb(255 255 255 / 0.8);
+    animation: none;
+  }
 }
 
 /*
@@ -291,6 +326,18 @@
 .controller:not([mediapaused]) .centerPlayIcon,
 .controller[mediapaused] .centerPauseIcon {
   display: none;
+}
+
+/*
+  触屏暂停态: 只留居中大按钮, 控制条、进度条与底部渐变遮罩都不出现.
+  鼠标端不适用 — 那边没有居中大按钮, 收起控制条会让暂停态失去全部入口.
+*/
+@media (pointer: coarse) {
+  .controller[mediapaused] media-control-bar,
+  .controller[mediapaused] media-time-range,
+  .controller[mediapaused] .scrim {
+    display: none;
+  }
 }
 
 /* 进度条独占一行, 铺满播放器宽度并贴在控制条上方. */

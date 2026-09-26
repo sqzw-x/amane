@@ -2,6 +2,7 @@ import { Slider } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
+  IconChevronRight,
   IconClock,
   IconLink,
   IconPlayerPauseFilled,
@@ -128,6 +129,14 @@ function formatClock(seconds: number): string {
   const ss = String(total % 60).padStart(2, "0");
   const hours = Math.floor(total / 3600);
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/** 跳转提示的文案: `目标时间 (偏移) / 总长度`, 偏移相对手势起手位置, 总长度未知时省略后半. */
+function formatSeekPreview(preview: SeekPreview): string {
+  const offset = Math.round(preview.delta);
+  const signed = `${offset >= 0 ? "+" : "-"}${Math.abs(offset)}`;
+  const target = `${formatClock(preview.target)} (${signed})`;
+  return preview.total == null ? target : `${target} / ${formatClock(preview.total)}`;
 }
 
 /**
@@ -497,6 +506,16 @@ const MIN_BRIGHTNESS = 0.2;
 /** 调整提示的类型: 音量与亮度共用同一套提示. */
 type HudKind = "volume" | "brightness";
 
+/**
+ * 跳转提示的内容: 目标位置, 总长度 (未知时为空), 以及相对基准的偏移秒数.
+ * 基准是手势起手那一刻的播放位置, 手势期间不随播放前进.
+ */
+type SeekPreview = {
+  target: number;
+  total: number | null;
+  delta: number;
+};
+
 /** 播放/暂停切换: 手势层的双击、画面单击与居中大按钮共用, 三处的判据必须一致. */
 function togglePlayback(video: HTMLVideoElement | null): void {
   if (video == null) {
@@ -628,7 +647,7 @@ function useTouchGestures(
   videoRef: RefObject<HTMLVideoElement | null>,
   seekable: boolean,
   onSpeedHold: (holding: boolean) => void,
-  onSeekPreview: (preview: { target: number; total: number | null } | null) => void,
+  onSeekPreview: (preview: SeekPreview | null) => void,
   onLevelChange: (kind: HudKind, value: number) => void,
   readLevel: (kind: HudKind) => number,
 ) {
@@ -693,8 +712,12 @@ function useTouchGestures(
       if (video == null) {
         return;
       }
-      // 手势期间不弹控制条: 提示由悬浮层给, 进度条只在拖动它自己时才需要.
-      controller.setAttribute(GESTURE_ATTRIBUTE, "");
+      // 暂停态只剩居中大按钮: 置位属性会让它在按下的一瞬整段消失、松手才回来, 看起来是闪烁.
+      const paused = video.paused;
+      if (!paused) {
+        // 手势期间不弹控制条: 提示由悬浮层给, 进度条只在拖动它自己时才需要.
+        controller.setAttribute(GESTURE_ATTRIBUTE, "");
+      }
       pointerId = event.pointerId;
       startX = event.clientX;
       startY = event.clientY;
@@ -709,7 +732,8 @@ function useTouchGestures(
           return;
         }
         const current = videoRef.current;
-        if (current == null) {
+        // 暂停时没有加速可言: 起手时可能还在播放, 按住期间才暂停.
+        if (current == null || current.paused) {
           return;
         }
         mode = "speed";
@@ -767,7 +791,11 @@ function useTouchGestures(
         live != null && Number.isFinite(live.duration) && live.duration > 0 ? live.duration : null;
       const target = Math.max(baseSeconds + deltaSeconds, 0);
       // 提示里的目标时间与落点一致: 超过总长时按总长显示.
-      onSeekPreview({ target: total == null ? target : Math.min(target, total), total });
+      onSeekPreview({
+        target: total == null ? target : Math.min(target, total),
+        total,
+        delta: deltaSeconds,
+      });
     };
 
     const handlePointerEnd = (event: PointerEvent) => {
@@ -1065,9 +1093,7 @@ export function PlaybackPlayer({
 
   // 触屏手势的提示: 长按加速与横滑拖进度, 与音量提示同形 (渲染位置见下方提示层).
   const [speedHold, setSpeedHold] = useState(false);
-  const [seekPreview, setSeekPreview] = useState<{ target: number; total: number | null } | null>(
-    null,
-  );
+  const [seekPreview, setSeekPreview] = useState<SeekPreview | null>(null);
 
   const openContextMenu = useCallback(
     (anchor: ContextMenuAnchor) => {
@@ -1623,15 +1649,19 @@ export function PlaybackPlayer({
             </div>
           </div>
         ) : null}
-        {/* 按住加速的标记: 触屏长按与键盘按住都会置位, 从菜单里选的倍速不显示. */}
+        {/* 按住加速的标记: 触屏长按与键盘按住都会置位, 从菜单里选的倍速不显示. 箭头是装饰, 闪烁见样式表. */}
         {speedHold ? (
           <div className={classes.speedBadgeLayer}>
             <div className={classes.speedBadge} role="status" aria-live="polite">
               {`${HOLD_SEEK_RATE}×`}
+              <span className={classes.speedBadgeArrows} aria-hidden="true">
+                <IconChevronRight className={classes.speedBadgeArrow} size={16} stroke={2.5} />
+                <IconChevronRight className={classes.speedBadgeArrow} size={16} stroke={2.5} />
+              </span>
             </div>
           </div>
         ) : null}
-        {/* 横滑拖进度: 目标时间 / 总长度. */}
+        {/* 横滑拖进度: 目标时间 (偏移) / 总长度. */}
         {seekPreview != null ? (
           <div className={classes.volumeIndicatorLayer}>
             <div
@@ -1639,9 +1669,7 @@ export function PlaybackPlayer({
               role="status"
               aria-live="polite"
             >
-              {seekPreview.total == null
-                ? formatClock(seekPreview.target)
-                : `${formatClock(seekPreview.target)} / ${formatClock(seekPreview.total)}`}
+              {formatSeekPreview(seekPreview)}
             </div>
           </div>
         ) : null}
