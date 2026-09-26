@@ -12,6 +12,8 @@ export interface NetworkCheckState {
   checking: boolean;
   /** 正在重试的来源 id, 其余行为 null. */
   retryingSourceId: string | null;
+  /** 请求本身失败 (网络中断 / 鉴权失效); 来源级的失败体现在条目里, 不会置起它. */
+  failed: boolean;
   check: () => void;
   retry: (sourceId: string) => void;
 }
@@ -30,7 +32,7 @@ export function useNetworkCheck(): NetworkCheckState {
   const report = useNetworkCheckStore((state) => state.report);
   const run = useNetworkCheckStore((state) => state.run);
 
-  const { mutate } = useMutation({
+  const { mutate, isError } = useMutation({
     ...checkConnectivityMutation(),
     onSuccess: (data, variables) => {
       const received = data.items ?? [];
@@ -71,6 +73,7 @@ export function useNetworkCheck(): NetworkCheckState {
     report,
     checking: run?.kind === "all",
     retryingSourceId: run?.kind === "source" ? run.sourceId : null,
+    failed: isError,
     check,
     retry,
   };

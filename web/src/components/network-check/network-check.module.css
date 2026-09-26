@@ -232,17 +232,14 @@
 /* ------------------------------------------------------------------ 空态 */
 
 .placeholder,
-.stageIdle,
 .stageBusy {
   animation: fadeIn 220ms ease-out both;
 }
 
 /*
- * 空态与进行中都不给外框: 此刻页面上只有一件事, 把它圈进一个盒子反而像一块已经存在的内容.
- * 两段几何完全一致 —— 开始按钮点下去要在原位置变成那个圈; 纵向只占上三分之一, 留白给下面的结果,
- * 也让视线起点偏上 (居中会读成"已完成"的收尾空白).
+ * 进行中不给外框: 此刻页面上只有一件事, 把它圈进一个盒子反而像一块已经存在的内容.
+ * 纵向只占上三分之一, 留白给下面的结果, 也让视线起点偏上 (居中会读成"已完成"的收尾空白).
  */
-.stageIdle,
 .stageBusy {
   display: flex;
   flex-direction: column;
@@ -253,18 +250,6 @@
 }
 
 /* ------------------------------------------------------------------ 动画 */
-
-/*
- * 首屏那颗按钮: 圆形图标按钮, 没有文字 (可访问名走 aria-label), 按下有轻微回弹 ——
- * 它是这个页面上唯一可点的东西, 反馈必须立刻可见.
- */
-.startButton {
-  transition: transform 140ms ease;
-}
-
-.startButton:active {
-  transform: scale(0.92);
-}
 
 /*
  * 进行中的圈: 只有环是主题蓝, 不铺底色 —— 铺底色会读成"一块按钮"或"一张卡片".
@@ -334,7 +319,6 @@
   .row,
   .card,
   .placeholder,
-  .stageIdle,
   .stageBusy,
   .spinner,
   .row[data-retrying="true"] .cellSource::before,
@@ -347,7 +331,6 @@
   .card,
   .statusBadge,
   .retry,
-  .startButton,
   .summary,
   .row .cellSource::before {
     transition: none;
@@ -355,8 +338,7 @@
 
   .stat:hover,
   .card:hover,
-  .retry:active,
-  .startButton:active {
+  .retry:active {
     transform: none;
   }
 }

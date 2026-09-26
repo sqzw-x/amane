@@ -1,9 +1,11 @@
 {
   "title": "Network Check",
-  "run": "Run check",
   "rerun": "Run again",
   "running": "Checking…",
   "lastChecked": "Last checked: {{time}}",
+  "emptyFailed": {
+    "title": "The check request failed"
+  },
   "emptySources": {
     "title": "No source to probe"
   },

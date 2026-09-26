@@ -1,7 +1,7 @@
 import { Button, Group, Paper, Skeleton, Stack, Text, ThemeIcon } from "@mantine/core";
 import { useReducedMotion } from "@mantine/hooks";
-import { IconFilterOff, IconPlugOff, IconWorldSearch } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { IconAlertTriangle, IconFilterOff, IconPlugOff } from "@tabler/icons-react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NetworkCheckList } from "@/components/network-check/network-check-list";
 import {
@@ -22,6 +22,8 @@ export interface NetworkCheckPanelProps {
   checking: boolean;
   /** 全量检测或行内重试在途; 任一在途时不得再发起请求. */
   busy: boolean;
+  /** 请求本身失败 (端点 4xx/5xx): 此时既没有结论也不会再自动重试, 要给出入口. */
+  failed: boolean;
   retryingSourceId: string | null;
   onCheck: () => void;
   onRetry: (sourceId: string) => void;
@@ -36,10 +38,12 @@ export function NetworkCheckPanel({
   report,
   checking,
   busy,
+  failed,
   retryingSourceId,
   onCheck,
   onRetry,
 }: NetworkCheckPanelProps) {
+  const { t } = useTranslation("networkCheck");
   const [filter, setFilter] = useState<StatusFilter | null>(null);
 
   const counts = useMemo(() => countStatuses(report?.items ?? []), [report]);
@@ -56,11 +60,29 @@ export function NetworkCheckPanel({
   );
 
   if (report == null || sorted == null || visible == null) {
-    return checking ? <NetworkCheckRunning /> : <NetworkCheckStart onCheck={onCheck} busy={busy} />;
+    // 没有结论: 自动检测刚发起或正在跑时给加载中 (首屏就是它).
+    if (!failed) {
+      return <NetworkCheckRunning />;
+    }
+    // 请求本身失败: 与「没有可探测的来源」共用同一个占位, 差别只有文案与图标 —— 两者都是"这次没有结论,
+    // 但还可以再试一次", 给两套外观只会让人以为是两类东西.
+    return (
+      <NetworkCheckPlaceholder
+        icon={<IconAlertTriangle size={24} />}
+        title={t("emptyFailed.title")}
+        action={<NetworkCheckRetry busy={busy} onCheck={onCheck} />}
+      />
+    );
   }
 
   if (report.items.length === 0) {
-    return <NetworkCheckNoSources />;
+    return (
+      <NetworkCheckPlaceholder
+        icon={<IconPlugOff size={24} />}
+        title={t("emptySources.title")}
+        action={<NetworkCheckRetry busy={busy} onCheck={onCheck} />}
+      />
+    );
   }
 
   return (
@@ -90,34 +112,46 @@ export function NetworkCheckPanel({
 }
 
 /**
- * 未检测: 页面此刻只有一件事可做, 所以只呈现那件事 —— 上三分之一的圆形按钮, 没有卡片框, 也没有字.
- * 圆 + 无文字让点击目标落在视线起点上, 名字只留 `aria-label` (读屏要, 屏幕上看不到).
+ * 空态与故障态共用的占位: 图标 + 标题 + 一个出口.
+ *
+ * 两种情形的共同点是「这一次没有结论, 但还可以再来一次」, 所以共用同一套外观, 只有文案与图标不同 ——
+ * 分开两套外观会让人把它们当成两类东西. 失败原因已经由 toast 报过, 这里不重复.
  */
-function NetworkCheckStart({ onCheck, busy }: { onCheck: () => void; busy: boolean }) {
+function NetworkCheckPlaceholder({
+  icon,
+  title,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  action: ReactNode;
+}) {
+  return (
+    <Paper withBorder radius="lg" p="xl" className={classes.placeholder}>
+      <Stack align="center" gap="xs">
+        <ThemeIcon variant="light" color="gray" size={48} radius="xl">
+          {icon}
+        </ThemeIcon>
+        <Text fw={600}>{title}</Text>
+        {action}
+      </Stack>
+    </Paper>
+  );
+}
+
+/** 空态与故障态唯一可做的事: 再跑一次. */
+function NetworkCheckRetry({ busy, onCheck }: { busy: boolean; onCheck: () => void }) {
   const { t } = useTranslation("networkCheck");
 
   return (
-    <div className={classes.stageIdle}>
-      <Button
-        className={classes.startButton}
-        aria-label={t("run")}
-        disabled={busy}
-        h={52}
-        miw={52}
-        onClick={onCheck}
-        p={0}
-        radius={9999}
-        variant="light"
-        w={52}
-      >
-        <IconWorldSearch size={22} />
-      </Button>
-    </div>
+    <Button variant="light" size="xs" loading={busy} disabled={busy} onClick={onCheck}>
+      {t("rerun")}
+    </Button>
   );
 }
 
 /**
- * 检测中且还没有结论: 开始按钮原地变成一个转动的圈, 下面接着骨架行给出结果的形状.
+ * 检测中且还没有结论: 转动的圈 + 骨架行给出结果的形状.
  * 圈只有环是主题蓝, 不铺底色 (铺底色会读成一块按钮 / 一张卡片); 文案不写"逐个" —— 探测是并发的.
  * 系统要求减少动态效果时不留 spinner, 只留这一行字: 旋转必须退化, 状态不能没有.
  */
@@ -149,39 +183,19 @@ function NetworkCheckRunning() {
   );
 }
 
-/** 配置里没有任何可探测的来源: 这是配置问题, 不是筛选结果为空, 所以说明白而不是劝人再点一次. */
-function NetworkCheckNoSources() {
-  const { t } = useTranslation("networkCheck");
-
-  return (
-    <Paper withBorder radius="lg" p="xl" className={classes.placeholder}>
-      <Stack align="center" gap="xs">
-        <ThemeIcon variant="light" color="gray" size={48} radius="xl">
-          <IconPlugOff size={24} />
-        </ThemeIcon>
-        <Text fw={600}>{t("emptySources.title")}</Text>
-      </Stack>
-    </Paper>
-  );
-}
-
 /** 筛选后为空: 结论里没有这一档, 不是加载失败, 所以给出回到全量的入口. */
 function NetworkCheckFilterEmpty({ onClear }: { onClear: () => void }) {
   const { t } = useTranslation("networkCheck");
 
   return (
-    <Paper withBorder radius="lg" p="lg" className={classes.placeholder}>
-      <Stack align="center" gap="xs">
-        <ThemeIcon variant="light" color="gray" size={40} radius="xl">
-          <IconFilterOff size={20} />
-        </ThemeIcon>
-        <Text size="sm" fw={500}>
-          {t("emptyFilter.title")}
-        </Text>
+    <NetworkCheckPlaceholder
+      icon={<IconFilterOff size={24} />}
+      title={t("emptyFilter.title")}
+      action={
         <Button variant="subtle" size="xs" onClick={onClear}>
           {t("emptyFilter.clear")}
         </Button>
-      </Stack>
-    </Paper>
+      }
+    />
   );
 }

@@ -1,9 +1,11 @@
 {
   "title": "网络检测",
-  "run": "开始检测",
   "rerun": "重新检测",
   "running": "正在检测…",
   "lastChecked": "上次检测: {{time}}",
+  "emptyFailed": {
+    "title": "检测请求失败"
+  },
   "emptySources": {
     "title": "没有可探测的来源"
   },
