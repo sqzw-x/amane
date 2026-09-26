@@ -256,6 +256,8 @@ function contextMenuAnchor(
  * 因此只看"点在不在菜单里", 不依赖事件传播次序.
  *
  * 不可寻址的流没有可复制的跳转目标, 两项都禁用.
+ *
+ * 菜单与遮罩的显隐只由状态决定, 不随控制条的自动隐藏消失 (画面内浮层的统一约定见 docs/dev/frontend.md).
  */
 function ContextMenu({
   anchor,
@@ -1593,8 +1595,8 @@ export function PlaybackPlayer({
           />
         ) : null}
         {/* 调整提示: 键盘调音量 / 静音与触屏竖直滑动 (音量或亮度) 时显示.
-          三个提示层都留在控制器内: 全屏只渲染控制器子树, 放在外面会随全屏消失; 它们不是 media-chrome
-          控件, 控件自动隐藏与它们无关. */}
+          画面内浮层 (本层、跳转提示、倍速徽标、右键菜单) 都留在控制器内 — 全屏只渲染控制器子树, 放在外面会随
+          全屏消失 — 显隐只由状态决定, 不随控制条的自动隐藏消失. */}
         {hud != null ? (
           <div className={classes.volumeIndicatorLayer}>
             <div className={classes.volumeIndicator} role="status" aria-live="polite">

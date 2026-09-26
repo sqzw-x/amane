@@ -100,6 +100,19 @@
 }
 
 /*
+  画面内浮层 (调整与跳转提示、倍速徽标、右键菜单): 显隐只由组件状态决定, 不随控制条的自动隐藏消失.
+  media-chrome 在 `userinactive` 时给控制器的每个子节点写 `opacity`. 本文档的规则与它写在 shadow 内的
+  `::slotted` 规则相比属于外层声明, 普通声明之间外层优先, 因此不需要 `!important`.
+  层仍留在控制器内 — 全屏只渲染控制器子树, 放在外面会随全屏消失.
+*/
+.controller .volumeIndicatorLayer,
+.controller .speedBadgeLayer,
+.controller .contextMenu,
+.controller .contextMenuBackdrop {
+  opacity: 1;
+}
+
+/*
   控制器内部的行高是 0 (media-chrome 给它的 chrome 用的), 提示与面板里的文字必须自己带行高,
   否则行盒高度为 0: 文字看起来正常, 但盒子只剩内边距, 比文字还矮.
 */
