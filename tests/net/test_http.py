@@ -1,5 +1,6 @@
-"""HTTP 限速器缓存 / 覆盖; RequestError 状态分类; 同源 Referer 注入."""
+"""HTTP 限速器缓存 / 覆盖; RequestError 状态分类; 同源 Referer 注入; 重试次数."""
 
+import asyncio
 from typing import Any, ClassVar
 
 import pytest
@@ -54,12 +55,12 @@ _JAVBUS = frozenset({"www.javbus.com"})
 
 
 class _StubResponse:
-    status_code = 200
     headers: ClassVar[dict[str, str]] = {}
 
-    def __init__(self, *, url: str = "", content: bytes = b"") -> None:
+    def __init__(self, *, url: str = "", content: bytes = b"", status: int = 200) -> None:
         self.url = url
         self.content = content
+        self.status_code = status
 
 
 class _StubSession:
@@ -110,3 +111,48 @@ class TestSameOriginReferer:
         await client.request("GET", "https://www.javbus.com/pics/cover/1.jpg")
 
         assert session.calls[0]["headers"] == {"Referer": "https://www.javbus.com/"}
+
+
+class TestRequestAttempts:
+    """重试次数: ``max_attempts`` 向下覆盖配置值, 但两者都至少发一次请求."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("max_retries", "max_attempts", "status", "expected_calls", "raises"),
+        [
+            # 未覆盖: 按配置的重试次数.
+            (3, None, 200, 1, False),
+            (3, None, 503, 3, True),
+            # 配置 0 表示不重试, 不是一次都不发.
+            (0, None, 200, 1, False),
+            (0, None, 503, 1, True),
+            # 探测的单次尝试: 覆盖配置里的重试次数.
+            (3, 1, 503, 1, True),
+            (3, 2, 503, 2, True),
+        ],
+    )
+    async def test_attempts(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        max_retries: int,
+        max_attempts: int | None,
+        status: int,
+        expected_calls: int,
+        raises: bool,
+    ):
+        async def _no_sleep(_seconds: float) -> None:
+            return None
+
+        client = WebClient(max_retries=max_retries, limiters=RateLimiters(default_rate=100))
+        session = _StubSession(_StubResponse(status=status))
+        monkeypatch.setattr(client, "_session", session)
+        # 重试之间的等待与结论无关, 缩短测试墙钟.
+        monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+        if raises:
+            with pytest.raises(RequestError):
+                await client.request("GET", "https://example.com/x", max_attempts=max_attempts)
+        else:
+            await client.request("GET", "https://example.com/x", max_attempts=max_attempts)
+
+        assert len(session.calls) == expected_calls

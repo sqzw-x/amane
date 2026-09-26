@@ -191,13 +191,14 @@ class WebClient:
     ) -> Response:
         """``ok_statuses`` 额外视为成功 (例如 RSS 304), 不重试、不当失败. 重试用尽后抛 ``RequestError``.
 
-        ``max_attempts`` 向下覆盖构造期的 ``max_retries``, 供一次性的探测使用.
+        ``max_attempts`` 向下覆盖构造期的 ``max_retries``, 供一次性的探测使用. 两者都至少发一次请求:
+        配置 0 表示不重试, 而不是一次都不发.
         """
         host = httpx.URL(url).host
         headers = _with_same_origin_referer(host, headers, self._same_origin_referer_hosts)
         await self._limiters.get(host).acquire()
 
-        attempts = self._max_retries if max_attempts is None else max(1, min(max_attempts, self._max_retries))
+        attempts = max(1, self._max_retries if max_attempts is None else min(max_attempts, self._max_retries))
         t0 = time.monotonic()
         failure: RequestFailure | None = None
         last_resp: Response | None = None
