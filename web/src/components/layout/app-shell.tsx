@@ -30,13 +30,13 @@ import {
   IconMoonStars,
   IconMovie,
   IconPuzzle,
-  IconRadar,
   IconRss,
   IconSearch,
   IconSettings,
   IconSun,
   IconSunMoon,
   IconUsers,
+  IconWorldSearch,
   type Icon,
 } from "@tabler/icons-react";
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
@@ -95,7 +95,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/tasks", labelKey: "nav.tasks", icon: IconListDetails },
       { to: "/schedules", labelKey: "nav.schedules", icon: IconClock },
       { to: "/logs", labelKey: "nav.logs", icon: IconFileText },
-      { to: "/connectivity", labelKey: "nav.connectivity", icon: IconRadar },
+      { to: "/network", labelKey: "nav.networkCheck", icon: IconWorldSearch },
     ],
   },
 ];

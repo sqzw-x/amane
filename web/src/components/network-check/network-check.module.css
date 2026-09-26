@@ -1,0 +1,362 @@
+/*
+ * 网络检测页的动效集中在此文件。
+ *
+ * 动效只回答两个问题: 结果从哪来 (行错峰淡入, 说明列表刚刚产生) 和哪些东西正在变
+ * (进行中状态的脉冲、重试按钮的旋转)。静态结果不允许有常驻循环动画 —— 无限闪动会
+ * 把"还在探测"误读成"有结论", 也会让页面在后台持续绘制。
+ *
+ * 颜色只用 Mantine CSS 变量, 明暗主题共用同一套声明: 需要区分主题时走 light-dark(),
+ * 而不是各写一份深色覆盖。
+ */
+
+/* ------------------------------------------------------------------ 汇总区 */
+
+.summary {
+  /* 圆环与数字块之间的视觉分隔靠留白与背景差, 不画第三条分隔线。 */
+  background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-7));
+  transition: background-color 200ms ease;
+}
+
+.summaryBody {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mantine-spacing-lg);
+}
+
+/* 数字块始终三列: 每块只有图标 + 两个短标签, 窄屏也不需要换行。 */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--mantine-spacing-sm);
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.ring {
+  /* 进行中才呼吸: 静态结论的圆环必须完全不动。 */
+  flex: 0 0 auto;
+}
+
+.ring[data-checking="true"] {
+  animation: ringBreathe 1.8s ease-in-out infinite;
+}
+
+.ratioValue {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 数字块: 可点击的筛选入口, 选中态靠背景 / 边框 / 抬升三重表达, 不只换颜色。 */
+.stat {
+  --stat-accent: var(--mantine-color-gray-6);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: light-dark(var(--mantine-color-white), var(--mantine-color-dark-6));
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.stat[data-status="ok"] {
+  --stat-accent: light-dark(var(--mantine-color-teal-8), var(--mantine-color-teal-3));
+}
+
+.stat[data-status="failed"] {
+  --stat-accent: light-dark(var(--mantine-color-red-8), var(--mantine-color-red-3));
+}
+
+.stat[data-status="skipped"] {
+  --stat-accent: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-4));
+}
+
+.stat:hover {
+  border-color: var(--stat-accent);
+  transform: translateY(-1px);
+  box-shadow: var(--mantine-shadow-sm);
+}
+
+.stat[data-active="true"] {
+  border-color: var(--stat-accent);
+  background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-5));
+  box-shadow: inset 0 0 0 1px var(--stat-accent);
+}
+
+.stat:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-5);
+  outline-offset: 2px;
+}
+
+.statHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--stat-accent);
+}
+
+.statValue {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.statValue[data-zero="true"] {
+  color: var(--mantine-color-dimmed);
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ 结果区 */
+
+.row {
+  --row-accent: transparent;
+  animation: rowIn 280ms ease-out both;
+  transition: background-color 180ms ease;
+}
+
+.row:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+/* 失败行加左侧色条: 表格的横向宽行只靠徽章颜色容易被扫视漏掉。 */
+.row .cellSource {
+  position: relative;
+}
+
+.row .cellSource::before {
+  content: "";
+  position: absolute;
+  inset-block: 6px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: var(--mantine-radius-xl);
+  background: var(--row-accent);
+  transform: scaleY(0.4);
+  opacity: 0;
+  transition:
+    opacity 240ms ease,
+    transform 240ms ease;
+}
+
+.row[data-status="failed"] {
+  --row-accent: light-dark(var(--mantine-color-red-6), var(--mantine-color-red-5));
+}
+
+.row[data-status="skipped"] {
+  --row-accent: light-dark(var(--mantine-color-gray-5), var(--mantine-color-dark-3));
+}
+
+.row[data-status="failed"] .cellSource::before,
+.row[data-status="skipped"] .cellSource::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* 重试中的行: 只让那一行脉动, 其余行的结论仍然静止可读。 */
+.row[data-retrying="true"] {
+  background-color: light-dark(var(--mantine-color-blue-0), var(--mantine-color-dark-6));
+}
+
+.row[data-retrying="true"] .cellSource::before {
+  --row-accent: var(--mantine-color-blue-5);
+  opacity: 1;
+  transform: scaleY(1);
+  animation: rowAccentPulse 1.1s ease-in-out infinite;
+}
+
+.statusBadge {
+  transition:
+    background-color 260ms ease,
+    color 260ms ease;
+}
+
+.sourceId,
+.sourceUrl {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 重试按钮: 按下有回弹, 在途时图标自转 —— 与 Mantine 的 loading 遮罩叠加不冲突。 */
+.retry {
+  transition: transform 140ms ease;
+}
+
+.retry:active {
+  transform: scale(0.86);
+}
+
+.retry[data-retrying="true"] .retryIcon {
+  animation: retrySpin 900ms linear infinite;
+}
+
+.retryIcon {
+  display: inline-flex;
+}
+
+/* 窄屏的卡片形态: 表格在 md 以下放不下列, 换成每行一张卡片 (判定见 useNarrowViewport)。 */
+.card {
+  --row-accent: transparent;
+  position: relative;
+  border-inline-start: 3px solid var(--row-accent);
+  animation: rowIn 280ms ease-out both;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--mantine-shadow-sm);
+}
+
+.card[data-status="failed"] {
+  --row-accent: light-dark(var(--mantine-color-red-6), var(--mantine-color-red-5));
+}
+
+.card[data-status="skipped"] {
+  --row-accent: light-dark(var(--mantine-color-gray-5), var(--mantine-color-dark-3));
+}
+
+.card[data-retrying="true"] {
+  --row-accent: var(--mantine-color-blue-5);
+  background-color: light-dark(var(--mantine-color-blue-0), var(--mantine-color-dark-6));
+}
+
+/* ------------------------------------------------------------------ 空态 */
+
+.placeholder,
+.stageIdle,
+.stageBusy {
+  animation: fadeIn 220ms ease-out both;
+}
+
+/*
+ * 空态与进行中都不给外框: 此刻页面上只有一件事, 把它圈进一个盒子反而像一块已经存在的内容.
+ * 两段几何完全一致 —— 开始按钮点下去要在原位置变成那个圈; 纵向只占上三分之一, 留白给下面的结果,
+ * 也让视线起点偏上 (居中会读成"已完成"的收尾空白).
+ */
+.stageIdle,
+.stageBusy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mantine-spacing-sm);
+  min-height: 30vh;
+}
+
+/* ------------------------------------------------------------------ 动画 */
+
+/*
+ * 首屏那颗按钮: 圆形图标按钮, 没有文字 (可访问名走 aria-label), 按下有轻微回弹 ——
+ * 它是这个页面上唯一可点的东西, 反馈必须立刻可见.
+ */
+.startButton {
+  transition: transform 140ms ease;
+}
+
+.startButton:active {
+  transform: scale(0.92);
+}
+
+/*
+ * 进行中的圈: 只有环是主题蓝, 不铺底色 —— 铺底色会读成"一块按钮"或"一张卡片".
+ * 留一圈中性轨道, 转动的只有其中一段, 静止的一帧也能看出"在转"。
+ */
+.spinner {
+  width: 52px;
+  height: 52px;
+  border: 3px solid var(--mantine-color-default-border);
+  border-top-color: var(--mantine-color-blue-6);
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ringBreathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes rowAccentPulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes retrySpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/*
+ * 降级: 系统要求减少动态效果时, 位移 / 自转 / 循环脉动全部停掉, 只留可读的静态状态。
+ * 用 `animation: none` 而非 `duration: 0s`, 这样 fill-mode 的初始隐藏态也一并失效 ——
+ * 否则错峰延迟会让行在动画被禁用的机器上反而多等一会儿才出现。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .ring[data-checking="true"],
+  .row,
+  .card,
+  .placeholder,
+  .stageIdle,
+  .stageBusy,
+  .spinner,
+  .row[data-retrying="true"] .cellSource::before,
+  .retry[data-retrying="true"] .retryIcon {
+    animation: none;
+  }
+
+  .stat,
+  .row,
+  .card,
+  .statusBadge,
+  .retry,
+  .startButton,
+  .summary,
+  .row .cellSource::before {
+    transition: none;
+  }
+
+  .stat:hover,
+  .card:hover,
+  .retry:active,
+  .startButton:active {
+    transform: none;
+  }
+}

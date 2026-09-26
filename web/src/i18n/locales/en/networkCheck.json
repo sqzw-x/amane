@@ -1,0 +1,41 @@
+{
+  "title": "Network Check",
+  "run": "Run check",
+  "rerun": "Run again",
+  "running": "Checking…",
+  "lastChecked": "Last checked: {{time}}",
+  "emptySources": {
+    "title": "No source to probe"
+  },
+  "emptyFilter": {
+    "title": "No source in this group",
+    "clear": "Show all"
+  },
+  "summary": {
+    "ratio": "{{value}}%",
+    "ratioLabel": "Reachable",
+    "ratioAria": "{{value}}% of sources reachable",
+    "total": "{{total}} sources in total"
+  },
+  "columns": {
+    "source": "Source",
+    "status": "Result",
+    "reason": "Reason",
+    "elapsed": "Time",
+    "actions": "Actions"
+  },
+  "status": {
+    "ok": "Reachable",
+    "failed": "Unreachable",
+    "skipped": "Not probed"
+  },
+  "kind": {
+    "film": "Film",
+    "actor": "Actor",
+    "plugin": "Plugin"
+  },
+  "retry": "Retry",
+  "retrying": "Retrying...",
+  "elapsedMs": "{{value}} ms",
+  "emptyValue": "—"
+}

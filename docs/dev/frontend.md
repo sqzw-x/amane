@@ -10,7 +10,7 @@
 |----|---------|
 | **Browse** | `/` 对话; `/meta` 片库; `/actors` 演员; `/catalog/...` 分类词云; `/saved-queries/$queryId` 查询结果; `/feeds` 阅读器 (`?feed=` / `?group=`) |
 | **Manage** | `/libraries` `/libraries/$id`; `/plugins` 来源插件; `/feeds/sources` 订阅源 |
-| **Ops** | `/tasks` `/schedules` `/logs` `/connectivity` |
+| **Ops** | `/tasks` `/schedules` `/logs` `/network` |
 | **Settings** | `/settings` (`?section=` 分组; Schema 表单); `/client` (壳内的客户端设置, 见 [android.md](android.md)) |
 
 路由组件与协作文件的对应见下表.
@@ -32,7 +32,7 @@
 | `/tasks` | `routes/tasks.tsx` | `components/task/task-tree.tsx`, `lib/task/` |
 | `/schedules` | `routes/schedules.tsx` | `components/cron-picker/`, `lib/cron.ts` |
 | `/logs` | `routes/logs.tsx` | `components/log/`, `stores/logs.ts` |
-| `/connectivity` | `routes/connectivity.tsx` | `components/connectivity/`, `hooks/use-connectivity.ts` |
+| `/network` | `routes/network.tsx` | `components/network-check/`, `hooks/use-network-check.ts` |
 | `/settings` | `routes/settings.tsx` | `components/schema-form/`, `hooks/use-config.ts` |
 
 路由由 `@tanstack/router-vite-plugin` 从 `routes/` 生成 (`routeTree.gen.ts` 不手改): 文件名的点号即路径层级, 需要独立 URL 又共享布局的一层写成 `xxx.tsx` + `xxx.index.tsx`, 叶页与父级同段时用尾随 `_`.

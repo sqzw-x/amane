@@ -13,11 +13,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ActorsRouteImport } from './routes/actors'
 import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as ClientRouteImport } from './routes/client'
-import { Route as ConnectivityRouteImport } from './routes/connectivity'
 import { Route as FeedsRouteImport } from './routes/feeds'
 import { Route as LibrariesRouteImport } from './routes/libraries'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as MetaRouteImport } from './routes/meta'
+import { Route as NetworkRouteImport } from './routes/network'
 import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as SchedulesRouteImport } from './routes/schedules'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -55,11 +55,6 @@ const ClientRoute = ClientRouteImport.update({
   path: '/client',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConnectivityRoute = ConnectivityRouteImport.update({
-  id: '/connectivity',
-  path: '/connectivity',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const FeedsRoute = FeedsRouteImport.update({
   id: '/feeds',
   path: '/feeds',
@@ -78,6 +73,11 @@ const LogsRoute = LogsRouteImport.update({
 const MetaRoute = MetaRouteImport.update({
   id: '/meta',
   path: '/meta',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NetworkRoute = NetworkRouteImport.update({
+  id: '/network',
+  path: '/network',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PluginsRoute = PluginsRouteImport.update({
@@ -166,11 +166,11 @@ export interface FileRoutesByFullPath {
   '/actors': typeof ActorsRouteWithChildren
   '/catalog': typeof CatalogRouteWithChildren
   '/client': typeof ClientRoute
-  '/connectivity': typeof ConnectivityRoute
   '/feeds': typeof FeedsRouteWithChildren
   '/libraries': typeof LibrariesRouteWithChildren
   '/logs': typeof LogsRoute
   '/meta': typeof MetaRouteWithChildren
+  '/network': typeof NetworkRoute
   '/plugins': typeof PluginsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRoute
@@ -191,8 +191,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/client': typeof ClientRoute
-  '/connectivity': typeof ConnectivityRoute
   '/logs': typeof LogsRoute
+  '/network': typeof NetworkRoute
   '/plugins': typeof PluginsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRoute
@@ -216,11 +216,11 @@ export interface FileRoutesById {
   '/actors': typeof ActorsRouteWithChildren
   '/catalog': typeof CatalogRouteWithChildren
   '/client': typeof ClientRoute
-  '/connectivity': typeof ConnectivityRoute
   '/feeds': typeof FeedsRouteWithChildren
   '/libraries': typeof LibrariesRouteWithChildren
   '/logs': typeof LogsRoute
   '/meta': typeof MetaRouteWithChildren
+  '/network': typeof NetworkRoute
   '/plugins': typeof PluginsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRoute
@@ -245,11 +245,11 @@ export interface FileRouteTypes {
     | '/actors'
     | '/catalog'
     | '/client'
-    | '/connectivity'
     | '/feeds'
     | '/libraries'
     | '/logs'
     | '/meta'
+    | '/network'
     | '/plugins'
     | '/schedules'
     | '/settings'
@@ -270,8 +270,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/client'
-    | '/connectivity'
     | '/logs'
+    | '/network'
     | '/plugins'
     | '/schedules'
     | '/settings'
@@ -294,11 +294,11 @@ export interface FileRouteTypes {
     | '/actors'
     | '/catalog'
     | '/client'
-    | '/connectivity'
     | '/feeds'
     | '/libraries'
     | '/logs'
     | '/meta'
+    | '/network'
     | '/plugins'
     | '/schedules'
     | '/settings'
@@ -322,11 +322,11 @@ export interface RootRouteChildren {
   ActorsRoute: typeof ActorsRouteWithChildren
   CatalogRoute: typeof CatalogRouteWithChildren
   ClientRoute: typeof ClientRoute
-  ConnectivityRoute: typeof ConnectivityRoute
   FeedsRoute: typeof FeedsRouteWithChildren
   LibrariesRoute: typeof LibrariesRouteWithChildren
   LogsRoute: typeof LogsRoute
   MetaRoute: typeof MetaRouteWithChildren
+  NetworkRoute: typeof NetworkRoute
   PluginsRoute: typeof PluginsRoute
   SchedulesRoute: typeof SchedulesRoute
   SettingsRoute: typeof SettingsRoute
@@ -364,13 +364,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/connectivity': {
-      id: '/connectivity'
-      path: '/connectivity'
-      fullPath: '/connectivity'
-      preLoaderRoute: typeof ConnectivityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/feeds': {
       id: '/feeds'
       path: '/feeds'
@@ -397,6 +390,13 @@ declare module '@tanstack/react-router' {
       path: '/meta'
       fullPath: '/meta'
       preLoaderRoute: typeof MetaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/network': {
+      id: '/network'
+      path: '/network'
+      fullPath: '/network'
+      preLoaderRoute: typeof NetworkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plugins': {
@@ -585,11 +585,11 @@ const rootRouteChildren: RootRouteChildren = {
   ActorsRoute: ActorsRouteWithChildren,
   CatalogRoute: CatalogRouteWithChildren,
   ClientRoute: ClientRoute,
-  ConnectivityRoute: ConnectivityRoute,
   FeedsRoute: FeedsRouteWithChildren,
   LibrariesRoute: LibrariesRouteWithChildren,
   LogsRoute: LogsRoute,
   MetaRoute: MetaRouteWithChildren,
+  NetworkRoute: NetworkRoute,
   PluginsRoute: PluginsRoute,
   SchedulesRoute: SchedulesRoute,
   SettingsRoute: SettingsRoute,

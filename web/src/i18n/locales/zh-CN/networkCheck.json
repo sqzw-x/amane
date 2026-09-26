@@ -1,0 +1,41 @@
+{
+  "title": "网络检测",
+  "run": "开始检测",
+  "rerun": "重新检测",
+  "running": "正在检测…",
+  "lastChecked": "上次检测: {{time}}",
+  "emptySources": {
+    "title": "没有可探测的来源"
+  },
+  "emptyFilter": {
+    "title": "这一档没有来源",
+    "clear": "查看全部"
+  },
+  "summary": {
+    "ratio": "{{value}}%",
+    "ratioLabel": "可访问",
+    "ratioAria": "可访问占比 {{value}}%",
+    "total": "共 {{total}} 个来源"
+  },
+  "columns": {
+    "source": "来源",
+    "status": "结果",
+    "reason": "原因",
+    "elapsed": "耗时",
+    "actions": "操作"
+  },
+  "status": {
+    "ok": "可访问",
+    "failed": "不可访问",
+    "skipped": "无法探测"
+  },
+  "kind": {
+    "film": "影片",
+    "actor": "演员",
+    "plugin": "插件"
+  },
+  "retry": "重试",
+  "retrying": "重试中...",
+  "elapsedMs": "{{value}} ms",
+  "emptyValue": "—"
+}

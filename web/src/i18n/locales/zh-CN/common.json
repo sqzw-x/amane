@@ -43,7 +43,7 @@
     "settings": "设置",
     "client": "客户端设置",
     "logs": "日志",
-    "connectivity": "来源连通性",
+    "networkCheck": "网络检测",
     "meta": "片库",
     "actors": "演员",
     "catalog": "分类",
