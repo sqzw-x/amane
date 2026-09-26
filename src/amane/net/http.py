@@ -191,8 +191,9 @@ class WebClient:
     ) -> Response:
         """``ok_statuses`` 额外视为成功 (例如 RSS 304), 不重试、不当失败. 重试用尽后抛 ``RequestError``.
 
-        ``max_attempts`` 向下覆盖构造期的 ``max_retries``, 供一次性的探测使用. 两者都至少发一次请求:
-        配置 0 表示不重试, 而不是一次都不发.
+        ``max_attempts`` 向下覆盖构造期的 ``max_retries``, 供一次性的探测使用. ``max_retries`` 实为总
+        **尝试次数** (``3`` → 最多发 3 次请求), 名字为兼容既有配置保留; 两者都至少发一次请求, 配置 0
+        表示不重试而不是一次都不发.
         """
         host = httpx.URL(url).host
         headers = _with_same_origin_referer(host, headers, self._same_origin_referer_hosts)

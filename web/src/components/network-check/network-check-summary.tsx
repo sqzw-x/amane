@@ -54,9 +54,12 @@ export function NetworkCheckSummary({
   // 一个都没探测到时不给比例 — 显示 0% 会把「没探」说成「全不可用」.
   const probed = counts.ok + counts.failed;
   const ratio = probed === 0 ? null : Math.round((counts.ok / probed) * 100);
-  // 圆环只画有来源的状态: 传 0 的段会留下 0 长度的曲线, 既无信息也让圆角端点叠成一坨.
-  const sections = SUMMARY_STATUSES.filter((status) => counts[status] > 0).map((status) => ({
-    value: (counts[status] / counts.total) * 100,
+  // 环与中心比例同一口径 (只画探测过的来源), 否则会出现「100% 可访问」旁边挂着一段灰色弧; 未探测的
+  // 个数由右侧数字块与「共 N 个来源」表达. 传 0 的段会留下 0 长度的曲线, 因此只画有来源的状态.
+  const sections = SUMMARY_STATUSES.filter(
+    (status) => status !== "skipped" && counts[status] > 0,
+  ).map((status) => ({
+    value: (counts[status] / probed) * 100,
     color: STATUS_COLOR[status],
   }));
 

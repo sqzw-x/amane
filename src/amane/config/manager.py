@@ -447,6 +447,7 @@ class NetworkConfig(BaseModel):
     proxy: str | None = None
     timeout: float = Field(default=10.0, ge=5.0, le=300.0)
     max_retries: int = Field(default=3, ge=0, le=10)
+    """实为总尝试次数 (``3`` → 最多发 3 次请求), 名字为兼容既有配置保留; 0 表示不重试."""
     max_clients: int = Field(default=50, ge=5, le=500, json_schema_extra={"x-hidden": True})
     browser_timeout: int = Field(default=15000, ge=5000, le=120000, json_schema_extra={"x-hidden": True})
 

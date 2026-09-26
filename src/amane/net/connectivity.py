@@ -64,6 +64,26 @@ class ConnectivityOutcome:
     skip_reason: SkipReason | None = None
     detail: str | None = None
 
+    def __post_init__(self) -> None:
+        """拒绝非法取值.
+
+        结论类型是插件 SDK 的出口, 而 dataclass 本身不做校验: 手写字符串这样的坏值若留到响应模型才被拒,
+        就会在逐来源保护之外抛 ``ValidationError``, 让整个端点 500 并丢掉其它来源的结论。在这里抛类型错误
+        则落进 ``ConnectivityChecker._run`` 的异常保护, 只使该来源报 ``unexpected``。
+
+        ``status`` 与原因字段的对应关系同时被强制: 失败必有 ``reason``, 未探测必有 ``skip_reason``, 二者
+        不同时出现, 可访问则都为空。
+        """
+        if not isinstance(self.status, ConnectivityStatus):
+            raise TypeError(f"status must be ConnectivityStatus, got {type(self.status).__name__}")
+        for value, expected in ((self.reason, FailureReason), (self.skip_reason, SkipReason)):
+            if value is not None and not isinstance(value, expected):
+                raise TypeError(f"{expected.__name__} expected, got {type(value).__name__}")
+        if (self.reason is not None) != (self.status is ConnectivityStatus.FAILED):
+            raise TypeError("reason must be set exactly when status is FAILED")
+        if (self.skip_reason is not None) != (self.status is ConnectivityStatus.SKIPPED):
+            raise TypeError("skip_reason must be set exactly when status is SKIPPED")
+
     @classmethod
     def ok(cls, url: str, http_status: int | None) -> ConnectivityOutcome:
         return cls(ConnectivityStatus.OK, url=url, http_status=http_status)

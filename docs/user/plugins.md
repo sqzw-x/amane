@@ -77,6 +77,7 @@ from amane.plugin import (
     MediaMetadata,
     PluginContext,
     SearchQuery,
+    SkipReason,
     SourceCapability,
     SourceDescriptor,
 )

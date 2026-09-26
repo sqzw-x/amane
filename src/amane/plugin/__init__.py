@@ -8,7 +8,7 @@ This is a documentation and import-path boundary, not a runtime sandbox.
 from ..crawlers.http import HttpClient
 from ..crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery, film_actors
 from ..enums import Language
-from ..net.connectivity import ConnectivityOutcome, ConnectivityStatus
+from ..net.connectivity import ConnectivityOutcome, ConnectivityStatus, SkipReason
 from ..net.errors import FailureReason, RequestError, SourceError
 from ..net.http import WebClient
 from ..parsing.file_info import ContentType
@@ -68,6 +68,7 @@ __all__ = [
     "RelativeHlsLocator",
     "RequestError",
     "SearchQuery",
+    "SkipReason",
     "SourceCapability",
     "SourceDescriptor",
     "SourceError",

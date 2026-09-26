@@ -71,6 +71,7 @@
     },
     "reason": {
       "http_error": "请求被站点拒绝",
+      "api_error": "上游接口报错",
       "not_found": "站点未找到该内容",
       "rate_limited": "请求过于频繁",
       "server_error": "站点服务器错误",

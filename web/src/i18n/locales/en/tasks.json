@@ -73,6 +73,7 @@
     },
     "reason": {
       "http_error": "Request rejected by the site",
+      "api_error": "Upstream API error",
       "not_found": "Content not found on the site",
       "rate_limited": "Rate limited",
       "server_error": "Site server error",

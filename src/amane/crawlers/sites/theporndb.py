@@ -91,10 +91,14 @@ class ThePornDBCrawler(Crawler):
         except Exception:
             payload = None
         if isinstance(payload, dict) and payload.get("errors") and not payload.get("data"):
-            # 不写 detail: 上游报 errors 的原因不止凭据一种 (查询字段改名 / 缺过滤条件), 断言单一原因
-            # 会把用户引向重置一个本来有效的 token. 完整应答在日志里.
-            self.logger.warning("theporndb graphql errors", errors=len(payload["errors"]))
-            return ConnectivityOutcome.failed(FailureReason.HTTP_ERROR, url=url)
+            # HTTP 状态正常而在 GraphQL 层失败: 原因不写在状态码上. 上游的错误文本是英文原文, 截断后作为
+            # 可行动信息报给用户 (不含 Authorization 头), 完整应答写入日志.
+            errors = payload["errors"]
+            self.logger.warning("theporndb graphql errors", errors=errors)
+            message = ""
+            if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+                message = str(errors[0].get("message") or "")
+            return ConnectivityOutcome.failed(FailureReason.API_ERROR, url=url, detail=message[:200] or None)
         return assess_response(url, resp)
 
     async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:

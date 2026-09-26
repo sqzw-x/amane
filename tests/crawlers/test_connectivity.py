@@ -10,13 +10,15 @@ from pydantic import BaseModel, ConfigDict
 from amane.config import HotSettings, PluginConfig, SiteConfig
 from amane.crawlers.actor.base import ActorCrawler
 from amane.crawlers.actor.registry import actor_registry
+from amane.crawlers.actor.sites.gfriends import GFriendsActorCrawler
 from amane.crawlers.base import Crawler, CrawlerProfile
 from amane.crawlers.connectivity import ConnectivityChecker, SourceKind
 from amane.crawlers.factory import CrawlerFactory
 from amane.crawlers.http import HttpClient
+from amane.crawlers.models import SearchQuery
 from amane.crawlers.registry import registry
 from amane.crawlers.sites.official import Manufacturer, OfficialCrawler
-from amane.crawlers.sites.prestige import PrestigeCrawler
+from amane.crawlers.sites.prestige import _PROBE_SKU, PrestigeCrawler
 from amane.crawlers.sites.theporndb import ThePornDBCrawler
 from amane.net.connectivity import ConnectivityOutcome, ConnectivityStatus, SkipReason, probe_get
 from amane.net.errors import FailureKind, FailureReason, RequestError, RequestFailure
@@ -92,6 +94,10 @@ class _FakeWeb:
             raise result
         return result
 
+    async def get_json(self, url: str, **kwargs: object) -> object:
+        """爬虫的 ``get_json`` 走同一套出站记录, 只是多一步解析."""
+        return (await self.request("GET", url, **kwargs)).json()
+
 
 class _FakeCrawler(Crawler):
     @classmethod
@@ -137,6 +143,17 @@ class _BrokenCrawler(_FakeCrawler):
         raise RuntimeError("stored config no longer matches")
 
 
+class _UndeclaredCrawler(_FakeCrawler):
+    """声明不探测: 与插件 provider 返回 ``None`` 同一语义."""
+
+    @classmethod
+    def profile(cls) -> CrawlerProfile:
+        return CrawlerProfile(name="probe_undeclared", base_url=_URL)
+
+    async def check_connectivity(self) -> ConnectivityOutcome | None:
+        return None
+
+
 class _EmptyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -171,11 +188,11 @@ class _Plugin(FilmSourcePlugin):
 
 @pytest.fixture(autouse=True)
 def _fake_crawlers():
-    for cls in (_FakeCrawler, _RaisingCrawler, _BrokenCrawler):
+    for cls in (_FakeCrawler, _RaisingCrawler, _BrokenCrawler, _UndeclaredCrawler):
         registry.register(cls)
     actor_registry.register(_FakeActorCrawler)
     yield
-    for name in ("probe_film", "probe_actor", "probe_raising", "probe_broken"):
+    for name in ("probe_film", "probe_actor", "probe_raising", "probe_broken", "probe_undeclared"):
         registry._crawlers.pop(name, None)
     actor_registry._classes.pop("probe_actor", None)
 
@@ -284,6 +301,8 @@ _RECOVERY_CASES: list[tuple[str, ConnectivityStatus, FailureReason | None, SkipR
     ("probe_raising", ConnectivityStatus.FAILED, FailureReason.UNEXPECTED, None, "RuntimeError", True),
     # 取来源实例失败 (插件配置坏 / 插件升级): 同样只让这一个来源不可用, 没有探测就没有耗时.
     ("probe_broken", ConnectivityStatus.FAILED, FailureReason.CRAWLER_UNAVAILABLE, None, "RuntimeError", False),
+    # 来源声明不探测: 与失败区分, 原因走 skip_reason.
+    ("probe_undeclared", ConnectivityStatus.SKIPPED, None, SkipReason.UNDECLARED, None, False),
 ]
 
 
@@ -351,22 +370,26 @@ async def test_checker_plugin_probe_and_fallback(
     assert [call[1] for call in web.calls] == expected_calls
 
 
-# 覆盖缺省探测的来源: 探测入口与 ``base_url`` 不同, 因此各自钉住「探到哪个地址」.
+# 覆盖缺省探测的来源: 探测入口与 ``base_url`` 不同, 因此各自钉住「探测落在哪个地址」.
 # 首页一律回年龄墙式的拦截页, 未编程的地址按 ``default`` 应答: 探测落回 ``base_url`` 就会失败.
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_prestige_probe_lands_on_the_sku_api() -> None:
+async def test_prestige_probe_targets_the_scrape_entry() -> None:
+    """探测与刮削取同一个入口: 探测落回带年龄墙的首页会得到 age_verification."""
     base = PrestigeCrawler.profile().base_url
-    web = _FakeWeb({base: _Resp("<div id='driver-verify'></div>")}, default=_Resp('{"uuid":"a55b0c4b"}'))
+    sku = {"parentProduct": {"uuid": "bdcdcfc9-f375-431a-80c5-87b688f1548a"}}
+    web = _FakeWeb({base: _Resp("<div id='driver-verify'></div>")}, default=_Resp('{"uuid":"a55b0c4b"}', payload=sku))
     crawler = PrestigeCrawler(HttpClient(web=cast("WebClient", web)))
+
+    # 先看刮削路径 (同一个番号) 请求了哪个地址, 再要求探测落在同一处.
+    await crawler._search(SearchQuery(number=_PROBE_SKU))
+    scraped_url = web.calls[0][1]
 
     outcome = await crawler.check_connectivity()
 
-    assert (outcome.status, outcome.url is not None and outcome.url.startswith(f"{base}/api/")) == (
-        ConnectivityStatus.OK,
-        True,
-    )
+    assert (outcome.status, outcome.url) == (ConnectivityStatus.OK, scraped_url)
+    assert [call[1] for call in web.calls] == [scraped_url, scraped_url]
 
 
 _ThePornDBCases: list[
@@ -382,8 +405,17 @@ _ThePornDBCases: list[
 ] = [
     # 没配 token: 不探测, 也不计入失败; 说明里只写缺少的配置项名 (界面原样渲染, 不翻译).
     (None, None, ConnectivityStatus.SKIPPED, None, SkipReason.MISSING_CREDENTIAL, "api_token", None),
-    # GraphQL 层报错: 状态码 200 不是失败原因, 因此不给 http_status, 也不替上游猜原因.
-    ("token", {"errors": [{"message": "boom"}]}, ConnectivityStatus.FAILED, FailureReason.HTTP_ERROR, None, None, None),
+    # GraphQL 层报错: 状态码 200 不是失败原因 (因此不给 http_status), 原因由枚举表达, 上游的错误文本
+    # 作为可行动信息进 detail.
+    (
+        "token",
+        {"errors": [{"message": "boom"}]},
+        ConnectivityStatus.FAILED,
+        FailureReason.API_ERROR,
+        None,
+        "boom",
+        None,
+    ),
     # 正常应答: 结论落在探测地址上.
     ("token", {"data": None}, ConnectivityStatus.OK, None, None, None, 200),
 ]
@@ -436,3 +468,36 @@ async def test_official_probe_follows_configured_routes(routes: dict[str, Manufa
 
     assert outcome.status is ConnectivityStatus.OK
     assert [call[1] for call in web.calls] == [f"https://{expected_host}"]
+
+
+_INVALID_OUTCOMES: list[tuple[dict[str, object]]] = [
+    # 手写字符串 (早期文档的写法) 必须在构造处被拒: 留到响应模型才拒会让整个端点 500.
+    ({"status": ConnectivityStatus.SKIPPED, "skip_reason": "missing_credential"},),
+    ({"status": ConnectivityStatus.FAILED, "reason": "http_error"},),
+    ({"status": "ok"},),
+    # 结论与原因字段的对应关系同样是契约: 失败必须有 reason, 未探测必须有 skip_reason.
+    ({"status": ConnectivityStatus.FAILED},),
+    ({"status": ConnectivityStatus.OK, "reason": FailureReason.NETWORK},),
+    ({"status": ConnectivityStatus.SKIPPED},),
+]
+
+
+@pytest.mark.parametrize(("kwargs",), _INVALID_OUTCOMES)
+def test_outcome_rejects_invalid_values(kwargs: dict[str, object]) -> None:
+    with pytest.raises(TypeError):
+        ConnectivityOutcome(**kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_gfriends_probe_targets_the_tree_that_scraping_fetches() -> None:
+    """仓库目录本身 404: 探测必须落在刮削真正取的 ``Filetree.json`` 上."""
+    web = _FakeWeb({}, default=_Resp('{"Content":{}}', payload={}))
+    crawler = GFriendsActorCrawler(HttpClient(web=cast("WebClient", web)))
+
+    await crawler._ensure_index()
+    fetched_url = web.calls[0][1]
+
+    outcome = await crawler.check_connectivity()
+
+    assert (outcome.status, outcome.url) == (ConnectivityStatus.OK, fetched_url)
+    assert [call[1] for call in web.calls] == [fetched_url, fetched_url]

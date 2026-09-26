@@ -137,5 +137,8 @@ class ConnectivityChecker:
             logger.exception("connectivity check failed", error=type(exc).__name__)
             return ConnectivityOutcome.failed(FailureReason.UNEXPECTED, detail=type(exc).__name__)
         if outcome is None:
+            # ``ConnectivityProbe`` 允许返回 ``None`` (= 未声明探测方式). 经 ``CrawlerFactory`` 拿到的来源
+            # 都不会走到这里 (插件适配器把 ``None`` 落成 descriptor 首个 URL 的探测), 保留它是因为该分支的
+            # 语义属于协议本身: 漏在抛 ``AttributeError`` 之外会让一个来源的坏返回拖垮整个端点.
             return ConnectivityOutcome.skipped(SkipReason.UNDECLARED)
         return outcome

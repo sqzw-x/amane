@@ -37,6 +37,8 @@ class FailureReason(StrEnum):
 
     HTTP_ERROR = "http_error"
     """其余 4xx/5xx; 具体状态码在 http_status."""
+    API_ERROR = "api_error"
+    """HTTP 状态正常而应答体表示失败 (GraphQL errors 等); 状态码不是失败原因, 因此不写 http_status."""
     NOT_FOUND = "not_found"
     RATE_LIMITED = "rate_limited"
     SERVER_ERROR = "server_error"

@@ -1503,6 +1503,7 @@ export const FailureReasonSchema = {
     type: 'string',
     enum: [
         'http_error',
+        'api_error',
         'not_found',
         'rate_limited',
         'server_error',

@@ -7,7 +7,7 @@ import amane.plugin as sdk
 from amane.crawlers.http import HttpClient
 from amane.crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery, film_actors
 from amane.enums import Language
-from amane.net.connectivity import ConnectivityOutcome, ConnectivityStatus
+from amane.net.connectivity import ConnectivityOutcome, ConnectivityStatus, SkipReason
 from amane.net.errors import FailureReason, RequestError, SourceError
 from amane.net.http import WebClient
 from amane.parsing.file_info import ContentType
@@ -67,6 +67,7 @@ _REEXPORTS: tuple[tuple[str, object], ...] = (
     ("RelativeHlsLocator", RelativeHlsLocator),
     ("RequestError", RequestError),
     ("SearchQuery", SearchQuery),
+    ("SkipReason", SkipReason),
     ("SourceCapability", SourceCapability),
     ("SourceDescriptor", SourceDescriptor),
     ("SourceError", SourceError),

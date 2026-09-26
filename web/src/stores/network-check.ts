@@ -32,7 +32,8 @@ const STATUSES: readonly ConnectivityStatus[] = ["ok", "failed", "skipped"];
 /**
  * 存储里的形状校验.
  * 反序列化不校验时, 旧形状 (API 字段改名后仍开着的标签页) 会让状态的图标与排序取到 undefined,
- * 前者被当成组件渲染, 后者让比较函数返回 NaN. 校验不过就按未检测处理, 比让页面崩掉便宜.
+ * 前者被当成组件渲染, 后者让比较函数返回 NaN; 名称类字段缺失则渲染出空标签. 校验不过就按未检测
+ * 处理, 比让页面崩掉或显示一屏空行便宜.
  */
 function isStoredReport(value: unknown): value is NetworkCheckReport {
   if (typeof value !== "object" || value === null) {
@@ -42,7 +43,12 @@ function isStoredReport(value: unknown): value is NetworkCheckReport {
   return (
     typeof report.checkedAt === "number" &&
     Array.isArray(report.items) &&
-    report.items.every((item) => STATUSES.includes(item.status))
+    report.items.every(
+      (item) =>
+        STATUSES.includes(item.status) &&
+        typeof item.kind === "string" &&
+        typeof item.source_id === "string",
+    )
   );
 }
 
