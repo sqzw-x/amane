@@ -665,9 +665,26 @@ function useTouchGestures(
      */
     const gesturesDisabled = () => controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE);
 
+    /**
+     * 起手落在进度条上的触摸由控件自己处理, 这一层不接.
+     *
+     * 接上就会置位 `GESTURE_ATTRIBUTE`, 样式表随之把进度条整段隐藏, 它的盒子塌成 0 —— 控件按自己的
+     * 盒子算落点, 于是拖动与点按一律落到片头.
+     *
+     * 判定只能用事件路径: 控件置位的拖动标记在冒泡阶段, 捕获阶段的此刻还读不到.
+     */
+    const startsOnSeekBar = (event: PointerEvent) =>
+      event
+        .composedPath()
+        .some((node) => node instanceof Element && node.localName === "media-time-range");
+
     const handlePointerDown = (event: PointerEvent) => {
       lastPointerType = event.pointerType;
-      if (event.pointerType !== "touch" || controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE)) {
+      if (
+        event.pointerType !== "touch" ||
+        controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE) ||
+        startsOnSeekBar(event)
+      ) {
         return;
       }
       const video = videoRef.current;
@@ -706,6 +723,9 @@ function useTouchGestures(
       }
       if (gesturesDisabled()) {
         clearLongPress();
+        // 让位时也要把自己的标记撤掉: 控件在 `pointerdown` 里置位拖动标记的同时隐藏了控制条与进度条,
+        // 属性留在这里就没有人再摘它 —— 松手时 `pointerId` 已清空, 那一次 `pointerup` 直接被跳过.
+        controller.removeAttribute(GESTURE_ATTRIBUTE);
         pointerId = null;
         mode = "idle";
         return;

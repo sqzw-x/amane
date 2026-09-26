@@ -223,11 +223,11 @@
 }
 
 /*
-  触屏手势进行中: 控制条与进度条不出现. 媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入,
+  触屏手势进行中: 控制条不出现. 媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入,
   横滑跳转时不需要它, 提示由悬浮层给. 属性由 playback-player.tsx 置位.
+  进度条不在此列: 它一被隐藏盒子就塌成 0, 起手落在它上面的拖动与点按会全部算到片头.
 */
 .controller[data-amane-gesture] media-control-bar,
-.controller[data-amane-gesture] media-time-range,
 .controller[data-amane-gesture] .scrim,
 .controller[data-amane-gesture] .centerPlayLayer {
   display: none;
