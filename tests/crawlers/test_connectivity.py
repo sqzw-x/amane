@@ -470,11 +470,31 @@ async def test_official_probe_follows_configured_routes(routes: dict[str, Manufa
     assert [call[1] for call in web.calls] == [f"https://{expected_host}"]
 
 
+_VALUE_STRINGS: list[tuple[dict[str, object], ConnectivityStatus, SkipReason | None]] = [
+    # 值字符串是 API JSON 里的形态: 从响应体抄写或用字面量的插件不该得到「意外错误」.
+    (
+        {"status": "skipped", "skip_reason": "missing_credential"},
+        ConnectivityStatus.SKIPPED,
+        SkipReason.MISSING_CREDENTIAL,
+    ),
+    ({"status": "ok"}, ConnectivityStatus.OK, None),
+]
+
+
+@pytest.mark.parametrize(("raw", "status", "skip_reason"), _VALUE_STRINGS)
+def test_outcome_accepts_value_strings(
+    raw: dict[str, object], status: ConnectivityStatus, skip_reason: SkipReason | None
+) -> None:
+    outcome = ConnectivityOutcome(**raw)  # type: ignore[arg-type]
+
+    assert (outcome.status, outcome.skip_reason) == (status, skip_reason)
+
+
 _INVALID_OUTCOMES: list[tuple[dict[str, object]]] = [
-    # 手写字符串 (早期文档的写法) 必须在构造处被拒: 留到响应模型才拒会让整个端点 500.
-    ({"status": ConnectivityStatus.SKIPPED, "skip_reason": "missing_credential"},),
-    ({"status": ConnectivityStatus.FAILED, "reason": "http_error"},),
-    ({"status": "ok"},),
+    # 拼错的取值仍然拒绝, 且发生在来源自己的调用里 (只使该来源报 unexpected).
+    ({"status": "skipped", "skip_reason": "拼错的"},),
+    ({"status": "failed", "reason": "http_error2"},),
+    ({"status": 1},),
     # 结论与原因字段的对应关系同样是契约: 失败必须有 reason, 未探测必须有 skip_reason.
     ({"status": ConnectivityStatus.FAILED},),
     ({"status": ConnectivityStatus.OK, "reason": FailureReason.NETWORK},),

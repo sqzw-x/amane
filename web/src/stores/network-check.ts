@@ -45,6 +45,7 @@ function isStoredReport(value: unknown): value is NetworkCheckReport {
     Array.isArray(report.items) &&
     report.items.every(
       (item) =>
+        item != null &&
         STATUSES.includes(item.status) &&
         typeof item.kind === "string" &&
         typeof item.source_id === "string",

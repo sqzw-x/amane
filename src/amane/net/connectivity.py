@@ -48,6 +48,22 @@ class SkipReason(StrEnum):
     """插件既未声明探测方式, 也未声明来源 URL."""
 
 
+def _coerce[T: StrEnum](value: object, enum: type[T]) -> T:
+    """枚举字段接受成员与值字符串, 其余取值抛 ``TypeError``.
+
+    值字符串是 API JSON 里的形态: 插件作者从响应体抄写或用字符串字面量时不该得到「意外错误」. 拼错的
+    值抛类型错误而不是 ``ValueError``, 让调用方的异常保护只认一种类型.
+    """
+    if isinstance(value, enum):
+        return value
+    if isinstance(value, str):
+        try:
+            return enum(value)
+        except ValueError as exc:
+            raise TypeError(f"{enum.__name__}: unknown value {value!r}") from exc
+    raise TypeError(f"{enum.__name__} expected, got {type(value).__name__}")
+
+
 @dataclass(frozen=True, slots=True)
 class ConnectivityOutcome:
     """单个来源的探测结论.
@@ -65,20 +81,22 @@ class ConnectivityOutcome:
     detail: str | None = None
 
     def __post_init__(self) -> None:
-        """拒绝非法取值.
+        """校验并收敛取值.
 
-        结论类型是插件 SDK 的出口, 而 dataclass 本身不做校验: 手写字符串这样的坏值若留到响应模型才被拒,
-        就会在逐来源保护之外抛 ``ValidationError``, 让整个端点 500 并丢掉其它来源的结论。在这里抛类型错误
-        则落进 ``ConnectivityChecker._run`` 的异常保护, 只使该来源报 ``unexpected``。
+        枚举字段接受成员与值字符串 (API JSON 里的形态), 值字符串在此收敛成成员, 因此响应模型与界面拿到
+        的永远是枚举; 未知取值抛类型错误. 这一步必须在这里: 结论类型是插件 SDK 的出口, dataclass 不做
+        校验, 手写取值若留到响应模型才被拒, 就会在逐来源保护之外抛 ``ValidationError``, 让整个端点 500
+        并丢掉其它来源的结论; 在这里抛则落进 ``ConnectivityChecker._run`` 的异常保护, 只使该来源报
+        ``unexpected``.
 
         ``status`` 与原因字段的对应关系同时被强制: 失败必有 ``reason``, 未探测必有 ``skip_reason``, 二者
-        不同时出现, 可访问则都为空。
+        不同时出现, 可访问则都为空 — 否则界面上会出现一行无法解释的结论.
         """
-        if not isinstance(self.status, ConnectivityStatus):
-            raise TypeError(f"status must be ConnectivityStatus, got {type(self.status).__name__}")
-        for value, expected in ((self.reason, FailureReason), (self.skip_reason, SkipReason)):
-            if value is not None and not isinstance(value, expected):
-                raise TypeError(f"{expected.__name__} expected, got {type(value).__name__}")
+        object.__setattr__(self, "status", _coerce(self.status, ConnectivityStatus))
+        object.__setattr__(self, "reason", None if self.reason is None else _coerce(self.reason, FailureReason))
+        object.__setattr__(
+            self, "skip_reason", None if self.skip_reason is None else _coerce(self.skip_reason, SkipReason)
+        )
         if (self.reason is not None) != (self.status is ConnectivityStatus.FAILED):
             raise TypeError("reason must be set exactly when status is FAILED")
         if (self.skip_reason is not None) != (self.status is ConnectivityStatus.SKIPPED):
