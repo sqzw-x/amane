@@ -9,9 +9,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
+
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from .errors import FailureReason, RequestError, classify_block
 
@@ -48,30 +49,20 @@ class SkipReason(StrEnum):
     """插件既未声明探测方式, 也未声明来源 URL."""
 
 
-def _coerce[T: StrEnum](value: object, enum: type[T]) -> T:
-    """枚举字段接受成员与值字符串, 其余取值抛 ``TypeError``.
-
-    值字符串是 API JSON 里的形态: 插件作者从响应体抄写或用字符串字面量时不该得到「意外错误」. 拼错的
-    值抛类型错误而不是 ``ValueError``, 让调用方的异常保护只认一种类型.
-    """
-    if isinstance(value, enum):
-        return value
-    if isinstance(value, str):
-        try:
-            return enum(value)
-        except ValueError as exc:
-            raise TypeError(f"{enum.__name__}: unknown value {value!r}") from exc
-    raise TypeError(f"{enum.__name__} expected, got {type(value).__name__}")
-
-
-@dataclass(frozen=True, slots=True)
-class ConnectivityOutcome:
+class ConnectivityOutcome(BaseModel):
     """单个来源的探测结论.
 
     ``url`` / ``http_status`` / ``reason`` 只在与状态相符时给出; ``skip_reason`` 说明不探测的原因.
     ``detail`` 只写补充说明, 且必须是语言中立的 (界面原样渲染, 不翻译): 失败原因的本地化由前端按
     ``reason`` / ``skip_reason`` 完成, 因此这里不放上游地址、密钥与中文句子.
+
+    取值由 pydantic 校验, 且必须在这里: 结论类型是插件 SDK 的出口, 手写取值若留到响应模型才被拒, 就会在
+    逐来源保护之外抛校验错误, 让整个端点 500 并丢掉其它来源的结论; 在构造处抛出则落进
+    ``ConnectivityChecker._run`` 的异常保护, 只使该来源报 ``unexpected``. 枚举字段接受值字符串 (API JSON
+    里的形态) 并收敛成成员, 拼错与跨枚举照旧被拒.
     """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     status: ConnectivityStatus
     url: str | None = None
@@ -80,31 +71,18 @@ class ConnectivityOutcome:
     skip_reason: SkipReason | None = None
     detail: str | None = None
 
-    def __post_init__(self) -> None:
-        """校验并收敛取值.
-
-        枚举字段接受成员与值字符串 (API JSON 里的形态), 值字符串在此收敛成成员, 因此响应模型与界面拿到
-        的永远是枚举; 未知取值抛类型错误. 这一步必须在这里: 结论类型是插件 SDK 的出口, dataclass 不做
-        校验, 手写取值若留到响应模型才被拒, 就会在逐来源保护之外抛 ``ValidationError``, 让整个端点 500
-        并丢掉其它来源的结论; 在这里抛则落进 ``ConnectivityChecker._run`` 的异常保护, 只使该来源报
-        ``unexpected``.
-
-        ``status`` 与原因字段的对应关系同时被强制: 失败必有 ``reason``, 未探测必有 ``skip_reason``, 二者
-        不同时出现, 可访问则都为空 — 否则界面上会出现一行无法解释的结论.
-        """
-        object.__setattr__(self, "status", _coerce(self.status, ConnectivityStatus))
-        object.__setattr__(self, "reason", None if self.reason is None else _coerce(self.reason, FailureReason))
-        object.__setattr__(
-            self, "skip_reason", None if self.skip_reason is None else _coerce(self.skip_reason, SkipReason)
-        )
+    @model_validator(mode="after")
+    def _reason_matches_status(self) -> Self:
+        """原因字段只在对应状态出现: 失败必有 ``reason``, 未探测必有 ``skip_reason``, 其余两者皆空."""
         if (self.reason is not None) != (self.status is ConnectivityStatus.FAILED):
-            raise TypeError("reason must be set exactly when status is FAILED")
+            raise ValueError("reason must be set exactly when status is FAILED")
         if (self.skip_reason is not None) != (self.status is ConnectivityStatus.SKIPPED):
-            raise TypeError("skip_reason must be set exactly when status is SKIPPED")
+            raise ValueError("skip_reason must be set exactly when status is SKIPPED")
+        return self
 
     @classmethod
-    def ok(cls, url: str, http_status: int | None) -> ConnectivityOutcome:
-        return cls(ConnectivityStatus.OK, url=url, http_status=http_status)
+    def ok(cls, url: str, http_status: int | None) -> Self:
+        return cls(status=ConnectivityStatus.OK, url=url, http_status=http_status)
 
     @classmethod
     def failed(
@@ -114,12 +92,12 @@ class ConnectivityOutcome:
         url: str | None = None,
         http_status: int | None = None,
         detail: str | None = None,
-    ) -> ConnectivityOutcome:
-        return cls(ConnectivityStatus.FAILED, url=url, http_status=http_status, reason=reason, detail=detail)
+    ) -> Self:
+        return cls(status=ConnectivityStatus.FAILED, url=url, http_status=http_status, reason=reason, detail=detail)
 
     @classmethod
-    def skipped(cls, reason: SkipReason, detail: str | None = None) -> ConnectivityOutcome:
-        return cls(ConnectivityStatus.SKIPPED, skip_reason=reason, detail=detail)
+    def skipped(cls, reason: SkipReason, detail: str | None = None) -> Self:
+        return cls(status=ConnectivityStatus.SKIPPED, skip_reason=reason, detail=detail)
 
 
 def assess_response(url: str, resp: Response) -> ConnectivityOutcome:

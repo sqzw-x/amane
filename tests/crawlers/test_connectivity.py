@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from amane.config import HotSettings, PluginConfig, SiteConfig
 from amane.crawlers.actor.base import ActorCrawler
@@ -491,7 +491,7 @@ def test_outcome_accepts_value_strings(
 
 
 _INVALID_OUTCOMES: list[tuple[dict[str, object]]] = [
-    # 拼错的取值仍然拒绝, 且发生在来源自己的调用里 (只使该来源报 unexpected).
+    # 拼错的取值与跨枚举误配仍被拒, 且发生在来源自己的调用里 (只使该来源报 unexpected).
     ({"status": "skipped", "skip_reason": "拼错的"},),
     ({"status": "failed", "reason": "http_error2"},),
     ({"status": 1},),
@@ -504,7 +504,7 @@ _INVALID_OUTCOMES: list[tuple[dict[str, object]]] = [
 
 @pytest.mark.parametrize(("kwargs",), _INVALID_OUTCOMES)
 def test_outcome_rejects_invalid_values(kwargs: dict[str, object]) -> None:
-    with pytest.raises(TypeError):
+    with pytest.raises(ValidationError):
         ConnectivityOutcome(**kwargs)  # type: ignore[arg-type]
 
 
