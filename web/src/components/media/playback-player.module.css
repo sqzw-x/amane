@@ -223,11 +223,14 @@
 }
 
 /*
-  触屏手势进行中: 控制条不出现. 媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入,
+  触屏手势进行中: 控制条与进度条都不出现. 媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入,
   横滑跳转时不需要它, 提示由悬浮层给. 属性由 playback-player.tsx 置位.
-  进度条不在此列: 它一被隐藏盒子就塌成 0, 起手落在它上面的拖动与点按会全部算到片头.
+  进度条同样在清单内: 隐藏会让它的盒子塌成 0, 因此起手落在它上面的触摸不得置位该属性, 见 `startsOnSeekBar`.
+  清单内必须同形: 这里用 `display: none` 立即隐藏, 不受该属性约束的元素只随 media-chrome 的 `userinactive`
+  淡出 (1s), 出现与消失都比其余的慢.
 */
 .controller[data-amane-gesture] media-control-bar,
+.controller[data-amane-gesture] media-time-range,
 .controller[data-amane-gesture] .scrim,
 .controller[data-amane-gesture] .centerPlayLayer {
   display: none;
