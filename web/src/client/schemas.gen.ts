@@ -1150,6 +1150,16 @@ export const ConnectivityItemResponseSchema = {
                 }
             ]
         },
+        skip_reason: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/SkipReason'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
         detail: {
             anyOf: [
                 {
@@ -1182,7 +1192,7 @@ export const ConnectivityItemResponseSchema = {
         'status'
     ],
     title: 'ConnectivityItemResponse',
-    description: '一个来源的探测结果.\n\n``reason`` 是失败原因枚举, 本地化由前端按它完成; ``detail`` 是补充说明, 只在 skipped 与无法归类的\n失败上出现 (例如未配置 API token); ``elapsed_ms`` 只在真正探测过时有值.'
+    description: '一个来源的探测结果.\n\n``reason`` (失败) 与 ``skip_reason`` (未探测) 都是枚举, 本地化由前端完成; ``detail`` 是语言中立的\n补充说明 (例如异常类名), 界面原样渲染. ``elapsed_ms`` 只在真正探测过时有值.'
 } as const;
 
 export const ConnectivityReportResponseSchema = {
@@ -6242,6 +6252,19 @@ export const SiteOutcomeRecordSchema = {
     ],
     title: 'SiteOutcomeRecord',
     description: '由 Recorder.record_site_outcome 唯一写入.'
+} as const;
+
+export const SkipReasonSchema = {
+    type: 'string',
+    enum: [
+        'unknown_source',
+        'no_http_upstream',
+        'missing_credential',
+        'undeclared',
+        'no_url'
+    ],
+    title: 'SkipReason',
+    description: '``SKIPPED`` 的原因.\n\n与 ``FailureReason`` 分开: 这一档不是失败, 文案也不进任务报告. 界面按它本地化, 因此每种原因\n都要能独立读懂, 不依赖 ``detail``.'
 } as const;
 
 export const SortOrderSchema = {

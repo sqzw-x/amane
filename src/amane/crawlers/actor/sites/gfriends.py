@@ -60,7 +60,7 @@ class GFriendsActorCrawler(ActorCrawler):
 
     @override
     async def check_connectivity(self) -> ConnectivityOutcome:
-        """真实入口是仓库根下的 ``Filetree.json``: 仓库目录本身 404, 探 ``base_url`` 会假报不可达."""
+        """真实入口是仓库根下的 ``Filetree.json``: 仓库目录本身 404, 探测 ``base_url`` 会假报不可达."""
         return await probe_get(
             self.client.web_client, f"{self._raw_base()}/Filetree.json", cookies=self.cookies, headers=self.headers
         )

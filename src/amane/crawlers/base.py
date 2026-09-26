@@ -104,7 +104,7 @@ class Crawler(ABC):
     async def check_connectivity(self) -> ConnectivityOutcome:
         """连通性自检: 缺省 GET ``base_url``, 用与刮削相同的通道 (代理 / 指纹 / 限速 / 同源 Referer).
 
-        实际入口与 ``base_url`` 不同的来源覆盖本方法 (改探真实 API 主机, 或按前置条件报 ``skipped``).
+        实际入口与 ``base_url`` 不同的来源覆盖本方法 (探测真实 API 主机, 或按前置条件报 ``skipped``).
         """
         return await probe_get(self.client.web_client, self.base_url, cookies=self.cookies, headers=self.headers)
 

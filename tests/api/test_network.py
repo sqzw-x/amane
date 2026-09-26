@@ -78,6 +78,10 @@ async def test_network_check(client: HttpxClient, app: FastAPI, monkeypatch: pyt
         # 只有真探测过的条目才有耗时: 界面据此显示「—」而不是 0 ms.
         assert all(item["elapsed_ms"] is not None for item in items if item["status"] == "ok")
         assert all(item["elapsed_ms"] is None for item in items if item["status"] != "ok")
+        # 结论与结构化原因一一对应: 失败带 reason, 未探测带 skip_reason, 其余两者皆空.
+        for item in items:
+            assert (item["reason"] is not None) == (item["status"] == "failed")
+            assert (item["skip_reason"] is not None) == (item["status"] == "skipped")
 
     # 单点重试: 只探传入的那一个来源.
     urls = _stub_transport(app, monkeypatch, _ok)
@@ -89,15 +93,19 @@ async def test_network_check(client: HttpxClient, app: FastAPI, monkeypatch: pyt
     assert (item["source_id"], item["kind"], item["status"]) == ("javdb", "film", "ok")
     assert urls == [item["url"]]
 
-    # 不存在的来源计入条目报 skipped, 不当作失败.
+    # 不存在的来源计入条目报 skipped, 不当作失败; 原因走枚举, 界面按它本地化.
     _stub_transport(app, monkeypatch, _ok)
 
     resp = await client.post("network/check", json={"source_ids": ["nope", "javdb"]})
 
     assert resp.status_code == 200
     by_id = {item["source_id"]: item for item in resp.json()["items"]}
-    assert (by_id["nope"]["status"], by_id["nope"]["reason"], by_id["nope"]["elapsed_ms"]) == ("skipped", None, None)
-    assert by_id["nope"]["detail"] == "来源不存在或未启用"
+    assert (
+        by_id["nope"]["status"],
+        by_id["nope"]["skip_reason"],
+        by_id["nope"]["reason"],
+        by_id["nope"]["elapsed_ms"],
+    ) == ("skipped", "unknown_source", None, None)
     assert by_id["javdb"]["status"] == "ok"
 
     # 失败只进条目: 端点仍 200; 没走到 HTTP 的失败没有状态码.

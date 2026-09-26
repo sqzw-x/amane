@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from amane.config import HotSettings, PluginConfig
+from amane.config import HotSettings, PluginConfig, SiteConfig
 from amane.crawlers.actor.base import ActorCrawler
 from amane.crawlers.actor.registry import actor_registry
 from amane.crawlers.base import Crawler, CrawlerProfile
@@ -15,7 +15,10 @@ from amane.crawlers.connectivity import ConnectivityChecker, SourceKind
 from amane.crawlers.factory import CrawlerFactory
 from amane.crawlers.http import HttpClient
 from amane.crawlers.registry import registry
-from amane.net.connectivity import ConnectivityOutcome, ConnectivityStatus, probe_get
+from amane.crawlers.sites.official import Manufacturer, OfficialCrawler
+from amane.crawlers.sites.prestige import PrestigeCrawler
+from amane.crawlers.sites.theporndb import ThePornDBCrawler
+from amane.net.connectivity import ConnectivityOutcome, ConnectivityStatus, SkipReason, probe_get
 from amane.net.errors import FailureKind, FailureReason, RequestError, RequestFailure
 from amane.plugin import (
     FilmSourcePlugin,
@@ -38,11 +41,19 @@ _URL = "https://probe.example.test/"
 
 
 class _Resp:
-    """WebClient 响应的最小替身: 探测只读 ``text`` / ``status_code``."""
+    """WebClient 响应的最小替身: 探测只读 ``text`` / ``status_code``, GraphQL 探测另读 ``json()``."""
 
-    def __init__(self, text: str, status: int = 200, *, unreadable: bool = False) -> None:
+    def __init__(
+        self,
+        text: str,
+        status: int = 200,
+        *,
+        unreadable: bool = False,
+        payload: object | None = None,
+    ) -> None:
         self._text = text
         self._unreadable = unreadable
+        self._payload = payload
         self.status_code = status
         self.url = _URL
         self.headers: dict[str, str] = {}
@@ -53,17 +64,28 @@ class _Resp:
             raise RuntimeError("undecodable body")
         return self._text
 
+    def json(self) -> object:
+        return self._payload
+
 
 class _FakeWeb:
-    """按 URL 编程的假 WebClient: 记录调用参数, 失败用 ``RequestError`` 表达."""
+    """按 URL 编程的假 WebClient: 记录调用参数, 失败用 ``RequestError`` 表达.
 
-    def __init__(self, responses: Mapping[str, _Resp | Exception]) -> None:
+    ``default`` 给未编程的地址一个统一应答, 供「只要不落在某个地址上就算通过」的断言使用.
+    """
+
+    def __init__(
+        self,
+        responses: Mapping[str, _Resp | Exception],
+        default: _Resp | Exception | None = None,
+    ) -> None:
         self.calls: list[tuple[str, str, dict[str, object]]] = []
         self._responses = dict(responses)
+        self._default = default
 
     async def request(self, method: str, url: str, **kwargs: object) -> _Resp:
         self.calls.append((method, url, kwargs))
-        result = self._responses.get(url)
+        result = self._responses.get(url, self._default)
         if result is None:
             raise RequestError(url, RequestFailure(kind=FailureKind.CURL, message="no stub"))
         if isinstance(result, Exception):
@@ -104,6 +126,17 @@ class _RaisingCrawler(_FakeCrawler):
         raise RuntimeError("boom")
 
 
+class _BrokenCrawler(_FakeCrawler):
+    """构造即失败: 插件存盘配置与 config_model 不再匹配时就是这个形态."""
+
+    @classmethod
+    def profile(cls) -> CrawlerProfile:
+        return CrawlerProfile(name="probe_broken", base_url=_URL)
+
+    def __init__(self, client: HttpClient, config: SiteConfig | None = None) -> None:
+        raise RuntimeError("stored config no longer matches")
+
+
 class _EmptyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -138,11 +171,11 @@ class _Plugin(FilmSourcePlugin):
 
 @pytest.fixture(autouse=True)
 def _fake_crawlers():
-    for cls in (_FakeCrawler, _RaisingCrawler):
+    for cls in (_FakeCrawler, _RaisingCrawler, _BrokenCrawler):
         registry.register(cls)
     actor_registry.register(_FakeActorCrawler)
     yield
-    for name in ("probe_film", "probe_actor", "probe_raising"):
+    for name in ("probe_film", "probe_actor", "probe_raising", "probe_broken"):
         registry._crawlers.pop(name, None)
     actor_registry._classes.pop("probe_actor", None)
 
@@ -244,24 +277,38 @@ async def test_checker_scope(
     assert {check.outcome.status for check in checks} == {ConnectivityStatus.OK}
 
 
-_RECOVERY_CASES: list[tuple[str, ConnectivityStatus, FailureReason | None, str]] = [
-    # 来源不存在: 报 skipped, 不计入失败.
-    ("nope", ConnectivityStatus.SKIPPED, None, "来源不存在或未启用"),
-    # 来源自己抛异常: 结果里只写类型名, 全文只进日志.
-    ("probe_raising", ConnectivityStatus.FAILED, FailureReason.UNEXPECTED, "RuntimeError"),
+_RECOVERY_CASES: list[tuple[str, ConnectivityStatus, FailureReason | None, SkipReason | None, str | None, bool]] = [
+    # 来源不存在: 报 skipped 并给出结构化原因, 不计入失败.
+    ("nope", ConnectivityStatus.SKIPPED, None, SkipReason.UNKNOWN_SOURCE, None, False),
+    # 来源自己抛异常: 结果里只写类型名, 全文只写入日志; 探测发生过, 因此有耗时.
+    ("probe_raising", ConnectivityStatus.FAILED, FailureReason.UNEXPECTED, None, "RuntimeError", True),
+    # 取来源实例失败 (插件配置坏 / 插件升级): 同样只让这一个来源不可用, 没有探测就没有耗时.
+    ("probe_broken", ConnectivityStatus.FAILED, FailureReason.CRAWLER_UNAVAILABLE, None, "RuntimeError", False),
 ]
 
 
 @pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.parametrize(("source_id", "status", "reason", "detail"), _RECOVERY_CASES)
+@pytest.mark.parametrize(("source_id", "status", "reason", "skip_reason", "detail", "probed"), _RECOVERY_CASES)
 async def test_checker_reports_unknown_and_unexpected(
-    source_id: str, status: ConnectivityStatus, reason: FailureReason | None, detail: str
+    source_id: str,
+    status: ConnectivityStatus,
+    reason: FailureReason | None,
+    skip_reason: SkipReason | None,
+    detail: str | None,
+    probed: bool,
 ) -> None:
     checker = ConnectivityChecker(_factory(_FakeWeb({})), _hot(routes=["probe_film"]))
 
     (check,) = await checker.check([source_id])
 
-    assert (check.outcome.status, check.outcome.reason, check.outcome.detail) == (status, reason, detail)
+    assert (check.outcome.status, check.outcome.reason, check.outcome.skip_reason, check.outcome.detail) == (
+        status,
+        reason,
+        skip_reason,
+        detail,
+    )
+    # 耗时只在探测发生过时给出: 界面把 null 显示为「—」, 与「无法探测」一致.
+    assert (check.elapsed_ms is not None) is probed
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -274,6 +321,7 @@ async def test_checker_reports_unknown_and_unexpected(
         (ConnectivityOutcome.ok("https://own.example.test/", 200), "https://own.example.test/", []),
     ],
 )
+@pytest.mark.asyncio(loop_scope="function")
 async def test_checker_plugin_probe_and_fallback(
     tmp_path,
     outcome: ConnectivityOutcome | None,
@@ -301,3 +349,90 @@ async def test_checker_plugin_probe_and_fallback(
     assert check.outcome.status is ConnectivityStatus.OK
     assert check.outcome.url == expected_url
     assert [call[1] for call in web.calls] == expected_calls
+
+
+# 覆盖缺省探测的来源: 探测入口与 ``base_url`` 不同, 因此各自钉住「探到哪个地址」.
+# 首页一律回年龄墙式的拦截页, 未编程的地址按 ``default`` 应答: 探测落回 ``base_url`` 就会失败.
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_prestige_probe_lands_on_the_sku_api() -> None:
+    base = PrestigeCrawler.profile().base_url
+    web = _FakeWeb({base: _Resp("<div id='driver-verify'></div>")}, default=_Resp('{"uuid":"a55b0c4b"}'))
+    crawler = PrestigeCrawler(HttpClient(web=cast("WebClient", web)))
+
+    outcome = await crawler.check_connectivity()
+
+    assert (outcome.status, outcome.url is not None and outcome.url.startswith(f"{base}/api/")) == (
+        ConnectivityStatus.OK,
+        True,
+    )
+
+
+_ThePornDBCases: list[
+    tuple[
+        str | None,
+        dict[str, object] | None,
+        ConnectivityStatus,
+        FailureReason | None,
+        SkipReason | None,
+        str | None,
+        int | None,
+    ]
+] = [
+    # 没配 token: 不探测, 也不计入失败; 说明里只写缺少的配置项名 (界面原样渲染, 不翻译).
+    (None, None, ConnectivityStatus.SKIPPED, None, SkipReason.MISSING_CREDENTIAL, "api_token", None),
+    # GraphQL 层报错: 状态码 200 不是失败原因, 因此不给 http_status, 也不替上游猜原因.
+    ("token", {"errors": [{"message": "boom"}]}, ConnectivityStatus.FAILED, FailureReason.HTTP_ERROR, None, None, None),
+    # 正常应答: 结论落在探测地址上.
+    ("token", {"data": None}, ConnectivityStatus.OK, None, None, None, 200),
+]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(
+    ("token", "payload", "status", "reason", "skip_reason", "detail", "http_status"), _ThePornDBCases
+)
+async def test_theporndb_probe_states(
+    token: str | None,
+    payload: dict[str, object] | None,
+    status: ConnectivityStatus,
+    reason: FailureReason | None,
+    skip_reason: SkipReason | None,
+    detail: str | None,
+    http_status: int | None,
+) -> None:
+    base = ThePornDBCrawler.profile().base_url
+    web = _FakeWeb({}, default=_Resp("{}", payload=payload))
+    crawler = ThePornDBCrawler(HttpClient(web=cast("WebClient", web)), config=SiteConfig(api_token=token))
+
+    outcome = await crawler.check_connectivity()
+
+    assert (outcome.status, outcome.reason, outcome.skip_reason, outcome.detail) == (
+        status,
+        reason,
+        skip_reason,
+        detail,
+    )
+    assert (outcome.url, outcome.http_status) == (base if token else None, http_status)
+    assert [call[1] for call in web.calls] == ([base] if token else [])
+
+
+_OfficialCases: list[tuple[dict[str, Manufacturer], str]] = [
+    # 没有用户路由: 取默认表首项.
+    ({}, "attackers.net"),
+    # 配了路由: 探用户真正会请求的域, 而不是默认表首项.
+    ({"HONNAKA": Manufacturer.HONNAKA}, "honnaka.jp"),
+]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(("routes", "expected_host"), _OfficialCases)
+async def test_official_probe_follows_configured_routes(routes: dict[str, Manufacturer], expected_host: str) -> None:
+    web = _FakeWeb({}, default=_Resp("<html>ok</html>"))
+    crawler = OfficialCrawler(HttpClient(web=cast("WebClient", web)), config=SiteConfig(official_routes=routes))
+
+    outcome = await crawler.check_connectivity()
+
+    assert outcome.status is ConnectivityStatus.OK
+    assert [call[1] for call in web.calls] == [f"https://{expected_host}"]

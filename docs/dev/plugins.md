@@ -88,7 +88,7 @@ descriptor 声明来源能力、支持的内容类型、语言、访问 URL、�
 
 `fetch` 未命中返回 `None`; 网络 / 拦截 / 可分类业务失败抛 `SourceError` (含 `RequestError`), 由 `invoke_source` 记入与内置来源同一套 `SiteOutcomeRecord`. 不允许 `except RequestError: return None`, 也不允许裸 `except Exception` — 吞异常会被记为 `no_usable_metadata`, 任务不失败.
 
-`FilmSourceProvider.check_connectivity` 是可选钩子, 供「网络检测」页探测本源. 返回 `None` = 未声明, 主机改探 descriptor 的首个 URL; 入口不是该 URL (登录页 / 需要 token 的 API) 或凭据缺失时覆盖它, 后者返回 `ConnectivityOutcome.skipped("原因")`; 抛 `SourceError` 也接受 (主机按异常上的原因与状态码报). 这是向后兼容的增量, 已有插件不实现也能被探测, `PLUGIN_API_VERSION` 不变.
+`FilmSourceProvider.check_connectivity` 是可选钩子, 供「网络检测」页探测本源. 返回 `None` = 未声明, 主机按 descriptor 的首个 URL 探测; 入口不是该 URL (登录页 / 需要 token 的 API) 或凭据缺失时覆盖它, 后者返回 `ConnectivityOutcome.skipped(SkipReason.MISSING_CREDENTIAL)`; 抛 `SourceError` 也接受 (主机按异常上的原因与状态码报). `detail` 会被界面原样渲染, 因此只放语言中立的补充 (例如缺失的配置项名), 不写中文句子. 这是向后兼容的增量, 已有插件不实现也能被探测, `PLUGIN_API_VERSION` 不变.
 
 插件 provider 在 `CrawlerFactory` 中按来源 ID 延迟创建并缓存; 禁用插件不会创建 provider, 构造失败只使本次来源请求不可用并由 Factory 记录异常. 目录替换后 Factory 随 rebuild 重建, 缓存不跨卸载存活.
 

@@ -7,7 +7,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...crawlers.connectivity import SourceKind
-from ...net.connectivity import ConnectivityStatus
+from ...net.connectivity import ConnectivityStatus, SkipReason
 from ...net.errors import FailureReason
 
 
@@ -22,8 +22,8 @@ class ConnectivityCheckRequest(BaseModel):
 class ConnectivityItemResponse(BaseModel):
     """一个来源的探测结果.
 
-    ``reason`` 是失败原因枚举, 本地化由前端按它完成; ``detail`` 是补充说明, 只在 skipped 与无法归类的
-    失败上出现 (例如未配置 API token); ``elapsed_ms`` 只在真正探测过时有值.
+    ``reason`` (失败) 与 ``skip_reason`` (未探测) 都是枚举, 本地化由前端完成; ``detail`` 是语言中立的
+    补充说明 (例如异常类名), 界面原样渲染. ``elapsed_ms`` 只在真正探测过时有值.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -35,6 +35,7 @@ class ConnectivityItemResponse(BaseModel):
     url: str | None = None
     http_status: int | None = None
     reason: FailureReason | None = None
+    skip_reason: SkipReason | None = None
     detail: str | None = None
     elapsed_ms: int | None = None
 

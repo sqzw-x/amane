@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, override
 
 from ...enums import ActorGender, SiteName
-from ...net.connectivity import ConnectivityOutcome, assess_response
+from ...net.connectivity import ConnectivityOutcome, SkipReason, assess_response
 from ...net.errors import FailureReason, RequestError
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
@@ -68,34 +68,34 @@ class ThePornDBCrawler(Crawler):
     async def check_connectivity(self) -> ConnectivityOutcome:
         """真发一次 GraphQL 请求: 本源只有带 token 才会请求, 探测必须同样验证凭据与连通性.
 
-        查一个不存在的 id: 应答便宜, 且能区分「token 被拒」与「站点不可达」.
+        查一个不存在的 id: 应答便宜, 且能区分「token 被拒」与「站点不可达」. 地址经 ``_gql_url``
+        取: ``?type=`` 是每次请求的过滤条件, 探测验证的是可达性与凭据, 不加该条件.
         """
         token = self.config.api_token if self.config else None
         if not token:
-            return ConnectivityOutcome.skipped("未配置 API token, 刮削时会跳过")
+            return ConnectivityOutcome.skipped(SkipReason.MISSING_CREDENTIAL, "api_token")
+        url = self._gql_url(None)
         try:
             resp = await self.client.web_client.request(
                 "POST",
-                self.base_url,
+                url,
                 json={"query": _FIND_BY_ID_QUERY, "variables": {"id": "0"}},
                 headers={"Authorization": f"Bearer {token}"},
                 max_attempts=1,
             )
         except RequestError as exc:
-            return ConnectivityOutcome.failed(exc.reason, url=self.base_url, http_status=exc.http_status)
+            return ConnectivityOutcome.failed(exc.reason, url=url, http_status=exc.http_status)
 
         try:
             payload = resp.json()
         except Exception:
             payload = None
         if isinstance(payload, dict) and payload.get("errors") and not payload.get("data"):
-            return ConnectivityOutcome.failed(
-                FailureReason.HTTP_ERROR,
-                url=self.base_url,
-                http_status=resp.status_code,
-                detail="GraphQL 返回错误, 通常是 API token 无效",
-            )
-        return assess_response(self.base_url, resp)
+            # 不写 detail: 上游报 errors 的原因不止凭据一种 (查询字段改名 / 缺过滤条件), 断言单一原因
+            # 会把用户引向重置一个本来有效的 token. 完整应答在日志里.
+            self.logger.warning("theporndb graphql errors", errors=len(payload["errors"]))
+            return ConnectivityOutcome.failed(FailureReason.HTTP_ERROR, url=url)
+        return assess_response(url, resp)
 
     async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:
         token = self.config.api_token if self.config else None

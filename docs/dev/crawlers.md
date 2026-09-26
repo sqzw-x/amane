@@ -39,7 +39,7 @@ CrawlerFactory (缓存实例)
 
 ## 连通性探测
 
-`Crawler.check_connectivity` / `ActorCrawler.check_connectivity` 是「网络检测」页的逐来源探测点, 缺省 GET `base_url` 并带上已合并的 cookies 与 headers, 与刮削同用一条 HTTP 通道 (代理 / 指纹 / 限速 / 同源 Referer), 判定复用 `net/errors.py` 的拦截分类. **实际入口不是 `base_url` 的来源必须覆盖它**, 否则会把「入口 404 / 是 API 端点」误报成不可达: `theporndb` 发一次 GraphQL, `official` 取一个厂牌站代表集群, `gfriends` 探仓库根下的 `Filetree.json`, `prestige` 探测 SKU JSON API (首页带年龄墙), `r18dev` 报 `skipped` (本源不经 HTTP), 需要凭据而凭据缺失的来源也报 `skipped`. 探测是单次尝试 (重试只会把同一个结论拖长), 编排与端点见 [api.md](api.md) 的 `/network/check`.
+`Crawler.check_connectivity` / `ActorCrawler.check_connectivity` 是「网络检测」页的逐来源探测点, 缺省 GET `base_url` 并带上已合并的 cookies 与 headers, 与刮削同用一条 HTTP 通道 (代理 / 指纹 / 限速 / 同源 Referer), 判定复用 `net/errors.py` 的拦截分类. **实际入口不是 `base_url` 的来源必须覆盖它**, 否则会把「入口 404 / 是 API 端点」误报成不可达: `theporndb` 发一次 GraphQL, `official` 取一个厂牌站作代表 (用户配了 `official_routes` 时取其中首个), `gfriends` 探测仓库根下的 `Filetree.json`, `prestige` 探测 SKU JSON API (首页带年龄墙), `r18dev` 与缺凭据的来源返回 `SKIPPED` 并给出 `SkipReason`. 探测是单次尝试 (重试只会把同一个结论拖长), 编排与端点见 [api.md](api.md) 的 `/network/check`.
 
 ## 番号入参
 

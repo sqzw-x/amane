@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Protocol
 
 import structlog
 
-from ..net.connectivity import ConnectivityOutcome, ConnectivityStatus
+from ..net.connectivity import ConnectivityOutcome, ConnectivityStatus, SkipReason
 from ..net.errors import FailureReason, SourceError
 from .actor import actor_registry
 from .registry import registry
@@ -51,7 +51,7 @@ class ConnectivityProbe(Protocol):
 class SourceCheck:
     """一个来源的探测结果.
 
-    ``elapsed_ms`` 只计探测本身, 不含取来源实例的时间; ``SKIPPED`` 时为 ``None``.
+    ``elapsed_ms`` 只计探测本身, 不含取来源实例的时间; 未探测 (``SKIPPED``) 与取实例失败时为 ``None``.
     """
 
     source_id: str
@@ -88,10 +88,17 @@ class ConnectivityChecker:
         return list(dict.fromkeys(chain_ids))
 
     async def _check_one(self, source_id: str) -> SourceCheck:
-        probe, kind, name = await self._resolve(source_id)
-        if probe is None:
-            outcome = ConnectivityOutcome.skipped("来源不存在或未启用")
+        kind, name = self._identify(source_id)
+        try:
+            probe = await self._probe_for(source_id, kind)
+        except Exception as exc:
+            # 取来源实例失败 (插件配置与 config_model 不再匹配 / 插件升级) 只让这一个来源不可用,
+            # 与 ``factory.get_crawlers`` 同一取向; 没有探测过, 因此不给耗时.
+            logger.exception("connectivity source unavailable", source=source_id, error=type(exc).__name__)
+            outcome = ConnectivityOutcome.failed(FailureReason.CRAWLER_UNAVAILABLE, detail=type(exc).__name__)
             return SourceCheck(source_id, name, kind, outcome, None)
+        if probe is None:
+            return SourceCheck(source_id, name, kind, ConnectivityOutcome.skipped(SkipReason.UNKNOWN_SOURCE), None)
         t0 = time.monotonic()
         outcome = await self._run(probe)
         elapsed = round((time.monotonic() - t0) * 1000)
@@ -100,16 +107,24 @@ class ConnectivityChecker:
             source_id, name, kind, outcome, None if outcome.status is ConnectivityStatus.SKIPPED else elapsed
         )
 
-    async def _resolve(self, source_id: str) -> tuple[ConnectivityProbe | None, SourceKind, str]:
-        """插件来源优先: 插件 ID 不会与内置 ``SiteName`` 重名, 但判定顺序仍固定, 便于阅读."""
+    def _identify(self, source_id: str) -> tuple[SourceKind, str]:
+        """来源类别与显示名. 与取实例分开判定: 取实例失败时同样要给出分组与名称.
+
+        插件来源优先 —— 插件 ID 不会与内置 ``SiteName`` 重名; 影片在演员之前, 因为 javdb 这类站点
+        同时注册在两边, 归到影片侧才与刮削时的取实例路径一致. 未登记的 ID 按 ``FILM`` 占位: 它的
+        结论是「不存在或未启用」, 分组只是展示用的归类.
+        """
         if self._plugins is not None and source_id in self._plugins.plugin_ids():
             descriptor = self._plugins.descriptor(source_id)
-            return await self._factory.get(source_id), SourceKind.PLUGIN, descriptor.name if descriptor else source_id
-        if source_id in registry.sites():
-            return await self._factory.get(source_id), SourceKind.FILM, source_id
-        if source_id in actor_registry.sites():
-            return await self._factory.get_actor(source_id), SourceKind.ACTOR, source_id
-        return None, SourceKind.FILM, source_id
+            return SourceKind.PLUGIN, descriptor.name if descriptor else source_id
+        if source_id in actor_registry.sites() and source_id not in registry.sites():
+            return SourceKind.ACTOR, source_id
+        return SourceKind.FILM, source_id
+
+    async def _probe_for(self, source_id: str, kind: SourceKind) -> ConnectivityProbe | None:
+        return (
+            await self._factory.get_actor(source_id) if kind is SourceKind.ACTOR else await self._factory.get(source_id)
+        )
 
     async def _run(self, probe: ConnectivityProbe) -> ConnectivityOutcome:
         """捕获来源抛出的异常. 未声明的 ``None`` 表示该插件不探测, 不计入失败."""
@@ -122,5 +137,5 @@ class ConnectivityChecker:
             logger.exception("connectivity check failed", error=type(exc).__name__)
             return ConnectivityOutcome.failed(FailureReason.UNEXPECTED, detail=type(exc).__name__)
         if outcome is None:
-            return ConnectivityOutcome.skipped("该来源未声明探测方式")
+            return ConnectivityOutcome.skipped(SkipReason.UNDECLARED)
         return outcome

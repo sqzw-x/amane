@@ -1,4 +1,4 @@
-"""来源连通性探测. 不进任务队列: 结果要立刻回到用户手里, 也不该占用 worker 名额."""
+"""来源连通性探测. 不进入任务队列: 结果要立刻回到用户手里, 也不该占用 worker 名额."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ def _item(check: SourceCheck) -> ConnectivityItemResponse:
         url=outcome.url,
         http_status=outcome.http_status,
         reason=outcome.reason,
+        skip_reason=outcome.skip_reason,
         detail=outcome.detail,
         elapsed_ms=check.elapsed_ms,
     )

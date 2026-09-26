@@ -8,7 +8,7 @@ import structlog
 
 from ..crawlers.models import FetchOptions, MediaMetadata, SearchQuery
 from ..enums import SiteName
-from ..net.connectivity import ConnectivityOutcome, probe_get
+from ..net.connectivity import ConnectivityOutcome, SkipReason, probe_get
 from ..plugins.api import FilmSourceProvider, PluginContext
 from ..plugins.manager import PluginManager
 from ..plugins.models import PluginConfig, SourceDescriptor
@@ -50,13 +50,13 @@ class _PluginProviderAdapter(FilmSourceProvider):
         return MediaMetadata.model_validate(result)
 
     async def check_connectivity(self) -> ConnectivityOutcome:
-        """插件可自定探测入口; 未声明 (``None``) 时按 descriptor 的首个 URL 探."""
+        """插件可自定探测入口; 未声明 (``None``) 时按 descriptor 的首个 URL 探测."""
         outcome = await self._provider.check_connectivity()
         if outcome is not None:
             return outcome
         urls = self._descriptor.urls if self._descriptor is not None else ()
         if not urls:
-            return ConnectivityOutcome.skipped("插件未声明探测方式, 也未声明来源 URL")
+            return ConnectivityOutcome.skipped(SkipReason.NO_URL)
         return await probe_get(self._http.web_client, urls[0])
 
 

@@ -55,7 +55,7 @@ class FailureReason(StrEnum):
     PARSE_ERROR = "parse_error"
     """响应与读模型不符 (字段缺失/类型变化); 通常意味着站点 schema 已变更."""
     CRAWLER_UNAVAILABLE = "crawler_unavailable"
-    """演员侧爬虫实例缺失."""
+    """来源实例缺失或构造失败 (配置与插件不再匹配等)."""
     UNEXPECTED = "unexpected"
 
 

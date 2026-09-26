@@ -630,8 +630,8 @@ export type ConnectivityCheckRequest = {
  *
  * 一个来源的探测结果.
  *
- * ``reason`` 是失败原因枚举, 本地化由前端按它完成; ``detail`` 是补充说明, 只在 skipped 与无法归类的
- * 失败上出现 (例如未配置 API token); ``elapsed_ms`` 只在真正探测过时有值.
+ * ``reason`` (失败) 与 ``skip_reason`` (未探测) 都是枚举, 本地化由前端完成; ``detail`` 是语言中立的
+ * 补充说明 (例如异常类名), 界面原样渲染. ``elapsed_ms`` 只在真正探测过时有值.
  */
 export type ConnectivityItemResponse = {
     /**
@@ -653,6 +653,7 @@ export type ConnectivityItemResponse = {
      */
     http_status?: number | null;
     reason?: FailureReason | null;
+    skip_reason?: SkipReason | null;
     /**
      * Detail
      */
@@ -3068,6 +3069,16 @@ export type SiteOutcomeRecord = {
      */
     detail?: string | null;
 };
+
+/**
+ * SkipReason
+ *
+ * ``SKIPPED`` 的原因.
+ *
+ * 与 ``FailureReason`` 分开: 这一档不是失败, 文案也不进任务报告. 界面按它本地化, 因此每种原因
+ * 都要能独立读懂, 不依赖 ``detail``.
+ */
+export type SkipReason = 'unknown_source' | 'no_http_upstream' | 'missing_credential' | 'undeclared' | 'no_url';
 
 /**
  * SortOrder
