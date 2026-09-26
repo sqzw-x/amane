@@ -1,8 +1,9 @@
 ---
 name: amane-dev
 description: >-
-  Starts Amane local API + Vite via `just dev`. Use when the user asks
-  to just dev, 启动开发服务器, 起前端, or start the dev servers.
+  Starts Amane local API + Vite via `just dev`, or the built SPA served by the
+  backend for mobile / LAN access. Use when the user asks to just dev,
+  启动开发服务器, 起前端, start the dev servers, 手机端检查, or 局域网访问.
 ---
 
 # 开发服务器
@@ -27,6 +28,29 @@ description: >-
 API 地址只在探测就绪时使用, 不写给用户: 用户经浏览器访问前端, 请求由 Vite 代理到 `/api`.
 
 要用户打开某个页面时, 给出带路径的完整地址, 同样纯文本, 例如 `Web: http://localhost:5173/meta/1393`.
+
+## 手机 APP 访问
+
+当涉及到移动端 APP 内验证时, **禁止用 `just dev`** 启动
+
+这是因为 APP 使用安卓内置 webview, 版本一般较低, 需 `@vitejs/plugin-legacy` 的语法降级与 polyfill, 而二者只在 `vite build` 时生效
+
+一律走构建 + 后端托管:
+
+```bash
+just build                          # generate + 前端构建 (降级产物在此生成)
+AMANE_HOST=0.0.0.0 just start       # 后端托管 web/dist, 监听 0.0.0.0:8000
+```
+
+端口只有 8000: 前后端同源, `/api` 由后端自身处理. 就绪探测仍走 `localhost`, 对用户输出的是局域网 IP 形式:
+
+```
+Web: http://<en0/en1 的 IP>:8000
+```
+
+IP 取 `ipconfig getifaddr en1` (或 en0, 取有值的那个).
+
+`dist` 不随源码热更新: 改动前端后必须重新 `just build`.
 
 ## 让用户验证时
 
