@@ -22,6 +22,8 @@ from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 
 from amane.agent.service import AgentService
 from amane.agent.tools import AgentDeps, build_explore_toolset, require_approval
+from amane.agent.trace import SessionStore
+from amane.api.routes import agent_agui
 from amane.db.models import AgentSessionStatus
 from amane.db.repository import Repository
 
@@ -491,3 +493,72 @@ async def test_approval_denied_via_resume(app: FastAPI, client: AsyncClient) -> 
     assert ran == []
     assert denied[-1]["outcome"] == {"type": "success"}
     assert "不删" in _of(denied, "TOOL_CALL_RESULT")["content"]
+
+
+@pytest.mark.asyncio
+async def test_follow_replays_rows_from_scratch(app: FastAPI, client: AsyncClient) -> None:
+    """跟随端点只订阅: 回合未跑时回放全部回放行就关闭, 不启动回合."""
+    service = await service_of(app, client)
+    session = await service.create_session(title="follow")
+    assert session.id is not None
+    store = service.store_for(session.id)
+    await store.append_row({"type": "text_delta", "text": "上半"})
+    await store.append_row({"type": "agui", "event": {"type": "RUN_FINISHED"}})
+
+    resp = await client.get(f"/agent/sessions/{session.id}/agui/events")
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
+    # 发的是回放行本身 (agui 行原样), 与 POST 通道的 AG-UI 投影不同
+    assert [(r["type"], r["seq"]) for r in _sse_events(resp.text)] == [
+        ("session_created", 1),
+        ("text_delta", 2),
+        ("agui", 3),
+    ]
+
+    assert (await client.get("/agent/sessions/999999/agui/events")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_follow_attaches_to_running_turn_without_starting_one(
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """回合进行中也能订阅: 跟随不启动回合 (照 POST 的做法会 409), 且回合收尾的行照样发得出来."""
+    release = asyncio.Event()
+    entered = asyncio.Event()
+    real_follow = agent_agui._follow_rows
+
+    async def spy(store: SessionStore) -> AsyncIterator[str]:
+        entered.set()
+        async for chunk in real_follow(store):
+            yield chunk
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[StreamItem]:
+        yield "上半"
+        await release.wait()
+        yield "下半"
+
+    service = await service_of(app, client)
+    session = await service.create_session(title="follow-live")
+    assert session.id is not None
+    _install_agent(service, stream)
+    monkeypatch.setattr(agent_agui, "_follow_rows", spy)
+
+    run_task = asyncio.create_task(_run(client, session.id, [_user("在吗")]))
+    for _ in range(200):
+        if service.is_turn_running(session.id):
+            break
+        await asyncio.sleep(0.01)
+    assert service.is_turn_running(session.id), "回合未起来"
+
+    follow_task = asyncio.create_task(client.get(f"/agent/sessions/{session.id}/agui/events"))
+    await asyncio.wait_for(entered.wait(), timeout=5)  # 订阅已建立, 而回合仍在跑
+    assert service.is_turn_running(session.id), "订阅不应影响进行中的回合"
+
+    release.set()
+    resp = await asyncio.wait_for(follow_task, timeout=5)
+    await asyncio.wait_for(run_task, timeout=5)
+
+    assert resp.status_code == 200
+    rows = _sse_events(resp.text)
+    assert [r["type"] for r in rows if r["type"] == "user_message"] == ["user_message"]
+    assert next(r for r in rows if r["type"] == "assistant_message")["text"] == "上半下半"

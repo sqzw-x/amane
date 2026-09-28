@@ -6907,6 +6907,34 @@ export type RunAgentAguiResponses = {
     200: unknown;
 };
 
+export type FollowAgentEventsData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: number;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{session_id}/agui/events';
+};
+
+export type FollowAgentEventsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FollowAgentEventsError = FollowAgentEventsErrors[keyof FollowAgentEventsErrors];
+
+export type FollowAgentEventsResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type CancelAguiTurnData = {
     body?: never;
     path: {

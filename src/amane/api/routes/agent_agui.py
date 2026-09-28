@@ -1,6 +1,6 @@
 """AG-UI 协议端点: 回合在后台执行, 事件落盘后分发给订阅者.
 
-回合不随连接存活: 断连只结束订阅, 回合继续跑完.
+回合不随连接存活: 断连只结束订阅, 回合继续跑完; 页面切走再回来靠 ``GET .../agui/events`` 续上订阅.
 
 落盘两类行:
 - ``{"type": "agui", "event": ...}``: 分发给订阅端的 AG-UI 事件
@@ -46,7 +46,7 @@ from ...agent.tools import AgentDeps
 from ...agent.trace import SessionStore
 from ...agent.usage import RequestTokenUsage, request_usages_from_run, turn_usage_from_run
 from ...db.models import AgentSessionStatus
-from ..deps import AgentDep, RuntimeDep
+from ..deps import AgentDep, RepoDep, RuntimeDep
 from ..models.agent import AgentCancelResponse
 
 router = APIRouter(tags=["agent"])
@@ -181,11 +181,17 @@ def _sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
 
 
-async def _follow(store: SessionStore, after: int) -> AsyncIterator[str]:
-    """回放 ``after`` 之后的事件并跟随新事件; 回合结束且追平后结束."""
+async def _follow_agui(store: SessionStore, after: int) -> AsyncIterator[str]:
+    """回放 ``after`` 之后的 AG-UI 事件并跟随新事件; 回合结束且追平后结束."""
     async for row in store.follow(after):
         if row.get("type") == "agui":
             yield _sse(row["event"])
+
+
+async def _follow_rows(store: SessionStore) -> AsyncIterator[str]:
+    """同上, 但发全部回放行 (含整段回放): 页面据此重建气泡与工具卡片, 不认 AG-UI 协议事件."""
+    async for row in store.follow(0):
+        yield _sse(row)
 
 
 # 未设置 response_class 时, FastAPI 会按 default_response_class 追加一条 application/json 声明,
@@ -265,7 +271,22 @@ async def run_agent_agui(
 
     task = asyncio.create_task(consume(), name=f"agui-turn-{session_id}")
     service.track_turn(session_id, task)
-    return StreamingResponse(_follow(store, start_seq), media_type=SSE_CONTENT_TYPE)
+    return StreamingResponse(_follow_agui(store, start_seq), media_type=SSE_CONTENT_TYPE)
+
+
+@router.get(
+    "/agent/sessions/{session_id}/agui/events",
+    response_class=StreamingResponse,
+    responses={200: {"content": {SSE_CONTENT_TYPE: {}}}},
+)
+async def follow_agent_events(session_id: int, service: AgentDep, repo: RepoDep) -> StreamingResponse:
+    """跟随已落盘的回放行 (先整段回放, 再跟随新行), 供页面重挂载后续上进度.
+
+    只订阅, **不**启动回合, 故进行中的回合也不会 409; 回合结束且追平后关闭.
+    """
+    if await repo.get_agent_session(session_id) is None:
+        raise HTTPException(404, detail="会话不存在")
+    return StreamingResponse(_follow_rows(service.store_for(session_id)), media_type=SSE_CONTENT_TYPE)
 
 
 @router.post("/agent/sessions/{session_id}/agui/cancel")

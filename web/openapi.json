@@ -5521,6 +5521,45 @@
         }
       }
     },
+    "/api/agent/sessions/{session_id}/agui/events": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Follow Agent Events",
+        "description": "跟随已落盘的回放行 (先整段回放, 再跟随新行), 供页面重挂载后续上进度.\n\n只订阅, **不**启动回合, 故进行中的回合也不会 409; 回合结束且追平后关闭.",
+        "operationId": "follow_agent_events",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent/sessions/{session_id}/agui/cancel": {
       "post": {
         "tags": [

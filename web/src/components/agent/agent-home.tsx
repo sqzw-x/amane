@@ -1,7 +1,7 @@
 /** AG-UI 页: assistant-ui runtime 驱动对话, 渲染复用 Amane 的 markdown 与输入框.
 
-会话状态在客户端 thread 里, 事件来自 `/agent/sessions/{id}/agui`; 首屏历史经
-`/agent/sessions/{id}/trace` 回放行重建 (AG-UI 协议本身没有历史回放).
+会话状态在客户端 thread 里: 本页发起的回合走 `/agent/sessions/{id}/agui`; 切走再回来则由 `.../agui/events`
+跟随后台回合, 首次进入与回合收尾取 `.../trace`. AG-UI 协议没有历史回放, 三处都靠回放行重建对话.
 */
 
 import { HttpAgent, type AgentSubscriber } from "@ag-ui/client";
@@ -40,7 +40,7 @@ import {
   TextInput,
   UnstyledButton,
 } from "@mantine/core";
-import { useDisclosure, useInterval } from "@mantine/hooks";
+import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconCheck,
@@ -60,6 +60,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentProps,
   type ReactNode,
@@ -487,80 +488,42 @@ function UserMessage() {
   );
 }
 
-/** 最近一回合的用量.
+/** 跟随端点的重建节拍: 行到得比渲染密, 逐行重建会把整段对话反复重排. */
+const FOLLOW_RENDER_MS = 300;
 
-   服务端已在 `RUN_FINISHED.usage` 上给出 (协议字段, 官方适配器不填), 但当前客户端解析器会丢弃该
-   字段, 故读回放行里的同一份数据.
-*/
-function useTurnUsage(sessionId: number, running: boolean): TurnTokenUsage | null {
-  const [usage, setUsage] = useState<TurnTokenUsage | null>(null);
-
-  useEffect(() => {
-    if (running) return;
-    void (async () => {
-      const { data } = await getAgentTrace({ path: { session_id: sessionId } });
-      if (!data) return;
-      const messages = messagesFromTrace(data.events).messages;
-      const last = messages.findLast((message) => message.role === "assistant");
-      setUsage(last?.role === "assistant" ? (last.usage ?? null) : null);
-    })();
-  }, [sessionId, running]);
-
-  return usage;
-}
-
-/** 观察线程: 上报用量, 并在服务端回合结束时通知外层重建历史.
-
-    回合在服务端后台执行; 刷新或换页后连接已断, 因此这里不接流, 只轮询回放行直到它跑完.
-*/
-function ThreadObserver({
-  sessionId,
-  onUsage,
-  onTurnEnd,
-}: {
-  sessionId: number;
-  onUsage: (usage: TurnTokenUsage | null) => void;
-  onTurnEnd: () => void;
-}) {
-  const { t } = useTranslation("agent");
-  const running = useAuiState((state) => state.thread.isRunning);
-  const usage = useTurnUsage(sessionId, running);
-  const [serverTurn, setServerTurn] = useState(false);
-
-  useEffect(() => onUsage(usage), [onUsage, usage]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const { data } = await getAgentTrace({ path: { session_id: sessionId } });
-      if (!cancelled) setServerTurn(data?.turn_running ?? false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, running]);
-
-  const watching = !running && serverTurn;
-
-  useInterval(() => {
-    if (!watching) return;
-    void (async () => {
-      const { data } = await getAgentTrace({ path: { session_id: sessionId } });
-      if (data?.turn_running) return;
-      setServerTurn(false);
-      onTurnEnd();
-    })();
-  }, 1500);
-
-  if (!watching) return null;
-  return (
-    <Group gap="xs" px="sm">
-      <Loader size="xs" />
-      <Text size="xs" c="dimmed">
-        {t("turnRunning")}
-      </Text>
-    </Group>
-  );
+/** 跟随回放行: 服务端先整段回放再跟随新行, 回合结束且追平后关闭; 断连由 signal 收掉. */
+async function followTraceRows(
+  sessionId: number,
+  signal: AbortSignal,
+  onRows: (rows: Record<string, unknown>[]) => void,
+): Promise<void> {
+  const response = await fetch(`${apiBase()}/api/agent/sessions/${sessionId}/agui/events`, {
+    signal,
+  });
+  if (!response.ok || response.body === null) return;
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      buffer += value;
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      const rows: Record<string, unknown>[] = [];
+      for (const frame of frames) {
+        const line = frame.split("\n").find((item) => item.startsWith("data:"));
+        if (line === undefined) continue;
+        const parsed: unknown = JSON.parse(line.slice(5).trim());
+        if (isRecord(parsed)) rows.push(parsed);
+      }
+      if (rows.length > 0) onRows(rows);
+    }
+  } catch (error) {
+    if (!signal.aborted) throw error;
+  } finally {
+    void reader.cancel().catch(() => undefined);
+  }
 }
 
 type Decision = "approve" | "reject";
@@ -793,12 +756,13 @@ function isInterrupt(value: unknown): value is AgUiInterrupt {
   return isRecord(value) && typeof value.id === "string";
 }
 
-/** 用回放行重建会话; 未决中断挂到最后一条助手消息上, 刷新后仍可继续审批. */
-async function seedThread(runtime: AssistantRuntime, sessionId: number): Promise<void> {
-  const { data } = await getAgentTrace({ path: { session_id: sessionId } });
-  if (!data) return;
-  const like = messagesFromTrace(data.events).messages.map(toThreadMessageLike);
-  const interrupts = pendingInterrupts(data.events);
+/** 重建好的消息; 回放行末尾停在中断上时, 把未决中断挂到最后一条助手消息 (刷新后仍可继续审批). */
+function threadMessages(
+  events: readonly unknown[],
+  messages: readonly ChatMessage[],
+): ThreadMessageLike[] {
+  const like = messages.map(toThreadMessageLike);
+  const interrupts = pendingInterrupts(events);
   const last = like.at(-1);
   if (interrupts.length > 0 && last?.role === "assistant") {
     like[like.length - 1] = {
@@ -807,7 +771,17 @@ async function seedThread(runtime: AssistantRuntime, sessionId: number): Promise
       metadata: { custom: { agui: { interrupts } } },
     };
   }
-  runtime.thread.reset(like);
+  return like;
+}
+
+/** 最近一回合的用量.
+
+   服务端已在 `RUN_FINISHED.usage` 上给出 (协议字段, 官方适配器不填), 但当前客户端解析器会丢弃该
+   字段, 故读回放行里的同一份数据.
+*/
+function lastTurnUsage(messages: readonly ChatMessage[]): TurnTokenUsage | null {
+  const last = messages.findLast((message) => message.role === "assistant");
+  return last?.role === "assistant" ? (last.usage ?? null) : null;
 }
 
 /** 审批队列须在 runtime 内读取, 故单独一层 Provider. */
@@ -844,15 +818,85 @@ function AgUiThread({
   const runtime = useAgUiRuntime({ agent });
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [usage, setUsage] = useState<TurnTokenUsage | null>(null);
+  const [serverTurn, setServerTurn] = useState(false);
+  /** 回放行攒到哪算到哪; 重建一律以它为准. */
+  const rowsRef = useRef<Record<string, unknown>[]>([]);
 
-  const seed = useCallback(() => seedThread(runtime, sessionId), [runtime, sessionId]);
+  /** 用回放行重建会话, 并报出最近一回合的用量. */
+  const applyRows = useCallback(
+    (rows: readonly Record<string, unknown>[]) => {
+      const { messages } = messagesFromTrace(rows);
+      setUsage(lastTurnUsage(messages));
+      runtime.thread.reset(threadMessages(rows, messages));
+    },
+    [runtime],
+  );
 
+  /** 取整段回放行并重建 (跟随开不起来时的兜底). */
+  const snapshot = useCallback(async () => {
+    const { data } = await getAgentTrace({ path: { session_id: sessionId } });
+    if (!data) return;
+    rowsRef.current = data.events;
+    applyRows(data.events);
+  }, [applyRows, sessionId]);
+
+  /** 收口: 重取快照, 并刷新会话列表 (标题与审批态可能在回合里变过). */
+  const settle = useCallback(async () => {
+    await snapshot();
+    void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
+  }, [queryClient, snapshot]);
+
+  /** 跟随本会话的回放行, 新行并进. */
+  const follow = useCallback(
+    (signal: AbortSignal) =>
+      followTraceRows(sessionId, signal, (rows) => {
+        rowsRef.current = [...rowsRef.current, ...rows];
+      }),
+    [sessionId],
+  );
+
+  // 回合在服务端后台跑: 本页的流随卸载断掉, 重挂载后由跟随端点接回 (先整段回放, 再跟随新行); 流关闭即回合已结束.
   useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
     void (async () => {
-      await seed();
-      setLoadingHistory(false);
+      setServerTurn(true);
+      let rendered = 0;
+      const timer = window.setInterval(() => {
+        if (rowsRef.current.length === rendered) return;
+        rendered = rowsRef.current.length;
+        setLoadingHistory(false);
+        applyRows(rowsRef.current);
+      }, FOLLOW_RENDER_MS);
+      try {
+        await follow(controller.signal);
+      } catch {
+        // 订阅建不起来: 退回一次性快照
+        if (!cancelled) await snapshot();
+      } finally {
+        window.clearInterval(timer);
+        if (!cancelled) {
+          setLoadingHistory(false);
+          setServerTurn(false);
+          applyRows(rowsRef.current);
+          void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
+        }
+      }
     })();
-  }, [seed]);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [applyRows, follow, queryClient, snapshot]);
+
+  // 本地回合收尾: 终态与用量都在回放行里, 重建一次落定.
+  const running = useAuiState((state) => state.thread.isRunning);
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    const settled = wasRunning.current && !running;
+    wasRunning.current = running;
+    if (settled) void settle();
+  }, [running, settle]);
 
   // 落地页首条消息: 会话建好后才能发, 故等历史重建完成再补发.
   useEffect(() => {
@@ -860,11 +904,6 @@ function AgUiThread({
     onFirstMessageSent();
     runtime.thread.append(firstMessage);
   }, [loadingHistory, firstMessage, onFirstMessageSent, runtime]);
-
-  const handleTurnEnd = useCallback(() => {
-    void seed();
-    void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
-  }, [seed, queryClient]);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -913,7 +952,14 @@ function AgUiThread({
               </ThreadPrimitive.Viewport>
             </ThreadPrimitive.Root>
           </Paper>
-          <ThreadObserver sessionId={sessionId} onUsage={setUsage} onTurnEnd={handleTurnEnd} />
+          {serverTurn && !loadingHistory && (
+            <Group gap="xs" px="sm">
+              <Loader size="xs" />
+              <Text size="xs" c="dimmed">
+                {t("turnRunning")}
+              </Text>
+            </Group>
+          )}
           <Composer
             runtime={runtime}
             sessionId={sessionId}
