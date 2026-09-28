@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from pydantic_ai import Agent, DeferredToolRequests, RunContext
-from pydantic_ai.messages import ModelMessage, ModelRequest, TextPart, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import (
     AgentInfo,
     DeltaThinkingCalls,
@@ -339,6 +339,59 @@ async def test_replayed_transcript_reaches_model_once(app: FastAPI, client: Asyn
 
     assert events[-1]["outcome"] == {"type": "success"}
     assert _user_prompts(seen[-1]) == ["第一轮", "第二轮"]
+
+
+@pytest.mark.asyncio
+async def test_tool_loop_replay_is_trimmed_by_user_message(app: FastAPI, client: AsyncClient) -> None:
+    """带工具调用的回合: 客户端重放整段会话时, 只送出新的一条用户消息.
+
+    服务端把工具回合拆成「一次模型请求一条消息」, 客户端回放却是合并后的一个助手气泡; 若逐条比对
+    全部消息, 会在第 2 条错位, 把上一条提问与回答重新当作新消息送给模型.
+    """
+    seen: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[StreamItem]:
+        seen.append(list(messages))
+        if _tool_returns(messages):
+            yield "统计完成"
+        else:
+            yield _call(name="sql_explore", args={"sql": "SELECT 1 AS n"}, call_id="call-1")
+
+    service = await service_of(app, client)
+    session = await service.create_session(title="loop-replay")
+    assert session.id is not None
+    _install_agent(service, stream, build_explore_toolset())
+
+    await _run(client, session.id, [_user("数一下")])
+    events = await _run(
+        client,
+        session.id,
+        [
+            _user("数一下"),
+            {
+                "id": "a1",
+                "role": "assistant",
+                "content": "统计完成",
+                "toolCalls": [
+                    {"id": "call-1", "type": "function", "function": {"name": "sql_explore", "arguments": "{}"}}
+                ],
+            },
+            {"id": "r1", "role": "tool", "toolCallId": "call-1", "content": "{}"},
+            _user("再来一次", "u2"),
+        ],
+    )
+
+    assert events[-1]["outcome"] == {"type": "success"}
+    final = seen[-1]
+    assert _user_prompts(final) == ["数一下", "再来一次"]
+    texts = [
+        p.content
+        for m in final
+        if isinstance(m, (ModelRequest, ModelResponse))
+        for p in m.parts
+        if isinstance(p, TextPart) and isinstance(p.content, str)
+    ]
+    assert texts.count("统计完成") == 1
 
 
 @pytest.mark.asyncio

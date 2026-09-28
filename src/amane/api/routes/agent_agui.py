@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ag_ui.core import (
-    AssistantMessage,
     BaseEvent,
     InputContent,
     Message,
@@ -31,13 +30,12 @@ from ag_ui.core import (
     ToolCallEndEvent,
     ToolCallResultEvent,
     ToolCallStartEvent,
-    ToolMessage,
     UserMessage,
 )
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic_ai import AgentRunResult, DeferredToolRequests
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from pydantic_ai.usage import RunUsage
 
@@ -61,35 +59,41 @@ def _content_text(content: str | list[InputContent]) -> str:
     return "".join(part.text for part in content if isinstance(part, TextInputContent))
 
 
-def _message_key(message: Message) -> tuple[str, str] | None:
-    """(角色, 文本) 指纹; ``None`` 表示该类型不参与匹配.
+def _history_user_texts(history: Sequence[ModelMessage]) -> list[str]:
+    """服务端历史里的用户输入文本."""
+    texts: list[str] = []
+    for message in history:
+        if not isinstance(message, ModelRequest):
+            continue
+        for part in message.parts:
+            if isinstance(part, UserPromptPart) and isinstance(part.content, str):
+                texts.append(part.content)
+                break
+    return texts
 
-    工具回执按 ``tool_call_id`` 比对: 服务端 dump 的 content 是 JSON 字符串, 客户端回放的是结构化
-    结果, 文本形式必然不同, 但 id 两侧一致.
+
+def _new_messages(client: Sequence[Message], history: Sequence[ModelMessage]) -> list[Message]:
+    """客户端本次要送的新内容.
+
+    AG-UI 输入契约要求客户端回放整段会话, 而服务端历史 (`SessionStore`) 才是权威, 故按**用户输入**切分:
+    开头若干条用户文本与服务端历史一一对应, 落在它们之后的消息才算本轮新内容.
+
+    不能逐条比对全部消息: 一个回合里的工具调用在服务端是「一次模型请求一条消息」, 在客户端回放里是
+    合并后的一个助手气泡, 两侧分组不同, 逐条比对必然错位并把旧内容重新送给模型.
     """
-    match message:
-        case UserMessage(content=content):
-            return ("user", _content_text(content))
-        case AssistantMessage(content=content):
-            return ("assistant", content or "")
-        case ToolMessage(tool_call_id=tool_call_id):
-            return ("tool", tool_call_id)
-        case _:
-            return None
-
-
-def _replayed_len(client: list[Message], server: list[Message]) -> int:
-    """客户端重放的服务端历史条数.
-
-    AG-UI 输入契约要求 ``messages`` 完整, 客户端会把整段会话发回来; 服务端历史 (SessionStore)
-    才是权威, 故只保留客户端多出的那一段. 逐条比对指纹, 首个不同即停.
-    """
-    shared = min(len(client), len(server))
-    for index in range(shared):
-        left, right = _message_key(client[index]), _message_key(server[index])
-        if left is None or right is None or left != right:
-            return index
-    return shared
+    replayed = _history_user_texts(history)
+    matched = 0
+    for index, message in enumerate(client):
+        if not isinstance(message, UserMessage):
+            continue
+        text = _content_text(message.content)
+        if not text:
+            continue
+        if matched < len(replayed) and replayed[matched] == text:
+            matched += 1
+            continue
+        return list(client[index:])
+    return []
 
 
 def _new_user_texts(messages: Sequence[Message]) -> list[str]:
@@ -200,9 +204,9 @@ async def run_agent_agui(
     store = service.store_for(session_id)
     history: list[ModelMessage] = list(store.load_messages() or [])
     adapter = await AGUIAdapter[AgentDeps, str | DeferredToolRequests].from_request(request, agent=agent)
-    replayed = _replayed_len(list(adapter.run_input.messages), adapter.dump_messages(history))
-    adapter.run_input.messages = list(adapter.run_input.messages[replayed:])
-    for text in _new_user_texts(adapter.run_input.messages):
+    incoming = _new_messages(list(adapter.run_input.messages), history)
+    adapter.run_input.messages = incoming
+    for text in _new_user_texts(incoming):
         await store.append_row({"type": "user_message", "text": text})
 
     start_seq = store.last_seq
