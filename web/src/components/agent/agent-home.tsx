@@ -11,7 +11,7 @@ import {
   ThreadPrimitive,
   useAuiState,
   type AssistantRuntime,
-  type ReasoningMessagePartProps,
+  type PartState,
   type TextMessagePartProps,
   type ThreadMessageLike,
   type ToolCallMessagePartProps,
@@ -61,6 +61,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type ComponentProps,
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -79,15 +80,16 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import { ChatComposer, parseThinking, type ThinkingValue } from "@/components/agent/chat-composer";
 import { MarkdownContent } from "@/components/agent/markdown-content";
-import type { ChatMessage, TurnTokenUsage } from "@/lib/agent/trace";
+import type { ChatMessage, RequestTokenUsage, TurnTokenUsage } from "@/lib/agent/trace";
 import { SavedQueryActions } from "@/components/agent/saved-query-actions";
 import {
   downloadSavedQueryResult,
   SavedQueryManager,
 } from "@/components/agent/saved-query-manager";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
+import { useFold } from "@/lib/agent/fold";
 import { messagesFromTrace } from "@/lib/agent/trace";
-import { TokenUsageBar } from "@/components/agent/token-usage-bar";
+import { TokenUsageBar, RequestUsageBar } from "@/components/agent/token-usage-bar";
 import { confirm } from "@/lib/confirm";
 
 function apiBase(): string {
@@ -155,17 +157,164 @@ function isRunning(status: { readonly type: string }): boolean {
   return status.type === "running";
 }
 
-function TextPart({ text, status }: TextMessagePartProps) {
+function TextPart({ text, status }: Pick<TextMessagePartProps, "text" | "status">) {
   return <MarkdownContent text={text} streaming={isRunning(status)} />;
 }
 
-function ReasoningPart({ text }: ReasoningMessagePartProps) {
+/** 思考块: 默认折叠; 同一步的多段思考由 ReasoningBlock 合并为一块. */
+function ReasoningBlock({ running, children }: { running: boolean; children: ReactNode }) {
+  const { t } = useTranslation("agent");
+  const { open, toggle, headerRef } = useFold();
   return (
-    <Box mb="xs" pl="sm" style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}>
-      <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
-        {text}
-      </Text>
+    <Box mb="xs">
+      <UnstyledButton ref={headerRef} onClick={toggle}>
+        <Group gap={4} wrap="nowrap">
+          {open ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
+          <Text size="xs" c="dimmed">
+            {t("thinking.label")}
+          </Text>
+          {running && <Loader size={12} />}
+        </Group>
+      </UnstyledButton>
+      {open && (
+        <Box pl="sm" mt={4} style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}>
+          {children}
+        </Box>
+      )}
     </Box>
+  );
+}
+
+/** 单段思考正文; 折叠由 ReasoningBlock 统一负责. */
+function ReasoningPart({ text }: { text: string }) {
+  return (
+    <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
+      {text}
+    </Text>
+  );
+}
+
+/** 单次请求的用量条: 回放行把它落在该次请求产出的内容之后. */
+function RequestUsagePart({ data }: { data: RequestTokenUsage }) {
+  return <RequestUsageBar usage={data} />;
+}
+
+/** 一段活动里工具调用超过这个数就整组折叠. */
+const ACTIVITY_TOOL_LIMIT = 3;
+
+/** 工具调用超过阈值的连续活动 (思考 + 工具调用) 折叠为一块. */
+function ActivityGroup({ count, children }: { count: number; children: ReactNode }) {
+  const { t } = useTranslation("agent");
+  const { open, toggle, headerRef } = useFold();
+  return (
+    <Box mb="xs">
+      <UnstyledButton ref={headerRef} onClick={toggle}>
+        <Group gap={4} wrap="nowrap">
+          {open ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
+          <Text size="xs" c="dimmed">
+            {t("toolCallsCount", { n: count })}
+          </Text>
+        </Group>
+      </UnstyledButton>
+      {open && <Box mt="xs">{children}</Box>}
+    </Box>
+  );
+}
+
+type AssistantPartsComponents = ComponentProps<typeof MessagePrimitive.PartByIndex>["components"];
+
+/** 回放行里的逐请求用量在协议里没有位置, 以 data 部件随消息重建. */
+const REQUEST_USAGE_PART = "request-usage";
+
+const ASSISTANT_PARTS = {
+  Text: TextPart,
+  Reasoning: ReasoningPart,
+  tools: { Override: ToolCallPart },
+  data: { by_name: { [REQUEST_USAGE_PART]: RequestUsagePart } },
+} satisfies AssistantPartsComponents;
+
+function PartAt({ index }: { index: number }) {
+  return <MessagePrimitive.PartByIndex index={index} components={ASSISTANT_PARTS} />;
+}
+
+/** 一段部件: 连续思考合并成一块折叠, 其余各归各. */
+function PartRun({
+  parts,
+  start,
+  end,
+}: {
+  parts: readonly PartState[];
+  start: number;
+  end: number;
+}) {
+  const runs = useMemo(() => reasoningRuns(parts, start, end), [parts, start, end]);
+  return (
+    <>
+      {runs.map((run) =>
+        run.kind === "reasoning" ? (
+          <ReasoningBlock
+            key={`thought-${run.indices[0]}`}
+            running={run.indices.some((index) => parts[index]?.status.type === "running")}
+          >
+            {run.indices.map((index) => (
+              <PartAt key={index} index={index} />
+            ))}
+          </ReasoningBlock>
+        ) : (
+          <PartAt key={run.index} index={run.index} />
+        ),
+      )}
+    </>
+  );
+}
+
+type PartRunChunk = { kind: "reasoning"; indices: number[] } | { kind: "part"; index: number };
+
+/** 把 [start, end) 切成连续思考块与单部件. */
+function reasoningRuns(parts: readonly PartState[], start: number, end: number): PartRunChunk[] {
+  const chunks: PartRunChunk[] = [];
+  let index = start;
+  while (index < end) {
+    if (parts[index]?.type !== "reasoning") {
+      chunks.push({ kind: "part", index });
+      index += 1;
+      continue;
+    }
+    const indices: number[] = [];
+    while (index < end && parts[index]?.type === "reasoning") {
+      indices.push(index);
+      index += 1;
+    }
+    chunks.push({ kind: "reasoning", indices });
+  }
+  return chunks;
+}
+
+/** 助手部件: 默认折叠思考; 整条消息工具调用够多时, 首尾活动 (含夹在中间的文本) 折成一块. */
+function AssistantParts() {
+  const approval = useContext(ApprovalContext);
+  const parts = useAuiState((state) => state.message.parts);
+  const tools = parts.flatMap((part) => (part.type === "tool-call" ? [part.toolCallId] : []));
+  const first = parts.findIndex((part) => part.type === "reasoning" || part.type === "tool-call");
+  const last = parts.findLastIndex(
+    (part) => part.type === "reasoning" || part.type === "tool-call",
+  );
+  // 未决审批在活动里时保持展开, 否则批准入口会被折没.
+  const awaiting = tools.some((id) =>
+    approval?.interrupts.some((interrupt) => interrupt.toolCallId === id),
+  );
+
+  if (tools.length <= ACTIVITY_TOOL_LIMIT || first < 0 || awaiting) {
+    return <PartRun parts={parts} start={0} end={parts.length} />;
+  }
+  return (
+    <>
+      <PartRun parts={parts} start={0} end={first} />
+      <ActivityGroup count={tools.length}>
+        <PartRun parts={parts} start={first} end={last + 1} />
+      </ActivityGroup>
+      <PartRun parts={parts} start={last + 1} end={parts.length} />
+    </>
   );
 }
 
@@ -195,8 +344,11 @@ function ToolCallPart({
   argsText,
   result,
   status,
-}: ToolCallMessagePartProps) {
-  const [open, setOpen] = useState(false);
+}: Pick<
+  ToolCallMessagePartProps,
+  "toolCallId" | "toolName" | "args" | "argsText" | "result" | "status"
+>) {
+  const { open, toggle, headerRef } = useFold();
   const queryClient = useQueryClient();
   const savedQueryId = savedQueryIdOf(toolName, result);
   const argsBody = argsBodyOf(args, argsText);
@@ -217,7 +369,7 @@ function ToolCallPart({
         overflow: "hidden",
       }}
     >
-      <UnstyledButton px="sm" py={6} w="100%" onClick={() => setOpen((v) => !v)}>
+      <UnstyledButton ref={headerRef} px="sm" py={6} w="100%" onClick={toggle}>
         <Group gap={6} wrap="nowrap">
           <IconTool size={14} stroke={1.6} />
           <Text size="xs" fw={500} ff="monospace">
@@ -274,24 +426,54 @@ function Message({ usage }: { usage: TurnTokenUsage | null }) {
   return (
     <Box mb="sm">
       <MessagePrimitive.If user>
-        <Text size="xs" c="dimmed" ta="right" mb={4}>
-          {t("you")}
-        </Text>
+        <UserMessage />
       </MessagePrimitive.If>
       <MessagePrimitive.If assistant>
         <Text size="xs" c="dimmed" mb={4}>
           {t("assistant")}
         </Text>
+        <AssistantParts />
+        {usage && (
+          <MessagePrimitive.If last>
+            <TokenUsageBar usage={usage} />
+          </MessagePrimitive.If>
+        )}
       </MessagePrimitive.If>
-      <MessagePrimitive.Parts
-        components={{ Text: TextPart, Reasoning: ReasoningPart, tools: { Override: ToolCallPart } }}
-      />
-      {usage && (
-        <MessagePrimitive.If last>
-          <TokenUsageBar usage={usage} />
-        </MessagePrimitive.If>
-      )}
     </Box>
+  );
+}
+
+/** 用户输入按原文展示, 不走 markdown. */
+function UserTextPart({ text }: { text: string }) {
+  return (
+    <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+      {text}
+    </Text>
+  );
+}
+
+/** 用户消息: 标签在左, 正文收进气泡, 与助手的纯文本回复区分. */
+function UserMessage() {
+  const { t } = useTranslation("agent");
+  return (
+    <Stack gap={4} mb="sm">
+      <Text size="xs" c="dimmed">
+        {t("you")}
+      </Text>
+      <Box
+        px="sm"
+        py="xs"
+        style={{
+          width: "fit-content",
+          maxWidth: "100%",
+          background: "var(--mantine-color-default-hover)",
+          borderRadius: "var(--mantine-radius-md)",
+          wordBreak: "break-word",
+        }}
+      >
+        <MessagePrimitive.Parts components={{ Text: UserTextPart }} />
+      </Box>
+    </Stack>
   );
 }
 
@@ -566,18 +748,21 @@ function toThreadMessageLike(message: ChatMessage, index: number): ThreadMessage
   return {
     id: `trace-a-${index}`,
     role: "assistant",
-    content: message.blocks.map((block, blockIndex) =>
-      block.kind === "text"
-        ? { type: "text" as const, text: block.text }
-        : {
-            type: "tool-call" as const,
-            toolCallId: block.tool.toolCallId || `trace-tool-${index}-${blockIndex}`,
-            toolName: block.tool.name,
-            args: toolArgsObject(block.tool.args),
-            argsText: toolArgsText(block.tool.args),
-            result: block.tool.result,
-          },
-    ),
+    content: message.blocks.map((block, blockIndex) => {
+      if (block.kind === "text") return { type: "text" as const, text: block.text };
+      if (block.kind === "reasoning") return { type: "reasoning" as const, text: block.text };
+      if (block.kind === "usage") {
+        return { type: `data-${REQUEST_USAGE_PART}` as const, data: block.usage };
+      }
+      return {
+        type: "tool-call" as const,
+        toolCallId: block.tool.toolCallId || `trace-tool-${index}-${blockIndex}`,
+        toolName: block.tool.name,
+        args: toolArgsObject(block.tool.args),
+        argsText: toolArgsText(block.tool.args),
+        result: block.tool.result,
+      };
+    }),
   };
 }
 
@@ -817,18 +1002,17 @@ function SessionItem({
   }
 
   return (
-    <Group gap={4} wrap="nowrap">
-      <UnstyledButton
-        onClick={onSelect}
-        px="xs"
-        py={6}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          borderRadius: "var(--mantine-radius-sm)",
-          background: active ? "var(--mantine-primary-color-light)" : undefined,
-        }}
-      >
+    <Group
+      gap={4}
+      wrap="nowrap"
+      px="xs"
+      py="xs"
+      style={{
+        borderRadius: "var(--mantine-radius-sm)",
+        background: active ? "var(--mantine-primary-color-light)" : undefined,
+      }}
+    >
+      <UnstyledButton onClick={onSelect} style={{ flex: 1, minWidth: 0 }}>
         <Group gap={6} wrap="nowrap">
           <Text size="sm" truncate style={{ flex: 1 }}>
             {session.title}
@@ -844,7 +1028,7 @@ function SessionItem({
         <Menu.Target>
           <UnstyledButton
             aria-label={t("sessions")}
-            p={4}
+            p={6}
             style={{ display: "flex", lineHeight: 0 }}
           >
             <IconDots size={14} />

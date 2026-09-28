@@ -236,6 +236,12 @@ async def test_tool_call_lifecycle_events(app: FastAPI, client: AsyncClient) -> 
     assert [r["type"] for r in rows if r["type"] in ("tool_call", "tool_result")] == ["tool_call", "tool_result"]
     assert next(r for r in rows if r["type"] == "tool_call")["name"] == "sql_explore"
 
+    # 逐请求用量随回合末尾补: 出工具那次挂在工具之后, 收尾正文那次落在末尾
+    usage_rows = [r for r in rows if r["type"] == "request_usage"]
+    assert [r["after_tool_call"] for r in usage_rows] == ["call-1", None]
+    assert all(isinstance(r["duration_ms"], int) for r in usage_rows)
+    assert usage_rows[0]["output"] > 0
+
 
 @pytest.mark.asyncio
 async def test_reasoning_events(app: FastAPI, client: AsyncClient) -> None:
@@ -252,6 +258,11 @@ async def test_reasoning_events(app: FastAPI, client: AsyncClient) -> None:
     assert "REASONING_MESSAGE_END" in types
     assert "REASONING_END" in types
     assert _of(events, "REASONING_MESSAGE_CONTENT")["delta"] == "先看库结构"
+
+    # 思考同样落回放行, 折叠的思考块在重放 (切会话 / 刷新) 后仍能还原
+    # 次数不作断言: 模型只回思考不回正文时框架会重试, 每次都重发一遍思考
+    rows = service.store_for(session.id).read_events()
+    assert {r["text"] for r in rows if r["type"] == "reasoning_delta"} == {"先看库结构"}
 
 
 @pytest.mark.asyncio

@@ -48,7 +48,8 @@
     "cacheRead": "cache read",
     "cacheWrite": "cache write",
     "output": "output",
-    "cacheHit": "cache hit"
+    "cacheHit": "cache hit",
+    "duration": "duration"
   },
   "loadingHistory": "Loading history…",
   "turnRunning": "Turn running",

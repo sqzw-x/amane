@@ -39,7 +39,7 @@ def delete_session_dir(data_dir: Path, session_id: int) -> None:
 
 
 class SessionStore:
-    """events.jsonl (UI/续订) + messages.json (LLM 权威历史)."""
+    """events.jsonl (UI 回放) + messages.json (LLM 权威历史)."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -128,7 +128,7 @@ class SessionStore:
         self._write_row({"type": event.type, **event.payload, "at": event.at})
 
     async def follow(self, after: int) -> AsyncIterator[dict[str, Any]]:
-        """从 after 之后续订: 先回放磁盘, 再等新事件; turn 结束且追平后停止."""
+        """从 after 之后跟随: 先回放磁盘, 再等新事件; turn 结束且追平后停止."""
         cursor = after
         while True:
             batch = self.events_after(cursor)

@@ -8,6 +8,16 @@ export type TurnTokenUsage = {
   requests: number;
 };
 
+/** 单次模型请求的用量; `duration_ms` 是请求发出到响应收到的耗时, `after_tool_call` 是它在回合里的落点. */
+export type RequestTokenUsage = {
+  input: number;
+  cache_read: number;
+  cache_write: number;
+  output: number;
+  duration_ms?: number;
+  after_tool_call?: string;
+};
+
 export type ToolApprovalStatus = "pending" | "approved" | "rejected";
 
 export type ToolApproval = {
@@ -25,10 +35,12 @@ export interface ToolCallView {
   approval?: ToolApproval;
 }
 
-/** 助手回合内按时间序排列的块: 文本与工具交错. */
+/** 助手回合内按时间序排列的块: 思考 / 文本 / 工具 / 每次请求的用量. */
 export type AssistantBlock =
+  | { kind: "reasoning"; id: string; text: string }
   | { kind: "text"; id: string; text: string }
-  | { kind: "tool"; tool: ToolCallView };
+  | { kind: "tool"; tool: ToolCallView }
+  | { kind: "usage"; id: string; usage: RequestTokenUsage };
 
 export type ChatMessage =
   | { role: "user"; text: string }
@@ -97,6 +109,27 @@ function parseUsage(value: unknown): TurnTokenUsage | undefined {
   };
 }
 
+function parseRequestUsage(value: unknown): RequestTokenUsage | undefined {
+  if (!isRecord(value)) return undefined;
+  const { input, cache_read, cache_write, output, duration_ms, after_tool_call } = value;
+  if (
+    typeof input !== "number" ||
+    typeof cache_read !== "number" ||
+    typeof cache_write !== "number" ||
+    typeof output !== "number"
+  ) {
+    return undefined;
+  }
+  return {
+    input,
+    cache_read,
+    cache_write,
+    output,
+    duration_ms: typeof duration_ms === "number" ? duration_ms : undefined,
+    after_tool_call: typeof after_tool_call === "string" ? after_tool_call : undefined,
+  };
+}
+
 function extractSavedQueryId(result: unknown): number | undefined {
   if (!isRecord(result)) return undefined;
   const id = result.saved_query_id;
@@ -142,6 +175,29 @@ function appendText(blocks: AssistantBlock[], piece: string): AssistantBlock[] {
   }
   next.push({ kind: "text", id: nextBlockId("t"), text: piece });
   return next;
+}
+
+function appendReasoning(blocks: AssistantBlock[], piece: string): AssistantBlock[] {
+  if (!piece) return blocks;
+  const next = [...blocks];
+  const last = next[next.length - 1];
+  if (last?.kind === "reasoning") {
+    next[next.length - 1] = { ...last, text: last.text + piece };
+    return next;
+  }
+  next.push({ kind: "reasoning", id: nextBlockId("r"), text: piece });
+  return next;
+}
+
+/** 用量块落点: 这次请求最后一次工具调用之后; 请求没有工具调用 (含最后一轮) 落在消息末尾. */
+function placeUsage(blocks: AssistantBlock[], usage: RequestTokenUsage): AssistantBlock[] {
+  const block: AssistantBlock = { kind: "usage", id: nextBlockId("u"), usage };
+  const anchor = usage.after_tool_call;
+  const index = anchor
+    ? blocks.findIndex((item) => item.kind === "tool" && item.tool.toolCallId === anchor)
+    : -1;
+  if (index < 0) return [...blocks, block];
+  return [...blocks.slice(0, index + 1), block, ...blocks.slice(index + 1)];
 }
 
 function upsertTool(
@@ -281,7 +337,7 @@ export function messagesFromTrace(events: ReadonlyArray<TraceEvent | Record<stri
     const payload = isRecord(raw.payload) ? raw.payload : undefined;
 
     if (evType === "user_message") {
-      // 批准/拒绝 follow-up 仍写入 events 供续订, 但对用户气泡隐藏
+      // 批准/拒绝 follow-up 仍写入回放行, 但对用户气泡隐藏
       if (raw.hidden === true || payload?.hidden === true) {
         continue;
       }
@@ -291,6 +347,16 @@ export function messagesFromTrace(events: ReadonlyArray<TraceEvent | Record<stri
       }
       flush();
       messages.push({ role: "user", text });
+      continue;
+    }
+
+    if (evType === "reasoning_delta") {
+      const assistant = ensureAssistant();
+      current = {
+        ...assistant,
+        blocks: appendReasoning(assistant.blocks, fieldText(raw)),
+        streaming: true,
+      };
       continue;
     }
 
@@ -389,6 +455,19 @@ export function messagesFromTrace(events: ReadonlyArray<TraceEvent | Record<stri
         usage: usage ?? assistant.usage,
         streaming: true,
       };
+      continue;
+    }
+
+    if (evType === "request_usage") {
+      const parsed = parseRequestUsage(raw.payload ?? raw);
+      if (parsed) {
+        const assistant = ensureAssistant();
+        current = {
+          ...assistant,
+          blocks: placeUsage(assistant.blocks, parsed),
+          streaming: true,
+        };
+      }
       continue;
     }
 

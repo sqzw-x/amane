@@ -48,7 +48,8 @@
     "cacheRead": "缓存读",
     "cacheWrite": "缓存写",
     "output": "输出",
-    "cacheHit": "缓存命中"
+    "cacheHit": "缓存命中",
+    "duration": "耗时"
   },
   "loadingHistory": "加载历史…",
   "turnRunning": "回合执行中",

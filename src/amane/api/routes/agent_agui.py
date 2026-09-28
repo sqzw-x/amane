@@ -4,8 +4,9 @@
 
 落盘两类行:
 - ``{"type": "agui", "event": ...}``: 分发给订阅端的 AG-UI 事件
-- ``user_message`` / ``text_delta`` / ``tool_call`` / ``tool_result`` / ``assistant_message``:
-  页面重建对话用的回放行
+- ``user_message`` / ``reasoning_delta`` / ``text_delta`` / ``tool_call`` / ``tool_result`` / ``request_usage`` /
+  ``assistant_message``: 页面重建对话用的回放行 (``request_usage`` 在回合末尾成批补, 用
+  ``after_tool_call`` 标出该次请求的落点)
 
 ``RUN_FINISHED.usage`` 由本端点补: 协议有这个字段, 官方适配器不填.
 """
@@ -22,6 +23,7 @@ from ag_ui.core import (
     BaseEvent,
     InputContent,
     Message,
+    ReasoningMessageContentEvent,
     RunFinishedEvent,
     TextInputContent,
     TextMessageContentEvent,
@@ -42,7 +44,7 @@ from pydantic_ai.usage import RunUsage
 from ...agent.runtime import UNLIMITED_USAGE, resolve_model_settings
 from ...agent.tools import AgentDeps
 from ...agent.trace import SessionStore
-from ...agent.usage import turn_usage_from_run
+from ...agent.usage import RequestTokenUsage, request_usages_from_run, turn_usage_from_run
 from ...db.models import AgentSessionStatus
 from ..deps import AgentDep, RuntimeDep
 from ..models.agent import AgentCancelResponse
@@ -133,9 +135,12 @@ class _ReplayRows:
     tool_names: dict[str, str] = field(default_factory=dict)
     tool_args: dict[str, str] = field(default_factory=dict)
     usage: RunUsage | None = None
+    request_usages: list[RequestTokenUsage] = field(default_factory=list)
 
     def feed(self, event: BaseEvent) -> Iterator[dict[str, Any]]:
         match event:
+            case ReasoningMessageContentEvent(delta=delta):
+                yield {"type": "reasoning_delta", "text": delta}
             case TextMessageContentEvent(delta=delta):
                 self.text.append(delta)
                 yield {"type": "text_delta", "text": delta}
@@ -159,6 +164,8 @@ class _ReplayRows:
                     "result": _maybe_json(content),
                 }
             case RunFinishedEvent():
+                for item in self.request_usages:
+                    yield {"type": "request_usage", **item.model_dump()}
                 if self.text or self.usage is not None:
                     yield {
                         "type": "assistant_message",
@@ -217,6 +224,7 @@ async def run_agent_agui(
     async def on_complete(result: AgentRunResult[Any]) -> AsyncIterator[BaseEvent]:
         store.save_messages(list(result.all_messages()))
         rows.usage = result.usage
+        rows.request_usages = request_usages_from_run(result)
         output = result.output
         pending = isinstance(output, DeferredToolRequests) and bool(output.approvals)
         await runtime.repo.update_agent_session(
