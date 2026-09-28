@@ -7,7 +7,10 @@
 import type { ThreadMessageLike } from "@assistant-ui/react";
 import type { AgentTraceResponse, Interrupt, TurnTokenUsage } from "@/client/types.gen";
 
-/** 服务端的回放行联合, 由 OpenAPI 生成; `type` 必填, 故下面的 switch 可做穷尽检查. */
+/** 页面契约的行联合, 由 OpenAPI 生成; `type` 必填, 故下面的 switch 可做穷尽检查.
+
+    契约里不含协议透传行: 那类行只在 `POST .../agui` 通道分发, `/trace` 与跟随端点都会滤掉.
+*/
 export type TraceRow = AgentTraceResponse["events"][number];
 
 /** 逐请求用量在协议里没有位置, 以 data 部件随消息重建. */
@@ -33,8 +36,13 @@ function toolKey(toolCallId: string): string {
   return `tool:${toolCallId}`;
 }
 
-function assertNever(value: never): never {
-  throw new Error(`未处理的行: ${JSON.stringify(value)}`);
+/** 未处理的行类型.
+
+    `never` 让编译期仍然强制穷尽; 运行期服务端可能先于页面 bundle 升级, 此时丢弃这一行并告警,
+    而不是让整段会话的重建失败.
+*/
+function unknownRow(row: never): void {
+  console.warn("[agent] 丢弃无法识别的回放行", row);
 }
 
 export function foldTrace(rows: readonly TraceRow[]): TraceFold {
@@ -99,10 +107,14 @@ export function foldTrace(rows: readonly TraceRow[]): TraceFold {
         break;
 
       case "tool_result": {
-        // 名字与参数在同 id 的 tool_call 行; 结果先到只可能是日志被截断, 无处归属
+        // 名字与参数在同 id 的 tool_call 行; 找不到锚点只可能来自被截断的日志
         const index = at(toolKey(row.tool_call_id));
         const part = index < 0 ? undefined : parts[index];
-        if (part?.type === "tool-call") parts[index] = { ...part, result: row.result };
+        if (part?.type === "tool-call") {
+          parts[index] = { ...part, result: row.result };
+        } else {
+          console.warn("[agent] 工具回执找不到对应的调用, 已丢弃", row);
+        }
         break;
       }
 
@@ -137,11 +149,8 @@ export function foldTrace(rows: readonly TraceRow[]): TraceFold {
         flush();
         break;
 
-      case "agui":
-        break;
-
       default:
-        assertNever(row);
+        unknownRow(row);
     }
   }
 

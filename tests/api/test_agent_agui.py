@@ -23,6 +23,8 @@ from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 from amane.agent.rows import (
     AguiEventRow,
     ApprovalsRow,
+    CancelledRow,
+    ErrorRow,
     ReasoningDeltaRow,
     RequestUsageRow,
     TextDeltaRow,
@@ -307,6 +309,85 @@ async def test_run_finished_usage_backfilled(app: FastAPI, client: AsyncClient) 
 
 
 @pytest.mark.asyncio
+async def test_failed_turn_clears_pending_approvals(app: FastAPI, client: AsyncClient) -> None:
+    """回合失败也要发出空的审批快照: 否则页面重放会停在上一轮遗留的待批态上.
+
+    模型失败经适配器的 RUN_ERROR 走出 (它不补 RUN_FINISHED), 因此终态快照由该事件补出.
+    """
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[StreamItem]:
+        raise RuntimeError("模型炸了")
+        yield "不会到这里"
+
+    service = await service_of(app, client)
+    session = await service.create_session(title="failed")
+    assert session.id is not None
+    _install_agent(service, stream)
+
+    await _run(client, session.id, [_user("在吗")])
+
+    rows = service.store_for(session.id).read_events()
+    errors = [row.event for row in rows if isinstance(row, AguiEventRow) and row.event["type"] == "RUN_ERROR"]
+    assert errors and "模型炸了" in str(errors[0]["message"])
+    # 失败原因要落在页面契约里: 协议行不发给页面, 重放路径否则看不到任何文案
+    assert [row.message for row in rows if isinstance(row, ErrorRow)] == ["模型炸了"]
+    assert [row.interrupts for row in rows if isinstance(row, ApprovalsRow)] == [[]]
+
+
+@pytest.mark.asyncio
+async def test_endpoint_failure_clears_pending_approvals(
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """端点自身出错 (与模型无关) 同样要落终态快照."""
+
+    def boom(*args: object) -> None:
+        raise RuntimeError("端点内部错误")
+
+    monkeypatch.setattr(agent_agui._ReplayRows, "feed", boom)
+    service = await service_of(app, client)
+    session = await service.create_session(title="endpoint-failure")
+    assert session.id is not None
+    _install_agent(service, _text_stream("在吗"))
+
+    await _run(client, session.id, [_user("在吗")])
+
+    rows = service.store_for(session.id).read_events()
+    assert any(isinstance(row, ErrorRow) for row in rows)
+    assert [row.interrupts for row in rows if isinstance(row, ApprovalsRow)] == [[]]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_turn_clears_pending_approvals(app: FastAPI, client: AsyncClient) -> None:
+    """取消同样要清掉待批态 (与失败路径共用同一条不变量)."""
+    release = asyncio.Event()
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[StreamItem]:
+        yield "上半"
+        await release.wait()
+
+    service = await service_of(app, client)
+    session = await service.create_session(title="cancelled")
+    assert session.id is not None
+    _install_agent(service, stream)
+
+    run_task = asyncio.create_task(_run(client, session.id, [_user("在吗")]))
+    for _ in range(200):
+        if service.is_turn_running(session.id):
+            break
+        await asyncio.sleep(0.01)
+    assert service.is_turn_running(session.id), "回合未起来"
+
+    resp = await client.post(f"/agent/sessions/{session.id}/agui/cancel")
+    assert resp.json() == {"cancelled": True}
+    release.set()
+    await asyncio.wait_for(run_task, timeout=5)
+
+    rows = service.store_for(session.id).read_events()
+    assert any(isinstance(row, CancelledRow) for row in rows)
+    assert [row.interrupts for row in rows if isinstance(row, ApprovalsRow)] == [[]]
+
+
+@pytest.mark.asyncio
 async def test_disconnect_does_not_cancel_turn(app: FastAPI, client: AsyncClient) -> None:
     """客户端中途断开只结束订阅, 回合继续跑完并落盘."""
     service = await service_of(app, client)
@@ -534,8 +615,8 @@ async def test_follow_replays_rows_from_scratch(app: FastAPI, client: AsyncClien
     resp = await client.get(f"/agent/sessions/{session.id}/agui/events")
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers["content-type"]
-    # 发的是回放行本身 (agui 行连载荷原样), 与 POST 通道的 AG-UI 投影不同
-    assert [(r["type"], r["seq"]) for r in _sse_events(resp.text)] == [("text_delta", 1), ("agui", 2)]
+    # 发的是页面契约的行本身, 与 POST 通道的 AG-UI 投影不同; 协议透传行不发给页面
+    assert [(r["type"], r["seq"]) for r in _sse_events(resp.text)] == [("text_delta", 1)]
 
     assert (await client.get("/agent/sessions/999999/agui/events")).status_code == 404
 

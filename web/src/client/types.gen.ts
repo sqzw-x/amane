@@ -454,7 +454,7 @@ export type AgentTraceResponse = {
     /**
      * Events
      */
-    events: Array<UserMessageRow | ReasoningDeltaRow | TextDeltaRow | ToolCallRow | ToolResultRow | RequestUsageRow | TurnUsageRow | ApprovalsRow | ErrorRow | CancelledRow | AguiEventRow>;
+    events: Array<UserMessageRow | ReasoningDeltaRow | TextDeltaRow | ToolCallRow | ToolResultRow | RequestUsageRow | TurnUsageRow | ApprovalsRow | ErrorRow | CancelledRow>;
     /**
      * Turn Running
      */
@@ -463,32 +463,6 @@ export type AgentTraceResponse = {
      * Last Seq
      */
     last_seq?: number;
-};
-
-/**
- * AguiEventRow
- *
- * AG-UI 事件原样透传, 供 `POST .../agui` 分发给协议客户端; 页面不读它.
- */
-export type AguiEventRow = {
-    /**
-     * Seq
-     */
-    seq?: number | null;
-    /**
-     * At
-     */
-    at?: string;
-    /**
-     * Type
-     */
-    type: 'agui';
-    /**
-     * Event
-     */
-    event: {
-        [key: string]: unknown;
-    };
 };
 
 /**
@@ -3710,6 +3684,9 @@ export type TextDeltaRow = {
  * ToolCallRow
  *
  * 工具调用成形 (协议按增量传参, 这里已解析). 卡片的名字与参数由此行给出.
+ *
+ * `args` 在生成的 TS 类型里退化为 `unknown` (pydantic 的 `JsonValue` 无法表达到 schema),
+ * 类型层面的保证到后端为止.
  */
 export type ToolCallRow = {
     /**
@@ -3828,6 +3805,9 @@ export type TurnTokenUsage = {
  * TurnUsageRow
  *
  * 回合收尾: 聚合用量归属当前助手消息, 同时标志本轮结束.
+ *
+ * 正文不在此行重复: 适配器对每段正文都发 `TEXT_MESSAGE_CONTENT`, 故正文必然已由
+ * `TextDeltaRow` 落盘, 无须回退到整段文本.
  */
 export type TurnUsageRow = {
     /**

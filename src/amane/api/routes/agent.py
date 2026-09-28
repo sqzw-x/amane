@@ -99,7 +99,7 @@ async def get_agent_trace(session_id: int, service: AgentDep, repo: RepoDep) -> 
     store = service.store_for(session_id)
     return AgentTraceResponse(
         meta=store.read_meta(),
-        events=store.read_events(),
+        events=store.ui_events(),
         turn_running=service.is_turn_running(session_id),
         last_seq=store.last_seq,
     )

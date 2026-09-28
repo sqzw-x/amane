@@ -4,7 +4,7 @@
 用量位置、未决中断还原) 都在这里定形. 前端只按到达顺序折叠, 不认识 `ag_ui` 事件.
 
 联合以 `type` 判别, 经 OpenAPI 生成前端类型: 加字段或改字段名即在前端编译期暴露.
-`seq` 与 `at` 由 `SessionStore` 落盘时补, 读取时一定存在.
+`seq` 与 `at` 由 `SessionStore` 落盘时补; 读取路径容忍手改文件缺 `seq`, 这类行不参与跟随.
 """
 
 from __future__ import annotations
@@ -23,6 +23,8 @@ def _utcnow_iso() -> str:
 
 
 class RowBase(BaseModel):
+    """行的信封. `seq` 与 `at` 由 `SessionStore` 落盘时补, 供日志自身定位与排障, 页面不读."""
+
     model_config = ConfigDict(extra="forbid")
 
     seq: int | None = None
@@ -53,7 +55,11 @@ class TextDeltaRow(RowBase):
 
 
 class ToolCallRow(RowBase):
-    """工具调用成形 (协议按增量传参, 这里已解析). 卡片的名字与参数由此行给出."""
+    """工具调用成形 (协议按增量传参, 这里已解析). 卡片的名字与参数由此行给出.
+
+    `args` 在生成的 TS 类型里退化为 `unknown` (pydantic 的 `JsonValue` 无法表达到 schema),
+    类型层面的保证到后端为止.
+    """
 
     type: Literal["tool_call"]
     tool_call_id: str
@@ -77,7 +83,11 @@ class RequestUsageRow(RowBase):
 
 
 class TurnUsageRow(RowBase):
-    """回合收尾: 聚合用量归属当前助手消息, 同时标志本轮结束."""
+    """回合收尾: 聚合用量归属当前助手消息, 同时标志本轮结束.
+
+    正文不在此行重复: 适配器对每段正文都发 `TEXT_MESSAGE_CONTENT`, 故正文必然已由
+    `TextDeltaRow` 落盘, 无须回退到整段文本.
+    """
 
     type: Literal["turn_usage"]
     usage: TurnTokenUsage
@@ -107,13 +117,23 @@ class CancelledRow(RowBase):
 
 
 class AguiEventRow(RowBase):
-    """AG-UI 事件原样透传, 供 `POST .../agui` 分发给协议客户端; 页面不读它."""
+    """AG-UI 事件原样透传, 供 `POST .../agui` 分发给协议客户端; 页面不读它.
+
+    载荷保持适配器给出的形状, 故不参与页面契约 (见 `UiRow`): `/trace` 与跟随端点都会把它滤掉.
+    """
 
     type: Literal["agui"]
     event: dict[str, Any]
 
 
-TraceRow = Annotated[
+def no_approvals() -> ApprovalsRow:
+    """无未决审批的快照. 回合的每条终止路径 (正常结束 / 取消 / 失败) 都要发出它, 否则页面重放时会停在
+    上一轮遗留的待批态上.
+    """
+    return ApprovalsRow(type="approvals", interrupts=[])
+
+
+UiRow = Annotated[
     UserMessageRow
     | ReasoningDeltaRow
     | TextDeltaRow
@@ -123,9 +143,12 @@ TraceRow = Annotated[
     | TurnUsageRow
     | ApprovalsRow
     | ErrorRow
-    | CancelledRow
-    | AguiEventRow,
+    | CancelledRow,
     Field(discriminator="type"),
 ]
+"""页面契约: 页面重建对话所需的行, 是闭集."""
+
+TraceRow = Annotated[UiRow | AguiEventRow, Field(discriminator="type")]
+"""`events.jsonl` 里允许出现的全部行, 含协议透传."""
 
 TRACE_ROW: TypeAdapter[TraceRow] = TypeAdapter(TraceRow)

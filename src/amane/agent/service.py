@@ -12,7 +12,7 @@ from .bridge import AgentRuntimeBridge
 from .cache import ResultCache
 from .executor import QueryExecutor
 from .naming import generate_title
-from .rows import CancelledRow
+from .rows import CancelledRow, no_approvals
 from .runtime import build_agent, build_model, parse_session_thinking
 from .sql import ReadonlySqlSandbox
 from .tools import AgentDeps
@@ -151,5 +151,6 @@ class AgentService:
     async def _write_cancelled(self, session_id: int) -> None:
         store = self.store_for(session_id)
         await store.append_row(CancelledRow(type="cancelled"))
+        await store.append_row(no_approvals())
         await self.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
         store.set_turn_running(False)

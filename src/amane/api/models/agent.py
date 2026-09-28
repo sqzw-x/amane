@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from ...agent.rows import TraceRow
+from ...agent.rows import UiRow
 from ...config import AgentThinkingMode
 from ...db.models import AgentSessionStatus, SavedQueryEntity
 
@@ -45,7 +45,7 @@ class AgentSessionListResponse(BaseModel):
 
 class AgentTraceResponse(BaseModel):
     meta: dict[str, Any]
-    events: list[TraceRow]
+    events: list[UiRow]
     turn_running: bool = False
     last_seq: int = 0
 

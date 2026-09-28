@@ -24,6 +24,7 @@ from ag_ui.core import (
     Interrupt,
     Message,
     ReasoningMessageContentEvent,
+    RunErrorEvent,
     RunFinishedEvent,
     RunFinishedInterruptOutcome,
     RunFinishedOutcome,
@@ -54,9 +55,10 @@ from ...agent.rows import (
     TextDeltaRow,
     ToolCallRow,
     ToolResultRow,
-    TraceRow,
     TurnUsageRow,
+    UiRow,
     UserMessageRow,
+    no_approvals,
 )
 from ...agent.runtime import UNLIMITED_USAGE, resolve_model_settings
 from ...agent.tools import AgentDeps
@@ -162,7 +164,7 @@ class _ReplayRows:
     usage: RunUsage | None = None
     request_usages: list[RequestTokenUsage] = field(default_factory=list)
 
-    def feed(self, event: BaseEvent) -> Iterator[TraceRow]:
+    def feed(self, event: BaseEvent) -> Iterator[UiRow]:
         match event:
             case ReasoningMessageContentEvent(message_id=block_id, delta=delta):
                 yield ReasoningDeltaRow(type="reasoning_delta", block_id=block_id, text=delta)
@@ -188,6 +190,10 @@ class _ReplayRows:
                 if self.usage is not None:
                     yield TurnUsageRow(type="turn_usage", usage=turn_usage_from_run(self.usage))
                 yield ApprovalsRow(type="approvals", interrupts=_interrupts_of(event.outcome))
+            case RunErrorEvent():
+                # 出错时适配器不补 RUN_FINISHED (after_stream 见到 _error 即返回): 失败原因与终态快照都在这里补
+                yield ErrorRow(type="error", message=event.message)
+                yield no_approvals()
             case _:
                 return
 
@@ -205,8 +211,10 @@ async def _follow_agui(store: SessionStore, after: int) -> AsyncIterator[str]:
 
 
 async def _follow_rows(store: SessionStore) -> AsyncIterator[str]:
-    """同上, 但发全部回放行 (含整段回放): 页面据此重建气泡与工具卡片, 不认 AG-UI 协议事件."""
+    """同上, 但发页面契约的行 (含整段回放): 页面据此重建气泡与工具卡片, 不认 AG-UI 协议事件."""
     async for row in store.follow(0):
+        if isinstance(row, AguiEventRow):
+            continue
         yield _sse(row.model_dump(mode="json", by_alias=True))
 
 
@@ -276,11 +284,13 @@ async def run_agent_agui(
                     await store.append_row(row)
         except asyncio.CancelledError:
             await store.append_row(CancelledRow(type="cancelled"))
+            await store.append_row(no_approvals())
             await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
             raise
         except Exception as exc:
             await store.append_row(AguiEventRow(type="agui", event={"type": "RUN_ERROR", "message": str(exc)}))
             await store.append_row(ErrorRow(type="error", message=str(exc)))
+            await store.append_row(no_approvals())
             await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
         finally:
             store.set_turn_running(False)

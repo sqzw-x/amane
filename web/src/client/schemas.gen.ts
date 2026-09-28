@@ -862,15 +862,11 @@ export const AgentTraceResponseSchema = {
                     },
                     {
                         $ref: '#/components/schemas/CancelledRow'
-                    },
-                    {
-                        $ref: '#/components/schemas/AguiEventRow'
                     }
                 ],
                 discriminator: {
                     propertyName: 'type',
                     mapping: {
-                        agui: '#/components/schemas/AguiEventRow',
                         approvals: '#/components/schemas/ApprovalsRow',
                         cancelled: '#/components/schemas/CancelledRow',
                         error: '#/components/schemas/ErrorRow',
@@ -904,44 +900,6 @@ export const AgentTraceResponseSchema = {
         'events'
     ],
     title: 'AgentTraceResponse'
-} as const;
-
-export const AguiEventRowSchema = {
-    properties: {
-        seq: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Seq'
-        },
-        at: {
-            type: 'string',
-            title: 'At'
-        },
-        type: {
-            type: 'string',
-            const: 'agui',
-            title: 'Type'
-        },
-        event: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Event'
-        }
-    },
-    additionalProperties: false,
-    type: 'object',
-    required: [
-        'type',
-        'event'
-    ],
-    title: 'AguiEventRow',
-    description: 'AG-UI 事件原样透传, 供 `POST .../agui` 分发给协议客户端; 页面不读它.'
 } as const;
 
 export const ApiTypeSchema = {
@@ -7471,7 +7429,7 @@ export const ToolCallRowSchema = {
         'args'
     ],
     title: 'ToolCallRow',
-    description: '工具调用成形 (协议按增量传参, 这里已解析). 卡片的名字与参数由此行给出.'
+    description: '工具调用成形 (协议按增量传参, 这里已解析). 卡片的名字与参数由此行给出.\n\n`args` 在生成的 TS 类型里退化为 `unknown` (pydantic 的 `JsonValue` 无法表达到 schema),\n类型层面的保证到后端为止.'
 } as const;
 
 export const ToolResultRowSchema = {
@@ -7640,7 +7598,7 @@ export const TurnUsageRowSchema = {
         'usage'
     ],
     title: 'TurnUsageRow',
-    description: '回合收尾: 聚合用量归属当前助手消息, 同时标志本轮结束.'
+    description: '回合收尾: 聚合用量归属当前助手消息, 同时标志本轮结束.\n\n正文不在此行重复: 适配器对每段正文都发 `TEXT_MESSAGE_CONTENT`, 故正文必然已由\n`TextDeltaRow` 落盘, 无须回退到整段文本.'
 } as const;
 
 export const UpscaleSubmissionSchema = {
