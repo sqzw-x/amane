@@ -514,10 +514,11 @@ function useApprovalQueue(): ApprovalQueue {
           interrupts.map((item) => ({
             interruptId: item.id,
             status: "resolved" as const,
+            // 拒绝理由随 payload 进 ToolDenied 再到 messages.json, 是模型的输入而不是页面徽章文案
             payload:
               next[item.id] === "approve"
                 ? { approved: true }
-                : { approved: false, reason: t("approvalRejected") },
+                : { approved: false, reason: t("approvalRejectReason") },
           })),
         );
       } catch (error) {

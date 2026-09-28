@@ -11,7 +11,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from amane.agent.naming import fallback_title
-from amane.agent.rows import CancelledRow
+from amane.agent.rows import ApprovalsRow, CancelledRow
 from amane.agent.service import AgentService
 from amane.db.models import SavedQueryEntity
 from amane.db.repository import Repository
@@ -287,3 +287,23 @@ async def test_cancel_running_turn(app: FastAPI, client: AsyncClient) -> None:
     assert r.json() == {"cancelled": True}
     assert not service.is_turn_running(sid)
     assert any(isinstance(row, CancelledRow) for row in store.read_events())
+
+
+@pytest.mark.asyncio
+async def test_cancel_writes_terminal_rows_without_task(app: FastAPI, client: AsyncClient) -> None:
+    """无后台任务但标记为进行中 (进程异常态) 时取消: 补写终态行与空审批快照并复位."""
+    service = app.state.runtime.agent_service
+    assert isinstance(service, AgentService)
+    session = await service.create_session(title="orphan-turn")
+    assert session.id is not None
+    store = service.store_for(session.id)
+    store.set_turn_running(True)
+
+    r = await client.post(f"/agent/sessions/{session.id}/agui/cancel")
+    assert r.status_code == 200
+    assert r.json() == {"cancelled": True}
+
+    assert not store.turn_running
+    rows = store.read_events()
+    assert any(isinstance(row, CancelledRow) for row in rows)
+    assert [row.interrupts for row in rows if isinstance(row, ApprovalsRow)] == [[]]

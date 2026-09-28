@@ -12,6 +12,7 @@
   "batchApprove": "Approve all",
   "approvalApproved": "Approved",
   "approvalRejected": "Rejected",
+  "approvalRejectReason": "Rejected by the user",
   "openMeta": "Open in library",
   "openActors": "Open in actors",
   "persist": "Keep preset",

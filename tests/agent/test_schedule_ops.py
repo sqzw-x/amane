@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import aiosqlite
 import pytest
@@ -19,29 +19,15 @@ from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.tools import TOOL_OK, AgentDeps
 from amane.db.models import RoutineType
 from amane.db.repository import Repository
-
-
-class _Ctx:
-    def __init__(
-        self,
-        deps: AgentDeps,
-        *,
-        tool_call_id: str = "tc-test",
-        tool_call_approved: bool = False,
-    ) -> None:
-        self.deps = deps
-        self.tool_call_id = tool_call_id
-        self.tool_call_approved = tool_call_approved
+from tests.agent.support import ToolCallContext, cap_toolset, tool_fn
 
 
 def _toolset() -> FunctionToolset[AgentDeps]:
-    toolset = build_schedule_ops_capability().get_toolset()
-    assert toolset is not None
-    return cast(FunctionToolset[AgentDeps], toolset)
+    return cap_toolset(build_schedule_ops_capability())
 
 
 def _tool_fn(name: str) -> Callable[..., Awaitable[dict[str, Any]]]:
-    return cast(Callable[..., Awaitable[dict[str, Any]]], _toolset().tools[name].function)
+    return tool_fn(build_schedule_ops_capability(), name)
 
 
 @pytest_asyncio.fixture
@@ -74,7 +60,7 @@ def test_schedule_ops_capability_contract() -> None:
 @pytest.mark.asyncio
 async def test_create_update_and_trigger_schedule(schedule_deps: AgentDeps) -> None:
     created = await _tool_fn("create_schedule")(
-        _Ctx(schedule_deps),
+        ToolCallContext(schedule_deps),
         name="nightly",
         cron="0 3 * * *",
         submission={"type": "cleanup", "remove_missing_files": False},
@@ -91,7 +77,9 @@ async def test_create_update_and_trigger_schedule(schedule_deps: AgentDeps) -> N
     }
 
     updated = await _tool_fn("update_schedule")(
-        _Ctx(schedule_deps), schedule_id=schedule_id, patch=AgentScheduleUpdate(cron="0 4 * * *", enabled=False)
+        ToolCallContext(schedule_deps),
+        schedule_id=schedule_id,
+        patch=AgentScheduleUpdate(cron="0 4 * * *", enabled=False),
     )
     assert updated == TOOL_OK
     stored = await schedule_deps.repo.get_schedule(schedule_id)
@@ -100,7 +88,7 @@ async def test_create_update_and_trigger_schedule(schedule_deps: AgentDeps) -> N
     assert stored.enabled is False
     assert stored.next_run is not None
 
-    triggered = await _tool_fn("trigger_schedule")(_Ctx(schedule_deps), schedule_id=schedule_id)
+    triggered = await _tool_fn("trigger_schedule")(ToolCallContext(schedule_deps), schedule_id=schedule_id)
     assert triggered == TOOL_OK
     stored = await schedule_deps.repo.get_schedule(schedule_id)
     assert stored is not None and stored.next_run is not None
@@ -110,7 +98,7 @@ async def test_create_update_and_trigger_schedule(schedule_deps: AgentDeps) -> N
 @pytest.mark.asyncio
 async def test_schedule_supports_rescrape_and_rejects_invalid_changes(schedule_deps: AgentDeps) -> None:
     created = await _tool_fn("create_schedule")(
-        _Ctx(schedule_deps),
+        ToolCallContext(schedule_deps),
         cron="*/15 * * * *",
         submission={"type": "rescrape", "limit": 25, "min_age_days": 7},
     )
@@ -122,20 +110,20 @@ async def test_schedule_supports_rescrape_and_rejects_invalid_changes(schedule_d
     assert stored.payload["targets"] == ["metadata"]
 
     invalid_cron = await _tool_fn("update_schedule")(
-        _Ctx(schedule_deps), schedule_id=schedule_id, patch=AgentScheduleUpdate(cron="not cron")
+        ToolCallContext(schedule_deps), schedule_id=schedule_id, patch=AgentScheduleUpdate(cron="not cron")
     )
     assert invalid_cron == {"error": "Invalid cron expression"}
 
     invalid_enabled = await _tool_fn("update_schedule")(
-        _Ctx(schedule_deps), schedule_id=schedule_id, patch=AgentScheduleUpdate(enabled=None)
+        ToolCallContext(schedule_deps), schedule_id=schedule_id, patch=AgentScheduleUpdate(enabled=None)
     )
     assert invalid_enabled == {"error": "enabled 不能为 null"}
 
-    missing = await _tool_fn("get_schedule")(_Ctx(schedule_deps), schedule_id=9999)
+    missing = await _tool_fn("get_schedule")(ToolCallContext(schedule_deps), schedule_id=9999)
     assert missing == {"error": "schedule 9999 不存在"}
 
     invalid_submission = await _tool_fn("create_schedule")(
-        _Ctx(schedule_deps), cron="0 3 * * *", submission={"type": "cleanup", "remove_missing_files": "x"}
+        ToolCallContext(schedule_deps), cron="0 3 * * *", submission={"type": "cleanup", "remove_missing_files": "x"}
     )
     # 失败时返回出错字段, 可用类型, 以及该类型的字段定义
     assert invalid_submission["error"].startswith("参数无效: cleanup.remove_missing_files:")
@@ -148,11 +136,13 @@ async def test_delete_schedule_requires_approval(schedule_deps: AgentDeps) -> No
     schedule = await schedule_deps.repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={})
     assert schedule.id is not None
     with pytest.raises(ApprovalRequired) as exc:
-        await _tool_fn("delete_schedule")(_Ctx(schedule_deps, tool_call_id="tc-schedule"), schedule_id=schedule.id)
+        await _tool_fn("delete_schedule")(
+            ToolCallContext(schedule_deps, tool_call_id="tc-schedule"), schedule_id=schedule.id
+        )
     assert (exc.value.metadata or {})["extra"]["schedule_id"] == schedule.id
 
     deleted = await _tool_fn("delete_schedule")(
-        _Ctx(schedule_deps, tool_call_id="tc-schedule", tool_call_approved=True), schedule_id=schedule.id
+        ToolCallContext(schedule_deps, tool_call_id="tc-schedule", tool_call_approved=True), schedule_id=schedule.id
     )
     assert deleted == TOOL_OK
     assert await schedule_deps.repo.get_schedule(schedule.id) is None

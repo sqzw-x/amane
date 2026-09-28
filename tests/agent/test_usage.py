@@ -30,19 +30,17 @@ from amane.agent.usage import (
 @pytest.mark.parametrize(
     ("run", "expected"),
     [
-        (RunUsage(input_tokens=100, cache_read_tokens=40, cache_write_tokens=10, output_tokens=20), (50, 40, 10, 20)),
-        (RunUsage(input_tokens=10, output_tokens=5), (10, 0, 0, 5)),
-        (RunUsage(input_tokens=5, cache_read_tokens=10, output_tokens=1), (0, 10, 0, 1)),
+        (
+            RunUsage(input_tokens=100, cache_read_tokens=40, cache_write_tokens=10, output_tokens=20),
+            (50, 40, 10, 20, 0),
+        ),
+        (RunUsage(input_tokens=10, output_tokens=5, requests=3), (10, 0, 0, 5, 3)),
+        (RunUsage(input_tokens=5, cache_read_tokens=10, output_tokens=1), (0, 10, 0, 1, 0)),
     ],
 )
-def test_turn_usage_from_run(run: RunUsage, expected: tuple[int, int, int, int]) -> None:
+def test_turn_usage_from_run(run: RunUsage, expected: tuple[int, int, int, int, int]) -> None:
     u = turn_usage_from_run(run)
-    assert (u.input, u.cache_read, u.cache_write, u.output) == expected
-
-
-def test_turn_usage_includes_requests() -> None:
-    u = turn_usage_from_run(RunUsage(input_tokens=10, output_tokens=2, requests=3))
-    assert u.requests == 3
+    assert (u.input, u.cache_read, u.cache_write, u.output, u.requests) == expected
 
 
 _START = datetime(2026, 1, 1, tzinfo=UTC)

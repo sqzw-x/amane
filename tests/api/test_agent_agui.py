@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from ag_ui.core import AssistantMessage, UserMessage
 from pydantic_ai import Agent, DeferredToolRequests, RunContext
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import (
@@ -389,11 +390,11 @@ async def test_cancelled_turn_clears_pending_approvals(app: FastAPI, client: Asy
 
 @pytest.mark.asyncio
 async def test_disconnect_does_not_cancel_turn(app: FastAPI, client: AsyncClient) -> None:
-    """客户端中途断开只结束订阅, 回合继续跑完并落盘."""
+    """客户端中途断开只结束订阅, 回合继续运行并落盘."""
     service = await service_of(app, client)
     session = await service.create_session(title="disconnect")
     assert session.id is not None
-    _install_agent(service, _text_stream("跑完了"))
+    _install_agent(service, _text_stream("运行完了"))
 
     body: dict[str, Any] = {
         "threadId": str(session.id),
@@ -418,7 +419,7 @@ async def test_disconnect_does_not_cancel_turn(app: FastAPI, client: AsyncClient
         await asyncio.sleep(0.01)
 
     rows = service.store_for(session.id).read_events()
-    assert "".join(row.text for row in rows if isinstance(row, TextDeltaRow)) == "跑完了"
+    assert "".join(row.text for row in rows if isinstance(row, TextDeltaRow)) == "运行完了"
     assert any(isinstance(row, TurnUsageRow) for row in rows)
 
 
@@ -559,7 +560,7 @@ async def test_approval_interrupt_and_resume(app: FastAPI, client: AsyncClient, 
     stored = await repo.get_agent_session(session.id)
     assert stored is not None and stored.status is AgentSessionStatus.ACTIVE
 
-    # 续跑成功的那次回合发出空快照: 待批态由后一条覆盖, 页面重放不会停在旧的审批上
+    # 续批成功的那次回合发出空快照: 待批态由后一条覆盖, 页面重放不会停在旧的审批上
     snapshots = [row for row in service.store_for(session.id).read_events() if isinstance(row, ApprovalsRow)]
     assert [len(row.interrupts) for row in snapshots] == [1, 0]
 
@@ -604,7 +605,7 @@ async def test_approval_denied_via_resume(app: FastAPI, client: AsyncClient) -> 
 
 @pytest.mark.asyncio
 async def test_follow_replays_rows_from_scratch(app: FastAPI, client: AsyncClient) -> None:
-    """跟随端点只订阅: 回合未跑时回放全部回放行就关闭, 不启动回合."""
+    """跟随端点只订阅: 回合未运行时回放全部回放行就关闭, 不启动回合."""
     service = await service_of(app, client)
     session = await service.create_session(title="follow")
     assert session.id is not None
@@ -654,7 +655,7 @@ async def test_follow_attaches_to_running_turn_without_starting_one(
     assert service.is_turn_running(session.id), "回合未起来"
 
     follow_task = asyncio.create_task(client.get(f"/agent/sessions/{session.id}/agui/events"))
-    await asyncio.wait_for(entered.wait(), timeout=5)  # 订阅已建立, 而回合仍在跑
+    await asyncio.wait_for(entered.wait(), timeout=5)  # 订阅已建立, 而回合仍在运行
     assert service.is_turn_running(session.id), "订阅不应影响进行中的回合"
 
     release.set()
@@ -665,3 +666,65 @@ async def test_follow_attaches_to_running_turn_without_starting_one(
     rows = _sse_events(resp.text)
     assert [r["type"] for r in rows if r["type"] == "user_message"] == ["user_message"]
     assert "".join(str(r["text"]) for r in rows if r["type"] == "text_delta") == "上半下半"
+
+
+@pytest.mark.asyncio
+async def test_second_turn_on_running_session_rejected(app: FastAPI, client: AsyncClient) -> None:
+    """同一会话同时只运行一个回合: 进行中再 POST 被拒 (409), 该回合本身不受影响."""
+    release = asyncio.Event()
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[StreamItem]:
+        yield "上半"
+        await release.wait()
+        yield "下半"
+
+    service = await service_of(app, client)
+    session = await service.create_session(title="busy")
+    assert session.id is not None
+    _install_agent(service, stream)
+
+    run_task = asyncio.create_task(_run(client, session.id, [_user("在吗")]))
+    for _ in range(200):
+        if service.is_turn_running(session.id):
+            break
+        await asyncio.sleep(0.01)
+    assert service.is_turn_running(session.id), "回合未起来"
+
+    resp = await client.post(f"/agent/sessions/{session.id}/agui", json={})
+    assert resp.status_code == 409
+
+    release.set()
+    assert (await asyncio.wait_for(run_task, timeout=5))[-1]["outcome"] == {"type": "success"}
+
+
+def _agui_messages(*items: tuple[str, str]) -> list[UserMessage | AssistantMessage]:
+    built: list[UserMessage | AssistantMessage] = []
+    for index, (role, text) in enumerate(items):
+        if role == "user":
+            built.append(UserMessage(id=f"m{index}", role="user", content=text))
+        else:
+            built.append(AssistantMessage(id=f"m{index}", role="assistant", content=text))
+    return built
+
+
+def _history(*texts: str) -> list[ModelMessage]:
+    return [ModelRequest(parts=[UserPromptPart(content=text)]) for text in texts]
+
+
+@pytest.mark.parametrize(
+    ("replayed", "history_texts", "expected"),
+    [
+        ([], [], []),
+        ([("assistant", "答")], ["旧问"], []),
+        ([("user", "旧问")], ["旧问"], []),
+        ([("user", "旧问"), ("assistant", "旧答"), ("user", "新问")], ["旧问"], ["新问"]),
+        ([("user", "改过的旧问")], ["旧问"], ["改过的旧问"]),
+    ],
+    ids=["空客户端", "只有助手消息", "完全重放", "追加新输入", "重放被编辑"],
+)
+def test_new_messages_keeps_only_unseen_user_input(
+    replayed: list[tuple[str, str]], history_texts: list[str], expected: list[str]
+) -> None:
+    """按用户输入切分: 与服务端历史逐条相等的开头被裁掉, 之后的内容整段算本轮新输入."""
+    incoming = agent_agui._new_messages(_agui_messages(*replayed), _history(*history_texts))
+    assert agent_agui._new_user_texts(incoming) == expected

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 
-from amane.agent.rows import TextDeltaRow
+from amane.agent.rows import TextDeltaRow, ToolCallRow
 from amane.agent.trace import SessionStore
 
 
@@ -42,7 +43,7 @@ async def test_session_store_seq_and_follow(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_session_store_skips_unreadable_rows(tmp_path: Path) -> None:
-    """半行与未知行只丢弃该行: 一行坏数据不应让整个会话无法回放."""
+    """无法解析的行与未知类型只丢弃该行: 一行坏数据不应让整个会话无法回放."""
     store = SessionStore(tmp_path / "4")
     await store.append_row(TextDeltaRow(type="text_delta", block_id="m1", text="a"))
     with store._events_path.open("a", encoding="utf-8") as f:
@@ -89,7 +90,7 @@ async def test_session_store_parses_only_appended_bytes(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_session_store_appends_after_partial_line(tmp_path: Path) -> None:
-    """崩溃留下没有换行的半行时, 新进程追加的行必须自成一行, 不能被半行吞掉."""
+    """日志末尾停在没有换行的半行时, 新进程追加的行必须自成一行, 不与半行拼成同一行."""
     path = tmp_path / "6"
     path.mkdir()
     await SessionStore(path).append_row(TextDeltaRow(type="text_delta", block_id="m1", text="a"))
@@ -104,9 +105,18 @@ async def test_session_store_appends_after_partial_line(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_session_store_row_roundtrip(tmp_path: Path) -> None:
-    """落盘再读回: 行按联合还原, 且 seq 由 store 补 (重启后回放同一份数据)."""
-    await SessionStore(tmp_path / "3").append_row(TextDeltaRow(type="text_delta", block_id="m1", text="a"))
+    """落盘再读回: 行按判别联合还原成各自的类型, seq 由 store 补, at 是合法时间戳."""
+    store = SessionStore(tmp_path / "3")
+    await store.append_row(TextDeltaRow(type="text_delta", block_id="m1", text="a"))
+    await store.append_row(
+        ToolCallRow(type="tool_call", tool_call_id="c1", name="sql_explore", args={"sql": "SELECT 1"})
+    )
 
-    row = SessionStore(tmp_path / "3").read_events()[0]
-    assert isinstance(row, TextDeltaRow)
-    assert (row.block_id, row.text, row.seq) == ("m1", "a", 1)
+    rows = SessionStore(tmp_path / "3").read_events()
+    assert [type(row) for row in rows] == [TextDeltaRow, ToolCallRow]
+    assert [row.seq for row in rows] == [1, 2]
+    assert {datetime.fromisoformat(row.at).tzinfo for row in rows} == {UTC}
+    assert isinstance(rows[0], TextDeltaRow)
+    assert (rows[0].block_id, rows[0].text) == ("m1", "a")
+    assert isinstance(rows[1], ToolCallRow)
+    assert (rows[1].tool_call_id, rows[1].name, rows[1].args) == ("c1", "sql_explore", {"sql": "SELECT 1"})

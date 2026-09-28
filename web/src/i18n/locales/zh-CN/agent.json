@@ -12,6 +12,7 @@
   "batchApprove": "批量批准",
   "approvalApproved": "已批准",
   "approvalRejected": "已拒绝",
+  "approvalRejectReason": "用户拒绝执行",
   "openMeta": "在片库中打开",
   "openActors": "在演员中打开",
   "persist": "保留预设",
