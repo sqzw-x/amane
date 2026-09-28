@@ -5134,252 +5134,6 @@
         }
       }
     },
-    "/api/agent/sessions/{session_id}/messages/stream": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Stream Agent Message",
-        "description": "启动后台回合并以 SSE 订阅事件; 客户端断连不取消回合.",
-        "operationId": "stream_agent_message",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Session Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentMessageRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/sessions/{session_id}/events/stream": {
-      "get": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Stream Agent Events",
-        "description": "续订会话事件流 (刷新或切换页面后用). after= 上次收到的 seq.",
-        "operationId": "stream_agent_events",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Session Id"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "After"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/sessions/{session_id}/approve/stream": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Stream Approve Agent Sql",
-        "operationId": "stream_approve_agent_sql",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Session Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentApproveRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/sessions/{session_id}/reject/stream": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Stream Reject Agent Approval",
-        "operationId": "stream_reject_agent_approval",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Session Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentRejectRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/sessions/{session_id}/cancel": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Cancel Agent Turn",
-        "description": "显式终止后台回合; 与 SSE 断连无关.",
-        "operationId": "cancel_agent_turn",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Session Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentCancelResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/agent/sessions/{session_id}/trace": {
       "get": {
         "tags": [
@@ -5658,6 +5412,88 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SavedQueryResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/sessions/{session_id}/agui": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Run Agent Agui",
+        "description": "启动 AG-UI 回合 (后台执行) 并订阅其事件. ``threadId`` 由适配器映射为 ``conversation_id``.",
+        "operationId": "run_agent_agui",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/sessions/{session_id}/agui/cancel": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Cancel Agui Turn",
+        "description": "显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续跑完.",
+        "operationId": "cancel_agui_turn",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCancelResponse"
                 }
               }
             }
@@ -6220,32 +6056,6 @@
         ],
         "title": "ActorUserTagsRequest"
       },
-      "AgentApproveRequest": {
-        "properties": {
-          "approval_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 64,
-            "minItems": 1,
-            "title": "Approval Ids"
-          },
-          "slow_timeout_ms": {
-            "type": "integer",
-            "maximum": 300000.0,
-            "minimum": 1000.0,
-            "title": "Slow Timeout Ms",
-            "default": 60000
-          }
-        },
-        "type": "object",
-        "required": [
-          "approval_ids"
-        ],
-        "title": "AgentApproveRequest",
-        "description": "一次可批多项; 服务端顺序执行后只开一轮模型 follow-up."
-      },
       "AgentCancelResponse": {
         "properties": {
           "cancelled": {
@@ -6353,34 +6163,6 @@
         "type": "object",
         "title": "AgentConfig",
         "description": "与 llm 翻译 section 分离: 凭据/模型/限速各自独立."
-      },
-      "AgentMessageRequest": {
-        "properties": {
-          "content": {
-            "type": "string",
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Content"
-          }
-        },
-        "type": "object",
-        "required": [
-          "content"
-        ],
-        "title": "AgentMessageRequest"
-      },
-      "AgentRejectRequest": {
-        "properties": {
-          "approval_id": {
-            "type": "string",
-            "title": "Approval Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "approval_id"
-        ],
-        "title": "AgentRejectRequest"
       },
       "AgentSessionCreateRequest": {
         "properties": {

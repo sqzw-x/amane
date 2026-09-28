@@ -18,6 +18,9 @@
     "deps:update": "ncu -u --target minor && pnpm install"
   },
   "dependencies": {
+    "@ag-ui/client": "^0.0.59",
+    "@assistant-ui/react": "^0.15.22",
+    "@assistant-ui/react-ag-ui": "^0.0.62",
     "@mantine/core": "^9.6.0",
     "@mantine/hooks": "^9.6.0",
     "@mantine/notifications": "^9.6.0",

@@ -551,33 +551,6 @@ export const ActorUserTagsRequestSchema = {
     title: 'ActorUserTagsRequest'
 } as const;
 
-export const AgentApproveRequestSchema = {
-    properties: {
-        approval_ids: {
-            items: {
-                type: 'string'
-            },
-            type: 'array',
-            maxItems: 64,
-            minItems: 1,
-            title: 'Approval Ids'
-        },
-        slow_timeout_ms: {
-            type: 'integer',
-            maximum: 300000,
-            minimum: 1000,
-            title: 'Slow Timeout Ms',
-            default: 60000
-        }
-    },
-    type: 'object',
-    required: [
-        'approval_ids'
-    ],
-    title: 'AgentApproveRequest',
-    description: '一次可批多项; 服务端顺序执行后只开一轮模型 follow-up.'
-} as const;
-
 export const AgentCancelResponseSchema = {
     properties: {
         cancelled: {
@@ -686,36 +659,6 @@ export const AgentConfigSchema = {
     type: 'object',
     title: 'AgentConfig',
     description: '与 llm 翻译 section 分离: 凭据/模型/限速各自独立.'
-} as const;
-
-export const AgentMessageRequestSchema = {
-    properties: {
-        content: {
-            type: 'string',
-            maxLength: 32000,
-            minLength: 1,
-            title: 'Content'
-        }
-    },
-    type: 'object',
-    required: [
-        'content'
-    ],
-    title: 'AgentMessageRequest'
-} as const;
-
-export const AgentRejectRequestSchema = {
-    properties: {
-        approval_id: {
-            type: 'string',
-            title: 'Approval Id'
-        }
-    },
-    type: 'object',
-    required: [
-        'approval_id'
-    ],
-    title: 'AgentRejectRequest'
 } as const;
 
 export const AgentSessionCreateRequestSchema = {

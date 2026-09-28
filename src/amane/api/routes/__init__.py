@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from .actors import router as actors_router
 from .agent import router as agent_router
+from .agent_agui import router as agent_agui_router
 from .comments import router as comments_router
 from .config import router as config_router
 from .facets import router as facets_router
@@ -43,4 +44,5 @@ router.include_router(tasks_router)
 router.include_router(libraries_router)
 router.include_router(webhooks_router)
 router.include_router(agent_router)
+router.include_router(agent_agui_router)
 router.include_router(ws_router)

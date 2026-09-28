@@ -291,22 +291,6 @@ export type ActorUserTagsRequest = {
 };
 
 /**
- * AgentApproveRequest
- *
- * 一次可批多项; 服务端顺序执行后只开一轮模型 follow-up.
- */
-export type AgentApproveRequest = {
-    /**
-     * Approval Ids
-     */
-    approval_ids: Array<string>;
-    /**
-     * Slow Timeout Ms
-     */
-    slow_timeout_ms?: number;
-};
-
-/**
  * AgentCancelResponse
  */
 export type AgentCancelResponse = {
@@ -364,26 +348,6 @@ export type AgentConfig = {
      * History Max Sessions
      */
     history_max_sessions?: number;
-};
-
-/**
- * AgentMessageRequest
- */
-export type AgentMessageRequest = {
-    /**
-     * Content
-     */
-    content: string;
-};
-
-/**
- * AgentRejectRequest
- */
-export type AgentRejectRequest = {
-    /**
-     * Approval Id
-     */
-    approval_id: string;
 };
 
 /**
@@ -6666,153 +6630,6 @@ export type UpdateAgentSessionResponses = {
 
 export type UpdateAgentSessionResponse = UpdateAgentSessionResponses[keyof UpdateAgentSessionResponses];
 
-export type StreamAgentMessageData = {
-    body: AgentMessageRequest;
-    path: {
-        /**
-         * Session Id
-         */
-        session_id: number;
-    };
-    query?: never;
-    url: '/api/agent/sessions/{session_id}/messages/stream';
-};
-
-export type StreamAgentMessageErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type StreamAgentMessageError = StreamAgentMessageErrors[keyof StreamAgentMessageErrors];
-
-export type StreamAgentMessageResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type StreamAgentEventsData = {
-    body?: never;
-    path: {
-        /**
-         * Session Id
-         */
-        session_id: number;
-    };
-    query?: {
-        /**
-         * After
-         */
-        after?: number;
-    };
-    url: '/api/agent/sessions/{session_id}/events/stream';
-};
-
-export type StreamAgentEventsErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type StreamAgentEventsError = StreamAgentEventsErrors[keyof StreamAgentEventsErrors];
-
-export type StreamAgentEventsResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type StreamApproveAgentSqlData = {
-    body: AgentApproveRequest;
-    path: {
-        /**
-         * Session Id
-         */
-        session_id: number;
-    };
-    query?: never;
-    url: '/api/agent/sessions/{session_id}/approve/stream';
-};
-
-export type StreamApproveAgentSqlErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type StreamApproveAgentSqlError = StreamApproveAgentSqlErrors[keyof StreamApproveAgentSqlErrors];
-
-export type StreamApproveAgentSqlResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type StreamRejectAgentApprovalData = {
-    body: AgentRejectRequest;
-    path: {
-        /**
-         * Session Id
-         */
-        session_id: number;
-    };
-    query?: never;
-    url: '/api/agent/sessions/{session_id}/reject/stream';
-};
-
-export type StreamRejectAgentApprovalErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type StreamRejectAgentApprovalError = StreamRejectAgentApprovalErrors[keyof StreamRejectAgentApprovalErrors];
-
-export type StreamRejectAgentApprovalResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type CancelAgentTurnData = {
-    body?: never;
-    path: {
-        /**
-         * Session Id
-         */
-        session_id: number;
-    };
-    query?: never;
-    url: '/api/agent/sessions/{session_id}/cancel';
-};
-
-export type CancelAgentTurnErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type CancelAgentTurnError = CancelAgentTurnErrors[keyof CancelAgentTurnErrors];
-
-export type CancelAgentTurnResponses = {
-    /**
-     * Successful Response
-     */
-    200: AgentCancelResponse;
-};
-
-export type CancelAgentTurnResponse = CancelAgentTurnResponses[keyof CancelAgentTurnResponses];
-
 export type GetAgentTraceData = {
     body?: never;
     path: {
@@ -7009,3 +6826,61 @@ export type GetSavedQueryResultResponses = {
 };
 
 export type GetSavedQueryResultResponse = GetSavedQueryResultResponses[keyof GetSavedQueryResultResponses];
+
+export type RunAgentAguiData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: number;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{session_id}/agui';
+};
+
+export type RunAgentAguiErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunAgentAguiError = RunAgentAguiErrors[keyof RunAgentAguiErrors];
+
+export type RunAgentAguiResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type CancelAguiTurnData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: number;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{session_id}/agui/cancel';
+};
+
+export type CancelAguiTurnErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelAguiTurnError = CancelAguiTurnErrors[keyof CancelAguiTurnErrors];
+
+export type CancelAguiTurnResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgentCancelResponse;
+};
+
+export type CancelAguiTurnResponse = CancelAguiTurnResponses[keyof CancelAguiTurnResponses];
