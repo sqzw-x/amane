@@ -2,13 +2,13 @@
 
 模型经 ``FunctionModel`` 或替换的 ``model_request`` 驱动, 不触网. 覆盖:
 - 清洗 (取首行 / 去引号标点 / 截断) 与回退截断
-- 未配置模型、请求失败、超时 三条回退路径
+- 未配置模型、结果为空、请求失败、超时四条回退路径
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 
 import pytest
 from pydantic_ai.messages import (
@@ -19,17 +19,23 @@ from pydantic_ai.messages import (
     TextPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from amane.agent import naming as naming_module
 from amane.agent.naming import (
-    DEFAULT_TITLE,
     FALLBACK_MAX_CHARS,
     TITLE_MAX_CHARS,
     clean_title,
     fallback_title,
     generate_title,
 )
+from amane.db.models import DEFAULT_SESSION_TITLE
+
+_PROMPT = "找出全部 4K 影片"
+"""回退用例共用的首条输入: 长度在 ``FALLBACK_MAX_CHARS`` 之内, 回退即原文."""
+
+_RequestCall = Callable[..., Awaitable[ModelResponse]]
 
 
 def _text_model(result: str) -> FunctionModel:
@@ -37,6 +43,15 @@ def _text_model(result: str) -> FunctionModel:
         return ModelResponse(parts=[TextPart(result)])
 
     return FunctionModel(respond)
+
+
+async def _boom(*_args: object, **_kwargs: object) -> ModelResponse:
+    raise RuntimeError("upstream down")
+
+
+async def _hang(*_args: object, **_kwargs: object) -> ModelResponse:
+    await asyncio.sleep(5)
+    return ModelResponse(parts=[TextPart("x")])
 
 
 def _prompts(messages: Sequence[ModelMessage]) -> tuple[str, str]:
@@ -78,8 +93,8 @@ def test_clean_title(raw: str | None, expected: str) -> None:
         ("  多行\n输入  ", "多行 输入"),
         ("x" * FALLBACK_MAX_CHARS, "x" * FALLBACK_MAX_CHARS),
         ("x" * (FALLBACK_MAX_CHARS + 1), "x" * FALLBACK_MAX_CHARS + "…"),
-        ("", DEFAULT_TITLE),
-        ("   ", DEFAULT_TITLE),
+        ("", DEFAULT_SESSION_TITLE),
+        ("   ", DEFAULT_SESSION_TITLE),
     ],
 )
 def test_fallback_title(prompt: str, expected: str) -> None:
@@ -101,33 +116,26 @@ async def test_generate_title_passes_first_prompt_only() -> None:
     assert str(TITLE_MAX_CHARS) in system
 
 
+@pytest.mark.parametrize(
+    ("model", "request_fn", "timeout_s"),
+    [
+        (None, None, None),
+        (_text_model("  \n "), None, None),
+        (_text_model("x"), _boom, None),
+        (_text_model("x"), _hang, 0.01),
+    ],
+    ids=["未配置模型", "结果为空", "请求失败", "超时"],
+)
 @pytest.mark.asyncio
-async def test_generate_title_without_model_falls_back() -> None:
-    assert await generate_title(None, "找出全部 4K 影片") == "找出全部 4K 影片"
-
-
-@pytest.mark.asyncio
-async def test_generate_title_blank_result_falls_back() -> None:
-    assert await generate_title(_text_model("  \n "), "找出全部 4K 影片") == "找出全部 4K 影片"
-
-
-@pytest.mark.asyncio
-async def test_generate_title_request_failure_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def boom(*_args: object, **_kwargs: object) -> ModelResponse:
-        raise RuntimeError("upstream down")
-
-    monkeypatch.setattr(naming_module, "model_request", boom)
-    assert await generate_title(_text_model("x"), "找出全部 4K 影片") == "找出全部 4K 影片"
-
-
-@pytest.mark.asyncio
-async def test_generate_title_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
-    """标题迟到即失去意义: 超时后回退, 不让请求悬挂."""
-
-    async def hang(*_args: object, **_kwargs: object) -> ModelResponse:
-        await asyncio.sleep(5)
-        return ModelResponse(parts=[TextPart("x")])
-
-    monkeypatch.setattr(naming_module, "TIMEOUT_S", 0.01)
-    monkeypatch.setattr(naming_module, "model_request", hang)
-    assert await generate_title(_text_model("x"), "找出全部 4K 影片") == "找出全部 4K 影片"
+async def test_generate_title_falls_back(
+    model: Model | None,
+    request_fn: _RequestCall | None,
+    timeout_s: float | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """四条失败路径都回退首条输入截断; 其中超时不悬挂, 请求失败不上抛."""
+    if request_fn is not None:
+        monkeypatch.setattr(naming_module, "model_request", request_fn)
+    if timeout_s is not None:
+        monkeypatch.setattr(naming_module, "TIMEOUT_S", timeout_s)
+    assert await generate_title(model, _PROMPT) == _PROMPT

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..config import AgentConfig, AgentThinkingMode
-from ..db.models import AgentSession, AgentSessionStatus
+from ..db.models import DEFAULT_SESSION_TITLE, AgentSession, AgentSessionStatus
 from .bridge import AgentRuntimeBridge
 from .cache import ResultCache
 from .executor import QueryExecutor
@@ -74,7 +74,7 @@ class AgentService:
 
         task.add_done_callback(_clear)
 
-    async def create_session(self, title: str = "新会话") -> AgentSession:
+    async def create_session(self, title: str = DEFAULT_SESSION_TITLE) -> AgentSession:
         session = await self.repo.create_agent_session(title=title)
         assert session.id is not None
         store = self.store_for(session.id)

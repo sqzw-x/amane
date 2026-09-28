@@ -8,7 +8,6 @@ import {
   IconPercentage,
   IconRepeat,
 } from "@tabler/icons-react";
-import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { RequestTokenUsage, TurnTokenUsage } from "@/client/types.gen";
 
@@ -47,14 +46,12 @@ function MetricChip({
   exact,
   color,
   Icon,
-  suffix,
 }: {
   label: string;
   display: string;
   exact: string;
   color: string;
   Icon: typeof IconArrowDown;
-  suffix?: ReactNode;
 }) {
   return (
     <Tooltip label={`${label}: ${exact}`} withArrow openDelay={300}>
@@ -75,7 +72,6 @@ function MetricChip({
         <Text size="xs" c="dimmed" ff="monospace" style={{ lineHeight: 1.2 }}>
           {display}
         </Text>
-        {suffix}
       </Group>
     </Tooltip>
   );

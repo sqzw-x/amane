@@ -73,7 +73,7 @@ import {
   listAgentSessionsQueryKey,
   updateAgentSessionMutation,
 } from "@/client/@tanstack/react-query.gen";
-import { getAgentTrace } from "@/client/sdk.gen";
+import { cancelAguiTurn, getAgentTrace } from "@/client/sdk.gen";
 import type { AgentSessionResponse, RequestTokenUsage, TurnTokenUsage } from "@/client/types.gen";
 import {
   listSavedQueriesQueryKey,
@@ -87,6 +87,7 @@ import {
   SavedQueryManager,
 } from "@/components/agent/saved-query-manager";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
+import { apiFetch } from "@/lib/api-token";
 import { useFold } from "@/lib/agent/fold";
 import { foldTrace, REQUEST_USAGE_PART, type TraceRow } from "@/lib/agent/trace";
 import { TokenUsageBar, RequestUsageBar } from "@/components/agent/token-usage-bar";
@@ -114,7 +115,8 @@ class NotifyingHttpAgent extends HttpAgent {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** 非 null 且非数组的对象. 工具参数与回执的形状判定需要排除数组, 故不用 `lib/utils.ts::isRecord` (含数组). */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -134,9 +136,16 @@ function TextPart({ text, status }: Pick<TextMessagePartProps, "text" | "status"
   return <MarkdownContent text={text} streaming={isRunning(status)} />;
 }
 
-/** 思考块: 默认折叠; 同一步的多段思考由 ReasoningBlock 合并为一块. */
-function ReasoningBlock({ running, children }: { running: boolean; children: ReactNode }) {
-  const { t } = useTranslation("agent");
+/** 折叠块: 标题行固定为一行说明, 展开内容统一左缩进; 折叠与标题位置保持见 useFold. */
+function FoldBlock({
+  label,
+  running,
+  children,
+}: {
+  label: string;
+  running?: boolean;
+  children: ReactNode;
+}) {
   const { open, toggle, headerRef } = useFold();
   return (
     <Box mb="xs">
@@ -144,13 +153,17 @@ function ReasoningBlock({ running, children }: { running: boolean; children: Rea
         <Group gap={4} wrap="nowrap">
           {open ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
           <Text size="xs" c="dimmed">
-            {t("thinking.label")}
+            {label}
           </Text>
           {running && <Loader size={12} />}
         </Group>
       </UnstyledButton>
       {open && (
-        <Box pl="sm" mt={4} style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}>
+        <Box
+          pl="sm"
+          mt="xs"
+          style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}
+        >
           {children}
         </Box>
       )}
@@ -158,7 +171,7 @@ function ReasoningBlock({ running, children }: { running: boolean; children: Rea
   );
 }
 
-/** 单段思考正文; 折叠由 ReasoningBlock 统一负责. */
+/** 单段思考正文; 折叠由 FoldBlock 统一负责. */
 function ReasoningPart({ text }: { text: string }) {
   return (
     <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
@@ -174,33 +187,6 @@ function RequestUsagePart({ data }: { data: RequestTokenUsage }) {
 
 /** 一段活动里工具调用超过这个数就整组折叠. */
 const ACTIVITY_TOOL_LIMIT = 3;
-
-/** 工具调用超过阈值的连续活动 (思考 + 工具调用) 折叠为一块. */
-function ActivityGroup({ count, children }: { count: number; children: ReactNode }) {
-  const { t } = useTranslation("agent");
-  const { open, toggle, headerRef } = useFold();
-  return (
-    <Box mb="xs">
-      <UnstyledButton ref={headerRef} onClick={toggle}>
-        <Group gap={4} wrap="nowrap">
-          {open ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
-          <Text size="xs" c="dimmed">
-            {t("toolCallsCount", { n: count })}
-          </Text>
-        </Group>
-      </UnstyledButton>
-      {open && (
-        <Box
-          pl="sm"
-          mt="xs"
-          style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}
-        >
-          {children}
-        </Box>
-      )}
-    </Box>
-  );
-}
 
 type AssistantPartsComponents = ComponentProps<typeof MessagePrimitive.PartByIndex>["components"];
 
@@ -225,19 +211,21 @@ function PartRun({
   start: number;
   end: number;
 }) {
+  const { t } = useTranslation("agent");
   const runs = useMemo(() => reasoningRuns(parts, start, end), [parts, start, end]);
   return (
     <>
       {runs.map((run) =>
         run.kind === "reasoning" ? (
-          <ReasoningBlock
+          <FoldBlock
             key={`thought-${run.indices[0]}`}
+            label={t("thinking.label")}
             running={run.indices.some((index) => parts[index]?.status.type === "running")}
           >
             {run.indices.map((index) => (
               <PartAt key={index} index={index} />
             ))}
-          </ReasoningBlock>
+          </FoldBlock>
         ) : (
           <PartAt key={run.index} index={run.index} />
         ),
@@ -268,8 +256,9 @@ function reasoningRuns(parts: readonly PartState[], start: number, end: number):
   return chunks;
 }
 
-/** 助手部件: 默认折叠思考; 整条消息工具调用够多时, 首尾活动 (含夹在中间的文本) 折成一块. */
+/** 助手部件: 默认折叠思考; 整条消息工具调用够多时, 首尾活动 (含夹在中间的文本) 折叠为一块. */
 function AssistantParts() {
+  const { t } = useTranslation("agent");
   const approval = useContext(ApprovalContext);
   const parts = useAuiState((state) => state.message.parts);
   const tools = parts.flatMap((part) => (part.type === "tool-call" ? [part.toolCallId] : []));
@@ -277,7 +266,7 @@ function AssistantParts() {
   const last = parts.findLastIndex(
     (part) => part.type === "reasoning" || part.type === "tool-call",
   );
-  // 未决审批在活动里时保持展开, 否则批准入口会被折没.
+  // 未决审批在活动里时保持展开, 否则批准入口会被折叠隐藏.
   const awaiting = tools.some((id) =>
     approval?.interrupts.some((interrupt) => interrupt.toolCallId === id),
   );
@@ -288,9 +277,9 @@ function AssistantParts() {
   return (
     <>
       <PartRun parts={parts} start={0} end={first} />
-      <ActivityGroup count={tools.length}>
+      <FoldBlock label={t("toolCallsCount", { n: tools.length })}>
         <PartRun parts={parts} start={first} end={last + 1} />
-      </ActivityGroup>
+      </FoldBlock>
       <PartRun parts={parts} start={last + 1} end={parts.length} />
     </>
   );
@@ -298,14 +287,14 @@ function AssistantParts() {
 
 /** 交付的 SQL 视图: 只有 sql_deliver 的回执进芯片, sql_explore 的探查视图不进. */
 function savedQueryIdOf(toolName: string, result: unknown): number | null {
-  if (toolName !== "sql_deliver" || !isRecord(result)) return null;
+  if (toolName !== "sql_deliver" || !isPlainObject(result)) return null;
   const id = result.saved_query_id;
   return typeof id === "number" ? id : null;
 }
 
 /** 参数视图: 优先已解析的对象; 流式未成形或日志里只留 JSON 文本时退回解析文本. */
 function argsBodyOf(args: unknown, argsText: string): unknown {
-  if (isRecord(args) && Object.keys(args).length > 0) return args;
+  if (isPlainObject(args) && Object.keys(args).length > 0) return args;
   const text = argsText.trim();
   if (!text) return undefined;
   try {
@@ -326,6 +315,7 @@ function ToolCallPart({
   ToolCallMessagePartProps,
   "toolCallId" | "toolName" | "args" | "argsText" | "result" | "status"
 >) {
+  const { t } = useTranslation("agent");
   const { open, toggle, headerRef } = useFold();
   const queryClient = useQueryClient();
   const savedQueryId = savedQueryIdOf(toolName, result);
@@ -381,7 +371,7 @@ function ToolCallPart({
           {argsBody !== undefined && (
             <>
               <Text size="xs" c="dimmed">
-                参数
+                {t("toolArgs")}
               </Text>
               <JsonBlock value={argsBody} />
             </>
@@ -389,7 +379,7 @@ function ToolCallPart({
           {result !== undefined && (
             <>
               <Text size="xs" c="dimmed" mt={4}>
-                结果
+                {t("toolResult")}
               </Text>
               <JsonBlock value={result} />
             </>
@@ -459,13 +449,13 @@ function UserMessage() {
 /** 跟随端点的重建节拍: 行到得比渲染密, 逐行重建会把整段对话反复重排. */
 const FOLLOW_RENDER_MS = 300;
 
-/** 跟随回放行: 服务端先整段回放再跟随新行, 回合结束且追平后关闭; 断连由 signal 收掉. */
+/** 跟随回放行: 服务端先整段回放再跟随新行, 回合结束且追平后关闭; 断连由 signal 终止. */
 async function followTraceRows(
   sessionId: number,
   signal: AbortSignal,
   onRows: (rows: TraceRow[]) => void,
 ): Promise<void> {
-  const response = await fetch(`${apiBase()}/api/agent/sessions/${sessionId}/agui/events`, {
+  const response = await apiFetch(`${apiBase()}/api/agent/sessions/${sessionId}/agui/events`, {
     signal,
   });
   if (!response.ok || response.body === null) return;
@@ -510,6 +500,7 @@ type ApprovalQueue = {
     批量批准即对全部中断一次暂存 approve.
 */
 function useApprovalQueue(): ApprovalQueue {
+  const { t } = useTranslation("agent");
   const interrupts = useAgUiInterrupts();
   const submit = useAgUiSubmitInterruptResponses();
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
@@ -526,7 +517,7 @@ function useApprovalQueue(): ApprovalQueue {
             payload:
               next[item.id] === "approve"
                 ? { approved: true }
-                : { approved: false, reason: "已拒绝" },
+                : { approved: false, reason: t("approvalRejected") },
           })),
         );
       } catch (error) {
@@ -690,6 +681,7 @@ function AgUiThread({
       new NotifyingHttpAgent({
         url: `${apiBase()}/api/agent/sessions/${sessionId}/agui`,
         threadId: String(sessionId),
+        fetch: apiFetch,
       }),
     [sessionId],
   );
@@ -718,7 +710,7 @@ function AgUiThread({
     applyRows(data.events);
   }, [applyRows, sessionId]);
 
-  /** 收口: 重取快照, 并刷新会话列表 (标题与审批态可能在回合里变过). */
+  /** 回合收尾后重取快照并刷新会话列表 (标题与审批态可能在回合里变过). */
   const settle = useCallback(async () => {
     await snapshot();
     void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
@@ -733,7 +725,7 @@ function AgUiThread({
     [sessionId],
   );
 
-  // 回合在服务端后台跑: 本页的流随卸载断掉, 重挂载后由跟随端点接回 (先整段回放, 再跟随新行); 流关闭即回合已结束.
+  // 回合在服务端后台运行: 本页的流随卸载断掉, 重挂载后由跟随端点接回 (先整段回放, 再跟随新行); 流关闭即回合已结束.
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
@@ -879,9 +871,9 @@ function Composer({
           runtime.thread.append(text);
         }}
         onStop={() => {
-          // 回合在服务端后台跑, 断开连接停不住它: 先让服务端终止, 再收掉本地流.
-          void fetch(`${apiBase()}/api/agent/sessions/${sessionId}/agui/cancel`, {
-            method: "POST",
+          // 回合在服务端后台运行, 断开连接停不住它: 先让服务端终止, 再终止本地流.
+          void cancelAguiTurn({ path: { session_id: sessionId } }).then(({ error }) => {
+            if (error) notifications.show({ color: "red", message: String(error) });
           });
           runtime.thread.cancelRun();
         }}

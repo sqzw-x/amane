@@ -849,6 +849,6 @@ export const followAgentEvents = <ThrowOnError extends boolean = false>(options:
 /**
  * Cancel Agui Turn
  *
- * 显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续跑完.
+ * 显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续运行.
  */
 export const cancelAguiTurn = <ThrowOnError extends boolean = false>(options: Options<CancelAguiTurnData, ThrowOnError>): RequestResult<CancelAguiTurnResponses, CancelAguiTurnErrors, ThrowOnError> => (options.client ?? client).post<CancelAguiTurnResponses, CancelAguiTurnErrors, ThrowOnError>({ url: '/api/agent/sessions/{session_id}/agui/cancel', ...options });

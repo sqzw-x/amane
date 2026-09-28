@@ -1,6 +1,6 @@
 """`events.jsonl` 的契约: 会话 UI 重建的唯一数据源.
 
-每行是一条**已成形的展示事实** — 协议里那些需要前端二次推断的东西 (工具参数增量拼装、结果按名配对、
+每行是一条**已成形的展示事实** — 协议里需要前端二次推断的部分 (工具参数增量拼装、结果按名配对、
 用量位置、未决中断还原) 都在这里定形. 前端只按到达顺序折叠, 不认识 `ag_ui` 事件.
 
 联合以 `type` 判别, 经 OpenAPI 生成前端类型: 加字段或改字段名即在前端编译期暴露.
@@ -68,7 +68,7 @@ class ToolCallRow(RowBase):
 
 
 class ToolResultRow(RowBase):
-    """工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续跑的回合不会再报调用名)."""
+    """工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名)."""
 
     type: Literal["tool_result"]
     tool_call_id: str
@@ -127,7 +127,7 @@ class AguiEventRow(RowBase):
 
 
 def no_approvals() -> ApprovalsRow:
-    """无未决审批的快照. 回合的每条终止路径 (正常结束 / 取消 / 失败) 都要发出它, 否则页面重放时会停在
+    """无未决审批的快照. 回合的三条可控终止路径 (正常结束 / 取消 / 失败) 都要发出它, 否则页面重放时会停在
     上一轮遗留的待批态上.
     """
     return ApprovalsRow(type="approvals", interrupts=[])

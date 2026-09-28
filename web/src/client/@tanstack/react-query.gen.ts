@@ -2204,7 +2204,7 @@ export const getSavedQueryResultInfiniteOptions = (options: Options<GetSavedQuer
 /**
  * Cancel Agui Turn
  *
- * 显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续跑完.
+ * 显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续运行.
  */
 export const cancelAguiTurnMutation = (options?: Partial<Options<CancelAguiTurnData>>): UseMutationOptions<CancelAguiTurnResponse, CancelAguiTurnError, Options<CancelAguiTurnData>> => {
     const mutationOptions: UseMutationOptions<CancelAguiTurnResponse, CancelAguiTurnError, Options<CancelAguiTurnData>> = {

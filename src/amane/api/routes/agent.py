@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ...agent import AgentService
 from ...agent.sql import as_id_subquery_sql
-from ...db.models import AgentSession, SavedQueryEntity
+from ...db.models import DEFAULT_SESSION_TITLE, AgentSession, SavedQueryEntity
 from ...db.repository import Repository
 from ...utils.model import to_resp
 from ..deps import AgentDep, RepoDep, RuntimeDep
@@ -39,7 +39,7 @@ def _session_response(service: AgentService, session: AgentSession) -> AgentSess
 
 @router.post("/agent/sessions", status_code=201)
 async def create_agent_session(service: AgentDep, req: AgentSessionCreateRequest | None = None) -> AgentSessionResponse:
-    title = req.title if req is not None else "新会话"
+    title = req.title if req is not None else DEFAULT_SESSION_TITLE
     session = await service.create_session(title=title)
     return _session_response(service, session)
 

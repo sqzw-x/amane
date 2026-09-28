@@ -5566,7 +5566,7 @@
           "agent"
         ],
         "summary": "Cancel Agui Turn",
-        "description": "显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续跑完.",
+        "description": "显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续运行.",
         "operationId": "cancel_agui_turn",
         "parameters": [
           {
@@ -12916,7 +12916,7 @@
           "result"
         ],
         "title": "ToolResultRow",
-        "description": "工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续跑的回合不会再报调用名)."
+        "description": "工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名)."
       },
       "TrashSubmission": {
         "properties": {

@@ -13,6 +13,8 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, SystemPromptPart, U
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 
+from ..db.models import DEFAULT_SESSION_TITLE
+
 logger = structlog.get_logger()
 
 TITLE_MAX_CHARS = 30
@@ -26,9 +28,6 @@ TIMEOUT_S = 15.0
 
 MAX_TOKENS = 1024
 """输出预算. 部分提供商的模型先写思维链再输出正文, 预算过小时正文为空 (回退截断)."""
-
-DEFAULT_TITLE = "新会话"
-"""与 ``AgentSession.title`` 的建表默认一致."""
 
 _SYSTEM = (
     "你是会话标题生成器. 依据用户的第一条提问概括会话主题, "
@@ -70,5 +69,5 @@ def fallback_title(prompt: str) -> str:
     """首条输入压缩空白后截断."""
     text = " ".join(prompt.split())
     if not text:
-        return DEFAULT_TITLE
+        return DEFAULT_SESSION_TITLE
     return text if len(text) <= FALLBACK_MAX_CHARS else f"{text[:FALLBACK_MAX_CHARS]}…"

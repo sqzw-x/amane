@@ -607,13 +607,17 @@ class SavedQueryEntity(StrEnum):
     DATA = "data"
 
 
+DEFAULT_SESSION_TITLE = "新会话"
+"""会话标题默认值; 建表、创建请求与标题生成失败的回退共用."""
+
+
 class AgentSession(SQLModel, table=True):
     """会话索引; 完整 trace 落盘, 不在本表."""
 
     __tablename__ = "agent_sessions"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
-    title: str = Field(default="新会话", nullable=False)
+    title: str = Field(default=DEFAULT_SESSION_TITLE, nullable=False)
     status: AgentSessionStatus = Field(default=AgentSessionStatus.ACTIVE, index=True)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)

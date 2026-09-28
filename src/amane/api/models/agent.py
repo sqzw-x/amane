@@ -5,11 +5,11 @@ from pydantic import BaseModel, Field
 
 from ...agent.rows import UiRow
 from ...config import AgentThinkingMode
-from ...db.models import AgentSessionStatus, SavedQueryEntity
+from ...db.models import DEFAULT_SESSION_TITLE, AgentSessionStatus, SavedQueryEntity
 
 
 class AgentSessionCreateRequest(BaseModel):
-    title: str = Field(default="新会话", min_length=1, max_length=200)
+    title: str = Field(default=DEFAULT_SESSION_TITLE, min_length=1, max_length=200)
 
 
 class AgentSessionUpdateRequest(BaseModel):

@@ -42,6 +42,8 @@
   "renamePrompt": "Session title",
   "confirmDeleteSession": "Delete this session? Unpersisted saved queries will be removed.",
   "toolCallsCount": "{{n}} tools called",
+  "toolArgs": "Arguments",
+  "toolResult": "Result",
   "savedQueryChip": "Saved query #{{id}}",
   "usage": {
     "requests": "requests",

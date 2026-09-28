@@ -7470,7 +7470,7 @@ export const ToolResultRowSchema = {
         'result'
     ],
     title: 'ToolResultRow',
-    description: '工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续跑的回合不会再报调用名).'
+    description: '工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名).'
 } as const;
 
 export const TrashSubmissionSchema = {

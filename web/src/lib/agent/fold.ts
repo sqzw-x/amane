@@ -1,4 +1,4 @@
-/** 折叠块的展开状态与"钉住标题行": 展开会让块变高, 视口在跟随底部时会把标题顶走. */
+/** 折叠块的展开状态, 以及展开前后对标题行屏幕位置的还原. */
 
 import { useCallback, useRef, useState, type RefObject } from "react";
 
@@ -8,10 +8,10 @@ export type Fold = {
   headerRef: RefObject<HTMLButtonElement | null>;
 };
 
-/** 展开/收起前后把标题行钉回原来的屏幕位置, 同一处再点即可收起.
+/** 展开/收起前后补回标题行的屏幕位置, 同一处再点即可收起.
 
-    视口在跟随底部 (assistant-ui 的 autoScroll): 内容一变高就自动滚到底, 标题随之被顶走,
-    点击位置落在展开块的中段. 这里在状态变化前记下标题位置, 等布局与那次自动滚动落地后补回滚动量.
+    视口在跟随底部 (assistant-ui 的 autoScroll): 内容一变高就自动滚动到底, 标题行随之移出点击位置;
+    这里在状态变化前记下标题位置, 等布局与那次自动滚动落地后补回滚动量.
 */
 export function useFold(): Fold {
   const [open, setOpen] = useState(false);

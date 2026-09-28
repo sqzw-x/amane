@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from sqlmodel import col, select
 
-from ..models import AgentSession, AgentSessionStatus, SavedQuery, SavedQueryEntity
+from ..models import DEFAULT_SESSION_TITLE, AgentSession, AgentSessionStatus, SavedQuery, SavedQueryEntity
 from ..repo_types import _utcnow
 from .base import RepositoryMixinBase
 
 
 class AgentRepoMixin(RepositoryMixinBase):
-    async def create_agent_session(self, title: str = "新会话") -> AgentSession:
+    async def create_agent_session(self, title: str = DEFAULT_SESSION_TITLE) -> AgentSession:
         async with self._session() as session:
             row = AgentSession(title=title, status=AgentSessionStatus.ACTIVE)
             session.add(row)

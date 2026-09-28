@@ -1,6 +1,6 @@
 """AG-UI 协议端点: 回合在后台执行, 事件落盘后分发给订阅者.
 
-回合不随连接存活: 断连只结束订阅, 回合继续跑完; 页面切走再回来靠 ``GET .../agui/events`` 续上订阅.
+回合不随连接存活: 断连只结束订阅, 回合继续运行至结束; 页面切走再回来靠 ``GET .../agui/events`` 续上订阅.
 
 落盘两类行 (契约见 `...agent.rows`):
 - `AguiEventRow`: 分发给订阅端的 AG-UI 事件
@@ -153,7 +153,7 @@ def _token_usage(usage: RunUsage) -> TokenUsage:
 
 @dataclass
 class _ReplayRows:
-    """把 AG-UI 事件摊成回放行 (页面重建对话用).
+    """把 AG-UI 事件展开为回放行 (页面重建对话用).
 
     正文与工具回执按事件粒度落盘, 因此切回会话能看到逐条进展, 不必等整个回合结束.
     工具参数在协议里是增量字符串, 这里拼装成对象再落盘, 页面无需二次解析.
@@ -317,7 +317,7 @@ async def follow_agent_events(session_id: int, service: AgentDep, repo: RepoDep)
 
 @router.post("/agent/sessions/{session_id}/agui/cancel")
 async def cancel_agui_turn(session_id: int, service: AgentDep) -> AgentCancelResponse:
-    """显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续跑完."""
+    """显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续运行."""
     try:
         cancelled = await service.cancel_turn(session_id)
     except KeyError:
