@@ -126,12 +126,11 @@ async def test_update_metadata_rejects_unknown_field_with_writable_list(write_de
 
 @pytest.mark.asyncio
 async def test_delete_metadata_registers_approval(write_deps: AgentDeps) -> None:
-    with pytest.raises(ApprovalRequired):
+    with pytest.raises(ApprovalRequired) as exc:
         await _tool_fn("delete_metadata")(_Ctx(write_deps, tool_call_id="tc-del-md"), metadata_id=1)
-    assert len(write_deps.pending) == 1
-    pending = write_deps.pending["tc-del-md"]
-    assert pending.tool == "delete_metadata"
-    assert pending.extra.get("metadata_id") == 1
+    meta = exc.value.metadata or {}
+    assert meta["tool"] == "delete_metadata"
+    assert meta["extra"].get("metadata_id") == 1
     result = await _tool_fn("delete_metadata")(
         _Ctx(write_deps, tool_call_id="tc-del-md", tool_call_approved=True), metadata_id=1
     )

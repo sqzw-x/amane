@@ -62,7 +62,7 @@ Settings、任务提交、定时创建、metadata 编辑共用 `components/schem
 
 ## 对话通道
 
-`/` 的实现边界见 [agent.md](agent.md). 前端两点: 对话经由 `lib/agent/sse.ts` 手写 SSE, 不经 hey-api 也不经 `/ws`; 请求统一经由 `lib/api-token.ts` 的 `apiFetch` (纯透传, 只把 401 转成登录门, 鉴权用 HttpOnly cookie).
+`/` 的实现边界见 [agent.md](agent.md). 前端两点: 对话经 AG-UI (`@ag-ui/client` + `@assistant-ui/react-ag-ui`), 不经 hey-api 也不经 `/ws`; 请求统一经由 `lib/api-token.ts` 的 `apiFetch` (纯透传, 只把 401 转成登录门, 鉴权用 HttpOnly cookie).
 
 ## 实时与状态
 
@@ -72,7 +72,7 @@ Settings、任务提交、定时创建、metadata 编辑共用 `components/schem
 |------|--------|
 | 列表 / 详情 | TanStack Query (invalidate) |
 | 高频流 (进度 / 日志) | Zustand |
-| 对话增量 | SSE (与 WS 正交) |
+| 对话增量 | AG-UI 事件流 (与 WS 正交) |
 | 导航态 (筛选 / 排序 / page / view) | URL search |
 | 列表密度 / 列宽 / 主题 / 播放源顺序 / 列表默认参数 | Zustand (`amane-web`) |
 

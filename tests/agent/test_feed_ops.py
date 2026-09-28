@@ -262,13 +262,13 @@ async def test_delete_feed_and_items_require_approval(feed_deps: AgentDeps) -> N
     item = await feed_deps.repo.create_feed_item(feed.id, "item")
     assert item.id is not None
 
-    with pytest.raises(ApprovalRequired):
+    with pytest.raises(ApprovalRequired) as exc:
         await _tool_fn("batch_feed_items")(
             _Ctx(feed_deps, tool_call_id="tc-items"),
             feed_id=feed.id,
             request=AgentFeedItemBatch(action=FeedItemBatchAction.DELETE, ids=[item.id]),
         )
-    assert feed_deps.pending["tc-items"].extra["action"] == "delete"
+    assert (exc.value.metadata or {})["extra"]["action"] == "delete"
 
     deleted_item = await _tool_fn("batch_feed_items")(
         _Ctx(feed_deps, tool_call_id="tc-items", tool_call_approved=True),

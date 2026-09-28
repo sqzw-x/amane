@@ -41,10 +41,10 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from pydantic_ai.usage import RunUsage
 
-from ...agent.events import turn_usage_from_run
 from ...agent.runtime import UNLIMITED_USAGE, resolve_model_settings
 from ...agent.tools import AgentDeps
 from ...agent.trace import SessionStore
+from ...agent.usage import turn_usage_from_run
 from ...db.models import AgentSessionStatus
 from ..deps import AgentDep, RuntimeDep
 from ..models.agent import AgentCancelResponse
@@ -240,6 +240,10 @@ async def run_agent_agui(
                 )
                 for row in rows.feed(event):
                     await store.append_row(row)
+        except asyncio.CancelledError:
+            await store.append_row({"type": "cancelled"})
+            await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
+            raise
         except Exception as exc:
             await store.append_row({"type": "agui", "event": {"type": "RUN_ERROR", "message": str(exc)}})
             await store.append_row({"type": "error", "message": str(exc)})
@@ -248,13 +252,7 @@ async def run_agent_agui(
             store.set_turn_running(False)
 
     task = asyncio.create_task(consume(), name=f"agui-turn-{session_id}")
-    service._turn_tasks[session_id] = task
-
-    def _clear(finished: asyncio.Task[None]) -> None:
-        if service._turn_tasks.get(session_id) is finished:
-            service._turn_tasks.pop(session_id, None)
-
-    task.add_done_callback(_clear)
+    service.track_turn(session_id, task)
     return StreamingResponse(_follow(store, start_seq), media_type=SSE_CONTENT_TYPE)
 
 

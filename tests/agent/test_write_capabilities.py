@@ -185,13 +185,13 @@ async def test_rename_facet_and_delete_needs_approval(write_deps: AgentDeps) -> 
     assert renamed == TOOL_OK
     studios, _ = await write_deps.repo.list_facets(FacetKind.STUDIO, limit=10)
     assert [item.name for item in studios] == ["StudioB"]
-    with pytest.raises(ApprovalRequired):
+    with pytest.raises(ApprovalRequired) as exc:
         await _tool_fn(build_facet_identity_capability(), "delete_facet")(
             _Ctx(write_deps, tool_call_id="tc-del-facet"), kind=FacetKind.STUDIO, facet_id=facet_id
         )
-    pending = write_deps.pending["tc-del-facet"]
-    assert pending.tool == "delete_facet"
-    assert pending.extra.get("facet_id") == facet_id
+    meta = exc.value.metadata or {}
+    assert meta["tool"] == "delete_facet"
+    assert meta["extra"].get("facet_id") == facet_id
     deleted = await _tool_fn(build_facet_identity_capability(), "delete_facet")(
         _Ctx(write_deps, tool_call_id="tc-del-facet", tool_call_approved=True), kind=FacetKind.STUDIO, facet_id=facet_id
     )
@@ -213,11 +213,11 @@ async def test_library_create_refresh_and_delete_approval(write_deps: AgentDeps,
         _Ctx(write_deps), path="/etc", scan=False
     )
     assert "error" in outside
-    with pytest.raises(ApprovalRequired):
+    with pytest.raises(ApprovalRequired) as exc:
         await _tool_fn(build_library_ops_capability(), "delete_library")(
             _Ctx(write_deps, tool_call_id="tc-del-lib"), library_id=library_id
         )
-    assert write_deps.pending["tc-del-lib"].tool == "delete_library"
+    assert (exc.value.metadata or {})["tool"] == "delete_library"
     deleted = await _tool_fn(build_library_ops_capability(), "delete_library")(
         _Ctx(write_deps, tool_call_id="tc-del-lib", tool_call_approved=True), library_id=library_id
     )

@@ -157,9 +157,9 @@ async def test_schedule_supports_rescrape_and_rejects_invalid_changes(schedule_d
 async def test_delete_schedule_requires_approval(schedule_deps: AgentDeps) -> None:
     schedule = await schedule_deps.repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={})
     assert schedule.id is not None
-    with pytest.raises(ApprovalRequired):
+    with pytest.raises(ApprovalRequired) as exc:
         await _tool_fn("delete_schedule")(_Ctx(schedule_deps, tool_call_id="tc-schedule"), schedule_id=schedule.id)
-    assert schedule_deps.pending["tc-schedule"].extra["schedule_id"] == schedule.id
+    assert (exc.value.metadata or {})["extra"]["schedule_id"] == schedule.id
 
     deleted = await _tool_fn("delete_schedule")(
         _Ctx(schedule_deps, tool_call_id="tc-schedule", tool_call_approved=True), schedule_id=schedule.id

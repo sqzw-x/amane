@@ -1,22 +1,14 @@
-import json
-from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
-from ...agent import AgentService, StreamError
+from ...agent import AgentService
 from ...agent.sql import as_id_subquery_sql
 from ...db.models import AgentSession, SavedQueryEntity
 from ...db.repository import Repository
 from ...utils.model import to_resp
 from ..deps import AgentDep, RepoDep, RuntimeDep
 from ..models.agent import (
-    AgentApproveRequest,
-    AgentCancelResponse,
-    AgentMessageRequest,
-    AgentRejectRequest,
     AgentSessionCreateRequest,
     AgentSessionListResponse,
     AgentSessionResponse,
@@ -29,11 +21,6 @@ from ..models.agent import (
 )
 
 router = APIRouter(tags=["agent"])
-
-
-def _sse_pack(event: BaseModel | dict[str, object]) -> str:
-    payload = event.model_dump(mode="json") if isinstance(event, BaseModel) else event
-    return f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
 
 
 def _session_response(service: AgentService, session: AgentSession) -> AgentSessionResponse:
@@ -90,92 +77,6 @@ async def delete_agent_session(session_id: int, service: AgentDep) -> None:
     ok = await service.delete_session(session_id)
     if not ok:
         raise HTTPException(404, detail="会话不存在")
-
-
-@router.post("/agent/sessions/{session_id}/messages/stream")
-async def stream_agent_message(
-    session_id: int, req: AgentMessageRequest, service: AgentDep, runtime: RuntimeDep
-) -> StreamingResponse:
-    """启动后台回合并以 SSE 订阅事件; 客户端断连不取消回合."""
-    session = await runtime.repo.get_agent_session(session_id)
-    if session is None:
-        raise HTTPException(404, detail="会话不存在")
-
-    try:
-        after = await service.start_turn(session_id, req.content)
-    except KeyError:
-        raise HTTPException(404, detail="会话不存在") from None
-    except RuntimeError as exc:
-        msg = str(exc)
-
-        async def err_gen() -> AsyncIterator[str]:
-            yield _sse_pack(StreamError(message=msg))
-
-        return StreamingResponse(err_gen(), media_type="text/event-stream")
-
-    async def gen() -> AsyncIterator[str]:
-        async for row in service.subscribe_events(session_id, after):
-            yield _sse_pack(row)
-
-    return StreamingResponse(gen(), media_type="text/event-stream")
-
-
-@router.get("/agent/sessions/{session_id}/events/stream")
-async def stream_agent_events(
-    session_id: int, service: AgentDep, runtime: RuntimeDep, after: Annotated[int, Query(ge=0)] = 0
-) -> StreamingResponse:
-    """续订会话事件流 (刷新或切换页面后用). after= 上次收到的 seq."""
-    session = await runtime.repo.get_agent_session(session_id)
-    if session is None:
-        raise HTTPException(404, detail="会话不存在")
-
-    async def gen() -> AsyncIterator[str]:
-        async for row in service.subscribe_events(session_id, after):
-            yield _sse_pack(row)
-
-    return StreamingResponse(gen(), media_type="text/event-stream")
-
-
-@router.post("/agent/sessions/{session_id}/approve/stream")
-async def stream_approve_agent_sql(session_id: int, req: AgentApproveRequest, service: AgentDep) -> StreamingResponse:
-    async def gen() -> AsyncIterator[str]:
-        try:
-            after = await service.start_approve(session_id, req.approval_ids, slow_timeout_ms=req.slow_timeout_ms)
-            async for row in service.subscribe_events(session_id, after):
-                yield _sse_pack(row)
-        except KeyError:
-            yield _sse_pack(StreamError(message="批准请求不存在或已过期"))
-        except RuntimeError as exc:
-            yield _sse_pack(StreamError(message=str(exc)))
-
-    return StreamingResponse(gen(), media_type="text/event-stream")
-
-
-@router.post("/agent/sessions/{session_id}/reject/stream")
-async def stream_reject_agent_approval(
-    session_id: int, req: AgentRejectRequest, service: AgentDep
-) -> StreamingResponse:
-    async def gen() -> AsyncIterator[str]:
-        try:
-            after = await service.start_reject(session_id, req.approval_id)
-            async for row in service.subscribe_events(session_id, after):
-                yield _sse_pack(row)
-        except KeyError:
-            yield _sse_pack(StreamError(message="批准请求不存在或已过期"))
-        except RuntimeError as exc:
-            yield _sse_pack(StreamError(message=str(exc)))
-
-    return StreamingResponse(gen(), media_type="text/event-stream")
-
-
-@router.post("/agent/sessions/{session_id}/cancel")
-async def cancel_agent_turn(session_id: int, service: AgentDep) -> AgentCancelResponse:
-    """显式终止后台回合; 与 SSE 断连无关."""
-    try:
-        cancelled = await service.cancel_turn(session_id)
-    except KeyError:
-        raise HTTPException(404, detail="会话不存在") from None
-    return AgentCancelResponse(cancelled=cancelled)
 
 
 @router.get("/agent/sessions/{session_id}/trace")

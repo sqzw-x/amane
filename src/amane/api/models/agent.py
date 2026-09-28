@@ -32,21 +32,6 @@ class AgentSessionListResponse(BaseModel):
     items: list[AgentSessionResponse]
 
 
-class AgentMessageRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=32_000)
-
-
-class AgentApproveRequest(BaseModel):
-    """一次可批多项; 服务端顺序执行后只开一轮模型 follow-up."""
-
-    approval_ids: list[str] = Field(min_length=1, max_length=64)
-    slow_timeout_ms: int = Field(default=60_000, ge=1000, le=300_000)
-
-
-class AgentRejectRequest(BaseModel):
-    approval_id: str
-
-
 class AgentTraceResponse(BaseModel):
     meta: dict[str, Any]
     events: list[dict[str, Any]]

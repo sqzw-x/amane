@@ -45,7 +45,7 @@
 - 失败只回 `{"error": ...}` (多字段出错另附 `errors`, 最多三条), 文案须自足且可行动: 点名出错输入, 并给出下一步. 创建后立即触发的外呼失败属部分成功: 仍回新 id, 原因单列 `poll_error`, 不并入 `error`.
 - 大块结果保持「列名 + 行数组」结构, 列名只回一次, 不按行重复键名.
 
-执行前只修改实际调用与落入 `messages.json` 的 `tool_name`: `__` 最后一段恰好是当前可调用名时裁成该段; 名字已在可调用集合里或后缀对不上则原样交给框架 (未知工具仍 `ModelRetry`). 流式 SSE 徽章仍可能显示模型原始名.
+执行前只修改实际调用与落入 `messages.json` 的 `tool_name`: `__` 最后一段恰好是当前可调用名时裁成该段; 名字已在可调用集合里或后缀对不上则原样交给框架 (未知工具仍 `ModelRetry`). 工具卡片仍可能显示模型原始名.
 
 `actor-ops` 的别名工具对应别名模型 (见 [data-model.md](data-model.md) 演员身份): 别名是一对多行, `resolve_actor_name` 多命中即歧义, 应交由用户决定; `set_actor_display_name` 与 `facet-identity.rename_facet(kind=actor)` 等价, 二者任一即可, 不允许重复调用. `PATCH /config` **不**暴露为工具.
 
@@ -53,7 +53,7 @@
 
 `schedule-ops` 创建时只接受 `RoutineSubmission`; 更新只允许 `name` / `cron` / `enabled`, 任务类型或 payload 变化须删除后重建. `trigger_schedule` 只把 `next_run` 设为当前时间, 实际 Task 由 `CronScheduler` 下一次 tick 创建, 不是同步执行.
 
-**批准流**: SQL 非法或 SQLite 运行时错误 → 工具返回 `error` 字符串, **不**升格为 SSE `error` 打断整轮. 慢查询 (`allow_slow`) 与破坏性写 (metadata / facet merge·delete·删规则 / 删库) 在工具体内 `raise ApprovalRequired`, 回合产出 `DeferredToolRequests`, 服务端写成 SSE `needs_approval` (`approval_id` = `tool_call_id`). **批量批准**一次提交同工具全部待批 id; **单次批准**先前端暂存, 待同工具再无 pending 时再一次回灌 (与模型并行调用对齐), 发新消息前清除暂存. 前端收集待批时只扫描**最后一条用户消息之后**的气泡, 服务端对已不在 `_pending` 的 id 跳过而非整批失败. 批准 / 拒绝以 `deferred_tool_results` 继续运行 (`user_prompt=None`): 批准 → 工具体再次进入且 `tool_call_approved=True`; 拒绝 → `ToolDenied`. 模型只看见普通 tool return, **无**「用户已批准…」类旁白; 回放跳过带 `hidden` 的历史内部 user_message.
+**批准流**: SQL 非法或 SQLite 运行时错误 → 工具返回 `error` 字符串, **不**升格为回合错误打断整轮. 慢查询 (`allow_slow`) 与破坏性写 (metadata / facet merge·delete·删规则 / 删库) 在工具体内 `raise ApprovalRequired`; 适配器把 `DeferredToolRequests` 映射成 AG-UI 中断 (`RUN_FINISHED.outcome.interrupts`), 中断 `id` 为 `int-{tool_call_id}`, 文案取自工具给的 metadata. 一次 `resume[]` 必须回答**全部**打开的中断, 故前端逐项暂存决定、集齐后整批提交, 批量批准即全部置 approve. 批准 → 工具体再次进入且 `tool_call_approved=True`; 拒绝 → `ToolDenied`. 模型只看见普通 tool return, **无**「用户已批准…」类旁白; 刷新后用回放行末尾的中断还原待批状态。
 
 ## 会话数据
 
@@ -62,20 +62,22 @@
 | 文件 | 角色 |
 |------|------|
 | `messages.json` | **权威** LLM `message_history`; 供 prompt cache 前缀一致 |
-| `events.jsonl` | UI 事件流 (单调 `seq`); 回放气泡 / 工具 / usage; SSE 续订 |
+| `events.jsonl` | UI 回放行 (单调 `seq`): AG-UI 事件 + 气泡 / 工具 / usage; 供页面重建 |
 | `meta.json` | 附属文件 (`turn_running`、会话 `thinking` 覆盖等) |
 
-`agent_sessions` 表只做索引. 删会话清理目录与未 persist 的 Saved Query. 进程内 history / pending 有 TTL + LRU, 逐出后从 `messages.json` 重新装入; `ResultCache` 独立 TTL.
+`agent_sessions` 表只做索引. 删会话清理目录与未 persist 的 Saved Query. 进行中的回合任务登记在 `AgentService`, 取消与删会话据此终止; `messages.json` 是唯一的模型上下文来源, `ResultCache` 独立 TTL.
 
 ## 对话通道
 
 | 通道 | 用途 |
 |------|------|
-| REST | 会话 CRUD、`cancel`、`trace`、Saved Query list / get / patch / delete / result |
-| **SSE** | `messages/stream`、`approve/stream` 启动后台回合并订阅; `events/stream?after=` 续订 |
+| REST | 会话 CRUD、`trace`、Saved Query list / get / patch / delete / result |
+| **AG-UI** | `POST /agent/sessions/{id}/agui` 启动后台回合并订阅; `POST .../agui/cancel` 终止 |
 | `/ws` | 任务日志等广播 — **不**承载对话 |
 
-回合在服务端运行完毕: **客户端断连不取消**; 显式 `cancel` 才 `task.cancel()`, 落盘 `cancelled` 并把已生成片段写回 `messages.json`. 事件先落盘再推订阅者; UI 从 events 重建气泡, 模型上下文只认 `messages.json`.
+回合在服务端跑完: **客户端断连不取消**, 只有显式 `cancel` 才终止任务并落 `cancelled` 行. 事件先落盘再分发给订阅者; 每条 AG-UI 事件同时摊成回放行, 页面据此重建气泡 (协议本身没有历史回放), 模型上下文只认 `messages.json`.
+
+`RUN_FINISHED.usage` 由端点补 — 协议有这个字段而官方适配器不填; 客户端解析器会丢弃该字段, 页面从回放行取同一份数据. 客户端重放整段会话时, 服务端按**用户输入**切分并裁掉已入库的部分 — 工具回合在两侧的消息分组不同, 逐条比对全部消息必然错位.
 
 ## Saved Query
 
@@ -87,6 +89,6 @@
 
 ## 运行时
 
-`AgentService` 挂载于 `AppRuntime`: `rebuild` 按 `hot.agent` 重建工厂并裁剪 history 热缓存, **不清除** ResultCache; bootstrap 装配 `bridge` (safe_dirs / watcher / 动态 Worker 取消 / `FeedService.poll_one`).
+`AgentService` 挂载于 `AppRuntime`: `rebuild` 按 `hot.agent` 重建工厂, **不清除** ResultCache; bootstrap 装配 `bridge` (safe_dirs / watcher / 动态 Worker 取消 / `FeedService.poll_one`).
 
 上游协议由 `hot.agent.api_type` 选择, 模型构造与翻译共用 `llm/model.py::build_model`; `base_url` / `api_key` / `model` 原样交给对应 Provider (Anthropic 需填 Anthropic 端点, 无隐式改写). 身份与规则经 agent `instructions` 注入而**不是** `system_prompt`: Responses 协议把 agent instructions 放在 API 顶层 `instructions` 字段, 服务端插在 `input` 之前; `system_prompt` 会变成 `input` 里的 system 消息, 于是各 capability 的注意事项反而排在身份定位之前. 思考强度: 全局 `hot.agent.thinking` 为默认 (`None` = 不传), 会话覆盖在 `meta.json`; 每回合经由 `model_settings` 注入 thinking 与 `hot.agent.max_tokens`. 运行使用无上限的 `UsageLimits`.

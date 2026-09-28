@@ -55,7 +55,7 @@ async def explore_env(tmp_path: Path, repo: Repository) -> tuple[AgentDeps, Path
 
 @pytest.mark.asyncio
 async def test_materialize_explore_view_not_surfaced(explore_env: tuple[AgentDeps, Path]) -> None:
-    """探查视图是行数组: 无 entity、无 id 列要求, 不挂交付芯片."""
+    """探查视图是行数组: 无 entity、无 id 列要求."""
     deps, _db = explore_env
     result = await deps.executor.run_sql("SELECT title FROM metadata ORDER BY id", timeout_ms=deps.sql_timeout_ms)
     view_id, name, entity_ids = await materialize_saved_query(
@@ -64,12 +64,10 @@ async def test_materialize_explore_view_not_surfaced(explore_env: tuple[AgentDep
         entity=None,
         name="probe",
         result=result,
-        surface_to_user=False,
     )
     assert view_id > 0
     assert name == "probe"
     assert entity_ids == []
-    assert deps.last_saved_query_ids == []
     assert deps.executor.cache.get(view_id) is not None
 
     query = await deps.repo.get_saved_query(view_id)
@@ -81,20 +79,18 @@ async def test_materialize_explore_view_not_surfaced(explore_env: tuple[AgentDep
 
 
 @pytest.mark.asyncio
-async def test_materialize_deliver_surfaces_to_user(explore_env: tuple[AgentDeps, Path]) -> None:
-    """实体交付: 抽 id 列并挂芯片."""
+async def test_materialize_deliver_extracts_entity_ids(explore_env: tuple[AgentDeps, Path]) -> None:
+    """实体交付: 抽取实体 id 列."""
     deps, _db = explore_env
     result = await deps.executor.run_sql("SELECT id FROM metadata WHERE id <= 3", timeout_ms=deps.sql_timeout_ms)
-    view_id, _name, entity_ids = await materialize_saved_query(
+    _view_id, _name, entity_ids = await materialize_saved_query(
         deps,
         sql="SELECT id FROM metadata WHERE id <= 3",
         entity=SavedQueryEntity.METADATA,
         name=None,
         result=result,
-        surface_to_user=True,
     )
     assert entity_ids == [1, 2, 3]
-    assert deps.last_saved_query_ids == [view_id]
 
 
 @pytest.mark.asyncio
@@ -110,14 +106,12 @@ async def test_materialize_data_deliver_without_id(explore_env: tuple[AgentDeps,
         entity=None,
         name=None,
         result=result,
-        surface_to_user=True,
     )
     assert entity_ids == []
     query = await deps.repo.get_saved_query(view_id)
     assert query is not None
     assert query.entity == SavedQueryEntity.DATA
     assert query.name == "数据查询"
-    assert deps.last_saved_query_ids == [view_id]
 
 
 @pytest.mark.asyncio
@@ -132,7 +126,6 @@ async def test_materialize_entity_deliver_requires_id(explore_env: tuple[AgentDe
             entity=SavedQueryEntity.METADATA,
             name=None,
             result=result,
-            surface_to_user=True,
         )
 
 
@@ -168,4 +161,5 @@ async def test_sql_deliver_reports_row_count_not_id_count(explore_env: tuple[Age
     )
 
     assert out["row_count"] == 3
-    assert out["saved_query_id"] in deps.last_saved_query_ids
+    assert out["saved_query_id"] > 0
+    assert (await deps.repo.get_saved_query(out["saved_query_id"])) is not None

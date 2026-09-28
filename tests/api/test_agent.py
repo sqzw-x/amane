@@ -8,7 +8,6 @@ import pytest
 from fastapi import FastAPI
 from httpx2 import AsyncClient
 
-from amane.agent.events import StreamCancelled
 from amane.agent.service import AgentService
 from amane.db.models import SavedQueryEntity
 from amane.db.repository import Repository
@@ -197,25 +196,14 @@ async def test_delete_session_with_fk_and_ephemeral(repo: Repository) -> None:
 
 
 @pytest.mark.asyncio
-async def test_stream_messages_when_disabled(client: AsyncClient, repo: Repository) -> None:
-    session = await repo.create_agent_session()
-    assert session.id is not None
-    r = await client.post(f"/agent/sessions/{session.id}/messages/stream", json={"content": "hello"})
-    assert r.status_code == 200
-    assert "text/event-stream" in r.headers.get("content-type", "")
-    assert "data:" in r.text
-    assert "error" in r.text
-
-
-@pytest.mark.asyncio
 async def test_cancel_idle_and_missing(client: AsyncClient, repo: Repository) -> None:
     session = await repo.create_agent_session()
     assert session.id is not None
-    r = await client.post(f"/agent/sessions/{session.id}/cancel")
+    r = await client.post(f"/agent/sessions/{session.id}/agui/cancel")
     assert r.status_code == 200
     assert r.json() == {"cancelled": False}
 
-    r = await client.post("/agent/sessions/999999/cancel")
+    r = await client.post("/agent/sessions/999999/agui/cancel")
     assert r.status_code == 404
 
 
@@ -234,23 +222,16 @@ async def test_cancel_running_turn(app: FastAPI, client: AsyncClient) -> None:
         try:
             await gate.wait()
         except asyncio.CancelledError:
-            await store.append_row(StreamCancelled().model_dump(mode="json"))
+            await store.append_row({"type": "cancelled"})
             raise
         finally:
             store.set_turn_running(False)
 
-    task = asyncio.create_task(fake_turn(), name=f"agent-turn-{sid}")
-    service._turn_tasks[sid] = task
-
-    def _clear(t: asyncio.Task[None]) -> None:
-        if service._turn_tasks.get(sid) is t:
-            service._turn_tasks.pop(sid, None)
-
-    task.add_done_callback(_clear)
+    service.track_turn(sid, asyncio.create_task(fake_turn(), name=f"agent-turn-{sid}"))
     await asyncio.sleep(0)
     assert service.is_turn_running(sid)
 
-    r = await client.post(f"/agent/sessions/{sid}/cancel")
+    r = await client.post(f"/agent/sessions/{sid}/agui/cancel")
     assert r.status_code == 200
     assert r.json() == {"cancelled": True}
     assert not service.is_turn_running(sid)

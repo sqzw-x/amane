@@ -16,19 +16,6 @@ from .executor import QueryExecutor, extract_entity_ids
 from .sql import SqlNeedsApproval, SqlResult, SqlSandboxError, SqlTimeoutError
 from .trace import SessionTrace, TraceEvent
 
-
-class NeedsApprovalPayload(BaseModel):
-    """approval_id 实际为 tool_call_id."""
-
-    approval_id: str
-    sql: str
-    tool: str
-    entity: SavedQueryEntity | None = None
-    name: str | None = None
-    create_view: bool = False
-    reason: str = "allow_slow"
-
-
 TOOL_OK = "OK"
 """成功回执: 模型下一步不需要任何观测的写操作只回它. 见 docs/dev/agent.md 返回值契约."""
 
@@ -60,20 +47,6 @@ class InspectResult(BaseModel):
 
 
 @dataclass
-class PendingApproval:
-    """approval_id == tool_call_id."""
-
-    approval_id: str
-    session_id: int
-    sql: str
-    tool: str
-    entity: SavedQueryEntity | None = None
-    name: str | None = None
-    create_view: bool = False
-    extra: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
 class AgentDeps:
     repo: Repository
     executor: QueryExecutor
@@ -81,9 +54,6 @@ class AgentDeps:
     trace: SessionTrace
     sql_timeout_ms: int
     sample_limit: int = 20
-    pending: dict[str, PendingApproval] = field(default_factory=dict)
-    last_saved_query_ids: list[int] = field(default_factory=list)
-    awaiting_approval: NeedsApprovalPayload | None = None
     persist_tool_trace: bool = True
     """流式回合由 SSE 落盘工具事件时为 False, 避免重复写入."""
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
@@ -114,16 +84,6 @@ def require_approval(
         "extra": dict(extra or {}),
         "reason": "allow_slow",
     }
-    ctx.deps.pending[tool_call_id] = PendingApproval(
-        approval_id=tool_call_id,
-        session_id=ctx.deps.session_id,
-        sql=sql,
-        tool=tool,
-        entity=entity,
-        name=name,
-        create_view=create_view,
-        extra=dict(extra or {}),
-    )
     raise ApprovalRequired(metadata=meta)
 
 
@@ -139,13 +99,11 @@ async def materialize_saved_query(
     entity: SavedQueryEntity | None,
     name: str | None,
     result: SqlResult,
-    surface_to_user: bool,
 ) -> tuple[int, str, list[int]]:
     """把全量 SQL 结果写成会话 SavedQuery 并入缓存.
 
     ``entity`` 省略按 ``DATA`` 落库: 不校验/不抽取 id, 只作数据表交付或探查视图.
     ``entity`` 为 metadata/actor 时按交付契约抽取 ``id`` 列 (缺失抛 ValueError).
-    ``surface_to_user=True`` 时追加 ``last_saved_query_ids`` (交付芯片); 探查视图为 False.
     """
     entity = entity or SavedQueryEntity.DATA
     entity_ids: list[int] = []
@@ -161,8 +119,6 @@ async def materialize_saved_query(
     )
     assert saved.id is not None
     deps.executor.cache.put(CachedResult(saved_query_id=saved.id, columns=result.columns, rows=result.rows))
-    if surface_to_user:
-        deps.last_saved_query_ids.append(saved.id)
     return saved.id, saved.name, entity_ids
 
 
@@ -216,7 +172,6 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
                     entity=None,
                     name=name,
                     result=result,
-                    surface_to_user=False,
                 )
             except ValueError as exc:
                 return {"error": str(exc)}
@@ -276,7 +231,6 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
                 entity=entity,
                 name=name,
                 result=result,
-                surface_to_user=True,
             )
         except ValueError as exc:
             return {"error": str(exc)}
