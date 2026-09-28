@@ -4,14 +4,15 @@ import asyncio
 import contextlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ..config import AgentConfig, AgentThinkingMode
-from ..db.models import AgentSessionStatus
+from ..db.models import AgentSession, AgentSessionStatus
 from .bridge import AgentRuntimeBridge
 from .cache import ResultCache
 from .executor import QueryExecutor
 from .naming import generate_title
+from .rows import CancelledRow
 from .runtime import build_agent, build_model, parse_session_thinking
 from .sql import ReadonlySqlSandbox
 from .tools import AgentDeps
@@ -73,7 +74,7 @@ class AgentService:
 
         task.add_done_callback(_clear)
 
-    async def create_session(self, title: str = "新会话") -> Any:
+    async def create_session(self, title: str = "新会话") -> AgentSession:
         session = await self.repo.create_agent_session(title=title)
         assert session.id is not None
         store = self.store_for(session.id)
@@ -85,7 +86,6 @@ class AgentService:
                 "thinking": None,
             }
         )
-        await store.append_row({"type": "session_created", "title": title})
         return session
 
     async def name_session(self, session_id: int, prompt: str) -> str:
@@ -122,14 +122,12 @@ class AgentService:
             delete_session_dir(self.data_dir, session_id)
         return ok
 
-    def _make_deps(self, session_id: int, store: SessionStore) -> AgentDeps:
+    def _make_deps(self, session_id: int) -> AgentDeps:
         return AgentDeps(
             repo=self.repo,
             executor=self.executor,
             session_id=session_id,
-            trace=store,
             sql_timeout_ms=self.config.sql_timeout_ms,
-            persist_tool_trace=False,
             bridge=self.bridge,
         )
 
@@ -152,6 +150,6 @@ class AgentService:
 
     async def _write_cancelled(self, session_id: int) -> None:
         store = self.store_for(session_id)
-        await store.append_row({"type": "cancelled"})
+        await store.append_row(CancelledRow(type="cancelled"))
         await self.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
         store.set_turn_running(False)

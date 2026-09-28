@@ -14,7 +14,7 @@ from ..db.models import Feed, FeedItem, FeedItemReadState, FeedItemState, TaskTy
 from ..db.repo_types import FeedUpdates
 from ..handlers.models import CacheKind, ScrapePayload, build_feed_scrape_payload
 from ..parsing import ContentType
-from .tools import TOOL_OK, AgentDeps, require_approval, trace_tool
+from .tools import TOOL_OK, AgentDeps, require_approval
 
 _CACHE_KIND_ORDER = (CacheKind.metadata, CacheKind.trans)
 
@@ -236,26 +236,21 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
     @cap.tool
     async def list_feeds(ctx: RunContext[AgentDeps]) -> dict[str, object]:
         """List all RSS/Atom feeds."""
-        trace_tool(ctx, "tool_call", {"tool": "list_feeds"})
         feeds = await ctx.deps.repo.list_feeds()
         counts = await ctx.deps.repo.count_unread_feed_items()
         result: dict[str, object] = {
             "items": [_feed_summary(feed, counts.get(feed.id or 0, 0)).model_dump(mode="json") for feed in feeds]
         }
-        trace_tool(ctx, "tool_result", {"tool": "list_feeds", "result": result})
         return result
 
     @cap.tool
     async def get_feed(ctx: RunContext[AgentDeps], feed_id: int) -> dict[str, object]:
         """Get one feed by id."""
-        trace_tool(ctx, "tool_call", {"tool": "get_feed", "feed_id": feed_id})
         feed = await ctx.deps.repo.get_feed(feed_id)
         if feed is None:
             return {"error": f"feed {feed_id} 不存在"}
         counts = await ctx.deps.repo.count_unread_feed_items(feed_id)
-        result = _feed_info(feed, counts.get(feed_id, 0)).model_dump(mode="json")
-        trace_tool(ctx, "tool_result", {"tool": "get_feed", "result": result})
-        return result
+        return _feed_info(feed, counts.get(feed_id, 0)).model_dump(mode="json")
 
     @cap.tool
     async def create_feed(ctx: RunContext[AgentDeps], request: AgentFeedCreate) -> dict[str, object]:
@@ -263,7 +258,6 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
 
         A failed first poll keeps the feed; the result then carries ``poll_error``.
         """
-        trace_tool(ctx, "tool_call", {"tool": "create_feed", "request": request.model_dump(mode="json")})
         try:
             name, url, group, number_pattern, use_cache, ignore_keywords = _feed_create_values(request)
             if await ctx.deps.repo.get_feed_by_url(url) is not None:
@@ -296,20 +290,14 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 refreshed = await ctx.deps.repo.get_feed(feed.id)
                 fetch_error = refreshed.last_error if refreshed is not None else None
             if fetch_error is not None:
-                out = _created_with_poll_error(feed.id, fetch_error)
-                trace_tool(ctx, "tool_result", {"tool": "create_feed", "result": out})
-                return out
+                return _created_with_poll_error(feed.id, fetch_error)
 
         out: dict[str, object] = {"feed_id": feed.id}
-        trace_tool(ctx, "tool_result", {"tool": "create_feed", "result": out})
         return out
 
     @cap.tool
     async def update_feed(ctx: RunContext[AgentDeps], feed_id: int, patch: AgentFeedUpdate) -> str | dict[str, object]:
         """Patch user-editable feed settings."""
-        trace_tool(
-            ctx, "tool_call", {"tool": "update_feed", "feed_id": feed_id, "patch": patch.model_dump(mode="json")}
-        )
         feed = await ctx.deps.repo.get_feed(feed_id)
         if feed is None:
             return {"error": f"feed {feed_id} 不存在"}
@@ -325,13 +313,11 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
             return {"error": str(exc)}
         if updated is None:
             return {"error": f"feed {feed_id} 不存在"}
-        trace_tool(ctx, "tool_result", {"tool": "update_feed", "result": TOOL_OK})
         return TOOL_OK
 
     @cap.tool
     async def poll_feed(ctx: RunContext[AgentDeps], feed_id: int) -> str | dict[str, object]:
         """Poll one feed now; discovered items may enqueue SCRAPE tasks."""
-        trace_tool(ctx, "tool_call", {"tool": "poll_feed", "feed_id": feed_id})
         feed = await ctx.deps.repo.get_feed(feed_id)
         if feed is None:
             return {"error": f"feed {feed_id} 不存在"}
@@ -348,18 +334,15 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         # FeedService 把抓取失败记进 last_error 而非抛出, 只回 OK 会掩盖失败
         if refreshed.last_error:
             return {"error": f"拉取失败: {refreshed.last_error}"}
-        trace_tool(ctx, "tool_result", {"tool": "poll_feed", "result": TOOL_OK})
         return TOOL_OK
 
     @cap.tool
     async def delete_feed(ctx: RunContext[AgentDeps], feed_id: int) -> str | dict[str, object]:
         """Delete a feed and its item history."""
         detail = f"删除订阅源 id={feed_id} 及其条目历史"
-        trace_tool(ctx, "tool_call", {"tool": "delete_feed", "feed_id": feed_id})
         require_approval(ctx, sql=detail, tool="delete_feed", extra={"feed_id": feed_id})
         if not await ctx.deps.repo.delete_feed(feed_id):
             return {"error": f"feed {feed_id} 不存在"}
-        trace_tool(ctx, "tool_result", {"tool": "delete_feed", "result": TOOL_OK})
         return TOOL_OK
 
     @cap.tool
@@ -385,20 +368,6 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 group = normalize_feed_group(group)
             except ValueError as exc:
                 return {"error": str(exc)}
-        trace_tool(
-            ctx,
-            "tool_call",
-            {
-                "tool": "list_feed_items",
-                "feed_id": feed_id,
-                "search": search,
-                "state": state,
-                "read": read,
-                "group": group,
-                "offset": offset,
-                "limit": limit,
-            },
-        )
         try:
             rows, total = await ctx.deps.repo.list_feed_items(
                 feed_id,
@@ -415,24 +384,13 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
             items=[_feed_item_info(item, metadata_id) for item, metadata_id in rows],
             total=total,
         )
-        result = out.model_dump(mode="json")
-        trace_tool(ctx, "tool_result", {"tool": "list_feed_items", "result": result})
-        return result
+        return out.model_dump(mode="json")
 
     @cap.tool
     async def batch_feed_items(
         ctx: RunContext[AgentDeps], feed_id: int, request: AgentFeedItemBatch
     ) -> dict[str, object]:
         """Batch ignore, unignore, read, unread, delete, or scrape feed items."""
-        trace_tool(
-            ctx,
-            "tool_call",
-            {
-                "tool": "batch_feed_items",
-                "feed_id": feed_id,
-                "request": request.model_dump(mode="json"),
-            },
-        )
         feed = await ctx.deps.repo.get_feed(feed_id)
         if feed is None:
             return {"error": f"feed {feed_id} 不存在"}
@@ -483,7 +441,6 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 "submitted": len(tasks),
             }
 
-        trace_tool(ctx, "tool_result", {"tool": "batch_feed_items", "result": result})
         return result
 
     return cap

@@ -17,19 +17,10 @@ from amane.agent.executor import QueryExecutor
 from amane.agent.feed_ops import AgentFeedCreate, AgentFeedItemBatch, AgentFeedUpdate, build_feed_ops_capability
 from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.tools import TOOL_OK, AgentDeps
-from amane.agent.trace import TraceEvent
 from amane.api.models.feeds import FeedItemBatchAction
 from amane.db.models import FeedItemReadState, FeedItemState
 from amane.db.repository import Repository
 from amane.parsing import ContentType
-
-
-class _MemTrace:
-    def __init__(self) -> None:
-        self.events: list[TraceEvent] = []
-
-    def append(self, event: TraceEvent) -> None:
-        self.events.append(event)
 
 
 class _Ctx:
@@ -67,7 +58,6 @@ async def feed_deps(tmp_path: Path, repo: Repository) -> AgentDeps:
         repo=repo,
         executor=QueryExecutor(ReadonlySqlSandbox(db), ResultCache(ttl_s=60, max_entries=8)),
         session_id=session.id,
-        trace=_MemTrace(),  # type: ignore[arg-type]
         sql_timeout_ms=2000,
     )
 

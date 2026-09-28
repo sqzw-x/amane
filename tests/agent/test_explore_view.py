@@ -16,17 +16,8 @@ from amane.agent.cache import ResultCache
 from amane.agent.executor import QueryExecutor
 from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.tools import AgentDeps, build_explore_toolset, materialize_saved_query
-from amane.agent.trace import TraceEvent
 from amane.db.models import SavedQueryEntity
 from amane.db.repository import Repository
-
-
-class _MemTrace:
-    def __init__(self) -> None:
-        self.events: list[TraceEvent] = []
-
-    def append(self, event: TraceEvent) -> None:
-        self.events.append(event)
 
 
 @pytest_asyncio.fixture
@@ -46,7 +37,6 @@ async def explore_env(tmp_path: Path, repo: Repository) -> tuple[AgentDeps, Path
         repo=repo,
         executor=executor,
         session_id=session.id,
-        trace=_MemTrace(),  # type: ignore[arg-type]
         sql_timeout_ms=5000,
         sample_limit=5,
     )

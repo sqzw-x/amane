@@ -14,7 +14,6 @@ from .bridge import AgentRuntimeBridge
 from .cache import CachedResult
 from .executor import QueryExecutor, extract_entity_ids
 from .sql import SqlNeedsApproval, SqlResult, SqlSandboxError, SqlTimeoutError
-from .trace import SessionTrace, TraceEvent
 
 TOOL_OK = "OK"
 """成功回执: 模型下一步不需要任何观测的写操作只回它. 见 docs/dev/agent.md 返回值契约."""
@@ -51,11 +50,8 @@ class AgentDeps:
     repo: Repository
     executor: QueryExecutor
     session_id: int
-    trace: SessionTrace
     sql_timeout_ms: int
     sample_limit: int = 20
-    persist_tool_trace: bool = True
-    """流式回合由 SSE 落盘工具事件时为 False, 避免重复写入."""
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
 
 
@@ -85,11 +81,6 @@ def require_approval(
         "reason": "allow_slow",
     }
     raise ApprovalRequired(metadata=meta)
-
-
-def trace_tool(ctx: RunContext[AgentDeps], event_type: str, payload: dict[str, Any]) -> None:
-    if ctx.deps.persist_tool_trace:
-        ctx.deps.trace.append(TraceEvent(type=event_type, payload=payload))
 
 
 async def materialize_saved_query(
@@ -139,11 +130,6 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
         instead of hand-written LIMIT/OFFSET probes. Views are just row arrays — no entity
         or `id` column requirement. Views are not shown as UI chips.
         """
-        trace_tool(
-            ctx,
-            "tool_call",
-            {"tool": "sql_explore", "sql": sql, "allow_slow": allow_slow, "create_view": create_view, "name": name},
-        )
         try:
             result = await ctx.deps.executor.run_sql(
                 sql,
@@ -189,7 +175,6 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
                 row_count=result.row_count if result.row_count >= 0 else len(result.rows),
                 truncated=result.row_count < 0,
             )
-        trace_tool(ctx, "tool_result", {"tool": "sql_explore", "result": out.model_dump(mode="json")})
         return out.model_dump(mode="json")
 
     @toolset.tool
@@ -206,11 +191,6 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
         filter in /meta or /actors AND can be opened as a data table.
         Omit entity (or use data): any read-only result, rendered only as a data table.
         """
-        trace_tool(
-            ctx,
-            "tool_call",
-            {"tool": "sql_deliver", "sql": sql, "entity": entity, "name": name, "allow_slow": allow_slow},
-        )
         try:
             result = await ctx.deps.executor.run_sql(
                 sql,
@@ -240,7 +220,6 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
             name=display_name,
             row_count=len(result.rows),
         )
-        trace_tool(ctx, "tool_result", {"tool": "sql_deliver", "result": out.model_dump(mode="json")})
         return out.model_dump(mode="json")
 
     @toolset.tool
@@ -253,11 +232,6 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
         """Inspect rows of a saved_query / explore view by id (uses cache or re-runs SQL)."""
         limit = max(1, min(limit, 100))
         offset = max(0, offset)
-        trace_tool(
-            ctx,
-            "tool_call",
-            {"tool": "inspect_result", "saved_query_id": saved_query_id, "offset": offset, "limit": limit},
-        )
         query = await ctx.deps.repo.get_saved_query(saved_query_id)
         if query is None:
             return {"error": f"saved_query {saved_query_id} 不存在"}
@@ -271,7 +245,6 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
             rows=cached.rows[offset : offset + limit],
             total=len(cached.rows),
         )
-        trace_tool(ctx, "tool_result", {"tool": "inspect_result", "result": out.model_dump(mode="json")})
         return out.model_dump(mode="json")
 
     return toolset

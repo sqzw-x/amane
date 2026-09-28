@@ -9,7 +9,7 @@ from ..db.models import FacetKind, TaskType
 from ..db.repo_types import ActorPersonFields
 from ..handlers.models import ActorScrapePayload, CacheKind
 from ..utils.dates import normalize_calendar_date
-from .tools import TOOL_OK, AgentDeps, trace_tool, unknown_field_error
+from .tools import TOOL_OK, AgentDeps, unknown_field_error
 
 _AGENT_ACTOR_PATCH_KEYS = frozenset(
     {
@@ -46,14 +46,11 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
     @cap.tool
     async def get_actor_aliases(ctx: RunContext[AgentDeps], actor_id: int) -> dict[str, Any]:
         """List an actor's display name and alias rows (in order)."""
-        trace_tool(ctx, "tool_call", {"tool": "get_actor_aliases", "actor_id": actor_id})
         actor = await ctx.deps.repo.get_actor(actor_id)
         if actor is None:
             return {"error": f"actor {actor_id} 不存在"}
         aliases = await ctx.deps.repo.get_actor_aliases(actor_id)
-        out = {"name": actor.name, "aliases": aliases}
-        trace_tool(ctx, "tool_result", {"tool": "get_actor_aliases", "result": out})
-        return out
+        return {"name": actor.name, "aliases": aliases}
 
     @cap.tool
     async def resolve_actor_name(ctx: RunContext[AgentDeps], name: str) -> dict[str, Any]:
@@ -63,20 +60,16 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
         (ambiguous) — ask the user which actor before writing.
         """
         cleaned = (name or "").strip()
-        trace_tool(ctx, "tool_call", {"tool": "resolve_actor_name", "name": cleaned})
         if not cleaned:
             return {"error": "名字不能为空"}
         actors = await ctx.deps.repo.lookup_actors_by_name(cleaned)
         matches = [{"id": a.id, "name": a.name, "is_display": a.name == cleaned} for a in actors if a.id is not None]
-        out = {"matches": matches}
-        trace_tool(ctx, "tool_result", {"tool": "resolve_actor_name", "result": out})
-        return out
+        return {"matches": matches}
 
     @cap.tool
     async def add_actor_alias(ctx: RunContext[AgentDeps], actor_id: int, name: str) -> str | dict[str, Any]:
         """Add one alias row to an actor (idempotent; duplicate → error)."""
         cleaned = (name or "").strip()
-        trace_tool(ctx, "tool_call", {"tool": "add_actor_alias", "actor_id": actor_id, "name": cleaned})
         if not cleaned:
             return {"error": "名字不能为空"}
         actor = await ctx.deps.repo.get_actor(actor_id)
@@ -86,7 +79,6 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
             return {"error": f"「{cleaned}」是当前展示名; 切换展示名请用 set_actor_display_name"}
         if not await ctx.deps.repo.add_actor_alias(actor_id, cleaned):
             return {"error": f"别名「{cleaned}」已存在"}
-        trace_tool(ctx, "tool_result", {"tool": "add_actor_alias", "result": TOOL_OK})
         return TOOL_OK
 
     @cap.tool
@@ -97,7 +89,6 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
         set_actor_display_name to switch, or rename_facet for a new name.
         """
         cleaned = (name or "").strip()
-        trace_tool(ctx, "tool_call", {"tool": "remove_actor_alias", "actor_id": actor_id, "name": cleaned})
         if not cleaned:
             return {"error": "名字不能为空"}
         actor = await ctx.deps.repo.get_actor(actor_id)
@@ -107,7 +98,6 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
             return {"error": f"「{cleaned}」是当前展示名, 不能作为别名删除; 切换展示名用 set_actor_display_name"}
         if not await ctx.deps.repo.remove_actor_alias(actor_id, cleaned):
             return {"error": f"别名「{cleaned}」不存在"}
-        trace_tool(ctx, "tool_result", {"tool": "remove_actor_alias", "result": TOOL_OK})
         return TOOL_OK
 
     @cap.tool
@@ -119,7 +109,6 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
         merge those actors first instead.
         """
         cleaned = (name or "").strip()
-        trace_tool(ctx, "tool_call", {"tool": "set_actor_display_name", "actor_id": actor_id, "name": cleaned})
         if not cleaned:
             return {"error": "名字不能为空"}
         try:
@@ -128,7 +117,6 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
             return {"error": str(exc)}
         if item is None:
             return {"error": f"actor {actor_id} 不存在"}
-        trace_tool(ctx, "tool_result", {"tool": "set_actor_display_name", "result": TOOL_OK})
         return TOOL_OK
 
     @cap.tool
@@ -138,7 +126,6 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
         Prefer add_actor_alias / remove_actor_alias for surgical alias edits — the aliases
         key here replaces all alias rows. Omits name/raw/field_sources.
         """
-        trace_tool(ctx, "tool_call", {"tool": "update_actor", "actor_id": actor_id, "patch": patch})
         if not patch:
             return {"error": "patch 为空"}
         unknown = sorted(set(patch) - _AGENT_ACTOR_PATCH_KEYS)
@@ -159,7 +146,6 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
         actor = await ctx.deps.repo.update_actor(actor_id, **cast(ActorPersonFields, updates))
         if actor is None:
             return {"error": f"actor {actor_id} 不存在"}
-        trace_tool(ctx, "tool_result", {"tool": "update_actor", "result": TOOL_OK})
         return TOOL_OK
 
     @cap.tool
@@ -168,15 +154,6 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
     ) -> dict[str, Any]:
         """Enqueue ACTOR_SCRAPE tasks for actor ids."""
         cache_kinds = use_cache if use_cache is not None else {CacheKind.metadata, CacheKind.trans}
-        trace_tool(
-            ctx,
-            "tool_call",
-            {
-                "tool": "enqueue_actor_scrape",
-                "actor_ids": actor_ids,
-                "use_cache": sorted(cache_kinds),
-            },
-        )
         if not actor_ids:
             return {"error": "actor_ids 为空"}
         submitted = 0
@@ -190,8 +167,6 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
                 task_type=TaskType.ACTOR_SCRAPE, payload=ActorScrapePayload(actor_id=actor_id, use_cache=cache_kinds)
             )
             submitted += 1
-        out = {"submitted": submitted, "missing": missing}
-        trace_tool(ctx, "tool_result", {"tool": "enqueue_actor_scrape", "result": out})
-        return out
+        return {"submitted": submitted, "missing": missing}
 
     return cap

@@ -20,6 +20,17 @@ from pydantic_ai.models.function import (
 )
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 
+from amane.agent.rows import (
+    AguiEventRow,
+    ApprovalsRow,
+    ReasoningDeltaRow,
+    RequestUsageRow,
+    TextDeltaRow,
+    ToolCallRow,
+    ToolResultRow,
+    TurnUsageRow,
+    UserMessageRow,
+)
 from amane.agent.service import AgentService
 from amane.agent.tools import AgentDeps, build_explore_toolset, require_approval
 from amane.agent.trace import SessionStore
@@ -200,12 +211,12 @@ async def test_text_stream_and_history_persisted(app: FastAPI, client: AsyncClie
     stored = await repo.get_agent_session(session.id)
     assert stored is not None and stored.status is AgentSessionStatus.ACTIVE
 
-    # 展示事件流同步落盘: 客户端 thread 切走即丢, 只能靠它回填
+    # 回放行同步落盘: 客户端 thread 切走即丢, 只能靠它回填
     rows = service.store_for(session.id).read_events()
-    assert [(r["type"], r.get("text")) for r in rows if r["type"] in ("user_message", "assistant_message")] == [
-        ("user_message", "在吗"),
-        ("assistant_message", "你好，世界"),
-    ]
+    assert [row.text for row in rows if isinstance(row, UserMessageRow)] == ["在吗"]
+    assert "".join(row.text for row in rows if isinstance(row, TextDeltaRow)) == "你好，世界"
+    assert [row.text for row in rows if isinstance(row, TextDeltaRow)][:1] == ["你好，"]  # 正文按增量落, 切回即可见进展
+    assert len([row for row in rows if isinstance(row, TurnUsageRow)]) == 1
 
 
 @pytest.mark.asyncio
@@ -233,16 +244,18 @@ async def test_tool_call_lifecycle_events(app: FastAPI, client: AsyncClient) -> 
     assert "".join(str(e["delta"]) for e in events if e["type"] == "TEXT_MESSAGE_CONTENT") == "统计完成"
     assert events[-1]["outcome"] == {"type": "success"}
 
-    # 工具事件同样落盘, 切回会话时 UI 才能重建工具卡片
+    # 工具事件同样落盘, 切回会话时 UI 才能重建工具卡片 (参数已解析成对象)
     rows = service.store_for(session.id).read_events()
-    assert [r["type"] for r in rows if r["type"] in ("tool_call", "tool_result")] == ["tool_call", "tool_result"]
-    assert next(r for r in rows if r["type"] == "tool_call")["name"] == "sql_explore"
+    calls = [row for row in rows if isinstance(row, (ToolCallRow, ToolResultRow))]
+    assert [row.type for row in calls] == ["tool_call", "tool_result"]
+    assert isinstance(calls[0], ToolCallRow)
+    assert (calls[0].tool_call_id, calls[0].name, calls[0].args) == ("call-1", "sql_explore", {"sql": "SELECT 1 AS n"})
 
     # 逐请求用量随回合末尾补: 出工具那次挂在工具之后, 收尾正文那次落在末尾
-    usage_rows = [r for r in rows if r["type"] == "request_usage"]
-    assert [r["after_tool_call"] for r in usage_rows] == ["call-1", None]
-    assert all(isinstance(r["duration_ms"], int) for r in usage_rows)
-    assert usage_rows[0]["output"] > 0
+    usage_rows = [row.usage for row in rows if isinstance(row, RequestUsageRow)]
+    assert [u.after_tool_call for u in usage_rows] == ["call-1", None]
+    assert all(isinstance(u.duration_ms, int) for u in usage_rows)
+    assert usage_rows[0].output > 0
 
 
 @pytest.mark.asyncio
@@ -264,7 +277,9 @@ async def test_reasoning_events(app: FastAPI, client: AsyncClient) -> None:
     # 思考同样落回放行, 折叠的思考块在重放 (切会话 / 刷新) 后仍能还原
     # 次数不作断言: 模型只回思考不回正文时框架会重试, 每次都重发一遍思考
     rows = service.store_for(session.id).read_events()
-    assert {r["text"] for r in rows if r["type"] == "reasoning_delta"} == {"先看库结构"}
+    deltas = [row for row in rows if isinstance(row, ReasoningDeltaRow)]
+    assert {row.text for row in deltas} == {"先看库结构"}
+    assert all(row.block_id for row in deltas), "归块要用协议给的 id, 前端不靠相邻关系拼接"
 
 
 @pytest.mark.asyncio
@@ -321,8 +336,9 @@ async def test_disconnect_does_not_cancel_turn(app: FastAPI, client: AsyncClient
             break
         await asyncio.sleep(0.01)
 
-    assistant = next(r for r in service.store_for(session.id).read_events() if r["type"] == "assistant_message")
-    assert assistant["text"] == "跑完了"
+    rows = service.store_for(session.id).read_events()
+    assert "".join(row.text for row in rows if isinstance(row, TextDeltaRow)) == "跑完了"
+    assert any(isinstance(row, TurnUsageRow) for row in rows)
 
 
 @pytest.mark.asyncio
@@ -443,6 +459,12 @@ async def test_approval_interrupt_and_resume(app: FastAPI, client: AsyncClient, 
     stored = await repo.get_agent_session(session.id)
     assert stored is not None and stored.status is AgentSessionStatus.AWAITING_APPROVAL
 
+    # 待批态落成一条快照行; 刷新后页面据此恢复审批入口, 故中断字段必须是库读得懂的 camelCase
+    trace = (await client.get(f"/agent/sessions/{session.id}/trace")).json()["events"]
+    pending = next(row for row in reversed(trace) if row["type"] == "approvals")["interrupts"]
+    assert [item["toolCallId"] for item in pending] == ["call-9"]
+    assert pending[0]["metadata"]["sql"] == "DELETE FROM metadata WHERE id = 1"
+
     # 批准: 客户端重放被打断的回合 + resume[]
     approved = await _run(
         client,
@@ -455,6 +477,10 @@ async def test_approval_interrupt_and_resume(app: FastAPI, client: AsyncClient, 
     assert _of(approved, "TOOL_CALL_RESULT")["content"] == "OK"
     stored = await repo.get_agent_session(session.id)
     assert stored is not None and stored.status is AgentSessionStatus.ACTIVE
+
+    # 续跑成功的那次回合发出空快照: 待批态由后一条覆盖, 页面重放不会停在旧的审批上
+    snapshots = [row for row in service.store_for(session.id).read_events() if isinstance(row, ApprovalsRow)]
+    assert [len(row.interrupts) for row in snapshots] == [1, 0]
 
 
 @pytest.mark.asyncio
@@ -502,18 +528,14 @@ async def test_follow_replays_rows_from_scratch(app: FastAPI, client: AsyncClien
     session = await service.create_session(title="follow")
     assert session.id is not None
     store = service.store_for(session.id)
-    await store.append_row({"type": "text_delta", "text": "上半"})
-    await store.append_row({"type": "agui", "event": {"type": "RUN_FINISHED"}})
+    await store.append_row(TextDeltaRow(type="text_delta", block_id="m1", text="上半"))
+    await store.append_row(AguiEventRow(type="agui", event={"type": "RUN_FINISHED"}))
 
     resp = await client.get(f"/agent/sessions/{session.id}/agui/events")
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers["content-type"]
-    # 发的是回放行本身 (agui 行原样), 与 POST 通道的 AG-UI 投影不同
-    assert [(r["type"], r["seq"]) for r in _sse_events(resp.text)] == [
-        ("session_created", 1),
-        ("text_delta", 2),
-        ("agui", 3),
-    ]
+    # 发的是回放行本身 (agui 行连载荷原样), 与 POST 通道的 AG-UI 投影不同
+    assert [(r["type"], r["seq"]) for r in _sse_events(resp.text)] == [("text_delta", 1), ("agui", 2)]
 
     assert (await client.get("/agent/sessions/999999/agui/events")).status_code == 404
 
@@ -561,4 +583,4 @@ async def test_follow_attaches_to_running_turn_without_starting_one(
     assert resp.status_code == 200
     rows = _sse_events(resp.text)
     assert [r["type"] for r in rows if r["type"] == "user_message"] == ["user_message"]
-    assert next(r for r in rows if r["type"] == "assistant_message")["text"] == "上半下半"
+    assert "".join(str(r["text"]) for r in rows if r["type"] == "text_delta") == "上半下半"

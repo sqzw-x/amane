@@ -27,21 +27,12 @@ from amane.agent.schedule_ops import build_schedule_ops_capability
 from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.task_ops import build_task_ops_capability
 from amane.agent.tools import TOOL_OK, AgentDeps
-from amane.agent.trace import TraceEvent
 from amane.config import AgentConfig
 from amane.db.models import FacetKind, TaskStatus, TaskType
 from amane.db.repository import Repository
 from amane.enums import ApiType
 from amane.handlers.models import ScrapePayload
 from amane.llm import build_model
-
-
-class _MemTrace:
-    def __init__(self) -> None:
-        self.events: list[TraceEvent] = []
-
-    def append(self, event: TraceEvent) -> None:
-        self.events.append(event)
 
 
 class _Ctx:
@@ -79,7 +70,6 @@ async def write_deps(tmp_path: Path, repo: Repository) -> AgentDeps:
         repo=repo,
         executor=QueryExecutor(ReadonlySqlSandbox(db), ResultCache(ttl_s=60, max_entries=8)),
         session_id=session.id,
-        trace=_MemTrace(),  # type: ignore[arg-type]
         sql_timeout_ms=2000,
         sample_limit=5,
         bridge=AgentRuntimeBridge(safe_dirs=[tmp_path.resolve()]),

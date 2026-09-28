@@ -82,18 +82,18 @@ def _response(seconds: float, usage: RequestUsage, tool_calls: Sequence[str] = (
                     duration_ms=2500,
                     after_tool_call="call-2",
                 ),
-                RequestTokenUsage(input=10, output=5, duration_ms=200),
+                RequestTokenUsage(input=10, cache_read=0, cache_write=0, output=5, duration_ms=200),
             ],
         ),
         # 缓存读大于输入总量 → 非缓存输入夹到 0
         (
             [_request(_START), _response(0.4, RequestUsage(input_tokens=5, cache_read_tokens=10, output_tokens=1))],
-            [RequestTokenUsage(cache_read=10, output=1, duration_ms=400)],
+            [RequestTokenUsage(input=0, cache_read=10, cache_write=0, output=1, duration_ms=400)],
         ),
         # 请求缺时间戳 → 只缺耗时, 用量照记
         (
             [_request(None), _response(1.0, RequestUsage(input_tokens=3, output_tokens=1))],
-            [RequestTokenUsage(input=3, output=1)],
+            [RequestTokenUsage(input=3, cache_read=0, cache_write=0, output=1)],
         ),
         # 中断在半途: 只有请求没有响应 → 不产生条目
         ([_request(_START)], []),

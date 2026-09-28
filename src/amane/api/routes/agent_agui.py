@@ -2,11 +2,10 @@
 
 回合不随连接存活: 断连只结束订阅, 回合继续跑完; 页面切走再回来靠 ``GET .../agui/events`` 续上订阅.
 
-落盘两类行:
-- ``{"type": "agui", "event": ...}``: 分发给订阅端的 AG-UI 事件
-- ``user_message`` / ``reasoning_delta`` / ``text_delta`` / ``tool_call`` / ``tool_result`` / ``request_usage`` /
-  ``assistant_message``: 页面重建对话用的回放行 (``request_usage`` 在回合末尾成批补, 用
-  ``after_tool_call`` 标出该次请求的落点)
+落盘两类行 (契约见 `...agent.rows`):
+- `AguiEventRow`: 分发给订阅端的 AG-UI 事件
+- 其余: 页面重建对话用的回放行, 由 `_ReplayRows` 从同一份事件展开; 逐请求用量在回合末尾成批补, 用
+  ``after_tool_call`` 标出该次请求的位置
 
 ``RUN_FINISHED.usage`` 由本端点补: 协议有这个字段, 官方适配器不填.
 """
@@ -22,9 +21,12 @@ from typing import Any
 from ag_ui.core import (
     BaseEvent,
     InputContent,
+    Interrupt,
     Message,
     ReasoningMessageContentEvent,
     RunFinishedEvent,
+    RunFinishedInterruptOutcome,
+    RunFinishedOutcome,
     TextInputContent,
     TextMessageContentEvent,
     TokenUsage,
@@ -36,11 +38,26 @@ from ag_ui.core import (
 )
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic import JsonValue
 from pydantic_ai import AgentRunResult, DeferredToolRequests
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from pydantic_ai.usage import RunUsage
 
+from ...agent.rows import (
+    AguiEventRow,
+    ApprovalsRow,
+    CancelledRow,
+    ErrorRow,
+    ReasoningDeltaRow,
+    RequestUsageRow,
+    TextDeltaRow,
+    ToolCallRow,
+    ToolResultRow,
+    TraceRow,
+    TurnUsageRow,
+    UserMessageRow,
+)
 from ...agent.runtime import UNLIMITED_USAGE, resolve_model_settings
 from ...agent.tools import AgentDeps
 from ...agent.trace import SessionStore
@@ -105,12 +122,20 @@ def _new_user_texts(messages: Sequence[Message]) -> list[str]:
     ]
 
 
-def _maybe_json(value: str) -> Any:
-    """工具回执在协议里是字符串; 回放行按对象存, 页面才能取字段 (如 saved_query_id)."""
+def _maybe_json(value: str) -> JsonValue:
+    """工具参数与回执在协议里是字符串; 回放行按对象存, 页面才能取字段 (如 saved_query_id)."""
     try:
-        return json.loads(value)
+        parsed: JsonValue = json.loads(value)
     except ValueError:
         return value
+    return parsed
+
+
+def _interrupts_of(outcome: RunFinishedOutcome | None) -> list[Interrupt]:
+    """本回合留下的未决中断; 成功或没有 outcome 时为空 (空列表会清掉页面上的待批态)."""
+    if isinstance(outcome, RunFinishedInterruptOutcome):
+        return list(outcome.interrupts)
+    return []
 
 
 def _token_usage(usage: RunUsage) -> TokenUsage:
@@ -129,69 +154,60 @@ class _ReplayRows:
     """把 AG-UI 事件摊成回放行 (页面重建对话用).
 
     正文与工具回执按事件粒度落盘, 因此切回会话能看到逐条进展, 不必等整个回合结束.
+    工具参数在协议里是增量字符串, 这里拼装成对象再落盘, 页面无需二次解析.
     """
 
-    text: list[str] = field(default_factory=list)
     tool_names: dict[str, str] = field(default_factory=dict)
     tool_args: dict[str, str] = field(default_factory=dict)
     usage: RunUsage | None = None
     request_usages: list[RequestTokenUsage] = field(default_factory=list)
 
-    def feed(self, event: BaseEvent) -> Iterator[dict[str, Any]]:
+    def feed(self, event: BaseEvent) -> Iterator[TraceRow]:
         match event:
-            case ReasoningMessageContentEvent(delta=delta):
-                yield {"type": "reasoning_delta", "text": delta}
-            case TextMessageContentEvent(delta=delta):
-                self.text.append(delta)
-                yield {"type": "text_delta", "text": delta}
+            case ReasoningMessageContentEvent(message_id=block_id, delta=delta):
+                yield ReasoningDeltaRow(type="reasoning_delta", block_id=block_id, text=delta)
+            case TextMessageContentEvent(message_id=block_id, delta=delta):
+                yield TextDeltaRow(type="text_delta", block_id=block_id, text=delta)
             case ToolCallStartEvent(tool_call_id=tool_call_id, tool_call_name=name):
                 self.tool_names[tool_call_id] = name
                 self.tool_args[tool_call_id] = ""
             case ToolCallArgsEvent(tool_call_id=tool_call_id, delta=delta):
                 self.tool_args[tool_call_id] = self.tool_args.get(tool_call_id, "") + delta
             case ToolCallEndEvent(tool_call_id=tool_call_id):
-                yield {
-                    "type": "tool_call",
-                    "tool_call_id": tool_call_id,
-                    "name": self.tool_names.get(tool_call_id, "tool"),
-                    "args": _maybe_json(self.tool_args.get(tool_call_id, "")),
-                }
+                yield ToolCallRow(
+                    type="tool_call",
+                    tool_call_id=tool_call_id,
+                    name=self.tool_names.get(tool_call_id, "tool"),
+                    args=_maybe_json(self.tool_args.get(tool_call_id, "")),
+                )
             case ToolCallResultEvent(tool_call_id=tool_call_id, content=content):
-                yield {
-                    "type": "tool_result",
-                    "tool_call_id": tool_call_id,
-                    "name": self.tool_names.get(tool_call_id, "tool"),
-                    "result": _maybe_json(content),
-                }
+                yield ToolResultRow(type="tool_result", tool_call_id=tool_call_id, result=_maybe_json(content))
             case RunFinishedEvent():
                 for item in self.request_usages:
-                    yield {"type": "request_usage", **item.model_dump()}
-                if self.text or self.usage is not None:
-                    yield {
-                        "type": "assistant_message",
-                        "text": "".join(self.text),
-                        "usage": turn_usage_from_run(self.usage).model_dump() if self.usage else None,
-                    }
+                    yield RequestUsageRow(type="request_usage", usage=item)
+                if self.usage is not None:
+                    yield TurnUsageRow(type="turn_usage", usage=turn_usage_from_run(self.usage))
+                yield ApprovalsRow(type="approvals", interrupts=_interrupts_of(event.outcome))
             case _:
                 return
 
 
-def _sse(event: dict[str, Any]) -> str:
-    """AG-UI 的 SSE 分帧: ``data: {json}\\n\\n``."""
-    return f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
+def _sse(payload: dict[str, Any]) -> str:
+    """SSE 分帧: ``data: {json}\\n\\n``."""
+    return f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
 
 
 async def _follow_agui(store: SessionStore, after: int) -> AsyncIterator[str]:
     """回放 ``after`` 之后的 AG-UI 事件并跟随新事件; 回合结束且追平后结束."""
     async for row in store.follow(after):
-        if row.get("type") == "agui":
-            yield _sse(row["event"])
+        if isinstance(row, AguiEventRow):
+            yield _sse(row.event)
 
 
 async def _follow_rows(store: SessionStore) -> AsyncIterator[str]:
     """同上, 但发全部回放行 (含整段回放): 页面据此重建气泡与工具卡片, 不认 AG-UI 协议事件."""
     async for row in store.follow(0):
-        yield _sse(row)
+        yield _sse(row.model_dump(mode="json", by_alias=True))
 
 
 # 未设置 response_class 时, FastAPI 会按 default_response_class 追加一条 application/json 声明,
@@ -220,11 +236,11 @@ async def run_agent_agui(
     incoming = _new_messages(list(adapter.run_input.messages), history)
     adapter.run_input.messages = incoming
     for text in _new_user_texts(incoming):
-        await store.append_row({"type": "user_message", "text": text})
+        await store.append_row(UserMessageRow(type="user_message", text=text))
 
     start_seq = store.last_seq
     rows = _ReplayRows()
-    deps = service._make_deps(session_id, store)
+    deps = service._make_deps(session_id)
     store.set_turn_running(True)
 
     async def on_complete(result: AgentRunResult[Any]) -> AsyncIterator[BaseEvent]:
@@ -254,17 +270,17 @@ async def run_agent_agui(
                 if isinstance(event, RunFinishedEvent) and rows.usage is not None:
                     event.usage = [_token_usage(rows.usage)]
                 await store.append_row(
-                    {"type": "agui", "event": event.model_dump(mode="json", by_alias=True, exclude_none=True)}
+                    AguiEventRow(type="agui", event=event.model_dump(mode="json", by_alias=True, exclude_none=True))
                 )
                 for row in rows.feed(event):
                     await store.append_row(row)
         except asyncio.CancelledError:
-            await store.append_row({"type": "cancelled"})
+            await store.append_row(CancelledRow(type="cancelled"))
             await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
             raise
         except Exception as exc:
-            await store.append_row({"type": "agui", "event": {"type": "RUN_ERROR", "message": str(exc)}})
-            await store.append_row({"type": "error", "message": str(exc)})
+            await store.append_row(AguiEventRow(type="agui", event={"type": "RUN_ERROR", "message": str(exc)}))
+            await store.append_row(ErrorRow(type="error", message=str(exc)))
             await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
         finally:
             store.set_turn_running(False)

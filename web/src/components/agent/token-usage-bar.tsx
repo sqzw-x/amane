@@ -10,7 +10,7 @@ import {
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { RequestTokenUsage, TurnTokenUsage } from "@/lib/agent/trace";
+import type { RequestTokenUsage, TurnTokenUsage } from "@/client/types.gen";
 
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -91,9 +91,9 @@ export function RequestUsageBar({ usage }: { usage: RequestTokenUsage }) {
     { key: "output", value: usage.output, color: "orange", Icon: IconArrowUp },
   ];
   const visible = metrics.filter((m) => m.value > 0);
-  const duration = usage.duration_ms;
+  const duration = usage.duration_ms ?? undefined;
 
-  if (visible.length === 0 && duration === undefined) return null;
+  if (duration === undefined && visible.length === 0) return null;
 
   return (
     <Group gap={4} wrap="wrap" align="center" mt={2} mb="sm">

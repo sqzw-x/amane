@@ -20,6 +20,11 @@ def _tool_fn(cap: Any, name: str) -> Callable[..., Awaitable[dict[str, Any]]]:
     return cast(Callable[..., Awaitable[dict[str, Any]]], toolset.tools[name].function)
 
 
+def _ctx() -> Any:
+    """直调工具函数时占位: 这些用例只走 schema 披露与校验失败两条路径, 不读 deps."""
+    return SimpleNamespace(deps=SimpleNamespace())
+
+
 def _union_types(union: Any) -> set[str]:
     return set(TypeAdapter(union).json_schema()["discriminator"]["mapping"])
 
@@ -40,9 +45,8 @@ async def test_schema_tool_covers_union_types(builder: Callable[[], Any], tool_n
     enum = set(toolset.tools[tool_name].function_schema.json_schema["properties"]["submission_type"]["enum"])
     assert enum == _union_types(union)
 
-    ctx = SimpleNamespace(deps=SimpleNamespace(persist_tool_trace=False))
     for submission_type in sorted(enum):
-        out = await _tool_fn(cap, tool_name)(ctx, submission_type=submission_type)
+        out = await _tool_fn(cap, tool_name)(_ctx(), submission_type=submission_type)
         # 返回的只含该类型自身字段, 且 type 固定为它
         assert out["properties"]["type"]["const"] == submission_type
 
@@ -63,7 +67,6 @@ async def test_schema_tool_covers_union_types(builder: Callable[[], Any], tool_n
 )
 async def test_submit_task_error_lists_bad_fields(submission: dict[str, Any], locs: list[str]) -> None:
     """一次提交多处出错时回执列出出错字段 (截取前三条), 模型无需逐轮修正."""
-    ctx = SimpleNamespace(deps=SimpleNamespace(persist_tool_trace=False))
-    out = await _tool_fn(build_task_ops_capability(), "submit_task")(ctx, submission=submission)
+    out = await _tool_fn(build_task_ops_capability(), "submit_task")(_ctx(), submission=submission)
     assert [detail.split(":")[0] for detail in out["errors"]] == locs
     assert out["error"].startswith(f"参数无效: {locs[0]}:")

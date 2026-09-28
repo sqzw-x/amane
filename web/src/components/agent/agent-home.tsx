@@ -13,7 +13,6 @@ import {
   type AssistantRuntime,
   type PartState,
   type TextMessagePartProps,
-  type ThreadMessageLike,
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import {
@@ -75,14 +74,13 @@ import {
   updateAgentSessionMutation,
 } from "@/client/@tanstack/react-query.gen";
 import { getAgentTrace } from "@/client/sdk.gen";
-import type { AgentSessionResponse } from "@/client/types.gen";
+import type { AgentSessionResponse, RequestTokenUsage, TurnTokenUsage } from "@/client/types.gen";
 import {
   listSavedQueriesQueryKey,
   updateSavedQueryMutation,
 } from "@/client/@tanstack/react-query.gen";
 import { ChatComposer, parseThinking, type ThinkingValue } from "@/components/agent/chat-composer";
 import { MarkdownContent } from "@/components/agent/markdown-content";
-import type { ChatMessage, RequestTokenUsage, TurnTokenUsage } from "@/lib/agent/trace";
 import { SavedQueryActions } from "@/components/agent/saved-query-actions";
 import {
   downloadSavedQueryResult,
@@ -90,7 +88,7 @@ import {
 } from "@/components/agent/saved-query-manager";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
 import { useFold } from "@/lib/agent/fold";
-import { messagesFromTrace } from "@/lib/agent/trace";
+import { foldTrace, REQUEST_USAGE_PART, type TraceRow } from "@/lib/agent/trace";
 import { TokenUsageBar, RequestUsageBar } from "@/components/agent/token-usage-bar";
 import { confirm } from "@/lib/confirm";
 
@@ -118,33 +116,6 @@ class NotifyingHttpAgent extends HttpAgent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
-function toJsonValue(value: unknown): JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (Array.isArray(value)) return value.map(toJsonValue);
-  if (isRecord(value)) {
-    const out: { [key: string]: JsonValue } = {};
-    for (const [key, item] of Object.entries(value)) out[key] = toJsonValue(item);
-    return out;
-  }
-  return String(value);
-}
-
-function toJsonObject(value: unknown): { [key: string]: JsonValue } {
-  const converted = toJsonValue(value);
-  return typeof converted === "object" && converted !== null && !Array.isArray(converted)
-    ? converted
-    : {};
 }
 
 function JsonBlock({ value }: { value: unknown }) {
@@ -232,9 +203,6 @@ function ActivityGroup({ count, children }: { count: number; children: ReactNode
 }
 
 type AssistantPartsComponents = ComponentProps<typeof MessagePrimitive.PartByIndex>["components"];
-
-/** 回放行里的逐请求用量在协议里没有位置, 以 data 部件随消息重建. */
-const REQUEST_USAGE_PART = "request-usage";
 
 const ASSISTANT_PARTS = {
   Text: TextPart,
@@ -495,7 +463,7 @@ const FOLLOW_RENDER_MS = 300;
 async function followTraceRows(
   sessionId: number,
   signal: AbortSignal,
-  onRows: (rows: Record<string, unknown>[]) => void,
+  onRows: (rows: TraceRow[]) => void,
 ): Promise<void> {
   const response = await fetch(`${apiBase()}/api/agent/sessions/${sessionId}/agui/events`, {
     signal,
@@ -510,12 +478,12 @@ async function followTraceRows(
       buffer += value;
       const frames = buffer.split("\n\n");
       buffer = frames.pop() ?? "";
-      const rows: Record<string, unknown>[] = [];
+      const rows: TraceRow[] = [];
       for (const frame of frames) {
         const line = frame.split("\n").find((item) => item.startsWith("data:"));
         if (line === undefined) continue;
-        const parsed: unknown = JSON.parse(line.slice(5).trim());
-        if (isRecord(parsed)) rows.push(parsed);
+        // 单处断言: 帧由本服务端按回放行契约写出, 逐行做运行时校验得不偿失
+        rows.push(JSON.parse(line.slice(5)) as TraceRow);
       }
       if (rows.length > 0) onRows(rows);
     }
@@ -694,96 +662,6 @@ function ApprovalPanel() {
   );
 }
 
-/** 回放行的参数: 日志里既可能是对象 (本地落盘) 也可能是 JSON 文本 (旧路径写的). */
-function toolArgsObject(value: unknown): { [key: string]: JsonValue } {
-  if (typeof value !== "string") return toJsonObject(value);
-  try {
-    return toJsonObject(JSON.parse(value));
-  } catch {
-    return {};
-  }
-}
-
-function toolArgsText(value: unknown): string {
-  if (typeof value === "string") return value;
-  return value === undefined ? "" : JSON.stringify(value);
-}
-
-/** 回放行 → 首屏可见的历史 (AG-UI 协议本身没有历史回放). */
-function toThreadMessageLike(message: ChatMessage, index: number): ThreadMessageLike {
-  if (message.role === "user") {
-    return {
-      id: `trace-u-${index}`,
-      role: "user",
-      content: [{ type: "text", text: message.text }],
-    };
-  }
-  return {
-    id: `trace-a-${index}`,
-    role: "assistant",
-    content: message.blocks.map((block, blockIndex) => {
-      if (block.kind === "text") return { type: "text" as const, text: block.text };
-      if (block.kind === "reasoning") return { type: "reasoning" as const, text: block.text };
-      if (block.kind === "usage") {
-        return { type: `data-${REQUEST_USAGE_PART}` as const, data: block.usage };
-      }
-      return {
-        type: "tool-call" as const,
-        toolCallId: block.tool.toolCallId || `trace-tool-${index}-${blockIndex}`,
-        toolName: block.tool.name,
-        args: toolArgsObject(block.tool.args),
-        argsText: toolArgsText(block.tool.args),
-        result: block.tool.result,
-      };
-    }),
-  };
-}
-
-/** 回放行末尾若停在中断上, 取出这组未决中断. */
-function pendingInterrupts(events: readonly unknown[]): AgUiInterrupt[] {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const row = events[index];
-    if (!isRecord(row) || row.type !== "agui" || !isRecord(row.event)) continue;
-    if (row.event.type !== "RUN_FINISHED") continue;
-    const outcome = row.event.outcome;
-    if (!isRecord(outcome) || outcome.type !== "interrupt") return [];
-    return Array.isArray(outcome.interrupts) ? outcome.interrupts.filter(isInterrupt) : [];
-  }
-  return [];
-}
-
-function isInterrupt(value: unknown): value is AgUiInterrupt {
-  return isRecord(value) && typeof value.id === "string";
-}
-
-/** 重建好的消息; 回放行末尾停在中断上时, 把未决中断挂到最后一条助手消息 (刷新后仍可继续审批). */
-function threadMessages(
-  events: readonly unknown[],
-  messages: readonly ChatMessage[],
-): ThreadMessageLike[] {
-  const like = messages.map(toThreadMessageLike);
-  const interrupts = pendingInterrupts(events);
-  const last = like.at(-1);
-  if (interrupts.length > 0 && last?.role === "assistant") {
-    like[like.length - 1] = {
-      ...last,
-      status: { type: "requires-action", reason: "interrupt" },
-      metadata: { custom: { agui: { interrupts } } },
-    };
-  }
-  return like;
-}
-
-/** 最近一回合的用量.
-
-   服务端已在 `RUN_FINISHED.usage` 上给出 (协议字段, 官方适配器不填), 但当前客户端解析器会丢弃该
-   字段, 故读回放行里的同一份数据.
-*/
-function lastTurnUsage(messages: readonly ChatMessage[]): TurnTokenUsage | null {
-  const last = messages.findLast((message) => message.role === "assistant");
-  return last?.role === "assistant" ? (last.usage ?? null) : null;
-}
-
 /** 审批队列须在 runtime 内读取, 故单独一层 Provider. */
 function ApprovalProvider({ children }: { children: ReactNode }) {
   const queue = useApprovalQueue();
@@ -820,14 +698,14 @@ function AgUiThread({
   const [usage, setUsage] = useState<TurnTokenUsage | null>(null);
   const [serverTurn, setServerTurn] = useState(false);
   /** 回放行攒到哪算到哪; 重建一律以它为准. */
-  const rowsRef = useRef<Record<string, unknown>[]>([]);
+  const rowsRef = useRef<TraceRow[]>([]);
 
   /** 用回放行重建会话, 并报出最近一回合的用量. */
   const applyRows = useCallback(
-    (rows: readonly Record<string, unknown>[]) => {
-      const { messages } = messagesFromTrace(rows);
-      setUsage(lastTurnUsage(messages));
-      runtime.thread.reset(threadMessages(rows, messages));
+    (rows: readonly TraceRow[]) => {
+      const { messages, turnUsage } = foldTrace(rows);
+      setUsage(turnUsage);
+      runtime.thread.reset(messages);
     },
     [runtime],
   );

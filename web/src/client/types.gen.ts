@@ -454,9 +454,7 @@ export type AgentTraceResponse = {
     /**
      * Events
      */
-    events: Array<{
-        [key: string]: unknown;
-    }>;
+    events: Array<UserMessageRow | ReasoningDeltaRow | TextDeltaRow | ToolCallRow | ToolResultRow | RequestUsageRow | TurnUsageRow | ApprovalsRow | ErrorRow | CancelledRow | AguiEventRow>;
     /**
      * Turn Running
      */
@@ -468,9 +466,61 @@ export type AgentTraceResponse = {
 };
 
 /**
+ * AguiEventRow
+ *
+ * AG-UI 事件原样透传, 供 `POST .../agui` 分发给协议客户端; 页面不读它.
+ */
+export type AguiEventRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'agui';
+    /**
+     * Event
+     */
+    event: {
+        [key: string]: unknown;
+    };
+};
+
+/**
  * ApiType
  */
 export type ApiType = 'chat' | 'response' | 'anthropic';
+
+/**
+ * ApprovalsRow
+ *
+ * 未决审批快照. 每个回合结束发一条, **空列表表示已无未决**, 后者覆盖前者.
+ *
+ * 原样携带 AG-UI 中断: 前端既用它渲染审批入口, 也把它交给 runtime 完成 `resume`.
+ */
+export type ApprovalsRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'approvals';
+    /**
+     * Interrupts
+     */
+    interrupts: Array<Interrupt>;
+};
 
 /**
  * Body_install_plugin
@@ -496,6 +546,26 @@ export type BodyInstallPlugin = {
  * 刮削可复用的缓存种类. use_cache 为其集合: 含某项 = 该缓存生效, 不含 = 强制刷新该项.
  */
 export type CacheKind = 'metadata' | 'trans';
+
+/**
+ * CancelledRow
+ *
+ * 回合被显式终止.
+ */
+export type CancelledRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'cancelled';
+};
 
 /**
  * CleanupSubmission
@@ -728,6 +798,30 @@ export type DesktopResponse = {
  * 影片附属资源类型: 刮削写入 Resource, 整理时按库配置复制到库路径.
  */
 export type DownloadableResource = 'thumb' | 'poster' | 'extrafanart' | 'trailer';
+
+/**
+ * ErrorRow
+ *
+ * 回合异常; 文案直接进助手气泡.
+ */
+export type ErrorRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'error';
+    /**
+     * Message
+     */
+    message: string;
+};
 
 /**
  * FacetKind
@@ -1269,6 +1363,55 @@ export type HotSettings = {
         [key: string]: PluginConfig;
     };
 };
+
+/**
+ * Interrupt
+ *
+ * A pause carried inside ``RunFinishedEvent.outcome`` when the outcome is
+ * ``RunFinishedInterruptOutcome``. The client resumes
+ * by addressing this interrupt in the resume array of the next RunAgentInput.
+ */
+export type Interrupt = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Message
+     */
+    message?: string | null;
+    /**
+     * Toolcallid
+     */
+    toolCallId?: string | null;
+    /**
+     * Responseschema
+     */
+    responseSchema?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Expiresat
+     */
+    expiresAt?: string | null;
+    /**
+     * Metadata
+     */
+    metadata?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Subagentrunid
+     */
+    subagentRunId?: string | null;
+    [key: string]: unknown;
+};
+
+export type JsonValue = unknown;
 
 /**
  * LLMConfig
@@ -2583,6 +2726,34 @@ export type R18ImportSubmission = {
 };
 
 /**
+ * ReasoningDeltaRow
+ *
+ * 思考增量; `block_id` 取自协议的消息 id, 前端据此归块而不靠相邻关系.
+ */
+export type ReasoningDeltaRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'reasoning_delta';
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
  * RefreshSubmission
  */
 export type RefreshSubmission = {
@@ -2648,6 +2819,62 @@ export type ReleaseResponse = {
      * Newer
      */
     newer: boolean;
+};
+
+/**
+ * RequestTokenUsage
+ *
+ * 单次模型请求的用量. `duration_ms` 是请求发出到响应收到的本地时间差, 不含工具执行.
+ *
+ * `after_tool_call` 是该请求最后一次工具调用的 id: 页面据此把用量印在这次请求产出的内容之后;
+ * 请求没有工具调用时为空, 用量落在消息末尾.
+ */
+export type RequestTokenUsage = {
+    /**
+     * Input
+     */
+    input: number;
+    /**
+     * Cache Read
+     */
+    cache_read: number;
+    /**
+     * Cache Write
+     */
+    cache_write: number;
+    /**
+     * Output
+     */
+    output: number;
+    /**
+     * Duration Ms
+     */
+    duration_ms?: number | null;
+    /**
+     * After Tool Call
+     */
+    after_tool_call?: string | null;
+};
+
+/**
+ * RequestUsageRow
+ *
+ * 单次模型请求的用量; `usage.after_tool_call` 标明它在回合里出现的位置.
+ */
+export type RequestUsageRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'request_usage';
+    usage: RequestTokenUsage;
 };
 
 /**
@@ -3452,6 +3679,88 @@ export type TaskWorkerResponse = {
 };
 
 /**
+ * TextDeltaRow
+ *
+ * 正文增量; 归块同 `ReasoningDeltaRow`.
+ */
+export type TextDeltaRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'text_delta';
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * ToolCallRow
+ *
+ * 工具调用成形 (协议按增量传参, 这里已解析). 卡片的名字与参数由此行给出.
+ */
+export type ToolCallRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'tool_call';
+    /**
+     * Tool Call Id
+     */
+    tool_call_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    args: JsonValue;
+};
+
+/**
+ * ToolResultRow
+ *
+ * 工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续跑的回合不会再报调用名).
+ */
+export type ToolResultRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'tool_result';
+    /**
+     * Tool Call Id
+     */
+    tool_call_id: string;
+    result: JsonValue;
+};
+
+/**
  * TrashSubmission
  */
 export type TrashSubmission = {
@@ -3486,6 +3795,57 @@ export type TrashSubmission = {
 };
 
 /**
+ * TurnTokenUsage
+ *
+ * `input` 是非缓存输入 (总量减去 cache_read/cache_write). pydantic-ai 的 `input_tokens` 含缓存, 此处拆开.
+ *
+ * 字段不给默认值: 回放行里的用量总是全字段, 前端因此可以直接参与算术.
+ */
+export type TurnTokenUsage = {
+    /**
+     * Input
+     */
+    input: number;
+    /**
+     * Cache Read
+     */
+    cache_read: number;
+    /**
+     * Cache Write
+     */
+    cache_write: number;
+    /**
+     * Output
+     */
+    output: number;
+    /**
+     * Requests
+     */
+    requests: number;
+};
+
+/**
+ * TurnUsageRow
+ *
+ * 回合收尾: 聚合用量归属当前助手消息, 同时标志本轮结束.
+ */
+export type TurnUsageRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'turn_usage';
+    usage: TurnTokenUsage;
+};
+
+/**
  * UpscaleSubmission
  */
 export type UpscaleSubmission = {
@@ -3505,6 +3865,30 @@ export type UpscaleSubmission = {
      * Type
      */
     type: 'upscale';
+};
+
+/**
+ * UserMessageRow
+ *
+ * 用户输入. 批准 / 拒绝只以 tool return 进模型上下文, 不产生此行的旁白.
+ */
+export type UserMessageRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'user_message';
+    /**
+     * Text
+     */
+    text: string;
 };
 
 /**

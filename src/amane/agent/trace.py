@@ -7,25 +7,12 @@ import json
 import shutil
 import threading
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 
-
-def _utcnow_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-@dataclass
-class TraceEvent:
-    """写入时展平为带 seq 的 JSONL 行."""
-
-    type: str
-    payload: dict[str, Any] = field(default_factory=dict)
-    at: str = field(default_factory=_utcnow_iso)
+from .rows import TRACE_ROW, TraceRow
 
 
 def session_dir(data_dir: Path, session_id: int) -> Path:
@@ -39,7 +26,7 @@ def delete_session_dir(data_dir: Path, session_id: int) -> None:
 
 
 class SessionStore:
-    """events.jsonl (UI 回放) + messages.json (LLM 权威历史)."""
+    """events.jsonl (回放行, UI 重建) + messages.json (LLM 权威历史)."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -99,42 +86,39 @@ class SessionStore:
             return {}
         return json.loads(self._meta_path.read_text(encoding="utf-8"))
 
-    def read_events(self) -> list[dict[str, Any]]:
+    def read_events(self) -> list[TraceRow]:
         if not self._events_path.is_file():
             return []
-        events: list[dict[str, Any]] = []
+        rows: list[TraceRow] = []
         for line in self._events_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line:
-                events.append(json.loads(line))
-        return events
+                rows.append(TRACE_ROW.validate_json(line))
+        return rows
 
-    def events_after(self, after: int) -> list[dict[str, Any]]:
-        return [e for e in self.read_events() if isinstance(e.get("seq"), int) and e["seq"] > after]
+    def events_after(self, after: int) -> list[TraceRow]:
+        return [row for row in self.read_events() if (row.seq or 0) > after]
 
-    def _write_row(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _write_row(self, row: TraceRow) -> TraceRow:
         with self._seq_lock:
             self._last_seq += 1
-            out = {**row, "seq": self._last_seq, "at": row.get("at") or _utcnow_iso()}
+            out = row.model_copy(update={"seq": self._last_seq})
             with self._events_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(out, ensure_ascii=False, default=str) + "\n")
+                f.write(out.model_dump_json(by_alias=True) + "\n")
         self._wake.set()
         return out
 
-    async def append_row(self, row: dict[str, Any]) -> dict[str, Any]:
+    async def append_row(self, row: TraceRow) -> TraceRow:
         return self._write_row(row)
 
-    def append(self, event: TraceEvent) -> None:
-        self._write_row({"type": event.type, **event.payload, "at": event.at})
-
-    async def follow(self, after: int) -> AsyncIterator[dict[str, Any]]:
+    async def follow(self, after: int) -> AsyncIterator[TraceRow]:
         """从 after 之后跟随: 先回放磁盘, 再等新事件; turn 结束且追平后停止."""
         cursor = after
         while True:
             batch = self.events_after(cursor)
-            for ev in batch:
-                cursor = int(ev["seq"])
-                yield ev
+            for row in batch:
+                cursor = row.seq or cursor
+                yield row
             if not self._turn_running and not self.events_after(cursor):
                 return
             self._wake.clear()
@@ -158,6 +142,3 @@ class SessionStore:
         if not data.strip():
             return None
         return list(ModelMessagesTypeAdapter.validate_json(data))
-
-
-SessionTrace = SessionStore

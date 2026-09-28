@@ -11,6 +11,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from amane.agent.naming import fallback_title
+from amane.agent.rows import CancelledRow
 from amane.agent.service import AgentService
 from amane.db.models import SavedQueryEntity
 from amane.db.repository import Repository
@@ -272,7 +273,7 @@ async def test_cancel_running_turn(app: FastAPI, client: AsyncClient) -> None:
         try:
             await gate.wait()
         except asyncio.CancelledError:
-            await store.append_row({"type": "cancelled"})
+            await store.append_row(CancelledRow(type="cancelled"))
             raise
         finally:
             store.set_turn_running(False)
@@ -285,4 +286,4 @@ async def test_cancel_running_turn(app: FastAPI, client: AsyncClient) -> None:
     assert r.status_code == 200
     assert r.json() == {"cancelled": True}
     assert not service.is_turn_running(sid)
-    assert any(e.get("type") == "cancelled" for e in store.read_events())
+    assert any(isinstance(row, CancelledRow) for row in store.read_events())

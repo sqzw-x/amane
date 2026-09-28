@@ -13,13 +13,16 @@ from pydantic_ai.usage import RunUsage, UsageBase
 
 
 class TurnTokenUsage(BaseModel):
-    """`input` 是非缓存输入 (总量减去 cache_read/cache_write). pydantic-ai 的 `input_tokens` 含缓存, 此处拆开."""
+    """`input` 是非缓存输入 (总量减去 cache_read/cache_write). pydantic-ai 的 `input_tokens` 含缓存, 此处拆开.
 
-    input: int = 0
-    cache_read: int = 0
-    cache_write: int = 0
-    output: int = 0
-    requests: int = 0
+    字段不给默认值: 回放行里的用量总是全字段, 前端因此可以直接参与算术.
+    """
+
+    input: int
+    cache_read: int
+    cache_write: int
+    output: int
+    requests: int
 
 
 class RequestTokenUsage(BaseModel):
@@ -29,10 +32,10 @@ class RequestTokenUsage(BaseModel):
     请求没有工具调用时为空, 用量落在消息末尾.
     """
 
-    input: int = 0
-    cache_read: int = 0
-    cache_write: int = 0
-    output: int = 0
+    input: int
+    cache_read: int
+    cache_write: int
+    output: int
     duration_ms: int | None = None
     after_tool_call: str | None = None
 

@@ -18,17 +18,8 @@ from amane.agent.metadata_ops import build_metadata_ops_capability
 from amane.agent.runtime import build_agent
 from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.tools import TOOL_OK, AgentDeps, build_explore_toolset
-from amane.agent.trace import TraceEvent
 from amane.config import AgentConfig
 from amane.db.repository import Repository
-
-
-class _MemTrace:
-    def __init__(self) -> None:
-        self.events: list[TraceEvent] = []
-
-    def append(self, event: TraceEvent) -> None:
-        self.events.append(event)
 
 
 class _Ctx:
@@ -68,7 +59,6 @@ async def write_deps(tmp_path: Path, repo: Repository) -> AgentDeps:
         repo=repo,
         executor=QueryExecutor(ReadonlySqlSandbox(db), ResultCache(ttl_s=60, max_entries=8)),
         session_id=session.id,
-        trace=_MemTrace(),  # type: ignore[arg-type]
         sql_timeout_ms=2000,
         sample_limit=5,
     )
