@@ -1,8 +1,34 @@
+/** AG-UI 页: assistant-ui runtime 驱动对话, 渲染复用 Amane 的 markdown 与输入框.
+
+会话状态在客户端 thread 里, 事件来自 `/agent/sessions/{id}/agui`; 首屏历史经
+`/agent/sessions/{id}/trace` 回放行重建 (AG-UI 协议本身没有历史回放).
+*/
+
+import { HttpAgent, type AgentSubscriber } from "@ag-ui/client";
 import {
-  ActionIcon,
+  AssistantRuntimeProvider,
+  MessagePrimitive,
+  ThreadPrimitive,
+  useAuiState,
+  type AssistantRuntime,
+  type ReasoningMessagePartProps,
+  type TextMessagePartProps,
+  type ThreadMessageLike,
+  type ToolCallMessagePartProps,
+} from "@assistant-ui/react";
+import {
+  useAgUiInterrupts,
+  useAgUiRuntime,
+  useAgUiSubmitInterruptResponses,
+  type AgUiInterrupt,
+} from "@assistant-ui/react-ag-ui";
+import {
+  Alert,
+  Badge,
   Box,
   Button,
   Center,
+  Code,
   Drawer,
   Group,
   Loader,
@@ -12,875 +38,642 @@ import {
   Stack,
   Text,
   TextInput,
-  Title,
   UnstyledButton,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useInterval } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconDots, IconList, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
+import {
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconDots,
+  IconList,
+  IconPencil,
+  IconPlus,
+  IconTool,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
-import { useLatestRef } from "@/hooks/use-latest-ref";
 import {
   createAgentSessionMutation,
   deleteAgentSessionMutation,
-  getAgentTraceOptions,
   listAgentSessionsOptions,
   listAgentSessionsQueryKey,
-  listSavedQueriesQueryKey,
   updateAgentSessionMutation,
+} from "@/client/@tanstack/react-query.gen";
+import { getAgentTrace } from "@/client/sdk.gen";
+import type { AgentSessionResponse } from "@/client/types.gen";
+import {
+  listSavedQueriesQueryKey,
   updateSavedQueryMutation,
 } from "@/client/@tanstack/react-query.gen";
-import { cancelAgentTurn, getSavedQueryResult } from "@/client/sdk.gen";
 import { ChatComposer, parseThinking, type ThinkingValue } from "@/components/agent/chat-composer";
-import { HintedActionIcon } from "@/components/common/hinted-action-icon";
+import { MarkdownContent } from "@/components/agent/markdown-content";
+import type { ChatMessage, TurnTokenUsage } from "@/lib/agent/trace";
+import { SavedQueryActions } from "@/components/agent/saved-query-actions";
 import {
-  type AssistantBlock,
-  type ChatMessage,
-  MessageBubble,
-  nextBlockId,
-  type TurnTokenUsage,
-} from "@/components/agent/message-bubble";
-import type {
-  ApprovalAction,
-  ToolApproval,
-  ToolCallView,
-} from "@/components/agent/tool-call-badge";
-import { SavedQueryManager } from "@/components/agent/saved-query-manager";
-import {
-  type AgentSseEvent,
-  type AgentTokenUsage,
-  streamAgentApprove,
-  streamAgentEvents,
-  streamAgentMessage,
-  streamAgentReject,
-} from "@/lib/agent/sse";
-import {
-  findPendingApprovals,
-  markMessagesApprovalStatus,
-  messagesFromTrace,
-  parseNeedsApproval,
-} from "@/lib/agent/trace";
-import { confirm } from "@/lib/confirm";
-import { extractErrorMessage } from "@/lib/api-error";
+  downloadSavedQueryResult,
+  SavedQueryManager,
+} from "@/components/agent/saved-query-manager";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
+import { messagesFromTrace } from "@/lib/agent/trace";
+import { TokenUsageBar } from "@/components/agent/token-usage-bar";
+import { confirm } from "@/lib/confirm";
 
-async function downloadSavedQueryResult(queryId: number) {
-  const { data, error } = await getSavedQueryResult({
-    path: { query_id: queryId },
-    query: { offset: 0, limit: 5000 },
-  });
-  if (error || !data) {
-    notifications.show({ color: "red", message: String(error) });
-    return;
-  }
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `saved-query-${queryId}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+function apiBase(): string {
+  return import.meta.env.VITE_API_URL || "";
 }
 
-function normalizeUsage(usage: AgentTokenUsage | undefined): TurnTokenUsage | undefined {
-  if (!usage) return undefined;
+/** 回合失败时弹出提示; 主动取消 (AbortError) 不算失败. */
+class NotifyingHttpAgent extends HttpAgent {
+  override async runAgent(
+    parameters?: Parameters<HttpAgent["runAgent"]>[0],
+    subscriber?: AgentSubscriber,
+  ) {
+    return super.runAgent(parameters, {
+      ...subscriber,
+      onRunFailed: (params) => {
+        if (params.error.name !== "AbortError") {
+          notifications.show({ color: "red", message: params.error.message });
+        }
+        return subscriber?.onRunFailed?.(params);
+      },
+    });
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+function toJsonValue(value: unknown): JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(toJsonValue);
+  if (isRecord(value)) {
+    const out: { [key: string]: JsonValue } = {};
+    for (const [key, item] of Object.entries(value)) out[key] = toJsonValue(item);
+    return out;
+  }
+  return String(value);
+}
+
+function toJsonObject(value: unknown): { [key: string]: JsonValue } {
+  const converted = toJsonValue(value);
+  return typeof converted === "object" && converted !== null && !Array.isArray(converted)
+    ? converted
+    : {};
+}
+
+function JsonBlock({ value }: { value: unknown }) {
+  return (
+    <Code block style={{ fontSize: 11, maxHeight: 200, overflow: "auto" }}>
+      {JSON.stringify(value ?? null, null, 2)}
+    </Code>
+  );
+}
+
+function isRunning(status: { readonly type: string }): boolean {
+  return status.type === "running";
+}
+
+function TextPart({ text, status }: TextMessagePartProps) {
+  return <MarkdownContent text={text} streaming={isRunning(status)} />;
+}
+
+function ReasoningPart({ text }: ReasoningMessagePartProps) {
+  return (
+    <Box mb="xs" pl="sm" style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}>
+      <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
+        {text}
+      </Text>
+    </Box>
+  );
+}
+
+/** 交付的 SQL 视图: 只有 sql_deliver 的回执进芯片, sql_explore 的探查视图不进. */
+function savedQueryIdOf(toolName: string, result: unknown): number | null {
+  if (toolName !== "sql_deliver" || !isRecord(result)) return null;
+  const id = result.saved_query_id;
+  return typeof id === "number" ? id : null;
+}
+
+/** 参数视图: 优先已解析的对象; 流式未成形或日志里只留 JSON 文本时退回解析文本. */
+function argsBodyOf(args: unknown, argsText: string): unknown {
+  if (isRecord(args) && Object.keys(args).length > 0) return args;
+  const text = argsText.trim();
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function ToolCallPart({
+  toolCallId,
+  toolName,
+  args,
+  argsText,
+  result,
+  status,
+}: ToolCallMessagePartProps) {
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const savedQueryId = savedQueryIdOf(toolName, result);
+  const argsBody = argsBodyOf(args, argsText);
+  const persist = useMutation({
+    ...updateSavedQueryMutation(),
+    onSuccess: () =>
+      void queryClient.invalidateQueries({
+        queryKey: listSavedQueriesQueryKey({ query: { persisted_only: true } }),
+      }),
+  });
+
+  return (
+    <Box
+      mb="xs"
+      style={{
+        border: "1px solid var(--mantine-color-default-border)",
+        borderRadius: "var(--mantine-radius-md)",
+        overflow: "hidden",
+      }}
+    >
+      <UnstyledButton px="sm" py={6} w="100%" onClick={() => setOpen((v) => !v)}>
+        <Group gap={6} wrap="nowrap">
+          <IconTool size={14} stroke={1.6} />
+          <Text size="xs" fw={500} ff="monospace">
+            {toolName}
+          </Text>
+          {isRunning(status) ? (
+            <Loader size={12} />
+          ) : result !== undefined ? (
+            <IconCheck size={13} color="var(--mantine-color-teal-6)" />
+          ) : null}
+          <Box style={{ marginLeft: "auto", display: "flex", lineHeight: 0 }}>
+            {open ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
+          </Box>
+        </Group>
+      </UnstyledButton>
+      <ApprovalGate toolCallId={toolCallId} />
+      {savedQueryId !== null && (
+        <Box px="sm" pb="sm">
+          <SavedQueryActions
+            ids={[savedQueryId]}
+            onDownload={(id) => void downloadSavedQueryResult(id)}
+            onPersist={(id) =>
+              persist.mutate({ path: { query_id: id }, body: { persisted: true } })
+            }
+          />
+        </Box>
+      )}
+      {open && (
+        <Stack gap={4} px="sm" pb="sm">
+          {argsBody !== undefined && (
+            <>
+              <Text size="xs" c="dimmed">
+                参数
+              </Text>
+              <JsonBlock value={argsBody} />
+            </>
+          )}
+          {result !== undefined && (
+            <>
+              <Text size="xs" c="dimmed" mt={4}>
+                结果
+              </Text>
+              <JsonBlock value={result} />
+            </>
+          )}
+        </Stack>
+      )}
+    </Box>
+  );
+}
+
+function Message({ usage }: { usage: TurnTokenUsage | null }) {
+  const { t } = useTranslation("agent");
+  return (
+    <Box mb="sm">
+      <MessagePrimitive.If user>
+        <Text size="xs" c="dimmed" ta="right" mb={4}>
+          {t("you")}
+        </Text>
+      </MessagePrimitive.If>
+      <MessagePrimitive.If assistant>
+        <Text size="xs" c="dimmed" mb={4}>
+          {t("assistant")}
+        </Text>
+      </MessagePrimitive.If>
+      <MessagePrimitive.Parts
+        components={{ Text: TextPart, Reasoning: ReasoningPart, tools: { Override: ToolCallPart } }}
+      />
+      {usage && (
+        <MessagePrimitive.If last>
+          <TokenUsageBar usage={usage} />
+        </MessagePrimitive.If>
+      )}
+    </Box>
+  );
+}
+
+/** 最近一回合的用量.
+
+   服务端已在 `RUN_FINISHED.usage` 上给出 (协议字段, 官方适配器不填), 但当前客户端解析器会丢弃该
+   字段, 故读回放行里的同一份数据.
+*/
+function useTurnUsage(sessionId: number, running: boolean): TurnTokenUsage | null {
+  const [usage, setUsage] = useState<TurnTokenUsage | null>(null);
+
+  useEffect(() => {
+    if (running) return;
+    void (async () => {
+      const { data } = await getAgentTrace({ path: { session_id: sessionId } });
+      if (!data) return;
+      const messages = messagesFromTrace(data.events).messages;
+      const last = messages.findLast((message) => message.role === "assistant");
+      setUsage(last?.role === "assistant" ? (last.usage ?? null) : null);
+    })();
+  }, [sessionId, running]);
+
+  return usage;
+}
+
+/** 观察线程: 上报用量, 并在服务端回合结束时通知外层重建历史.
+
+    回合在服务端后台执行; 刷新或换页后连接已断, 因此这里不接流, 只轮询回放行直到它跑完.
+*/
+function ThreadObserver({
+  sessionId,
+  onUsage,
+  onTurnEnd,
+}: {
+  sessionId: number;
+  onUsage: (usage: TurnTokenUsage | null) => void;
+  onTurnEnd: () => void;
+}) {
+  const { t } = useTranslation("agent");
+  const running = useAuiState((state) => state.thread.isRunning);
+  const usage = useTurnUsage(sessionId, running);
+  const [serverTurn, setServerTurn] = useState(false);
+
+  useEffect(() => onUsage(usage), [onUsage, usage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data } = await getAgentTrace({ path: { session_id: sessionId } });
+      if (!cancelled) setServerTurn(data?.turn_running ?? false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, running]);
+
+  const watching = !running && serverTurn;
+
+  useInterval(() => {
+    if (!watching) return;
+    void (async () => {
+      const { data } = await getAgentTrace({ path: { session_id: sessionId } });
+      if (data?.turn_running) return;
+      setServerTurn(false);
+      onTurnEnd();
+    })();
+  }, 1500);
+
+  if (!watching) return null;
+  return (
+    <Group gap="xs" px="sm">
+      <Loader size="xs" />
+      <Text size="xs" c="dimmed">
+        {t("turnRunning")}
+      </Text>
+    </Group>
+  );
+}
+
+type Decision = "approve" | "reject";
+
+type ApprovalQueue = {
+  interrupts: readonly AgUiInterrupt[];
+  decisions: Record<string, Decision>;
+  submitting: boolean;
+  decide: (interruptId: string, decision: Decision) => void;
+  approveAll: () => void;
+};
+
+/** 审批队列.
+
+    一次 resume 必须回答全部打开的中断, 故逐个点选只暂存决定, 最后一个决定落下时才整批提交;
+    批量批准即对全部中断一次暂存 approve.
+*/
+function useApprovalQueue(): ApprovalQueue {
+  const interrupts = useAgUiInterrupts();
+  const submit = useAgUiSubmitInterruptResponses();
+  const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  const flush = (next: Record<string, Decision>) => {
+    setSubmitting(true);
+    void (async () => {
+      try {
+        await submit(
+          interrupts.map((item) => ({
+            interruptId: item.id,
+            status: "resolved" as const,
+            payload:
+              next[item.id] === "approve"
+                ? { approved: true }
+                : { approved: false, reason: "已拒绝" },
+          })),
+        );
+      } catch (error) {
+        notifications.show({ color: "red", message: String(error) });
+      } finally {
+        setSubmitting(false);
+        setDecisions({});
+      }
+    })();
+  };
+
+  const record = (next: Record<string, Decision>) => {
+    setDecisions(next);
+    if (interrupts.every((item) => next[item.id] !== undefined)) flush(next);
+  };
+
   return {
-    input: usage.input,
-    cache_read: usage.cache_read,
-    cache_write: usage.cache_write,
-    output: usage.output,
-    requests: usage.requests ?? 0,
+    interrupts,
+    decisions,
+    submitting,
+    decide: (interruptId, decision) => record({ ...decisions, [interruptId]: decision }),
+    approveAll: () =>
+      record(Object.fromEntries(interrupts.map((item) => [item.id, "approve" as const]))),
   };
 }
 
-function appendTextBlock(blocks: AssistantBlock[], piece: string): AssistantBlock[] {
-  if (!piece) return blocks;
-  const next = [...blocks];
-  const last = next[next.length - 1];
-  if (last?.kind === "text") {
-    next[next.length - 1] = { ...last, text: last.text + piece };
-    return next;
-  }
-  next.push({ kind: "text", id: nextBlockId("t"), text: piece });
-  return next;
+const ApprovalContext = createContext<ApprovalQueue | null>(null);
+
+/** SQL 可能不含空格, 只按空白折行会撑破气泡并让消息区出现横向滚动. */
+function SqlText({ sql }: { sql: string }) {
+  return (
+    <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+      {sql}
+    </Text>
+  );
 }
 
-function attachApproval(blocks: AssistantBlock[], approval: ToolApproval): AssistantBlock[] {
-  // approval_id 即 tool_call_id (DeferredToolRequests)
-  const next = [...blocks];
-  const byCallId = next.findIndex(
-    (b) => b.kind === "tool" && b.tool.toolCallId === approval.approval_id,
-  );
-  if (byCallId >= 0 && next[byCallId]?.kind === "tool") {
-    next[byCallId] = {
-      kind: "tool",
-      tool: { ...next[byCallId].tool, approval },
-    };
-    return next;
-  }
-  const byApprovalId = next.findIndex(
-    (b) => b.kind === "tool" && b.tool.approval?.approval_id === approval.approval_id,
-  );
-  if (byApprovalId >= 0 && next[byApprovalId]?.kind === "tool") {
-    next[byApprovalId] = {
-      kind: "tool",
-      tool: { ...next[byApprovalId].tool, approval },
-    };
-    return next;
-  }
-  const byName = next.findLastIndex(
-    (b) =>
-      b.kind === "tool" &&
-      b.tool.name === approval.tool &&
-      (b.tool.approval === undefined || b.tool.approval.status === "pending"),
-  );
-  if (byName >= 0 && next[byName]?.kind === "tool") {
-    next[byName] = {
-      kind: "tool",
-      tool: { ...next[byName].tool, approval },
-    };
-  }
-  return next;
-}
-
-function applySseToAssistant(prev: ChatMessage[], event: AgentSseEvent): ChatMessage[] {
-  if (event.type === "user_message" || event.type === "assistant_message") {
-    return prev;
-  }
-
-  const messages = [...prev];
-  let last = messages[messages.length - 1];
-  if (!last || last.role !== "assistant") {
-    messages.push({ role: "assistant", blocks: [], streaming: true });
-    last = messages[messages.length - 1];
-  }
-  if (last.role !== "assistant") {
-    return prev;
-  }
-  let blocks = [...last.blocks];
-  let savedQueryIds = [...(last.savedQueryIds ?? [])];
-
-  if (event.type === "text_delta") {
-    blocks = appendTextBlock(blocks, event.text);
-    messages[messages.length - 1] = { ...last, blocks, streaming: true };
-    return messages;
-  }
-
-  if (event.type === "tool_call") {
-    blocks.push({
-      kind: "tool",
-      tool: {
-        toolCallId: event.tool_call_id,
-        name: event.name,
-        args: event.args,
-      },
-    });
-    messages[messages.length - 1] = { ...last, blocks, streaming: true };
-    return messages;
-  }
-
-  if (event.type === "tool_result") {
-    // 新路径批准只经 needs_approval SSE; tool_result 内嵌 needs_approval 仅兼容旧 trace
-    const parsed = parseNeedsApproval(event.result);
-    const idx = blocks.findIndex(
-      (b) => b.kind === "tool" && b.tool.toolCallId === event.tool_call_id,
-    );
-    const patch: ToolCallView = {
-      toolCallId: event.tool_call_id,
-      name: event.name,
-      result: event.result,
-      approval: parsed ? { ...parsed, status: "pending" } : undefined,
-    };
-    if (idx >= 0 && blocks[idx]?.kind === "tool") {
-      blocks[idx] = {
-        kind: "tool",
-        tool: {
-          ...blocks[idx].tool,
-          ...patch,
-          approval: patch.approval ?? blocks[idx].tool.approval,
-        },
-      };
-    } else {
-      blocks.push({ kind: "tool", tool: patch });
-    }
-    if (
-      event.result !== null &&
-      typeof event.result === "object" &&
-      "saved_query_id" in event.result &&
-      typeof event.result.saved_query_id === "number" &&
-      !savedQueryIds.includes(event.result.saved_query_id)
-    ) {
-      savedQueryIds = [...savedQueryIds, event.result.saved_query_id];
-    }
-    messages[messages.length - 1] = { ...last, blocks, savedQueryIds, streaming: true };
-    return messages;
-  }
-
-  if (event.type === "needs_approval") {
-    blocks = attachApproval(blocks, {
-      approval_id: event.approval_id,
-      sql: event.sql,
-      tool: event.tool,
-      status: "pending",
-    });
-    messages[messages.length - 1] = { ...last, blocks, streaming: false };
-    return messages;
-  }
-
-  if (event.type === "done") {
-    messages[messages.length - 1] = {
-      ...last,
-      blocks,
-      streaming: false,
-      savedQueryIds: event.saved_query_ids.length > 0 ? event.saved_query_ids : savedQueryIds,
-      usage: normalizeUsage(event.usage),
-    };
-    return messages;
-  }
-
-  if (event.type === "error") {
-    blocks = appendTextBlock(blocks, `\n\n⚠ ${event.message}`);
-    messages[messages.length - 1] = { ...last, blocks, streaming: false };
-    return messages;
-  }
-
-  if (event.type === "cancelled") {
-    messages[messages.length - 1] = { ...last, blocks, streaming: false };
-    return messages;
-  }
-
-  return prev;
-}
-
-export function AgentHome() {
-  const { t } = useTranslation(["agent", "common"]);
-  const qc = useQueryClient();
-  const sessionsQuery = useQuery(listAgentSessionsOptions());
-  const [sessionId, setSessionId] = useState<number | null>(null);
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [streaming, setStreaming] = useState(false);
-  const [historyEpoch, setHistoryEpoch] = useState(0);
-  const [renamingId, setRenamingId] = useState<number | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  /** 会话思考覆盖; null = 继承全局默认. */
-  const [sessionThinking, setSessionThinking] = useState<ThinkingValue | null>(null);
-  /** 窄屏会话抽屉; md 以上侧栏内联, 该状态不参与呈现. */
-  const [sessionsDrawer, sessionsDrawerHandlers] = useDisclosure(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const skipTraceLoad = useRef(false);
-  const lastSeqRef = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
-  /** 历史恢复后需滚到底; 在 messages 提交后再清除. */
-  const pendingScrollBottom = useRef(false);
-  const messagesRef = useLatestRef(messages);
-  /** 单次批准暂存: approval_id → tool; 同工具待批清空后再一次 approve/stream. */
-  const stagedApprovalsRef = useRef(new Map<string, string>());
-
-  if (sessionId == null && !sessionsQuery.isPending) {
-    const latest = sessionsQuery.data?.items[0];
-    if (latest != null) {
-      setSessionId(latest.id);
-      setSessionThinking(parseThinking(latest.thinking));
-    }
-  }
-
-  const traceQuery = useQuery({
-    ...getAgentTraceOptions({ path: { session_id: sessionId ?? 0 } }),
-    enabled: sessionId != null && !streaming,
-  });
-
-  const createSession = useMutation({
-    ...createAgentSessionMutation(),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
-    },
-  });
-
-  const renameSession = useMutation({
-    ...updateAgentSessionMutation(),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
-      setRenamingId(null);
-    },
-  });
-
-  const updateThinking = useMutation({
-    ...updateAgentSessionMutation(),
-    onSuccess: async (data) => {
-      setSessionThinking(parseThinking(data.thinking));
-      await qc.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
-    },
-    onError: (err) => {
-      notifications.show({
-        color: "red",
-        message: extractErrorMessage(err, t("disabled")),
-      });
-    },
-  });
-
-  const deleteSession = useMutation({
-    ...deleteAgentSessionMutation(),
-    onSuccess: async (_data, vars) => {
-      await qc.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
-      if (sessionId === vars.path.session_id) {
-        abortRef.current?.abort();
-        stagedApprovalsRef.current.clear();
-        setSessionId(null);
-        setMessages([]);
-        setSessionThinking(null);
-        setStreaming(false);
-      }
-    },
-  });
-
-  const persistQuery = useMutation({
-    ...updateSavedQueryMutation(),
-    onSuccess: async () => {
-      notifications.show({ color: "green", message: t("persist") });
-      await qc.invalidateQueries({
-        queryKey: listSavedQueriesQueryKey({ query: { persisted_only: true } }),
-      });
-      if (sessionId != null) {
-        await qc.invalidateQueries({
-          queryKey: listSavedQueriesQueryKey({ query: { session_id: sessionId } }),
-        });
-      }
-    },
-  });
-
-  function scrollToBottom() {
-    requestAnimationFrame(() => {
-      const el = scrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    });
-  }
-
-  async function consumeEvents(iter: AsyncGenerator<AgentSseEvent>): Promise<boolean> {
-    let ok = true;
-    for await (const event of iter) {
-      if (typeof event.seq === "number") {
-        lastSeqRef.current = Math.max(lastSeqRef.current, event.seq);
-      }
-      setMessages((prev) => applySseToAssistant(prev, event));
-      scrollToBottom();
-      if (event.type === "error") {
-        ok = false;
-        notifications.show({ color: "red", message: event.message });
-      }
-    }
-    return ok;
-  }
-
-  const resumeTail = useEffectEvent(async (sid: number, after: number) => {
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setStreaming(true);
-    try {
-      await consumeEvents(streamAgentEvents(sid, after, ac.signal));
-      skipTraceLoad.current = true;
-      await qc.invalidateQueries({
-        queryKey: getAgentTraceOptions({ path: { session_id: sid } }).queryKey,
-      });
-    } catch (err) {
-      if (ac.signal.aborted) return;
-      notifications.show({
-        color: "red",
-        message: extractErrorMessage(err, t("disabled")),
-      });
-    } finally {
-      if (abortRef.current === ac) {
-        setStreaming(false);
-        abortRef.current = null;
-      }
-    }
-  });
-
-  useEffect(() => {
-    if (sessionId == null || streaming) return;
-    // 再点当前会话时 sessionId 不变, 靠 historyEpoch 让本 effect 重新绑定.
-    if (historyEpoch < 0) return;
-    if (skipTraceLoad.current) {
-      skipTraceLoad.current = false;
-      return;
-    }
-    if (!traceQuery.data) return;
-    const { messages: restored, lastSeq } = messagesFromTrace(traceQuery.data.events);
-    lastSeqRef.current = Math.max(lastSeq, traceQuery.data.last_seq ?? 0);
-    // External store → local transcript. Resume / scroll flags are side effects
-    // that cannot run during render.
-    // oxlint-disable-next-line react/set-state-in-effect
-    setMessages(restored);
-    setSessionThinking(parseThinking(traceQuery.data.meta?.thinking));
-    if (traceQuery.data.turn_running) {
-      void resumeTail(sessionId, lastSeqRef.current);
-    } else if (restored.length > 0) {
-      pendingScrollBottom.current = true;
-    }
-  }, [sessionId, historyEpoch, streaming, traceQuery.data]);
-
-  useEffect(() => {
-    if (!pendingScrollBottom.current) return;
-    if (sessionId == null || streaming) return;
-    // 切换会话会先清空 messages; 同一次 commit 里 trace 已置旗但 messages 仍为空 - 保留旗标等下一拍.
-    if (messages.length === 0) return;
-    pendingScrollBottom.current = false;
-    requestAnimationFrame(() => {
-      const el = scrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    });
-  }, [sessionId, messages, streaming]);
-
-  function openSession(id: number) {
-    // 抽屉在窄屏覆盖消息区, 选定会话后必须关闭.
-    sessionsDrawerHandlers.close();
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setStreaming(false);
-    setRenamingId(null);
-    stagedApprovalsRef.current.clear();
-    setSessionId(id);
-    setMessages([]);
-    const found = (sessionsQuery.data?.items ?? []).find((s) => s.id === id);
-    setSessionThinking(parseThinking(found?.thinking));
-    lastSeqRef.current = 0;
-    setHistoryEpoch((n) => n + 1);
-  }
-
-  async function handleNewSession() {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setStreaming(false);
-    stagedApprovalsRef.current.clear();
-    setInput("");
-    try {
-      const session = await createSession.mutateAsync({
-        body: { title: t("newSession") },
-      });
-      // 抽屉在窄屏覆盖消息区, 新会话建立后必须关闭.
-      sessionsDrawerHandlers.close();
-      skipTraceLoad.current = true;
-      lastSeqRef.current = 0;
-      setMessages([]);
-      setSessionThinking(parseThinking(session.thinking));
-      setSessionId(session.id);
-    } catch (err) {
-      notifications.show({
-        color: "red",
-        message: extractErrorMessage(err, t("disabled")),
-      });
-    }
-  }
-
-  async function runStream(
-    sid: number,
-    content: string,
-    mode: "message" | "approve" | "reject",
-    approvalIds?: readonly string[],
-  ): Promise<boolean> {
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setStreaming(true);
-    if (mode === "message") {
-      stagedApprovalsRef.current.clear();
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", text: content },
-        { role: "assistant", blocks: [], streaming: true },
-      ]);
-    } else {
-      setMessages((prev) => [...prev, { role: "assistant", blocks: [], streaming: true }]);
-    }
-    scrollToBottom();
-
-    try {
-      let iter: AsyncGenerator<AgentSseEvent>;
-      if (mode === "approve" && approvalIds && approvalIds.length > 0) {
-        iter = streamAgentApprove(sid, approvalIds, 60_000, ac.signal);
-      } else if (mode === "reject" && approvalIds?.[0]) {
-        iter = streamAgentReject(sid, approvalIds[0], ac.signal);
-      } else {
-        iter = streamAgentMessage(sid, content, ac.signal);
-      }
-      const streamOk = await consumeEvents(iter);
-      skipTraceLoad.current = true;
-      await qc.invalidateQueries({
-        queryKey: getAgentTraceOptions({ path: { session_id: sid } }).queryKey,
-      });
-      return streamOk;
-    } catch (err) {
-      if (ac.signal.aborted) return false;
-      notifications.show({
-        color: "red",
-        message: extractErrorMessage(err, t("disabled")),
-      });
-      setMessages((prev) => {
-        const copy = [...prev];
-        const last = copy[copy.length - 1];
-        if (last?.role === "assistant") {
-          copy[copy.length - 1] = { ...last, streaming: false };
-        }
-        return copy;
-      });
-      return false;
-    } finally {
-      if (abortRef.current === ac) {
-        setStreaming(false);
-        abortRef.current = null;
-      }
-    }
-  }
-
-  function markApprovalsLocally(ids: readonly string[], status: ToolApproval["status"]) {
-    setMessages((prev) => {
-      let next = prev;
-      for (const id of ids) {
-        next = markMessagesApprovalStatus(next, id, status);
-      }
-      messagesRef.current = next;
-      return next;
-    });
-  }
-
-  function takeStagedIds(tool: string): string[] {
-    const ids: string[] = [];
-    for (const [id, stagedTool] of stagedApprovalsRef.current) {
-      if (stagedTool === tool) {
-        ids.push(id);
-        stagedApprovalsRef.current.delete(id);
-      }
-    }
-    return ids;
-  }
-
-  /** 同工具暂存已齐 (无剩余 pending) 时一次性回灌. */
-  async function flushStagedApprovals(sid: number, tool: string) {
-    const ids = takeStagedIds(tool);
-    if (ids.length === 0) return;
-    const ok = await runStream(sid, "", "approve", ids);
-    if (!ok) {
-      markApprovalsLocally(ids, "pending");
-      for (const id of ids) {
-        stagedApprovalsRef.current.set(id, tool);
-      }
-    }
-  }
-
-  async function flushAllStaged(sid: number) {
-    const tools = [...new Set(stagedApprovalsRef.current.values())];
-    for (const tool of tools) {
-      await flushStagedApprovals(sid, tool);
-    }
-  }
-
-  async function handleApprovalAction(approval: ToolApproval, action: ApprovalAction) {
-    if (sessionId == null || streaming || approval.status !== "pending") return;
-
-    if (action === "reject") {
-      stagedApprovalsRef.current.delete(approval.approval_id);
-      markApprovalsLocally([approval.approval_id], "rejected");
-      await runStream(sessionId, "", "reject", [approval.approval_id]);
-      // 拒绝后若同工具已无 pending, 把此前暂存一并回灌
-      if (findPendingApprovals(messagesRef.current, approval.tool).length === 0) {
-        await flushStagedApprovals(sessionId, approval.tool);
-      }
-      return;
-    }
-
-    if (action === "batch") {
-      const pendingIds = findPendingApprovals(messagesRef.current, approval.tool).map(
-        (a) => a.approval_id,
-      );
-      const stagedIds = takeStagedIds(approval.tool);
-      const ids = [...new Set([...stagedIds, ...pendingIds])];
-      if (ids.length === 0) return;
-      markApprovalsLocally(ids, "approved");
-      const ok = await runStream(sessionId, "", "approve", ids);
-      if (!ok) {
-        markApprovalsLocally(ids, "pending");
-      }
-      return;
-    }
-
-    // 单次批准: 暂存; 同工具待批清空后再请求
-    stagedApprovalsRef.current.set(approval.approval_id, approval.tool);
-    markApprovalsLocally([approval.approval_id], "approved");
-    if (findPendingApprovals(messagesRef.current, approval.tool).length === 0) {
-      await flushStagedApprovals(sessionId, approval.tool);
-    }
-  }
-
-  async function handleSend(raw?: string) {
-    const text = (raw ?? input).trim();
-    if (!text || streaming) return;
-    setInput("");
-
-    let sid = sessionId;
-    if (sid == null) {
-      try {
-        const session = await createSession.mutateAsync({
-          body: { title: text.slice(0, 40) || t("newSession") },
-        });
-        sid = session.id;
-        skipTraceLoad.current = true;
-        setSessionThinking(parseThinking(session.thinking));
-        setSessionId(sid);
-        setMessages([]);
-      } catch (err) {
-        notifications.show({
-          color: "red",
-          message: extractErrorMessage(err, t("disabled")),
-        });
-        return;
-      }
-    }
-    // 发新消息前先冲掉暂存批准, 避免只修改了 UI 却未执行
-    await flushAllStaged(sid);
-    await runStream(sid, text, "message");
-  }
-
-  async function handleStop() {
-    if (sessionId == null || !streaming) return;
-    const { error } = await cancelAgentTurn({ path: { session_id: sessionId } });
-    if (error) {
-      notifications.show({ color: "red", message: String(error) });
-      return;
-    }
-    setMessages((prev) => {
-      const copy = [...prev];
-      const last = copy[copy.length - 1];
-      if (last?.role === "assistant" && last.streaming) {
-        copy[copy.length - 1] = { ...last, streaming: false };
-      }
-      return copy;
-    });
-    setStreaming(false);
-    abortRef.current?.abort();
-    abortRef.current = null;
-  }
-
-  function startRename(id: number, title: string) {
-    setRenamingId(id);
-    setRenameValue(title);
-  }
-
-  function commitRename() {
-    if (renamingId == null) return;
-    const title = renameValue.trim();
-    if (!title) {
-      setRenamingId(null);
-      return;
-    }
-    renameSession.mutate(
-      { path: { session_id: renamingId }, body: { title } },
-      {
-        onError: (err) => {
-          notifications.show({
-            color: "red",
-            message: err instanceof Error ? err.message : String(err),
-          });
-        },
-      },
-    );
-  }
-
-  async function handleDelete(id: number) {
-    const ok = await confirm({
-      title: t("deleteSession"),
-      message: t("confirmDeleteSession"),
-      confirmLabel: t("common:actions.delete"),
-    });
-    if (!ok) return;
-    deleteSession.mutate({ path: { session_id: id } });
-  }
-
-  const sessions = sessionsQuery.data?.items ?? [];
-  const sessionsReady = !sessionsQuery.isPending;
-  const hasSessionHistory = sessions.length > 0;
-  // 开幕落地态仅在确认没有任何历史会话时展示; 有历史或已选中会话时始终采用侧栏对话布局.
-  const showLanding = sessionsReady && !hasSessionHistory && sessionId == null;
-  const loadingHistory =
-    sessionId != null && !streaming && traceQuery.isFetching && messages.length === 0;
-
-  if (!sessionsReady && sessionId == null) {
-    return (
-      <Center style={{ minHeight: APP_SHELL_MAIN_HEIGHT }}>
-        <Loader />
-      </Center>
-    );
-  }
-
-  if (showLanding) {
-    return (
-      <Center style={{ minHeight: APP_SHELL_MAIN_HEIGHT }}>
-        <Stack gap="xl" maw={640} w="100%" px="md" align="stretch">
-          <Stack gap={6} align="center">
-            <Title order={1} style={{ letterSpacing: "-0.03em" }}>
-              Amane
-            </Title>
-            <Text c="dimmed" size="sm" ta="center">
-              {t("landingHint")}
-            </Text>
-          </Stack>
-          <ChatComposer
-            value={input}
-            onChange={setInput}
-            onSubmit={() => void handleSend()}
-            onStop={() => void handleStop()}
-            loading={streaming}
-            disabled={createSession.isPending}
-            large
-          />
-        </Stack>
-      </Center>
-    );
-  }
-
-  // 会话面板在两处呈现: md 以上的内联侧栏, 与窄屏的抽屉; 抽屉内宽度占满.
-  const sessionsPanel = (
-    <Paper
-      withBorder
-      radius="md"
-      p="sm"
-      w={{ base: "100%", md: 260 }}
-      style={{ flexShrink: 0, display: "flex", flexDirection: "column", minHeight: 0 }}
-    >
-      <Group justify="space-between" mb="sm" style={{ flexShrink: 0 }}>
-        {/* 抽屉由 Drawer 标题呈现「会话」, 面板标题只在内联侧栏呈现. */}
-        <Text fw={600} size="sm" visibleFrom="md">
-          {t("sessions")}
-        </Text>
-        <Group gap={4}>
-          <SavedQueryManager sessionId={sessionId} />
-          <HintedActionIcon
-            variant="light"
-            loading={createSession.isPending}
-            label={t("newSession")}
-            onClick={() => void handleNewSession()}
-          >
-            <IconPlus size={16} />
-          </HintedActionIcon>
-        </Group>
-      </Group>
-      <ScrollArea style={{ flex: 1, minHeight: 0 }} offsetScrollbars>
-        <Stack gap={6}>
-          {sessions.map((s) => (
-            <Box
-              key={s.id}
-              p="xs"
-              style={{
-                borderRadius: "var(--mantine-radius-md)",
-                border:
-                  sessionId === s.id
-                    ? "1px solid var(--mantine-color-default-border)"
-                    : "1px solid transparent",
-                background: sessionId === s.id ? "var(--mantine-color-default-hover)" : undefined,
-              }}
-            >
-              {renamingId === s.id ? (
-                <Stack gap={6}>
-                  <TextInput
-                    size="sm"
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.currentTarget.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        commitRename();
-                      }
-                      if (e.key === "Escape") setRenamingId(null);
-                    }}
-                    autoFocus
-                    aria-label={t("renamePrompt")}
-                  />
-                  <Group gap={6} justify="flex-end">
-                    <Button size="compact-xs" variant="default" onClick={() => setRenamingId(null)}>
-                      {t("common:actions.cancel")}
-                    </Button>
-                    <Button
-                      size="compact-xs"
-                      loading={renameSession.isPending}
-                      onClick={() => commitRename()}
-                    >
-                      {t("common:actions.save")}
-                    </Button>
-                  </Group>
-                </Stack>
-              ) : (
-                <Group gap={4} wrap="nowrap" align="flex-start">
-                  <UnstyledButton
-                    onClick={() => openSession(s.id)}
-                    style={{ flex: 1, minWidth: 0, textAlign: "left" }}
-                  >
-                    <Text size="sm" fw={sessionId === s.id ? 600 : 400} lineClamp={2}>
-                      {s.title}
-                    </Text>
-                  </UnstyledButton>
-                  <Menu position="bottom-end" withinPortal>
-                    <Menu.Target>
-                      <ActionIcon
-                        size="sm"
-                        variant="subtle"
-                        aria-label={t("sessions")}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <IconDots size={14} />
-                      </ActionIcon>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      <Menu.Item
-                        leftSection={<IconPencil size={14} />}
-                        onClick={() => startRename(s.id, s.title)}
-                      >
-                        {t("renameSession")}
-                      </Menu.Item>
-                      <Menu.Item
-                        color="red"
-                        leftSection={<IconTrash size={14} />}
-                        onClick={() => void handleDelete(s.id)}
-                      >
-                        {t("deleteSession")}
-                      </Menu.Item>
-                    </Menu.Dropdown>
-                  </Menu>
-                </Group>
-              )}
-            </Box>
-          ))}
-        </Stack>
-      </ScrollArea>
-    </Paper>
-  );
+/** 工具卡片内的审批入口; 该工具调用没有对应中断时不渲染. */
+function ApprovalGate({ toolCallId }: { toolCallId: string }) {
+  const { t } = useTranslation("agent");
+  const queue = useContext(ApprovalContext);
+  const interrupt = queue?.interrupts.find((item) => item.toolCallId === toolCallId);
+  if (!queue || !interrupt) return null;
+  const decision = queue.decisions[interrupt.id];
+  const sql = interrupt.metadata?.sql;
 
   return (
-    <Stack gap="sm" style={{ height: APP_SHELL_MAIN_HEIGHT, minHeight: 0 }}>
-      {/* 窄屏会话入口; md 以上侧栏内联, 该行不参与布局. */}
-      <Group hiddenFrom="md" style={{ flexShrink: 0 }}>
-        <Button
-          variant="default"
-          size="sm"
-          leftSection={<IconList size={16} />}
-          onClick={sessionsDrawerHandlers.open}
-        >
-          {t("sessions")}
-        </Button>
-      </Group>
+    <Stack gap={6} px="sm" pb="sm">
+      {typeof sql === "string" && <SqlText sql={sql} />}
+      {decision === undefined ? (
+        <Group gap="xs">
+          <Button
+            size="compact-xs"
+            disabled={queue.submitting}
+            onClick={() => queue.decide(interrupt.id, "approve")}
+          >
+            {t("approve")}
+          </Button>
+          <Button
+            size="compact-xs"
+            variant="light"
+            color="red"
+            disabled={queue.submitting}
+            onClick={() => queue.decide(interrupt.id, "reject")}
+          >
+            {t("reject")}
+          </Button>
+          <Button
+            size="compact-xs"
+            variant="light"
+            disabled={queue.submitting}
+            onClick={queue.approveAll}
+          >
+            {t("batchApprove")}
+          </Button>
+        </Group>
+      ) : (
+        <Text size="xs" c={decision === "approve" ? "teal" : "red"}>
+          {decision === "approve" ? t("approvalApproved") : t("approvalRejected")}
+        </Text>
+      )}
+    </Stack>
+  );
+}
 
-      <Group
-        align="stretch"
-        gap="md"
-        wrap="nowrap"
-        style={{ flex: 1, minHeight: 0, overflow: "hidden" }}
-      >
-        {/* 行向 flex 使面板拉伸到侧栏高度, 列向只拉伸宽度, 面板会退回内容高度. */}
-        <Box visibleFrom="md" style={{ display: "flex", flexShrink: 0, minHeight: 0 }}>
-          {sessionsPanel}
-        </Box>
+/** 无工具卡片可挂的中断 (以及批量批准) 的兜底入口. */
+function ApprovalPanel() {
+  const { t } = useTranslation("agent");
+  const queue = useContext(ApprovalContext);
+  const orphans = queue?.interrupts.filter((item) => item.toolCallId === undefined) ?? [];
 
+  if (!queue || (orphans.length === 0 && queue.interrupts.length < 2)) return null;
+
+  return (
+    <Stack gap="xs" p="sm" style={{ flexShrink: 0 }}>
+      {orphans.map((interrupt) => (
+        <Alert key={interrupt.id} color="yellow" title={interrupt.message ?? t("approve")}>
+          <Stack gap="xs">
+            {typeof interrupt.metadata?.sql === "string" && (
+              <SqlText sql={interrupt.metadata.sql} />
+            )}
+            <Group gap="xs">
+              <Button
+                size="xs"
+                disabled={queue.submitting}
+                onClick={() => queue.decide(interrupt.id, "approve")}
+              >
+                {t("approve")}
+              </Button>
+              <Button
+                size="xs"
+                variant="default"
+                disabled={queue.submitting}
+                onClick={() => queue.decide(interrupt.id, "reject")}
+              >
+                {t("reject")}
+              </Button>
+            </Group>
+          </Stack>
+        </Alert>
+      ))}
+      {queue.interrupts.length > 1 && (
+        <Group gap="xs">
+          <Button size="xs" variant="light" disabled={queue.submitting} onClick={queue.approveAll}>
+            {t("batchApprove")}
+          </Button>
+          <Text size="xs" c="dimmed">
+            {queue.interrupts.length}
+          </Text>
+        </Group>
+      )}
+    </Stack>
+  );
+}
+
+/** 回放行的参数: 日志里既可能是对象 (本地落盘) 也可能是 JSON 文本 (旧路径写的). */
+function toolArgsObject(value: unknown): { [key: string]: JsonValue } {
+  if (typeof value !== "string") return toJsonObject(value);
+  try {
+    return toJsonObject(JSON.parse(value));
+  } catch {
+    return {};
+  }
+}
+
+function toolArgsText(value: unknown): string {
+  if (typeof value === "string") return value;
+  return value === undefined ? "" : JSON.stringify(value);
+}
+
+/** 回放行 → 首屏可见的历史 (AG-UI 协议本身没有历史回放). */
+function toThreadMessageLike(message: ChatMessage, index: number): ThreadMessageLike {
+  if (message.role === "user") {
+    return {
+      id: `trace-u-${index}`,
+      role: "user",
+      content: [{ type: "text", text: message.text }],
+    };
+  }
+  return {
+    id: `trace-a-${index}`,
+    role: "assistant",
+    content: message.blocks.map((block, blockIndex) =>
+      block.kind === "text"
+        ? { type: "text" as const, text: block.text }
+        : {
+            type: "tool-call" as const,
+            toolCallId: block.tool.toolCallId || `trace-tool-${index}-${blockIndex}`,
+            toolName: block.tool.name,
+            args: toolArgsObject(block.tool.args),
+            argsText: toolArgsText(block.tool.args),
+            result: block.tool.result,
+          },
+    ),
+  };
+}
+
+/** 回放行末尾若停在中断上, 取出这组未决中断. */
+function pendingInterrupts(events: readonly unknown[]): AgUiInterrupt[] {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const row = events[index];
+    if (!isRecord(row) || row.type !== "agui" || !isRecord(row.event)) continue;
+    if (row.event.type !== "RUN_FINISHED") continue;
+    const outcome = row.event.outcome;
+    if (!isRecord(outcome) || outcome.type !== "interrupt") return [];
+    return Array.isArray(outcome.interrupts) ? outcome.interrupts.filter(isInterrupt) : [];
+  }
+  return [];
+}
+
+function isInterrupt(value: unknown): value is AgUiInterrupt {
+  return isRecord(value) && typeof value.id === "string";
+}
+
+/** 用回放行重建会话; 未决中断挂到最后一条助手消息上, 刷新后仍可继续审批. */
+async function seedThread(runtime: AssistantRuntime, sessionId: number): Promise<void> {
+  const { data } = await getAgentTrace({ path: { session_id: sessionId } });
+  if (!data) return;
+  const like = messagesFromTrace(data.events).messages.map(toThreadMessageLike);
+  const interrupts = pendingInterrupts(data.events);
+  const last = like.at(-1);
+  if (interrupts.length > 0 && last?.role === "assistant") {
+    like[like.length - 1] = {
+      ...last,
+      status: { type: "requires-action", reason: "interrupt" },
+      metadata: { custom: { agui: { interrupts } } },
+    };
+  }
+  runtime.thread.reset(like);
+}
+
+/** 审批队列须在 runtime 内读取, 故单独一层 Provider. */
+function ApprovalProvider({ children }: { children: ReactNode }) {
+  const queue = useApprovalQueue();
+  return <ApprovalContext.Provider value={queue}>{children}</ApprovalContext.Provider>;
+}
+
+function AgUiThread({
+  sessionId,
+  firstMessage,
+  onFirstMessageSent,
+  thinking,
+  onThinkingChange,
+  thinkingDisabled,
+}: {
+  sessionId: number;
+  firstMessage: string | null;
+  onFirstMessageSent: () => void;
+  thinking: ThinkingValue | null;
+  onThinkingChange: (value: ThinkingValue | null) => void;
+  thinkingDisabled: boolean;
+}) {
+  const { t } = useTranslation("agent");
+  const queryClient = useQueryClient();
+  const agent = useMemo(
+    () =>
+      new NotifyingHttpAgent({
+        url: `${apiBase()}/api/agent/sessions/${sessionId}/agui`,
+        threadId: String(sessionId),
+      }),
+    [sessionId],
+  );
+  const runtime = useAgUiRuntime({ agent });
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [usage, setUsage] = useState<TurnTokenUsage | null>(null);
+
+  const seed = useCallback(() => seedThread(runtime, sessionId), [runtime, sessionId]);
+
+  useEffect(() => {
+    void (async () => {
+      await seed();
+      setLoadingHistory(false);
+    })();
+  }, [seed]);
+
+  // 落地页首条消息: 会话建好后才能发, 故等历史重建完成再补发.
+  useEffect(() => {
+    if (loadingHistory || firstMessage === null) return;
+    onFirstMessageSent();
+    runtime.thread.append(firstMessage);
+  }, [loadingHistory, firstMessage, onFirstMessageSent, runtime]);
+
+  const handleTurnEnd = useCallback(() => {
+    void seed();
+    void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
+  }, [seed, queryClient]);
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <ApprovalProvider>
         <Stack style={{ flex: 1, minWidth: 0, minHeight: 0, height: "100%" }} gap="sm">
           <Paper
             withBorder
@@ -893,86 +686,389 @@ export function AgentHome() {
               overflow: "hidden",
             }}
           >
-            <Box
-              ref={scrollRef}
-              style={{
-                flex: 1,
-                minHeight: 0,
-                overflow: "auto",
-                padding: "var(--mantine-spacing-md)",
-              }}
+            <ApprovalPanel />
+            <ThreadPrimitive.Root
+              style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
             >
-              <Stack gap="lg">
-                {sessionId == null && (
-                  <Text c="dimmed" size="sm">
-                    {t("selectSessionHint")}
-                  </Text>
-                )}
-                {loadingHistory && (
+              <ThreadPrimitive.Viewport
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflow: "auto",
+                  padding: "var(--mantine-spacing-md)",
+                }}
+              >
+                {loadingHistory ? (
                   <Group gap="xs">
                     <Loader size="sm" />
                     <Text c="dimmed" size="sm">
                       {t("loadingHistory")}
                     </Text>
                   </Group>
+                ) : (
+                  <ThreadPrimitive.Empty>
+                    <Text c="dimmed" size="sm">
+                      {t("continueHint")}
+                    </Text>
+                  </ThreadPrimitive.Empty>
                 )}
-                {sessionId != null && !loadingHistory && messages.length === 0 && (
-                  <Text c="dimmed" size="sm">
-                    {t("continueHint")}
-                  </Text>
-                )}
-                {messages.map((m, i) => (
-                  <MessageBubble
-                    key={`${m.role}-${i}`}
-                    message={m}
-                    approvalBusy={streaming}
-                    onApprovalAction={(approval, action) => {
-                      void handleApprovalAction(approval, action);
-                    }}
-                    onDownload={downloadSavedQueryResult}
-                    onPersist={(id) =>
-                      persistQuery.mutate({ path: { query_id: id }, body: { persisted: true } })
-                    }
-                  />
-                ))}
-              </Stack>
-            </Box>
+                <ThreadPrimitive.Messages>
+                  {() => <Message usage={usage} />}
+                </ThreadPrimitive.Messages>
+              </ThreadPrimitive.Viewport>
+            </ThreadPrimitive.Root>
           </Paper>
-
-          <Box style={{ flexShrink: 0 }}>
-            <ChatComposer
-              value={input}
-              onChange={setInput}
-              onSubmit={() => void handleSend()}
-              onStop={() => void handleStop()}
-              loading={streaming}
-              thinking={sessionId != null ? sessionThinking : undefined}
-              onThinkingChange={
-                sessionId != null
-                  ? (next) => {
-                      setSessionThinking(next);
-                      updateThinking.mutate({
-                        path: { session_id: sessionId },
-                        body: { thinking: next },
-                      });
-                    }
-                  : undefined
-              }
-              thinkingDisabled={streaming || updateThinking.isPending}
-            />
-          </Box>
+          <ThreadObserver sessionId={sessionId} onUsage={setUsage} onTurnEnd={handleTurnEnd} />
+          <Composer
+            runtime={runtime}
+            sessionId={sessionId}
+            thinking={thinking}
+            onThinkingChange={onThinkingChange}
+            thinkingDisabled={thinkingDisabled}
+          />
         </Stack>
+      </ApprovalProvider>
+    </AssistantRuntimeProvider>
+  );
+}
+
+function Composer({
+  runtime,
+  sessionId,
+  thinking,
+  onThinkingChange,
+  thinkingDisabled,
+}: {
+  runtime: AssistantRuntime;
+  sessionId: number;
+  thinking: ThinkingValue | null;
+  onThinkingChange: (value: ThinkingValue | null) => void;
+  thinkingDisabled: boolean;
+}) {
+  const [value, setValue] = useState("");
+  const running = useAuiState((state) => state.thread.isRunning);
+
+  return (
+    <Box style={{ flexShrink: 0 }}>
+      <ChatComposer
+        value={value}
+        onChange={setValue}
+        onSubmit={() => {
+          const text = value.trim();
+          if (!text || running) return;
+          setValue("");
+          runtime.thread.append(text);
+        }}
+        onStop={() => {
+          // 回合在服务端后台跑, 断开连接停不住它: 先让服务端终止, 再收掉本地流.
+          void fetch(`${apiBase()}/api/agent/sessions/${sessionId}/agui/cancel`, {
+            method: "POST",
+          });
+          runtime.thread.cancelRun();
+        }}
+        loading={running}
+        thinking={thinking}
+        onThinkingChange={onThinkingChange}
+        thinkingDisabled={thinkingDisabled}
+      />
+    </Box>
+  );
+}
+
+function SessionItem({
+  session,
+  active,
+  onSelect,
+  onRename,
+  onDelete,
+}: {
+  session: AgentSessionResponse;
+  active: boolean;
+  onSelect: () => void;
+  onRename: (title: string) => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation("agent");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(session.title);
+
+  if (editing) {
+    return (
+      <TextInput
+        autoFocus
+        size="xs"
+        value={draft}
+        placeholder={t("renamePrompt")}
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onBlur={() => {
+          setEditing(false);
+          const next = draft.trim();
+          if (next && next !== session.title) onRename(next);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            setDraft(session.title);
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <Group gap={4} wrap="nowrap">
+      <UnstyledButton
+        onClick={onSelect}
+        px="xs"
+        py={6}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          borderRadius: "var(--mantine-radius-sm)",
+          background: active ? "var(--mantine-primary-color-light)" : undefined,
+        }}
+      >
+        <Group gap={6} wrap="nowrap">
+          <Text size="sm" truncate style={{ flex: 1 }}>
+            {session.title}
+          </Text>
+          {session.status === "awaiting_approval" && (
+            <Badge size="xs" color="yellow" variant="light">
+              {t("approve")}
+            </Badge>
+          )}
+        </Group>
+      </UnstyledButton>
+      <Menu position="bottom-end" withinPortal shadow="md">
+        <Menu.Target>
+          <UnstyledButton
+            aria-label={t("sessions")}
+            p={4}
+            style={{ display: "flex", lineHeight: 0 }}
+          >
+            <IconDots size={14} />
+          </UnstyledButton>
+        </Menu.Target>
+        <Menu.Dropdown>
+          <Menu.Item leftSection={<IconPencil size={14} />} onClick={() => setEditing(true)}>
+            {t("renameSession")}
+          </Menu.Item>
+          <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={onDelete}>
+            {t("deleteSession")}
+          </Menu.Item>
+        </Menu.Dropdown>
+      </Menu>
+    </Group>
+  );
+}
+
+function SessionsPanel({
+  sessions,
+  currentId,
+  onSelect,
+  onCreate,
+  creating,
+}: {
+  sessions: AgentSessionResponse[];
+  currentId: number | null;
+  onSelect: (id: number) => void;
+  onCreate: () => void;
+  creating: boolean;
+}) {
+  const { t } = useTranslation("agent");
+  const queryClient = useQueryClient();
+  const removeSession = useMutation({
+    ...deleteAgentSessionMutation(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() }),
+  });
+  const renameSession = useMutation({
+    ...updateAgentSessionMutation(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() }),
+  });
+
+  return (
+    <Paper
+      withBorder
+      radius="md"
+      w={260}
+      style={{ display: "flex", flexDirection: "column", minHeight: 0 }}
+    >
+      <Group justify="space-between" px="sm" py="xs" wrap="nowrap">
+        <Text size="sm" fw={600}>
+          {t("sessions")}
+        </Text>
+        <Group gap={4} wrap="nowrap">
+          <SavedQueryManager sessionId={currentId} />
+          <Button
+            size="compact-xs"
+            variant="light"
+            leftSection={<IconPlus size={13} />}
+            loading={creating}
+            onClick={onCreate}
+          >
+            {t("newSession")}
+          </Button>
+        </Group>
+      </Group>
+      <ScrollArea style={{ flex: 1, minHeight: 0 }} px={4} pb="xs">
+        <Stack gap={2}>
+          {sessions.map((session) => (
+            <SessionItem
+              key={session.id}
+              session={session}
+              active={session.id === currentId}
+              onSelect={() => onSelect(session.id)}
+              onRename={(title) =>
+                renameSession.mutate({ path: { session_id: session.id }, body: { title } })
+              }
+              onDelete={() => {
+                void (async () => {
+                  if (!(await confirm({ message: t("confirmDeleteSession") }))) return;
+                  removeSession.mutate({ path: { session_id: session.id } });
+                  if (session.id === currentId) onSelect(-1);
+                })();
+              }}
+            />
+          ))}
+        </Stack>
+      </ScrollArea>
+    </Paper>
+  );
+}
+
+export function AgentHome() {
+  const { t } = useTranslation("agent");
+  const queryClient = useQueryClient();
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [firstMessage, setFirstMessage] = useState<string | null>(null);
+  const [input, setInput] = useState("");
+  const [drawerOpened, drawer] = useDisclosure(false);
+  const sessions = useQuery(listAgentSessionsOptions());
+  const items = sessions.data?.items ?? [];
+
+  const createSession = useMutation({
+    ...createAgentSessionMutation(),
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
+      setSessionId(created.id);
+    },
+    onError: (error) => notifications.show({ color: "red", message: String(error) }),
+  });
+  const updateThinking = useMutation({
+    ...updateAgentSessionMutation(),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() }),
+    onError: (error) => notifications.show({ color: "red", message: String(error) }),
+  });
+
+  // 未指定会话时进入最近一个; 一条会话都没有时只留落地输入框.
+  const activeId = sessionId ?? items[0]?.id ?? null;
+  const hasSessions = items.length > 0;
+
+  const current = items.find((item) => item.id === activeId);
+  const handleCreate = () => {
+    drawer.close();
+    createSession.mutate({ body: { title: t("newSession") } });
+  };
+  const handleSelect = (id: number) => {
+    drawer.close();
+    setSessionId(id < 0 ? null : id);
+    setFirstMessage(null);
+  };
+
+  const sessionsPanel = (
+    <SessionsPanel
+      sessions={items}
+      currentId={activeId}
+      onSelect={handleSelect}
+      onCreate={handleCreate}
+      creating={createSession.isPending}
+    />
+  );
+
+  return (
+    <Stack gap="sm" style={{ height: APP_SHELL_MAIN_HEIGHT, minHeight: 0 }}>
+      {hasSessions && (
+        <Group hiddenFrom="md" style={{ flexShrink: 0 }}>
+          <Button
+            variant="default"
+            size="sm"
+            leftSection={<IconList size={16} />}
+            onClick={drawer.open}
+          >
+            {t("sessions")}
+          </Button>
+        </Group>
+      )}
+
+      <Group
+        align="stretch"
+        gap="md"
+        wrap="nowrap"
+        style={{ flex: 1, minHeight: 0, overflow: "hidden" }}
+      >
+        {hasSessions && (
+          <Box visibleFrom="md" style={{ display: "flex", flexShrink: 0, minHeight: 0 }}>
+            {sessionsPanel}
+          </Box>
+        )}
+
+        {activeId !== null ? (
+          <AgUiThread
+            key={activeId}
+            sessionId={activeId}
+            firstMessage={firstMessage}
+            onFirstMessageSent={() => setFirstMessage(null)}
+            thinking={parseThinking(current?.thinking ?? null)}
+            thinkingDisabled={updateThinking.isPending}
+            onThinkingChange={(next) =>
+              updateThinking.mutate({ path: { session_id: activeId }, body: { thinking: next } })
+            }
+          />
+        ) : (
+          <Center style={{ flex: 1 }}>
+            {sessions.isPending ? (
+              <Loader size="sm" />
+            ) : (
+              <Stack align="center" gap="md" maw={640} w="100%">
+                <Text size="xl" fw={700}>
+                  Amane
+                </Text>
+                <Text c="dimmed" size="sm">
+                  {t("landingHint")}
+                </Text>
+                <Box w="100%">
+                  <ChatComposer
+                    large
+                    value={input}
+                    onChange={setInput}
+                    onSubmit={() => {
+                      const text = input.trim();
+                      if (!text) return;
+                      setInput("");
+                      setFirstMessage(text);
+                      createSession.mutate({ body: { title: t("newSession") } });
+                    }}
+                    loading={createSession.isPending}
+                  />
+                </Box>
+              </Stack>
+            )}
+          </Center>
+        )}
       </Group>
 
-      <Drawer
-        opened={sessionsDrawer}
-        onClose={sessionsDrawerHandlers.close}
-        title={t("sessions")}
-        size="xs"
-        hiddenFrom="md"
-      >
-        {sessionsPanel}
-      </Drawer>
+      {hasSessions && (
+        <Drawer
+          opened={drawerOpened}
+          onClose={drawer.close}
+          title={t("sessions")}
+          size="xs"
+          hiddenFrom="md"
+        >
+          {sessionsPanel}
+        </Drawer>
+      )}
     </Stack>
   );
 }

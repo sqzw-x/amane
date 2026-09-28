@@ -1,6 +1,5 @@
 {
   "landingHint": "Query and manage your library in natural language",
-  "selectSessionHint": "Pick a session on the left, or start a new chat",
   "continueHint": "Ask another question, or switch sessions on the left",
   "newSession": "New chat",
   "sessions": "Sessions",
@@ -52,6 +51,7 @@
     "cacheHit": "cache hit"
   },
   "loadingHistory": "Loading history…",
+  "turnRunning": "Turn running",
   "thinking": {
     "label": "Thinking",
     "inherit": "Default",

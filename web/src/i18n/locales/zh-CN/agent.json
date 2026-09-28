@@ -1,6 +1,5 @@
 {
   "landingHint": "用自然语言查询与管理片库",
-  "selectSessionHint": "从左侧选择会话，或新建对话",
   "continueHint": "继续提问，或从左侧切换会话",
   "newSession": "新对话",
   "sessions": "会话",
@@ -52,6 +51,7 @@
     "cacheHit": "缓存命中"
   },
   "loadingHistory": "加载历史…",
+  "turnRunning": "回合执行中",
   "thinking": {
     "label": "思考",
     "inherit": "默认",

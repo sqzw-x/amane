@@ -1,12 +1,44 @@
 /** 从 session events.jsonl 重建聊天消息 (时间序 blocks). */
 
-import {
-  type AssistantBlock,
-  type ChatMessage,
-  nextBlockId,
-  type TurnTokenUsage,
-} from "@/components/agent/message-bubble";
-import type { ToolApproval, ToolCallView } from "@/components/agent/tool-call-badge";
+export type TurnTokenUsage = {
+  input: number;
+  cache_read: number;
+  cache_write: number;
+  output: number;
+  requests: number;
+};
+
+export type ToolApprovalStatus = "pending" | "approved" | "rejected";
+
+export type ToolApproval = {
+  approval_id: string;
+  sql: string;
+  tool: string;
+  status: ToolApprovalStatus;
+};
+
+export interface ToolCallView {
+  toolCallId: string;
+  name: string;
+  args?: unknown;
+  result?: unknown;
+  approval?: ToolApproval;
+}
+
+/** 助手回合内按时间序排列的块: 文本与工具交错. */
+export type AssistantBlock =
+  | { kind: "text"; id: string; text: string }
+  | { kind: "tool"; tool: ToolCallView };
+
+export type ChatMessage =
+  | { role: "user"; text: string }
+  | {
+      role: "assistant";
+      blocks: AssistantBlock[];
+      savedQueryIds?: number[];
+      streaming?: boolean;
+      usage?: TurnTokenUsage;
+    };
 
 export type TraceEvent = {
   type: string;
@@ -17,17 +49,23 @@ export type TraceEvent = {
   [key: string]: unknown;
 };
 
-export type NeedsApproval = {
+type NeedsApproval = {
   approval_id: string;
   sql: string;
   tool: string;
 };
 
+let blockSeq = 0;
+function nextBlockId(prefix: string): string {
+  blockSeq += 1;
+  return `${prefix}-${blockSeq}`;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function parseNeedsApproval(value: unknown): NeedsApproval | null {
+function parseNeedsApproval(value: unknown): NeedsApproval | null {
   if (!isRecord(value)) return null;
   const src = isRecord(value.needs_approval) ? value.needs_approval : value;
   const approvalId = src.approval_id;
@@ -469,51 +507,4 @@ export function messagesFromTrace(events: ReadonlyArray<TraceEvent | Record<stri
   }
 
   return { messages, lastSeq };
-}
-
-/** 查找当前停顿内仍待处理的批准 (可按工具名过滤).
- * 只遍历"最后一条用户消息之后"的助手气泡, 避免把更早回合里已过期仍显示 pending 的 id 打进批量请求.
- */
-export function findPendingApprovals(
-  messages: ChatMessage[],
-  tool?: string,
-): Array<NeedsApproval & { toolCallId: string }> {
-  let from = 0;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.role === "user") {
-      from = i + 1;
-      break;
-    }
-  }
-  const out: Array<NeedsApproval & { toolCallId: string }> = [];
-  const seen = new Set<string>();
-  for (let i = from; i < messages.length; i++) {
-    const m = messages[i];
-    if (m?.role !== "assistant") continue;
-    for (const b of m.blocks) {
-      if (b.kind !== "tool" || b.tool.approval?.status !== "pending") continue;
-      const a = b.tool.approval;
-      if (tool !== undefined && a.tool !== tool) continue;
-      if (seen.has(a.approval_id)) continue;
-      seen.add(a.approval_id);
-      out.push({
-        approval_id: a.approval_id,
-        sql: a.sql,
-        tool: a.tool,
-        toolCallId: b.tool.toolCallId,
-      });
-    }
-  }
-  return out;
-}
-
-export function markMessagesApprovalStatus(
-  messages: ChatMessage[],
-  approvalId: string,
-  status: ToolApproval["status"],
-): ChatMessage[] {
-  return messages.map((m) => {
-    if (m.role !== "assistant") return m;
-    return { ...m, blocks: markApprovalStatus(m.blocks, approvalId, status) };
-  });
 }

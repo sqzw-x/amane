@@ -44,7 +44,7 @@ import {
 
 type Scope = "persisted" | "session";
 
-async function downloadSavedQueryResult(queryId: number) {
+export async function downloadSavedQueryResult(queryId: number) {
   const { data, error } = await getSavedQueryResult({
     path: { query_id: queryId },
     query: { offset: 0, limit: 5000 },

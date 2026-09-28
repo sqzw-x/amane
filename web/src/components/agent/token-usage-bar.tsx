@@ -8,7 +8,7 @@ import {
   IconRepeat,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
-import type { TurnTokenUsage } from "@/components/agent/message-bubble";
+import type { TurnTokenUsage } from "@/lib/agent/trace";
 
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
