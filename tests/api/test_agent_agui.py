@@ -248,15 +248,24 @@ async def test_tool_call_lifecycle_events(app: FastAPI, client: AsyncClient) -> 
     assert events[-1]["outcome"] == {"type": "success"}
 
     # 工具事件同样落盘, 切回会话时 UI 才能重建工具卡片 (参数已解析成对象)
-    rows = service.store_for(session.id).read_events()
+    rows = service.store_for(session.id).ui_events()
     calls = [row for row in rows if isinstance(row, (ToolCallRow, ToolResultRow))]
     assert [row.type for row in calls] == ["tool_call", "tool_result"]
     assert isinstance(calls[0], ToolCallRow)
     assert (calls[0].tool_call_id, calls[0].name, calls[0].args) == ("call-1", "sql_explore", {"sql": "SELECT 1 AS n"})
 
-    # 逐请求用量随回合末尾补: 出工具那次挂在工具之后, 收尾正文那次落在末尾
+    # 逐请求用量随该次响应落行, 不等回合收尾: 出工具那次落在工具回执之前, 收尾正文那次落在回合总计之前
     usage_rows = [row.usage for row in rows if isinstance(row, RequestUsageRow)]
-    assert [u.after_tool_call for u in usage_rows] == ["call-1", None]
+    assert [row.type for row in rows] == [
+        "user_message",
+        "tool_call",
+        "request_usage",
+        "tool_result",
+        "text_delta",
+        "request_usage",
+        "turn_usage",
+        "approvals",
+    ]
     assert all(isinstance(u.duration_ms, int) for u in usage_rows)
     assert usage_rows[0].output > 0
 
@@ -605,19 +614,27 @@ async def test_approval_denied_via_resume(app: FastAPI, client: AsyncClient) -> 
 
 @pytest.mark.asyncio
 async def test_follow_replays_rows_from_scratch(app: FastAPI, client: AsyncClient) -> None:
-    """跟随端点只订阅: 回合未运行时回放全部回放行就关闭, 不启动回合."""
+    """跟随端点只订阅: 回合未运行时回放回放行就关闭, 不启动回合; 给了 cursor 则只接新行."""
     service = await service_of(app, client)
     session = await service.create_session(title="follow")
     assert session.id is not None
     store = service.store_for(session.id)
     await store.append_row(TextDeltaRow(type="text_delta", block_id="m1", text="上半"))
     await store.append_row(AguiEventRow(type="agui", event={"type": "RUN_FINISHED"}))
+    await store.append_row(TextDeltaRow(type="text_delta", block_id="m1", text="下半"))
 
     resp = await client.get(f"/agent/sessions/{session.id}/agui/events")
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers["content-type"]
     # 发的是页面契约的行本身, 与 POST 通道的 AG-UI 投影不同; 协议透传行不发给页面
-    assert [(r["type"], r["seq"]) for r in _sse_events(resp.text)] == [("text_delta", 1)]
+    assert [(r["type"], r["seq"]) for r in _sse_events(resp.text)] == [
+        ("text_delta", 1),
+        ("text_delta", 3),
+    ]
+
+    # cursor 按 seq 取: 整段历史走 /trace, 接进度时不该重发一遍
+    resp = await client.get(f"/agent/sessions/{session.id}/agui/events?after_seq=1")
+    assert [(r["type"], r["seq"]) for r in _sse_events(resp.text)] == [("text_delta", 3)]
 
     assert (await client.get("/agent/sessions/999999/agui/events")).status_code == 404
 
@@ -631,9 +648,9 @@ async def test_follow_attaches_to_running_turn_without_starting_one(
     entered = asyncio.Event()
     real_follow = agent_agui._follow_rows
 
-    async def spy(store: SessionStore) -> AsyncIterator[str]:
+    async def spy(store: SessionStore, after: int) -> AsyncIterator[str]:
         entered.set()
-        async for chunk in real_follow(store):
+        async for chunk in real_follow(store, after):
             yield chunk
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[StreamItem]:

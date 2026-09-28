@@ -1,20 +1,14 @@
-/** AG-UI 页: assistant-ui runtime 驱动对话, 渲染复用 Amane 的 markdown 与输入框.
+/** AG-UI 页: 对话展示只认回放行, 运行时只负责运行控制 (发起 / 取消 / 续批) 与话题本.
 
-会话状态在客户端 thread 里: 本页发起的回合走 `/agent/sessions/{id}/agui`; 切走再回来则由 `.../agui/events`
-跟随后台回合, 首次进入与回合收尾取 `.../trace`. AG-UI 协议没有历史回放, 三处都靠回放行重建对话.
+页面渲染的是 `foldTrace` 的产物, 直播与回放因此同形: 本页发起的回合也跟随 `.../agui/events`, 与切走再回来
+走同一条路径; `.../trace` 取整段历史, 回合收尾时再落定一次. 运行时的消息来自同一份 fold — 库从消息 metadata
+读待批中断, 续批与运行输入也要它, 但它的直播聚合不再是展示源.
+
+注: AG-UI 协议没有历史回放, 重建一律靠回放行.
 */
 
-import { HttpAgent, type AgentSubscriber } from "@ag-ui/client";
-import {
-  AssistantRuntimeProvider,
-  MessagePrimitive,
-  ThreadPrimitive,
-  useAuiState,
-  type AssistantRuntime,
-  type PartState,
-  type TextMessagePartProps,
-  type ToolCallMessagePartProps,
-} from "@assistant-ui/react";
+import { HttpAgent } from "@ag-ui/client";
+import { AssistantRuntimeProvider, useAuiState, type AssistantRuntime } from "@assistant-ui/react";
 import {
   useAgUiInterrupts,
   useAgUiRuntime,
@@ -61,7 +55,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentProps,
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -74,7 +67,7 @@ import {
   updateAgentSessionMutation,
 } from "@/client/@tanstack/react-query.gen";
 import { cancelAguiTurn, getAgentTrace } from "@/client/sdk.gen";
-import type { AgentSessionResponse, RequestTokenUsage, TurnTokenUsage } from "@/client/types.gen";
+import type { AgentSessionResponse } from "@/client/types.gen";
 import {
   listSavedQueriesQueryKey,
   updateSavedQueryMutation,
@@ -89,30 +82,18 @@ import {
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
 import { apiFetch } from "@/lib/api-token";
 import { useFold } from "@/lib/agent/fold";
-import { foldTrace, REQUEST_USAGE_PART, type TraceRow } from "@/lib/agent/trace";
+import {
+  foldTrace,
+  type AgentMessage,
+  type AgentPart,
+  type AgentToolCallPart,
+  type TraceRow,
+} from "@/lib/agent/trace";
 import { TokenUsageBar, RequestUsageBar } from "@/components/agent/token-usage-bar";
 import { confirm } from "@/lib/confirm";
 
 function apiBase(): string {
   return import.meta.env.VITE_API_URL || "";
-}
-
-/** 回合失败时弹出提示; 主动取消 (AbortError) 不算失败. */
-class NotifyingHttpAgent extends HttpAgent {
-  override async runAgent(
-    parameters?: Parameters<HttpAgent["runAgent"]>[0],
-    subscriber?: AgentSubscriber,
-  ) {
-    return super.runAgent(parameters, {
-      ...subscriber,
-      onRunFailed: (params) => {
-        if (params.error.name !== "AbortError") {
-          notifications.show({ color: "red", message: params.error.message });
-        }
-        return subscriber?.onRunFailed?.(params);
-      },
-    });
-  }
 }
 
 /** 非 null 且非数组的对象. 工具参数与回执的形状判定需要排除数组, 故不用 `lib/utils.ts::isRecord` (含数组). */
@@ -128,12 +109,9 @@ function JsonBlock({ value }: { value: unknown }) {
   );
 }
 
-function isRunning(status: { readonly type: string }): boolean {
-  return status.type === "running";
-}
-
-function TextPart({ text, status }: Pick<TextMessagePartProps, "text" | "status">) {
-  return <MarkdownContent text={text} streaming={isRunning(status)} />;
+/** 正文段: 回合进行中且它是消息的最后一段时带光标. */
+function TextPart({ text, streaming }: { text: string; streaming: boolean }) {
+  return <MarkdownContent text={text} streaming={streaming} />;
 }
 
 /** 折叠块: 标题行固定为一行说明, 展开内容统一左缩进; 折叠与标题位置保持见 useFold. */
@@ -180,65 +158,30 @@ function ReasoningPart({ text }: { text: string }) {
   );
 }
 
-/** 单次请求的用量条: 回放行把它落在该次请求产出的内容之后. */
-function RequestUsagePart({ data }: { data: RequestTokenUsage }) {
-  return <RequestUsageBar usage={data} />;
+/** 单个部件: 一个部件一个渲染分支, 用量部件因此直接拿到确切载荷. */
+function Part({ part, streaming }: { part: AgentPart; streaming: boolean }) {
+  switch (part.type) {
+    case "text":
+      return <TextPart text={part.text} streaming={streaming} />;
+    case "reasoning":
+      return <ReasoningPart text={part.text} />;
+    case "tool-call":
+      return <ToolCallPart part={part} running={streaming && part.result === undefined} />;
+    case "data-request-usage":
+      return <RequestUsageBar usage={part.data} />;
+    case "data-turn-usage":
+      return <TokenUsageBar usage={part.data} />;
+  }
 }
 
 /** 一段活动里工具调用超过这个数就整组折叠. */
 const ACTIVITY_TOOL_LIMIT = 3;
 
-type AssistantPartsComponents = ComponentProps<typeof MessagePrimitive.PartByIndex>["components"];
-
-const ASSISTANT_PARTS = {
-  Text: TextPart,
-  Reasoning: ReasoningPart,
-  tools: { Override: ToolCallPart },
-  data: { by_name: { [REQUEST_USAGE_PART]: RequestUsagePart } },
-} satisfies AssistantPartsComponents;
-
-function PartAt({ index }: { index: number }) {
-  return <MessagePrimitive.PartByIndex index={index} components={ASSISTANT_PARTS} />;
-}
-
-/** 一段部件: 连续思考合并成一块折叠, 其余各归各. */
-function PartRun({
-  parts,
-  start,
-  end,
-}: {
-  parts: readonly PartState[];
-  start: number;
-  end: number;
-}) {
-  const { t } = useTranslation("agent");
-  const runs = useMemo(() => reasoningRuns(parts, start, end), [parts, start, end]);
-  return (
-    <>
-      {runs.map((run) =>
-        run.kind === "reasoning" ? (
-          <FoldBlock
-            key={`thought-${run.indices[0]}`}
-            label={t("thinking.label")}
-            running={run.indices.some((index) => parts[index]?.status.type === "running")}
-          >
-            {run.indices.map((index) => (
-              <PartAt key={index} index={index} />
-            ))}
-          </FoldBlock>
-        ) : (
-          <PartAt key={run.index} index={run.index} />
-        ),
-      )}
-    </>
-  );
-}
-
-type PartRunChunk = { kind: "reasoning"; indices: number[] } | { kind: "part"; index: number };
+type PartChunk = { kind: "reasoning"; indices: number[] } | { kind: "part"; index: number };
 
 /** 把 [start, end) 切成连续思考块与单部件. */
-function reasoningRuns(parts: readonly PartState[], start: number, end: number): PartRunChunk[] {
-  const chunks: PartRunChunk[] = [];
+function partChunks(parts: readonly AgentPart[], start: number, end: number): PartChunk[] {
+  const chunks: PartChunk[] = [];
   let index = start;
   while (index < end) {
     if (parts[index]?.type !== "reasoning") {
@@ -256,11 +199,50 @@ function reasoningRuns(parts: readonly PartState[], start: number, end: number):
   return chunks;
 }
 
+/** 一段部件: 连续思考合并成一块折叠, 其余各归各. 光标与转圈只给消息的最后一段. */
+function PartRun({
+  parts,
+  start,
+  end,
+  streaming,
+}: {
+  parts: readonly AgentPart[];
+  start: number;
+  end: number;
+  streaming: boolean;
+}) {
+  const { t } = useTranslation("agent");
+  const chunks = useMemo(() => partChunks(parts, start, end), [parts, start, end]);
+  const lastIndex = parts.length - 1;
+  return (
+    <>
+      {chunks.map((chunk) =>
+        chunk.kind === "reasoning" ? (
+          <FoldBlock
+            key={`thought-${chunk.indices[0]}`}
+            label={t("thinking.label")}
+            running={streaming && chunk.indices.at(-1) === lastIndex}
+          >
+            {chunk.indices.map((index) => (
+              <Part key={index} part={parts[index]} streaming={false} />
+            ))}
+          </FoldBlock>
+        ) : (
+          <Part
+            key={chunk.index}
+            part={parts[chunk.index]}
+            streaming={streaming && chunk.index === lastIndex}
+          />
+        ),
+      )}
+    </>
+  );
+}
+
 /** 助手部件: 默认折叠思考; 整条消息工具调用够多时, 首尾活动 (含夹在中间的文本) 折叠为一块. */
-function AssistantParts() {
+function AssistantParts({ parts, streaming }: { parts: readonly AgentPart[]; streaming: boolean }) {
   const { t } = useTranslation("agent");
   const approval = useContext(ApprovalContext);
-  const parts = useAuiState((state) => state.message.parts);
   const tools = parts.flatMap((part) => (part.type === "tool-call" ? [part.toolCallId] : []));
   const first = parts.findIndex((part) => part.type === "reasoning" || part.type === "tool-call");
   const last = parts.findLastIndex(
@@ -272,15 +254,15 @@ function AssistantParts() {
   );
 
   if (tools.length <= ACTIVITY_TOOL_LIMIT || first < 0 || awaiting) {
-    return <PartRun parts={parts} start={0} end={parts.length} />;
+    return <PartRun parts={parts} start={0} end={parts.length} streaming={streaming} />;
   }
   return (
     <>
-      <PartRun parts={parts} start={0} end={first} />
+      <PartRun parts={parts} start={0} end={first} streaming={streaming} />
       <FoldBlock label={t("toolCallsCount", { n: tools.length })}>
-        <PartRun parts={parts} start={first} end={last + 1} />
+        <PartRun parts={parts} start={first} end={last + 1} streaming={streaming} />
       </FoldBlock>
-      <PartRun parts={parts} start={last + 1} end={parts.length} />
+      <PartRun parts={parts} start={last + 1} end={parts.length} streaming={streaming} />
     </>
   );
 }
@@ -292,9 +274,8 @@ function savedQueryIdOf(toolName: string, result: unknown): number | null {
   return typeof id === "number" ? id : null;
 }
 
-/** 参数视图: 优先已解析的对象; 流式未成形或日志里只留 JSON 文本时退回解析文本. */
-function argsBodyOf(args: unknown, argsText: string): unknown {
-  if (isPlainObject(args) && Object.keys(args).length > 0) return args;
+/** 参数视图: 回放行只留 JSON 文本, 解析失败就原样展示. */
+function argsBodyOf(argsText: string): unknown {
   const text = argsText.trim();
   if (!text) return undefined;
   try {
@@ -304,22 +285,13 @@ function argsBodyOf(args: unknown, argsText: string): unknown {
   }
 }
 
-function ToolCallPart({
-  toolCallId,
-  toolName,
-  args,
-  argsText,
-  result,
-  status,
-}: Pick<
-  ToolCallMessagePartProps,
-  "toolCallId" | "toolName" | "args" | "argsText" | "result" | "status"
->) {
+function ToolCallPart({ part, running }: { part: AgentToolCallPart; running: boolean }) {
   const { t } = useTranslation("agent");
   const { open, toggle, headerRef } = useFold();
   const queryClient = useQueryClient();
+  const { toolCallId, toolName, result } = part;
   const savedQueryId = savedQueryIdOf(toolName, result);
-  const argsBody = argsBodyOf(args, argsText);
+  const argsBody = argsBodyOf(part.argsText);
   const persist = useMutation({
     ...updateSavedQueryMutation(),
     onSuccess: () =>
@@ -343,7 +315,7 @@ function ToolCallPart({
           <Text size="xs" fw={500} ff="monospace">
             {toolName}
           </Text>
-          {isRunning(status) ? (
+          {running ? (
             <Loader size={12} />
           ) : result !== undefined ? (
             <IconCheck size={13} color="var(--mantine-color-teal-6)" />
@@ -390,39 +362,25 @@ function ToolCallPart({
   );
 }
 
-function Message({ usage }: { usage: TurnTokenUsage | null }) {
+function Message({ message, streaming }: { message: AgentMessage; streaming: boolean }) {
   const { t } = useTranslation("agent");
+  if (message.role === "user") return <UserMessage text={message.content.map(textOf).join("")} />;
   return (
     <Box mb="sm">
-      <MessagePrimitive.If user>
-        <UserMessage />
-      </MessagePrimitive.If>
-      <MessagePrimitive.If assistant>
-        <Text size="xs" c="dimmed" mb={4}>
-          {t("assistant")}
-        </Text>
-        <AssistantParts />
-        {usage && (
-          <MessagePrimitive.If last>
-            <TokenUsageBar usage={usage} />
-          </MessagePrimitive.If>
-        )}
-      </MessagePrimitive.If>
+      <Text size="xs" c="dimmed" mb={4}>
+        {t("assistant")}
+      </Text>
+      <AssistantParts parts={message.content} streaming={streaming} />
     </Box>
   );
 }
 
-/** 用户输入按原文展示, 不走 markdown. */
-function UserTextPart({ text }: { text: string }) {
-  return (
-    <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-      {text}
-    </Text>
-  );
+function textOf(part: AgentPart): string {
+  return part.type === "text" ? part.text : "";
 }
 
-/** 用户消息: 标签在左, 正文收进气泡, 与助手的纯文本回复区分. */
-function UserMessage() {
+/** 用户消息: 标签在左, 正文收进气泡, 与助手的纯文本回复区分; 按原文展示, 不走 markdown. */
+function UserMessage({ text }: { text: string }) {
   const { t } = useTranslation("agent");
   return (
     <Stack gap={4} mb="sm">
@@ -440,7 +398,9 @@ function UserMessage() {
           wordBreak: "break-word",
         }}
       >
-        <MessagePrimitive.Parts components={{ Text: UserTextPart }} />
+        <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+          {text}
+        </Text>
       </Box>
     </Stack>
   );
@@ -449,15 +409,26 @@ function UserMessage() {
 /** 跟随端点的重建节拍: 行到得比渲染密, 逐行重建会把整段对话反复重排. */
 const FOLLOW_RENDER_MS = 300;
 
-/** 跟随回放行: 服务端先整段回放再跟随新行, 回合结束且追平后关闭; 断连由 signal 终止. */
+/** 跟随端点的重试间隔: 订阅可能赶在服务端登记回合之前打开, 空转即返时要再接上. */
+const FOLLOW_RETRY_MS = 500;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+/** 跟随 `afterSeq` 之后的回放行; 服务端在回合结束且追平后关闭, 断连由 signal 终止. */
 async function followTraceRows(
   sessionId: number,
+  afterSeq: number,
   signal: AbortSignal,
   onRows: (rows: TraceRow[]) => void,
 ): Promise<void> {
-  const response = await apiFetch(`${apiBase()}/api/agent/sessions/${sessionId}/agui/events`, {
-    signal,
-  });
+  const response = await apiFetch(
+    `${apiBase()}/api/agent/sessions/${sessionId}/agui/events?after_seq=${afterSeq}`,
+    { signal },
+  );
   if (!response.ok || response.body === null) return;
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
@@ -660,6 +631,37 @@ function ApprovalProvider({ children }: { children: ReactNode }) {
   return <ApprovalContext.Provider value={queue}>{children}</ApprovalContext.Provider>;
 }
 
+/** 已发出的用户输入, 连同送出时已有的消息条数. */
+type Pending = { readonly text: string; readonly afterMessages: number };
+
+/** 该输入是否已进消息列表: 只在送出位置之后找, 重复内容不会误判成已到. */
+function landed(messages: readonly AgentMessage[], pending: Pending): boolean {
+  return messages
+    .slice(pending.afterMessages)
+    .some(
+      (message) =>
+        message.role === "user" &&
+        message.content.some((part) => part.type === "text" && part.text === pending.text),
+    );
+}
+
+/** 线程运行态的两个边沿: 开始运行要接上回放行跟随, 运行结束要落定一次.
+
+读线程状态须在 provider 之内, 故单列一个组件而不放在持有 provider 的 `AgUiThread` 里.
+*/
+function RunEdges({ onStart, onEnd }: { onStart: () => void; onEnd: () => void }) {
+  const running = useAuiState((state) => state.thread.isRunning);
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    const started = !wasRunning.current && running;
+    const ended = wasRunning.current && !running;
+    wasRunning.current = running;
+    if (started) onStart();
+    if (ended) void onEnd();
+  }, [running, onStart, onEnd]);
+  return null;
+}
+
 function AgUiThread({
   sessionId,
   firstMessage,
@@ -677,38 +679,66 @@ function AgUiThread({
 }) {
   const { t } = useTranslation("agent");
   const queryClient = useQueryClient();
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [serverTurn, setServerTurn] = useState(false);
+  /** 展示源: 回放行折叠出的消息, 直播与回放共用. */
+  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  /** 最近一次发出的用户输入: 回放行里还没出现时先占位, 失败则退回输入框. */
+  const [pending, setPending] = useState<Pending | null>(null);
+  /** 回放行攒到哪算到哪; 展示与运行时话题本都以它为准. */
+  const rowsRef = useRef<TraceRow[]>([]);
+  /** 进行中的跟随订阅; 同一时刻只允许一个. */
+  const followRef = useRef<AbortController | null>(null);
+  const pendingRef = useRef<Pending | null>(null);
+  /** 已折叠出的消息, 供回调读取而不进依赖. */
+  const messagesRef = useRef<AgentMessage[]>([]);
+  /** 挂载流程只跑一次: 回调身份会随运行时状态变化, 不该因此重取历史. */
+  const mountedRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  /** 视图是否贴底: 用户上滚查看历史时不再跟随新内容. */
+  const stickRef = useRef(true);
+
   const agent = useMemo(
     () =>
-      new NotifyingHttpAgent({
+      new HttpAgent({
         url: `${apiBase()}/api/agent/sessions/${sessionId}/agui`,
         threadId: String(sessionId),
         fetch: apiFetch,
       }),
     [sessionId],
   );
-  const runtime = useAgUiRuntime({ agent });
-  const [loadingHistory, setLoadingHistory] = useState(true);
-  const [usage, setUsage] = useState<TurnTokenUsage | null>(null);
-  const [serverTurn, setServerTurn] = useState(false);
-  /** 回放行攒到哪算到哪; 重建一律以它为准. */
-  const rowsRef = useRef<TraceRow[]>([]);
+  const runtime = useAgUiRuntime({
+    agent,
+    onError: (error) => {
+      notifications.show({ color: "red", message: error.message });
+      // 回合没起来 (输入还在等回执) 时把内容还给输入框, 不让它悄悄消失
+      const failed = pendingRef.current;
+      if (failed !== null) {
+        pendingRef.current = null;
+        setPending(null);
+        setDraft(failed.text);
+      }
+    },
+  });
 
-  /** 用回放行重建会话, 并报出最近一回合的用量. */
+  /** 用回放行重建展示; `syncRuntime` 只在回合不在运行时开: 它的直播聚合不再是展示源, 话题本只需在落定处对齐. */
   const applyRows = useCallback(
-    (rows: readonly TraceRow[]) => {
-      const { messages, turnUsage } = foldTrace(rows);
-      setUsage(turnUsage);
-      runtime.thread.reset(messages);
+    (rows: readonly TraceRow[], syncRuntime: boolean) => {
+      const folded = foldTrace(rows);
+      messagesRef.current = folded;
+      setMessages(folded);
+      if (syncRuntime) runtime.thread.reset(folded);
     },
     [runtime],
   );
 
-  /** 取整段回放行并重建 (跟随开不起来时的兜底). */
+  /** 取整段回放行: 重建展示, 并把运行时话题本与待批态对齐过去. */
   const snapshot = useCallback(async () => {
     const { data } = await getAgentTrace({ path: { session_id: sessionId } });
     if (!data) return;
     rowsRef.current = data.events;
-    applyRows(data.events);
+    applyRows(data.events, true);
   }, [applyRows, sessionId]);
 
   /** 回合收尾后重取快照并刷新会话列表 (标题与审批态可能在回合里变过). */
@@ -717,67 +747,87 @@ function AgUiThread({
     void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
   }, [queryClient, snapshot]);
 
-  /** 跟随本会话的回放行, 新行并进. */
-  const follow = useCallback(
-    (signal: AbortSignal) =>
-      followTraceRows(sessionId, signal, (rows) => {
-        rowsRef.current = [...rowsRef.current, ...rows];
-      }),
-    [sessionId],
-  );
-
-  // 回合在服务端后台运行: 本页的流随卸载断掉, 重挂载后由跟随端点接回 (先整段回放, 再跟随新行); 流关闭即回合已结束.
-  useEffect(() => {
+  /** 跟随回放行: 从已有位置接上, 新行并进; 服务端在回合结束且追平后关闭. */
+  const startFollow = useCallback(() => {
+    if (followRef.current !== null) return;
     const controller = new AbortController();
-    let cancelled = false;
+    followRef.current = controller;
+    setServerTurn(true);
     void (async () => {
-      setServerTurn(true);
-      let rendered = 0;
+      let rendered = -1;
       const timer = window.setInterval(() => {
         if (rowsRef.current.length === rendered) return;
         rendered = rowsRef.current.length;
         setLoadingHistory(false);
-        applyRows(rowsRef.current);
+        applyRows(rowsRef.current, false);
       }, FOLLOW_RENDER_MS);
       try {
-        await follow(controller.signal);
+        while (!controller.signal.aborted) {
+          const from = rowsRef.current.at(-1)?.seq ?? 0;
+          await followTraceRows(sessionId, from, controller.signal, (rows) => {
+            rowsRef.current = [...rowsRef.current, ...rows];
+          });
+          if (!runtime.thread.getState().isRunning) break;
+          // 回合刚发出时订阅可能先到: 服务端那时尚未登记回合, 空转即返; 稍后再接上, 副本由 cursor 去重
+          await wait(FOLLOW_RETRY_MS);
+        }
       } catch {
         // 订阅建不起来: 退回一次性快照
-        if (!cancelled) await snapshot();
+        if (!controller.signal.aborted) await snapshot();
       } finally {
         window.clearInterval(timer);
-        if (!cancelled) {
+        followRef.current = null;
+        if (!controller.signal.aborted) {
           setLoadingHistory(false);
           setServerTurn(false);
-          applyRows(rowsRef.current);
+          // 流关闭即回合已结束且行已追平: 此刻的行是完整的, 据此落定
+          applyRows(rowsRef.current, true);
           void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
         }
       }
     })();
+  }, [applyRows, queryClient, runtime, sessionId, snapshot]);
+
+  // 挂载: 先取整段历史, 再接上跟随 (挂载时回合可能正在后台运行, 跟随会一路跟到它结束).
+  useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      await snapshot();
+      if (cancelled) return;
+      setLoadingHistory(false);
+      startFollow();
+    })();
     return () => {
       cancelled = true;
-      controller.abort();
+      followRef.current?.abort();
     };
-  }, [applyRows, follow, queryClient, snapshot]);
-
-  // 本地回合收尾: 终态与用量都在回放行里, 重建一次落定.
-  const running = useAuiState((state) => state.thread.isRunning);
-  const wasRunning = useRef(false);
-  useEffect(() => {
-    const settled = wasRunning.current && !running;
-    wasRunning.current = running;
-    if (settled) void settle();
-  }, [running, settle]);
+  }, [snapshot, startFollow]);
 
   // 落地页首条消息: 会话建好后才能发, 故等历史重建完成再补发.
   useEffect(() => {
     if (loadingHistory || firstMessage === null) return;
     onFirstMessageSent();
+    pendingRef.current = { text: firstMessage, afterMessages: messagesRef.current.length };
     runtime.thread.append(firstMessage);
   }, [loadingHistory, firstMessage, onFirstMessageSent, runtime]);
 
+  /* oxlint-disable react/exhaustive-effect-dependencies --
+   * 这两项是"内容变了"的触发器, 不参与计算: 滚动位置只由 DOM 与贴底状态决定.
+   */
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (element === null || !stickRef.current) return;
+    element.scrollTop = element.scrollHeight;
+  }, [messages, pending]);
+
+  // 占位气泡只活到该输入进消息列表为止; 进过就不再渲染, 无须再清状态.
+  const pendingText = pending !== null && !landed(messages, pending) ? pending.text : null;
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <RunEdges onStart={startFollow} onEnd={settle} />
       <ApprovalProvider>
         <Stack style={{ flex: 1, minWidth: 0, minHeight: 0, height: "100%" }} gap="sm">
           <Paper
@@ -792,36 +842,38 @@ function AgUiThread({
             }}
           >
             <ApprovalPanel />
-            <ThreadPrimitive.Root
-              style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
+            <Box
+              ref={scrollRef}
+              onScroll={() => {
+                const element = scrollRef.current;
+                if (element === null) return;
+                stickRef.current =
+                  element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+              }}
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflow: "auto",
+                padding: "var(--mantine-spacing-md)",
+              }}
             >
-              <ThreadPrimitive.Viewport
-                style={{
-                  flex: 1,
-                  minHeight: 0,
-                  overflow: "auto",
-                  padding: "var(--mantine-spacing-md)",
-                }}
-              >
-                {loadingHistory ? (
-                  <Group gap="xs">
-                    <Loader size="sm" />
-                    <Text c="dimmed" size="sm">
-                      {t("loadingHistory")}
-                    </Text>
-                  </Group>
-                ) : (
-                  <ThreadPrimitive.Empty>
-                    <Text c="dimmed" size="sm">
-                      {t("continueHint")}
-                    </Text>
-                  </ThreadPrimitive.Empty>
-                )}
-                <ThreadPrimitive.Messages>
-                  {() => <Message usage={usage} />}
-                </ThreadPrimitive.Messages>
-              </ThreadPrimitive.Viewport>
-            </ThreadPrimitive.Root>
+              {loadingHistory ? (
+                <Group gap="xs">
+                  <Loader size="sm" />
+                  <Text c="dimmed" size="sm">
+                    {t("loadingHistory")}
+                  </Text>
+                </Group>
+              ) : messages.length === 0 && pendingText === null ? (
+                <Text c="dimmed" size="sm">
+                  {t("continueHint")}
+                </Text>
+              ) : null}
+              {messages.map((message) => (
+                <Message key={message.id} message={message} streaming={serverTurn} />
+              ))}
+              {pendingText !== null && <UserMessage text={pendingText} />}
+            </Box>
           </Paper>
           {serverTurn && !loadingHistory && (
             <Group gap="xs" px="sm">
@@ -834,6 +886,14 @@ function AgUiThread({
           <Composer
             runtime={runtime}
             sessionId={sessionId}
+            value={draft}
+            onChange={setDraft}
+            onSubmit={(text) => {
+              const sent: Pending = { text, afterMessages: messages.length };
+              pendingRef.current = sent;
+              setPending(sent);
+              runtime.thread.append(text);
+            }}
             thinking={thinking}
             onThinkingChange={onThinkingChange}
             thinkingDisabled={thinkingDisabled}
@@ -847,29 +907,35 @@ function AgUiThread({
 function Composer({
   runtime,
   sessionId,
+  value,
+  onChange,
+  onSubmit,
   thinking,
   onThinkingChange,
   thinkingDisabled,
 }: {
   runtime: AssistantRuntime;
   sessionId: number;
+  /** 输入内容由会话层持有: 回合没起来时要把内容还回输入框. */
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: (text: string) => void;
   thinking: ThinkingValue | null;
   onThinkingChange: (value: ThinkingValue | null) => void;
   thinkingDisabled: boolean;
 }) {
-  const [value, setValue] = useState("");
   const running = useAuiState((state) => state.thread.isRunning);
 
   return (
     <Box style={{ flexShrink: 0 }}>
       <ChatComposer
         value={value}
-        onChange={setValue}
+        onChange={onChange}
         onSubmit={() => {
           const text = value.trim();
           if (!text || running) return;
-          setValue("");
-          runtime.thread.append(text);
+          onChange("");
+          onSubmit(text);
         }}
         onStop={() => {
           // 回合在服务端后台运行, 断开连接停不住它: 先让服务端终止, 再终止本地流.

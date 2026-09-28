@@ -4,8 +4,8 @@
 
 落盘两类行 (契约见 `...agent.rows`):
 - `AguiEventRow`: 分发给订阅端的 AG-UI 事件
-- 其余: 页面重建对话用的回放行, 由 `_ReplayRows` 从同一份事件展开; 逐请求用量在回合末尾成批补, 用
-  ``after_tool_call`` 标出该次请求的位置
+- 其余: 页面重建对话用的回放行. 正文与工具由 `_ReplayRows` 从同一份事件展开; 逐请求用量由
+  `_RequestUsageRows` 在每次响应完成时落行
 
 ``RUN_FINISHED.usage`` 由本端点补: 协议有这个字段, 官方适配器不填.
 """
@@ -16,6 +16,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from ag_ui.core import (
@@ -40,8 +41,10 @@ from ag_ui.core import (
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import JsonValue
-from pydantic_ai import AgentRunResult, DeferredToolRequests
-from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
+from pydantic_ai import AgentRunResult, DeferredToolRequests, RunContext
+from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from pydantic_ai.usage import RunUsage
 
@@ -63,7 +66,7 @@ from ...agent.rows import (
 from ...agent.runtime import UNLIMITED_USAGE, resolve_model_settings
 from ...agent.tools import AgentDeps
 from ...agent.trace import SessionStore
-from ...agent.usage import RequestTokenUsage, request_usages_from_run, turn_usage_from_run
+from ...agent.usage import request_usage, turn_usage_from_run
 from ...db.models import AgentSessionStatus
 from ..deps import AgentDep, RepoDep, RuntimeDep
 from ..models.agent import AgentCancelResponse
@@ -151,6 +154,30 @@ def _token_usage(usage: RunUsage) -> TokenUsage:
     )
 
 
+def _request_sent_at(messages: Sequence[ModelMessage]) -> datetime | None:
+    """本次请求发出的时刻: 送出的历史以这条 `ModelRequest` 收尾, 据此计算耗时; 末尾不是请求时耗时留空."""
+    last = messages[-1]
+    return last.timestamp if isinstance(last, ModelRequest) else None
+
+
+@dataclass
+class _RequestUsageRows(AbstractCapability[AgentDeps]):
+    """逐请求用量: 每次模型响应完成即写一条回放行.
+
+    该钩子在这次响应的正文与工具调用事件之后、工具执行之前触发, 因此到达顺序就是用量在该回合里的位置;
+    等到回合收尾再成批补, 会让整轮开销都堆到最后 (长回合里工具运行了好几轮仍看不到花费).
+    """
+
+    store: SessionStore
+
+    async def after_model_request(
+        self, ctx: RunContext[AgentDeps], *, request_context: ModelRequestContext, response: ModelResponse
+    ) -> ModelResponse:
+        usage = request_usage(response, _request_sent_at(request_context.messages))
+        await self.store.append_row(RequestUsageRow(type="request_usage", usage=usage))
+        return response
+
+
 @dataclass
 class _ReplayRows:
     """把 AG-UI 事件展开为回放行 (页面重建对话用).
@@ -162,7 +189,6 @@ class _ReplayRows:
     tool_names: dict[str, str] = field(default_factory=dict)
     tool_args: dict[str, str] = field(default_factory=dict)
     usage: RunUsage | None = None
-    request_usages: list[RequestTokenUsage] = field(default_factory=list)
 
     def feed(self, event: BaseEvent) -> Iterator[UiRow]:
         match event:
@@ -185,8 +211,6 @@ class _ReplayRows:
             case ToolCallResultEvent(tool_call_id=tool_call_id, content=content):
                 yield ToolResultRow(type="tool_result", tool_call_id=tool_call_id, result=_maybe_json(content))
             case RunFinishedEvent():
-                for item in self.request_usages:
-                    yield RequestUsageRow(type="request_usage", usage=item)
                 if self.usage is not None:
                     yield TurnUsageRow(type="turn_usage", usage=turn_usage_from_run(self.usage))
                 yield ApprovalsRow(type="approvals", interrupts=_interrupts_of(event.outcome))
@@ -210,9 +234,9 @@ async def _follow_agui(store: SessionStore, after: int) -> AsyncIterator[str]:
             yield _sse(row.event)
 
 
-async def _follow_rows(store: SessionStore) -> AsyncIterator[str]:
-    """同上, 但发页面契约的行 (含整段回放): 页面据此重建气泡与工具卡片, 不认 AG-UI 协议事件."""
-    async for row in store.follow(0):
+async def _follow_rows(store: SessionStore, after: int) -> AsyncIterator[str]:
+    """同上, 但发页面契约的行: 页面据此重建气泡与工具卡片, 不认 AG-UI 协议事件."""
+    async for row in store.follow(after):
         if isinstance(row, AguiEventRow):
             continue
         yield _sse(row.model_dump(mode="json", by_alias=True))
@@ -254,7 +278,6 @@ async def run_agent_agui(
     async def on_complete(result: AgentRunResult[Any]) -> AsyncIterator[BaseEvent]:
         store.save_messages(list(result.all_messages()))
         rows.usage = result.usage
-        rows.request_usages = request_usages_from_run(result)
         output = result.output
         pending = isinstance(output, DeferredToolRequests) and bool(output.approvals)
         await runtime.repo.update_agent_session(
@@ -269,6 +292,7 @@ async def run_agent_agui(
             async for event in adapter.run_stream(
                 message_history=history,
                 deps=deps,
+                capabilities=[_RequestUsageRows(store=store)],
                 model_settings=resolve_model_settings(
                     service.config, session_thinking=service.session_thinking(session_id)
                 ),
@@ -305,14 +329,18 @@ async def run_agent_agui(
     response_class=StreamingResponse,
     responses={200: {"content": {SSE_CONTENT_TYPE: {}}}},
 )
-async def follow_agent_events(session_id: int, service: AgentDep, repo: RepoDep) -> StreamingResponse:
-    """跟随已落盘的回放行 (先整段回放, 再跟随新行), 供页面重挂载后续上进度.
+async def follow_agent_events(
+    session_id: int, service: AgentDep, repo: RepoDep, after_seq: int = 0
+) -> StreamingResponse:
+    """跟随 ``after_seq`` 之后的回放行, 供页面接上进度: 整段历史走 ``/trace``, 这里只接新行.
+
+    页面发起的回合也走这条通道 (展示只认回放行), 因此必须能给出起始位置: 否则每接一次都要重发整段历史.
 
     只订阅, **不**启动回合, 故进行中的回合也不会 409; 回合结束且追平后关闭.
     """
     if await repo.get_agent_session(session_id) is None:
         raise HTTPException(404, detail="会话不存在")
-    return StreamingResponse(_follow_rows(service.store_for(session_id)), media_type=SSE_CONTENT_TYPE)
+    return StreamingResponse(_follow_rows(service.store_for(session_id), after_seq), media_type=SSE_CONTENT_TYPE)
 
 
 @router.post("/agent/sessions/{session_id}/agui/cancel")

@@ -1,11 +1,18 @@
 /** 回放行 → 页面消息.
 
-行是服务端成形的展示事实 (正文已按块归好、工具参数已解析、用量标出位置), 这里只做归块、定位与消息切分,
+行是服务端成形的展示事实 (正文已按块归好、工具参数已解析、用量按到达顺序落位), 这里只做归块与消息切分,
 不认识 AG-UI 事件, 也不推断字段形状.
+
+页面只渲染这里的产物: 直播与回放共用同一份形状, 运行时话题本只用于运行控制 (见 `components/agent/agent-home.tsx`).
+返回类型比库的 `ThreadMessageLike` 更窄, 用量部件因此带确切载荷.
 */
 
-import type { ThreadMessageLike } from "@assistant-ui/react";
-import type { AgentTraceResponse, Interrupt, TurnTokenUsage } from "@/client/types.gen";
+import type {
+  AgentTraceResponse,
+  Interrupt,
+  RequestTokenUsage,
+  TurnTokenUsage,
+} from "@/client/types.gen";
 
 /** 页面契约的行联合, 由 OpenAPI 生成; `type` 必填, 故下面的 switch 可做穷尽检查.
 
@@ -13,19 +20,51 @@ import type { AgentTraceResponse, Interrupt, TurnTokenUsage } from "@/client/typ
 */
 export type TraceRow = AgentTraceResponse["events"][number];
 
-/** 逐请求用量在协议里没有位置, 以 data 部件随消息重建. */
-export const REQUEST_USAGE_PART = "request-usage";
-
-/** 未决审批寄存的位置: 库从这里读取待批态以恢复审批入口 (键名由库约定). */
+/** 未决审批寄存的位置: 库读消息 metadata 的这一项来恢复审批入口 (键名由库约定). */
 const AGUI_METADATA_KEY = "agui";
 
-export type TraceFold = {
-  messages: ThreadMessageLike[];
-  /** 最近一回合的聚合用量; 回合未收尾时为空. */
-  turnUsage: TurnTokenUsage | null;
+/** 正文: 一段回复或一轮里的若干段, 归块键是协议给的块 id. */
+export type AgentTextPart = { readonly type: "text"; readonly text: string };
+
+/** 思考: 与正文同处一条消息, 渲染时相邻的若干段合成一个折叠块. */
+export type AgentReasoningPart = { readonly type: "reasoning"; readonly text: string };
+
+/** 工具调用: 参数只留 JSON 文本, `result` 为空表示这次调用还没有回执. */
+export type AgentToolCallPart = {
+  readonly type: "tool-call";
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly argsText: string;
+  readonly result?: unknown;
 };
 
-type AssistantPart = Exclude<NonNullable<ThreadMessageLike["content"]>, string>[number];
+/** 单次请求的用量; 协议里没有它的位置, 以 data 部件随消息走. */
+export type AgentRequestUsagePart = {
+  readonly type: "data-request-usage";
+  readonly data: RequestTokenUsage;
+};
+
+/** 回合总计: 该轮消息的最后一个部件, 因此每轮的总计都留在自己轮末. */
+export type AgentTurnUsagePart = {
+  readonly type: "data-turn-usage";
+  readonly data: TurnTokenUsage;
+};
+
+export type AgentPart =
+  | AgentTextPart
+  | AgentReasoningPart
+  | AgentToolCallPart
+  | AgentRequestUsagePart
+  | AgentTurnUsagePart;
+
+export type AgentMessage = {
+  readonly id: string;
+  readonly role: "user" | "assistant";
+  /** 只在有未决审批时出现; 库从 metadata 读同一份中断清单. */
+  readonly status?: { readonly type: "requires-action"; readonly reason: "interrupt" };
+  readonly metadata?: { readonly custom: Record<string, unknown> };
+  readonly content: readonly AgentPart[];
+};
 
 /** 归块键: 正文与思考用协议给的块 id, 工具用调用 id. */
 function blockKey(kind: "text" | "reasoning", blockId: string): string {
@@ -45,12 +84,11 @@ function unknownRow(row: never): void {
   console.warn("[agent] 丢弃无法识别的回放行", row);
 }
 
-export function foldTrace(rows: readonly TraceRow[]): TraceFold {
-  const messages: ThreadMessageLike[] = [];
-  let parts: AssistantPart[] = [];
+export function foldTrace(rows: readonly TraceRow[]): AgentMessage[] {
+  const messages: AgentMessage[] = [];
+  let parts: AgentPart[] = [];
   let keys: (string | null)[] = [];
   let approvals: Interrupt[] = [];
-  let turnUsage: TurnTokenUsage | null = null;
 
   const flush = () => {
     if (parts.length === 0) return;
@@ -59,7 +97,7 @@ export function foldTrace(rows: readonly TraceRow[]): TraceFold {
     keys = [];
   };
 
-  const push = (key: string | null, part: AssistantPart) => {
+  const push = (key: string | null, part: AgentPart) => {
     parts.push(part);
     keys.push(key);
   };
@@ -97,7 +135,7 @@ export function foldTrace(rows: readonly TraceRow[]): TraceFold {
         break;
 
       case "tool_call":
-        // 只给 argsText: 库会解析成对象填进 args, 前端不必再判一次形状
+        // 参数只存 JSON 文本: 回执与渲染两侧都按同一份文本解析, 不必在行里再存一遍对象
         push(toolKey(row.tool_call_id), {
           type: "tool-call",
           toolCallId: row.tool_call_id,
@@ -118,21 +156,12 @@ export function foldTrace(rows: readonly TraceRow[]): TraceFold {
         break;
       }
 
-      case "request_usage": {
-        const part: AssistantPart = { type: `data-${REQUEST_USAGE_PART}`, data: row.usage };
-        const anchor = row.usage.after_tool_call;
-        const index = anchor == null ? -1 : at(toolKey(anchor));
-        if (index < 0) {
-          push(null, part);
-          break;
-        }
-        parts.splice(index + 1, 0, part);
-        keys.splice(index + 1, 0, null);
+      case "request_usage":
+        push(null, { type: "data-request-usage", data: row.usage });
         break;
-      }
 
       case "turn_usage":
-        turnUsage = row.usage;
+        push(null, { type: "data-turn-usage", data: row.usage });
         break;
 
       case "approvals":
@@ -167,7 +196,7 @@ export function foldTrace(rows: readonly TraceRow[]): TraceFold {
     }
   }
 
-  return { messages, turnUsage };
+  return messages;
 }
 
 /** 工具参数已是解析过的 JSON; 字符串原样保留, 其余转文本. */

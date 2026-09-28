@@ -5686,17 +5686,6 @@ export const RequestTokenUsageSchema = {
                 }
             ],
             title: 'Duration Ms'
-        },
-        after_tool_call: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'After Tool Call'
         }
     },
     type: 'object',
@@ -5707,7 +5696,7 @@ export const RequestTokenUsageSchema = {
         'output'
     ],
     title: 'RequestTokenUsage',
-    description: '单次模型请求的用量. `duration_ms` 是请求发出到响应收到的本地时间差, 不含工具执行.\n\n`after_tool_call` 是该请求最后一次工具调用的 id: 页面据此把用量印在这次请求产出的内容之后;\n请求没有工具调用时为空, 用量落在消息末尾.'
+    description: '单次模型请求的用量. `duration_ms` 是请求发出到响应收到的本地时间差, 不含工具执行.'
 } as const;
 
 export const RequestUsageRowSchema = {
@@ -5743,7 +5732,7 @@ export const RequestUsageRowSchema = {
         'usage'
     ],
     title: 'RequestUsageRow',
-    description: '单次模型请求的用量; `usage.after_tool_call` 标明它在回合里出现的位置.'
+    description: '单次模型请求的用量; 该次响应一到即写行, 到达顺序即它在回合里的位置 (这次响应的正文与工具调用之后).'
 } as const;
 
 export const RescrapeSubmissionSchema = {

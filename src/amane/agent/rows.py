@@ -76,7 +76,7 @@ class ToolResultRow(RowBase):
 
 
 class RequestUsageRow(RowBase):
-    """单次模型请求的用量; `usage.after_tool_call` 标明它在回合里出现的位置."""
+    """单次模型请求的用量; 该次响应一到即写行, 到达顺序即它在回合里的位置 (这次响应的正文与工具调用之后)."""
 
     type: Literal["request_usage"]
     usage: RequestTokenUsage
