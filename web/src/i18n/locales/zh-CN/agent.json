@@ -37,6 +37,7 @@
   "you": "你",
   "assistant": "Amane",
   "deleteSession": "删除会话",
+  "sessionDeleted": "会话已删除",
   "renameSession": "重命名",
   "renamePrompt": "会话标题",
   "confirmDeleteSession": "删除此会话？未保留的查询预设会一并删除。",

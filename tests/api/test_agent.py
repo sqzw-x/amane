@@ -7,7 +7,10 @@ import asyncio
 import pytest
 from fastapi import FastAPI
 from httpx2 import AsyncClient
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from amane.agent.naming import fallback_title
 from amane.agent.service import AgentService
 from amane.db.models import SavedQueryEntity
 from amane.db.repository import Repository
@@ -193,6 +196,53 @@ async def test_delete_session_with_fk_and_ephemeral(repo: Repository) -> None:
     kept = await repo.get_saved_query(persisted.id)
     assert kept is not None
     assert kept.session_id is None
+
+
+@pytest.mark.asyncio
+async def test_generate_session_title_from_model(client: AsyncClient, app: FastAPI) -> None:
+    """模型可用时取正文作标题, 并写回会话索引与 meta."""
+    service = app.state.runtime.agent_service
+    assert isinstance(service, AgentService)
+
+    def respond(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart("「影片清单」")])
+
+    service.naming_model = FunctionModel(respond)
+
+    r = await client.post("/agent/sessions", json={"title": "新会话"})
+    session_id = r.json()["id"]
+
+    r = await client.post(f"/agent/sessions/{session_id}/title", json={"prompt": "列出全部影片"})
+    assert r.status_code == 200
+    assert r.json() == {"title": "影片清单"}
+
+    r = await client.get("/agent/sessions")
+    assert next(i["title"] for i in r.json()["items"] if i["id"] == session_id) == "影片清单"
+    r = await client.get(f"/agent/sessions/{session_id}/trace")
+    assert r.json()["meta"]["title"] == "影片清单"
+
+
+@pytest.mark.asyncio
+async def test_generate_session_title_falls_back_without_model(client: AsyncClient) -> None:
+    """未配置模型 (测试环境无 api_key) 时回退首条输入截断."""
+    prompt = "find every movie released after 2020 in the library"
+    r = await client.post("/agent/sessions", json={"title": "新会话"})
+    session_id = r.json()["id"]
+
+    r = await client.post(f"/agent/sessions/{session_id}/title", json={"prompt": prompt})
+    assert r.status_code == 200
+    assert r.json() == {"title": fallback_title(prompt)}
+
+    r = await client.get("/agent/sessions")
+    assert next(i["title"] for i in r.json()["items"] if i["id"] == session_id) == fallback_title(prompt)
+
+
+@pytest.mark.asyncio
+async def test_generate_session_title_rejects_bad_request(client: AsyncClient) -> None:
+    r = await client.post("/agent/sessions/999999/title", json={"prompt": "列出全部影片"})
+    assert r.status_code == 404
+    r = await client.post("/agent/sessions/1/title", json={"prompt": ""})
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio

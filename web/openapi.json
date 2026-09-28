@@ -5134,6 +5134,59 @@
         }
       }
     },
+    "/api/agent/sessions/{session_id}/title": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Generate Agent Session Title",
+        "description": "按首条输入生成标题. 与主回合并行执行, 前端不等回合结束即可刷新列表.",
+        "operationId": "generate_agent_session_title",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSessionTitleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionTitleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent/sessions/{session_id}/trace": {
       "get": {
         "tags": [
@@ -6245,6 +6298,35 @@
           "closed"
         ],
         "title": "AgentSessionStatus"
+      },
+      "AgentSessionTitleRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "AgentSessionTitleRequest",
+        "description": "首条用户输入: 标题只依据它生成."
+      },
+      "AgentSessionTitleResponse": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "AgentSessionTitleResponse"
       },
       "AgentSessionUpdateRequest": {
         "properties": {

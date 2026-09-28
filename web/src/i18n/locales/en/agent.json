@@ -37,6 +37,7 @@
   "you": "You",
   "assistant": "Amane",
   "deleteSession": "Delete session",
+  "sessionDeleted": "Session deleted",
   "renameSession": "Rename",
   "renamePrompt": "Session title",
   "confirmDeleteSession": "Delete this session? Unpersisted saved queries will be removed.",

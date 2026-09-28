@@ -747,6 +747,37 @@ export const AgentSessionStatusSchema = {
     title: 'AgentSessionStatus'
 } as const;
 
+export const AgentSessionTitleRequestSchema = {
+    properties: {
+        prompt: {
+            type: 'string',
+            maxLength: 4000,
+            minLength: 1,
+            title: 'Prompt'
+        }
+    },
+    type: 'object',
+    required: [
+        'prompt'
+    ],
+    title: 'AgentSessionTitleRequest',
+    description: '首条用户输入: 标题只依据它生成.'
+} as const;
+
+export const AgentSessionTitleResponseSchema = {
+    properties: {
+        title: {
+            type: 'string',
+            title: 'Title'
+        }
+    },
+    type: 'object',
+    required: [
+        'title'
+    ],
+    title: 'AgentSessionTitleResponse'
+} as const;
+
 export const AgentSessionUpdateRequestSchema = {
     properties: {
         title: {

@@ -28,6 +28,16 @@ class AgentSessionResponse(BaseModel):
     updated_at: datetime
 
 
+class AgentSessionTitleRequest(BaseModel):
+    """首条用户输入: 标题只依据它生成."""
+
+    prompt: str = Field(min_length=1, max_length=4000)
+
+
+class AgentSessionTitleResponse(BaseModel):
+    title: str
+
+
 class AgentSessionListResponse(BaseModel):
     items: list[AgentSessionResponse]
 

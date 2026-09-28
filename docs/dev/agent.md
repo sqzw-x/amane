@@ -65,13 +65,13 @@
 | `events.jsonl` | UI 回放行 (单调 `seq`): AG-UI 事件 + 气泡 / 工具 / usage; 供页面重建 |
 | `meta.json` | 附属文件 (`turn_running`、会话 `thinking` 覆盖等) |
 
-`agent_sessions` 表只做索引. 删会话清理目录与未 persist 的 Saved Query. 进行中的回合任务登记在 `AgentService`, 取消与删会话据此终止; `messages.json` 是唯一的模型上下文来源, `ResultCache` 独立 TTL.
+`agent_sessions` 表只做索引. 删会话清理目录与未 persist 的 Saved Query. 标题由 `POST /agent/sessions/{id}/title` 按首条用户输入生成, 与回合并行执行 (前端在发出首条消息时另行请求, 不等回合结束); 未配置模型、请求失败或超时回退首条输入截断, 标题不进模型上下文. 进行中的回合任务登记在 `AgentService`, 取消与删会话据此终止; `messages.json` 是唯一的模型上下文来源, `ResultCache` 独立 TTL.
 
 ## 对话通道
 
 | 通道 | 用途 |
 |------|------|
-| REST | 会话 CRUD、`trace`、Saved Query list / get / patch / delete / result |
+| REST | 会话 CRUD、标题生成、`trace`、Saved Query list / get / patch / delete / result |
 | **AG-UI** | `POST /agent/sessions/{id}/agui` 启动后台回合并订阅; `POST .../agui/cancel` 终止 |
 | `/ws` | 任务日志等广播 — **不**承载对话 |
 

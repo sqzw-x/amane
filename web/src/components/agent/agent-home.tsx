@@ -68,6 +68,7 @@ import { useTranslation } from "react-i18next";
 import {
   createAgentSessionMutation,
   deleteAgentSessionMutation,
+  generateAgentSessionTitleMutation,
   listAgentSessionsOptions,
   listAgentSessionsQueryKey,
   updateAgentSessionMutation,
@@ -216,7 +217,15 @@ function ActivityGroup({ count, children }: { count: number; children: ReactNode
           </Text>
         </Group>
       </UnstyledButton>
-      {open && <Box mt="xs">{children}</Box>}
+      {open && (
+        <Box
+          pl="sm"
+          mt="xs"
+          style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}
+        >
+          {children}
+        </Box>
+      )}
     </Box>
   );
 }
@@ -398,7 +407,8 @@ function ToolCallPart({
         </Box>
       )}
       {open && (
-        <Stack gap={4} px="sm" pb="sm">
+        // 与工具名对齐: 图标 14 + 间距 6 + 卡片内边距 12
+        <Stack gap={4} pl="xl" pr="sm" pb="sm">
           {argsBody !== undefined && (
             <>
               <Text size="xs" c="dimmed">
@@ -1052,19 +1062,21 @@ function SessionsPanel({
   currentId,
   onSelect,
   onCreate,
-  creating,
 }: {
   sessions: AgentSessionResponse[];
   currentId: number | null;
   onSelect: (id: number) => void;
   onCreate: () => void;
-  creating: boolean;
 }) {
-  const { t } = useTranslation("agent");
+  const { t } = useTranslation(["agent", "common"]);
   const queryClient = useQueryClient();
   const removeSession = useMutation({
     ...deleteAgentSessionMutation(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
+      notifications.show({ message: t("sessionDeleted"), color: "blue" });
+    },
+    onError: (error) => notifications.show({ color: "red", message: String(error) }),
   });
   const renameSession = useMutation({
     ...updateAgentSessionMutation(),
@@ -1088,7 +1100,6 @@ function SessionsPanel({
             size="compact-xs"
             variant="light"
             leftSection={<IconPlus size={13} />}
-            loading={creating}
             onClick={onCreate}
           >
             {t("newSession")}
@@ -1108,7 +1119,12 @@ function SessionsPanel({
               }
               onDelete={() => {
                 void (async () => {
-                  if (!(await confirm({ message: t("confirmDeleteSession") }))) return;
+                  const ok = await confirm({
+                    title: t("deleteSession"),
+                    message: t("confirmDeleteSession"),
+                    confirmLabel: t("common:actions.delete"),
+                  });
+                  if (!ok) return;
                   removeSession.mutate({ path: { session_id: session.id } });
                   if (session.id === currentId) onSelect(-1);
                 })();
@@ -1127,6 +1143,8 @@ export function AgentHome() {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [firstMessage, setFirstMessage] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  /** 「新对话」进入的草稿态: 首条消息发出前不建会话. */
+  const [draft, setDraft] = useState(false);
   const [drawerOpened, drawer] = useDisclosure(false);
   const sessions = useQuery(listAgentSessionsOptions());
   const items = sessions.data?.items ?? [];
@@ -1135,6 +1153,7 @@ export function AgentHome() {
     ...createAgentSessionMutation(),
     onSuccess: (created) => {
       void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
+      setDraft(false);
       setSessionId(created.id);
     },
     onError: (error) => notifications.show({ color: "red", message: String(error) }),
@@ -1144,20 +1163,39 @@ export function AgentHome() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() }),
     onError: (error) => notifications.show({ color: "red", message: String(error) }),
   });
+  // 标题与回合并行生成, 先到先显; 失败保留建会话时的标题, 不打扰用户.
+  const nameSession = useMutation({
+    ...generateAgentSessionTitleMutation(),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() }),
+  });
 
-  // 未指定会话时进入最近一个; 一条会话都没有时只留落地输入框.
-  const activeId = sessionId ?? items[0]?.id ?? null;
+  // 未指定会话时进入最近一个; 一条会话都没有或处于草稿态时只留落地输入框.
+  const activeId = draft ? null : (sessionId ?? items[0]?.id ?? null);
   const hasSessions = items.length > 0;
 
   const current = items.find((item) => item.id === activeId);
   const handleCreate = () => {
     drawer.close();
-    createSession.mutate({ body: { title: t("newSession") } });
+    setDraft(true);
+    setSessionId(null);
+    setFirstMessage(null);
   };
   const handleSelect = (id: number) => {
     drawer.close();
+    setDraft(false);
     setSessionId(id < 0 ? null : id);
     setFirstMessage(null);
+  };
+  /** 草稿态首条消息: 建会话后另行请求标题 — 标题与回合并行, 不等回合结束. */
+  const startSession = (text: string) => {
+    void (async () => {
+      try {
+        const created = await createSession.mutateAsync({ body: { title: t("newSession") } });
+        nameSession.mutate({ path: { session_id: created.id }, body: { prompt: text } });
+      } catch {
+        // 建会话失败已由 createSession.onError 提示.
+      }
+    })();
   };
 
   const sessionsPanel = (
@@ -1166,7 +1204,6 @@ export function AgentHome() {
       currentId={activeId}
       onSelect={handleSelect}
       onCreate={handleCreate}
-      creating={createSession.isPending}
     />
   );
 
@@ -1231,7 +1268,7 @@ export function AgentHome() {
                       if (!text) return;
                       setInput("");
                       setFirstMessage(text);
-                      createSession.mutate({ body: { title: t("newSession") } });
+                      startSession(text);
                     }}
                     loading={createSession.isPending}
                   />

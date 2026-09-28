@@ -11,13 +11,15 @@ from ..db.models import AgentSessionStatus
 from .bridge import AgentRuntimeBridge
 from .cache import ResultCache
 from .executor import QueryExecutor
-from .runtime import build_agent, parse_session_thinking
+from .naming import generate_title
+from .runtime import build_agent, build_model, parse_session_thinking
 from .sql import ReadonlySqlSandbox
 from .tools import AgentDeps
 from .trace import SessionStore, delete_session_dir, session_dir
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent, DeferredToolRequests
+    from pydantic_ai.models import Model
 
     from ..db.repository import Repository
 
@@ -32,6 +34,7 @@ class AgentService:
     sandbox: ReadonlySqlSandbox = field(init=False)
     executor: QueryExecutor = field(init=False)
     agent: Agent[AgentDeps, str | DeferredToolRequests] | None = field(init=False, default=None)
+    naming_model: Model | None = field(init=False, default=None)
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
     _stores: dict[int, SessionStore] = field(default_factory=dict)
     _turn_tasks: dict[int, asyncio.Task[None]] = field(default_factory=dict)
@@ -45,6 +48,7 @@ class AgentService:
         self.config = config
         self.cache.configure(ttl_s=config.result_cache_ttl_s, max_entries=config.result_cache_max_entries)
         self.agent = build_agent(config)
+        self.naming_model = build_model(config) if config.api_key else None
 
     def store_for(self, session_id: int) -> SessionStore:
         store = self._stores.get(session_id)
@@ -83,6 +87,17 @@ class AgentService:
         )
         await store.append_row({"type": "session_created", "title": title})
         return session
+
+    async def name_session(self, session_id: int, prompt: str) -> str:
+        """按首条用户输入生成标题并写回. 调用方与主回合并行执行, 不等待回合结束."""
+        title = await generate_title(self.naming_model, prompt)
+        if await self.repo.update_agent_session(session_id, title=title) is None:
+            return title
+        store = self.store_for(session_id)
+        meta = store.read_meta()
+        meta["title"] = title
+        store.write_meta(meta)
+        return title
 
     def session_thinking(self, session_id: int) -> AgentThinkingMode | None:
         return parse_session_thinking(self.store_for(session_id).read_meta().get("thinking"))

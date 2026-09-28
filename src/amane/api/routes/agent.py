@@ -12,6 +12,8 @@ from ..models.agent import (
     AgentSessionCreateRequest,
     AgentSessionListResponse,
     AgentSessionResponse,
+    AgentSessionTitleRequest,
+    AgentSessionTitleResponse,
     AgentSessionUpdateRequest,
     AgentTraceResponse,
     SavedQueryListResponse,
@@ -70,6 +72,16 @@ async def update_agent_session(
     if "thinking" in fields:
         service.set_session_thinking(session_id, req.thinking)
     return _session_response(service, session)
+
+
+@router.post("/agent/sessions/{session_id}/title")
+async def generate_agent_session_title(
+    session_id: int, req: AgentSessionTitleRequest, service: AgentDep, repo: RepoDep
+) -> AgentSessionTitleResponse:
+    """按首条输入生成标题. 与主回合并行执行, 前端不等回合结束即可刷新列表."""
+    if await repo.get_agent_session(session_id) is None:
+        raise HTTPException(404, detail="会话不存在")
+    return AgentSessionTitleResponse(title=await service.name_session(session_id, req.prompt))
 
 
 @router.delete("/agent/sessions/{session_id}", status_code=204)

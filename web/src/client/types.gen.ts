@@ -400,6 +400,28 @@ export type AgentSessionResponse = {
 export type AgentSessionStatus = 'active' | 'awaiting_approval' | 'closed';
 
 /**
+ * AgentSessionTitleRequest
+ *
+ * 首条用户输入: 标题只依据它生成.
+ */
+export type AgentSessionTitleRequest = {
+    /**
+     * Prompt
+     */
+    prompt: string;
+};
+
+/**
+ * AgentSessionTitleResponse
+ */
+export type AgentSessionTitleResponse = {
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
  * AgentSessionUpdateRequest
  *
  * title / thinking 均可选; thinking=null 表示取消覆盖, 继承全局默认.
@@ -6629,6 +6651,36 @@ export type UpdateAgentSessionResponses = {
 };
 
 export type UpdateAgentSessionResponse = UpdateAgentSessionResponses[keyof UpdateAgentSessionResponses];
+
+export type GenerateAgentSessionTitleData = {
+    body: AgentSessionTitleRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: number;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{session_id}/title';
+};
+
+export type GenerateAgentSessionTitleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GenerateAgentSessionTitleError = GenerateAgentSessionTitleErrors[keyof GenerateAgentSessionTitleErrors];
+
+export type GenerateAgentSessionTitleResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgentSessionTitleResponse;
+};
+
+export type GenerateAgentSessionTitleResponse = GenerateAgentSessionTitleResponses[keyof GenerateAgentSessionTitleResponses];
 
 export type GetAgentTraceData = {
     body?: never;
