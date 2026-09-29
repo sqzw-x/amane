@@ -32,9 +32,13 @@ def _crawlers_need_oshash(crawlers: Mapping[str, CrawlerLike]) -> bool:
     return any(isinstance(crawler, Crawler) and type(crawler).profile().uses_file_hash for crawler in crawlers.values())
 
 
-def _deferred_sources(crawlers: Mapping[str, CrawlerLike], plugin_sources: frozenset[str]) -> frozenset[str]:
-    """第二段来源: 内置读 profile().traits, 插件按 descriptor 派生的集合."""
-    deferred = {name for name in crawlers if name in plugin_sources}
+def _deferred_sources(crawlers: Mapping[str, CrawlerLike], descriptor_sources: frozenset[str]) -> frozenset[str]:
+    """第二段来源: 实例声明 trait 的爬虫, 加上 descriptor 派生集合中本次可用的来源.
+
+    两条路径读同一份 traits. 内置来源有实例, 可经 ``Crawler`` 读 profile;
+    外部插件不是 ``Crawler``, 只能靠 descriptor 派生集合 (``plugin_manager`` 缺失时该集合为空, 内置来源仍走实例分支).
+    """
+    deferred = {name for name in crawlers if name in descriptor_sources}
     deferred.update(
         name
         for name, crawler in crawlers.items()

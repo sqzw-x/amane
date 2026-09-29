@@ -195,6 +195,11 @@ async def execute_graph(
     available = [node for node in graph.nodes if node.site in crawlers]
     first = [node for node in available if node.site not in deferred]
     second = [node for node in available if node.site in deferred]
+    current().debug(
+        "fetch phases",
+        first=[node.cache_key for node in first],
+        second=[node.cache_key for node in second],
+    )
 
     await _fetch_phase(state, first, query, crawlers, snapshots, None)
     _resolve_scalars(graph, state)
@@ -305,6 +310,7 @@ def build_graph(
     multi_lang_sites: frozenset[SourceName] = MULTI_LANGUAGE_SOURCE_IDS,
 ) -> FetchGraph:
     # 节点集合由字段链的并集推导: 被全部字段黑名单的站点不产生节点.
+    # 登记顺序 = 字段与优先级链上的首次出现顺序, 该顺序决定 sites_queried / failed 的写入顺序.
     # 站点只要在任一字段上需要语言, 该站统一用带语言节点 (一次请求同时满足两类字段).
     site_langs: dict[str, set[Language]] = defaultdict(set)
     for field in ALL_FIELDS:
