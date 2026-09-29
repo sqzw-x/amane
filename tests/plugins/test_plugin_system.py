@@ -49,8 +49,10 @@ def plugin_source(
     class_name: str = "Plugin",
     api_version: str | None = None,
     content_types: str = '{"censored"}',
+    traits: str | None = None,
 ) -> str:
     version_arg = f", api_version={api_version!r}" if api_version is not None else ""
+    traits_arg = f", traits=frozenset({{{traits}}})" if traits is not None else ""
     return f"""
 from pydantic import BaseModel, ConfigDict
 
@@ -87,7 +89,7 @@ class {class_name}(FilmSourcePlugin):
             capabilities=frozenset({{SourceCapability.FILM_METADATA}}),
             content_types=frozenset({content_types}),
             urls=("https://plugin.example.test",),
-            multi_language=True{version_arg},
+            multi_language=True{version_arg}{traits_arg},
         )
 
     def build(self, context: PluginContext, config: BaseModel) -> FilmSourceProvider:
@@ -156,6 +158,14 @@ def test_plugin_manager_discovers_dropins(tmp_path: Path) -> None:
     assert any("unsupported plugin API version" in failure.error for failure in manager.failures)
     assert any("namespace.local" in failure.error for failure in manager.failures)
     assert any("reserved" in failure.error for failure in manager.failures)
+
+
+def test_unknown_trait_does_not_fail_load(tmp_path: Path) -> None:
+    """未知 trait 只记 warning 并忽略, 插件仍加载 — 宿主与插件版本可以不一致."""
+    write_plugin(tmp_path, "acme.future", body=plugin_source("acme.future", traits='"not_a_trait"'))
+    manager = PluginManager.discover(tmp_path)
+    assert manager.has_plugin("acme.future")
+    assert not manager.failures
 
 
 def test_discover_rejects_descriptor_id_mismatch(tmp_path: Path) -> None:

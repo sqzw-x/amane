@@ -40,6 +40,8 @@ from .packaging import (
 
 logger = logging.getLogger(__name__)
 
+_KNOWN_TRAITS: frozenset[str] = frozenset(trait.value for trait in SourceTrait)
+
 
 class PluginLoadFailure(BaseModel):
     """A plugin drop-in that could not be loaded."""
@@ -125,6 +127,13 @@ class PluginManager:
                         f"unsupported plugin API version {descriptor.api_version!r}; expected {PLUGIN_API_VERSION!r}"
                     )
                 _require_matching_capabilities(plugin, descriptor)
+                unknown_traits = sorted(trait for trait in descriptor.traits if trait not in _KNOWN_TRAITS)
+                if unknown_traits:
+                    # 未知取值降级为忽略: 插件可能针对更新的宿主声明了本版本还不认识的 trait.
+                    logger.warning(
+                        "unknown source traits ignored",
+                        extra={"plugin": plugin_id, "traits": unknown_traits},
+                    )
                 validate_external_source_id(descriptor.id)
                 if descriptor.id != plugin_id:
                     raise ValueError(f"descriptor id {descriptor.id!r} does not match directory name {plugin_id!r}")
