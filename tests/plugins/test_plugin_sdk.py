@@ -1,4 +1,4 @@
-"""Author SDK re-exports the host contract types by identity."""
+"""第三方来源经 ``amane.plugin`` 导入宿主契约, 取到的对象与宿主侧为同一份."""
 
 import pytest
 from pydantic import ValidationError

@@ -33,7 +33,7 @@ class CrawlerProfile:
     same_origin_referer: bool = False
     # 空则影片爬虫视为 film_metadata; 演员爬虫必须显式声明 profile / image.
     capabilities: frozenset[SourceCapability] = field(default_factory=frozenset)
-    # 聚合调度行为标记; 与 capabilities (来源提供什么) 分开.
+    # 聚合引擎读取的来源属性, 如 NEEDS_PARTIAL 决定该来源排在哪一段; 与 capabilities (来源提供什么) 分开.
     traits: frozenset[SourceTrait] = field(default_factory=frozenset)
     # True 时聚合展开 (site, lang) 节点.
     multi_language: bool = False

@@ -54,7 +54,7 @@ class SourceCapability(StrEnum):
 
 
 class SourceTrait(StrEnum):
-    """Home of the aggregation scheduler's per-source behavior marks."""
+    """Source properties the aggregation engine reads when ordering sources."""
 
     # 依赖前序来源的聚合结果: 排第二段执行, 收到只读 ``partial_result``.
     # 单层依赖: 同段来源彼此不可见, 不支持来源之间互相声明依赖.

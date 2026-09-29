@@ -172,7 +172,7 @@ def test_source_descriptor_rejects_unstable_ids() -> None:
 
 
 def test_builtin_descriptor_mirrors_traits() -> None:
-    """内置来源的调度标记经 descriptor 镜像, 可按 trait 取出声明来源."""
+    """内置来源的 traits 经 descriptor 镜像, 可按 trait 取出声明来源."""
     manager = PluginManager({}, [])
     official = manager.descriptor("official")
     javdb = manager.descriptor("javdb")

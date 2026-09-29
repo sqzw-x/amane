@@ -11,7 +11,7 @@
 |----|------|--------|
 | `parsing/` | 完整路径 / 自由文本 → 番号 + 类型 + 文件相位标记 | 纯函数, 无 I/O 与配置依赖; 路径解析会重写番号 (见 [crawlers.md](crawlers.md)) |
 | `crawlers/` | 番号 → `MediaMetadata`; 演员名 → `ActorMetadata` | 无状态; HTTP 与配置在构造期注入; 影片 / 演员分 registry |
-| `plugin/` | 第三方来源作者 SDK | 插件只导入这里; 主机不导入 |
+| `plugin/` | 第三方来源导入的公开接口 | 插件只导入这里; 主机不导入 |
 | `plugins/` | 来源插件主机 (发现 / 落盘 / Factory) | 作者不导入; 契约见 [plugins.md](plugins.md) |
 | `playback/` | 上游反向代理与 HLS 清单改写 | 浏览器只请求本机媒体端点; 码流走独立客户端; 不允许主机实时转码 |
 | `aggregate/` | 多源优先级 → `AggregatedMetadata` / `AggregatedActor` | 影片按抓取图两段并发执行; 演员为档案填空 + 头像优先; 不写 DB |

@@ -1,4 +1,4 @@
-"""Author-facing plugin SDK.
+"""Public interface for third-party source plugins.
 
 Plugin drop-ins should import only from this module. Host code uses
 ``amane.plugins.*`` implementation modules and must not import ``amane.plugin``.
