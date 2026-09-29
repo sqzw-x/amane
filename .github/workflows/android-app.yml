@@ -105,11 +105,12 @@ jobs:
       # 只有 tag 触发的运行才发布; 手动运行 (workflow_dispatch) 到这里就结束, 只留产物.
       # `make_latest: false`: Releases 页的 Latest 徽标属于本体版本, 不该被 APP 发布顶掉
       # (本体的更新检查读发布列表并跳过 `app-*`, 与徽标无关).
+      # 不用自动生成的 release notes: 它取上一个 Release 作起点, 而那通常是本体的 `v*`, 会把服务端与桌面端的
+      # 提交算进 APP 发版; APP 发版频率低, 正文由发版时手工填写.
       - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/app-')
         uses: softprops/action-gh-release@v3
         with:
           make_latest: false
-          generate_release_notes: true
           files: ${{ steps.apk.outputs.apk }}
           fail_on_unmatched_files: true
