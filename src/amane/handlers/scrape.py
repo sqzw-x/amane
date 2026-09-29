@@ -262,8 +262,8 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             return None
         try:
             result = await self._translator.translate(value, target, field, use_cache=use_cache)
-        except Exception:
-            current().warning("translation failed, keeping original", field=str(field))
+        except Exception as e:
+            current().warning("translation failed, keeping original", field=str(field), error=str(e))
             return None
         if result:
             current().debug("field translated", field=str(field), target=str(target))
