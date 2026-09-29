@@ -74,12 +74,14 @@ jobs:
           APK="$(ls -1 dist/Amane-app-*.apk | head -1)"
           test -n "$APK"
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          # upload-artifact 的 name 不允许出现 `/`, 而手动触发多在 fix/... 这类分支上运行.
+          echo "artifact=Amane-app-${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
           ls -lh "$APK"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Amane-app-${{ github.ref_name }}
+          name: ${{ steps.apk.outputs.artifact }}
           path: ${{ steps.apk.outputs.apk }}
           if-no-files-found: error
 
