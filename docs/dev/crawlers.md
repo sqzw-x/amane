@@ -19,7 +19,7 @@ CrawlerFactory (缓存实例)
 
 - 演员站与影片站共用 HttpClient / 限速; 实现位于 `crawlers/actor/`, 只注册 `actor_registry` (可以不在影片 `registry`). **双料站**指同一 `SiteName` 在影片 / 演员注册表各有一个类并共用 `site_config`; 不允许在 `site_roles` 中手写双料名单.
 - gFriends 额外依赖 `data_dir` (Filetree 缓存) 与 `actor_scraping.gfriends_repo`.
-- **能力声明**位于 `CrawlerProfile`: 演员爬虫必须显式给出 `capabilities` (`ACTOR_PROFILE` / `ACTOR_IMAGE`) 与 `genders`; 影片爬虫空 `capabilities` 视为 `film_metadata`. 消费 `FetchOptions.language` 的设置 `multi_language=True`. Stash 指纹匹配站设置 `uses_file_hash=True`, 刮削前才计算 oshash, 扫描不读取文件内容. `site_roles` 只从两个注册表推导配置 schema 用的站点列表 (档案序 = 注册序); 聚合引擎只对推导出的多语言站点展开 `(site, lang)` 节点. Handler 按 `Actor.gender` 对 `profile().genders` 裁站, 见 [task-system.md](task-system.md).
+- **能力声明**位于 `CrawlerProfile`: 演员爬虫必须显式给出 `capabilities` (`ACTOR_PROFILE` / `ACTOR_IMAGE`) 与 `genders`; 影片爬虫空 `capabilities` 视为 `film_metadata`. 消费 `FetchOptions.language` 的设置 `multi_language=True`. 聚合调度行为写在 `traits`, 与「来源提供什么」分开: `NEEDS_PARTIAL` 表示该来源依赖前序聚合结果, 排在第二段执行. Stash 指纹匹配站设置 `uses_file_hash=True`, 刮削前才计算 oshash, 扫描不读取文件内容. `site_roles` 只从两个注册表推导配置 schema 用的站点列表 (档案序 = 注册序); 聚合引擎只对推导出的多语言站点展开 `(site, lang)` 节点. Handler 按 `Actor.gender` 对 `profile().genders` 裁站, 见 [task-system.md](task-system.md).
 
 ## 影片出演者
 

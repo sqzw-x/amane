@@ -40,4 +40,4 @@
 
 ## Python 测试范围
 
-数据驱动只覆盖「输入 → 输出」解析. 下列放 `tests/crawlers/test_<site>.py`: 跨多个详情页的依赖 (如 official 路由转发)、副作用 (改 `partial_result`、调 fallback)、错误恢复 (5xx 重试、限速).
+数据驱动只覆盖「输入 → 输出」解析. 下列放 `tests/crawlers/test_<site>.py`: 跨多个详情页的依赖 (如 official 路由转发)、副作用 (读 `partial_result` 路由、缓存与落盘写入)、错误恢复 (5xx 重试、限速).

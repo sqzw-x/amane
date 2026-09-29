@@ -49,7 +49,7 @@
 
 ### `field_sources`
 
-`{field_name: site_name}`, 仅记录**标量字段**的来源; 聚合类字段自带来源结构, 不写入. 用途是调试多源不一致与前端展示来源, 不参与业务逻辑, 重新刮削后被覆盖.
+`{field_name: site_name}`, 仅记录**标量字段**的来源; 聚合类字段自带来源结构, 不写入. 只有非空取值才记来源, 因此为空不代表刮削失败 (判据见 [task-system.md](task-system.md)). 用途是调试多源不一致与前端展示来源, 不参与业务逻辑, 重新刮削后被覆盖.
 
 `raw` 的字段名 / 类型必须与当前 `MediaMetadata` 一致 — 站点级复用会把它直接反序列化. 模型改名或改类型时, 结果列与 raw 是两份数据, 需单独的 data migration (见 [database.md](database.md) Autogenerate 盲区).
 

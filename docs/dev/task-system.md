@@ -46,15 +46,15 @@ ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显
 
 ## 站点级复用
 
-SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完全不联网的纯整理由 ORGANIZE 承担. 它总是进入聚合, 但当 `CacheKind.metadata ∈ use_cache` 时把 `Metadata.raw` 作为 `cache` 传入, 请求某站前按 `cache_key` (`site` 或 `site:lang`) 查快照, 命中即还原并跳过爬虫调用, 仅缺失 / 失败站点真正发起请求. 不含 `metadata` 时全部站点强制重爬; 不含 `trans` 时跳过译文缓存读取 (仍写入), 见 [llm.md](llm.md). 复用与新结果统一写入 `fetched`, 输出 `raw` 为两者合并; 快照含非法字段时降级为正常 fetch.
+SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完全不联网的纯整理由 ORGANIZE 承担. 它总是进入聚合, 但当 `CacheKind.metadata ∈ use_cache` 时把 `Metadata.raw` 作为 `cache` 传入, 请求某站前按 `cache_key` (`site` 或 `site:lang`) 查快照, 命中即还原并跳过爬虫调用, 未命中的站点按抓取图请求. 不含 `metadata` 时全部站点强制重爬; 不含 `trans` 时跳过译文缓存读取 (仍写入), 见 [llm.md](llm.md). 复用与新结果统一写入 `fetched`, 输出 `raw` 为两者合并; 快照含非法字段时降级为正常 fetch.
 
 ## 字段级多源聚合
 
-`aggregate` (`src/amane/aggregate/`) 先把优先级配置编译成**静态抓取图** (`build_graph`), 再按波次执行 (`execute_graph`):
+`aggregate` (`src/amane/aggregate/`) 先把优先级配置编译成**抓取图** (`build_graph`), 再分两段执行 (`execute_graph`):
 
-- **建图**: handler 先把 `content_routes[type]`、稀疏 `field_priority` 与稀疏 `field_blacklist` 编成每字段站点链 (见 [config.md](config.md)); `content_routes` 是该类型资格真值, 不在表内的站不会被请求. 站点 + 语言唯一确定一个 `FetchNode` (`cache_key`), 节点按拓扑分层为**波次** (层内可并行), 每个字段沿优先级链回填 `covers` 与 `fallback` 边.
-- **执行**: 逐波推进, 每波只激活仍有未满足字段且尚未请求的节点并并发抓取. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿 fallback 继续, 不调用 `invoke_source` (因此不会记成 unexpected). 波后只定值标量 (满足即短路), 后波 `partial` 只携带已定标量. 聚合类字段 (URL / score / extrafanart) 在全部请求结束后按该字段 `field_chains` 拼接, 不按返回先后排列; 某站未返回或该字段为空则跳过, 不把后面的站提到前面.
-- **多语言合并**: 某字段需 (site, lang) 而另一字段仅需 (site, None) 时合并为一次带语言请求.
+- **建图**: handler 先把 `content_routes[type]`、稀疏 `field_priority` 与稀疏 `field_blacklist` 编成每字段站点链 (见 [config.md](config.md)); `content_routes` 是该类型资格真值, 被全部字段黑名单的站不产生节点. 站点 + 语言唯一确定一个 `FetchNode` (`cache_key`); 站点在任一字段上需要语言时统一用带语言节点.
+- **执行**: 未声明依赖的节点并发请求; 声明 `SourceTrait.NEEDS_PARTIAL` 的来源 (内置读 `CrawlerProfile.traits`, 插件由 descriptor 镜像) 在第二段并发, 段间注入只读的标量聚合 (`partial_result`, 深拷贝). 节点不因标量已满足而跳过. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿链继续, 不调用 `invoke_source` (因此不会记成 unexpected).
+- **取值**: 标量沿链取第一个非空值, 空值继续回退, 链上仍有未执行节点时中断该字段; 只有非空值写入 `field_sources`. 聚合类字段 (URL / score / extrafanart) 在全部请求结束后按该字段 `field_chains` 拼接, 不按返回先后排列; 某站未返回或该字段为空则跳过. 标量可以全空: 只要有来源返回结果, 任务仍成功.
 
 ## TaskHandler 契约
 
