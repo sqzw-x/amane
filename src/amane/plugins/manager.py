@@ -9,8 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from ..config.manager import HotSettings
-from ..crawlers import registry
-from ..crawlers.site_roles import FILM_METADATA_SITES
+from ..crawlers.site_roles import FILM_METADATA_SITES, builtin_descriptors
 from .api import (
     FilmSourcePlugin,
     FilmSourceProvider,
@@ -153,13 +152,6 @@ class PluginManager:
     @property
     def failures(self) -> tuple[PluginLoadFailure, ...]:
         return tuple(self._failures)
-
-    @property
-    def multi_language_sources(self) -> frozenset[str]:
-        return frozenset(descriptor.id for descriptor in self.descriptors() if descriptor.multi_language)
-
-    def sources_with_trait(self, trait: SourceTrait) -> frozenset[str]:
-        return frozenset(descriptor.id for descriptor in self.descriptors() if trait.value in descriptor.traits)
 
     def get(self, source_id: str) -> InstalledPlugin | None:
         return self._plugins.get(source_id)
@@ -342,24 +334,5 @@ class PluginManager:
 
     @staticmethod
     def _build_descriptors(plugins: dict[str, InstalledPlugin]) -> tuple[SourceDescriptor, ...]:
-        builtin: list[SourceDescriptor] = []
-        for site in FILM_METADATA_SITES:
-            source_id = str(site)
-            crawler = registry.get(source_id)
-            if crawler is None:
-                continue
-            profile = crawler.profile()
-            builtin.append(
-                SourceDescriptor(
-                    id=source_id,
-                    name=source_id,
-                    version="builtin",
-                    capabilities=frozenset(profile.effective_capabilities()),
-                    urls=(*profile.urls, profile.base_url),
-                    multi_language=profile.multi_language,
-                    traits=frozenset(str(trait) for trait in profile.traits),
-                )
-            )
-
         external = [plugin.descriptor() for plugin in plugins.values()]
-        return tuple(sorted([*builtin, *external], key=lambda item: item.id))
+        return tuple(sorted([*builtin_descriptors(), *external], key=lambda item: item.id))

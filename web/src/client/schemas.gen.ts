@@ -6697,6 +6697,11 @@ export const SourceDescriptorSchema = {
             title: 'Traits',
             default: []
         },
+        uses_file_hash: {
+            type: 'boolean',
+            title: 'Uses File Hash',
+            default: false
+        },
         rate_limit: {
             anyOf: [
                 {

@@ -7,12 +7,14 @@ import structlog
 
 from ..enums import ActorGender
 from ..net.connectivity import ConnectivityOutcome, probe_get
-from ..plugins.models import SourceCapability, SourceTrait
+from ..plugins.models import SourceCapability, SourceDescriptor, SourceTrait
 from .http import HttpClient
 
 if TYPE_CHECKING:
+    from ..aggregate.engine import CrawlerLike
     from ..config import SiteConfig
     from ..enums import SiteName
+    from .connectivity import ConnectivityProbe
     from .models import FetchOptions, MediaMetadata, SearchQuery
 
 
@@ -43,6 +45,19 @@ class CrawlerProfile:
 
     def effective_capabilities(self) -> frozenset[SourceCapability]:
         return self.capabilities or frozenset({SourceCapability.FILM_METADATA})
+
+    def to_descriptor(self) -> SourceDescriptor:
+        """引擎与配置读取的声明性事实只有这一个出口, 新增 profile 字段时同步此处."""
+        return SourceDescriptor(
+            id=str(self.name),
+            name=str(self.name),
+            version="builtin",
+            capabilities=frozenset(self.effective_capabilities()),
+            urls=(*self.urls, self.base_url),
+            multi_language=self.multi_language,
+            traits=frozenset(str(trait) for trait in self.traits),
+            uses_file_hash=self.uses_file_hash,
+        )
 
 
 class Crawler(ABC):
@@ -115,3 +130,9 @@ class Crawler(ABC):
 
     @abstractmethod
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None: ...
+
+
+if TYPE_CHECKING:
+    # 结构性协议没有运行期检查: 在此静态断言实例满足聚合引擎与连通性编排声明的协议.
+    _crawler_like: type[CrawlerLike] = Crawler
+    _connectivity_probe: type[ConnectivityProbe] = Crawler

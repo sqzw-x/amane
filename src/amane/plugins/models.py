@@ -78,6 +78,8 @@ class SourceDescriptor(BaseModel):
     multi_language: bool = False
     traits: frozenset[str] = frozenset()
     """调度属性; 未知取值被忽略, 允许插件先声明宿主后续新增的值."""
+    uses_file_hash: bool = False
+    """为 True 时刮削前按需计算 oshash, 经 ``SearchQuery.file_hash`` 传入本来源."""
     rate_limit: float | None = Field(default=None, ge=0.1, le=100)
 
     @field_validator("id")

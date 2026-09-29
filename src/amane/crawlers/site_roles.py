@@ -1,4 +1,4 @@
-"""由已注册爬虫的 ``profile()`` 推导站点角色, 供配置 schema 与运行时校验共用.
+"""由已注册爬虫的 ``profile()`` 推导站点角色与内置来源声明, 供配置 schema、运行时校验与工厂共用.
 
 不写入 HotSettings. 双料站 = 同一 ``SiteName`` 同时出现在影片 / 演员注册表, 不允许手写名单.
 """
@@ -11,7 +11,7 @@ from typing import Any, cast, overload
 from pydantic.config import JsonDict
 
 from ..enums import SiteName
-from ..plugins.models import SourceCapability, is_external_source_id
+from ..plugins.models import SourceCapability, SourceDescriptor, is_external_source_id
 from . import actor_registry, registry
 
 _ACTOR_PROFILE = SourceCapability.ACTOR_PROFILE
@@ -47,6 +47,14 @@ MULTI_LANGUAGE_SITES: frozenset[SiteName] = frozenset(
     s for s in FILM_METADATA_SITES if (cls := registry.get(s)) is not None and cls.profile().multi_language
 )
 MULTI_LANGUAGE_SOURCE_IDS: frozenset[str] = frozenset(MULTI_LANGUAGE_SITES)
+
+
+def builtin_descriptors() -> tuple[SourceDescriptor, ...]:
+    """内置影片来源的声明. 插件来源由插件自己声明, 二者由 ``PluginManager`` 合成为一份目录."""
+    return tuple(
+        cls.profile().to_descriptor() for site in FILM_METADATA_SITES if (cls := registry.get(site)) is not None
+    )
+
 
 _ACTOR_PROFILE_SET = frozenset(ACTOR_PROFILE_SITES)
 _ACTOR_IMAGE_SET = frozenset(ACTOR_IMAGE_SITES)

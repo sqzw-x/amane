@@ -3320,6 +3320,10 @@ export type SourceDescriptor = {
      */
     traits?: Array<string>;
     /**
+     * Uses File Hash
+     */
+    uses_file_hash?: boolean;
+    /**
      * Rate Limit
      */
     rate_limit?: number | null;

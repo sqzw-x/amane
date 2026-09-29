@@ -181,16 +181,19 @@ def test_source_descriptor_rejects_unstable_ids() -> None:
         SourceDescriptor(id="FakePlugin", name="Invalid")
 
 
-def test_builtin_descriptor_mirrors_traits() -> None:
-    """内置来源的 traits 经 descriptor 镜像, 可按 trait 取出声明来源."""
+def test_builtin_descriptor_mirrors_profile_facts() -> None:
+    """内置来源的调度事实经 descriptor 镜像: 引擎只读目录, 不按来源种类区分."""
     manager = PluginManager({}, [])
     official = manager.descriptor("official")
     javdb = manager.descriptor("javdb")
+    theporndb = manager.descriptor("theporndb")
     assert official is not None
     assert javdb is not None
+    assert theporndb is not None
     assert SourceTrait.NEEDS_PARTIAL in official.traits
-    assert manager.sources_with_trait(SourceTrait.NEEDS_PARTIAL) == frozenset({"official"})
     assert javdb.traits == frozenset()
+    assert theporndb.uses_file_hash
+    assert not javdb.uses_file_hash
 
 
 class TraitPlugin(FakePlugin):
@@ -201,10 +204,15 @@ class TraitPlugin(FakePlugin):
         return super().descriptor().model_copy(update={"traits": frozenset({"needs_partial"})})
 
 
-def test_sources_with_trait_includes_external_plugin() -> None:
-    """外部插件声明的 trait 与内置来源一起进入 sources_with_trait."""
+def test_descriptor_trait_covers_external_plugin() -> None:
+    """外部插件声明的 trait 与内置来源进入同一份目录."""
     manager = PluginManager({"acme.fake": TraitPlugin()}, [])
-    assert manager.sources_with_trait(SourceTrait.NEEDS_PARTIAL) == frozenset({"acme.fake", "official"})
+    plugin = manager.descriptor("acme.fake")
+    official = manager.descriptor("official")
+    assert plugin is not None
+    assert official is not None
+    assert SourceTrait.NEEDS_PARTIAL in plugin.traits
+    assert SourceTrait.NEEDS_PARTIAL in official.traits
 
 
 @pytest.mark.parametrize(

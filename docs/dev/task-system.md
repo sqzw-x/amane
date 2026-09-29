@@ -42,7 +42,7 @@ ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显
 
 扫描遍历经由 `scan_library` (`@in_thread` glob / stat, 一次分类为跳过 / 回收 / 媒体), 与库内索引的差集在 Python 计算. 不允许将整棵树的路径放入 SQL `IN` / `NOT IN` — 按批拆分时 `NOT IN` 会把其它批里真实存在的文件误判为失效; 仅 `remove` 时对库内记录 `exists`, 不遍历磁盘树. fan-out 必须 `list_media_files(..., limit=None)`, 默认 50 是列表分页不是批量任务上限. `MediaFile.path` 的写入、按路径查找、有效 / 失效集合差一律 NFC, 从库内路径打开 / 判断存在 / 落盘必须经 `existing_disk_path`.
 
-文件注册 (watcher 与 REFRESH 共用 `register_media_file`) 只写路径, 不计算 oshash; 指纹只在 SCRAPE 时按需计算 (本次实例化的爬虫 `profile().uses_file_hash` 且 `oshash` 为空), 失败留 `None`, 不阻断刮削. REFRESH 仅在指定 library 下运行, 提交不接受裸 path; 不入库只刮削由 `ScrapeSubmission` 的 by-number 纯查询路径表达.
+文件注册 (watcher 与 REFRESH 共用 `register_media_file`) 只写路径, 不计算 oshash; 指纹只在 SCRAPE 时按需计算 (本次可用来源中有声明 `uses_file_hash` 且 `oshash` 为空), 失败留 `None`, 不阻断刮削. REFRESH 仅在指定 library 下运行, 提交不接受裸 path; 不入库只刮削由 `ScrapeSubmission` 的 by-number 纯查询路径表达.
 
 ## 站点级复用
 
@@ -53,7 +53,7 @@ SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完�
 `aggregate` (`src/amane/aggregate/`) 先把优先级配置编译成**抓取图** (`build_graph`), 再分两段执行 (`execute_graph`):
 
 - **建图**: handler 先把 `content_routes[type]`、稀疏 `field_priority` 与稀疏 `field_blacklist` 编成每字段站点链 (见 [config.md](config.md)); `content_routes` 是该类型资格真值, 被全部字段黑名单的站不产生节点. 站点 + 语言唯一确定一个 `FetchNode` (`cache_key`); 站点在任一字段上需要语言时统一用带语言节点.
-- **执行**: 未声明依赖的节点并发请求; 声明 `SourceTrait.NEEDS_PARTIAL` 的来源 (内置读 `CrawlerProfile.traits`, 插件由 descriptor 镜像) 在第二段并发, 段间注入只读的标量聚合 (`partial_result`, 深拷贝). 节点不因标量已满足而跳过. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿链继续, 不调用 `invoke_source` (因此不会记成 unexpected).
+- **执行**: 未声明依赖的节点并发请求; 声明 `SourceTrait.NEEDS_PARTIAL` 的来源 (按来源目录的 `traits` 判定) 在第二段并发, 段间注入只读的标量聚合 (`partial_result`, 深拷贝). 节点不因标量已满足而跳过. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿链继续, 不调用 `invoke_source` (因此不会记成 unexpected).
 - **取值**: 标量沿链取第一个非空值 (判定为真值, `0` / 空串 / 空列表都算空), 空值继续回退, 链上仍有未执行节点时中断该字段; 只有非空值写入 `field_sources`. 聚合类字段 (URL / score / extrafanart) 在全部请求结束后按该字段 `field_chains` 拼接, 不按返回先后排列; 某站未返回或该字段为空则跳过. 标量可以全空: 只要有来源返回结果, 任务仍成功.
 
 ## TaskHandler 契约
