@@ -139,6 +139,7 @@ class Plugin(FilmSourcePlugin):
 - **连通性检测**: 可选的 `check_connectivity` 供 Amane 的「网络检测」页探测本源. 不实现时主机探测 `descriptor.urls` 的第一个地址; 入口不同 (登录页 / 需要 token 的 API) 或凭据缺失就实现它, 后者返回 `ConnectivityOutcome.skipped(SkipReason.MISSING_CREDENTIAL)` 说明无法探测的原因. 请求照旧走 `context.http_client`
 - **落盘写 `context.data_dir`**: 插件自己的 `{data_dir}/plugins/<id>/` 目录, 卸载时保留, 适合放缓存
 - **多语言支持**: descriptor 声明 `multi_language=True`, fetch 通过 `options.language` 获取当前语言
+- **前序结果**: descriptor 声明 `traits={"needs_partial"}` 时该来源排在聚合第二段, fetch 经只读的 `query.partial_result` 读取前序标量; 为 `None` 表示本次不在第二段
 - **出演者**: `actors` 为 `FilmActor` 列表 (`name` + `gender`). 仍可传入字符串列表, 性别视为未识别. 名单能判定性别时写出 `female` / `male`
 - **仅播放插件**: descriptor 必须显式声明 `playback`. 播放源插件可以声明打开某个已入库文件, 或声明上游地址; 媒体正文一律由主机打开或代理, 插件不直接向浏览器输出字节
 - **HLS**: 返回带 locator 的 HLS 目标. locator 负责读取清单, 并把清单里的原始 URI 定位成上游地址. 主机改写清单并代理分片与密钥. 不允许要求本机转码

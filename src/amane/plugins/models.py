@@ -77,6 +77,7 @@ class SourceDescriptor(BaseModel):
     urls: tuple[str, ...] = ()
     multi_language: bool = False
     traits: frozenset[str] = frozenset()
+    """调度属性; 未知取值被忽略, 允许插件先声明宿主后续新增的值."""
     rate_limit: float | None = Field(default=None, ge=0.1, le=100)
 
     @field_validator("id")

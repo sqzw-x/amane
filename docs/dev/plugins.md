@@ -33,7 +33,7 @@
 
 descriptor 声明来源能力、支持的内容类型、语言、访问 URL、多语言行为、`traits` 和默认速率. 路由校验在启动与配置热更新时执行: 已安装来源须声明影片元数据能力, 且若声明了内容类型集合则必须覆盖所配置的 `ContentType`; 尚未安装的合法第三方来源 ID 可以留在路由里, 只记日志.
 
-`multi_language` 决定聚合器是否按字段语言展开 `(source, language)` 抓取节点, `traits` 里的 `needs_partial` 决定来源是否排在聚合第二段, 不允许只在爬虫内部根据配置猜测这两种行为. `SearchQuery.partial_result` 属于插件契约且只读: 为 `None` 当且仅当该来源不在第二段, 单源路由下是空对象. 内置影片来源的 descriptor 从对应爬虫 `profile()` 的 `effective_capabilities()` / `multi_language` / `traits` 拷贝, 不另维护名单.
+`multi_language` 决定聚合器是否按字段语言展开 `(source, language)` 抓取节点, `traits` 里的 `needs_partial` 决定来源是否排在聚合第二段, 不允许只在爬虫内部根据配置猜测这两种行为. `SearchQuery.partial_result` 属于插件契约且只读: 为 `None` 当且仅当该来源不在第二段, 单源路由下是空对象. 它是 `SearchQuery` 上唯一属于契约的注入状态; 主机侧的中间结果与站点快照不属于插件契约, 增删不递增 `PLUGIN_API_VERSION`. 内置影片来源的 descriptor 从对应爬虫 `profile()` 的 `effective_capabilities()` / `multi_language` / `traits` 拷贝, 不另维护名单.
 
 ## 配置
 
