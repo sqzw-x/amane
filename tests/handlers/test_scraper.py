@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import ValidationError
 
+from amane.aggregate import AggregatedMetadata
 from amane.config import HotSettings, ScrapingConfig
 from amane.crawlers.base import Crawler, CrawlerProfile
 from amane.crawlers.models import MediaMetadata
@@ -254,25 +255,25 @@ class TestScrapeHandler:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_declared_source_receives_partial_result(self, repo: Repository, resource_store):
-        """partial_sources 里的来源在第二段执行并收到 partial_result, 其余来源收到 None."""
+        """第二段来源收到第一段已定值的标量, 第一段来源收到 None."""
 
         class RecordingFetcher:
             def __init__(self, metadata: MediaMetadata) -> None:
                 self._metadata = metadata
-                self.partials: list[object] = []
+                self.partials: list[AggregatedMetadata | None] = []
 
             async def fetch(self, query, options=None) -> MediaMetadata | None:
                 self.partials.append(query.partial_result)
                 return self._metadata
 
         declared = RecordingFetcher(MediaMetadata(number="PHASE-001", title="FromDeclared"))
-        plain = RecordingFetcher(MediaMetadata(number="PHASE-001", studio="FromPlain"))
+        first_phase = RecordingFetcher(MediaMetadata(number="PHASE-001", title="FromPhase1"))
         h = ScrapeHandler(
             repo=repo,
-            factory=FakeFactory({"dmm": declared, "javdb": plain}),
+            factory=FakeFactory({"dmm": first_phase, "javdb": declared}),
             resource_store=resource_store,
             pipeline_config=HotSettings(),
-            partial_sources=frozenset({"dmm"}),
+            partial_sources=frozenset({"javdb"}),
         )
         media = await repo.create_media_file(library_id=1, path="/media/PHASE-001.mp4")
         result = await h.handle(
@@ -280,9 +281,11 @@ class TestScrapeHandler:
         )
 
         assert result.success is True
-        assert plain.partials == [None]
+        assert first_phase.partials == [None]
         assert len(declared.partials) == 1
+        # dmm 是默认路由里各标量字段的链首且在第一段已返回, 其取值必须出现在第二段的入参上.
         assert declared.partials[0] is not None
+        assert declared.partials[0].title == "FromPhase1"
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_materializes_cropped_poster(self, repo: Repository, resource_store):
