@@ -693,8 +693,9 @@ function AgUiThread({
   const pendingRef = useRef<Pending | null>(null);
   /** 已折叠出的消息, 供回调读取而不进依赖. */
   const messagesRef = useRef<AgentMessage[]>([]);
-  /** 挂载流程只跑一次: 回调身份会随运行时状态变化, 不该因此重取历史. */
-  const mountedRef = useRef(false);
+  /** 挂载引导状态: 回调身份会随运行时状态变化, 故完整跑过一次就不再跑; 被取消的那些
+   *  (StrictMode 模拟卸载) 退回 idle, 由下一次 setup 重跑. */
+  const bootRef = useRef<"idle" | "running" | "done">("idle");
   const scrollRef = useRef<HTMLDivElement>(null);
   /** 视图是否贴底: 用户上滚查看历史时不再跟随新内容. */
   const stickRef = useRef(true);
@@ -790,17 +791,20 @@ function AgUiThread({
 
   // 挂载: 先取整段历史, 再接上跟随 (挂载时回合可能正在后台运行, 跟随会一路跟到它结束).
   useEffect(() => {
-    if (mountedRef.current) return;
-    mountedRef.current = true;
+    if (bootRef.current !== "idle") return;
+    bootRef.current = "running";
     let cancelled = false;
     void (async () => {
       await snapshot();
       if (cancelled) return;
+      bootRef.current = "done";
       setLoadingHistory(false);
       startFollow();
     })();
     return () => {
       cancelled = true;
+      // 没跑完就被卸载 (StrictMode 模拟卸载): 退回 idle, 由下一次 setup 重跑
+      if (bootRef.current === "running") bootRef.current = "idle";
       followRef.current?.abort();
     };
   }, [snapshot, startFollow]);
