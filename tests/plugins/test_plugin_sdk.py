@@ -35,6 +35,7 @@ from amane.plugins.models import (
     SourceCapability,
     SourceDescriptor,
     SourceId,
+    SourceTrait,
     is_external_source_id,
     validate_external_source_id,
 )
@@ -72,6 +73,7 @@ _REEXPORTS: tuple[tuple[str, object], ...] = (
     ("SourceDescriptor", SourceDescriptor),
     ("SourceError", SourceError),
     ("SourceId", SourceId),
+    ("SourceTrait", SourceTrait),
     ("SubtitleTrack", SubtitleTrack),
     ("UpstreamPlaybackTarget", UpstreamPlaybackTarget),
     ("WebClient", WebClient),

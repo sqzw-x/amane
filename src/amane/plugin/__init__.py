@@ -36,6 +36,7 @@ from ..plugins.models import (
     SourceCapability,
     SourceDescriptor,
     SourceId,
+    SourceTrait,
     is_external_source_id,
     validate_external_source_id,
 )
@@ -73,6 +74,7 @@ __all__ = [
     "SourceDescriptor",
     "SourceError",
     "SourceId",
+    "SourceTrait",
     "SubtitleTrack",
     "UpstreamPlaybackTarget",
     "WebClient",

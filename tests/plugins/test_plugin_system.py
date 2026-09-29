@@ -18,6 +18,7 @@ from amane.plugin import (
     PluginContext,
     SourceCapability,
     SourceDescriptor,
+    SourceTrait,
     is_external_source_id,
     validate_external_source_id,
 )
@@ -168,6 +169,18 @@ def test_discover_rejects_descriptor_id_mismatch(tmp_path: Path) -> None:
 def test_source_descriptor_rejects_unstable_ids() -> None:
     with pytest.raises(ValidationError, match="source id"):
         SourceDescriptor(id="FakePlugin", name="Invalid")
+
+
+def test_builtin_descriptor_mirrors_traits() -> None:
+    """内置来源的调度标记经 descriptor 镜像, 可按 trait 取出声明来源."""
+    manager = PluginManager({}, [])
+    official = manager.descriptor("official")
+    javdb = manager.descriptor("javdb")
+    assert official is not None
+    assert javdb is not None
+    assert SourceTrait.NEEDS_PARTIAL in official.traits
+    assert manager.sources_with_trait(SourceTrait.NEEDS_PARTIAL) == frozenset({"official"})
+    assert javdb.traits == frozenset()
 
 
 @pytest.mark.parametrize(
