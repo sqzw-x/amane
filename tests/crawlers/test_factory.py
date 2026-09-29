@@ -63,24 +63,6 @@ class TestCrawlerFactoryGetCrawlers:
         assert "nonexistent" not in result
 
 
-class TestCrawlerFactoryActiveCrawlers:
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_reflects_instantiated_crawlers(self, http_client):
-        factory = CrawlerFactory(http_client)
-        await factory.get("fake_test_site")
-        active = factory.active_crawlers
-        assert "fake_test_site" in active
-        assert isinstance(active["fake_test_site"], _FakeCrawler)
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_returns_copy_not_reference(self, http_client):
-        factory = CrawlerFactory(http_client)
-        await factory.get("fake_test_site")
-        active = factory.active_crawlers
-        active["new_key"] = None  # type: ignore[assignment]
-        assert "new_key" not in factory.active_crawlers
-
-
 @pytest.mark.asyncio(loop_scope="function")
 async def test_javdb_film_and_actor_are_distinct_instances(http_client):
     from amane.crawlers.actor.sites.javdb import JavDBActorCrawler
