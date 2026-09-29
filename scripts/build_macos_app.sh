@@ -60,6 +60,7 @@ done < <(.venv/bin/python scripts/stdlib_modules.py)
   --collect-all pydantic_ai \
   --collect-all pydantic_graph \
   --collect-all genai_prices \
+  --collect-data zhconv \
   --hidden-import socksio \
   "${STDLIB_ARGS[@]}" \
   --copy-metadata genai_prices \
