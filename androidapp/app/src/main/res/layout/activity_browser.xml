@@ -20,7 +20,7 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        <com.github.sqzwx.amane.android.AxisLockSwipeRefreshLayout
             android:id="@+id/swipe_refresh"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
@@ -29,7 +29,7 @@
                 android:id="@+id/web_view"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
-        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+        </com.github.sqzwx.amane.android.AxisLockSwipeRefreshLayout>
 
         <!-- 主文档加载失败或页面脚本未启动时的替代界面 (见 BrowserActivity 的启动看门狗) -->
         <LinearLayout
