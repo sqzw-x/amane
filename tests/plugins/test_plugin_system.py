@@ -183,6 +183,20 @@ def test_builtin_descriptor_mirrors_traits() -> None:
     assert javdb.traits == frozenset()
 
 
+class TraitPlugin(FakePlugin):
+    """在 descriptor 里声明 NEEDS_PARTIAL 的外部插件."""
+
+    @classmethod
+    def descriptor(cls) -> SourceDescriptor:
+        return super().descriptor().model_copy(update={"traits": frozenset({"needs_partial"})})
+
+
+def test_sources_with_trait_includes_external_plugin() -> None:
+    """外部插件声明的 trait 与内置来源一起进入 sources_with_trait."""
+    manager = PluginManager({"acme.fake": TraitPlugin()}, [])
+    assert manager.sources_with_trait(SourceTrait.NEEDS_PARTIAL) == frozenset({"acme.fake", "official"})
+
+
 @pytest.mark.parametrize(
     ("source_id", "ok"),
     [

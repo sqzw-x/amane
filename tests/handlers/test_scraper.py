@@ -6,12 +6,15 @@ import pytest
 from pydantic import ValidationError
 
 from amane.config import HotSettings, ScrapingConfig
+from amane.crawlers.base import Crawler, CrawlerProfile
 from amane.crawlers.models import MediaMetadata
 from amane.db.models import MediaFileStatus, TaskType
 from amane.enums import MetadataField, SiteName
 from amane.handlers import RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
+from amane.handlers.scrape import _deferred_sources
 from amane.library import LibraryFileKind, LibraryHit
 from amane.parsing import ContentType
+from amane.plugins.models import SourceTrait
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -77,6 +80,71 @@ def factory():
 @pytest.fixture
 def handler(repo, factory, resource_store):
     return ScrapeHandler(repo=repo, factory=factory, resource_store=resource_store, pipeline_config=HotSettings())
+
+
+class _TraitCrawler(Crawler):
+    """声明 NEEDS_PARTIAL 的内置来源; 不装配 HttpClient."""
+
+    @classmethod
+    def profile(cls) -> CrawlerProfile:
+        return CrawlerProfile(name=SiteName.OFFICIAL, base_url="", traits=frozenset({SourceTrait.NEEDS_PARTIAL}))
+
+    def __init__(self) -> None:
+        self._profile = self.profile()
+        self.name = self._profile.name
+
+    async def _search(self, query, options=None) -> str | None:
+        return None
+
+    async def _scrape(self, url: str, options=None) -> MediaMetadata | None:
+        return None
+
+
+class _PlainCrawler(_TraitCrawler):
+    @classmethod
+    def profile(cls) -> CrawlerProfile:
+        return CrawlerProfile(name=SiteName.JAVDB, base_url="")
+
+
+class _PluginFetcher:
+    """插件适配器形态: 满足 fetch 协议, 不是 Crawler 子类."""
+
+    async def fetch(self, query, options=None) -> MediaMetadata | None:
+        return None
+
+
+@pytest.mark.parametrize(
+    ("crawlers", "descriptor_sources", "expected"),
+    [
+        pytest.param(
+            {"javdb": _PlainCrawler(), "official": _TraitCrawler()},
+            frozenset({"official"}),
+            frozenset({"official"}),
+            id="instance-and-descriptor-agree",
+        ),
+        pytest.param(
+            {"acme.source": _PluginFetcher()},
+            frozenset({"acme.source"}),
+            frozenset({"acme.source"}),
+            id="plugin-visible-through-descriptors",
+        ),
+        pytest.param(
+            {"official": _TraitCrawler()},
+            frozenset(),
+            frozenset({"official"}),
+            id="instance-branch-without-descriptor-set",
+        ),
+        pytest.param(
+            {"javdb": _PlainCrawler()},
+            frozenset({"acme.source"}),
+            frozenset(),
+            id="unavailable-source-ignored",
+        ),
+    ],
+)
+def test_deferred_sources(crawlers, descriptor_sources, expected) -> None:
+    """第二段来源 = 实例上声明 trait 的爬虫, 加上 descriptor 派生集合中本次可用的来源."""
+    assert _deferred_sources(crawlers, descriptor_sources) == expected
 
 
 # --- ScrapeHandler 测试 ---
@@ -183,6 +251,38 @@ class TestScrapeHandler:
         metadata = await repo.get_metadata_by_number("POSTER-001")
         assert metadata is not None
         assert metadata.poster_urls == ["http://p.jpg"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_declared_source_receives_partial_result(self, repo: Repository, resource_store):
+        """partial_sources 里的来源在第二段执行并收到 partial_result, 其余来源收到 None."""
+
+        class RecordingFetcher:
+            def __init__(self, metadata: MediaMetadata) -> None:
+                self._metadata = metadata
+                self.partials: list[object] = []
+
+            async def fetch(self, query, options=None) -> MediaMetadata | None:
+                self.partials.append(query.partial_result)
+                return self._metadata
+
+        declared = RecordingFetcher(MediaMetadata(number="PHASE-001", title="FromDeclared"))
+        plain = RecordingFetcher(MediaMetadata(number="PHASE-001", studio="FromPlain"))
+        h = ScrapeHandler(
+            repo=repo,
+            factory=FakeFactory({"dmm": declared, "javdb": plain}),
+            resource_store=resource_store,
+            pipeline_config=HotSettings(),
+            partial_sources=frozenset({"dmm"}),
+        )
+        media = await repo.create_media_file(library_id=1, path="/media/PHASE-001.mp4")
+        result = await h.handle(
+            ScrapePayload(media_file_id=media.id, number="PHASE-001", content_type=ContentType.CENSORED)
+        )
+
+        assert result.success is True
+        assert plain.partials == [None]
+        assert len(declared.partials) == 1
+        assert declared.partials[0] is not None
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_materializes_cropped_poster(self, repo: Repository, resource_store):
