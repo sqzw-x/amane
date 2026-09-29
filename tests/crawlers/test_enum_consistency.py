@@ -9,7 +9,7 @@ from amane.crawlers.site_roles import (
     FILM_METADATA_SITES,
     MULTI_LANGUAGE_SITES,
 )
-from amane.plugins.models import SourceCapability
+from amane.plugins.models import SourceCapability, SourceTrait
 
 _ACTOR_CAPS = frozenset({SourceCapability.ACTOR_PROFILE, SourceCapability.ACTOR_IMAGE})
 
@@ -62,21 +62,21 @@ class TestEnumConsistency:
         assert both <= set(FILM_METADATA_SITES)
         assert both.isdisjoint(ACTOR_ONLY_SITES)
 
-    def test_multi_language_follows_film_profile_flag(self):
-        from_profile = frozenset(
+    def test_multi_language_follows_film_trait(self):
+        from_traits = frozenset(
             SiteName(name)
             for name in registry.sites()
-            if (cls := registry.get(name)) is not None and cls.profile().multi_language
+            if (cls := registry.get(name)) is not None and SourceTrait.MULTI_LANGUAGE in cls.profile().traits
         )
-        assert from_profile == MULTI_LANGUAGE_SITES
+        assert from_traits == MULTI_LANGUAGE_SITES
         assert frozenset(FILM_METADATA_SITES) >= MULTI_LANGUAGE_SITES
 
-    def test_file_hash_flag_is_stash_film_crawlers(self):
+    def test_file_hash_trait_is_stash_film_crawlers(self):
         """uses_file_hash 只出现在需要指纹匹配的影片站 (当前 ThePornDB)."""
         flagged = frozenset(
             SiteName(name)
             for name in registry.sites()
-            if (cls := registry.get(name)) is not None and cls.profile().uses_file_hash
+            if (cls := registry.get(name)) is not None and SourceTrait.USES_FILE_HASH in cls.profile().traits
         )
         assert flagged == frozenset({SiteName.THEPORNDB})
         assert flagged <= frozenset(FILM_METADATA_SITES)

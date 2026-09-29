@@ -6683,11 +6683,6 @@ export const SourceDescriptorSchema = {
             title: 'Urls',
             default: []
         },
-        multi_language: {
-            type: 'boolean',
-            title: 'Multi Language',
-            default: false
-        },
         traits: {
             items: {
                 type: 'string'
@@ -6696,11 +6691,6 @@ export const SourceDescriptorSchema = {
             uniqueItems: true,
             title: 'Traits',
             default: []
-        },
-        uses_file_hash: {
-            type: 'boolean',
-            title: 'Uses File Hash',
-            default: false
         },
         rate_limit: {
             anyOf: [

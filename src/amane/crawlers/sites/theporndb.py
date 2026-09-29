@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, override
 from ...enums import ActorGender, SiteName
 from ...net.connectivity import ConnectivityOutcome, SkipReason, assess_response
 from ...net.errors import FailureReason, RequestError
+from ...plugins.models import SourceTrait
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
 
@@ -62,7 +63,11 @@ class ThePornDBCrawler(Crawler):
 
     @classmethod
     def profile(cls) -> CrawlerProfile:
-        return CrawlerProfile(name=SiteName.THEPORNDB, base_url="https://theporndb.net/graphql", uses_file_hash=True)
+        return CrawlerProfile(
+            name=SiteName.THEPORNDB,
+            base_url="https://theporndb.net/graphql",
+            traits=frozenset({SourceTrait.USES_FILE_HASH}),
+        )
 
     @override
     async def check_connectivity(self) -> ConnectivityOutcome:

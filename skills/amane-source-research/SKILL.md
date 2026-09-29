@@ -55,7 +55,7 @@ description: >-
 
 - 支持的语言集合, 以及标题、简介、演员名各自的语言.
 - 是否存在机器翻译、多语言入口与语言切换.
-- 结论须给出 descriptor 的 `multi_language` 取值与理由.
+- 结论须给出 descriptor 的 `multi_language` trait 取值与理由.
 
 ### 接入面
 

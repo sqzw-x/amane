@@ -3,6 +3,7 @@ import re
 from parsel import Selector
 
 from ...enums import SiteName
+from ...plugins.models import SourceTrait
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text
@@ -20,7 +21,9 @@ _LANG_PREFIX = {
 class IqqtvCrawler(Crawler):
     @classmethod
     def profile(cls) -> CrawlerProfile:
-        return CrawlerProfile(name=SiteName.IQQTV, base_url="https://iqq5.xyz", multi_language=True)
+        return CrawlerProfile(
+            name=SiteName.IQQTV, base_url="https://iqq5.xyz", traits=frozenset({SourceTrait.MULTI_LANGUAGE})
+        )
 
     def _get_lang_prefix(self, options: FetchOptions | None) -> str:
         lang = (options.language if options else None) or "zh_cn"

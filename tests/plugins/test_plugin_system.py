@@ -88,8 +88,7 @@ class {class_name}(FilmSourcePlugin):
             version="0.1.0",
             capabilities=frozenset({{SourceCapability.FILM_METADATA}}),
             content_types=frozenset({content_types}),
-            urls=("https://plugin.example.test",),
-            multi_language=True{version_arg}{traits_arg},
+            urls=("https://plugin.example.test",){version_arg}{traits_arg},
         )
 
     def build(self, context: PluginContext, config: BaseModel) -> FilmSourceProvider:
@@ -119,7 +118,7 @@ class FakePlugin(FilmSourcePlugin):
             capabilities=frozenset({SourceCapability.FILM_METADATA}),
             content_types=frozenset({"censored"}),
             urls=("https://plugin.example.test",),
-            multi_language=True,
+            traits=frozenset({"multi_language"}),
         )
 
     def build(self, context: PluginContext, config: BaseModel) -> FilmSourceProvider:
@@ -182,7 +181,7 @@ def test_source_descriptor_rejects_unstable_ids() -> None:
 
 
 def test_builtin_descriptor_mirrors_profile_facts() -> None:
-    """内置来源的调度事实经 descriptor 镜像: 引擎只读目录, 不按来源种类区分."""
+    """内置来源的声明经 descriptor 镜像: 引擎只读目录, 不按来源种类区分."""
     manager = PluginManager({}, [])
     official = manager.descriptor("official")
     javdb = manager.descriptor("javdb")
@@ -192,8 +191,7 @@ def test_builtin_descriptor_mirrors_profile_facts() -> None:
     assert theporndb is not None
     assert SourceTrait.NEEDS_PARTIAL in official.traits
     assert javdb.traits == frozenset()
-    assert theporndb.uses_file_hash
-    assert not javdb.uses_file_hash
+    assert SourceTrait.USES_FILE_HASH in theporndb.traits
 
 
 class TraitPlugin(FakePlugin):

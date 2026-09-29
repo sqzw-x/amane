@@ -54,11 +54,20 @@ class SourceCapability(StrEnum):
 
 
 class SourceTrait(StrEnum):
-    """Source properties the aggregation engine reads when ordering sources."""
+    """Source-declared behavior switches the host reads to schedule or call a source.
+
+    Unknown values are ignored with a warning, so a plugin may declare values added by a
+    newer host. Distinct from ``SourceCapability``: this says how the host calls the
+    source, not what the source provides.
+    """
 
     # 依赖前序来源的聚合结果: 排第二段执行, 收到只读 ``partial_result``.
     # 单层依赖: 同段来源彼此不可见, 不支持来源之间互相声明依赖.
     NEEDS_PARTIAL = "needs_partial"
+    # 消费 ``FetchOptions.language``: 聚合按 (来源, 语言) 展开抓取节点.
+    MULTI_LANGUAGE = "multi_language"
+    # 刮削前按需计算 oshash, 经 ``SearchQuery.file_hash`` 传入.
+    USES_FILE_HASH = "uses_file_hash"
 
 
 class SourceDescriptor(BaseModel):
@@ -75,11 +84,8 @@ class SourceDescriptor(BaseModel):
     metadata_fields: frozenset[str] = frozenset()
     languages: frozenset[str] = frozenset()
     urls: tuple[str, ...] = ()
-    multi_language: bool = False
     traits: frozenset[str] = frozenset()
-    """调度属性; 未知取值被忽略, 允许插件先声明宿主后续新增的值."""
-    uses_file_hash: bool = False
-    """为 True 时刮削前按需计算 oshash, 经 ``SearchQuery.file_hash`` 传入本来源."""
+    """行为开关, 取值见 ``SourceTrait``; 未知取值被忽略, 允许插件先声明宿主后续新增的值."""
     rate_limit: float | None = Field(default=None, ge=0.1, le=100)
 
     @field_validator("id")

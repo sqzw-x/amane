@@ -24,7 +24,7 @@ from amane.enums import SiteName
 from amane.handlers import ActorScrapePayload, RefreshHandler, RefreshPayload, ScrapeHandler, ScrapePayload
 from amane.handlers.protocol import TaskHandler, TaskResult
 from amane.parsing import ContentType
-from amane.plugins.models import SourceDescriptor
+from amane.plugins.models import SourceDescriptor, SourceTrait
 from amane.scheduler.watcher import DEBOUNCE_SECONDS, FileWatcher
 
 if TYPE_CHECKING:
@@ -91,7 +91,9 @@ class HashCrawler(Crawler):
     def profile(cls):
         from amane.crawlers.base import CrawlerProfile
 
-        return CrawlerProfile(name=SiteName.THEPORNDB, base_url="https://fake.example.com", uses_file_hash=True)
+        return CrawlerProfile(
+            name=SiteName.THEPORNDB, base_url="https://fake.example.com", traits=frozenset({SourceTrait.USES_FILE_HASH})
+        )
 
     def __init__(self, metadata: MediaMetadata):
         self._profile = self.profile()
@@ -375,7 +377,7 @@ class TestScrapeHandler:
             factory,
             resource_store,
             pipeline_config=HotSettings(scraping=ScrapingConfig(content_routes={ContentType.CENSORED: ["acme.hash"]})),
-            source_catalog=(SourceDescriptor(id="acme.hash", name="Acme Hash", uses_file_hash=True),),
+            source_catalog=(SourceDescriptor(id="acme.hash", name="Acme Hash", traits=frozenset({"uses_file_hash"})),),
         )
         result = await handler.handle(
             ScrapePayload(number="MIDV-123", media_file_id=media.id, content_type=ContentType.CENSORED)

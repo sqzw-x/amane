@@ -52,9 +52,9 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         self._translator = translator
         # 调度事实只从来源目录读取: 内置来源的 descriptor 由 profile() 合成, 插件来源由插件声明.
         catalog = source_catalog if source_catalog is not None else builtin_descriptors()
-        self._multi_language_sources = frozenset(d.id for d in catalog if d.multi_language)
+        self._multi_language_sources = frozenset(d.id for d in catalog if SourceTrait.MULTI_LANGUAGE in d.traits)
         self._partial_sources = frozenset(d.id for d in catalog if SourceTrait.NEEDS_PARTIAL in d.traits)
-        self._file_hash_sources = frozenset(d.id for d in catalog if d.uses_file_hash)
+        self._file_hash_sources = frozenset(d.id for d in catalog if SourceTrait.USES_FILE_HASH in d.traits)
 
     async def handle(self, payload: ScrapePayload) -> TaskResult[ScrapeResult]:
         bind_contextvars(number=payload.number)

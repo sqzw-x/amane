@@ -19,7 +19,7 @@ CrawlerFactory (缓存实例)
 
 - 演员站与影片站共用 HttpClient / 限速; 实现位于 `crawlers/actor/`, 只注册 `actor_registry` (可以不在影片 `registry`). **双料站**指同一 `SiteName` 在影片 / 演员注册表各有一个类并共用 `site_config`; 不允许在 `site_roles` 中手写双料名单.
 - gFriends 额外依赖 `data_dir` (Filetree 缓存) 与 `actor_scraping.gfriends_repo`.
-- **能力声明**位于 `CrawlerProfile`: 演员爬虫必须显式给出 `capabilities` (`ACTOR_PROFILE` / `ACTOR_IMAGE`) 与 `genders`; 影片爬虫空 `capabilities` 视为 `film_metadata`. 消费 `FetchOptions.language` 的设置 `multi_language=True`. `traits` 记录来源自身声明的属性, 与「来源提供什么」分开: `NEEDS_PARTIAL` 表示该来源依赖前序聚合结果, 排在第二段执行. Stash 指纹匹配站设置 `uses_file_hash=True`, 刮削前才计算 oshash, 扫描不读取文件内容. `site_roles` 只从两个注册表推导配置 schema 用的站点列表 (档案序 = 注册序); 聚合引擎只对推导出的多语言站点展开 `(site, lang)` 节点. Handler 按 `Actor.gender` 对 `profile().genders` 裁站, 见 [task-system.md](task-system.md). 影片来源的这些声明经 `CrawlerProfile.to_descriptor()` 进入来源目录, 刮削只读目录, 不读实例的 profile; 演员来源不进入目录.
+- **能力声明**位于 `CrawlerProfile`: 演员爬虫必须显式给出 `capabilities` (`ACTOR_PROFILE` / `ACTOR_IMAGE`) 与 `genders`; 影片爬虫空 `capabilities` 视为 `film_metadata`. 行为开关一律写在 `traits` (取值见 `SourceTrait`), 与「来源提供什么」分开: `needs_partial` 表示依赖前序聚合结果, 排在第二段执行; `multi_language` 表示消费 `FetchOptions.language`; `uses_file_hash` 表示刮削前需要文件指纹 (扫描不读取文件内容). `site_roles` 只从两个注册表推导配置 schema 用的站点列表 (档案序 = 注册序); 聚合引擎只对声明 `multi_language` 的站点展开 `(site, lang)` 节点. Handler 按 `Actor.gender` 对 `profile().genders` 裁站, 见 [task-system.md](task-system.md). 影片来源的这些声明经 `CrawlerProfile.to_descriptor()` 进入来源目录, 刮削只读目录, 不读实例的 profile; 演员来源不进入目录.
 
 ## 影片出演者
 
@@ -81,7 +81,7 @@ CrawlerFactory (缓存实例)
 ## 新爬虫接入
 
 1. `enums.py` 加 `SiteName` (frozen dict 加载时按代码枚举补默认槽, 见 [config.md](config.md)).
-2. 影片: `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`); 演员: `crawlers/actor/sites/{site}.py`, `profile()` 声明 `capabilities` 与 `genders`. 消费 language 的影片爬虫设置 `multi_language=True`; 测试须覆盖番号有无短横线两种形态.
+2. 影片: `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`); 演员: `crawlers/actor/sites/{site}.py`, `profile()` 声明 `capabilities` 与 `genders`. 消费 language 的影片爬虫在 `traits` 声明 `multi_language`, 需要文件指纹的声明 `uses_file_hash`; 测试须覆盖番号有无短横线两种形态.
 3. 导出后 `registry.register` / `actor_registry.register`. 双料站两个类用同一 `SiteName` 各注册一次; 不允许修改 `site_roles` 常量. 演员 `register` 顺序即默认 `profile_sites` 优先级. 需要 cookie / token 时给 `SiteConfig` 加字段.
 4. 加 TOML 用例 (见 [crawler-testing.md](crawler-testing.md)) 并 `just test`.
 

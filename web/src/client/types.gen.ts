@@ -3312,17 +3312,9 @@ export type SourceDescriptor = {
      */
     urls?: Array<string>;
     /**
-     * Multi Language
-     */
-    multi_language?: boolean;
-    /**
      * Traits
      */
     traits?: Array<string>;
-    /**
-     * Uses File Hash
-     */
-    uses_file_hash?: boolean;
     /**
      * Rate Limit
      */

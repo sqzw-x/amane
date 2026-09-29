@@ -11,7 +11,7 @@ from typing import Any, cast, overload
 from pydantic.config import JsonDict
 
 from ..enums import SiteName
-from ..plugins.models import SourceCapability, SourceDescriptor, is_external_source_id
+from ..plugins.models import SourceCapability, SourceDescriptor, SourceTrait, is_external_source_id
 from . import actor_registry, registry
 
 _ACTOR_PROFILE = SourceCapability.ACTOR_PROFILE
@@ -44,7 +44,9 @@ FILM_METADATA_SITES: tuple[SiteName, ...] = tuple(s for s in SiteName if s in _F
 
 # 消费 FetchOptions.language 的影片站. 聚合引擎只对这些站展开 (site, lang) 节点.
 MULTI_LANGUAGE_SITES: frozenset[SiteName] = frozenset(
-    s for s in FILM_METADATA_SITES if (cls := registry.get(s)) is not None and cls.profile().multi_language
+    s
+    for s in FILM_METADATA_SITES
+    if (cls := registry.get(s)) is not None and SourceTrait.MULTI_LANGUAGE in cls.profile().traits
 )
 MULTI_LANGUAGE_SOURCE_IDS: frozenset[str] = frozenset(MULTI_LANGUAGE_SITES)
 

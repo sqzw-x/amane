@@ -35,13 +35,10 @@ class CrawlerProfile:
     same_origin_referer: bool = False
     # 空则影片爬虫视为 film_metadata; 演员爬虫必须显式声明 profile / image.
     capabilities: frozenset[SourceCapability] = field(default_factory=frozenset)
-    # 聚合引擎读取的来源属性, 如 NEEDS_PARTIAL 决定该来源排在哪一段; 与 capabilities (来源提供什么) 分开.
+    # 行为开关: 引擎读到某个取值就改变调度或调用方式 (排段 / 多语言 / 文件指纹), 取值见 ``SourceTrait``.
+    # 与 capabilities (来源提供什么) 分开.
     traits: frozenset[SourceTrait] = field(default_factory=frozenset)
-    # True 时聚合展开 (site, lang) 节点.
-    multi_language: bool = False
     genders: frozenset[ActorGender] | None = None
-    # True 时刮削前按需计算 oshash. 默认不在扫描期算.
-    uses_file_hash: bool = False
 
     def effective_capabilities(self) -> frozenset[SourceCapability]:
         return self.capabilities or frozenset({SourceCapability.FILM_METADATA})
@@ -54,9 +51,7 @@ class CrawlerProfile:
             version="builtin",
             capabilities=frozenset(self.effective_capabilities()),
             urls=(*self.urls, self.base_url),
-            multi_language=self.multi_language,
             traits=frozenset(str(trait) for trait in self.traits),
-            uses_file_hash=self.uses_file_hash,
         )
 
 
