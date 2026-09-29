@@ -48,14 +48,21 @@ jobs:
             exit 1
           fi
 
+      # 签名密钥只此一份. 缺了它构建会退化成 debug 签名, 而 debug 密钥由构建机在构建时随机生成,
+      # 每次产物签名都不同, 已装用户只能卸载重装 — 与其产出这样的 APK, 不如让构建失败.
       - name: Write keystore
-        if: env.ANDROID_KEYSTORE_BASE64 != ''
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "缺少仓库 secret $name, 无法产出可覆盖安装的 APK" >&2
+              exit 1
+            fi
+          done
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > androidapp/release.jks
           cat > androidapp/keystore.properties <<EOF
           storeFile=release.jks
@@ -64,7 +71,6 @@ jobs:
           keyPassword=$ANDROID_KEY_PASSWORD
           EOF
 
-      # 没有签名密钥时脚本退回 debug 包 (可侧载, 但不是正式产物).
       - name: just android-app
         run: just android-app
 
@@ -77,6 +83,17 @@ jobs:
           # upload-artifact 的 name 不允许出现 `/`, 而手动触发多在 fix/... 这类分支上运行.
           echo "artifact=Amane-app-${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
           ls -lh "$APK"
+
+      # 构建脚本在密钥缺席时会退回 debug 包, 这里再挡一道: 署名不是发版密钥就不上传.
+      - name: Check APK signing key
+        run: |
+          APKSIGNER="$(find "$ANDROID_SDK_ROOT/build-tools" -maxdepth 2 -name apksigner -type f | sort -V | tail -1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --print-certs "${{ steps.apk.outputs.apk }}"
+          if "$APKSIGNER" verify --print-certs "${{ steps.apk.outputs.apk }}" | grep -q 'CN=Android Debug'; then
+            echo "产物由 debug 密钥签名, 已装用户无法覆盖安装" >&2
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
