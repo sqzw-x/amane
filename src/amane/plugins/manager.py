@@ -25,6 +25,7 @@ from .models import (
     PluginOrigin,
     SourceCapability,
     SourceDescriptor,
+    SourceTrait,
     is_external_source_id,
     validate_external_source_id,
 )
@@ -147,6 +148,9 @@ class PluginManager:
     @property
     def multi_language_sources(self) -> frozenset[str]:
         return frozenset(descriptor.id for descriptor in self.descriptors() if descriptor.multi_language)
+
+    def sources_with_trait(self, trait: SourceTrait) -> frozenset[str]:
+        return frozenset(descriptor.id for descriptor in self.descriptors() if trait.value in descriptor.traits)
 
     def get(self, source_id: str) -> InstalledPlugin | None:
         return self._plugins.get(source_id)
@@ -344,6 +348,7 @@ class PluginManager:
                     capabilities=frozenset(profile.effective_capabilities()),
                     urls=(*profile.urls, profile.base_url),
                     multi_language=profile.multi_language,
+                    traits=frozenset(str(trait) for trait in profile.traits),
                 )
             )
 

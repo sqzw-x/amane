@@ -53,6 +53,14 @@ class SourceCapability(StrEnum):
     PLAYBACK = "playback"
 
 
+class SourceTrait(StrEnum):
+    """Home of the aggregation scheduler's per-source behavior marks."""
+
+    # 依赖前序来源的聚合结果: 排第二段执行, 收到只读 ``partial_result``.
+    # 单层依赖: 同段来源彼此不可见, 不支持来源之间互相声明依赖.
+    NEEDS_PARTIAL = "needs_partial"
+
+
 class SourceDescriptor(BaseModel):
     """Stable, serializable description of a metadata source."""
 
@@ -68,6 +76,7 @@ class SourceDescriptor(BaseModel):
     languages: frozenset[str] = frozenset()
     urls: tuple[str, ...] = ()
     multi_language: bool = False
+    traits: frozenset[str] = frozenset()
     rate_limit: float | None = Field(default=None, ge=0.1, le=100)
 
     @field_validator("id")

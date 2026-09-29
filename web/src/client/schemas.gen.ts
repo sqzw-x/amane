@@ -6688,6 +6688,15 @@ export const SourceDescriptorSchema = {
             title: 'Multi Language',
             default: false
         },
+        traits: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            uniqueItems: true,
+            title: 'Traits',
+            default: []
+        },
         rate_limit: {
             anyOf: [
                 {

@@ -11,6 +11,7 @@ from ..db.models import TaskType
 from ..enums import ActorGender, MetadataField
 from ..media import materialize_images
 from ..observability import current
+from ..plugins.models import SourceTrait
 from ._common import ensure_oshash, finalize_media_file
 from .models import ActorScrapePayload, CacheKind, ScrapePayload, ScrapeResult
 from .protocol import FollowupTask, TaskHandler, TaskResult
@@ -31,6 +32,17 @@ def _crawlers_need_oshash(crawlers: Mapping[str, CrawlerLike]) -> bool:
     return any(isinstance(crawler, Crawler) and type(crawler).profile().uses_file_hash for crawler in crawlers.values())
 
 
+def _deferred_sources(crawlers: Mapping[str, CrawlerLike], plugin_sources: frozenset[str]) -> frozenset[str]:
+    """第二段来源: 内置读 profile().traits, 插件按 descriptor 派生的集合."""
+    deferred = {name for name in crawlers if name in plugin_sources}
+    deferred.update(
+        name
+        for name, crawler in crawlers.items()
+        if isinstance(crawler, Crawler) and SourceTrait.NEEDS_PARTIAL in type(crawler).profile().traits
+    )
+    return frozenset(deferred)
+
+
 class CrawlerFactoryLike(Protocol):
     async def get_crawlers(self, names: Iterable[str]) -> dict[str, CrawlerLike]: ...
 
@@ -47,6 +59,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         web_client: WebClient | None = None,
         translator: Translator | None = None,
         multi_language_sources: frozenset[str] | None = None,
+        partial_sources: frozenset[str] | None = None,
     ):
         super().__init__(payload_t=ScrapePayload, result_t=ScrapeResult)
         self._repo = repo
@@ -56,6 +69,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         self._resource_store = resource_store
         self._translator = translator
         self._multi_language_sources = multi_language_sources or MULTI_LANGUAGE_SOURCE_IDS
+        self._partial_sources = partial_sources or frozenset()
 
     async def handle(self, payload: ScrapePayload) -> TaskResult[ScrapeResult]:
         bind_contextvars(number=payload.number)
@@ -110,7 +124,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             # aggregate 上报的 current 是已满足标量字段数; 分母由 handler 统一为含后续步骤的 total.
             await self.report_progress(current, progress_total, message)
 
-        # 出站: 按波次执行抓取图 (execute_graph); 按 use_cache 复用 raw 快照.
+        # 出站: 执行抓取图 (execute_graph), 声明依赖的来源在第二段; 按 use_cache 复用 raw 快照.
         result = await aggregate(
             q,
             crawlers,
@@ -119,12 +133,14 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             db_data.raw if db_data else None,
             on_progress=_on_fetch_progress,
             multi_lang_sites=self._multi_language_sources,
+            deferred_sites=_deferred_sources(crawlers, self._partial_sources),
         )
 
         # 站点结果已由引擎 _fetch_one 逐条上报到 summary.outcomes; 这里只记录调度顺序.
         rec.update_summary(sites_queried=list(result.sites_queried))
 
-        if not result.field_sources:
+        # 标量可以全空: 只要有来源返回结果, 海报 / 评分 / external_id 仍可入库.
+        if not result.raw:
             current().warning("no data found from any source", failed_sites=result.failed_sites)
             return TaskResult(success=False, error=f"No metadata found for {payload.number}")
 

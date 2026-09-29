@@ -1,18 +1,20 @@
-"""测试 amane.aggregate: 静态抓取图、分波请求、标量短路、聚合类字段按链拼接."""
+"""测试 amane.aggregate: 抓取图、两段执行、标量沿链取第一个非空值、聚合类字段按链拼接."""
 
+import copy
 from collections import defaultdict
 
 import pytest
 
 from amane.aggregate import (
+    ALL_FIELDS,
     SCALAR_FIELDS,
     aggregate,
     build_graph,
     compile_priority,
-    compute_waves,
     execute_graph,
 )
-from amane.aggregate.engine import ProgressCallback, _cache_key
+from amane.aggregate.engine import _cache_key
+from amane.aggregate.models import AggregatedMetadata
 from amane.crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
 from amane.enums import ActorGender, Language, MetadataField, SiteName
 
@@ -22,10 +24,18 @@ S1, S2, S3 = SiteName.JAVDB, SiteName.DMM, SiteName.JAVBUS
 K1, K2, K3 = str(S1), str(S2), str(S3)
 DB, DMM, BUS, OFF = SiteName.JAVDB, SiteName.DMM, SiteName.JAVBUS, SiteName.OFFICIAL
 PLUGIN = "example.source"
+PLUGIN_K = PLUGIN
 
 IQQTV = SiteName.IQQTV
 TITLE = MetadataField.TITLE
 PLOT = MetadataField.PLOT
+AGGREGATE_FIELDS = (
+    MetadataField.POSTER_URLS,
+    MetadataField.THUMB_URLS,
+    MetadataField.TRAILER_URLS,
+    MetadataField.EXTRAFANART,
+    MetadataField.SCORE,
+)
 
 
 class TestCompilePriority:
@@ -124,19 +134,35 @@ class FailingCrawler:
 
 
 class RecordingCrawler:
-    """记录收到的 SearchQuery 参数 (用于验证 partial_result 注入)."""
+    """记录收到的 SearchQuery 与 partial_result 引用 (用于验证两段执行)."""
 
     def __init__(self, result: MediaMetadata):
         self._result = result
         self.queries: list[SearchQuery] = []
+        self.partials: list[AggregatedMetadata | None] = []
         self.options: list[FetchOptions | None] = []
 
     async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:
-        import copy as _copy
-
-        self.queries.append(_copy.copy(query))
+        self.queries.append(copy.copy(query))
+        self.partials.append(query.partial_result)
         self.options.append(options)
         return self._result
+
+
+class MutatingCrawler(RecordingCrawler):
+    """拿到 partial_result 后改动它, 用于验证只读契约."""
+
+    def __init__(self, result: MediaMetadata):
+        super().__init__(result)
+        self.observed_studio: str | None = None
+
+    async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:
+        result = await super().fetch(query, options)
+        if query.partial_result is not None:
+            self.observed_studio = query.partial_result.studio
+            query.partial_result.studio = "MUTATED"
+            query.partial_result.field_sources["studio"] = "mutated"
+        return result
 
 
 def _full_metadata(**overrides) -> MediaMetadata:
@@ -163,133 +189,26 @@ def _full_metadata(**overrides) -> MediaMetadata:
 
 
 # ============================================================
-# compute_waves - 波次划分 (与旧测试兼容)
-# ============================================================
-
-
-@pytest.mark.parametrize(
-    "desc, fp, fl, mf, ms, expected",
-    [
-        (
-            "简单场景1: 所有字段默认优先级, 无语言",
-            defaultdict(lambda: [DB, DMM, BUS]),
-            {},
-            frozenset(),
-            frozenset(),
-            [{S1: set()}, {S2: set()}, {S3: set()}],
-        ),
-        (
-            "简单场景2: title 倒序, 其余默认",
-            defaultdict(lambda: [DB, DMM, BUS], {MetadataField.TITLE: [BUS, DMM, DB]}),
-            {},
-            frozenset(),
-            frozenset(),
-            [{DB: set(), BUS: set()}, {DMM: set()}],
-        ),
-        (
-            "综合场景: 多语言合并, 多字段不同优先级",
-            defaultdict(
-                lambda: [DB, DMM, BUS],
-                {
-                    MetadataField.TITLE: [DB, DMM, BUS],
-                    MetadataField.PLOT: [DMM, DB, BUS],
-                    MetadataField.STUDIO: [DB, BUS, DMM],
-                    MetadataField.RELEASE: [BUS, DB, DMM],
-                },
-            ),
-            {
-                MetadataField.TITLE: Language.ZH_CN,
-                MetadataField.PLOT: Language.JP,
-                MetadataField.STUDIO: Language.ZH_TW,
-                MetadataField.RELEASE: Language.ZH_CN,
-            },
-            frozenset({MetadataField.TITLE, MetadataField.PLOT, MetadataField.STUDIO}),
-            frozenset({DB, DMM, BUS}),
-            [
-                {DB: {Language.ZH_CN, Language.ZH_TW}, DMM: {Language.JP}, BUS: {Language.ZH_TW}},
-                {DB: {Language.JP}, DMM: {Language.ZH_CN}},
-                {DMM: {Language.ZH_TW}, BUS: {Language.ZH_CN, Language.JP}},
-            ],
-        ),
-        (
-            "综合场景: 第四轮仍可产生波次 (OFFICIAL 跨轮)",
-            defaultdict(
-                lambda: [DB, DMM, BUS],
-                {
-                    MetadataField.TITLE: [OFF, DB, DMM, BUS],
-                    MetadataField.PLOT: [DMM, DB, BUS],
-                    MetadataField.STUDIO: [DB, BUS, DMM],
-                    MetadataField.RELEASE: [BUS, DB, DMM],
-                    MetadataField.SCORE: [BUS, OFF, DB, DMM],
-                },
-            ),
-            {MetadataField.TITLE: Language.ZH_CN, MetadataField.PLOT: Language.JP},
-            frozenset({MetadataField.TITLE, MetadataField.PLOT, MetadataField.STUDIO}),
-            frozenset({DB, BUS, OFF}),
-            [
-                {OFF: {Language.ZH_CN}, DB: {Language.ZH_CN}, DMM: set(), BUS: {Language.JP}},
-                {DB: {Language.JP}},
-                {BUS: {Language.ZH_CN}},
-            ],
-        ),
-    ],
-)
-def test_compute_waves(desc, fp, fl, mf, ms, expected):
-    waves = compute_waves(fp, fl, mf, ms)
-    assert waves == expected, f"Failed: {desc}"
-
-
-# ============================================================
-# build_graph - 图结构正确性
+# build_graph - 节点与字段链
 # ============================================================
 
 
 class TestBuildGraph:
-    def test_nodes_count_matches_waves(self):
-        """节点数 = 波次中 (site, lang) 组合的总数."""
+    def test_nodes_are_union_of_field_chains(self):
         fp = defaultdict(lambda: [DB, DMM, BUS])
         graph = build_graph(fp, {})
-        # 无语言 → 3 波, 每波 1 个节点
-        assert len(graph.nodes) == 3
-        assert len(graph.waves) == 3
-        assert all(len(w) == 1 for w in graph.waves)
+        assert [n.cache_key for n in graph.nodes] == [K1, K2, K3]
 
     def test_field_chains_respect_priority_order(self):
         """field_chains 中节点顺序 = 字段的 site 优先级顺序."""
         fp = defaultdict(lambda: [DB, DMM, BUS], {MetadataField.TITLE: [BUS, DMM, DB]})
         graph = build_graph(fp, {})
 
-        # title chain: BUS → DMM → DB
         title_chain = graph.field_chains[MetadataField.TITLE]
         assert [n.site for n in title_chain] == [BUS, DMM, DB]
 
-        # default chain: DB → DMM → BUS
         default_chain = graph.field_chains[MetadataField.STUDIO]
         assert [n.site for n in default_chain] == [DB, DMM, BUS]
-
-    def test_fallback_edges_form_correct_chain(self):
-        """每个字段的 fallback 边构成正确的优先级链."""
-        fp = defaultdict(lambda: [DB, DMM, BUS], {MetadataField.TITLE: [BUS, DMM, DB]})
-        graph = build_graph(fp, {})
-
-        # title 的 fallback 链: N_BUS → N_DMM → N_DB → None
-        title_nodes = graph.field_chains[MetadataField.TITLE]
-        assert len(title_nodes) == 3
-        assert title_nodes[0].fallback[MetadataField.TITLE] is title_nodes[1]
-        assert title_nodes[1].fallback[MetadataField.TITLE] is title_nodes[2]
-        assert title_nodes[2].fallback[MetadataField.TITLE] is None
-
-    def test_covers_assigned_correctly(self):
-        """每个节点的 covers 包含其原生负责的字段."""
-        fp = defaultdict(lambda: [DB, DMM, BUS], {MetadataField.TITLE: [BUS, DMM, DB]})
-        graph = build_graph(fp, {})
-
-        # 波 0: DB (默认字段) + BUS (title)
-        w0_nodes = {n.site: n for n in graph.waves[0]}
-        assert MetadataField.TITLE in w0_nodes[BUS].covers
-        assert MetadataField.STUDIO in w0_nodes[DB].covers
-        # title 不应该出现在 DB 的 covers 中 (DB 是 title 的第三优先级)
-        assert MetadataField.TITLE not in w0_nodes[DB].covers
 
     def test_same_site_different_langs_produce_distinct_nodes(self):
         """同站点不同语言 = 不同节点."""
@@ -300,21 +219,44 @@ class TestBuildGraph:
 
         graph = build_graph(fp, fl, mf, ms)
 
-        # 应该有 javdb:zh_cn 和 javdb:jp 两个节点
         cks = {n.cache_key for n in graph.nodes}
         assert _cache_key(DB, Language.ZH_CN) in cks
         assert _cache_key(DB, Language.JP) in cks
 
+    def test_language_node_serves_language_free_fields(self):
+        """站点只要在任一字段上需要语言, 其余字段共用该带语言节点, 不额外请求."""
+        fp = defaultdict(lambda: [DB])
+        graph = build_graph(
+            fp,
+            {MetadataField.TITLE: Language.ZH_CN},
+            frozenset({MetadataField.TITLE}),
+            frozenset({DB}),
+        )
+
+        assert [n.cache_key for n in graph.nodes] == [f"{DB}:{Language.ZH_CN}"]
+        assert [n.cache_key for n in graph.field_chains[MetadataField.PLOT]] == [f"{DB}:{Language.ZH_CN}"]
+
+    def test_site_blacklisted_from_all_fields_has_no_node(self):
+        fp = compile_priority([DB, DMM], {}, {field: [DB] for field in ALL_FIELDS})
+        graph = build_graph(fp, {})
+        assert [n.cache_key for n in graph.nodes] == [K2]
+
+    def test_site_blacklisted_from_aggregate_fields_keeps_node(self):
+        """只被聚合类字段黑名单的站点仍在标量链上, 因此仍是节点."""
+        fp = compile_priority([DB, DMM], {}, {field: [DMM] for field in AGGREGATE_FIELDS})
+        graph = build_graph(fp, {})
+        assert [n.cache_key for n in graph.nodes] == [K1, K2]
+
 
 # ============================================================
-# execute_graph - 执行正确性
+# execute_graph - 取值语义
 # ============================================================
 
 
 class TestExecuteGraph:
     @pytest.mark.asyncio
-    async def test_all_success_merges_correctly(self):
-        """所有站点成功 → 标量字段按优先级选取, URL 收集所有站点."""
+    async def test_scalars_take_first_non_empty_value(self):
+        """所有站点成功 → 标量取链上第一个非空值, URL 按链收集."""
         fp = defaultdict(lambda: [DB, DMM, BUS], {MetadataField.TITLE: [BUS, DMM, DB]})
         graph = build_graph(fp, {})
 
@@ -334,166 +276,61 @@ class TestExecuteGraph:
         assert len(state.failed) == 0
 
     @pytest.mark.asyncio
-    async def test_early_termination_when_all_scalar_satisfied(self):
-        """波 0 全部满足标量字段 → 不再执行后续波 (但 URL 字段仍驱动)."""
-        fp = defaultdict(lambda: [DB, DMM, BUS])
+    async def test_empty_value_falls_through_to_next_source(self):
+        """站点已返回但字段为空 → 继续取链上下一站的值."""
+        fp = defaultdict(lambda: [DB, DMM])
         graph = build_graph(fp, {})
 
-        c1 = MockCrawler(result=_full_metadata(number="X"))  # wave 0: javdb
-        c2 = MockCrawler(result=_full_metadata(number="X"))  # wave 1: dmm
-        c3 = MockCrawler(result=_full_metadata(number="X"))  # wave 2: javbus
+        c1 = MockCrawler(MediaMetadata(number="X", title="T1", series=None, studio="S1", tags=[]))
+        c2 = MockCrawler(
+            MediaMetadata.model_validate(
+                {"number": "X", "title": "T2", "series": "Ser2", "studio": "S2", "tags": ["t2"]}
+            )
+        )
 
-        crawlers = {K1: c1, K2: c2, K3: c3}
+        state = await execute_graph(graph, {K1: c1, K2: c2}, SearchQuery("X"))
+
+        assert state.result.series == "Ser2"
+        assert state.result.field_sources["series"] == "dmm"
+        assert state.result.tags == ["t2"]
+        assert state.result.field_sources["tags"] == "dmm"
+        assert state.result.title == "T1"
+        assert state.result.studio == "S1"
+
+    @pytest.mark.asyncio
+    async def test_all_values_empty_keeps_fields_unresolved(self):
+        """全部来源为空 → 字段不定值, 不写 field_sources; 站点仍算已请求."""
+        fp = defaultdict(lambda: [DB, DMM])
+        graph = build_graph(fp, {})
+
+        crawlers = {K1: MockCrawler(MediaMetadata(number="X")), K2: MockCrawler(MediaMetadata(number="X"))}
+
         state = await execute_graph(graph, crawlers, SearchQuery("X"))
 
-        # javdb (wave 0) 返回了完整数据, dmm 和 javbus 仍为 URL 字段而执行
-        assert len(c1.fetch_calls) == 1  # always called
-        # dmm, javbus: called because URL fields drive additional waves
-        # but if javdb provides all URL values, dmm/javbus still get called for URL collection
-        assert len(state.sites_queried) == 3
+        assert state.result.title is None
+        assert state.result.field_sources == {}
+        assert state.sites_queried == [K1, K2]
+        assert state.failed == []
 
     @pytest.mark.asyncio
     async def test_failure_falls_back_to_next_priority(self):
-        """javdb 失败 → title (默认优先 DB) 回退到 dmm."""
+        """javdb 失败 → 标量取 dmm 的值."""
         fp = defaultdict(lambda: [DB, DMM, BUS])
         graph = build_graph(fp, {})
 
-        fail = FailingCrawler()
-        good = MockCrawler(result=MediaMetadata(number="X", title="FromDMM", studio="S2"))
+        crawlers = {
+            K1: FailingCrawler(),
+            K2: MockCrawler(result=MediaMetadata(number="X", title="FromDMM", studio="S2")),
+            K3: MockCrawler(result=None),
+        }
 
-        crawlers = {K1: fail, K2: good, K3: MockCrawler(result=None)}
         state = await execute_graph(graph, crawlers, SearchQuery("X"))
 
-        # DB 失败 → title/studio 等回退到 DMM
         assert state.result.title == "FromDMM"
         assert state.result.field_sources["title"] == "dmm"
         assert state.result.studio == "S2"
         assert K1 in state.failed
-
-    @pytest.mark.asyncio
-    async def test_empty_required_field_falls_through_to_next(self):
-        """站点成功但 REQUIRED 字段为空 → 回退到下一优先级."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        no_title = MockCrawler(result=MediaMetadata(number="X", title=None, studio="S1"))
-        has_title = MockCrawler(result=MediaMetadata(number="X", title="T2", studio="S2"))
-
-        crawlers = {K1: no_title, K2: has_title}
-        state = await execute_graph(graph, crawlers, SearchQuery("X"))
-
-        # DB 成功但 title 为 None → 回退到 DMM (title 是 REQUIRED)
-        assert state.result.title == "T2"
-        assert state.result.field_sources["title"] == "dmm"
-        # studio 被 DB 满足 (不为空)
-        assert state.result.field_sources["studio"] == "javdb"
-
-    @pytest.mark.asyncio
-    async def test_empty_optional_field_accepted_no_fallback(self):
-        """站点成功但 OPTIONAL 字段为 None → 接受空值, 不回退."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        c1 = MockCrawler(result=MediaMetadata(number="X", title="T1", series=None, studio="S1"))
-        c2 = MockCrawler(result=MediaMetadata(number="X", title="T2", series="Ser", studio="S2"))
-
-        crawlers = {K1: c1, K2: c2}
-        state = await execute_graph(graph, crawlers, SearchQuery("X"))
-
-        # DB 成功 → series=None 被接受, 不回退到 DMM
-        assert state.result.series is None
-        assert state.result.field_sources.get("series") == "javdb"
-        # title 和 studio 也被 DB 满足
-        assert state.result.title == "T1"
-        assert state.result.studio == "S1"
-
-    @pytest.mark.asyncio
-    async def test_empty_optional_list_field_accepted_no_fallback(self):
-        """OPTIONAL list 字段 (actors=[]) 被接受, 不回退."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        c1 = MockCrawler(result=MediaMetadata(number="X", title="T1", actors=[], studio="S1"))
-        c2 = MockCrawler(
-            result=MediaMetadata.model_validate({"number": "X", "title": "T2", "actors": ["A1"], "studio": "S2"})
-        )
-
-        crawlers = {K1: c1, K2: c2}
-        state = await execute_graph(graph, crawlers, SearchQuery("X"))
-
-        # actors 是 OPTIONAL → 空列表被接受, 不回退
-        assert state.result.actors == []
-        assert state.result.field_sources.get("actors") == "javdb"
-        # title 和 studio 被 DB 满足
-        assert state.result.title == "T1"
-        assert state.result.studio == "S1"
-
-    @pytest.mark.asyncio
-    async def test_optional_fields_satisfied_by_first_site_even_when_empty(self):
-        """多个 OPTIONAL 字段为空 → 全被第一站点满足, 不回退."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        c1 = MockCrawler(
-            result=MediaMetadata(
-                number="X",
-                title="T1",
-                studio="S1",
-                series=None,
-                tags=[],
-                directors=[],
-                actors=[],
-                publisher=None,
-                plot=None,
-            )
-        )
-        c2 = MockCrawler(result=MediaMetadata(number="X", series="Ser2", tags=["T2"]))
-
-        crawlers = {K1: c1, K2: c2}
-        state = await execute_graph(graph, crawlers, SearchQuery("X"))
-
-        # OPTIONAL 字段: 全被 javdb 满足 (即使为空)
-        assert state.result.series is None
-        assert state.result.tags == []
-        assert state.result.directors == []
-        assert state.result.actors == []
-        assert state.result.publisher is None
-        assert state.result.plot is None
-        assert state.result.field_sources.get("series") == "javdb"
-        assert state.result.title == "T1"
-        assert state.result.studio == "S1"
-
-    @pytest.mark.asyncio
-    async def test_mixed_required_and_optional_fields(self):
-        """REQUIRED 为空回退, OPTIONAL 为空不回退 (混合场景)."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        c1 = MockCrawler(result=MediaMetadata(number="X", title=None, series=None, actors=[], studio="S1"))
-        c2 = MockCrawler(
-            result=MediaMetadata.model_validate(
-                {"number": "X", "title": "T2", "series": "Ser2", "actors": ["A2"], "studio": "S2"}
-            )
-        )
-
-        crawlers = {K1: c1, K2: c2}
-        state = await execute_graph(graph, crawlers, SearchQuery("X"))
-
-        # title 是 REQUIRED → DB 的 None 不满足, 回退到 DMM
-        assert state.result.title == "T2"
-        assert state.result.field_sources["title"] == "dmm"
-
-        # series 是 OPTIONAL → DB 的 None 被接受, 不回退
-        assert state.result.series is None
-        assert state.result.field_sources["series"] == "javdb"
-
-        # actors 是 OPTIONAL → DB 的 [] 被接受, 不回退
-        assert state.result.actors == []
-        assert state.result.field_sources["actors"] == "javdb"
-
-        # studio 是 OPTIONAL → DB 的 "S1" 被接受
-        assert state.result.studio == "S1"
-        assert state.result.field_sources["studio"] == "javdb"
+        assert K3 in state.failed
 
     @pytest.mark.asyncio
     async def test_external_ids_and_source_urls_collected(self):
@@ -510,35 +347,6 @@ class TestExecuteGraph:
         assert state.result.external_ids["dmm"] == "id_b"
         assert state.result.source_urls["javdb"] == "http://a.com"
         assert state.result.source_urls["dmm"] == "http://b.com"
-
-    @pytest.mark.asyncio
-    async def test_partial_result_injected_after_first_wave(self):
-        """首波 partial_result=None, 后续波注入已聚合的中间结果."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        r1 = RecordingCrawler(_full_metadata(number="X", title="First", plot=None))
-        r2 = RecordingCrawler(_full_metadata(number="X", title="Second", plot="P2"))
-
-        await execute_graph(graph, {K1: r1, K2: r2}, SearchQuery("X"))
-
-        # 波 0 (javdb): partial_result 应为 None
-        assert r1.queries[0].partial_result is None
-        # 波 1 (dmm): partial_result 应包含 javdb 的结果
-        assert r2.queries[0].partial_result is not None
-        assert r2.queries[0].partial_result.title == "First"
-
-    @pytest.mark.asyncio
-    async def test_all_fail_returns_empty_result(self):
-        """全部站点失败 → fetched 全 None, 但所有节点都已尝试."""
-        fp = defaultdict(lambda: [DB, DMM])
-        graph = build_graph(fp, {})
-
-        state = await execute_graph(graph, {K1: FailingCrawler(), K2: FailingCrawler()}, SearchQuery("X"))
-
-        assert state.result.title is None
-        assert len(state.failed) == 2
-        assert len(state.sites_queried) == 2
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -571,9 +379,8 @@ class TestExecuteGraph:
         expect_queried: list[str],
         expect_failed: list[str],
     ) -> None:
-        """路由里有但 crawlers 映射没有的来源 (禁用插件等) 跳过, 不记失败, 沿 fallback 继续."""
-        plugin = "example.source"
-        fp = defaultdict(lambda: [plugin, DB, DMM])
+        """路由里有但 crawlers 映射没有的来源 (禁用插件等) 跳过, 不记失败, 沿链继续."""
+        fp = defaultdict(lambda: [PLUGIN_K, DB, DMM])
         graph = build_graph(fp, {})
         crawlers = {
             name: MockCrawler(None if title is None else MediaMetadata(number="X", title=title))
@@ -589,8 +396,8 @@ class TestExecuteGraph:
             assert state.result.field_sources["title"] == expect_source
         assert state.sites_queried == expect_queried
         assert state.failed == expect_failed
-        assert plugin not in state.failed
-        assert plugin not in state.sites_queried
+        assert PLUGIN_K not in state.failed
+        assert PLUGIN_K not in state.sites_queried
 
     @pytest.mark.asyncio
     async def test_db_cache_hit_skips_crawler(self):
@@ -610,6 +417,158 @@ class TestExecuteGraph:
 
         assert len(crawler.fetch_calls) == 0  # 缓存命中
         assert state.result.title == "Cached"
+
+    @pytest.mark.asyncio
+    async def test_aggregate_field_blacklist_still_requests_site(self):
+        """站点仅被聚合类字段黑名单: 仍被请求并写入 sites_queried, 该字段取值不受影响."""
+        fp = compile_priority([DB, DMM], {}, {field: [DMM] for field in AGGREGATE_FIELDS})
+        graph = build_graph(fp, {})
+
+        c_db = MockCrawler(MediaMetadata(number="X", title="T_DB", poster_urls=[]))
+        c_dmm = MockCrawler(MediaMetadata(number="X", poster_urls=["http://dmm/p.jpg"]))
+
+        state = await execute_graph(graph, {K1: c_db, K2: c_dmm}, SearchQuery("X"))
+
+        assert state.sites_queried == [K1, K2]
+        assert state.result.poster_urls == []
+        assert state.result.field_sources["title"] == "javdb"
+
+    @pytest.mark.asyncio
+    async def test_all_fail_returns_empty_result(self):
+        """全部站点失败 → fetched 全 None, 但所有节点都已尝试."""
+        fp = defaultdict(lambda: [DB, DMM])
+        graph = build_graph(fp, {})
+
+        state = await execute_graph(graph, {K1: FailingCrawler(), K2: FailingCrawler()}, SearchQuery("X"))
+
+        assert state.result.title is None
+        assert len(state.failed) == 2
+        assert len(state.sites_queried) == 2
+
+
+# ============================================================
+# execute_graph - 两段执行
+# ============================================================
+
+
+class TestTwoPhaseExecution:
+    @pytest.mark.asyncio
+    async def test_declared_source_runs_in_second_phase(self):
+        """声明来源在第二段执行, 第一段来源拿不到 partial_result."""
+        fp = defaultdict(lambda: [DB, DMM, OFF], {MetadataField.TITLE: [OFF]})
+        graph = build_graph(fp, {})
+
+        first = RecordingCrawler(_full_metadata(number="X", title="T_DB", studio="S_DB"))
+        second = RecordingCrawler(_full_metadata(number="X", title="T_DMM", studio="S_DMM"))
+        declared = RecordingCrawler(_full_metadata(number="X", title="T_OFF", studio="S_OFF"))
+
+        state = await execute_graph(
+            graph,
+            {K1: first, K2: second, str(OFF): declared},
+            SearchQuery("X"),
+            deferred_sites=frozenset({OFF}),
+        )
+
+        assert first.partials == [None]
+        assert second.partials == [None]
+        assert declared.partials[0] is not None
+        assert declared.partials[0].studio == "S_DB"
+        # 链首是声明来源且尚未执行: 段间解析不越过它定值, 第二段结果不被丢弃.
+        assert declared.partials[0].title is None
+        assert state.result.title == "T_OFF"
+        assert state.result.field_sources["title"] == "official"
+        assert state.sites_queried == [K1, K2, str(OFF)]
+
+    @pytest.mark.asyncio
+    async def test_declared_source_at_route_head_blocks_then_wins(self):
+        """路由整体前置声明来源: 段间所有字段被中断, 末次解析按链首取值."""
+        fp = defaultdict(lambda: [OFF, DB, DMM])
+        graph = build_graph(fp, {})
+
+        first = RecordingCrawler(_full_metadata(number="X", title="T_DB", studio="S_DB", series="FrmDB"))
+        declared = RecordingCrawler(_full_metadata(number="X", title="T_OFF", studio="S_OFF", series=None))
+
+        state = await execute_graph(
+            graph,
+            {K1: first, str(OFF): declared},
+            SearchQuery("X"),
+            deferred_sites=frozenset({OFF}),
+        )
+
+        assert declared.partials[0] is not None
+        assert declared.partials[0].title is None
+        assert declared.partials[0].studio is None
+        assert state.result.title == "T_OFF"
+        assert state.result.studio == "S_OFF"
+        # 声明来源留空的字段仍由第一段来源补上.
+        assert state.result.series == "FrmDB"
+
+    @pytest.mark.asyncio
+    async def test_second_phase_nodes_share_one_partial_and_cannot_write_back(self):
+        """同段共享同一个只读对象; 爬虫对它的改动不回写聚合结果."""
+        fp = defaultdict(lambda: [DB, DMM, BUS])
+        graph = build_graph(fp, {})
+
+        first = MockCrawler(_full_metadata(number="X", title="T_DB", studio="S_DB"))
+        mutating = MutatingCrawler(_full_metadata(number="X", studio="S_DMM"))
+        other = RecordingCrawler(_full_metadata(number="X", series="SerBUS"))
+
+        state = await execute_graph(
+            graph,
+            {K1: first, K2: mutating, K3: other},
+            SearchQuery("X"),
+            deferred_sites=frozenset({DMM, BUS}),
+        )
+
+        assert mutating.partials[0] is other.partials[0]
+        assert mutating.partials[0] is not None
+        assert mutating.observed_studio == "S_DB"
+        assert state.result.studio == "S_DB"
+        assert state.result.field_sources["studio"] == "javdb"
+
+    @pytest.mark.asyncio
+    async def test_no_first_phase_gives_empty_partial(self):
+        """路由只有声明来源: 第二段仍执行, partial 是空对象而非 None."""
+        fp = defaultdict(lambda: [OFF])
+        graph = build_graph(fp, {})
+
+        declared = RecordingCrawler(_full_metadata(number="X", title="T_OFF"))
+
+        state = await execute_graph(graph, {str(OFF): declared}, SearchQuery("X"), deferred_sites=frozenset({OFF}))
+
+        assert declared.partials[0] is not None
+        assert isinstance(declared.partials[0], AggregatedMetadata)
+        assert declared.partials[0].title is None
+        assert state.result.title == "T_OFF"
+
+    @pytest.mark.asyncio
+    async def test_no_second_phase_keeps_partial_none(self):
+        """无声明来源: 全部节点在第一段, partial_result 恒为 None."""
+        fp = defaultdict(lambda: [DB, DMM])
+        graph = build_graph(fp, {})
+
+        first = RecordingCrawler(_full_metadata(number="X"))
+        second = RecordingCrawler(_full_metadata(number="X"))
+
+        await execute_graph(graph, {K1: first, K2: second}, SearchQuery("X"))
+
+        assert first.partials == [None]
+        assert second.partials == [None]
+
+    @pytest.mark.asyncio
+    async def test_declared_source_unavailable_is_premarked(self):
+        """声明来源不在 crawlers: 预标空结果, 不请求也不记失败, 其余来源照常."""
+        fp = defaultdict(lambda: [PLUGIN_K, DB])
+        graph = build_graph(fp, {})
+
+        live = RecordingCrawler(_full_metadata(number="X", title="FromJavDB"))
+
+        state = await execute_graph(graph, {K1: live}, SearchQuery("X"), deferred_sites=frozenset({PLUGIN_K}))
+
+        assert state.sites_queried == [K1]
+        assert PLUGIN_K not in state.failed
+        assert state.result.title == "FromJavDB"
+        assert live.partials == [None]
 
 
 # ============================================================
@@ -643,10 +602,20 @@ class TestAggregate:
         result = await aggregate(SearchQuery("X"), {K1: FailingCrawler()}, defaultdict(lambda: [DB]))
         assert result.metadata.title is None
         assert result.field_sources == {}
+        assert result.raw == {}
+
+    @pytest.mark.asyncio
+    async def test_empty_scalars_keep_raw_for_handler(self):
+        """标量全空但有海报 → field_sources 为空, raw 非空 (handler 的失败判据)."""
+        crawler = MockCrawler(result=MediaMetadata(number="X", poster_urls=["http://p.jpg"]))
+        result = await aggregate(SearchQuery("X"), {K1: crawler}, defaultdict(lambda: [DB]))
+        assert result.field_sources == {}
+        assert result.metadata.poster_urls == ["http://p.jpg"]
+        assert result.raw
 
     @pytest.mark.asyncio
     async def test_raw_contains_fetched_snapshots(self):
-        """raw 字段包含所有已抓取站点的 asdict 快照."""
+        """raw 字段包含所有已抓取站点的快照."""
         a = MockCrawler(result=MediaMetadata(number="X", title="A"))
         result = await aggregate(SearchQuery("X"), {K1: a}, defaultdict(lambda: [DB]))
         assert "javdb" in result.raw
@@ -655,16 +624,15 @@ class TestAggregate:
     @pytest.mark.asyncio
     async def test_unavailable_source_skipped_not_failed(self):
         """禁用/缺失来源不写入 failed_sites, 后续源仍可聚合."""
-        plugin = "example.source"
         result = await aggregate(
             SearchQuery("X"),
             {K1: MockCrawler(MediaMetadata(number="X", title="FromJavDB"))},
-            defaultdict(lambda: [plugin, DB]),
+            defaultdict(lambda: [PLUGIN_K, DB]),
         )
         assert result.metadata.title == "FromJavDB"
         assert result.field_sources["title"] == "javdb"
-        assert plugin not in result.failed_sites
-        assert plugin not in result.sites_queried
+        assert PLUGIN_K not in result.failed_sites
+        assert PLUGIN_K not in result.sites_queried
 
     @pytest.mark.asyncio
     async def test_cache_reuse_avoids_requests(self):
@@ -707,53 +675,74 @@ class TestAggregate:
 
 
 # ============================================================
-# MediaMetadata asdict 往返一致性 (cache 复用基础)
-# ============================================================
-
-
-# ============================================================
-# 复杂场景: 混合优先级 + 同波 fallback
+# 复杂场景: 混合优先级 + 聚合类字段拼接
 # ============================================================
 
 
 class TestComplexScenarios:
     @pytest.mark.asyncio
-    async def test_mixed_priorities_same_wave_fallback(self):
-        """两个字段优先级互逆, 同波执行互为 fallback.
-
-        title: [javdb, dmm]
-        poster_url: [dmm, javdb]
-        同波 {javdb, dmm}, 互为 fallback. 任意一方失败, 另一方已执行.
-        """
-        fp = defaultdict(lambda: [DB], {MetadataField.TITLE: [DB, DMM], MetadataField.POSTER_URLS: [DMM, DB]})
+    async def test_per_field_priority_overrides(self):
+        """不同字段不同优先级: title 偏 javbus, studio 偏 dmm."""
+        fp = defaultdict(
+            lambda: [DB, DMM, BUS],
+            {
+                MetadataField.TITLE: [BUS, DB, DMM],
+                MetadataField.STUDIO: [DMM, DB, BUS],
+            },
+        )
         graph = build_graph(fp, {})
 
-        c_javdb = MockCrawler(result=MediaMetadata(number="X", title="FromJavDB", poster_urls=["http://db.jpg"]))
-        c_dmm = MockCrawler(result=MediaMetadata(number="X", title="FromDMM", poster_urls=["http://dmm.jpg"]))
+        crawlers = {
+            K1: MockCrawler(result=MediaMetadata(number="X", title="T_DB", studio="S_DB")),
+            K2: MockCrawler(result=MediaMetadata(number="X", title="T_DMM", studio="S_DMM")),
+            K3: MockCrawler(result=MediaMetadata(number="X", title="T_BUS", studio="S_BUS")),
+        }
 
-        state = await execute_graph(graph, {K1: c_javdb, K2: c_dmm}, SearchQuery("X"))
+        state = await execute_graph(graph, crawlers, SearchQuery("X"))
 
-        assert state.result.title == "FromJavDB"
-        assert state.result.field_sources["title"] == "javdb"
-        assert state.result.poster_urls == ["http://dmm.jpg", "http://db.jpg"]
+        assert state.result.title == "T_BUS"
+        assert state.result.field_sources["title"] == "javbus"
+        assert state.result.studio == "S_DMM"
+        assert state.result.field_sources["studio"] == "dmm"
 
     @pytest.mark.asyncio
-    async def test_url_drives_additional_wave_when_scalar_satisfied(self):
-        """标量字段在波 0 满足, 但 poster_url 仅波 1 站点有 → 波 1 仍执行."""
-        fp = defaultdict(lambda: [DB, DMM])
+    async def test_per_field_blacklist_skips_site(self):
+        """title 排除 javdb 后走下一站; studio 仍可用 javdb."""
+        fp = compile_priority([DB, DMM, BUS], {}, {MetadataField.TITLE: [DB]})
         graph = build_graph(fp, {})
 
-        # 波 0 javdb: 有所有标量字段, 无 poster_url
-        c1 = MockCrawler(result=MediaMetadata(number="X", title="T1", studio="S1", poster_urls=[]))
-        # 波 1 dmm: 有 poster_url
-        c2 = MockCrawler(result=MediaMetadata(number="X", poster_urls=["http://only-dmm.jpg"]))
+        crawlers = {
+            K1: MockCrawler(result=MediaMetadata(number="X", title="T_DB", studio="S_DB")),
+            K2: MockCrawler(result=MediaMetadata(number="X", title="T_DMM", studio="S_DMM")),
+            K3: MockCrawler(result=MediaMetadata(number="X", title="T_BUS", studio="S_BUS")),
+        }
 
-        state = await execute_graph(graph, {K1: c1, K2: c2}, SearchQuery("X"))
+        state = await execute_graph(graph, crawlers, SearchQuery("X"))
 
-        assert state.result.title == "T1"
-        assert len(c1.fetch_calls) == 1
-        assert len(c2.fetch_calls) == 1  # dmm 为 poster_url 而执行
-        assert state.result.poster_urls == ["http://only-dmm.jpg"]
+        assert state.result.title == "T_DMM"
+        assert state.result.field_sources["title"] == "dmm"
+        assert state.result.studio == "S_DB"
+        assert state.result.field_sources["studio"] == "javdb"
+
+    @pytest.mark.asyncio
+    async def test_three_way_fallback_chain(self):
+        """三站点优先级链: javdb → dmm → javbus, 前两个失败, 第三个救场."""
+        fp = defaultdict(lambda: [DB, DMM, BUS])
+        graph = build_graph(fp, {})
+
+        crawlers = {
+            K1: MockCrawler(result=None),
+            K2: MockCrawler(result=None),
+            K3: MockCrawler(result=MediaMetadata(number="X", title="LastResort")),
+        }
+
+        state = await execute_graph(graph, crawlers, SearchQuery("X"))
+
+        assert state.result.title == "LastResort"
+        assert state.result.field_sources["title"] == "javbus"
+        assert K1 in state.failed
+        assert K2 in state.failed
+        assert K3 not in state.failed
 
     @pytest.mark.asyncio
     async def test_db_cache_partial_hit_mixed_with_live_fetch(self):
@@ -771,91 +760,17 @@ class TestComplexScenarios:
             db_cache={"javdb": _full_metadata(number="X", title="Cached").model_dump()},
         )
 
-        # javdb 命中缓存 → 不调用爬虫
         assert len(c_javdb.fetch_calls) == 0
         assert state.result.title == "Cached"
 
     @pytest.mark.asyncio
-    async def test_three_way_fallback_chain(self):
-        """三站点优先级链: javdb → dmm → javbus, 前两个失败, 第三个救场."""
-        fp = defaultdict(lambda: [DB, DMM, BUS])
-        graph = build_graph(fp, {})
-
-        c1 = MockCrawler(result=None)  # javdb 失败
-        c2 = MockCrawler(result=None)  # dmm 失败
-        c3 = MockCrawler(result=MediaMetadata(number="X", title="LastResort"))
-
-        state = await execute_graph(graph, {K1: c1, K2: c2, K3: c3}, SearchQuery("X"))
-
-        assert state.result.title == "LastResort"
-        assert state.result.field_sources["title"] == "javbus"
-        assert K1 in state.failed
-        assert K2 in state.failed
-        assert K3 not in state.failed
-
-    @pytest.mark.asyncio
-    async def test_per_field_priority_overrides(self):
-        """不同字段不同优先级: title 偏 javbus, studio 偏 dmm.
-
-        title: [javbus, javdb, dmm]
-        studio: [dmm, javdb, javbus]
-        其余: [javdb, dmm, javbus]
-
-        所有站点返回完整数据 → title 来自 javbus, studio 来自 dmm.
-        """
-        fp = defaultdict(
-            lambda: [DB, DMM, BUS],
-            {
-                MetadataField.TITLE: [BUS, DB, DMM],
-                MetadataField.STUDIO: [DMM, DB, BUS],
-            },
-        )
-        graph = build_graph(fp, {})
-
-        c_javdb = MockCrawler(result=MediaMetadata(number="X", title="T_DB", studio="S_DB"))
-        c_dmm = MockCrawler(result=MediaMetadata(number="X", title="T_DMM", studio="S_DMM"))
-        c_bus = MockCrawler(result=MediaMetadata(number="X", title="T_BUS", studio="S_BUS"))
-
-        state = await execute_graph(graph, {K1: c_javdb, K2: c_dmm, K3: c_bus}, SearchQuery("X"))
-
-        assert state.result.title == "T_BUS"  # javbus 第一优先
-        assert state.result.field_sources["title"] == "javbus"
-        assert state.result.studio == "S_DMM"  # dmm 第一优先
-        assert state.result.field_sources["studio"] == "dmm"
-
-    @pytest.mark.asyncio
-    async def test_per_field_blacklist_skips_site(self):
-        """title 排除 javdb 后走下一站; studio 仍可用 javdb."""
-        fp = compile_priority([DB, DMM, BUS], {}, {MetadataField.TITLE: [DB]})
-        graph = build_graph(fp, {})
-
-        c_javdb = MockCrawler(result=MediaMetadata(number="X", title="T_DB", studio="S_DB"))
-        c_dmm = MockCrawler(result=MediaMetadata(number="X", title="T_DMM", studio="S_DMM"))
-        c_bus = MockCrawler(result=MediaMetadata(number="X", title="T_BUS", studio="S_BUS"))
-
-        state = await execute_graph(graph, {K1: c_javdb, K2: c_dmm, K3: c_bus}, SearchQuery("X"))
-
-        assert state.result.title == "T_DMM"
-        assert state.result.field_sources["title"] == "dmm"
-        assert state.result.studio == "S_DB"
-        assert state.result.field_sources["studio"] == "javdb"
-
-
-class TestAggregateFieldOrder:
-    """出演/评分把低优先级图片站拉进前波时, 列表仍按该字段站点顺序."""
-
-    @pytest.mark.asyncio
-    async def test_resrape_plugin_wave0_javdb_cache_later(self):
-        """有码补刮: 插件因出演/评分在第 0 波, javdb 缓存后到.
-
-        路由 dmm → javdb → 插件. actors/score 把插件提前.
-        dmm 无数据; javdb 无海报、有封面与剧照; 插件三类都有.
-        """
+    async def test_aggregate_fields_concatenate_in_chain_order(self):
+        """聚合类字段按字段链顺序拼接, 与请求阶段无关."""
         fp = compile_priority(
-            [DMM, DB, PLUGIN],
+            [DMM, DB, PLUGIN_K],
             {
-                MetadataField.ACTORS: [PLUGIN, DB, DMM],
-                MetadataField.SCORE: [PLUGIN, DB, DMM],
+                MetadataField.ACTORS: [PLUGIN_K, DB, DMM],
+                MetadataField.SCORE: [PLUGIN_K, DB, DMM],
             },
         )
         graph = build_graph(fp, {})
@@ -889,7 +804,7 @@ class TestAggregateFieldOrder:
             {
                 "dmm": MockCrawler(None),
                 K1: MockCrawler(MediaMetadata(number="NFDM-311", title="ShouldNotFetch")),
-                PLUGIN: MockCrawler(plugin_meta),
+                PLUGIN_K: MockCrawler(plugin_meta),
             },
             SearchQuery("NFDM-311"),
             db_cache={"javdb": javdb_snap},
@@ -898,58 +813,17 @@ class TestAggregateFieldOrder:
         assert state.result.title == "FromJavDB"
         assert state.result.field_sources["title"] == "javdb"
         assert [a.name for a in state.result.actors] == ["P1"]
-        assert state.result.field_sources["actors"] == PLUGIN
+        assert state.result.field_sources["actors"] == PLUGIN_K
         assert state.result.poster_urls == ["http://plugin/poster.jpg"]
         assert state.result.thumb_urls == ["http://jdbstatic/cover.jpg", "http://plugin/thumb.jpg"]
-        assert list(state.result.extrafanart_urls) == ["javdb", PLUGIN]
-        assert [s.site for s in state.result.scores] == [PLUGIN, "javdb"]
+        assert list(state.result.extrafanart_urls) == ["javdb", PLUGIN_K]
+        assert [s.site for s in state.result.scores] == [PLUGIN_K, "javdb"]
         assert [s.score for s in state.result.scores] == [4.1, 4.36]
-
-    @pytest.mark.asyncio
-    async def test_thumb_prefer_then_route_remainder(self):
-        """封面例外名单不含 javdb 时, 编译链仍是例外 ∩ 路由 + 其余路由保序."""
-        fp = compile_priority(
-            [DMM, DB, PLUGIN],
-            {
-                MetadataField.ACTORS: [PLUGIN, DB, DMM],
-                MetadataField.THUMB_URLS: [DMM],
-            },
-        )
-        graph = build_graph(fp, {})
-
-        state = await execute_graph(
-            graph,
-            {
-                "dmm": MockCrawler(None),
-                K1: MockCrawler(
-                    MediaMetadata(
-                        number="X",
-                        title="T",
-                        thumb_urls=["http://javdb/t.jpg"],
-                        extrafanart=["http://javdb/e.jpg"],
-                    )
-                ),
-                PLUGIN: MockCrawler(
-                    MediaMetadata.model_validate(
-                        {
-                            "number": "X",
-                            "actors": ["A"],
-                            "thumb_urls": ["http://plugin/t.jpg"],
-                            "extrafanart": ["http://plugin/e.jpg"],
-                        }
-                    )
-                ),
-            },
-            SearchQuery("X"),
-        )
-
-        assert state.result.thumb_urls == ["http://javdb/t.jpg", "http://plugin/t.jpg"]
-        assert list(state.result.extrafanart_urls) == ["javdb", PLUGIN]
 
     @pytest.mark.asyncio
     async def test_higher_priority_empty_url_does_not_occupy_slot(self):
         """图片链上更前的站该字段为空时, 列表从下一站有值处开始, 不留空位."""
-        fp = compile_priority([DB, DMM, PLUGIN], {MetadataField.SCORE: [PLUGIN, DB, DMM]})
+        fp = compile_priority([DB, DMM, PLUGIN_K], {MetadataField.SCORE: [PLUGIN_K, DB, DMM]})
         graph = build_graph(fp, {})
 
         state = await execute_graph(
@@ -961,7 +835,7 @@ class TestAggregateFieldOrder:
                 "dmm": MockCrawler(
                     MediaMetadata(number="X", poster_urls=["http://dmm/p.jpg"], thumb_urls=[], score=None)
                 ),
-                PLUGIN: MockCrawler(
+                PLUGIN_K: MockCrawler(
                     MediaMetadata(
                         number="X",
                         poster_urls=["http://plugin/p.jpg"],
@@ -975,26 +849,25 @@ class TestAggregateFieldOrder:
 
         assert state.result.poster_urls == ["http://dmm/p.jpg", "http://plugin/p.jpg"]
         assert state.result.thumb_urls == ["http://javdb/t.jpg", "http://plugin/t.jpg"]
-        assert [s.site for s in state.result.scores] == [PLUGIN, "javdb"]
+        assert [s.site for s in state.result.scores] == [PLUGIN_K, "javdb"]
 
 
 # ============================================================
-# execute_graph / aggregate - 进度回调
+# 进度回调与列表清理
 # ============================================================
 
 
 class TestProgressReporting:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "desc, setup, expect_calls_min, expect_final",
+        ("desc", "deferred", "expect_calls"),
         [
-            ("完整元数据: 最终 current==标量字段数", "full", 1, "all"),
-            ("全部失败: 仍上报但 current 为 0", "all_fail", 1, "zero"),
-            ("无回调: 不报错且无事件", "full_no_cb", 0, "none"),
+            ("无第二段: 每段一次", frozenset(), 1),
+            ("有第二段: 两段各一次", frozenset({DMM}), 2),
         ],
-        ids=["full", "all_fail", "no_callback"],
+        ids=["single_phase", "two_phases"],
     )
-    async def test_execute_graph_progress(self, desc: str, setup: str, expect_calls_min: int, expect_final: str):
+    async def test_execute_graph_progress(self, desc: str, deferred: frozenset[SiteName], expect_calls: int):
         fp = defaultdict(lambda: [DB, DMM])
         graph = build_graph(fp, {})
         events: list[tuple[int, int, str]] = []
@@ -1002,39 +875,40 @@ class TestProgressReporting:
         async def on_progress(current: int, total: int, message: str = "") -> None:
             events.append((current, total, message))
 
-        field_total = len(SCALAR_FIELDS)
-        cb: ProgressCallback | None
-        if setup == "full":
-            data = _full_metadata(number="X")
-            crawlers = {K1: MockCrawler(data), K2: MockCrawler(data)}
-            cb = on_progress
-        elif setup == "all_fail":
-            crawlers = {K1: MockCrawler(result=None), K2: FailingCrawler()}
-            cb = on_progress
-        elif setup == "full_no_cb":
-            data = _full_metadata(number="X")
-            crawlers = {K1: MockCrawler(data), K2: MockCrawler(data)}
-            cb = None
-        else:
-            raise AssertionError(setup)
+        data = _full_metadata(number="X")
+        await execute_graph(
+            graph,
+            {K1: MockCrawler(data), K2: MockCrawler(data)},
+            SearchQuery("X"),
+            on_progress=on_progress,
+            deferred_sites=deferred,
+        )
 
-        await execute_graph(graph, crawlers, SearchQuery("X"), on_progress=cb)
+        assert len(events) == expect_calls, desc
+        assert all(total == len(SCALAR_FIELDS) for _, total, _ in events), desc
+        assert all(message for _, _, message in events), "message should name fetched sites"
+        currents = [current for current, _, _ in events]
+        assert currents == sorted(currents)
+        assert events[-1][0] == len(SCALAR_FIELDS)
 
-        assert len(events) >= expect_calls_min, desc
-        if expect_final == "none":
-            assert events == []
-            return
+    @pytest.mark.asyncio
+    async def test_progress_counts_only_non_empty_scalars(self):
+        """分子只计非空取值; 全部来源为空时保持 0."""
+        fp = defaultdict(lambda: [DB])
+        graph = build_graph(fp, {})
+        events: list[tuple[int, int, str]] = []
 
-        assert all(t == field_total for _, t, _ in events), desc
-        currents = [c for c, _, _ in events]
-        assert currents == sorted(currents), f"not monotonic: {currents}"
-        assert all(m for _, _, m in events), "message should name fetched sites"
-        if expect_final == "all":
-            assert events[-1][0] == field_total, desc
-        elif expect_final == "zero":
-            assert events[-1][0] == 0, desc
-        else:
-            raise AssertionError(expect_final)
+        async def on_progress(current: int, total: int, message: str = "") -> None:
+            events.append((current, total, message))
+
+        await execute_graph(
+            graph,
+            {K1: MockCrawler(MediaMetadata(number="X", poster_urls=["http://p.jpg"]))},
+            SearchQuery("X"),
+            on_progress=on_progress,
+        )
+
+        assert events == [(0, len(SCALAR_FIELDS), K1)]
 
     @pytest.mark.asyncio
     async def test_aggregate_forwards_progress(self):
@@ -1054,6 +928,12 @@ class TestProgressReporting:
 
         assert events
         assert events[-1] == (len(SCALAR_FIELDS), len(SCALAR_FIELDS), "javdb")
+
+    @pytest.mark.asyncio
+    async def test_no_callback_is_silent(self):
+        fp = defaultdict(lambda: [DB])
+        graph = build_graph(fp, {})
+        await execute_graph(graph, {K1: MockCrawler(_full_metadata(number="X"))}, SearchQuery("X"))
 
     @pytest.mark.asyncio
     async def test_list_scalar_dedupes_duplicate_names(self):
@@ -1097,17 +977,17 @@ class TestProgressReporting:
 
 
 # ============================================================
-# 集成测试: DAG 图 + ScrapeHandler
+# 集成: cache 与 handler 判据的前置条件
 # ============================================================
 
 
 class TestFetchGraphIntegration:
     @pytest.mark.asyncio
-    async def test_aggregate_with_cache_and_fallback(self):
+    async def test_aggregate_with_cache_and_missing_source(self):
         """aggregate 配合 cache: javdb 快照命中, dmm 失败 → 部分成功."""
         fp = defaultdict(lambda: [DB, DMM])
 
-        c_dmm = MockCrawler(result=None)  # dmm 失败
+        c_dmm = MockCrawler(result=None)
 
         result = await aggregate(
             SearchQuery("X"),
@@ -1116,10 +996,8 @@ class TestFetchGraphIntegration:
             cache={"javdb": _full_metadata(number="X", title="CacheHit", studio="CS").model_dump()},
         )
 
-        # javdb 缓存命中
         assert result.metadata.title == "CacheHit"
         assert result.metadata.studio == "CS"
-        # dmm 失败被记录
         assert "dmm" in result.failed_sites
-        # javdb 未被实际请求
-        assert len(c_dmm.fetch_calls) == 1  # 只有 dmm 被真正请求
+        assert len(c_dmm.fetch_calls) == 1
+        assert result.raw

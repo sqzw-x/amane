@@ -3316,6 +3316,10 @@ export type SourceDescriptor = {
      */
     multi_language?: boolean;
     /**
+     * Traits
+     */
+    traits?: Array<string>;
+    /**
      * Rate Limit
      */
     rate_limit?: number | null;

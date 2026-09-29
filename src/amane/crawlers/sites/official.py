@@ -12,6 +12,7 @@ from parsel import Selector
 
 from ...enums import SiteName
 from ...net.connectivity import ConnectivityOutcome, probe_get
+from ...plugins.models import SourceTrait
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text
@@ -276,7 +277,10 @@ class OfficialCrawler(Crawler):
     @classmethod
     def profile(cls) -> CrawlerProfile:
         return CrawlerProfile(
-            name=SiteName.OFFICIAL, base_url="", urls=[f"https://{d}" for d in MANUFACTURER_DOMAINS.values()]
+            name=SiteName.OFFICIAL,
+            base_url="",
+            urls=[f"https://{d}" for d in MANUFACTURER_DOMAINS.values()],
+            traits=frozenset({SourceTrait.NEEDS_PARTIAL}),
         )
 
     @override

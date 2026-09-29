@@ -34,6 +34,7 @@ from ..media.watermarks import user_watermark_dir
 from ..net.http import RateLimiters, WebClient
 from ..playback import PlaybackFactory, PlaybackState
 from ..plugins.manager import PluginManager
+from ..plugins.models import SourceTrait
 from ..plugins.packaging import install_plugin_path, install_plugin_zip, uninstall_plugin_tree
 from ..scheduler.worker import AsyncWorker
 
@@ -366,6 +367,7 @@ def build_handlers(
             web_client,
             translator,
             plugin_manager.multi_language_sources if plugin_manager is not None else None,
+            plugin_manager.sources_with_trait(SourceTrait.NEEDS_PARTIAL) if plugin_manager is not None else None,
         ),
         TaskType.ACTOR_SCRAPE: ActorScrapeHandler(repo, factory, resource_store, hot, web_client),
         TaskType.ORGANIZE: OrganizeHandler(

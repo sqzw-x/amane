@@ -155,6 +155,36 @@ class TestScrapeHandler:
         assert result.success is False
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_empty_scalars_with_image_still_succeeds(self, repo: Repository, resource_store):
+        """标量全空但有海报 → 仍算抓到数据, 不整单失败."""
+
+        class PosterOnlyCrawler:
+            name = SiteName.JAVDB
+
+            def __init__(self, client=None):
+                self.client = client
+
+            async def fetch(self, query, options=None) -> MediaMetadata | None:
+                return MediaMetadata(number=query.number, poster_urls=["http://p.jpg"])
+
+        h = ScrapeHandler(
+            repo=repo,
+            factory=FakeFactory({"javdb": PosterOnlyCrawler()}),
+            resource_store=resource_store,
+            pipeline_config=HotSettings(),
+        )
+        media = await repo.create_media_file(library_id=1, path="/media/POSTER-001.mp4")
+        result = await h.handle(
+            ScrapePayload(media_file_id=media.id, number="POSTER-001", content_type=ContentType.CENSORED)
+        )
+        assert result.success is True
+        assert result.result is not None
+        assert result.result.field_sources == {}
+        metadata = await repo.get_metadata_by_number("POSTER-001")
+        assert metadata is not None
+        assert metadata.poster_urls == ["http://p.jpg"]
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_materializes_cropped_poster(self, repo: Repository, resource_store):
         """有 web_client 时, scrape 物化: poster 候选偏矮 → 裁剪 → metadata 记内部 URL."""
         from typing import ClassVar, cast
