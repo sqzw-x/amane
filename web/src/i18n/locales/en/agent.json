@@ -56,6 +56,7 @@
     "duration": "duration"
   },
   "loadingHistory": "Loading history…",
+  "historyLoadFailed": "Failed to load conversation history",
   "turnRunning": "Turn running",
   "thinking": {
     "label": "Thinking",

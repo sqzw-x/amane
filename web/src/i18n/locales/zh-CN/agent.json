@@ -56,6 +56,7 @@
     "duration": "耗时"
   },
   "loadingHistory": "加载历史…",
+  "historyLoadFailed": "会话历史加载失败",
   "turnRunning": "回合执行中",
   "thinking": {
     "label": "思考",

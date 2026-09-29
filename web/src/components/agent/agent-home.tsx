@@ -80,6 +80,8 @@ import {
   SavedQueryManager,
 } from "@/components/agent/saved-query-manager";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
+import i18n from "@/i18n";
+import { extractErrorMessage } from "@/lib/api-error";
 import { apiFetch } from "@/lib/api-token";
 import { useFold } from "@/lib/agent/fold";
 import {
@@ -734,17 +736,19 @@ function AgUiThread({
     [runtime],
   );
 
-  /** 取整段回放行: 重建展示, 并把运行时话题本与待批态对齐过去. */
+  /** 取整段回放行: 重建展示, 并把运行时话题本与待批态对齐过去; 失败抛错, 由调用处决定出路. */
   const snapshot = useCallback(async () => {
-    const { data } = await getAgentTrace({ path: { session_id: sessionId } });
-    if (!data) return;
+    const { data, error } = await getAgentTrace({ path: { session_id: sessionId } });
+    // hey-api 客户端把 HTTP / 网络失败都收进 error 字段而不抛错, 这里统一转成异常
+    if (!data) throw error;
     rowsRef.current = data.events;
     applyRows(data.events, true);
   }, [applyRows, sessionId]);
 
   /** 回合收尾后重取快照并刷新会话列表 (标题与审批态可能在回合里变过). */
   const settle = useCallback(async () => {
-    await snapshot();
+    // 快照失败不打断落定: 展示已由跟随收尾, 条幅照常刷新
+    await snapshot().catch(() => undefined);
     void queryClient.invalidateQueries({ queryKey: listAgentSessionsQueryKey() });
   }, [queryClient, snapshot]);
 
@@ -773,8 +777,8 @@ function AgUiThread({
           await wait(FOLLOW_RETRY_MS);
         }
       } catch {
-        // 订阅建不起来: 退回一次性快照
-        if (!controller.signal.aborted) await snapshot();
+        // 订阅建不起来: 退回一次性快照; 再失败无碍, 收尾照常清掉加载态
+        if (!controller.signal.aborted) await snapshot().catch(() => undefined);
       } finally {
         window.clearInterval(timer);
         followRef.current = null;
@@ -790,15 +794,29 @@ function AgUiThread({
   }, [applyRows, queryClient, runtime, sessionId, snapshot]);
 
   // 挂载: 先取整段历史, 再接上跟随 (挂载时回合可能正在后台运行, 跟随会一路跟到它结束).
+  // 取历史失败不留在加载态: 提示后放行, 页面照常可用.
   useEffect(() => {
     if (bootRef.current !== "idle") return;
     bootRef.current = "running";
     let cancelled = false;
     void (async () => {
-      await snapshot();
+      let failure: unknown = null;
+      try {
+        await snapshot();
+      } catch (error) {
+        failure = error;
+      }
       if (cancelled) return;
       bootRef.current = "done";
       setLoadingHistory(false);
+      if (failure !== null) {
+        notifications.show({
+          color: "red",
+          // 经单例取文案: t 的身份会随语言变化, 不属于引导的依赖
+          message: extractErrorMessage(failure, i18n.t("historyLoadFailed", { ns: "agent" })),
+        });
+        return;
+      }
       startFollow();
     })();
     return () => {
