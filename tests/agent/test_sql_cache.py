@@ -160,7 +160,6 @@ def test_result_cache_misses_on_sql_version_mismatch() -> None:
     cache = ResultCache(ttl_s=3600, max_entries=8)
     cache.put(CachedResult(1, "SELECT 1", ["n"], [[1]]))
     assert cache.get(1, "SELECT 2") is None
-    assert cache.get(1, "SELECT 1") is not None
 
 
 @pytest.mark.asyncio

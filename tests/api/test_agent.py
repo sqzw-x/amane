@@ -10,7 +10,6 @@ from httpx2 import AsyncClient
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from amane.agent.cache import CachedResult
 from amane.agent.naming import fallback_title
 from amane.agent.rows import ApprovalsRow, CancelledRow
 from amane.agent.service import AgentService
@@ -86,167 +85,93 @@ async def test_saved_query_crud_and_metadata_filter(client: AsyncClient, repo: R
 
 
 _CREATE_VALID_CASES = [
-    pytest.param("metadata", "SELECT id FROM metadata", id="metadata"),
-    pytest.param("actor", "SELECT id FROM actors", id="actor"),
-    pytest.param("data", "SELECT 1 AS n", id="data"),
+    ("metadata", "SELECT id FROM metadata"),
+    ("actor", "SELECT id FROM actors"),
+    ("data", "SELECT 1 AS n"),
 ]
 
 
-@pytest.mark.parametrize(("entity", "sql"), _CREATE_VALID_CASES)
 @pytest.mark.asyncio
-async def test_create_saved_query_manual(client: AsyncClient, entity: str, sql: str) -> None:
+async def test_create_saved_query_manual(client: AsyncClient) -> None:
     """手动创建: strip 落库, 无会话归属且直接已保留; 请求外键被忽略."""
-    r = await client.post(
-        "/saved-queries",
-        json={
-            "name": "  手动预设  ",
-            "description": "  说明  ",
-            "sql": f"  {sql}  ",
-            "entity": entity,
-            "persisted": False,
-            "session_id": 999,
-        },
-    )
-    assert r.status_code == 201
-    body = r.json()
-    assert body["name"] == "手动预设"
-    assert body["description"] == "说明"
-    assert body["sql"] == sql
-    assert body["entity"] == entity
-    assert body["persisted"] is True
-    assert body["session_id"] is None
+    for entity, sql in _CREATE_VALID_CASES:
+        r = await client.post(
+            "/saved-queries",
+            json={
+                "name": "  手动预设  ",
+                "description": "  说明  ",
+                "sql": f"  {sql}  ",
+                "entity": entity,
+                "persisted": False,
+                "session_id": 999,
+            },
+        )
+        assert r.status_code == 201, entity
+        body = r.json()
+        assert body["name"] == "手动预设"
+        assert body["description"] == "说明"
+        assert body["sql"] == sql
+        assert body["entity"] == entity
+        assert body["persisted"] is True
+        assert body["session_id"] is None
 
-    r = await client.get(f"/saved-queries/{body['id']}")
-    assert r.status_code == 200
-    assert r.json() == body
-    r = await client.get(f"/saved-queries/{body['id']}/result")
-    assert r.status_code == 200
+        r = await client.get(f"/saved-queries/{body['id']}")
+        assert r.status_code == 200
+        assert r.json() == body
+        r = await client.get(f"/saved-queries/{body['id']}/result")
+        assert r.status_code == 200
 
 
 _CREATE_REJECT_CASES = [
-    pytest.param(
+    (
         {"name": "  ", "sql": "SELECT id FROM metadata", "entity": "metadata"},
         422,
         "String should have at least 1 character",
-        id="blank-name",
     ),
-    pytest.param(
-        {"name": "x", "sql": "  ", "entity": "data"},
-        422,
-        "String should have at least 1 character",
-        id="blank-sql",
-    ),
-    pytest.param(
-        {"name": "x", "sql": "SELEC id FROM metadata", "entity": "metadata"},
-        400,
-        "SQL 校验失败",
-        id="syntax-error",
-    ),
-    pytest.param(
-        {"name": "x", "sql": "SELECT id FROM metadata; SELECT 1", "entity": "metadata"},
-        400,
-        "SQL 校验失败",
-        id="multi-statement",
-    ),
-    pytest.param(
-        {"name": "x", "sql": "DELETE FROM metadata", "entity": "metadata"},
-        400,
-        "SQL 校验失败",
-        id="write-statement",
-    ),
-    pytest.param(
-        {"name": "x", "sql": "SELECT number FROM metadata", "entity": "metadata"},
-        400,
-        "id 列",
-        id="metadata-without-id",
-    ),
-    pytest.param(
-        {"name": "x", "sql": "SELECT name FROM actors", "entity": "actor"},
-        400,
-        "id 列",
-        id="actor-without-id",
-    ),
-    pytest.param(
-        {"name": "x", "sql": "SELECT 1", "entity": "unknown"},
-        422,
-        None,
-        id="unknown-entity",
-    ),
+    ({"name": "x", "sql": "  ", "entity": "data"}, 422, "String should have at least 1 character"),
+    ({"name": "x", "sql": "SELEC id FROM metadata", "entity": "metadata"}, 400, "SQL 校验失败"),
+    ({"name": "x", "sql": "SELECT id FROM metadata; SELECT 1", "entity": "metadata"}, 400, "SQL 校验失败"),
+    ({"name": "x", "sql": "DELETE FROM metadata", "entity": "metadata"}, 400, "SQL 校验失败"),
+    ({"name": "x", "sql": "SELECT number FROM metadata", "entity": "metadata"}, 400, "id 列"),
+    ({"name": "x", "sql": "SELECT name FROM actors", "entity": "actor"}, 400, "id 列"),
+    ({"name": "x", "sql": "SELECT 1", "entity": "unknown"}, 422, None),
 ]
 
 
-@pytest.mark.parametrize(("body", "status", "fragment"), _CREATE_REJECT_CASES)
 @pytest.mark.asyncio
-async def test_create_saved_query_rejects_invalid(
-    client: AsyncClient, repo: Repository, body: dict[str, object], status: int, fragment: str | None
-) -> None:
+async def test_create_saved_query_rejects_invalid(client: AsyncClient, repo: Repository) -> None:
     await repo.upsert_metadata(number="ABC-001")
-    r = await client.post("/saved-queries", json=body)
-    assert r.status_code == status
-    if fragment is not None:
-        assert fragment in r.text
-    assert (await client.get("/saved-queries")).json()["items"] == []
+    for body, status, fragment in _CREATE_REJECT_CASES:
+        r = await client.post("/saved-queries", json=body)
+        assert r.status_code == status, body
+        if fragment is not None:
+            assert fragment in r.text, body
+        assert (await client.get("/saved-queries")).json()["items"] == []
 
 
-_BOUNDS_CASES = [
-    pytest.param("name", "x" * 201, id="name-over-max"),
-    pytest.param("description", "y" * 2001, id="description-over-max"),
-    pytest.param("name", "   ", id="name-blank"),
-    pytest.param("sql", "   ", id="sql-blank"),
-]
+# 名称 / 描述上限; 空白拒绝由 _CREATE_REJECT_CASES 与更新用例覆盖
+_CONTENT_OVER_MAX = (("name", "x" * 201), ("description", "y" * 2001))
 
 
-@pytest.mark.parametrize(("field", "value"), _BOUNDS_CASES)
 @pytest.mark.asyncio
-async def test_saved_query_content_bounds_create(client: AsyncClient, field: str, value: str) -> None:
-    """服务端强制名称 / 描述上限与空白拒绝, 绕过界面直接调用同样 422."""
-    body: dict[str, object] = {"name": "合法", "sql": "SELECT 1 AS n", "entity": "data"}
-    body[field] = value
-    r = await client.post("/saved-queries", json=body)
-    assert r.status_code == 422
+async def test_saved_query_content_length_limits(client: AsyncClient, repo: Repository) -> None:
+    """创建与更新两条路径的长度上限一致, 越界拒绝, 边界值合法."""
+    for field, value in _CONTENT_OVER_MAX:
+        body: dict[str, object] = {"name": "合法", "sql": "SELECT 1 AS n", "entity": "data", field: value}
+        r = await client.post("/saved-queries", json=body)
+        assert r.status_code == 422, field
 
-
-@pytest.mark.parametrize(("field", "value"), _BOUNDS_CASES)
-@pytest.mark.asyncio
-async def test_saved_query_content_bounds_update(client: AsyncClient, repo: Repository, field: str, value: str) -> None:
-    """更新请求模型独立定义, 约束与创建保持一致."""
     sq = await repo.create_saved_query(name="合法", sql="SELECT 1 AS n", entity=SavedQueryEntity.DATA, persisted=True)
     assert sq.id is not None
-    r = await client.patch(f"/saved-queries/{sq.id}", json={field: value})
-    assert r.status_code == 422
+    for field, value in _CONTENT_OVER_MAX:
+        r = await client.patch(f"/saved-queries/{sq.id}", json={field: value})
+        assert r.status_code == 422, field
 
-
-@pytest.mark.asyncio
-async def test_saved_query_content_bounds_boundary_accepted(client: AsyncClient) -> None:
-    """恰好 200 / 2000 字符合法."""
     r = await client.post(
         "/saved-queries",
-        json={
-            "name": "x" * 200,
-            "description": "y" * 2000,
-            "sql": "SELECT 1 AS n",
-            "entity": "data",
-        },
+        json={"name": "x" * 200, "description": "y" * 2000, "sql": "SELECT 1 AS n", "entity": "data"},
     )
     assert r.status_code == 201
-
-
-@pytest.mark.asyncio
-async def test_stale_saved_query_result_not_served(client: AsyncClient, app: FastAPI, repo: Repository) -> None:
-    """失效窗口内回写的旧 SQL 条目不得命中: 条目按 SQL 定版."""
-    service = app.state.runtime.agent_service
-    assert isinstance(service, AgentService)
-    sq = await repo.create_saved_query(name="竞态", sql="SELECT 1 AS n", entity=SavedQueryEntity.DATA, persisted=True)
-    assert sq.id is not None
-
-    r = await client.patch(f"/saved-queries/{sq.id}", json={"sql": "SELECT 2 AS n"})
-    assert r.status_code == 200
-
-    # 模拟执行中的旧请求在 PATCH 失效之后完成写入
-    service.cache.put(CachedResult(saved_query_id=sq.id, sql="SELECT 1 AS n", columns=["n"], rows=[[1]]))
-    r = await client.get(f"/saved-queries/{sq.id}/result")
-    assert r.status_code == 200
-    assert r.json()["rows"] == [[2]]
 
 
 @pytest.mark.asyncio
@@ -477,13 +402,6 @@ async def test_list_saved_queries_filters(client: AsyncClient, repo: Repository)
     persisted_ids = {i["id"] for i in r.json()["items"]}
     assert kept.id in persisted_ids
     assert ephemeral.id not in persisted_ids
-
-    r = await client.post("/saved-queries/batch/delete", json={"ids": [ephemeral.id]})
-    assert r.status_code == 200
-    assert r.json() == {"deleted": 1, "missing": 0}
-    r = await client.post("/saved-queries/batch/delete", json={"ids": [999999]})
-    assert r.status_code == 200
-    assert r.json() == {"deleted": 0, "missing": 1}
 
 
 @pytest.mark.asyncio

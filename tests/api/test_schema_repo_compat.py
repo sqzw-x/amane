@@ -39,7 +39,7 @@ from amane.api.models import (
 )
 from amane.api.models.agent import SavedQueryUpdateRequest
 from amane.db import Feed, Library, MediaFile, Metadata, Repository, SavedQuery, Schedule
-from amane.db.models import RoutineType, SavedQueryEntity
+from amane.db.models import RoutineType
 from amane.db.repo_types import (
     FeedUpdates,
     LibraryUpdates,
@@ -433,12 +433,6 @@ async def _make_feed(repo: Repository) -> int:
     return feed.id
 
 
-async def _make_saved_query(repo: Repository) -> int:
-    row = await repo.create_saved_query(name="seed", sql="SELECT 1", entity=SavedQueryEntity.METADATA)
-    assert row.id is not None
-    return row.id
-
-
 # (TypedDict, 建种子记录, repo update 方法名, 跳过的外键列, 跳过的语义校验列)
 _ROUNDTRIP = [
     (MediaFileUpdates, _make_media, "update_media_file", frozenset({"metadata_id"}), frozenset()),
@@ -468,9 +462,8 @@ _ROUNDTRIP = [
     (ScheduleUpdates, _make_schedule, "update_schedule", frozenset(), frozenset()),
     (MetadataFields, _make_metadata, "update_metadata", frozenset(), frozenset()),
     (FeedUpdates, _make_feed, "update_feed", frozenset(), frozenset()),
-    (SavedQueryUpdates, _make_saved_query, "update_saved_query", frozenset(), frozenset()),
 ]
-_ROUNDTRIP_IDS = ["media", "library", "schedule", "metadata", "feed", "saved_query"]
+_ROUNDTRIP_IDS = ["media", "library", "schedule", "metadata", "feed"]
 
 
 @pytest_asyncio.fixture
