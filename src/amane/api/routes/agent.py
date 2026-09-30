@@ -3,8 +3,9 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from ...agent import AgentService
-from ...agent.sql import as_id_subquery_sql
+from ...agent.sql import SqlSandboxError, as_id_subquery_sql
 from ...db.models import DEFAULT_SESSION_TITLE, AgentSession, SavedQueryEntity
+from ...db.repo_types import SavedQueryUpdates
 from ...db.repository import Repository
 from ...utils.model import to_resp
 from ..deps import AgentDep, RepoDep, RuntimeDep
@@ -16,6 +17,10 @@ from ..models.agent import (
     AgentSessionTitleResponse,
     AgentSessionUpdateRequest,
     AgentTraceResponse,
+    SavedQueryBatchDeleteResponse,
+    SavedQueryBatchIdsRequest,
+    SavedQueryBatchPersistResponse,
+    SavedQueryCreateRequest,
     SavedQueryListResponse,
     SavedQueryResponse,
     SavedQueryResultResponse,
@@ -123,24 +128,88 @@ async def get_saved_query(query_id: int, repo: RepoDep) -> SavedQueryResponse:
     return to_resp(SavedQueryResponse, query)
 
 
-@router.patch("/saved-queries/{query_id}")
-async def update_saved_query(query_id: int, req: SavedQueryUpdateRequest, repo: RepoDep) -> SavedQueryResponse:
-    if req.name is None and req.persisted is None:
-        raise HTTPException(422, detail="无更新字段")
-    query = await repo.update_saved_query(query_id, name=req.name, persisted=req.persisted)
-    if query is None:
-        raise HTTPException(404, detail="查询预设不存在")
+async def _validate_saved_query(service: AgentService, sql: str, entity: SavedQueryEntity) -> None:
+    """创建 / 编辑前在只读沙箱里试跑; 截断结果不入缓存."""
+    try:
+        await service.executor.validate_saved_query(sql, entity=entity, timeout_ms=service.config.sql_timeout_ms)
+    except ValueError as exc:
+        raise HTTPException(400, detail=f"{entity.value} 预设的 SQL 必须返回 id 列") from exc
+    except SqlSandboxError as exc:
+        raise HTTPException(400, detail=f"SQL 校验失败: {exc}") from exc
+
+
+@router.post("/saved-queries", status_code=201)
+async def create_saved_query(req: SavedQueryCreateRequest, repo: RepoDep, service: AgentDep) -> SavedQueryResponse:
+    """手动创建: 无会话归属, 直接已保留."""
+    await _validate_saved_query(service, req.sql, req.entity)
+    query = await repo.create_saved_query(
+        name=req.name,
+        sql=req.sql,
+        entity=req.entity,
+        description=req.description,
+        persisted=True,
+    )
     return to_resp(SavedQueryResponse, query)
 
 
-@router.delete("/saved-queries/{query_id}", status_code=204)
-async def delete_saved_query(query_id: int, repo: RepoDep, runtime: RuntimeDep) -> None:
-    ok = await repo.delete_saved_query(query_id)
-    if not ok:
+@router.patch("/saved-queries/{query_id}")
+async def update_saved_query(
+    query_id: int, req: SavedQueryUpdateRequest, repo: RepoDep, service: AgentDep
+) -> SavedQueryResponse:
+    """仅内容字段; 类型 / 归属 / 保留态不可改. SQL 变化才重校验并失效缓存."""
+    if not req.model_fields_set:
+        raise HTTPException(422, detail="无更新字段")
+    query = await repo.get_saved_query(query_id)
+    if query is None:
         raise HTTPException(404, detail="查询预设不存在")
+
+    updates: SavedQueryUpdates = {}
+    if req.name is not None:
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(422, detail="name 不能为空")
+        updates["name"] = name
+    if req.description is not None:
+        updates["description"] = req.description.strip()
+    sql_changed = False
+    if req.sql is not None:
+        sql = req.sql.strip()
+        if not sql:
+            raise HTTPException(422, detail="sql 不能为空")
+        sql_changed = sql != query.sql.strip()
+        if sql_changed:
+            await _validate_saved_query(service, sql, query.entity)
+            updates["sql"] = sql
+
+    if not updates:
+        return to_resp(SavedQueryResponse, query)
+    updated = await repo.update_saved_query(query_id, **updates)
+    if updated is None:  # pragma: no cover - 上文已确认存在
+        raise HTTPException(404, detail="查询预设不存在")
+    if sql_changed:
+        service.cache.invalidate(query_id)
+    return to_resp(SavedQueryResponse, updated)
+
+
+@router.post("/saved-queries/batch/delete")
+async def batch_delete_saved_queries(
+    req: SavedQueryBatchIdsRequest, repo: RepoDep, runtime: RuntimeDep
+) -> SavedQueryBatchDeleteResponse:
+    """重复 id 只处理一次; 缓存失效尽力而为, 不因 AgentService 缺失而失败."""
+    deleted, missing = await repo.delete_saved_queries(req.ids)
     service = runtime.agent_service
     if service is not None:
-        service.cache.invalidate(query_id)
+        # 缓存键即预设 id (rowid 可复用), 缺失键的 invalidate 是 no-op.
+        for query_id in req.ids:
+            service.cache.invalidate(query_id)
+    return SavedQueryBatchDeleteResponse(deleted=deleted, missing=missing)
+
+
+@router.post("/saved-queries/batch/persist")
+async def batch_persist_saved_queries(req: SavedQueryBatchIdsRequest, repo: RepoDep) -> SavedQueryBatchPersistResponse:
+    """置为已保留并解绑会话; 幂等."""
+    persisted, missing = await repo.persist_saved_queries(req.ids)
+    return SavedQueryBatchPersistResponse(persisted=persisted, missing=missing)
 
 
 @router.get("/saved-queries/{query_id}/result")

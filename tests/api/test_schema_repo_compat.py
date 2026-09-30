@@ -36,9 +36,17 @@ from amane.api.models import (
     PartialMetadata,
     ScheduleUpdateRequest,
 )
-from amane.db import Feed, Library, MediaFile, Metadata, Repository, Schedule
-from amane.db.models import RoutineType
-from amane.db.repo_types import FeedUpdates, LibraryUpdates, MediaFileUpdates, MetadataFields, ScheduleUpdates
+from amane.api.models.agent import SavedQueryUpdateRequest
+from amane.db import Feed, Library, MediaFile, Metadata, Repository, SavedQuery, Schedule
+from amane.db.models import RoutineType, SavedQueryEntity
+from amane.db.repo_types import (
+    FeedUpdates,
+    LibraryUpdates,
+    MediaFileUpdates,
+    MetadataFields,
+    SavedQueryUpdates,
+    ScheduleUpdates,
+)
 from amane.utils.model import assert_model_subset, create_partial_model
 from tests.schema_template import copy_schema
 
@@ -325,8 +333,14 @@ _DISCIPLINE = [
         Feed,
         {"id", "etag", "last_modified", "next_fetch_at", "last_fetched_at", "last_error", "last_enqueued"},
     ),
+    (
+        SavedQueryUpdateRequest,
+        SavedQueryUpdates,
+        SavedQuery,
+        {"id", "entity", "session_id", "persisted", "created_at", "updated_at"},
+    ),
 ]
-_DISCIPLINE_IDS = ["media", "library", "schedule", "metadata", "feed"]
+_DISCIPLINE_IDS = ["media", "library", "schedule", "metadata", "feed", "saved_query"]
 
 
 class TestCovariantSubsetOfLibrary:
@@ -418,6 +432,12 @@ async def _make_feed(repo: Repository) -> int:
     return feed.id
 
 
+async def _make_saved_query(repo: Repository) -> int:
+    row = await repo.create_saved_query(name="seed", sql="SELECT 1", entity=SavedQueryEntity.METADATA)
+    assert row.id is not None
+    return row.id
+
+
 # (TypedDict, 建种子记录, repo update 方法名, 跳过的外键列, 跳过的语义校验列)
 _ROUNDTRIP = [
     (MediaFileUpdates, _make_media, "update_media_file", frozenset({"metadata_id"}), frozenset()),
@@ -447,8 +467,9 @@ _ROUNDTRIP = [
     (ScheduleUpdates, _make_schedule, "update_schedule", frozenset(), frozenset()),
     (MetadataFields, _make_metadata, "update_metadata", frozenset(), frozenset()),
     (FeedUpdates, _make_feed, "update_feed", frozenset(), frozenset()),
+    (SavedQueryUpdates, _make_saved_query, "update_saved_query", frozenset(), frozenset()),
 ]
-_ROUNDTRIP_IDS = ["media", "library", "schedule", "metadata", "feed"]
+_ROUNDTRIP_IDS = ["media", "library", "schedule", "metadata", "feed", "saved_query"]
 
 
 @pytest_asyncio.fixture

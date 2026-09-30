@@ -19,6 +19,7 @@ from amane.db.repository import Repository
 
 @pytest.mark.asyncio
 async def test_saved_query_crud_and_metadata_filter(client: AsyncClient, repo: Repository) -> None:
+    """Agent 交付路径的预设: 改名 / 保留 / 筛选深链 / 结果 / 批量删除."""
     session = await repo.create_agent_session(title="t")
     assert session.id is not None
 
@@ -37,13 +38,20 @@ async def test_saved_query_crud_and_metadata_filter(client: AsyncClient, repo: R
     r = await client.get(f"/saved-queries/{sq.id}")
     assert r.status_code == 200
     assert r.json()["name"] == "两部片子"
+    assert r.json()["description"] == ""
+    assert r.json()["persisted"] is False
 
-    r = await client.patch(f"/saved-queries/{sq.id}", json={"persisted": True, "name": "保留"})
+    r = await client.patch(f"/saved-queries/{sq.id}", json={"name": "改名"})
     assert r.status_code == 200
-    body = r.json()
-    assert body["persisted"] is True
-    assert body["session_id"] is None
-    assert body["name"] == "保留"
+    assert r.json()["name"] == "改名"
+
+    # 保留: 批量端点置 persisted 并解绑会话; 已保留行重复调用幂等
+    r = await client.post("/saved-queries/batch/persist", json={"ids": [sq.id, 999999]})
+    assert r.status_code == 200
+    assert r.json() == {"persisted": 1, "missing": 1}
+    r = await client.get(f"/saved-queries/{sq.id}")
+    assert r.json()["persisted"] is True
+    assert r.json()["session_id"] is None
 
     r = await client.get("/metadata", params={"saved_query_id": sq.id})
     assert r.status_code == 200
@@ -69,10 +77,278 @@ async def test_saved_query_crud_and_metadata_filter(client: AsyncClient, repo: R
     assert r.status_code == 200
     assert any(i["id"] == sq.id for i in r.json()["items"])
 
-    r = await client.delete(f"/saved-queries/{sq.id}")
-    assert r.status_code == 204
+    r = await client.post("/saved-queries/batch/delete", json={"ids": [sq.id]})
+    assert r.status_code == 200
+    assert r.json() == {"deleted": 1, "missing": 0}
     r = await client.get(f"/saved-queries/{sq.id}")
     assert r.status_code == 404
+
+
+_CREATE_VALID_CASES = [
+    pytest.param("metadata", "SELECT id FROM metadata", id="metadata"),
+    pytest.param("actor", "SELECT id FROM actors", id="actor"),
+    pytest.param("data", "SELECT 1 AS n", id="data"),
+]
+
+
+@pytest.mark.parametrize(("entity", "sql"), _CREATE_VALID_CASES)
+@pytest.mark.asyncio
+async def test_create_saved_query_manual(client: AsyncClient, entity: str, sql: str) -> None:
+    """手动创建: strip 落库, 无会话归属且直接已保留; 请求外键被忽略."""
+    r = await client.post(
+        "/saved-queries",
+        json={
+            "name": "  手动预设  ",
+            "description": "  说明  ",
+            "sql": f"  {sql}  ",
+            "entity": entity,
+            "persisted": False,
+            "session_id": 999,
+        },
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["name"] == "手动预设"
+    assert body["description"] == "说明"
+    assert body["sql"] == sql
+    assert body["entity"] == entity
+    assert body["persisted"] is True
+    assert body["session_id"] is None
+
+    r = await client.get(f"/saved-queries/{body['id']}")
+    assert r.status_code == 200
+    assert r.json() == body
+    r = await client.get(f"/saved-queries/{body['id']}/result")
+    assert r.status_code == 200
+
+
+_CREATE_REJECT_CASES = [
+    pytest.param(
+        {"name": "  ", "sql": "SELECT id FROM metadata", "entity": "metadata"},
+        422,
+        "name 不能为空",
+        id="blank-name",
+    ),
+    pytest.param(
+        {"name": "x", "sql": "  ", "entity": "data"},
+        422,
+        "sql 不能为空",
+        id="blank-sql",
+    ),
+    pytest.param(
+        {"name": "x", "sql": "SELEC id FROM metadata", "entity": "metadata"},
+        400,
+        "SQL 校验失败",
+        id="syntax-error",
+    ),
+    pytest.param(
+        {"name": "x", "sql": "SELECT id FROM metadata; SELECT 1", "entity": "metadata"},
+        400,
+        "SQL 校验失败",
+        id="multi-statement",
+    ),
+    pytest.param(
+        {"name": "x", "sql": "DELETE FROM metadata", "entity": "metadata"},
+        400,
+        "SQL 校验失败",
+        id="write-statement",
+    ),
+    pytest.param(
+        {"name": "x", "sql": "SELECT number FROM metadata", "entity": "metadata"},
+        400,
+        "id 列",
+        id="metadata-without-id",
+    ),
+    pytest.param(
+        {"name": "x", "sql": "SELECT name FROM actors", "entity": "actor"},
+        400,
+        "id 列",
+        id="actor-without-id",
+    ),
+    pytest.param(
+        {"name": "x", "sql": "SELECT 1", "entity": "unknown"},
+        422,
+        None,
+        id="unknown-entity",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "status", "fragment"), _CREATE_REJECT_CASES)
+@pytest.mark.asyncio
+async def test_create_saved_query_rejects_invalid(
+    client: AsyncClient, repo: Repository, body: dict[str, object], status: int, fragment: str | None
+) -> None:
+    await repo.upsert_metadata(number="ABC-001")
+    r = await client.post("/saved-queries", json=body)
+    assert r.status_code == status
+    if fragment is not None:
+        assert fragment in r.text
+    assert (await client.get("/saved-queries")).json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_update_saved_query_content_and_rejection(client: AsyncClient, repo: Repository) -> None:
+    m1 = await repo.upsert_metadata(number="ABC-001", title="First")
+    m2 = await repo.upsert_metadata(number="ABC-002", title="Second")
+    assert m1.id is not None and m2.id is not None
+    sq = await repo.create_saved_query(
+        name="旧名",
+        description="旧描述",
+        sql=f"SELECT id FROM metadata WHERE id = {m1.id}",
+        entity=SavedQueryEntity.METADATA,
+        persisted=True,
+    )
+    assert sq.id is not None
+    path = f"/saved-queries/{sq.id}"
+
+    # 预热缓存: 旧 SQL 一行
+    r = await client.get(f"{path}/result")
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+
+    r = await client.patch(
+        path,
+        json={
+            "name": "  新名  ",
+            "description": "新描述",
+            "sql": f"SELECT id FROM metadata WHERE id IN ({m1.id}, {m2.id})",
+            "entity": "data",
+            "persisted": False,
+            "session_id": None,
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] == "新名"
+    assert body["description"] == "新描述"
+    assert body["entity"] == "metadata"  # 类型不可改, 多余键被忽略
+    assert body["persisted"] is True
+    assert body["session_id"] is None
+
+    # SQL 变更失效缓存: 重新执行得到两行
+    r = await client.get(f"{path}/result")
+    assert r.status_code == 200
+    assert r.json()["total"] == 2
+
+    r = await client.patch(path, json={"description": ""})
+    assert r.status_code == 200
+    assert r.json()["description"] == ""
+
+    # 无字段 / null / 空白 / 未知 id
+    r = await client.patch(path, json={})
+    assert r.status_code == 422
+    assert "无更新字段" in r.text
+    r = await client.patch(path, json={"name": None})
+    assert r.status_code == 422
+    r = await client.patch(path, json={"description": None})
+    assert r.status_code == 422
+    r = await client.patch(path, json={"sql": None})
+    assert r.status_code == 422
+    r = await client.patch(path, json={"name": "   "})
+    assert r.status_code == 422
+    assert "name 不能为空" in r.text
+    r = await client.patch("/saved-queries/999999", json={"name": "x"})
+    assert r.status_code == 404
+
+    # 原子性: 非法 SQL 时 name 不落库
+    r = await client.patch(path, json={"name": "不应落库", "sql": "SELECT number FROM metadata"})
+    assert r.status_code == 400
+    assert "id 列" in r.text
+    assert (await client.get(path)).json()["name"] == "新名"
+
+
+@pytest.mark.asyncio
+async def test_batch_delete_saved_queries(app: FastAPI, client: AsyncClient, repo: Repository) -> None:
+    """批量删除: 不去重, 结果 + missing == len(ids); 缓存同步失效."""
+    service = app.state.runtime.agent_service
+    assert isinstance(service, AgentService)
+
+    async def make(name: str) -> int:
+        row = await repo.create_saved_query(
+            name=name,
+            sql="SELECT 1 AS n",
+            entity=SavedQueryEntity.DATA,
+            persisted=True,
+        )
+        assert row.id is not None
+        return row.id
+
+    a = await make("a")
+    b = await make("b")
+
+    # 预热缓存, 删除后必须失效
+    r = await client.get(f"/saved-queries/{a}/result")
+    assert r.status_code == 200
+    assert service.cache.get(a) is not None
+
+    r = await client.post("/saved-queries/batch/delete", json={"ids": [a, b, 999999]})
+    assert r.status_code == 200
+    assert r.json() == {"deleted": 2, "missing": 1}
+    assert service.cache.get(a) is None
+    assert (await client.get(f"/saved-queries/{a}/result")).status_code == 404
+    assert await repo.get_saved_query(b) is None
+
+    # 重复 id 只处理一次
+    c = await make("c")
+    r = await client.post("/saved-queries/batch/delete", json={"ids": [c, c]})
+    assert r.json() == {"deleted": 1, "missing": 0}
+
+    r = await client.post("/saved-queries/batch/delete", json={"ids": []})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_batch_persist_saved_queries(client: AsyncClient, repo: Repository) -> None:
+    """批量保留: 幂等; 未保留的会话预设解绑会话."""
+    session = await repo.create_agent_session(title="persist")
+    assert session.id is not None
+    ephemeral = await repo.create_saved_query(
+        name="tmp",
+        sql="SELECT 1 AS n",
+        entity=SavedQueryEntity.DATA,
+        session_id=session.id,
+        persisted=False,
+    )
+    assert ephemeral.id is not None
+
+    r = await client.post("/saved-queries/batch/persist", json={"ids": [ephemeral.id, 999999]})
+    assert r.status_code == 200
+    assert r.json() == {"persisted": 1, "missing": 1}
+
+    row = await repo.get_saved_query(ephemeral.id)
+    assert row is not None
+    assert row.persisted is True
+    assert row.session_id is None
+
+    r = await client.post("/saved-queries/batch/persist", json={"ids": [ephemeral.id]})
+    assert r.json() == {"persisted": 1, "missing": 0}
+
+
+@pytest.mark.asyncio
+async def test_delete_session_invalidates_ephemeral_cache(app: FastAPI, client: AsyncClient, repo: Repository) -> None:
+    """删会话清理未保留预设时必须失效结果缓存 (预设 id 是 rowid, 可复用)."""
+    service = app.state.runtime.agent_service
+    assert isinstance(service, AgentService)
+    session = await service.create_session(title="cache")
+    assert session.id is not None
+    sq = await repo.create_saved_query(
+        name="tmp",
+        sql="SELECT 1 AS n",
+        entity=SavedQueryEntity.DATA,
+        session_id=session.id,
+        persisted=False,
+    )
+    assert sq.id is not None
+
+    r = await client.get(f"/saved-queries/{sq.id}/result")
+    assert r.status_code == 200
+    assert service.cache.get(sq.id) is not None
+
+    r = await client.delete(f"/agent/sessions/{session.id}")
+    assert r.status_code == 204
+    assert service.cache.get(sq.id) is None
+    assert await repo.get_saved_query(sq.id) is None
 
 
 @pytest.mark.asyncio
@@ -122,7 +398,7 @@ async def test_list_saved_queries_filters(client: AsyncClient, repo: Repository)
         persisted=True,
     )
     assert ephemeral.id is not None and kept.id is not None
-    await repo.update_saved_query(kept.id, persisted=True)
+    await repo.persist_saved_queries([kept.id])
 
     r = await client.get("/saved-queries", params={"session_id": session.id})
     assert r.status_code == 200
@@ -136,10 +412,12 @@ async def test_list_saved_queries_filters(client: AsyncClient, repo: Repository)
     assert kept.id in persisted_ids
     assert ephemeral.id not in persisted_ids
 
-    r = await client.delete(f"/saved-queries/{ephemeral.id}")
-    assert r.status_code == 204
-    r = await client.delete("/saved-queries/999999")
-    assert r.status_code == 404
+    r = await client.post("/saved-queries/batch/delete", json={"ids": [ephemeral.id]})
+    assert r.status_code == 200
+    assert r.json() == {"deleted": 1, "missing": 0}
+    r = await client.post("/saved-queries/batch/delete", json={"ids": [999999]})
+    assert r.status_code == 200
+    assert r.json() == {"deleted": 0, "missing": 1}
 
 
 @pytest.mark.asyncio
@@ -151,10 +429,10 @@ async def test_delete_session_keeps_persisted_query(client: AsyncClient, repo: R
         sql="SELECT id FROM metadata WHERE 0",
         entity=SavedQueryEntity.METADATA,
         session_id=session.id,
-        persisted=True,
+        persisted=False,
     )
     assert sq.id is not None
-    await repo.update_saved_query(sq.id, persisted=True)
+    assert await repo.persist_saved_queries([sq.id]) == (1, 0)
 
     r = await client.delete(f"/agent/sessions/{session.id}")
     assert r.status_code == 204

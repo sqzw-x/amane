@@ -5805,6 +5805,96 @@ export const RoutineTypeSchema = {
     title: 'RoutineType'
 } as const;
 
+export const SavedQueryBatchDeleteResponseSchema = {
+    properties: {
+        deleted: {
+            type: 'integer',
+            title: 'Deleted',
+            description: '成功删除的数量'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing',
+            description: '不存在的 id 数量'
+        }
+    },
+    type: 'object',
+    required: [
+        'deleted',
+        'missing'
+    ],
+    title: 'SavedQueryBatchDeleteResponse'
+} as const;
+
+export const SavedQueryBatchIdsRequestSchema = {
+    properties: {
+        ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Ids',
+            description: '查询预设 ID 列表'
+        }
+    },
+    type: 'object',
+    required: [
+        'ids'
+    ],
+    title: 'SavedQueryBatchIdsRequest'
+} as const;
+
+export const SavedQueryBatchPersistResponseSchema = {
+    properties: {
+        persisted: {
+            type: 'integer',
+            title: 'Persisted',
+            description: '找到并置为已保留的数量 (已保留的也计入, 幂等)'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing',
+            description: '不存在的 id 数量'
+        }
+    },
+    type: 'object',
+    required: [
+        'persisted',
+        'missing'
+    ],
+    title: 'SavedQueryBatchPersistResponse'
+} as const;
+
+export const SavedQueryCreateRequestSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            title: 'Description',
+            default: ''
+        },
+        sql: {
+            type: 'string',
+            title: 'Sql'
+        },
+        entity: {
+            $ref: '#/components/schemas/SavedQueryEntity'
+        }
+    },
+    type: 'object',
+    required: [
+        'name',
+        'sql',
+        'entity'
+    ],
+    title: 'SavedQueryCreateRequest',
+    description: '手动创建: 内容 + 类型; 归属与保留态由服务端固定 (无会话, 已保留).'
+} as const;
+
 export const SavedQueryEntitySchema = {
     type: 'string',
     enum: [
@@ -5843,6 +5933,10 @@ export const SavedQueryResponseSchema = {
             type: 'string',
             title: 'Name'
         },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
         sql: {
             type: 'string',
             title: 'Sql'
@@ -5880,6 +5974,7 @@ export const SavedQueryResponseSchema = {
     required: [
         'id',
         'name',
+        'description',
         'sql',
         'entity',
         'session_id',
@@ -5941,9 +6036,7 @@ export const SavedQueryUpdateRequestSchema = {
         name: {
             anyOf: [
                 {
-                    type: 'string',
-                    maxLength: 200,
-                    minLength: 1
+                    type: 'string'
                 },
                 {
                     type: 'null'
@@ -5951,16 +6044,27 @@ export const SavedQueryUpdateRequestSchema = {
             ],
             title: 'Name'
         },
-        persisted: {
+        description: {
             anyOf: [
                 {
-                    type: 'boolean'
+                    type: 'string'
                 },
                 {
                     type: 'null'
                 }
             ],
-            title: 'Persisted'
+            title: 'Description'
+        },
+        sql: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Sql'
         }
     },
     type: 'object',

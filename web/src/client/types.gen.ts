@@ -2885,6 +2885,75 @@ export type RescrapeTarget = 'metadata' | 'actor';
 export type RoutineType = 'cleanup' | 'upscale' | 'r18_import' | 'rescrape';
 
 /**
+ * SavedQueryBatchDeleteResponse
+ */
+export type SavedQueryBatchDeleteResponse = {
+    /**
+     * Deleted
+     *
+     * 成功删除的数量
+     */
+    deleted: number;
+    /**
+     * Missing
+     *
+     * 不存在的 id 数量
+     */
+    missing: number;
+};
+
+/**
+ * SavedQueryBatchIdsRequest
+ */
+export type SavedQueryBatchIdsRequest = {
+    /**
+     * Ids
+     *
+     * 查询预设 ID 列表
+     */
+    ids: Array<number>;
+};
+
+/**
+ * SavedQueryBatchPersistResponse
+ */
+export type SavedQueryBatchPersistResponse = {
+    /**
+     * Persisted
+     *
+     * 找到并置为已保留的数量 (已保留的也计入, 幂等)
+     */
+    persisted: number;
+    /**
+     * Missing
+     *
+     * 不存在的 id 数量
+     */
+    missing: number;
+};
+
+/**
+ * SavedQueryCreateRequest
+ *
+ * 手动创建: 内容 + 类型; 归属与保留态由服务端固定 (无会话, 已保留).
+ */
+export type SavedQueryCreateRequest = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Sql
+     */
+    sql: string;
+    entity: SavedQueryEntity;
+};
+
+/**
  * SavedQueryEntity
  *
  * 交付目标, 决定 Browse 深链与主键语义.
@@ -2913,6 +2982,10 @@ export type SavedQueryResponse = {
      * Name
      */
     name: string;
+    /**
+     * Description
+     */
+    description: string;
     /**
      * Sql
      */
@@ -2975,9 +3048,13 @@ export type SavedQueryUpdateRequest = {
      */
     name?: string | null;
     /**
-     * Persisted
+     * Description
      */
-    persisted?: boolean | null;
+    description?: string | null;
+    /**
+     * Sql
+     */
+    sql?: string | null;
 };
 
 /**
@@ -7107,35 +7184,30 @@ export type ListSavedQueriesResponses = {
 
 export type ListSavedQueriesResponse = ListSavedQueriesResponses[keyof ListSavedQueriesResponses];
 
-export type DeleteSavedQueryData = {
-    body?: never;
-    path: {
-        /**
-         * Query Id
-         */
-        query_id: number;
-    };
+export type CreateSavedQueryData = {
+    body: SavedQueryCreateRequest;
+    path?: never;
     query?: never;
-    url: '/api/saved-queries/{query_id}';
+    url: '/api/saved-queries';
 };
 
-export type DeleteSavedQueryErrors = {
+export type CreateSavedQueryErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type DeleteSavedQueryError = DeleteSavedQueryErrors[keyof DeleteSavedQueryErrors];
+export type CreateSavedQueryError = CreateSavedQueryErrors[keyof CreateSavedQueryErrors];
 
-export type DeleteSavedQueryResponses = {
+export type CreateSavedQueryResponses = {
     /**
      * Successful Response
      */
-    204: void;
+    201: SavedQueryResponse;
 };
 
-export type DeleteSavedQueryResponse = DeleteSavedQueryResponses[keyof DeleteSavedQueryResponses];
+export type CreateSavedQueryResponse = CreateSavedQueryResponses[keyof CreateSavedQueryResponses];
 
 export type GetSavedQueryData = {
     body?: never;
@@ -7196,6 +7268,56 @@ export type UpdateSavedQueryResponses = {
 };
 
 export type UpdateSavedQueryResponse = UpdateSavedQueryResponses[keyof UpdateSavedQueryResponses];
+
+export type BatchDeleteSavedQueriesData = {
+    body: SavedQueryBatchIdsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/saved-queries/batch/delete';
+};
+
+export type BatchDeleteSavedQueriesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BatchDeleteSavedQueriesError = BatchDeleteSavedQueriesErrors[keyof BatchDeleteSavedQueriesErrors];
+
+export type BatchDeleteSavedQueriesResponses = {
+    /**
+     * Successful Response
+     */
+    200: SavedQueryBatchDeleteResponse;
+};
+
+export type BatchDeleteSavedQueriesResponse = BatchDeleteSavedQueriesResponses[keyof BatchDeleteSavedQueriesResponses];
+
+export type BatchPersistSavedQueriesData = {
+    body: SavedQueryBatchIdsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/saved-queries/batch/persist';
+};
+
+export type BatchPersistSavedQueriesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BatchPersistSavedQueriesError = BatchPersistSavedQueriesErrors[keyof BatchPersistSavedQueriesErrors];
+
+export type BatchPersistSavedQueriesResponses = {
+    /**
+     * Successful Response
+     */
+    200: SavedQueryBatchPersistResponse;
+};
+
+export type BatchPersistSavedQueriesResponse = BatchPersistSavedQueriesResponses[keyof BatchPersistSavedQueriesResponses];
 
 export type GetSavedQueryResultData = {
     body?: never;

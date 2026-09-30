@@ -354,6 +354,14 @@ class CommentUpdates(TypedDict, total=False):
     body: str
 
 
+class SavedQueryUpdates(TypedDict, total=False):
+    """查询预设的内容字段; 类型 / 归属 / 保留态不经此更新."""
+
+    name: str
+    description: str
+    sql: str
+
+
 class UserTagUpdates(TypedDict, total=False):
     name: str
 

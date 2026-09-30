@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..db.models import SavedQuery
+from ..db.models import SavedQuery, SavedQueryEntity
 from .cache import CachedResult, ResultCache
 from .sql import ReadonlySqlSandbox, SqlResult
 
@@ -47,6 +47,15 @@ class QueryExecutor:
             approved=approved,
             max_rows=max_rows,
         )
+
+    async def validate_saved_query(self, sql: str, *, entity: SavedQueryEntity, timeout_ms: int) -> None:
+        """校验预设 SQL 可执行且满足实体契约; 截断结果不写缓存.
+
+        ``entity`` 非 ``data`` 时结果须含 ``id`` 列 (缺失抛 ValueError).
+        """
+        result = await self.run_sql(sql, timeout_ms=timeout_ms, max_rows=1)
+        if entity is not SavedQueryEntity.DATA:
+            extract_entity_ids(result.columns, result.rows)
 
     async def ensure_cached(
         self,

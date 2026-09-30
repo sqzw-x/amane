@@ -630,6 +630,7 @@ class SavedQuery(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(nullable=False)
+    description: str = Field(default="", nullable=False)
     sql: str = Field(nullable=False)
     entity: SavedQueryEntity = Field(index=True)
     session_id: int | None = Field(default=None, foreign_key="agent_sessions.id", index=True)

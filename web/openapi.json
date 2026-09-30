@@ -5290,6 +5290,46 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Create Saved Query",
+        "description": "手动创建: 无会话归属, 直接已保留.",
+        "operationId": "create_saved_query",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedQueryCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/saved-queries/{query_id}": {
@@ -5338,6 +5378,7 @@
           "agent"
         ],
         "summary": "Update Saved Query",
+        "description": "仅内容字段; 类型 / 归属 / 保留态不可改. SQL 变化才重校验并失效缓存.",
         "operationId": "update_saved_query",
         "parameters": [
           {
@@ -5382,27 +5423,78 @@
             }
           }
         }
-      },
-      "delete": {
+      }
+    },
+    "/api/saved-queries/batch/delete": {
+      "post": {
         "tags": [
           "agent"
         ],
-        "summary": "Delete Saved Query",
-        "operationId": "delete_saved_query",
-        "parameters": [
-          {
-            "name": "query_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Query Id"
+        "summary": "Batch Delete Saved Queries",
+        "description": "重复 id 只处理一次; 缓存失效尽力而为, 不因 AgentService 缺失而失败.",
+        "operationId": "batch_delete_saved_queries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedQueryBatchIdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryBatchDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
             }
           }
+        }
+      }
+    },
+    "/api/saved-queries/batch/persist": {
+      "post": {
+        "tags": [
+          "agent"
         ],
+        "summary": "Batch Persist Saved Queries",
+        "description": "置为已保留并解绑会话; 幂等.",
+        "operationId": "batch_persist_saved_queries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedQueryBatchIdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
-          "204": {
-            "description": "Successful Response"
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryBatchPersistResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -11298,6 +11390,92 @@
         ],
         "title": "RoutineType"
       },
+      "SavedQueryBatchDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted",
+            "description": "成功删除的数量"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing",
+            "description": "不存在的 id 数量"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "missing"
+        ],
+        "title": "SavedQueryBatchDeleteResponse"
+      },
+      "SavedQueryBatchIdsRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Ids",
+            "description": "查询预设 ID 列表"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "title": "SavedQueryBatchIdsRequest"
+      },
+      "SavedQueryBatchPersistResponse": {
+        "properties": {
+          "persisted": {
+            "type": "integer",
+            "title": "Persisted",
+            "description": "找到并置为已保留的数量 (已保留的也计入, 幂等)"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing",
+            "description": "不存在的 id 数量"
+          }
+        },
+        "type": "object",
+        "required": [
+          "persisted",
+          "missing"
+        ],
+        "title": "SavedQueryBatchPersistResponse"
+      },
+      "SavedQueryCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "sql": {
+            "type": "string",
+            "title": "Sql"
+          },
+          "entity": {
+            "$ref": "#/components/schemas/SavedQueryEntity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "sql",
+          "entity"
+        ],
+        "title": "SavedQueryCreateRequest",
+        "description": "手动创建: 内容 + 类型; 归属与保留态由服务端固定 (无会话, 已保留)."
+      },
       "SavedQueryEntity": {
         "type": "string",
         "enum": [
@@ -11333,6 +11511,10 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
           },
           "sql": {
             "type": "string",
@@ -11371,6 +11553,7 @@
         "required": [
           "id",
           "name",
+          "description",
           "sql",
           "entity",
           "session_id",
@@ -11430,9 +11613,7 @@
           "name": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 200,
-                "minLength": 1
+                "type": "string"
               },
               {
                 "type": "null"
@@ -11440,16 +11621,27 @@
             ],
             "title": "Name"
           },
-          "persisted": {
+          "description": {
             "anyOf": [
               {
-                "type": "boolean"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Persisted"
+            "title": "Description"
+          },
+          "sql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql"
           }
         },
         "type": "object",
