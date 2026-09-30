@@ -2141,7 +2141,7 @@ export const getSavedQueryOptions = (options: Options<GetSavedQueryData>) => que
 /**
  * Update Saved Query
  *
- * 仅内容字段; 类型 / 归属 / 保留态不可改. SQL 变化才重校验并失效缓存.
+ * SQL 变化才重校验并失效缓存.
  */
 export const updateSavedQueryMutation = (options?: Partial<Options<UpdateSavedQueryData>>): UseMutationOptions<UpdateSavedQueryResponse, UpdateSavedQueryError, Options<UpdateSavedQueryData>> => {
     const mutationOptions: UseMutationOptions<UpdateSavedQueryResponse, UpdateSavedQueryError, Options<UpdateSavedQueryData>> = {
@@ -2160,7 +2160,7 @@ export const updateSavedQueryMutation = (options?: Partial<Options<UpdateSavedQu
 /**
  * Batch Delete Saved Queries
  *
- * 重复 id 只处理一次; 缓存失效尽力而为, 不因 AgentService 缺失而失败.
+ * AgentService 未装配时跳过缓存失效.
  */
 export const batchDeleteSavedQueriesMutation = (options?: Partial<Options<BatchDeleteSavedQueriesData>>): UseMutationOptions<BatchDeleteSavedQueriesResponse, BatchDeleteSavedQueriesError, Options<BatchDeleteSavedQueriesData>> => {
     const mutationOptions: UseMutationOptions<BatchDeleteSavedQueriesResponse, BatchDeleteSavedQueriesError, Options<BatchDeleteSavedQueriesData>> = {

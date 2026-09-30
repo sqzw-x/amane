@@ -49,7 +49,6 @@ function SavedQueryCardLink({
   );
 }
 
-/** 卡片主体点击即进入预设的消费入口: ID 类型去对应筛选页, data 去数据页. */
 export function SavedQueryCard({
   query,
   selected,

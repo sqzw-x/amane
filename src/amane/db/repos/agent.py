@@ -133,7 +133,7 @@ class AgentRepoMixin(RepositoryMixinBase):
             return row
 
     async def delete_saved_queries(self, ids: list[int]) -> tuple[int, int]:
-        """重复 id 只处理一次; 不存在的 id 计入 missing. 单条 IN 查询取行."""
+        """重复 id 只处理一次; 不存在的 id 计入 missing."""
         unique = list(dict.fromkeys(ids))
         async with self._session() as session:
             rows = (await session.exec(select(SavedQuery).where(col(SavedQuery.id).in_(unique)))).all()

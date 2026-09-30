@@ -5897,7 +5897,7 @@ export const SavedQueryCreateRequestSchema = {
         'entity'
     ],
     title: 'SavedQueryCreateRequest',
-    description: '手动创建: 内容 + 类型; 归属与保留态由服务端固定 (无会话, 已保留).'
+    description: '手动创建: 名称 / 描述 / SQL 与类型; 归属与保留态由服务端固定 (无会话, 已保留).'
 } as const;
 
 export const SavedQueryEntitySchema = {
@@ -6078,7 +6078,7 @@ export const SavedQueryUpdateRequestSchema = {
     },
     type: 'object',
     title: 'SavedQueryUpdateRequest',
-    description: '内容三项均可选; 类型 / 归属 / 保留态不可改.\n\n显式 null → 422, 省略键才是「不更新」. 约束与创建请求共用, 不随 DB 模型派生\n(``create_partial_model`` 会丢弃 ``StringConstraints``).'
+    description: '仅名称 / 描述 / SQL 三项, 未知键被忽略; 显式 null 一律 422, 省略键才是「不更新」.\n\n字段不从 DB 模型派生: ``create_partial_model`` 会丢弃 ``StringConstraints``;\n约束别名与创建请求共用.'
 } as const;
 
 export const ScanModeSchema = {

@@ -2935,7 +2935,7 @@ export type SavedQueryBatchPersistResponse = {
 /**
  * SavedQueryCreateRequest
  *
- * 手动创建: 内容 + 类型; 归属与保留态由服务端固定 (无会话, 已保留).
+ * 手动创建: 名称 / 描述 / SQL 与类型; 归属与保留态由服务端固定 (无会话, 已保留).
  */
 export type SavedQueryCreateRequest = {
     /**
@@ -3042,10 +3042,10 @@ export type SavedQueryResultResponse = {
 /**
  * SavedQueryUpdateRequest
  *
- * 内容三项均可选; 类型 / 归属 / 保留态不可改.
+ * 仅名称 / 描述 / SQL 三项, 未知键被忽略; 显式 null 一律 422, 省略键才是「不更新」.
  *
- * 显式 null → 422, 省略键才是「不更新」. 约束与创建请求共用, 不随 DB 模型派生
- * (``create_partial_model`` 会丢弃 ``StringConstraints``).
+ * 字段不从 DB 模型派生: ``create_partial_model`` 会丢弃 ``StringConstraints``;
+ * 约束别名与创建请求共用.
  */
 export type SavedQueryUpdateRequest = {
     /**

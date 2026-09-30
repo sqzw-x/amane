@@ -116,7 +116,7 @@ class AgentService:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-        # 取消后回合不再写新预设, 此时取未保留 id; 缓存键是预设 id (rowid 可复用), 删除路径必须失效.
+        # 回合已取消, 不会再新增未保留预设; 这些行随会话删除且删除路径不回传 id, 故先快照供缓存失效
         ephemeral_ids = [
             q.id
             for q in await self.repo.list_saved_queries(session_id=session_id)

@@ -825,7 +825,7 @@ export const getSavedQuery = <ThrowOnError extends boolean = false>(options: Opt
 /**
  * Update Saved Query
  *
- * 仅内容字段; 类型 / 归属 / 保留态不可改. SQL 变化才重校验并失效缓存.
+ * SQL 变化才重校验并失效缓存.
  */
 export const updateSavedQuery = <ThrowOnError extends boolean = false>(options: Options<UpdateSavedQueryData, ThrowOnError>): RequestResult<UpdateSavedQueryResponses, UpdateSavedQueryErrors, ThrowOnError> => (options.client ?? client).patch<UpdateSavedQueryResponses, UpdateSavedQueryErrors, ThrowOnError>({
     url: '/api/saved-queries/{query_id}',
@@ -839,7 +839,7 @@ export const updateSavedQuery = <ThrowOnError extends boolean = false>(options: 
 /**
  * Batch Delete Saved Queries
  *
- * 重复 id 只处理一次; 缓存失效尽力而为, 不因 AgentService 缺失而失败.
+ * AgentService 未装配时跳过缓存失效.
  */
 export const batchDeleteSavedQueries = <ThrowOnError extends boolean = false>(options: Options<BatchDeleteSavedQueriesData, ThrowOnError>): RequestResult<BatchDeleteSavedQueriesResponses, BatchDeleteSavedQueriesErrors, ThrowOnError> => (options.client ?? client).post<BatchDeleteSavedQueriesResponses, BatchDeleteSavedQueriesErrors, ThrowOnError>({
     url: '/api/saved-queries/batch/delete',

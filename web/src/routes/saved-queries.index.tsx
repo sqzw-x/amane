@@ -44,7 +44,7 @@ import { SAVED_QUERY_ENTITIES } from "@/lib/exhaustive-maps";
 import { SAVED_QUERY_ENTITY_LABEL_KEY } from "@/lib/saved-query/display";
 import { downloadSavedQueryResult } from "@/lib/saved-query/download";
 
-/** 信息量小于片库类页面, 宽屏下限制内容宽度并居中; 与插件页 / 网络检测页同宽. */
+/** 与插件页 / 网络检测页同宽. */
 const PAGE_MAX_WIDTH = 1120;
 
 type EntityFilter = SavedQueryEntity | "all";

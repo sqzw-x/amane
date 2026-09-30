@@ -175,7 +175,7 @@ function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDelete
   );
 }
 
-/** 合并两次受限查询并按 updated_at 倒序, 与列表接口排序一致; id 去重防重. */
+/** 合并两次受限查询并按 updated_at 倒序, 与列表接口排序一致; id 去重. */
 function mergePresets(
   persisted: SavedQueryResponse[] | undefined,
   session: SavedQueryResponse[] | undefined,

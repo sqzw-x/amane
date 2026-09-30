@@ -129,7 +129,6 @@ async def get_saved_query(query_id: int, repo: RepoDep) -> SavedQueryResponse:
 
 
 async def _validate_saved_query(service: AgentService, sql: str, entity: SavedQueryEntity) -> None:
-    """创建 / 编辑前在只读沙箱里试跑; 截断结果不入缓存."""
     try:
         await service.executor.validate_saved_query(sql, entity=entity, timeout_ms=service.config.sql_timeout_ms)
     except ValueError as exc:
@@ -156,7 +155,7 @@ async def create_saved_query(req: SavedQueryCreateRequest, repo: RepoDep, servic
 async def update_saved_query(
     query_id: int, req: SavedQueryUpdateRequest, repo: RepoDep, service: AgentDep
 ) -> SavedQueryResponse:
-    """仅内容字段; 类型 / 归属 / 保留态不可改. SQL 变化才重校验并失效缓存."""
+    """SQL 变化才重校验并失效缓存."""
     if not req.model_fields_set:
         raise HTTPException(422, detail="无更新字段")
     query = await repo.get_saved_query(query_id)
@@ -170,7 +169,7 @@ async def update_saved_query(
         updates["description"] = req.description
     sql_changed = False
     if req.sql is not None:
-        # 请求模型已 strip; 与库中 SQL 比较, 变化才重校验并失效缓存.
+        # 请求模型已 strip; 库中旧行可能未 strip
         sql_changed = req.sql != query.sql.strip()
         if sql_changed:
             await _validate_saved_query(service, req.sql, query.entity)
@@ -190,11 +189,11 @@ async def update_saved_query(
 async def batch_delete_saved_queries(
     req: SavedQueryBatchIdsRequest, repo: RepoDep, runtime: RuntimeDep
 ) -> SavedQueryBatchDeleteResponse:
-    """重复 id 只处理一次; 缓存失效尽力而为, 不因 AgentService 缺失而失败."""
+    """AgentService 未装配时跳过缓存失效."""
     deleted, missing = await repo.delete_saved_queries(req.ids)
     service = runtime.agent_service
     if service is not None:
-        # 缓存键即预设 id (rowid 可复用), 缺失键的 invalidate 是 no-op.
+        # 对请求中的全部 id 失效: 未命中的键是 no-op
         for query_id in req.ids:
             service.cache.invalidate(query_id)
     return SavedQueryBatchDeleteResponse(deleted=deleted, missing=missing)

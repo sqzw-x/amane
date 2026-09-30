@@ -14,7 +14,7 @@ export const SAVED_QUERY_FORM_MODAL_SIZE = "min(56rem, 94vw)";
 export const SAVED_QUERY_NAME_MAX = 200;
 export const SAVED_QUERY_DESCRIPTION_MAX = 2000;
 
-/** 各类型契约提示的翻译 key, 与 SAVED_QUERY_ENTITIES 同步. */
+/** 各类型契约提示的翻译 key. */
 const ENTITY_HINT_KEY = {
   metadata: "entityHintMetadata",
   actor: "entityHintActor",
@@ -50,7 +50,7 @@ export function savedQueryFormToCreateBody(form: SavedQueryFormState): SavedQuer
   };
 }
 
-/** 只提交改动字段; 类型不可改, 空对象表示无改动 (保存按钮据此禁用). */
+/** 只提交改动字段; 空对象表示无改动 (保存按钮据此禁用). */
 export function savedQueryFormToUpdateBody(
   form: SavedQueryFormState,
   original: SavedQueryResponse,

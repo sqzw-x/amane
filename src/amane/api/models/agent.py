@@ -76,7 +76,7 @@ SavedQuerySql = Annotated[str, StringConstraints(strip_whitespace=True, min_leng
 
 
 class SavedQueryCreateRequest(BaseModel):
-    """手动创建: 内容 + 类型; 归属与保留态由服务端固定 (无会话, 已保留)."""
+    """手动创建: 名称 / 描述 / SQL 与类型; 归属与保留态由服务端固定 (无会话, 已保留)."""
 
     name: SavedQueryName
     description: SavedQueryDescription = ""
@@ -85,10 +85,10 @@ class SavedQueryCreateRequest(BaseModel):
 
 
 class SavedQueryUpdateRequest(BaseModel):
-    """内容三项均可选; 类型 / 归属 / 保留态不可改.
+    """仅名称 / 描述 / SQL 三项, 未知键被忽略; 显式 null 一律 422, 省略键才是「不更新」.
 
-    显式 null → 422, 省略键才是「不更新」. 约束与创建请求共用, 不随 DB 模型派生
-    (``create_partial_model`` 会丢弃 ``StringConstraints``).
+    字段不从 DB 模型派生: ``create_partial_model`` 会丢弃 ``StringConstraints``;
+    约束别名与创建请求共用.
     """
 
     name: SavedQueryName | None = None
@@ -107,7 +107,7 @@ class SavedQueryUpdateRequest(BaseModel):
 
 
 class SavedQueryBatchIdsRequest(BaseModel):
-    # 单条 IN 查询逐 id 绑定变量; 上限防 SQLite 变量数超限, 越界请求得到明确 422.
+    # 单条 IN 查询为每个 id 绑定一个变量, 上限防 SQLite 变量数超限
     ids: list[int] = Field(min_length=1, max_length=1000, description="查询预设 ID 列表")
 
 

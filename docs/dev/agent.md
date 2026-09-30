@@ -83,9 +83,9 @@
 
 权威是存下的 **SQL + 实体类型** (`metadata` | `actor` | `data`). Browse / 下载时 **Live 重新运行** (命中内存缓存则跳过); **无**后端 Snapshot, 要留当时行集由前端下载.
 
-预设经 Agent 交付或手动创建 (页面 / API); 手动预设无会话归属、直接已保留, 类型只在创建时选定. 创建与改 SQL 前在只读沙箱试跑 (`max_rows=1`, 结果不写缓存), metadata / actor 类型须返回 `id` 列; 内容字段 (标题 / 描述 / SQL) 经 PATCH 更新, 长度上限由请求模型强制. 删除与保留为批量端点. **缓存条目按产生它的 SQL 定版**: 命中要求条目 SQL 与本次读到的预设行一致, 故行 id 复用 (无 AUTOINCREMENT) 或失效窗口内回写的旧条目都不会命中; 删除与改 SQL 路径仍须 `invalidate` (含删会话清理未保留预设的路径), 用于回收与触发重算.
+预设经 Agent 交付或手动创建 (页面 / API); 手动预设无会话归属、直接已保留, 类型只在创建时选定, 名称 / 描述 / SQL 经 PATCH 更新. 创建与改 SQL 前在只读沙箱试跑 (结果不写缓存), metadata / actor 类型须返回 `id` 列. **缓存条目绑定产生它的 SQL**: 命中要求条目 SQL 与本次读到的预设行一致, 故行 id 复用 (无 AUTOINCREMENT) 或失效窗口内回写的旧条目都不会命中; 删除与改 SQL 路径仍须 `invalidate` (含删会话清理未保留预设的路径), 用于回收与触发重算.
 
-呈现规则: `metadata` / `actor` 交付双呈现 (`/meta|/actors?saved_query_id=` 筛选深链 + 数据页); `data` (含全部探查视图) 只渲染数据页, 作列表筛选会 400. 结果缓存 (`ResultCache`) 条目绑定 SQL, 对列内容无感, 只存 `columns + rows`; `id` 列抽取仅发生在 metadata / actor 交付时作为契约校验 (缺列报错), 结果不写入缓存.
+呈现规则: `metadata` / `actor` 交付双呈现 (`/meta|/actors?saved_query_id=` 筛选深链 + 数据页); `data` (含全部探查视图) 只渲染数据页, 作列表筛选会 400. 结果缓存 (`ResultCache`) 只存 `columns + rows`, 不解释列语义; `id` 列抽取仅发生在 metadata / actor 交付时作为契约校验 (缺列报错).
 
 交付先绑定会话, `persisted=true` 后与会话解耦; 删会话清理未 persist 预设, **已 persist 保留**. 列表带 `saved_query_id` 时与其它筛选项 **AND**: 预设 SQL 包成 `id IN (SELECT id FROM (…))` 子查询嵌入, 不预物化 id 列表.
 
