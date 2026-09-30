@@ -10,9 +10,10 @@ from typing import Any
 
 @dataclass(slots=True)
 class CachedResult:
-    """缓存对列内容无感, 只存行列数组."""
+    """缓存条目绑定产生它的 SQL; 行列内容本身无感."""
 
     saved_query_id: int
+    sql: str
     columns: list[str]
     rows: list[list[Any]]
     created_at: float = field(default_factory=time.monotonic)
@@ -36,9 +37,14 @@ class ResultCache:
         self._max_entries = max_entries
         self._evict()
 
-    def get(self, saved_query_id: int) -> CachedResult | None:
+    def get(self, saved_query_id: int, sql: str) -> CachedResult | None:
+        """仅命中 SQL 与当前预设一致的条目.
+
+        预设 id 是 rowid, 删除后会被新行复用; 执行中的旧请求也可能在失效之后回写.
+        以条目 SQL 为版本, 这两种情况下的旧条目都不会命中, 无须依赖失效调用的时序.
+        """
         entry = self._entries.get(saved_query_id)
-        if entry is None:
+        if entry is None or entry.sql != sql:
             return None
         if time.monotonic() - entry.created_at > self._ttl_s:
             del self._entries[saved_query_id]

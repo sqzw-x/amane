@@ -64,12 +64,16 @@ class QueryExecutor:
         timeout_ms: int,
         approved: bool = False,
     ) -> CachedResult:
-        """未命中则执行 SQL 并写回缓存 (可能触发审批 / 重执行)."""
+        """未命中则执行 SQL 并写回缓存 (可能触发审批 / 重执行).
+
+        命中要求缓存条目的 SQL 与 ``query.sql`` 一致; 行 id 复用或执行中改 SQL
+        时, 旧条目按未命中处理并重新执行, 见 ``ResultCache.get``.
+        """
         assert query.id is not None
-        hit = self.cache.get(query.id)
+        hit = self.cache.get(query.id, query.sql)
         if hit is not None:
             return hit
         result = await self.run_sql(query.sql, timeout_ms=timeout_ms, approved=approved)
-        entry = CachedResult(saved_query_id=query.id, columns=result.columns, rows=result.rows)
+        entry = CachedResult(saved_query_id=query.id, sql=query.sql, columns=result.columns, rows=result.rows)
         self.cache.put(entry)
         return entry

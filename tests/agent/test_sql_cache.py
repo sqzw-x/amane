@@ -8,7 +8,9 @@ import pytest
 import pytest_asyncio
 
 from amane.agent.cache import CachedResult, ResultCache
+from amane.agent.executor import QueryExecutor
 from amane.agent.sql import ReadonlySqlSandbox, SqlNeedsApproval, SqlSandboxError, SqlTimeoutError, as_id_subquery_sql
+from amane.db.models import SavedQuery, SavedQueryEntity
 
 
 @pytest.mark.parametrize(
@@ -144,17 +146,37 @@ async def test_max_rows_truncation(sandbox: ReadonlySqlSandbox) -> None:
 
 def test_result_cache_lru_and_get() -> None:
     cache = ResultCache(ttl_s=3600, max_entries=2)
-    cache.put(CachedResult(1, ["id"], [[1]]))
-    cache.put(CachedResult(2, ["id"], [[2]]))
-    assert cache.get(1) is not None
-    cache.put(CachedResult(3, ["id"], [[3]]))
-    assert cache.get(2) is None  # LRU evicted
-    assert cache.get(1) is not None
-    assert cache.get(3) is not None
+    cache.put(CachedResult(1, "SELECT 1", ["id"], [[1]]))
+    cache.put(CachedResult(2, "SELECT 2", ["id"], [[2]]))
+    assert cache.get(1, "SELECT 1") is not None
+    cache.put(CachedResult(3, "SELECT 3", ["id"], [[3]]))
+    assert cache.get(2, "SELECT 2") is None  # LRU evicted
+    assert cache.get(1, "SELECT 1") is not None
+    assert cache.get(3, "SELECT 3") is not None
+
+
+def test_result_cache_misses_on_sql_version_mismatch() -> None:
+    """同一 id 条目与请求 SQL 不一致时不命中: 行 id 复用或失效窗口内回写都不会污染."""
+    cache = ResultCache(ttl_s=3600, max_entries=8)
+    cache.put(CachedResult(1, "SELECT 1", ["n"], [[1]]))
+    assert cache.get(1, "SELECT 2") is None
+    assert cache.get(1, "SELECT 1") is not None
+
+
+@pytest.mark.asyncio
+async def test_ensure_cached_reexecutes_when_sql_changed(sandbox: ReadonlySqlSandbox) -> None:
+    """库中 SQL 已变但旧条目仍在 (失效前完成写入) 时, 按新 SQL 重新执行."""
+    cache = ResultCache(ttl_s=3600, max_entries=8)
+    executor = QueryExecutor(sandbox, cache)
+    old = SavedQuery(id=1, name="q", sql="SELECT id FROM items WHERE id = 1", entity=SavedQueryEntity.DATA)
+    new = SavedQuery(id=1, name="q", sql="SELECT id FROM items WHERE id = 2", entity=SavedQueryEntity.DATA)
+
+    assert (await executor.ensure_cached(old, timeout_ms=1000)).rows == [[1]]
+    assert (await executor.ensure_cached(new, timeout_ms=1000)).rows == [[2]]
 
 
 def test_result_cache_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
     cache = ResultCache(ttl_s=10, max_entries=8)
-    cache.put(CachedResult(1, ["id"], [[1]], created_at=0.0))
+    cache.put(CachedResult(1, "SELECT 1", ["id"], [[1]], created_at=0.0))
     monkeypatch.setattr("amane.agent.cache.time.monotonic", lambda: 11.0)
-    assert cache.get(1) is None
+    assert cache.get(1, "SELECT 1") is None

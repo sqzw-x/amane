@@ -10,6 +10,7 @@ from httpx2 import AsyncClient
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from amane.agent.cache import CachedResult
 from amane.agent.naming import fallback_title
 from amane.agent.rows import ApprovalsRow, CancelledRow
 from amane.agent.service import AgentService
@@ -231,6 +232,24 @@ async def test_saved_query_content_bounds_boundary_accepted(client: AsyncClient)
 
 
 @pytest.mark.asyncio
+async def test_stale_saved_query_result_not_served(client: AsyncClient, app: FastAPI, repo: Repository) -> None:
+    """失效窗口内回写的旧 SQL 条目不得命中: 条目按 SQL 定版."""
+    service = app.state.runtime.agent_service
+    assert isinstance(service, AgentService)
+    sq = await repo.create_saved_query(name="竞态", sql="SELECT 1 AS n", entity=SavedQueryEntity.DATA, persisted=True)
+    assert sq.id is not None
+
+    r = await client.patch(f"/saved-queries/{sq.id}", json={"sql": "SELECT 2 AS n"})
+    assert r.status_code == 200
+
+    # 模拟执行中的旧请求在 PATCH 失效之后完成写入
+    service.cache.put(CachedResult(saved_query_id=sq.id, sql="SELECT 1 AS n", columns=["n"], rows=[[1]]))
+    r = await client.get(f"/saved-queries/{sq.id}/result")
+    assert r.status_code == 200
+    assert r.json()["rows"] == [[2]]
+
+
+@pytest.mark.asyncio
 async def test_update_saved_query_content_and_rejection(client: AsyncClient, repo: Repository) -> None:
     m1 = await repo.upsert_metadata(number="ABC-001", title="First")
     m2 = await repo.upsert_metadata(number="ABC-002", title="Second")
@@ -323,12 +342,12 @@ async def test_batch_delete_saved_queries(app: FastAPI, client: AsyncClient, rep
     # 预热缓存, 删除后必须失效
     r = await client.get(f"/saved-queries/{a}/result")
     assert r.status_code == 200
-    assert service.cache.get(a) is not None
+    assert service.cache.get(a, "SELECT 1 AS n") is not None
 
     r = await client.post("/saved-queries/batch/delete", json={"ids": [a, b, 999999]})
     assert r.status_code == 200
     assert r.json() == {"deleted": 2, "missing": 1}
-    assert service.cache.get(a) is None
+    assert service.cache.get(a, "SELECT 1 AS n") is None
     assert (await client.get(f"/saved-queries/{a}/result")).status_code == 404
     assert await repo.get_saved_query(b) is None
 
@@ -390,11 +409,11 @@ async def test_delete_session_invalidates_ephemeral_cache(app: FastAPI, client: 
 
     r = await client.get(f"/saved-queries/{sq.id}/result")
     assert r.status_code == 200
-    assert service.cache.get(sq.id) is not None
+    assert service.cache.get(sq.id, "SELECT 1 AS n") is not None
 
     r = await client.delete(f"/agent/sessions/{session.id}")
     assert r.status_code == 204
-    assert service.cache.get(sq.id) is None
+    assert service.cache.get(sq.id, "SELECT 1 AS n") is None
     assert await repo.get_saved_query(sq.id) is None
 
 

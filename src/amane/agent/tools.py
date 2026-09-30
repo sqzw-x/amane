@@ -109,7 +109,7 @@ async def materialize_saved_query(
         persisted=False,
     )
     assert saved.id is not None
-    deps.executor.cache.put(CachedResult(saved_query_id=saved.id, columns=result.columns, rows=result.rows))
+    deps.executor.cache.put(CachedResult(saved_query_id=saved.id, sql=sql, columns=result.columns, rows=result.rows))
     return saved.id, saved.name, entity_ids
 
 

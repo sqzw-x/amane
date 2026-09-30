@@ -58,7 +58,7 @@ async def test_materialize_explore_view_not_surfaced(explore_env: tuple[AgentDep
     assert view_id > 0
     assert name == "probe"
     assert entity_ids == []
-    assert deps.executor.cache.get(view_id) is not None
+    assert deps.executor.cache.get(view_id, "SELECT title FROM metadata ORDER BY id") is not None
 
     query = await deps.repo.get_saved_query(view_id)
     assert query is not None
