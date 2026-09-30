@@ -72,6 +72,11 @@ export function isSavedQueryFormDirty(
   return Object.keys(savedQueryFormToUpdateBody(form, original)).length > 0;
 }
 
+/** 名称与 SQL 均非空才可提交; 创建与编辑判据共用, 避免两处不一致. */
+export function isSavedQueryFormSubmittable(form: SavedQueryFormState): boolean {
+  return form.name.trim() !== "" && form.sql.trim() !== "";
+}
+
 export function SavedQueryFormFields({
   value,
   onChange,

@@ -38,6 +38,7 @@ import { ListPagination } from "@/components/common/list-pagination";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import {
   isSavedQueryFormDirty,
+  isSavedQueryFormSubmittable,
   savedQueryFormFromResponse,
   savedQueryFormToUpdateBody,
   SavedQueryFormFields,
@@ -171,7 +172,9 @@ function SavedQueryDataPage() {
   }
 
   const editDirty =
-    editForm != null && isSavedQueryFormDirty(editForm, query) && editForm.name.trim() !== "";
+    editForm != null &&
+    isSavedQueryFormDirty(editForm, query) &&
+    isSavedQueryFormSubmittable(editForm);
 
   return (
     <Stack gap="md" style={{ minWidth: 0 }}>

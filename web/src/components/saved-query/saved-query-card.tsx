@@ -1,19 +1,53 @@
-import {
-  ActionIcon,
-  Badge,
-  Card,
-  Checkbox,
-  Group,
-  Stack,
-  Text,
-  UnstyledButton,
-} from "@mantine/core";
+import { ActionIcon, Badge, Card, Checkbox, Group, Stack, Text } from "@mantine/core";
 import { IconDownload, IconPencil, IconTrash } from "@tabler/icons-react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
+import type { CSSProperties, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { SavedQueryResponse } from "@/client/types.gen";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { SAVED_QUERY_BADGE_COLOR, SAVED_QUERY_ENTITY_LABEL_KEY } from "@/lib/saved-query/display";
+
+const CARD_LINK_STYLE: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  textAlign: "left",
+  textDecoration: "none",
+  color: "inherit",
+  display: "block",
+};
+
+/** 用 Link 承载卡片本体, 保留中键 / 修饰键新标签页与复制链接. */
+function SavedQueryCardLink({
+  query,
+  children,
+}: {
+  query: SavedQueryResponse;
+  children: ReactNode;
+}) {
+  if (query.entity === "metadata") {
+    return (
+      <Link to="/meta" search={{ saved_query_id: query.id }} style={CARD_LINK_STYLE}>
+        {children}
+      </Link>
+    );
+  }
+  if (query.entity === "actor") {
+    return (
+      <Link to="/actors" search={{ saved_query_id: query.id }} style={CARD_LINK_STYLE}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <Link
+      to="/saved-queries/$queryId"
+      params={{ queryId: String(query.id) }}
+      style={CARD_LINK_STYLE}
+    >
+      {children}
+    </Link>
+  );
+}
 
 /** 卡片主体点击即进入预设的消费入口: ID 类型去对应筛选页, data 去数据页. */
 export function SavedQueryCard({
@@ -32,17 +66,6 @@ export function SavedQueryCard({
   onDownload: () => void;
 }) {
   const { t, i18n } = useTranslation(["savedQueries", "common"]);
-  const navigate = useNavigate();
-
-  function openPrimary() {
-    if (query.entity === "metadata") {
-      void navigate({ to: "/meta", search: { saved_query_id: query.id } });
-    } else if (query.entity === "actor") {
-      void navigate({ to: "/actors", search: { saved_query_id: query.id } });
-    } else {
-      void navigate({ to: "/saved-queries/$queryId", params: { queryId: String(query.id) } });
-    }
-  }
 
   return (
     <Card withBorder radius="md" padding="sm">
@@ -54,7 +77,7 @@ export function SavedQueryCard({
           onChange={onToggleSelect}
           aria-label={query.name}
         />
-        <UnstyledButton onClick={openPrimary} style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+        <SavedQueryCardLink query={query}>
           <Stack gap={6}>
             <Text fw={600} lineClamp={2} style={{ lineHeight: 1.3 }}>
               {query.name}
@@ -75,7 +98,7 @@ export function SavedQueryCard({
               </Text>
             )}
           </Stack>
-        </UnstyledButton>
+        </SavedQueryCardLink>
         <Group gap={2} wrap="nowrap">
           <ActionIcon
             variant="subtle"

@@ -29,6 +29,7 @@ import { SavedQueryCard } from "@/components/saved-query/saved-query-card";
 import {
   emptySavedQueryForm,
   isSavedQueryFormDirty,
+  isSavedQueryFormSubmittable,
   savedQueryFormFromResponse,
   savedQueryFormToCreateBody,
   savedQueryFormToUpdateBody,
@@ -175,8 +176,8 @@ function SavedQueriesPage() {
   }
 
   const editDirty = editing != null && isSavedQueryFormDirty(editForm, editing);
-  const createDisabled = createForm.name.trim() === "" || createForm.sql.trim() === "";
-  const editDisabled = !editDirty || editForm.name.trim() === "" || editForm.sql.trim() === "";
+  const createDisabled = !isSavedQueryFormSubmittable(createForm);
+  const editDisabled = !editDirty || !isSavedQueryFormSubmittable(editForm);
 
   return (
     <Stack gap="md" maw={PAGE_MAX_WIDTH} mx="auto" w="100%">

@@ -175,26 +175,41 @@ function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDelete
   );
 }
 
+/** 合并两次受限查询并按 updated_at 倒序, 与列表接口排序一致; id 去重防重. */
+function mergePresets(
+  persisted: SavedQueryResponse[] | undefined,
+  session: SavedQueryResponse[] | undefined,
+): SavedQueryResponse[] {
+  const byId = new Map<number, SavedQueryResponse>();
+  for (const item of [...(persisted ?? []), ...(session ?? [])]) byId.set(item.id, item);
+  return [...byId.values()].toSorted((a, b) => b.updated_at.localeCompare(a.updated_at));
+}
+
 /** 会话页的预设入口: 展示已保留的全部预设与当前会话的临时预设, 靠标签区分. */
 export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
   const { t } = useTranslation(["agent", "savedQueries", "common"]);
   const qc = useQueryClient();
   const [opened, setOpened] = useState(false);
 
-  const listQuery = useQuery({
-    ...listSavedQueriesOptions(),
+  // 两次受限请求: 已保留预设 + 当前会话临时预设, 不拉取其它会话的临时预设.
+  const persistedQuery = useQuery({
+    ...listSavedQueriesOptions({ query: { persisted_only: true } }),
     enabled: opened,
+  });
+  const sessionQuery = useQuery({
+    ...listSavedQueriesOptions({ query: { session_id: sessionId } }),
+    enabled: opened && sessionId != null,
   });
 
   function invalidateLists() {
     void qc.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
   }
 
-  const items = (listQuery.data?.items ?? []).filter(
-    (item) => item.persisted || item.session_id === sessionId,
-  );
-  const errorMessage =
-    listQuery.error instanceof Error ? listQuery.error.message : t("common:status.error");
+  const items = mergePresets(persistedQuery.data?.items, sessionQuery.data?.items);
+  const isLoading = persistedQuery.isPending || (sessionId != null && sessionQuery.isPending);
+  const isError = persistedQuery.isError || (sessionId != null && sessionQuery.isError);
+  const queryError = persistedQuery.error ?? sessionQuery.error;
+  const errorMessage = queryError instanceof Error ? queryError.message : t("common:status.error");
 
   return (
     <Menu
@@ -219,19 +234,19 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
             {t("presets")}
           </Text>
 
-          {listQuery.isPending && (
+          {isLoading && (
             <Group justify="center" py="xl">
               <Loader size="sm" />
             </Group>
           )}
 
-          {listQuery.isError && (
+          {isError && (
             <Text c="red" size="sm">
               {errorMessage}
             </Text>
           )}
 
-          {!listQuery.isPending && !listQuery.isError && items.length === 0 && (
+          {!isLoading && !isError && items.length === 0 && (
             <Box py="xl" px="md">
               <Text c="dimmed" size="sm" ta="center" style={{ lineHeight: 1.6 }}>
                 {t("presetsEmpty")}
@@ -239,7 +254,7 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
             </Box>
           )}
 
-          {!listQuery.isPending && items.length > 0 && (
+          {!isLoading && items.length > 0 && (
             <ScrollArea.Autosize mah={420} offsetScrollbars type="auto">
               <Stack gap="sm" pr={4}>
                 {items.map((item) => (
