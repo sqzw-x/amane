@@ -125,8 +125,18 @@ function SavedQueryDataPage() {
   });
   const deleteMutation = useMutation({
     ...batchDeleteSavedQueriesMutation(),
-    onSuccess: async () => {
-      notifications.show({ color: "blue", message: t("deletedToast", { count: 1 }) });
+    onSuccess: async (result) => {
+      if (result.deleted === 0) {
+        notifications.show({
+          color: "yellow",
+          message: t("deleteNothingToast", { missing: result.missing }),
+        });
+      } else {
+        notifications.show({
+          color: "blue",
+          message: t("deletedToast", { count: result.deleted }),
+        });
+      }
       await qc.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
       await navigate({ to: "/saved-queries" });
     },

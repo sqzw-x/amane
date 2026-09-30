@@ -291,8 +291,11 @@ function ToolCallPart({ part, running }: { part: AgentToolCallPart; running: boo
   const argsBody = argsBodyOf(part.argsText);
   const persist = useMutation({
     ...batchPersistSavedQueriesMutation(),
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
+      // 行内「保留」按钮的禁用态来自 getSavedQuery, 一并刷新
+      void queryClient.invalidateQueries({ queryKey: [{ _id: "getSavedQuery" }] });
+    },
   });
 
   return (
