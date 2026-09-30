@@ -1,12 +1,11 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Annotated, Any, Self
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from ...agent.rows import UiRow
 from ...config import AgentThinkingMode
-from ...db.models import DEFAULT_SESSION_TITLE, AgentSessionStatus, SavedQuery, SavedQueryEntity
-from ...utils.model import create_partial_model
+from ...db.models import DEFAULT_SESSION_TITLE, AgentSessionStatus, SavedQueryEntity
 
 
 class AgentSessionCreateRequest(BaseModel):
@@ -71,40 +70,45 @@ class SavedQueryListResponse(BaseModel):
     items: list[SavedQueryResponse]
 
 
+SavedQueryName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+SavedQueryDescription = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+SavedQuerySql = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
 class SavedQueryCreateRequest(BaseModel):
     """手动创建: 内容 + 类型; 归属与保留态由服务端固定 (无会话, 已保留)."""
 
-    name: str
-    description: str = ""
-    sql: str
+    name: SavedQueryName
+    description: SavedQueryDescription = ""
+    sql: SavedQuerySql
     entity: SavedQueryEntity
 
-    @field_validator("name", "sql")
-    @classmethod
-    def _strip_non_empty(cls, value: str, info: ValidationInfo) -> str:
-        text = value.strip()
-        if not text:
-            raise ValueError(f"{info.field_name} 不能为空")
-        return text
 
-    @field_validator("description")
-    @classmethod
-    def _strip_description(cls, value: str) -> str:
-        return value.strip()
+class SavedQueryUpdateRequest(BaseModel):
+    """内容三项均可选; 类型 / 归属 / 保留态不可改.
 
+    显式 null → 422, 省略键才是「不更新」. 约束与创建请求共用, 不随 DB 模型派生
+    (``create_partial_model`` 会丢弃 ``StringConstraints``).
+    """
 
-if TYPE_CHECKING:
-    type SavedQueryUpdateRequest = SavedQuery
+    name: SavedQueryName | None = None
+    description: SavedQueryDescription | None = None
+    sql: SavedQuerySql | None = None
 
-# 外部可写字段: 仅内容三项; 类型 / 归属 / 保留态不可经 PATCH 改动.
-# 非空列显式 null → 422; 清空描述送空串 (前端经 schema-form 编码器出 body).
-SavedQueryUpdateRequest = create_partial_model(
-    SavedQuery, fields=("name", "description", "sql"), partial_cls_name="SavedQueryUpdateRequest"
-)
+    @model_validator(mode="after")
+    def _reject_explicit_null(self) -> Self:
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("name cannot be null")
+        if "description" in self.model_fields_set and self.description is None:
+            raise ValueError("description cannot be null")
+        if "sql" in self.model_fields_set and self.sql is None:
+            raise ValueError("sql cannot be null")
+        return self
 
 
 class SavedQueryBatchIdsRequest(BaseModel):
-    ids: list[int] = Field(min_length=1, description="查询预设 ID 列表")
+    # 单条 IN 查询逐 id 绑定变量; 上限防 SQLite 变量数超限, 越界请求得到明确 422.
+    ids: list[int] = Field(min_length=1, max_length=1000, description="查询预设 ID 列表")
 
 
 class SavedQueryBatchDeleteResponse(BaseModel):

@@ -3041,6 +3041,11 @@ export type SavedQueryResultResponse = {
 
 /**
  * SavedQueryUpdateRequest
+ *
+ * 内容三项均可选; 类型 / 归属 / 保留态不可改.
+ *
+ * 显式 null → 422, 省略键才是「不更新」. 约束与创建请求共用, 不随 DB 模型派生
+ * (``create_partial_model`` 会丢弃 ``StringConstraints``).
  */
 export type SavedQueryUpdateRequest = {
     /**

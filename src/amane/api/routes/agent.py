@@ -165,21 +165,16 @@ async def update_saved_query(
 
     updates: SavedQueryUpdates = {}
     if req.name is not None:
-        name = req.name.strip()
-        if not name:
-            raise HTTPException(422, detail="name 不能为空")
-        updates["name"] = name
+        updates["name"] = req.name
     if req.description is not None:
-        updates["description"] = req.description.strip()
+        updates["description"] = req.description
     sql_changed = False
     if req.sql is not None:
-        sql = req.sql.strip()
-        if not sql:
-            raise HTTPException(422, detail="sql 不能为空")
-        sql_changed = sql != query.sql.strip()
+        # 请求模型已 strip; 与库中 SQL 比较, 变化才重校验并失效缓存.
+        sql_changed = req.sql != query.sql.strip()
         if sql_changed:
-            await _validate_saved_query(service, sql, query.entity)
-            updates["sql"] = sql
+            await _validate_saved_query(service, req.sql, query.entity)
+            updates["sql"] = req.sql
 
     if not updates:
         return to_resp(SavedQueryResponse, query)

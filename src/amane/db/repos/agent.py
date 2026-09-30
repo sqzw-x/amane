@@ -133,35 +133,26 @@ class AgentRepoMixin(RepositoryMixinBase):
             return row
 
     async def delete_saved_queries(self, ids: list[int]) -> tuple[int, int]:
-        """重复 id 只处理一次; 不存在的 id 计入 missing."""
+        """重复 id 只处理一次; 不存在的 id 计入 missing. 单条 IN 查询取行."""
+        unique = list(dict.fromkeys(ids))
         async with self._session() as session:
-            deleted = 0
-            missing = 0
-            for query_id in dict.fromkeys(ids):
-                row = await session.get(SavedQuery, query_id)
-                if row is None:
-                    missing += 1
-                    continue
+            rows = (await session.exec(select(SavedQuery).where(col(SavedQuery.id).in_(unique)))).all()
+            for row in rows:
                 await session.delete(row)
-                deleted += 1
             await session.commit()
-            return deleted, missing
+            deleted = len(rows)
+            return deleted, len(unique) - deleted
 
     async def persist_saved_queries(self, ids: list[int]) -> tuple[int, int]:
         """置为已保留并解绑会话; 重复 id 只处理一次; 幂等: 已保留的行计入 persisted 且不重写."""
+        unique = list(dict.fromkeys(ids))
         async with self._session() as session:
-            persisted = 0
-            missing = 0
-            for query_id in dict.fromkeys(ids):
-                row = await session.get(SavedQuery, query_id)
-                if row is None:
-                    missing += 1
-                    continue
+            rows = (await session.exec(select(SavedQuery).where(col(SavedQuery.id).in_(unique)))).all()
+            for row in rows:
                 if not row.persisted or row.session_id is not None:
                     row.persisted = True
                     row.session_id = None
                     row.updated_at = _utcnow()
                     session.add(row)
-                persisted += 1
             await session.commit()
-            return persisted, missing
+            return len(rows), len(unique) - len(rows)

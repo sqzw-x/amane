@@ -5833,6 +5833,7 @@ export const SavedQueryBatchIdsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids',
             description: '查询预设 ID 列表'
@@ -5870,15 +5871,19 @@ export const SavedQueryCreateRequestSchema = {
     properties: {
         name: {
             type: 'string',
+            maxLength: 200,
+            minLength: 1,
             title: 'Name'
         },
         description: {
             type: 'string',
+            maxLength: 2000,
             title: 'Description',
             default: ''
         },
         sql: {
             type: 'string',
+            minLength: 1,
             title: 'Sql'
         },
         entity: {
@@ -6036,7 +6041,9 @@ export const SavedQueryUpdateRequestSchema = {
         name: {
             anyOf: [
                 {
-                    type: 'string'
+                    type: 'string',
+                    maxLength: 200,
+                    minLength: 1
                 },
                 {
                     type: 'null'
@@ -6047,7 +6054,8 @@ export const SavedQueryUpdateRequestSchema = {
         description: {
             anyOf: [
                 {
-                    type: 'string'
+                    type: 'string',
+                    maxLength: 2000
                 },
                 {
                     type: 'null'
@@ -6058,7 +6066,8 @@ export const SavedQueryUpdateRequestSchema = {
         sql: {
             anyOf: [
                 {
-                    type: 'string'
+                    type: 'string',
+                    minLength: 1
                 },
                 {
                     type: 'null'
@@ -6068,7 +6077,8 @@ export const SavedQueryUpdateRequestSchema = {
         }
     },
     type: 'object',
-    title: 'SavedQueryUpdateRequest'
+    title: 'SavedQueryUpdateRequest',
+    description: '内容三项均可选; 类型 / 归属 / 保留态不可改.\n\n显式 null → 422, 省略键才是「不更新」. 约束与创建请求共用, 不随 DB 模型派生\n(``create_partial_model`` 会丢弃 ``StringConstraints``).'
 } as const;
 
 export const ScanModeSchema = {

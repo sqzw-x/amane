@@ -3,7 +3,8 @@
 设计背景见 docs/dev/data-model.md "可写字段与兼容性". 安全性由三层共同保证, 本文件分别验证:
 
 1. ``create_partial_model`` 的正确性 (``TestCreatePartialModel``)
-   -- req model 全部由它派生, 故只要它正确, req↔DB 的字段/类型兼容性即由构造保证.
+   -- 多数 req model 由它派生, 故只要它正确, 这些模型的字段/类型兼容性即由构造保证;
+      个别需要字段约束而显式声明的 req model 由第 2 节的字段纪律覆盖.
 2. 字段纪律 (``TestFieldDiscipline``)
    -- req 字段 ⊆ repo TypedDict 字段 ⊆ DB 列; 只读/内部字段不出现在外部可写字段.
    手写响应子集 ``@subset_of(..., covariant=)`` 导入时校验.

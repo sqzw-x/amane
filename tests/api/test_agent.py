@@ -126,13 +126,13 @@ _CREATE_REJECT_CASES = [
     pytest.param(
         {"name": "  ", "sql": "SELECT id FROM metadata", "entity": "metadata"},
         422,
-        "name 不能为空",
+        "String should have at least 1 character",
         id="blank-name",
     ),
     pytest.param(
         {"name": "x", "sql": "  ", "entity": "data"},
         422,
-        "sql 不能为空",
+        "String should have at least 1 character",
         id="blank-sql",
     ),
     pytest.param(
@@ -185,6 +185,49 @@ async def test_create_saved_query_rejects_invalid(
     if fragment is not None:
         assert fragment in r.text
     assert (await client.get("/saved-queries")).json()["items"] == []
+
+
+_BOUNDS_CASES = [
+    pytest.param("name", "x" * 201, id="name-over-max"),
+    pytest.param("description", "y" * 2001, id="description-over-max"),
+    pytest.param("name", "   ", id="name-blank"),
+    pytest.param("sql", "   ", id="sql-blank"),
+]
+
+
+@pytest.mark.parametrize(("field", "value"), _BOUNDS_CASES)
+@pytest.mark.asyncio
+async def test_saved_query_content_bounds_create(client: AsyncClient, field: str, value: str) -> None:
+    """服务端强制名称 / 描述上限与空白拒绝, 绕过界面直接调用同样 422."""
+    body: dict[str, object] = {"name": "合法", "sql": "SELECT 1 AS n", "entity": "data"}
+    body[field] = value
+    r = await client.post("/saved-queries", json=body)
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize(("field", "value"), _BOUNDS_CASES)
+@pytest.mark.asyncio
+async def test_saved_query_content_bounds_update(client: AsyncClient, repo: Repository, field: str, value: str) -> None:
+    """更新请求模型独立定义, 约束与创建保持一致."""
+    sq = await repo.create_saved_query(name="合法", sql="SELECT 1 AS n", entity=SavedQueryEntity.DATA, persisted=True)
+    assert sq.id is not None
+    r = await client.patch(f"/saved-queries/{sq.id}", json={field: value})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_saved_query_content_bounds_boundary_accepted(client: AsyncClient) -> None:
+    """恰好 200 / 2000 字符合法."""
+    r = await client.post(
+        "/saved-queries",
+        json={
+            "name": "x" * 200,
+            "description": "y" * 2000,
+            "sql": "SELECT 1 AS n",
+            "entity": "data",
+        },
+    )
+    assert r.status_code == 201
 
 
 @pytest.mark.asyncio
@@ -247,7 +290,7 @@ async def test_update_saved_query_content_and_rejection(client: AsyncClient, rep
     assert r.status_code == 422
     r = await client.patch(path, json={"name": "   "})
     assert r.status_code == 422
-    assert "name 不能为空" in r.text
+    assert "String should have at least 1 character" in r.text
     r = await client.patch("/saved-queries/999999", json={"name": "x"})
     assert r.status_code == 404
 
@@ -295,6 +338,10 @@ async def test_batch_delete_saved_queries(app: FastAPI, client: AsyncClient, rep
     assert r.json() == {"deleted": 1, "missing": 0}
 
     r = await client.post("/saved-queries/batch/delete", json={"ids": []})
+    assert r.status_code == 422
+
+    # 上限 1000: 越界请求不触发 IN 查询的变量数超限
+    r = await client.post("/saved-queries/batch/delete", json={"ids": list(range(1001))})
     assert r.status_code == 422
 
 
