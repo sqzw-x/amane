@@ -59,15 +59,15 @@
 
 - **DB 列**: ground truth, 全部可持久化字段.
 - **repo 入参 TypedDict** (`src/amane/db/repo_types.py`): repo update 方法接受的内部可写字段. 比 DB 列窄 (排除主键 / 时间戳), 但比外部可写字段宽 — 含仅后端可写字段 (`Metadata.raw` / `field_sources` 由刮削写入, `Schedule.next_run` / `last_run` 由调度器维护).
-- **req model** (`src/amane/api/models/`): 对外可写字段, 经 `create_partial_model(DBModel, ignore_fields=...)` 从 DB 模型派生. `ignore_fields` 把只读列与仅后端可写字段从模型上**彻底移除**, 阻断外部经 API 越权赋值; 非 DB 列的可写字段 (如 `Actor.aliases` 别名行) 经 `extra_fields` 显式纳入, 同样 partial 化且显式 `null` 被拒.
+- **req model** (`src/amane/api/models/`): 对外可写字段. 多数经 `create_partial_model(DBModel, ignore_fields=...)` 从 DB 模型派生, 个别需字段约束 (长度上限等) 时显式声明. `ignore_fields` 把只读列与仅后端可写字段从模型上**彻底移除**, 阻断外部经 API 越权赋值; 非 DB 列的可写字段 (如 `Actor.aliases` 别名行) 经 `extra_fields` 显式纳入, 同样 partial 化且显式 `null` 被拒.
 
 **可写字段约束** (无运行时反射):
 
 1. repo update 方法**显式逐字段赋值**, 不用 `setattr`; 字段名与类型兼容性由静态类型检查保证, TypedDict 与 DB 列漂移会直接编译期报错.
-2. req↔DB 的字段 / 类型兼容性由 `create_partial_model` 的构造保证, 只需验证该函数正确 (`tests/api/test_schema_repo_compat.py`). 手写且必须是某表列字段子集的响应模型用 `@subset_of(..., covariant=)` 在导入时校验.
+2. 派生 req 的 req↔DB 字段 / 类型兼容性由 `create_partial_model` 的构造保证, 只需验证该函数正确; 显式声明的 req (`StringConstraints` 等约束无法经派生保留) 与手写响应模型一样登记进 `tests/api/test_schema_repo_compat.py` 的字段纪律表 — 字段名 ⊆ repo TypedDict ⊆ DB 列, 只读字段不得出现. 手写且必须是某表列字段子集的响应模型用 `@subset_of(..., covariant=)` 在导入时校验.
 3. 端点把窄的 req `model_dump` 结果传入宽的 repo 方法; 唯一运行时缝隙 (req 键须 ⊆ TypedDict 键, 否则多余键被 repo 静默丢弃) 由字段纪律测试兜底.
 
-PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写入; **显式 `null`** 仅当源列本就可空时表示清空. 源列非 Optional 时显式 `null` 由 `create_partial_model` 拒绝 (422). 空 glob 的合法写入是 `[]`.
+PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写入; **显式 `null`** 仅当源列本就可空时表示清空. 源列非 Optional 时显式 `null` 一律 422 — 派生模型由 `create_partial_model` 拒绝, 显式声明的模型自行校验. 空 glob 的合法写入是 `[]`.
 
 `create_partial_model` 的 `ignore_fields` 依赖「生成模型不继承源字段」才能真正移除字段, 因此仅对 `table=True` 的 SQLModel 有效; 对普通 `BaseModel` 传 `ignore_fields` 会显式报错, 以免被忽略字段经继承泄漏.
 
