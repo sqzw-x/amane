@@ -5,6 +5,7 @@ import {
   Code,
   Collapse,
   Group,
+  Modal,
   ScrollArea,
   Stack,
   Table,
@@ -17,28 +18,41 @@ import {
   IconChevronRight,
   IconDownload,
   IconExternalLink,
+  IconPencil,
   IconTrash,
 } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import {
-  deleteSavedQueryMutation,
+  batchDeleteSavedQueriesMutation,
+  batchPersistSavedQueriesMutation,
   getSavedQueryOptions,
   getSavedQueryResultOptions,
   updateSavedQueryMutation,
 } from "@/client/@tanstack/react-query.gen";
-import { getSavedQueryResult } from "@/client/sdk.gen";
 import { ListPagination } from "@/components/common/list-pagination";
 import { PageSizeSelect } from "@/components/common/page-size-select";
+import {
+  isSavedQueryFormDirty,
+  savedQueryFormFromResponse,
+  savedQueryFormToUpdateBody,
+  SavedQueryFormFields,
+  SAVED_QUERY_FORM_MODAL_SIZE,
+  type SavedQueryFormState,
+} from "@/components/saved-query/saved-query-form";
 import { confirm } from "@/lib/confirm";
+import { extractErrorMessage } from "@/lib/api-error";
+import { formatRelativeTime } from "@/lib/format-relative-time";
 import {
   savedQueryBrowseHref,
   SAVED_QUERY_BADGE_COLOR,
   SAVED_QUERY_ENTITY_LABEL_KEY,
-} from "@/lib/agent/saved-query";
+} from "@/lib/saved-query/display";
+import { downloadSavedQueryResult } from "@/lib/saved-query/download";
 import { useUIStore } from "@/stores/ui";
 
 const savedQuerySearchSchema = z.object({
@@ -51,23 +65,6 @@ export const Route = createFileRoute("/saved-queries/$queryId")({
   component: SavedQueryDataPage,
 });
 
-async function downloadResult(queryId: number) {
-  const { data, error } = await getSavedQueryResult({
-    path: { query_id: queryId },
-    query: { offset: 0, limit: 5000 },
-  });
-  if (error || !data) {
-    throw new Error(String(error));
-  }
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `saved-query-${queryId}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function formatCell(value: unknown): string {
   if (value === null) return "NULL";
   if (typeof value === "string") return value;
@@ -79,8 +76,10 @@ function SavedQueryDataPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const qc = useQueryClient();
-  const { t } = useTranslation(["agent", "common"]);
+  const { t, i18n } = useTranslation(["savedQueries", "common"]);
   const [sqlOpen, setSqlOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<SavedQueryFormState | null>(null);
   const pageSize = useUIStore((s) => s.pageSizes.savedQuery);
 
   const id = Number(queryId);
@@ -93,18 +92,44 @@ function SavedQueryDataPage() {
     enabled: metaQuery.isSuccess,
   });
 
-  const persistMutation = useMutation({
+  function invalidateQueries() {
+    void qc.invalidateQueries({ queryKey: [{ _id: "getSavedQuery" }] });
+    void qc.invalidateQueries({ queryKey: [{ _id: "getSavedQueryResult" }] });
+    void qc.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
+  }
+
+  function showError(err: unknown) {
+    notifications.show({
+      color: "red",
+      message: extractErrorMessage(err, t("common:toast.operationFailed")),
+    });
+  }
+
+  const updateMutation = useMutation({
     ...updateSavedQueryMutation(),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["getSavedQuery"] });
+      notifications.show({ color: "blue", message: t("updatedToast") });
+      setEditOpen(false);
+      invalidateQueries();
     },
+    onError: showError,
+  });
+  const persistMutation = useMutation({
+    ...batchPersistSavedQueriesMutation(),
+    onSuccess: () => {
+      notifications.show({ color: "blue", message: t("persistedToast") });
+      invalidateQueries();
+    },
+    onError: showError,
   });
   const deleteMutation = useMutation({
-    ...deleteSavedQueryMutation(),
+    ...batchDeleteSavedQueriesMutation(),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["listSavedQueries"] });
-      await navigate({ to: "/" });
+      notifications.show({ color: "blue", message: t("deletedToast", { count: 1 }) });
+      await qc.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
+      await navigate({ to: "/saved-queries" });
     },
+    onError: showError,
   });
 
   const query = metaQuery.data;
@@ -119,16 +144,22 @@ function SavedQueryDataPage() {
 
   async function handleDelete() {
     const ok = await confirm({
-      title: t("deletePreset"),
-      message: t("confirmDeletePreset", { name: query?.name ?? `#${id}` }),
+      title: t("delete"),
+      message: t("confirmDelete", { name: query?.name ?? `#${id}` }),
       confirmLabel: t("common:actions.delete"),
     });
     if (!ok) return;
-    deleteMutation.mutate({ path: { query_id: id } });
+    deleteMutation.mutate({ body: { ids: [id] } });
+  }
+
+  function openEdit() {
+    if (query == null) return;
+    setEditForm(savedQueryFormFromResponse(query));
+    setEditOpen(true);
   }
 
   if (metaQuery.isLoading) {
-    return <Text c="dimmed">{t("loadingHistory")}</Text>;
+    return <Text c="dimmed">{t("common:status.loading")}</Text>;
   }
   if (metaQuery.isError || query == null) {
     return (
@@ -139,6 +170,9 @@ function SavedQueryDataPage() {
     );
   }
 
+  const editDirty =
+    editForm != null && isSavedQueryFormDirty(editForm, query) && editForm.name.trim() !== "";
+
   return (
     <Stack gap="md" style={{ minWidth: 0 }}>
       <Group justify="space-between" align="flex-start" wrap="wrap">
@@ -146,7 +180,7 @@ function SavedQueryDataPage() {
           <Title order={2}>{query.name}</Title>
           <Group gap={8}>
             <Badge size="sm" variant="light" color={SAVED_QUERY_BADGE_COLOR[query.entity]}>
-              {t(`${SAVED_QUERY_ENTITY_LABEL_KEY[query.entity]}`)}
+              {t(SAVED_QUERY_ENTITY_LABEL_KEY[query.entity])}
             </Badge>
             {query.persisted && (
               <Badge size="sm" variant="outline" color="teal">
@@ -156,9 +190,27 @@ function SavedQueryDataPage() {
             <Text size="xs" c="dimmed" ff="monospace">
               #{id}
             </Text>
+            <Text size="xs" c="dimmed">
+              {t("updatedAt", {
+                time: formatRelativeTime(query.updated_at, i18n.language, t("justNow")),
+              })}
+            </Text>
           </Group>
+          {query.description.trim() !== "" && (
+            <Text size="sm" c="dimmed" maw={720}>
+              {query.description}
+            </Text>
+          )}
         </Stack>
         <Group gap="xs" wrap="wrap">
+          <Button
+            size="xs"
+            variant="default"
+            leftSection={<IconPencil size={14} />}
+            onClick={openEdit}
+          >
+            {t("common:actions.edit")}
+          </Button>
           {href != null && (
             <Button
               component="a"
@@ -177,9 +229,7 @@ function SavedQueryDataPage() {
               size="xs"
               variant="default"
               loading={persistMutation.isPending}
-              onClick={() =>
-                persistMutation.mutate({ path: { query_id: id }, body: { persisted: true } })
-              }
+              onClick={() => persistMutation.mutate({ body: { ids: [id] } })}
             >
               {t("persist")}
             </Button>
@@ -188,11 +238,7 @@ function SavedQueryDataPage() {
             size="xs"
             variant="default"
             leftSection={<IconDownload size={14} />}
-            onClick={() => {
-              downloadResult(id).catch((err: unknown) => {
-                console.error(err);
-              });
-            }}
+            onClick={() => void downloadSavedQueryResult(id, t("common:toast.operationFailed"))}
           >
             {t("download")}
           </Button>
@@ -204,7 +250,7 @@ function SavedQueryDataPage() {
             loading={deleteMutation.isPending}
             onClick={() => void handleDelete()}
           >
-            {t("deletePreset")}
+            {t("delete")}
           </Button>
         </Group>
       </Group>
@@ -244,7 +290,7 @@ function SavedQueryDataPage() {
       </Group>
 
       {resultQuery.isLoading ? (
-        <Text c="dimmed">{t("loadingHistory")}</Text>
+        <Text c="dimmed">{t("common:status.loading")}</Text>
       ) : resultQuery.isError ? (
         <Text c="dimmed">{t("dataPageFailed")}</Text>
       ) : total === 0 ? (
@@ -296,6 +342,37 @@ function SavedQueryDataPage() {
           )}
         </>
       )}
+
+      <Modal
+        opened={editOpen}
+        onClose={() => setEditOpen(false)}
+        title={t("editPreset")}
+        size={SAVED_QUERY_FORM_MODAL_SIZE}
+        centered
+      >
+        {editForm != null && (
+          <Stack gap="md">
+            <SavedQueryFormFields value={editForm} onChange={setEditForm} entityEditable={false} />
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setEditOpen(false)}>
+                {t("common:actions.cancel")}
+              </Button>
+              <Button
+                loading={updateMutation.isPending}
+                disabled={!editDirty}
+                onClick={() =>
+                  updateMutation.mutate({
+                    path: { query_id: id },
+                    body: savedQueryFormToUpdateBody(editForm, query),
+                  })
+                }
+              >
+                {t("common:actions.save")}
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </Stack>
   );
 }

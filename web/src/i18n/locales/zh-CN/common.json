@@ -50,6 +50,7 @@
     "libraries": "媒体库",
     "feeds": "订阅",
     "feedSources": "订阅源",
+    "savedQueries": "查询预设",
     "agent": "Amane",
     "groups": {
       "browse": "浏览",

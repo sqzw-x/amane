@@ -8,9 +8,9 @@ import {
   Loader,
   Menu,
   ScrollArea,
-  SegmentedControl,
   Stack,
   Text,
+  Tooltip,
   UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -27,68 +27,45 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  deleteSavedQueryMutation,
+  batchDeleteSavedQueriesMutation,
   listSavedQueriesOptions,
-  listSavedQueriesQueryKey,
 } from "@/client/@tanstack/react-query.gen";
-import { getSavedQueryResult } from "@/client/sdk.gen";
 import type { SavedQueryResponse } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
+import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import {
   savedQueryBrowseHref,
   SAVED_QUERY_BADGE_COLOR,
   SAVED_QUERY_ENTITY_LABEL_KEY,
   SAVED_QUERY_OPEN_LABEL_KEY,
-} from "@/lib/agent/saved-query";
-
-type Scope = "persisted" | "session";
-
-export async function downloadSavedQueryResult(queryId: number) {
-  const { data, error } = await getSavedQueryResult({
-    path: { query_id: queryId },
-    query: { offset: 0, limit: 5000 },
-  });
-  if (error || !data) {
-    notifications.show({ color: "red", message: String(error) });
-    return;
-  }
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `saved-query-${queryId}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+} from "@/lib/saved-query/display";
+import { downloadSavedQueryResult } from "@/lib/saved-query/download";
 
 function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDeleted: () => void }) {
-  const { t } = useTranslation(["agent", "common"]);
+  const { t } = useTranslation(["agent", "savedQueries", "common"]);
   const [open, setOpen] = useState(false);
   const deleteMutation = useMutation({
-    ...deleteSavedQueryMutation(),
-    onSuccess: () => {
-      onDeleted();
-    },
-    onError: (err) => {
+    ...batchDeleteSavedQueriesMutation(),
+    onSuccess: onDeleted,
+    onError: (err) =>
       notifications.show({
         color: "red",
-        message: err instanceof Error ? err.message : String(err),
-      });
-    },
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+      }),
   });
 
-  const entityLabel = t(`${SAVED_QUERY_ENTITY_LABEL_KEY[item.entity]}`);
+  const entityLabel = t(SAVED_QUERY_ENTITY_LABEL_KEY[item.entity], { ns: "savedQueries" });
   const openHref = savedQueryBrowseHref({ id: item.id, entity: item.entity });
 
   async function handleDelete() {
     const ok = await confirm({
-      title: t("deletePreset"),
-      message: t("confirmDeletePreset", { name: item.name }),
+      title: t("delete", { ns: "savedQueries" }),
+      message: t("confirmDelete", { ns: "savedQueries", name: item.name }),
       confirmLabel: t("common:actions.delete"),
     });
     if (!ok) return;
-    deleteMutation.mutate({ path: { query_id: item.id } });
+    deleteMutation.mutate({ body: { ids: [item.id] } });
   }
 
   return (
@@ -114,10 +91,16 @@ function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDelete
                 <Badge size="sm" variant="light" color={SAVED_QUERY_BADGE_COLOR[item.entity]}>
                   {entityLabel}
                 </Badge>
-                {item.persisted && (
+                {item.persisted ? (
                   <Badge size="sm" variant="outline" color="teal">
-                    {t("persistedBadge")}
+                    {t("persistedBadge", { ns: "savedQueries" })}
                   </Badge>
+                ) : (
+                  <Tooltip label={t("sessionTooltip", { ns: "savedQueries" })}>
+                    <Badge size="sm" variant="light" color="gray">
+                      {t("sessionBadge", { ns: "savedQueries" })}
+                    </Badge>
+                  </Tooltip>
                 )}
                 <Text size="xs" c="dimmed" ff="monospace">
                   #{item.id}
@@ -152,7 +135,7 @@ function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDelete
               variant="light"
               leftSection={<IconExternalLink size={14} />}
             >
-              {t(`${SAVED_QUERY_OPEN_LABEL_KEY[item.entity]}`)}
+              {t(SAVED_QUERY_OPEN_LABEL_KEY[item.entity], { ns: "savedQueries" })}
             </Button>
           )}
           <Button
@@ -164,15 +147,17 @@ function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDelete
             variant="light"
             leftSection={<IconTable size={14} />}
           >
-            {t("openData")}
+            {t(SAVED_QUERY_OPEN_LABEL_KEY.data, { ns: "savedQueries" })}
           </Button>
           <Button
             size="compact-sm"
             variant="default"
             leftSection={<IconDownload size={14} />}
-            onClick={() => void downloadSavedQueryResult(item.id)}
+            onClick={() =>
+              void downloadSavedQueryResult(item.id, t("common:toast.operationFailed"))
+            }
           >
-            {t("download")}
+            {t("download", { ns: "savedQueries" })}
           </Button>
           <Button
             size="compact-sm"
@@ -182,7 +167,7 @@ function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDelete
             loading={deleteMutation.isPending}
             onClick={() => void handleDelete()}
           >
-            {t("deletePreset")}
+            {t("delete", { ns: "savedQueries" })}
           </Button>
         </Group>
       </Stack>
@@ -190,36 +175,24 @@ function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDelete
   );
 }
 
+/** 会话页的预设入口: 展示已保留的全部预设与当前会话的临时预设, 靠标签区分. */
 export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
-  const { t } = useTranslation(["agent", "common"]);
+  const { t } = useTranslation(["agent", "savedQueries", "common"]);
   const qc = useQueryClient();
   const [opened, setOpened] = useState(false);
-  const [scope, setScope] = useState<Scope>("persisted");
-
-  const effectiveScope: Scope = scope === "session" && sessionId == null ? "persisted" : scope;
-
-  const listOpts =
-    effectiveScope === "session" && sessionId != null
-      ? listSavedQueriesOptions({ query: { session_id: sessionId } })
-      : listSavedQueriesOptions({ query: { persisted_only: true } });
 
   const listQuery = useQuery({
-    ...listOpts,
+    ...listSavedQueriesOptions(),
     enabled: opened,
   });
 
   function invalidateLists() {
-    void qc.invalidateQueries({
-      queryKey: listSavedQueriesQueryKey({ query: { persisted_only: true } }),
-    });
-    if (sessionId != null) {
-      void qc.invalidateQueries({
-        queryKey: listSavedQueriesQueryKey({ query: { session_id: sessionId } }),
-      });
-    }
+    void qc.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
   }
 
-  const items = listQuery.data?.items ?? [];
+  const items = (listQuery.data?.items ?? []).filter(
+    (item) => item.persisted || item.session_id === sessionId,
+  );
   const errorMessage =
     listQuery.error instanceof Error ? listQuery.error.message : t("common:status.error");
 
@@ -242,29 +215,9 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
       </Menu.Target>
       <Menu.Dropdown p="md">
         <Stack gap="md">
-          <Stack gap={4}>
-            <Text size="md" fw={700} style={{ letterSpacing: "-0.02em" }}>
-              {t("presets")}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {effectiveScope === "session" ? t("presetsSessionHint") : t("presetsPersistedHint")}
-            </Text>
-          </Stack>
-
-          <SegmentedControl
-            size="sm"
-            fullWidth
-            value={effectiveScope}
-            onChange={(v) => setScope(v as Scope)}
-            data={[
-              { label: t("presetsPersisted"), value: "persisted" },
-              {
-                label: t("presetsSession"),
-                value: "session",
-                disabled: sessionId == null,
-              },
-            ]}
-          />
+          <Text size="md" fw={700} style={{ letterSpacing: "-0.02em" }}>
+            {t("presets")}
+          </Text>
 
           {listQuery.isPending && (
             <Group justify="center" py="xl">
@@ -281,9 +234,7 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
           {!listQuery.isPending && !listQuery.isError && items.length === 0 && (
             <Box py="xl" px="md">
               <Text c="dimmed" size="sm" ta="center" style={{ lineHeight: 1.6 }}>
-                {effectiveScope === "session"
-                  ? t("presetsSessionEmpty")
-                  : t("presetsPersistedEmpty")}
+                {t("presetsEmpty")}
               </Text>
             </Box>
           )}

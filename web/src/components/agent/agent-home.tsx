@@ -60,6 +60,7 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   createAgentSessionMutation,
+  batchPersistSavedQueriesMutation,
   deleteAgentSessionMutation,
   generateAgentSessionTitleMutation,
   listAgentSessionsOptions,
@@ -68,17 +69,10 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import { cancelAguiTurn, getAgentTrace } from "@/client/sdk.gen";
 import type { AgentSessionResponse } from "@/client/types.gen";
-import {
-  listSavedQueriesQueryKey,
-  updateSavedQueryMutation,
-} from "@/client/@tanstack/react-query.gen";
 import { ChatComposer, parseThinking, type ThinkingValue } from "@/components/agent/chat-composer";
 import { MarkdownContent } from "@/components/agent/markdown-content";
 import { SavedQueryActions } from "@/components/agent/saved-query-actions";
-import {
-  downloadSavedQueryResult,
-  SavedQueryManager,
-} from "@/components/agent/saved-query-manager";
+import { SavedQueryManager } from "@/components/agent/saved-query-manager";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
 import i18n from "@/i18n";
 import { extractErrorMessage } from "@/lib/api-error";
@@ -91,6 +85,7 @@ import {
   type AgentToolCallPart,
   type TraceRow,
 } from "@/lib/agent/trace";
+import { downloadSavedQueryResult } from "@/lib/saved-query/download";
 import { TokenUsageBar, RequestUsageBar } from "@/components/agent/token-usage-bar";
 import { confirm } from "@/lib/confirm";
 
@@ -288,18 +283,16 @@ function argsBodyOf(argsText: string): unknown {
 }
 
 function ToolCallPart({ part, running }: { part: AgentToolCallPart; running: boolean }) {
-  const { t } = useTranslation("agent");
+  const { t } = useTranslation(["agent", "common"]);
   const { open, toggle, headerRef } = useFold();
   const queryClient = useQueryClient();
   const { toolCallId, toolName, result } = part;
   const savedQueryId = savedQueryIdOf(toolName, result);
   const argsBody = argsBodyOf(part.argsText);
   const persist = useMutation({
-    ...updateSavedQueryMutation(),
+    ...batchPersistSavedQueriesMutation(),
     onSuccess: () =>
-      void queryClient.invalidateQueries({
-        queryKey: listSavedQueriesQueryKey({ query: { persisted_only: true } }),
-      }),
+      void queryClient.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] }),
   });
 
   return (
@@ -332,10 +325,10 @@ function ToolCallPart({ part, running }: { part: AgentToolCallPart; running: boo
         <Box px="sm" pb="sm">
           <SavedQueryActions
             ids={[savedQueryId]}
-            onDownload={(id) => void downloadSavedQueryResult(id)}
-            onPersist={(id) =>
-              persist.mutate({ path: { query_id: id }, body: { persisted: true } })
+            onDownload={(id) =>
+              void downloadSavedQueryResult(id, t("common:toast.operationFailed"))
             }
+            onPersist={(id) => persist.mutate({ body: { ids: [id] } })}
           />
         </Box>
       )}

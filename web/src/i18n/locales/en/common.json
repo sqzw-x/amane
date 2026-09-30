@@ -50,6 +50,7 @@
     "libraries": "Libraries",
     "feeds": "Feeds",
     "feedSources": "Feed sources",
+    "savedQueries": "Saved queries",
     "agent": "Amane",
     "groups": {
       "browse": "Browse",

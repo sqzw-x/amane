@@ -3,7 +3,7 @@ import { IconDownload, IconExternalLink, IconTable } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { getSavedQueryOptions } from "@/client/@tanstack/react-query.gen";
-import { savedQueryBrowseHref, SAVED_QUERY_OPEN_LABEL_KEY } from "@/lib/agent/saved-query";
+import { savedQueryBrowseHref, SAVED_QUERY_OPEN_LABEL_KEY } from "@/lib/saved-query/display";
 
 export function SavedQueryActions({
   ids,
@@ -32,7 +32,7 @@ function SavedQueryActionRow({
   onDownload: (id: number) => void;
   onPersist: (id: number) => void;
 }) {
-  const { t } = useTranslation("agent");
+  const { t } = useTranslation(["agent", "savedQueries"]);
   const { data } = useQuery(getSavedQueryOptions({ path: { query_id: id } }));
   const href = data != null ? savedQueryBrowseHref({ id, entity: data.entity }) : null;
   const label = data?.name ?? t("savedQueryChip", { id });
@@ -56,7 +56,7 @@ function SavedQueryActionRow({
         variant="light"
         leftSection={<IconTable size={14} />}
       >
-        {t("openData")}
+        {t(SAVED_QUERY_OPEN_LABEL_KEY.data, { ns: "savedQueries" })}
       </Button>
       {data != null && href != null && (
         <Button
@@ -68,11 +68,16 @@ function SavedQueryActionRow({
           variant="light"
           leftSection={<IconExternalLink size={14} />}
         >
-          {t(SAVED_QUERY_OPEN_LABEL_KEY[data.entity])}
+          {t(SAVED_QUERY_OPEN_LABEL_KEY[data.entity], { ns: "savedQueries" })}
         </Button>
       )}
-      <Button size="xs" variant="default" onClick={() => onPersist(id)}>
-        {t("persist")}
+      <Button
+        size="xs"
+        variant="default"
+        onClick={() => onPersist(id)}
+        disabled={data?.persisted === true}
+      >
+        {t("persist", { ns: "savedQueries" })}
       </Button>
       <Button
         size="xs"
@@ -80,7 +85,7 @@ function SavedQueryActionRow({
         leftSection={<IconDownload size={14} />}
         onClick={() => onDownload(id)}
       >
-        {t("download")}
+        {t("download", { ns: "savedQueries" })}
       </Button>
     </Group>
   );

@@ -26,6 +26,7 @@ import type {
   Mosaic,
   RescrapeTarget,
   RoutineType,
+  SavedQueryEntity,
   ScanMode,
   SiteOutcomeKind,
   SortOrder,
@@ -49,6 +50,13 @@ export const SCAN_MODES = exhaustiveTuple<ScanMode>()("add", "remove");
 export const CACHE_KINDS = exhaustiveTuple<CacheKind>()("metadata", "trans");
 
 export const RESCRAPE_TARGETS = exhaustiveTuple<RescrapeTarget>()("metadata", "actor");
+
+/** 查询预设的交付类型; 顺序即创建表单与筛选的选项顺序. */
+export const SAVED_QUERY_ENTITIES = exhaustiveTuple<SavedQueryEntity>()(
+  "metadata",
+  "actor",
+  "data",
+);
 
 export const CONTENT_TYPES = exhaustiveTuple<ContentType>()(
   "censored",

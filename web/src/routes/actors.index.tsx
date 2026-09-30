@@ -105,7 +105,7 @@ function ActiveUserTagChip({ tagId, onClear }: { tagId: number; onClear: () => v
 function ActorsIndexPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { t } = useTranslation(["metadata", "common", "agent"]);
+  const { t } = useTranslation(["metadata", "common", "savedQueries"]);
   const listLimit = useUIStore((s) => s.pageSizes.actorsList);
 
   const filters = actorFilterValuesFromSearch(search);
@@ -295,7 +295,7 @@ function ActorsIndexPage() {
           {search.saved_query_id != null && (
             <Group gap={4} wrap="nowrap">
               <ActiveFilterChip
-                label={`${t("common:nav.agent")}: #${search.saved_query_id}`}
+                label={`${t("common:nav.savedQueries")}: #${search.saved_query_id}`}
                 onClear={() =>
                   void navigate({
                     search: (prev) => ({ ...prev, saved_query_id: undefined, page: 1 }),
@@ -309,7 +309,7 @@ function ActorsIndexPage() {
                 href={`/saved-queries/${search.saved_query_id}`}
                 target="_blank"
                 rel="noreferrer"
-                aria-label={t("agent:openData")}
+                aria-label={t("savedQueries:openData")}
               >
                 <IconTable size={14} />
               </ActionIcon>

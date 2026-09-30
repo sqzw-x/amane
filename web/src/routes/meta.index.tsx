@@ -99,7 +99,7 @@ function ActiveTriChip({ label, onClear }: { label: string; onClear: () => void 
 }
 
 function MetaIndexPage() {
-  const { t } = useTranslation(["metadata", "common", "agent"]);
+  const { t } = useTranslation(["metadata", "common", "savedQueries"]);
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const listLimit = useUIStore((s) => s.pageSizes.metaList);
@@ -363,7 +363,7 @@ function MetaIndexPage() {
           {search.saved_query_id != null && (
             <Group gap={4} wrap="nowrap">
               <Badge variant="outline">
-                {t("common:nav.agent")}: #{search.saved_query_id}
+                {t("common:nav.savedQueries")}: #{search.saved_query_id}
               </Badge>
               <ActionIcon
                 size="sm"
@@ -372,7 +372,7 @@ function MetaIndexPage() {
                 href={`/saved-queries/${search.saved_query_id}`}
                 target="_blank"
                 rel="noreferrer"
-                aria-label={t("agent:openData")}
+                aria-label={t("savedQueries:openData")}
               >
                 <IconTable size={14} />
               </ActionIcon>
