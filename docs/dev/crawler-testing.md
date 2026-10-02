@@ -19,7 +19,7 @@
 |------|------|
 | curl (`-L` + cookie jar) | API / 低反爬 |
 | 项目 `WebClient` (curl_cffi) | curl 过不了的中等反爬 |
-| 无头浏览器 (`get_rendered`) | JS 渲染 (成功率低) |
+| 无头浏览器 (`get_rendered` / camoufox 后端) | JS 渲染与 CF managed challenge |
 | 真浏览器 DevTools → Copy Response | CF 盾 (往往是唯一可靠途径) |
 
 每个 TOML **顶部注释必须记录**采集命令, 方便刷新; 一个 TOML 一个场景, 不能放入多个 case. 布局 `cases/{site}/`: 纯演员站 TOML 在站点根; 同名也在影片 registry 的站, 影片在根、演员只放 `actor/` (影片 runner 忽略 `actor/` 段; 演员 runner 不回退根目录). 查询键: 影片 `number`, 演员 `name`; 覆盖 `fetch()` 的站只写 `[fetch]`. `*.config` 段注入 `SiteConfig`. 命名: 影片 `{番号小写}_{变体}.toml`, 演员 `{名字或场景}_{变体}.toml`; 响应与 TOML 同目录, `.html` → `get_text`, `.json` → `post_json`.
