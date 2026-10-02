@@ -44,7 +44,7 @@ while IFS= read -r name; do
   STDLIB_ARGS+=(--collect-submodules "$name")
 done < <(.venv/bin/python scripts/stdlib_modules.py)
 
-# Excludes: patchright (lazy browser import in net/http.py) and IPython
+# Excludes: patchright / camoufox / playwright (本地引擎, 桌面端仅 solver 可用) and IPython
 # (python-dotenv -> dotenv.ipython -> IPython.core.magic).
 .venv/bin/pyinstaller \
   --noconfirm --clean --onedir --console \
@@ -56,6 +56,8 @@ done < <(.venv/bin/python scripts/stdlib_modules.py)
   --add-data "$ROOT/alembic.ini:." \
   --collect-submodules amane \
   --exclude-module patchright \
+  --exclude-module camoufox \
+  --exclude-module playwright \
   --exclude-module IPython \
   --collect-all pydantic_ai \
   --collect-all pydantic_graph \

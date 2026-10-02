@@ -60,6 +60,8 @@ $StdlibArgs = @()
     --add-data "$(Join-Path $Root 'alembic.ini');." `
     --collect-submodules amane `
     --exclude-module patchright `
+    --exclude-module camoufox `
+    --exclude-module playwright `
     --exclude-module IPython `
     --collect-all pydantic_ai `
     --collect-all pydantic_graph `
