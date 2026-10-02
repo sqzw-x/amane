@@ -31,6 +31,7 @@ from ..handlers import (
 )
 from ..llm import TranslationCache, build_translator
 from ..media.watermarks import user_watermark_dir
+from ..net.browser import BrowserPool
 from ..net.http import RateLimiters, WebClient
 from ..playback import PlaybackFactory, PlaybackState
 from ..plugins.manager import PluginManager
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from ..agent import AgentService
-    from ..config import ConfigManager, HotSettings
+    from ..config import BrowserConfig, ConfigManager, HotSettings
     from ..db.repository import Repository
     from ..events import EventBus
     from ..handlers.protocol import TaskHandler
@@ -61,6 +62,7 @@ class NetworkStack:
     web_client: WebClient
     http_client: HttpClient
     factory: CrawlerFactory
+    browser: BrowserPool
 
 
 def build_network_stack(
@@ -69,8 +71,13 @@ def build_network_stack(
     *,
     data_dir: Path | None = None,
     plugin_manager: PluginManager | None = None,
+    browser: BrowserPool | None = None,
 ) -> NetworkStack:
-    """bootstrap 与热重载共用. r18_db 为会话级只读引擎, 热重载时复用同一实例, 不随配置重建."""
+    """bootstrap 与热重载共用. r18_db 为会话级只读引擎, 热重载时复用同一实例, 不随配置重建.
+
+    ``browser`` 由热重载传入未变化的浏览器池以保留已解决的会话; 复用时就地同步新的 HTTP 通道
+    (solver 经它出站). 不传则按当前配置构造.
+    """
     site_urls: dict[str, list[str]] = {}
     referer_hosts: set[str] = set()
     site_config = hot.scraping.site_config
@@ -118,7 +125,18 @@ def build_network_stack(
         limiters=limiters,
         same_origin_referer_hosts=frozenset(referer_hosts),
     )
-    http_client = HttpClient(web=web_client, browser=None)
+    if browser is None:
+        browser = BrowserPool(
+            default_backend=hot.network.browser.backend,
+            solver_url=hot.network.browser.solver_url,
+            proxy=hot.network.proxy,
+            web_client=web_client,
+            timeout_ms=hot.network.browser_timeout,
+        )
+    else:
+        browser.rebind_web_client(web_client)
+    _warn_disabled_browser_sources(hot, browser)
+    http_client = HttpClient(web=web_client, browser=browser, browser_timeout=hot.network.browser_timeout)
     factory = CrawlerFactory(
         http_client,
         site_configs=hot.scraping.site_config,
@@ -129,7 +147,14 @@ def build_network_stack(
         plugin_configs=hot.plugins,
     )
 
-    return NetworkStack(web_client=web_client, http_client=http_client, factory=factory)
+    return NetworkStack(web_client=web_client, http_client=http_client, factory=factory, browser=browser)
+
+
+def _warn_disabled_browser_sources(hot: HotSettings, browser: BrowserPool) -> None:
+    """启用浏览器渲染却没有可解析后端的来源: 抓取时必然失败, 在构造期给出一次明确告警."""
+    for site, config in hot.scraping.site_config.items():
+        if config.use_browser and browser.resolve(config.browser_backend) is None:
+            logger.warning("browser rendering enabled without backend", site=str(site))
 
 
 def build_r18_db(r18: R18Config) -> R18Database | None:
@@ -168,14 +193,23 @@ class AppRuntime:
     plugin_manager: PluginManager | None = None
     playback_factory: PlaybackFactory | None = None
     playback_state: PlaybackState = field(default_factory=PlaybackState)
+    browser: BrowserPool | None = None
 
     _r18_config: R18Config | None = field(default=None, repr=False)
     _old_r18_db: R18Database | None = field(default=None, repr=False)
+    _browser_key: tuple[BrowserConfig, int, str | None] | None = field(default=None, repr=False)
+    _old_browser: BrowserPool | None = field(default=None, repr=False)
     _rebuild_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     def __post_init__(self) -> None:
         if self._r18_config is None:
             self._r18_config = self.config.hot.r18.model_copy(deep=True)
+        self._browser_key = self._current_browser_key()
+
+    def _current_browser_key(self) -> tuple[BrowserConfig, int, str | None]:
+        """浏览器池的生命周期键: 任一变化都需要换新引擎 (代理与超时参与启动与单次渲染)."""
+        network = self.config.hot.network
+        return (network.browser.model_copy(deep=True), network.browser_timeout, network.proxy)
 
     def rebuild(self) -> AsyncWorker:
         """重建依赖热配置的对象.
@@ -196,15 +230,26 @@ class AppRuntime:
             self.r18_db = build_r18_db(hot.r18)
             self._r18_config = hot.r18.model_copy(deep=True)
 
+        # 浏览器池只在其生命周期键变化时重建; 复用同一实例保留已解决的挑战会话
+        browser_key = self._current_browser_key()
+        if browser_key != self._browser_key:
+            self._old_browser = self.browser
+            reused_browser = None
+        else:
+            reused_browser = self.browser
+        self._browser_key = browser_key
+
         stack = build_network_stack(
             hot,
             r18_db=self.r18_db,
             data_dir=self.config.cold.data_dir,
             plugin_manager=self.plugin_manager,
+            browser=reused_browser,
         )
         self.web_client = stack.web_client
         self.http_client = stack.http_client
         self.factory = stack.factory
+        self.browser = stack.browser
         if self.feed_service is not None:
             self.feed_service.set_web_client(self.web_client)
 
@@ -302,6 +347,7 @@ class AppRuntime:
         await old_worker.stop()
         self.worker.start()
         await self.dispose_old_r18()
+        await self.dispose_old_browser()
         if old_playback is not None:
             await old_playback.aclose()
 
@@ -327,6 +373,12 @@ class AppRuntime:
         if self._old_r18_db is not None:
             await self._old_r18_db.close()
             self._old_r18_db = None
+
+    async def dispose_old_browser(self) -> None:
+        """异步释放 rebuild() 替换下来的旧浏览器池; 须在旧 worker 排空后调用."""
+        old, self._old_browser = self._old_browser, None
+        if old is not None:
+            await old.close()
 
 
 def build_handlers(

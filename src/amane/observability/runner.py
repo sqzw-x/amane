@@ -10,7 +10,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..app.runtime import build_network_stack, build_r18_db
 from ..config import HotSettings
@@ -25,6 +25,9 @@ from ..media import ResourceStore
 from ..net.http import WebClient
 from .models import RecordManifest, TaskSnapshot
 from .replay import ReplayWebClient
+
+if TYPE_CHECKING:
+    from ..net.browser import BrowserPool
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -74,6 +77,7 @@ async def run_record(record_path: Path, *, online: bool = False) -> int:
                 await repo.upsert_metadata(payload.number, raw=raw)
 
             r18_db = build_r18_db(hot.r18) if not use_offline else None
+            browser: BrowserPool | None = None
             if use_offline:
                 web: Any = ReplayWebClient(root / "http")
                 http_client = HttpClient(web=web, browser=None)
@@ -82,6 +86,7 @@ async def run_record(record_path: Path, *, online: bool = False) -> int:
                 stack = build_network_stack(hot, r18_db=r18_db)
                 web = stack.web_client
                 factory = stack.factory
+                browser = stack.browser
 
             handler = ScrapeHandler(repo, factory, resource_store, hot, web)
             result = await handler.handle(payload)
@@ -94,6 +99,8 @@ async def run_record(record_path: Path, *, online: bool = False) -> int:
             print(json.dumps(out, ensure_ascii=False, indent=2))  # noqa: T201
             if isinstance(web, WebClient):
                 await web.close()
+            if browser is not None:
+                await browser.close()
             if isinstance(r18_db, R18Database):
                 await r18_db.close()
             await engine.dispose()

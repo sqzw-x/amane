@@ -198,7 +198,6 @@ class _LocalBackend(ABC):
         timeout: float | None = None,
     ) -> BrowserPageResult:
         effective = timeout if timeout is not None else self._default_timeout
-        deadline = time.monotonic() + effective / 1000
         self._active += 1
         self._schedule_idle()
         try:
@@ -209,7 +208,6 @@ class _LocalBackend(ABC):
                     cookies=cookies,
                     headers=headers,
                     wait_for=wait_for,
-                    deadline=deadline,
                     timeout=effective,
                 )
         finally:
@@ -223,12 +221,13 @@ class _LocalBackend(ABC):
         cookies: Mapping[str, str] | None,
         headers: Mapping[str, str] | None,
         wait_for: str | None,
-        deadline: float,
         timeout: float,
     ) -> BrowserPageResult:
         page: Any = None
         try:
             context = await self._context(scope)
+            # 引擎启动 (含 camoufox 首次下载) 不计入单次渲染时限.
+            deadline = time.monotonic() + timeout / 1000
             if cookies:
                 await context.add_cookies([{"name": k, "value": v, "url": url} for k, v in cookies.items()])
             if headers:
