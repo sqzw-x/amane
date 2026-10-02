@@ -39,6 +39,15 @@ class Language(StrEnum):
     EN = "en"
 
 
+class BrowserBackendName(StrEnum):
+    """浏览器渲染后端. ``OFF`` 表示不走浏览器; 来源可经 ``SiteConfig.browser_backend`` 覆盖."""
+
+    OFF = "off"
+    PATCHRIGHT = "patchright"
+    CAMOUFOX = "camoufox"
+    SOLVER = "solver"
+
+
 # 大模型上游协议: chat = OpenAI Chat Completions, response = OpenAI Responses, anthropic = Anthropic Messages.
 class ApiType(StrEnum):
     CHAT = "chat"

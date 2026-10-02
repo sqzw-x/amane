@@ -296,7 +296,17 @@
           },
           "use_browser": {
             "label": "使用浏览器",
-            "description": "使用无头浏览器抓取(尚未实现)"
+            "description": "该来源的 HTML 请求改由浏览器后端渲染"
+          },
+          "browser_backend": {
+            "label": "浏览器后端",
+            "description": "覆盖全局后端; off 表示该来源禁用浏览器",
+            "options": {
+              "off": "关闭",
+              "patchright": "Patchright",
+              "camoufox": "Camoufox",
+              "solver": "Solver 服务"
+            }
           },
           "cookie": {
             "label": "Cookie",
@@ -443,6 +453,22 @@
       "browser_timeout": {
         "label": "浏览器超时",
         "description": "无头浏览器页面导航超时 (毫秒)"
+      },
+      "browser": {
+        "label": "浏览器渲染",
+        "backend": {
+          "label": "后端",
+          "options": {
+            "off": "关闭",
+            "patchright": "Patchright",
+            "camoufox": "Camoufox",
+            "solver": "Solver 服务"
+          }
+        },
+        "solver_url": {
+          "label": "Solver 地址",
+          "description": "FlareSolverr 兼容服务地址, 仅 solver 后端使用"
+        }
       },
       "chunked_threshold": {
         "label": "分块阈值",

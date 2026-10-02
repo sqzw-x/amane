@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..enums import ActorGender
-from ..net.connectivity import ConnectivityOutcome, probe_get
+from ..net.connectivity import ConnectivityOutcome
 from ..plugins.models import SourceCapability, SourceDescriptor, SourceTrait
 from .http import HttpClient
 
@@ -114,11 +114,11 @@ class Crawler(ABC):
         return result
 
     async def check_connectivity(self) -> ConnectivityOutcome:
-        """连通性自检: 缺省 GET ``base_url``, 用与刮削相同的通道 (代理 / 指纹 / 限速 / 同源 Referer).
+        """连通性自检: 缺省 GET ``base_url``, 用与刮削相同的视图 (渲染来源走浏览器, 其余走 HTTP).
 
         实际入口与 ``base_url`` 不同的来源覆盖本方法 (探测真实 API 主机, 或按前置条件报 ``skipped``).
         """
-        return await probe_get(self.client.web_client, self.base_url, cookies=self.cookies, headers=self.headers)
+        return await self.client.check(self.base_url, cookies=self.cookies, headers=self.headers)
 
     @abstractmethod
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None: ...

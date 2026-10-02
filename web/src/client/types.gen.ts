@@ -515,6 +515,24 @@ export type BodyInstallPlugin = {
 };
 
 /**
+ * BrowserBackendName
+ *
+ * 浏览器渲染后端. ``OFF`` 表示不走浏览器; 来源可经 ``SiteConfig.browser_backend`` 覆盖.
+ */
+export type BrowserBackendName = 'off' | 'patchright' | 'camoufox' | 'solver';
+
+/**
+ * BrowserConfig
+ */
+export type BrowserConfig = {
+    backend?: BrowserBackendName;
+    /**
+     * Solver Url
+     */
+    solver_url?: string;
+};
+
+/**
  * CacheKind
  *
  * 刮削可复用的缓存种类. use_cache 为其集合: 含某项 = 该缓存生效, 不含 = 强制刷新该项.
@@ -2321,6 +2339,7 @@ export type NetworkConfig = {
      * Browser Timeout
      */
     browser_timeout?: number;
+    browser?: BrowserConfig;
     /**
      * Chunked Threshold
      */
@@ -3276,6 +3295,7 @@ export type SiteConfig = {
      * Use Browser
      */
     use_browser?: boolean;
+    browser_backend?: BrowserBackendName | null;
     /**
      * Cookie
      */

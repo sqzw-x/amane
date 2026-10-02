@@ -104,11 +104,12 @@ class CrawlerFactory:
         cls = registry.get(name)
         if cls is not None:
             site_config = self._site_configs.get(name)
+            client = self._http.for_source(name, site_config)
             # R18DevCrawler 额外注入只读 DB.
             if cls is R18DevCrawler:
-                instance: Crawler = R18DevCrawler(client=self._http, config=site_config, db=self._r18_db)
+                instance: Crawler = R18DevCrawler(client=client, config=site_config, db=self._r18_db)
             else:
-                instance = cls(client=self._http, config=site_config)
+                instance = cls(client=client, config=site_config)
             self._instances[name] = instance
             return instance
 
@@ -168,15 +169,16 @@ class CrawlerFactory:
             return None
 
         site_config = self._site_configs.get(name)
+        client = self._http.for_source(name, site_config)
         if cls is GFriendsActorCrawler:
             instance: ActorCrawler = GFriendsActorCrawler(
-                client=self._http,
+                client=client,
                 config=site_config,
                 data_dir=self._data_dir,
                 repo_url=self._gfriends_repo,
             )
         else:
-            instance = cls(client=self._http, config=site_config)
+            instance = cls(client=client, config=site_config)
         self._actor_instances[name] = instance
         return instance
 

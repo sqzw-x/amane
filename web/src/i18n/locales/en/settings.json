@@ -296,7 +296,17 @@
           },
           "use_browser": {
             "label": "Use Browser",
-            "description": "Scrape with a headless browser (not implemented yet)"
+            "description": "Render this source's HTML requests with the browser backend"
+          },
+          "browser_backend": {
+            "label": "Browser Backend",
+            "description": "Overrides the global backend; off disables the browser for this source",
+            "options": {
+              "off": "Off",
+              "patchright": "Patchright",
+              "camoufox": "Camoufox",
+              "solver": "Solver"
+            }
           },
           "cookie": {
             "label": "Cookie",
@@ -443,6 +453,22 @@
       "browser_timeout": {
         "label": "Browser Timeout",
         "description": "Headless browser page navigation timeout (milliseconds)"
+      },
+      "browser": {
+        "label": "Browser Rendering",
+        "backend": {
+          "label": "Backend",
+          "options": {
+            "off": "Off",
+            "patchright": "Patchright",
+            "camoufox": "Camoufox",
+            "solver": "Solver"
+          }
+        },
+        "solver_url": {
+          "label": "Solver URL",
+          "description": "FlareSolverr-compatible service URL; used by the solver backend only"
+        }
       },
       "chunked_threshold": {
         "label": "Chunked Threshold",

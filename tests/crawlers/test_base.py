@@ -122,6 +122,26 @@ def test_classify_block_detects(text: str, failure: RequestFailure | None, expec
     assert (reason is not None) is expected
 
 
+# 挑战页按平台标记识别, 不依赖页面语言; 挑战页同样带 ray-id, 封禁判定只在无挑战标记时生效.
+# CF 的 JS Detection 脚本 (challenge-platform/scripts/jsd) 也出现在正常页面上, 不构成拦截信号.
+_CLOUDFLARE_REASON_CASES: list[tuple[str, FailureReason | None]] = [
+    ("just a moment... cloudflare challenge", FailureReason.CLOUDFLARE_CHALLENGE),
+    (
+        "<html><head><title>しばらくお待ちください...</title>"
+        '<script>window._cf_chl_opt={cType:"managed"};</script></head><body>captcha</body></html>',
+        FailureReason.CLOUDFLARE_CHALLENGE,
+    ),
+    ("<html><div class='ray-id'>Ray ID: abc</div>cf-ray blocked</html>", FailureReason.CLOUDFLARE_BLOCKED),
+    ("<html><script src='/cdn-cgi/challenge-platform/scripts/jsd/main.js'></script></html>", None),
+    ('<html><input name="cf-turnstile-response"></html>', None),
+]
+
+
+@pytest.mark.parametrize(("text", "expected"), _CLOUDFLARE_REASON_CASES)
+def test_classify_block_cloudflare_reason(text: str, expected: FailureReason | None):
+    assert classify_block(text) is expected
+
+
 @pytest.mark.parametrize(
     ("status", "expected"),
     [

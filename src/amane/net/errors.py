@@ -30,6 +30,8 @@ class RequestFailure:
     """kind=HTTP_STATUS 时必有."""
     body: bytes | None = None
     """截断后的失败响应正文, 拦截判定用."""
+    reason: FailureReason | None = None
+    """失败语义已知时直接给出, 跳过正文启发式. 浏览器后端用它表达挑战未解决等下游无法从正文判定的失败."""
 
 
 class FailureReason(StrEnum):
@@ -138,10 +140,15 @@ def _classify_text(text: str) -> FailureReason | None:
         return FailureReason.GEO_RESTRICTED
     if "banned your access" in lower:
         return FailureReason.IP_BANNED
-    if "ray-id" in lower and "cf-" in lower:
-        return FailureReason.CLOUDFLARE_BLOCKED
+    # 挑战页按平台标记识别, 不依赖页面语言 (本地化标题不含 "just a moment"). ``_cf_chl_opt`` 只在
+    # 挑战页出现: ``challenge-platform`` 亦是正常页面的 JS Detection 脚本, 不能单独作为判据.
+    # 挑战页同样带 ray-id, 因此必须先于封禁页判定.
+    if "_cf_chl_opt" in lower:
+        return FailureReason.CLOUDFLARE_CHALLENGE
     if "just a moment" in lower and "cloudflare" in lower:
         return FailureReason.CLOUDFLARE_CHALLENGE
+    if "ray-id" in lower and "cf-" in lower:
+        return FailureReason.CLOUDFLARE_BLOCKED
     if "driver-verify" in lower:
         return FailureReason.AGE_VERIFICATION
     if "年齢認証" in text or "age verification" in lower:
@@ -153,6 +160,8 @@ def classify_request_error(failure: RequestFailure | None) -> FailureReason:
     """无正文信号时按 kind/status 分类."""
     if failure is None:
         return FailureReason.NETWORK
+    if failure.reason is not None:
+        return failure.reason
     if failure.body:
         reason = _classify_text(failure.body.decode("utf-8", errors="replace"))
         if reason is not None:

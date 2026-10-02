@@ -984,6 +984,35 @@ export const Body_install_pluginSchema = {
     title: 'Body_install_plugin'
 } as const;
 
+export const BrowserBackendNameSchema = {
+    type: 'string',
+    enum: [
+        'off',
+        'patchright',
+        'camoufox',
+        'solver'
+    ],
+    title: 'BrowserBackendName',
+    description: '浏览器渲染后端. ``OFF`` 表示不走浏览器; 来源可经 ``SiteConfig.browser_backend`` 覆盖.'
+} as const;
+
+export const BrowserConfigSchema = {
+    properties: {
+        backend: {
+            $ref: '#/components/schemas/BrowserBackendName',
+            default: 'off'
+        },
+        solver_url: {
+            type: 'string',
+            minLength: 1,
+            title: 'Solver Url',
+            default: 'http://127.0.0.1:8191'
+        }
+    },
+    type: 'object',
+    title: 'BrowserConfig'
+} as const;
+
 export const CacheKindSchema = {
     type: 'string',
     enum: [
@@ -2679,7 +2708,11 @@ export const HotSettingsSchema = {
                 timeout: 10,
                 max_retries: 3,
                 max_clients: 50,
-                browser_timeout: 15000,
+                browser_timeout: 30000,
+                browser: {
+                    backend: 'off',
+                    solver_url: 'http://127.0.0.1:8191'
+                },
                 chunked_threshold: 2097152,
                 chunk_size: 1048576,
                 concurrency: 10,
@@ -4906,7 +4939,11 @@ export const NetworkConfigSchema = {
             maximum: 120000,
             minimum: 5000,
             title: 'Browser Timeout',
-            default: 15000,
+            default: 30000,
+            'x-hidden': true
+        },
+        browser: {
+            $ref: '#/components/schemas/BrowserConfig',
             'x-hidden': true
         },
         chunked_threshold: {
@@ -6559,6 +6596,17 @@ export const SiteConfigSchema = {
             type: 'boolean',
             title: 'Use Browser',
             default: false,
+            'x-hidden': true
+        },
+        browser_backend: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/BrowserBackendName'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             'x-hidden': true
         },
         cookie: {

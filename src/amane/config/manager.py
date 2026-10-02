@@ -23,6 +23,7 @@ from ..crawlers.site_roles import (
 from ..crawlers.sites.official import Manufacturer
 from ..enums import (
     ApiType,
+    BrowserBackendName,
     DownloadableResource,
     Language,
     MetadataField,
@@ -228,6 +229,8 @@ class SiteConfig(BaseModel):
     base_url: str | None = None
     use_proxy: bool = True
     use_browser: bool = Field(default=False, json_schema_extra={"x-hidden": True})
+    browser_backend: BrowserBackendName | None = Field(default=None, json_schema_extra={"x-hidden": True})
+    """覆盖 ``network.browser.backend``; ``off`` 表示该来源显式禁用浏览器渲染."""
     cookie: dict[str, str] = {}
     api_token: str | None = Field(default=None, json_schema_extra={"x-visible-keys": _SITES_WITH_API_TOKEN})
     official_routes: dict[str, Manufacturer] = Field(
@@ -443,13 +446,20 @@ class WatermarkConfig(BaseModel):
         return _complete_frozen_dict(v, dict.fromkeys(WatermarkKind, WatermarkCorner.TOP_LEFT))
 
 
+class BrowserConfig(BaseModel):
+    backend: BrowserBackendName = BrowserBackendName.OFF
+    solver_url: str = Field(default="http://127.0.0.1:8191", min_length=1)
+    """FlareSolverr 兼容服务地址; 仅 ``solver`` 后端使用. 服务不允许暴露到公网."""
+
+
 class NetworkConfig(BaseModel):
     proxy: str | None = None
     timeout: float = Field(default=10.0, ge=5.0, le=300.0)
     max_retries: int = Field(default=3, ge=0, le=10)
     """实为总尝试次数 (``3`` → 最多发 3 次请求), 名字为兼容既有配置保留; 0 表示不重试."""
     max_clients: int = Field(default=50, ge=5, le=500, json_schema_extra={"x-hidden": True})
-    browser_timeout: int = Field(default=15000, ge=5000, le=120000, json_schema_extra={"x-hidden": True})
+    browser_timeout: int = Field(default=30000, ge=5000, le=120000, json_schema_extra={"x-hidden": True})
+    browser: BrowserConfig = Field(default_factory=BrowserConfig, json_schema_extra={"x-hidden": True})
 
     chunked_threshold: int = Field(default=2 * 1024**2, ge=512 * 1024, le=100 * 1024**2)
     """超过此大小 (字节) 启用分块并发下载."""
