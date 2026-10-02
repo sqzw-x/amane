@@ -9,6 +9,7 @@ from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 from parsel import Selector
 
 from amane.enums import ActorGender, SiteName
+from amane.net.connectivity import ConnectivityOutcome
 from amane.parsing import split_actor_aliases
 from amane.plugins.models import SourceCapability
 from amane.utils.dates import normalize_calendar_date
@@ -38,11 +39,12 @@ class MinnanoActorCrawler(ActorCrawler):
             base_url="https://www.minnano-av.com",
             capabilities=frozenset({SourceCapability.ACTOR_PROFILE}),
             genders=frozenset({ActorGender.FEMALE}),
+            # 站点用 JS 注入年龄确认弹层, 仅在缺 cookie 时出现; 预置后页面不再被拦截判定命中.
+            cookies={"age_verified": "1"},
         )
 
     async def _search(self, name: str) -> str | None:
-        q = quote(name)
-        search_url = f"{self.base_url}/search_result.php?search_scope=actress&search_word={q}&search=Go"
+        search_url = self._search_url(name)
         text = await self.client.get_html(search_url, cookies=self.cookies)
         html = Selector(text=text)
 
@@ -62,6 +64,13 @@ class MinnanoActorCrawler(ActorCrawler):
             return None
 
         return self._pick_search_hit(html, name)
+
+    def _search_url(self, name: str) -> str:
+        return f"{self.base_url}/search_result.php?search_scope=actress&search_word={quote(name)}&search=Go"
+
+    async def check_connectivity(self) -> ConnectivityOutcome:
+        """探测检索入口: 首页可达不代表 ``search_result.php`` 可达, 后者处于挑战保护."""
+        return await self.client.check(self._search_url("あ"), cookies=self.cookies)
 
     def _pick_search_hit(self, html: Selector, name: str) -> str | None:
         # 精确名优先; 否则取首条演员行.
