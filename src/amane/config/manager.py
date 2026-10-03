@@ -228,9 +228,10 @@ class ColdSettings(BaseSettings):
 class SiteConfig(BaseModel):
     base_url: str | None = None
     use_proxy: bool = True
-    use_browser: bool = Field(default=False, json_schema_extra={"x-hidden": True})
+    use_browser: bool = False
+    """该来源的 HTML 请求改走浏览器渲染; 后端由 ``network.browser.backend`` 决定."""
     browser_backend: BrowserBackendName | None = Field(default=None, json_schema_extra={"x-hidden": True})
-    """覆盖 ``network.browser.backend``; ``off`` 表示该来源显式禁用浏览器渲染."""
+    """覆盖 ``network.browser.backend``; ``use_browser`` 未开启时不生效, ``off`` 显式禁用."""
     cookie: dict[str, str] = {}
     api_token: str | None = Field(default=None, json_schema_extra={"x-visible-keys": _SITES_WITH_API_TOKEN})
     official_routes: dict[str, Manufacturer] = Field(
@@ -448,7 +449,9 @@ class WatermarkConfig(BaseModel):
 
 class BrowserConfig(BaseModel):
     backend: BrowserBackendName = BrowserBackendName.OFF
-    solver_url: str = Field(default="http://127.0.0.1:8191", min_length=1)
+    timeout: int = Field(default=30000, ge=5000, le=120000)
+    """页面导航默认超时 (毫秒); 单次渲染可覆盖."""
+    solver_url: str = Field(default="http://127.0.0.1:8191", pattern=r"^https?://.+")
     """FlareSolverr 兼容服务地址; 仅 ``solver`` 后端使用. 服务不允许暴露到公网."""
 
 
@@ -458,8 +461,7 @@ class NetworkConfig(BaseModel):
     max_retries: int = Field(default=3, ge=0, le=10)
     """实为总尝试次数 (``3`` → 最多发 3 次请求), 名字为兼容既有配置保留; 0 表示不重试."""
     max_clients: int = Field(default=50, ge=5, le=500, json_schema_extra={"x-hidden": True})
-    browser_timeout: int = Field(default=30000, ge=5000, le=120000, json_schema_extra={"x-hidden": True})
-    browser: BrowserConfig = Field(default_factory=BrowserConfig, json_schema_extra={"x-hidden": True})
+    browser: BrowserConfig = Field(default_factory=BrowserConfig)
 
     chunked_threshold: int = Field(default=2 * 1024**2, ge=512 * 1024, le=100 * 1024**2)
     """超过此大小 (字节) 启用分块并发下载."""
@@ -668,6 +670,23 @@ class HotSettings(BaseModel):
             logging = {}
             data["logging"] = logging
         logging.setdefault("debug_capture", flag)
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_browser_timeout(cls, data: Any) -> Any:
+        """network.browser_timeout → network.browser.timeout."""
+        if not isinstance(data, dict):
+            return data
+        network = data.get("network")
+        if not isinstance(network, dict) or "browser_timeout" not in network:
+            return data
+        timeout = network.pop("browser_timeout")
+        browser = network.get("browser")
+        if not isinstance(browser, dict):
+            browser = {}
+            network["browser"] = browser
+        browser.setdefault("timeout", timeout)
         return data
 
     scraping: ScrapingConfig = ScrapingConfig()

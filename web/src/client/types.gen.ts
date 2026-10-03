@@ -527,6 +527,10 @@ export type BrowserBackendName = 'off' | 'patchright' | 'camoufox' | 'solver';
 export type BrowserConfig = {
     backend?: BrowserBackendName;
     /**
+     * Timeout
+     */
+    timeout?: number;
+    /**
      * Solver Url
      */
     solver_url?: string;
@@ -2335,10 +2339,6 @@ export type NetworkConfig = {
      * Max Clients
      */
     max_clients?: number;
-    /**
-     * Browser Timeout
-     */
-    browser_timeout?: number;
     browser?: BrowserConfig;
     /**
      * Chunked Threshold

@@ -12,8 +12,6 @@
     - [ ] 自动整理等库级流水依赖此图, 不要在 Handler 里继续链式 create_task
 - 助理 Agent
 - 刮削与爬虫
-  - [ ] 实现 use_browser, 考虑通过 HttpClient 封装 curl 和浏览器的差异
-    - 低优先级; 采集方法见 [crawler-testing.md](dev/crawler-testing.md)
 - 定时任务
 - 资源管理
 - [ ] RSS Feed: 刮削成功后按来源自动为入库元数据添加 UserTag

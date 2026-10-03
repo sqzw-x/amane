@@ -1002,9 +1002,16 @@ export const BrowserConfigSchema = {
             $ref: '#/components/schemas/BrowserBackendName',
             default: 'off'
         },
+        timeout: {
+            type: 'integer',
+            maximum: 120000,
+            minimum: 5000,
+            title: 'Timeout',
+            default: 30000
+        },
         solver_url: {
             type: 'string',
-            minLength: 1,
+            pattern: '^https?://.+',
             title: 'Solver Url',
             default: 'http://127.0.0.1:8191'
         }
@@ -2708,10 +2715,10 @@ export const HotSettingsSchema = {
                 timeout: 10,
                 max_retries: 3,
                 max_clients: 50,
-                browser_timeout: 30000,
                 browser: {
                     backend: 'off',
-                    solver_url: 'http://127.0.0.1:8191'
+                    solver_url: 'http://127.0.0.1:8191',
+                    timeout: 30000
                 },
                 chunked_threshold: 2097152,
                 chunk_size: 1048576,
@@ -4934,17 +4941,8 @@ export const NetworkConfigSchema = {
             default: 50,
             'x-hidden': true
         },
-        browser_timeout: {
-            type: 'integer',
-            maximum: 120000,
-            minimum: 5000,
-            title: 'Browser Timeout',
-            default: 30000,
-            'x-hidden': true
-        },
         browser: {
-            $ref: '#/components/schemas/BrowserConfig',
-            'x-hidden': true
+            $ref: '#/components/schemas/BrowserConfig'
         },
         chunked_threshold: {
             type: 'integer',
@@ -6595,8 +6593,7 @@ export const SiteConfigSchema = {
         use_browser: {
             type: 'boolean',
             title: 'Use Browser',
-            default: false,
-            'x-hidden': true
+            default: false
         },
         browser_backend: {
             anyOf: [

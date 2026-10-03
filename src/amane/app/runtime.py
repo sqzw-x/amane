@@ -131,12 +131,12 @@ def build_network_stack(
             solver_url=hot.network.browser.solver_url,
             proxy=hot.network.proxy,
             web_client=web_client,
-            timeout_ms=hot.network.browser_timeout,
+            timeout_ms=hot.network.browser.timeout,
         )
     else:
         browser.rebind_web_client(web_client)
     _warn_disabled_browser_sources(hot, browser)
-    http_client = HttpClient(web=web_client, browser=browser, browser_timeout=hot.network.browser_timeout)
+    http_client = HttpClient(web=web_client, browser=browser, browser_timeout=hot.network.browser.timeout)
     factory = CrawlerFactory(
         http_client,
         site_configs=hot.scraping.site_config,
@@ -197,7 +197,7 @@ class AppRuntime:
 
     _r18_config: R18Config | None = field(default=None, repr=False)
     _old_r18_db: R18Database | None = field(default=None, repr=False)
-    _browser_key: tuple[BrowserConfig, int, str | None] | None = field(default=None, repr=False)
+    _browser_key: tuple[BrowserConfig, str | None] | None = field(default=None, repr=False)
     _old_browser: BrowserPool | None = field(default=None, repr=False)
     _rebuild_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -206,10 +206,10 @@ class AppRuntime:
             self._r18_config = self.config.hot.r18.model_copy(deep=True)
         self._browser_key = self._current_browser_key()
 
-    def _current_browser_key(self) -> tuple[BrowserConfig, int, str | None]:
+    def _current_browser_key(self) -> tuple[BrowserConfig, str | None]:
         """浏览器池的生命周期键: 任一变化都需要换新引擎 (代理与超时参与启动与单次渲染)."""
         network = self.config.hot.network
-        return (network.browser.model_copy(deep=True), network.browser_timeout, network.proxy)
+        return (network.browser.model_copy(deep=True), network.proxy)
 
     def rebuild(self) -> AsyncWorker:
         """重建依赖热配置的对象.

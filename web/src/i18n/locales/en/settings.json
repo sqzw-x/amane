@@ -450,10 +450,6 @@
         "label": "Max Connections",
         "description": "Connection pool maximum size"
       },
-      "browser_timeout": {
-        "label": "Browser Timeout",
-        "description": "Headless browser page navigation timeout (milliseconds)"
-      },
       "browser": {
         "label": "Browser Rendering",
         "backend": {
@@ -464,6 +460,10 @@
             "camoufox": "Camoufox",
             "solver": "Solver"
           }
+        },
+        "timeout": {
+          "label": "Navigation Timeout",
+          "description": "Default headless browser page navigation timeout (milliseconds)"
         },
         "solver_url": {
           "label": "Solver URL",

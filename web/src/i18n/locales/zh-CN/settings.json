@@ -450,10 +450,6 @@
         "label": "最大连接数",
         "description": "连接池最大连接数"
       },
-      "browser_timeout": {
-        "label": "浏览器超时",
-        "description": "无头浏览器页面导航超时 (毫秒)"
-      },
       "browser": {
         "label": "浏览器渲染",
         "backend": {
@@ -464,6 +460,10 @@
             "camoufox": "Camoufox",
             "solver": "Solver 服务"
           }
+        },
+        "timeout": {
+          "label": "页面导航超时",
+          "description": "无头浏览器页面导航默认超时 (毫秒)"
         },
         "solver_url": {
           "label": "Solver 地址",

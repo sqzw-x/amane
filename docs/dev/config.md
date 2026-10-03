@@ -43,11 +43,13 @@ RateLimiters → WebClient → HttpClient → CrawlerFactory
 
 **r18 只读引擎**: 只在 `hot.r18` 实际变化时重建. rebuild 是同步的, 无法 await 释放 asyncpg 连接池, 旧引擎暂存 `_old_r18_db`, 由 config 路由随后 `dispose_old_r18()` 异步关闭.
 
-**浏览器池**: 只在 `network.browser` / `browser_timeout` / `proxy` 变化时重建 (见 `src/amane/app/runtime.py::AppRuntime.rebuild`), 其余热重载复用同一实例以保留已解决的挑战会话; 被替换的旧池在旧 worker 排空后由 `dispose_old_browser()` 异步关闭.
+**浏览器池**: 只在 `network.browser` / `proxy` 变化时重建 (见 `src/amane/app/runtime.py::AppRuntime.rebuild`), 其余热重载复用同一实例以保留已解决的挑战会话; 被替换的旧池在旧 worker 排空后由 `dispose_old_browser()` 异步关闭.
 
 ## TOML 持久化
 
 写 TOML 必须用临时文件 + `os.replace` 原子化 — 直接覆盖时写入中途进程中止会留下空文件. `tomli_w` 不接受 `None` / `set`, 持久化前须按 JSON 模式导出并剔除 `None` 与默认值.
+
+`PATCH /api/config` 的 `_deep_merge` 只合并两层: 顶层 section 及其直接子对象. 更深的嵌套对象 (如 `network.browser`) 由 patch 整体替换, 未列出的子字段回退默认值. `site_config` / `rate_limits` 等字典依赖整体替换删除 key, 不允许改为递归合并.
 
 ## 配置项增补规范
 

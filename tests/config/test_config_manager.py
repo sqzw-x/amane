@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from amane.app.bootstrap import build_safe_dirs
 from amane.config import (
     SAFE_DIRS_ALLOW_ALL,
+    BrowserConfig,
     ColdSettings,
     ConfigManager,
     DownloadableResource,
@@ -196,6 +197,35 @@ class TestDebugCaptureMigration:
     def test_logging_debug_capture_wins_if_both_present(self):
         cfg = HotSettings.model_validate({"scraping": {"debug_capture": True}, "logging": {"debug_capture": False}})
         assert cfg.logging.debug_capture is False
+
+
+class TestBrowserTimeoutMigration:
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            ({"network": {"browser_timeout": 45000}}, 45000),
+            ({"network": {"browser": {"backend": "camoufox", "timeout": 60000}}}, 60000),
+            ({"network": {"browser_timeout": 45000, "browser": {"timeout": 60000}}}, 60000),
+            ({"network": {"browser": {"backend": "solver"}}}, 30000),
+        ],
+    )
+    def test_browser_timeout_moves_into_browser_config(self, payload: dict, expected: int):
+        cfg = HotSettings.model_validate(payload)
+        assert cfg.network.browser.timeout == expected
+
+    def test_migrated_value_still_validated(self):
+        with pytest.raises(ValidationError):
+            HotSettings.model_validate({"network": {"browser_timeout": 1000}})
+
+
+class TestBrowserConfigValidation:
+    @pytest.mark.parametrize("url", ["127.0.0.1:8191", "ftp://solver.local"])
+    def test_solver_url_requires_http_scheme(self, url: str):
+        with pytest.raises(ValidationError):
+            BrowserConfig(solver_url=url)
+
+    def test_solver_url_accepts_https(self):
+        assert BrowserConfig(solver_url="https://solver.local:8191").solver_url == "https://solver.local:8191"
 
 
 class TestScrapingPriorityMigration:
