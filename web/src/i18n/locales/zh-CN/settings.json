@@ -296,7 +296,6 @@
           },
           "use_browser": {
             "label": "浏览器策略",
-            "description": "auto 先直连, 遇 Cloudflare 挑战后改用浏览器",
             "options": {
               "off": "关闭",
               "auto": "自适应",
@@ -467,8 +466,8 @@
           }
         },
         "timeout": {
-          "label": "页面导航超时",
-          "description": "无头浏览器页面导航默认超时 (毫秒)"
+          "label": "页面请求超时",
+          "description": "浏览器超时(毫秒)"
         },
         "solver_url": {
           "label": "Solver 地址",

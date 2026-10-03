@@ -296,7 +296,6 @@
           },
           "use_browser": {
             "label": "Browser Mode",
-            "description": "auto tries direct first and switches to the browser on a Cloudflare challenge",
             "options": {
               "off": "Off",
               "auto": "Auto",
@@ -467,8 +466,8 @@
           }
         },
         "timeout": {
-          "label": "Navigation Timeout",
-          "description": "Default headless browser page navigation timeout (milliseconds)"
+          "label": "Page Request Timeout",
+          "description": "Browser timeout (milliseconds)"
         },
         "solver_url": {
           "label": "Solver URL",
