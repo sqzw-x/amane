@@ -190,7 +190,7 @@ async def batch_tasks(
     result = await execute_task_batch(
         action=req.action,
         repo=repo,
-        worker=runtime.worker,
+        cancel_task=runtime.cancel_task,
         log_dir=config.cold.log_dir,
         task_ids=req.task_ids,
         statuses=req.status,

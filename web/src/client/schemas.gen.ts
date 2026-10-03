@@ -5503,7 +5503,7 @@ export const R18ConfigSchema = {
     },
     type: 'object',
     title: 'R18Config',
-    description: '放 Hot: 修改 dsn 经 AppRuntime.rebuild() 重建只读引擎. 未配置 dsn 时整个数据源禁用.\n定时导入不在此节, 须经 Schedule API 创建 r18_import.'
+    description: '放 Hot: 修改 dsn 经 AppRuntime.apply_rebuild() 重建只读引擎. 未配置 dsn 时整个数据源禁用.\n定时导入不在此节, 须经 Schedule API 创建 r18_import.'
 } as const;
 
 export const R18ImportSubmissionSchema = {

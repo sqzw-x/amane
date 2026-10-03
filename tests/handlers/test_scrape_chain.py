@@ -197,4 +197,6 @@ async def test_second_scrape_reuses_active_actor_task(repo: Repository, tmp_path
 
     tasks = await _list_actor_tasks(repo)
     assert len(tasks) == 1
-    await worker.stop()
+    worker.retire()
+    await worker.wait_stopped()
+    await worker.shutdown_active()

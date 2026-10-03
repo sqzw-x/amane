@@ -1,6 +1,7 @@
 """异步任务 worker 测试"""
 
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -9,7 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from amane.db.models import TaskStatus, TaskType
 from amane.handlers.protocol import FollowupTask, TaskHandler, TaskResult
-from amane.scheduler.worker import AsyncWorker
+from amane.scheduler.worker import CANCEL_ERROR, AsyncWorker
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -46,17 +47,20 @@ class FailHandler(TaskHandler):
         return TaskResult(success=False, error="intentional failure")
 
 
-class SlowHandler(TaskHandler):
+class BlockingHandler(TaskHandler):
     payload_type = dict
 
     def __init__(self, tracker: Tracker | None = None):
         self.tracker = tracker
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
 
     async def handle(self, payload: dict):
-        await asyncio.sleep(0.05)
         if self.tracker:
             self.tracker.calls.append(payload)
-        return TaskResult(success=True, result={"slow": True})
+        self.started.set()
+        await self.release.wait()
+        return TaskResult(success=True, result={"blocked": True})
 
 
 async def recv(worker: AsyncWorker, n: int, timeout: float = 5.0) -> list[int]:
@@ -69,17 +73,18 @@ async def recv(worker: AsyncWorker, n: int, timeout: float = 5.0) -> list[int]:
     return ids
 
 
-@pytest.mark.asyncio(loop_scope="function")
-async def test_worker_stop_blocks_inflight_claim(repo: Repository):
-    """stop() 不得放行「在飞 claim」: stop 后新入队任务必须保持 QUEUED.
+async def stop_worker(worker: AsyncWorker) -> None:
+    """完整停机: 停认领 → 等主循环退出 → 处置活跃任务."""
+    worker.retire()
+    await worker.wait_stopped()
+    await worker.shutdown_active()
 
-    回归 CI 偶发 test_filter_type_scrape_sees_children 失败: stop() 只置 ``_running=False``
-    并返回, 不等待主循环任务; 若主循环已进入 claim_next_task (在飞), 该 claim 会在
-    stop() 返回后完成并认领测试刚创建的任务, 使测试自身的 claim 读到 None.
-    """
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_worker_retire_drain_stops_claiming(repo: Repository) -> None:
+    """retire 后: 在飞 claim 仍可落地; drain 返回后不再认领新任务."""
     tracker = Tracker()
-    handlers = {TaskType.SCRAPE: SuccessHandler(tracker)}
-    worker = AsyncWorker(repo=repo, handlers=handlers, poll_interval=0.05)
+    worker = AsyncWorker(repo=repo, handlers={TaskType.SCRAPE: SuccessHandler(tracker)}, poll_interval=0.05)
 
     started = asyncio.Event()
     release = asyncio.Event()
@@ -100,21 +105,152 @@ async def test_worker_stop_blocks_inflight_claim(repo: Repository):
     worker.start()
     await started.wait()  # worker 已进入 claim 并在飞
 
-    await worker.stop()  # 契约: stop() 返回后不得再有任何 claim 存活
+    worker.retire()
+    drain_task = asyncio.create_task(worker.drain())
+    await asyncio.sleep(0.05)
+    assert not drain_task.done(), "drain 不得在在飞 claim 结算前返回"
 
-    t = await repo.create_task(TaskType.SCRAPE, payload={"number": "LATE-1"})
-    assert t.id is not None
+    # 在飞 claim 期间入队的任务允许被旧 worker 认领: 归属按认领开始时刻
+    inflight = await repo.create_task(TaskType.SCRAPE, payload={"number": "IN-FLIGHT"})
+    assert inflight.id is not None
     release.set()
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(drain_task, timeout=5)
 
-    fetched = await repo.get_task(t.id)
+    fetched = await repo.get_task(inflight.id)
     assert fetched is not None
-    assert fetched.status == TaskStatus.QUEUED, "stop() 后 in-flight claim 不得认领新任务"
-    assert tracker.calls == []
+    assert fetched.status == TaskStatus.DONE
+    assert tracker.calls == [{"number": "IN-FLIGHT"}]
+
+    # drain 返回后新入队任务必须保持 QUEUED
+    late = await repo.create_task(TaskType.SCRAPE, payload={"number": "LATE-1"})
+    assert late.id is not None
+    await asyncio.sleep(0.15)
+    late_fetched = await repo.get_task(late.id)
+    assert late_fetched is not None
+    assert late_fetched.status == TaskStatus.QUEUED
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_worker_processes_task(repo: Repository):
+async def test_worker_drain_waits_for_inflight_claim(repo: Repository, monkeypatch: pytest.MonkeyPatch) -> None:
+    """drain 不得取消进行中的认领.
+
+    认领的 commit 被打断, 事务就不会正常结束: SQLite 写锁留在池里的连接上.
+    """
+    await repo.create_task(TaskType.SCRAPE, payload={"i": 0})
+
+    claim_commit_started = asyncio.Event()
+    release_claim_commit = asyncio.Event()
+    real_commit = AsyncSession.commit
+    armed = True
+
+    async def _commit(self: AsyncSession) -> None:
+        nonlocal armed
+        if armed:
+            armed = False
+            claim_commit_started.set()
+            await release_claim_commit.wait()
+        await real_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", _commit)
+
+    worker = AsyncWorker(repo=repo, handlers={TaskType.SCRAPE: SuccessHandler()}, poll_interval=0.05)
+    worker.start()
+    await asyncio.wait_for(claim_commit_started.wait(), timeout=5)
+
+    worker.retire()
+    drain_task = asyncio.create_task(worker.drain())
+    await asyncio.sleep(0.05)
+    assert not drain_task.done(), "drain 提前返回: 进行中的认领被取消"
+
+    release_claim_commit.set()
+    await asyncio.wait_for(drain_task, timeout=5)
+
+    # 事务已结束, 写锁释放: 后续写入不能撞上锁超时.
+    await asyncio.wait_for(repo.create_task(TaskType.SCRAPE, payload={"i": 1}), timeout=5)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_worker_retire_keeps_running_task(repo: Repository) -> None:
+    """retire 不影响已认领任务; drain 等待它自然完成."""
+    handler = BlockingHandler()
+    worker = AsyncWorker(repo=repo, handlers={TaskType.SCRAPE: handler}, poll_interval=0.05)
+
+    t = await repo.create_task(TaskType.SCRAPE, payload={"number": "BLOCK-1"})
+    assert t.id is not None
+    worker.start()
+    await asyncio.wait_for(handler.started.wait(), timeout=5)
+
+    worker.retire()
+    await worker.wait_stopped()
+    fetched = await repo.get_task(t.id)
+    assert fetched is not None
+    assert fetched.status == TaskStatus.RUNNING
+
+    drain_task = asyncio.create_task(worker.drain())
+    await asyncio.sleep(0.05)
+    assert not drain_task.done()
+
+    handler.release.set()
+    await asyncio.wait_for(drain_task, timeout=5)
+    done = await repo.get_task(t.id)
+    assert done is not None
+    assert done.status == TaskStatus.DONE
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_worker_shutdown_active_cancels_running(repo: Repository) -> None:
+    """shutdown_active 在超时后取消活跃任务并写终态."""
+    handler = BlockingHandler()
+    worker = AsyncWorker(repo=repo, handlers={TaskType.SCRAPE: handler}, poll_interval=0.05, shutdown_timeout=0)
+
+    t = await repo.create_task(TaskType.SCRAPE, payload={"number": "CANCEL-1"})
+    assert t.id is not None
+    worker.start()
+    await asyncio.wait_for(handler.started.wait(), timeout=5)
+
+    worker.retire()
+    await worker.wait_stopped()
+    await worker.shutdown_active()
+
+    fetched = await repo.get_task(t.id)
+    assert fetched is not None
+    assert fetched.status == TaskStatus.FAILED
+    assert fetched.error == CANCEL_ERROR
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_worker_done_callback_writes_terminal_state(repo: Repository) -> None:
+    """已登记但未首次调度即被取消的任务由 done callback 兜底写 FAILED."""
+    t = await repo.create_task(TaskType.SCRAPE, payload={"number": "PRESCHED"})
+    assert t.id is not None
+    claimed = await repo.claim_next_task()
+    assert claimed is not None and claimed.id == t.id
+
+    worker = AsyncWorker(repo=repo, handlers={})
+    body_ran = False
+
+    async def body() -> None:
+        nonlocal body_ran
+        body_ran = True
+
+    asyncio_task = asyncio.create_task(body())
+    asyncio_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await asyncio_task
+    assert body_ran is False
+
+    worker._on_task_done(t.id, asyncio_task)
+    assert worker.active_count == 0
+    await asyncio.gather(*list(worker._cleanup_tasks))
+
+    fetched = await repo.get_task(t.id)
+    assert fetched is not None
+    assert fetched.status == TaskStatus.FAILED
+    assert fetched.error == CANCEL_ERROR
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_worker_processes_task(repo: Repository) -> None:
     """Worker 拾取排队的任务并执行 handler"""
     tracker = Tracker()
     handlers = {TaskType.SCRAPE: SuccessHandler(tracker)}
@@ -124,14 +260,14 @@ async def test_worker_processes_task(repo: Repository):
 
     worker.start()
     done_ids = await recv(worker, 1)
-    await worker.stop()
+    await stop_worker(worker)
 
     assert done_ids == [t.id]
     assert tracker.calls == [{"number": "TEST-001"}]
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_worker_handles_failure(repo: Repository):
+async def test_worker_handles_failure(repo: Repository) -> None:
     """Handler 返回失败时 worker 正确处理"""
     tracker = Tracker()
     handlers = {TaskType.SCRAPE: FailHandler(tracker)}
@@ -141,14 +277,14 @@ async def test_worker_handles_failure(repo: Repository):
 
     worker.start()
     done_ids = await recv(worker, 1)
-    await worker.stop()
+    await stop_worker(worker)
 
     assert done_ids == [t.id]
     assert tracker.calls == [{"x": 1}]
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_worker_handles_exception(repo: Repository):
+async def test_worker_handles_exception(repo: Repository) -> None:
     """Worker 捕获 handler 异常而不崩溃"""
     called = []
 
@@ -167,14 +303,14 @@ async def test_worker_handles_exception(repo: Repository):
 
     worker.start()
     done_ids = await recv(worker, 1)
-    await worker.stop()
+    await stop_worker(worker)
 
     assert done_ids == [t.id]
     assert called == [{"z": 9}]
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_worker_respects_concurrency(repo: Repository):
+async def test_worker_respects_concurrency(repo: Repository) -> None:
     """Worker 限制并发任务执行数"""
     max_concurrent = 0
     current = 0
@@ -202,7 +338,7 @@ async def test_worker_respects_concurrency(repo: Repository):
 
     worker.start()
     await recv(worker, 4)
-    await worker.stop()
+    await stop_worker(worker)
 
     # 并发不应超过 2
     assert max_concurrent <= 2
@@ -211,59 +347,20 @@ async def test_worker_respects_concurrency(repo: Repository):
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_worker_idle_when_no_tasks(repo: Repository):
+async def test_worker_idle_when_no_tasks(repo: Repository) -> None:
     """队列为空时 worker 空闲等待且无错误"""
     handlers = {TaskType.SCRAPE: SuccessHandler()}
     worker = AsyncWorker(repo=repo, handlers=handlers, poll_interval=0.05)
 
     worker.start()
     await asyncio.sleep(0.1)
-    await worker.stop()
+    await stop_worker(worker)
 
     assert worker._done_queue.empty()
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_worker_stop_waits_for_inflight_claim(repo: Repository, monkeypatch: pytest.MonkeyPatch) -> None:
-    """stop() 不得取消进行中的认领.
-
-    认领的 commit 被打断, 事务就不会正常结束: SQLite 写锁留在池里的连接上,
-    紧随其后的 fail_all_running_tasks() 写入在 Windows CI 上就以 database is locked 超时.
-    """
-    await repo.create_task(TaskType.SCRAPE, payload={"i": 0})
-
-    claim_commit_started = asyncio.Event()
-    release_claim_commit = asyncio.Event()
-    real_commit = AsyncSession.commit
-    armed = True
-
-    async def _commit(self: AsyncSession) -> None:
-        nonlocal armed
-        if armed:
-            armed = False
-            claim_commit_started.set()
-            await release_claim_commit.wait()
-        await real_commit(self)
-
-    monkeypatch.setattr(AsyncSession, "commit", _commit)
-
-    worker = AsyncWorker(repo=repo, handlers={TaskType.SCRAPE: SuccessHandler()}, poll_interval=0.05)
-    worker.start()
-    await asyncio.wait_for(claim_commit_started.wait(), timeout=5)
-
-    stop_task = asyncio.create_task(worker.stop())
-    await asyncio.sleep(0.05)
-    assert not stop_task.done(), "stop() 提前返回: 进行中的认领被取消"
-
-    release_claim_commit.set()
-    await asyncio.wait_for(stop_task, timeout=5)
-
-    # 事务已结束, 写锁释放: 后续写入不能撞上锁超时.
-    await asyncio.wait_for(repo.create_task(TaskType.SCRAPE, payload={"i": 1}), timeout=5)
-
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_worker_pause_skips_claim(repo: Repository):
+async def test_worker_pause_skips_claim(repo: Repository) -> None:
     """暂停后不再认领排队任务; 恢复后继续."""
     tracker = Tracker()
     handlers = {TaskType.SCRAPE: SuccessHandler(tracker)}
@@ -281,12 +378,12 @@ async def test_worker_pause_skips_claim(repo: Repository):
 
     worker.set_paused(False)
     await recv(worker, 1)
-    await worker.stop()
+    await stop_worker(worker)
     assert tracker.calls == [{"number": "PAUSE-1"}]
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_worker_completes_with_followups(repo: Repository):
+async def test_worker_completes_with_followups(repo: Repository) -> None:
     """Handler 返回 followups 时, worker 完成事务内创建子任务并写 TaskLink."""
 
     class FollowupHandler(TaskHandler):
@@ -311,7 +408,7 @@ async def test_worker_completes_with_followups(repo: Repository):
 
     worker.start()
     await recv(worker, 1)
-    await worker.stop()
+    await stop_worker(worker)
 
     done = await repo.get_task(t.id)
     assert done is not None
@@ -330,7 +427,7 @@ async def test_worker_completes_with_followups(repo: Repository):
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_worker_no_followups_on_failure(repo: Repository):
+async def test_worker_no_followups_on_failure(repo: Repository) -> None:
     """失败时不创建 on_success 后继."""
 
     class FailingFollowupHandler(TaskHandler):
@@ -352,7 +449,7 @@ async def test_worker_no_followups_on_failure(repo: Repository):
 
     worker.start()
     await recv(worker, 1)
-    await worker.stop()
+    await stop_worker(worker)
 
     assert await repo.list_task_links(parent_task_id=t.id) == []
     assert await repo.list_tasks_by_root(t.id) == []

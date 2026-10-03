@@ -14,7 +14,7 @@
 
 ## 调度
 
-`FeedService` (`scheduler/feeds.py`) 每 60s 扫描 `enabled AND (next_fetch_at IS NULL OR <= now)`. `enabled` 只控制是否进入这轮扫描 — 关闭后创建时的立即拉取与 `POST /feeds/{id}/poll` 仍执行. 完成后按该源间隔排列下次; 失败也按间隔重试, 不另做指数退避. `rebuild()` 只替换 WebClient 引用, 循环不停.
+`FeedService` (`scheduler/feeds.py`) 每 60s 扫描 `enabled AND (next_fetch_at IS NULL OR <= now)`. `enabled` 只控制是否进入这轮扫描 — 关闭后创建时的立即拉取与 `POST /feeds/{id}/poll` 仍执行. 完成后按该源间隔排列下次; 失败也按间隔重试, 不另做指数退避. `_rebuild()` 只替换 WebClient 引用, 循环不停.
 
 `auto_enqueue` 只决定发现**新**条目且解析出番号时是否入队 SCRAPE (`priority=-1`, 避免一次追赶抢占手动刮削的优先级); 关闭后仍写 `FeedItem`, 定时与立即拉取经由同一 `poll_one` 遵守同一开关. 已见过的 `item_key` 不会在后来打开开关时补入队.
 

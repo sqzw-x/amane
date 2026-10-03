@@ -237,6 +237,23 @@ class TasksRepoMixin(RepositoryMixinBase):
             session.add(task)
             await session.commit()
 
+    async def fail_running_task(self, task_id: int, error: str) -> bool:
+        """仅当任务仍为 RUNNING 时标记失败; 返回是否命中.
+
+        取消回退与取消兜底使用: 已进入终态的任务不得被覆盖为 FAILED.
+        """
+        async with self._session() as session:
+            task = await session.get(Task, task_id)
+            if task is None or task.status != TaskStatus.RUNNING:
+                return False
+            task.status = TaskStatus.FAILED
+            task.error = error
+            task.retries += 1
+            task.finished_at = _utcnow()
+            session.add(task)
+            await session.commit()
+            return True
+
     async def fail_all_running_tasks(self) -> int:
         """将全部 RUNNING 标为 FAILED (进程重启后的僵尸任务)."""
         async with self._session() as session:

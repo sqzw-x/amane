@@ -46,7 +46,7 @@ EventBus → 日志 → 来源插件发现 → 主 DB engine + Repository → r1
 
 - **EventBus 必须最先**: 日志 pipeline 把 structlog 事件转发到 WebSocket, 颠倒会丢启动期日志.
 - **RateLimiters 在 WebClient 之前**: WebClient 持有漏桶引用, 重建限速器等于重建 WebClient.
-- **来源插件在网络栈之前发现**: descriptor 提供来源 URL、多语言能力与默认速率, 配置中的外部来源 ID 须先经当前插件目录校验再构造 `CrawlerFactory`; 目录替换走同一套 `rebuild()`, 见 [plugins.md](plugins.md).
+- **来源插件在网络栈之前发现**: descriptor 提供来源 URL、多语言能力与默认速率, 配置中的外部来源 ID 须先经当前插件目录校验再构造 `CrawlerFactory`; 目录替换走同一套 `_rebuild()`, 见 [plugins.md](plugins.md).
 - **CrawlerFactory 缓存爬虫实例**, 只在 `HttpClient` 更换后才需重建.
 - **Handlers 在 Worker 之前**: Worker 启动后立即 claim 任务, handler map 必须已就位.
 - **PlaybackFactory 在插件目录之后**: 播放源只来自插件, 反代走独立流式客户端, rebuild 时替换并关闭旧客户端.

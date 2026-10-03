@@ -171,4 +171,4 @@ async def stop_worker(app: FastAPI, client: AsyncClient) -> None:
     任务并改写状态, 与"任务状态只由测试驱动"的断言竞态. 仅停 worker, 不改项目代码.
     """
     runtime = app.state.runtime
-    await runtime.worker.stop()
+    await runtime.stop_workers(closing=False)

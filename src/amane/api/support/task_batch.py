@@ -1,16 +1,16 @@
 """按 ID 或与列表同形的 status/type 筛选."""
 
 import contextlib
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 
 from ...db.models import Task, TaskStatus, TaskType
 from ...db.repository import Repository
 from ...observability import remove_task_dir
-from ...scheduler.worker import AsyncWorker
+from ...scheduler.worker import CANCEL_ERROR
 from ..models.tasks import TaskBatchAction, TaskBatchResponse
 
-CANCEL_ERROR = "Cancelled by user"
+CancelRunning = Callable[[int], Awaitable[bool]]
 
 _CANCELABLE = frozenset({TaskStatus.QUEUED, TaskStatus.RUNNING})
 _DELETABLE = frozenset({TaskStatus.DONE, TaskStatus.FAILED})
@@ -39,16 +39,15 @@ def cleanup_task_artifacts(task: Task, log_dir: Path) -> None:
                 log_path.unlink(missing_ok=True)
 
 
-async def _cancel_running(worker: AsyncWorker, repo: Repository, tasks: Sequence[Task]) -> int:
-    """取消失败的记录为 failed (CANCEL_ERROR)."""
+async def _cancel_running(cancel_task: CancelRunning, repo: Repository, tasks: Sequence[Task]) -> int:
+    """取消失败的记录为 failed (CANCEL_ERROR); 不覆盖已终态."""
     affected = 0
     for task in tasks:
         if task.id is None:
             continue
-        cancelled = await worker.cancel_task(task.id)
-        if not cancelled:
-            await repo.fail_task(task.id, error=CANCEL_ERROR)
-        affected += 1
+        cancelled = await cancel_task(task.id)
+        if cancelled or await repo.fail_running_task(task.id, error=CANCEL_ERROR):
+            affected += 1
     return affected
 
 
@@ -56,7 +55,7 @@ async def execute_task_batch(
     *,
     action: TaskBatchAction,
     repo: Repository,
-    worker: AsyncWorker,
+    cancel_task: CancelRunning,
     log_dir: Path,
     task_ids: Sequence[int] | None,
     statuses: Sequence[TaskStatus] | None,
@@ -71,7 +70,7 @@ async def execute_task_batch(
         return await _apply_found(
             action=action,
             repo=repo,
-            worker=worker,
+            cancel_task=cancel_task,
             log_dir=log_dir,
             found=found,
             missing=missing,
@@ -89,14 +88,14 @@ async def execute_task_batch(
         running: list[Task] = []
         if TaskStatus.RUNNING in effective:
             running = await repo.find_tasks(statuses=[TaskStatus.RUNNING], task_types=task_types)
-        running_n = await _cancel_running(worker, repo, running) if running else 0
+        running_n = await _cancel_running(cancel_task, repo, running) if running else 0
         return TaskBatchResponse(affected=queued_n + running_n)
 
     found = await repo.find_tasks(statuses=effective, task_types=task_types)
     return await _apply_found(
         action=action,
         repo=repo,
-        worker=worker,
+        cancel_task=cancel_task,
         log_dir=log_dir,
         found=found,
         missing=0,
@@ -107,7 +106,7 @@ async def _apply_found(
     *,
     action: TaskBatchAction,
     repo: Repository,
-    worker: AsyncWorker,
+    cancel_task: CancelRunning,
     log_dir: Path,
     found: Sequence[Task],
     missing: int,
@@ -123,7 +122,7 @@ async def _apply_found(
         if queued_ids:
             affected += await repo.fail_queued_tasks(error=CANCEL_ERROR, task_ids=queued_ids)
         if running:
-            affected += await _cancel_running(worker, repo, running)
+            affected += await _cancel_running(cancel_task, repo, running)
         return TaskBatchResponse(affected=affected, skipped=skipped, missing=missing)
 
     if action == TaskBatchAction.DELETE:

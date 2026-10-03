@@ -95,7 +95,7 @@ Cloudflare managed challenge 只能执行 JS 越过, 因此受保护的来源经
 
 ## 特殊数据源: r18.dev 离线 PG 镜像
 
-`src/amane/crawlers/r18dev/` + `sites/r18dev.py`. r18.dev 不提供逐番号 HTTP 接口, 而是发布完整 **PostgreSQL dump**; dump 是 PG 专用 (COPY / Identity / 角色系统), 无法转为 SQLite, 因此使用独立的只读 PG 镜像: 用户自备 PG 实例并提供连接串 (`hot.r18.dsn`, 需 CREATEDB / CREATEROLE), 项目负责建库 / 导入 / 原子换名 / 创建只读角色. 该库不纳入 Alembic (外部只读镜像, 见 [database.md](database.md)); 配置在 Hot, 修改 dsn 经由 `AppRuntime.rebuild()`.
+`src/amane/crawlers/r18dev/` + `sites/r18dev.py`. r18.dev 不提供逐番号 HTTP 接口, 而是发布完整 **PostgreSQL dump**; dump 是 PG 专用 (COPY / Identity / 角色系统), 无法转为 SQLite, 因此使用独立的只读 PG 镜像: 用户自备 PG 实例并提供连接串 (`hot.r18.dsn`, 需 CREATEDB / CREATEROLE), 项目负责建库 / 导入 / 原子换名 / 创建只读角色. 该库不纳入 Alembic (外部只读镜像, 见 [database.md](database.md)); 配置在 Hot, 修改 dsn 经由 `AppRuntime.apply_rebuild()`.
 
 `R18DevCrawler` override `fetch()` 用 SQL 替代 HTTP 两步; 只读 `R18Database` 由 `CrawlerFactory` 构造期特判注入. PG 未配置或镜像未导入时 `fetch()` 返回 `None`, 不中断多源聚合.
 
