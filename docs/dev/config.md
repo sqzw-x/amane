@@ -8,7 +8,7 @@
 `src/amane/config/manager.py` 把配置划分为两份:
 
 - **ColdSettings** (`AMANE_*` 环境变量) — 路径类、安全边界等进程级绑定. 修改后必须重启, 因为 `data_dir` 等会派生出 SQLite 路径、TOML 路径、resources 目录.
-- **HotSettings** (TOML, 经 `PATCH /api/config` 写入) — 行为参数. 多数变更经由 `AppRuntime.rebuild()`, 不重启进程.
+- **HotSettings** (TOML, 经 `PATCH /api/config` 写入) — 行为参数. 多数变更经由 `AppRuntime.apply_rebuild()`, 不重启进程.
 
 `data_dir` 不允许放入热配置: 切换目录须迁移 DB、resources 与未完成任务. 判据是 Cold = 派生路径 / 进程级绑定, Hot = 行为参数.
 
@@ -24,7 +24,7 @@ API 鉴权是冷配置: 中间件在请求路径上, 不能在进程内 rebuild 
 
 ## 进程内 rebuild
 
-`AppRuntime.rebuild()` 重建依赖 HotSettings 的对象链:
+`AppRuntime._rebuild()` 重建依赖 HotSettings 的对象链:
 
 ```
 RateLimiters → WebClient → HttpClient → CrawlerFactory
@@ -35,7 +35,7 @@ RateLimiters → WebClient → HttpClient → CrawlerFactory
 
 `logging.level` 在 rebuild 内直接修改 logger, 不依赖对象重建.
 
-**不重建的对象**: `Repository`、`EventBus`、`WatcherService`、`FeedService`、`ResourceStore`、`TranslationCache`、`ProxyFailureCache`、`AgentService` 内的 `ResultCache` — 它们的状态是会话级的 (DB 连接池、WS 客户端、watchdog observer、feed 轮询循环、资源去重表、译文缓存、负缓存、交付结果缓存), 重建会切断现有连接或丢掉缓存句柄. `rebuild()` 只把新 `WebClient` 交给 `FeedService.set_web_client`.
+**不重建的对象**: `Repository`、`EventBus`、`WatcherService`、`FeedService`、`ResourceStore`、`TranslationCache`、`ProxyFailureCache`、`AgentService` 内的 `ResultCache` — 它们的状态是会话级的 (DB 连接池、WS 客户端、watchdog observer、feed 轮询循环、资源去重表、译文缓存、负缓存、交付结果缓存), 重建会切断现有连接或丢掉缓存句柄. `_rebuild()` 只把新 `WebClient` 交给 `FeedService.set_web_client`.
 
 `watcher.use_polling` / `media_extensions` / `debounce_seconds` 在 `start_app` 构造时一次性注入, **不随 rebuild 更新**, 修改 TOML 后须重启; Library 级的 `automation` / `ingest` / `cloud_path` / 路径 / `trailer_pattern` 等由 libraries 路由热更新, 与这三项无关. 契约见 [watcher.md](watcher.md).
 
@@ -52,7 +52,7 @@ RateLimiters → WebClient → HttpClient → CrawlerFactory
 字段加在 `src/amane/config/manager.py` 对应 section model (全部配置 model 集中在该文件), 然后:
 
 1. 需要 UI 展示时添加 `json_schema_extra` 的 `x-*` 扩展 (`x-*` 清单见 `web/src/components/schema-form/schema/types.ts`). 站点列表字段必须用 `site_roles` 的 schema 收窄 `items.enum`, 不允许直接暴露完整 `SiteName`.
-2. 若新字段影响限速 / HTTP / 爬虫 / LLM / handler 行为, 确认 `rebuild()` 链能传播变更; 若影响 WatcherService 构造参数, 须标明「重启生效」.
+2. 若新字段影响限速 / HTTP / 爬虫 / LLM / handler 行为, 确认 `_rebuild()` 链能传播变更; 若影响 WatcherService 构造参数, 须标明「重启生效」.
 3. `just generate` 同步前端 schema, 并补 `web/src/i18n/` 翻译, 否则构建失败.
 
 `x-frozen-keys` 全量 dict (`site_config` / `content_routes` / `field_language`): `default_factory` 只在整段缺席时生效; 文件里已有该字段但缺 key 时, 校验按代码枚举补默认并丢弃未知 key. UI 不能加 key, 不补则新项无法配置. `GET /api/config` 始终返回全集.

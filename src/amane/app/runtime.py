@@ -1,4 +1,4 @@
-"""经 ``app.state.runtime`` / ``RuntimeDep`` 注入. ``rebuild()`` 在 HotSettings 变更时重建依赖热配置的对象."""
+"""经 ``app.state.runtime`` / ``RuntimeDep`` 注入. ``apply_rebuild()`` 在 HotSettings 变更时重建依赖热配置的对象."""
 
 import asyncio
 import logging
@@ -135,7 +135,7 @@ def build_network_stack(
 def build_r18_db(r18: R18Config) -> R18Database | None:
     """从 r18 配置构建只读引擎. dsn 未配置或建连失败时返回 None (数据源静默禁用).
 
-    引擎构造是同步的 (create_async_engine 仅初始化连接池, 不立即连接), 故可在 rebuild() 内调用.
+    引擎构造是同步的 (create_async_engine 仅初始化连接池, 不立即连接), 故可在 _rebuild() 内调用.
     """
     if not r18.enabled:
         return None
@@ -177,8 +177,8 @@ class AppRuntime:
         if self._r18_config is None:
             self._r18_config = self.config.hot.r18.model_copy(deep=True)
 
-    def rebuild(self) -> AsyncWorker:
-        """重建依赖热配置的对象.
+    def _rebuild(self) -> AsyncWorker:
+        """重建依赖热配置的对象. 调用方必须持有 ``_rebuild_lock`` (见 ``apply_rebuild``).
 
         r18 只读引擎随 hot.r18 变更而重建. rebuild 是同步的, 不能 await;
         旧引擎由 dispose_old_r18 异步释放. 返回旧 worker 以便调用方排空.
@@ -298,7 +298,7 @@ class AppRuntime:
     async def _apply_rebuild_unlocked(self) -> None:
         """必须持有 ``_rebuild_lock``."""
         old_playback = self.playback_factory
-        old_worker = self.rebuild()
+        old_worker = self._rebuild()
         await old_worker.stop()
         self.worker.start()
         await self.dispose_old_r18()
@@ -323,7 +323,7 @@ class AppRuntime:
         return manager
 
     async def dispose_old_r18(self) -> None:
-        """异步释放 rebuild() 替换下来的旧 r18 引擎."""
+        """异步释放 _rebuild() 替换下来的旧 r18 引擎."""
         if self._old_r18_db is not None:
             await self._old_r18_db.close()
             self._old_r18_db = None
@@ -341,7 +341,7 @@ def build_handlers(
     plugin_manager: PluginManager | None = None,
 ) -> dict[TaskType, TaskHandler[Any, Any]]:
     # 未启用/缺密钥时 translator 为 None, ScrapeHandler 跳过翻译.
-    # 经 rebuild() 热重载; 代理沿用 network.proxy.
+    # 经 _rebuild() 热重载; 代理沿用 network.proxy.
     # 译文缓存是会话级, 热重载时复用同一实例.
     translator = build_translator(
         enabled=hot.llm.enabled,

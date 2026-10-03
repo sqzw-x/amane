@@ -118,7 +118,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ### 暂停
 
-进程内 `_paused`, 不写入 HotSettings. 暂停只停 `claim_next_task`, 循环仍在, 已认领的继续运行, 入队不受影响. `rebuild()` 把 pause 复制到新 worker, 避免 PATCH 配置时意外恢复领队. 与 `stop()` 不同: stop 排空 / 取消活跃任务并把僵尸 RUNNING 标为失败.
+进程内 `_paused`, 不写入 HotSettings. 暂停只停 `claim_next_task`, 循环仍在, 已认领的继续运行, 入队不受影响. `_rebuild()` 把 pause 复制到新 worker, 避免 PATCH 配置时意外恢复领队. 与 `stop()` 不同: stop 排空 / 取消活跃任务并把僵尸 RUNNING 标为失败.
 
 ### 取消
 
