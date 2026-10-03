@@ -283,7 +283,7 @@ function argsBodyOf(argsText: string): unknown {
 }
 
 function ToolCallPart({ part, running }: { part: AgentToolCallPart; running: boolean }) {
-  const { t } = useTranslation(["agent", "common"]);
+  const { t } = useTranslation(["agent", "common", "savedQueries"]);
   const { open, toggle, headerRef } = useFold();
   const queryClient = useQueryClient();
   const { toolCallId, toolName, result } = part;
@@ -292,10 +292,16 @@ function ToolCallPart({ part, running }: { part: AgentToolCallPart; running: boo
   const persist = useMutation({
     ...batchPersistSavedQueriesMutation(),
     onSuccess: () => {
+      notifications.show({ color: "blue", message: t("persistedToast", { ns: "savedQueries" }) });
       void queryClient.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
       // 行内「保留」按钮的禁用态来自 getSavedQuery, 一并刷新
       void queryClient.invalidateQueries({ queryKey: [{ _id: "getSavedQuery" }] });
     },
+    onError: (err) =>
+      notifications.show({
+        color: "red",
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+      }),
   });
 
   return (
