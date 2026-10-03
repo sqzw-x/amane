@@ -153,3 +153,19 @@ async def test_sql_deliver_reports_row_count_not_id_count(explore_env: tuple[Age
     assert out["row_count"] == 3
     assert out["saved_query_id"] > 0
     assert (await deps.repo.get_saved_query(out["saved_query_id"])) is not None
+
+
+@pytest.mark.asyncio
+async def test_sql_deliver_stores_description(explore_env: tuple[AgentDeps, Path]) -> None:
+    """交付描述落入预设, 首尾空白被去除."""
+    deps, _db = explore_env
+    ctx = cast(RunContext[AgentDeps], SimpleNamespace(deps=deps, tool_call_approved=False))
+    out = await _deliver_fn()(
+        ctx,
+        sql="SELECT title FROM metadata WHERE id <= 2 ORDER BY id",
+        description="  未整理的条目  ",
+    )
+
+    query = await deps.repo.get_saved_query(out["saved_query_id"])
+    assert query is not None
+    assert query.description == "未整理的条目"

@@ -89,6 +89,7 @@ async def materialize_saved_query(
     sql: str,
     entity: SavedQueryEntity | None,
     name: str | None,
+    description: str | None = None,
     result: SqlResult,
 ) -> tuple[int, str, list[int]]:
     """把全量 SQL 结果写成会话 SavedQuery 并入缓存.
@@ -103,6 +104,7 @@ async def materialize_saved_query(
     display_name = (name or "").strip() or ("数据查询" if entity is SavedQueryEntity.DATA else f"查询 ({entity})")
     saved = await deps.repo.create_saved_query(
         name=display_name,
+        description=(description or "").strip(),
         sql=sql,
         entity=entity,
         session_id=deps.session_id,
@@ -183,10 +185,13 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
         sql: str,
         entity: SavedQueryEntity | None = None,
         name: str | None = None,
+        description: str | None = None,
         allow_slow: bool = False,
     ) -> dict[str, Any]:
         """Deliver a final result set for humans. Creates a saved_query.
 
+        name / description: short human-readable label and note, shown in the preset list
+        and on the data page.
         entity=metadata|actor: SQL MUST return a column named `id`; the preset becomes a
         filter in /meta or /actors AND can be opened as a data table.
         Omit entity (or use data): any read-only result, rendered only as a data table.
@@ -210,6 +215,7 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
                 sql=sql,
                 entity=entity,
                 name=name,
+                description=description,
                 result=result,
             )
         except ValueError as exc:
