@@ -3,7 +3,6 @@
 import asyncio
 import random
 import time
-from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import aiofiles
@@ -14,10 +13,10 @@ from curl_cffi import CurlError
 from curl_cffi.requests import AsyncSession, BrowserTypeLiteral, Response
 
 from .errors import FailureKind, RequestError, RequestFailure
-from .recording import get_bound_http_recorder, reset_skip_http_body, set_skip_http_body
+from .recording import get_bound_http_recorder, skip_body_recording
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Mapping
     from pathlib import Path
 
     from curl_cffi.requests.session import HttpMethod
@@ -25,16 +24,6 @@ if TYPE_CHECKING:
     from ..config import SiteConfig
 
 logger = structlog.get_logger()
-
-
-@contextmanager
-def _skip_body_recording() -> Iterator[None]:
-    """get_bytes / download 跳过 body 落盘 (仅记 meta)."""
-    token = set_skip_http_body(True)
-    try:
-        yield
-    finally:
-        reset_skip_http_body(token)
 
 
 _IMPERSONATE_OPTIONS: tuple[BrowserTypeLiteral, ...] = (
@@ -355,7 +344,7 @@ class WebClient:
         cookies: dict[str, str] | None = None,
         use_proxy: bool = True,
     ) -> bytes:
-        with _skip_body_recording():
+        with skip_body_recording():
             resp = await self.request("GET", url, headers=headers, cookies=cookies, use_proxy=use_proxy)
         return resp.content
 

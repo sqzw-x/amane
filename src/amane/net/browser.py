@@ -18,6 +18,7 @@ import structlog
 
 from ..enums import BrowserBackendName
 from .errors import FailureKind, FailureReason, RequestError, RequestFailure, classify_block
+from .recording import skip_body_recording
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -96,10 +97,7 @@ class BrowserPool:
         self._web = web_client
         self._timeout_ms = timeout_ms
         self._instances: dict[BrowserBackendName, BrowserBackend] = {}
-
-    @property
-    def default_backend(self) -> BrowserBackendName:
-        return self._default
+        self._closed = False
 
     def resolve(self, override: BrowserBackendName | None) -> BrowserBackendName | None:
         """来源覆盖优先; 覆盖为 ``off`` 表示显式禁用, 结果为 None."""
@@ -125,6 +123,8 @@ class BrowserPool:
         name = self.resolve(backend)
         if name is None:
             return None, RequestFailure(kind=FailureKind.UNEXPECTED, message="browser backend disabled")
+        if self._closed:
+            return None, RequestFailure(kind=FailureKind.UNEXPECTED, message="browser pool closed")
         instance = self._instances.get(name)
         if instance is None:
             instance = self._create(name)
@@ -154,6 +154,7 @@ class BrowserPool:
                 raise ValueError(f"unsupported browser backend: {name}")
 
     async def close(self) -> None:
+        self._closed = True
         instances = list(self._instances.values())
         self._instances.clear()
         for instance in instances:
@@ -162,6 +163,18 @@ class BrowserPool:
 
 class _ChallengeUnresolved(Exception):
     """导航结束仍在挑战页: 由 ``_LocalBackend`` 转成带原因的失败."""
+
+
+class _BackendClosed(Exception):
+    """后端已关闭: 拒绝重新启动引擎."""
+
+
+class _PageUnreadable(Exception):
+    """等待期内未读到任何正文: 页面崩溃或已关闭, 与挑战未解决区分."""
+
+    def __init__(self, error: BaseException | None) -> None:
+        super().__init__(str(error) if error is not None else "page content unreadable")
+        self.error = error
 
 
 _WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
@@ -230,7 +243,9 @@ class _LocalBackend(ABC):
         self._semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
         self._launch_lock = asyncio.Lock()
         self._active = 0
+        self._idle_gen = 0
         self._idle_task: asyncio.Task[None] | None = None
+        self._closed = False
 
     @abstractmethod
     async def _launch(self, stack: AsyncExitStack) -> _BrowserLike:
@@ -292,6 +307,14 @@ class _LocalBackend(ABC):
                 await page.wait_for_selector(wait_for, timeout=remaining)
                 content = await page.content()
             return content, None
+        except _BackendClosed:
+            return None, RequestFailure(kind=FailureKind.UNEXPECTED, message="browser backend closed")
+        except _PageUnreadable as exc:
+            if exc.error is not None and _is_timeout(exc.error):
+                return None, RequestFailure(kind=FailureKind.TIMEOUT, message=f"browser page unreadable: {url}")
+            detail = "unknown" if exc.error is None else f"{type(exc.error).__name__}: {exc.error}"
+            logger.error("browser page unreadable", url=url, error=detail)
+            return None, RequestFailure(kind=FailureKind.UNEXPECTED, message=f"browser page unreadable: {detail}")
         except _ChallengeUnresolved:
             return None, RequestFailure(
                 kind=FailureKind.UNEXPECTED,
@@ -314,18 +337,26 @@ class _LocalBackend(ABC):
                     logger.debug("browser page close failed (ignored)", url=url, error=str(exc))
 
     async def _settle_challenge(self, page: _PageLike, deadline: float) -> str:
-        """轮询正文直到挑战消解; 超时抛 ``_ChallengeUnresolved``.
+        """轮询正文直到挑战消解; 超时抛 ``_ChallengeUnresolved`` 或 ``_PageUnreadable``.
 
         导航瞬间读正文可能撞上框架重建; 读失败不视为空页, 计入等待直到超时.
+        整个等待期一次都没读到正文时抛 ``_PageUnreadable``, 页面崩溃不误报为挑战未解决.
         """
+        read_ok = False
+        last_error: BaseException | None = None
         while True:
             try:
                 content: str | None = await page.content()
-            except Exception:
+            except Exception as exc:
                 content = None
+                last_error = exc
+            else:
+                read_ok = True
             if content is not None and classify_block(content) is not FailureReason.CLOUDFLARE_CHALLENGE:
                 return content
             if time.monotonic() >= deadline:
+                if not read_ok:
+                    raise _PageUnreadable(last_error)
                 raise _ChallengeUnresolved
             await asyncio.sleep(_CHALLENGE_POLL_S)
 
@@ -334,6 +365,8 @@ class _LocalBackend(ABC):
         if browser is not None:
             return browser
         async with self._launch_lock:
+            if self._closed:
+                raise _BackendClosed
             browser = self._browser
             if browser is None:
                 stack = AsyncExitStack()
@@ -357,14 +390,13 @@ class _LocalBackend(ABC):
     def _schedule_idle(self) -> None:
         if self._idle_timeout <= 0:
             return
-        if self._idle_task is not None:
-            self._idle_task.cancel()
-        self._idle_task = asyncio.create_task(self._idle_close())
+        self._idle_gen += 1
+        self._idle_task = asyncio.create_task(self._idle_close(self._idle_gen))
 
-    async def _idle_close(self) -> None:
-        try:
-            await asyncio.sleep(self._idle_timeout)
-        except asyncio.CancelledError:
+    async def _idle_close(self, gen: int) -> None:
+        """代际替代取消: 已有请求时重新计时, 关闭途中被越过不会中断退出清理."""
+        await asyncio.sleep(self._idle_timeout)
+        if gen != self._idle_gen:
             return
         if self._active:
             self._schedule_idle()
@@ -382,10 +414,13 @@ class _LocalBackend(ABC):
                 await stack.aclose()
 
     async def close(self) -> None:
+        self._closed = True
+        self._idle_gen += 1
         task, self._idle_task = self._idle_task, None
-        if task is not None:
-            task.cancel()
         await self._close_browser(force=True)
+        # 释放完成后取消残留的休眠任务; cleanup 只在锁内进行, 此刻不可能被打断.
+        if task is not None and not task.done():
+            task.cancel()
 
 
 class PatchrightBackend(_LocalBackend):
@@ -430,14 +465,16 @@ class CamoufoxBackend(_LocalBackend):
             options["proxy"] = {"server": self._proxy}
         browser = await stack.enter_async_context(AsyncCamoufox(**options))
         # 未启用 persistent_context, 返回值必为 Browser.
-        assert isinstance(browser, Browser), "camoufox persistent context is not supported"
+        if not isinstance(browser, Browser):
+            raise RuntimeError("camoufox persistent context is not supported")
         return browser
 
 
 class SolverBackend:
     """FlareSolverr 兼容服务: HTML 取自 ``solution.response``, 会话按来源复用.
 
-    只支持 ``request.get``; 请求头由 solver 自行决定, 因此 ``headers`` 不参与转发 (本地后端支持).
+    只支持 ``request.get``; 请求头与选择器等待由 solver 自行决定,
+    因此 ``headers`` / ``wait_for`` 不参与转发 (本地后端支持).
     """
 
     def __init__(self, *, web_provider: Callable[[], WebClient], url: str, default_timeout: float) -> None:
@@ -447,6 +484,7 @@ class SolverBackend:
         self._sessions: set[str] = set()
         self._semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
         self._lock = asyncio.Lock()
+        self._closed = False
 
     async def get_page(
         self,
@@ -460,6 +498,8 @@ class SolverBackend:
     ) -> BrowserPageResult:
         effective = timeout if timeout is not None else self._default_timeout
         async with self._semaphore:
+            if self._closed:
+                return None, RequestFailure(kind=FailureKind.UNEXPECTED, message="solver backend closed")
             try:
                 await self._ensure_session(scope)
                 data = await self._request_get(url, scope, effective, cookies)
@@ -504,6 +544,8 @@ class SolverBackend:
         if scope in self._sessions:
             return
         async with self._lock:
+            if self._closed:
+                raise self._closed_error()
             if scope in self._sessions:
                 return
             data = await self._post(
@@ -514,13 +556,22 @@ class SolverBackend:
             # 同名会话已存在同样可用, 不视为失败.
             if not _solver_ok(data) and not _is_existing_session(message):
                 raise RequestError(self._url, _solver_failure(message))
+            if self._closed:
+                # close 的销毁快照可能错过本次创建; 立即回收, 不写回 _sessions.
+                await self._destroy_session(scope)
+                raise self._closed_error()
             self._sessions.add(scope)
+
+    def _closed_error(self) -> RequestError:
+        return RequestError(self._url, RequestFailure(kind=FailureKind.UNEXPECTED, message="solver backend closed"))
 
     async def _post(self, payload: dict[str, Any], *, timeout_s: float) -> dict[str, Any]:
         web = self._web_provider()
-        resp = await web.request(
-            "POST", f"{self._url}/v1", json=payload, use_proxy=False, timeout=timeout_s, max_attempts=1
-        )
+        # solver 响应内嵌目标页 HTML, 只记 meta 避免任务记录膨胀.
+        with skip_body_recording():
+            resp = await web.request(
+                "POST", f"{self._url}/v1", json=payload, use_proxy=False, timeout=timeout_s, max_attempts=1
+            )
         try:
             data = resp.json()
         except Exception as exc:
@@ -535,13 +586,16 @@ class SolverBackend:
         return data
 
     async def close(self) -> None:
+        self._closed = True
         sessions = list(self._sessions)
         self._sessions.clear()
-        for scope in sessions:
-            try:
-                await self._post({"cmd": "sessions.destroy", "session": scope}, timeout_s=_SOLVER_SESSION_TIMEOUT_S)
-            except Exception as exc:
-                logger.debug("solver session destroy failed (ignored)", session=scope, error=str(exc))
+        await asyncio.gather(*(self._destroy_session(scope) for scope in sessions))
+
+    async def _destroy_session(self, scope: str) -> None:
+        try:
+            await self._post({"cmd": "sessions.destroy", "session": scope}, timeout_s=_SOLVER_SESSION_TIMEOUT_S)
+        except Exception as exc:
+            logger.debug("solver session destroy failed (ignored)", session=scope, error=str(exc))
 
 
 def _solver_ok(data: dict[str, Any]) -> bool:

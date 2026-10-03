@@ -72,7 +72,7 @@ Feed 失败记在源的 `last_error`, 不写入站点 outcome 表.
 
 ### 非目标 (v1)
 
-ORGANIZE / REFRESH 全量回放、浏览器 HAR、回放写生产 DB / 移动用户媒体. 浏览器渲染的请求不进 `http/` 索引, 含渲染来源的任务在离线回放中该来源必然失败, 需 `--online`.
+ORGANIZE / REFRESH 全量回放、浏览器 HAR、回放写生产 DB / 移动用户媒体. 浏览器渲染不经 `http/` 记录 (本地引擎不走 `WebClient`; solver 的 `/v1` 调用只记 meta, 响应正文不落盘), 含渲染来源的任务在离线回放中该来源必然失败, 需 `--online`.
 
 ## 排障速查
 
