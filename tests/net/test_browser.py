@@ -67,16 +67,14 @@ class _RecordingBackend:
         self.closed = True
 
 
-def _make_pool(backend: BrowserBackendName, *, timeout_ms: float = 1000) -> tuple[BrowserPool, _FakeWeb]:
-    web = _FakeWeb([])
-    pool = BrowserPool(
+def _make_pool(backend: BrowserBackendName, *, timeout_ms: float = 1000) -> BrowserPool:
+    return BrowserPool(
         default_backend=backend,
         solver_url="http://solver.test:8191",
         proxy=None,
-        web_client=web,  # type: ignore[arg-type]
+        web_client=_FakeWeb([]),  # type: ignore[arg-type]
         timeout_ms=timeout_ms,
     )
-    return pool, web
 
 
 _BACKEND_CASES: list[tuple[BrowserBackendName, BrowserBackendName | None, BrowserBackendName | None]] = [
@@ -94,37 +92,34 @@ _BACKEND_CASES: list[tuple[BrowserBackendName, BrowserBackendName | None, Browse
 def test_pool_resolve(
     default: BrowserBackendName, override: BrowserBackendName | None, expected: BrowserBackendName | None
 ):
-    pool, _ = _make_pool(default)
+    pool = _make_pool(default)
 
     assert pool.resolve(override) is expected
 
 
+_POOL_UNAVAILABLE_CASES: list[tuple[BrowserBackendName, bool, str]] = [
+    (BrowserBackendName.OFF, False, "browser backend disabled"),
+    (BrowserBackendName.CAMOUFOX, True, "browser pool closed"),
+]
+
+
 @pytest.mark.asyncio
-async def test_pool_disabled_returns_structured_failure():
-    pool, _ = _make_pool(BrowserBackendName.OFF)
+@pytest.mark.parametrize(("backend", "closed", "message"), _POOL_UNAVAILABLE_CASES)
+async def test_pool_unavailable_returns_structured_failure(backend: BrowserBackendName, closed: bool, message: str):
+    pool = _make_pool(backend)
+    if closed:
+        await pool.close()
 
     html, failure = await pool.get_page("https://example.com/", scope="site")
 
     assert html is None
     assert failure is not None
-    assert (failure.kind, failure.message) == (FailureKind.UNEXPECTED, "browser backend disabled")
-
-
-@pytest.mark.asyncio
-async def test_pool_closed_returns_structured_failure():
-    pool, _ = _make_pool(BrowserBackendName.CAMOUFOX)
-
-    await pool.close()
-    html, failure = await pool.get_page("https://example.com/", scope="site")
-
-    assert html is None
-    assert failure is not None
-    assert failure.message == "browser pool closed"
+    assert (failure.kind, failure.message) == (FailureKind.UNEXPECTED, message)
 
 
 @pytest.mark.asyncio
 async def test_pool_reuses_created_backend_and_applies_timeout(monkeypatch: pytest.MonkeyPatch):
-    pool, _ = _make_pool(BrowserBackendName.CAMOUFOX, timeout_ms=4321)
+    pool = _make_pool(BrowserBackendName.CAMOUFOX, timeout_ms=4321)
     backend = _RecordingBackend()
     created: list[BrowserBackendName] = []
 
@@ -302,34 +297,33 @@ async def test_local_backend_close_releases_browser():
     assert backend.closed_browsers == 1
 
 
-@pytest.mark.asyncio
-async def test_local_backend_reports_unreadable_page(monkeypatch: pytest.MonkeyPatch):
-    """整个等待期读不到正文: 报页面不可读, 不冒充 cloudflare_challenge."""
-    monkeypatch.setattr("amane.net.browser._CHALLENGE_POLL_S", 0.0)
-    backend = _FakeLocalBackend(_FakePage(["<html>never</html>"], content_failures=10**9))
+# 类名必须是 TimeoutError: 引擎超时不继承内建异常, _is_timeout 按类名识别.
+_EngineTimeout = type("TimeoutError", (Exception,), {})
 
-    html, failure = await backend.get_page("https://a.example/", scope="site-a", timeout=50)
 
-    assert html is None
-    assert failure is not None
-    assert failure.kind == FailureKind.UNEXPECTED
-    assert failure.reason != FailureReason.CLOUDFLARE_CHALLENGE
-    assert "browser page unreadable" in failure.message
+_UNREADABLE_CASES: list[tuple[BaseException, FailureKind]] = [
+    (RuntimeError("execution context destroyed"), FailureKind.UNEXPECTED),
+    (_EngineTimeout("engine timeout"), FailureKind.TIMEOUT),
+]
 
 
 @pytest.mark.asyncio
-async def test_local_backend_unreadable_timeout_maps_to_timeout(monkeypatch: pytest.MonkeyPatch):
-    """页面持续不可读且底层是超时类错误: 归为 TIMEOUT."""
+@pytest.mark.parametrize(("error", "expected_kind"), _UNREADABLE_CASES, ids=["runtime-error", "engine-timeout"])
+async def test_local_backend_unreadable_page_maps_failure(
+    monkeypatch: pytest.MonkeyPatch, error: BaseException, expected_kind: FailureKind
+):
+    """整个等待期读不到正文: 按底层异常归为 UNEXPECTED 或 TIMEOUT, 不冒充挑战."""
     monkeypatch.setattr("amane.net.browser._CHALLENGE_POLL_S", 0.0)
     page = _FakePage(["<html>never</html>"])
-    page.content_error = type("TimeoutError", (Exception,), {})("engine timeout")
+    page.content_error = error
     backend = _FakeLocalBackend(page)
 
     html, failure = await backend.get_page("https://a.example/", scope="site-a", timeout=50)
 
     assert html is None
     assert failure is not None
-    assert failure.kind == FailureKind.TIMEOUT
+    assert failure.kind is expected_kind
+    assert "browser page unreadable" in failure.message
 
 
 @pytest.mark.asyncio
@@ -376,9 +370,10 @@ async def test_local_backend_closed_rejects_restart():
     ("error", "expected"),
     [
         (TimeoutError(), True),
-        (type("TimeoutError", (Exception,), {})("engine"), True),
+        (_EngineTimeout("engine"), True),
         (RuntimeError("boom"), False),
     ],
+    ids=["builtin", "engine-class-name", "unrelated"],
 )
 def test_is_timeout(error: BaseException, expected: bool):
     """playwright 的 TimeoutError 不继承内建异常, 按类名识别."""
@@ -508,38 +503,27 @@ async def test_solver_closed_rejects_request():
     assert failure.message == "solver backend closed"
 
 
-@pytest.mark.asyncio
-async def test_solver_close_during_request_prevents_session_recreate():
-    """close 发生在缺会话回退之前: 不重建会话, 也不写回 _sessions."""
-    web = _GatedWeb([{"status": "ok"}, {"status": "error", "message": "Session not found"}, {"status": "ok"}])
-    solver = SolverBackend(
-        web_provider=lambda: web,  # type: ignore[arg-type]
-        url="http://solver.test:8191",
-        default_timeout=1000,
-    )
-    task = asyncio.create_task(solver.get_page("https://a.example/", scope="site-a"))
-
-    await web.get_answered.wait()
-    await solver.close()
-    web.release.set()
-
-    html, failure = await task
-
-    assert html is None
-    assert failure is not None
-    assert failure.message == "solver backend closed"
-    assert solver._sessions == set()
-    assert [call[2]["json"]["cmd"] for call in web.calls] == [
-        "sessions.create",
+_SOLVER_CLOSE_RACE_CASES: list[tuple[str, list[object], list[str]]] = [
+    (
         "request.get",
-        "sessions.destroy",
-    ]
+        [{"status": "ok"}, {"status": "error", "message": "Session not found"}, {"status": "ok"}],
+        ["sessions.create", "request.get", "sessions.destroy"],
+    ),
+    ("sessions.create", [{"status": "ok"}, {"status": "ok"}], ["sessions.create", "sessions.destroy"]),
+]
 
 
 @pytest.mark.asyncio
-async def test_solver_close_after_session_create_recycles_it():
-    """create 返回后才 close: 立即销毁该会话, 不写回 _sessions."""
-    web = _GatedWeb([{"status": "ok"}, {"status": "ok"}], gate_cmd="sessions.create")
+@pytest.mark.parametrize(
+    ("gate_cmd", "responses", "expected_cmds"),
+    _SOLVER_CLOSE_RACE_CASES,
+    ids=["before-session-retry", "after-session-create"],
+)
+async def test_solver_close_race_stops_session_lifecycle(
+    gate_cmd: str, responses: list[object], expected_cmds: list[str]
+):
+    """close 与请求交错: 不重建 / 回收会话, 且不再写回 _sessions."""
+    web = _GatedWeb(responses, gate_cmd=gate_cmd)
     solver = SolverBackend(
         web_provider=lambda: web,  # type: ignore[arg-type]
         url="http://solver.test:8191",
@@ -557,7 +541,7 @@ async def test_solver_close_after_session_create_recycles_it():
     assert failure is not None
     assert failure.message == "solver backend closed"
     assert solver._sessions == set()
-    assert [call[2]["json"]["cmd"] for call in web.calls] == ["sessions.create", "sessions.destroy"]
+    assert [call[2]["json"]["cmd"] for call in web.calls] == expected_cmds
 
 
 @pytest.mark.asyncio

@@ -72,8 +72,6 @@ class BrowserClient(Protocol):
         timeout: float | None = None,
     ) -> BrowserPageResult: ...
 
-    async def close(self) -> None: ...
-
 
 class BrowserPool:
     """按配置解析并缓存后端实例; 引擎惰性启动, ``off`` 不产生任何实例.
@@ -498,8 +496,6 @@ class SolverBackend:
     ) -> BrowserPageResult:
         effective = timeout if timeout is not None else self._default_timeout
         async with self._semaphore:
-            if self._closed:
-                return None, RequestFailure(kind=FailureKind.UNEXPECTED, message="solver backend closed")
             try:
                 await self._ensure_session(scope)
                 data = await self._request_get(url, scope, effective, cookies)

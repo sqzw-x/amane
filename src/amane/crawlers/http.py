@@ -20,9 +20,6 @@ if TYPE_CHECKING:
 from ..net.connectivity import ConnectivityOutcome, probe_get
 from ..net.errors import FailureKind, RequestError, RequestFailure, SourceError, classify_block
 
-# 未显式传 timeout 且未接线配置时的渲染时限 (毫秒).
-_DEFAULT_BROWSER_TIMEOUT_MS = 30000.0
-
 
 class HttpClient:
     """构造函数注入 WebClient / BrowserClient. 渲染视图由 ``for_source`` 派生."""
@@ -35,14 +32,14 @@ class HttpClient:
         source: str | None = None,
         use_browser: bool = False,
         browser_backend: BrowserBackendName | None = None,
-        browser_timeout: float | None = None,
+        browser_timeout: float = 30000.0,
     ):
         self._web = web
         self._browser = browser
         self._source = source
         self._use_browser = use_browser
         self._browser_backend = browser_backend
-        self._browser_timeout = browser_timeout if browser_timeout is not None else _DEFAULT_BROWSER_TIMEOUT_MS
+        self._browser_timeout = browser_timeout
 
     @property
     def web_client(self) -> WebClient:
