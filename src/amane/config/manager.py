@@ -1,4 +1,5 @@
 import contextlib
+import importlib
 import os
 import tempfile
 import tomllib
@@ -245,6 +246,11 @@ class SiteConfig(BaseModel):
             return BrowserMode.OFF
         return v
 
+    @field_validator("browser_backend")
+    @classmethod
+    def _override_engine_available(cls, v: BrowserBackendName | None) -> BrowserBackendName | None:
+        return None if v is None else _require_browser_engine(v)
+
     api_token: str | None = Field(default=None, json_schema_extra={"x-visible-keys": _SITES_WITH_API_TOKEN})
     official_routes: dict[str, Manufacturer] = Field(
         default_factory=dict, json_schema_extra={"x-visible-keys": [SiteName.OFFICIAL]}
@@ -459,12 +465,29 @@ class WatermarkConfig(BaseModel):
         return _complete_frozen_dict(v, dict.fromkeys(WatermarkKind, WatermarkCorner.TOP_LEFT))
 
 
+def _require_browser_engine(backend: BrowserBackendName) -> BrowserBackendName:
+    """本地引擎不在当前分发时拒绝配置, 不等到启动浏览器才报 ModuleNotFoundError."""
+    module = {BrowserBackendName.PATCHRIGHT: "patchright", BrowserBackendName.CAMOUFOX: "camoufox"}.get(backend)
+    if module is None:
+        return backend
+    try:
+        importlib.import_module(module)
+    except ImportError as exc:
+        raise ValueError(f"浏览器后端 {backend} 不可用: 当前分发未包含 {module}, 请改用 solver") from exc
+    return backend
+
+
 class BrowserConfig(BaseModel):
     backend: BrowserBackendName = BrowserBackendName.OFF
     timeout: int = Field(default=30000, ge=5000, le=120000)
     """页面导航默认超时 (毫秒); 单次渲染可覆盖."""
     solver_url: str = Field(default="http://127.0.0.1:8191", pattern=r"^https?://.+")
     """FlareSolverr 兼容服务地址; 仅 ``solver`` 后端使用. 服务不允许暴露到公网."""
+
+    @field_validator("backend")
+    @classmethod
+    def _engine_available(cls, v: BrowserBackendName) -> BrowserBackendName:
+        return _require_browser_engine(v)
 
 
 class NetworkConfig(BaseModel):

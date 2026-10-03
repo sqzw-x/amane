@@ -22,7 +22,16 @@ from amane.config import (
     WorkerConfig,
 )
 from amane.config.manager import LANG_METADATA_FIELD_SET
-from amane.enums import ApiType, BrowserMode, Language, MetadataField, SiteName, WatermarkCorner, WatermarkKind
+from amane.enums import (
+    ApiType,
+    BrowserBackendName,
+    BrowserMode,
+    Language,
+    MetadataField,
+    SiteName,
+    WatermarkCorner,
+    WatermarkKind,
+)
 from amane.parsing import ContentType
 
 # ---------------------------------------------------------------------------
@@ -227,6 +236,31 @@ class TestBrowserConfigValidation:
 
     def test_solver_url_accepts_https(self):
         assert BrowserConfig(solver_url="https://solver.local:8191").solver_url == "https://solver.local:8191"
+
+
+class TestBrowserBackendAvailability:
+    def test_default_is_off(self):
+        assert BrowserConfig().backend is BrowserBackendName.OFF
+
+    @pytest.mark.parametrize("backend", [BrowserBackendName.OFF, BrowserBackendName.SOLVER])
+    def test_off_and_solver_skip_engine_import(self, monkeypatch: pytest.MonkeyPatch, backend: BrowserBackendName):
+        def _raise(name: str) -> None:
+            raise ImportError(name)
+
+        monkeypatch.setattr("amane.config.manager.importlib.import_module", _raise)
+
+        assert BrowserConfig(backend=backend).backend is backend
+
+    def test_unavailable_engine_rejected(self, monkeypatch: pytest.MonkeyPatch):
+        def _raise(name: str) -> None:
+            raise ImportError(name)
+
+        monkeypatch.setattr("amane.config.manager.importlib.import_module", _raise)
+
+        with pytest.raises(ValidationError, match="请改用 solver"):
+            BrowserConfig(backend=BrowserBackendName.CAMOUFOX)
+        with pytest.raises(ValidationError, match="请改用 solver"):
+            SiteConfig(browser_backend=BrowserBackendName.PATCHRIGHT)
 
 
 class TestSiteBrowserMode:
