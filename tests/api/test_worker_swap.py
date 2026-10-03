@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 import pytest_asyncio
 from httpx2 import ASGITransport, AsyncClient
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 import amane.app.bootstrap as bootstrap_module
 import amane.app.runtime as runtime_module
@@ -178,6 +179,100 @@ async def test_stop_workers_cancels_running(
 
     failed = await _await_status(client, task_id, "failed")
     assert failed["error"] == CANCEL_ERROR
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_library_locks_shared_across_workers(
+    swap_client: tuple[AsyncClient, BlockingRefresh, AppRuntime],
+) -> None:
+    """同库 ORGANIZE / TRASH 的串行锁跨 worker 共享."""
+    client, _blocker, runtime = swap_client
+    locks = runtime.library_locks
+    old_worker = runtime.worker
+    assert old_worker._handlers[TaskType.ORGANIZE]._library_locks is locks
+    assert old_worker._handlers[TaskType.TRASH]._library_locks is locks
+
+    resp = await client.patch("config", json={"watermark": {"enabled": True}})
+    assert resp.status_code == 200
+
+    # 新 worker 与退役 worker 的 handlers 必须共用同一把锁
+    assert runtime.worker._handlers[TaskType.ORGANIZE]._library_locks is locks
+    assert runtime.worker._handlers[TaskType.TRASH]._library_locks is locks
+    assert old_worker._handlers[TaskType.ORGANIZE]._library_locks is locks
+    assert old_worker._handlers[TaskType.TRASH]._library_locks is locks
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_consecutive_changes_keep_each_task(
+    swap_client: tuple[AsyncClient, BlockingRefresh, AppRuntime], safe_path: Path
+) -> None:
+    """连续两次变更: 两个退役 worker 并存, 各代任务都继续运行."""
+    client, blocker, runtime = swap_client
+    library_id = await _create_library(client, safe_path)
+
+    first = await _submit_refresh(client, library_id)
+    await asyncio.wait_for(blocker.generations[0][1].wait(), timeout=5)
+
+    resp = await client.patch("config", json={"watermark": {"enabled": True}})
+    assert resp.status_code == 200
+    await asyncio.wait_for(runtime._retiring[-1].worker.wait_stopped(), timeout=5)
+
+    second = await _submit_refresh(client, library_id)
+    await asyncio.wait_for(blocker.generations[1][1].wait(), timeout=5)
+
+    resp = await client.patch("config", json={"agent": {"model": "gpt-5"}})
+    assert resp.status_code == 200
+    await asyncio.wait_for(runtime._retiring[-1].worker.wait_stopped(), timeout=5)
+
+    third = await _submit_refresh(client, library_id)
+    await asyncio.wait_for(blocker.generations[2][1].wait(), timeout=5)
+    assert len(runtime._retiring) == 2
+
+    for task_id in (first, second, third):
+        resp = await client.get(f"tasks/{task_id}")
+        assert resp.json()["status"] == "running"
+
+    for _hot, _started, release in blocker.generations:
+        release.set()
+    for task_id in (first, second, third):
+        await _await_status(client, task_id, "done")
+    await asyncio.gather(*list(runtime._retire_tasks), return_exceptions=True)
+    assert runtime._retiring == []
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_stop_workers_bounds_stuck_claim(
+    swap_client: tuple[AsyncClient, BlockingRefresh, AppRuntime],
+    safe_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """认领 commit 卡死时 stop_workers 有界返回并取消主循环."""
+    client, _blocker, runtime = swap_client
+    library_id = await _create_library(client, safe_path)
+    task_id = await _submit_refresh(client, library_id)
+
+    commit_started = asyncio.Event()
+    release_commit = asyncio.Event()
+    real_commit = AsyncSession.commit
+    armed = True
+
+    async def blocked_commit(self: AsyncSession) -> None:
+        nonlocal armed
+        if armed:
+            armed = False
+            commit_started.set()
+            await release_commit.wait()
+        await real_commit(self)
+
+    monkeypatch.setattr(runtime_module, "MAIN_LOOP_STOP_TIMEOUT", 0.1)
+    monkeypatch.setattr(AsyncSession, "commit", blocked_commit)
+    await asyncio.wait_for(commit_started.wait(), timeout=5)
+
+    await asyncio.wait_for(runtime.stop_workers(closing=False), timeout=5)
+
+    # 认领事务未提交, 行停留在 QUEUED, 不残留 RUNNING
+    resp = await client.get(f"tasks/{task_id}")
+    assert resp.json()["status"] == "queued"
 
 
 @pytest.mark.asyncio(loop_scope="function")
