@@ -1,29 +1,25 @@
 """execute_task_batch / cleanup_task_artifacts: 不经 FastAPI lifespan."""
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 
 from amane.api.models.tasks import TaskBatchAction
-from amane.api.support.task_batch import CANCEL_ERROR, cleanup_task_artifacts, execute_task_batch
+from amane.api.support.task_batch import cleanup_task_artifacts, execute_task_batch
 from amane.db.models import TaskStatus, TaskType
-from amane.scheduler.worker import AsyncWorker
+from amane.scheduler.worker import CANCEL_ERROR
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
 
 
-class _StubWorker:
-    def __init__(self, *, cancel_ok: bool = True) -> None:
-        self.cancel_ok = cancel_ok
+def _cancel(*, ok: bool = True) -> Callable[[int], Awaitable[bool]]:
+    async def cancel(task_id: int) -> bool:
+        return ok
 
-    async def cancel_task(self, task_id: int) -> bool:
-        return self.cancel_ok
-
-
-def _worker(*, cancel_ok: bool = True) -> AsyncWorker:
-    return cast("AsyncWorker", _StubWorker(cancel_ok=cancel_ok))
+    return cancel
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -54,7 +50,7 @@ async def test_batch_delete_counts_and_skips_active_chain(repo: Repository, tmp_
     body = await execute_task_batch(
         action=TaskBatchAction.DELETE,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=[*ids, queued.id, 999_999],
         statuses=None,
@@ -85,7 +81,7 @@ async def test_batch_delete_counts_and_skips_active_chain(repo: Repository, tmp_
     filtered = await execute_task_batch(
         action=TaskBatchAction.DELETE,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=None,
         statuses=[TaskStatus.DONE],
@@ -104,7 +100,7 @@ async def test_batch_delete_counts_and_skips_active_chain(repo: Repository, tmp_
     by_type = await execute_task_batch(
         action=TaskBatchAction.DELETE,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=None,
         statuses=None,
@@ -145,7 +141,7 @@ async def test_batch_delete_mixed_tree_keeps_failed_under_root(repo: Repository,
     cleared_done = await execute_task_batch(
         action=TaskBatchAction.DELETE,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=None,
         statuses=[TaskStatus.DONE],
@@ -162,7 +158,7 @@ async def test_batch_delete_mixed_tree_keeps_failed_under_root(repo: Repository,
     cleared_failed = await execute_task_batch(
         action=TaskBatchAction.DELETE,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=None,
         statuses=[TaskStatus.FAILED],
@@ -175,7 +171,7 @@ async def test_batch_delete_mixed_tree_keeps_failed_under_root(repo: Repository,
     cleared_empty = await execute_task_batch(
         action=TaskBatchAction.DELETE,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=None,
         statuses=[TaskStatus.DONE],
@@ -193,7 +189,7 @@ async def test_batch_cancel_queued_running_and_filter(repo: Repository, tmp_path
     cancelled = await execute_task_batch(
         action=TaskBatchAction.CANCEL,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=[queued.id],
         statuses=None,
@@ -211,7 +207,7 @@ async def test_batch_cancel_queued_running_and_filter(repo: Repository, tmp_path
     skip = await execute_task_batch(
         action=TaskBatchAction.CANCEL,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=[done.id],
         statuses=None,
@@ -222,7 +218,7 @@ async def test_batch_cancel_queued_running_and_filter(repo: Repository, tmp_path
     missing = await execute_task_batch(
         action=TaskBatchAction.CANCEL,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=[9999],
         statuses=None,
@@ -238,7 +234,7 @@ async def test_batch_cancel_queued_running_and_filter(repo: Repository, tmp_path
     fallback = await execute_task_batch(
         action=TaskBatchAction.CANCEL,
         repo=repo,
-        worker=_worker(cancel_ok=False),
+        cancel_task=_cancel(ok=False),
         log_dir=tmp_path,
         task_ids=[running.id],
         statuses=None,
@@ -256,7 +252,7 @@ async def test_batch_cancel_queued_running_and_filter(repo: Repository, tmp_path
     by_type = await execute_task_batch(
         action=TaskBatchAction.CANCEL,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=None,
         statuses=None,
@@ -277,7 +273,7 @@ async def test_batch_retry(repo: Repository, tmp_path: Path) -> None:
     body = await execute_task_batch(
         action=TaskBatchAction.RETRY,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=[task.id],
         statuses=None,
@@ -300,7 +296,7 @@ async def test_batch_retry(repo: Repository, tmp_path: Path) -> None:
     skip = await execute_task_batch(
         action=TaskBatchAction.RETRY,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=[queued.id],
         statuses=None,
@@ -317,7 +313,7 @@ async def test_batch_retry(repo: Repository, tmp_path: Path) -> None:
     filtered = await execute_task_batch(
         action=TaskBatchAction.RETRY,
         repo=repo,
-        worker=_worker(),
+        cancel_task=_cancel(),
         log_dir=tmp_path,
         task_ids=None,
         statuses=[TaskStatus.FAILED],

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -35,7 +36,7 @@ from ..net.http import RateLimiters, WebClient
 from ..playback import PlaybackFactory, PlaybackState
 from ..plugins.manager import PluginManager
 from ..plugins.packaging import install_plugin_path, install_plugin_zip, uninstall_plugin_tree
-from ..scheduler.worker import AsyncWorker
+from ..scheduler.worker import MAIN_LOOP_STOP_TIMEOUT, AsyncWorker
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -146,6 +147,22 @@ def build_r18_db(r18: R18Config) -> R18Database | None:
         return None
 
 
+@dataclass(eq=False)
+class R18Handle:
+    """r18 引擎的所有权标记. 引擎对象本身仍以 ``R18Database`` 注入 factory / crawler."""
+
+    engine: R18Database
+    closed: bool = False
+
+
+@dataclass(eq=False)
+class RetiringWorker:
+    """已退役、正在排空的 worker 及其使用的 r18 句柄."""
+
+    worker: AsyncWorker
+    r18: R18Handle | None
+
+
 @dataclass
 class AppRuntime:
     repo: Repository
@@ -168,32 +185,38 @@ class AppRuntime:
     plugin_manager: PluginManager | None = None
     playback_factory: PlaybackFactory | None = None
     playback_state: PlaybackState = field(default_factory=PlaybackState)
+    library_locks: LibraryTaskLocks = field(default_factory=LibraryTaskLocks)
+    r18_handle: R18Handle | None = None
 
     _r18_config: R18Config | None = field(default=None, repr=False)
-    _old_r18_db: R18Database | None = field(default=None, repr=False)
     _rebuild_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    _retiring: list[RetiringWorker] = field(default_factory=list, repr=False)
+    _retire_tasks: set[asyncio.Task[None]] = field(default_factory=set, repr=False)
+    _closing: bool = field(default=False, repr=False)
+    _stopped: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
         if self._r18_config is None:
             self._r18_config = self.config.hot.r18.model_copy(deep=True)
+        if self.r18_handle is None and self.r18_db is not None:
+            self.r18_handle = R18Handle(self.r18_db)
 
-    def _rebuild(self) -> AsyncWorker:
+    def _rebuild(self) -> None:
         """重建依赖热配置的对象. 调用方必须持有 ``_rebuild_lock`` (见 ``apply_rebuild``).
 
-        r18 只读引擎随 hot.r18 变更而重建. rebuild 是同步的, 不能 await;
-        旧引擎由 dispose_old_r18 异步释放. 返回旧 worker 以便调用方排空.
+        r18 只读引擎随 hot.r18 变更而重建; 旧引擎由退役流程在引用它的 worker 排空后释放.
+        rebuild 是同步的, 不能 await.
         """
         hot = self.config.hot
-        old_worker = self.worker
-        paused = old_worker.is_paused
+        paused = self.worker.is_paused
 
         # 日志级别即时生效, 无需重建
         logging.getLogger("amane").setLevel(hot.logging.level)
 
-        # r18 配置变更时重建只读引擎; 旧引擎待异步释放
+        # r18 配置变更时重建只读引擎与新句柄; 旧句柄随退役 worker 释放
         if hot.r18 != self._r18_config:
-            self._old_r18_db = self.r18_db
             self.r18_db = build_r18_db(hot.r18)
+            self.r18_handle = R18Handle(self.r18_db) if self.r18_db is not None else None
             self._r18_config = hot.r18.model_copy(deep=True)
 
         stack = build_network_stack(
@@ -221,6 +244,7 @@ class AppRuntime:
                 self.translation_cache,
                 self.config.cold.data_dir,
                 self.plugin_manager,
+                library_locks=self.library_locks,
             ),
             concurrency=hot.worker.concurrency,
             poll_interval=hot.worker.poll_interval,
@@ -253,16 +277,16 @@ class AppRuntime:
             self.playback_state.reset()
         self.playback_factory = current_playback
 
-        return old_worker
-
     async def apply_rebuild(self) -> None:
         """Serialize rebuild + worker swap + old r18 dispose for config and plugin routes."""
         async with self._rebuild_lock:
+            self._ensure_open()
             await self._apply_rebuild_unlocked()
 
     async def reload_plugins(self) -> PluginManager:
         """Rediscover drop-ins under ``plugins/sources`` and rebuild the scrape stack."""
         async with self._rebuild_lock:
+            self._ensure_open()
             self._replace_plugin_manager(PluginManager.discover(self.config.cold.data_dir))
             await self._apply_rebuild_unlocked()
             return self._require_plugin_manager()
@@ -270,6 +294,7 @@ class AppRuntime:
     async def install_plugin_archive(self, payload: bytes) -> PluginManager:
         """Install a zip of ``plugin.py`` into ``plugins/sources`` and rebuild."""
         async with self._rebuild_lock:
+            self._ensure_open()
             plugin_id = install_plugin_zip(self.config.cold.data_dir, payload)
             self._replace_plugin_manager(PluginManager.discover(self.config.cold.data_dir))
             await self._apply_rebuild_unlocked()
@@ -279,6 +304,7 @@ class AppRuntime:
     async def install_plugin_from_path(self, source: Path) -> PluginManager:
         """Copy a server path (directory or zip) into ``plugins/sources`` and rebuild."""
         async with self._rebuild_lock:
+            self._ensure_open()
             plugin_id = install_plugin_path(self.config.cold.data_dir, source)
             self._replace_plugin_manager(PluginManager.discover(self.config.cold.data_dir))
             await self._apply_rebuild_unlocked()
@@ -288,6 +314,7 @@ class AppRuntime:
     async def uninstall_plugin_tree(self, plugin_id: str) -> None:
         """Remove ``plugins/sources/<plugin_id>`` and rediscover sources."""
         async with self._rebuild_lock:
+            self._ensure_open()
             manager = self._require_plugin_manager()
             if manager.get(plugin_id) is None:
                 raise KeyError(plugin_id)
@@ -298,12 +325,88 @@ class AppRuntime:
     async def _apply_rebuild_unlocked(self) -> None:
         """必须持有 ``_rebuild_lock``."""
         old_playback = self.playback_factory
-        old_worker = self._rebuild()
-        await old_worker.stop()
+        old_worker = self.worker
+        old_r18 = self.r18_handle
+        self._rebuild()
+        old_worker.retire()
         self.worker.start()
-        await self.dispose_old_r18()
+        self._retire_worker(old_worker, old_r18)
+        if self._retiring:
+            logger.warning("workers retiring", count=len(self._retiring))
         if old_playback is not None:
             await old_playback.aclose()
+
+    def _retire_worker(self, worker: AsyncWorker, r18: R18Handle | None) -> None:
+        entry = RetiringWorker(worker=worker, r18=r18)
+        self._retiring.append(entry)
+        task = asyncio.create_task(self._drain_and_close(entry))
+        self._retire_tasks.add(task)
+
+    async def _drain_and_close(self, entry: RetiringWorker) -> None:
+        """等退役 worker 排空后释放其 r18 句柄; 不获取 ``_rebuild_lock``."""
+        try:
+            await entry.worker.drain()
+            self._retiring.remove(entry)
+            if entry.r18 is not None:
+                await self._release_r18(entry.r18)
+        except Exception:
+            logger.exception("retiring worker cleanup failed")
+        finally:
+            self._retire_tasks.discard(asyncio.current_task())
+        logger.info("worker retired", active_count=entry.worker.active_count)
+
+    async def _release_r18(self, handle: R18Handle) -> None:
+        """句柄不再被当前或任何退役 worker 使用时关闭; 判定与置位在同一同步段."""
+        if handle.closed or handle is self.r18_handle:
+            return
+        if any(entry.r18 is handle for entry in self._retiring):
+            return
+        handle.closed = True
+        await handle.engine.close()
+
+    async def cancel_task(self, task_id: int) -> bool:
+        """当前 worker 与退役 worker 都能命中."""
+        if await self.worker.cancel_task(task_id):
+            return True
+        for entry in list(self._retiring):
+            if await entry.worker.cancel_task(task_id):
+                return True
+        return False
+
+    async def stop_workers(self, *, closing: bool = True) -> None:
+        """关闭编排: 停全部 worker 的认领, 限时处置活跃任务, 单次清扫. 幂等."""
+        async with self._rebuild_lock:
+            if self._stopped:
+                return
+            if closing:
+                self._closing = True
+            workers = [self.worker, *(entry.worker for entry in self._retiring)]
+            self._retire_worker(self.worker, self.r18_handle)
+            for worker in workers:
+                worker.retire()
+            for worker in workers:
+                try:
+                    await asyncio.wait_for(worker.wait_stopped(), timeout=MAIN_LOOP_STOP_TIMEOUT)
+                except TimeoutError:
+                    logger.warning("worker main loop stuck, cancelling", timeout=MAIN_LOOP_STOP_TIMEOUT)
+                    worker.cancel_main_loop()
+                    await worker.wait_stopped()
+            for worker in workers:
+                await worker.shutdown_active()
+            failed = await self.repo.fail_all_running_tasks()
+            for task in list(self._retire_tasks):
+                with suppress(Exception):
+                    await task
+            if self.r18_handle is not None and not self.r18_handle.closed:
+                self.r18_handle.closed = True
+                with suppress(Exception):
+                    await self.r18_handle.engine.close()
+            self._stopped = True
+            logger.info("workers stopped", marked_failed=failed)
+
+    def _ensure_open(self) -> None:
+        if self._closing:
+            raise RuntimeError("运行时正在关闭")
 
     def _replace_plugin_manager(self, discovered: PluginManager) -> None:
         discovered.validate_hot_settings(self.config.hot, require_available=False)
@@ -322,12 +425,6 @@ class AppRuntime:
             raise RuntimeError("来源插件目录未初始化")
         return manager
 
-    async def dispose_old_r18(self) -> None:
-        """异步释放 _rebuild() 替换下来的旧 r18 引擎."""
-        if self._old_r18_db is not None:
-            await self._old_r18_db.close()
-            self._old_r18_db = None
-
 
 def build_handlers(
     repo: Repository,
@@ -339,6 +436,7 @@ def build_handlers(
     translation_cache: TranslationCache | None = None,
     state_dir: Path | None = None,
     plugin_manager: PluginManager | None = None,
+    library_locks: LibraryTaskLocks | None = None,
 ) -> dict[TaskType, TaskHandler[Any, Any]]:
     # 未启用/缺密钥时 translator 为 None, ScrapeHandler 跳过翻译.
     # 经 _rebuild() 热重载; 代理沿用 network.proxy.
@@ -355,7 +453,8 @@ def build_handlers(
         field_prompts=hot.llm.field_prompts,
         cache=translation_cache,
     )
-    library_locks = LibraryTaskLocks()
+    if library_locks is None:
+        library_locks = LibraryTaskLocks()
     handlers: dict[TaskType, TaskHandler[Any, Any]] = {
         TaskType.REFRESH: RefreshHandler(repo, media_extensions=hot.watcher.media_extensions),
         TaskType.SCRAPE: ScrapeHandler(

@@ -11,6 +11,7 @@ from pydantic_ai.capabilities import Capability
 
 from ..api.support.task_resolve import resolve_submission
 from ..db.models import TaskStatus
+from ..scheduler.worker import CANCEL_ERROR
 from .payload_schema import TASK_SUBMISSION, TaskSubmissionType
 from .tools import TOOL_OK, AgentDeps
 
@@ -57,13 +58,13 @@ def build_task_ops_capability() -> Capability[AgentDeps]:
         if task.status == TaskStatus.RUNNING:
             cancel_fn = ctx.deps.bridge.cancel_running_task
             if cancel_fn is None:
-                await ctx.deps.repo.fail_task(task_id, error="Cancelled by user")
+                await ctx.deps.repo.fail_running_task(task_id, error=CANCEL_ERROR)
             else:
                 cancelled = await cancel_fn(task_id)
                 if not cancelled:
-                    await ctx.deps.repo.fail_task(task_id, error="Cancelled by user")
+                    await ctx.deps.repo.fail_running_task(task_id, error=CANCEL_ERROR)
         elif task.status == TaskStatus.QUEUED:
-            await ctx.deps.repo.fail_task(task_id, error="Cancelled by user")
+            await ctx.deps.repo.fail_task(task_id, error=CANCEL_ERROR)
         else:
             return {"error": f"无法取消状态为 '{task.status}' 的任务"}
         return TOOL_OK

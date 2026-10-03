@@ -104,7 +104,8 @@ class TestConfigRebuild:
         assert resp.status_code == 200
 
         assert runtime.r18_db is not None
+        assert runtime.r18_handle is not None
+        assert runtime.r18_handle.engine is runtime.r18_db
         crawler = await runtime.factory.get("r18dev")
         assert crawler is not None
         assert crawler._db is runtime.r18_db
-        assert runtime._old_r18_db is None

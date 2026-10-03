@@ -16,6 +16,7 @@ from ..config.token import resolve_api_token
 from ..db.engine import create_async_engine_from_path
 from ..db.repository import Repository
 from ..events import EventBus
+from ..handlers import LibraryTaskLocks
 from ..llm import TranslationCache
 from ..media import ResourceStore
 from ..observability import setup_logging
@@ -83,12 +84,10 @@ class AppSession:
         self._cron_task.cancel()
         with suppress(asyncio.CancelledError):
             await self._cron_task
-        await self.runtime.worker.stop()
+        await self.runtime.stop_workers()
         if self.runtime.playback_factory is not None:
             await self.runtime.playback_factory.aclose()
         await self.runtime.web_client.close()
-        if self.runtime.r18_db is not None:
-            await self.runtime.r18_db.close()
         if self.runtime.translation_cache is not None:
             await self.runtime.translation_cache.close()
         await self._engine.dispose()
@@ -160,6 +159,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
     if api_token is not None:
         logger.info("api token auth enabled", token=api_token)
 
+    library_locks = LibraryTaskLocks()
     handlers = build_handlers(
         repo,
         factory,
@@ -170,6 +170,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         translation_cache,
         cold.data_dir,
         plugin_manager,
+        library_locks=library_locks,
     )
 
     worker = AsyncWorker(
@@ -229,6 +230,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         agent_service=agent_service,
         plugin_manager=plugin_manager,
         playback_state=playback_state,
+        library_locks=library_locks,
         playback_factory=PlaybackFactory(
             plugin_manager=plugin_manager,
             plugin_configs=hot.plugins,
@@ -241,7 +243,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
     )
     agent_service.bridge.safe_dirs = None if safe_dirs is None else list(safe_dirs)
     agent_service.bridge.watcher = watcher_service
-    agent_service.bridge.cancel_running_task = lambda task_id: runtime.worker.cancel_task(task_id)
+    agent_service.bridge.cancel_running_task = runtime.cancel_task
     agent_service.bridge.poll_feed = feed_service.poll_one
 
     logger.info("amane service ready")
