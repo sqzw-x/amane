@@ -28,6 +28,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   batchDeleteSavedQueriesMutation,
+  batchPersistSavedQueriesMutation,
   listSavedQueriesOptions,
 } from "@/client/@tanstack/react-query.gen";
 import type { SavedQueryResponse } from "@/client/types.gen";
@@ -42,12 +43,24 @@ import {
 } from "@/lib/saved-query/display";
 import { downloadSavedQueryResult } from "@/lib/saved-query/download";
 
-function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDeleted: () => void }) {
+function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChanged: () => void }) {
   const { t } = useTranslation(["agent", "savedQueries", "common"]);
   const [open, setOpen] = useState(false);
   const deleteMutation = useMutation({
     ...batchDeleteSavedQueriesMutation(),
-    onSuccess: onDeleted,
+    onSuccess: onChanged,
+    onError: (err) =>
+      notifications.show({
+        color: "red",
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+      }),
+  });
+  const persistMutation = useMutation({
+    ...batchPersistSavedQueriesMutation(),
+    onSuccess: () => {
+      notifications.show({ color: "blue", message: t("persistedToast", { ns: "savedQueries" }) });
+      onChanged();
+    },
     onError: (err) =>
       notifications.show({
         color: "red",
@@ -149,6 +162,17 @@ function SavedQueryRow({ item, onDeleted }: { item: SavedQueryResponse; onDelete
           >
             {t(SAVED_QUERY_OPEN_LABEL_KEY.data, { ns: "savedQueries" })}
           </Button>
+          {!item.persisted && (
+            <Button
+              size="compact-sm"
+              variant="default"
+              leftSection={<IconBookmark size={14} />}
+              loading={persistMutation.isPending}
+              onClick={() => persistMutation.mutate({ body: { ids: [item.id] } })}
+            >
+              {t("persist", { ns: "savedQueries" })}
+            </Button>
+          )}
           <Button
             size="compact-sm"
             variant="default"
@@ -201,8 +225,10 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
     enabled: opened && sessionId != null,
   });
 
-  function invalidateLists() {
+  function invalidateQueries() {
     void qc.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
+    // 交付芯片的「保留预设」禁用态来自 getSavedQuery, 一并刷新
+    void qc.invalidateQueries({ queryKey: [{ _id: "getSavedQuery" }] });
   }
 
   const items = mergePresets(persistedQuery.data?.items, sessionQuery.data?.items);
@@ -258,7 +284,7 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
             <ScrollArea.Autosize mah={420} offsetScrollbars type="auto">
               <Stack gap="sm" pr={4}>
                 {items.map((item) => (
-                  <SavedQueryRow key={item.id} item={item} onDeleted={invalidateLists} />
+                  <SavedQueryRow key={item.id} item={item} onChanged={invalidateQueries} />
                 ))}
               </Stack>
             </ScrollArea.Autosize>
