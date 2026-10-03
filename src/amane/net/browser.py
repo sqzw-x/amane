@@ -12,7 +12,7 @@ import os
 import time
 from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, Protocol, TypedDict
 
 import structlog
 
@@ -20,7 +20,7 @@ from ..enums import BrowserBackendName
 from .errors import FailureKind, FailureReason, RequestError, RequestFailure, classify_block
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Mapping, Sequence
 
     from .http import WebClient
 
@@ -164,6 +164,55 @@ class _ChallengeUnresolved(Exception):
     """导航结束仍在挑战页: 由 ``_LocalBackend`` 转成带原因的失败."""
 
 
+_WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
+
+
+class _Cookie(TypedDict, total=False):
+    """playwright 系 ``SetCookieParam`` 的结构镜像.
+
+    引擎是可选依赖, 协议不能直接引用其类型; 字段须与引擎定义保持一致才能结构匹配.
+    """
+
+    name: str
+    value: str
+    url: str | None
+    domain: str | None
+    path: str | None
+    expires: float | None
+    httpOnly: bool | None
+    secure: bool | None
+    sameSite: Literal["Lax", "None", "Strict"] | None
+    partitionKey: str | None
+
+
+class _PageLike(Protocol):
+    """``_LocalBackend`` 使用的页面能力: 导航, 读取正文与等待选择器."""
+
+    async def goto(self, url: str, *, timeout: float, wait_until: _WaitUntil) -> object: ...
+
+    async def content(self) -> str: ...
+
+    async def wait_for_selector(self, selector: str, *, timeout: float) -> object: ...
+
+    async def close(self) -> None: ...
+
+
+class _ContextLike(Protocol):
+    """``_LocalBackend`` 使用的 context 能力: 注入 cookie / 请求头, 创建页面."""
+
+    async def add_cookies(self, cookies: Sequence[_Cookie]) -> None: ...
+
+    async def set_extra_http_headers(self, headers: dict[str, str]) -> None: ...
+
+    async def new_page(self) -> _PageLike: ...
+
+
+class _BrowserLike(Protocol):
+    """``_LocalBackend`` 使用的浏览器能力: 按来源创建独立 context."""
+
+    async def new_context(self) -> _ContextLike: ...
+
+
 class _LocalBackend(ABC):
     """playwright 系本地引擎共用: 会话复用, 挑战等待, 并发与空闲释放.
 
@@ -176,16 +225,16 @@ class _LocalBackend(ABC):
         self._default_timeout = default_timeout
         self._idle_timeout = idle_timeout
         self._stack: AsyncExitStack | None = None
-        self._browser: Any = None
-        self._contexts: dict[str, Any] = {}
+        self._browser: _BrowserLike | None = None
+        self._contexts: dict[str, _ContextLike] = {}
         self._semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
         self._launch_lock = asyncio.Lock()
         self._active = 0
         self._idle_task: asyncio.Task[None] | None = None
 
     @abstractmethod
-    async def _launch(self, stack: AsyncExitStack) -> Any:
-        """启动浏览器并压入 exit stack; 返回的对象须支持 ``new_context()``."""
+    async def _launch(self, stack: AsyncExitStack) -> _BrowserLike:
+        """启动浏览器, 并把退出清理压入 ``stack``."""
 
     async def get_page(
         self,
@@ -223,13 +272,16 @@ class _LocalBackend(ABC):
         wait_for: str | None,
         timeout: float,
     ) -> BrowserPageResult:
-        page: Any = None
+        page: _PageLike | None = None
         try:
             context = await self._context(scope)
             # 引擎启动 (含 camoufox 首次下载) 不计入单次渲染时限.
             deadline = time.monotonic() + timeout / 1000
             if cookies:
-                await context.add_cookies([{"name": k, "value": v, "url": url} for k, v in cookies.items()])
+                context_cookies: list[_Cookie] = [
+                    {"name": name, "value": value, "url": url} for name, value in cookies.items()
+                ]
+                await context.add_cookies(context_cookies)
             if headers:
                 await context.set_extra_http_headers(dict(headers))
             page = await context.new_page()
@@ -261,7 +313,7 @@ class _LocalBackend(ABC):
                 except Exception as exc:
                     logger.debug("browser page close failed (ignored)", url=url, error=str(exc))
 
-    async def _settle_challenge(self, page: Any, deadline: float) -> str:
+    async def _settle_challenge(self, page: _PageLike, deadline: float) -> str:
         """轮询正文直到挑战消解; 超时抛 ``_ChallengeUnresolved``.
 
         导航瞬间读正文可能撞上框架重建; 读失败不视为空页, 计入等待直到超时.
@@ -277,21 +329,24 @@ class _LocalBackend(ABC):
                 raise _ChallengeUnresolved
             await asyncio.sleep(_CHALLENGE_POLL_S)
 
-    async def _ensure_browser(self) -> Any:
-        if self._browser is not None:
-            return self._browser
+    async def _ensure_browser(self) -> _BrowserLike:
+        browser = self._browser
+        if browser is not None:
+            return browser
         async with self._launch_lock:
-            if self._browser is None:
+            browser = self._browser
+            if browser is None:
                 stack = AsyncExitStack()
                 try:
-                    self._browser = await self._launch(stack)
+                    browser = await self._launch(stack)
                 except BaseException:
                     await stack.aclose()
                     raise
+                self._browser = browser
                 self._stack = stack
-        return self._browser
+        return browser
 
-    async def _context(self, scope: str) -> Any:
+    async def _context(self, scope: str) -> _ContextLike:
         context = self._contexts.get(scope)
         if context is None:
             browser = await self._ensure_browser()
@@ -336,7 +391,7 @@ class _LocalBackend(ABC):
 class PatchrightBackend(_LocalBackend):
     """patchright 驱动的系统 Chrome; ``AMANE_SHOW_BROWSER`` 置位时强制有头."""
 
-    async def _launch(self, stack: AsyncExitStack) -> Any:
+    async def _launch(self, stack: AsyncExitStack) -> _BrowserLike:
         from patchright.async_api import async_playwright
 
         playwright = await stack.enter_async_context(async_playwright())
@@ -350,20 +405,33 @@ class PatchrightBackend(_LocalBackend):
         return browser
 
 
+class _CamoufoxOptions(TypedDict):
+    """``AsyncCamoufox`` 的启动参数."""
+
+    headless: bool
+    humanize: bool
+    locale: str
+    proxy: NotRequired[dict[str, str]]
+
+
 class CamoufoxBackend(_LocalBackend):
     """stealth Firefox; 浏览器二进制在首次启动时下载."""
 
-    async def _launch(self, stack: AsyncExitStack) -> Any:
+    async def _launch(self, stack: AsyncExitStack) -> _BrowserLike:
         from camoufox.async_api import AsyncCamoufox
+        from playwright.async_api import Browser
 
-        options: dict[str, Any] = {
+        options: _CamoufoxOptions = {
             "headless": os.getenv("AMANE_SHOW_BROWSER") is None,
             "humanize": True,
             "locale": "ja-JP",
         }
         if self._proxy:
             options["proxy"] = {"server": self._proxy}
-        return await stack.enter_async_context(AsyncCamoufox(**options))
+        browser = await stack.enter_async_context(AsyncCamoufox(**options))
+        # 未启用 persistent_context, 返回值必为 Browser.
+        assert isinstance(browser, Browser), "camoufox persistent context is not supported"
+        return browser
 
 
 class SolverBackend:

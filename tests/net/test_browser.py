@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from contextlib import AsyncExitStack
 from typing import Any
 
 import pytest
 
 from amane.enums import BrowserBackendName
-from amane.net.browser import BrowserPageResult, BrowserPool, SolverBackend, _LocalBackend
+from amane.net.browser import BrowserPageResult, BrowserPool, SolverBackend, _Cookie, _LocalBackend
 from amane.net.errors import FailureKind, FailureReason, RequestError, RequestFailure, classify_request_error
 
 
@@ -143,12 +145,12 @@ class _FakePage:
 class _FakeContext:
     def __init__(self, page: _FakePage) -> None:
         self.page = page
-        self.cookies: list[dict[str, str]] = []
+        self.cookies: list[_Cookie] = []
         self.headers: dict[str, str] = {}
         self.pages = 0
 
-    async def add_cookies(self, cookies: list[dict[str, str]]) -> None:
-        self.cookies = cookies
+    async def add_cookies(self, cookies: Sequence[_Cookie]) -> None:
+        self.cookies = list(cookies)
 
     async def set_extra_http_headers(self, headers: dict[str, str]) -> None:
         self.headers = headers
@@ -174,12 +176,12 @@ class _FakeLocalBackend(_LocalBackend):
 
     def __init__(self, page: _FakePage) -> None:
         super().__init__(proxy=None, default_timeout=1000, idle_timeout=0)
-        self.page = page
+        self.browser = _FakeBrowser(page)
         self.closed_browsers = 0
 
-    async def _launch(self, stack: Any) -> _FakeBrowser:
+    async def _launch(self, stack: AsyncExitStack) -> _FakeBrowser:
         stack.push_async_callback(self._mark_closed)
-        return _FakeBrowser(self.page)
+        return self.browser
 
     async def _mark_closed(self) -> None:
         self.closed_browsers += 1
@@ -190,15 +192,14 @@ async def test_local_backend_reuses_context_per_scope(monkeypatch: pytest.Monkey
     monkeypatch.setattr("amane.net.browser._CHALLENGE_POLL_S", 0.0)
     page = _FakePage(["<html>ok</html>"])
     backend = _FakeLocalBackend(page)
-    browser = await backend._ensure_browser()
 
     await backend.get_page("https://a.example/1", scope="site-a", cookies={"x": "1"}, headers={"R": "1"})
     await backend.get_page("https://a.example/2", scope="site-a")
     await backend.get_page("https://b.example/1", scope="site-b")
 
-    assert len(browser.contexts) == 2
-    assert browser.contexts[0].cookies == [{"name": "x", "value": "1", "url": "https://a.example/1"}]
-    assert browser.contexts[0].headers == {"R": "1"}
+    assert len(backend.browser.contexts) == 2
+    assert backend.browser.contexts[0].cookies == [{"name": "x", "value": "1", "url": "https://a.example/1"}]
+    assert backend.browser.contexts[0].headers == {"R": "1"}
     assert page.closed is True
 
 
