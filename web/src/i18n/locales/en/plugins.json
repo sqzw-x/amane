@@ -13,7 +13,7 @@
   "installHint": "Browse a server path to install, or upload a zip from this computer",
   "pickZip": "Upload zip",
   "uninstall": "Uninstall",
-  "uninstallConfirm": "Uninstall {{name}} ({{id}})? The source tree is removed; runtime data is kept.",
+  "uninstallConfirm": "Uninstall {{name}} ({{id}})? The source tree is removed; runtime data is kept",
   "reload": "Rescan",
   "installed": "Plugin installed",
   "uninstalled": "Plugin uninstalled",

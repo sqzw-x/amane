@@ -59,8 +59,8 @@
     "actor": "演员",
     "viewActor": "查看 #{{id}}",
     "loading": "加载摘要…",
-    "unavailable": "暂无摘要。",
-    "successEmpty": "任务已完成。",
+    "unavailable": "暂无摘要",
+    "successEmpty": "任务已完成",
     "group": {
       "failed": "失败",
       "ok": "成功",
@@ -246,15 +246,15 @@
     "upscale": {
       "max_dim_threshold": {
         "label": "最大尺寸阈值",
-        "description": "仅对最长边低于此值的图像进行超分（视为低分辨率）。"
+        "description": "仅对最长边低于此值的图像进行超分（视为低分辨率）"
       },
       "max_bytes_threshold": {
         "label": "最大文件大小阈值 (bytes)",
-        "description": "超过此大小的文件跳过超分（视为足够清晰）。"
+        "description": "超过此大小的文件跳过超分（视为足够清晰）"
       },
       "limit": {
         "label": "数量上限",
-        "description": "最多超分的图像数量。"
+        "description": "最多超分的图像数量"
       }
     },
     "toggle": "提交任务",
@@ -314,7 +314,7 @@
     "actor_scrape": {
       "actor_id": {
         "label": "演员 ID",
-        "description": "Actor 实体主键。"
+        "description": "Actor 实体主键"
       },
       "use_cache": {
         "label": "使用缓存",

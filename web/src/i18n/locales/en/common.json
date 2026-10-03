@@ -160,10 +160,10 @@
   },
   "auth": {
     "title": "Sign in required",
-    "description": "On desktop, click the menu bar / tray icon and copy the API token. In a container, read it from the token file in the data directory.",
+    "description": "On desktop, click the menu bar / tray icon and copy the API token. In a container, read it from the token file in the data directory",
     "tokenPlaceholder": "Paste token",
     "serverSettings": "Server settings",
-    "invalidToken": "Invalid token. Please check and retry.",
-    "connectionFailed": "Cannot reach the server. Make sure it is running."
+    "invalidToken": "Invalid token. Please check and retry",
+    "connectionFailed": "Cannot reach the server. Make sure it is running"
   }
 }

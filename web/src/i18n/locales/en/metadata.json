@@ -56,8 +56,8 @@
     "batchScrape": "Batch Re-scrape",
     "batchDelete": "Batch Delete",
     "confirmBatchDeleteTitle": "Delete selected metadata?",
-    "confirmBatchDeleteDesc_one": "This will permanently delete the selected metadata entries.",
-    "confirmBatchDeleteDesc_other": "This will permanently delete the selected metadata entries."
+    "confirmBatchDeleteDesc_one": "This will permanently delete the selected metadata entries",
+    "confirmBatchDeleteDesc_other": "This will permanently delete the selected metadata entries"
   },
   "edit": {
     "title": "Edit Metadata"
@@ -105,7 +105,7 @@
     "commentSortNewest": "Newest first",
     "commentSortOldest": "Oldest first",
     "deleteCommentTitle": "Delete comment",
-    "deleteCommentMessage": "This cannot be undone.",
+    "deleteCommentMessage": "This cannot be undone",
     "playTrailer": "Play trailer",
     "closeTrailer": "Close trailer",
     "coverUnavailable": "Cover unavailable",
@@ -253,7 +253,7 @@
     "setDisplayNameBody": "Make \"{{alias}}\" the display name of \"{{name}}\"? \"{{name}}\" will be kept as an alias",
     "setDisplayNameDone": "Display name updated",
     "imagesEdit": "Photo URLs",
-    "imagesEditHint": "First URL is the primary photo (detail + grid). Drag cards to reorder; click to preview.",
+    "imagesEditHint": "First URL is the primary photo (detail + grid). Drag cards to reorder; click to preview",
     "primaryImage": "Primary",
     "reorderImage": "Drag to reorder photo",
     "removeImage": "Remove this photo",
@@ -267,7 +267,7 @@
   },
   "notFound": "Metadata not found",
   "invalidId": "Invalid metadata ID",
-  "confirmDelete": "Delete metadata #{{id}}? This cannot be undone.",
+  "confirmDelete": "Delete metadata #{{id}}? This cannot be undone",
   "empty": "No metadata records",
   "editor": {
     "title": {
@@ -347,7 +347,7 @@
   },
   "merge": {
     "title": "Compare Sources",
-    "noRawData": "No raw data available for merge.",
+    "noRawData": "No raw data available for merge",
     "apply": "Apply Merge",
     "revert": "Revert",
     "revertAll": "Revert All",

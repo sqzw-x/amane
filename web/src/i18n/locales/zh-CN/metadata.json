@@ -56,7 +56,7 @@
     "batchScrape": "批量重新刮削",
     "batchDelete": "批量删除",
     "confirmBatchDeleteTitle": "删除选中的元数据？",
-    "confirmBatchDeleteDesc": "将永久删除选中的元数据条目，此操作不可撤销。"
+    "confirmBatchDeleteDesc": "将永久删除选中的元数据条目，此操作不可撤销"
   },
   "edit": {
     "title": "编辑元数据"
@@ -106,7 +106,7 @@
     "commentSortNewest": "新 → 旧",
     "commentSortOldest": "旧 → 新",
     "deleteCommentTitle": "删除评论",
-    "deleteCommentMessage": "删除后无法恢复。",
+    "deleteCommentMessage": "删除后无法恢复",
     "playTrailer": "播放预告片",
     "closeTrailer": "关闭预告片",
     "coverUnavailable": "封面不可用",
@@ -243,7 +243,7 @@
     "setDisplayNameBody": "将「{{alias}}」设为「{{name}}」的展示名？「{{name}}」会保留为别名",
     "setDisplayNameDone": "已设为展示名",
     "imagesEdit": "头像 URL",
-    "imagesEditHint": "第一张为主图（详情大图与头像墙）。拖拽卡片调整顺序，点图预览。",
+    "imagesEditHint": "第一张为主图（详情大图与头像墙）。拖拽卡片调整顺序，点图预览",
     "primaryImage": "主图",
     "reorderImage": "拖拽排序头像",
     "removeImage": "删除这张头像",
@@ -253,7 +253,7 @@
   },
   "notFound": "未找到元数据",
   "invalidId": "无效的元数据 ID",
-  "confirmDelete": "确定删除元数据 #{{id}}？此操作不可撤销。",
+  "confirmDelete": "确定删除元数据 #{{id}}？此操作不可撤销",
   "empty": "暂无元数据记录",
   "editor": {
     "title": {
@@ -331,7 +331,7 @@
   },
   "merge": {
     "title": "对比来源",
-    "noRawData": "无原始数据可用于合并。",
+    "noRawData": "无原始数据可用于合并",
     "apply": "应用合并",
     "revert": "回退",
     "revertAll": "全部回退",

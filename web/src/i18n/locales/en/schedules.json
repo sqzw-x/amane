@@ -81,6 +81,6 @@
   },
   "confirm": {
     "deleteTitle": "Delete Schedule",
-    "deleteMessage": "Are you sure you want to delete this schedule? This action cannot be undone."
+    "deleteMessage": "Are you sure you want to delete this schedule? This action cannot be undone"
   }
 }

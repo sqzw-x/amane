@@ -3,7 +3,7 @@
   "searchPlaceholder": "搜索路径或番号...",
   "deleteLibrary": {
     "confirmTitle": "删除媒体库",
-    "confirmDescEmpty": "此操作将永久删除媒体库「{{name}}」，且无法撤销。",
+    "confirmDescEmpty": "此操作将永久删除媒体库「{{name}}」，且无法撤销",
     "tooltip": "删除此媒体库"
   },
   "scan": {
@@ -57,11 +57,11 @@
   },
   "batch": {
     "confirmDeleteTitle": "删除媒体文件",
-    "confirmDeleteDesc": "确定要删除 {{count}} 个已选媒体文件吗？此操作不可撤销。"
+    "confirmDeleteDesc": "确定要删除 {{count}} 个已选媒体文件吗？此操作不可撤销"
   },
   "detail": {
     "confirmDeleteTitle": "删除媒体文件",
-    "confirmDeleteDesc": "确定要删除此媒体文件吗？此操作不可撤销。"
+    "confirmDeleteDesc": "确定要删除此媒体文件吗？此操作不可撤销"
   },
   "filters": {
     "title": "按状态筛选",
@@ -142,7 +142,7 @@
   "optionalTemplateDefault": "默认: {{default}}",
   "placeholders": {
     "label": "可用占位符",
-    "hint": "点击复制.",
+    "hint": "点击复制",
     "docs": "参考文档",
     "copied": "已复制 {{placeholder}} 到剪贴板",
     "copyFailed": "复制失败, 请手动复制",

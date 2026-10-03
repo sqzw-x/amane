@@ -17,14 +17,14 @@
   },
   "client": {
     "title": "Client settings",
-    "unavailable": "This page is only available inside the Android shell.",
-    "bridgeMissing": "The shell is not responding to page requests. Reinstall or update the app.",
+    "unavailable": "This page is only available inside the Android shell",
+    "bridgeMissing": "The shell is not responding to page requests. Reinstall or update the app",
     "server": "Current server",
     "switchServer": "Switch server",
     "webView": "System WebView",
     "chromium": "Rendering engine",
     "webViewUnknown": "Unknown",
-    "chromiumOutdated": "Rendering engine Chromium {{major}} is below the {{min}} this frontend needs. Update the system WebView, otherwise the layout and styles will be incomplete.",
+    "chromiumOutdated": "Rendering engine Chromium {{major}} is below the {{min}} this frontend needs. Update the system WebView, otherwise the layout and styles will be incomplete",
     "updateWebView": "Open the WebView store page",
     "appVersion": "APP version"
   },
@@ -66,7 +66,7 @@
       },
       "field_priority": {
         "label": "Field Priority",
-        "description": "Set priority for specific fields. Other sites in the type route are still requested.",
+        "description": "Set priority for specific fields. Other sites in the type route are still requested",
         "options": {
           "title": "Title",
           "actors": "Actors",
@@ -147,7 +147,7 @@
       },
       "field_blacklist": {
         "label": "Field Blacklist",
-        "description": "Sites a field must not use.",
+        "description": "Sites a field must not use",
         "options": {
           "title": "Title",
           "actors": "Actors",
@@ -314,7 +314,7 @@
           },
           "cookie": {
             "label": "Cookie",
-            "description": "For sites that require sign-in, etc."
+            "description": "For sites that require sign-in, etc"
           },
           "api_token": {
             "label": "API Token",
@@ -488,7 +488,7 @@
       },
       "rate_limits": {
         "label": "Rate Limits",
-        "description": "Limit request rate by host (e.g. javdb.com). Takes priority over per-site settings."
+        "description": "Limit request rate by host (e.g. javdb.com). Takes priority over per-site settings"
       },
       "default_rate_limit": {
         "label": "Default Rate Limit",

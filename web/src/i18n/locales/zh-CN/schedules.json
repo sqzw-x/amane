@@ -81,6 +81,6 @@
   },
   "confirm": {
     "deleteTitle": "删除定时任务",
-    "deleteMessage": "确定要删除此定时任务吗？此操作不可撤销。"
+    "deleteMessage": "确定要删除此定时任务吗？此操作不可撤销"
   }
 }

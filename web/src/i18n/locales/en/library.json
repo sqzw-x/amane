@@ -3,7 +3,7 @@
   "searchPlaceholder": "Search by path or number...",
   "deleteLibrary": {
     "confirmTitle": "Delete Library",
-    "confirmDescEmpty": "This permanently deletes the library \"{{name}}\". This action cannot be undone.",
+    "confirmDescEmpty": "This permanently deletes the library \"{{name}}\". This action cannot be undone",
     "tooltip": "Delete this library"
   },
   "scan": {
@@ -42,7 +42,7 @@
     "number": "Number",
     "numberPlaceholder": "e.g. MIDV-123",
     "contentType": "Content type",
-    "contentTypeHint": "Leave empty to infer from the number you enter.",
+    "contentTypeHint": "Leave empty to infer from the number you enter",
     "contentTypeAuto": "Infer automatically",
     "submit": "Start scrape",
     "contentTypes": {
@@ -57,13 +57,13 @@
   },
   "batch": {
     "confirmDeleteTitle": "Delete Media Files",
-    "confirmDeleteDesc": "Are you sure you want to delete {{count}} selected media files? This action cannot be undone.",
-    "confirmDeleteDesc_one": "Are you sure you want to delete {{count}} selected media file? This action cannot be undone.",
-    "confirmDeleteDesc_other": "Are you sure you want to delete {{count}} selected media files? This action cannot be undone."
+    "confirmDeleteDesc": "Are you sure you want to delete {{count}} selected media files? This action cannot be undone",
+    "confirmDeleteDesc_one": "Are you sure you want to delete {{count}} selected media file? This action cannot be undone",
+    "confirmDeleteDesc_other": "Are you sure you want to delete {{count}} selected media files? This action cannot be undone"
   },
   "detail": {
     "confirmDeleteTitle": "Delete Media File",
-    "confirmDeleteDesc": "Are you sure you want to delete this media file? This action cannot be undone."
+    "confirmDeleteDesc": "Are you sure you want to delete this media file? This action cannot be undone"
   },
   "filters": {
     "title": "Filter by status",
@@ -144,7 +144,7 @@
   "optionalTemplateDefault": "Default: {{default}}",
   "placeholders": {
     "label": "Placeholders",
-    "hint": "Click to copy.",
+    "hint": "Click to copy",
     "docs": "See the documentation",
     "copied": "Copied {{placeholder}} to clipboard",
     "copyFailed": "Copy failed, please copy manually",

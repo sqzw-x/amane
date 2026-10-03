@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         radius="md"
       >
         <Stack gap="sm">
-          <Text size="sm">渲染此页面时抛出了未捕获的异常, 详情见下方.</Text>
+          <Text size="sm">渲染此页面时抛出了未捕获的异常, 详情见下方</Text>
           <Code block>{error.message}</Code>
           <Group gap="xs">
             <Button

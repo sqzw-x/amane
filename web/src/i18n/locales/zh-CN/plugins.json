@@ -13,7 +13,7 @@
   "installHint": "浏览服务器路径安装，或点上传图标从本机选择 zip",
   "pickZip": "上传 zip",
   "uninstall": "卸载",
-  "uninstallConfirm": "卸载 {{name}}（{{id}}）？源码目录会被删除，运行时数据保留。",
+  "uninstallConfirm": "卸载 {{name}}（{{id}}）？源码目录会被删除，运行时数据保留",
   "reload": "重新扫描",
   "installed": "插件已安装",
   "uninstalled": "插件已卸载",

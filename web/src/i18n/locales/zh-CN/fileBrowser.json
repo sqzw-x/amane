@@ -1,5 +1,5 @@
 {
-  "tooManyEntries": "条目过多 — 显示前 {{shown}} 条，共 {{total}} 条。",
+  "tooManyEntries": "条目过多 — 显示前 {{shown}} 条，共 {{total}} 条",
   "empty": "空目录",
   "selectAll": "全选",
   "selectDir": "选择此目录",

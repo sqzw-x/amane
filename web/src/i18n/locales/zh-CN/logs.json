@@ -1,7 +1,7 @@
 {
   "title": "日志",
   "empty": "暂无日志",
-  "noMatch": "没有匹配的日志条目。",
+  "noMatch": "没有匹配的日志条目",
   "searchPlaceholder": "level:ERROR AND source:scraper",
   "levels": {
     "debug": "调试",

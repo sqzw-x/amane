@@ -61,8 +61,8 @@
     "actor": "Actor",
     "viewActor": "Open #{{id}}",
     "loading": "Loading summary…",
-    "unavailable": "No summary available.",
-    "successEmpty": "Task completed.",
+    "unavailable": "No summary available",
+    "successEmpty": "Task completed",
     "group": {
       "failed": "Failed",
       "ok": "Succeeded",
@@ -249,15 +249,15 @@
     "upscale": {
       "max_dim_threshold": {
         "label": "Max Dimension Threshold",
-        "description": "Only upscale images whose longest side is below this value."
+        "description": "Only upscale images whose longest side is below this value"
       },
       "max_bytes_threshold": {
         "label": "Max File Size Threshold (bytes)",
-        "description": "Files larger than this skip upscaling (treated as sharp enough)."
+        "description": "Files larger than this skip upscaling (treated as sharp enough)"
       },
       "limit": {
         "label": "Limit",
-        "description": "Maximum number of images to upscale."
+        "description": "Maximum number of images to upscale"
       }
     },
     "refresh": {
@@ -316,7 +316,7 @@
     "actor_scrape": {
       "actor_id": {
         "label": "Actor ID",
-        "description": "Primary key of the Actor entity."
+        "description": "Primary key of the Actor entity"
       },
       "use_cache": {
         "label": "Use cache",
