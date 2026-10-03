@@ -537,6 +537,13 @@ export type BrowserConfig = {
 };
 
 /**
+ * BrowserMode
+ *
+ * 来源的浏览器使用策略. ``ALWAYS`` 一律渲染, ``OFF`` 一律直连, ``AUTO`` 直连遇挑战后切换.
+ */
+export type BrowserMode = 'off' | 'auto' | 'always';
+
+/**
  * CacheKind
  *
  * 刮削可复用的缓存种类. use_cache 为其集合: 含某项 = 该缓存生效, 不含 = 强制刷新该项.
@@ -3291,10 +3298,7 @@ export type SiteConfig = {
      * Use Proxy
      */
     use_proxy?: boolean;
-    /**
-     * Use Browser
-     */
-    use_browser?: boolean;
+    use_browser?: BrowserMode;
     browser_backend?: BrowserBackendName | null;
     /**
      * Cookie

@@ -60,6 +60,8 @@ class BrowserBackend(Protocol):
 class BrowserClient(Protocol):
     """``HttpClient`` 依赖的浏览器通道: 按后端名解析实际引擎, 调用方不感知实现."""
 
+    def resolve(self, override: BrowserBackendName | None) -> BrowserBackendName | None: ...
+
     async def get_page(
         self,
         url: str,

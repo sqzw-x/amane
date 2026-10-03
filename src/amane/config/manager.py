@@ -24,6 +24,7 @@ from ..crawlers.sites.official import Manufacturer
 from ..enums import (
     ApiType,
     BrowserBackendName,
+    BrowserMode,
     DownloadableResource,
     Language,
     MetadataField,
@@ -228,11 +229,22 @@ class ColdSettings(BaseSettings):
 class SiteConfig(BaseModel):
     base_url: str | None = None
     use_proxy: bool = True
-    use_browser: bool = False
-    """该来源的 HTML 请求改走浏览器渲染; 后端由 ``network.browser.backend`` 决定."""
+    use_browser: BrowserMode = BrowserMode.AUTO
+    """``auto`` 先直连, 首次命中 Cloudflare 挑战后该来源改用浏览器; 后端由 ``network.browser.backend`` 决定."""
     browser_backend: BrowserBackendName | None = Field(default=None, json_schema_extra={"x-hidden": True})
-    """覆盖 ``network.browser.backend``; ``use_browser`` 未开启时不生效, ``off`` 显式禁用."""
+    """覆盖 ``network.browser.backend``; 仅在改用浏览器后生效, ``off`` 表示该来源禁用浏览器."""
     cookie: dict[str, str] = {}
+
+    @field_validator("use_browser", mode="before")
+    @classmethod
+    def _migrate_use_browser_bool(cls, v: object) -> object:
+        """旧布尔值: true → always, false → off."""
+        if v is True:
+            return BrowserMode.ALWAYS
+        if v is False:
+            return BrowserMode.OFF
+        return v
+
     api_token: str | None = Field(default=None, json_schema_extra={"x-visible-keys": _SITES_WITH_API_TOKEN})
     official_routes: dict[str, Manufacturer] = Field(
         default_factory=dict, json_schema_extra={"x-visible-keys": [SiteName.OFFICIAL]}

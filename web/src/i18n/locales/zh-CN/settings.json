@@ -295,8 +295,13 @@
             "description": "通过配置的代理发送请求"
           },
           "use_browser": {
-            "label": "使用浏览器",
-            "description": "该来源的 HTML 请求改由浏览器后端渲染"
+            "label": "浏览器策略",
+            "description": "auto 先直连, 遇 Cloudflare 挑战后改用浏览器",
+            "options": {
+              "off": "关闭",
+              "auto": "自适应",
+              "always": "始终"
+            }
           },
           "browser_backend": {
             "label": "浏览器后端",

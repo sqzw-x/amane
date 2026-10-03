@@ -17,11 +17,12 @@ from amane.config import (
     DownloadableResource,
     HotSettings,
     ScrapingConfig,
+    SiteConfig,
     WatermarkConfig,
     WorkerConfig,
 )
 from amane.config.manager import LANG_METADATA_FIELD_SET
-from amane.enums import ApiType, Language, MetadataField, SiteName, WatermarkCorner, WatermarkKind
+from amane.enums import ApiType, BrowserMode, Language, MetadataField, SiteName, WatermarkCorner, WatermarkKind
 from amane.parsing import ContentType
 
 # ---------------------------------------------------------------------------
@@ -226,6 +227,28 @@ class TestBrowserConfigValidation:
 
     def test_solver_url_accepts_https(self):
         assert BrowserConfig(solver_url="https://solver.local:8191").solver_url == "https://solver.local:8191"
+
+
+class TestSiteBrowserMode:
+    def test_default_is_auto(self):
+        assert SiteConfig().use_browser is BrowserMode.AUTO
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (True, BrowserMode.ALWAYS),
+            (False, BrowserMode.OFF),
+            ("auto", BrowserMode.AUTO),
+            ("always", BrowserMode.ALWAYS),
+            ("off", BrowserMode.OFF),
+        ],
+    )
+    def test_accepts_modes_and_legacy_bool(self, raw: object, expected: BrowserMode):
+        assert SiteConfig.model_validate({"use_browser": raw}).use_browser is expected
+
+    def test_rejects_unknown_mode(self):
+        with pytest.raises(ValidationError):
+            SiteConfig.model_validate({"use_browser": "browser"})
 
 
 class TestScrapingPriorityMigration:

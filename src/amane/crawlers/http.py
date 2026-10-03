@@ -1,7 +1,7 @@
 """爬虫 HTTP 封装. ``get_html`` / ``get_rendered`` 命中拦截页抛 ``SourceError``.
 
-启用浏览器渲染的来源经 ``for_source`` 派生绑定来源的视图: ``get_html`` 自动改走渲染通道, 同一来源保持
-单一请求形态. ``get_json`` 不做 HTML 拦截启发式.
+按来源的浏览器策略经 ``for_source`` 派生绑定来源的视图: ``auto`` (默认) 先直连, 首次命中 Cloudflare
+挑战后该来源改用浏览器并保持; ``always`` 一律渲染, ``off`` 一律直连. ``get_json`` 不做 HTML 拦截启发式.
 """
 
 from __future__ import annotations
@@ -17,12 +17,13 @@ if TYPE_CHECKING:
     from ..net.browser import BrowserClient
     from ..net.http import WebClient
 
+from ..enums import BrowserMode
 from ..net.connectivity import ConnectivityOutcome, probe_get
-from ..net.errors import FailureKind, RequestError, RequestFailure, SourceError, classify_block
+from ..net.errors import FailureKind, FailureReason, RequestError, RequestFailure, SourceError, classify_block
 
 
 class HttpClient:
-    """构造函数注入 WebClient / BrowserClient. 渲染视图由 ``for_source`` 派生."""
+    """构造函数注入 WebClient / BrowserClient. 按来源策略由 ``for_source`` 派生."""
 
     def __init__(
         self,
@@ -30,16 +31,19 @@ class HttpClient:
         browser: BrowserClient | None = None,
         *,
         source: str | None = None,
-        use_browser: bool = False,
+        browser_mode: BrowserMode = BrowserMode.AUTO,
         browser_backend: BrowserBackendName | None = None,
         browser_timeout: float = 30000.0,
+        browser_required: set[str] | None = None,
     ):
         self._web = web
         self._browser = browser
         self._source = source
-        self._use_browser = use_browser
+        self._browser_mode = browser_mode
         self._browser_backend = browser_backend
         self._browser_timeout = browser_timeout
+        # auto 已切到浏览器的 scope; 同一来源的派生视图共享, 避免每个视图重新撞盾.
+        self._browser_required = browser_required if browser_required is not None else set()
 
     @property
     def web_client(self) -> WebClient:
@@ -47,16 +51,17 @@ class HttpClient:
         return self._web
 
     def for_source(self, source: str, config: SiteConfig | None) -> HttpClient:
-        """派生绑定来源的视图; 未启用浏览器渲染时返回原对象."""
-        if config is None or not config.use_browser:
+        """派生绑定来源的视图; 无来源配置时返回原对象."""
+        if config is None:
             return self
         return HttpClient(
             self._web,
             self._browser,
             source=source,
-            use_browser=True,
+            browser_mode=config.use_browser,
             browser_backend=config.browser_backend,
             browser_timeout=self._browser_timeout,
+            browser_required=self._browser_required,
         )
 
     async def get_text(
@@ -77,13 +82,20 @@ class HttpClient:
         cookies: dict[str, str] | None = None,
         encoding: str = "utf-8",
     ) -> str:
-        if self._use_browser:
+        if self._should_render(url):
             return await self.get_rendered(url, headers=headers, cookies=cookies)
         text = await self.get_text(url, headers=headers, cookies=cookies, encoding=encoding)
         reason = classify_block(text)
-        if reason is not None:
-            raise SourceError(reason, detail=url)
-        return text
+        if reason is None:
+            return text
+        if (
+            reason is FailureReason.CLOUDFLARE_CHALLENGE
+            and self._browser_mode is BrowserMode.AUTO
+            and self._browser_available()
+        ):
+            self._browser_required.add(self._scope(url))
+            return await self.get_rendered(url, headers=headers, cookies=cookies)
+        raise SourceError(reason, detail=url)
 
     async def get_json(
         self,
@@ -115,14 +127,13 @@ class HttpClient:
         wait_for: str | None = None,
         timeout: float | None = None,
     ) -> str:
-        # 未启用后端或抓取失败抛 RequestError; 拦截页抛 SourceError.
+        # 未配置后端或抓取失败抛 RequestError; 拦截页抛 SourceError.
         if self._browser is None:
             raise RequestError(url, RequestFailure(kind=FailureKind.UNEXPECTED, message="browser backend disabled"))
         await self._web.acquire(url)
-        scope = self._source or urlparse(url).hostname or url
         html, failure = await self._browser.get_page(
             url,
-            scope=scope,
+            scope=self._scope(url),
             backend=self._browser_backend,
             cookies=cookies,
             headers=headers,
@@ -141,14 +152,38 @@ class HttpClient:
     async def check(
         self, url: str, *, headers: dict[str, str] | None = None, cookies: dict[str, str] | None = None
     ) -> ConnectivityOutcome:
-        """按本视图的请求形态探测: 渲染视图走浏览器, 否则单次 HTTP GET."""
-        if not self._use_browser:
-            return await probe_get(self._web, url, cookies=cookies, headers=headers)
+        """按本视图的请求形态探测: 渲染视图走浏览器, 否则单次 HTTP GET; auto 命中挑战后切换."""
+        if self._should_render(url):
+            return await self._render_check(url, headers=headers, cookies=cookies)
+        outcome = await probe_get(self._web, url, cookies=cookies, headers=headers)
+        if (
+            outcome.reason is FailureReason.CLOUDFLARE_CHALLENGE
+            and self._browser_mode is BrowserMode.AUTO
+            and self._browser_available()
+        ):
+            self._browser_required.add(self._scope(url))
+            return await self._render_check(url, headers=headers, cookies=cookies)
+        return outcome
+
+    async def _render_check(
+        self, url: str, *, headers: dict[str, str] | None, cookies: dict[str, str] | None
+    ) -> ConnectivityOutcome:
         try:
             await self.get_rendered(url, headers=headers, cookies=cookies)
         except SourceError as exc:
             return ConnectivityOutcome.failed(exc.reason, url=exc.url or url, http_status=exc.http_status)
         return ConnectivityOutcome.ok(url, None)
+
+    def _scope(self, url: str) -> str:
+        return self._source or urlparse(url).hostname or url
+
+    def _should_render(self, url: str) -> bool:
+        if self._browser_mode is BrowserMode.ALWAYS:
+            return True
+        return self._browser_mode is BrowserMode.AUTO and self._scope(url) in self._browser_required
+
+    def _browser_available(self) -> bool:
+        return self._browser is not None and self._browser.resolve(self._browser_backend) is not None
 
     async def download(self, url: str, dest: Path) -> bool:
         # 失败返回 False, 不抛异常.

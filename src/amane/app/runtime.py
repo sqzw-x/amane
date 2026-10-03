@@ -16,7 +16,7 @@ from ..crawlers.factory import CrawlerFactory
 from ..crawlers.http import HttpClient
 from ..crawlers.r18dev import R18Database
 from ..db.models import TaskType
-from ..enums import BrowserBackendName, SiteName
+from ..enums import BrowserBackendName, BrowserMode, SiteName
 from ..handlers import (
     ActorScrapeHandler,
     CleanupHandler,
@@ -151,12 +151,12 @@ def build_network_stack(
 
 
 def _warn_disabled_browser_sources(hot: HotSettings, browser: BrowserPool) -> None:
-    """启用浏览器渲染又没有可用后端的来源: 抓取时必然失败, 在构造期给出一次明确告警.
+    """一律走浏览器却没有可用后端的来源: 抓取时必然失败, 在构造期给出一次明确告警.
 
-    ``browser_backend=off`` 是显式禁用, 不在此告警.
+    ``auto`` 在无后端时退化为直连, ``browser_backend=off`` 是显式禁用, 均不在此告警.
     """
     for site, config in hot.scraping.site_config.items():
-        if not config.use_browser or config.browser_backend is BrowserBackendName.OFF:
+        if config.use_browser is not BrowserMode.ALWAYS or config.browser_backend is BrowserBackendName.OFF:
             continue
         if browser.resolve(config.browser_backend) is None:
             logger.warning("browser rendering enabled without backend", site=str(site))

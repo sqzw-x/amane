@@ -295,8 +295,13 @@
             "description": "Route requests through the configured proxy"
           },
           "use_browser": {
-            "label": "Use Browser",
-            "description": "Render this source's HTML requests with the browser backend"
+            "label": "Browser Mode",
+            "description": "auto tries direct first and switches to the browser on a Cloudflare challenge",
+            "options": {
+              "off": "Off",
+              "auto": "Auto",
+              "always": "Always"
+            }
           },
           "browser_backend": {
             "label": "Browser Backend",

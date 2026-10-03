@@ -48,6 +48,14 @@ class BrowserBackendName(StrEnum):
     SOLVER = "solver"
 
 
+class BrowserMode(StrEnum):
+    """来源的浏览器使用策略. ``ALWAYS`` 一律渲染, ``OFF`` 一律直连, ``AUTO`` 直连遇挑战后切换."""
+
+    OFF = "off"
+    AUTO = "auto"
+    ALWAYS = "always"
+
+
 # 大模型上游协议: chat = OpenAI Chat Completions, response = OpenAI Responses, anthropic = Anthropic Messages.
 class ApiType(StrEnum):
     CHAT = "chat"
