@@ -39,9 +39,9 @@ RateLimiters → WebClient → HttpClient → CrawlerFactory
 
 `watcher.use_polling` / `media_extensions` / `debounce_seconds` 在 `start_app` 构造时一次性注入, **不随 rebuild 更新**, 修改 TOML 后须重启; Library 级的 `automation` / `ingest` / `cloud_path` / 路径 / `trailer_pattern` 等由 libraries 路由热更新, 与这三项无关. 契约见 [watcher.md](watcher.md).
 
-旧 worker 在 rebuild 后被替换: 调用方必须排空旧 worker 再启动新的, 否则两个 worker 会同时认领任务. 配置 PATCH、插件启用 / 禁用、插件安装 / 卸载 / 重新扫描都经由 `AppRuntime.apply_rebuild()`, 串行化这段替换.
+Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 worker `retire()` (停止认领并退出主循环), 新 worker 立即开始认领; 旧 worker 的已认领任务继续运行, 清零后由后台释放其 r18 句柄, 连续变更可同时存在多个退役 worker. 配置 PATCH、插件启用 / 禁用、插件安装 / 卸载 / 重新扫描都经由 `AppRuntime.apply_rebuild()`, 串行化这段替换. 归属以认领开始时刻为准: 变更发生时在飞的 claim 属于旧 worker, 每次退役至多带走一个旧配置任务.
 
-**r18 只读引擎**: 只在 `hot.r18` 实际变化时重建. rebuild 是同步的, 无法 await 释放 asyncpg 连接池, 旧引擎暂存 `_old_r18_db`, 由 config 路由随后 `dispose_old_r18()` 异步关闭.
+**r18 只读引擎**: 只在 `hot.r18` 实际变化时重建. 旧引擎由 `R18Handle` 标记所有权, 等使用它的退役 worker 排空且无其它 worker 引用后由后台关闭; `AppRuntime.stop_workers()` 在关闭时负责当前句柄. 契约见 [task-system.md](task-system.md).
 
 ## TOML 持久化
 

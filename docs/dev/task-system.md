@@ -118,11 +118,11 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ### 暂停
 
-进程内 `_paused`, 不写入 HotSettings. 暂停只停 `claim_next_task`, 循环仍在, 已认领的继续运行, 入队不受影响. `_rebuild()` 把 pause 复制到新 worker, 避免 PATCH 配置时意外恢复领队. 与 `stop()` 不同: stop 排空 / 取消活跃任务并把僵尸 RUNNING 标为失败.
+进程内 `_paused`, 不写入 HotSettings. 暂停只停 `claim_next_task`, 循环仍在, 已认领的继续运行, 入队不受影响. `_rebuild()` 把 pause 复制到新 worker, 避免 PATCH 配置时意外恢复领队. 与退役不同: 退役不可逆且主循环退出.
 
 ### 取消
 
-`AsyncWorker.cancel_task(task_id)` 通过给运行中的 asyncio task 注入 `CancelledError`:
+`AsyncWorker.cancel_task(task_id)` 通过给运行中的 asyncio task 注入 `CancelledError`; `AppRuntime.cancel_task` 依次尝试当前与退役 worker, 批量接口与助理 bridge 都经由它.
 
 | 场景 | 安全性 |
 | ------ | ------ |
@@ -130,11 +130,19 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 | 文件 move / hardlink 中 | **不安全** (shutil 不响应 CancelledError) |
 | DB 写入中 | 安全 (session 退出时回滚) |
 
-文件操作中取消只能等操作完成后才能真正生效.
+文件操作中取消只能等操作完成后才能真正生效. 两个已知窗口: claim 的 commit 到登记之间取消不可达 (回退的状态条件写入不覆盖已终态, 任务仍可能执行); 登记后、首次调度前被取消由 done callback 补写终态.
+
+### 配置变更与退役
+
+配置变更不取消运行中任务. `_apply_rebuild_unlocked()` 构建新 worker 后调用旧 worker 的 `retire()`: 同步置 `is_main=False` 并唤醒轮询, 主循环退出且不再认领; 已认领任务继续运行; 新 worker 立即开始认领. 退役 worker 由后台 `drain()` 处理: 先等主循环退出 (在飞 claim 结算并登记), 再等活跃任务清零, 顺序不可交换; 清零后释放其 r18 句柄. 连续变更时多个退役 worker 可以并存.
+
+归属边界是**认领开始时刻**: 变更时在飞的那次 claim 仍属于旧 worker, 每次退役至多带走一个旧配置任务; PATCH 返回后开始的认领属于新 worker. 过渡期总并发为新旧 worker 上限之和; 长期挂起的任务会延迟退役 worker 的资源释放.
 
 ### 关闭
 
-`stop()` 先置 `_running=False` 并发停止信号, **等主循环自己退出, 不取消它** — 取消可能落在 claim 的 commit 之间, 事务不结束, SQLite 写锁会留在池里的连接上, 紧随的 `fail_all_running_tasks()` 会以 `database is locked` 超时; 认领卡死超过兜底阈值才取消. 之后处置活跃任务 (handler 在 `handle()` 内直接写 repo, 立即取消同样可能打断其写事务): `worker.shutdown_timeout` 是等待活跃任务自然完成的秒数, `0` 表示立即超时并 cancel. 主循环若不被终止, 停在 DB 往返中的 claim 会在 `stop()` 返回后认领**之后**入队的任务, 因此 API 测试停 worker 必须在此语义下才不竞态.
+`AppRuntime.stop_workers()` 顺序: 对全部 worker (当前与退役中的) `retire()` → 逐个有界等待主循环退出 (超时 `MAIN_LOOP_STOP_TIMEOUT` 后取消主循环) → 统一 `shutdown_active()` (`worker.shutdown_timeout` 是等待活跃任务自然完成的秒数, `0` 表示立即超时并 cancel) → 单次 `fail_all_running_tasks()` → await 后台释放任务. 
+
+清扫必须只在全部 worker 处置完成后执行一次: `fail_all_running_tasks` 是全库操作, 逐个 worker 清扫会把其它 worker 的运行中任务标为失败, 其完成事务随后因状态不再是 RUNNING 而静默丢弃. 等待主循环退出须在清扫之前, 否则在飞 claim 的行可能晚于清扫提交而永久 RUNNING; 该行也可能因取消落在事务提交等待中而无法被清扫覆盖, 由人工取消处置. `stop_workers(closing=False)` 供测试夹具使用: 不置关闭态, 其余步骤相同.
 
 ## 即时提交与定时提交
 

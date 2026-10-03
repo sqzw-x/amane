@@ -27,7 +27,7 @@
 
 ## 进程内重建
 
-安装 / 卸载 / 重新扫描 / 启用 / 禁用都不重启进程: 它们共用一把 rebuild 锁, 先处理源码树, 再 `AppRuntime._rebuild()` 换网络栈、Factory 和 Worker 并排空旧 Worker. 安装把一份 zip 解到 `plugins/sources/<id>/` (根目录或单一顶层文件夹里必须有 `plugin.py`), 同 ID 已存在则整棵替换; 把文件夹直接放到该路径后点「重新扫描」效果相同. zip 拒绝路径穿越和过大载荷. 重建会清理已加载的插件模块, 以便下一轮 `discover()` 执行到新代码; `amane` 本体不会被卸模块, 进程内解释器也无法阻止插件 `import amane.db`. 配置里的第三方来源路由和 `plugins` 段在卸载后可以残留 — 刮削时跳过, 不阻断写入 (见 [config.md](config.md)).
+安装 / 卸载 / 重新扫描 / 启用 / 禁用都不重启进程: 它们共用一把 rebuild 锁, 先处理源码树, 再 `AppRuntime._rebuild()` 构建新网络栈、Factory 和 Worker 并退役旧 Worker — 已认领任务不取消, 用旧插件对象跑到终态, 新任务使用新目录. 安装把一份 zip 解到 `plugins/sources/<id>/` (根目录或单一顶层文件夹里必须有 `plugin.py`), 同 ID 已存在则整棵替换; 把文件夹直接放到该路径后点「重新扫描」效果相同. zip 拒绝路径穿越和过大载荷. 重建会清理已加载的插件模块, 以便下一轮 `discover()` 执行到新代码; `amane` 本体不会被卸模块, 进程内解释器也无法阻止插件 `import amane.db`. 配置里的第三方来源路由和 `plugins` 段在卸载后可以残留 — 刮削时跳过, 不阻断写入 (见 [config.md](config.md)).
 
 ## Descriptor
 
