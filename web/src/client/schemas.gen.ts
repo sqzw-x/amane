@@ -992,8 +992,7 @@ export const BrowserBackendNameSchema = {
         'camoufox',
         'solver'
     ],
-    title: 'BrowserBackendName',
-    description: '浏览器渲染后端. ``OFF`` 表示不走浏览器; 来源可经 ``SiteConfig.browser_backend`` 覆盖.'
+    title: 'BrowserBackendName'
 } as const;
 
 export const BrowserConfigSchema = {
@@ -1027,8 +1026,7 @@ export const BrowserModeSchema = {
         'auto',
         'always'
     ],
-    title: 'BrowserMode',
-    description: '来源的浏览器使用策略. ``ALWAYS`` 一律渲染, ``OFF`` 一律直连, ``AUTO`` 直连遇挑战后切换.'
+    title: 'BrowserMode'
 } as const;
 
 export const CacheKindSchema = {

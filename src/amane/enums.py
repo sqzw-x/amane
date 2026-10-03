@@ -39,18 +39,17 @@ class Language(StrEnum):
     EN = "en"
 
 
+# 浏览器渲染后端; OFF 表示不走浏览器, 来源可经 SiteConfig.browser_backend 覆盖.
+# 枚举 docstring 会进入 JSON schema 并作为前端无翻译时的兜底描述, 内部约定不要写在 docstring.
 class BrowserBackendName(StrEnum):
-    """浏览器渲染后端. ``OFF`` 表示不走浏览器; 来源可经 ``SiteConfig.browser_backend`` 覆盖."""
-
     OFF = "off"
     PATCHRIGHT = "patchright"
     CAMOUFOX = "camoufox"
     SOLVER = "solver"
 
 
+# 来源的浏览器使用策略: ALWAYS 一律渲染, OFF 一律直连, AUTO 直连遇挑战后切换.
 class BrowserMode(StrEnum):
-    """来源的浏览器使用策略. ``ALWAYS`` 一律渲染, ``OFF`` 一律直连, ``AUTO`` 直连遇挑战后切换."""
-
     OFF = "off"
     AUTO = "auto"
     ALWAYS = "always"

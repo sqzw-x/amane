@@ -516,8 +516,6 @@ export type BodyInstallPlugin = {
 
 /**
  * BrowserBackendName
- *
- * 浏览器渲染后端. ``OFF`` 表示不走浏览器; 来源可经 ``SiteConfig.browser_backend`` 覆盖.
  */
 export type BrowserBackendName = 'off' | 'patchright' | 'camoufox' | 'solver';
 
@@ -538,8 +536,6 @@ export type BrowserConfig = {
 
 /**
  * BrowserMode
- *
- * 来源的浏览器使用策略. ``ALWAYS`` 一律渲染, ``OFF`` 一律直连, ``AUTO`` 直连遇挑战后切换.
  */
 export type BrowserMode = 'off' | 'auto' | 'always';
 
