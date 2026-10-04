@@ -368,10 +368,9 @@ class UserTagUpdates(TypedDict, total=False):
 
 
 class MetadataWriteMode(StrEnum):
-    """Metadata 仓库写入策略.
+    """Metadata 写入策略: ``AUTO`` 供自动刮削, ``MANUAL`` 供手动与助理写入.
 
-    ``AUTO`` 为自动刮削: 跳过被锁定字段, 不改动锁状态.
-    ``MANUAL`` 为用户或助理写入: 无视锁, 并把本次写入的可锁字段并入锁.
+    各自语义见 docs/dev/data-model.md「元数据锁定」.
     """
 
     AUTO = "auto"

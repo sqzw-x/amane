@@ -439,7 +439,7 @@ export const updateMetadataMutation = (options?: Partial<Options<UpdateMetadataD
 /**
  * Set Metadata Locks
  *
- * 整体替换锁定字段集合; 手动操作不受锁限制, 锁只拦截自动刮削.
+ * 整体替换锁定字段集合.
  */
 export const setMetadataLocksMutation = (options?: Partial<Options<SetMetadataLocksData>>): UseMutationOptions<SetMetadataLocksResponse, SetMetadataLocksError, Options<SetMetadataLocksData>> => {
     const mutationOptions: UseMutationOptions<SetMetadataLocksResponse, SetMetadataLocksError, Options<SetMetadataLocksData>> = {

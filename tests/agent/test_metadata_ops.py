@@ -88,7 +88,7 @@ async def test_update_metadata_tool(write_deps: AgentDeps) -> None:
     row = await write_deps.repo.get_metadata(mid)
     assert row is not None
     assert row.title == "Patched"
-    # 助理写入属于用户触发的修改: 无视锁并把写入字段并入锁.
+    # 助理写入自动加锁.
     assert row.locked_fields == ["title"]
 
 

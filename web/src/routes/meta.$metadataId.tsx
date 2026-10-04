@@ -99,7 +99,7 @@ type LockProps = {
   onToggleLock: (field: MetadataField) => void;
 };
 
-/** 字段旁的小锁: 点击切换该字段的锁定状态; 锁定后刮削不再覆盖该字段. */
+/** 字段旁的锁开关, 点击切换. */
 function LockToggle({ field, locked, busy, onToggleLock }: LockProps) {
   const { t } = useTranslation("metadata");
   return (
@@ -111,7 +111,6 @@ function LockToggle({ field, locked, busy, onToggleLock }: LockProps) {
         aria-label={locked ? t("lock.locked") : t("lock.unlocked")}
         disabled={busy}
         onClick={() => onToggleLock(field)}
-        // 未锁定时弱化, 避免比字段名更醒目.
         style={{ opacity: locked ? 1 : 0.45 }}
       >
         {locked ? <IconLock size={12} /> : <IconLockOpen size={12} />}
@@ -120,7 +119,7 @@ function LockToggle({ field, locked, busy, onToggleLock }: LockProps) {
   );
 }
 
-/** 无字段块的资源 (封面 / 海报 / 预告片) 使用的带文字锁开关. */
+/** 带文字的锁开关 (封面 / 海报 / 预告片). */
 function LockChip({ label, ...lock }: LockProps & { label: string }) {
   const { t } = useTranslation("metadata");
   return (
@@ -304,12 +303,12 @@ function TitleDetailPage() {
   const [lockTarget, setLockTarget] = useState<{ id: number; fields: MetadataField[] } | null>(
     null,
   );
-  // 锁写入单飞: 在途期间的点击合并为最后目标, 结算后补发, 避免并发 PUT 乱序丢切换.
+  // 锁写入单飞: 在途点击合并为最后目标, 结算后补发.
   const queuedLocksRef = useRef<{ id: number; fields: MetadataField[] } | null>(null);
   const lockMutation = useMutation({
     ...setMetadataLocksMutation(),
     onSuccess: async (_data, variables) => {
-      // 按本次请求的条目失效, 补发旧条目时不会误刷当前页; 等详情重取完成再撤销乐观显示.
+      // 失效按本次请求的条目; 等重取完成再撤销乐观显示, 避免图标回退翻转.
       await queryClient.invalidateQueries({
         queryKey: getMetadataQueryKey({ path: { metadata_id: variables.path.metadata_id } }),
       });
@@ -325,7 +324,7 @@ function TitleDetailPage() {
       const queued = queuedLocksRef.current;
       queuedLocksRef.current = null;
       if (queued) {
-        // 条目已切换时也补发其最后目标; 乐观显示按条目 id 生效, 不受影响.
+        // 条目已切换时按原条目补发.
         lockMutation.mutate({ path: { metadata_id: queued.id }, body: { fields: queued.fields } });
         return;
       }
@@ -337,7 +336,7 @@ function TitleDetailPage() {
     () => new Set<MetadataField>(data?.metadata.locked_fields ?? []),
     [data?.metadata.locked_fields],
   );
-  // 目标集合先于服务端确认显示; 在途请求期间其他锁控件保持原样式, 只把点击并入单飞队列.
+  // 乐观显示目标集合; 在途状态不扩散到其它锁控件.
   const lockedFields = useMemo(
     () =>
       lockTarget && lockTarget.id === id
@@ -433,7 +432,6 @@ function TitleDetailPage() {
     setPendingLock(pending);
     setLockTarget({ id, fields: target });
     if (lockMutation.isPending) {
-      // 单飞: 在途请求结束后补发最后目标, 中间的多次点击合并.
       queuedLocksRef.current = { id, fields: target };
       return;
     }

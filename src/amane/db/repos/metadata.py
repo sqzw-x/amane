@@ -75,7 +75,7 @@ _LOCK_COLUMN_FIELD: dict[str, MetadataField] = {column: field for field, column 
 
 
 def _locked_fields_of(meta: Metadata) -> set[MetadataField]:
-    """库内锁定集合; 非法存量值忽略, 不阻断刮削与写入."""
+    """库内锁定集合; 非法存量值忽略."""
     locked: set[MetadataField] = set()
     for name in meta.locked_fields or []:
         try:
@@ -88,7 +88,7 @@ def _locked_fields_of(meta: Metadata) -> set[MetadataField]:
 def _filter_locked(
     fields: MetadataFields, locked: set[MetadataField], existing_sources: Mapping[str, str]
 ) -> MetadataFields:
-    """AUTO 写入: 跳过锁定列; ``field_sources`` 保留锁定字段的既有来源, 不声称未发生的更新."""
+    """AUTO 写入: 跳过锁定列, ``field_sources`` 保留锁定字段的既有来源."""
     if not locked:
         return fields
     locked_columns = {_LOCK_FIELD_COLUMN[field] for field in locked}
@@ -102,7 +102,7 @@ def _filter_locked(
 
 
 def _merge_auto_locks(fields: MetadataFields, locked: set[MetadataField]) -> list[str]:
-    """MANUAL 写入: 把本次写入的可锁列并入锁定集, 按 MetadataField 定义序存储."""
+    """MANUAL 写入: 把本次写入的可锁列并入锁定集."""
     written = {_LOCK_COLUMN_FIELD[key] for key in fields if key in _LOCK_COLUMN_FIELD}
     return [str(field) for field in MetadataField if field in locked | written]
 
@@ -232,7 +232,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         **kwargs: Unpack[MetadataFields],
     ) -> Metadata:
         """查重忽略大小写; 已存在时不改写 number 的原始大小写.
-        自动刮削写入: 跳过被锁定字段 (含 field_sources 对应标量键), ``raw`` 始终更新.
+        自动刮削写入; 锁定行为见 docs/dev/data-model.md.
         ``actor_genders`` 只填 ``Actor.gender`` 空位, 不是 Metadata 列.
         """
         fields = _normalize_text_fields(kwargs)
@@ -271,11 +271,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         actor_genders: Mapping[str, ActorGender] | None = None,
         **updates: Unpack[MetadataFields],
     ) -> Metadata | None:
-        """不存在返回 None.
-
-        ``mode`` 默认 ``AUTO`` (遵循锁, 供自动路径调用); ``MANUAL`` 无视锁并
-        把本次写入的可锁字段并入 ``locked_fields``.
-        """
+        """不存在返回 None; 写入策略见 MetadataWriteMode."""
         updates = _normalize_text_fields(updates)
         async with self._session() as session:
             metadata = await session.get(Metadata, metadata_id)
@@ -336,9 +332,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             return metadata
 
     async def set_metadata_locks(self, metadata_id: int, fields: Collection[MetadataField]) -> Metadata | None:
-        """整体替换锁定字段集合, 不修改 ``updated_at`` (锁不是内容, 不参与 RESCRAPE 的年龄选择).
-        不存在返回 None.
-        """
+        """整体替换锁定字段集合, 不修改 ``updated_at``. 不存在返回 None."""
         async with self._session() as session:
             metadata = await session.get(Metadata, metadata_id)
             if metadata is None:

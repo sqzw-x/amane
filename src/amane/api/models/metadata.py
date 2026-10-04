@@ -57,7 +57,7 @@ class MetadataResponse(BaseModel):
     @field_validator("locked_fields", mode="before")
     @classmethod
     def _drop_unknown_locks(cls, value: object) -> object:
-        """库内非法存量锁值不阻断读取, 与写入路径的容忍一致; 仅保留 MetadataField 成员."""
+        """非法存量锁值忽略."""
         if not isinstance(value, list):
             return []
         return list(dict.fromkeys(item for item in value if isinstance(item, str) and item in _METADATA_FIELD_VALUES))

@@ -1181,7 +1181,7 @@
           "metadata"
         ],
         "summary": "Set Metadata Locks",
-        "description": "整体替换锁定字段集合; 手动操作不受锁限制, 锁只拦截自动刮削.",
+        "description": "整体替换锁定字段集合.",
         "operationId": "set_metadata_locks",
         "parameters": [
           {

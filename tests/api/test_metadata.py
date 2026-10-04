@@ -113,7 +113,6 @@ class TestMetadataHttp:
         assert resp.status_code == 200
         assert resp.json()["title"] == "dmm title"
         assert resp.json()["field_sources"]["title"] == "dmm"
-        # 手动合并自动锁定被合并字段.
         assert resp.json()["locked_fields"] == ["title"]
 
         none_meta = await repo.upsert_metadata(
@@ -151,7 +150,7 @@ class TestMetadataHttp:
         assert len(data["poster_urls"]) == 1
         assert data["poster_urls"][0].startswith("/api/resources/")
         assert data["thumb_urls"] == ["https://example.com/t.jpg"]
-        # 手动裁切写 poster_urls, 因此自动锁定该字段.
+        # 裁切写入 poster_urls 并自动锁定.
         assert data["locked_fields"] == ["poster_urls"]
 
         no_thumb = await repo.upsert_metadata(number="CROP-003", poster_urls=["https://example.com/p.jpg"])
@@ -206,7 +205,7 @@ class TestMetadataHttp:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_response_drops_unknown_locked_values(self, client: AsyncClient, repo: Repository):
-        """库内非法存量锁值不使读路径 500; 与写入路径的容忍一致."""
+        """库内非法存量锁值不使读路径 500, 并去重."""
         meta = await repo.upsert_metadata(number="LOCK-102")
         assert meta.id is not None
         async with repo._session() as session:

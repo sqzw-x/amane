@@ -59,7 +59,7 @@
 
 写入策略由 `MetadataWriteMode` 表达, repository 默认 `AUTO`:
 
-- `AUTO` (`ScrapeHandler` → `upsert_metadata`): 跳过锁定列, 并从本次 `field_sources` 剔除对应标量键, 锁定字段保留原来源 (本次来源为空也保留); `raw` 始终更新, 即使只更新 `raw` 也刷新 `updated_at`, 因此全锁条目仍参与 RESCRAPE 的年龄选择.
+- `AUTO` (`ScrapeHandler` → `upsert_metadata`): 跳过锁定列, 并从本次 `field_sources` 剔除对应标量键, 锁定字段保留原来源; `raw` 始终更新, 只更新 `raw` 也刷新 `updated_at`, 因此全锁条目仍参与 RESCRAPE 的年龄选择.
 - `MANUAL` (REST PATCH / merge / crop 与 Agent 工具): 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. `set_metadata_locks` 整体替换锁集合; 锁集合本身的变更不刷新 `updated_at`.
 
 facet 规则、实体 rename / delete 与写入路径内的 `clean_actor_names` / `apply_facet_rules_to_metadata` 都不读锁 — 分类管理与演员别名归一是用户显式操作.

@@ -815,7 +815,7 @@ class TestMetadataRepo:
         assert updated.title == "Old"
         assert updated.poster_urls == ["https://old/p.jpg"]
         assert updated.actors == ["B"]
-        # 锁定字段的来源标注不声明未发生的更新; 未锁定字段正常写入.
+        # 锁定字段来源保留, 未锁定字段正常写入.
         assert updated.field_sources == {"title": "javdb", "actors": "dmm"}
         assert updated.raw == {"dmm": {"title": "New"}}
 
@@ -979,7 +979,7 @@ class TestMetadataRepo:
         assert actors[0].id is not None
         await repo.delete_facet(FacetKind.ACTOR, actors[0].id)
 
-        # 绕过 delete 的剔除把被 block 的名字写回锁定行, 模拟存量偏离: 归一路径必须仍剔除它.
+        # 绕过 delete 的剔除写回被 block 的名字, 归一路径必须仍剔除.
         async with repo._session() as session:
             row = await session.get(Metadata, meta.id)
             assert row is not None

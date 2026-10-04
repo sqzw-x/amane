@@ -251,7 +251,7 @@ async def update_metadata(metadata_id: int, req: PartialMetadata, repo: RepoDep)
 
 @router.put("/{metadata_id}/locks")
 async def set_metadata_locks(metadata_id: int, req: MetadataLocksRequest, repo: RepoDep) -> MetadataResponse:
-    """整体替换锁定字段集合; 手动操作不受锁限制, 锁只拦截自动刮削."""
+    """整体替换锁定字段集合."""
     metadata = await repo.set_metadata_locks(metadata_id, req.fields)
     if metadata is None:
         raise HTTPException(status_code=404, detail="Metadata not found")

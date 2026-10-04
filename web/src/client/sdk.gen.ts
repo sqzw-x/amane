@@ -158,7 +158,7 @@ export const updateMetadata = <ThrowOnError extends boolean = false>(options: Op
 /**
  * Set Metadata Locks
  *
- * 整体替换锁定字段集合; 手动操作不受锁限制, 锁只拦截自动刮削.
+ * 整体替换锁定字段集合.
  */
 export const setMetadataLocks = <ThrowOnError extends boolean = false>(options: Options<SetMetadataLocksData, ThrowOnError>): RequestResult<SetMetadataLocksResponses, SetMetadataLocksErrors, ThrowOnError> => (options.client ?? client).put<SetMetadataLocksResponses, SetMetadataLocksErrors, ThrowOnError>({
     url: '/api/metadata/{metadata_id}/locks',

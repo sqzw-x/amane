@@ -2,7 +2,7 @@ import type { ParseKeys } from "i18next";
 import type { MetadataField } from "@/client/types.gen";
 import { assertExhaustive, exhaustiveRecord } from "@/lib/exhaustive";
 
-/** 可锁字段全集; 与后端 `MetadataField` 一一对应, 数组顺序即锁菜单显示顺序. */
+/** 顺序即锁菜单显示顺序. */
 export const LOCKABLE_FIELDS = [
   "title",
   "actors",
