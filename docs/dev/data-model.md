@@ -49,20 +49,21 @@
 
 ### `field_sources`
 
-`{field_name: site_name}`, 仅记录**标量字段**的来源; 聚合类字段自带来源结构, 不写入. 只有非空取值才记来源, 因此为空不代表刮削失败 (判据见 [task-system.md](task-system.md)). 用途是调试多源不一致与前端展示来源, 不参与业务逻辑; 未锁定字段重新刮削后被覆盖, 锁定字段保留原来源 (见「元数据锁定」).
+`{field_name: site_name}`, 仅记录**标量字段**的来源; 聚合类字段自带来源结构, 不写入. 只有非空取值才记来源, 因此为空不代表刮削失败 (判据见 [task-system.md](task-system.md)). 用途是调试多源不一致与前端展示来源, 不参与业务逻辑; 未锁定字段重新刮削后被覆盖, 锁定字段保留原来源 (见「字段锁定」).
 
 `raw` 的字段名 / 类型必须与当前 `MediaMetadata` 一致 — 站点级复用会把它直接反序列化. 模型改名或改类型时, 结果列与 raw 是两份数据, 需单独的 data migration (见 [database.md](database.md) Autogenerate 盲区).
 
-## 元数据锁定
+## 字段锁定
 
-`Metadata.locked_fields` 是字段级锁集合 (取值 `MetadataField`, 空集为未锁定); 没有条目级开关, 「全部锁定」由前端写入全集. 可锁集合即 `MetadataField` 全集; `raw` / `field_sources` / `external_ids` / `source_urls` 不可锁 — 它们是刮削缓存与来源映射, 冻结后重刮与手动 merge 都失效.
+`Metadata.locked_fields` / `Actor.locked_fields` 是字段级锁集合 (取值 `MetadataField` / `ActorField`, 空集为未锁定); 没有条目级开关, 「全部锁定」由前端写入全集. 可锁集合即各枚举全集; 身份、别名、来源映射与刮削缓存字段不可锁 — 冻结后重刮与手动 merge 都失效.
 
-写入策略由 `MetadataWriteMode` 表达, repository 默认 `AUTO`:
+写入策略由 `WriteMode` 表达, repository 默认 `AUTO` (自动写入者漏传策略时只会未加锁, 不会误加锁; 手动调用点显式传 `MANUAL`):
 
-- `AUTO` (`ScrapeHandler` → `upsert_metadata`): 跳过锁定列, 并从本次 `field_sources` 剔除对应标量键, 锁定字段保留原来源; `raw` 始终更新, 只更新 `raw` 也刷新 `updated_at`, 因此全锁条目仍参与 RESCRAPE 的年龄选择.
-- `MANUAL` (REST PATCH / merge / crop 与 Agent 工具): 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. `set_metadata_locks` 整体替换锁集合; 锁集合本身的变更不刷新 `updated_at`.
-
-facet 规则、实体 rename / delete 与写入路径内的 `clean_actor_names` / `apply_facet_rules_to_metadata` 都不读锁 — 分类管理与演员别名归一是用户显式操作.
+- `AUTO`: 跳过锁定列并保留其既有值与既有 `field_sources`; `raw` 始终更新, 只更新 `raw` 也刷新 `updated_at`, 因此全锁条目仍参与 RESCRAPE 的年龄选择. 落点: 影片 `upsert_metadata` (`ScrapeHandler`); 演员 `save_actor` (ACTOR_SCRAPE) 与 `clean_actor_names` 的 `Actor.gender` 填空.
+- `MANUAL`: 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. 落点: 两端 REST PATCH / merge / crop 与 Agent 工具.
+- `set_metadata_locks` / `set_actor_locks` 整体替换锁集合; 锁集合本身的变更不刷新 `updated_at`.
+- 演员 `clear_actor_person` (REST clear-person) 清空档案 + `field_sources` + 锁, 保留 `name` / `gender` / `raw`, 使清空后可被重刮填回.
+- 分类治理与实体 rename / delete 不读锁, 也不自动上锁 (用户显式操作); 演员实体 merge 例外: 源锁集并入 target, 而填空并入的未锁字段不额外上锁.
 
 ## 可写字段与 req↔repo 兼容性
 
@@ -128,7 +129,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 `Metadata` 上的 `actors` / `tags` / `directors` (JSON list) 与 `studio` / `publisher` / `series` (标量) **仍是刮削聚合、NFO、路径模板的真值来源**. 分类实体表 + 关联表是**查询投影**: `upsert_metadata` / `update_metadata` 写入后重建 (按 name get-or-create; list 字段带 `position` 保序).
 
-写入时先清洗 `Metadata.actors` 的 `name(alias1, alias2)` 形式: 展示名留真值, 别名并入对应演员的 `ActorAlias` 行. 每个名字经 `resolve_actor_by_name` 解析 (展示名精确命中 → 别名唯一命中 → 歧义 / 无命中以名字本身为展示名新建实体), 因此站点给的**裸别名**会折到已认定演员, 不再另建重复实体; block 判定在解析前后各执行一次. 影片名单顺序由第一成功源锁定, 其后已抓源按展示名填空性别. 写入时若带 `FilmActor.gender`, 只对 `Actor.gender == unknown` 填空, 不覆盖已有值, 不写入 `field_sources`. `Metadata.actors` 存库始终是展示名, 站点 `raw` 快照保留原始带括号形式.
+写入时先清洗 `Metadata.actors` 的 `name(alias1, alias2)` 形式: 展示名留真值, 别名并入对应演员的 `ActorAlias` 行. 每个名字经 `resolve_actor_by_name` 解析 (展示名精确命中 → 别名唯一命中 → 歧义 / 无命中以名字本身为展示名新建实体), 因此站点给的**裸别名**会折到已认定演员, 不再另建重复实体; block 判定在解析前后各执行一次. 影片名单顺序由第一成功源锁定, 其后已抓源按展示名填空性别. 写入时若带 `FilmActor.gender`, 只对 `Actor.gender == unknown` 且 gender 未锁的行填空, 不覆盖已有值, 不写入 `field_sources`. `Metadata.actors` 存库始终是展示名, 站点 `raw` 快照保留原始带括号形式.
 
 用户对爬取侧分类的改名 / 合并 / 删除意图落在 `FacetRule` (按 `(kind, source_name)` 唯一), **不**修改投影表本身:
 
