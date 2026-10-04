@@ -83,7 +83,7 @@ OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-ma
 
 ## 图片
 
-外站图经由 `/api/resources/proxy` (`proxyImageUrl`); `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是 `thumb_urls[0]` 对应的 Resource 本地文件, 只提交像素坐标, 不上传 blob.
+外站图经由 `/api/resources/proxy` (`proxyImageUrl`); `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是源图 (海报 `thumb_urls[0]`, 演员头像 `image_urls[0]`) 对应的 Resource 本地文件; 两者共用 `ImageCropDialog`, 只提交像素坐标, 不上传 blob.
 
 相位水印是 CSS overlay (`FilePhaseOverlay`), 读列表聚合的 `file_phase`, 不修改 Resource 像素; 表格与文件列表仍用 `FilePhaseBadges`. `FanartLightbox` 必须 Portal 到 `document.body`. 外链图片的并发限流见 `components/media/proxy-image.tsx` 与 `lib/image-loader.ts` 的注释.
 
