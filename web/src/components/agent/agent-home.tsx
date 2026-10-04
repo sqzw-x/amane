@@ -59,8 +59,8 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  batchSavedQueriesMutation,
   createAgentSessionMutation,
-  batchPersistSavedQueriesMutation,
   deleteAgentSessionMutation,
   generateAgentSessionTitleMutation,
   listAgentSessionsOptions,
@@ -290,7 +290,7 @@ function ToolCallPart({ part, running }: { part: AgentToolCallPart; running: boo
   const savedQueryId = savedQueryIdOf(toolName, result);
   const argsBody = argsBodyOf(part.argsText);
   const persist = useMutation({
-    ...batchPersistSavedQueriesMutation(),
+    ...batchSavedQueriesMutation(),
     onSuccess: () => {
       notifications.show({ color: "blue", message: t("persistedToast", { ns: "savedQueries" }) });
       void queryClient.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
@@ -337,7 +337,7 @@ function ToolCallPart({ part, running }: { part: AgentToolCallPart; running: boo
             onDownload={(id) =>
               void downloadSavedQueryResult(id, t("common:toast.operationFailed"))
             }
-            onPersist={(id) => persist.mutate({ body: { ids: [id] } })}
+            onPersist={(id) => persist.mutate({ body: { action: "persist", ids: [id] } })}
           />
         </Box>
       )}

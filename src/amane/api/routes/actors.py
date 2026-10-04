@@ -21,7 +21,7 @@ from ..models import (
     UserTagLinksResponse,
     UserTagResponse,
 )
-from .agent import resolve_saved_query_id_subquery
+from .saved_queries import resolve_saved_query_id_subquery
 
 logger = structlog.get_logger()
 

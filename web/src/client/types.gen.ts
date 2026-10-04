@@ -2907,27 +2907,15 @@ export type RescrapeTarget = 'metadata' | 'actor';
 export type RoutineType = 'cleanup' | 'upscale' | 'r18_import' | 'rescrape';
 
 /**
- * SavedQueryBatchDeleteResponse
+ * SavedQueryBatchAction
  */
-export type SavedQueryBatchDeleteResponse = {
-    /**
-     * Deleted
-     *
-     * 成功删除的数量
-     */
-    deleted: number;
-    /**
-     * Missing
-     *
-     * 不存在的 id 数量
-     */
-    missing: number;
-};
+export type SavedQueryBatchAction = 'delete' | 'persist';
 
 /**
- * SavedQueryBatchIdsRequest
+ * SavedQueryBatchRequest
  */
-export type SavedQueryBatchIdsRequest = {
+export type SavedQueryBatchRequest = {
+    action: SavedQueryBatchAction;
     /**
      * Ids
      *
@@ -2937,15 +2925,15 @@ export type SavedQueryBatchIdsRequest = {
 };
 
 /**
- * SavedQueryBatchPersistResponse
+ * SavedQueryBatchResponse
  */
-export type SavedQueryBatchPersistResponse = {
+export type SavedQueryBatchResponse = {
     /**
-     * Persisted
+     * Affected
      *
-     * 找到并置为已保留的数量 (已保留的也计入, 幂等)
+     * 成功处理的数量; delete 为实际删除的数量, persist 为找到并置为已保留的数量 (幂等, 已保留的也计入)
      */
-    persisted: number;
+    affected: number;
     /**
      * Missing
      *
@@ -7171,6 +7159,97 @@ export type GetAgentTraceResponses = {
 
 export type GetAgentTraceResponse = GetAgentTraceResponses[keyof GetAgentTraceResponses];
 
+export type RunAgentAguiData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: number;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{session_id}/agui';
+};
+
+export type RunAgentAguiErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunAgentAguiError = RunAgentAguiErrors[keyof RunAgentAguiErrors];
+
+export type RunAgentAguiResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type FollowAgentEventsData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: number;
+    };
+    query?: {
+        /**
+         * After Seq
+         */
+        after_seq?: number;
+    };
+    url: '/api/agent/sessions/{session_id}/agui/events';
+};
+
+export type FollowAgentEventsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FollowAgentEventsError = FollowAgentEventsErrors[keyof FollowAgentEventsErrors];
+
+export type FollowAgentEventsResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type CancelAguiTurnData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: number;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{session_id}/agui/cancel';
+};
+
+export type CancelAguiTurnErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelAguiTurnError = CancelAguiTurnErrors[keyof CancelAguiTurnErrors];
+
+export type CancelAguiTurnResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgentCancelResponse;
+};
+
+export type CancelAguiTurnResponse = CancelAguiTurnResponses[keyof CancelAguiTurnResponses];
+
 export type ListSavedQueriesData = {
     body?: never;
     path?: never;
@@ -7294,55 +7373,30 @@ export type UpdateSavedQueryResponses = {
 
 export type UpdateSavedQueryResponse = UpdateSavedQueryResponses[keyof UpdateSavedQueryResponses];
 
-export type BatchDeleteSavedQueriesData = {
-    body: SavedQueryBatchIdsRequest;
+export type BatchSavedQueriesData = {
+    body: SavedQueryBatchRequest;
     path?: never;
     query?: never;
-    url: '/api/saved-queries/batch/delete';
+    url: '/api/saved-queries/batch';
 };
 
-export type BatchDeleteSavedQueriesErrors = {
+export type BatchSavedQueriesErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type BatchDeleteSavedQueriesError = BatchDeleteSavedQueriesErrors[keyof BatchDeleteSavedQueriesErrors];
+export type BatchSavedQueriesError = BatchSavedQueriesErrors[keyof BatchSavedQueriesErrors];
 
-export type BatchDeleteSavedQueriesResponses = {
+export type BatchSavedQueriesResponses = {
     /**
      * Successful Response
      */
-    200: SavedQueryBatchDeleteResponse;
+    200: SavedQueryBatchResponse;
 };
 
-export type BatchDeleteSavedQueriesResponse = BatchDeleteSavedQueriesResponses[keyof BatchDeleteSavedQueriesResponses];
-
-export type BatchPersistSavedQueriesData = {
-    body: SavedQueryBatchIdsRequest;
-    path?: never;
-    query?: never;
-    url: '/api/saved-queries/batch/persist';
-};
-
-export type BatchPersistSavedQueriesErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type BatchPersistSavedQueriesError = BatchPersistSavedQueriesErrors[keyof BatchPersistSavedQueriesErrors];
-
-export type BatchPersistSavedQueriesResponses = {
-    /**
-     * Successful Response
-     */
-    200: SavedQueryBatchPersistResponse;
-};
-
-export type BatchPersistSavedQueriesResponse = BatchPersistSavedQueriesResponses[keyof BatchPersistSavedQueriesResponses];
+export type BatchSavedQueriesResponse = BatchSavedQueriesResponses[keyof BatchSavedQueriesResponses];
 
 export type GetSavedQueryResultData = {
     body?: never;
@@ -7382,94 +7436,3 @@ export type GetSavedQueryResultResponses = {
 };
 
 export type GetSavedQueryResultResponse = GetSavedQueryResultResponses[keyof GetSavedQueryResultResponses];
-
-export type RunAgentAguiData = {
-    body?: never;
-    path: {
-        /**
-         * Session Id
-         */
-        session_id: number;
-    };
-    query?: never;
-    url: '/api/agent/sessions/{session_id}/agui';
-};
-
-export type RunAgentAguiErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RunAgentAguiError = RunAgentAguiErrors[keyof RunAgentAguiErrors];
-
-export type RunAgentAguiResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type FollowAgentEventsData = {
-    body?: never;
-    path: {
-        /**
-         * Session Id
-         */
-        session_id: number;
-    };
-    query?: {
-        /**
-         * After Seq
-         */
-        after_seq?: number;
-    };
-    url: '/api/agent/sessions/{session_id}/agui/events';
-};
-
-export type FollowAgentEventsErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type FollowAgentEventsError = FollowAgentEventsErrors[keyof FollowAgentEventsErrors];
-
-export type FollowAgentEventsResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type CancelAguiTurnData = {
-    body?: never;
-    path: {
-        /**
-         * Session Id
-         */
-        session_id: number;
-    };
-    query?: never;
-    url: '/api/agent/sessions/{session_id}/agui/cancel';
-};
-
-export type CancelAguiTurnErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type CancelAguiTurnError = CancelAguiTurnErrors[keyof CancelAguiTurnErrors];
-
-export type CancelAguiTurnResponses = {
-    /**
-     * Successful Response
-     */
-    200: AgentCancelResponse;
-};
-
-export type CancelAguiTurnResponse = CancelAguiTurnResponses[keyof CancelAguiTurnResponses];

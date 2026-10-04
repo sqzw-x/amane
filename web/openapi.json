@@ -5229,351 +5229,6 @@
         }
       }
     },
-    "/api/saved-queries": {
-      "get": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "List Saved Queries",
-        "operationId": "list_saved_queries",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "仅该会话下的预设",
-              "title": "Session Id"
-            },
-            "description": "仅该会话下的预设"
-          },
-          {
-            "name": "persisted_only",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "仅已保留 (persisted) 的预设",
-              "default": false,
-              "title": "Persisted Only"
-            },
-            "description": "仅已保留 (persisted) 的预设"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SavedQueryListResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Create Saved Query",
-        "description": "手动创建: 无会话归属, 直接已保留.",
-        "operationId": "create_saved_query",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SavedQueryCreateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SavedQueryResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/saved-queries/{query_id}": {
-      "get": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Get Saved Query",
-        "operationId": "get_saved_query",
-        "parameters": [
-          {
-            "name": "query_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Query Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SavedQueryResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Update Saved Query",
-        "description": "SQL 变化才重校验并失效缓存.",
-        "operationId": "update_saved_query",
-        "parameters": [
-          {
-            "name": "query_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Query Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SavedQueryUpdateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SavedQueryResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/saved-queries/batch/delete": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Batch Delete Saved Queries",
-        "description": "AgentService 未装配时跳过缓存失效.",
-        "operationId": "batch_delete_saved_queries",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SavedQueryBatchIdsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SavedQueryBatchDeleteResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/saved-queries/batch/persist": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Batch Persist Saved Queries",
-        "description": "置为已保留并解绑会话; 幂等.",
-        "operationId": "batch_persist_saved_queries",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SavedQueryBatchIdsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SavedQueryBatchPersistResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/saved-queries/{query_id}/result": {
-      "get": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Get Saved Query Result",
-        "operationId": "get_saved_query_result",
-        "parameters": [
-          {
-            "name": "query_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Query Id"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Offset"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 5000,
-              "minimum": 1,
-              "default": 100,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SavedQueryResultResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/agent/sessions/{session_id}/agui": {
       "post": {
         "tags": [
@@ -5688,6 +5343,309 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentCancelResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/saved-queries": {
+      "get": {
+        "tags": [
+          "saved-queries"
+        ],
+        "summary": "List Saved Queries",
+        "operationId": "list_saved_queries",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "仅该会话下的预设",
+              "title": "Session Id"
+            },
+            "description": "仅该会话下的预设"
+          },
+          {
+            "name": "persisted_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "仅已保留 (persisted) 的预设",
+              "default": false,
+              "title": "Persisted Only"
+            },
+            "description": "仅已保留 (persisted) 的预设"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "saved-queries"
+        ],
+        "summary": "Create Saved Query",
+        "description": "手动创建: 无会话归属, 直接已保留.",
+        "operationId": "create_saved_query",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedQueryCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/saved-queries/{query_id}": {
+      "get": {
+        "tags": [
+          "saved-queries"
+        ],
+        "summary": "Get Saved Query",
+        "operationId": "get_saved_query",
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Query Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "saved-queries"
+        ],
+        "summary": "Update Saved Query",
+        "description": "SQL 变化才重校验并失效缓存.",
+        "operationId": "update_saved_query",
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Query Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedQueryUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/saved-queries/batch": {
+      "post": {
+        "tags": [
+          "saved-queries"
+        ],
+        "summary": "Batch Saved Queries",
+        "description": "不存在的 id 计入 missing; 重复 id 只处理一次. AgentService 未装配时 delete 跳过缓存失效.",
+        "operationId": "batch_saved_queries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedQueryBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/saved-queries/{query_id}/result": {
+      "get": {
+        "tags": [
+          "saved-queries"
+        ],
+        "summary": "Get Saved Query Result",
+        "operationId": "get_saved_query_result",
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Query Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryResultResponse"
                 }
               }
             }
@@ -11431,28 +11389,19 @@
         ],
         "title": "RoutineType"
       },
-      "SavedQueryBatchDeleteResponse": {
-        "properties": {
-          "deleted": {
-            "type": "integer",
-            "title": "Deleted",
-            "description": "成功删除的数量"
-          },
-          "missing": {
-            "type": "integer",
-            "title": "Missing",
-            "description": "不存在的 id 数量"
-          }
-        },
-        "type": "object",
-        "required": [
-          "deleted",
-          "missing"
+      "SavedQueryBatchAction": {
+        "type": "string",
+        "enum": [
+          "delete",
+          "persist"
         ],
-        "title": "SavedQueryBatchDeleteResponse"
+        "title": "SavedQueryBatchAction"
       },
-      "SavedQueryBatchIdsRequest": {
+      "SavedQueryBatchRequest": {
         "properties": {
+          "action": {
+            "$ref": "#/components/schemas/SavedQueryBatchAction"
+          },
           "ids": {
             "items": {
               "type": "integer"
@@ -11466,16 +11415,17 @@
         },
         "type": "object",
         "required": [
+          "action",
           "ids"
         ],
-        "title": "SavedQueryBatchIdsRequest"
+        "title": "SavedQueryBatchRequest"
       },
-      "SavedQueryBatchPersistResponse": {
+      "SavedQueryBatchResponse": {
         "properties": {
-          "persisted": {
+          "affected": {
             "type": "integer",
-            "title": "Persisted",
-            "description": "找到并置为已保留的数量 (已保留的也计入, 幂等)"
+            "title": "Affected",
+            "description": "成功处理的数量; delete 为实际删除的数量, persist 为找到并置为已保留的数量 (幂等, 已保留的也计入)"
           },
           "missing": {
             "type": "integer",
@@ -11485,10 +11435,10 @@
         },
         "type": "object",
         "required": [
-          "persisted",
+          "affected",
           "missing"
         ],
-        "title": "SavedQueryBatchPersistResponse"
+        "title": "SavedQueryBatchResponse"
       },
       "SavedQueryCreateRequest": {
         "properties": {

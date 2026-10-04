@@ -5849,29 +5849,20 @@ export const RoutineTypeSchema = {
     title: 'RoutineType'
 } as const;
 
-export const SavedQueryBatchDeleteResponseSchema = {
-    properties: {
-        deleted: {
-            type: 'integer',
-            title: 'Deleted',
-            description: '成功删除的数量'
-        },
-        missing: {
-            type: 'integer',
-            title: 'Missing',
-            description: '不存在的 id 数量'
-        }
-    },
-    type: 'object',
-    required: [
-        'deleted',
-        'missing'
+export const SavedQueryBatchActionSchema = {
+    type: 'string',
+    enum: [
+        'delete',
+        'persist'
     ],
-    title: 'SavedQueryBatchDeleteResponse'
+    title: 'SavedQueryBatchAction'
 } as const;
 
-export const SavedQueryBatchIdsRequestSchema = {
+export const SavedQueryBatchRequestSchema = {
     properties: {
+        action: {
+            $ref: '#/components/schemas/SavedQueryBatchAction'
+        },
         ids: {
             items: {
                 type: 'integer'
@@ -5885,17 +5876,18 @@ export const SavedQueryBatchIdsRequestSchema = {
     },
     type: 'object',
     required: [
+        'action',
         'ids'
     ],
-    title: 'SavedQueryBatchIdsRequest'
+    title: 'SavedQueryBatchRequest'
 } as const;
 
-export const SavedQueryBatchPersistResponseSchema = {
+export const SavedQueryBatchResponseSchema = {
     properties: {
-        persisted: {
+        affected: {
             type: 'integer',
-            title: 'Persisted',
-            description: '找到并置为已保留的数量 (已保留的也计入, 幂等)'
+            title: 'Affected',
+            description: '成功处理的数量; delete 为实际删除的数量, persist 为找到并置为已保留的数量 (幂等, 已保留的也计入)'
         },
         missing: {
             type: 'integer',
@@ -5905,10 +5897,10 @@ export const SavedQueryBatchPersistResponseSchema = {
     },
     type: 'object',
     required: [
-        'persisted',
+        'affected',
         'missing'
     ],
-    title: 'SavedQueryBatchPersistResponse'
+    title: 'SavedQueryBatchResponse'
 } as const;
 
 export const SavedQueryCreateRequestSchema = {

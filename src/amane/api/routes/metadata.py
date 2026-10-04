@@ -32,7 +32,7 @@ from ..models import (
     UserTagLinksResponse,
     UserTagResponse,
 )
-from .agent import resolve_saved_query_id_subquery
+from .saved_queries import resolve_saved_query_id_subquery
 
 if TYPE_CHECKING:
     from ...db.repo_types import MetadataFields

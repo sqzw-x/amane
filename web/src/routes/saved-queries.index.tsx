@@ -18,7 +18,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  batchDeleteSavedQueriesMutation,
+  batchSavedQueriesMutation,
   createSavedQueryMutation,
   listSavedQueriesOptions,
   updateSavedQueryMutation,
@@ -118,9 +118,9 @@ function SavedQueriesPage() {
     onError: showError,
   });
   const deleteMutation = useMutation({
-    ...batchDeleteSavedQueriesMutation(),
+    ...batchSavedQueriesMutation(),
     onSuccess: (result) => {
-      if (result.deleted === 0) {
+      if (result.affected === 0) {
         notifications.show({
           color: "yellow",
           message: t("deleteNothingToast", { missing: result.missing }),
@@ -128,12 +128,12 @@ function SavedQueriesPage() {
       } else if (result.missing > 0) {
         notifications.show({
           color: "blue",
-          message: t("deletedPartialToast", { deleted: result.deleted, missing: result.missing }),
+          message: t("deletedPartialToast", { deleted: result.affected, missing: result.missing }),
         });
       } else {
         notifications.show({
           color: "blue",
-          message: t("deletedToast", { count: result.deleted }),
+          message: t("deletedToast", { count: result.affected }),
         });
       }
       selection.clear();
@@ -161,7 +161,7 @@ function SavedQueriesPage() {
       confirmLabel: t("common:actions.delete"),
     });
     if (!ok) return;
-    deleteMutation.mutate({ body: { ids: [query.id] } });
+    deleteMutation.mutate({ body: { action: "delete", ids: [query.id] } });
   }
 
   async function handleBatchDelete() {
@@ -172,7 +172,7 @@ function SavedQueriesPage() {
       confirmLabel: t("common:actions.delete"),
     });
     if (!ok) return;
-    deleteMutation.mutate({ body: { ids } });
+    deleteMutation.mutate({ body: { action: "delete", ids } });
   }
 
   const editDirty = editing != null && isSavedQueryFormDirty(editForm, editing);

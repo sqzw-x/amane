@@ -31,7 +31,8 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 | `playback` | `/playback` | 播放源列表与码流 |
 | `files` | `/files` | 目录浏览; 契约见下 |
 | `resources` | `/resources` | 本地资源 + `GET /proxy` |
-| `agent` | `/agent`, `/saved-queries` | 见 [agent.md](agent.md) |
+| `agent` | `/agent` | 会话 CRUD / 标题 / trace / AG-UI; 见 [agent.md](agent.md) |
+| `saved-queries` | `/saved-queries` | 查询预设 CRUD / 结果 / 批量; 见 [agent.md](agent.md) |
 | `ws` | `/ws` | EventBus 广播 |
 
 OpenAPI 列出参数, 不表达组合语义:
