@@ -76,7 +76,8 @@ async def swap_client(
 
 
 async def _create_library(client: AsyncClient, path: Path) -> int:
-    resp = await client.post("libraries", json={"path": str(path)})
+    # scan=False 禁用建库初始刷新任务: 本文件等待的 handler 事件必须对应自己提交的任务
+    resp = await client.post("libraries", json={"path": str(path), "scan": False})
     assert resp.status_code == 201, resp.text
     return int(resp.json()["id"])
 
