@@ -8,15 +8,17 @@ from fastapi import APIRouter, HTTPException, Query
 from ...db.models import Actor, FacetKind, SavedQueryEntity, TaskType
 from ...db.repo_types import ActorBrowseItem, ActorBrowseParams, ActorPersonFields
 from ...handlers import ActorScrapePayload
+from ...media import manual_crop_image
 from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
-from ..deps import RepoDep
+from ..deps import RepoDep, RuntimeDep
 from ..models import (
     ActorListResponse,
     ActorResponse,
     ActorScrapeRequest,
     ActorUpdateRequest,
     ActorUserTagsRequest,
+    CropAvatarRequest,
     TaskResponse,
     UserTagLinksResponse,
     UserTagResponse,
@@ -149,6 +151,47 @@ async def update_actor(actor_id: int, req: ActorUpdateRequest, repo: RepoDep) ->
     aliases = await repo.get_actor_aliases(actor.id)
     user_tags = await _actor_user_tags(repo, actor.id)
     return _from_actor(actor, count=count, aliases=aliases, user_tags=user_tags, include_raw=True)
+
+
+@router.post("/{actor_id}/crop-avatar")
+async def crop_actor_avatar(
+    actor_id: int,
+    req: CropAvatarRequest,
+    repo: RepoDep,
+    runtime: RuntimeDep,
+) -> ActorResponse:
+    """从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图."""
+    actor = await repo.get_actor(actor_id)
+    if actor is None:
+        raise HTTPException(status_code=404, detail="Actor not found")
+    image_urls = list(actor.image_urls or [])
+    if not image_urls:
+        raise HTTPException(status_code=400, detail="无头像图可裁切")
+
+    box = (req.left, req.top, req.right, req.bottom)
+    try:
+        cropped_url = await manual_crop_image(
+            image_urls[0],
+            box,
+            runtime.resource_store,
+            runtime.web_client,
+            runtime.config.hot,
+            runtime.config.cold.data_dir,
+            subject="头像",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    updated = await repo.update_actor(actor_id, image_urls=list(dict.fromkeys([cropped_url, *image_urls])))
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Actor not found")
+    item = await repo.get_facet(FacetKind.ACTOR, actor_id)
+    count = item.count if item is not None else 0
+    assert updated.id is not None
+    aliases = await repo.get_actor_aliases(updated.id)
+    user_tags = await _actor_user_tags(repo, updated.id)
+    logger.info("actor avatar cropped", actor_id=actor_id, box=box, image_url=cropped_url)
+    return _from_actor(updated, count=count, aliases=aliases, user_tags=user_tags, include_raw=True)
 
 
 @router.post("/{actor_id}/scrape", status_code=202)

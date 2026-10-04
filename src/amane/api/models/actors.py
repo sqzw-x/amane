@@ -7,6 +7,7 @@ from ...db.models import Actor
 from ...enums import ActorGender
 from ...handlers.models import CacheKind
 from ...utils.model import create_partial_model
+from .crop import CropBoxRequest
 from .user_tags import UserTagResponse
 
 
@@ -52,6 +53,10 @@ class ActorUserTagsRequest(BaseModel):
     ids: list[int] = Field(min_length=1, description="演员 ID 列表")
     user_tag_ids: list[int] = Field(min_length=1, description="用户标签 ID 列表")
     action: Literal["attach", "detach"] = Field(description="attach 为并入, detach 为移除; 两者均幂等")
+
+
+class CropAvatarRequest(CropBoxRequest):
+    """从当前主图按像素框裁切头像 (相对 image_urls[0] 当前本地文件像素; 含就地超分后尺寸)."""
 
 
 if TYPE_CHECKING:

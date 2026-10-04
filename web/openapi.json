@@ -2673,6 +2673,59 @@
         }
       }
     },
+    "/api/actors/{actor_id}/crop-avatar": {
+      "post": {
+        "tags": [
+          "actors"
+        ],
+        "summary": "Crop Actor Avatar",
+        "description": "从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图.",
+        "operationId": "crop_actor_avatar",
+        "parameters": [
+          {
+            "name": "actor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Actor Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CropAvatarRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/actors/{actor_id}/scrape": {
       "post": {
         "tags": [
@@ -6997,6 +7050,43 @@
           "hentai"
         ],
         "title": "ContentType"
+      },
+      "CropAvatarRequest": {
+        "properties": {
+          "left": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Left",
+            "description": "裁切框左边界 (含)"
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Top",
+            "description": "裁切框上边界 (含)"
+          },
+          "right": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Right",
+            "description": "裁切框右边界 (不含)"
+          },
+          "bottom": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Bottom",
+            "description": "裁切框下边界 (不含)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "left",
+          "top",
+          "right",
+          "bottom"
+        ],
+        "title": "CropAvatarRequest",
+        "description": "从当前主图按像素框裁切头像 (相对 image_urls[0] 当前本地文件像素; 含就地超分后尺寸)."
       },
       "CropPosterRequest": {
         "properties": {

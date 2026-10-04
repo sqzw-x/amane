@@ -1371,6 +1371,44 @@ export const ContentTypeSchema = {
     title: 'ContentType'
 } as const;
 
+export const CropAvatarRequestSchema = {
+    properties: {
+        left: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Left',
+            description: '裁切框左边界 (含)'
+        },
+        top: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Top',
+            description: '裁切框上边界 (含)'
+        },
+        right: {
+            type: 'integer',
+            exclusiveMinimum: 0,
+            title: 'Right',
+            description: '裁切框右边界 (不含)'
+        },
+        bottom: {
+            type: 'integer',
+            exclusiveMinimum: 0,
+            title: 'Bottom',
+            description: '裁切框下边界 (不含)'
+        }
+    },
+    type: 'object',
+    required: [
+        'left',
+        'top',
+        'right',
+        'bottom'
+    ],
+    title: 'CropAvatarRequest',
+    description: '从当前主图按像素框裁切头像 (相对 image_urls[0] 当前本地文件像素; 含就地超分后尺寸).'
+} as const;
+
 export const CropPosterRequestSchema = {
     properties: {
         left: {

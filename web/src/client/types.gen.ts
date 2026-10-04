@@ -742,6 +742,38 @@ export type ConnectivityStatus = 'ok' | 'failed' | 'skipped';
 export type ContentType = 'censored' | 'uncensored' | 'chinese' | 'western' | 'fc2' | 'amateur' | 'hentai';
 
 /**
+ * CropAvatarRequest
+ *
+ * 从当前主图按像素框裁切头像 (相对 image_urls[0] 当前本地文件像素; 含就地超分后尺寸).
+ */
+export type CropAvatarRequest = {
+    /**
+     * Left
+     *
+     * 裁切框左边界 (含)
+     */
+    left: number;
+    /**
+     * Top
+     *
+     * 裁切框上边界 (含)
+     */
+    top: number;
+    /**
+     * Right
+     *
+     * 裁切框右边界 (不含)
+     */
+    right: number;
+    /**
+     * Bottom
+     *
+     * 裁切框下边界 (不含)
+     */
+    bottom: number;
+};
+
+/**
  * CropPosterRequest
  *
  * 从封面图按像素框裁切海报 (相对 thumb 当前本地文件像素; 含就地超分后尺寸).
@@ -5564,6 +5596,36 @@ export type UpdateActorResponses = {
 };
 
 export type UpdateActorResponse = UpdateActorResponses[keyof UpdateActorResponses];
+
+export type CropActorAvatarData = {
+    body: CropAvatarRequest;
+    path: {
+        /**
+         * Actor Id
+         */
+        actor_id: number;
+    };
+    query?: never;
+    url: '/api/actors/{actor_id}/crop-avatar';
+};
+
+export type CropActorAvatarErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CropActorAvatarError = CropActorAvatarErrors[keyof CropActorAvatarErrors];
+
+export type CropActorAvatarResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActorResponse;
+};
+
+export type CropActorAvatarResponse = CropActorAvatarResponses[keyof CropActorAvatarResponses];
 
 export type ScrapeActorData = {
     /**

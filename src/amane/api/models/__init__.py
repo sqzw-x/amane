@@ -1,5 +1,13 @@
-from .actors import ActorListResponse, ActorResponse, ActorScrapeRequest, ActorUpdateRequest, ActorUserTagsRequest
+from .actors import (
+    ActorListResponse,
+    ActorResponse,
+    ActorScrapeRequest,
+    ActorUpdateRequest,
+    ActorUserTagsRequest,
+    CropAvatarRequest,
+)
 from .comments import CommentCreateRequest, CommentResponse, CommentUpdateRequest
+from .crop import CropBoxRequest
 from .facets import (
     FacetListResponse,
     FacetMergeRequest,
@@ -98,6 +106,8 @@ __all__ = [
     "ConnectivityCheckRequest",
     "ConnectivityItemResponse",
     "ConnectivityReportResponse",
+    "CropAvatarRequest",
+    "CropBoxRequest",
     "CropPosterRequest",
     "DesktopResponse",
     "FacetListResponse",

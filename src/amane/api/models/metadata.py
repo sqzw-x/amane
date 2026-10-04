@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from ...db import Metadata
 from ...enums import ActorGender
@@ -9,6 +9,7 @@ from ...handlers import CacheKind
 from ...parsing import ContentType, Mosaic
 from ...utils.model import anyof_extras, create_partial_model, kv
 from .comments import CommentResponse
+from .crop import CropBoxRequest
 from .media import MediaFileResponse
 from .user_tags import UserTagResponse
 
@@ -97,19 +98,8 @@ class MergeRequest(BaseModel):
     selections: dict[str, str] = Field(description="field_name -> source_key 映射")
 
 
-class CropPosterRequest(BaseModel):
+class CropPosterRequest(CropBoxRequest):
     """从封面图按像素框裁切海报 (相对 thumb 当前本地文件像素; 含就地超分后尺寸)."""
-
-    left: int = Field(ge=0, description="裁切框左边界 (含)")
-    top: int = Field(ge=0, description="裁切框上边界 (含)")
-    right: int = Field(gt=0, description="裁切框右边界 (不含)")
-    bottom: int = Field(gt=0, description="裁切框下边界 (不含)")
-
-    @model_validator(mode="after")
-    def _box_positive_area(self) -> CropPosterRequest:
-        if self.left >= self.right or self.top >= self.bottom:
-            raise ValueError("裁切区域须为正矩形 (left < right, top < bottom)")
-        return self
 
 
 class MetadataBatchIdsRequest(BaseModel):

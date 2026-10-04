@@ -5,10 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from PIL import Image
 
 from amane.db.models import FacetKind
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from fastapi import FastAPI
     from httpx2 import AsyncClient
 
     from amane.db.repository import Repository
@@ -151,3 +155,61 @@ class TestActorsApi:
         assert (
             await client.post("actors/batch/user-tags", json={"ids": [tag_me], "user_tag_ids": [], "action": "attach"})
         ).status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_crop_avatar(self, client: AsyncClient, repo: Repository, app: FastAPI) -> None:
+        """外部源裁切 → 内部 URL 前插并保留原图; 再以内部源裁切; 边界与非法输入."""
+        await repo.upsert_metadata(number="ACT-CROP-1", actors=["CropMe"])
+        actors, _ = await repo.list_facets(FacetKind.ACTOR)
+        actor_id = next(a.id for a in actors if a.name == "CropMe")
+        actor = await repo.get_actor(actor_id)
+        assert actor is not None
+        actor.image_urls = ["https://img.example/orig.jpg"]
+        await repo.save_actor(actor)
+
+        async def fake_download(url: str, dest: Path, **kwargs: object) -> bool:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (800, 538), "blue").save(dest)
+            return True
+
+        async def fake_resolve(url: str, **kwargs: object) -> str:
+            return url
+
+        app.state.runtime.web_client.download = fake_download  # type: ignore[method-assign]
+        app.state.runtime.web_client.resolve_final_url = fake_resolve  # type: ignore[method-assign]
+
+        first = await client.post(
+            f"actors/{actor_id}/crop-avatar", json={"left": 0, "top": 0, "right": 400, "bottom": 538}
+        )
+        assert first.status_code == 200
+        urls = first.json()["image_urls"]
+        assert len(urls) == 2
+        assert urls[0].startswith("/api/resources/")
+        assert urls[1] == "https://img.example/orig.jpg"
+
+        # 主图已变: 再次裁切以上一层裁切结果为源, 追加新派生项并保留全部历史
+        second = await client.post(
+            f"actors/{actor_id}/crop-avatar", json={"left": 0, "top": 0, "right": 200, "bottom": 269}
+        )
+        assert second.status_code == 200
+        second_urls = second.json()["image_urls"]
+        assert second_urls[0].startswith("/api/resources/") and second_urls[0] != urls[0]
+        assert second_urls[1:] == urls
+
+        # 非法框 (left >= right) 在模型层拒绝
+        inverted = await client.post(
+            f"actors/{actor_id}/crop-avatar", json={"left": 100, "top": 0, "right": 50, "bottom": 100}
+        )
+        assert inverted.status_code == 422
+
+        # 无图演员与不存在的演员
+        await repo.upsert_metadata(number="ACT-CROP-2", actors=["NoImage"])
+        actors, _ = await repo.list_facets(FacetKind.ACTOR)
+        no_image_id = next(a.id for a in actors if a.name == "NoImage")
+        no_image = await client.post(
+            f"actors/{no_image_id}/crop-avatar", json={"left": 0, "top": 0, "right": 10, "bottom": 10}
+        )
+        assert no_image.status_code == 400
+        assert "头像" in no_image.json()["detail"]
+        missing = await client.post("actors/99999/crop-avatar", json={"left": 0, "top": 0, "right": 10, "bottom": 10})
+        assert missing.status_code == 404
