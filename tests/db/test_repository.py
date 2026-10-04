@@ -1,10 +1,12 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, get_type_hints
 
 import pytest
 
+from amane.aggregate.actor import AggregatedActor
 from amane.db.models import (
+    Actor,
     FacetKind,
     FacetRuleAction,
     MediaFileStatus,
@@ -22,10 +24,11 @@ from amane.db.repo_types import (
     _METADATA_SORT_COLUMNS,
     _TASK_SORT_COLUMNS,
     ActorBrowseParams,
+    ActorPersonFields,
     MetadataFields,
-    MetadataWriteMode,
+    WriteMode,
 )
-from amane.enums import LibraryAutomation, MetadataField
+from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataField
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
 from amane.parsing import ContentType, Mosaic
 from tests.helpers import assert_exhaustive_enum
@@ -853,7 +856,7 @@ class TestMetadataRepo:
         await repo.set_metadata_locks(meta.id, [MetadataField.ACTORS])
 
         updated = await repo.update_metadata(
-            meta.id, mode=MetadataWriteMode.MANUAL, title="New", poster_urls=["https://p/1.jpg"]
+            meta.id, mode=WriteMode.MANUAL, title="New", poster_urls=["https://p/1.jpg"]
         )
 
         assert updated is not None
@@ -873,7 +876,7 @@ class TestMetadataRepo:
         meta = await repo.upsert_metadata(number="LOCK-005")
         assert meta.id is not None
 
-        updated = await repo.update_metadata(meta.id, mode=MetadataWriteMode.MANUAL, **updates)
+        updated = await repo.update_metadata(meta.id, mode=WriteMode.MANUAL, **updates)
 
         assert updated is not None
         assert updated.locked_fields == [expected_lock]
@@ -885,7 +888,7 @@ class TestMetadataRepo:
 
         updated = await repo.update_metadata(
             meta.id,
-            mode=MetadataWriteMode.MANUAL,
+            mode=WriteMode.MANUAL,
             field_sources={"title": "javdb"},
             raw={"javdb": {"title": "X"}},
         )
@@ -990,6 +993,250 @@ class TestMetadataRepo:
         updated = await repo.upsert_metadata(number="LOCK-013", actors=["New"])
 
         assert updated.actors == ["Keep"]
+
+
+class TestActorLocks:
+    """Actor 人物字段锁定: AUTO 跳过锁定列, MANUAL 自动并入, 清空 / 合并的锁语义."""
+
+    @staticmethod
+    async def _actor(repo: Repository, name: str) -> Actor:
+        await repo.upsert_metadata(number=f"AL-{name}", actors=[name])
+        actor = (await repo.get_actors_by_names([name]))[0]
+        assert actor.id is not None
+        return actor
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_save_actor_skips_locked_fields_and_keeps_sources(self, repo: Repository):
+        actor = await self._actor(repo, "Locked")
+        actor.birthday = "1990-01-01"
+        actor.image_urls = ["https://old/a.jpg"]
+        actor.field_sources = {"birthday": "minnano"}
+        actor.raw = {"minnano": {"birthday": "1990-01-01"}}
+        await repo.save_actor(actor)
+        assert actor.id is not None
+        await repo.set_actor_locks(actor.id, [ActorField.BIRTHDAY, ActorField.IMAGE_URLS])
+
+        actor.birthday = "2000-01-01"
+        actor.height = 160
+        actor.image_urls = ["https://old/a.jpg", "https://new/b.jpg"]
+        actor.field_sources = {"birthday": "dmm", "height": "dmm"}
+        actor.raw = {"dmm": {"birthday": "2000-01-01"}}
+        saved = await repo.save_actor(actor)
+
+        assert saved is not None
+        assert saved.birthday == "1990-01-01"
+        assert saved.image_urls == ["https://old/a.jpg"]
+        assert saved.height == 160
+        # 锁定字段来源保留, 未锁定字段正常写入; raw 始终更新.
+        assert saved.field_sources == {"birthday": "minnano", "height": "dmm"}
+        assert saved.raw == {"dmm": {"birthday": "2000-01-01"}}
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_save_actor_locked_empty_field_not_filled(self, repo: Repository):
+        actor = await self._actor(repo, "KeepEmpty")
+        assert actor.id is not None
+        await repo.set_actor_locks(actor.id, [ActorField.BIRTHDAY])
+
+        actor.birthday = "2000-01-01"
+        actor.field_sources = {"birthday": "dmm"}
+        saved = await repo.save_actor(actor)
+
+        assert saved is not None
+        assert saved.birthday is None
+        assert saved.field_sources == {}
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_save_actor_tolerates_unknown_locked_value(self, repo: Repository):
+        actor = await self._actor(repo, "BadLock")
+        actor.birthday = "1990-01-01"
+        await repo.save_actor(actor)
+        assert actor.id is not None
+        async with repo._session() as session:
+            row = await session.get(Actor, actor.id)
+            assert row is not None
+            row.locked_fields = ["not-a-field", "birthday"]
+            session.add(row)
+            await session.commit()
+
+        actor.birthday = "2000-01-01"
+        saved = await repo.save_actor(actor)
+
+        assert saved is not None
+        assert saved.birthday == "1990-01-01"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_actor_auto_mode_respects_locks(self, repo: Repository):
+        actor = await self._actor(repo, "AutoMode")
+        actor.birthday = "1990-01-01"
+        await repo.save_actor(actor)
+        assert actor.id is not None
+        await repo.set_actor_locks(actor.id, [ActorField.BIRTHDAY])
+
+        updated = await repo.update_actor(actor.id, birthday="2000-01-01", height=160)
+
+        assert updated is not None
+        assert updated.birthday == "1990-01-01"
+        assert updated.height == 160
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_actor_auto_preserves_locked_source(self, repo: Repository):
+        actor = await self._actor(repo, "AutoSource")
+        actor.birthday = "1990-01-01"
+        actor.field_sources = {"birthday": "minnano"}
+        await repo.save_actor(actor)
+        assert actor.id is not None
+        await repo.set_actor_locks(actor.id, [ActorField.BIRTHDAY])
+
+        updated = await repo.update_actor(actor.id, birthday=None, field_sources={"birthday": "dmm", "height": "dmm"})
+
+        assert updated is not None
+        assert updated.birthday == "1990-01-01"
+        assert updated.field_sources == {"birthday": "minnano", "height": "dmm"}
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_actor_manual_ignores_lock_and_auto_locks_written_fields(self, repo: Repository):
+        actor = await self._actor(repo, "ManualMode")
+        assert actor.id is not None
+        await repo.set_actor_locks(actor.id, [ActorField.BIRTHDAY])
+
+        updated = await repo.update_actor(
+            actor.id, mode=WriteMode.MANUAL, birthday="2000-01-01", image_urls=["https://a/b.jpg"]
+        )
+
+        assert updated is not None
+        assert updated.birthday == "2000-01-01"
+        assert set(updated.locked_fields) == {"birthday", "image_urls"}
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_actor_manual_null_stays_locked(self, repo: Repository):
+        actor = await self._actor(repo, "ClearOne")
+        actor.birthday = "1990-01-01"
+        await repo.save_actor(actor)
+        assert actor.id is not None
+
+        cleared = await repo.update_actor(actor.id, mode=WriteMode.MANUAL, birthday=None)
+        assert cleared is not None
+        assert cleared.birthday is None
+        assert cleared.locked_fields == ["birthday"]
+
+        # 显式清空后 AUTO 不再填回.
+        filled = await repo.update_actor(actor.id, birthday="2000-01-01")
+        assert filled is not None
+        assert filled.birthday is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_actor_manual_does_not_lock_provenance_fields(self, repo: Repository):
+        actor = await self._actor(repo, "Provenance")
+        assert actor.id is not None
+
+        updated = await repo.update_actor(
+            actor.id,
+            mode=WriteMode.MANUAL,
+            aliases=["Alias"],
+            provider_ids={"theporndb": "1"},
+            source_urls={"minnano": "https://m/a"},
+            field_sources={"birthday": "minnano"},
+            raw={"minnano": {"birthday": "x"}},
+        )
+
+        assert updated is not None
+        assert updated.locked_fields == []
+        assert await repo.get_actor_aliases(actor.id) == ["Alias"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_set_actor_locks_replaces_and_orders(self, repo: Repository):
+        actor = await self._actor(repo, "Ordered")
+        assert actor.id is not None
+
+        locked = await repo.set_actor_locks(actor.id, [ActorField.IMAGE_URLS, ActorField.GENDER])
+        assert locked is not None
+        assert locked.locked_fields == ["gender", "image_urls"]  # 枚举声明序
+        assert locked.updated_at == actor.updated_at
+
+        cleared = await repo.set_actor_locks(actor.id, [])
+        assert cleared is not None
+        assert cleared.locked_fields == []
+
+        assert await repo.set_actor_locks(9999, [ActorField.GENDER]) is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_clear_actor_person_resets_fields_sources_and_locks(self, repo: Repository):
+        actor = await self._actor(repo, "ToClear")
+        actor.gender = ActorGender.FEMALE
+        actor.birthday = "1990-01-01"
+        actor.height = 160
+        actor.image_urls = ["https://a/b.jpg"]
+        actor.provider_ids = {"theporndb": "1"}
+        actor.source_urls = {"minnano": "https://m/a"}
+        actor.field_sources = {"birthday": "minnano"}
+        actor.raw = {"minnano": {"birthday": "1990-01-01"}}
+        await repo.save_actor(actor, aliases=["OldAlias"])
+        assert actor.id is not None
+        await repo.set_actor_locks(actor.id, [ActorField.BIRTHDAY])
+
+        cleared = await repo.clear_actor_person(actor.id)
+
+        assert cleared is not None
+        assert cleared.name == "ToClear"
+        assert cleared.gender == ActorGender.FEMALE  # 性别保留 (刮削路由)
+        assert cleared.birthday is None
+        assert cleared.height is None
+        assert cleared.image_urls == []
+        assert cleared.provider_ids == {}
+        assert cleared.source_urls == {}
+        assert cleared.field_sources == {}
+        assert cleared.locked_fields == []
+        assert cleared.raw == {"minnano": {"birthday": "1990-01-01"}}  # 刮削缓存保留
+        assert await repo.get_actor_aliases(actor.id) == []
+        assert await repo.clear_actor_person(9999) is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_merge_actor_carries_source_locks(self, repo: Repository):
+        target = await self._actor(repo, "MergeTarget")
+        source = await self._actor(repo, "MergeSource")
+        assert target.id is not None and source.id is not None
+        await repo.set_actor_locks(target.id, [ActorField.IMAGE_URLS])
+        await repo.set_actor_locks(source.id, [ActorField.BIRTHDAY])
+
+        item = await repo.merge_facets(FacetKind.ACTOR, target.id, [source.id])
+
+        assert item is not None
+        merged = await repo.get_actor(target.id)
+        assert merged is not None
+        assert merged.locked_fields == ["birthday", "image_urls"]
+
+        # 源锁定的空 birthday 合并后仍受保护, AUTO 不填回.
+        merged.birthday = "2000-01-01"
+        saved = await repo.save_actor(merged)
+        assert saved is not None
+        assert saved.birthday is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_clean_actor_names_skips_locked_gender(self, repo: Repository):
+        locked = await self._actor(repo, "GenderLocked")
+        assert locked.id is not None
+        locked_id = locked.id
+        await repo.set_actor_locks(locked_id, [ActorField.GENDER])
+
+        await repo.upsert_metadata(
+            number="AL-gender-1",
+            actors=["GenderLocked", "GenderFree"],
+            actor_genders={"GenderLocked": ActorGender.FEMALE, "GenderFree": ActorGender.FEMALE},
+        )
+
+        refetched = await repo.get_actor(locked_id)
+        assert refetched is not None
+        assert refetched.gender == ActorGender.UNKNOWN
+        free = (await repo.get_actors_by_names(["GenderFree"]))[0]
+        assert free.gender == ActorGender.FEMALE
+
+    def test_actor_field_matches_person_surface(self) -> None:
+        """ActorField 必须覆盖人物可写字段全集; 漏加成员会静默不可锁或运行期属性错误."""
+        identity = {"id", "name", "created_at", "updated_at", "locked_fields"}
+        non_person = {"aliases", "provider_ids", "source_urls", "field_sources", "raw"}
+        assert set(ActorField) == set(Actor.model_fields) - identity - non_person
+        assert set(ActorField) == set(get_type_hints(ActorPersonFields)) - non_person
+        assert set(ActorField) == set(AggregatedActor.model_fields) - non_person
 
 
 class TestTaskRepo:

@@ -367,10 +367,11 @@ class UserTagUpdates(TypedDict, total=False):
     name: str
 
 
-class MetadataWriteMode(StrEnum):
-    """Metadata 写入策略: ``AUTO`` 供自动刮削, ``MANUAL`` 供手动与助理写入.
+class WriteMode(StrEnum):
+    """Metadata / Actor 字段写入策略: ``AUTO`` 供自动刮削, ``MANUAL`` 供手动与助理写入.
 
-    各自语义见 docs/dev/data-model.md「元数据锁定」.
+    默认 ``AUTO``: 自动写入者漏传策略时只会未加锁, 不会误加锁.
+    语义见 docs/dev/data-model.md「字段锁定」.
     """
 
     AUTO = "auto"

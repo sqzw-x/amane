@@ -81,6 +81,8 @@ async def test_update_actor_and_enqueue_scrape(write_deps: AgentDeps) -> None:
     actor = await write_deps.repo.get_actor(actor_id)
     assert actor is not None
     assert actor.overview == "bio"
+    # 助理写入属 MANUAL: 所改字段自动上锁.
+    assert actor.locked_fields == ["overview"]
     scrape = await tool_fn(build_actor_ops_capability(), "enqueue_actor_scrape")(
         ToolCallContext(write_deps), actor_ids=[actor_id]
     )

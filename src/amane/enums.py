@@ -131,6 +131,22 @@ class MetadataField(StrEnum):
     SCORE = "score"
 
 
+class ActorField(StrEnum):
+    """演员人物档案的可锁字段; 取值与 Actor 列名同形."""
+
+    GENDER = "gender"
+    BIRTHDAY = "birthday"
+    BIRTHPLACE = "birthplace"
+    HEIGHT = "height"
+    BUST = "bust"
+    WAIST = "waist"
+    HIP = "hip"
+    CUP = "cup"
+    OVERVIEW = "overview"
+    TAGLINE = "tagline"
+    IMAGE_URLS = "image_urls"
+
+
 class WatermarkKind(StrEnum):
     """整理落盘封面角标类别. 清晰度共用 definition, 不论 4K/1080p."""
 

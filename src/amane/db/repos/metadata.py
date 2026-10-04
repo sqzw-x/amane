@@ -24,7 +24,7 @@ from ..models import (
 )
 from ..repo_types import (
     MetadataFields,
-    MetadataWriteMode,
+    WriteMode,
     _media_file_uncensored_predicate,
     _metadata_has_files_clause,
     _metadata_linked_file_exists,
@@ -267,18 +267,18 @@ class MetadataRepoMixin(RepositoryMixinBase):
         self,
         metadata_id: int,
         *,
-        mode: MetadataWriteMode = MetadataWriteMode.AUTO,
+        mode: WriteMode = WriteMode.AUTO,
         actor_genders: Mapping[str, ActorGender] | None = None,
         **updates: Unpack[MetadataFields],
     ) -> Metadata | None:
-        """不存在返回 None; 写入策略见 MetadataWriteMode."""
+        """不存在返回 None; 写入策略见 WriteMode."""
         updates = _normalize_text_fields(updates)
         async with self._session() as session:
             metadata = await session.get(Metadata, metadata_id)
             if metadata is None:
                 return None
             locked = _locked_fields_of(metadata)
-            if mode is MetadataWriteMode.AUTO:
+            if mode is WriteMode.AUTO:
                 updates = _filter_locked(updates, locked, metadata.field_sources or {})
             else:
                 metadata.locked_fields = _merge_auto_locks(updates, locked)

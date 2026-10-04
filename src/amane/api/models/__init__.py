@@ -1,5 +1,6 @@
 from .actors import (
     ActorListResponse,
+    ActorLocksRequest,
     ActorResponse,
     ActorScrapeRequest,
     ActorUpdateRequest,
@@ -95,6 +96,7 @@ from .user_tags import UserTagLinksResponse, UserTagResponse
 
 __all__ = [
     "ActorListResponse",
+    "ActorLocksRequest",
     "ActorResponse",
     "ActorScrapeRequest",
     "ActorScrapeSubmission",

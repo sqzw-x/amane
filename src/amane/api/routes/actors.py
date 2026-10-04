@@ -6,7 +6,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query
 
 from ...db.models import Actor, FacetKind, SavedQueryEntity, TaskType
-from ...db.repo_types import ActorBrowseItem, ActorBrowseParams, ActorPersonFields
+from ...db.repo_types import ActorBrowseItem, ActorBrowseParams, ActorPersonFields, WriteMode
 from ...handlers import ActorScrapePayload
 from ...media import manual_crop_image
 from ...utils.dates import normalize_calendar_date
@@ -14,6 +14,7 @@ from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
 from ..models import (
     ActorListResponse,
+    ActorLocksRequest,
     ActorResponse,
     ActorScrapeRequest,
     ActorUpdateRequest,
@@ -23,6 +24,7 @@ from ..models import (
     UserTagLinksResponse,
     UserTagResponse,
 )
+from ..models.actors import normalize_actor_locks
 from .saved_queries import resolve_saved_query_id_subquery
 
 logger = structlog.get_logger()
@@ -79,12 +81,23 @@ def _from_actor(
         source_urls=dict(actor.source_urls or {}),
         field_sources=dict(actor.field_sources or {}),
         raw=dict(actor.raw or {}) if include_raw else {},
+        locked_fields=normalize_actor_locks(actor.locked_fields),
         updated_at=actor.updated_at,
     )
 
 
 async def _actor_user_tags(repo: RepoDep, actor_id: int) -> list[UserTagResponse]:
     return [to_resp(UserTagResponse, tag) for tag in await repo.list_actor_user_tags(actor_id)]
+
+
+async def _detail_response(repo: RepoDep, actor: Actor) -> ActorResponse:
+    """详情全量响应: count / 别名 / 用户标签 / raw 均补齐."""
+    assert actor.id is not None
+    item = await repo.get_facet(FacetKind.ACTOR, actor.id)
+    count = item.count if item is not None else 0
+    aliases = await repo.get_actor_aliases(actor.id)
+    user_tags = await _actor_user_tags(repo, actor.id)
+    return _from_actor(actor, count=count, aliases=aliases, user_tags=user_tags, include_raw=True)
 
 
 @router.get("")
@@ -119,15 +132,12 @@ async def get_actor(actor_id: int, repo: RepoDep) -> ActorResponse:
     actor = await repo.get_actor(actor_id)
     if item is None or actor is None:
         raise HTTPException(status_code=404, detail="Actor not found")
-    assert actor.id is not None
-    aliases = await repo.get_actor_aliases(actor.id)
-    user_tags = await _actor_user_tags(repo, actor.id)
-    return _from_actor(actor, count=item.count, aliases=aliases, user_tags=user_tags, include_raw=True)
+    return await _detail_response(repo, actor)
 
 
 @router.patch("/{actor_id}")
 async def update_actor(actor_id: int, req: ActorUpdateRequest, repo: RepoDep) -> ActorResponse:
-    """更新演员规范人物字段 (不含 name/raw/field_sources)."""
+    """更新演员规范人物字段 (不含 name/raw/field_sources); 写入字段自动加锁."""
     updates = cast("ActorPersonFields", req.model_dump(exclude_unset=True))
     if not updates:
         raise HTTPException(status_code=422, detail="No fields to update")
@@ -142,15 +152,30 @@ async def update_actor(actor_id: int, req: ActorUpdateRequest, repo: RepoDep) ->
             updates["birthday"] = normalized
         else:
             raise HTTPException(status_code=422, detail="birthday must be YYYY-MM-DD")
-    actor = await repo.update_actor(actor_id, **updates)
+    actor = await repo.update_actor(actor_id, mode=WriteMode.MANUAL, **updates)
     if actor is None:
         raise HTTPException(status_code=404, detail="Actor not found")
-    item = await repo.get_facet(FacetKind.ACTOR, actor_id)
-    count = item.count if item is not None else 0
-    assert actor.id is not None
-    aliases = await repo.get_actor_aliases(actor.id)
-    user_tags = await _actor_user_tags(repo, actor.id)
-    return _from_actor(actor, count=count, aliases=aliases, user_tags=user_tags, include_raw=True)
+    return await _detail_response(repo, actor)
+
+
+@router.put("/{actor_id}/locks")
+async def set_actor_locks(actor_id: int, req: ActorLocksRequest, repo: RepoDep) -> ActorResponse:
+    """整体替换锁定字段集合."""
+    actor = await repo.set_actor_locks(actor_id, req.fields)
+    if actor is None:
+        raise HTTPException(status_code=404, detail="Actor not found")
+    logger.info("actor locks updated", actor_id=actor_id, fields=[str(field) for field in req.fields])
+    return await _detail_response(repo, actor)
+
+
+@router.post("/{actor_id}/clear-person")
+async def clear_actor_person(actor_id: int, repo: RepoDep) -> ActorResponse:
+    """清空人物档案并解除全部锁 (保留 name / gender / 刮削缓存)."""
+    actor = await repo.clear_actor_person(actor_id)
+    if actor is None:
+        raise HTTPException(status_code=404, detail="Actor not found")
+    logger.info("actor person cleared", actor_id=actor_id)
+    return await _detail_response(repo, actor)
 
 
 @router.post("/{actor_id}/crop-avatar")
@@ -182,16 +207,13 @@ async def crop_actor_avatar(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    updated = await repo.update_actor(actor_id, image_urls=list(dict.fromkeys([cropped_url, *image_urls])))
+    updated = await repo.update_actor(
+        actor_id, mode=WriteMode.MANUAL, image_urls=list(dict.fromkeys([cropped_url, *image_urls]))
+    )
     if updated is None:
         raise HTTPException(status_code=404, detail="Actor not found")
-    item = await repo.get_facet(FacetKind.ACTOR, actor_id)
-    count = item.count if item is not None else 0
-    assert updated.id is not None
-    aliases = await repo.get_actor_aliases(updated.id)
-    user_tags = await _actor_user_tags(repo, updated.id)
     logger.info("actor avatar cropped", actor_id=actor_id, box=box, image_url=cropped_url)
-    return _from_actor(updated, count=count, aliases=aliases, user_tags=user_tags, include_raw=True)
+    return await _detail_response(repo, updated)
 
 
 @router.post("/{actor_id}/scrape", status_code=202)

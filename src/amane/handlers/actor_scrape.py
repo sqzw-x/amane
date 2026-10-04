@@ -6,7 +6,12 @@ from structlog.contextvars import bind_contextvars
 from ..aggregate import merge_actor_metadata, merge_actor_rows_fill_empty
 from ..crawlers.actor import ActorFetcher, ActorMetadata, filter_sites_for_gender
 from ..crawlers.site_roles import is_actor_image_site, is_actor_profile_site
-from ..db.actor_person import actor_to_aggregated, apply_aggregated_to_actor
+from ..db.actor_person import (
+    actor_to_aggregated,
+    apply_aggregated_to_actor,
+    filter_locked_person_data,
+    locked_fields_of,
+)
 from ..enums import SiteName
 from ..net.errors import FailureReason, SourceError
 from ..observability import current, invoke_source
@@ -154,6 +159,8 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         site_agg = merge_actor_metadata(results, profile_sites=profile_sites, image_sites=image_sites)
         existing_aliases = await self._repo.get_actor_aliases(payload.actor_id)
         merged = merge_actor_rows_fill_empty(actor_to_aggregated(actor), site_agg)
+        # AUTO 写入: 锁定字段保留库内值; 下载与任务结果同以过滤后集合为准, 不为注定丢弃的新图下载.
+        merged = filter_locked_person_data(merged, locked=locked_fields_of(actor), current=actor_to_aggregated(actor))
 
         if cfg.download_images and merged.image_urls and self._web_client is not None:
             for url in merged.image_urls:

@@ -5,6 +5,13 @@ export type ClientOptions = {
 };
 
 /**
+ * ActorField
+ *
+ * 演员人物档案的可锁字段; 取值与 Actor 列名同形.
+ */
+export type ActorField = 'gender' | 'birthday' | 'birthplace' | 'height' | 'bust' | 'waist' | 'hip' | 'cup' | 'overview' | 'tagline' | 'image_urls';
+
+/**
  * ActorGender
  *
  * 演员性别 - 用于展示与按站裁剪刮削源.
@@ -26,9 +33,23 @@ export type ActorListResponse = {
 };
 
 /**
+ * ActorLocksRequest
+ *
+ * 整体替换锁定字段集合.
+ */
+export type ActorLocksRequest = {
+    /**
+     * Fields
+     *
+     * 锁定的字段集合; 空集解除全部锁定
+     */
+    fields?: Array<ActorField>;
+};
+
+/**
  * ActorResponse
  *
- * 详情填全量; 列表 (`GET /actors`) 只填卡片/表格字段, 简介/别名/标签/源字典/raw 为空.
+ * 详情填全量; 列表 (`GET /actors`) 只填卡片/表格字段, 其余 (简介/别名/标签/源字典/raw/锁) 为空.
  */
 export type ActorResponse = {
     /**
@@ -122,6 +143,10 @@ export type ActorResponse = {
             [key: string]: unknown;
         };
     };
+    /**
+     * Locked Fields
+     */
+    locked_fields?: Array<ActorField>;
     /**
      * Updated At
      */
@@ -5644,6 +5669,66 @@ export type UpdateActorResponses = {
 };
 
 export type UpdateActorResponse = UpdateActorResponses[keyof UpdateActorResponses];
+
+export type SetActorLocksData = {
+    body: ActorLocksRequest;
+    path: {
+        /**
+         * Actor Id
+         */
+        actor_id: number;
+    };
+    query?: never;
+    url: '/api/actors/{actor_id}/locks';
+};
+
+export type SetActorLocksErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetActorLocksError = SetActorLocksErrors[keyof SetActorLocksErrors];
+
+export type SetActorLocksResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActorResponse;
+};
+
+export type SetActorLocksResponse = SetActorLocksResponses[keyof SetActorLocksResponses];
+
+export type ClearActorPersonData = {
+    body?: never;
+    path: {
+        /**
+         * Actor Id
+         */
+        actor_id: number;
+    };
+    query?: never;
+    url: '/api/actors/{actor_id}/clear-person';
+};
+
+export type ClearActorPersonErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClearActorPersonError = ClearActorPersonErrors[keyof ClearActorPersonErrors];
+
+export type ClearActorPersonResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActorResponse;
+};
+
+export type ClearActorPersonResponse = ClearActorPersonResponses[keyof ClearActorPersonResponses];
 
 export type CropActorAvatarData = {
     body: CropAvatarRequest;

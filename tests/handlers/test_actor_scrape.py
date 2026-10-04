@@ -13,7 +13,7 @@ from amane.config import ActorScrapingConfig, HotSettings
 from amane.crawlers.actor import ActorFetcher, ActorMetadata
 from amane.crawlers.block import FailureReason
 from amane.db.models import Actor, FacetKind, Task, TaskStatus, TaskType
-from amane.enums import ActorGender, SiteName
+from amane.enums import ActorField, ActorGender, SiteName
 from amane.handlers.actor_scrape import ActorScrapeHandler
 from amane.handlers.models import ActorScrapePayload, CacheKind
 from amane.media import ResourceStore
@@ -106,6 +106,38 @@ async def test_actor_scrape_fills_empty_and_preserves_existing(repo: Repository,
     assert saved.name == "Alice"
     assert await repo.get_actor_aliases(actor_id) == ["ありす"]
     assert saved.image_urls == ["https://img.example/a.jpg"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_respects_locked_fields(repo: Repository, hot: HotSettings) -> None:
+    """锁定字段不被填 / 不被并集; 下载与任务结果同以过滤后集合为准."""
+    actor_id = await _actor_id(repo, "LockedActor")
+    await repo.set_actor_locks(actor_id, [ActorField.BIRTHDAY, ActorField.IMAGE_URLS])
+
+    minnano = _FakeActorCrawler({"LockedActor": ActorMetadata(name="LockedActor", birthday="2000-01-01", height=160)})
+    gfriends = _FakeActorCrawler(
+        {"LockedActor": ActorMetadata(name="LockedActor", image_urls=["https://img.example/a.jpg"])}
+    )
+    factory = _FakeFactory({"minnano": minnano, "gfriends": gfriends})
+    hot.actor_scraping.download_images = True
+    resource_store = AsyncMock()
+    handler = ActorScrapeHandler(repo, factory, resource_store, hot, web_client=cast("WebClient", AsyncMock()))
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id, use_cache=set()))
+
+    assert result.success
+    assert result.result is not None
+    saved = await repo.get_actor(actor_id)
+    assert saved is not None
+    assert saved.birthday is None  # 锁定空值不被填
+    assert saved.height == 160  # 未锁定字段照常
+    assert saved.image_urls == []  # 锁定 image_urls 不被并集
+    assert result.result.image_count == 0
+    assert "birthday" not in result.result.field_sources
+    assert "image_urls" not in result.result.field_sources
+    assert result.result.field_sources == saved.field_sources
+    # 注定丢弃的新图不下载.
+    resource_store.acquire.assert_not_awaited()
 
 
 @pytest.mark.asyncio(loop_scope="function")

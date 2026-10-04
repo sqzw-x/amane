@@ -6,7 +6,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 
 from ..db.models import FacetKind, TaskType
-from ..db.repo_types import ActorPersonFields
+from ..db.repo_types import ActorPersonFields, WriteMode
 from ..handlers.models import ActorScrapePayload, CacheKind
 from ..utils.dates import normalize_calendar_date
 from .tools import TOOL_OK, AgentDeps, unknown_field_error
@@ -143,7 +143,7 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
                 updates["birthday"] = normalized
             else:
                 return {"error": "birthday 须为 YYYY-MM-DD"}
-        actor = await ctx.deps.repo.update_actor(actor_id, **cast(ActorPersonFields, updates))
+        actor = await ctx.deps.repo.update_actor(actor_id, mode=WriteMode.MANUAL, **cast(ActorPersonFields, updates))
         if actor is None:
             return {"error": f"actor {actor_id} 不存在"}
         return TOOL_OK

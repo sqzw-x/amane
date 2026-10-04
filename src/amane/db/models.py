@@ -446,6 +446,10 @@ class Actor(SQLModel, table=True):
     source_urls: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     field_sources: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     raw: dict[str, dict[str, Any]] = Field(default_factory=dict, sa_column=Column(JSON))
+    # 人物字段级锁定; 契约见 docs/dev/data-model.md.
+    locked_fields: list[str] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False, server_default=text("'[]'"))
+    )
 
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
