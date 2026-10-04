@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type ServerSentEventsResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { BatchActorUserTagsData, BatchActorUserTagsErrors, BatchActorUserTagsResponses, BatchDeleteMetadataData, BatchDeleteMetadataErrors, BatchDeleteMetadataResponses, BatchDeleteSavedQueriesData, BatchDeleteSavedQueriesErrors, BatchDeleteSavedQueriesResponses, BatchFeedItemsData, BatchFeedItemsErrors, BatchFeedItemsResponses, BatchMetadataUserTagsData, BatchMetadataUserTagsErrors, BatchMetadataUserTagsResponses, BatchPersistSavedQueriesData, BatchPersistSavedQueriesErrors, BatchPersistSavedQueriesResponses, BatchScrapeMetadataData, BatchScrapeMetadataErrors, BatchScrapeMetadataResponses, BatchTasksData, BatchTasksErrors, BatchTasksResponses, CancelAguiTurnData, CancelAguiTurnErrors, CancelAguiTurnResponses, CheckConnectivityData, CheckConnectivityErrors, CheckConnectivityResponses, ClouddriveNotifyData, ClouddriveNotifyErrors, ClouddriveNotifyResponses, CreateAgentSessionData, CreateAgentSessionErrors, CreateAgentSessionResponses, CreateCommentData, CreateCommentErrors, CreateCommentResponses, CreateFeedData, CreateFeedErrors, CreateFeedResponses, CreateLibraryData, CreateLibraryErrors, CreateLibraryResponses, CreateSavedQueryData, CreateSavedQueryErrors, CreateSavedQueryResponses, CreateScheduleData, CreateScheduleErrors, CreateScheduleResponses, CreateUserTagsData, CreateUserTagsErrors, CreateUserTagsResponses, CropPosterFromThumbData, CropPosterFromThumbErrors, CropPosterFromThumbResponses, DeleteAgentSessionData, DeleteAgentSessionErrors, DeleteAgentSessionResponses, DeleteCommentData, DeleteCommentErrors, DeleteCommentResponses, DeleteFacetData, DeleteFacetErrors, DeleteFacetResponses, DeleteFacetRuleData, DeleteFacetRuleErrors, DeleteFacetRuleResponses, DeleteFeedData, DeleteFeedErrors, DeleteFeedResponses, DeleteLibraryData, DeleteLibraryErrors, DeleteLibraryResponses, DeleteMediaData, DeleteMediaErrors, DeleteMediaResponses, DeleteMetadataData, DeleteMetadataErrors, DeleteMetadataResponses, DeleteScheduleData, DeleteScheduleErrors, DeleteScheduleResponses, DesktopInfoData, DesktopInfoResponses, FollowAgentEventsData, FollowAgentEventsErrors, FollowAgentEventsResponses, GenerateAgentSessionTitleData, GenerateAgentSessionTitleErrors, GenerateAgentSessionTitleResponses, GetActorData, GetActorErrors, GetActorResponses, GetAgentTraceData, GetAgentTraceErrors, GetAgentTraceResponses, GetConfigData, GetConfigResponses, GetConfigSchemaData, GetConfigSchemaResponses, GetFacetData, GetFacetErrors, GetFacetResponses, GetFeedData, GetFeedErrors, GetFeedResponses, GetLibraryData, GetLibraryErrors, GetLibraryResponses, GetMediaData, GetMediaErrors, GetMediaResponses, GetMetadataData, GetMetadataErrors, GetMetadataResponses, GetMetadataSchemaData, GetMetadataSchemaResponses, GetPathTemplateSchemaData, GetPathTemplateSchemaResponses, GetPluginData, GetPluginErrors, GetPluginResponses, GetReleaseData, GetReleaseResponses, GetSavedQueryData, GetSavedQueryErrors, GetSavedQueryResponses, GetSavedQueryResultData, GetSavedQueryResultErrors, GetSavedQueryResultResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetScheduleSchemaData, GetScheduleSchemaResponses, GetTaskChildrenData, GetTaskChildrenErrors, GetTaskChildrenResponses, GetTaskData, GetTaskErrors, GetTaskRecordData, GetTaskRecordErrors, GetTaskRecordResponses, GetTaskReportData, GetTaskReportErrors, GetTaskReportResponses, GetTaskResponses, GetTaskSchemaData, GetTaskSchemaResponses, GetTaskWorkerData, GetTaskWorkerResponses, HealthCheckData, HealthCheckResponses, InstallPluginData, InstallPluginErrors, InstallPluginResponses, ListActorsData, ListActorsErrors, ListActorsResponses, ListAgentSessionsData, ListAgentSessionsResponses, ListAllFeedItemsData, ListAllFeedItemsErrors, ListAllFeedItemsResponses, ListFacetRulesData, ListFacetRulesErrors, ListFacetRulesResponses, ListFacetsData, ListFacetsErrors, ListFacetsResponses, ListFeedItemsData, ListFeedItemsErrors, ListFeedItemsResponses, ListFeedsData, ListFeedsResponses, ListFilesData, ListFilesErrors, ListFilesResponses, ListLibrariesData, ListLibrariesResponses, ListMediaData, ListMediaErrors, ListMediaResponses, ListMetadataData, ListMetadataErrors, ListMetadataResponses, ListPlaybackSourcesData, ListPlaybackSourcesResponses, ListPlaybackStreamsData, ListPlaybackStreamsErrors, ListPlaybackStreamsResponses, ListPluginsData, ListPluginsResponses, ListSavedQueriesData, ListSavedQueriesErrors, ListSavedQueriesResponses, ListSchedulesData, ListSchedulesResponses, ListTasksData, ListTasksErrors, ListTasksResponses, MergeFacetsData, MergeFacetsErrors, MergeFacetsResponses, MergeMetadataData, MergeMetadataErrors, MergeMetadataResponses, PauseTaskWorkerData, PauseTaskWorkerResponses, PlayMetadataData, PlayMetadataErrors, PlayMetadataHlsPartData, PlayMetadataHlsPartErrors, PlayMetadataHlsPartResponses, PlayMetadataPlaylistData, PlayMetadataPlaylistErrors, PlayMetadataPlaylistResponses, PlayMetadataResponses, PlayMetadataSubtitleData, PlayMetadataSubtitleErrors, PlayMetadataSubtitleResponses, PlayStreamData, PlayStreamErrors, PlayStreamHlsPartData, PlayStreamHlsPartErrors, PlayStreamHlsPartResponses, PlayStreamPlaylistData, PlayStreamPlaylistErrors, PlayStreamPlaylistResponses, PlayStreamResponses, PlayStreamSubtitleData, PlayStreamSubtitleErrors, PlayStreamSubtitleResponses, PollFeedData, PollFeedErrors, PollFeedResponses, ProxyImageData, ProxyImageErrors, ProxyImageResponses, ReloadPluginsData, ReloadPluginsResponses, RenameFacetData, RenameFacetErrors, RenameFacetResponses, RestartServerData, RestartServerResponses, ResumeTaskWorkerData, ResumeTaskWorkerResponses, RunAgentAguiData, RunAgentAguiErrors, RunAgentAguiResponses, ScrapeActorData, ScrapeActorErrors, ScrapeActorResponses, ServeResourceData, ServeResourceErrors, ServeResourceResponses, SetMetadataLocksData, SetMetadataLocksErrors, SetMetadataLocksResponses, SubmitTaskData, SubmitTaskErrors, SubmitTaskResponses, TriggerScheduleData, TriggerScheduleErrors, TriggerScheduleResponses, UninstallPluginData, UninstallPluginErrors, UninstallPluginResponses, UpdateActorData, UpdateActorErrors, UpdateActorResponses, UpdateAgentSessionData, UpdateAgentSessionErrors, UpdateAgentSessionResponses, UpdateCommentData, UpdateCommentErrors, UpdateCommentResponses, UpdateConfigData, UpdateConfigErrors, UpdateConfigResponses, UpdateFeedData, UpdateFeedErrors, UpdateFeedResponses, UpdateLibraryData, UpdateLibraryErrors, UpdateLibraryResponses, UpdateMediaData, UpdateMediaErrors, UpdateMediaResponses, UpdateMetadataData, UpdateMetadataErrors, UpdateMetadataResponses, UpdatePluginData, UpdatePluginErrors, UpdatePluginResponses, UpdateSavedQueryData, UpdateSavedQueryErrors, UpdateSavedQueryResponses, UpdateScheduleData, UpdateScheduleErrors, UpdateScheduleResponses } from './types.gen';
+import type { BatchActorUserTagsData, BatchActorUserTagsErrors, BatchActorUserTagsResponses, BatchDeleteMetadataData, BatchDeleteMetadataErrors, BatchDeleteMetadataResponses, BatchFeedItemsData, BatchFeedItemsErrors, BatchFeedItemsResponses, BatchMetadataUserTagsData, BatchMetadataUserTagsErrors, BatchMetadataUserTagsResponses, BatchSavedQueriesData, BatchSavedQueriesErrors, BatchSavedQueriesResponses, BatchScrapeMetadataData, BatchScrapeMetadataErrors, BatchScrapeMetadataResponses, BatchTasksData, BatchTasksErrors, BatchTasksResponses, CancelAguiTurnData, CancelAguiTurnErrors, CancelAguiTurnResponses, CheckConnectivityData, CheckConnectivityErrors, CheckConnectivityResponses, ClouddriveNotifyData, ClouddriveNotifyErrors, ClouddriveNotifyResponses, CreateAgentSessionData, CreateAgentSessionErrors, CreateAgentSessionResponses, CreateCommentData, CreateCommentErrors, CreateCommentResponses, CreateFeedData, CreateFeedErrors, CreateFeedResponses, CreateLibraryData, CreateLibraryErrors, CreateLibraryResponses, CreateSavedQueryData, CreateSavedQueryErrors, CreateSavedQueryResponses, CreateScheduleData, CreateScheduleErrors, CreateScheduleResponses, CreateUserTagsData, CreateUserTagsErrors, CreateUserTagsResponses, CropActorAvatarData, CropActorAvatarErrors, CropActorAvatarResponses, CropPosterFromThumbData, CropPosterFromThumbErrors, CropPosterFromThumbResponses, DeleteAgentSessionData, DeleteAgentSessionErrors, DeleteAgentSessionResponses, DeleteCommentData, DeleteCommentErrors, DeleteCommentResponses, DeleteFacetData, DeleteFacetErrors, DeleteFacetResponses, DeleteFacetRuleData, DeleteFacetRuleErrors, DeleteFacetRuleResponses, DeleteFeedData, DeleteFeedErrors, DeleteFeedResponses, DeleteLibraryData, DeleteLibraryErrors, DeleteLibraryResponses, DeleteMediaData, DeleteMediaErrors, DeleteMediaResponses, DeleteMetadataData, DeleteMetadataErrors, DeleteMetadataResponses, DeleteScheduleData, DeleteScheduleErrors, DeleteScheduleResponses, DesktopInfoData, DesktopInfoResponses, FollowAgentEventsData, FollowAgentEventsErrors, FollowAgentEventsResponses, GenerateAgentSessionTitleData, GenerateAgentSessionTitleErrors, GenerateAgentSessionTitleResponses, GetActorData, GetActorErrors, GetActorResponses, GetAgentTraceData, GetAgentTraceErrors, GetAgentTraceResponses, GetConfigData, GetConfigResponses, GetConfigSchemaData, GetConfigSchemaResponses, GetFacetData, GetFacetErrors, GetFacetResponses, GetFeedData, GetFeedErrors, GetFeedResponses, GetLibraryData, GetLibraryErrors, GetLibraryResponses, GetMediaData, GetMediaErrors, GetMediaResponses, GetMetadataData, GetMetadataErrors, GetMetadataResponses, GetMetadataSchemaData, GetMetadataSchemaResponses, GetPathTemplateSchemaData, GetPathTemplateSchemaResponses, GetPluginData, GetPluginErrors, GetPluginResponses, GetReleaseData, GetReleaseResponses, GetSavedQueryData, GetSavedQueryErrors, GetSavedQueryResponses, GetSavedQueryResultData, GetSavedQueryResultErrors, GetSavedQueryResultResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetScheduleSchemaData, GetScheduleSchemaResponses, GetTaskChildrenData, GetTaskChildrenErrors, GetTaskChildrenResponses, GetTaskData, GetTaskErrors, GetTaskRecordData, GetTaskRecordErrors, GetTaskRecordResponses, GetTaskReportData, GetTaskReportErrors, GetTaskReportResponses, GetTaskResponses, GetTaskSchemaData, GetTaskSchemaResponses, GetTaskWorkerData, GetTaskWorkerResponses, HealthCheckData, HealthCheckResponses, InstallPluginData, InstallPluginErrors, InstallPluginResponses, ListActorsData, ListActorsErrors, ListActorsResponses, ListAgentSessionsData, ListAgentSessionsResponses, ListAllFeedItemsData, ListAllFeedItemsErrors, ListAllFeedItemsResponses, ListFacetRulesData, ListFacetRulesErrors, ListFacetRulesResponses, ListFacetsData, ListFacetsErrors, ListFacetsResponses, ListFeedItemsData, ListFeedItemsErrors, ListFeedItemsResponses, ListFeedsData, ListFeedsResponses, ListFilesData, ListFilesErrors, ListFilesResponses, ListLibrariesData, ListLibrariesResponses, ListMediaData, ListMediaErrors, ListMediaResponses, ListMetadataData, ListMetadataErrors, ListMetadataResponses, ListPlaybackSourcesData, ListPlaybackSourcesResponses, ListPlaybackStreamsData, ListPlaybackStreamsErrors, ListPlaybackStreamsResponses, ListPluginsData, ListPluginsResponses, ListSavedQueriesData, ListSavedQueriesErrors, ListSavedQueriesResponses, ListSchedulesData, ListSchedulesResponses, ListTasksData, ListTasksErrors, ListTasksResponses, MergeFacetsData, MergeFacetsErrors, MergeFacetsResponses, MergeMetadataData, MergeMetadataErrors, MergeMetadataResponses, PauseTaskWorkerData, PauseTaskWorkerResponses, PlayMetadataData, PlayMetadataErrors, PlayMetadataHlsPartData, PlayMetadataHlsPartErrors, PlayMetadataHlsPartResponses, PlayMetadataPlaylistData, PlayMetadataPlaylistErrors, PlayMetadataPlaylistResponses, PlayMetadataResponses, PlayMetadataSubtitleData, PlayMetadataSubtitleErrors, PlayMetadataSubtitleResponses, PlayStreamData, PlayStreamErrors, PlayStreamHlsPartData, PlayStreamHlsPartErrors, PlayStreamHlsPartResponses, PlayStreamPlaylistData, PlayStreamPlaylistErrors, PlayStreamPlaylistResponses, PlayStreamResponses, PlayStreamSubtitleData, PlayStreamSubtitleErrors, PlayStreamSubtitleResponses, PollFeedData, PollFeedErrors, PollFeedResponses, ProxyImageData, ProxyImageErrors, ProxyImageResponses, ReloadPluginsData, ReloadPluginsResponses, RenameFacetData, RenameFacetErrors, RenameFacetResponses, RestartServerData, RestartServerResponses, ResumeTaskWorkerData, ResumeTaskWorkerResponses, RunAgentAguiData, RunAgentAguiErrors, RunAgentAguiResponses, ScrapeActorData, ScrapeActorErrors, ScrapeActorResponses, ServeResourceData, ServeResourceErrors, ServeResourceResponses, SetMetadataLocksData, SetMetadataLocksErrors, SetMetadataLocksResponses, SubmitTaskData, SubmitTaskErrors, SubmitTaskResponses, TriggerScheduleData, TriggerScheduleErrors, TriggerScheduleResponses, UninstallPluginData, UninstallPluginErrors, UninstallPluginResponses, UpdateActorData, UpdateActorErrors, UpdateActorResponses, UpdateAgentSessionData, UpdateAgentSessionErrors, UpdateAgentSessionResponses, UpdateCommentData, UpdateCommentErrors, UpdateCommentResponses, UpdateConfigData, UpdateConfigErrors, UpdateConfigResponses, UpdateFeedData, UpdateFeedErrors, UpdateFeedResponses, UpdateLibraryData, UpdateLibraryErrors, UpdateLibraryResponses, UpdateMediaData, UpdateMediaErrors, UpdateMediaResponses, UpdateMetadataData, UpdateMetadataErrors, UpdateMetadataResponses, UpdatePluginData, UpdatePluginErrors, UpdatePluginResponses, UpdateSavedQueryData, UpdateSavedQueryErrors, UpdateSavedQueryResponses, UpdateScheduleData, UpdateScheduleErrors, UpdateScheduleResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -345,6 +345,20 @@ export const getActor = <ThrowOnError extends boolean = false>(options: Options<
  */
 export const updateActor = <ThrowOnError extends boolean = false>(options: Options<UpdateActorData, ThrowOnError>): RequestResult<UpdateActorResponses, UpdateActorErrors, ThrowOnError> => (options.client ?? client).patch<UpdateActorResponses, UpdateActorErrors, ThrowOnError>({
     url: '/api/actors/{actor_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Crop Actor Avatar
+ *
+ * 从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图.
+ */
+export const cropActorAvatar = <ThrowOnError extends boolean = false>(options: Options<CropActorAvatarData, ThrowOnError>): RequestResult<CropActorAvatarResponses, CropActorAvatarErrors, ThrowOnError> => (options.client ?? client).post<CropActorAvatarResponses, CropActorAvatarErrors, ThrowOnError>({
+    url: '/api/actors/{actor_id}/crop-avatar',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -813,6 +827,31 @@ export const generateAgentSessionTitle = <ThrowOnError extends boolean = false>(
 export const getAgentTrace = <ThrowOnError extends boolean = false>(options: Options<GetAgentTraceData, ThrowOnError>): RequestResult<GetAgentTraceResponses, GetAgentTraceErrors, ThrowOnError> => (options.client ?? client).get<GetAgentTraceResponses, GetAgentTraceErrors, ThrowOnError>({ url: '/api/agent/sessions/{session_id}/trace', ...options });
 
 /**
+ * Run Agent Agui
+ *
+ * 启动 AG-UI 回合 (后台执行) 并订阅其事件. ``threadId`` 由适配器映射为 ``conversation_id``.
+ */
+export const runAgentAgui = <ThrowOnError extends boolean = false>(options: Options<RunAgentAguiData, ThrowOnError, unknown>): Promise<ServerSentEventsResult<RunAgentAguiResponses>> => (options.client ?? client).sse.post<RunAgentAguiResponses, RunAgentAguiErrors, ThrowOnError>({ url: '/api/agent/sessions/{session_id}/agui', ...options });
+
+/**
+ * Follow Agent Events
+ *
+ * 跟随 ``after_seq`` 之后的回放行, 供页面接上进度: 整段历史走 ``/trace``, 这里只接新行.
+ *
+ * 页面发起的回合也走这条通道 (展示只认回放行), 因此必须能给出起始位置: 否则每接一次都要重发整段历史.
+ *
+ * 只订阅, **不**启动回合, 故进行中的回合也不会 409; 回合结束且追平后关闭.
+ */
+export const followAgentEvents = <ThrowOnError extends boolean = false>(options: Options<FollowAgentEventsData, ThrowOnError, unknown>): Promise<ServerSentEventsResult<FollowAgentEventsResponses>> => (options.client ?? client).sse.get<FollowAgentEventsResponses, FollowAgentEventsErrors, ThrowOnError>({ url: '/api/agent/sessions/{session_id}/agui/events', ...options });
+
+/**
+ * Cancel Agui Turn
+ *
+ * 显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续运行.
+ */
+export const cancelAguiTurn = <ThrowOnError extends boolean = false>(options: Options<CancelAguiTurnData, ThrowOnError>): RequestResult<CancelAguiTurnResponses, CancelAguiTurnErrors, ThrowOnError> => (options.client ?? client).post<CancelAguiTurnResponses, CancelAguiTurnErrors, ThrowOnError>({ url: '/api/agent/sessions/{session_id}/agui/cancel', ...options });
+
+/**
  * List Saved Queries
  */
 export const listSavedQueries = <ThrowOnError extends boolean = false>(options?: Options<ListSavedQueriesData, ThrowOnError>): RequestResult<ListSavedQueriesResponses, ListSavedQueriesErrors, ThrowOnError> => (options?.client ?? client).get<ListSavedQueriesResponses, ListSavedQueriesErrors, ThrowOnError>({ url: '/api/saved-queries', ...options });
@@ -851,26 +890,12 @@ export const updateSavedQuery = <ThrowOnError extends boolean = false>(options: 
 });
 
 /**
- * Batch Delete Saved Queries
+ * Batch Saved Queries
  *
- * AgentService 未装配时跳过缓存失效.
+ * 不存在的 id 计入 missing; 重复 id 只处理一次. AgentService 未装配时 delete 跳过缓存失效.
  */
-export const batchDeleteSavedQueries = <ThrowOnError extends boolean = false>(options: Options<BatchDeleteSavedQueriesData, ThrowOnError>): RequestResult<BatchDeleteSavedQueriesResponses, BatchDeleteSavedQueriesErrors, ThrowOnError> => (options.client ?? client).post<BatchDeleteSavedQueriesResponses, BatchDeleteSavedQueriesErrors, ThrowOnError>({
-    url: '/api/saved-queries/batch/delete',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Batch Persist Saved Queries
- *
- * 置为已保留并解绑会话; 幂等.
- */
-export const batchPersistSavedQueries = <ThrowOnError extends boolean = false>(options: Options<BatchPersistSavedQueriesData, ThrowOnError>): RequestResult<BatchPersistSavedQueriesResponses, BatchPersistSavedQueriesErrors, ThrowOnError> => (options.client ?? client).post<BatchPersistSavedQueriesResponses, BatchPersistSavedQueriesErrors, ThrowOnError>({
-    url: '/api/saved-queries/batch/persist',
+export const batchSavedQueries = <ThrowOnError extends boolean = false>(options: Options<BatchSavedQueriesData, ThrowOnError>): RequestResult<BatchSavedQueriesResponses, BatchSavedQueriesErrors, ThrowOnError> => (options.client ?? client).post<BatchSavedQueriesResponses, BatchSavedQueriesErrors, ThrowOnError>({
+    url: '/api/saved-queries/batch',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -882,28 +907,3 @@ export const batchPersistSavedQueries = <ThrowOnError extends boolean = false>(o
  * Get Saved Query Result
  */
 export const getSavedQueryResult = <ThrowOnError extends boolean = false>(options: Options<GetSavedQueryResultData, ThrowOnError>): RequestResult<GetSavedQueryResultResponses, GetSavedQueryResultErrors, ThrowOnError> => (options.client ?? client).get<GetSavedQueryResultResponses, GetSavedQueryResultErrors, ThrowOnError>({ url: '/api/saved-queries/{query_id}/result', ...options });
-
-/**
- * Run Agent Agui
- *
- * 启动 AG-UI 回合 (后台执行) 并订阅其事件. ``threadId`` 由适配器映射为 ``conversation_id``.
- */
-export const runAgentAgui = <ThrowOnError extends boolean = false>(options: Options<RunAgentAguiData, ThrowOnError, unknown>): Promise<ServerSentEventsResult<RunAgentAguiResponses>> => (options.client ?? client).sse.post<RunAgentAguiResponses, RunAgentAguiErrors, ThrowOnError>({ url: '/api/agent/sessions/{session_id}/agui', ...options });
-
-/**
- * Follow Agent Events
- *
- * 跟随 ``after_seq`` 之后的回放行, 供页面接上进度: 整段历史走 ``/trace``, 这里只接新行.
- *
- * 页面发起的回合也走这条通道 (展示只认回放行), 因此必须能给出起始位置: 否则每接一次都要重发整段历史.
- *
- * 只订阅, **不**启动回合, 故进行中的回合也不会 409; 回合结束且追平后关闭.
- */
-export const followAgentEvents = <ThrowOnError extends boolean = false>(options: Options<FollowAgentEventsData, ThrowOnError, unknown>): Promise<ServerSentEventsResult<FollowAgentEventsResponses>> => (options.client ?? client).sse.get<FollowAgentEventsResponses, FollowAgentEventsErrors, ThrowOnError>({ url: '/api/agent/sessions/{session_id}/agui/events', ...options });
-
-/**
- * Cancel Agui Turn
- *
- * 显式终止后台回合: 客户端 abort 只是断开订阅, 回合会继续运行.
- */
-export const cancelAguiTurn = <ThrowOnError extends boolean = false>(options: Options<CancelAguiTurnData, ThrowOnError>): RequestResult<CancelAguiTurnResponses, CancelAguiTurnErrors, ThrowOnError> => (options.client ?? client).post<CancelAguiTurnResponses, CancelAguiTurnErrors, ThrowOnError>({ url: '/api/agent/sessions/{session_id}/agui/cancel', ...options });

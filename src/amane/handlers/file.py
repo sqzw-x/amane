@@ -14,7 +14,7 @@ from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
 from ..library.rules import is_in_trash
 from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
 from ..media import write_nfo as write_nfo_file
-from ..media.pipeline import RESOURCE_URL_PREFIX
+from ..media.resource_store import internal_url_hash
 from ..net.http import WebClient
 from ..organize import (
     MoveMode,
@@ -245,11 +245,7 @@ async def commit_organized_media_file(
 
 
 async def _resolve_local(url: str, store: ResourceStore, client: WebClient) -> Path | None:
-    """内部 `/api/resources/{hash}` 查 store 已存文件; 外部 URL 经 store.acquire (命中缓存直出)."""
-    if url.startswith(RESOURCE_URL_PREFIX):
-        url_hash = url.rsplit("/", 1)[-1]
-        found = await store.get_by_url_hash(url_hash)
-        return found[1] if found else None
+    """内部 `/api/resources/{hash}` 与外部 URL 均由 store 解析 (命中缓存直出)."""
     return await store.acquire(url, client)
 
 
@@ -528,9 +524,9 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
 def _add_resource_ref(url: str, live_urls: set[str], live_hashes: set[str]) -> None:
     if not url:
         return
-    prefix = f"{RESOURCE_URL_PREFIX}/"
-    if url.startswith(prefix):
-        live_hashes.add(url[len(prefix) :].split("?", 1)[0])
+    url_hash = internal_url_hash(url)
+    if url_hash is not None:
+        live_hashes.add(url_hash)
     else:
         live_urls.add(url)
 

@@ -27,8 +27,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  batchDeleteSavedQueriesMutation,
-  batchPersistSavedQueriesMutation,
+  batchSavedQueriesMutation,
   listSavedQueriesOptions,
 } from "@/client/@tanstack/react-query.gen";
 import type { SavedQueryResponse } from "@/client/types.gen";
@@ -47,7 +46,7 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
   const { t } = useTranslation(["agent", "savedQueries", "common"]);
   const [open, setOpen] = useState(false);
   const deleteMutation = useMutation({
-    ...batchDeleteSavedQueriesMutation(),
+    ...batchSavedQueriesMutation(),
     onSuccess: onChanged,
     onError: (err) =>
       notifications.show({
@@ -56,7 +55,7 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
       }),
   });
   const persistMutation = useMutation({
-    ...batchPersistSavedQueriesMutation(),
+    ...batchSavedQueriesMutation(),
     onSuccess: () => {
       notifications.show({ color: "blue", message: t("persistedToast", { ns: "savedQueries" }) });
       onChanged();
@@ -78,7 +77,7 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
       confirmLabel: t("common:actions.delete"),
     });
     if (!ok) return;
-    deleteMutation.mutate({ body: { ids: [item.id] } });
+    deleteMutation.mutate({ body: { action: "delete", ids: [item.id] } });
   }
 
   return (
@@ -168,7 +167,9 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
               variant="default"
               leftSection={<IconBookmark size={14} />}
               loading={persistMutation.isPending}
-              onClick={() => persistMutation.mutate({ body: { ids: [item.id] } })}
+              onClick={() =>
+                persistMutation.mutate({ body: { action: "persist", ids: [item.id] } })
+              }
             >
               {t("persist", { ns: "savedQueries" })}
             </Button>

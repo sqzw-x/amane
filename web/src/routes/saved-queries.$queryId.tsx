@@ -28,8 +28,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import {
-  batchDeleteSavedQueriesMutation,
-  batchPersistSavedQueriesMutation,
+  batchSavedQueriesMutation,
   getSavedQueryOptions,
   getSavedQueryResultOptions,
   updateSavedQueryMutation,
@@ -116,7 +115,7 @@ function SavedQueryDataPage() {
     onError: showError,
   });
   const persistMutation = useMutation({
-    ...batchPersistSavedQueriesMutation(),
+    ...batchSavedQueriesMutation(),
     onSuccess: () => {
       notifications.show({ color: "blue", message: t("persistedToast") });
       invalidateQueries();
@@ -124,9 +123,9 @@ function SavedQueryDataPage() {
     onError: showError,
   });
   const deleteMutation = useMutation({
-    ...batchDeleteSavedQueriesMutation(),
+    ...batchSavedQueriesMutation(),
     onSuccess: async (result) => {
-      if (result.deleted === 0) {
+      if (result.affected === 0) {
         notifications.show({
           color: "yellow",
           message: t("deleteNothingToast", { missing: result.missing }),
@@ -134,7 +133,7 @@ function SavedQueryDataPage() {
       } else {
         notifications.show({
           color: "blue",
-          message: t("deletedToast", { count: result.deleted }),
+          message: t("deletedToast", { count: result.affected }),
         });
       }
       await qc.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
@@ -160,7 +159,7 @@ function SavedQueryDataPage() {
       confirmLabel: t("common:actions.delete"),
     });
     if (!ok) return;
-    deleteMutation.mutate({ body: { ids: [id] } });
+    deleteMutation.mutate({ body: { action: "delete", ids: [id] } });
   }
 
   function openEdit() {
@@ -242,7 +241,7 @@ function SavedQueryDataPage() {
               size="xs"
               variant="default"
               loading={persistMutation.isPending}
-              onClick={() => persistMutation.mutate({ body: { ids: [id] } })}
+              onClick={() => persistMutation.mutate({ body: { action: "persist", ids: [id] } })}
             >
               {t("persist")}
             </Button>

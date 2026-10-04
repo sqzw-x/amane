@@ -236,6 +236,11 @@
     "noPhoto": "暂无头像",
     "goToLibrary": "转到片库",
     "editTitle": "编辑演员",
+    "cropAvatar": {
+      "action": "裁切头像",
+      "title": "裁切头像",
+      "success": "头像已更新"
+    },
     "genderHint": "未知时仅查询通用来源, 避免误匹配. 部分来源可自动获取此字段",
     "genderUnknownHint": "",
     "aliasesHint": "回车或逗号添加，点 × 删除",

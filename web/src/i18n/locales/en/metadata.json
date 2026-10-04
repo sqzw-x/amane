@@ -246,6 +246,11 @@
     "noPhoto": "No photo",
     "goToLibrary": "Go to library",
     "editTitle": "Edit actor",
+    "cropAvatar": {
+      "action": "Crop photo",
+      "title": "Crop photo",
+      "success": "Photo updated"
+    },
     "genderHint": "When unknown, only generic sources are queried to avoid false matches. Some sources can fill this field automatically",
     "genderUnknownHint": "",
     "aliasesHint": "Press Enter or comma to add; click × to remove",

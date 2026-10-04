@@ -16,6 +16,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
+  IconCrop,
   IconEraser,
   IconExternalLink,
   IconFilter,
@@ -42,6 +43,7 @@ import {
 import type { ActorResponse, CacheKind } from "@/client/types.gen";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
 import { SortMenu } from "@/components/common/sort-menu";
+import { ActorAvatarCropDialog } from "@/components/media/actor-avatar-crop-dialog";
 import { ActorEditDialog } from "@/components/media/actor-edit-dialog";
 import { ActorUserTags } from "@/components/media/actor-user-tags";
 import { FanartLightbox } from "@/components/media/fanart-lightbox";
@@ -90,6 +92,7 @@ function ActorDetailPage() {
   const validId = Number.isInteger(id) && id > 0;
 
   const [editOpen, setEditOpen] = useState(false);
+  const [cropOpen, setCropOpen] = useState(false);
   const actorWorksSort = useUIStore((state) => state.actorWorksSort);
   const setActorWorksSort = useUIStore((state) => state.setActorWorksSort);
 
@@ -255,6 +258,7 @@ function ActorDetailPage() {
             })
           }
           onEdit={() => setEditOpen(true)}
+          onCrop={() => setCropOpen(true)}
           onClear={() => void handleClear()}
           onDelete={() => void handleDelete()}
           onSetDisplay={(alias) => void handleSetDisplay(alias)}
@@ -305,6 +309,16 @@ function ActorDetailPage() {
           onSave={(body) => updateMutation.mutate({ path: { actor_id: id }, body })}
         />
       )}
+
+      {actor && (actor.image_urls?.[0] ?? "") !== "" && (
+        <ActorAvatarCropDialog
+          opened={cropOpen}
+          onClose={() => setCropOpen(false)}
+          actorId={actor.id}
+          imageUrl={actor.image_urls?.[0] ?? ""}
+          onSuccess={invalidate}
+        />
+      )}
     </Stack>
   );
 }
@@ -315,6 +329,7 @@ function ActorHero({
   clearPending,
   onScrape,
   onEdit,
+  onCrop,
   onClear,
   onDelete,
   onSetDisplay,
@@ -324,6 +339,7 @@ function ActorHero({
   clearPending: boolean;
   onScrape: (useCache: CacheKind[]) => void;
   onEdit: () => void;
+  onCrop: () => void;
   onClear: () => void;
   onDelete: () => void;
   onSetDisplay: (alias: string) => void;
@@ -411,6 +427,18 @@ function ActorHero({
               {t("actors.noPhoto")}
             </Text>
           </Box>
+        )}
+        {primaryImage && (
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconCrop size={14} />}
+            mt="xs"
+            fullWidth
+            onClick={onCrop}
+          >
+            {t("actors.cropAvatar.action")}
+          </Button>
         )}
       </Box>
 

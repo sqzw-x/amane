@@ -20,6 +20,7 @@ from .images import (
     should_crop_poster,
     validate_crop_box,
 )
+from .resource_store import RESOURCE_URL_PREFIX
 
 if TYPE_CHECKING:
     from ..config import HotSettings, SrConfig
@@ -28,8 +29,6 @@ if TYPE_CHECKING:
     from .resource_store import ResourceStore
 
 logger = structlog.get_logger()
-
-RESOURCE_URL_PREFIX = "/api/resources"
 
 
 @dataclass
@@ -192,22 +191,27 @@ async def materialize_images(
     return out
 
 
-async def manual_crop_poster(
-    thumb_url: str,
+async def manual_crop_image(
+    source_url: str,
     box: tuple[int, int, int, int],
     store: ResourceStore,
     client: WebClient,
     config: HotSettings,
     data_dir: Path,
+    *,
+    subject: str,
 ) -> str:
-    """失败抛 ``ValueError`` (消息可直接作 API detail)."""
-    local = await store.acquire(thumb_url, client)
-    if local is None:
-        raise ValueError("无法获取封面图")
+    """手动裁切源图, 返回内部 URL. 源可为外部 http(s) 或 ``/api/resources/{hash}``.
 
-    size = probe_size(local)
+    失败抛 ``ValueError`` (消息可直接作 API detail); ``subject`` 组装提示文案 (如「封面图」「头像」).
+    """
+    source = await store.resolve_source(source_url, client)
+    if source is None:
+        raise ValueError(f"无法获取{subject}")
+
+    size = probe_size(source.path)
     if size is None:
-        raise ValueError("封面图无法读取")
+        raise ValueError(f"{subject}无法读取")
     if not validate_crop_box(box, size):
         raise ValueError("裁切区域无效")
 
@@ -215,9 +219,9 @@ async def manual_crop_poster(
     jpeg_quality = config.scraping.jpeg_quality
 
     async def producer(dest: Path) -> bool:
-        return crop_box(local, dest, box, jpeg_quality=jpeg_quality)
+        return crop_box(source.path, dest, box, jpeg_quality=jpeg_quality)
 
-    crop_res = await store.acquire_derived(thumb_url, "crop", args, producer)
+    crop_res = await store.acquire_derived(source.locator, "crop", args, producer)
     if crop_res is None:
         raise ValueError("裁切失败")
 

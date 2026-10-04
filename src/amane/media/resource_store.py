@@ -2,6 +2,7 @@
 
 派生资源用合成 locator ``derived:{sha256(src)}:{op}:{args}``.
 就地超分覆盖原文件, URL 不变, meta 打 ``sr`` 标记.
+内部 URL ``/api/resources/{hash}`` 是对既有 Resource 的引用, 解析为本地文件而不发请求.
 """
 
 import asyncio
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
+RESOURCE_URL_PREFIX = "/api/resources"
+
 # 上游把已下架资源重定向到 200 的占位图 (DMM 的 now_printing) 时不能算获取成功:
 # 否则该 URL 会被判为可用并前置, 前端最终显示占位图本身.
 _PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/",)
@@ -35,6 +38,15 @@ _PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/",)
 def _is_placeholder_url(url: str) -> bool:
     path = urlsplit(url).path.lower()
     return any(marker in path for marker in _PLACEHOLDER_PATH_MARKERS)
+
+
+def internal_url_hash(url: str) -> str | None:
+    """内部 URL 的 hash; 非内部 URL 返回 None. 查询串与额外路径段一律剥离."""
+    prefix = f"{RESOURCE_URL_PREFIX}/"
+    if not url.startswith(prefix):
+        return None
+    token = url[len(prefix) :].split("?", 1)[0].split("/", 1)[0]
+    return token or None
 
 
 def _url_hash(url: str) -> str:
@@ -61,6 +73,14 @@ class AcquireResult:
     path: Path | None = None
     used_url: str | None = None
     failed: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class ResolvedSource:
+    """处理入口的源解析结果: 底层 locator 与本地文件."""
+
+    locator: str
+    path: Path
 
 
 class ResourceStore:
@@ -109,6 +129,12 @@ class ResourceStore:
             return full_path
 
     async def acquire(self, url: str, client: WebClient) -> Path | None:
+        # 内部 URL 是对既有 Resource 的引用: 直接解析本地文件, 不下载也不写记录.
+        internal = internal_url_hash(url)
+        if internal is not None:
+            found = await self.get_by_url_hash(internal)
+            return found[1] if found else None
+
         # 缓存命中且文件存在则直出.
         cached = await self.resolve(url)
         if cached:
@@ -145,6 +171,22 @@ class ResourceStore:
             await session.commit()
 
         return dest
+
+    async def resolve_source(self, url: str, client: WebClient) -> ResolvedSource | None:
+        """处理入口的源解析: 内部 URL 定位既有 Resource, 外部仅接受 http(s), 其余返回 None."""
+        internal = internal_url_hash(url)
+        if internal is not None:
+            found = await self.get_by_url_hash(internal)
+            if found is None:
+                return None
+            return ResolvedSource(locator=found[0].url, path=found[1])
+
+        if not url.startswith(("http://", "https://")):
+            return None
+        path = await self.acquire(url, client)
+        if path is None:
+            return None
+        return ResolvedSource(locator=url, path=path)
 
     async def get_by_url(self, url: str) -> Resource | None:
         async with self._session() as session:

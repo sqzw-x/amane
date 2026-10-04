@@ -37,7 +37,7 @@ from amane.api.models import (
     PartialMetadata,
     ScheduleUpdateRequest,
 )
-from amane.api.models.agent import SavedQueryUpdateRequest
+from amane.api.models.saved_queries import SavedQueryUpdateRequest
 from amane.db import Feed, Library, MediaFile, Metadata, Repository, SavedQuery, Schedule
 from amane.db.models import RoutineType
 from amane.db.repo_types import (

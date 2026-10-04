@@ -7,7 +7,7 @@ from PIL import Image
 
 from amane.config import HotSettings
 from amane.enums import DownloadableResource
-from amane.media import ResourceStore, materialize_images
+from amane.media import ResourceStore, manual_crop_image, materialize_images
 from amane.media import pipeline as pipeline_mod
 
 if TYPE_CHECKING:
@@ -227,6 +227,80 @@ async def test_thumb_trailer_reordered_when_first_dead(resource_store: ResourceS
     )
     assert out.thumb_urls == ["https://s/live.jpg", "https://s/dead.jpg"]
     assert out.trailer_urls == ["https://s/trailer.mp4", "https://s/dead.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_manual_crop_image_external_source(resource_store: ResourceStore, tmp_path: Path):
+    client = FakeClient({"https://s/a.jpg": (800, 538)})
+
+    url = await manual_crop_image(
+        "https://s/a.jpg",
+        (0, 0, 400, 538),
+        resource_store,
+        cast("WebClient", client),
+        HotSettings(),
+        tmp_path,
+        subject="头像",
+    )
+
+    assert url.startswith(pipeline_mod.RESOURCE_URL_PREFIX)
+    got = await resource_store.get_by_url_hash(url.rsplit("/", 1)[-1])
+    assert got is not None
+    record, path = got
+    assert record.meta == {"op": "crop", "src": "https://s/a.jpg", "args": "box:0,0,400,538"}
+    assert Image.open(path).size == (400, 538)
+
+
+@pytest.mark.asyncio
+async def test_manual_crop_image_internal_source_records_locator(resource_store: ResourceStore, tmp_path: Path):
+    async def producer(dest: Path) -> bool:
+        Image.new("RGB", (400, 538), "blue").save(dest)
+        return True
+
+    seed = await resource_store.acquire_derived("https://s/orig.jpg", "crop", "box:0,0,400,538", producer)
+    assert seed is not None
+    internal = f"{pipeline_mod.RESOURCE_URL_PREFIX}/{ResourceStore.url_hash(seed.url)}"
+
+    class _ExplodingClient:
+        async def download(self, url: str, dest: Path, **kwargs: object) -> bool:
+            raise AssertionError("内部源不应触网")
+
+    url = await manual_crop_image(
+        internal,
+        (0, 0, 200, 269),
+        resource_store,
+        cast("WebClient", _ExplodingClient()),
+        HotSettings(),
+        tmp_path,
+        subject="头像",
+    )
+
+    got = await resource_store.get_by_url_hash(url.rsplit("/", 1)[-1])
+    assert got is not None
+    record, path = got
+    assert record.meta is not None
+    assert record.meta["src"] == seed.url  # 底层 locator, 而非内部 URL
+    assert Image.open(path).size == (200, 269)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_url", "box", "message"),
+    [
+        ("https://s/missing.jpg", (0, 0, 10, 10), "无法获取头像"),
+        ("data:image/png;base64,AAAA", (0, 0, 10, 10), "无法获取头像"),
+        ("https://s/video.mp4", (0, 0, 10, 10), "头像无法读取"),
+        ("https://s/a.jpg", (10, 0, 5, 10), "裁切区域无效"),
+    ],
+)
+async def test_manual_crop_image_invalid_inputs(
+    resource_store: ResourceStore, tmp_path: Path, source_url: str, box: tuple[int, int, int, int], message: str
+):
+    client = FakeClient({"https://s/a.jpg": (800, 538)}, fail={"https://s/missing.jpg"})
+    with pytest.raises(ValueError, match=message):
+        await manual_crop_image(
+            source_url, box, resource_store, cast("WebClient", client), HotSettings(), tmp_path, subject="头像"
+        )
 
 
 @pytest.mark.asyncio

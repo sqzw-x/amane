@@ -9,7 +9,7 @@ from ...db.models import MetadataSortField, SavedQueryEntity, SortOrder, TaskTyp
 from ...db.repo_types import MetadataWriteMode
 from ...db.repos.media import file_phase_of
 from ...handlers import ScrapePayload
-from ...media import manual_crop_poster
+from ...media import manual_crop_image
 from ...parsing import DEFINITION_VALUES, ContentType, Mosaic, infer_content_type, summarize_file_phases
 from ...parsing import FilePhaseSummary as ParsedFilePhase
 from ...utils.dates import normalize_calendar_date
@@ -34,7 +34,7 @@ from ..models import (
     UserTagLinksResponse,
     UserTagResponse,
 )
-from .agent import resolve_saved_query_id_subquery
+from .saved_queries import resolve_saved_query_id_subquery
 
 if TYPE_CHECKING:
     from ...db.repo_types import MetadataFields
@@ -285,13 +285,14 @@ async def crop_poster_from_thumb(
     thumb_url = metadata.thumb_urls[0]
     box = (req.left, req.top, req.right, req.bottom)
     try:
-        poster_url = await manual_crop_poster(
+        poster_url = await manual_crop_image(
             thumb_url,
             box,
             runtime.resource_store,
             runtime.web_client,
             runtime.config.hot,
             runtime.config.cold.data_dir,
+            subject="封面图",
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

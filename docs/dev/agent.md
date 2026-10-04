@@ -71,7 +71,7 @@
 
 | 通道 | 用途 |
 |------|------|
-| REST | 会话 CRUD、标题生成、`trace`、Saved Query list / get / create / patch / batch delete / batch persist / result |
+| REST | 会话 CRUD、标题生成、`trace` |
 | **AG-UI** | `POST /agent/sessions/{id}/agui` 启动后台回合并订阅; `GET .../agui/events` 只跟随回放行; `POST .../agui/cancel` 终止 |
 | `/ws` | 任务日志等广播 — **不**承载对话 |
 
