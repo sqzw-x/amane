@@ -304,20 +304,31 @@ function TitleDetailPage() {
   const [lockTarget, setLockTarget] = useState<{ id: number; fields: MetadataField[] } | null>(
     null,
   );
+  // 锁写入单飞: 在途期间的点击合并为最后目标, 结算后补发, 避免并发 PUT 乱序丢切换.
+  const queuedLocksRef = useRef<{ id: number; fields: MetadataField[] } | null>(null);
   const lockMutation = useMutation({
     ...setMetadataLocksMutation(),
-    onSuccess: async () => {
-      // 等详情重取完成再撤销乐观显示, 否则图标会先回退再翻转.
+    onSuccess: async (_data, variables) => {
+      // 按本次请求的条目失效, 补发旧条目时不会误刷当前页; 等详情重取完成再撤销乐观显示.
       await queryClient.invalidateQueries({
-        queryKey: getMetadataQueryKey({ path: { metadata_id: id } }),
+        queryKey: getMetadataQueryKey({ path: { metadata_id: variables.path.metadata_id } }),
       });
     },
-    onError: (err) =>
+    onError: (err) => {
+      queuedLocksRef.current = null;
       notifications.show({
         message: extractErrorMessage(err, t("common:toast.operationFailed")),
         color: "red",
-      }),
+      });
+    },
     onSettled: () => {
+      const queued = queuedLocksRef.current;
+      queuedLocksRef.current = null;
+      if (queued) {
+        // 条目已切换时也补发其最后目标; 乐观显示按条目 id 生效, 不受影响.
+        lockMutation.mutate({ path: { metadata_id: queued.id }, body: { fields: queued.fields } });
+        return;
+      }
       setPendingLock(null);
       setLockTarget(null);
     },
@@ -326,7 +337,7 @@ function TitleDetailPage() {
     () => new Set<MetadataField>(data?.metadata.locked_fields ?? []),
     [data?.metadata.locked_fields],
   );
-  // 请求期间与确认前按目标集合显示; 只有被点击的字段进入 busy, 其余锁图标不集体变灰.
+  // 目标集合先于服务端确认显示; 在途请求期间其他锁控件保持原样式, 只把点击并入单飞队列.
   const lockedFields = useMemo(
     () =>
       lockTarget && lockTarget.id === id
@@ -418,9 +429,15 @@ function TitleDetailPage() {
   const allLocked = LOCKABLE_FIELDS.every((field) => lockedFields.has(field));
 
   function applyLocks(fields: readonly MetadataField[], pending: MetadataField | null = null) {
+    const target = [...fields];
     setPendingLock(pending);
-    setLockTarget({ id, fields: [...fields] });
-    lockMutation.mutate({ path: { metadata_id: id }, body: { fields: [...fields] } });
+    setLockTarget({ id, fields: target });
+    if (lockMutation.isPending) {
+      // 单飞: 在途请求结束后补发最后目标, 中间的多次点击合并.
+      queuedLocksRef.current = { id, fields: target };
+      return;
+    }
+    lockMutation.mutate({ path: { metadata_id: id }, body: { fields: target } });
   }
 
   function toggleLock(field: MetadataField) {
