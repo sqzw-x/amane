@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ...db import Metadata
 from ...enums import ActorGender, MetadataField
@@ -12,6 +12,8 @@ from .comments import CommentResponse
 from .crop import CropBoxRequest
 from .media import MediaFileResponse
 from .user_tags import UserTagResponse
+
+_METADATA_FIELD_VALUES = frozenset(str(field) for field in MetadataField)
 
 
 class FilePhaseSummary(BaseModel):
@@ -51,6 +53,15 @@ class MetadataResponse(BaseModel):
     field_sources: dict = {}
     raw: dict = {}
     locked_fields: list[MetadataField] = []
+
+    @field_validator("locked_fields", mode="before")
+    @classmethod
+    def _drop_unknown_locks(cls, value: object) -> object:
+        """库内非法存量锁值不阻断读取, 与写入路径的容忍一致; 仅保留 MetadataField 成员."""
+        if not isinstance(value, list):
+            return []
+        return list(dict.fromkeys(item for item in value if isinstance(item, str) and item in _METADATA_FIELD_VALUES))
+
     file_count: int = 0
     file_phase: FilePhaseSummary = Field(default_factory=FilePhaseSummary)
     created_at: datetime | None = None
