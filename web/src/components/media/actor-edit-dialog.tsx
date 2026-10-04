@@ -64,22 +64,25 @@ function sameStringList(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-function isDraftDirty(draft: ActorDraft, actor: ActorResponse): boolean {
+/** 只提交相对初值有变化的字段; 归一与保存体同源, 避免「界面未改却被上锁」. */
+function patchFromDraft(draft: ActorDraft, actor: ActorResponse): ActorUpdateRequest {
   const initial = draftFromActor(actor);
-  return (
-    draft.gender !== initial.gender ||
-    draft.birthday !== initial.birthday ||
-    draft.birthplace !== initial.birthplace ||
-    numOrNull(draft.height) !== numOrNull(initial.height) ||
-    numOrNull(draft.bust) !== numOrNull(initial.bust) ||
-    numOrNull(draft.waist) !== numOrNull(initial.waist) ||
-    numOrNull(draft.hip) !== numOrNull(initial.hip) ||
-    draft.cup !== initial.cup ||
-    draft.tagline !== initial.tagline ||
-    draft.overview !== initial.overview ||
-    !sameStringList(draft.aliases, initial.aliases) ||
-    !sameStringList(draft.imageUrls, initial.imageUrls)
-  );
+  const patch: ActorUpdateRequest = {};
+  if (draft.gender !== initial.gender) patch.gender = draft.gender;
+  if (draft.birthday.trim() !== initial.birthday) patch.birthday = draft.birthday.trim() || null;
+  if (draft.birthplace.trim() !== initial.birthplace)
+    patch.birthplace = draft.birthplace.trim() || null;
+  if (numOrNull(draft.height) !== numOrNull(initial.height)) patch.height = numOrNull(draft.height);
+  if (numOrNull(draft.bust) !== numOrNull(initial.bust)) patch.bust = numOrNull(draft.bust);
+  if (numOrNull(draft.waist) !== numOrNull(initial.waist)) patch.waist = numOrNull(draft.waist);
+  if (numOrNull(draft.hip) !== numOrNull(initial.hip)) patch.hip = numOrNull(draft.hip);
+  if (draft.cup.trim() !== initial.cup) patch.cup = draft.cup.trim() || null;
+  if (draft.tagline.trim() !== initial.tagline) patch.tagline = draft.tagline.trim() || null;
+  if (draft.overview.trim() !== initial.overview) patch.overview = draft.overview.trim() || null;
+  const aliases = draft.aliases.map((a) => a.trim()).filter(Boolean);
+  if (!sameStringList(aliases, initial.aliases)) patch.aliases = aliases;
+  if (!sameStringList(draft.imageUrls, initial.imageUrls)) patch.image_urls = draft.imageUrls;
+  return patch;
 }
 
 export interface ActorEditDialogProps {
@@ -112,27 +115,15 @@ export function ActorEditDialog({
   }
 
   const rawSites = Object.entries(actor.raw ?? {});
-  const dirty = isDraftDirty(draft, actor);
+  const patch = patchFromDraft(draft, actor);
+  const dirty = Object.keys(patch).length > 0;
 
   function patchDraft(partial: Partial<ActorDraft>) {
     setDraft((prev) => ({ ...prev, ...partial }));
   }
 
   function handleSave() {
-    onSave({
-      gender: draft.gender,
-      birthday: draft.birthday.trim() || null,
-      birthplace: draft.birthplace.trim() || null,
-      height: numOrNull(draft.height),
-      bust: numOrNull(draft.bust),
-      waist: numOrNull(draft.waist),
-      hip: numOrNull(draft.hip),
-      cup: draft.cup.trim() || null,
-      tagline: draft.tagline.trim() || null,
-      overview: draft.overview.trim() || null,
-      aliases: draft.aliases.map((a) => a.trim()).filter(Boolean),
-      image_urls: draft.imageUrls,
-    });
+    onSave(patch);
   }
 
   return (

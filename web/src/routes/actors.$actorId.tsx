@@ -16,10 +16,13 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
+  IconCheck,
   IconCrop,
   IconEraser,
   IconExternalLink,
   IconFilter,
+  IconLock,
+  IconLockOpen,
   IconPencil,
   IconRefresh,
   IconStar,
@@ -27,9 +30,10 @@ import {
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  clearActorPersonMutation,
   deleteFacetMutation,
   getActorOptions,
   getActorQueryKey,
@@ -38,18 +42,20 @@ import {
   listMetadataQueryKey,
   renameFacetMutation,
   scrapeActorMutation,
+  setActorLocksMutation,
   updateActorMutation,
 } from "@/client/@tanstack/react-query.gen";
-import type { ActorResponse, CacheKind } from "@/client/types.gen";
+import type { ActorField, ActorResponse, CacheKind } from "@/client/types.gen";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
 import { SortMenu } from "@/components/common/sort-menu";
 import { ActorAvatarCropDialog } from "@/components/media/actor-avatar-crop-dialog";
 import { ActorEditDialog } from "@/components/media/actor-edit-dialog";
 import { ActorUserTags } from "@/components/media/actor-user-tags";
 import { FanartLightbox } from "@/components/media/fanart-lightbox";
+import { LockChip, LockToggle, type LockProps } from "@/components/media/field-lock";
 import { PosterGrid } from "@/components/media/poster-grid";
+import { ACTOR_FIELD_LABEL_KEY, LOCKABLE_ACTOR_FIELDS } from "@/lib/actors/fields";
 import { extractErrorMessage } from "@/lib/api-error";
-import { CLEARED_ACTOR_PERSON_PATCH } from "@/lib/actors/person";
 import { confirm } from "@/lib/confirm";
 import { metaSearchForFacet } from "@/lib/facets";
 import { ageFromBirthday } from "@/lib/format-birthday";
@@ -72,14 +78,33 @@ export const Route = createFileRoute("/actors/$actorId")({
   component: ActorDetailPage,
 });
 
-function FieldBlock({ label, children }: { label: string; children: ReactNode }) {
+function FieldBlock({
+  label,
+  children,
+  lock,
+}: {
+  label: string;
+  children: ReactNode;
+  lock?: LockProps<ActorField>;
+}) {
   return (
     <div>
-      <Text size="xs" c="dimmed" mb={4}>
-        {label}
-      </Text>
+      <Group gap={4} wrap="nowrap" align="center" mb={4}>
+        <Text size="xs" c="dimmed">
+          {label}
+        </Text>
+        {lock && <LockToggle {...lock} />}
+      </Group>
       <div>{children}</div>
     </div>
+  );
+}
+
+function EmptyValue() {
+  return (
+    <Text size="sm" c="dimmed">
+      —
+    </Text>
   );
 }
 
@@ -165,7 +190,7 @@ function ActorDetailPage() {
   });
 
   const clearMutation = useMutation({
-    ...updateActorMutation(),
+    ...clearActorPersonMutation(),
     onSuccess: () => {
       notifications.show({ message: t("actors.clearPersonDone"), color: "blue" });
       invalidate();
@@ -190,6 +215,82 @@ function ActorDetailPage() {
       }),
   });
 
+  const [pendingLock, setPendingLock] = useState<ActorField | null>(null);
+  const [lockTarget, setLockTarget] = useState<{ id: number; fields: ActorField[] } | null>(null);
+  // 锁写入串行化: 在途点击合并为最后目标, 结算后补发.
+  const queuedLocksRef = useRef<{ id: number; fields: ActorField[] } | null>(null);
+  const lockMutation = useMutation({
+    ...setActorLocksMutation(),
+    onSuccess: async (_data, variables) => {
+      // 失效按本次请求的条目; 等重取完成再撤销乐观显示, 避免图标回退翻转.
+      await queryClient.invalidateQueries({
+        queryKey: getActorQueryKey({ path: { actor_id: variables.path.actor_id } }),
+      });
+    },
+    onError: (err) => {
+      queuedLocksRef.current = null;
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      });
+    },
+    onSettled: () => {
+      const queued = queuedLocksRef.current;
+      queuedLocksRef.current = null;
+      if (queued) {
+        // 条目已切换时按原条目补发.
+        lockMutation.mutate({ path: { actor_id: queued.id }, body: { fields: queued.fields } });
+        return;
+      }
+      setPendingLock(null);
+      setLockTarget(null);
+    },
+  });
+  const serverLockedFields = useMemo(
+    () => new Set<ActorField>(actor?.locked_fields ?? []),
+    [actor?.locked_fields],
+  );
+  // 乐观显示目标集合; 在途状态不扩散到其它锁控件.
+  const lockedFields = useMemo(
+    () =>
+      lockTarget && lockTarget.id === id
+        ? new Set<ActorField>(lockTarget.fields)
+        : serverLockedFields,
+    [lockTarget, id, serverLockedFields],
+  );
+  const allLocked = LOCKABLE_ACTOR_FIELDS.every((field) => lockedFields.has(field));
+
+  function applyLocks(fields: readonly ActorField[], pending: ActorField | null = null) {
+    const target = [...fields];
+    setPendingLock(pending);
+    setLockTarget({ id, fields: target });
+    if (lockMutation.isPending) {
+      queuedLocksRef.current = { id, fields: target };
+      return;
+    }
+    lockMutation.mutate({ path: { actor_id: id }, body: { fields: target } });
+  }
+
+  function toggleLock(field: ActorField) {
+    const next = new Set(lockedFields);
+    if (next.has(field)) {
+      next.delete(field);
+    } else {
+      next.add(field);
+    }
+    applyLocks(
+      LOCKABLE_ACTOR_FIELDS.filter((candidate) => next.has(candidate)),
+      field,
+    );
+  }
+
+  const lockProps = (field: ActorField): LockProps<ActorField> => ({
+    field,
+    locked: lockedFields.has(field),
+    busy: pendingLock === field,
+    onToggleLock: toggleLock,
+  });
+
   async function handleClear() {
     const ok = await confirm({
       title: t("actors.clearPerson"),
@@ -197,7 +298,7 @@ function ActorDetailPage() {
       confirmLabel: t("actors.clearPerson"),
     });
     if (!ok) return;
-    clearMutation.mutate({ path: { actor_id: id }, body: CLEARED_ACTOR_PERSON_PATCH });
+    clearMutation.mutate({ path: { actor_id: id } });
   }
 
   async function handleSetDisplay(alias: string) {
@@ -251,6 +352,12 @@ function ActorDetailPage() {
           actor={actor}
           scrapePending={scrapeMutation.isPending}
           clearPending={clearMutation.isPending}
+          lockProps={lockProps}
+          lockedFields={lockedFields}
+          allLocked={allLocked}
+          locksPending={lockMutation.isPending}
+          onToggleLock={toggleLock}
+          onApplyLocks={applyLocks}
           onScrape={(useCache) =>
             scrapeMutation.mutate({
               path: { actor_id: id },
@@ -327,6 +434,12 @@ function ActorHero({
   actor,
   scrapePending,
   clearPending,
+  lockProps,
+  lockedFields,
+  allLocked,
+  locksPending,
+  onToggleLock,
+  onApplyLocks,
   onScrape,
   onEdit,
   onCrop,
@@ -337,6 +450,12 @@ function ActorHero({
   actor: ActorResponse;
   scrapePending: boolean;
   clearPending: boolean;
+  lockProps: (field: ActorField) => LockProps<ActorField>;
+  lockedFields: ReadonlySet<ActorField>;
+  allLocked: boolean;
+  locksPending: boolean;
+  onToggleLock: (field: ActorField) => void;
+  onApplyLocks: (fields: readonly ActorField[]) => void;
   onScrape: (useCache: CacheKind[]) => void;
   onEdit: () => void;
   onCrop: () => void;
@@ -355,6 +474,9 @@ function ActorHero({
   const measurements = [actor.bust, actor.waist, actor.hip].every((v) => v == null)
     ? null
     : `${actor.bust ?? "-"} / ${actor.waist ?? "-"} / ${actor.hip ?? "-"}`;
+  const measurementLocked = (["bust", "waist", "hip"] as const).some((field) =>
+    lockedFields.has(field),
+  );
   const age = ageFromBirthday(actor.birthday);
   const birthdayLabel = actor.birthday
     ? age != null
@@ -440,6 +562,9 @@ function ActorHero({
             {t("actors.cropAvatar.action")}
           </Button>
         )}
+        <Box mt="xs">
+          <LockChip label={t("actors.imagesEdit")} {...lockProps("image_urls")} />
+        </Box>
       </Box>
 
       {/* basis 不能为 0: 换行按 flex-basis 判定, 取 0 时信息列永不换行, 窄屏只会被压成几十像素宽. */}
@@ -452,6 +577,7 @@ function ActorHero({
           <Badge size="lg" variant="outline" style={{ textTransform: "none" }}>
             {t(`browse.person.gender_${actor.gender ?? "unknown"}`)}
           </Badge>
+          <LockToggle {...lockProps("gender")} />
         </Group>
 
         {(actor.gender ?? "unknown") === "unknown" && (
@@ -465,34 +591,46 @@ function ActorHero({
             <AliasTags values={aliases} onSetDisplay={onSetDisplay} />
           </FieldBlock>
         )}
-        {birthdayLabel && (
-          <FieldBlock label={t("browse.person.birthday")}>
-            <Text size="sm">{birthdayLabel}</Text>
+        {(birthdayLabel || lockedFields.has("birthday")) && (
+          <FieldBlock label={t("browse.person.birthday")} lock={lockProps("birthday")}>
+            {birthdayLabel ? <Text size="sm">{birthdayLabel}</Text> : <EmptyValue />}
           </FieldBlock>
         )}
-        {actor.birthplace && (
-          <FieldBlock label={t("browse.person.birthplace")}>
-            <Text size="sm">{actor.birthplace}</Text>
+        {(actor.birthplace || lockedFields.has("birthplace")) && (
+          <FieldBlock label={t("browse.person.birthplace")} lock={lockProps("birthplace")}>
+            {actor.birthplace ? <Text size="sm">{actor.birthplace}</Text> : <EmptyValue />}
           </FieldBlock>
         )}
-        {actor.height != null && (
-          <FieldBlock label={t("browse.person.height")}>
-            <Text size="sm">{t("browse.person.cm", { value: actor.height })}</Text>
+        {(actor.height != null || lockedFields.has("height")) && (
+          <FieldBlock label={t("browse.person.height")} lock={lockProps("height")}>
+            {actor.height != null ? (
+              <Text size="sm">{t("browse.person.cm", { value: actor.height })}</Text>
+            ) : (
+              <EmptyValue />
+            )}
           </FieldBlock>
         )}
-        {measurements && (
-          <FieldBlock label={t("browse.person.measurements")}>
-            <Text size="sm">{measurements}</Text>
+        {(measurements || measurementLocked) && (
+          <div>
+            <Group gap={4} wrap="nowrap" align="center" mb={4}>
+              <Text size="xs" c="dimmed">
+                {t("browse.person.measurements")}
+              </Text>
+              <LockToggle {...lockProps("bust")} />
+              <LockToggle {...lockProps("waist")} />
+              <LockToggle {...lockProps("hip")} />
+            </Group>
+            <Text size="sm">{measurements ?? "- / - / -"}</Text>
+          </div>
+        )}
+        {(actor.cup || lockedFields.has("cup")) && (
+          <FieldBlock label={t("browse.person.cup")} lock={lockProps("cup")}>
+            {actor.cup ? <Text size="sm">{actor.cup}</Text> : <EmptyValue />}
           </FieldBlock>
         )}
-        {actor.cup && (
-          <FieldBlock label={t("browse.person.cup")}>
-            <Text size="sm">{actor.cup}</Text>
-          </FieldBlock>
-        )}
-        {actor.tagline && (
-          <FieldBlock label={t("browse.person.tagline")}>
-            <Text size="sm">{actor.tagline}</Text>
+        {(actor.tagline || lockedFields.has("tagline")) && (
+          <FieldBlock label={t("browse.person.tagline")} lock={lockProps("tagline")}>
+            {actor.tagline ? <Text size="sm">{actor.tagline}</Text> : <EmptyValue />}
           </FieldBlock>
         )}
         {sourceUrls.length > 0 && (
@@ -521,11 +659,15 @@ function ActorHero({
             </Group>
           </FieldBlock>
         )}
-        {actor.overview && (
-          <FieldBlock label={t("browse.person.overview")}>
-            <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-              {actor.overview}
-            </Text>
+        {(actor.overview || lockedFields.has("overview")) && (
+          <FieldBlock label={t("browse.person.overview")} lock={lockProps("overview")}>
+            {actor.overview ? (
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                {actor.overview}
+              </Text>
+            ) : (
+              <EmptyValue />
+            )}
           </FieldBlock>
         )}
 
@@ -577,6 +719,37 @@ function ActorHero({
           <Button size="xs" variant="light" leftSection={<IconPencil size={14} />} onClick={onEdit}>
             {t("common:actions.edit")}
           </Button>
+          <Menu shadow="md" position="bottom-start">
+            <Menu.Target>
+              <Button
+                size="xs"
+                variant="light"
+                color={allLocked ? "yellow" : "gray"}
+                leftSection={<IconLock size={14} />}
+                loading={locksPending}
+              >
+                {t("actors.lockManage")}
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item onClick={() => onApplyLocks(allLocked ? [] : LOCKABLE_ACTOR_FIELDS)}>
+                {allLocked ? t("lock.clearAll") : t("lock.all")}
+              </Menu.Item>
+              <Menu.Divider />
+              {LOCKABLE_ACTOR_FIELDS.map((field) => (
+                <Menu.Item
+                  key={field}
+                  onClick={() => onToggleLock(field)}
+                  leftSection={
+                    lockedFields.has(field) ? <IconLock size={14} /> : <IconLockOpen size={14} />
+                  }
+                  rightSection={lockedFields.has(field) ? <IconCheck size={14} /> : undefined}
+                >
+                  {t(ACTOR_FIELD_LABEL_KEY[field])}
+                </Menu.Item>
+              ))}
+            </Menu.Dropdown>
+          </Menu>
           <Button
             size="xs"
             variant="light"

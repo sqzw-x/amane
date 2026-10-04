@@ -55,6 +55,7 @@ import {
 import { getMetadataSchema } from "@/client/sdk.gen";
 import type { MetadataField, MetadataResponse } from "@/client/types.gen";
 import { FacetBadge } from "@/components/media/facet-badge";
+import { LockChip, LockToggle, type LockProps } from "@/components/media/field-lock";
 import { UserTagActions } from "@/components/media/user-tag-add";
 import { FanartLightbox, FanartStrip } from "@/components/media/fanart-lightbox";
 import { FilePhaseBadges, FilePhaseOverlay } from "@/components/media/file-phase-badges";
@@ -92,53 +93,6 @@ function formatRuntime(minutes?: number | null): string | null {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-type LockProps = {
-  field: MetadataField;
-  locked: boolean;
-  busy: boolean;
-  onToggleLock: (field: MetadataField) => void;
-};
-
-/** 字段旁的锁开关, 点击切换. */
-function LockToggle({ field, locked, busy, onToggleLock }: LockProps) {
-  const { t } = useTranslation("metadata");
-  return (
-    <Tooltip label={locked ? t("lock.toggleLocked") : t("lock.toggleUnlocked")} withArrow>
-      <ActionIcon
-        size="xs"
-        variant="subtle"
-        color={locked ? "yellow" : "gray"}
-        aria-label={locked ? t("lock.locked") : t("lock.unlocked")}
-        disabled={busy}
-        onClick={() => onToggleLock(field)}
-        style={{ opacity: locked ? 1 : 0.45 }}
-      >
-        {locked ? <IconLock size={12} /> : <IconLockOpen size={12} />}
-      </ActionIcon>
-    </Tooltip>
-  );
-}
-
-/** 带文字的锁开关 (封面 / 海报 / 预告片). */
-function LockChip({ label, ...lock }: LockProps & { label: string }) {
-  const { t } = useTranslation("metadata");
-  return (
-    <Tooltip label={lock.locked ? t("lock.toggleLocked") : t("lock.toggleUnlocked")} withArrow>
-      <Button
-        size="compact-xs"
-        variant={lock.locked ? "light" : "subtle"}
-        color={lock.locked ? "yellow" : "gray"}
-        leftSection={lock.locked ? <IconLock size={12} /> : <IconLockOpen size={12} />}
-        disabled={lock.busy}
-        onClick={() => lock.onToggleLock(lock.field)}
-        style={lock.locked ? undefined : { opacity: 0.65 }}
-      >
-        {label}
-      </Button>
-    </Tooltip>
-  );
-}
-
 function FieldBlock({
   label,
   children,
@@ -146,7 +100,7 @@ function FieldBlock({
 }: {
   label: string;
   children: ReactNode;
-  lock?: LockProps;
+  lock?: LockProps<MetadataField>;
 }) {
   return (
     <div>
@@ -303,7 +257,7 @@ function TitleDetailPage() {
   const [lockTarget, setLockTarget] = useState<{ id: number; fields: MetadataField[] } | null>(
     null,
   );
-  // 锁写入单飞: 在途点击合并为最后目标, 结算后补发.
+  // 锁写入串行化: 在途点击合并为最后目标, 结算后补发.
   const queuedLocksRef = useRef<{ id: number; fields: MetadataField[] } | null>(null);
   const lockMutation = useMutation({
     ...setMetadataLocksMutation(),
@@ -451,7 +405,7 @@ function TitleDetailPage() {
     );
   }
 
-  const lockProps = (field: MetadataField): LockProps => ({
+  const lockProps = (field: MetadataField): LockProps<MetadataField> => ({
     field,
     locked: lockedFields.has(field),
     busy: pendingLock === field,

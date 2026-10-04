@@ -37,7 +37,7 @@ import {
   listActorsQueryKey,
   listFacetsOptions,
 } from "@/client/@tanstack/react-query.gen";
-import { scrapeActor, updateActor } from "@/client/sdk.gen";
+import { clearActorPerson, scrapeActor, updateActor } from "@/client/sdk.gen";
 import type {
   ActorGender,
   ActorResponse,
@@ -53,7 +53,6 @@ import { FacetRulesPanel } from "./facet-rules-panel";
 import { useFacetIdentityActions } from "@/hooks/use-facet-identity-actions";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { useResizableColumns } from "@/hooks/use-resizable-columns";
-import { CLEARED_ACTOR_PERSON_PATCH } from "@/lib/actors/person";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
@@ -328,13 +327,7 @@ export function ActorTable({
     if (!ok) return;
     setBatchClearing(true);
     const results = await Promise.allSettled(
-      ids.map((id) =>
-        updateActor({
-          path: { actor_id: id },
-          body: CLEARED_ACTOR_PERSON_PATCH,
-          throwOnError: true,
-        }),
-      ),
+      ids.map((id) => clearActorPerson({ path: { actor_id: id }, throwOnError: true })),
     );
     setBatchClearing(false);
     const failed = results.filter((r) => r.status === "rejected").length;
