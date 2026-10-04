@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -16,12 +16,15 @@ from amane.db.models import Actor, FacetKind, Task, TaskStatus, TaskType
 from amane.enums import ActorGender, SiteName
 from amane.handlers.actor_scrape import ActorScrapeHandler
 from amane.handlers.models import ActorScrapePayload, CacheKind
+from amane.media import ResourceStore
+from amane.media.resource_store import RESOURCE_URL_PREFIX
 from amane.net.errors import SourceError
 from amane.observability.models import SiteOutcomeKind
 from amane.observability.recorder import Recorder
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
+    from amane.net.http import WebClient
 
 
 class _FakeActorCrawler:
@@ -103,6 +106,49 @@ async def test_actor_scrape_fills_empty_and_preserves_existing(repo: Repository,
     assert saved.name == "Alice"
     assert await repo.get_actor_aliases(actor_id) == ["ありす"]
     assert saved.image_urls == ["https://img.example/a.jpg"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_internal_avatar_needs_no_request(
+    repo: Repository, resource_store: ResourceStore, hot: HotSettings
+) -> None:
+    """主图为内部 URL 时 download_images 直接解析本地文件, 不触发任何请求."""
+    hot.actor_scraping.download_images = True
+    actor_id = await _actor_id(repo, "Cropped")
+
+    async def producer(dest: Path) -> bool:
+        dest.write_bytes(b"avatar-bytes")
+        return True
+
+    res = await resource_store.acquire_derived("https://img.example/orig.jpg", "crop", "box:0,0,10,10", producer)
+    assert res is not None
+    internal = f"{RESOURCE_URL_PREFIX}/{ResourceStore.url_hash(res.url)}"
+    actor = await repo.get_actor(actor_id)
+    assert actor is not None
+    actor.image_urls = [internal]
+    await repo.save_actor(actor)
+
+    class _ExplodingClient:
+        async def download(self, url: str, dest: Path, **kwargs: object) -> bool:
+            raise AssertionError("内部 URL 不应触网")
+
+        async def resolve_final_url(self, url: str, **kwargs: object) -> str:
+            raise AssertionError("内部 URL 不应触网")
+
+    factory = _FakeFactory(
+        {
+            "minnano": _FakeActorCrawler({"Cropped": ActorMetadata(name="Cropped")}),
+            "gfriends": _FakeActorCrawler({"Cropped": ActorMetadata(name="Cropped")}),
+        }
+    )
+    handler = ActorScrapeHandler(repo, factory, resource_store, hot, web_client=cast("WebClient", _ExplodingClient()))
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id, use_cache=set()))
+
+    assert result.success
+    saved = await repo.get_actor(actor_id)
+    assert saved is not None
+    assert saved.image_urls == [internal]  # 内部 URL 保持主图位置
 
 
 @pytest.mark.asyncio(loop_scope="function")

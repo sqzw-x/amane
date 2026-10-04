@@ -12,11 +12,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
-from amane.db.models import MediaFileStatus
+from amane.db.models import FacetKind, MediaFileStatus
 from amane.db.repository import Repository
 from amane.handlers import CleanupHandler, CleanupPayload
 from amane.media import ResourceStore
-from amane.media.pipeline import RESOURCE_URL_PREFIX
+from amane.media.resource_store import RESOURCE_URL_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -152,6 +152,37 @@ async def test_purges_unreferenced_resources(cleanup_env):
     assert await store.get_by_url(keep.url) is not None
     assert await store.get_by_url(drop.url) is None
     assert not drop_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_keeps_actor_internal_resource(cleanup_env):
+    """演员 image_urls 中的内部 URL 保活派生资源; 未引用的同型资源照常回收."""
+    repo, store, _tmp = cleanup_env
+
+    async def producer(dest: Path) -> bool:
+        Image.new("RGB", (100, 100), "blue").save(dest)
+        return True
+
+    keep = await store.acquire_derived("https://cdn.example/actor.jpg", "crop", "box:0,0,50,50", producer)
+    drop = await store.acquire_derived("https://cdn.example/other.jpg", "crop", "box:0,0,50,50", producer)
+    assert keep is not None and drop is not None
+
+    await repo.upsert_metadata(number="ACT-KEEP-1", actors=["KeepActor"])
+    actors, _ = await repo.list_facets(FacetKind.ACTOR)
+    actor_id = next(a.id for a in actors if a.name == "KeepActor")
+    actor = await repo.get_actor(actor_id)
+    assert actor is not None
+    actor.image_urls = [f"{RESOURCE_URL_PREFIX}/{ResourceStore.url_hash(keep.url)}", "https://cdn.example/actor.jpg"]
+    await repo.save_actor(actor)
+
+    handler = CleanupHandler(repo, store)
+    result = await handler.handle(CleanupPayload(remove_missing_files=False, remove_unreferenced_resources=True))
+
+    assert result.success
+    assert result.result is not None
+    assert result.result.resources_removed == 1
+    assert await store.get_by_url(keep.url) is not None
+    assert await store.get_by_url(drop.url) is None
 
 
 @pytest.mark.asyncio
