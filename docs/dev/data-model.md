@@ -49,7 +49,7 @@
 
 ### `field_sources`
 
-`{field_name: site_name}`, 仅记录**标量字段**的来源; 聚合类字段自带来源结构, 不写入. 只有非空取值才记来源, 因此为空不代表刮削失败 (判据见 [task-system.md](task-system.md)). 用途是调试多源不一致与前端展示来源, 不参与业务逻辑, 重新刮削后被覆盖.
+`{field_name: site_name}`, 仅记录**标量字段**的来源; 聚合类字段自带来源结构, 不写入. 只有非空取值才记来源, 因此为空不代表刮削失败 (判据见 [task-system.md](task-system.md)). 用途是调试多源不一致与前端展示来源, 不参与业务逻辑; 未锁定字段重新刮削后被覆盖, 锁定字段保留原来源 (见「元数据锁定」).
 
 `raw` 的字段名 / 类型必须与当前 `MediaMetadata` 一致 — 站点级复用会把它直接反序列化. 模型改名或改类型时, 结果列与 raw 是两份数据, 需单独的 data migration (见 [database.md](database.md) Autogenerate 盲区).
 
@@ -59,10 +59,10 @@
 
 写入策略由 `MetadataWriteMode` 表达, repository 默认 `AUTO`:
 
-- `AUTO` (`ScrapeHandler` → `upsert_metadata`): 跳过锁定列, 并从本次 `field_sources` 剔除对应标量键, 锁定字段保留原来源; `raw` 始终更新.
-- `MANUAL` (REST PATCH / merge / crop 与 Agent 工具): 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. `set_metadata_locks` 整体替换锁集合, 不刷新 `updated_at`.
+- `AUTO` (`ScrapeHandler` → `upsert_metadata`): 跳过锁定列, 并从本次 `field_sources` 剔除对应标量键, 锁定字段保留原来源 (本次来源为空也保留); `raw` 始终更新, 即使只更新 `raw` 也刷新 `updated_at`, 因此全锁条目仍参与 RESCRAPE 的年龄选择.
+- `MANUAL` (REST PATCH / merge / crop 与 Agent 工具): 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. `set_metadata_locks` 整体替换锁集合; 锁集合本身的变更不刷新 `updated_at`.
 
-facet 规则与实体 rename / delete 直接写库, 不读锁 — 分类管理是用户显式操作.
+facet 规则、实体 rename / delete 与写入路径内的 `clean_actor_names` / `apply_facet_rules_to_metadata` 都不读锁 — 分类管理与演员别名归一是用户显式操作.
 
 ## 可写字段与 req↔repo 兼容性
 
