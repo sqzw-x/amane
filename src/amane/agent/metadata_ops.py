@@ -7,7 +7,7 @@ from pydantic_ai.capabilities import Capability
 
 from ..aggregate import compute_merge_updates
 from ..db.models import TaskType
-from ..db.repo_types import MetadataFields
+from ..db.repo_types import MetadataFields, MetadataWriteMode
 from ..handlers.models import CacheKind, ScrapePayload
 from ..parsing import ContentType
 from .tools import TOOL_OK, AgentDeps, require_approval, unknown_field_error
@@ -50,7 +50,9 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
         unknown = sorted(set(patch) - _AGENT_PATCH_KEYS)
         if unknown:
             return unknown_field_error(unknown, _AGENT_PATCH_KEYS)
-        row = await ctx.deps.repo.update_metadata(metadata_id, **cast(MetadataFields, patch))
+        row = await ctx.deps.repo.update_metadata(
+            metadata_id, mode=MetadataWriteMode.MANUAL, **cast(MetadataFields, patch)
+        )
         if row is None:
             return {"error": f"metadata {metadata_id} 不存在"}
         return TOOL_OK
@@ -92,7 +94,7 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
             return {"error": str(exc)}
         if not updates:
             return {"error": "无有效合并项"}
-        await ctx.deps.repo.update_metadata(metadata_id, **cast(MetadataFields, updates))
+        await ctx.deps.repo.update_metadata(metadata_id, mode=MetadataWriteMode.MANUAL, **cast(MetadataFields, updates))
         return TOOL_OK
 
     @cap.tool

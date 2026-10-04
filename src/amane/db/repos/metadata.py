@@ -1,4 +1,4 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from typing import Unpack, cast
 
@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 
-from ...enums import ActorGender
+from ...enums import ActorGender, MetadataField
 from ...parsing import ContentType, Mosaic
 from ...utils.text import normalize_long_text
 from ..models import (
@@ -24,6 +24,7 @@ from ..models import (
 )
 from ..repo_types import (
     MetadataFields,
+    MetadataWriteMode,
     _media_file_uncensored_predicate,
     _metadata_has_files_clause,
     _metadata_linked_file_exists,
@@ -50,6 +51,60 @@ def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
     if not isinstance(plot, str):
         return fields
     return cast("MetadataFields", {**fields, "plot": normalize_long_text(plot)})
+
+
+# 锁字段 (MetadataField) ↔ Metadata 列名; 仅 extrafanart / score 两名不同.
+_LOCK_FIELD_COLUMN: dict[MetadataField, str] = {
+    MetadataField.TITLE: "title",
+    MetadataField.PLOT: "plot",
+    MetadataField.ACTORS: "actors",
+    MetadataField.DIRECTORS: "directors",
+    MetadataField.TAGS: "tags",
+    MetadataField.SERIES: "series",
+    MetadataField.RELEASE: "release",
+    MetadataField.RUNTIME: "runtime",
+    MetadataField.PUBLISHER: "publisher",
+    MetadataField.STUDIO: "studio",
+    MetadataField.POSTER_URLS: "poster_urls",
+    MetadataField.THUMB_URLS: "thumb_urls",
+    MetadataField.TRAILER_URLS: "trailer_urls",
+    MetadataField.EXTRAFANART: "extrafanart_urls",
+    MetadataField.SCORE: "scores",
+}
+_LOCK_COLUMN_FIELD: dict[str, MetadataField] = {column: field for field, column in _LOCK_FIELD_COLUMN.items()}
+
+
+def _locked_fields_of(meta: Metadata) -> set[MetadataField]:
+    """库内锁定集合; 非法存量值忽略, 不阻断刮削与写入."""
+    locked: set[MetadataField] = set()
+    for name in meta.locked_fields or []:
+        try:
+            locked.add(MetadataField(name))
+        except ValueError:
+            continue
+    return locked
+
+
+def _filter_locked(
+    fields: MetadataFields, locked: set[MetadataField], existing_sources: Mapping[str, str]
+) -> MetadataFields:
+    """AUTO 写入: 跳过锁定列; ``field_sources`` 保留锁定字段的既有来源, 不声称未发生的更新."""
+    if not locked:
+        return fields
+    locked_columns = {_LOCK_FIELD_COLUMN[field] for field in locked}
+    filtered = cast("MetadataFields", {key: value for key, value in fields.items() if key not in locked_columns})
+    sources = filtered.get("field_sources")
+    if sources:
+        preserved = {key: value for key, value in existing_sources.items() if key in locked}
+        merged = {**preserved, **{key: value for key, value in sources.items() if key not in locked}}
+        filtered = cast("MetadataFields", {**filtered, "field_sources": merged})
+    return filtered
+
+
+def _merge_auto_locks(fields: MetadataFields, locked: set[MetadataField]) -> list[str]:
+    """MANUAL 写入: 把本次写入的可锁列并入锁定集, 按 MetadataField 定义序存储."""
+    written = {_LOCK_COLUMN_FIELD[key] for key in fields if key in _LOCK_COLUMN_FIELD}
+    return [str(field) for field in MetadataField if field in locked | written]
 
 
 class MetadataRepoMixin(RepositoryMixinBase):
@@ -177,6 +232,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         **kwargs: Unpack[MetadataFields],
     ) -> Metadata:
         """查重忽略大小写; 已存在时不改写 number 的原始大小写.
+        自动刮削写入: 跳过被锁定字段 (含 field_sources 对应标量键), ``raw`` 始终更新.
         ``actor_genders`` 只填 ``Actor.gender`` 空位, 不是 Metadata 列.
         """
         fields = _normalize_text_fields(kwargs)
@@ -185,6 +241,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             existing = result.first()
             if existing:
+                fields = _filter_locked(fields, _locked_fields_of(existing), existing.field_sources or {})
                 for key, value in fields.items():
                     setattr(existing, key, value)
                 existing.updated_at = _utcnow()
@@ -210,15 +267,25 @@ class MetadataRepoMixin(RepositoryMixinBase):
         self,
         metadata_id: int,
         *,
+        mode: MetadataWriteMode = MetadataWriteMode.AUTO,
         actor_genders: Mapping[str, ActorGender] | None = None,
         **updates: Unpack[MetadataFields],
     ) -> Metadata | None:
-        """不存在返回 None."""
+        """不存在返回 None.
+
+        ``mode`` 默认 ``AUTO`` (遵循锁, 供自动路径调用); ``MANUAL`` 无视锁并
+        把本次写入的可锁字段并入 ``locked_fields``.
+        """
         updates = _normalize_text_fields(updates)
         async with self._session() as session:
             metadata = await session.get(Metadata, metadata_id)
             if metadata is None:
                 return None
+            locked = _locked_fields_of(metadata)
+            if mode is MetadataWriteMode.AUTO:
+                updates = _filter_locked(updates, locked, metadata.field_sources or {})
+            else:
+                metadata.locked_fields = _merge_auto_locks(updates, locked)
             # 显式赋值, 禁止 setattr; 字段集由 MetadataFields 与 Metadata 静态对齐.
             if "title" in updates:
                 metadata.title = updates["title"]
@@ -264,6 +331,21 @@ class MetadataRepoMixin(RepositoryMixinBase):
             await clean_actor_names(session, metadata, actor_genders)
             await apply_facet_rules_to_metadata(session, metadata)
             await sync_metadata_facets(session, metadata)
+            await session.commit()
+            await session.refresh(metadata)
+            return metadata
+
+    async def set_metadata_locks(self, metadata_id: int, fields: Collection[MetadataField]) -> Metadata | None:
+        """整体替换锁定字段集合, 不修改 ``updated_at`` (锁不是内容, 不参与 RESCRAPE 的年龄选择).
+        不存在返回 None.
+        """
+        async with self._session() as session:
+            metadata = await session.get(Metadata, metadata_id)
+            if metadata is None:
+                return None
+            wanted = set(fields)
+            metadata.locked_fields = [str(field) for field in MetadataField if field in wanted]
+            session.add(metadata)
             await session.commit()
             await session.refresh(metadata)
             return metadata

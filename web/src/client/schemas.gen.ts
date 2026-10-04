@@ -4341,6 +4341,22 @@ export const MetadataListResponseSchema = {
     title: 'MetadataListResponse'
 } as const;
 
+export const MetadataLocksRequestSchema = {
+    properties: {
+        fields: {
+            items: {
+                $ref: '#/components/schemas/MetadataField'
+            },
+            type: 'array',
+            title: 'Fields',
+            description: '锁定的字段集合; 空集解除全部锁定'
+        }
+    },
+    type: 'object',
+    title: 'MetadataLocksRequest',
+    description: '整体替换锁定字段集合.'
+} as const;
+
 export const MetadataPartialSchema = {
     properties: {
         title: {
@@ -4797,6 +4813,14 @@ export const MetadataResponseSchema = {
             type: 'object',
             title: 'Raw',
             default: {}
+        },
+        locked_fields: {
+            items: {
+                $ref: '#/components/schemas/MetadataField'
+            },
+            type: 'array',
+            title: 'Locked Fields',
+            default: []
         },
         file_count: {
             type: 'integer',

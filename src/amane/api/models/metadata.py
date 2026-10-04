@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from ...db import Metadata
-from ...enums import ActorGender
+from ...enums import ActorGender, MetadataField
 from ...handlers import CacheKind
 from ...parsing import ContentType, Mosaic
 from ...utils.model import anyof_extras, create_partial_model, kv
@@ -49,6 +49,7 @@ class MetadataResponse(BaseModel):
     source_urls: dict = {}
     field_sources: dict = {}
     raw: dict = {}
+    locked_fields: list[MetadataField] = []
     file_count: int = 0
     file_phase: FilePhaseSummary = Field(default_factory=FilePhaseSummary)
     created_at: datetime | None = None
@@ -58,10 +59,10 @@ class MetadataResponse(BaseModel):
 if TYPE_CHECKING:
     type PartialMetadata = Metadata
 
-# 外部可写字段: 排除只读列 (id/number/时间戳) 与仅后端可写字段 (raw/field_sources 由刮削写入, 前端只读展示).
+# 外部可写字段: 排除只读列 (id/number/时间戳), 仅后端可写字段 (raw/field_sources 由刮削写入) 与锁列 (经 PUT locks 管理).
 PartialMetadata = create_partial_model(
     Metadata,
-    ignore_fields=("id", "number", "created_at", "updated_at", "raw", "field_sources"),
+    ignore_fields=("id", "number", "created_at", "updated_at", "raw", "field_sources", "locked_fields"),
     json_schema_extras={
         "extrafanart_urls": anyof_extras(kv({"v-x-long": True})),
         "release": anyof_extras(
@@ -95,6 +96,12 @@ class MetadataDetailResponse(BaseModel):
 
 class MergeRequest(BaseModel):
     selections: dict[str, str] = Field(description="field_name -> source_key 映射")
+
+
+class MetadataLocksRequest(BaseModel):
+    """整体替换锁定字段集合."""
+
+    fields: list[MetadataField] = Field(default_factory=list, description="锁定的字段集合; 空集解除全部锁定")
 
 
 class CropPosterRequest(BaseModel):

@@ -6,6 +6,7 @@ from pydantic import TypeAdapter
 
 from ...aggregate import compute_merge_updates
 from ...db.models import MetadataSortField, SavedQueryEntity, SortOrder, TaskType
+from ...db.repo_types import MetadataWriteMode
 from ...db.repos.media import file_phase_of
 from ...handlers import ScrapePayload
 from ...media import manual_crop_poster
@@ -26,6 +27,7 @@ from ..models import (
     MetadataBatchScrapeResponse,
     MetadataDetailResponse,
     MetadataListResponse,
+    MetadataLocksRequest,
     MetadataResponse,
     MetadataUserTagsRequest,
     PartialMetadata,
@@ -240,10 +242,20 @@ async def update_metadata(metadata_id: int, req: PartialMetadata, repo: RepoDep)
             updates["release"] = normalized
         else:
             raise HTTPException(status_code=422, detail="release must be YYYY-MM-DD")
-    metadata = await repo.update_metadata(metadata_id, **updates)
+    metadata = await repo.update_metadata(metadata_id, mode=MetadataWriteMode.MANUAL, **updates)
     if metadata is None:
         raise HTTPException(status_code=404, detail="Metadata not found")
     logger.info("metadata updated", metadata_id=metadata_id, fields=list(updates.keys()))
+    return to_resp(MetadataResponse, metadata)
+
+
+@router.put("/{metadata_id}/locks")
+async def set_metadata_locks(metadata_id: int, req: MetadataLocksRequest, repo: RepoDep) -> MetadataResponse:
+    """整体替换锁定字段集合; 手动操作不受锁限制, 锁只拦截自动刮削."""
+    metadata = await repo.set_metadata_locks(metadata_id, req.fields)
+    if metadata is None:
+        raise HTTPException(status_code=404, detail="Metadata not found")
+    logger.info("metadata locks updated", metadata_id=metadata_id, fields=[str(field) for field in req.fields])
     return to_resp(MetadataResponse, metadata)
 
 
@@ -285,7 +297,7 @@ async def crop_poster_from_thumb(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     # 写回 poster_urls
-    updated = await repo.update_metadata(metadata_id, poster_urls=[poster_url])
+    updated = await repo.update_metadata(metadata_id, mode=MetadataWriteMode.MANUAL, poster_urls=[poster_url])
     assert updated is not None
     logger.info(
         "poster cropped",
@@ -315,7 +327,7 @@ async def merge_metadata(metadata_id: int, req: MergeRequest, repo: RepoDep) -> 
         raise HTTPException(status_code=400, detail="no valid selections")
 
     # 写回元数据
-    updated = await repo.update_metadata(metadata_id, **cast("MetadataFields", updates))
+    updated = await repo.update_metadata(metadata_id, mode=MetadataWriteMode.MANUAL, **cast("MetadataFields", updates))
     assert updated is not None
     logger.info("metadata merged", metadata_id=metadata_id, selections=req.selections)
     return to_resp(MetadataResponse, updated)

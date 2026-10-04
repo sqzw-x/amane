@@ -2065,6 +2065,20 @@ export type MetadataListResponse = {
 };
 
 /**
+ * MetadataLocksRequest
+ *
+ * 整体替换锁定字段集合.
+ */
+export type MetadataLocksRequest = {
+    /**
+     * Fields
+     *
+     * 锁定的字段集合; 空集解除全部锁定
+     */
+    fields?: Array<MetadataField>;
+};
+
+/**
  * MetadataPartial
  */
 export type MetadataPartial = {
@@ -2266,6 +2280,10 @@ export type MetadataResponse = {
     raw?: {
         [key: string]: unknown;
     };
+    /**
+     * Locked Fields
+     */
+    locked_fields?: Array<MetadataField>;
     /**
      * File Count
      */
@@ -4764,6 +4782,36 @@ export type UpdateMetadataResponses = {
 };
 
 export type UpdateMetadataResponse = UpdateMetadataResponses[keyof UpdateMetadataResponses];
+
+export type SetMetadataLocksData = {
+    body: MetadataLocksRequest;
+    path: {
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+    };
+    query?: never;
+    url: '/api/metadata/{metadata_id}/locks';
+};
+
+export type SetMetadataLocksErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetMetadataLocksError = SetMetadataLocksErrors[keyof SetMetadataLocksErrors];
+
+export type SetMetadataLocksResponses = {
+    /**
+     * Successful Response
+     */
+    200: MetadataResponse;
+};
+
+export type SetMetadataLocksResponse = SetMetadataLocksResponses[keyof SetMetadataLocksResponses];
 
 export type CropPosterFromThumbData = {
     body: CropPosterRequest;

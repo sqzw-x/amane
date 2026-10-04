@@ -20,6 +20,7 @@ from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.tools import TOOL_OK, AgentDeps, build_explore_toolset
 from amane.config import AgentConfig
 from amane.db.repository import Repository
+from amane.enums import MetadataField
 from tests.agent.support import ToolCallContext, cap_toolset, tool_fn
 
 
@@ -87,6 +88,24 @@ async def test_update_metadata_tool(write_deps: AgentDeps) -> None:
     row = await write_deps.repo.get_metadata(mid)
     assert row is not None
     assert row.title == "Patched"
+    # 助理写入属于用户触发的修改: 无视锁并把写入字段并入锁.
+    assert row.locked_fields == ["title"]
+
+
+@pytest.mark.asyncio
+async def test_update_metadata_tool_ignores_lock(write_deps: AgentDeps) -> None:
+    items, _total = await write_deps.repo.list_metadata(limit=10)
+    mid = items[0].id
+    assert mid is not None
+    await write_deps.repo.set_metadata_locks(mid, [MetadataField.TITLE])
+
+    out = await _tool_fn("update_metadata")(ToolCallContext(write_deps), metadata_id=mid, patch={"title": "Agent"})
+
+    assert out == TOOL_OK
+    row = await write_deps.repo.get_metadata(mid)
+    assert row is not None
+    assert row.title == "Agent"
+    assert row.locked_fields == ["title"]
 
 
 @pytest.mark.asyncio

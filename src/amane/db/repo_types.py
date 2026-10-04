@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypedDict
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
@@ -364,6 +365,17 @@ class SavedQueryUpdates(TypedDict, total=False):
 
 class UserTagUpdates(TypedDict, total=False):
     name: str
+
+
+class MetadataWriteMode(StrEnum):
+    """Metadata 仓库写入策略.
+
+    ``AUTO`` 为自动刮削: 跳过被锁定字段, 不改动锁状态.
+    ``MANUAL`` 为用户或助理写入: 无视锁, 并把本次写入的可锁字段并入锁.
+    """
+
+    AUTO = "auto"
+    MANUAL = "manual"
 
 
 type UserTagLinkAction = Literal["attach", "detach"]

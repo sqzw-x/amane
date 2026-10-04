@@ -97,6 +97,8 @@ class TestMetadataHttp:
         props = resp.json()["properties"]
         for key in ("title", "actors", "poster_urls", "scores", "external_ids", "source_urls"):
             assert key in props
+        # 锁列由 PUT /locks 管理, 不经 PATCH 写入.
+        assert "locked_fields" not in props
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_merge_http(self, client: AsyncClient, repo: Repository):
@@ -111,6 +113,8 @@ class TestMetadataHttp:
         assert resp.status_code == 200
         assert resp.json()["title"] == "dmm title"
         assert resp.json()["field_sources"]["title"] == "dmm"
+        # 手动合并自动锁定被合并字段.
+        assert resp.json()["locked_fields"] == ["title"]
 
         none_meta = await repo.upsert_metadata(
             number="ABC-004", field_sources={"title": "javdb"}, raw={"javdb": {"title": None}}
@@ -147,6 +151,8 @@ class TestMetadataHttp:
         assert len(data["poster_urls"]) == 1
         assert data["poster_urls"][0].startswith("/api/resources/")
         assert data["thumb_urls"] == ["https://example.com/t.jpg"]
+        # 手动裁切写 poster_urls, 因此自动锁定该字段.
+        assert data["locked_fields"] == ["poster_urls"]
 
         no_thumb = await repo.upsert_metadata(number="CROP-003", poster_urls=["https://example.com/p.jpg"])
         assert no_thumb.id is not None
@@ -163,3 +169,32 @@ class TestMetadataHttp:
         assert (
             await client.post("metadata/99999/crop-poster", json={"left": 0, "top": 0, "right": 10, "bottom": 10})
         ).status_code == 404
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_locks_http(self, client: AsyncClient, repo: Repository):
+        meta = await repo.upsert_metadata(number="LOCK-101", title="X")
+        assert meta.id is not None
+
+        locked = await client.put(f"metadata/{meta.id}/locks", json={"fields": ["title", "poster_urls"]})
+        assert locked.status_code == 200
+        assert set(locked.json()["locked_fields"]) == {"title", "poster_urls"}
+
+        # 手动 PATCH 无视锁, 并把写入字段并入锁.
+        patched = await client.patch(f"metadata/{meta.id}", json={"title": "Manual"})
+        assert patched.status_code == 200
+        assert patched.json()["title"] == "Manual"
+        assert set(patched.json()["locked_fields"]) == {"title", "poster_urls"}
+
+        # 自动刮削写入跳过锁定字段, 未锁定字段正常更新.
+        updated = await repo.upsert_metadata(number="LOCK-101", title="Scraped", actors=["A"])
+        assert updated.title == "Manual"
+        body = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert body["actors"] == ["A"]
+
+        cleared = await client.put(f"metadata/{meta.id}/locks", json={"fields": []})
+        assert cleared.status_code == 200
+        assert cleared.json()["locked_fields"] == []
+
+        bad = await client.put(f"metadata/{meta.id}/locks", json={"fields": ["bogus"]})
+        assert bad.status_code == 422
+        assert (await client.put("metadata/9999/locks", json={"fields": []})).status_code == 404

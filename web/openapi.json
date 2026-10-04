@@ -1175,6 +1175,59 @@
         }
       }
     },
+    "/api/metadata/{metadata_id}/locks": {
+      "put": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Set Metadata Locks",
+        "description": "整体替换锁定字段集合; 手动操作不受锁限制, 锁只拦截自动刮削.",
+        "operationId": "set_metadata_locks",
+        "parameters": [
+          {
+            "name": "metadata_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Metadata Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataLocksRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata/{metadata_id}/crop-poster": {
       "post": {
         "tags": [
@@ -9954,6 +10007,21 @@
         ],
         "title": "MetadataListResponse"
       },
+      "MetadataLocksRequest": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/MetadataField"
+            },
+            "type": "array",
+            "title": "Fields",
+            "description": "锁定的字段集合; 空集解除全部锁定"
+          }
+        },
+        "type": "object",
+        "title": "MetadataLocksRequest",
+        "description": "整体替换锁定字段集合."
+      },
       "MetadataPartial": {
         "properties": {
           "title": {
@@ -10409,6 +10477,14 @@
             "type": "object",
             "title": "Raw",
             "default": {}
+          },
+          "locked_fields": {
+            "items": {
+              "$ref": "#/components/schemas/MetadataField"
+            },
+            "type": "array",
+            "title": "Locked Fields",
+            "default": []
           },
           "file_count": {
             "type": "integer",

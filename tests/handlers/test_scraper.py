@@ -98,6 +98,25 @@ class TestScrapeHandler:
         assert metadata.title == "Mock Title"
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_skips_locked_fields_end_to_end(self, repo: Repository, handler):
+        """自动刮削跳过锁定字段, 未锁定字段正常更新."""
+        seeded = await repo.upsert_metadata(number="MIDV-123", title="Manual", tags=["keep"])
+        assert seeded.id is not None
+        await repo.set_metadata_locks(seeded.id, [MetadataField.TITLE])
+
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        result = await handler.handle(
+            ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
+        )
+
+        assert result.success is True
+        updated = await repo.get_metadata_by_number("MIDV-123")
+        assert updated is not None
+        assert updated.title == "Manual"
+        assert updated.tags == ["Drama"]
+        assert updated.locked_fields == ["title"]
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_reports_determinate_progress(self, repo: Repository, handler):
         """ScrapeHandler 上报 determinate 进度: 字段抓取 → materialize → done."""
         events: list[tuple[int, int, str]] = []

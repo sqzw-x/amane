@@ -207,6 +207,10 @@ class Metadata(SQLModel, table=True):
     field_sources: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     # 各站原始快照, 供离线重新聚合.
     raw: dict[str, dict[str, Any]] = Field(default_factory=dict, sa_column=Column(JSON))
+    # 字段级锁定: 自动刮削跳过锁定字段, 手动写入自动并入; 见 docs/dev/data-model.md.
+    locked_fields: list[str] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False, server_default=text("'[]'"))
+    )
 
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
