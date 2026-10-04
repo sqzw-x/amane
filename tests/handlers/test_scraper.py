@@ -99,8 +99,10 @@ class TestScrapeHandler:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_skips_locked_fields_end_to_end(self, repo: Repository, handler):
-        """自动刮削跳过锁定字段, 未锁定字段正常更新."""
-        seeded = await repo.upsert_metadata(number="MIDV-123", title="Manual", tags=["keep"])
+        """自动刮削跳过锁定字段, 未锁定字段正常更新, 锁定字段的来源标注保留."""
+        seeded = await repo.upsert_metadata(
+            number="MIDV-123", title="Manual", tags=["keep"], field_sources={"title": "manual-src"}
+        )
         assert seeded.id is not None
         await repo.set_metadata_locks(seeded.id, [MetadataField.TITLE])
 
@@ -114,6 +116,7 @@ class TestScrapeHandler:
         assert updated is not None
         assert updated.title == "Manual"
         assert updated.tags == ["Drama"]
+        assert updated.field_sources["title"] == "manual-src"
         assert updated.locked_fields == ["title"]
 
     @pytest.mark.asyncio(loop_scope="function")
@@ -203,6 +206,40 @@ class TestScrapeHandler:
         assert result.result.field_sources == {}
         metadata = await repo.get_metadata_by_number("POSTER-001")
         assert metadata is not None
+        assert metadata.poster_urls == ["http://p.jpg"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_locked_source_preserved_when_scalars_empty(self, repo: Repository, resource_store):
+        """标量全空的成功刮削也不冲掉锁定字段的来源标注."""
+        seeded = await repo.upsert_metadata(number="POSTER-001", title="Manual", field_sources={"title": "manual-src"})
+        assert seeded.id is not None
+        await repo.set_metadata_locks(seeded.id, [MetadataField.TITLE])
+
+        class PosterOnlyCrawler:
+            name = SiteName.JAVDB
+
+            def __init__(self, client=None):
+                self.client = client
+
+            async def fetch(self, query, options=None) -> MediaMetadata | None:
+                return MediaMetadata(number=query.number, poster_urls=["http://p.jpg"])
+
+        h = ScrapeHandler(
+            repo=repo,
+            factory=FakeFactory({"javdb": PosterOnlyCrawler()}),
+            resource_store=resource_store,
+            pipeline_config=HotSettings(),
+        )
+        media = await repo.create_media_file(library_id=1, path="/media/POSTER-001.mp4")
+        result = await h.handle(
+            ScrapePayload(media_file_id=media.id, number="POSTER-001", content_type=ContentType.CENSORED)
+        )
+
+        assert result.success is True
+        metadata = await repo.get_metadata_by_number("POSTER-001")
+        assert metadata is not None
+        assert metadata.title == "Manual"
+        assert metadata.field_sources == {"title": "manual-src"}
         assert metadata.poster_urls == ["http://p.jpg"]
 
     @pytest.mark.asyncio(loop_scope="function")

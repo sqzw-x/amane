@@ -94,7 +94,7 @@ def _filter_locked(
     locked_columns = {_LOCK_FIELD_COLUMN[field] for field in locked}
     filtered = cast("MetadataFields", {key: value for key, value in fields.items() if key not in locked_columns})
     sources = filtered.get("field_sources")
-    if sources:
+    if sources is not None:
         preserved = {key: value for key, value in existing_sources.items() if key in locked}
         merged = {**preserved, **{key: value for key, value in sources.items() if key not in locked}}
         filtered = cast("MetadataFields", {**filtered, "field_sources": merged})

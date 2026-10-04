@@ -33,6 +33,14 @@ def _insert_metadata(conn: Any, *, number: str, title: str) -> int:
     return int(result.lastrowid)
 
 
+def _index_sql(conn: Any, name: str) -> str:
+    sql = conn.execute(
+        text("SELECT sql FROM sqlite_master WHERE type='index' AND name = :name"), {"name": name}
+    ).scalar_one()
+    assert isinstance(sql, str)
+    return sql
+
+
 def test_metadata_locked_fields_backfill(alembic_cfg: Config) -> None:
     command.upgrade(alembic_cfg, "0c4de00792e3")
 
@@ -50,6 +58,10 @@ def test_metadata_locked_fields_backfill(alembic_cfg: Config) -> None:
         assert columns["locked_fields"]["nullable"] is False
         legacy = conn.execute(text("SELECT locked_fields FROM metadata WHERE id = :id"), {"id": legacy_id}).scalar_one()
         assert legacy == "[]"
+        # ADD COLUMN 不重建表, number 的大小写不敏感唯一索引必须保留原定义.
+        index_sql = _index_sql(conn, "ix_metadata_number")
+        assert "UNIQUE" in index_sql
+        assert "COLLATE NOCASE" in index_sql
 
     # 新写入不给该列时由 server_default 填充.
     with engine.begin() as conn:
@@ -57,5 +69,25 @@ def test_metadata_locked_fields_backfill(alembic_cfg: Config) -> None:
     with engine.connect() as conn:
         new = conn.execute(text("SELECT locked_fields FROM metadata WHERE id = :id"), {"id": new_id}).scalar_one()
         assert new == "[]"
+
+    engine.dispose()
+
+
+def test_metadata_locked_fields_downgrade_restores_expression_index(alembic_cfg: Config) -> None:
+    command.upgrade(alembic_cfg, "head")
+
+    url = alembic_cfg.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        _insert_metadata(conn, number="ABC-003", title="Downgrade")
+
+    command.downgrade(alembic_cfg, "0c4de00792e3")
+
+    with engine.connect() as conn:
+        assert "locked_fields" not in {column["name"] for column in inspect(conn).get_columns("metadata")}
+        index_sql = _index_sql(conn, "ix_metadata_number")
+        assert "UNIQUE" in index_sql
+        assert "COLLATE NOCASE" in index_sql
 
     engine.dispose()

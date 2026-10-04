@@ -1,6 +1,6 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -22,6 +22,7 @@ from amane.db.repo_types import (
     _METADATA_SORT_COLUMNS,
     _TASK_SORT_COLUMNS,
     ActorBrowseParams,
+    MetadataFields,
     MetadataWriteMode,
 )
 from amane.enums import LibraryAutomation, MetadataField
@@ -907,6 +908,88 @@ class TestMetadataRepo:
         assert cleared.locked_fields == []
 
         assert await repo.set_metadata_locks(9999, [MetadataField.TITLE]) is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_preserves_locked_source_when_incoming_empty(self, repo: Repository):
+        """本次来源为空也要保留锁定字段的既有来源, 未锁定字段的来源照常清空."""
+        meta = await repo.upsert_metadata(
+            number="LOCK-010", title="Old", field_sources={"title": "javdb", "actors": "javdb"}
+        )
+        assert meta.id is not None
+        await repo.set_metadata_locks(meta.id, [MetadataField.TITLE])
+
+        updated = await repo.upsert_metadata(number="LOCK-010", title=None, actors=["New"], field_sources={})
+
+        assert updated.title == "Old"
+        assert updated.actors == ["New"]
+        assert updated.field_sources == {"title": "javdb"}
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_auto_preserves_locked_source_when_incoming_empty(self, repo: Repository):
+        meta = await repo.upsert_metadata(number="LOCK-011", title="Old", field_sources={"title": "javdb"})
+        assert meta.id is not None
+        await repo.set_metadata_locks(meta.id, [MetadataField.TITLE])
+
+        updated = await repo.update_metadata(meta.id, title=None, field_sources={})
+
+        assert updated is not None
+        assert updated.title == "Old"
+        assert updated.field_sources == {"title": "javdb"}
+
+    @pytest.mark.parametrize(
+        ("field", "original_kwargs", "incoming_kwargs"),
+        [
+            (MetadataField.ACTORS, {"actors": ["A"]}, {"actors": ["B"]}),
+            (MetadataField.TAGS, {"tags": ["t1"]}, {"tags": ["t2"]}),
+            (
+                MetadataField.EXTRAFANART,
+                {"extrafanart_urls": {"javdb": ["https://f/1.jpg"]}},
+                {"extrafanart_urls": {"dmm": ["https://f/2.jpg"]}},
+            ),
+            (MetadataField.SCORE, {"scores": {"javdb": 4.0}}, {"scores": {"dmm": 5.0}}),
+        ],
+    )
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_keeps_locked_value_by_column_shape(
+        self,
+        repo: Repository,
+        field: MetadataField,
+        original_kwargs: dict[str, object],
+        incoming_kwargs: dict[str, object],
+    ):
+        await repo.upsert_metadata(number="LOCK-012", **cast("MetadataFields", original_kwargs))
+        meta = await repo.get_metadata_by_number("LOCK-012")
+        assert meta is not None and meta.id is not None
+        await repo.set_metadata_locks(meta.id, [field])
+
+        incoming = cast("MetadataFields", {**incoming_kwargs, "plot": "unlocked-update"})
+        updated = await repo.upsert_metadata(number="LOCK-012", **incoming)
+
+        (column,) = original_kwargs
+        assert getattr(updated, column) == original_kwargs[column]
+        assert updated.plot == "unlocked-update"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_locked_actors_still_filtered_by_block_rule(self, repo: Repository):
+        """锁拦截自动刮削取值; 写入路径内的 block 规则仍作用于锁定 actors."""
+        meta = await repo.upsert_metadata(number="LOCK-013", actors=["Blocked", "Keep"])
+        assert meta.id is not None
+        await repo.set_metadata_locks(meta.id, [MetadataField.ACTORS])
+        actors = await repo.get_actors_by_names(["Blocked"])
+        assert actors[0].id is not None
+        await repo.delete_facet(FacetKind.ACTOR, actors[0].id)
+
+        # 绕过 delete 的剔除把被 block 的名字写回锁定行, 模拟存量偏离: 归一路径必须仍剔除它.
+        async with repo._session() as session:
+            row = await session.get(Metadata, meta.id)
+            assert row is not None
+            row.actors = ["Blocked", "Keep"]
+            session.add(row)
+            await session.commit()
+
+        updated = await repo.upsert_metadata(number="LOCK-013", actors=["New"])
+
+        assert updated.actors == ["Keep"]
 
 
 class TestTaskRepo:
