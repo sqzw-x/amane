@@ -53,6 +53,17 @@
 
 `raw` 的字段名 / 类型必须与当前 `MediaMetadata` 一致 — 站点级复用会把它直接反序列化. 模型改名或改类型时, 结果列与 raw 是两份数据, 需单独的 data migration (见 [database.md](database.md) Autogenerate 盲区).
 
+## 元数据锁定
+
+`Metadata.locked_fields` 是字段级锁集合 (取值 `MetadataField`, 空集为未锁定); 没有条目级开关, 「全部锁定」由前端写入全集. 可锁集合即 `MetadataField` 全集; `raw` / `field_sources` / `external_ids` / `source_urls` 不可锁 — 它们是刮削缓存与来源映射, 冻结后重刮与手动 merge 都失效.
+
+写入策略由 `MetadataWriteMode` 表达, repository 默认 `AUTO`:
+
+- `AUTO` (`ScrapeHandler` → `upsert_metadata`): 跳过锁定列, 并从本次 `field_sources` 剔除对应标量键, 锁定字段保留原来源; `raw` 始终更新.
+- `MANUAL` (REST PATCH / merge / crop 与 Agent 工具): 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. `set_metadata_locks` 整体替换锁集合, 不刷新 `updated_at`.
+
+facet 规则与实体 rename / delete 直接写库, 不读锁 — 分类管理是用户显式操作.
+
 ## 可写字段与 req↔repo 兼容性
 
 更新一条记录时存在三个模型, 字段集呈包含关系: **req model (对外) ⊆ repo 入参 TypedDict (对内) ⊆ DB 列**.
