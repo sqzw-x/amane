@@ -356,5 +356,14 @@
     "noChanges": "No changes",
     "changedCount_one": "{{count}} field(s) changed",
     "changedCount_other": "{{count}} field(s) changed"
+  },
+  "lock": {
+    "manage": "Metadata Locks",
+    "all": "Lock All",
+    "clearAll": "Unlock All",
+    "locked": "Locked",
+    "unlocked": "Unlocked",
+    "toggleLocked": "Unlock field",
+    "toggleUnlocked": "Lock field"
   }
 }

@@ -340,5 +340,14 @@
     "changedCount_one": "已修改 {{count}} 个字段",
     "changedCount_other": "已修改 {{count}} 个字段",
     "noChanges": "无修改"
+  },
+  "lock": {
+    "manage": "元数据锁定",
+    "all": "全部锁定",
+    "clearAll": "全部解除",
+    "locked": "已锁定",
+    "unlocked": "未锁定",
+    "toggleLocked": "解锁字段",
+    "toggleUnlocked": "锁定字段"
   }
 }

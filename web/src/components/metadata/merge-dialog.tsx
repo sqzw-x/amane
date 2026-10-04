@@ -16,7 +16,6 @@ import { notifications } from "@mantine/notifications";
 import { IconArrowBackUp, IconExternalLink } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { useMemo, type CSSProperties, type ReactNode } from "react";
-import type { ParseKeys } from "i18next";
 import { useTranslation } from "react-i18next";
 import { mergeMetadataMutation } from "@/client/@tanstack/react-query.gen";
 import type { ActorGender, MetadataField, MetadataResponse } from "@/client/types.gen";
@@ -25,7 +24,8 @@ import { GenderMark } from "@/components/media/gender-mark";
 import { useResettingState } from "@/hooks/use-resetting-state";
 import { ACTOR_GENDERS } from "@/lib/actors/browse";
 import { extractErrorMessage } from "@/lib/api-error";
-import { assertExhaustive, exhaustiveRecord, isOneOf } from "@/lib/exhaustive";
+import { assertExhaustive, isOneOf } from "@/lib/exhaustive";
+import { FIELD_LABEL_KEY } from "@/lib/media/metadata-fields";
 import { isRecord } from "@/lib/utils";
 
 /** Scalar fields - point-pick by equal value groups. */
@@ -56,25 +56,6 @@ const SCORE_FIELD = "score" as const satisfies MetadataField;
 
 /** 分区并集必须覆盖 `MetadataField` 全集, 新增字段时此处编译失败. */
 assertExhaustive<MetadataField>()([...TEXT_FIELDS, ...MEDIA_FIELDS, SCORE_FIELD] as const);
-
-/** MetadataField → metadata 命名空间下的字段标签 key. */
-const FIELD_LABEL_KEY = exhaustiveRecord<MetadataField>()({
-  title: "detail.fields.title",
-  plot: "detail.fields.plot",
-  actors: "detail.fields.actors",
-  directors: "detail.fields.directors",
-  tags: "detail.fields.tags",
-  series: "detail.fields.series",
-  release: "detail.fields.release",
-  runtime: "detail.fields.runtime",
-  publisher: "detail.fields.publisher",
-  studio: "detail.fields.studio",
-  poster_urls: "detail.fields.poster",
-  thumb_urls: "detail.fields.thumb",
-  trailer_urls: "detail.fields.trailer",
-  extrafanart: "detail.fields.extrafanart",
-  score: "detail.fields.score",
-} as const satisfies Record<MetadataField, ParseKeys<"metadata">>);
 
 type TextField = (typeof TEXT_FIELDS)[number];
 type MediaField = (typeof MEDIA_FIELDS)[number];
