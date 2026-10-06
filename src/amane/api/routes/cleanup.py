@@ -206,7 +206,7 @@ async def expand_cleanup_selection(
             meta = await repo.get_metadata(item.metadata_id)
             if meta is not None:
                 metas[item.metadata_id] = meta
-    outcome = build_footprint(
+    outcome = await build_footprint(
         library=library,
         items=items,
         indexed=await repo.list_media_files(library_id=library_id, limit=None),

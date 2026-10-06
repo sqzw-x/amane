@@ -38,7 +38,7 @@ class TestFootprint:
     async def test_file_only_lists_products_and_subtitles(self, repo: Repository, tmp_path: Path) -> None:
         lib, metas, item, video = await self._seed(repo, tmp_path)
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib,
             items=[item],
             indexed=[item],
@@ -57,7 +57,7 @@ class TestFootprint:
         """整目录删除按内容展开: 未被索引的同目录文件也在清单里, 用户看得到."""
         lib, metas, item, _video = await self._seed(repo, tmp_path)
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib,
             items=[item],
             indexed=[item],
@@ -75,7 +75,7 @@ class TestFootprint:
         lib, metas, item, video = await self._seed(repo, tmp_path)
         (video.parent / "empty").mkdir()
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib,
             items=[item],
             indexed=[item],
@@ -91,7 +91,7 @@ class TestFootprint:
         """选中项触顶要标记已截断并说明还有多少没纳入, 否则用户以为整份足迹都在清单里."""
         lib, metas, item, _video = await self._seed(repo, tmp_path)
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib,
             items=[item],
             indexed=[item],
@@ -119,7 +119,7 @@ class TestFootprint:
             lib.id, path=str(sibling), number="NSFS-040", status=MediaFileStatus.SCRAPED, metadata_id=metadata_id
         )
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib,
             items=[item],
             indexed=[item, other],
@@ -136,7 +136,7 @@ class TestFootprint:
     async def test_work_dir_refused_at_library_root(self, repo: Repository, tmp_path: Path) -> None:
         lib, metas, item, _video = await self._seed(repo, tmp_path, video_dir_rel="")
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib,
             items=[item],
             indexed=[item],
@@ -153,7 +153,7 @@ class TestFootprint:
         (video.parent / "NSFS-039.nfo").unlink()
         video.unlink()
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib,
             items=[item],
             indexed=[item],
@@ -188,7 +188,7 @@ class TestFootprint:
             lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
         )
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib,
             items=[item],
             indexed=[item],
@@ -223,7 +223,7 @@ class TestFootprint:
             lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
         )
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib, items=[item], indexed=[item], metas={meta.id: meta}, include_work_dir=False, limit=1
         )
 
@@ -255,7 +255,7 @@ class TestFootprint:
             metadata_id=meta.id,
         )
 
-        outcome = build_footprint(
+        outcome = build_footprint.sync(
             library=lib, items=[item], indexed=[item], metas={meta.id: meta}, include_work_dir=False
         )
 

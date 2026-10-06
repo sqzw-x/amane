@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ import structlog
 from ...organize.path_templates import resolve_paths
 from ...parsing import parse_file_info
 from ...utils.path import existing_disk_path, path_is_under, path_key
+from ...utils.threads import in_thread
 from ..rules import DEFAULT_SUBTITLE_EXTENSIONS
 from .inventory import (
     MAX_INVENTORY_ENTRIES,
@@ -45,6 +47,7 @@ class FootprintOutcome:
     notices: list[str]
 
 
+@in_thread
 def build_footprint(
     *,
     library: Library,
@@ -54,13 +57,20 @@ def build_footprint(
     include_work_dir: bool,
     limit: int = MAX_INVENTORY_ENTRIES,
 ) -> FootprintOutcome:
-    """由选中的媒体文件展开显式来源清单; 只读磁盘, 不访问数据库."""
+    """由选中的媒体文件展开显式来源清单; 只读磁盘, 不访问数据库.
+
+    展开含整目录递归与逐项 stat, 因此与其他库内 I/O 一样经 ``in_thread``.
+    """
     assert library.id is not None
     root = Path(library.path)
     entries: list[InventoryEntry] = []
     notices: list[str] = []
     seen: set[str] = set()
     dropped = 0
+    # 整目录删除要数每个目录的索引条数; 逐项扫整份索引在选中项多时是平方, 因此先归并一次.
+    indexed_per_dir: Mapping[str, int] = (
+        Counter(path_key(Path(item.path).parent) for item in indexed) if include_work_dir else {}
+    )
 
     def add(path: Path, *, indexed_file: bool = False) -> None:
         nonlocal dropped
@@ -92,7 +102,7 @@ def build_footprint(
             _add_subtitles(library, Path(item.path), add=add)
             continue
         work_dir = Path(item.path).parent
-        refusal = _work_dir_refusal(work_dir, root=root, indexed=indexed)
+        refusal = _work_dir_refusal(work_dir, root=root, indexed_per_dir=indexed_per_dir)
         if refusal is not None:
             notices.append(refusal)
             _add_subtitles(library, Path(item.path), add=add)
@@ -191,12 +201,12 @@ def _add_subtitles(library: Library, video: Path, *, add: _Add) -> None:
             add(child)
 
 
-def _work_dir_refusal(work_dir: Path, *, root: Path, indexed: Sequence[MediaFile]) -> str | None:
+def _work_dir_refusal(work_dir: Path, *, root: Path, indexed_per_dir: Mapping[str, int]) -> str | None:
     if path_key(work_dir) == path_key(root):
         return "作品目录就是库根, 不提供整目录删除"
-    siblings = [item for item in indexed if path_key(Path(item.path).parent) == path_key(work_dir)]
-    if len(siblings) > 1:
-        return f"目录内有 {len(siblings)} 条媒体索引, 不提供整目录删除: {work_dir}"
+    siblings = indexed_per_dir.get(path_key(work_dir), 0)
+    if siblings > 1:
+        return f"目录内有 {siblings} 条媒体索引, 不提供整目录删除: {work_dir}"
     return None
 
 
