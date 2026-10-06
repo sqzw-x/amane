@@ -41,7 +41,7 @@ ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显
 
 `RefreshPayload` 的 `scan` / `scrape` / `use_cache` 取值语义见 `handlers/models.py`; 落盘另交 ORGANIZE.
 
-扫描遍历经由 `scan_plan` 的显式递归 (`@in_thread`, 一次分类为跳过 / 无效 / 媒体, 顺带产出清理清单与读错误计数), 与库内索引的差集在 Python 计算. 不允许将整棵树的路径放入 SQL `IN` / `NOT IN` — 按批拆分时 `NOT IN` 会把其它批里真实存在的文件误判为失效; 仅 `remove` 时对库内记录 `exists`, 不遍历磁盘树. fan-out 必须 `list_media_files(..., limit=None)`, 默认 50 是列表分页不是批量任务上限. `MediaFile.path` 的写入、按路径查找、有效 / 失效集合差一律 NFC, 从库内路径打开 / 判断存在 / 落盘必须经 `existing_disk_path`.
+扫描遍历经由 `scan_inventory` 的显式递归 (`@in_thread`, 一次分类为跳过 / 无效 / 媒体, 顺带产出清理清单与读错误计数), 与库内索引的差集在 Python 计算. 不允许将整棵树的路径放入 SQL `IN` / `NOT IN` — 按批拆分时 `NOT IN` 会把其它批里真实存在的文件误判为失效; 仅 `remove` 时对库内记录 `exists`, 不遍历磁盘树. fan-out 必须 `list_media_files(..., limit=None)`, 默认 50 是列表分页不是批量任务上限. `MediaFile.path` 的写入、按路径查找、有效 / 失效集合差一律 NFC, 从库内路径打开 / 判断存在 / 落盘必须经 `existing_disk_path`.
 
 文件注册 (watcher 与 REFRESH 共用 `register_media_file`) 只写路径, 不计算 oshash; 指纹只在 SCRAPE 时按需计算 (本次可用来源中有声明 `uses_file_hash` trait 且 `oshash` 为空), 失败留 `None`, 不阻断刮削. REFRESH 仅在指定 library 下运行, 提交不接受裸 path; 不入库只刮削由 `ScrapeSubmission` 的 by-number 纯查询路径表达.
 
@@ -78,7 +78,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 | 单元 | 位置 | 复用方 | 职责 |
 | ------ | ------ | -------- | ------ |
 | `LibraryScan` | `library/scan.py` | REFRESH / watcher / ORGANIZE / SCAN_INVALID | 单路径分类 (跳过 / 无效 / 媒体), `unwanted_kind` 给出无效原因; 规则常量与校验在 `library/rules.py` |
-| `scan_library` | `handlers/_common.py` | clouddrive 巡检 | 库目录遍历; `@in_thread` 包装 glob / stat. 入库扫描与清理清单改走 `library/plan.py::scan_plan` 的显式递归 (能收集读错误并产出目录条目) |
+| `scan_library` | `handlers/_common.py` | clouddrive 巡检 | 库目录遍历; `@in_thread` 包装 glob / stat. 入库扫描与清理清单改走 `library/cleanup/inventory.py::scan_inventory` 的显式递归 (能收集读错误并产出目录条目) |
 | `LibraryTaskLocks` | `handlers/_common.py` | ORGANIZE / DELETE | `build_handlers` 构造一份注入两端, 同库执行期串行; 测试里未注入时各 handler 自建, 互不共享 |
 | `finalize_media_file` | `handlers/_common.py` | SCRAPE (缓存 / 主路径) | 标记 SCRAPED + 关联 Metadata |
 | `apply_file_operations` | `handlers/file.py` | ORGANIZE | 读取 MediaFile→读取 Library→渲染路径→执行 file ops; 库路径 I/O 经 `@in_thread` |
@@ -104,11 +104,11 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 清单有两个产出方: `SCAN_INVALID` 的全库只读遍历, 与 `REFRESH` 整库扫描的顺带产出 (同一趟遍历, 媒体命中用于增删). 回收站展开由只读接口同步产出显式来源清单, 走同一套删除. `DELETE` 只按清单执行 — 清单是它们之间唯一的输入:
 
-- **进程内**: 存放挂在 `AppRuntime.plan_store`, 按库与来源分组保留最近四份, 24 小时过期; 不落库, 重启即丢. 库路径修改或库删除时丢弃该库清单.
+- **进程内**: 存放挂在 `AppRuntime.inventory_store`, 按库与来源分组保留最近四份, 24 小时过期; 不落库, 重启即丢. 库路径修改或库删除时丢弃该库清单.
 - **触顶只丢条目**: 条目上限触顶后遍历照常走完, 只是不登记条目并记下未纳入的候选数. 同一趟遍历要给 `REFRESH` 收集媒体命中, 提前收工会让 `add + remove` 把磁盘上还在的文件当成失效; 截断与未纳入数在状态接口上可见.
 - **执行集合 ⊆ 清单**: `DELETE` 携带清单标识与排除项; 标识不存在、已执行、库不一致或库根已变更即失败, 不重新扫描、不重新生成. 排除项按路径分量匹配, 相对路径按清单库根解释, 不匹配任何条目的排除项忽略. 已执行的清单在面板侧等同于不存在, 而按标识查找仍返回它, 供执行侧区分「不存在」与「已执行过」.
 - **边界**: 目标须在清单记录的库根内, 没有例外 — 库外的一切 (链接模式下写在链接树的 strm 与产物) 既不进清单也不删除; 库根自身与 `.amane_trash` 自身 (含递归途中的该子树) 拒绝. 库内同时存在指向库外的符号链接时, 边界判定用字面路径, 不做真身解析.
-- **面板读取**: 状态接口只给状态与范围, 节点一律走 `plan/nodes` 按 `offset`/`limit` 取一页 (顶层与下钻同一接口, 回收站用响应里的 `path` 展开) — 一份清单可能有上万条候选, 整份下发会卡住面板. 清单内容生成后不变, 树因此只构建一次 (`plan.py::plan_tree`). 节点路径一律 `/` 分隔, 面板按它做分量匹配. 遍历设置与当前库配置不一致的清单按不存在处理: 它只覆盖了库的一部分, 面板不该照整库渲染. `will_be_empty` 由扫描自底向上算出, 而不是面板按清单条目推断 (有效媒体不是条目); 面板还要确认该子树里没有被排除的条目, 否则标记预告的是一个不会发生的结果.
+- **面板读取**: 状态接口只给状态与范围, 节点一律走 `inventory/nodes` 按 `offset`/`limit` 取一页 (顶层与下钻同一接口, 回收站用响应里的 `path` 展开) — 一份清单可能有上万条候选, 整份下发会卡住面板. 清单内容生成后不变, 树因此只构建一次 (`library/cleanup/inventory.py::inventory_tree`). 节点路径一律 `/` 分隔, 面板按它做分量匹配. 遍历设置与当前库配置不一致的清单按不存在处理: 它只覆盖了库的一部分, 面板不该照整库渲染. `will_be_empty` 由扫描自底向上算出, 而不是面板按清单条目推断 (有效媒体不是条目); 面板还要确认该子树里没有被排除的条目, 否则标记预告的是一个不会发生的结果.
 - **不加库列**: 清单与剪枝开关都只存在于任务 payload, 没有需要从库里取真值的读取路径.
 
 ## 刮削期资源物化

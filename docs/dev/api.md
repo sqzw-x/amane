@@ -61,7 +61,7 @@ OpenAPI 列出参数, 不表达组合语义:
 
 **错误**: `HTTPException(detail=中文)`. 路径校验位于 `support/path_validation.py` (存在 / 类型 / `safe_dirs` → 400 / 403 / 404; `ALLOW_ALL` 时跳过边界层). `/files` 的失败映射: 不存在 → 404, 不在 `safe_dirs` → 403, 空名单 → 500, `os.scandir` 的 `OSError` (含网络盘挂载失效) → 500 + strerror detail, `PermissionError` → 403. 错误日志统一由 LoggingMiddleware 打点 (见 [observability.md](observability.md)), handler 内不自行打印.
 
-**列表**: `media` / `metadata` / `tasks` / `facets` / `actors` 同构 `offset` + `limit` + `sort_by` + `order`, 响应 `{items, total}`; `sort_by` 是各资源 `*SortField` 枚举, repo 用 enum→Column, 禁止反射列名. 清理清单的 `cleanup/plan/nodes` 同样是 `offset` / `limit` + `{items, total}`, 顺序由树决定, 因此没有排序参数 (见 [task-system.md](task-system.md)). `libraries` / `schedules` / `feeds` 全量无分页. `GET /actors` 列表项不填简介 / 别名 / 用户标签 / 源字典 / `raw` (详情仍全量).
+**列表**: `media` / `metadata` / `tasks` / `facets` / `actors` 同构 `offset` + `limit` + `sort_by` + `order`, 响应 `{items, total}`; `sort_by` 是各资源 `*SortField` 枚举, repo 用 enum→Column, 禁止反射列名. 清理清单的 `cleanup/inventory/nodes` 同样是 `offset` / `limit` + `{items, total}`, 顺序由树决定, 因此没有排序参数 (见 [task-system.md](task-system.md)). `libraries` / `schedules` / `feeds` 全量无分页. `GET /actors` 列表项不填简介 / 别名 / 用户标签 / 源字典 / `raw` (详情仍全量).
 
 **状态码**: 创建 201、任务入队 202、无返回体 204; 空 PATCH / 非法 cron → 422; 任务状态不允许的 report / record → 409.
 
