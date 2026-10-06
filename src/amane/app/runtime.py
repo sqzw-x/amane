@@ -517,6 +517,8 @@ def build_handlers(
     )
     if library_locks is None:
         library_locks = LibraryTaskLocks()
+    # 缺省自建只服务精简构造 (测试); 生产必须传入 AppRuntime 的那一份, 否则扫描写进的清单
+    # 不在面板读取的存放里, 删除任务只会得到「清单不存在」.
     if inventory_store is None:
         inventory_store = InventoryStore()
     handlers: dict[TaskType, TaskHandler[Any, Any]] = {

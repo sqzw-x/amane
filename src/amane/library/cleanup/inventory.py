@@ -34,10 +34,11 @@ INVENTORY_TTL_SECONDS = 24 * 3600
 
 
 class InventorySource(StrEnum):
-    """清单来源分组. 面板只渲染规则来源的最新一份."""
+    """清单来源分组. 面板只渲染规则来源的最新一份; 回收站与选中项展开发往各自的分组, 互不挤占保留窗口."""
 
     RULES = "rules"
     EXPLICIT = "explicit"
+    TRASH = "trash"
 
 
 class InventoryReason(StrEnum):
@@ -157,9 +158,13 @@ class InventoryStore:
         if len(bucket) > self.keep:
             del bucket[: len(bucket) - self.keep]
 
-    def latest(self, library_id: int, source: InventorySource) -> CleanupInventory | None:
+    def latest(
+        self, library_id: int, source: InventorySource, *, max_age: timedelta | None = None
+    ) -> CleanupInventory | None:
+        """最新的可用清单; ``max_age`` 用于只接受刚产出过的那一份."""
+        within = max_age.total_seconds() if max_age is not None else None
         for inventory in reversed(self._inventories.get((library_id, source), [])):
-            if not inventory.executed and not self._expired(inventory):
+            if not inventory.executed and not self._expired(inventory, within=within):
                 return inventory
         return None
 
@@ -176,8 +181,9 @@ class InventoryStore:
         for key in [key for key in self._inventories if key[0] == library_id]:
             del self._inventories[key]
 
-    def _expired(self, inventory: CleanupInventory) -> bool:
-        return self.now() - inventory.created_at > timedelta(seconds=self.ttl_seconds)
+    def _expired(self, inventory: CleanupInventory, *, within: float | None = None) -> bool:
+        """``within`` 覆盖有效期 (秒); 缺省用清单本身的 TTL."""
+        return self.now() - inventory.created_at > timedelta(seconds=self.ttl_seconds if within is None else within)
 
 
 @dataclass
@@ -484,7 +490,7 @@ def scan_trash(
         scope_path=trash_dir,
         recursive=True,
         patterns=(),
-        source=InventorySource.EXPLICIT,
+        source=InventorySource.TRASH,
         created_at=datetime.now(UTC),
         entries=state.entries,
         dirs=state.dirs,

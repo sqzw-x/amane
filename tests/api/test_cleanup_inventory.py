@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
-from amane.api.routes.cleanup import MAX_NODE_PAGE_SIZE
+from amane.api.routes.cleanup import MAX_NODE_PAGE_SIZE, TRASH_REUSE_WINDOW
 from amane.db.models import TaskType
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidPayload
 from amane.library import InventorySource, scan_inventory
@@ -327,7 +328,7 @@ async def test_trash_expansion_lists_history(
     assert body["path"] == ".amane_trash"
     inventory = app.state.runtime.inventory_store.get(body["inventory_id"])
     assert inventory is not None
-    assert inventory.source is InventorySource.EXPLICIT
+    assert inventory.source is InventorySource.TRASH
 
     page = await _nodes(client, library_id, path=body["path"], inventory_id=body["inventory_id"])
 
@@ -352,6 +353,33 @@ async def test_trash_expansion_without_trash(client: AsyncClient, safe_path: Pat
 
     assert resp.status_code == 200
     assert resp.json()["exists"] is False
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_trash_expansion_reuses_recent_inventory(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+    """窗口内的重复展开复用同一份; 窗口过后重新遍历, 面板才看得到刚删完的样子."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root)
+    trash = root / ".amane_trash"
+    trash.mkdir(parents=True)
+    (trash / "old-ad.mp4").write_bytes(b"x" * 10)
+
+    first = await client.get(f"libraries/{library_id}/cleanup/trash")
+    repeated = await client.get(f"libraries/{library_id}/cleanup/trash")
+
+    assert repeated.json()["inventory_id"] == first.json()["inventory_id"]
+
+    app.state.runtime.inventory_store.now = lambda: datetime.now(UTC) + TRASH_REUSE_WINDOW + timedelta(seconds=1)
+    (trash / "old-ad.mp4").unlink()
+    (trash / "old-2.mp4").write_bytes(b"x" * 20)
+
+    rescanned = await client.get(f"libraries/{library_id}/cleanup/trash")
+
+    assert rescanned.json()["inventory_id"] != first.json()["inventory_id"]
+    page = await _nodes(
+        client, library_id, path=rescanned.json()["path"], inventory_id=rescanned.json()["inventory_id"]
+    )
+    assert {node["name"] for node in page["items"]} == {"old-2.mp4"}
 
 
 @pytest.mark.asyncio(loop_scope="function")

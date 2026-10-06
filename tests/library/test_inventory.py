@@ -292,11 +292,31 @@ class TestInventoryStore:
             source=InventorySource.EXPLICIT,
             created_at=_NOW,
         )
+        trash = CleanupInventory(
+            inventory_id="trash",
+            library_id=1,
+            root=rules.root,
+            scope_path=rules.root / ".amane_trash",
+            recursive=True,
+            patterns=(),
+            source=InventorySource.TRASH,
+            created_at=_NOW,
+        )
         store.put(rules)
         store.put(explicit)
+        store.put(trash)
 
         assert store.latest(1, InventorySource.RULES) is rules
         assert store.latest(1, InventorySource.EXPLICIT) is explicit
+        assert store.latest(1, InventorySource.TRASH) is trash
+
+    def test_latest_within_window(self) -> None:
+        """``max_age`` 只接受刚产出过的那一份: 回收站展开据此复用同一秒级的重复请求."""
+        store = InventoryStore(now=lambda: _NOW + timedelta(seconds=5))
+        store.put(self._inventory("a", created=_NOW))
+
+        assert store.latest(1, InventorySource.RULES, max_age=timedelta(seconds=10)) is not None
+        assert store.latest(1, InventorySource.RULES, max_age=timedelta(seconds=2)) is None
 
     def test_drop_library(self) -> None:
         store = InventoryStore(now=lambda: _NOW)
@@ -404,7 +424,7 @@ class TestScanTrash:
 
         inventory = scan_trash.sync(trash, library_id=1, library_root=lib)
 
-        assert inventory.source is InventorySource.EXPLICIT
+        assert inventory.source is InventorySource.TRASH
         assert inventory.scope_path == trash
         assert {entry.path.name: entry.reason for entry in inventory.entries} == {
             "old-ad.mp4": InventoryReason.EXPLICIT,
