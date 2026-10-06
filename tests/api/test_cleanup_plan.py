@@ -170,3 +170,41 @@ async def test_scan_task_fills_panel_plan(client: AsyncClient, safe_path: Path) 
     names = {node["name"]: node for node in body["nodes"]}
     assert set(names) == {"work"}
     assert names["work"]["entry_count"] == 2
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_trash_expansion_lists_history(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+    """回收站展开同步产出显式来源清单: 其下条目可删, 目录自身不可删."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root)
+    trash = root / ".amane_trash"
+    trash.mkdir(parents=True)
+    (trash / "old-ad.mp4").write_bytes(b"x" * 10)
+    (trash / "old-2.mp4").write_bytes(b"x" * 20)
+
+    resp = await client.get(f"libraries/{library_id}/cleanup/trash")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["exists"] is True
+    assert body["entry_count"] == 2
+    assert body["entry_bytes"] == 30
+    assert {node["name"] for node in body["nodes"]} == {"old-ad.mp4", "old-2.mp4"}
+    assert all(node["outside"] is False for node in body["nodes"])
+    plan = app.state.runtime.plan_store.get(body["plan_id"])
+    assert plan is not None
+    assert plan.source is PlanSource.EXPLICIT
+
+    deleted = await client.post("tasks", json={"type": "delete", "library_id": library_id, "plan_id": body["plan_id"]})
+    assert deleted.status_code == 202
+    assert app.state.runtime.plan_store.get(body["plan_id"]) is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_trash_expansion_without_trash(client: AsyncClient, safe_path: Path) -> None:
+    library_id = await _library(client, safe_path / "lib")
+
+    resp = await client.get(f"libraries/{library_id}/cleanup/trash")
+
+    assert resp.status_code == 200
+    assert resp.json()["exists"] is False

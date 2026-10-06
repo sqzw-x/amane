@@ -4096,6 +4096,34 @@ export type ToolResultRow = {
 };
 
 /**
+ * TrashSummaryResponse
+ *
+ * 回收站历史内容: 展开即产出显式来源清单, 面板按同一套审查与删除处理.
+ */
+export type TrashSummaryResponse = {
+    /**
+     * Exists
+     */
+    exists: boolean;
+    /**
+     * Plan Id
+     */
+    plan_id?: string | null;
+    /**
+     * Entry Count
+     */
+    entry_count?: number;
+    /**
+     * Entry Bytes
+     */
+    entry_bytes?: number;
+    /**
+     * Nodes
+     */
+    nodes?: Array<PlanNodeResponse>;
+};
+
+/**
  * TurnTokenUsage
  *
  * `input` 是非缓存输入 (总量减去 cache_read/cache_write). pydantic-ai 的 `input_tokens` 含缓存, 此处拆开.
@@ -4500,6 +4528,12 @@ export type GetCleanupPlanNodesData = {
          * 节点路径: 库内相对库根, 库外为绝对路径; 空串取根
          */
         path?: string;
+        /**
+         * Plan Id
+         *
+         * 指定清单; 缺省用规则来源的最新一份
+         */
+        plan_id?: string | null;
     };
     url: '/api/libraries/{library_id}/cleanup/plan/nodes';
 };
@@ -4521,6 +4555,36 @@ export type GetCleanupPlanNodesResponses = {
 };
 
 export type GetCleanupPlanNodesResponse = GetCleanupPlanNodesResponses[keyof GetCleanupPlanNodesResponses];
+
+export type GetCleanupTrashData = {
+    body?: never;
+    path: {
+        /**
+         * Library Id
+         */
+        library_id: number;
+    };
+    query?: never;
+    url: '/api/libraries/{library_id}/cleanup/trash';
+};
+
+export type GetCleanupTrashErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCleanupTrashError = GetCleanupTrashErrors[keyof GetCleanupTrashErrors];
+
+export type GetCleanupTrashResponses = {
+    /**
+     * Successful Response
+     */
+    200: TrashSummaryResponse;
+};
+
+export type GetCleanupTrashResponse = GetCleanupTrashResponses[keyof GetCleanupTrashResponses];
 
 export type ListFilesData = {
     body?: never;

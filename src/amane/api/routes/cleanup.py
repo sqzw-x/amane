@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ...db.models import TaskStatus, TaskType
 from ...library import (
+    TRASH_DIRNAME,
     LibraryPlan,
     PlanEntryKind,
     PlanNode,
@@ -16,9 +17,10 @@ from ...library import (
     PlanStore,
     build_plan_tree,
     find_plan_node,
+    scan_trash,
 )
 from ..deps import RepoDep, RuntimeDep
-from ..models.cleanup import PlanNodeResponse, PlanNodesResponse, PlanSummaryResponse
+from ..models.cleanup import PlanNodeResponse, PlanNodesResponse, PlanSummaryResponse, TrashSummaryResponse
 
 if TYPE_CHECKING:
     from ...db.repository import Repository
@@ -51,9 +53,9 @@ def _to_response(plan: LibraryPlan, node: PlanNode, *, children: bool) -> PlanNo
     )
 
 
-def _plan_or_404(store: PlanStore, library_id: int) -> LibraryPlan:
-    plan = store.latest(library_id, PlanSource.RULES)
-    if plan is None:
+def _plan_by_id(store: PlanStore, library_id: int, plan_id: str | None) -> LibraryPlan:
+    plan = store.get(plan_id) if plan_id else store.latest(library_id, PlanSource.RULES)
+    if plan is None or plan.library_id != library_id:
         raise HTTPException(status_code=404, detail="No cleanup plan")
     return plan
 
@@ -93,9 +95,10 @@ async def get_cleanup_plan_nodes(
     library_id: int,
     runtime: RuntimeDep,
     path: Annotated[str, Query(description="节点路径: 库内相对库根, 库外为绝对路径; 空串取根")] = "",
+    plan_id: Annotated[str | None, Query(description="指定清单; 缺省用规则来源的最新一份")] = None,
 ) -> PlanNodesResponse:
     """展开某个节点: 只返回该目录的直接子节点."""
-    plan = _plan_or_404(runtime.plan_store, library_id)
+    plan = _plan_by_id(runtime.plan_store, library_id, plan_id)
     root = build_plan_tree(plan)
     node = find_plan_node(root, _resolve(plan, path))
     if node is None:
@@ -108,3 +111,31 @@ def _resolve(plan: LibraryPlan, raw: str) -> Path:
         return plan.root
     candidate = Path(raw)
     return candidate if candidate.is_absolute() else plan.root / candidate
+
+
+@router.get("/{library_id}/cleanup/trash")
+async def get_cleanup_trash(library_id: int, repo: RepoDep, runtime: RuntimeDep) -> TrashSummaryResponse:
+    """展开回收站历史内容: 同步产出显式来源清单, 前端只引用与排除."""
+    library = await repo.get_library(library_id)
+    if library is None:
+        raise HTTPException(status_code=404, detail="Library not found")
+    library_root = Path(library.path)
+    trash_dir = library_root / TRASH_DIRNAME
+    if not trash_dir.is_dir():
+        return TrashSummaryResponse(exists=False)
+
+    plan = await scan_trash(trash_dir, library_id=library_id, library_root=library_root)
+    if not plan.entries:
+        return TrashSummaryResponse(exists=False)
+    runtime.plan_store.put(plan)
+
+    root = build_plan_tree(plan)
+    node = find_plan_node(root, trash_dir)
+    children = node.children if node is not None else ()
+    return TrashSummaryResponse(
+        exists=True,
+        plan_id=plan.plan_id,
+        entry_count=node.entry_count if node is not None else 0,
+        entry_bytes=node.entry_bytes if node is not None else 0,
+        nodes=[_to_response(plan, child, children=False) for child in children],
+    )

@@ -51,3 +51,13 @@ class PlanSummaryResponse(BaseModel):
 
 class PlanNodesResponse(BaseModel):
     nodes: list[PlanNodeResponse] = []
+
+
+class TrashSummaryResponse(BaseModel):
+    """回收站历史内容: 展开即产出显式来源清单, 面板按同一套审查与删除处理."""
+
+    exists: bool
+    plan_id: str | None = None
+    entry_count: int = 0
+    entry_bytes: int = 0
+    nodes: list[PlanNodeResponse] = []

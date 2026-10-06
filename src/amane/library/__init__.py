@@ -32,6 +32,7 @@ from .plan import (
     find_plan_node,
     new_plan_id,
     scan_plan,
+    scan_trash,
 )
 from .rules import (
     DEFAULT_SUBTITLE_EXTENSIONS,
@@ -91,6 +92,7 @@ __all__ = [
     "resolve_ingest_cloud_path",
     "same_path",
     "scan_plan",
+    "scan_trash",
     "to_local_path",
     "validate_blacklist_pattern",
     "validate_min_file_size",

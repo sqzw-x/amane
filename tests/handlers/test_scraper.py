@@ -1,5 +1,6 @@
 """测试 amane.pipeline - ScrapeHandler 和 RefreshHandler"""
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -11,7 +12,7 @@ from amane.crawlers.models import MediaMetadata
 from amane.db.models import MediaFileStatus, TaskType
 from amane.enums import MetadataField, SiteName
 from amane.handlers import RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
-from amane.library import LibraryFileKind, LibraryHit
+from amane.library import LibraryFileKind, LibraryHit, LibraryPlan, PlanSource, PlanStore
 from amane.parsing import ContentType
 from amane.plugins.models import SourceDescriptor
 
@@ -560,6 +561,44 @@ class TestRefreshHandler:
         assert result.result.scrape == 2
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_unscoped_scan_writes_cleanup_plan(self, repo: Repository, tmp_path):
+        """整库范围的入库扫描顺带产出清单: 无效文件与空目录都在里面, 面板不必再扫一次."""
+        (tmp_path / "MIDV-123.mp4").write_bytes(b"\x00" * 100)
+        (tmp_path / "ad.mp4").write_bytes(b"\x00" * 10)
+        (tmp_path / "empty").mkdir()
+        lib = await repo.create_library(name="t", path=str(tmp_path), write_nfo=False, blacklist_patterns=["ad"])
+        assert lib.id is not None
+        store = PlanStore()
+
+        result = await RefreshHandler(repo=repo, plan_store=store).handle(
+            RefreshPayload(library_id=lib.id, path=str(tmp_path), scrape=set())
+        )
+
+        assert result.success is True
+        plan = store.latest(lib.id, PlanSource.RULES)
+        assert plan is not None
+        assert plan.scope_path is None
+        assert {entry.path.name for entry in plan.entries} == {"ad.mp4", "empty"}
+        assert [hit.path.name for hit in plan.media_hits] == ["MIDV-123.mp4"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_scoped_scan_leaves_plan_alone(self, repo: Repository, tmp_path):
+        """子目录巡检不代表整库, 不覆盖面板用的清单."""
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (sub / "ad.mp4").write_bytes(b"\x00" * 10)
+        lib = await repo.create_library(name="t", path=str(tmp_path), write_nfo=False, blacklist_patterns=["ad"])
+        assert lib.id is not None
+        store = PlanStore()
+
+        result = await RefreshHandler(repo=repo, plan_store=store).handle(
+            RefreshPayload(library_id=lib.id, path=str(sub), scrape=set())
+        )
+
+        assert result.success is True
+        assert store.latest(lib.id, PlanSource.RULES) is None
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_handle_files(self, repo: Repository, tmp_path):
         """新文件被注册; PENDING 状态的文件被刮削; SKIP 状态的文件不被刮削."""
 
@@ -747,11 +786,23 @@ class TestRefreshHandler:
         assert media.path == str(stored)
 
         listed = tmp_path / f"{nfd}.mp4"
+        library_id = lib.id
+        assert library_id is not None
 
-        async def fake_scan(*_args: object, **_kwargs: object) -> list[LibraryHit]:
-            return [LibraryHit(listed, LibraryFileKind.MEDIA)]
+        async def fake_scan(*_args: object, **_kwargs: object) -> LibraryPlan:
+            return LibraryPlan(
+                plan_id="test",
+                library_id=library_id,
+                root=tmp_path,
+                scope_path=None,
+                recursive=True,
+                patterns=(),
+                source=PlanSource.RULES,
+                created_at=datetime.now(UTC),
+                media_hits=[LibraryHit(listed, LibraryFileKind.MEDIA)],
+            )
 
-        monkeypatch.setattr("amane.handlers.refresh.scan_library", fake_scan)
+        monkeypatch.setattr("amane.handlers.refresh.scan_plan", fake_scan)
         result = await RefreshHandler(repo=repo).handle(
             RefreshPayload(
                 library_id=lib.id,

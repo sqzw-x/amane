@@ -21,7 +21,7 @@ import structlog
 
 from ..utils.threads import in_thread
 from .rules import TRASH_DIRNAME
-from .scan import LibraryScan, UnwantedKind
+from .scan import LibraryFileKind, LibraryHit, LibraryScan, UnwantedKind
 
 logger = structlog.get_logger()
 
@@ -101,6 +101,8 @@ class LibraryPlan:
     skipped_dirs: int = 0
     skipped_files: int = 0
     executed: bool = False
+    media_hits: list[LibraryHit] = field(default_factory=list)
+    """同一趟遍历命中的媒体文件; 只有 `collect_media` 时填充 (入库扫描用)."""
 
     @property
     def scoped(self) -> bool:
@@ -173,6 +175,8 @@ class _ScanState:
     entries: list[PlanEntry]
     dirs: dict[Path, DirCoverage]
     limit: int
+    collect_media: bool = False
+    media: list[LibraryHit] = field(default_factory=list)
     truncated: bool = False
     skipped_dirs: int = 0
     skipped_files: int = 0
@@ -200,8 +204,11 @@ def scan_plan(
     scan: LibraryScan,
     source: PlanSource = PlanSource.RULES,
     limit: int = MAX_PLAN_ENTRIES,
+    collect_media: bool = False,
 ) -> LibraryPlan:
     """遍历范围内的一层或整棵子树, 产出清单.
+
+    与入库扫描共用同一趟遍历: `collect_media` 为真时同时收集媒体命中, 不额外遍历磁盘.
 
     - 黑名单与体积过小的文件是条目; 预告片与其余文件不是.
     - 磁盘上没有子项的目录作为「扫描时已空」的条目.
@@ -209,7 +216,7 @@ def scan_plan(
     - 读不到的目录与 stat 失败的文件只计数, 其余子项继续.
     - 达到条目上限即停止遍历并标记已截断.
     """
-    state = _ScanState(entries=[], dirs={}, limit=limit)
+    state = _ScanState(entries=[], dirs={}, limit=limit, collect_media=collect_media)
     _walk(scope_dir, state=state, scan=scan, recursive=recursive)
     plan = LibraryPlan(
         plan_id=new_plan_id(),
@@ -225,6 +232,7 @@ def scan_plan(
         truncated=state.truncated,
         skipped_dirs=state.skipped_dirs,
         skipped_files=state.skipped_files,
+        media_hits=state.media,
     )
     logger.info(
         "plan scanned",
@@ -274,6 +282,13 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
                 entries += sub.entries
                 if sub.disappears:
                     removed += 1
+            continue
+        kind = scan.classify(path)
+        if kind is LibraryFileKind.MEDIA:
+            if state.collect_media:
+                state.media.append(LibraryHit(path, kind))
+            continue
+        if kind is not LibraryFileKind.TRASH:
             continue
         entry = _file_entry(path, scan=scan, child_stat=child_stat, is_symlink=child.is_symlink())
         if entry is not None and _record_entry(entry, state=state):
@@ -423,3 +438,100 @@ def find_plan_node(root: PlanNode, path: Path) -> PlanNode | None:
 
 def _is_under(path: Path, root: Path) -> bool:
     return path != root and root in path.parents
+
+
+@in_thread
+def scan_trash(
+    trash_dir: Path,
+    *,
+    library_id: int,
+    library_root: Path,
+    limit: int = MAX_PLAN_ENTRIES,
+) -> LibraryPlan:
+    """把回收站的历史内容展开成显式来源清单.
+
+    不做规则判定: 其下每个文件都是条目, 空目录同样是条目. 回收站目录自身从不作为条目.
+    """
+    state = _ScanState(entries=[], dirs={}, limit=limit)
+    _walk_explicit(trash_dir, state=state)
+    plan = LibraryPlan(
+        plan_id=new_plan_id(),
+        library_id=library_id,
+        root=library_root,
+        scope_path=trash_dir,
+        recursive=True,
+        patterns=(),
+        source=PlanSource.EXPLICIT,
+        created_at=datetime.now(UTC),
+        entries=state.entries,
+        dirs=state.dirs,
+        truncated=state.truncated,
+        skipped_dirs=state.skipped_dirs,
+        skipped_files=state.skipped_files,
+    )
+    logger.info(
+        "trash scanned",
+        library_id=library_id,
+        entries=len(plan.entries),
+        truncated=plan.truncated,
+        skipped_dirs=plan.skipped_dirs,
+        skipped_files=plan.skipped_files,
+    )
+    return plan
+
+
+def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
+    """登记回收站目录下的全部内容; 读不到该目录时返回 None."""
+    if state.truncated:
+        return _DirResult(children=0, entries=0, disappears=False)
+    try:
+        with os.scandir(directory) as scanned:
+            children = list(scanned)
+    except OSError as exc:
+        state.skipped_dirs += 1
+        logger.warning("trash scan directory unreadable", path=str(directory), error=str(exc))
+        return None
+
+    total = 0
+    removed = 0
+    entries = 0
+    for child in children:
+        if state.truncated:
+            break
+        total += 1
+        path = Path(child.path)
+        try:
+            child_stat = child.stat(follow_symlinks=False)
+        except OSError as exc:
+            state.skipped_files += 1
+            logger.warning("trash scan entry unreadable", path=str(path), error=str(exc))
+            continue
+        if stat.S_ISDIR(child_stat.st_mode) and not child.is_symlink():
+            sub = _walk_explicit(path, state=state)
+            if sub is None or state.truncated:
+                continue
+            if sub.children == 0:
+                entry = PlanEntry(path=path, kind=PlanEntryKind.DIR, reason=PlanReason.EXPLICIT)
+                if _record_entry(entry, state=state):
+                    entries += 1
+                    removed += 1
+                continue
+            state.dirs[path] = DirCoverage(disk_children=sub.children, will_be_empty=sub.disappears)
+            entries += sub.entries
+            if sub.disappears:
+                removed += 1
+            continue
+        entry = PlanEntry(
+            path=path,
+            kind=PlanEntryKind.SYMLINK if child.is_symlink() else PlanEntryKind.FILE,
+            reason=PlanReason.EXPLICIT,
+            size=child_stat.st_size,
+            dev=child_stat.st_dev,
+            ino=child_stat.st_ino,
+            nlink=child_stat.st_nlink,
+        )
+        if _record_entry(entry, state=state):
+            entries += 1
+            removed += 1
+
+    return _DirResult(children=total, entries=entries, disappears=total > 0 and removed == total)

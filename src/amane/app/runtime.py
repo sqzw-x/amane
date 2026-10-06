@@ -520,7 +520,7 @@ def build_handlers(
     if plan_store is None:
         plan_store = PlanStore()
     handlers: dict[TaskType, TaskHandler[Any, Any]] = {
-        TaskType.REFRESH: RefreshHandler(repo, media_extensions=hot.watcher.media_extensions),
+        TaskType.REFRESH: RefreshHandler(repo, hot.watcher.media_extensions, plan_store),
         TaskType.SCRAPE: ScrapeHandler(
             repo,
             factory,

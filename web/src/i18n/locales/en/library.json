@@ -223,6 +223,10 @@
     "selected_one": "cleanup.selected",
     "selected_other": "cleanup.selected",
     "nodeCount_one": "cleanup.nodeCount",
-    "nodeCount_other": "cleanup.nodeCount"
+    "nodeCount_other": "cleanup.nodeCount",
+    "tabRules": "Unwanted files",
+    "tabTrash": "Trash",
+    "trashEmpty": "Trash is empty",
+    "trashNote": "Nothing new is written here; this clears the legacy content, and the .amane_trash directory itself stays"
   }
 }

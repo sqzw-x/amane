@@ -20,6 +20,7 @@ from amane.library import (
     find_plan_node,
     new_plan_id,
     scan_plan,
+    scan_trash,
 )
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -334,3 +335,35 @@ class TestPlanTree:
         root = build_plan_tree(plan)
 
         assert find_plan_node(root, lib / "gone") is None
+
+
+class TestScanTrash:
+    def test_lists_everything_under_trash(self, tmp_path: Path) -> None:
+        """回收站展开不做规则判定: 其下每个文件与空目录都是条目, 回收站目录自身不是."""
+        lib = tmp_path / "lib"
+        trash = lib / ".amane_trash"
+        (trash / "sub").mkdir(parents=True)
+        (trash / "old-ad.mp4").write_bytes(b"x" * 10)
+        (trash / "sub" / "old-2.mp4").write_bytes(b"x" * 20)
+        (trash / "sub" / "empty").mkdir()
+        (lib / "keep.mp4").write_bytes(b"x" * 100)
+
+        plan = scan_trash.sync(trash, library_id=1, library_root=lib)
+
+        assert plan.source is PlanSource.EXPLICIT
+        assert plan.scope_path == trash
+        assert {entry.path.name: entry.reason for entry in plan.entries} == {
+            "old-ad.mp4": PlanReason.EXPLICIT,
+            "old-2.mp4": PlanReason.EXPLICIT,
+            "empty": PlanReason.EXPLICIT,
+        }
+        assert plan.total_size == 30
+
+    def test_empty_trash_has_no_entries(self, tmp_path: Path) -> None:
+        lib = tmp_path / "lib"
+        trash = lib / ".amane_trash"
+        trash.mkdir(parents=True)
+
+        plan = scan_trash.sync(trash, library_id=1, library_root=lib)
+
+        assert plan.entries == []

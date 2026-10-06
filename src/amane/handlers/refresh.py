@@ -5,11 +5,11 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..db import TaskType
-from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
+from ..library import MEDIA_EXTENSIONS, LibraryScan, PlanStore, scan_plan
 from ..parsing import parse_file_info
 from ..utils.path import nfc_path
 from ..utils.threads import path_exists, path_is_dir
-from ._common import register_media_file, scan_library
+from ._common import register_media_file
 from .models import RefreshPayload, RefreshResult, ScanMode, ScrapePayload
 from .protocol import FollowupTask, TaskHandler, TaskResult
 
@@ -22,10 +22,18 @@ _WALK_LOG_EVERY = 500
 
 
 class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
-    def __init__(self, repo: Repository, media_extensions: Sequence[str] | None = None):
+    """扫描增删 MediaFile; 整库范围时顺带把清理清单写入清单存放."""
+
+    def __init__(
+        self,
+        repo: Repository,
+        media_extensions: Sequence[str] | None = None,
+        plan_store: PlanStore | None = None,
+    ):
         super().__init__(payload_t=RefreshPayload, result_t=RefreshResult)
         self._repo = repo
         self._media_extensions = frozenset(media_extensions) if media_extensions else MEDIA_EXTENSIONS
+        self._plan_store = plan_store
 
     async def handle(self, payload: RefreshPayload) -> TaskResult[RefreshResult]:
         scan_dir = Path(payload.path)
@@ -57,12 +65,21 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
             if want_add:
                 logger.info("scan walking started", path=payload.path)
                 walked = 0
-                hits = await scan_library(
-                    scan_dir, recursive=payload.recursive if payload.recursive is not None else True, scan=scan
+                library_root = Path(library.path) if library is not None else scan_dir
+                # 与清理清单共用一趟遍历: 媒体命中用于增删, 无效文件与空目录顺手进清单.
+                plan = await scan_plan(
+                    scan_dir,
+                    library_id=payload.library_id,
+                    library_root=library_root,
+                    recursive=payload.recursive if payload.recursive is not None else True,
+                    patterns=payload.patterns or [],
+                    scan=scan,
+                    collect_media=True,
                 )
-                for hit in hits:
-                    if hit.kind is not LibraryFileKind.MEDIA:
-                        continue
+                if library is not None and self._plan_store is not None and plan.scope_path is None:
+                    # 子目录范围的巡检不代表整库, 因此不覆盖面板用的清单.
+                    self._plan_store.put(plan)
+                for hit in plan.media_hits:
                     file_path = hit.path
                     path_key = nfc_path(str(file_path))
                     walked += 1

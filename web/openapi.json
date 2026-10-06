@@ -184,6 +184,24 @@
               "title": "Path"
             },
             "description": "节点路径: 库内相对库根, 库外为绝对路径; 空串取根"
+          },
+          {
+            "name": "plan_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "指定清单; 缺省用规则来源的最新一份",
+              "title": "Plan Id"
+            },
+            "description": "指定清单; 缺省用规则来源的最新一份"
           }
         ],
         "responses": {
@@ -193,6 +211,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PlanNodesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/libraries/{library_id}/cleanup/trash": {
+      "get": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "Get Cleanup Trash",
+        "description": "展开回收站历史内容: 同步产出显式来源清单, 前端只引用与排除.",
+        "operationId": "get_cleanup_trash",
+        "parameters": [
+          {
+            "name": "library_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Library Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashSummaryResponse"
                 }
               }
             }
@@ -13855,6 +13916,49 @@
         ],
         "title": "ToolResultRow",
         "description": "工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名)."
+      },
+      "TrashSummaryResponse": {
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count",
+            "default": 0
+          },
+          "entry_bytes": {
+            "type": "integer",
+            "title": "Entry Bytes",
+            "default": 0
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/PlanNodeResponse"
+            },
+            "type": "array",
+            "title": "Nodes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "exists"
+        ],
+        "title": "TrashSummaryResponse",
+        "description": "回收站历史内容: 展开即产出显式来源清单, 面板按同一套审查与删除处理."
       },
       "TurnTokenUsage": {
         "properties": {

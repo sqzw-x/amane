@@ -215,6 +215,10 @@
       "undersized": "体积过小",
       "empty_dir": "空目录",
       "explicit": "手动选中"
-    }
+    },
+    "tabRules": "无效文件",
+    "tabTrash": "回收站",
+    "trashEmpty": "回收站是空的",
+    "trashNote": "回收站不再写入新内容, 这里清理历史遗留; 清空不会删除 .amane_trash 目录本身"
   }
 }

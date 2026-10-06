@@ -8066,6 +8066,50 @@ export const ToolResultRowSchema = {
     description: '工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名).'
 } as const;
 
+export const TrashSummaryResponseSchema = {
+    properties: {
+        exists: {
+            type: 'boolean',
+            title: 'Exists'
+        },
+        plan_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Plan Id'
+        },
+        entry_count: {
+            type: 'integer',
+            title: 'Entry Count',
+            default: 0
+        },
+        entry_bytes: {
+            type: 'integer',
+            title: 'Entry Bytes',
+            default: 0
+        },
+        nodes: {
+            items: {
+                $ref: '#/components/schemas/PlanNodeResponse'
+            },
+            type: 'array',
+            title: 'Nodes',
+            default: []
+        }
+    },
+    type: 'object',
+    required: [
+        'exists'
+    ],
+    title: 'TrashSummaryResponse',
+    description: '回收站历史内容: 展开即产出显式来源清单, 面板按同一套审查与删除处理.'
+} as const;
+
 export const TurnTokenUsageSchema = {
     properties: {
         input: {
