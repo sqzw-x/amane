@@ -1,7 +1,10 @@
 """全局测试 fixtures"""
 
+import os
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -11,10 +14,30 @@ from amane.media import ResourceStore
 from tests.schema_template import copy_schema
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+    from collections.abc import AsyncGenerator, Iterator, Sequence
     from pathlib import Path
 
     from sqlalchemy.ext.asyncio import AsyncEngine
+
+
+@pytest.fixture
+def candidates_first_scandir(monkeypatch: pytest.MonkeyPatch) -> None:
+    """固定目录枚举顺序: 名字以 `ad-` 开头的候选排在媒体之前.
+
+    清单触顶的用例, 前提是截断点落在媒体收集完成之前; 文件系统给的顺序是环境属性,
+    靠文件名巧合会让用例失去鉴别力. 触顶用例与需要同一前提的入库扫描用例都用它.
+
+    `amane.library.plan.os` 就是 `os` 模块, 因此这是整个进程内的替换, 只给单元级用例用:
+    带 worker 的用例上会连带影响别的调用方.
+    """
+    real_scandir = os.scandir
+
+    @contextmanager
+    def ordered(path: str | os.PathLike[str]) -> Iterator[Sequence[os.DirEntry[str]]]:
+        with real_scandir(path) as scanned:
+            yield sorted(scanned, key=lambda entry: (not entry.name.startswith("ad-"), entry.name))
+
+    monkeypatch.setattr("amane.library.plan.os.scandir", ordered)
 
 
 def _file_engine(db_path: Path) -> AsyncEngine:

@@ -165,9 +165,22 @@ class TestResolvedPath:
         assert is_resolved_path(alias) is False
         assert is_resolved_path(real) is True
 
-    def test_missing_path_falls_back_to_literal(self, tmp_path: Path) -> None:
-        """解析不到 (断连网络盘 / 虚拟卷) 时按字面绝对路径回退, 不抛异常."""
+    def test_missing_path_folds_literal_segments(self, tmp_path: Path) -> None:
+        """缺失路径仍做字面归一: ``..`` 被折叠, 不抛异常."""
         missing = tmp_path / "gone" / ".." / "gone"
 
         assert resolved_path(missing) == tmp_path / "gone"
         assert is_resolved_path(missing) is True
+
+    def test_resolution_error_falls_back_to_literal(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """规范化查询失败 (断连网络盘 / 虚拟卷) 时按字面绝对路径回退, 不抛异常."""
+        # 路径须是平台绝对路径: 回退用 ``abspath``, 而 Windows 的 ntpath 会给 ``/vault/...`` 补上当前盘符.
+        literal = tmp_path / "vault" / "media" / "gone"
+
+        def fake_realpath(path, *, strict=False):
+            raise OSError(1, "Incorrect function")
+
+        monkeypatch.setattr(os.path, "realpath", fake_realpath)
+
+        assert resolved_path(literal) == literal
+        assert is_resolved_path(literal) is True

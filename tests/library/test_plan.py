@@ -21,7 +21,6 @@ from amane.library import (
     build_plan_tree,
     build_selection_plan,
     find_plan_node,
-    new_plan_id,
     plan_tree,
     scan_plan,
     scan_trash,
@@ -44,6 +43,7 @@ def _plan(
     scope: Path | None = None,
     recursive: bool = True,
     limit: int = 20000,
+    collect_media: bool = False,
 ) -> LibraryPlan:
     scope_dir = scope or lib
     return scan_plan.sync(
@@ -54,6 +54,7 @@ def _plan(
         patterns=[],
         scan=scan or _scan(),
         limit=limit,
+        collect_media=collect_media,
     )
 
 
@@ -164,6 +165,36 @@ class TestScanPlan:
         assert plan.skipped_dirs == 1
         assert lib / "blocked" not in plan.dirs
 
+    def test_truncation_keeps_walking_for_media(self, tmp_path: Path, candidates_first_scandir: None) -> None:
+        """触顶只丢条目: 本趟遍历同时给入库扫描收集媒体, 提前收工会让媒体缺项."""
+        lib = tmp_path / "lib"
+        (lib / "work").mkdir(parents=True)
+        for i in range(20):
+            (lib / f"NSFS-{i:03d}.mp4").write_bytes(b"x" * 4096)
+        for i in range(4):
+            (lib / f"ad-{i}.mkv").write_bytes(b"x")
+
+        plan = _plan(lib, scan=_scan(blacklist=["ad-"]), limit=2, collect_media=True)
+
+        assert len(plan.entries) == 2
+        assert plan.truncated is True
+        assert len(plan.media_hits) == 20
+
+    def test_truncation_counts_every_dropped_candidate(self, tmp_path: Path, candidates_first_scandir: None) -> None:
+        """未纳入的候选数要覆盖全部来源: 空目录同样是被丢掉的候选, 不能只数文件."""
+        lib = tmp_path / "lib"
+        lib.mkdir()
+        for i in range(4):
+            (lib / f"ad-{i}.mkv").write_bytes(b"x")
+        for i in range(3):
+            (lib / f"empty-{i}").mkdir()
+
+        plan = _plan(lib, scan=_scan(blacklist=["ad-"]), limit=1)
+
+        assert len(plan.entries) == 1
+        assert plan.truncated is True
+        assert plan.dropped == 6
+
     def test_truncates_at_limit(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
         lib.mkdir()
@@ -174,6 +205,7 @@ class TestScanPlan:
 
         assert len(plan.entries) == 2
         assert plan.truncated is True
+        assert plan.dropped == 3
 
     def test_non_recursive_ignores_subdirectories(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
@@ -281,8 +313,16 @@ class TestPlanStore:
         assert store.get("a") is None
         assert store.get("b") is not None
 
-    def test_new_plan_id_is_unique(self) -> None:
-        assert new_plan_id() != new_plan_id()
+    def test_executed_plan_is_not_latest(self) -> None:
+        """已执行的清单在面板侧等同于不存在; `get` 仍返回它, 供执行侧给出准确原因."""
+        store = PlanStore(now=lambda: _NOW)
+        plan = self._plan("a")
+        store.put(plan)
+
+        plan.executed = True
+
+        assert store.latest(1, PlanSource.RULES) is None
+        assert store.get("a") is plan
 
 
 class TestPlanTree:
@@ -387,6 +427,19 @@ class TestScanTrash:
 
         assert plan.entries == []
 
+    def test_truncation_reports_dropped(self, tmp_path: Path) -> None:
+        lib = tmp_path / "lib"
+        trash = lib / ".amane_trash"
+        trash.mkdir(parents=True)
+        for index in range(3):
+            (trash / f"old-{index}.mp4").write_bytes(b"x" * 10)
+
+        plan = scan_trash.sync(trash, library_id=1, library_root=lib, limit=1)
+
+        assert len(plan.entries) == 1
+        assert plan.truncated is True
+        assert plan.dropped == 2
+
 
 class TestSelectionPlan:
     """显式来源展开: 由选中项求作品的完整足迹."""
@@ -445,6 +498,42 @@ class TestSelectionPlan:
         names = sorted(entry.path.name for entry in outcome.plan.entries)
         assert names == ["NSFS-039.mp4", "NSFS-039.nfo", "NSFS-039.zh.srt", "cover.jpg"]
         assert outcome.notices == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_work_dir_includes_empty_subdirectory(self, repo: Repository, tmp_path: Path) -> None:
+        """空子目录自身也是条目: 否则「删除所在目录」会因为残留的空目录而不成立."""
+        lib, metas, item, video = await self._seed(repo, tmp_path)
+        (video.parent / "empty").mkdir()
+
+        outcome = build_selection_plan(
+            library=lib,
+            items=[item],
+            indexed=[item],
+            metas=metas,
+            include_work_dir=True,
+        )
+
+        kinds = {entry.path.name: entry.kind for entry in outcome.plan.entries}
+        assert kinds["empty"] is PlanEntryKind.DIR
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_truncation_is_visible(self, repo: Repository, tmp_path: Path) -> None:
+        """选中项触顶要标记已截断并说明还有多少没纳入, 否则用户以为整份足迹都在清单里."""
+        lib, metas, item, _video = await self._seed(repo, tmp_path)
+
+        outcome = build_selection_plan(
+            library=lib,
+            items=[item],
+            indexed=[item],
+            metas=metas,
+            include_work_dir=True,
+            limit=1,
+        )
+
+        assert len(outcome.plan.entries) == 1
+        assert outcome.plan.truncated is True
+        assert outcome.plan.dropped == 3
+        assert any("未纳入清单" in notice for notice in outcome.notices)
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_work_dir_refused_when_sibling_indexed(self, repo: Repository, tmp_path: Path) -> None:
@@ -539,6 +628,38 @@ class TestSelectionPlan:
 
         assert [entry.path for entry in outcome.plan.entries] == [video]
         assert outcome.notices == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_truncation_ignores_paths_outside_root(self, repo: Repository, tmp_path: Path) -> None:
+        """库外产物不进清单, 因此也不算「未纳入」: 提示里的数字只数真会进清单的路径."""
+        from amane.db.models import MediaFileStatus
+
+        root = tmp_path / "lib"
+        video_dir = root / "Studio" / "NSFS-039"
+        video_dir.mkdir(parents=True)
+        video = video_dir / "NSFS-039.mp4"
+        video.write_bytes(b"v" * 100)
+        link_tree = tmp_path / "linktree" / "NSFS-039"
+        link_tree.mkdir(parents=True)
+        (link_tree / "NSFS-039.nfo").write_text("nfo")
+        (link_tree / "poster.jpg").write_bytes(b"poster")
+        lib = await repo.create_library(
+            name="t", path=str(root), link_template=str(tmp_path / "linktree" / "{number}" / "{number}")
+        )
+        assert lib.id is not None
+        meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+        assert meta.id is not None
+        item = await repo.create_media_file(
+            lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        )
+
+        outcome = build_selection_plan(
+            library=lib, items=[item], indexed=[item], metas={meta.id: meta}, include_work_dir=False, limit=1
+        )
+
+        assert [entry.path for entry in outcome.plan.entries] == [video]
+        assert outcome.plan.truncated is False
+        assert outcome.plan.dropped == 0
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_alias_index_path_is_notice(self, repo: Repository, tmp_path: Path) -> None:

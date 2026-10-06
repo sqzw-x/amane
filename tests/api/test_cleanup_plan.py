@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,8 +9,9 @@ import pytest
 
 from amane.api.routes.cleanup import MAX_NODE_PAGE_SIZE
 from amane.db.models import TaskType
-from amane.handlers import ScanInvalidPayload
+from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidPayload
 from amane.library import PlanSource, scan_plan
+from tests.helpers import await_for
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -27,16 +27,26 @@ async def _library(client: AsyncClient, root: Path, **extra: object) -> int:
     return int(created.json()["id"])
 
 
-def _store_plan(app: FastAPI, root: Path, library_id: int, **kwargs: object):
+def _store_plan(
+    app: FastAPI,
+    root: Path,
+    library_id: int,
+    *,
+    recursive: bool = True,
+    patterns: list[str] | None = None,
+    limit: int = 20000,
+    **kwargs: object,
+):
     from amane.library import LibraryScan
 
     plan = scan_plan.sync(
         root,
         library_id=library_id,
         library_root=root,
-        recursive=True,
-        patterns=[],
+        recursive=recursive,
+        patterns=patterns or [],
         scan=LibraryScan(**kwargs),  # type: ignore[arg-type]
+        limit=limit,
     )
     app.state.runtime.plan_store.put(plan)
     return plan
@@ -100,7 +110,7 @@ async def test_plan_tree_nodes(client: AsyncClient, app: FastAPI, safe_path: Pat
     nodes = nested["items"]
     assert [node["name"] for node in nodes] == ["ad-1.mkv"]
     assert nodes[0]["reason"] == "blacklist"
-    assert nodes[0]["path"] == str(Path("work") / "ad-1.mkv")
+    assert nodes[0]["path"] == (Path("work") / "ad-1.mkv").as_posix()
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -161,6 +171,69 @@ async def test_plan_nodes_without_plan(client: AsyncClient, safe_path: Path) -> 
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_plan_reports_truncation(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+    """触顶要在面板可见, 并说明还有多少候选没纳入."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root, blacklist_patterns=["ad-"])
+    for index in range(3):
+        (root / f"ad-{index}.mkv").write_bytes(b"x")
+    _store_plan(app, root, library_id, blacklist_patterns=["ad-"], limit=1)
+
+    body = (await client.get(f"libraries/{library_id}/cleanup/plan")).json()
+
+    assert body["exists"] is True
+    assert body["truncated"] is True
+    assert body["dropped"] == 2
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_plan_hidden_when_scan_settings_differ(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+    """遍历设置与当前库配置不一致的清单不算整库清单: 它只覆盖了库的一部分, 面板不该照整库渲染.
+
+    四种不一致各建一个库, 在同一次 lifespan 内循环 (client 是函数级夹具, 不能按参数乘).
+    """
+    cases: list[tuple[bool, bool, list[str] | None, list[str] | None]] = [
+        (False, True, None, None),
+        (True, False, None, None),
+        (True, True, ["*.mp4"], None),
+        (True, True, None, ["*.mp4"]),
+    ]
+    for index, (library_recursive, plan_recursive, library_patterns, plan_patterns) in enumerate(cases):
+        root = safe_path / f"lib-{index}"
+        library_extra: dict[str, object] = {"recursive": library_recursive}
+        if library_patterns is not None:
+            library_extra["patterns"] = library_patterns
+        library_id = await _library(client, root, blacklist_patterns=["ad-"], **library_extra)
+        (root / "ad.mkv").write_bytes(b"x")
+        _store_plan(app, root, library_id, blacklist_patterns=["ad-"], recursive=plan_recursive, patterns=plan_patterns)
+
+        body = (await client.get(f"libraries/{library_id}/cleanup/plan")).json()
+
+        assert body["exists"] is False, cases[index]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_executed_plan_disappears_from_panel(
+    client: AsyncClient, app: FastAPI, repo: Repository, safe_path: Path
+) -> None:
+    """删除成功后清单已花掉: 面板回到无清单态, 按标识读节点也按不存在处理."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root, blacklist_patterns=["ad-"])
+    (root / "ad.mkv").write_bytes(b"x")
+    plan = _store_plan(app, root, library_id, blacklist_patterns=["ad-"])
+
+    result = await DeleteHandler(repo, app.state.runtime.plan_store).handle(
+        DeletePayload(library_id=library_id, plan_id=plan.plan_id)
+    )
+
+    assert result.success is True
+    body = (await client.get(f"libraries/{library_id}/cleanup/plan")).json()
+    assert body["exists"] is False
+    nodes = await client.get(f"libraries/{library_id}/cleanup/plan/nodes", params={"plan_id": plan.plan_id})
+    assert nodes.status_code == 404
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_scan_running_flag(
     client: AsyncClient, repo: Repository, app: FastAPI, safe_path: Path, stop_worker: None
 ) -> None:
@@ -203,12 +276,13 @@ async def test_scan_task_fills_panel_plan(client: AsyncClient, safe_path: Path) 
     created = await client.post("tasks", json={"type": "scan_invalid", "library_id": library_id})
     assert created.status_code == 202
     task_id = created.json()["id"]
-    for _ in range(100):
+
+    async def finished() -> str | None:
         task = await client.get(f"tasks/{task_id}")
-        if task.json()["status"] in {"done", "failed"}:
-            break
-        await asyncio.sleep(0.05)
-    assert task.json()["status"] == "done"
+        status = task.json()["status"]
+        return status if status in {"done", "failed"} else None
+
+    assert await await_for(finished) == "done"
 
     resp = await client.get(f"libraries/{library_id}/cleanup/plan")
 
@@ -225,7 +299,9 @@ async def test_scan_task_fills_panel_plan(client: AsyncClient, safe_path: Path) 
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_trash_expansion_lists_history(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+async def test_trash_expansion_lists_history(
+    client: AsyncClient, app: FastAPI, safe_path: Path, stop_worker: None
+) -> None:
     """回收站展开同步产出显式来源清单: 其下条目可删, 目录自身不可删."""
     root = safe_path / "lib"
     library_id = await _library(client, root)
@@ -251,8 +327,10 @@ async def test_trash_expansion_lists_history(client: AsyncClient, app: FastAPI, 
     assert {node["name"] for node in page["items"]} == {"old-ad.mp4", "old-2.mp4"}
 
     deleted = await client.post("tasks", json={"type": "delete", "library_id": library_id, "plan_id": body["plan_id"]})
+
     assert deleted.status_code == 202
-    assert app.state.runtime.plan_store.get(body["plan_id"]) is not None
+    # 提交只入队: 清单的消费发生在执行期, worker 已停, 因此它还没被花掉.
+    assert plan.executed is False
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -266,7 +344,9 @@ async def test_trash_expansion_without_trash(client: AsyncClient, safe_path: Pat
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_selection_expansion_previews_then_deletes(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+async def test_selection_expansion_previews_then_deletes(
+    client: AsyncClient, app: FastAPI, safe_path: Path, stop_worker: None
+) -> None:
     """文件表的删除入口: 展开预览 → 确认 → 删除任务, 只碰清单里的条目."""
     root = safe_path / "lib"
     library_id = await _library(client, root)
@@ -300,8 +380,12 @@ async def test_selection_expansion_previews_then_deletes(client: AsyncClient, ap
     assert {node["name"] for node in work_page["items"]} == {"NSFS-039.mp4", "NSFS-039.nfo", "cover.jpg"}
 
     deleted = await client.post("tasks", json={"type": "delete", "library_id": library_id, "plan_id": body["plan_id"]})
+
     assert deleted.status_code == 202
-    assert app.state.runtime.plan_store.get(body["plan_id"]) is not None
+    # 提交只入队: 清单的消费发生在执行期, worker 已停, 因此它还没被花掉.
+    plan = app.state.runtime.plan_store.get(body["plan_id"])
+    assert plan is not None
+    assert plan.executed is False
 
 
 @pytest.mark.asyncio(loop_scope="function")

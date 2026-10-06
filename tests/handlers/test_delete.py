@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -10,18 +11,25 @@ from amane.config import HotSettings
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidHandler, ScanInvalidPayload
 from amane.library import PlanStore
 
+if TYPE_CHECKING:
+    from amane.db.repository import Repository
 
-async def _plan_id(repo, store: PlanStore, library_id: int, **payload_kwargs) -> str:
-    result = await ScanInvalidHandler(repo, HotSettings(), store).handle(
-        ScanInvalidPayload(library_id=library_id, **payload_kwargs)
+
+async def _plan_id(repo: Repository, store: PlanStore, library_id: int, *, path: str | None = None) -> str:
+    """跑一次 SCAN_INVALID 并返回清单标识; `path` 限定扫描范围."""
+    payload = (
+        ScanInvalidPayload(library_id=library_id)
+        if path is None
+        else ScanInvalidPayload(library_id=library_id, path=path)
     )
+    result = await ScanInvalidHandler(repo, HotSettings(), store).handle(payload)
     assert result.success is True
     assert result.result is not None
     return result.result.plan_id
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_executes_plan(repo, tmp_path: Path) -> None:
+async def test_delete_executes_plan(repo: Repository, tmp_path: Path) -> None:
     lib_root = tmp_path / "lib"
     (lib_root / "work").mkdir(parents=True)
     ad = lib_root / "work" / "ad-1.mkv"
@@ -52,7 +60,7 @@ async def test_delete_executes_plan(repo, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_missing_plan_fails(repo, tmp_path: Path) -> None:
+async def test_delete_missing_plan_fails(repo: Repository, tmp_path: Path) -> None:
     lib_root = tmp_path / "lib"
     lib_root.mkdir()
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
@@ -65,7 +73,7 @@ async def test_delete_missing_plan_fails(repo, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_executed_plan_refused(repo, tmp_path: Path) -> None:
+async def test_delete_executed_plan_refused(repo: Repository, tmp_path: Path) -> None:
     lib_root = tmp_path / "lib"
     lib_root.mkdir()
     (lib_root / "ad.mkv").write_bytes(b"x")
@@ -84,7 +92,7 @@ async def test_delete_executed_plan_refused(repo, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_refuses_changed_library_root(repo, tmp_path: Path) -> None:
+async def test_delete_refuses_changed_library_root(repo: Repository, tmp_path: Path) -> None:
     lib_root = tmp_path / "lib"
     moved_root = tmp_path / "moved"
     lib_root.mkdir()
@@ -106,7 +114,7 @@ async def test_delete_refuses_changed_library_root(repo, tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_exclude_matches_path_components(repo, tmp_path: Path) -> None:
+async def test_delete_exclude_matches_path_components(repo: Repository, tmp_path: Path) -> None:
     """取消勾选 Show A 不应排除 Show A (2019): 按路径分量而不是字符串前缀."""
     lib_root = tmp_path / "lib"
     (lib_root / "Show A").mkdir(parents=True)
@@ -132,7 +140,7 @@ async def test_delete_exclude_matches_path_components(repo, tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_without_prune_keeps_directory(repo, tmp_path: Path) -> None:
+async def test_delete_without_prune_keeps_directory(repo: Repository, tmp_path: Path) -> None:
     lib_root = tmp_path / "lib"
     (lib_root / "work").mkdir(parents=True)
     ad = lib_root / "work" / "ad.mkv"
@@ -154,7 +162,7 @@ async def test_delete_without_prune_keeps_directory(repo, tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_other_library_plan_refused(repo, tmp_path: Path) -> None:
+async def test_delete_other_library_plan_refused(repo: Repository, tmp_path: Path) -> None:
     first_root = tmp_path / "a"
     second_root = tmp_path / "b"
     first_root.mkdir()
@@ -173,7 +181,7 @@ async def test_delete_other_library_plan_refused(repo, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_prunes_ancestors_only(repo, tmp_path: Path) -> None:
+async def test_delete_prunes_ancestors_only(repo: Repository, tmp_path: Path) -> None:
     """自底向上剪枝本次删除项的祖先; 之前就存在的空目录不在范围内."""
     lib_root = tmp_path / "lib"
     (lib_root / "a" / "b").mkdir(parents=True)
@@ -194,7 +202,7 @@ async def test_delete_prunes_ancestors_only(repo, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_drops_index_by_directory_prefix(repo, tmp_path: Path) -> None:
+async def test_delete_drops_index_by_directory_prefix(repo: Repository, tmp_path: Path) -> None:
     lib_root = tmp_path / "lib"
     (lib_root / "empty").mkdir(parents=True)
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)

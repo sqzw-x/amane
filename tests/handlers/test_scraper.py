@@ -1,5 +1,7 @@
 """测试 amane.pipeline - ScrapeHandler 和 RefreshHandler"""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -12,12 +14,13 @@ from amane.crawlers.models import MediaMetadata
 from amane.db.models import MediaFileStatus, TaskType
 from amane.enums import MetadataField, SiteName
 from amane.handlers import RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
-from amane.library import LibraryFileKind, LibraryHit, LibraryPlan, PlanSource, PlanStore
+from amane.library import LibraryFileKind, LibraryHit, LibraryPlan, PlanSource, PlanStore, scan_plan
 from amane.parsing import ContentType
 from amane.plugins.models import SourceDescriptor
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from pathlib import Path
 
     from amane.db.repository import Repository
 
@@ -561,7 +564,7 @@ class TestRefreshHandler:
         assert result.result.scrape == 2
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_unscoped_scan_writes_cleanup_plan(self, repo: Repository, tmp_path):
+    async def test_unscoped_scan_writes_cleanup_plan(self, repo: Repository, tmp_path: Path):
         """整库范围的入库扫描顺带产出清单: 无效文件与空目录都在里面, 面板不必再扫一次."""
         (tmp_path / "MIDV-123.mp4").write_bytes(b"\x00" * 100)
         (tmp_path / "ad.mp4").write_bytes(b"\x00" * 10)
@@ -582,7 +585,7 @@ class TestRefreshHandler:
         assert [hit.path.name for hit in plan.media_hits] == ["MIDV-123.mp4"]
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_scoped_scan_leaves_plan_alone(self, repo: Repository, tmp_path):
+    async def test_scoped_scan_leaves_plan_alone(self, repo: Repository, tmp_path: Path):
         """子目录巡检不代表整库, 不覆盖面板用的清单."""
         sub = tmp_path / "sub"
         sub.mkdir()
@@ -597,6 +600,50 @@ class TestRefreshHandler:
 
         assert result.success is True
         assert store.latest(lib.id, PlanSource.RULES) is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_truncated_plan_keeps_media_complete(
+        self,
+        repo: Repository,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        candidates_first_scandir: None,
+    ):
+        """清单触顶不影响入库扫描的媒体收集: add+remove 据此判定存在性, 缺项会删掉磁盘上还在的索引行."""
+        for index in range(20):
+            (tmp_path / f"NSFS-{index:03d}.mp4").write_bytes(b"\x00" * 100)
+        for index in range(3):
+            (tmp_path / f"ad-{index}.mp4").write_bytes(b"\x00" * 10)
+        lib = await repo.create_library(name="t", path=str(tmp_path), write_nfo=False, blacklist_patterns=["ad-"])
+        assert lib.id is not None
+        rows = []
+        for index in range(20):
+            row = await repo.create_media_file(lib.id, path=str(tmp_path / f"NSFS-{index:03d}.mp4"))
+            assert row.id is not None
+            rows.append(row)
+
+        real_scan = scan_plan
+
+        async def small_limit(scope_dir, **kwargs):
+            kwargs["limit"] = 1
+            return await real_scan(scope_dir, **kwargs)
+
+        monkeypatch.setattr("amane.handlers.refresh.scan_plan", small_limit)
+
+        result = await RefreshHandler(repo=repo).handle(
+            RefreshPayload(
+                library_id=lib.id,
+                path=str(tmp_path),
+                scan={ScanMode.add, ScanMode.remove},
+                scrape=set(),
+            )
+        )
+
+        assert result.success is True
+        assert result.result is not None
+        assert result.result.removed == 0
+        for row in rows:
+            assert await repo.get_media_file(row.id) is not None
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_handle_files(self, repo: Repository, tmp_path):
