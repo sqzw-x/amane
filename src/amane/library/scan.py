@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 
 class LibraryFileKind(StrEnum):
+    """分类结果. `TRASH` 沿用旧名: 表示无效文件 (黑名单或体积过小), 与已停用的回收任务无关."""
+
     SKIP = "skip"
     TRASH = "trash"
     MEDIA = "media"
@@ -52,7 +54,7 @@ class LibraryScan:
     def unwanted_kind(self, path: Path) -> UnwantedKind | None:
         """无效文件的命中规则; 未命中返回 None.
 
-        规则顺序与 `classify` 一致: 预告片先于体积判定排除, 否则低码率预告片会被判成体积过小.
+        黑名单先于预告片与体积判定; 预告片不算无效, 否则低码率预告片会被判成体积过小.
         stat 失败 (含悬空链接) 不判体积, 见 `is_undersized_video`.
         """
         if is_in_trash(path):

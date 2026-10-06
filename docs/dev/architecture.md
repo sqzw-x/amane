@@ -21,7 +21,7 @@
 | `agent/` | 助理 Agent + Saved Query + 会话 trace | 读为只读 SQL, 写只经封装工具; 与 `llm/` 配置分离, 见 [agent.md](agent.md) |
 | `sr/` | 超分二进制封装 | 就地覆盖本地资源文件 |
 | `db/` | SQLModel 表 + 异步 Repository | 单一数据源; 启动期自动 `alembic upgrade head` |
-| `library/` | 库文件规则与分类 (`LibraryScan.classify`) + CloudDrive 虚拟路径规范 | 扩展名 / 预告片与黑名单正则 / `.amane_trash` / 体积阈值 / `cloud_path`; handlers 与 scheduler 共用, 不归任何一侧 |
+| `library/` | 库文件规则与分类 (`LibraryScan.classify`) + 清理清单与库内删除执行单元 + CloudDrive 虚拟路径规范 | 扩展名 / 预告片与黑名单正则 / `.amane_trash` / 体积阈值 / `cloud_path`; handlers 与 scheduler 共用, 不归任何一侧 |
 | `scheduler/` | 队列消费 / cron / 文件监控 / CloudDrive webhook / RSS 发现 | 与 api 解耦, 经 EventBus 上报; webhook 契约见 [watcher.md](watcher.md) |
 | `observability/` | 进程级日志管线 + 单任务 Recorder | 叙事经 structlog; 任务产物落 `{log_dir}/tasks/task-{id}/` |
 | `app/` | 进程组合根 (`AppRuntime` / `build_*` / `start_app`) | HTTP 与 CLI / 回放共用; 不依赖 FastAPI; 拥有启停顺序 |

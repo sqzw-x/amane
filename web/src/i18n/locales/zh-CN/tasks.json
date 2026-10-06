@@ -366,7 +366,7 @@
       },
       "exclude": {
         "label": "排除项",
-        "description": "库内为相对路径前缀, 库外为绝对路径"
+        "description": "库内为清单库根下的相对路径 (按路径分量, 含其子树), 库外为绝对路径"
       },
       "prune_empty_dirs": {
         "label": "删除腾空的目录",
