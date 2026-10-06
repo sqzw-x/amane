@@ -129,7 +129,12 @@ def pick_candidate(candidates: list[dict[str, Any]], key: str) -> dict[str, Any]
 
 
 def has_number_product(work: dict[str, Any], key: str) -> bool:
-    """同一作品的多个 SKU 商品 (midv00852 / midv852 / midv852bod) 同在一份 products 里, 因此本判据只在多个 ``work`` 候选之间打破平局."""
+    """同一作品的多个 SKU 商品 (midv00852 / midv852 / midv852bod) 同在一份 products 里, 因此本判据只在多个 ``work`` 候选之间打破平局.
+
+    命中可信, 未命中不构成对候选的否定: FANZA content_id 带前导数字的厂牌 (118abf355 / 1dldss00529 /
+    1jimmy011) 归一后不等于番号, 实测 29 件有 FANZA 商品的作品中仅 21 件命中. ``pick_candidate`` 因此取
+    ``ranked or candidates``, 不得改为按本判据过滤 —— 那样会把正确条目判掉.
+    """
     products = work.get("products")
     if not isinstance(products, list):
         return False
