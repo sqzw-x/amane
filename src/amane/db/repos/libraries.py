@@ -181,7 +181,9 @@ class LibrariesRepoMixin(RepositoryMixinBase):
             # 显式赋值, 禁止 setattr; 字段集由 LibraryUpdates 与 Library 静态对齐.
             if "name" in updates:
                 lib.name = updates["name"]
-            if "path" in updates:
+            # 值未变时不改写形式: 老库的库路径可能还没解析为真实路径, 而索引行都是与它同一形式的写法,
+            # 仅仅重新保存一次就把库根换成另一种写法, 会把同一个文件算成两条索引.
+            if "path" in updates and updates["path"] != lib.path:
                 lib.path = str(resolved_path(updates["path"]))
             if "automation" in updates:
                 lib.automation = updates["automation"]

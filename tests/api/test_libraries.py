@@ -1,5 +1,6 @@
 """/libraries 端点测试"""
 
+import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,12 @@ if TYPE_CHECKING:
     from httpx2 import AsyncClient
 
     from amane.db.repository import Repository
+
+
+def _set_library_path(db_path: Path, library_id: int, path: str) -> None:
+    """把库行的路径改成给定写法: 写入侧只落真实路径, 未解析的写法没有别的入口能造出来."""
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE libraries SET path = ? WHERE id = ?", (path, library_id))
 
 
 class TestLibraries:
@@ -251,3 +258,34 @@ class TestLibraries:
 
         assert updated.status_code == 200
         assert updated.json()["path"] == str(real)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_unchanged_library_path_keeps_its_form(self, client: AsyncClient, safe_path: Path, tmp_path: Path):
+        """值没变就不改写路径形式.
+
+        库路径与索引行必须同一写法, 而解析只发生在路径真的被改动时: 未解析的库根一经改写,
+        既有索引行会全部落到库根之外, 下次扫描就会把同一个文件再登记一遍.
+        """
+        kept_real = safe_path / "kept-real"
+        kept_real.mkdir()
+        kept_alias = safe_path / "kept-alias"
+        kept_alias.symlink_to(kept_real, target_is_directory=True)
+
+        created = await client.post("libraries", json={"path": str(kept_alias), "scan": False})
+        library_id = created.json()["id"]
+        _set_library_path(tmp_path / "data" / "amane.db", library_id, str(kept_alias))
+
+        unchanged = await client.patch(f"libraries/{library_id}", json={"path": str(kept_alias)})
+
+        assert unchanged.status_code == 200
+        assert unchanged.json()["path"] == str(kept_alias)
+
+        moved_real = safe_path / "moved-real"
+        moved_real.mkdir()
+        moved_alias = safe_path / "moved-alias"
+        moved_alias.symlink_to(moved_real, target_is_directory=True)
+
+        changed = await client.patch(f"libraries/{library_id}", json={"path": str(moved_alias)})
+
+        assert changed.status_code == 200
+        assert changed.json()["path"] == str(moved_real)
