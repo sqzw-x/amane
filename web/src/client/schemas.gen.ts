@@ -3966,6 +3966,10 @@ export const MediaFileResponseSchema = {
             type: 'integer',
             title: 'Id'
         },
+        library_id: {
+            type: 'integer',
+            title: 'Library Id'
+        },
         path: {
             type: 'string',
             title: 'Path'
@@ -4096,6 +4100,7 @@ export const MediaFileResponseSchema = {
     type: 'object',
     required: [
         'id',
+        'library_id',
         'path',
         'status',
         'content_type'
@@ -7009,6 +7014,83 @@ export const ScrapingConfigSchema = {
     },
     type: 'object',
     title: 'ScrapingConfig'
+} as const;
+
+export const SelectionRequestSchema = {
+    properties: {
+        media_file_ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Media File Ids',
+            description: '选中的媒体文件 ID; 必须属于该库'
+        },
+        include_work_dir: {
+            type: 'boolean',
+            title: 'Include Work Dir',
+            description: '连同作品文件夹一起删除; 仅在该目录只含这一条媒体索引且不是库根时提供',
+            default: false
+        }
+    },
+    type: 'object',
+    required: [
+        'media_file_ids'
+    ],
+    title: 'SelectionRequest',
+    description: '由选中的媒体文件展开显式来源清单.'
+} as const;
+
+export const SelectionSummaryResponseSchema = {
+    properties: {
+        exists: {
+            type: 'boolean',
+            title: 'Exists'
+        },
+        plan_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Plan Id'
+        },
+        entry_count: {
+            type: 'integer',
+            title: 'Entry Count',
+            default: 0
+        },
+        entry_bytes: {
+            type: 'integer',
+            title: 'Entry Bytes',
+            default: 0
+        },
+        nodes: {
+            items: {
+                $ref: '#/components/schemas/PlanNodeResponse'
+            },
+            type: 'array',
+            title: 'Nodes',
+            default: []
+        },
+        notices: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Notices',
+            default: []
+        }
+    },
+    type: 'object',
+    required: [
+        'exists'
+    ],
+    title: 'SelectionSummaryResponse'
 } as const;
 
 export const SiteConfigSchema = {

@@ -49,6 +49,7 @@ from .rules import (
     validate_trailer_pattern,
 )
 from .scan import LibraryFileKind, LibraryHit, LibraryScan, UnwantedKind
+from .selection import SelectionOutcome, build_selection_plan
 
 __all__ = [
     "DEFAULT_SUBTITLE_EXTENSIONS",
@@ -75,11 +76,13 @@ __all__ = [
     "PlanSource",
     "PlanStore",
     "PruneResult",
+    "SelectionOutcome",
     "SubtitleExtensions",
     "TrailerPattern",
     "UnwantedKind",
     "ancestor_dirs",
     "build_plan_tree",
+    "build_selection_plan",
     "cloud_covers",
     "cloud_paths_overlap",
     "delete_target",

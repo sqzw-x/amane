@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -17,11 +18,15 @@ from amane.library import (
     PlanSource,
     PlanStore,
     build_plan_tree,
+    build_selection_plan,
     find_plan_node,
     new_plan_id,
     scan_plan,
     scan_trash,
 )
+
+if TYPE_CHECKING:
+    from amane.db.repository import Repository
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -367,3 +372,121 @@ class TestScanTrash:
         plan = scan_trash.sync(trash, library_id=1, library_root=lib)
 
         assert plan.entries == []
+
+
+class TestSelectionPlan:
+    """显式来源展开: 由选中项求作品的完整足迹."""
+
+    async def _seed(self, repo: Repository, tmp_path: Path, *, video_dir_rel: str = "Studio/NSFS-039"):
+        from amane.db.models import MediaFileStatus
+
+        root = tmp_path / "lib"
+        video_dir = root / video_dir_rel if video_dir_rel else root
+        video_dir.mkdir(parents=True, exist_ok=True)
+        video = video_dir / "NSFS-039.mp4"
+        video.write_bytes(b"v" * 100)
+        (video_dir / "NSFS-039.nfo").write_text("nfo")
+        (video_dir / "NSFS-039.zh.srt").write_text("sub")
+        (video_dir / "cover.jpg").write_bytes(b"cover")
+        lib = await repo.create_library(name="t", path=str(root), write_nfo=True)
+        assert lib.id is not None
+        meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+        assert meta.id is not None
+        item = await repo.create_media_file(
+            lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        )
+        return lib, {meta.id: meta}, item, video
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_file_only_lists_products_and_subtitles(self, repo: Repository, tmp_path: Path) -> None:
+        lib, metas, item, video = await self._seed(repo, tmp_path)
+
+        outcome = build_selection_plan(
+            library=lib,
+            items=[item],
+            indexed=[item],
+            metas=metas,
+            include_work_dir=False,
+        )
+
+        names = sorted(entry.path.name for entry in outcome.plan.entries)
+        assert names == ["NSFS-039.mp4", "NSFS-039.nfo", "NSFS-039.zh.srt"]
+        assert outcome.notices == []
+        assert all(entry.reason is PlanReason.EXPLICIT for entry in outcome.plan.entries)
+        assert video.exists()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_work_dir_lists_everything_inside(self, repo: Repository, tmp_path: Path) -> None:
+        """整目录删除按内容展开: 未被索引的同目录文件也在清单里, 用户看得到."""
+        lib, metas, item, _video = await self._seed(repo, tmp_path)
+
+        outcome = build_selection_plan(
+            library=lib,
+            items=[item],
+            indexed=[item],
+            metas=metas,
+            include_work_dir=True,
+        )
+
+        names = sorted(entry.path.name for entry in outcome.plan.entries)
+        assert names == ["NSFS-039.mp4", "NSFS-039.nfo", "NSFS-039.zh.srt", "cover.jpg"]
+        assert outcome.notices == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_work_dir_refused_when_sibling_indexed(self, repo: Repository, tmp_path: Path) -> None:
+        """目录里还有另一条媒体索引时拒绝整目录删除, 并给出原因."""
+        from amane.db.models import MediaFileStatus
+
+        lib, metas, item, video = await self._seed(repo, tmp_path)
+        assert lib.id is not None
+        sibling = video.parent / "NSFS-040.mp4"
+        sibling.write_bytes(b"v" * 100)
+        metadata_id = next(iter(metas))
+        other = await repo.create_media_file(
+            lib.id, path=str(sibling), number="NSFS-040", status=MediaFileStatus.SCRAPED, metadata_id=metadata_id
+        )
+
+        outcome = build_selection_plan(
+            library=lib,
+            items=[item],
+            indexed=[item, other],
+            metas=metas,
+            include_work_dir=True,
+        )
+
+        assert len(outcome.notices) == 1
+        assert "媒体索引" in outcome.notices[0]
+        names = sorted(entry.path.name for entry in outcome.plan.entries)
+        assert "cover.jpg" not in names
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_work_dir_refused_at_library_root(self, repo: Repository, tmp_path: Path) -> None:
+        lib, metas, item, _video = await self._seed(repo, tmp_path, video_dir_rel="")
+
+        outcome = build_selection_plan(
+            library=lib,
+            items=[item],
+            indexed=[item],
+            metas=metas,
+            include_work_dir=True,
+        )
+
+        assert outcome.notices == ["作品目录就是库根, 不提供整目录删除"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_missing_video_is_notice(self, repo: Repository, tmp_path: Path) -> None:
+        """选中的目标缺失要提示; 模板产物本来就可能没写过, 不提示."""
+        lib, metas, item, video = await self._seed(repo, tmp_path)
+        (video.parent / "NSFS-039.nfo").unlink()
+        video.unlink()
+
+        outcome = build_selection_plan(
+            library=lib,
+            items=[item],
+            indexed=[item],
+            metas=metas,
+            include_work_dir=False,
+        )
+
+        assert [entry.path.name for entry in outcome.plan.entries] == ["NSFS-039.zh.srt"]
+        assert any("已不在磁盘上" in notice for notice in outcome.notices)

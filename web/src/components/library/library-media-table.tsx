@@ -32,6 +32,7 @@ import { ListToolbar } from "@/components/common/list-toolbar";
 import { SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
 import { ScrapeOverrideDialog } from "./scrape-override-dialog";
+import { MediaDeleteDialog } from "./media-delete-dialog";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
@@ -134,6 +135,9 @@ export function LibraryMediaTable({
   const [batchScraping, setBatchScraping] = useState(false);
   const [batchOrganizing, setBatchOrganizing] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  const [deleteTargets, setDeleteTargets] = useState<{ ids: number[]; workDir: boolean } | null>(
+    null,
+  );
   const [overrideTarget, setOverrideTarget] = useState<MediaFileResponse | null>(null);
   const [overrideSaving, setOverrideSaving] = useState(false);
 
@@ -259,6 +263,10 @@ export function LibraryMediaTable({
   const effectiveOrder = order ?? "desc";
   const busy = batchScraping || batchOrganizing || batchDeleting;
 
+  function openMediaDelete(includeWorkDir: boolean) {
+    setDeleteTargets({ ids: selectedIds, workDir: includeWorkDir });
+  }
+
   function handlePageChange(p: number) {
     clear();
     onPageChange(p);
@@ -293,17 +301,31 @@ export function LibraryMediaTable({
             >
               {t("actions.batchOrganize")}
             </Button>
-            <Button
-              size="xs"
-              variant="light"
-              color="red"
-              leftSection={<IconTrash size={14} />}
-              loading={busy}
-              disabled={selected.size === 0}
-              onClick={() => void handleBatchDelete()}
-            >
-              {t("common:actions.delete")}
-            </Button>
+            <Menu position="bottom-end" withinPortal>
+              <Menu.Target>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="red"
+                  leftSection={<IconTrash size={14} />}
+                  loading={busy}
+                  disabled={selected.size === 0}
+                >
+                  {t("cleanup.deleteMenu")}
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item onClick={() => void handleBatchDelete()}>
+                  {t("cleanup.deleteRecord")}
+                </Menu.Item>
+                <Menu.Item onClick={() => openMediaDelete(false)}>
+                  {t("cleanup.deleteFiles")}
+                </Menu.Item>
+                <Menu.Item onClick={() => openMediaDelete(true)}>
+                  {t("cleanup.deleteWorkDir")}
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
           </Group>
           <Box hiddenFrom="sm">
             <Menu position="bottom-start" withinPortal>
@@ -334,7 +356,13 @@ export function LibraryMediaTable({
                   disabled={busy}
                   onClick={() => void handleBatchDelete()}
                 >
-                  {t("common:actions.delete")}
+                  {t("cleanup.deleteRecord")}
+                </Menu.Item>
+                <Menu.Item disabled={busy} onClick={() => openMediaDelete(false)}>
+                  {t("cleanup.deleteFiles")}
+                </Menu.Item>
+                <Menu.Item disabled={busy} onClick={() => openMediaDelete(true)}>
+                  {t("cleanup.deleteWorkDir")}
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
@@ -525,6 +553,17 @@ export function LibraryMediaTable({
           if (!overrideSaving) setOverrideTarget(null);
         }}
         onSubmit={(number, contentType) => void handleOverrideScrape(number, contentType)}
+      />
+      <MediaDeleteDialog
+        libraryId={libraryId}
+        mediaFileIds={deleteTargets?.ids ?? []}
+        includeWorkDir={deleteTargets?.workDir ?? false}
+        opened={deleteTargets !== null}
+        onClose={() => setDeleteTargets(null)}
+        onDeleted={() => {
+          clear();
+          invalidate();
+        }}
       />
     </ListToolbar>
   );

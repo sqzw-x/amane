@@ -227,6 +227,11 @@
     "tabRules": "Unwanted files",
     "tabTrash": "Trash",
     "trashEmpty": "Trash is empty",
-    "trashNote": "Nothing new is written here; this clears the legacy content, and the .amane_trash directory itself stays"
+    "trashNote": "Nothing new is written here; this clears the legacy content, and the .amane_trash directory itself stays",
+    "previewTitle": "Confirm what will be deleted",
+    "deleteMenu": "Delete",
+    "deleteRecord": "Record only",
+    "deleteFiles": "Delete files",
+    "deleteWorkDir": "Delete files and work folder"
   }
 }

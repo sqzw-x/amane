@@ -205,6 +205,8 @@ def _remove_contents(directory: Path, *, dev: int, files: list[DeletedFile]) -> 
                 path.unlink()
                 continue
             if stat.S_ISDIR(entry_stat.st_mode):
+                if entry.name == TRASH_DIRNAME:
+                    raise _BoundaryRefusal(f"refuse to delete trash subtree: {path}")
                 if _crosses_boundary(entry_stat, dev=dev):
                     raise _BoundaryRefusal(f"mount boundary crossed: {path}")
                 _remove_contents(path, dev=dev, files=files)

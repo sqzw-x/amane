@@ -16,11 +16,19 @@ from ...library import (
     PlanSource,
     PlanStore,
     build_plan_tree,
+    build_selection_plan,
     find_plan_node,
     scan_trash,
 )
 from ..deps import RepoDep, RuntimeDep
-from ..models.cleanup import PlanNodeResponse, PlanNodesResponse, PlanSummaryResponse, TrashSummaryResponse
+from ..models.cleanup import (
+    PlanNodeResponse,
+    PlanNodesResponse,
+    PlanSummaryResponse,
+    SelectionRequest,
+    SelectionSummaryResponse,
+    TrashSummaryResponse,
+)
 
 if TYPE_CHECKING:
     from ...db.repository import Repository
@@ -138,4 +146,48 @@ async def get_cleanup_trash(library_id: int, repo: RepoDep, runtime: RuntimeDep)
         entry_count=node.entry_count if node is not None else 0,
         entry_bytes=node.entry_bytes if node is not None else 0,
         nodes=[_to_response(plan, child, children=False) for child in children],
+    )
+
+
+@router.post("/{library_id}/cleanup/selection")
+async def expand_cleanup_selection(
+    library_id: int,
+    req: SelectionRequest,
+    repo: RepoDep,
+    runtime: RuntimeDep,
+) -> SelectionSummaryResponse:
+    """由选中项展开显式来源清单: 文件表与详情页的删除入口据此预览. 只读, 不改磁盘与索引."""
+    library = await repo.get_library(library_id)
+    if library is None:
+        raise HTTPException(status_code=404, detail="Library not found")
+    items = await repo.list_media_files(ids=req.media_file_ids, limit=None)
+    if any(item.library_id != library_id for item in items):
+        raise HTTPException(status_code=422, detail="media_file_ids 含其它库的文件")
+    if len(items) != len(set(req.media_file_ids)):
+        raise HTTPException(status_code=422, detail="media_file_ids 含不存在的文件")
+
+    metas = {}
+    for item in items:
+        if item.metadata_id is not None and item.metadata_id not in metas:
+            meta = await repo.get_metadata(item.metadata_id)
+            if meta is not None:
+                metas[item.metadata_id] = meta
+    outcome = build_selection_plan(
+        library=library,
+        items=items,
+        indexed=await repo.list_media_files(library_id=library_id, limit=None),
+        metas=metas,
+        include_work_dir=req.include_work_dir,
+    )
+    if not outcome.plan.entries:
+        return SelectionSummaryResponse(exists=False, notices=outcome.notices)
+    runtime.plan_store.put(outcome.plan)
+    root = build_plan_tree(outcome.plan)
+    return SelectionSummaryResponse(
+        exists=True,
+        plan_id=outcome.plan.plan_id,
+        entry_count=root.entry_count,
+        entry_bytes=root.entry_bytes,
+        nodes=[_to_response(outcome.plan, child, children=False) for child in root.children],
+        notices=outcome.notices,
     )

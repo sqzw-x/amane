@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...library import PlanEntryKind, PlanReason
 
@@ -61,3 +61,22 @@ class TrashSummaryResponse(BaseModel):
     entry_count: int = 0
     entry_bytes: int = 0
     nodes: list[PlanNodeResponse] = []
+
+
+class SelectionRequest(BaseModel):
+    """由选中的媒体文件展开显式来源清单."""
+
+    media_file_ids: list[int] = Field(min_length=1, description="选中的媒体文件 ID; 必须属于该库")
+    include_work_dir: bool = Field(
+        default=False, description="连同作品文件夹一起删除; 仅在该目录只含这一条媒体索引且不是库根时提供"
+    )
+
+
+class SelectionSummaryResponse(BaseModel):
+    exists: bool
+    plan_id: str | None = None
+    entry_count: int = 0
+    entry_bytes: int = 0
+    nodes: list[PlanNodeResponse] = []
+    notices: list[str] = []
+    """未能纳入的部分与原因 (例如作品目录不满足整目录删除的条件)."""

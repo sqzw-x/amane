@@ -10,6 +10,7 @@ from ...utils.model import create_partial_model
 
 class MediaFileResponse(BaseModel):
     id: int
+    library_id: int
     path: str
     oshash: str | None = None
     size: int | None = None

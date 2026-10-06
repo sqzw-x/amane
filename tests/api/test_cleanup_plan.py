@@ -208,3 +208,44 @@ async def test_trash_expansion_without_trash(client: AsyncClient, safe_path: Pat
 
     assert resp.status_code == 200
     assert resp.json()["exists"] is False
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_selection_expansion_previews_then_deletes(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+    """文件表的删除入口: 展开预览 → 确认 → 删除任务, 只碰清单里的条目."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root)
+    work = root / "Studio" / "NSFS-039"
+    work.mkdir(parents=True)
+    video = work / "NSFS-039.mp4"
+    video.write_bytes(b"v" * 100)
+    (work / "NSFS-039.nfo").write_text("nfo")
+    (work / "cover.jpg").write_bytes(b"cover")
+    media = await app.state.runtime.repo.create_media_file(library_id, path=str(video), number="NSFS-039")
+    assert media.id is not None
+
+    preview = await client.post(
+        f"libraries/{library_id}/cleanup/selection",
+        json={"media_file_ids": [media.id], "include_work_dir": True},
+    )
+
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["exists"] is True
+    assert body["entry_count"] == 3
+    assert body["notices"] == []
+
+    deleted = await client.post("tasks", json={"type": "delete", "library_id": library_id, "plan_id": body["plan_id"]})
+    assert deleted.status_code == 202
+    assert app.state.runtime.plan_store.get(body["plan_id"]) is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_selection_rejects_foreign_media(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+    first = await _library(client, safe_path / "a")
+    second = await _library(client, safe_path / "b")
+    other = await app.state.runtime.repo.create_media_file(second, path=str(safe_path / "b" / "x.mp4"))
+
+    resp = await client.post(f"libraries/{first}/cleanup/selection", json={"media_file_ids": [other.id]})
+
+    assert resp.status_code == 422

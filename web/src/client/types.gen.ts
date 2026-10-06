@@ -1900,6 +1900,10 @@ export type MediaFileResponse = {
      */
     id: number;
     /**
+     * Library Id
+     */
+    library_id: number;
+    /**
      * Path
      */
     path: string;
@@ -3546,6 +3550,56 @@ export type ScrapingConfig = {
 };
 
 /**
+ * SelectionRequest
+ *
+ * 由选中的媒体文件展开显式来源清单.
+ */
+export type SelectionRequest = {
+    /**
+     * Media File Ids
+     *
+     * 选中的媒体文件 ID; 必须属于该库
+     */
+    media_file_ids: Array<number>;
+    /**
+     * Include Work Dir
+     *
+     * 连同作品文件夹一起删除; 仅在该目录只含这一条媒体索引且不是库根时提供
+     */
+    include_work_dir?: boolean;
+};
+
+/**
+ * SelectionSummaryResponse
+ */
+export type SelectionSummaryResponse = {
+    /**
+     * Exists
+     */
+    exists: boolean;
+    /**
+     * Plan Id
+     */
+    plan_id?: string | null;
+    /**
+     * Entry Count
+     */
+    entry_count?: number;
+    /**
+     * Entry Bytes
+     */
+    entry_bytes?: number;
+    /**
+     * Nodes
+     */
+    nodes?: Array<PlanNodeResponse>;
+    /**
+     * Notices
+     */
+    notices?: Array<string>;
+};
+
+/**
  * SiteConfig
  */
 export type SiteConfig = {
@@ -4585,6 +4639,36 @@ export type GetCleanupTrashResponses = {
 };
 
 export type GetCleanupTrashResponse = GetCleanupTrashResponses[keyof GetCleanupTrashResponses];
+
+export type ExpandCleanupSelectionData = {
+    body: SelectionRequest;
+    path: {
+        /**
+         * Library Id
+         */
+        library_id: number;
+    };
+    query?: never;
+    url: '/api/libraries/{library_id}/cleanup/selection';
+};
+
+export type ExpandCleanupSelectionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExpandCleanupSelectionError = ExpandCleanupSelectionErrors[keyof ExpandCleanupSelectionErrors];
+
+export type ExpandCleanupSelectionResponses = {
+    /**
+     * Successful Response
+     */
+    200: SelectionSummaryResponse;
+};
+
+export type ExpandCleanupSelectionResponse = ExpandCleanupSelectionResponses[keyof ExpandCleanupSelectionResponses];
 
 export type ListFilesData = {
     body?: never;

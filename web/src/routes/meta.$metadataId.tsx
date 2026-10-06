@@ -30,6 +30,7 @@ import {
   IconPlayerPlay,
   IconRefresh,
   IconStar,
+  IconDots,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
@@ -64,6 +65,8 @@ import { MergeDialog } from "@/components/metadata/merge-dialog";
 import { type JSONSchemaObject, resolveSchema } from "@/components/schema-form/schema";
 import { SchemaForm } from "@/components/schema-form/schema-form";
 import { extractErrorMessage } from "@/lib/api-error";
+import { MediaDeleteDialog } from "@/components/library/media-delete-dialog";
+import { deleteMedia } from "@/client/sdk.gen";
 import { confirm } from "@/lib/confirm";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { FIELD_LABEL_KEY, LOCKABLE_FIELDS } from "@/lib/media/metadata-fields";
@@ -117,13 +120,18 @@ function FieldBlock({
 
 function TitleDetailPage() {
   const { metadataId } = Route.useParams();
-  const { t } = useTranslation(["metadata", "common"]);
+  const { t } = useTranslation(["metadata", "library", "common"]);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [cropOpen, setCropOpen] = useState(false);
   const [coverLightboxOpen, coverLightbox] = useDisclosure(false);
+  const [deleteTargets, setDeleteTargets] = useState<{
+    ids: number[];
+    libraryId: number;
+    workDir: boolean;
+  } | null>(null);
   const [playingTrailer, setPlayingTrailer] = useState(false);
   const [thumbBroken, setThumbBroken] = useState(false);
   const [posterBroken, setPosterBroken] = useState(false);
@@ -210,6 +218,20 @@ function TitleDetailPage() {
         color: "red",
       }),
   });
+
+  async function handleDeleteFileRecord(mediaId: number) {
+    const ok = await confirm({
+      title: t("library:detail.confirmDeleteTitle"),
+      message: t("library:detail.confirmDeleteDesc"),
+      confirmLabel: t("common:actions.delete"),
+    });
+    if (!ok) return;
+    await deleteMedia({ path: { media_id: mediaId } });
+    notifications.show({ message: t("common:toast.mediaDeleted"), color: "blue" });
+    void queryClient.invalidateQueries({
+      queryKey: getMetadataQueryKey({ path: { metadata_id: id } }),
+    });
+  }
 
   async function handleDelete() {
     const ok = await confirm({
@@ -865,6 +887,36 @@ function TitleDetailPage() {
                   <Badge size="sm" variant="light">
                     {f.status}
                   </Badge>
+                  <Menu shadow="md" position="bottom-end" withinPortal>
+                    <Menu.Target>
+                      <ActionIcon
+                        variant="subtle"
+                        size="sm"
+                        aria-label={t("library:cleanup.deleteMenu")}
+                      >
+                        <IconDots size={14} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item onClick={() => void handleDeleteFileRecord(f.id)}>
+                        {t("library:cleanup.deleteRecord")}
+                      </Menu.Item>
+                      <Menu.Item
+                        onClick={() =>
+                          setDeleteTargets({ ids: [f.id], libraryId: f.library_id, workDir: false })
+                        }
+                      >
+                        {t("library:cleanup.deleteFiles")}
+                      </Menu.Item>
+                      <Menu.Item
+                        onClick={() =>
+                          setDeleteTargets({ ids: [f.id], libraryId: f.library_id, workDir: true })
+                        }
+                      >
+                        {t("library:cleanup.deleteWorkDir")}
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
                 </Group>
               ))}
             </Stack>
@@ -934,6 +986,15 @@ function TitleDetailPage() {
       {coverLightboxOpen && coverSrc && (
         <FanartLightbox images={[coverSrc]} onClose={coverLightbox.close} />
       )}
+
+      <MediaDeleteDialog
+        libraryId={deleteTargets?.libraryId ?? 0}
+        mediaFileIds={deleteTargets?.ids ?? []}
+        includeWorkDir={deleteTargets?.workDir ?? false}
+        opened={deleteTargets !== null}
+        onClose={() => setDeleteTargets(null)}
+        onDeleted={invalidateDetail}
+      />
     </Stack>
   );
 }

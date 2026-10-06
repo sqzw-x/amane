@@ -344,3 +344,20 @@ class TestPruneEmptyDirs:
 
         assert (result.removed, result.failed) == (0, 1)
         assert (lib / "incoming").is_dir()
+
+
+class TestTrashSubtreeGuard:
+    def test_recursive_delete_refuses_trash_subtree(self, tmp_path: Path) -> None:
+        """目录删除不深入 .amane_trash: 回收站不能被子目录的整目录删除顺手清掉."""
+        lib = tmp_path / "lib"
+        work = lib / "work"
+        trash = work / ".amane_trash"
+        trash.mkdir(parents=True)
+        (trash / "old.mkv").write_bytes(b"old")
+        (work / "a.mkv").write_bytes(b"aaaa")
+
+        tally = _delete(work, lib, DeleteTally())
+
+        assert (tally.deleted, tally.failed) == (0, 1)
+        assert (trash / "old.mkv").read_bytes() == b"old"
+        assert work.is_dir()

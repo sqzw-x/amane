@@ -271,6 +271,59 @@
         }
       }
     },
+    "/api/libraries/{library_id}/cleanup/selection": {
+      "post": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "Expand Cleanup Selection",
+        "description": "由选中项展开显式来源清单: 文件表与详情页的删除入口据此预览. 只读, 不改磁盘与索引.",
+        "operationId": "expand_cleanup_selection",
+        "parameters": [
+          {
+            "name": "library_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Library Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectionSummaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/files": {
       "get": {
         "tags": [
@@ -9910,6 +9963,10 @@
             "type": "integer",
             "title": "Id"
           },
+          "library_id": {
+            "type": "integer",
+            "title": "Library Id"
+          },
           "path": {
             "type": "string",
             "title": "Path"
@@ -10040,6 +10097,7 @@
         "type": "object",
         "required": [
           "id",
+          "library_id",
           "path",
           "status",
           "content_type"
@@ -12887,6 +12945,81 @@
         },
         "type": "object",
         "title": "ScrapingConfig"
+      },
+      "SelectionRequest": {
+        "properties": {
+          "media_file_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Media File Ids",
+            "description": "选中的媒体文件 ID; 必须属于该库"
+          },
+          "include_work_dir": {
+            "type": "boolean",
+            "title": "Include Work Dir",
+            "description": "连同作品文件夹一起删除; 仅在该目录只含这一条媒体索引且不是库根时提供",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "media_file_ids"
+        ],
+        "title": "SelectionRequest",
+        "description": "由选中的媒体文件展开显式来源清单."
+      },
+      "SelectionSummaryResponse": {
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count",
+            "default": 0
+          },
+          "entry_bytes": {
+            "type": "integer",
+            "title": "Entry Bytes",
+            "default": 0
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/PlanNodeResponse"
+            },
+            "type": "array",
+            "title": "Nodes",
+            "default": []
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notices",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "exists"
+        ],
+        "title": "SelectionSummaryResponse"
       },
       "SiteConfig": {
         "properties": {
