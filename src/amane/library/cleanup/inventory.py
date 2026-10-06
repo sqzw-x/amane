@@ -362,7 +362,7 @@ def _record_entry(entry: InventoryEntry, *, state: _ScanState) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class InventoryNode:
-    """面板的树节点. 目录节点只覆盖含条目的子树, 因此 node 数不超过条目数."""
+    """面板的树节点. 目录节点只出现在条目路径的祖先链上, 因此树不是库目录树的副本."""
 
     path: Path
     name: str
