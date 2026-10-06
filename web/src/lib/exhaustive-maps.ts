@@ -173,7 +173,6 @@ export const MANUAL_TASK_TYPES = exhaustiveTuple<ManualTaskType>()(
   "scrape",
   "refresh",
   "organize",
-  "trash",
   "scan_invalid",
   "cleanup",
   "upscale",

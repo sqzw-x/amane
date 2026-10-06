@@ -31,7 +31,7 @@
     "failed": "Failed",
     "scrape": "Scrape",
     "organize": "Organize",
-    "trash": "Trash",
+    "trash": "Trash (retired)",
     "cleanup": "Cleanup",
     "upscale": "Upscale",
     "refresh": "Refresh",
@@ -146,7 +146,6 @@
     "types": {
       "scrape": "Scrape",
       "organize": "Organize",
-      "trash": "Trash",
       "cleanup": "Cleanup",
       "upscale": "Upscale",
       "refresh": "Refresh",
@@ -202,24 +201,6 @@
       "prune_empty_dirs": {
         "label": "Prune emptied directories",
         "description": "Removes directories emptied by this run; no effect on copy / hardlink / symlink"
-      }
-    },
-    "trash": {
-      "library_id": {
-        "label": "Library",
-        "description": ""
-      },
-      "recursive": {
-        "label": "Recursive",
-        "description": "Overrides library setting"
-      },
-      "patterns": {
-        "label": "Patterns",
-        "description": "Overrides library setting"
-      },
-      "path": {
-        "label": "Path",
-        "description": "Trash only a subdirectory of the library"
       }
     },
     "scrape": {

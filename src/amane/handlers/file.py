@@ -378,7 +378,7 @@ def _classify_indexed(path: Path, scan: LibraryScan) -> LibraryFileKind | None:
 class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
     """依据已有 Metadata 整理范围内的 MediaFile; 不刮削, 不修改 Metadata, 不扫描磁盘.
 
-    同库执行期与 TRASH 共用一把锁.
+    同库执行期与 DELETE 共用一把锁.
     """
 
     def __init__(

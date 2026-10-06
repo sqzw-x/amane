@@ -16,7 +16,6 @@ from ...handlers import (
     RescrapePayload,
     ScanInvalidPayload,
     ScrapePayload,
-    TrashPayload,
     UpscalePayload,
 )
 from ...parsing import ContentType, infer_content_type, parse_file_info
@@ -167,10 +166,6 @@ class OrganizeSubmission(OrganizePayload):
     type: Literal["organize"]
 
 
-class TrashSubmission(TrashPayload):
-    type: Literal["trash"]
-
-
 class ScanInvalidSubmission(ScanInvalidPayload):
     type: Literal["scan_invalid"]
 
@@ -211,7 +206,6 @@ class ActorScrapeSubmission(BaseModel):
 TaskSubmission = Annotated[
     RefreshSubmission
     | OrganizeSubmission
-    | TrashSubmission
     | ScanInvalidSubmission
     | DeleteSubmission
     | ScrapeSubmission

@@ -29,7 +29,7 @@
     "failed": "失败",
     "scrape": "刮削",
     "organize": "整理",
-    "trash": "回收",
+    "trash": "回收 (已停用)",
     "cleanup": "清理",
     "upscale": "超分",
     "refresh": "扫描",
@@ -143,7 +143,6 @@
     "types": {
       "scrape": "刮削",
       "organize": "整理",
-      "trash": "回收",
       "cleanup": "清理",
       "upscale": "超分",
       "refresh": "扫描",
@@ -199,24 +198,6 @@
       "prune_empty_dirs": {
         "label": "删除腾空的目录",
         "description": "移动后删除本次腾空的目录; 复制 / 硬链接 / 软链接方式无效"
-      }
-    },
-    "trash": {
-      "library_id": {
-        "label": "媒体库",
-        "description": ""
-      },
-      "recursive": {
-        "label": "递归扫描",
-        "description": "覆盖媒体库设置"
-      },
-      "patterns": {
-        "label": "匹配模式",
-        "description": "覆盖媒体库设置"
-      },
-      "path": {
-        "label": "路径",
-        "description": "可设置仅回收库的子目录"
       }
     },
     "scrape": {

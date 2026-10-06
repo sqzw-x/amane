@@ -29,7 +29,6 @@ from ..handlers import (
     RescrapeHandler,
     ScanInvalidHandler,
     ScrapeHandler,
-    TrashHandler,
     UpscaleHandler,
 )
 from ..library import PlanStore
@@ -541,7 +540,6 @@ def build_handlers(
             watermark_dir=user_watermark_dir(state_dir) if state_dir is not None else None,
             library_locks=library_locks,
         ),
-        TaskType.TRASH: TrashHandler(repo, hot, library_locks=library_locks),
         TaskType.SCAN_INVALID: ScanInvalidHandler(repo, hot, plan_store),
         TaskType.DELETE: DeleteHandler(repo, plan_store, library_locks=library_locks),
         TaskType.CLEANUP: CleanupHandler(repo=repo, resource_store=resource_store),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
@@ -139,3 +140,33 @@ async def test_library_path_change_drops_plan(client: AsyncClient, app: FastAPI,
     assert updated.status_code == 200
     assert app.state.runtime.plan_store.get(plan.plan_id) is None
     assert app.state.runtime.plan_store.latest(library_id, PlanSource.RULES) is None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_scan_task_fills_panel_plan(client: AsyncClient, safe_path: Path) -> None:
+    """提交扫描任务后, 面板能读到 worker 写进清单存放的清单 (注入必须共用同一实例)."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root, blacklist_patterns=["ad"], min_file_size=1024)
+    (root / "work").mkdir(parents=True)
+    (root / "work" / "ad-1.mkv").write_bytes(b"x" * 10)
+    (root / "work" / "empty").mkdir()
+
+    created = await client.post("tasks", json={"type": "scan_invalid", "library_id": library_id})
+    assert created.status_code == 202
+    task_id = created.json()["id"]
+    for _ in range(100):
+        task = await client.get(f"tasks/{task_id}")
+        if task.json()["status"] in {"done", "failed"}:
+            break
+        await asyncio.sleep(0.05)
+    assert task.json()["status"] == "done"
+
+    resp = await client.get(f"libraries/{library_id}/cleanup/plan")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["exists"] is True
+    assert body["entry_count"] == 2
+    names = {node["name"]: node for node in body["nodes"]}
+    assert set(names) == {"work"}
+    assert names["work"]["entry_count"] == 2

@@ -24,14 +24,12 @@ from ..api.models.tasks import (
     ScanInvalidSubmission,
     ScrapeSubmission,
     TaskSubmission,
-    TrashSubmission,
     UpscaleSubmission,
 )
 
 TaskSubmissionType = Literal[
     "refresh",
     "organize",
-    "trash",
     "scan_invalid",
     "scrape",
     "cleanup",
@@ -45,7 +43,6 @@ RoutineSubmissionType = Literal["cleanup", "upscale", "r18_import", "rescrape"]
 _TASK_MEMBERS: dict[str, type[BaseModel]] = {
     "refresh": RefreshSubmission,
     "organize": OrganizeSubmission,
-    "trash": TrashSubmission,
     "scan_invalid": ScanInvalidSubmission,
     "scrape": ScrapeSubmission,
     "cleanup": CleanupSubmission,

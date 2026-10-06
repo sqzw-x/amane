@@ -91,7 +91,6 @@ from .tasks import (
     TaskResponse,
     TaskSubmission,
     TaskWorkerResponse,
-    TrashSubmission,
     UpscaleSubmission,
 )
 from .user_tags import UserTagLinksResponse, UserTagResponse
@@ -183,7 +182,6 @@ __all__ = [
     "TaskResponse",
     "TaskSubmission",
     "TaskWorkerResponse",
-    "TrashSubmission",
     "UpscaleSubmission",
     "UserTagLinksResponse",
     "UserTagResponse",

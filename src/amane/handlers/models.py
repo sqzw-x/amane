@@ -46,7 +46,7 @@ class LibraryBase(BaseModel):
 
 
 class LibraryScanBase(LibraryBase):
-    """REFRESH / TRASH 扫描范围: 可覆盖库的 recursive / patterns."""
+    """REFRESH / SCAN_INVALID 扫描范围: 可覆盖库的 recursive / patterns."""
 
     recursive: bool | None = Field(default=None, description="覆盖 Library 的 recursive; None 沿用库设置")
     patterns: list[str] | None = Field(default=None, description="覆盖 Library 的 patterns; None 沿用库设置")
@@ -186,18 +186,6 @@ class ScanInvalidResult(BaseModel):
     truncated: bool = False
     skipped_dirs: int = 0
     skipped_files: int = 0
-
-
-# --- TRASH ---
-
-
-class TrashPayload(LibraryScanBase):
-    """扫描 path 范围内的黑名单与过小视频, 移入 `.amane_trash`. path 缺省为库根."""
-
-
-class TrashResult(BaseModel):
-    trashed: int
-    failed: int = 0
 
 
 # --- DELETE ---

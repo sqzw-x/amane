@@ -9,5 +9,4 @@ from .refresh import *
 from .rescrape import *
 from .scan_invalid import *
 from .scrape import *
-from .trash import *
 from .upscale import *

@@ -13,7 +13,6 @@ from ...handlers import (
     RescrapePayload,
     ScanInvalidPayload,
     ScrapePayload,
-    TrashPayload,
     UpscalePayload,
 )
 from ..models import (
@@ -27,7 +26,6 @@ from ..models import (
     ScanInvalidSubmission,
     ScrapeSubmission,
     TaskSubmission,
-    TrashSubmission,
     UpscaleSubmission,
 )
 
@@ -40,7 +38,6 @@ ResolvedPayload = (
     | ScanInvalidPayload
     | DeletePayload
     | OrganizePayload
-    | TrashPayload
     | CleanupPayload
     | UpscalePayload
     | R18ImportPayload
@@ -57,9 +54,6 @@ async def resolve_submission(req: TaskSubmission, repo: Repository) -> tuple[Tas
         case OrganizeSubmission():
             await req.resolve(repo)
             return TaskType.ORGANIZE, req
-        case TrashSubmission():
-            await req.resolve(repo)
-            return TaskType.TRASH, req
         case DeleteSubmission():
             return TaskType.DELETE, req
         case ScanInvalidSubmission():

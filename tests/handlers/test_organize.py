@@ -11,9 +11,9 @@ from fastapi import HTTPException
 from amane.config import HotSettings
 from amane.db.models import MediaFileStatus
 from amane.enums import DownloadableResource, LinkMode, MoveMode
-from amane.handlers import LibraryTaskLocks, OrganizeHandler, OrganizePayload, TrashHandler, TrashPayload
+from amane.handlers import DeleteHandler, DeletePayload, LibraryTaskLocks, OrganizeHandler, OrganizePayload
 from amane.handlers.file import FileOperationsResult, commit_organized_media_file
-from amane.organize.file import OrganizeResult as DiskOrganizeResult
+from amane.library import DeleteOutcome, LibraryScan, PlanStore, scan_plan
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -608,10 +608,10 @@ async def test_organize_serializes_same_library(
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_organize_and_trash_do_not_overlap(
+async def test_organize_and_delete_do_not_overlap(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """同库 TRASH 与 ORGANIZE 注入同一把锁时, 落盘与回收不交叠."""
+    """同库 DELETE 与 ORGANIZE 注入同一把锁时, 落盘与删除不交叠."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
@@ -638,25 +638,35 @@ async def test_organize_and_trash_do_not_overlap(
         inflight -= 1
         return None
 
-    async def tracked_move(file_path, trash_dir):
+    async def tracked_delete(*_args: object, **_kwargs: object) -> DeleteOutcome:
         nonlocal inflight, max_inflight
         inflight += 1
         max_inflight = max(max_inflight, inflight)
         await asyncio.sleep(0.05)
         inflight -= 1
-        return DiskOrganizeResult(success=True, dest=trash_dir / file_path.name)
+        return DeleteOutcome(status="deleted")
 
     monkeypatch.setattr("amane.handlers.file.apply_file_operations", tracked_apply)
-    monkeypatch.setattr("amane.handlers.trash._move_to_trash", tracked_move)
+    monkeypatch.setattr("amane.handlers.delete.delete_target", tracked_delete)
 
+    plan = scan_plan.sync(
+        lib_root,
+        library_id=lib.id,
+        library_root=lib_root,
+        recursive=True,
+        patterns=[],
+        scan=LibraryScan(blacklist_patterns=["广告"]),
+    )
+    store = PlanStore()
+    store.put(plan)
     locks = LibraryTaskLocks()
     org = OrganizeHandler(repo, HotSettings(), resource_store, library_locks=locks)
-    trash = TrashHandler(repo, HotSettings(), library_locks=locks)
-    org_result, trash_result = await asyncio.gather(
+    dele = DeleteHandler(repo, store, library_locks=locks)
+    org_result, delete_result = await asyncio.gather(
         org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root))),
-        trash.handle(TrashPayload(library_id=lib.id, path=str(lib_root))),
+        dele.handle(DeletePayload(library_id=lib.id, plan_id=plan.plan_id)),
     )
-    assert org_result.success is True and trash_result.success is True
+    assert org_result.success is True and delete_result.success is True
     assert max_inflight == 1
 
 

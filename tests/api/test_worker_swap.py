@@ -186,21 +186,21 @@ async def test_stop_workers_cancels_running(
 async def test_library_locks_shared_across_workers(
     swap_client: tuple[AsyncClient, BlockingRefresh, AppRuntime],
 ) -> None:
-    """同库 ORGANIZE / TRASH 的串行锁跨 worker 共享."""
+    """同库 ORGANIZE / DELETE 的串行锁跨 worker 共享."""
     client, _blocker, runtime = swap_client
     locks = runtime.library_locks
     old_worker = runtime.worker
     assert old_worker._handlers[TaskType.ORGANIZE]._library_locks is locks
-    assert old_worker._handlers[TaskType.TRASH]._library_locks is locks
+    assert old_worker._handlers[TaskType.DELETE]._library_locks is locks
 
     resp = await client.patch("config", json={"watermark": {"enabled": True}})
     assert resp.status_code == 200
 
     # 新 worker 与退役 worker 的 handlers 必须共用同一把锁
     assert runtime.worker._handlers[TaskType.ORGANIZE]._library_locks is locks
-    assert runtime.worker._handlers[TaskType.TRASH]._library_locks is locks
+    assert runtime.worker._handlers[TaskType.DELETE]._library_locks is locks
     assert old_worker._handlers[TaskType.ORGANIZE]._library_locks is locks
-    assert old_worker._handlers[TaskType.TRASH]._library_locks is locks
+    assert old_worker._handlers[TaskType.DELETE]._library_locks is locks
 
 
 @pytest.mark.asyncio(loop_scope="function")

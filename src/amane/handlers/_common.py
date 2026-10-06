@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class LibraryTaskLocks:
-    """同库 TRASH 与 ORGANIZE 共用, 执行期串行."""
+    """同库 ORGANIZE 与 DELETE 共用, 执行期串行."""
 
     def __init__(self) -> None:
         self._locks: dict[int, asyncio.Lock] = {}
