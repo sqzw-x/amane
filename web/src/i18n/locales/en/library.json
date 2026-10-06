@@ -191,7 +191,6 @@
   "cleanup": {
     "tooltip": "Clean unwanted files and empty directories",
     "title": "Clean unwanted files",
-    "noPlanHint": "Not scanned yet",
     "scan": "Start scan",
     "rescan": "Rescan",
     "scanStarted": "Scan started",
@@ -231,7 +230,7 @@
     "deleteMenu": "Delete",
     "deleteRecord": "Record only",
     "deleteFiles": "Delete files",
-    "deleteWorkDir": "Delete files and work folder",
+    "deleteWorkDir": "Delete containing folder",
     "scanning": "Scanning for unwanted files…",
     "scanningHint": "You can close this panel; the scan keeps running",
     "scanFailed": "Last scan failed",

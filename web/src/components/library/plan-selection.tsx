@@ -140,14 +140,20 @@ export function PlanSelection({
   };
 
   return (
-    <Stack gap="xs">
+    // 面板给固定高度时撑满它, 让按钮行贴底; 嵌在自适应高度的弹窗里时按内容收缩.
+    <Stack gap="xs" style={{ flex: "1 1 auto", minHeight: 0 }}>
       <Group justify="space-between">
         <Text size="sm">
           {t("cleanup.selected", { count: totals.entries, size: formatFileSize(totals.bytes) })}
         </Text>
         {header}
       </Group>
-      <ScrollArea.Autosize mah="46vh" className={classes.scroll} py="sm">
+      <ScrollArea.Autosize
+        mah="46vh"
+        className={classes.scroll}
+        py="sm"
+        style={{ flex: "1 1 auto", minHeight: 0 }}
+      >
         {level.isLoading ? (
           <Center py="lg">
             <Loader size="sm" />

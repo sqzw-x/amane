@@ -189,7 +189,6 @@
   "cleanup": {
     "tooltip": "清理无效文件与空目录",
     "title": "清理无效文件",
-    "noPlanHint": "尚未扫描无效文件",
     "scan": "开始扫描",
     "rescan": "重新扫描",
     "scanStarted": "扫描已开始",
@@ -223,7 +222,7 @@
     "deleteMenu": "删除",
     "deleteRecord": "只删除记录",
     "deleteFiles": "删除文件",
-    "deleteWorkDir": "删除文件与作品文件夹",
+    "deleteWorkDir": "删除所在目录",
     "scanning": "正在扫描无效文件…",
     "scanningHint": "可以关掉面板, 扫描在后台继续",
     "scanFailed": "上次扫描失败",

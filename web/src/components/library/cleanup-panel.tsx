@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Loader, Modal, Stack, Tabs, Text } from "@mantine/core";
+import { Alert, Button, Center, Group, Loader, Modal, Stack, Tabs, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +13,9 @@ import {
 import type { LibraryResponse, PlanSummaryResponse } from "@/client/types.gen";
 import { PlanSelection } from "@/components/library/plan-selection";
 import { extractErrorMessage } from "@/lib/api-error";
+
+/** 两个页签共用同一块高度: 弹窗居中, 高度一变表头就会跟着上下跳. */
+const PANEL_HEIGHT = "52vh";
 
 interface CleanupPanelProps {
   library: LibraryResponse;
@@ -31,10 +34,10 @@ export function CleanupPanel({ library, opened, onClose }: CleanupPanelProps) {
           <Tabs.Tab value="rules">{t("cleanup.tabRules")}</Tabs.Tab>
           <Tabs.Tab value="trash">{t("cleanup.tabTrash")}</Tabs.Tab>
         </Tabs.List>
-        <Tabs.Panel value="rules">
+        <Tabs.Panel value="rules" h={PANEL_HEIGHT}>
           <RulesTab library={library} enabled={opened && tab === "rules"} onDone={onClose} />
         </Tabs.Panel>
-        <Tabs.Panel value="trash">
+        <Tabs.Panel value="trash" h={PANEL_HEIGHT}>
           <TrashTab library={library} enabled={opened && tab === "trash"} onDone={onClose} />
         </Tabs.Panel>
       </Tabs>
@@ -74,9 +77,9 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
 
   if (planQuery.isLoading) {
     return (
-      <Group justify="center" p="lg">
+      <Center h="100%">
         <Loader size="sm" />
-      </Group>
+      </Center>
     );
   }
   const plan = planQuery.data;
@@ -84,20 +87,9 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
   const scan = () =>
     scanMutation.mutate({ body: { type: "scan_invalid", library_id: library.id } });
   if (!plan?.exists) {
-    // 扫描期间只渲染扫描中: 面板可以关掉, 扫描在后台继续.
-    if (plan?.scan_running) {
-      return (
-        <Stack gap={6} align="center" py="xl">
-          <Loader size="sm" />
-          <Text size="sm">{t("cleanup.scanning")}</Text>
-          <Text size="xs" c="dimmed">
-            {t("cleanup.scanningHint")}
-          </Text>
-        </Stack>
-      );
-    }
+    // 空清单与扫描中共用一块居中区域: 空时只有一个按钮, 提交后原地变成加载的圈.
     return (
-      <Stack gap="sm">
+      <Stack gap="sm" h="100%">
         {plan?.last_scan_error ? (
           <Alert
             color="red"
@@ -108,28 +100,26 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
             <Text size="xs">{plan.last_scan_error}</Text>
           </Alert>
         ) : null}
-        <Text size="sm" c="dimmed">
-          {t("cleanup.noPlanHint")}
-        </Text>
-        <Group>
-          {/* 提交后立即关面板: 进度由「扫描中」状态与任务列表表达, 不在这里再转一次圈. */}
-          <Button
-            leftSection={<IconRefresh size={16} />}
-            onClick={() =>
-              scanMutation.mutate(
-                { body: { type: "scan_invalid", library_id: library.id } },
-                { onSuccess: onDone },
-              )
-            }
-          >
-            {t("cleanup.scan")}
-          </Button>
-        </Group>
+        <Center style={{ flex: 1 }}>
+          {scanning ? (
+            <Stack gap={6} align="center">
+              <Loader size="sm" />
+              <Text size="sm">{t("cleanup.scanning")}</Text>
+              <Text size="xs" c="dimmed">
+                {t("cleanup.scanningHint")}
+              </Text>
+            </Stack>
+          ) : (
+            <Button leftSection={<IconRefresh size={16} />} onClick={scan}>
+              {t("cleanup.scan")}
+            </Button>
+          )}
+        </Center>
       </Stack>
     );
   }
   return (
-    <Stack gap="xs">
+    <Stack gap="xs" h="100%">
       <PlanNotices plan={plan} />
       <PlanSelection
         key={plan.plan_id}
@@ -161,21 +151,23 @@ function TrashTab({ library, enabled, onDone }: TabProps) {
 
   if (trashQuery.isLoading) {
     return (
-      <Group justify="center" p="lg">
+      <Center h="100%">
         <Loader size="sm" />
-      </Group>
+      </Center>
     );
   }
   const trash = trashQuery.data;
   if (!trash?.exists) {
     return (
-      <Text size="sm" c="dimmed">
-        {t("cleanup.trashEmpty")}
-      </Text>
+      <Center h="100%">
+        <Text size="sm" c="dimmed">
+          {t("cleanup.trashEmpty")}
+        </Text>
+      </Center>
     );
   }
   return (
-    <Stack gap="xs">
+    <Stack gap="xs" h="100%">
       <Text size="xs" c="dimmed">
         {t("cleanup.trashNote")}
       </Text>
