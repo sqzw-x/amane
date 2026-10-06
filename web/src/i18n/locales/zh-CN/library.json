@@ -216,8 +216,6 @@
     },
     "tabRules": "无效文件",
     "tabTrash": "回收站",
-    "trashEmpty": "回收站是空的",
-    "trashNote": "回收站不再写入新内容, 这里清理历史遗留; 清空不会删除 .amane_trash 目录本身",
     "previewTitle": "确认要删除的内容",
     "deleteMenu": "删除",
     "deleteRecord": "只删除记录",

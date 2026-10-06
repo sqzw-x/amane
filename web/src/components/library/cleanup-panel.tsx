@@ -1,4 +1,4 @@
-import { Alert, Button, Center, Group, Loader, Modal, Stack, Tabs, Text } from "@mantine/core";
+import { Alert, Box, Button, Center, Group, Loader, Modal, Stack, Tabs, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,21 +26,39 @@ interface CleanupPanelProps {
 export function CleanupPanel({ library, opened, onClose }: CleanupPanelProps) {
   const { t } = useTranslation(["library", "common"]);
   const [tab, setTab] = useState<string | null>("rules");
+  // 回收站是历史遗留: 里面没东西时连页签都不渲染, 用户看不到它; 有遗留才出现.
+  const trashQuery = useQuery({
+    ...getCleanupTrashOptions({ path: { library_id: library.id } }),
+    enabled: opened,
+  });
+  const trash = trashQuery.data?.exists ? trashQuery.data : null;
 
   return (
     <Modal opened={opened} onClose={onClose} title={t("cleanup.title")} size="xl" centered>
-      <Tabs value={tab} onChange={setTab} keepMounted={false}>
-        <Tabs.List mb="sm">
-          <Tabs.Tab value="rules">{t("cleanup.tabRules")}</Tabs.Tab>
-          <Tabs.Tab value="trash">{t("cleanup.tabTrash")}</Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel value="rules" h={PANEL_HEIGHT}>
-          <RulesTab library={library} enabled={opened && tab === "rules"} onDone={onClose} />
-        </Tabs.Panel>
-        <Tabs.Panel value="trash" h={PANEL_HEIGHT}>
-          <TrashTab library={library} enabled={opened && tab === "trash"} onDone={onClose} />
-        </Tabs.Panel>
-      </Tabs>
+      {trash ? (
+        <Tabs value={tab} onChange={setTab} keepMounted={false}>
+          <Tabs.List mb="sm">
+            <Tabs.Tab value="rules">{t("cleanup.tabRules")}</Tabs.Tab>
+            <Tabs.Tab value="trash">{t("cleanup.tabTrash")}</Tabs.Tab>
+          </Tabs.List>
+          <Tabs.Panel value="rules" h={PANEL_HEIGHT}>
+            <RulesTab library={library} enabled={opened && tab !== "trash"} onDone={onClose} />
+          </Tabs.Panel>
+          <Tabs.Panel value="trash" h={PANEL_HEIGHT}>
+            <PlanSelection
+              key={trash.plan_id}
+              libraryId={library.id}
+              planId={trash.plan_id ?? ""}
+              path={trash.path ?? ""}
+              onDone={onClose}
+            />
+          </Tabs.Panel>
+        </Tabs>
+      ) : (
+        <Box h={PANEL_HEIGHT}>
+          <RulesTab library={library} enabled={opened} onDone={onClose} />
+        </Box>
+      )}
     </Modal>
   );
 }
@@ -137,46 +155,6 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
             {t("cleanup.rescan")}
           </Button>
         }
-      />
-    </Stack>
-  );
-}
-
-function TrashTab({ library, enabled, onDone }: TabProps) {
-  const { t } = useTranslation(["library", "common"]);
-  const trashQuery = useQuery({
-    ...getCleanupTrashOptions({ path: { library_id: library.id } }),
-    enabled,
-  });
-
-  if (trashQuery.isLoading) {
-    return (
-      <Center h="100%">
-        <Loader size="sm" />
-      </Center>
-    );
-  }
-  const trash = trashQuery.data;
-  if (!trash?.exists) {
-    return (
-      <Center h="100%">
-        <Text size="sm" c="dimmed">
-          {t("cleanup.trashEmpty")}
-        </Text>
-      </Center>
-    );
-  }
-  return (
-    <Stack gap="xs" h="100%">
-      <Text size="xs" c="dimmed">
-        {t("cleanup.trashNote")}
-      </Text>
-      <PlanSelection
-        key={trash.plan_id}
-        libraryId={library.id}
-        planId={trash.plan_id ?? ""}
-        path={trash.path ?? ""}
-        onDone={onDone}
       />
     </Stack>
   );
