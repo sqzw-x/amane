@@ -1536,7 +1536,7 @@ class TestLibraryRepo:
 
         watched = await repo.list_libraries(watch_only=True)
         assert len(watched) == 1
-        # 库路径在入口落真身: 期望值同样按真身算, 免得在 Windows 上把盘符相对路径当别名.
+        # 库路径在入口解析为真实路径: 期望值同样按真实路径算, 免得在 Windows 上把盘符相对路径当别名.
         assert watched[0].path == str(resolved_path("/media/incoming"))
 
     @pytest.mark.asyncio(loop_scope="function")

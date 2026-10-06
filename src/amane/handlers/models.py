@@ -38,8 +38,8 @@ class LibraryBase(BaseModel):
                 status_code=HTTP_403_FORBIDDEN,
                 detail=f"Path {self.path} is not a descendant of library path {lib.path}",
             )
-        # 范围路径与库路径必须同一形式 (文件选择器给的是真身): 索引与清理清单都按字面路径比较,
-        # 两种写法会把同一个文件算成两条索引. 库路径尚未落真身的旧库保持原样, 否则范围会与既有索引分家.
+        # 范围路径与库路径必须同一形式 (文件选择器给的是真实路径): 索引与清理清单都按字面路径比较,
+        # 两种写法会把同一个文件算成两条索引. 库路径尚未解析为真实路径的旧库保持原样, 否则范围会与既有索引分家.
         if self.path and is_resolved_path(lib.path):
             self.path = str(resolved_path(self.path))
         self.path = self.path or lib.path

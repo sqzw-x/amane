@@ -235,7 +235,7 @@ class TestLibraries:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_library_path_is_resolved(self, client: AsyncClient, safe_path: Path):
-        """库路径落真身: 符号链接别名与真身只能留一种写法, 否则索引与清理清单都按字面路径分家."""
+        """库路径解析为真实路径: 符号链接别名与真实路径只能留一种写法, 否则索引与清理清单都按字面路径分家."""
         real = safe_path / "real-movies"
         real.mkdir()
         alias = safe_path / "alias-movies"

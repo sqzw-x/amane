@@ -370,7 +370,7 @@ class TestTaskRecord:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_scope_path_lands_on_real_path(self, client: AsyncClient, repo: Repository, safe_path: Path):
-        """范围路径与库路径同一形式: 文件选择器给的是真身, 别名写法必须落回真身再入队."""
+        """范围路径与库路径同一形式: 文件选择器给的是真实路径, 别名写法必须先解析为真实路径再入队."""
         real = safe_path / "movies"
         (real / "sub").mkdir(parents=True)
         alias = safe_path / "alias"

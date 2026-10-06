@@ -456,7 +456,7 @@ _ROUNDTRIP = [
                 "strm_content_template",
                 "ingest",
                 "cloud_path",
-                # path 落真身 (符号链接解析后), 与写入值不再逐字相同
+                # path 解析为真实路径 (符号链接解析后), 与写入值不再逐字相同
                 "path",
             }
         ),
