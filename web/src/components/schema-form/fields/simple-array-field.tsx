@@ -71,67 +71,89 @@ interface ArrayInputProps {
   onChange: (value: string[]) => void;
 }
 
+function joinCommas(items: string[]): string {
+  return items.join(", ");
+}
+
+function joinLines(items: string[]): string {
+  return items.join("\n");
+}
+
+interface ArrayTextDraft {
+  text: string;
+  /** 输入时更新文本, 解析结果与表单值不同则立即写回表单. */
+  edit: (text: string) => void;
+  /** 失焦时解析文本并写回表单, 同时把文本规范化为 `join` 的结果. */
+  commit: () => void;
+}
+
 /**
- * 逗号分隔的列表输入.
+ * 列表文本与表单值之间的编辑状态.
  *
- * 输入框持有原始文本, 只在失焦时解析并写回表单. 每次按键都解析会把末尾的 `,` 与空格
- * 立刻吃掉 (`"a, "` → `["a"]` → 显示 `"a"`), 导致无法在尾部继续追加.
+ * 输入时写回表单值, 保存条才能反映编辑中的改动. 文本保留输入原样: 若每次输入都把解析结果
+ * 回填, 尾随分隔符与空格会被立即丢弃, 无法在末尾继续追加; 因此仅在解析结果与表单值内容
+ * 不一致时才重新同步文本.
  */
-function CommaArrayInput({ id, value, onChange }: ArrayInputProps) {
-  const [draft, setDraft] = useState(() => value.join(", "));
+function useArrayTextDraft(
+  value: string[],
+  onChange: (value: string[]) => void,
+  parse: (text: string) => string[],
+  join: (items: string[]) => string,
+): ArrayTextDraft {
+  const [text, setText] = useState(() => join(value));
   const [synced, setSynced] = useState(value);
 
-  // 表单值由外部改变 (重置 / 加载) 时重新同步文本.
-  if (synced !== value) {
+  // 表单值由外部改变 (重置 / 加载) 时重新同步文本. 编辑期间写回的值与解析结果内容相同, 文本因此不被覆盖.
+  if (!sameItems(synced, value)) {
     setSynced(value);
-    setDraft(value.join(", "));
+    if (!sameItems(parse(text), value)) {
+      setText(join(value));
+    }
   }
 
-  const commit = () => {
-    const items = parseCommas(draft);
+  const edit = (next: string) => {
+    setText(next);
+    const items = parse(next);
     if (!sameItems(items, value)) {
       onChange(items);
-      return;
     }
-    // 值没变也可能只是末尾多了 `,` / 空格, 提交后回到规范化文本.
-    setDraft(items.join(", "));
   };
+
+  const commit = () => {
+    const items = parse(text);
+    // 解析结果未变化时, 文本仍可能残留尾随分隔符; 失焦后按解析结果规范化文本.
+    setText(join(items));
+    if (!sameItems(items, value)) {
+      onChange(items);
+    }
+  };
+
+  return { text, edit, commit };
+}
+
+function CommaArrayInput({ id, value, onChange }: ArrayInputProps) {
+  const { text, edit, commit } = useArrayTextDraft(value, onChange, parseCommas, joinCommas);
 
   return (
     <TextInput
       id={id}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
+      value={text}
+      onChange={(e) => edit(e.target.value)}
       onBlur={commit}
       placeholder="Comma-separated values"
     />
   );
 }
 
-/** x-long 的多行列表输入, 同样保留原始文本直到失焦. */
+/** x-long 的多行列表输入. */
 function MultilineArrayInput({ id, value, onChange }: ArrayInputProps) {
-  const [draft, setDraft] = useState(() => value.join("\n"));
-  const [synced, setSynced] = useState(value);
-
-  if (synced !== value) {
-    setSynced(value);
-    setDraft(value.join("\n"));
-  }
-
-  const commit = () => {
-    const items = parseLines(draft);
-    if (!sameItems(items, value)) {
-      onChange(items);
-      return;
-    }
-    setDraft(items.join("\n"));
-  };
+  const { text, edit, commit } = useArrayTextDraft(value, onChange, parseLines, joinLines);
 
   return (
     <Textarea
       id={id}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
+      value={text}
+      onChange={(e) => edit(e.target.value)}
       onBlur={commit}
       placeholder="One value per line"
       rows={8}
