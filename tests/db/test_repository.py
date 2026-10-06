@@ -1,5 +1,6 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, cast, get_type_hints
 
 import pytest
@@ -31,6 +32,7 @@ from amane.db.repo_types import (
 from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataField
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
 from amane.parsing import ContentType, Mosaic
+from amane.utils.path import resolved_path
 from tests.helpers import assert_exhaustive_enum
 
 if TYPE_CHECKING:
@@ -1534,7 +1536,8 @@ class TestLibraryRepo:
 
         watched = await repo.list_libraries(watch_only=True)
         assert len(watched) == 1
-        assert watched[0].path == "/media/incoming"
+        # 库路径在入口落真身: 期望值同样按真身算, 免得在 Windows 上把盘符相对路径当别名.
+        assert watched[0].path == str(resolved_path("/media/incoming"))
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_delete_library(self, repo: Repository):
@@ -1575,7 +1578,7 @@ class TestLibraryRepo:
 
         fetched = await repo.get_library(lib.id)
         assert fetched is not None
-        assert fetched.path == "/media/test"
+        assert fetched.path == str(resolved_path("/media/test"))
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_get_library_not_found(self, repo: Repository):
@@ -1585,12 +1588,13 @@ class TestLibraryRepo:
     async def test_get_library_for_path(self, repo: Repository):
         await repo.create_library(name="root", path="/media/jav")
         sub = await repo.create_library(name="sub", path="/media/jav/sub")
+        sub_path = Path(resolved_path("/media/jav/sub"))
 
         # 最长前缀匹配
-        matched = await repo.get_library_for_path("/media/jav/sub/a.mp4")
+        matched = await repo.get_library_for_path(str(sub_path / "a.mp4"))
         assert matched is not None and matched.id == sub.id
         # 无匹配
-        assert await repo.get_library_for_path("/orphan/b.mp4") is None
+        assert await repo.get_library_for_path(str(Path(resolved_path("/orphan")) / "b.mp4")) is None
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_library(self, repo: Repository):
@@ -1599,7 +1603,7 @@ class TestLibraryRepo:
 
         updated = await repo.update_library(lib.id, path="/media/new", automation=LibraryAutomation.NONE)
         assert updated is not None
-        assert updated.path == "/media/new"
+        assert updated.path == str(resolved_path("/media/new"))
         assert updated.automation == LibraryAutomation.NONE
 
     @pytest.mark.asyncio(loop_scope="function")
