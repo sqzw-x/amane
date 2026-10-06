@@ -430,6 +430,34 @@ async def test_selection_expansion_previews_then_deletes(
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_selection_notice_carries_code_and_relative_path(
+    client: AsyncClient, app: FastAPI, safe_path: Path
+) -> None:
+    """未纳入的部分给码与参数 (文案由面板按界面语言给出), 路径与清单节点同一约定."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root)
+    work = root / "Studio" / "NSFS-039"
+    work.mkdir(parents=True)
+    for name in ("NSFS-039.mp4", "NSFS-040.mp4"):
+        (work / name).write_bytes(b"v" * 100)
+
+    repo = app.state.runtime.repo
+    first = await repo.create_media_file(library_id, path=str(work / "NSFS-039.mp4"), number="NSFS-039")
+    await repo.create_media_file(library_id, path=str(work / "NSFS-040.mp4"), number="NSFS-040")
+    assert first.id is not None
+
+    resp = await client.post(
+        f"libraries/{library_id}/cleanup/selection",
+        json={"media_file_ids": [first.id], "include_work_dir": True},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["notices"] == [
+        {"kind": "work_dir_multiple", "path": "Studio/NSFS-039", "count": 2, "detail": None}
+    ]
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_selection_rejects_foreign_media(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
     first = await _library(client, safe_path / "a")
     second = await _library(client, safe_path / "b")

@@ -2522,6 +2522,19 @@ export const FilePhaseSummarySchema = {
     description: '关联文件相位聚合: 任一文件具备即亮; definition 取最高档.'
 } as const;
 
+export const FootprintNoticeKindSchema = {
+    type: 'string',
+    enum: [
+        'missing',
+        'outside_root',
+        'work_dir_is_root',
+        'work_dir_multiple',
+        'template_error'
+    ],
+    title: 'FootprintNoticeKind',
+    description: '未能纳入清单的项. 只给码与参数, 文案由面板按界面语言给出.'
+} as const;
+
 export const HTTPValidationErrorSchema = {
     properties: {
         detail: {
@@ -7037,6 +7050,53 @@ export const ScrapingConfigSchema = {
     title: 'ScrapingConfig'
 } as const;
 
+export const SelectionNoticeResponseSchema = {
+    properties: {
+        kind: {
+            $ref: '#/components/schemas/FootprintNoticeKind'
+        },
+        path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Path'
+        },
+        count: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Count'
+        },
+        detail: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Detail'
+        }
+    },
+    type: 'object',
+    required: [
+        'kind'
+    ],
+    title: 'SelectionNoticeResponse',
+    description: '展开时未能纳入清单的项. 面板按 ``kind`` 用界面语言给出文案, 因此服务端不带文案.'
+} as const;
+
 export const SelectionRequestSchema = {
     properties: {
         media_file_ids: {
@@ -7082,7 +7142,7 @@ export const SelectionSummaryResponseSchema = {
         },
         notices: {
             items: {
-                type: 'string'
+                $ref: '#/components/schemas/SelectionNoticeResponse'
             },
             type: 'array',
             title: 'Notices',

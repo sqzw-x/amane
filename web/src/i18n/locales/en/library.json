@@ -216,6 +216,13 @@
       "empty_dir": "Empty directory",
       "explicit": "Selected"
     },
+    "notice": {
+      "missing": "No longer on disk: {{path}}",
+      "outside_root": "Outside the library root; save the library path again: {{path}}",
+      "work_dir_is_root": "This folder is the library root; deleting it is not offered",
+      "work_dir_multiple": "The folder holds {{count}} indexed media files; deleting it is not offered: {{path}}",
+      "template_error": "Template cannot be resolved; products were left out: {{path}} ({{detail}})"
+    },
     "confirmMessage_one": "{{count}} items, about {{size}}, will be deleted. This cannot be undone; index rows go with them.",
     "confirmMessage_other": "{{count}} items, about {{size}}, will be deleted. This cannot be undone; index rows go with them.",
     "selected_one": "{{count}} selected, about {{size}}",

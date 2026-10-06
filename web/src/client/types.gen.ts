@@ -1406,6 +1406,13 @@ export type FilePhaseSummary = {
 };
 
 /**
+ * FootprintNoticeKind
+ *
+ * 未能纳入清单的项. 只给码与参数, 文案由面板按界面语言给出.
+ */
+export type FootprintNoticeKind = 'missing' | 'outside_root' | 'work_dir_is_root' | 'work_dir_multiple' | 'template_error';
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -3564,6 +3571,27 @@ export type ScrapingConfig = {
 };
 
 /**
+ * SelectionNoticeResponse
+ *
+ * 展开时未能纳入清单的项. 面板按 ``kind`` 用界面语言给出文案, 因此服务端不带文案.
+ */
+export type SelectionNoticeResponse = {
+    kind: FootprintNoticeKind;
+    /**
+     * Path
+     */
+    path?: string | null;
+    /**
+     * Count
+     */
+    count?: number | null;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+};
+
+/**
  * SelectionRequest
  *
  * 由选中的媒体文件展开显式来源清单.
@@ -3600,7 +3628,7 @@ export type SelectionSummaryResponse = {
     /**
      * Notices
      */
-    notices?: Array<string>;
+    notices?: Array<SelectionNoticeResponse>;
     /**
      * Truncated
      */

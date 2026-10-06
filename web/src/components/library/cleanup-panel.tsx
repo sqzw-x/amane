@@ -188,7 +188,13 @@ function InventoryNotices({ inventory }: { inventory: InventorySummaryResponse }
 }
 
 /** 触顶提示: 清单只包含部分条目, 并给出还有多少没纳入 — 用户据此把扫描限定到子目录. */
-function TruncationNotice({ truncated, dropped }: { truncated?: boolean; dropped?: number }) {
+export function TruncationNotice({
+  truncated,
+  dropped,
+}: {
+  truncated?: boolean;
+  dropped?: number;
+}) {
   const { t } = useTranslation("library");
   if (!truncated) return null;
   return (

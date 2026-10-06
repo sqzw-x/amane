@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
@@ -12,6 +13,7 @@ from ...db.models import TaskStatus, TaskType
 from ...library import (
     TRASH_DIRNAME,
     CleanupInventory,
+    FootprintNotice,
     InventoryEntryKind,
     InventoryNode,
     InventorySource,
@@ -26,6 +28,7 @@ from ..models.cleanup import (
     InventoryNodePage,
     InventoryNodeResponse,
     InventorySummaryResponse,
+    SelectionNoticeResponse,
     SelectionRequest,
     SelectionSummaryResponse,
     TrashSummaryResponse,
@@ -192,6 +195,19 @@ async def get_cleanup_trash(library_id: int, repo: RepoDep, runtime: RuntimeDep)
     )
 
 
+def _notices(inventory: CleanupInventory, notices: Sequence[FootprintNotice]) -> list[SelectionNoticeResponse]:
+    """提示里的路径与清单节点同一约定: 库内相对库根, 库外保留绝对路径."""
+    return [
+        SelectionNoticeResponse(
+            kind=notice.kind,
+            path=_relative(inventory, notice.path) if notice.path is not None else None,
+            count=notice.count,
+            detail=notice.detail,
+        )
+        for notice in notices
+    ]
+
+
 @router.post("/{library_id}/cleanup/selection")
 async def expand_cleanup_selection(
     library_id: int,
@@ -223,12 +239,12 @@ async def expand_cleanup_selection(
         include_work_dir=req.include_work_dir,
     )
     if not outcome.inventory.entries:
-        return SelectionSummaryResponse(exists=False, notices=outcome.notices)
+        return SelectionSummaryResponse(exists=False, notices=_notices(outcome.inventory, outcome.notices))
     runtime.inventory_store.put(outcome.inventory)
     return SelectionSummaryResponse(
         exists=True,
         inventory_id=outcome.inventory.inventory_id,
-        notices=outcome.notices,
+        notices=_notices(outcome.inventory, outcome.notices),
         truncated=outcome.inventory.truncated,
         dropped=outcome.inventory.dropped,
     )

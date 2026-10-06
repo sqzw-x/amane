@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { expandCleanupSelection } from "@/client/sdk.gen";
 import { InventoryTree } from "@/components/library/inventory-tree";
+import { TruncationNotice } from "@/components/library/cleanup-panel";
 
 interface MediaDeleteDialogProps {
   libraryId: number;
@@ -52,14 +53,21 @@ export function MediaDeleteDialog({
         </Text>
       ) : (
         <Stack gap="xs">
+          <TruncationNotice truncated={preview.data.truncated} dropped={preview.data.dropped} />
           {(preview.data.notices ?? []).map((notice) => (
             <Alert
-              key={notice}
+              key={`${notice.kind}:${notice.path ?? ""}`}
               color="yellow"
               variant="light"
               icon={<IconAlertTriangle size={16} />}
             >
-              <Text size="xs">{notice}</Text>
+              <Text size="xs">
+                {t(`cleanup.notice.${notice.kind}`, {
+                  path: notice.path,
+                  count: notice.count,
+                  detail: notice.detail,
+                })}
+              </Text>
             </Alert>
           ))}
           <InventoryTree

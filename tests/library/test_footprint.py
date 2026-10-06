@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from amane.library import InventoryEntryKind, InventoryReason, build_footprint
+from amane.library import FootprintNotice, FootprintNoticeKind, InventoryEntryKind, InventoryReason, build_footprint
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -104,7 +104,8 @@ class TestFootprint:
         assert len(outcome.inventory.entries) == 1
         assert outcome.inventory.truncated is True
         assert outcome.inventory.dropped == 3
-        assert any("未纳入清单" in notice for notice in outcome.notices)
+        # 截断不另发提示: 面板按 truncated / dropped 自己给出文案.
+        assert outcome.notices == []
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_work_dir_refused_when_sibling_indexed(self, repo: Repository, tmp_path: Path) -> None:
@@ -128,8 +129,7 @@ class TestFootprint:
             include_work_dir=True,
         )
 
-        assert len(outcome.notices) == 1
-        assert "媒体索引" in outcome.notices[0]
+        assert outcome.notices == [FootprintNotice(FootprintNoticeKind.WORK_DIR_MULTIPLE, path=video.parent, count=2)]
         names = sorted(entry.path.name for entry in outcome.inventory.entries)
         assert "cover.jpg" not in names
 
@@ -145,7 +145,7 @@ class TestFootprint:
             include_work_dir=True,
         )
 
-        assert outcome.notices == ["作品目录就是库根, 不提供整目录删除"]
+        assert outcome.notices == [FootprintNotice(FootprintNoticeKind.WORK_DIR_IS_ROOT)]
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_missing_video_is_notice(self, repo: Repository, tmp_path: Path) -> None:
@@ -163,7 +163,7 @@ class TestFootprint:
         )
 
         assert [entry.path.name for entry in outcome.inventory.entries] == ["NSFS-039.zh.srt"]
-        assert any("已不在磁盘上" in notice for notice in outcome.notices)
+        assert any(notice.kind is FootprintNoticeKind.MISSING for notice in outcome.notices)
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_unstattable_video_is_notice(
@@ -189,7 +189,7 @@ class TestFootprint:
         )
 
         assert [entry.path.name for entry in outcome.inventory.entries] == ["NSFS-039.nfo", "NSFS-039.zh.srt"]
-        assert any("已不在磁盘上" in notice for notice in outcome.notices)
+        assert any(notice.kind is FootprintNoticeKind.MISSING for notice in outcome.notices)
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_outside_products_left_alone(self, repo: Repository, tmp_path: Path) -> None:
@@ -287,4 +287,4 @@ class TestFootprint:
         )
 
         assert outcome.inventory.entries == []
-        assert any("重新保存媒体库路径" in notice for notice in outcome.notices)
+        assert any(notice.kind is FootprintNoticeKind.OUTSIDE_ROOT for notice in outcome.notices)

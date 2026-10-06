@@ -1,4 +1,4 @@
-from .footprint import FootprintOutcome, build_footprint
+from .footprint import FootprintNotice, FootprintNoticeKind, FootprintOutcome, build_footprint
 from .inventory import (
     INVENTORY_RETENTION,
     INVENTORY_TTL_SECONDS,
@@ -25,6 +25,8 @@ __all__ = [
     "MAX_INVENTORY_ENTRIES",
     "CleanupInventory",
     "DirCoverage",
+    "FootprintNotice",
+    "FootprintNoticeKind",
     "FootprintOutcome",
     "InventoryEntry",
     "InventoryEntryKind",

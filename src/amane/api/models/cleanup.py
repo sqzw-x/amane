@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from ...library import InventoryEntryKind, InventoryReason
+from ...library import FootprintNoticeKind, InventoryEntryKind, InventoryReason
 
 
 class InventoryNodeResponse(BaseModel):
@@ -83,12 +83,23 @@ class SelectionRequest(BaseModel):
     )
 
 
+class SelectionNoticeResponse(BaseModel):
+    """展开时未能纳入清单的项. 面板按 ``kind`` 用界面语言给出文案, 因此服务端不带文案."""
+
+    kind: FootprintNoticeKind
+    path: str | None = None
+    """涉及的路径: 库内为相对路径, 库外为绝对路径, 与清单节点同一约定."""
+    count: int | None = None
+    detail: str | None = None
+    """解析器给出的原因; 只有模板解析失败带出."""
+
+
 class SelectionSummaryResponse(BaseModel):
     """展开结果. 条目自库根展开 (库外产物挂在根下), 面板按分页接口读取."""
 
     exists: bool
     inventory_id: str | None = None
-    notices: list[str] = []
+    notices: list[SelectionNoticeResponse] = []
     """未能纳入的部分与原因 (例如作品目录不满足整目录删除的条件)."""
     truncated: bool = False
     dropped: int = 0

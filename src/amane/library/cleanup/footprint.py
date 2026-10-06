@@ -11,6 +11,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -39,12 +40,31 @@ logger = structlog.get_logger()
 _Add = Callable[[Path], None]
 
 
+class FootprintNoticeKind(StrEnum):
+    """未能纳入清单的项. 只给码与参数, 文案由面板按界面语言给出."""
+
+    MISSING = "missing"
+    OUTSIDE_ROOT = "outside_root"
+    WORK_DIR_IS_ROOT = "work_dir_is_root"
+    WORK_DIR_MULTIPLE = "work_dir_multiple"
+    TEMPLATE_ERROR = "template_error"
+
+
+@dataclass(frozen=True, slots=True)
+class FootprintNotice:
+    kind: FootprintNoticeKind
+    path: Path | None = None
+    count: int | None = None
+    detail: str | None = None
+    """解析器给出的原因; 只有模板解析失败带出."""
+
+
 @dataclass(frozen=True, slots=True)
 class FootprintOutcome:
     """展开结果与未能纳入的部分 (面板据此提示用户)."""
 
     inventory: CleanupInventory
-    notices: list[str]
+    notices: list[FootprintNotice]
 
 
 @in_thread
@@ -64,7 +84,7 @@ def build_footprint(
     assert library.id is not None
     root = Path(library.path)
     entries: list[InventoryEntry] = []
-    notices: list[str] = []
+    notices: list[FootprintNotice] = []
     seen: set[str] = set()
     dropped = 0
     # 整目录删除要数每个目录的索引条数; 逐项扫整份索引在选中项多时是平方, 因此先归并一次.
@@ -81,19 +101,19 @@ def build_footprint(
         seen.add(key)
         disk = existing_disk_path(path, follow_symlinks=False)
         if disk is None:
-            notices.append(f"已不在磁盘上: {path}")
+            notices.append(FootprintNotice(FootprintNoticeKind.MISSING, path=path))
             return
         if not path_is_under(disk, root):
             if indexed_file:
                 # 索引里的文件本该在库根内: 落在这里说明库路径与索引写法不一致 (旧库的符号链接别名).
-                notices.append(f"文件不在库根内, 请重新保存媒体库路径: {disk}")
+                notices.append(FootprintNotice(FootprintNoticeKind.OUTSIDE_ROOT, path=disk))
             # 模板产物落在库外链接树是正常的, 那些不归本功能管.
             return
         try:
             entry = _entry(disk)
         except OSError:
             # 存在性检查与 stat 之间文件消失, 或挂载盘掉线: 与不在磁盘上同样是这次展开拿不到.
-            notices.append(f"已不在磁盘上: {path}")
+            notices.append(FootprintNotice(FootprintNoticeKind.MISSING, path=path))
             return
         # 上限判断放在这里: 只有真会进清单的路径才算「未纳入」, 库外产物与不存在的路径不计入.
         if len(entries) >= limit:
@@ -114,9 +134,6 @@ def build_footprint(
             _add_subtitles(library, Path(item.path), add=add)
             continue
         _add_tree_contents(work_dir, add=add)
-
-    if dropped:
-        notices.append(f"选中项过多, 另有 {dropped} 项未纳入清单")
 
     inventory = CleanupInventory(
         inventory_id=new_inventory_id(),
@@ -167,7 +184,7 @@ def _add_products(
     metas: Mapping[int, Metadata],
     *,
     add: _Add,
-    notices: list[str],
+    notices: list[FootprintNotice],
 ) -> None:
     """按路径模板反解刮削产物: 产物位置由模板决定, 与视频文件名没有对应关系."""
     metadata = metas.get(item.metadata_id) if item.metadata_id is not None else None
@@ -184,7 +201,7 @@ def _add_products(
             safe_dirs=None,
         )
     except ValueError as exc:
-        notices.append(f"模板无法解析, 产物未纳入: {source} ({exc})")
+        notices.append(FootprintNotice(FootprintNoticeKind.TEMPLATE_ERROR, path=source, detail=str(exc)))
         return
     for product in (paths.nfo, paths.thumb, paths.poster, paths.fanart, paths.trailer, paths.extrafanart_dir):
         # 模板产物本来就可能没写过, 只收磁盘上已有的, 缺失不值得提示.
@@ -207,12 +224,12 @@ def _add_subtitles(library: Library, video: Path, *, add: _Add) -> None:
             add(child)
 
 
-def _work_dir_refusal(work_dir: Path, *, root: Path, indexed_per_dir: Mapping[str, int]) -> str | None:
+def _work_dir_refusal(work_dir: Path, *, root: Path, indexed_per_dir: Mapping[str, int]) -> FootprintNotice | None:
     if path_key(work_dir) == path_key(root):
-        return "作品目录就是库根, 不提供整目录删除"
+        return FootprintNotice(FootprintNoticeKind.WORK_DIR_IS_ROOT)
     siblings = indexed_per_dir.get(path_key(work_dir), 0)
     if siblings > 1:
-        return f"目录内有 {siblings} 条媒体索引, 不提供整目录删除: {work_dir}"
+        return FootprintNotice(FootprintNoticeKind.WORK_DIR_MULTIPLE, path=work_dir, count=siblings)
     return None
 
 
