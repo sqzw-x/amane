@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..config import HotSettings
-from ..library import MEDIA_EXTENSIONS, LibraryScan, PlanStore, scan_plan
+from ..library import MEDIA_EXTENSIONS, InventoryStore, LibraryScan, scan_inventory
 from ..utils.threads import path_is_dir
 from .models import ScanInvalidPayload, ScanInvalidResult
 from .protocol import TaskHandler, TaskResult
@@ -25,11 +25,11 @@ class ScanInvalidHandler(TaskHandler[ScanInvalidPayload, ScanInvalidResult]):
     只读, 因此不参与库锁: 与整理并发时清单可能落后于磁盘, 由执行侧逐项复验兜底.
     """
 
-    def __init__(self, repo: Repository, config: HotSettings, plan_store: PlanStore):
+    def __init__(self, repo: Repository, config: HotSettings, inventory_store: InventoryStore):
         super().__init__(payload_t=ScanInvalidPayload, result_t=ScanInvalidResult)
         self._repo = repo
         self._config = config
-        self._plan_store = plan_store
+        self._inventory_store = inventory_store
 
     async def handle(self, payload: ScanInvalidPayload) -> TaskResult[ScanInvalidResult]:
         library = await self._repo.get_library(payload.library_id)
@@ -53,7 +53,7 @@ class ScanInvalidHandler(TaskHandler[ScanInvalidPayload, ScanInvalidResult]):
             min_file_size=library.min_file_size,
             media_extensions=media_extensions,
         )
-        plan = await scan_plan(
+        inventory = await scan_inventory(
             scope_dir,
             library_id=library.id,
             library_root=library_root,
@@ -61,18 +61,23 @@ class ScanInvalidHandler(TaskHandler[ScanInvalidPayload, ScanInvalidResult]):
             patterns=payload.patterns or [],
             scan=scan,
         )
-        self._plan_store.put(plan)
+        self._inventory_store.put(inventory)
         await self.report_progress(1, 1, "done")
-        logger.info("scan invalid completed", path=payload.path, plan_id=plan.plan_id, entries=len(plan.entries))
+        logger.info(
+            "scan invalid completed",
+            path=payload.path,
+            inventory_id=inventory.inventory_id,
+            entries=len(inventory.entries),
+        )
         return TaskResult(
             True,
             result=ScanInvalidResult(
-                plan_id=plan.plan_id,
-                entries=len(plan.entries),
-                dirs=len(plan.dirs),
-                scope_path=str(plan.scope_path) if plan.scope_path is not None else None,
-                truncated=plan.truncated,
-                skipped_dirs=plan.skipped_dirs,
-                skipped_files=plan.skipped_files,
+                inventory_id=inventory.inventory_id,
+                entries=len(inventory.entries),
+                dirs=len(inventory.dirs),
+                scope_path=str(inventory.scope_path) if inventory.scope_path is not None else None,
+                truncated=inventory.truncated,
+                skipped_dirs=inventory.skipped_dirs,
+                skipped_files=inventory.skipped_files,
             ),
         )

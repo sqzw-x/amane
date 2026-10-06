@@ -5,13 +5,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  getCleanupPlanOptions,
-  getCleanupPlanQueryKey,
+  getCleanupInventoryOptions,
+  getCleanupInventoryQueryKey,
   getCleanupTrashOptions,
   submitTaskMutation,
 } from "@/client/@tanstack/react-query.gen";
-import type { LibraryResponse, PlanSummaryResponse } from "@/client/types.gen";
-import { PlanSelection } from "@/components/library/plan-selection";
+import type { LibraryResponse, InventorySummaryResponse } from "@/client/types.gen";
+import { InventoryTree } from "@/components/library/inventory-tree";
 import { extractErrorMessage } from "@/lib/api-error";
 
 /** 两个页签共用同一块高度: 弹窗居中, 高度一变表头就会跟着上下跳. */
@@ -49,10 +49,10 @@ export function CleanupPanel({ library, opened, onClose }: CleanupPanelProps) {
           <Tabs.Panel value="trash" h={PANEL_HEIGHT}>
             <Stack gap="xs" h="100%">
               <TruncationNotice truncated={trash.truncated} dropped={trash.dropped} />
-              <PlanSelection
-                key={trash.plan_id}
+              <InventoryTree
+                key={trash.inventory_id}
                 libraryId={library.id}
-                planId={trash.plan_id ?? ""}
+                inventoryId={trash.inventory_id ?? ""}
                 path={trash.path ?? ""}
                 onDone={onClose}
               />
@@ -77,8 +77,8 @@ interface TabProps {
 function RulesTab({ library, enabled, onDone }: TabProps) {
   const { t } = useTranslation(["library", "common"]);
   const queryClient = useQueryClient();
-  const planQuery = useQuery({
-    ...getCleanupPlanOptions({ path: { library_id: library.id } }),
+  const inventoryQuery = useQuery({
+    ...getCleanupInventoryOptions({ path: { library_id: library.id } }),
     enabled,
     // 扫描在跑时轮询, 结束后停止.
     refetchInterval: (query) => (query.state.data?.scan_running ? 2000 : false),
@@ -88,7 +88,7 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
     onSuccess: () => {
       notifications.show({ message: t("cleanup.scanStarted"), color: "blue" });
       void queryClient.invalidateQueries({
-        queryKey: getCleanupPlanQueryKey({ path: { library_id: library.id } }),
+        queryKey: getCleanupInventoryQueryKey({ path: { library_id: library.id } }),
       });
     },
     onError: (err) =>
@@ -98,29 +98,29 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
       }),
   });
 
-  if (planQuery.isLoading) {
+  if (inventoryQuery.isLoading) {
     return (
       <Center h="100%">
         <Loader size="sm" />
       </Center>
     );
   }
-  const plan = planQuery.data;
-  const scanning = Boolean(plan?.scan_running) || scanMutation.isPending;
+  const inventory = inventoryQuery.data;
+  const scanning = Boolean(inventory?.scan_running) || scanMutation.isPending;
   const scan = () =>
     scanMutation.mutate({ body: { type: "scan_invalid", library_id: library.id } });
-  if (!plan?.exists) {
+  if (!inventory?.exists) {
     // 空清单与扫描中共用一块居中区域: 空时只有一个按钮, 提交后原地变成加载的圈.
     return (
       <Stack gap="sm" h="100%">
-        {plan?.last_scan_error ? (
+        {inventory?.last_scan_error ? (
           <Alert
             color="red"
             variant="light"
             icon={<IconAlertTriangle size={16} />}
             title={t("cleanup.scanFailed")}
           >
-            <Text size="xs">{plan.last_scan_error}</Text>
+            <Text size="xs">{inventory.last_scan_error}</Text>
           </Alert>
         ) : null}
         <Center style={{ flex: 1 }}>
@@ -143,11 +143,11 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
   }
   return (
     <Stack gap="xs" h="100%">
-      <PlanNotices plan={plan} />
-      <PlanSelection
-        key={plan.plan_id}
+      <InventoryNotices inventory={inventory} />
+      <InventoryTree
+        key={inventory.inventory_id}
         libraryId={library.id}
-        planId={plan.plan_id ?? ""}
+        inventoryId={inventory.inventory_id ?? ""}
         onDone={onDone}
         header={
           <Button
@@ -165,21 +165,21 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
   );
 }
 
-function PlanNotices({ plan }: { plan: PlanSummaryResponse }) {
+function InventoryNotices({ inventory }: { inventory: InventorySummaryResponse }) {
   const { t } = useTranslation("library");
   return (
     <Stack gap={4}>
-      {plan.scope_path ? (
+      {inventory.scope_path ? (
         <Text size="xs" c="dimmed">
-          {t("cleanup.scope", { path: plan.scope_path })}
+          {t("cleanup.scope", { path: inventory.scope_path })}
         </Text>
       ) : null}
-      <TruncationNotice truncated={plan.truncated} dropped={plan.dropped} />
-      {plan.skipped_dirs || plan.skipped_files ? (
+      <TruncationNotice truncated={inventory.truncated} dropped={inventory.dropped} />
+      {inventory.skipped_dirs || inventory.skipped_files ? (
         <Group gap={4} c="yellow.7">
           <IconAlertTriangle size={14} />
           <Text size="xs">
-            {t("cleanup.skipped", { dirs: plan.skipped_dirs, files: plan.skipped_files })}
+            {t("cleanup.skipped", { dirs: inventory.skipped_dirs, files: inventory.skipped_files })}
           </Text>
         </Group>
       ) : null}

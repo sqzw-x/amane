@@ -3,7 +3,7 @@ import { IconAlertTriangle } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { expandCleanupSelection } from "@/client/sdk.gen";
-import { PlanSelection } from "@/components/library/plan-selection";
+import { InventoryTree } from "@/components/library/inventory-tree";
 
 interface MediaDeleteDialogProps {
   libraryId: number;
@@ -62,10 +62,10 @@ export function MediaDeleteDialog({
               <Text size="xs">{notice}</Text>
             </Alert>
           ))}
-          <PlanSelection
-            key={preview.data.plan_id}
+          <InventoryTree
+            key={preview.data.inventory_id}
             libraryId={libraryId}
-            planId={preview.data.plan_id ?? ""}
+            inventoryId={preview.data.inventory_id ?? ""}
             onDone={() => {
               onDeleted();
               onClose();

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..db import TaskType
-from ..library import MEDIA_EXTENSIONS, LibraryScan, PlanStore, scan_plan
+from ..library import MEDIA_EXTENSIONS, InventoryStore, LibraryScan, scan_inventory
 from ..parsing import parse_file_info
 from ..utils.path import nfc_path
 from ..utils.threads import path_exists, path_is_dir
@@ -28,12 +28,12 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
         self,
         repo: Repository,
         media_extensions: Sequence[str] | None = None,
-        plan_store: PlanStore | None = None,
+        inventory_store: InventoryStore | None = None,
     ):
         super().__init__(payload_t=RefreshPayload, result_t=RefreshResult)
         self._repo = repo
         self._media_extensions = frozenset(media_extensions) if media_extensions else MEDIA_EXTENSIONS
-        self._plan_store = plan_store
+        self._inventory_store = inventory_store
 
     async def handle(self, payload: RefreshPayload) -> TaskResult[RefreshResult]:
         scan_dir = Path(payload.path)
@@ -67,7 +67,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
                 walked = 0
                 library_root = Path(library.path) if library is not None else scan_dir
                 # 与清理清单共用一趟遍历: 媒体命中用于增删, 无效文件与空目录顺手进清单.
-                plan = await scan_plan(
+                inventory = await scan_inventory(
                     scan_dir,
                     library_id=payload.library_id,
                     library_root=library_root,
@@ -76,10 +76,10 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
                     scan=scan,
                     collect_media=True,
                 )
-                if library is not None and self._plan_store is not None and plan.scope_path is None:
+                if library is not None and self._inventory_store is not None and inventory.scope_path is None:
                     # 子目录范围的巡检不代表整库, 因此不覆盖面板用的清单.
-                    self._plan_store.put(plan)
-                for hit in plan.media_hits:
+                    self._inventory_store.put(inventory)
+                for hit in inventory.media_hits:
                     file_path = hit.path
                     path_key = nfc_path(str(file_path))
                     walked += 1

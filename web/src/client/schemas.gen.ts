@@ -1498,9 +1498,9 @@ export const DeleteSubmissionSchema = {
             title: 'Library Id',
             description: '清单所属 Library ID'
         },
-        plan_id: {
+        inventory_id: {
             type: 'string',
-            title: 'Plan Id',
+            title: 'Inventory Id',
             description: '后端生成的清单标识; 不存在或已过期则失败'
         },
         exclude: {
@@ -1526,7 +1526,7 @@ export const DeleteSubmissionSchema = {
     type: 'object',
     required: [
         'library_id',
-        'plan_id',
+        'inventory_id',
         'type'
     ],
     title: 'DeleteSubmission'
@@ -3052,6 +3052,244 @@ export const InterruptSchema = {
     ],
     title: 'Interrupt',
     description: 'A pause carried inside ``RunFinishedEvent.outcome`` when the outcome is\n``RunFinishedInterruptOutcome``. The client resumes\nby addressing this interrupt in the resume array of the next RunAgentInput.'
+} as const;
+
+export const InventoryEntryKindSchema = {
+    type: 'string',
+    enum: [
+        'file',
+        'dir',
+        'symlink'
+    ],
+    title: 'InventoryEntryKind'
+} as const;
+
+export const InventoryNodePageSchema = {
+    properties: {
+        path: {
+            type: 'string',
+            title: 'Path'
+        },
+        items: {
+            items: {
+                $ref: '#/components/schemas/InventoryNodeResponse'
+            },
+            type: 'array',
+            title: 'Items'
+        },
+        total: {
+            type: 'integer',
+            title: 'Total'
+        },
+        offset: {
+            type: 'integer',
+            title: 'Offset'
+        },
+        limit: {
+            type: 'integer',
+            title: 'Limit'
+        },
+        entry_count: {
+            type: 'integer',
+            title: 'Entry Count'
+        },
+        entry_bytes: {
+            type: 'integer',
+            title: 'Entry Bytes'
+        }
+    },
+    type: 'object',
+    required: [
+        'path',
+        'items',
+        'total',
+        'offset',
+        'limit',
+        'entry_count',
+        'entry_bytes'
+    ],
+    title: 'InventoryNodePage',
+    description: '一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页.'
+} as const;
+
+export const InventoryNodeResponseSchema = {
+    properties: {
+        path: {
+            type: 'string',
+            title: 'Path'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        kind: {
+            $ref: '#/components/schemas/InventoryEntryKind'
+        },
+        reason: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/InventoryReason'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        size: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Size'
+        },
+        hardlink: {
+            type: 'boolean',
+            title: 'Hardlink',
+            default: false
+        },
+        entry_count: {
+            type: 'integer',
+            title: 'Entry Count'
+        },
+        entry_bytes: {
+            type: 'integer',
+            title: 'Entry Bytes'
+        },
+        will_be_empty: {
+            type: 'boolean',
+            title: 'Will Be Empty',
+            default: false
+        },
+        has_children: {
+            type: 'boolean',
+            title: 'Has Children',
+            default: false
+        },
+        children: {
+            anyOf: [
+                {
+                    items: {
+                        $ref: '#/components/schemas/InventoryNodeResponse'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Children'
+        }
+    },
+    type: 'object',
+    required: [
+        'path',
+        'name',
+        'kind',
+        'entry_count',
+        'entry_bytes'
+    ],
+    title: 'InventoryNodeResponse',
+    description: '树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取.'
+} as const;
+
+export const InventoryReasonSchema = {
+    type: 'string',
+    enum: [
+        'blacklist',
+        'undersized',
+        'empty_dir',
+        'explicit'
+    ],
+    title: 'InventoryReason'
+} as const;
+
+export const InventorySummaryResponseSchema = {
+    properties: {
+        exists: {
+            type: 'boolean',
+            title: 'Exists'
+        },
+        inventory_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Inventory Id'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        scope_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Scope Path'
+        },
+        truncated: {
+            type: 'boolean',
+            title: 'Truncated',
+            default: false
+        },
+        dropped: {
+            type: 'integer',
+            title: 'Dropped',
+            default: 0
+        },
+        skipped_dirs: {
+            type: 'integer',
+            title: 'Skipped Dirs',
+            default: 0
+        },
+        skipped_files: {
+            type: 'integer',
+            title: 'Skipped Files',
+            default: 0
+        },
+        scan_running: {
+            type: 'boolean',
+            title: 'Scan Running',
+            default: false
+        },
+        last_scan_error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Scan Error'
+        }
+    },
+    type: 'object',
+    required: [
+        'exists'
+    ],
+    title: 'InventorySummaryResponse',
+    description: '面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取.'
 } as const;
 
 export const JsonValueSchema = {} as const;
@@ -5333,244 +5571,6 @@ export const PathTemplateSchemaResponseSchema = {
     description: '与 resolve_paths 同源.'
 } as const;
 
-export const PlanEntryKindSchema = {
-    type: 'string',
-    enum: [
-        'file',
-        'dir',
-        'symlink'
-    ],
-    title: 'PlanEntryKind'
-} as const;
-
-export const PlanNodePageSchema = {
-    properties: {
-        path: {
-            type: 'string',
-            title: 'Path'
-        },
-        items: {
-            items: {
-                $ref: '#/components/schemas/PlanNodeResponse'
-            },
-            type: 'array',
-            title: 'Items'
-        },
-        total: {
-            type: 'integer',
-            title: 'Total'
-        },
-        offset: {
-            type: 'integer',
-            title: 'Offset'
-        },
-        limit: {
-            type: 'integer',
-            title: 'Limit'
-        },
-        entry_count: {
-            type: 'integer',
-            title: 'Entry Count'
-        },
-        entry_bytes: {
-            type: 'integer',
-            title: 'Entry Bytes'
-        }
-    },
-    type: 'object',
-    required: [
-        'path',
-        'items',
-        'total',
-        'offset',
-        'limit',
-        'entry_count',
-        'entry_bytes'
-    ],
-    title: 'PlanNodePage',
-    description: '一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页.'
-} as const;
-
-export const PlanNodeResponseSchema = {
-    properties: {
-        path: {
-            type: 'string',
-            title: 'Path'
-        },
-        name: {
-            type: 'string',
-            title: 'Name'
-        },
-        kind: {
-            $ref: '#/components/schemas/PlanEntryKind'
-        },
-        reason: {
-            anyOf: [
-                {
-                    $ref: '#/components/schemas/PlanReason'
-                },
-                {
-                    type: 'null'
-                }
-            ]
-        },
-        size: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Size'
-        },
-        hardlink: {
-            type: 'boolean',
-            title: 'Hardlink',
-            default: false
-        },
-        entry_count: {
-            type: 'integer',
-            title: 'Entry Count'
-        },
-        entry_bytes: {
-            type: 'integer',
-            title: 'Entry Bytes'
-        },
-        will_be_empty: {
-            type: 'boolean',
-            title: 'Will Be Empty',
-            default: false
-        },
-        has_children: {
-            type: 'boolean',
-            title: 'Has Children',
-            default: false
-        },
-        children: {
-            anyOf: [
-                {
-                    items: {
-                        $ref: '#/components/schemas/PlanNodeResponse'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Children'
-        }
-    },
-    type: 'object',
-    required: [
-        'path',
-        'name',
-        'kind',
-        'entry_count',
-        'entry_bytes'
-    ],
-    title: 'PlanNodeResponse',
-    description: '树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取.'
-} as const;
-
-export const PlanReasonSchema = {
-    type: 'string',
-    enum: [
-        'blacklist',
-        'undersized',
-        'empty_dir',
-        'explicit'
-    ],
-    title: 'PlanReason'
-} as const;
-
-export const PlanSummaryResponseSchema = {
-    properties: {
-        exists: {
-            type: 'boolean',
-            title: 'Exists'
-        },
-        plan_id: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Plan Id'
-        },
-        created_at: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Created At'
-        },
-        scope_path: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Scope Path'
-        },
-        truncated: {
-            type: 'boolean',
-            title: 'Truncated',
-            default: false
-        },
-        dropped: {
-            type: 'integer',
-            title: 'Dropped',
-            default: 0
-        },
-        skipped_dirs: {
-            type: 'integer',
-            title: 'Skipped Dirs',
-            default: 0
-        },
-        skipped_files: {
-            type: 'integer',
-            title: 'Skipped Files',
-            default: 0
-        },
-        scan_running: {
-            type: 'boolean',
-            title: 'Scan Running',
-            default: false
-        },
-        last_scan_error: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Last Scan Error'
-        }
-    },
-    type: 'object',
-    required: [
-        'exists'
-    ],
-    title: 'PlanSummaryResponse',
-    description: '面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取.'
-} as const;
-
 export const PlaybackSourceListResponseSchema = {
     properties: {
         items: {
@@ -7069,7 +7069,7 @@ export const SelectionSummaryResponseSchema = {
             type: 'boolean',
             title: 'Exists'
         },
-        plan_id: {
+        inventory_id: {
             anyOf: [
                 {
                     type: 'string'
@@ -7078,7 +7078,7 @@ export const SelectionSummaryResponseSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Plan Id'
+            title: 'Inventory Id'
         },
         notices: {
             items: {
@@ -8167,7 +8167,7 @@ export const TrashSummaryResponseSchema = {
             type: 'boolean',
             title: 'Exists'
         },
-        plan_id: {
+        inventory_id: {
             anyOf: [
                 {
                     type: 'string'
@@ -8176,7 +8176,7 @@ export const TrashSummaryResponseSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Plan Id'
+            title: 'Inventory Id'
         },
         path: {
             anyOf: [

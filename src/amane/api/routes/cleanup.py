@@ -10,21 +10,21 @@ from fastapi import APIRouter, HTTPException, Query
 from ...db.models import TaskStatus, TaskType
 from ...library import (
     TRASH_DIRNAME,
-    LibraryPlan,
-    PlanEntryKind,
-    PlanNode,
-    PlanSource,
-    PlanStore,
-    build_selection_plan,
-    find_plan_node,
-    plan_tree,
+    CleanupInventory,
+    InventoryEntryKind,
+    InventoryNode,
+    InventorySource,
+    InventoryStore,
+    build_footprint,
+    find_inventory_node,
+    inventory_tree,
     scan_trash,
 )
 from ..deps import RepoDep, RuntimeDep
 from ..models.cleanup import (
-    PlanNodePage,
-    PlanNodeResponse,
-    PlanSummaryResponse,
+    InventoryNodePage,
+    InventoryNodeResponse,
+    InventorySummaryResponse,
     SelectionRequest,
     SelectionSummaryResponse,
     TrashSummaryResponse,
@@ -41,23 +41,25 @@ NODE_PAGE_SIZE = 200
 MAX_NODE_PAGE_SIZE = 1000
 
 
-def _relative(plan: LibraryPlan, path: Path) -> str:
+def _relative(inventory: CleanupInventory, path: Path) -> str:
     """库内给相对路径 (库根为空串), 库外给绝对路径.
 
     一律用 ``as_posix``: 面板按 `/` 做分量匹配, 而 Windows 的原生分隔符是反斜杠.
     """
-    if path == plan.root:
+    if path == inventory.root:
         return ""
-    if not path.is_relative_to(plan.root):
+    if not path.is_relative_to(inventory.root):
         return path.as_posix()
-    return path.relative_to(plan.root).as_posix()
+    return path.relative_to(inventory.root).as_posix()
 
 
-def _to_response(plan: LibraryPlan, node: PlanNode, *, children: bool) -> PlanNodeResponse:
-    return PlanNodeResponse(
-        path=_relative(plan, node.path),
+def _to_response(inventory: CleanupInventory, node: InventoryNode, *, children: bool) -> InventoryNodeResponse:
+    return InventoryNodeResponse(
+        path=_relative(inventory, node.path),
         name=node.name,
-        kind=PlanEntryKind.DIR if node.is_dir else (PlanEntryKind.SYMLINK if node.is_symlink else PlanEntryKind.FILE),
+        kind=InventoryEntryKind.DIR
+        if node.is_dir
+        else (InventoryEntryKind.SYMLINK if node.is_symlink else InventoryEntryKind.FILE),
         reason=node.reason,
         size=node.size,
         hardlink=node.hardlink,
@@ -65,22 +67,22 @@ def _to_response(plan: LibraryPlan, node: PlanNode, *, children: bool) -> PlanNo
         entry_bytes=node.entry_bytes,
         will_be_empty=node.will_be_empty,
         has_children=bool(node.children),
-        children=[_to_response(plan, child, children=False) for child in node.children] if children else None,
+        children=[_to_response(inventory, child, children=False) for child in node.children] if children else None,
     )
 
 
-def _plan_by_id(store: PlanStore, library_id: int, plan_id: str | None) -> LibraryPlan:
+def _inventory_by_id(store: InventoryStore, library_id: int, inventory_id: str | None) -> CleanupInventory:
     """按标识取清单. 已执行的清单在面板侧等同于不存在 — 它按设计无法再执行."""
-    plan = store.get(plan_id) if plan_id else store.latest(library_id, PlanSource.RULES)
-    if plan is None or plan.executed or plan.library_id != library_id:
-        raise HTTPException(status_code=404, detail="No cleanup plan")
-    return plan
+    inventory = store.get(inventory_id) if inventory_id else store.latest(library_id, InventorySource.RULES)
+    if inventory is None or inventory.executed or inventory.library_id != library_id:
+        raise HTTPException(status_code=404, detail="No cleanup inventory")
+    return inventory
 
 
-def _page(plan: LibraryPlan, node: PlanNode, *, offset: int, limit: int) -> PlanNodePage:
-    return PlanNodePage(
-        path=_relative(plan, node.path),
-        items=[_to_response(plan, child, children=False) for child in node.children[offset : offset + limit]],
+def _page(inventory: CleanupInventory, node: InventoryNode, *, offset: int, limit: int) -> InventoryNodePage:
+    return InventoryNodePage(
+        path=_relative(inventory, node.path),
+        items=[_to_response(inventory, child, children=False) for child in node.children[offset : offset + limit]],
         total=len(node.children),
         offset=offset,
         limit=limit,
@@ -103,9 +105,9 @@ async def _scan_state(repo: Repository, library_id: int) -> tuple[bool, str | No
     return is_running, None
 
 
-@router.get("/{library_id}/cleanup/plan")
-async def get_cleanup_plan(library_id: int, repo: RepoDep, runtime: RuntimeDep) -> PlanSummaryResponse:
-    """面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取.
+@router.get("/{library_id}/cleanup/inventory")
+async def get_cleanup_inventory(library_id: int, repo: RepoDep, runtime: RuntimeDep) -> InventorySummaryResponse:
+    """面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/inventory/nodes`` 另取.
 
     遍历设置与当前库配置不一致的清单按不存在处理: 面板只渲染代表整库的规则来源清单,
     否则一次不递归或带自定义匹配模式的扫描会被当成整库可以清理.
@@ -114,46 +116,46 @@ async def get_cleanup_plan(library_id: int, repo: RepoDep, runtime: RuntimeDep) 
     library = await repo.get_library(library_id)
     if library is None:
         raise HTTPException(status_code=404, detail="Library not found")
-    plan = runtime.plan_store.latest(library_id, PlanSource.RULES)
-    if plan is None or plan.recursive != library.recursive or plan.patterns != tuple(library.patterns):
-        return PlanSummaryResponse(exists=False, scan_running=running, last_scan_error=last_error)
+    inventory = runtime.inventory_store.latest(library_id, InventorySource.RULES)
+    if inventory is None or inventory.recursive != library.recursive or inventory.patterns != tuple(library.patterns):
+        return InventorySummaryResponse(exists=False, scan_running=running, last_scan_error=last_error)
 
-    return PlanSummaryResponse(
+    return InventorySummaryResponse(
         exists=True,
-        plan_id=plan.plan_id,
-        created_at=plan.created_at,
-        scope_path=_relative(plan, plan.scope_path) if plan.scope_path is not None else None,
-        truncated=plan.truncated,
-        dropped=plan.dropped,
-        skipped_dirs=plan.skipped_dirs,
-        skipped_files=plan.skipped_files,
+        inventory_id=inventory.inventory_id,
+        created_at=inventory.created_at,
+        scope_path=_relative(inventory, inventory.scope_path) if inventory.scope_path is not None else None,
+        truncated=inventory.truncated,
+        dropped=inventory.dropped,
+        skipped_dirs=inventory.skipped_dirs,
+        skipped_files=inventory.skipped_files,
         scan_running=running,
         last_scan_error=last_error,
     )
 
 
-@router.get("/{library_id}/cleanup/plan/nodes")
-async def get_cleanup_plan_nodes(
+@router.get("/{library_id}/cleanup/inventory/nodes")
+async def get_cleanup_inventory_nodes(
     library_id: int,
     runtime: RuntimeDep,
     path: Annotated[str, Query(description="节点路径: 库内相对库根, 库外为绝对路径; 空串取根")] = "",
-    plan_id: Annotated[str | None, Query(description="指定清单; 缺省用规则来源的最新一份")] = None,
+    inventory_id: Annotated[str | None, Query(description="指定清单; 缺省用规则来源的最新一份")] = None,
     offset: Annotated[int, Query(ge=0, description="从第几个子节点开始")] = 0,
     limit: Annotated[int, Query(ge=1, le=MAX_NODE_PAGE_SIZE, description="本页最多返回多少个子节点")] = NODE_PAGE_SIZE,
-) -> PlanNodePage:
+) -> InventoryNodePage:
     """展开某个节点的一页子节点. 库可能有上万条候选, 因此不整份下发."""
-    plan = _plan_by_id(runtime.plan_store, library_id, plan_id)
-    node = find_plan_node(plan_tree(plan), _resolve(plan, path))
+    inventory = _inventory_by_id(runtime.inventory_store, library_id, inventory_id)
+    node = find_inventory_node(inventory_tree(inventory), _resolve(inventory, path))
     if node is None:
-        raise HTTPException(status_code=404, detail=f"Plan node not found: {path}")
-    return _page(plan, node, offset=offset, limit=limit)
+        raise HTTPException(status_code=404, detail=f"Inventory node not found: {path}")
+    return _page(inventory, node, offset=offset, limit=limit)
 
 
-def _resolve(plan: LibraryPlan, raw: str) -> Path:
+def _resolve(inventory: CleanupInventory, raw: str) -> Path:
     if not raw:
-        return plan.root
+        return inventory.root
     candidate = Path(raw)
-    return candidate if candidate.is_absolute() else plan.root / candidate
+    return candidate if candidate.is_absolute() else inventory.root / candidate
 
 
 @router.get("/{library_id}/cleanup/trash")
@@ -167,17 +169,17 @@ async def get_cleanup_trash(library_id: int, repo: RepoDep, runtime: RuntimeDep)
     if not trash_dir.is_dir():
         return TrashSummaryResponse(exists=False)
 
-    plan = await scan_trash(trash_dir, library_id=library_id, library_root=library_root)
-    if not plan.entries:
+    inventory = await scan_trash(trash_dir, library_id=library_id, library_root=library_root)
+    if not inventory.entries:
         return TrashSummaryResponse(exists=False)
-    runtime.plan_store.put(plan)
+    runtime.inventory_store.put(inventory)
 
     return TrashSummaryResponse(
         exists=True,
-        plan_id=plan.plan_id,
-        path=_relative(plan, trash_dir),
-        truncated=plan.truncated,
-        dropped=plan.dropped,
+        inventory_id=inventory.inventory_id,
+        path=_relative(inventory, trash_dir),
+        truncated=inventory.truncated,
+        dropped=inventory.dropped,
     )
 
 
@@ -204,20 +206,20 @@ async def expand_cleanup_selection(
             meta = await repo.get_metadata(item.metadata_id)
             if meta is not None:
                 metas[item.metadata_id] = meta
-    outcome = build_selection_plan(
+    outcome = build_footprint(
         library=library,
         items=items,
         indexed=await repo.list_media_files(library_id=library_id, limit=None),
         metas=metas,
         include_work_dir=req.include_work_dir,
     )
-    if not outcome.plan.entries:
+    if not outcome.inventory.entries:
         return SelectionSummaryResponse(exists=False, notices=outcome.notices)
-    runtime.plan_store.put(outcome.plan)
+    runtime.inventory_store.put(outcome.inventory)
     return SelectionSummaryResponse(
         exists=True,
-        plan_id=outcome.plan.plan_id,
+        inventory_id=outcome.inventory.inventory_id,
         notices=outcome.notices,
-        truncated=outcome.plan.truncated,
-        dropped=outcome.plan.dropped,
+        truncated=outcome.inventory.truncated,
+        dropped=outcome.inventory.dropped,
     )

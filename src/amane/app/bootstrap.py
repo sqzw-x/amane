@@ -17,7 +17,7 @@ from ..db.engine import create_async_engine_from_path
 from ..db.repository import Repository
 from ..events import EventBus
 from ..handlers import LibraryTaskLocks
-from ..library import PlanStore
+from ..library import InventoryStore
 from ..llm import TranslationCache
 from ..media import ResourceStore
 from ..observability import setup_logging
@@ -163,7 +163,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         logger.info("api token auth enabled", token=api_token)
 
     library_locks = LibraryTaskLocks()
-    plan_store = PlanStore()
+    inventory_store = InventoryStore()
     handlers = build_handlers(
         repo,
         factory,
@@ -175,7 +175,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         cold.data_dir,
         plugin_manager,
         library_locks=library_locks,
-        plan_store=plan_store,
+        inventory_store=inventory_store,
     )
 
     worker = AsyncWorker(
@@ -236,7 +236,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         plugin_manager=plugin_manager,
         playback_state=playback_state,
         library_locks=library_locks,
-        plan_store=plan_store,
+        inventory_store=inventory_store,
         playback_factory=PlaybackFactory(
             plugin_manager=plugin_manager,
             plugin_configs=hot.plugins,

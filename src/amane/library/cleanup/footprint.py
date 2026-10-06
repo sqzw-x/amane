@@ -15,22 +15,22 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from ..organize.path_templates import resolve_paths
-from ..parsing import parse_file_info
-from ..utils.path import existing_disk_path, path_is_under, path_key
-from .plan import (
-    MAX_PLAN_ENTRIES,
-    LibraryPlan,
-    PlanEntry,
-    PlanEntryKind,
-    PlanReason,
-    PlanSource,
-    new_plan_id,
+from ...organize.path_templates import resolve_paths
+from ...parsing import parse_file_info
+from ...utils.path import existing_disk_path, path_is_under, path_key
+from ..rules import DEFAULT_SUBTITLE_EXTENSIONS
+from .inventory import (
+    MAX_INVENTORY_ENTRIES,
+    CleanupInventory,
+    InventoryEntry,
+    InventoryEntryKind,
+    InventoryReason,
+    InventorySource,
+    new_inventory_id,
 )
-from .rules import DEFAULT_SUBTITLE_EXTENSIONS
 
 if TYPE_CHECKING:
-    from ..db.models import Library, MediaFile, Metadata
+    from ...db.models import Library, MediaFile, Metadata
 
 logger = structlog.get_logger()
 
@@ -38,26 +38,26 @@ _Add = Callable[[Path], None]
 
 
 @dataclass(frozen=True, slots=True)
-class SelectionOutcome:
+class FootprintOutcome:
     """展开结果与未能纳入的部分 (面板据此提示用户)."""
 
-    plan: LibraryPlan
+    inventory: CleanupInventory
     notices: list[str]
 
 
-def build_selection_plan(
+def build_footprint(
     *,
     library: Library,
     items: Sequence[MediaFile],
     indexed: Sequence[MediaFile],
     metas: Mapping[int, Metadata],
     include_work_dir: bool,
-    limit: int = MAX_PLAN_ENTRIES,
-) -> SelectionOutcome:
+    limit: int = MAX_INVENTORY_ENTRIES,
+) -> FootprintOutcome:
     """由选中的媒体文件展开显式来源清单; 只读磁盘, 不访问数据库."""
     assert library.id is not None
     root = Path(library.path)
-    entries: list[PlanEntry] = []
+    entries: list[InventoryEntry] = []
     notices: list[str] = []
     seen: set[str] = set()
     dropped = 0
@@ -102,14 +102,14 @@ def build_selection_plan(
     if dropped:
         notices.append(f"选中项过多, 另有 {dropped} 项未纳入清单")
 
-    plan = LibraryPlan(
-        plan_id=new_plan_id(),
+    inventory = CleanupInventory(
+        inventory_id=new_inventory_id(),
         library_id=library.id,
         root=root,
         scope_path=None,
         recursive=True,
         patterns=(),
-        source=PlanSource.EXPLICIT,
+        source=InventorySource.EXPLICIT,
         created_at=datetime.now(UTC),
         entries=entries,
         truncated=bool(dropped),
@@ -118,26 +118,26 @@ def build_selection_plan(
     logger.info(
         "selection expanded",
         library_id=library.id,
-        entries=len(plan.entries),
-        dropped=plan.dropped,
+        entries=len(inventory.entries),
+        dropped=inventory.dropped,
         notices=len(notices),
     )
-    return SelectionOutcome(plan=plan, notices=notices)
+    return FootprintOutcome(inventory=inventory, notices=notices)
 
 
-def _entry(disk: Path) -> PlanEntry:
+def _entry(disk: Path) -> InventoryEntry:
     st = disk.lstat()
     if disk.is_symlink():
-        kind = PlanEntryKind.SYMLINK
+        kind = InventoryEntryKind.SYMLINK
     elif disk.is_dir():
-        kind = PlanEntryKind.DIR
+        kind = InventoryEntryKind.DIR
     else:
-        kind = PlanEntryKind.FILE
-    is_file = kind is not PlanEntryKind.DIR
-    return PlanEntry(
+        kind = InventoryEntryKind.FILE
+    is_file = kind is not InventoryEntryKind.DIR
+    return InventoryEntry(
         path=disk,
         kind=kind,
-        reason=PlanReason.EXPLICIT,
+        reason=InventoryReason.EXPLICIT,
         size=st.st_size if is_file else None,
         dev=st.st_dev if is_file else None,
         ino=st.st_ino if is_file else None,

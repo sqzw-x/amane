@@ -359,7 +359,7 @@
         "label": "媒体库",
         "description": ""
       },
-      "plan_id": {
+      "inventory_id": {
         "label": "清单标识",
         "description": "面板产出; 手动填写不会命中任何清单"
       },

@@ -195,7 +195,7 @@
     "rescan": "Rescan",
     "scanStarted": "Scan started",
     "deleteStarted": "Deletion started",
-    "scope": "This plan covers {{path}} only",
+    "scope": "This inventory covers {{path}} only",
     "truncated": "Too many files; only part of the results are included",
     "truncatedMore": "{{count}} more items are not included",
     "skipped": "{{dirs}} directories and {{files}} files were not covered",

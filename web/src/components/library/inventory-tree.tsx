@@ -18,17 +18,17 @@ import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-q
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  getCleanupPlanNodesInfiniteOptions,
-  getCleanupPlanQueryKey,
+  getCleanupInventoryNodesInfiniteOptions,
+  getCleanupInventoryQueryKey,
   submitTaskMutation,
 } from "@/client/@tanstack/react-query.gen";
-import type { PlanNodeResponse } from "@/client/types.gen";
+import type { InventoryNodeResponse } from "@/client/types.gen";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
 import { formatFileSize } from "@/lib/utils";
-import classes from "./plan-selection.module.css";
+import classes from "./inventory-tree.module.css";
 
 /** 一层最多渲染这么多条, 滚到底再取下一页: 一份清单可能有上万条候选. */
 const NODE_PAGE_SIZE = 200;
@@ -43,9 +43,9 @@ function coveringPrefix(excluded: string[], path: string): string | undefined {
   return excluded.find((prefix) => isUnder(path, prefix));
 }
 
-export interface PlanSelectionProps {
+export interface InventoryTreeProps {
   libraryId: number;
-  planId: string;
+  inventoryId: string;
   /** 要展开的目录: 库内相对路径, 空串为库根; 回收站传其相对路径. */
   path?: string;
   onDone: () => void;
@@ -53,24 +53,24 @@ export interface PlanSelectionProps {
 }
 
 /** 一份清单的勾选与确认: 规则来源、回收站与选中项预览共用. 选择随清单标识重置 (父组件用 key 重建). */
-export function PlanSelection({
+export function InventoryTree({
   libraryId,
-  planId,
+  inventoryId,
   path = "",
   onDone,
   header,
-}: PlanSelectionProps) {
+}: InventoryTreeProps) {
   const { t } = useTranslation(["library", "common"]);
   const queryClient = useQueryClient();
   const [excluded, setExcluded] = useState<string[]>([]);
-  const [loadedNodes, setLoadedNodes] = useState<Record<string, PlanNodeResponse>>({});
-  const level = usePlanNodeLevel({ libraryId, planId, path });
+  const [loadedNodes, setLoadedNodes] = useState<Record<string, InventoryNodeResponse>>({});
+  const level = useInventoryNodeLevel({ libraryId, inventoryId, path });
   const deleteMutation = useMutation({
     ...submitTaskMutation(),
     onSuccess: () => {
       notifications.show({ message: t("cleanup.deleteStarted"), color: "blue" });
       void queryClient.invalidateQueries({
-        queryKey: getCleanupPlanQueryKey({ path: { library_id: libraryId } }),
+        queryKey: getCleanupInventoryQueryKey({ path: { library_id: libraryId } }),
       });
       onDone();
     },
@@ -99,7 +99,7 @@ export function PlanSelection({
   }, [excluded, loadedNodes, level.nodes, level.entryCount, level.entryBytes]);
 
   const registerNodes = useCallback(
-    (loaded: PlanNodeResponse[]) =>
+    (loaded: InventoryNodeResponse[]) =>
       setLoadedNodes((prev) => {
         const next = { ...prev };
         for (const node of loaded) next[node.path] = node;
@@ -109,7 +109,7 @@ export function PlanSelection({
   );
 
   // 依赖为空: 翻页只新增行, 已渲染的行靠 memo 挡住重渲染.
-  const toggle = useCallback((node: PlanNodeResponse) => {
+  const toggle = useCallback((node: InventoryNodeResponse) => {
     setExcluded((prev) => {
       const covering = coveringPrefix(prev, node.path);
       if (covering === node.path) return prev.filter((prefix) => prefix !== node.path);
@@ -132,7 +132,7 @@ export function PlanSelection({
       body: {
         type: "delete",
         library_id: libraryId,
-        plan_id: planId,
+        inventory_id: inventoryId,
         exclude: excluded,
         prune_empty_dirs: true,
       },
@@ -165,10 +165,10 @@ export function PlanSelection({
         ) : (
           <Stack gap={6}>
             {level.nodes.map((node) => (
-              <PlanNodeRow
+              <InventoryNodeRow
                 key={node.path}
                 libraryId={libraryId}
-                planId={planId}
+                inventoryId={inventoryId}
                 node={node}
                 depth={0}
                 excluded={excluded}
@@ -205,19 +205,24 @@ export function PlanSelection({
   );
 }
 
-interface PlanNodeLevelProps {
+interface InventoryNodeLevelProps {
   libraryId: number;
-  planId: string;
+  inventoryId: string;
   path: string;
   enabled?: boolean;
 }
 
 /** 一层子节点: 只取一页, 滚到底再取下一页. 展开任意目录都走这里. */
-function usePlanNodeLevel({ libraryId, planId, path, enabled = true }: PlanNodeLevelProps) {
+function useInventoryNodeLevel({
+  libraryId,
+  inventoryId,
+  path,
+  enabled = true,
+}: InventoryNodeLevelProps) {
   const query = useInfiniteQuery({
-    ...getCleanupPlanNodesInfiniteOptions({
+    ...getCleanupInventoryNodesInfiniteOptions({
       path: { library_id: libraryId },
-      query: { path, plan_id: planId, limit: NODE_PAGE_SIZE },
+      query: { path, inventory_id: inventoryId, limit: NODE_PAGE_SIZE },
     }),
     enabled,
     initialPageParam: 0,
@@ -236,26 +241,26 @@ function usePlanNodeLevel({ libraryId, planId, path, enabled = true }: PlanNodeL
   };
 }
 
-interface PlanNodeRowProps {
+interface InventoryNodeRowProps {
   libraryId: number;
-  planId: string;
-  node: PlanNodeResponse;
+  inventoryId: string;
+  node: InventoryNodeResponse;
   depth: number;
   excluded: string[];
-  onToggle: (node: PlanNodeResponse) => void;
-  onNodes: (nodes: PlanNodeResponse[]) => void;
+  onToggle: (node: InventoryNodeResponse) => void;
+  onNodes: (nodes: InventoryNodeResponse[]) => void;
 }
 
 /** 行是纯展示 + 一层子节点查询: memo 让翻页只挂载新增的行, 不重渲染已加载的. */
-const PlanNodeRow = memo(function PlanNodeRow({
+const InventoryNodeRow = memo(function InventoryNodeRow({
   libraryId,
-  planId,
+  inventoryId,
   node,
   depth,
   excluded,
   onToggle,
   onNodes,
-}: PlanNodeRowProps) {
+}: InventoryNodeRowProps) {
   const { t } = useTranslation(["library", "common"]);
   const [expanded, setExpanded] = useState(false);
   const covering = coveringPrefix(excluded, node.path);
@@ -264,9 +269,9 @@ const PlanNodeRow = memo(function PlanNodeRow({
   const keepsSomething = excluded.some(
     (prefix) => prefix !== node.path && isUnder(prefix, node.path),
   );
-  const children = usePlanNodeLevel({
+  const children = useInventoryNodeLevel({
     libraryId,
-    planId,
+    inventoryId,
     path: node.path,
     enabled: expanded && node.has_children,
   });
@@ -360,10 +365,10 @@ const PlanNodeRow = memo(function PlanNodeRow({
           ) : (
             <>
               {children.nodes.map((child) => (
-                <PlanNodeRow
+                <InventoryNodeRow
                   key={child.path}
                   libraryId={libraryId}
-                  planId={planId}
+                  inventoryId={inventoryId}
                   node={child}
                   depth={depth + 1}
                   excluded={excluded}

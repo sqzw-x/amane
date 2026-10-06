@@ -112,14 +112,14 @@
         }
       }
     },
-    "/api/libraries/{library_id}/cleanup/plan": {
+    "/api/libraries/{library_id}/cleanup/inventory": {
       "get": {
         "tags": [
           "cleanup"
         ],
-        "summary": "Get Cleanup Plan",
-        "description": "面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取.\n\n遍历设置与当前库配置不一致的清单按不存在处理: 面板只渲染代表整库的规则来源清单,\n否则一次不递归或带自定义匹配模式的扫描会被当成整库可以清理.",
-        "operationId": "get_cleanup_plan",
+        "summary": "Get Cleanup Inventory",
+        "description": "面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/inventory/nodes`` 另取.\n\n遍历设置与当前库配置不一致的清单按不存在处理: 面板只渲染代表整库的规则来源清单,\n否则一次不递归或带自定义匹配模式的扫描会被当成整库可以清理.",
+        "operationId": "get_cleanup_inventory",
         "parameters": [
           {
             "name": "library_id",
@@ -137,7 +137,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanSummaryResponse"
+                  "$ref": "#/components/schemas/InventorySummaryResponse"
                 }
               }
             }
@@ -155,14 +155,14 @@
         }
       }
     },
-    "/api/libraries/{library_id}/cleanup/plan/nodes": {
+    "/api/libraries/{library_id}/cleanup/inventory/nodes": {
       "get": {
         "tags": [
           "cleanup"
         ],
-        "summary": "Get Cleanup Plan Nodes",
+        "summary": "Get Cleanup Inventory Nodes",
         "description": "展开某个节点的一页子节点. 库可能有上万条候选, 因此不整份下发.",
-        "operationId": "get_cleanup_plan_nodes",
+        "operationId": "get_cleanup_inventory_nodes",
         "parameters": [
           {
             "name": "library_id",
@@ -186,7 +186,7 @@
             "description": "节点路径: 库内相对库根, 库外为绝对路径; 空串取根"
           },
           {
-            "name": "plan_id",
+            "name": "inventory_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -199,7 +199,7 @@
                 }
               ],
               "description": "指定清单; 缺省用规则来源的最新一份",
-              "title": "Plan Id"
+              "title": "Inventory Id"
             },
             "description": "指定清单; 缺省用规则来源的最新一份"
           },
@@ -237,7 +237,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanNodePage"
+                  "$ref": "#/components/schemas/InventoryNodePage"
                 }
               }
             }
@@ -7565,9 +7565,9 @@
             "title": "Library Id",
             "description": "清单所属 Library ID"
           },
-          "plan_id": {
+          "inventory_id": {
             "type": "string",
-            "title": "Plan Id",
+            "title": "Inventory Id",
             "description": "后端生成的清单标识; 不存在或已过期则失败"
           },
           "exclude": {
@@ -7593,7 +7593,7 @@
         "type": "object",
         "required": [
           "library_id",
-          "plan_id",
+          "inventory_id",
           "type"
         ],
         "title": "DeleteSubmission"
@@ -9089,6 +9089,239 @@
         ],
         "title": "Interrupt",
         "description": "A pause carried inside ``RunFinishedEvent.outcome`` when the outcome is\n``RunFinishedInterruptOutcome``. The client resumes\nby addressing this interrupt in the resume array of the next RunAgentInput."
+      },
+      "InventoryEntryKind": {
+        "type": "string",
+        "enum": [
+          "file",
+          "dir",
+          "symlink"
+        ],
+        "title": "InventoryEntryKind"
+      },
+      "InventoryNodePage": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InventoryNodeResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count"
+          },
+          "entry_bytes": {
+            "type": "integer",
+            "title": "Entry Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "items",
+          "total",
+          "offset",
+          "limit",
+          "entry_count",
+          "entry_bytes"
+        ],
+        "title": "InventoryNodePage",
+        "description": "一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页."
+      },
+      "InventoryNodeResponse": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/InventoryEntryKind"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InventoryReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "hardlink": {
+            "type": "boolean",
+            "title": "Hardlink",
+            "default": false
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count"
+          },
+          "entry_bytes": {
+            "type": "integer",
+            "title": "Entry Bytes"
+          },
+          "will_be_empty": {
+            "type": "boolean",
+            "title": "Will Be Empty",
+            "default": false
+          },
+          "has_children": {
+            "type": "boolean",
+            "title": "Has Children",
+            "default": false
+          },
+          "children": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/InventoryNodeResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Children"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "name",
+          "kind",
+          "entry_count",
+          "entry_bytes"
+        ],
+        "title": "InventoryNodeResponse",
+        "description": "树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取."
+      },
+      "InventoryReason": {
+        "type": "string",
+        "enum": [
+          "blacklist",
+          "undersized",
+          "empty_dir",
+          "explicit"
+        ],
+        "title": "InventoryReason"
+      },
+      "InventorySummaryResponse": {
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "inventory_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventory Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "scope_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Path"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "dropped": {
+            "type": "integer",
+            "title": "Dropped",
+            "default": 0
+          },
+          "skipped_dirs": {
+            "type": "integer",
+            "title": "Skipped Dirs",
+            "default": 0
+          },
+          "skipped_files": {
+            "type": "integer",
+            "title": "Skipped Files",
+            "default": 0
+          },
+          "scan_running": {
+            "type": "boolean",
+            "title": "Scan Running",
+            "default": false
+          },
+          "last_scan_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scan Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exists"
+        ],
+        "title": "InventorySummaryResponse",
+        "description": "面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取."
       },
       "JsonValue": {},
       "LLMConfig": {
@@ -11332,239 +11565,6 @@
         "title": "PathTemplateSchemaResponse",
         "description": "与 resolve_paths 同源."
       },
-      "PlanEntryKind": {
-        "type": "string",
-        "enum": [
-          "file",
-          "dir",
-          "symlink"
-        ],
-        "title": "PlanEntryKind"
-      },
-      "PlanNodePage": {
-        "properties": {
-          "path": {
-            "type": "string",
-            "title": "Path"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/PlanNodeResponse"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "offset": {
-            "type": "integer",
-            "title": "Offset"
-          },
-          "limit": {
-            "type": "integer",
-            "title": "Limit"
-          },
-          "entry_count": {
-            "type": "integer",
-            "title": "Entry Count"
-          },
-          "entry_bytes": {
-            "type": "integer",
-            "title": "Entry Bytes"
-          }
-        },
-        "type": "object",
-        "required": [
-          "path",
-          "items",
-          "total",
-          "offset",
-          "limit",
-          "entry_count",
-          "entry_bytes"
-        ],
-        "title": "PlanNodePage",
-        "description": "一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页."
-      },
-      "PlanNodeResponse": {
-        "properties": {
-          "path": {
-            "type": "string",
-            "title": "Path"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/PlanEntryKind"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlanReason"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size"
-          },
-          "hardlink": {
-            "type": "boolean",
-            "title": "Hardlink",
-            "default": false
-          },
-          "entry_count": {
-            "type": "integer",
-            "title": "Entry Count"
-          },
-          "entry_bytes": {
-            "type": "integer",
-            "title": "Entry Bytes"
-          },
-          "will_be_empty": {
-            "type": "boolean",
-            "title": "Will Be Empty",
-            "default": false
-          },
-          "has_children": {
-            "type": "boolean",
-            "title": "Has Children",
-            "default": false
-          },
-          "children": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/PlanNodeResponse"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Children"
-          }
-        },
-        "type": "object",
-        "required": [
-          "path",
-          "name",
-          "kind",
-          "entry_count",
-          "entry_bytes"
-        ],
-        "title": "PlanNodeResponse",
-        "description": "树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取."
-      },
-      "PlanReason": {
-        "type": "string",
-        "enum": [
-          "blacklist",
-          "undersized",
-          "empty_dir",
-          "explicit"
-        ],
-        "title": "PlanReason"
-      },
-      "PlanSummaryResponse": {
-        "properties": {
-          "exists": {
-            "type": "boolean",
-            "title": "Exists"
-          },
-          "plan_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Plan Id"
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "scope_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scope Path"
-          },
-          "truncated": {
-            "type": "boolean",
-            "title": "Truncated",
-            "default": false
-          },
-          "dropped": {
-            "type": "integer",
-            "title": "Dropped",
-            "default": 0
-          },
-          "skipped_dirs": {
-            "type": "integer",
-            "title": "Skipped Dirs",
-            "default": 0
-          },
-          "skipped_files": {
-            "type": "integer",
-            "title": "Skipped Files",
-            "default": 0
-          },
-          "scan_running": {
-            "type": "boolean",
-            "title": "Scan Running",
-            "default": false
-          },
-          "last_scan_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Scan Error"
-          }
-        },
-        "type": "object",
-        "required": [
-          "exists"
-        ],
-        "title": "PlanSummaryResponse",
-        "description": "面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取."
-      },
       "PlaybackSourceListResponse": {
         "properties": {
           "items": {
@@ -13025,7 +13025,7 @@
             "type": "boolean",
             "title": "Exists"
           },
-          "plan_id": {
+          "inventory_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -13034,7 +13034,7 @@
                 "type": "null"
               }
             ],
-            "title": "Plan Id"
+            "title": "Inventory Id"
           },
           "notices": {
             "items": {
@@ -14096,7 +14096,7 @@
             "type": "boolean",
             "title": "Exists"
           },
-          "plan_id": {
+          "inventory_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -14105,7 +14105,7 @@
                 "type": "null"
               }
             ],
-            "title": "Plan Id"
+            "title": "Inventory Id"
           },
           "path": {
             "anyOf": [

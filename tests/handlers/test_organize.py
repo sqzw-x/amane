@@ -13,7 +13,7 @@ from amane.db.models import MediaFileStatus
 from amane.enums import DownloadableResource, LinkMode, MoveMode
 from amane.handlers import DeleteHandler, DeletePayload, LibraryTaskLocks, OrganizeHandler, OrganizePayload
 from amane.handlers.file import FileOperationsResult, commit_organized_media_file
-from amane.library import DeleteOutcome, LibraryScan, PlanStore, scan_plan
+from amane.library import DeleteOutcome, InventoryStore, LibraryScan, scan_inventory
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -649,7 +649,7 @@ async def test_organize_and_delete_do_not_overlap(
     monkeypatch.setattr("amane.handlers.file.apply_file_operations", tracked_apply)
     monkeypatch.setattr("amane.handlers.delete.delete_target", tracked_delete)
 
-    plan = scan_plan.sync(
+    inventory = scan_inventory.sync(
         lib_root,
         library_id=lib.id,
         library_root=lib_root,
@@ -657,14 +657,14 @@ async def test_organize_and_delete_do_not_overlap(
         patterns=[],
         scan=LibraryScan(blacklist_patterns=["广告"]),
     )
-    store = PlanStore()
-    store.put(plan)
+    store = InventoryStore()
+    store.put(inventory)
     locks = LibraryTaskLocks()
     org = OrganizeHandler(repo, HotSettings(), resource_store, library_locks=locks)
     dele = DeleteHandler(repo, store, library_locks=locks)
     org_result, delete_result = await asyncio.gather(
         org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root))),
-        dele.handle(DeletePayload(library_id=lib.id, plan_id=plan.plan_id)),
+        dele.handle(DeletePayload(library_id=lib.id, inventory_id=inventory.inventory_id)),
     )
     assert org_result.success is True and delete_result.success is True
     assert max_inflight == 1

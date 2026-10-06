@@ -27,7 +27,7 @@ def candidates_first_scandir(monkeypatch: pytest.MonkeyPatch) -> None:
     清单触顶的用例, 前提是截断点落在媒体收集完成之前; 文件系统给的顺序是环境属性,
     靠文件名巧合会让用例失去鉴别力. 触顶用例与需要同一前提的入库扫描用例都用它.
 
-    `amane.library.plan.os` 就是 `os` 模块, 因此这是整个进程内的替换, 只给单元级用例用:
+    `amane.library.cleanup.inventory.os` 就是 `os` 模块, 因此这是整个进程内的替换, 只给单元级用例用:
     带 worker 的用例上会连带影响别的调用方.
     """
     real_scandir = os.scandir
@@ -37,7 +37,7 @@ def candidates_first_scandir(monkeypatch: pytest.MonkeyPatch) -> None:
         with real_scandir(path) as scanned:
             yield sorted(scanned, key=lambda entry: (not entry.name.startswith("ad-"), entry.name))
 
-    monkeypatch.setattr("amane.library.plan.os.scandir", ordered)
+    monkeypatch.setattr("amane.library.cleanup.inventory.os.scandir", ordered)
 
 
 def _file_engine(db_path: Path) -> AsyncEngine:

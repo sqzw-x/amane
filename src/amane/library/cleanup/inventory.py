@@ -19,51 +19,51 @@ from pathlib import Path
 
 import structlog
 
-from ..utils.threads import in_thread
-from .rules import TRASH_DIRNAME
-from .scan import LibraryFileKind, LibraryHit, LibraryScan, UnwantedKind
+from ...utils.threads import in_thread
+from ..rules import TRASH_DIRNAME
+from ..scan import LibraryFileKind, LibraryHit, LibraryScan, UnwantedKind
 
 logger = structlog.get_logger()
 
 # 单份清单的条目上限. 触顶只丢条目并标记已截断, 遍历照常走完: 截断只会少删, 但必须在面板上可见.
-MAX_PLAN_ENTRIES = 20000
+MAX_INVENTORY_ENTRIES = 20000
 # 每库每来源保留的清单份数. 固定窗口, 因此存放与任务表无关.
-PLAN_RETENTION = 4
+INVENTORY_RETENTION = 4
 # 清单有效期, 自生成时刻起算, 读取不续期.
-PLAN_TTL_SECONDS = 24 * 3600
+INVENTORY_TTL_SECONDS = 24 * 3600
 
 
-class PlanSource(StrEnum):
+class InventorySource(StrEnum):
     """清单来源分组. 面板只渲染规则来源的最新一份."""
 
     RULES = "rules"
     EXPLICIT = "explicit"
 
 
-class PlanReason(StrEnum):
+class InventoryReason(StrEnum):
     BLACKLIST = "blacklist"
     UNDERSIZED = "undersized"
     EMPTY_DIR = "empty_dir"
     EXPLICIT = "explicit"
 
 
-class PlanEntryKind(StrEnum):
+class InventoryEntryKind(StrEnum):
     FILE = "file"
     DIR = "dir"
     SYMLINK = "symlink"
 
 
-_REASONS: dict[UnwantedKind, PlanReason] = {
-    UnwantedKind.BLACKLIST: PlanReason.BLACKLIST,
-    UnwantedKind.UNDERSIZED: PlanReason.UNDERSIZED,
+_REASONS: dict[UnwantedKind, InventoryReason] = {
+    UnwantedKind.BLACKLIST: InventoryReason.BLACKLIST,
+    UnwantedKind.UNDERSIZED: InventoryReason.UNDERSIZED,
 }
 
 
 @dataclass(frozen=True, slots=True)
-class PlanEntry:
+class InventoryEntry:
     path: Path
-    kind: PlanEntryKind
-    reason: PlanReason
+    kind: InventoryEntryKind
+    reason: InventoryReason
     size: int | None = None
     dev: int | None = None
     ino: int | None = None
@@ -83,18 +83,18 @@ class DirCoverage:
 
 
 @dataclass
-class LibraryPlan:
+class CleanupInventory:
     """一份清单. ``root`` 是生成时的库根, 执行前必须与当前库根一致."""
 
-    plan_id: str
+    inventory_id: str
     library_id: int
     root: Path
     scope_path: Path | None
     recursive: bool
     patterns: tuple[str, ...]
-    source: PlanSource
+    source: InventorySource
     created_at: datetime
-    entries: list[PlanEntry] = field(default_factory=list)
+    entries: list[InventoryEntry] = field(default_factory=list)
     dirs: dict[Path, DirCoverage] = field(default_factory=dict)
     truncated: bool = False
     dropped: int = 0
@@ -104,7 +104,7 @@ class LibraryPlan:
     executed: bool = False
     media_hits: list[LibraryHit] = field(default_factory=list)
     """同一趟遍历命中的媒体文件; 只有 `collect_media` 时填充 (入库扫描用)."""
-    tree: PlanNode | None = field(default=None, repr=False, compare=False)
+    tree: InventoryNode | None = field(default=None, repr=False, compare=False)
 
     @property
     def scoped(self) -> bool:
@@ -130,7 +130,7 @@ class LibraryPlan:
         return loose + sum(sizes.values())
 
 
-def new_plan_id() -> str:
+def new_inventory_id() -> str:
     return secrets.token_urlsafe(16)
 
 
@@ -139,50 +139,50 @@ def _utcnow() -> datetime:
 
 
 @dataclass
-class PlanStore:
+class InventoryStore:
     """进程内的清单存放: 每库每来源保留最近若干份, 过期即视为不存在.
 
     已执行的清单是花掉的: 面板侧的读取一律当它不存在, 否则用户会看到一份按设计无法再执行的清单.
     `get` 例外 — 执行侧要凭它区分「不存在」与「已执行过」, 因此过滤在调用方.
     """
 
-    keep: int = PLAN_RETENTION
-    ttl_seconds: int = PLAN_TTL_SECONDS
+    keep: int = INVENTORY_RETENTION
+    ttl_seconds: int = INVENTORY_TTL_SECONDS
     now: Callable[[], datetime] = _utcnow
-    _plans: dict[tuple[int, PlanSource], list[LibraryPlan]] = field(default_factory=dict)
+    _inventories: dict[tuple[int, InventorySource], list[CleanupInventory]] = field(default_factory=dict)
 
-    def put(self, plan: LibraryPlan) -> None:
-        bucket = self._plans.setdefault((plan.library_id, plan.source), [])
-        bucket.append(plan)
+    def put(self, inventory: CleanupInventory) -> None:
+        bucket = self._inventories.setdefault((inventory.library_id, inventory.source), [])
+        bucket.append(inventory)
         if len(bucket) > self.keep:
             del bucket[: len(bucket) - self.keep]
 
-    def latest(self, library_id: int, source: PlanSource) -> LibraryPlan | None:
-        for plan in reversed(self._plans.get((library_id, source), [])):
-            if not plan.executed and not self._expired(plan):
-                return plan
+    def latest(self, library_id: int, source: InventorySource) -> CleanupInventory | None:
+        for inventory in reversed(self._inventories.get((library_id, source), [])):
+            if not inventory.executed and not self._expired(inventory):
+                return inventory
         return None
 
-    def get(self, plan_id: str) -> LibraryPlan | None:
+    def get(self, inventory_id: str) -> CleanupInventory | None:
         """按标识查找; 不存在与已过期同样返回 None, 调用方不做区分."""
-        for bucket in self._plans.values():
-            for plan in bucket:
-                if plan.plan_id == plan_id:
-                    return None if self._expired(plan) else plan
+        for bucket in self._inventories.values():
+            for inventory in bucket:
+                if inventory.inventory_id == inventory_id:
+                    return None if self._expired(inventory) else inventory
         return None
 
     def drop_library(self, library_id: int) -> None:
         """库路径被修改或库被删除时丢弃该库清单."""
-        for key in [key for key in self._plans if key[0] == library_id]:
-            del self._plans[key]
+        for key in [key for key in self._inventories if key[0] == library_id]:
+            del self._inventories[key]
 
-    def _expired(self, plan: LibraryPlan) -> bool:
-        return self.now() - plan.created_at > timedelta(seconds=self.ttl_seconds)
+    def _expired(self, inventory: CleanupInventory) -> bool:
+        return self.now() - inventory.created_at > timedelta(seconds=self.ttl_seconds)
 
 
 @dataclass
 class _ScanState:
-    entries: list[PlanEntry]
+    entries: list[InventoryEntry]
     dirs: dict[Path, DirCoverage]
     limit: int
     collect_media: bool = False
@@ -205,7 +205,7 @@ class _DirResult:
 
 
 @in_thread
-def scan_plan(
+def scan_inventory(
     scope_dir: Path,
     *,
     library_id: int,
@@ -213,10 +213,10 @@ def scan_plan(
     recursive: bool,
     patterns: Sequence[str],
     scan: LibraryScan,
-    source: PlanSource = PlanSource.RULES,
-    limit: int = MAX_PLAN_ENTRIES,
+    source: InventorySource = InventorySource.RULES,
+    limit: int = MAX_INVENTORY_ENTRIES,
     collect_media: bool = False,
-) -> LibraryPlan:
+) -> CleanupInventory:
     """遍历范围内的一层或整棵子树, 产出清单.
 
     与入库扫描共用同一趟遍历: `collect_media` 为真时同时收集媒体命中, 不额外遍历磁盘.
@@ -229,8 +229,8 @@ def scan_plan(
     """
     state = _ScanState(entries=[], dirs={}, limit=limit, collect_media=collect_media)
     _walk(scope_dir, state=state, scan=scan, recursive=recursive)
-    plan = LibraryPlan(
-        plan_id=new_plan_id(),
+    inventory = CleanupInventory(
+        inventory_id=new_inventory_id(),
         library_id=library_id,
         root=library_root,
         scope_path=None if scope_dir == library_root else scope_dir,
@@ -247,17 +247,17 @@ def scan_plan(
         media_hits=state.media,
     )
     logger.info(
-        "plan scanned",
+        "inventory scanned",
         library_id=library_id,
         scope=str(scope_dir),
-        entries=len(plan.entries),
-        dirs=len(plan.dirs),
-        truncated=plan.truncated,
-        dropped=plan.dropped,
-        skipped_dirs=plan.skipped_dirs,
-        skipped_files=plan.skipped_files,
+        entries=len(inventory.entries),
+        dirs=len(inventory.dirs),
+        truncated=inventory.truncated,
+        dropped=inventory.dropped,
+        skipped_dirs=inventory.skipped_dirs,
+        skipped_files=inventory.skipped_files,
     )
-    return plan
+    return inventory
 
 
 def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: bool) -> _DirResult | None:
@@ -271,7 +271,7 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
             children = list(scanned)
     except OSError as exc:
         state.skipped_dirs += 1
-        logger.warning("plan scan directory unreadable", path=str(directory), error=str(exc))
+        logger.warning("inventory scan directory unreadable", path=str(directory), error=str(exc))
         return None
 
     total = 0
@@ -287,7 +287,7 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
             child_stat = path.lstat()
         except OSError as exc:
             state.skipped_files += 1
-            logger.warning("plan scan entry unreadable", path=str(path), error=str(exc))
+            logger.warning("inventory scan entry unreadable", path=str(path), error=str(exc))
             continue
         if stat.S_ISDIR(child_stat.st_mode):
             sub = _record_dir(path, state=state, scan=scan, recursive=recursive)
@@ -321,7 +321,7 @@ def _record_dir(path: Path, *, state: _ScanState, scan: LibraryScan, recursive: 
         return None
     if result.children == 0:
         # 空目录仍要经过 `_record_entry`: 触顶时它同样是被丢掉的候选, 与回收站来源口径一致.
-        entry = PlanEntry(path=path, kind=PlanEntryKind.DIR, reason=PlanReason.EMPTY_DIR)
+        entry = InventoryEntry(path=path, kind=InventoryEntryKind.DIR, reason=InventoryReason.EMPTY_DIR)
         if not _record_entry(entry, state=state):
             return None
         return _DirResult(children=0, entries=1, disappears=True)
@@ -334,13 +334,15 @@ def _record_dir(path: Path, *, state: _ScanState, scan: LibraryScan, recursive: 
     return result
 
 
-def _file_entry(path: Path, *, scan: LibraryScan, child_stat: os.stat_result, is_symlink: bool) -> PlanEntry | None:
+def _file_entry(
+    path: Path, *, scan: LibraryScan, child_stat: os.stat_result, is_symlink: bool
+) -> InventoryEntry | None:
     kind = scan.unwanted_kind(path)
     if kind is None:
         return None
-    return PlanEntry(
+    return InventoryEntry(
         path=path,
-        kind=PlanEntryKind.SYMLINK if is_symlink else PlanEntryKind.FILE,
+        kind=InventoryEntryKind.SYMLINK if is_symlink else InventoryEntryKind.FILE,
         reason=_REASONS[kind],
         size=child_stat.st_size,
         dev=child_stat.st_dev,
@@ -349,7 +351,7 @@ def _file_entry(path: Path, *, scan: LibraryScan, child_stat: os.stat_result, is
     )
 
 
-def _record_entry(entry: PlanEntry, *, state: _ScanState) -> bool:
+def _record_entry(entry: InventoryEntry, *, state: _ScanState) -> bool:
     if state.full:
         state.truncated = True
         state.dropped += 1
@@ -359,29 +361,29 @@ def _record_entry(entry: PlanEntry, *, state: _ScanState) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
-class PlanNode:
+class InventoryNode:
     """面板的树节点. 目录节点只覆盖含条目的子树, 因此 node 数不超过条目数."""
 
     path: Path
     name: str
     is_dir: bool
     is_symlink: bool
-    reason: PlanReason | None
+    reason: InventoryReason | None
     size: int | None
     hardlink: bool
     entry_count: int
     entry_bytes: int
     will_be_empty: bool
-    children: tuple[PlanNode, ...] = ()
+    children: tuple[InventoryNode, ...] = ()
 
 
-def build_plan_tree(plan: LibraryPlan) -> PlanNode:
+def build_inventory_tree(inventory: CleanupInventory) -> InventoryNode:
     """把清单折叠成树. 同 inode 只算一次体积, 与 `total_size` 一致."""
-    by_parent: dict[Path, list[PlanEntry]] = {}
+    by_parent: dict[Path, list[InventoryEntry]] = {}
     subdirs: dict[Path, set[Path]] = {}
     counted: set[Path] = set()
     seen_inodes: set[tuple[int, int]] = set()
-    for entry in plan.entries:
+    for entry in inventory.entries:
         # 身份不可用时每个名字各算一次, 与 `total_size` 一致.
         if entry.dev and entry.ino:
             key = (entry.dev, entry.ino)
@@ -393,16 +395,16 @@ def build_plan_tree(plan: LibraryPlan) -> PlanNode:
         parent = entry.path.parent
         by_parent.setdefault(parent, []).append(entry)
         cursor = parent
-        while cursor != plan.root and _is_under(cursor, plan.root):
+        while cursor != inventory.root and _is_under(cursor, inventory.root):
             subdirs.setdefault(cursor.parent, set()).add(cursor)
             cursor = cursor.parent
 
-    def build(directory: Path) -> PlanNode:
+    def build(directory: Path) -> InventoryNode:
         nodes = [_entry_node(entry, counted=counted) for entry in by_parent.get(directory, [])]
         nodes.extend(build(child_dir) for child_dir in sorted(subdirs.get(directory, ()), key=lambda p: p.name))
         nodes.sort(key=lambda node: (not node.is_dir, node.name))
-        coverage = plan.dirs.get(directory)
-        return PlanNode(
+        coverage = inventory.dirs.get(directory)
+        return InventoryNode(
             path=directory,
             name=directory.name,
             is_dir=True,
@@ -416,26 +418,26 @@ def build_plan_tree(plan: LibraryPlan) -> PlanNode:
             children=tuple(nodes),
         )
 
-    return build(plan.root)
+    return build(inventory.root)
 
 
-def plan_tree(plan: LibraryPlan) -> PlanNode:
+def inventory_tree(inventory: CleanupInventory) -> InventoryNode:
     """面板读取用的树. 构建是 O(清单条目数), 而清单生成后内容不再变化, 因此只构建一次.
 
     面板翻页会反复读取同一份清单, 每页都重建对两万条候选是纯浪费.
     """
-    if plan.tree is None:
-        plan.tree = build_plan_tree(plan)
-    return plan.tree
+    if inventory.tree is None:
+        inventory.tree = build_inventory_tree(inventory)
+    return inventory.tree
 
 
-def _entry_node(entry: PlanEntry, *, counted: set[Path]) -> PlanNode:
-    is_dir = entry.kind is PlanEntryKind.DIR
-    return PlanNode(
+def _entry_node(entry: InventoryEntry, *, counted: set[Path]) -> InventoryNode:
+    is_dir = entry.kind is InventoryEntryKind.DIR
+    return InventoryNode(
         path=entry.path,
         name=entry.path.name,
         is_dir=is_dir,
-        is_symlink=entry.kind is PlanEntryKind.SYMLINK,
+        is_symlink=entry.kind is InventoryEntryKind.SYMLINK,
         reason=entry.reason,
         size=entry.size,
         hardlink=(entry.nlink or 1) > 1,
@@ -445,7 +447,7 @@ def _entry_node(entry: PlanEntry, *, counted: set[Path]) -> PlanNode:
     )
 
 
-def find_plan_node(root: PlanNode, path: Path) -> PlanNode | None:
+def find_inventory_node(root: InventoryNode, path: Path) -> InventoryNode | None:
     """按绝对路径在树里查找节点 (面板按目录下钻)."""
     if root.path == path:
         return root
@@ -453,7 +455,7 @@ def find_plan_node(root: PlanNode, path: Path) -> PlanNode | None:
         if child.path == path:
             return child
         if child.is_dir and _is_under(path, child.path):
-            return find_plan_node(child, path)
+            return find_inventory_node(child, path)
     return None
 
 
@@ -467,22 +469,22 @@ def scan_trash(
     *,
     library_id: int,
     library_root: Path,
-    limit: int = MAX_PLAN_ENTRIES,
-) -> LibraryPlan:
+    limit: int = MAX_INVENTORY_ENTRIES,
+) -> CleanupInventory:
     """把回收站的历史内容展开成显式来源清单.
 
     不做规则判定: 其下每个文件都是条目, 空目录同样是条目. 回收站目录自身从不作为条目.
     """
     state = _ScanState(entries=[], dirs={}, limit=limit)
     _walk_explicit(trash_dir, state=state)
-    plan = LibraryPlan(
-        plan_id=new_plan_id(),
+    inventory = CleanupInventory(
+        inventory_id=new_inventory_id(),
         library_id=library_id,
         root=library_root,
         scope_path=trash_dir,
         recursive=True,
         patterns=(),
-        source=PlanSource.EXPLICIT,
+        source=InventorySource.EXPLICIT,
         created_at=datetime.now(UTC),
         entries=state.entries,
         dirs=state.dirs,
@@ -494,13 +496,13 @@ def scan_trash(
     logger.info(
         "trash scanned",
         library_id=library_id,
-        entries=len(plan.entries),
-        truncated=plan.truncated,
-        dropped=plan.dropped,
-        skipped_dirs=plan.skipped_dirs,
-        skipped_files=plan.skipped_files,
+        entries=len(inventory.entries),
+        truncated=inventory.truncated,
+        dropped=inventory.dropped,
+        skipped_dirs=inventory.skipped_dirs,
+        skipped_files=inventory.skipped_files,
     )
-    return plan
+    return inventory
 
 
 def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
@@ -533,7 +535,7 @@ def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
             if sub is None:
                 continue
             if sub.children == 0:
-                entry = PlanEntry(path=path, kind=PlanEntryKind.DIR, reason=PlanReason.EXPLICIT)
+                entry = InventoryEntry(path=path, kind=InventoryEntryKind.DIR, reason=InventoryReason.EXPLICIT)
                 if _record_entry(entry, state=state):
                     entries += 1
                     removed += 1
@@ -544,10 +546,10 @@ def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
             if sub.disappears:
                 removed += 1
             continue
-        entry = PlanEntry(
+        entry = InventoryEntry(
             path=path,
-            kind=PlanEntryKind.SYMLINK if stat.S_ISLNK(child_stat.st_mode) else PlanEntryKind.FILE,
-            reason=PlanReason.EXPLICIT,
+            kind=InventoryEntryKind.SYMLINK if stat.S_ISLNK(child_stat.st_mode) else InventoryEntryKind.FILE,
+            reason=InventoryReason.EXPLICIT,
             size=child_stat.st_size,
             dev=child_stat.st_dev,
             ino=child_stat.st_ino,

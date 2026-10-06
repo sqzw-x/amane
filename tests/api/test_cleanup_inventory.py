@@ -1,4 +1,4 @@
-"""/libraries/{id}/cleanup/plan 只读接口: 面板状态、范围与按需下钻."""
+"""/libraries/{id}/cleanup/inventory 只读接口: 面板状态、范围与按需下钻."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 from amane.api.routes.cleanup import MAX_NODE_PAGE_SIZE
 from amane.db.models import TaskType
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidPayload
-from amane.library import PlanSource, scan_plan
+from amane.library import InventorySource, scan_inventory
 from tests.helpers import await_for
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ async def _library(client: AsyncClient, root: Path, **extra: object) -> int:
     return int(created.json()["id"])
 
 
-def _store_plan(
+def _store_inventory(
     app: FastAPI,
     root: Path,
     library_id: int,
@@ -39,7 +39,7 @@ def _store_plan(
 ):
     from amane.library import LibraryScan
 
-    plan = scan_plan.sync(
+    inventory = scan_inventory.sync(
         root,
         library_id=library_id,
         library_root=root,
@@ -48,39 +48,39 @@ def _store_plan(
         scan=LibraryScan(**kwargs),  # type: ignore[arg-type]
         limit=limit,
     )
-    app.state.runtime.plan_store.put(plan)
-    return plan
+    app.state.runtime.inventory_store.put(inventory)
+    return inventory
 
 
 async def _nodes(client: AsyncClient, library_id: int, **params: str | int) -> dict:
-    resp = await client.get(f"libraries/{library_id}/cleanup/plan/nodes", params=params)
+    resp = await client.get(f"libraries/{library_id}/cleanup/inventory/nodes", params=params)
     assert resp.status_code == 200, resp.text
     return resp.json()
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_plan_absent(client: AsyncClient, safe_path: Path) -> None:
+async def test_inventory_absent(client: AsyncClient, safe_path: Path) -> None:
     library_id = await _library(client, safe_path / "lib")
 
-    resp = await client.get(f"libraries/{library_id}/cleanup/plan")
+    resp = await client.get(f"libraries/{library_id}/cleanup/inventory")
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["exists"] is False
-    assert body["plan_id"] is None
+    assert body["inventory_id"] is None
     assert body["scan_running"] is False
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_plan_tree_nodes(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+async def test_inventory_tree_nodes(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
     root = safe_path / "lib"
     library_id = await _library(client, root, blacklist_patterns=["ad-"])
     (root / "work").mkdir(parents=True)
     (root / "work" / "ad-1.mkv").write_bytes(b"x" * 10)
     (root / "empty").mkdir()
-    _store_plan(app, root, library_id, blacklist_patterns=["ad-"])
+    _store_inventory(app, root, library_id, blacklist_patterns=["ad-"])
 
-    resp = await client.get(f"libraries/{library_id}/cleanup/plan")
+    resp = await client.get(f"libraries/{library_id}/cleanup/inventory")
 
     assert resp.status_code == 200
     body = resp.json()
@@ -114,14 +114,14 @@ async def test_plan_tree_nodes(client: AsyncClient, app: FastAPI, safe_path: Pat
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_plan_nodes_paginate(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+async def test_inventory_nodes_paginate(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
     """一次下钻只给一页: 两万条候选整份下发会拖垮面板."""
     root = safe_path / "lib"
     library_id = await _library(client, root, blacklist_patterns=["ad-"])
     root.mkdir(parents=True, exist_ok=True)
     for index in range(5):
         (root / f"ad-{index}.mkv").write_bytes(b"x")
-    _store_plan(app, root, library_id, blacklist_patterns=["ad-"])
+    _store_inventory(app, root, library_id, blacklist_patterns=["ad-"])
 
     first = await _nodes(client, library_id, limit=2)
 
@@ -145,41 +145,41 @@ async def test_plan_nodes_paginate(client: AsyncClient, app: FastAPI, safe_path:
     assert empty["total"] == 5
 
     for params in ({"limit": 0}, {"limit": MAX_NODE_PAGE_SIZE + 1}, {"offset": -1}):
-        rejected = await client.get(f"libraries/{library_id}/cleanup/plan/nodes", params=params)
+        rejected = await client.get(f"libraries/{library_id}/cleanup/inventory/nodes", params=params)
         assert rejected.status_code == 422
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_plan_nodes_unknown_path(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+async def test_inventory_nodes_unknown_path(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
     root = safe_path / "lib"
     library_id = await _library(client, root)
     (root / "ad.mkv").write_bytes(b"x")
-    _store_plan(app, root, library_id, blacklist_patterns=["ad"])
+    _store_inventory(app, root, library_id, blacklist_patterns=["ad"])
 
-    resp = await client.get(f"libraries/{library_id}/cleanup/plan/nodes", params={"path": "gone"})
+    resp = await client.get(f"libraries/{library_id}/cleanup/inventory/nodes", params={"path": "gone"})
 
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_plan_nodes_without_plan(client: AsyncClient, safe_path: Path) -> None:
+async def test_inventory_nodes_without_inventory(client: AsyncClient, safe_path: Path) -> None:
     library_id = await _library(client, safe_path / "lib")
 
-    resp = await client.get(f"libraries/{library_id}/cleanup/plan/nodes")
+    resp = await client.get(f"libraries/{library_id}/cleanup/inventory/nodes")
 
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_plan_reports_truncation(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+async def test_inventory_reports_truncation(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
     """触顶要在面板可见, 并说明还有多少候选没纳入."""
     root = safe_path / "lib"
     library_id = await _library(client, root, blacklist_patterns=["ad-"])
     for index in range(3):
         (root / f"ad-{index}.mkv").write_bytes(b"x")
-    _store_plan(app, root, library_id, blacklist_patterns=["ad-"], limit=1)
+    _store_inventory(app, root, library_id, blacklist_patterns=["ad-"], limit=1)
 
-    body = (await client.get(f"libraries/{library_id}/cleanup/plan")).json()
+    body = (await client.get(f"libraries/{library_id}/cleanup/inventory")).json()
 
     assert body["exists"] is True
     assert body["truncated"] is True
@@ -187,7 +187,7 @@ async def test_plan_reports_truncation(client: AsyncClient, app: FastAPI, safe_p
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_plan_hidden_when_scan_settings_differ(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+async def test_inventory_hidden_when_scan_settings_differ(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
     """遍历设置与当前库配置不一致的清单不算整库清单: 它只覆盖了库的一部分, 面板不该照整库渲染.
 
     四种不一致各建一个库, 在同一次 lifespan 内循环 (client 是函数级夹具, 不能按参数乘).
@@ -198,38 +198,47 @@ async def test_plan_hidden_when_scan_settings_differ(client: AsyncClient, app: F
         (True, True, ["*.mp4"], None),
         (True, True, None, ["*.mp4"]),
     ]
-    for index, (library_recursive, plan_recursive, library_patterns, plan_patterns) in enumerate(cases):
+    for index, (library_recursive, inventory_recursive, library_patterns, inventory_patterns) in enumerate(cases):
         root = safe_path / f"lib-{index}"
         library_extra: dict[str, object] = {"recursive": library_recursive}
         if library_patterns is not None:
             library_extra["patterns"] = library_patterns
         library_id = await _library(client, root, blacklist_patterns=["ad-"], **library_extra)
         (root / "ad.mkv").write_bytes(b"x")
-        _store_plan(app, root, library_id, blacklist_patterns=["ad-"], recursive=plan_recursive, patterns=plan_patterns)
+        _store_inventory(
+            app,
+            root,
+            library_id,
+            blacklist_patterns=["ad-"],
+            recursive=inventory_recursive,
+            patterns=inventory_patterns,
+        )
 
-        body = (await client.get(f"libraries/{library_id}/cleanup/plan")).json()
+        body = (await client.get(f"libraries/{library_id}/cleanup/inventory")).json()
 
         assert body["exists"] is False, cases[index]
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_executed_plan_disappears_from_panel(
+async def test_executed_inventory_disappears_from_panel(
     client: AsyncClient, app: FastAPI, repo: Repository, safe_path: Path
 ) -> None:
     """删除成功后清单已花掉: 面板回到无清单态, 按标识读节点也按不存在处理."""
     root = safe_path / "lib"
     library_id = await _library(client, root, blacklist_patterns=["ad-"])
     (root / "ad.mkv").write_bytes(b"x")
-    plan = _store_plan(app, root, library_id, blacklist_patterns=["ad-"])
+    inventory = _store_inventory(app, root, library_id, blacklist_patterns=["ad-"])
 
-    result = await DeleteHandler(repo, app.state.runtime.plan_store).handle(
-        DeletePayload(library_id=library_id, plan_id=plan.plan_id)
+    result = await DeleteHandler(repo, app.state.runtime.inventory_store).handle(
+        DeletePayload(library_id=library_id, inventory_id=inventory.inventory_id)
     )
 
     assert result.success is True
-    body = (await client.get(f"libraries/{library_id}/cleanup/plan")).json()
+    body = (await client.get(f"libraries/{library_id}/cleanup/inventory")).json()
     assert body["exists"] is False
-    nodes = await client.get(f"libraries/{library_id}/cleanup/plan/nodes", params={"plan_id": plan.plan_id})
+    nodes = await client.get(
+        f"libraries/{library_id}/cleanup/inventory/nodes", params={"inventory_id": inventory.inventory_id}
+    )
     assert nodes.status_code == 404
 
 
@@ -242,30 +251,30 @@ async def test_scan_running_flag(
     library_id = await _library(client, root)
     await repo.create_task(TaskType.SCAN_INVALID, ScanInvalidPayload(library_id=library_id, path=str(root)))
 
-    resp = await client.get(f"libraries/{library_id}/cleanup/plan")
+    resp = await client.get(f"libraries/{library_id}/cleanup/inventory")
 
     assert resp.json()["scan_running"] is True
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_library_path_change_drops_plan(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+async def test_library_path_change_drops_inventory(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
     """库路径改掉后清单不再可用: 相对路径会按新库根重解释."""
     root = safe_path / "lib"
     moved = safe_path / "moved"
     library_id = await _library(client, root)
     (root / "ad.mkv").write_bytes(b"x")
-    plan = _store_plan(app, root, library_id, blacklist_patterns=["ad"])
+    inventory = _store_inventory(app, root, library_id, blacklist_patterns=["ad"])
     moved.mkdir()
 
     updated = await client.patch(f"libraries/{library_id}", json={"path": str(moved)})
 
     assert updated.status_code == 200
-    assert app.state.runtime.plan_store.get(plan.plan_id) is None
-    assert app.state.runtime.plan_store.latest(library_id, PlanSource.RULES) is None
+    assert app.state.runtime.inventory_store.get(inventory.inventory_id) is None
+    assert app.state.runtime.inventory_store.latest(library_id, InventorySource.RULES) is None
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_scan_task_fills_panel_plan(client: AsyncClient, safe_path: Path) -> None:
+async def test_scan_task_fills_panel_inventory(client: AsyncClient, safe_path: Path) -> None:
     """提交扫描任务后, 面板能读到 worker 写进清单存放的清单 (注入必须共用同一实例)."""
     root = safe_path / "lib"
     library_id = await _library(client, root, blacklist_patterns=["ad"], min_file_size=1024)
@@ -284,7 +293,7 @@ async def test_scan_task_fills_panel_plan(client: AsyncClient, safe_path: Path) 
 
     assert await await_for(finished) == "done"
 
-    resp = await client.get(f"libraries/{library_id}/cleanup/plan")
+    resp = await client.get(f"libraries/{library_id}/cleanup/inventory")
 
     assert resp.status_code == 200
     body = resp.json()
@@ -316,21 +325,23 @@ async def test_trash_expansion_lists_history(
     body = resp.json()
     assert body["exists"] is True
     assert body["path"] == ".amane_trash"
-    plan = app.state.runtime.plan_store.get(body["plan_id"])
-    assert plan is not None
-    assert plan.source is PlanSource.EXPLICIT
+    inventory = app.state.runtime.inventory_store.get(body["inventory_id"])
+    assert inventory is not None
+    assert inventory.source is InventorySource.EXPLICIT
 
-    page = await _nodes(client, library_id, path=body["path"], plan_id=body["plan_id"])
+    page = await _nodes(client, library_id, path=body["path"], inventory_id=body["inventory_id"])
 
     assert page["entry_count"] == 2
     assert page["entry_bytes"] == 30
     assert {node["name"] for node in page["items"]} == {"old-ad.mp4", "old-2.mp4"}
 
-    deleted = await client.post("tasks", json={"type": "delete", "library_id": library_id, "plan_id": body["plan_id"]})
+    deleted = await client.post(
+        "tasks", json={"type": "delete", "library_id": library_id, "inventory_id": body["inventory_id"]}
+    )
 
     assert deleted.status_code == 202
     # 提交只入队: 清单的消费发生在执行期, worker 已停, 因此它还没被花掉.
-    assert plan.executed is False
+    assert inventory.executed is False
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -369,23 +380,25 @@ async def test_selection_expansion_previews_then_deletes(
     assert body["exists"] is True
     assert body["notices"] == []
 
-    page = await _nodes(client, library_id, plan_id=body["plan_id"])
+    page = await _nodes(client, library_id, inventory_id=body["inventory_id"])
 
     assert page["entry_count"] == 3
     assert [node["name"] for node in page["items"]] == ["Studio"]
 
-    work_page = await _nodes(client, library_id, path="Studio/NSFS-039", plan_id=body["plan_id"])
+    work_page = await _nodes(client, library_id, path="Studio/NSFS-039", inventory_id=body["inventory_id"])
 
     assert work_page["total"] == 3
     assert {node["name"] for node in work_page["items"]} == {"NSFS-039.mp4", "NSFS-039.nfo", "cover.jpg"}
 
-    deleted = await client.post("tasks", json={"type": "delete", "library_id": library_id, "plan_id": body["plan_id"]})
+    deleted = await client.post(
+        "tasks", json={"type": "delete", "library_id": library_id, "inventory_id": body["inventory_id"]}
+    )
 
     assert deleted.status_code == 202
     # 提交只入队: 清单的消费发生在执行期, worker 已停, 因此它还没被花掉.
-    plan = app.state.runtime.plan_store.get(body["plan_id"])
-    assert plan is not None
-    assert plan.executed is False
+    inventory = app.state.runtime.inventory_store.get(body["inventory_id"])
+    assert inventory is not None
+    assert inventory.executed is False
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -400,7 +413,7 @@ async def test_selection_rejects_foreign_media(client: AsyncClient, app: FastAPI
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_plan_reports_last_scan_failure(
+async def test_inventory_reports_last_scan_failure(
     client: AsyncClient,
     repo: Repository,
     safe_path: Path,
@@ -414,7 +427,7 @@ async def test_plan_reports_last_scan_failure(
     assert task.id is not None
     await repo.fail_task(task.id, error="Not a directory: gone")
 
-    resp = await client.get(f"libraries/{library_id}/cleanup/plan")
+    resp = await client.get(f"libraries/{library_id}/cleanup/inventory")
 
     body = resp.json()
     assert body["exists"] is False

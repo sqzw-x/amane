@@ -183,7 +183,7 @@ class ScanInvalidPayload(LibraryScanBase):
 
 
 class ScanInvalidResult(BaseModel):
-    plan_id: str
+    inventory_id: str
     entries: int
     dirs: int
     scope_path: str | None = None
@@ -199,7 +199,7 @@ class DeletePayload(BaseModel):
     """按清单标识删除; 执行集合 = 清单条目减去 exclude, 不做运行时推导."""
 
     library_id: int = Field(description="清单所属 Library ID")
-    plan_id: str = Field(description="后端生成的清单标识; 不存在或已过期则失败")
+    inventory_id: str = Field(description="后端生成的清单标识; 不存在或已过期则失败")
     exclude: list[str] = Field(
         default_factory=list,
         description="排除项: 库内为清单库根下的相对路径, 库外为绝对路径; 按路径分量匹配",

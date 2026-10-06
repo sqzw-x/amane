@@ -841,11 +841,11 @@ export type DeleteSubmission = {
      */
     library_id: number;
     /**
-     * Plan Id
+     * Inventory Id
      *
      * 后端生成的清单标识; 不存在或已过期则失败
      */
-    plan_id: string;
+    inventory_id: string;
     /**
      * Exclude
      *
@@ -1499,6 +1499,146 @@ export type Interrupt = {
      */
     subagentRunId?: string | null;
     [key: string]: unknown;
+};
+
+/**
+ * InventoryEntryKind
+ */
+export type InventoryEntryKind = 'file' | 'dir' | 'symlink';
+
+/**
+ * InventoryNodePage
+ *
+ * 一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页.
+ */
+export type InventoryNodePage = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Items
+     */
+    items: Array<InventoryNodeResponse>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Limit
+     */
+    limit: number;
+    /**
+     * Entry Count
+     */
+    entry_count: number;
+    /**
+     * Entry Bytes
+     */
+    entry_bytes: number;
+};
+
+/**
+ * InventoryNodeResponse
+ *
+ * 树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取.
+ */
+export type InventoryNodeResponse = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Name
+     */
+    name: string;
+    kind: InventoryEntryKind;
+    reason?: InventoryReason | null;
+    /**
+     * Size
+     */
+    size?: number | null;
+    /**
+     * Hardlink
+     */
+    hardlink?: boolean;
+    /**
+     * Entry Count
+     */
+    entry_count: number;
+    /**
+     * Entry Bytes
+     */
+    entry_bytes: number;
+    /**
+     * Will Be Empty
+     */
+    will_be_empty?: boolean;
+    /**
+     * Has Children
+     */
+    has_children?: boolean;
+    /**
+     * Children
+     */
+    children?: Array<InventoryNodeResponse> | null;
+};
+
+/**
+ * InventoryReason
+ */
+export type InventoryReason = 'blacklist' | 'undersized' | 'empty_dir' | 'explicit';
+
+/**
+ * InventorySummaryResponse
+ *
+ * 面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取.
+ */
+export type InventorySummaryResponse = {
+    /**
+     * Exists
+     */
+    exists: boolean;
+    /**
+     * Inventory Id
+     */
+    inventory_id?: string | null;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Scope Path
+     */
+    scope_path?: string | null;
+    /**
+     * Truncated
+     */
+    truncated?: boolean;
+    /**
+     * Dropped
+     */
+    dropped?: number;
+    /**
+     * Skipped Dirs
+     */
+    skipped_dirs?: number;
+    /**
+     * Skipped Files
+     */
+    skipped_files?: number;
+    /**
+     * Scan Running
+     */
+    scan_running?: boolean;
+    /**
+     * Last Scan Error
+     */
+    last_scan_error?: string | null;
 };
 
 export type JsonValue = unknown;
@@ -2600,146 +2740,6 @@ export type PathTemplateSchemaResponse = {
 };
 
 /**
- * PlanEntryKind
- */
-export type PlanEntryKind = 'file' | 'dir' | 'symlink';
-
-/**
- * PlanNodePage
- *
- * 一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页.
- */
-export type PlanNodePage = {
-    /**
-     * Path
-     */
-    path: string;
-    /**
-     * Items
-     */
-    items: Array<PlanNodeResponse>;
-    /**
-     * Total
-     */
-    total: number;
-    /**
-     * Offset
-     */
-    offset: number;
-    /**
-     * Limit
-     */
-    limit: number;
-    /**
-     * Entry Count
-     */
-    entry_count: number;
-    /**
-     * Entry Bytes
-     */
-    entry_bytes: number;
-};
-
-/**
- * PlanNodeResponse
- *
- * 树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取.
- */
-export type PlanNodeResponse = {
-    /**
-     * Path
-     */
-    path: string;
-    /**
-     * Name
-     */
-    name: string;
-    kind: PlanEntryKind;
-    reason?: PlanReason | null;
-    /**
-     * Size
-     */
-    size?: number | null;
-    /**
-     * Hardlink
-     */
-    hardlink?: boolean;
-    /**
-     * Entry Count
-     */
-    entry_count: number;
-    /**
-     * Entry Bytes
-     */
-    entry_bytes: number;
-    /**
-     * Will Be Empty
-     */
-    will_be_empty?: boolean;
-    /**
-     * Has Children
-     */
-    has_children?: boolean;
-    /**
-     * Children
-     */
-    children?: Array<PlanNodeResponse> | null;
-};
-
-/**
- * PlanReason
- */
-export type PlanReason = 'blacklist' | 'undersized' | 'empty_dir' | 'explicit';
-
-/**
- * PlanSummaryResponse
- *
- * 面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取.
- */
-export type PlanSummaryResponse = {
-    /**
-     * Exists
-     */
-    exists: boolean;
-    /**
-     * Plan Id
-     */
-    plan_id?: string | null;
-    /**
-     * Created At
-     */
-    created_at?: string | null;
-    /**
-     * Scope Path
-     */
-    scope_path?: string | null;
-    /**
-     * Truncated
-     */
-    truncated?: boolean;
-    /**
-     * Dropped
-     */
-    dropped?: number;
-    /**
-     * Skipped Dirs
-     */
-    skipped_dirs?: number;
-    /**
-     * Skipped Files
-     */
-    skipped_files?: number;
-    /**
-     * Scan Running
-     */
-    scan_running?: boolean;
-    /**
-     * Last Scan Error
-     */
-    last_scan_error?: string | null;
-};
-
-/**
  * PlaybackSourceListResponse
  */
 export type PlaybackSourceListResponse = {
@@ -3594,9 +3594,9 @@ export type SelectionSummaryResponse = {
      */
     exists: boolean;
     /**
-     * Plan Id
+     * Inventory Id
      */
-    plan_id?: string | null;
+    inventory_id?: string | null;
     /**
      * Notices
      */
@@ -4172,9 +4172,9 @@ export type TrashSummaryResponse = {
      */
     exists: boolean;
     /**
-     * Plan Id
+     * Inventory Id
      */
-    plan_id?: string | null;
+    inventory_id?: string | null;
     /**
      * Path
      */
@@ -4549,7 +4549,7 @@ export type GetConfigSchemaResponses = {
 
 export type GetConfigSchemaResponse = GetConfigSchemaResponses[keyof GetConfigSchemaResponses];
 
-export type GetCleanupPlanData = {
+export type GetCleanupInventoryData = {
     body?: never;
     path: {
         /**
@@ -4558,28 +4558,28 @@ export type GetCleanupPlanData = {
         library_id: number;
     };
     query?: never;
-    url: '/api/libraries/{library_id}/cleanup/plan';
+    url: '/api/libraries/{library_id}/cleanup/inventory';
 };
 
-export type GetCleanupPlanErrors = {
+export type GetCleanupInventoryErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type GetCleanupPlanError = GetCleanupPlanErrors[keyof GetCleanupPlanErrors];
+export type GetCleanupInventoryError = GetCleanupInventoryErrors[keyof GetCleanupInventoryErrors];
 
-export type GetCleanupPlanResponses = {
+export type GetCleanupInventoryResponses = {
     /**
      * Successful Response
      */
-    200: PlanSummaryResponse;
+    200: InventorySummaryResponse;
 };
 
-export type GetCleanupPlanResponse = GetCleanupPlanResponses[keyof GetCleanupPlanResponses];
+export type GetCleanupInventoryResponse = GetCleanupInventoryResponses[keyof GetCleanupInventoryResponses];
 
-export type GetCleanupPlanNodesData = {
+export type GetCleanupInventoryNodesData = {
     body?: never;
     path: {
         /**
@@ -4595,11 +4595,11 @@ export type GetCleanupPlanNodesData = {
          */
         path?: string;
         /**
-         * Plan Id
+         * Inventory Id
          *
          * 指定清单; 缺省用规则来源的最新一份
          */
-        plan_id?: string | null;
+        inventory_id?: string | null;
         /**
          * Offset
          *
@@ -4613,26 +4613,26 @@ export type GetCleanupPlanNodesData = {
          */
         limit?: number;
     };
-    url: '/api/libraries/{library_id}/cleanup/plan/nodes';
+    url: '/api/libraries/{library_id}/cleanup/inventory/nodes';
 };
 
-export type GetCleanupPlanNodesErrors = {
+export type GetCleanupInventoryNodesErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type GetCleanupPlanNodesError = GetCleanupPlanNodesErrors[keyof GetCleanupPlanNodesErrors];
+export type GetCleanupInventoryNodesError = GetCleanupInventoryNodesErrors[keyof GetCleanupInventoryNodesErrors];
 
-export type GetCleanupPlanNodesResponses = {
+export type GetCleanupInventoryNodesResponses = {
     /**
      * Successful Response
      */
-    200: PlanNodePage;
+    200: InventoryNodePage;
 };
 
-export type GetCleanupPlanNodesResponse = GetCleanupPlanNodesResponses[keyof GetCleanupPlanNodesResponses];
+export type GetCleanupInventoryNodesResponse = GetCleanupInventoryNodesResponses[keyof GetCleanupInventoryNodesResponses];
 
 export type GetCleanupTrashData = {
     body?: never;

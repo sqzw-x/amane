@@ -6,16 +6,16 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from ...library import PlanEntryKind, PlanReason
+from ...library import InventoryEntryKind, InventoryReason
 
 
-class PlanNodeResponse(BaseModel):
+class InventoryNodeResponse(BaseModel):
     """树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取."""
 
     path: str
     name: str
-    kind: PlanEntryKind
-    reason: PlanReason | None = None
+    kind: InventoryEntryKind
+    reason: InventoryReason | None = None
     """仅条目节点有; 容器目录为 None."""
     size: int | None = None
     hardlink: bool = False
@@ -26,15 +26,15 @@ class PlanNodeResponse(BaseModel):
     will_be_empty: bool = False
     """清单条目全部删除后该目录是否会空 (含子目录递归)."""
     has_children: bool = False
-    children: list[PlanNodeResponse] | None = None
+    children: list[InventoryNodeResponse] | None = None
 
 
-class PlanNodePage(BaseModel):
+class InventoryNodePage(BaseModel):
     """一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页."""
 
     path: str
     """本页展开的目录: 库内相对路径, 库外为绝对路径, 一律 `/` 分隔, 空串为库根."""
-    items: list[PlanNodeResponse]
+    items: list[InventoryNodeResponse]
     total: int
     """该目录的子节点总数, 与 ``items`` 的长度无关."""
     offset: int
@@ -44,11 +44,11 @@ class PlanNodePage(BaseModel):
     entry_bytes: int
 
 
-class PlanSummaryResponse(BaseModel):
+class InventorySummaryResponse(BaseModel):
     """面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取."""
 
     exists: bool
-    plan_id: str | None = None
+    inventory_id: str | None = None
     created_at: datetime | None = None
     scope_path: str | None = None
     """非空表示本次清单只覆盖该子目录, 面板据此标注范围."""
@@ -67,7 +67,7 @@ class TrashSummaryResponse(BaseModel):
     """回收站历史内容: 展开即产出显式来源清单, 面板套用同一套审查与删除."""
 
     exists: bool
-    plan_id: str | None = None
+    inventory_id: str | None = None
     path: str | None = None
     """要展开的目录 (清单库根下的回收站), 交给分页接口."""
     truncated: bool = False
@@ -87,7 +87,7 @@ class SelectionSummaryResponse(BaseModel):
     """展开结果. 条目自库根展开 (库外产物挂在根下), 面板按分页接口读取."""
 
     exists: bool
-    plan_id: str | None = None
+    inventory_id: str | None = None
     notices: list[str] = []
     """未能纳入的部分与原因 (例如作品目录不满足整目录删除的条件)."""
     truncated: bool = False

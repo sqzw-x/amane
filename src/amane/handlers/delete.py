@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..library import (
+    CleanupInventory,
     DeleteTally,
-    LibraryPlan,
-    PlanStore,
+    InventoryStore,
     ancestor_dirs,
     delete_target,
     prune_empty_dirs,
@@ -37,17 +37,19 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
     同库执行期与 ORGANIZE 共用一把锁.
     """
 
-    def __init__(self, repo: Repository, plan_store: PlanStore, *, library_locks: LibraryTaskLocks | None = None):
+    def __init__(
+        self, repo: Repository, inventory_store: InventoryStore, *, library_locks: LibraryTaskLocks | None = None
+    ):
         super().__init__(payload_t=DeletePayload, result_t=DeleteResult)
         self._repo = repo
-        self._plan_store = plan_store
+        self._inventory_store = inventory_store
         self._library_locks = library_locks if library_locks is not None else LibraryTaskLocks()
 
     async def handle(self, payload: DeletePayload) -> TaskResult[DeleteResult]:
-        plan = self._plan_store.get(payload.plan_id)
-        if plan is None:
+        inventory = self._inventory_store.get(payload.inventory_id)
+        if inventory is None:
             return TaskResult(success=False, error="清单不存在或已过期, 请重新扫描后再确认")
-        if plan.library_id != payload.library_id:
+        if inventory.library_id != payload.library_id:
             return TaskResult(success=False, error="清单与目标库不一致")
 
         library = await self._repo.get_library(payload.library_id)
@@ -55,24 +57,28 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
             return TaskResult(success=False, error=f"Library {payload.library_id} not found")
         assert library.id is not None
         library_root = Path(library.path)
-        if not same_path(plan.root, library_root):
-            return TaskResult(success=False, error=f"库路径已变更: {plan.root} → {library_root}")
+        if not same_path(inventory.root, library_root):
+            return TaskResult(success=False, error=f"库路径已变更: {inventory.root} → {library_root}")
         if not await path_is_dir(library_root):
             return TaskResult(success=False, error=f"Not a directory: {library.path}")
 
         lock = await self._library_locks.get(library.id)
         async with lock:
             # 复验在锁内: 同一份清单被两次提交时, 只有先拿到锁的那次能执行.
-            if plan.executed:
+            if inventory.executed:
                 return TaskResult(success=False, error="该清单已经执行过, 请重新扫描后再确认")
-            return await self._execute(payload, plan, library_root)
+            return await self._execute(payload, inventory, library_root)
 
-    async def _execute(self, payload: DeletePayload, plan: LibraryPlan, library_root: Path) -> TaskResult[DeleteResult]:
+    async def _execute(
+        self, payload: DeletePayload, inventory: CleanupInventory, library_root: Path
+    ) -> TaskResult[DeleteResult]:
         excluded_keys = _path_keys(payload.exclude, root=library_root)
         targets = [
-            entry for entry in plan.entries if not _matches(entry.path, exact=excluded_keys, subtrees=excluded_keys)
+            entry
+            for entry in inventory.entries
+            if not _matches(entry.path, exact=excluded_keys, subtrees=excluded_keys)
         ]
-        excluded = len(plan.entries) - len(targets)
+        excluded = len(inventory.entries) - len(targets)
         tally = DeleteTally()
         removed_paths: list[Path] = []
         total = len(targets)
@@ -86,7 +92,7 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
                 logger.warning("delete item failed", path=str(entry.path), error=outcome.error)
             await self.report_progress(i, total, entry.path.name)
 
-        indexed = await self._delete_index_rows(plan.library_id, removed_paths)
+        indexed = await self._delete_index_rows(inventory.library_id, removed_paths)
         pruned = 0
         if payload.prune_empty_dirs and removed_paths:
             candidates: set[Path] = set()
@@ -96,11 +102,11 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
                 pruned = (await prune_empty_dirs(candidates, library_root=library_root)).removed
         await self.report_progress(total, total, "done")
 
-        plan.executed = True
+        inventory.executed = True
         logger.info(
             "delete completed",
-            plan_id=plan.plan_id,
-            library_id=plan.library_id,
+            inventory_id=inventory.inventory_id,
+            library_id=inventory.library_id,
             deleted=tally.deleted,
             changed=tally.changed,
             failed=tally.failed,

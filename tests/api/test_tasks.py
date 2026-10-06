@@ -145,7 +145,7 @@ class TestSubmitTask:
         assert (await client.post("tasks", json={"type": "trash", "library_id": lib.id})).status_code == 422
         assert (await client.post("tasks", json={"type": "delete", "library_id": lib.id})).status_code == 422
         assert (
-            await client.post("tasks", json={"type": "delete", "library_id": lib.id, "plan_id": "nope"})
+            await client.post("tasks", json={"type": "delete", "library_id": lib.id, "inventory_id": "nope"})
         ).status_code == 202
         assert (await client.post("tasks", json={"type": "scan_invalid", "library_id": 9999})).status_code == 404
         ids_and_path = await client.post(

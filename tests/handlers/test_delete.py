@@ -9,13 +9,13 @@ import pytest
 
 from amane.config import HotSettings
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidHandler, ScanInvalidPayload
-from amane.library import PlanStore
+from amane.library import InventoryStore
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
 
 
-async def _plan_id(repo: Repository, store: PlanStore, library_id: int, *, path: str | None = None) -> str:
+async def _inventory_id(repo: Repository, store: InventoryStore, library_id: int, *, path: str | None = None) -> str:
     """跑一次 SCAN_INVALID 并返回清单标识; `path` 限定扫描范围."""
     payload = (
         ScanInvalidPayload(library_id=library_id)
@@ -25,11 +25,11 @@ async def _plan_id(repo: Repository, store: PlanStore, library_id: int, *, path:
     result = await ScanInvalidHandler(repo, HotSettings(), store).handle(payload)
     assert result.success is True
     assert result.result is not None
-    return result.result.plan_id
+    return result.result.inventory_id
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_executes_plan(repo: Repository, tmp_path: Path) -> None:
+async def test_delete_executes_inventory(repo: Repository, tmp_path: Path) -> None:
     lib_root = tmp_path / "lib"
     (lib_root / "work").mkdir(parents=True)
     ad = lib_root / "work" / "ad-1.mkv"
@@ -39,10 +39,10 @@ async def test_delete_executes_plan(repo: Repository, tmp_path: Path) -> None:
     assert lib.id is not None
     row = await repo.create_media_file(lib.id, path=str(ad), number="AD-1")
     assert row.id is not None
-    store = PlanStore()
+    store = InventoryStore()
 
-    plan_id = await _plan_id(repo, store, lib.id)
-    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, plan_id=plan_id))
+    inventory_id = await _inventory_id(repo, store, lib.id)
+    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, inventory_id=inventory_id))
 
     assert result.success is True
     assert result.result is not None
@@ -54,38 +54,38 @@ async def test_delete_executes_plan(repo: Repository, tmp_path: Path) -> None:
     assert not ad.exists()
     assert not (lib_root / "empty").exists()
     assert await repo.get_media_file(row.id) is None
-    plan = store.get(plan_id)
-    assert plan is not None
-    assert plan.executed is True
+    inventory = store.get(inventory_id)
+    assert inventory is not None
+    assert inventory.executed is True
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_missing_plan_fails(repo: Repository, tmp_path: Path) -> None:
+async def test_delete_missing_inventory_fails(repo: Repository, tmp_path: Path) -> None:
     lib_root = tmp_path / "lib"
     lib_root.mkdir()
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
 
-    result = await DeleteHandler(repo, PlanStore()).handle(DeletePayload(library_id=lib.id, plan_id="nope"))
+    result = await DeleteHandler(repo, InventoryStore()).handle(DeletePayload(library_id=lib.id, inventory_id="nope"))
 
     assert result.success is False
     assert "清单不存在" in (result.error or "")
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_executed_plan_refused(repo: Repository, tmp_path: Path) -> None:
+async def test_delete_executed_inventory_refused(repo: Repository, tmp_path: Path) -> None:
     lib_root = tmp_path / "lib"
     lib_root.mkdir()
     (lib_root / "ad.mkv").write_bytes(b"x")
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad"])
     assert lib.id is not None
-    store = PlanStore()
-    plan_id = await _plan_id(repo, store, lib.id)
+    store = InventoryStore()
+    inventory_id = await _inventory_id(repo, store, lib.id)
     handler = DeleteHandler(repo, store)
-    first = await handler.handle(DeletePayload(library_id=lib.id, plan_id=plan_id))
+    first = await handler.handle(DeletePayload(library_id=lib.id, inventory_id=inventory_id))
     assert first.success is True
 
-    second = await handler.handle(DeletePayload(library_id=lib.id, plan_id=plan_id))
+    second = await handler.handle(DeletePayload(library_id=lib.id, inventory_id=inventory_id))
 
     assert second.success is False
     assert "已经执行过" in (second.error or "")
@@ -101,11 +101,11 @@ async def test_delete_refuses_changed_library_root(repo: Repository, tmp_path: P
     (moved_root / "ad.mkv").write_bytes(b"x")
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad"])
     assert lib.id is not None
-    store = PlanStore()
-    plan_id = await _plan_id(repo, store, lib.id)
+    store = InventoryStore()
+    inventory_id = await _inventory_id(repo, store, lib.id)
     await repo.update_library(lib.id, path=str(moved_root))
 
-    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, plan_id=plan_id))
+    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, inventory_id=inventory_id))
 
     assert result.success is False
     assert "库路径已变更" in (result.error or "")
@@ -125,11 +125,11 @@ async def test_delete_exclude_matches_path_components(repo: Repository, tmp_path
     removed.write_bytes(b"x")
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad-"])
     assert lib.id is not None
-    store = PlanStore()
+    store = InventoryStore()
 
-    plan_id = await _plan_id(repo, store, lib.id)
+    inventory_id = await _inventory_id(repo, store, lib.id)
     result = await DeleteHandler(repo, store).handle(
-        DeletePayload(library_id=lib.id, plan_id=plan_id, exclude=["Show A"])
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id, exclude=["Show A"])
     )
 
     assert result.success is True
@@ -147,11 +147,11 @@ async def test_delete_without_prune_keeps_directory(repo: Repository, tmp_path: 
     ad.write_bytes(b"x")
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad"])
     assert lib.id is not None
-    store = PlanStore()
+    store = InventoryStore()
 
-    plan_id = await _plan_id(repo, store, lib.id)
+    inventory_id = await _inventory_id(repo, store, lib.id)
     result = await DeleteHandler(repo, store).handle(
-        DeletePayload(library_id=lib.id, plan_id=plan_id, prune_empty_dirs=False)
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id, prune_empty_dirs=False)
     )
 
     assert result.success is True
@@ -162,7 +162,7 @@ async def test_delete_without_prune_keeps_directory(repo: Repository, tmp_path: 
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_other_library_plan_refused(repo: Repository, tmp_path: Path) -> None:
+async def test_delete_other_library_inventory_refused(repo: Repository, tmp_path: Path) -> None:
     first_root = tmp_path / "a"
     second_root = tmp_path / "b"
     first_root.mkdir()
@@ -171,10 +171,10 @@ async def test_delete_other_library_plan_refused(repo: Repository, tmp_path: Pat
     first = await repo.create_library(name="a", path=str(first_root), write_nfo=False, blacklist_patterns=["ad"])
     second = await repo.create_library(name="b", path=str(second_root), write_nfo=False)
     assert first.id is not None and second.id is not None
-    store = PlanStore()
-    plan_id = await _plan_id(repo, store, first.id)
+    store = InventoryStore()
+    inventory_id = await _inventory_id(repo, store, first.id)
 
-    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=second.id, plan_id=plan_id))
+    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=second.id, inventory_id=inventory_id))
 
     assert result.success is False
     assert "不一致" in (result.error or "")
@@ -189,10 +189,10 @@ async def test_delete_prunes_ancestors_only(repo: Repository, tmp_path: Path) ->
     (lib_root / "preexisting").mkdir()
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad"])
     assert lib.id is not None
-    store = PlanStore()
+    store = InventoryStore()
 
-    plan_id = await _plan_id(repo, store, lib.id, path=str(lib_root / "a"))
-    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, plan_id=plan_id))
+    inventory_id = await _inventory_id(repo, store, lib.id, path=str(lib_root / "a"))
+    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, inventory_id=inventory_id))
 
     assert result.success is True
     assert result.result is not None
@@ -209,10 +209,10 @@ async def test_delete_drops_index_by_directory_prefix(repo: Repository, tmp_path
     assert lib.id is not None
     row = await repo.create_media_file(lib.id, path=str(lib_root / "empty" / "gone.mkv"), number="X-1")
     assert row.id is not None
-    store = PlanStore()
+    store = InventoryStore()
 
-    plan_id = await _plan_id(repo, store, lib.id)
-    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, plan_id=plan_id))
+    inventory_id = await _inventory_id(repo, store, lib.id)
+    result = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, inventory_id=inventory_id))
 
     assert result.success is True
     assert result.result is not None
