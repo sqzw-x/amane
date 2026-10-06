@@ -196,7 +196,7 @@
     "scanStarted": "Scan started",
     "deleteStarted": "Deletion started",
     "scope": "This plan covers {{path}} only",
-    "truncated": "Plan truncated, narrow the scope to a subdirectory",
+    "truncated": "Too many files; only part of the results are shown",
     "skipped": "{{dirs}} directories and {{files}} files were not covered",
     "selected": "{{count}} selected, about {{size}}",
     "empty": "Nothing to clean",

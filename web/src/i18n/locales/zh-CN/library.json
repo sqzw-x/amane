@@ -194,7 +194,7 @@
     "scanStarted": "扫描已开始",
     "deleteStarted": "删除已开始",
     "scope": "本次清单只覆盖 {{path}}",
-    "truncated": "清单已截断, 请按子目录分批处理",
+    "truncated": "文件过多, 仅显示部分结果",
     "skipped": "本次未覆盖 {{dirs}} 个目录与 {{files}} 个文件",
     "selected": "已选 {{count}} 项, 约 {{size}}",
     "empty": "没有需要清理的条目",
