@@ -15,7 +15,7 @@
 
 CD2 webhook 库须同时填写:
 
-- **路径**: 本机可扫描的挂载目录 (如 `/Volumes/115/云下载`, 或 Docker bind 后的路径)
+- **路径**: 本机可扫描的挂载目录 (如 `/Volumes/115/云下载`, 或 Docker bind 后的路径). 保存时会解析成真实路径, 因此填符号链接别名时界面上显示的是链接指向的目录.
 - **CloudDrive 路径**: 库路径对应的 CloudDrive2 内路径 (如 `/115open/云下载`). 不是 `/Volumes/...` 或 Windows 盘符. 多库时按最长前缀匹配. 不允许两个 CD2 webhook 库使用相同或互为前缀的 CloudDrive 路径.
 
 `watcher.use_polling` 只作用于「本地文件」, 不能替代 CD2 webhook. 目录整树复制或离线完成往往只推送结果目录一条 `create`; Amane 会对该子树扫描. 未推送的变更仍可手动扫描.

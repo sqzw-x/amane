@@ -17,6 +17,7 @@ from ...library import (
 )
 from ...organize.path_templates import VIDEO_TEMPLATE_DEFAULT, normalize_link_template, validate_path_template
 from ...organize.strm_content import normalize_strm_content_template, validate_strm_content_template
+from ...utils.path import resolved_path
 from ..models import Library, MediaFile
 from ..repo_types import LibraryUpdates
 from .base import RepositoryMixinBase
@@ -92,7 +93,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 await _reject_overlapping_cloud_path(session, cloud_path)
             lib = Library(
                 name=name,
-                path=path,
+                path=str(resolved_path(path)),
                 automation=automation,
                 ingest=ingest,
                 cloud_path=cloud_path,
@@ -181,7 +182,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
             if "name" in updates:
                 lib.name = updates["name"]
             if "path" in updates:
-                lib.path = updates["path"]
+                lib.path = str(resolved_path(updates["path"]))
             if "automation" in updates:
                 lib.automation = updates["automation"]
             if "ingest" in updates:

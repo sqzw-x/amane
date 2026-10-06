@@ -370,3 +370,19 @@ class TestTaskRecord:
         assert resp.status_code == 200
         assert resp.headers.get("content-type") == "application/zip"
         assert resp.content[:2] == b"PK"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_scope_path_lands_on_real_path(self, client: AsyncClient, repo: Repository, safe_path: Path):
+        """范围路径与库路径同一形式: 文件选择器给的是真身, 别名写法必须落回真身再入队."""
+        real = safe_path / "movies"
+        (real / "sub").mkdir(parents=True)
+        alias = safe_path / "alias"
+        alias.symlink_to(real, target_is_directory=True)
+        lib = await repo.create_library(name="a", path=str(real))
+
+        submitted = await client.post(
+            "tasks", json={"type": "scan_invalid", "library_id": lib.id, "path": str(alias / "sub")}
+        )
+
+        assert submitted.status_code == 202
+        assert submitted.json()["payload"]["path"] == str(real / "sub")

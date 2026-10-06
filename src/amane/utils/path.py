@@ -20,6 +20,23 @@ def _resolve_or_literal(p: str | Path) -> str:
         return os.path.abspath(os.fspath(p))  # noqa: PTH100
 
 
+def resolved_path(path: str | Path) -> Path:
+    """真身路径: 解析符号链接后的绝对路径, 解析失败时按字面绝对路径回退.
+
+    库路径及其派生的索引路径必须同一形式: 两侧按字面比较, 写法不同会把同一个文件算成两个.
+    """
+    return Path(_resolve_or_literal(path))
+
+
+def is_resolved_path(path: str | Path) -> bool:
+    """路径是否已经是真身.
+
+    与字面形式比较时必须先做 lexical 归一 (``Path`` 不折叠 ``..``), 且不能用 ``Path.resolve()``:
+    它会跟随符号链接, 那正是这里要区分的差别.
+    """
+    return resolved_path(path) == Path(os.path.abspath(os.fspath(path)))  # noqa: PTH100
+
+
 def is_descendant(p: str | Path, parent: str | Path) -> bool:
     """
     检查 p 是否是 parent 或者 parent 的后代.

@@ -4,7 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from amane.utils.path import existing_disk_path, is_descendant, nfc_path, path_forms, path_is_under
+from amane.utils.path import (
+    existing_disk_path,
+    is_descendant,
+    is_resolved_path,
+    nfc_path,
+    path_forms,
+    path_is_under,
+    resolved_path,
+)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="此测试不适用于 Windows")
@@ -144,3 +152,22 @@ def test_existing_disk_path_tries_nfd(tmp_path: Path) -> None:
     assert found is not None
     assert found.read_bytes() == b"x"
     assert existing_disk_path(tmp_path / "missing.mp4") is None
+
+
+class TestResolvedPath:
+    def test_alias_resolves_to_target(self, tmp_path: Path) -> None:
+        real = tmp_path / "real"
+        real.mkdir()
+        alias = tmp_path / "alias"
+        alias.symlink_to(real, target_is_directory=True)
+
+        assert resolved_path(alias) == real
+        assert is_resolved_path(alias) is False
+        assert is_resolved_path(real) is True
+
+    def test_missing_path_falls_back_to_literal(self, tmp_path: Path) -> None:
+        """解析不到 (断连网络盘 / 虚拟卷) 时按字面绝对路径回退, 不抛异常."""
+        missing = tmp_path / "gone" / ".." / "gone"
+
+        assert resolved_path(missing) == tmp_path / "gone"
+        assert is_resolved_path(missing) is True

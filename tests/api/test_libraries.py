@@ -232,3 +232,22 @@ class TestLibraries:
             t for t in await repo.list_tasks(task_types=[TaskType.REFRESH]) if t.payload.get("library_id") == quiet_id
         ]
         assert still == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_library_path_is_resolved(self, client: AsyncClient, safe_path: Path):
+        """库路径落真身: 符号链接别名与真身只能留一种写法, 否则索引与清理清单都按字面路径分家."""
+        real = safe_path / "real-movies"
+        real.mkdir()
+        alias = safe_path / "alias-movies"
+        alias.symlink_to(real, target_is_directory=True)
+
+        created = await client.post("libraries", json={"path": str(alias), "scan": False})
+
+        assert created.status_code == 201
+        library_id = created.json()["id"]
+        assert created.json()["path"] == str(real)
+
+        updated = await client.patch(f"libraries/{library_id}", json={"path": str(alias)})
+
+        assert updated.status_code == 200
+        assert updated.json()["path"] == str(real)

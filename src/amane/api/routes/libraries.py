@@ -97,7 +97,8 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
                 library_id=lib.id,
                 recursive=req.recursive,
                 patterns=req.patterns,
-                path=req.path,
+                # 用落库后的路径: 入口已把库路径落成真身, 首次扫描必须与它同一形式.
+                path=lib.path,
                 scan={ScanMode.add},
                 scrape=set(),
             ),
