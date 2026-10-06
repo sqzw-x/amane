@@ -81,7 +81,7 @@ export function InventoryTree({
       }),
   });
 
-  // 排除项按前缀记录, 因此选中量 = 清单总量减去被排除节点的子树量.
+  // 排除项按前缀记录且互不嵌套 (见 toggle), 因此选中量 = 清单总量减去被排除节点的子树量.
   const totals = useMemo(() => {
     let entries = 0;
     let bytes = 0;
@@ -114,7 +114,8 @@ export function InventoryTree({
       const covering = coveringPrefix(prev, node.path);
       if (covering === node.path) return prev.filter((prefix) => prefix !== node.path);
       if (covering) return prev; // 祖先已排除: 恢复本节点会连带兄弟节点.
-      return [...prev, node.path];
+      // 已排除的后代并入本节点: 两个前缀会各减一次同一棵子树, 选中量就比实际执行集合少.
+      return [...prev.filter((prefix) => !isUnder(prefix, node.path)), node.path];
     });
   }, []);
 
