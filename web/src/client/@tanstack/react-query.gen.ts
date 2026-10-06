@@ -118,6 +118,9 @@ export const getCleanupPlanQueryKey = (options: Options<GetCleanupPlanData>) => 
  * Get Cleanup Plan
  *
  * 面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取.
+ *
+ * 遍历设置与当前库配置不一致的清单按不存在处理: 面板只渲染代表整库的规则来源清单,
+ * 否则一次不递归或带自定义匹配模式的扫描会被当成整库可以清理.
  */
 export const getCleanupPlanOptions = (options: Options<GetCleanupPlanData>) => queryOptions<GetCleanupPlanResponse, GetCleanupPlanError, GetCleanupPlanResponse, ReturnType<typeof getCleanupPlanQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 
 import structlog
@@ -11,14 +12,13 @@ import structlog
 from ..library import (
     DeleteTally,
     LibraryPlan,
-    PlanEntry,
     PlanStore,
     ancestor_dirs,
     delete_target,
     prune_empty_dirs,
     same_path,
 )
-from ..utils.path import path_is_under
+from ..utils.path import path_key
 from ..utils.threads import path_is_dir
 from ._common import LibraryTaskLocks
 from .models import DeletePayload, DeleteResult
@@ -47,8 +47,6 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
         plan = self._plan_store.get(payload.plan_id)
         if plan is None:
             return TaskResult(success=False, error="清单不存在或已过期, 请重新扫描后再确认")
-        if plan.executed:
-            return TaskResult(success=False, error="该清单已经执行过, 请重新扫描后再确认")
         if plan.library_id != payload.library_id:
             return TaskResult(success=False, error="清单与目标库不一致")
 
@@ -64,10 +62,16 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
 
         lock = await self._library_locks.get(library.id)
         async with lock:
+            # 复验在锁内: 同一份清单被两次提交时, 只有先拿到锁的那次能执行.
+            if plan.executed:
+                return TaskResult(success=False, error="该清单已经执行过, 请重新扫描后再确认")
             return await self._execute(payload, plan, library_root)
 
     async def _execute(self, payload: DeletePayload, plan: LibraryPlan, library_root: Path) -> TaskResult[DeleteResult]:
-        targets = [entry for entry in plan.entries if not _excluded(entry, payload.exclude, root=library_root)]
+        excluded_keys = _path_keys(payload.exclude, root=library_root)
+        targets = [
+            entry for entry in plan.entries if not _matches(entry.path, exact=excluded_keys, subtrees=excluded_keys)
+        ]
         excluded = len(plan.entries) - len(targets)
         tally = DeleteTally()
         removed_paths: list[Path] = []
@@ -124,21 +128,35 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
         """按路径删除已删目标的索引行; 目录目标按前缀. 不触碰 Metadata."""
         if not targets:
             return 0
+        keys = _path_keys(targets, root=None)
         removed = 0
         for media in await self._repo.list_media_files(library_id=library_id, limit=None):
             if media.id is None:
                 continue
-            if any(path_is_under(media.path, target) for target in targets):
+            if _matches(media.path, exact=keys, subtrees=keys):
                 await self._repo.delete_media_file(media.id)
                 removed += 1
         return removed
 
 
-def _excluded(entry: PlanEntry, exclude: Sequence[str], *, root: Path) -> bool:
-    """排除项按路径分量匹配, 相对路径按清单库根解释."""
-    for raw in exclude:
+def _path_keys(paths: Sequence[str | Path], *, root: Path | None) -> set[str]:
+    """把目标或排除项归约成一个集合, 供 ``_matches`` 按分量命中.
+
+    逐条目 × 逐目标的比较在万级规模下是数十分钟量级, 且跑在事件循环上 (DELETE 还持有同库锁).
+    相对路径按清单库根解释; 文件路径放进前缀集合也无害 — 文件路径下没有子孙.
+    """
+    keys: set[str] = set()
+    for raw in paths:
         candidate = Path(raw)
-        prefix = candidate if candidate.is_absolute() else root / candidate
-        if path_is_under(entry.path, prefix):
-            return True
-    return False
+        if root is not None and not candidate.is_absolute():
+            candidate = root / candidate
+        keys.add(path_key(candidate))
+    return keys
+
+
+def _matches(path: str | Path, *, exact: set[str], subtrees: set[str]) -> bool:
+    """路径是否命中集合: 与某项相等, 或落在某项之下 (逐级查父目录)."""
+    key = PurePath(path_key(path))
+    if os.fspath(key) in exact:
+        return True
+    return any(os.fspath(parent) in subtrees for parent in key.parents)

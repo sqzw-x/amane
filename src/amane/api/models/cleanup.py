@@ -10,7 +10,7 @@ from ...library import PlanEntryKind, PlanReason
 
 
 class PlanNodeResponse(BaseModel):
-    """树节点. ``path`` 库内为相对路径, 库外为绝对路径; 子节点按需再取."""
+    """树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取."""
 
     path: str
     name: str
@@ -33,7 +33,7 @@ class PlanNodePage(BaseModel):
     """一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页."""
 
     path: str
-    """本页展开的目录: 库内相对路径, 库外为绝对路径, 空串为库根."""
+    """本页展开的目录: 库内相对路径, 库外为绝对路径, 一律 `/` 分隔, 空串为库根."""
     items: list[PlanNodeResponse]
     total: int
     """该目录的子节点总数, 与 ``items`` 的长度无关."""
@@ -53,6 +53,8 @@ class PlanSummaryResponse(BaseModel):
     scope_path: str | None = None
     """非空表示本次清单只覆盖该子目录, 面板据此标注范围."""
     truncated: bool = False
+    dropped: int = 0
+    """触顶后未纳入清单的候选数; 截断时面板据此提示还有多少没看到."""
     skipped_dirs: int = 0
     skipped_files: int = 0
     scan_running: bool = False
@@ -68,6 +70,8 @@ class TrashSummaryResponse(BaseModel):
     plan_id: str | None = None
     path: str | None = None
     """要展开的目录 (清单库根下的回收站), 交给分页接口."""
+    truncated: bool = False
+    dropped: int = 0
 
 
 class SelectionRequest(BaseModel):
@@ -86,3 +90,5 @@ class SelectionSummaryResponse(BaseModel):
     plan_id: str | None = None
     notices: list[str] = []
     """未能纳入的部分与原因 (例如作品目录不满足整目录删除的条件)."""
+    truncated: bool = False
+    dropped: int = 0

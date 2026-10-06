@@ -51,6 +51,9 @@ export const getConfigSchema = <ThrowOnError extends boolean = false>(options?: 
  * Get Cleanup Plan
  *
  * 面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取.
+ *
+ * 遍历设置与当前库配置不一致的清单按不存在处理: 面板只渲染代表整库的规则来源清单,
+ * 否则一次不递归或带自定义匹配模式的扫描会被当成整库可以清理.
  */
 export const getCleanupPlan = <ThrowOnError extends boolean = false>(options: Options<GetCleanupPlanData, ThrowOnError>): RequestResult<GetCleanupPlanResponses, GetCleanupPlanErrors, ThrowOnError> => (options.client ?? client).get<GetCleanupPlanResponses, GetCleanupPlanErrors, ThrowOnError>({ url: '/api/libraries/{library_id}/cleanup/plan', ...options });
 

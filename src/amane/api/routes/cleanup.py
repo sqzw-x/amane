@@ -42,12 +42,15 @@ MAX_NODE_PAGE_SIZE = 1000
 
 
 def _relative(plan: LibraryPlan, path: Path) -> str:
-    """库内给相对路径 (库根为空串), 库外给绝对路径."""
+    """库内给相对路径 (库根为空串), 库外给绝对路径.
+
+    一律用 ``as_posix``: 面板按 `/` 做分量匹配, 而 Windows 的原生分隔符是反斜杠.
+    """
     if path == plan.root:
         return ""
     if not path.is_relative_to(plan.root):
-        return str(path)
-    return str(path.relative_to(plan.root))
+        return path.as_posix()
+    return path.relative_to(plan.root).as_posix()
 
 
 def _to_response(plan: LibraryPlan, node: PlanNode, *, children: bool) -> PlanNodeResponse:
@@ -67,8 +70,9 @@ def _to_response(plan: LibraryPlan, node: PlanNode, *, children: bool) -> PlanNo
 
 
 def _plan_by_id(store: PlanStore, library_id: int, plan_id: str | None) -> LibraryPlan:
+    """按标识取清单. 已执行的清单在面板侧等同于不存在 — 它按设计无法再执行."""
     plan = store.get(plan_id) if plan_id else store.latest(library_id, PlanSource.RULES)
-    if plan is None or plan.library_id != library_id:
+    if plan is None or plan.executed or plan.library_id != library_id:
         raise HTTPException(status_code=404, detail="No cleanup plan")
     return plan
 
@@ -101,10 +105,17 @@ async def _scan_state(repo: Repository, library_id: int) -> tuple[bool, str | No
 
 @router.get("/{library_id}/cleanup/plan")
 async def get_cleanup_plan(library_id: int, repo: RepoDep, runtime: RuntimeDep) -> PlanSummaryResponse:
-    """面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取."""
+    """面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取.
+
+    遍历设置与当前库配置不一致的清单按不存在处理: 面板只渲染代表整库的规则来源清单,
+    否则一次不递归或带自定义匹配模式的扫描会被当成整库可以清理.
+    """
     running, last_error = await _scan_state(repo, library_id)
+    library = await repo.get_library(library_id)
+    if library is None:
+        raise HTTPException(status_code=404, detail="Library not found")
     plan = runtime.plan_store.latest(library_id, PlanSource.RULES)
-    if plan is None:
+    if plan is None or plan.recursive != library.recursive or plan.patterns != tuple(library.patterns):
         return PlanSummaryResponse(exists=False, scan_running=running, last_scan_error=last_error)
 
     return PlanSummaryResponse(
@@ -113,6 +124,7 @@ async def get_cleanup_plan(library_id: int, repo: RepoDep, runtime: RuntimeDep) 
         created_at=plan.created_at,
         scope_path=_relative(plan, plan.scope_path) if plan.scope_path is not None else None,
         truncated=plan.truncated,
+        dropped=plan.dropped,
         skipped_dirs=plan.skipped_dirs,
         skipped_files=plan.skipped_files,
         scan_running=running,
@@ -160,7 +172,13 @@ async def get_cleanup_trash(library_id: int, repo: RepoDep, runtime: RuntimeDep)
         return TrashSummaryResponse(exists=False)
     runtime.plan_store.put(plan)
 
-    return TrashSummaryResponse(exists=True, plan_id=plan.plan_id, path=_relative(plan, trash_dir))
+    return TrashSummaryResponse(
+        exists=True,
+        plan_id=plan.plan_id,
+        path=_relative(plan, trash_dir),
+        truncated=plan.truncated,
+        dropped=plan.dropped,
+    )
 
 
 @router.post("/{library_id}/cleanup/selection")
@@ -196,4 +214,10 @@ async def expand_cleanup_selection(
     if not outcome.plan.entries:
         return SelectionSummaryResponse(exists=False, notices=outcome.notices)
     runtime.plan_store.put(outcome.plan)
-    return SelectionSummaryResponse(exists=True, plan_id=outcome.plan.plan_id, notices=outcome.notices)
+    return SelectionSummaryResponse(
+        exists=True,
+        plan_id=outcome.plan.plan_id,
+        notices=outcome.notices,
+        truncated=outcome.plan.truncated,
+        dropped=outcome.plan.dropped,
+    )

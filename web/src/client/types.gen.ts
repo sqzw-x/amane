@@ -2643,7 +2643,7 @@ export type PlanNodePage = {
 /**
  * PlanNodeResponse
  *
- * 树节点. ``path`` 库内为相对路径, 库外为绝对路径; 子节点按需再取.
+ * 树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取.
  */
 export type PlanNodeResponse = {
     /**
@@ -2717,6 +2717,10 @@ export type PlanSummaryResponse = {
      * Truncated
      */
     truncated?: boolean;
+    /**
+     * Dropped
+     */
+    dropped?: number;
     /**
      * Skipped Dirs
      */
@@ -3597,6 +3601,14 @@ export type SelectionSummaryResponse = {
      * Notices
      */
     notices?: Array<string>;
+    /**
+     * Truncated
+     */
+    truncated?: boolean;
+    /**
+     * Dropped
+     */
+    dropped?: number;
 };
 
 /**
@@ -4167,6 +4179,14 @@ export type TrashSummaryResponse = {
      * Path
      */
     path?: string | null;
+    /**
+     * Truncated
+     */
+    truncated?: boolean;
+    /**
+     * Dropped
+     */
+    dropped?: number;
 };
 
 /**

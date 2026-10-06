@@ -5472,7 +5472,7 @@ export const PlanNodeResponseSchema = {
         'entry_bytes'
     ],
     title: 'PlanNodeResponse',
-    description: '树节点. ``path`` 库内为相对路径, 库外为绝对路径; 子节点按需再取.'
+    description: '树节点. ``path`` 库内为相对路径, 库外为绝对路径, 一律 `/` 分隔; 子节点按需再取.'
 } as const;
 
 export const PlanReasonSchema = {
@@ -5530,6 +5530,11 @@ export const PlanSummaryResponseSchema = {
             type: 'boolean',
             title: 'Truncated',
             default: false
+        },
+        dropped: {
+            type: 'integer',
+            title: 'Dropped',
+            default: 0
         },
         skipped_dirs: {
             type: 'integer',
@@ -7082,6 +7087,16 @@ export const SelectionSummaryResponseSchema = {
             type: 'array',
             title: 'Notices',
             default: []
+        },
+        truncated: {
+            type: 'boolean',
+            title: 'Truncated',
+            default: false
+        },
+        dropped: {
+            type: 'integer',
+            title: 'Dropped',
+            default: 0
         }
     },
     type: 'object',
@@ -8174,6 +8189,16 @@ export const TrashSummaryResponseSchema = {
                 }
             ],
             title: 'Path'
+        },
+        truncated: {
+            type: 'boolean',
+            title: 'Truncated',
+            default: false
+        },
+        dropped: {
+            type: 'integer',
+            title: 'Dropped',
+            default: 0
         }
     },
     type: 'object',
