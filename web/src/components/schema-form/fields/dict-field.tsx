@@ -11,7 +11,8 @@ import {
 } from "@mantine/core";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import type { AnyFieldApi } from "@tanstack/react-form";
-import { useRef, useState } from "react";
+import { useRef, useState, type FocusEvent } from "react";
+import { isEmptyDictValue } from "../encode";
 import { useDictKeyI18n } from "../hooks";
 import type { DictFieldProps, JSONSchemaObject } from "../schema";
 import {
@@ -23,7 +24,7 @@ import {
   isVisibleForKey,
 } from "../schema";
 import classes from "./dict-field.module.css";
-import { DictEntryScope, dictEntryForm } from "./dict-entry-form";
+import { asDict, DictEntryScope, dictEntryForm } from "./dict-entry-form";
 import { FieldRouter } from "./field-router";
 
 export function DictField({
@@ -57,10 +58,32 @@ export function DictField({
   return (
     <form.Field name={name}>
       {(field: AnyFieldApi) => {
-        const dictValue = (field.state.value as Record<string, unknown>) || {};
+        const dictValue = asDict(field.state.value);
         const allKeys = Object.keys(dictValue);
         const entries = allKeys.map((k) => [k, dictValue[k]] as const);
         const resolvedTab = allKeys.includes(activeTab) ? activeTab : (allKeys[0] ?? "");
+
+        /**
+         * 条目失焦且值仍为空时删除该 key.
+         *
+         * 空值条目在编码阶段已按缺席处理 (`encodeEmptyValue`); 输入过程中的空值只是中间态,
+         * 就地删除会连同控件卸载, 用户无法清空后重新输入. `x-frozen-keys` 的空值必须保留.
+         */
+        const pruneEmptyEntry = (key: string) => {
+          if (!canModifyKeys) return;
+          const latest = asDict(field.state.value);
+          if (!(key in latest) || !isEmptyDictValue(latest[key])) return;
+          const rest = { ...latest };
+          delete rest[key];
+          field.handleChange(rest);
+        };
+
+        /** 焦点移出条目才算失焦; 在条目内部控件之间移动不删除. */
+        const handleEntryBlur = (key: string, event: FocusEvent<HTMLDivElement>) => {
+          const next = event.relatedTarget;
+          if (next instanceof Node && event.currentTarget.contains(next)) return;
+          pruneEmptyEntry(key);
+        };
 
         const handleAdd = () => {
           if (!newKey.trim() || newKey in dictValue) return;
@@ -173,13 +196,11 @@ export function DictField({
                         <Text size="sm" fw={500} title={getKeyLabel(key)}>
                           {getKeyLabel(key)}
                         </Text>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <DictEntryScope
-                            parentField={field}
-                            entryKey={key}
-                            bindEntry
-                            pruneEmpty={canModifyKeys}
-                          >
+                        <div
+                          style={{ flex: 1, minWidth: 0 }}
+                          onBlur={(event) => handleEntryBlur(key, event)}
+                        >
+                          <DictEntryScope parentField={field} entryKey={key} bindEntry>
                             <FieldRouter
                               name={`${name}:${key}`}
                               i18nPath={`${i18nPath}.$`}
@@ -261,12 +282,7 @@ export function DictField({
                       </Group>
 
                       {isObject(valueSchema) && valueSchema.properties ? (
-                        <DictEntryScope
-                          parentField={field}
-                          entryKey={key}
-                          bindEntry={false}
-                          pruneEmpty={canModifyKeys}
-                        >
+                        <DictEntryScope parentField={field} entryKey={key} bindEntry={false}>
                           <Stack gap={0} pl="xs">
                             {Object.entries(valueSchema.properties).map(
                               ([fieldName, fieldSchema]) =>
@@ -285,13 +301,8 @@ export function DictField({
                           </Stack>
                         </DictEntryScope>
                       ) : (
-                        <DictEntryScope
-                          parentField={field}
-                          entryKey={key}
-                          bindEntry
-                          pruneEmpty={canModifyKeys}
-                        >
-                          <Stack gap={0} pl="xs">
+                        <DictEntryScope parentField={field} entryKey={key} bindEntry>
+                          <Stack gap={0} pl="xs" onBlur={(event) => handleEntryBlur(key, event)}>
                             <FieldRouter
                               name={`${name}:${key}`}
                               i18nPath={`${i18nPath}.$`}

@@ -1,7 +1,6 @@
 import type { AnyFieldApi } from "@tanstack/react-form";
 import { createContext, useContext, useId, type ReactNode } from "react";
 import { isRecord } from "@/lib/utils";
-import { isEmptyDictValue } from "../encode";
 import type { SchemaFormInstance } from "../schema";
 
 /**
@@ -18,7 +17,6 @@ const DictEntryContext = createContext<{
   parentField: AnyFieldApi;
   entryKey: string;
   bindEntry: boolean;
-  pruneEmpty: boolean;
   scopeId: string;
 } | null>(null);
 
@@ -26,19 +24,16 @@ export function DictEntryScope({
   parentField,
   entryKey,
   bindEntry,
-  pruneEmpty = false,
   children,
 }: {
   parentField: AnyFieldApi;
   entryKey: string;
   bindEntry: boolean;
-  /** 可增减 key 时, 条目值被清空则删除该 key. `x-frozen-keys` 必须为 false. */
-  pruneEmpty?: boolean;
   children: ReactNode;
 }) {
   const scopeId = useId();
   return (
-    <DictEntryContext.Provider value={{ parentField, entryKey, bindEntry, pruneEmpty, scopeId }}>
+    <DictEntryContext.Provider value={{ parentField, entryKey, bindEntry, scopeId }}>
       {children}
     </DictEntryContext.Provider>
   );
@@ -51,7 +46,8 @@ export function useFieldDomId(name: string): string {
   return `${ctx.scopeId}${name}`;
 }
 
-function asDict(value: unknown): Record<string, unknown> {
+/** dict 字段值的对象视图; 非对象一律按空 dict 处理, 与 `DictField` 的条目列表同源. */
+export function asDict(value: unknown): Record<string, unknown> {
   return isRecord(value) && !Array.isArray(value) ? value : {};
 }
 
@@ -90,23 +86,18 @@ function DictEntryField({
   if (ctx == null) {
     throw new Error("DictEntryField requires DictEntryScope");
   }
-  const { parentField, entryKey, bindEntry, pruneEmpty } = ctx;
+  const { parentField, entryKey, bindEntry } = ctx;
   const dict = asDict(parentField.state.value);
   const parts = bindEntry ? [] : name.split(".").filter((part) => part.length > 0);
   const value = getAt(dict[entryKey], parts);
 
   // 只实现叶子控件用到的 value / handleChange / meta.errors; 完整 AnyFieldApi 过宽.
+  // 空值条目的删除由 `DictField` 在条目失焦时执行 — 输入过程中的空值只是中间态,
+  // 在这里删除会连同控件卸载, 用户无法就地重新输入.
   const field = {
     state: { value, meta: { errors: [] } },
     handleChange: (next: unknown) => {
       const latest = asDict(parentField.state.value);
-      // 仅可增减 key 的 dict 在值被清空时删除该 key; frozen key 的空列表必须保留.
-      if (pruneEmpty && bindEntry && isEmptyDictValue(next)) {
-        const rest = { ...latest };
-        delete rest[entryKey];
-        parentField.handleChange(rest);
-        return;
-      }
       parentField.handleChange({
         ...latest,
         [entryKey]: setAt(latest[entryKey], parts, next),
