@@ -171,6 +171,23 @@ class OrganizeResult(BaseModel):
     pruned_dirs: int = 0
 
 
+# --- SCAN INVALID ---
+
+
+class ScanInvalidPayload(LibraryScanBase):
+    """只读遍历 path 范围内的无效文件与已空目录, 产出清单. path 缺省为库根."""
+
+
+class ScanInvalidResult(BaseModel):
+    plan_id: str
+    entries: int
+    dirs: int
+    scope_path: str | None = None
+    truncated: bool = False
+    skipped_dirs: int = 0
+    skipped_files: int = 0
+
+
 # --- TRASH ---
 
 
@@ -181,6 +198,36 @@ class TrashPayload(LibraryScanBase):
 class TrashResult(BaseModel):
     trashed: int
     failed: int = 0
+
+
+# --- DELETE ---
+
+
+class DeletePayload(BaseModel):
+    """按清单标识删除; 执行集合 = 清单条目减去 exclude, 不做运行时推导."""
+
+    library_id: int = Field(description="清单所属 Library ID")
+    plan_id: str = Field(description="后端生成的清单标识; 不存在或已过期则失败")
+    exclude: list[str] = Field(
+        default_factory=list,
+        description="排除项: 库内为清单库根下的相对路径, 库外为绝对路径; 按路径分量匹配",
+    )
+    prune_empty_dirs: bool = Field(default=True, description="删除本次腾空的目录 (库根与 .amane_trash 除外)")
+
+
+class DeleteResult(BaseModel):
+    deleted: int
+    changed: int
+    failed: int
+    freed_bytes: int = 0
+    """按 inode 归并后的释放空间; 硬链接名字不齐时不计入."""
+    hardlink_items: int = 0
+    """已删除但不释放空间的硬链接项数."""
+    pruned_dirs: int = 0
+    excluded: int = 0
+    """被 exclude 排除的清单条目数."""
+    indexed: int = 0
+    """随之删除的 MediaFile 行数."""
 
 
 # --- CLEANUP ---

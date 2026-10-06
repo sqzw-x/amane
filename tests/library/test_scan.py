@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from amane.library import LibraryFileKind, LibraryScan
+from amane.library import LibraryFileKind, LibraryScan, UnwantedKind
 
 
 class TestClassify:
@@ -60,3 +60,31 @@ class TestClassify:
     def test_trash_dir_omitted(self):
         scan = LibraryScan()
         assert scan.classify(Path("/lib/.amane_trash/video.mp4")) is None
+
+
+class TestUnwantedKind:
+    """无效文件的命中规则; 预告片是预期文件, 不是无效文件."""
+
+    def test_blacklist_and_size(self, tmp_path: Path):
+        small = tmp_path / "small.mp4"
+        small.write_bytes(b"x")
+        large = tmp_path / "film.mp4"
+        large.write_bytes(b"x" * 100)
+        scan = LibraryScan(blacklist_patterns=["ad"], min_file_size=50)
+
+        assert scan.unwanted_kind(tmp_path / "ad.mkv") is UnwantedKind.BLACKLIST
+        assert scan.unwanted_kind(small) is UnwantedKind.UNDERSIZED
+        assert scan.unwanted_kind(large) is None
+        assert scan.unwanted_kind(tmp_path / "note.nfo") is None
+
+    def test_trailer_excluded_before_size(self, tmp_path: Path):
+        trailer = tmp_path / "trailer.mp4"
+        trailer.write_bytes(b"x")
+        scan = LibraryScan(trailer_pattern="(?i)trailer", min_file_size=50)
+
+        assert scan.unwanted_kind(trailer) is None
+
+    def test_trash_dir_omitted(self):
+        scan = LibraryScan(blacklist_patterns=["ad"])
+
+        assert scan.unwanted_kind(Path("/lib/.amane_trash/ad.mkv")) is None

@@ -4562,6 +4562,12 @@
                     "$ref": "#/components/schemas/TrashSubmission"
                   },
                   {
+                    "$ref": "#/components/schemas/ScanInvalidSubmission"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DeleteSubmission"
+                  },
+                  {
                     "$ref": "#/components/schemas/ScrapeSubmission"
                   },
                   {
@@ -7315,6 +7321,46 @@
         ],
         "title": "CropPosterRequest",
         "description": "从封面图按像素框裁切海报 (相对 thumb 当前本地文件像素; 含就地超分后尺寸)."
+      },
+      "DeleteSubmission": {
+        "properties": {
+          "library_id": {
+            "type": "integer",
+            "title": "Library Id",
+            "description": "清单所属 Library ID"
+          },
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id",
+            "description": "后端生成的清单标识; 不存在或已过期则失败"
+          },
+          "exclude": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exclude",
+            "description": "排除项: 库内为清单库根下的相对路径, 库外为绝对路径; 按路径分量匹配"
+          },
+          "prune_empty_dirs": {
+            "type": "boolean",
+            "title": "Prune Empty Dirs",
+            "description": "删除本次腾空的目录 (库根与 .amane_trash 除外)",
+            "default": true
+          },
+          "type": {
+            "type": "string",
+            "const": "delete",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "library_id",
+          "plan_id",
+          "type"
+        ],
+        "title": "DeleteSubmission"
       },
       "DesktopResponse": {
         "properties": {
@@ -11966,6 +12012,62 @@
         "title": "SavedQueryUpdateRequest",
         "description": "仅名称 / 描述 / SQL 三项, 未知键被忽略; 显式 null 一律 422, 省略键才是「不更新」.\n\n字段不从 DB 模型派生: ``create_partial_model`` 会丢弃 ``StringConstraints``;\n约束别名与创建请求共用."
       },
+      "ScanInvalidSubmission": {
+        "properties": {
+          "library_id": {
+            "type": "integer",
+            "title": "Library Id",
+            "description": "所属 Library ID; 扫描/整理在该媒体库下进行",
+            "x-widget": "LibraryPicker"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).",
+            "default": "",
+            "x-path-type": "directory",
+            "x-widget": "PathPicker"
+          },
+          "recursive": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recursive",
+            "description": "覆盖 Library 的 recursive; None 沿用库设置"
+          },
+          "patterns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patterns",
+            "description": "覆盖 Library 的 patterns; None 沿用库设置"
+          },
+          "type": {
+            "type": "string",
+            "const": "scan_invalid",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "library_id",
+          "type"
+        ],
+        "title": "ScanInvalidSubmission"
+      },
       "ScanMode": {
         "type": "string",
         "enum": [
@@ -13302,7 +13404,9 @@
           "upscale",
           "r18_import",
           "actor_scrape",
-          "rescrape"
+          "rescrape",
+          "scan_invalid",
+          "delete"
         ],
         "title": "TaskType"
       },

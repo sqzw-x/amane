@@ -6,10 +6,12 @@ from ...db.models import TaskType
 from ...handlers import (
     ActorScrapePayload,
     CleanupPayload,
+    DeletePayload,
     OrganizePayload,
     R18ImportPayload,
     RefreshPayload,
     RescrapePayload,
+    ScanInvalidPayload,
     ScrapePayload,
     TrashPayload,
     UpscalePayload,
@@ -17,10 +19,12 @@ from ...handlers import (
 from ..models import (
     ActorScrapeSubmission,
     CleanupSubmission,
+    DeleteSubmission,
     OrganizeSubmission,
     R18ImportSubmission,
     RefreshSubmission,
     RescrapeSubmission,
+    ScanInvalidSubmission,
     ScrapeSubmission,
     TaskSubmission,
     TrashSubmission,
@@ -33,6 +37,8 @@ if TYPE_CHECKING:
 ResolvedPayload = (
     RefreshPayload
     | ScrapePayload
+    | ScanInvalidPayload
+    | DeletePayload
     | OrganizePayload
     | TrashPayload
     | CleanupPayload
@@ -54,6 +60,11 @@ async def resolve_submission(req: TaskSubmission, repo: Repository) -> tuple[Tas
         case TrashSubmission():
             await req.resolve(repo)
             return TaskType.TRASH, req
+        case DeleteSubmission():
+            return TaskType.DELETE, req
+        case ScanInvalidSubmission():
+            await req.resolve(repo)
+            return TaskType.SCAN_INVALID, req
         case ScrapeSubmission():
             return TaskType.SCRAPE, await req.resolve(repo)
         case CleanupSubmission():

@@ -9,7 +9,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import { DiscriminatedSchemaForm } from "@/components/schema-form/discriminated-schema-form";
 import { extractErrorMessage } from "@/lib/api-error";
-import { type TaskPayload, SUBMITTABLE_TASK_TYPES } from "@/lib/exhaustive-maps";
+import { type TaskPayload, MANUAL_TASK_TYPES } from "@/lib/exhaustive-maps";
 
 interface TaskSubmitModalProps {
   opened: boolean;
@@ -38,7 +38,7 @@ export function TaskSubmitModal({ opened, onClose }: TaskSubmitModalProps) {
     <Modal opened={opened} onClose={onClose} title={t("actions.submit")} size="lg">
       {opened && (
         <DiscriminatedSchemaForm
-          types={SUBMITTABLE_TASK_TYPES}
+          types={MANUAL_TASK_TYPES}
           defaultType="scrape"
           active={opened}
           schemaQuery={getTaskSchemaOptions()}

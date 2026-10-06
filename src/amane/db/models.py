@@ -40,6 +40,8 @@ class TaskType(StrEnum):
     R18_IMPORT = "r18_import"
     ACTOR_SCRAPE = "actor_scrape"
     RESCRAPE = "rescrape"
+    SCAN_INVALID = "scan_invalid"
+    DELETE = "delete"
 
 
 class RoutineType(StrEnum):

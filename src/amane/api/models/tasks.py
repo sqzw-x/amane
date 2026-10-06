@@ -9,10 +9,12 @@ from ...db import Repository, TaskStatus, TaskType
 from ...handlers import (
     CacheKind,
     CleanupPayload,
+    DeletePayload,
     OrganizePayload,
     R18ImportPayload,
     RefreshPayload,
     RescrapePayload,
+    ScanInvalidPayload,
     ScrapePayload,
     TrashPayload,
     UpscalePayload,
@@ -169,6 +171,14 @@ class TrashSubmission(TrashPayload):
     type: Literal["trash"]
 
 
+class ScanInvalidSubmission(ScanInvalidPayload):
+    type: Literal["scan_invalid"]
+
+
+class DeleteSubmission(DeletePayload):
+    type: Literal["delete"]
+
+
 class ScrapeSubmission(ScrapeRequest):
     type: Literal["scrape"]
 
@@ -202,6 +212,8 @@ TaskSubmission = Annotated[
     RefreshSubmission
     | OrganizeSubmission
     | TrashSubmission
+    | ScanInvalidSubmission
+    | DeleteSubmission
     | ScrapeSubmission
     | CleanupSubmission
     | UpscaleSubmission

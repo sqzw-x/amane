@@ -37,7 +37,9 @@
     "refresh": "Refresh",
     "r18_import": "R18 Import",
     "actor_scrape": "Actor Scrape",
-    "rescrape": "Rescrape"
+    "rescrape": "Rescrape",
+    "scan_invalid": "Scan unwanted",
+    "delete": "Delete"
   },
   "detail": {
     "status": "Status",
@@ -150,7 +152,9 @@
       "refresh": "Refresh",
       "r18_import": "R18 Import",
       "actor_scrape": "Actor Scrape",
-      "rescrape": "Rescrape"
+      "rescrape": "Rescrape",
+      "scan_invalid": "Scan unwanted",
+      "delete": "Delete"
     },
     "cleanup": {
       "remove_missing_files": {
@@ -352,6 +356,42 @@
             "actor": "Actors"
           }
         }
+      }
+    },
+    "scan_invalid": {
+      "library_id": {
+        "label": "Library",
+        "description": ""
+      },
+      "path": {
+        "label": "Path",
+        "description": "Scan only a subdirectory of the library"
+      },
+      "recursive": {
+        "label": "Recursive",
+        "description": "Overrides library setting"
+      },
+      "patterns": {
+        "label": "Patterns",
+        "description": "Overrides library setting"
+      }
+    },
+    "delete": {
+      "library_id": {
+        "label": "Library",
+        "description": ""
+      },
+      "plan_id": {
+        "label": "Plan ID",
+        "description": "Produced by the panel; a manual value matches no plan"
+      },
+      "exclude": {
+        "label": "Excluded",
+        "description": "Library-relative prefixes, or absolute paths outside the library"
+      },
+      "prune_empty_dirs": {
+        "label": "Prune emptied directories",
+        "description": "Library root and .amane_trash excluded"
       }
     }
   },

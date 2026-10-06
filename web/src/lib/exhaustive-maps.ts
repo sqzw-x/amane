@@ -40,6 +40,11 @@ export type TaskPayload = SubmitTaskData["body"];
 
 export type SubmittableTaskType = TaskPayload["type"];
 
+/** 面板专用类型: 只能由清理面板连同清单标识提交, 不出现在手动提交入口. */
+export type PanelOnlyTaskType = "delete";
+
+export type ManualTaskType = Exclude<SubmittableTaskType, PanelOnlyTaskType>;
+
 export type PayloadFor<K extends SubmittableTaskType> = Extract<TaskPayload, { type: K }>;
 
 /** 与 `LoggingConfig.level` / WS 日志事件同源. */
@@ -87,6 +92,8 @@ export const TASK_TYPES = exhaustiveTuple<TaskType>()(
   "r18_import",
   "actor_scrape",
   "rescrape",
+  "scan_invalid",
+  "delete",
 );
 
 export const DOWNLOADABLE_RESOURCES = exhaustiveTuple<DownloadableResource>()(
@@ -162,11 +169,12 @@ export const ACTOR_SORT_FIELDS = exhaustiveTuple<ActorSortField>()(
   "cup",
 );
 
-export const SUBMITTABLE_TASK_TYPES = exhaustiveTuple<SubmittableTaskType>()(
+export const MANUAL_TASK_TYPES = exhaustiveTuple<ManualTaskType>()(
   "scrape",
   "refresh",
   "organize",
   "trash",
+  "scan_invalid",
   "cleanup",
   "upscale",
   "r18_import",

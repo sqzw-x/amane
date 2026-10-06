@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from ..api.models.tasks import (
     ActorScrapeSubmission,
@@ -20,6 +21,7 @@ from ..api.models.tasks import (
     RefreshSubmission,
     RescrapeSubmission,
     RoutineSubmission,
+    ScanInvalidSubmission,
     ScrapeSubmission,
     TaskSubmission,
     TrashSubmission,
@@ -30,6 +32,7 @@ TaskSubmissionType = Literal[
     "refresh",
     "organize",
     "trash",
+    "scan_invalid",
     "scrape",
     "cleanup",
     "upscale",
@@ -43,6 +46,7 @@ _TASK_MEMBERS: dict[str, type[BaseModel]] = {
     "refresh": RefreshSubmission,
     "organize": OrganizeSubmission,
     "trash": TrashSubmission,
+    "scan_invalid": ScanInvalidSubmission,
     "scrape": ScrapeSubmission,
     "cleanup": CleanupSubmission,
     "upscale": UpscaleSubmission,
@@ -70,7 +74,14 @@ class SubmissionSpec[T]:
         return TypeAdapter(self.members[submission_type]).json_schema()
 
     def validate(self, data: dict[str, Any]) -> T:
-        """校验入参, 保留联合体类型; 失败时抛出 ``ValidationError``."""
+        """校验入参, 保留联合体类型; 类型不在成员表时拒绝.
+
+        `members` 是准入真值: 联合体服务全部提交入口, 单个入口可提交的子集由成员表决定,
+        因此不能因为联合体里有同名成员就放行.
+        """
+        declared = data.get("type")
+        if not isinstance(declared, str) or declared not in self.members:
+            raise _not_admitted(declared, self.members)
         return self.union.validate_python(data)
 
     def error(self, data: dict[str, Any], exc: ValidationError) -> dict[str, Any]:
@@ -85,6 +96,24 @@ class SubmissionSpec[T]:
         if isinstance(declared, str) and declared in self.members:
             out["schema"] = self.schema(declared)
         return out
+
+
+def _not_admitted(declared: object, members: dict[str, type[BaseModel]]) -> ValidationError:
+    """构造与联合体校验同形的错误: 调用方按 ``loc`` / ``msg`` 收集, 并附带可用类型."""
+    return ValidationError.from_exception_data(
+        title="SubmissionSpec",
+        line_errors=[
+            InitErrorDetails(
+                type=PydanticCustomError(
+                    "not_admitted",
+                    "该入口不接受任务类型 {declared}; 可用类型: {allowed}",
+                    {"declared": declared, "allowed": ", ".join(sorted(members))},
+                ),
+                loc=("type",),
+                input=declared,
+            )
+        ],
+    )
 
 
 def _error_details(exc: ValidationError) -> list[str]:

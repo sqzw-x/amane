@@ -21,15 +21,18 @@ from ..enums import BrowserBackendName, BrowserMode, SiteName
 from ..handlers import (
     ActorScrapeHandler,
     CleanupHandler,
+    DeleteHandler,
     LibraryTaskLocks,
     OrganizeHandler,
     R18ImportHandler,
     RefreshHandler,
     RescrapeHandler,
+    ScanInvalidHandler,
     ScrapeHandler,
     TrashHandler,
     UpscaleHandler,
 )
+from ..library import PlanStore
 from ..llm import TranslationCache, build_translator
 from ..media.watermarks import user_watermark_dir
 from ..net.browser import BrowserPool
@@ -217,6 +220,7 @@ class AppRuntime:
     playback_factory: PlaybackFactory | None = None
     playback_state: PlaybackState = field(default_factory=PlaybackState)
     library_locks: LibraryTaskLocks = field(default_factory=LibraryTaskLocks)
+    plan_store: PlanStore = field(default_factory=PlanStore)
     browser: BrowserPool | None = None
     r18_handle: R18Handle | None = None
 
@@ -291,6 +295,7 @@ class AppRuntime:
                 self.config.cold.data_dir,
                 self.plugin_manager,
                 library_locks=self.library_locks,
+                plan_store=self.plan_store,
             ),
             concurrency=hot.worker.concurrency,
             poll_interval=hot.worker.poll_interval,
@@ -494,6 +499,7 @@ def build_handlers(
     state_dir: Path | None = None,
     plugin_manager: PluginManager | None = None,
     library_locks: LibraryTaskLocks | None = None,
+    plan_store: PlanStore | None = None,
 ) -> dict[TaskType, TaskHandler[Any, Any]]:
     # 未启用/缺密钥时 translator 为 None, ScrapeHandler 跳过翻译.
     # 经 _rebuild() 热重载; 代理沿用 network.proxy.
@@ -512,6 +518,8 @@ def build_handlers(
     )
     if library_locks is None:
         library_locks = LibraryTaskLocks()
+    if plan_store is None:
+        plan_store = PlanStore()
     handlers: dict[TaskType, TaskHandler[Any, Any]] = {
         TaskType.REFRESH: RefreshHandler(repo, media_extensions=hot.watcher.media_extensions),
         TaskType.SCRAPE: ScrapeHandler(
@@ -534,6 +542,8 @@ def build_handlers(
             library_locks=library_locks,
         ),
         TaskType.TRASH: TrashHandler(repo, hot, library_locks=library_locks),
+        TaskType.SCAN_INVALID: ScanInvalidHandler(repo, hot, plan_store),
+        TaskType.DELETE: DeleteHandler(repo, plan_store, library_locks=library_locks),
         TaskType.CLEANUP: CleanupHandler(repo=repo, resource_store=resource_store),
         TaskType.UPSCALE: UpscaleHandler(resource_store, hot),
         TaskType.RESCRAPE: RescrapeHandler(repo),

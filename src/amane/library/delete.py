@@ -142,7 +142,7 @@ def ancestor_dirs(path: Path, *, library_root: Path) -> list[Path]:
     for parent in Path(path).parents:
         if not path_is_under(parent, library_root):
             break
-        if _same_path(parent, library_root) or _same_path(parent, trash_root):
+        if same_path(parent, library_root) or same_path(parent, trash_root):
             break
         out.append(parent)
     return out
@@ -160,7 +160,7 @@ def prune_empty_dirs(directories: Iterable[Path], *, library_root: Path) -> Prun
     trash_root = library_root / TRASH_DIRNAME
     candidates = sorted({Path(directory) for directory in directories}, key=_depth, reverse=True)
     for directory in candidates:
-        if _same_path(directory, library_root) or _same_path(directory, trash_root):
+        if same_path(directory, library_root) or same_path(directory, trash_root):
             continue
         if not path_is_under(directory, library_root):
             continue
@@ -232,17 +232,17 @@ def _crosses_boundary(st: os.stat_result, *, dev: int) -> bool:
 
 
 def _refuse_reason(target: Path, *, library_root: Path, outside_targets: Collection[Path]) -> str | None:
-    if _same_path(target, library_root):
+    if same_path(target, library_root):
         return f"refuse to delete library root: {target}"
-    if _same_path(target, library_root / TRASH_DIRNAME):
+    if same_path(target, library_root / TRASH_DIRNAME):
         return f"refuse to delete trash root: {target}"
     if path_is_under(target, library_root):
         return None
-    if any(_same_path(target, allowed) for allowed in outside_targets):
+    if any(same_path(target, allowed) for allowed in outside_targets):
         return None
     return f"outside library root: {target}"
 
 
-def _same_path(left: Path, right: Path) -> bool:
-    """``path_is_under`` 同时比较 NFC、大小写与字面归一, 双向包含即相等."""
+def same_path(left: Path, right: Path) -> bool:
+    """字面路径是否相等. ``path_is_under`` 已比较 NFC、大小写与归一, 双向包含即相等."""
     return path_is_under(left, right) and path_is_under(right, left)

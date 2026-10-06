@@ -831,6 +831,40 @@ export type CropPosterRequest = {
 };
 
 /**
+ * DeleteSubmission
+ */
+export type DeleteSubmission = {
+    /**
+     * Library Id
+     *
+     * 清单所属 Library ID
+     */
+    library_id: number;
+    /**
+     * Plan Id
+     *
+     * 后端生成的清单标识; 不存在或已过期则失败
+     */
+    plan_id: string;
+    /**
+     * Exclude
+     *
+     * 排除项: 库内为清单库根下的相对路径, 库外为绝对路径; 按路径分量匹配
+     */
+    exclude?: Array<string>;
+    /**
+     * Prune Empty Dirs
+     *
+     * 删除本次腾空的目录 (库根与 .amane_trash 除外)
+     */
+    prune_empty_dirs?: boolean;
+    /**
+     * Type
+     */
+    type: 'delete';
+};
+
+/**
  * DesktopResponse
  */
 export type DesktopResponse = {
@@ -3154,6 +3188,40 @@ export type SavedQueryUpdateRequest = {
 };
 
 /**
+ * ScanInvalidSubmission
+ */
+export type ScanInvalidSubmission = {
+    /**
+     * Library Id
+     *
+     * 所属 Library ID; 扫描/整理在该媒体库下进行
+     */
+    library_id: number;
+    /**
+     * Path
+     *
+     * 要扫描的目录路径 (覆盖 Library 路径, 必须为 Library 子目录).
+     */
+    path?: string;
+    /**
+     * Recursive
+     *
+     * 覆盖 Library 的 recursive; None 沿用库设置
+     */
+    recursive?: boolean | null;
+    /**
+     * Patterns
+     *
+     * 覆盖 Library 的 patterns; None 沿用库设置
+     */
+    patterns?: Array<string> | null;
+    /**
+     * Type
+     */
+    type: 'scan_invalid';
+};
+
+/**
  * ScanMode
  */
 export type ScanMode = 'add' | 'remove';
@@ -3804,7 +3872,7 @@ export type TaskStatus = 'queued' | 'running' | 'done' | 'failed';
 /**
  * TaskType
  */
-export type TaskType = 'scrape' | 'organize' | 'trash' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape';
+export type TaskType = 'scrape' | 'organize' | 'trash' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape' | 'scan_invalid' | 'delete';
 
 /**
  * TaskWorkerResponse
@@ -6773,7 +6841,7 @@ export type SubmitTaskData = {
     /**
      * Req
      */
-    body: RefreshSubmission | OrganizeSubmission | TrashSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission;
+    body: RefreshSubmission | OrganizeSubmission | TrashSubmission | ScanInvalidSubmission | DeleteSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission;
     path?: never;
     query?: never;
     url: '/api/tasks';
