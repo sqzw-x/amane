@@ -200,7 +200,6 @@
     "empty": "没有需要清理的条目",
     "expand": "展开",
     "willBeEmpty": "将变空",
-    "outside": "库外产物",
     "hardlink": "硬链接",
     "hardlinkHint": "删除不额外释放空间",
     "nodeCount": "{{count}} 项",

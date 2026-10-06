@@ -65,7 +65,6 @@ class PlanEntry:
     kind: PlanEntryKind
     reason: PlanReason
     size: int | None = None
-    outside: bool = False
     dev: int | None = None
     ino: int | None = None
     nlink: int | None = None
@@ -349,7 +348,6 @@ class PlanNode:
     name: str
     is_dir: bool
     is_symlink: bool
-    outside: bool
     reason: PlanReason | None
     size: int | None
     hardlink: bool
@@ -373,9 +371,6 @@ def build_plan_tree(plan: LibraryPlan) -> PlanNode:
                 counted.add(entry.path)
         else:
             counted.add(entry.path)
-        if entry.outside:
-            # 库外产物没有库内位置, 挂在根下由面板单独标注; 删除照样释放空间, 体积照算.
-            continue
         parent = entry.path.parent
         by_parent.setdefault(parent, []).append(entry)
         cursor = parent
@@ -386,9 +381,6 @@ def build_plan_tree(plan: LibraryPlan) -> PlanNode:
     def build(directory: Path) -> PlanNode:
         nodes = [_entry_node(entry, counted=counted) for entry in by_parent.get(directory, [])]
         nodes.extend(build(child_dir) for child_dir in sorted(subdirs.get(directory, ()), key=lambda p: p.name))
-        if directory == plan.root:
-            # 库外产物没有库内位置, 挂在根下由面板单独标注.
-            nodes.extend(_entry_node(entry, counted=counted) for entry in plan.entries if entry.outside)
         nodes.sort(key=lambda node: (not node.is_dir, node.name))
         coverage = plan.dirs.get(directory)
         return PlanNode(
@@ -396,7 +388,6 @@ def build_plan_tree(plan: LibraryPlan) -> PlanNode:
             name=directory.name,
             is_dir=True,
             is_symlink=False,
-            outside=False,
             reason=None,
             size=None,
             hardlink=False,
@@ -426,7 +417,6 @@ def _entry_node(entry: PlanEntry, *, counted: set[Path]) -> PlanNode:
         name=entry.path.name,
         is_dir=is_dir,
         is_symlink=entry.kind is PlanEntryKind.SYMLINK,
-        outside=entry.outside,
         reason=entry.reason,
         size=entry.size,
         hardlink=(entry.nlink or 1) > 1,

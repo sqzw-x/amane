@@ -2661,10 +2661,6 @@ export type PlanNodeResponse = {
      */
     size?: number | null;
     /**
-     * Outside
-     */
-    outside?: boolean;
-    /**
      * Hardlink
      */
     hardlink?: boolean;

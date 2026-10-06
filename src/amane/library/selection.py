@@ -2,7 +2,7 @@
 
 删除文件 = 媒体文件自身 + 按库路径模板反解出的刮削产物 + 同目录同名字幕;
 删除文件与作品文件夹 = 该作品文件夹下的全部内容, 只在该目录仅含这一条媒体索引且不是库根时提供.
-展开只收两类路径: 清单库根内的路径, 与逐条明列的库外产物 (配置链接模板时产物落在链接树).
+展开只收库根内的路径: 配置链接模板时产物落在库外的链接树, 那些不归本功能管.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def build_selection_plan(
     entries: list[PlanEntry] = []
     notices: list[str] = []
 
-    def add(path: Path) -> None:
+    def add(path: Path, *, indexed_file: bool = False) -> None:
         if len(entries) >= limit:
             return
         if any(same_path(path, entry.path) for entry in entries):
@@ -70,10 +70,16 @@ def build_selection_plan(
         if disk is None:
             notices.append(f"已不在磁盘上: {path}")
             return
-        entries.append(_entry(disk, root=root))
+        if not path_is_under(disk, root):
+            if indexed_file:
+                # 索引里的文件本该在库根内: 落在这里说明库路径与索引写法不一致 (旧库的符号链接别名).
+                notices.append(f"文件不在库根内, 请重新保存媒体库路径: {disk}")
+            # 模板产物落在库外链接树是正常的, 那些不归本功能管.
+            return
+        entries.append(_entry(disk))
 
     for item in items:
-        add(Path(item.path))
+        add(Path(item.path), indexed_file=True)
         _add_products(library, item, metas, add=add, notices=notices)
         if not include_work_dir:
             _add_subtitles(library, Path(item.path), add=add)
@@ -101,7 +107,7 @@ def build_selection_plan(
     return SelectionOutcome(plan=plan, notices=notices)
 
 
-def _entry(disk: Path, *, root: Path) -> PlanEntry:
+def _entry(disk: Path) -> PlanEntry:
     st = disk.lstat()
     if disk.is_symlink():
         kind = PlanEntryKind.SYMLINK
@@ -115,7 +121,6 @@ def _entry(disk: Path, *, root: Path) -> PlanEntry:
         kind=kind,
         reason=PlanReason.EXPLICIT,
         size=st.st_size if is_file else None,
-        outside=not path_is_under(disk, root),
         dev=st.st_dev if is_file else None,
         ino=st.st_ino if is_file else None,
         nlink=st.st_nlink if is_file else None,

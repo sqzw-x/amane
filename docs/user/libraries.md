@@ -182,6 +182,8 @@ NFO: {link_dir}/{video_name}.nfo
 - 本地创建 strm/软链接 + NFO/海报/字幕等
 - 媒体服务器 Emby/Jellyfin 添加本地媒体库即可
 
+库外这一份不归 Amane 清理: 在媒体库里删除视频只会删掉库内的文件, 库外链接树里的 strm 与 NFO / 图片会留在原处, 需要自己清理.
+
 `strm_content_template` 用于设置 STRM 文件的内容模板. 默认情况下, STRM 会写入原视频文件的绝对路径,
 某些场景需要使用网盘 / OpenList URL, 则可手动设置模板, 例如:
 

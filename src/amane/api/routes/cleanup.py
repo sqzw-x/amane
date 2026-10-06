@@ -57,7 +57,6 @@ def _to_response(plan: LibraryPlan, node: PlanNode, *, children: bool) -> PlanNo
         kind=PlanEntryKind.DIR if node.is_dir else (PlanEntryKind.SYMLINK if node.is_symlink else PlanEntryKind.FILE),
         reason=node.reason,
         size=node.size,
-        outside=node.outside,
         hardlink=node.hardlink,
         entry_count=node.entry_count,
         entry_bytes=node.entry_bytes,

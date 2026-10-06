@@ -74,7 +74,7 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
         total = len(targets)
         await self.report_progress(0, total, "delete")
         for i, entry in enumerate(targets, start=1):
-            outcome = await delete_target(entry.path, library_root=library_root, outside_targets=_outside_targets(plan))
+            outcome = await delete_target(entry.path, library_root=library_root)
             tally.record(outcome)
             if outcome.status != "failed":
                 removed_paths.append(entry.path)
@@ -134,18 +134,10 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
         return removed
 
 
-def _outside_targets(plan: LibraryPlan) -> tuple[Path, ...]:
-    return tuple(entry.path for entry in plan.entries if entry.outside)
-
-
 def _excluded(entry: PlanEntry, exclude: Sequence[str], *, root: Path) -> bool:
-    """排除项按路径分量匹配: 库内是清单库根下的相对路径, 库外是绝对路径等值."""
+    """排除项按路径分量匹配, 相对路径按清单库根解释."""
     for raw in exclude:
         candidate = Path(raw)
-        if entry.outside:
-            if same_path(entry.path, candidate):
-                return True
-            continue
         prefix = candidate if candidate.is_absolute() else root / candidate
         if path_is_under(entry.path, prefix):
             return True

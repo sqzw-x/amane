@@ -18,7 +18,6 @@ class PlanNodeResponse(BaseModel):
     reason: PlanReason | None = None
     """仅条目节点有; 容器目录为 None."""
     size: int | None = None
-    outside: bool = False
     hardlink: bool = False
     entry_count: int
     """子树内的条目数."""

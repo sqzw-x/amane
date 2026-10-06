@@ -202,7 +202,6 @@
     "empty": "Nothing to clean",
     "expand": "Expand",
     "willBeEmpty": "Will be emptied",
-    "outside": "Outside library",
     "hardlink": "Hard link",
     "hardlinkHint": "Deleting frees no extra space",
     "nodeCount": "{{count}} items",

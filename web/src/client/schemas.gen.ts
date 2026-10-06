@@ -5425,11 +5425,6 @@ export const PlanNodeResponseSchema = {
             ],
             title: 'Size'
         },
-        outside: {
-            type: 'boolean',
-            title: 'Outside',
-            default: false
-        },
         hardlink: {
             type: 'boolean',
             title: 'Hardlink',

@@ -12,7 +12,7 @@ from __future__ import annotations
 import errno
 import os
 import stat
-from collections.abc import Collection, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -94,22 +94,16 @@ class PruneResult:
 
 
 @in_thread
-def delete_target(
-    path: Path,
-    *,
-    library_root: Path,
-    outside_targets: Collection[Path] = (),
-) -> DeleteOutcome:
+def delete_target(path: Path, *, library_root: Path) -> DeleteOutcome:
     """删除一个目标 (文件、符号链接或目录).
 
-    库外路径只有出现在 ``outside_targets`` 中才允许删除 (配置链接模板时刮削产物落在库外);
-    库根自身与 ``.amane_trash`` 自身一律拒绝.
+    库根外的一切一律拒绝, 没有例外; 库根自身与 ``.amane_trash`` 自身同样拒绝.
     """
     disk_path = existing_disk_path(path, follow_symlinks=False)
     if disk_path is None:
         return DeleteOutcome(status="changed")
 
-    refusal = _refuse_reason(disk_path, library_root=library_root, outside_targets=outside_targets)
+    refusal = _refuse_reason(disk_path, library_root=library_root)
     if refusal is not None:
         logger.warning("delete refused", path=str(disk_path), reason=refusal)
         return DeleteOutcome(status="failed", error=refusal)
@@ -233,14 +227,12 @@ def _crosses_boundary(st: os.stat_result, *, dev: int) -> bool:
     return st.st_dev != dev or _is_reparse_point(st)
 
 
-def _refuse_reason(target: Path, *, library_root: Path, outside_targets: Collection[Path]) -> str | None:
+def _refuse_reason(target: Path, *, library_root: Path) -> str | None:
     if same_path(target, library_root):
         return f"refuse to delete library root: {target}"
     if same_path(target, library_root / TRASH_DIRNAME):
         return f"refuse to delete trash root: {target}"
     if path_is_under(target, library_root):
-        return None
-    if any(same_path(target, allowed) for allowed in outside_targets):
         return None
     return f"outside library root: {target}"
 

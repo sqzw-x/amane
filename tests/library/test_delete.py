@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _delete(path: Path, library_root: Path, tally: DeleteTally, outside: tuple[Path, ...] = ()) -> DeleteTally:
-    tally.record(delete_target.sync(path, library_root=library_root, outside_targets=outside))
+def _delete(path: Path, library_root: Path, tally: DeleteTally) -> DeleteTally:
+    tally.record(delete_target.sync(path, library_root=library_root))
     return tally
 
 
@@ -99,46 +99,21 @@ class TestDeleteTarget:
         assert tally.freed_bytes == 4
 
     def test_outside_library_refused(self, tmp_path: Path) -> None:
-        lib = tmp_path / "lib"
-        outside = tmp_path / "outside"
-        lib.mkdir()
-        outside.mkdir()
-        target = outside / "keep.mkv"
-        target.write_bytes(b"keep")
-
-        tally = _delete(target, lib, DeleteTally())
-
-        assert target.read_bytes() == b"keep"
-        assert (tally.deleted, tally.failed) == (0, 1)
-
-    def test_listed_outside_target_deleted(self, tmp_path: Path) -> None:
+        """库根外没有例外: 链接树里的产物与同目录邻居一律拒绝."""
         lib = tmp_path / "lib"
         outside = tmp_path / "linktree"
         lib.mkdir()
         outside.mkdir()
         target = outside / "poster.jpg"
+        neighbor = outside / "fanart.jpg"
         target.write_bytes(b"poster")
+        neighbor.write_bytes(b"fanart")
 
-        tally = _delete(target, lib, DeleteTally(), outside=(target,))
+        tally = _delete(target, lib, DeleteTally())
+        tally = _delete(neighbor, lib, tally)
 
-        assert not target.exists()
-        assert tally.deleted == 1
-
-    def test_unlisted_sibling_of_outside_target_refused(self, tmp_path: Path) -> None:
-        """库外只认清单明列的路径, 同目录的其它文件不在授权范围内."""
-        lib = tmp_path / "lib"
-        outside = tmp_path / "linktree"
-        lib.mkdir()
-        outside.mkdir()
-        listed = outside / "poster.jpg"
-        other = outside / "fanart.jpg"
-        listed.write_bytes(b"poster")
-        other.write_bytes(b"fanart")
-
-        tally = _delete(other, lib, DeleteTally(), outside=(listed,))
-
-        assert other.read_bytes() == b"fanart"
-        assert tally.failed == 1
+        assert (target.read_bytes(), neighbor.read_bytes()) == (b"poster", b"fanart")
+        assert (tally.deleted, tally.failed) == (0, 2)
 
     def test_library_root_refused(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"

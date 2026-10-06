@@ -13,7 +13,6 @@ from amane.library import (
     PLAN_TTL_SECONDS,
     LibraryPlan,
     LibraryScan,
-    PlanEntry,
     PlanEntryKind,
     PlanReason,
     PlanSource,
@@ -353,35 +352,6 @@ class TestPlanTree:
         assert plan_tree(plan) is plan_tree(plan)
         assert plan_tree(plan).entry_count == 1
 
-    def test_outside_products_count_bytes(self, tmp_path: Path) -> None:
-        """库外产物没有库内位置, 但删除照样释放空间, 体积必须计入根节点."""
-        lib = tmp_path / "lib"
-        lib.mkdir()
-        (lib / "ad.mkv").write_bytes(b"x" * 10)
-        link_tree = tmp_path / "linktree"
-        link_tree.mkdir()
-        poster = link_tree / "poster.jpg"
-        poster.write_bytes(b"p" * 64)
-        plan = _plan(lib, scan=_scan(blacklist=["ad"]))
-        stat = poster.stat()
-        plan.entries.append(
-            PlanEntry(
-                path=poster,
-                kind=PlanEntryKind.FILE,
-                reason=PlanReason.EXPLICIT,
-                size=stat.st_size,
-                outside=True,
-                dev=stat.st_dev,
-                ino=stat.st_ino,
-                nlink=stat.st_nlink,
-            )
-        )
-
-        root = plan_tree(plan)
-
-        assert root.entry_bytes == plan.total_size == 74
-        assert root.children[-1].outside is True
-
 
 class TestScanTrash:
     def test_lists_everything_under_trash(self, tmp_path: Path) -> None:
@@ -531,3 +501,69 @@ class TestSelectionPlan:
 
         assert [entry.path.name for entry in outcome.plan.entries] == ["NSFS-039.zh.srt"]
         assert any("已不在磁盘上" in notice for notice in outcome.notices)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_outside_products_left_alone(self, repo: Repository, tmp_path: Path) -> None:
+        """链接模式: 面向媒体服务器的那一份写在库外链接树, 清单只收库根内的路径."""
+        from amane.db.models import MediaFileStatus
+
+        root = tmp_path / "lib"
+        video_dir = root / "Studio" / "NSFS-039"
+        video_dir.mkdir(parents=True)
+        video = video_dir / "NSFS-039.mp4"
+        video.write_bytes(b"v" * 100)
+        link_tree = tmp_path / "linktree" / "NSFS-039"
+        link_tree.mkdir(parents=True)
+        (link_tree / "NSFS-039.nfo").write_text("nfo")
+        (link_tree / "poster.jpg").write_bytes(b"poster")
+        lib = await repo.create_library(
+            name="t", path=str(root), link_template=str(tmp_path / "linktree" / "{number}" / "{number}")
+        )
+        assert lib.id is not None
+        meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+        assert meta.id is not None
+        item = await repo.create_media_file(
+            lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        )
+
+        outcome = build_selection_plan(
+            library=lib,
+            items=[item],
+            indexed=[item],
+            metas={meta.id: meta},
+            include_work_dir=False,
+        )
+
+        assert [entry.path for entry in outcome.plan.entries] == [video]
+        assert outcome.notices == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_alias_index_path_is_notice(self, repo: Repository, tmp_path: Path) -> None:
+        """库根与索引写法不一致 (旧库的符号链接别名) 时给出可操作的提示, 而不是静默什么都不删."""
+        from amane.db.models import MediaFileStatus
+
+        root = tmp_path / "lib"
+        video_dir = root / "Studio" / "NSFS-039"
+        video_dir.mkdir(parents=True)
+        video = video_dir / "NSFS-039.mp4"
+        video.write_bytes(b"v" * 100)
+        alias = tmp_path / "alias"
+        alias.symlink_to(root, target_is_directory=True)
+        lib = await repo.create_library(name="t", path=str(root))
+        assert lib.id is not None
+        meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+        assert meta.id is not None
+        item = await repo.create_media_file(
+            lib.id,
+            path=str(alias / "Studio" / "NSFS-039" / "NSFS-039.mp4"),
+            number="NSFS-039",
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta.id,
+        )
+
+        outcome = build_selection_plan(
+            library=lib, items=[item], indexed=[item], metas={meta.id: meta}, include_work_dir=False
+        )
+
+        assert outcome.plan.entries == []
+        assert any("重新保存媒体库路径" in notice for notice in outcome.notices)

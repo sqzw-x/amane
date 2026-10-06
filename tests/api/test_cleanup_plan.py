@@ -250,7 +250,6 @@ async def test_trash_expansion_lists_history(client: AsyncClient, app: FastAPI, 
     assert page["entry_count"] == 2
     assert page["entry_bytes"] == 30
     assert {node["name"] for node in page["items"]} == {"old-ad.mp4", "old-2.mp4"}
-    assert all(node["outside"] is False for node in page["items"])
 
     deleted = await client.post("tasks", json={"type": "delete", "library_id": library_id, "plan_id": body["plan_id"]})
     assert deleted.status_code == 202

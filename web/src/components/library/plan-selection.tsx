@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconChevronRight, IconExternalLink, IconFile, IconFolder } from "@tabler/icons-react";
+import { IconChevronRight, IconFile, IconFolder } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -304,13 +304,7 @@ const PlanNodeRow = memo(function PlanNodeRow({
           disabled={covered && covering !== node.path}
           onChange={() => onToggle(node)}
         />
-        {node.kind === "dir" ? (
-          <IconFolder size={16} />
-        ) : node.outside ? (
-          <IconExternalLink size={16} />
-        ) : (
-          <IconFile size={16} />
-        )}
+        {node.kind === "dir" ? <IconFolder size={16} /> : <IconFile size={16} />}
         {node.kind === "symlink" ? (
           <Tooltip label={t("cleanup.symlinkHint")}>
             <Badge size="sm" variant="light" color="blue">
@@ -324,11 +318,6 @@ const PlanNodeRow = memo(function PlanNodeRow({
         {node.will_be_empty && node.kind === "dir" && !node.reason ? (
           <Badge size="sm" variant="light" color="orange">
             {t("cleanup.willBeEmpty")}
-          </Badge>
-        ) : null}
-        {node.outside ? (
-          <Badge size="sm" variant="light" color="gray">
-            {t("cleanup.outside")}
           </Badge>
         ) : null}
         {node.hardlink ? (
