@@ -5,6 +5,7 @@ class SiteName(StrEnum):
     """爬虫站点名称 (影片与演员源共用)."""
 
     AIRAV = "airav"
+    AVBASE = "avbase"
     AVSOX = "avsox"
     DAHLIA = "dahlia"
     DMM = "dmm"
