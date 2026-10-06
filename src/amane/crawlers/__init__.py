@@ -2,6 +2,7 @@ from ..enums import Language, MetadataField, SiteName
 from .actor import (
     ActorCrawler,
     ActorMetadata,
+    AvbaseActorCrawler,
     GFriendsActorCrawler,
     JavDBActorCrawler,
     MinnanoActorCrawler,
@@ -71,6 +72,7 @@ __all__ = [
     "ActorCrawler",
     "ActorMetadata",
     "AiravCrawler",
+    "AvbaseActorCrawler",
     "AvbaseCrawler",
     "AvsoxCrawler",
     "Crawler",
