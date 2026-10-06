@@ -36,6 +36,8 @@ export function MediaDeleteDialog({
       return data;
     },
     enabled: opened && mediaFileIds.length > 0,
+    // 展开是有副作用的读取 (每次都产出新清单): 窗口重新聚焦不该换掉用户正在勾选的清单.
+    refetchOnWindowFocus: false,
   });
 
   return (

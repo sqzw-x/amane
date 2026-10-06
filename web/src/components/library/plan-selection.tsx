@@ -260,6 +260,10 @@ const PlanNodeRow = memo(function PlanNodeRow({
   const [expanded, setExpanded] = useState(false);
   const covering = coveringPrefix(excluded, node.path);
   const covered = covering !== undefined;
+  // 子树里只要有一项被取消勾选, 整份清单执行完这个目录也不会空.
+  const keepsSomething = excluded.some(
+    (prefix) => prefix !== node.path && isUnder(prefix, node.path),
+  );
   const children = usePlanNodeLevel({
     libraryId,
     planId,
@@ -315,7 +319,11 @@ const PlanNodeRow = memo(function PlanNodeRow({
         <Text size="sm" fw={500} truncate title={node.path}>
           {node.name}
         </Text>
-        {node.will_be_empty && node.kind === "dir" && !node.reason ? (
+        {node.will_be_empty &&
+        node.kind === "dir" &&
+        !node.reason &&
+        !covered &&
+        !keepsSomething ? (
           <Badge size="sm" variant="light" color="orange">
             {t("cleanup.willBeEmpty")}
           </Badge>

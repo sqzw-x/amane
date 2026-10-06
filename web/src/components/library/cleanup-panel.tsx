@@ -27,9 +27,11 @@ export function CleanupPanel({ library, opened, onClose }: CleanupPanelProps) {
   const { t } = useTranslation(["library", "common"]);
   const [tab, setTab] = useState<string | null>("rules");
   // 回收站是历史遗留: 里面没东西时连页签都不渲染, 用户看不到它; 有遗留才出现.
+  // 展开是有副作用的读取 (每次都产出新清单), 因此不跟着窗口聚焦重跑.
   const trashQuery = useQuery({
     ...getCleanupTrashOptions({ path: { library_id: library.id } }),
     enabled: opened,
+    refetchOnWindowFocus: false,
   });
   const trash = trashQuery.data?.exists ? trashQuery.data : null;
 
@@ -45,13 +47,16 @@ export function CleanupPanel({ library, opened, onClose }: CleanupPanelProps) {
             <RulesTab library={library} enabled={opened && tab !== "trash"} onDone={onClose} />
           </Tabs.Panel>
           <Tabs.Panel value="trash" h={PANEL_HEIGHT}>
-            <PlanSelection
-              key={trash.plan_id}
-              libraryId={library.id}
-              planId={trash.plan_id ?? ""}
-              path={trash.path ?? ""}
-              onDone={onClose}
-            />
+            <Stack gap="xs" h="100%">
+              <TruncationNotice truncated={trash.truncated} dropped={trash.dropped} />
+              <PlanSelection
+                key={trash.plan_id}
+                libraryId={library.id}
+                planId={trash.plan_id ?? ""}
+                path={trash.path ?? ""}
+                onDone={onClose}
+              />
+            </Stack>
           </Tabs.Panel>
         </Tabs>
       ) : (
@@ -169,12 +174,7 @@ function PlanNotices({ plan }: { plan: PlanSummaryResponse }) {
           {t("cleanup.scope", { path: plan.scope_path })}
         </Text>
       ) : null}
-      {plan.truncated ? (
-        <Group gap={4} c="yellow.7">
-          <IconAlertTriangle size={14} />
-          <Text size="xs">{t("cleanup.truncated")}</Text>
-        </Group>
-      ) : null}
+      <TruncationNotice truncated={plan.truncated} dropped={plan.dropped} />
       {plan.skipped_dirs || plan.skipped_files ? (
         <Group gap={4} c="yellow.7">
           <IconAlertTriangle size={14} />
@@ -184,5 +184,18 @@ function PlanNotices({ plan }: { plan: PlanSummaryResponse }) {
         </Group>
       ) : null}
     </Stack>
+  );
+}
+
+/** 触顶提示: 清单只包含部分条目, 并给出还有多少没纳入 — 用户据此把扫描限定到子目录. */
+function TruncationNotice({ truncated, dropped }: { truncated?: boolean; dropped?: number }) {
+  const { t } = useTranslation("library");
+  if (!truncated) return null;
+  return (
+    <Group gap={4} c="yellow.7">
+      <IconAlertTriangle size={14} />
+      <Text size="xs">{t("cleanup.truncated")}</Text>
+      {dropped ? <Text size="xs">{t("cleanup.truncatedMore", { count: dropped })}</Text> : null}
+    </Group>
   );
 }

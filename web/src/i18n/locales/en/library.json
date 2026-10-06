@@ -196,7 +196,8 @@
     "scanStarted": "Scan started",
     "deleteStarted": "Deletion started",
     "scope": "This plan covers {{path}} only",
-    "truncated": "Too many files; only part of the results are shown",
+    "truncated": "Too many files; only part of the results are included",
+    "truncatedMore": "{{count}} more items are not included",
     "skipped": "{{dirs}} directories and {{files}} files were not covered",
     "selected": "{{count}} selected, about {{size}}",
     "empty": "Nothing to clean",
@@ -215,12 +216,12 @@
       "empty_dir": "Empty directory",
       "explicit": "Selected"
     },
-    "confirmMessage_one": "cleanup.confirmMessage",
-    "confirmMessage_other": "cleanup.confirmMessage",
-    "selected_one": "cleanup.selected",
-    "selected_other": "cleanup.selected",
-    "nodeCount_one": "cleanup.nodeCount",
-    "nodeCount_other": "cleanup.nodeCount",
+    "confirmMessage_one": "{{count}} items, about {{size}}, will be deleted. This cannot be undone; index rows go with them.",
+    "confirmMessage_other": "{{count}} items, about {{size}}, will be deleted. This cannot be undone; index rows go with them.",
+    "selected_one": "{{count}} selected, about {{size}}",
+    "selected_other": "{{count}} selected, about {{size}}",
+    "nodeCount_one": "{{count}} items",
+    "nodeCount_other": "{{count}} items",
     "tabRules": "Unwanted files",
     "tabTrash": "Trash",
     "previewTitle": "Confirm what will be deleted",
@@ -232,6 +233,8 @@
     "scanningHint": "You can close this panel; the scan keeps running",
     "scanFailed": "Last scan failed",
     "symlink": "Link",
-    "symlinkHint": "Deletes the link inside the library, not the file it points to"
+    "symlinkHint": "Deletes the link inside the library, not the file it points to",
+    "truncatedMore_one": "{{count}} more item is not included",
+    "truncatedMore_other": "{{count}} more items are not included"
   }
 }
