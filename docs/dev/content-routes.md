@@ -37,6 +37,8 @@
 
 **javlibrary.com** — 常命中 Cloudflare 等待页, 不纳入默认表.
 
+**avbase.net** — 名单来自用户投稿而非官方; 受 Cloudflare managed challenge 保护, 客户端指纹不过关即拦截. 不纳入默认表: 进入 `censored` 会让每次刮削多一次可能退化为浏览器 / solver 的请求.
+
 **airav.io** — 中文标题补强, 不是国产分区; 国产路由里垫在 iqqtv 后面.
 
 **iqqtv** (`iqq5.xyz` 会跳转到 `iqqk4.quest` 一类轮换域) — 导航有國產区 (爱豆傳媒、杏吧傳媒等, 不是 MD 号为主), 国产路由第一源; 爬虫带 `/cn|/jp` 语言前缀.
