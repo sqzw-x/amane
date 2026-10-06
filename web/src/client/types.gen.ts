@@ -2605,6 +2605,42 @@ export type PathTemplateSchemaResponse = {
 export type PlanEntryKind = 'file' | 'dir' | 'symlink';
 
 /**
+ * PlanNodePage
+ *
+ * 一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页.
+ */
+export type PlanNodePage = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Items
+     */
+    items: Array<PlanNodeResponse>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Limit
+     */
+    limit: number;
+    /**
+     * Entry Count
+     */
+    entry_count: number;
+    /**
+     * Entry Bytes
+     */
+    entry_bytes: number;
+};
+
+/**
  * PlanNodeResponse
  *
  * 树节点. ``path`` 库内为相对路径, 库外为绝对路径; 子节点按需再取.
@@ -2655,16 +2691,6 @@ export type PlanNodeResponse = {
 };
 
 /**
- * PlanNodesResponse
- */
-export type PlanNodesResponse = {
-    /**
-     * Nodes
-     */
-    nodes?: Array<PlanNodeResponse>;
-};
-
-/**
  * PlanReason
  */
 export type PlanReason = 'blacklist' | 'undersized' | 'empty_dir' | 'explicit';
@@ -2672,7 +2698,7 @@ export type PlanReason = 'blacklist' | 'undersized' | 'empty_dir' | 'explicit';
 /**
  * PlanSummaryResponse
  *
- * 面板一次取到状态、范围与顶层节点; ``exists`` 为假时其余字段无意义.
+ * 面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取.
  */
 export type PlanSummaryResponse = {
     /**
@@ -2704,18 +2730,6 @@ export type PlanSummaryResponse = {
      */
     skipped_files?: number;
     /**
-     * Entry Count
-     */
-    entry_count?: number;
-    /**
-     * Entry Bytes
-     */
-    entry_bytes?: number;
-    /**
-     * Dir Count
-     */
-    dir_count?: number;
-    /**
      * Scan Running
      */
     scan_running?: boolean;
@@ -2723,10 +2737,6 @@ export type PlanSummaryResponse = {
      * Last Scan Error
      */
     last_scan_error?: string | null;
-    /**
-     * Nodes
-     */
-    nodes?: Array<PlanNodeResponse>;
 };
 
 /**
@@ -3575,6 +3585,8 @@ export type SelectionRequest = {
 
 /**
  * SelectionSummaryResponse
+ *
+ * 展开结果. 条目自库根展开 (库外产物挂在根下), 面板按分页接口读取.
  */
 export type SelectionSummaryResponse = {
     /**
@@ -3585,18 +3597,6 @@ export type SelectionSummaryResponse = {
      * Plan Id
      */
     plan_id?: string | null;
-    /**
-     * Entry Count
-     */
-    entry_count?: number;
-    /**
-     * Entry Bytes
-     */
-    entry_bytes?: number;
-    /**
-     * Nodes
-     */
-    nodes?: Array<PlanNodeResponse>;
     /**
      * Notices
      */
@@ -4156,7 +4156,7 @@ export type ToolResultRow = {
 /**
  * TrashSummaryResponse
  *
- * 回收站历史内容: 展开即产出显式来源清单, 面板按同一套审查与删除处理.
+ * 回收站历史内容: 展开即产出显式来源清单, 面板套用同一套审查与删除.
  */
 export type TrashSummaryResponse = {
     /**
@@ -4168,17 +4168,9 @@ export type TrashSummaryResponse = {
      */
     plan_id?: string | null;
     /**
-     * Entry Count
+     * Path
      */
-    entry_count?: number;
-    /**
-     * Entry Bytes
-     */
-    entry_bytes?: number;
-    /**
-     * Nodes
-     */
-    nodes?: Array<PlanNodeResponse>;
+    path?: string | null;
 };
 
 /**
@@ -4592,6 +4584,18 @@ export type GetCleanupPlanNodesData = {
          * 指定清单; 缺省用规则来源的最新一份
          */
         plan_id?: string | null;
+        /**
+         * Offset
+         *
+         * 从第几个子节点开始
+         */
+        offset?: number;
+        /**
+         * Limit
+         *
+         * 本页最多返回多少个子节点
+         */
+        limit?: number;
     };
     url: '/api/libraries/{library_id}/cleanup/plan/nodes';
 };
@@ -4609,7 +4613,7 @@ export type GetCleanupPlanNodesResponses = {
     /**
      * Successful Response
      */
-    200: PlanNodesResponse;
+    200: PlanNodePage;
 };
 
 export type GetCleanupPlanNodesResponse = GetCleanupPlanNodesResponses[keyof GetCleanupPlanNodesResponses];

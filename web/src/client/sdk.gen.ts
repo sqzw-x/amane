@@ -50,21 +50,21 @@ export const getConfigSchema = <ThrowOnError extends boolean = false>(options?: 
 /**
  * Get Cleanup Plan
  *
- * 面板的入口: 有清单给状态与顶层节点, 无清单只给 ``exists=False``.
+ * 面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取.
  */
 export const getCleanupPlan = <ThrowOnError extends boolean = false>(options: Options<GetCleanupPlanData, ThrowOnError>): RequestResult<GetCleanupPlanResponses, GetCleanupPlanErrors, ThrowOnError> => (options.client ?? client).get<GetCleanupPlanResponses, GetCleanupPlanErrors, ThrowOnError>({ url: '/api/libraries/{library_id}/cleanup/plan', ...options });
 
 /**
  * Get Cleanup Plan Nodes
  *
- * 展开某个节点: 只返回该目录的直接子节点.
+ * 展开某个节点的一页子节点. 库可能有上万条候选, 因此不整份下发.
  */
 export const getCleanupPlanNodes = <ThrowOnError extends boolean = false>(options: Options<GetCleanupPlanNodesData, ThrowOnError>): RequestResult<GetCleanupPlanNodesResponses, GetCleanupPlanNodesErrors, ThrowOnError> => (options.client ?? client).get<GetCleanupPlanNodesResponses, GetCleanupPlanNodesErrors, ThrowOnError>({ url: '/api/libraries/{library_id}/cleanup/plan/nodes', ...options });
 
 /**
  * Get Cleanup Trash
  *
- * 展开回收站历史内容: 同步产出显式来源清单, 前端只引用与排除.
+ * 展开回收站历史内容: 同步产出显式来源清单, 前端拿到要展开的目录再按页读.
  */
 export const getCleanupTrash = <ThrowOnError extends boolean = false>(options: Options<GetCleanupTrashData, ThrowOnError>): RequestResult<GetCleanupTrashResponses, GetCleanupTrashErrors, ThrowOnError> => (options.client ?? client).get<GetCleanupTrashResponses, GetCleanupTrashErrors, ThrowOnError>({ url: '/api/libraries/{library_id}/cleanup/trash', ...options });
 

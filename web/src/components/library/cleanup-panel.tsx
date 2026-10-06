@@ -135,9 +135,6 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
         key={plan.plan_id}
         libraryId={library.id}
         planId={plan.plan_id ?? ""}
-        nodes={plan.nodes ?? []}
-        entryCount={plan.entry_count ?? 0}
-        entryBytes={plan.entry_bytes ?? 0}
         onDone={onDone}
         header={
           <Button
@@ -186,9 +183,7 @@ function TrashTab({ library, enabled, onDone }: TabProps) {
         key={trash.plan_id}
         libraryId={library.id}
         planId={trash.plan_id ?? ""}
-        nodes={trash.nodes ?? []}
-        entryCount={trash.entry_count ?? 0}
-        entryBytes={trash.entry_bytes ?? 0}
+        path={trash.path ?? ""}
         onDone={onDone}
       />
     </Stack>

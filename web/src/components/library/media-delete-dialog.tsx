@@ -64,9 +64,6 @@ export function MediaDeleteDialog({
             key={preview.data.plan_id}
             libraryId={libraryId}
             planId={preview.data.plan_id ?? ""}
-            nodes={preview.data.nodes ?? []}
-            entryCount={preview.data.entry_count ?? 0}
-            entryBytes={preview.data.entry_bytes ?? 0}
             onDone={() => {
               onDeleted();
               onClose();

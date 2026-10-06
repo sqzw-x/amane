@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from amane.api.routes.cleanup import MAX_NODE_PAGE_SIZE
 from amane.db.models import TaskType
 from amane.handlers import ScanInvalidPayload
 from amane.library import PlanSource, scan_plan
@@ -42,6 +43,12 @@ def _store_plan(app: FastAPI, root: Path, library_id: int, **kwargs: object):
     return plan
 
 
+async def _nodes(client: AsyncClient, library_id: int, **params: str | int) -> dict:
+    resp = await client.get(f"libraries/{library_id}/cleanup/plan/nodes", params=params)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
 @pytest.mark.asyncio(loop_scope="function")
 async def test_plan_absent(client: AsyncClient, safe_path: Path) -> None:
     library_id = await _library(client, safe_path / "lib")
@@ -51,7 +58,7 @@ async def test_plan_absent(client: AsyncClient, safe_path: Path) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["exists"] is False
-    assert body["nodes"] == []
+    assert body["plan_id"] is None
     assert body["scan_running"] is False
 
 
@@ -69,11 +76,16 @@ async def test_plan_tree_nodes(client: AsyncClient, app: FastAPI, safe_path: Pat
     assert resp.status_code == 200
     body = resp.json()
     assert body["exists"] is True
-    assert body["entry_count"] == 2
-    assert body["entry_bytes"] == 10
     assert body["scope_path"] is None
     assert body["scan_running"] is False
-    top = {node["name"]: node for node in body["nodes"]}
+
+    page = await _nodes(client, library_id)
+
+    assert page["path"] == ""
+    assert page["total"] == 2
+    assert page["entry_count"] == 2
+    assert page["entry_bytes"] == 10
+    top = {node["name"]: node for node in page["items"]}
     assert set(top) == {"work", "empty"}
     assert top["work"]["has_children"] is True
     assert top["work"]["children"] is None
@@ -81,13 +93,51 @@ async def test_plan_tree_nodes(client: AsyncClient, app: FastAPI, safe_path: Pat
     assert top["empty"]["kind"] == "dir"
     assert top["empty"]["reason"] == "empty_dir"
 
-    nested = await client.get(f"libraries/{library_id}/cleanup/plan/nodes", params={"path": "work"})
+    nested = await _nodes(client, library_id, path="work")
 
-    assert nested.status_code == 200
-    nodes = nested.json()["nodes"]
+    assert nested["path"] == "work"
+    assert nested["total"] == 1
+    assert nested["entry_count"] == 1
+    nodes = nested["items"]
     assert [node["name"] for node in nodes] == ["ad-1.mkv"]
     assert nodes[0]["reason"] == "blacklist"
     assert nodes[0]["path"] == "work/ad-1.mkv"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_plan_nodes_paginate(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+    """一次下钻只给一页: 两万条候选整份下发会拖垮面板."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root, blacklist_patterns=["ad-"])
+    root.mkdir(parents=True, exist_ok=True)
+    for index in range(5):
+        (root / f"ad-{index}.mkv").write_bytes(b"x")
+    _store_plan(app, root, library_id, blacklist_patterns=["ad-"])
+
+    first = await _nodes(client, library_id, limit=2)
+
+    assert first["total"] == 5
+    assert first["offset"] == 0
+    assert first["limit"] == 2
+    assert len(first["items"]) == 2
+
+    second = await _nodes(client, library_id, limit=2, offset=2)
+
+    assert [node["path"] for node in second["items"]] == ["ad-2.mkv", "ad-3.mkv"]
+
+    beyond = await _nodes(client, library_id, limit=2, offset=4)
+
+    assert len(beyond["items"]) == 1
+    assert beyond["total"] == 5
+
+    empty = await _nodes(client, library_id, offset=99)
+
+    assert empty["items"] == []
+    assert empty["total"] == 5
+
+    for params in ({"limit": 0}, {"limit": MAX_NODE_PAGE_SIZE + 1}, {"offset": -1}):
+        rejected = await client.get(f"libraries/{library_id}/cleanup/plan/nodes", params=params)
+        assert rejected.status_code == 422
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -166,8 +216,11 @@ async def test_scan_task_fills_panel_plan(client: AsyncClient, safe_path: Path) 
     assert resp.status_code == 200
     body = resp.json()
     assert body["exists"] is True
-    assert body["entry_count"] == 2
-    names = {node["name"]: node for node in body["nodes"]}
+
+    page = await _nodes(client, library_id)
+
+    assert page["entry_count"] == 2
+    names = {node["name"]: node for node in page["items"]}
     assert set(names) == {"work"}
     assert names["work"]["entry_count"] == 2
 
@@ -187,13 +240,17 @@ async def test_trash_expansion_lists_history(client: AsyncClient, app: FastAPI, 
     assert resp.status_code == 200
     body = resp.json()
     assert body["exists"] is True
-    assert body["entry_count"] == 2
-    assert body["entry_bytes"] == 30
-    assert {node["name"] for node in body["nodes"]} == {"old-ad.mp4", "old-2.mp4"}
-    assert all(node["outside"] is False for node in body["nodes"])
+    assert body["path"] == ".amane_trash"
     plan = app.state.runtime.plan_store.get(body["plan_id"])
     assert plan is not None
     assert plan.source is PlanSource.EXPLICIT
+
+    page = await _nodes(client, library_id, path=body["path"], plan_id=body["plan_id"])
+
+    assert page["entry_count"] == 2
+    assert page["entry_bytes"] == 30
+    assert {node["name"] for node in page["items"]} == {"old-ad.mp4", "old-2.mp4"}
+    assert all(node["outside"] is False for node in page["items"])
 
     deleted = await client.post("tasks", json={"type": "delete", "library_id": library_id, "plan_id": body["plan_id"]})
     assert deleted.status_code == 202
@@ -232,8 +289,17 @@ async def test_selection_expansion_previews_then_deletes(client: AsyncClient, ap
     assert preview.status_code == 200
     body = preview.json()
     assert body["exists"] is True
-    assert body["entry_count"] == 3
     assert body["notices"] == []
+
+    page = await _nodes(client, library_id, plan_id=body["plan_id"])
+
+    assert page["entry_count"] == 3
+    assert [node["name"] for node in page["items"]] == ["Studio"]
+
+    work_page = await _nodes(client, library_id, path="Studio/NSFS-039", plan_id=body["plan_id"])
+
+    assert work_page["total"] == 3
+    assert {node["name"] for node in work_page["items"]} == {"NSFS-039.mp4", "NSFS-039.nfo", "cover.jpg"}
 
     deleted = await client.post("tasks", json={"type": "delete", "library_id": library_id, "plan_id": body["plan_id"]})
     assert deleted.status_code == 202

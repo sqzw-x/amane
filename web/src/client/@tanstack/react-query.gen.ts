@@ -117,7 +117,7 @@ export const getCleanupPlanQueryKey = (options: Options<GetCleanupPlanData>) => 
 /**
  * Get Cleanup Plan
  *
- * 面板的入口: 有清单给状态与顶层节点, 无清单只给 ``exists=False``.
+ * 面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取.
  */
 export const getCleanupPlanOptions = (options: Options<GetCleanupPlanData>) => queryOptions<GetCleanupPlanResponse, GetCleanupPlanError, GetCleanupPlanResponse, ReturnType<typeof getCleanupPlanQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -137,7 +137,7 @@ export const getCleanupPlanNodesQueryKey = (options: Options<GetCleanupPlanNodes
 /**
  * Get Cleanup Plan Nodes
  *
- * 展开某个节点: 只返回该目录的直接子节点.
+ * 展开某个节点的一页子节点. 库可能有上万条候选, 因此不整份下发.
  */
 export const getCleanupPlanNodesOptions = (options: Options<GetCleanupPlanNodesData>) => queryOptions<GetCleanupPlanNodesResponse, GetCleanupPlanNodesError, GetCleanupPlanNodesResponse, ReturnType<typeof getCleanupPlanNodesQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -152,12 +152,73 @@ export const getCleanupPlanNodesOptions = (options: Options<GetCleanupPlanNodesD
     queryKey: getCleanupPlanNodesQueryKey(options)
 });
 
+const createInfiniteParams = <K extends Pick<QueryKey<Options>[0], 'body' | 'headers' | 'path' | 'query'>>(queryKey: QueryKey<Options>, page: K) => {
+    const params = { ...queryKey[0] };
+    if (page.body) {
+        params.body = {
+            ...queryKey[0].body as any,
+            ...page.body as any
+        };
+    }
+    if (page.headers) {
+        params.headers = {
+            ...queryKey[0].headers,
+            ...page.headers
+        };
+    }
+    if (page.path) {
+        params.path = {
+            ...queryKey[0].path as any,
+            ...page.path as any
+        };
+    }
+    if (page.query) {
+        params.query = {
+            ...queryKey[0].query as any,
+            ...page.query as any
+        };
+    }
+    return params as unknown as typeof page;
+};
+
+export const getCleanupPlanNodesInfiniteQueryKey = (options: Options<GetCleanupPlanNodesData>): QueryKey<Options<GetCleanupPlanNodesData>> => createQueryKey('getCleanupPlanNodes', options, true);
+
+/**
+ * Get Cleanup Plan Nodes
+ *
+ * 展开某个节点的一页子节点. 库可能有上万条候选, 因此不整份下发.
+ */
+export const getCleanupPlanNodesInfiniteOptions = (options: Options<GetCleanupPlanNodesData>) => {
+    const opts = infiniteQueryOptions<GetCleanupPlanNodesResponse, GetCleanupPlanNodesError, InfiniteData<GetCleanupPlanNodesResponse>, QueryKey<Options<GetCleanupPlanNodesData>>, number | Pick<QueryKey<Options<GetCleanupPlanNodesData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore
+            const page: Pick<QueryKey<Options<GetCleanupPlanNodesData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    offset: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await getCleanupPlanNodes({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: getCleanupPlanNodesInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+
 export const getCleanupTrashQueryKey = (options: Options<GetCleanupTrashData>) => createQueryKey('getCleanupTrash', options);
 
 /**
  * Get Cleanup Trash
  *
- * 展开回收站历史内容: 同步产出显式来源清单, 前端只引用与排除.
+ * 展开回收站历史内容: 同步产出显式来源清单, 前端拿到要展开的目录再按页读.
  */
 export const getCleanupTrashOptions = (options: Options<GetCleanupTrashData>) => queryOptions<GetCleanupTrashResponse, GetCleanupTrashError, GetCleanupTrashResponse, ReturnType<typeof getCleanupTrashQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -228,35 +289,6 @@ export const listMediaOptions = (options?: Options<ListMediaData>) => queryOptio
     },
     queryKey: listMediaQueryKey(options)
 });
-
-const createInfiniteParams = <K extends Pick<QueryKey<Options>[0], 'body' | 'headers' | 'path' | 'query'>>(queryKey: QueryKey<Options>, page: K) => {
-    const params = { ...queryKey[0] };
-    if (page.body) {
-        params.body = {
-            ...queryKey[0].body as any,
-            ...page.body as any
-        };
-    }
-    if (page.headers) {
-        params.headers = {
-            ...queryKey[0].headers,
-            ...page.headers
-        };
-    }
-    if (page.path) {
-        params.path = {
-            ...queryKey[0].path as any,
-            ...page.path as any
-        };
-    }
-    if (page.query) {
-        params.query = {
-            ...queryKey[0].query as any,
-            ...page.query as any
-        };
-    }
-    return params as unknown as typeof page;
-};
 
 export const listMediaInfiniteQueryKey = (options?: Options<ListMediaData>): QueryKey<Options<ListMediaData>> => createQueryKey('listMedia', options, true);
 

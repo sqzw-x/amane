@@ -13,6 +13,7 @@ from amane.library import (
     PLAN_TTL_SECONDS,
     LibraryPlan,
     LibraryScan,
+    PlanEntry,
     PlanEntryKind,
     PlanReason,
     PlanSource,
@@ -21,6 +22,7 @@ from amane.library import (
     build_selection_plan,
     find_plan_node,
     new_plan_id,
+    plan_tree,
     scan_plan,
     scan_trash,
 )
@@ -340,6 +342,45 @@ class TestPlanTree:
         root = build_plan_tree(plan)
 
         assert find_plan_node(root, lib / "gone") is None
+
+    def test_plan_tree_builds_once(self, tmp_path: Path) -> None:
+        """面板翻页反复读同一份清单, 树构建一次后复用."""
+        lib = tmp_path / "lib"
+        lib.mkdir()
+        (lib / "ad.mkv").write_bytes(b"x")
+        plan = _plan(lib, scan=_scan(blacklist=["ad"]))
+
+        assert plan_tree(plan) is plan_tree(plan)
+        assert plan_tree(plan).entry_count == 1
+
+    def test_outside_products_count_bytes(self, tmp_path: Path) -> None:
+        """库外产物没有库内位置, 但删除照样释放空间, 体积必须计入根节点."""
+        lib = tmp_path / "lib"
+        lib.mkdir()
+        (lib / "ad.mkv").write_bytes(b"x" * 10)
+        link_tree = tmp_path / "linktree"
+        link_tree.mkdir()
+        poster = link_tree / "poster.jpg"
+        poster.write_bytes(b"p" * 64)
+        plan = _plan(lib, scan=_scan(blacklist=["ad"]))
+        stat = poster.stat()
+        plan.entries.append(
+            PlanEntry(
+                path=poster,
+                kind=PlanEntryKind.FILE,
+                reason=PlanReason.EXPLICIT,
+                size=stat.st_size,
+                outside=True,
+                dev=stat.st_dev,
+                ino=stat.st_ino,
+                nlink=stat.st_nlink,
+            )
+        )
+
+        root = plan_tree(plan)
+
+        assert root.entry_bytes == plan.total_size == 74
+        assert root.children[-1].outside is True
 
 
 class TestScanTrash:

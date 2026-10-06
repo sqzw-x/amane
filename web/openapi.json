@@ -118,7 +118,7 @@
           "cleanup"
         ],
         "summary": "Get Cleanup Plan",
-        "description": "面板的入口: 有清单给状态与顶层节点, 无清单只给 ``exists=False``.",
+        "description": "面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取.",
         "operationId": "get_cleanup_plan",
         "parameters": [
           {
@@ -161,7 +161,7 @@
           "cleanup"
         ],
         "summary": "Get Cleanup Plan Nodes",
-        "description": "展开某个节点: 只返回该目录的直接子节点.",
+        "description": "展开某个节点的一页子节点. 库可能有上万条候选, 因此不整份下发.",
         "operationId": "get_cleanup_plan_nodes",
         "parameters": [
           {
@@ -202,6 +202,33 @@
               "title": "Plan Id"
             },
             "description": "指定清单; 缺省用规则来源的最新一份"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "从第几个子节点开始",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "从第几个子节点开始"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "description": "本页最多返回多少个子节点",
+              "default": 200,
+              "title": "Limit"
+            },
+            "description": "本页最多返回多少个子节点"
           }
         ],
         "responses": {
@@ -210,7 +237,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanNodesResponse"
+                  "$ref": "#/components/schemas/PlanNodePage"
                 }
               }
             }
@@ -234,7 +261,7 @@
           "cleanup"
         ],
         "summary": "Get Cleanup Trash",
-        "description": "展开回收站历史内容: 同步产出显式来源清单, 前端只引用与排除.",
+        "description": "展开回收站历史内容: 同步产出显式来源清单, 前端拿到要展开的目录再按页读.",
         "operationId": "get_cleanup_trash",
         "parameters": [
           {
@@ -11314,6 +11341,53 @@
         ],
         "title": "PlanEntryKind"
       },
+      "PlanNodePage": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanNodeResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count"
+          },
+          "entry_bytes": {
+            "type": "integer",
+            "title": "Entry Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "items",
+          "total",
+          "offset",
+          "limit",
+          "entry_count",
+          "entry_bytes"
+        ],
+        "title": "PlanNodePage",
+        "description": "一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页."
+      },
       "PlanNodeResponse": {
         "properties": {
           "path": {
@@ -11402,20 +11476,6 @@
         "title": "PlanNodeResponse",
         "description": "树节点. ``path`` 库内为相对路径, 库外为绝对路径; 子节点按需再取."
       },
-      "PlanNodesResponse": {
-        "properties": {
-          "nodes": {
-            "items": {
-              "$ref": "#/components/schemas/PlanNodeResponse"
-            },
-            "type": "array",
-            "title": "Nodes",
-            "default": []
-          }
-        },
-        "type": "object",
-        "title": "PlanNodesResponse"
-      },
       "PlanReason": {
         "type": "string",
         "enum": [
@@ -11481,21 +11541,6 @@
             "title": "Skipped Files",
             "default": 0
           },
-          "entry_count": {
-            "type": "integer",
-            "title": "Entry Count",
-            "default": 0
-          },
-          "entry_bytes": {
-            "type": "integer",
-            "title": "Entry Bytes",
-            "default": 0
-          },
-          "dir_count": {
-            "type": "integer",
-            "title": "Dir Count",
-            "default": 0
-          },
           "scan_running": {
             "type": "boolean",
             "title": "Scan Running",
@@ -11511,14 +11556,6 @@
               }
             ],
             "title": "Last Scan Error"
-          },
-          "nodes": {
-            "items": {
-              "$ref": "#/components/schemas/PlanNodeResponse"
-            },
-            "type": "array",
-            "title": "Nodes",
-            "default": []
           }
         },
         "type": "object",
@@ -11526,7 +11563,7 @@
           "exists"
         ],
         "title": "PlanSummaryResponse",
-        "description": "面板一次取到状态、范围与顶层节点; ``exists`` 为假时其余字段无意义."
+        "description": "面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取."
       },
       "PlaybackSourceListResponse": {
         "properties": {
@@ -12999,24 +13036,6 @@
             ],
             "title": "Plan Id"
           },
-          "entry_count": {
-            "type": "integer",
-            "title": "Entry Count",
-            "default": 0
-          },
-          "entry_bytes": {
-            "type": "integer",
-            "title": "Entry Bytes",
-            "default": 0
-          },
-          "nodes": {
-            "items": {
-              "$ref": "#/components/schemas/PlanNodeResponse"
-            },
-            "type": "array",
-            "title": "Nodes",
-            "default": []
-          },
           "notices": {
             "items": {
               "type": "string"
@@ -13030,7 +13049,8 @@
         "required": [
           "exists"
         ],
-        "title": "SelectionSummaryResponse"
+        "title": "SelectionSummaryResponse",
+        "description": "展开结果. 条目自库根展开 (库外产物挂在根下), 面板按分页接口读取."
       },
       "SiteConfig": {
         "properties": {
@@ -14078,23 +14098,16 @@
             ],
             "title": "Plan Id"
           },
-          "entry_count": {
-            "type": "integer",
-            "title": "Entry Count",
-            "default": 0
-          },
-          "entry_bytes": {
-            "type": "integer",
-            "title": "Entry Bytes",
-            "default": 0
-          },
-          "nodes": {
-            "items": {
-              "$ref": "#/components/schemas/PlanNodeResponse"
-            },
-            "type": "array",
-            "title": "Nodes",
-            "default": []
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           }
         },
         "type": "object",
@@ -14102,7 +14115,7 @@
           "exists"
         ],
         "title": "TrashSummaryResponse",
-        "description": "回收站历史内容: 展开即产出显式来源清单, 面板按同一套审查与删除处理."
+        "description": "回收站历史内容: 展开即产出显式来源清单, 面板套用同一套审查与删除."
       },
       "TurnTokenUsage": {
         "properties": {

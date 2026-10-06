@@ -15,15 +15,15 @@ from ...library import (
     PlanNode,
     PlanSource,
     PlanStore,
-    build_plan_tree,
     build_selection_plan,
     find_plan_node,
+    plan_tree,
     scan_trash,
 )
 from ..deps import RepoDep, RuntimeDep
 from ..models.cleanup import (
+    PlanNodePage,
     PlanNodeResponse,
-    PlanNodesResponse,
     PlanSummaryResponse,
     SelectionRequest,
     SelectionSummaryResponse,
@@ -36,9 +36,15 @@ if TYPE_CHECKING:
 router = APIRouter(prefix="/libraries", tags=["cleanup"])
 
 _SCAN_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING)
+# 单页子节点数. 一次下钻最多这么多条, 面板滚到底再取下一页.
+NODE_PAGE_SIZE = 200
+MAX_NODE_PAGE_SIZE = 1000
 
 
 def _relative(plan: LibraryPlan, path: Path) -> str:
+    """库内给相对路径 (库根为空串), 库外给绝对路径."""
+    if path == plan.root:
+        return ""
     if not path.is_relative_to(plan.root):
         return str(path)
     return str(path.relative_to(plan.root))
@@ -68,6 +74,18 @@ def _plan_by_id(store: PlanStore, library_id: int, plan_id: str | None) -> Libra
     return plan
 
 
+def _page(plan: LibraryPlan, node: PlanNode, *, offset: int, limit: int) -> PlanNodePage:
+    return PlanNodePage(
+        path=_relative(plan, node.path),
+        items=[_to_response(plan, child, children=False) for child in node.children[offset : offset + limit]],
+        total=len(node.children),
+        offset=offset,
+        limit=limit,
+        entry_count=node.entry_count,
+        entry_bytes=node.entry_bytes,
+    )
+
+
 async def _scan_state(repo: Repository, library_id: int) -> tuple[bool, str | None]:
     """该库是否有扫描在跑, 以及最近一次扫描的失败原因 (面板据此给出可见的错误)."""
     running = await repo.list_tasks(statuses=_SCAN_STATUSES, task_types=(TaskType.SCAN_INVALID,), limit=50)
@@ -84,13 +102,12 @@ async def _scan_state(repo: Repository, library_id: int) -> tuple[bool, str | No
 
 @router.get("/{library_id}/cleanup/plan")
 async def get_cleanup_plan(library_id: int, repo: RepoDep, runtime: RuntimeDep) -> PlanSummaryResponse:
-    """面板的入口: 有清单给状态与顶层节点, 无清单只给 ``exists=False``."""
+    """面板的入口: 有清单给状态与范围, 无清单只给 ``exists=False``; 节点经 ``/plan/nodes`` 另取."""
     running, last_error = await _scan_state(repo, library_id)
     plan = runtime.plan_store.latest(library_id, PlanSource.RULES)
     if plan is None:
         return PlanSummaryResponse(exists=False, scan_running=running, last_scan_error=last_error)
 
-    root = build_plan_tree(plan)
     return PlanSummaryResponse(
         exists=True,
         plan_id=plan.plan_id,
@@ -99,12 +116,8 @@ async def get_cleanup_plan(library_id: int, repo: RepoDep, runtime: RuntimeDep) 
         truncated=plan.truncated,
         skipped_dirs=plan.skipped_dirs,
         skipped_files=plan.skipped_files,
-        entry_count=root.entry_count,
-        entry_bytes=root.entry_bytes,
-        dir_count=len(plan.dirs),
         scan_running=running,
         last_scan_error=last_error,
-        nodes=[_to_response(plan, child, children=False) for child in root.children],
     )
 
 
@@ -114,14 +127,15 @@ async def get_cleanup_plan_nodes(
     runtime: RuntimeDep,
     path: Annotated[str, Query(description="节点路径: 库内相对库根, 库外为绝对路径; 空串取根")] = "",
     plan_id: Annotated[str | None, Query(description="指定清单; 缺省用规则来源的最新一份")] = None,
-) -> PlanNodesResponse:
-    """展开某个节点: 只返回该目录的直接子节点."""
+    offset: Annotated[int, Query(ge=0, description="从第几个子节点开始")] = 0,
+    limit: Annotated[int, Query(ge=1, le=MAX_NODE_PAGE_SIZE, description="本页最多返回多少个子节点")] = NODE_PAGE_SIZE,
+) -> PlanNodePage:
+    """展开某个节点的一页子节点. 库可能有上万条候选, 因此不整份下发."""
     plan = _plan_by_id(runtime.plan_store, library_id, plan_id)
-    root = build_plan_tree(plan)
-    node = find_plan_node(root, _resolve(plan, path))
+    node = find_plan_node(plan_tree(plan), _resolve(plan, path))
     if node is None:
         raise HTTPException(status_code=404, detail=f"Plan node not found: {path}")
-    return PlanNodesResponse(nodes=[_to_response(plan, child, children=False) for child in node.children])
+    return _page(plan, node, offset=offset, limit=limit)
 
 
 def _resolve(plan: LibraryPlan, raw: str) -> Path:
@@ -133,7 +147,7 @@ def _resolve(plan: LibraryPlan, raw: str) -> Path:
 
 @router.get("/{library_id}/cleanup/trash")
 async def get_cleanup_trash(library_id: int, repo: RepoDep, runtime: RuntimeDep) -> TrashSummaryResponse:
-    """展开回收站历史内容: 同步产出显式来源清单, 前端只引用与排除."""
+    """展开回收站历史内容: 同步产出显式来源清单, 前端拿到要展开的目录再按页读."""
     library = await repo.get_library(library_id)
     if library is None:
         raise HTTPException(status_code=404, detail="Library not found")
@@ -147,16 +161,7 @@ async def get_cleanup_trash(library_id: int, repo: RepoDep, runtime: RuntimeDep)
         return TrashSummaryResponse(exists=False)
     runtime.plan_store.put(plan)
 
-    root = build_plan_tree(plan)
-    node = find_plan_node(root, trash_dir)
-    children = node.children if node is not None else ()
-    return TrashSummaryResponse(
-        exists=True,
-        plan_id=plan.plan_id,
-        entry_count=node.entry_count if node is not None else 0,
-        entry_bytes=node.entry_bytes if node is not None else 0,
-        nodes=[_to_response(plan, child, children=False) for child in children],
-    )
+    return TrashSummaryResponse(exists=True, plan_id=plan.plan_id, path=_relative(plan, trash_dir))
 
 
 @router.post("/{library_id}/cleanup/selection")
@@ -192,12 +197,4 @@ async def expand_cleanup_selection(
     if not outcome.plan.entries:
         return SelectionSummaryResponse(exists=False, notices=outcome.notices)
     runtime.plan_store.put(outcome.plan)
-    root = build_plan_tree(outcome.plan)
-    return SelectionSummaryResponse(
-        exists=True,
-        plan_id=outcome.plan.plan_id,
-        entry_count=root.entry_count,
-        entry_bytes=root.entry_bytes,
-        nodes=[_to_response(outcome.plan, child, children=False) for child in root.children],
-        notices=outcome.notices,
-    )
+    return SelectionSummaryResponse(exists=True, plan_id=outcome.plan.plan_id, notices=outcome.notices)

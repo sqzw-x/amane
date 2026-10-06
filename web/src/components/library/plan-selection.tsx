@@ -3,6 +3,7 @@ import {
   Badge,
   Box,
   Button,
+  Center,
   Checkbox,
   Group,
   Loader,
@@ -13,19 +14,24 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconChevronRight, IconExternalLink, IconFile, IconFolder } from "@tabler/icons-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  getCleanupPlanNodesOptions,
+  getCleanupPlanNodesInfiniteOptions,
   getCleanupPlanQueryKey,
   submitTaskMutation,
 } from "@/client/@tanstack/react-query.gen";
 import type { PlanNodeResponse } from "@/client/types.gen";
+import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
+import { nextOffsetPageParam } from "@/lib/infinite-list";
 import { formatFileSize } from "@/lib/utils";
 import classes from "./plan-selection.module.css";
+
+/** 一层最多渲染这么多条, 滚到底再取下一页: 一份清单可能有上万条候选. */
+const NODE_PAGE_SIZE = 200;
 
 /** 清单里的路径前缀匹配: 与后端一致按路径分量, 不用字符串前缀. */
 function isUnder(path: string, prefix: string): boolean {
@@ -40,20 +46,17 @@ function coveringPrefix(excluded: string[], path: string): string | undefined {
 export interface PlanSelectionProps {
   libraryId: number;
   planId: string;
-  nodes: PlanNodeResponse[];
-  entryCount: number;
-  entryBytes: number;
+  /** 要展开的目录: 库内相对路径, 空串为库根; 回收站传其相对路径. */
+  path?: string;
   onDone: () => void;
   header?: ReactNode;
 }
 
-/** 一份清单的勾选与确认: 规则来源与回收站共用. 选择随清单标识重置 (父组件用 key 重建). */
+/** 一份清单的勾选与确认: 规则来源、回收站与选中项预览共用. 选择随清单标识重置 (父组件用 key 重建). */
 export function PlanSelection({
   libraryId,
   planId,
-  nodes,
-  entryCount,
-  entryBytes,
+  path = "",
   onDone,
   header,
 }: PlanSelectionProps) {
@@ -61,6 +64,7 @@ export function PlanSelection({
   const queryClient = useQueryClient();
   const [excluded, setExcluded] = useState<string[]>([]);
   const [loadedNodes, setLoadedNodes] = useState<Record<string, PlanNodeResponse>>({});
+  const level = usePlanNodeLevel({ libraryId, planId, path });
   const deleteMutation = useMutation({
     ...submitTaskMutation(),
     onSuccess: () => {
@@ -81,14 +85,18 @@ export function PlanSelection({
   const totals = useMemo(() => {
     let entries = 0;
     let bytes = 0;
-    for (const path of excluded) {
-      const node = loadedNodes[path] ?? nodes.find((candidate) => candidate.path === path);
+    for (const prefix of excluded) {
+      const node =
+        loadedNodes[prefix] ?? level.nodes.find((candidate) => candidate.path === prefix);
       if (!node) continue;
       entries += node.entry_count;
       bytes += node.entry_bytes;
     }
-    return { entries: Math.max(0, entryCount - entries), bytes: Math.max(0, entryBytes - bytes) };
-  }, [excluded, loadedNodes, nodes, entryCount, entryBytes]);
+    return {
+      entries: Math.max(0, level.entryCount - entries),
+      bytes: Math.max(0, level.entryBytes - bytes),
+    };
+  }, [excluded, loadedNodes, level.nodes, level.entryCount, level.entryBytes]);
 
   const registerNodes = useCallback(
     (loaded: PlanNodeResponse[]) =>
@@ -100,15 +108,15 @@ export function PlanSelection({
     [],
   );
 
-  const toggle = (node: PlanNodeResponse) => {
-    const covering = coveringPrefix(excluded, node.path);
-    if (covering === node.path) {
-      setExcluded(excluded.filter((prefix) => prefix !== node.path));
-      return;
-    }
-    if (covering) return; // 祖先已排除: 恢复本节点会连带兄弟节点.
-    setExcluded([...excluded, node.path]);
-  };
+  // 依赖为空: 翻页只新增行, 已渲染的行靠 memo 挡住重渲染.
+  const toggle = useCallback((node: PlanNodeResponse) => {
+    setExcluded((prev) => {
+      const covering = coveringPrefix(prev, node.path);
+      if (covering === node.path) return prev.filter((prefix) => prefix !== node.path);
+      if (covering) return prev; // 祖先已排除: 恢复本节点会连带兄弟节点.
+      return [...prev, node.path];
+    });
+  }, []);
 
   const handleDelete = async () => {
     const ok = await confirm({
@@ -140,13 +148,17 @@ export function PlanSelection({
         {header}
       </Group>
       <ScrollArea.Autosize mah="46vh" className={classes.scroll} py="sm">
-        {nodes.length === 0 ? (
+        {level.isLoading ? (
+          <Center py="lg">
+            <Loader size="sm" />
+          </Center>
+        ) : level.total === 0 ? (
           <Text size="sm" c="dimmed">
             {t("cleanup.empty")}
           </Text>
         ) : (
           <Stack gap={6}>
-            {nodes.map((node) => (
+            {level.nodes.map((node) => (
               <PlanNodeRow
                 key={node.path}
                 libraryId={libraryId}
@@ -158,6 +170,15 @@ export function PlanSelection({
                 onNodes={registerNodes}
               />
             ))}
+            <InfiniteScrollSentinel
+              hasNextPage={level.hasNextPage}
+              isFetchingNextPage={level.isFetchingNextPage}
+              fetchNextPage={level.fetchNextPage}
+              loadedLabel={t("common:pagination.loadedOfTotal", {
+                loaded: level.nodes.length,
+                total: level.total,
+              })}
+            />
           </Stack>
         )}
       </ScrollArea.Autosize>
@@ -178,6 +199,37 @@ export function PlanSelection({
   );
 }
 
+interface PlanNodeLevelProps {
+  libraryId: number;
+  planId: string;
+  path: string;
+  enabled?: boolean;
+}
+
+/** 一层子节点: 只取一页, 滚到底再取下一页. 展开任意目录都走这里. */
+function usePlanNodeLevel({ libraryId, planId, path, enabled = true }: PlanNodeLevelProps) {
+  const query = useInfiniteQuery({
+    ...getCleanupPlanNodesInfiniteOptions({
+      path: { library_id: libraryId },
+      query: { path, plan_id: planId, limit: NODE_PAGE_SIZE },
+    }),
+    enabled,
+    initialPageParam: 0,
+    getNextPageParam: nextOffsetPageParam,
+  });
+  const nodes = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
+  return {
+    nodes,
+    total: query.data?.pages[0]?.total ?? 0,
+    entryCount: query.data?.pages[0]?.entry_count ?? 0,
+    entryBytes: query.data?.pages[0]?.entry_bytes ?? 0,
+    isLoading: query.isLoading,
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    fetchNextPage: query.fetchNextPage,
+  };
+}
+
 interface PlanNodeRowProps {
   libraryId: number;
   planId: string;
@@ -188,7 +240,8 @@ interface PlanNodeRowProps {
   onNodes: (nodes: PlanNodeResponse[]) => void;
 }
 
-function PlanNodeRow({
+/** 行是纯展示 + 一层子节点查询: memo 让翻页只挂载新增的行, 不重渲染已加载的. */
+const PlanNodeRow = memo(function PlanNodeRow({
   libraryId,
   planId,
   node,
@@ -197,22 +250,20 @@ function PlanNodeRow({
   onToggle,
   onNodes,
 }: PlanNodeRowProps) {
-  const { t } = useTranslation("library");
+  const { t } = useTranslation(["library", "common"]);
   const [expanded, setExpanded] = useState(false);
   const covering = coveringPrefix(excluded, node.path);
   const covered = covering !== undefined;
-  const childrenQuery = useQuery({
-    ...getCleanupPlanNodesOptions({
-      path: { library_id: libraryId },
-      query: { path: node.path, plan_id: planId },
-    }),
+  const children = usePlanNodeLevel({
+    libraryId,
+    planId,
+    path: node.path,
     enabled: expanded && node.has_children,
   });
-  const childNodes = childrenQuery.data?.nodes;
 
   useEffect(() => {
-    if (childNodes) onNodes(childNodes);
-  }, [childNodes, onNodes]);
+    if (children.nodes.length > 0) onNodes(children.nodes);
+  }, [children.nodes, onNodes]);
 
   const marker = node.reason ? t(`cleanup.reason.${node.reason}`) : null;
   return (
@@ -299,26 +350,37 @@ function PlanNodeRow({
       </Group>
       {expanded && node.has_children ? (
         <Stack gap={6} mt={2}>
-          {childrenQuery.isLoading ? (
+          {children.isLoading ? (
             <Group pl={(depth + 1) * 16} gap="xs">
               <Loader size="xs" />
             </Group>
           ) : (
-            (childNodes ?? []).map((child) => (
-              <PlanNodeRow
-                key={child.path}
-                libraryId={libraryId}
-                planId={planId}
-                node={child}
-                depth={depth + 1}
-                excluded={excluded}
-                onToggle={onToggle}
-                onNodes={onNodes}
+            <>
+              {children.nodes.map((child) => (
+                <PlanNodeRow
+                  key={child.path}
+                  libraryId={libraryId}
+                  planId={planId}
+                  node={child}
+                  depth={depth + 1}
+                  excluded={excluded}
+                  onToggle={onToggle}
+                  onNodes={onNodes}
+                />
+              ))}
+              <InfiniteScrollSentinel
+                hasNextPage={children.hasNextPage}
+                isFetchingNextPage={children.isFetchingNextPage}
+                fetchNextPage={children.fetchNextPage}
+                loadedLabel={t("common:pagination.loadedOfTotal", {
+                  loaded: children.nodes.length,
+                  total: children.total,
+                })}
               />
-            ))
+            </>
           )}
         </Stack>
       ) : null}
     </Box>
   );
-}
+});

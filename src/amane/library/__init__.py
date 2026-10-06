@@ -31,6 +31,7 @@ from .plan import (
     build_plan_tree,
     find_plan_node,
     new_plan_id,
+    plan_tree,
     scan_plan,
     scan_trash,
 )
@@ -91,6 +92,7 @@ __all__ = [
     "normalize_cloud_path",
     "normalize_subtitle_extensions",
     "optional_cloud_path",
+    "plan_tree",
     "prune_empty_dirs",
     "resolve_ingest_cloud_path",
     "same_path",

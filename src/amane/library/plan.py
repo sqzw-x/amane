@@ -103,6 +103,7 @@ class LibraryPlan:
     executed: bool = False
     media_hits: list[LibraryHit] = field(default_factory=list)
     """同一趟遍历命中的媒体文件; 只有 `collect_media` 时填充 (入库扫描用)."""
+    tree: PlanNode | None = field(default=None, repr=False, compare=False)
 
     @property
     def scoped(self) -> bool:
@@ -365,8 +366,6 @@ def build_plan_tree(plan: LibraryPlan) -> PlanNode:
     counted: set[Path] = set()
     seen_inodes: set[tuple[int, int]] = set()
     for entry in plan.entries:
-        if entry.outside:
-            continue
         if entry.dev is not None and entry.ino is not None:
             key = (entry.dev, entry.ino)
             if key not in seen_inodes:
@@ -374,6 +373,9 @@ def build_plan_tree(plan: LibraryPlan) -> PlanNode:
                 counted.add(entry.path)
         else:
             counted.add(entry.path)
+        if entry.outside:
+            # 库外产物没有库内位置, 挂在根下由面板单独标注; 删除照样释放空间, 体积照算.
+            continue
         parent = entry.path.parent
         by_parent.setdefault(parent, []).append(entry)
         cursor = parent
@@ -405,6 +407,16 @@ def build_plan_tree(plan: LibraryPlan) -> PlanNode:
         )
 
     return build(plan.root)
+
+
+def plan_tree(plan: LibraryPlan) -> PlanNode:
+    """面板读取用的树. 构建是 O(清单条目数), 而清单生成后内容不再变化, 因此只构建一次.
+
+    面板翻页会反复读取同一份清单, 每页都重建对两万条候选是纯浪费.
+    """
+    if plan.tree is None:
+        plan.tree = build_plan_tree(plan)
+    return plan.tree
 
 
 def _entry_node(entry: PlanEntry, *, counted: set[Path]) -> PlanNode:

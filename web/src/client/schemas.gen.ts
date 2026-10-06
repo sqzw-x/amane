@@ -5343,6 +5343,54 @@ export const PlanEntryKindSchema = {
     title: 'PlanEntryKind'
 } as const;
 
+export const PlanNodePageSchema = {
+    properties: {
+        path: {
+            type: 'string',
+            title: 'Path'
+        },
+        items: {
+            items: {
+                $ref: '#/components/schemas/PlanNodeResponse'
+            },
+            type: 'array',
+            title: 'Items'
+        },
+        total: {
+            type: 'integer',
+            title: 'Total'
+        },
+        offset: {
+            type: 'integer',
+            title: 'Offset'
+        },
+        limit: {
+            type: 'integer',
+            title: 'Limit'
+        },
+        entry_count: {
+            type: 'integer',
+            title: 'Entry Count'
+        },
+        entry_bytes: {
+            type: 'integer',
+            title: 'Entry Bytes'
+        }
+    },
+    type: 'object',
+    required: [
+        'path',
+        'items',
+        'total',
+        'offset',
+        'limit',
+        'entry_count',
+        'entry_bytes'
+    ],
+    title: 'PlanNodePage',
+    description: '一个目录的子节点切片. 面板只渲染 ``items``, 滚到底再按 ``offset`` 取下一页.'
+} as const;
+
 export const PlanNodeResponseSchema = {
     properties: {
         path: {
@@ -5432,21 +5480,6 @@ export const PlanNodeResponseSchema = {
     description: '树节点. ``path`` 库内为相对路径, 库外为绝对路径; 子节点按需再取.'
 } as const;
 
-export const PlanNodesResponseSchema = {
-    properties: {
-        nodes: {
-            items: {
-                $ref: '#/components/schemas/PlanNodeResponse'
-            },
-            type: 'array',
-            title: 'Nodes',
-            default: []
-        }
-    },
-    type: 'object',
-    title: 'PlanNodesResponse'
-} as const;
-
 export const PlanReasonSchema = {
     type: 'string',
     enum: [
@@ -5513,21 +5546,6 @@ export const PlanSummaryResponseSchema = {
             title: 'Skipped Files',
             default: 0
         },
-        entry_count: {
-            type: 'integer',
-            title: 'Entry Count',
-            default: 0
-        },
-        entry_bytes: {
-            type: 'integer',
-            title: 'Entry Bytes',
-            default: 0
-        },
-        dir_count: {
-            type: 'integer',
-            title: 'Dir Count',
-            default: 0
-        },
         scan_running: {
             type: 'boolean',
             title: 'Scan Running',
@@ -5543,14 +5561,6 @@ export const PlanSummaryResponseSchema = {
                 }
             ],
             title: 'Last Scan Error'
-        },
-        nodes: {
-            items: {
-                $ref: '#/components/schemas/PlanNodeResponse'
-            },
-            type: 'array',
-            title: 'Nodes',
-            default: []
         }
     },
     type: 'object',
@@ -5558,7 +5568,7 @@ export const PlanSummaryResponseSchema = {
         'exists'
     ],
     title: 'PlanSummaryResponse',
-    description: '面板一次取到状态、范围与顶层节点; ``exists`` 为假时其余字段无意义.'
+    description: '面板入口: 状态与范围. ``exists`` 为假时其余字段无意义; 节点一律经分页接口另取.'
 } as const;
 
 export const PlaybackSourceListResponseSchema = {
@@ -7070,24 +7080,6 @@ export const SelectionSummaryResponseSchema = {
             ],
             title: 'Plan Id'
         },
-        entry_count: {
-            type: 'integer',
-            title: 'Entry Count',
-            default: 0
-        },
-        entry_bytes: {
-            type: 'integer',
-            title: 'Entry Bytes',
-            default: 0
-        },
-        nodes: {
-            items: {
-                $ref: '#/components/schemas/PlanNodeResponse'
-            },
-            type: 'array',
-            title: 'Nodes',
-            default: []
-        },
         notices: {
             items: {
                 type: 'string'
@@ -7101,7 +7093,8 @@ export const SelectionSummaryResponseSchema = {
     required: [
         'exists'
     ],
-    title: 'SelectionSummaryResponse'
+    title: 'SelectionSummaryResponse',
+    description: '展开结果. 条目自库根展开 (库外产物挂在根下), 面板按分页接口读取.'
 } as const;
 
 export const SiteConfigSchema = {
@@ -8176,23 +8169,16 @@ export const TrashSummaryResponseSchema = {
             ],
             title: 'Plan Id'
         },
-        entry_count: {
-            type: 'integer',
-            title: 'Entry Count',
-            default: 0
-        },
-        entry_bytes: {
-            type: 'integer',
-            title: 'Entry Bytes',
-            default: 0
-        },
-        nodes: {
-            items: {
-                $ref: '#/components/schemas/PlanNodeResponse'
-            },
-            type: 'array',
-            title: 'Nodes',
-            default: []
+        path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Path'
         }
     },
     type: 'object',
@@ -8200,7 +8186,7 @@ export const TrashSummaryResponseSchema = {
         'exists'
     ],
     title: 'TrashSummaryResponse',
-    description: '回收站历史内容: 展开即产出显式来源清单, 面板按同一套审查与删除处理.'
+    description: '回收站历史内容: 展开即产出显式来源清单, 面板套用同一套审查与删除.'
 } as const;
 
 export const TurnTokenUsageSchema = {
