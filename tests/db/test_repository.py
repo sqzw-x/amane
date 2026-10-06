@@ -1374,7 +1374,7 @@ class TestTaskRepo:
             (TaskType.ORGANIZE, {"library_id": 1}, {"library_id": 1}, False),
             (TaskType.ORGANIZE, {"library_id": 1}, {"library_id": 1, "write_nfo": False}, False),
             (TaskType.ORGANIZE, {"library_id": 1}, {"library_id": 2}, False),
-            (TaskType.TRASH, {"library_id": 1}, {"library_id": 1}, False),
+            (TaskType.DELETE, {"library_id": 1}, {"library_id": 1}, False),
             (TaskType.ACTOR_SCRAPE, {"actor_id": 3}, {"actor_id": 3}, True),
             (TaskType.ACTOR_SCRAPE, {"actor_id": 3}, {"actor_id": 3, "use_cache": []}, True),
             (TaskType.ACTOR_SCRAPE, {"actor_id": 3}, {"actor_id": 4}, False),

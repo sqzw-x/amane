@@ -33,7 +33,6 @@ class MediaFileStatus(StrEnum):
 class TaskType(StrEnum):
     SCRAPE = "scrape"
     ORGANIZE = "organize"
-    TRASH = "trash"
     REFRESH = "refresh"
     CLEANUP = "cleanup"
     UPSCALE = "upscale"

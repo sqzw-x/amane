@@ -8006,7 +8006,6 @@ export const TaskTypeSchema = {
     enum: [
         'scrape',
         'organize',
-        'trash',
         'refresh',
         'cleanup',
         'upscale',

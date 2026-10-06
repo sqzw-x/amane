@@ -16,7 +16,6 @@
 | `DELETE` | 按清单标识删除文件与目录, 删对应索引, 按需剪枝 | 重新扫描、重新生成清单、写 NFO、回收 Resource |
 
 `CLEANUP` / `UPSCALE` 扫描 DB / Resource; `ACTOR_SCRAPE` 刮人物; `R18_IMPORT` 导入 dump. 上述类型均不执行影片落盘.
-`TRASH` 已停用: 枚举取值与前端图标保留供历史任务行展示, 提交面与执行面都不存在; 队列里残留的该类型任务由 Worker 置失败.
 
 不允许 ScrapeHandler 或 Watcher 提交 ORGANIZE / DELETE — Watcher 只注册文件并入队 SCRAPE; 完整的扫描、刮削与落盘须提交 REFRESH, 再提交 ORGANIZE. ORGANIZE 可用 `priority=-1` 跟在刮削之后, 但该优先级不使 ORGANIZE 等待刮削完成: 当时尚未刮削完成的文件会被跳过, 须再次运行 ORGANIZE.
 

@@ -13940,7 +13940,6 @@
         "enum": [
           "scrape",
           "organize",
-          "trash",
           "refresh",
           "cleanup",
           "upscale",

@@ -141,7 +141,7 @@ class TestSubmitTask:
         assert (await client.post("tasks", json={"type": "refresh"})).status_code == 422
         assert (await client.post("tasks", json={"type": "refresh", "library_id": 9999})).status_code == 404
         assert (await client.post("tasks", json={"type": "organize", "library_id": 9999})).status_code == 404
-        # 回收已移除; 删除只认后端产出的清单标识.
+        # 已移除的类型不再被接受; 删除只认后端产出的清单标识.
         assert (await client.post("tasks", json={"type": "trash", "library_id": lib.id})).status_code == 422
         assert (await client.post("tasks", json={"type": "delete", "library_id": lib.id})).status_code == 422
         assert (
@@ -165,11 +165,8 @@ class TestSubmitTask:
         schema = await client.get("tasks/schema")
         assert schema.status_code == 200
         covered = set(schema.json()["discriminator"]["mapping"].keys())
-        # 已停用类型只保留历史任务行, 因此没有提交模型.
-        retired = {TaskType.TRASH}
-        missing = set(TaskType) - covered - retired
+        missing = set(TaskType) - covered
         assert not missing, f"TaskSubmission missing: {missing}. Add submission model to TaskSubmission union."
-        assert not (covered & retired), f"TaskSubmission 不应接受已停用类型: {covered & retired}"
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_submit_organize_creates_new_when_active(

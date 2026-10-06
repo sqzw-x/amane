@@ -85,7 +85,6 @@ export const TASK_STATUSES = exhaustiveTuple<TaskStatus>()("queued", "running", 
 export const TASK_TYPES = exhaustiveTuple<TaskType>()(
   "refresh",
   "organize",
-  "trash",
   "cleanup",
   "scrape",
   "upscale",

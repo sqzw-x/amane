@@ -44,11 +44,6 @@ class TestTaskSubmission:
         assert req.type == "actor_scrape"
         assert req.actor_id == 42
 
-    def test_trash_no_longer_submittable(self):
-        """回收任务已移除: 历史行仍可展示, 但提交面不再接受该类型."""
-        with pytest.raises(ValidationError):
-            self.adapter.validate_python({"type": "trash", "library_id": 7})
-
     def test_unknown_type_rejected(self):
         with pytest.raises(ValidationError):
             self.adapter.validate_python({"type": "unknown"})

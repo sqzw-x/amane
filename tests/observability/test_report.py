@@ -157,7 +157,7 @@ def test_build_task_report_actor_id(tmp_path: Path, result: object, payload: dic
     "task_type",
     [
         TaskType.ORGANIZE,
-        TaskType.TRASH,
+        TaskType.DELETE,
         TaskType.REFRESH,
         TaskType.CLEANUP,
         TaskType.UPSCALE,
