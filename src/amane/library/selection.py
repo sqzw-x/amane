@@ -17,8 +17,7 @@ import structlog
 
 from ..organize.path_templates import resolve_paths
 from ..parsing import parse_file_info
-from ..utils.path import existing_disk_path, path_is_under
-from .delete import same_path
+from ..utils.path import existing_disk_path, path_is_under, path_key
 from .plan import (
     MAX_PLAN_ENTRIES,
     LibraryPlan,
@@ -60,12 +59,16 @@ def build_selection_plan(
     root = Path(library.path)
     entries: list[PlanEntry] = []
     notices: list[str] = []
+    seen: set[str] = set()
+    dropped = 0
 
     def add(path: Path, *, indexed_file: bool = False) -> None:
-        if len(entries) >= limit:
+        nonlocal dropped
+        # 去重按比较键: 逐条目两两比较在万级规模下是平方.
+        key = path_key(path)
+        if key in seen:
             return
-        if any(same_path(path, entry.path) for entry in entries):
-            return
+        seen.add(key)
         disk = existing_disk_path(path, follow_symlinks=False)
         if disk is None:
             notices.append(f"已不在磁盘上: {path}")
@@ -75,6 +78,10 @@ def build_selection_plan(
                 # 索引里的文件本该在库根内: 落在这里说明库路径与索引写法不一致 (旧库的符号链接别名).
                 notices.append(f"文件不在库根内, 请重新保存媒体库路径: {disk}")
             # 模板产物落在库外链接树是正常的, 那些不归本功能管.
+            return
+        # 上限判断放在这里: 只有真会进清单的路径才算「未纳入」, 库外产物与不存在的路径不计入.
+        if len(entries) >= limit:
+            dropped += 1
             return
         entries.append(_entry(disk))
 
@@ -92,6 +99,9 @@ def build_selection_plan(
             continue
         _add_tree_contents(work_dir, add=add)
 
+    if dropped:
+        notices.append(f"选中项过多, 另有 {dropped} 项未纳入清单")
+
     plan = LibraryPlan(
         plan_id=new_plan_id(),
         library_id=library.id,
@@ -102,8 +112,16 @@ def build_selection_plan(
         source=PlanSource.EXPLICIT,
         created_at=datetime.now(UTC),
         entries=entries,
+        truncated=bool(dropped),
+        dropped=dropped,
     )
-    logger.info("selection expanded", library_id=library.id, entries=len(plan.entries), notices=len(notices))
+    logger.info(
+        "selection expanded",
+        library_id=library.id,
+        entries=len(plan.entries),
+        dropped=plan.dropped,
+        notices=len(notices),
+    )
     return SelectionOutcome(plan=plan, notices=notices)
 
 
@@ -174,19 +192,26 @@ def _add_subtitles(library: Library, video: Path, *, add: _Add) -> None:
 
 
 def _work_dir_refusal(work_dir: Path, *, root: Path, indexed: Sequence[MediaFile]) -> str | None:
-    if same_path(work_dir, root):
+    if path_key(work_dir) == path_key(root):
         return "作品目录就是库根, 不提供整目录删除"
-    siblings = [item for item in indexed if same_path(Path(item.path).parent, work_dir)]
+    siblings = [item for item in indexed if path_key(Path(item.path).parent) == path_key(work_dir)]
     if len(siblings) > 1:
         return f"目录内有 {len(siblings)} 条媒体索引, 不提供整目录删除: {work_dir}"
     return None
 
 
 def _add_tree_contents(directory: Path, *, add: _Add) -> None:
-    """整目录删除按内容逐条展开: 面板给用户看的就是将被删除的全部路径."""
+    """整目录删除按内容逐条展开: 面板给用户看的就是将被删除的全部路径.
+
+    空目录自身也是一个条目: 它没有子项, 只按内容展开就会漏掉它, 而剪枝只处理本次删除项的祖先,
+    于是「删除所在目录」会因为残留的空目录而不成立.
+    """
     try:
         children = list(directory.iterdir())
     except OSError:
+        return
+    if not children:
+        add(directory)
         return
     for child in children:
         if child.is_dir() and not child.is_symlink():

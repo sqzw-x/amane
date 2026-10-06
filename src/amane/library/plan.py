@@ -25,7 +25,7 @@ from .scan import LibraryFileKind, LibraryHit, LibraryScan, UnwantedKind
 
 logger = structlog.get_logger()
 
-# 单份清单的条目上限. 触顶即停止遍历并标记已截断: 截断只会少删, 但必须在面板上可见.
+# 单份清单的条目上限. 触顶只丢条目并标记已截断, 遍历照常走完: 截断只会少删, 但必须在面板上可见.
 MAX_PLAN_ENTRIES = 20000
 # 每库每来源保留的清单份数. 固定窗口, 因此存放与任务表无关.
 PLAN_RETENTION = 4
@@ -97,6 +97,8 @@ class LibraryPlan:
     entries: list[PlanEntry] = field(default_factory=list)
     dirs: dict[Path, DirCoverage] = field(default_factory=dict)
     truncated: bool = False
+    dropped: int = 0
+    """触顶后未纳入清单的候选数; 截断时才有意义."""
     skipped_dirs: int = 0
     skipped_files: int = 0
     executed: bool = False
@@ -138,7 +140,11 @@ def _utcnow() -> datetime:
 
 @dataclass
 class PlanStore:
-    """进程内的清单存放: 每库每来源保留最近若干份, 过期即视为不存在."""
+    """进程内的清单存放: 每库每来源保留最近若干份, 过期即视为不存在.
+
+    已执行的清单是花掉的: 面板侧的读取一律当它不存在, 否则用户会看到一份按设计无法再执行的清单.
+    `get` 例外 — 执行侧要凭它区分「不存在」与「已执行过」, 因此过滤在调用方.
+    """
 
     keep: int = PLAN_RETENTION
     ttl_seconds: int = PLAN_TTL_SECONDS
@@ -153,7 +159,7 @@ class PlanStore:
 
     def latest(self, library_id: int, source: PlanSource) -> LibraryPlan | None:
         for plan in reversed(self._plans.get((library_id, source), [])):
-            if not self._expired(plan):
+            if not plan.executed and not self._expired(plan):
                 return plan
         return None
 
@@ -182,6 +188,7 @@ class _ScanState:
     collect_media: bool = False
     media: list[LibraryHit] = field(default_factory=list)
     truncated: bool = False
+    dropped: int = 0
     skipped_dirs: int = 0
     skipped_files: int = 0
 
@@ -218,7 +225,7 @@ def scan_plan(
     - 磁盘上没有子项的目录作为「扫描时已空」的条目.
     - 回收站子树整棵不进入清单, 且算作不可删除的子项: 其父目录不会因此被预告清除.
     - 读不到的目录与 stat 失败的文件只计数, 其余子项继续.
-    - 达到条目上限即停止遍历并标记已截断.
+    - 达到条目上限后不再登记条目, 但遍历照常走完 (媒体命中必须完整), 并记下未纳入的候选数.
     """
     state = _ScanState(entries=[], dirs={}, limit=limit, collect_media=collect_media)
     _walk(scope_dir, state=state, scan=scan, recursive=recursive)
@@ -234,6 +241,7 @@ def scan_plan(
         entries=state.entries,
         dirs=state.dirs,
         truncated=state.truncated,
+        dropped=state.dropped,
         skipped_dirs=state.skipped_dirs,
         skipped_files=state.skipped_files,
         media_hits=state.media,
@@ -245,6 +253,7 @@ def scan_plan(
         entries=len(plan.entries),
         dirs=len(plan.dirs),
         truncated=plan.truncated,
+        dropped=plan.dropped,
         skipped_dirs=plan.skipped_dirs,
         skipped_files=plan.skipped_files,
     )
@@ -252,9 +261,11 @@ def scan_plan(
 
 
 def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: bool) -> _DirResult | None:
-    """登记 ``directory`` 下的条目与覆盖信息; 读不到该目录时返回 None."""
-    if state.truncated:
-        return _DirResult(children=0, entries=0, disappears=False)
+    """登记 ``directory`` 下的条目与覆盖信息; 读不到该目录时返回 None.
+
+    触顶后不提前返回: 本趟遍历同时承担入库扫描的媒体收集, 半途而废会让媒体列表缺项,
+    ``REFRESH`` 的增删据此判断存在性, 缺项即误删索引. 触顶只丢条目与覆盖信息.
+    """
     try:
         with os.scandir(directory) as scanned:
             children = list(scanned)
@@ -267,8 +278,6 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
     removed = 0
     entries = 0
     for child in children:
-        if state.truncated:
-            break
         total += 1
         path = Path(child.path)
         if child.name == TRASH_DIRNAME:
@@ -308,13 +317,17 @@ def _record_dir(path: Path, *, state: _ScanState, scan: LibraryScan, recursive: 
         # 不递归时子目录不是处置对象: 计入子项数, 使父目录不会被预告清除.
         return None
     result = _walk(path, state=state, scan=scan, recursive=recursive)
-    if result is None or state.truncated:
+    if result is None:
         return None
     if result.children == 0:
+        # 空目录仍要经过 `_record_entry`: 触顶时它同样是被丢掉的候选, 与回收站来源口径一致.
         entry = PlanEntry(path=path, kind=PlanEntryKind.DIR, reason=PlanReason.EMPTY_DIR)
         if not _record_entry(entry, state=state):
             return None
         return _DirResult(children=0, entries=1, disappears=True)
+    if state.truncated:
+        # 截断后不登记覆盖: 「将变空」只在整份清单完整时才有意义.
+        return None
     if result.entries > 0:
         # 只登记子树里有条目的目录: 「将变空」只对它们有意义, 也限制覆盖表的规模.
         state.dirs[path] = DirCoverage(disk_children=result.children, will_be_empty=result.disappears)
@@ -339,6 +352,7 @@ def _file_entry(path: Path, *, scan: LibraryScan, child_stat: os.stat_result, is
 def _record_entry(entry: PlanEntry, *, state: _ScanState) -> bool:
     if state.full:
         state.truncated = True
+        state.dropped += 1
         return False
     state.entries.append(entry)
     return True
@@ -473,6 +487,7 @@ def scan_trash(
         entries=state.entries,
         dirs=state.dirs,
         truncated=state.truncated,
+        dropped=state.dropped,
         skipped_dirs=state.skipped_dirs,
         skipped_files=state.skipped_files,
     )
@@ -481,6 +496,7 @@ def scan_trash(
         library_id=library_id,
         entries=len(plan.entries),
         truncated=plan.truncated,
+        dropped=plan.dropped,
         skipped_dirs=plan.skipped_dirs,
         skipped_files=plan.skipped_files,
     )
@@ -488,9 +504,10 @@ def scan_trash(
 
 
 def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
-    """登记回收站目录下的全部内容; 读不到该目录时返回 None."""
-    if state.truncated:
-        return _DirResult(children=0, entries=0, disappears=False)
+    """登记回收站目录下的全部内容; 读不到该目录时返回 None.
+
+    与规则来源同一条规则: 触顶只丢条目与覆盖信息, 遍历照常走完.
+    """
     try:
         with os.scandir(directory) as scanned:
             children = list(scanned)
@@ -503,8 +520,6 @@ def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
     removed = 0
     entries = 0
     for child in children:
-        if state.truncated:
-            break
         total += 1
         path = Path(child.path)
         try:
@@ -515,7 +530,7 @@ def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
             continue
         if stat.S_ISDIR(child_stat.st_mode):
             sub = _walk_explicit(path, state=state)
-            if sub is None or state.truncated:
+            if sub is None:
                 continue
             if sub.children == 0:
                 entry = PlanEntry(path=path, kind=PlanEntryKind.DIR, reason=PlanReason.EXPLICIT)
@@ -523,7 +538,8 @@ def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
                     entries += 1
                     removed += 1
                 continue
-            state.dirs[path] = DirCoverage(disk_children=sub.children, will_be_empty=sub.disappears)
+            if not state.truncated:
+                state.dirs[path] = DirCoverage(disk_children=sub.children, will_be_empty=sub.disappears)
             entries += sub.entries
             if sub.disappears:
                 removed += 1

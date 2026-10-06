@@ -59,14 +59,22 @@ def is_any_descendant(p: str | Path, *parents: str | Path) -> bool:
     return any(is_descendant(p, parent) for parent in parents)
 
 
+def path_key(path: str | Path) -> str:
+    """字面路径的比较键: NFC、``normcase`` 与 ``normpath``.
+
+    与 `path_is_under` 同一套归一, 供集合成员判定使用 — 两两比较在万级规模下是平方.
+    """
+    return os.path.normcase(os.path.normpath(nfc_path(os.fspath(path))))
+
+
 def path_is_under(path: str | Path, root: str | Path) -> bool:
     """字面路径是否为 root 自身或子孙.
 
     不做 realpath: 目录移出或删除后源路径已不存在, 仍须能按索引前缀匹配.
     比较前 NFC、``normcase``、``normpath``, 避免 ``/a/bar`` 命中 ``/a/barbar``.
     """
-    candidate = Path(os.path.normcase(os.path.normpath(nfc_path(os.fspath(path)))))
-    base = Path(os.path.normcase(os.path.normpath(nfc_path(os.fspath(root)))))
+    candidate = Path(path_key(path))
+    base = Path(path_key(root))
     return candidate == base or base in candidate.parents
 
 
