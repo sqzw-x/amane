@@ -20,14 +20,14 @@ class TestClassify:
 
     def test_blacklist_is_trash(self):
         scan = LibraryScan(blacklist_patterns=["广告"])
-        assert scan.classify(Path("/tmp/广告.html")) is LibraryFileKind.TRASH
-        assert scan.classify(Path("/tmp/广告.jpg")) is LibraryFileKind.TRASH
+        assert scan.classify(Path("/tmp/广告.html")) is LibraryFileKind.UNWANTED
+        assert scan.classify(Path("/tmp/广告.jpg")) is LibraryFileKind.UNWANTED
         assert scan.classify(Path("/tmp/cover.jpg")) is None
 
     def test_blacklist_before_trailer(self):
         """同时命中黑名单与预告片时回收."""
         scan = LibraryScan(trailer_pattern="trailer", blacklist_patterns=["trailer"])
-        assert scan.classify(Path("/tmp/trailer.mp4")) is LibraryFileKind.TRASH
+        assert scan.classify(Path("/tmp/trailer.mp4")) is LibraryFileKind.UNWANTED
 
     def test_undersized_video_is_trash(self, tmp_path: Path):
         small = tmp_path / "ad.mp4"
@@ -37,7 +37,7 @@ class TestClassify:
         nfo = tmp_path / "note.nfo"
         nfo.write_bytes(b"nfo")
         scan = LibraryScan(min_file_size=50)
-        assert scan.classify(small) is LibraryFileKind.TRASH
+        assert scan.classify(small) is LibraryFileKind.UNWANTED
         assert scan.classify(large) is LibraryFileKind.MEDIA
         assert scan.classify(nfo) is None
         assert scan.classify(tmp_path / "gone.mp4") is LibraryFileKind.MEDIA
@@ -55,7 +55,7 @@ class TestClassify:
 
     def test_blacklist_outside_patterns(self):
         scan = LibraryScan(patterns=["*.mkv"], blacklist_patterns=["广告"])
-        assert scan.classify(Path("/tmp/广告.mp4")) is LibraryFileKind.TRASH
+        assert scan.classify(Path("/tmp/广告.mp4")) is LibraryFileKind.UNWANTED
 
     def test_trash_dir_omitted(self):
         scan = LibraryScan()

@@ -301,7 +301,7 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
             if state.collect_media:
                 state.media.append(LibraryHit(path, kind))
             continue
-        if kind is not LibraryFileKind.TRASH:
+        if kind is not LibraryFileKind.UNWANTED:
             continue
         entry = _file_entry(path, scan=scan, child_stat=child_stat, is_symlink=stat.S_ISLNK(child_stat.st_mode))
         if entry is not None and _record_entry(entry, state=state):

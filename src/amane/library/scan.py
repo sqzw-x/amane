@@ -13,10 +13,10 @@ if TYPE_CHECKING:
 
 
 class LibraryFileKind(StrEnum):
-    """分类结果. `TRASH` 沿用旧名: 表示无效文件 (黑名单或体积过小), 与已停用的回收任务无关."""
+    """分类结果: 媒体入库; 无效文件进清理清单; 跳过既不入库也不进清单."""
 
     SKIP = "skip"
-    TRASH = "trash"
+    UNWANTED = "unwanted"
     MEDIA = "media"
 
 
@@ -73,7 +73,7 @@ class LibraryScan:
         if is_in_trash(path):
             return None
         if self.unwanted_kind(path) is not None:
-            return LibraryFileKind.TRASH
+            return LibraryFileKind.UNWANTED
         # 预告片 → 跳过.
         if self._matches(self._trailer, path.name):
             return LibraryFileKind.SKIP

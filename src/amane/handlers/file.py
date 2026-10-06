@@ -450,7 +450,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                         await self._repo.delete_media_file(mf.id)
                     else:
                         kind = await _classify_indexed(mf_path, scan)
-                        if kind is LibraryFileKind.TRASH or kind is LibraryFileKind.SKIP:
+                        if kind is LibraryFileKind.UNWANTED or kind is LibraryFileKind.SKIP:
                             skipped += 1
                         else:
                             # MEDIA, 以及 classify 返回 None 的已索引行 (不在当前扩展名白名单,

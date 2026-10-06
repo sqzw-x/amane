@@ -38,7 +38,7 @@ class TestScanLibrary:
         hits = scan_library.sync(tree, recursive=True, scan=LibraryScan())
         assert _names(hits, LibraryFileKind.MEDIA) == {"a.mp4", "c.mkv", "e.avi"}
         assert _names(hits, LibraryFileKind.SKIP) == set()
-        assert _names(hits, LibraryFileKind.TRASH) == set()
+        assert _names(hits, LibraryFileKind.UNWANTED) == set()
 
     def test_non_recursive_top_level(self, tree: Path):
         hits = scan_library.sync(tree, recursive=False, scan=LibraryScan())
@@ -54,7 +54,7 @@ class TestScanLibrary:
         )
         assert _names(hits, LibraryFileKind.MEDIA) == {"b.txt", "d.nfo"}
         assert _names(hits, LibraryFileKind.SKIP) == {"trailer.mp4"}
-        assert _names(hits, LibraryFileKind.TRASH) == {"广告.html"}
+        assert _names(hits, LibraryFileKind.UNWANTED) == {"广告.html"}
 
     def test_empty_dir(self, tmp_path: Path):
         assert scan_library.sync(tmp_path, recursive=True, scan=LibraryScan()) == []
@@ -74,7 +74,7 @@ class TestScanLibrary:
         (tree / "sub" / "deep" / "e.avi").write_bytes(b"x" * 100)
         hits = scan_library.sync(tree, recursive=True, scan=LibraryScan(min_file_size=50))
         assert _names(hits, LibraryFileKind.MEDIA) == {"c.mkv", "e.avi"}
-        assert _names(hits, LibraryFileKind.TRASH) == {"a.mp4"}
+        assert _names(hits, LibraryFileKind.UNWANTED) == {"a.mp4"}
 
     @pytest.mark.asyncio
     async def test_in_thread_matches_sync(self, tree: Path):
