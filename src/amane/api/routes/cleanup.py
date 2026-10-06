@@ -68,18 +68,27 @@ def _plan_by_id(store: PlanStore, library_id: int, plan_id: str | None) -> Libra
     return plan
 
 
-async def _scan_running(repo: Repository, library_id: int) -> bool:
-    tasks = await repo.list_tasks(statuses=_SCAN_STATUSES, task_types=(TaskType.SCAN_INVALID,), limit=50)
-    return any(task.payload.get("library_id") == library_id for task in tasks)
+async def _scan_state(repo: Repository, library_id: int) -> tuple[bool, str | None]:
+    """该库是否有扫描在跑, 以及最近一次扫描的失败原因 (面板据此给出可见的错误)."""
+    running = await repo.list_tasks(statuses=_SCAN_STATUSES, task_types=(TaskType.SCAN_INVALID,), limit=50)
+    is_running = any(task.payload.get("library_id") == library_id for task in running)
+    recent = await repo.list_tasks(task_types=(TaskType.SCAN_INVALID,), limit=50)
+    for task in recent:
+        if task.payload.get("library_id") != library_id:
+            continue
+        if task.status is TaskStatus.FAILED:
+            return is_running, task.error or "扫描失败"
+        return is_running, None
+    return is_running, None
 
 
 @router.get("/{library_id}/cleanup/plan")
 async def get_cleanup_plan(library_id: int, repo: RepoDep, runtime: RuntimeDep) -> PlanSummaryResponse:
     """面板的入口: 有清单给状态与顶层节点, 无清单只给 ``exists=False``."""
-    running = await _scan_running(repo, library_id)
+    running, last_error = await _scan_state(repo, library_id)
     plan = runtime.plan_store.latest(library_id, PlanSource.RULES)
     if plan is None:
-        return PlanSummaryResponse(exists=False, scan_running=running)
+        return PlanSummaryResponse(exists=False, scan_running=running, last_scan_error=last_error)
 
     root = build_plan_tree(plan)
     return PlanSummaryResponse(
@@ -94,6 +103,7 @@ async def get_cleanup_plan(library_id: int, repo: RepoDep, runtime: RuntimeDep) 
         entry_bytes=root.entry_bytes,
         dir_count=len(plan.dirs),
         scan_running=running,
+        last_scan_error=last_error,
         nodes=[_to_response(plan, child, children=False) for child in root.children],
     )
 

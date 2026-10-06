@@ -25,6 +25,7 @@ import type { PlanNodeResponse } from "@/client/types.gen";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import { formatFileSize } from "@/lib/utils";
+import classes from "./plan-selection.module.css";
 
 /** 清单里的路径前缀匹配: 与后端一致按路径分量, 不用字符串前缀. */
 function isUnder(path: string, prefix: string): boolean {
@@ -138,13 +139,13 @@ export function PlanSelection({
         </Text>
         {header}
       </Group>
-      <ScrollArea.Autosize mah="50vh">
+      <ScrollArea.Autosize mah="46vh" className={classes.scroll} py="sm">
         {nodes.length === 0 ? (
           <Text size="sm" c="dimmed">
             {t("cleanup.empty")}
           </Text>
         ) : (
-          <Stack gap={2}>
+          <Stack gap={6}>
             {nodes.map((node) => (
               <PlanNodeRow
                 key={node.path}
@@ -215,8 +216,13 @@ function PlanNodeRow({
 
   const marker = node.reason ? t(`cleanup.reason.${node.reason}`) : null;
   return (
-    <Box>
-      <Group gap={4} wrap="nowrap" pl={depth * 16}>
+    <Box
+      className={classes.row}
+      py={6}
+      pr="sm"
+      pl={`calc(var(--mantine-spacing-xs) + ${depth * 20}px)`}
+    >
+      <Group gap="sm" wrap="nowrap">
         {node.has_children ? (
           <ActionIcon
             variant="subtle"
@@ -225,7 +231,7 @@ function PlanNodeRow({
             onClick={() => setExpanded((prev) => !prev)}
           >
             <IconChevronRight
-              size={14}
+              size={16}
               style={{
                 transform: expanded ? "rotate(90deg)" : undefined,
                 transition: "transform 120ms",
@@ -233,59 +239,66 @@ function PlanNodeRow({
             />
           </ActionIcon>
         ) : (
-          <Box w={22} />
+          <Box w={26} />
         )}
         <Checkbox
-          size="xs"
+          size="sm"
           checked={!covered}
           disabled={covered && covering !== node.path}
           onChange={() => onToggle(node)}
         />
         {node.kind === "dir" ? (
-          <IconFolder size={14} />
+          <IconFolder size={16} />
         ) : node.outside ? (
-          <IconExternalLink size={14} />
+          <IconExternalLink size={16} />
         ) : (
-          <IconFile size={14} />
+          <IconFile size={16} />
         )}
-        <Text size="sm" truncate title={node.path}>
+        {node.kind === "symlink" ? (
+          <Tooltip label={t("cleanup.symlinkHint")}>
+            <Badge size="sm" variant="light" color="blue">
+              {t("cleanup.symlink")}
+            </Badge>
+          </Tooltip>
+        ) : null}
+        <Text size="sm" fw={500} truncate title={node.path}>
           {node.name}
         </Text>
         {node.will_be_empty && node.kind === "dir" && !node.reason ? (
-          <Badge size="xs" variant="light" color="orange">
+          <Badge size="sm" variant="light" color="orange">
             {t("cleanup.willBeEmpty")}
           </Badge>
         ) : null}
         {node.outside ? (
-          <Badge size="xs" variant="light" color="gray">
+          <Badge size="sm" variant="light" color="gray">
             {t("cleanup.outside")}
           </Badge>
         ) : null}
         {node.hardlink ? (
           <Tooltip label={t("cleanup.hardlinkHint")}>
-            <Badge size="xs" variant="light" color="gray">
+            <Badge size="sm" variant="light" color="gray">
               {t("cleanup.hardlink")}
             </Badge>
           </Tooltip>
         ) : null}
         {marker ? (
-          <Badge size="xs" variant="default">
+          <Badge size="sm" variant="default">
             {marker}
           </Badge>
         ) : null}
         {node.kind !== "dir" ? (
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             {formatFileSize(node.size)}
           </Text>
         ) : null}
         {node.entry_count > 1 ? (
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             {t("cleanup.nodeCount", { count: node.entry_count })}
           </Text>
         ) : null}
       </Group>
       {expanded && node.has_children ? (
-        <Stack gap={2} mt={2}>
+        <Stack gap={6} mt={2}>
           {childrenQuery.isLoading ? (
             <Group pl={(depth + 1) * 16} gap="xs">
               <Loader size="xs" />

@@ -249,3 +249,26 @@ async def test_selection_rejects_foreign_media(client: AsyncClient, app: FastAPI
     resp = await client.post(f"libraries/{first}/cleanup/selection", json={"media_file_ids": [other.id]})
 
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_plan_reports_last_scan_failure(
+    client: AsyncClient,
+    repo: Repository,
+    safe_path: Path,
+    stop_worker: None,
+) -> None:
+    """无清单时把最近一次扫描的失败原因带给面板, 否则用户只看到一个空状态."""
+    library_id = await _library(client, safe_path / "lib")
+    task = await repo.create_task(
+        TaskType.SCAN_INVALID, ScanInvalidPayload(library_id=library_id, path=str(safe_path / "lib" / "gone"))
+    )
+    assert task.id is not None
+    await repo.fail_task(task.id, error="Not a directory: gone")
+
+    resp = await client.get(f"libraries/{library_id}/cleanup/plan")
+
+    body = resp.json()
+    assert body["exists"] is False
+    assert body["scan_running"] is False
+    assert body["last_scan_error"] == "Not a directory: gone"

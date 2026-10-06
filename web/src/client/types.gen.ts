@@ -2720,6 +2720,10 @@ export type PlanSummaryResponse = {
      */
     scan_running?: boolean;
     /**
+     * Last Scan Error
+     */
+    last_scan_error?: string | null;
+    /**
      * Nodes
      */
     nodes?: Array<PlanNodeResponse>;

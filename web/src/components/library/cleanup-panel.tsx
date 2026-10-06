@@ -1,4 +1,4 @@
-import { Button, Group, Loader, Modal, Stack, Tabs, Text } from "@mantine/core";
+import { Alert, Button, Group, Loader, Modal, Stack, Tabs, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,7 +25,7 @@ export function CleanupPanel({ library, opened, onClose }: CleanupPanelProps) {
   const [tab, setTab] = useState<string | null>("rules");
 
   return (
-    <Modal opened={opened} onClose={onClose} title={t("cleanup.title")} size="xl">
+    <Modal opened={opened} onClose={onClose} title={t("cleanup.title")} size="xl" centered>
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List mb="sm">
           <Tabs.Tab value="rules">{t("cleanup.tabRules")}</Tabs.Tab>
@@ -84,19 +84,44 @@ function RulesTab({ library, enabled, onDone }: TabProps) {
   const scan = () =>
     scanMutation.mutate({ body: { type: "scan_invalid", library_id: library.id } });
   if (!plan?.exists) {
+    // 扫描期间只渲染扫描中: 面板可以关掉, 扫描在后台继续.
+    if (plan?.scan_running) {
+      return (
+        <Stack gap={6} align="center" py="xl">
+          <Loader size="sm" />
+          <Text size="sm">{t("cleanup.scanning")}</Text>
+          <Text size="xs" c="dimmed">
+            {t("cleanup.scanningHint")}
+          </Text>
+        </Stack>
+      );
+    }
     return (
       <Stack gap="sm">
+        {plan?.last_scan_error ? (
+          <Alert
+            color="red"
+            variant="light"
+            icon={<IconAlertTriangle size={16} />}
+            title={t("cleanup.scanFailed")}
+          >
+            <Text size="xs">{plan.last_scan_error}</Text>
+          </Alert>
+        ) : null}
         <Text size="sm" c="dimmed">
           {t("cleanup.noPlanHint")}
         </Text>
-        {scanning ? (
-          <Group gap="xs">
-            <Loader size="xs" />
-            <Text size="sm">{t("cleanup.generating")}</Text>
-          </Group>
-        ) : null}
         <Group>
-          <Button leftSection={<IconRefresh size={16} />} loading={scanning} onClick={scan}>
+          {/* 提交后立即关面板: 进度由「扫描中」状态与任务列表表达, 不在这里再转一次圈. */}
+          <Button
+            leftSection={<IconRefresh size={16} />}
+            onClick={() =>
+              scanMutation.mutate(
+                { body: { type: "scan_invalid", library_id: library.id } },
+                { onSuccess: onDone },
+              )
+            }
+          >
             {t("cleanup.scan")}
           </Button>
         </Group>

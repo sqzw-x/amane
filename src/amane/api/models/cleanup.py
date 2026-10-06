@@ -46,6 +46,8 @@ class PlanSummaryResponse(BaseModel):
     dir_count: int = 0
     scan_running: bool = False
     """该库是否有扫描无效文件任务在跑, 避免重复触发."""
+    last_scan_error: str | None = None
+    """最近一次扫描的失败原因; 面板在无清单时据此显示错误."""
     nodes: list[PlanNodeResponse] = []
 
 

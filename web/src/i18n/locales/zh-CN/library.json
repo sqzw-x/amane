@@ -189,12 +189,11 @@
   "cleanup": {
     "tooltip": "清理无效文件与空目录",
     "title": "清理无效文件",
-    "noPlanHint": "还没有清单. 清理需要一次全库遍历, 由只读的扫描任务承担; 可以关掉面板让任务继续.",
+    "noPlanHint": "尚未扫描无效文件",
     "scan": "开始扫描",
     "rescan": "重新扫描",
     "scanStarted": "扫描已开始",
     "deleteStarted": "删除已开始",
-    "generating": "正在生成清单…",
     "scope": "本次清单只覆盖 {{path}}",
     "truncated": "清单已截断, 请按子目录分批处理",
     "skipped": "本次未覆盖 {{dirs}} 个目录与 {{files}} 个文件",
@@ -224,6 +223,11 @@
     "deleteMenu": "删除",
     "deleteRecord": "只删除记录",
     "deleteFiles": "删除文件",
-    "deleteWorkDir": "删除文件与作品文件夹"
+    "deleteWorkDir": "删除文件与作品文件夹",
+    "scanning": "正在扫描无效文件…",
+    "scanningHint": "可以关掉面板, 扫描在后台继续",
+    "scanFailed": "上次扫描失败",
+    "symlink": "链接",
+    "symlinkHint": "删除的是库内链接本身, 不影响它指向的源文件"
   }
 }

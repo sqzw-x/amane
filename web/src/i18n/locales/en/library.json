@@ -191,12 +191,11 @@
   "cleanup": {
     "tooltip": "Clean unwanted files and empty directories",
     "title": "Clean unwanted files",
-    "noPlanHint": "No plan yet. Building one needs a full library scan, run by a read-only task; you can close the panel and let it finish.",
+    "noPlanHint": "Not scanned yet",
     "scan": "Start scan",
     "rescan": "Rescan",
     "scanStarted": "Scan started",
     "deleteStarted": "Deletion started",
-    "generating": "Building plan…",
     "scope": "This plan covers {{path}} only",
     "truncated": "Plan truncated, narrow the scope to a subdirectory",
     "skipped": "{{dirs}} directories and {{files}} files were not covered",
@@ -232,6 +231,11 @@
     "deleteMenu": "Delete",
     "deleteRecord": "Record only",
     "deleteFiles": "Delete files",
-    "deleteWorkDir": "Delete files and work folder"
+    "deleteWorkDir": "Delete files and work folder",
+    "scanning": "Scanning for unwanted files…",
+    "scanningHint": "You can close this panel; the scan keeps running",
+    "scanFailed": "Last scan failed",
+    "symlink": "Link",
+    "symlinkHint": "Deletes the link inside the library, not the file it points to"
   }
 }

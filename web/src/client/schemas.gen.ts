@@ -5533,6 +5533,17 @@ export const PlanSummaryResponseSchema = {
             title: 'Scan Running',
             default: false
         },
+        last_scan_error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Scan Error'
+        },
         nodes: {
             items: {
                 $ref: '#/components/schemas/PlanNodeResponse'

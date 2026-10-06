@@ -39,7 +39,7 @@ export function MediaDeleteDialog({
   });
 
   return (
-    <Modal opened={opened} onClose={onClose} title={t("cleanup.previewTitle")} size="xl">
+    <Modal opened={opened} onClose={onClose} title={t("cleanup.previewTitle")} size="xl" centered>
       {preview.isLoading ? (
         <Group justify="center" p="lg">
           <Loader size="sm" />
