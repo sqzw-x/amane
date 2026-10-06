@@ -87,6 +87,7 @@
         "$": {
           "options": {
             "airav": "airav",
+            "avbase": "avbase",
             "avsox": "avsox",
             "dahlia": "dahlia",
             "dmm": "dmm",
@@ -116,6 +117,7 @@
           "$": {
             "options": {
               "airav": "airav",
+              "avbase": "avbase",
               "avsox": "avsox",
               "dahlia": "dahlia",
               "dmm": "dmm",
@@ -168,6 +170,7 @@
         "$": {
           "options": {
             "airav": "airav",
+            "avbase": "avbase",
             "avsox": "avsox",
             "dahlia": "dahlia",
             "dmm": "dmm",
@@ -197,6 +200,7 @@
           "$": {
             "options": {
               "airav": "airav",
+              "avbase": "avbase",
               "avsox": "avsox",
               "dahlia": "dahlia",
               "dmm": "dmm",
@@ -259,6 +263,7 @@
         "description": "按站点单独设置",
         "options": {
           "airav": "airav",
+          "avbase": "avbase",
           "avsox": "avsox",
           "dahlia": "dahlia",
           "dmm": "dmm",
@@ -378,6 +383,7 @@
         "$": {
           "options": {
             "airav": "airav",
+            "avbase": "avbase",
             "avsox": "avsox",
             "dahlia": "dahlia",
             "dmm": "dmm",
@@ -407,6 +413,7 @@
           "$": {
             "options": {
               "airav": "airav",
+              "avbase": "avbase",
               "avsox": "avsox",
               "dahlia": "dahlia",
               "dmm": "dmm",
@@ -771,6 +778,7 @@
       "profile_sites": {
         "label": "演员资料优先级",
         "options": {
+          "avbase": "avbase",
           "javdb": "javdb",
           "minnano": "minnano",
           "theporndb": "theporndb",
@@ -778,6 +786,7 @@
         },
         "$": {
           "options": {
+            "avbase": "avbase",
             "javdb": "javdb",
             "minnano": "minnano",
             "theporndb": "theporndb",
