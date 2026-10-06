@@ -187,5 +187,42 @@
     "nfo": "NFO Template",
     "trailer": "Trailer Template",
     "subtitle": "Subtitle Template"
+  },
+  "cleanup": {
+    "tooltip": "Clean unwanted files and empty directories",
+    "title": "Clean unwanted files",
+    "noPlanHint": "No plan yet. Building one needs a full library scan, run by a read-only task; you can close the panel and let it finish.",
+    "scan": "Start scan",
+    "rescan": "Rescan",
+    "scanStarted": "Scan started",
+    "deleteStarted": "Deletion started",
+    "generating": "Building plan…",
+    "scope": "This plan covers {{path}} only",
+    "truncated": "Plan truncated, narrow the scope to a subdirectory",
+    "skipped": "{{dirs}} directories and {{files}} files were not covered",
+    "selected": "{{count}} selected, about {{size}}",
+    "empty": "Nothing to clean",
+    "expand": "Expand",
+    "willBeEmpty": "Will be emptied",
+    "outside": "Outside library",
+    "hardlink": "Hard link",
+    "hardlinkHint": "Deleting frees no extra space",
+    "nodeCount": "{{count}} items",
+    "confirmTitle": "Confirm deletion",
+    "confirmMessage": "{{count}} items, about {{size}}, will be deleted. This cannot be undone; index rows go with them.",
+    "confirmLabel": "Delete",
+    "deleteSelected": "Delete selected",
+    "reason": {
+      "blacklist": "Blacklist",
+      "undersized": "Too small",
+      "empty_dir": "Empty directory",
+      "explicit": "Selected"
+    },
+    "confirmMessage_one": "cleanup.confirmMessage",
+    "confirmMessage_other": "cleanup.confirmMessage",
+    "selected_one": "cleanup.selected",
+    "selected_other": "cleanup.selected",
+    "nodeCount_one": "cleanup.nodeCount",
+    "nodeCount_other": "cleanup.nodeCount"
   }
 }

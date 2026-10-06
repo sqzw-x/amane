@@ -16,6 +16,8 @@ from amane.library import (
     PlanReason,
     PlanSource,
     PlanStore,
+    build_plan_tree,
+    find_plan_node,
     new_plan_id,
     scan_plan,
 )
@@ -271,3 +273,64 @@ class TestPlanStore:
 
     def test_new_plan_id_is_unique(self) -> None:
         assert new_plan_id() != new_plan_id()
+
+
+class TestPlanTree:
+    def test_aggregates_subtree_and_marks_empty(self, tmp_path: Path) -> None:
+        lib = tmp_path / "lib"
+        (lib / "a" / "b").mkdir(parents=True)
+        (lib / "a" / "b" / "ad-1.mkv").write_bytes(b"x" * 10)
+        (lib / "a" / "NSFS-039.mp4").write_bytes(b"x" * 4096)
+        plan = _plan(lib, scan=_scan(blacklist=["ad-"]))
+
+        root = build_plan_tree(plan)
+
+        assert root.entry_count == 1
+        assert root.entry_bytes == 10
+        node_a = find_plan_node(root, lib / "a")
+        assert node_a is not None
+        assert node_a.entry_count == 1
+        assert node_a.will_be_empty is False  # 正片还在
+        node_b = find_plan_node(root, lib / "a" / "b")
+        assert node_b is not None
+        assert node_b.will_be_empty is True
+        assert [child.name for child in node_b.children] == ["ad-1.mkv"]
+        assert node_b.children[0].reason is PlanReason.BLACKLIST
+
+    def test_hardlink_bytes_counted_once(self, tmp_path: Path) -> None:
+        lib = tmp_path / "lib"
+        lib.mkdir()
+        first = lib / "ad-1.mkv"
+        second = lib / "ad-2.mkv"
+        first.write_bytes(b"x" * 100)
+        os.link(first, second)
+        plan = _plan(lib, scan=_scan(blacklist=["ad-"]))
+
+        root = build_plan_tree(plan)
+
+        assert root.entry_count == 2
+        assert root.entry_bytes == 100
+        assert all(child.hardlink for child in root.children)
+
+    def test_empty_dir_entry_is_leaf_node(self, tmp_path: Path) -> None:
+        lib = tmp_path / "lib"
+        (lib / "empty").mkdir(parents=True)
+        plan = _plan(lib)
+
+        root = build_plan_tree(plan)
+
+        node = root.children[0]
+        assert node.is_dir is True
+        assert node.reason is PlanReason.EMPTY_DIR
+        assert node.will_be_empty is True
+        assert node.children == ()
+
+    def test_missing_node_returns_none(self, tmp_path: Path) -> None:
+        lib = tmp_path / "lib"
+        lib.mkdir()
+        (lib / "ad.mkv").write_bytes(b"x")
+        plan = _plan(lib, scan=_scan(blacklist=["ad"]))
+
+        root = build_plan_tree(plan)
+
+        assert find_plan_node(root, lib / "gone") is None

@@ -112,6 +112,104 @@
         }
       }
     },
+    "/api/libraries/{library_id}/cleanup/plan": {
+      "get": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "Get Cleanup Plan",
+        "description": "面板的入口: 有清单给状态与顶层节点, 无清单只给 ``exists=False``.",
+        "operationId": "get_cleanup_plan",
+        "parameters": [
+          {
+            "name": "library_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Library Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanSummaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/libraries/{library_id}/cleanup/plan/nodes": {
+      "get": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "Get Cleanup Plan Nodes",
+        "description": "展开某个节点: 只返回该目录的直接子节点.",
+        "operationId": "get_cleanup_plan_nodes",
+        "parameters": [
+          {
+            "name": "library_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Library Id"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "节点路径: 库内相对库根, 库外为绝对路径; 空串取根",
+              "default": "",
+              "title": "Path"
+            },
+            "description": "节点路径: 库内相对库根, 库外为绝对路径; 空串取根"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanNodesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/files": {
       "get": {
         "tags": [
@@ -11090,6 +11188,218 @@
         ],
         "title": "PathTemplateSchemaResponse",
         "description": "与 resolve_paths 同源."
+      },
+      "PlanEntryKind": {
+        "type": "string",
+        "enum": [
+          "file",
+          "dir",
+          "symlink"
+        ],
+        "title": "PlanEntryKind"
+      },
+      "PlanNodeResponse": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PlanEntryKind"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "outside": {
+            "type": "boolean",
+            "title": "Outside",
+            "default": false
+          },
+          "hardlink": {
+            "type": "boolean",
+            "title": "Hardlink",
+            "default": false
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count"
+          },
+          "entry_bytes": {
+            "type": "integer",
+            "title": "Entry Bytes"
+          },
+          "will_be_empty": {
+            "type": "boolean",
+            "title": "Will Be Empty",
+            "default": false
+          },
+          "has_children": {
+            "type": "boolean",
+            "title": "Has Children",
+            "default": false
+          },
+          "children": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlanNodeResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Children"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "name",
+          "kind",
+          "entry_count",
+          "entry_bytes"
+        ],
+        "title": "PlanNodeResponse",
+        "description": "树节点. ``path`` 库内为相对路径, 库外为绝对路径; 子节点按需再取."
+      },
+      "PlanNodesResponse": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/PlanNodeResponse"
+            },
+            "type": "array",
+            "title": "Nodes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "PlanNodesResponse"
+      },
+      "PlanReason": {
+        "type": "string",
+        "enum": [
+          "blacklist",
+          "undersized",
+          "empty_dir",
+          "explicit"
+        ],
+        "title": "PlanReason"
+      },
+      "PlanSummaryResponse": {
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "scope_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Path"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "skipped_dirs": {
+            "type": "integer",
+            "title": "Skipped Dirs",
+            "default": 0
+          },
+          "skipped_files": {
+            "type": "integer",
+            "title": "Skipped Files",
+            "default": 0
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count",
+            "default": 0
+          },
+          "entry_bytes": {
+            "type": "integer",
+            "title": "Entry Bytes",
+            "default": 0
+          },
+          "dir_count": {
+            "type": "integer",
+            "title": "Dir Count",
+            "default": 0
+          },
+          "scan_running": {
+            "type": "boolean",
+            "title": "Scan Running",
+            "default": false
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/PlanNodeResponse"
+            },
+            "type": "array",
+            "title": "Nodes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "exists"
+        ],
+        "title": "PlanSummaryResponse",
+        "description": "面板一次取到状态、范围与顶层节点; ``exists`` 为假时其余字段无意义."
       },
       "PlaybackSourceListResponse": {
         "properties": {

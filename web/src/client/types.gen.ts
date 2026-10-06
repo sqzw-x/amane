@@ -2596,6 +2596,132 @@ export type PathTemplateSchemaResponse = {
 };
 
 /**
+ * PlanEntryKind
+ */
+export type PlanEntryKind = 'file' | 'dir' | 'symlink';
+
+/**
+ * PlanNodeResponse
+ *
+ * 树节点. ``path`` 库内为相对路径, 库外为绝对路径; 子节点按需再取.
+ */
+export type PlanNodeResponse = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Name
+     */
+    name: string;
+    kind: PlanEntryKind;
+    reason?: PlanReason | null;
+    /**
+     * Size
+     */
+    size?: number | null;
+    /**
+     * Outside
+     */
+    outside?: boolean;
+    /**
+     * Hardlink
+     */
+    hardlink?: boolean;
+    /**
+     * Entry Count
+     */
+    entry_count: number;
+    /**
+     * Entry Bytes
+     */
+    entry_bytes: number;
+    /**
+     * Will Be Empty
+     */
+    will_be_empty?: boolean;
+    /**
+     * Has Children
+     */
+    has_children?: boolean;
+    /**
+     * Children
+     */
+    children?: Array<PlanNodeResponse> | null;
+};
+
+/**
+ * PlanNodesResponse
+ */
+export type PlanNodesResponse = {
+    /**
+     * Nodes
+     */
+    nodes?: Array<PlanNodeResponse>;
+};
+
+/**
+ * PlanReason
+ */
+export type PlanReason = 'blacklist' | 'undersized' | 'empty_dir' | 'explicit';
+
+/**
+ * PlanSummaryResponse
+ *
+ * 面板一次取到状态、范围与顶层节点; ``exists`` 为假时其余字段无意义.
+ */
+export type PlanSummaryResponse = {
+    /**
+     * Exists
+     */
+    exists: boolean;
+    /**
+     * Plan Id
+     */
+    plan_id?: string | null;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Scope Path
+     */
+    scope_path?: string | null;
+    /**
+     * Truncated
+     */
+    truncated?: boolean;
+    /**
+     * Skipped Dirs
+     */
+    skipped_dirs?: number;
+    /**
+     * Skipped Files
+     */
+    skipped_files?: number;
+    /**
+     * Entry Count
+     */
+    entry_count?: number;
+    /**
+     * Entry Bytes
+     */
+    entry_bytes?: number;
+    /**
+     * Dir Count
+     */
+    dir_count?: number;
+    /**
+     * Scan Running
+     */
+    scan_running?: boolean;
+    /**
+     * Nodes
+     */
+    nodes?: Array<PlanNodeResponse>;
+};
+
+/**
  * PlaybackSourceListResponse
  */
 export type PlaybackSourceListResponse = {
@@ -4362,6 +4488,73 @@ export type GetConfigSchemaResponses = {
 };
 
 export type GetConfigSchemaResponse = GetConfigSchemaResponses[keyof GetConfigSchemaResponses];
+
+export type GetCleanupPlanData = {
+    body?: never;
+    path: {
+        /**
+         * Library Id
+         */
+        library_id: number;
+    };
+    query?: never;
+    url: '/api/libraries/{library_id}/cleanup/plan';
+};
+
+export type GetCleanupPlanErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCleanupPlanError = GetCleanupPlanErrors[keyof GetCleanupPlanErrors];
+
+export type GetCleanupPlanResponses = {
+    /**
+     * Successful Response
+     */
+    200: PlanSummaryResponse;
+};
+
+export type GetCleanupPlanResponse = GetCleanupPlanResponses[keyof GetCleanupPlanResponses];
+
+export type GetCleanupPlanNodesData = {
+    body?: never;
+    path: {
+        /**
+         * Library Id
+         */
+        library_id: number;
+    };
+    query?: {
+        /**
+         * Path
+         *
+         * 节点路径: 库内相对库根, 库外为绝对路径; 空串取根
+         */
+        path?: string;
+    };
+    url: '/api/libraries/{library_id}/cleanup/plan/nodes';
+};
+
+export type GetCleanupPlanNodesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCleanupPlanNodesError = GetCleanupPlanNodesErrors[keyof GetCleanupPlanNodesErrors];
+
+export type GetCleanupPlanNodesResponses = {
+    /**
+     * Successful Response
+     */
+    200: PlanNodesResponse;
+};
+
+export type GetCleanupPlanNodesResponse = GetCleanupPlanNodesResponses[keyof GetCleanupPlanNodesResponses];
 
 export type ListFilesData = {
     body?: never;

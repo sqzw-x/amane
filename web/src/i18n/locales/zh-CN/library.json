@@ -185,5 +185,36 @@
     "nfo": "NFO 模板",
     "trailer": "预告片模板",
     "subtitle": "字幕模板"
+  },
+  "cleanup": {
+    "tooltip": "清理无效文件与空目录",
+    "title": "清理无效文件",
+    "noPlanHint": "还没有清单. 清理需要一次全库遍历, 由只读的扫描任务承担; 可以关掉面板让任务继续.",
+    "scan": "开始扫描",
+    "rescan": "重新扫描",
+    "scanStarted": "扫描已开始",
+    "deleteStarted": "删除已开始",
+    "generating": "正在生成清单…",
+    "scope": "本次清单只覆盖 {{path}}",
+    "truncated": "清单已截断, 请按子目录分批处理",
+    "skipped": "本次未覆盖 {{dirs}} 个目录与 {{files}} 个文件",
+    "selected": "已选 {{count}} 项, 约 {{size}}",
+    "empty": "没有需要清理的条目",
+    "expand": "展开",
+    "willBeEmpty": "将变空",
+    "outside": "库外产物",
+    "hardlink": "硬链接",
+    "hardlinkHint": "删除不额外释放空间",
+    "nodeCount": "{{count}} 项",
+    "confirmTitle": "确认删除",
+    "confirmMessage": "将删除 {{count}} 项, 约 {{size}}. 删除不可撤销, 索引随条目一并清理.",
+    "confirmLabel": "删除",
+    "deleteSelected": "删除选中项",
+    "reason": {
+      "blacklist": "黑名单",
+      "undersized": "体积过小",
+      "empty_dir": "空目录",
+      "explicit": "手动选中"
+    }
   }
 }

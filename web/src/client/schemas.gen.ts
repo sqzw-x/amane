@@ -5328,6 +5328,223 @@ export const PathTemplateSchemaResponseSchema = {
     description: '与 resolve_paths 同源.'
 } as const;
 
+export const PlanEntryKindSchema = {
+    type: 'string',
+    enum: [
+        'file',
+        'dir',
+        'symlink'
+    ],
+    title: 'PlanEntryKind'
+} as const;
+
+export const PlanNodeResponseSchema = {
+    properties: {
+        path: {
+            type: 'string',
+            title: 'Path'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        kind: {
+            $ref: '#/components/schemas/PlanEntryKind'
+        },
+        reason: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/PlanReason'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        size: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Size'
+        },
+        outside: {
+            type: 'boolean',
+            title: 'Outside',
+            default: false
+        },
+        hardlink: {
+            type: 'boolean',
+            title: 'Hardlink',
+            default: false
+        },
+        entry_count: {
+            type: 'integer',
+            title: 'Entry Count'
+        },
+        entry_bytes: {
+            type: 'integer',
+            title: 'Entry Bytes'
+        },
+        will_be_empty: {
+            type: 'boolean',
+            title: 'Will Be Empty',
+            default: false
+        },
+        has_children: {
+            type: 'boolean',
+            title: 'Has Children',
+            default: false
+        },
+        children: {
+            anyOf: [
+                {
+                    items: {
+                        $ref: '#/components/schemas/PlanNodeResponse'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Children'
+        }
+    },
+    type: 'object',
+    required: [
+        'path',
+        'name',
+        'kind',
+        'entry_count',
+        'entry_bytes'
+    ],
+    title: 'PlanNodeResponse',
+    description: '树节点. ``path`` 库内为相对路径, 库外为绝对路径; 子节点按需再取.'
+} as const;
+
+export const PlanNodesResponseSchema = {
+    properties: {
+        nodes: {
+            items: {
+                $ref: '#/components/schemas/PlanNodeResponse'
+            },
+            type: 'array',
+            title: 'Nodes',
+            default: []
+        }
+    },
+    type: 'object',
+    title: 'PlanNodesResponse'
+} as const;
+
+export const PlanReasonSchema = {
+    type: 'string',
+    enum: [
+        'blacklist',
+        'undersized',
+        'empty_dir',
+        'explicit'
+    ],
+    title: 'PlanReason'
+} as const;
+
+export const PlanSummaryResponseSchema = {
+    properties: {
+        exists: {
+            type: 'boolean',
+            title: 'Exists'
+        },
+        plan_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Plan Id'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        scope_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Scope Path'
+        },
+        truncated: {
+            type: 'boolean',
+            title: 'Truncated',
+            default: false
+        },
+        skipped_dirs: {
+            type: 'integer',
+            title: 'Skipped Dirs',
+            default: 0
+        },
+        skipped_files: {
+            type: 'integer',
+            title: 'Skipped Files',
+            default: 0
+        },
+        entry_count: {
+            type: 'integer',
+            title: 'Entry Count',
+            default: 0
+        },
+        entry_bytes: {
+            type: 'integer',
+            title: 'Entry Bytes',
+            default: 0
+        },
+        dir_count: {
+            type: 'integer',
+            title: 'Dir Count',
+            default: 0
+        },
+        scan_running: {
+            type: 'boolean',
+            title: 'Scan Running',
+            default: false
+        },
+        nodes: {
+            items: {
+                $ref: '#/components/schemas/PlanNodeResponse'
+            },
+            type: 'array',
+            title: 'Nodes',
+            default: []
+        }
+    },
+    type: 'object',
+    required: [
+        'exists'
+    ],
+    title: 'PlanSummaryResponse',
+    description: '面板一次取到状态、范围与顶层节点; ``exists`` 为假时其余字段无意义.'
+} as const;
+
 export const PlaybackSourceListResponseSchema = {
     properties: {
         items: {

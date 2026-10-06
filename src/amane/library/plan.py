@@ -185,6 +185,7 @@ class _ScanState:
 @dataclass(frozen=True, slots=True)
 class _DirResult:
     children: int
+    entries: int
     disappears: bool
 
 
@@ -241,7 +242,7 @@ def scan_plan(
 def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: bool) -> _DirResult | None:
     """登记 ``directory`` 下的条目与覆盖信息; 读不到该目录时返回 None."""
     if state.truncated:
-        return _DirResult(children=0, disappears=False)
+        return _DirResult(children=0, entries=0, disappears=False)
     try:
         with os.scandir(directory) as scanned:
             children = list(scanned)
@@ -252,6 +253,7 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
 
     total = 0
     removed = 0
+    entries = 0
     for child in children:
         if state.truncated:
             break
@@ -267,29 +269,37 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
             logger.warning("plan scan entry unreadable", path=str(path), error=str(exc))
             continue
         if stat.S_ISDIR(child_stat.st_mode) and not child.is_symlink():
-            if _record_dir(path, state=state, scan=scan, recursive=recursive):
-                removed += 1
+            sub = _record_dir(path, state=state, scan=scan, recursive=recursive)
+            if sub is not None:
+                entries += sub.entries
+                if sub.disappears:
+                    removed += 1
             continue
         entry = _file_entry(path, scan=scan, child_stat=child_stat, is_symlink=child.is_symlink())
         if entry is not None and _record_entry(entry, state=state):
+            entries += 1
             removed += 1
 
-    return _DirResult(children=total, disappears=total > 0 and removed == total)
+    return _DirResult(children=total, entries=entries, disappears=total > 0 and removed == total)
 
 
-def _record_dir(path: Path, *, state: _ScanState, scan: LibraryScan, recursive: bool) -> bool:
-    """登记子目录; 返回该子目录会消失与否 (空目录作为条目, 也在此登记)."""
-    if recursive:
-        result = _walk(path, state=state, scan=scan, recursive=recursive)
-        if result is None or state.truncated:
-            return False
-        if result.children == 0:
-            entry = PlanEntry(path=path, kind=PlanEntryKind.DIR, reason=PlanReason.EMPTY_DIR)
-            return _record_entry(entry, state=state)
+def _record_dir(path: Path, *, state: _ScanState, scan: LibraryScan, recursive: bool) -> _DirResult | None:
+    """登记子目录; 返回该子目录的统计 (空目录在此转成条目), 不处置时返回 None."""
+    if not recursive:
+        # 不递归时子目录不是处置对象: 计入子项数, 使父目录不会被预告清除.
+        return None
+    result = _walk(path, state=state, scan=scan, recursive=recursive)
+    if result is None or state.truncated:
+        return None
+    if result.children == 0:
+        entry = PlanEntry(path=path, kind=PlanEntryKind.DIR, reason=PlanReason.EMPTY_DIR)
+        if not _record_entry(entry, state=state):
+            return None
+        return _DirResult(children=0, entries=1, disappears=True)
+    if result.entries > 0:
+        # 只登记子树里有条目的目录: 「将变空」只对它们有意义, 也限制覆盖表的规模.
         state.dirs[path] = DirCoverage(disk_children=result.children, will_be_empty=result.disappears)
-        return result.disappears
-    # 不递归时子目录不是处置对象: 计入子项数, 使父目录不会被预告清除.
-    return False
+    return result
 
 
 def _file_entry(path: Path, *, scan: LibraryScan, child_stat: os.stat_result, is_symlink: bool) -> PlanEntry | None:
@@ -313,3 +323,103 @@ def _record_entry(entry: PlanEntry, *, state: _ScanState) -> bool:
         return False
     state.entries.append(entry)
     return True
+
+
+@dataclass(frozen=True, slots=True)
+class PlanNode:
+    """面板的树节点. 目录节点只覆盖含条目的子树, 因此 node 数不超过条目数."""
+
+    path: Path
+    name: str
+    is_dir: bool
+    is_symlink: bool
+    outside: bool
+    reason: PlanReason | None
+    size: int | None
+    hardlink: bool
+    entry_count: int
+    entry_bytes: int
+    will_be_empty: bool
+    children: tuple[PlanNode, ...] = ()
+
+
+def build_plan_tree(plan: LibraryPlan) -> PlanNode:
+    """把清单折叠成树. 同 inode 只算一次体积, 与 `total_size` 一致."""
+    by_parent: dict[Path, list[PlanEntry]] = {}
+    subdirs: dict[Path, set[Path]] = {}
+    counted: set[Path] = set()
+    seen_inodes: set[tuple[int, int]] = set()
+    for entry in plan.entries:
+        if entry.outside:
+            continue
+        if entry.dev is not None and entry.ino is not None:
+            key = (entry.dev, entry.ino)
+            if key not in seen_inodes:
+                seen_inodes.add(key)
+                counted.add(entry.path)
+        else:
+            counted.add(entry.path)
+        parent = entry.path.parent
+        by_parent.setdefault(parent, []).append(entry)
+        cursor = parent
+        while cursor != plan.root and _is_under(cursor, plan.root):
+            subdirs.setdefault(cursor.parent, set()).add(cursor)
+            cursor = cursor.parent
+
+    def build(directory: Path) -> PlanNode:
+        nodes = [_entry_node(entry, counted=counted) for entry in by_parent.get(directory, [])]
+        nodes.extend(build(child_dir) for child_dir in sorted(subdirs.get(directory, ()), key=lambda p: p.name))
+        if directory == plan.root:
+            # 库外产物没有库内位置, 挂在根下由面板单独标注.
+            nodes.extend(_entry_node(entry, counted=counted) for entry in plan.entries if entry.outside)
+        nodes.sort(key=lambda node: (not node.is_dir, node.name))
+        coverage = plan.dirs.get(directory)
+        return PlanNode(
+            path=directory,
+            name=directory.name,
+            is_dir=True,
+            is_symlink=False,
+            outside=False,
+            reason=None,
+            size=None,
+            hardlink=False,
+            entry_count=sum(node.entry_count for node in nodes),
+            entry_bytes=sum(node.entry_bytes for node in nodes),
+            will_be_empty=coverage.will_be_empty if coverage is not None else False,
+            children=tuple(nodes),
+        )
+
+    return build(plan.root)
+
+
+def _entry_node(entry: PlanEntry, *, counted: set[Path]) -> PlanNode:
+    is_dir = entry.kind is PlanEntryKind.DIR
+    return PlanNode(
+        path=entry.path,
+        name=entry.path.name,
+        is_dir=is_dir,
+        is_symlink=entry.kind is PlanEntryKind.SYMLINK,
+        outside=entry.outside,
+        reason=entry.reason,
+        size=entry.size,
+        hardlink=(entry.nlink or 1) > 1,
+        entry_count=1,
+        entry_bytes=entry.size if entry.path in counted and entry.size is not None else 0,
+        will_be_empty=is_dir,
+    )
+
+
+def find_plan_node(root: PlanNode, path: Path) -> PlanNode | None:
+    """按绝对路径在树里查找节点 (面板按目录下钻)."""
+    if root.path == path:
+        return root
+    for child in root.children:
+        if child.path == path:
+            return child
+        if child.is_dir and _is_under(path, child.path):
+            return find_plan_node(child, path)
+    return None
+
+
+def _is_under(path: Path, root: Path) -> bool:
+    return path != root and root in path.parents

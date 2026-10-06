@@ -2,11 +2,13 @@ import { Group, Menu, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustmentsHorizontal,
+  IconSparkles,
   IconFolderDown,
   IconScan,
   IconTrash,
 } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   deleteLibraryMutation,
@@ -16,6 +18,7 @@ import {
 import { submitTask } from "@/client/sdk.gen";
 import type { LibraryResponse } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
+import { CleanupPanel } from "@/components/library/cleanup-panel";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 
@@ -26,7 +29,7 @@ interface LibraryActionButtonsProps {
   onDeleted?: () => void;
 }
 
-/** 扫描 / 整理 / 配置 / 删除. 列表卡片与详情表体顶栏共用. */
+/** 扫描 / 整理 / 清理无效文件 / 配置 / 删除. 列表卡片与详情表体顶栏共用. */
 export function LibraryActionButtons({
   library,
   onConfigure,
@@ -34,6 +37,7 @@ export function LibraryActionButtons({
 }: LibraryActionButtonsProps) {
   const { t } = useTranslation(["library", "common"]);
   const queryClient = useQueryClient();
+  const [cleanupOpen, setCleanupOpen] = useState(false);
 
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: listLibrariesQueryKey() });
@@ -142,6 +146,13 @@ export function LibraryActionButtons({
       >
         <IconFolderDown size={16} />
       </HintedActionIcon>
+      <HintedActionIcon
+        variant="light"
+        onClick={() => setCleanupOpen(true)}
+        label={t("cleanup.tooltip")}
+      >
+        <IconSparkles size={16} />
+      </HintedActionIcon>
       <HintedActionIcon variant="light" onClick={onConfigure} label={t("configureLibrary")}>
         <IconAdjustmentsHorizontal size={16} />
       </HintedActionIcon>
@@ -154,6 +165,7 @@ export function LibraryActionButtons({
       >
         <IconTrash size={16} />
       </HintedActionIcon>
+      <CleanupPanel library={library} opened={cleanupOpen} onClose={() => setCleanupOpen(false)} />
     </Group>
   );
 }
