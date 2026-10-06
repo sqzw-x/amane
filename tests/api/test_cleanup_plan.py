@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -226,7 +225,6 @@ async def test_scan_task_fills_panel_plan(client: AsyncClient, safe_path: Path) 
 
 
 @pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows 不保证 st_ino, 同 inode 去重会合并不同文件")
 async def test_trash_expansion_lists_history(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
     """回收站展开同步产出显式来源清单: 其下条目可删, 目录自身不可删."""
     root = safe_path / "lib"

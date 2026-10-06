@@ -80,11 +80,12 @@ class DeleteTally:
 
     @property
     def freed_bytes(self) -> int:
-        return sum(group[0].size for group in self._groups.values() if len(group) == group[0].nlink)
+        """链接数不可用 (平台给 0) 时按 1 计: 宁可把可能未释放的数据算进来, 也不要恒为 0."""
+        return sum(group[0].size for group in self._groups.values() if len(group) >= _links(group[0]))
 
     @property
     def hardlink_items(self) -> int:
-        return sum(len(group) for group in self._groups.values() if len(group) != group[0].nlink)
+        return sum(len(group) for group in self._groups.values() if len(group) != _links(group[0]))
 
 
 @dataclass(frozen=True)
@@ -121,6 +122,10 @@ def delete_target(path: Path, *, library_root: Path) -> DeleteOutcome:
         logger.warning("delete failed", path=str(disk_path), error=str(exc))
         return DeleteOutcome(status="failed", error=str(exc), files=files)
     return DeleteOutcome(status="deleted", files=files)
+
+
+def _links(item: DeletedFile) -> int:
+    return max(item.nlink, 1)
 
 
 def ancestor_dirs(path: Path, *, library_root: Path) -> list[Path]:
@@ -194,8 +199,9 @@ def _remove_contents(directory: Path, *, dev: int, files: list[DeletedFile]) -> 
     with os.scandir(directory) as entries:
         for entry in entries:
             path = Path(entry.path)
-            entry_stat = entry.stat(follow_symlinks=False)
-            if entry.is_symlink():
+            # 真正的文件查询: 目录枚举顺带给出的统计在 Windows 上不含设备 / 文件编号 / 链接数.
+            entry_stat = path.lstat()
+            if stat.S_ISLNK(entry_stat.st_mode):
                 path.unlink()
                 continue
             if stat.S_ISDIR(entry_stat.st_mode):

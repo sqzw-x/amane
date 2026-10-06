@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import errno
 import os
-import sys
 import unicodedata
 from typing import TYPE_CHECKING
 
@@ -45,7 +44,6 @@ class TestDeleteTarget:
         assert (tally.deleted, tally.changed, tally.failed) == (0, 1, 0)
         assert tally.freed_bytes == 0
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="Windows 的 st_dev 不表示设备号, 挂载点判定不成立")
     def test_delete_directory_removes_contents(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
         (lib / "work" / "sub").mkdir(parents=True)
@@ -85,7 +83,6 @@ class TestDeleteTarget:
         assert tally.deleted == 1
         assert tally.freed_bytes == 0
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_recursion_does_not_follow_symlinked_directory(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
         outside = tmp_path / "outside"
@@ -166,7 +163,6 @@ class TestDeleteTarget:
         assert not on_disk.exists()
         assert tally.deleted == 1
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="Windows 不保证 st_ino, 无法按 inode 伪造边界")
     def test_nested_mount_boundary_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         lib = tmp_path / "lib"
         (lib / "work" / "mounted").mkdir(parents=True)
@@ -209,7 +205,6 @@ class TestDeleteTally:
         assert both.hardlink_items == 0
         assert both.freed_bytes == 10
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="Windows 不保证 st_nlink, 释放空间统计不成立")
     def test_failed_target_keeps_removed_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """目录删除中途失败: 已删文件仍计入统计, 目标记失败."""
         lib = tmp_path / "lib"

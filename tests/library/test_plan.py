@@ -307,7 +307,6 @@ class TestPlanTree:
         assert [child.name for child in node_b.children] == ["ad-1.mkv"]
         assert node_b.children[0].reason is PlanReason.BLACKLIST
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="Windows 不保证 st_nlink, 硬链接判定不成立")
     def test_hardlink_bytes_counted_once(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
         lib.mkdir()
@@ -358,7 +357,6 @@ class TestPlanTree:
 
 
 class TestScanTrash:
-    @pytest.mark.skipif(sys.platform == "win32", reason="Windows 不保证 st_ino, 同 inode 去重会合并不同文件")
     def test_lists_everything_under_trash(self, tmp_path: Path) -> None:
         """回收站展开不做规则判定: 其下每个文件与空目录都是条目, 回收站目录自身不是."""
         lib = tmp_path / "lib"

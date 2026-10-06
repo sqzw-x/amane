@@ -111,13 +111,17 @@ class LibraryPlan:
 
     @property
     def total_size(self) -> int:
-        """条目体积合计. 同一 inode 只算一次 (硬链接整理会产生多个名字)."""
+        """条目体积合计. 同一 inode 只算一次 (硬链接整理会产生多个名字).
+
+        身份不可用 (拿不到设备或文件编号, 含平台给出的 0) 时不去重: 宁可把同一份数据多算几次,
+        也不能把不同文件当成同一个而少算.
+        """
         sizes: dict[tuple[int, int], int] = {}
         loose = 0
         for entry in self.entries:
             if entry.size is None:
                 continue
-            if entry.dev is None or entry.ino is None:
+            if not entry.dev or not entry.ino:
                 loose += entry.size
                 continue
             sizes.setdefault((entry.dev, entry.ino), entry.size)
@@ -271,12 +275,12 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
             # 回收站: 不进清单, 也不计作会消失的子项.
             continue
         try:
-            child_stat = child.stat(follow_symlinks=False)
+            child_stat = path.lstat()
         except OSError as exc:
             state.skipped_files += 1
             logger.warning("plan scan entry unreadable", path=str(path), error=str(exc))
             continue
-        if stat.S_ISDIR(child_stat.st_mode) and not child.is_symlink():
+        if stat.S_ISDIR(child_stat.st_mode):
             sub = _record_dir(path, state=state, scan=scan, recursive=recursive)
             if sub is not None:
                 entries += sub.entries
@@ -290,7 +294,7 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
             continue
         if kind is not LibraryFileKind.TRASH:
             continue
-        entry = _file_entry(path, scan=scan, child_stat=child_stat, is_symlink=child.is_symlink())
+        entry = _file_entry(path, scan=scan, child_stat=child_stat, is_symlink=stat.S_ISLNK(child_stat.st_mode))
         if entry is not None and _record_entry(entry, state=state):
             entries += 1
             removed += 1
@@ -364,7 +368,8 @@ def build_plan_tree(plan: LibraryPlan) -> PlanNode:
     counted: set[Path] = set()
     seen_inodes: set[tuple[int, int]] = set()
     for entry in plan.entries:
-        if entry.dev is not None and entry.ino is not None:
+        # 身份不可用时每个名字各算一次, 与 `total_size` 一致.
+        if entry.dev and entry.ino:
             key = (entry.dev, entry.ino)
             if key not in seen_inodes:
                 seen_inodes.add(key)
@@ -503,12 +508,12 @@ def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
         total += 1
         path = Path(child.path)
         try:
-            child_stat = child.stat(follow_symlinks=False)
+            child_stat = path.lstat()
         except OSError as exc:
             state.skipped_files += 1
             logger.warning("trash scan entry unreadable", path=str(path), error=str(exc))
             continue
-        if stat.S_ISDIR(child_stat.st_mode) and not child.is_symlink():
+        if stat.S_ISDIR(child_stat.st_mode):
             sub = _walk_explicit(path, state=state)
             if sub is None or state.truncated:
                 continue
@@ -525,7 +530,7 @@ def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
             continue
         entry = PlanEntry(
             path=path,
-            kind=PlanEntryKind.SYMLINK if child.is_symlink() else PlanEntryKind.FILE,
+            kind=PlanEntryKind.SYMLINK if stat.S_ISLNK(child_stat.st_mode) else PlanEntryKind.FILE,
             reason=PlanReason.EXPLICIT,
             size=child_stat.st_size,
             dev=child_stat.st_dev,
