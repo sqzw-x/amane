@@ -198,7 +198,7 @@ export type ActorScrapingConfig = {
      *
      * 档案源顺序 (标量填空优先级); 仅演员档案站
      */
-    profile_sites?: Array<'minnano' | 'javdb' | 'wikipedia' | 'theporndb'>;
+    profile_sites?: Array<'minnano' | 'javdb' | 'wikipedia' | 'theporndb' | 'avbase'>;
     /**
      * Image Sites
      *
@@ -3317,19 +3317,19 @@ export type ScrapingConfig = {
      * Content Routes
      */
     content_routes?: {
-        [key in ContentType]?: Array<'airav' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'xcity'>;
+        [key in ContentType]?: Array<'airav' | 'avbase' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'xcity'>;
     };
     /**
      * Field Priority
      */
     field_priority?: {
-        [key in MetadataField]?: Array<'airav' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'xcity'>;
+        [key in MetadataField]?: Array<'airav' | 'avbase' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'xcity'>;
     };
     /**
      * Field Blacklist
      */
     field_blacklist?: {
-        [key in MetadataField]?: Array<'airav' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'xcity'>;
+        [key in MetadataField]?: Array<'airav' | 'avbase' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'xcity'>;
     };
     /**
      * Field Language
@@ -3386,7 +3386,7 @@ export type SiteConfig = {
  *
  * 爬虫站点名称 (影片与演员源共用).
  */
-export type SiteName = 'airav' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'gfriends' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'minnano' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'wikipedia' | 'xcity';
+export type SiteName = 'airav' | 'avbase' | 'avsox' | 'dahlia' | 'dmm' | 'faleno' | 'fc2' | 'fc2club' | 'fc2ppvdb' | 'freejavbt' | 'getchu' | 'gfriends' | 'giga' | 'iqqtv' | 'jav321' | 'javbus' | 'javdb' | 'javlibrary' | 'kin8' | 'mgstage' | 'minnano' | 'official' | 'prestige' | 'r18dev' | 'theporndb' | 'wikipedia' | 'xcity';
 
 /**
  * SiteOutcomeKind

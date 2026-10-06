@@ -6184,7 +6184,8 @@
                 "minnano",
                 "javdb",
                 "wikipedia",
-                "theporndb"
+                "theporndb",
+                "avbase"
               ]
             },
             "type": "array",
@@ -8386,6 +8387,13 @@
                   "use_browser": "auto",
                   "use_proxy": true
                 },
+                "avbase": {
+                  "cookie": {},
+                  "official_routes": {},
+                  "rate_limit": 2.0,
+                  "use_browser": "auto",
+                  "use_proxy": true
+                },
                 "avsox": {
                   "cookie": {},
                   "official_routes": {},
@@ -8571,7 +8579,8 @@
                 "minnano",
                 "javdb",
                 "wikipedia",
-                "theporndb"
+                "theporndb",
+                "avbase"
               ],
               "image_sites": [
                 "gfriends"
@@ -12264,6 +12273,7 @@
                 "type": "string",
                 "enum": [
                   "airav",
+                  "avbase",
                   "avsox",
                   "dahlia",
                   "dmm",
@@ -12304,6 +12314,7 @@
                 "type": "string",
                 "enum": [
                   "airav",
+                  "avbase",
                   "avsox",
                   "dahlia",
                   "dmm",
@@ -12344,6 +12355,7 @@
                 "type": "string",
                 "enum": [
                   "airav",
+                  "avbase",
                   "avsox",
                   "dahlia",
                   "dmm",
@@ -12487,6 +12499,7 @@
         "type": "string",
         "enum": [
           "airav",
+          "avbase",
           "avsox",
           "dahlia",
           "dmm",

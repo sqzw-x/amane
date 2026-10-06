@@ -323,7 +323,8 @@ export const ActorScrapingConfigSchema = {
                     'minnano',
                     'javdb',
                     'wikipedia',
-                    'theporndb'
+                    'theporndb',
+                    'avbase'
                 ]
             },
             type: 'array',
@@ -2589,6 +2590,13 @@ export const HotSettingsSchema = {
                         use_browser: 'auto',
                         use_proxy: true
                     },
+                    avbase: {
+                        cookie: {},
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
+                    },
                     avsox: {
                         cookie: {},
                         official_routes: {},
@@ -2774,7 +2782,8 @@ export const HotSettingsSchema = {
                     'minnano',
                     'javdb',
                     'wikipedia',
-                    'theporndb'
+                    'theporndb',
+                    'avbase'
                 ],
                 image_sites: [
                     'gfriends'
@@ -6541,6 +6550,7 @@ export const ScrapingConfigSchema = {
                     type: 'string',
                     enum: [
                         'airav',
+                        'avbase',
                         'avsox',
                         'dahlia',
                         'dmm',
@@ -6581,6 +6591,7 @@ export const ScrapingConfigSchema = {
                     type: 'string',
                     enum: [
                         'airav',
+                        'avbase',
                         'avsox',
                         'dahlia',
                         'dmm',
@@ -6621,6 +6632,7 @@ export const ScrapingConfigSchema = {
                     type: 'string',
                     enum: [
                         'airav',
+                        'avbase',
                         'avsox',
                         'dahlia',
                         'dmm',
@@ -6766,6 +6778,7 @@ export const SiteNameSchema = {
     type: 'string',
     enum: [
         'airav',
+        'avbase',
         'avsox',
         'dahlia',
         'dmm',
