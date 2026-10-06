@@ -10,7 +10,7 @@ from ..config import HotSettings, WatermarkConfig
 from ..db.models import Library, MediaFile
 from ..db.repo_types import MediaFileUpdates
 from ..enums import ActorGender, DownloadableResource, LinkMode
-from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
+from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan, ancestor_dirs, prune_empty_dirs
 from ..library.rules import is_in_trash
 from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
 from ..media import write_nfo as write_nfo_file
@@ -463,6 +463,9 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         organized = 0
         failed = 0
         total = len(live)
+        # 只有移动方式会移走源文件, 复制 / 硬链接 / 软链接不腾空目录.
+        prune_candidates: set[Path] = set()
+        collect_prune = payload.prune_empty_dirs and library.move_mode is MoveMode.MOVE
         if total == 0:
             await self.report_progress(1, 1, "done")
         else:
@@ -504,11 +507,17 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                     await commit_organized_media_file(self._repo, media_file, fop_result.dest, library_root)
                 if fop_result.success:
                     organized += 1
+                    if collect_prune:
+                        prune_candidates.update(ancestor_dirs(file_path, library_root=library_root))
                 else:
                     logger.warning("organize failed", path=path_str, error=fop_result.error)
                     failed += 1
                 await self.report_progress(i, total, file_path.name)
             await self.report_progress(total, total, "done")
+
+        pruned_dirs = 0
+        if prune_candidates:
+            pruned_dirs = (await prune_empty_dirs(prune_candidates, library_root=library_root)).removed
 
         logger.info(
             "organize completed",
@@ -516,9 +525,12 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             organized=organized,
             skipped=skipped,
             failed=failed,
+            pruned_dirs=pruned_dirs,
         )
 
-        return TaskResult(True, result=OrganizeResult(organized=organized, skipped=skipped, failed=failed))
+        return TaskResult(
+            True, result=OrganizeResult(organized=organized, skipped=skipped, failed=failed, pruned_dirs=pruned_dirs)
+        )
 
 
 def _add_resource_ref(url: str, live_urls: set[str], live_hashes: set[str]) -> None:

@@ -12,7 +12,7 @@
 | `REFRESH` | 扫描增删、注册 MediaFile、fan-out SCRAPE (`use_cache` 原样转发) | 移动文件、写 NFO |
 | `SCRAPE` | 联网聚合 → DB → Resource; `media_file_id` 只作查询输入 (番号 / oshash) 与回写关联 | 库内移动 / NFO |
 | `TRASH` | 扫描范围内的黑名单与过小视频, 移入 `.amane_trash` | 整理正片、写 NFO、注册 MediaFile |
-| `ORGANIZE` | 范围内已有 Metadata 的 MediaFile 按路径模板落盘; 缺资源时 `acquire` 可出站 HTTP | 扫描磁盘、回收、运行爬虫、修改 Metadata |
+| `ORGANIZE` | 范围内已有 Metadata 的 MediaFile 按路径模板落盘, 并删除本次腾空的目录; 缺资源时 `acquire` 可出站 HTTP | 扫描磁盘、回收、运行爬虫、修改 Metadata |
 
 `CLEANUP` / `UPSCALE` 扫描 DB / Resource; `ACTOR_SCRAPE` 刮人物; `R18_IMPORT` 导入 dump. 上述类型均不执行影片落盘.
 
@@ -97,6 +97,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 - **链接入口**: `link_template` 非空时视频就位后在库外写 strm 或软链接, 指向这次整理后的路径; `MediaFile.path` 仍是真实视频. 链接写入失败时, 目标路径仍在本库内则回写 path, 任务记失败以便重试补链接.
 - **索引写回**: 整理后路径仍在本库内则更新 `MediaFile.path`; 已不在本库内且源路径不在磁盘上则删除该行. 不改 `library_id`, 不写其它库的行. 目标路径已被本库另一行占用时删除本行, 占用行缺少刮削字段则补上.
 - **失效索引**: 落盘前只对本次读到的行探活 (path 不存在或不在本库内则删除), 范围外的行不读取、不探活. 碰撞改名只检查磁盘, 范围内未删除的幽灵行仍会与带编号的目标路径在 UNIQUE 上冲突.
+- **腾空目录**: payload 的 `prune_empty_dirs` (默认开) 为真且放置方式为移动时, 落盘后删除本次移动腾空的祖先目录. 自底向上, 只把 `ENOTEMPTY` 当作非空, 库根与 `.amane_trash` 不删; 复制 / 硬链接 / 软链接不移走源文件, 不产生腾空目录. 删除与剪枝共用 `library/delete.py` 的执行单元 (字面路径边界, 不跟随符号链接, 不跨越挂载点).
 
 ## 刮削期资源物化
 

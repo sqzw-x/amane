@@ -194,6 +194,10 @@
             "trailer": "Trailer"
           }
         }
+      },
+      "prune_empty_dirs": {
+        "label": "Prune emptied directories",
+        "description": "Removes directories emptied by this run; no effect on copy / hardlink / symlink"
       }
     },
     "trash": {

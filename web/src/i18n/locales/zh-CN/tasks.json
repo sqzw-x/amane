@@ -191,6 +191,10 @@
             "trailer": "预告片"
           }
         }
+      },
+      "prune_empty_dirs": {
+        "label": "删除腾空的目录",
+        "description": "移动后删除本次腾空的目录; 复制 / 硬链接 / 软链接方式无效"
       }
     },
     "trash": {

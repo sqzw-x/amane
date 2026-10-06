@@ -5210,6 +5210,12 @@ export const OrganizeSubmissionSchema = {
             title: 'Media File Ids',
             description: '勾选快照; 与 path 不能同时指定. None 表示 path 范围内的全部索引'
         },
+        prune_empty_dirs: {
+            type: 'boolean',
+            title: 'Prune Empty Dirs',
+            description: '移动后删除本次腾空的目录 (库根与 .amane_trash 除外); 复制 / 硬链接 / 软链接方式不移走源文件, 该开关无效',
+            default: true
+        },
         type: {
             type: 'string',
             const: 'organize',
