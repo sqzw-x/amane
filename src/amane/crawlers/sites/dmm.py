@@ -116,8 +116,9 @@ class DmmCrawler(Crawler):
                 raise last_error
             return None
 
-        # 按分类优先级选取.
-        sorted_urls = sorted(all_urls, key=lambda u: _CATEGORY_PRIORITY.get(_parse_category(u), 0), reverse=True)
+        # 选择键依次为分类优先级、与规范化检索番号完全相等、URL 字典序, 末位键消除 set 迭代顺序的影响.
+        exact_ids = frozenset({number_00, number_no_00})
+        sorted_urls = sorted(all_urls, key=lambda u: self._selection_key(u, exact_ids), reverse=True)
         return sorted_urls[0] if sorted_urls else None
 
     def _parse_search_results(self, html: Selector, prefix: str, digits: str) -> list[str]:
@@ -144,6 +145,24 @@ class DmmCrawler(Crawler):
                 results.append(url)
 
         return results
+
+    @staticmethod
+    def _selection_key(url: str, exact_ids: frozenset[str]) -> tuple[int, int, str]:
+        """候选选择键, 值大者优先: 分类优先级 > 番号完全相等 > URL 字典序.
+
+        ``exact_ids`` 为检索番号的零填充与去填充两种形态. 详情 URL 的内容标识与之完全相等时,
+        优先于 ``sora00652a`` 一类带后缀变体. 末位键保证同优先级同精确度下仍有确定结果.
+        """
+        priority = _CATEGORY_PRIORITY.get(_parse_category(url), 0)
+        content_id = DmmCrawler._url_content_id(url)
+        exact = 1 if content_id is not None and content_id in exact_ids else 0
+        return (priority, exact, url)
+
+    @staticmethod
+    def _url_content_id(url: str) -> str | None:
+        """从详情 URL 提取内容标识并转小写; 取 cid / id / content 查询参数."""
+        match = re.search(r"(?:cid|id|content)=([^/&?]+)", url)
+        return match.group(1).lower() if match else None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         category = _parse_category(url)
