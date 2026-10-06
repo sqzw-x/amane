@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -162,6 +163,32 @@ class TestFootprint:
         )
 
         assert [entry.path.name for entry in outcome.inventory.entries] == ["NSFS-039.zh.srt"]
+        assert any("已不在磁盘上" in notice for notice in outcome.notices)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_unstattable_video_is_notice(
+        self, repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """存在性检查与 stat 之间文件消失 (或挂载盘掉线) 只记一条提示, 不让整次展开失败."""
+        lib, metas, item, video = await self._seed(repo, tmp_path)
+        lstat = Path.lstat
+
+        def statless(self: Path) -> os.stat_result:
+            if self == video:
+                raise OSError("mount gone")
+            return lstat(self)
+
+        monkeypatch.setattr(Path, "lstat", statless)
+
+        outcome = build_footprint.sync(
+            library=lib,
+            items=[item],
+            indexed=[item],
+            metas=metas,
+            include_work_dir=False,
+        )
+
+        assert [entry.path.name for entry in outcome.inventory.entries] == ["NSFS-039.nfo", "NSFS-039.zh.srt"]
         assert any("已不在磁盘上" in notice for notice in outcome.notices)
 
     @pytest.mark.asyncio(loop_scope="function")

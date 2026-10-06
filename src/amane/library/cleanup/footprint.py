@@ -89,11 +89,17 @@ def build_footprint(
                 notices.append(f"文件不在库根内, 请重新保存媒体库路径: {disk}")
             # 模板产物落在库外链接树是正常的, 那些不归本功能管.
             return
+        try:
+            entry = _entry(disk)
+        except OSError:
+            # 存在性检查与 stat 之间文件消失, 或挂载盘掉线: 与不在磁盘上同样是这次展开拿不到.
+            notices.append(f"已不在磁盘上: {path}")
+            return
         # 上限判断放在这里: 只有真会进清单的路径才算「未纳入」, 库外产物与不存在的路径不计入.
         if len(entries) >= limit:
             dropped += 1
             return
-        entries.append(_entry(disk))
+        entries.append(entry)
 
     for item in items:
         add(Path(item.path), indexed_file=True)
