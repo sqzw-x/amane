@@ -1,6 +1,6 @@
 # 开发文档
 
-> 本目录是**索引**: 只记录跨文件的边界、顺序、契约、取舍与踩坑, 字段、签名、枚举与单文件内部的原因去源码. 归属与判据见 [AGENTS.md](../../AGENTS.md)「内容归属」, 用语见 [writing.md](writing.md).
+> 本目录是**索引**: 只记录跨文件的边界、顺序、契约、取舍与踩坑, 字段、签名、枚举与单文件内部的原因去源码. 归属与判据见 [AGENTS.md](../../AGENTS.md)「内容归属」, 遣词造句见 [writing.md](writing.md), 项目用词见 [terms.md](terms.md).
 
 阅读顺序:
 
@@ -11,7 +11,7 @@
 
 | 主题 | 文档 |
 |---------|------|
-| 注释 / 文档 / 提交说明 / 对话 | [writing.md](writing.md) (最高优先级) · [glossary.md](glossary.md) |
+| 注释 / 文档 / 提交说明 / 对话 | [writing.md](writing.md) (遣词造句) · [terms.md](terms.md) (项目用词, 按需查) |
 | 爬虫 / 采集 fixture | [crawlers.md](crawlers.md) (含番号入参) · [crawler-testing.md](crawler-testing.md) |
 | 来源插件 (影片刮削 / 播放) | [plugins.md](plugins.md) · [crawlers.md](crawlers.md) |
 | 站点覆盖 / 默认路由 | [content-routes.md](content-routes.md) |

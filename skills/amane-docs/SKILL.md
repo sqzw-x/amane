@@ -8,7 +8,7 @@ description: >-
 
 # 文档与注释精简
 
-用语规范以 `docs/dev/writing.md` 为准.
+遣词造句以 `docs/dev/writing.md` 为准; 项目用词见 `docs/dev/terms.md`.
 
 ## 开发文档
 
@@ -41,7 +41,7 @@ description: >-
 
 - 写该处的契约, 以及修改后受影响的边界.
 - 同一约束只完整陈述一次, 其余位置引用.
-- 措辞按 `docs/dev/writing.md` 执行, 不在此复述其条款.
+- 措辞按 `docs/dev/writing.md` 与 `docs/dev/terms.md` 执行, 不在此复述其条款.
 - 只描述当前状态. 沿革与未实现的计划不写入注释; 变更过程从 git 历史取得, 计划记入 `docs/roadmap.md` 或 Issue.
 - 复述导入语句、复述文件名、复述调用方的实现描述属于无信息量, 一律删除.
 
