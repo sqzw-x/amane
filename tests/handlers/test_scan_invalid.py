@@ -92,3 +92,26 @@ async def test_scan_invalid_missing_path(repo: Repository, tmp_path: Path) -> No
 
     assert result.success is False
     assert "Not a directory" in (result.error or "")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_scan_invalid_reports_blocked_dirs(repo: Repository, tmp_path: Path) -> None:
+    """候选目录里有无法识别的文件时不登记, 但在结果里计数: 与「读不到」的跳过分开."""
+    lib_root = tmp_path / "lib"
+    (lib_root / "old").mkdir(parents=True)
+    (lib_root / "old" / "poster.jpg").write_bytes(b"x")
+    (lib_root / "old" / "notes.txt").write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+
+    result = await _handler(repo, store).handle(ScanInvalidPayload(library_id=lib.id))
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.entries == 0
+    assert result.result.blocked_dirs == 1
+    assert result.result.skipped_dirs == 0
+    inventory = store.get(result.result.inventory_id)
+    assert inventory is not None
+    assert inventory.blocked.unexplained == 1

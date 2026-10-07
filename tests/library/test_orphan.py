@@ -1,4 +1,4 @@
-"""残留目录判定: 只含附属文件的目录进清理清单, 其余一律不判定.
+"""残留目录判定: 子树只含附属文件与可随目录删除的垃圾项的目录进清理清单, 其余一律不判定.
 
 判定同时覆盖三个方向 (祖先的直接子项、自身、子树), 因此用例按方向分组, 并单独覆盖
 登记形态 (嵌套候选、内部条目保留、库根与扫描范围目录的退化) 与冷静期边界.
@@ -125,11 +125,16 @@ class TestOrphanVerdict:
         assert _sizes(inventory, lib)["old"] == 12
 
     def test_companion_files_under_subdir(self, tmp_path: Path) -> None:
+        """容器是最外层的候选, 子目录里的附属文件上浮成它的条目."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / "images" / "poster.jpg")
         _touch(lib / "old" / "NSFS-039.nfo")
 
-        assert _container(_scan(lib), lib) is True
+        assert _reasons(_scan(lib), lib) == {
+            "old": InventoryReason.ORPHAN,
+            "old/NSFS-039.nfo": InventoryReason.ORPHAN,
+            "old/images/poster.jpg": InventoryReason.ORPHAN,
+        }
 
     def test_media_in_subdir_blocks_parent(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"

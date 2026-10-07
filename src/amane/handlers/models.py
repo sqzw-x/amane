@@ -198,7 +198,7 @@ class ScanInvalidResult(BaseModel):
 
 
 class DeletePayload(BaseModel):
-    """按清单标识删除; 执行集合 = 清单条目减去 exclude 再加上 include, 不做运行时推导."""
+    """按清单标识删除; 执行集合取自清单条目 — 命中排除项的不删除, 命中更深的纳入项的仍删除."""
 
     library_id: int = Field(description="清单所属 Library ID")
     inventory_id: str = Field(description="后端生成的清单标识; 不存在或已过期则失败")

@@ -49,7 +49,7 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
       会连同索引行一起被删;
     - 空目录条目: 执行侧删目录是递归的, 后来落进去的内容会一起没.
 
-    输入是清单标识与排除项, 执行集合恒为清单的子集: 清单之外的路径不可能被删除.
+    输入是清单标识、排除项与纳入项, 执行集合恒为清单的子集: 清单之外的路径不可能被删除.
     同库执行期与 ORGANIZE 共用一把锁.
     """
 
@@ -191,7 +191,7 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
         scope_dir: Path,
         patterns: Sequence[str],
     ) -> OrphanScan | None:
-        """复验用的判定设置; 没有配置来源 (旧构造方式) 时跳过复验.
+        """复验用的判定设置; 未注入 ``config`` 时跳过复验.
 
         ``scope_dir`` 与 ``patterns`` 取自清单本身而不是库的当前设置: 扫描从范围目录起算, 用的是
         那次任务实际生效的 patterns (``LibraryScanBase._apply_library`` 允许按任务覆盖), 复验
