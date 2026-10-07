@@ -190,6 +190,8 @@ class ScanInvalidResult(BaseModel):
     truncated: bool = False
     skipped_dirs: int = 0
     skipped_files: int = 0
+    blocked_dirs: int = 0
+    """判定为候选但没有登记的目录数; 与「读不到」的 skipped 分开, 否则两类问题无法区分."""
 
 
 # --- DELETE ---
@@ -220,6 +222,8 @@ class DeleteResult(BaseModel):
     """被 exclude 排除的清单条目数."""
     indexed: int = 0
     """随之删除的 MediaFile 行数."""
+    reverify_rejected: int = 0
+    """执行前复验未通过的残留条目数: 扫描之后目录里又落进了正片, 条目不再成立."""
 
 
 # --- CLEANUP ---

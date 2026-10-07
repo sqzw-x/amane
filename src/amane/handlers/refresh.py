@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..db import TaskType
-from ..library import MEDIA_EXTENSIONS, InventoryStore, LibraryScan, scan_inventory
+from ..library import MEDIA_EXTENSIONS, InventoryStore, LibraryScan, OrphanScan, scan_inventory
 from ..parsing import parse_file_info
 from ..utils.path import nfc_path
 from ..utils.threads import path_exists, path_is_dir
@@ -75,6 +75,18 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
                     patterns=payload.patterns or [],
                     scan=scan,
                     collect_media=True,
+                    orphan_scan=(
+                        OrphanScan.from_library(
+                            library_root=library_root,
+                            scope_dir=scan_dir,
+                            subtitle_extensions=library.subtitle_extensions,
+                            trailer_pattern=library.trailer_pattern,
+                            patterns=payload.patterns or [],
+                            media_extensions=self._media_extensions,
+                        )
+                        if library is not None
+                        else None
+                    ),
                 )
                 if library is not None and self._inventory_store is not None and inventory.scope_path is None:
                     # 子目录范围的巡检不代表整库, 因此不覆盖面板用的清单.
