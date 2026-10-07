@@ -73,14 +73,14 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         route = self._config.scraping.content_routes.get(content_type)
         if not route:
             rec.warning("no eligible crawlers for content type", content_type=content_type)
-            return TaskResult(success=False, error=f"No eligible crawlers for content type {content_type}")
+            return TaskResult(success=False, error=f"内容类型 {content_type} 没有可用来源")
         rec.info("scraping started", content_type=str(content_type), crawlers=route)
         rec.update_summary(eligible_sites=[str(s) for s in route])
 
         crawlers = await self._factory.get_crawlers(route)
         if not crawlers:
             current().warning("no crawlers available", requested=route)
-            return TaskResult(success=False, error=f"No crawlers available for {payload.number}")
+            return TaskResult(success=False, error=f"番号 {payload.number} 没有可用来源")
 
         file = None
         if payload.media_file_id:
@@ -109,7 +109,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             # aggregate 上报的 current 是已满足标量字段数; 分母由 handler 统一为含后续步骤的 total.
             await self.report_progress(current, progress_total, message)
 
-        # 出站: 执行抓取图 (execute_graph), 声明依赖的来源在第二段; 按 use_cache 复用 raw 快照.
+        # 出站: 执行获取图 (execute_graph), 声明依赖的来源在第二段; 按 use_cache 复用 raw 快照.
         result = await aggregate(
             q,
             crawlers,
@@ -127,9 +127,9 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         # 标量可以全空: 只要有来源返回结果, 海报 / 评分 / external_id 仍可入库.
         if not result.raw:
             current().warning("no data found from any source", failed_sites=result.failed_sites)
-            return TaskResult(success=False, error=f"No metadata found for {payload.number}")
+            return TaskResult(success=False, error=f"未找到 {payload.number} 的元数据")
 
-        # 抓取结束: 进度分子对齐标量字段数, 其后为物化与持久化.
+        # 获取结束: 进度分子对齐标量字段数, 其后为物化与持久化.
         await self.report_progress(len(SCALAR_FIELDS), progress_total, "fetch")
 
         # 翻译文本字段; 失败不阻断刮削.

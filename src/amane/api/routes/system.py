@@ -36,7 +36,7 @@ async def desktop_info(runtime: RuntimeDep) -> DesktopResponse:
 async def restart_server(request: Request, background: BackgroundTasks, config: ConfigDep) -> Response:
     """优雅停机并以退出码 3 退出. 仅监督者在场时可用."""
     if not config.cold.supervised:
-        raise HTTPException(status_code=403, detail="Restart is not available")
+        raise HTTPException(status_code=403, detail="未受监督, 不允许重启")
     request.app.state.exit_code = EXIT_RESTART
     background.add_task(_trigger_shutdown, request.app)
     return Response(status_code=202)

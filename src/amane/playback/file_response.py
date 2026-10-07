@@ -133,11 +133,11 @@ class IndexedFileResponse(Response):
         range_header = self._request.headers.get("range")
         if range_header is not None and self._use_range(etag, last_modified):
             if _is_multi_range(range_header):
-                raise HTTPException(status_code=400, detail="不支持多段 Range")
+                raise HTTPException(status_code=400, detail="不支持多段请求")
             try:
                 start, end = _parse_single_range(range_header, size)
             except _MalformedRange as exc:
-                raise HTTPException(status_code=400, detail="Range 无法解析") from exc
+                raise HTTPException(status_code=400, detail="分段请求无法解析") from exc
             except _UnsatisfiableRange:
                 # 416 也带 detail: 前端探测失败原因时读的是响应体, 只有状态码时用户看到的是
                 # 「无法播放此码流（HTTP 416）」, 分不出是空文件还是越界范围.

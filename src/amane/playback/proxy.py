@@ -135,15 +135,15 @@ def _upstream_url(url: str) -> str:
     """校验并归一化上游 URL.
 
     ``httpx.InvalidURL`` 直接继承 ``Exception``, 不是 ``RequestError``; 畸形 URL 若不在入口
-    拦下, 会绕过 ``except httpx.RequestError`` 的归还分支漏掉出口额度, 并被路由记成未处理
+    拦下, 会绕过 ``except httpx.RequestError`` 的归还分支漏掉通道额度, 并被路由记成未处理
     异常返回 500. 只接受主机可代理的绝对 http(s) 地址.
     """
     try:
         parsed = httpx.URL(url)
     except httpx.InvalidURL as exc:
-        raise HTTPException(status_code=502, detail="上游地址无效") from exc
+        raise HTTPException(status_code=502, detail="播放来源地址无效") from exc
     if parsed.scheme not in {"http", "https"} or not parsed.host:
-        raise HTTPException(status_code=502, detail="上游地址无效")
+        raise HTTPException(status_code=502, detail="播放来源地址无效")
     return str(parsed)
 
 
@@ -168,12 +168,12 @@ class UpstreamGate:
         try:
             await asyncio.wait_for(self._global.acquire(), timeout=ACQUIRE_TIMEOUT_SECONDS)
         except TimeoutError:
-            raise HTTPException(status_code=503, detail="播放出口繁忙") from None
+            raise HTTPException(status_code=503, detail="播放通道繁忙") from None
         try:
             await asyncio.wait_for(source_sem.acquire(), timeout=ACQUIRE_TIMEOUT_SECONDS)
         except TimeoutError:
             self._global.release()
-            raise HTTPException(status_code=503, detail="播放出口繁忙") from None
+            raise HTTPException(status_code=503, detail="播放通道繁忙") from None
 
     def release(self, source_id: str) -> None:
         source_sem = self._per_source.get(source_id)
@@ -356,7 +356,7 @@ class StreamClient:
     ) -> tuple[httpx.Response, Callable[[], Awaitable[None]]]:
         """发出上游请求, 同时返回一个幂等的一次性释放函数.
 
-        释放函数负责关闭上游响应并归还出口额度, 入口段与 post-send 段都必须调用它:
+        释放函数负责关闭上游响应并归还通道额度, 入口段与 post-send 段都必须调用它:
         ``httpx.InvalidURL`` 不是 ``RequestError``, ``aread()`` 的 ``ReadTimeout`` 与清单改写
         的 ``SourceError`` 也不属于 ``HTTPException``; 只按单一异常类型释放会漏掉额度, 累积到
         全局上限后整个进程的播放固定返回 503.
@@ -382,7 +382,7 @@ class StreamClient:
         except httpx.RequestError as exc:
             await release()
             logger.warning("playback upstream request failed", source=source_id, error=str(exc))
-            raise HTTPException(status_code=502, detail="上游不可达") from exc
+            raise HTTPException(status_code=502, detail="播放来源不可达") from exc
         except BaseException:
             await release()
             raise
@@ -405,9 +405,9 @@ class StreamClient:
         )
         try:
             if 300 <= response.status_code < 400:
-                raise HTTPException(status_code=502, detail="上游重定向被拒绝")
+                raise HTTPException(status_code=502, detail="播放来源重定向被拒绝")
             if response.status_code >= 400:
-                raise HTTPException(status_code=502, detail="上游失败")
+                raise HTTPException(status_code=502, detail="播放来源失败")
             chunks: list[bytes] = []
             total = 0
             async for chunk in response.aiter_bytes():
@@ -431,7 +431,7 @@ class StreamClient:
     ) -> Response:
         range_header = request.headers.get("range")
         if range_header is not None and _is_multi_range(range_header):
-            raise HTTPException(status_code=400, detail="不支持多段 Range")
+            raise HTTPException(status_code=400, detail="不支持多段请求")
 
         outbound: dict[str, str] = {**target.headers}
         outbound["Accept-Encoding"] = "identity"
@@ -468,9 +468,9 @@ class StreamClient:
                 await release()
                 return Response(status_code=416, headers=filtered)
             if 300 <= response.status_code < 400:
-                raise HTTPException(status_code=502, detail="上游重定向被拒绝")
+                raise HTTPException(status_code=502, detail="播放来源重定向被拒绝")
             if response.status_code >= 400:
-                raise HTTPException(status_code=502, detail="上游失败")
+                raise HTTPException(status_code=502, detail="播放来源失败")
             content_type = response.headers.get("content-type", "")
             if is_playlist_type(content_type) and rewrite_playlist is not None and method == "GET":
                 raw = await response.aread()
@@ -493,12 +493,12 @@ class StreamClient:
                     source=source_id,
                     content_type=content_type,
                 )
-                raise HTTPException(status_code=502, detail="上游不是可播放的媒体")
+                raise HTTPException(status_code=502, detail="播放来源不是可播放的媒体")
             if not _length_range_consistent({k.lower(): v for k, v in response.headers.items()}):
-                raise HTTPException(status_code=502, detail="上游长度与 Range 不一致")
+                raise HTTPException(status_code=502, detail="播放来源长度与分段请求不一致")
         except BaseException:
             # post-send 段: aread() 的 ReadTimeout 与清单改写的 SourceError 都不属于
-            # HTTPException, 只捕 HTTPException 会漏掉出口额度.
+            # HTTPException, 只捕 HTTPException 会漏掉通道额度.
             await release()
             raise
 

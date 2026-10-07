@@ -321,7 +321,7 @@ class PlaybackFactory:
                 if exc.reason is FailureReason.NO_USABLE_METADATA:
                     return [self._unavailable(source_id, detail=exc.detail or "没有可播放的流")]
                 logger.warning("playback probe failed", source=source_id, error=str(exc))
-                detail = "探测超时" if exc.reason is FailureReason.TIMEOUT else "上游失败"
+                detail = "探测超时" if exc.reason is FailureReason.TIMEOUT else "播放来源失败"
                 return [self._unavailable(source_id, detail=detail)]
             except Exception:
                 logger.exception("playback probe crashed", source=source_id)
@@ -342,7 +342,7 @@ class PlaybackFactory:
         """解析出由主机执行的播放目标, 复用插件声明的有效期.
 
         命中缓存的前提是插件在上一次结果里声明了 ``cache_ttl``; 未声明时每次都调用插件的
-        ``resolve``. 只有成功的解析结果进缓存: 抛 ``SourceError`` 与返回 ``None`` 仍走
+        ``resolve``. 只有成功的解析结果进缓存: 抛 ``SourceError`` 与返回 ``None`` 仍按未命中处理, 计入
         ``open_fail`` 负缓存. 过长的声明由宿主上限 ``RESOLVE_TTL_MAX_SECONDS`` 截断.
         """
         # key 由插件自选, ``"None"`` 是合法取值: 直接插值会让「没有选中」与「选中了该 key」
@@ -352,7 +352,7 @@ class PlaybackFactory:
         if cached is not None:
             return cached
         if self._caches.open_fail.is_blocked(open_key):
-            raise SourceError(FailureReason.NETWORK, detail="上游暂时不可用")
+            raise SourceError(FailureReason.NETWORK, detail="播放来源暂时不可用")
         provider = self.provider(source_id)
         if provider is None:
             raise LookupError(source_id)

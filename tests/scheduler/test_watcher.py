@@ -46,7 +46,7 @@ class TestHandler:
         assert handler._matches(Path("/tmp/中文预告片.mp4")) is True  # (?i)trailer 不匹配预告
 
     def test_skips_undersized_video(self, tmp_path: Path):
-        """体积阈值只跳过真实存在的小视频; 缺失路径不因 stat 失败被挡 (删除事件仍匹配)."""
+        """大小阈值只跳过真实存在的小视频; 缺失路径不因 stat 失败被挡 (删除事件仍匹配)."""
         small = tmp_path / "ad.mp4"
         small.write_bytes(b"tiny")
         large = tmp_path / "film.mp4"
@@ -66,7 +66,7 @@ class TestHandler:
         assert handler._matches(Path("/tmp/video.mp4")) is True
 
     def test_skips_any_blacklist_pattern(self):
-        """多个跳过正则任一命中即忽略 (预告片 + 黑名单组合)."""
+        """多个跳过正则任一命中即忽略 (预告片 + 文件黑名单组合)."""
         handler = _Handler(library_id=1, scan=LibraryScan(blacklist_patterns=["广告", "(?i)ads"]))
         assert handler._matches(Path("/tmp/新片广告.mp4")) is False
         assert handler._matches(Path("/tmp/ADS_01.mkv")) is False

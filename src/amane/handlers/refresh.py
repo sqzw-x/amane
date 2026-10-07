@@ -38,7 +38,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
     async def handle(self, payload: RefreshPayload) -> TaskResult[RefreshResult]:
         scan_dir = Path(payload.path)
         if not await path_is_dir(scan_dir):
-            return TaskResult(success=False, error=f"Not a directory: {payload.path}")
+            return TaskResult(success=False, error=f"不是目录: {payload.path}")
 
         library = await self._repo.get_library(payload.library_id)
         scan = LibraryScan(

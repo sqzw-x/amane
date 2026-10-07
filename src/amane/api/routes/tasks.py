@@ -136,7 +136,7 @@ async def get_task_children(
 ) -> TaskChildListResponse:
     """直接后继 (TaskLink 出边). total 为出边总数, 不受本页截断."""
     if await repo.get_task(task_id) is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     pairs = await repo.list_children(task_id, limit=limit, offset=offset)
     decorated = await _decorate_tasks(repo, [task for task, _ in pairs])
     parent_counts = await repo.child_status_counts([task_id])
@@ -213,7 +213,7 @@ async def batch_tasks(
 async def get_task(task_id: int, repo: RepoDep) -> TaskResponse:
     task = await repo.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     return await _to_resp(repo, task)
 
 
@@ -222,9 +222,9 @@ async def get_task_report(task_id: int, repo: RepoDep, config: ConfigDep) -> Tas
     """面向 UI 的投影, 非完整记录导出. 仅终态可用."""
     task = await repo.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     if task.status not in (TaskStatus.DONE, TaskStatus.FAILED):
-        raise HTTPException(status_code=409, detail="Report is only available for finished tasks")
+        raise HTTPException(status_code=409, detail="只有已结束的任务才有摘要")
     return build_task_report(config.cold.log_dir, task)
 
 
@@ -240,14 +240,14 @@ async def get_task_record(
     """导出任务记录 (zip). 默认脱敏; include_secrets=true 需本地存在 .secrets.hot.json."""
     task = await repo.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     if task.status not in (TaskStatus.DONE, TaskStatus.FAILED):
-        raise HTTPException(status_code=409, detail="Record is only available for finished tasks")
+        raise HTTPException(status_code=409, detail="只有已结束的任务才能导出任务记录")
 
     try:
         data = build_record_zip(config.cold.log_dir, task_id, include_secrets=include_secrets)
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Record not found for this task") from None
+        raise HTTPException(status_code=404, detail="该任务没有任务记录") from None
     except PermissionError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 

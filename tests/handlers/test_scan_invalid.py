@@ -76,7 +76,7 @@ async def test_scan_invalid_missing_library(repo: Repository) -> None:
     result = await _handler(repo, InventoryStore()).handle(ScanInvalidPayload(library_id=999))
 
     assert result.success is False
-    assert "not found" in (result.error or "")
+    assert "不存在" in (result.error or "")
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -91,4 +91,4 @@ async def test_scan_invalid_missing_path(repo: Repository, tmp_path: Path) -> No
     )
 
     assert result.success is False
-    assert "Not a directory" in (result.error or "")
+    assert "不是目录" in (result.error or "")

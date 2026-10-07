@@ -560,12 +560,12 @@ class TestPlaybackHttp:
 
         error_status, error_body = await play("error", "PLAY-ERR")
         assert error_status == 502
-        assert error_body.get("detail") == "上游失败"
+        assert error_body.get("detail") == "播放来源失败"
 
         error_id = await _seed_title(repo, number="PLAY-ERR-LIST")
         error_list = await _listing(client, error_id)
         assert [(row["source_id"], row["available"], row["detail"]) for row in error_list.json()["items"]] == [
-            ("acme.play", False, "上游失败")
+            ("acme.play", False, "播放来源失败")
         ]
         assert (await client.get(f"playback/acme.play/{error_id}")).status_code == 502
 
@@ -687,7 +687,7 @@ class TestPlaybackHttp:
     ) -> None:
         """插件用 ``NO_USABLE_METADATA`` 说明本条目没有可播流时, 原因进列表也进播放响应.
 
-        没有原因时用户只知道「当前不可用」; 走这条路径的失败不是上游故障, 因此不打「上游失败」
+        没有原因时用户只知道「当前不可用」; 走这条路径的失败不是播放来源故障, 因此不打「播放来源失败」
         的负缓存, 与 ``probe`` 返回 ``None`` 同一条记录.
         """
         data_dir = app.state.runtime.config.cold.data_dir
@@ -792,9 +792,9 @@ class TestPlaybackHttp:
         repo: Repository,
         app: FastAPI,
     ) -> None:
-        """插件自己判定探测超时时, 列表显示宿主的「探测超时」而不是通用的「上游失败」.
+        """插件自己判定探测超时时, 列表显示宿主的「探测超时」而不是通用的「播放来源失败」.
 
-        插件给的 detail 可能带上游地址, 因此文案由插件给出的 reason 决定, 不直接展示插件文本.
+        插件给的 detail 可能带播放来源地址, 因此文案由插件给出的 reason 决定, 不直接展示插件文本.
         """
         data_dir = app.state.runtime.config.cold.data_dir
         write_plugin(data_dir, "acme.play", body=playback_plugin_source("acme.play"))
@@ -944,9 +944,9 @@ class TestPlaybackHttp:
         repo: Repository,
         app: FastAPI,
     ) -> None:
-        """上游把分片声明成 text/css 时照常转发, 响应类型中和为 octet-stream.
+        """播放来源把分片声明成 text/css 时照常转发, 响应类型中和为 octet-stream.
 
-        缓存策略按上游原始类型判定: 密钥由 token 的 is_key 标记固定 no-store, 普通分片仍写
+        缓存策略按播放来源原始类型判定: 密钥由 token 的 is_key 标记固定 no-store, 普通分片仍写
         不可变缓存.
         """
         server, origin = _start_hls_origin(
@@ -1102,7 +1102,7 @@ class TestPlaybackHttp:
     ) -> None:
         """清单里一条无法定位的 URI 只作废自己: 其余分片照常可播.
 
-        无法定位的 URI 仍然改写到本机 (上游 Origin 不得因此漏进清单), 请求它的 token 时返回 502
+        无法定位的 URI 仍然改写到本机 (播放来源 Origin 不得因此漏进清单), 请求它的 token 时返回 502
         与原始原因; 归属校验不变, 其它条目 / 文件 / 来源请求同一个 token 一律 404.
         """
         server, origin = _start_hls_origin({"/good.ts": ("video/mp4", b"GOODSEG")})

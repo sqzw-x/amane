@@ -47,7 +47,7 @@ async def _load_query(
     """
     metadata = await repo.get_metadata(metadata_id)
     if metadata is None:
-        raise HTTPException(status_code=404, detail="元数据不存在")
+        raise HTTPException(status_code=404, detail="影片不存在")
     files = await repo.get_media_by_metadata_id(metadata_id)
     library_paths: dict[int, str] = {}
     for item in files:
@@ -82,7 +82,7 @@ def _stream_item(row: ListedSource, metadata_id: int) -> PlaybackStreamItem:
 
 
 def _playback_http_error(exc: SourceError) -> HTTPException:
-    return HTTPException(status_code=502, detail=exc.detail or "上游失败")
+    return HTTPException(status_code=502, detail=exc.detail or "播放来源失败")
 
 
 @router.get("/sources", response_model=PlaybackSourceListResponse)

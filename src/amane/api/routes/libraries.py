@@ -111,7 +111,7 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
 async def get_library(library_id: int, repo: RepoDep) -> LibraryResponse:
     lib = await repo.get_library(library_id)
     if lib is None:
-        raise HTTPException(status_code=404, detail="Library not found")
+        raise HTTPException(status_code=404, detail="媒体库不存在")
     return to_resp(LibraryResponse, lib)
 
 
@@ -124,7 +124,7 @@ async def update_library(
 ) -> LibraryResponse:
     updates = cast("LibraryUpdates", req.model_dump(exclude_unset=True))
     if not updates:
-        raise HTTPException(status_code=422, detail="No fields to update")
+        raise HTTPException(status_code=422, detail="没有需要修改的字段")
 
     # 仅 path 被显式更新时才校验
     if "path" in updates and updates["path"] is not None:
@@ -135,7 +135,7 @@ async def update_library(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if lib is None:
-        raise HTTPException(status_code=404, detail="Library not found")
+        raise HTTPException(status_code=404, detail="媒体库不存在")
     logger.info("library updated", library_id=library_id, fields=list(updates.keys()))
 
     watch_fields = {
@@ -163,7 +163,7 @@ async def delete_library(library_id: int, repo: RepoDep, runtime: RuntimeDep):
     """级联删除该库 MediaFile (library_id 非空 FK). 仅删除数据库索引, 不动磁盘文件."""
     existing = await repo.list_libraries()
     if not any(lib.id == library_id for lib in existing):
-        raise HTTPException(status_code=404, detail="Library not found")
+        raise HTTPException(status_code=404, detail="媒体库不存在")
 
     # 先停止监控, 避免删库后 watcher 仍为已删库 id 创建悬空 MediaFile
     if runtime.watcher_service:

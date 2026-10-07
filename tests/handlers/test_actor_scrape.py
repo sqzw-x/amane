@@ -231,7 +231,7 @@ async def test_actor_scrape_missing_actor(repo: Repository, hot: HotSettings) ->
     result = await handler.handle(ActorScrapePayload(actor_id=99999))
     assert not result.success
     assert result.error is not None
-    assert "not found" in result.error
+    assert "不存在" in result.error
 
 
 @pytest.mark.asyncio(loop_scope="function")

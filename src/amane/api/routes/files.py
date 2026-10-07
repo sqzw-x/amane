@@ -65,7 +65,7 @@ async def list_files(
 @in_thread
 def _list_files_sync(path: str, base: str | None, show_hidden: bool, safe_dirs: list[Path] | None) -> FileListResponse:
     if safe_dirs is not None and not safe_dirs:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="No safe directories configured.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="尚未配置安全目录")
 
     p = Path(path)
     try:
@@ -84,15 +84,15 @@ def _list_files_sync(path: str, base: str | None, show_hidden: bool, safe_dirs: 
     except OSError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Path resolution failed — may not exist or lacks access permission.",
+            detail="路径解析失败: 可能不存在, 或没有访问权限",
         )
 
     # ALLOW_ALL 时 safe_dirs 为 None, 跳过边界检查
     if safe_dirs is not None and not is_any_descendant(target_path, *safe_dirs):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to this path is not permitted.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="不允许访问该路径")
 
     if not target_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Path does not exist: {path}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"路径不存在: {path}")
 
     if not target_path.is_dir():
         target_path = target_path.parent
@@ -114,7 +114,7 @@ def _list_files_sync(path: str, base: str | None, show_hidden: bool, safe_dirs: 
                 pass
             items.append(item)
     except PermissionError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied reading directory.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="没有读取该目录的权限")
     except OSError as exc:
         # 网络盘挂载失效 (macOS errno 6 "Device not configured") 等抛 OSError
         raise HTTPException(

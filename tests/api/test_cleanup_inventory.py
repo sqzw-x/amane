@@ -481,11 +481,11 @@ async def test_inventory_reports_last_scan_failure(
         TaskType.SCAN_INVALID, ScanInvalidPayload(library_id=library_id, path=str(safe_path / "lib" / "gone"))
     )
     assert task.id is not None
-    await repo.fail_task(task.id, error="Not a directory: gone")
+    await repo.fail_task(task.id, error="不是目录: gone")
 
     resp = await client.get(f"libraries/{library_id}/cleanup/inventory")
 
     body = resp.json()
     assert body["exists"] is False
     assert body["scan_running"] is False
-    assert body["last_scan_error"] == "Not a directory: gone"
+    assert body["last_scan_error"] == "不是目录: gone"

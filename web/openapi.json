@@ -261,7 +261,7 @@
           "cleanup"
         ],
         "summary": "Get Cleanup Trash",
-        "description": "展开回收站历史内容: 产出回收站来源的清单, 前端拿到要展开的目录再按页读.\n\n展开本身是只读遍历, 但代价随回收站体积增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):\n窗口内已有的一份直接复用, 免得重走整棵树并往存放里堆用不到的清单.",
+        "description": "展开回收站历史内容: 产出回收站来源的清单, 前端拿到要展开的目录再按页读.\n\n展开本身是只读遍历, 但代价随回收站大小增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):\n窗口内已有的一份直接复用, 免得重新遍历整棵树并往存放里堆用不到的清单.",
         "operationId": "get_cleanup_trash",
         "parameters": [
           {
@@ -3515,7 +3515,7 @@
           "facets"
         ],
         "summary": "Delete Facet",
-        "description": "删除分类. 爬取侧写入黑名单并从 Metadata 真值剔除; user_tag 硬删.",
+        "description": "删除分类. 爬取侧写入剔除规则并从 Metadata 真值移除; user_tag 硬删.",
         "operationId": "delete_facet",
         "parameters": [
           {
@@ -11506,7 +11506,7 @@
           "prune_empty_dirs": {
             "type": "boolean",
             "title": "Prune Empty Dirs",
-            "description": "移动后删除本次腾空的目录 (库根与 .amane_trash 除外); 复制 / 硬链接 / 软链接方式不移走源文件, 该开关无效",
+            "description": "移动后删除本次腾空的目录 (库根与 .amane_trash 除外); 复制 / 硬链接 / 符号链接方式不移走源文件, 该开关无效",
             "default": true
           },
           "type": {

@@ -53,7 +53,7 @@ _DOUBLE_ENCODED = {"AT&amp;amp;T"}
 
 @pytest.mark.parametrize(("raw", "_expected"), [c for c in CASES if c[0] not in _DOUBLE_ENCODED])
 def test_normalize_is_idempotent(raw: str | None, _expected: str | None) -> None:
-    """聚合出口与落库钩子都会调用, 二次调用必须不再变化."""
+    """聚合输出与落库钩子都会调用, 二次调用必须不再变化."""
     once = normalize_long_text(raw)
     assert normalize_long_text(once) == once
 

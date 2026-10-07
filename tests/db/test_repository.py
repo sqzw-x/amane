@@ -1622,11 +1622,11 @@ class TestLibraryRepo:
         assert updated is not None
         assert updated.video_template == "{number}/{number}[-CD{cd?}].{ext}"
 
-        with pytest.raises(ValueError, match="unclosed"):
+        with pytest.raises(ValueError, match="未闭合"):
             await repo.update_library(lib.id, video_template="{number}[-CD{cd?}.{ext}")
-        with pytest.raises(ValueError, match="unknown mapping key"):
+        with pytest.raises(ValueError, match="映射键未知"):
             await repo.update_library(lib.id, video_template="{mosaic?|uncencored=U}.{ext}")
-        with pytest.raises(ValueError, match="unmatched"):
+        with pytest.raises(ValueError, match="没有匹配"):
             await repo.create_library(name="bad", path="/media/bad", video_template="{number}].{ext}")
 
     @pytest.mark.asyncio(loop_scope="function")

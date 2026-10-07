@@ -131,7 +131,7 @@ async def get_actor(actor_id: int, repo: RepoDep) -> ActorResponse:
     item = await repo.get_facet(FacetKind.ACTOR, actor_id)
     actor = await repo.get_actor(actor_id)
     if item is None or actor is None:
-        raise HTTPException(status_code=404, detail="Actor not found")
+        raise HTTPException(status_code=404, detail="演员不存在")
     return await _detail_response(repo, actor)
 
 
@@ -140,7 +140,7 @@ async def update_actor(actor_id: int, req: ActorUpdateRequest, repo: RepoDep) ->
     """更新演员规范人物字段 (不含 name/raw/field_sources); 写入字段自动加锁."""
     updates = cast("ActorPersonFields", req.model_dump(exclude_unset=True))
     if not updates:
-        raise HTTPException(status_code=422, detail="No fields to update")
+        raise HTTPException(status_code=422, detail="没有需要修改的字段")
     if "birthday" in updates:
         raw_bday = updates["birthday"]
         if raw_bday is None or (isinstance(raw_bday, str) and not raw_bday.strip()):
@@ -148,13 +148,13 @@ async def update_actor(actor_id: int, req: ActorUpdateRequest, repo: RepoDep) ->
         elif isinstance(raw_bday, str):
             normalized = normalize_calendar_date(raw_bday)
             if normalized is None:
-                raise HTTPException(status_code=422, detail="birthday must be YYYY-MM-DD")
+                raise HTTPException(status_code=422, detail="生日必须为 YYYY-MM-DD")
             updates["birthday"] = normalized
         else:
-            raise HTTPException(status_code=422, detail="birthday must be YYYY-MM-DD")
+            raise HTTPException(status_code=422, detail="生日必须为 YYYY-MM-DD")
     actor = await repo.update_actor(actor_id, mode=WriteMode.MANUAL, **updates)
     if actor is None:
-        raise HTTPException(status_code=404, detail="Actor not found")
+        raise HTTPException(status_code=404, detail="演员不存在")
     return await _detail_response(repo, actor)
 
 
@@ -163,7 +163,7 @@ async def set_actor_locks(actor_id: int, req: ActorLocksRequest, repo: RepoDep) 
     """整体替换锁定字段集合."""
     actor = await repo.set_actor_locks(actor_id, req.fields)
     if actor is None:
-        raise HTTPException(status_code=404, detail="Actor not found")
+        raise HTTPException(status_code=404, detail="演员不存在")
     logger.info("actor locks updated", actor_id=actor_id, fields=[str(field) for field in req.fields])
     return await _detail_response(repo, actor)
 
@@ -173,7 +173,7 @@ async def clear_actor_person(actor_id: int, repo: RepoDep) -> ActorResponse:
     """清空人物档案并解除全部锁 (保留 name / gender / 刮削缓存)."""
     actor = await repo.clear_actor_person(actor_id)
     if actor is None:
-        raise HTTPException(status_code=404, detail="Actor not found")
+        raise HTTPException(status_code=404, detail="演员不存在")
     logger.info("actor person cleared", actor_id=actor_id)
     return await _detail_response(repo, actor)
 
@@ -188,7 +188,7 @@ async def crop_actor_avatar(
     """从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图."""
     actor = await repo.get_actor(actor_id)
     if actor is None:
-        raise HTTPException(status_code=404, detail="Actor not found")
+        raise HTTPException(status_code=404, detail="演员不存在")
     image_urls = list(actor.image_urls or [])
     if not image_urls:
         raise HTTPException(status_code=400, detail="无头像图可裁切")
@@ -211,7 +211,7 @@ async def crop_actor_avatar(
         actor_id, mode=WriteMode.MANUAL, image_urls=list(dict.fromkeys([cropped_url, *image_urls]))
     )
     if updated is None:
-        raise HTTPException(status_code=404, detail="Actor not found")
+        raise HTTPException(status_code=404, detail="演员不存在")
     logger.info("actor avatar cropped", actor_id=actor_id, box=box, image_url=cropped_url)
     return await _detail_response(repo, updated)
 
@@ -220,7 +220,7 @@ async def crop_actor_avatar(
 async def scrape_actor(actor_id: int, repo: RepoDep, req: ActorScrapeRequest | None = None) -> TaskResponse:
     actor = await repo.get_actor(actor_id)
     if actor is None:
-        raise HTTPException(status_code=404, detail="Actor not found")
+        raise HTTPException(status_code=404, detail="演员不存在")
     body = req or ActorScrapeRequest()
     task = await repo.create_task(
         task_type=TaskType.ACTOR_SCRAPE, payload=ActorScrapePayload(actor_id=actor_id, use_cache=body.use_cache)

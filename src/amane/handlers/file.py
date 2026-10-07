@@ -71,7 +71,7 @@ async def execute_file_operations(
     source_path = await existing_disk_path(Path(media_file.path))
     if source_path is None:
         logger.warning("source file missing", path=media_file.path)
-        return FileOperationsResult(success=False, error=f"Source file not found: {media_file.path}")
+        return FileOperationsResult(success=False, error=f"源文件不存在: {media_file.path}")
 
     info = file_info if file_info is not None else parse_file_info(source_path)
 
@@ -413,15 +413,15 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
     async def handle(self, payload: OrganizePayload) -> TaskResult[OrganizeResult]:
         library = await self._repo.get_library(payload.library_id)
         if library is None:
-            return TaskResult(success=False, error=f"Library {payload.library_id} not found")
+            return TaskResult(success=False, error=f"媒体库 {payload.library_id} 不存在")
         assert library.id is not None
         library_root = Path(library.path)
         if not await path_is_dir(library_root):
-            return TaskResult(success=False, error=f"Not a directory: {library.path}")
+            return TaskResult(success=False, error=f"不是目录: {library.path}")
         if payload.media_file_ids is None:
             scope = Path(payload.path) if payload.path else library_root
             if nfc_path(str(scope)) != nfc_path(library.path) and not await path_is_dir(scope):
-                return TaskResult(success=False, error=f"Not a directory: {scope}")
+                return TaskResult(success=False, error=f"不是目录: {scope}")
 
         lock = await self._library_locks.get(library.id)
         async with lock:
@@ -463,7 +463,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         organized = 0
         failed = 0
         total = len(live)
-        # 只有移动方式会移走源文件, 复制 / 硬链接 / 软链接不腾空目录.
+        # 只有移动方式会移走源文件, 复制 / 硬链接 / 符号链接不腾空目录.
         prune_candidates: set[Path] = set()
         collect_prune = payload.prune_empty_dirs and library.move_mode is MoveMode.MOVE
         if total == 0:

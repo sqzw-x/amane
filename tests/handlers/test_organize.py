@@ -368,7 +368,7 @@ async def test_organize_writes_subtitle_tag(repo: Repository, resource_store: Re
 async def test_organize_does_not_trash_blacklisted(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
-    """整理不扫描磁盘、不回收; 黑名单文件即使在范围内也留在原路径."""
+    """整理不扫描磁盘、不回收; 文件黑名单文件即使在范围内也留在原路径."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
@@ -528,7 +528,7 @@ async def test_organize_ids_requires_library_root(
     result = await org.handle(OrganizePayload(library_id=lib.id, media_file_ids=[media.id]))
     assert result.success is False
     assert result.error is not None
-    assert "Not a directory" in result.error
+    assert "不是目录" in result.error
     assert await repo.get_media_file(media.id) is not None
 
 
@@ -537,7 +537,7 @@ async def test_organize_ids_requires_library_root(
 async def test_organize_skips_rule_hits(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path, case: str
 ) -> None:
-    """已入库但命中黑名单/过小的行跳过落盘; 回收站内的行删除索引, 不整理出回收站."""
+    """已入库但命中文件黑名单/过小的行跳过落盘; 回收站内的行删除索引, 不整理出回收站."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)
@@ -979,7 +979,7 @@ async def test_reports_progress(repo: Repository, resource_store: ResourceStore,
         result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir / "missing")))
         assert result.success is False
         assert result.error is not None
-        assert "Not a directory" in result.error
+        assert "不是目录" in result.error
         assert events == []
         return
 
@@ -987,7 +987,7 @@ async def test_reports_progress(repo: Repository, resource_store: ResourceStore,
         result = await org.handle(OrganizePayload(library_id=lib.id + 999, path=str(src_dir)))
         assert result.success is False
         assert result.error is not None
-        assert "not found" in result.error
+        assert "不存在" in result.error
         assert events == []
         return
 
@@ -1247,7 +1247,7 @@ async def test_organize_keeps_source_dir_when_prune_disabled(
 async def test_organize_other_modes_leave_source_dir(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path, mode: MoveMode
 ) -> None:
-    """复制 / 硬链接 / 软链接不移走源文件, 目录不会变空, 开关无效."""
+    """复制 / 硬链接 / 符号链接不移走源文件, 目录不会变空, 开关无效."""
     lib_root = tmp_path / "lib"
     lib_root.mkdir()
     src_dir = lib_root / "incoming"

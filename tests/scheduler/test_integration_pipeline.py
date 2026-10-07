@@ -310,7 +310,7 @@ class TestScrapeHandler:
         # 应失败因为未获取到数据
         assert result.success is False
         assert result.error is not None
-        assert "no metadata" in result.error.lower()
+        assert "元数据" in result.error
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_scrape_no_crawlers_available(self, empty_handler):
@@ -319,7 +319,7 @@ class TestScrapeHandler:
 
         assert result.success is False
         assert result.error is not None
-        assert "no crawlers" in result.error.lower()
+        assert "没有可用来源" in result.error
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_scrape_computes_oshash_for_stash_crawler(

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class _FakeCrawler(Crawler):
-    """用于测试的假爬虫 - 只记录构造次数, 不做实际抓取."""
+    """用于测试的假爬虫 - 只记录构造次数, 不做实际获取."""
 
     @classmethod
     def profile(cls) -> CrawlerProfile:

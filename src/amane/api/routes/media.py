@@ -21,7 +21,7 @@ def _require_known_definition(definition: str | None) -> str | None:
     if definition is None:
         return None
     if definition not in DEFINITION_VALUES:
-        raise HTTPException(status_code=422, detail=f"未知清晰度: {definition}")
+        raise HTTPException(status_code=422, detail=f"未知分辨率: {definition}")
     return definition
 
 
@@ -76,7 +76,7 @@ async def list_media(
 async def get_media(media_id: int, repo: RepoDep) -> MediaFileResponse:
     media = await repo.get_media_file(media_id)
     if media is None:
-        raise HTTPException(status_code=404, detail="Media file not found")
+        raise HTTPException(status_code=404, detail="媒体文件不存在")
     return to_resp(MediaFileResponse, media)
 
 
@@ -84,10 +84,10 @@ async def get_media(media_id: int, repo: RepoDep) -> MediaFileResponse:
 async def update_media(media_id: int, req: MediaFileUpdateRequest, repo: RepoDep) -> MediaFileResponse:
     updates = cast("MediaFileUpdates", req.model_dump(exclude_unset=True))
     if not updates:
-        raise HTTPException(status_code=422, detail="No fields to update")
+        raise HTTPException(status_code=422, detail="没有需要修改的字段")
     media = await repo.update_media_file(media_id, **updates)
     if media is None:
-        raise HTTPException(status_code=404, detail="Media file not found")
+        raise HTTPException(status_code=404, detail="媒体文件不存在")
     logger.info("media file updated", media_id=media_id, fields=list(updates.keys()))
     return to_resp(MediaFileResponse, media)
 
@@ -96,6 +96,6 @@ async def update_media(media_id: int, req: MediaFileUpdateRequest, repo: RepoDep
 async def delete_media(media_id: int, repo: RepoDep):
     deleted = await repo.delete_media_file(media_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Media file not found")
+        raise HTTPException(status_code=404, detail="媒体文件不存在")
     logger.info("media file deleted", media_id=media_id)
     return Response(status_code=204)

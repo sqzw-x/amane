@@ -50,7 +50,7 @@ def test_strm_content_does_not_clip_title(tmp_path: Path) -> None:
 
 
 def test_relpath_outside_library_raises(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="outside library root"):
+    with pytest.raises(ValueError, match="库根"):
         render_strm_content("/{video_relpath}", tmp_path / "outside" / "A.mp4", tmp_path / "lib", _meta())
 
 

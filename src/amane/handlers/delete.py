@@ -54,13 +54,13 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
 
         library = await self._repo.get_library(payload.library_id)
         if library is None:
-            return TaskResult(success=False, error=f"Library {payload.library_id} not found")
+            return TaskResult(success=False, error=f"媒体库 {payload.library_id} 不存在")
         assert library.id is not None
         library_root = Path(library.path)
         if not same_path(inventory.root, library_root):
             return TaskResult(success=False, error=f"库路径已变更: {inventory.root} → {library_root}")
         if not await path_is_dir(library_root):
-            return TaskResult(success=False, error=f"Not a directory: {library.path}")
+            return TaskResult(success=False, error=f"不是目录: {library.path}")
 
         lock = await self._library_locks.get(library.id)
         async with lock:

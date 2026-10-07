@@ -286,7 +286,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
             except Exception as exc:
                 fetch_error = str(exc)
             else:
-                # FeedService 把抓取失败记进 last_error 而非抛出, 只回 feed_id 会把失败报成成功
+                # FeedService 把获取失败记进 last_error 而非抛出, 只回 feed_id 会把失败报成成功
                 refreshed = await ctx.deps.repo.get_feed(feed.id)
                 fetch_error = refreshed.last_error if refreshed is not None else None
             if fetch_error is not None:
@@ -331,7 +331,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
         refreshed = await ctx.deps.repo.get_feed(feed_id)
         if refreshed is None:
             return {"error": f"feed {feed_id} 不存在"}
-        # FeedService 把抓取失败记进 last_error 而非抛出, 只回 OK 会掩盖失败
+        # FeedService 把获取失败记进 last_error 而非抛出, 只回 OK 会掩盖失败
         if refreshed.last_error:
             return {"error": f"拉取失败: {refreshed.last_error}"}
         return TOOL_OK

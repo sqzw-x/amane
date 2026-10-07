@@ -124,7 +124,7 @@ def _resolve_link_path(
     if library.link_mode == LinkMode.STRM:
         link = link.with_suffix(".strm")
     if is_descendant(link, base_path):
-        raise ValueError(f"link_template must resolve outside the library root: '{link}' is under '{base_path}'")
+        raise ValueError(f"链接模板必须解析到库根之外: {link} 位于 {base_path} 之下")
     return link
 
 

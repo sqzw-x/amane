@@ -69,8 +69,8 @@ export const getCleanupInventoryNodes = <ThrowOnError extends boolean = false>(o
  *
  * 展开回收站历史内容: 产出回收站来源的清单, 前端拿到要展开的目录再按页读.
  *
- * 展开本身是只读遍历, 但代价随回收站体积增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):
- * 窗口内已有的一份直接复用, 免得重走整棵树并往存放里堆用不到的清单.
+ * 展开本身是只读遍历, 但代价随回收站大小增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):
+ * 窗口内已有的一份直接复用, 免得重新遍历整棵树并往存放里堆用不到的清单.
  */
 export const getCleanupTrash = <ThrowOnError extends boolean = false>(options: Options<GetCleanupTrashData, ThrowOnError>): RequestResult<GetCleanupTrashResponses, GetCleanupTrashErrors, ThrowOnError> => (options.client ?? client).get<GetCleanupTrashResponses, GetCleanupTrashErrors, ThrowOnError>({ url: '/api/libraries/{library_id}/cleanup/trash', ...options });
 
@@ -474,7 +474,7 @@ export const deleteFacetRule = <ThrowOnError extends boolean = false>(options: O
 /**
  * Delete Facet
  *
- * 删除分类. 爬取侧写入黑名单并从 Metadata 真值剔除; user_tag 硬删.
+ * 删除分类. 爬取侧写入剔除规则并从 Metadata 真值移除; user_tag 硬删.
  */
 export const deleteFacet = <ThrowOnError extends boolean = false>(options: Options<DeleteFacetData, ThrowOnError>): RequestResult<DeleteFacetResponses, DeleteFacetErrors, ThrowOnError> => (options.client ?? client).delete<DeleteFacetResponses, DeleteFacetErrors, ThrowOnError>({ url: '/api/facets/{kind}/{facet_id}', ...options });
 

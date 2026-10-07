@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-CANCEL_ERROR = "Cancelled by user"
+CANCEL_ERROR = "已由用户取消"
 
 _DEFAULT_SHUTDOWN_TIMEOUT = 0
 # 关闭时等待主循环 (含在飞 claim) 退出的兜底阈值; 正常路径只等它自己退出.
@@ -210,14 +210,14 @@ class AsyncWorker:
             handler = self._handlers.get(task.type)
 
             if handler is None:
-                await self._repo.fail_task(task_id, error=f"No handler for {task.type}")
+                await self._repo.fail_task(task_id, error=f"任务类型 {task.type} 没有处理器")
                 self._done_queue.put_nowait(task_id)
                 return
 
             try:
                 typed_payload = handler.parse_payload(task.payload)
             except (TypeError, KeyError, ValueError) as e:
-                await self._repo.fail_task(task_id, error=f"Invalid payload: {e}")
+                await self._repo.fail_task(task_id, error=f"参数无效: {e}")
                 self._done_queue.put_nowait(task_id)
                 return
 

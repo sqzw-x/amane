@@ -134,7 +134,7 @@ class ScrapeRequest(BaseModel):
         if self.media_id is not None:
             media = await repo.get_media_file(self.media_id)
             if media is None:
-                raise HTTPException(status_code=404, detail=f"Media file {self.media_id} not found")
+                raise HTTPException(status_code=404, detail=f"媒体文件 {self.media_id} 不存在")
             if self.number is not None:
                 return ScrapePayload(
                     number=self.number,

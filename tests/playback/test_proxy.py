@@ -358,7 +358,7 @@ async def test_proxy_hls_part_rejects_4xx_and_playlist() -> None:
     missing, _c1, _ = _serve(status=404)
     playlist, _c2, _ = _serve(media_type="application/vnd.apple.mpegurl", body=b"#EXTM3U\n")
     try:
-        cases = [(missing, "上游失败"), (playlist, "上游不是可播放的媒体")]
+        cases = [(missing, "播放来源失败"), (playlist, "播放来源不是可播放的媒体")]
         for server, detail in cases:
             app = _app(_origin(server), allow="hls_part")
             transport = ASGITransport(app=app)
@@ -492,10 +492,10 @@ async def test_upstream_request_errors_do_not_leak_gate_permits() -> None:
                 with pytest.raises(HTTPException) as failure:
                     await stream.fetch_bytes(source_id="acme.play", target=refused)
                 assert failure.value.status_code == 502
-                assert failure.value.detail == "上游不可达"
+                assert failure.value.detail == "播放来源不可达"
                 resp = await client.get("/refused")
                 assert resp.status_code == 502
-                assert resp.json()["detail"] == "上游不可达"
+                assert resp.json()["detail"] == "播放来源不可达"
 
             assert await stream.fetch_bytes(source_id="acme.play", target=good) == b"abcdef" * 20
             ok = await client.get("/good")
@@ -525,13 +525,13 @@ async def test_malformed_upstream_url_rejected_before_gate() -> None:
         with pytest.raises(HTTPException) as failure:
             await stream.fetch_bytes(source_id="acme.play", target=bad)
         assert failure.value.status_code == 502
-        assert failure.value.detail == "上游地址无效"
+        assert failure.value.detail == "播放来源地址无效"
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/bad")
             assert resp.status_code == 502
-            assert resp.json()["detail"] == "上游地址无效"
+            assert resp.json()["detail"] == "播放来源地址无效"
     finally:
         await stream.aclose()
 

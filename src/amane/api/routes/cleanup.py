@@ -1,4 +1,4 @@
-"""清理清单的只读接口: 面板读取清单, 提交扫描与删除仍走任务接口."""
+"""清理清单的只读接口: 面板读取清单, 提交扫描与删除仍经任务接口."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def _inventory_by_id(store: InventoryStore, library_id: int, inventory_id: str |
     """按标识取清单. 已执行的清单在面板侧等同于不存在 — 它按设计无法再执行."""
     inventory = store.get(inventory_id) if inventory_id else store.latest(library_id, InventorySource.RULES)
     if inventory is None or inventory.executed or inventory.library_id != library_id:
-        raise HTTPException(status_code=404, detail="No cleanup inventory")
+        raise HTTPException(status_code=404, detail="没有可用的清理清单")
     return inventory
 
 
@@ -121,7 +121,7 @@ async def get_cleanup_inventory(library_id: int, repo: RepoDep, runtime: Runtime
     running, last_error = await _scan_state(repo, library_id)
     library = await repo.get_library(library_id)
     if library is None:
-        raise HTTPException(status_code=404, detail="Library not found")
+        raise HTTPException(status_code=404, detail="媒体库不存在")
     inventory = runtime.inventory_store.latest(library_id, InventorySource.RULES)
     if inventory is None or inventory.recursive != library.recursive or inventory.patterns != tuple(library.patterns):
         return InventorySummaryResponse(exists=False, scan_running=running, last_scan_error=last_error)
@@ -153,7 +153,7 @@ async def get_cleanup_inventory_nodes(
     inventory = _inventory_by_id(runtime.inventory_store, library_id, inventory_id)
     node = find_inventory_node(inventory_tree(inventory), _resolve(inventory, path))
     if node is None:
-        raise HTTPException(status_code=404, detail=f"Inventory node not found: {path}")
+        raise HTTPException(status_code=404, detail=f"清单节点不存在: {path}")
     return _page(inventory, node, offset=offset, limit=limit)
 
 
@@ -168,12 +168,12 @@ def _resolve(inventory: CleanupInventory, raw: str) -> Path:
 async def get_cleanup_trash(library_id: int, repo: RepoDep, runtime: RuntimeDep) -> TrashSummaryResponse:
     """展开回收站历史内容: 产出回收站来源的清单, 前端拿到要展开的目录再按页读.
 
-    展开本身是只读遍历, 但代价随回收站体积增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):
-    窗口内已有的一份直接复用, 免得重走整棵树并往存放里堆用不到的清单.
+    展开本身是只读遍历, 但代价随回收站大小增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):
+    窗口内已有的一份直接复用, 免得重新遍历整棵树并往存放里堆用不到的清单.
     """
     library = await repo.get_library(library_id)
     if library is None:
-        raise HTTPException(status_code=404, detail="Library not found")
+        raise HTTPException(status_code=404, detail="媒体库不存在")
     library_root = Path(library.path)
     trash_dir = library_root / TRASH_DIRNAME
     if not trash_dir.is_dir():
@@ -218,7 +218,7 @@ async def expand_cleanup_selection(
     """由选中项展开显式来源清单: 文件表与详情页的删除入口据此预览. 只读, 不改磁盘与索引."""
     library = await repo.get_library(library_id)
     if library is None:
-        raise HTTPException(status_code=404, detail="Library not found")
+        raise HTTPException(status_code=404, detail="媒体库不存在")
     items = await repo.list_media_files(ids=req.media_file_ids, limit=None)
     if any(item.library_id != library_id for item in items):
         raise HTTPException(status_code=422, detail="media_file_ids 含其它库的文件")

@@ -39,7 +39,7 @@ async def get_schedule_schema() -> dict:
 @router.post("", status_code=201)
 async def create_schedule(req: ScheduleCreateRequest, repo: RepoDep) -> ScheduleResponse:
     if not croniter.is_valid(req.cron):
-        raise HTTPException(status_code=422, detail="Invalid cron expression")
+        raise HTTPException(status_code=422, detail="cron 表达式无效")
 
     next_run = croniter(req.cron, datetime.now(UTC)).get_next(datetime)
     task_type = RoutineType(req.submission.type)
@@ -61,7 +61,7 @@ async def create_schedule(req: ScheduleCreateRequest, repo: RepoDep) -> Schedule
 async def get_schedule(schedule_id: int, repo: RepoDep) -> ScheduleResponse:
     schedule = await repo.get_schedule(schedule_id)
     if schedule is None:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise HTTPException(status_code=404, detail="定时任务不存在")
     return to_resp(ScheduleResponse, schedule)
 
 
@@ -72,12 +72,12 @@ async def update_schedule(schedule_id: int, req: ScheduleUpdateRequest, repo: Re
 
     if "cron" in updates:
         if not croniter.is_valid(updates["cron"]):
-            raise HTTPException(status_code=422, detail="Invalid cron expression")
+            raise HTTPException(status_code=422, detail="cron 表达式无效")
         updates["next_run"] = croniter(updates["cron"], datetime.now(UTC)).get_next(datetime)
 
     schedule = await repo.update_schedule(schedule_id, **updates)
     if schedule is None:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise HTTPException(status_code=404, detail="定时任务不存在")
     logger.info("schedule updated", schedule_id=schedule_id, fields=list(updates.keys()))
     return to_resp(ScheduleResponse, schedule)
 
@@ -86,7 +86,7 @@ async def update_schedule(schedule_id: int, req: ScheduleUpdateRequest, repo: Re
 async def delete_schedule(schedule_id: int, repo: RepoDep):
     deleted = await repo.delete_schedule(schedule_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise HTTPException(status_code=404, detail="定时任务不存在")
     logger.info("schedule deleted", schedule_id=schedule_id)
     return Response(status_code=204)
 
@@ -96,7 +96,7 @@ async def trigger_schedule(schedule_id: int, repo: RepoDep) -> ScheduleResponse:
     """将 next_run 设置为当前时间, 由 cron 在下一个 tick 执行."""
     schedule = await repo.get_schedule(schedule_id)
     if schedule is None:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise HTTPException(status_code=404, detail="定时任务不存在")
     assert schedule.id is not None
     updated = await repo.update_schedule(schedule.id, next_run=datetime.now(UTC))
     assert updated is not None

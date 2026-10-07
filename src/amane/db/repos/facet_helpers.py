@@ -137,7 +137,7 @@ SCALAR_FACETS: dict[FacetKind, _ScalarFacetSpec] = {
         kind=FacetKind.STUDIO,
         entity=Studio,
         meta_col=col(Metadata.studio),
-        label="厂商",
+        label="制作商",
     ),
     FacetKind.PUBLISHER: _ScalarFacetSpec(
         kind=FacetKind.PUBLISHER,
@@ -466,7 +466,7 @@ async def _upsert_alias(session: AsyncSession, kind: FacetKind, source: str, tar
 async def _upsert_block(session: AsyncSession, kind: FacetKind, name: str) -> set[str]:
     """写 block 并将指向 name 的 alias 压成 block; 返回全部变为 block 的名字."""
     if kind not in SCRAPE_FACET_KINDS:
-        raise ValueError(f"facet kind {kind} 不支持黑名单规则")
+        raise ValueError(f"facet kind {kind} 不支持剔除规则")
     blocked: set[str] = {name}
     await _set_facet_rule(session, kind, name, FacetRuleAction.BLOCK, None)
 

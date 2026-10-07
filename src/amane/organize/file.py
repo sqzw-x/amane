@@ -29,7 +29,7 @@ def execute_organize(
     disk_source = existing_disk_path(source)
     if disk_source is None:
         logger.warning("organize source not found", source=str(source))
-        return OrganizeResult(success=False, error=f"Source not found: {source}")
+        return OrganizeResult(success=False, error=f"源文件不存在: {source}")
 
     try:
         target_dir.mkdir(parents=True, exist_ok=True)

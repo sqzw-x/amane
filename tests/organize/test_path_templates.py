@@ -206,7 +206,7 @@ class TestOptionalGroups:
         assert result.nfo == media / "ABC-123" / "ABC-123-CD1.nfo"
 
     def test_unclosed_group_rejected(self):
-        with pytest.raises(ValueError, match="unclosed optional group"):
+        with pytest.raises(ValueError, match="可选组未闭合"):
             validate_path_template("{number}[-CD{cd?}.{ext}")
 
 
@@ -239,7 +239,7 @@ class TestValidatePathTemplate:
         assert validate_path_template("{number}[-{mosaic?}[-{def?}]]") == "{number}[-{mosaic?}[-{def?}]]"
 
     def test_unclosed_placeholder(self):
-        with pytest.raises(ValueError, match="unclosed placeholder"):
+        with pytest.raises(ValueError, match="占位符未闭合"):
             validate_path_template("{number")
 
     @pytest.mark.parametrize(
@@ -268,15 +268,15 @@ class TestValidatePathTemplate:
     @pytest.mark.parametrize(
         ("template", "match"),
         [
-            ("{mosaic?|}", "empty placeholder mapping"),
-            ("{mosaic?|uncensored}", "invalid placeholder mapping"),
-            ("{mosaic?|=U,=V}", "duplicate mapping key"),
-            ("{mosaic?|uncensored=U,uncensored=V}", "duplicate mapping key"),
-            ("{mosaic?|uncencored=U}", "unknown mapping key"),
-            ("{content_type|unknown=x}", "unknown mapping key"),
-            ("{def?|2160p=4K}", "unknown mapping key"),
-            ("{sub?|CH=中字}", "unknown mapping key"),
-            ("{mosaic?|uncensored=U,}", "invalid placeholder mapping"),
+            ("{mosaic?|}", "空的占位符映射"),
+            ("{mosaic?|uncensored}", "占位符映射无效"),
+            ("{mosaic?|=U,=V}", "映射键重复"),
+            ("{mosaic?|uncensored=U,uncensored=V}", "映射键重复"),
+            ("{mosaic?|uncencored=U}", "映射键未知"),
+            ("{content_type|unknown=x}", "映射键未知"),
+            ("{def?|2160p=4K}", "映射键未知"),
+            ("{sub?|CH=中字}", "映射键未知"),
+            ("{mosaic?|uncensored=U,}", "占位符映射无效"),
         ],
     )
     def test_value_mapping_rejected(self, template: str, match: str):
@@ -472,7 +472,7 @@ class TestPathTraversalProtection:
         """相对模板中含 .. 导致逃逸时抛出 ValueError"""
         wp = Library(name="t", path=str(media / "incoming"), video_template="../../etc/{number}.{ext}")
         meta = _meta()
-        with pytest.raises(ValueError, match="Path traversal detected"):
+        with pytest.raises(ValueError, match="路径越界"):
             resolve_paths(wp, meta, ext="mp4")
 
     def test_metadata_title_sanitized_no_escape(self, media: Path):
@@ -487,7 +487,7 @@ class TestPathTraversalProtection:
         """绝对路径模板逃逸 base 且无 safe_dirs 覆盖时, 抛出 ValueError"""
         wp = Library(name="t", path=str(media), video_template=str(other / "{number}" / "{number}.{ext}"))
         meta = _meta()
-        with pytest.raises(ValueError, match="Path traversal detected"):
+        with pytest.raises(ValueError, match="路径越界"):
             resolve_paths(wp, meta, ext="mp4")
 
     def test_absolute_template_allowed_within_safe_dir(self, media: Path, other: Path):
@@ -501,7 +501,7 @@ class TestPathTraversalProtection:
         """绝对路径模板逃逸所有 safe_dirs 时, 仍抛出 ValueError"""
         wp = Library(name="t", path=str(media), video_template=str(etc / "{number}" / "{number}.{ext}"))
         meta = _meta()
-        with pytest.raises(ValueError, match="Path traversal detected"):
+        with pytest.raises(ValueError, match="路径越界"):
             resolve_paths(wp, meta, ext="mp4", safe_dirs=[other])
 
     def test_absolute_template_allow_all_skips_extra_boundary(self, media: Path, other: Path):
@@ -513,7 +513,7 @@ class TestPathTraversalProtection:
     def test_relative_template_still_rejects_escape_when_allow_all(self, media: Path):
         """相对模板含 .. 时 ALLOW_ALL 仍拒绝逃出本库."""
         wp = Library(name="t", path=str(media / "incoming"), video_template="../../etc/{number}.{ext}")
-        with pytest.raises(ValueError, match="Path traversal detected"):
+        with pytest.raises(ValueError, match="路径越界"):
             resolve_paths(wp, _meta(), ext="mp4", safe_dirs=None)
 
     def test_absolute_template_within_base_ok(self, media: Path):
@@ -544,7 +544,7 @@ class TestPathTraversalProtection:
 
     @pytest.mark.skipif(platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_in_library_file_symlink_keeps_lexical_video_dir(self, media: Path):
-        """dest 已是指向库内源文件的软链接时, {video_dir} 仍是 dest 所在目录."""
+        """dest 已是指向库内源文件的符号链接时, {video_dir} 仍是 dest 所在目录."""
         media.mkdir()
         src = media / "incoming" / "ABC-123.mp4"
         src.parent.mkdir()
@@ -566,12 +566,12 @@ class TestPathTraversalProtection:
         etc.mkdir()
         (media / "leak").symlink_to(etc)
         wp = Library(name="t", path=str(media), video_template="leak/{number}/{number}.{ext}")
-        with pytest.raises(ValueError, match="Path traversal detected"):
+        with pytest.raises(ValueError, match="路径越界"):
             resolve_paths(wp, _meta(), ext="mp4")
 
     @pytest.mark.skipif(platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_file_symlink_to_outside_rejected(self, media: Path, etc: Path):
-        """dest 文件软链接指向库外时拒绝."""
+        """dest 文件符号链接指向库外时拒绝."""
         media.mkdir()
         etc.mkdir()
         outside = etc / "secret.mp4"
@@ -580,7 +580,7 @@ class TestPathTraversalProtection:
         dest_dir.mkdir(parents=True)
         (dest_dir / "ABC-123.mp4").symlink_to(outside)
         wp = Library(name="t", path=str(media), video_template=VIDEO_TEMPLATE_DEFAULT)
-        with pytest.raises(ValueError, match="Path traversal detected"):
+        with pytest.raises(ValueError, match="路径越界"):
             resolve_paths(wp, _meta(), ext="mp4")
 
 
@@ -664,7 +664,7 @@ class TestResolvePathsLink:
             video_template="{number}/{number}.{ext}",
             link_template="{number}/{number}.{ext}",
         )
-        with pytest.raises(ValueError, match="outside the library root"):
+        with pytest.raises(ValueError, match="库根之外"):
             resolve_paths(wp, _meta(), ext="mp4")
 
     def test_absolute_link_inside_library_rejected(self, media: Path):
@@ -674,7 +674,7 @@ class TestResolvePathsLink:
             video_template="{number}/{number}.{ext}",
             link_template=str(media / "links" / "{number}.{ext}"),
         )
-        with pytest.raises(ValueError, match="outside the library root"):
+        with pytest.raises(ValueError, match="库根之外"):
             resolve_paths(wp, _meta(), ext="mp4")
 
     def test_subtitle_default_follows_link_dir(self, media: Path, other: Path):

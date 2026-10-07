@@ -115,7 +115,7 @@ async def test_create_update_and_poll_feed(feed_deps: AgentDeps) -> None:
 
 @pytest.mark.asyncio
 async def test_poll_feed_surfaces_fetch_error(feed_deps: AgentDeps) -> None:
-    """FeedService 把抓取失败写进 last_error 而不是抛出, 工具须把它当失败回报."""
+    """FeedService 把获取失败写进 last_error 而不是抛出, 工具须把它当失败回报."""
 
     async def poll(feed_id: int) -> None:
         await feed_deps.repo.update_feed(feed_id, last_error="connection reset")

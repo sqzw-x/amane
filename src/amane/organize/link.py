@@ -14,7 +14,7 @@ def create_video_link(
     content: str | None = None,
 ) -> OrganizeResult:
     """strm 默认写 target 的绝对路径 (一行 + 换行); content 非空时用该正文.
-    已就位则成功不改写. 占用路径若不是可替换的链接产物 (已有 strm / 软链接) 则拒绝覆盖.
+    已就位则成功不改写. 占用路径若不是可替换的链接产物 (已有 strm / 符号链接) 则拒绝覆盖.
     """
     try:
         link_path.parent.mkdir(parents=True, exist_ok=True)
@@ -32,7 +32,7 @@ def _write_strm(target: Path, link_path: Path, content: str | None = None) -> Or
             if link_path.read_text(encoding="utf-8") == text:
                 return OrganizeResult(success=True, dest=link_path)
         else:
-            return OrganizeResult(success=False, error=f"Refusing to overwrite {link_path}")
+            return OrganizeResult(success=False, error=f"拒绝覆盖 {link_path}")
     if link_path.exists() or link_path.is_symlink():
         link_path.unlink()
     link_path.write_text(text, encoding="utf-8")
@@ -48,6 +48,6 @@ def _write_symlink(target: Path, link_path: Path) -> OrganizeResult:
             pass
         link_path.unlink()
     elif link_path.exists():
-        return OrganizeResult(success=False, error=f"Refusing to overwrite {link_path}")
+        return OrganizeResult(success=False, error=f"拒绝覆盖 {link_path}")
     link_path.symlink_to(target)
     return OrganizeResult(success=True, dest=link_path)

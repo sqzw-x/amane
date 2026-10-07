@@ -12,7 +12,7 @@ from amane.crawlers.r18dev.repository import content_id_candidates
 
 class TestImageUrls:
     def test_digital_video_dual_urls(self):
-        """digital/video 产出双 URL: 高清 + 标准回落."""
+        """digital/video 产出双 URL: 高清 + 标准回退."""
         urls = _image_urls("digital/video/ssis00497/ssis00497pl")
         assert len(urls) == 2
         assert urls[0] == "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497pl.jpg"

@@ -213,7 +213,7 @@ def test_record_site_outcome_cache_then_failed_upgrades(tmp_path: Path, task: Ta
 
 
 def test_recorder_begin_discards_stale_summary(tmp_path: Path):
-    """任务 id 复用时 begin 丢掉目录里残留的刮削摘要, 避免 ORGANIZE 读到旧 summary.json."""
+    """任务 id 复用时 begin 丢弃目录里残留的刮削摘要, 避免 ORGANIZE 读到旧 summary.json."""
     leftover = Task(id=7, type=TaskType.ORGANIZE, status=TaskStatus.RUNNING, payload={"library_id": 1})
     root = task_dir_for(tmp_path, 7)
     root.mkdir(parents=True)

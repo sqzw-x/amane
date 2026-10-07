@@ -1,4 +1,4 @@
-"""测试 amane.aggregate: 抓取图、两段执行、标量沿链取第一个非空值、聚合类字段按链拼接."""
+"""测试 amane.aggregate: 获取图、两段执行、单源字段沿链取第一个非空值、多源字段按链拼接."""
 
 import copy
 from collections import defaultdict
@@ -242,7 +242,7 @@ class TestBuildGraph:
         assert [n.cache_key for n in graph.nodes] == [K2]
 
     def test_site_blacklisted_from_aggregate_fields_keeps_node(self):
-        """只被聚合类字段黑名单的站点仍在标量链上, 因此仍是节点."""
+        """只被多源字段排除的站点仍在单源字段链上, 因此仍是节点."""
         fp = compile_priority([DB, DMM], {}, {field: [DMM] for field in AGGREGATE_FIELDS})
         graph = build_graph(fp, {})
         assert [n.cache_key for n in graph.nodes] == [K1, K2]
@@ -256,7 +256,7 @@ class TestBuildGraph:
 class TestExecuteGraph:
     @pytest.mark.asyncio
     async def test_scalars_take_first_non_empty_value(self):
-        """所有站点成功 → 标量取链上第一个非空值, URL 按链收集."""
+        """所有站点成功 → 单源字段取链上第一个非空值, URL 按链收集."""
         fp = defaultdict(lambda: [DB, DMM, BUS], {MetadataField.TITLE: [BUS, DMM, DB]})
         graph = build_graph(fp, {})
 
@@ -314,7 +314,7 @@ class TestExecuteGraph:
 
     @pytest.mark.asyncio
     async def test_failure_falls_back_to_next_priority(self):
-        """javdb 失败 → 标量取 dmm 的值."""
+        """javdb 失败 → 单源字段取 dmm 的值."""
         fp = defaultdict(lambda: [DB, DMM, BUS])
         graph = build_graph(fp, {})
 
@@ -420,7 +420,7 @@ class TestExecuteGraph:
 
     @pytest.mark.asyncio
     async def test_aggregate_field_blacklist_still_requests_site(self):
-        """站点仅被聚合类字段黑名单: 仍被请求并写入 sites_queried, 该字段取值不受影响."""
+        """站点仅被多源字段排除: 仍被请求并写入 sites_queried, 该字段取值不受影响."""
         fp = compile_priority([DB, DMM], {}, {field: [DMM] for field in AGGREGATE_FIELDS})
         graph = build_graph(fp, {})
 
@@ -579,7 +579,7 @@ class TestTwoPhaseExecution:
 class TestAggregate:
     @pytest.mark.asyncio
     async def test_single_source_fills_fields(self):
-        """单源成功 → 所有标量字段来自该源."""
+        """单源成功 → 所有单源字段来自该源."""
         data = MediaMetadata.model_validate(
             {"number": "MIDV-123", "title": "Title", "actors": ["A"], "studio": "S", "score": 8.5}
         )
@@ -606,7 +606,7 @@ class TestAggregate:
 
     @pytest.mark.asyncio
     async def test_empty_scalars_keep_raw_for_handler(self):
-        """标量全空但有海报 → field_sources 为空, raw 非空 (handler 的失败判据)."""
+        """单源字段全空但有海报 → field_sources 为空, raw 非空 (handler 的失败判据)."""
         crawler = MockCrawler(result=MediaMetadata(number="X", poster_urls=["http://p.jpg"]))
         result = await aggregate(SearchQuery("X"), {K1: crawler}, defaultdict(lambda: [DB]))
         assert result.field_sources == {}
@@ -615,7 +615,7 @@ class TestAggregate:
 
     @pytest.mark.asyncio
     async def test_raw_contains_fetched_snapshots(self):
-        """raw 字段包含所有已抓取站点的快照."""
+        """raw 字段包含所有已获取站点的快照."""
         a = MockCrawler(result=MediaMetadata(number="X", title="A"))
         result = await aggregate(SearchQuery("X"), {K1: a}, defaultdict(lambda: [DB]))
         assert "javdb" in result.raw
@@ -654,7 +654,7 @@ class TestAggregate:
 
     @pytest.mark.asyncio
     async def test_plot_normalized_on_fetch(self):
-        """长文本在聚合出口收成纯文本, raw 快照与字段值一致."""
+        """长文本在聚合输出收成纯文本, raw 快照与字段值一致."""
         crawler = MockCrawler(result=MediaMetadata(number="X", title="T", plot="前戏<br>高潮<br><br>尾声 &amp; 至此"))
 
         result = await aggregate(SearchQuery("X"), {K1: crawler}, defaultdict(lambda: [DB]))
@@ -664,7 +664,7 @@ class TestAggregate:
 
     @pytest.mark.asyncio
     async def test_plot_normalized_on_cache_hit(self):
-        """快照复用同样过归一: 旧快照里的 HTML 不会绕过出口."""
+        """快照复用同样过归一: 旧快照里的 HTML 不会绕过归一."""
         crawler = MockCrawler(result=_full_metadata(number="X"))
         snapshot = _full_metadata(number="X", title="Cached", plot="旧<br>快照").model_dump()
 
@@ -675,7 +675,7 @@ class TestAggregate:
 
 
 # ============================================================
-# 复杂场景: 混合优先级 + 聚合类字段拼接
+# 复杂场景: 混合优先级 + 多源字段拼接
 # ============================================================
 
 
@@ -765,7 +765,7 @@ class TestComplexScenarios:
 
     @pytest.mark.asyncio
     async def test_aggregate_fields_concatenate_in_chain_order(self):
-        """聚合类字段按字段链顺序拼接, 与请求阶段无关."""
+        """多源字段按字段链顺序拼接, 与请求阶段无关."""
         fp = compile_priority(
             [DMM, DB, PLUGIN_K],
             {
@@ -937,7 +937,7 @@ class TestProgressReporting:
 
     @pytest.mark.asyncio
     async def test_list_scalar_dedupes_duplicate_names(self):
-        """聚合返回前对 list 标量保序去重."""
+        """聚合返回前对 列表型单源字段保序去重."""
         fp = defaultdict(lambda: [DMM])
         c = MockCrawler(
             result=MediaMetadata.model_validate(

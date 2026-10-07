@@ -96,19 +96,19 @@ type _Node = _Literal | _Placeholder | _Group
 
 def _parse_placeholder_mapping(name: str, spec: str) -> tuple[tuple[str, str], ...]:
     if not spec.strip():
-        raise ValueError("empty placeholder mapping in path template")
+        raise ValueError("路径模板里有空的占位符映射")
     pairs: list[tuple[str, str]] = []
     seen: set[str] = set()
     allowed = PLACEHOLDER_MAP_KEYS.get(name)
     for item in spec.split(","):
         if "=" not in item:
-            raise ValueError("invalid placeholder mapping in path template")
+            raise ValueError("路径模板里的占位符映射无效")
         key, value = item.split("=", 1)
         key = key.strip()
         if key in seen:
-            raise ValueError(f"duplicate mapping key {key!r} in path template")
+            raise ValueError(f"路径模板里的映射键重复: {key!r}")
         if key and allowed is not None and key not in allowed:
-            raise ValueError(f"unknown mapping key {key!r} for {{{name}}}")
+            raise ValueError(f"{{{name}}} 的映射键未知: {key!r}")
         seen.add(key)
         pairs.append((key, value.strip()))
     return tuple(pairs)
@@ -160,12 +160,12 @@ class Parser:
                 nodes.append(self._parse_placeholder())
                 continue
             if self.src[self.i] == "]":
-                raise ValueError("unmatched ] in path template")
+                raise ValueError("路径模板里的 ] 没有匹配的 [")
             buf.append(self.src[self.i])
             self.i += 1
         flush()
         if closer is not None:
-            raise ValueError("unclosed optional group in path template")
+            raise ValueError("路径模板里的可选组未闭合")
         return nodes
 
     def _parse_placeholder(self) -> _Placeholder:
@@ -173,18 +173,18 @@ class Parser:
         start = self.i
         while self.i < len(self.src) and self.src[self.i] != "}":
             if self.src[self.i] == "{":
-                raise ValueError("nested braces in path template placeholder")
+                raise ValueError("路径模板的占位符里嵌套了花括号")
             self.i += 1
         if self.i >= len(self.src):
-            raise ValueError("unclosed placeholder in path template")
+            raise ValueError("路径模板里的占位符未闭合")
         body = self.src[start : self.i]
         self.i += 1
         if not body:
-            raise ValueError("empty placeholder in path template")
+            raise ValueError("路径模板里有空的占位符")
         name_part, sep, map_part = body.partition("|")
         name = name_part.strip()
         if not name:
-            raise ValueError("empty placeholder in path template")
+            raise ValueError("路径模板里有空的占位符")
         mapping = _parse_placeholder_mapping(name, map_part) if sep else ()
         return _Placeholder(name, mapping)
 
@@ -277,7 +277,7 @@ def video_relpath(dest: Path, library_root: Path) -> str:
     try:
         rel = dest_abs.relative_to(root_abs)
     except ValueError as exc:
-        raise ValueError(f"video dest '{dest_abs}' is outside library root '{root_abs}'") from exc
+        raise ValueError(f"视频目标路径 {dest_abs} 位于库根 {root_abs} 之外") from exc
     return rel.as_posix()
 
 
@@ -476,14 +476,12 @@ class PathEngine(TemplateEngine):
             allowed_roots = [base_path, *safe_dirs]
             if not is_any_descendant(candidate, *allowed_roots):
                 followed = candidate.resolve()
-                raise ValueError(
-                    f"Path traversal detected: rendered path '{followed}' escapes base '{base_path}' and safe directories"
-                )
+                raise ValueError(f"路径越界: 渲染结果 {followed} 超出基准目录 {base_path} 与安全目录")
             return candidate
         candidate = _lexical_abs(base_path / path)
         if not is_descendant(candidate, base_path):
             followed = candidate.resolve()
-            raise ValueError(f"Path traversal detected: rendered path '{followed}' escapes base '{base_path}'")
+            raise ValueError(f"路径越界: 渲染结果 {followed} 超出基准目录 {base_path}")
         return candidate
 
 
@@ -496,6 +494,6 @@ class StrmEngine(TemplateEngine):
     def render(self, ctx: TemplateContext) -> str:
         if self.uses("video_relpath"):
             if ctx.dest is None or ctx.library_root is None:
-                raise ValueError("video_relpath requires dest and library_root")
+                raise ValueError("video_relpath 需要 dest 与 library_root")
             video_relpath(ctx.dest, ctx.library_root)
         return super().render(ctx)

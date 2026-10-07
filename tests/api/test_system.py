@@ -62,7 +62,7 @@ async def test_desktop_supervised_when_flag_set(tmp_path: Path) -> None:
 async def test_restart_unavailable_without_supervisor(client: HttpxClient) -> None:
     resp = await client.post("system/restart")
     assert resp.status_code == 403
-    assert "not available" in resp.json()["detail"]
+    assert resp.json()["detail"] == "未受监督, 不允许重启"
 
 
 @pytest.mark.asyncio(loop_scope="function")

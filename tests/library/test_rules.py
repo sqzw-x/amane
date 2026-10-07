@@ -1,4 +1,4 @@
-"""跳过/黑名单正则与 `.amane_trash` 保留目录: 匹配文件名 (含扩展名)."""
+"""跳过与文件黑名单正则, 以及 `.amane_trash` 保留目录: 匹配文件名 (含扩展名)."""
 
 from pathlib import Path
 

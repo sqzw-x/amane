@@ -98,9 +98,9 @@ async def test_empty_file_range_is_416_with_detail(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("range_header", "detail"),
     [
-        ("bytes=0-1,3-4", "不支持多段 Range"),
-        ("bytes=abc", "Range 无法解析"),
-        ("items=0-1", "Range 无法解析"),
+        ("bytes=0-1,3-4", "不支持多段请求"),
+        ("bytes=abc", "分段请求无法解析"),
+        ("items=0-1", "分段请求无法解析"),
     ],
 )
 async def test_file_response_invalid_range_rejected(tmp_path: Path, range_header: str, detail: str) -> None:

@@ -33,7 +33,7 @@ class ActorCrawlerFactoryLike(Protocol):
 
 
 class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
-    """按 Actor 查找名顺序访问档案站 / 头像站, 填空合并后写回."""
+    """按 Actor 查找名顺序访问资料来源 / 头像来源, 填空合并后写回."""
 
     def __init__(
         self,
@@ -57,11 +57,11 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         # 校验 Actor 与站点资格.
         actor = await self._repo.get_actor(payload.actor_id)
         if actor is None:
-            return TaskResult(success=False, error=f"Actor {payload.actor_id} not found")
+            return TaskResult(success=False, error=f"演员 {payload.actor_id} 不存在")
 
         names = await self._repo.get_actor_lookup_names(payload.actor_id)
         if not names:
-            return TaskResult(success=False, error=f"Actor {payload.actor_id} has no lookup names")
+            return TaskResult(success=False, error=f"演员 {payload.actor_id} 没有可用于查找的名字")
 
         bind_contextvars(actor_name=actor.name)
         cfg = self._config.actor_scraping
@@ -75,7 +75,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
             rec.warning("actor scrape ignored sites lacking capability", sites=list(ignored))
         configured = _unique_sites([*profile_sites, *image_sites])
         if not configured:
-            return TaskResult(success=False, error="No actor scraping sites configured")
+            return TaskResult(success=False, error="尚未配置演员刮削站点")
 
         gender = actor.gender
         sites, skipped_by_gender = filter_sites_for_gender(configured, gender)
@@ -83,7 +83,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         image_sites = [s for s in image_sites if s in sites]
 
         if not sites:
-            return TaskResult(success=False, error=f"No actor scraping sites eligible for gender={gender}")
+            return TaskResult(success=False, error=f"没有适用于性别 {gender} 的演员刮削站点")
 
         use_metadata_cache = CacheKind.metadata in payload.use_cache
         # CacheKind.trans 写入 payload 但不改变本任务行为.
@@ -106,7 +106,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         progress_total = len(sites) + 2
         rec.update_summary(eligible_sites=list(sites), sites_queried=list(sites))
 
-        # 出站: 按查找名逐站抓取; 缓存命中则跳过请求.
+        # 出站: 按查找名逐站获取; 缓存命中则跳过请求.
         for i, site in enumerate(sites):
             cached_payload = raw_cache.get(site) if use_metadata_cache else None
             if cached_payload is not None:
@@ -171,7 +171,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         # 别名行整表替换为「既有行 + 站点名」并集 (去重/去展示名在行写入层).
         saved = await self._repo.save_actor(actor, aliases=[*existing_aliases, *merged.aliases])
         if saved is None:
-            return TaskResult(success=False, error=f"Failed to save actor {payload.actor_id}")
+            return TaskResult(success=False, error=f"保存演员 {payload.actor_id} 失败")
         await self.report_progress(progress_total, progress_total, "saved")
 
         rec.info(

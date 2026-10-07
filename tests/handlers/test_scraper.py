@@ -125,7 +125,7 @@ class TestScrapeHandler:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_reports_determinate_progress(self, repo: Repository, handler):
-        """ScrapeHandler 上报 determinate 进度: 字段抓取 → materialize → done."""
+        """ScrapeHandler 上报 determinate 进度: 字段获取 → materialize → done."""
         events: list[tuple[int, int, str]] = []
 
         async def capture(current: int, total: int, message: str = "") -> None:
@@ -146,7 +146,7 @@ class TestScrapeHandler:
         assert all(t == total for _, t, _ in events)
         assert [c for c, _, _ in events] == sorted(c for c, _, _ in events)
         assert any(m == "materialize" for _, _, m in events)
-        # 抓取结束抬到标量满分 (= total - 2, 留给 materialize/persist)
+        # 获取结束抬到标量满分 (= total - 2, 留给 materialize/persist)
         assert any(c == total - 2 and m == "fetch" for c, _, m in events)
 
     @pytest.mark.asyncio(loop_scope="function")
@@ -424,7 +424,7 @@ class TestContentRoutesFiltering:
 
         assert result.success is False
         assert result.error is not None
-        assert "No eligible crawlers" in result.error
+        assert "没有可用来源" in result.error
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_prefer_outside_route_not_requested(self, repo: Repository, resource_store):
@@ -516,7 +516,7 @@ class TestScrapeTranslation:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_translator_failure_keeps_original(self, repo: Repository, factory, resource_store):
-        """translator 抛异常时降级保留原值, 刮削不失败 (机会主义)."""
+        """translator 抛异常时降级保留原值, 刮削不失败 (失败即跳过)."""
         from amane.enums import Language, MetadataField
 
         class BrokenTranslator:
@@ -911,7 +911,7 @@ class TestRefreshHandler:
 
         assert result.success is False
         assert result.error is not None
-        assert "not a directory" in result.error.lower()
+        assert "不是目录" in result.error
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_submits_scrape_tasks_with_correct_payload(self, repo: Repository, tmp_path):

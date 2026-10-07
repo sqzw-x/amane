@@ -151,7 +151,7 @@ class FeedService:
         if not body:
             await self._repo.update_feed(
                 feed_id,
-                last_error="empty body",
+                last_error="响应为空",
                 last_fetched_at=now,
                 next_fetch_at=next_fetch,
             )

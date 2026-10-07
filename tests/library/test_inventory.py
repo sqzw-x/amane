@@ -78,7 +78,7 @@ class TestScanInventory:
         assert inventory.skipped_files == 0
 
     def test_trailer_is_never_undersized(self, tmp_path: Path) -> None:
-        """预告片先于体积判定排除: 低码率预告片不是无效文件."""
+        """预告片先于大小判定排除: 低码率预告片不是无效文件."""
         lib = tmp_path / "lib"
         lib.mkdir()
         (lib / "trailer.mp4").write_bytes(b"x")
@@ -176,7 +176,7 @@ class TestScanInventory:
         assert len(inventory.media_hits) == 20
 
     def test_truncation_counts_every_dropped_candidate(self, tmp_path: Path, candidates_first_scandir: None) -> None:
-        """未纳入的候选数要覆盖全部来源: 空目录同样是被丢掉的候选, 不能只数文件."""
+        """未纳入的候选数要覆盖全部来源: 空目录同样是被丢弃的候选, 不能只数文件."""
         lib = tmp_path / "lib"
         lib.mkdir()
         for i in range(4):
