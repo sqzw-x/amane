@@ -332,9 +332,9 @@ async def run_agent_agui(
 async def follow_agent_events(
     session_id: int, service: AgentDep, repo: RepoDep, after_seq: int = 0
 ) -> StreamingResponse:
-    """跟随 ``after_seq`` 之后的回放行, 供页面接上进度: 整段历史走 ``/trace``, 这里只接新行.
+    """跟随 ``after_seq`` 之后的回放行, 供页面接上进度: 整段历史经 ``/trace``, 这里只接新行.
 
-    页面发起的回合也走这条通道 (展示只认回放行), 因此必须能给出起始位置: 否则每接一次都要重发整段历史.
+    页面发起的回合也经由这条通道 (展示只认回放行), 因此必须能给出起始位置: 否则每接一次都要重发整段历史.
 
     只订阅, **不**启动回合, 故进行中的回合也不会 409; 回合结束且追平后关闭.
     """

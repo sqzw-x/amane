@@ -32,7 +32,7 @@ class RowBase(BaseModel):
 
 
 class UserMessageRow(RowBase):
-    """用户输入. 批准 / 拒绝只以 tool return 进模型上下文, 不产生此行的旁白."""
+    """用户输入. 批准 / 拒绝只以 tool return 进模型上下文, 不产生此行的附加说明."""
 
     type: Literal["user_message"]
     text: str

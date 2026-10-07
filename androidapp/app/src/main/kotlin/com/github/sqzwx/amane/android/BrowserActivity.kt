@@ -468,7 +468,7 @@ open class BrowserActivity : AppCompatActivity() {
 
     /**
      * 主文档加载成功不等于页面能用: 脚本在挂载前抛异常时页面停在空白上, 页面自己的错误界面也不会出现,
-     * 只有原生层能给出重试与切换服务器的出口.
+     * 只有原生层能给出重试与切换服务器的途径.
      */
     private fun scheduleBootCheck() {
         if (binding.errorView.visibility == View.VISIBLE) return

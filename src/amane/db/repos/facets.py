@@ -228,7 +228,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
     async def save_actor(self, actor: Actor, *, aliases: Sequence[str] | None = None) -> Actor | None:
         """不存在返回 None. ``aliases`` 提供时整表替换别名行; 省略则不动别名.
 
-        AUTO 写入 (演员刮削), 锁定字段保留库内值与来源; 手动字段写入走 ``update_actor``.
+        AUTO 写入 (演员刮削), 锁定字段保留库内值与来源; 手动字段写入经 ``update_actor``.
         """
         if actor.id is None:
             return None

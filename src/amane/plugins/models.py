@@ -64,7 +64,7 @@ class SourceTrait(StrEnum):
     # 依赖前序来源的聚合结果: 排第二段执行, 收到只读 ``partial_result``.
     # 单层依赖: 同段来源彼此不可见, 不支持来源之间互相声明依赖.
     NEEDS_PARTIAL = "needs_partial"
-    # 消费 ``FetchOptions.language``: 聚合按 (来源, 语言) 展开抓取节点.
+    # 消费 ``FetchOptions.language``: 聚合按 (来源, 语言) 展开获取节点.
     MULTI_LANGUAGE = "multi_language"
     # 刮削前按需计算 oshash, 经 ``SearchQuery.file_hash`` 传入.
     USES_FILE_HASH = "uses_file_hash"

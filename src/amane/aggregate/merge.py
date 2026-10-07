@@ -23,7 +23,7 @@ def compute_merge_updates(
 ) -> dict[str, object]:
     """未知来源或字段抛 ``ValueError``; 值为 ``None`` 的项跳过.
 
-    重命名字段以 ``{source: value}`` 保留来源; 标量来源并入 ``field_sources``.
+    重命名字段以 ``{source: value}`` 保留来源; 单源字段的来源并入 ``field_sources``.
     """
     updates: dict[str, object] = {}
     field_sources_updates: dict[str, str] = {}

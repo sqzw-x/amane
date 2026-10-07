@@ -22,7 +22,7 @@ class InventoryNodeResponse(BaseModel):
     entry_count: int
     """子树内的条目数."""
     entry_bytes: int
-    """子树内的条目体积, 同 inode 只算一次."""
+    """子树内的条目大小, 同 inode 只算一次."""
     will_be_empty: bool = False
     """清单条目全部删除后该目录是否会空 (含子目录递归)."""
     has_children: bool = False

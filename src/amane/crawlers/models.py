@@ -19,7 +19,7 @@ class SearchQuery:
     file_path: str | None = None
     file_hash: str | None = None
     content_type: ContentType | None = None
-    # 前序来源的标量聚合结果, 只读; 仅 ``SourceTrait.NEEDS_PARTIAL`` 来源非空.
+    # 前序来源的单源字段聚合结果, 只读; 仅 ``SourceTrait.NEEDS_PARTIAL`` 来源非空.
     # 为 ``None`` 当且仅当本次来源不在第二段; 单源路由下是空对象而非 ``None``.
     partial_result: AggregatedMetadata | None = None
 

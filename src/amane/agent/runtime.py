@@ -111,7 +111,7 @@ def build_agent(config: AgentConfig) -> Agent[AgentDeps, str | DeferredToolReque
         build_model(config),
         deps_type=AgentDeps,
         output_type=[str, DeferredToolRequests],
-        # 走 instructions 而非 system_prompt: Responses 协议把 agent instructions 放 API 顶层
+        # 使用 instructions 而非 system_prompt: Responses 协议把 agent instructions 放 API 顶层
         # instructions 字段, 服务端将其插在 input 之前; system_prompt 会变成 input 里的 system
         # 消息, 落到 capability 指令之后 —— 身份定位出现在各域注意事项之后.
         instructions=_SYSTEM + build_schema_docs(),

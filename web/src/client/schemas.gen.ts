@@ -329,7 +329,7 @@ export const ActorScrapingConfigSchema = {
             },
             type: 'array',
             title: 'Profile Sites',
-            description: '档案源顺序 (标量填空优先级); 仅演员档案站',
+            description: '资料来源顺序 (单源字段填空优先级); 仅演员资料来源',
             'x-ordered': true
         },
         image_sites: {
@@ -341,7 +341,7 @@ export const ActorScrapingConfigSchema = {
             },
             type: 'array',
             title: 'Image Sites',
-            description: '头像源顺序 (优先于档案站附图); 仅演员头像站',
+            description: '头像来源顺序 (优先于资料来源附图); 仅演员头像来源',
             'x-ordered': true
         },
         download_images: {
@@ -363,7 +363,7 @@ export const ActorScrapingConfigSchema = {
     },
     type: 'object',
     title: 'ActorScrapingConfig',
-    description: '档案站顺序填空, 头像站优先.'
+    description: '资料来源顺序填空, 头像来源优先.'
 } as const;
 
 export const ActorSortFieldSchema = {
@@ -8415,7 +8415,7 @@ export const UserMessageRowSchema = {
         'text'
     ],
     title: 'UserMessageRow',
-    description: '用户输入. 批准 / 拒绝只以 tool return 进模型上下文, 不产生此行的旁白.'
+    description: '用户输入. 批准 / 拒绝只以 tool return 进模型上下文, 不产生此行的附加说明.'
 } as const;
 
 export const UserTagLinksResponseSchema = {
@@ -8652,7 +8652,7 @@ export const WatermarkKindSchema = {
         'definition'
     ],
     title: 'WatermarkKind',
-    description: '整理落盘封面角标类别. 清晰度共用 definition, 不论 4K/1080p.'
+    description: '整理落盘封面角标类别. 分辨率共用 definition, 不论 4K/1080p.'
 } as const;
 
 export const WorkerConfigSchema = {

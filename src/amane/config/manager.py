@@ -648,17 +648,17 @@ class AgentConfig(BaseModel):
 
 
 class ActorScrapingConfig(BaseModel):
-    """档案站顺序填空, 头像站优先."""
+    """资料来源顺序填空, 头像来源优先."""
 
     profile_sites: list[SiteName] = Field(
         default_factory=lambda: list(ACTOR_PROFILE_SITES),
         json_schema_extra=site_list_schema(ACTOR_PROFILE_SITES, ordered=True),
-        description="档案源顺序 (标量填空优先级); 仅演员档案站",
+        description="资料来源顺序 (单源字段填空优先级); 仅演员资料来源",
     )
     image_sites: list[SiteName] = Field(
         default_factory=lambda: list(ACTOR_IMAGE_SITES),
         json_schema_extra=site_list_schema(ACTOR_IMAGE_SITES, ordered=True),
-        description="头像源顺序 (优先于档案站附图); 仅演员头像站",
+        description="头像来源顺序 (优先于资料来源附图); 仅演员头像来源",
     )
     download_images: bool = True
     auto_scrape: bool = True

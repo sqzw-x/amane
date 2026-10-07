@@ -1,9 +1,9 @@
 """字段级多源聚合.
 
-建图: ``compile_priority`` 给出各字段的站点顺序, ``site + lang`` 唯一确定一次抓取的节点;
-字段链是聚合真值, 标量取值顺序与聚合类字段拼接顺序都由它决定.
+建图: ``compile_priority`` 给出各字段的站点顺序, ``site + lang`` 唯一确定一次获取的节点;
+字段链是聚合真值, 单源字段取值顺序与多源字段拼接顺序都由它决定.
 执行: 未声明依赖的节点并发请求, 声明 ``SourceTrait.NEEDS_PARTIAL`` 的来源在第二段并发请求;
-段间把已定值的标量交给第二段 (只读). 标量沿链取第一个非空值, 链上存在未处理节点时中断该字段.
+段间把已定值的单源字段交给第二段 (只读). 单源字段沿链取第一个非空值, 链上存在未处理节点时中断该字段.
 不在 crawlers 映射中的站点标成已处理空结果, 不写入 failed / sites_queried, 也不调用 invoke_source.
 """
 
@@ -180,7 +180,7 @@ async def execute_graph(
     on_progress: ProgressCallback | None = None,
     deferred_sites: frozenset[SourceName] = frozenset(),
 ) -> ExecutionState:
-    """两段并发请求; 段间给声明来源注入已定值的标量, 全部结束后按字段链拼接聚合类字段."""
+    """两段并发请求; 段间给声明来源注入已定值的单源字段, 全部结束后按字段链拼接多源字段."""
     snapshots = db_cache or {}
     state = ExecutionState(number=query.number)
     deferred = {str(site) for site in deferred_sites}
@@ -282,7 +282,7 @@ def _cache_key(site: str, lang: Language | None) -> SourceKey:
 
 @dataclass
 class FetchNode:
-    """site + lang 唯一确定一次抓取."""
+    """site + lang 唯一确定一次获取."""
 
     site: str
     lang: Language | None
@@ -309,7 +309,7 @@ def build_graph(
     multi_lang_fields: frozenset[MetadataField] = LANG_METADATA_FIELD_SET,
     multi_lang_sites: frozenset[SourceName] = MULTI_LANGUAGE_SOURCE_IDS,
 ) -> FetchGraph:
-    # 节点集合由字段链的并集推导: 被全部字段黑名单的站点不产生节点.
+    # 节点集合由字段链的并集推导: 被全部字段排除的站点不产生节点.
     # 登记顺序 = 字段与优先级链上的首次出现顺序, 该顺序决定 sites_queried / failed 的写入顺序.
     # 站点只要在任一字段上需要语言, 该站统一用带语言节点 (一次请求同时满足两类字段).
     site_langs: dict[str, set[Language]] = defaultdict(set)
@@ -461,7 +461,7 @@ def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None
 def _normalize_source_text(meta: MediaMetadata) -> MediaMetadata:
     """长文本在进入聚合前收成纯文本.
 
-    出口只有一个, 因此字段选择、``raw`` 快照与 merge 拿到的都是同一份规范值;
+    归一只有这一处, 因此字段选择、``raw`` 快照与 merge 拿到的都是同一份规范值;
     函数幂等, 与落库钩子重复调用安全.
     """
     meta.plot = normalize_long_text(meta.plot)

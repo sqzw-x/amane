@@ -1,4 +1,4 @@
-"""按站点顺序标量填空; 头像源优先拼接 image_urls."""
+"""按站点顺序单源字段填空; 头像源优先拼接 image_urls."""
 
 from __future__ import annotations
 
@@ -68,9 +68,9 @@ def _dedupe_preserve(items: list[str]) -> list[str]:
 def merge_actor_metadata(
     results: Mapping[SiteName, ActorMetadata | None], *, profile_sites: list[SiteName], image_sites: list[SiteName]
 ) -> AggregatedActor:
-    """标量按 profile_sites 填空. aliases 为各站 name + aliases 并集, 站点显示名不当身份.
+    """单源字段按 profile_sites 填空. aliases 为各站 name + aliases 并集, 站点显示名不当身份.
 
-    image_urls: image_sites 优先, 再档案站附图, 去重保序.
+    image_urls: image_sites 优先, 再资料来源附图, 去重保序.
     """
     out = AggregatedActor()
 
@@ -94,7 +94,7 @@ def merge_actor_metadata(
         if meta.source_url:
             out.source_urls.setdefault(site, meta.source_url)
 
-    # 头像: image_sites 优先, 再档案站附图.
+    # 头像: image_sites 优先, 再资料来源附图.
     image_order = [*image_sites, *[s for s in profile_sites if s not in image_sites]]
     images: list[str] = []
     for site in image_order:

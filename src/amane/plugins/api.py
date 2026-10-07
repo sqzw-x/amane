@@ -135,7 +135,7 @@ class PlaybackOffer(BaseModel):
     不解释它的含义, 也不核对它是否对应该条目的某个文件, 认不出来的 key 由插件自己拒绝. 同一
     来源的同一个条目内不允许出现重复的 key.
 
-    ``name`` 是这条流在来源内的展示名 (本地文件用文件名, 上游源用版本或清晰度). 列表里的每一行
+    ``name`` 是这条流在来源内的展示名 (本地文件用文件名, 上游源用版本或分辨率). 列表里的每一行
     由主机拼成「来源名 · 流的展示名」, 因此插件不要在 ``name`` 里重复来源名.
 
     条目里列出来的候选都可以出现在这里, 不可播的候选以 ``unavailable`` 说明原因: 用户看得到
@@ -269,7 +269,7 @@ class RelativeHlsLocator(HlsLocator):
 class HlsPlaybackTarget:
     """HLS presentation. Host rewrites the playlist; the locator finds each URI.
 
-    Pydantic dataclass: 位置参数与 ``dataclasses`` 工具照旧, ``cache_ttl`` 与另外两种目标走同一
+    Pydantic dataclass: 位置参数与 ``dataclasses`` 工具照旧, ``cache_ttl`` 与另外两种目标共用同一
     套字段校验. ``locator`` 是插件侧对象, 只做 ``isinstance`` 核对.
     """
 

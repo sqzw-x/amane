@@ -1,4 +1,4 @@
-"""档案 / 头像源与影片爬虫隔离.
+"""资料来源 / 头像来源与影片爬虫隔离.
 
 性别覆盖读 ``profile().genders``. ``register`` 顺序即默认 ``profile_sites`` / ``image_sites`` 优先级.
 """

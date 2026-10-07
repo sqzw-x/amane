@@ -1,4 +1,4 @@
-"""影片抓取图引擎与演员填空合并."""
+"""影片获取图引擎与演员填空合并."""
 
 from .actor import AggregatedActor, merge_actor_metadata, merge_actor_rows_fill_empty
 from .engine import (

@@ -48,12 +48,12 @@ _IMMUTABLE = "public, max-age=31536000, immutable"
 class _DistFiles(StaticFiles):
     """按 dist 目录直出的静态文件, 统一补一条 `Cache-Control`.
 
-    走 `StaticFiles` 而不是 `FileResponse` 是为了拿到条件请求与 Range: `FileResponse` 自己不看
+    使用 `StaticFiles` 而不是 `FileResponse` 是为了拿到条件请求与 Range: `FileResponse` 自己不看
     `If-None-Match` / `If-Modified-Since`, 用它会每个响应都整份重传 — 打了 `no-cache` 之后浏览器每次加载
     都会发条件请求, 那种情况下全量重传正是要避免的.
 
     调用方必须保证 `directory` 下只放对应缓存策略适用的东西: 本仓库里 `assets/` 只放 Vite 的带 hash 产物,
-    `web/public/` 下的未改名文件落在 dist 根目录, 因此走的是 `_NO_CACHE`.
+    `web/public/` 下的未改名文件落在 dist 根目录, 因此命中 `_NO_CACHE`.
     """
 
     def __init__(self, *, directory: str, cache_control: str) -> None:

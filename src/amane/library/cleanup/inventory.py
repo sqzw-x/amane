@@ -114,7 +114,7 @@ class CleanupInventory:
 
     @property
     def total_size(self) -> int:
-        """条目体积合计. 同一 inode 只算一次 (硬链接整理会产生多个名字).
+        """条目大小合计. 同一 inode 只算一次 (硬链接整理会产生多个名字).
 
         身份不可用 (拿不到设备或文件编号, 含平台给出的 0) 时不去重: 宁可把同一份数据多算几次,
         也不能把不同文件当成同一个而少算.
@@ -227,7 +227,7 @@ def scan_inventory(
 
     与入库扫描共用同一趟遍历: `collect_media` 为真时同时收集媒体命中, 不额外遍历磁盘.
 
-    - 黑名单与体积过小的文件是条目; 预告片与其余文件不是.
+    - 命中文件黑名单的文件与小于最小视频大小的文件是条目; 预告片与其余文件不是.
     - 磁盘上没有子项的目录作为「扫描时已空」的条目.
     - 回收站子树整棵不进入清单, 且算作不可删除的子项: 其父目录不会因此被预告清除.
     - 读不到的目录与 stat 失败的文件只计数, 其余子项继续.
@@ -326,7 +326,7 @@ def _record_dir(path: Path, *, state: _ScanState, scan: LibraryScan, recursive: 
     if result is None:
         return None
     if result.children == 0:
-        # 空目录仍要经过 `_record_entry`: 触顶时它同样是被丢掉的候选, 与回收站来源口径一致.
+        # 空目录仍要经过 `_record_entry`: 触顶时它同样是被丢弃的候选, 与回收站来源口径一致.
         entry = InventoryEntry(path=path, kind=InventoryEntryKind.DIR, reason=InventoryReason.EMPTY_DIR)
         if not _record_entry(entry, state=state):
             return None
@@ -384,7 +384,7 @@ class InventoryNode:
 
 
 def build_inventory_tree(inventory: CleanupInventory) -> InventoryNode:
-    """把清单折叠成树. 同 inode 只算一次体积, 与 `total_size` 一致."""
+    """把清单折叠成树. 同 inode 只算一次大小, 与 `total_size` 一致."""
     by_parent: dict[Path, list[InventoryEntry]] = {}
     subdirs: dict[Path, set[Path]] = {}
     counted: set[Path] = set()

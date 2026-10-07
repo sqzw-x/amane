@@ -154,7 +154,7 @@ def build_network_stack(
 
 
 def _warn_disabled_browser_sources(hot: HotSettings, browser: BrowserPool) -> None:
-    """一律走浏览器却没有可用后端的来源: 抓取时必然失败, 在构造期给出一次明确告警.
+    """一律使用浏览器却没有可用后端的来源: 获取时必然失败, 在构造期给出一次明确告警.
 
     ``auto`` 在无后端时退化为直连, ``browser_backend=off`` 是显式禁用, 均不在此告警.
     """

@@ -127,7 +127,7 @@ class HttpClient:
         wait_for: str | None = None,
         timeout: float | None = None,
     ) -> str:
-        # 未配置后端或抓取失败抛 RequestError; 拦截页抛 SourceError.
+        # 未配置后端或获取失败抛 RequestError; 拦截页抛 SourceError.
         if self._browser is None:
             raise RequestError(url, RequestFailure(kind=FailureKind.UNEXPECTED, message="browser backend disabled"))
         await self._web.acquire(url)
@@ -152,7 +152,7 @@ class HttpClient:
     async def check(
         self, url: str, *, headers: dict[str, str] | None = None, cookies: dict[str, str] | None = None
     ) -> ConnectivityOutcome:
-        """按本视图的请求形态探测: 渲染视图走浏览器, 否则单次 HTTP GET; auto 命中挑战后切换."""
+        """按本视图的请求形态探测: 渲染视图经浏览器, 否则单次 HTTP GET; auto 命中挑战后切换."""
         if self._should_render(url):
             return await self._render_check(url, headers=headers, cookies=cookies)
         outcome = await probe_get(self._web, url, cookies=cookies, headers=headers)

@@ -35,7 +35,7 @@ _SUBTITLE_EXT_RE = re.compile(r"^\.[a-z0-9]+$")
 # 固定保留名. 路径任一深度含此目录名则不入库.
 TRASH_DIRNAME = ".amane_trash"
 
-# .strm 在扫描扩展名里 (当正片入口), 但是路径指针不是视频字节; 体积过滤不把它当视频字节.
+# .strm 在扫描扩展名里 (当正片入口), 但是路径指针不是视频字节; 大小过滤不把它当视频字节.
 _POINTER_EXTENSIONS = frozenset({".strm"})
 
 
@@ -119,8 +119,8 @@ def is_undersized_video(path: Path, min_file_size: int, media_extensions: frozen
 
     - min_file_size <= 0 视为关闭.
     - 只对扫描视频扩展名判定; 图片 / nfo / 字幕等后缀一律不算.
-    - .strm 是路径指针, 体积无意义, 不参与过滤.
-    - 软链接跟随目标, 比目标文件字节, 不是链接节点本身.
+    - .strm 是路径指针, 大小无意义, 不参与过滤.
+    - 符号链接跟随目标, 比目标文件字节, 不是链接节点本身.
     - stat 失败 (含悬空链接) 视为不匹配, 不能把读不到的正片当广告丢弃.
     """
     if min_file_size <= 0:

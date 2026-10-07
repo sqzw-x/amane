@@ -40,7 +40,7 @@ class Language(StrEnum):
     EN = "en"
 
 
-# 浏览器渲染后端; OFF 表示不走浏览器, 来源可经 SiteConfig.browser_backend 覆盖.
+# 浏览器渲染后端; OFF 表示不使用浏览器, 来源可经 SiteConfig.browser_backend 覆盖.
 # 枚举 docstring 会进入 JSON schema 并作为前端无翻译时的兜底描述, 内部约定不要写在 docstring.
 class BrowserBackendName(StrEnum):
     OFF = "off"
@@ -149,7 +149,7 @@ class ActorField(StrEnum):
 
 
 class WatermarkKind(StrEnum):
-    """整理落盘封面角标类别. 清晰度共用 definition, 不论 4K/1080p."""
+    """整理落盘封面角标类别. 分辨率共用 definition, 不论 4K/1080p."""
 
     SUBTITLE = "subtitle"
     UNCENSORED = "uncensored"

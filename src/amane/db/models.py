@@ -294,9 +294,9 @@ class Library(SQLModel, table=True):
     move_mode: MoveMode = Field(default=MoveMode.MOVE)
     video_template: PathTemplate = Field(default=VIDEO_TEMPLATE_DEFAULT)
     link_template: PathTemplate | None = None
-    """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或软链接, 必须在库外."""
+    """空则不创建链接. 非空时 ORGANIZE 在视频就位后按此模板写 strm 或符号链接, 必须在库外."""
     link_mode: LinkMode = Field(default=LinkMode.STRM)
-    """link_template 非空时: strm 写 .strm 文本; symlink 做文件系统软链接."""
+    """link_template 非空时: strm 写 .strm 文本; symlink 做文件系统符号链接."""
     strm_content_template: StrmContentTemplate | None = None
     """仅 link_mode=strm: .strm 正文模板. 空则写视频绝对路径. 占位符与路径模板相同."""
     thumb_template: PathTemplate | None = None
@@ -320,7 +320,7 @@ class Library(SQLModel, table=True):
     blacklist_patterns: list[BlacklistPattern] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     """文件名正则列表, 命中任一则扫描/监控跳过, 并作为无效文件进入清理清单. 空列表关闭."""
     min_file_size: MinFileSize = Field(default=0)
-    """视频体积下限 (字节). 小于此值的扫描视频在 REFRESH/监控跳过, 并作为无效文件进入清理清单. 0 关闭.
+    """最小视频大小 (字节). 小于此值的扫描视频在 REFRESH/监控跳过, 并作为无效文件进入清理清单. 0 关闭.
 
     只对扫描视频扩展名生效 (与 watcher.media_extensions / MEDIA_EXTENSIONS 同一套);
     图片、NFO、字幕、`.strm` 指针都不参与.

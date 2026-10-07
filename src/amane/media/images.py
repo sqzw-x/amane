@@ -151,7 +151,7 @@ def _stamp_stems(
     mosaic: Mosaic | None,
     definition: str | None,
 ) -> list[str]:
-    """相位 → PNG 主干, 顺序: 中字 / 无码 / 破解 / 流出 / 清晰度."""
+    """相位 → PNG 主干, 顺序: 中字 / 无码 / 破解 / 流出 / 分辨率."""
     stems: list[str] = []
     if has_subtitle:
         stems.append("subtitle")

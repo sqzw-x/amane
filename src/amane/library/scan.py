@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class LibraryFileKind(StrEnum):
-    """分类结果: 媒体入库; 无效文件进清理清单; 跳过既不入库也不进清单."""
+    """归类结果: 媒体入库; 无效文件进清理清单; 跳过既不入库也不进清单."""
 
     SKIP = "skip"
     UNWANTED = "unwanted"
@@ -54,8 +54,8 @@ class LibraryScan:
     def unwanted_kind(self, path: Path) -> UnwantedKind | None:
         """无效文件的命中规则; 未命中返回 None.
 
-        黑名单先于预告片与体积判定; 预告片不算无效, 否则低码率预告片会被判成体积过小.
-        stat 失败 (含悬空链接) 不判体积, 见 `is_undersized_video`.
+        文件黑名单先于预告片与大小判定; 预告片不算无效, 否则低码率预告片会被判成小于最小视频大小.
+        stat 失败 (含悬空链接) 不判大小, 见 `is_undersized_video`.
         """
         if is_in_trash(path):
             return None

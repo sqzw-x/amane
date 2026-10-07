@@ -43,9 +43,9 @@ from .facet_helpers import (
 
 
 def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
-    """长文本列在落库前归一 (与聚合出口同一函数, 幂等).
+    """长文本列在落库前归一 (与聚合输出同一函数, 幂等).
 
-    覆盖面是全部写库路径: 首刮 / 补刮 / merge / REST PATCH / Agent 工具都走这两个写方法.
+    覆盖面是全部写库路径: 首刮 / 补刮 / merge / REST PATCH / Agent 工具都经这两个写方法.
     """
     plot = fields.get("plot")
     if not isinstance(plot, str):

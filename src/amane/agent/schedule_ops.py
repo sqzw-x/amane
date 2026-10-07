@@ -25,7 +25,7 @@ class AgentScheduleUpdate(BaseModel):
 
 
 class ScheduleSummary(BaseModel):
-    """列表视图 (`list_schedules`): 不带 routine payload, 细节走 get_schedule."""
+    """列表视图 (`list_schedules`): 不带 routine payload, 细节经 ``get_schedule`` 取."""
 
     id: int
     name: str | None

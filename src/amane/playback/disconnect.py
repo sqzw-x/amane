@@ -41,7 +41,7 @@ class DisconnectSignal:
             yield
         finally:
             task.cancel()
-            # 只吞掉自己发起的取消: 调用方被取消时 CancelledError 会从 gather 抛出并继续上抛
+            # 只忽略自己发起的取消: 调用方被取消时 CancelledError 会从 gather 抛出并继续上抛
             await asyncio.gather(task, return_exceptions=True)
 
     async def _wait(self, receive: Receive) -> None:

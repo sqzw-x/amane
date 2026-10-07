@@ -44,7 +44,7 @@ class CrawlerProfile:
         return self.capabilities or frozenset({SourceCapability.FILM_METADATA})
 
     def to_descriptor(self) -> SourceDescriptor:
-        """引擎与配置读取的声明性事实只有这一个出口, 新增 profile 字段时同步此处."""
+        """引擎与配置读取的声明性事实都在这里产出, 新增 profile 字段时同步此处."""
         return SourceDescriptor(
             id=str(self.name),
             name=str(self.name),
@@ -114,7 +114,7 @@ class Crawler(ABC):
         return result
 
     async def check_connectivity(self) -> ConnectivityOutcome:
-        """连通性自检: 缺省 GET ``base_url``, 用与刮削相同的视图 (渲染来源走浏览器, 其余走 HTTP).
+        """连通性自检: 缺省 GET ``base_url``, 用与刮削相同的视图 (渲染来源经浏览器, 其余直接请求).
 
         实际入口与 ``base_url`` 不同的来源覆盖本方法 (探测真实 API 主机, 或按前置条件报 ``skipped``).
         """

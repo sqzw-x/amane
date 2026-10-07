@@ -4,7 +4,7 @@
 只有字符串则按自由文本 (RSS 标题、已有番号), 未命中则 ``number is None``, 不能把原文冒充番号.
 常用字段投影是同一函数的包装.
 
-文件相位 (cd / 字幕 / 马赛克 / 清晰度) 与类型正交: cd / 字幕 / 清晰度只依据文件名; 马赛克依据文件名与目录整段词表, 未命中时再依据番号分类 (有码类型为 censored, 无码类型为 uncensored; 其它类型为空).
+文件相位 (cd / 中字 / 马赛克 / 分辨率) 与类型正交: cd / 中字 / 分辨率只依据文件名; 马赛克依据文件名与目录整段词表, 未命中时再依据番号分类 (有码类型为 censored, 无码类型为 uncensored; 其它类型为空).
 """
 
 from __future__ import annotations
@@ -230,7 +230,7 @@ def parse_file_info(
     路径: 文件名优先, 未命中可回退父目录; 仍未命中用清理后的文件名 (不丢弃).
     目录关键词 (欧美 / 里番 / getchu) 可覆盖类型. 分集还可认直接父目录 CD/PART.
     文本: 只执行番号规则, 未命中 ``number is None`` (不能把原文当番号). 文件相位只依据该字符串
-    (``Path(text).stem``, 与字幕分集检测一致), 不依据目录.
+    (``Path(text).stem``, 与中字分集检测一致), 不依据目录.
     """
     if path is None and text is None:
         raise ValueError("path or text required")
@@ -356,7 +356,7 @@ class _Prepared:
     """同一输入的三个加工阶段.
 
     escaped: 只去掉分辨率/用户逃逸串. 国产 MD 必须用此阶段 — 再剥尾部盘符会把 MD0165-1 的 -1 删除.
-    dated: 再剥 CD/字幕尾符, 日期还在. 欧美 studio.YY.MM.DD 使用此阶段.
+    dated: 再剥 CD/中字尾符, 日期还在. 欧美 studio.YY.MM.DD 使用此阶段.
     catalog: 再剥日期并归一 FC2. 其余番号规则使用此阶段.
     """
 
