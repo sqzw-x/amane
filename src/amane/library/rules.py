@@ -145,5 +145,5 @@ def is_skipped_media(path: Path, pattern: str | None) -> bool:
 
 
 def is_in_trash(path: Path) -> bool:
-    """路径任一深度组件为 `.amane_trash` 则视为回收站内容: 不入库、不触发监控事件."""
+    """路径任一深度组件为 `.amane_trash` 则视为回收目录内容: 不入库、不触发监控事件."""
     return any(part == TRASH_DIRNAME for part in path.parts)

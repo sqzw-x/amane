@@ -149,7 +149,7 @@
         "label": "移除缺失文件"
       },
       "remove_unreferenced_resources": {
-        "label": "移除无引用资源",
+        "label": "移除未引用资源",
         "description": "删除没有任何影片引用的资源文件"
       }
     },
@@ -333,7 +333,7 @@
     "scan_invalid": {
       "library_id": {
         "label": "媒体库",
-        "description": "遍历该库的无效文件与已空目录"
+        "description": "遍历该库的无效文件与空目录"
       },
       "path": {
         "label": "路径",

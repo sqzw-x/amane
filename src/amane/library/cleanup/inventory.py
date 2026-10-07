@@ -1,4 +1,4 @@
-"""清理清单: 无效文件与已空目录的快照, 以及进程内的存放.
+"""清理清单: 无效文件与空目录的快照, 以及进程内的存放.
 
 清单由扫描产出 (规则来源) 或由选中项展开产出 (显式来源), 前端展示并确认后交给删除任务执行.
 存放只在进程内: 不落库, 因此没有迁移与残留; 进程重启即丢失, 面板要求重新生成.
@@ -34,7 +34,7 @@ INVENTORY_TTL_SECONDS = 24 * 3600
 
 
 class InventorySource(StrEnum):
-    """清单来源分组. 面板只渲染规则来源的最新一份; 回收站与选中项展开发往各自的分组, 互不挤占保留窗口."""
+    """清单来源分组. 面板只渲染规则来源的最新一份; 回收目录与选中项展开发往各自的分组, 互不挤占保留窗口."""
 
     RULES = "rules"
     EXPLICIT = "explicit"
@@ -229,7 +229,7 @@ def scan_inventory(
 
     - 命中文件黑名单的文件与小于最小视频大小的文件是条目; 预告片与其余文件不是.
     - 磁盘上没有子项的目录作为「扫描时已空」的条目.
-    - 回收站子树整棵不进入清单, 且算作不可删除的子项: 其父目录不会因此被预告清除.
+    - 回收目录子树整棵不进入清单, 且算作不可删除的子项: 其父目录不会因此被预告清除.
     - 读不到的目录与 stat 失败的文件只计数, 其余子项继续.
     - 达到条目上限后不再登记条目, 但遍历照常走完 (媒体命中必须完整), 并记下未纳入的候选数.
     """
@@ -287,7 +287,7 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
         total += 1
         path = Path(child.path)
         if child.name == TRASH_DIRNAME:
-            # 回收站: 不进清单, 也不计作会消失的子项.
+            # 回收目录: 不进清单, 也不计作会消失的子项.
             continue
         try:
             child_stat = path.lstat()
@@ -326,7 +326,7 @@ def _record_dir(path: Path, *, state: _ScanState, scan: LibraryScan, recursive: 
     if result is None:
         return None
     if result.children == 0:
-        # 空目录仍要经过 `_record_entry`: 触顶时它同样是被丢弃的候选, 与回收站来源口径一致.
+        # 空目录仍要经过 `_record_entry`: 触顶时它同样是被丢弃的候选, 与回收目录来源口径一致.
         entry = InventoryEntry(path=path, kind=InventoryEntryKind.DIR, reason=InventoryReason.EMPTY_DIR)
         if not _record_entry(entry, state=state):
             return None
@@ -477,9 +477,9 @@ def scan_trash(
     library_root: Path,
     limit: int = MAX_INVENTORY_ENTRIES,
 ) -> CleanupInventory:
-    """把回收站的历史内容展开成显式来源清单.
+    """把回收目录的历史内容展开成清单.
 
-    不做规则判定: 其下每个文件都是条目, 空目录同样是条目. 回收站目录自身从不作为条目.
+    不做规则判定: 其下每个文件都是条目, 空目录同样是条目. 回收目录自身从不作为条目.
     """
     state = _ScanState(entries=[], dirs={}, limit=limit)
     _walk_explicit(trash_dir, state=state)
@@ -512,7 +512,7 @@ def scan_trash(
 
 
 def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
-    """登记回收站目录下的全部内容; 读不到该目录时返回 None.
+    """登记回收目录下的全部内容; 读不到该目录时返回 None.
 
     与规则来源同一条规则: 触顶只丢条目与覆盖信息, 遍历照常走完.
     """

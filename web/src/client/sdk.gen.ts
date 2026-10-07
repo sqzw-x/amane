@@ -67,9 +67,9 @@ export const getCleanupInventoryNodes = <ThrowOnError extends boolean = false>(o
 /**
  * Get Cleanup Trash
  *
- * 展开回收站历史内容: 产出回收站来源的清单, 前端拿到要展开的目录再按页读.
+ * 展开回收目录的历史内容: 产出回收目录来源的清单, 前端拿到要展开的目录再按页读.
  *
- * 展开本身是只读遍历, 但代价随回收站大小增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):
+ * 展开本身是只读遍历, 但代价随回收目录大小增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):
  * 窗口内已有的一份直接复用, 免得重新遍历整棵树并往存放里堆用不到的清单.
  */
 export const getCleanupTrash = <ThrowOnError extends boolean = false>(options: Options<GetCleanupTrashData, ThrowOnError>): RequestResult<GetCleanupTrashResponses, GetCleanupTrashErrors, ThrowOnError> => (options.client ?? client).get<GetCleanupTrashResponses, GetCleanupTrashErrors, ThrowOnError>({ url: '/api/libraries/{library_id}/cleanup/trash', ...options });

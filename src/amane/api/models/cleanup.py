@@ -64,12 +64,12 @@ class InventorySummaryResponse(BaseModel):
 
 
 class TrashSummaryResponse(BaseModel):
-    """回收站历史内容: 展开即产出显式来源清单, 面板套用同一套审查与删除."""
+    """回收目录历史内容: 展开即产出清单, 面板套用同一套审查与删除."""
 
     exists: bool
     inventory_id: str | None = None
     path: str | None = None
-    """要展开的目录 (清单库根下的回收站), 交给分页接口."""
+    """要展开的目录 (清单库根下的回收目录), 交给分页接口."""
     truncated: bool = False
     dropped: int = 0
 

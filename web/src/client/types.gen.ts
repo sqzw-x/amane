@@ -4192,7 +4192,7 @@ export type ToolResultRow = {
 /**
  * TrashSummaryResponse
  *
- * 回收站历史内容: 展开即产出显式来源清单, 面板套用同一套审查与删除.
+ * 回收目录历史内容: 展开即产出清单, 面板套用同一套审查与删除.
  */
 export type TrashSummaryResponse = {
     /**

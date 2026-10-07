@@ -179,7 +179,7 @@ class OrganizeResult(BaseModel):
 
 
 class ScanInvalidPayload(LibraryScanBase):
-    """只读遍历 path 范围内的无效文件与已空目录, 产出清单. path 缺省为库根."""
+    """只读遍历 path 范围内的无效文件与空目录, 产出清单. path 缺省为库根."""
 
 
 class ScanInvalidResult(BaseModel):

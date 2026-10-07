@@ -37,10 +37,10 @@ def _maybe_file(f: Path) -> bool:
 
 @in_thread
 def scan_library(scan_dir: Path, *, recursive: bool, scan: LibraryScan) -> list[LibraryHit]:
-    """目录本身与回收站不产出."""
+    """目录本身与回收目录不产出."""
     glob_pattern = "**/*" if recursive else "*"
     hits: list[LibraryHit] = []
-    # 跳过目录与回收站; 其余按规则分类.
+    # 跳过目录与回收目录; 其余按规则分类.
     for file_path in scan_dir.glob(glob_pattern):
         if not _maybe_file(file_path):
             continue

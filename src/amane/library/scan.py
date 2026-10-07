@@ -69,7 +69,7 @@ class LibraryScan:
         return None
 
     def classify(self, path: Path) -> LibraryFileKind | None:
-        """回收站与无规则命中的其它文件返回 None."""
+        """回收目录与无规则命中的其它文件返回 None."""
         if is_in_trash(path):
             return None
         if self.unwanted_kind(path) is not None:

@@ -20,7 +20,7 @@ logger = structlog.get_logger()
 
 
 class ScanInvalidHandler(TaskHandler[ScanInvalidPayload, ScanInvalidResult]):
-    """遍历范围内的无效文件与已空目录, 写入清单存放; 不移动、不删除、不改索引.
+    """遍历范围内的无效文件与空目录, 写入清单存放; 不移动、不删除、不改索引.
 
     只读, 因此不参与库锁: 与整理并发时清单可能落后于磁盘, 由执行侧逐项复验兜底.
     """
