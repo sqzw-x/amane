@@ -595,3 +595,29 @@ async def test_delete_removes_entries_kept_inside_orphan_container(repo: Reposit
     assert result.result.deleted == 2
     assert result.result.pruned_dirs == 1
     assert not old.exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_reverify_stops_at_scan_scope(repo: Repository, tmp_path: Path) -> None:
+    """范围清单的复验只走到扫描范围那一层: 更上面的层扫描时没看过, 拿它否决会拒掉全部条目."""
+    lib_root = tmp_path / "lib"
+    scope = lib_root / "old"
+    scope.mkdir(parents=True)
+    entry = scope / "NSFS-039.nfo"
+    entry.write_bytes(b"x")
+    (lib_root / "NEW-001.mp4").write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id, path=str(scope))
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 0
+    assert result.result.deleted == 1
+    assert not entry.exists()

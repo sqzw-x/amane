@@ -438,6 +438,8 @@ class TestRegistration:
         }
         assert inventory.truncated is False
         assert inventory.dropped == 0
+        # 容器条目排在它保留的内容之后: 触顶时它占住的位置不会被内容反过来挤掉.
+        assert inventory.entries[-1].path == lib / "old"
         node = find_inventory_node(build_inventory_tree(inventory), lib / "old")
         assert node is not None
         assert {child.path.name for child in node.children} == {"poster.jpg", "sample.jpg", "emptysub"}

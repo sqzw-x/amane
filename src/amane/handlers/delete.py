@@ -113,7 +113,12 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
         # 容器条目 (残留目录) 自身不是删除目标, 但它的子树要整体复验一次, 因此先记下路径.
         containers = {path_key(entry.path): entry.path for entry in inventory.entries if entry.expandable}
         targets = [entry for entry in targets if not entry.expandable]
-        orphan_scan = self._orphan_scan(library, library_root=library_root, patterns=inventory.patterns)
+        orphan_scan = self._orphan_scan(
+            library,
+            library_root=library_root,
+            scope_dir=inventory.scope_path or library_root,
+            patterns=inventory.patterns,
+        )
         # 复验的探测按目录记忆: 同一目录下的条目走的是同一趟路, 网络盘上这是删除的主要开销.
         probe = _MediaProbe(orphan_scan=orphan_scan) if orphan_scan is not None else None
         tally = DeleteTally()
@@ -178,18 +183,26 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
             ),
         )
 
-    def _orphan_scan(self, library: Library, *, library_root: Path, patterns: Sequence[str]) -> OrphanScan | None:
+    def _orphan_scan(
+        self,
+        library: Library,
+        *,
+        library_root: Path,
+        scope_dir: Path,
+        patterns: Sequence[str],
+    ) -> OrphanScan | None:
         """复验用的判定设置; 没有配置来源 (旧构造方式) 时跳过复验.
 
-        ``patterns`` 取自清单本身而不是库的当前设置: 扫描侧用的是那次任务实际生效的值
-        (``LibraryScanBase._apply_library`` 允许按任务覆盖), 复验用同一份设置才谈得上「同一套条件」.
+        ``scope_dir`` 与 ``patterns`` 取自清单本身而不是库的当前设置: 扫描从范围目录起算, 用的是
+        那次任务实际生效的 patterns (``LibraryScanBase._apply_library`` 允许按任务覆盖), 复验
+        按同一份设置才谈得上「同一套条件」.
         """
         if self._config is None:
             return None
         media_extensions = frozenset(self._config.watcher.media_extensions) or MEDIA_EXTENSIONS
         return OrphanScan.from_library(
             library_root=library_root,
-            scope_dir=library_root,
+            scope_dir=scope_dir,
             subtitle_extensions=library.subtitle_extensions,
             trailer_pattern=library.trailer_pattern,
             patterns=patterns,

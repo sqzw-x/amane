@@ -685,8 +685,9 @@ def _register_orphan(
             ),
             state=state,
         )
-    # 容器条目挪到末尾, 位置不影响展示 (它的体积与条目数在树里由子项汇总).
-    state.entries.append(state.entries.pop(entries_before))
+    # 容器条目挪到末尾, 位置不影响展示 (它的体积与条目数在树里由子项汇总). 它此刻正好在
+    # 保留条目的后面: 按下标取而不是按值取, 否则挪走的是保留下来的第一条.
+    state.entries.append(state.entries.pop(entries_before + len(kept)))
     for covered in [key for key in state.dirs if key not in dirs_before]:
         del state.dirs[covered]
     return _DirResult(
