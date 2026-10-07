@@ -12,16 +12,27 @@ import os
 import secrets
 import stat
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 
 from ...utils.threads import in_thread
 from ..rules import TRASH_DIRNAME
 from ..scan import LibraryFileKind, LibraryHit, LibraryScan, UnwantedKind
+from .orphan import (
+    ORPHAN_COOLDOWN_SECONDS,
+    BlockedDirs,
+    JunkKind,
+    OrphanScan,
+    classify_junk,
+)
+
+if TYPE_CHECKING:
+    from re import Pattern
 
 logger = structlog.get_logger()
 
@@ -46,6 +57,8 @@ class InventoryReason(StrEnum):
     UNDERSIZED = "undersized"
     EMPTY_DIR = "empty_dir"
     EXPLICIT = "explicit"
+    ORPHAN = "orphan"
+    """只含附属文件的目录: 视频被搬走或删除后留下 NFO / 图片 / 字幕, 整目录登记为一条."""
 
 
 class InventoryEntryKind(StrEnum):
@@ -102,6 +115,8 @@ class CleanupInventory:
     """触顶后未纳入清单的候选数; 截断时才有意义."""
     skipped_dirs: int = 0
     skipped_files: int = 0
+    blocked: BlockedDirs = field(default_factory=BlockedDirs)
+    """判定为候选但没有登记的目录数, 按原因分组; 只在带残留判定的扫描里累加."""
     executed: bool = False
     media_hits: list[LibraryHit] = field(default_factory=list)
     """同一趟遍历命中的媒体文件; 只有 `collect_media` 时填充 (入库扫描用)."""
@@ -197,6 +212,13 @@ class _ScanState:
     dropped: int = 0
     skipped_dirs: int = 0
     skipped_files: int = 0
+    blocked: BlockedDirs = field(default_factory=BlockedDirs)
+    orphan_scan: OrphanScan | None = None
+    """带残留判定时非空; 缺省不判定, 与既有调用方兼容."""
+    now: float = 0.0
+    """一次扫描只取一个时刻: 否则同一份清单里两个目录会按不同时刻判定冷静期."""
+    trailer_matcher: Pattern[str] | None = None
+    """预告片正则只编译一次: 判定在万级子项上反复调用."""
 
     @property
     def full(self) -> bool:
@@ -205,9 +227,28 @@ class _ScanState:
 
 @dataclass(frozen=True, slots=True)
 class _DirResult:
+    """一个目录的统计.
+
+    ``entries`` / ``disappears`` 供覆盖表使用; 其余四项是残留判定的输入, 由递归向上汇总 —
+    它们都在同一次遍历里算出, 判定因此不额外访问磁盘.
+    """
+
     children: int
     entries: int
     disappears: bool
+    has_media: bool = False
+    """本目录的**直接子项**里是否有媒体."""
+    explainable: bool = True
+    """子树里是否只有附属文件与可随目录删除的垃圾项."""
+    undeletable: bool = False
+    """子树里是否有不可删除的子项 (回收站、版本库、下载进度等)."""
+    orphan_in_subtree: bool = False
+    """子树里是否已经登记了残留条目; 外层候选命中时由它决定要不要吸收子层条目."""
+    blocked_in_subtree: bool = False
+    """子树里是否已有未登记的候选; 由它保证同一原因只按最外层那一个计数."""
+    newest_mtime: float = 0.0
+    bytes_total: int = 0
+    """子树内会被删除的字节合计, 写进目录条目的体积."""
 
 
 @in_thread
@@ -222,6 +263,8 @@ def scan_inventory(
     source: InventorySource = InventorySource.RULES,
     limit: int = MAX_INVENTORY_ENTRIES,
     collect_media: bool = False,
+    orphan_scan: OrphanScan | None = None,
+    now: float | None = None,
 ) -> CleanupInventory:
     """遍历范围内的一层或整棵子树, 产出清单.
 
@@ -232,9 +275,24 @@ def scan_inventory(
     - 回收站子树整棵不进入清单, 且算作不可删除的子项: 其父目录不会因此被预告清除.
     - 读不到的目录与 stat 失败的文件只计数, 其余子项继续.
     - 达到条目上限后不再登记条目, 但遍历照常走完 (媒体命中必须完整), 并记下未纳入的候选数.
+    - `orphan_scan` 非空时额外把「只含附属文件的目录」登记为一条目录条目, 见 `orphan.py`.
     """
-    state = _ScanState(entries=[], dirs={}, limit=limit, collect_media=collect_media)
-    _walk(scope_dir, state=state, scan=scan, recursive=recursive)
+    try:
+        scope_mtime = scope_dir.lstat().st_mtime
+    except OSError:
+        scope_mtime = 0.0
+    state = _ScanState(
+        entries=[],
+        dirs={},
+        limit=limit,
+        collect_media=collect_media,
+        orphan_scan=orphan_scan,
+        now=now if now is not None else _utcnow().timestamp(),
+        trailer_matcher=orphan_scan.trailer_matcher() if orphan_scan is not None else None,
+    )
+    result = _walk(scope_dir, state=state, scan=scan, recursive=recursive, ancestor_has_media=False)
+    if result is not None and orphan_scan is not None:
+        _register_scope_files(scope_dir, result=result, state=state, directory_mtime=scope_mtime)
     inventory = CleanupInventory(
         inventory_id=new_inventory_id(),
         library_id=library_id,
@@ -250,6 +308,7 @@ def scan_inventory(
         dropped=state.dropped,
         skipped_dirs=state.skipped_dirs,
         skipped_files=state.skipped_files,
+        blocked=state.blocked,
         media_hits=state.media,
     )
     logger.info(
@@ -262,11 +321,19 @@ def scan_inventory(
         dropped=inventory.dropped,
         skipped_dirs=inventory.skipped_dirs,
         skipped_files=inventory.skipped_files,
+        blocked_dirs=inventory.blocked.total,
     )
     return inventory
 
 
-def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: bool) -> _DirResult | None:
+def _walk(
+    directory: Path,
+    *,
+    state: _ScanState,
+    scan: LibraryScan,
+    recursive: bool,
+    ancestor_has_media: bool,
+) -> _DirResult | None:
     """登记 ``directory`` 下的条目与覆盖信息; 读不到该目录时返回 None.
 
     触顶后不提前返回: 本趟遍历同时承担入库扫描的媒体收集, 半途而废会让媒体列表缺项,
@@ -283,11 +350,22 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
     total = 0
     removed = 0
     entries = 0
+    self_media = False
+    explainable = True
+    undeletable = False
+    orphan_in_subtree = False
+    blocked_in_subtree = False
+    newest_mtime = 0.0
+    bytes_total = 0
+    subdirs: list[tuple[Path, os.stat_result]] = []
+    # 两趟: 先看清本层有没有媒体, 再下钻. 本层的媒体是子目录的「祖先直接子项含媒体」,
+    # 边看边传会让排在媒体之前的子目录漏掉这个条件 (目录枚举顺序不保证).
     for child in children:
         total += 1
         path = Path(child.path)
         if child.name == TRASH_DIRNAME:
             # 回收站: 不进清单, 也不计作会消失的子项.
+            undeletable = True
             continue
         try:
             child_stat = path.lstat()
@@ -295,49 +373,282 @@ def _walk(directory: Path, *, state: _ScanState, scan: LibraryScan, recursive: b
             state.skipped_files += 1
             logger.warning("inventory scan entry unreadable", path=str(path), error=str(exc))
             continue
+        newest_mtime = max(newest_mtime, child_stat.st_mtime)
         if stat.S_ISDIR(child_stat.st_mode):
-            sub = _record_dir(path, state=state, scan=scan, recursive=recursive)
-            if sub is not None:
-                entries += sub.entries
-                if sub.disappears:
-                    removed += 1
+            if classify_junk(path, is_dir=True) is JunkKind.VETO:
+                # 不可删除的子项: 不递归、不登记, 并使该目录不判定. 口径与回收站一致,
+                # 差别只在它不需要单独列出 (回收站要在面板上有名字).
+                undeletable = True
+                continue
+            subdirs.append((path, child_stat))
             continue
-        kind = scan.classify(path)
-        if kind is LibraryFileKind.MEDIA:
-            if state.collect_media:
-                state.media.append(LibraryHit(path, kind))
-            continue
-        if kind is not LibraryFileKind.UNWANTED:
-            continue
-        entry = _file_entry(path, scan=scan, child_stat=child_stat, is_symlink=stat.S_ISLNK(child_stat.st_mode))
-        if entry is not None and _record_entry(entry, state=state):
+        if _process_file(
+            path,
+            state=state,
+            scan=scan,
+            child_stat=child_stat,
+            is_symlink=stat.S_ISLNK(child_stat.st_mode),
+        ):
             entries += 1
             removed += 1
+            bytes_total += child_stat.st_size
+            self_media = self_media or _is_media(path, state=state)
+            continue
+        # 判定顺序是契约的一部分: 垃圾项先于媒体判据 (._x.mp4 是伴生文件, 不是视频),
+        # 媒体先于白名单 (用户可以把 .mp4 写进 subtitle_extensions).
+        junk = classify_junk(path, is_dir=False)
+        if junk is JunkKind.DELETABLE:
+            # 垃圾文件随目录一起删除: 不否决, 也不单独登记; 但仍计入子项数,
+            # 否则只含垃圾项的目录会被当成空目录登记.
+            continue
+        if junk is JunkKind.VETO:
+            undeletable = True
+            continue
+        orphan_scan = state.orphan_scan
+        if orphan_scan is not None and orphan_scan.is_media(path, trailer=state.trailer_matcher):
+            self_media = True
+            continue
+        if orphan_scan is not None and orphan_scan.is_companion(path):
+            # 附属文件: 判定通过, 但不单独登记 — 它随外层目录条目一起删除.
+            bytes_total += child_stat.st_size
+            continue
+        explainable = False
 
-    return _DirResult(children=total, entries=entries, disappears=total > 0 and removed == total)
+    for path, child_stat in subdirs:
+        sub = _record_dir(
+            path,
+            state=state,
+            scan=scan,
+            recursive=recursive,
+            ancestor_has_media=ancestor_has_media or self_media,
+            directory_mtime=child_stat.st_mtime,
+        )
+        if sub is None:
+            continue
+        entries += sub.entries
+        if sub.disappears:
+            removed += 1
+        self_media = self_media or sub.has_media
+        explainable = explainable and sub.explainable
+        undeletable = undeletable or sub.undeletable
+        orphan_in_subtree = orphan_in_subtree or sub.orphan_in_subtree
+        blocked_in_subtree = blocked_in_subtree or sub.blocked_in_subtree
+        bytes_total += sub.bytes_total
+
+    return _DirResult(
+        children=total,
+        entries=entries,
+        disappears=total > 0 and removed == total,
+        has_media=self_media,
+        explainable=explainable,
+        undeletable=undeletable,
+        orphan_in_subtree=orphan_in_subtree,
+        blocked_in_subtree=blocked_in_subtree,
+        newest_mtime=newest_mtime,
+        bytes_total=bytes_total,
+    )
 
 
-def _record_dir(path: Path, *, state: _ScanState, scan: LibraryScan, recursive: bool) -> _DirResult | None:
-    """登记子目录; 返回该子目录的统计 (空目录在此转成条目), 不处置时返回 None."""
+def _is_media(path: Path, *, state: _ScanState) -> bool:
+    """本层是否躺着媒体. 只在带残留判定时查询, 其余调用方不承担这次判定."""
+    orphan_scan = state.orphan_scan
+    if orphan_scan is None:
+        return False
+    return orphan_scan.is_media(path, trailer=state.trailer_matcher)
+
+
+def _process_file(
+    path: Path,
+    *,
+    state: _ScanState,
+    scan: LibraryScan,
+    child_stat: os.stat_result,
+    is_symlink: bool,
+) -> bool:
+    """登记无效文件条目; 返回该文件是否进清单."""
+    kind = scan.classify(path)
+    if kind is LibraryFileKind.MEDIA:
+        if state.collect_media:
+            state.media.append(LibraryHit(path, kind))
+        return False
+    if kind is not LibraryFileKind.UNWANTED:
+        return False
+    entry = _file_entry(path, scan=scan, child_stat=child_stat, is_symlink=is_symlink)
+    return entry is not None and _record_entry(entry, state=state)
+
+
+def _record_dir(
+    path: Path,
+    *,
+    state: _ScanState,
+    scan: LibraryScan,
+    recursive: bool,
+    ancestor_has_media: bool,
+    directory_mtime: float,
+) -> _DirResult | None:
+    """登记子目录; 返回该子目录的统计 (空目录与残留目录在此转成条目), 不处置时返回 None."""
     if not recursive:
         # 不递归时子目录不是处置对象: 计入子项数, 使父目录不会被预告清除.
         return None
-    result = _walk(path, state=state, scan=scan, recursive=recursive)
+    entries_before = len(state.entries)
+    dropped_before = state.dropped
+    truncated_before = state.truncated
+    dirs_before = set(state.dirs)
+    blocked_below = False
+    result = _walk(path, state=state, scan=scan, recursive=recursive, ancestor_has_media=ancestor_has_media)
     if result is None:
         return None
+    orphan_scan = state.orphan_scan
+    if orphan_scan is not None:
+        verdict = orphan_scan.verdict(
+            path,
+            ancestor_has_media=ancestor_has_media,
+            self_has_media=result.has_media,
+            subtree_has_media=result.has_media,
+            subtree_explainable=result.explainable,
+            subtree_undeletable=result.undeletable,
+            newest_mtime=result.newest_mtime,
+            directory_mtime=directory_mtime,
+            now=state.now,
+        )
+        if verdict is None:
+            return result
+        if verdict.registrable:
+            absorbed = _register_orphan(
+                path,
+                result=result,
+                state=state,
+                entries_before=entries_before,
+                dropped_before=dropped_before,
+                truncated_before=truncated_before,
+                dirs_before=dirs_before,
+            )
+            # 覆盖信息照常登记: 面板要预告的是「这条目录条目删掉之后父目录会空」.
+            _record_coverage(path, result=absorbed, state=state)
+            return absorbed
+        # 只按最外层那一个计数: 后代已登记或被否决时, 同一原因不该在祖先上再计一次.
+        if verdict.blocked is not None:
+            if not result.orphan_in_subtree and not result.blocked_in_subtree:
+                state.blocked = state.blocked.plus(verdict.blocked)
+            blocked_below = True
     if result.children == 0:
         # 空目录仍要经过 `_record_entry`: 触顶时它同样是被丢掉的候选, 与回收站来源口径一致.
         entry = InventoryEntry(path=path, kind=InventoryEntryKind.DIR, reason=InventoryReason.EMPTY_DIR)
         if not _record_entry(entry, state=state):
             return None
         return _DirResult(children=0, entries=1, disappears=True)
-    if state.truncated:
-        # 截断后不登记覆盖: 「将变空」只在整份清单完整时才有意义.
-        return None
-    if result.entries > 0:
-        # 只登记子树里有条目的目录: 「将变空」只对它们有意义, 也限制覆盖表的规模.
-        state.dirs[path] = DirCoverage(disk_children=result.children, will_be_empty=result.disappears)
+    _record_coverage(path, result=result, state=state)
+    if blocked_below:
+        return replace(result, blocked_in_subtree=True)
     return result
+
+
+def _record_coverage(path: Path, *, result: _DirResult, state: _ScanState) -> None:
+    """登记目录的覆盖信息.
+
+    截断后不登记: 「将变空」只在整份清单完整时才有意义. 只登记子树里有条目的目录 —
+    「将变空」只对它们有意义, 也限制覆盖表的规模.
+    """
+    if state.truncated or result.entries == 0:
+        return
+    state.dirs[path] = DirCoverage(disk_children=result.children, will_be_empty=result.disappears)
+
+
+def _register_orphan(
+    path: Path,
+    *,
+    result: _DirResult,
+    state: _ScanState,
+    entries_before: int,
+    dropped_before: int,
+    truncated_before: bool,
+    dirs_before: set[Path],
+) -> _DirResult:
+    """把目录登记为一条残留条目, 并丢弃子树内已登记的条目.
+
+    先登记再丢弃: 触顶时外层登记失败, 内部条目保持原样 (它们至少是有效候选), 否则既没登记
+    外层又丢了内部条目, 连 `dropped` 都不留. 丢弃之后同路径不会既是指向子节点的分支、又是
+    条目节点 — 那种形态会让 `find_inventory_node` 返回无子节点的条目节点, 面板无法展开.
+    """
+    # `entries_before` 取自进入子树之前: 这一段之后的条目都属于被吸收的子树.
+    inner = len(state.entries) - entries_before
+    entry = InventoryEntry(
+        path=path,
+        kind=InventoryEntryKind.DIR,
+        reason=InventoryReason.ORPHAN,
+        size=result.bytes_total,
+    )
+    if not _record_entry(entry, state=state):
+        return result
+    # 新登记的这条在末尾, 必须留下, 因此按条数截断而不是切到末尾.
+    del state.entries[entries_before : entries_before + inner]
+    # 子树内触顶丢掉的候选随外层条目一起被吸收, 否则面板会预告「另有 N 项未纳入」,
+    # 而那 N 项已经在清单里; 截断标记只回滚本次子树造成的.
+    state.dropped = dropped_before
+    state.truncated = truncated_before
+    for covered in [key for key in state.dirs if key not in dirs_before]:
+        del state.dirs[covered]
+    return _DirResult(
+        children=result.children,
+        entries=1,
+        # 用子树的真实结论, 不强制为真: 垃圾项不被删除 (它随目录一起删), 目录因此不空.
+        disappears=result.disappears,
+        has_media=result.has_media,
+        explainable=result.explainable,
+        undeletable=result.undeletable,
+        orphan_in_subtree=True,
+        blocked_in_subtree=result.blocked_in_subtree,
+        newest_mtime=result.newest_mtime,
+        bytes_total=result.bytes_total,
+    )
+
+
+def _register_scope_files(
+    directory: Path,
+    *,
+    result: _DirResult,
+    state: _ScanState,
+    directory_mtime: float,
+) -> None:
+    """库根与扫描范围目录的退化处置: 逐文件登记白名单内的附属文件.
+
+    这两层永不登记为目录条目 (一条条目就能带走整库内容), 但「下载目录本身就是库根、视频
+    整理走后根目录里留下 NFO 与图片」是最常见的形态, 不能整层放弃. 同一道门仍然适用:
+    该层自身的直接子项里有媒体时, 这些文件是正片的附属文件, 不是残留.
+    """
+    orphan_scan = state.orphan_scan
+    if orphan_scan is None or result.has_media:
+        return
+    if not result.explainable or result.undeletable:
+        return
+    if state.now - max(result.newest_mtime, directory_mtime) <= ORPHAN_COOLDOWN_SECONDS:
+        return
+    try:
+        with os.scandir(directory) as scanned:
+            children = list(scanned)
+    except OSError:
+        return
+    for child in children:
+        path = Path(child.path)
+        if not orphan_scan.is_companion(path):
+            continue
+        try:
+            child_stat = path.lstat()
+        except OSError:
+            state.skipped_files += 1
+            continue
+        if stat.S_ISDIR(child_stat.st_mode):
+            continue
+        entry = InventoryEntry(
+            path=path,
+            kind=InventoryEntryKind.SYMLINK if stat.S_ISLNK(child_stat.st_mode) else InventoryEntryKind.FILE,
+            reason=InventoryReason.ORPHAN,
+            size=child_stat.st_size,
+            dev=child_stat.st_dev,
+            ino=child_stat.st_ino,
+            nlink=child_stat.st_nlink,
+        )
+        _record_entry(entry, state=state)
 
 
 def _file_entry(

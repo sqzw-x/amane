@@ -18,11 +18,23 @@ from .inventory import (
     scan_inventory,
     scan_trash,
 )
+from .orphan import (
+    ORPHAN_COOLDOWN_SECONDS,
+    BlockedDirs,
+    BlockedReason,
+    JunkKind,
+    OrphanScan,
+    OrphanVerdict,
+    classify_junk,
+)
 
 __all__ = [
     "INVENTORY_RETENTION",
     "INVENTORY_TTL_SECONDS",
     "MAX_INVENTORY_ENTRIES",
+    "ORPHAN_COOLDOWN_SECONDS",
+    "BlockedDirs",
+    "BlockedReason",
     "CleanupInventory",
     "DirCoverage",
     "FootprintNotice",
@@ -34,8 +46,12 @@ __all__ = [
     "InventoryReason",
     "InventorySource",
     "InventoryStore",
+    "JunkKind",
+    "OrphanScan",
+    "OrphanVerdict",
     "build_footprint",
     "build_inventory_tree",
+    "classify_junk",
     "find_inventory_node",
     "inventory_tree",
     "new_inventory_id",
