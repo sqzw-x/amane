@@ -230,7 +230,7 @@ class _ScanState:
     orphan_scan: OrphanScan | None = None
     """带残留判定时非空; 缺省不判定, 与既有调用方兼容."""
     now: float = 0.0
-    """一次扫描只取一个时刻: 否则同一份清单里两个目录会按不同时刻判定冷静期."""
+    """一次扫描只取一个时刻: 否则同一份清单里两个目录会按不同时刻判定冷却期."""
     trailer_matcher: Pattern[str] | None = None
     """预告片正则只编译一次: 判定在万级子项上反复调用."""
 
@@ -281,7 +281,7 @@ class _DirResult:
     blocked_in_subtree: bool = False
     """子树里是否已有未登记的候选; 由它保证同一原因只按最外层那一个计数."""
     newest_mtime: float = 0.0
-    """子树内最新的 mtime; 残留判定的冷静期按它算, 深层刚动过同样拦住整棵子树."""
+    """子树内最新的 mtime; 残留判定的冷却期按它算, 深层刚动过同样拦住整棵子树."""
     bytes_total: int = 0
     """子树内会被删除的字节合计, 写进目录条目的体积."""
     companions: tuple[tuple[Path, os.stat_result], ...] = ()

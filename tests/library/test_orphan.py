@@ -1,7 +1,7 @@
 """残留目录判定: 子树只含附属文件与可随目录删除的垃圾项的目录进清理清单, 其余一律不判定.
 
 判定同时覆盖三个方向 (祖先的直接子项、自身、子树), 因此用例按方向分组, 并单独覆盖
-登记形态 (嵌套候选、内部条目保留、库根与扫描范围目录的退化) 与冷静期边界.
+登记形态 (嵌套候选、内部条目保留、库根与扫描范围目录的退化) 与冷却期边界.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from amane.library import (
     scan_inventory,
 )
 
-# 判定用的固定时刻; 夹具文件的 mtime 统一设成它, 冷静期因此不影响默认用例.
+# 判定用的固定时刻; 夹具文件的 mtime 统一设成它, 冷却期因此不影响默认用例.
 _NOW = 1_800_000_000.0
 
 
@@ -81,7 +81,7 @@ def _scan(
 def _touch_at(path: Path, *, mtime: float) -> Path:
     """写入并把文件与其父目录的 mtime 定到给定时刻.
 
-    目录自身的 mtime 也必须定: 否则夹具目录带着真实时间, 冷静期用例无从构造边界.
+    目录自身的 mtime 也必须定: 否则夹具目录带着真实时间, 冷却期用例无从构造边界.
     """
     _touch(path, mtime=mtime)
     os.utime(path.parent, (mtime, mtime))
@@ -364,7 +364,7 @@ class TestJunk:
 
 class TestCooldown:
     def test_recent_subtree_is_not_registered(self, tmp_path: Path) -> None:
-        """冷静期内的目录按「刚变动过」处理, 不登记也不计数."""
+        """冷却期内的目录按「刚变动过」处理, 不登记也不计数."""
         lib = tmp_path / "lib"
         _touch_at(lib / "old" / "poster.jpg", mtime=_NOW - 60)
 
@@ -374,7 +374,7 @@ class TestCooldown:
         assert inventory.blocked.total == 0
 
     def test_exactly_at_threshold_is_not_registered(self, tmp_path: Path) -> None:
-        """阈值处算「仍在冷静期」; 目录自身的 mtime 单独设旧, 让边界只由文件决定."""
+        """阈值处算「仍在冷却期」; 目录自身的 mtime 单独设旧, 让边界只由文件决定."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / "poster.jpg", mtime=_NOW - ORPHAN_COOLDOWN_SECONDS)
         os.utime(lib / "old", (_NOW - 7200, _NOW - 7200))
@@ -390,7 +390,7 @@ class TestCooldown:
         assert _contents(inventory, lib) != {}
 
     def test_directory_mtime_counts(self, tmp_path: Path) -> None:
-        """目录自身的 mtime 来自父目录那次 lstat, 也必须参与冷静期."""
+        """目录自身的 mtime 来自父目录那次 lstat, 也必须参与冷却期."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / "poster.jpg", mtime=_NOW - 7200)
         os.utime(lib / "old", (_NOW - 60, _NOW - 60))

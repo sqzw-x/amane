@@ -61,7 +61,7 @@ _JUNK_EXTENSIONS = frozenset({".tmp"})
 
 # 不可删除的子项: 命中即否决该目录. 目录名与文件扩展名分开, 效力与 kind 无关.
 _VETO_DIRNAMES = frozenset({".amane_trash", "#recycle", ".stversions", ".stfolder", "@eadir", ".appledouble"})
-# 暂停或排队中的下载进度: 冷静期只保护正在写入的那一个, 删掉不可恢复.
+# 暂停或排队中的下载进度: 冷却期只保护正在写入的那一个, 删掉不可恢复.
 _VETO_EXTENSIONS = frozenset({".part", ".crdownload"})
 
 
@@ -78,7 +78,7 @@ class BlockedReason(StrEnum):
     """目录被判成候选但没有登记的原因.
 
     只暴露用户能据此行动的那一种: 子树里有无法识别的文件. 其余原因 (目录里有媒体、
-    有不可删除的子项、仍在冷静期) 都是内部保护规则, 对应的目录与正常媒体目录一样不用管,
+    有不可删除的子项、仍在冷却期) 都是内部保护规则, 对应的目录与正常媒体目录一样不用管,
     不需要向用户解释.
     """
 
@@ -208,7 +208,7 @@ class OrphanScan:
             return None
         if not subtree_explainable:
             return OrphanVerdict(BlockedReason.UNEXPLAINED)
-        # 阈值处算「仍在冷静期」; 未来时间戳 (时钟偏移) 同样按未超阈值处理.
+        # 阈值处算「仍在冷却期」; 未来时间戳 (时钟偏移) 同样按未超阈值处理.
         if now - max(newest_mtime, directory_mtime) <= ORPHAN_COOLDOWN_SECONDS:
             return None
         return OrphanVerdict()

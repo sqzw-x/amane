@@ -324,7 +324,7 @@ async def test_delete_drops_index_by_directory_prefix(repo: Repository, tmp_path
 
 
 def _age_for_orphan(root: Path) -> None:
-    """把库根整棵树 (目录与文件) 的 mtime 定到冷静期之外.
+    """把库根整棵树 (目录与文件) 的 mtime 定到冷却期之外.
 
     目录自身的 mtime 也参与判定, 而写文件会把夹具目录的 mtime 留在写入那一刻, 于是判定会认为
     目录刚变动过; 文件与目录因此都要调旧, 两者的先后不影响结果.
