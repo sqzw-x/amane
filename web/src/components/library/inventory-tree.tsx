@@ -1,7 +1,5 @@
 import {
-  ActionIcon,
   Badge,
-  Box,
   Button,
   Center,
   Checkbox,
@@ -13,9 +11,24 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconChevronRight, IconFile, IconFolder } from "@tabler/icons-react";
+import {
+  IconArrowsDiagonal,
+  IconArrowsDiagonalMinimize,
+  IconFile,
+  IconFolder,
+  IconFolderOpen,
+} from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { memo, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   getCleanupInventoryNodesInfiniteOptions,
@@ -32,6 +45,13 @@ import classes from "./inventory-tree.module.css";
 
 /** 一层最多渲染这么多条, 滚到底再取下一页: 一份清单可能有上万条候选. */
 const NODE_PAGE_SIZE = 200;
+
+/** 深度交给样式表算缩进与底色; React 的 CSSProperties 不含自定义属性, 这里显式补上. */
+type DepthStyle = CSSProperties & { "--row-depth": number };
+
+function depthStyle(depth: number): DepthStyle {
+  return { "--row-depth": depth };
+}
 
 /** 清单里的路径前缀匹配: 与后端一致按路径分量, 不用字符串前缀. */
 function isUnder(path: string, prefix: string): boolean {
@@ -66,6 +86,10 @@ export function InventoryTree({
   const [loadedNodes, setLoadedNodes] = useState<Record<string, InventoryNodeResponse>>({});
   // 系统与同步工具的产物默认折叠: 它们也会被删除, 但多数时候只是噪音; 用户可展开核对.
   const [showNoise, setShowNoise] = useState(false);
+  // 展开状态提在树上: 全局展开是模式, 逐个收起记进 collapsed, 因此新挂载的行也跟着展开.
+  const [expandAll, setExpandAll] = useState(false);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const level = useInventoryNodeLevel({ libraryId, inventoryId, path, noise: showNoise });
   const deleteMutation = useMutation({
     ...submitTaskMutation(),
@@ -113,6 +137,21 @@ export function InventoryTree({
     [],
   );
 
+  // 全局展开时「收起一个」记进 collapsed, 而不是抹掉模式本身: 之后挂载的行仍应展开.
+  const toggleExpand = useCallback(
+    (nodePath: string) => {
+      const update = (prev: ReadonlySet<string>) => {
+        const next = new Set(prev);
+        if (next.has(nodePath)) next.delete(nodePath);
+        else next.add(nodePath);
+        return next;
+      };
+      if (expandAll) setCollapsed(update);
+      else setExpanded(update);
+    },
+    [expandAll],
+  );
+
   // 依赖为空: 翻页只新增行, 已渲染的行靠 memo 挡住重渲染.
   const toggle = useCallback((node: InventoryNodeResponse) => {
     setExcluded((prev) => {
@@ -157,22 +196,40 @@ export function InventoryTree({
   return (
     // 面板给固定高度时撑满它, 让按钮行贴底; 嵌在自适应高度的弹窗里时按内容收缩.
     <Stack gap="xs" style={{ flex: "1 1 auto", minHeight: 0 }}>
-      <Group justify="space-between">
+      <Group justify="space-between" gap="sm" wrap="wrap">
         <Text size="sm">
           {t("cleanup.selected", { count: totals.entries, size: formatFileSize(totals.bytes) })}
         </Text>
-        <Group gap="sm">
+        <Group gap="sm" wrap="wrap" justify="flex-end">
           <Checkbox
             size="xs"
             checked={showNoise}
             label={t("cleanup.showNoise")}
             onChange={(event) => setShowNoise(event.currentTarget.checked)}
           />
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={
+              expandAll ? (
+                <IconArrowsDiagonalMinimize size={14} />
+              ) : (
+                <IconArrowsDiagonal size={14} />
+              )
+            }
+            onClick={() => {
+              setExpandAll((prev) => !prev);
+              setExpanded(new Set());
+              setCollapsed(new Set());
+            }}
+          >
+            {expandAll ? t("cleanup.collapseAll") : t("cleanup.expandAll")}
+          </Button>
           {header}
         </Group>
       </Group>
       <ScrollArea.Autosize
-        mah="46vh"
+        mah={{ base: "68vh", sm: "46vh" }}
         className={classes.scroll}
         py="sm"
         style={{ flex: "1 1 auto", minHeight: 0 }}
@@ -186,7 +243,7 @@ export function InventoryTree({
             {t("cleanup.empty")}
           </Text>
         ) : (
-          <Stack gap={6}>
+          <Stack gap={0}>
             {level.nodes.map((node) => (
               <InventoryNodeRow
                 key={node.path}
@@ -197,7 +254,11 @@ export function InventoryTree({
                 excluded={excluded}
                 kept={totals.kept}
                 showNoise={showNoise}
+                expandAll={expandAll}
+                expanded={expanded}
+                collapsed={collapsed}
                 onToggle={toggle}
+                onToggleExpand={toggleExpand}
                 onNodes={registerNodes}
               />
             ))}
@@ -276,7 +337,11 @@ interface InventoryNodeRowProps {
   excluded: string[];
   kept: Record<string, number>;
   showNoise: boolean;
+  expandAll: boolean;
+  expanded: ReadonlySet<string>;
+  collapsed: ReadonlySet<string>;
   onToggle: (node: InventoryNodeResponse) => void;
+  onToggleExpand: (path: string) => void;
   onNodes: (nodes: InventoryNodeResponse[]) => void;
 }
 
@@ -289,11 +354,14 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
   excluded,
   kept,
   showNoise,
+  expandAll,
+  expanded,
+  collapsed,
   onToggle,
+  onToggleExpand,
   onNodes,
 }: InventoryNodeRowProps) {
   const { t } = useTranslation(["library", "common"]);
-  const [expanded, setExpanded] = useState(false);
   const covering = coveringPrefix(excluded, node.path);
   const covered = covering !== undefined;
   // 子树里只要有一项被取消勾选, 整份清单执行完这个目录也不会空.
@@ -307,12 +375,15 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
   );
   const allKept = keptBelow > 0 && keptBelow >= node.entry_count;
   const partial = keepsSomething && !allKept;
+  // 有子节点的目录靠点条目本身展开; 其余条目点条目本身即切换选中.
+  const expandable = node.kind === "dir" && Boolean(node.has_children);
+  const isOpen = expandAll ? !collapsed.has(node.path) : expanded.has(node.path);
   const children = useInventoryNodeLevel({
     libraryId,
     inventoryId,
     path: node.path,
     noise: showNoise,
-    enabled: expanded && node.has_children,
+    enabled: isOpen && expandable,
   });
 
   useEffect(() => {
@@ -321,115 +392,109 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
 
   const marker = node.reason ? t(`cleanup.reason.${node.reason}`) : null;
   // 信息项随宿主条目一起删除: 不给勾选框, 也不显示「将变空」这类只对可执行条目有意义的标记.
-  if (node.informational) {
-    return (
-      <Box
-        className={classes.row}
-        py={4}
-        pr="sm"
-        pl={`calc(var(--mantine-spacing-xs) + ${depth * 20}px)`}
-      >
-        <Group gap="sm" wrap="nowrap">
-          <Box w={26} />
-          <IconFile size={14} />
-          <Text size="xs" c={node.noise ? "dimmed" : undefined} truncate title={node.path}>
-            {node.name}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {formatFileSize(node.size)}
-          </Text>
-          {node.noise ? (
-            <Tooltip label={t("cleanup.noiseHint")}>
-              <Badge size="xs" variant="light" color="gray">
-                {t("cleanup.noise")}
+  const informational = Boolean(node.informational);
+  const activate = () => {
+    if (expandable) onToggleExpand(node.path);
+    else onToggle(node);
+  };
+  const onActivateKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    activate();
+  };
+
+  return (
+    <div className={classes.node} style={depthStyle(depth)}>
+      <div className={classes.row} data-clickable={informational ? undefined : true}>
+        {/* 信息项没有勾选框, 空槽让两类的图标与名字仍然对齐. */}
+        <span className={classes.checkbox}>
+          {informational ? null : (
+            <Checkbox
+              className={classes.checkboxBox}
+              size="sm"
+              checked={!covered && !allKept}
+              indeterminate={partial}
+              onChange={() => onToggle(node)}
+            />
+          )}
+        </span>
+        <div
+          className={classes.body}
+          role={informational ? undefined : "button"}
+          tabIndex={informational ? undefined : 0}
+          aria-expanded={expandable ? isOpen : undefined}
+          onClick={informational ? undefined : activate}
+          onKeyDown={informational ? undefined : onActivateKeyDown}
+        >
+          {node.kind === "dir" ? (
+            isOpen ? (
+              <IconFolderOpen size={18} />
+            ) : (
+              <IconFolder size={18} />
+            )
+          ) : (
+            <IconFile size={18} />
+          )}
+          {node.kind === "symlink" ? (
+            <Tooltip label={t("cleanup.symlinkHint")}>
+              <Badge size="sm" variant="light" color="blue">
+                {t("cleanup.symlink")}
               </Badge>
             </Tooltip>
           ) : null}
-        </Group>
-      </Box>
-    );
-  }
-  return (
-    <Box
-      className={classes.row}
-      py={6}
-      pr="sm"
-      pl={`calc(var(--mantine-spacing-xs) + ${depth * 20}px)`}
-    >
-      <Group gap="sm" wrap="nowrap">
-        {node.has_children ? (
-          <ActionIcon
-            variant="subtle"
-            size="sm"
-            aria-label={t("cleanup.expand")}
-            onClick={() => setExpanded((prev) => !prev)}
+          <Text
+            className={classes.name}
+            size={informational ? "xs" : "sm"}
+            fw={informational ? undefined : 500}
+            c={node.noise ? "dimmed" : undefined}
+            truncate
+            title={node.path}
           >
-            <IconChevronRight
-              size={16}
-              style={{
-                transform: expanded ? "rotate(90deg)" : undefined,
-                transition: "transform 120ms",
-              }}
-            />
-          </ActionIcon>
-        ) : (
-          <Box w={26} />
-        )}
-        <Checkbox
-          size="sm"
-          checked={!covered && !allKept}
-          indeterminate={partial}
-          onChange={() => onToggle(node)}
-        />
-        {node.kind === "dir" ? <IconFolder size={16} /> : <IconFile size={16} />}
-        {node.kind === "symlink" ? (
-          <Tooltip label={t("cleanup.symlinkHint")}>
-            <Badge size="sm" variant="light" color="blue">
-              {t("cleanup.symlink")}
-            </Badge>
-          </Tooltip>
-        ) : null}
-        <Text size="sm" fw={500} truncate title={node.path}>
-          {node.name}
-        </Text>
-        {node.will_be_empty &&
-        node.kind === "dir" &&
-        !node.reason &&
-        !covered &&
-        !keepsSomething ? (
-          <Badge size="sm" variant="light" color="orange">
-            {t("cleanup.willBeEmpty")}
-          </Badge>
-        ) : null}
-        {node.hardlink ? (
-          <Tooltip label={t("cleanup.hardlinkHint")}>
-            <Badge size="sm" variant="light" color="gray">
-              {t("cleanup.hardlink")}
-            </Badge>
-          </Tooltip>
-        ) : null}
-        {marker ? (
-          <Badge size="sm" variant="default">
-            {marker}
-          </Badge>
-        ) : null}
-        {node.kind !== "dir" ? (
-          <Text size="sm" c="dimmed">
-            {formatFileSize(node.size)}
+            {node.name}
           </Text>
-        ) : null}
-        {node.entry_count > 1 ? (
-          <Text size="sm" c="dimmed">
-            {t("cleanup.nodeCount", { count: node.entry_count })}
-          </Text>
-        ) : null}
-      </Group>
-      {expanded && node.has_children ? (
-        <Stack gap={6} mt={2}>
+          {/* 徽章与体积整体换行 (窄屏) 或整体保持不压缩, 都不拆开单个元素. */}
+          <span className={classes.meta}>
+            {!informational &&
+            node.will_be_empty &&
+            node.kind === "dir" &&
+            !node.reason &&
+            !covered &&
+            !keepsSomething ? (
+              <Badge size="sm" variant="light" color="orange">
+                {t("cleanup.willBeEmpty")}
+              </Badge>
+            ) : null}
+            {!informational && node.hardlink ? (
+              <Tooltip label={t("cleanup.hardlinkHint")}>
+                <Badge size="sm" variant="light" color="gray">
+                  {t("cleanup.hardlink")}
+                </Badge>
+              </Tooltip>
+            ) : null}
+            {!informational && marker ? (
+              <Badge size="sm" variant="default">
+                {marker}
+              </Badge>
+            ) : null}
+            {node.kind !== "dir" ? (
+              <Text size={informational ? "xs" : "sm"} c="dimmed">
+                {formatFileSize(node.size)}
+              </Text>
+            ) : null}
+            {!informational && node.entry_count > 1 ? (
+              <Text size="sm" c="dimmed">
+                {t("cleanup.nodeCount", { count: node.entry_count })}
+              </Text>
+            ) : null}
+          </span>
+        </div>
+      </div>
+      {isOpen && expandable ? (
+        <div className={classes.children}>
           {children.isLoading ? (
-            <Group pl={(depth + 1) * 16} gap="xs">
+            <div className={classes.pending} style={depthStyle(depth + 1)}>
               <Loader size="xs" />
-            </Group>
+            </div>
           ) : (
             <>
               {children.nodes.map((child) => (
@@ -442,7 +507,11 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
                   excluded={excluded}
                   kept={kept}
                   showNoise={showNoise}
+                  expandAll={expandAll}
+                  expanded={expanded}
+                  collapsed={collapsed}
                   onToggle={onToggle}
+                  onToggleExpand={onToggleExpand}
                   onNodes={onNodes}
                 />
               ))}
@@ -457,8 +526,8 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
               />
             </>
           )}
-        </Stack>
+        </div>
       ) : null}
-    </Box>
+    </div>
   );
 });

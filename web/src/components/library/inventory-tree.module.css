@@ -1,13 +1,119 @@
-.row {
-  border-radius: var(--mantine-radius-sm);
-  transition: background-color 120ms ease;
-}
-
-.row:hover {
-  background-color: var(--mantine-color-default-hover);
-}
+/* 缩进与底色只由行上的 --row-depth 决定: 子级不再继承父级的缩进, 因此每层缩进是固定的. */
 
 .scroll {
+  --pad-left: 8px;
+  --indent: 20px;
+  /* 缩进封顶的深度: 桌面不封顶, 窄屏封顶 (见文件末尾的窄屏段). */
+  --max-depth: 99;
+  --row-pad-y: 12px;
+  --row-gap: 12px;
+  --row-rule: light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  --tree-line: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3));
+
   border-top: 1px solid var(--mantine-color-default-border);
   border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.row {
+  --row-tint: calc(var(--row-depth) * 4%);
+
+  display: flex;
+  align-items: center;
+  gap: var(--row-gap);
+  padding: var(--row-pad-y) 10px var(--row-pad-y)
+    calc(var(--pad-left) + min(var(--row-depth), var(--max-depth)) * var(--indent));
+  border-bottom: 1px solid var(--row-rule);
+  /* 层级越深底色越重: 与行分隔线一起, 不画引导线也能看出归属. */
+  background: light-dark(
+    color-mix(in srgb, var(--mantine-color-gray-6) var(--row-tint), transparent),
+    color-mix(in srgb, var(--mantine-color-gray-2) var(--row-tint), transparent)
+  );
+}
+
+/* 悬停只给可点的行: 信息项不响应点击. */
+.row[data-clickable]:hover {
+  --row-tint: calc(var(--row-depth) * 4% + 7%);
+}
+
+.checkbox {
+  flex: 0 0 auto;
+  display: flex;
+  /* 与 size="sm" 的 Checkbox 同宽: 信息项没有勾选框, 靠这个空槽对齐. */
+  width: calc(1.25rem * var(--mantine-scale));
+}
+
+/* 勾选框只有 20px: 内边距把可点区域撑到 36×40, 负外边距抵消掉布局影响 (触屏). */
+.checkboxBox {
+  padding: 10px 8px;
+  margin: -10px -8px;
+}
+
+.body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.body[role="button"] {
+  cursor: pointer;
+}
+
+.body:focus-visible {
+  outline: 2px solid var(--mantine-color-brand-6);
+  outline-offset: 2px;
+  border-radius: var(--mantine-radius-sm);
+}
+
+.name {
+  min-width: 0;
+}
+
+/* 徽章与体积不参与压缩: 空间不够时截断的是名字, 换行的是整块元信息. */
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.children {
+  position: relative;
+}
+
+/* 引导线落在子级勾选框的左侧: 子级的勾选框从它右侧开始, 缩进封顶时也不会穿过勾选框. */
+.children::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--pad-left) + min(var(--row-depth) + 1, var(--max-depth)) * var(--indent) - 7px);
+  border-left: 1px solid var(--tree-line);
+  pointer-events: none;
+}
+
+.pending {
+  display: flex;
+  align-items: center;
+  padding: var(--row-pad-y) 10px var(--row-pad-y)
+    calc(var(--pad-left) + min(var(--row-depth), var(--max-depth)) * var(--indent));
+}
+
+/* 窄屏: 缩进减半并封顶 (省下的宽度给名字), 元信息整块换到第二行而不是把名字压没. */
+@media (max-width: 47.99em) {
+  .scroll {
+    --indent: 16px;
+    --max-depth: 3;
+  }
+
+  .body {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .name {
+    min-width: 5.5em;
+  }
 }

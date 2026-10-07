@@ -14,8 +14,8 @@ import type { LibraryResponse, InventorySummaryResponse } from "@/client/types.g
 import { InventoryTree } from "@/components/library/inventory-tree";
 import { extractErrorMessage } from "@/lib/api-error";
 
-/** 两个页签共用同一块高度: 弹窗居中, 高度一变表头就会跟着上下跳. */
-const PANEL_HEIGHT = "52vh";
+/** 两个页签共用同一块高度: 弹窗居中, 高度一变表头就会跟着上下跳. 窄屏占满更多高度, 否则列表只剩两三行. */
+const PANEL_HEIGHT = { base: "78vh", sm: "52vh" };
 
 interface CleanupPanelProps {
   library: LibraryResponse;
