@@ -25,9 +25,9 @@
 
 ### 加入刮削路由
 
-影片刮削插件安装后, 需要在「设置 → 影片刮削 → 内容路由」中将插件 ID 添加到对应内容类型的站点列表中, 插件才会在刮削时被调用.
+影片刮削插件安装后, 需要在「设置 → 影片刮削 → 类型路由」中将插件 ID 添加到对应内容类型的站点列表中, 插件才会在刮削时被调用.
 
-播放源插件不写入内容路由. 启用后, 影片详情页会把它列为可播放源.
+播放源插件不写入类型路由. 启用后, 影片详情页会把它列为可播放源.
 
 ### 更新与卸载
 
@@ -139,13 +139,13 @@ class Plugin(FilmSourcePlugin):
 - **连通性检测**: 可选的 `check_connectivity` 供 Amane 的「网络检测」页探测本源. 不实现时主机探测 `descriptor.urls` 的第一个地址; 入口不同 (登录页 / 需要 token 的 API) 或凭据缺失就实现它, 后者返回 `ConnectivityOutcome.skipped(SkipReason.MISSING_CREDENTIAL)` 说明无法探测的原因. 请求照旧走 `context.http_client`
 - **落盘写 `context.data_dir`**: 插件自己的 `{data_dir}/plugins/<id>/` 目录, 卸载时保留, 适合放缓存
 - **行为开关**: 主机能识别的来源行为写在 descriptor 的 `traits` 里, 目前有 `needs_partial` / `multi_language` / `uses_file_hash`; 宿主不认识的取值会被忽略, 因此可以声明为更新宿主准备的能力
-- **多语言支持**: descriptor 的 `traits` 声明 `multi_language`, 主机按字段语言展开抓取节点, fetch 通过 `options.language` 获取当前语言
+- **多语言支持**: descriptor 的 `traits` 声明 `multi_language`, 主机按字段语言展开获取节点, fetch 通过 `options.language` 获取当前语言
 - **前序结果**: descriptor 声明 `traits={"needs_partial"}` 时该来源排在聚合第二段, fetch 经只读的 `query.partial_result` 读取前序标量; 为 `None` 表示本次不在第二段
 - **文件指纹**: descriptor 的 `traits` 声明 `uses_file_hash` 时, 主机在刮削前计算所关联文件的 oshash 并经 `query.file_hash` 传入; 本次没有关联文件时为 `None`
 - **出演者**: `actors` 为 `FilmActor` 列表 (`name` + `gender`). 仍可传入字符串列表, 性别视为未识别. 名单能判定性别时写出 `female` / `male`
 - **仅播放插件**: descriptor 必须显式声明 `playback`. 播放源插件可以声明打开某个已入库文件, 或声明上游地址; 媒体正文一律由主机打开或代理, 插件不直接向浏览器输出字节
 - **HLS**: 返回带 locator 的 HLS 目标. locator 负责读取清单, 并把清单里的原始 URI 定位成上游地址. 主机改写清单并代理分片与密钥. 不允许要求本机转码
-- **解析结果有效期**: 主机每次取流都会调用 `resolve`. 返回的播放目标可以带 `cache_ttl` (秒, 正数) 声明可复用时长, 主机在这么多秒内复用这一次解析结果, 上限 300 秒; 不声明就不缓存. 签名 URL 与会话令牌必须声明不超过其实际有效期的值, 声明过长会让播放器拿到已失效的地址. 改插件配置会清空这份缓存, 下次取流重新解析
+- **解析结果有效期**: 主机每次取流都会调用 `resolve`. 返回的播放目标可以带 `cache_ttl` (秒, 正数) 声明可复用时长, 主机在这么多秒内复用这一次解析结果, 上限 300 秒; 不声明就不缓存. 签名 URL 与会话凭据必须声明不超过其实际有效期的值, 声明过长会让播放器拿到已失效的地址. 改插件配置会清空这份缓存, 下次取流重新解析
 - **字幕**: `probe` 声明轨道; `subtitle` 返回 WebVTT 正文或上游 VTT 地址. 需要读取本机字幕文件时由插件自行读取并转换为 WebVTT, 主机不读字幕文件
 - **不得阻塞事件循环**: `probe`、`resolve`、`subtitle` 在 Amane 的事件循环上被调用. 读盘、`stat`、同步 HTTP 等阻塞调用必须用 `asyncio.to_thread` 提交到线程池. 阻塞调用会让整个服务端停止推进, 其它来源的探测一并超时. 探测预算由主机计时, 无法中断已经进入事件循环的阻塞调用
 
