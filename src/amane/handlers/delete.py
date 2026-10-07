@@ -265,6 +265,18 @@ def _deepest_depth(path: str | Path, keys: set[str]) -> int:
     return -1
 
 
+@dataclass(frozen=True, slots=True)
+class _LevelFacts:
+    """某一层的复验事实: 本层有没有媒体, 有没有不可删除的文件子项 (下载进度).
+
+    读不到时只填 ``unreadable``: 调用方按拒绝处理 (保守), 但给出的原因与「有媒体」分开.
+    """
+
+    has_media: bool = False
+    veto: bool = False
+    unreadable: str | None = None
+
+
 @dataclass
 class _MediaProbe:
     """一趟删除里的探测缓存.
@@ -275,29 +287,39 @@ class _MediaProbe:
     """
 
     orphan_scan: OrphanScan
-    levels: dict[Path, bool] = field(default_factory=dict)
+    levels: dict[Path, _LevelFacts] = field(default_factory=dict)
     subtrees: dict[Path, str | None] = field(default_factory=dict)
 
-    def level_has_media(self, directory: Path) -> bool:
+    def level(self, directory: Path) -> _LevelFacts:
         cached = self.levels.get(directory)
         if cached is None:
-            cached = _level_has_media(directory, orphan_scan=self.orphan_scan)
+            cached = _level_facts(directory, orphan_scan=self.orphan_scan)
             self.levels[directory] = cached
         return cached
 
-    def ancestors_have_media(self, directory: Path) -> bool:
-        """目录自身或其任一祖先的直接子项里是否有媒体; 读不到时按有媒体处理 (保守).
+    def ancestor_refusal(self, directory: Path) -> str | None:
+        """目录自身或其任一祖先的直接子项里出现了媒体即拒绝; 读不到同样拒绝 (保守).
 
         只走到扫描范围那一层: 更上面的层扫描时没看过, 拿它否决会把清单里本来成立的条目全部拒掉.
         """
         scope = self.orphan_scan.scope_dir
         current = directory
         while True:
-            if self.level_has_media(current):
-                return True
+            facts = self.level(current)
+            if facts.unreadable is not None:
+                return facts.unreadable
+            if facts.has_media:
+                return "目录的祖先里出现了媒体"
             if current == scope or current.parent == current:
-                return False
+                return None
             current = current.parent
+
+    def level_refusal(self, directory: Path) -> str | None:
+        """本层出现了下载进度: 扫描侧据此不登记这一层的文件, 复验照同一道门."""
+        facts = self.level(directory)
+        if facts.unreadable is not None:
+            return facts.unreadable
+        return "本层出现了下载进度" if facts.veto else None
 
     def subtree_refusal(self, directory: Path) -> str | None:
         """整棵子树的复验结论; 同一个容器的条目共用一次遍历."""
@@ -324,9 +346,10 @@ def _reverify(entry: InventoryEntry, *, probe: _MediaProbe, container: Path | No
 
     - 残留条目: 宿主容器的整棵子树复验一次 (子树里出现媒体、不可删除的子项、白名单外的文件
       都不再成立), 再加上每一级祖先的直接子项 — 祖先旁边出现媒体同样不再成立;
-    - 库根与扫描范围目录的条目没有容器: 祖先链从它所在的那一层算起, 与扫描时的条件一致;
+    - 库根与扫描范围目录的条目没有容器: 扫描时只看本层, 复验同样只看本层 (含下载进度);
     - 空目录条目: 目录不再为空即拒绝, 执行侧删目录是递归的, 后来落进去的内容会一起没;
-    - 冷静期不重复施加: 条目已经过用户确认, 再按时间否决只会让删除在无提示的情况下少做.
+    - 冷静期不重复施加: 条目已经过用户确认, 再按时间否决只会让删除在无提示的情况下少做;
+    - 只复验磁盘事实, 不重算设置: 体积过小条目按阈值判定, 库设置改了应当重扫, 不在这里兜底.
     """
     if entry.reason is InventoryReason.EMPTY_DIR:
         return _reverify_empty_dir(entry.path)
@@ -336,44 +359,56 @@ def _reverify(entry: InventoryEntry, *, probe: _MediaProbe, container: Path | No
         refusal = probe.subtree_refusal(container)
         if refusal is not None:
             return refusal
-    if probe.ancestors_have_media(container if container is not None else entry.path.parent):
-        return "目录的祖先里出现了媒体"
-    return None
+        return probe.ancestor_refusal(container)
+    judged = entry.path.parent
+    return probe.ancestor_refusal(judged) or probe.level_refusal(judged)
+
+
+def _read_dir(directory: Path) -> tuple[list[os.DirEntry[str]], str | None]:
+    """列目录; 返回子项与读不到的原因.
+
+    目录已经不在磁盘上不算失败: 条目与它一起没了, 交给执行侧按「已不存在」记账 (``changed``).
+    """
+    try:
+        with os.scandir(directory) as scanned:
+            return list(scanned), None
+    except FileNotFoundError:
+        return [], None
+    except OSError as exc:
+        return [], f"目录无法读取: {exc}"
 
 
 def _reverify_empty_dir(directory: Path) -> str | None:
-    try:
-        with os.scandir(directory) as scanned:
-            for _ in scanned:
-                return "目录不再是空的"
-    except OSError as exc:
-        return f"目录无法读取: {exc}"
-    return None
+    children, unreadable = _read_dir(directory)
+    if unreadable is not None:
+        return unreadable
+    return "目录不再是空的" if children else None
 
 
 def _reverify_subtree(directory: Path, *, orphan_scan: OrphanScan) -> str | None:
     """整棵子树的复验: 与扫描时的条件同口径 (冷静期除外).
 
-    判定顺序同样按契约: 垃圾项先于媒体判据 (``._x.mp4`` 是伴生文件, 不是视频); 垃圾项不否决,
-    不可删除的目录子项否决整棵子树.
+    判定顺序同样按契约: 垃圾项先于媒体判据 (``._x.mp4`` 是伴生文件, 不是视频); 可随目录删除的
+    垃圾项不否决, 不可删除的子项 (回收站、版本库、下载进度) 否决整棵子树.
     """
-    try:
-        with os.scandir(directory) as scanned:
-            children = list(scanned)
-    except OSError as exc:
-        return f"目录无法读取: {exc}"
+    children, unreadable = _read_dir(directory)
+    if unreadable is not None:
+        return unreadable
     trailer = orphan_scan.trailer_matcher()
     for child in children:
         path = Path(child.path)
         try:
             child_stat = path.lstat()
+        except FileNotFoundError:
+            # 走到一半消失的子项: 它不可能再是媒体, 跳过.
+            continue
         except OSError as exc:
             return f"子项无法读取: {exc}"
         is_dir = stat.S_ISDIR(child_stat.st_mode)
         junk = classify_junk(path, is_dir=is_dir)
+        if junk is JunkKind.VETO:
+            return f"目录里出现了不可删除的子项: {path.name}"
         if is_dir:
-            if junk is JunkKind.VETO:
-                return f"目录里出现了不可删除的子项: {path.name}"
             refusal = _reverify_subtree(path, orphan_scan=orphan_scan)
             if refusal is not None:
                 return refusal
@@ -387,24 +422,28 @@ def _reverify_subtree(directory: Path, *, orphan_scan: OrphanScan) -> str | None
     return None
 
 
-def _level_has_media(directory: Path, *, orphan_scan: OrphanScan) -> bool:
-    """该目录的直接子项里是否有媒体; 读不到时按有媒体处理 (保守)."""
-    try:
-        with os.scandir(directory) as scanned:
-            children = list(scanned)
-    except OSError:
-        return True
+def _level_facts(directory: Path, *, orphan_scan: OrphanScan) -> _LevelFacts:
+    """该目录的直接子项里的媒体与不可删除的文件子项; 读不到时交给调用方按拒绝处理."""
+    children, unreadable = _read_dir(directory)
+    if unreadable is not None:
+        return _LevelFacts(unreadable=unreadable)
     trailer = orphan_scan.trailer_matcher()
+    has_media = False
+    veto = False
     for child in children:
         path = Path(child.path)
         try:
             is_dir = stat.S_ISDIR(path.lstat().st_mode)
-        except OSError:
-            return True
-        if classify_junk(path, is_dir=is_dir) is not None:
+        except FileNotFoundError:
             continue
-        if is_dir:
+        except OSError as exc:
+            return _LevelFacts(unreadable=f"子项无法读取: {exc}")
+        junk = classify_junk(path, is_dir=is_dir)
+        if junk is JunkKind.VETO and not is_dir:
+            veto = True
+            continue
+        if junk is not None or is_dir:
             continue
         if orphan_scan.is_media(path, trailer=trailer):
-            return True
-    return False
+            has_media = True
+    return _LevelFacts(has_media=has_media, veto=veto)

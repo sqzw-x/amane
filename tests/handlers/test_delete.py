@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -386,13 +387,13 @@ async def test_delete_reverify_scans_each_level_once(
     inventory_id = await _inventory_id(repo, store, lib.id)
 
     scanned: list[Path] = []
-    original = delete_module._level_has_media
+    original = delete_module._level_facts
 
-    def _spy(directory: Path, *, orphan_scan: OrphanScan) -> bool:
+    def _spy(directory: Path, *, orphan_scan: OrphanScan) -> delete_module._LevelFacts:
         scanned.append(directory)
         return original(directory, orphan_scan=orphan_scan)
 
-    monkeypatch.setattr(delete_module, "_level_has_media", _spy)
+    monkeypatch.setattr(delete_module, "_level_facts", _spy)
     result = await DeleteHandler(repo, store, HotSettings()).handle(
         DeletePayload(library_id=lib.id, inventory_id=inventory_id)
     )
@@ -621,3 +622,86 @@ async def test_delete_reverify_stops_at_scan_scope(repo: Repository, tmp_path: P
     assert result.result.reverify_rejected == 0
     assert result.result.deleted == 1
     assert not entry.exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize("shape", ["container", "empty"], ids=["容器被移走", "空目录被删"])
+async def test_delete_reverify_missing_target_is_changed(repo: Repository, tmp_path: Path, shape: str) -> None:
+    """目标已经不在磁盘上时按「已不存在」记账, 不算复验拒绝 — 两者在结果里的含义不同."""
+    lib_root = tmp_path / "lib"
+    target = lib_root / ("old" if shape == "container" else "empty")
+    target.mkdir(parents=True)
+    if shape == "container":
+        (target / "NSFS-039.nfo").write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    shutil.rmtree(target)
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 0
+    assert result.result.failed == 0
+    assert result.result.changed == 1
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_reverify_rejects_download_in_container(repo: Repository, tmp_path: Path) -> None:
+    """容器子树里出现下载进度文件即否决: 与扫描时同口径, 暂停的下载删掉不可恢复."""
+    lib_root = tmp_path / "lib"
+    old = lib_root / "old"
+    (old / "other").mkdir(parents=True)
+    (old / "NSFS-039.nfo").write_bytes(b"x")
+    (old / "other" / "1.jpg").write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    (old / "NSFS-039.mp4.part").write_bytes(b"x")
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 2
+    assert result.result.deleted == 0
+    assert (old / "NSFS-039.nfo").exists()
+    assert (old / "other" / "1.jpg").exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_reverify_rejects_download_at_scope_level(repo: Repository, tmp_path: Path) -> None:
+    """库根与扫描范围层同样只看本层: 本层出现下载进度即不删这一层的残留文件."""
+    lib_root = tmp_path / "lib"
+    scope = lib_root / "old"
+    scope.mkdir(parents=True)
+    entry = scope / "NSFS-039.nfo"
+    entry.write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id, path=str(scope))
+
+    (scope / "NSFS-039.mp4.part").write_bytes(b"x")
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 1
+    assert result.result.deleted == 0
+    assert entry.exists()

@@ -227,7 +227,7 @@ class DeleteResult(BaseModel):
     indexed: int = 0
     """随之删除的 MediaFile 行数."""
     reverify_rejected: int = 0
-    """执行前复验未通过的残留条目数: 扫描之后目录里又落进了正片, 条目不再成立."""
+    """执行前复验未通过的条目数: 残留条目 (目录里又落进了正片) 与空目录条目 (目录不再为空)."""
 
 
 # --- CLEANUP ---
