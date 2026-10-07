@@ -2866,7 +2866,7 @@ export const HotSettingsSchema = {
             $ref: '#/components/schemas/NetworkConfig',
             default: {
                 timeout: 10,
-                max_retries: 3,
+                max_retries: 2,
                 max_clients: 50,
                 browser: {
                     backend: 'off',
@@ -5351,7 +5351,7 @@ export const NetworkConfigSchema = {
             maximum: 10,
             minimum: 0,
             title: 'Max Retries',
-            default: 3
+            default: 2
         },
         max_clients: {
             type: 'integer',

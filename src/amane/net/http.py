@@ -144,7 +144,7 @@ class WebClient:
         *,
         proxy: str | None = None,
         timeout: float = 30.0,
-        max_retries: int = 3,
+        max_retries: int = 2,
         max_clients: int = 50,
         limiters: RateLimiters,
         same_origin_referer_hosts: frozenset[str] = frozenset(),
@@ -183,15 +183,16 @@ class WebClient:
     ) -> Response:
         """``ok_statuses`` 额外视为成功 (例如 RSS 304), 不重试、不当失败. 重试用尽后抛 ``RequestError``.
 
-        ``max_attempts`` 向下覆盖构造期的 ``max_retries``, 供一次性的探测使用. ``max_retries`` 实为总
-        **尝试次数** (``3`` → 最多发 3 次请求), 名字为兼容既有配置保留; 两者都至少发一次请求, 配置 0
-        表示不重试而不是一次都不发.
+        ``max_retries`` 是首次请求之外的**重试次数** (``2`` → 最多发 3 次请求); ``max_attempts`` 是
+        **总尝试次数** 上限, 供一次性的探测向下覆盖 (探测传 1 表示只发一次). 两者都至少发一次请求,
+        配置 0 表示不重试而不是一次都不发.
         """
         host = httpx.URL(url).host
         headers = _with_same_origin_referer(host, headers, self._same_origin_referer_hosts)
         await self._limiters.get(host).acquire()
 
-        attempts = max(1, self._max_retries if max_attempts is None else min(max_attempts, self._max_retries))
+        total_attempts = 1 + self._max_retries
+        attempts = max(1, total_attempts if max_attempts is None else min(max_attempts, total_attempts))
         t0 = time.monotonic()
         failure: RequestFailure | None = None
         last_resp: Response | None = None

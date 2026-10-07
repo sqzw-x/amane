@@ -8903,7 +8903,7 @@
             "$ref": "#/components/schemas/NetworkConfig",
             "default": {
               "timeout": 10.0,
-              "max_retries": 3,
+              "max_retries": 2,
               "max_clients": 50,
               "browser": {
                 "backend": "off",
@@ -11349,7 +11349,7 @@
             "maximum": 10.0,
             "minimum": 0.0,
             "title": "Max Retries",
-            "default": 3
+            "default": 2
           },
           "max_clients": {
             "type": "integer",

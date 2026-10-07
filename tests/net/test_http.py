@@ -114,15 +114,16 @@ class TestSameOriginReferer:
 
 
 class TestRequestAttempts:
-    """重试次数: ``max_attempts`` 向下覆盖配置值, 但两者都至少发一次请求."""
+    """重试次数: 配置值是首次请求之外的重试次数; ``max_attempts`` 是总次数上限, 向下覆盖."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("max_retries", "max_attempts", "status", "expected_calls", "raises"),
         [
-            # 未覆盖: 按配置的重试次数.
+            # 未覆盖: 按配置的重试次数 (首次请求之外), 因此最多 1 + 3 次.
             (3, None, 200, 1, False),
-            (3, None, 503, 3, True),
+            (3, None, 503, 4, True),
+            (2, None, 503, 3, True),
             # 配置 0 表示不重试, 不是一次都不发.
             (0, None, 200, 1, False),
             (0, None, 503, 1, True),
