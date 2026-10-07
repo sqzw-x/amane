@@ -3,7 +3,7 @@
   "manageTitle": "Feed sources",
   "empty": "No feeds yet",
   "goToManage": "Manage feed sources",
-  "searchSources": "Filter by name, URL, or group",
+  "searchSources": "Filter by name, address, or group",
   "newFeed": "Add feed",
   "editFeed": "Edit feed",
   "historyEmpty": "No fetch history yet",
@@ -47,7 +47,7 @@
   },
   "importOpml": "Import OPML",
   "importTitle": "Import from OPML",
-  "importHint": "Reads xmlUrl; outlines without a URL become groups. Optional prefix becomes the top-level folder. Fetch starts immediately after import",
+  "importHint": "Reads the feed address; group titles without one become groups. Optional prefix becomes the top-level folder. Fetch starts immediately after import",
   "importPrefix": "Group prefix",
   "importPrefixPlaceholder": "rsshub",
   "importPrefixHint": "Optional. Prepended to OPML folder paths as a top-level group for this import",
@@ -64,8 +64,8 @@
   "fields": {
     "name": "Name",
     "namePlaceholder": "Leave empty to use the feed title",
-    "nameHint": "Optional. If empty, the first successful fetch writes the feed’s own title",
-    "url": "Feed URL",
+    "nameHint": "Optional. If empty, the first successful fetch writes the source’s own title",
+    "url": "Feed address",
     "urlPlaceholder": "https://example.com/rss.xml",
     "group": "Group",
     "groupPlaceholder": "jav/rsshub",
@@ -77,7 +77,7 @@
     "numberPattern": "Number regex",
     "numberPatternHint": "Overrides built-in number extraction. First capture group is used if present",
     "contentType": "Content Type",
-    "contentTypeHint": "",
+    "contentTypeHint": "Inferred from the item title and number when set to auto",
     "contentTypeAuto": "Infer automatically",
     "useCache": "Use Cache",
     "useCacheHint": "Checked uses that cache; otherwise refetch",
@@ -88,8 +88,8 @@
     "cacheTrans": "Translation Cache",
     "enabled": "Enabled",
     "enabledHint": "Whether to poll on a schedule",
-    "autoEnqueue": "Auto-submit scrape tasks",
-    "autoEnqueueHint": ""
+    "autoEnqueue": "Auto-scrape new items",
+    "autoEnqueueHint": "Only applies to new items whose number can be parsed"
   },
   "units": {
     "hours": "hours",
@@ -107,7 +107,7 @@
   },
   "columns": {
     "name": "Name",
-    "url": "URL",
+    "url": "Address",
     "group": "Group",
     "actions": "Actions"
   },
@@ -116,8 +116,8 @@
     "any": "Any",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "autoEnqueue": "Auto enqueue",
-    "discoverOnly": "Discover only"
+    "autoEnqueue": "Auto-scrape new items",
+    "discoverOnly": "No auto-scrape"
   },
   "labels": {
     "interval": "Interval",
@@ -135,7 +135,7 @@
     "noNumber": "No number parsed",
     "inLibrary": "In library",
     "notInLibrary": "Not in library",
-    "discoverOnly": "Discover only",
+    "discoverOnly": "No auto-scrape",
     "ignored": "Ignored"
   },
   "actions": {
@@ -145,11 +145,11 @@
     "pollSelected": "Fetch selected",
     "enableSelected": "Enable",
     "disableSelected": "Disable",
-    "enableAutoEnqueueSelected": "Auto enqueue",
-    "disableAutoEnqueueSelected": "Discover only",
+    "enableAutoEnqueueSelected": "Auto-scrape new items",
+    "disableAutoEnqueueSelected": "No auto-scrape",
     "rescrape": "Rescrape",
     "ignore": "Ignore",
-    "unignore": "Restore",
+    "unignore": "Unignore",
     "markRead": "Mark as read",
     "markUnread": "Mark as unread",
     "setIgnoreKeywords": "Set ignore keywords"

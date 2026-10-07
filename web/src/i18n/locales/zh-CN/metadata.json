@@ -12,7 +12,7 @@
     "hasSubtitle": "中字",
     "uncensored": "无码",
     "mosaic": "马赛克标记",
-    "definition": "清晰度",
+    "definition": "分辨率",
     "contentType": "类型",
     "any": "不限",
     "yes": "是",
@@ -43,8 +43,8 @@
   "columns": {
     "number": "番号",
     "title": "标题",
-    "studio": "厂商",
-    "release": "发行日",
+    "studio": "制作商",
+    "release": "发行日期",
     "score": "评分",
     "actions": "操作",
     "created": "创建时间",
@@ -55,16 +55,16 @@
     "scrape": "重新刮削",
     "batchScrape": "批量重新刮削",
     "batchDelete": "批量删除",
-    "confirmBatchDeleteTitle": "删除选中的元数据？",
-    "confirmBatchDeleteDesc": "将永久删除选中的元数据条目，此操作不可撤销"
+    "confirmBatchDeleteTitle": "删除选中的影片？",
+    "confirmBatchDeleteDesc": "将永久删除选中的影片, 此操作不可撤销"
   },
   "edit": {
-    "title": "编辑元数据"
+    "title": "编辑影片"
   },
   "detail": {
     "fields": {
       "title": "标题",
-      "studio": "厂商",
+      "studio": "制作商",
       "publisher": "发行商",
       "release": "发行日期",
       "runtime": "时长",
@@ -78,7 +78,7 @@
       "poster": "海报",
       "thumb": "封面",
       "extrafanart": "剧照",
-      "sourceUrls": "外部链接"
+      "sourceUrls": "来源链接"
     },
     "connections": "关联文件",
     "noFiles": "无关联文件",
@@ -90,18 +90,14 @@
     "addUserTag": "添加用户标签",
     "removeUserTag": "移除用户标签",
     "applyAddUserTags": "添加 {{count}} 个",
-    "applyAddUserTags_one": "添加 {{count}} 个",
-    "applyAddUserTags_other": "添加 {{count}} 个",
     "applyRemoveUserTags": "移除 {{count}} 个",
-    "applyRemoveUserTags_one": "移除 {{count}} 个",
-    "applyRemoveUserTags_other": "移除 {{count}} 个",
     "createUserTag": "创建「{{name}}」",
     "detachUserTag": "从此影片移除",
     "comments": "评论",
     "commentPlaceholder": "写下评论…",
     "addComment": "发表评论",
     "editComment": "编辑评论",
-    "commentEditedAt": "（已编辑 {{time}}）",
+    "commentEditedAt": "(已编辑 {{time}})",
     "commentJustNow": "刚刚",
     "commentSortLabel": "按编辑时间",
     "commentSortNewest": "新 → 旧",
@@ -113,12 +109,12 @@
     "coverUnavailable": "封面不可用",
     "playback": "播放",
     "playbackFailed": "无法播放此码流",
-    "playbackFailedWithStatus": "无法播放此码流（HTTP {{status}}）",
-    "playbackFailedHls": "无法播放此码流（hls.js 错误类型 {{details}}）：{{url}}",
-    "playbackFailedHlsWithStatus": "无法播放此码流（hls.js 错误类型 {{details}}，HTTP {{status}}）：{{url}}",
+    "playbackFailedWithStatus": "无法播放此码流(HTTP {{status}})",
+    "playbackFailedHls": "无法播放此码流(播放器错误 {{details}}): {{url}}",
+    "playbackFailedHlsWithStatus": "无法播放此码流(播放器错误 {{details}}, HTTP {{status}}): {{url}}",
     "playbackUnsupported": "此播放源的媒体类型无法在页面内播放",
     "playbackUnavailable": "该播放源当前不可用",
-    "playbackUnavailableOption": "{{name}}（当前不可用）",
+    "playbackUnavailableOption": "{{name}}(当前不可用)",
     "playbackSourcesFailed": "无法加载播放源",
     "playbackStreamsFailed": "无法加载流列表",
     "playbackSourceLabel": "播放源",
@@ -151,14 +147,14 @@
   },
   "browse": {
     "title": "分类浏览",
-    "subtitle": "按演员、标签、厂商等浏览影片",
+    "subtitle": "按演员、标签、制作商等浏览影片",
     "searchPlaceholder": "搜索分类名称…",
     "count": "{{count}} 部",
     "kinds": {
       "actor": "演员",
       "director": "导演",
       "tag": "标签",
-      "studio": "厂商",
+      "studio": "制作商",
       "publisher": "发行商",
       "series": "系列",
       "user_tag": "用户标签"
@@ -185,7 +181,7 @@
       "cup": "罩杯",
       "overview": "简介",
       "tagline": "标语",
-      "sourceUrl": "来源",
+      "sourceUrl": "来源链接",
       "images": "头像",
       "cm": "{{value}} cm",
       "birthdayFormat": "格式: 2000-01-01 或 2000/1/1 或 2000年1月1日"
@@ -230,10 +226,10 @@
     "batchClearPersonFailed": "{{count}} 位清空失败",
     "scrapeMissingOnPage": "刮削本页空缺",
     "noneMissing": "本页无空缺",
-    "birthdayWithAge": "{{date}}（{{age}}岁）",
+    "birthdayWithAge": "{{date}}({{age}}岁)",
     "ageShort": "{{age}}岁",
     "cupShort": "{{cup}}罩杯",
-    "filmography": "出演作品（{{count}}）",
+    "filmography": "出演作品({{count}})",
     "noPhoto": "暂无头像",
     "goToLibrary": "转到片库",
     "editTitle": "编辑演员",
@@ -244,24 +240,24 @@
       "success": "头像已更新"
     },
     "genderHint": "未知时仅查询通用来源, 避免误匹配. 部分来源可自动获取此字段",
-    "genderUnknownHint": "",
-    "aliasesHint": "回车或逗号添加，点 × 删除",
+    "genderUnknownHint": "无法判断时选此项; 刮削只请求同时覆盖两性的站点",
+    "aliasesHint": "回车或逗号添加, 点 × 删除",
     "setDisplayName": "设为展示名",
     "setDisplayNameBody": "将「{{alias}}」设为「{{name}}」的展示名？「{{name}}」会保留为别名",
     "setDisplayNameDone": "已设为展示名",
     "imagesEdit": "头像 URL",
-    "imagesEditHint": "第一张为主图（详情大图与头像墙）。拖拽卡片调整顺序，点图预览",
+    "imagesEditHint": "第一张为主图(详情大图与头像墙). 拖拽卡片调整顺序, 点图预览",
     "primaryImage": "主图",
     "reorderImage": "拖拽排序头像",
     "removeImage": "删除这张头像",
     "rawSources": "刮削来源快照",
-    "rawSourcesHint": "",
+    "rawSourcesHint": "各站原始快照, 只读; 供离线重新聚合",
     "viewAll": "查看全部 {{count}} 位"
   },
-  "notFound": "未找到元数据",
-  "invalidId": "无效的元数据 ID",
-  "confirmDelete": "确定删除元数据 #{{id}}？此操作不可撤销",
-  "empty": "暂无元数据记录",
+  "notFound": "未找到影片",
+  "invalidId": "无效的影片 ID",
+  "confirmDelete": "确定删除影片 #{{id}}？此操作不可撤销",
+  "empty": "暂无影片记录",
   "editor": {
     "title": {
       "label": "标题"
@@ -289,7 +285,7 @@
       "label": "系列"
     },
     "plot": {
-      "label": "简介"
+      "label": "剧情"
     },
     "directors": {
       "label": "导演"
@@ -313,26 +309,26 @@
       "label": "外部 ID"
     },
     "source_urls": {
-      "label": "来源 URL"
+      "label": "来源链接"
     }
   },
   "manage": {
     "name": "名称",
     "count": "数量",
     "mergeGuide": "勾选来源后点击目标行的合并图标",
-    "mergeNeedSources": "请先勾选要合并的来源项，再点目标项的合并",
+    "mergeNeedSources": "请先勾选要合并的来源项, 再点目标项的合并",
     "merge": "合并到此项",
     "mergeConfirm": "确认合并",
     "mergeConfirmBody": "将把 {{count}} 个来源合并到目标项",
-    "deleteFacetBody": "将从所有影片中移除「{{name}}」, 并加入黑名单, 后续刮削时自动剔除",
+    "deleteFacetBody": "将从所有影片中移除「{{name}}」, 并加入剔除名单, 后续刮削时自动剔除",
     "deleteUserTagBody": "确定永久删除用户标签 「{{name}}」？将从所有影片上移除该标签",
-    "rulesTitle": "用户规则",
-    "rulesHint": "刮削时自动按别名重命名并剔除黑名单. 移除规则不会影响现有影片",
+    "rulesTitle": "分类规则",
+    "rulesHint": "刮削时自动按别名重命名并剔除. 移除规则不会影响现有影片",
     "rulesEmpty": "暂无规则",
     "ruleSource": "源名称",
     "ruleAction": "动作",
     "ruleTarget": "目标",
-    "ruleBlock": "黑名单",
+    "ruleBlock": "剔除",
     "ruleAlias": "别名",
     "ruleRemove": "移除规则"
   },
@@ -344,12 +340,10 @@
     "revertAll": "全部回退",
     "current": "当前",
     "changedCount": "已修改 {{count}} 个字段",
-    "changedCount_one": "已修改 {{count}} 个字段",
-    "changedCount_other": "已修改 {{count}} 个字段",
     "noChanges": "无修改"
   },
   "lock": {
-    "manage": "元数据锁定",
+    "manage": "字段锁定",
     "all": "全部锁定",
     "clearAll": "全部解除",
     "locked": "已锁定",

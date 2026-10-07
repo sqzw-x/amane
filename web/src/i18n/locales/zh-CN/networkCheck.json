@@ -33,9 +33,9 @@
   },
   "skip": {
     "unknown_source": "来源不存在或未启用",
-    "no_http_upstream": "本源不经 HTTP 取数据 (离线镜像)",
+    "no_http_upstream": "该来源不经网络取数据, 读取离线镜像",
     "missing_credential": "缺少凭据, 刮削时会跳过",
-    "undeclared": "该来源未声明探测方式",
+    "undeclared": "未提供可探测的地址",
     "no_url": "插件未声明来源 URL"
   },
   "kind": {

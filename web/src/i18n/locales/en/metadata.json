@@ -12,7 +12,7 @@
     "hasSubtitle": "Chinese subtitles",
     "uncensored": "Uncensored",
     "mosaic": "Mosaic mark",
-    "definition": "Definition",
+    "definition": "Resolution",
     "contentType": "Content type",
     "any": "Any",
     "yes": "Yes",
@@ -55,12 +55,12 @@
     "scrape": "Re-scrape",
     "batchScrape": "Batch Re-scrape",
     "batchDelete": "Batch Delete",
-    "confirmBatchDeleteTitle": "Delete selected metadata?",
-    "confirmBatchDeleteDesc_one": "This will permanently delete the selected metadata entries",
-    "confirmBatchDeleteDesc_other": "This will permanently delete the selected metadata entries"
+    "confirmBatchDeleteTitle": "Delete selected films?",
+    "confirmBatchDeleteDesc_one": "This will permanently delete the selected films",
+    "confirmBatchDeleteDesc_other": "This will permanently delete the selected films"
   },
   "edit": {
-    "title": "Edit Metadata"
+    "title": "Edit film"
   },
   "detail": {
     "fields": {
@@ -79,7 +79,7 @@
       "poster": "Poster",
       "thumb": "Cover",
       "extrafanart": "Fanart",
-      "sourceUrls": "External Links"
+      "sourceUrls": "Source Links"
     },
     "connections": "Related Files",
     "noFiles": "No related files",
@@ -113,8 +113,8 @@
     "playback": "Playback",
     "playbackFailed": "This stream could not be played",
     "playbackFailedWithStatus": "This stream could not be played (HTTP {{status}})",
-    "playbackFailedHls": "This stream could not be played (hls.js error type {{details}}): {{url}}",
-    "playbackFailedHlsWithStatus": "This stream could not be played (hls.js error type {{details}}, HTTP {{status}}): {{url}}",
+    "playbackFailedHls": "This stream could not be played (player error {{details}}): {{url}}",
+    "playbackFailedHlsWithStatus": "This stream could not be played (player error {{details}}, HTTP {{status}}): {{url}}",
     "playbackUnsupported": "This source's media type cannot play on this page",
     "playbackUnavailable": "This source is currently unavailable",
     "playbackUnavailableOption": "{{name}} (currently unavailable)",
@@ -163,7 +163,7 @@
       "series": "Series",
       "user_tag": "User tags"
     },
-    "filterInMeta": "Filter in library",
+    "filterInMeta": "Filter in films",
     "scrapeActor": "Scrape",
     "scrapeQueued": "Actor scrape task queued",
     "person": {
@@ -185,7 +185,7 @@
       "cup": "Cup",
       "overview": "Overview",
       "tagline": "Tagline",
-      "sourceUrl": "Source",
+      "sourceUrl": "Source link",
       "images": "Photos",
       "cm": "{{value}} cm",
       "birthdayFormat": "Format: 2000-01-01, 2000/1/1, or 2000年1月1日"
@@ -245,7 +245,7 @@
     "cupShort": "Cup {{cup}}",
     "filmography": "Filmography ({{count}})",
     "noPhoto": "No photo",
-    "goToLibrary": "Go to library",
+    "goToLibrary": "Go to films",
     "editTitle": "Edit actor",
     "lockManage": "Profile field locks",
     "cropAvatar": {
@@ -254,7 +254,7 @@
       "success": "Photo updated"
     },
     "genderHint": "When unknown, only generic sources are queried to avoid false matches. Some sources can fill this field automatically",
-    "genderUnknownHint": "",
+    "genderUnknownHint": "Use when the gender cannot be determined; scraping only queries sites covering both",
     "aliasesHint": "Press Enter or comma to add; click × to remove",
     "setDisplayName": "Set as display name",
     "setDisplayNameBody": "Make \"{{alias}}\" the display name of \"{{name}}\"? \"{{name}}\" will be kept as an alias",
@@ -265,17 +265,17 @@
     "reorderImage": "Drag to reorder photo",
     "removeImage": "Remove this photo",
     "rawSources": "Scrape source snapshots",
-    "rawSourcesHint": "",
+    "rawSourcesHint": "Raw per-site snapshots, read-only; used for offline re-aggregation",
     "filmography_one": "Filmography ({{count}})",
     "filmography_other": "Filmography ({{count}})",
     "viewAll": "View all {{count}}",
     "viewAll_one": "View all {{count}}",
     "viewAll_other": "View all {{count}}"
   },
-  "notFound": "Metadata not found",
-  "invalidId": "Invalid metadata ID",
-  "confirmDelete": "Delete metadata #{{id}}? This cannot be undone",
-  "empty": "No metadata records",
+  "notFound": "Film not found",
+  "invalidId": "Invalid film ID",
+  "confirmDelete": "Delete film #{{id}}? This cannot be undone",
+  "empty": "No films",
   "editor": {
     "title": {
       "label": "Title"
@@ -327,7 +327,7 @@
       "label": "External IDs"
     },
     "source_urls": {
-      "label": "Source URLs"
+      "label": "Source Links"
     }
   },
   "manage": {
@@ -340,15 +340,15 @@
     "mergeConfirmBody": "Merge {{count}} sources into the target",
     "mergeConfirmBody_one": "Merge {{count}} source into the target",
     "mergeConfirmBody_other": "Merge {{count}} sources into the target",
-    "deleteFacetBody": "Remove \"{{name}}\" from all titles and add it to the blocklist; later scrapes will drop it",
+    "deleteFacetBody": "Remove \"{{name}}\" from all titles and add it to the drop list; later scrapes will drop it",
     "deleteUserTagBody": "Permanently delete user tag \"{{name}}\"? It will be removed from all titles",
-    "rulesTitle": "User rules",
-    "rulesHint": "Scrapes rename by alias and drop blocklist names. Removing a rule does not change existing titles",
+    "rulesTitle": "Facet rules",
+    "rulesHint": "Scrapes rename by alias and drop excluded names. Removing a rule does not change existing titles",
     "rulesEmpty": "No rules yet",
     "ruleSource": "Source",
     "ruleAction": "Action",
     "ruleTarget": "Target",
-    "ruleBlock": "Block",
+    "ruleBlock": "Drop",
     "ruleAlias": "Alias",
     "ruleRemove": "Remove rule"
   },
@@ -365,7 +365,7 @@
     "changedCount_other": "{{count}} field(s) changed"
   },
   "lock": {
-    "manage": "Metadata Locks",
+    "manage": "Field Locks",
     "all": "Lock All",
     "clearAll": "Unlock All",
     "locked": "Locked",

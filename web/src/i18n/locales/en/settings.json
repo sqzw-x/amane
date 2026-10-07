@@ -17,14 +17,14 @@
   },
   "client": {
     "title": "Client settings",
-    "unavailable": "This page is only available inside the Android shell",
-    "bridgeMissing": "The shell is not responding to page requests. Reinstall or update the app",
+    "unavailable": "This page is only available inside the Android app",
+    "bridgeMissing": "The app is not responding to page requests. Reinstall or update it",
     "server": "Current server",
     "switchServer": "Switch server",
     "webView": "System WebView",
-    "chromium": "Rendering engine",
+    "chromium": "Chromium version",
     "webViewUnknown": "Unknown",
-    "chromiumOutdated": "Rendering engine Chromium {{major}} is below the {{min}} this frontend needs. Update the system WebView, otherwise the layout and styles will be incomplete",
+    "chromiumOutdated": "Chromium {{major}} is below the {{min}} this frontend needs. Update the system WebView, otherwise the layout and styles will be incomplete",
     "updateWebView": "Open the WebView store page",
     "appVersion": "APP version"
   },
@@ -148,7 +148,7 @@
         }
       },
       "field_blacklist": {
-        "label": "Field Blacklist",
+        "label": "Field Exclusions",
         "description": "Sites a field must not use",
         "options": {
           "title": "Title",
@@ -309,7 +309,7 @@
           },
           "browser_backend": {
             "label": "Browser Backend",
-            "description": "Overrides the global backend; off disables the browser for this source",
+            "description": "Overrides the global backend; \"off\" disables the browser for this source",
             "options": {
               "off": "Off",
               "patchright": "Patchright",
@@ -323,10 +323,10 @@
           },
           "api_token": {
             "label": "API Token",
-            "description": ""
+            "description": "Access token for this site"
           },
           "official_routes": {
-            "label": "Manufacturer Routes",
+            "label": "Maker routes",
             "description": "Map title prefixes to studios",
             "$": {
               "options": {
@@ -455,7 +455,7 @@
       },
       "max_retries": {
         "label": "Max Retries",
-        "description": "Maximum retry attempts on request failure"
+        "description": "Retry limit on request failure, excluding the first attempt; 0 sends a single request"
       },
       "max_clients": {
         "label": "Max Connections",
@@ -464,7 +464,7 @@
       "browser": {
         "label": "Browser Rendering",
         "backend": {
-          "label": "Backend",
+          "label": "Browser backend",
           "options": {
             "off": "Off",
             "patchright": "Patchright",
@@ -519,7 +519,7 @@
     "watcher": {
       "use_polling": {
         "label": "Polling Mode",
-        "description": "Use polling instead of inotify (for network filesystems)"
+        "description": "Use polling instead of system events (for network filesystems)"
       },
       "debounce_seconds": {
         "label": "Debounce Window",
@@ -588,7 +588,7 @@
       },
       "api_key": {
         "label": "API Key",
-        "description": ""
+        "description": "Upstream service key; stored in the local config only"
       },
       "api_type": {
         "label": "API Type",
@@ -698,20 +698,20 @@
         "description": "See the provider's docs; too high may trigger rate limiting"
       },
       "sql_timeout_ms": {
-        "label": "SQL Timeout (ms)",
+        "label": "Query timeout (ms)",
         "description": "Default timeout for queries that run without approval; queries that exceed it need user approval"
       },
       "result_cache_ttl_s": {
-        "label": "Result Cache TTL (s)",
-        "description": "In-memory TTL for delivered results; expired entries are re-run"
+        "label": "Result cache duration (s)",
+        "description": "In-memory lifetime of delivered results; expired entries are re-run"
       },
       "result_cache_max_entries": {
         "label": "Result Cache Capacity",
         "description": "Max in-memory result entries (LRU)"
       },
       "history_ttl_s": {
-        "label": "Session History TTL (s)",
-        "description": "In-memory message_history TTL; reloads from on-disk messages.json after eviction"
+        "label": "Session history memory duration (s)",
+        "description": "In-memory lifetime of session history; reloaded from disk on demand after eviction"
       },
       "history_max_sessions": {
         "label": "Session History Capacity",
@@ -736,7 +736,7 @@
       },
       "read_timeout": {
         "label": "Query Timeout (s)",
-        "description": ""
+        "description": "Timeout in seconds for a single query"
       },
       "download_url": {
         "label": "Data package URL",
@@ -756,13 +756,13 @@
       },
       "corners": {
         "label": "Watermark position",
-        "description": "Multiple in the same corner stack in order: subtitle → uncensored → cracked → leaked → definition",
+        "description": "Multiple in the same corner stack in order: subtitle → uncensored → cracked → leaked → resolution",
         "options": {
           "subtitle": "Subtitle",
           "uncensored": "Uncensored",
           "cracked": "Cracked",
           "leaked": "Leaked",
-          "definition": "Definition"
+          "definition": "Resolution"
         },
         "$": {
           "options": {

@@ -1,6 +1,6 @@
 {
   "landingHint": "用自然语言查询与管理片库",
-  "continueHint": "继续提问，或从左侧切换会话",
+  "continueHint": "继续提问, 或从左侧切换会话",
   "newSession": "新对话",
   "sessions": "会话",
   "placeholder": "描述你想查的内容…",
@@ -14,7 +14,7 @@
   "approvalRejected": "已拒绝",
   "approvalRejectReason": "用户拒绝执行",
   "presets": "查询预设",
-  "presetsEmpty": "暂无可查看的预设。对话中交付结果后会自动出现在这里",
+  "presetsEmpty": "暂无可查看的预设. 对话中交付结果后会自动出现在这里",
   "disabled": "请先在设置中配置 Amane",
   "you": "你",
   "assistant": "Amane",

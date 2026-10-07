@@ -5,7 +5,7 @@
   "editSchedule": "编辑定时任务",
   "fields": {
     "name": "名称",
-    "namePlaceholder": "例如：每晚全量扫描",
+    "namePlaceholder": "例如: 每晚全量扫描",
     "cron": "运行时间",
     "enabled": "启用"
   },
@@ -42,15 +42,15 @@
     },
     "summary": {
       "intervalMinutes": "每 {{every}} 分钟",
-      "intervalHours": "每 {{every}} 小时（第 {{minute}} 分钟）",
-      "intervalHoursOnHour": "每小时（第 {{minute}} 分钟）",
+      "intervalHours": "每 {{every}} 小时(第 {{minute}} 分钟)",
+      "intervalHoursOnHour": "每小时(第 {{minute}} 分钟)",
       "daily": "每天 {{time}}",
       "weekly": "每周{{days}} {{time}}",
       "monthly": "每月 {{day}} 日 {{time}}"
     }
   },
   "payload": {
-    "title": "任务内容",
+    "title": "参数",
     "joiner": " · ",
     "listJoiner": "、",
     "unset": "沿用配置",

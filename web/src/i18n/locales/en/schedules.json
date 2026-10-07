@@ -50,7 +50,7 @@
     }
   },
   "payload": {
-    "title": "Routine",
+    "title": "Parameters",
     "joiner": " · ",
     "listJoiner": ", ",
     "unset": "Use configured default",

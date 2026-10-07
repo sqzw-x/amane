@@ -15,9 +15,9 @@
     "browse": "Browse",
     "saving": "Saving...",
     "clear": "Clear",
-    "selectFile": "",
-    "selectDirectory": "",
-    "selectPath": "",
+    "selectFile": "Choose file",
+    "selectDirectory": "Choose directory",
+    "selectPath": "Choose path",
     "submit": "Submit",
     "scrapeNormal": "Scrape",
     "scrapeNormalDesc": "Do not re-fetch cached data",
@@ -44,7 +44,7 @@
     "client": "Client",
     "logs": "Logs",
     "networkCheck": "Network Check",
-    "meta": "Library",
+    "meta": "Films",
     "actors": "Actors",
     "catalog": "Catalog",
     "libraries": "Libraries",
@@ -102,8 +102,8 @@
   "toast": {
     "scrapeStarted": "Scrape task queued",
     "scanStarted": "Scan started",
-    "metadataUpdated": "Metadata updated",
-    "metadataDeleted": "Metadata deleted",
+    "metadataUpdated": "Film updated",
+    "metadataDeleted": "Film deleted",
     "configSaved": "Configuration saved",
     "watchPathAdded": "Watch path added",
     "watchPathRemoved": "Watch path removed",
@@ -124,7 +124,7 @@
     "feedPolled": "Feed fetched",
     "operationFailed": "Operation failed",
     "taskCreated": "Task queued",
-    "organizeStarted": "",
+    "organizeStarted": "Organize task submitted",
     "userTagCreated": "User tag created",
     "userTagExists": "User tag already exists",
     "userTagAttached": "User tag attached",
@@ -132,7 +132,7 @@
     "userTagBatchUpdated_other": "User tags updated on {{count}} titles",
     "userTagDetached": "User tag removed",
     "userTagDeleted": "User tag deleted",
-    "facetDeleted": "Facet deleted and blocklisted",
+    "facetDeleted": "Facet deleted and dropped",
     "facetRuleDeleted": "Rule removed",
     "commentCreated": "Comment posted",
     "commentUpdated": "Comment saved",
@@ -165,5 +165,11 @@
     "serverSettings": "Server settings",
     "invalidToken": "Invalid token. Please check and retry",
     "connectionFailed": "Cannot reach the server. Make sure it is running"
+  },
+  "errorBoundary": {
+    "title": "Page error",
+    "description": "Rendering this page threw an uncaught exception; details below",
+    "retry": "Retry",
+    "switchServer": "Switch server"
   }
 }

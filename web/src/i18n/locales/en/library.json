@@ -27,7 +27,7 @@
     "path": "Path",
     "status": "Status",
     "size": "Size",
-    "metadata": "Metadata",
+    "metadata": "Film",
     "updated": "Updated",
     "actions": "Actions"
   },
@@ -82,12 +82,12 @@
     "label": "Automation",
     "hint": "Watching and auto-scrape; organize stays manual",
     "none": "Off",
-    "watch": "Ingest only",
-    "scrape": "Ingest and scrape"
+    "watch": "Watch only",
+    "scrape": "Watch and scrape"
   },
   "ingest": {
-    "label": "File watching",
-    "hint": "Webhook requires a CloudDrive2 membership; better than watching the mount",
+    "label": "File discovery",
+    "hint": "Webhook requires a CloudDrive2 membership; performs better than watching the mount path",
     "native": "Local files",
     "clouddrive": "CD2 webhook",
     "cloudPath": "CloudDrive path",
@@ -101,19 +101,19 @@
   "placeholder": "/path/to/media/directory",
   "fieldRecursive": "Recursive",
   "fieldPatterns": "Patterns",
-  "fieldPatternsHint": "Comma-separated globs, e.g. *.mp4,*.mkv",
+  "fieldPatternsHint": "Comma-separated wildcards, e.g. *.mp4,*.mkv",
   "fieldTrailerPattern": "Trailer filename regex",
   "fieldTrailerPatternHint": "Matches are treated as trailers and skipped during scan and watch",
-  "fieldBlacklistPatterns": "Blacklist regexes",
+  "fieldBlacklistPatterns": "File blacklist regexes",
   "fieldBlacklistPatternsHint": "One regex per line; matches are treated as junk and listed as cleanup candidates",
   "fieldMinFileSize": "Minimum video size",
   "fieldMinFileSizeHint": "Videos smaller than this are treated as junk and listed as cleanup candidates",
   "fieldSubtitleExtensions": "Subtitle extensions",
   "fieldSubtitleExtensionsHint": "Comma-separated",
-  "fieldMoveMode": "File Operation Mode",
+  "fieldMoveMode": "Organize Mode",
   "fieldWriteNfo": "Write NFO",
   "fieldCopyResources": "Copy on organize",
-  "fieldCopyResourcesHint": "",
+  "fieldCopyResourcesHint": "Copy downloaded resources to the library path when organizing",
   "copyResource": {
     "thumb": "Cover",
     "poster": "Poster",
@@ -129,12 +129,12 @@
   "fieldVideoTemplate": "Video Path Template",
   "fieldVideoTemplateHint": "Relative or absolute path; see placeholder badges below",
   "fieldLinkTemplate": "Link Path Template",
-  "fieldLinkTemplateHint": "Organize creates a strm/symlink here. Must be an absolute path outside the library",
+  "fieldLinkTemplateHint": "Organize creates an STRM file or symbolic link here. Must be an absolute path outside the library",
   "fieldLinkTemplatePlaceholder": "e.g. /local/emby/{studio}/{number}/{number}.{ext}",
   "fieldLinkMode": "Link Mode",
   "linkMode": {
     "strm": "STRM file",
-    "symlink": "Symlink"
+    "symlink": "Symbolic Link"
   },
   "fieldStrmContentTemplate": "STRM content template",
   "fieldStrmContentTemplateHint": "Applies when the link mode is STRM. Default writes the video file absolute path",
@@ -180,7 +180,7 @@
     }
   },
   "tpl": {
-    "thumb": "Thumbnail Template",
+    "thumb": "Cover Template",
     "poster": "Poster Template",
     "fanart": "Fanart Template",
     "extrafanart": "Extrafanart Template",
@@ -211,7 +211,7 @@
     "confirmLabel": "Delete",
     "deleteSelected": "Delete selected",
     "reason": {
-      "blacklist": "Blacklist",
+      "blacklist": "File blacklist",
       "undersized": "Too small",
       "empty_dir": "Empty directory",
       "explicit": "Selected"

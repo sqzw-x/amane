@@ -57,7 +57,7 @@
   },
   "report": {
     "headline": "Failure",
-    "metadata": "Metadata",
+    "metadata": "Film",
     "viewMetadata": "Open #{{id}}",
     "actor": "Actor",
     "viewActor": "Open #{{id}}",
@@ -132,12 +132,13 @@
   },
   "batchScrape": {
     "toggle": "Batch Scrape",
-    "templateLabel": "Liquid Template",
+    "templateLabel": "Template",
     "previewLabel": "Preview",
     "previewEmpty": "Enter a template to see preview",
     "submit": "Submit {{count}} task(s)",
     "submit_one": "Submit {{count}} task",
-    "submit_other": "Submit {{count}} tasks"
+    "submit_other": "Submit {{count}} tasks",
+    "templateDescription": "Write numbers in Liquid syntax; loops and filters are supported"
   },
   "submit": {
     "toggle": "Submit Task",
@@ -159,13 +160,14 @@
         "label": "Remove Missing Files"
       },
       "remove_unreferenced_resources": {
-        "label": "Remove Unreferenced Resources"
+        "label": "Remove unreferenced resources",
+        "description": "Delete resource files that no film references"
       }
     },
     "organize": {
       "library_id": {
         "label": "Library",
-        "description": ""
+        "description": "Files under this library are organized"
       },
       "path": {
         "label": "Path",
@@ -199,7 +201,7 @@
       },
       "prune_empty_dirs": {
         "label": "Prune emptied directories",
-        "description": "Removes directories emptied by this run; no effect on copy / hardlink / symlink"
+        "description": "Removes directories emptied by this run; no effect on copy / hardlink / symbolic link"
       }
     },
     "scrape": {
@@ -207,7 +209,7 @@
         "label": "Number"
       },
       "media_id": {
-        "label": "Media ID",
+        "label": "File ID",
         "description": "Not needed for manual scrape"
       },
       "content_type": {
@@ -251,7 +253,7 @@
     "refresh": {
       "library_id": {
         "label": "Library",
-        "description": ""
+        "description": "Scan this library"
       },
       "recursive": {
         "label": "Recursive",
@@ -269,8 +271,8 @@
         "label": "Scan Mode",
         "$": {
           "options": {
-            "add": "Add New Files",
-            "remove": "Remove Missing"
+            "add": "Scan for new files",
+            "remove": "Remove dead entries"
           }
         }
       },
@@ -298,13 +300,13 @@
     "r18_import": {
       "force": {
         "label": "Force Reimport",
-        "description": "Ignore the stored dump ETag and force re-download and import"
+        "description": "Ignore the stored data package version and force re-download and import"
       }
     },
     "actor_scrape": {
       "actor_id": {
         "label": "Actor ID",
-        "description": "Primary key of the Actor entity"
+        "description": "Actor ID"
       },
       "use_cache": {
         "label": "Use cache",
@@ -317,11 +319,11 @@
         }
       }
     },
-    "number": "",
+    "number": "Number",
     "rescrape": {
       "limit": {
         "label": "Limit",
-        "description": ""
+        "description": "Maximum entries per selected target in one run"
       },
       "min_age_days": {
         "label": "Min age (days)",
@@ -341,7 +343,7 @@
     "scan_invalid": {
       "library_id": {
         "label": "Library",
-        "description": ""
+        "description": "Walk invalid files and empty directories under this library"
       },
       "path": {
         "label": "Path",
@@ -359,7 +361,7 @@
     "delete": {
       "library_id": {
         "label": "Library",
-        "description": ""
+        "description": "Library the inventory belongs to"
       },
       "inventory_id": {
         "label": "Inventory ID",

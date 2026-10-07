@@ -14,7 +14,7 @@
   "pickZip": "Upload zip",
   "uninstall": "Uninstall",
   "uninstallConfirm": "Uninstall {{name}} ({{id}})? The source tree is removed; runtime data is kept",
-  "reload": "Rescan",
+  "reload": "Reload",
   "installed": "Plugin installed",
   "uninstalled": "Plugin uninstalled",
   "reloaded": "Plugin catalog reloaded",

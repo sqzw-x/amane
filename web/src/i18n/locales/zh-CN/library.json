@@ -3,7 +3,7 @@
   "searchPlaceholder": "搜索路径或番号...",
   "deleteLibrary": {
     "confirmTitle": "删除媒体库",
-    "confirmDescEmpty": "此操作将永久删除媒体库「{{name}}」，且无法撤销",
+    "confirmDescEmpty": "此操作将永久删除媒体库「{{name}}」, 且无法撤销",
     "tooltip": "删除此媒体库"
   },
   "scan": {
@@ -11,7 +11,7 @@
     "modes": {
       "add": {
         "label": "扫描新文件",
-        "desc": "发现并注册新媒体文件，随后刮削待处理的文件"
+        "desc": "发现新媒体文件并入库, 随后刮削待处理的文件"
       },
       "remove": {
         "label": "清理失效记录",
@@ -27,7 +27,7 @@
     "path": "路径",
     "status": "状态",
     "size": "大小",
-    "metadata": "元数据",
+    "metadata": "影片",
     "updated": "更新时间",
     "actions": "操作"
   },
@@ -78,14 +78,14 @@
   "invalidId": "无效的媒体库 ID",
   "automation": {
     "label": "自动化",
-    "hint": "控制监控与自动刮削；整理仍需手动触发",
+    "hint": "控制监控与自动刮削. 整理仍需手动触发",
     "none": "关闭",
-    "watch": "仅入库",
-    "scrape": "入库并刮削"
+    "watch": "仅监控",
+    "scrape": "监控+刮削"
   },
   "ingest": {
-    "label": "文件监控",
-    "hint": "Webhook 需会员, 性能好于监听挂载路径",
+    "label": "文件发现方式",
+    "hint": "Webhook 需 CloudDrive2 会员, 性能好于监听挂载路径",
     "native": "本地文件",
     "clouddrive": "CD2 webhook",
     "cloudPath": "CloudDrive 路径",
@@ -99,19 +99,19 @@
   "placeholder": "/path/to/media/directory",
   "fieldRecursive": "递归",
   "fieldPatterns": "匹配模式",
-  "fieldPatternsHint": "逗号分隔的 glob, 如 *.mp4,*.mkv",
+  "fieldPatternsHint": "逗号分隔的通配符, 如 *.mp4,*.mkv",
   "fieldTrailerPattern": "预告片文件名正则",
   "fieldTrailerPatternHint": "匹配则视为预告片, 跳过扫描和监控",
-  "fieldBlacklistPatterns": "黑名单正则",
+  "fieldBlacklistPatterns": "文件黑名单正则",
   "fieldBlacklistPatternsHint": "每行一条正则, 匹配则视为垃圾文件, 扫描时跳过, 清理时列为候选",
-  "fieldMinFileSize": "最小视频体积",
+  "fieldMinFileSize": "最小视频大小",
   "fieldMinFileSizeHint": "小于此大小的视频视为垃圾文件, 清理时列为候选",
   "fieldSubtitleExtensions": "字幕扩展名",
   "fieldSubtitleExtensionsHint": "逗号分隔",
-  "fieldMoveMode": "文件操作模式",
+  "fieldMoveMode": "整理方式",
   "fieldWriteNfo": "写入 NFO",
   "fieldCopyResources": "整理时复制",
-  "fieldCopyResourcesHint": "",
+  "fieldCopyResourcesHint": "整理时把已下载的资源复制到库路径",
   "copyResource": {
     "thumb": "封面",
     "poster": "海报",
@@ -127,16 +127,16 @@
   "fieldVideoTemplate": "视频路径模板",
   "fieldVideoTemplateHint": "可使用相对或绝对路径, 可用占位符见下方徽章",
   "fieldLinkTemplate": "链接路径模板",
-  "fieldLinkTemplateHint": "整理时在此路径创建 strm /软链接. 必须是库外的绝对路径",
+  "fieldLinkTemplateHint": "整理时在此路径创建 STRM 文件或符号链接. 必须是库外的绝对路径",
   "fieldLinkTemplatePlaceholder": "例如 /local/emby/{studio}/{number}/{number}.{ext}",
   "fieldLinkMode": "链接方式",
   "linkMode": {
     "strm": "STRM 文件",
-    "symlink": "软链接"
+    "symlink": "符号链接"
   },
   "fieldStrmContentTemplate": "STRM 内容模板",
   "fieldStrmContentTemplateHint": "链接方式为 STRM 时有效. 默认写入视频文件绝对路径",
-  "fieldInitialRefresh": "创建后立即刷新",
+  "fieldInitialRefresh": "创建后立即扫描",
   "advancedTemplates": "附属资源模板",
   "advancedTemplatesHint": "留空使用默认值",
   "optionalTemplateDefault": "默认: {{default}}",
@@ -209,8 +209,8 @@
     "confirmLabel": "删除",
     "deleteSelected": "删除选中项",
     "reason": {
-      "blacklist": "黑名单",
-      "undersized": "体积过小",
+      "blacklist": "文件黑名单",
+      "undersized": "小于最小视频大小",
       "empty_dir": "空目录",
       "explicit": "手动选中"
     },

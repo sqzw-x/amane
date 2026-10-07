@@ -23,9 +23,9 @@
   },
   "filters": {
     "all": "全部",
-    "queued": "排队",
-    "running": "运行",
-    "done": "完成",
+    "queued": "排队中",
+    "running": "运行中",
+    "done": "已完成",
     "failed": "失败",
     "scrape": "刮削",
     "organize": "整理",
@@ -34,7 +34,7 @@
     "refresh": "扫描",
     "r18_import": "R18 导入",
     "actor_scrape": "演员刮削",
-    "rescrape": "补刮",
+    "rescrape": "重新刮削",
     "scan_invalid": "扫描无效文件",
     "delete": "删除"
   },
@@ -55,7 +55,7 @@
   },
   "report": {
     "headline": "失败原因",
-    "metadata": "元数据",
+    "metadata": "影片",
     "viewMetadata": "查看 #{{id}}",
     "actor": "演员",
     "viewActor": "查看 #{{id}}",
@@ -107,14 +107,8 @@
   },
   "batch": {
     "cancel": "已取消 {{count}} 个",
-    "cancel_one": "已取消 {{count}} 个",
-    "cancel_other": "已取消 {{count}} 个",
     "retry": "已重试 {{count}} 个",
-    "retry_one": "已重试 {{count}} 个",
-    "retry_other": "已重试 {{count}} 个",
-    "delete": "已删除 {{count}} 个",
-    "delete_one": "已删除 {{count}} 个",
-    "delete_other": "已删除 {{count}} 个"
+    "delete": "已删除 {{count}} 个"
   },
   "confirm": {
     "deleteTitle": "删除任务",
@@ -130,12 +124,11 @@
   },
   "batchScrape": {
     "toggle": "批量刮削",
-    "templateLabel": "Liquid 模板",
+    "templateLabel": "模板",
     "previewLabel": "预览",
     "previewEmpty": "输入模板以预览结果",
     "submit": "提交 {{count}} 个任务",
-    "submit_one": "提交 {{count}} 个任务",
-    "submit_other": "提交 {{count}} 个任务"
+    "templateDescription": "用 Liquid 语法写番号; 支持循环与过滤器"
   },
   "submit": {
     "typeLabel": "任务类型",
@@ -147,7 +140,7 @@
       "refresh": "扫描",
       "r18_import": "R18 导入",
       "actor_scrape": "演员刮削",
-      "rescrape": "补刮",
+      "rescrape": "重新刮削",
       "scan_invalid": "扫描无效文件",
       "delete": "删除"
     },
@@ -156,13 +149,14 @@
         "label": "移除缺失文件"
       },
       "remove_unreferenced_resources": {
-        "label": "移除未引用资源"
+        "label": "移除无引用资源",
+        "description": "删除没有任何影片引用的资源文件"
       }
     },
     "organize": {
       "library_id": {
         "label": "媒体库",
-        "description": ""
+        "description": "该库下的文件参与整理"
       },
       "path": {
         "label": "路径",
@@ -196,7 +190,7 @@
       },
       "prune_empty_dirs": {
         "label": "删除腾空的目录",
-        "description": "移动后删除本次腾空的目录; 复制 / 硬链接 / 软链接方式无效"
+        "description": "移动后删除本次腾空的目录; 复制 / 硬链接 / 符号链接方式无效"
       }
     },
     "scrape": {
@@ -204,7 +198,7 @@
         "label": "番号"
       },
       "media_id": {
-        "label": "Media ID",
+        "label": "文件 ID",
         "description": "手动刮削无需指定"
       },
       "content_type": {
@@ -222,7 +216,7 @@
       },
       "use_cache": {
         "label": "使用缓存",
-        "description": "勾选则使用对应缓存, 否则重新抓取",
+        "description": "勾选则使用对应缓存, 否则重新获取",
         "$": {
           "options": {
             "metadata": "元数据缓存",
@@ -234,11 +228,11 @@
     "upscale": {
       "max_dim_threshold": {
         "label": "最大尺寸阈值",
-        "description": "仅对最长边低于此值的图像进行超分（视为低分辨率）"
+        "description": "仅对最长边低于此值的图像进行超分(视为低分辨率)"
       },
       "max_bytes_threshold": {
         "label": "最大文件大小阈值 (bytes)",
-        "description": "超过此大小的文件跳过超分（视为足够清晰）"
+        "description": "超过此大小的文件跳过超分(视为足够清晰)"
       },
       "limit": {
         "label": "数量上限",
@@ -249,7 +243,7 @@
     "refresh": {
       "library_id": {
         "label": "媒体库",
-        "description": ""
+        "description": "在该库下扫描"
       },
       "recursive": {
         "label": "递归扫描",
@@ -267,8 +261,8 @@
         "label": "扫描模式",
         "$": {
           "options": {
-            "add": "新增文件",
-            "remove": "移除缺失"
+            "add": "扫描新文件",
+            "remove": "清理失效记录"
           }
         }
       },
@@ -296,17 +290,17 @@
     "r18_import": {
       "force": {
         "label": "强制重新导入",
-        "description": "忽略已记录的 dump ETag, 强制重新下载并导入"
+        "description": "忽略已记录的数据包版本, 强制重新下载并导入"
       }
     },
     "actor_scrape": {
       "actor_id": {
         "label": "演员 ID",
-        "description": "Actor 实体主键"
+        "description": "演员 ID"
       },
       "use_cache": {
         "label": "使用缓存",
-        "description": "勾选则使用对应缓存, 否则重新抓取",
+        "description": "勾选则使用对应缓存, 否则重新获取",
         "$": {
           "options": {
             "metadata": "元数据缓存",
@@ -319,10 +313,10 @@
     "rescrape": {
       "limit": {
         "label": "数量上限",
-        "description": ""
+        "description": "每个已选目标单次最多重新刮削的条数"
       },
       "min_age_days": {
-        "label": "最小间隔（天）",
+        "label": "最小间隔(天)",
         "description": "仅处理超过此间隔未更新的条目"
       },
       "targets": {
@@ -339,7 +333,7 @@
     "scan_invalid": {
       "library_id": {
         "label": "媒体库",
-        "description": ""
+        "description": "遍历该库的无效文件与已空目录"
       },
       "path": {
         "label": "路径",
@@ -357,7 +351,7 @@
     "delete": {
       "library_id": {
         "label": "媒体库",
-        "description": ""
+        "description": "清单所属的媒体库"
       },
       "inventory_id": {
         "label": "清单标识",
