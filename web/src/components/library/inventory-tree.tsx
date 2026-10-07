@@ -64,7 +64,9 @@ export function InventoryTree({
   const queryClient = useQueryClient();
   const [excluded, setExcluded] = useState<string[]>([]);
   const [loadedNodes, setLoadedNodes] = useState<Record<string, InventoryNodeResponse>>({});
-  const level = useInventoryNodeLevel({ libraryId, inventoryId, path });
+  // 系统与同步工具的产物默认折叠: 它们也会被删除, 但多数时候只是噪音; 用户可展开核对.
+  const [showNoise, setShowNoise] = useState(false);
+  const level = useInventoryNodeLevel({ libraryId, inventoryId, path, noise: showNoise });
   const deleteMutation = useMutation({
     ...submitTaskMutation(),
     onSuccess: () => {
@@ -85,16 +87,19 @@ export function InventoryTree({
   const totals = useMemo(() => {
     let entries = 0;
     let bytes = 0;
+    const kept: Record<string, number> = {};
     for (const prefix of excluded) {
       const node =
         loadedNodes[prefix] ?? level.nodes.find((candidate) => candidate.path === prefix);
       if (!node) continue;
       entries += node.entry_count;
       bytes += node.entry_bytes;
+      kept[prefix] = node.entry_count;
     }
     return {
       entries: Math.max(0, level.entryCount - entries),
       bytes: Math.max(0, level.entryBytes - bytes),
+      kept,
     };
   }, [excluded, loadedNodes, level.nodes, level.entryCount, level.entryBytes]);
 
@@ -112,8 +117,17 @@ export function InventoryTree({
   const toggle = useCallback((node: InventoryNodeResponse) => {
     setExcluded((prev) => {
       const covering = coveringPrefix(prev, node.path);
-      if (covering === node.path) return prev.filter((prefix) => prefix !== node.path);
-      if (covering) return prev; // 祖先已排除: 恢复本节点会连带兄弟节点.
+      if (covering === node.path) {
+        // 取消整棵: 后代本来就是「不删」, 不保留多余的排除项.
+        return prev.filter((prefix) => prefix !== node.path);
+      }
+      if (covering) {
+        // 祖先被排除时仍然可以直接点这一项: 把祖先换成「祖先之下除它以外全部排除」.
+        return [
+          ...prev.filter((prefix) => prefix !== covering && !isUnder(prefix, covering)),
+          node.path,
+        ];
+      }
       // 已排除的后代并入本节点: 两个前缀会各减一次同一棵子树, 选中量就比实际执行集合少.
       return [...prev.filter((prefix) => !isUnder(prefix, node.path)), node.path];
     });
@@ -147,7 +161,15 @@ export function InventoryTree({
         <Text size="sm">
           {t("cleanup.selected", { count: totals.entries, size: formatFileSize(totals.bytes) })}
         </Text>
-        {header}
+        <Group gap="sm">
+          <Checkbox
+            size="xs"
+            checked={showNoise}
+            label={t("cleanup.showNoise")}
+            onChange={(event) => setShowNoise(event.currentTarget.checked)}
+          />
+          {header}
+        </Group>
       </Group>
       <ScrollArea.Autosize
         mah="46vh"
@@ -173,6 +195,8 @@ export function InventoryTree({
                 node={node}
                 depth={0}
                 excluded={excluded}
+                kept={totals.kept}
+                showNoise={showNoise}
                 onToggle={toggle}
                 onNodes={registerNodes}
               />
@@ -210,6 +234,7 @@ interface InventoryNodeLevelProps {
   libraryId: number;
   inventoryId: string;
   path: string;
+  noise?: boolean;
   enabled?: boolean;
 }
 
@@ -218,12 +243,13 @@ function useInventoryNodeLevel({
   libraryId,
   inventoryId,
   path,
+  noise = false,
   enabled = true,
 }: InventoryNodeLevelProps) {
   const query = useInfiniteQuery({
     ...getCleanupInventoryNodesInfiniteOptions({
       path: { library_id: libraryId },
-      query: { path, inventory_id: inventoryId, limit: NODE_PAGE_SIZE },
+      query: { path, inventory_id: inventoryId, limit: NODE_PAGE_SIZE, noise },
     }),
     enabled,
     initialPageParam: 0,
@@ -248,6 +274,8 @@ interface InventoryNodeRowProps {
   node: InventoryNodeResponse;
   depth: number;
   excluded: string[];
+  kept: Record<string, number>;
+  showNoise: boolean;
   onToggle: (node: InventoryNodeResponse) => void;
   onNodes: (nodes: InventoryNodeResponse[]) => void;
 }
@@ -259,6 +287,8 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
   node,
   depth,
   excluded,
+  kept,
+  showNoise,
   onToggle,
   onNodes,
 }: InventoryNodeRowProps) {
@@ -270,10 +300,18 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
   const keepsSomething = excluded.some(
     (prefix) => prefix !== node.path && isUnder(prefix, node.path),
   );
+  // 子树里的条目全被取消时这个目录实际什么都不会删: 勾选框与整体取消一致, 不再半选.
+  const keptBelow = Object.entries(kept).reduce(
+    (sum, [prefix, count]) => (isUnder(prefix, node.path) ? sum + count : sum),
+    0,
+  );
+  const allKept = keptBelow > 0 && keptBelow >= node.entry_count;
+  const partial = keepsSomething && !allKept;
   const children = useInventoryNodeLevel({
     libraryId,
     inventoryId,
     path: node.path,
+    noise: showNoise,
     enabled: expanded && node.has_children,
   });
 
@@ -282,6 +320,35 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
   }, [children.nodes, onNodes]);
 
   const marker = node.reason ? t(`cleanup.reason.${node.reason}`) : null;
+  // 信息项随宿主条目一起删除: 不给勾选框, 也不显示「将变空」这类只对可执行条目有意义的标记.
+  if (node.informational) {
+    return (
+      <Box
+        className={classes.row}
+        py={4}
+        pr="sm"
+        pl={`calc(var(--mantine-spacing-xs) + ${depth * 20}px)`}
+      >
+        <Group gap="sm" wrap="nowrap">
+          <Box w={26} />
+          <IconFile size={14} />
+          <Text size="xs" c={node.noise ? "dimmed" : undefined} truncate title={node.path}>
+            {node.name}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {formatFileSize(node.size)}
+          </Text>
+          {node.noise ? (
+            <Tooltip label={t("cleanup.noiseHint")}>
+              <Badge size="xs" variant="light" color="gray">
+                {t("cleanup.noise")}
+              </Badge>
+            </Tooltip>
+          ) : null}
+        </Group>
+      </Box>
+    );
+  }
   return (
     <Box
       className={classes.row}
@@ -310,8 +377,8 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
         )}
         <Checkbox
           size="sm"
-          checked={!covered}
-          disabled={covered && covering !== node.path}
+          checked={!covered && !allKept}
+          indeterminate={partial}
           onChange={() => onToggle(node)}
         />
         {node.kind === "dir" ? <IconFolder size={16} /> : <IconFile size={16} />}
@@ -373,6 +440,8 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
                   node={child}
                   depth={depth + 1}
                   excluded={excluded}
+                  kept={kept}
+                  showNoise={showNoise}
                   onToggle={onToggle}
                   onNodes={onNodes}
                 />

@@ -88,7 +88,17 @@ def _touch_at(path: Path, *, mtime: float) -> Path:
 
 
 def _reasons(inventory: CleanupInventory, lib: Path) -> dict[str, InventoryReason]:
+    """执行集合里的条目 (容器条目也在内, 它承载徽章与整目录汇总)."""
     return {entry.path.relative_to(lib).as_posix(): entry.reason for entry in inventory.entries}
+
+
+def _contents(inventory: CleanupInventory, lib: Path) -> dict[str, InventoryReason]:
+    """会被删除的文件条目; 容器条目自身不是删除目标."""
+    return {entry.path.relative_to(lib).as_posix(): entry.reason for entry in inventory.entries if not entry.expandable}
+
+
+def _container(inventory: CleanupInventory, lib: Path) -> bool:
+    return any(entry.expandable for entry in inventory.entries)
 
 
 def _sizes(inventory: CleanupInventory, lib: Path) -> dict[str, int | None]:
@@ -104,15 +114,21 @@ class TestOrphanVerdict:
 
         inventory = _scan(lib)
 
-        assert _reasons(inventory, lib) == {"old": InventoryReason.ORPHAN}
-        assert _sizes(inventory, lib) == {"old": 12}
+        assert _reasons(inventory, lib) == {
+            "old": InventoryReason.ORPHAN,
+            "old/NSFS-039.nfo": InventoryReason.ORPHAN,
+            "old/NSFS-039.zh.srt": InventoryReason.ORPHAN,
+            "old/poster.jpg": InventoryReason.ORPHAN,
+        }
+        assert _container(inventory, lib) is True
+        assert _sizes(inventory, lib)["old"] == 12
 
     def test_companion_files_under_subdir(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
         _touch(lib / "old" / "images" / "poster.jpg")
         _touch(lib / "old" / "NSFS-039.nfo")
 
-        assert _reasons(_scan(lib), lib) == {"old": InventoryReason.ORPHAN}
+        assert _container(_scan(lib), lib) is True
 
     def test_media_in_subdir_blocks_parent(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
@@ -128,6 +144,18 @@ class TestOrphanVerdict:
 
         assert _reasons(_scan(lib), lib) == {}
 
+    def test_sibling_media_does_not_block_by_enumeration_order(self, tmp_path: Path) -> None:
+        """兄弟目录之间不是祖先关系.
+
+        「祖先直接子项含媒体」必须在同一层里一次算完: 边下钻边更新会让排在媒体之后的兄弟
+        被当成「祖先含媒体」, 判定结果因此取决于目录枚举顺序.
+        """
+        lib = tmp_path / "lib"
+        _touch(lib / "a_media" / "NSFS-001.mp4")
+        _touch(lib / "z_orphan" / "NSFS-039.nfo")
+
+        assert _container(_scan(lib), lib) is True
+
     def test_media_in_ancestor_blocks_subdir(self, tmp_path: Path) -> None:
         """extrafanart 这类附属子目录由直接父目录里的正片保护."""
         lib = tmp_path / "lib"
@@ -142,7 +170,9 @@ class TestOrphanVerdict:
         _touch(lib / "work" / "NSFS-039.mp4")
         _touch(lib / "old" / "NSFS-039.nfo")
 
-        assert _reasons(_scan(lib), lib) == {"old": InventoryReason.ORPHAN}
+        inventory = _scan(lib)
+        assert _container(inventory, lib) is True
+        assert _contents(inventory, lib) != {}
 
     def test_root_companion_of_live_media_is_not_registered(self, tmp_path: Path) -> None:
         """库根的直接子项里有正片时, 根层的 NFO 是它的附属文件."""
@@ -226,14 +256,16 @@ class TestCompanionWhitelist:
         lib = tmp_path / "lib"
         _touch(lib / "old" / name)
 
-        assert _reasons(_scan(lib), lib) == {"old": InventoryReason.ORPHAN}
+        inventory = _scan(lib)
+        assert _container(inventory, lib) is True
+        assert _contents(inventory, lib) != {}
 
     def test_empty_subtitle_extensions_falls_back_to_defaults(self, tmp_path: Path) -> None:
         """清空字幕扩展名表示关闭字幕发现, 不代表 .srt 不再是附属文件."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / "NSFS-039.srt")
 
-        assert _reasons(_scan(lib, subtitles=[]), lib) == {"old": InventoryReason.ORPHAN}
+        assert _container(_scan(lib, subtitles=[]), lib) is True
 
     def test_extensionless_file_blocks(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
@@ -244,15 +276,19 @@ class TestCompanionWhitelist:
 
 class TestJunk:
     @pytest.mark.parametrize("name", [".DS_Store", "Thumbs.db", "desktop.ini", "notes.tmp", "._README", "._.DS_Store"])
-    def test_deletable_junk_neither_blocks_nor_registers(self, tmp_path: Path, name: str) -> None:
+    def test_deletable_junk_is_listed_as_noise(self, tmp_path: Path, name: str) -> None:
+        """垃圾文件同样会被删除, 因此也列出来; 标记为 noise 供面板默认折叠."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / name)
         _touch(lib / "old" / "poster.jpg")
 
         inventory = _scan(lib)
+        node = find_inventory_node(build_inventory_tree(inventory), lib / "old")
 
-        assert _reasons(inventory, lib) == {"old": InventoryReason.ORPHAN}
-        assert _sizes(inventory, lib) == {"old": 4}
+        assert _container(inventory, lib) is True
+        assert _sizes(inventory, lib)["old"] == 4
+        assert node is not None
+        assert [(child.name, child.noise) for child in node.children] == [(name, True), ("poster.jpg", False)]
 
     def test_apple_double_video_sidecar_is_junk_not_media(self, tmp_path: Path) -> None:
         """._x.mp4 是 macOS 伴生文件; 垃圾项判定必须先于媒体判据."""
@@ -260,7 +296,9 @@ class TestJunk:
         _touch(lib / "old" / "._NSFS-039.mp4")
         _touch(lib / "old" / "poster.jpg")
 
-        assert _reasons(_scan(lib), lib) == {"old": InventoryReason.ORPHAN}
+        inventory = _scan(lib)
+        assert _container(inventory, lib) is True
+        assert _contents(inventory, lib) != {}
 
     @pytest.mark.parametrize("name", ["library.db", "settings.ini", "notes.tmp.bak"])
     def test_lookalike_names_are_not_junk(self, tmp_path: Path, name: str) -> None:
@@ -273,7 +311,8 @@ class TestJunk:
         assert inventory.blocked.unexplained == 1
 
     @pytest.mark.parametrize("name", ["#recycle", ".stversions", ".stfolder", "@eaDir", ".AppleDouble"])
-    def test_veto_dirs_block_and_count(self, tmp_path: Path, name: str) -> None:
+    def test_veto_dirs_are_left_alone(self, tmp_path: Path, name: str) -> None:
+        """有不可删除子项的目录与正常媒体目录一样不用管: 不登记, 也不计数."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / name / "inner.bin")
         _touch(lib / "old" / "poster.jpg")
@@ -281,11 +320,11 @@ class TestJunk:
         inventory = _scan(lib)
 
         assert _reasons(inventory, lib) == {}
-        assert inventory.blocked.undeletable == 1
+        assert inventory.blocked.total == 0
 
     @pytest.mark.parametrize("name", ["NSFS-039.part", "x.crdownload"])
-    def test_veto_files_block_and_count(self, tmp_path: Path, name: str) -> None:
-        """暂停中的下载进度: 删掉不可恢复, 因此否决而不是随目录删除."""
+    def test_veto_files_are_left_alone(self, tmp_path: Path, name: str) -> None:
+        """暂停中的下载进度删掉不可恢复: 该目录整个不碰."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / name)
         _touch(lib / "old" / "poster.jpg")
@@ -293,7 +332,7 @@ class TestJunk:
         inventory = _scan(lib)
 
         assert _reasons(inventory, lib) == {}
-        assert inventory.blocked.undeletable == 1
+        assert inventory.blocked.total == 0
 
     @pytest.mark.parametrize("name", ["#Recycle", "@EADIR"])
     def test_veto_is_case_insensitive(self, tmp_path: Path, name: str) -> None:
@@ -310,7 +349,7 @@ class TestJunk:
 
         inventory = _scan(lib)
 
-        assert _reasons(inventory, lib) == {"old": InventoryReason.ORPHAN}
+        assert _container(inventory, lib) is True
         # 它不作为空目录登记: 空目录条目会连带整棵子树被删, 而这里只该删垃圾文件与目录本身.
         assert InventoryReason.EMPTY_DIR not in _reasons(inventory, lib).values()
         # 垃圾文件不会被删 (它随目录一起删), 因此这条条目执行完目录并不空.
@@ -319,13 +358,14 @@ class TestJunk:
 
 class TestCooldown:
     def test_recent_subtree_is_not_registered(self, tmp_path: Path) -> None:
+        """冷静期内的目录按「刚变动过」处理, 不登记也不计数."""
         lib = tmp_path / "lib"
         _touch_at(lib / "old" / "poster.jpg", mtime=_NOW - 60)
 
         inventory = _scan(lib)
 
         assert _reasons(inventory, lib) == {}
-        assert inventory.blocked.cooldown == 1
+        assert inventory.blocked.total == 0
 
     def test_exactly_at_threshold_is_not_registered(self, tmp_path: Path) -> None:
         """阈值处算「仍在冷静期」; 目录自身的 mtime 单独设旧, 让边界只由文件决定."""
@@ -339,7 +379,9 @@ class TestCooldown:
         lib = tmp_path / "lib"
         _touch_at(lib / "old" / "poster.jpg", mtime=_NOW - ORPHAN_COOLDOWN_SECONDS - 1)
 
-        assert _reasons(_scan(lib), lib) == {"old": InventoryReason.ORPHAN}
+        inventory = _scan(lib)
+        assert _container(inventory, lib) is True
+        assert _contents(inventory, lib) != {}
 
     def test_directory_mtime_counts(self, tmp_path: Path) -> None:
         """目录自身的 mtime 来自父目录那次 lstat, 也必须参与冷静期."""
@@ -373,8 +415,8 @@ class TestRegistration:
 
         inventory = _scan(lib)
 
-        assert _reasons(inventory, lib) == {"old": InventoryReason.ORPHAN}
-        assert _sizes(inventory, lib) == {"old": 30}
+        assert _container(inventory, lib) is True
+        assert _sizes(inventory, lib)["old"] == 30
 
     def test_inner_entries_are_discarded(self, tmp_path: Path) -> None:
         """候选内部的空目录与黑名单文件随外层条目一起被丢弃."""
@@ -385,8 +427,8 @@ class TestRegistration:
 
         inventory = _scan(lib, blacklist=["sample"])
 
-        assert _reasons(inventory, lib) == {"old": InventoryReason.ORPHAN}
-        assert _sizes(inventory, lib) == {"old": 30}
+        assert _container(inventory, lib) is True
+        assert _sizes(inventory, lib)["old"] == 30
         assert inventory.truncated is False
         assert inventory.dropped == 0
 
@@ -419,14 +461,14 @@ class TestRegistration:
         assert inventory.dirs[lib / "with_entry"].will_be_empty is True
 
     def test_orphan_entry_parent_is_not_marked_will_be_empty(self, tmp_path: Path) -> None:
-        """目录里只有残留条目时, 那个目录本身就是候选 (被外层吸收), 不会有自己的覆盖行."""
+        """外层目录本身就是候选, 覆盖信息不预告它将被清空."""
         lib = tmp_path / "lib"
         _touch(lib / "work" / "old" / "poster.jpg")
 
         inventory = _scan(lib)
 
-        assert _reasons(inventory, lib) == {"work": InventoryReason.ORPHAN}
-        assert inventory.dirs[lib / "work"].will_be_empty is False
+        assert "work/old" in _reasons(inventory, lib)
+        assert lib / "work" not in inventory.dirs or inventory.dirs[lib / "work"].will_be_empty is False
 
     def test_dir_with_media_blocks_its_orphan_subdir(self, tmp_path: Path) -> None:
         """正片所在目录的子目录不判定: extrafanart 这类附属子目录由直接父目录保护."""
@@ -437,27 +479,30 @@ class TestRegistration:
         inventory = _scan(lib)
 
         assert _reasons(inventory, lib) == {}
-        assert inventory.blocked.media_ancestor == 1
+        assert inventory.blocked.total == 0
 
     def test_truncation_counts_orphan_candidate(self, tmp_path: Path) -> None:
+        """触顶时容器条目先登记, 内容条目被丢弃并计数."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / "poster.jpg")
-        _touch(lib / "other" / "poster.jpg")
 
         inventory = _scan(lib, limit=1)
 
         assert inventory.truncated is True
         assert inventory.dropped == 1
+        assert [entry.path.name for entry in inventory.entries] == ["old"]
 
-    def test_truncation_does_not_lose_inner_entries_when_outer_fails(self, tmp_path: Path) -> None:
-        """外层登记失败时内部条目保持原样, 不能既没登记外层又丢了内部."""
+    def test_truncation_keeps_container_when_content_dropped(self, tmp_path: Path) -> None:
+        """触顶时容器条目仍登记: 用户至少能看到这处残留, 内容被丢弃并计数."""
         lib = tmp_path / "lib"
-        _touch(lib / "old" / "sample.jpg")
         _touch(lib / "old" / "poster.jpg")
 
-        inventory = _scan(lib, blacklist=["sample"], limit=1)
+        inventory = _scan(lib, limit=1)
+        node = find_inventory_node(build_inventory_tree(inventory), lib / "old")
 
-        assert _reasons(inventory, lib) == {"old/sample.jpg": InventoryReason.BLACKLIST}
+        assert node is not None
+        assert node.expandable is True
+        assert inventory.dropped == 1
 
 
 class TestScopeLayer:
@@ -490,6 +535,7 @@ class TestScopeLayer:
         assert _reasons(_scan(lib), lib) == {
             "NSFS-039.nfo": InventoryReason.ORPHAN,
             "old": InventoryReason.ORPHAN,
+            "old/poster.jpg": InventoryReason.ORPHAN,
         }
 
     def test_root_symlink_entry_is_marked(self, tmp_path: Path) -> None:
@@ -533,29 +579,30 @@ class TestScopeLayer:
         assert _reasons(_scan(lib), lib) == {}
 
 
-class TestBlockedCounts:
-    def test_media_ancestor_is_counted(self, tmp_path: Path) -> None:
+class TestBlockedUnexplained:
+    """只暴露用户能据此行动的那一种原因: 目录里有无法识别的文件."""
+
+    def test_unexplained_file_is_counted(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
-        _touch(lib / "work" / "NSFS-039.mp4")
-        _touch(lib / "work" / "extrafanart" / "1.jpg")
+        _touch(lib / "old" / "poster.jpg")
+        _touch(lib / "old" / "notes.txt")
 
         inventory = _scan(lib)
 
-        assert inventory.blocked.media_ancestor == 1
-        assert inventory.blocked.total == 1
-
-    def test_undeletable_and_unexplained_are_counted_separately(self, tmp_path: Path) -> None:
-        lib = tmp_path / "lib"
-        _touch(lib / "a" / "poster.jpg")
-        (lib / "a" / "#recycle").mkdir(parents=True)
-        _touch(lib / "b" / "poster.jpg")
-        _touch(lib / "b" / "notes.txt")
-
-        inventory = _scan(lib)
-
-        assert inventory.blocked.undeletable == 1
+        assert _reasons(inventory, lib) == {}
         assert inventory.blocked.unexplained == 1
-        assert inventory.blocked.total == 2
+
+    def test_media_and_veto_are_not_counted(self, tmp_path: Path) -> None:
+        """目录里有媒体或不可删除的子项时与正常媒体目录一样, 不进任何计数."""
+        lib = tmp_path / "lib"
+        _touch(lib / "with_media" / "NSFS-001.mp4")
+        _touch(lib / "with_media" / "NSFS-001.nfo")
+        _touch(lib / "with_veto" / "poster.jpg")
+        _touch(lib / "with_veto" / "NSFS-002.part")
+
+        inventory = _scan(lib)
+
+        assert inventory.blocked.total == 0
 
     def test_skipped_is_separate_from_blocked(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
@@ -566,3 +613,37 @@ class TestBlockedCounts:
         assert inventory.skipped_dirs == 0
         assert inventory.skipped_files == 0
         assert inventory.blocked.unexplained == 1
+
+
+class TestContainerNotCounted:
+    """容器条目不是删除目标: 面板按它的子项算选中量, 它自己不能被算成一项."""
+
+    def test_root_count_excludes_container(self, tmp_path: Path) -> None:
+        lib = tmp_path / "lib"
+        _touch(lib / "old" / "poster.jpg")
+
+        inventory = _scan(lib)
+        root = build_inventory_tree(inventory)
+
+        # 只有 1 个文件会被删: 容器条目代表它整棵子树, 不能与它的内容各算一次.
+        assert root.entry_count == 1
+
+    def test_container_count_sums_its_content(self, tmp_path: Path) -> None:
+        lib = tmp_path / "lib"
+        _touch(lib / "old" / "poster.jpg")
+        _touch(lib / "old" / "NSFS-039.nfo")
+
+        inventory = _scan(lib)
+        node = find_inventory_node(build_inventory_tree(inventory), lib / "old")
+
+        assert node is not None
+        assert node.entry_count == 2
+
+    def test_junk_only_dir_counts_one(self, tmp_path: Path) -> None:
+        """只含垃圾文件的目录算 1 项: 取消它之后就没有可提交的内容."""
+        lib = tmp_path / "lib"
+        _touch(lib / "old" / ".DS_Store")
+
+        inventory = _scan(lib)
+
+        assert build_inventory_tree(inventory).entry_count == 1

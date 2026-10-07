@@ -72,45 +72,31 @@ class JunkKind(StrEnum):
 
 
 class BlockedReason(StrEnum):
-    """目录被判定为候选、但没有登记的原因. 分开计, 用户才能分辨配置问题与时序问题."""
+    """目录被判成候选但没有登记的原因.
+
+    只暴露用户能据此行动的那一种: 子树里有无法识别的文件. 其余原因 (目录里有媒体、
+    有不可删除的子项、仍在冷静期) 都是内部保护规则, 对应的目录与正常媒体目录一样不用管,
+    不需要向用户解释.
+    """
 
     UNEXPLAINED = "unexplained"
-    """子树里有白名单外的文件."""
-    UNDELETABLE = "undeletable"
-    """子树里有不可删除的子项 (回收站、版本库、下载进度等)."""
-    MEDIA_ANCESTOR = "media_ancestor"
-    """目录自身或某一级祖先的直接子项里有媒体."""
-    COOLDOWN = "cooldown"
-    """子树最新 mtime 仍在冷静期内."""
+    """子树里有白名单外的文件: 用户要么清掉它, 要么它就是不该被清的内容."""
 
 
 @dataclass(frozen=True, slots=True)
 class BlockedDirs:
-    """未登记的候选目录数, 按原因分组."""
+    """未登记的候选目录数."""
 
     unexplained: int = 0
-    undeletable: int = 0
-    media_ancestor: int = 0
-    cooldown: int = 0
 
     @property
     def total(self) -> int:
-        return self.unexplained + self.undeletable + self.media_ancestor + self.cooldown
+        return self.unexplained
 
     def plus(self, reason: BlockedReason) -> BlockedDirs:
-        counts = {
-            BlockedReason.UNEXPLAINED: self.unexplained,
-            BlockedReason.UNDELETABLE: self.undeletable,
-            BlockedReason.MEDIA_ANCESTOR: self.media_ancestor,
-            BlockedReason.COOLDOWN: self.cooldown,
-        }
-        counts[reason] += 1
-        return BlockedDirs(
-            unexplained=counts[BlockedReason.UNEXPLAINED],
-            undeletable=counts[BlockedReason.UNDELETABLE],
-            media_ancestor=counts[BlockedReason.MEDIA_ANCESTOR],
-            cooldown=counts[BlockedReason.COOLDOWN],
-        )
+        match reason:
+            case BlockedReason.UNEXPLAINED:
+                return BlockedDirs(self.unexplained + 1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +180,7 @@ class OrphanScan:
         subtree_has_media: bool,
         subtree_explainable: bool,
         subtree_undeletable: bool,
+        subtree_has_content: bool,
         newest_mtime: float,
         directory_mtime: float,
         now: float,
@@ -206,14 +193,22 @@ class OrphanScan:
         if directory == self.library_root or directory == self.scope_dir:
             return None
         if ancestor_has_media or self_has_media or subtree_has_media:
-            return OrphanVerdict(BlockedReason.MEDIA_ANCESTOR)
+            # 目录里有媒体, 与正常媒体目录一样不用管.
+            return None
         if subtree_undeletable:
-            return OrphanVerdict(BlockedReason.UNDELETABLE)
+            # 有不可删除的子项 (回收站、版本库、下载进度): 整个目录不碰.
+            return None
+        if not subtree_has_content:
+            # 子树里只有空目录: 没有内容可清, 由空目录条目处置.
+            return None
+        if not subtree_has_content:
+            # 子树里只有空目录: 没有内容可清, 交给空目录条目.
+            return None
         if not subtree_explainable:
             return OrphanVerdict(BlockedReason.UNEXPLAINED)
         # 阈值处算「仍在冷静期」; 未来时间戳 (时钟偏移) 同样按未超阈值处理.
         if now - max(newest_mtime, directory_mtime) <= ORPHAN_COOLDOWN_SECONDS:
-            return OrphanVerdict(BlockedReason.COOLDOWN)
+            return None
         return OrphanVerdict()
 
 

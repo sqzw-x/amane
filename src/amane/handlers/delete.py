@@ -102,6 +102,8 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
             if not _matches(entry.path, exact=excluded_keys, subtrees=excluded_keys)
         ]
         excluded = len(inventory.entries) - len(targets)
+        # 容器条目 (残留目录) 展开为它的子条目: 自身不是删除目标, 删完由剪枝回收空目录.
+        targets = [entry for entry in targets if not entry.expandable]
         orphan_scan = self._orphan_scan(library, library_root=library_root)
         tally = DeleteTally()
         removed_paths: list[Path] = []

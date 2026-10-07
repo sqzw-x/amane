@@ -25,6 +25,10 @@ class InventoryNodeResponse(BaseModel):
     """子树内的条目体积, 同 inode 只算一次."""
     will_be_empty: bool = False
     """清单条目全部删除后该目录是否会空 (含子目录递归)."""
+    informational: bool = False
+    """只给用户看, 不作为独立条目执行: 残留目录里的文件随宿主目录条目一起删除."""
+    noise: bool = False
+    """系统与同步工具的产物; 面板默认折叠这一类, 由用户决定要不要看."""
     has_children: bool = False
     children: list[InventoryNodeResponse] | None = None
 
@@ -58,15 +62,7 @@ class InventorySummaryResponse(BaseModel):
     skipped_dirs: int = 0
     skipped_files: int = 0
     blocked_dirs: int = 0
-    """判定为候选但没有登记的目录数, 与「读不到」的 skipped 分开计."""
-    blocked_unexplained: int = 0
-    """其中因子树里有白名单外文件而未登记的数量."""
-    blocked_undeletable: int = 0
-    """其中因子树里有不可删除的子项 (回收站、版本库、下载进度等) 而未登记的数量."""
-    blocked_media_ancestor: int = 0
-    """其中因祖先或自身直接子项里有媒体而未登记的数量."""
-    blocked_cooldown: int = 0
-    """其中因子树最新 mtime 仍在冷静期内而未登记的数量."""
+    """判定为候选但因子树里有无法识别的文件而未登记的目录数, 与「读不到」的 skipped 分开计."""
     scan_running: bool = False
     """该库是否有扫描无效文件任务在跑, 避免重复触发."""
     last_scan_error: str | None = None

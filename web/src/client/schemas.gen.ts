@@ -3177,6 +3177,16 @@ export const InventoryNodeResponseSchema = {
             title: 'Will Be Empty',
             default: false
         },
+        informational: {
+            type: 'boolean',
+            title: 'Informational',
+            default: false
+        },
+        noise: {
+            type: 'boolean',
+            title: 'Noise',
+            default: false
+        },
         has_children: {
             type: 'boolean',
             title: 'Has Children',
@@ -3284,26 +3294,6 @@ export const InventorySummaryResponseSchema = {
         blocked_dirs: {
             type: 'integer',
             title: 'Blocked Dirs',
-            default: 0
-        },
-        blocked_unexplained: {
-            type: 'integer',
-            title: 'Blocked Unexplained',
-            default: 0
-        },
-        blocked_undeletable: {
-            type: 'integer',
-            title: 'Blocked Undeletable',
-            default: 0
-        },
-        blocked_media_ancestor: {
-            type: 'integer',
-            title: 'Blocked Media Ancestor',
-            default: 0
-        },
-        blocked_cooldown: {
-            type: 'integer',
-            title: 'Blocked Cooldown',
             default: 0
         },
         scan_running: {

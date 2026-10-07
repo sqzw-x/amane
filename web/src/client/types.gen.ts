@@ -1586,6 +1586,14 @@ export type InventoryNodeResponse = {
      */
     will_be_empty?: boolean;
     /**
+     * Informational
+     */
+    informational?: boolean;
+    /**
+     * Noise
+     */
+    noise?: boolean;
+    /**
      * Has Children
      */
     has_children?: boolean;
@@ -1642,22 +1650,6 @@ export type InventorySummaryResponse = {
      * Blocked Dirs
      */
     blocked_dirs?: number;
-    /**
-     * Blocked Unexplained
-     */
-    blocked_unexplained?: number;
-    /**
-     * Blocked Undeletable
-     */
-    blocked_undeletable?: number;
-    /**
-     * Blocked Media Ancestor
-     */
-    blocked_media_ancestor?: number;
-    /**
-     * Blocked Cooldown
-     */
-    blocked_cooldown?: number;
     /**
      * Scan Running
      */
@@ -4660,6 +4652,12 @@ export type GetCleanupInventoryNodesData = {
          * 本页最多返回多少个子节点
          */
         limit?: number;
+        /**
+         * Noise
+         *
+         * 是否列出系统与同步工具的产物
+         */
+        noise?: boolean;
     };
     url: '/api/libraries/{library_id}/cleanup/inventory/nodes';
 };
