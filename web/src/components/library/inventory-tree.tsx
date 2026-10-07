@@ -399,8 +399,6 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
   });
 
   const marker = node.reason ? t(`cleanup.reason.${node.reason}`) : null;
-  // 信息项随宿主条目一起删除: 不给勾选框, 也不显示「将变空」这类只对可执行条目有意义的标记.
-  const informational = Boolean(node.informational);
   const activate = () => {
     if (expandable) onToggleExpand(node.path);
     else onToggle(node);
@@ -414,32 +412,22 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
   return (
     <div className={classes.node} style={depthStyle(depth)}>
       {/* 点击范围是整个行: 内容上下方的内边距也算, 只有勾选框留给切换选中. */}
-      <div
-        className={classes.row}
-        data-clickable={informational ? undefined : true}
-        onClick={informational ? undefined : activate}
-      >
-        {/* 信息项没有勾选框, 空槽让两类的图标与名字仍然对齐. */}
-        <span
-          className={classes.checkbox}
-          onClick={informational ? undefined : (event) => event.stopPropagation()}
-        >
-          {informational ? null : (
-            <Checkbox
-              className={classes.checkboxBox}
-              size="sm"
-              checked={checked}
-              indeterminate={partial}
-              onChange={() => onToggle(node)}
-            />
-          )}
+      <div className={classes.row} data-clickable onClick={activate}>
+        <span className={classes.checkbox} onClick={(event) => event.stopPropagation()}>
+          <Checkbox
+            className={classes.checkboxBox}
+            size="sm"
+            checked={checked}
+            indeterminate={partial}
+            onChange={() => onToggle(node)}
+          />
         </span>
         <div
           className={classes.body}
-          role={informational ? undefined : "button"}
-          tabIndex={informational ? undefined : 0}
+          role="button"
+          tabIndex={0}
           aria-expanded={expandable ? isOpen : undefined}
-          onKeyDown={informational ? undefined : onActivateKeyDown}
+          onKeyDown={onActivateKeyDown}
         >
           {node.kind === "dir" ? (
             isOpen ? (
@@ -459,8 +447,8 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
           ) : null}
           <Text
             className={classes.name}
-            size={informational ? "xs" : "sm"}
-            fw={informational ? undefined : 500}
+            size="sm"
+            fw={500}
             c={node.noise ? "dimmed" : undefined}
             truncate
             title={node.path}
@@ -469,33 +457,29 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
           </Text>
           {/* 徽章与体积整体换行 (窄屏) 或整体保持不压缩, 都不拆开单个元素. */}
           <span className={classes.meta}>
-            {!informational &&
-            node.will_be_empty &&
-            node.kind === "dir" &&
-            !node.reason &&
-            kept.entries === 0 ? (
+            {node.will_be_empty && node.kind === "dir" && !node.reason && kept.entries === 0 ? (
               <Badge size="sm" variant="light" color="orange">
                 {t("cleanup.willBeEmpty")}
               </Badge>
             ) : null}
-            {!informational && node.hardlink ? (
+            {node.hardlink ? (
               <Tooltip label={t("cleanup.hardlinkHint")}>
                 <Badge size="sm" variant="light" color="gray">
                   {t("cleanup.hardlink")}
                 </Badge>
               </Tooltip>
             ) : null}
-            {!informational && marker ? (
+            {marker ? (
               <Badge size="sm" variant="default">
                 {marker}
               </Badge>
             ) : null}
             {node.kind !== "dir" ? (
-              <Text size={informational ? "xs" : "sm"} c="dimmed">
+              <Text size="sm" c="dimmed">
                 {formatFileSize(node.size)}
               </Text>
             ) : null}
-            {!informational && node.entry_count > 1 ? (
+            {node.entry_count > 1 ? (
               <Text size="sm" c="dimmed">
                 {t("cleanup.nodeCount", { count: node.entry_count })}
               </Text>

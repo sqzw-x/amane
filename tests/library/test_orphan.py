@@ -1,7 +1,7 @@
 """残留目录判定: 只含附属文件的目录进清理清单, 其余一律不判定.
 
 判定同时覆盖三个方向 (祖先的直接子项、自身、子树), 因此用例按方向分组, 并单独覆盖
-登记形态 (嵌套候选、内部条目丢弃、库根退化) 与冷静期边界.
+登记形态 (嵌套候选、内部条目保留、库根与扫描范围目录的退化) 与冷静期边界.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import pytest
 
 from amane.library import (
     ORPHAN_COOLDOWN_SECONDS,
+    TRASH_DIRNAME,
     CleanupInventory,
     InventoryEntryKind,
     InventoryReason,
@@ -418,8 +419,8 @@ class TestRegistration:
         assert _container(inventory, lib) is True
         assert _sizes(inventory, lib)["old"] == 30
 
-    def test_inner_entries_are_discarded(self, tmp_path: Path) -> None:
-        """候选内部的空目录与黑名单文件随外层条目一起被丢弃."""
+    def test_inner_entries_are_kept(self, tmp_path: Path) -> None:
+        """候选内部的空目录与黑名单文件保留为条目: 丢掉会让用户既看不到也删不掉."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / "poster.jpg", size=10)
         _touch(lib / "old" / "sample.jpg", size=20)
@@ -429,8 +430,17 @@ class TestRegistration:
 
         assert _container(inventory, lib) is True
         assert _sizes(inventory, lib)["old"] == 30
+        assert _reasons(inventory, lib) == {
+            "old": InventoryReason.ORPHAN,
+            "old/poster.jpg": InventoryReason.ORPHAN,
+            "old/sample.jpg": InventoryReason.BLACKLIST,
+            "old/emptysub": InventoryReason.EMPTY_DIR,
+        }
         assert inventory.truncated is False
         assert inventory.dropped == 0
+        node = find_inventory_node(build_inventory_tree(inventory), lib / "old")
+        assert node is not None
+        assert {child.path.name for child in node.children} == {"poster.jpg", "sample.jpg", "emptysub"}
 
     def test_tree_has_single_node_per_path(self, tmp_path: Path) -> None:
         lib = tmp_path / "lib"
@@ -577,6 +587,43 @@ class TestScopeLayer:
         os.utime(lib, (_NOW - 60, _NOW - 60))
 
         assert _reasons(_scan(lib), lib) == {}
+
+    def test_root_files_registered_when_media_elsewhere(self, tmp_path: Path) -> None:
+        """库内别处有正片与库根这一层的文件是不是残留无关: 门槛只按本层算."""
+        lib = tmp_path / "lib"
+        _touch(lib / "NSFS-039.nfo")
+        _touch(lib / "work" / "NSFS-001.mp4")
+
+        assert _reasons(_scan(lib), lib) == {"NSFS-039.nfo": InventoryReason.ORPHAN}
+
+    def test_root_files_registered_with_trash_present(self, tmp_path: Path) -> None:
+        """库根的回收站目录不拦逐文件登记: 这一层不会被整层删除, 回收站不受牵连."""
+        lib = tmp_path / "lib"
+        _touch(lib / "NSFS-039.nfo")
+        (lib / TRASH_DIRNAME).mkdir(parents=True)
+
+        assert _reasons(_scan(lib), lib) == {"NSFS-039.nfo": InventoryReason.ORPHAN}
+
+    def test_root_files_skipped_when_download_in_progress(self, tmp_path: Path) -> None:
+        """本层有下载进度时不登记: 附属文件可能属于那个还没落地的下载."""
+        lib = tmp_path / "lib"
+        _touch(lib / "NSFS-039.nfo")
+        _touch(lib / "NSFS-039.mp4.part")
+
+        assert _reasons(_scan(lib), lib) == {}
+
+    def test_junk_video_does_not_count_as_media(self, tmp_path: Path) -> None:
+        """`._x.mp4` 是伴生文件, 命中黑名单也只是条目: 它不把同一层变成「有媒体」."""
+        lib = tmp_path / "lib"
+        _touch(lib / "._NSFS-039.mp4", size=1)
+        _touch(lib / "NSFS-039.nfo")
+
+        inventory = _scan(lib, blacklist=["_"])
+
+        assert _reasons(inventory, lib) == {
+            "._NSFS-039.mp4": InventoryReason.BLACKLIST,
+            "NSFS-039.nfo": InventoryReason.ORPHAN,
+        }
 
 
 class TestBlockedUnexplained:

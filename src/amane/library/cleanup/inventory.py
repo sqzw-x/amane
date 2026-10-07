@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from ...utils.path import path_key
 from ...utils.threads import in_thread
 from ..rules import TRASH_DIRNAME
 from ..scan import LibraryFileKind, LibraryHit, LibraryScan, UnwantedKind
@@ -88,8 +89,6 @@ class InventoryEntry:
     残留目录属于这一种 — 用户要能逐个文件选择删或不删, 因此内容本身就是条目; 目录条目
     只承载「这是一处残留」与整目录的汇总, 删除时跳过它, 删完由剪枝回收空目录.
     """
-    informational: bool = False
-    """只给用户看, 不作为独立条目执行."""
     noise: bool = False
     """操作系统与同步工具的产物 (.DS_Store、Thumbs.db、*.tmp 等).
 
@@ -122,9 +121,7 @@ class CleanupInventory:
     source: InventorySource
     created_at: datetime
     entries: list[InventoryEntry] = field(default_factory=list)
-    """执行集合: `DELETE` 的目标只来自这里, 信息项不在其中."""
-    informational: list[InventoryEntry] = field(default_factory=list)
-    """只给用户看的条目 (残留目录的内容). 它们随宿主条目一起删除, 因此不进执行集合."""
+    """执行集合: `DELETE` 的目标只来自这里, 容器条目在展开后不在其中."""
     dirs: dict[Path, DirCoverage] = field(default_factory=dict)
     truncated: bool = False
     dropped: int = 0
@@ -230,7 +227,6 @@ class _ScanState:
     skipped_dirs: int = 0
     skipped_files: int = 0
     blocked: BlockedDirs = field(default_factory=BlockedDirs)
-    informational: list[InventoryEntry] = field(default_factory=list)
     orphan_scan: OrphanScan | None = None
     """带残留判定时非空; 缺省不判定, 与既有调用方兼容."""
     now: float = 0.0
@@ -244,18 +240,36 @@ class _ScanState:
 
 
 @dataclass(frozen=True, slots=True)
+class _LevelFacts:
+    """本目录的**直接子项**的判定输入.
+
+    子目录的「祖先直接子项里有没有媒体」由它传递; 库根与扫描范围目录的逐文件登记也只看它 —
+    整库别处有正片与这一层的文件是不是残留无关.
+    """
+
+    has_media: bool = False
+    """本层有媒体; 读不到的子项按有媒体处理 (保守)."""
+    veto: bool = False
+    """本层有不可删除的**文件**子项 (下载进度). 目录类不可删除项不影响逐文件登记: 整层不会被删."""
+    newest_mtime: float = 0.0
+    companions: tuple[tuple[Path, os.stat_result], ...] = ()
+    """本层的附属文件."""
+
+
+@dataclass(frozen=True, slots=True)
 class _DirResult:
     """一个目录的统计.
 
-    ``entries`` / ``disappears`` 供覆盖表使用; 其余四项是残留判定的输入, 由递归向上汇总 —
+    ``entries`` / ``disappears`` 供覆盖表使用; 其余是残留判定的输入, 由递归向上汇总 —
     它们都在同一次遍历里算出, 判定因此不额外访问磁盘.
     """
 
     children: int
     entries: int
     disappears: bool
-    has_media: bool = False
-    """本目录的**直接子项**里是否有媒体."""
+    level: _LevelFacts = field(default_factory=_LevelFacts)
+    subtree_has_media: bool = False
+    """子树里是否有媒体."""
     explainable: bool = True
     """子树里是否只有附属文件与可随目录删除的垃圾项."""
     undeletable: bool = False
@@ -267,12 +281,13 @@ class _DirResult:
     blocked_in_subtree: bool = False
     """子树里是否已有未登记的候选; 由它保证同一原因只按最外层那一个计数."""
     newest_mtime: float = 0.0
+    """子树内最新的 mtime; 残留判定的冷静期按它算, 深层刚动过同样拦住整棵子树."""
     bytes_total: int = 0
     """子树内会被删除的字节合计, 写进目录条目的体积."""
     companions: tuple[tuple[Path, os.stat_result], ...] = ()
-    """子树内的附属文件; 目录命中残留时登记为信息项, 让面板列出即将删除的内容."""
+    """子树内的附属文件; 目录命中残留时登记为条目, 让面板列出即将删除的内容."""
     noise: tuple[tuple[Path, os.stat_result], ...] = ()
-    """子树内的垃圾文件 (系统与同步工具的产物); 同样登记为信息项, 面板默认折叠."""
+    """子树内的垃圾文件 (系统与同步工具的产物); 同样登记为条目, 面板默认折叠."""
 
 
 @in_thread
@@ -316,7 +331,7 @@ def scan_inventory(
     )
     result = _walk(scope_dir, state=state, scan=scan, recursive=recursive, ancestor_has_media=False)
     if result is not None and orphan_scan is not None:
-        _register_scope_files(scope_dir, result=result, state=state, directory_mtime=scope_mtime)
+        _register_scope_files(result=result, state=state, directory_mtime=scope_mtime)
     inventory = CleanupInventory(
         inventory_id=new_inventory_id(),
         library_id=library_id,
@@ -327,7 +342,6 @@ def scan_inventory(
         source=source,
         created_at=datetime.now(UTC),
         entries=state.entries,
-        informational=state.informational,
         dirs=state.dirs,
         truncated=state.truncated,
         dropped=state.dropped,
@@ -375,7 +389,10 @@ def _walk(
     total = 0
     removed = 0
     entries = 0
-    self_media = False
+    level_media = False
+    level_veto = False
+    level_newest_mtime = 0.0
+    subtree_media = False
     explainable = True
     undeletable = False
     has_content = False
@@ -387,7 +404,8 @@ def _walk(
     companions: list[tuple[Path, os.stat_result]] = []
     noise: list[tuple[Path, os.stat_result]] = []
     # 两趟: 先看清本层有没有媒体, 再下钻. 本层的媒体是子目录的「祖先直接子项含媒体」,
-    # 边看边传会让排在媒体之前的子目录漏掉这个条件 (目录枚举顺序不保证).
+    # 边看边传会让排在媒体之前的子目录漏掉这个条件 (目录枚举顺序不保证). 本层的媒体与
+    # 最新 mtime 在第一个循环里顺带算出, 不再为此重扫一遍子项.
     for child in children:
         total += 1
         path = Path(child.path)
@@ -400,10 +418,17 @@ def _walk(
         except OSError as exc:
             state.skipped_files += 1
             logger.warning("inventory scan entry unreadable", path=str(path), error=str(exc))
+            # 读不到的按有媒体处理 (保守), 与逐层判定同一口径.
+            level_media = True
             continue
+        level_newest_mtime = max(level_newest_mtime, child_stat.st_mtime)
         newest_mtime = max(newest_mtime, child_stat.st_mtime)
-        if stat.S_ISDIR(child_stat.st_mode):
-            if classify_junk(path, is_dir=True) is JunkKind.VETO:
+        is_dir = stat.S_ISDIR(child_stat.st_mode)
+        # 判定顺序是契约的一部分: 垃圾项先于媒体判据 (._x.mp4 是伴生文件, 不是视频),
+        # 媒体先于白名单 (用户可以把 .mp4 写进 subtitle_extensions).
+        junk = classify_junk(path, is_dir=is_dir)
+        if is_dir:
+            if junk is JunkKind.VETO:
                 # 不可删除的子项: 不递归、不登记, 并使该目录不判定. 口径与回收站一致,
                 # 差别只在它不需要单独列出 (回收站要在面板上有名字).
                 undeletable = True
@@ -421,34 +446,37 @@ def _walk(
             entries += 1
             removed += 1
             bytes_total += child_stat.st_size
-            self_media = self_media or _is_media(path, state=state)
+            if junk is None:
+                level_media = level_media or _is_media(path, state=state)
             continue
-        # 判定顺序是契约的一部分: 垃圾项先于媒体判据 (._x.mp4 是伴生文件, 不是视频),
-        # 媒体先于白名单 (用户可以把 .mp4 写进 subtitle_extensions).
-        junk = classify_junk(path, is_dir=False)
         if junk is JunkKind.DELETABLE:
-            # 垃圾文件随目录一起删除: 不否决, 但登记为信息项 — 用户有权看到即将删除的
+            # 垃圾文件随目录一起删除: 不否决, 但登记为条目 — 用户有权看到即将删除的
             # 全部内容. 面板默认折叠这一类, 由用户决定要不要展开.
             noise.append((path, child_stat))
             continue
         if junk is JunkKind.VETO:
             undeletable = True
+            level_veto = True
             continue
         orphan_scan = state.orphan_scan
         if orphan_scan is not None and orphan_scan.is_media(path, trailer=state.trailer_matcher):
-            self_media = True
+            level_media = True
             continue
         if orphan_scan is not None and orphan_scan.is_companion(path):
             # 附属文件: 判定通过, 不进执行集合. 目录命中残留时由 `_register_orphan` 登记为
-            # 信息项, 供面板列出「即将删除什么」; 库根与扫描范围目录那两层另行逐文件登记.
+            # 条目, 供面板列出「即将删除什么」; 库根与扫描范围目录那两层另行逐文件登记.
             bytes_total += child_stat.st_size
             companions.append((path, child_stat))
             continue
         explainable = False
 
-    # 下钻之前定死「本层直接子项里有没有媒体」: 兄弟目录之间不构成祖先关系, 边下钻边更新
-    # 会让排在媒体之后的兄弟被误判成「祖先含媒体」, 判定结果因此取决于枚举顺序.
-    ancestor_has_media = ancestor_has_media or _level_has_media(children, state=state)
+    level = _LevelFacts(
+        has_media=level_media,
+        veto=level_veto,
+        newest_mtime=level_newest_mtime,
+        companions=tuple(companions),
+    )
+    ancestor_has_media = ancestor_has_media or level_media
     for path, child_stat in subdirs:
         sub = _record_dir(
             path,
@@ -463,12 +491,13 @@ def _walk(
         entries += sub.entries
         if sub.disappears:
             removed += 1
-        self_media = self_media or sub.has_media
+        subtree_media = subtree_media or sub.subtree_has_media
         explainable = explainable and sub.explainable
         undeletable = undeletable or sub.undeletable
         orphan_in_subtree = orphan_in_subtree or sub.orphan_in_subtree
         blocked_in_subtree = blocked_in_subtree or sub.blocked_in_subtree
         has_content = has_content or sub.has_content
+        newest_mtime = max(newest_mtime, sub.newest_mtime)
         bytes_total += sub.bytes_total
         # 子目录被外层吸收时它的附属文件要跟着上浮, 否则嵌套残留的内容列不出来.
         companions.extend(sub.companions)
@@ -478,7 +507,8 @@ def _walk(
         children=total,
         entries=entries,
         disappears=total > 0 and removed == total,
-        has_media=self_media,
+        level=level,
+        subtree_has_media=level_media or subtree_media,
         explainable=explainable,
         undeletable=undeletable,
         has_content=has_content,
@@ -489,31 +519,6 @@ def _walk(
         companions=tuple(companions),
         noise=tuple(noise),
     )
-
-
-def _level_has_media(children: Sequence[os.DirEntry[str]], *, state: _ScanState) -> bool:
-    """本层 (某个目录的直接子项) 里有没有媒体; 读不到的子项按有媒体处理 (保守).
-
-    判定顺序与 `_walk` 一致: 垃圾项先于媒体判据, 否则 macOS 的 `._x.mp4` 会被当成视频.
-    垃圾项自己不是媒体, 它的子树也不下钻 (不可删除的子项由 `_walk` 单独处理).
-    """
-    orphan_scan = state.orphan_scan
-    if orphan_scan is None:
-        return False
-    for child in children:
-        path = Path(child.path)
-        try:
-            child_stat = path.lstat()
-        except OSError:
-            return True
-        is_dir = stat.S_ISDIR(child_stat.st_mode)
-        if classify_junk(path, is_dir=is_dir) is not None:
-            continue
-        if is_dir:
-            continue
-        if orphan_scan.is_media(path, trailer=state.trailer_matcher):
-            return True
-    return False
 
 
 def _is_media(path: Path, *, state: _ScanState) -> bool:
@@ -558,7 +563,6 @@ def _record_dir(
         # 不递归时子目录不是处置对象: 计入子项数, 使父目录不会被预告清除.
         return None
     entries_before = len(state.entries)
-    informational_before = len(state.informational)
     dropped_before = state.dropped
     truncated_before = state.truncated
     dirs_before = set(state.dirs)
@@ -578,8 +582,7 @@ def _record_dir(
         verdict = orphan_scan.verdict(
             path,
             ancestor_has_media=ancestor_has_media,
-            self_has_media=result.has_media,
-            subtree_has_media=result.has_media,
+            subtree_has_media=result.subtree_has_media,
             subtree_explainable=result.explainable,
             subtree_undeletable=result.undeletable,
             subtree_has_content=result.has_content,
@@ -593,7 +596,6 @@ def _record_dir(
                 result=result,
                 state=state,
                 entries_before=entries_before,
-                informational_before=informational_before,
                 dropped_before=dropped_before,
                 truncated_before=truncated_before,
                 dirs_before=dirs_before,
@@ -630,7 +632,6 @@ def _register_orphan(
     result: _DirResult,
     state: _ScanState,
     entries_before: int,
-    informational_before: int,
     dropped_before: int,
     truncated_before: bool,
     dirs_before: set[Path],
@@ -640,11 +641,10 @@ def _register_orphan(
     内容本身就是条目, 用户因此能逐个文件选择删或不删, 与黑名单 / 体积过小条目一致; 目录
     条目只承载「这是一处残留」与整目录的汇总, 执行时跳过它 (删完由剪枝回收空目录).
 
-    子树里原有的条目 (空子目录、命中黑名单的文件) 先丢弃: 目录展开后只保留内容文件, 否则
-    同一路径会既是指向子节点的分支、又是条目节点, 面板无法展开.
+    子树里已经登记的条目 (空子目录、命中黑名单的文件) 同样保留: 它们也是这一处残留的内容,
+    丢掉会让用户既看不到也删不掉. 只有会重新登记的那部分 (附属文件与垃圾文件, 含嵌套容器
+    上浮上来的) 摘掉重登, 以免同一路径出现两条; 嵌套的容器条目一并摘掉, 它的内容已经上浮.
     """
-    # `entries_before` 取自进入子树之前: 这一段之后的条目都属于被吸收的子树.
-    inner = len(state.entries) - entries_before
     # 容器条目先登记并占住一个位置: 触顶时它必须留下 — 少了它用户看不到这处残留.
     container = InventoryEntry(
         path=path,
@@ -655,11 +655,13 @@ def _register_orphan(
     )
     if not _record_entry(container, state=state):
         return result
-    # 丢弃子树里原有的条目 (空子目录、命中黑名单的文件): 目录展开后只保留内容文件, 否则
-    # 同一路径会既是指向子节点的分支、又是条目节点, 面板无法展开. 容器条目留在列表里,
-    # 因此截断的是它前面那一段 (摘出再截断会让容器腾出的位置被内容条目占掉).
-    del state.entries[entries_before : entries_before + inner]
-    del state.informational[informational_before:]
+    # `entries_before` 取自进入子树之前, 末尾是刚登记的容器: 这一段都是被吸收的子树.
+    inner = state.entries[entries_before:-1]
+    relisted = {path_key(item[0]) for item in (*result.companions, *result.noise)}
+    kept = [entry for entry in inner if not entry.expandable and path_key(entry.path) not in relisted]
+    # 容器条目留在列表里直到内容登记完: 它占住的那个位置必须算数, 否则触顶时内容会反过来
+    # 把容器挤掉, 而那容器是这处残留在面板上的唯一入口.
+    state.entries[entries_before:-1] = kept
     # 子树内触顶丢掉的候选随容器条目一起被吸收, 否则面板会预告「另有 N 项未纳入」,
     # 而那 N 项已经在清单里.
     state.dropped = dropped_before
@@ -689,9 +691,10 @@ def _register_orphan(
         del state.dirs[covered]
     return _DirResult(
         children=result.children,
-        entries=1 + len(listed),
+        entries=1 + len(listed) + len(kept),
         disappears=result.disappears,
-        has_media=result.has_media,
+        level=result.level,
+        subtree_has_media=result.subtree_has_media,
         explainable=result.explainable,
         undeletable=result.undeletable,
         orphan_in_subtree=True,
@@ -704,41 +707,28 @@ def _register_orphan(
 
 
 def _register_scope_files(
-    directory: Path,
     *,
     result: _DirResult,
     state: _ScanState,
     directory_mtime: float,
 ) -> None:
-    """库根与扫描范围目录的退化处置: 逐文件登记白名单内的附属文件.
+    """库根与扫描范围目录的退化处置: 逐文件登记本层的附属文件.
 
     这两层永不登记为目录条目 (一条条目就能带走整库内容), 但「下载目录本身就是库根、视频
-    整理走后根目录里留下 NFO 与图片」是最常见的形态, 不能整层放弃. 同一道门仍然适用:
-    该层自身的直接子项里有媒体时, 这些文件是正片的附属文件, 不是残留.
+    整理走后根目录里留下 NFO 与图片」是最常见的形态, 不能整层放弃.
+
+    条件只按**本层**算, 与目录条目的子树口径不同: 库内别处有正片, 与这一层留下的文件是不是
+    残留无关, 子树口径会让上面这个形态永不生效. 本层有媒体 (正片就在旁边)、本层有下载进度
+    (不可删除的文件子项)、本层刚变动过 (附属文件先落盘), 三种情况都不登记. 目录类的不可删除
+    子项不影响: 这一层不会被整层删除, 回收站与版本库目录不受牵连.
     """
     orphan_scan = state.orphan_scan
-    if orphan_scan is None or result.has_media:
+    level = result.level
+    if orphan_scan is None or level.has_media or level.veto:
         return
-    if not result.explainable or result.undeletable:
+    if state.now - max(level.newest_mtime, directory_mtime) <= ORPHAN_COOLDOWN_SECONDS:
         return
-    if state.now - max(result.newest_mtime, directory_mtime) <= ORPHAN_COOLDOWN_SECONDS:
-        return
-    try:
-        with os.scandir(directory) as scanned:
-            children = list(scanned)
-    except OSError:
-        return
-    for child in children:
-        path = Path(child.path)
-        if not orphan_scan.is_companion(path):
-            continue
-        try:
-            child_stat = path.lstat()
-        except OSError:
-            state.skipped_files += 1
-            continue
-        if stat.S_ISDIR(child_stat.st_mode):
-            continue
+    for path, child_stat in level.companions:
         entry = InventoryEntry(
             path=path,
             kind=InventoryEntryKind.SYMLINK if stat.S_ISLNK(child_stat.st_mode) else InventoryEntryKind.FILE,
@@ -793,19 +783,17 @@ class InventoryNode:
     will_be_empty: bool
     expandable: bool = False
     """容器条目: 执行时展开为子条目; 面板把它当目录节点渲染."""
-    informational: bool = False
-    """只给用户看, 不作为独立条目执行; 不计父节点的条目数与体积."""
     noise: bool = False
     """系统与同步工具的产物; 面板默认折叠这一类."""
     children: tuple[InventoryNode, ...] = ()
-    """目录条目的内容是信息项; 容器目录的子节点是清单条目与分支."""
+    """容器目录的子节点是清单条目与分支."""
 
 
 def build_inventory_tree(inventory: CleanupInventory) -> InventoryNode:
     """把清单折叠成树. 同 inode 只算一次体积, 与 `total_size` 一致.
 
-    信息项不参与祖先链: 它们直接挂在自己的宿主目录条目下, 否则目录条目所在的路径会同时
-    产出条目节点与分支节点, `find_inventory_node` 会返回没有子节点的那个, 面板无法展开.
+    容器条目覆盖的路径由条目节点代表, 不再另建分支节点, 否则同一路径会同时产出条目节点与
+    分支节点, `find_inventory_node` 会返回没有子节点的那个, 面板无法展开.
     """
     by_parent: dict[Path, list[InventoryEntry]] = {}
     subdirs: dict[Path, set[Path]] = {}
@@ -827,16 +815,6 @@ def build_inventory_tree(inventory: CleanupInventory) -> InventoryNode:
             subdirs.setdefault(cursor.parent, set()).add(cursor)
             cursor = cursor.parent
 
-    # 信息项挂到最近的宿主目录条目: 被吸收的子目录不再是条目, 它的内容要上浮到外层.
-    hosts = {entry.path for entry in inventory.entries if entry.kind is InventoryEntryKind.DIR}
-    by_host: dict[Path, list[InventoryEntry]] = {}
-    for item in inventory.informational:
-        cursor = item.path.parent
-        while cursor not in hosts and _is_under(cursor, inventory.root):
-            cursor = cursor.parent
-        if cursor in hosts:
-            by_host.setdefault(cursor, []).append(item)
-
     # 容器条目覆盖的路径: 这些路径由条目节点代表, 不再另建分支节点, 否则同一路径会出现两个节点.
     hosts = {entry.path for entry in inventory.entries if entry.expandable}
 
@@ -856,10 +834,7 @@ def build_inventory_tree(inventory: CleanupInventory) -> InventoryNode:
                 node.entry_count = sum(child.entry_count for child in node.children)
                 node.entry_bytes = sum(child.entry_bytes for child in node.children)
         coverage = inventory.dirs.get(directory)
-        # 信息项不计入容器目录: 面板按 entry_count 算选中量, 而信息项随宿主条目一起删除.
-        # 容器条目代表它整棵子树 (汇总取子项), 因此在父级里按它自己的 entry_count 计一次;
-        # 信息项不是删除目标, 不计入.
-        counted_nodes = [node for node in nodes if not node.informational]
+        # 容器条目代表它整棵子树 (汇总取子项), 因此在父级里按它自己的 entry_count 计一次.
         return InventoryNode(
             path=directory,
             name=directory.name,
@@ -868,8 +843,8 @@ def build_inventory_tree(inventory: CleanupInventory) -> InventoryNode:
             reason=None,
             size=None,
             hardlink=False,
-            entry_count=sum(node.entry_count for node in counted_nodes),
-            entry_bytes=sum(node.entry_bytes for node in counted_nodes),
+            entry_count=sum(node.entry_count for node in nodes),
+            entry_bytes=sum(node.entry_bytes for node in nodes),
             will_be_empty=coverage.will_be_empty if coverage is not None else False,
             children=tuple(nodes),
         )
@@ -901,7 +876,6 @@ def _entry_node(entry: InventoryEntry, *, counted: set[Path]) -> InventoryNode:
         entry_bytes=entry.size if entry.path in counted and entry.size is not None else 0,
         will_be_empty=is_dir,
         expandable=entry.expandable,
-        informational=entry.informational,
         noise=entry.noise,
     )
 
@@ -946,7 +920,6 @@ def scan_trash(
         source=InventorySource.TRASH,
         created_at=datetime.now(UTC),
         entries=state.entries,
-        informational=state.informational,
         dirs=state.dirs,
         truncated=state.truncated,
         dropped=state.dropped,

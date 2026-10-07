@@ -1592,10 +1592,6 @@ export type InventoryNodeResponse = {
      */
     will_be_empty?: boolean;
     /**
-     * Informational
-     */
-    informational?: boolean;
-    /**
      * Noise
      */
     noise?: boolean;

@@ -17,7 +17,6 @@ from ..library import (
     DeleteOutcome,
     DeleteTally,
     InventoryEntry,
-    InventoryEntryKind,
     InventoryReason,
     InventoryStore,
     OrphanScan,
@@ -26,8 +25,8 @@ from ..library import (
     prune_empty_dirs,
     same_path,
 )
-from ..library.cleanup.orphan import classify_junk
-from ..utils.path import existing_disk_path, path_key
+from ..library.cleanup.orphan import JunkKind, classify_junk
+from ..utils.path import path_key
 from ..utils.threads import in_thread, path_is_dir
 from ._common import LibraryTaskLocks
 from .models import DeletePayload, DeleteResult
@@ -44,8 +43,11 @@ logger = structlog.get_logger()
 class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
     """执行一份清单; 不重新扫描, 不重新生成清单.
 
-    残留条目是唯一的例外: 它们描述的是「目录里没有正片」这一会变的事实, 而清单有 24 小时
-    有效期, 因此执行前用同一个判定复验一次 — 扫描之后落进正片的目录会连同索引行一起被删.
+    描述会变的事实的条目是例外, 执行前就地复验一次:
+
+    - 残留条目: 清单有 24 小时有效期, 而「目录里没有正片」随时会变, 扫描之后落进正片的目录
+      会连同索引行一起被删;
+    - 空目录条目: 执行侧删目录是递归的, 后来落进去的内容会一起没.
 
     输入是清单标识与排除项, 执行集合恒为清单的子集: 清单之外的路径不可能被删除.
     同库执行期与 ORGANIZE 共用一把锁.
@@ -108,10 +110,11 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
             if not _is_excluded(entry.path, excluded=excluded_keys, included=included_keys)
         ]
         excluded = len(inventory.entries) - len(targets)
-        # 容器条目 (残留目录) 展开为它的子条目: 自身不是删除目标, 删完由剪枝回收空目录.
+        # 容器条目 (残留目录) 自身不是删除目标, 但它的子树要整体复验一次, 因此先记下路径.
+        containers = {path_key(entry.path): entry.path for entry in inventory.entries if entry.expandable}
         targets = [entry for entry in targets if not entry.expandable]
-        orphan_scan = self._orphan_scan(library, library_root=library_root)
-        # 复验的祖先探测按目录记忆: 同一目录下的条目走的是同一趟路, 网络盘上这是删除的主要开销.
+        orphan_scan = self._orphan_scan(library, library_root=library_root, patterns=inventory.patterns)
+        # 复验的探测按目录记忆: 同一目录下的条目走的是同一趟路, 网络盘上这是删除的主要开销.
         probe = _MediaProbe(orphan_scan=orphan_scan) if orphan_scan is not None else None
         tally = DeleteTally()
         removed_paths: list[Path] = []
@@ -119,13 +122,13 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
         total = len(targets)
         await self.report_progress(0, total, "delete")
         for i, entry in enumerate(targets, start=1):
-            if probe is not None and entry.reason is InventoryReason.ORPHAN:
-                refusal = await _reverify(entry, library_root=library_root, probe=probe)
+            if probe is not None:
+                refusal = await _reverify(entry, probe=probe, container=_host_container(entry.path, containers))
                 if refusal is not None:
                     # 记成 failed 而不是跳过: 用户确认过的条目没有删除, 结果里必须看得见.
                     tally.record(DeleteOutcome(status="failed", error=refusal))
                     reverify_rejected += 1
-                    logger.warning("delete orphan reverify rejected", path=str(entry.path), reason=refusal)
+                    logger.warning("delete reverify rejected", path=str(entry.path), reason=refusal)
                     await self.report_progress(i, total, entry.path.name)
                     continue
             outcome = await delete_target(entry.path, library_root=library_root)
@@ -175,8 +178,12 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
             ),
         )
 
-    def _orphan_scan(self, library: Library, *, library_root: Path) -> OrphanScan | None:
-        """复验用的库设置; 没有配置来源 (旧构造方式) 时跳过复验."""
+    def _orphan_scan(self, library: Library, *, library_root: Path, patterns: Sequence[str]) -> OrphanScan | None:
+        """复验用的判定设置; 没有配置来源 (旧构造方式) 时跳过复验.
+
+        ``patterns`` 取自清单本身而不是库的当前设置: 扫描侧用的是那次任务实际生效的值
+        (``LibraryScanBase._apply_library`` 允许按任务覆盖), 复验用同一份设置才谈得上「同一套条件」.
+        """
         if self._config is None:
             return None
         media_extensions = frozenset(self._config.watcher.media_extensions) or MEDIA_EXTENSIONS
@@ -185,7 +192,7 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
             scope_dir=library_root,
             subtitle_extensions=library.subtitle_extensions,
             trailer_pattern=library.trailer_pattern,
-            patterns=library.patterns,
+            patterns=patterns,
             media_extensions=media_extensions,
         )
 
@@ -247,14 +254,16 @@ def _deepest_depth(path: str | Path, keys: set[str]) -> int:
 
 @dataclass
 class _MediaProbe:
-    """一趟删除里的祖先探测缓存.
+    """一趟删除里的探测缓存.
 
     复验要把条目的祖先链逐级列一遍, 同一目录下的条目走的是同一趟路: 云下载库的 4421 个残留
-    条目落在约 1095 个目录里, 按目录记住每级结果即可少列约四分之三的目录.
+    条目落在约 1095 个目录里, 按目录记住结果即可少列约四分之三的目录. 容器子树的复验同样
+    只做一次 — 一个容器下的条目共用一个结论.
     """
 
     orphan_scan: OrphanScan
     levels: dict[Path, bool] = field(default_factory=dict)
+    subtrees: dict[Path, str | None] = field(default_factory=dict)
 
     def level_has_media(self, directory: Path) -> bool:
         cached = self.levels.get(directory)
@@ -264,74 +273,104 @@ class _MediaProbe:
         return cached
 
     def ancestors_have_media(self, directory: Path) -> bool:
-        """目录自身或其任一祖先的直接子项里是否有媒体; 读不到时按有媒体处理 (保守)."""
+        """目录自身或其任一祖先的直接子项里是否有媒体; 读不到时按有媒体处理 (保守).
+
+        只走到扫描范围那一层: 更上面的层扫描时没看过, 拿它否决会把清单里本来成立的条目全部拒掉.
+        """
+        scope = self.orphan_scan.scope_dir
         current = directory
         while True:
             if self.level_has_media(current):
                 return True
-            if current == self.orphan_scan.library_root or current.parent == current:
+            if current == scope or current.parent == current:
                 return False
             current = current.parent
 
+    def subtree_refusal(self, directory: Path) -> str | None:
+        """整棵子树的复验结论; 同一个容器的条目共用一次遍历."""
+        if directory not in self.subtrees:
+            self.subtrees[directory] = _reverify_subtree(directory, orphan_scan=self.orphan_scan)
+        return self.subtrees[directory]
+
+
+def _host_container(path: Path, containers: dict[str, Path]) -> Path | None:
+    """条目所属的容器 (残留目录) 路径; 不在任何容器下时返回 None. 由深到浅取首个命中."""
+    key = PurePath(path_key(path))
+    for candidate in (key, *key.parents):
+        container = containers.get(os.fspath(candidate))
+        if container is not None:
+            return container
+    return None
+
 
 @in_thread
-def _reverify(entry: InventoryEntry, *, library_root: Path, probe: _MediaProbe) -> str | None:
-    """残留条目是否仍然成立; 不成立时返回原因.
+def _reverify(entry: InventoryEntry, *, probe: _MediaProbe, container: Path | None) -> str | None:
+    """条目是否仍然成立; 不成立时返回原因.
 
-    判定与扫描时同一个 (``orphan.py``), 只是数据来源从遍历换成就地读取:
+    判定与扫描时同一套条件 (``orphan.py``), 数据来源从遍历换成就地读取:
 
-    - 祖先的直接子项里出现媒体, 或子树里出现媒体、不可删除的子项、白名单外的文件, 都不再成立;
-    - 目录条目复验整棵子树, 文件条目复验该文件本身 (它可能已被正片覆盖);
+    - 残留条目: 宿主容器的整棵子树复验一次 (子树里出现媒体、不可删除的子项、白名单外的文件
+      都不再成立), 再加上每一级祖先的直接子项 — 祖先旁边出现媒体同样不再成立;
+    - 库根与扫描范围目录的条目没有容器: 祖先链从它所在的那一层算起, 与扫描时的条件一致;
+    - 空目录条目: 目录不再为空即拒绝, 执行侧删目录是递归的, 后来落进去的内容会一起没;
     - 冷静期不重复施加: 条目已经过用户确认, 再按时间否决只会让删除在无提示的情况下少做.
     """
-    if entry.path.parent != library_root and probe.ancestors_have_media(entry.path.parent):
+    if entry.reason is InventoryReason.EMPTY_DIR:
+        return _reverify_empty_dir(entry.path)
+    if entry.reason is not InventoryReason.ORPHAN:
+        return None
+    if container is not None:
+        refusal = probe.subtree_refusal(container)
+        if refusal is not None:
+            return refusal
+    if probe.ancestors_have_media(container if container is not None else entry.path.parent):
         return "目录的祖先里出现了媒体"
-    if entry.kind is InventoryEntryKind.DIR:
-        return _reverify_dir(entry.path, orphan_scan=probe.orphan_scan)
-    return _reverify_file(entry.path, orphan_scan=probe.orphan_scan)
+    return None
 
 
-def _reverify_dir(directory: Path, *, orphan_scan: OrphanScan) -> str | None:
+def _reverify_empty_dir(directory: Path) -> str | None:
+    try:
+        with os.scandir(directory) as scanned:
+            for _ in scanned:
+                return "目录不再是空的"
+    except OSError as exc:
+        return f"目录无法读取: {exc}"
+    return None
+
+
+def _reverify_subtree(directory: Path, *, orphan_scan: OrphanScan) -> str | None:
+    """整棵子树的复验: 与扫描时的条件同口径 (冷静期除外).
+
+    判定顺序同样按契约: 垃圾项先于媒体判据 (``._x.mp4`` 是伴生文件, 不是视频); 垃圾项不否决,
+    不可删除的目录子项否决整棵子树.
+    """
     try:
         with os.scandir(directory) as scanned:
             children = list(scanned)
     except OSError as exc:
         return f"目录无法读取: {exc}"
+    trailer = orphan_scan.trailer_matcher()
     for child in children:
         path = Path(child.path)
         try:
             child_stat = path.lstat()
         except OSError as exc:
             return f"子项无法读取: {exc}"
-        if stat.S_ISDIR(child_stat.st_mode):
-            refusal = _reverify_dir(path, orphan_scan=orphan_scan)
+        is_dir = stat.S_ISDIR(child_stat.st_mode)
+        junk = classify_junk(path, is_dir=is_dir)
+        if is_dir:
+            if junk is JunkKind.VETO:
+                return f"目录里出现了不可删除的子项: {path.name}"
+            refusal = _reverify_subtree(path, orphan_scan=orphan_scan)
             if refusal is not None:
                 return refusal
             continue
-        if orphan_scan.is_media(path, trailer=orphan_scan.trailer_matcher()):
-            return f"目录里出现了媒体: {path.name}"
-        if classify_junk(path, is_dir=False) is not None:
+        if junk is not None:
             continue
+        if orphan_scan.is_media(path, trailer=trailer):
+            return f"目录里出现了媒体: {path.name}"
         if not orphan_scan.is_companion(path):
             return f"目录里出现了无法解释的文件: {path.name}"
-    return None
-
-
-def _reverify_file(path: Path, *, orphan_scan: OrphanScan) -> str | None:
-    try:
-        disk_path = existing_disk_path(path, follow_symlinks=False)
-    except OSError as exc:
-        return f"文件无法读取: {exc}"
-    if disk_path is None:
-        # 已经不在磁盘上: 交给执行侧按「已不存在」记账, 不算复验拒绝.
-        return None
-    if orphan_scan.is_media(disk_path, trailer=orphan_scan.trailer_matcher()):
-        return f"文件已被媒体覆盖: {path.name}"
-    # 垃圾文件同样是条目 (面板默认折叠, 打开开关即可见), 与目录复验用同一道门.
-    if classify_junk(disk_path, is_dir=False) is not None:
-        return None
-    if not orphan_scan.is_companion(disk_path):
-        return f"文件不再是附属文件: {path.name}"
     return None
 
 
@@ -342,13 +381,17 @@ def _level_has_media(directory: Path, *, orphan_scan: OrphanScan) -> bool:
             children = list(scanned)
     except OSError:
         return True
+    trailer = orphan_scan.trailer_matcher()
     for child in children:
         path = Path(child.path)
         try:
-            if stat.S_ISDIR(path.lstat().st_mode):
-                continue
+            is_dir = stat.S_ISDIR(path.lstat().st_mode)
         except OSError:
             return True
-        if orphan_scan.is_media(path, trailer=orphan_scan.trailer_matcher()):
+        if classify_junk(path, is_dir=is_dir) is not None:
+            continue
+        if is_dir:
+            continue
+        if orphan_scan.is_media(path, trailer=trailer):
             return True
     return False

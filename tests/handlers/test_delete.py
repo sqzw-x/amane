@@ -20,12 +20,17 @@ if TYPE_CHECKING:
 
 
 async def _inventory_id(repo: Repository, store: InventoryStore, library_id: int, *, path: str | None = None) -> str:
-    """跑一次 SCAN_INVALID 并返回清单标识; `path` 限定扫描范围."""
+    """跑一次 SCAN_INVALID 并返回清单标识; `path` 限定扫描范围.
+
+    与任务入口同一条路: 库默认值 (patterns / recursive) 由 ``resolve`` 落到 payload 上, 扫描侧
+    与执行侧因此看到同一份设置.
+    """
     payload = (
         ScanInvalidPayload(library_id=library_id)
         if path is None
         else ScanInvalidPayload(library_id=library_id, path=path)
     )
+    await payload.resolve(repo)
     result = await ScanInvalidHandler(repo, HotSettings(), store).handle(payload)
     assert result.success is True
     assert result.result is not None
@@ -428,17 +433,19 @@ async def test_delete_reverify_accepts_junk_inside_orphan_dir(repo: Repository, 
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_delete_reverifies_root_orphan_file(repo: Repository, tmp_path: Path) -> None:
-    """根层文件条目同样复验: 该路径已经变成库会当作影片接收的路径时不再删除."""
+    """根层条目同样复验: 库根这一层出现正片之后, 旁边的残留不再是残留."""
     lib_root = tmp_path / "lib"
     lib_root.mkdir()
     entry = lib_root / "NSFS-039.nfo"
     entry.write_bytes(b"x")
-    # 该库把 .nfo 当媒体收: 同名的正片落进来之后, 这条残留条目不再成立.
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, patterns=["**/*.nfo"])
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
     store = InventoryStore()
     _age_for_orphan(lib_root)
     inventory_id = await _inventory_id(repo, store, lib.id)
+
+    # 扫描之后才到达的正片, 与残留条目同一层.
+    (lib_root / "NEW-001.mp4").write_bytes(b"x")
 
     result = await DeleteHandler(repo, store, HotSettings()).handle(
         DeletePayload(library_id=lib.id, inventory_id=inventory_id)
@@ -495,4 +502,96 @@ async def test_delete_orphan_still_executes_when_unchanged(repo: Repository, tmp
     assert result.result is not None
     assert result.result.reverify_rejected == 0
     assert result.result.deleted == 1
+    assert not old.exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(
+    ("appeared", "is_dir"),
+    [
+        ("other/NEW-001.mp4", False),
+        ("other/.stversions", True),
+        ("other/notes.txt", False),
+    ],
+    ids=["媒体", "不可删除的子项", "白名单外的文件"],
+)
+async def test_delete_reverifies_orphan_container_subtree(
+    repo: Repository, tmp_path: Path, appeared: str, is_dir: bool
+) -> None:
+    """正片落在残留目录的**子目录**里时整棵子树不成立: 条目级复验看不到兄弟子目录."""
+    lib_root = tmp_path / "lib"
+    old = lib_root / "old"
+    (old / "other").mkdir(parents=True)
+    (old / "poster.jpg").write_bytes(b"x")
+    (old / "other" / "1.jpg").write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    added = old / appeared
+    if is_dir:
+        added.mkdir()
+    else:
+        added.write_bytes(b"x")
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 2
+    assert result.result.deleted == 0
+    assert (old / "poster.jpg").exists()
+    assert (old / "other" / "1.jpg").exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_reverifies_empty_dir(repo: Repository, tmp_path: Path) -> None:
+    """空目录条目同样复验: 执行侧删目录是递归的, 后来落进去的内容会一起没."""
+    lib_root = tmp_path / "lib"
+    empty = lib_root / "empty"
+    empty.mkdir(parents=True)
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    arrived = empty / "NEW-001.mp4"
+    arrived.write_bytes(b"x")
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 1
+    assert result.result.deleted == 0
+    assert arrived.exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_removes_entries_kept_inside_orphan_container(repo: Repository, tmp_path: Path) -> None:
+    """容器里保留的空子目录同样是删除目标: 丢掉它这处残留就永远清不掉."""
+    lib_root = tmp_path / "lib"
+    old = lib_root / "old"
+    (old / "emptysub").mkdir(parents=True)
+    (old / "poster.jpg").write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.deleted == 2
+    assert result.result.pruned_dirs == 1
     assert not old.exists()

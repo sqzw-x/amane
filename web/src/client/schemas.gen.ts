@@ -3185,11 +3185,6 @@ export const InventoryNodeResponseSchema = {
             title: 'Will Be Empty',
             default: false
         },
-        informational: {
-            type: 'boolean',
-            title: 'Informational',
-            default: false
-        },
         noise: {
             type: 'boolean',
             title: 'Noise',

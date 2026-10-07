@@ -6,6 +6,9 @@
 - 目录的整棵子树里没有媒体;
 - 子树里每个文件要么是附属文件, 要么是可随目录删除的垃圾项, 且没有不可删除的子项.
 
+库根与扫描范围目录不判定 (一条目录条目就能带走整库内容), 它们的附属文件逐条登记, 条件只取
+本层: 库内别处有正片与这一层的文件是不是残留无关.
+
 三个条件都只描述磁盘现状: 索引不参与 (执行侧只复验存在性与边界, 规则不在执行期自动复验),
 因此 ``handlers/delete.py`` 在执行前对残留条目再调一次这里的判定, 拦住扫描之后才落进正片的目录.
 """
@@ -176,7 +179,6 @@ class OrphanScan:
         directory: Path,
         *,
         ancestor_has_media: bool,
-        self_has_media: bool,
         subtree_has_media: bool,
         subtree_explainable: bool,
         subtree_undeletable: bool,
@@ -188,18 +190,18 @@ class OrphanScan:
         """目录能否登记为残留条目; 不是候选 (库根与扫描范围目录) 时返回 None.
 
         库根与扫描范围目录永不登记: 它们是删除的保留目标, 一条条目就能带走整库内容.
-        调用方对这两层退化为逐文件登记.
+        调用方对这两层退化为逐文件登记, 条件按本层算.
+
+        三个条件里的媒体判据都在子树口径上: 目录自己那层的直接子项包含在子树里, 因此不需要
+        单独的参数.
         """
         if directory == self.library_root or directory == self.scope_dir:
             return None
-        if ancestor_has_media or self_has_media or subtree_has_media:
+        if ancestor_has_media or subtree_has_media:
             # 目录里有媒体, 与正常媒体目录一样不用管.
             return None
         if subtree_undeletable:
             # 有不可删除的子项 (回收站、版本库、下载进度): 整个目录不碰.
-            return None
-        if not subtree_has_content:
-            # 子树里只有空目录: 没有内容可清, 由空目录条目处置.
             return None
         if not subtree_has_content:
             # 子树里只有空目录: 没有内容可清, 交给空目录条目.

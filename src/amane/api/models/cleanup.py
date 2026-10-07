@@ -25,8 +25,6 @@ class InventoryNodeResponse(BaseModel):
     """子树内的条目体积, 同 inode 只算一次."""
     will_be_empty: bool = False
     """清单条目全部删除后该目录是否会空 (含子目录递归)."""
-    informational: bool = False
-    """只给用户看, 不作为独立条目执行: 残留目录里的文件随宿主目录条目一起删除."""
     noise: bool = False
     """系统与同步工具的产物; 面板默认折叠这一类, 由用户决定要不要看."""
     has_children: bool = False

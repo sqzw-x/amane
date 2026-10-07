@@ -59,7 +59,9 @@ def _relative(inventory: CleanupInventory, path: Path) -> str:
     return path.relative_to(inventory.root).as_posix()
 
 
-def _to_response(inventory: CleanupInventory, node: InventoryNode, *, children: bool) -> InventoryNodeResponse:
+def _to_response(
+    inventory: CleanupInventory, node: InventoryNode, *, children: bool, noise: bool
+) -> InventoryNodeResponse:
     return InventoryNodeResponse(
         path=_relative(inventory, node.path),
         name=node.name,
@@ -72,10 +74,12 @@ def _to_response(inventory: CleanupInventory, node: InventoryNode, *, children: 
         entry_count=node.entry_count,
         entry_bytes=node.entry_bytes,
         will_be_empty=node.will_be_empty,
-        informational=node.informational,
         noise=node.noise,
-        has_children=bool(node.children),
-        children=[_to_response(inventory, child, children=False) for child in node.children] if children else None,
+        # 折叠时子节点会被过滤掉, 因此可展开与否按过滤后的集合算: 否则面板会给出一个展开后为空的行.
+        has_children=any(noise or not child.noise for child in node.children),
+        children=[_to_response(inventory, child, children=False, noise=noise) for child in node.children]
+        if children
+        else None,
     )
 
 
@@ -94,7 +98,9 @@ def _page(
     children = [child for child in node.children if noise or not child.noise]
     return InventoryNodePage(
         path=_relative(inventory, node.path),
-        items=[_to_response(inventory, child, children=False) for child in children[offset : offset + limit]],
+        items=[
+            _to_response(inventory, child, children=False, noise=noise) for child in children[offset : offset + limit]
+        ],
         total=len(children),
         offset=offset,
         limit=limit,
