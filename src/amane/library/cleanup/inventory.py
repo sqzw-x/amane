@@ -92,7 +92,7 @@ class InventoryEntry:
     noise: bool = False
     """操作系统与同步工具的产物 (.DS_Store、Thumbs.db、*.tmp 等).
 
-    它们同样会被删除, 因此也要列出来; 面板默认折叠这一类, 由用户决定要不要看.
+    它们同样会被删除, 因此也要登记为条目; 面板默认折叠这一类, 由用户展开核对.
     """
 
 
@@ -287,7 +287,7 @@ class _DirResult:
     companions: tuple[tuple[Path, os.stat_result], ...] = ()
     """子树内的附属文件; 目录命中残留时登记为条目, 让面板列出即将删除的内容."""
     noise: tuple[tuple[Path, os.stat_result], ...] = ()
-    """子树内的垃圾文件 (系统与同步工具的产物); 同样登记为条目, 面板默认折叠."""
+    """子树内的垃圾文件; 与附属文件同样登记为条目, 登记时标 `InventoryEntry.noise`."""
 
 
 @in_thread
@@ -403,9 +403,9 @@ def _walk(
     subdirs: list[tuple[Path, os.stat_result]] = []
     companions: list[tuple[Path, os.stat_result]] = []
     noise: list[tuple[Path, os.stat_result]] = []
-    # 两趟: 先看清本层有没有媒体, 再下钻. 本层的媒体是子目录的「祖先直接子项含媒体」,
-    # 边看边传会让排在媒体之前的子目录漏掉这个条件 (目录枚举顺序不保证). 本层的媒体与
-    # 最新 mtime 在第一个循环里顺带算出, 不再为此重扫一遍子项.
+    # 分两趟: 先确定本层有没有媒体, 再递归子目录. 本层媒体是子目录的「祖先直接子项含媒体」,
+    # 边遍历边传递会让排在媒体之前的子目录漏掉这个条件 (目录枚举顺序不保证). 本层媒体与
+    # 最新 mtime 在第一个循环里一并算出, 不为此重扫子项.
     for child in children:
         total += 1
         path = Path(child.path)
@@ -450,8 +450,7 @@ def _walk(
                 level_media = level_media or _is_media(path, state=state)
             continue
         if junk is JunkKind.DELETABLE:
-            # 垃圾文件随目录一起删除: 不否决, 但登记为条目 — 用户有权看到即将删除的
-            # 全部内容. 面板默认折叠这一类, 由用户决定要不要展开.
+            # 随目录一起删除, 不否决判定; 登记为条目让面板列出即将删除的全部内容.
             noise.append((path, child_stat))
             continue
         if junk is JunkKind.VETO:
@@ -522,7 +521,7 @@ def _walk(
 
 
 def _is_media(path: Path, *, state: _ScanState) -> bool:
-    """本层是否躺着媒体. 只在带残留判定时查询, 其余调用方不承担这次判定."""
+    """本层是否存在媒体. 只在带残留判定的扫描里查询, 其余调用方不承担这次判定."""
     orphan_scan = state.orphan_scan
     if orphan_scan is None:
         return False
@@ -563,8 +562,6 @@ def _record_dir(
         # 不递归时子目录不是处置对象: 计入子项数, 使父目录不会被预告清除.
         return None
     entries_before = len(state.entries)
-    dropped_before = state.dropped
-    truncated_before = state.truncated
     dirs_before = set(state.dirs)
     blocked_below = False
     result = _walk(path, state=state, scan=scan, recursive=recursive, ancestor_has_media=ancestor_has_media)
@@ -596,8 +593,6 @@ def _record_dir(
                 result=result,
                 state=state,
                 entries_before=entries_before,
-                dropped_before=dropped_before,
-                truncated_before=truncated_before,
                 dirs_before=dirs_before,
             )
             # 覆盖信息照常登记: 面板要预告的是「这条目录条目删掉之后父目录会空」.
@@ -632,8 +627,6 @@ def _register_orphan(
     result: _DirResult,
     state: _ScanState,
     entries_before: int,
-    dropped_before: int,
-    truncated_before: bool,
     dirs_before: set[Path],
 ) -> _DirResult:
     """把目录登记为一条容器条目, 并把子树里的内容登记为可选择的条目.
@@ -642,10 +635,12 @@ def _register_orphan(
     条目只承载「这是一处残留」与整目录的汇总, 执行时跳过它 (删完由剪枝回收空目录).
 
     子树里已经登记的条目 (空子目录、命中黑名单的文件) 同样保留: 它们也是这一处残留的内容,
-    丢掉会让用户既看不到也删不掉. 只有会重新登记的那部分 (附属文件与垃圾文件, 含嵌套容器
-    上浮上来的) 摘掉重登, 以免同一路径出现两条; 嵌套的容器条目一并摘掉, 它的内容已经上浮.
+    保留条目才能使面板列出并删除这些内容. 只有会重新登记的那部分 (附属文件与垃圾文件, 含嵌套
+    容器上浮上来的) 摘掉重登, 以免同一路径出现两条; 嵌套的容器条目一并摘掉, 它的内容已经上浮.
+
+    触顶时容器条目先占住一个位置: 少了它面板上看不到这处残留; 内容登记完再把它挪到末尾,
+    因此先被丢弃的是内容, 容器不受影响.
     """
-    # 容器条目先登记并占住一个位置: 触顶时它必须留下 — 少了它用户看不到这处残留.
     container = InventoryEntry(
         path=path,
         kind=InventoryEntryKind.DIR,
@@ -659,14 +654,8 @@ def _register_orphan(
     inner = state.entries[entries_before:-1]
     relisted = {path_key(item[0]) for item in (*result.companions, *result.noise)}
     kept = [entry for entry in inner if not entry.expandable and path_key(entry.path) not in relisted]
-    # 容器条目留在列表里直到内容登记完: 它占住的那个位置必须算数, 否则触顶时内容会反过来
-    # 把容器挤掉, 而那容器是这处残留在面板上的唯一入口.
     state.entries[entries_before:-1] = kept
-    # 子树内触顶丢掉的候选随容器条目一起被吸收, 否则面板会预告「另有 N 项未纳入」,
-    # 而那 N 项已经在清单里.
-    state.dropped = dropped_before
-    state.truncated = truncated_before
-    # 内容登记为真正的条目; 垃圾文件标 noise, 面板默认折叠.
+    # 内容登记为真正的条目; 垃圾文件标 noise, 面板默认折叠这一类.
     listed = [
         *((item[0], item[1], False) for item in result.companions),
         *((item[0], item[1], True) for item in result.noise),
@@ -685,8 +674,7 @@ def _register_orphan(
             ),
             state=state,
         )
-    # 容器条目挪到末尾, 位置不影响展示 (它的体积与条目数在树里由子项汇总). 它此刻正好在
-    # 保留条目的后面: 按下标取而不是按值取, 否则挪走的是保留下来的第一条.
+    # 容器条目此刻正好在保留条目的后面: 按下标取而不是按值取, 否则挪走的是保留下来的第一条.
     state.entries.append(state.entries.pop(entries_before + len(kept)))
     for covered in [key for key in state.dirs if key not in dirs_before]:
         del state.dirs[covered]
@@ -785,7 +773,7 @@ class InventoryNode:
     expandable: bool = False
     """容器条目: 执行时展开为子条目; 面板把它当目录节点渲染."""
     noise: bool = False
-    """系统与同步工具的产物; 面板默认折叠这一类."""
+    """取自 `InventoryEntry.noise`; 折叠与标记都由面板按它决定."""
     children: tuple[InventoryNode, ...] = ()
     """容器目录的子节点是清单条目与分支."""
 
@@ -823,7 +811,7 @@ def build_inventory_tree(inventory: CleanupInventory) -> InventoryNode:
         nodes = [_entry_node(entry, counted=counted) for entry in by_parent.get(directory, [])]
         for child_dir in sorted(subdirs.get(directory, ()), key=lambda p: p.name):
             if child_dir in hosts:
-                # 该路径由容器条目代表: 把它的内容挂到容器上, 不再另建分支节点.
+                # 把它的内容挂到容器上, 容器节点由 `nodes` 里那条条目节点充当.
                 container = next(node for node in nodes if node.path == child_dir)
                 container.children = build(child_dir).children
                 continue
@@ -835,7 +823,7 @@ def build_inventory_tree(inventory: CleanupInventory) -> InventoryNode:
                 node.entry_count = sum(child.entry_count for child in node.children)
                 node.entry_bytes = sum(child.entry_bytes for child in node.children)
         coverage = inventory.dirs.get(directory)
-        # 容器条目代表它整棵子树 (汇总取子项), 因此在父级里按它自己的 entry_count 计一次.
+        # 容器的子项挂在容器自己下面, 不在这一层: 父级按容器的汇总值计一次.
         return InventoryNode(
             path=directory,
             name=directory.name,
