@@ -11,7 +11,7 @@
 
 | 主题 | 文档 |
 |---------|------|
-| 注释 / 文档 / 提交说明 / 对话 | [writing.md](writing.md) (最高优先级) |
+| 注释 / 文档 / 提交说明 / 对话 | [writing.md](writing.md) (最高优先级) · [glossary.md](glossary.md) |
 | 爬虫 / 采集 fixture | [crawlers.md](crawlers.md) (含番号入参) · [crawler-testing.md](crawler-testing.md) |
 | 来源插件 (影片刮削 / 播放) | [plugins.md](plugins.md) · [crawlers.md](crawlers.md) |
 | 站点覆盖 / 默认路由 | [content-routes.md](content-routes.md) |

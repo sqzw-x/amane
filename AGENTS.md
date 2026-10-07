@@ -6,6 +6,7 @@
 ## 用语规范
 
 **最高优先级.** 凡需语言表达的输出 (注释、开发文档、提交说明、Pull Request、与维护者的对话) 必须遵守 [`docs/dev/writing.md`](docs/dev/writing.md). 与本文其它条款冲突时以该文档为准.
+符号与中文用词的对照见 [`docs/dev/glossary.md`](docs/dev/glossary.md): 用户层与开发层各用哪个词, 以该表为准.
 
 ## 项目定位
 
