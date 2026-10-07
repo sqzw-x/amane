@@ -134,6 +134,7 @@ class CleanupInventory:
     blocked: BlockedDirs = field(default_factory=BlockedDirs)
     """判定为候选但没有登记的目录数, 按原因分组; 只在带残留判定的扫描里累加."""
     executed: bool = False
+    """已被执行任务取用: 预检一过就置位, 因此取消与中途失败同样算, 面板随即当它不存在."""
     media_hits: list[LibraryHit] = field(default_factory=list)
     """同一趟遍历命中的媒体文件; 只有 `collect_media` 时填充 (入库扫描用)."""
     tree: InventoryNode | None = field(default=None, repr=False, compare=False)

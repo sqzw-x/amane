@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 
 from amane.config import HotSettings
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidHandler, ScanInvalidPayload
+from amane.handlers import delete as delete_module
 from amane.library import InventoryStore
 
 if TYPE_CHECKING:
@@ -91,6 +93,54 @@ async def test_delete_executed_inventory_refused(repo: Repository, tmp_path: Pat
 
     assert second.success is False
     assert "已经执行过" in (second.error or "")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_spends_inventory_before_first_target(
+    repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """取消 / 崩溃落在第一个目标上时清单同样作废: 面板不能再拿半执行的快照重跑."""
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    ad = lib_root / "ad.mkv"
+    ad.write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad"])
+    assert lib.id is not None
+    store = InventoryStore()
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    async def _cancelled(*args: object, **kwargs: object) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(delete_module, "delete_target", _cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, inventory_id=inventory_id))
+
+    # 一个目标都没删掉, 清单照样是花掉的.
+    assert ad.exists()
+    second = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, inventory_id=inventory_id))
+    assert second.success is False
+    assert "已经执行过" in (second.error or "")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_preflight_failure_keeps_inventory(repo: Repository, tmp_path: Path) -> None:
+    """预检失败一次都没动盘, 清单仍可执行: 否则一次误提交就要重扫整个库."""
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    ad = lib_root / "ad.mkv"
+    ad.write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad"])
+    assert lib.id is not None
+    store = InventoryStore()
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    refused = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id + 1, inventory_id=inventory_id))
+    assert refused.success is False
+
+    second = await DeleteHandler(repo, store).handle(DeletePayload(library_id=lib.id, inventory_id=inventory_id))
+    assert second.success is True
+    assert not ad.exists()
 
 
 @pytest.mark.asyncio(loop_scope="function")

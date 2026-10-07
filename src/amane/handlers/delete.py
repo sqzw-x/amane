@@ -86,6 +86,10 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
             # 复验在锁内: 同一份清单被两次提交时, 只有先拿到锁的那次能执行.
             if inventory.executed:
                 return TaskResult(success=False, error="该清单已经执行过, 请重新扫描后再确认")
+            # 预检已全部通过, 从这里开始动盘: 清单随即作废, 取消 / 崩溃 / 中途失败都算.
+            # 半执行的快照留在面板上只会显示一批磁盘上已经没有的条目, 而重跑它没有意义 —
+            # 重跑既不会恢复已删的文件, 也不会补上没删的. 预检失败不置位: 一次都没动盘, 重试是合理的.
+            inventory.executed = True
             return await self._execute(payload, inventory, library_root, library)
 
     async def _execute(
@@ -139,7 +143,6 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
                 pruned = (await prune_empty_dirs(candidates, library_root=library_root)).removed
         await self.report_progress(total, total, "done")
 
-        inventory.executed = True
         logger.info(
             "delete completed",
             inventory_id=inventory.inventory_id,
