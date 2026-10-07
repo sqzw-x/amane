@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,7 +15,7 @@ import pytest
 from amane.config import HotSettings
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidHandler, ScanInvalidPayload
 from amane.handlers import delete as delete_module
-from amane.library import InventoryStore, OrphanScan
+from amane.library import ORPHAN_COOLDOWN_SECONDS, InventoryStore, OrphanScan
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -182,6 +183,10 @@ async def test_delete_refuses_changed_library_root(repo: Repository, tmp_path: P
         (["outer", "outer/inner/ad-1.mkv"], ["outer/inner"], ["outer/inner/ad-1.mkv"]),
         # 只有纳入项、没有排除项: 不影响执行集合.
         ([], ["outer/inner"], []),
+        # 纳入项不匹配任何条目: 忽略, 执行集合不变.
+        (["outer"], ["outer/gone"], ["outer/inner/ad-1.mkv", "outer/inner/ad-2.mkv"]),
+        # 同一路径同时命中两组: 按纳入处理 (面板不会产出这两条, 这里只固定 API 侧行为).
+        (["outer/inner"], ["outer/inner"], []),
     ],
 )
 @pytest.mark.asyncio(loop_scope="function")
@@ -324,26 +329,40 @@ async def test_delete_drops_index_by_directory_prefix(repo: Repository, tmp_path
 
 
 def _age_for_orphan(root: Path) -> None:
-    """把库根整棵树 (目录与文件) 的 mtime 定到冷却期之外.
+    """把库根整棵树的 mtime 定到冷却期之外.
 
-    目录自身的 mtime 也参与判定, 而写文件会把夹具目录的 mtime 留在写入那一刻, 于是判定会认为
-    目录刚变动过; 文件与目录因此都要调旧, 两者的先后不影响结果.
+    目录自身的 mtime 也参与判定, 而创建夹具会把目录的 mtime 留在写入那一刻, 因此目录与文件
+    都要调旧; utime 只改目标自身的时间, 不触碰父目录, 一趟即可.
     """
-    now = time.time()
-    for path in sorted(root.rglob("*"), reverse=True):
-        os.utime(path, (now - 7200, now - 7200))
-    for path in sorted((p for p in root.rglob("*") if p.is_dir()), reverse=True):
-        os.utime(path, (now - 5400, now - 5400))
-    os.utime(root, (now - 5400, now - 5400))
+    old = time.time() - 2 * ORPHAN_COOLDOWN_SECONDS
+    for path in root.rglob("*"):
+        os.utime(path, (old, old))
+    os.utime(root, (old, old))
+
+
+def _orphan_scan(root: Path) -> OrphanScan:
+    return OrphanScan.from_library(
+        library_root=root,
+        scope_dir=root,
+        subtitle_extensions=[".srt"],
+        trailer_pattern=None,
+        patterns=[],
+        media_extensions=None,
+    )
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_reverifies_orphan_dir_and_keeps_new_media(repo: Repository, tmp_path: Path) -> None:
-    """扫描之后目录里落进了正片: 残留条目不再成立, 连同索引一起保留."""
+@pytest.mark.parametrize("layout", ["orphan", "empty"], ids=["残留目录", "空目录"])
+async def test_delete_reverifies_target_that_gained_media(repo: Repository, tmp_path: Path, layout: str) -> None:
+    """扫描之后目标处落进了正片: 条目不再成立, 连同索引一起保留.
+
+    残留条目按宿主目录判, 空目录条目按目录是否仍为空判; 两条路径都拒绝同一个变异.
+    """
     lib_root = tmp_path / "lib"
-    old = lib_root / "old"
-    old.mkdir(parents=True)
-    (old / "NSFS-039.nfo").write_bytes(b"x")
+    target = lib_root / ("old" if layout == "orphan" else "empty")
+    target.mkdir(parents=True)
+    if layout == "orphan":
+        (target / "NSFS-039.nfo").write_bytes(b"x")
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
     store = InventoryStore()
@@ -351,9 +370,9 @@ async def test_delete_reverifies_orphan_dir_and_keeps_new_media(repo: Repository
     inventory_id = await _inventory_id(repo, store, lib.id)
 
     # 扫描之后才到达的正片.
-    video = old / "NSFS-039.mp4"
+    video = target / "NEW-001.mp4"
     video.write_bytes(b"x")
-    row = await repo.create_media_file(lib.id, path=str(video), number="NSFS-039")
+    row = await repo.create_media_file(lib.id, path=str(video), number="NEW-001")
     assert row.id is not None
 
     result = await DeleteHandler(repo, store, HotSettings()).handle(
@@ -366,8 +385,9 @@ async def test_delete_reverifies_orphan_dir_and_keeps_new_media(repo: Repository
     assert result.result.deleted == 0
     assert result.result.failed == 1
     assert video.exists()
-    assert (old / "NSFS-039.nfo").exists()
     assert await repo.get_media_file(row.id) is not None
+    if layout == "orphan":
+        assert (target / "NSFS-039.nfo").exists()
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -401,8 +421,9 @@ async def test_delete_reverify_scans_each_level_once(
     assert result.success is True
     assert result.result is not None
     assert result.result.deleted == 3
-    # 三个文件各走一遍的话是 6 次; 按目录去重后 old 与库根各一次.
-    assert [path.name for path in scanned] == ["old", "lib"]
+    # 每个文件各走一遍的话会有重复; 按目录记忆后 old 与库根各一次, 与目录顺序无关.
+    assert sorted(path.name for path in scanned) == ["lib", "old"]
+    assert len(scanned) == len(set(scanned))
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -459,19 +480,29 @@ async def test_delete_reverifies_root_orphan_file(repo: Repository, tmp_path: Pa
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_orphan_file_gone_is_not_a_rejection(repo: Repository, tmp_path: Path) -> None:
-    """条目路径已经不在磁盘上时按「已不存在」记账, 不算复验拒绝."""
+@pytest.mark.parametrize("shape", ["file", "container", "empty"], ids=["文件被移走", "容器被移走", "空目录被删"])
+async def test_delete_reverify_missing_target_is_changed(repo: Repository, tmp_path: Path, shape: str) -> None:
+    """目标已经不在磁盘上时按「已不存在」记账, 不算复验拒绝 — 两者在结果里的含义不同."""
     lib_root = tmp_path / "lib"
-    lib_root.mkdir()
-    nfo = lib_root / "NSFS-039.nfo"
-    nfo.write_bytes(b"x")
+    if shape == "file":
+        lib_root.mkdir()
+        target = lib_root / "NSFS-039.nfo"
+        target.write_bytes(b"x")
+    else:
+        target = lib_root / ("old" if shape == "container" else "empty")
+        target.mkdir(parents=True)
+        if shape == "container":
+            (target / "NSFS-039.nfo").write_bytes(b"x")
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
     store = InventoryStore()
     _age_for_orphan(lib_root)
     inventory_id = await _inventory_id(repo, store, lib.id)
 
-    nfo.unlink()
+    if shape == "file":
+        target.unlink()
+    else:
+        shutil.rmtree(target)
 
     result = await DeleteHandler(repo, store, HotSettings()).handle(
         DeletePayload(library_id=lib.id, inventory_id=inventory_id)
@@ -480,6 +511,7 @@ async def test_delete_orphan_file_gone_is_not_a_rejection(repo: Repository, tmp_
     assert result.success is True
     assert result.result is not None
     assert result.result.reverify_rejected == 0
+    assert result.result.failed == 0
     assert result.result.changed == 1
 
 
@@ -513,13 +545,14 @@ async def test_delete_orphan_still_executes_when_unchanged(repo: Repository, tmp
         ("other/NEW-001.mp4", False),
         ("other/.stversions", True),
         ("other/notes.txt", False),
+        ("NSFS-039.mp4.part", False),
     ],
-    ids=["媒体", "不可删除的子项", "白名单外的文件"],
+    ids=["媒体", "不可删除的子项", "白名单外的文件", "下载进度"],
 )
 async def test_delete_reverifies_orphan_container_subtree(
     repo: Repository, tmp_path: Path, appeared: str, is_dir: bool
 ) -> None:
-    """正片落在残留目录的**子目录**里时整棵子树不成立: 条目级复验看不到兄弟子目录."""
+    """残留目录的子树里出现新的否决项时整棵子树不成立: 条目级复验看不到兄弟子目录."""
     lib_root = tmp_path / "lib"
     old = lib_root / "old"
     (old / "other").mkdir(parents=True)
@@ -550,33 +583,8 @@ async def test_delete_reverifies_orphan_container_subtree(
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_reverifies_empty_dir(repo: Repository, tmp_path: Path) -> None:
-    """空目录条目同样复验: 执行侧删目录是递归的, 后来落进去的内容会一起没."""
-    lib_root = tmp_path / "lib"
-    empty = lib_root / "empty"
-    empty.mkdir(parents=True)
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
-    assert lib.id is not None
-    store = InventoryStore()
-    inventory_id = await _inventory_id(repo, store, lib.id)
-
-    arrived = empty / "NEW-001.mp4"
-    arrived.write_bytes(b"x")
-
-    result = await DeleteHandler(repo, store, HotSettings()).handle(
-        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
-    )
-
-    assert result.success is True
-    assert result.result is not None
-    assert result.result.reverify_rejected == 1
-    assert result.result.deleted == 0
-    assert arrived.exists()
-
-
-@pytest.mark.asyncio(loop_scope="function")
 async def test_delete_removes_entries_kept_inside_orphan_container(repo: Repository, tmp_path: Path) -> None:
-    """容器里保留的空子目录同样是删除目标: 丢掉它这处残留就永远清不掉."""
+    """容器里保留的空子目录同样是删除目标: 丢弃它这处残留就无法清除."""
     lib_root = tmp_path / "lib"
     old = lib_root / "old"
     (old / "emptysub").mkdir(parents=True)
@@ -625,62 +633,6 @@ async def test_delete_reverify_stops_at_scan_scope(repo: Repository, tmp_path: P
 
 
 @pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.parametrize("shape", ["container", "empty"], ids=["容器被移走", "空目录被删"])
-async def test_delete_reverify_missing_target_is_changed(repo: Repository, tmp_path: Path, shape: str) -> None:
-    """目标已经不在磁盘上时按「已不存在」记账, 不算复验拒绝 — 两者在结果里的含义不同."""
-    lib_root = tmp_path / "lib"
-    target = lib_root / ("old" if shape == "container" else "empty")
-    target.mkdir(parents=True)
-    if shape == "container":
-        (target / "NSFS-039.nfo").write_bytes(b"x")
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
-    assert lib.id is not None
-    store = InventoryStore()
-    _age_for_orphan(lib_root)
-    inventory_id = await _inventory_id(repo, store, lib.id)
-
-    shutil.rmtree(target)
-
-    result = await DeleteHandler(repo, store, HotSettings()).handle(
-        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
-    )
-
-    assert result.success is True
-    assert result.result is not None
-    assert result.result.reverify_rejected == 0
-    assert result.result.failed == 0
-    assert result.result.changed == 1
-
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_delete_reverify_rejects_download_in_container(repo: Repository, tmp_path: Path) -> None:
-    """容器子树里出现下载进度文件即否决: 与扫描时同口径, 暂停的下载删掉不可恢复."""
-    lib_root = tmp_path / "lib"
-    old = lib_root / "old"
-    (old / "other").mkdir(parents=True)
-    (old / "NSFS-039.nfo").write_bytes(b"x")
-    (old / "other" / "1.jpg").write_bytes(b"x")
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
-    assert lib.id is not None
-    store = InventoryStore()
-    _age_for_orphan(lib_root)
-    inventory_id = await _inventory_id(repo, store, lib.id)
-
-    (old / "NSFS-039.mp4.part").write_bytes(b"x")
-
-    result = await DeleteHandler(repo, store, HotSettings()).handle(
-        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
-    )
-
-    assert result.success is True
-    assert result.result is not None
-    assert result.result.reverify_rejected == 2
-    assert result.result.deleted == 0
-    assert (old / "NSFS-039.nfo").exists()
-    assert (old / "other" / "1.jpg").exists()
-
-
-@pytest.mark.asyncio(loop_scope="function")
 async def test_delete_reverify_rejects_download_at_scope_level(repo: Repository, tmp_path: Path) -> None:
     """库根与扫描范围层同样只看本层: 本层出现下载进度即不删这一层的残留文件."""
     lib_root = tmp_path / "lib"
@@ -705,3 +657,100 @@ async def test_delete_reverify_rejects_download_at_scope_level(repo: Repository,
     assert result.result.reverify_rejected == 1
     assert result.result.deleted == 0
     assert entry.exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_reverify_ignores_cooldown(repo: Repository, tmp_path: Path) -> None:
+    """复验不重复施加冷却期: 条目已经过用户确认, 扫描之后被触碰过的文件仍然删除."""
+    lib_root = tmp_path / "lib"
+    old = lib_root / "old"
+    old.mkdir(parents=True)
+    nfo = old / "NSFS-039.nfo"
+    nfo.write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    # 扫描之后被重新写入: 扫描侧的冷却期此刻会否决这个目录.
+    os.utime(nfo, None)
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 0
+    assert result.result.deleted == 1
+    assert not nfo.exists()
+
+
+@pytest.mark.parametrize(
+    ("name", "is_dir", "expected"),
+    [
+        ("NEW-001.mp4", False, "目录里出现了媒体: NEW-001.mp4"),
+        ("sub/NEW-001.mp4", False, "目录里出现了媒体: NEW-001.mp4"),
+        ("notes.txt", False, "目录里出现了无法解释的文件: notes.txt"),
+        ("NSFS-039.mp4.part", False, "目录里出现了不可删除的子项: NSFS-039.mp4.part"),
+        (".stversions", True, "目录里出现了不可删除的子项: .stversions"),
+    ],
+    ids=["媒体", "子目录里的媒体", "白名单外的文件", "下载进度", "不可删除的目录"],
+)
+def test_reverify_subtree_reports_reason(tmp_path: Path, name: str, is_dir: bool, expected: str) -> None:
+    """复验拒绝的文案是排障依据, 结果里只留计数: 文案区分原因, 由这张表固定."""
+    container = tmp_path / "old"
+    container.mkdir()
+    appeared = container / name
+    if is_dir:
+        appeared.mkdir(parents=True)
+    else:
+        appeared.parent.mkdir(parents=True, exist_ok=True)
+        appeared.write_bytes(b"x")
+
+    assert delete_module._reverify_subtree(container, orphan_scan=_orphan_scan(tmp_path)) == expected
+
+
+def test_reverify_empty_dir_reports_reason(tmp_path: Path) -> None:
+    """空目录条目只按目录是否仍为空判定: 执行侧删目录是递归的."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert delete_module._reverify_empty_dir(empty) is None
+
+    (empty / "NEW-001.mp4").write_bytes(b"x")
+
+    assert delete_module._reverify_empty_dir(empty) == "目录不再是空的"
+
+
+def test_media_probe_reports_ancestor_and_level_reason(tmp_path: Path) -> None:
+    """库根与扫描范围层的拒绝文案: 与子树文案分开, 排障时能区分是哪一层."""
+    lib_root = tmp_path / "lib"
+    old = lib_root / "old"
+    old.mkdir(parents=True)
+    (old / "NSFS-039.nfo").write_bytes(b"x")
+    (lib_root / "NSFS-001.mp4").write_bytes(b"x")
+    orphan_scan = _orphan_scan(lib_root)
+
+    assert delete_module._MediaProbe(orphan_scan=orphan_scan).ancestor_refusal(old) == "目录的祖先里出现了媒体"
+
+    (old / "NSFS-039.mp4.part").write_bytes(b"x")
+
+    assert delete_module._MediaProbe(orphan_scan=orphan_scan).level_refusal(old) == "本层出现了下载进度"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 无 POSIX 权限位")
+def test_reverify_subtree_reports_unreadable_dir(tmp_path: Path) -> None:
+    """读不到的目录按拒绝处理: 文案与「有媒体」分开, 排障时能区分."""
+    if os.geteuid() == 0:  # pragma: no cover - root 无视权限位
+        pytest.skip("root 可以读任意目录")
+    container = tmp_path / "old"
+    container.mkdir()
+    container.chmod(0)
+    try:
+        refusal = delete_module._reverify_subtree(container, orphan_scan=_orphan_scan(tmp_path))
+    finally:
+        container.chmod(0o755)
+
+    assert refusal is not None
+    assert refusal.startswith("目录无法读取")

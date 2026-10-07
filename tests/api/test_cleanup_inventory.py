@@ -509,7 +509,7 @@ async def test_inventory_reports_last_scan_failure(
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_node_has_children_respects_noise_filter(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
-    """折叠噪音时只剩噪音的行不报告可展开: 否则面板给出一个展开后为空的目录."""
+    """折叠系统与同步工具的产物时, 只剩这类产物的行不报告可展开: 否则面板给出一个展开后为空的行."""
     root = safe_path / "lib"
     library_id = await _library(client, root)
     (root / "old").mkdir(parents=True)
