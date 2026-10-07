@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -218,3 +220,122 @@ async def test_delete_drops_index_by_directory_prefix(repo: Repository, tmp_path
     assert result.result is not None
     assert result.result.indexed == 1
     assert await repo.get_media_file(row.id) is None
+
+
+def _age_for_orphan(root: Path) -> None:
+    """把库根整棵树 (目录与文件) 的 mtime 定到冷静期之外.
+
+    库根自身的 mtime 也参与冷静期, 而写文件会把夹具目录的 mtime 留在写入那一刻, 于是判定会
+    认为目录刚变动过. 文件定在两小时前, 目录定在 90 分钟前 — 目录必须比文件新.
+    """
+    now = time.time()
+    for path in sorted(root.rglob("*"), reverse=True):
+        os.utime(path, (now - 7200, now - 7200))
+    for path in sorted((p for p in root.rglob("*") if p.is_dir()), reverse=True):
+        os.utime(path, (now - 5400, now - 5400))
+    os.utime(root, (now - 5400, now - 5400))
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_reverifies_orphan_dir_and_keeps_new_media(repo: Repository, tmp_path: Path) -> None:
+    """扫描之后目录里落进了正片: 残留条目不再成立, 连同索引一起保留."""
+    lib_root = tmp_path / "lib"
+    old = lib_root / "old"
+    old.mkdir(parents=True)
+    (old / "NSFS-039.nfo").write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    # 扫描之后才到达的正片.
+    video = old / "NSFS-039.mp4"
+    video.write_bytes(b"x")
+    row = await repo.create_media_file(lib.id, path=str(video), number="NSFS-039")
+    assert row.id is not None
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 1
+    assert result.result.deleted == 0
+    assert result.result.failed == 1
+    assert video.exists()
+    assert (old / "NSFS-039.nfo").exists()
+    assert await repo.get_media_file(row.id) is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_reverifies_root_orphan_file(repo: Repository, tmp_path: Path) -> None:
+    """根层文件条目同样复验: 该路径已经变成库会当作影片接收的路径时不再删除."""
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    entry = lib_root / "NSFS-039.nfo"
+    entry.write_bytes(b"x")
+    # 该库把 .nfo 当媒体收: 同名的正片落进来之后, 这条残留条目不再成立.
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, patterns=["**/*.nfo"])
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 1
+    assert entry.exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_orphan_file_gone_is_not_a_rejection(repo: Repository, tmp_path: Path) -> None:
+    """条目路径已经不在磁盘上时按「已不存在」记账, 不算复验拒绝."""
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    nfo = lib_root / "NSFS-039.nfo"
+    nfo.write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    nfo.unlink()
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 0
+    assert result.result.changed == 1
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_orphan_still_executes_when_unchanged(repo: Repository, tmp_path: Path) -> None:
+    lib_root = tmp_path / "lib"
+    old = lib_root / "old"
+    old.mkdir(parents=True)
+    (old / "NSFS-039.nfo").write_bytes(b"x" * 5)
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 0
+    assert result.result.deleted == 1
+    assert not old.exists()
