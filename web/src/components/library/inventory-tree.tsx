@@ -25,7 +25,6 @@ import {
   memo,
   type ReactNode,
   useCallback,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -53,14 +52,60 @@ function depthStyle(depth: number): DepthStyle {
   return { "--row-depth": depth };
 }
 
-/** 清单里的路径前缀匹配: 与后端一致按路径分量, 不用字符串前缀. */
+/** 清单里的路径前缀匹配: 与后端一致按路径分量, 不用字符串前缀. 空前缀即库根, 一切都在它之下. */
 function isUnder(path: string, prefix: string): boolean {
-  if (path === prefix) return true;
+  if (prefix === "" || path === prefix) return true;
   return path.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
 }
 
-function coveringPrefix(excluded: string[], path: string): string | undefined {
-  return excluded.find((prefix) => isUnder(path, prefix));
+/**
+ * 一条勾选规则. `keep` 是排除项 (不删), `restore` 是在排除项内重新纳入 (删).
+ *
+ * 只有前缀集合表达不了「保留这个目录, 但删掉里面的某一项」, 因此规则可以互相嵌套,
+ * 路径互为祖先时按最深的一条判定 — 用户刚点的那条总是更深.
+ */
+interface SelectionRule {
+  path: string;
+  kind: "keep" | "restore";
+  count: number;
+  bytes: number;
+}
+
+function ruleDepth(path: string): number {
+  return path.split("/").length;
+}
+
+/** 决定这一项自身状态的规则: 命中它的最深一条; 没有任何规则即默认勾选 (删). */
+function deepestRule(rules: readonly SelectionRule[], path: string): SelectionRule | undefined {
+  let best: SelectionRule | undefined;
+  for (const rule of rules) {
+    if (!isUnder(path, rule.path)) continue;
+    if (best === undefined || ruleDepth(rule.path) > ruleDepth(best.path)) best = rule;
+  }
+  return best;
+}
+
+/** 子树里不会被删除的条目数与字节数: 自身规则按整棵算, 内部规则按它与自身相反的方向加减. */
+function keptTotals(
+  rules: readonly SelectionRule[],
+  path: string,
+  count: number,
+  bytes: number,
+): { entries: number; bytes: number } {
+  const own = deepestRule(rules, path);
+  const ownKept = own?.kind === "keep";
+  let entries = ownKept ? count : 0;
+  let keptBytes = ownKept ? bytes : 0;
+  for (const rule of rules) {
+    if (rule.path === path || !isUnder(rule.path, path)) continue;
+    const sign = rule.kind === "keep" ? 1 : -1;
+    entries += sign * rule.count;
+    keptBytes += sign * rule.bytes;
+  }
+  return {
+    entries: Math.min(Math.max(entries, 0), count),
+    bytes: Math.min(Math.max(keptBytes, 0), bytes),
+  };
 }
 
 export interface InventoryTreeProps {
@@ -82,8 +127,7 @@ export function InventoryTree({
 }: InventoryTreeProps) {
   const { t } = useTranslation(["library", "common"]);
   const queryClient = useQueryClient();
-  const [excluded, setExcluded] = useState<string[]>([]);
-  const [loadedNodes, setLoadedNodes] = useState<Record<string, InventoryNodeResponse>>({});
+  const [rules, setRules] = useState<SelectionRule[]>([]);
   // 系统与同步工具的产物默认折叠: 它们也会被删除, 但多数时候只是噪音; 用户可展开核对.
   const [showNoise, setShowNoise] = useState(false);
   // 展开状态提在树上: 全局展开是模式, 逐个收起记进 collapsed, 因此新挂载的行也跟着展开.
@@ -107,35 +151,14 @@ export function InventoryTree({
       }),
   });
 
-  // 排除项按前缀记录且互不嵌套 (见 toggle), 因此选中量 = 清单总量减去被排除节点的子树量.
+  // 选中量 = 清单总量减去规则保下来的子树量.
   const totals = useMemo(() => {
-    let entries = 0;
-    let bytes = 0;
-    const kept: Record<string, number> = {};
-    for (const prefix of excluded) {
-      const node =
-        loadedNodes[prefix] ?? level.nodes.find((candidate) => candidate.path === prefix);
-      if (!node) continue;
-      entries += node.entry_count;
-      bytes += node.entry_bytes;
-      kept[prefix] = node.entry_count;
-    }
+    const kept = keptTotals(rules, path, level.entryCount, level.entryBytes);
     return {
-      entries: Math.max(0, level.entryCount - entries),
-      bytes: Math.max(0, level.entryBytes - bytes),
-      kept,
+      entries: Math.max(0, level.entryCount - kept.entries),
+      bytes: Math.max(0, level.entryBytes - kept.bytes),
     };
-  }, [excluded, loadedNodes, level.nodes, level.entryCount, level.entryBytes]);
-
-  const registerNodes = useCallback(
-    (loaded: InventoryNodeResponse[]) =>
-      setLoadedNodes((prev) => {
-        const next = { ...prev };
-        for (const node of loaded) next[node.path] = node;
-        return next;
-      }),
-    [],
-  );
+  }, [rules, path, level.entryCount, level.entryBytes]);
 
   // 全局展开时「收起一个」记进 collapsed, 而不是抹掉模式本身: 之后挂载的行仍应展开.
   const toggleExpand = useCallback(
@@ -154,21 +177,24 @@ export function InventoryTree({
 
   // 依赖为空: 翻页只新增行, 已渲染的行靠 memo 挡住重渲染.
   const toggle = useCallback((node: InventoryNodeResponse) => {
-    setExcluded((prev) => {
-      const covering = coveringPrefix(prev, node.path);
-      if (covering === node.path) {
-        // 取消整棵: 后代本来就是「不删」, 不保留多余的排除项.
-        return prev.filter((prefix) => prefix !== node.path);
-      }
-      if (covering) {
-        // 祖先被排除时仍然可以直接点这一项: 把祖先换成「祖先之下除它以外全部排除」.
-        return [
-          ...prev.filter((prefix) => prefix !== covering && !isUnder(prefix, covering)),
-          node.path,
-        ];
-      }
-      // 已排除的后代并入本节点: 两个前缀会各减一次同一棵子树, 选中量就比实际执行集合少.
-      return [...prev.filter((prefix) => !isUnder(prefix, node.path)), node.path];
+    setRules((prev) => {
+      // 后代随本项一起定: 本项一旦有规则, 内部的规则就被它覆盖, 留着只会让计数绕圈.
+      const outside = prev.filter(
+        (rule) => rule.path !== node.path && !isUnder(rule.path, node.path),
+      );
+      const own = deepestRule(prev, node.path);
+      // 本项自己就有规则: 点一下翻掉它, 回到祖先 (或默认) 的状态.
+      if (own?.path === node.path) return outside;
+      // 被祖先的规则覆盖或没有任何规则: 补一条与当前状态相反的规则, 本项自己的勾选随之翻转.
+      return [
+        ...outside,
+        {
+          path: node.path,
+          kind: own?.kind === "keep" ? "restore" : "keep",
+          count: node.entry_count,
+          bytes: node.entry_bytes,
+        },
+      ];
     });
   }, []);
 
@@ -187,7 +213,8 @@ export function InventoryTree({
         type: "delete",
         library_id: libraryId,
         inventory_id: inventoryId,
-        exclude: excluded,
+        exclude: rules.filter((rule) => rule.kind === "keep").map((rule) => rule.path),
+        include: rules.filter((rule) => rule.kind === "restore").map((rule) => rule.path),
         prune_empty_dirs: true,
       },
     });
@@ -251,15 +278,13 @@ export function InventoryTree({
                 inventoryId={inventoryId}
                 node={node}
                 depth={0}
-                excluded={excluded}
-                kept={totals.kept}
+                rules={rules}
                 showNoise={showNoise}
                 expandAll={expandAll}
                 expanded={expanded}
                 collapsed={collapsed}
                 onToggle={toggle}
                 onToggleExpand={toggleExpand}
-                onNodes={registerNodes}
               />
             ))}
             <InfiniteScrollSentinel
@@ -334,15 +359,13 @@ interface InventoryNodeRowProps {
   inventoryId: string;
   node: InventoryNodeResponse;
   depth: number;
-  excluded: string[];
-  kept: Record<string, number>;
+  rules: readonly SelectionRule[];
   showNoise: boolean;
   expandAll: boolean;
   expanded: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
   onToggle: (node: InventoryNodeResponse) => void;
   onToggleExpand: (path: string) => void;
-  onNodes: (nodes: InventoryNodeResponse[]) => void;
 }
 
 /** 行是纯展示 + 一层子节点查询: memo 让翻页只挂载新增的行, 不重渲染已加载的. */
@@ -351,30 +374,19 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
   inventoryId,
   node,
   depth,
-  excluded,
-  kept,
+  rules,
   showNoise,
   expandAll,
   expanded,
   collapsed,
   onToggle,
   onToggleExpand,
-  onNodes,
 }: InventoryNodeRowProps) {
   const { t } = useTranslation(["library", "common"]);
-  const covering = coveringPrefix(excluded, node.path);
-  const covered = covering !== undefined;
-  // 子树里只要有一项被取消勾选, 整份清单执行完这个目录也不会空.
-  const keepsSomething = excluded.some(
-    (prefix) => prefix !== node.path && isUnder(prefix, node.path),
-  );
-  // 子树里的条目全被取消时这个目录实际什么都不会删: 勾选框与整体取消一致, 不再半选.
-  const keptBelow = Object.entries(kept).reduce(
-    (sum, [prefix, count]) => (isUnder(prefix, node.path) ? sum + count : sum),
-    0,
-  );
-  const allKept = keptBelow > 0 && keptBelow >= node.entry_count;
-  const partial = keepsSomething && !allKept;
+  // 子树里保下来的条目数决定这一项的勾选状态: 全保即不勾, 保一部分即半选.
+  const kept = keptTotals(rules, node.path, node.entry_count, node.entry_bytes);
+  const checked = kept.entries < node.entry_count;
+  const partial = checked && kept.entries > 0;
   // 有子节点的目录靠点条目本身展开; 其余条目点条目本身即切换选中.
   const expandable = node.kind === "dir" && Boolean(node.has_children);
   const isOpen = expandAll ? !collapsed.has(node.path) : expanded.has(node.path);
@@ -385,10 +397,6 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
     noise: showNoise,
     enabled: isOpen && expandable,
   });
-
-  useEffect(() => {
-    if (children.nodes.length > 0) onNodes(children.nodes);
-  }, [children.nodes, onNodes]);
 
   const marker = node.reason ? t(`cleanup.reason.${node.reason}`) : null;
   // 信息项随宿主条目一起删除: 不给勾选框, 也不显示「将变空」这类只对可执行条目有意义的标记.
@@ -405,14 +413,22 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
 
   return (
     <div className={classes.node} style={depthStyle(depth)}>
-      <div className={classes.row} data-clickable={informational ? undefined : true}>
+      {/* 点击范围是整个行: 内容上下方的内边距也算, 只有勾选框留给切换选中. */}
+      <div
+        className={classes.row}
+        data-clickable={informational ? undefined : true}
+        onClick={informational ? undefined : activate}
+      >
         {/* 信息项没有勾选框, 空槽让两类的图标与名字仍然对齐. */}
-        <span className={classes.checkbox}>
+        <span
+          className={classes.checkbox}
+          onClick={informational ? undefined : (event) => event.stopPropagation()}
+        >
           {informational ? null : (
             <Checkbox
               className={classes.checkboxBox}
               size="sm"
-              checked={!covered && !allKept}
+              checked={checked}
               indeterminate={partial}
               onChange={() => onToggle(node)}
             />
@@ -423,7 +439,6 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
           role={informational ? undefined : "button"}
           tabIndex={informational ? undefined : 0}
           aria-expanded={expandable ? isOpen : undefined}
-          onClick={informational ? undefined : activate}
           onKeyDown={informational ? undefined : onActivateKeyDown}
         >
           {node.kind === "dir" ? (
@@ -458,8 +473,7 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
             node.will_be_empty &&
             node.kind === "dir" &&
             !node.reason &&
-            !covered &&
-            !keepsSomething ? (
+            kept.entries === 0 ? (
               <Badge size="sm" variant="light" color="orange">
                 {t("cleanup.willBeEmpty")}
               </Badge>
@@ -504,15 +518,13 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
                   inventoryId={inventoryId}
                   node={child}
                   depth={depth + 1}
-                  excluded={excluded}
-                  kept={kept}
+                  rules={rules}
                   showNoise={showNoise}
                   expandAll={expandAll}
                   expanded={expanded}
                   collapsed={collapsed}
                   onToggle={onToggle}
                   onToggleExpand={onToggleExpand}
-                  onNodes={onNodes}
                 />
               ))}
               <InfiniteScrollSentinel

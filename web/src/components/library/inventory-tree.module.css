@@ -56,7 +56,7 @@
   min-width: 0;
 }
 
-.body[role="button"] {
+.row[data-clickable] {
   cursor: pointer;
 }
 
