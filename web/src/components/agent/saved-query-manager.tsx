@@ -228,7 +228,7 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
 
   function invalidateQueries() {
     void qc.invalidateQueries({ queryKey: [{ _id: "listSavedQueries" }] });
-    // 交付芯片的「保留预设」禁用态来自 getSavedQuery, 一并刷新
+    // 交付结果的「保留预设」禁用态来自 getSavedQuery, 一并刷新
     void qc.invalidateQueries({ queryKey: [{ _id: "getSavedQuery" }] });
   }
 

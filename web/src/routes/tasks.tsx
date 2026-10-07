@@ -184,6 +184,9 @@ function BatchScrapePanel({
           <Text size="sm" fw={600}>
             {t("batchScrape.templateLabel")}
           </Text>
+          <Text size="xs" c="dimmed">
+            {t("batchScrape.templateDescription")}
+          </Text>
           <Textarea
             value={template}
             onChange={(e) => onTemplateChange(e.currentTarget.value)}

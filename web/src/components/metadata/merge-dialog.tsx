@@ -398,7 +398,7 @@ export function MergeDialog({ metadata, opened, onClose, onMerged }: MergeDialog
                       label={fieldLabel(field)}
                       field={field}
                       urls={urls}
-                      sourceBadge={effective ?? t("merge.current", { defaultValue: "当前" })}
+                      sourceBadge={effective ?? t("merge.current")}
                       changed={changed}
                       onRevert={() => revert(field)}
                       revertLabel={t("merge.revert")}

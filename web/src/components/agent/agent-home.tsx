@@ -1,7 +1,6 @@
 /** AG-UI 页: 对话展示只认回放行, 运行时只负责运行控制 (发起 / 取消 / 续批) 与话题本.
 
-页面渲染的是 `foldTrace` 的产物, 直播与回放因此同形: 本页发起的回合也跟随 `.../agui/events`, 与切走再回来
-走同一条路径; `.../trace` 取整段历史, 回合收尾时再落定一次. 运行时的消息来自同一份 fold — 库从消息 metadata
+页面渲染的是 `foldTrace` 的产物, 直播与回放因此同形: 本页发起的回合也跟随 `.../agui/events`, 与切走再回来时相同; `.../trace` 取整段历史, 回合收尾时再落定一次. 运行时的消息来自同一份 fold — 库从消息 metadata
 读待批中断, 续批与运行输入也要它, 但它的直播聚合不再是展示源.
 
 注: AG-UI 协议没有历史回放, 重建一律靠回放行.
@@ -383,7 +382,7 @@ function textOf(part: AgentPart): string {
   return part.type === "text" ? part.text : "";
 }
 
-/** 用户消息: 标签在左, 正文收进气泡, 与助手的纯文本回复区分; 按原文展示, 不走 markdown. */
+/** 用户消息: 标签在左, 正文收进气泡, 与助手的纯文本回复区分; 按原文展示, 不解析 markdown. */
 function UserMessage({ text }: { text: string }) {
   const { t } = useTranslation("agent");
   return (

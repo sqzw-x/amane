@@ -61,9 +61,7 @@ export function ClientSettings() {
 
       <Stack gap={4}>
         <Text fw={600}>{t("client.chromium")}</Text>
-        <Code>
-          {shell.chromiumVersion ? `Chromium ${shell.chromiumVersion}` : t("client.webViewUnknown")}
-        </Code>
+        <Code>{shell.chromiumVersion ?? t("client.webViewUnknown")}</Code>
         {shell.chromiumOutdated ? (
           <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />} mt="xs">
             <Stack gap="xs">

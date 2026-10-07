@@ -30,7 +30,7 @@ export function isEmptyDictValue(value: unknown): boolean {
  * - 空串 + 非空 string: `""`
  * - 空数组 / `null` 落到非空 array: `[]`
  * - 可空字段上的 `null`: 保持 `null`
- * - 可增减 key 的 dict: 丢掉空值条目; `x-frozen-keys` 保留全部 key
+ * - 可增减 key 的 dict: 丢弃空值条目; `x-frozen-keys` 保留全部 key
  */
 export function encodeEmptyValue(schema: unknown, value: undefined): undefined;
 export function encodeEmptyValue(schema: unknown, value: string): string | null;

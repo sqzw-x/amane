@@ -38,7 +38,7 @@ export const KIND_LABEL_KEY = exhaustiveRecord<SourceKind>()({
   plugin: "kind.plugin",
 } as const satisfies Record<SourceKind, ParseKeys<"networkCheck">>);
 
-/** 未探测的原因不走任务报告 (它不是失败), 文案在本页的 `skip.*`. */
+/** 未探测的原因不写入任务报告 (它不是失败), 文案在本页的 `skip.*`. */
 export const SKIP_LABEL_KEY = exhaustiveRecord<SkipReason>()({
   unknown_source: "skip.unknown_source",
   no_http_upstream: "skip.no_http_upstream",

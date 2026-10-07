@@ -93,7 +93,7 @@ function ActiveFilterChip({ label, onClear }: { label: string; onClear: () => vo
   );
 }
 
-/** 标签名走单条分类查询, 与片库的芯片同形. */
+/** 标签名经单条分类查询, 与片库的芯片同形. */
 function ActiveUserTagChip({ tagId, onClear }: { tagId: number; onClear: () => void }) {
   const { t } = useTranslation("metadata");
   const { data } = useQuery(getFacetOptions({ path: { kind: "user_tag", facet_id: tagId } }));

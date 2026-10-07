@@ -116,7 +116,7 @@ interface FilePhaseBadgesProps {
   size?: "xs" | "sm";
 }
 
-/** 表格/详情文件列表: 中字 / 有码 / 无码 / 破解 / 流出 / 清晰度. 无码看 mosaic 或 content_type. */
+/** 表格/详情文件列表: 中字 / 有码 / 无码 / 破解 / 流出 / 分辨率. 无码看 mosaic 或 content_type. */
 export function FilePhaseBadges({ phase, size = "xs" }: FilePhaseBadgesProps) {
   const { t } = useTranslation("metadata");
   if (phase == null) return null;
@@ -154,11 +154,11 @@ const CORNER_GROUP = { zIndex: 1, maxWidth: "68%" } as const;
 
 interface FilePhaseOverlayProps {
   phase: FilePhaseLike | FilePhaseSummary | null | undefined;
-  /** 左下角追加 (出演年龄), 与中字/清晰度同组. */
+  /** 左下角追加 (出演年龄), 与中字/分辨率同组. */
   bottomExtra?: ReactNode;
 }
 
-/** 海报/封面 CSS 水印. 左上马赛克, 左下中字+清晰度; 样式对齐评分/日期 chip. */
+/** 海报/封面 CSS 水印. 左上马赛克, 左下中字+分辨率; 样式对齐评分/日期 chip. */
 export function FilePhaseOverlay({ phase, bottomExtra }: FilePhaseOverlayProps) {
   const { t } = useTranslation("metadata");
   const mosaic = phase != null ? mosaicChips(phase, t) : [];

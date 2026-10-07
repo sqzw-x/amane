@@ -213,7 +213,7 @@ interface InventoryNodeLevelProps {
   enabled?: boolean;
 }
 
-/** 一层子节点: 只取一页, 滚到底再取下一页. 展开任意目录都走这里. */
+/** 一层子节点: 只取一页, 滚到底再取下一页. 展开任意目录都经由这里. */
 function useInventoryNodeLevel({
   libraryId,
   inventoryId,

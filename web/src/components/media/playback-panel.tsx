@@ -319,7 +319,7 @@ export function PlaybackPanel({
   // 播放失败的重试计数: 地址不变时播放器不会重新装载, 由它换掉 key 触发重挂.
   const [reloadNonce, setReloadNonce] = useState(0);
 
-  // 来源列表变化后原选择可能不存在 (来源被停用或卸载), 回落到第一个来源.
+  // 来源列表变化后原选择可能不存在 (来源被停用或卸载), 回退到第一个来源.
   const source = sources.find((item) => item.source_id === pickedSourceId) ?? sources[0];
   // 当前来源的流在挂载时与切换来源时加载; 没有来源时查询不启用, 不发请求.
   const streamsQuery = useQuery({

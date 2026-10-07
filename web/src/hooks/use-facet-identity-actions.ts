@@ -141,9 +141,7 @@ export function useFacetIdentityActions({
       const sources = [...selected].filter((id) => id !== targetId);
       if (sources.length === 0) {
         notifications.show({
-          message: t("manage.mergeNeedSources", {
-            defaultValue: "请先勾选要合并的来源项，再点目标项的合并",
-          }),
+          message: t("manage.mergeNeedSources"),
           color: "yellow",
         });
         return;

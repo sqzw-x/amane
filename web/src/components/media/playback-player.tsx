@@ -196,7 +196,7 @@ function SubtitleTracks({ tracks }: { tracks: PlaybackSubtitleItem[] }) {
 /**
  * 画面的右键菜单.
  *
- * 监听挂在控制器上而不是走 React 的 `onContextMenu`: 该事件不会派发到自定义元素上的 React 监听
+ * 监听挂在控制器上而不是使用 React 的 `onContextMenu`: 该事件不会派发到自定义元素上的 React 监听
  * (普通元素正常), 控制器收不到回调. 判定与画面的单击、双击一致 —— 只有视频与控制器自身算数,
  * 控制条与菜单保留浏览器原生右键菜单.
  */
@@ -225,7 +225,7 @@ function useVideoContextMenu(
   }, [controllerRef, openRef, videoRef]);
 }
 
-/** 右键菜单在播放窗口内的落点: 相对控制器的坐标, 以及展开的方向. */
+/** 右键菜单在播放窗口内的点按位置: 相对控制器的坐标, 以及展开的方向. */
 type ContextMenuAnchor = {
   left: number;
   top: number;
@@ -336,7 +336,7 @@ function ContextMenu({
         role="menu"
         data-upward={anchor.upward ? "true" : undefined}
         style={{ left: anchor.left, top: anchor.top }}
-        // 菜单上的右键不改写落点, 也不允许浏览器原生菜单叠上来. 这是普通元素, 合成事件正常触发.
+        // 菜单上的右键不改写点按位置, 也不允许浏览器原生菜单叠上来. 这是普通元素, 合成事件正常触发.
         onContextMenu={(event) => event.preventDefault()}
       >
         <button
@@ -492,14 +492,14 @@ const GESTURES_DISABLED_ATTRIBUTE = "gesturesdisabled";
 const GESTURE_ATTRIBUTE = "data-amane-gesture";
 /** 双击的判定窗口 (毫秒). 单击的动作须等过整个窗口, 才能确定没有第二次点击. */
 const DOUBLE_CLICK_MS = 250;
-/** 触屏长按多久算"按住加速" (毫秒); 走的是键盘 `HOLD_SEEK_DELAY_MS` 那条动作. */
+/** 触屏长按多久算"按住加速" (毫秒); 与键盘 `HOLD_SEEK_DELAY_MS` 是同一条动作. */
 const TOUCH_LONG_PRESS_MS = 450;
 /** 触屏手势的起手位移阈值 (像素): 超过它就不再是点按. */
 const TOUCH_MOVE_THRESHOLD_PX = 10;
 /** 横向滑过整个播放窗口对应的跳转秒数, 以及单次手势的跳转上限. */
 const TOUCH_SEEK_SPAN_SECONDS = 120;
 const TOUCH_SEEK_MAX_SECONDS = 90;
-/** 竖直滑动走完音量 (右半屏) 或亮度 (左半屏) 全量程所需的像素数, 向上为增. */
+/** 竖直滑动覆盖音量 (右半屏) 或亮度 (左半屏) 全量程所需的像素数, 向上为增. */
 const TOUCH_LEVEL_FULL_SPAN_PX = 220;
 /** 亮度下限: 全黑既没有意义也回不来. */
 const MIN_BRIGHTNESS = 0.2;
@@ -690,7 +690,7 @@ function useTouchGestures(
      * 起手落在进度条上的触摸由控件自己处理, 这一层不接.
      *
      * 接上就会置位 `GESTURE_ATTRIBUTE`, 样式表随之把进度条整段隐藏, 它的盒子塌成 0 —— 控件按自己的
-     * 盒子算落点, 于是拖动与点按一律落到片头.
+     * 盒子算点按位置, 于是拖动与点按一律落到片头.
      *
      * 判定只能用事件路径: 控件置位的拖动标记在冒泡阶段, 捕获阶段的此刻还读不到.
      */
@@ -764,7 +764,7 @@ function useTouchGestures(
         }
         clearLongPress();
         if (Math.abs(dy) > Math.abs(dx)) {
-          // 竖直: 左半屏调亮度, 右半屏调音量. 基值在手势起点读一次, 之后不再跟着状态走.
+          // 竖直: 左半屏调亮度, 右半屏调音量. 基值在手势起点读一次, 之后不再随状态变化.
           const rect = controller.getBoundingClientRect();
           levelKind = event.clientX < rect.left + rect.width / 2 ? "brightness" : "volume";
           baseLevel = readLevel(levelKind);
@@ -790,7 +790,7 @@ function useTouchGestures(
       const total =
         live != null && Number.isFinite(live.duration) && live.duration > 0 ? live.duration : null;
       const target = Math.max(baseSeconds + deltaSeconds, 0);
-      // 提示里的目标时间与落点一致: 超过总长时按总长显示.
+      // 提示里的目标时间与点按位置一致: 超过总长时按总长显示.
       onSeekPreview({
         target: total == null ? target : Math.min(target, total),
         total,
@@ -1084,7 +1084,7 @@ export function PlaybackPlayer({
   const [rateSheetOpen, setRateSheetOpen] = useState(false);
   const rateSheetVisible = coarsePointer && rateSheetOpen;
 
-  // 右键菜单: 只记落点. 复制的秒数在点按条目时读取, 因此不订阅 timeupdate (订阅会让整个播放器
+  // 右键菜单: 只记点按位置. 复制的秒数在点按条目时读取, 因此不订阅 timeupdate (订阅会让整个播放器
   // 每秒重渲染).
   const [contextMenu, setContextMenu] = useState<ContextMenuAnchor | null>(null);
 
@@ -1347,7 +1347,7 @@ export function PlaybackPlayer({
     setSpeedHold,
   );
 
-  // 手势的基值读取与写入都走稳定引用: 它们变化会重建手势监听, 正在进行的那次手势会丢.
+  // 手势的基值读取与写入都经稳定引用: 它们变化会重建手势监听, 正在进行的那次手势会丢.
   const readLevel = useCallback(
     (level: HudKind) => (level === "volume" ? volumeRef.current : brightnessRef.current),
     [],
@@ -1531,7 +1531,7 @@ export function PlaybackPlayer({
             onBlur={handleVolumeBlur}
           >
             <MediaMuteButton />
-            {/* 触屏上不铺拖动的滑杆: 音量走竖直滑动 (见 useTouchGestures), 按钮只管静音.
+            {/* 触屏上不铺拖动的滑杆: 音量使用竖直滑动 (见 useTouchGestures), 按钮只管静音.
                 判据是指针类型而不是宽度 — 鼠标在窄窗口里既没有滑杆也没有触屏手势, 用宽度判定会让他两头落空. */}
             {coarsePointer ? null : (
               <div className={classes.volumePanel} onPointerDown={startVolumeDrag}>

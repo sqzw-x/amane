@@ -305,7 +305,7 @@ function HeaderSearch() {
   }
 
   return (
-    // 窄屏顶栏放不下搜索框, 入口回落到片库页内搜索.
+    // 窄屏顶栏放不下搜索框, 入口回退到片库页内搜索.
     <Box
       component="form"
       visibleFrom="sm"

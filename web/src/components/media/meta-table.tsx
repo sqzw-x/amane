@@ -172,7 +172,6 @@ export function MetaTable({
     onSuccess: (res) => {
       notifications.show({
         message: t("common:toast.batchScrapeStarted", {
-          defaultValue: `已提交 ${res.submitted} 个刮削任务`,
           count: res.submitted,
         }),
         color: "blue",
@@ -187,11 +186,9 @@ export function MetaTable({
 
   const batchDelete = useMutation({
     ...batchDeleteMetadataMutation(),
-    onSuccess: (res) => {
+    onSuccess: () => {
       notifications.show({
-        message: t("common:toast.metadataDeleted", {
-          defaultValue: `已删除 ${res.deleted} 条`,
-        }),
+        message: t("common:toast.metadataDeleted"),
         color: "blue",
       });
       clear();

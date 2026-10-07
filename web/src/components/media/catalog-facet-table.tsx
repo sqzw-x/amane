@@ -193,7 +193,7 @@ export function CatalogFacetTable({
                     </HintedActionIcon>
                     <HintedActionIcon
                       variant="subtle"
-                      label={t("manage.merge", { defaultValue: "合并到此项" })}
+                      label={t("manage.merge")}
                       onClick={() => void identity.openMerge(facet.id, selected)}
                     >
                       <IconArrowMerge size={16} />
@@ -226,7 +226,7 @@ export function CatalogFacetTable({
                           leftSection={<IconArrowMerge size={14} />}
                           onClick={() => void identity.openMerge(facet.id, selected)}
                         >
-                          {t("manage.merge", { defaultValue: "合并到此项" })}
+                          {t("manage.merge")}
                         </Menu.Item>
                         <Menu.Divider />
                         <Menu.Item
