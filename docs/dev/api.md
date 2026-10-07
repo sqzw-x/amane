@@ -43,7 +43,7 @@ OpenAPI 列出参数, 不表达组合语义:
 - `PUT /metadata/{id}/locks` 与 `PUT /actors/{id}/locks` 整体替换锁定字段集合; 锁语义见 [data-model.md](data-model.md)「字段锁定」.
 - 注册顺序有约束的五处: `/facets/{kind}/rules` 先于 `/{facet_id}`; `/plugins/reload` 先于 `/plugins/{plugin_id}` (否则 `reload` 被当成插件 ID); `/tasks/batch` 与 `/tasks/worker*` 先于 `/{task_id}` (否则被当成非法整数 id); `/feeds/items` 先于 `/{feed_id}`; `/playback/sources` 先于 `/{source_id}`.
 - 播放端点的形状 (流的一行、`available` / `key` / `detail` 的三种组合、Range、HLS 分片与字幕路径、404 / 502 语义) 见 [plugins.md](plugins.md)「播放源」.
-- `/network/check` 的探测范围 = 当前热配置真正会请求的来源 (各类型路由的并集 + 演员档案 / 头像来源), 省略 `source_ids` 即全量. `source_id` 是 `str` 而非 `SiteName` 枚举 (第三方来源是 `namespace.local`, 且来源集合随插件增删变化), 未知值无法用 schema 拒绝, 不存在的 ID 计入条目返回 `SKIPPED`. 逐来源的失败只进条目, 端点始终 200 — 探测结果本身就是响应体; `reason` 只在失败时给出, `skip_reason` 只在未探测时给出, `detail` 是语言中立的补充说明 (界面原样渲染, 不翻译). 探测不进入任务队列, 也不写入站点 outcome (那是刮削任务的记录).
+- `/network/check` 的探测范围 = 当前热配置真正会请求的来源 (各类型路由的并集 + 演员资料来源 / 头像来源), 省略 `source_ids` 即全量. `source_id` 是 `str` 而非 `SiteName` 枚举 (第三方来源是 `namespace.local`, 且来源集合随插件增删变化), 未知值无法用 schema 拒绝, 不存在的 ID 计入条目返回 `SKIPPED`. 逐来源的失败只进条目, 端点始终 200 — 探测结果本身就是响应体; `reason` 只在失败时给出, `skip_reason` 只在未探测时给出, `detail` 是语言中立的补充说明 (界面原样渲染, 不翻译). 探测不进入任务队列, 也不写入站点 outcome (那是刮削任务的记录).
 - 评论正文先去除首尾空白再校验长度, 全空白与超过 10000 字符均为 422. `updated_at` 晚于 `created_at` 表示正文被编辑过: PATCH 提交与库中一致的正文不写库, 也不刷新 `updated_at`, 前端据此判定「已编辑」; 排序由前端在详情响应上完成, 端点不提供 order 参数.
 - `/files`: 路径解析为非严格 (虚拟 / 网络挂载盘无法规范化查询时按字面兜底), 相对 `path` 经 `base` 参数解析 (缺省 = 首个安全目录). 响应含规范 `path` (resolve 后的绝对路径), 前端文件浏览器以它为面包屑的唯一权威形态, 不做分段拼接.
 
@@ -53,7 +53,7 @@ OpenAPI 列出参数, 不表达组合语义:
 
 ## 中间件顺序
 
-`create_app` 先 `include_router` 再 `mount_spa` (SPA catch-all 会吞 `/api`), 最后注册 `LoggingMiddleware`. `add_middleware` 后注册者在栈外层 (`insert(0)`), 故 LoggingMiddleware 包住 TokenAuth / CORS / SPA fallback, 401 / 403 直返与内层中间件自身异常也进入请求日志. **新增自定义中间件时 LoggingMiddleware 必须仍为最外层.**
+`create_app` 先 `include_router` 再 `mount_spa` (SPA catch-all 会截获 `/api`), 最后注册 `LoggingMiddleware`. `add_middleware` 后注册者在栈外层 (`insert(0)`), 故 LoggingMiddleware 包住 TokenAuth / CORS / SPA fallback, 401 / 403 直返与内层中间件自身异常也进入请求日志. **新增自定义中间件时 LoggingMiddleware 必须仍为最外层.**
 
 `TokenAuthMiddleware` 与 `LoggingMiddleware` 都是 `BaseHTTPMiddleware`: 它交给下游的是包装过的 `receive`, 必须真正挂起等待才会收到 `http.disconnect`, 因此 `Request.is_disconnected()` (立刻取消式探测) 在本栈内恒为 `False`; 需要感知客户端离开的长响应改用 `DisconnectSignal` (见 [plugins.md](plugins.md)).
 
@@ -71,4 +71,4 @@ OpenAPI 列出参数, 不表达组合语义:
 
 ## WebSocket
 
-`/ws` 只接收不发送, 协议层 PING/PONG. 前端入站收口在 `web/src/lib/connection.ts`, 各 store 的消费见 `web/src/stores/`; EventBus 须最先初始化见 [architecture.md](architecture.md).
+`/ws` 只接收不发送, 协议层 PING/PONG. 前端入站处理集中在 `web/src/lib/connection.ts`, 各 store 的消费见 `web/src/stores/`; EventBus 须最先初始化见 [architecture.md](architecture.md).

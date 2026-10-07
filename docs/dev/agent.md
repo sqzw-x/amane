@@ -15,9 +15,9 @@
 
 | 工具 | 契约 |
 |------|------|
-| `sql_explore` | 中间推理; 默认只回样例. `create_view=true` 物化会话内 SavedQuery 供 `inspect_result` 翻页 — 视图是**纯行数组**, 无 entity / `id` 列要求, **不**纳入交付芯片 |
+| `sql_explore` | 中间推理; 默认只回样例. `create_view=true` 物化会话内 SavedQuery 供 `inspect_result` 翻页 — 视图是**纯行数组**, 无 entity / `id` 列要求, **不**纳入交付结果 |
 | `sql_deliver` | 面向用户的结果 → `saved_query` + 内存结果缓存. `entity=metadata\|actor` 交付须含主键列 `id`, 可作片库 / 演员筛选并深链; 省略 entity (或 `data`) 交付任意只读结果, 只进入数据页 |
-| `inspect_result` | 按 `saved_query_id` 窥行 (交付或探查视图) |
+| `inspect_result` | 按 `saved_query_id` 取行 (交付或探查视图) |
 
 写操作工具按域分组为 `Capability`, **不做延迟载入**: 每个请求都声明全部工具. 兼容端点 (DeepSeek 等) 没有「声明了但不开放」的通道, 逐次载入只能通过修改 `tools` 实现, 而工具定义渲染在 system 之后、对话之前, 每载入一次即重读整段对话前缀; 全量声明的固定前缀恒定不变, 首轮即命中缓存. 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务.
 
@@ -31,7 +31,7 @@
 | `schedule-ops` | CLEANUP / UPSCALE / R18_IMPORT / RESCRAPE 定时 CRUD 与触发 |
 | `task-ops` | 统一提交 / 取消 / 重试 (入队, 不代为运行) |
 
-任务与定时任务的入参 (即 `submit_task` / `create_schedule` 的 `submission`) **不随工具签名内联**: 联合体体积远大于其余工具定义, 改为 `get_task_submission_schema` / `get_routine_submission_schema` 按需返回, 与提交时的校验共用同一个 `TypeAdapter`; 校验失败返回出错字段 (最多三条)、可用类型与该类型的字段定义, 模型无需再次试探形状.
+任务与定时任务的入参 (即 `submit_task` / `create_schedule` 的 `submission`) **不随工具签名内联**: 联合体大小远大于其余工具定义, 改为 `get_task_submission_schema` / `get_routine_submission_schema` 按需返回, 与提交时的校验共用同一个 `TypeAdapter`; 校验失败返回出错字段 (最多三条)、可用类型与该类型的字段定义, 模型无需再次试探形状.
 
 指令只保留域特有约束. 全局约定 (id 一律取自 `sql_explore` / `sql_deliver`、破坏性操作批准、失败返回 `{error}`、入参先取 schema) 集中在系统提示, 不逐工具重复; capability id 不再对模型可见, 指令中不得引用.
 
@@ -53,11 +53,11 @@
 
 `schedule-ops` 创建时只接受 `RoutineSubmission`; 更新只允许 `name` / `cron` / `enabled`, 任务类型或 payload 变化须删除后重建. `trigger_schedule` 只把 `next_run` 设为当前时间, 实际 Task 由 `CronScheduler` 下一次 tick 创建, 不是同步执行.
 
-**批准流**: SQL 非法或 SQLite 运行时错误 → 工具返回 `error` 字符串, **不**升格为回合错误打断整轮. 慢查询 (`allow_slow`) 与破坏性写 (metadata / facet merge·delete·删规则 / 删库) 在工具体内 `raise ApprovalRequired`; 适配器把 `DeferredToolRequests` 映射成 AG-UI 中断 (`RUN_FINISHED.outcome.interrupts`), 中断 `id` 为 `int-{tool_call_id}`, 文案取自工具给的 metadata. 一次 `resume[]` 必须回答**全部**打开的中断, 故前端逐项暂存决定、集齐后整批提交, 批量批准即全部置 approve. 批准 → 工具体再次进入且 `tool_call_approved=True`; 拒绝 → `ToolDenied`. 模型只看见普通 tool return, **无**「用户已批准…」类旁白; 刷新后用回放行末尾的中断还原待批状态。
+**批准流**: SQL 非法或 SQLite 运行时错误 → 工具返回 `error` 字符串, **不**升格为回合错误打断整轮. 慢查询 (`allow_slow`) 与破坏性写 (metadata / facet merge·delete·删规则 / 删库) 在工具体内 `raise ApprovalRequired`; 适配器把 `DeferredToolRequests` 映射成 AG-UI 中断 (`RUN_FINISHED.outcome.interrupts`), 中断 `id` 为 `int-{tool_call_id}`, 文案取自工具给的 metadata. 一次 `resume[]` 必须回答**全部**打开的中断, 故前端逐项暂存决定、集齐后整批提交, 批量批准即全部置 approve. 批准 → 工具体再次进入且 `tool_call_approved=True`; 拒绝 → `ToolDenied`. 模型只看见普通 tool return, **无**「用户已批准…」类附加说明; 刷新后用回放行末尾的中断还原待批状态. 
 
 ## 会话数据
 
-会话是**用户数据**, 落 Cold `data_dir`, **不**纳入 `log_dir`: `{data_dir}/agent/sessions/{session_id}/`
+会话是**用户数据**, 写入 Cold `data_dir`, **不**纳入 `log_dir`: `{data_dir}/agent/sessions/{session_id}/`
 
 | 文件 | 角色 |
 |------|------|

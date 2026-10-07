@@ -23,7 +23,7 @@
 
 官方 / 内置来源使用单段 ID (`javdb`、`dmm`); 第三方来源 ID 必须是 `namespace.local` (第一段是开发者声明的命名空间, 可再分段), 命名空间不能是 `amane` / `plugin` / `official` / `builtin`, 也不能是任何内置 `SiteName`. ID 是持久化数据中的稳定 key, 出现在路由、`raw`、`source_urls`、`field_sources`、任务摘要和缓存 key 中, **改变插件 ID 会使历史 `raw` 失去原有身份, 不允许这样做**; 显示名称不能代替 ID. descriptor 里的 `id` 必须与目录名一致, 否则该目录记为失败. 运行时数据在 `{cold.data_dir}/plugins/<id>/` (`PluginContext.data_dir`), 卸载只删源码树, 不删运行时数据.
 
-内置影片来源与插件影片来源进入同一个 `CrawlerFactory`、HTTP 客户端、Host 限速器、聚合器和任务记录管线. 仅声明播放能力的插件不进入 `CrawlerFactory`, 也不允许写入 `content_routes` / `field_priority` / `field_blacklist`; 内容路由校验只检查路由里出现的 ID 是否具备影片元数据能力, 配置里只有 `plugins.<id>` 不触发该检查.
+内置影片来源与插件影片来源进入同一个 `CrawlerFactory`、HTTP 客户端、Host 限速器、聚合器和任务记录管线. 仅声明播放能力的插件不进入 `CrawlerFactory`, 也不允许写入 `content_routes` / `field_priority` / `field_blacklist`; 类型路由校验只检查路由里出现的 ID 是否具备影片元数据能力, 配置里只有 `plugins.<id>` 不触发该检查.
 
 ## 进程内重建
 
@@ -33,7 +33,7 @@
 
 descriptor 声明来源能力、支持的内容类型、语言、访问 URL、`traits` 行为开关和默认速率. 路由校验在启动与配置热更新时执行: 已安装来源须声明影片元数据能力, 且若声明了内容类型集合则必须覆盖所配置的 `ContentType`; 尚未安装的合法第三方来源 ID 可以留在路由里, 只记日志.
 
-`traits` 承载来源的行为开关, 取值见 `SourceTrait`: `needs_partial` 决定来源是否排在聚合第二段, `multi_language` 决定是否按字段语言展开 `(source, language)` 抓取节点, `uses_file_hash` 决定刮削前是否计算 oshash 并经 `SearchQuery.file_hash` 传入. 不允许只在爬虫内部根据配置猜测这些行为, 也不允许为同一开关另开 descriptor 字段; 未知取值被忽略, 插件可以声明为更新宿主准备的能力. `SearchQuery.partial_result` 属于插件契约且只读: 为 `None` 当且仅当该来源不在第二段, 单源路由下是空对象. 它是 `SearchQuery` 上唯一属于契约的注入状态; 主机侧的中间结果与站点快照不属于插件契约, 增删不递增 `PLUGIN_API_VERSION`. 内置影片来源的 descriptor 由 `crawlers/site_roles.py::builtin_descriptors` 从对应爬虫的 `CrawlerProfile` 合成, 不另维护名单; 刮削任务的调度事实只从这份目录读取, 与来源是内置还是插件无关.
+`traits` 承载来源的行为开关, 取值见 `SourceTrait`: `needs_partial` 决定来源是否排在聚合第二段, `multi_language` 决定是否按字段语言展开 `(source, language)` 获取节点, `uses_file_hash` 决定刮削前是否计算 oshash 并经 `SearchQuery.file_hash` 传入. 不允许只在爬虫内部根据配置猜测这些行为, 也不允许为同一开关另开 descriptor 字段; 未知取值被忽略, 插件可以声明为更新宿主准备的能力. `SearchQuery.partial_result` 属于插件契约且只读: 为 `None` 当且仅当该来源不在第二段, 单源路由下是空对象. 它是 `SearchQuery` 上唯一属于契约的注入状态; 主机侧的中间结果与站点快照不属于插件契约, 增删不递增 `PLUGIN_API_VERSION`. 内置影片来源的 descriptor 由 `crawlers/site_roles.py::builtin_descriptors` 从对应爬虫的 `CrawlerProfile` 合成, 不另维护名单; 刮削任务的调度事实只从这份目录读取, 与来源是内置还是插件无关.
 
 ## 配置
 
@@ -70,7 +70,7 @@ descriptor 声明来源能力、支持的内容类型、语言、访问 URL、`t
 
 **断连不在 `Request` 上探测**: 中间件栈让 `Request.is_disconnected()` 恒为 `False` (原因见 [api.md](api.md)), 长响应用 `playback/disconnect.py` 的 `DisconnectSignal`.
 
-码流 I/O 不复用刮削 `HttpClient` / `WebClient`, 改用独立流式客户端 (出口并发上限、`Accept-Encoding: identity`、不跟随重定向、剥离 hop-by-hop 与 `Set-Cookie`、任何失败路径都必须归还出口额度). 分片按「非播放列表即放行」处理, 不设媒体类型白名单 — 上游 CDN 普遍伪装分片的扩展名与 `Content-Type`; 响应类型一律中和为 `application/octet-stream` (`text/vtt` 与文本型 AES 密钥保留原类型), 播放列表类型仍拒绝. 分片缓存按上游声明的类型区分: 媒体分片与初始化段可用不可变缓存, 密钥 URI 一律 `no-store`, 其余 4xx / 5xx 不写入不可变缓存.
+码流 I/O 不复用刮削 `HttpClient` / `WebClient`, 改用独立流式客户端 (通道并发上限、`Accept-Encoding: identity`、不跟随重定向、剥离 hop-by-hop 与 `Set-Cookie`、任何失败路径都必须归还通道额度). 分片按「非播放列表即放行」处理, 不设媒体类型白名单 — 上游 CDN 普遍伪装分片的扩展名与 `Content-Type`; 响应类型一律中和为 `application/octet-stream` (`text/vtt` 与文本型 AES 密钥保留原类型), 播放列表类型仍拒绝. 分片缓存按上游声明的类型区分: 媒体分片与初始化段可用不可变缓存, 密钥 URI 一律 `no-store`, 其余 4xx / 5xx 不写入不可变缓存.
 
 **token 表与探测缓存跨 rebuild 存活** (所有权在 `AppRuntime`), 只在插件集合变化 (安装 / 卸载 / 重载 / 启停) 时清空 — 播放中修改任意热配置不得让在播 HLS 会话的分片失效; **解析结果缓存相反, 每次 rebuild 都清空**. 探测失败与打开失败使用独立的进程内 TTL, 不复用图片代理负缓存, 也不把码流写入 `ResourceStore`.
 
@@ -80,7 +80,7 @@ descriptor 声明来源能力、支持的内容类型、语言、访问 URL、`t
 
 插件通过 `PluginContext` 得到共享 `HttpClient`、`WebClient` 和 `data_dir`. 使用共享客户端是契约的一部分: 插件请求必须遵守 Amane 的代理、重试、Host 限速和任务 HTTP 记录. HTML 用 `http_client.get_html` (拦截页抛 `SourceError`), JSON API 用 `get_json`. `data_dir` 是 `{cold.data_dir}/plugins/<plugin_id>`, 插件不允许写入该目录之外. 插件短 JSON 仍经由 `context.http_client`; 需要输出本机文件时声明 `file` 目标由主机打开, 插件不自行读盘.
 
-`fetch` 未命中返回 `None`; 网络 / 拦截 / 可分类业务失败抛 `SourceError` (含 `RequestError`), 由 `invoke_source` 记入与内置来源同一套 `SiteOutcomeRecord`. 不允许 `except RequestError: return None`, 也不允许裸 `except Exception` — 吞异常会被记为 `no_usable_metadata`, 任务不失败.
+`fetch` 未命中返回 `None`; 网络 / 拦截 / 可分类业务失败抛 `SourceError` (含 `RequestError`), 由 `invoke_source` 记入与内置来源同一套 `SiteOutcomeRecord`. 不允许 `except RequestError: return None`, 也不允许裸 `except Exception` — 忽略异常会被记为 `no_usable_metadata`, 任务不失败.
 
 `FilmSourceProvider.check_connectivity` 是可选钩子, 供「网络检测」页探测本源: 返回 `None` = 未声明 (主机按 descriptor 的首个 URL 探测), 入口不是该 URL (登录页 / 需要 token 的 API) 或凭据缺失时须覆盖它, 后者返回 `ConnectivityOutcome.skipped(SkipReason.MISSING_CREDENTIAL)`. `detail` 会被界面原样渲染, 因此只放语言中立的补充 (例如缺失的配置项名), 不写中文句子. 这是向后兼容的增量, 已有插件不实现也能被探测, `PLUGIN_API_VERSION` 不变.
 

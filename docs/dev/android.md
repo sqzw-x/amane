@@ -40,7 +40,7 @@ Android 端是**远程客户端**: 服务端 (FastAPI + SQLite + 运行期加载
 
 `addJavascriptInterface` 对 WebView 加载的文档全部可见, 因此站外链接必须交给系统浏览器. 弹窗与 `window.open` 的过渡 WebView 都可能落到站外文档, 因此它们不装桥, 并与主窗口共用同一条站内判据.
 
-**启动看门狗**: 主文档加载成功不等于页面能用 — 页面在挂载前抛异常时 (WebView 低于前端下限即是这种情况), 页面自己的错误界面不会出现, 用户看到的只是一张空白页. 壳在 `onPageFinished` 后检查 `#root` 是否有子节点, 两次检查仍为空则显示原生错误界面, 这是该情况下唯一的重试与换服务器出口.
+**启动看门狗**: 主文档加载成功不等于页面能用 — 页面在挂载前抛异常时 (WebView 低于前端下限即是这种情况), 页面自己的错误界面不会出现, 用户看到的只是一张空白页. 壳在 `onPageFinished` 后检查 `#root` 是否有子节点, 两次检查仍为空则显示原生错误界面, 这是该情况下唯一的重试与切换服务器途径.
 
 ## 平台功能
 
@@ -48,12 +48,12 @@ Android 端是**远程客户端**: 服务端 (FastAPI + SQLite + 运行期加载
 - **下拉刷新**: `SwipeRefreshLayout` 包住 WebView, 松开即 `reload()`, 加载结束或失败时收起指示器, 全屏播放期间禁用. 接管需同时满足两条, 缺一都会误触: 触点处已无法向上滚动 — `SwipeRefreshLayout` 只依据 WebView 自身的滚动位置, 而 SPA 的滚动多在内部容器里 (那里恒为 0), 该判据因此由页面在 `touchstart` 实测并经桥推送至壳 (`web/src/lib/pull-refresh.ts`); 纵向位移压过横向 — 基类只比较纵位移是否越过 touchSlop, 横向滑动伴随的纵向偏移会被当成下拉, 方向改由 `AxisLockSwipeRefreshLayout` 在手势起手处判定.
 - **文件选择**: WebView 自身不实现文件选择器, `<input type="file">` 必须由系统选择器接管.
 - **下载**: `Content-Disposition: attachment` 交给 `DownloadManager`; 它在独立进程, 不共享 cookie 罐, 因此显式写入 `Cookie` 请求头. 附件型 `window.open` 同样交给它, 真页面才另起 `PopupActivity`.
-- **全屏视频**: `onShowCustomView` 的自定义视图 (`<video>` 与页面自己的 Fullscreen API 都走这条路), 同时收起系统栏并把方向锁到传感器横屏, 期间根容器的 inset 内边距归零; 返回键先请求页面退出全屏, 超时未退出则按原生方式收起; 全屏期间按 Home 键切换为画中画.
+- **全屏视频**: `onShowCustomView` 的自定义视图 (`<video>` 与页面自己的 Fullscreen API 都经由这条路径), 同时收起系统栏并把方向锁到传感器横屏, 期间根容器的 inset 内边距归零; 返回键先请求页面退出全屏, 超时未退出则按原生方式收起; 全屏期间按 Home 键切换为画中画.
 - **浅色 / 深色**: 算法深色 (强深色) 必须在页面侧与壳侧都关掉, 只靠任何一侧都会漏. 页面自己按用户设置在深浅两套之间切换, 内核在系统深色时再叠一层会把浅色主题反转成另一种深色; 页面侧由 `web/src/global.css` 把壳内根元素 (`data-amane-shell`) 的 `color-scheme` 钉成 `dark`, 换掉这一项内核就不再套用算法深色; 壳侧新内核用 `setAlgorithmicDarkeningAllowed(false)`, 旧内核回退到 `setForceDark(FORCE_DARK_OFF)` — Android 13 以上且 targetSdk ≥ 33 时旧接口是空操作, 低于 Chromium 105 的 WebView 又不支持前者. `prefers-color-scheme` 由应用主题 (DayNight) 决定, 与这个开关无关.
 
 窗口 inset 以原生 padding 施加在根容器上, 页面不使用 `env(safe-area-inset-*)`: WebView 的视口因此等于安全区, SPA 既有视口高度计算无需改动 (见 [frontend.md](frontend.md)). 壳没有自己的栏, 状态栏区域显示系统背景 (跟随 DayNight), 页面头部不会被状态栏压住.
 
-`usesCleartextTraffic="true"` 是刻意的: 网络策略不能按用户在运行期填写的地址放开明文, 而自建服务默认走 `http://`. 非局域网部署应自备 HTTPS 反代.
+`usesCleartextTraffic="true"` 是刻意的: 网络策略不能按用户在运行期填写的地址放开明文, 而自建服务默认使用 `http://`. 非局域网部署应自备 HTTPS 反代.
 
 ## WebView 运行期
 

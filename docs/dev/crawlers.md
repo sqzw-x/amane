@@ -54,12 +54,12 @@ CrawlerFactory (缓存实例)
 
 ## HTTP 层
 
-`WebClient` (`net/http.py`) 是唯一出站 HTTP 通道: 失败抛出 `RequestError` (`SourceError` 子类, `failure` 位于异常上), `ok_statuses` (如 RSS 304) 仍算成功. `HttpClient` (`crawlers/http.py`) 是其薄封装; 启用浏览器渲染的来源由 `for_source` 派生视图改走浏览器, 爬虫与插件均经由它.
+`WebClient` (`net/http.py`) 是唯一出站 HTTP 通道: 失败抛出 `RequestError` (`SourceError` 子类, `failure` 位于异常上), `ok_statuses` (如 RSS 304) 仍算成功. `HttpClient` (`crawlers/http.py`) 是其薄封装; 启用浏览器渲染的来源由 `for_source` 派生视图改用浏览器, 爬虫与插件均经由它.
 
 - HTML 页用 `get_html`: `get_text` + `classify_block`, 命中拦截 / 空页抛出 `SourceError`.
 - JSON API 用 `get_json` / `post_json`, 不执行 HTML 启发式; `post_json` 载荷可以是 object 或 array (Yii 式 RPC).
-- `download` / `ResourceStore.acquire` 是机会主义的: 调用方 `except RequestError: return None` / 返回 `bool`, 不经由第二套错误通道. `ResourceStore.acquire` 另按重定向终址拒收上游改派的占位图 (DMM 的 `now_printing`), 由多 URL 试探回退.
-- 多 URL 试探可在子类 `except RequestError: continue`; 全部失败时抛出最后一次异常, 不允许吞没为裸 `None`.
+- `download` / `ResourceStore.acquire` 失败即跳过, 不阻断调用方: 调用方 `except RequestError: return None` / 返回 `bool`, 不经由第二套错误通道. `ResourceStore.acquire` 另按重定向终址拒收上游改派的占位图 (DMM 的 `now_printing`), 由多 URL 试探回退.
+- 多 URL 试探可在子类 `except RequestError: continue`; 全部失败时抛出最后一次异常, 不允许静默忽略为裸 `None`.
 - 防盗链: 声明 `CrawlerProfile.same_origin_referer` 的站点, 其 host 由 `build_network_stack` 交给 `WebClient`, 调用方未给 `Referer` 时补 `https://{host}/`; 站点按前缀匹配, 结尾斜杠不可省略.
 
 ### 拦截判定
@@ -74,11 +74,11 @@ CrawlerFactory (缓存实例)
 
 `WebClient` 基于 curl_cffi, 每次请求从预设列表轮换指纹.
 
-Cloudflare managed challenge 只能执行 JS 越过, 因此受保护的来源经 `HttpClient.get_rendered` 走浏览器: 后端由 `network.browser.backend` (`off` / `patchright` / `camoufox` / `solver`) 选择, 来源按 `SiteConfig.use_browser` 三档路由 (设置页可编辑): `auto` (默认) 先直连, 首次命中 `classify_block` 的 `cloudflare_challenge` 后该来源改用浏览器并保持; `always` 一律渲染; `off` 一律直连. `SiteConfig.browser_backend` 覆盖后端 (`off` 显式禁用; 可空枚举没有 UI 回退项, 覆盖只经 TOML/API 设置), 只在改用浏览器后生效; 仅 `always` 在无可用后端时于构造期告警. `get_html` 与基类 `check_connectivity` 按策略走当前视图; `get_text` / `get_json` / `get_bytes` / `download` 仍直连, 自定义 `check_connectivity` 自选传输. 输出仍按 `net/errors.py::classify_block` 判定拦截, 后端自身的失败以 `RequestFailure.reason` 表达——挑战未解决归为 `cloudflare_challenge`, 不因缺少正文退化成通用错误.
+Cloudflare managed challenge 只能执行 JS 越过, 因此受保护的来源经 `HttpClient.get_rendered` 经由浏览器: 后端由 `network.browser.backend` (`off` / `patchright` / `camoufox` / `solver`) 选择, 来源按 `SiteConfig.use_browser` 三档路由 (设置页可编辑): `auto` (默认) 先直连, 首次命中 `classify_block` 的 `cloudflare_challenge` 后该来源改用浏览器并保持; `always` 一律渲染; `off` 一律直连. `SiteConfig.browser_backend` 覆盖后端 (`off` 显式禁用; 可空枚举没有 UI 回退项, 覆盖只经 TOML/API 设置), 只在改用浏览器后生效; 仅 `always` 在无可用后端时于构造期告警. `get_html` 与基类 `check_connectivity` 按策略经由当前视图; `get_text` / `get_json` / `get_bytes` / `download` 仍直连, 自定义 `check_connectivity` 自选传输. 输出仍按 `net/errors.py::classify_block` 判定拦截, 后端自身的失败以 `RequestFailure.reason` 表达——挑战未解决归为 `cloudflare_challenge`, 不因缺少正文退化成通用错误.
 
 同一来源的连续请求复用同一个浏览器 context (solver 复用同名会话); 引擎惰性启动, camoufox 浏览器二进制在首次启动时下载, 空闲及进程退出 / 热重建时释放. 浏览器池只在 `network.browser` / `proxy` 变化时重建, 其余热重载保留已解决的 clearance; solver 经注入的 `WebClient` 出站, 地址来自 `network.browser.solver_url`, 不允许暴露到公网.
 
-改用浏览器的来源 (auto 切换后或 always) 实际入口不是 `base_url` 时必须覆盖 `check_connectivity` (如 minnano 探测 `search_result.php`), 否则首页可达会掩盖入口不可达. 插件来源没有浏览器入口, 始终走 HTTP. `browser` 可选依赖不随 Docker 与桌面打包分发, 这两处只能用 `solver`.
+改用浏览器的来源 (auto 切换后或 always) 实际入口不是 `base_url` 时必须覆盖 `check_connectivity` (如 minnano 探测 `search_result.php`), 否则首页可达会掩盖入口不可达. 插件来源没有浏览器入口, 始终使用 HTTP. `browser` 可选依赖不随 Docker 与桌面打包分发, 这两处只能用 `solver`.
 
 ## 外部 API 读模型
 
@@ -91,7 +91,7 @@ Cloudflare managed challenge 只能执行 JS 越过, 因此受保护的来源经
 3. 导出后 `registry.register` / `actor_registry.register`. 双料站两个类用同一 `SiteName` 各注册一次; 不允许修改 `site_roles` 常量. 演员 `register` 顺序即默认 `profile_sites` 优先级. 需要 cookie / token 时给 `SiteConfig` 加字段.
 4. 加 TOML 用例 (见 [crawler-testing.md](crawler-testing.md)) 并 `just test`.
 
-长文本字段 (`plot` / 演员 `overview`) 直接返回上游原文: HTML 片段、实体、异体空白由聚合出口统一归一, 契约见 [data-model.md](data-model.md). **爬虫不得自行 unescape / 转义 / 转换行** — 自行处理会让归一退化成二次解码.
+长文本字段 (`plot` / 演员 `overview`) 直接返回上游原文: HTML 片段、实体、异体空白由聚合输出统一归一, 契约见 [data-model.md](data-model.md). **爬虫不得自行 unescape / 转义 / 转换行** — 自行处理会让归一退化成二次解码.
 
 ## 特殊数据源: r18.dev 离线 PG 镜像
 

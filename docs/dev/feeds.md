@@ -41,7 +41,7 @@
 
 - `ignore`: 保留历史和去重记录, 不取消已入队 / 运行中 / 已完成的 SCRAPE; 后续拉取不会重新创建或入队.
 - `unignore`: 清除忽略状态, 只恢复可见性, 不自动提交 SCRAPE.
-- `read` / `unread`: 写 / 清 `read_at`, 幂等, 不改变忽略状态, 不入队 SCRAPE.
+- `read` / `unread`: 写入 / 清除 `read_at`, 幂等, 不改变忽略状态, 不入队 SCRAPE.
 - `delete`: 永久删除历史行, 不影响已有 Task / Metadata / Resource; 远程源再次返回相同 `item_key` 时重新视为新条目.
 - `scrape`: 按当前 Feed 的 `content_type` / `use_cache` 为有番号条目创建番号级 SCRAPE; 同批次番号大小写不敏感去重, 无番号计入 `skipped`, 手动任务优先级为 `0`. 配置在任务创建时写入 payload, 后续修改 Feed 不影响已入队任务.
 

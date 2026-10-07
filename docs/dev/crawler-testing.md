@@ -9,7 +9,7 @@
 
 ## Fixture 仓库
 
-用例在独立仓库 `amane-testdata`; `just fixtures` 按 `tests/.fixtures-rev` 钉住的 sha 检出到 `tests/crawlers/cases/` (gitignored), 由 `just test` / `just test-cov` 作为依赖执行, 因此 `just check` 间接执行、不单独声明; CI 经 `FIXTURES_DEPLOY_KEY` 走 SSH. 直接运行 `uv run pytest` 不会同步 fixture, 获取失败时依赖 `cases/` 的用例 skip, **不会失败**. 刷新方式: testdata 仓库重新采集并提交, 再推进指针.
+用例在独立仓库 `amane-testdata`; `just fixtures` 按 `tests/.fixtures-rev` 钉住的 sha 检出到 `tests/crawlers/cases/` (gitignored), 由 `just test` / `just test-cov` 作为依赖执行, 因此 `just check` 间接执行、不单独声明; CI 经由 `FIXTURES_DEPLOY_KEY` 使用 SSH. 直接运行 `uv run pytest` 不会同步 fixture, 获取失败时依赖 `cases/` 的用例 skip, **不会失败**. 刷新方式: testdata 仓库重新采集并提交, 再推进指针.
 
 ## 采集
 
@@ -34,7 +34,7 @@
 
 - **`url_contains` 子串匹配**: 多条都命中时**第一条生效**, 更具体的模式放前面; 同一 URL 上不同 GraphQL 操作再用 `body_contains` (匹配 POST JSON 正文).
 - **`live` 不能替代 mock**: `@pytest.mark.live` 在 CI 跳过, 回归必须可重复.
-- **Wikipedia 演员页**必须 `get_text`, 不能走 `get_html` (引用里的「年齢認証」会误判拦截).
+- **Wikipedia 演员页**必须 `get_text`, 不能用 `get_html` (引用里的「年齢認証」会误判拦截).
 
 许多站点长期 CF / DNS / 关站, 不能为「测得到」而编造 fixture; 采集失败则 skip, 并在 TOML 注释里记下当时用的方法.
 

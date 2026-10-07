@@ -12,7 +12,7 @@ Python 只运行 HTTP (与 Docker / `just start` 同一入口 `amane.server`), �
 
 **macOS** 三个进程, Swift 是 App 入口, 菜单栏是兄弟进程而非服务的孩子:
 
-- **应用进程**: `macapp/Sources/Amane` → `Contents/MacOS/Amane`; Launch Services 登记为 `com.github.sqzw-x.amane` (必须是 NSApplication, 第二次打开才走系统单实例). 本进程设置环境、监督 Python、启动与回收菜单栏. 服务退出码 **0 / 130 / 143** 结束 App, **3** 立刻再次启动 Python (UI 继续活着), **4** 启动失败 (退避后重试, 原因写入状态文件), **126 / 127** exec 失败退出, 其它退避 2s; TERM 时先停两个子进程. Info.plist 含 `LSUIElement` + `LSMultipleInstancesProhibited`, 并设置 `AMANE_SUPERVISED=1`.
+- **应用进程**: `macapp/Sources/Amane` → `Contents/MacOS/Amane`; Launch Services 登记为 `com.github.sqzw-x.amane` (必须是 NSApplication, 第二次打开才经由系统单实例). 本进程设置环境、监督 Python、启动与回收菜单栏. 服务退出码 **0 / 130 / 143** 结束 App, **3** 立刻再次启动 Python (UI 继续活着), **4** 启动失败 (退避后重试, 原因写入状态文件), **126 / 127** exec 失败退出, 其它退避 2s; TERM 时先停两个子进程. Info.plist 含 `LSUIElement` + `LSMultipleInstancesProhibited`, 并设置 `AMANE_SUPERVISED=1`.
 - **服务进程**: PyInstaller onedir, 入口与导入约束见 [architecture.md](architecture.md).
 - **UI 进程**: 嵌套 `Contents/Resources/AmaneUI.app` (`com.github.sqzw-x.amane.ui`). 独立 bundle id 以免和主进程抢 NSApplication; 无状态, 只轮询 HTTP; `--watch-parent` 指向**应用进程** PID. `NSStatusItem` 只能在 `applicationDidFinishLaunching` 里创建 — 更早碰菜单栏时 WindowServer / CGS 尚未就绪, SkyLight 会断言退出.
 
@@ -37,7 +37,7 @@ Windows 壳是 Per-Monitor V2 (`winapp/app.manifest`): 未声明时系统把 `Tr
 | 复制 API Token | 壳拿到的 token 拷入剪贴板; 未传 (关鉴权) 时置灰 |
 | 退出 | 停壳; 壳先停 Python (就绪时经同一条 `POST /api/system/restart` 优雅停机, 因 stopping 不再再次启动; 否则 Kill), 再卸托盘 |
 
-bar 的静态信息**不走** `/api/health` — 后者是就绪契约 (Docker healthcheck); `/api/system/desktop` 是 bar 专属. 菜单字符串按系统 UI 语言 (zh / en), 不跟随前端浏览器语言. 壳等 bootstrap 写入 `data_dir/token` 后再带 `Authorization`.
+bar 的静态信息**不使用** `/api/health` — 后者是就绪契约 (Docker healthcheck); `/api/system/desktop` 是 bar 专属. 菜单字符串按系统 UI 语言 (zh / en), 不跟随前端浏览器语言. 壳等 bootstrap 写入 `data_dir/token` 后再带 `Authorization`.
 
 macOS UI argv (`AmaneUI --base-url http://127.0.0.1:PORT [--token <token>] [--watch-parent [pid]]`): `--base-url` 必传; `--token` 仅用于轮询 `Authorization`, 不进打开 Web UI 的 URL; `--watch-parent` 省略时回退 `getppid()`, pid ≤ 1 视为未监视. Windows 无独立 UI 进程与这组 argv; `AMANE_UI_ONLY=1` 只开托盘、不启动 Python, 对已有服务轮询.
 

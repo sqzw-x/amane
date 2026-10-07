@@ -1,4 +1,4 @@
-# 内容路由与站点特性
+# 类型路由与站点特性
 
 > 默认 `content_routes` 的取舍、各源覆盖与站点特例. 资格真值 / `field_priority` / `field_blacklist` 编译见 [config.md](config.md), 建图见 [task-system.md](task-system.md). 成员与顺序以 `config/manager.py` 的默认表为准, 本文不列出默认表.
 
@@ -6,9 +6,9 @@
 
 ## 原则
 
-- 类型专属源靠前, 综合索引垫后.
+- 类型专属源靠前, 综合索引排在链尾.
 - 厂牌站若对不匹配的番号仍发 HTTP, 不纳入默认表 (用户可按前缀自行加).
-- 未配置即立即返回 `None` 的源 (theporndb 无 token、r18dev 无 PG、official 前缀未命中) 可以垫后.
+- 未配置即立即返回 `None` 的源 (theporndb 无 token、r18dev 无 PG、official 前缀未命中) 可以排在链尾.
 - 会把无关番号拼成「看起来像详情页」的站不纳入默认表.
 
 ## 类型取舍
@@ -17,10 +17,10 @@
 |------|------|----------|
 | censored | 中文索引 → FANZA 权威图文 → 稳定镜像 → 可空返回的官网 / r18 | 单厂牌 API (Prestige 等对每个候选 SKU 都请求); iqqtv (每部有碼片都会请求中文站; 需要时加入本路由再把 `field_priority.title` 提前) |
 | uncensored | 有独立无碼区的索引 + 无碼专站 | kin8 (从任意番号抽数字拼详情, 会误匹配) |
-| fc2 | javdb 分类 + 专用索引 + 官方电子市场 + BT 垫后 | fc2club (跳转镜像不稳定) |
+| fc2 | javdb 分类 + 专用索引 + 官方电子市场 + BT 排在链尾 | fc2club (跳转镜像不稳定) |
 | chinese | 有國產区的中文站第一, 综合 / BT 兜底 | javdb 当第一源 |
 | amateur | MGS 第一; FANZA 有素人频道; javbus 首页能见到 `300MIUM-*` | MGS 不纳入有碼默认, 否则 MIDV 会请求 MGS |
-| western | TPDB 第一 (需 token 才真正请求); 有歐美分类的索引垫后 | javbus 欧美域 (目录空); 不实现该域爬虫 |
+| western | TPDB 第一 (需 token 才真正请求); 有歐美分类的索引排在链尾 | javbus 欧美域 (目录空); 不实现该域爬虫 |
 | hentai | getchu 对路径关键词分类的里番第一; DMM 动画 / 同人; javdb 兜底 | getchu 商品是数字 id 不是 JAV 番号, 仅因路径分类而纳入此链 |
 
 ## 综合索引
@@ -29,17 +29,17 @@
 
 **javbus.com** — 有碼首页、無碼 `/uncensored` (日期番号风格); 有碼首页会混素人号. 搜索回退带 `parent=ce`, 无碼主要靠 `/{number}` 直达. 有碼详情 `extrafanart` 热链 `pics.dmm.co.jp`, 发行日与 DMM 配信日相同, 片商用 DMM 日文名. 图片 (`/pics/`) 校验同源 Referer (见 [crawlers.md](crawlers.md)). **不解析 plot**; 无碼是另一套目录. 欧美入口指向 `javbus.org`, 该域正文可以是字面 `404`, 关公告后没有影片网格, `javbus.hair` 证书无效 — **欧美目录不可用**, 不允许放入欧美默认路由.
 
-**freejavbt.com** — 显式分有碼 / 無碼 / 歐美 / FC2, 首页还有「國產」「成人動畫」. 覆盖最宽的 BT 向索引, 元数据质量一般, 适合垫后.
+**freejavbt.com** — 显式分有碼 / 無碼 / 歐美 / FC2, 首页还有「國產」「成人動畫」. 覆盖最宽的 BT 向索引, 元数据质量一般, 适合排在链尾.
 
 **avsox.click** — 日本无码情报站. 同源 AVMOO = 有碼, AVHEAT = 欧美 (`avheat.shop`), 项目只接入 AVSOX. 搜索对有无短横线都能命中, `_` 与 `-` 是两部; 对不上不取第一条.
 
-**jav321.com** — DMM 目录镜像; 有碼与素人垫后, 无无碼 / FC2 / 欧美入口.
+**jav321.com** — DMM 目录镜像; 有碼与素人排在链尾, 无无碼 / FC2 / 欧美入口.
 
 **javlibrary.com** — 常命中 Cloudflare 等待页, 不纳入默认表.
 
 **avbase.net** — 名单来自用户投稿而非官方; 受 Cloudflare managed challenge 保护, 客户端指纹不过关即拦截. 不纳入默认表: 进入 `censored` 会让每次刮削多一次可能退化为浏览器 / solver 的请求.
 
-**airav.io** — 中文标题补强, 不是国产分区; 国产路由里垫在 iqqtv 后面.
+**airav.io** — 中文标题补强, 不是国产分区; 国产路由里置于 iqqtv 之后.
 
 **iqqtv** (`iqq5.xyz` 会跳转到 `iqqk4.quest` 一类轮换域) — 导航有國產区 (爱豆傳媒、杏吧傳媒等, 不是 MD 号为主), 国产路由第一源; 爬虫带 `/cn|/jp` 语言前缀.
 
@@ -47,11 +47,11 @@
 
 **mgstage.com** (`adc=1` 通过年龄墙) — Prestige 集团素人站; 首页同时有 `ABF-*` (有碼号, 番号分类会判成 censored) 与 `300MIUM-*`. 素人路由第一源.
 
-**dmm.co.jp / FANZA** — 有碼权威源, 高清图, 字段齐全 (含 plot), 覆盖几乎全部有碼厂; 也是素人第二源, 里番可垫. 不是 FC2 / 欧美 / 国产站.
+**dmm.co.jp / FANZA** — 有碼权威源, 高清图, 字段齐全 (含 plot), 覆盖几乎全部有碼厂; 也是素人第二源, 动漫可排在链尾. 不是 FC2 / 欧美 / 国产站.
 
 **adult.contents.fc2.com** — 官方 FC2 电子市场, 商品 ID 纯数字; 元数据偏卖家自填, 但属第一方, 置于 javdb / fc2ppvdb 之后.
 
-**fc2ppvdb.com** — FC2 专用索引, 可能被 Cloudflare Access denied; 拦截后回落到后续源.
+**fc2ppvdb.com** — FC2 专用索引, 可能被 Cloudflare Access denied; 拦截后回退到后续源.
 
 **fc2club.top** — 打开后跳转镜像, 不稳定, 不纳入默认表.
 

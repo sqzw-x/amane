@@ -68,11 +68,11 @@ Feed 失败记在源的 `last_error`, 不写入站点 outcome 表.
 
 ### 回放 CLI
 
-经 `just repro` (或 `python -m amane.observability`) 回放: 有 `http/` 且未 `--online` 时走 Offline (`ReplayWebClient` + `ScrapeHandler`), 否则 Online. v1 仅 `type=scrape`, 只读取 `http/` 与 `task.json`, 不依赖站点结果结构化字段.
+经 `just repro` (或 `python -m amane.observability`) 回放: 有 `http/` 且未 `--online` 时使用 Offline 模式 (`ReplayWebClient` + `ScrapeHandler`), 否则 Online. v1 仅 `type=scrape`, 只读取 `http/` 与 `task.json`, 不依赖站点结果结构化字段.
 
 ### 非目标 (v1)
 
-ORGANIZE / REFRESH 全量回放、浏览器 HAR、回放写生产 DB / 移动用户媒体. 浏览器渲染不经 `http/` 记录 (本地引擎不走 `WebClient`; solver 的 `/v1` 调用只记 meta, 响应正文不落盘), 含渲染来源的任务在离线回放中该来源必然失败, 需 `--online`.
+ORGANIZE / REFRESH 全量回放、浏览器 HAR、回放写生产 DB / 移动用户媒体. 浏览器渲染不经 `http/` 记录 (本地引擎不使用 `WebClient`; solver 的 `/v1` 调用只记 meta, 响应正文不落盘), 含渲染来源的任务在离线回放中该来源必然失败, 需 `--online`.
 
 ## 排障速查
 

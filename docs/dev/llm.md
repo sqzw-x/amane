@@ -20,7 +20,7 @@
 
 接入位置在 `ScrapeHandler.handle`: `aggregate()` 之后、`upsert_metadata()` 之前. 翻译是对 `AggregatedMetadata` 文本字段的**就地变换**, 与 image materialize 并列为聚合后的后处理步骤.
 
-- **机会主义降级**: translator 为 `None` (未配置) 或单字段翻译抛异常时保留原值、不阻断刮削 — 与资源物化同款策略.
+- **按条件跳过**: translator 为 `None` (未配置) 或单字段翻译抛异常时保留原值、不阻断刮削 — 与资源物化同款策略.
 - **缓存语义不变**: `Metadata.raw` 仍存**源语言**站点快照; 译文是派生值, 写入 `Metadata` 标量字段.
 - **独立限速**: LLM 端点用自己的 `AsyncLimiter`, 与站点 host 限速器隔离.
 - **覆盖字段**: 由 `llm.translate_fields` 控制, 当前仅文本标量. 扩展到 tags / series 等须在 `_translate_metadata` 显式列出 (项目禁反射).
@@ -40,7 +40,7 @@
 
 - **键 = `(源文本 sha256, 目标语言, 字段, system 提示词 sha256)`**. 不含 number (翻译输出只取决于文本, 系列共用简介天然去重), 含 field (不同字段用不同说明), 含 system 提示词指纹 (实际发给模型的 system 内容变化即失效); 不含 model / temperature.
 - **独立 SQLite 文件** (`data_dir/translations.db`), **不纳入主库、不经由 Alembic**: 纯缓存, 仅 `CREATE TABLE IF NOT EXISTS`, 可安全直接删除并在下次自动重建. 现有表的列集合与当前 schema 不符时整表 `DROP` 重建.
-- **会话级注入**: `start_app` 创建 → `AppRuntime.translation_cache` → 穿过 `build_handlers` / `build_translator`; 与 `ResourceStore` 同属不随热重载重建的对象, `_rebuild()` 复用同一实例 (改 LLM 配置不丢缓存).
+- **会话级注入**: `start_app` 创建 → `AppRuntime.translation_cache` → 穿过 `build_handlers` / `build_translator`; 与 `ResourceStore` 同属不随热重载重建的对象, `_rebuild()` 复用同一实例 (修改 LLM 配置不会丢弃缓存).
 - **只缓存 LLM 路径**: 中文简繁 (zhconv) 廉价且确定, 不进缓存; 模型返回空也不写, 下次重试.
 
 刮削 `use_cache` 的 `trans` 档控制是否读此缓存 (仍回写), 与 `metadata` 档的分工见 [task-system.md](task-system.md); 前端「强制刮削」发 `use_cache=["trans"]`, 即重爬元数据、源文本不变则零 token. 换模型后想重译可直接删除 `translations.db` (model 不在键里); 修改提示词不需要删缓存 (指纹已在键中).
@@ -53,4 +53,6 @@
 - **简繁不经由 LLM**: 简繁是字形差异而非语言差异, 中文文本一律交 `zhconv.convert` (幂等); 共用字转换后等于原文则返回 `None`, 调用方保留原值 — **无需检测**文本是简还是繁.
 - 仅日↔中、英↔中等**跨语系**才调 LLM (`needs_llm_translation`).
 
-> 踩坑: `is_ascii_only` 的字符类必须含方 / 花括号 `[]{}` — `[HD]` / `[4K]` 在番号标题中极常见, 漏了会把英文标题误判为非英文而触发无谓翻译.
+> `is_ascii_only` 的判据是「仅 ASCII 可见字符」: 字母、数字、空白与常用标点, 纯数字与纯符号也算通过 (句子级文本里近似于英文, 与「是否含字母」无关).
+>
+> 踩坑: 字符类必须含方 / 花括号 `[]{}` — `[HD]` / `[4K]` 在番号标题中极常见, 漏了会把近似英文的标题误判为需翻译.

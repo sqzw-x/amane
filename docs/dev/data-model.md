@@ -39,17 +39,17 @@
 
 | 字段类型 | 存储方式 | 取舍 |
 |----------|---------|----------|
-| 标量 (`title`, `studio`, `plot`, ...) | 单值, 聚合按字段优先级选首个非空源 | 覆盖大多数场景 |
+| 单源字段 (`title`, `studio`, `plot`, ...) | 沿链取首个非空值; 列表型 (演员 / 标签 / 导演) 整份列表取首个非空 | 覆盖大多数场景 | 覆盖大多数场景 |
 | 聚合类 URL (`poster_urls`, `thumb_urls`, ...) | list, 按字段站点顺序拼接各站非空值, 物化后按下载成功重排 (见 [task-system.md](task-system.md)) | 下载时顺序尝试, 某站失效不需重新刮削 |
 | `extrafanart_urls` | `dict[site, list[url]]` 按站点分组 | 剧照集合是站点特异的, 扁平合并会丢失站点上下文 |
 | `scores` | `dict[site, score]` | 不同评分体系 (5 分 vs 100 分) 需保留来源供前端分列展示 |
 | `raw` | `{site: {field: value}}` 原始快照 | 支持离线重新聚合与站点级复用 (见 [task-system.md](task-system.md)) |
 
-长文本 (`plot` / 演员 `overview`) 存**纯文本**: 上游的 HTML 片段、HTML 实体、异体空白 (NBSP / 全角空格)、XML 非法字符在入库前归一, HTML 换行与段落变成 `\n` 与空行. 归一必须幂等, 只在聚合出口与落库写入两处发生 (见 `utils/text.py`), 因此 `raw` 快照、merge 输入与库内值是同一份规范文本; 消费端 (NFO 写出、前端) 不识别 HTML. 存量行在下次写入时被清理.
+长文本 (`plot` / 演员 `overview`) 存**纯文本**: 上游的 HTML 片段、HTML 实体、异体空白 (NBSP / 全角空格)、XML 非法字符在入库前归一, HTML 换行与段落变成 `\n` 与空行. 归一必须幂等, 只在聚合输出与落库写入两处发生 (见 `utils/text.py`), 因此 `raw` 快照、merge 输入与库内值是同一份规范文本; 消费端 (NFO 写出、前端) 不识别 HTML. 存量行在下次写入时被清理.
 
 ### `field_sources`
 
-`{field_name: site_name}`, 仅记录**标量字段**的来源; 聚合类字段自带来源结构, 不写入. 只有非空取值才记来源, 因此为空不代表刮削失败 (判据见 [task-system.md](task-system.md)). 用途是调试多源不一致与前端展示来源, 不参与业务逻辑; 未锁定字段重新刮削后被覆盖, 锁定字段保留原来源 (见「字段锁定」).
+`{field_name: site_name}`, 仅记录**单源字段**的来源; 多源字段自带来源结构, 不写入. 只有非空取值才记来源, 因此为空不代表刮削失败 (判据见 [task-system.md](task-system.md)). 用途是调试多源不一致与前端展示来源, 不参与业务逻辑; 未锁定字段重新刮削后被覆盖, 锁定字段保留原来源 (见「字段锁定」).
 
 `raw` 的字段名 / 类型必须与当前 `MediaMetadata` 一致 — 站点级复用会把它直接反序列化. 模型改名或改类型时, 结果列与 raw 是两份数据, 需单独的 data migration (见 [database.md](database.md) Autogenerate 盲区).
 
@@ -59,8 +59,8 @@
 
 写入策略由 `WriteMode` 表达, repository 默认 `AUTO` (自动写入者漏传策略时只会未加锁, 不会误加锁; 手动调用点显式传 `MANUAL`):
 
-- `AUTO`: 跳过锁定列并保留其既有值与既有 `field_sources`; `raw` 始终更新, 只更新 `raw` 也刷新 `updated_at`, 因此全锁条目仍参与 RESCRAPE 的年龄选择. 落点: 影片 `upsert_metadata` (`ScrapeHandler`); 演员 `save_actor` (ACTOR_SCRAPE) 与 `clean_actor_names` 的 `Actor.gender` 填空.
-- `MANUAL`: 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. 落点: 两端 REST PATCH / merge / crop 与 Agent 工具.
+- `AUTO`: 跳过锁定列并保留其既有值与既有 `field_sources`; `raw` 始终更新, 只更新 `raw` 也刷新 `updated_at`, 因此全锁条目仍参与 RESCRAPE 的年龄选择. 写入位置: 影片 `upsert_metadata` (`ScrapeHandler`); 演员 `save_actor` (ACTOR_SCRAPE) 与 `clean_actor_names` 的 `Actor.gender` 填空.
+- `MANUAL`: 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. 写入位置: 两端 REST PATCH / merge / crop 与 Agent 工具.
 - `set_metadata_locks` / `set_actor_locks` 整体替换锁集合; 锁集合本身的变更不刷新 `updated_at`.
 - 演员 `clear_actor_person` (REST clear-person) 清空档案 + `field_sources` + 锁, 保留 `name` / `gender` / `raw`, 使清空后可被重刮填回.
 - 分类治理与实体 rename / delete 不读锁, 也不自动上锁 (用户显式操作); 演员实体 merge 例外: 源锁集并入 target, 而填空并入的未锁字段不额外上锁.
@@ -100,7 +100,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 每个 Library 持有 `move_mode` (move / copy / hardlink / symlink)、一组按资源类型独立的路径模板与整理默认 (`write_nfo` / `copy_resources`), 因此同一进程里各库可以不同. `copy_resources` 与刮削热配置 `scraping.download_resources` 共用 `DownloadableResource` 枚举但互不读写 — 前者控制复制到库路径, 后者控制写入 Resource 目录. ORGANIZE payload 上对应字段为 `None` 时沿用库设置, 非空则只覆盖该次任务.
 
-`trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH 扫描与 watcher 都不把该文件当正片入库; 空串关闭. `min_file_size` (字节, 默认 0 关闭) 只过滤**扫描视频**: 后缀须属于该次扫描的视频扩展名白名单; 图片 / NFO / 字幕不适用, `.strm` 是路径指针也不参与判定; 软链接跟随目标比较真实体积, 否则已整理的入口会被当作广告. 低于阈值与黑名单同语义: REFRESH / watcher 不入库, 整库扫描列为清理候选; stat 失败 (含悬空链接) 视为不匹配.
+`trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH 扫描与 watcher 都不把该文件当正片入库; 空串关闭. `min_file_size` (字节, 默认 0 关闭) 只过滤**扫描视频**: 后缀须属于该次扫描的视频扩展名白名单; 图片 / NFO / 字幕不适用, `.strm` 是路径指针也不参与判定; 符号链接跟随目标比较真实大小, 否则已整理的入口会被当作广告. 低于阈值与文件黑名单同语义: REFRESH / watcher 不入库, 整库扫描列为清理候选; stat 失败 (含悬空链接) 视为不匹配.
 
 `blacklist_patterns` (正则列表) 与预告片同属「文件名匹配即跳过」, 差别在处置:
 
@@ -114,7 +114,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 字幕: ORGANIZE 在视频**挪走前**扫描其同目录 (不递归、不入库、不扫描同目录其它视频), 扩展名由库 `subtitle_extensions` 配置; 多个字幕全部搬走不挑主字幕, 放置采用与视频相同的 `move_mode`. 字幕采用同一套 `parse_file_info`, 但只解析**文件名** (`text=` 入参), 否则 `chs.srt` 会被当成番号; 解析出番号时必须与当前视频相同, 再按分集配对, 解析不出时才回退独立目录规则.
 
-`link_template` 为空则不创建链接, 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的入口 (`link_mode=strm` 写 `.strm`, `symlink` 做软链接). 链接必须在库外, 否则 REFRESH 会把入口再扫描为媒体. `.strm` 正文由库级 `strm_content_template` 决定 (空则写一行视频绝对路径); 模板引用 `{video_relpath}` 且整理后路径不在本库内时失败, 不写出错误正文. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO / 海报自动跟随链接.
+`link_template` 为空则不创建链接, 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的链接 (`link_mode=strm` 写 `.strm`, `symlink` 做符号链接). 链接必须在库外, 否则 REFRESH 会把链接再扫描为媒体. `.strm` 正文由库级 `strm_content_template` 决定 (空则写一行视频绝对路径); 模板引用 `{video_relpath}` 且整理后路径不在本库内时失败, 不写出错误正文. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO / 海报自动跟随链接.
 
 模板语言在 `organize/template.py`, 只约束以下几点: 占位符分相位注入 (`metadata` → file 相位 → `apply_video` → `apply_link`), file 相位未检出是**空串**不是 `Unknown`; 渲染时把 `{title}` / `{actor}` 等分量截到 200 UTF-8 字节 (不切开多字节字符), 但不截断渲染后的路径分量; 可选组 `[...]` 内直接占位符全空则整段丢弃, 有一个非空时其余输出空串. 普通占位符缺失回退 `Unknown`. **逃逸防护**: 校验对渲染结果做 realpath (跟随符号链接), 相对模板的真实写出路径必须在本库内 (`ALLOW_ALL` 也不例外), 绝对模板必须位于本库或 `safe_dirs` 内, 否则 `ValueError`; 多盘分存要求目标盘在 `safe_dirs` 内. 细则见 `organize/path_templates.py`.
 
