@@ -115,6 +115,51 @@ async def test_delete_refuses_changed_library_root(repo: Repository, tmp_path: P
     assert (lib_root / "ad.mkv").exists()
 
 
+@pytest.mark.parametrize(
+    ("exclude", "include", "surviving"),
+    [
+        # 排除整个目录后单独纳入一个文件: 只删它.
+        (["outer"], ["outer/inner/ad-1.mkv"], ["outer/inner/ad-2.mkv"]),
+        # 纳入的是目录: 整棵子树重新进入删除集合.
+        (["outer"], ["outer/inner"], []),
+        # 纳入项内再排除一项 (三层): 最深的那条说了算.
+        (["outer", "outer/inner/ad-1.mkv"], ["outer/inner"], ["outer/inner/ad-1.mkv"]),
+        # 只有纳入项、没有排除项: 不影响执行集合.
+        ([], ["outer/inner"], []),
+    ],
+)
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_include_restores_within_exclude(
+    repo: Repository,
+    tmp_path: Path,
+    exclude: list[str],
+    include: list[str],
+    surviving: list[str],
+) -> None:
+    """纳入项在排除项内部把路径重新拉回删除集合; 两者互为祖先时按最深的一条判定."""
+    lib_root = tmp_path / "lib"
+    (lib_root / "outer" / "inner").mkdir(parents=True)
+    first = lib_root / "outer" / "inner" / "ad-1.mkv"
+    second = lib_root / "outer" / "inner" / "ad-2.mkv"
+    first.write_bytes(b"x")
+    second.write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad-"])
+    assert lib.id is not None
+    store = InventoryStore()
+
+    inventory_id = await _inventory_id(repo, store, lib.id)
+    result = await DeleteHandler(repo, store).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id, exclude=exclude, include=include)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    for relative in surviving:
+        assert (lib_root / relative).exists()
+    for path in (first, second):
+        assert path.exists() is (path.relative_to(lib_root).as_posix() in surviving)
+
+
 @pytest.mark.asyncio(loop_scope="function")
 async def test_delete_exclude_matches_path_components(repo: Repository, tmp_path: Path) -> None:
     """取消勾选 Show A 不应排除 Show A (2019): 按路径分量而不是字符串前缀."""
@@ -267,6 +312,33 @@ async def test_delete_reverifies_orphan_dir_and_keeps_new_media(repo: Repository
     assert video.exists()
     assert (old / "NSFS-039.nfo").exists()
     assert await repo.get_media_file(row.id) is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_reverify_accepts_junk_inside_orphan_dir(repo: Repository, tmp_path: Path) -> None:
+    """垃圾文件也是条目 (面板默认折叠), 复验不能只认附属文件白名单."""
+    lib_root = tmp_path / "lib"
+    old = lib_root / "old"
+    old.mkdir(parents=True)
+    (old / "NSFS-039.nfo").write_bytes(b"x")
+    junk = old / ".DS_Store"
+    junk.write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.reverify_rejected == 0
+    assert result.result.deleted == 2
+    assert not junk.exists()
+    assert not (old / "NSFS-039.nfo").exists()
 
 
 @pytest.mark.asyncio(loop_scope="function")

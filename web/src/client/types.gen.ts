@@ -853,6 +853,12 @@ export type DeleteSubmission = {
      */
     exclude?: Array<string>;
     /**
+     * Include
+     *
+     * 在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定
+     */
+    include?: Array<string>;
+    /**
      * Prune Empty Dirs
      *
      * 删除本次腾空的目录 (库根与 .amane_trash 除外)

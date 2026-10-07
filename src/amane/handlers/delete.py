@@ -96,10 +96,11 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
         library: Library,
     ) -> TaskResult[DeleteResult]:
         excluded_keys = _path_keys(payload.exclude, root=library_root)
+        included_keys = _path_keys(payload.include, root=library_root)
         targets = [
             entry
             for entry in inventory.entries
-            if not _matches(entry.path, exact=excluded_keys, subtrees=excluded_keys)
+            if not _is_excluded(entry.path, excluded=excluded_keys, included=included_keys)
         ]
         excluded = len(inventory.entries) - len(targets)
         # 容器条目 (残留目录) 展开为它的子条目: 自身不是删除目标, 删完由剪枝回收空目录.
@@ -220,6 +221,24 @@ def _matches(path: str | Path, *, exact: set[str], subtrees: set[str]) -> bool:
     return any(os.fspath(parent) in subtrees for parent in key.parents)
 
 
+def _is_excluded(path: str | Path, *, excluded: set[str], included: set[str]) -> bool:
+    """路径是否被排除在删除集合之外.
+
+    排除项与纳入项互为祖先时按最深的一条判定: 面板用「排除一个目录 + 纳入其中一项」表达
+    「保留这个目录, 但删掉里面的某一项」, 用户刚点的那条一定更深.
+    """
+    return _deepest_depth(path, excluded) > _deepest_depth(path, included)
+
+
+def _deepest_depth(path: str | Path, keys: set[str]) -> int:
+    """命中路径的最深键的深度; 没命中返回 -1. ``PurePath.parents`` 由深到浅, 首个命中即最深."""
+    key = PurePath(path_key(path))
+    for candidate in (key, *key.parents):
+        if os.fspath(candidate) in keys:
+            return len(candidate.parts)
+    return -1
+
+
 @in_thread
 def _reverify(entry: InventoryEntry, *, orphan_scan: OrphanScan, library_root: Path) -> str | None:
     """残留条目是否仍然成立; 不成立时返回原因.
@@ -273,6 +292,9 @@ def _reverify_file(path: Path, *, orphan_scan: OrphanScan) -> str | None:
         return None
     if orphan_scan.is_media(disk_path, trailer=orphan_scan.trailer_matcher()):
         return f"文件已被媒体覆盖: {path.name}"
+    # 垃圾文件同样是条目 (面板默认折叠, 打开开关即可见), 与目录复验用同一道门.
+    if classify_junk(disk_path, is_dir=False) is not None:
+        return None
     if not orphan_scan.is_companion(disk_path):
         return f"文件不再是附属文件: {path.name}"
     return None

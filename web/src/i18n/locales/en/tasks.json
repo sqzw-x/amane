@@ -369,6 +369,10 @@
         "label": "Excluded",
         "description": "Paths under the inventory's library root, matched by path component (subtree included); or absolute paths outside the library"
       },
+      "include": {
+        "label": "Include",
+        "description": "Paths restored inside the excluded ones; the deepest match wins"
+      },
       "prune_empty_dirs": {
         "label": "Prune emptied directories",
         "description": "Library root and .amane_trash excluded"

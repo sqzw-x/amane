@@ -1511,6 +1511,14 @@ export const DeleteSubmissionSchema = {
             title: 'Exclude',
             description: '排除项: 库内为清单库根下的相对路径, 库外为绝对路径; 按路径分量匹配'
         },
+        include: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Include',
+            description: '在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定'
+        },
         prune_empty_dirs: {
             type: 'boolean',
             title: 'Prune Empty Dirs',
