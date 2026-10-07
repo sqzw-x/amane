@@ -13,7 +13,7 @@ import pytest
 from amane.config import HotSettings
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidHandler, ScanInvalidPayload
 from amane.handlers import delete as delete_module
-from amane.library import InventoryStore
+from amane.library import InventoryStore, OrphanScan
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -362,6 +362,41 @@ async def test_delete_reverifies_orphan_dir_and_keeps_new_media(repo: Repository
     assert video.exists()
     assert (old / "NSFS-039.nfo").exists()
     assert await repo.get_media_file(row.id) is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_reverify_scans_each_level_once(
+    repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同一目录下的多个残留条目共用一次祖先探测: 重复列目录是网络盘上删除的主要开销."""
+    lib_root = tmp_path / "lib"
+    old = lib_root / "old"
+    old.mkdir(parents=True)
+    for name in ("a.nfo", "b.nfo", "c.nfo"):
+        (old / name).write_bytes(b"x")
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    store = InventoryStore()
+    _age_for_orphan(lib_root)
+    inventory_id = await _inventory_id(repo, store, lib.id)
+
+    scanned: list[Path] = []
+    original = delete_module._level_has_media
+
+    def _spy(directory: Path, *, orphan_scan: OrphanScan) -> bool:
+        scanned.append(directory)
+        return original(directory, orphan_scan=orphan_scan)
+
+    monkeypatch.setattr(delete_module, "_level_has_media", _spy)
+    result = await DeleteHandler(repo, store, HotSettings()).handle(
+        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
+    )
+
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.deleted == 3
+    # 三个文件各走一遍的话是 6 次; 按目录去重后 old 与库根各一次.
+    assert [path.name for path in scanned] == ["old", "lib"]
 
 
 @pytest.mark.asyncio(loop_scope="function")

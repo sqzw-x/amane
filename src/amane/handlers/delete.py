@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import stat
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 
@@ -110,14 +111,16 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
         # 容器条目 (残留目录) 展开为它的子条目: 自身不是删除目标, 删完由剪枝回收空目录.
         targets = [entry for entry in targets if not entry.expandable]
         orphan_scan = self._orphan_scan(library, library_root=library_root)
+        # 复验的祖先探测按目录记忆: 同一目录下的条目走的是同一趟路, 网络盘上这是删除的主要开销.
+        probe = _MediaProbe(orphan_scan=orphan_scan) if orphan_scan is not None else None
         tally = DeleteTally()
         removed_paths: list[Path] = []
         reverify_rejected = 0
         total = len(targets)
         await self.report_progress(0, total, "delete")
         for i, entry in enumerate(targets, start=1):
-            if orphan_scan is not None and entry.reason is InventoryReason.ORPHAN:
-                refusal = await _reverify(entry, orphan_scan=orphan_scan, library_root=library_root)
+            if probe is not None and entry.reason is InventoryReason.ORPHAN:
+                refusal = await _reverify(entry, library_root=library_root, probe=probe)
                 if refusal is not None:
                     # 记成 failed 而不是跳过: 用户确认过的条目没有删除, 结果里必须看得见.
                     tally.record(DeleteOutcome(status="failed", error=refusal))
@@ -242,8 +245,37 @@ def _deepest_depth(path: str | Path, keys: set[str]) -> int:
     return -1
 
 
+@dataclass
+class _MediaProbe:
+    """一趟删除里的祖先探测缓存.
+
+    复验要把条目的祖先链逐级列一遍, 同一目录下的条目走的是同一趟路: 云下载库的 4421 个残留
+    条目落在约 1095 个目录里, 按目录记住每级结果即可少列约四分之三的目录.
+    """
+
+    orphan_scan: OrphanScan
+    levels: dict[Path, bool] = field(default_factory=dict)
+
+    def level_has_media(self, directory: Path) -> bool:
+        cached = self.levels.get(directory)
+        if cached is None:
+            cached = _level_has_media(directory, orphan_scan=self.orphan_scan)
+            self.levels[directory] = cached
+        return cached
+
+    def ancestors_have_media(self, directory: Path) -> bool:
+        """目录自身或其任一祖先的直接子项里是否有媒体; 读不到时按有媒体处理 (保守)."""
+        current = directory
+        while True:
+            if self.level_has_media(current):
+                return True
+            if current == self.orphan_scan.library_root or current.parent == current:
+                return False
+            current = current.parent
+
+
 @in_thread
-def _reverify(entry: InventoryEntry, *, orphan_scan: OrphanScan, library_root: Path) -> str | None:
+def _reverify(entry: InventoryEntry, *, library_root: Path, probe: _MediaProbe) -> str | None:
     """残留条目是否仍然成立; 不成立时返回原因.
 
     判定与扫描时同一个 (``orphan.py``), 只是数据来源从遍历换成就地读取:
@@ -252,11 +284,11 @@ def _reverify(entry: InventoryEntry, *, orphan_scan: OrphanScan, library_root: P
     - 目录条目复验整棵子树, 文件条目复验该文件本身 (它可能已被正片覆盖);
     - 冷静期不重复施加: 条目已经过用户确认, 再按时间否决只会让删除在无提示的情况下少做.
     """
-    if entry.path.parent != library_root and _ancestor_has_media(entry.path.parent, orphan_scan=orphan_scan):
+    if entry.path.parent != library_root and probe.ancestors_have_media(entry.path.parent):
         return "目录的祖先里出现了媒体"
     if entry.kind is InventoryEntryKind.DIR:
-        return _reverify_dir(entry.path, orphan_scan=orphan_scan)
-    return _reverify_file(entry.path, orphan_scan=orphan_scan)
+        return _reverify_dir(entry.path, orphan_scan=probe.orphan_scan)
+    return _reverify_file(entry.path, orphan_scan=probe.orphan_scan)
 
 
 def _reverify_dir(directory: Path, *, orphan_scan: OrphanScan) -> str | None:
@@ -303,24 +335,20 @@ def _reverify_file(path: Path, *, orphan_scan: OrphanScan) -> str | None:
     return None
 
 
-def _ancestor_has_media(directory: Path, *, orphan_scan: OrphanScan) -> bool:
-    """目录自身或其任一祖先的直接子项里是否有媒体; 读不到时按有媒体处理 (保守)."""
-    current = directory
-    while True:
+def _level_has_media(directory: Path, *, orphan_scan: OrphanScan) -> bool:
+    """该目录的直接子项里是否有媒体; 读不到时按有媒体处理 (保守)."""
+    try:
+        with os.scandir(directory) as scanned:
+            children = list(scanned)
+    except OSError:
+        return True
+    for child in children:
+        path = Path(child.path)
         try:
-            with os.scandir(current) as scanned:
-                children = list(scanned)
+            if stat.S_ISDIR(path.lstat().st_mode):
+                continue
         except OSError:
             return True
-        for child in children:
-            path = Path(child.path)
-            try:
-                if stat.S_ISDIR(path.lstat().st_mode):
-                    continue
-            except OSError:
-                return True
-            if orphan_scan.is_media(path, trailer=orphan_scan.trailer_matcher()):
-                return True
-        if current == orphan_scan.library_root or current.parent == current:
-            return False
-        current = current.parent
+        if orphan_scan.is_media(path, trailer=orphan_scan.trailer_matcher()):
+            return True
+    return False
