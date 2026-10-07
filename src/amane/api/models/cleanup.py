@@ -26,7 +26,7 @@ class InventoryNodeResponse(BaseModel):
     will_be_empty: bool = False
     """清单条目全部删除后该目录是否会空 (含子目录递归)."""
     noise: bool = False
-    """系统与同步工具的产物; 面板默认折叠这一类, 由用户决定要不要看."""
+    """系统与同步工具的产物 (`InventoryEntry.noise`); 面板默认折叠这一类, 由用户展开核对."""
     has_children: bool = False
     children: list[InventoryNodeResponse] | None = None
 

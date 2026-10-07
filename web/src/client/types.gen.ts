@@ -855,7 +855,7 @@ export type DeleteSubmission = {
     /**
      * Include
      *
-     * 在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定
+     * 在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定, 同一路径同时命中两组时按纳入处理
      */
     include?: Array<string>;
     /**

@@ -128,7 +128,7 @@ export function InventoryTree({
   const { t } = useTranslation(["library", "common"]);
   const queryClient = useQueryClient();
   const [rules, setRules] = useState<SelectionRule[]>([]);
-  // 系统与同步工具的产物默认折叠: 它们也会被删除, 但多数时候只是噪音; 用户可展开核对.
+  // 系统与同步工具的产物默认折叠: 它们同样会被删除, 但多数时候不需要逐条核对; 用户可展开查看.
   const [showNoise, setShowNoise] = useState(false);
   // 展开状态提在树上: 全局展开是模式, 逐个收起记进 collapsed, 因此新挂载的行也跟着展开.
   const [expandAll, setExpandAll] = useState(false);
@@ -178,7 +178,7 @@ export function InventoryTree({
   // 依赖为空: 翻页只新增行, 已渲染的行靠 memo 挡住重渲染.
   const toggle = useCallback((node: InventoryNodeResponse) => {
     setRules((prev) => {
-      // 后代随本项一起定: 本项一旦有规则, 内部的规则就被它覆盖, 留着只会让计数绕圈.
+      // 后代随本项一起定: 本项一旦有规则, 内部的规则就被它覆盖, 留着只会让计数重复加减.
       const outside = prev.filter(
         (rule) => rule.path !== node.path && !isUnder(rule.path, node.path),
       );

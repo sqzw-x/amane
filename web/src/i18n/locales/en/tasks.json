@@ -371,7 +371,7 @@
       },
       "include": {
         "label": "Include",
-        "description": "Paths restored inside the excluded ones; the deepest match wins"
+        "description": "Paths restored inside the excluded ones; the deepest match wins, ties count as included"
       },
       "prune_empty_dirs": {
         "label": "Prune emptied directories",

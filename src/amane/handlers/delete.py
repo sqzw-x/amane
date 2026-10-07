@@ -251,7 +251,8 @@ def _is_excluded(path: str | Path, *, excluded: set[str], included: set[str]) ->
     """路径是否被排除在删除集合之外.
 
     排除项与纳入项互为祖先时按最深的一条判定: 面板用「排除一个目录 + 纳入其中一项」表达
-    「保留这个目录, 但删掉里面的某一项」, 用户刚点的那条一定更深.
+    「保留这个目录, 但删掉里面的某一项」, 用户刚点的那条一定更深. 同一路径同时出现在两组时
+    按纳入处理 — 面板的开关不会同时产出这两条, 这里只固定 API 侧的行为.
     """
     return _deepest_depth(path, excluded) > _deepest_depth(path, included)
 
@@ -281,8 +282,8 @@ class _LevelFacts:
 class _MediaProbe:
     """一趟删除里的探测缓存.
 
-    复验要把条目的祖先链逐级列一遍, 同一目录下的条目走的是同一趟路: 云下载库的 4421 个残留
-    条目落在约 1095 个目录里, 按目录记住结果即可少列约四分之三的目录. 容器子树的复验同样
+    复验要把条目的祖先链逐级列出, 同一目录下的条目经过同一串目录: 云下载库的 4421 个残留
+    条目分布在约 1095 个目录里, 按目录记住结果即可省下重复的列目录调用. 容器子树的复验同样
     只做一次 — 一个容器下的条目共用一个结论.
     """
 
@@ -300,7 +301,8 @@ class _MediaProbe:
     def ancestor_refusal(self, directory: Path) -> str | None:
         """目录自身或其任一祖先的直接子项里出现了媒体即拒绝; 读不到同样拒绝 (保守).
 
-        只走到扫描范围那一层: 更上面的层扫描时没看过, 拿它否决会把清单里本来成立的条目全部拒掉.
+        只遍历到扫描范围那一层: 更上面的层扫描时没有检查过, 据此否决会把清单里本来成立的
+        条目全部拒绝.
         """
         scope = self.orphan_scan.scope_dir
         current = directory
@@ -342,13 +344,14 @@ def _host_container(path: Path, containers: dict[str, Path]) -> Path | None:
 def _reverify(entry: InventoryEntry, *, probe: _MediaProbe, container: Path | None) -> str | None:
     """条目是否仍然成立; 不成立时返回原因.
 
-    判定与扫描时同一套条件 (``orphan.py``), 数据来源从遍历换成就地读取:
+    判定复用扫描侧的谓词 (``orphan.py``), 事实就地读取; 遍历另写一份, 见
+    ``_reverify_subtree``, 两处的判定顺序必须一致:
 
     - 残留条目: 宿主容器的整棵子树复验一次 (子树里出现媒体、不可删除的子项、白名单外的文件
       都不再成立), 再加上每一级祖先的直接子项 — 祖先旁边出现媒体同样不再成立;
     - 库根与扫描范围目录的条目没有容器: 扫描时只看本层, 复验同样只看本层 (含下载进度);
     - 空目录条目: 目录不再为空即拒绝, 执行侧删目录是递归的, 后来落进去的内容会一起没;
-    - 冷却期不重复施加: 条目已经过用户确认, 再按时间否决只会让删除在无提示的情况下少做;
+    - 冷却期不重复施加: 条目已经过用户确认, 再按时间否决只会让条目静默地不被删除;
     - 只复验磁盘事实, 不重算设置: 体积过小条目按阈值判定, 库设置改了应当重扫, 不在这里兜底.
     """
     if entry.reason is InventoryReason.EMPTY_DIR:
@@ -388,8 +391,9 @@ def _reverify_empty_dir(directory: Path) -> str | None:
 def _reverify_subtree(directory: Path, *, orphan_scan: OrphanScan) -> str | None:
     """整棵子树的复验: 与扫描时的条件同口径 (冷却期除外).
 
-    判定顺序同样按契约: 垃圾项先于媒体判据 (``._x.mp4`` 是伴生文件, 不是视频); 可随目录删除的
-    垃圾项不否决, 不可删除的子项 (回收站、版本库、下载进度) 否决整棵子树.
+    判定顺序与 `inventory.py::_walk` 一致, 两处修改必须同步: 垃圾项先于媒体判据 (``._x.mp4``
+    是伴生文件, 不是视频); 可随目录删除的垃圾项不否决, 不可删除的子项 (回收站、版本库、
+    下载进度) 否决整棵子树.
     """
     children, unreadable = _read_dir(directory)
     if unreadable is not None:

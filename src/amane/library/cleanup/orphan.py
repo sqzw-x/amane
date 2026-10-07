@@ -34,7 +34,7 @@ ORPHAN_COOLDOWN_SECONDS = 3600
 COMPANION_EXTENSIONS = frozenset(
     {
         ".nfo",
-        # VobSub 的字幕索引与 .sub 成对; 不在 DEFAULT_SUBTITLE_EXTENSIONS 里, 缺了它这类残留清不掉.
+        # VobSub 的字幕索引与 .sub 成对; 不在 DEFAULT_SUBTITLE_EXTENSIONS 里, 缺了它这类残留无法清除.
         ".idx",
         ".jpg",
         ".jpeg",
@@ -52,7 +52,8 @@ COMPANION_EXTENSIONS = frozenset(
     }
 )
 
-# 可随目录删除的垃圾项: 既不否决判定, 也不单独登记, 随父目录一起删除.
+# 可随目录删除的垃圾项: 不否决判定, 也不在遍历里单独登记 — 残留目录命中时随内容登记为
+# `noise` 条目, 与父目录一起删除. 库根与扫描范围目录只登记附属文件, 这两层的垃圾项不登记.
 # 按整个文件名比较, 不按扩展名 — `.DS_Store` 没有扩展名, 而按扩展名匹配会把 library.db 当垃圾.
 _JUNK_FILENAMES = frozenset({".ds_store", "thumbs.db", "desktop.ini"})
 # macOS 在非原生文件系统上的伴生文件 (._.DS_Store、._README 都没有可用的扩展名).
@@ -69,7 +70,7 @@ class JunkKind(StrEnum):
     """垃圾项的两个类别. 效力与它无关, 只决定匹配方式与是否否决."""
 
     DELETABLE = "deletable"
-    """可随目录删除: 不否决, 也不登记."""
+    """可随目录删除: 不否决判定; 残留目录命中时随内容登记为 `noise` 条目, 一并删除."""
     VETO = "veto"
     """不可删除的子项: 否决该目录."""
 
@@ -78,7 +79,7 @@ class BlockedReason(StrEnum):
     """目录被判成候选但没有登记的原因.
 
     只暴露用户能据此行动的那一种: 子树里有无法识别的文件. 其余原因 (目录里有媒体、
-    有不可删除的子项、仍在冷却期) 都是内部保护规则, 对应的目录与正常媒体目录一样不用管,
+    有不可删除的子项、仍在冷却期) 都是内部保护规则, 对应的目录与正常媒体目录同样不处理,
     不需要向用户解释.
     """
 
@@ -158,7 +159,7 @@ class OrphanScan:
     def is_media(self, path: Path, *, trailer: Pattern[str] | None = None) -> bool:
         """库会当作影片接收的路径.
 
-        不看黑名单与体积: 命中黑名单的视频同样是「库里躺着一个视频」, 排除它会让只含
+        不套用黑名单与体积: 命中黑名单的视频同样是库内的一份内容, 排除它会让只含
         `sample.mp4` 的目录被整目录删除. 扩展名与预告片先于 `patterns`: 用户可以把 `.mp4`
         写进 `subtitle_extensions`, 而 `patterns` 非空的库里不匹配 `patterns` 的 `.mp4` 不算媒体,
         于是白名单成员会被当成残留.
@@ -198,7 +199,6 @@ class OrphanScan:
         if directory == self.library_root or directory == self.scope_dir:
             return None
         if ancestor_has_media or subtree_has_media:
-            # 目录里有媒体, 与正常媒体目录一样不用管.
             return None
         if subtree_undeletable:
             # 有不可删除的子项 (回收站、版本库、下载进度): 整个目录不碰.
@@ -206,6 +206,8 @@ class OrphanScan:
         if not subtree_has_content:
             # 子树里只有空目录: 没有内容可清, 交给空目录条目.
             return None
+        # 白名单外的文件先于冷却期: 未登记的原因只按用户能据此行动的那一种算, 冷却期中的目录
+        # 同样计入 `BlockedDirs.unexplained`.
         if not subtree_explainable:
             return OrphanVerdict(BlockedReason.UNEXPLAINED)
         # 阈值处算「仍在冷却期」; 未来时间戳 (时钟偏移) 同样按未超阈值处理.

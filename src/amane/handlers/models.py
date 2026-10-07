@@ -208,7 +208,10 @@ class DeletePayload(BaseModel):
     )
     include: list[str] = Field(
         default_factory=list,
-        description="在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定",
+        description=(
+            "在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定, "
+            "同一路径同时命中两组时按纳入处理"
+        ),
     )
     prune_empty_dirs: bool = Field(default=True, description="删除本次腾空的目录 (库根与 .amane_trash 除外)")
 
@@ -227,7 +230,8 @@ class DeleteResult(BaseModel):
     indexed: int = 0
     """随之删除的 MediaFile 行数."""
     reverify_rejected: int = 0
-    """执行前复验未通过的条目数: 残留条目 (目录里又落进了正片) 与空目录条目 (目录不再为空)."""
+    """执行前复验未通过的条目数; 拒绝原因见 `delete.py::_reverify` (目录里出现媒体 / 白名单外的
+    文件 / 下载进度, 目录不再为空或无法读取), 这些条目同时计入 `failed`."""
 
 
 # --- CLEANUP ---

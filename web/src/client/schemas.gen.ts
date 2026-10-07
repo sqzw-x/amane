@@ -1517,7 +1517,7 @@ export const DeleteSubmissionSchema = {
             },
             type: 'array',
             title: 'Include',
-            description: '在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定'
+            description: '在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定, 同一路径同时命中两组时按纳入处理'
         },
         prune_empty_dirs: {
             type: 'boolean',
