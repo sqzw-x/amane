@@ -183,6 +183,11 @@ function InventoryNotices({ inventory }: { inventory: InventorySummaryResponse }
           </Text>
         </Group>
       ) : null}
+      {inventory.blocked_dirs ? (
+        <Text size="xs" c="dimmed">
+          {t("cleanup.blocked", { count: inventory.blocked_dirs })}
+        </Text>
+      ) : null}
     </Stack>
   );
 }

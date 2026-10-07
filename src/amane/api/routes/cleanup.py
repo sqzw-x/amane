@@ -135,6 +135,11 @@ async def get_cleanup_inventory(library_id: int, repo: RepoDep, runtime: Runtime
         dropped=inventory.dropped,
         skipped_dirs=inventory.skipped_dirs,
         skipped_files=inventory.skipped_files,
+        blocked_dirs=inventory.blocked.total,
+        blocked_unexplained=inventory.blocked.unexplained,
+        blocked_undeletable=inventory.blocked.undeletable,
+        blocked_media_ancestor=inventory.blocked.media_ancestor,
+        blocked_cooldown=inventory.blocked.cooldown,
         scan_running=running,
         last_scan_error=last_error,
     )

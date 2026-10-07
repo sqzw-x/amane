@@ -1598,7 +1598,7 @@ export type InventoryNodeResponse = {
 /**
  * InventoryReason
  */
-export type InventoryReason = 'blacklist' | 'undersized' | 'empty_dir' | 'explicit';
+export type InventoryReason = 'blacklist' | 'undersized' | 'empty_dir' | 'explicit' | 'orphan';
 
 /**
  * InventorySummaryResponse
@@ -1638,6 +1638,26 @@ export type InventorySummaryResponse = {
      * Skipped Files
      */
     skipped_files?: number;
+    /**
+     * Blocked Dirs
+     */
+    blocked_dirs?: number;
+    /**
+     * Blocked Unexplained
+     */
+    blocked_unexplained?: number;
+    /**
+     * Blocked Undeletable
+     */
+    blocked_undeletable?: number;
+    /**
+     * Blocked Media Ancestor
+     */
+    blocked_media_ancestor?: number;
+    /**
+     * Blocked Cooldown
+     */
+    blocked_cooldown?: number;
     /**
      * Scan Running
      */

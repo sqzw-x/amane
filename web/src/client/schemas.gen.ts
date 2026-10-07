@@ -3215,7 +3215,8 @@ export const InventoryReasonSchema = {
         'blacklist',
         'undersized',
         'empty_dir',
-        'explicit'
+        'explicit',
+        'orphan'
     ],
     title: 'InventoryReason'
 } as const;
@@ -3278,6 +3279,31 @@ export const InventorySummaryResponseSchema = {
         skipped_files: {
             type: 'integer',
             title: 'Skipped Files',
+            default: 0
+        },
+        blocked_dirs: {
+            type: 'integer',
+            title: 'Blocked Dirs',
+            default: 0
+        },
+        blocked_unexplained: {
+            type: 'integer',
+            title: 'Blocked Unexplained',
+            default: 0
+        },
+        blocked_undeletable: {
+            type: 'integer',
+            title: 'Blocked Undeletable',
+            default: 0
+        },
+        blocked_media_ancestor: {
+            type: 'integer',
+            title: 'Blocked Media Ancestor',
+            default: 0
+        },
+        blocked_cooldown: {
+            type: 'integer',
+            title: 'Blocked Cooldown',
             default: 0
         },
         scan_running: {

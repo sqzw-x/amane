@@ -57,6 +57,16 @@ class InventorySummaryResponse(BaseModel):
     """触顶后未纳入清单的候选数; 截断时面板据此提示还有多少没看到."""
     skipped_dirs: int = 0
     skipped_files: int = 0
+    blocked_dirs: int = 0
+    """判定为候选但没有登记的目录数, 与「读不到」的 skipped 分开计."""
+    blocked_unexplained: int = 0
+    """其中因子树里有白名单外文件而未登记的数量."""
+    blocked_undeletable: int = 0
+    """其中因子树里有不可删除的子项 (回收站、版本库、下载进度等) 而未登记的数量."""
+    blocked_media_ancestor: int = 0
+    """其中因祖先或自身直接子项里有媒体而未登记的数量."""
+    blocked_cooldown: int = 0
+    """其中因子树最新 mtime 仍在冷静期内而未登记的数量."""
     scan_running: bool = False
     """该库是否有扫描无效文件任务在跑, 避免重复触发."""
     last_scan_error: str | None = None

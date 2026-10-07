@@ -187,8 +187,8 @@
     "subtitle": "字幕模板"
   },
   "cleanup": {
-    "tooltip": "清理无效文件与空目录",
-    "title": "清理无效文件",
+    "tooltip": "清理无效文件、残留目录与空目录",
+    "title": "清理文件",
     "scan": "开始扫描",
     "rescan": "重新扫描",
     "scanStarted": "扫描已开始",
@@ -212,7 +212,8 @@
       "blacklist": "黑名单",
       "undersized": "体积过小",
       "empty_dir": "空目录",
-      "explicit": "手动选中"
+      "explicit": "手动选中",
+      "orphan": "残留目录"
     },
     "notice": {
       "missing": "已不在磁盘上: {{path}}",
@@ -221,17 +222,18 @@
       "work_dir_multiple": "目录内有 {{count}} 条媒体索引, 不提供整目录删除: {{path}}",
       "template_error": "模板无法解析, 产物未纳入: {{path}} ({{detail}})"
     },
-    "tabRules": "无效文件",
+    "tabRules": "可清理项",
     "tabTrash": "回收站",
     "previewTitle": "确认要删除的内容",
     "deleteMenu": "删除",
     "deleteRecord": "只删除记录",
     "deleteFiles": "删除文件",
     "deleteWorkDir": "删除所在目录",
-    "scanning": "正在扫描无效文件…",
+    "scanning": "正在扫描…",
     "scanningHint": "可以关掉面板, 扫描在后台继续",
     "scanFailed": "上次扫描失败",
     "symlink": "链接",
-    "symlinkHint": "删除的是库内链接本身, 不影响它指向的源文件"
+    "symlinkHint": "删除的是库内链接本身, 不影响它指向的源文件",
+    "blocked": "另有 {{count}} 个目录因含无法识别的文件或不可删除的内容, 未纳入清单"
   }
 }
