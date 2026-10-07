@@ -191,7 +191,7 @@ class ScanInvalidResult(BaseModel):
     skipped_dirs: int = 0
     skipped_files: int = 0
     blocked_dirs: int = 0
-    """判定为候选但没有登记的目录数; 与「读不到」的 skipped 分开, 否则两类问题无法区分."""
+    """因子树里有无法识别的文件而未登记的候选目录数; 与「读不到」的 skipped 分开计."""
 
 
 # --- DELETE ---
