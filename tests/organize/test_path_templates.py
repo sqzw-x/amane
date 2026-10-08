@@ -674,6 +674,47 @@ class TestResolvePathsLink:
         with pytest.raises(ValueError, match="库根之外"):
             resolve_paths(wp, _meta(), ext="mp4")
 
+    def test_existing_link_to_library_video_keeps_link_outside(self, media: Path, other: Path):
+        """库外链接文件已指向库内视频时, 它自身仍判为库外.
+
+        判定的是文件落在哪里, 不是它指向的视频; 否则再次整理会失败, 不满足幂等.
+        """
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{studio}/{number}/{number}.{ext}",
+            link_template=str(other / "{number}" / "{number}.{ext}"),
+            link_mode=LinkMode.SYMLINK,
+        )
+        first = resolve_paths(wp, _meta(), ext="mp4", safe_dirs=[other])
+        assert first.link is not None
+        first.video.parent.mkdir(parents=True)
+        first.video.write_bytes(b"video")
+        first.link.parent.mkdir(parents=True)
+        first.link.symlink_to(first.video)
+
+        second = resolve_paths(wp, _meta(), ext="mp4", safe_dirs=[other])
+        assert second.link is not None
+        assert second.link == first.link
+        assert second.link.resolve() == first.video.resolve()
+
+    def test_link_dir_symlink_into_library_rejected(self, media: Path, other: Path):
+        """链接父目录是指向库内的符号链接时仍拒绝: 判定完整解析父目录链."""
+        inside = media / "links"
+        inside.mkdir(parents=True)
+        into_library = other / "into_library"
+        into_library.parent.mkdir(parents=True, exist_ok=True)
+        into_library.symlink_to(inside, target_is_directory=True)
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}.{ext}",
+            link_template=str(into_library / "{number}.{ext}"),
+            link_mode=LinkMode.SYMLINK,
+        )
+        with pytest.raises(ValueError, match="库根之外"):
+            resolve_paths(wp, _meta(), ext="mp4", safe_dirs=[other])
+
     def test_subtitle_default_follows_link_dir(self, media: Path, other: Path):
         wp = Library(
             name="t",

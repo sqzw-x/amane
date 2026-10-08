@@ -116,14 +116,18 @@ def _resolve_link_path(
     base_path: Path,
     safe_dirs: Sequence[Path] | None,
 ) -> Path | None:
-    """结果必须在库外. 此时 `{video_dir}` / `{video_name}` / `{video_relpath}` 已注入, `{link_dir}` / `{link_name}` 尚未注入."""
+    """结果必须在库外: 库外指链接文件自身所在的位置, 判定只解析父目录链.
+
+    链接文件已指向库内视频时, 判定的是文件落在哪里, 不是它指向的视频, 因此仍然通过校验.
+    此时 `{video_dir}` / `{video_name}` / `{video_relpath}` 已注入, `{link_dir}` / `{link_name}` 尚未注入.
+    """
     template = normalize_link_template(library.link_template)
     if template is None:
         return None
     link = PathEngine(template).resolve(ctx, base_path, safe_dirs)
     if library.link_mode == LinkMode.STRM:
         link = link.with_suffix(".strm")
-    if is_descendant(link, base_path):
+    if is_descendant(link.parent, base_path):
         raise ValueError(f"链接模板必须解析到库根之外: {link} 位于 {base_path} 之下")
     return link
 

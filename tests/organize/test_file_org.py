@@ -219,6 +219,17 @@ class TestCreateVideoLink:
         assert result.dest.is_symlink()
         assert result.dest.resolve() == target.resolve()
 
+    def test_symlink_idempotent(self, tmp_path: Path):
+        """链接已指向同一目标时保持原样并成功."""
+        target = tmp_path / "lib" / "A.mp4"
+        target.parent.mkdir()
+        target.write_text("video")
+        link = tmp_path / "emby" / "A.mp4"
+        assert create_video_link.sync(target, link, LinkMode.SYMLINK).success is True
+        assert create_video_link.sync(target, link, LinkMode.SYMLINK).success is True
+        assert link.is_symlink()
+        assert link.resolve() == target.resolve()
+
     def test_symlink_refuses_regular_file(self, tmp_path: Path):
         target = tmp_path / "A.mp4"
         target.write_text("video")
