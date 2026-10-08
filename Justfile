@@ -1,3 +1,9 @@
+# recipe 行必须同时兼容 sh 与 pwsh, 禁止在 recipe 中调用 bash / sh 脚本:
+# Windows 侧由 [windows] 指定 pwsh (sh 只随 Git for Windows 提供), 其它平台仍使用 just 默认的 sh -cu.
+# 需要 just >= 1.56.0 ([windows] 属性可用于 setting).
+[windows]
+set shell := ["pwsh", "-NoProfile", "-Command"]
+
 default:
     @just --list
 
