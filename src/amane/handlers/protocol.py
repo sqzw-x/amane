@@ -29,10 +29,14 @@ class TaskResult[R: BaseModel | dict]:
     followups: list[FollowupTask] = field(default_factory=list)
 
     def as_dict(self) -> dict | None:
+        """结果载荷的唯一落库形状: 以 JSON 模式 dump, 由 `tasks.result` 列的 `json.dumps` 直接写出.
+
+        传 dict 时不做校验, 载荷须自带 JSON 原生值 (与 payload 侧的 `_payload_dict` 对称).
+        """
         if isinstance(self.result, dict):
             return self.result
         if isinstance(self.result, BaseModel):
-            return self.result.model_dump()
+            return self.result.model_dump(mode="json")
         return None
 
 
