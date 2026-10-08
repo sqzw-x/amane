@@ -146,7 +146,7 @@ windows-app: sync build
 # SPA 由服务端提供, 不依赖 web/dist; 无 androidapp/keystore.properties 时退回 debug 包
 # 构建 Android 壳的 APK (需 JDK 17+ 与 Android SDK)
 android-app:
-    bash scripts/build_android_app.sh
+    uv run python scripts/build_android_app.py
 
 # 编译 Android 壳并运行单元测试 (CI 门禁; 需 JDK 17+ 与 Android SDK)
 android-check:

@@ -105,7 +105,7 @@ jobs:
           fi
           if git diff --quiet "$BASE_SHA...$GITHUB_SHA" -- \
             androidapp \
-            scripts/build_android_app.sh \
+            scripts/build_android_app.py \
             Justfile \
             .github/workflows/ci.yaml \
             .github/workflows/android-app.yml; then
