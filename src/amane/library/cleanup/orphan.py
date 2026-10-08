@@ -52,9 +52,8 @@ COMPANION_EXTENSIONS = frozenset(
     }
 )
 
-# 可随目录删除的垃圾项: 不否决判定, 也不在遍历里单独登记 — 残留目录命中时随内容登记为
-# `noise` 条目, 与父目录一起删除. 库根与扫描范围目录只登记附属文件, 这两层的垃圾项不登记.
-# 按整个文件名比较, 不按扩展名 — `.DS_Store` 没有扩展名, 而按扩展名匹配会把 library.db 当垃圾.
+# 可随目录删除的垃圾项. 按整个文件名比较, 不按扩展名 — `.DS_Store` 没有扩展名, 而按扩展名
+# 匹配会把 library.db 当垃圾. 命中黑名单或体积规则的垃圾项由 `_process_file` 先行登记, 不进 `noise`.
 _JUNK_FILENAMES = frozenset({".ds_store", "thumbs.db", "desktop.ini"})
 # macOS 在非原生文件系统上的伴生文件 (._.DS_Store、._README 都没有可用的扩展名).
 _JUNK_PREFIXES = ("._",)

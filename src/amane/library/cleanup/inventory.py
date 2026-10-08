@@ -450,7 +450,6 @@ def _walk(
                 level_media = level_media or _is_media(path, state=state)
             continue
         if junk is JunkKind.DELETABLE:
-            # 随目录一起删除, 不否决判定; 登记为条目让面板列出即将删除的全部内容.
             noise.append((path, child_stat))
             continue
         if junk is JunkKind.VETO:
@@ -638,7 +637,7 @@ def _register_orphan(
     保留条目才能使面板列出并删除这些内容. 只有会重新登记的那部分 (附属文件与垃圾文件, 含嵌套
     容器上浮上来的) 摘掉重登, 以免同一路径出现两条; 嵌套的容器条目一并摘掉, 它的内容已经上浮.
 
-    触顶时容器条目先占住一个位置: 少了它面板上看不到这处残留; 内容登记完再把它挪到末尾,
+    触顶时容器条目先占住一个位置: 少了它, 面板上就没有这处残留的入口; 内容登记完再挪到末尾,
     因此先被丢弃的是内容, 容器不受影响.
     """
     container = InventoryEntry(
@@ -773,7 +772,7 @@ class InventoryNode:
     expandable: bool = False
     """容器条目: 执行时展开为子条目; 面板把它当目录节点渲染."""
     noise: bool = False
-    """取自 `InventoryEntry.noise`; 折叠与标记都由面板按它决定."""
+    """取自 `InventoryEntry.noise`."""
     children: tuple[InventoryNode, ...] = ()
     """容器目录的子节点是清单条目与分支."""
 
