@@ -63,7 +63,7 @@ SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完�
 
 **约束**: 不允许重命名已持久化的 payload 字段, 否则队列中的旧 dict 无法还原; 新增字段必须带默认值.
 
-结果侧: 每个结果模型自带 `type` 字面量, 单条任务的结果按该字段判别 (联合定义在 `api/models/tasks.py`, 前端按 `result.type` 收窄). 结果由本进程按同一模型写入, 读不出来时不迁移也不猜字段: 详情响应里置空 (列表形状见 [api.md](api.md)). 落库前统一经 `TaskResult.as_dict` 按 JSON 模式 dump, 字段取值必须能被 JSON 模式 dump; dict 载荷不做转换, 须自带 JSON 原生值. 失败任务同样落库载荷 (`fail_task` / `fail_running_task` 都接 `result`): 刮削与演员刮削攒下站点明细后失败时带上它, 崩溃与取消由 `TaskHandler.failure_result` 补交 (含站点已上报而调度顺序尚未写入的抓取阶段); 任务首次调度前被取消、取消落在完成事务或信号量等待、以及 agent 工具侧的兜底取消都不经该钩子, 载荷为空. 新增结果模型须同时补 `tests/handlers/test_protocol.py` 的用例与 `api/models/tasks.py` 的联合 (漏了联合, 该类型的详情会静默置空).
+结果侧: 每个结果模型自带 `type` 字面量, 单条任务的结果按该字段判别 (联合定义在 `api/models/tasks.py`, 前端按 `result.type` 收窄). 结果由本进程按同一模型写入, 读不出来时不迁移也不猜字段: 详情响应里置空 (列表形状见 [api.md](api.md)). 落库前统一经 `TaskResult.as_dict` 按 JSON 模式 dump, 字段取值必须能被 JSON 模式 dump; dict 载荷不做转换, 须自带 JSON 原生值. 失败任务同样落库载荷 (`fail_task` / `fail_running_task` 都接 `result`): 刮削与演员刮削攒下站点明细后失败时带上它, 崩溃与取消由 `TaskHandler.failure_result` 补交 (含站点已上报而调度顺序尚未写入的抓取阶段); 取消落在 `handle()` 之外 (首次调度前, 或信号量等待 / 记录器初始化 / 完成事务期间), 以及由 agent 工具与批量取消的兜底路径写入时, 都不经该钩子, 载荷为空. 新增结果模型须同时补 `tests/handlers/test_protocol.py` 的用例与 `api/models/tasks.py` 的联合 (漏了联合, 该类型的详情会静默置空).
 
 ### 进度上报
 
