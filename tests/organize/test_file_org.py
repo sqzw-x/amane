@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from amane.enums import LinkMode
-from amane.organize import MoveMode, create_video_link, execute_organize
+from amane.organize import MoveMode, PlaceOutcome, create_video_link, execute_organize
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,7 +28,7 @@ class TestExecuteOrganize:
             mode=MoveMode.MOVE,
         )
 
-        assert result.success is True
+        assert result.outcome is PlaceOutcome.PLACED
         assert result.dest == target_file
         assert target_file.exists()
         assert not src.exists()
@@ -48,19 +48,42 @@ class TestExecuteOrganize:
             mode=MoveMode.HARDLINK,
         )
 
-        assert result.success is True
+        assert result.outcome is PlaceOutcome.PLACED
         assert target_file.exists()
         assert src.exists()  # 保留原文件
         assert src.stat().st_ino == target_file.stat().st_ino  # 相同 inode
 
-    def test_collision_renames(self, tmp_path: Path):
-        """目标文件已存在时添加 (1) 后缀"""
+    @pytest.mark.parametrize("mode", list(MoveMode))
+    def test_target_occupied_skips_without_touching_disk(self, tmp_path: Path, mode: MoveMode):
+        """目标已被别的文件占用时不改名、不动磁盘, 由调用方记账."""
         src = tmp_path / "MIDV-123.mp4"
         src.write_text("new content")
 
         target_dir = tmp_path / "output"
         target_dir.mkdir()
-        (target_dir / "MIDV-123.mp4").write_text("existing content")
+        dest = target_dir / "MIDV-123.mp4"
+        dest.write_text("existing content")
+
+        result = execute_organize.sync(
+            source=src,
+            target_dir=target_dir,
+            target_stem="MIDV-123",
+            mode=mode,
+        )
+
+        assert result.outcome is PlaceOutcome.CONFLICT
+        assert result.dest == dest
+        assert dest.read_text() == "existing content"
+        assert src.read_text() == "new content"
+        assert [p.name for p in target_dir.iterdir()] == ["MIDV-123.mp4"]
+
+    def test_target_is_directory_counts_as_occupied(self, tmp_path: Path):
+        """目标位置是目录时按占用处理, 不抛异常."""
+        src = tmp_path / "MIDV-123.mp4"
+        src.write_text("content")
+        target_dir = tmp_path / "output"
+        dest = target_dir / "MIDV-123.mp4"
+        dest.mkdir(parents=True)
 
         result = execute_organize.sync(
             source=src,
@@ -69,13 +92,13 @@ class TestExecuteOrganize:
             mode=MoveMode.MOVE,
         )
 
-        assert result.success is True
-        assert result.dest is not None
-        assert result.dest.name == "MIDV-123(1).mp4"
+        assert result.outcome is PlaceOutcome.CONFLICT
+        assert dest.is_dir()
+        assert src.exists()
 
     @pytest.mark.parametrize("mode", list(MoveMode))
     def test_already_at_dest_is_success(self, tmp_path: Path, mode: MoveMode):
-        """源已在模板路径上时直接成功, 不改成 (1)."""
+        """源已在模板路径上时视为已就位, 不做任何改动."""
         target_dir = tmp_path / "output"
         target_dir.mkdir()
         dest = target_dir / "MIDV-123.mp4"
@@ -88,10 +111,10 @@ class TestExecuteOrganize:
             mode=mode,
         )
 
-        assert result.success is True
+        assert result.outcome is PlaceOutcome.PLACED
         assert result.dest == dest
         assert dest.read_text() == "content"
-        assert not (target_dir / "MIDV-123(1).mp4").exists()
+        assert [p.name for p in target_dir.iterdir()] == ["MIDV-123.mp4"]
 
     def test_move_resolves_nfd_source_from_nfc_path(self, tmp_path: Path):
         """库内 NFC 路径对应磁盘 NFD 文件时仍能打开并移动."""
@@ -106,13 +129,13 @@ class TestExecuteOrganize:
             target_stem="SSIS-914",
             mode=MoveMode.MOVE,
         )
-        assert result.success is True
+        assert result.outcome is PlaceOutcome.PLACED
         dest = tmp_path / "out" / "SSIS-914.mp4"
         assert dest.read_text() == "video"
         assert not src_nfd.exists()
 
     def test_already_hardlinked_dest_is_success(self, tmp_path: Path):
-        """源与 dest 不同路径但同一 inode 时也不碰撞改名."""
+        """源与 dest 不同路径但同一 inode 时视为已就位, 不按占用处理."""
         src = tmp_path / "src.mp4"
         src.write_text("content")
         target_dir = tmp_path / "output"
@@ -127,9 +150,8 @@ class TestExecuteOrganize:
             mode=MoveMode.HARDLINK,
         )
 
-        assert result.success is True
+        assert result.outcome is PlaceOutcome.PLACED
         assert result.dest == dest
-        assert not (target_dir / "MIDV-123(1).mp4").exists()
 
     def test_source_missing_returns_failure(self, tmp_path: Path):
         """源文件不存在时返回失败"""
@@ -139,7 +161,8 @@ class TestExecuteOrganize:
             target_stem="MIDV-123",
             mode=MoveMode.MOVE,
         )
-        assert result.success is False
+        assert result.outcome is PlaceOutcome.FAILED
+        assert result.error is not None
 
     def test_symlink_broken_source_does_not_crash(self, tmp_path: Path):
         """断链符号链接作为 source 时不应崩溃 (原 source.resolve() 抛 RuntimeError 的回归).
@@ -155,7 +178,7 @@ class TestExecuteOrganize:
             mode=MoveMode.SYMLINK,
         )
         # 不抛即达标; 断链源被判为不存在, 返回失败
-        assert result.success is False
+        assert result.outcome is PlaceOutcome.FAILED
 
     def test_symlink_valid_source(self, tmp_path: Path):
         """SYMLINK 模式对有效源创建符号链接, 不再因 resolve 崩溃."""
@@ -168,7 +191,7 @@ class TestExecuteOrganize:
             target_stem="MIDV-123",
             mode=MoveMode.SYMLINK,
         )
-        assert result.success is True
+        assert result.outcome is PlaceOutcome.PLACED
         assert result.dest is not None
         assert result.dest.is_symlink()
 
@@ -180,7 +203,7 @@ class TestCreateVideoLink:
         target.write_text("video")
         link = tmp_path / "emby" / "A.strm"
         result = create_video_link.sync(target, link, LinkMode.STRM)
-        assert result.success is True
+        assert result.outcome is PlaceOutcome.PLACED
         assert result.dest == link
         assert link.read_text(encoding="utf-8") == f"{target}\n"
 
@@ -188,15 +211,16 @@ class TestCreateVideoLink:
         target = tmp_path / "A.mp4"
         target.write_text("video")
         link = tmp_path / "A.strm"
-        assert create_video_link.sync(target, link, LinkMode.STRM).success
-        assert create_video_link.sync(target, link, LinkMode.STRM).success
+        assert create_video_link.sync(target, link, LinkMode.STRM).outcome is PlaceOutcome.PLACED
+        assert create_video_link.sync(target, link, LinkMode.STRM).outcome is PlaceOutcome.PLACED
         assert link.read_text(encoding="utf-8") == f"{target}\n"
 
     def test_strm_custom_content(self, tmp_path: Path):
         target = tmp_path / "A.mp4"
         target.write_text("video")
         link = tmp_path / "A.strm"
-        assert create_video_link.sync(target, link, LinkMode.STRM, content="/rel/A.mp4\n").success
+        result = create_video_link.sync(target, link, LinkMode.STRM, content="/rel/A.mp4\n")
+        assert result.outcome is PlaceOutcome.PLACED
         assert link.read_text(encoding="utf-8") == "/rel/A.mp4\n"
 
     def test_strm_refuses_regular_file(self, tmp_path: Path):
@@ -205,7 +229,7 @@ class TestCreateVideoLink:
         occupied = tmp_path / "A.jpg"
         occupied.write_text("nope")
         result = create_video_link.sync(target, occupied, LinkMode.STRM)
-        assert result.success is False
+        assert result.outcome is PlaceOutcome.FAILED
         assert occupied.read_text() == "nope"
 
     def test_symlink_points_at_target(self, tmp_path: Path):
@@ -214,7 +238,7 @@ class TestCreateVideoLink:
         target.write_text("video")
         link = tmp_path / "emby" / "A.mp4"
         result = create_video_link.sync(target, link, LinkMode.SYMLINK)
-        assert result.success is True
+        assert result.outcome is PlaceOutcome.PLACED
         assert result.dest is not None
         assert result.dest.is_symlink()
         assert result.dest.resolve() == target.resolve()
@@ -225,8 +249,8 @@ class TestCreateVideoLink:
         target.parent.mkdir()
         target.write_text("video")
         link = tmp_path / "emby" / "A.mp4"
-        assert create_video_link.sync(target, link, LinkMode.SYMLINK).success is True
-        assert create_video_link.sync(target, link, LinkMode.SYMLINK).success is True
+        assert create_video_link.sync(target, link, LinkMode.SYMLINK).outcome is PlaceOutcome.PLACED
+        assert create_video_link.sync(target, link, LinkMode.SYMLINK).outcome is PlaceOutcome.PLACED
         assert link.is_symlink()
         assert link.resolve() == target.resolve()
 
@@ -236,5 +260,5 @@ class TestCreateVideoLink:
         occupied = tmp_path / "B.mp4"
         occupied.write_text("other")
         result = create_video_link.sync(target, occupied, LinkMode.SYMLINK)
-        assert result.success is False
+        assert result.outcome is PlaceOutcome.FAILED
         assert occupied.read_text() == "other"

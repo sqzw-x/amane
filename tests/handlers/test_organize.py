@@ -12,8 +12,10 @@ from amane.config import HotSettings
 from amane.db.models import MediaFileStatus
 from amane.enums import DownloadableResource, LinkMode, MoveMode
 from amane.handlers import DeleteHandler, DeletePayload, LibraryTaskLocks, OrganizeHandler, OrganizePayload
-from amane.handlers.file import FileOperationsResult, commit_organized_media_file
+from amane.handlers.file import FileOperationsResult, _record_conflicts, commit_organized_media_file
+from amane.handlers.models import ORGANIZE_CONFLICT_LIMIT
 from amane.library import DeleteOutcome, InventoryStore, LibraryScan, scan_inventory
+from amane.observability.models import OrganizeConflict, OrganizeConflictReason
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -75,10 +77,10 @@ async def test_organize_resolve_rejects_unknown_copy_resource(
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_organize_prunes_stale_collision_dest(
+async def test_organize_target_occupied_skips_and_reports(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
-    """模板 dest 已被另一文件占用时落到 dest(1); 幽灵占用行在落盘前被清掉, 不撞 UNIQUE."""
+    """目标被别的文件占用时不改名、不动磁盘: 行留在源路径, 冲突写进结果; 幽灵行仍被清掉."""
     lib_root = tmp_path / "lib"
     dest_dir = lib_root / "Studio" / "NSFS-039"
     dest_dir.mkdir(parents=True)
@@ -87,98 +89,95 @@ async def test_organize_prunes_stale_collision_dest(
     src = lib_root / "incoming" / "NSFS-039.mp4"
     src.parent.mkdir()
     src.write_bytes(b"second")
-    stale = dest_dir / "NSFS-039(1).mp4"
-    assert not stale.exists()
+    ghost = dest_dir / "NSFS-039(1).mp4"
+    assert not ghost.exists()
 
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
 
-    first = await repo.create_media_file(
-        lib.id,
-        path=str(dest),
-        number="NSFS-039",
-        status=MediaFileStatus.SCRAPED,
-        metadata_id=meta.id,
-    )
-    occupant = await repo.create_media_file(
-        lib.id,
-        path=str(stale),
-        number="NSFS-039",
-        status=MediaFileStatus.SCRAPED,
-        metadata_id=meta.id,
+    phantom = await repo.create_media_file(
+        lib.id, path=str(ghost), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
     )
     source = await repo.create_media_file(
-        lib.id,
-        path=str(src),
-        number="NSFS-039",
-        status=MediaFileStatus.SCRAPED,
-        metadata_id=meta.id,
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
     )
-    assert first.id is not None and occupant.id is not None and source.id is not None
+    assert phantom.id is not None and source.id is not None
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
     result = await org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root)))
     assert result.success is True
     assert result.result is not None
-    assert result.result.failed == 0
+    assert (result.result.organized, result.result.conflicted, result.result.failed) == (0, 1, 0)
+    assert [c.model_dump() for c in result.result.conflicts] == [
+        {"path": str(src), "target": str(dest), "reason": OrganizeConflictReason.target_exists}
+    ]
 
-    assert dest.exists()
     assert dest.read_bytes() == b"first"
-    assert stale.exists()
-    assert stale.read_bytes() == b"second"
-    assert not src.exists()
+    assert src.read_bytes() == b"second"
+    assert not ghost.exists()
 
-    assert await repo.get_media_file(occupant.id) is None
-    claimed = await repo.get_media_file(source.id)
-    assert claimed is not None
-    assert claimed.path == str(stale)
-    kept = await repo.get_media_file(first.id)
-    assert kept is not None
-    assert kept.path == str(dest)
+    assert await repo.get_media_file(phantom.id) is None
+    kept_source = await repo.get_media_file(source.id)
+    assert kept_source is not None
+    assert kept_source.path == str(src)
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_organize_collision_dest_free(repo: Repository, resource_store: ResourceStore, tmp_path: Path) -> None:
-    """碰撞 dest(1) 空闲时第二份文件落到 dest(1), 两行都保留."""
+async def test_organize_subtitle_target_occupied_is_reported(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """字幕目标被占用: 视频照常落盘, 字幕留在原处, 冲突记进结果."""
     lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / "NSFS-039.mp4"
+    src.write_bytes(b"video")
+    sub = src_dir / "NSFS-039.srt"
+    sub.write_text("new subtitle", encoding="utf-8")
+
     dest_dir = lib_root / "Studio" / "NSFS-039"
     dest_dir.mkdir(parents=True)
-    dest = dest_dir / "NSFS-039.mp4"
-    dest.write_bytes(b"first")
-    src = lib_root / "incoming" / "NSFS-039.mp4"
-    src.parent.mkdir()
-    src.write_bytes(b"second")
+    occupied_sub = dest_dir / "NSFS-039.srt"
+    occupied_sub.write_text("existing subtitle", encoding="utf-8")
 
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
-
-    first = await repo.create_media_file(
-        lib.id, path=str(dest), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
-    )
     source = await repo.create_media_file(
         lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
     )
-    assert first.id is not None and source.id is not None
+    assert source.id is not None
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
-    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src.parent)))
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
     assert result.success is True
     assert result.result is not None
-    assert result.result.failed == 0
+    assert (result.result.organized, result.result.conflicted, result.result.failed) == (1, 1, 0)
+    assert [c.model_dump() for c in result.result.conflicts] == [
+        {"path": str(src), "target": str(occupied_sub), "reason": OrganizeConflictReason.subtitle_target_exists}
+    ]
 
-    dest1 = dest_dir / "NSFS-039(1).mp4"
+    dest = dest_dir / "NSFS-039.mp4"
     assert dest.exists()
-    assert dest1.exists()
+    assert occupied_sub.read_text(encoding="utf-8") == "existing subtitle"
+    assert sub.read_text(encoding="utf-8") == "new subtitle"
     updated = await repo.get_media_file(source.id)
     assert updated is not None
-    assert updated.path == str(dest1)
-    kept = await repo.get_media_file(first.id)
-    assert kept is not None
-    assert kept.path == str(dest)
+    assert updated.path == str(dest)
+
+
+def test_record_conflicts_caps_entries(tmp_path: Path) -> None:
+    """conflicts 达到上限后只计数, 不继续追加."""
+    conflicts = [
+        OrganizeConflict(path=f"/src/{i}.mp4", target=f"/lib/{i}.mp4", reason=OrganizeConflictReason.target_exists)
+        for i in range(ORGANIZE_CONFLICT_LIMIT)
+    ]
+    count = _record_conflicts(conflicts, "/src/x.mp4", [tmp_path / "x.mp4"], OrganizeConflictReason.target_exists)
+    assert count == 1
+    assert len(conflicts) == ORGANIZE_CONFLICT_LIMIT
 
 
 @pytest.mark.asyncio(loop_scope="function")

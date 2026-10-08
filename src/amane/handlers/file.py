@@ -1,6 +1,6 @@
 import shutil
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,14 +16,17 @@ from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
 from ..media import write_nfo as write_nfo_file
 from ..media.resource_store import internal_url_hash
 from ..net.http import WebClient
+from ..observability.models import OrganizeConflict, OrganizeConflictReason
 from ..organize import (
     MoveMode,
+    PlaceOutcome,
     ResolvedPaths,
     discover_subtitles,
     execute_organize,
     place_subtitles,
     render_strm_content,
     resolve_paths,
+    target_occupied,
 )
 from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
@@ -31,7 +34,13 @@ from ..utils.path import existing_disk_path as existing_disk_path_sync
 from ..utils.path import is_descendant, nfc_path, path_is_under
 from ..utils.threads import existing_disk_path, in_thread, path_is_dir
 from ._common import LibraryTaskLocks
-from .models import CleanupPayload, CleanupResult, OrganizePayload, OrganizeResult
+from .models import (
+    ORGANIZE_CONFLICT_LIMIT,
+    CleanupPayload,
+    CleanupResult,
+    OrganizePayload,
+    OrganizeResult,
+)
 from .protocol import TaskHandler, TaskResult
 
 if TYPE_CHECKING:
@@ -46,8 +55,12 @@ logger = structlog.get_logger()
 
 @dataclass
 class FileOperationsResult:
-    success: bool
+    outcome: PlaceOutcome
     dest: Path | None = None
+    """PLACED 是落盘路径; FAILED 时可能仍带路径, 以便回写 MediaFile.path 补链接."""
+    conflict_target: Path | None = None
+    """CONFLICT 时被占用的目标路径."""
+    subtitle_conflicts: list[Path] = field(default_factory=list)
     error: str | None = None
 
 
@@ -71,9 +84,14 @@ async def execute_file_operations(
     source_path = await existing_disk_path(Path(media_file.path))
     if source_path is None:
         logger.warning("source file missing", path=media_file.path)
-        return FileOperationsResult(success=False, error=f"源文件不存在: {media_file.path}")
+        return FileOperationsResult(outcome=PlaceOutcome.FAILED, error=f"源文件不存在: {media_file.path}")
 
     info = file_info if file_info is not None else parse_file_info(source_path)
+
+    # 目标被别的文件占用时立即返回: 不下载图片, 不写附属文件, 不改库内任何路径.
+    if await target_occupied(source_path, paths.video):
+        logger.warning("organize target occupied", source=str(source_path), dest=str(paths.video))
+        return FileOperationsResult(outcome=PlaceOutcome.CONFLICT, conflict_target=paths.video)
 
     # 下载图片; 水印打在库路径副本上, 不能修改 Resource 原图.
     if web_client and download_images:
@@ -102,8 +120,11 @@ async def execute_file_operations(
         mode=move_mode,
     )
 
+    if org_result.outcome is PlaceOutcome.CONFLICT:
+        return FileOperationsResult(outcome=PlaceOutcome.CONFLICT, conflict_target=org_result.dest)
+
     # 写链接; 失败仍带 dest, 以便回写 MediaFile.path.
-    if org_result.success and org_result.dest and paths.link is not None:
+    if org_result.outcome is PlaceOutcome.PLACED and org_result.dest and paths.link is not None:
         mode = LinkMode(library.link_mode) if library is not None else LinkMode.STRM
         strm_content: str | None = None
         if mode == LinkMode.STRM and library is not None:
@@ -119,18 +140,19 @@ async def execute_file_operations(
                     actor_genders=actor_genders,
                 )
             except ValueError as e:
-                return FileOperationsResult(success=False, dest=org_result.dest, error=str(e))
+                return FileOperationsResult(outcome=PlaceOutcome.FAILED, dest=org_result.dest, error=str(e))
         link_result = await create_video_link(org_result.dest, paths.link, mode, content=strm_content)
-        if not link_result.success:
-            return FileOperationsResult(success=False, dest=org_result.dest, error=link_result.error)
+        if link_result.outcome is not PlaceOutcome.PLACED:
+            return FileOperationsResult(outcome=PlaceOutcome.FAILED, dest=org_result.dest, error=link_result.error)
 
     # 写入 NFO.
-    if org_result.success and org_result.dest and write_nfo:
+    if org_result.outcome is PlaceOutcome.PLACED and org_result.dest and write_nfo:
         await write_nfo_file(metadata, paths.nfo)
 
     # 字幕按模板落到 video_dest 侧.
-    if org_result.success and org_result.dest and library is not None and subtitles:
-        await place_subtitles(
+    subtitle_conflicts: list[Path] = []
+    if org_result.outcome is PlaceOutcome.PLACED and org_result.dest and library is not None and subtitles:
+        subtitle_conflicts = await place_subtitles(
             subtitles,
             video_source=source_path,
             video_dest=org_result.dest,
@@ -144,11 +166,13 @@ async def execute_file_operations(
             actor_genders=actor_genders,
         )
 
-    if org_result.success:
+    if org_result.outcome is PlaceOutcome.PLACED:
         logger.debug("file operations done", number=metadata.number, dest=str(org_result.dest), mode=str(move_mode))
-        return FileOperationsResult(success=True, dest=org_result.dest)
+        return FileOperationsResult(
+            outcome=PlaceOutcome.PLACED, dest=org_result.dest, subtitle_conflicts=subtitle_conflicts
+        )
     logger.debug("file operations failed", number=metadata.number, error=org_result.error)
-    return FileOperationsResult(success=False, error=org_result.error)
+    return FileOperationsResult(outcome=PlaceOutcome.FAILED, error=org_result.error)
 
 
 async def apply_file_operations(
@@ -461,6 +485,8 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             live = indexed
 
         organized = 0
+        conflicted = 0
+        conflicts: list[OrganizeConflict] = []
         failed = 0
         total = len(live)
         # 只有移动方式会移走源文件, 复制 / 硬链接 / 符号链接不腾空目录.
@@ -505,13 +531,25 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
 
                 if fop_result.dest and media_file.id is not None:
                     await commit_organized_media_file(self._repo, media_file, fop_result.dest, library_root)
-                if fop_result.success:
-                    organized += 1
-                    if collect_prune:
-                        prune_candidates.update(ancestor_dirs(file_path, library_root=library_root))
-                else:
-                    logger.warning("organize failed", path=path_str, error=fop_result.error)
-                    failed += 1
+                match fop_result.outcome:
+                    case PlaceOutcome.PLACED:
+                        organized += 1
+                        if collect_prune:
+                            prune_candidates.update(ancestor_dirs(file_path, library_root=library_root))
+                        conflicted += _record_conflicts(
+                            conflicts,
+                            path_str,
+                            fop_result.subtitle_conflicts,
+                            OrganizeConflictReason.subtitle_target_exists,
+                        )
+                    case PlaceOutcome.CONFLICT:
+                        # 行不提交落点, 留在源路径: 下次整理会再次报告, 直到用户自行处理.
+                        conflicted += _record_conflicts(
+                            conflicts, path_str, [fop_result.conflict_target], OrganizeConflictReason.target_exists
+                        )
+                    case PlaceOutcome.FAILED:
+                        logger.warning("organize failed", path=path_str, error=fop_result.error)
+                        failed += 1
                 await self.report_progress(i, total, file_path.name)
             await self.report_progress(total, total, "done")
 
@@ -524,13 +562,39 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
             path=payload.path,
             organized=organized,
             skipped=skipped,
+            conflicted=conflicted,
             failed=failed,
             pruned_dirs=pruned_dirs,
         )
 
         return TaskResult(
-            True, result=OrganizeResult(organized=organized, skipped=skipped, failed=failed, pruned_dirs=pruned_dirs)
+            True,
+            result=OrganizeResult(
+                organized=organized,
+                skipped=skipped,
+                conflicted=conflicted,
+                failed=failed,
+                pruned_dirs=pruned_dirs,
+                conflicts=conflicts,
+            ),
         )
+
+
+def _record_conflicts(
+    conflicts: list[OrganizeConflict],
+    path: str,
+    targets: Sequence[Path | None],
+    reason: OrganizeConflictReason,
+) -> int:
+    """登记未处理的目标路径, 返回条数; 列表达到上限后只计数."""
+    count = 0
+    for target in targets:
+        if target is None:
+            continue
+        count += 1
+        if len(conflicts) < ORGANIZE_CONFLICT_LIMIT:
+            conflicts.append(OrganizeConflict(path=path, target=str(target), reason=reason))
+    return count
 
 
 def _add_resource_ref(url: str, live_urls: set[str], live_hashes: set[str]) -> None:

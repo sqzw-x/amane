@@ -9,6 +9,7 @@ from starlette.status import HTTP_403_FORBIDDEN
 
 from ..db import Library, MediaFileStatus, Repository
 from ..enums import DownloadableResource
+from ..observability.models import OrganizeConflict
 from ..parsing import ContentType, infer_content_type
 from ..utils.path import is_descendant, is_resolved_path, resolved_path
 
@@ -168,11 +169,17 @@ class OrganizePayload(LibraryBase):
             self.copy_resources = [DownloadableResource(r) for r in lib.copy_resources]
 
 
+ORGANIZE_CONFLICT_LIMIT = 200
+"""conflicts 的条数上限; 超出只累加 conflicted, 不写进任务结果."""
+
+
 class OrganizeResult(BaseModel):
     organized: int
     skipped: int
+    conflicted: int = 0
     failed: int
     pruned_dirs: int = 0
+    conflicts: list[OrganizeConflict] = Field(default_factory=list)
 
 
 # --- SCAN INVALID ---

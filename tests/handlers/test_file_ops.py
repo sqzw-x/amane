@@ -9,7 +9,7 @@ from amane.config import HotSettings, WatermarkConfig
 from amane.db.models import MediaFile, Metadata
 from amane.handlers.file import execute_file_operations
 from amane.media import ResourceStore
-from amane.organize import MoveMode, ResolvedPaths
+from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths
 from amane.parsing import ContentType, FileInfo
 
 if TYPE_CHECKING:
@@ -85,7 +85,7 @@ async def test_internal_poster_and_trailer(resource_store: ResourceStore, tmp_pa
         web_client=client,
         config=HotSettings(),
     )
-    assert result.success is True
+    assert result.outcome is PlaceOutcome.PLACED
     assert paths.thumb.exists()  # 外部下载
     assert paths.poster.exists()  # 内部派生解析
     assert paths.trailer.exists()  # trailer 落盘
@@ -115,7 +115,7 @@ async def test_copy_resources_skips_trailer(resource_store: ResourceStore, tmp_p
         config=HotSettings(),
         copy_resources=[DownloadableResource.thumb, DownloadableResource.poster],
     )
-    assert result.success is True
+    assert result.outcome is PlaceOutcome.PLACED
     assert paths.thumb.exists()
     assert not paths.trailer.exists()
 
@@ -140,7 +140,7 @@ async def test_write_nfo_false_skips_nfo(resource_store: ResourceStore, tmp_path
         config=HotSettings(),
         write_nfo=False,
     )
-    assert result.success is True
+    assert result.outcome is PlaceOutcome.PLACED
     assert not paths.nfo.exists()
 
 
@@ -168,7 +168,7 @@ async def test_missing_internal_resource_falls_back_to_crop(resource_store: Reso
         web_client=client,
         config=HotSettings(),
     )
-    assert result.success is True
+    assert result.outcome is PlaceOutcome.PLACED
     assert paths.poster.exists()  # 裁剪回退
 
 
@@ -198,7 +198,7 @@ async def test_watermark_respects_enabled(resource_store: ResourceStore, tmp_pat
         file_info=FileInfo(number="MIDV-123", content_type=ContentType.CENSORED, prefix="MIDV", has_subtitle=True),
         watermark_dir=user_dir,
     )
-    assert result.success is True
+    assert result.outcome is PlaceOutcome.PLACED
     with Image.open(paths.thumb) as img:
         pixel = img.convert("RGB").getpixel((20, 20))
     assert isinstance(pixel, tuple)

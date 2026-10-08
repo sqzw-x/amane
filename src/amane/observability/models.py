@@ -60,6 +60,23 @@ class SiteOutcomeRecord(BaseModel):
     """展示用, 不解析."""
 
 
+class OrganizeConflictReason(StrEnum):
+    """整理未处理的原因."""
+
+    target_exists = "target_exists"
+    """目标路径已被另一个文件占用."""
+    subtitle_target_exists = "subtitle_target_exists"
+    """字幕目标路径已被另一个文件占用."""
+
+
+class OrganizeConflict(BaseModel):
+    """一条未落盘的记录: 源文件路径 + 被占用的目标路径."""
+
+    path: str
+    target: str
+    reason: OrganizeConflictReason
+
+
 class TaskSummary(BaseModel):
     """只保留 task.json / http/ 无法直接表达的聚合信息."""
 

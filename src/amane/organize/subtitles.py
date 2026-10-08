@@ -7,7 +7,7 @@ import structlog
 from ..enums import ActorGender, MoveMode
 from ..parsing import FileInfo, parse_file_info
 from ..utils.threads import in_thread
-from .file import execute_organize
+from .file import PlaceOutcome, execute_organize
 from .path_templates import resolve_subtitle_path
 
 if TYPE_CHECKING:
@@ -56,8 +56,9 @@ def place_subtitles(
     link_dir: Path | None = None,
     link_name: str | None = None,
     actor_genders: Mapping[str, ActorGender] | None = None,
-) -> None:
-    """失败只记日志, 不抛异常."""
+) -> list[Path]:
+    """失败与冲突只记日志, 不抛异常; 返回被占用而跳过的目标路径."""
+    conflicted: list[Path] = []
     for sub in sources:
         dest = resolve_subtitle_path(
             library,
@@ -80,8 +81,15 @@ def place_subtitles(
             mode=mode,
             suffix=dest.suffix,
         )
-        if not result.success:
-            logger.warning("subtitle organize failed", source=str(sub), dest=str(dest), error=result.error)
+        match result.outcome:
+            case PlaceOutcome.PLACED:
+                pass
+            case PlaceOutcome.CONFLICT:
+                logger.warning("subtitle target occupied", source=str(sub), dest=str(dest))
+                conflicted.append(dest)
+            case PlaceOutcome.FAILED:
+                logger.warning("subtitle organize failed", source=str(sub), dest=str(dest), error=result.error)
+    return conflicted
 
 
 def _belongs(video: FileInfo, sub: FileInfo) -> bool:
