@@ -51,6 +51,13 @@ class TaskHandler[P: BaseModel | dict = dict, R: BaseModel | dict = dict](ABC):
     @abstractmethod
     async def handle(self, payload: P) -> TaskResult[R]: ...
 
+    def failure_result(self, payload: P) -> R | None:
+        """异常 / 取消时补交的失败载荷: 任务已攒下的事实不该随异常丢掉.
+
+        默认没有; 有站点事实的 handler 覆写它, 由 worker 在崩溃与取消分支落库.
+        """
+        return None
+
     def parse_payload(self, raw: dict) -> P:
         """已是目标类型时原样返回, 不重新校验."""
         if isinstance(raw, self.payload_type):

@@ -10,6 +10,7 @@ from ..db.models import TaskType
 from ..enums import ActorGender, MetadataField
 from ..media import materialize_images
 from ..observability import current
+from ..observability.models import SiteOutcomeKind
 from ..plugins.models import SourceDescriptor, SourceTrait
 from ._common import ensure_oshash, finalize_media_file
 from .models import ActorScrapePayload, CacheKind, ScrapePayload, ScrapeResult
@@ -221,6 +222,17 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
                 outcomes=current().site_outcomes(),
             ),
             followups=actor_followups,
+        )
+
+    def failure_result(self, payload: ScrapePayload) -> ScrapeResult | None:
+        """抓取之后崩掉时, 站点明细仍要能回答"为什么刮不到"."""
+        outcomes = current().site_outcomes()
+        if not outcomes:
+            return None
+        return ScrapeResult(
+            field_sources={},
+            failed_sites=[row.site for row in outcomes if row.outcome is SiteOutcomeKind.FAILED],
+            outcomes=outcomes,
         )
 
     async def _actor_scrape_followups(self, actor_names: list[str]) -> list[FollowupTask]:

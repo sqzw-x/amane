@@ -160,7 +160,7 @@ export function TaskDetailPanel({ task, linkKey, actions }: TaskDetailPanelProps
         <CollapsibleJson title={t("detail.result")} value={detail.result} />
       )}
 
-      {task.status === "failed" && detail != null && !hasResult ? (
+      {isTerminal && detail != null && !hasResult ? (
         <Text size="xs" c="dimmed">
           {t("result.noResultHint")}
         </Text>

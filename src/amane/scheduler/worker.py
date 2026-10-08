@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from ..config import HotSettings
 from ..events import EventType
+from ..handlers.protocol import TaskResult
 from ..observability import Recorder
 
 if TYPE_CHECKING:
@@ -258,6 +259,15 @@ class AsyncWorker:
                     return False
                 return self._get_hot().logging.debug_capture
 
+            def _failure_payload() -> dict[str, object] | None:
+                """崩溃 / 取消时让 handler 补一份失败载荷; 钩子出错不影响失败处理."""
+                try:
+                    failure = handler.failure_result(typed_payload)
+                except Exception:
+                    logger.exception("failure result build failed", task_id=task_id)
+                    return None
+                return TaskResult(success=False, result=failure).as_dict()
+
             async def _finalize_recorder(*, success: bool, error: str | None) -> None:
                 if rec is None:
                     return
@@ -274,7 +284,7 @@ class AsyncWorker:
                 except asyncio.CancelledError:
                     duration_s = round(time.monotonic() - start_time, 2)
                     logger.info("task cancelled", duration_s=duration_s)
-                    await self._repo.fail_running_task(task_id, error=CANCEL_ERROR)
+                    await self._repo.fail_running_task(task_id, error=CANCEL_ERROR, result=_failure_payload())
                     await _finalize_recorder(success=False, error=CANCEL_ERROR)
                     if self._event_bus:
                         await self._event_bus.emit(
@@ -286,7 +296,7 @@ class AsyncWorker:
                 except Exception as e:
                     duration_s = round(time.monotonic() - start_time, 2)
                     logger.exception("task crashed", error=str(e), duration_s=duration_s)
-                    await self._repo.fail_task(task_id, error=str(e))
+                    await self._repo.fail_task(task_id, error=str(e), result=_failure_payload())
                     await _finalize_recorder(success=False, error=str(e))
                     if self._event_bus:
                         await self._event_bus.emit(

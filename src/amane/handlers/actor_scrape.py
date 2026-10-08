@@ -50,6 +50,19 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         self._resource_store = resource_store
         self._web_client = web_client
 
+    def failure_result(self, payload: ActorScrapePayload) -> ActorScrapeResult | None:
+        """抓取之后崩掉时, 站点明细仍要能看到."""
+        outcomes = current().site_outcomes()
+        if not outcomes:
+            return None
+        return ActorScrapeResult(
+            actor_id=payload.actor_id,
+            field_sources={},
+            failed_sites=[row.site for row in outcomes if row.outcome is SiteOutcomeKind.FAILED],
+            image_count=0,
+            outcomes=outcomes,
+        )
+
     async def handle(self, payload: ActorScrapePayload) -> TaskResult[ActorScrapeResult]:
         bind_contextvars(actor_id=payload.actor_id)
         rec = current()

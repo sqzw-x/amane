@@ -35,7 +35,9 @@ function resultBranch(result: TaskResult, failed: boolean): ReactNode {
   switch (result.type) {
     case "scrape": {
       const outcomes = result.outcomes ?? [];
-      const metadataId = result.metadata_id ?? null;
+      // 结果里的 id 可能是手写或坏行留下的 0 / 负数, 只给正数渲染链接.
+      const metadataId =
+        result.metadata_id != null && result.metadata_id > 0 ? result.metadata_id : null;
       return (
         <>
           <MetadataLink metadataId={metadataId} />
