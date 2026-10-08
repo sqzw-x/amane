@@ -1,14 +1,12 @@
-import re
 from typing import TYPE_CHECKING, Any, override
 
 from ...enums import ActorGender, SiteName
 from ...net.connectivity import ConnectivityOutcome, SkipReason, assess_response
 from ...net.errors import FailureReason, RequestError
 from ...plugins.models import SourceTrait
-from ...utils.dates import normalize_calendar_date
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
-from ..parsing import fold_number
+from ..parsing import fold_studio, is_same_number, parse_western_number
 
 _PERFORMER_GENDER: dict[str, ActorGender] = {
     "FEMALE": ActorGender.FEMALE,
@@ -43,9 +41,6 @@ query FindByID($id: ID!) {{
   findScene(id: $id) {{{_SCENE_FIELDS}
   }}
 }}"""
-
-# 欧美日期号 ``Studio.YY.MM.DD``; 片商名可含 ``-``, 因此年份段用非贪婪匹配回溯.
-_WESTERN_NUMBER = re.compile(r"^(?P<studio>.+?)[._-](?P<year>\d{4}|\d{2})[._-](?P<month>\d{2})[._-](?P<day>\d{2})$")
 
 _TYPE_FILTER: dict[str, str] = {
     "censored": "JAV",
@@ -218,35 +213,20 @@ def pick_scene(results: object, number: str) -> dict[str, Any] | None:
     片商 + 发布日期确认, 只认唯一命中.
     """
     scenes = [item for item in results if isinstance(item, dict)] if isinstance(results, list) else []
-    folded = fold_number(number)
     for scene in scenes:
         code = scene.get("code")
-        if isinstance(code, str) and code and fold_number(code) == folded:
+        if isinstance(code, str) and code and is_same_number(code, number):
             return scene
 
-    dated = _western_number(number)
-    if dated is None:
+    western = parse_western_number(number)
+    if western is None:
         return None
-    studio, date = dated
-    hits = [scene for scene in scenes if _scene_date(scene) == date and _fold_studio(_scene_studio(scene)) == studio]
+    hits = [
+        scene
+        for scene in scenes
+        if _scene_date(scene) == western.date and fold_studio(_scene_studio(scene)) == western.studio
+    ]
     return hits[0] if len(hits) == 1 else None
-
-
-def _western_number(number: str) -> tuple[str, str] | None:
-    """``Studio.YY.MM.DD`` → (折叠片商, ``YYYY-MM-DD``); 其它形态与非法日期返回 None."""
-    match = _WESTERN_NUMBER.match(number.strip())
-    if match is None:
-        return None
-    year = match["year"] if len(match["year"]) == 4 else f"20{match['year']}"
-    date = f"{year}-{match['month']}-{match['day']}"
-    if normalize_calendar_date(date) != date:
-        return None
-    return _fold_studio(match["studio"]), date
-
-
-def _fold_studio(name: str) -> str:
-    """片商名折叠: 忽略大小写与非字母数字, 供文件名与站内写法比较."""
-    return "".join(ch for ch in name.casefold() if ch.isalnum())
 
 
 def _scene_studio(scene: dict[str, Any]) -> str:
