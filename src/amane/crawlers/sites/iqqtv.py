@@ -6,7 +6,7 @@ from ...enums import SiteName
 from ...plugins.models import SourceTrait
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text
+from ..parsing import extract_all_texts, extract_text, is_same_number
 
 # 排除马赛克破坏版等无有效元数据的条目
 _EXCLUDED_KEYWORDS = ("克破", "无码破解", "無碼破解", "无码流出", "無碼流出")
@@ -30,20 +30,18 @@ class IqqtvCrawler(Crawler):
         return _LANG_PREFIX.get(lang, "/cn")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
+        """条目标题里的番号是独立词, 只认整词与入参相等; 排除破坏版等条目."""
         number = query.number if re.match(r"n\d{4}", query.number) else query.number.upper()
         prefix = self._get_lang_prefix(options)
         url = f"{self.base_url}{prefix}/search.php?kw={number}"
         text = await self.client.get_html(url)
         html = Selector(text=text)
-        if not html.xpath('//a[@class="ga_click"]/@href').getall():
-            return None
-        # 匹配番号, 排除破坏版等条目.
         for item in html.xpath('//span[@class="title"]'):
             href = item.xpath("./a/@href").get()
             title = item.xpath("./a/@title").get() or ""
-            if not href:
+            if not href or any(kw in title for kw in _EXCLUDED_KEYWORDS):
                 continue
-            if number.upper() in title and not any(kw in title for kw in _EXCLUDED_KEYWORDS):
+            if any(is_same_number(token, number) for token in title.split()):
                 detail_path = re.sub(r"^/(cn|jp)/", "", href).lstrip("/")
                 return f"{self.base_url}{prefix}/{detail_path}"
         return None
