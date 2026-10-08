@@ -190,19 +190,28 @@ class ScanInvalidResult(BaseModel):
     truncated: bool = False
     skipped_dirs: int = 0
     skipped_files: int = 0
+    blocked_dirs: int = 0
+    """因子树里有无法识别的文件而未登记的候选目录数; 与「读不到」的 skipped 分开计."""
 
 
 # --- DELETE ---
 
 
 class DeletePayload(BaseModel):
-    """按清单标识删除; 执行集合 = 清单条目减去 exclude, 不做运行时推导."""
+    """按清单标识删除; 执行集合取自清单条目 — 命中排除项的不删除, 命中更深的纳入项的仍删除."""
 
     library_id: int = Field(description="清单所属 Library ID")
     inventory_id: str = Field(description="后端生成的清单标识; 不存在或已过期则失败")
     exclude: list[str] = Field(
         default_factory=list,
         description="排除项: 库内为清单库根下的相对路径, 库外为绝对路径; 按路径分量匹配",
+    )
+    include: list[str] = Field(
+        default_factory=list,
+        description=(
+            "在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定, "
+            "同一路径同时命中两组时按纳入处理"
+        ),
     )
     prune_empty_dirs: bool = Field(default=True, description="删除本次腾空的目录 (库根与 .amane_trash 除外)")
 
@@ -217,9 +226,12 @@ class DeleteResult(BaseModel):
     """已删除但不释放空间的硬链接项数."""
     pruned_dirs: int = 0
     excluded: int = 0
-    """被 exclude 排除的清单条目数."""
+    """因排除项而不删除、且未被纳入项恢复的清单条目数."""
     indexed: int = 0
     """随之删除的 MediaFile 行数."""
+    reverify_rejected: int = 0
+    """执行前复验未通过的条目数; 拒绝原因见 `delete.py::_reverify` (目录里出现媒体 / 白名单外的
+    文件 / 下载进度, 目录不再为空或无法读取), 这些条目同时计入 `failed`."""
 
 
 # --- CLEANUP ---

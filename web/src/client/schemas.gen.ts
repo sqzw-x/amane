@@ -1511,6 +1511,14 @@ export const DeleteSubmissionSchema = {
             title: 'Exclude',
             description: '排除项: 库内为清单库根下的相对路径, 库外为绝对路径; 按路径分量匹配'
         },
+        include: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Include',
+            description: '在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定, 同一路径同时命中两组时按纳入处理'
+        },
         prune_empty_dirs: {
             type: 'boolean',
             title: 'Prune Empty Dirs',
@@ -3177,6 +3185,11 @@ export const InventoryNodeResponseSchema = {
             title: 'Will Be Empty',
             default: false
         },
+        noise: {
+            type: 'boolean',
+            title: 'Noise',
+            default: false
+        },
         has_children: {
             type: 'boolean',
             title: 'Has Children',
@@ -3215,7 +3228,8 @@ export const InventoryReasonSchema = {
         'blacklist',
         'undersized',
         'empty_dir',
-        'explicit'
+        'explicit',
+        'orphan'
     ],
     title: 'InventoryReason'
 } as const;
@@ -3278,6 +3292,11 @@ export const InventorySummaryResponseSchema = {
         skipped_files: {
             type: 'integer',
             title: 'Skipped Files',
+            default: 0
+        },
+        blocked_dirs: {
+            type: 'integer',
+            title: 'Blocked Dirs',
             default: 0
         },
         scan_running: {

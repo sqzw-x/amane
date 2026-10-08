@@ -229,6 +229,18 @@
               "title": "Limit"
             },
             "description": "本页最多返回多少个子节点"
+          },
+          {
+            "name": "noise",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "是否列出系统与同步工具的产物",
+              "default": false,
+              "title": "Noise"
+            },
+            "description": "是否列出系统与同步工具的产物"
           }
         ],
         "responses": {
@@ -261,7 +273,7 @@
           "cleanup"
         ],
         "summary": "Get Cleanup Trash",
-        "description": "展开回收目录的历史内容: 产出回收目录来源的清单, 前端拿到要展开的目录再按页读.\n\n展开本身是只读遍历, 但代价随回收目录大小增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):\n窗口内已有的一份直接复用, 免得重新遍历整棵树并往存放里堆用不到的清单.",
+        "description": "展开回收站历史内容: 产出回收站来源的清单, 前端拿到要展开的目录再按页读.\n\n展开本身是只读遍历, 但代价随回收站体积增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):\n窗口内已有的一份直接复用, 免得重走整棵树并往存放里堆用不到的清单.",
         "operationId": "get_cleanup_trash",
         "parameters": [
           {
@@ -7578,6 +7590,14 @@
             "title": "Exclude",
             "description": "排除项: 库内为清单库根下的相对路径, 库外为绝对路径; 按路径分量匹配"
           },
+          "include": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Include",
+            "description": "在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定, 同一路径同时命中两组时按纳入处理"
+          },
           "prune_empty_dirs": {
             "type": "boolean",
             "title": "Prune Empty Dirs",
@@ -9210,6 +9230,11 @@
             "title": "Will Be Empty",
             "default": false
           },
+          "noise": {
+            "type": "boolean",
+            "title": "Noise",
+            "default": false
+          },
           "has_children": {
             "type": "boolean",
             "title": "Has Children",
@@ -9247,7 +9272,8 @@
           "blacklist",
           "undersized",
           "empty_dir",
-          "explicit"
+          "explicit",
+          "orphan"
         ],
         "title": "InventoryReason"
       },
@@ -9309,6 +9335,11 @@
           "skipped_files": {
             "type": "integer",
             "title": "Skipped Files",
+            "default": 0
+          },
+          "blocked_dirs": {
+            "type": "integer",
+            "title": "Blocked Dirs",
             "default": 0
           },
           "scan_running": {

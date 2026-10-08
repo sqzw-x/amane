@@ -40,11 +40,16 @@ export function InfiniteScrollSentinel({
     return () => observer.disconnect();
   }, [fetchRef, fetchingRef, hasNextPage]);
 
+  // 没有下一页时不占高度: 它挂在每个展开的目录里, 留白会随嵌套层数累加.
+  // 元素本身要保留, IntersectionObserver 得挂在它上面才会在滚到底时触发取下一页.
+  if (!hasNextPage && !isFetchingNextPage) {
+    return <Center ref={ref} />;
+  }
   return (
     <Center ref={ref} py="md">
       {isFetchingNextPage ? (
         <Loader size="sm" />
-      ) : hasNextPage && loadedLabel ? (
+      ) : loadedLabel ? (
         <Text size="sm" c="dimmed">
           {loadedLabel}
         </Text>

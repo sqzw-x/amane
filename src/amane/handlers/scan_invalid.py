@@ -1,4 +1,4 @@
-"""SCAN_INVALID: 只读遍历, 产出无效文件与「扫描时已空」目录的清单."""
+"""SCAN_INVALID: 只读遍历, 产出无效文件、残留目录与「扫描时已空」目录的清单."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..config import HotSettings
-from ..library import MEDIA_EXTENSIONS, InventoryStore, LibraryScan, scan_inventory
+from ..library import MEDIA_EXTENSIONS, InventoryStore, LibraryScan, OrphanScan, scan_inventory
 from ..utils.threads import path_is_dir
 from .models import ScanInvalidPayload, ScanInvalidResult
 from .protocol import TaskHandler, TaskResult
@@ -60,6 +60,14 @@ class ScanInvalidHandler(TaskHandler[ScanInvalidPayload, ScanInvalidResult]):
             recursive=recursive,
             patterns=payload.patterns or [],
             scan=scan,
+            orphan_scan=OrphanScan.from_library(
+                library_root=library_root,
+                scope_dir=scope_dir,
+                subtitle_extensions=library.subtitle_extensions,
+                trailer_pattern=library.trailer_pattern,
+                patterns=payload.patterns or [],
+                media_extensions=media_extensions,
+            ),
         )
         self._inventory_store.put(inventory)
         await self.report_progress(1, 1, "done")
@@ -68,6 +76,7 @@ class ScanInvalidHandler(TaskHandler[ScanInvalidPayload, ScanInvalidResult]):
             path=payload.path,
             inventory_id=inventory.inventory_id,
             entries=len(inventory.entries),
+            blocked_dirs=inventory.blocked.total,
         )
         return TaskResult(
             True,
@@ -79,5 +88,6 @@ class ScanInvalidHandler(TaskHandler[ScanInvalidPayload, ScanInvalidResult]):
                 truncated=inventory.truncated,
                 skipped_dirs=inventory.skipped_dirs,
                 skipped_files=inventory.skipped_files,
+                blocked_dirs=inventory.blocked.total,
             ),
         )

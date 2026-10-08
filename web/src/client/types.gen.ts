@@ -853,6 +853,12 @@ export type DeleteSubmission = {
      */
     exclude?: Array<string>;
     /**
+     * Include
+     *
+     * 在排除项内重新纳入的路径 (路径约定同 exclude); 与排除项互为祖先时按最深的一条判定, 同一路径同时命中两组时按纳入处理
+     */
+    include?: Array<string>;
+    /**
      * Prune Empty Dirs
      *
      * 删除本次腾空的目录 (库根与 .amane_trash 除外)
@@ -1586,6 +1592,10 @@ export type InventoryNodeResponse = {
      */
     will_be_empty?: boolean;
     /**
+     * Noise
+     */
+    noise?: boolean;
+    /**
      * Has Children
      */
     has_children?: boolean;
@@ -1598,7 +1608,7 @@ export type InventoryNodeResponse = {
 /**
  * InventoryReason
  */
-export type InventoryReason = 'blacklist' | 'undersized' | 'empty_dir' | 'explicit';
+export type InventoryReason = 'blacklist' | 'undersized' | 'empty_dir' | 'explicit' | 'orphan';
 
 /**
  * InventorySummaryResponse
@@ -1638,6 +1648,10 @@ export type InventorySummaryResponse = {
      * Skipped Files
      */
     skipped_files?: number;
+    /**
+     * Blocked Dirs
+     */
+    blocked_dirs?: number;
     /**
      * Scan Running
      */
@@ -4640,6 +4654,12 @@ export type GetCleanupInventoryNodesData = {
          * 本页最多返回多少个子节点
          */
         limit?: number;
+        /**
+         * Noise
+         *
+         * 是否列出系统与同步工具的产物
+         */
+        noise?: boolean;
     };
     url: '/api/libraries/{library_id}/cleanup/inventory/nodes';
 };

@@ -189,8 +189,8 @@
     "subtitle": "Subtitle Template"
   },
   "cleanup": {
-    "tooltip": "Clean unwanted files and empty directories",
-    "title": "Clean unwanted files",
+    "tooltip": "Clean up unwanted files, leftover folders and empty folders",
+    "title": "Clean up files",
     "scan": "Start scan",
     "rescan": "Rescan",
     "scanStarted": "Scan started",
@@ -201,7 +201,8 @@
     "skipped": "{{dirs}} directories and {{files}} files were not covered",
     "selected": "{{count}} selected, about {{size}}",
     "empty": "Nothing to clean",
-    "expand": "Expand",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
     "willBeEmpty": "Will be emptied",
     "hardlink": "Hard link",
     "hardlinkHint": "Deleting frees no extra space",
@@ -214,7 +215,8 @@
       "blacklist": "File blacklist",
       "undersized": "Too small",
       "empty_dir": "Empty directory",
-      "explicit": "Selected"
+      "explicit": "Selected",
+      "orphan": "Leftover folder"
     },
     "notice": {
       "missing": "No longer on disk: {{path}}",
@@ -229,19 +231,25 @@
     "selected_other": "{{count}} selected, about {{size}}",
     "nodeCount_one": "{{count}} items",
     "nodeCount_other": "{{count}} items",
-    "tabRules": "Unwanted files",
+    "tabRules": "Cleanable items",
     "tabTrash": "Trash",
     "previewTitle": "Confirm what will be deleted",
     "deleteMenu": "Delete",
     "deleteRecord": "Record only",
     "deleteFiles": "Delete files",
     "deleteWorkDir": "Delete containing folder",
-    "scanning": "Scanning for unwanted files…",
+    "scanning": "Scanning…",
     "scanningHint": "You can close this panel; the scan keeps running",
     "scanFailed": "Last scan failed",
     "symlink": "Link",
     "symlinkHint": "Deletes the link inside the library, not the file it points to",
     "truncatedMore_one": "{{count}} more item is not included",
-    "truncatedMore_other": "{{count}} more items are not included"
+    "truncatedMore_other": "{{count}} more items are not included",
+    "blocked_one": "{{count}} more folder was left out: unrecognized files",
+    "blocked_other": "{{count}} more folders were left out: unrecognized files",
+    "noise": "System file",
+    "noiseHint": "Created by the OS or a sync tool; deleted along with the folder",
+    "blocked": "{{count}} more folders were left out: unrecognized files",
+    "showNoise": "Show system files"
   }
 }

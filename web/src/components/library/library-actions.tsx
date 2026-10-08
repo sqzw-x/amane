@@ -29,7 +29,7 @@ interface LibraryActionButtonsProps {
   onDeleted?: () => void;
 }
 
-/** 扫描 / 整理 / 清理无效文件 / 配置 / 删除. 列表卡片与详情表体顶栏共用. */
+/** 扫描 / 整理 / 清理文件 / 配置 / 删除. 列表卡片与详情表体顶栏共用. */
 export function LibraryActionButtons({
   library,
   onConfigure,

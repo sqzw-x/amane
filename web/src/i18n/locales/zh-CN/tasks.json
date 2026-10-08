@@ -361,6 +361,10 @@
         "label": "排除项",
         "description": "库内为清单库根下的相对路径 (按路径分量, 含其子树), 库外为绝对路径"
       },
+      "include": {
+        "label": "纳入项",
+        "description": "排除项内重新纳入的路径; 与排除项互为祖先时按最深的一条判定, 同深时按纳入处理"
+      },
       "prune_empty_dirs": {
         "label": "删除腾空的目录",
         "description": "库根与 .amane_trash 除外"

@@ -25,6 +25,8 @@ class InventoryNodeResponse(BaseModel):
     """子树内的条目大小, 同 inode 只算一次."""
     will_be_empty: bool = False
     """清单条目全部删除后该目录是否会空 (含子目录递归)."""
+    noise: bool = False
+    """系统与同步工具的产物 (`InventoryEntry.noise`); 面板默认折叠这一类, 由用户展开核对."""
     has_children: bool = False
     children: list[InventoryNodeResponse] | None = None
 
@@ -57,6 +59,8 @@ class InventorySummaryResponse(BaseModel):
     """触顶后未纳入清单的候选数; 截断时面板据此提示还有多少没看到."""
     skipped_dirs: int = 0
     skipped_files: int = 0
+    blocked_dirs: int = 0
+    """判定为候选但因子树里有无法识别的文件而未登记的目录数, 与「读不到」的 skipped 分开计."""
     scan_running: bool = False
     """该库是否有扫描无效文件任务在跑, 避免重复触发."""
     last_scan_error: str | None = None

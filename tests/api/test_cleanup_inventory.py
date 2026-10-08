@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,7 +12,7 @@ import pytest
 from amane.api.routes.cleanup import MAX_NODE_PAGE_SIZE, TRASH_REUSE_WINDOW
 from amane.db.models import TaskType
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidPayload
-from amane.library import InventorySource, scan_inventory
+from amane.library import ORPHAN_COOLDOWN_SECONDS, InventorySource, OrphanScan, scan_inventory
 from tests.helpers import await_for
 
 if TYPE_CHECKING:
@@ -28,6 +29,17 @@ async def _library(client: AsyncClient, root: Path, **extra: object) -> int:
     return int(created.json()["id"])
 
 
+def _orphan_scan(root: Path) -> OrphanScan:
+    return OrphanScan.from_library(
+        library_root=root,
+        scope_dir=root,
+        subtitle_extensions=(),
+        trailer_pattern=None,
+        patterns=[],
+        media_extensions=None,
+    )
+
+
 def _store_inventory(
     app: FastAPI,
     root: Path,
@@ -36,6 +48,8 @@ def _store_inventory(
     recursive: bool = True,
     patterns: list[str] | None = None,
     limit: int = 20000,
+    orphan_scan: OrphanScan | None = None,
+    now: float | None = None,
     **kwargs: object,
 ):
     from amane.library import LibraryScan
@@ -48,6 +62,8 @@ def _store_inventory(
         patterns=patterns or [],
         scan=LibraryScan(**kwargs),  # type: ignore[arg-type]
         limit=limit,
+        orphan_scan=orphan_scan,
+        now=now,
     )
     app.state.runtime.inventory_store.put(inventory)
     return inventory
@@ -481,11 +497,51 @@ async def test_inventory_reports_last_scan_failure(
         TaskType.SCAN_INVALID, ScanInvalidPayload(library_id=library_id, path=str(safe_path / "lib" / "gone"))
     )
     assert task.id is not None
-    await repo.fail_task(task.id, error="不是目录: gone")
+    await repo.fail_task(task.id, error="Not a directory: gone")
 
     resp = await client.get(f"libraries/{library_id}/cleanup/inventory")
 
     body = resp.json()
     assert body["exists"] is False
     assert body["scan_running"] is False
-    assert body["last_scan_error"] == "不是目录: gone"
+    assert body["last_scan_error"] == "Not a directory: gone"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_node_has_children_respects_noise_filter(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+    """折叠系统与同步工具的产物时, 只剩这类产物的行不报告可展开: 否则面板给出一个展开后为空的行."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root)
+    (root / "old").mkdir(parents=True)
+    (root / "old" / ".DS_Store").write_bytes(b"x")
+    _store_inventory(
+        app, root, library_id, orphan_scan=_orphan_scan(root), now=time.time() + 2 * ORPHAN_COOLDOWN_SECONDS
+    )
+
+    page = await _nodes(client, library_id)
+
+    top = {node["name"]: node for node in page["items"]}
+    assert top["old"]["has_children"] is False
+
+    shown = await _nodes(client, library_id, path="old", noise="true")
+
+    assert shown["total"] == 1
+    assert shown["items"][0]["name"] == ".DS_Store"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_inventory_reports_blocked_dirs(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
+    """未登记的候选目录在状态接口上可见: 面板据此提示「另有 N 个目录未纳入」."""
+    root = safe_path / "lib"
+    library_id = await _library(client, root)
+    (root / "old").mkdir(parents=True)
+    (root / "old" / "poster.jpg").write_bytes(b"x")
+    (root / "old" / "notes.txt").write_bytes(b"x")
+    _store_inventory(
+        app, root, library_id, orphan_scan=_orphan_scan(root), now=time.time() + 2 * ORPHAN_COOLDOWN_SECONDS
+    )
+
+    resp = await client.get(f"libraries/{library_id}/cleanup/inventory")
+
+    assert resp.status_code == 200
+    assert resp.json()["blocked_dirs"] == 1

@@ -1,7 +1,5 @@
 import {
-  ActionIcon,
   Badge,
-  Box,
   Button,
   Center,
   Checkbox,
@@ -13,9 +11,23 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconChevronRight, IconFile, IconFolder } from "@tabler/icons-react";
+import {
+  IconArrowsDiagonal,
+  IconArrowsDiagonalMinimize,
+  IconFile,
+  IconFolder,
+  IconFolderOpen,
+} from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { memo, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  memo,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   getCleanupInventoryNodesInfiniteOptions,
@@ -33,14 +45,67 @@ import classes from "./inventory-tree.module.css";
 /** 一层最多渲染这么多条, 滚到底再取下一页: 一份清单可能有上万条候选. */
 const NODE_PAGE_SIZE = 200;
 
-/** 清单里的路径前缀匹配: 与后端一致按路径分量, 不用字符串前缀. */
+/** 深度交给样式表算缩进与底色; React 的 CSSProperties 不含自定义属性, 这里显式补上. */
+type DepthStyle = CSSProperties & { "--row-depth": number };
+
+function depthStyle(depth: number): DepthStyle {
+  return { "--row-depth": depth };
+}
+
+/** 清单里的路径前缀匹配: 与后端一致按路径分量, 不用字符串前缀. 空前缀即库根, 一切都在它之下. */
 function isUnder(path: string, prefix: string): boolean {
-  if (path === prefix) return true;
+  if (prefix === "" || path === prefix) return true;
   return path.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
 }
 
-function coveringPrefix(excluded: string[], path: string): string | undefined {
-  return excluded.find((prefix) => isUnder(path, prefix));
+/**
+ * 一条勾选规则. `keep` 是排除项 (不删), `restore` 是在排除项内重新纳入 (删).
+ *
+ * 只有前缀集合表达不了「保留这个目录, 但删掉里面的某一项」, 因此规则可以互相嵌套,
+ * 路径互为祖先时按最深的一条判定 — 用户刚点的那条总是更深.
+ */
+interface SelectionRule {
+  path: string;
+  kind: "keep" | "restore";
+  count: number;
+  bytes: number;
+}
+
+function ruleDepth(path: string): number {
+  return path.split("/").length;
+}
+
+/** 决定这一项自身状态的规则: 命中它的最深一条; 没有任何规则即默认勾选 (删). */
+function deepestRule(rules: readonly SelectionRule[], path: string): SelectionRule | undefined {
+  let best: SelectionRule | undefined;
+  for (const rule of rules) {
+    if (!isUnder(path, rule.path)) continue;
+    if (best === undefined || ruleDepth(rule.path) > ruleDepth(best.path)) best = rule;
+  }
+  return best;
+}
+
+/** 子树里不会被删除的条目数与字节数: 自身规则按整棵算, 内部规则按它与自身相反的方向加减. */
+function keptTotals(
+  rules: readonly SelectionRule[],
+  path: string,
+  count: number,
+  bytes: number,
+): { entries: number; bytes: number } {
+  const own = deepestRule(rules, path);
+  const ownKept = own?.kind === "keep";
+  let entries = ownKept ? count : 0;
+  let keptBytes = ownKept ? bytes : 0;
+  for (const rule of rules) {
+    if (rule.path === path || !isUnder(rule.path, path)) continue;
+    const sign = rule.kind === "keep" ? 1 : -1;
+    entries += sign * rule.count;
+    keptBytes += sign * rule.bytes;
+  }
+  return {
+    entries: Math.min(Math.max(entries, 0), count),
+    bytes: Math.min(Math.max(keptBytes, 0), bytes),
+  };
 }
 
 export interface InventoryTreeProps {
@@ -62,9 +127,14 @@ export function InventoryTree({
 }: InventoryTreeProps) {
   const { t } = useTranslation(["library", "common"]);
   const queryClient = useQueryClient();
-  const [excluded, setExcluded] = useState<string[]>([]);
-  const [loadedNodes, setLoadedNodes] = useState<Record<string, InventoryNodeResponse>>({});
-  const level = useInventoryNodeLevel({ libraryId, inventoryId, path });
+  const [rules, setRules] = useState<SelectionRule[]>([]);
+  // 系统与同步工具的产物默认折叠: 它们同样会被删除, 但多数时候不需要逐条核对; 用户可展开查看.
+  const [showNoise, setShowNoise] = useState(false);
+  // 展开状态提在树上: 全局展开是模式, 逐个收起记进 collapsed, 因此新挂载的行也跟着展开.
+  const [expandAll, setExpandAll] = useState(false);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const level = useInventoryNodeLevel({ libraryId, inventoryId, path, noise: showNoise });
   const deleteMutation = useMutation({
     ...submitTaskMutation(),
     onSuccess: () => {
@@ -81,41 +151,50 @@ export function InventoryTree({
       }),
   });
 
-  // 排除项按前缀记录且互不嵌套 (见 toggle), 因此选中量 = 清单总量减去被排除节点的子树量.
+  // 选中量 = 清单总量减去规则保下来的子树量.
   const totals = useMemo(() => {
-    let entries = 0;
-    let bytes = 0;
-    for (const prefix of excluded) {
-      const node =
-        loadedNodes[prefix] ?? level.nodes.find((candidate) => candidate.path === prefix);
-      if (!node) continue;
-      entries += node.entry_count;
-      bytes += node.entry_bytes;
-    }
+    const kept = keptTotals(rules, path, level.entryCount, level.entryBytes);
     return {
-      entries: Math.max(0, level.entryCount - entries),
-      bytes: Math.max(0, level.entryBytes - bytes),
+      entries: Math.max(0, level.entryCount - kept.entries),
+      bytes: Math.max(0, level.entryBytes - kept.bytes),
     };
-  }, [excluded, loadedNodes, level.nodes, level.entryCount, level.entryBytes]);
+  }, [rules, path, level.entryCount, level.entryBytes]);
 
-  const registerNodes = useCallback(
-    (loaded: InventoryNodeResponse[]) =>
-      setLoadedNodes((prev) => {
-        const next = { ...prev };
-        for (const node of loaded) next[node.path] = node;
+  // 全局展开时「收起一个」记进 collapsed, 而不是抹掉模式本身: 之后挂载的行仍应展开.
+  const toggleExpand = useCallback(
+    (nodePath: string) => {
+      const update = (prev: ReadonlySet<string>) => {
+        const next = new Set(prev);
+        if (next.has(nodePath)) next.delete(nodePath);
+        else next.add(nodePath);
         return next;
-      }),
-    [],
+      };
+      if (expandAll) setCollapsed(update);
+      else setExpanded(update);
+    },
+    [expandAll],
   );
 
   // 依赖为空: 翻页只新增行, 已渲染的行靠 memo 挡住重渲染.
   const toggle = useCallback((node: InventoryNodeResponse) => {
-    setExcluded((prev) => {
-      const covering = coveringPrefix(prev, node.path);
-      if (covering === node.path) return prev.filter((prefix) => prefix !== node.path);
-      if (covering) return prev; // 祖先已排除: 恢复本节点会连带兄弟节点.
-      // 已排除的后代并入本节点: 两个前缀会各减一次同一棵子树, 选中量就比实际执行集合少.
-      return [...prev.filter((prefix) => !isUnder(prefix, node.path)), node.path];
+    setRules((prev) => {
+      // 后代随本项一起定: 本项一旦有规则, 内部的规则就被它覆盖, 留着只会让计数重复加减.
+      const outside = prev.filter(
+        (rule) => rule.path !== node.path && !isUnder(rule.path, node.path),
+      );
+      const own = deepestRule(prev, node.path);
+      // 本项自己就有规则: 点一下翻掉它, 回到祖先 (或默认) 的状态.
+      if (own?.path === node.path) return outside;
+      // 被祖先的规则覆盖或没有任何规则: 补一条与当前状态相反的规则, 本项自己的勾选随之翻转.
+      return [
+        ...outside,
+        {
+          path: node.path,
+          kind: own?.kind === "keep" ? "restore" : "keep",
+          count: node.entry_count,
+          bytes: node.entry_bytes,
+        },
+      ];
     });
   }, []);
 
@@ -134,7 +213,8 @@ export function InventoryTree({
         type: "delete",
         library_id: libraryId,
         inventory_id: inventoryId,
-        exclude: excluded,
+        exclude: rules.filter((rule) => rule.kind === "keep").map((rule) => rule.path),
+        include: rules.filter((rule) => rule.kind === "restore").map((rule) => rule.path),
         prune_empty_dirs: true,
       },
     });
@@ -143,14 +223,40 @@ export function InventoryTree({
   return (
     // 面板给固定高度时撑满它, 让按钮行贴底; 嵌在自适应高度的弹窗里时按内容收缩.
     <Stack gap="xs" style={{ flex: "1 1 auto", minHeight: 0 }}>
-      <Group justify="space-between">
+      <Group justify="space-between" gap="sm" wrap="wrap">
         <Text size="sm">
           {t("cleanup.selected", { count: totals.entries, size: formatFileSize(totals.bytes) })}
         </Text>
-        {header}
+        <Group gap="sm" wrap="wrap" justify="flex-end">
+          <Checkbox
+            size="xs"
+            checked={showNoise}
+            label={t("cleanup.showNoise")}
+            onChange={(event) => setShowNoise(event.currentTarget.checked)}
+          />
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={
+              expandAll ? (
+                <IconArrowsDiagonalMinimize size={14} />
+              ) : (
+                <IconArrowsDiagonal size={14} />
+              )
+            }
+            onClick={() => {
+              setExpandAll((prev) => !prev);
+              setExpanded(new Set());
+              setCollapsed(new Set());
+            }}
+          >
+            {expandAll ? t("cleanup.collapseAll") : t("cleanup.expandAll")}
+          </Button>
+          {header}
+        </Group>
       </Group>
       <ScrollArea.Autosize
-        mah="46vh"
+        mah={{ base: "68vh", sm: "46vh" }}
         className={classes.scroll}
         py="sm"
         style={{ flex: "1 1 auto", minHeight: 0 }}
@@ -164,7 +270,7 @@ export function InventoryTree({
             {t("cleanup.empty")}
           </Text>
         ) : (
-          <Stack gap={6}>
+          <Stack gap={0}>
             {level.nodes.map((node) => (
               <InventoryNodeRow
                 key={node.path}
@@ -172,9 +278,13 @@ export function InventoryTree({
                 inventoryId={inventoryId}
                 node={node}
                 depth={0}
-                excluded={excluded}
+                rules={rules}
+                showNoise={showNoise}
+                expandAll={expandAll}
+                expanded={expanded}
+                collapsed={collapsed}
                 onToggle={toggle}
-                onNodes={registerNodes}
+                onToggleExpand={toggleExpand}
               />
             ))}
             <InfiniteScrollSentinel
@@ -210,6 +320,7 @@ interface InventoryNodeLevelProps {
   libraryId: number;
   inventoryId: string;
   path: string;
+  noise?: boolean;
   enabled?: boolean;
 }
 
@@ -218,12 +329,13 @@ function useInventoryNodeLevel({
   libraryId,
   inventoryId,
   path,
+  noise = false,
   enabled = true,
 }: InventoryNodeLevelProps) {
   const query = useInfiniteQuery({
     ...getCleanupInventoryNodesInfiniteOptions({
       path: { library_id: libraryId },
-      query: { path, inventory_id: inventoryId, limit: NODE_PAGE_SIZE },
+      query: { path, inventory_id: inventoryId, limit: NODE_PAGE_SIZE, noise },
     }),
     enabled,
     initialPageParam: 0,
@@ -247,9 +359,13 @@ interface InventoryNodeRowProps {
   inventoryId: string;
   node: InventoryNodeResponse;
   depth: number;
-  excluded: string[];
+  rules: readonly SelectionRule[];
+  showNoise: boolean;
+  expandAll: boolean;
+  expanded: ReadonlySet<string>;
+  collapsed: ReadonlySet<string>;
   onToggle: (node: InventoryNodeResponse) => void;
-  onNodes: (nodes: InventoryNodeResponse[]) => void;
+  onToggleExpand: (path: string) => void;
 }
 
 /** 行是纯展示 + 一层子节点查询: memo 让翻页只挂载新增的行, 不重渲染已加载的. */
@@ -258,111 +374,125 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
   inventoryId,
   node,
   depth,
-  excluded,
+  rules,
+  showNoise,
+  expandAll,
+  expanded,
+  collapsed,
   onToggle,
-  onNodes,
+  onToggleExpand,
 }: InventoryNodeRowProps) {
   const { t } = useTranslation(["library", "common"]);
-  const [expanded, setExpanded] = useState(false);
-  const covering = coveringPrefix(excluded, node.path);
-  const covered = covering !== undefined;
-  // 子树里只要有一项被取消勾选, 整份清单执行完这个目录也不会空.
-  const keepsSomething = excluded.some(
-    (prefix) => prefix !== node.path && isUnder(prefix, node.path),
-  );
+  // 子树里保下来的条目数决定这一项的勾选状态: 全保即不勾, 保一部分即半选.
+  const kept = keptTotals(rules, node.path, node.entry_count, node.entry_bytes);
+  const checked = kept.entries < node.entry_count;
+  const partial = checked && kept.entries > 0;
+  // 有子节点的目录靠点条目本身展开; 其余条目点条目本身即切换选中.
+  const expandable = node.kind === "dir" && Boolean(node.has_children);
+  const isOpen = expandAll ? !collapsed.has(node.path) : expanded.has(node.path);
   const children = useInventoryNodeLevel({
     libraryId,
     inventoryId,
     path: node.path,
-    enabled: expanded && node.has_children,
+    noise: showNoise,
+    enabled: isOpen && expandable,
   });
 
-  useEffect(() => {
-    if (children.nodes.length > 0) onNodes(children.nodes);
-  }, [children.nodes, onNodes]);
-
   const marker = node.reason ? t(`cleanup.reason.${node.reason}`) : null;
+  const activate = () => {
+    if (expandable) onToggleExpand(node.path);
+    else onToggle(node);
+  };
+  const onActivateKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    activate();
+  };
+
   return (
-    <Box
-      className={classes.row}
-      py={6}
-      pr="sm"
-      pl={`calc(var(--mantine-spacing-xs) + ${depth * 20}px)`}
-    >
-      <Group gap="sm" wrap="nowrap">
-        {node.has_children ? (
-          <ActionIcon
-            variant="subtle"
+    <div className={classes.node} style={depthStyle(depth)}>
+      {/* 点击范围是整个行: 内容上下方的内边距也算, 只有勾选框留给切换选中. */}
+      <div className={classes.row} data-clickable onClick={activate}>
+        <span className={classes.checkbox} onClick={(event) => event.stopPropagation()}>
+          <Checkbox
+            className={classes.checkboxBox}
             size="sm"
-            aria-label={t("cleanup.expand")}
-            onClick={() => setExpanded((prev) => !prev)}
+            checked={checked}
+            indeterminate={partial}
+            onChange={() => onToggle(node)}
+          />
+        </span>
+        <div
+          className={classes.body}
+          role="button"
+          tabIndex={0}
+          aria-expanded={expandable ? isOpen : undefined}
+          onKeyDown={onActivateKeyDown}
+        >
+          {node.kind === "dir" ? (
+            isOpen ? (
+              <IconFolderOpen size={18} />
+            ) : (
+              <IconFolder size={18} />
+            )
+          ) : (
+            <IconFile size={18} />
+          )}
+          {node.kind === "symlink" ? (
+            <Tooltip label={t("cleanup.symlinkHint")}>
+              <Badge size="sm" variant="light" color="blue">
+                {t("cleanup.symlink")}
+              </Badge>
+            </Tooltip>
+          ) : null}
+          <Text
+            className={classes.name}
+            size="sm"
+            fw={500}
+            c={node.noise ? "dimmed" : undefined}
+            truncate
+            title={node.path}
           >
-            <IconChevronRight
-              size={16}
-              style={{
-                transform: expanded ? "rotate(90deg)" : undefined,
-                transition: "transform 120ms",
-              }}
-            />
-          </ActionIcon>
-        ) : (
-          <Box w={26} />
-        )}
-        <Checkbox
-          size="sm"
-          checked={!covered}
-          disabled={covered && covering !== node.path}
-          onChange={() => onToggle(node)}
-        />
-        {node.kind === "dir" ? <IconFolder size={16} /> : <IconFile size={16} />}
-        {node.kind === "symlink" ? (
-          <Tooltip label={t("cleanup.symlinkHint")}>
-            <Badge size="sm" variant="light" color="blue">
-              {t("cleanup.symlink")}
-            </Badge>
-          </Tooltip>
-        ) : null}
-        <Text size="sm" fw={500} truncate title={node.path}>
-          {node.name}
-        </Text>
-        {node.will_be_empty &&
-        node.kind === "dir" &&
-        !node.reason &&
-        !covered &&
-        !keepsSomething ? (
-          <Badge size="sm" variant="light" color="orange">
-            {t("cleanup.willBeEmpty")}
-          </Badge>
-        ) : null}
-        {node.hardlink ? (
-          <Tooltip label={t("cleanup.hardlinkHint")}>
-            <Badge size="sm" variant="light" color="gray">
-              {t("cleanup.hardlink")}
-            </Badge>
-          </Tooltip>
-        ) : null}
-        {marker ? (
-          <Badge size="sm" variant="default">
-            {marker}
-          </Badge>
-        ) : null}
-        {node.kind !== "dir" ? (
-          <Text size="sm" c="dimmed">
-            {formatFileSize(node.size)}
+            {node.name}
           </Text>
-        ) : null}
-        {node.entry_count > 1 ? (
-          <Text size="sm" c="dimmed">
-            {t("cleanup.nodeCount", { count: node.entry_count })}
-          </Text>
-        ) : null}
-      </Group>
-      {expanded && node.has_children ? (
-        <Stack gap={6} mt={2}>
+          {/* 徽章与体积整体换行 (窄屏) 或整体保持不压缩, 都不拆开单个元素. */}
+          <span className={classes.meta}>
+            {node.will_be_empty && node.kind === "dir" && !node.reason && kept.entries === 0 ? (
+              <Badge size="sm" variant="light" color="orange">
+                {t("cleanup.willBeEmpty")}
+              </Badge>
+            ) : null}
+            {node.hardlink ? (
+              <Tooltip label={t("cleanup.hardlinkHint")}>
+                <Badge size="sm" variant="light" color="gray">
+                  {t("cleanup.hardlink")}
+                </Badge>
+              </Tooltip>
+            ) : null}
+            {marker ? (
+              <Badge size="sm" variant="default">
+                {marker}
+              </Badge>
+            ) : null}
+            {node.kind !== "dir" ? (
+              <Text size="sm" c="dimmed">
+                {formatFileSize(node.size)}
+              </Text>
+            ) : null}
+            {node.entry_count > 1 ? (
+              <Text size="sm" c="dimmed">
+                {t("cleanup.nodeCount", { count: node.entry_count })}
+              </Text>
+            ) : null}
+          </span>
+        </div>
+      </div>
+      {isOpen && expandable ? (
+        <div className={classes.children}>
           {children.isLoading ? (
-            <Group pl={(depth + 1) * 16} gap="xs">
+            <div className={classes.pending} style={depthStyle(depth + 1)}>
               <Loader size="xs" />
-            </Group>
+            </div>
           ) : (
             <>
               {children.nodes.map((child) => (
@@ -372,9 +502,13 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
                   inventoryId={inventoryId}
                   node={child}
                   depth={depth + 1}
-                  excluded={excluded}
+                  rules={rules}
+                  showNoise={showNoise}
+                  expandAll={expandAll}
+                  expanded={expanded}
+                  collapsed={collapsed}
                   onToggle={onToggle}
-                  onNodes={onNodes}
+                  onToggleExpand={onToggleExpand}
                 />
               ))}
               <InfiniteScrollSentinel
@@ -388,8 +522,8 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
               />
             </>
           )}
-        </Stack>
+        </div>
       ) : null}
-    </Box>
+    </div>
   );
 });

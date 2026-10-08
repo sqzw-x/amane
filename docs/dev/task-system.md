@@ -12,14 +12,14 @@
 | `REFRESH` | 扫描增删、注册 MediaFile、fan-out SCRAPE (`use_cache` 原样转发); 整库范围时顺带写入清理清单 | 移动文件、写 NFO |
 | `SCRAPE` | 联网聚合 → DB → Resource; `media_file_id` 只作查询输入 (番号 / oshash) 与回写关联 | 库内移动 / NFO |
 | `ORGANIZE` | 范围内已有 Metadata 的 MediaFile 按路径模板落盘, 并删除本次腾空的目录; 缺资源时 `acquire` 可出站 HTTP | 扫描磁盘、运行爬虫、修改 Metadata |
-| `SCAN_INVALID` | 遍历库产出清理清单 (文件黑名单 / 小于最小视频大小的文件 / 空目录), 写入进程内清单存放 | 一切写操作 |
-| `DELETE` | 按清单标识删除文件与目录, 删对应索引, 按需剪枝 | 重新扫描、重新生成清单、写 NFO、回收 Resource |
+| `SCAN_INVALID` | 遍历库产出清理清单 (黑名单 / 过小视频 / 残留目录 / 已空目录), 写入进程内清单存放 | 一切写操作 |
+| `DELETE` | 按清单标识删除文件与目录, 删对应索引, 按需剪枝 | 整库重新扫描、重新生成清单、写 NFO、回收 Resource |
 
 `CLEANUP` / `UPSCALE` 扫描 DB / Resource; `ACTOR_SCRAPE` 刮人物; `R18_IMPORT` 导入 dump. 上述类型均不执行影片落盘.
 
 不允许 ScrapeHandler 或 Watcher 提交 ORGANIZE / DELETE — Watcher 只注册文件并入队 SCRAPE; 完整的扫描、刮削与落盘须提交 REFRESH, 再提交 ORGANIZE. ORGANIZE 可用 `priority=-1` 跟在刮削之后, 但该优先级不使 ORGANIZE 等待刮削完成: 当时尚未刮削完成的文件会被跳过, 须再次运行 ORGANIZE.
 
-ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显式 `path` 按前缀过滤, `media_file_ids` 为勾选快照 (含其它库的 id 则 422); 后两者同时给出则 422. 库根必须是已存在的目录, 否则失败; `media_file_ids` 未给出且 path 为子目录时该子目录也必须存在 — 避免网络盘掉线时把选中行当失效索引删掉. 无 Metadata 的行与命中文件黑名单 / 小于最小视频大小 / 预告片规则的行跳过落盘; 路径落在 `.amane_trash` 内的行删除索引. SCAN_INVALID 的 `path` 同样可限定子目录. 整理默认与预告片跳过正则见 [data-model.md](data-model.md).
+ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显式 `path` 按前缀过滤, `media_file_ids` 为勾选快照 (含其它库的 id 则 422); 后两者同时给出则 422. 库根必须是已存在的目录, 否则失败; `media_file_ids` 未给出且 path 为子目录时该子目录也必须存在 — 避免网络盘掉线时把选中行当失效索引删掉. 无 Metadata 的行与命中黑名单 / 过小 / 预告片规则的行跳过落盘; 路径落在 `.amane_trash` 内的行删除索引. SCAN_INVALID 的 `path` 同样可限定子目录. 整理默认与预告片跳过正则见 [data-model.md](data-model.md).
 
 入队互斥在 `create_task`: queued / running 的 ACTOR_SCRAPE 按 `payload.actor_id` 复用已有行; ORGANIZE 与 DELETE 每次提交都新建行, 禁止复用, 同库的二者共用 `LibraryTaskLocks` 在执行期串行 (都在同一棵树上动文件). 不同库 / 不同演员仍并行. API、Agent、链式入队、retry 都经由 `create_task`, Worker 不按类型加锁; 终态之后允许再入队; 互斥不比较 payload 其它字段. SQLite 默认 DEFERRED 事务里两个 session 的 SELECT 都会在写锁前看到空表, 因此检查与插入须在 Repository 上串行化 (单进程).
 
@@ -41,21 +41,21 @@ ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显
 
 `RefreshPayload` 的 `scan` / `scrape` / `use_cache` 取值语义见 `handlers/models.py`; 落盘另交 ORGANIZE.
 
-扫描遍历经由 `scan_inventory` 的显式递归 (`@in_thread`, 一次归类为跳过 / 无效 / 媒体, 顺带产出清理清单与读错误计数), 与库内索引的差集在 Python 计算. 不允许将整棵树的路径放入 SQL `IN` / `NOT IN` — 按批拆分时 `NOT IN` 会把其它批里真实存在的文件误判为失效; 仅 `remove` 时对库内记录 `exists`, 不遍历磁盘树. fan-out 必须 `list_media_files(..., limit=None)`, 默认 50 是列表分页不是批量任务上限. `MediaFile.path` 的写入、按路径查找、有效 / 失效集合差一律 NFC, 从库内路径打开 / 判断存在 / 落盘必须经 `existing_disk_path`.
+扫描遍历经由 `scan_inventory` 的显式递归 (`@in_thread`, 一次分类为跳过 / 无效 / 媒体, 顺带产出清理清单与读错误计数), 与库内索引的差集在 Python 计算. 不允许将整棵树的路径放入 SQL `IN` / `NOT IN` — 按批拆分时 `NOT IN` 会把其它批里真实存在的文件误判为失效; 仅 `remove` 时对库内记录 `exists`, 不遍历磁盘树. fan-out 必须 `list_media_files(..., limit=None)`, 默认 50 是列表分页不是批量任务上限. `MediaFile.path` 的写入、按路径查找、有效 / 失效集合差一律 NFC, 从库内路径打开 / 判断存在 / 落盘必须经 `existing_disk_path`.
 
 文件注册 (watcher 与 REFRESH 共用 `register_media_file`) 只写路径, 不计算 oshash; 指纹只在 SCRAPE 时按需计算 (本次可用来源中有声明 `uses_file_hash` trait 且 `oshash` 为空), 失败留 `None`, 不阻断刮削. REFRESH 仅在指定 library 下运行, 提交不接受裸 path; 不入库只刮削由 `ScrapeSubmission` 的 by-number 纯查询路径表达.
 
 ## 站点级复用
 
-SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完全不联网的纯整理由 ORGANIZE 承担. 它总是进入聚合, 但当 `CacheKind.metadata ∈ use_cache` 时把 `Metadata.raw` 作为 `cache` 传入, 请求某站前按 `cache_key` (`site` 或 `site:lang`) 查快照, 命中即还原并跳过爬虫调用, 未命中的站点按获取图请求. 不含 `metadata` 时全部站点强制重爬; 不含 `trans` 时跳过译文缓存读取 (仍写入), 见 [llm.md](llm.md). 复用与新结果统一写入 `fetched`, 输出 `raw` 为两者合并; 快照含非法字段时降级为正常 fetch.
+SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完全不联网的纯整理由 ORGANIZE 承担. 它总是进入聚合, 但当 `CacheKind.metadata ∈ use_cache` 时把 `Metadata.raw` 作为 `cache` 传入, 请求某站前按 `cache_key` (`site` 或 `site:lang`) 查快照, 命中即还原并跳过爬虫调用, 未命中的站点按抓取图请求. 不含 `metadata` 时全部站点强制重爬; 不含 `trans` 时跳过译文缓存读取 (仍写入), 见 [llm.md](llm.md). 复用与新结果统一写入 `fetched`, 输出 `raw` 为两者合并; 快照含非法字段时降级为正常 fetch.
 
 ## 字段级多源聚合
 
-`aggregate` (`src/amane/aggregate/`) 先把优先级配置编译成**获取图** (`build_graph`), 再分两段执行 (`execute_graph`):
+`aggregate` (`src/amane/aggregate/`) 先把优先级配置编译成**抓取图** (`build_graph`), 再分两段执行 (`execute_graph`):
 
-- **建图**: handler 先把 `content_routes[type]`、稀疏 `field_priority` 与稀疏 `field_blacklist` 编成每字段站点链 (见 [config.md](config.md)); `content_routes` 是该类型资格真值, 被全部字段排除的站不产生节点. 站点 + 语言唯一确定一个 `FetchNode` (`cache_key`); 站点在任一字段上需要语言时统一用带语言节点.
-- **执行**: 未声明依赖的节点并发请求; 声明 `SourceTrait.NEEDS_PARTIAL` 的来源 (按来源目录的 `traits` 判定) 在第二段并发, 段间注入只读的单源字段聚合 (`partial_result`, 深拷贝). 节点不因标量已满足而跳过. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿链继续, 不调用 `invoke_source` (因此不会记成 unexpected).
-- **取值**: 单源字段沿链取第一个非空值 (判定为真值, `0` / 空串 / 空列表都算空), 空值继续回退, 链上仍有未执行节点时中断该字段; 只有非空值写入 `field_sources`. 多源字段 (URL / score / extrafanart) 在全部请求结束后按该字段 `field_chains` 拼接, 不按返回先后排列; 某站未返回或该字段为空则跳过. 单源字段可以全空: 只要有来源返回结果, 任务仍成功. 落库跳过锁定字段, 见 [data-model.md](data-model.md).
+- **建图**: handler 先把 `content_routes[type]`、稀疏 `field_priority` 与稀疏 `field_blacklist` 编成每字段站点链 (见 [config.md](config.md)); `content_routes` 是该类型资格真值, 被全部字段黑名单的站不产生节点. 站点 + 语言唯一确定一个 `FetchNode` (`cache_key`); 站点在任一字段上需要语言时统一用带语言节点.
+- **执行**: 未声明依赖的节点并发请求; 声明 `SourceTrait.NEEDS_PARTIAL` 的来源 (按来源目录的 `traits` 判定) 在第二段并发, 段间注入只读的标量聚合 (`partial_result`, 深拷贝). 节点不因标量已满足而跳过. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿链继续, 不调用 `invoke_source` (因此不会记成 unexpected).
+- **取值**: 标量沿链取第一个非空值 (判定为真值, `0` / 空串 / 空列表都算空), 空值继续回退, 链上仍有未执行节点时中断该字段; 只有非空值写入 `field_sources`. 聚合类字段 (URL / score / extrafanart) 在全部请求结束后按该字段 `field_chains` 拼接, 不按返回先后排列; 某站未返回或该字段为空则跳过. 标量可以全空: 只要有来源返回结果, 任务仍成功. 落库跳过锁定字段, 见 [data-model.md](data-model.md).
 
 ## TaskHandler 契约
 
@@ -77,8 +77,8 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 | 单元 | 位置 | 复用方 | 职责 |
 | ------ | ------ | -------- | ------ |
-| `LibraryScan` | `library/scan.py` | REFRESH / watcher / ORGANIZE / SCAN_INVALID | 单路径归类 (跳过 / 无效 / 媒体), `unwanted_kind` 给出无效原因; 规则常量与校验在 `library/rules.py` |
-| `scan_library` | `handlers/_common.py` | clouddrive 巡检 | 库目录遍历; `@in_thread` 包装 glob / stat. 入库扫描与清理清单改用 `library/cleanup/inventory.py::scan_inventory` 的显式递归 (能收集读错误并产出目录条目) |
+| `LibraryScan` | `library/scan.py` | REFRESH / watcher / ORGANIZE / SCAN_INVALID | 单路径分类 (跳过 / 无效 / 媒体), `unwanted_kind` 给出无效原因; 规则常量与校验在 `library/rules.py` |
+| `scan_library` | `handlers/_common.py` | clouddrive 巡检 | 库目录遍历; `@in_thread` 包装 glob / stat. 入库扫描与清理清单改走 `library/cleanup/inventory.py::scan_inventory` 的显式递归 (能收集读错误并产出目录条目) |
 | `LibraryTaskLocks` | `handlers/_common.py` | ORGANIZE / DELETE | `build_handlers` 构造一份注入两端, 同库执行期串行; 测试里未注入时各 handler 自建, 互不共享 |
 | `finalize_media_file` | `handlers/_common.py` | SCRAPE (缓存 / 主路径) | 标记 SCRAPED + 关联 Metadata |
 | `apply_file_operations` | `handlers/file.py` | ORGANIZE | 读取 MediaFile→读取 Library→渲染路径→执行 file ops; 库路径 I/O 经 `@in_thread` |
@@ -95,21 +95,23 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 - **封面角标**: `watermark.enabled` 时 poster / thumb 副本按源文件 FileInfo 叠 PNG; Resource 原图与 fanart 不修改.
 - **海报缺失**: 按 `scraping.crop_poster` 从已落盘 thumb 裁剪兜底.
 - **已就位**: 源与模板 dest 已是同一文件 (含硬链同一 inode) 时视为成功, 不追加 `(1)`; 碰撞改名只用于 dest 被另一文件占用.
-- **链接**: `link_template` 非空时视频就位后在库外写 STRM 文件或符号链接, 指向这次整理后的路径; `MediaFile.path` 仍是真实视频. 链接写入失败时, 目标路径仍在本库内则回写 path, 任务记失败以便重试补链接.
+- **链接入口**: `link_template` 非空时视频就位后在库外写 strm 或软链接, 指向这次整理后的路径; `MediaFile.path` 仍是真实视频. 链接写入失败时, 目标路径仍在本库内则回写 path, 任务记失败以便重试补链接.
 - **索引写回**: 整理后路径仍在本库内则更新 `MediaFile.path`; 已不在本库内且源路径不在磁盘上则删除该行. 不改 `library_id`, 不写其它库的行. 目标路径已被本库另一行占用时删除本行, 占用行缺少刮削字段则补上.
 - **失效索引**: 落盘前只对本次读到的行探活 (path 不存在或不在本库内则删除), 范围外的行不读取、不探活. 碰撞改名只检查磁盘, 范围内未删除的幽灵行仍会与带编号的目标路径在 UNIQUE 上冲突.
-- **腾空目录**: payload 的 `prune_empty_dirs` (默认开) 为真且放置方式为移动时, 落盘后删除本次移动腾空的祖先目录. 自底向上, 只把 `ENOTEMPTY` 当作非空, 库根与 `.amane_trash` 不删; 复制 / 硬链接 / 符号链接不移走源文件, 不产生腾空目录. 删除与剪枝共用 `library/delete.py` 的执行单元 (字面路径边界, 不跟随符号链接, 不跨越挂载点).
+- **腾空目录**: payload 的 `prune_empty_dirs` (默认开) 为真且放置方式为移动时, 落盘后删除本次移动腾空的祖先目录. 自底向上, 只把 `ENOTEMPTY` 当作非空, 库根与 `.amane_trash` 不删; 复制 / 硬链接 / 软链接不移走源文件, 不产生腾空目录. 删除与剪枝共用 `library/delete.py` 的执行单元 (字面路径边界, 不跟随符号链接, 不跨越挂载点).
 
 ## 清理清单
 
-清单有两个产出方: `SCAN_INVALID` 的全库只读遍历, 与 `REFRESH` 整库扫描的顺带产出 (同一趟遍历, 媒体命中用于增删). 回收目录展开由只读接口产出回收目录来源清单, 使用同一套删除. `DELETE` 只按清单执行 — 清单是它们之间唯一的输入:
+清单有两个产出方: `SCAN_INVALID` 的全库只读遍历, 与 `REFRESH` 整库扫描的顺带产出 (同一趟遍历, 媒体命中用于增删), 两者产出的条目集合相同. 回收站展开由只读接口产出回收站来源清单, 走同一套删除. `DELETE` 按清单执行, 清单是它唯一的路径来源:
 
-- **进程内**: 存放挂在 `AppRuntime.inventory_store`, 按库与来源分组 (规则 / 回收目录 / 选中项展开各一组, 打开回收目录因此不挤掉正在复核的选中项清单) 保留最近四份, 24 小时过期; 不落库, 重启即丢. 库路径修改或库删除时丢弃该库清单.
+- **进程内**: 存放挂在 `AppRuntime.inventory_store`, 按库与来源分组 (规则 / 回收站 / 选中项展开各一组, 开回收站因此不挤掉正在复核的选中项清单) 保留最近四份, 24 小时过期; 不落库, 重启即丢. 库路径修改或库删除时丢弃该库清单.
+- **残留目录**: 整棵子树只含附属文件 (NFO / 图片 / 字幕)、祖先的直接子项里没有媒体的目录, 登记为一条 `orphan` 容器条目 (`InventoryEntry.expandable`); 判定规则见 `library/cleanup/orphan.py::OrphanScan.verdict`. 容器自身不是删除目标 (执行时跳过, 删空后由剪枝回收目录), 子树内容一律登记为普通条目, 系统与同步工具的产物带 `noise` 标记; 子树里本来就会成为条目的空子目录与黑名单文件同样保留. 容器在父级只算一次 (条目数与体积由子项汇总). 库根与扫描范围目录不登记为条目, 它们直接子项里的附属文件按普通条目登记, 条件只按本层算 (库内别处有正片与这一层是不是残留无关). 判定为候选但没有登记的目录只按白名单外文件一种计数 (`BlockedDirs.unexplained`), 与「读不到」的 `skipped_*` 分开.
 - **触顶只丢条目**: 条目上限触顶后遍历照常走完, 只是不登记条目并记下未纳入的候选数. 同一趟遍历要给 `REFRESH` 收集媒体命中, 提前收工会让 `add + remove` 把磁盘上还在的文件当成失效; 截断与未纳入数在状态接口上可见.
-- **执行集合 ⊆ 清单**: `DELETE` 携带清单标识与排除项; 标识不存在、已执行、库不一致或库根已变更即失败, 不重新扫描、不重新生成. 排除项按路径分量匹配, 相对路径按清单库根解释, 不匹配任何条目的排除项忽略. 已执行的清单在面板侧等同于不存在, 而按标识查找仍返回它, 供执行侧区分「不存在」与「已执行过」.
-- **展开提示**: 选中项展开把未能纳入的项作为码与参数 (`kind` / `path` / `count` / `detail`) 返回, 文案由面板按界面语言给出; 截断与未纳入数只体现在响应的 `truncated` / `dropped`.
+- **执行集合 ⊆ 清单**: `DELETE` 携带清单标识与排除项 / 纳入项; 标识不存在、已执行、库不一致或库根已变更即失败, 不重新扫描、不重新生成清单. 两者都按路径分量匹配, 相对路径按清单库根解释, 不匹配任何条目的忽略; 互为祖先时按最深的一条判定 (同深时纳入优先) — 面板用「排除一个目录 + 纳入其中一项」表达「保留这个目录, 但删掉里面的某一项」, 用户刚点的那条总是更深, 只按「纳入优先」判会让再深一层的取消勾选失效. 清单在取到同库锁之后、动第一个目标之前即置为已执行: 半执行的快照留在面板上只会显示一批磁盘上已经没有的条目, 重跑它既不会恢复已删的也不会补上没删的; 预检失败 (标识不存在 / 库不一致 / 库根变更 / 抢不到锁) 不置位, 一次都没动盘时重试仍然合理. 已执行的清单在面板侧等同于不存在, 而按标识查找仍返回它, 供执行侧区分「不存在」与「已执行过」.
+- **会变的事实在执行前复验**: 残留条目与空目录条目描述的事实 (目录里没有正片 / 目录是空的) 都会在清单的 24 小时有效期里失效, 因此执行前就地重算: 谓词复用 `library/cleanup/orphan.py`, 遍历另写在 `handlers/delete.py::_reverify_subtree`, 两处的判定顺序必须一致; 冷却期不参与复验. 残留条目按宿主容器的整棵子树加每一级祖先, 容器下的条目共用一次子树复验; 空目录条目只确认目录仍为空 (执行侧删目录是递归的). 不通过的条目不进删除集合, 按失败记账并单独计数 (`DeleteResult.reverify_rejected`); 目标已经不在磁盘上不算复验拒绝, 交给执行侧按「已不存在」记账. 只复验磁盘事实: 体积判定与库设置的变化不在其中, 设置改了应当重扫. 这是 `DELETE` 唯一会重算规则的路径, 其余条目只复验存在性与边界.
+- **展开提示**: 选中项展开把未能纳入的项作为码与参数 (`kind` / `path` / `count` / `detail`) 返回, 文案由面板按界面语言给出; 截断与未纳入数只走响应的 `truncated` / `dropped`.
 - **边界**: 目标须在清单记录的库根内, 没有例外 — 库外的一切 (链接模式下写在链接树的 strm 与产物) 既不进清单也不删除; 库根自身与 `.amane_trash` 自身 (含递归途中的该子树) 拒绝. 库内同时存在指向库外的符号链接时, 边界判定用字面路径, 不解析符号链接.
-- **面板读取**: 状态接口只给状态与范围, 节点一律经 `inventory/nodes` 按 `offset`/`limit` 取一页 (顶层与下钻同一接口, 回收目录用响应里的 `path` 展开, 同一打开动作的重复请求复用上一次展开) — 一份清单可能有上万条候选, 整份下发会卡住面板. 清单内容生成后不变, 树因此只构建一次 (`library/cleanup/inventory.py::inventory_tree`). 节点路径一律 `/` 分隔, 面板按它做分量匹配. 遍历设置与当前库配置不一致的清单按不存在处理: 它只覆盖了库的一部分, 面板不该照整库渲染. `will_be_empty` 由扫描自底向上算出, 而不是面板按清单条目推断 (有效媒体不是条目); 面板还要确认该子树里没有被排除的条目, 否则标记预告的是一个不会发生的结果.
+- **面板读取**: 状态接口只给状态与范围, 节点一律走 `inventory/nodes` 按 `offset`/`limit` 取一页 (顶层与下钻同一接口, 回收站用响应里的 `path` 展开, 同一打开动作的重复请求复用上一次展开) — 一份清单可能有上万条候选, 整份下发会卡住面板. 清单内容生成后不变, 树因此只构建一次 (`library/cleanup/inventory.py::inventory_tree`). 节点路径一律 `/` 分隔, 面板按它做分量匹配; 折叠系统与同步工具的产物时 `has_children` 按过滤后的子节点算, 否则面板会给出展开后为空的行. 遍历设置与当前库配置不一致的清单按不存在处理: 它只覆盖了库的一部分, 面板不该照整库渲染. `will_be_empty` 由扫描自底向上算出, 而不是面板按清单条目推断 (有效媒体不是条目); 面板还要确认该子树里没有被排除的条目, 否则标记预告的是一个不会发生的结果.
 - **不加库列**: 清单与剪枝开关都只存在于任务 payload, 没有需要从库里取真值的读取路径.
 
 ## 刮削期资源物化
@@ -166,7 +168,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ## ACTOR_SCRAPE
 
-`ActorScrapeHandler` 按 `HotSettings.actor_scraping` 的资料来源 / 头像来源顺序获取 (见 [config.md](config.md)), **先按 `Actor.gender` 与各站 `profile().genders` 过滤** (`unknown` 只请求同时覆盖两性的站; 被裁站不发 HTTP、不消费其 raw 缓存). 站点内按查找名首命中; 聚合是单源字段填空 (含 `gender`, `unknown` 当空) + 头像优先, 无影片字段 DAG. `use_cache` 与影片同型: 含 `metadata` 时按**已允许**站复用 `Actor.raw` 跳过爬虫 (非法快照降级为重爬). 写回时再与库内已有人物字段填空合并, 避免冲掉已填值.
+`ActorScrapeHandler` 按 `HotSettings.actor_scraping` 的档案站 / 头像站顺序抓取 (见 [config.md](config.md)), **先按 `Actor.gender` 与各站 `profile().genders` 过滤** (`unknown` 只请求同时覆盖两性的站; 被裁站不发 HTTP、不消费其 raw 缓存). 站点内按查找名首命中; 聚合是标量填空 (含 `gender`, `unknown` 当空) + 头像优先, 无影片字段 DAG. `use_cache` 与影片同型: 含 `metadata` 时按**已允许**站复用 `Actor.raw` 跳过爬虫 (非法快照降级为重爬). 写回时再与库内已有人物字段填空合并, 避免冲掉已填值.
 
 **链式自动触发**: `actor_scraping.auto_scrape` 开启 (默认) 时, 影片 SCRAPE 成功后在 `ScrapeHandler` 末尾按清洗解析后的 `meta.actors` 查询 Actor 实体, **`Actor.raw` 非空 (已刮过) 则跳过**, 其余以 **`priority=-1`** 入队 (不抢占影片任务优先级); 同 `actor_id` 已有 queued / running 时复用入队互斥. 链式块内异常只记录 warning, 不阻断刮削主流程.
 

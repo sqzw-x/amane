@@ -543,7 +543,7 @@ def build_handlers(
             library_locks=library_locks,
         ),
         TaskType.SCAN_INVALID: ScanInvalidHandler(repo, hot, inventory_store),
-        TaskType.DELETE: DeleteHandler(repo, inventory_store, library_locks=library_locks),
+        TaskType.DELETE: DeleteHandler(repo, inventory_store, hot, library_locks=library_locks),
         TaskType.CLEANUP: CleanupHandler(repo=repo, resource_store=resource_store),
         TaskType.UPSCALE: UpscaleHandler(resource_store, hot),
         TaskType.RESCRAPE: RescrapeHandler(repo),

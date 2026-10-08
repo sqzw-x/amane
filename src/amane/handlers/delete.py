@@ -3,28 +3,38 @@
 from __future__ import annotations
 
 import os
+import stat
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 
 import structlog
 
 from ..library import (
+    MEDIA_EXTENSIONS,
     CleanupInventory,
+    DeleteOutcome,
     DeleteTally,
+    InventoryEntry,
+    InventoryReason,
     InventoryStore,
+    OrphanScan,
     ancestor_dirs,
     delete_target,
     prune_empty_dirs,
     same_path,
 )
+from ..library.cleanup.orphan import JunkKind, classify_junk
 from ..utils.path import path_key
-from ..utils.threads import path_is_dir
+from ..utils.threads import in_thread, path_is_dir
 from ._common import LibraryTaskLocks
 from .models import DeletePayload, DeleteResult
 from .protocol import TaskHandler, TaskResult
 
 if TYPE_CHECKING:
+    from ..config import HotSettings
+    from ..db.models import Library
     from ..db.repository import Repository
 
 logger = structlog.get_logger()
@@ -33,16 +43,28 @@ logger = structlog.get_logger()
 class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
     """执行一份清单; 不重新扫描, 不重新生成清单.
 
-    输入是清单标识与排除项, 执行集合恒为清单的子集: 清单之外的路径不可能被删除.
+    描述会变的事实的条目是例外, 执行前就地复验一次:
+
+    - 残留条目: 清单有 24 小时有效期, 而「目录里没有正片」随时会变, 扫描之后落进正片的目录
+      会连同索引行一起被删;
+    - 空目录条目: 执行侧删目录是递归的, 后来落进去的内容会一起没.
+
+    输入是清单标识、排除项与纳入项, 执行集合恒为清单的子集: 清单之外的路径不可能被删除.
     同库执行期与 ORGANIZE 共用一把锁.
     """
 
     def __init__(
-        self, repo: Repository, inventory_store: InventoryStore, *, library_locks: LibraryTaskLocks | None = None
+        self,
+        repo: Repository,
+        inventory_store: InventoryStore,
+        config: HotSettings | None = None,
+        *,
+        library_locks: LibraryTaskLocks | None = None,
     ):
         super().__init__(payload_t=DeletePayload, result_t=DeleteResult)
         self._repo = repo
         self._inventory_store = inventory_store
+        self._config = config
         self._library_locks = library_locks if library_locks is not None else LibraryTaskLocks()
 
     async def handle(self, payload: DeletePayload) -> TaskResult[DeleteResult]:
@@ -67,23 +89,53 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
             # 复验在锁内: 同一份清单被两次提交时, 只有先拿到锁的那次能执行.
             if inventory.executed:
                 return TaskResult(success=False, error="该清单已经执行过, 请重新扫描后再确认")
-            return await self._execute(payload, inventory, library_root)
+            # 预检已全部通过, 从这里开始动盘: 清单随即作废, 取消 / 崩溃 / 中途失败都算.
+            # 半执行的快照留在面板上只会显示一批磁盘上已经没有的条目, 而重跑它没有意义 —
+            # 重跑既不会恢复已删的文件, 也不会补上没删的. 预检失败不置位: 一次都没动盘, 重试是合理的.
+            inventory.executed = True
+            return await self._execute(payload, inventory, library_root, library)
 
     async def _execute(
-        self, payload: DeletePayload, inventory: CleanupInventory, library_root: Path
+        self,
+        payload: DeletePayload,
+        inventory: CleanupInventory,
+        library_root: Path,
+        library: Library,
     ) -> TaskResult[DeleteResult]:
         excluded_keys = _path_keys(payload.exclude, root=library_root)
+        included_keys = _path_keys(payload.include, root=library_root)
         targets = [
             entry
             for entry in inventory.entries
-            if not _matches(entry.path, exact=excluded_keys, subtrees=excluded_keys)
+            if not _is_excluded(entry.path, excluded=excluded_keys, included=included_keys)
         ]
         excluded = len(inventory.entries) - len(targets)
+        # 容器条目 (残留目录) 自身不是删除目标, 但它的子树要整体复验一次, 因此先记下路径.
+        containers = {path_key(entry.path): entry.path for entry in inventory.entries if entry.expandable}
+        targets = [entry for entry in targets if not entry.expandable]
+        orphan_scan = self._orphan_scan(
+            library,
+            library_root=library_root,
+            scope_dir=inventory.scope_path or library_root,
+            patterns=inventory.patterns,
+        )
+        # 复验的探测按目录记忆: 同一目录下的条目走的是同一趟路, 网络盘上这是删除的主要开销.
+        probe = _MediaProbe(orphan_scan=orphan_scan) if orphan_scan is not None else None
         tally = DeleteTally()
         removed_paths: list[Path] = []
+        reverify_rejected = 0
         total = len(targets)
         await self.report_progress(0, total, "delete")
         for i, entry in enumerate(targets, start=1):
+            if probe is not None:
+                refusal = await _reverify(entry, probe=probe, container=_host_container(entry.path, containers))
+                if refusal is not None:
+                    # 记成 failed 而不是跳过: 用户确认过的条目没有删除, 结果里必须看得见.
+                    tally.record(DeleteOutcome(status="failed", error=refusal))
+                    reverify_rejected += 1
+                    logger.warning("delete reverify rejected", path=str(entry.path), reason=refusal)
+                    await self.report_progress(i, total, entry.path.name)
+                    continue
             outcome = await delete_target(entry.path, library_root=library_root)
             tally.record(outcome)
             if outcome.status != "failed":
@@ -102,7 +154,6 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
                 pruned = (await prune_empty_dirs(candidates, library_root=library_root)).removed
         await self.report_progress(total, total, "done")
 
-        inventory.executed = True
         logger.info(
             "delete completed",
             inventory_id=inventory.inventory_id,
@@ -115,6 +166,7 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
             pruned_dirs=pruned,
             excluded=excluded,
             indexed=indexed,
+            reverify_rejected=reverify_rejected,
         )
         return TaskResult(
             True,
@@ -127,7 +179,34 @@ class DeleteHandler(TaskHandler[DeletePayload, DeleteResult]):
                 pruned_dirs=pruned,
                 excluded=excluded,
                 indexed=indexed,
+                reverify_rejected=reverify_rejected,
             ),
+        )
+
+    def _orphan_scan(
+        self,
+        library: Library,
+        *,
+        library_root: Path,
+        scope_dir: Path,
+        patterns: Sequence[str],
+    ) -> OrphanScan | None:
+        """复验用的判定设置; 未注入 ``config`` 时跳过复验.
+
+        ``scope_dir`` 与 ``patterns`` 取自清单本身而不是库的当前设置: 扫描从范围目录起算, 用的是
+        那次任务实际生效的 patterns (``LibraryScanBase._apply_library`` 允许按任务覆盖), 复验
+        按同一份设置才谈得上「同一套条件」.
+        """
+        if self._config is None:
+            return None
+        media_extensions = frozenset(self._config.watcher.media_extensions) or MEDIA_EXTENSIONS
+        return OrphanScan.from_library(
+            library_root=library_root,
+            scope_dir=scope_dir,
+            subtitle_extensions=library.subtitle_extensions,
+            trailer_pattern=library.trailer_pattern,
+            patterns=patterns,
+            media_extensions=media_extensions,
         )
 
     async def _delete_index_rows(self, library_id: int, targets: Sequence[Path]) -> int:
@@ -166,3 +245,209 @@ def _matches(path: str | Path, *, exact: set[str], subtrees: set[str]) -> bool:
     if os.fspath(key) in exact:
         return True
     return any(os.fspath(parent) in subtrees for parent in key.parents)
+
+
+def _is_excluded(path: str | Path, *, excluded: set[str], included: set[str]) -> bool:
+    """路径是否被排除在删除集合之外.
+
+    排除项与纳入项互为祖先时按最深的一条判定: 面板用「排除一个目录 + 纳入其中一项」表达
+    「保留这个目录, 但删掉里面的某一项」, 用户刚点的那条一定更深. 同一路径同时出现在两组时
+    按纳入处理 — 面板的开关不会同时产出这两条, 这里只固定 API 侧的行为.
+    """
+    return _deepest_depth(path, excluded) > _deepest_depth(path, included)
+
+
+def _deepest_depth(path: str | Path, keys: set[str]) -> int:
+    """命中路径的最深键的深度; 没命中返回 -1. ``PurePath.parents`` 由深到浅, 首个命中即最深."""
+    key = PurePath(path_key(path))
+    for candidate in (key, *key.parents):
+        if os.fspath(candidate) in keys:
+            return len(candidate.parts)
+    return -1
+
+
+@dataclass(frozen=True, slots=True)
+class _LevelFacts:
+    """某一层的复验事实: 本层有没有媒体, 有没有不可删除的文件子项 (下载进度).
+
+    读不到时只填 ``unreadable``: 调用方按拒绝处理 (保守), 但给出的原因与「有媒体」分开.
+    """
+
+    has_media: bool = False
+    veto: bool = False
+    unreadable: str | None = None
+
+
+@dataclass
+class _MediaProbe:
+    """一趟删除里的探测缓存.
+
+    复验要把条目的祖先链逐级列出, 同一目录下的条目经过同一串目录: 云下载库的 4421 个残留
+    条目分布在约 1095 个目录里, 按目录记住结果即可省下重复的列目录调用. 容器子树的复验同样
+    只做一次 — 一个容器下的条目共用一个结论.
+    """
+
+    orphan_scan: OrphanScan
+    levels: dict[Path, _LevelFacts] = field(default_factory=dict)
+    subtrees: dict[Path, str | None] = field(default_factory=dict)
+
+    def level(self, directory: Path) -> _LevelFacts:
+        cached = self.levels.get(directory)
+        if cached is None:
+            cached = _level_facts(directory, orphan_scan=self.orphan_scan)
+            self.levels[directory] = cached
+        return cached
+
+    def ancestor_refusal(self, directory: Path) -> str | None:
+        """目录自身或其任一祖先的直接子项里出现了媒体即拒绝; 读不到同样拒绝 (保守).
+
+        只遍历到扫描范围那一层: 更上面的层扫描时没有检查过, 据此否决会把清单里本来成立的
+        条目全部拒绝.
+        """
+        scope = self.orphan_scan.scope_dir
+        current = directory
+        while True:
+            facts = self.level(current)
+            if facts.unreadable is not None:
+                return facts.unreadable
+            if facts.has_media:
+                return "目录的祖先里出现了媒体"
+            if current == scope or current.parent == current:
+                return None
+            current = current.parent
+
+    def level_refusal(self, directory: Path) -> str | None:
+        """本层出现了下载进度: 扫描侧据此不登记这一层的文件, 复验照同一道门."""
+        facts = self.level(directory)
+        if facts.unreadable is not None:
+            return facts.unreadable
+        return "本层出现了下载进度" if facts.veto else None
+
+    def subtree_refusal(self, directory: Path) -> str | None:
+        """整棵子树的复验结论; 同一个容器的条目共用一次遍历."""
+        if directory not in self.subtrees:
+            self.subtrees[directory] = _reverify_subtree(directory, orphan_scan=self.orphan_scan)
+        return self.subtrees[directory]
+
+
+def _host_container(path: Path, containers: dict[str, Path]) -> Path | None:
+    """条目所属的容器 (残留目录) 路径; 不在任何容器下时返回 None. 由深到浅取首个命中."""
+    key = PurePath(path_key(path))
+    for candidate in (key, *key.parents):
+        container = containers.get(os.fspath(candidate))
+        if container is not None:
+            return container
+    return None
+
+
+@in_thread
+def _reverify(entry: InventoryEntry, *, probe: _MediaProbe, container: Path | None) -> str | None:
+    """条目是否仍然成立; 不成立时返回原因.
+
+    判定复用扫描侧的谓词 (``orphan.py``), 事实就地读取; 遍历另写一份, 见
+    ``_reverify_subtree``, 两处的判定顺序必须一致:
+
+    - 残留条目: 宿主容器的整棵子树复验一次 (子树里出现媒体、不可删除的子项、白名单外的文件
+      都不再成立), 再加上每一级祖先的直接子项 — 祖先旁边出现媒体同样不再成立;
+    - 库根与扫描范围目录的条目没有容器: 扫描时只看本层, 复验同样只看本层 (含下载进度);
+    - 空目录条目: 目录不再为空即拒绝, 执行侧删目录是递归的, 后来落进去的内容会一起没;
+    - 冷却期不重复施加: 条目已经过用户确认, 再按时间否决只会让条目静默地不被删除;
+    - 只复验磁盘事实, 不重算设置: 体积过小条目按阈值判定, 库设置改了应当重扫, 不在这里兜底.
+    """
+    if entry.reason is InventoryReason.EMPTY_DIR:
+        return _reverify_empty_dir(entry.path)
+    if entry.reason is not InventoryReason.ORPHAN:
+        return None
+    if container is not None:
+        refusal = probe.subtree_refusal(container)
+        if refusal is not None:
+            return refusal
+        return probe.ancestor_refusal(container)
+    judged = entry.path.parent
+    return probe.ancestor_refusal(judged) or probe.level_refusal(judged)
+
+
+def _read_dir(directory: Path) -> tuple[list[os.DirEntry[str]], str | None]:
+    """列目录; 返回子项与读不到的原因.
+
+    目录已经不在磁盘上不算失败: 条目与它一起没了, 交给执行侧按「已不存在」记账 (``changed``).
+    """
+    try:
+        with os.scandir(directory) as scanned:
+            return list(scanned), None
+    except FileNotFoundError:
+        return [], None
+    except OSError as exc:
+        return [], f"目录无法读取: {exc}"
+
+
+def _reverify_empty_dir(directory: Path) -> str | None:
+    children, unreadable = _read_dir(directory)
+    if unreadable is not None:
+        return unreadable
+    return "目录不再是空的" if children else None
+
+
+def _reverify_subtree(directory: Path, *, orphan_scan: OrphanScan) -> str | None:
+    """整棵子树的复验: 与扫描时的条件同口径 (冷却期除外).
+
+    判定顺序与 `inventory.py::_walk` 一致, 两处修改必须同步: 垃圾项先于媒体判据 (``._x.mp4``
+    是伴生文件, 不是视频); 可随目录删除的垃圾项不否决, 不可删除的子项 (回收站、版本库、
+    下载进度) 否决整棵子树.
+    """
+    children, unreadable = _read_dir(directory)
+    if unreadable is not None:
+        return unreadable
+    trailer = orphan_scan.trailer_matcher()
+    for child in children:
+        path = Path(child.path)
+        try:
+            child_stat = path.lstat()
+        except FileNotFoundError:
+            # 走到一半消失的子项: 它不可能再是媒体, 跳过.
+            continue
+        except OSError as exc:
+            return f"子项无法读取: {exc}"
+        is_dir = stat.S_ISDIR(child_stat.st_mode)
+        junk = classify_junk(path, is_dir=is_dir)
+        if junk is JunkKind.VETO:
+            return f"目录里出现了不可删除的子项: {path.name}"
+        if is_dir:
+            refusal = _reverify_subtree(path, orphan_scan=orphan_scan)
+            if refusal is not None:
+                return refusal
+            continue
+        if junk is not None:
+            continue
+        if orphan_scan.is_media(path, trailer=trailer):
+            return f"目录里出现了媒体: {path.name}"
+        if not orphan_scan.is_companion(path):
+            return f"目录里出现了无法解释的文件: {path.name}"
+    return None
+
+
+def _level_facts(directory: Path, *, orphan_scan: OrphanScan) -> _LevelFacts:
+    """该目录的直接子项里的媒体与不可删除的文件子项; 读不到时交给调用方按拒绝处理."""
+    children, unreadable = _read_dir(directory)
+    if unreadable is not None:
+        return _LevelFacts(unreadable=unreadable)
+    trailer = orphan_scan.trailer_matcher()
+    has_media = False
+    veto = False
+    for child in children:
+        path = Path(child.path)
+        try:
+            is_dir = stat.S_ISDIR(path.lstat().st_mode)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            return _LevelFacts(unreadable=f"子项无法读取: {exc}")
+        junk = classify_junk(path, is_dir=is_dir)
+        if junk is JunkKind.VETO and not is_dir:
+            veto = True
+            continue
+        if junk is not None or is_dir:
+            continue
+        if orphan_scan.is_media(path, trailer=trailer):
+            has_media = True
+    return _LevelFacts(has_media=has_media, veto=veto)
