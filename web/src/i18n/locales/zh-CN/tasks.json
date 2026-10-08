@@ -112,8 +112,12 @@
       "reason": {
         "target_exists": "目标路径已有其它文件",
         "subtitle_target_exists": "字幕目标路径已有其它文件"
-      }
-    }
+      },
+      "conflictsTruncated": "另有 {{count}} 条未列出, 见任务日志"
+    },
+    "detailTruncated": "已截断",
+    "loadFailed": "详情加载失败",
+    "noResultHint": "该任务没有结果载荷; 完整明细在任务记录里"
   },
   "status": {
     "queued": "排队中",

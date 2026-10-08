@@ -58,6 +58,8 @@ class SiteOutcomeRecord(BaseModel):
     """reason=http_error 时必有."""
     detail: str | None = None
     """展示用, 不解析."""
+    detail_truncated: bool = False
+    """结果里的 detail 是否被截断; 记录文件里始终是完整文本."""
 
 
 class OrganizeConflictReason(StrEnum):

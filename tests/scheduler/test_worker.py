@@ -427,6 +427,35 @@ async def test_worker_completes_with_followups(repo: Repository) -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_worker_stores_result_on_failure(repo: Repository) -> None:
+    """失败分支同样落库结果载荷 (handler 给了才写), 供详情面板解释失败原因."""
+
+    class FailWithResultHandler(TaskHandler):
+        def __init__(self):
+            super().__init__(payload_t=dict, result_t=dict)
+
+        async def handle(self, payload: dict):
+            return TaskResult(
+                success=False, error="boom", result={"type": "refresh", "added": 0, "removed": 0, "scrape": 0}
+            )
+
+    handlers = {TaskType.REFRESH: FailWithResultHandler()}
+    worker = AsyncWorker(repo=repo, handlers=handlers, poll_interval=0.05)
+
+    t = await repo.create_task(TaskType.REFRESH, payload={"library_id": 1})
+    assert t.id is not None
+
+    worker.start()
+    await recv(worker, 1)
+    await stop_worker(worker)
+
+    fetched = await repo.get_task(t.id)
+    assert fetched is not None
+    assert fetched.status == TaskStatus.FAILED
+    assert fetched.result == {"type": "refresh", "added": 0, "removed": 0, "scrape": 0}
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_worker_no_followups_on_failure(repo: Repository) -> None:
     """失败时不创建 on_success 后继."""
 

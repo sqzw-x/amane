@@ -134,8 +134,13 @@
       "reason": {
         "target_exists": "Target path already holds another file",
         "subtitle_target_exists": "Subtitle target path already holds another file"
-      }
-    }
+      },
+      "conflictsTruncated_one": "{{count}} more not listed — see the task log",
+      "conflictsTruncated_other": "{{count}} more not listed — see the task log"
+    },
+    "detailTruncated": "Truncated",
+    "loadFailed": "Failed to load details",
+    "noResultHint": "No result payload for this task; the task record keeps the full detail"
   },
   "status": {
     "queued": "Queued",

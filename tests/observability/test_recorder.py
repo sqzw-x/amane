@@ -261,11 +261,16 @@ def test_site_outcomes_truncates_detail(tmp_path: Path, task: Task):
     """任务结果里的 detail 截断; 记录中仍是完整文本."""
     rec = Recorder.begin(tmp_path, task, HotSettings())
     long_detail = "x" * (OUTCOME_DETAIL_LIMIT + 50)
-    rec.update_summary(sites_queried=["javdb"])
+    rec.update_summary(sites_queried=["javdb", "dmm"])
     rec.record_site_outcome(site="javdb", outcome=SiteOutcomeKind.FAILED, detail=long_detail)
+    rec.record_site_outcome(site="dmm", outcome=SiteOutcomeKind.FAILED, detail="x" * OUTCOME_DETAIL_LIMIT)
 
-    assert rec.site_outcomes()[0].detail == "x" * OUTCOME_DETAIL_LIMIT
+    truncated = rec.site_outcomes()[0]
+    assert truncated.detail == "x" * OUTCOME_DETAIL_LIMIT
+    assert truncated.detail_truncated is True
     assert rec.summary.outcomes["javdb"].detail == long_detail
+    assert rec.summary.outcomes["javdb"].detail_truncated is False
+    assert rec.site_outcomes()[1].detail_truncated is False  # 恰好等于上限不算截断
 
 
 def test_site_outcomes_without_recorder_is_empty():

@@ -29,6 +29,7 @@ async def invoke_source[T](source_id: str, fetch: Callable[[], Awaitable[T | Non
         return None
     if result is None:
         rec.record_site_outcome(site=source_id, outcome=SiteOutcomeKind.FAILED, reason=FailureReason.NO_USABLE_METADATA)
+        rec.warning("source returned no usable metadata", source=source_id)
         return None
     rec.record_site_outcome(site=source_id, outcome=SiteOutcomeKind.OK)
     return result

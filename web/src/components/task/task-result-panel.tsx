@@ -35,7 +35,7 @@ function resultBranch(result: TaskResult, failed: boolean): ReactNode {
   switch (result.type) {
     case "scrape": {
       const outcomes = result.outcomes ?? [];
-      const metadataId = result.metadata_id > 0 ? result.metadata_id : null;
+      const metadataId = result.metadata_id ?? null;
       return (
         <>
           <MetadataLink metadataId={metadataId} />
@@ -55,7 +55,6 @@ function resultBranch(result: TaskResult, failed: boolean): ReactNode {
       );
     }
     case "organize": {
-      const conflicts = result.conflicts;
       const empty =
         result.organized === 0 &&
         result.skipped === 0 &&
@@ -64,7 +63,7 @@ function resultBranch(result: TaskResult, failed: boolean): ReactNode {
       return (
         <>
           <OrganizeCounts result={result} />
-          <OrganizeConflicts conflicts={conflicts} />
+          <OrganizeConflicts result={result} />
           <EmptyHint visible={!failed && empty} />
         </>
       );
@@ -219,12 +218,16 @@ function OrganizeCounts({ result }: { result: OrganizeResult }) {
   );
 }
 
-function OrganizeConflicts({ conflicts }: { conflicts: OrganizeResult["conflicts"] }) {
+function OrganizeConflicts({ result }: { result: OrganizeResult }) {
   const { t } = useTranslation("tasks");
+  const conflicts = result.conflicts;
 
   if (conflicts.length === 0) {
     return null;
   }
+
+  // 结果里的条目是 conflicted 计数的前缀, 差额只留在任务日志里.
+  const dropped = result.conflicted - conflicts.length;
 
   return (
     <Stack gap={6}>
@@ -251,6 +254,11 @@ function OrganizeConflicts({ conflicts }: { conflicts: OrganizeResult["conflicts
           </div>
         ))}
       </Stack>
+      {dropped > 0 ? (
+        <Text size="xs" c="dimmed">
+          {t("result.organize.conflictsTruncated", { count: dropped })}
+        </Text>
+      ) : null}
     </Stack>
   );
 }
@@ -319,6 +327,11 @@ function FailedSiteRow({ row }: { row: SiteOutcomeRecord }) {
         {primary}
         {suffix}
       </Text>
+      {row.detail_truncated ? (
+        <Badge size="xs" variant="light" color="gray" tt="none" style={{ flexShrink: 0 }}>
+          {t("result.detailTruncated")}
+        </Badge>
+      ) : null}
     </Group>
   );
 }

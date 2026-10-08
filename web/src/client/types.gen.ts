@@ -3765,7 +3765,7 @@ export type ScrapeResult = {
     /**
      * Metadata Id
      */
-    metadata_id: number;
+    metadata_id?: number | null;
     /**
      * Field Sources
      */
@@ -4007,6 +4007,10 @@ export type SiteOutcomeRecord = {
      * Detail
      */
     detail?: string | null;
+    /**
+     * Detail Truncated
+     */
+    detail_truncated?: boolean;
 };
 
 /**

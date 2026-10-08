@@ -181,6 +181,10 @@ class TestScrapeHandler:
             ScrapePayload(media_file_id=media.id, number="TEST-001", content_type=ContentType.CENSORED)
         )
         assert result.success is False
+        # 失败也要带结果载荷, 否则界面只剩一句错误, 说不清是哪个站点怎么了.
+        assert result.result is not None
+        assert result.result.metadata_id is None
+        assert result.result.failed_sites == ["javdb"]
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_empty_scalars_with_image_still_succeeds(self, repo: Repository, resource_store):

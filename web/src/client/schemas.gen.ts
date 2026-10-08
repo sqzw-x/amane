@@ -7204,7 +7204,14 @@ export const ScrapeResultSchema = {
             default: 'scrape'
         },
         metadata_id: {
-            type: 'integer',
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Metadata Id'
         },
         field_sources: {
@@ -7231,7 +7238,6 @@ export const ScrapeResultSchema = {
     },
     type: 'object',
     required: [
-        'metadata_id',
         'field_sources',
         'failed_sites'
     ],
@@ -7765,6 +7771,11 @@ export const SiteOutcomeRecordSchema = {
                 }
             ],
             title: 'Detail'
+        },
+        detail_truncated: {
+            type: 'boolean',
+            title: 'Detail Truncated',
+            default: false
         }
     },
     type: 'object',

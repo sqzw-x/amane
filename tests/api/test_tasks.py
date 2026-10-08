@@ -266,13 +266,21 @@ class TestTaskResult:
                     "field_sources": {"title": "dmm"},
                     "failed_sites": ["javdb"],
                     "outcomes": [
-                        {"site": "dmm", "outcome": "ok", "reason": None, "http_status": None, "detail": None},
+                        {
+                            "site": "dmm",
+                            "outcome": "ok",
+                            "reason": None,
+                            "http_status": None,
+                            "detail": None,
+                            "detail_truncated": False,
+                        },
                         {
                             "site": "javdb",
                             "outcome": "failed",
                             "reason": "not_found",
                             "http_status": 404,
                             "detail": None,
+                            "detail_truncated": False,
                         },
                     ],
                 },
@@ -293,6 +301,16 @@ class TestTaskResult:
                             "reason": "target_exists",
                         }
                     ],
+                },
+            ),
+            (
+                TaskType.SCRAPE,
+                {
+                    "type": "scrape",
+                    "metadata_id": None,
+                    "field_sources": {},
+                    "failed_sites": ["javdb"],
+                    "outcomes": [],
                 },
             ),
             (TaskType.REFRESH, {"type": "refresh", "added": 2, "removed": 0, "scrape": 1}),
@@ -332,7 +350,6 @@ class TestTaskResult:
         [
             None,
             {"metadata_id": 17, "field_sources": {}, "failed_sites": []},
-            {"type": "scrape", "metadata_id": None, "field_sources": {}, "failed_sites": []},
             {
                 "type": "scrape",
                 "metadata_id": 17,
@@ -355,6 +372,60 @@ class TestTaskResult:
         resp = await client.get(f"tasks/{task.id}")
         assert resp.status_code == 200
         assert resp.json()["result"] is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_failed_task_keeps_result_payload(self, client: AsyncClient, repo: Repository, stop_worker: None):
+        """失败任务的站点明细照样能读: 刮削失败时界面靠它解释原因."""
+        task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "SSIS-497"})
+        assert task.id is not None
+        await repo.claim_next_task()
+        await repo.fail_task(
+            task.id,
+            error="未找到 SSIS-497 的元数据",
+            result={
+                "type": "scrape",
+                "metadata_id": None,
+                "field_sources": {},
+                "failed_sites": ["javdb"],
+                "outcomes": [
+                    {
+                        "site": "javdb",
+                        "outcome": "failed",
+                        "reason": "not_found",
+                        "http_status": 404,
+                        "detail": None,
+                        "detail_truncated": False,
+                    }
+                ],
+            },
+        )
+
+        body = (await client.get(f"tasks/{task.id}")).json()
+        assert body["status"] == "failed"
+        assert body["error"] == "未找到 SSIS-497 的元数据"
+        assert body["result"]["type"] == "scrape"
+        assert [row["site"] for row in body["result"]["outcomes"]] == ["javdb"]
+
+    def test_result_union_covers_every_task_type(self):
+        """判别联合与结果模型必须覆盖全部任务类型: 漏一个, 该类型的详情会静默置空."""
+        from typing import get_args
+
+        from pydantic import BaseModel
+
+        from amane.api.models.tasks import TaskResultPayload
+        from amane.handlers import models as handler_models
+
+        members = get_args(get_args(TaskResultPayload)[0])
+        assert members, "联合成员为空"
+        labels = {get_args(member.model_fields["type"].annotation)[0] for member in members}
+        declared = {
+            get_args(obj.model_fields["type"].annotation)[0]
+            for obj in vars(handler_models).values()
+            if isinstance(obj, type) and issubclass(obj, BaseModel) and obj.__name__.endswith("Result")
+        }
+
+        assert declared == set(TaskType)
+        assert labels == declared
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_detail_result_type_mismatch_is_empty(self, client: AsyncClient, repo: Repository, stop_worker: None):

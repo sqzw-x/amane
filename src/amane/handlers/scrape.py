@@ -127,7 +127,16 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         # 标量可以全空: 只要有来源返回结果, 海报 / 评分 / external_id 仍可入库.
         if not result.raw:
             current().warning("no data found from any source", failed_sites=result.failed_sites)
-            return TaskResult(success=False, error=f"未找到 {payload.number} 的元数据")
+            # 失败也要能回答"为什么刮不到": 站点明细随失败结果落库.
+            return TaskResult(
+                success=False,
+                error=f"未找到 {payload.number} 的元数据",
+                result=ScrapeResult(
+                    field_sources=result.field_sources,
+                    failed_sites=list(result.failed_sites),
+                    outcomes=current().site_outcomes(),
+                ),
+            )
 
         # 获取结束: 进度分子对齐标量字段数, 其后为物化与持久化.
         await self.report_progress(len(SCALAR_FIELDS), progress_total, "fetch")

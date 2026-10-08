@@ -84,7 +84,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 /** JSON 默认折叠. 列表不带 payload 与 result, 展开时按 id 取详情. */
 export function TaskDetailPanel({ task, linkKey, actions }: TaskDetailPanelProps) {
   const { t } = useTranslation(["tasks", "common"]);
-  const { data: detail } = useQuery({ ...getTaskOptions({ path: { task_id: task.id } }) });
+  const { data: detail, isError } = useQuery({ ...getTaskOptions({ path: { task_id: task.id } }) });
   const progress = useProgressStore((s) => s.byTask[task.id]);
   const duration = formatDuration(task.started_at, task.finished_at);
   const isTerminal = task.status === "done" || task.status === "failed";
@@ -139,8 +139,8 @@ export function TaskDetailPanel({ task, linkKey, actions }: TaskDetailPanelProps
       )}
 
       {isTerminal && detail == null ? (
-        <Text size="xs" c="dimmed">
-          {t("result.loading")}
+        <Text size="xs" c={isError ? "red" : "dimmed"}>
+          {isError ? t("result.loadFailed") : t("result.loading")}
         </Text>
       ) : null}
 
@@ -156,9 +156,15 @@ export function TaskDetailPanel({ task, linkKey, actions }: TaskDetailPanelProps
         <CollapsibleJson title={t("detail.payload")} value={detail.payload} />
       )}
 
-      {hasResult && task.status === "done" && detail != null && (
+      {hasResult && detail != null && (
         <CollapsibleJson title={t("detail.result")} value={detail.result} />
       )}
+
+      {task.status === "failed" && detail != null && !hasResult ? (
+        <Text size="xs" c="dimmed">
+          {t("result.noResultHint")}
+        </Text>
+      ) : null}
 
       {(task.status === "queued" || task.status === "running") && (
         <div>

@@ -275,7 +275,7 @@ class Recorder:
                 continue
             detail = record.detail
             if detail is not None and len(detail) > OUTCOME_DETAIL_LIMIT:
-                record = record.model_copy(update={"detail": detail[:OUTCOME_DETAIL_LIMIT]})
+                record = record.model_copy(update={"detail": detail[:OUTCOME_DETAIL_LIMIT], "detail_truncated": True})
             out.append(record)
         return out
 

@@ -126,7 +126,8 @@ def build_feed_scrape_payload(feed: Feed, number: str) -> ScrapePayload:
 
 class ScrapeResult(BaseModel):
     type: Literal[TaskType.SCRAPE] = TaskType.SCRAPE
-    metadata_id: int
+    metadata_id: int | None = None
+    """刮削失败时没有元数据行, 为 None."""
     field_sources: dict[str, str]
     failed_sites: list[str]
     outcomes: list[SiteOutcomeRecord] = Field(default_factory=list)
@@ -186,6 +187,7 @@ class OrganizeResult(BaseModel):
     failed: int
     pruned_dirs: int
     conflicts: list[OrganizeConflict]
+    """未处理的条目, 最多 ORGANIZE_CONFLICT_LIMIT 条; 恒为 conflicted 条目的前缀, 差额只留在任务日志里."""
 
 
 # --- SCAN INVALID ---

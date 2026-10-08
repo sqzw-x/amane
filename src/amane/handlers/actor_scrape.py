@@ -171,7 +171,17 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         # 别名行整表替换为「既有行 + 站点名」并集 (去重/去展示名在行写入层).
         saved = await self._repo.save_actor(actor, aliases=[*existing_aliases, *merged.aliases])
         if saved is None:
-            return TaskResult(success=False, error=f"保存演员 {payload.actor_id} 失败")
+            return TaskResult(
+                success=False,
+                error=f"保存演员 {payload.actor_id} 失败",
+                result=ActorScrapeResult(
+                    actor_id=payload.actor_id,
+                    field_sources=dict(merged.field_sources),
+                    failed_sites=failed_sites,
+                    image_count=len(merged.image_urls),
+                    outcomes=current().site_outcomes(),
+                ),
+            )
         await self.report_progress(progress_total, progress_total, "saved")
 
         rec.info(

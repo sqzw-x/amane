@@ -322,7 +322,7 @@ class AsyncWorker:
                 else:
                     duration_s = round(time.monotonic() - start_time, 2)
                     err = result.error or "Unknown error"
-                    await self._repo.fail_task(task_id, error=err)
+                    await self._repo.fail_task(task_id, error=err, result=result.as_dict())
                     logger.warning("task failed", error=result.error, duration_s=duration_s)
                     await _finalize_recorder(success=False, error=err)
                     if self._event_bus:
