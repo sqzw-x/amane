@@ -1,11 +1,12 @@
 import re
+from urllib.parse import unquote, urljoin
 
 from parsel import Selector
 
 from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text
+from ..parsing import extract_all_texts, extract_text, is_same_number
 
 
 class FreejavbtCrawler(Crawler):
@@ -14,13 +15,16 @@ class FreejavbtCrawler(Crawler):
         return CrawlerProfile(name=SiteName.FREEJAVBT, base_url="https://freejavbt.com")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
+        """条目链接末段即番号, 与入参不同者视为未命中."""
         number = query.number
         url = f"{self.base_url}/search/{number}"
         text = await self.client.get_html(url)
         html = Selector(text=text)
-        links = html.xpath('//article[contains(@class,"post")]//a/@href').getall()
-        urls = list(dict.fromkeys(links))[:5]
-        return urls[0] if urls else None
+        for item in html.xpath('//div[contains(@class,"category-page") and contains(@class,"video-list-item")]'):
+            href = item.xpath(".//a/@href").get()
+            if href and is_same_number(_number_from_url(href), number):
+                return urljoin(self.base_url, href)
+        return None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         text = await self.client.get_html(url)
@@ -68,3 +72,9 @@ class FreejavbtCrawler(Crawler):
             return None
         match = re.search(r"(\d+)", text)
         return int(match.group(1)) if match else None
+
+
+def _number_from_url(url: str) -> str:
+    """取链接末段作为番号; 广告外链的末段不是番号, 比对自然不中."""
+    path = url.split("?", 1)[0].rstrip("/")
+    return unquote(path.rsplit("/", 1)[-1]) if path else ""
