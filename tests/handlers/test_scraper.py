@@ -178,7 +178,7 @@ class TestScrapeHandler:
             pipeline_config=HotSettings(),
         )
         media = await repo.create_media_file(library_id=1, path="/media/TEST-001.mp4")
-        # 站点明细来自记录器, 没有记录器时失败载荷只有 failed_sites.
+        # 站点明细来自 `Recorder`, 没有它时失败载荷只有 `failed_sites`.
         recorder = Recorder.begin(
             tmp_path, Task(id=91, type=TaskType.SCRAPE, status=TaskStatus.RUNNING, payload={}), HotSettings()
         )
