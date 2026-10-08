@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from amane.library import FootprintNotice, FootprintNoticeKind, InventoryEntryKind, InventoryReason, build_footprint
+from amane.library.cleanup import footprint as footprint_module
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -288,3 +289,29 @@ class TestFootprint:
 
         assert outcome.inventory.entries == []
         assert any(notice.kind is FootprintNoticeKind.OUTSIDE_ROOT for notice in outcome.notices)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_work_dir_surrogate_is_not_expanded(
+        self, repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """工作目录里指向别处的目录 (Windows 的 junction) 不展开: 库外内容不进删除集合."""
+        from amane.db.models import MediaFileStatus
+
+        root = tmp_path / "lib"
+        video_dir = root / "Studio" / "NSFS-039"
+        outside = tmp_path / "outside"
+        (video_dir / "linked").mkdir(parents=True)
+        outside.mkdir()
+        (outside / "secret.nfo").write_bytes(b"secret")
+        video = video_dir / "NSFS-039.mp4"
+        video.write_bytes(b"v" * 100)
+        lib = await repo.create_library(name="t", path=str(root))
+        assert lib.id is not None
+        item = await repo.create_media_file(lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED)
+        monkeypatch.setattr(footprint_module, "is_name_surrogate_dir", lambda path: path.name == "linked")
+
+        outcome = build_footprint.sync(library=lib, items=[item], indexed=[item], metas={}, include_work_dir=True)
+
+        paths = {entry.path for entry in outcome.inventory.entries}
+        assert video in paths
+        assert not any(path.name == "secret.nfo" for path in paths)

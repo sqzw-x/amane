@@ -24,6 +24,8 @@ from amane.library import (
     find_inventory_node,
     scan_inventory,
 )
+from amane.library.cleanup import inventory as inventory_module
+from tests.helpers import make_junction
 
 # 判定用的固定时刻; 夹具文件的 mtime 统一设成它, 冷却期因此不影响默认用例.
 _NOW = 1_800_000_000.0
@@ -693,3 +695,50 @@ class TestContainerNotCounted:
         inventory = _scan(lib)
 
         assert build_inventory_tree(inventory).entry_count == 1
+
+
+class TestSurrogateDirectory:
+    """指向别处的目录 (Windows 的 junction 与挂载点): 不进去, 里面的内容不算库内条目."""
+
+    def test_surrogate_content_is_not_collected(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """非 Windows 没有 junction, 用谓词替身验证同一分支."""
+        lib = tmp_path / "lib"
+        _touch(lib / "keep" / "poster.jpg")
+        _touch(lib / "keep" / "linked" / "ad.mp4")
+        monkeypatch.setattr(
+            inventory_module,
+            "is_name_surrogate",
+            lambda st: st.st_ino == os.lstat(lib / "keep" / "linked").st_ino,
+        )
+
+        inventory = _scan(lib, blacklist=["ad"])
+
+        assert _reasons(inventory, lib) == {}
+        assert inventory.blocked.unexplained == 1
+
+    def test_surrogate_at_root_is_not_traversed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """库根下的替身同样不进去: 库外内容一条也不进清单."""
+        lib = tmp_path / "lib"
+        _touch(lib / "linked" / "ad.mp4")
+        monkeypatch.setattr(
+            inventory_module, "is_name_surrogate", lambda st: st.st_ino == os.lstat(lib / "linked").st_ino
+        )
+
+        inventory = _scan(lib, blacklist=["ad"])
+
+        assert inventory.entries == []
+        assert inventory.blocked.total == 0
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="junction 是 Windows 专有")
+    def test_junction_content_is_not_collected(self, tmp_path: Path) -> None:
+        lib = tmp_path / "lib"
+        outside = tmp_path / "outside"
+        (lib / "keep").mkdir(parents=True)
+        outside.mkdir()
+        _touch(outside / "ad.mp4")
+        _touch(lib / "keep" / "poster.jpg")
+        make_junction(lib / "keep" / "linked", outside)
+
+        inventory = _scan(lib, blacklist=["ad"])
+
+        assert _reasons(inventory, lib) == {}

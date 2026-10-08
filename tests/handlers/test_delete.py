@@ -700,6 +700,20 @@ def test_reverify_empty_dir_reports_reason(tmp_path: Path) -> None:
     assert delete_module._reverify_empty_dir(empty) == "目录不再是空的"
 
 
+def test_reverify_subtree_rejects_surrogate_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """扫描之后才出现的目录替身 (Windows 的 junction): 子树里有没有媒体无从判断, 按拒绝处理."""
+    container = tmp_path / "old"
+    (container / "linked").mkdir(parents=True)
+    monkeypatch.setattr(
+        delete_module, "is_name_surrogate", lambda st: st.st_ino == os.lstat(container / "linked").st_ino
+    )
+
+    assert (
+        delete_module._reverify_subtree(container, orphan_scan=_orphan_scan(tmp_path))
+        == "目录里出现了指向别处的目录: linked"
+    )
+
+
 def test_media_probe_reports_ancestor_and_level_reason(tmp_path: Path) -> None:
     """库根与扫描范围层的拒绝文案: 与子树文案分开, 排障时能区分是哪一层."""
     lib_root = tmp_path / "lib"

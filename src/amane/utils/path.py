@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import os
+import stat
 import unicodedata
 from pathlib import Path
+
+#: 重解析点 tag 的 name surrogate 位: 置位表示该目录项代表系统里另一个命名对象.
+NAME_SURROGATE = 0x20000000
 
 
 def _resolve_or_literal(p: str | Path) -> str:
@@ -105,3 +109,21 @@ def existing_disk_path(path: str | Path, *, follow_symlinks: bool = True) -> Pat
         if candidate.exists(follow_symlinks=follow_symlinks):
             return candidate
     return None
+
+
+def is_name_surrogate(st: os.stat_result) -> bool:
+    """该目录项是否代表系统里另一个命名对象 (Windows 的 junction、挂载点、符号链接等).
+
+    ``st_reparse_tag`` 只有 Windows 有, 其它平台取不到即视为假 — 那边的目录符号链接
+    由 ``S_ISLNK`` 覆盖.
+    """
+    return bool(getattr(st, "st_reparse_tag", 0) & NAME_SURROGATE)
+
+
+def is_name_surrogate_dir(path: str | Path) -> bool:
+    """路径是否为指向别处的目录. 读不到时返回假, 交给调用方的存在性分支."""
+    try:
+        st = Path(path).lstat()
+    except OSError:
+        return False
+    return stat.S_ISDIR(st.st_mode) and is_name_surrogate(st)

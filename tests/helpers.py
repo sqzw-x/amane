@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 import time
 from collections.abc import Iterable
 from enum import Enum
@@ -15,6 +16,13 @@ if TYPE_CHECKING:
     from amane.db.models import TaskType
     from amane.db.repository import Repository
     from amane.handlers.protocol import TaskHandler
+
+
+def make_junction(link: Path, target: Path) -> None:
+    """Windows 专有: 建一个目录交接点. 其它平台没有等价物, 调用方自行 skip."""
+    done = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True, check=False)
+    if done.returncode != 0:
+        raise RuntimeError(f"mklink /J 失败: {done.stdout.decode()} {done.stderr.decode()}")
 
 
 def alembic_config(db_path: Path) -> Config:

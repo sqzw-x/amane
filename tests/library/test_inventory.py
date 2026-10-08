@@ -23,6 +23,7 @@ from amane.library import (
     scan_inventory,
     scan_trash,
 )
+from amane.library.cleanup import inventory as inventory_module
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -454,3 +455,18 @@ class TestScanTrash:
         assert len(inventory.entries) == 1
         assert inventory.truncated is True
         assert inventory.dropped == 2
+
+    def test_surrogate_dir_is_not_expanded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """回收站里的替身 (Windows 的 junction) 不展开: 它指向别处, 不是可删的历史内容."""
+        lib = tmp_path / "lib"
+        trash = lib / ".amane_trash"
+        (trash / "linked").mkdir(parents=True)
+        (trash / "linked" / "old-ad.mp4").write_bytes(b"x" * 10)
+        (trash / "old-2.mp4").write_bytes(b"y" * 10)
+        monkeypatch.setattr(
+            inventory_module, "is_name_surrogate", lambda st: st.st_ino == os.lstat(trash / "linked").st_ino
+        )
+
+        inventory = scan_trash.sync(trash, library_id=1, library_root=lib)
+
+        assert {entry.path.name for entry in inventory.entries} == {"old-2.mp4"}

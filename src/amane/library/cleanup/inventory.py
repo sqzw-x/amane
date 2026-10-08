@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from ...utils.path import path_key
+from ...utils.path import is_name_surrogate, path_key
 from ...utils.threads import in_thread
 from ..rules import TRASH_DIRNAME
 from ..scan import LibraryFileKind, LibraryHit, LibraryScan, UnwantedKind
@@ -432,6 +432,13 @@ def _walk(
                 # 不可删除的子项: 不递归、不登记, 并使该目录不判定. 口径与回收目录一致,
                 # 差别只在它不需要单独列出 (回收目录要在面板上有名字).
                 undeletable = True
+                continue
+            if is_name_surrogate(child_stat):
+                # 目录类的替身 (Windows 的 junction 与挂载点): 指向别处, 进去会把库外内容
+                # 算成库内条目. 与目录符号链接同口径: 不递归、不登记, 宿主目录不判定为残留,
+                # 内容按「无法解释」计数, 面板因此看得见.
+                has_content = True
+                explainable = False
                 continue
             subdirs.append((path, child_stat))
             continue
@@ -952,6 +959,9 @@ def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
             logger.warning("trash scan entry unreadable", path=str(path), error=str(exc))
             continue
         if stat.S_ISDIR(child_stat.st_mode):
+            if is_name_surrogate(child_stat):
+                # 指向别处的目录 (Windows 的 junction 与挂载点): 不展开, 回收站里的替身不是可删内容.
+                continue
             sub = _walk_explicit(path, state=state)
             if sub is None:
                 continue

@@ -7,12 +7,15 @@ import pytest
 from amane.utils.path import (
     existing_disk_path,
     is_descendant,
+    is_name_surrogate,
+    is_name_surrogate_dir,
     is_resolved_path,
     nfc_path,
     path_forms,
     path_is_under,
     resolved_path,
 )
+from tests.helpers import make_junction
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="此测试不适用于 Windows")
@@ -184,3 +187,34 @@ class TestResolvedPath:
 
         assert resolved_path(literal) == literal
         assert is_resolved_path(literal) is True
+
+
+class TestNameSurrogate:
+    def test_plain_directory_is_not_surrogate(self, tmp_path: Path) -> None:
+        directory = tmp_path / "dir"
+        directory.mkdir()
+
+        assert is_name_surrogate(directory.lstat()) is False
+        assert is_name_surrogate_dir(directory) is False
+
+    def test_symlinked_directory_is_not_surrogate(self, tmp_path: Path) -> None:
+        """目录符号链接由 ``S_ISLNK`` 覆盖, 不走这一支."""
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(real, target_is_directory=True)
+
+        assert is_name_surrogate_dir(link) is False
+
+    def test_missing_path_is_not_surrogate(self, tmp_path: Path) -> None:
+        assert is_name_surrogate_dir(tmp_path / "gone") is False
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="junction 是 Windows 专有")
+    def test_junction_is_surrogate(self, tmp_path: Path) -> None:
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "junction"
+        make_junction(link, real)
+
+        assert is_name_surrogate(link.lstat()) is True
+        assert is_name_surrogate_dir(link) is True
