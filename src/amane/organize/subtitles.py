@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -43,6 +44,14 @@ def discover_subtitles(video_path: Path, extensions: Sequence[str], video: FileI
     return found
 
 
+@dataclass(frozen=True, slots=True)
+class SubtitleConflict:
+    """一条未落盘的字幕: 源路径 + 被占用的目标路径."""
+
+    source: Path
+    target: Path
+
+
 @in_thread
 def place_subtitles(
     sources: Sequence[Path],
@@ -56,9 +65,9 @@ def place_subtitles(
     link_dir: Path | None = None,
     link_name: str | None = None,
     actor_genders: Mapping[str, ActorGender] | None = None,
-) -> list[Path]:
-    """失败与冲突只记日志, 不抛异常; 返回被占用而跳过的目标路径."""
-    conflicted: list[Path] = []
+) -> list[SubtitleConflict]:
+    """失败与冲突只记日志, 不抛异常; 返回被占用而跳过的字幕源与其目标."""
+    conflicted: list[SubtitleConflict] = []
     for sub in sources:
         dest = resolve_subtitle_path(
             library,
@@ -86,7 +95,7 @@ def place_subtitles(
                 pass
             case PlaceOutcome.CONFLICT:
                 logger.warning("subtitle target occupied", source=str(sub), dest=str(dest))
-                conflicted.append(dest)
+                conflicted.append(SubtitleConflict(source=sub, target=dest))
             case PlaceOutcome.FAILED:
                 logger.warning("subtitle organize failed", source=str(sub), dest=str(dest), error=result.error)
     return conflicted

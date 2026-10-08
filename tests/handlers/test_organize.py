@@ -156,8 +156,9 @@ async def test_organize_subtitle_target_occupied_is_reported(
     assert result.success is True
     assert result.result is not None
     assert (result.result.organized, result.result.conflicted, result.result.failed) == (1, 1, 0)
+    # path 是留在原处的那条字幕, 而不是已经搬走的视频源路径.
     assert [c.model_dump() for c in result.result.conflicts] == [
-        {"path": str(src), "target": str(occupied_sub), "reason": OrganizeConflictReason.subtitle_target_exists}
+        {"path": str(sub), "target": str(occupied_sub), "reason": OrganizeConflictReason.subtitle_target_exists}
     ]
 
     dest = dest_dir / "NSFS-039.mp4"
@@ -169,14 +170,56 @@ async def test_organize_subtitle_target_occupied_is_reported(
     assert updated.path == str(dest)
 
 
+@pytest.mark.asyncio(loop_scope="function")
+async def test_template_extension_does_not_fake_conflict(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """模板写死扩展名时, 占用判定看的仍是真实落点 (源文件后缀), 不把模板路径算成冲突."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / "NSFS-041.mkv"
+    src.write_bytes(b"video")
+
+    dest_dir = lib_root / "Studio" / "NSFS-041"
+    dest_dir.mkdir(parents=True)
+    template_path = dest_dir / "NSFS-041.mp4"
+    template_path.write_bytes(b"other")
+
+    lib = await repo.create_library(
+        name="t", path=str(lib_root), write_nfo=False, video_template="{studio}/{number}/{number}.mp4"
+    )
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-041", studio="Studio")
+    assert meta.id is not None
+    await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-041", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+
+    assert result.success is True
+    assert result.result is not None
+    assert (result.result.organized, result.result.conflicted, result.result.failed) == (1, 0, 0)
+    assert (dest_dir / "NSFS-041.mkv").exists()
+    assert template_path.read_bytes() == b"other"
+
+
 def test_record_conflicts_caps_entries(tmp_path: Path) -> None:
-    """conflicts 达到上限后只计数, 不继续追加."""
-    conflicts = [
-        OrganizeConflict(path=f"/src/{i}.mp4", target=f"/lib/{i}.mp4", reason=OrganizeConflictReason.target_exists)
-        for i in range(ORGANIZE_CONFLICT_LIMIT)
-    ]
-    count = _record_conflicts(conflicts, "/src/x.mp4", [tmp_path / "x.mp4"], OrganizeConflictReason.target_exists)
-    assert count == 1
+    """conflicts 达到上限后只计数: 计数含未列出的条目, 列表长度是上限."""
+
+    def entry(i: int) -> OrganizeConflict:
+        return OrganizeConflict(
+            path=f"/src/{i}.mp4", target=str(tmp_path / f"{i}.mp4"), reason=OrganizeConflictReason.target_exists
+        )
+
+    conflicts = [entry(i) for i in range(ORGANIZE_CONFLICT_LIMIT - 1)]
+    dropped = [entry(i) for i in range(ORGANIZE_CONFLICT_LIMIT - 1, ORGANIZE_CONFLICT_LIMIT + 2)]
+
+    count = _record_conflicts(conflicts, dropped)
+
+    assert count == len(dropped)
     assert len(conflicts) == ORGANIZE_CONFLICT_LIMIT
 
 

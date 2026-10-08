@@ -21,12 +21,14 @@ from ..organize import (
     MoveMode,
     PlaceOutcome,
     ResolvedPaths,
+    SubtitleConflict,
     discover_subtitles,
     execute_organize,
     place_subtitles,
     render_strm_content,
     resolve_paths,
     target_occupied,
+    video_dest,
 )
 from ..organize.link import create_video_link
 from ..parsing import FileInfo, parse_file_info
@@ -60,7 +62,7 @@ class FileOperationsResult:
     """PLACED 是落盘路径; FAILED 时可能仍带路径, 以便回写 MediaFile.path 补链接."""
     conflict_target: Path | None = None
     """CONFLICT 时被占用的目标路径."""
-    subtitle_conflicts: list[Path] = field(default_factory=list)
+    subtitle_conflicts: list[SubtitleConflict] = field(default_factory=list)
     error: str | None = None
 
 
@@ -89,9 +91,11 @@ async def execute_file_operations(
     info = file_info if file_info is not None else parse_file_info(source_path)
 
     # 目标被别的文件占用时立即返回: 不下载图片, 不写附属文件, 不改库内任何路径.
-    if await target_occupied(source_path, paths.video):
-        logger.warning("organize target occupied", source=str(source_path), dest=str(paths.video))
-        return FileOperationsResult(outcome=PlaceOutcome.CONFLICT, conflict_target=paths.video)
+    # 落点必须与 execute_organize 同一算法: 模板写死扩展名时它与模板渲染结果不同.
+    dest = video_dest(paths.video.parent, paths.video.stem, source_path)
+    if await target_occupied(source_path, dest):
+        logger.warning("organize target occupied", source=str(source_path), dest=str(dest))
+        return FileOperationsResult(outcome=PlaceOutcome.CONFLICT, conflict_target=dest)
 
     # 下载图片; 水印打在库路径副本上, 不能修改 Resource 原图.
     if web_client and download_images:
@@ -150,7 +154,7 @@ async def execute_file_operations(
         await write_nfo_file(metadata, paths.nfo)
 
     # 字幕按模板落到 video_dest 侧.
-    subtitle_conflicts: list[Path] = []
+    subtitle_conflicts: list[SubtitleConflict] = []
     if org_result.outcome is PlaceOutcome.PLACED and org_result.dest and library is not None and subtitles:
         subtitle_conflicts = await place_subtitles(
             subtitles,
@@ -536,16 +540,30 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                         organized += 1
                         if collect_prune:
                             prune_candidates.update(ancestor_dirs(file_path, library_root=library_root))
+                        # 字幕冲突的 path 是留在原处的那条字幕, 不是视频源路径.
                         conflicted += _record_conflicts(
                             conflicts,
-                            path_str,
-                            fop_result.subtitle_conflicts,
-                            OrganizeConflictReason.subtitle_target_exists,
+                            [
+                                OrganizeConflict(
+                                    path=str(item.source),
+                                    target=str(item.target),
+                                    reason=OrganizeConflictReason.subtitle_target_exists,
+                                )
+                                for item in fop_result.subtitle_conflicts
+                            ],
                         )
                     case PlaceOutcome.CONFLICT:
                         # 行不提交落点, 留在源路径: 下次整理会再次报告, 直到用户自行处理.
+                        target = fop_result.conflict_target
                         conflicted += _record_conflicts(
-                            conflicts, path_str, [fop_result.conflict_target], OrganizeConflictReason.target_exists
+                            conflicts,
+                            []
+                            if target is None
+                            else [
+                                OrganizeConflict(
+                                    path=path_str, target=str(target), reason=OrganizeConflictReason.target_exists
+                                )
+                            ],
                         )
                     case PlaceOutcome.FAILED:
                         logger.warning("organize failed", path=path_str, error=fop_result.error)
@@ -580,21 +598,10 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         )
 
 
-def _record_conflicts(
-    conflicts: list[OrganizeConflict],
-    path: str,
-    targets: Sequence[Path | None],
-    reason: OrganizeConflictReason,
-) -> int:
-    """登记未处理的目标路径, 返回条数; 列表达到上限后只计数."""
-    count = 0
-    for target in targets:
-        if target is None:
-            continue
-        count += 1
-        if len(conflicts) < ORGANIZE_CONFLICT_LIMIT:
-            conflicts.append(OrganizeConflict(path=path, target=str(target), reason=reason))
-    return count
+def _record_conflicts(conflicts: list[OrganizeConflict], entries: Sequence[OrganizeConflict]) -> int:
+    """登记未处理的目标, 返回条数; 列表达到上限后只计数, 差额只留在任务日志里."""
+    conflicts.extend(entries[: max(0, ORGANIZE_CONFLICT_LIMIT - len(conflicts))])
+    return len(entries)
 
 
 def _add_resource_ref(url: str, live_urls: set[str], live_hashes: set[str]) -> None:

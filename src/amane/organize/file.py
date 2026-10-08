@@ -43,6 +43,14 @@ def target_occupied(source: Path, dest: Path) -> bool:
         return True
 
 
+def video_dest(target_dir: Path, target_stem: str, source: Path, suffix: str | None = None) -> Path:
+    """落点路径的唯一算法: 后缀默认取源文件, 而不是模板里写死的那个.
+
+    目标占用判定与真正的落盘都走这里, 否则模板写死扩展名时两处会算出不同路径.
+    """
+    return target_dir / f"{target_stem}{source.suffix if suffix is None else suffix}"
+
+
 @in_thread
 def execute_organize(
     source: Path,
@@ -63,8 +71,7 @@ def execute_organize(
 
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
-        dest_suffix = disk_source.suffix if suffix is None else suffix
-        dest = target_dir / f"{target_stem}{dest_suffix}"
+        dest = video_dest(target_dir, target_stem, disk_source, suffix)
         if existing_disk_path(dest) is not None:
             # 已就位则无需动作.
             if not target_occupied.sync(disk_source, dest):
