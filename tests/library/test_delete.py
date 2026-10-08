@@ -98,6 +98,50 @@ class TestDeleteTarget:
         assert (outside / "keep.mkv").read_bytes() == b"keep"
         assert tally.freed_bytes == 4
 
+    def test_target_through_directory_alias_refused(self, tmp_path: Path) -> None:
+        """经目录替身落到库外的文件不是库内目标: 字面路径在库内, 真身在库外 (Windows 的 junction 同理)."""
+        lib = tmp_path / "lib"
+        outside = tmp_path / "outside"
+        lib.mkdir()
+        outside.mkdir()
+        (outside / "secret.nfo").write_bytes(b"secret")
+        (lib / "linked").symlink_to(outside, target_is_directory=True)
+
+        tally = _delete(lib / "linked" / "secret.nfo", lib, DeleteTally())
+
+        assert (outside / "secret.nfo").read_bytes() == b"secret"
+        assert (tally.deleted, tally.failed) == (0, 1)
+
+    def test_symlink_to_outside_file_removes_link_only(self, tmp_path: Path) -> None:
+        """符号链接仍只删链接自身: 真身复核不适用于链接."""
+        lib = tmp_path / "lib"
+        outside = tmp_path / "outside"
+        lib.mkdir()
+        outside.mkdir()
+        target = outside / "keep.mkv"
+        target.write_bytes(b"keep")
+        link = lib / "entry.mkv"
+        link.symlink_to(target)
+
+        tally = _delete(link, lib, DeleteTally())
+
+        assert not link.exists(follow_symlinks=False)
+        assert target.read_bytes() == b"keep"
+        assert (tally.deleted, tally.failed) == (1, 0)
+
+    def test_alias_library_root_still_deletes_inside(self, tmp_path: Path) -> None:
+        """库路径自身是别名 (旧库未落真身) 时, 库内目标不因两次真身解析而误拒."""
+        real = tmp_path / "real"
+        (real / "work").mkdir(parents=True)
+        (real / "work" / "a.nfo").write_bytes(b"a")
+        alias = tmp_path / "alias"
+        alias.symlink_to(real, target_is_directory=True)
+
+        tally = _delete(alias / "work" / "a.nfo", alias, DeleteTally())
+
+        assert not (real / "work" / "a.nfo").exists()
+        assert tally.deleted == 1
+
     def test_outside_library_refused(self, tmp_path: Path) -> None:
         """库根外没有例外: 链接树里的产物与同目录邻居一律拒绝."""
         lib = tmp_path / "lib"
