@@ -11,8 +11,17 @@ import {
   IconUser,
   IconZoomExclamation,
 } from "@tabler/icons-react";
-import type { TaskChildStatusCounts, TaskResponse, TaskStatus, TaskType } from "@/client/types.gen";
+import type {
+  TaskChildStatusCounts,
+  TaskListItem,
+  TaskResponse,
+  TaskStatus,
+  TaskType,
+} from "@/client/types.gen";
 import { assertNever, exhaustiveRecord } from "@/lib/exhaustive";
+
+/** 任务结果: 详情响应里按类型判别的联合; 用其字段类型, 避免依赖内联联合的名字. */
+export type TaskResult = NonNullable<TaskResponse["result"]>;
 
 /** 任务类型 → 图标; 与 TaskType 穷尽对应. */
 export const TASK_ICONS: Record<TaskType, Icon> = exhaustiveRecord<TaskType>()({
@@ -63,11 +72,11 @@ export function statusColor(status: TaskStatus): string {
   }
 }
 
-export function childCountOf(task: TaskResponse): number {
+export function childCountOf(task: TaskListItem): number {
   return task.child_count ?? 0;
 }
 
-export function childStatusOf(task: TaskResponse): Required<TaskChildStatusCounts> {
+export function childStatusOf(task: TaskListItem): Required<TaskChildStatusCounts> {
   const s = task.child_status;
   if (s == null) return EMPTY_CHILD_STATUS;
   return {

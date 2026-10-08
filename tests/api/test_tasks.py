@@ -251,48 +251,135 @@ class TestTaskWorker:
         assert app.state.runtime.worker.is_paused is False
 
 
-class TestTaskReport:
-    """GET /tasks/{id}/report - 读 log 目录摘要 + 终态 result."""
+class TestTaskResult:
+    """GET /tasks/{id}: 结果按任务类型判别; 列表与子任务不带重字段."""
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_report_http(self, app: FastAPI, client: AsyncClient, repo: Repository, stop_worker: None):
-        assert (await client.get("tasks/9999/report")).status_code == 404
-        queued = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "SSIS-497"})
-        assert (await client.get(f"tasks/{queued.id}/report")).status_code == 409
-
-        task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "jur-837"})
+    @pytest.mark.parametrize(
+        ("task_type", "result"),
+        [
+            (
+                TaskType.SCRAPE,
+                {
+                    "type": "scrape",
+                    "metadata_id": 17,
+                    "field_sources": {"title": "dmm"},
+                    "failed_sites": ["javdb"],
+                    "outcomes": [
+                        {"site": "dmm", "outcome": "ok", "reason": None, "http_status": None, "detail": None},
+                        {
+                            "site": "javdb",
+                            "outcome": "failed",
+                            "reason": "not_found",
+                            "http_status": 404,
+                            "detail": None,
+                        },
+                    ],
+                },
+            ),
+            (
+                TaskType.ORGANIZE,
+                {
+                    "type": "organize",
+                    "organized": 1,
+                    "skipped": 0,
+                    "conflicted": 1,
+                    "failed": 0,
+                    "pruned_dirs": 0,
+                    "conflicts": [
+                        {
+                            "path": "/lib/incoming/NSFS-039.mp4",
+                            "target": "/lib/Studio/NSFS-039/NSFS-039.mp4",
+                            "reason": "target_exists",
+                        }
+                    ],
+                },
+            ),
+            (TaskType.REFRESH, {"type": "refresh", "added": 2, "removed": 0, "scrape": 1}),
+            (
+                TaskType.ACTOR_SCRAPE,
+                {
+                    "type": "actor_scrape",
+                    "actor_id": 9,
+                    "field_sources": {},
+                    "failed_sites": [],
+                    "image_count": 1,
+                    "outcomes": [],
+                },
+            ),
+        ],
+    )
+    async def test_detail_result_is_typed(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        stop_worker: None,
+        task_type: TaskType,
+        result: dict[str, object],
+    ):
+        """结果按类型判别, 原样回读."""
+        task = await repo.create_task(task_type=task_type, payload={})
         assert task.id is not None
-        await repo.fail_task(task.id, error="No metadata found for jur-837")
-        log_dir = app.state.runtime.config.cold.log_dir
-        root = log_dir / "tasks" / f"task-{task.id}"
-        root.mkdir(parents=True)
-        (root / "summary.json").write_text(
-            '{"eligible_sites":["dmm","javdb"],"sites_queried":["dmm","javdb"],"outcomes":{'
-            '"dmm":{"site":"dmm","outcome":"failed","reason":"no_usable_metadata"},'
-            '"javdb":{"site":"javdb","outcome":"failed","reason":"http_error","http_status":403,"detail":"HTTP 403"}}}',
-            encoding="utf-8",
-        )
-        resp = await client.get(f"tasks/{task.id}/report")
+        await repo.complete_task(task.id, result=result)
+
+        body = (await client.get(f"tasks/{task.id}")).json()
+        assert body["result"] == result
+        assert body["result"]["type"] == task_type
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        "stored",
+        [
+            None,
+            {"metadata_id": 17, "field_sources": {}, "failed_sites": []},
+            {"type": "scrape", "metadata_id": None, "field_sources": {}, "failed_sites": []},
+            {
+                "type": "scrape",
+                "metadata_id": 17,
+                "field_sources": {},
+                "failed_sites": [],
+                "outcomes": [{"site": "dmm", "outcome": "nope"}],
+            },
+            {"type": "scrape", "metadata_id": 17},
+            {"type": "nope", "metadata_id": 17, "field_sources": {}, "failed_sites": []},
+        ],
+    )
+    async def test_detail_result_unreadable_is_empty(
+        self, client: AsyncClient, repo: Repository, stop_worker: None, stored: dict[str, object] | None
+    ):
+        """旧行与坏数据读不出来时置空, 端点不失败."""
+        task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "SSIS-497"})
+        assert task.id is not None
+        await repo.complete_task(task.id, result=stored)
+
+        resp = await client.get(f"tasks/{task.id}")
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["headline"] == "No metadata found for jur-837"
-        by_site = {o["site"]: o for o in body["outcomes"]}
-        assert by_site["javdb"]["http_status"] == 403
-        assert by_site["dmm"]["reason"] == "no_usable_metadata"
+        assert resp.json()["result"] is None
 
-        done = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "SSIS-001"})
-        assert done.id is not None
-        await repo.complete_task(done.id, result={"metadata_id": 17, "field_sources": {}, "failed_sites": []})
-        done_body = (await client.get(f"tasks/{done.id}/report")).json()
-        assert done_body["metadata_id"] == 17
-        assert done_body["actor_id"] is None
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_detail_result_type_mismatch_is_empty(self, client: AsyncClient, repo: Repository, stop_worker: None):
+        """结果成员的类型与任务类型不一致时置空."""
+        task = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
+        assert task.id is not None
+        await repo.complete_task(task.id, result={"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
 
-        actor = await repo.create_task(task_type=TaskType.ACTOR_SCRAPE, payload={"actor_id": 8})
-        assert actor.id is not None
-        await repo.fail_task(actor.id, error="Actor 8 not found")
-        actor_body = (await client.get(f"tasks/{actor.id}/report")).json()
-        assert actor_body["actor_id"] == 8
-        assert actor_body["headline"] == "Actor 8 not found"
+        body = (await client.get(f"tasks/{task.id}")).json()
+        assert body["result"] is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_omits_payload_and_result(self, client: AsyncClient, repo: Repository, stop_worker: None):
+        """列表不带 payload 与 result, 展开时再取详情."""
+        task = await repo.create_task(task_type=TaskType.REFRESH, payload={"library_id": 3})
+        assert task.id is not None
+        await repo.complete_task(task.id, result={"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
+
+        item = (await client.get("tasks")).json()["items"][0]
+        assert "payload" not in item
+        assert "result" not in item
+
+        detail = (await client.get(f"tasks/{task.id}")).json()
+        assert detail["payload"] == task.payload
+        assert detail["result"]["type"] == "refresh"
 
 
 class TestTaskChain:

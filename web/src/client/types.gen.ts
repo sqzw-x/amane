@@ -166,6 +166,38 @@ export type ActorScrapeRequest = {
 };
 
 /**
+ * ActorScrapeResult
+ */
+export type ActorScrapeResult = {
+    /**
+     * Type
+     */
+    type?: 'actor_scrape';
+    /**
+     * Actor Id
+     */
+    actor_id: number;
+    /**
+     * Field Sources
+     */
+    field_sources: {
+        [key: string]: string;
+    };
+    /**
+     * Failed Sites
+     */
+    failed_sites: Array<string>;
+    /**
+     * Image Count
+     */
+    image_count: number;
+    /**
+     * Outcomes
+     */
+    outcomes?: Array<SiteOutcomeRecord>;
+};
+
+/**
  * ActorScrapeSubmission
  */
 export type ActorScrapeSubmission = {
@@ -592,6 +624,24 @@ export type CancelledRow = {
 };
 
 /**
+ * CleanupResult
+ */
+export type CleanupResult = {
+    /**
+     * Type
+     */
+    type?: 'cleanup';
+    /**
+     * Files Removed
+     */
+    files_removed: number;
+    /**
+     * Resources Removed
+     */
+    resources_removed: number;
+};
+
+/**
  * CleanupSubmission
  */
 export type CleanupSubmission = {
@@ -828,6 +878,52 @@ export type CropPosterRequest = {
      * 裁切框下边界 (不含)
      */
     bottom: number;
+};
+
+/**
+ * DeleteResult
+ */
+export type DeleteResult = {
+    /**
+     * Type
+     */
+    type?: 'delete';
+    /**
+     * Deleted
+     */
+    deleted: number;
+    /**
+     * Changed
+     */
+    changed: number;
+    /**
+     * Failed
+     */
+    failed: number;
+    /**
+     * Freed Bytes
+     */
+    freed_bytes?: number;
+    /**
+     * Hardlink Items
+     */
+    hardlink_items?: number;
+    /**
+     * Pruned Dirs
+     */
+    pruned_dirs?: number;
+    /**
+     * Excluded
+     */
+    excluded?: number;
+    /**
+     * Indexed
+     */
+    indexed?: number;
+    /**
+     * Reverify Rejected
+     */
+    reverify_rejected?: number;
 };
 
 /**
@@ -2678,6 +2774,64 @@ export type OptionalPathTemplateDefaults = {
 };
 
 /**
+ * OrganizeConflict
+ *
+ * 一条未落盘的记录: 源文件路径 + 被占用的目标路径.
+ */
+export type OrganizeConflict = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Target
+     */
+    target: string;
+    reason: OrganizeConflictReason;
+};
+
+/**
+ * OrganizeConflictReason
+ *
+ * 整理未处理的原因.
+ */
+export type OrganizeConflictReason = 'target_exists' | 'subtitle_target_exists';
+
+/**
+ * OrganizeResult
+ */
+export type OrganizeResult = {
+    /**
+     * Type
+     */
+    type?: 'organize';
+    /**
+     * Organized
+     */
+    organized: number;
+    /**
+     * Skipped
+     */
+    skipped: number;
+    /**
+     * Conflicted
+     */
+    conflicted: number;
+    /**
+     * Failed
+     */
+    failed: number;
+    /**
+     * Pruned Dirs
+     */
+    pruned_dirs: number;
+    /**
+     * Conflicts
+     */
+    conflicts: Array<OrganizeConflict>;
+};
+
+/**
  * OrganizeSubmission
  */
 export type OrganizeSubmission = {
@@ -2988,6 +3142,24 @@ export type R18Config = {
 };
 
 /**
+ * R18ImportResult
+ */
+export type R18ImportResult = {
+    /**
+     * Type
+     */
+    type?: 'r18_import';
+    /**
+     * Imported
+     */
+    imported: boolean;
+    /**
+     * Etag
+     */
+    etag?: string | null;
+};
+
+/**
  * R18ImportSubmission
  */
 export type R18ImportSubmission = {
@@ -3027,6 +3199,28 @@ export type ReasoningDeltaRow = {
      * Text
      */
     text: string;
+};
+
+/**
+ * RefreshResult
+ */
+export type RefreshResult = {
+    /**
+     * Type
+     */
+    type?: 'refresh';
+    /**
+     * Added
+     */
+    added: number;
+    /**
+     * Removed
+     */
+    removed: number;
+    /**
+     * Scrape
+     */
+    scrape: number;
 };
 
 /**
@@ -3144,6 +3338,28 @@ export type RequestUsageRow = {
      */
     type: 'request_usage';
     usage: RequestTokenUsage;
+};
+
+/**
+ * RescrapeResult
+ */
+export type RescrapeResult = {
+    /**
+     * Type
+     */
+    type?: 'rescrape';
+    /**
+     * Submitted
+     */
+    submitted: number;
+    /**
+     * Metadata
+     */
+    metadata?: number;
+    /**
+     * Actors
+     */
+    actors?: number;
 };
 
 /**
@@ -3353,6 +3569,48 @@ export type SavedQueryUpdateRequest = {
 };
 
 /**
+ * ScanInvalidResult
+ */
+export type ScanInvalidResult = {
+    /**
+     * Type
+     */
+    type?: 'scan_invalid';
+    /**
+     * Inventory Id
+     */
+    inventory_id: string;
+    /**
+     * Entries
+     */
+    entries: number;
+    /**
+     * Dirs
+     */
+    dirs: number;
+    /**
+     * Scope Path
+     */
+    scope_path?: string | null;
+    /**
+     * Truncated
+     */
+    truncated?: boolean;
+    /**
+     * Skipped Dirs
+     */
+    skipped_dirs?: number;
+    /**
+     * Skipped Files
+     */
+    skipped_files?: number;
+    /**
+     * Blocked Dirs
+     */
+    blocked_dirs?: number;
+};
+
+/**
  * ScanInvalidSubmission
  */
 export type ScanInvalidSubmission = {
@@ -3494,6 +3752,34 @@ export type ScheduleUpdateRequest = {
      * Enabled
      */
     enabled?: boolean | null;
+};
+
+/**
+ * ScrapeResult
+ */
+export type ScrapeResult = {
+    /**
+     * Type
+     */
+    type?: 'scrape';
+    /**
+     * Metadata Id
+     */
+    metadata_id: number;
+    /**
+     * Field Sources
+     */
+    field_sources: {
+        [key: string]: string;
+    };
+    /**
+     * Failed Sites
+     */
+    failed_sites: Array<string>;
+    /**
+     * Outcomes
+     */
+    outcomes?: Array<SiteOutcomeRecord>;
 };
 
 /**
@@ -3884,23 +4170,9 @@ export type TaskBatchResponse = {
 };
 
 /**
- * TaskChildListResponse
+ * TaskChildItem
  */
-export type TaskChildListResponse = {
-    /**
-     * Items
-     */
-    items: Array<TaskChildResponse>;
-    /**
-     * Total
-     */
-    total: number;
-};
-
-/**
- * TaskChildResponse
- */
-export type TaskChildResponse = {
+export type TaskChildItem = {
     /**
      * Id
      */
@@ -3911,18 +4183,6 @@ export type TaskChildResponse = {
      * Title
      */
     title?: string | null;
-    /**
-     * Payload
-     */
-    payload?: {
-        [key: string]: unknown;
-    };
-    /**
-     * Result
-     */
-    result?: {
-        [key: string]: unknown;
-    } | null;
     /**
      * Error
      */
@@ -3967,6 +4227,20 @@ export type TaskChildResponse = {
 };
 
 /**
+ * TaskChildListResponse
+ */
+export type TaskChildListResponse = {
+    /**
+     * Items
+     */
+    items: Array<TaskChildItem>;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
  * TaskChildStatusCounts
  *
  * 直接后继按状态计数. 四字段之和等于 child_count.
@@ -3991,47 +4265,11 @@ export type TaskChildStatusCounts = {
 };
 
 /**
- * TaskListResponse
- */
-export type TaskListResponse = {
-    /**
-     * Items
-     */
-    items: Array<TaskResponse>;
-    /**
-     * Total
-     */
-    total: number;
-};
-
-/**
- * TaskReport
+ * TaskListItem
  *
- * outcomes 与 summary.json 同一结构.
+ * 列表与树: 不含 payload 与 result 等重字段, 展开时再取详情.
  */
-export type TaskReport = {
-    /**
-     * Headline
-     */
-    headline?: string | null;
-    /**
-     * Metadata Id
-     */
-    metadata_id?: number | null;
-    /**
-     * Actor Id
-     */
-    actor_id?: number | null;
-    /**
-     * Outcomes
-     */
-    outcomes?: Array<SiteOutcomeRecord>;
-};
-
-/**
- * TaskResponse
- */
-export type TaskResponse = {
+export type TaskListItem = {
     /**
      * Id
      */
@@ -4042,18 +4280,6 @@ export type TaskResponse = {
      * Title
      */
     title?: string | null;
-    /**
-     * Payload
-     */
-    payload?: {
-        [key: string]: unknown;
-    };
-    /**
-     * Result
-     */
-    result?: {
-        [key: string]: unknown;
-    } | null;
     /**
      * Error
      */
@@ -4091,6 +4317,105 @@ export type TaskResponse = {
      * Finished At
      */
     finished_at?: string | null;
+};
+
+/**
+ * TaskListResponse
+ */
+export type TaskListResponse = {
+    /**
+     * Items
+     */
+    items: Array<TaskListItem>;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
+ * TaskResponse
+ *
+ * 详情: 额外带 payload 与按类型的 result.
+ */
+export type TaskResponse = {
+    /**
+     * Id
+     */
+    id: number;
+    type: TaskType;
+    status: TaskStatus;
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Log File
+     */
+    log_file?: string | null;
+    /**
+     * Retries
+     */
+    retries?: number;
+    /**
+     * Priority
+     */
+    priority?: number;
+    /**
+     * Root Task Id
+     */
+    root_task_id?: number | null;
+    /**
+     * Child Count
+     */
+    child_count?: number;
+    child_status?: TaskChildStatusCounts;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Finished At
+     */
+    finished_at?: string | null;
+    /**
+     * Payload
+     */
+    payload?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Result
+     */
+    result?: ({
+        type: 'refresh';
+    } & RefreshResult) | ({
+        type: 'organize';
+    } & OrganizeResult) | ({
+        type: 'scan_invalid';
+    } & ScanInvalidResult) | ({
+        type: 'delete';
+    } & DeleteResult) | ({
+        type: 'scrape';
+    } & ScrapeResult) | ({
+        type: 'cleanup';
+    } & CleanupResult) | ({
+        type: 'upscale';
+    } & UpscaleResult) | ({
+        type: 'r18_import';
+    } & R18ImportResult) | ({
+        type: 'actor_scrape';
+    } & ActorScrapeResult) | ({
+        type: 'rescrape';
+    } & RescrapeResult) | null;
 };
 
 /**
@@ -4283,6 +4608,32 @@ export type TurnUsageRow = {
      */
     type: 'turn_usage';
     usage: TurnTokenUsage;
+};
+
+/**
+ * UpscaleResult
+ */
+export type UpscaleResult = {
+    /**
+     * Type
+     */
+    type?: 'upscale';
+    /**
+     * Scanned
+     */
+    scanned: number;
+    /**
+     * Upscaled
+     */
+    upscaled: number;
+    /**
+     * Skipped
+     */
+    skipped: number;
+    /**
+     * Failed
+     */
+    failed: number;
 };
 
 /**
@@ -7405,36 +7756,6 @@ export type GetTaskResponses = {
 };
 
 export type GetTaskResponse = GetTaskResponses[keyof GetTaskResponses];
-
-export type GetTaskReportData = {
-    body?: never;
-    path: {
-        /**
-         * Task Id
-         */
-        task_id: number;
-    };
-    query?: never;
-    url: '/api/tasks/{task_id}/report';
-};
-
-export type GetTaskReportErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetTaskReportError = GetTaskReportErrors[keyof GetTaskReportErrors];
-
-export type GetTaskReportResponses = {
-    /**
-     * Successful Response
-     */
-    200: TaskReport;
-};
-
-export type GetTaskReportResponse = GetTaskReportResponses[keyof GetTaskReportResponses];
 
 export type GetTaskRecordData = {
     body?: never;

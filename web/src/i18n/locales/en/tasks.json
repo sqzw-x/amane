@@ -1,28 +1,61 @@
 {
-  "title": "Tasks",
   "actions": {
     "cancelTask": "Cancel Task",
     "record": "Task record",
     "submit": "Submit Task"
   },
-  "status": {
-    "queued": "Queued",
-    "running": "Running",
-    "done": "Done",
-    "failed": "Failed"
+  "batch": {
+    "cancel": "Cancelled {{count}}",
+    "cancel_one": "Cancelled {{count}}",
+    "cancel_other": "Cancelled {{count}}",
+    "retry": "Retried {{count}}",
+    "retry_one": "Retried {{count}}",
+    "retry_other": "Retried {{count}}",
+    "delete": "Deleted {{count}}",
+    "delete_one": "Deleted {{count}}",
+    "delete_other": "Deleted {{count}}"
+  },
+  "batchScrape": {
+    "toggle": "Batch Scrape",
+    "templateLabel": "Template",
+    "previewLabel": "Preview",
+    "previewEmpty": "Enter a template to see preview",
+    "submit": "Submit {{count}} task(s)",
+    "submit_one": "Submit {{count}} task",
+    "submit_other": "Submit {{count}} tasks",
+    "templateDescription": "Write numbers in Liquid syntax; loops and filters are supported"
+  },
+  "childrenCount": "{{count}} subtasks",
+  "childrenCount_one": "{{count}} subtask",
+  "childrenCount_other": "{{count}} subtasks",
+  "confirm": {
+    "deleteTitle": "Delete task",
+    "deleteMessage": "Delete this task record?",
+    "cancelTitle": "Cancel tasks",
+    "cancelFilterMessage": "Cancel queued and running tasks in the current filter?",
+    "retryFilterTitle": "Retry failed",
+    "retryFilterMessage": "Retry failed tasks in the current filter?",
+    "clearDoneTitle": "Clear completed",
+    "clearDoneMessage": "Delete completed tasks in the current filter?",
+    "clearFailedTitle": "Clear failed",
+    "clearFailedMessage": "Delete failed tasks in the current filter?"
+  },
+  "detail": {
+    "status": "Status",
+    "priority": "Priority",
+    "created": "Created",
+    "started": "Started",
+    "duration": "Duration",
+    "retries": "Retries",
+    "id": "ID",
+    "root": "Root task",
+    "linkKey": "Subtask",
+    "payload": "Payload",
+    "result": "Result",
+    "liveLogs": "Live Logs",
+    "progress": "Progress"
   },
   "empty": "No tasks",
-  "total": "{{count}} total",
-  "total_one": "{{count}} total",
-  "total_other": "{{count}} total",
-  "childrenCount": "{{count}} subtasks",
-  "loadMoreChildren": "Load more ({{count}})",
-  "tree": {
-    "loading": "Loading subtasks…",
-    "loadError": "Could not load subtasks",
-    "retry": "Retry",
-    "linkKey": "Subtask"
-  },
   "filters": {
     "all": "All",
     "queued": "Queued",
@@ -40,29 +73,38 @@
     "scan_invalid": "Scan unwanted",
     "delete": "Delete"
   },
-  "detail": {
-    "status": "Status",
-    "priority": "Priority",
-    "created": "Created",
-    "started": "Started",
-    "duration": "Duration",
-    "retries": "Retries",
-    "id": "ID",
-    "root": "Root task",
-    "linkKey": "Subtask",
-    "payload": "Payload",
-    "result": "Result",
-    "liveLogs": "Live Logs",
-    "progress": "Progress"
+  "loadMoreChildren": "Load more ({{count}})",
+  "loadMoreChildren_one": "Load more ({{count}})",
+  "loadMoreChildren_other": "Load more ({{count}})",
+  "logView": {
+    "empty": "No logs"
   },
-  "report": {
+  "reason": {
+    "http_error": "Request rejected by the site",
+    "api_error": "Upstream API error",
+    "not_found": "Content not found on the site",
+    "rate_limited": "Rate limited",
+    "server_error": "Site server error",
+    "timeout": "Request timed out",
+    "network": "Network error",
+    "cloudflare_challenge": "Cloudflare challenge",
+    "cloudflare_blocked": "Blocked by Cloudflare",
+    "ip_banned": "IP banned",
+    "geo_restricted": "Not available in your region",
+    "age_verification": "Age verification required",
+    "empty_response": "Empty response",
+    "no_usable_metadata": "No usable metadata",
+    "parse_error": "Failed to parse the site response",
+    "crawler_unavailable": "Source unavailable",
+    "unexpected": "Unexpected error"
+  },
+  "result": {
     "headline": "Failure",
     "metadata": "Film",
     "viewMetadata": "Open #{{id}}",
     "actor": "Actor",
     "viewActor": "Open #{{id}}",
     "loading": "Loading summary…",
-    "unavailable": "No summary available",
     "successEmpty": "Task completed",
     "group": {
       "failed": "Failed",
@@ -72,73 +114,34 @@
     "detail": {
       "unknown": "Unknown reason"
     },
-    "reason": {
-      "http_error": "Request rejected by the site",
-      "api_error": "Upstream API error",
-      "not_found": "Content not found on the site",
-      "rate_limited": "Rate limited",
-      "server_error": "Site server error",
-      "timeout": "Request timed out",
-      "network": "Network error",
-      "cloudflare_challenge": "Cloudflare challenge",
-      "cloudflare_blocked": "Blocked by Cloudflare",
-      "ip_banned": "IP banned",
-      "geo_restricted": "Not available in your region",
-      "age_verification": "Age verification required",
-      "empty_response": "Empty response",
-      "no_usable_metadata": "No usable metadata",
-      "parse_error": "Failed to parse the site response",
-      "crawler_unavailable": "Source unavailable",
-      "unexpected": "Unexpected error"
+    "organize": {
+      "organized": "Organized {{count}}",
+      "organized_one": "Organized {{count}}",
+      "organized_other": "Organized {{count}}",
+      "skipped": "Skipped {{count}}",
+      "skipped_one": "Skipped {{count}}",
+      "skipped_other": "Skipped {{count}}",
+      "conflicted": "Conflicts {{count}}",
+      "conflicted_one": "Conflicts {{count}}",
+      "conflicted_other": "Conflicts {{count}}",
+      "failed": "Failed {{count}}",
+      "failed_one": "Failed {{count}}",
+      "failed_other": "Failed {{count}}",
+      "prunedDirs": "Pruned dirs {{count}}",
+      "prunedDirs_one": "Pruned dirs {{count}}",
+      "prunedDirs_other": "Pruned dirs {{count}}",
+      "conflicts": "Unresolved conflicts",
+      "reason": {
+        "target_exists": "Target path already holds another file",
+        "subtitle_target_exists": "Subtitle target path already holds another file"
+      }
     }
   },
-  "logView": {
-    "empty": "No logs"
-  },
-  "toolbar": {
-    "cancel": "Cancel",
-    "retryFailed": "Retry failed",
-    "clearDone": "Clear done",
-    "clearFailed": "Clear failed",
-    "collapseAll": "Collapse All",
-    "expandAll": "Expand All"
-  },
-  "worker": {
-    "pause": "Pause",
-    "resume": "Resume"
-  },
-  "batch": {
-    "cancel": "Cancelled {{count}}",
-    "cancel_one": "Cancelled {{count}}",
-    "cancel_other": "Cancelled {{count}}",
-    "retry": "Retried {{count}}",
-    "retry_one": "Retried {{count}}",
-    "retry_other": "Retried {{count}}",
-    "delete": "Deleted {{count}}",
-    "delete_one": "Deleted {{count}}",
-    "delete_other": "Deleted {{count}}"
-  },
-  "confirm": {
-    "deleteTitle": "Delete task",
-    "deleteMessage": "Delete this task record?",
-    "cancelTitle": "Cancel tasks",
-    "cancelFilterMessage": "Cancel queued and running tasks in the current filter?",
-    "retryFilterTitle": "Retry failed",
-    "retryFilterMessage": "Retry failed tasks in the current filter?",
-    "clearDoneTitle": "Clear completed",
-    "clearDoneMessage": "Delete completed tasks in the current filter?",
-    "clearFailedTitle": "Clear failed",
-    "clearFailedMessage": "Delete failed tasks in the current filter?"
-  },
-  "batchScrape": {
-    "toggle": "Batch Scrape",
-    "templateLabel": "Template",
-    "previewLabel": "Preview",
-    "previewEmpty": "Enter a template to see preview",
-    "submit": "Submit {{count}} task(s)",
-    "submit_one": "Submit {{count}} task",
-    "submit_other": "Submit {{count}} tasks",
-    "templateDescription": "Write numbers in Liquid syntax; loops and filters are supported"
+  "status": {
+    "queued": "Queued",
+    "running": "Running",
+    "done": "Done",
+    "failed": "Failed"
   },
   "submit": {
     "toggle": "Submit Task",
@@ -381,8 +384,26 @@
       }
     }
   },
-  "loadMoreChildren_one": "Load more ({{count}})",
-  "loadMoreChildren_other": "Load more ({{count}})",
-  "childrenCount_one": "{{count}} subtask",
-  "childrenCount_other": "{{count}} subtasks"
+  "title": "Tasks",
+  "toolbar": {
+    "cancel": "Cancel",
+    "retryFailed": "Retry failed",
+    "clearDone": "Clear done",
+    "clearFailed": "Clear failed",
+    "collapseAll": "Collapse All",
+    "expandAll": "Expand All"
+  },
+  "total": "{{count}} total",
+  "total_one": "{{count}} total",
+  "total_other": "{{count}} total",
+  "tree": {
+    "loading": "Loading subtasks…",
+    "loadError": "Could not load subtasks",
+    "retry": "Retry",
+    "linkKey": "Subtask"
+  },
+  "worker": {
+    "pause": "Pause",
+    "resume": "Resume"
+  }
 }

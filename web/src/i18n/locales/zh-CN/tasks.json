@@ -1,26 +1,51 @@
 {
-  "title": "任务",
   "actions": {
     "cancelTask": "取消任务",
     "record": "任务记录",
     "submit": "提交任务"
   },
-  "status": {
-    "queued": "排队中",
-    "running": "运行中",
-    "done": "已完成",
-    "failed": "失败"
+  "batch": {
+    "cancel": "已取消 {{count}} 个",
+    "retry": "已重试 {{count}} 个",
+    "delete": "已删除 {{count}} 个"
+  },
+  "batchScrape": {
+    "toggle": "批量刮削",
+    "templateLabel": "模板",
+    "previewLabel": "预览",
+    "previewEmpty": "输入模板以预览结果",
+    "submit": "提交 {{count}} 个任务",
+    "templateDescription": "用 Liquid 语法写番号; 支持循环与过滤器"
+  },
+  "childrenCount": "{{count}} 个子任务",
+  "confirm": {
+    "deleteTitle": "删除任务",
+    "deleteMessage": "确定删除此任务记录？",
+    "cancelTitle": "取消任务",
+    "cancelFilterMessage": "取消当前筛选中的排队和运行中任务？",
+    "retryFilterTitle": "重试失败",
+    "retryFilterMessage": "重试当前筛选中的失败任务？",
+    "clearDoneTitle": "清除已完成",
+    "clearDoneMessage": "删除当前筛选中的已完成任务？",
+    "clearFailedTitle": "清除失败",
+    "clearFailedMessage": "删除当前筛选中的失败任务？"
+  },
+  "detail": {
+    "status": "状态",
+    "priority": "优先级",
+    "created": "创建时间",
+    "started": "开始时间",
+    "duration": "耗时",
+    "retries": "重试次数",
+    "id": "ID",
+    "root": "根任务",
+    "linkKey": "子任务",
+    "payload": "参数",
+    "result": "结果",
+    "liveLogs": "实时日志",
+    "progress": "进度"
   },
   "empty": "暂无任务",
-  "total": "{{count}} 条记录",
-  "childrenCount": "{{count}} 个子任务",
-  "loadMoreChildren": "加载更多 ({{count}})",
-  "tree": {
-    "loading": "加载子任务…",
-    "loadError": "无法加载子任务",
-    "retry": "重试",
-    "linkKey": "子任务"
-  },
   "filters": {
     "all": "全部",
     "queued": "排队中",
@@ -38,29 +63,36 @@
     "scan_invalid": "扫描无效文件",
     "delete": "删除"
   },
-  "detail": {
-    "status": "状态",
-    "priority": "优先级",
-    "created": "创建时间",
-    "started": "开始时间",
-    "duration": "耗时",
-    "retries": "重试次数",
-    "id": "ID",
-    "root": "根任务",
-    "linkKey": "子任务",
-    "payload": "参数",
-    "result": "结果",
-    "liveLogs": "实时日志",
-    "progress": "进度"
+  "loadMoreChildren": "加载更多 ({{count}})",
+  "logView": {
+    "empty": "暂无日志"
   },
-  "report": {
+  "reason": {
+    "http_error": "请求被站点拒绝",
+    "api_error": "上游接口报错",
+    "not_found": "站点未找到该内容",
+    "rate_limited": "请求过于频繁",
+    "server_error": "站点服务器错误",
+    "timeout": "请求超时",
+    "network": "网络错误",
+    "cloudflare_challenge": "Cloudflare 人机验证",
+    "cloudflare_blocked": "Cloudflare 拦截",
+    "ip_banned": "IP 被封禁",
+    "geo_restricted": "地域受限",
+    "age_verification": "年龄验证拦截",
+    "empty_response": "空响应",
+    "no_usable_metadata": "无可用元数据",
+    "parse_error": "站点响应解析失败",
+    "crawler_unavailable": "来源不可用",
+    "unexpected": "意外错误"
+  },
+  "result": {
     "headline": "失败原因",
     "metadata": "影片",
     "viewMetadata": "查看 #{{id}}",
     "actor": "演员",
     "viewActor": "查看 #{{id}}",
     "loading": "加载摘要…",
-    "unavailable": "暂无摘要",
     "successEmpty": "任务已完成",
     "group": {
       "failed": "失败",
@@ -70,65 +102,24 @@
     "detail": {
       "unknown": "原因未知"
     },
-    "reason": {
-      "http_error": "请求被站点拒绝",
-      "api_error": "上游接口报错",
-      "not_found": "站点未找到该内容",
-      "rate_limited": "请求过于频繁",
-      "server_error": "站点服务器错误",
-      "timeout": "请求超时",
-      "network": "网络错误",
-      "cloudflare_challenge": "Cloudflare 人机验证",
-      "cloudflare_blocked": "Cloudflare 拦截",
-      "ip_banned": "IP 被封禁",
-      "geo_restricted": "地域受限",
-      "age_verification": "年龄验证拦截",
-      "empty_response": "空响应",
-      "no_usable_metadata": "无可用元数据",
-      "parse_error": "站点响应解析失败",
-      "crawler_unavailable": "来源不可用",
-      "unexpected": "意外错误"
+    "organize": {
+      "organized": "已整理 {{count}}",
+      "skipped": "跳过 {{count}}",
+      "conflicted": "冲突 {{count}}",
+      "failed": "失败 {{count}}",
+      "prunedDirs": "剪枝目录 {{count}}",
+      "conflicts": "未处理的冲突",
+      "reason": {
+        "target_exists": "目标路径已有其它文件",
+        "subtitle_target_exists": "字幕目标路径已有其它文件"
+      }
     }
   },
-  "logView": {
-    "empty": "暂无日志"
-  },
-  "toolbar": {
-    "cancel": "取消",
-    "retryFailed": "重试失败",
-    "clearDone": "清除已完成",
-    "clearFailed": "清除失败",
-    "collapseAll": "全部收起",
-    "expandAll": "全部展开"
-  },
-  "worker": {
-    "pause": "暂停",
-    "resume": "恢复"
-  },
-  "batch": {
-    "cancel": "已取消 {{count}} 个",
-    "retry": "已重试 {{count}} 个",
-    "delete": "已删除 {{count}} 个"
-  },
-  "confirm": {
-    "deleteTitle": "删除任务",
-    "deleteMessage": "确定删除此任务记录？",
-    "cancelTitle": "取消任务",
-    "cancelFilterMessage": "取消当前筛选中的排队和运行中任务？",
-    "retryFilterTitle": "重试失败",
-    "retryFilterMessage": "重试当前筛选中的失败任务？",
-    "clearDoneTitle": "清除已完成",
-    "clearDoneMessage": "删除当前筛选中的已完成任务？",
-    "clearFailedTitle": "清除失败",
-    "clearFailedMessage": "删除当前筛选中的失败任务？"
-  },
-  "batchScrape": {
-    "toggle": "批量刮削",
-    "templateLabel": "模板",
-    "previewLabel": "预览",
-    "previewEmpty": "输入模板以预览结果",
-    "submit": "提交 {{count}} 个任务",
-    "templateDescription": "用 Liquid 语法写番号; 支持循环与过滤器"
+  "status": {
+    "queued": "排队中",
+    "running": "运行中",
+    "done": "已完成",
+    "failed": "失败"
   },
   "submit": {
     "typeLabel": "任务类型",
@@ -370,5 +361,25 @@
         "description": "库根与 .amane_trash 除外"
       }
     }
+  },
+  "title": "任务",
+  "toolbar": {
+    "cancel": "取消",
+    "retryFailed": "重试失败",
+    "clearDone": "清除已完成",
+    "clearFailed": "清除失败",
+    "collapseAll": "全部收起",
+    "expandAll": "全部展开"
+  },
+  "total": "{{count}} 条记录",
+  "tree": {
+    "loading": "加载子任务…",
+    "loadError": "无法加载子任务",
+    "retry": "重试",
+    "linkKey": "子任务"
+  },
+  "worker": {
+    "pause": "暂停",
+    "resume": "恢复"
   }
 }

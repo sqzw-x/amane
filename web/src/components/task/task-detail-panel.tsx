@@ -20,11 +20,13 @@ import {
 } from "@tabler/icons-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
+import { getTaskOptions } from "@/client/@tanstack/react-query.gen";
 import { client } from "@/client/client.gen";
-import type { TaskResponse } from "@/client/types.gen";
+import type { TaskListItem } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { TaskLogView } from "@/components/log/task-log-view";
-import { TaskReportPanel } from "@/components/task/task-report-panel";
+import { TaskResultPanel } from "@/components/task/task-result-panel";
 import { formatDuration, statusColor } from "@/lib/task/display";
 import { useProgressStore } from "@/stores/progress";
 
@@ -36,7 +38,7 @@ export interface TaskNodeActions {
 }
 
 interface TaskDetailPanelProps {
-  task: TaskResponse;
+  task: TaskListItem;
   linkKey: string | null;
   actions: TaskNodeActions;
 }
@@ -79,14 +81,15 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** JSON 默认折叠. */
+/** JSON 默认折叠. 列表不带 payload 与 result, 展开时按 id 取详情. */
 export function TaskDetailPanel({ task, linkKey, actions }: TaskDetailPanelProps) {
   const { t } = useTranslation(["tasks", "common"]);
+  const { data: detail } = useQuery({ ...getTaskOptions({ path: { task_id: task.id } }) });
   const progress = useProgressStore((s) => s.byTask[task.id]);
   const duration = formatDuration(task.started_at, task.finished_at);
   const isTerminal = task.status === "done" || task.status === "failed";
-  const hasPayload = task.payload != null && Object.keys(task.payload).length > 0;
-  const hasResult = task.result != null && Object.keys(task.result).length > 0;
+  const hasPayload = Object.keys(detail?.payload ?? {}).length > 0;
+  const hasResult = detail?.result != null;
 
   return (
     <Stack gap="sm" p="sm">
@@ -135,14 +138,26 @@ export function TaskDetailPanel({ task, linkKey, actions }: TaskDetailPanelProps
         </div>
       )}
 
-      {isTerminal && (
-        <TaskReportPanel taskId={task.id} failed={task.status === "failed"} taskType={task.type} />
+      {isTerminal && detail == null ? (
+        <Text size="xs" c="dimmed">
+          {t("result.loading")}
+        </Text>
+      ) : null}
+
+      {isTerminal && detail != null ? (
+        <TaskResultPanel
+          result={detail.result ?? null}
+          headline={task.error}
+          failed={task.status === "failed"}
+        />
+      ) : null}
+
+      {hasPayload && detail != null && (
+        <CollapsibleJson title={t("detail.payload")} value={detail.payload} />
       )}
 
-      {hasPayload && <CollapsibleJson title={t("detail.payload")} value={task.payload} />}
-
-      {hasResult && task.status === "done" && (
-        <CollapsibleJson title={t("detail.result")} value={task.result} />
+      {hasResult && task.status === "done" && detail != null && (
+        <CollapsibleJson title={t("detail.result")} value={detail.result} />
       )}
 
       {(task.status === "queued" || task.status === "running") && (
@@ -209,7 +224,7 @@ export function TaskRowActions({
   task,
   actions,
 }: {
-  task: TaskResponse;
+  task: TaskListItem;
   actions: TaskNodeActions;
 }) {
   const { t } = useTranslation(["tasks", "common"]);

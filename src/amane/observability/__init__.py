@@ -22,7 +22,6 @@ from .recorder import (
     task_dir_for,
 )
 from .redact import hot_slice_for_task, needs_secrets_file, redact_dsn, redact_hot, redact_proxy
-from .report import TaskReport, build_task_report
 from .source import invoke_source
 
 __all__ = [
@@ -35,12 +34,10 @@ __all__ = [
     "SiteOutcomeKind",
     "SiteOutcomeRecord",
     "TaskIdFilter",
-    "TaskReport",
     "TaskSnapshot",
     "TaskSummary",
     "WSEventLogHandler",
     "build_record_zip",
-    "build_task_report",
     "current",
     "get_recorder",
     "get_task_id",

@@ -284,6 +284,54 @@ export const ActorScrapeRequestSchema = {
     title: 'ActorScrapeRequest'
 } as const;
 
+export const ActorScrapeResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'actor_scrape',
+            title: 'Type',
+            default: 'actor_scrape'
+        },
+        actor_id: {
+            type: 'integer',
+            title: 'Actor Id'
+        },
+        field_sources: {
+            additionalProperties: {
+                type: 'string'
+            },
+            type: 'object',
+            title: 'Field Sources'
+        },
+        failed_sites: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Failed Sites'
+        },
+        image_count: {
+            type: 'integer',
+            title: 'Image Count'
+        },
+        outcomes: {
+            items: {
+                $ref: '#/components/schemas/SiteOutcomeRecord'
+            },
+            type: 'array',
+            title: 'Outcomes'
+        }
+    },
+    type: 'object',
+    required: [
+        'actor_id',
+        'field_sources',
+        'failed_sites',
+        'image_count'
+    ],
+    title: 'ActorScrapeResult'
+} as const;
+
 export const ActorScrapeSubmissionSchema = {
     properties: {
         type: {
@@ -1115,6 +1163,31 @@ export const CancelledRowSchema = {
     description: '回合被显式终止.'
 } as const;
 
+export const CleanupResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'cleanup',
+            title: 'Type',
+            default: 'cleanup'
+        },
+        files_removed: {
+            type: 'integer',
+            title: 'Files Removed'
+        },
+        resources_removed: {
+            type: 'integer',
+            title: 'Resources Removed'
+        }
+    },
+    type: 'object',
+    required: [
+        'files_removed',
+        'resources_removed'
+    ],
+    title: 'CleanupResult'
+} as const;
+
 export const CleanupSubmissionSchema = {
     properties: {
         remove_missing_files: {
@@ -1489,6 +1562,66 @@ export const CropPosterRequestSchema = {
     ],
     title: 'CropPosterRequest',
     description: '从封面图按像素框裁切海报 (相对 thumb 当前本地文件像素; 含就地超分后尺寸).'
+} as const;
+
+export const DeleteResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'delete',
+            title: 'Type',
+            default: 'delete'
+        },
+        deleted: {
+            type: 'integer',
+            title: 'Deleted'
+        },
+        changed: {
+            type: 'integer',
+            title: 'Changed'
+        },
+        failed: {
+            type: 'integer',
+            title: 'Failed'
+        },
+        freed_bytes: {
+            type: 'integer',
+            title: 'Freed Bytes',
+            default: 0
+        },
+        hardlink_items: {
+            type: 'integer',
+            title: 'Hardlink Items',
+            default: 0
+        },
+        pruned_dirs: {
+            type: 'integer',
+            title: 'Pruned Dirs',
+            default: 0
+        },
+        excluded: {
+            type: 'integer',
+            title: 'Excluded',
+            default: 0
+        },
+        indexed: {
+            type: 'integer',
+            title: 'Indexed',
+            default: 0
+        },
+        reverify_rejected: {
+            type: 'integer',
+            title: 'Reverify Rejected',
+            default: 0
+        }
+    },
+    type: 'object',
+    required: [
+        'deleted',
+        'changed',
+        'failed'
+    ],
+    title: 'DeleteResult'
 } as const;
 
 export const DeleteSubmissionSchema = {
@@ -5468,6 +5601,88 @@ export const OptionalPathTemplateDefaultsSchema = {
     description: '附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用).'
 } as const;
 
+export const OrganizeConflictSchema = {
+    properties: {
+        path: {
+            type: 'string',
+            title: 'Path'
+        },
+        target: {
+            type: 'string',
+            title: 'Target'
+        },
+        reason: {
+            $ref: '#/components/schemas/OrganizeConflictReason'
+        }
+    },
+    type: 'object',
+    required: [
+        'path',
+        'target',
+        'reason'
+    ],
+    title: 'OrganizeConflict',
+    description: '一条未落盘的记录: 源文件路径 + 被占用的目标路径.'
+} as const;
+
+export const OrganizeConflictReasonSchema = {
+    type: 'string',
+    enum: [
+        'target_exists',
+        'subtitle_target_exists'
+    ],
+    title: 'OrganizeConflictReason',
+    description: '整理未处理的原因.'
+} as const;
+
+export const OrganizeResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'organize',
+            title: 'Type',
+            default: 'organize'
+        },
+        organized: {
+            type: 'integer',
+            title: 'Organized'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped'
+        },
+        conflicted: {
+            type: 'integer',
+            title: 'Conflicted'
+        },
+        failed: {
+            type: 'integer',
+            title: 'Failed'
+        },
+        pruned_dirs: {
+            type: 'integer',
+            title: 'Pruned Dirs'
+        },
+        conflicts: {
+            items: {
+                $ref: '#/components/schemas/OrganizeConflict'
+            },
+            type: 'array',
+            title: 'Conflicts'
+        }
+    },
+    type: 'object',
+    required: [
+        'organized',
+        'skipped',
+        'conflicted',
+        'failed',
+        'pruned_dirs',
+        'conflicts'
+    ],
+    title: 'OrganizeResult'
+} as const;
+
 export const OrganizeSubmissionSchema = {
     properties: {
         library_id: {
@@ -5942,6 +6157,37 @@ export const R18ConfigSchema = {
     description: '放 Hot: 修改 dsn 经 AppRuntime.apply_rebuild() 重建只读引擎. 未配置 dsn 时整个数据源禁用.\n定时导入不在此节, 须经 Schedule API 创建 r18_import.'
 } as const;
 
+export const R18ImportResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'r18_import',
+            title: 'Type',
+            default: 'r18_import'
+        },
+        imported: {
+            type: 'boolean',
+            title: 'Imported'
+        },
+        etag: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Etag'
+        }
+    },
+    type: 'object',
+    required: [
+        'imported'
+    ],
+    title: 'R18ImportResult'
+} as const;
+
 export const R18ImportSubmissionSchema = {
     properties: {
         force: {
@@ -6002,6 +6248,36 @@ export const ReasoningDeltaRowSchema = {
     ],
     title: 'ReasoningDeltaRow',
     description: '思考增量; `block_id` 取自协议的消息 id, 前端据此归块而不靠相邻关系.'
+} as const;
+
+export const RefreshResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'refresh',
+            title: 'Type',
+            default: 'refresh'
+        },
+        added: {
+            type: 'integer',
+            title: 'Added'
+        },
+        removed: {
+            type: 'integer',
+            title: 'Removed'
+        },
+        scrape: {
+            type: 'integer',
+            title: 'Scrape'
+        }
+    },
+    type: 'object',
+    required: [
+        'added',
+        'removed',
+        'scrape'
+    ],
+    title: 'RefreshResult'
 } as const;
 
 export const RefreshSubmissionSchema = {
@@ -6213,6 +6489,36 @@ export const RequestUsageRowSchema = {
     ],
     title: 'RequestUsageRow',
     description: '单次模型请求的用量; 该次响应一到即写行, 到达顺序即它在回合里的位置 (这次响应的正文与工具调用之后).'
+} as const;
+
+export const RescrapeResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'rescrape',
+            title: 'Type',
+            default: 'rescrape'
+        },
+        submitted: {
+            type: 'integer',
+            title: 'Submitted'
+        },
+        metadata: {
+            type: 'integer',
+            title: 'Metadata',
+            default: 0
+        },
+        actors: {
+            type: 'integer',
+            title: 'Actors',
+            default: 0
+        }
+    },
+    type: 'object',
+    required: [
+        'submitted'
+    ],
+    title: 'RescrapeResult'
 } as const;
 
 export const RescrapeSubmissionSchema = {
@@ -6553,6 +6859,67 @@ export const SavedQueryUpdateRequestSchema = {
     description: '仅名称 / 描述 / SQL 三项, 未知键被忽略; 显式 null 一律 422, 省略键才是「不更新」.\n\n字段不从 DB 模型派生: ``create_partial_model`` 会丢弃 ``StringConstraints``;\n约束别名与创建请求共用.'
 } as const;
 
+export const ScanInvalidResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'scan_invalid',
+            title: 'Type',
+            default: 'scan_invalid'
+        },
+        inventory_id: {
+            type: 'string',
+            title: 'Inventory Id'
+        },
+        entries: {
+            type: 'integer',
+            title: 'Entries'
+        },
+        dirs: {
+            type: 'integer',
+            title: 'Dirs'
+        },
+        scope_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Scope Path'
+        },
+        truncated: {
+            type: 'boolean',
+            title: 'Truncated',
+            default: false
+        },
+        skipped_dirs: {
+            type: 'integer',
+            title: 'Skipped Dirs',
+            default: 0
+        },
+        skipped_files: {
+            type: 'integer',
+            title: 'Skipped Files',
+            default: 0
+        },
+        blocked_dirs: {
+            type: 'integer',
+            title: 'Blocked Dirs',
+            default: 0
+        }
+    },
+    type: 'object',
+    required: [
+        'inventory_id',
+        'entries',
+        'dirs'
+    ],
+    title: 'ScanInvalidResult'
+} as const;
+
 export const ScanInvalidSubmissionSchema = {
     properties: {
         library_id: {
@@ -6826,6 +7193,49 @@ export const ScheduleUpdateRequestSchema = {
     },
     type: 'object',
     title: 'ScheduleUpdateRequest'
+} as const;
+
+export const ScrapeResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'scrape',
+            title: 'Type',
+            default: 'scrape'
+        },
+        metadata_id: {
+            type: 'integer',
+            title: 'Metadata Id'
+        },
+        field_sources: {
+            additionalProperties: {
+                type: 'string'
+            },
+            type: 'object',
+            title: 'Field Sources'
+        },
+        failed_sites: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Failed Sites'
+        },
+        outcomes: {
+            items: {
+                $ref: '#/components/schemas/SiteOutcomeRecord'
+            },
+            type: 'array',
+            title: 'Outcomes'
+        }
+    },
+    type: 'object',
+    required: [
+        'metadata_id',
+        'field_sources',
+        'failed_sites'
+    ],
+    title: 'ScrapeResult'
 } as const;
 
 export const ScrapeSubmissionSchema = {
@@ -7657,29 +8067,7 @@ export const TaskBatchResponseSchema = {
     title: 'TaskBatchResponse'
 } as const;
 
-export const TaskChildListResponseSchema = {
-    properties: {
-        items: {
-            items: {
-                $ref: '#/components/schemas/TaskChildResponse'
-            },
-            type: 'array',
-            title: 'Items'
-        },
-        total: {
-            type: 'integer',
-            title: 'Total'
-        }
-    },
-    type: 'object',
-    required: [
-        'items',
-        'total'
-    ],
-    title: 'TaskChildListResponse'
-} as const;
-
-export const TaskChildResponseSchema = {
+export const TaskChildItemSchema = {
     properties: {
         id: {
             type: 'integer',
@@ -7701,23 +8089,6 @@ export const TaskChildResponseSchema = {
                 }
             ],
             title: 'Title'
-        },
-        payload: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Payload'
-        },
-        result: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Result'
         },
         error: {
             anyOf: [
@@ -7818,7 +8189,29 @@ export const TaskChildResponseSchema = {
         'status',
         'link_key'
     ],
-    title: 'TaskChildResponse'
+    title: 'TaskChildItem'
+} as const;
+
+export const TaskChildListResponseSchema = {
+    properties: {
+        items: {
+            items: {
+                $ref: '#/components/schemas/TaskChildItem'
+            },
+            type: 'array',
+            title: 'Items'
+        },
+        total: {
+            type: 'integer',
+            title: 'Total'
+        }
+    },
+    type: 'object',
+    required: [
+        'items',
+        'total'
+    ],
+    title: 'TaskChildListResponse'
 } as const;
 
 export const TaskChildStatusCountsSchema = {
@@ -7849,77 +8242,7 @@ export const TaskChildStatusCountsSchema = {
     description: '直接后继按状态计数. 四字段之和等于 child_count.'
 } as const;
 
-export const TaskListResponseSchema = {
-    properties: {
-        items: {
-            items: {
-                $ref: '#/components/schemas/TaskResponse'
-            },
-            type: 'array',
-            title: 'Items'
-        },
-        total: {
-            type: 'integer',
-            title: 'Total'
-        }
-    },
-    type: 'object',
-    required: [
-        'items',
-        'total'
-    ],
-    title: 'TaskListResponse'
-} as const;
-
-export const TaskReportSchema = {
-    properties: {
-        headline: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Headline'
-        },
-        metadata_id: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Metadata Id'
-        },
-        actor_id: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Actor Id'
-        },
-        outcomes: {
-            items: {
-                $ref: '#/components/schemas/SiteOutcomeRecord'
-            },
-            type: 'array',
-            title: 'Outcomes'
-        }
-    },
-    type: 'object',
-    title: 'TaskReport',
-    description: 'outcomes 与 summary.json 同一结构.'
-} as const;
-
-export const TaskResponseSchema = {
+export const TaskListItemSchema = {
     properties: {
         id: {
             type: 'integer',
@@ -7941,23 +8264,6 @@ export const TaskResponseSchema = {
                 }
             ],
             title: 'Title'
-        },
-        payload: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Payload'
-        },
-        result: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Result'
         },
         error: {
             anyOf: [
@@ -8053,7 +8359,213 @@ export const TaskResponseSchema = {
         'type',
         'status'
     ],
-    title: 'TaskResponse'
+    title: 'TaskListItem',
+    description: '列表与树: 不含 payload 与 result 等重字段, 展开时再取详情.'
+} as const;
+
+export const TaskListResponseSchema = {
+    properties: {
+        items: {
+            items: {
+                $ref: '#/components/schemas/TaskListItem'
+            },
+            type: 'array',
+            title: 'Items'
+        },
+        total: {
+            type: 'integer',
+            title: 'Total'
+        }
+    },
+    type: 'object',
+    required: [
+        'items',
+        'total'
+    ],
+    title: 'TaskListResponse'
+} as const;
+
+export const TaskResponseSchema = {
+    properties: {
+        id: {
+            type: 'integer',
+            title: 'Id'
+        },
+        type: {
+            $ref: '#/components/schemas/TaskType'
+        },
+        status: {
+            $ref: '#/components/schemas/TaskStatus'
+        },
+        title: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Title'
+        },
+        error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        log_file: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Log File'
+        },
+        retries: {
+            type: 'integer',
+            title: 'Retries',
+            default: 0
+        },
+        priority: {
+            type: 'integer',
+            title: 'Priority',
+            default: 0
+        },
+        root_task_id: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Root Task Id'
+        },
+        child_count: {
+            type: 'integer',
+            title: 'Child Count',
+            default: 0
+        },
+        child_status: {
+            $ref: '#/components/schemas/TaskChildStatusCounts'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Started At'
+        },
+        finished_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Finished At'
+        },
+        payload: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Payload'
+        },
+        result: {
+            anyOf: [
+                {
+                    oneOf: [
+                        {
+                            $ref: '#/components/schemas/RefreshResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/OrganizeResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/ScanInvalidResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/DeleteResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/ScrapeResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/CleanupResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/UpscaleResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/R18ImportResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/ActorScrapeResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/RescrapeResult'
+                        }
+                    ],
+                    discriminator: {
+                        propertyName: 'type',
+                        mapping: {
+                            actor_scrape: '#/components/schemas/ActorScrapeResult',
+                            cleanup: '#/components/schemas/CleanupResult',
+                            delete: '#/components/schemas/DeleteResult',
+                            organize: '#/components/schemas/OrganizeResult',
+                            r18_import: '#/components/schemas/R18ImportResult',
+                            refresh: '#/components/schemas/RefreshResult',
+                            rescrape: '#/components/schemas/RescrapeResult',
+                            scan_invalid: '#/components/schemas/ScanInvalidResult',
+                            scrape: '#/components/schemas/ScrapeResult',
+                            upscale: '#/components/schemas/UpscaleResult'
+                        }
+                    }
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Result'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'type',
+        'status'
+    ],
+    title: 'TaskResponse',
+    description: '详情: 额外带 payload 与按类型的 result.'
 } as const;
 
 export const TaskSortFieldSchema = {
@@ -8356,6 +8868,41 @@ export const TurnUsageRowSchema = {
     ],
     title: 'TurnUsageRow',
     description: '回合收尾: 聚合用量归属当前助手消息, 同时标志本轮结束.\n\n正文不在此行重复: 适配器对每段正文都发 `TEXT_MESSAGE_CONTENT`, 故正文必然已由\n`TextDeltaRow` 落盘, 无须回退到整段文本.'
+} as const;
+
+export const UpscaleResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'upscale',
+            title: 'Type',
+            default: 'upscale'
+        },
+        scanned: {
+            type: 'integer',
+            title: 'Scanned'
+        },
+        upscaled: {
+            type: 'integer',
+            title: 'Upscaled'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped'
+        },
+        failed: {
+            type: 'integer',
+            title: 'Failed'
+        }
+    },
+    type: 'object',
+    required: [
+        'scanned',
+        'upscaled',
+        'skipped',
+        'failed'
+    ],
+    title: 'UpscaleResult'
 } as const;
 
 export const UpscaleSubmissionSchema = {

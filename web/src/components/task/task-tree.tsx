@@ -4,7 +4,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { type KeyboardEvent, useLayoutEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { getTaskChildrenInfiniteOptions } from "@/client/@tanstack/react-query.gen";
-import type { TaskChildResponse, TaskResponse } from "@/client/types.gen";
+import type { TaskChildItem, TaskListItem } from "@/client/types.gen";
 import {
   TaskDetailPanel,
   type TaskNodeActions,
@@ -54,7 +54,7 @@ function TreePaneRails({
   continuations: readonly boolean[];
   isLast: boolean;
   hasChildren: boolean;
-  status: TaskResponse["status"];
+  status: TaskListItem["status"];
   narrow: boolean;
 }) {
   // 根节点不把森林兄弟画进树; 更深的节点把「自己不是末子」并进祖先贯通线.
@@ -84,7 +84,7 @@ function TreePaneRails({
 }
 
 export interface TaskTreeProps {
-  tasks: readonly TaskResponse[];
+  tasks: readonly TaskListItem[];
   progressByTask: Readonly<Record<number, TaskProgress | undefined>>;
   actions: TaskNodeActions;
   opened: ReadonlySet<number>;
@@ -124,7 +124,7 @@ export function TaskTree({
 }
 
 interface TaskTreeNodeProps {
-  task: TaskResponse;
+  task: TaskListItem;
   linkKey: string | null;
   depth: number;
   isLast: boolean;
@@ -172,7 +172,7 @@ function TaskTreeNode({
     getNextPageParam: nextOffsetPageParam,
   });
 
-  const children: TaskChildResponse[] = useMemo(
+  const children: TaskChildItem[] = useMemo(
     () => childrenQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [childrenQuery.data],
   );

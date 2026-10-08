@@ -63,6 +63,8 @@ SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完�
 
 **约束**: 不允许重命名已持久化的 payload 字段, 否则队列中的旧 dict 无法还原; 新增字段必须带默认值.
 
+结果侧: 每个结果模型自带 `type` 字面量, 单条任务的结果按该字段判别 (联合定义在 `api/models/tasks.py`, 前端按 `result.type` 收窄). 结果由本进程按同一模型写入, 读不出来时不迁移也不猜字段: 详情响应里置空. 列表与子任务响应不带 `payload` 与 `result`, 展开单个任务时才取详情.
+
 ### 进度上报
 
 Worker 在 `handle()` 前注入 `report_progress` 回调, 经 EventBus 发 `task.progress` (`{task_id, current, total, message}`); 前端写 `web/src/stores/progress.ts`. **契约**: `total > 0` 时前端按 `current/total` 显示百分比, 未上报则回退 indeterminate, Handler 不调用时静默忽略.

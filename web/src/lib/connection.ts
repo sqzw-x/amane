@@ -168,6 +168,7 @@ function numField(data: Record<string, unknown>, key: string, fallback: number):
 export function invalidateTaskQueries(queryClient: QueryClient): void {
   queryClient.invalidateQueries({ queryKey: listTasksQueryKey() });
   queryClient.invalidateQueries({ queryKey: [{ _id: "getTaskChildren" }] });
+  queryClient.invalidateQueries({ queryKey: [{ _id: "getTask" }] });
 }
 
 // 按 event.type 更新 store 并失效对应 query

@@ -249,11 +249,11 @@ function ElapsedLabel({ item }: { item: ConnectivityItemResponse }) {
 function ReasonCell({ item }: { item: ConnectivityItemResponse }) {
   const { t } = useTranslation("networkCheck");
   const { t: tTasks } = useTranslation("tasks");
-  // 原因与状态码均为结构化字段, 不解析文本; 失败原因文案复用任务报告 (tasks:report.reason.*),
+  // 原因与状态码均为结构化字段, 不解析文本; 失败原因文案复用任务结果面板 (tasks:reason.*),
   // 未探测的原因只在本页 (networkCheck:skip.*) — 它在任务报告里没有对应语义.
   const reason =
     item.reason != null
-      ? tTasks(`report.reason.${item.reason}`)
+      ? tTasks(`reason.${item.reason}`)
       : item.skip_reason != null
         ? t(SKIP_LABEL_KEY[item.skip_reason])
         : null;

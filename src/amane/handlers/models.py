@@ -182,10 +182,10 @@ class OrganizeResult(BaseModel):
     type: Literal[TaskType.ORGANIZE] = TaskType.ORGANIZE
     organized: int
     skipped: int
-    conflicted: int = 0
+    conflicted: int
     failed: int
-    pruned_dirs: int = 0
-    conflicts: list[OrganizeConflict] = Field(default_factory=list)
+    pruned_dirs: int
+    conflicts: list[OrganizeConflict]
 
 
 # --- SCAN INVALID ---
