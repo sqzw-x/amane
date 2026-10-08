@@ -188,6 +188,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
                 field_sources=dict(merged.field_sources),
                 failed_sites=failed_sites,
                 image_count=len(merged.image_urls),
+                outcomes=current().site_outcomes(),
             ),
         )
 

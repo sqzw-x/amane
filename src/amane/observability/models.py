@@ -77,6 +77,10 @@ class OrganizeConflict(BaseModel):
     reason: OrganizeConflictReason
 
 
+OUTCOME_DETAIL_LIMIT = 200
+"""任务结果里站点明细 `detail` 的截断长度; 完整文本只留在任务记录中."""
+
+
 class TaskSummary(BaseModel):
     """只保留 task.json / http/ 无法直接表达的聚合信息."""
 

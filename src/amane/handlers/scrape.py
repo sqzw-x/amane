@@ -206,7 +206,10 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         return TaskResult(
             success=True,
             result=ScrapeResult(
-                metadata_id=meta.id, field_sources=result.field_sources, failed_sites=result.failed_sites
+                metadata_id=meta.id,
+                field_sources=result.field_sources,
+                failed_sites=result.failed_sites,
+                outcomes=current().site_outcomes(),
             ),
             followups=actor_followups,
         )
