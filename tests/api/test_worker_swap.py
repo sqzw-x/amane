@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -15,7 +16,8 @@ import amane.app.bootstrap as bootstrap_module
 import amane.app.runtime as runtime_module
 from amane.api.routes import API_PREFIX
 from amane.config import HotSettings
-from amane.db.models import TaskType
+from amane.db.models import Task, TaskType
+from amane.db.repository import Repository
 from amane.handlers.models import RefreshPayload, RefreshResult
 from amane.handlers.protocol import TaskHandler, TaskResult
 from amane.scheduler.worker import CANCEL_ERROR
@@ -247,26 +249,38 @@ async def test_stop_workers_bounds_stuck_claim(
     safe_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """认领 commit 卡死时 stop_workers 有界返回并取消主循环."""
+    """认领事务的提交被阻塞时, stop_workers 有界返回并取消主循环."""
     client, _blocker, runtime = swap_client
     library_id = await _create_library(client, safe_path)
-    task_id = await _submit_refresh(client, library_id)
 
+    # 标记须按任务隔离: 主循环认领期间, 提交任务的请求会同时落库.
+    in_claim: ContextVar[bool] = ContextVar("in_claim", default=False)
+    real_claim = Repository.claim_next_task
     commit_started = asyncio.Event()
     release_commit = asyncio.Event()
     real_commit = AsyncSession.commit
-    armed = True
+    blocked = False
+
+    async def marked_claim(self: Repository) -> Task | None:
+        in_claim.set(True)
+        try:
+            return await real_claim(self)
+        finally:
+            in_claim.set(False)
 
     async def blocked_commit(self: AsyncSession) -> None:
-        nonlocal armed
-        if armed:
-            armed = False
+        nonlocal blocked
+        if in_claim.get() and not blocked:
+            blocked = True
             commit_started.set()
             await release_commit.wait()
         await real_commit(self)
 
     monkeypatch.setattr(runtime_module, "MAIN_LOOP_STOP_TIMEOUT", 0.1)
+    monkeypatch.setattr(Repository, "claim_next_task", marked_claim)
     monkeypatch.setattr(AsyncSession, "commit", blocked_commit)
+    # 阻塞须在提交任务前生效: 提交返回时主循环可能已经认领, 被阻塞的就不是该提交.
+    task_id = await _submit_refresh(client, library_id)
     await asyncio.wait_for(commit_started.wait(), timeout=5)
 
     await asyncio.wait_for(runtime.stop_workers(closing=False), timeout=5)
