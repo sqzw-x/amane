@@ -10,7 +10,7 @@ import pytest
 
 from amane.config import HotSettings
 from amane.handlers import RefreshHandler, RefreshPayload, ScanInvalidHandler, ScanInvalidPayload
-from amane.library import ORPHAN_COOLDOWN_SECONDS, InventoryReason, InventorySource, InventoryStore
+from amane.library import ORPHAN_COOLDOWN_SECONDS, CleanupInventory, InventoryReason, InventorySource, InventoryStore
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -129,7 +129,10 @@ async def test_scan_invalid_reports_blocked_dirs(repo: Repository, tmp_path: Pat
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_refresh_and_scan_invalid_agree_on_entries(repo: Repository, tmp_path: Path) -> None:
-    """两个产出方共用同一趟遍历: 同一棵树上产出的条目集合与原因必须一致."""
+    """两个产出方共用同一趟遍历: 同一棵树上产出的条目集合与原因必须一致.
+
+    比较用库根相对路径: 两个 handler 的 `library_root` / `scope_dir` 来源不同, 分叉会出现在目录层.
+    """
     lib_root = tmp_path / "lib"
     (lib_root / "old").mkdir(parents=True)
     (lib_root / "old" / "NSFS-039.nfo").write_bytes(b"x")
@@ -138,6 +141,8 @@ async def test_refresh_and_scan_invalid_agree_on_entries(repo: Repository, tmp_p
     (lib_root / "work" / "NSFS-001.mp4").write_bytes(b"x")
     (lib_root / "work" / "ad-1.mkv").write_bytes(b"x")
     (lib_root / "empty").mkdir()
+    # 库根层的附属文件: 走 `_register_scope_files`, 两个产出方都要覆盖到.
+    (lib_root / "NSFS-002.nfo").write_bytes(b"x")
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad-"])
     assert lib.id is not None
     _age(lib_root)
@@ -156,14 +161,19 @@ async def test_refresh_and_scan_invalid_agree_on_entries(repo: Repository, tmp_p
     scan_inventory = scan_store.get(scanned.result.inventory_id)
     assert refresh_inventory is not None
     assert scan_inventory is not None
+
+    def entries(inventory: CleanupInventory) -> set[tuple[str, InventoryReason]]:
+        return {(entry.path.relative_to(lib_root).as_posix(), entry.reason) for entry in inventory.entries}
+
     assert (
-        {(entry.path.name, entry.reason) for entry in refresh_inventory.entries}
-        == {(entry.path.name, entry.reason) for entry in scan_inventory.entries}
+        entries(refresh_inventory)
+        == entries(scan_inventory)
         == {
+            ("NSFS-002.nfo", InventoryReason.ORPHAN),
             ("old", InventoryReason.ORPHAN),
-            ("NSFS-039.nfo", InventoryReason.ORPHAN),
-            ("poster.jpg", InventoryReason.ORPHAN),
-            ("ad-1.mkv", InventoryReason.BLACKLIST),
+            ("old/NSFS-039.nfo", InventoryReason.ORPHAN),
+            ("old/poster.jpg", InventoryReason.ORPHAN),
+            ("work/ad-1.mkv", InventoryReason.BLACKLIST),
             ("empty", InventoryReason.EMPTY_DIR),
         }
     )

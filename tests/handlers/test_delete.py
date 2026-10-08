@@ -516,11 +516,27 @@ async def test_delete_reverify_missing_target_is_changed(repo: Repository, tmp_p
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_orphan_still_executes_when_unchanged(repo: Repository, tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("content", "deleted"),
+    [
+        (("NSFS-039.nfo",), 1),
+        (("emptysub/", "poster.jpg"), 2),
+    ],
+    ids=["附属文件", "空子目录与附属文件"],
+)
+async def test_delete_removes_orphan_container_entries(
+    repo: Repository, tmp_path: Path, content: tuple[str, ...], deleted: int
+) -> None:
+    """容器里的条目 (附属文件、保留的空子目录) 都是删除目标, 删完由剪枝回收容器目录."""
     lib_root = tmp_path / "lib"
     old = lib_root / "old"
     old.mkdir(parents=True)
-    (old / "NSFS-039.nfo").write_bytes(b"x" * 5)
+    for relative in content:
+        path = old / relative
+        if relative.endswith("/"):
+            path.mkdir(parents=True)
+        else:
+            path.write_bytes(b"x" * 5)
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
     store = InventoryStore()
@@ -534,7 +550,8 @@ async def test_delete_orphan_still_executes_when_unchanged(repo: Repository, tmp
     assert result.success is True
     assert result.result is not None
     assert result.result.reverify_rejected == 0
-    assert result.result.deleted == 1
+    assert result.result.deleted == deleted
+    assert result.result.pruned_dirs == 1
     assert not old.exists()
 
 
@@ -583,58 +600,15 @@ async def test_delete_reverifies_orphan_container_subtree(
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_delete_removes_entries_kept_inside_orphan_container(repo: Repository, tmp_path: Path) -> None:
-    """容器里保留的空子目录同样是删除目标: 丢弃它这处残留就无法清除."""
-    lib_root = tmp_path / "lib"
-    old = lib_root / "old"
-    (old / "emptysub").mkdir(parents=True)
-    (old / "poster.jpg").write_bytes(b"x")
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
-    assert lib.id is not None
-    store = InventoryStore()
-    _age_for_orphan(lib_root)
-    inventory_id = await _inventory_id(repo, store, lib.id)
-
-    result = await DeleteHandler(repo, store, HotSettings()).handle(
-        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
-    )
-
-    assert result.success is True
-    assert result.result is not None
-    assert result.result.deleted == 2
-    assert result.result.pruned_dirs == 1
-    assert not old.exists()
-
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_delete_reverify_stops_at_scan_scope(repo: Repository, tmp_path: Path) -> None:
-    """范围清单的复验只走到扫描范围那一层: 更上面的层扫描时没看过, 拿它否决会拒掉全部条目."""
-    lib_root = tmp_path / "lib"
-    scope = lib_root / "old"
-    scope.mkdir(parents=True)
-    entry = scope / "NSFS-039.nfo"
-    entry.write_bytes(b"x")
-    (lib_root / "NEW-001.mp4").write_bytes(b"x")
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
-    assert lib.id is not None
-    store = InventoryStore()
-    _age_for_orphan(lib_root)
-    inventory_id = await _inventory_id(repo, store, lib.id, path=str(scope))
-
-    result = await DeleteHandler(repo, store, HotSettings()).handle(
-        DeletePayload(library_id=lib.id, inventory_id=inventory_id)
-    )
-
-    assert result.success is True
-    assert result.result is not None
-    assert result.result.reverify_rejected == 0
-    assert result.result.deleted == 1
-    assert not entry.exists()
-
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_delete_reverify_rejects_download_at_scope_level(repo: Repository, tmp_path: Path) -> None:
-    """库根与扫描范围层同样只看本层: 本层出现下载进度即不删这一层的残留文件."""
+@pytest.mark.parametrize(
+    ("appeared", "rejected", "deleted"),
+    [("NEW-001.mp4", 0, 1), ("old/NSFS-039.mp4.part", 1, 0)],
+    ids=["范围之上出现媒体", "本层出现下载进度"],
+)
+async def test_delete_reverify_stops_at_scan_scope(
+    repo: Repository, tmp_path: Path, appeared: str, rejected: int, deleted: int
+) -> None:
+    """范围清单的复验只走到扫描范围那一层: 之上的媒体不否决, 本层的否决项拦住这一层的条目."""
     lib_root = tmp_path / "lib"
     scope = lib_root / "old"
     scope.mkdir(parents=True)
@@ -646,7 +620,8 @@ async def test_delete_reverify_rejects_download_at_scope_level(repo: Repository,
     _age_for_orphan(lib_root)
     inventory_id = await _inventory_id(repo, store, lib.id, path=str(scope))
 
-    (scope / "NSFS-039.mp4.part").write_bytes(b"x")
+    # 扫描之后才到达的媒体 / 下载进度.
+    (lib_root / appeared).write_bytes(b"x")
 
     result = await DeleteHandler(repo, store, HotSettings()).handle(
         DeletePayload(library_id=lib.id, inventory_id=inventory_id)
@@ -654,9 +629,9 @@ async def test_delete_reverify_rejects_download_at_scope_level(repo: Repository,
 
     assert result.success is True
     assert result.result is not None
-    assert result.result.reverify_rejected == 1
-    assert result.result.deleted == 0
-    assert entry.exists()
+    assert result.result.reverify_rejected == rejected
+    assert result.result.deleted == deleted
+    assert entry.exists() is (deleted == 0)
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -695,10 +670,12 @@ async def test_delete_reverify_ignores_cooldown(repo: Repository, tmp_path: Path
         ("notes.txt", False, "目录里出现了无法解释的文件: notes.txt"),
         ("NSFS-039.mp4.part", False, "目录里出现了不可删除的子项: NSFS-039.mp4.part"),
         (".stversions", True, "目录里出现了不可删除的子项: .stversions"),
+        # 垃圾项先于媒体判据: `._x.mp4` 是伴生文件, 不否决.
+        ("._NSFS-039.mp4", False, None),
     ],
-    ids=["媒体", "子目录里的媒体", "白名单外的文件", "下载进度", "不可删除的目录"],
+    ids=["媒体", "子目录里的媒体", "白名单外的文件", "下载进度", "不可删除的目录", "垃圾项"],
 )
-def test_reverify_subtree_reports_reason(tmp_path: Path, name: str, is_dir: bool, expected: str) -> None:
+def test_reverify_subtree_reports_reason(tmp_path: Path, name: str, is_dir: bool, expected: str | None) -> None:
     """复验拒绝的文案是排障依据, 结果里只留计数: 文案区分原因, 由这张表固定."""
     container = tmp_path / "old"
     container.mkdir()
@@ -740,17 +717,26 @@ def test_media_probe_reports_ancestor_and_level_reason(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows 无 POSIX 权限位")
-def test_reverify_subtree_reports_unreadable_dir(tmp_path: Path) -> None:
-    """读不到的目录按拒绝处理: 文案与「有媒体」分开, 排障时能区分."""
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [(0o000, "目录无法读取"), (0o400, "子项无法读取")],
+    ids=["目录无法读取", "子项无法读取"],
+)
+def test_reverify_subtree_reports_unreadable(tmp_path: Path, mode: int, expected: str) -> None:
+    """读不到按拒绝处理, 与「有媒体」分开: 只缺搜索位时列得出来, 但 lstat 不了子项."""
     if os.geteuid() == 0:  # pragma: no cover - root 无视权限位
         pytest.skip("root 可以读任意目录")
     container = tmp_path / "old"
     container.mkdir()
-    container.chmod(0)
+    (container / "poster.jpg").write_bytes(b"x")
+    blocked = container / "blocked"
+    blocked.mkdir()
+    (blocked / "inner.bin").write_bytes(b"x")
+    blocked.chmod(mode)
     try:
         refusal = delete_module._reverify_subtree(container, orphan_scan=_orphan_scan(tmp_path))
     finally:
-        container.chmod(0o755)
+        blocked.chmod(0o755)
 
     assert refusal is not None
-    assert refusal.startswith("目录无法读取")
+    assert refusal.startswith(expected)

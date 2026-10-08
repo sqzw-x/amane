@@ -478,7 +478,7 @@ class TestRegistration:
         assert lib / "work" not in inventory.dirs or inventory.dirs[lib / "work"].will_be_empty is False
 
     def test_truncation_keeps_container_when_content_dropped(self, tmp_path: Path) -> None:
-        """触顶时容器条目仍登记, 内容条目被丢弃并计数: 用户至少能看到这处残留."""
+        """触顶时容器条目仍登记, 内容条目被丢弃并计数: 面板不会漏掉这处残留."""
         lib = tmp_path / "lib"
         _touch(lib / "old" / "poster.jpg")
 
