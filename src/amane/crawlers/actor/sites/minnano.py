@@ -73,23 +73,19 @@ class MinnanoActorCrawler(ActorCrawler):
         return await self.client.check(self._search_url("あ"), cookies=self.cookies)
 
     def _pick_search_hit(self, html: Selector, name: str) -> str | None:
-        # 精确名优先; 否则取首条演员行.
+        """行标题与查找名 (去掉注记括号后) 相等才算命中; 确认不了返回 None."""
+        needle = _fold_name(_strip_annotations(name))
+        if not needle:
+            return None
         rows = html.xpath('//table[contains(@class,"tbllist") and contains(@class,"actress")]//tr[td]')
-        exact: str | None = None
-        first: str | None = None
         for row in rows:
             title = extract_text(row, './/h2[contains(@class,"ttl")]/a/text()')
             href = extract_text(row, './/h2[contains(@class,"ttl")]/a/@href')
-            if not href or not _ACTRESS_HREF_RE.search(href):
+            if not title or not href or not _ACTRESS_HREF_RE.search(href):
                 continue
-            clean_href = href.split("?", 1)[0]
-            url = urljoin(self.base_url + "/", clean_href)
-            if first is None:
-                first = url
-            if title and title.strip() == name:
-                exact = url
-                break
-        return exact or first
+            if _fold_name(_strip_annotations(title)) == needle:
+                return urljoin(self.base_url + "/", href.split("?", 1)[0])
+        return None
 
     async def _scrape(self, url: str) -> ActorMetadata | None:
         text = await self.client.get_html(url, cookies=self.cookies)
@@ -168,6 +164,11 @@ def _strip_annotations(name: str) -> str:
         if stripped == name:
             return name
         name = stripped
+
+
+def _fold_name(value: str) -> str:
+    """名字比较键: NFKC 折叠后大小写无关."""
+    return unicodedata.normalize("NFKC", value).strip().casefold()
 
 
 def _dedupe_preserve(values: list[str]) -> list[str]:
