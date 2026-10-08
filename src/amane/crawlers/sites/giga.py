@@ -6,7 +6,7 @@ from parsel import Selector
 from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text
+from ..parsing import extract_all_texts, extract_text, leading_token
 
 
 class GigaCrawler(Crawler):
@@ -46,7 +46,7 @@ class GigaCrawler(Crawler):
         extrafanart = extract_all_texts(html, '//ul[@class="sample-image-list"]//img/@src')
         extrafanart = [urljoin(url, u) for u in extrafanart]
 
-        number = title.split()[0] if title else ""
+        number = leading_token(title)
 
         return MediaMetadata(
             number=number,

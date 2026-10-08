@@ -6,7 +6,7 @@ from parsel import Selector
 from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text, is_same_number
+from ..parsing import extract_all_texts, extract_text, is_same_number, leading_token
 
 
 class AiravCrawler(Crawler):
@@ -23,7 +23,7 @@ class AiravCrawler(Crawler):
         for item in html.xpath('//div[contains(@class,"oneVideo")]'):
             href = item.xpath(".//a/@href").get()
             title = item.xpath("string(.//h5)").get() or ""
-            if href and is_same_number(_leading_token(title), number):
+            if href and is_same_number(leading_token(title), number):
                 return urljoin(self.base_url, href)
         return None
 
@@ -64,9 +64,3 @@ class AiravCrawler(Crawler):
             return None
         match = re.search(r"(\d+)", text)
         return int(match.group(1)) if match else None
-
-
-def _leading_token(text: str) -> str:
-    """取标题里首个空白分隔的词作为番号."""
-    parts = text.split()
-    return parts[0] if parts else ""

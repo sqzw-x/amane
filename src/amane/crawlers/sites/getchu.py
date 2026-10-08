@@ -5,7 +5,7 @@ from parsel import Selector
 from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery
-from ..parsing import extract_all_texts, extract_text
+from ..parsing import extract_all_texts, extract_text, leading_token
 
 
 class GetchuCrawler(Crawler):
@@ -49,7 +49,7 @@ class GetchuCrawler(Crawler):
         tags = extract_all_texts(html, '//a[contains(@href,"genre")]/text()')
 
         # Extract number from title
-        number = title.split()[0] if title else ""
+        number = leading_token(title)
 
         return MediaMetadata(
             number=number,

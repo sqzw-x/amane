@@ -209,6 +209,7 @@ class ThePornDBCrawler(Crawler):
 def pick_scene(results: object, number: str) -> dict[str, Any] | None:
     """检索结果 → 命中的条目; 确认不了返回 None, 不回退首条.
 
+    ``code`` 与入参按同一番号判定, 欧美日期号的两种年份写法等价, 命中取应答里的首条.
     欧美条目的 ``code`` 是 ``studio:title-slug``, 与文件名番号不同构, 这类日期号按
     片商 + 发布日期确认, 只认唯一命中.
     """

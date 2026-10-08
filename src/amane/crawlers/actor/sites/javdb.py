@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from urllib.parse import quote, urljoin, urlsplit
 
 from parsel import Selector
@@ -12,7 +11,7 @@ from amane.enums import ActorGender, SiteName
 from amane.plugins.models import SourceCapability
 
 from ...base import CrawlerProfile
-from ...parsing import extract_text
+from ...parsing import extract_text, is_same_name, normalize_name
 from ..base import ActorCrawler
 from ..models import ActorMetadata
 
@@ -61,18 +60,14 @@ class JavDBActorCrawler(ActorCrawler):
 
 def pick_javdb_actor_search_hit(html: Selector, name: str, *, base_url: str) -> str | None:
     """精确匹配 canonical 名或 title 别名 (大小写不敏感). 不允许回退首条, 避免子串误伤."""
-    needle = _norm(name).casefold()
-    if not needle:
-        return None
     for box in html.xpath('//div[contains(@class,"actor-box")]//a[@href]'):
         href = extract_text(box, "@href")
         actor_id = _actor_id_from_href(href)
         if not actor_id:
             continue
-        canonical = _norm(extract_text(box, ".//strong/text()") or extract_text(box, "string(.//strong)"))
+        canonical = normalize_name(extract_text(box, ".//strong/text()") or extract_text(box, "string(.//strong)"))
         aliases = _split_names(extract_text(box, "@title"))
-        names = [n for n in [canonical, *aliases] if n]
-        if any(_norm(n).casefold() == needle for n in names):
+        if any(is_same_name(n, name) for n in [canonical, *aliases]):
             return urljoin(base_url + "/", href)
     return None
 
@@ -120,14 +115,10 @@ def parse_javdb_actor_detail(html_text: str, *, page_url: str, base_url: str) ->
     )
 
 
-def _norm(value: str) -> str:
-    return unicodedata.normalize("NFKC", value).strip()
-
-
 def _split_names(raw: str) -> list[str]:
     if not raw:
         return []
-    return [p for p in (_norm(part) for part in re.split(r"[,，]", raw)) if p]
+    return [p for p in (normalize_name(part) for part in re.split(r"[,，]", raw)) if p]
 
 
 def _dedupe_preserve(values: list[str]) -> list[str]:

@@ -1,7 +1,8 @@
-"""爬虫共用的小工具: 从 parsel Selector 提取文本, 番号归一, 以及页面内嵌数据."""
+"""爬虫共用的小工具: 从 parsel Selector 提取文本, 番号与名字归一, 以及页面内嵌数据."""
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from re import Pattern
 from typing import TYPE_CHECKING, Any
@@ -103,11 +104,14 @@ class WesternNumber:
 
 def fold_studio(name: str) -> str:
     """片商名折叠: 忽略大小写与非字母数字, 供番号与站内片商名比较."""
-    return "".join(ch for ch in name.casefold() if ch.isalnum())
+    return "".join(ch for ch in unicodedata.normalize("NFKC", name).casefold() if ch.isalnum())
 
 
 def parse_western_number(number: str) -> WesternNumber | None:
-    """``Studio.YY.MM.DD`` → 折叠片商、``YYYY-MM-DD`` 与另一种年份写法; 其它形态与非法日期返回 None."""
+    """``Studio.YY.MM.DD`` → 折叠片商、``YYYY-MM-DD`` 与另一种年份写法; 其它形态与非法日期返回 None.
+
+    2 位年份一律按 20xx 解读 (欧美日期号没有 19xx 的写法).
+    """
     match = _WESTERN_NUMBER.match(number.strip())
     if match is None:
         return None
@@ -124,10 +128,31 @@ def parse_western_number(number: str) -> WesternNumber | None:
 
 
 def is_same_number(left: str, right: str) -> bool:
-    """两个番号是否同指一部: 折叠后相等, 或同为欧美日期号且片商与发布日期相同."""
+    """两个番号是否同指一部: 折叠后相等, 或同为欧美日期号且片商与发布日期相同; 任一侧为空为假."""
     if not left or not right:
         return False
     if fold_number(left) == fold_number(right):
         return True
     western = parse_western_number(left)
     return western is not None and western == parse_western_number(right)
+
+
+def normalize_name(value: str) -> str:
+    """名字取值归一: NFKC 折叠 + 去首尾空白, 保留大小写. 供落库与展示取值."""
+    return unicodedata.normalize("NFKC", value).strip()
+
+
+def fold_name(value: str) -> str:
+    """名字比较键: ``normalize_name`` 之后大小写无关; 空名归一为空串."""
+    return normalize_name(value).casefold()
+
+
+def is_same_name(left: str, right: str) -> bool:
+    """两个名字是否同一人 (含别名写法): 折叠后相等; 任一侧为空为假."""
+    return bool(left) and bool(right) and fold_name(left) == fold_name(right)
+
+
+def leading_token(text: str) -> str:
+    """取空白分隔的首个词 (条目标题常以番号开头); 无词返回空串."""
+    parts = text.split()
+    return parts[0] if parts else ""

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Any
 from urllib.parse import quote
 
@@ -15,7 +14,7 @@ from amane.plugins.models import SourceCapability
 from amane.utils.dates import normalize_calendar_date
 
 from ...base import CrawlerProfile
-from ...parsing import extract_text
+from ...parsing import extract_text, is_same_name
 from ..base import ActorCrawler
 from ..models import ActorMetadata
 
@@ -216,10 +215,7 @@ def _name_matches(entity: dict[str, Any], name: str) -> bool:
 
     ``wbsearchentities`` 是模糊检索: 只按描述与职业筛实体, 会把名字完全不同的他人档案当成本人.
     """
-    needle = _norm(name).casefold()
-    if not needle:
-        return False
-    return any(_norm(value).casefold() == needle for value in _entity_name_values(entity))
+    return any(is_same_name(value, name) for value in _entity_name_values(entity))
 
 
 def _entity_name_values(entity: dict[str, Any]) -> list[str]:
@@ -235,10 +231,6 @@ def _entity_name_values(entity: dict[str, Any]) -> list[str]:
                 if isinstance(value, str) and value.strip():
                     out.append(value)
     return out
-
-
-def _norm(value: str) -> str:
-    return unicodedata.normalize("NFKC", value).strip()
 
 
 def _descriptions_match(entity: dict[str, Any]) -> bool:

@@ -7,13 +7,13 @@ stash-box 的 death_date / 出道年 / 发色瞳色 / ethnicity / breast_type / 
 
 from __future__ import annotations
 
-import unicodedata
 from typing import Any
 
 from amane.enums import ActorGender, SiteName
 from amane.plugins.models import SourceCapability
 
 from ...base import CrawlerProfile
+from ...parsing import is_same_name, normalize_name
 from ..base import ActorCrawler
 from ..models import ActorMetadata
 
@@ -136,43 +136,40 @@ class ThePornDBActorCrawler(ActorCrawler):
 
 
 def pick_performer(results: list[Any], name: str) -> dict[str, Any] | None:
-    """精确匹配 canonical 名或 aliases (NFKC + casefold). 不允许回退首条."""
-    needle = _norm(name).casefold()
-    if not needle:
-        return None
+    """精确匹配 canonical 名或 aliases. 不允许回退首条."""
     for item in results:
         if not isinstance(item, dict):
             continue
-        if any(_norm(n).casefold() == needle for n in _performer_names(item)):
+        if any(is_same_name(n, name) for n in _performer_names(item)):
             return item
     return None
 
 
 def performer_to_metadata(perf: dict[str, Any]) -> ActorMetadata | None:
-    name = _norm(str(perf.get("name") or ""))
+    name = normalize_name(str(perf.get("name") or ""))
     if not name:
         return None
 
     raw_aliases = perf.get("aliases")
     alias_src = raw_aliases if isinstance(raw_aliases, list) else []
-    aliases = _dedupe_preserve([a for a in (_norm(str(x)) for x in alias_src if x) if a != name])
+    aliases = _dedupe_preserve([a for a in (normalize_name(str(x)) for x in alias_src if x) if a != name])
     raw_meas = perf.get("measurements")
     meas = raw_meas if isinstance(raw_meas, dict) else {}
     performer_id = str(perf.get("id") or "").strip()
     birthday = perf.get("birth_date")
-    tagline = _norm(str(perf.get("disambiguation") or "")) or None
+    tagline = normalize_name(str(perf.get("disambiguation") or "")) or None
 
     return ActorMetadata(
         name=name,
         aliases=aliases,
         gender=_GENDER.get(str(perf.get("gender") or "")),
         birthday=birthday if isinstance(birthday, str) else None,
-        birthplace=_norm(str(perf.get("country") or "")) or None,
+        birthplace=normalize_name(str(perf.get("country") or "")) or None,
         height=_positive_int(perf.get("height")),
         bust=_positive_int(meas.get("band_size")),
         waist=_positive_int(meas.get("waist")),
         hip=_positive_int(meas.get("hip")),
-        cup=_norm(str(meas.get("cup_size") or "")) or None,
+        cup=normalize_name(str(meas.get("cup_size") or "")) or None,
         tagline=tagline,
         image_urls=_image_urls(perf),
         provider_ids=_provider_ids(perf, performer_id),
@@ -186,7 +183,7 @@ def _image_urls(perf: dict[str, Any]) -> list[str]:
     ranked = sorted(images, key=_image_area, reverse=True)
     urls: list[str] = []
     for img in ranked:
-        url = _norm(str(img.get("url") or ""))
+        url = normalize_name(str(img.get("url") or ""))
         if url and url not in urls:
             urls.append(url)
     return urls
@@ -208,10 +205,10 @@ def _provider_ids(perf: dict[str, Any], performer_id: str) -> dict[str, str]:
     for item in raw_urls:
         if not isinstance(item, dict):
             continue
-        url = _norm(str(item.get("url") or ""))
+        url = normalize_name(str(item.get("url") or ""))
         if not url or "theporndb.net" in url.casefold():
             continue
-        key = _URL_TYPE_KEYS.get(_norm(str(item.get("type") or "")).casefold())
+        key = _URL_TYPE_KEYS.get(normalize_name(str(item.get("type") or "")).casefold())
         if key is None or key in out:
             continue
         out[key] = url
@@ -223,11 +220,7 @@ def _performer_names(perf: dict[str, Any]) -> list[str]:
     aliases = perf.get("aliases") or []
     if isinstance(aliases, list):
         names.extend(str(a) for a in aliases if a)
-    return [n for n in names if _norm(n)]
-
-
-def _norm(value: str) -> str:
-    return unicodedata.normalize("NFKC", value).strip()
+    return [n for n in names if normalize_name(n)]
 
 
 def _dedupe_preserve(values: list[str]) -> list[str]:

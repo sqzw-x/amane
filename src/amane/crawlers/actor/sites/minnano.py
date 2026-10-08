@@ -15,7 +15,7 @@ from amane.plugins.models import SourceCapability
 from amane.utils.dates import normalize_calendar_date
 
 from ...base import CrawlerProfile
-from ...parsing import extract_text
+from ...parsing import extract_text, is_same_name, normalize_name
 from ..base import ActorCrawler
 from ..models import ActorMetadata
 
@@ -74,8 +74,7 @@ class MinnanoActorCrawler(ActorCrawler):
 
     def _pick_search_hit(self, html: Selector, name: str) -> str | None:
         """行标题与查找名 (去掉注记括号后) 相等才算命中; 确认不了返回 None."""
-        needle = _fold_name(_strip_annotations(name))
-        if not needle:
+        if not name.strip():
             return None
         rows = html.xpath('//table[contains(@class,"tbllist") and contains(@class,"actress")]//tr[td]')
         for row in rows:
@@ -83,7 +82,7 @@ class MinnanoActorCrawler(ActorCrawler):
             href = extract_text(row, './/h2[contains(@class,"ttl")]/a/@href')
             if not title or not href or not _ACTRESS_HREF_RE.search(href):
                 continue
-            if _fold_name(_strip_annotations(title)) == needle:
+            if is_same_name(_strip_annotations(title), name):
                 return urljoin(self.base_url + "/", href.split("?", 1)[0])
         return None
 
@@ -148,7 +147,7 @@ def parse_minnano_detail(html_text: str, *, page_url: str, base_url: str) -> Act
 
 
 def _parse_name_line(raw: str) -> tuple[str, list[str]]:
-    text = unicodedata.normalize("NFKC", raw).strip()
+    text = normalize_name(raw)
     m = _NAME_RE.match(text)
     if not m:
         return text, []
@@ -164,11 +163,6 @@ def _strip_annotations(name: str) -> str:
         if stripped == name:
             return name
         name = stripped
-
-
-def _fold_name(value: str) -> str:
-    """名字比较键: NFKC 折叠后大小写无关."""
-    return unicodedata.normalize("NFKC", value).strip().casefold()
 
 
 def _dedupe_preserve(values: list[str]) -> list[str]:
