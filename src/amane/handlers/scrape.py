@@ -226,7 +226,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
 
     def failure_result(self, payload: ScrapePayload) -> ScrapeResult | None:
         """抓取之后崩掉时, 站点明细仍要能回答"为什么刮不到"."""
-        outcomes = current().site_outcomes()
+        outcomes = current().site_outcomes(include_unqueried=True)
         if not outcomes:
             return None
         return ScrapeResult(

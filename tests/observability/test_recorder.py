@@ -273,6 +273,21 @@ def test_site_outcomes_truncates_detail(tmp_path: Path, task: Task):
     assert rec.site_outcomes()[1].detail_truncated is False  # 恰好等于上限不算截断
 
 
+def test_site_outcomes_include_unqueried(tmp_path: Path, task: Task):
+    """抓取中崩掉时站点已上报、调度顺序还没写: 补交要把它们带上, 排在已查询站点之后."""
+    rec = Recorder.begin(tmp_path, task, HotSettings())
+    rec.update_summary(eligible_sites=["dmm", "javdb"])
+    rec.record_site_outcome(site="javdb", outcome=SiteOutcomeKind.FAILED, reason=FailureReason.NOT_FOUND)
+    rec.record_site_outcome(site="dmm", outcome=SiteOutcomeKind.OK)
+
+    assert rec.site_outcomes() == []
+    assert [row.site for row in rec.site_outcomes(include_unqueried=True)] == ["javdb", "dmm"]
+
+    rec.update_summary(sites_queried=["dmm"])
+    assert [row.site for row in rec.site_outcomes()] == ["dmm"]
+    assert [row.site for row in rec.site_outcomes(include_unqueried=True)] == ["dmm", "javdb"]
+
+
 def test_site_outcomes_without_recorder_is_empty():
     """无 begin 时 (回放等) 的空壳没有站点结果."""
     assert _LogOnly(structlog.get_logger()).site_outcomes() == []

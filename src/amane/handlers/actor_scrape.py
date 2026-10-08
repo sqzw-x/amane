@@ -52,7 +52,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
 
     def failure_result(self, payload: ActorScrapePayload) -> ActorScrapeResult | None:
         """抓取之后崩掉时, 站点明细仍要能看到."""
-        outcomes = current().site_outcomes()
+        outcomes = current().site_outcomes(include_unqueried=True)
         if not outcomes:
             return None
         return ActorScrapeResult(
