@@ -70,7 +70,7 @@ class OrganizeConflictReason(StrEnum):
 
 
 class OrganizeConflict(BaseModel):
-    """一条未落盘的记录: 源文件路径 + 被占用的目标路径."""
+    """一条未落盘的整理项: 源路径 + 被占用的目标路径."""
 
     path: str
     target: str

@@ -12,7 +12,7 @@ logger = structlog.get_logger()
 
 
 class PlaceOutcome(StrEnum):
-    """PLACED 已落盘或已就位; CONFLICT 目标被占用, 未处理; FAILED 执行失败."""
+    """PLACED 含「源已在目标路径上」的就位情形; CONFLICT 是目标被别的文件占用而未处理."""
 
     PLACED = "placed"
     CONFLICT = "conflict"
@@ -31,7 +31,7 @@ class OrganizeResult:
 def target_occupied(source: Path, dest: Path) -> bool:
     """`dest` 上已有文件且与 `source` 不是同一个文件.
 
-    同一个文件含硬链与符号链接解析: 源已在落点上时不构成冲突.
+    同一个文件含硬链与符号链接解析: 源已在目标路径上时不构成冲突.
     无法比较 (stat 失败等) 时按占用处理, 不动磁盘上已有的东西.
     """
     dest_on_disk = existing_disk_path(dest)
@@ -44,9 +44,9 @@ def target_occupied(source: Path, dest: Path) -> bool:
 
 
 def video_dest(target_dir: Path, target_stem: str, source: Path, suffix: str | None = None) -> Path:
-    """落点路径的唯一算法: 后缀默认取源文件, 而不是模板里写死的那个.
+    """目标路径的唯一算法: 后缀默认取源文件, 而不是模板里写死的那个.
 
-    目标占用判定与真正的落盘都走这里, 否则模板写死扩展名时两处会算出不同路径.
+    占用判定与真正的落盘都走这里, 否则模板写死扩展名时两处会算出不同路径.
     """
     return target_dir / f"{target_stem}{source.suffix if suffix is None else suffix}"
 

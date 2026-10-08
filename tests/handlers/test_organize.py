@@ -174,7 +174,7 @@ async def test_organize_subtitle_target_occupied_is_reported(
 async def test_template_extension_does_not_fake_conflict(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
-    """模板写死扩展名时, 占用判定看的仍是真实落点 (源文件后缀), 不把模板路径算成冲突."""
+    """模板写死扩展名时, 占用判定看的仍是真实目标路径 (源文件后缀), 不把模板路径算成冲突."""
     lib_root = tmp_path / "lib"
     src_dir = lib_root / "incoming"
     src_dir.mkdir(parents=True)

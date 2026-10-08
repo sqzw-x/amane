@@ -53,6 +53,45 @@ class TestExecuteOrganize:
         assert src.exists()  # 保留原文件
         assert src.stat().st_ino == target_file.stat().st_ino  # 相同 inode
 
+    def test_dangling_symlink_at_target_is_treated_as_free(self, tmp_path: Path):
+        """目标是断链符号链接时按空闲处理: 存在性判定跟随符号链接, MOVE 会替换掉它."""
+        src = tmp_path / "MIDV-123.mp4"
+        src.write_text("content")
+        target_dir = tmp_path / "output"
+        target_dir.mkdir()
+        dest = target_dir / "MIDV-123.mp4"
+        dest.symlink_to(tmp_path / "missing-target.mp4")
+
+        result = execute_organize.sync(
+            source=src,
+            target_dir=target_dir,
+            target_stem="MIDV-123",
+            mode=MoveMode.MOVE,
+        )
+
+        assert result.outcome is PlaceOutcome.PLACED
+        assert dest.is_file() and not dest.is_symlink()
+        assert not src.exists()
+
+        # SYMLINK 模式在同一位置会撞上 EEXIST: 记失败, 原来的符号链接保持原样.
+        src2 = tmp_path / "MIDV-124.mp4"
+        src2.write_text("content")
+        target_dir2 = tmp_path / "output2"
+        target_dir2.mkdir()
+        dest2 = target_dir2 / "MIDV-124.mp4"
+        dest2.symlink_to(tmp_path / "missing-target-2.mp4")
+
+        result2 = execute_organize.sync(
+            source=src2,
+            target_dir=target_dir2,
+            target_stem="MIDV-124",
+            mode=MoveMode.SYMLINK,
+        )
+
+        assert result2.outcome is PlaceOutcome.FAILED
+        assert dest2.is_symlink()
+        assert src2.exists()
+
     @pytest.mark.parametrize("mode", list(MoveMode))
     def test_target_occupied_skips_without_touching_disk(self, tmp_path: Path, mode: MoveMode):
         """目标已被别的文件占用时不改名、不动磁盘, 由调用方记账."""

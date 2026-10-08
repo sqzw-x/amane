@@ -91,7 +91,7 @@ async def execute_file_operations(
     info = file_info if file_info is not None else parse_file_info(source_path)
 
     # 目标被别的文件占用时立即返回: 不下载图片, 不写附属文件, 不改库内任何路径.
-    # 落点必须与 execute_organize 同一算法: 模板写死扩展名时它与模板渲染结果不同.
+    # 目标路径必须与 execute_organize 同一算法: 模板写死扩展名时, 模板渲染结果与真实目标不同.
     dest = video_dest(paths.video.parent, paths.video.stem, source_path)
     if await target_occupied(source_path, dest):
         logger.warning("organize target occupied", source=str(source_path), dest=str(dest))
@@ -553,7 +553,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                             ],
                         )
                     case PlaceOutcome.CONFLICT:
-                        # 行不提交落点, 留在源路径: 下次整理会再次报告, 直到用户自行处理.
+                        # 行不提交新路径, 留在源路径: 下次整理会再次报告, 直到用户自行处理.
                         target = fop_result.conflict_target
                         conflicted += _record_conflicts(
                             conflicts,
