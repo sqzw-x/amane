@@ -1,4 +1,4 @@
-"""测试独立的 HTML 解析工具函数"""
+"""测试爬虫共用的解析工具: HTML 提取, 番号与名字归一."""
 
 import pytest
 from parsel import Selector
@@ -8,7 +8,11 @@ from amane.crawlers.parsing import (
     clean_string,
     extract_all_texts,
     extract_text,
+    fold_name,
+    is_same_name,
     is_same_number,
+    leading_token,
+    normalize_name,
     parse_western_number,
 )
 
@@ -129,3 +133,48 @@ def test_parse_western_number(number: str, expected: tuple[str, str, str] | None
 )
 def test_is_same_number(left: str, right: str, expected: bool) -> None:
     assert is_same_number(left, right) is expected
+
+
+@pytest.mark.parametrize(
+    ("value", "normalized", "folded"),
+    [
+        ("  相川美羽  ", "相川美羽", "相川美羽"),
+        ("Miu Aikawa", "Miu Aikawa", "miu aikawa"),
+        # 全角字母与全角空格按 NFKC 收成半角
+        ("Ｍｉｕ　Ａｉｋａｗａ", "Miu Aikawa", "miu aikawa"),
+        ("", "", ""),
+    ],
+)
+def test_name_keys(value: str, normalized: str, folded: str) -> None:
+    """取值归一保留大小写, 比较键再折叠大小写."""
+    assert normalize_name(value) == normalized
+    assert fold_name(value) == folded
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        ("Miu Aikawa", "miu aikawa", True),
+        ("Ｍｉｕ Ａｉｋａｗａ", "Miu Aikawa", True),
+        # 注记括号由站点侧剥离, 基准工具按整名比较
+        ("相川美羽", "相川美羽(tenshigao)", False),
+        ("あい", "あいだゆあ", False),
+        ("", "", False),
+        ("相川美羽", "", False),
+    ],
+)
+def test_is_same_name(left: str, right: str, expected: bool) -> None:
+    assert is_same_name(left, right) is expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("SSIS-497 與最棒女性", "SSIS-497"),
+        ("  MD-0180-2 夜勤病栋-下", "MD-0180-2"),
+        ("", ""),
+        ("   ", ""),
+    ],
+)
+def test_leading_token(text: str, expected: str) -> None:
+    assert leading_token(text) == expected
