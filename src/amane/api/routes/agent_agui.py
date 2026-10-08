@@ -189,6 +189,7 @@ class _ReplayRows:
     tool_names: dict[str, str] = field(default_factory=dict)
     tool_args: dict[str, str] = field(default_factory=dict)
     usage: RunUsage | None = None
+    emitted_tool_call_ids: set[str] = field(default_factory=set)
 
     def feed(self, event: BaseEvent) -> Iterator[UiRow]:
         match event:
@@ -197,11 +198,22 @@ class _ReplayRows:
             case TextMessageContentEvent(message_id=block_id, delta=delta):
                 yield TextDeltaRow(type="text_delta", block_id=block_id, text=delta)
             case ToolCallStartEvent(tool_call_id=tool_call_id, tool_call_name=name):
+                # 已收尾的 id 后续 Start/Args/End 一律跳过: Anthropic 适配器会在
+                # approval_granted 之后把刚批准的工具调用在新一轮 assistant message
+                # 里再发一次, 不去重会让前端 React `key=tool:${id}` 撞车
+                # (`Duplicate key toolCallId-call_xxx in useResources`).
+                if tool_call_id in self.emitted_tool_call_ids:
+                    return
                 self.tool_names[tool_call_id] = name
                 self.tool_args[tool_call_id] = ""
             case ToolCallArgsEvent(tool_call_id=tool_call_id, delta=delta):
+                if tool_call_id in self.emitted_tool_call_ids:
+                    return
                 self.tool_args[tool_call_id] = self.tool_args.get(tool_call_id, "") + delta
             case ToolCallEndEvent(tool_call_id=tool_call_id):
+                if tool_call_id in self.emitted_tool_call_ids:
+                    return
+                self.emitted_tool_call_ids.add(tool_call_id)
                 yield ToolCallRow(
                     type="tool_call",
                     tool_call_id=tool_call_id,
