@@ -542,7 +542,6 @@ class TestPathTraversalProtection:
         assert result.thumb == media / "StudioX" / "ABC-123" / "thumb.jpg"
         assert result.nfo == media / "StudioX" / "ABC-123" / "ABC-123.nfo"
 
-    @pytest.mark.skipif(platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_in_library_file_symlink_keeps_lexical_video_dir(self, media: Path):
         """dest 已是指向库内源文件的符号链接时, {video_dir} 仍是 dest 所在目录."""
         media.mkdir()
@@ -559,7 +558,6 @@ class TestPathTraversalProtection:
         assert result.thumb == dest_dir / "thumb.jpg"
         assert result.nfo == dest_dir / "ABC-123.nfo"
 
-    @pytest.mark.skipif(platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_dir_symlink_escaping_library_rejected(self, media: Path, etc: Path):
         """库内目录项指向库外时, 相对模板跟随后逃逸, 拒绝."""
         media.mkdir()
@@ -569,7 +567,6 @@ class TestPathTraversalProtection:
         with pytest.raises(ValueError, match="路径越界"):
             resolve_paths(wp, _meta(), ext="mp4")
 
-    @pytest.mark.skipif(platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_file_symlink_to_outside_rejected(self, media: Path, etc: Path):
         """dest 文件符号链接指向库外时拒绝."""
         media.mkdir()

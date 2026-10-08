@@ -1,6 +1,5 @@
 """测试文件整理 - 文件操作"""
 
-import sys
 from typing import TYPE_CHECKING
 
 import pytest
@@ -142,7 +141,6 @@ class TestExecuteOrganize:
         )
         assert result.success is False
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_symlink_broken_source_does_not_crash(self, tmp_path: Path):
         """断链符号链接作为 source 时不应崩溃 (原 source.resolve() 抛 RuntimeError 的回归).
 
@@ -159,7 +157,6 @@ class TestExecuteOrganize:
         # 不抛即达标; 断链源被判为不存在, 返回失败
         assert result.success is False
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_symlink_valid_source(self, tmp_path: Path):
         """SYMLINK 模式对有效源创建符号链接, 不再因 resolve 崩溃."""
         src = tmp_path / "MIDV-123.mp4"
@@ -211,7 +208,6 @@ class TestCreateVideoLink:
         assert result.success is False
         assert occupied.read_text() == "nope"
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_symlink_points_at_target(self, tmp_path: Path):
         target = tmp_path / "lib" / "A.mp4"
         target.parent.mkdir()
@@ -223,7 +219,6 @@ class TestCreateVideoLink:
         assert result.dest.is_symlink()
         assert result.dest.resolve() == target.resolve()
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="符号链接行为在 Windows 下不一致")
     def test_symlink_refuses_regular_file(self, tmp_path: Path):
         target = tmp_path / "A.mp4"
         target.write_text("video")
