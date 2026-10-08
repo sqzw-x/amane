@@ -82,7 +82,7 @@ def crop_poster(
     poster_ratio: float = _DEFAULT_POSTER_RATIO,
     jpeg_quality: int = _DEFAULT_JPEG_QUALITY,
 ) -> bool:
-    """海报取缩略图右侧, 宽度 = height × poster_ratio."""
+    """海报取封面右侧, 宽度 = height × poster_ratio."""
     try:
         img = Image.open(thumb_path)
         w, h = img.size

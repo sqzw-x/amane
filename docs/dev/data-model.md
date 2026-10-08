@@ -14,7 +14,7 @@
 | `Metadata` | 番号级聚合元数据 | `number` UNIQUE (**大小写不敏感**; 存库保留首次写入的原始大小写) |
 | `Resource` | URL 级下载缓存 | `url` UNIQUE |
 | `Task` | 持久化任务队列 | `id` |
-| `Library` | 媒体库: 根目录 + 路径模板 + 整理放置方式 + 自动化级别 | `id` |
+| `Library` | 媒体库: 根目录 + 路径模板 + 整理方式 + 自动化级别 | `id` |
 | `Feed` | 远程 RSS / Atom 发现源 (间隔与刮削属性按源绑定; 分组是字符串伪路径, 不建目录表) | `url` UNIQUE |
 | `FeedItem` | 某源曾见过的条目 (去重 + 历史 + 阅读器正文快照) | `(feed_id, item_key)` UNIQUE |
 | `Schedule` | cron 触发器 | `id` |
@@ -29,9 +29,9 @@
 
 ## Library 归属
 
-与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理放置方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 发现通道 (`ingest`: native / clouddrive) + 跳过规则. `automation` 只控制发现侧 (不监控 / 仅登记 / 登记后自动刮削); `ingest=clouddrive` 必填 `cloud_path` 且不挂 watchdog Observer, 契约见 [watcher.md](watcher.md). **自动整理尚未开放**, 落盘只由手动 ORGANIZE 执行. **库路径在写入时解析为真实路径**, 但值没变就不改写形式: 老库的库根可能还没解析, 而索引行与它同一写法. 索引路径、模板产物与任务范围一律按字面路径比较, 别名与真实路径混用会把同一个文件算成两条索引 — 任务范围仅在该库路径已是真实路径时才跟着规范化.
+与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 发现通道 (`ingest`: native / clouddrive) + 跳过规则. `automation` 只控制发现侧 (不监控 / 仅登记 / 登记后自动刮削); `ingest=clouddrive` 必填 `cloud_path` 且不挂 watchdog Observer, 契约见 [watcher.md](watcher.md). **自动整理尚未开放**, 落盘只由手动 ORGANIZE 执行. **库路径在写入时解析为真实路径**, 但值没变就不改写形式: 老库的库根可能还没解析, 而索引行与它同一写法. 索引路径、模板产物与任务范围一律按字面路径比较, 别名与真实路径混用会把同一个文件算成两条索引 — 任务范围仅在该库路径已是真实路径时才跟着规范化.
 
-**每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK). 归属在文件**入库时确定一次**, 入口行为一致: watcher 按监控根绑定的 `library_id`, scan 按 payload 自带, 手动 by-number scrape / RSS 发现与文件无关因而无归属. 库目录落盘只由 ORGANIZE 执行 — 读 `media_file.library_id` 取模板与放置方式, 是归属的唯一真值来源; SCRAPE 用 `media_file_id` 只作查询输入与回写关联, 不移动文件.
+**每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK). 归属在文件**入库时确定一次**, 入口行为一致: watcher 按监控根绑定的 `library_id`, scan 按 payload 自带, 手动 by-number scrape / RSS 发现与文件无关因而无归属. 库目录落盘只由 ORGANIZE 执行 — 读 `media_file.library_id` 取模板与整理方式, 是归属的唯一真值来源; SCRAPE 用 `media_file_id` 只作查询输入与回写关联, 不移动文件.
 
 一库一根目录, 目录不重叠由用户保证 (不强制校验); 不提供一库多目录, 多根须另建子表.
 

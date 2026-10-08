@@ -25,7 +25,7 @@
 两项相互独立:
 
 - **HTTP 304**: `Feed.etag` / `last_modified`; 整份 XML 没变则不解析. 304 不能当失败重试.
-- **条目身份**: `FeedItem(feed_id, item_key)` UNIQUE, `item_key` = guid → link → title. 同一条目不再入队; 解析失败也插一行 (`number` 空), 避免每轮重试垃圾标题.
+- **条目身份**: `FeedItem(feed_id, item_key)` UNIQUE, `item_key` = guid → link → title. 同一条目不再入队; 解析失败也插一行 (`number` 空), 避免每轮重复处理同一条目.
 
 不去重 `Metadata.number` — 已有条目仍入队 SCRAPE (默认 `use_cache`); 同一 tick、同一源内相同番号只入队一次. 删 Feed 应用层级联删 FeedItem, CLEANUP 不处理此表.
 

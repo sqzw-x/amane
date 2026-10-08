@@ -347,12 +347,12 @@ def _reverify(entry: InventoryEntry, *, probe: _MediaProbe, container: Path | No
     判定复用扫描侧的谓词 (``orphan.py``), 事实就地读取; 遍历另写一份, 见
     ``_reverify_subtree``, 两处的判定顺序必须一致:
 
-    - 残留条目: 宿主容器的整棵子树复验一次 (子树里出现媒体、不可删除的子项、白名单外的文件
+    - 残留条目: 宿主容器的整棵子树复验一次 (子树里出现媒体、不可删除的子项、未识别的文件
       都不再成立), 再加上每一级祖先的直接子项 — 祖先旁边出现媒体同样不再成立;
     - 库根与扫描范围目录的条目没有容器: 扫描时只看本层, 复验同样只看本层 (含下载进度);
     - 空目录条目: 目录不再为空即拒绝, 执行侧删目录是递归的, 后来落进去的内容会一起没;
     - 冷却期不重复施加: 条目已经过用户确认, 再按时间否决只会让条目静默地不被删除;
-    - 只复验磁盘事实, 不重算设置: 体积过小条目按阈值判定, 库设置改了应当重扫, 不在这里兜底.
+    - 只复验磁盘事实, 不重算设置: 小于最小视频大小的条目按扫描时的阈值判定, 库设置改了应当重扫, 不在这里兜底.
     """
     if entry.reason is InventoryReason.EMPTY_DIR:
         return _reverify_empty_dir(entry.path)
@@ -391,8 +391,8 @@ def _reverify_empty_dir(directory: Path) -> str | None:
 def _reverify_subtree(directory: Path, *, orphan_scan: OrphanScan) -> str | None:
     """整棵子树的复验: 与扫描时的条件同口径 (冷却期除外).
 
-    判定顺序与 `inventory.py::_walk` 一致, 两处修改必须同步: 垃圾项先于媒体判据 (``._x.mp4``
-    是伴生文件, 不是视频); 可随目录删除的垃圾项不否决, 不可删除的子项 (回收站、版本库、
+    判定顺序与 `inventory.py::_walk` 一致, 两处修改必须同步: 系统产物先于媒体判据 (``._x.mp4``
+    是伴生文件, 不是视频); 可随目录删除的系统产物不否决, 不可删除的子项 (回收目录、版本库、
     下载进度) 否决整棵子树.
     """
     children, unreadable = _read_dir(directory)

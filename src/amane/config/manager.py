@@ -269,7 +269,7 @@ class ScrapingConfig(BaseModel):
     crop_poster: bool = True
 
     poster_ratio: float = Field(default=0.7, ge=0.3, le=1.0)
-    """海报裁剪宽高比 (w/h). 从缩略图右侧裁剪生成海报. 默认 0.7 (贴近常见 379x538 / 高清海报)."""
+    """海报裁剪宽高比 (w/h). 从封面右侧裁剪生成海报. 默认 0.7 (贴近常见 379x538 / 高清海报)."""
 
     poster_crop_skip_ratio: float = Field(default=0.9, ge=0.5, le=1.0)
     """海报裁剪跳过阈值. 当 poster 候选高度已达 thumb 高度的此比例以上时, 视为候选够用, 不再从 thumb 裁剪

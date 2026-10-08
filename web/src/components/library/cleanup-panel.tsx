@@ -26,7 +26,7 @@ interface CleanupPanelProps {
 export function CleanupPanel({ library, opened, onClose }: CleanupPanelProps) {
   const { t } = useTranslation(["library", "common"]);
   const [tab, setTab] = useState<string | null>("rules");
-  // 回收站是历史遗留: 里面没东西时连页签都不渲染, 用户看不到它; 有遗留才出现.
+  // 回收目录是历史遗留: 里面没东西时连页签都不渲染, 用户看不到它; 有遗留才出现.
   // 展开是有副作用的读取 (每次都产出新清单), 因此不跟着窗口聚焦重跑.
   const trashQuery = useQuery({
     ...getCleanupTrashOptions({ path: { library_id: library.id } }),

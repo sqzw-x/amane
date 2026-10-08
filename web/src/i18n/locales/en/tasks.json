@@ -343,7 +343,7 @@
     "scan_invalid": {
       "library_id": {
         "label": "Library",
-        "description": "Walk unwanted files and empty directories under this library"
+        "description": "Walk unwanted files and empty folders under this library"
       },
       "path": {
         "label": "Path",

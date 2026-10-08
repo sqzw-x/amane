@@ -1,4 +1,4 @@
-"""清理清单: 无效文件与已空目录的快照, 以及进程内的存放.
+"""清理清单: 无效文件与空目录的快照, 以及进程内的存放.
 
 清单由扫描产出 (规则来源) 或由选中项展开产出 (显式来源), 前端展示并确认后交给删除任务执行.
 存放只在进程内: 不落库, 因此没有迁移与残留; 进程重启即丢失, 面板要求重新生成.
@@ -46,7 +46,7 @@ INVENTORY_TTL_SECONDS = 24 * 3600
 
 
 class InventorySource(StrEnum):
-    """清单来源分组. 面板只渲染规则来源的最新一份; 回收站与选中项展开发往各自的分组, 互不挤占保留窗口."""
+    """清单来源分组. 面板只渲染规则来源的最新一份; 回收目录与选中项展开发往各自的分组, 互不挤占保留窗口."""
 
     RULES = "rules"
     EXPLICIT = "explicit"
@@ -143,7 +143,7 @@ class CleanupInventory:
 
     @property
     def total_size(self) -> int:
-        """条目体积合计. 同一 inode 只算一次 (硬链接整理会产生多个名字).
+        """条目大小合计. 同一 inode 只算一次 (硬链接整理会产生多个名字).
 
         身份不可用 (拿不到设备或文件编号, 含平台给出的 0) 时不去重: 宁可把同一份数据多算几次,
         也不能把不同文件当成同一个而少算.
@@ -271,9 +271,9 @@ class _DirResult:
     subtree_has_media: bool = False
     """子树里是否有媒体."""
     explainable: bool = True
-    """子树里是否只有附属文件与可随目录删除的垃圾项."""
+    """子树里是否只有附属文件与可随目录删除的系统产物."""
     undeletable: bool = False
-    """子树里是否有不可删除的子项 (回收站、版本库、下载进度等)."""
+    """子树里是否有不可删除的子项 (回收目录、版本库、下载进度等)."""
     has_content: bool = False
     """子树里是否有文件; 只有空目录时为假 (那种情况由空目录条目处置)."""
     orphan_in_subtree: bool = False
@@ -283,11 +283,11 @@ class _DirResult:
     newest_mtime: float = 0.0
     """子树内最新的 mtime; 残留判定的冷却期按它算, 深层刚动过同样拦住整棵子树."""
     bytes_total: int = 0
-    """子树内会被删除的字节合计, 写进目录条目的体积."""
+    """子树内会被删除的字节合计, 写进目录条目的大小."""
     companions: tuple[tuple[Path, os.stat_result], ...] = ()
     """子树内的附属文件; 目录命中残留时登记为条目, 让面板列出即将删除的内容."""
     noise: tuple[tuple[Path, os.stat_result], ...] = ()
-    """子树内的垃圾文件; 与附属文件同样登记为条目, 登记时标 `InventoryEntry.noise`."""
+    """子树内的系统产物; 与附属文件同样登记为条目, 登记时标 `InventoryEntry.noise`."""
 
 
 @in_thread
@@ -309,9 +309,9 @@ def scan_inventory(
 
     与入库扫描共用同一趟遍历: `collect_media` 为真时同时收集媒体命中, 不额外遍历磁盘.
 
-    - 黑名单与体积过小的文件是条目; 预告片与其余文件不是.
+    - 文件黑名单与小于最小视频大小的文件是条目; 预告片与其余文件不是.
     - 磁盘上没有子项的目录作为「扫描时已空」的条目.
-    - 回收站子树整棵不进入清单, 且算作不可删除的子项: 其父目录不会因此被预告清除.
+    - 回收目录子树整棵不进入清单, 且算作不可删除的子项: 其父目录不会因此被预告清除.
     - 读不到的目录与 stat 失败的文件只计数, 其余子项继续.
     - 达到条目上限后不再登记条目, 但遍历照常走完 (媒体命中必须完整), 并记下未纳入的候选数.
     - `orphan_scan` 非空时额外把「只含附属文件的目录」登记为一条目录条目, 见 `orphan.py`.
@@ -410,7 +410,7 @@ def _walk(
         total += 1
         path = Path(child.path)
         if child.name == TRASH_DIRNAME:
-            # 回收站: 不进清单, 也不计作会消失的子项.
+            # 回收目录: 不进清单, 也不计作会消失的子项.
             undeletable = True
             continue
         try:
@@ -424,13 +424,13 @@ def _walk(
         level_newest_mtime = max(level_newest_mtime, child_stat.st_mtime)
         newest_mtime = max(newest_mtime, child_stat.st_mtime)
         is_dir = stat.S_ISDIR(child_stat.st_mode)
-        # 判定顺序是契约的一部分: 垃圾项先于媒体判据 (._x.mp4 是伴生文件, 不是视频),
+        # 判定顺序是契约的一部分: 系统产物先于媒体判据 (._x.mp4 是伴生文件, 不是视频),
         # 媒体先于白名单 (用户可以把 .mp4 写进 subtitle_extensions).
         junk = classify_junk(path, is_dir=is_dir)
         if is_dir:
             if junk is JunkKind.VETO:
-                # 不可删除的子项: 不递归、不登记, 并使该目录不判定. 口径与回收站一致,
-                # 差别只在它不需要单独列出 (回收站要在面板上有名字).
+                # 不可删除的子项: 不递归、不登记, 并使该目录不判定. 口径与回收目录一致,
+                # 差别只在它不需要单独列出 (回收目录要在面板上有名字).
                 undeletable = True
                 continue
             subdirs.append((path, child_stat))
@@ -630,11 +630,11 @@ def _register_orphan(
 ) -> _DirResult:
     """把目录登记为一条容器条目, 并把子树里的内容登记为可选择的条目.
 
-    内容本身就是条目, 用户因此能逐个文件选择删或不删, 与黑名单 / 体积过小条目一致; 目录
+    内容本身就是条目, 用户因此能逐个文件选择删或不删, 与文件黑名单 / 小于最小视频大小的条目一致; 目录
     条目只承载「这是一处残留」与整目录的汇总, 执行时跳过它 (删完由剪枝回收空目录).
 
-    子树里已经登记的条目 (空子目录、命中黑名单的文件) 同样保留: 它们也是这一处残留的内容,
-    保留条目才能使面板列出并删除这些内容. 只有会重新登记的那部分 (附属文件与垃圾文件, 含嵌套
+    子树里已经登记的条目 (空子目录、命中文件黑名单的文件) 同样保留: 它们也是这一处残留的内容,
+    保留条目才能使面板列出并删除这些内容. 只有会重新登记的那部分 (附属文件与系统产物, 含嵌套
     容器上浮上来的) 摘掉重登, 以免同一路径出现两条; 嵌套的容器条目一并摘掉, 它的内容已经上浮.
 
     触顶时容器条目先占住一个位置: 少了它, 面板上就没有这处残留的入口; 内容登记完再挪到末尾,
@@ -654,7 +654,7 @@ def _register_orphan(
     relisted = {path_key(item[0]) for item in (*result.companions, *result.noise)}
     kept = [entry for entry in inner if not entry.expandable and path_key(entry.path) not in relisted]
     state.entries[entries_before:-1] = kept
-    # 内容登记为真正的条目; 垃圾文件标 noise, 面板默认折叠这一类.
+    # 内容登记为真正的条目; 系统产物标 noise, 面板默认折叠这一类.
     listed = [
         *((item[0], item[1], False) for item in result.companions),
         *((item[0], item[1], True) for item in result.noise),
@@ -708,7 +708,7 @@ def _register_scope_files(
     条件只按**本层**算, 与目录条目的子树口径不同: 库内别处有正片, 与这一层留下的文件是不是
     残留无关, 子树口径会让上面这个形态永不生效. 本层有媒体 (正片就在旁边)、本层有下载进度
     (不可删除的文件子项)、本层刚变动过 (附属文件先落盘), 三种情况都不登记. 目录类的不可删除
-    子项不影响: 这一层不会被整层删除, 回收站与版本库目录不受牵连.
+    子项不影响: 这一层不会被整层删除, 回收目录与版本库目录不受牵连.
     """
     orphan_scan = state.orphan_scan
     level = result.level
@@ -778,7 +778,7 @@ class InventoryNode:
 
 
 def build_inventory_tree(inventory: CleanupInventory) -> InventoryNode:
-    """把清单折叠成树. 同 inode 只算一次体积, 与 `total_size` 一致.
+    """把清单折叠成树. 同 inode 只算一次大小, 与 `total_size` 一致.
 
     容器条目覆盖的路径由条目节点代表, 不再另建分支节点, 否则同一路径会同时产出条目节点与
     分支节点, `find_inventory_node` 会返回没有子节点的那个, 面板无法展开.
@@ -892,9 +892,9 @@ def scan_trash(
     library_root: Path,
     limit: int = MAX_INVENTORY_ENTRIES,
 ) -> CleanupInventory:
-    """把回收站的历史内容展开成显式来源清单.
+    """把回收目录的历史内容展开成清单.
 
-    不做规则判定: 其下每个文件都是条目, 空目录同样是条目. 回收站目录自身从不作为条目.
+    不做规则判定: 其下每个文件都是条目, 空目录同样是条目. 回收目录自身从不作为条目.
     """
     state = _ScanState(entries=[], dirs={}, limit=limit)
     _walk_explicit(trash_dir, state=state)
@@ -927,7 +927,7 @@ def scan_trash(
 
 
 def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
-    """登记回收站目录下的全部内容; 读不到该目录时返回 None.
+    """登记回收目录下的全部内容; 读不到该目录时返回 None.
 
     与规则来源同一条规则: 触顶只丢条目与覆盖信息, 遍历照常走完.
     """

@@ -190,7 +190,7 @@
   },
   "cleanup": {
     "tooltip": "Clean up unwanted files, leftover folders and empty folders",
-    "title": "Clean up files",
+    "title": "Cleanup",
     "scan": "Start scan",
     "rescan": "Rescan",
     "scanStarted": "Scan started",
@@ -198,7 +198,7 @@
     "scope": "This inventory covers {{path}} only",
     "truncated": "Too many files; only part of the results are included",
     "truncatedMore": "{{count}} more items are not included",
-    "skipped": "{{dirs}} directories and {{files}} files were not covered",
+    "skipped": "{{dirs}} folders and {{files}} files were not covered",
     "selected": "{{count}} selected, about {{size}}",
     "empty": "Nothing to clean",
     "expandAll": "Expand all",
@@ -214,7 +214,7 @@
     "reason": {
       "blacklist": "File blacklist",
       "undersized": "Too small",
-      "empty_dir": "Empty directory",
+      "empty_dir": "Empty folder",
       "explicit": "Selected",
       "orphan": "Leftover folder"
     },

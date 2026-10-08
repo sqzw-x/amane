@@ -43,7 +43,7 @@ _SCAN_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING)
 # 单页子节点数. 一次下钻最多这么多条, 面板滚到底再取下一页.
 NODE_PAGE_SIZE = 200
 MAX_NODE_PAGE_SIZE = 1000
-# 回收站展开的复用窗口: 晚于它的请求重新遍历, 面板因此看得到刚删完的样子.
+# 回收目录展开的复用窗口: 晚于它的请求重新遍历, 面板因此看得到刚删完的样子.
 TRASH_REUSE_WINDOW = timedelta(seconds=2)
 
 
@@ -180,9 +180,9 @@ def _resolve(inventory: CleanupInventory, raw: str) -> Path:
 
 @router.get("/{library_id}/cleanup/trash")
 async def get_cleanup_trash(library_id: int, repo: RepoDep, runtime: RuntimeDep) -> TrashSummaryResponse:
-    """展开回收站历史内容: 产出回收站来源的清单, 前端拿到要展开的目录再按页读.
+    """展开回收目录的历史内容: 产出回收目录来源的清单, 前端拿到要展开的目录再按页读.
 
-    展开本身是只读遍历, 但代价随回收站体积增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):
+    展开本身是只读遍历, 但代价随回收目录大小增长, 而同一个打开动作可能重复发请求 (渲染两次 / 重连):
     窗口内已有的一份直接复用, 免得重走整棵树并往存放里堆用不到的清单.
     """
     library = await repo.get_library(library_id)

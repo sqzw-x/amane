@@ -111,13 +111,13 @@ function keptTotals(
 export interface InventoryTreeProps {
   libraryId: number;
   inventoryId: string;
-  /** 要展开的目录: 库内相对路径, 空串为库根; 回收站传其相对路径. */
+  /** 要展开的目录: 库内相对路径, 空串为库根; 回收目录传其相对路径. */
   path?: string;
   onDone: () => void;
   header?: ReactNode;
 }
 
-/** 一份清单的勾选与确认: 规则来源、回收站与选中项预览共用. 选择随清单标识重置 (父组件用 key 重建). */
+/** 一份清单的勾选与确认: 规则来源、回收目录与选中项预览共用. 选择随清单标识重置 (父组件用 key 重建). */
 export function InventoryTree({
   libraryId,
   inventoryId,
@@ -455,7 +455,7 @@ const InventoryNodeRow = memo(function InventoryNodeRow({
           >
             {node.name}
           </Text>
-          {/* 徽章与体积整体换行 (窄屏) 或整体保持不压缩, 都不拆开单个元素. */}
+          {/* 徽章与大小整体换行 (窄屏) 或整体保持不压缩, 都不拆开单个元素. */}
           <span className={classes.meta}>
             {node.will_be_empty && node.kind === "dir" && !node.reason && kept.entries === 0 ? (
               <Badge size="sm" variant="light" color="orange">
