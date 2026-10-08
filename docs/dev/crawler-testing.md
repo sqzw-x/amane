@@ -28,7 +28,7 @@
 
 `expected` 段每个字段默认 `==` 全等 (含 list 顺序与完整 URL). `actors` 必须写 `[{ name, gender }]` 表 (性别可为 `unknown`), 与 `FilmActor` 全等. 社区评分随评价人数漂移, 用 `score_between` (闭区间, 填该站量表), 不写具体值. 其它宽松断言 (`field_contains` 等) **仅特殊情况**, 且必须在该键旁注释为何不能全等 (如签名 CDN). `responses[].url_contains` 是 mock 路由键, 不是 ground truth.
 
-每个站点的 `[search]` **必须有空结果用例** (`expected_none = true`): `_search` 对不存在的番号须返回 `None`, 否则筛选 bug 会被首页 / 推广链接掩盖.
+每个站点 **必须有空结果用例** (`expected_none = true`; 覆盖 `fetch()` 的站写在 `[fetch]` 段): 对不存在的番号须返回 `None`, 否则筛选 bug 会被首页 / 推广链接掩盖.
 
 ## 解析约束
 

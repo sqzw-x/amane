@@ -16,7 +16,12 @@ TOML 格式:
     url = "https://..."
     responses = [{ url_contains = "...", method = "post_json", file = "response.json" }]
 
-    [scrape.expected]                     # 字段断言
+    [fetch]                               # 可选: 测试 fetch() (覆盖 fetch 的来源)
+    number = "SSIS-497"
+    responses = [{ url_contains = "...", method = "post_json", file = "response.json" }]
+    expected_none = true                   # 可选: 期望 fetch() 返回 None (空搜索 / 未配凭据)
+
+    [scrape.expected]                     # 字段断言 (fetch 段同)
     field = value                         # 精确匹配
     field_contains = "x"                  # 子串/成员检查
     field_count = N                       # len(field) == N
@@ -87,6 +92,9 @@ async def test_crawler_fetch(case_id: str, toml_path: Path) -> None:
     build_mock(mock_web, toml_path.parent, fetch_cfg["responses"])
 
     result = await crawler.fetch(SearchQuery(fetch_cfg["number"]))
+    if fetch_cfg.get("expected_none"):
+        assert result is None, f"fetch({fetch_cfg['number']!r}) should return None, got {result!r}"
+        return
     assert result is not None, f"fetch() returned None for {fetch_cfg['number']}"
     assert_expected(result, fetch_cfg["expected"])
 
