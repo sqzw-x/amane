@@ -59,7 +59,7 @@
 
 **kin8tengoku.com** — 从任意番号抽数字拼详情页, 会误匹配其它番号, 不纳入默认表.
 
-**theporndb.net** — 未登录跳转 `/login`; GraphQL 无 token 时影片 / 演员爬虫都直接 `None`. 欧美路由第一, 与影片共用 `site_config.api_token`.
+**theporndb.net** — 未登录跳转 `/login`; GraphQL 无 token 时影片 / 演员爬虫都直接 `None`. 欧美路由第一, 与影片共用 `site_config.api_token`. 欧美条目 `code` 是 `studio:title-slug`, 与文件名番号不同构, 日期号 (`Studio.YY.MM.DD`) 按片商 + 发布日期确认.
 
 **official** — Will / Outvision 官网集群; 前缀对不上不发 HTTP.
 

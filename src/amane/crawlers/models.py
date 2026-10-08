@@ -48,6 +48,7 @@ class MediaMetadata(BaseModel):
     studio: str | None = None
     publisher: str | None = None
     release: str | None = None
+    # 分钟. 外部 API 多以秒计时, 爬虫负责换算.
     runtime: int | None = None
     tags: list[str] = Field(default_factory=list)
     series: str | None = None
