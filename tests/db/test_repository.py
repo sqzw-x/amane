@@ -1296,21 +1296,19 @@ class TestTaskRepo:
         assert fetched.retries == 1
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_fail_task_keeps_result_payload(self, repo: Repository):
-        """失败也能带结果载荷; 不带时清掉上一次运行的残留."""
+    async def test_fail_task_clears_previous_result(self, repo: Repository):
+        """不带载荷地失败会清掉上一次运行的残留 (带载荷落库由 worker 与 API 层测试覆盖)."""
         task = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
         assert task.id is not None
         await repo.claim_next_task()
-        await repo.fail_task(task.id, error="未找到元数据", result={"type": "scrape", "metadata_id": None})
+        await repo.complete_task(task.id, result={"type": "scrape", "metadata_id": None})
+
+        await repo.fail_task(task.id, error="again")
 
         fetched = await repo.get_task(task.id)
         assert fetched is not None
-        assert fetched.result == {"type": "scrape", "metadata_id": None}
-
-        await repo.fail_task(task.id, error="again")
-        cleared = await repo.get_task(task.id)
-        assert cleared is not None
-        assert cleared.result is None
+        assert fetched.status == TaskStatus.FAILED
+        assert fetched.result is None
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_delete_task(self, repo: Repository):

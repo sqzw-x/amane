@@ -33,7 +33,7 @@ class ConnectivityStatus(StrEnum):
 class SkipReason(StrEnum):
     """``SKIPPED`` 的原因.
 
-    与 ``FailureReason`` 分开: 这一档不是失败, 文案也不进任务报告. 界面按它本地化, 因此每种原因
+    与 ``FailureReason`` 分开: 这一档不是失败, 文案也不进站点明细. 界面按它本地化, 因此每种原因
     都要能独立读懂, 不依赖 ``detail``.
     """
 

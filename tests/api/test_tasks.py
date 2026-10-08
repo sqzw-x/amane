@@ -2,12 +2,15 @@
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args
 
 import pytest
+from pydantic import BaseModel
 
+from amane.api.models.tasks import TaskResultPayload
 from amane.db.models import TaskType
 from amane.enums import DownloadableResource
+from amane.handlers import models as handler_models
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -255,9 +258,9 @@ class TestTaskResult:
     """GET /tasks/{id}: 结果按任务类型判别; 列表与子任务不带重字段."""
 
     @pytest.mark.asyncio(loop_scope="function")
-    @pytest.mark.parametrize(
-        ("task_type", "result"),
-        [
+    async def test_detail_result_is_typed(self, client: AsyncClient, repo: Repository, stop_worker: None):
+        """结果按类型判别, 原样回读; 整张表在同一个 lifespan 内跑完."""
+        cases: list[tuple[TaskType, dict[str, object]]] = [
             (
                 TaskType.SCRAPE,
                 {
@@ -325,29 +328,21 @@ class TestTaskResult:
                     "outcomes": [],
                 },
             ),
-        ],
-    )
-    async def test_detail_result_is_typed(
-        self,
-        client: AsyncClient,
-        repo: Repository,
-        stop_worker: None,
-        task_type: TaskType,
-        result: dict[str, object],
-    ):
-        """结果按类型判别, 原样回读."""
-        task = await repo.create_task(task_type=task_type, payload={})
-        assert task.id is not None
-        await repo.complete_task(task.id, result=result)
+        ]
 
-        body = (await client.get(f"tasks/{task.id}")).json()
-        assert body["result"] == result
-        assert body["result"]["type"] == task_type
+        for task_type, result in cases:
+            task = await repo.create_task(task_type=task_type, payload={})
+            assert task.id is not None
+            await repo.complete_task(task.id, result=result)
+
+            body = (await client.get(f"tasks/{task.id}")).json()
+            assert body["result"] == result
+            assert body["result"]["type"] == task_type
 
     @pytest.mark.asyncio(loop_scope="function")
-    @pytest.mark.parametrize(
-        "stored",
-        [
+    async def test_detail_result_unreadable_is_empty(self, client: AsyncClient, repo: Repository, stop_worker: None):
+        """旧行与坏数据读不出来时置空, 端点不失败; 整张表在同一个 lifespan 内跑完."""
+        stored_cases: list[dict[str, object] | None] = [
             None,
             {"metadata_id": 17, "field_sources": {}, "failed_sites": []},
             {
@@ -359,19 +354,16 @@ class TestTaskResult:
             },
             {"type": "scrape", "metadata_id": 17},
             {"type": "nope", "metadata_id": 17, "field_sources": {}, "failed_sites": []},
-        ],
-    )
-    async def test_detail_result_unreadable_is_empty(
-        self, client: AsyncClient, repo: Repository, stop_worker: None, stored: dict[str, object] | None
-    ):
-        """旧行与坏数据读不出来时置空, 端点不失败."""
-        task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "SSIS-497"})
-        assert task.id is not None
-        await repo.complete_task(task.id, result=stored)
+        ]
 
-        resp = await client.get(f"tasks/{task.id}")
-        assert resp.status_code == 200
-        assert resp.json()["result"] is None
+        for stored in stored_cases:
+            task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "SSIS-497"})
+            assert task.id is not None
+            await repo.complete_task(task.id, result=stored)
+
+            resp = await client.get(f"tasks/{task.id}")
+            assert resp.status_code == 200
+            assert resp.json()["result"] is None
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_failed_task_keeps_result_payload(self, client: AsyncClient, repo: Repository, stop_worker: None):
@@ -408,13 +400,6 @@ class TestTaskResult:
 
     def test_result_union_covers_every_task_type(self):
         """判别联合与结果模型必须覆盖全部任务类型: 漏一个, 该类型的详情会静默置空."""
-        from typing import get_args
-
-        from pydantic import BaseModel
-
-        from amane.api.models.tasks import TaskResultPayload
-        from amane.handlers import models as handler_models
-
         members = get_args(get_args(TaskResultPayload)[0])
         assert members, "联合成员为空"
         labels = {get_args(member.model_fields["type"].annotation)[0] for member in members}
@@ -451,6 +436,21 @@ class TestTaskResult:
         detail = (await client.get(f"tasks/{task.id}")).json()
         assert detail["payload"] == task.payload
         assert detail["result"]["type"] == "refresh"
+
+        # 子任务列表同样只给精简形状.
+        parent = await repo.create_task(task_type=TaskType.REFRESH, payload={"library_id": 3})
+        assert parent.id is not None
+        claimed = await repo.claim_next_task()
+        assert claimed is not None and claimed.id == parent.id
+        await repo.complete_task_with_followups(
+            parent.id,
+            result={"type": "refresh", "added": 0, "removed": 0, "scrape": 0},
+            followups=[("scrape:1", TaskType.SCRAPE, {"number": "MIDV-123"}, 0)],
+        )
+
+        child = (await client.get(f"tasks/{parent.id}/children")).json()["items"][0]
+        assert "payload" not in child
+        assert "result" not in child
 
 
 class TestTaskChain:

@@ -31,7 +31,7 @@ scrape 等 handler 只调用 `current()`; 其它代码仍可直接使用 `logger
 
 `task-{id}/` 内: `manifest.json`、`task.json`、`config.hot.json` (确有密钥时另写 `.secrets.hot.json`)、`summary.json`、可选 `raw_cache.json`、`http/index.jsonl` 与 `http/bodies/{seq}.*`、`task.log`.
 
-导出: `GET /api/tasks/{id}/record?include_secrets=false` → `task-{id}-record.zip`, 仅终态可导出. 界面读任务结果的 JSON: 站点明细在任务结束时经 `Recorder.site_outcomes()` 写进结果 (成功与失败都一样, 见 [task-system.md](task-system.md) 的结果侧), 与 summary.json 是**同一结构** (`SiteOutcomeRecord`) 的不同序列化, `detail` 在入结果前截断并置 `detail_truncated`, 完整文本只留在记录里; 结果不解析任何文本. 出站 HTTP (含 ORGANIZE 缺资源时的 `acquire`) 只写入 `http/`, **不是**站点 outcome.
+导出: `GET /api/tasks/{id}/record?include_secrets=false` → `task-{id}-record.zip`, 仅终态可导出. 界面读任务结果的 JSON: 站点明细在任务结束时经 `Recorder.site_outcomes()` 写进 SCRAPE / ACTOR_SCRAPE 的结果 (失败侧来自 handler 的失败返回, 或 worker 崩溃 / 取消时 `TaskHandler.failure_result` 的补交; 边界见 [task-system.md](task-system.md) 的结果侧), 与 summary.json 是**同一结构** (`SiteOutcomeRecord`) 的不同序列化, `detail` 在入结果前截断并置 `detail_truncated`, 完整文本只留在记录里; 结果不解析任何文本. 出站 HTTP (含 ORGANIZE 缺资源时的 `acquire`) 只写入 `http/`, **不是**站点 outcome.
 
 ### 分层
 

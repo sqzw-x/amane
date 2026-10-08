@@ -93,6 +93,40 @@ async def test_internal_poster_and_trailer(resource_store: ResourceStore, tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_target_occupied_returns_before_side_effects(resource_store: ResourceStore, tmp_path: Path):
+    """目标被占用时立即返回: 不下载图片、不写 NFO、不动磁盘."""
+    client = cast("WebClient", FakeClient())
+
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+
+    paths = _paths(tmp_path / "out")
+    paths.video.parent.mkdir(parents=True)
+    paths.video.write_text("existing content")
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(number="MIDV-123", thumb_urls=["https://s/t.jpg"])
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.MOVE,
+        resource_store=resource_store,
+        web_client=client,
+        config=HotSettings(),
+    )
+
+    assert result.outcome is PlaceOutcome.CONFLICT
+    assert result.conflict_target == paths.video
+    assert paths.video.read_text() == "existing content"
+    assert src.read_bytes() == b"movie"
+    assert not paths.thumb.exists()
+    assert not paths.nfo.exists()
+
+
+@pytest.mark.asyncio
 async def test_copy_resources_skips_trailer(resource_store: ResourceStore, tmp_path: Path):
     """copy_resources 不含 trailer 时不落盘预告片, 仍复制封面."""
     from amane.enums import DownloadableResource

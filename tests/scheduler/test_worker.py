@@ -486,6 +486,37 @@ async def test_worker_stores_failure_result_on_crash(repo: Repository) -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_worker_crash_with_broken_failure_result(repo: Repository) -> None:
+    """补交载荷的钩子自己抛错时不影响失败处理: 任务照样 FAILED, 载荷为空."""
+
+    class BrokenHookHandler(TaskHandler):
+        def __init__(self):
+            super().__init__(payload_t=dict, result_t=dict)
+
+        async def handle(self, payload: dict):
+            raise RuntimeError("boom")
+
+        def failure_result(self, payload: dict):
+            raise RuntimeError("hook exploded")
+
+    handlers = {TaskType.REFRESH: BrokenHookHandler()}
+    worker = AsyncWorker(repo=repo, handlers=handlers, poll_interval=0.05)
+
+    t = await repo.create_task(TaskType.REFRESH, payload={"library_id": 1})
+    assert t.id is not None
+
+    worker.start()
+    await recv(worker, 1)
+    await stop_worker(worker)
+
+    fetched = await repo.get_task(t.id)
+    assert fetched is not None
+    assert fetched.status == TaskStatus.FAILED
+    assert fetched.error == "boom"
+    assert fetched.result is None
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_worker_cancel_keeps_failure_result(repo: Repository) -> None:
     """取消同样落库 handler 补的失败载荷."""
 

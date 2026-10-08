@@ -11,10 +11,11 @@ from pydantic import ValidationError
 from amane.aggregate import AggregatedMetadata
 from amane.config import HotSettings, ScrapingConfig
 from amane.crawlers.models import MediaMetadata
-from amane.db.models import MediaFileStatus, TaskType
+from amane.db.models import MediaFileStatus, Task, TaskStatus, TaskType
 from amane.enums import MetadataField, SiteName
 from amane.handlers import RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
 from amane.library import CleanupInventory, InventorySource, InventoryStore, LibraryFileKind, LibraryHit, scan_inventory
+from amane.observability import Recorder
 from amane.parsing import ContentType
 from amane.plugins.models import SourceDescriptor
 
@@ -167,8 +168,8 @@ class TestScrapeHandler:
             handler.parse_payload({"media_file_id": 1})
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_no_results_marks_failed(self, repo: Repository, resource_store):
-        """所有爬虫返回空结果时标记失败"""
+    async def test_no_results_marks_failed(self, repo: Repository, resource_store, tmp_path: Path):
+        """所有爬虫返回空结果时标记失败, 站点明细随失败结果返回"""
         empty_factory = FakeFactory({"javdb": EmptySearchCrawler()})
         h = ScrapeHandler(
             repo=repo,
@@ -177,14 +178,25 @@ class TestScrapeHandler:
             pipeline_config=HotSettings(),
         )
         media = await repo.create_media_file(library_id=1, path="/media/TEST-001.mp4")
-        result = await h.handle(
-            ScrapePayload(media_file_id=media.id, number="TEST-001", content_type=ContentType.CENSORED)
+        # 站点明细来自记录器, 没有记录器时失败载荷只有 failed_sites.
+        recorder = Recorder.begin(
+            tmp_path, Task(id=91, type=TaskType.SCRAPE, status=TaskStatus.RUNNING, payload={}), HotSettings()
         )
+        try:
+            result = await h.handle(
+                ScrapePayload(media_file_id=media.id, number="TEST-001", content_type=ContentType.CENSORED)
+            )
+        finally:
+            recorder.close()
+
         assert result.success is False
         # 失败也要带结果载荷, 否则界面只剩一句错误, 说不清是哪个站点怎么了.
         assert result.result is not None
         assert result.result.metadata_id is None
         assert result.result.failed_sites == ["javdb"]
+        assert [(row.site, row.outcome, row.reason) for row in result.result.outcomes] == [
+            ("javdb", "failed", "no_usable_metadata")
+        ]
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_empty_scalars_with_image_still_succeeds(self, repo: Repository, resource_store):

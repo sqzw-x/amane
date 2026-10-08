@@ -2776,7 +2776,7 @@ export type OptionalPathTemplateDefaults = {
 /**
  * OrganizeConflict
  *
- * 一条未落盘的记录: 源文件路径 + 被占用的目标路径.
+ * 一条未落盘的整理项: 源路径 + 被占用的目标路径.
  */
 export type OrganizeConflict = {
     /**
@@ -4018,7 +4018,7 @@ export type SiteOutcomeRecord = {
  *
  * ``SKIPPED`` 的原因.
  *
- * 与 ``FailureReason`` 分开: 这一档不是失败, 文案也不进任务报告. 界面按它本地化, 因此每种原因
+ * 与 ``FailureReason`` 分开: 这一档不是失败, 文案也不进站点明细. 界面按它本地化, 因此每种原因
  * 都要能独立读懂, 不依赖 ``detail``.
  */
 export type SkipReason = 'unknown_source' | 'no_http_upstream' | 'missing_credential' | 'undeclared' | 'no_url';

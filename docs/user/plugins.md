@@ -133,7 +133,7 @@ class Plugin(FilmSourcePlugin):
 ### 开发要点
 
 - **未命中返回 `None`**: 请求成功但没有得到元数据 (或番号不匹配), 这是「没有找到」, 不是失败
-- **网络失败抛 `SourceError`**: 交给 Amane 分类记录, 任务不会崩溃, 报告里能看到原因. 不要 `except Exception` 吞掉异常
+- **网络失败抛 `SourceError`**: 交给 Amane 分类记录, 任务不会崩溃, 站点明细里能看到原因. 不要 `except Exception` 吞掉异常
 - **网络请求走 `context.http_client`**: 共享 Amane 的代理、重试、限速, 并记入任务记录, 不要自建客户端. 播放码流由主机反向代理, 插件只返回上游 URL 与服务端请求头
 - **`descriptor.urls`** 填插件需访问的站点, 会用于请求限速
 - **连通性检测**: 可选的 `check_connectivity` 供 Amane 的「网络检测」页探测本源. 不实现时主机探测 `descriptor.urls` 的第一个地址; 入口不同 (登录页 / 需要 token 的 API) 或凭据缺失就实现它, 后者返回 `ConnectivityOutcome.skipped(SkipReason.MISSING_CREDENTIAL)` 说明无法探测的原因. 请求照旧走 `context.http_client`

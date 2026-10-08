@@ -101,7 +101,7 @@ async def _to_resp(repo: RepoDep, task: Task) -> TaskResponse:
     resp = (await _decorate_tasks(repo, [task], TaskResponse))[0]
     if task.result is None:
         return resp
-    # 历史行缺 type 属预期状态 (每次展开都会命中), 降到 debug; 真的写坏了要靠记录目录排查.
+    # 缺 type 的行属预期状态 (每次展开都会命中), 降到 debug; 真的写坏了要靠记录目录排查.
     if resp.result is None:
         logger.debug("task result unreadable", task_id=task.id, task_type=str(task.type))
         return resp

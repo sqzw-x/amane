@@ -5622,7 +5622,7 @@ export const OrganizeConflictSchema = {
         'reason'
     ],
     title: 'OrganizeConflict',
-    description: '一条未落盘的记录: 源文件路径 + 被占用的目标路径.'
+    description: '一条未落盘的整理项: 源路径 + 被占用的目标路径.'
 } as const;
 
 export const OrganizeConflictReasonSchema = {
@@ -7797,7 +7797,7 @@ export const SkipReasonSchema = {
         'no_url'
     ],
     title: 'SkipReason',
-    description: '``SKIPPED`` 的原因.\n\n与 ``FailureReason`` 分开: 这一档不是失败, 文案也不进任务报告. 界面按它本地化, 因此每种原因\n都要能独立读懂, 不依赖 ``detail``.'
+    description: '``SKIPPED`` 的原因.\n\n与 ``FailureReason`` 分开: 这一档不是失败, 文案也不进站点明细. 界面按它本地化, 因此每种原因\n都要能独立读懂, 不依赖 ``detail``.'
 } as const;
 
 export const SortOrderSchema = {

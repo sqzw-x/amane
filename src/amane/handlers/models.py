@@ -131,7 +131,7 @@ class ScrapeResult(BaseModel):
     field_sources: dict[str, str]
     failed_sites: list[str]
     outcomes: list[SiteOutcomeRecord] = Field(default_factory=list)
-    """各来源的结果明细, 报告与界面据此展示; 与记录里的 summary 同源."""
+    """各来源的结果明细; 与记录里的 summary 同源."""
 
 
 # --- ORGANIZE ---
