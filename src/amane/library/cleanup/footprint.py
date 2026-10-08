@@ -3,7 +3,7 @@
 删除文件 = 媒体文件自身 + 按库路径模板反解出的刮削产物 + 同目录同名字幕;
 删除文件与作品文件夹 = 该作品文件夹下的全部内容, 只在该目录仅含这一条媒体索引且不是库根时提供.
 展开只收库根内的路径: 配置链接模板时产物落在库外的链接树, 那些不归本功能管;
-工作目录里指向别处的目录 (Windows 的 junction 与挂载点) 同样不展开, 它是用户布置的入口.
+工作目录里的目录链接 (Windows 的 junction 与挂载点) 同样不展开, 它由用户布置.
 """
 
 from __future__ import annotations
@@ -250,8 +250,8 @@ def _add_tree_contents(directory: Path, *, add: _Add) -> None:
     for child in children:
         if child.is_dir() and not child.is_symlink():
             if is_name_surrogate_dir(child):
-                # 指向别处的目录 (Windows 的 junction 与挂载点): 不展开也不删除 — 它是用户
-                # 布置的入口, 而展开会把库外内容列进删除集合.
+                # 目录链接 (Windows 的 junction 与挂载点): 不展开也不删除 — 它由用户布置,
+                # 而展开会把库外内容列进删除集合.
                 continue
             _add_tree_contents(child, add=add)
             continue

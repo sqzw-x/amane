@@ -149,7 +149,7 @@ async def test_file_response_missing_file_is_502(tmp_path: Path) -> None:
 
 
 class _CountingHandle:
-    """计数文件句柄替身: 记录每次读取的字节数, 并在关闭时回调."""
+    """计数文件句柄的替代实现: 记录每次读取的字节数, 并在关闭时回调."""
 
     def __init__(self, payload: bytes, reads: list[int], on_close: Callable[[], None]) -> None:
         self._payload = payload

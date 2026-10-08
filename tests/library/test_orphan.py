@@ -698,10 +698,10 @@ class TestContainerNotCounted:
 
 
 class TestSurrogateDirectory:
-    """指向别处的目录 (Windows 的 junction 与挂载点): 不进去, 里面的内容不算库内条目."""
+    """目录链接 (Windows 的 junction 与挂载点): 不进去, 里面的内容不算库内条目."""
 
     def test_surrogate_content_is_not_collected(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """非 Windows 没有 junction, 用谓词替身验证同一分支."""
+        """非 Windows 没有 junction, 用替代谓词验证同一分支."""
         lib = tmp_path / "lib"
         _touch(lib / "keep" / "poster.jpg")
         _touch(lib / "keep" / "linked" / "ad.mp4")
@@ -717,7 +717,7 @@ class TestSurrogateDirectory:
         assert inventory.blocked.unexplained == 1
 
     def test_surrogate_at_root_is_not_traversed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """库根下的替身同样不进去: 库外内容一条也不进清单."""
+        """库根下的目录链接同样不进去: 库外内容一条也不进清单."""
         lib = tmp_path / "lib"
         _touch(lib / "linked" / "ad.mp4")
         monkeypatch.setattr(

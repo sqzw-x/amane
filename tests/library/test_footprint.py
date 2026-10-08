@@ -294,7 +294,7 @@ class TestFootprint:
     async def test_work_dir_surrogate_is_not_expanded(
         self, repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """工作目录里指向别处的目录 (Windows 的 junction) 不展开: 库外内容不进删除集合."""
+        """工作目录里的目录链接 (Windows 的 junction) 不展开: 库外内容不进删除集合."""
         from amane.db.models import MediaFileStatus
 
         root = tmp_path / "lib"

@@ -90,7 +90,7 @@ class FakeWeb:
 
 
 def _service(repo: Repository, web: FakeWeb) -> FeedService:
-    # FakeWeb 与 WebClient 结构兼容; 测试替身不走真实 TLS.
+    # FakeWeb 与 WebClient 结构兼容; 替代实现不走真实 TLS.
     return FeedService(repo, web)  # pyright: ignore[reportArgumentType]
 
 

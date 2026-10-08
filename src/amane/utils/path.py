@@ -121,7 +121,7 @@ def is_name_surrogate(st: os.stat_result) -> bool:
 
 
 def is_name_surrogate_dir(path: str | Path) -> bool:
-    """路径是否为指向别处的目录. 读不到时返回假, 交给调用方的存在性分支."""
+    """路径是否为目录链接 (Windows 的 junction 与挂载点). 读不到时返回假, 交给调用方的存在性分支."""
     try:
         st = Path(path).lstat()
     except OSError:

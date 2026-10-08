@@ -414,9 +414,9 @@ def _reverify_subtree(directory: Path, *, orphan_scan: OrphanScan) -> str | None
             return f"目录里出现了不可删除的子项: {path.name}"
         if is_dir:
             if is_name_surrogate(child_stat):
-                # 扫描之后才出现的目录替身 (Windows 的 junction 与挂载点): 它里面有没有媒体
+                # 扫描之后才出现的目录链接 (Windows 的 junction 与挂载点): 它里面有没有媒体
                 # 无从判断, 与扫描侧同一口径按拒绝处理.
-                return f"目录里出现了指向别处的目录: {path.name}"
+                return f"目录里出现了目录链接: {path.name}"
             refusal = _reverify_subtree(path, orphan_scan=orphan_scan)
             if refusal is not None:
                 return refusal

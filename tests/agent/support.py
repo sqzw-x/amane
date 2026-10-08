@@ -1,4 +1,4 @@
-"""直调 Capability 工具函数的替身与取用.
+"""直调 Capability 工具函数的调用上下文与取用.
 
 工具函数只读 ``ctx.deps`` 与 ``ctx.tool_call_id`` / ``ctx.tool_call_approved``, 运行时的 RunContext 因此
 可以用 ``ToolCallContext`` 代替; 这类调用绕开模型, 直接覆盖工具自身的分支.

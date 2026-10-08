@@ -434,7 +434,7 @@ def _walk(
                 undeletable = True
                 continue
             if is_name_surrogate(child_stat):
-                # 目录类的替身 (Windows 的 junction 与挂载点): 指向别处, 进去会把库外内容
+                # 目录链接 (Windows 的 junction 与挂载点): 进去会把库外内容
                 # 算成库内条目. 与目录符号链接同口径: 不递归、不登记, 宿主目录不判定为残留,
                 # 内容按「无法解释」计数, 面板因此看得见.
                 has_content = True
@@ -960,7 +960,7 @@ def _walk_explicit(directory: Path, *, state: _ScanState) -> _DirResult | None:
             continue
         if stat.S_ISDIR(child_stat.st_mode):
             if is_name_surrogate(child_stat):
-                # 指向别处的目录 (Windows 的 junction 与挂载点): 不展开, 回收站里的替身不是可删内容.
+                # 目录链接 (Windows 的 junction 与挂载点): 不展开, 它指向的内容不是可删的历史内容.
                 continue
             sub = _walk_explicit(path, state=state)
             if sub is None:

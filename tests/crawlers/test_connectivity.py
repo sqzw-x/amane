@@ -43,7 +43,7 @@ _URL = "https://probe.example.test/"
 
 
 class _Resp:
-    """WebClient 响应的最小替身: 探测只读 ``text`` / ``status_code``, GraphQL 探测另读 ``json()``."""
+    """WebClient 响应的最小替代实现: 探测只读 ``text`` / ``status_code``, GraphQL 探测另读 ``json()``."""
 
     def __init__(
         self,

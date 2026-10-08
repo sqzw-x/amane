@@ -701,7 +701,7 @@ def test_reverify_empty_dir_reports_reason(tmp_path: Path) -> None:
 
 
 def test_reverify_subtree_rejects_surrogate_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """扫描之后才出现的目录替身 (Windows 的 junction): 子树里有没有媒体无从判断, 按拒绝处理."""
+    """扫描之后才出现的目录链接 (Windows 的 junction): 子树里有没有媒体无从判断, 按拒绝处理."""
     container = tmp_path / "old"
     (container / "linked").mkdir(parents=True)
     monkeypatch.setattr(
@@ -709,8 +709,7 @@ def test_reverify_subtree_rejects_surrogate_dir(tmp_path: Path, monkeypatch: pyt
     )
 
     assert (
-        delete_module._reverify_subtree(container, orphan_scan=_orphan_scan(tmp_path))
-        == "目录里出现了指向别处的目录: linked"
+        delete_module._reverify_subtree(container, orphan_scan=_orphan_scan(tmp_path)) == "目录里出现了目录链接: linked"
     )
 
 

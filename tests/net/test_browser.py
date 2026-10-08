@@ -23,7 +23,7 @@ class _Resp:
 
 
 class _FakeWeb:
-    """minimal WebClient 替身: 记录出站请求, 按编程应答."""
+    """WebClient 的最小替代实现: 记录出站请求, 按编程应答."""
 
     def __init__(self, responses: list[object]) -> None:
         self._responses = list(responses)
@@ -200,7 +200,7 @@ class _FakeBrowser:
 
 
 class _FakeLocalBackend(_LocalBackend):
-    """测试替身: 跳过真实浏览器启动, 记录退出栈是否释放."""
+    """替代实现: 跳过真实浏览器启动, 记录退出栈是否释放."""
 
     def __init__(self, page: _FakePage, *, idle_timeout: float = 0) -> None:
         super().__init__(proxy=None, default_timeout=1000, idle_timeout=idle_timeout)

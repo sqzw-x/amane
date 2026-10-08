@@ -457,7 +457,7 @@ class TestScanTrash:
         assert inventory.dropped == 2
 
     def test_surrogate_dir_is_not_expanded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """回收站里的替身 (Windows 的 junction) 不展开: 它指向别处, 不是可删的历史内容."""
+        """回收站里的目录链接 (Windows 的 junction) 不展开: 它指向的内容不是可删的历史内容."""
         lib = tmp_path / "lib"
         trash = lib / ".amane_trash"
         (trash / "linked").mkdir(parents=True)
