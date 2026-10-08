@@ -26,7 +26,7 @@ logger = structlog.get_logger()
 CANCEL_ERROR = "已由用户取消"
 
 _DEFAULT_SHUTDOWN_TIMEOUT = 0
-# 关闭时等待主循环 (含在飞 claim) 退出的兜底阈值; 正常路径只等它自己退出.
+# 关闭时等待主循环 (含尚未结算的认领) 退出的兜底阈值; 正常路径只等它自己退出.
 MAIN_LOOP_STOP_TIMEOUT = 5.0
 
 
@@ -98,12 +98,12 @@ class AsyncWorker:
         self._main_task = asyncio.create_task(self._run_loop())
 
     def cancel_main_loop(self) -> None:
-        """关闭路径等待超时后调用; 取消主循环, 在飞 claim 事务可能无法完整结束."""
+        """关闭路径等待超时后调用; 取消主循环, 尚未结算的认领事务可能无法完整结束."""
         if self._main_task is not None:
             self._main_task.cancel()
 
     async def wait_stopped(self) -> None:
-        """等主循环退出 (含在飞 claim 结算).
+        """等主循环退出 (含认领结算).
 
         ``asyncio.wait`` 不因主循环被取消而向调用者抛出; 主循环异常在此记录并继续.
         """

@@ -63,7 +63,7 @@ export function releaseImageSlot(): void {
  * 调用方在图片 onLoad / onError 时调用 release (请求结束, 让出连接);
  * 组件卸载时自动释放 (浏览器会取消未挂载 img 的请求并释放连接).
  *
- * 设置 src 即视为请求在途, 与 loading=lazy 互斥: lazy 会让屏外 img 占槽不发请求.
+ * 设置 src 即视为请求已开始, 与 loading=lazy 互斥: lazy 会让屏外 img 占槽不发请求.
  * ProxyImage 只对邻近视口的 URL 才传入此 hook.
  */
 export function useQueuedImageUrl(url: string | null | undefined): {

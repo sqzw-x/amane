@@ -74,7 +74,7 @@ class PlaybackCaches:
         self._lock = asyncio.Lock()
 
     def reset(self) -> None:
-        """丢弃全部 TTL 记录; 插件集合变化时调用. 在途合并由 ``_inflight`` 自行结束."""
+        """丢弃全部 TTL 记录; 插件集合变化时调用. 正在进行的合并由 ``_inflight`` 自行结束."""
         self.probe_hits.clear()
         self.open_fail.clear()
         self.resolve_hits.clear()

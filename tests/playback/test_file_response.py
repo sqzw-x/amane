@@ -239,7 +239,7 @@ async def test_file_response_stops_reading_after_disconnect(tmp_path: Path) -> N
     """断开消息已经等在通道里时不再输出正文.
 
     ASGI 服务器在客户端离开后让 ``send`` 静默成功, 读取循环只看 ``send`` 不会停止; 这里让
-    ``receive`` 一开始就报告断连, 断言正文一块都不发, 句柄已关闭, 且至多提交了一次已在途的读取.
+    ``receive`` 一开始就报告断连, 断言正文一块都不发, 句柄已关闭, 且至多提交了一次已开始的读取.
     """
     path = tmp_path / "clip.mp4"
     path.write_bytes(PAYLOAD)

@@ -280,7 +280,7 @@ class _GateStreamingResponse(StreamingResponse):
     """在响应生命周期结束时兜底释放上游请求.
 
     ``body()`` 的 ``finally`` 只在生成器被迭代过时执行: 首块 ``send`` 抛 ``ClientDisconnect``
-    (播放器切换码率或 seek 会主动中止在途分片) 时生成器从未启动, 只有 ``__call__`` 能观察到
+    (播放器切换码率或 seek 会主动中止正在传输的分片) 时生成器从未启动, 只有 ``__call__`` 能观察到
     结束. 释放函数幂等, 两处都调用不会重复归还.
     """
 
@@ -337,7 +337,7 @@ class StreamClient:
             self._idle.set()
 
     async def aclose(self) -> None:
-        """等在途请求结束后再关闭连接池.
+        """等正在进行的请求结束后再关闭连接池.
 
         重建时立即关闭会掐断正在传输的分片; 卡死的上游由读超时与 ``DRAIN_TIMEOUT_SECONDS``
         兜底, 不让被替换的客户端无限期存活.

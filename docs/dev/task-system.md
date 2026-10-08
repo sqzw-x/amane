@@ -150,15 +150,15 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ### 配置变更与退役
 
-配置变更不取消运行中任务. `_apply_rebuild_unlocked()` 构建新 worker 后调用旧 worker 的 `retire()`: 同步置 `is_main=False` 并唤醒轮询, 主循环退出且不再认领; 已认领任务继续运行; 新 worker 立即开始认领. 退役 worker 由后台 `drain()` 处理: 先等主循环退出 (在飞 claim 结算并登记), 再等活跃任务清零, 顺序不可交换; 清零后释放其持有的 r18 句柄与浏览器池. 连续变更时多个退役 worker 可以并存.
+配置变更不取消运行中任务. `_apply_rebuild_unlocked()` 构建新 worker 后调用旧 worker 的 `retire()`: 同步置 `is_main=False` 并唤醒轮询, 主循环退出且不再认领; 已认领任务继续运行; 新 worker 立即开始认领. 退役 worker 由后台 `drain()` 处理: 先等主循环退出 (认领结算并登记), 再等活跃任务清零, 顺序不可交换; 清零后释放其持有的 r18 句柄与浏览器池. 连续变更时多个退役 worker 可以并存.
 
-归属边界是**认领开始时刻**: 变更时在飞的那次 claim 仍属于旧 worker, 每次退役至多带走一个旧配置任务; PATCH 返回后开始的认领属于新 worker. 过渡期总并发为新旧 worker 上限之和; 长期挂起的任务会延迟退役 worker 的资源释放.
+归属边界是**认领开始时刻**: 变更时尚未结算的那次认领仍属于旧 worker, 每次退役至多带走一个旧配置任务; PATCH 返回后开始的认领属于新 worker. 过渡期总并发为新旧 worker 上限之和; 长期挂起的任务会延迟退役 worker 的资源释放.
 
 ### 关闭
 
 `AppRuntime.stop_workers()` 顺序: 对全部 worker (当前与退役中的) `retire()` → 逐个有界等待主循环退出 (超时 `MAIN_LOOP_STOP_TIMEOUT` 后取消主循环) → 统一 `shutdown_active()` (`worker.shutdown_timeout` 是等待活跃任务自然完成的秒数, `0` 表示立即超时并 cancel) → 单次 `fail_all_running_tasks()` → await 后台释放任务. 
 
-清扫必须只在全部 worker 处置完成后执行一次: `fail_all_running_tasks` 是全库操作, 逐个 worker 清扫会把其它 worker 的运行中任务标为失败, 其完成事务随后因状态不再是 RUNNING 而静默丢弃. 等待主循环退出须在清扫之前, 否则在飞 claim 的行可能晚于清扫提交而永久 RUNNING; 该行也可能因取消落在事务提交等待中而无法被清扫覆盖, 由人工取消处置. `stop_workers(closing=False)` 供测试夹具使用: 不置关闭态, 其余步骤相同.
+清扫必须只在全部 worker 处置完成后执行一次: `fail_all_running_tasks` 是全库操作, 逐个 worker 清扫会把其它 worker 的运行中任务标为失败, 其完成事务随后因状态不再是 RUNNING 而静默丢弃. 等待主循环退出须在清扫之前, 否则认领尚未提交的行可能晚于清扫提交而永久 RUNNING; 该行也可能因取消落在事务提交等待中而无法被清扫覆盖, 由人工取消处置. `stop_workers(closing=False)` 供测试夹具使用: 不置关闭态, 其余步骤相同.
 
 ## 即时提交与定时提交
 

@@ -82,7 +82,7 @@ async def stop_worker(worker: AsyncWorker) -> None:
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_worker_retire_drain_stops_claiming(repo: Repository) -> None:
-    """retire 后: 在飞 claim 仍可落地; drain 返回后不再认领新任务."""
+    """retire 后: 尚未结算的认领仍可落地; drain 返回后不再认领新任务."""
     tracker = Tracker()
     worker = AsyncWorker(repo=repo, handlers={TaskType.SCRAPE: SuccessHandler(tracker)}, poll_interval=0.05)
 
@@ -99,18 +99,18 @@ async def test_worker_retire_drain_stops_claiming(repo: Repository) -> None:
             await release.wait()
         return await orig_claim()
 
-    # 实例级遮蔽: 仅阻塞 worker 主循环的第一次 claim, 模拟慢 DB 下在飞 claim
+    # 实例级遮蔽: 仅阻塞 worker 主循环的第一次 claim, 模拟慢 DB 下尚未结算的认领
     repo.claim_next_task = blocked_claim  # type: ignore[method-assign]
 
     worker.start()
-    await started.wait()  # worker 已进入 claim 并在飞
+    await started.wait()  # worker 已进入 claim, 提交尚未完成
 
     worker.retire()
     drain_task = asyncio.create_task(worker.drain())
     await asyncio.sleep(0.05)
-    assert not drain_task.done(), "drain 不得在在飞 claim 结算前返回"
+    assert not drain_task.done(), "drain 不得在 claim 结算前返回"
 
-    # 在飞 claim 期间入队的任务允许被旧 worker 认领: 归属按认领开始时刻
+    # claim 尚未结算期间入队的任务允许被旧 worker 认领: 归属按认领开始时刻
     inflight = await repo.create_task(TaskType.SCRAPE, payload={"number": "IN-FLIGHT"})
     assert inflight.id is not None
     release.set()

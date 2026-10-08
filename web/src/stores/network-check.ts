@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ConnectivityItemResponse, ConnectivityStatus } from "@/client/types.gen";
 
-/** 全量检测与行内重试互斥, 因此同一时刻只记录一个在途目标. */
+/** 全量检测与行内重试互斥, 因此同一时刻只记录一个进行中的目标. */
 export type NetworkCheckRun = { kind: "all" } | { kind: "source"; sourceId: string };
 
 /**
@@ -60,7 +60,7 @@ function isStoredReport(value: unknown): value is NetworkCheckReport {
  * 因此不放在路由组件的 state 里. 但它同时随配置与网络变化, 长期留存会让过期结论继续以结论的
  * 样子出现 —— 折中是 `sessionStorage`: 路由切换与刷新都保留, 标签页关掉即消失, 不跨会话.
  *
- * 在途标记同样不持久化, 但归 store 管: 它要跨组件卸载存在 —— 离开页面再回来时请求仍在飞, 只有
+ * 进行中的标记同样不持久化, 但归 store 管: 它要跨组件卸载存在 —— 离开页面再回来时请求仍未结束, 只有
  * store 能继续把它显示为「检测中」并挡住第二个请求; 页面重载后没有请求会回来清掉它, 因此不入存储.
  */
 export const useNetworkCheckStore = create<NetworkCheckStore>()(
