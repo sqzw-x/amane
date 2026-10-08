@@ -1,8 +1,16 @@
 """测试独立的 HTML 解析工具函数"""
 
+import pytest
 from parsel import Selector
 
-from amane.crawlers.parsing import CSSSelector, clean_string, extract_all_texts, extract_text
+from amane.crawlers.parsing import (
+    CSSSelector,
+    clean_string,
+    extract_all_texts,
+    extract_text,
+    is_same_number,
+    parse_western_number,
+)
 
 SAMPLE_HTML = """
 <html>
@@ -72,3 +80,52 @@ class TestExtractAllTexts:
         sel = Selector(text=SAMPLE_HTML)
         result = extract_all_texts(sel, "//div[@class='nothing']/a/text()")
         assert result == []
+
+
+@pytest.mark.parametrize(
+    ("number", "expected"),
+    [
+        # 片商名折叠大小写与非字母数字; alternate 是同番号的另一种年份写法
+        ("Blacked.26.03.29", ("blacked", "2026-03-29", "Blacked.2026.03.29")),
+        ("Blacked.2026.03.29", ("blacked", "2026-03-29", "Blacked.26.03.29")),
+        ("blacked-26-03-29", ("blacked", "2026-03-29", "blacked-2026-03-29")),
+        ("X-art.18.06.26", ("xart", "2018-06-26", "X-art.2018.06.26")),
+        # 非日期号与非法日期不作日期号解析
+        ("SSIS-497", None),
+        ("300MIUM-1000", None),
+        ("010115_001", None),
+        ("Blacked.26.13.45", None),
+        ("Blacked.26.02.30", None),
+        ("", None),
+    ],
+)
+def test_parse_western_number(number: str, expected: tuple[str, str, str] | None) -> None:
+    result = parse_western_number(number)
+    if expected is None:
+        assert result is None
+        return
+    assert result is not None
+    assert (result.studio, result.date, result.alternate) == expected
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        # 大小写与短横线 / 空格无关
+        ("ABF355", "ABF-355", True),
+        ("Heyzo-3607", "HEYZO3607", True),
+        # 前缀与相近番号不是同一部
+        ("ABF-35", "ABF-355", False),
+        ("SSIS-497", "SSIS-4970", False),
+        ("FC2-2476386", "FC2-3476386", False),
+        # 欧美日期号: 年份 2 位与 4 位同番号; 片商或发布日期不同则不是
+        ("Blacked.26.03.29", "Blacked.2026.03.29", True),
+        ("Blacked.26.03.29", "Blacked.2026.03.24", False),
+        ("Blacked.26.03.29", "BlackedRaw.2026.03.29", False),
+        # ``_`` 与 ``-`` 是两部片
+        ("010115_001", "010115-001", False),
+        ("", "ABF-355", False),
+    ],
+)
+def test_is_same_number(left: str, right: str, expected: bool) -> None:
+    assert is_same_number(left, right) is expected
