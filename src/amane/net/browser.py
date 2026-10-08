@@ -471,7 +471,7 @@ class CamoufoxBackend(_LocalBackend):
 
 
 class SolverBackend:
-    """FlareSolverr 兼容服务: HTML 取自 ``solution.response``, 会话按来源复用.
+    """FlareSolverr 兼容服务: HTML 取自 ``solution.response``, 会话按来源复用且同会话串行.
 
     只支持 ``request.get``; 请求头与选择器等待由 solver 自行决定,
     因此 ``headers`` / ``wait_for`` 不参与转发 (本地后端支持).
@@ -483,6 +483,7 @@ class SolverBackend:
         self._default_timeout = default_timeout
         self._sessions: set[str] = set()
         self._semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
+        self._scope_locks: dict[str, asyncio.Lock] = {}
         self._lock = asyncio.Lock()
         self._closed = False
 
@@ -497,7 +498,7 @@ class SolverBackend:
         timeout: float | None = None,
     ) -> BrowserPageResult:
         effective = timeout if timeout is not None else self._default_timeout
-        async with self._semaphore:
+        async with self._semaphore, self._lock_for(scope):
             try:
                 await self._ensure_session(scope)
                 data = await self._request_get(url, scope, effective, cookies)
@@ -524,6 +525,14 @@ class SolverBackend:
             if not isinstance(html, str):
                 return None, RequestFailure(kind=FailureKind.UNEXPECTED, message="solver solution has no response")
             return html, None
+
+    def _lock_for(self, scope: str) -> asyncio.Lock:
+        """会话级互斥: 一个会话只有一个浏览器标签, 并发请求会互相读到对方导航的正文."""
+        lock = self._scope_locks.get(scope)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._scope_locks[scope] = lock
+        return lock
 
     async def _request_get(
         self, url: str, scope: str, timeout_ms: float, cookies: Mapping[str, str] | None

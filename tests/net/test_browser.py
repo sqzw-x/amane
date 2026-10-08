@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -52,6 +52,56 @@ class _GatedWeb(_FakeWeb):
             self.get_answered.set()
             await self.release.wait()
         return result
+
+
+class _SolverWeb:
+    """可注入应答的 solver 通道: 统计 ``request.get`` 的同时执行数, 令指定 cmd 的首次调用挂起.
+
+    ``delay`` 是页面请求的应答滞后, 供测试在 ``request.get`` 上开出真实交错窗口.
+    """
+
+    def __init__(
+        self,
+        handler: Callable[[dict[str, Any]], object],
+        *,
+        delay: float = 0.0,
+        gate_cmd: str | None = None,
+    ) -> None:
+        self._handler = handler
+        self._delay = delay
+        self._gate_cmd = gate_cmd
+        self._gated = False
+        self.calls: list[dict[str, Any]] = []
+        self.max_simultaneous = 0
+        self.running = 0
+        self.gated = asyncio.Event()
+        self.release = asyncio.Event()
+
+    @property
+    def requested_urls(self) -> list[str]:
+        return [call["url"] for call in self.calls if call["cmd"] == "request.get"]
+
+    async def request(self, method: str, url: str, **kwargs: Any) -> _Resp:
+        payload = kwargs["json"]
+        self.calls.append(payload)
+        tracked = payload["cmd"] == "request.get"
+        if tracked:
+            self.running += 1
+            self.max_simultaneous = max(self.max_simultaneous, self.running)
+        try:
+            if payload["cmd"] == self._gate_cmd and not self._gated:
+                self._gated = True
+                self.gated.set()
+                await self.release.wait()
+            if tracked and self._delay:
+                await asyncio.sleep(self._delay)
+            result = self._handler(payload)
+        finally:
+            if tracked:
+                self.running -= 1
+        if isinstance(result, Exception):
+            raise result
+        return _Resp(result)
 
 
 class _RecordingBackend:
@@ -563,3 +613,59 @@ async def test_solver_close_destroys_all_sessions():
 
     destroyed = {call[2]["json"]["session"] for call in web.calls if call[2]["json"]["cmd"] == "sessions.destroy"}
     assert destroyed == {"site-a", "site-b"}
+
+
+# solver 同会话互斥: FlareSolverr 的会话是一张浏览器标签, 同会话并发会让两个调用方读到同一份正文.
+
+
+def _solver_responder(payload: dict[str, Any]) -> dict[str, Any]:
+    """``sessions.create`` / ``sessions.destroy`` 应答 ok, 页面请求应答按 URL 可辨识的正文."""
+    if payload["cmd"] in {"sessions.create", "sessions.destroy"}:
+        return {"status": "ok"}
+    return {"status": "ok", "solution": {"response": f"<html>{payload['url']}</html>", "status": 200}}
+
+
+_SOLVER_PARALLEL_CASES: list[tuple[str, tuple[tuple[str, str], ...], int]] = [
+    ("同一来源", (("https://a.example/1", "site-a"), ("https://a.example/2", "site-a")), 1),
+    ("两个来源", (("https://a.example/1", "site-a"), ("https://b.example/1", "site-b")), 2),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("requests", "max_simultaneous"),
+    [case[1:] for case in _SOLVER_PARALLEL_CASES],
+    ids=[case[0] for case in _SOLVER_PARALLEL_CASES],
+)
+async def test_solver_serializes_requests_within_scope(requests: tuple[tuple[str, str], ...], max_simultaneous: int):
+    """应答滞后开出交错窗口: 同 scope 至多一个请求同时执行, 不同 scope 不受限; 正文不串号."""
+    web = _SolverWeb(_solver_responder, delay=0.01)
+    solver = SolverBackend(web_provider=lambda: web, url="http://solver.test:8191", default_timeout=1000)  # type: ignore[arg-type]
+
+    pages = await asyncio.gather(*(solver.get_page(url, scope=scope) for url, scope in requests))
+
+    assert web.max_simultaneous == max_simultaneous
+    assert web.requested_urls == [url for url, _ in requests]
+    assert pages == [(f"<html>{url}</html>", None) for url, _ in requests]
+
+
+@pytest.mark.asyncio
+async def test_solver_releases_scope_lock_on_session_failure():
+    """会话建立失败也释放互斥: 已在排队的同来源请求随后恢复, 而不是永久等待."""
+    responses: list[object] = [{"status": "error", "message": "boom"}, {"status": "ok"}, _SOLVER_OK]
+    web = _SolverWeb(lambda payload: responses.pop(0))
+    solver = SolverBackend(web_provider=lambda: web, url="http://solver.test:8191", default_timeout=1000)  # type: ignore[arg-type]
+
+    failed, recovered = await asyncio.wait_for(
+        asyncio.gather(
+            solver.get_page("https://a.example/1", scope="site-a"),
+            solver.get_page("https://a.example/2", scope="site-a"),
+        ),
+        timeout=5,
+    )
+
+    assert failed[0] is None
+    assert failed[1] is not None
+    assert failed[1].message == "boom"
+    assert recovered == ("<html>ok</html>", None)
+    assert [call["cmd"] for call in web.calls] == ["sessions.create", "sessions.create", "request.get"]
