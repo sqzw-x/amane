@@ -51,6 +51,10 @@
 
 **视口高度统一经 `--amane-vh`**: 默认 `100vh`, 入口检测到 `dvh` 时替换成 `100dvh`. 禁止在样式或组件属性里写死 `dvh` — Chromium < 108 的 WebView 会整条丢弃含它的声明; 第三方样式 (Mantine) 里的 `dvh` 由构建期替换成同一变量.
 
+**CSS 数学表达式只能经 `style` 写入**, 禁止作为 Mantine 样式属性的值: 样式属性把字符串中的裸数字视为像素并除以 16 转成 rem, 于是 `calc()` 内出现长度相乘, 该声明在计算时判为无效并退回初始值. 只有以 `calc(` / `clamp(` 开头的字符串原样透传.
+
+`style` 与 `mx="auto"` 并用时必须同时给 `w="100%"`: 外层是 flex 列容器时, `margin-inline: auto` 会取消拉伸, 元素宽度塌缩为内容宽.
+
 导航栏在 `sm` (768px) 折叠, 页面内部布局 (三列标题行、并排分栏、内容侧栏) 一律用 `md` (992px): 768px 上导航栏刚展开, 内容宽度反而收窄. 新增断点只允许落在 `base` 至 `md`, `lg` 以上是已验收的宽屏基线, 不得改动.
 
 显隐用 `visibleFrom` / `hiddenFrom`; 必须更换控件形态时用 `useNarrowViewport()` (`hooks/use-narrow-viewport.ts`), 其断点参数必须与同一处显隐用的 `hiddenFrom` 一致 — 不一致会在中间区间同时渲染两套控件. 钉高页面必须让顶栏 chrome 可折叠: 筛选与批量操作在窄屏收进 `Menu` / `Drawer`, 滚动区给出下界, 外层容器纵向可滚动 — 否则表体被压成 0 高且分页被裁掉. 窄屏侧栏统一采用 `routes/feeds.index.tsx` 的 Drawer 范式: 内容侧 `hiddenFrom`, 抽屉与触发按钮取同一断点. HTML5 拖拽排序在触屏设备不可用, 有序列表必须在窄屏提供等价入口.

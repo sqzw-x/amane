@@ -25,7 +25,10 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import type { PlaybackSourceOption, PlaybackStreamItem } from "@/client/types.gen";
 import { EnumToggle } from "@/components/common/enum-toggle";
-import { APP_SHELL_HEADER_HEIGHT } from "@/components/layout/app-shell-metrics";
+import {
+  APP_SHELL_HEADER_HEIGHT,
+  APP_SHELL_MAIN_HEIGHT,
+} from "@/components/layout/app-shell-metrics";
 import type { HlsFailure, SeekRequest } from "@/components/media/playback-player";
 import { extractErrorMessage } from "@/lib/api-error";
 import { apiFetch } from "@/lib/api-token";
@@ -42,11 +45,25 @@ const PlaybackPlayer = lazy(() =>
 const EMPTY_SOURCES: PlaybackSourceOption[] = [];
 const EMPTY_STREAMS: PlaybackStreamItem[] = [];
 /**
- * 视频宽度上限.
- * 只限制高度会让替换元素的盒子比例宽于素材比例, `object-fit: contain` 于是在左右留黑边;
- * 这里改为限制宽度, 让盒子比例由 16:9 决定, 并把播放器压在一屏之内.
+ * 播放卡片内除播放窗口以外的高度: 上下 padding (`p="md"`)、上下边框、`Stack` 间距与标题行.
+ * 末项是标题行里的来源与流选择控件 (`SegmentedControl` 的 `sm` 尺寸) 的高度; 换成更高的控件时
+ * 本值必须同步, 否则整张卡片会溢出一屏.
  */
-const PLAYER_MAX_WIDTH = "min(100%, calc(var(--amane-vh) * 0.72 * 16 / 9))";
+const PLAYBACK_CARD_CHROME =
+  "calc(2 * var(--mantine-spacing-md) + 2px + var(--mantine-spacing-xs) + 2.25rem)";
+
+/**
+ * 播放卡片宽度上限: 按内容区高度换算播放窗口的宽度, 再加回卡片自身的左右 padding 与边框, 使整张卡片
+ * (含标题行的来源与流选择) 落在一屏之内. 上限加在卡片而不是播放窗口上, 后者会让标题行溢出视口.
+ *
+ * 可用区宽高比大于 16:9 时高度项生效, 卡片窄于内容区并居中; 小于 16:9 时 `100%` 生效; 恰好 16:9 时
+ * 两者相等, 正好铺满. 限制宽度而不是高度, 是因为后者会让替换元素的盒子比例宽于素材比例, 左右留黑边.
+ *
+ * 只能经 `style` 写入. Mantine 样式属性把字符串里的裸数字当作像素并转成 rem, `calc()` 内于是出现
+ * 长度相乘, 声明在计算时判为无效, 上限退回 `none`; 约束详见 `docs/dev/frontend.md`.
+ * 式中的 `16 / 9` 与 `PlayerFrame` 的 `AspectRatio` 取值必须一致.
+ */
+const PLAYBACK_CARD_MAX_WIDTH = `min(100%, calc((${APP_SHELL_MAIN_HEIGHT} - ${PLAYBACK_CARD_CHROME}) * 16 / 9 + 2 * var(--mantine-spacing-md) + 2px))`;
 /** 短枚举平铺展示; 超过该数量时换行难以阅读, 回退为下拉菜单. */
 const MAX_TOGGLE_ITEMS = 4;
 
@@ -205,14 +222,7 @@ function PlayerFrame({
   frameRef?: Ref<HTMLDivElement>;
 }) {
   return (
-    <Box
-      ref={frameRef}
-      w="100%"
-      maw={PLAYER_MAX_WIDTH}
-      mx="auto"
-      bg="#000"
-      style={{ scrollMarginTop: APP_SHELL_HEADER_HEIGHT }}
-    >
+    <Box ref={frameRef} w="100%" bg="#000" style={{ scrollMarginTop: APP_SHELL_HEADER_HEIGHT }}>
       <AspectRatio ratio={16 / 9}>{children}</AspectRatio>
     </Box>
   );
@@ -438,7 +448,15 @@ export function PlaybackPanel({
   ) : null;
 
   return (
-    <Card withBorder radius="md" p="md">
+    <Card
+      withBorder
+      radius="md"
+      p="md"
+      w="100%"
+      mx="auto"
+      // flex 列容器里 `margin-inline: auto` 会取消拉伸, 必须同时给 `w="100%"`.
+      style={{ maxWidth: PLAYBACK_CARD_MAX_WIDTH }}
+    >
       <Stack gap="xs">
         <Group justify="space-between" align="flex-end" wrap="wrap">
           {title}
