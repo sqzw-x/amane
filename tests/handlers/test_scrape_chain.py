@@ -118,6 +118,29 @@ async def test_scrape_skips_all_when_all_scraped(repo: Repository, tmp_path: Pat
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_scrape_reenqueues_actor_after_person_cleared(repo: Repository, tmp_path: Path):
+    """清空人物档案连带清空 raw → 该演员重新进入链式自动刮削 (不再是「已刮过」)."""
+    handler = _make_handler(repo, ["Actor A"], auto_scrape=True)
+    await handler.handle(ScrapePayload(number="MIDV-123", media_file_id=None, content_type=ContentType.CENSORED))
+    actor = (await repo.get_actors_by_names(["Actor A"]))[0]
+    assert actor.id is not None
+    await repo.update_actor(actor.id, raw={"minnano": {"gender": "female"}})
+
+    skipped = await handler.handle(
+        ScrapePayload(number="MIDV-123", media_file_id=None, content_type=ContentType.CENSORED)
+    )
+    assert [f for f in (skipped.followups or []) if f.task_type == TaskType.ACTOR_SCRAPE] == []
+
+    assert await repo.clear_actor_person(actor.id) is not None
+
+    requeued = await handler.handle(
+        ScrapePayload(number="MIDV-123", media_file_id=None, content_type=ContentType.CENSORED)
+    )
+    actor_scrapes = [f for f in (requeued.followups or []) if f.task_type == TaskType.ACTOR_SCRAPE]
+    assert [f.payload["actor_id"] for f in actor_scrapes] == [actor.id]
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_scrape_no_chain_when_disabled(repo: Repository, tmp_path: Path):
     """auto_scrape=False → 无 ACTOR_SCRAPE followup."""
     handler = _make_handler(repo, ["Actor A"], auto_scrape=False)

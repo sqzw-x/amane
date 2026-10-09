@@ -170,7 +170,7 @@ async def set_actor_locks(actor_id: int, req: ActorLocksRequest, repo: RepoDep) 
 
 @router.post("/{actor_id}/clear-person")
 async def clear_actor_person(actor_id: int, repo: RepoDep) -> ActorResponse:
-    """清空人物档案并解除全部锁 (保留 name / gender / 刮削缓存)."""
+    """清空人物档案与刮削缓存并解除全部锁 (保留 name / gender)."""
     actor = await repo.clear_actor_person(actor_id)
     if actor is None:
         raise HTTPException(status_code=404, detail="演员不存在")

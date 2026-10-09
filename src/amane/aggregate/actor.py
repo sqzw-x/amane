@@ -136,3 +136,15 @@ def merge_actor_rows_fill_empty(target: AggregatedActor, source: AggregatedActor
     for field, site in source.field_sources.items():
         target.field_sources.setdefault(field, site)
     return target
+
+
+def merge_actor_scrape_result(fetched: AggregatedActor, current: AggregatedActor) -> AggregatedActor:
+    """刮削写回: 本次结果优先, 空位由库内值兜底; 站点快照按本次结果覆盖.
+
+    ``image_urls`` 同样以本次结果为准, 手工裁剪与编辑由 ``ActorField.IMAGE_URLS`` 锁保护;
+    别名仍与库内并集 (别名行还承载影片名单解析与用户手改, 无来源标记), 收缩由别名的锁承担.
+    """
+    merged = merge_actor_rows_fill_empty(fetched.model_copy(deep=True), current)
+    if fetched.image_urls:
+        merged.image_urls = list(fetched.image_urls)
+    return merged

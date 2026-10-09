@@ -15,6 +15,7 @@ export const LOCKABLE_ACTOR_FIELDS = [
   "overview",
   "tagline",
   "image_urls",
+  "aliases",
 ] as const satisfies readonly ActorField[];
 
 assertExhaustive<ActorField>()(LOCKABLE_ACTOR_FIELDS);
@@ -32,4 +33,5 @@ export const ACTOR_FIELD_LABEL_KEY = exhaustiveRecord<ActorField>()({
   overview: "browse.person.overview",
   tagline: "browse.person.tagline",
   image_urls: "actors.imagesEdit",
+  aliases: "browse.person.aliases",
 } as const satisfies Record<ActorField, ParseKeys<"metadata">>);

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Protocol
 from pydantic import ValidationError
 from structlog.contextvars import bind_contextvars
 
-from ..aggregate import merge_actor_metadata, merge_actor_rows_fill_empty
+from ..aggregate import merge_actor_metadata, merge_actor_scrape_result
 from ..crawlers.actor import ActorFetcher, ActorMetadata, filter_sites_for_gender
 from ..crawlers.site_roles import is_actor_image_site, is_actor_profile_site
 from ..db.actor_person import (
@@ -33,7 +33,7 @@ class ActorCrawlerFactoryLike(Protocol):
 
 
 class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
-    """按 Actor 查找名顺序访问资料来源 / 头像来源, 填空合并后写回."""
+    """按 Actor 查找名顺序访问资料来源 / 头像来源, 以本次结果写回."""
 
     def __init__(
         self,
@@ -168,10 +168,10 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
                 failed_sites.append(site)
             await self.report_progress(i + 1, progress_total, f"fetched {site}")
 
-        # 填空合并后写库.
+        # 本次结果优先写回, 空位由库内值兜底.
         site_agg = merge_actor_metadata(results, profile_sites=profile_sites, image_sites=image_sites)
         existing_aliases = await self._repo.get_actor_aliases(payload.actor_id)
-        merged = merge_actor_rows_fill_empty(actor_to_aggregated(actor), site_agg)
+        merged = merge_actor_scrape_result(site_agg, actor_to_aggregated(actor))
         # AUTO 写入: 锁定字段保留库内值; 下载与任务结果同以过滤后集合为准, 不为注定丢弃的新图下载.
         merged = filter_locked_person_data(merged, locked=locked_fields_of(actor), current=actor_to_aggregated(actor))
 
@@ -181,7 +181,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         await self.report_progress(len(sites) + 1, progress_total, "images")
 
         apply_aggregated_to_actor(actor, merged)
-        # 别名行整表替换为「既有行 + 站点名」并集 (去重/去展示名在行写入层).
+        # 别名行整表替换为「既有行 + 站点名」并集 (去重/去展示名/锁判定在行写入层).
         saved = await self._repo.save_actor(actor, aliases=[*existing_aliases, *merged.aliases])
         if saved is None:
             return TaskResult(

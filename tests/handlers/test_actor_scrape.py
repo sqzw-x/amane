@@ -12,7 +12,7 @@ import pytest
 from amane.config import ActorScrapingConfig, HotSettings
 from amane.crawlers.actor import ActorFetcher, ActorMetadata
 from amane.crawlers.block import FailureReason
-from amane.db.models import Actor, FacetKind, Task, TaskStatus, TaskType
+from amane.db.models import FacetKind, Task, TaskStatus, TaskType
 from amane.enums import ActorField, ActorGender, SiteName
 from amane.handlers.actor_scrape import ActorScrapeHandler
 from amane.handlers.models import ActorScrapePayload, CacheKind
@@ -68,7 +68,8 @@ async def _actor_id(repo: Repository, name: str, *, gender: ActorGender = ActorG
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_actor_scrape_fills_empty_and_preserves_existing(repo: Repository, hot: HotSettings) -> None:
+async def test_actor_scrape_prefers_fetched_values_and_fills_empty(repo: Repository, hot: HotSettings) -> None:
+    """本次结果覆盖库内已填值; 库内空位照填."""
     actor_id = await _actor_id(repo, "Alice")
 
     existing = await repo.get_actor(actor_id)
@@ -100,7 +101,7 @@ async def test_actor_scrape_fills_empty_and_preserves_existing(repo: Repository,
 
     saved = await repo.get_actor(actor_id)
     assert saved is not None
-    assert saved.birthday == "1990-01-01"
+    assert saved.birthday == "2000-01-01"
     assert saved.height == 160
     assert saved.overview == "from minnano"
     assert saved.name == "Alice"
@@ -109,9 +110,56 @@ async def test_actor_scrape_fills_empty_and_preserves_existing(repo: Repository,
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_keeps_images_when_run_yields_none(repo: Repository, hot: HotSettings) -> None:
+    """本次抓取无图时保留库内头像 (有图即替换由纯函数表覆盖)."""
+    actor_id = await _actor_id(repo, "Imaged")
+    actor = await repo.get_actor(actor_id)
+    assert actor is not None
+    actor.image_urls = ["https://img.example/old.jpg"]
+    await repo.save_actor(actor)
+
+    factory = _FakeFactory(
+        {"minnano": _FakeActorCrawler({"Imaged": ActorMetadata(name="Imaged")}), "gfriends": _FakeActorCrawler({})}
+    )
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id))
+    assert result.success
+    saved = await repo.get_actor(actor_id)
+    assert saved is not None
+    assert saved.image_urls == ["https://img.example/old.jpg"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_skips_locked_aliases(repo: Repository, hot: HotSettings) -> None:
+    """别名已锁: 站点别名不写入, 库内行原样保留, 其余字段照常写回."""
+    actor_id = await _actor_id(repo, "FrozenAlias")
+    actor = await repo.get_actor(actor_id)
+    assert actor is not None
+    await repo.save_actor(actor, aliases=["手填别名"])
+    await repo.set_actor_locks(actor_id, [ActorField.ALIASES])
+
+    minnano = _FakeActorCrawler({"FrozenAlias": ActorMetadata(name="站点显示名", aliases=["站点别名"], overview="bio")})
+    factory = _FakeFactory({"minnano": minnano, "gfriends": _FakeActorCrawler({})})
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id))
+    assert result.success
+    saved = await repo.get_actor(actor_id)
+    assert saved is not None
+    assert saved.overview == "bio"  # 锁定别名不影响其余字段写回
+    # #354 的回归点: 站点别名与既有别名行都不写回.
+    assert await repo.get_actor_aliases(actor_id) == ["手填别名"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_actor_scrape_respects_locked_fields(repo: Repository, hot: HotSettings) -> None:
     """锁定字段不被填 / 不被并集; 下载与任务结果同以过滤后集合为准."""
     actor_id = await _actor_id(repo, "LockedActor")
+    actor = await repo.get_actor(actor_id)
+    assert actor is not None
+    actor.birthday = "1990-01-01"
+    await repo.save_actor(actor)
     await repo.set_actor_locks(actor_id, [ActorField.BIRTHDAY, ActorField.IMAGE_URLS])
 
     minnano = _FakeActorCrawler({"LockedActor": ActorMetadata(name="LockedActor", birthday="2000-01-01", height=160)})
@@ -129,8 +177,8 @@ async def test_actor_scrape_respects_locked_fields(repo: Repository, hot: HotSet
     assert result.result is not None
     saved = await repo.get_actor(actor_id)
     assert saved is not None
-    assert saved.birthday is None  # 锁定空值不被填
-    assert saved.height == 160  # 未锁定字段照常
+    assert saved.birthday == "1990-01-01"  # 锁定字段压住本次的新值
+    assert saved.height == 160  # 未锁定字段取本次结果
     assert saved.image_urls == []  # 锁定 image_urls 不被并集
     assert result.result.image_count == 0
     assert "birthday" not in result.result.field_sources
@@ -274,11 +322,14 @@ async def test_actor_scrape_reuses_raw_when_metadata_cache_enabled(repo: Reposit
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_actor_scrape_bypasses_raw_when_use_cache_empty(repo: Repository, hot: HotSettings) -> None:
+    """强制刷新: 全站重爬, 站点快照按本次结果覆盖, 未参与站点的快照保留."""
     actor_id = await _actor_id(repo, "Forced")
     actor = await repo.get_actor(actor_id)
     assert actor is not None
+    actor.birthday = "1980-01-01"
     actor.raw = {
         "minnano": {"name": "Forced", "birthday": "1980-01-01", "overview": "stale"},
+        "wikipedia": {"name": "Forced", "overview": "kept"},
     }
     await repo.save_actor(actor)
 
@@ -296,6 +347,34 @@ async def test_actor_scrape_bypasses_raw_when_use_cache_empty(repo: Repository, 
     assert saved.birthday == "2001-01-01"
     assert saved.overview == "fresh"
     assert saved.image_urls == ["https://img.example/new.jpg"]
+    assert saved.raw["minnano"]["birthday"] == "2001-01-01"
+    assert saved.raw["minnano"]["overview"] == "fresh"
+    assert saved.raw["wikipedia"] == {"name": "Forced", "overview": "kept"}
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_keeps_stored_values_when_all_sites_miss(repo: Repository, hot: HotSettings) -> None:
+    """站点参与但全部未命中: 库内标量, 头像与旧快照都保留 (整轮空结果不得清库)."""
+    actor_id = await _actor_id(repo, "Missed")
+    actor = await repo.get_actor(actor_id)
+    assert actor is not None
+    actor.overview = "库内简介"
+    actor.image_urls = ["https://img.example/old.jpg"]
+    actor.raw = {"minnano": {"name": "Missed", "overview": "旧快照"}}
+    await repo.save_actor(actor)
+
+    factory = _FakeFactory({"minnano": _FakeActorCrawler({}), "gfriends": _FakeActorCrawler({})})
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id, use_cache=set()))
+    assert result.success
+    assert result.result is not None
+    assert set(result.result.failed_sites) == {"minnano", "gfriends"}
+    saved = await repo.get_actor(actor_id)
+    assert saved is not None
+    assert saved.overview == "库内简介"
+    assert saved.image_urls == ["https://img.example/old.jpg"]
+    assert saved.raw == {"minnano": {"name": "Missed", "overview": "旧快照"}}
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -346,6 +425,7 @@ async def test_actor_scrape_male_skips_female_only_sites_and_raw(repo: Repositor
     assert saved is not None
     assert saved.overview == "from wiki raw"
     assert saved.birthday is None  # minnano raw not applied
+    assert saved.raw["minnano"]["birthday"] == "1988-01-01"  # 被裁站点的快照保留
     assert saved.image_urls == []
 
 
@@ -372,20 +452,6 @@ async def test_actor_scrape_unknown_skips_female_only_like_male(repo: Repository
     assert saved.overview == "wiki"
     assert saved.birthday is None
     assert saved.image_urls == []
-
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_actor_row_roundtrip(repo: Repository) -> None:
-    actor_id = await _actor_id(repo, "Bob")
-    actor = await repo.get_actor(actor_id)
-    assert actor is not None
-    actor.cup = "C"
-    actor.image_urls = ["https://x/y.jpg"]
-    saved = await repo.save_actor(actor)
-    assert saved is not None
-    assert saved.cup == "C"
-    assert saved.image_urls == ["https://x/y.jpg"]
-    assert isinstance(saved, Actor)
 
 
 @pytest.mark.asyncio(loop_scope="function")

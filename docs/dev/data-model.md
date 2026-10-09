@@ -55,14 +55,14 @@
 
 ## 字段锁定
 
-`Metadata.locked_fields` / `Actor.locked_fields` 是字段级锁集合 (取值 `MetadataField` / `ActorField`, 空集为未锁定); 没有条目级开关, 「全部锁定」由前端写入全集. 可锁集合即各枚举全集; 身份、别名、来源映射与刮削缓存字段不可锁 — 冻结后重刮与手动 merge 都失效.
+`Metadata.locked_fields` / `Actor.locked_fields` 是字段级锁集合 (取值 `MetadataField` / `ActorField`, 空集为未锁定); 没有条目级开关, 「全部锁定」由前端写入全集. 可锁集合即各枚举全集; 身份、来源映射与刮削缓存字段不可锁 — 冻结后重刮与手动 merge 都失效. 别名可锁, 但真值在 `actor_aliases` 行: 锁判定落在该行的自动写入点, 不进值对象的锁定回填.
 
 写入策略由 `WriteMode` 表达, repository 默认 `AUTO` (自动写入者漏传策略时只会未加锁, 不会误加锁; 手动调用点显式传 `MANUAL`):
 
-- `AUTO`: 跳过锁定列并保留其既有值与既有 `field_sources`; `raw` 始终更新, 只更新 `raw` 也刷新 `updated_at`, 因此全锁条目仍参与 RESCRAPE 的年龄选择. 写入位置: 影片 `upsert_metadata` (`ScrapeHandler`); 演员 `save_actor` (ACTOR_SCRAPE) 与 `clean_actor_names` 的 `Actor.gender` 填空.
+- `AUTO`: 跳过锁定列并保留其既有值与既有 `field_sources`; `raw` 始终更新, 只更新 `raw` 也刷新 `updated_at`, 因此全锁条目仍参与 RESCRAPE 的年龄选择. 写入位置: 影片 `upsert_metadata` (`ScrapeHandler`); 演员 `save_actor` (ACTOR_SCRAPE) 与 `clean_actor_names` 的 `Actor.gender` 填空与别名行写入.
 - `MANUAL`: 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. 写入位置: 两端 REST PATCH / merge / crop 与 Agent 工具.
 - `set_metadata_locks` / `set_actor_locks` 整体替换锁集合; 锁集合本身的变更不刷新 `updated_at`.
-- 演员 `clear_actor_person` (REST clear-person) 清空档案 + `field_sources` + 锁, 保留 `name` / `gender` / `raw`, 使清空后可被重刮填回.
+- 演员 `clear_actor_person` (REST clear-person) 清空档案 + `field_sources` + 锁 + `raw`, 保留 `name` / `gender`: 旧快照留着会在下次刮削被原样写回; 而 `raw` 非空是链式自动刮削的跳过判据, 清空后该演员重新入队, 代价是下次刮削全站重取.
 - 分类治理与实体 rename / delete 不读锁, 也不自动上锁 (用户显式操作); 演员实体 merge 例外: 源锁集并入 target, 而填空并入的未锁字段不额外上锁.
 
 ## 可写字段与 req↔repo 兼容性
@@ -156,7 +156,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 `Actor` 另存人物元数据 (`gender` / 生日 / 身材 / 简介 / `image_urls` / `provider_ids` / `source_urls` / `raw`). `gender` 的 `unknown` 视为标量空位, 可被刮削填空或手动修改覆盖; `birthday` 与 `Metadata.release` 同为 `YYYY-MM-DD`; `image_urls[0]` 是主图 (详情 / 头像墙), 用户可编辑次序; 头像裁切以其为源, 结果前插并保留原图.
 
-档案刮削**不修改** `Actor.name`: 各站 `ActorMetadata.name` 与 `aliases` 并入别名行并集, 写回时排除与展示名相同的项, 因此站点的中文显示名不会盖掉已认定的展示名. 多站 `source_url` 聚合为 `source_urls` (site→url, 先到先得). 实体 merge 保留 target id: 先把源演员的名字并入 target 别名行, 再把人物字段填空并入. 实体 delete 对展示名与其**独有**别名写 block 行 (被其它演员引用的共享名不写, 避免误伤), 别名行随实体显式删除, 不依赖 SQLite FK pragma.
+档案刮削**不修改** `Actor.name`: 各站 `ActorMetadata.name` 与 `aliases` 并入别名行并集, 写回时排除与展示名相同的项, 因此站点的中文显示名不会盖掉已认定的展示名; 别名已锁则整段不写. 并集只增不减: 站点给过的名字删掉后会被下一次带缓存的刮削写回, 冻结靠别名锁. 多站 `source_url` 聚合为 `source_urls` (site→url, 先到先得). 实体 merge 保留 target id: 先把源演员的名字并入 target 别名行, 再把人物字段填空并入. 实体 delete 对展示名与其**独有**别名写 block 行 (被其它演员引用的共享名不写, 避免误伤), 别名行随实体显式删除, 不依赖 SQLite FK pragma.
 
 ## 用户注解 (与爬取隔离)
 

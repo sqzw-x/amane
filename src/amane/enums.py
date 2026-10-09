@@ -133,7 +133,7 @@ class MetadataField(StrEnum):
 
 
 class ActorField(StrEnum):
-    """演员人物档案的可锁字段; 取值与 Actor 列名同形."""
+    """演员人物档案的可锁字段; 除 ``ALIASES`` 外取值与 Actor 列名同形."""
 
     GENDER = "gender"
     BIRTHDAY = "birthday"
@@ -146,6 +146,8 @@ class ActorField(StrEnum):
     OVERVIEW = "overview"
     TAGLINE = "tagline"
     IMAGE_URLS = "image_urls"
+    ALIASES = "aliases"
+    """别名真值在 ``actor_aliases`` 行, 无对应 Actor 列."""
 
 
 class WatermarkKind(StrEnum):

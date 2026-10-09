@@ -60,11 +60,17 @@ def locked_fields_of(actor: Actor) -> set[ActorField]:
 def filter_locked_person_data(
     data: AggregatedActor, *, locked: set[ActorField], current: AggregatedActor
 ) -> AggregatedActor:
-    """AUTO 写入: 锁定字段保留 ``current`` 的值与来源, 其余取 ``data``."""
+    """AUTO 写入: 锁定字段保留 ``current`` 的值与来源, 其余取 ``data``.
+
+    别名不进 ``AggregatedActor`` 回填: ``current`` 由 ``actor_to_aggregated`` 得到, 不含别名,
+    回填即清空; 其锁在别名行写入点判定.
+    """
     if not locked:
         return data
     merged = data.model_copy(deep=True)
     for field in locked:
+        if field is ActorField.ALIASES:
+            continue
         setattr(merged, field, getattr(current, field))
     merged.field_sources = {
         **{key: value for key, value in current.field_sources.items() if key in locked},

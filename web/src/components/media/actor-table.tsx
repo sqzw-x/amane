@@ -59,6 +59,7 @@ import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 import { ageFromBirthday } from "@/lib/format-birthday";
 import { proxyImageUrl } from "@/lib/utils";
+import { ClearPersonNotice } from "@/components/media/clear-person-notice";
 import { ProxyImage } from "@/components/media/proxy-image";
 import { type ActorTableColumnKey, useUIStore } from "@/stores/ui";
 import classes from "./actor-table.module.css";
@@ -318,10 +319,15 @@ export function ActorTable({
     if (ids.length === 0) return;
     const ok = await confirm({
       title: t("actors.clearPerson"),
-      message:
-        ids.length === 1 && opts?.name
-          ? t("actors.clearPersonBody", { name: opts.name })
-          : t("actors.batchClearPersonBody", { count: ids.length }),
+      message: (
+        <ClearPersonNotice
+          first={
+            ids.length === 1 && opts?.name
+              ? t("actors.clearPersonFields", { name: opts.name })
+              : t("actors.batchClearPersonFields", { count: ids.length })
+          }
+        />
+      ),
       confirmLabel: t("actors.clearPerson"),
     });
     if (!ok) return;

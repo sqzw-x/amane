@@ -1,10 +1,12 @@
 import { Button, getDefaultZIndex, Group, Modal, Stack, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 export type ConfirmOptions = {
   title?: string;
-  message: string;
+  /** 单句说明, 或条目清单. */
+  message: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   /** 确认钮颜色; 未设置时 danger=true 用 red. */
@@ -76,7 +78,10 @@ export function ConfirmHost() {
       zIndex={CONFIRM_Z_INDEX}
     >
       <Stack gap="md">
-        <Text size="sm">{pending?.message}</Text>
+        {/* component="div": 清单消息会传 <ul>, 套在 <p> 里是非法嵌套 */}
+        <Text size="sm" component="div">
+          {pending?.message}
+        </Text>
         <Group justify="flex-end" gap="sm">
           <Button variant="default" onClick={() => close(false)}>
             {pending?.cancelLabel ?? t("actions.cancel")}

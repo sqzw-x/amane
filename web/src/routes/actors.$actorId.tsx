@@ -51,6 +51,7 @@ import { SortMenu } from "@/components/common/sort-menu";
 import { ActorAvatarCropDialog } from "@/components/media/actor-avatar-crop-dialog";
 import { ActorEditDialog } from "@/components/media/actor-edit-dialog";
 import { ActorUserTags } from "@/components/media/actor-user-tags";
+import { ClearPersonNotice } from "@/components/media/clear-person-notice";
 import { FanartLightbox } from "@/components/media/fanart-lightbox";
 import { LockChip, LockToggle, type LockProps } from "@/components/media/field-lock";
 import { PosterGrid } from "@/components/media/poster-grid";
@@ -294,7 +295,9 @@ function ActorDetailPage() {
   async function handleClear() {
     const ok = await confirm({
       title: t("actors.clearPerson"),
-      message: t("actors.clearPersonBody", { name: actor?.name ?? "" }),
+      message: (
+        <ClearPersonNotice first={t("actors.clearPersonFields", { name: actor?.name ?? "" })} />
+      ),
       confirmLabel: t("actors.clearPerson"),
     });
     if (!ok) return;
@@ -586,9 +589,13 @@ function ActorHero({
           </Text>
         )}
 
-        {aliases.length > 0 && (
-          <FieldBlock label={t("browse.person.aliases")}>
-            <AliasTags values={aliases} onSetDisplay={onSetDisplay} />
+        {(aliases.length > 0 || lockedFields.has("aliases")) && (
+          <FieldBlock label={t("browse.person.aliases")} lock={lockProps("aliases")}>
+            {aliases.length > 0 ? (
+              <AliasTags values={aliases} onSetDisplay={onSetDisplay} />
+            ) : (
+              <EmptyValue />
+            )}
           </FieldBlock>
         )}
         {(birthdayLabel || lockedFields.has("birthday")) && (

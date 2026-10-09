@@ -3036,7 +3036,7 @@
           "actors"
         ],
         "summary": "Clear Actor Person",
-        "description": "清空人物档案并解除全部锁 (保留 name / gender / 刮削缓存).",
+        "description": "清空人物档案与刮削缓存并解除全部锁 (保留 name / gender).",
         "operationId": "clear_actor_person",
         "parameters": [
           {
@@ -6092,10 +6092,11 @@
           "cup",
           "overview",
           "tagline",
-          "image_urls"
+          "image_urls",
+          "aliases"
         ],
         "title": "ActorField",
-        "description": "演员人物档案的可锁字段; 取值与 Actor 列名同形."
+        "description": "演员人物档案的可锁字段; 除 ``ALIASES`` 外取值与 Actor 列名同形."
       },
       "ActorGender": {
         "type": "string",

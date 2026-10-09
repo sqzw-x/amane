@@ -114,10 +114,12 @@ class TestActorsApi:
         assert patched.json()["overview"] == "bio"
         assert patched.json()["locked_fields"] == ["overview"]
 
-        # PUT /locks 整体替换: 重复值去重且按枚举声明序.
-        locked = await client.put(f"actors/{actor_id}/locks", json={"fields": ["image_urls", "gender", "gender"]})
+        # PUT /locks 整体替换: 重复值去重且按枚举声明序; 别名同属可锁集合.
+        locked = await client.put(
+            f"actors/{actor_id}/locks", json={"fields": ["aliases", "image_urls", "gender", "gender"]}
+        )
         assert locked.status_code == 200
-        assert locked.json()["locked_fields"] == ["gender", "image_urls"]
+        assert locked.json()["locked_fields"] == ["gender", "image_urls", "aliases"]
 
         # 自动刮削写入跳过锁定字段 (gender 被锁保留, 未锁定 birthday 正常写入).
         actor = await repo.get_actor(actor_id)
@@ -134,11 +136,16 @@ class TestActorsApi:
         assert bad.status_code == 422
         assert (await client.put("actors/99999/locks", json={"fields": []})).status_code == 404
 
-        # 清空信息: 字段 / 别名清空并解除全部锁, name 与 gender 保留.
+        # 清空信息: 字段 / 别名 / 刮削缓存清空并解除全部锁, name 与 gender 保留.
         aliased = await client.patch(
             f"actors/{actor_id}", json={"aliases": ["Nick"], "birthday": "1991-01-01", "gender": "female"}
         )
         assert aliased.status_code == 200
+        seeded = await repo.get_actor(actor_id)
+        assert seeded is not None
+        seeded.raw = {"minnano": {"birthday": "1991-01-01"}}
+        await repo.save_actor(seeded)
+
         cleared = await client.post(f"actors/{actor_id}/clear-person")
         assert cleared.status_code == 200
         body = cleared.json()

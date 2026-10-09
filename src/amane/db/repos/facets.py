@@ -226,7 +226,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
             return await browse_actors(session, params, id_subquery_sql=id_subquery_sql)
 
     async def save_actor(self, actor: Actor, *, aliases: Sequence[str] | None = None) -> Actor | None:
-        """不存在返回 None. ``aliases`` 提供时整表替换别名行; 省略则不动别名.
+        """不存在返回 None. ``aliases`` 提供时整表替换别名行; 省略或别名已锁则不动别名.
 
         AUTO 写入 (演员刮削), 锁定字段保留库内值与来源; 手动字段写入经 ``update_actor``.
         """
@@ -243,7 +243,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
             apply_aggregated_to_actor(db, data)
             db.updated_at = _utcnow()
             session.add(db)
-            if aliases is not None:
+            if aliases is not None and ActorField.ALIASES not in locked:
                 await replace_actor_aliases(session, db, aliases)
             await session.commit()
             await session.refresh(db)
@@ -360,9 +360,9 @@ class FacetsRepoMixin(RepositoryMixinBase):
             return actor
 
     async def clear_actor_person(self, actor_id: int) -> Actor | None:
-        """清空人物档案并解除全部锁 (保留 ``name`` / ``gender`` / ``raw``). 不存在返回 None.
+        """清空人物档案并解除全部锁 (保留 ``name`` / ``gender``). 不存在返回 None.
 
-        ``field_sources`` 一并清空: 残留来源指向空值, 且会让重刮后来源错位.
+        ``field_sources`` 与 ``raw`` 一并清空: 残留来源指向空值, 而旧快照会在下次刮削被原样写回.
         """
         async with self._session() as session:
             actor = await session.get(Actor, actor_id)
@@ -382,6 +382,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
             actor.provider_ids = {}
             actor.source_urls = {}
             actor.field_sources = {}
+            actor.raw = {}
             actor.locked_fields = []
             actor.updated_at = _utcnow()
             session.add(actor)

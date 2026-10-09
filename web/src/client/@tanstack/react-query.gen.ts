@@ -1047,7 +1047,7 @@ export const setActorLocksMutation = (options?: Partial<Options<SetActorLocksDat
 /**
  * Clear Actor Person
  *
- * 清空人物档案并解除全部锁 (保留 name / gender / 刮削缓存).
+ * 清空人物档案与刮削缓存并解除全部锁 (保留 name / gender).
  */
 export const clearActorPersonMutation = (options?: Partial<Options<ClearActorPersonData>>): UseMutationOptions<ClearActorPersonResponse, ClearActorPersonError, Options<ClearActorPersonData>> => {
     const mutationOptions: UseMutationOptions<ClearActorPersonResponse, ClearActorPersonError, Options<ClearActorPersonData>> = {

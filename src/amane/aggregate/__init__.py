@@ -1,6 +1,6 @@
 """影片获取图引擎与演员填空合并."""
 
-from .actor import AggregatedActor, merge_actor_metadata, merge_actor_rows_fill_empty
+from .actor import AggregatedActor, merge_actor_metadata, merge_actor_rows_fill_empty, merge_actor_scrape_result
 from .engine import (
     ALL_FIELDS,
     RAW_TO_DB_FIELD,
@@ -42,4 +42,5 @@ __all__ = [
     "execute_graph",
     "merge_actor_metadata",
     "merge_actor_rows_fill_empty",
+    "merge_actor_scrape_result",
 ]

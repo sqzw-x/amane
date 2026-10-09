@@ -410,7 +410,7 @@ export const setActorLocks = <ThrowOnError extends boolean = false>(options: Opt
 /**
  * Clear Actor Person
  *
- * 清空人物档案并解除全部锁 (保留 name / gender / 刮削缓存).
+ * 清空人物档案与刮削缓存并解除全部锁 (保留 name / gender).
  */
 export const clearActorPerson = <ThrowOnError extends boolean = false>(options: Options<ClearActorPersonData, ThrowOnError>): RequestResult<ClearActorPersonResponses, ClearActorPersonErrors, ThrowOnError> => (options.client ?? client).post<ClearActorPersonResponses, ClearActorPersonErrors, ThrowOnError>({ url: '/api/actors/{actor_id}/clear-person', ...options });
 

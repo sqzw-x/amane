@@ -786,6 +786,7 @@ async def clean_actor_names(
     须在 ``apply_facet_rules_to_metadata`` 之前运行. block 在解析前查原始名、解析后查展示名.
     名单不变时不改 ``Metadata.actors``. ``Actor.gender`` 为 ``unknown`` 且入参给出
     ``female`` / ``male`` 时填空; 不覆盖已有性别, 不写入 ``field_sources``; 性别已锁则跳过.
+    别名并入同样跳过别名已锁的演员.
     """
     raw_names = normalize_names(meta.actors)
     if not raw_names:
@@ -821,7 +822,7 @@ async def clean_actor_names(
             alias_targets.setdefault(actor.id, []).extend(aliases)
     for actor_id, aliases in alias_targets.items():
         actor = await session.get(Actor, actor_id)
-        if actor is not None:
+        if actor is not None and ActorField.ALIASES not in locked_fields_of(actor):
             await add_actor_aliases(session, actor, aliases)
     if canonical == meta.actors:
         return

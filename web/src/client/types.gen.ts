@@ -7,9 +7,9 @@ export type ClientOptions = {
 /**
  * ActorField
  *
- * 演员人物档案的可锁字段; 取值与 Actor 列名同形.
+ * 演员人物档案的可锁字段; 除 ``ALIASES`` 外取值与 Actor 列名同形.
  */
-export type ActorField = 'gender' | 'birthday' | 'birthplace' | 'height' | 'bust' | 'waist' | 'hip' | 'cup' | 'overview' | 'tagline' | 'image_urls';
+export type ActorField = 'gender' | 'birthday' | 'birthplace' | 'height' | 'bust' | 'waist' | 'hip' | 'cup' | 'overview' | 'tagline' | 'image_urls' | 'aliases';
 
 /**
  * ActorGender

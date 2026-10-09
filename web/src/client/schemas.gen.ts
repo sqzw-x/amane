@@ -13,10 +13,11 @@ export const ActorFieldSchema = {
         'cup',
         'overview',
         'tagline',
-        'image_urls'
+        'image_urls',
+        'aliases'
     ],
     title: 'ActorField',
-    description: '演员人物档案的可锁字段; 取值与 Actor 列名同形.'
+    description: '演员人物档案的可锁字段; 除 ``ALIASES`` 外取值与 Actor 列名同形.'
 } as const;
 
 export const ActorGenderSchema = {

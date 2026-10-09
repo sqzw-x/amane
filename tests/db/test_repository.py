@@ -1142,7 +1142,7 @@ class TestActorLocks:
         )
 
         assert updated is not None
-        assert updated.locked_fields == []
+        assert updated.locked_fields == ["aliases"]  # 别名是人物字段, 手改即锁; 来源映射字段不锁
         assert await repo.get_actor_aliases(actor.id) == ["Alias"]
 
     @pytest.mark.asyncio(loop_scope="function")
@@ -1188,7 +1188,7 @@ class TestActorLocks:
         assert cleared.source_urls == {}
         assert cleared.field_sources == {}
         assert cleared.locked_fields == []
-        assert cleared.raw == {"minnano": {"birthday": "1990-01-01"}}  # 刮削缓存保留
+        assert cleared.raw == {}  # 刮削缓存一并清空, 使清空后重刮不再回灌旧快照
         assert await repo.get_actor_aliases(actor.id) == []
         assert await repo.clear_actor_person(9999) is None
 
@@ -1232,11 +1232,38 @@ class TestActorLocks:
         free = (await repo.get_actors_by_names(["GenderFree"]))[0]
         assert free.gender == ActorGender.FEMALE
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_clean_actor_names_skips_locked_aliases(self, repo: Repository):
+        actor = await self._actor(repo, "AliasFrozen")
+        assert actor.id is not None
+        await repo.save_actor(actor, aliases=["手填"])
+        await repo.set_actor_locks(actor.id, [ActorField.ALIASES])
+
+        await repo.upsert_metadata(number="AL-alias-1", actors=["AliasFrozen(站点名)"])
+
+        assert await repo.get_actor_aliases(actor.id) == ["手填"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_save_actor_skips_locked_aliases(self, repo: Repository):
+        actor = await self._actor(repo, "SaveFrozen")
+        assert actor.id is not None
+        await repo.save_actor(actor, aliases=["keep"])
+        await repo.set_actor_locks(actor.id, [ActorField.ALIASES])
+
+        saved = await repo.save_actor(actor, aliases=["站点名"])
+        assert saved is not None
+        assert await repo.get_actor_aliases(actor.id) == ["keep"]
+
+        await repo.set_actor_locks(actor.id, [])
+        await repo.save_actor(actor, aliases=["站点名"])
+        assert await repo.get_actor_aliases(actor.id) == ["站点名"]
+
     def test_actor_field_matches_person_surface(self) -> None:
-        """ActorField 必须覆盖人物可写字段全集; 漏加成员会静默不可锁或运行期属性错误."""
+        """ActorField 覆盖人物可写字段全集与别名; 漏加成员会静默不可锁或运行期属性错误."""
         identity = {"id", "name", "created_at", "updated_at", "locked_fields"}
-        non_person = {"aliases", "provider_ids", "source_urls", "field_sources", "raw"}
-        assert set(ActorField) == set(Actor.model_fields) - identity - non_person
+        non_person = {"provider_ids", "source_urls", "field_sources", "raw"}
+        # 别名真值在 actor_aliases 行, 不在 Actor 列上, 单独补回.
+        assert set(ActorField) == (set(Actor.model_fields) - identity - non_person) | {ActorField.ALIASES}
         assert set(ActorField) == set(get_type_hints(ActorPersonFields)) - non_person
         assert set(ActorField) == set(AggregatedActor.model_fields) - non_person
 

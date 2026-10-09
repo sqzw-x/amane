@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
-from amane.aggregate.actor import AggregatedActor, merge_actor_metadata, merge_actor_rows_fill_empty
+import pytest
+
+from amane.aggregate.actor import (
+    AggregatedActor,
+    merge_actor_metadata,
+    merge_actor_rows_fill_empty,
+    merge_actor_scrape_result,
+)
 from amane.crawlers.actor import ActorMetadata
-from amane.db.actor_person import actor_to_aggregated, apply_aggregated_to_actor, merge_person_fields_into_target
+from amane.db.actor_person import (
+    actor_to_aggregated,
+    apply_aggregated_to_actor,
+    filter_locked_person_data,
+    merge_person_fields_into_target,
+)
 from amane.db.models import Actor
-from amane.enums import ActorGender, SiteName
+from amane.enums import ActorField, ActorGender, SiteName
 
 
 class TestMergeActorMetadata:
@@ -118,13 +130,10 @@ class TestActorPersonHelpers:
         assert target.provider_ids == {"wikidata": "Q9"}
         assert "wikipedia" in target.raw
 
-    def test_roundtrip_aggregated(self):
-        actor = Actor(name="A", height=160, image_urls=["u"])
-        data = actor_to_aggregated(actor)
+    def test_apply_aggregated_keeps_name(self):
+        """写回不修改 name/id."""
         other = Actor(name="B")
-        apply_aggregated_to_actor(other, data)
-        assert other.height == 160
-        assert other.image_urls == ["u"]
+        apply_aggregated_to_actor(other, actor_to_aggregated(Actor(name="A", height=160)))
         assert other.name == "B"
 
     def test_merge_keeps_site_aliases_in_memory(self):
@@ -134,3 +143,61 @@ class TestActorPersonHelpers:
         merged = merge_actor_rows_fill_empty(actor_to_aggregated(actor), site)
         assert actor.name == "鷲尾めい"
         assert merged.aliases == ["筧純", "鷲尾芽衣", "筧ジュン", "鷲尾めい"]
+
+    def test_filter_locked_person_data_keeps_aliases(self):
+        """别名无库内值可回填, 锁定它不得清空 (回填由别名行写入点负责)."""
+        data = AggregatedActor(aliases=["站点别名"], overview="new")
+        current = AggregatedActor(overview="old")
+        out = filter_locked_person_data(data, locked={ActorField.ALIASES, ActorField.OVERVIEW}, current=current)
+        assert out.aliases == ["站点别名"]
+        assert out.overview == "old"
+
+
+class TestMergeActorScrapeResult:
+    @pytest.mark.parametrize(
+        ("current", "fetched", "expected"),
+        [
+            # 本次非空压过库内; 本次为空的位置取库内值.
+            (
+                AggregatedActor(height=155, field_sources={"birthday": "minnano", "height": "gfriends"}),
+                AggregatedActor(birthday="2000-01-01", overview="bio", field_sources={"birthday": "javdb"}),
+                {"birthday": "2000-01-01", "overview": "bio", "height": 155},
+            ),
+            # 本次有图即替换库内列表.
+            (
+                AggregatedActor(image_urls=["old.jpg"]),
+                AggregatedActor(image_urls=["new.jpg"]),
+                {"image_urls": ["new.jpg"]},
+            ),
+            # 本次无图才保留库内列表.
+            (AggregatedActor(image_urls=["old.jpg"]), AggregatedActor(), {"image_urls": ["old.jpg"]}),
+            # 别名并集; 本次站点名在前.
+            (AggregatedActor(aliases=["既有"]), AggregatedActor(aliases=["站点"]), {"aliases": ["站点", "既有"]}),
+        ],
+    )
+    def test_fetched_wins_with_fill_empty_fallback(
+        self, current: AggregatedActor, fetched: AggregatedActor, expected: dict[str, object]
+    ):
+        out = merge_actor_scrape_result(fetched, current)
+        assert {key: getattr(out, key) for key in expected} == expected
+
+    def test_field_sources_follow_the_winning_value(self):
+        current = AggregatedActor(height=155, field_sources={"birthday": "minnano", "height": "gfriends"})
+        fetched = AggregatedActor(birthday="2000-01-01", field_sources={"birthday": "javdb"})
+        out = merge_actor_scrape_result(fetched, current)
+        assert out.field_sources == {"birthday": "javdb", "height": "gfriends"}
+
+    def test_site_snapshot_replaced_wholesale_and_absent_sites_kept(self):
+        """本次快照整段覆盖 (旧键随之消失), 未参与站点的快照保留."""
+        current = AggregatedActor(
+            raw={"minnano": {"overview": "stale", "birthday": "1980-01-01"}, "gfriends": {"image_urls": ["old"]}}
+        )
+        fetched = AggregatedActor(raw={"minnano": {"overview": "fresh"}})
+        out = merge_actor_scrape_result(fetched, current)
+        assert out.raw == {"minnano": {"overview": "fresh"}, "gfriends": {"image_urls": ["old"]}}
+        assert "birthday" not in out.raw["minnano"]
+
+    def test_fetched_not_mutated(self):
+        fetched = AggregatedActor(overview="x")
+        merge_actor_scrape_result(fetched, AggregatedActor(height=155))
+        assert fetched.height is None
