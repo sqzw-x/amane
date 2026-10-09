@@ -2,6 +2,7 @@
 
 import asyncio
 import warnings
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
@@ -18,8 +19,6 @@ from amane.library import DeleteOutcome, InventoryStore, LibraryScan, scan_inven
 from amane.observability.models import OrganizeConflict, OrganizeConflictReason
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from amane.db.repository import Repository
     from amane.media import ResourceStore
 
@@ -119,6 +118,48 @@ async def test_organize_target_occupied_skips_and_reports(
     assert not ghost.exists()
 
     assert await repo.get_media_file(phantom.id) is None
+    kept_source = await repo.get_media_file(source.id)
+    assert kept_source is not None
+    assert kept_source.path == str(src)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_unknown_target_state_counts_failed(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """读不出目标状态时记为失败而不是冲突: 不写冲突条目, 行留在源路径, 不动磁盘."""
+    lib_root = tmp_path / "lib"
+    dest_dir = lib_root / "Studio" / "NSFS-039"
+    dest_dir.mkdir(parents=True)
+    dest = dest_dir / "NSFS-039.mp4"
+    dest.write_bytes(b"first")
+    src = lib_root / "incoming" / "NSFS-039.mp4"
+    src.parent.mkdir()
+    src.write_bytes(b"second")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    source = await repo.create_media_file(
+        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert source.id is not None
+
+    def denied(self: Path, other: object) -> bool:
+        raise PermissionError(13, "Permission denied", str(other))
+
+    monkeypatch.setattr(Path, "samefile", denied)
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(lib_root)))
+    assert result.success is True
+    assert result.result is not None
+    assert (result.result.organized, result.result.conflicted, result.result.failed) == (0, 0, 1)
+    assert result.result.conflicts == []
+
+    assert dest.read_bytes() == b"first"
+    assert src.read_bytes() == b"second"
     kept_source = await repo.get_media_file(source.id)
     assert kept_source is not None
     assert kept_source.path == str(src)

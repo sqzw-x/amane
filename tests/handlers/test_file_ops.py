@@ -1,5 +1,6 @@
 """测试 file ops 消费已物化 URL (内部派生 / 外部) + trailer 落盘."""
 
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -13,8 +14,6 @@ from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths
 from amane.parsing import ContentType, FileInfo
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from amane.net.http import WebClient
 
 
@@ -120,6 +119,49 @@ async def test_target_occupied_returns_before_side_effects(resource_store: Resou
 
     assert result.outcome is PlaceOutcome.CONFLICT
     assert result.conflict_target == paths.video
+    assert paths.video.read_text() == "existing content"
+    assert src.read_bytes() == b"movie"
+    assert not paths.thumb.exists()
+    assert not paths.nfo.exists()
+
+
+@pytest.mark.asyncio
+async def test_unknown_target_state_returns_before_side_effects(
+    resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """读不出目标状态时立即返回并记为失败: 不下载图片、不写 NFO、不动磁盘."""
+    client = cast("WebClient", FakeClient())
+
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+
+    paths = _paths(tmp_path / "out")
+    paths.video.parent.mkdir(parents=True)
+    paths.video.write_text("existing content")
+
+    def denied(self: Path, other: object) -> bool:
+        raise PermissionError(13, "Permission denied", str(other))
+
+    monkeypatch.setattr(Path, "samefile", denied)
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(number="MIDV-123", thumb_urls=["https://s/t.jpg"])
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.MOVE,
+        resource_store=resource_store,
+        web_client=client,
+        config=HotSettings(),
+    )
+
+    assert result.outcome is PlaceOutcome.FAILED
+    assert result.error is not None
+    assert "Permission denied" in result.error
+    assert result.conflict_target is None
     assert paths.video.read_text() == "existing content"
     assert src.read_bytes() == b"movie"
     assert not paths.thumb.exists()

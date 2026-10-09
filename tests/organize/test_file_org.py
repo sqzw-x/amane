@@ -1,14 +1,96 @@
 """测试文件整理 - 文件操作"""
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
 from amane.enums import LinkMode
-from amane.organize import MoveMode, PlaceOutcome, create_video_link, execute_organize
+from amane.organize import (
+    MoveMode,
+    PlaceOutcome,
+    TargetState,
+    create_video_link,
+    execute_organize,
+    target_state,
+)
 
-if TYPE_CHECKING:
-    from pathlib import Path
+
+class TestTargetState:
+    """目标占用判定: 读不出状态不得当作被占用."""
+
+    @pytest.mark.parametrize(
+        ("layout", "expected"),
+        [
+            ("missing", TargetState.FREE),
+            ("other_file", TargetState.OCCUPIED),
+            ("directory", TargetState.OCCUPIED),
+            ("hardlink", TargetState.SAME),
+            ("symlink", TargetState.SAME),
+            ("dangling_symlink", TargetState.FREE),
+        ],
+    )
+    def test_layouts(self, tmp_path: Path, layout: str, expected: TargetState):
+        """逐种目标布局断言状态; 断链符号链接跟随符号链接后按空闲处理."""
+        src = tmp_path / "MIDV-123.mp4"
+        src.write_text("source")
+        dest = tmp_path / "output" / "MIDV-123.mp4"
+        dest.parent.mkdir()
+        match layout:
+            case "other_file":
+                dest.write_text("other")
+            case "directory":
+                dest.mkdir()
+            case "hardlink":
+                dest.hardlink_to(src)
+            case "symlink":
+                dest.symlink_to(src)
+            case "dangling_symlink":
+                dest.symlink_to(tmp_path / "gone.mp4")
+
+        check = target_state.sync(src, dest)
+
+        assert check.state is expected
+        assert check.error is None
+
+    def test_stat_failure_is_unknown(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """比较源与目标时 stat 失败记为 UNKNOWN, 错误说明带 errno 与失败路径.
+
+        断言只取文件名: Windows 的 OSError 文本按 repr 转义路径里的反斜杠.
+        """
+        src = tmp_path / "MIDV-123.mp4"
+        src.write_text("source")
+        dest = tmp_path / "output" / "MIDV-123.mp4"
+        dest.parent.mkdir()
+        dest.write_text("other")
+
+        def denied(self: Path, other: object) -> bool:
+            raise PermissionError(13, "Permission denied", str(other))
+
+        monkeypatch.setattr(Path, "samefile", denied)
+
+        check = target_state.sync(src, dest)
+
+        assert check.state is TargetState.UNKNOWN
+        assert check.error is not None
+        assert "Permission denied" in check.error
+        assert dest.name in check.error
+
+    def test_dest_vanishing_between_reads_is_unknown(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """目标在存在性判定与比较之间消失 (竞态) 记为 UNKNOWN, 不当作空闲去落盘."""
+        src = tmp_path / "MIDV-123.mp4"
+        src.write_text("source")
+        dest = tmp_path / "output" / "MIDV-123.mp4"
+
+        def always_found(path: Path, *, follow_symlinks: bool = True) -> Path:
+            return path
+
+        monkeypatch.setattr("amane.organize.file.existing_disk_path", always_found)
+
+        check = target_state.sync(src, dest)
+
+        assert check.state is TargetState.UNKNOWN
+        assert check.error is not None
+        assert dest.name in check.error
 
 
 class TestExecuteOrganize:
@@ -115,6 +197,33 @@ class TestExecuteOrganize:
         assert dest.read_text() == "existing content"
         assert src.read_text() == "new content"
         assert [p.name for p in target_dir.iterdir()] == ["MIDV-123.mp4"]
+
+    def test_unknown_target_state_is_failure_not_conflict(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """读不出目标状态时记为失败并带上错误说明, 不计入冲突, 也不动磁盘上已有的文件."""
+        src = tmp_path / "MIDV-123.mp4"
+        src.write_text("new content")
+        target_dir = tmp_path / "output"
+        target_dir.mkdir()
+        dest = target_dir / "MIDV-123.mp4"
+        dest.write_text("existing content")
+
+        def denied(self: Path, other: object) -> bool:
+            raise PermissionError(13, "Permission denied", str(other))
+
+        monkeypatch.setattr(Path, "samefile", denied)
+
+        result = execute_organize.sync(
+            source=src,
+            target_dir=target_dir,
+            target_stem="MIDV-123",
+            mode=MoveMode.MOVE,
+        )
+
+        assert result.outcome is PlaceOutcome.FAILED
+        assert result.error is not None
+        assert "Permission denied" in result.error
+        assert dest.read_text() == "existing content"
+        assert src.read_text() == "new content"
 
     def test_target_is_directory_counts_as_occupied(self, tmp_path: Path):
         """目标位置是目录时按占用处理, 不抛异常."""
