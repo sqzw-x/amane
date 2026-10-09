@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
 from types import UnionType
-from typing import Annotated, Any, Optional, Self, Union, get_args, get_origin, no_type_check
+from typing import TYPE_CHECKING, Annotated, Any, Optional, Self, Union, get_args, get_origin, no_type_check
 
 from pydantic import (
     AfterValidator,
@@ -16,6 +16,9 @@ from pydantic import (
 from pydantic.config import JsonDict
 from pydantic.fields import FieldInfo
 from sqlmodel import SQLModel
+
+if TYPE_CHECKING:
+    from typing_extensions import TypeForm
 
 _ANNOTATED_VALIDATORS = (AfterValidator, BeforeValidator, PlainValidator, WrapValidator)
 
@@ -210,7 +213,7 @@ def create_partial_model[T: BaseModel](
     """
 
     # Convert one type to being partial - if possible
-    def _partial_annotation_arg(field_name_: str, field_annotation: type) -> type:
+    def _partial_annotation_arg(field_name_: str, field_annotation: TypeForm[Any]) -> TypeForm[Any]:
         if isinstance(field_annotation, type) and issubclass(field_annotation, BaseModel):
             field_prefix = f"{field_name_}."
             children_fields = [field.removeprefix(field_prefix) for field in fields_ if field.startswith(field_prefix)]

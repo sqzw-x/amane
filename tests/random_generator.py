@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel, HttpUrl
 from pydantic_core import PydanticUndefined
+from typing_extensions import TypeForm
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
@@ -76,12 +77,12 @@ def generate_random_pydantic_instance(
     return model_class(**random_data)
 
 
-def generate_random_value_for_type(field_type: type, field_info: FieldInfo | None = None) -> Any:
+def generate_random_value_for_type(field_type: TypeForm[Any], field_info: FieldInfo | None = None) -> Any:
     """
     根据类型生成随机值
 
     Args:
-        field_type: 字段类型
+        field_type: 字段类型 (注解表达式, 逐层解包)
         field_info: 字段信息(可选)
 
     Returns:

@@ -64,7 +64,8 @@ _TASK_SORT_COLUMNS: dict[TaskSortField, Mapped[Any]] = {
 
 
 def _order_clause[T](column: Mapped[T], order: SortOrder) -> UnaryExpression[T]:
-    return asc(column) if order == SortOrder.ASC else desc(column)
+    # 用列上的方法而非独立函数: 后者返回 OrderByList | UnaryExpression, 收窄不掉.
+    return column.asc() if order == SortOrder.ASC else column.desc()
 
 
 def _metadata_file_count_expr() -> ColumnElement[int]:

@@ -1,7 +1,7 @@
 import asyncio
 import subprocess
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -36,7 +36,7 @@ def alembic_config(db_path: Path) -> Config:
     return cfg
 
 
-def patch_path(obj: object) -> str:
+def patch_path(obj: type | Callable[..., object]) -> str:
     """根据对象动态生成 patch 路径"""
     return f"{obj.__module__}.{obj.__qualname__}"
 

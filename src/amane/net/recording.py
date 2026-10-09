@@ -4,7 +4,7 @@ WebClient 不依赖 observability; 由 observability.recorder 在导入时
 ``bind_http_recorder_lookup(get_recorder)`` 注入查找函数.
 """
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Protocol
@@ -43,7 +43,7 @@ def skip_http_body() -> bool:
 
 
 @contextmanager
-def skip_body_recording() -> Iterator[None]:
+def skip_body_recording() -> Generator[None]:
     """请求期间跳过 body 落盘, 只记 meta (get_bytes / download / solver 响应)."""
     token = set_skip_http_body(True)
     try:

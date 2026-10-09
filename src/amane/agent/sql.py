@@ -129,7 +129,7 @@ class ReadonlySqlSandbox:
                 row_count = len(rows)
                 if max_rows is not None and len(rows) == max_rows:
                     # 再取一行探测是否还有更多 - 不把探测行并入结果
-                    more = await cursor.fetchmany(1)
+                    more = list(await cursor.fetchmany(1))
                     if more:
                         # 未知精确总数时用 -1 表示"至少 max_rows"
                         row_count = -1

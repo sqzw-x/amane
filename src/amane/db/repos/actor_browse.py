@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import String, and_, asc, cast, desc, func, literal, nulls_last, or_, text
+from sqlalchemy import String, and_, cast, func, literal, or_, text
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
@@ -58,7 +58,7 @@ def _actor_primary_order(sort_by: ActorSortField, order: SortOrder, *, count_exp
         primary = col(Actor.cup)
     else:
         primary = col(Actor.name)
-    ordered = asc(primary) if ascending else desc(primary)
+    ordered = primary.asc() if ascending else primary.desc()
     # 人物指标空值排到排序末尾, 避免无生日在 ASC 时排在最前.
     if sort_by in (
         ActorSortField.BIRTHDAY,
@@ -69,7 +69,7 @@ def _actor_primary_order(sort_by: ActorSortField, order: SortOrder, *, count_exp
         ActorSortField.CUP,
         ActorSortField.UPDATED_AT,
     ):
-        return nulls_last(ordered)
+        return ordered.nulls_last()
     return ordered
 
 

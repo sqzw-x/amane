@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from starlette.types import Receive
@@ -30,7 +30,7 @@ class DisconnectSignal:
         return self._disconnected.is_set()
 
     @asynccontextmanager
-    async def watch(self, receive: Receive) -> AsyncIterator[None]:
+    async def watch(self, receive: Receive) -> AsyncGenerator[None]:
         """在响应生命周期内等待 ``http.disconnect``.
 
         ``receive`` 必须是响应拿到的那一个: 它可能已被中间件包装, 包装内的等待才是真正的等待.

@@ -50,7 +50,7 @@ def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
     plot = fields.get("plot")
     if not isinstance(plot, str):
         return fields
-    return cast("MetadataFields", {**fields, "plot": normalize_long_text(plot)})
+    return {**fields, "plot": normalize_long_text(plot)}
 
 
 # 锁字段 (MetadataField) ↔ Metadata 列名; 仅 extrafanart / score 两名不同.

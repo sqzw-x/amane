@@ -81,10 +81,11 @@ class MediaRepoMixin(RepositoryMixinBase):
         """library_id 须收窄到单库, 否则扫描 A 会误删 B.
         在 Python 做集合差, 禁止 SQL NOT IN: 分批 NOT IN 会把其它批里真实存在的路径误判为失效.
         """
-        if library_id is None and not disk_paths:
+        paths = [nfc_path(p) for p in disk_paths]
+        if library_id is None and not paths:
             return []
         files = await self.list_media_files(library_id=library_id, limit=None)
-        disk = frozenset(nfc_path(p) for p in disk_paths)
+        disk = frozenset(paths)
         if not disk:
             return files
         return [f for f in files if nfc_path(f.path) not in disk]
