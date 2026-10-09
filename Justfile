@@ -21,7 +21,7 @@ setup: sync fixtures
 sync: _sync-python _web-install
 
 _sync-python:
-    uv sync --all-extras --dev --group packaging
+    uv sync --all-extras --all-groups
 
 [working-directory('web')]
 _web-install:
@@ -92,7 +92,7 @@ ci-windows:
 deps: _deps-python _web-deps
 
 _deps-python:
-    uv tree -d 1 --outdated
+    uv tree -d 1 --outdated --all-groups
 
 [working-directory('web')]
 _web-deps:
