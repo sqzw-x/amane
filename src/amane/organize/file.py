@@ -19,6 +19,26 @@ class PlaceOutcome(StrEnum):
     FAILED = "failed"
 
 
+class TargetState(StrEnum):
+    """目标路径的占用判定结果."""
+
+    FREE = "free"
+    """目标位置上没有条目, 可以直接落盘."""
+    SAME = "same"
+    """目标位置上就是源本身: 同一文件, 含硬链与符号链接解析."""
+    OCCUPIED = "occupied"
+    """目标位置上另有条目."""
+    UNKNOWN = "unknown"
+    """读不出状态: 比较源与目标时 stat 失败, 或两者在两次读取之间被替换."""
+
+
+@dataclass(frozen=True, slots=True)
+class TargetCheck:
+    state: TargetState
+    error: str | None = None
+    """UNKNOWN 时的错误说明, 含失败路径与 errno; 展示用, 不解析."""
+
+
 @dataclass
 class OrganizeResult:
     outcome: PlaceOutcome
@@ -28,19 +48,21 @@ class OrganizeResult:
 
 
 @in_thread
-def target_occupied(source: Path, dest: Path) -> bool:
-    """`dest` 上已有文件且与 `source` 不是同一个文件.
+def target_state(source: Path, dest: Path) -> TargetCheck:
+    """判定 `dest` 位置能否落盘, 只读磁盘.
 
-    同一个文件含硬链与符号链接解析: 源已在目标路径上时不构成冲突.
-    无法比较 (stat 失败等) 时按占用处理, 不动磁盘上已有的东西.
+    同一个文件含硬链与符号链接解析: 源已在目标路径上时记为 SAME, 不构成冲突.
+    读不出状态时记为 UNKNOWN 并带上错误说明, 不得当作被占用: 那会让用户去排查一个与本次无关的文件.
     """
-    dest_on_disk = existing_disk_path(dest)
-    if dest_on_disk is None:
-        return False
     try:
-        return not source.samefile(dest_on_disk)
-    except OSError:
-        return True
+        dest_on_disk = existing_disk_path(dest)
+        if dest_on_disk is None:
+            return TargetCheck(TargetState.FREE)
+        if source.samefile(dest_on_disk):
+            return TargetCheck(TargetState.SAME)
+        return TargetCheck(TargetState.OCCUPIED)
+    except OSError as e:
+        return TargetCheck(TargetState.UNKNOWN, error=f"无法判定目标路径是否被占用: {e}")
 
 
 def video_dest(target_dir: Path, target_stem: str, source: Path, suffix: str | None = None) -> Path:
@@ -63,6 +85,7 @@ def execute_organize(
     """落盘单元, 一次一个文件.
 
     目标被占用时不改名、不动磁盘, 返回 CONFLICT 交给调用方记账; 冲突不自动解决.
+    无法判定时返回 FAILED 并带上错误说明, 不改动磁盘.
     """
     disk_source = existing_disk_path(source)
     if disk_source is None:
@@ -72,12 +95,21 @@ def execute_organize(
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
         dest = video_dest(target_dir, target_stem, disk_source, suffix)
-        if existing_disk_path(dest) is not None:
-            # 已就位则无需动作.
-            if not target_occupied.sync(disk_source, dest):
+        check = target_state.sync(disk_source, dest)
+        match check.state:
+            case TargetState.SAME:
+                # 已就位则无需动作.
                 return OrganizeResult(outcome=PlaceOutcome.PLACED, dest=dest)
-            logger.warning("organize target occupied", source=str(disk_source), dest=str(dest))
-            return OrganizeResult(outcome=PlaceOutcome.CONFLICT, dest=dest)
+            case TargetState.OCCUPIED:
+                logger.warning("organize target occupied", source=str(disk_source), dest=str(dest))
+                return OrganizeResult(outcome=PlaceOutcome.CONFLICT, dest=dest)
+            case TargetState.UNKNOWN:
+                logger.warning(
+                    "organize target state unknown", source=str(disk_source), dest=str(dest), error=check.error
+                )
+                return OrganizeResult(outcome=PlaceOutcome.FAILED, error=check.error)
+            case TargetState.FREE:
+                pass
 
         match mode:
             case MoveMode.MOVE:

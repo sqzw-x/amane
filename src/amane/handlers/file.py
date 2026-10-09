@@ -22,12 +22,13 @@ from ..organize import (
     PlaceOutcome,
     ResolvedPaths,
     SubtitleConflict,
+    TargetState,
     discover_subtitles,
     execute_organize,
     place_subtitles,
     render_strm_content,
     resolve_paths,
-    target_occupied,
+    target_state,
     video_dest,
 )
 from ..organize.link import create_video_link
@@ -91,11 +92,16 @@ async def execute_file_operations(
     info = file_info if file_info is not None else parse_file_info(source_path)
 
     # 目标被别的文件占用时立即返回: 不下载图片, 不写附属文件, 不改库内任何路径.
+    # 读不出目标状态时同样立即返回, 但记为失败而不是冲突.
     # 目标路径必须与 execute_organize 同一算法: 模板写死扩展名时, 模板渲染结果与真实目标不同.
     dest = video_dest(paths.video.parent, paths.video.stem, source_path)
-    if await target_occupied(source_path, dest):
+    check = await target_state(source_path, dest)
+    if check.state is TargetState.OCCUPIED:
         logger.warning("organize target occupied", source=str(source_path), dest=str(dest))
         return FileOperationsResult(outcome=PlaceOutcome.CONFLICT, conflict_target=dest)
+    if check.state is TargetState.UNKNOWN:
+        logger.warning("organize target state unknown", source=str(source_path), dest=str(dest), error=check.error)
+        return FileOperationsResult(outcome=PlaceOutcome.FAILED, error=check.error)
 
     # 下载图片; 水印打在库路径副本上, 不能修改 Resource 原图.
     if web_client and download_images:

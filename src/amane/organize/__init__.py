@@ -1,5 +1,5 @@
 from ..enums import MoveMode
-from .file import OrganizeResult, PlaceOutcome, execute_organize, target_occupied, video_dest
+from .file import OrganizeResult, PlaceOutcome, TargetCheck, TargetState, execute_organize, target_state, video_dest
 from .link import create_video_link
 from .path_templates import (
     VIDEO_TEMPLATE_DEFAULT,
@@ -28,6 +28,8 @@ __all__ = [
     "ResolvedPaths",
     "StrmContentTemplate",
     "SubtitleConflict",
+    "TargetCheck",
+    "TargetState",
     "create_video_link",
     "discover_subtitles",
     "execute_organize",
@@ -38,7 +40,7 @@ __all__ = [
     "render_strm_content",
     "resolve_paths",
     "resolve_subtitle_path",
-    "target_occupied",
+    "target_state",
     "validate_path_template",
     "validate_strm_content_template",
     "video_dest",
