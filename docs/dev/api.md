@@ -15,7 +15,7 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 |------|------|------|
 | `health` | `/` | 就绪探测 |
 | `system` | `/system` | 桌面契约 / 重启 (无监督者 403) / 版本检查 |
-| `libraries` | `/libraries` | 库 CRUD; create 可携首刷; 路径模板 schema |
+| `libraries` | `/libraries` | 库 CRUD; create 可携首刷; 路径与 NFO 内容模板 schema |
 | `webhooks` | `/webhooks` | CloudDrive 回调; 见 [watcher.md](watcher.md) |
 | `feeds` | `/feeds` | 源 CRUD + 立即拉取 + 条目历史检索 / 批量操作 / 重刮削; 见 [feeds.md](feeds.md) |
 | `media` | `/media` | MediaFile |
