@@ -327,7 +327,7 @@ class TestAutoOrganize:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_last_organize_summary_follows_latest_task(
-        self, client: AsyncClient, repo: Repository, safe_path: Path
+        self, client: AsyncClient, repo: Repository, safe_path: Path, stop_worker: None
     ) -> None:
         """摘要来自最近一条终态 ORGANIZE; 失败任务没有结果载荷时仍显示原因."""
         target = safe_path / "hist"
@@ -366,7 +366,7 @@ class TestAutoOrganize:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_summary_survives_other_libraries_history(
-        self, client: AsyncClient, repo: Repository, safe_path: Path
+        self, client: AsyncClient, repo: Repository, safe_path: Path, stop_worker: None
     ) -> None:
         """别的库堆出大量新整理任务, 不把久未整理的库显示成「从未整理」."""
         quiet = safe_path / "quiet"
@@ -385,9 +385,9 @@ class TestAutoOrganize:
 
         await repo.create_tasks(TaskType.ORGANIZE, [{"library_id": busy_id, "media_file_ids": [n]} for n in range(260)])
         await repo.fail_queued_tasks(error="boom", task_types=[TaskType.ORGANIZE])
-        # 后台 worker 可能抢先认领了几条, 它们同样是终态; 只断言「新任务确实多到能挤掉旧记录」.
+        # worker 已停, 计数确定: 静库那条 DONE + 忙库 260 条 FAILED, 足以挤掉旧记录的窗口远小于此.
         terminal = await repo.count_tasks(statuses=[TaskStatus.DONE, TaskStatus.FAILED], task_types=[TaskType.ORGANIZE])
-        assert terminal > 200
+        assert terminal == 261
 
         summary = (await client.get(f"libraries/{quiet_id}")).json()["last_organize"]
         assert summary is not None
