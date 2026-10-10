@@ -7,6 +7,7 @@ from copy import copy
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 
 import tomli_w
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -227,14 +228,38 @@ class ColdSettings(BaseSettings):
         return self.data_dir / "amane.db"
 
 
+_PROXY_SCHEMES = frozenset({"http", "https", "socks4", "socks4a", "socks5", "socks5h"})
+"""curl 接受的代理协议; 地址必须带协议, 否则无法区分 http 与 socks."""
+
+
+def _validate_proxy_url(value: str | None) -> str | None:
+    """校验站点代理地址; 空白归一为未配置."""
+    if value is None or not value.strip():
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme not in _PROXY_SCHEMES or not parsed.hostname:
+        raise ValueError(
+            f"代理地址必须带协议, 形如 socks5://127.0.0.1:1080; 支持的协议: {', '.join(sorted(_PROXY_SCHEMES))}"
+        )
+    return value
+
+
 class SiteConfig(BaseModel):
     base_url: str | None = None
     use_proxy: bool = True
+    """``False`` 表示该站点的域名直连: 站点代理与全局代理都不使用."""
+    proxy: str | None = None
+    """该站点的专用代理; 留空使用 ``network.proxy``."""
     use_browser: BrowserMode = BrowserMode.AUTO
     """``auto`` 先直连, 首次命中 Cloudflare 挑战后该来源改用浏览器; 后端由 ``network.browser.backend`` 决定."""
     browser_backend: BrowserBackendName | None = Field(default=None, json_schema_extra={"x-hidden": True})
     """覆盖 ``network.browser.backend``; 仅在改用浏览器后生效, ``off`` 表示该来源禁用浏览器."""
     cookie: dict[str, str] = {}
+
+    @field_validator("proxy")
+    @classmethod
+    def _validate_proxy(cls, v: str | None) -> str | None:
+        return _validate_proxy_url(v)
 
     @field_validator("use_browser", mode="before")
     @classmethod

@@ -299,6 +299,10 @@
             "label": "使用代理",
             "description": "通过配置的代理发送请求"
           },
+          "proxy": {
+            "label": "站点代理",
+            "description": "该站点专用的代理地址, 留空使用全局代理; 关闭「使用代理」时该站点直连"
+          },
           "use_browser": {
             "label": "浏览器策略",
             "options": {

@@ -285,6 +285,46 @@ class TestSiteBrowserMode:
             SiteConfig.model_validate({"use_browser": "browser"})
 
 
+class TestSiteProxy:
+    """站点代理地址必须带协议 (curl 需要它区分 http 与 socks), 空白归一为未配置."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "http://127.0.0.1:7890",
+            "https://proxy.example:8443",
+            "socks5://127.0.0.1:1080",
+            "socks5h://user:pass@proxy.example:1080",
+            "socks4://127.0.0.1:1080",
+        ],
+    )
+    def test_accepts_supported_schemes(self, value: str):
+        assert SiteConfig(proxy=value).proxy == value
+
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_blank_becomes_unset(self, value: str):
+        assert SiteConfig(proxy=value).proxy is None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "127.0.0.1:1080",  # 无协议: 无法区分 http 与 socks
+            "ftp://127.0.0.1:1080",
+            "socks5://",
+            "socks5://:1080",
+            "not a url",
+        ],
+    )
+    def test_rejects_invalid(self, value: str):
+        with pytest.raises(ValidationError, match="代理地址必须带协议"):
+            SiteConfig(proxy=value)
+
+    def test_defaults(self):
+        cfg = SiteConfig()
+        assert cfg.proxy is None
+        assert cfg.use_proxy is True
+
+
 class TestScrapingPriorityMigration:
     def test_default_priority_reorders_routes(self):
         cfg = ScrapingConfig.model_validate(
