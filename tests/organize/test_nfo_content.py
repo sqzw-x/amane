@@ -164,6 +164,10 @@ def test_validate_reports_unknown_placeholder_name() -> None:
     [
         ("<movie><plot>{plot}</plot>&nbsp;</movie>", "&#160;"),
         ("<movie xml:lang='x' y='{xml_actor}'></movie>", "元素内容位置"),
+        ('<movie><poster url="a>b {xml_actor}"/></movie>', "元素内容位置"),
+        ("<movie><!-- {xml_actor} --><num>{number}</num></movie>", "注释或 CDATA"),
+        ("<movie><plot><![CDATA[{xml_actor}]]></plot></movie>", "注释或 CDATA"),
+        ("<movie><title>A < B {xml_actor}</title></movie>", "未转义的 `<`"),
         ("[<movie>{number}</movie>]", "没有任何元素"),
         ("[{number}<n>{number}</n>]", "完整的 XML 文档"),
         ("<movie><title>{display_title} & {title}</title></movie>", "&amp;"),
@@ -172,6 +176,11 @@ def test_validate_reports_unknown_placeholder_name() -> None:
 def test_validate_messages_are_actionable(template: str, hint: str) -> None:
     with pytest.raises(ValueError, match=hint):
         validate_nfo_content_template(template)
+
+
+def test_fragment_in_content_position_is_accepted() -> None:
+    """片段与取值都在元素内容位置时正常通过."""
+    assert validate_nfo_content_template("<movie><num>{number}</num>{xml_actor}{xml_tag}</movie>")
 
 
 def test_validate_syntax_error_names_the_template() -> None:

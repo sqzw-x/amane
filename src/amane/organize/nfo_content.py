@@ -94,6 +94,8 @@ NFO_PLACEHOLDER_MAP_KEYS: dict[str, tuple[str, ...]] = {
 
 _XML_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 
+_COMMENT_OR_CDATA = re.compile(r"<!--.*?-->|<!\[CDATA\[.*?\]\]>", re.DOTALL)
+
 
 def _element_lines(name: str, values: Sequence[str]) -> str:
     return "".join(f"  <{name}>{_escape_xml(value)}</{name}>\n" for value in values if value)
@@ -254,18 +256,47 @@ def _require_well_formed(rendered: str, subject: str) -> None:
         raise ValueError(_xml_error_message(exc, subject)) from exc
 
 
-def _fragment_in_tag(source: str) -> str | None:
-    """片段出现在标签内部 (属性位置) 的模板, 直接给出原因.
+def _fragment_position(source: str) -> str | None:
+    """片段出现在非元素内容位置时给出原因, 全部就位时返回 None.
 
-    预检只看源文本: 该位置之前最后一个 `<` 若在最后一个 `>` 之后, 说明它落在某个标签里.
-    标签属性值里出现 `>` 的少数写法会漏判, 那时仍由探针的 XML 解析兜底.
+    只看源文本: 注释与 CDATA 段先按区间识别, 其后再按引号状态判断该位置是否落在标签内部.
+    这是文案判据, 不是良构判据 — 真正的判据是探针的 XML 解析; 片段前面有未转义的 `<` 时
+    会被归成「标签内部」, 因此该提示里补了一句自检.
     """
+    starts: list[tuple[int, str]] = []
     for name in NFO_FRAGMENT_PLACEHOLDERS:
         start = 0
         while (index := source.find(f"{{{name}", start)) != -1:
-            if source.rfind("<", 0, index) > source.rfind(">", 0, index):
-                return name
+            starts.append((index, name))
             start = index + 1
+    if not starts:
+        return None
+
+    spans = [(match.start(), match.end()) for match in _COMMENT_OR_CDATA.finditer(source)]
+    cursor = 0
+    in_tag = False
+    quote = ""
+    for index, name in sorted(starts):
+        while cursor < index:
+            char = source[cursor]
+            if in_tag:
+                if quote:
+                    if char == quote:
+                        quote = ""
+                elif char in "\"'":
+                    quote = char
+                elif char == ">":
+                    in_tag = False
+            elif char == "<":
+                in_tag = True
+            cursor += 1
+        if any(start <= index < end for start, end in spans):
+            return f"{{{name}}} 落在注释或 CDATA 内部: 片段占位符只能写在元素内容位置"
+        if in_tag:
+            return (
+                f"{{{name}}} 落在标签内部: 片段占位符只能写在元素内容位置; "
+                "若片段确实在元素内容处, 检查它前面是否有未转义的 `<`"
+            )
     return None
 
 
@@ -298,9 +329,9 @@ def validate_nfo_content_template(value: str) -> str:
     unknown = [name for name in placeholder_names(value, _TEMPLATE_NAME) if name not in NFO_PLACEHOLDERS]
     if unknown:
         raise ValueError(f"{_TEMPLATE_NAME}包含未知占位符: {', '.join(unknown)}")
-    misplaced = _fragment_in_tag(value)
+    misplaced = _fragment_position(value)
     if misplaced is not None:
-        raise ValueError(f"{_TEMPLATE_NAME}里的 {{{misplaced}}} 写在标签内部: 片段占位符只能写在元素内容位置")
+        raise ValueError(f"{_TEMPLATE_NAME}: {misplaced}")
     for variables in _probe_variants():
         _require_well_formed(NfoEngine(value).render(TemplateContext(variables=variables)), _TEMPLATE_NAME)
     return value
