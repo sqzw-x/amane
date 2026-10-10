@@ -1,6 +1,7 @@
 import {
   type Icon,
   IconArrowsDiagonal,
+  IconCloudUp,
   IconDatabase,
   IconEraser,
   IconFolder,
@@ -35,6 +36,7 @@ export const TASK_ICONS: Record<TaskType, Icon> = exhaustiveRecord<TaskType>()({
   rescrape: IconRepeat,
   scan_invalid: IconZoomExclamation,
   delete: IconTrashX,
+  emby_sync: IconCloudUp,
 });
 
 const EMPTY_CHILD_STATUS: Required<TaskChildStatusCounts> = {
