@@ -5,9 +5,6 @@ import time
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import SQLModel
 from watchdog.events import (
     DirCreatedEvent,
     DirDeletedEvent,
@@ -25,7 +22,7 @@ from amane.library import LibraryScan
 from amane.scheduler.service import WatcherService
 from amane.scheduler.watcher import DEBOUNCE_SECONDS, FileWatcher, _Handler
 from amane.utils.path import path_is_under
-from tests.helpers import await_for, wait_for
+from tests.helpers import LOAD_TOLERANT_TIMEOUT, await_for, wait_for
 
 
 class TestHandler:
@@ -375,16 +372,11 @@ class TestFileWatcher:
 
 
 class TestWatcherService:
-    """WatcherService 编排测试"""
+    """WatcherService 编排测试
 
-    @pytest_asyncio.fixture
-    async def repo(self):
-        """创建使用内存 SQLite 的异步 Repository"""
-        engine = create_async_engine("sqlite+aiosqlite://", echo=False)
-        async with engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.create_all)
-        yield Repository(engine)
-        await engine.dispose()
+    ``repo`` 用 `tests/conftest.py` 的文件库: 去抖回调是与用例并发执行的独立任务,
+    内存库 (StaticPool) 让两者的会话共用同一个连接, 会互相提交或回滚对方的事务.
+    """
 
     @pytest.fixture
     def bus(self):
@@ -463,9 +455,8 @@ class TestWatcherService:
         fake_path = str(tmp_path / "phantom.mp4")
         handler._pending[fake_path] = time.time() - DEBOUNCE_SECONDS - 1
 
-        # 给 debounce 循环时间来执行 + ensure_future 回调完成
-        # debounce 循环间隔为 1s, 回调是 fire-and-forget, 需要额外的事件循环轮次
-        media = await await_for(lambda: repo.get_media_file_by_path(fake_path))
+        # 去抖回调是 fire-and-forget 任务, 等它把 MediaFile 落库
+        media = await await_for(lambda: repo.get_media_file_by_path(fake_path), timeout=LOAD_TOLERANT_TIMEOUT)
         assert media is not None
 
         await service.stop()
@@ -552,7 +543,7 @@ class TestWatcherService:
         async def gone() -> bool:
             return await repo.get_media_file_by_path(str(video)) is None
 
-        assert await await_for(gone)
+        assert await await_for(gone, timeout=LOAD_TOLERANT_TIMEOUT)
         await service.stop()
 
     @pytest.mark.asyncio(loop_scope="function")

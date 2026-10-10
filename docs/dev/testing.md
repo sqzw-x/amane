@@ -4,7 +4,7 @@
 
 优先使用现成 fixture, 不能自建引擎: `repo` / `resource_store` (`tests/conftest.py`) 已拷 head schema; HTTP 经由 `client` 或 `make_app` (`tests/api/conftest.py`), 后者会 `copy_schema` 并把 `worker.poll_interval` 压到配置下限.
 
-必须自开文件库时调用 `copy_schema` (`tests/schema_template.py`), 不能在每个测试里 `create_all` / Alembic. **例外**: 测迁移本身必须从空文件起步. GET `/config` 全量相等用 `hot_for_tests()`, 不能与裸 `HotSettings()` 比较 (夹具 poll 不是生产默认). 真文件系统的 watcher 集成把 `observer_timeout` / `check_interval` 收到 0.1 / 0.05, 否定断言用短 `wait_for(duration=…)`, 不能使用秒级 sleep.
+必须自开文件库时调用 `copy_schema` (`tests/schema_template.py`), 不能在每个测试里 `create_all` / Alembic. **例外**: 测迁移本身必须从空文件起步. GET `/config` 全量相等用 `hot_for_tests()`, 不能与裸 `HotSettings()` 比较 (夹具 poll 不是生产默认). 真文件系统的 watcher 集成把 `observer_timeout` / `check_interval` 收到 0.1 / 0.05; 否定断言用短 `wait_for(duration=…)`, 先后顺序用事件判据 (`tests/helpers.py::LoopProgressProbe`), 条件等待上限用 `tests/helpers.py::LOAD_TOLERANT_TIMEOUT`; 不能用 sleep 长短或真实耗时代替同步原语 — 超售的 CI runner 上单次事件循环轮转可达数百毫秒.
 
 ## 测试分层
 

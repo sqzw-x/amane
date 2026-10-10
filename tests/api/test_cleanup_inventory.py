@@ -13,7 +13,7 @@ from amane.api.routes.cleanup import MAX_NODE_PAGE_SIZE, TRASH_REUSE_WINDOW
 from amane.db.models import TaskType
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidPayload
 from amane.library import ORPHAN_COOLDOWN_SECONDS, InventorySource, OrphanScan, scan_inventory
-from tests.helpers import await_for
+from tests.helpers import LOAD_TOLERANT_TIMEOUT, await_for
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -308,7 +308,7 @@ async def test_scan_task_fills_panel_inventory(client: AsyncClient, safe_path: P
         status = task.json()["status"]
         return status if status in {"done", "failed"} else None
 
-    assert await await_for(finished) == "done"
+    assert await await_for(finished, timeout=LOAD_TOLERANT_TIMEOUT) == "done"
 
     resp = await client.get(f"libraries/{library_id}/cleanup/inventory")
 
