@@ -1,4 +1,4 @@
-"""测试 ResourceStore 的派生资源 (裁剪) 与就地超分能力."""
+"""测试 ResourceStore 的派生资源 (裁剪), 就地超分与获取失败的收尾."""
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -238,31 +238,37 @@ class TestResolveSource:
 
 
 class _StubResponse:
-    status_code = 200
     headers: ClassVar[dict[str, str]] = {}
 
-    def __init__(self, *, url: str, content: bytes = b"") -> None:
+    def __init__(self, *, url: str, content: bytes = b"", status: int = 200) -> None:
         self.url = url
         self.content = content
+        self.status_code = status
 
 
 class _StubSession:
     """替换 ``WebClient._session``: 按方法返回预设应答, 记录出站方法."""
 
-    def __init__(self, *, final_url: str, content: bytes = b"") -> None:
+    def __init__(self, *, final_url: str, content: bytes = b"", statuses: dict[str, int] | None = None) -> None:
         self.methods: list[str] = []
-        self._response = _StubResponse(url=final_url, content=content)
+        self._final_url = final_url
+        self._content = content
+        self._statuses = statuses or {}
 
     async def request(self, method: str, url: str, **kwargs: Any) -> _StubResponse:
         self.methods.append(method)
-        return self._response
+        return _StubResponse(url=self._final_url, content=self._content, status=self._statuses.get(method, 200))
 
 
 def _stub_client(
-    monkeypatch: pytest.MonkeyPatch, *, final_url: str, content: bytes = b""
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    final_url: str,
+    content: bytes = b"",
+    statuses: dict[str, int] | None = None,
 ) -> tuple[WebClient, _StubSession]:
     client = WebClient(limiters=RateLimiters(default_rate=100))
-    session = _StubSession(final_url=final_url, content=content)
+    session = _StubSession(final_url=final_url, content=content, statuses=statuses)
     monkeypatch.setattr(client, "_session", session)
     return client, session
 
@@ -304,3 +310,23 @@ class TestPlaceholderRedirect:
         assert path is not None and path.read_bytes() == b"jpeg-bytes"
         assert session.methods[0] == "HEAD" and "GET" in session.methods
         assert await resource_store.get_by_url(_REQUEST) is not None
+
+
+class TestAcquireFailure:
+    """获取失败既可能是站点拦下指纹, 也可能是上游没有该图; 两种失败都不写资源记录, 也不留文件."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", [403, 404, 500])
+    async def test_failed_download_keeps_no_trace(
+        self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch, status: int
+    ):
+        client, session = _stub_client(monkeypatch, final_url=_REQUEST, statuses={"GET": status})
+        dest = resource_store._compute_path(_REQUEST)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"partial")  # 分块下载失败会留下按 Content-Length 建好的文件
+
+        assert await resource_store.acquire(_REQUEST, client) is None
+
+        assert not dest.exists()
+        assert await resource_store.get_by_url(_REQUEST) is None
+        assert session.methods[0] == "HEAD" and "GET" in session.methods

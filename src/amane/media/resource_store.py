@@ -149,9 +149,12 @@ class ResourceStore:
         dest = self._compute_path(url)
         dest.parent.mkdir(parents=True, exist_ok=True)
 
-        # 下载.
-        ok = await client.download(url, dest)
-        if not ok:
+        # 下载. 失败可能是站点拦下指纹 (403/406, 见 net/http.py 的轮换), 也可能是上游本来就没有图;
+        # 两种失败都不写资源记录, 这里给出资源层的告警, 与上游的请求级日志区分开.
+        if not await client.download(url, dest):
+            # 分块下载先按 Content-Length 建文件, 失败会留下只写入一部分的文件.
+            dest.unlink(missing_ok=True)
+            logger.warning("resource download failed", url=url, host=urlsplit(url).hostname)
             return None
 
         size = dest.stat().st_size if dest.exists() else None
