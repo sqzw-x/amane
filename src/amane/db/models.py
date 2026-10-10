@@ -325,6 +325,11 @@ class Library(SQLModel, table=True):
     path: str = Field(nullable=False)
     automation: LibraryAutomation = Field(default=LibraryAutomation.SCRAPE)
     """自动化级别: none 不监控 / watch 仅入库 / scrape 入库并自动刮削. 库本身始终有效."""
+    auto_organize: bool = Field(default=False)
+    """刮削成功后为该文件自动入队 ORGANIZE (单文件范围, 随刮削任务成链).
+
+    与 `automation` 正交: none / watch 下手动刮削同样触发. 只影响新后继, 不撤销已入队的整理.
+    """
     ingest: LibraryIngest = Field(default=LibraryIngest.NATIVE)
     """文件发现通道. clouddrive 不 schedule Observer, 由 webhook 按 cloud_path 分流."""
     cloud_path: str | None = None

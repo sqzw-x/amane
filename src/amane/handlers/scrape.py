@@ -13,11 +13,12 @@ from ..observability import current
 from ..observability.models import SiteOutcomeKind
 from ..plugins.models import SourceDescriptor, SourceTrait
 from ._common import ensure_oshash, finalize_media_file
-from .models import ActorScrapePayload, CacheKind, ScrapePayload, ScrapeResult
+from .models import ActorScrapePayload, CacheKind, OrganizePayload, ScrapePayload, ScrapeResult
 from .protocol import FollowupTask, TaskHandler, TaskResult
 
 if TYPE_CHECKING:
     from ..config import HotSettings
+    from ..db.models import MediaFile
     from ..db.repository import Repository
     from ..llm import Translator
     from ..media import ResourceStore
@@ -200,6 +201,8 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
 
         # 为尚未刮削的演员扇出 ACTOR_SCRAPE.
         actor_followups = await self._actor_scrape_followups(meta.actors)
+        # 库开启自动整理时为本次刮削的文件扇出 ORGANIZE.
+        organize_followups = await self._auto_organize_followups(payload, file)
 
         await self.report_progress(progress_total, progress_total, "done")
 
@@ -210,6 +213,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             fields_resolved=len(result.field_sources),
             failed_sites=result.failed_sites,
             actor_followups=len(actor_followups),
+            organize_followups=len(organize_followups),
         )
 
         assert meta.id is not None
@@ -221,7 +225,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
                 failed_sites=result.failed_sites,
                 outcomes=current().site_outcomes(),
             ),
-            followups=actor_followups,
+            followups=[*actor_followups, *organize_followups],
         )
 
     def failure_result(self, payload: ScrapePayload) -> ScrapeResult | None:
@@ -234,6 +238,42 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             failed_sites=[row.site for row in outcomes if row.outcome is SiteOutcomeKind.FAILED],
             outcomes=outcomes,
         )
+
+    async def _auto_organize_followups(self, payload: ScrapePayload, file: MediaFile | None) -> list[FollowupTask]:
+        """库开启自动整理时为本次刮削的那一个文件描述 ORGANIZE 后继.
+
+        范围只有该文件, 且后继只在父成功后创建, 因此整理必然发生在它刮削完成之后.
+        按番号刮削没有可落盘的 `MediaFile` (库因此未知), 不在此列; `media_file_id` 非空但读不到
+        文件或库说明索引与任务不一致, 记 debug 后不链.
+        ``priority=-1``: 不抢占交互提交的任务; 自动整理彼此仍按 FIFO.
+
+        整段 ``except`` 只为不让已写库的刮削任务转为 FAILED; 这一支不可达于任何预期输入, 出现即模型或
+        数据库有问题, 按异常记日志. 此时整理不会发生, 该文件停在「已刮削未落盘」, 与完成事务失败同属不覆盖窗口.
+        """
+        if payload.media_file_id is None:
+            return []
+        if file is None or file.id is None:
+            current().debug("auto organize skipped: media file missing", media_file_id=payload.media_file_id)
+            return []
+        try:
+            library = await self._repo.get_library(file.library_id)
+            if library is None:
+                current().debug("auto organize skipped: library missing", library_id=file.library_id)
+                return []
+            if not library.auto_organize:
+                return []
+            organize = OrganizePayload(library_id=file.library_id, media_file_ids=[file.id])
+            return [
+                FollowupTask(
+                    key=f"organize:{file.id}",
+                    task_type=TaskType.ORGANIZE,
+                    payload=organize.model_dump(mode="json"),
+                    priority=-1,
+                )
+            ]
+        except Exception:
+            current().exception("failed to build auto organize followup", media_file_id=file.id)
+            return []
 
     async def _actor_scrape_followups(self, actor_names: list[str]) -> list[FollowupTask]:
         """为尚未刮削的影片演员描述 ACTOR_SCRAPE 后继; 失败不阻断主流程.

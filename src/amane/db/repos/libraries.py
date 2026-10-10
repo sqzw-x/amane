@@ -53,6 +53,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         name: str,
         path: str,
         automation: LibraryAutomation = LibraryAutomation.SCRAPE,
+        auto_organize: bool = False,
         ingest: LibraryIngest = LibraryIngest.NATIVE,
         cloud_path: str | None = None,
         recursive: bool = True,
@@ -95,6 +96,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 name=name,
                 path=str(resolved_path(path)),
                 automation=automation,
+                auto_organize=auto_organize,
                 ingest=ingest,
                 cloud_path=cloud_path,
                 recursive=recursive,
@@ -187,6 +189,8 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 lib.path = str(resolved_path(updates["path"]))
             if "automation" in updates:
                 lib.automation = updates["automation"]
+            if "auto_organize" in updates:
+                lib.auto_organize = updates["auto_organize"]
             if "ingest" in updates:
                 lib.ingest = updates["ingest"]
             if "cloud_path" in updates:

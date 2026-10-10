@@ -9,7 +9,7 @@
     - [x] 现有 fan-out (REFRESH/RESCRAPE→SCRAPE, SCRAPE→ACTOR_SCRAPE) 迁入图
     - [x] 任务树视图 (前端嵌套树 + `children` API)
     - [ ] 静态后继声明 (Feed 刮削成功后挂 UserTag 等)
-    - [ ] 自动整理等库级流水依赖此图, 不要在 Handler 里继续链式 create_task
+    - [ ] 库级流水 (批次屏障 / 失败补偿) 仍待实现, 禁止事项见 [dev/task-system.md](dev/task-system.md)
 - 助理 Agent
 - 刮削与爬虫
 - 定时任务

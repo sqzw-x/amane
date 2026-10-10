@@ -18,6 +18,7 @@ _LIBRARY_UPDATE_KEYS = frozenset(
         "name",
         "path",
         "automation",
+        "auto_organize",
         "ingest",
         "cloud_path",
         "recursive",
@@ -66,6 +67,7 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
         path: str,
         name: str | None = None,
         automation: LibraryAutomation = LibraryAutomation.SCRAPE,
+        auto_organize: bool = False,
         recursive: bool = True,
         patterns: list[str] | None = None,
         scan: bool = True,
@@ -82,6 +84,7 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
                 name=display,
                 path=path,
                 automation=automation,
+                auto_organize=auto_organize,
                 recursive=recursive,
                 patterns=patterns,
             )

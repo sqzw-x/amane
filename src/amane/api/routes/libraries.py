@@ -50,6 +50,7 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
             name=name,
             path=req.path,
             automation=req.automation,
+            auto_organize=req.auto_organize,
             ingest=req.ingest,
             cloud_path=req.cloud_path,
             recursive=req.recursive,

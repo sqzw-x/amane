@@ -289,3 +289,36 @@ class TestLibraries:
 
         assert changed.status_code == 200
         assert changed.json()["path"] == str(moved_real)
+
+
+class TestAutoOrganize:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_default_off_and_patch_persists(self, client: AsyncClient, repo: Repository, safe_path: Path) -> None:
+        """默认关闭; PATCH 后必须从库里读回 (响应字段与 repo 的显式赋值是两处)."""
+        target = safe_path / "auto"
+        target.mkdir()
+        created = await client.post("libraries", json={"path": str(target), "scan": False})
+
+        assert created.status_code == 201
+        assert created.json()["auto_organize"] is False
+        library_id = created.json()["id"]
+
+        patched = await client.patch(f"libraries/{library_id}", json={"auto_organize": True})
+
+        assert patched.status_code == 200
+        assert patched.json()["auto_organize"] is True
+        stored = await repo.get_library(library_id)
+        assert stored is not None
+        assert stored.auto_organize is True
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_with_flag(self, client: AsyncClient, repo: Repository, safe_path: Path) -> None:
+        target = safe_path / "auto-create"
+        target.mkdir()
+        created = await client.post("libraries", json={"path": str(target), "auto_organize": True, "scan": False})
+
+        assert created.status_code == 201
+        assert created.json()["auto_organize"] is True
+        stored = await repo.get_library(created.json()["id"])
+        assert stored is not None
+        assert stored.auto_organize is True
