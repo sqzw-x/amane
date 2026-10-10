@@ -13,7 +13,7 @@ export function VrBadge({ size = "xs" }: { size?: "xs" | "sm" }) {
       variant="filled"
       leftSection={<IconView360 size={size === "sm" ? 12 : 10} />}
     >
-      {t("detail.vr")}
+      {t("detail.fields.vr")}
     </Badge>
   );
 }
@@ -24,7 +24,7 @@ export function VrOverlayChip() {
   return (
     <OverlayChip>
       <IconView360 size={12} color="var(--mantine-color-violet-3)" />
-      <OverlayChipLabel>{t("detail.vr")}</OverlayChipLabel>
+      <OverlayChipLabel>{t("detail.fields.vr")}</OverlayChipLabel>
     </OverlayChip>
   );
 }

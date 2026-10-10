@@ -150,8 +150,7 @@
     "playbackCopyTimestamp": "Copy timestamp",
     "playbackCopyLink": "Copy link to current time",
     "playbackCopied": "Copied to clipboard",
-    "playbackCopyFailed": "Copy failed",
-    "vr": ""
+    "playbackCopyFailed": "Copy failed"
   },
   "browse": {
     "title": "Browse",

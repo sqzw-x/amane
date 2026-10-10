@@ -147,8 +147,7 @@
     "playbackCopyTimestamp": "复制时间戳",
     "playbackCopyLink": "复制当前时间的链接",
     "playbackCopied": "已复制到剪贴板",
-    "playbackCopyFailed": "复制失败",
-    "vr": "detail.vr"
+    "playbackCopyFailed": "复制失败"
   },
   "browse": {
     "title": "分类浏览",
