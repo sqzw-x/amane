@@ -10,7 +10,7 @@ import pytest
 from amane.config import ParsingConfig, build_number_rules
 from amane.db.models import LibraryAutomation, MediaFileStatus
 from amane.events import EventBus
-from amane.parsing import ContentType
+from amane.parsing import ContentType, file_phase_from_path
 from amane.scheduler.service import WatcherService
 
 
@@ -37,14 +37,22 @@ async def test_registration_writes_configured_phase(repo, tmp_path: Path):
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_moved_file_recomputes_with_configured_rules(repo, tmp_path: Path):
-    """watcher 观察到移动: 改 path 时同样用当时规则重算, 不会退回内置判定."""
+    """watcher 观察到移动: 改 path 时同样用当时规则重算, 不会退回内置判定.
+
+    两个文件名都命中内置形态, 相位只由文件名决定. 断言不得依据 ``tmp_path`` 的父目录名:
+    pytest 的 basetemp 目录段会被当作番号解析, 取值随临时目录形状变化.
+    """
     library = await repo.create_library(name="t", path=str(tmp_path), automation=LibraryAutomation.WATCH)
     assert library.id is not None
-    src = tmp_path / "old.mp4"
+    src = tmp_path / "OLD-001.mp4"
     dest = tmp_path / "MIDV-123.mp4"
+    # 目标路径不传规则时的内置判定是 censored; 用户规则把 MIDV 翻成 uncensored.
+    # 因此「未重算」与「按内置判定重算」两种退化都会让最后一条断言失败.
+    assert file_phase_from_path(dest)["content_type"] is ContentType.CENSORED
+
     media = await repo.create_media_file(library_id=library.id, path=str(src), rules=_rules())
     assert media.id is not None
-    # 源文件名没有 MIDV, 规则不命中, 因此内置判定给的仍是 censored.
+    # 源文件名没有 MIDV, 规则不命中, 因此相位来自内置判定.
     assert media.content_type is ContentType.CENSORED
 
     service = WatcherService(repo, EventBus(), number_rules=_rules())
