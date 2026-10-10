@@ -12,6 +12,7 @@ from amane.parsing import (
     infer_content_type,
     is_amateur,
     is_uncensored,
+    is_vr,
     parse_file_info,
     split_number,
 )
@@ -447,6 +448,50 @@ AMATEUR_CASES: list[tuple[str, bool]] = [
 @pytest.mark.parametrize(("number", "expected"), AMATEUR_CASES)
 def test_is_amateur(number: str, expected: bool) -> None:
     assert is_amateur(number) is expected
+
+
+VR_NUMBER_CASES: list[tuple[str | None, bool]] = [
+    ("VR-001", True),
+    # VR 牌号把 VR 放在厂商前缀里, 子串语义才命中这几种真实写法; 含 VR 字样的非 VR 番号会被误判.
+    ("HUNVR-211", True),
+    ("8KVR-012", True),
+    ("MDVR-123", True),
+    ("VR123", True),
+    ("vr-123", True),
+    ("  vr-123  ", True),
+    ("VRS-1", False),
+    ("VRX-1", False),
+    ("VR", False),
+    ("VR-ABC", False),
+    ("VR-１２３", False),
+    ("ＶＲ-123", False),
+    ("IPX-123", False),
+    ("", False),
+    (None, False),
+]
+
+
+@pytest.mark.parametrize(("number", "expected"), VR_NUMBER_CASES)
+def test_is_vr_number(number: str | None, expected: bool) -> None:
+    """番号侧: 只认 ASCII 的 VR + 可选连字符 + 数字, 不看位置."""
+    assert is_vr(number) is expected
+
+
+VR_TAG_CASES: list[tuple[list[str], bool]] = [
+    (["VR"], True),
+    ([" vr "], True),
+    (["VR専用"], True),
+    (["8KVR"], True),
+    (["VRっぽい"], False),
+    (["MetaVR", "VR(8K)", "8K VR", "ＶＲ"], False),
+    ([], False),
+]
+
+
+@pytest.mark.parametrize(("tags", "expected"), VR_TAG_CASES)
+def test_is_vr_tags(tags: list[str], expected: bool) -> None:
+    """标签侧: 整体相等 (忽略大小写与首尾空白); 番号非 VR 时只看标签."""
+    assert is_vr("IPX-123", tags) is expected
 
 
 EXTRACT_NUMBER_CASES: list[tuple[str, str | None]] = [
