@@ -826,6 +826,40 @@
         "label": "插件配置",
         "description": "由插件提供的配置项"
       }
+    },
+    "emby": {
+      "url": {
+        "label": "服务器地址",
+        "description": "Emby / Jellyfin 的地址, 例如 http://127.0.0.1:8096"
+      },
+      "api_key": {
+        "label": "API 密钥",
+        "description": "服务器设置里生成的密钥, 需要来自管理员账号; 只保存在本机配置"
+      },
+      "sync_on_actor_scrape": {
+        "label": "刮削后自动同步",
+        "description": "演员刮削成功后自动推送该演员"
+      },
+      "sync_images": {
+        "label": "同步头像",
+        "description": "把本地已下载的头像上传为人物主图"
+      },
+      "sync_profile": {
+        "label": "同步人物资料",
+        "description": "推送简介与出身地; 生日只在覆盖模式下推送"
+      },
+      "overwrite": {
+        "label": "覆盖已有值",
+        "description": "关闭时只补服务器上仍为空的部分"
+      },
+      "timeout": {
+        "label": "请求超时",
+        "description": "单次请求的超时秒数; 大媒体库首次同步要现算人物列表, 可调大"
+      },
+      "verify_tls": {
+        "label": "校验 TLS 证书",
+        "description": "服务器使用自签证书时关闭"
+      }
     }
   }
 }

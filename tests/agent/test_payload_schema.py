@@ -58,6 +58,12 @@ def test_delete_not_admitted_to_agent() -> None:
     assert "delete" not in TASK_SUBMISSION.members
 
 
+def test_admitted_types_match_union() -> None:
+    """成员表里的每个类型都必须在联合体里: 名字写错时枚举有它, 提交时的校验却必失败."""
+    assert set(TASK_SUBMISSION.members) <= _union_types(TaskSubmission)
+    assert "emby_sync" in TASK_SUBMISSION.members
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("submission", "locs"),

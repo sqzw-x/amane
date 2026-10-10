@@ -36,6 +36,9 @@ def needs_secrets_file(hot_dump: dict[str, Any]) -> bool:
     llm = hot_dump.get("llm")
     if isinstance(llm, dict) and llm.get("api_key"):
         return True
+    emby = hot_dump.get("emby")
+    if isinstance(emby, dict) and emby.get("api_key"):
+        return True
     network = hot_dump.get("network")
     if isinstance(network, dict) and network.get("proxy"):
         proxy = str(network["proxy"])
@@ -78,6 +81,10 @@ def redact_hot(data: dict[str, Any]) -> dict[str, Any]:
     llm = out.get("llm")
     if isinstance(llm, dict) and llm.get("api_key"):
         llm["api_key"] = REDACTION_PLACEHOLDER
+
+    emby = out.get("emby")
+    if isinstance(emby, dict) and emby.get("api_key"):
+        emby["api_key"] = REDACTION_PLACEHOLDER
 
     network = out.get("network")
     if isinstance(network, dict) and network.get("proxy"):

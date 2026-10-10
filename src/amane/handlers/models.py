@@ -357,3 +357,33 @@ class RescrapeResult(BaseModel):
     submitted: int
     metadata: int = 0
     actors: int = 0
+
+
+# --- EMBY SYNC ---
+
+
+class EmbySyncPayload(BaseModel):
+    actor_id: int | None = Field(default=None, description="只同步该演员; 缺省同步全部演员")
+    force: bool = Field(default=False, description="覆盖服务器上已有的头像与字段, 忽略 emby.overwrite")
+
+
+class EmbySyncResult(BaseModel):
+    type: Literal[TaskType.EMBY_SYNC] = TaskType.EMBY_SYNC
+    actors: int
+    """处理的演员数."""
+    persons: int
+    """服务器上命中的同名人物条目数; 同一演员的多个名字撞到同一条目时只计一次."""
+    images: int
+    """上传的头像数."""
+    updated: int
+    """回写字段的人物条目数."""
+    skipped: int
+    """按覆盖规则或开关无需写入的人物条目数; 写入失败的条目只计 ``failed``."""
+    not_found: int
+    """服务器上没有同名人物的演员数."""
+    no_image: int
+    """本地没有可推送头像的演员数; ``emby.sync_images=false`` 时不计数."""
+    failed: int
+    """失败的人物条目数 (服务器不可达的整任务失败不走这里); 明细见 ``failures``."""
+    failures: list[str]
+    """失败明细 (人物名: 原因), 每条一个字符串, 有上限."""

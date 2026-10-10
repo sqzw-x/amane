@@ -71,7 +71,8 @@
     "actor_scrape": "Actor Scrape",
     "rescrape": "Rescrape",
     "scan_invalid": "Scan unwanted",
-    "delete": "Delete"
+    "delete": "Delete",
+    "emby_sync": "Actor Sync"
   },
   "loadMoreChildren": "Load more ({{count}})",
   "loadMoreChildren_one": "Load more ({{count}})",
@@ -140,7 +141,18 @@
     },
     "detailTruncated": "Truncated",
     "loadFailed": "Failed to load details",
-    "noResultHint": "No result payload for this task; the task record keeps the full detail"
+    "noResultHint": "No result payload for this task; the task record keeps the full detail",
+    "emby_sync": {
+      "actors": "Actors {{count}}",
+      "persons": "Persons {{count}}",
+      "images": "Images {{count}}",
+      "updated": "Fields {{count}}",
+      "skipped": "Skipped {{count}}",
+      "notFound": "Not on server {{count}}",
+      "noImage": "No local portrait {{count}}",
+      "failed": "Failed {{count}}",
+      "failures": "Failures"
+    }
   },
   "status": {
     "queued": "Queued",
@@ -161,7 +173,8 @@
       "actor_scrape": "Actor Scrape",
       "rescrape": "Rescrape",
       "scan_invalid": "Scan unwanted",
-      "delete": "Delete"
+      "delete": "Delete",
+      "emby_sync": "Emby Sync"
     },
     "cleanup": {
       "remove_missing_files": {
@@ -386,6 +399,16 @@
       "prune_empty_dirs": {
         "label": "Prune emptied directories",
         "description": "Library root and .amane_trash excluded"
+      }
+    },
+    "emby_sync": {
+      "actor_id": {
+        "label": "Actor ID",
+        "description": "Leave empty to sync every actor"
+      },
+      "force": {
+        "label": "Force Overwrite",
+        "description": "Ignore the overwrite switch and replace images and fields already on the server"
       }
     }
   },

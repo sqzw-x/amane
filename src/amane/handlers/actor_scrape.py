@@ -12,12 +12,13 @@ from ..db.actor_person import (
     filter_locked_person_data,
     locked_fields_of,
 )
+from ..db.models import TaskType
 from ..enums import SiteName
 from ..net.errors import FailureReason, SourceError
 from ..observability import current, invoke_source
 from ..observability.models import SiteOutcomeKind
-from .models import ActorScrapePayload, ActorScrapeResult, CacheKind
-from .protocol import TaskHandler, TaskResult
+from .models import ActorScrapePayload, ActorScrapeResult, CacheKind, EmbySyncPayload
+from .protocol import FollowupTask, TaskHandler, TaskResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -213,7 +214,22 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
                 image_count=len(merged.image_urls),
                 outcomes=current().site_outcomes(),
             ),
+            followups=self._emby_followups(payload),
         )
+
+    def _emby_followups(self, payload: ActorScrapePayload) -> list[FollowupTask]:
+        """刮削成功后把该演员推送到 Emby / Jellyfin; 配置未启用时不入队."""
+        emby = self._config.emby
+        if not emby.enabled or not emby.sync_on_actor_scrape:
+            return []
+        return [
+            FollowupTask(
+                key=f"emby-sync:{payload.actor_id}",
+                task_type=TaskType.EMBY_SYNC,
+                payload=EmbySyncPayload(actor_id=payload.actor_id).model_dump(mode="json"),
+                priority=-1,
+            )
+        ]
 
 
 def _actor_from_raw(payload: object) -> ActorMetadata | None:

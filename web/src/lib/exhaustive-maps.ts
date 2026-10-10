@@ -93,6 +93,7 @@ export const TASK_TYPES = exhaustiveTuple<TaskType>()(
   "rescrape",
   "scan_invalid",
   "delete",
+  "emby_sync",
 );
 
 export const DOWNLOADABLE_RESOURCES = exhaustiveTuple<DownloadableResource>()(
@@ -178,6 +179,7 @@ export const MANUAL_TASK_TYPES = exhaustiveTuple<ManualTaskType>()(
   "r18_import",
   "actor_scrape",
   "rescrape",
+  "emby_sync",
 );
 
 /** 刮削站点结果分组顺序. */

@@ -207,6 +207,33 @@ class TestGetTask:
         assert (await client.get(f"tasks/{cleanup.id}")).json()["title"] is None
 
 
+class TestSubmitEmbySync:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_submission_resolves_payload(self, client: AsyncClient, stop_worker: None):
+        """提交联合与 resolve_submission 的 emby_sync 分支: 手动触发路径."""
+        resp = await client.post("tasks", json={"type": "emby_sync", "actor_id": 7, "force": True})
+
+        assert resp.status_code == 202
+        assert resp.json()["payload"] == {"actor_id": 7, "force": True}
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_title_is_actor_name_only_for_single_actor(
+        self, client: AsyncClient, repo: Repository, stop_worker: None
+    ):
+        await repo.upsert_metadata(number="T-EMBY", actors=["Taro"])
+        actors = (await client.get("facets/actor")).json()["items"]
+        actor_id = next(a["id"] for a in actors if a["name"] == "Taro")
+
+        single = await client.post("tasks", json={"type": "emby_sync", "actor_id": actor_id})
+        assert single.status_code == 202
+        assert single.json()["title"] == "Taro"
+
+        # 全量同步没有单一主体, 标题留空而不是取某个演员
+        bulk = await client.post("tasks", json={"type": "emby_sync"})
+        assert bulk.status_code == 202
+        assert bulk.json()["title"] is None
+
+
 class TestBatchTasks:
     """POST /tasks/batch 接线. 计数/跳过链/重试见 tests/db/test_task_batch.py."""
 

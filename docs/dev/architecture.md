@@ -20,6 +20,7 @@
 | `llm/` | 大模型接入 + 翻译协议 + 译文缓存 | 管线只依赖 `Translator` 协议; provider 映射与 `agent/` 共用, 配置分离 |
 | `agent/` | 助理 Agent + Saved Query + 会话 trace | 读为只读 SQL, 写只经封装工具; 与 `llm/` 配置分离, 见 [agent.md](agent.md) |
 | `sr/` | 超分二进制封装 | 就地覆盖本地资源文件 |
+| `emby/` | Emby / Jellyfin 人物条目: HTTP 客户端与名字匹配 | 单服务器; 只写人物条目, 不碰影片元数据; 不复用爬虫 `WebClient`, 配置见 [config.md](config.md) |
 | `db/` | SQLModel 表 + 异步 Repository | 单一数据源; 启动期自动 `alembic upgrade head` |
 | `library/` | 库文件规则与归类 (`LibraryScan.classify`) + 清理清单 (`cleanup/` 子包) 与库内删除执行单元 + CloudDrive 虚拟路径规范 | 扩展名 / 预告片与文件黑名单正则 / `.amane_trash` / 大小阈值 / `cloud_path`; handlers 与 scheduler 共用, 只有 `cleanup/` 归清理功能 |
 | `scheduler/` | 队列消费 / cron / 文件监控 / CloudDrive webhook / RSS 发现 | 与 api 解耦, 经 EventBus 上报; webhook 契约见 [watcher.md](watcher.md) |

@@ -44,6 +44,15 @@ class TestTaskSubmission:
         assert req.type == "actor_scrape"
         assert req.actor_id == 42
 
+    def test_dispatch_emby_sync(self):
+        req = self.adapter.validate_python({"type": "emby_sync", "actor_id": 42, "force": True})
+        assert req.type == "emby_sync"
+        assert (req.actor_id, req.force) == (42, True)
+
+    def test_emby_sync_defaults_to_all_actors(self):
+        req = self.adapter.validate_python({"type": "emby_sync"})
+        assert (req.actor_id, req.force) == (None, False)
+
     def test_unknown_type_rejected(self):
         with pytest.raises(ValidationError):
             self.adapter.validate_python({"type": "unknown"})

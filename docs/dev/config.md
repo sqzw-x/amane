@@ -88,6 +88,14 @@ Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 work
 
 跨角色站点写入会被 section validator 拒绝. 发请求前仍按 `Actor.gender` 与站点性别覆盖再过滤 (见 [crawlers.md](crawlers.md)).
 
+## `emby` (Hot)
+
+`url` 与 `api_key` 齐备才算启用: 缺任一项时演员刮削不留同步后继, 手动提交的同步任务直接失败而不是静默跳过.
+
+`api_key` 是密钥字段: `needs_secrets_file` 与 `redact_hot` 两处都要覆盖它, 因此任务目录里的 `config.hot.json` 只有占位符, 明文进同目录的 secrets 副本 (机制见 [observability.md](observability.md)). 不读 `network.proxy`.
+
+`sync_on_actor_scrape` 只决定是否产生**新**后继, 关闭不撤销已入队的同步; `overwrite` 与任务 payload 的 `force` 的优先级见 [task-system.md](task-system.md).
+
 ## `watermark` (Hot)
 
 只在 ORGANIZE 落盘封面时绘制, 不修改 Resource; 片库 CSS overlay 不读 `enabled`. 角标高度 = 图高 × `scale` (不按宽、不按 PNG 原图像素); `corners` 是 `x-frozen-keys` 五类到四角的映射, 同角按中字 / 无码 / 破解 / 流出 / 分辨率向内叠. PNG 覆盖仍是 `{data_dir}/watermarks/{stem}.png`.

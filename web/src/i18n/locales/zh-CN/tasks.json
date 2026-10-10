@@ -61,7 +61,8 @@
     "actor_scrape": "演员刮削",
     "rescrape": "重新刮削",
     "scan_invalid": "扫描无效文件",
-    "delete": "删除"
+    "delete": "删除",
+    "emby_sync": "演员同步"
   },
   "loadMoreChildren": "加载更多 ({{count}})",
   "logView": {
@@ -117,7 +118,18 @@
     },
     "detailTruncated": "已截断",
     "loadFailed": "详情加载失败",
-    "noResultHint": "该任务没有结果载荷; 完整明细在任务记录里"
+    "noResultHint": "该任务没有结果载荷; 完整明细在任务记录里",
+    "emby_sync": {
+      "actors": "演员 {{count}}",
+      "persons": "人物 {{count}}",
+      "images": "头像 {{count}}",
+      "updated": "字段 {{count}}",
+      "skipped": "跳过 {{count}}",
+      "notFound": "服务器未找到 {{count}}",
+      "noImage": "本地无头像 {{count}}",
+      "failed": "失败 {{count}}",
+      "failures": "失败明细"
+    }
   },
   "status": {
     "queued": "排队中",
@@ -137,7 +149,8 @@
       "actor_scrape": "演员刮削",
       "rescrape": "重新刮削",
       "scan_invalid": "扫描无效文件",
-      "delete": "删除"
+      "delete": "删除",
+      "emby_sync": "Emby 同步"
     },
     "cleanup": {
       "remove_missing_files": {
@@ -363,6 +376,16 @@
       "prune_empty_dirs": {
         "label": "删除腾空的目录",
         "description": "库根与 .amane_trash 除外"
+      }
+    },
+    "emby_sync": {
+      "actor_id": {
+        "label": "演员 ID",
+        "description": "留空则同步全部演员"
+      },
+      "force": {
+        "label": "强制覆盖",
+        "description": "忽略覆盖开关, 重写服务器上已有的头像与字段"
       }
     }
   },

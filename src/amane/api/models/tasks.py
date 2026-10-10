@@ -13,6 +13,8 @@ from ...handlers import (
     CleanupResult,
     DeletePayload,
     DeleteResult,
+    EmbySyncPayload,
+    EmbySyncResult,
     OrganizePayload,
     OrganizeResult,
     R18ImportPayload,
@@ -50,7 +52,8 @@ TaskResultPayload = Annotated[
     | UpscaleResult
     | R18ImportResult
     | ActorScrapeResult
-    | RescrapeResult,
+    | RescrapeResult
+    | EmbySyncResult,
     Field(discriminator="type"),
 ]
 """任务结果按任务类型判别; 各成员自带 `type` 字面量, 前端据此收窄."""
@@ -249,6 +252,10 @@ class ActorScrapeSubmission(BaseModel):
     )
 
 
+class EmbySyncSubmission(EmbySyncPayload):
+    type: Literal["emby_sync"]
+
+
 TaskSubmission = Annotated[
     RefreshSubmission
     | OrganizeSubmission
@@ -259,7 +266,8 @@ TaskSubmission = Annotated[
     | UpscaleSubmission
     | R18ImportSubmission
     | ActorScrapeSubmission
-    | RescrapeSubmission,
+    | RescrapeSubmission
+    | EmbySyncSubmission,
     Field(discriminator="type"),
 ]
 

@@ -826,6 +826,40 @@
         "label": "Plugin configuration",
         "description": "Configuration fields provided by the plugin"
       }
+    },
+    "emby": {
+      "url": {
+        "label": "Server URL",
+        "description": "Emby / Jellyfin address, e.g. http://127.0.0.1:8096"
+      },
+      "api_key": {
+        "label": "API Key",
+        "description": "Key created in the server settings, must come from an admin account; stored locally only"
+      },
+      "sync_on_actor_scrape": {
+        "label": "Sync after scraping",
+        "description": "Push an actor once its scrape succeeds"
+      },
+      "sync_images": {
+        "label": "Sync images",
+        "description": "Upload locally downloaded portraits as the person primary image"
+      },
+      "sync_profile": {
+        "label": "Sync profile",
+        "description": "Push overview and birthplace; birthday is pushed only with overwrite"
+      },
+      "overwrite": {
+        "label": "Overwrite existing",
+        "description": "When off, only parts still empty on the server are filled"
+      },
+      "timeout": {
+        "label": "Request timeout",
+        "description": "Timeout in seconds for a single request; raise it for a large library, whose person list is built on first read"
+      },
+      "verify_tls": {
+        "label": "Verify TLS",
+        "description": "Turn off for servers with self-signed certificates"
+      }
     }
   }
 }

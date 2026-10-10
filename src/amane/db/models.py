@@ -41,6 +41,7 @@ class TaskType(StrEnum):
     RESCRAPE = "rescrape"
     SCAN_INVALID = "scan_invalid"
     DELETE = "delete"
+    EMBY_SYNC = "emby_sync"
 
 
 class RoutineType(StrEnum):

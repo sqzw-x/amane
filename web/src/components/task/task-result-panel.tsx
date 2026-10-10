@@ -70,6 +70,9 @@ function resultBranch(result: TaskResult, failed: boolean): ReactNode {
         </>
       );
     }
+    case "emby_sync": {
+      return <EmbySyncCounts result={result} />;
+    }
     case "refresh":
     case "cleanup":
     case "upscale":
@@ -185,6 +188,67 @@ function EmptyHint({ visible }: { visible: boolean }) {
     <Text size="sm" c="dimmed">
       {t("result.successEmpty")}
     </Text>
+  );
+}
+
+function EmbySyncCounts({ result }: { result: Extract<TaskResult, { type: "emby_sync" }> }) {
+  const { t } = useTranslation("tasks");
+
+  return (
+    <Stack gap="xs">
+      <Group gap="xs">
+        <Badge color="gray" variant="light">
+          {t("result.emby_sync.actors", { count: result.actors })}
+        </Badge>
+        {result.persons > 0 ? (
+          <Badge color="blue" variant="light">
+            {t("result.emby_sync.persons", { count: result.persons })}
+          </Badge>
+        ) : null}
+        {result.images > 0 ? (
+          <Badge color="teal" variant="light">
+            {t("result.emby_sync.images", { count: result.images })}
+          </Badge>
+        ) : null}
+        {result.updated > 0 ? (
+          <Badge color="grape" variant="light">
+            {t("result.emby_sync.updated", { count: result.updated })}
+          </Badge>
+        ) : null}
+        {result.skipped > 0 ? (
+          <Badge color="gray" variant="light">
+            {t("result.emby_sync.skipped", { count: result.skipped })}
+          </Badge>
+        ) : null}
+        {result.not_found > 0 ? (
+          <Badge color="yellow" variant="light">
+            {t("result.emby_sync.notFound", { count: result.not_found })}
+          </Badge>
+        ) : null}
+        {result.no_image > 0 ? (
+          <Badge color="yellow" variant="light">
+            {t("result.emby_sync.noImage", { count: result.no_image })}
+          </Badge>
+        ) : null}
+        {result.failed > 0 ? (
+          <Badge color="red" variant="light">
+            {t("result.emby_sync.failed", { count: result.failed })}
+          </Badge>
+        ) : null}
+      </Group>
+      {result.failures.length > 0 ? (
+        <Stack gap={4}>
+          <Text size="xs" fw={500}>
+            {t("result.emby_sync.failures")}
+          </Text>
+          {result.failures.map((failure) => (
+            <Text key={failure} size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
+              {failure}
+            </Text>
+          ))}
+        </Stack>
+      ) : null}
+    </Stack>
   );
 }
 

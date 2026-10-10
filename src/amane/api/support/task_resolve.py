@@ -7,6 +7,7 @@ from ...handlers import (
     ActorScrapePayload,
     CleanupPayload,
     DeletePayload,
+    EmbySyncPayload,
     OrganizePayload,
     R18ImportPayload,
     RefreshPayload,
@@ -19,6 +20,7 @@ from ..models import (
     ActorScrapeSubmission,
     CleanupSubmission,
     DeleteSubmission,
+    EmbySyncSubmission,
     OrganizeSubmission,
     R18ImportSubmission,
     RefreshSubmission,
@@ -43,6 +45,7 @@ ResolvedPayload = (
     | R18ImportPayload
     | ActorScrapePayload
     | RescrapePayload
+    | EmbySyncPayload
 )
 
 
@@ -78,5 +81,7 @@ async def resolve_submission(req: TaskSubmission, repo: Repository) -> tuple[Tas
             return TaskType.RESCRAPE, RescrapePayload(
                 limit=req.limit, min_age_days=req.min_age_days, targets=req.targets
             )
+        case EmbySyncSubmission():
+            return TaskType.EMBY_SYNC, EmbySyncPayload(actor_id=req.actor_id, force=req.force)
         case _:
             assert_never(req)
