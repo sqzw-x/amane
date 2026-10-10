@@ -11,6 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from amane.db.models import TaskStatus, TaskType
 from amane.handlers.protocol import FollowupTask, TaskHandler, TaskResult
 from amane.scheduler.worker import CANCEL_ERROR, AsyncWorker
+from tests.helpers import LOAD_TOLERANT_TIMEOUT
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -63,7 +64,7 @@ class BlockingHandler(TaskHandler):
         return TaskResult(success=True, result={"blocked": True})
 
 
-async def recv(worker: AsyncWorker, n: int, timeout: float = 5.0) -> list[int]:
+async def recv(worker: AsyncWorker, n: int, timeout: float = LOAD_TOLERANT_TIMEOUT) -> list[int]:
     """从 worker 的 done channel 接收 n 个完成信号."""
     ids = []
     async with asyncio.timeout(timeout):
