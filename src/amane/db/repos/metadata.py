@@ -7,7 +7,7 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 
 from ...enums import ActorGender, MetadataField
-from ...parsing import ContentType, Mosaic, is_vr
+from ...parsing import ContentType, Mosaic
 from ...utils.text import normalize_long_text
 from ..models import (
     MediaFile,
@@ -36,6 +36,7 @@ from .facet_helpers import (
     apply_facet_rules_to_metadata,
     cascade_delete_metadata,
     clean_actor_names,
+    project_derived_columns,
     resolve_scalar_facet_names,
     sync_metadata_facets,
     unique_ids,
@@ -83,18 +84,6 @@ def _locked_fields_of(meta: Metadata) -> set[MetadataField]:
         except ValueError:
             continue
     return locked
-
-
-def _project_derived(meta: Metadata) -> None:
-    """把派生自 JSON / 文本列的筛选与排序列投影回实体.
-
-    ``vr`` 来自 ``number`` / ``tags``, ``score_rank`` 来自 ``scores``; 两者都不进 ``MetadataFields``,
-    因此没有独立写入入口, 只能由写方法在改完真值后一次性投影. 调用点必须在
-    ``apply_facet_rules_to_metadata`` 之后 —— 规则会改写 ``tags``, 早于它投影会写入过期判定.
-    """
-    meta.vr = is_vr(meta.number, meta.tags or [])
-    scores = meta.scores or {}
-    meta.score_rank = float(next(iter(scores.values()))) if scores else None
 
 
 def _filter_locked(
@@ -264,7 +253,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 await session.flush()
                 await clean_actor_names(session, existing, actor_genders)
                 await apply_facet_rules_to_metadata(session, existing)
-                _project_derived(existing)
+                project_derived_columns(existing)
                 await sync_metadata_facets(session, existing)
                 await session.commit()
                 await session.refresh(existing)
@@ -274,7 +263,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             await session.flush()
             await clean_actor_names(session, meta, actor_genders)
             await apply_facet_rules_to_metadata(session, meta)
-            _project_derived(meta)
+            project_derived_columns(meta)
             await sync_metadata_facets(session, meta)
             await session.commit()
             await session.refresh(meta)
@@ -343,7 +332,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             await session.flush()
             await clean_actor_names(session, metadata, actor_genders)
             await apply_facet_rules_to_metadata(session, metadata)
-            _project_derived(metadata)
+            project_derived_columns(metadata)
             await sync_metadata_facets(session, metadata)
             await session.commit()
             await session.refresh(metadata)

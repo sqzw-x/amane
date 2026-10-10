@@ -233,11 +233,13 @@ class TestMetadataHttp:
         assert listed.status_code == 200
         assert [item["number"] for item in listed.json()["items"]] == ["HUNVR-211"]
         assert listed.json()["items"][0]["vr"] is True
+        assert listed.json()["total"] == 1
 
         excluded = await client.get("metadata?vr=false")
         assert excluded.status_code == 200
         assert sorted(item["number"] for item in excluded.json()["items"]) == ["ABP-123", "MIDV-001"]
         assert all(item["vr"] is False for item in excluded.json()["items"])
+        assert excluded.json()["total"] == 2
 
         by_score = await client.get("metadata?sort_by=score&order=desc")
         assert by_score.status_code == 200

@@ -215,7 +215,7 @@ class Metadata(SQLModel, table=True):
     locked_fields: list[str] = Field(
         default_factory=list, sa_column=Column(JSON, nullable=False, server_default=text("'[]'"))
     )
-    # VR 判定结果, 由 number / tags 投影而来; 写入路径见 db/repos/metadata.py 的 _project_derived.
+    # VR 判定结果, 由 number / tags 投影而来; 写入路径见 db/repos/facet_helpers.py 的 project_derived_columns.
     vr: bool = Field(default=False, index=True)
 
     created_at: datetime = Field(default_factory=_utcnow)

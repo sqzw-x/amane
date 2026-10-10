@@ -12,7 +12,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...enums import ActorField, ActorGender
-from ...parsing import split_actor_aliases
+from ...parsing import is_vr, split_actor_aliases
 from ..actor_lookup import list_actor_aliases, resolve_actor_by_name
 from ..actor_person import locked_fields_of, merge_person_fields_into_target
 from ..facet_rules import RuleEntry, apply_metadata_facet_fields, empty_rules_by_kind
@@ -514,6 +514,7 @@ async def _strip_names_from_link_metadata(session: AsyncSession, spec: _LinkFace
         meta.updated_at = _utcnow()
         session.add(meta)
         await session.flush()
+        project_derived_columns(meta)
         await sync_metadata_facets(session, meta)
 
 
@@ -831,6 +832,20 @@ async def clean_actor_names(
     await session.flush()
 
 
+def project_derived_columns(meta: Metadata) -> None:
+    """把派生自 JSON / 文本列的筛选与排序列投影回实体.
+
+    ``vr`` 来自 ``number`` / ``tags``, ``score_rank`` 来自 ``scores``; 两者都不进 ``MetadataFields``,
+    因此没有独立写入入口, 只能由写方法在修改完真值后一次性投影. 调用点必须在
+    ``apply_facet_rules_to_metadata`` 之后 —— 规则会改写 ``tags``, 早于它投影会写入过期判定.
+    修改 ``tags`` 的入口不止 ``update_metadata``: 标签的改名 / 合并 / 删除同样要投影,
+    否则列与真值长期不一致.
+    """
+    meta.vr = is_vr(meta.number, meta.tags or [])
+    scores = meta.scores or {}
+    meta.score_rank = float(next(iter(scores.values()))) if scores else None
+
+
 async def sync_metadata_facets(session: AsyncSession, meta: Metadata) -> None:
     """按 Metadata JSON/标量列重建分类投影. 不触碰 UserTag / Comment."""
     assert meta.id is not None
@@ -937,6 +952,7 @@ async def rename_link_facet(
                 session.add(meta)
                 await session.flush()
                 await apply_facet_rules_to_metadata(session, meta)
+                project_derived_columns(meta)
                 await sync_metadata_facets(session, meta)
     item = await get_facet(session, spec.kind, facet_id)
     await session.commit()
@@ -1013,6 +1029,7 @@ async def merge_link_facets(
         session.add(meta)
         await session.flush()
         await apply_facet_rules_to_metadata(session, meta)
+        project_derived_columns(meta)
         await sync_metadata_facets(session, meta)
     if spec.kind == FacetKind.ACTOR:
         assert isinstance(target, Actor)
