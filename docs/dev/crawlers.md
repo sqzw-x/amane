@@ -78,9 +78,9 @@ CrawlerFactory (缓存实例)
 
 ## 浏览器指纹与渲染
 
-`WebClient` 基于 curl_cffi, 每次请求从预设列表轮换指纹.
+`WebClient` 基于 curl_cffi, 指纹按 host 记忆: 该 host 的首次请求取进程默认值 (构造期随机选定并记入日志), 命中 403/406 判定为站点拦下此指纹, 换下一个未试过的指纹重发, 换过的指纹对该 host 保持; 该 host 的指纹全部被拒后不再轮换. 轮换不占 `max_retries` / `max_attempts` 的重试预算, 单次尝试的探测同样会换指纹.
 
-Cloudflare managed challenge 只能执行 JS 越过, 因此受保护的来源经 `HttpClient.get_rendered` 经由浏览器: 后端由 `network.browser.backend` (`off` / `patchright` / `camoufox` / `solver`) 选择, 来源按 `SiteConfig.use_browser` 三档路由 (设置页可编辑): `auto` (默认) 先直连, 首次命中 `classify_block` 的 `cloudflare_challenge` 后该来源改用浏览器并保持; `always` 一律渲染; `off` 一律直连. `SiteConfig.browser_backend` 覆盖后端 (`off` 显式禁用; 可空枚举没有 UI 回退项, 覆盖只经 TOML/API 设置), 只在改用浏览器后生效; 仅 `always` 在无可用后端时于构造期告警. `get_html` 与基类 `check_connectivity` 按策略经由当前视图; `get_text` / `get_json` / `get_bytes` / `download` 仍直连, 自定义 `check_connectivity` 自选传输. 输出仍按 `net/errors.py::classify_block` 判定拦截, 后端自身的失败以 `RequestFailure.reason` 表达——挑战未解决归为 `cloudflare_challenge`, 不因缺少正文退化成通用错误.
+Cloudflare managed challenge 只能执行 JS 越过, 因此受保护的来源经 `HttpClient.get_rendered` 经由浏览器: 后端由 `network.browser.backend` (`off` / `patchright` / `camoufox` / `solver`) 选择, 来源按 `SiteConfig.use_browser` 三档路由 (设置页可编辑): `auto` (默认) 先直连, 首次命中 `classify_block` 的 `cloudflare_challenge` 后该来源改用浏览器并保持; `always` 一律渲染; `off` 一律直连. `SiteConfig.browser_backend` 覆盖后端 (`off` 显式禁用; 可空枚举没有 UI 回退项, 覆盖只经 TOML/API 设置), 只在改用浏览器后生效; 仅 `always` 在无可用后端时于构造期告警. `get_html` 与基类 `check_connectivity` 按策略经由当前视图; `get_text` / `get_json` / `get_bytes` / `download` 仍直连 (浏览器后端只产出渲染后的 HTML, solver 同样不返回正文字节: 二进制下载没有浏览器回退, 被拦时只由指纹轮换处理), 自定义 `check_connectivity` 自选传输. 输出仍按 `net/errors.py::classify_block` 判定拦截, 后端自身的失败以 `RequestFailure.reason` 表达——挑战未解决归为 `cloudflare_challenge`, 不因缺少正文退化成通用错误.
 
 同一来源的连续请求复用同一个浏览器 context (solver 复用同名会话); 引擎惰性启动, camoufox 浏览器二进制在首次启动时下载, 空闲及进程退出 / 热重建时释放. 浏览器池只在 `network.browser` / `proxy` 变化时重建, 其余热重载保留已解决的 clearance; solver 经注入的 `WebClient` 出站, 地址来自 `network.browser.solver_url`, 不允许暴露到公网. FlareSolverr 的会话就是 solver 服务里的一张浏览器标签, 同一会话的并发页面请求会互相覆盖导航, 导致所有调用方读到同一份正文, 且以成功响应返回, 因此同一来源的并发渲染在 `SolverBackend` 里按会话排队.
 
