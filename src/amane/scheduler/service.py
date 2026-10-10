@@ -12,7 +12,7 @@ import structlog
 from ..db.models import Library, TaskType
 from ..enums import LibraryAutomation, LibraryIngest
 from ..events import EventBus, EventType
-from ..handlers._common import register_media_file, scan_library
+from ..handlers._common import refresh_external_subtitle, register_media_file, scan_library
 from ..handlers.models import ScrapePayload
 from ..library import LibraryFileKind, LibraryScan
 from ..parsing import parse_file_info
@@ -430,7 +430,10 @@ class WatcherService:
             dest = dest_root / rel
             if src_route.library_id == dest_route.library_id:
                 if self._accept_cloud_file(dest_route, dest):
-                    await self._repo.update_media_file(media.id, path=str(dest))
+                    library = await self._repo.get_library(dest_route.library_id)
+                    updated = await self._repo.update_media_file(media.id, path=str(dest))
+                    if updated is not None and library is not None:
+                        await refresh_external_subtitle(self._repo, updated, library)
                 else:
                     await self._on_file_deleted(Path(media.path))
                 continue
@@ -465,7 +468,8 @@ class WatcherService:
             logger.debug("file already tracked", path=path_str)
             return
 
-        media = await register_media_file(self._repo, library_id, path)
+        library = await self._repo.get_library(library_id)
+        media = await register_media_file(self._repo, library_id, path, library=library)
         assert media.id is not None
         logger.info("file discovered", path=path_str, media_file_id=media.id, library_id=library_id)
 
@@ -475,7 +479,6 @@ class WatcherService:
             logger.debug("cannot parse number", path=path_str)
             parsed = None
 
-        library = await self._repo.get_library(library_id)
         if parsed is not None and parsed.number is not None:
             await self._repo.update_media_file(media.id, number=parsed.number)
             if library is not None and library.automation == LibraryAutomation.SCRAPE:
@@ -511,7 +514,10 @@ class WatcherService:
             return
 
         assert media.id is not None
-        await self._repo.update_media_file(media.id, path=dest_str)
+        library = await self._repo.get_library(library_id)
+        updated = await self._repo.update_media_file(media.id, path=dest_str)
+        if updated is not None and library is not None:
+            await refresh_external_subtitle(self._repo, updated, library)
         logger.info("file path updated", src=src_str, dest=dest_str, media_file_id=media.id)
 
     async def _debounce_loop(self) -> None:
