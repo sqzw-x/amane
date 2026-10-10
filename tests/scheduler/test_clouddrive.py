@@ -14,6 +14,7 @@ from amane.enums import LibraryAutomation, LibraryIngest
 from amane.events import EventBus
 from amane.library import LibraryScan
 from amane.library.cloud_path import normalize_cloud_path
+from amane.parsing import EMPTY_NUMBER_RULES
 from amane.scheduler.clouddrive import CloudDriveChange, CloudDriveRoute, match_route
 from amane.scheduler.service import WatcherService
 from amane.scheduler.watcher import FileWatcher
@@ -128,7 +129,7 @@ class TestCloudDriveIngest:
             automation=LibraryAutomation.WATCH,
         )
         assert lib.id is not None
-        await repo.create_media_file(library_id=lib.id, path=str(video))
+        await repo.create_media_file(library_id=lib.id, path=str(video), rules=EMPTY_NUMBER_RULES)
         await service.start()
         await service.ingest_clouddrive(
             [CloudDriveChange(action="delete", is_dir=True, source_file="/115open/lib/show")]
@@ -203,7 +204,7 @@ class TestCloudDriveIngest:
             automation=LibraryAutomation.WATCH,
         )
         assert lib.id is not None
-        await repo.create_media_file(library_id=lib.id, path=str(src))
+        await repo.create_media_file(library_id=lib.id, path=str(src), rules=EMPTY_NUMBER_RULES)
         await service.start()
         await service.ingest_clouddrive(
             [
@@ -291,7 +292,7 @@ class TestCloudDriveIngest:
             automation=LibraryAutomation.WATCH,
         )
         assert src_lib.id is not None
-        await repo.create_media_file(library_id=src_lib.id, path=str(src))
+        await repo.create_media_file(library_id=src_lib.id, path=str(src), rules=EMPTY_NUMBER_RULES)
         await service.start()
         await service.ingest_clouddrive(
             [
@@ -367,7 +368,7 @@ class TestCloudDriveIngest:
             recursive=False,
         )
         assert src_lib.id is not None
-        await repo.create_media_file(library_id=src_lib.id, path=str(video))
+        await repo.create_media_file(library_id=src_lib.id, path=str(video), rules=EMPTY_NUMBER_RULES)
         await service.start()
         await service.ingest_clouddrive(
             [

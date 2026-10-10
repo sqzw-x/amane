@@ -1,4 +1,5 @@
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import NamedTuple, Unpack
 
 from sqlalchemy import func, or_
@@ -6,9 +7,18 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.sql.expression import SelectOfScalar
 
-from ...parsing import ContentType, FilePhase, FilePhaseSummary, Mosaic, file_phase_from_path, summarize_file_phases
+from ...library.rules import has_companion_subtitle
+from ...parsing import (
+    ContentType,
+    FilePhase,
+    FilePhaseSummary,
+    Mosaic,
+    NumberRules,
+    file_phase_from_path,
+    summarize_file_phases,
+)
 from ...utils.path import nfc_path
-from ..models import MediaFile, MediaFileStatus, MediaSortField, SortOrder
+from ..models import Library, MediaFile, MediaFileStatus, MediaSortField, SortOrder
 from ..repo_types import _MEDIA_SORT_COLUMNS, MediaFileUpdates, _apply_media_phase_filters, _order_clause, _utcnow
 from .base import RepositoryMixinBase
 
@@ -16,17 +26,25 @@ from .base import RepositoryMixinBase
 SQL_IN_CHUNK_SIZE = 500
 
 
-def _apply_path_phase(media: MediaFile) -> None:
-    """path 是真值, 相位列是投影; 创建与改 path 时必须回填.
+def _apply_path_phase(media: MediaFile, rules: NumberRules) -> None:
+    """path 是真值, 相位列是投影; 创建与改 path 时必须回填, 且按调用方当时生效的规则算.
 
-    只回填 path 能推出的相位. 同目录字幕不是 path 的投影, 由调用方另经
-    ``handlers._common.refresh_external_subtitle`` 写入.
+    只回填 path 能推出的相位. 同目录字幕不是 path 的投影, 由 ``rewrite_media_path`` 在同一入口
+    复查, ``register_media_file`` (登记路径) 另调 ``refresh_external_subtitle``.
     """
-    phase = file_phase_from_path(media.path)
+    phase = file_phase_from_path(media.path, rules=rules)
     media.content_type = phase["content_type"]
     media.mosaic = phase["mosaic"]
     media.has_subtitle_in_name = phase["has_subtitle"]
     media.definition = phase["definition"]
+
+
+async def detect_external_subtitle(media: MediaFile, library: Library) -> bool:
+    """查一次视频同目录有无库 ``subtitle_extensions`` 命中的字幕, 不写库.
+
+    库扩展名为空表示关闭发现, 目录读取不到按无字幕处理, 两条都在 ``library/rules.py`` 里.
+    """
+    return await has_companion_subtitle(Path(media.path), library.subtitle_extensions or [])
 
 
 def file_phase_of(media: MediaFile) -> FilePhase:
@@ -45,13 +63,13 @@ class MetadataFilesSummary(NamedTuple):
 
 
 class MediaRepoMixin(RepositoryMixinBase):
-    async def create_media_file(self, library_id: int, **updates: Unpack[MediaFileUpdates]) -> MediaFile:
-        path = updates.get("path")
-        if path is not None:
-            updates["path"] = nfc_path(path)
+    async def create_media_file(
+        self, library_id: int, path: str, *, rules: NumberRules, **updates: Unpack[MediaFileUpdates]
+    ) -> MediaFile:
+        """``rules`` 无缺省值: 相位必须按调用方当时生效的规则计算, 不给静默默认."""
         async with self._session() as session:
-            media = MediaFile(library_id=library_id, **updates)
-            _apply_path_phase(media)
+            media = MediaFile(library_id=library_id, path=nfc_path(path), **updates)
+            _apply_path_phase(media, rules)
             session.add(media)
             await session.commit()
             await session.refresh(media)
@@ -196,9 +214,6 @@ class MediaRepoMixin(RepositoryMixinBase):
             if media is None:
                 return None
             # 显式赋值, 禁止 setattr; 字段集由 MediaFileUpdates 与 MediaFile 静态对齐.
-            if "path" in updates:
-                media.path = nfc_path(updates["path"])
-                _apply_path_phase(media)
             if "number" in updates:
                 media.number = updates["number"]
             if "oshash" in updates:
@@ -220,6 +235,60 @@ class MediaRepoMixin(RepositoryMixinBase):
             await session.commit()
             await session.refresh(media)
             return media
+
+    async def refresh_external_subtitle(self, media: MediaFile, library: Library | None) -> None:
+        """按视频**当前**所在目录复查外挂字幕, 写回 ``MediaFile.has_external_subtitle``.
+
+        改 path 与登记都经这里, 中字列因此不会与视频实际所处目录脱节. 库行取不到时跳过复查:
+        用假值覆盖会把早先命中的角标熄灭, 比留着旧值更错.
+        """
+        if media.id is None or library is None:
+            return
+        found = await detect_external_subtitle(media, library)
+        media.has_external_subtitle = found
+        await self.update_media_file(media.id, has_external_subtitle=found)
+
+    async def rewrite_media_path(
+        self,
+        media_id: int,
+        path: str,
+        *,
+        rules: NumberRules,
+        library: Library | None,
+        **updates: Unpack[MediaFileUpdates],
+    ) -> MediaFile | None:
+        """改 path 的唯一入口: 字段、相位与同目录字幕都在这里落定; 行不存在返回 None.
+
+        ``rules`` 与 ``library`` 无缺省值: 相位必须按调用方当时生效的规则重算, 字幕则按
+        **新目录**复查 (库的 ``subtitle_extensions`` 决定查什么), 让漏传成为类型错误.
+        ``library=None`` 只在库行确实取不到时用, 此时跳过字幕复查并保留已有的中字角标.
+        """
+        async with self._session() as session:
+            media = await session.get(MediaFile, media_id)
+            if media is None:
+                return None
+            media.path = nfc_path(path)
+            if "number" in updates:
+                media.number = updates["number"]
+            if "oshash" in updates:
+                media.oshash = updates["oshash"]
+            if "size" in updates:
+                media.size = updates["size"]
+            if "duration" in updates:
+                media.duration = updates["duration"]
+            if "codec" in updates:
+                media.codec = updates["codec"]
+            if "status" in updates:
+                media.status = updates["status"]
+            if "metadata_id" in updates:
+                media.metadata_id = updates["metadata_id"]
+            _apply_path_phase(media, rules)
+            media.updated_at = _utcnow()
+            session.add(media)
+            await session.commit()
+            await session.refresh(media)
+        await self.refresh_external_subtitle(media, library)
+        return media
 
     async def delete_media_file(self, media_id: int) -> bool:
         async with self._session() as session:

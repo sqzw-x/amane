@@ -6,7 +6,7 @@ import structlog
 
 from ..db import TaskType
 from ..library import MEDIA_EXTENSIONS, InventoryStore, LibraryScan, OrphanScan, scan_inventory
-from ..parsing import parse_file_info
+from ..parsing import EMPTY_NUMBER_RULES, NumberRules, parse_file_info
 from ..utils.path import nfc_path
 from ..utils.threads import path_exists, path_is_dir
 from ._common import register_media_file
@@ -29,11 +29,13 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
         repo: Repository,
         media_extensions: Sequence[str] | None = None,
         inventory_store: InventoryStore | None = None,
+        number_rules: NumberRules = EMPTY_NUMBER_RULES,
     ):
         super().__init__(payload_t=RefreshPayload, result_t=RefreshResult)
         self._repo = repo
         self._media_extensions = frozenset(media_extensions) if media_extensions else MEDIA_EXTENSIONS
         self._inventory_store = inventory_store
+        self._number_rules = number_rules
 
     async def handle(self, payload: RefreshPayload) -> TaskResult[RefreshResult]:
         scan_dir = Path(payload.path)
@@ -100,7 +102,13 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
                     if walked % _WALK_LOG_EVERY == 0:
                         logger.info("scan walking", path=payload.path, seen=walked, added=added)
                     if path_key not in existing_by_path:
-                        media = await register_media_file(self._repo, payload.library_id, file_path, library=library)
+                        media = await register_media_file(
+                            self._repo,
+                            payload.library_id,
+                            file_path,
+                            library=library,
+                            rules=self._number_rules,
+                        )
                         existing_by_path[path_key] = media
                         added += 1
                 if added:
@@ -130,7 +138,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
         # 扇出 SCRAPE; 只描述后继, 由完成事务创建.
         followups = []
         for f in media_files:
-            parsed = parse_file_info(f.path)
+            parsed = parse_file_info(f.path, rules=self._number_rules)
             assert f.id is not None
             assert parsed.number is not None
             followups.append(

@@ -13,6 +13,7 @@ from amane.api.routes.cleanup import MAX_NODE_PAGE_SIZE, TRASH_REUSE_WINDOW
 from amane.db.models import TaskType
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidPayload
 from amane.library import ORPHAN_COOLDOWN_SECONDS, InventorySource, OrphanScan, scan_inventory
+from amane.parsing import EMPTY_NUMBER_RULES
 from tests.helpers import await_for
 
 if TYPE_CHECKING:
@@ -411,7 +412,9 @@ async def test_selection_expansion_previews_then_deletes(
     video.write_bytes(b"v" * 100)
     (work / "NSFS-039.nfo").write_text("nfo")
     (work / "cover.jpg").write_bytes(b"cover")
-    media = await app.state.runtime.repo.create_media_file(library_id, path=str(video), number="NSFS-039")
+    media = await app.state.runtime.repo.create_media_file(
+        library_id, path=str(video), number="NSFS-039", rules=EMPTY_NUMBER_RULES
+    )
     assert media.id is not None
 
     preview = await client.post(
@@ -458,8 +461,12 @@ async def test_selection_notice_carries_code_and_relative_path(
         (work / name).write_bytes(b"v" * 100)
 
     repo = app.state.runtime.repo
-    first = await repo.create_media_file(library_id, path=str(work / "NSFS-039.mp4"), number="NSFS-039")
-    await repo.create_media_file(library_id, path=str(work / "NSFS-040.mp4"), number="NSFS-040")
+    first = await repo.create_media_file(
+        library_id, path=str(work / "NSFS-039.mp4"), number="NSFS-039", rules=EMPTY_NUMBER_RULES
+    )
+    await repo.create_media_file(
+        library_id, path=str(work / "NSFS-040.mp4"), number="NSFS-040", rules=EMPTY_NUMBER_RULES
+    )
     assert first.id is not None
 
     resp = await client.post(
@@ -477,7 +484,9 @@ async def test_selection_notice_carries_code_and_relative_path(
 async def test_selection_rejects_foreign_media(client: AsyncClient, app: FastAPI, safe_path: Path) -> None:
     first = await _library(client, safe_path / "a")
     second = await _library(client, safe_path / "b")
-    other = await app.state.runtime.repo.create_media_file(second, path=str(safe_path / "b" / "x.mp4"))
+    other = await app.state.runtime.repo.create_media_file(
+        second, path=str(safe_path / "b" / "x.mp4"), rules=EMPTY_NUMBER_RULES
+    )
 
     resp = await client.post(f"libraries/{first}/cleanup/selection", json={"media_file_ids": [other.id]})
 

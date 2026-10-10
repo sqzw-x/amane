@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..agent import AgentService, ResultCache
-from ..config import SAFE_DIRS_ALLOW_ALL, ColdSettings, ConfigManager
+from ..config import SAFE_DIRS_ALLOW_ALL, ColdSettings, ConfigManager, build_number_rules
 from ..config.token import resolve_api_token
 from ..db.engine import create_async_engine_from_path
 from ..db.repository import Repository
@@ -164,6 +164,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
 
     library_locks = LibraryTaskLocks()
     inventory_store = InventoryStore()
+    number_rules = build_number_rules(hot.parsing)
     handlers = build_handlers(
         repo,
         factory,
@@ -176,6 +177,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         plugin_manager,
         library_locks=library_locks,
         inventory_store=inventory_store,
+        number_rules=number_rules,
     )
 
     worker = AsyncWorker(
@@ -193,7 +195,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
     cron_scheduler = CronScheduler(repo)
     cron_task = asyncio.create_task(cron_scheduler.start())
 
-    feed_service = FeedService(repo, web_client)
+    feed_service = FeedService(repo, web_client, number_rules)
     feed_task = asyncio.create_task(feed_service.start())
 
     emitter_task: asyncio.Task[None] | None = None
@@ -208,6 +210,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
             use_polling=hot.watcher.use_polling,
             media_extensions=hot.watcher.media_extensions,
             debounce_seconds=hot.watcher.debounce_seconds,
+            number_rules=number_rules,
         )
         await watcher_service.start()
     except Exception:
@@ -237,6 +240,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         playback_state=playback_state,
         library_locks=library_locks,
         inventory_store=inventory_store,
+        number_rules=number_rules,
         playback_factory=PlaybackFactory(
             plugin_manager=plugin_manager,
             plugin_configs=hot.plugins,

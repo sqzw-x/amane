@@ -266,7 +266,7 @@ class MetadataFields(TypedDict, total=False):
 
 
 class MediaFileUpdates(TypedDict, total=False):
-    path: str
+    # 不含 path: 改路径必须经 rewrite_media_path, 相位才不会被漏算.
     number: str | None
     oshash: str | None
     size: int | None
@@ -274,6 +274,7 @@ class MediaFileUpdates(TypedDict, total=False):
     codec: str | None
     status: MediaFileStatus
     metadata_id: int | None
+    # 中字两列的写入与同目录检查绑定 (见 media.py::refresh_external_subtitle), 调用方不直接传.
     has_external_subtitle: bool
 
 

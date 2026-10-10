@@ -12,7 +12,7 @@ from amane.crawlers.models import MediaMetadata
 from amane.enums import SiteName
 from amane.handlers import OrganizeHandler, OrganizePayload, ScrapeHandler, ScrapePayload
 from amane.organize import MoveMode
-from amane.parsing import ContentType
+from amane.parsing import EMPTY_NUMBER_RULES, ContentType
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -76,7 +76,7 @@ async def test_full_pipeline_with_post_processing(repo: Repository, fake_factory
         name="test", path=str(src_dir), video_template=str(tmp_path / "organized" / "{studio}/{number}/{number}.{ext}")
     )
     assert lib.id is not None
-    media = await repo.create_media_file(library_id=lib.id, path=str(src_file))
+    media = await repo.create_media_file(library_id=lib.id, path=str(src_file), rules=EMPTY_NUMBER_RULES)
 
     pipeline_config = HotSettings(scraping=ScrapingConfig(field_priority={}))
 
@@ -137,7 +137,7 @@ async def test_pipeline_copy_mode_keeps_source(repo: Repository, fake_factory, r
         video_template=str(tmp_path / "organized" / "{studio}/{number}/{number}.{ext}"),
     )
     assert lib.id is not None
-    media = await repo.create_media_file(library_id=lib.id, path=str(src_file))
+    media = await repo.create_media_file(library_id=lib.id, path=str(src_file), rules=EMPTY_NUMBER_RULES)
 
     async def _fake_download(url: str, dest: Path, **_: object) -> bool:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -176,7 +176,7 @@ async def test_scrape_does_not_move_files(repo: Repository, fake_factory, resour
     """SCRAPE 只写元数据, 不整理库内文件."""
     src_file = tmp_path / "MIDV-123.mp4"
     src_file.write_text("fake video")
-    media = await repo.create_media_file(library_id=1, path=str(src_file))
+    media = await repo.create_media_file(library_id=1, path=str(src_file), rules=EMPTY_NUMBER_RULES)
 
     pipeline_config = HotSettings(scraping=ScrapingConfig(field_priority={}))
 
@@ -201,7 +201,7 @@ async def test_dead_poster_url_reordered_before_persist(repo: Repository, fake_f
     """首位 poster URL 下载失败 → 落库 poster_urls 首位为成功 URL (而非优先级最高的死 URL)."""
     src_file = tmp_path / "MIDV-123.mp4"
     src_file.write_text("fake video")
-    media = await repo.create_media_file(library_id=1, path=str(src_file))
+    media = await repo.create_media_file(library_id=1, path=str(src_file), rules=EMPTY_NUMBER_RULES)
 
     pipeline_config = HotSettings(scraping=ScrapingConfig(field_priority={}))
 

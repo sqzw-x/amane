@@ -67,6 +67,15 @@ Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 work
 
 `AMANE_UPDATE_URL` 覆盖版本检查的 GitHub 地址 (空 = 官方 API 的发布列表; 指向镜像的 `/releases/latest` 也可以, 单条发布的响应同样接受).
 
+## `parsing` (Hot)
+
+番号解析与检索的用户规则, 同时服务扫描 (watcher / REFRESH)、整理与刮削; 由 `build_number_rules` 转成 `parsing` 的 `NumberRules` 值对象传参 (该包本身不依赖配置). 规则对象是 `AppRuntime` 的构造期字段, `_rebuild()` 只负责替换, 请求路径一律读它.
+
+- **`escape_strings`**: 识别番号前从**文件名与目录名**中整段剔除 (`HHD800.COM@` 这类站点署名), 大小写不敏感; 空列表关闭.
+- **`prefix_types`**: 番号前缀 → 内容类型, 覆盖内置判定; 键大小写与尾部分隔符不敏感, 长形态优先 (同时写 `MIUM` 与 `300MIUM` 时后者赢). 目录名的 `里番` / `欧美` / `getchu` 是更具体的声明, 仍会覆盖本项.
+- **`search_aliases`** / **`auto_search_aliases`**: 出站检索时先试的别名番号. 非空的手动项覆盖该前缀的自动别名; 自动项按内置别名表 (素人号的 `MIUM` ↔ `300MIUM` 之类) 双向补齐. 别名只作用于检索, 不改本地番号, 也不改写回填的来源字段.
+- 规则**不回填存量行**: 改配置后要重新登记 / 重新刮削 / 手动改单条才会看到新类型. 相位写入协议见 [data-model.md](data-model.md).
+
 ## `scraping` 影片路由 (Hot)
 
 `content_routes` 是按内容类型的**有序站点链**: 资格真值 + 该类型默认字段顺序. 实际请求的站点 ⊆ 此表, 空表则该类型刮削直接失败. 关闭某类型刮削须把该项设为空列表, 不允许删除 key.

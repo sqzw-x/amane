@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from amane.db import ActorSortField, Repository, TaskType
 from amane.handlers import RescrapeHandler, RescrapePayload, RescrapeTarget
+from amane.parsing import EMPTY_NUMBER_RULES
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -48,7 +49,9 @@ async def test_content_type_inference(repo: Repository):
     await repo.upsert_metadata(number="FC2-PPV-1234567")  # 无文件 → fc2
     hentai_id = await repo.upsert_metadata(number="MD-0123")
     assert hentai_id.id is not None
-    await repo.create_media_file(lib.id, path="/media/里番/MD-0123.mp4", metadata_id=hentai_id.id)  # 路径优先 → hentai
+    await repo.create_media_file(
+        lib.id, path="/media/里番/MD-0123.mp4", metadata_id=hentai_id.id, rules=EMPTY_NUMBER_RULES
+    )  # 路径优先 → hentai
     await repo.upsert_metadata(number="MD-0456")  # 无文件 → 国产番号模式 chinese
 
     handler = RescrapeHandler(repo)

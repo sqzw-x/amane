@@ -432,7 +432,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
                 if key in seen_numbers:
                     continue
                 seen_numbers.add(key)
-                payloads.append(build_feed_scrape_payload(feed, item.number))
+                payloads.append(build_feed_scrape_payload(feed, item.number, rules=ctx.deps.number_rules))
             tasks = await ctx.deps.repo.create_tasks(TaskType.SCRAPE, payloads, priority=0)
             result = {
                 "affected": len(items),

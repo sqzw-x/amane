@@ -48,6 +48,7 @@ from amane.db.repo_types import (
     SavedQueryUpdates,
     ScheduleUpdates,
 )
+from amane.parsing import EMPTY_NUMBER_RULES
 from amane.utils.model import assert_model_subset, create_partial_model
 from tests.schema_template import copy_schema
 
@@ -317,7 +318,8 @@ class TestCreatePartialModel:
 # 2. 字段纪律: req ⊆ TypedDict ⊆ DB; 只读字段不外泄
 # ============================================================================
 
-# (req model, repo TypedDict, DB 模型, 禁止出现在外部可写字段的字段)
+# (req model, repo TypedDict, DB 模型, 禁止出现在外部可写字段的字段, 走专用入口的字段)
+# 专用入口的字段不经 TypedDict (改 path 必须交代解析规则, 见 MediaRepoMixin.rewrite_media_path).
 _DISCIPLINE = [
     (
         MediaFileUpdateRequest,
@@ -330,25 +332,36 @@ _DISCIPLINE = [
             "updated_at",
             "content_type",
             "mosaic",
+            # has_subtitle 是两列的并集; 两列本身是 path 的投影或目录检查的结果, 都不对外写.
+            "has_subtitle",
             "has_subtitle_in_name",
             "has_external_subtitle",
             "definition",
         },
+        frozenset({"path"}),
     ),
-    (LibraryUpdateRequest, LibraryUpdates, Library, {"id"}),
-    (ScheduleUpdateRequest, ScheduleUpdates, Schedule, {"id", "last_run", "next_run"}),
-    (PartialMetadata, MetadataFields, Metadata, {"id", "number", "created_at", "updated_at", "raw", "field_sources"}),
+    (LibraryUpdateRequest, LibraryUpdates, Library, {"id"}, frozenset()),
+    (ScheduleUpdateRequest, ScheduleUpdates, Schedule, {"id", "last_run", "next_run"}, frozenset()),
+    (
+        PartialMetadata,
+        MetadataFields,
+        Metadata,
+        {"id", "number", "created_at", "updated_at", "raw", "field_sources"},
+        frozenset(),
+    ),
     (
         FeedUpdateRequest,
         FeedUpdates,
         Feed,
         {"id", "etag", "last_modified", "next_fetch_at", "last_fetched_at", "last_error", "last_enqueued"},
+        frozenset(),
     ),
     (
         SavedQueryUpdateRequest,
         SavedQueryUpdates,
         SavedQuery,
         {"id", "entity", "session_id", "persisted", "created_at", "updated_at"},
+        frozenset(),
     ),
 ]
 _DISCIPLINE_IDS = ["media", "library", "schedule", "metadata", "feed", "saved_query"]
@@ -366,24 +379,27 @@ class TestCovariantSubsetOfLibrary:
 
 
 class TestFieldDiscipline:
-    @pytest.mark.parametrize(("req", "typed_dict", "db", "forbidden"), _DISCIPLINE, ids=_DISCIPLINE_IDS)
-    def test_req_subset_of_typeddict(self, req, typed_dict, db, forbidden):
-        """外部可写字段必须是 repo 入参的子集, 否则 model_dump 携带的键会被 repo 静默丢弃."""
-        req_fields = set(req.model_fields)
+    @pytest.mark.parametrize(("req", "typed_dict", "db", "forbidden", "dedicated"), _DISCIPLINE, ids=_DISCIPLINE_IDS)
+    def test_req_subset_of_typeddict(self, req, typed_dict, db, forbidden, dedicated):
+        """外部可写字段必须是 repo 入参的子集, 否则 model_dump 携带的键会被 repo 静默丢弃.
+
+        ``dedicated`` 里的字段走各自的专用 repo 入口, 不经 TypedDict.
+        """
+        req_fields = set(req.model_fields) - set(dedicated)
         td_fields = set(get_type_hints(typed_dict))
         extra = req_fields - td_fields
         assert not extra, f"{req.__name__} 含 repo 无法接受的字段: {extra}"
 
-    @pytest.mark.parametrize(("req", "typed_dict", "db", "forbidden"), _DISCIPLINE, ids=_DISCIPLINE_IDS)
-    def test_typeddict_subset_of_db_columns(self, req, typed_dict, db, forbidden):
+    @pytest.mark.parametrize(("req", "typed_dict", "db", "forbidden", "dedicated"), _DISCIPLINE, ids=_DISCIPLINE_IDS)
+    def test_typeddict_subset_of_db_columns(self, req, typed_dict, db, forbidden, dedicated):
         """repo 入参字段必须都是真实 DB 列, 否则去反射后的显式赋值无法静态通过 (此处再校验)."""
         td_fields = set(get_type_hints(typed_dict))
         db_fields = set(db.model_fields)
         unknown = td_fields - db_fields
         assert not unknown, f"{typed_dict.__name__} 含 {db.__name__} 不存在的列: {unknown}"
 
-    @pytest.mark.parametrize(("req", "typed_dict", "db", "forbidden"), _DISCIPLINE, ids=_DISCIPLINE_IDS)
-    def test_readonly_fields_not_externally_writable(self, req, typed_dict, db, forbidden):
+    @pytest.mark.parametrize(("req", "typed_dict", "db", "forbidden", "dedicated"), _DISCIPLINE, ids=_DISCIPLINE_IDS)
+    def test_readonly_fields_not_externally_writable(self, req, typed_dict, db, forbidden, dedicated):
         """只读/内部字段绝不出现在外部可写字段 (req model)."""
         leaked = set(req.model_fields) & forbidden
         assert not leaked, f"{req.__name__} 越权暴露只读/内部字段: {leaked}"
@@ -414,7 +430,9 @@ async def _make_media(repo: Repository) -> int:
     # 服务端测试库启用 FK 约束, MediaFile.library_id 必须指向已存在的 Library.
     lib = await repo.create_library(name="seed", path="/seed/lib")
     assert lib.id is not None
-    m = await repo.create_media_file(library_id=lib.id, path="/seed/orig.mp4", number="ORIG-000")
+    m = await repo.create_media_file(
+        library_id=lib.id, path="/seed/orig.mp4", number="ORIG-000", rules=EMPTY_NUMBER_RULES
+    )
     assert m.id is not None
     return m.id
 
@@ -534,3 +552,17 @@ class TestRepoRoundTrip:
                 assert actual_utc == expected_utc, f"{method_name}.{key}: {actual!r} != {expected!r}"
             else:
                 assert actual == expected, f"{method_name}.{key}: {actual!r} != {expected!r}"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_rewrite_media_path_roundtrip(self, repo: Repository):
+        """``path`` 不在 ``MediaFileUpdates`` 里 (改路径走专用入口), 因此单独验证它的往返保真."""
+        record_id = await _make_media(repo)
+        target = "/seed/rewritten.mp4"
+
+        result = await repo.rewrite_media_path(record_id, target, rules=EMPTY_NUMBER_RULES, library=None)
+
+        assert result is not None
+        assert result.path == target
+        reloaded = await repo.get_media_file(record_id)
+        assert reloaded is not None
+        assert reloaded.path == target

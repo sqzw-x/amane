@@ -11,7 +11,7 @@ from ..db import Library, MediaFileStatus, Repository
 from ..db.models import TaskType
 from ..enums import DownloadableResource
 from ..observability.models import OrganizeConflict, SiteOutcomeRecord
-from ..parsing import ContentType, infer_content_type
+from ..parsing import EMPTY_NUMBER_RULES, ContentType, NumberRules, infer_content_type
 from ..utils.path import is_descendant, is_resolved_path, resolved_path
 
 if TYPE_CHECKING:
@@ -106,8 +106,8 @@ class ScrapePayload(BaseModel):
     use_cache: set[CacheKind] = {CacheKind.metadata, CacheKind.trans}
 
 
-def build_feed_scrape_payload(feed: Feed, number: str) -> ScrapePayload:
-    content_type = feed.content_type or infer_content_type(number)
+def build_feed_scrape_payload(feed: Feed, number: str, *, rules: NumberRules = EMPTY_NUMBER_RULES) -> ScrapePayload:
+    content_type = feed.content_type or infer_content_type(number, rules=rules)
 
     use_cache: set[CacheKind] = set()
     for raw_kind in feed.use_cache:

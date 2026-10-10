@@ -13,8 +13,10 @@ from ..enums import ActorGender
 from ..parsing.file_info import (
     CONTENT_TYPE_VALUES,
     DEFINITION_VALUES,
+    EMPTY_NUMBER_RULES,
     MOSAIC_VALUES,
     FileInfo,
+    NumberRules,
     parse_file_info,
     split_number,
 )
@@ -304,6 +306,7 @@ def _build_variables(
     file_info: FileInfo | None = None,
     cd: int | None = None,
     actor_genders: Mapping[str, ActorGender] | None = None,
+    rules: NumberRules = EMPTY_NUMBER_RULES,
 ) -> TemplateVariables:
     year = metadata.release[:4] if metadata.release and len(metadata.release) >= 4 else None
     actor = metadata.actors[0] if metadata.actors else None
@@ -338,7 +341,7 @@ def _build_variables(
         "content_type": (
             str(file_info.content_type)
             if file_info is not None
-            else (str(parse_file_info(text=metadata.number).content_type) if metadata.number else "")
+            else (str(parse_file_info(text=metadata.number, rules=rules).content_type) if metadata.number else "")
         ),
         "mosaic?": file_info.mosaic if file_info is not None and file_info.mosaic else "",
         "def?": file_info.definition if file_info is not None and file_info.definition else "",
@@ -373,8 +376,9 @@ class TemplateContext:
         file_info: FileInfo | None = None,
         cd: int | None = None,
         actor_genders: Mapping[str, ActorGender] | None = None,
+        rules: NumberRules = EMPTY_NUMBER_RULES,
     ) -> TemplateContext:
-        built = _build_variables(metadata, ext, source_path, file_info, cd, actor_genders)
+        built = _build_variables(metadata, ext, source_path, file_info, cd, actor_genders, rules)
         variables = cast(dict[str, str], {**built})
         # {dir} 是 {raw_dir} 的别名, 不下发 schema.
         variables["dir"] = built["raw_dir"]

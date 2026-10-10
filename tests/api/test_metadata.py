@@ -8,6 +8,7 @@ from PIL import Image
 
 from amane.db.models import MediaFileStatus, Metadata
 from amane.enums import ActorGender
+from amane.parsing import EMPTY_NUMBER_RULES
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,7 +42,9 @@ class TestMetadataHttp:
             actor_genders={"Mei": ActorGender.FEMALE},
         )
         assert meta.id is not None
-        media = await repo.create_media_file(library_id=1, path="/video/MIDV-001-C.mp4", number="ABC-001")
+        media = await repo.create_media_file(
+            library_id=1, path="/video/MIDV-001-C.mp4", number="ABC-001", rules=EMPTY_NUMBER_RULES
+        )
         assert media.id is not None
         await repo.update_media_file(media.id, status=MediaFileStatus.SCRAPED, metadata_id=meta.id)
 

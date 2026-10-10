@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import httpx2 as httpx
 import structlog
 
-from ..config import R18Config
+from ..config import R18Config, build_number_rules
 from ..crawlers import actor_registry, registry
 from ..crawlers.base import CrawlerProfile
 from ..crawlers.factory import CrawlerFactory
@@ -36,6 +36,7 @@ from ..llm import TranslationCache, build_translator
 from ..media.watermarks import user_watermark_dir
 from ..net.browser import BrowserPool
 from ..net.http import RateLimiters, WebClient
+from ..parsing import EMPTY_NUMBER_RULES, NumberRules
 from ..playback import PlaybackFactory, PlaybackState
 from ..plugins.manager import PluginManager
 from ..plugins.packaging import install_plugin_path, install_plugin_zip, uninstall_plugin_tree
@@ -220,6 +221,8 @@ class AppRuntime:
     playback_state: PlaybackState = field(default_factory=PlaybackState)
     library_locks: LibraryTaskLocks = field(default_factory=LibraryTaskLocks)
     inventory_store: InventoryStore = field(default_factory=InventoryStore)
+    #: 构造期由 bootstrap 按 hot.parsing 建好; _rebuild() 只替换. 请求路径一律读这里.
+    number_rules: NumberRules = EMPTY_NUMBER_RULES
     browser: BrowserPool | None = None
     r18_handle: R18Handle | None = None
 
@@ -280,6 +283,11 @@ class AppRuntime:
         if self.feed_service is not None:
             self.feed_service.set_web_client(self.web_client)
 
+        # 解析规则随 hot.parsing 变化: 请求路径读 self.number_rules, 因此这里先替换再重建 handler.
+        self.number_rules = build_number_rules(hot.parsing)
+        if self.watcher_service is not None:
+            self.watcher_service.set_number_rules(self.number_rules)
+
         # 使用新处理器与并发数重建 worker
         self.worker = AsyncWorker(
             repo=self.repo,
@@ -295,6 +303,7 @@ class AppRuntime:
                 self.plugin_manager,
                 library_locks=self.library_locks,
                 inventory_store=self.inventory_store,
+                number_rules=self.number_rules,
             ),
             concurrency=hot.worker.concurrency,
             poll_interval=hot.worker.poll_interval,
@@ -306,6 +315,7 @@ class AppRuntime:
         self.worker.set_paused(paused)
 
         if self.agent_service is not None:
+            self.agent_service.number_rules = self.number_rules
             self.agent_service.rebuild(hot.agent)
 
         previous_playback = self.playback_factory
@@ -499,6 +509,7 @@ def build_handlers(
     plugin_manager: PluginManager | None = None,
     library_locks: LibraryTaskLocks | None = None,
     inventory_store: InventoryStore | None = None,
+    number_rules: NumberRules = EMPTY_NUMBER_RULES,
 ) -> dict[TaskType, TaskHandler[Any, Any]]:
     # 未启用/缺密钥时 translator 为 None, ScrapeHandler 跳过翻译.
     # 经 _rebuild() 热重载; 代理沿用 network.proxy.
@@ -522,7 +533,7 @@ def build_handlers(
     if inventory_store is None:
         inventory_store = InventoryStore()
     handlers: dict[TaskType, TaskHandler[Any, Any]] = {
-        TaskType.REFRESH: RefreshHandler(repo, hot.watcher.media_extensions, inventory_store),
+        TaskType.REFRESH: RefreshHandler(repo, hot.watcher.media_extensions, inventory_store, number_rules),
         TaskType.SCRAPE: ScrapeHandler(
             repo,
             factory,
@@ -531,6 +542,7 @@ def build_handlers(
             web_client,
             translator,
             plugin_manager.descriptors() if plugin_manager is not None else None,
+            number_rules,
         ),
         TaskType.ACTOR_SCRAPE: ActorScrapeHandler(repo, factory, resource_store, hot, web_client),
         TaskType.ORGANIZE: OrganizeHandler(
@@ -541,12 +553,13 @@ def build_handlers(
             safe_dirs,
             watermark_dir=user_watermark_dir(state_dir) if state_dir is not None else None,
             library_locks=library_locks,
+            rules=number_rules,
         ),
         TaskType.SCAN_INVALID: ScanInvalidHandler(repo, hot, inventory_store),
         TaskType.DELETE: DeleteHandler(repo, inventory_store, hot, library_locks=library_locks),
         TaskType.CLEANUP: CleanupHandler(repo=repo, resource_store=resource_store),
         TaskType.UPSCALE: UpscaleHandler(resource_store, hot),
-        TaskType.RESCRAPE: RescrapeHandler(repo),
+        TaskType.RESCRAPE: RescrapeHandler(repo, number_rules),
     }
     # state_dir 缺省回退 cwd/data (精简构造场景).
     handlers[TaskType.R18_IMPORT] = R18ImportHandler(

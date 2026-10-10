@@ -23,7 +23,7 @@ from amane.db.models import MediaFileStatus, TaskStatus, TaskType
 from amane.enums import SiteName
 from amane.handlers import ActorScrapePayload, RefreshHandler, RefreshPayload, ScrapeHandler, ScrapePayload
 from amane.handlers.protocol import TaskHandler, TaskResult
-from amane.parsing import ContentType
+from amane.parsing import EMPTY_NUMBER_RULES, ContentType
 from amane.plugins.models import SourceDescriptor, SourceTrait
 from amane.scheduler.watcher import DEBOUNCE_SECONDS, FileWatcher
 
@@ -251,7 +251,7 @@ class TestRefreshHandler:
         """存量缺失指纹的条目扫描时也不回填."""
         video = tmp_path / "OLD-001.mkv"
         video.write_bytes(bytes(range(256)) * (65536 * 2 // 256))
-        await repo.create_media_file(library_id=1, path=str(video))
+        await repo.create_media_file(library_id=1, path=str(video), rules=EMPTY_NUMBER_RULES)
 
         result = await RefreshHandler(repo).handle(RefreshPayload(library_id=1, path=str(tmp_path)))
 
@@ -270,7 +270,7 @@ class TestScrapeHandler:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_scrape_aggregates_and_stores_metadata(self, repo: Repository, handler):
         """SCRAPE 任务调用爬虫并持久化聚合后的元数据"""
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
 
         result = await handler.handle(
             ScrapePayload(number="MIDV-123", media_file_id=media.id, content_type=ContentType.CENSORED)
@@ -328,7 +328,7 @@ class TestScrapeHandler:
         """路由里有 uses_file_hash 的站时, 刮削前计算并落库指纹."""
         video = tmp_path / "MIDV-123.mkv"
         video.write_bytes(bytes(range(256)) * (65536 * 2 // 256))
-        media = await repo.create_media_file(library_id=1, path=str(video))
+        media = await repo.create_media_file(library_id=1, path=str(video), rules=EMPTY_NUMBER_RULES)
         crawler = HashCrawler(fake_metadata)
         factory = AsyncMock(spec=CrawlerFactory)
         factory.get_crawlers.return_value = {"theporndb": crawler}
@@ -357,7 +357,7 @@ class TestScrapeHandler:
         """外部来源声明 uses_file_hash 时同样计算指纹, 不要求它是 Crawler 子类."""
         video = tmp_path / "MIDV-123.mkv"
         video.write_bytes(bytes(range(256)) * (65536 * 2 // 256))
-        media = await repo.create_media_file(library_id=1, path=str(video))
+        media = await repo.create_media_file(library_id=1, path=str(video), rules=EMPTY_NUMBER_RULES)
 
         class HashFetcher:
             """插件适配器形态: 满足 fetch 协议, 不是 Crawler 子类."""
@@ -390,7 +390,7 @@ class TestScrapeHandler:
         """默认 javdb 路由不算指纹."""
         video = tmp_path / "MIDV-123.mp4"
         video.write_bytes(bytes(range(256)) * (65536 * 2 // 256))
-        media = await repo.create_media_file(library_id=1, path=str(video))
+        media = await repo.create_media_file(library_id=1, path=str(video), rules=EMPTY_NUMBER_RULES)
         result = await handler.handle(
             ScrapePayload(number="MIDV-123", media_file_id=media.id, content_type=ContentType.CENSORED)
         )

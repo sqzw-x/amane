@@ -10,7 +10,8 @@
     "logging": "日志",
     "sr": "图像超分",
     "llm": "LLM 翻译",
-    "watermark": "水印"
+    "watermark": "水印",
+    "parsing": "番号解析"
   },
   "config": {
     "loadError": "加载配置失败"
@@ -29,6 +30,44 @@
     "appVersion": "APP 版本"
   },
   "fields": {
+    "parsing": {
+      "escape_strings": {
+        "label": "剔除的字符串",
+        "description": "识别番号前从文件名与目录名中整段剔除; 用于文件名带网址或站点署名, 如 HHD800.COM@"
+      },
+      "prefix_types": {
+        "label": "前缀类别约定",
+        "description": "按番号前缀指定内容类型, 如 MIUM=素人; 目录名的 里番 / 欧美 / getchu 会覆盖本项",
+        "options": {
+          "censored": "有码",
+          "uncensored": "无码",
+          "chinese": "国产",
+          "western": "欧美",
+          "fc2": "FC2",
+          "amateur": "素人",
+          "hentai": "动漫"
+        },
+        "$": {
+          "options": {
+            "censored": "有码",
+            "uncensored": "无码",
+            "chinese": "国产",
+            "western": "欧美",
+            "fc2": "FC2",
+            "amateur": "素人",
+            "hentai": "动漫"
+          }
+        }
+      },
+      "search_aliases": {
+        "label": "检索别名",
+        "description": "按番号前缀覆盖自动补充的检索词, 如 300MIUM=MIUM-999; 顺序即尝试顺序"
+      },
+      "auto_search_aliases": {
+        "label": "自动检索别名",
+        "description": "按内置别名映射自动补检索词 (如 300MIUM 与 MIUM 互补)"
+      }
+    },
     "scraping": {
       "download_resources": {
         "label": "刮削时下载",

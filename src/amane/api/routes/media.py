@@ -3,13 +3,14 @@ from typing import TYPE_CHECKING, Annotated, cast
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from ...db.models import MediaFileStatus, MediaSortField, SortOrder
+from ...db.models import Library, MediaFileStatus, MediaSortField, SortOrder
 from ...parsing import DEFINITION_VALUES, ContentType, Mosaic
 from ...utils.model import to_resp
-from ..deps import RepoDep
+from ..deps import RepoDep, RuntimeDep
 from ..models import MediaFileResponse, MediaFileUpdateRequest, MediaListResponse
 
 if TYPE_CHECKING:
+    from ...db.models import MediaFile
     from ...db.repo_types import MediaFileUpdates
 
 logger = structlog.get_logger()
@@ -81,14 +82,33 @@ async def get_media(media_id: int, repo: RepoDep) -> MediaFileResponse:
 
 
 @router.patch("/{media_id}")
-async def update_media(media_id: int, req: MediaFileUpdateRequest, repo: RepoDep) -> MediaFileResponse:
-    updates = cast("MediaFileUpdates", req.model_dump(exclude_unset=True))
-    if not updates:
+async def update_media(
+    media_id: int, req: MediaFileUpdateRequest, repo: RepoDep, runtime: RuntimeDep
+) -> MediaFileResponse:
+    params: dict[str, object] = req.model_dump(exclude_unset=True)
+    if not params:
         raise HTTPException(status_code=422, detail="没有需要修改的字段")
-    media = await repo.update_media_file(media_id, **updates)
+    # path 走 rewrite_media_path: 只有它能按运行时规则重算相位; 其余字段走通用入口.
+    path = params.pop("path", None)
+    media: MediaFile | None
+    if path is None:
+        media = await repo.update_media_file(media_id, **cast("MediaFileUpdates", params))
+    else:
+        current = await repo.get_media_file(media_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="媒体文件不存在")
+        # library 可缺 (库行已删): 交给入口决定跳过字幕复查, 相位仍按运行时规则重算.
+        library: Library | None = await repo.get_library(current.library_id)
+        media = await repo.rewrite_media_path(
+            media_id,
+            cast("str", path),
+            rules=runtime.number_rules,
+            library=library,
+            **cast("MediaFileUpdates", params),
+        )
     if media is None:
         raise HTTPException(status_code=404, detail="媒体文件不存在")
-    logger.info("media file updated", media_id=media_id, fields=list(updates.keys()))
+    logger.info("media file updated", media_id=media_id, fields=list(params.keys()))
     return to_resp(MediaFileResponse, media)
 
 

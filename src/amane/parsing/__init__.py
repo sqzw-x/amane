@@ -20,16 +20,19 @@ from .file_info import (
     split_number,
     summarize_file_phases,
 )
+from .rules import EMPTY_NUMBER_RULES, NumberRules, search_aliases_for
 
 __all__ = [
     "CONTENT_TYPE_VALUES",
     "DEFINITION_VALUES",
+    "EMPTY_NUMBER_RULES",
     "MOSAIC_VALUES",
     "ContentType",
     "FileInfo",
     "FilePhase",
     "FilePhaseSummary",
     "Mosaic",
+    "NumberRules",
     "detect_cd",
     "extract_number",
     "file_phase_from_path",
@@ -39,6 +42,7 @@ __all__ = [
     "is_uncensored",
     "max_definition",
     "parse_file_info",
+    "search_aliases_for",
     "split_actor_aliases",
     "split_number",
     "summarize_file_phases",

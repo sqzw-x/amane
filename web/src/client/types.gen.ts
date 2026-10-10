@@ -1544,6 +1544,7 @@ export type HealthResponse = {
  * 运行时可更新, 持久化到 TOML. extra=forbid, 未知字段须校验失败.
  */
 export type HotSettings = {
+    parsing?: ParsingConfig;
     scraping?: ScrapingConfig;
     actor_scraping?: ActorScrapingConfig;
     agent?: AgentConfig;
@@ -2875,6 +2876,34 @@ export type OrganizeSubmission = {
      * Type
      */
     type: 'organize';
+};
+
+/**
+ * ParsingConfig
+ *
+ * 番号解析与检索的用户约定; 同时服务扫描 (watcher / REFRESH)、整理与刮削.
+ */
+export type ParsingConfig = {
+    /**
+     * Escape Strings
+     */
+    escape_strings?: Array<string>;
+    /**
+     * Prefix Types
+     */
+    prefix_types?: {
+        [key: string]: ContentType;
+    };
+    /**
+     * Search Aliases
+     */
+    search_aliases?: {
+        [key: string]: Array<string>;
+    };
+    /**
+     * Auto Search Aliases
+     */
+    auto_search_aliases?: boolean;
 };
 
 /**

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Annotated
 from pydantic import AfterValidator
 
 from ..enums import ActorGender, LinkMode
+from ..parsing import EMPTY_NUMBER_RULES, NumberRules
 from ..parsing.file_info import FileInfo
 from ..utils.path import is_descendant
 from .template import PLACEHOLDER_MAP_KEYS as PLACEHOLDER_MAP_KEYS
@@ -71,6 +72,7 @@ def resolve_paths(
     file_info: FileInfo | None = None,
     safe_dirs: Sequence[Path] | None = (),
     actor_genders: Mapping[str, ActorGender] | None = None,
+    rules: NumberRules = EMPTY_NUMBER_RULES,
 ) -> ResolvedPaths:
     """``safe_dirs is None`` 时不限制绝对模板写出的路径; 相对模板仍须在 base_path 下."""
     base_path = Path(library.path)
@@ -81,6 +83,7 @@ def resolve_paths(
         file_info=file_info,
         cd=cd,
         actor_genders=actor_genders,
+        rules=rules,
     )
 
     # 先渲染视频, 注入 `{video_*}` 后再渲染链接与刮削产物.

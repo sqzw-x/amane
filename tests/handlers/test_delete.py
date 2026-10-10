@@ -16,6 +16,7 @@ from amane.config import HotSettings
 from amane.handlers import DeleteHandler, DeletePayload, ScanInvalidHandler, ScanInvalidPayload
 from amane.handlers import delete as delete_module
 from amane.library import ORPHAN_COOLDOWN_SECONDS, InventoryStore, OrphanScan
+from amane.parsing import EMPTY_NUMBER_RULES
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -48,7 +49,7 @@ async def test_delete_executes_inventory(repo: Repository, tmp_path: Path) -> No
     (lib_root / "empty").mkdir()
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, blacklist_patterns=["ad-"])
     assert lib.id is not None
-    row = await repo.create_media_file(lib.id, path=str(ad), number="AD-1")
+    row = await repo.create_media_file(lib.id, path=str(ad), number="AD-1", rules=EMPTY_NUMBER_RULES)
     assert row.id is not None
     store = InventoryStore()
 
@@ -315,7 +316,9 @@ async def test_delete_drops_index_by_directory_prefix(repo: Repository, tmp_path
     (lib_root / "empty").mkdir(parents=True)
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
-    row = await repo.create_media_file(lib.id, path=str(lib_root / "empty" / "gone.mkv"), number="X-1")
+    row = await repo.create_media_file(
+        lib.id, path=str(lib_root / "empty" / "gone.mkv"), number="X-1", rules=EMPTY_NUMBER_RULES
+    )
     assert row.id is not None
     store = InventoryStore()
 
@@ -372,7 +375,7 @@ async def test_delete_reverifies_target_that_gained_media(repo: Repository, tmp_
     # 扫描之后才到达的正片.
     video = target / "NEW-001.mp4"
     video.write_bytes(b"x")
-    row = await repo.create_media_file(lib.id, path=str(video), number="NEW-001")
+    row = await repo.create_media_file(lib.id, path=str(video), number="NEW-001", rules=EMPTY_NUMBER_RULES)
     assert row.id is not None
 
     result = await DeleteHandler(repo, store, HotSettings()).handle(

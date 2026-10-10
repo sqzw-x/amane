@@ -11,6 +11,7 @@ from .manager import (
     LLMConfig,
     LoggingConfig,
     NetworkConfig,
+    ParsingConfig,
     PluginConfig,
     R18Config,
     ScrapingConfig,
@@ -19,6 +20,7 @@ from .manager import (
     WatcherConfig,
     WatermarkConfig,
     WorkerConfig,
+    build_number_rules,
 )
 
 __all__ = [
@@ -34,6 +36,7 @@ __all__ = [
     "LLMConfig",
     "LoggingConfig",
     "NetworkConfig",
+    "ParsingConfig",
     "PluginConfig",
     "R18Config",
     "ScrapingConfig",
@@ -42,4 +45,5 @@ __all__ = [
     "WatcherConfig",
     "WatermarkConfig",
     "WorkerConfig",
+    "build_number_rules",
 ]

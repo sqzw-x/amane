@@ -32,11 +32,11 @@ from ..organize import (
     video_dest,
 )
 from ..organize.link import create_video_link
-from ..parsing import FileInfo, parse_file_info
+from ..parsing import EMPTY_NUMBER_RULES, FileInfo, NumberRules, parse_file_info
 from ..utils.path import existing_disk_path as existing_disk_path_sync
 from ..utils.path import is_descendant, nfc_path, path_is_under
 from ..utils.threads import existing_disk_path, in_thread, path_is_dir
-from ._common import LibraryTaskLocks, refresh_external_subtitle
+from ._common import LibraryTaskLocks
 from .models import (
     ORGANIZE_CONFLICT_LIMIT,
     CleanupPayload,
@@ -83,13 +83,14 @@ async def execute_file_operations(
     safe_dirs: Sequence[Path] | None = (),
     watermark_dir: Path | None = None,
     actor_genders: dict[str, ActorGender] | None = None,
+    rules: NumberRules = EMPTY_NUMBER_RULES,
 ) -> FileOperationsResult:
     source_path = await existing_disk_path(Path(media_file.path))
     if source_path is None:
         logger.warning("source file missing", path=media_file.path)
         return FileOperationsResult(outcome=PlaceOutcome.FAILED, error=f"源文件不存在: {media_file.path}")
 
-    info = file_info if file_info is not None else parse_file_info(source_path)
+    info = file_info if file_info is not None else parse_file_info(source_path, rules=rules)
 
     # 目标被别的文件占用时立即返回: 不下载图片, 不写附属文件, 不改库内任何路径.
     # 读不出目标状态时同样立即返回, 但记为失败而不是冲突.
@@ -121,7 +122,7 @@ async def execute_file_operations(
     # 发现字幕: 必须在视频移动前检查同目录.
     subtitles: list[Path] = []
     if library is not None:
-        subtitles = await discover_subtitles(source_path, library.subtitle_extensions, info)
+        subtitles = await discover_subtitles(source_path, library.subtitle_extensions, info, rules=rules)
 
     org_result = await execute_organize(
         source=source_path,
@@ -197,6 +198,7 @@ async def apply_file_operations(
     web_client: WebClient | None = None,
     safe_dirs: Sequence[Path] | None = (),
     watermark_dir: Path | None = None,
+    rules: NumberRules = EMPTY_NUMBER_RULES,
 ) -> FileOperationsResult | None:
     """缺少 media_file_id 或对应记录时返回 None (跳过, 不视为失败).
     Library 由 MediaFile.library_id 派生.
@@ -212,7 +214,7 @@ async def apply_file_operations(
 
     # 渲染路径后执行落盘.
     ext = Path(media_file.path).suffix.lstrip(".")
-    file_info = parse_file_info(media_file.path)
+    file_info = parse_file_info(media_file.path, rules=rules)
     actor_genders = {a.name: a.gender for a in await repo.get_actors_by_names(metadata.actors)}
     paths = resolve_paths(
         library,
@@ -247,6 +249,8 @@ async def commit_organized_media_file(
     media: MediaFile,
     placed: Path,
     library_root: Path,
+    *,
+    rules: NumberRules = EMPTY_NUMBER_RULES,
 ) -> None:
     """整理后的路径仍在本库内才改 path; 已离开本库且源路径不在磁盘上则删行.
 
@@ -262,9 +266,7 @@ async def commit_organized_media_file(
 
     occupant = await repo.get_media_file_by_path(str(placed))
     if occupant is None or occupant.id == media.id:
-        updated = await repo.update_media_file(media.id, path=str(placed))
-        if updated is not None and library is not None:
-            await refresh_external_subtitle(repo, updated, library)
+        await repo.rewrite_media_path(media.id, str(placed), rules=rules, library=library)
         return
     if occupant.id is None:
         return
@@ -279,8 +281,8 @@ async def commit_organized_media_file(
     if occupant_updates:
         await repo.update_media_file(occupant.id, **occupant_updates)
     await repo.delete_media_file(media.id)
-    if library is not None:
-        await refresh_external_subtitle(repo, occupant, library)
+    # 占据了落点的那一行代表就位的视频: 它没走改 path 入口, 字幕在这里补一次复查.
+    await repo.refresh_external_subtitle(occupant, library)
 
 
 async def _resolve_local(url: str, store: ResourceStore, client: WebClient) -> Path | None:
@@ -430,6 +432,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         watermark_dir: Path | None = None,
         *,
         library_locks: LibraryTaskLocks | None = None,
+        rules: NumberRules = EMPTY_NUMBER_RULES,
     ):
         super().__init__(payload_t=OrganizePayload, result_t=OrganizeResult)
         self._repo = repo
@@ -439,6 +442,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
         self._safe_dirs = safe_dirs
         self._watermark_dir = watermark_dir
         self._library_locks = library_locks if library_locks is not None else LibraryTaskLocks()
+        self._number_rules = rules
 
     async def _load_scope(self, payload: OrganizePayload, library: Library) -> list[MediaFile]:
         assert library.id is not None
@@ -538,6 +542,7 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                     web_client=self._web_client,
                     safe_dirs=self._safe_dirs,
                     watermark_dir=self._watermark_dir,
+                    rules=self._number_rules,
                 )
                 if fop_result is None:
                     skipped += 1
@@ -545,7 +550,9 @@ class OrganizeHandler(TaskHandler[OrganizePayload, OrganizeResult]):
                     continue
 
                 if fop_result.dest and media_file.id is not None:
-                    await commit_organized_media_file(self._repo, media_file, fop_result.dest, library_root)
+                    await commit_organized_media_file(
+                        self._repo, media_file, fop_result.dest, library_root, rules=self._number_rules
+                    )
                 match fop_result.outcome:
                     case PlaceOutcome.PLACED:
                         organized += 1

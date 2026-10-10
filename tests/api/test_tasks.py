@@ -11,6 +11,7 @@ from amane.api.models.tasks import TaskResultPayload
 from amane.db.models import TaskType
 from amane.enums import DownloadableResource
 from amane.handlers import models as handler_models
+from amane.parsing import EMPTY_NUMBER_RULES
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -97,7 +98,9 @@ class TestSubmitTask:
         )
         assert forced.json()["payload"]["content_type"] == "censored"
 
-        media = await seed_library.create_media_file(library_id=1, path="/media/里番/MD-0123.mp4")
+        media = await seed_library.create_media_file(
+            library_id=1, path="/media/里番/MD-0123.mp4", rules=EMPTY_NUMBER_RULES
+        )
         assert media.id is not None
         hentai = await client.post("tasks", json={"type": "scrape", "media_id": media.id})
         assert hentai.json()["payload"]["content_type"] == "hentai"
@@ -158,7 +161,9 @@ class TestSubmitTask:
         other_lib = await repo.create_library(name="x", path=str(safe_path / "x"))
         (safe_path / "x").mkdir()
         assert other_lib.id is not None
-        foreign = await repo.create_media_file(library_id=other_lib.id, path=str(safe_path / "x" / "a.mp4"))
+        foreign = await repo.create_media_file(
+            library_id=other_lib.id, path=str(safe_path / "x" / "a.mp4"), rules=EMPTY_NUMBER_RULES
+        )
         assert foreign.id is not None
         foreign_ids = await client.post(
             "tasks", json={"type": "organize", "library_id": lib.id, "media_file_ids": [foreign.id]}

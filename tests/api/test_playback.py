@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 import pytest
 
+from amane.parsing import EMPTY_NUMBER_RULES
 from amane.playback.factory import SOURCE_ID_MAX_LEN
 from tests.plugins.test_plugin_system import playback_plugin_source, write_plugin
 
@@ -40,6 +41,7 @@ async def _attach_file(
         path=str(path.resolve()),
         size=len(payload),
         metadata_id=metadata_id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert media.id is not None
     return media.id
@@ -445,6 +447,7 @@ class TestPlaybackHttp:
             path=str(alias),
             size=len(payload),
             metadata_id=meta_id.id,
+            rules=EMPTY_NUMBER_RULES,
         )
         assert media.id is not None
         configured = await client.patch(
