@@ -57,12 +57,12 @@ LANG_METADATA_FIELD_SET: frozenset[MetadataField] = frozenset(
 
 # json_schema_extra 需要 JsonValue 兼容类型, 使用 list[Any] 避免 pyright invariance 问题
 _SITES_WITH_API_TOKEN: list[Any] = [SiteName.THEPORNDB]
-# 当前只有维基消费 languages, 因此只在该站点卡片展示; 其它来源要使用时去掉此项即可.
+# 当前只有维基消费该字段, 因此只在该站点卡片展示; 其它来源要使用时去掉此项即可.
 _SITES_WITH_LANGUAGES: list[Any] = [SiteName.WIKIPEDIA]
 
 
 def _languages_schema(schema: dict[str, Any]) -> None:
-    """取值收窄到来源支持的词条语言; 仅在已消费该字段的站点卡片展示."""
+    """items 是站点间共用的一份取值集合, 收窄到维基支持的词条语言; 展示由 x-visible-keys 逐站点控制."""
     schema["items"] = {"type": "string", "enum": list(WIKI_LANGUAGES)}
     schema["x-ordered"] = True
     schema["x-visible-keys"] = _SITES_WITH_LANGUAGES
@@ -301,10 +301,9 @@ class SiteConfig(BaseModel):
         json_schema_extra=_languages_schema,
         description="词条语言优先级, 依序取第一个有正文的词条",
     )
-    """该来源的词条语言优先级, 依序取第一个有正文的词条. 座位对全部来源通用, 当前取值集合来自维基支持的词条版本.
+    """座位对全部来源通用 (名称不绑定维基), 当前取值集合来自维基支持的词条版本.
 
-    只由 WikipediaActorCrawler 读取; 收窄列表不会减少 Wikidata 检索语言. 集合收紧到 ``WIKI_LANGUAGES``
-    是为了让设置页只列出可用语言; 将来某个来源需要别的集合时, 再决定放宽集合还是改为按站声明.
+    只决定取哪一版维基词条正文, 不减少 Wikidata 的检索语言; 留空则回退默认优先级; 只有 WikipediaActorCrawler 读取.
     """
 
     @field_validator("languages")
