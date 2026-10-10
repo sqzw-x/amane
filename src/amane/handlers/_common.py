@@ -62,9 +62,9 @@ async def register_media_file(
 
 
 async def refresh_external_subtitle(repo: Repository, media: MediaFile, library: Library) -> None:
-    """按视频当前所在目录重查一次外挂字幕, 写回 ``MediaFile.has_external_subtitle``.
+    """按视频当前所在目录检查一次外挂字幕, 写回 ``MediaFile.has_external_subtitle``.
 
-    库 ``subtitle_extensions`` 为空即关闭发现, 写入假值关掉早先命中的角标.
+    库 ``subtitle_extensions`` 为空表示关闭发现, 此时写入假值, 早先命中的角标随之熄灭.
     """
     extensions = library.subtitle_extensions or []
     found = await has_companion_subtitle(Path(media.path), extensions)

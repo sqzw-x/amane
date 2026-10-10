@@ -169,7 +169,7 @@ class MediaFile(SQLModel, table=True):
     mosaic: Mosaic | None = Field(default=None, index=True)
     #: 文件名带中字标记, 只由 path 派生.
     has_subtitle_in_name: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, index=True))
-    #: 视频同目录存在库 `subtitle_extensions` 命中的字幕; 由注册与改 path 时的同目录检查写入, 不随 path 投影.
+    #: 同目录存在库 `subtitle_extensions` 命中的字幕; 只有登记与修改 path 时会重新检查.
     has_external_subtitle: bool = Field(default=False, index=True)
     definition: str | None = Field(default=None, index=True)
     metadata_id: int | None = Field(default=None, foreign_key="metadata.id", index=True)
@@ -179,18 +179,14 @@ class MediaFile(SQLModel, table=True):
 
     @property
     def has_subtitle(self) -> bool:
-        """文件名标记与同目录字幕命中任一即真.
-
-        SQL 侧用 ``has_subtitle_predicate`` 表达同一口径, 两者必须一致.
-        """
+        """文件名标记与同目录字幕命中任一即真."""
         return self.has_subtitle_in_name or self.has_external_subtitle
 
 
 def has_subtitle_predicate() -> ColumnElement[bool]:
     """`MediaFile.has_subtitle` 的 SQL 等价式: 文件名标记或同目录字幕命中.
 
-    ``MediaFile.has_subtitle`` 是纯 Python property, 不能出现在 SQL 表达式里; 判定中字的查询与筛选
-    必须走这里. 两处口径必须一致.
+    该 property 不能出现在 SQL 表达式里, 判定中字的查询与筛选一律走这里; 两处口径必须一致.
     """
     return or_(col(MediaFile.has_subtitle_in_name).is_(True), col(MediaFile.has_external_subtitle).is_(True))
 
