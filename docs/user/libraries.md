@@ -221,14 +221,15 @@ https://example.com/{video_relpath} -> https://example.com/ABC-123/ABC-123.mp4
 | `{directors}` `{tags}` | 导演 / 标签, 逗号分隔 |
 | `{xml_actor}` `{xml_tag}` `{xml_genre}` `{xml_director}` `{xml_external_id}` | 片段: 按值产出多行同名元素, 已转义 |
 
-路径模板的其余占位符 (`{number}` / `{title}` / `{actors}` / `{studio}` / `{release}` / `{content_type}` / `{mosaic?}` / `{cd?}` / `{sub?}` 等) 在 NFO 模板中同样可用. 位置类占位符 (`{video_dir}` / `{link_dir}` / `{video_relpath}` / `{raw_dir}` / `{raw_srt_name}`) 不可用, 目录里没有的名字会被拒绝保存.
+路径模板的其余占位符 (`{number}` / `{title}` / `{actors}` / `{studio}` / `{release}` / `{content_type}` / `{mosaic?}` / `{cd?}` / `{sub?}` 等) 在 NFO 模板中同样可用. 不可用的名字: 位置类 (`{video_dir}` / `{link_dir}` / `{video_relpath}` / `{raw_dir}` / `{raw_srt_name}`)、`{link_name}` 与 `{raw_name}` (文件名只保留视频文件名)、`{ext}` (正文不描述扩展名)、`{actress}` / `{actresses}` (演员名单不区分性别). 可用名字以库表单里的占位符徽章为准, 不在其中的名字保存时被拒绝.
 
-片段是固定展开器: `{xml_actor}` 为每个演员输出一组 `<actor><name>…</name><type>Actor</type></actor>`, `{xml_tag}` 与 `{xml_genre}` 为每个标签输出一行, 内部结构不可修改. 片段只能写在元素内容位置, 写进属性会被拒绝.
+片段是固定展开器: `{xml_actor}` 为每个演员输出一组 `<actor><name>…</name><type>Actor</type></actor>`, `{xml_tag}` 与 `{xml_genre}` 为每个标签输出一行, 内部结构不可修改. 片段只能写在元素内容位置: 写进属性、注释与 CDATA 都会被拒绝.
 
 ### 写法约束
 
 - 字面量原样输出, 占位符取值由引擎转义. 字面量里的 `&` 要写成 `&amp;`, `<` 要写成 `&lt;`.
 - 需要条件省略的方括号组里必须有占位符; 只想显示方括号时, 方括号内不要写占位符.
+- 单独的 `[` 或 `]` 会被当成未闭合的可选组而拒绝保存; 需要显示时写成 `&#91;` / `&#93;`.
 - 根元素自定, 媒体服务器按根元素判断类型, 影片使用 `<movie>`.
 - 修改模板不会改写已有 NFO: 重跑整理才按新模板覆盖全库.
 - 「填入默认模板」把当前默认正文复制成该库自己的模板, 此后默认正文变化不再作用于该库; 清空即回到默认正文.
