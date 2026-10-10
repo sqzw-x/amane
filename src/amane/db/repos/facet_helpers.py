@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import delete as sqla_delete
-from sqlalchemy import or_, update
+from sqlalchemy import literal, or_, update
 from sqlalchemy.orm import Mapped
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
@@ -17,6 +17,7 @@ from ..actor_lookup import list_actor_aliases, resolve_actor_by_name
 from ..actor_person import locked_fields_of, merge_person_fields_into_target
 from ..facet_rules import RuleEntry, apply_metadata_facet_fields, empty_rules_by_kind
 from ..models import (
+    FAVORITE_FACET_ENTITIES,
     SCRAPE_FACET_KINDS,
     Actor,
     ActorAlias,
@@ -1026,6 +1027,7 @@ async def merge_link_facets(
         for src in actor_sources:
             await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == src.id))
         await session.flush()
+    await _carry_favorites_into_target(session, spec.kind, target_id, source_id_set)
     for src in sources:
         await session.delete(src)
     item = await get_facet(session, spec.kind, target_id)
@@ -1047,6 +1049,7 @@ async def merge_scalar_facets(
     for src_name in source_names:
         await _upsert_alias(session, spec.kind, src_name, target.name)
     await _bulk_set_scalar_field(session, spec.kind, source_names, target.name)
+    await _carry_favorites_into_target(session, spec.kind, target_id, source_id_set)
     for src in sources:
         await session.delete(src)
     item = await get_facet(session, spec.kind, target_id)
@@ -1054,17 +1057,74 @@ async def merge_scalar_facets(
     return item
 
 
+def _favorite_entity(kind: FacetKind) -> type[Tag] | type[Studio] | type[Publisher] | type[Series] | None:
+    """可收藏的实体模型; 不支持收藏的分类返回 None.
+
+    收藏列与实体同源 (``FAVORITE_FACET_ENTITIES``): 列表 / 详情 / 写入 / 合并都经这里取,
+    不在各分支另写 kind 名单.
+    """
+    return FAVORITE_FACET_ENTITIES.get(kind)
+
+
+def _favorite_column(kind: FacetKind) -> Any | None:
+    """收藏列表达式; 不支持收藏的分类返回 None."""
+    entity = _favorite_entity(kind)
+    return None if entity is None else col(entity.is_favorite)
+
+
+def _favorite_condition(kind: FacetKind, favorite: bool) -> Any:
+    column = _favorite_column(kind)
+    if column is None:
+        raise ValueError(f"facet kind {kind} 不支持收藏")
+    return column.is_(favorite)
+
+
+async def _facet_favorite(session: AsyncSession, kind: FacetKind, facet_id: int) -> bool:
+    entity = _favorite_entity(kind)
+    if entity is None:
+        return False
+    value = (await session.exec(select(col(entity.is_favorite)).where(col(entity.id) == facet_id))).first()
+    return bool(value)
+
+
+async def _carry_favorites_into_target(
+    session: AsyncSession, kind: FacetKind, target_id: int, source_id_set: set[int]
+) -> None:
+    """合并前把源的收藏并入目标.
+
+    源实体随后被删除, 收藏位随行消失等于在用户的显式操作下静默丢失; 目标自身已收藏时保持真值,
+    合并不取消目标收藏.
+    """
+    entity = _favorite_entity(kind)
+    if entity is None or not source_id_set:
+        return
+    hit = (
+        await session.exec(select(count()).where(col(entity.id).in_(source_id_set), col(entity.is_favorite).is_(True)))
+    ).one()
+    if not hit:
+        return
+    target = await session.get(entity, target_id)
+    if target is None:
+        return
+    target.is_favorite = True
+    await session.flush()
+
+
 async def _list_link_facets(
     session: AsyncSession,
     spec: _LinkFacetSpec,
     *,
     search: str | None,
+    favorite: bool | None,
     offset: int,
     limit: int,
     sort_by: FacetSortField,
     order: SortOrder,
 ) -> tuple[list[FacetItem], int]:
     entity, link, link_fk = spec.entity, spec.link, spec.link_fk
+    favorite_column = _favorite_column(spec.kind)
+    favorite_expr: Any = literal(False) if favorite_column is None else favorite_column
+    favorite_condition = None if favorite is None else _favorite_condition(spec.kind, favorite)
 
     def _match(pattern: str) -> Any:
         """展示名命中; Actor 额外以 EXISTS 命中别名行, 不产生重复行."""
@@ -1080,12 +1140,18 @@ async def _list_link_facets(
     base = select(entity)
     if search:
         base = base.where(_match(f"%{search}%"))
+    if favorite_condition is not None:
+        base = base.where(favorite_condition)
     total = (await session.exec(select(count()).select_from(base.subquery()))).one() or 0
     count_expr = count(col(link.metadata_id))
+    group_by: list[Any] = [col(entity.id), col(entity.name)]
+    if favorite_column is not None:
+        # group_by 与 select 必须同步扩列; 常量占位不进 group_by.
+        group_by.append(favorite_column)
     stmt = (
-        select(col(entity.id), col(entity.name), count_expr)
+        select(col(entity.id), col(entity.name), count_expr, favorite_expr)
         .outerjoin(link, col(link_fk) == col(entity.id))
-        .group_by(col(entity.id), col(entity.name))
+        .group_by(*group_by)
         .order_by(
             _facet_primary_order(sort_by, order, name_col=col(entity.name), count_expr=count_expr), col(entity.id).asc()
         )
@@ -1094,6 +1160,8 @@ async def _list_link_facets(
     )
     if search:
         stmt = stmt.where(_match(f"%{search}%"))
+    if favorite_condition is not None:
+        stmt = stmt.where(favorite_condition)
     rows = (await session.exec(stmt)).all()
     return [_facet_row(r) for r in rows], int(total)
 
@@ -1103,21 +1171,31 @@ async def _list_scalar_facets(
     spec: _ScalarFacetSpec,
     *,
     search: str | None,
+    favorite: bool | None,
     offset: int,
     limit: int,
     sort_by: FacetSortField,
     order: SortOrder,
 ) -> tuple[list[FacetItem], int]:
     entity, meta_col = spec.entity, spec.meta_col
+    favorite_column = _favorite_column(spec.kind)
+    favorite_expr: Any = literal(False) if favorite_column is None else favorite_column
+    favorite_condition = None if favorite is None else _favorite_condition(spec.kind, favorite)
     base = select(entity)
     if search:
         base = base.where(col(entity.name).ilike(f"%{search}%"))
+    if favorite_condition is not None:
+        base = base.where(favorite_condition)
     total = (await session.exec(select(count()).select_from(base.subquery()))).one() or 0
     count_expr = count(col(Metadata.id))
+    group_by: list[Any] = [col(entity.id), col(entity.name)]
+    if favorite_column is not None:
+        # group_by 与 select 必须同步扩列; 常量占位不进 group_by.
+        group_by.append(favorite_column)
     stmt = (
-        select(col(entity.id), col(entity.name), count_expr)
+        select(col(entity.id), col(entity.name), count_expr, favorite_expr)
         .outerjoin(Metadata, meta_col == col(entity.name))
-        .group_by(col(entity.id), col(entity.name))
+        .group_by(*group_by)
         .order_by(
             _facet_primary_order(sort_by, order, name_col=col(entity.name), count_expr=count_expr), col(entity.id).asc()
         )
@@ -1126,6 +1204,8 @@ async def _list_scalar_facets(
     )
     if search:
         stmt = stmt.where(col(entity.name).ilike(f"%{search}%"))
+    if favorite_condition is not None:
+        stmt = stmt.where(favorite_condition)
     rows = (await session.exec(stmt)).all()
     return [_facet_row(r) for r in rows], int(total)
 
@@ -1135,6 +1215,7 @@ async def list_facets(
     kind: FacetKind,
     *,
     search: str | None,
+    favorite: bool | None = None,
     offset: int,
     limit: int,
     sort_by: FacetSortField,
@@ -1145,6 +1226,7 @@ async def list_facets(
             session,
             LINK_FACETS[kind],
             search=search,
+            favorite=favorite,
             offset=offset,
             limit=limit,
             sort_by=sort_by,
@@ -1155,6 +1237,7 @@ async def list_facets(
             session,
             SCALAR_FACETS[kind],
             search=search,
+            favorite=favorite,
             offset=offset,
             limit=limit,
             sort_by=sort_by,
@@ -1164,11 +1247,12 @@ async def list_facets(
 
 
 def _facet_row(r: tuple[object, ...]) -> FacetItem:
-    facet_id, name, cnt = r[0], r[1], r[2]
+    facet_id, name, cnt, favorite = r[0], r[1], r[2], r[3]
     assert isinstance(facet_id, int)
     assert isinstance(name, str)
     assert cnt is None or isinstance(cnt, int)
-    return FacetItem(id=facet_id, name=name, count=0 if cnt is None else cnt)
+    assert isinstance(favorite, bool | int)
+    return FacetItem(id=facet_id, name=name, count=0 if cnt is None else cnt, is_favorite=bool(favorite))
 
 
 async def get_facet(session: AsyncSession, kind: FacetKind, facet_id: int) -> FacetItem | None:
@@ -1178,12 +1262,35 @@ async def get_facet(session: AsyncSession, kind: FacetKind, facet_id: int) -> Fa
         if entity is None or entity.id is None:
             return None
         cnt = (await session.exec(select(count()).where(col(spec.link_fk) == facet_id))).one() or 0
-        return FacetItem(id=entity.id, name=entity.name, count=int(cnt))
+        # tag 是 link 分类, 收藏列同样取自实体行.
+        favorite = await _facet_favorite(session, kind, facet_id)
+        return FacetItem(id=entity.id, name=entity.name, count=int(cnt), is_favorite=favorite)
     if kind in SCALAR_FACETS:
         spec = SCALAR_FACETS[kind]
         entity = await session.get(spec.entity, facet_id)
         if entity is None or entity.id is None:
             return None
         cnt = (await session.exec(select(count()).where(spec.meta_col == entity.name))).one() or 0
-        return FacetItem(id=entity.id, name=entity.name, count=int(cnt))
+        favorite = await _facet_favorite(session, kind, facet_id)
+        return FacetItem(id=entity.id, name=entity.name, count=int(cnt), is_favorite=favorite)
     return None
+
+
+async def set_facet_favorite(
+    session: AsyncSession, kind: FacetKind, facet_id: int, is_favorite: bool
+) -> FacetItem | None:
+    """整体赋值收藏位; 值未变时不写库. 实体不存在返回 None, 分类不支持收藏抛 ``ValueError``."""
+    entity = _favorite_entity(kind)
+    if entity is None:
+        raise ValueError(f"facet kind {kind} 不支持收藏")
+    row = await session.get(entity, facet_id)
+    if row is None:
+        return None
+    if row.is_favorite != is_favorite:
+        row.is_favorite = is_favorite
+        row.updated_at = _utcnow()
+        session.add(row)
+        await session.flush()
+    item = await get_facet(session, kind, facet_id)
+    await session.commit()
+    return item

@@ -134,6 +134,8 @@ class FacetItem(BaseModel):
     id: int
     name: str
     count: int
+    #: 不支持收藏的分类恒为假.
+    is_favorite: bool = False
 
 
 class ActorBrowseItem(BaseModel):

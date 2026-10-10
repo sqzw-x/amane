@@ -67,6 +67,7 @@ from .facet_helpers import (
     rename_link_facet,
     rename_scalar_facet,
     replace_actor_aliases,
+    set_facet_favorite,
 )
 
 
@@ -155,6 +156,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
         self,
         kind: FacetKind,
         search: str | None = None,
+        favorite: bool | None = None,
         offset: int = 0,
         limit: int = 50,
         sort_by: FacetSortField = FacetSortField.NAME,
@@ -162,8 +164,20 @@ class FacetsRepoMixin(RepositoryMixinBase):
     ) -> tuple[list[FacetItem], int]:
         async with self._session() as session:
             return await list_facets(
-                session, kind, search=search, offset=offset, limit=limit, sort_by=sort_by, order=order
+                session,
+                kind,
+                search=search,
+                favorite=favorite,
+                offset=offset,
+                limit=limit,
+                sort_by=sort_by,
+                order=order,
             )
+
+    async def set_facet_favorite(self, kind: FacetKind, facet_id: int, is_favorite: bool) -> FacetItem | None:
+        """整体赋值收藏位; 分类不支持收藏抛 ``ValueError``, 实体不存在返回 None."""
+        async with self._session() as session:
+            return await set_facet_favorite(session, kind, facet_id, is_favorite)
 
     async def get_facet(self, kind: FacetKind, facet_id: int) -> FacetItem | None:
         async with self._session() as session:
