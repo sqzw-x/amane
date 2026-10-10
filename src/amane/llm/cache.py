@@ -18,7 +18,7 @@ from pathlib import Path
 import aiosqlite
 import structlog
 
-from ..enums import Language, MetadataField
+from ..enums import Language, TranslateField
 
 logger = structlog.get_logger()
 
@@ -68,7 +68,7 @@ class TranslationCache:
     def _hash(text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-    async def get(self, text: str, target: Language, field: MetadataField, system_prompt: str) -> str | None:
+    async def get(self, text: str, target: Language, field: TranslateField, system_prompt: str) -> str | None:
         conn = await self._ensure()
         async with conn.execute(
             "SELECT translation FROM translations WHERE text_hash=? AND target=? AND field=? AND prompt_hash=?",
@@ -78,7 +78,7 @@ class TranslationCache:
         return row[0] if row else None
 
     async def put(
-        self, text: str, target: Language, field: MetadataField, system_prompt: str, translation: str
+        self, text: str, target: Language, field: TranslateField, system_prompt: str, translation: str
     ) -> None:
         conn = await self._ensure()
         await conn.execute(

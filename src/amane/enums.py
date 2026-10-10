@@ -150,6 +150,10 @@ class ActorField(StrEnum):
     """别名真值在 ``actor_aliases`` 行, 无对应 Actor 列."""
 
 
+type TranslateField = MetadataField | ActorField
+"""可翻译文本的字段标识. 两个枚举取值不相交, 因此并集可安全用作提示词表与译文缓存键的键类型."""
+
+
 class WatermarkKind(StrEnum):
     """整理落盘封面角标类别. 分辨率共用 definition, 不论 4K/1080p."""
 

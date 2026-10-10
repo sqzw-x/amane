@@ -21,6 +21,7 @@ from .saved_queries import router as saved_queries_router
 from .schedules import router as schedules_router
 from .system import router as system_router
 from .tasks import router as tasks_router
+from .translation import router as translation_router
 from .webhooks import router as webhooks_router
 from .ws import router as ws_router
 
@@ -37,6 +38,7 @@ router.include_router(network_router)
 router.include_router(playback_router)
 router.include_router(plugins_router)
 router.include_router(actors_router)
+router.include_router(translation_router)
 router.include_router(facets_router)
 router.include_router(feeds_router)
 router.include_router(comments_router)

@@ -590,28 +590,6 @@
         "label": "启用 LLM 翻译",
         "description": "刮削时翻译文本字段"
       },
-      "api_key": {
-        "label": "API 密钥",
-        "description": "上游服务的密钥; 只保存在本机配置"
-      },
-      "api_type": {
-        "label": "API 类型",
-        "options": {
-          "chat": "Chat",
-          "response": "Responses",
-          "anthropic": "Anthropic"
-        }
-      },
-      "base_url": {
-        "label": "API 端点",
-        "description": "OpenAI 兼容 API BASE URL"
-      },
-      "model": {
-        "label": "模型"
-      },
-      "rate_limit": {
-        "label": "每秒请求上限"
-      },
       "translate_fields": {
         "label": "翻译字段",
         "description": "当前仅支持标题/剧情",
@@ -634,6 +612,40 @@
             "score": "评分"
           }
         }
+      },
+      "actor_translate_fields": {
+        "label": "演员翻译字段",
+        "description": "当前仅支持简介/标语",
+        "$": {
+          "options": {
+            "gender": "性别",
+            "birthday": "生日",
+            "birthplace": "出生地",
+            "height": "身高",
+            "bust": "胸围",
+            "waist": "腰围",
+            "hip": "臀围",
+            "cup": "罩杯",
+            "overview": "简介",
+            "tagline": "标语",
+            "image_urls": "头像",
+            "aliases": "别名"
+          }
+        }
+      },
+      "actor_language": {
+        "label": "演员翻译目标语言",
+        "description": "影片侧目标语言按字段在刮削设置里配置",
+        "options": {
+          "zh_cn": "简体中文",
+          "zh_tw": "繁体中文",
+          "jp": "日语",
+          "en": "英语"
+        }
+      },
+      "strip_actor_names_from_title": {
+        "label": "标题剔除演员名",
+        "description": "标题中出现演员名时剔除, 在翻译之前执行; 与 LLM 开关无关"
       },
       "system_prompt": {
         "label": "系统提示词"
@@ -660,6 +672,48 @@
           "extrafanart": "剧照",
           "score": "评分"
         }
+      },
+      "actor_field_prompts": {
+        "label": "演员字段提示词",
+        "options": {
+          "gender": "性别",
+          "birthday": "生日",
+          "birthplace": "出生地",
+          "height": "身高",
+          "bust": "胸围",
+          "waist": "腰围",
+          "hip": "臀围",
+          "cup": "罩杯",
+          "overview": "简介",
+          "tagline": "标语",
+          "image_urls": "头像",
+          "aliases": "别名"
+        },
+        "$": {
+          "label": "提示词"
+        }
+      },
+      "api_key": {
+        "label": "API 密钥",
+        "description": "上游服务的密钥; 只保存在本机配置"
+      },
+      "api_type": {
+        "label": "API 类型",
+        "options": {
+          "chat": "Chat",
+          "response": "Responses",
+          "anthropic": "Anthropic"
+        }
+      },
+      "base_url": {
+        "label": "API 端点",
+        "description": "OpenAI 兼容 API BASE URL"
+      },
+      "model": {
+        "label": "模型"
+      },
+      "rate_limit": {
+        "label": "每秒请求上限"
       }
     },
     "agent": {

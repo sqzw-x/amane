@@ -16,7 +16,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Syst
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from amane.enums import ApiType, Language, MetadataField
+from amane.enums import ActorField, ApiType, Language, MetadataField, TranslateField
 from amane.llm import LLMTranslator, TranslationCache, build_system_prompt, build_translator
 from amane.llm import translator as translator_module
 
@@ -50,7 +50,7 @@ def _translator(
     cache: TranslationCache | None = None,
     *,
     system_prompt: str | None = None,
-    field_prompts: Mapping[MetadataField, str] | None = None,
+    field_prompts: Mapping[TranslateField, str] | None = None,
 ) -> LLMTranslator:
     """rate_limit 拉高: 用例内的连续调用不等待限速."""
     return LLMTranslator(model, cache, rate_limit=100.0, system_prompt=system_prompt, field_prompts=field_prompts)
@@ -246,6 +246,29 @@ async def test_cache_key_components(cache):
     other = build_system_prompt(Language.ZH_CN, MetadataField.TITLE, system_prompt="只用中性词汇.")
     assert await cache.get("Hello", Language.ZH_CN, MetadataField.TITLE, other) is None
     await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_cache_separates_actor_fields(cache):
+    """演员字段与影片字段同属一个命名空间但不互相命中 (取值不相交)."""
+    await cache.put("似鳥は女優", Language.ZH_CN, MetadataField.PLOT, _SYSTEM_ZH, "剧情译")
+    assert await cache.get("似鳥は女優", Language.ZH_CN, ActorField.OVERVIEW, _SYSTEM_ZH) is None
+    await cache.put("似鳥は女優", Language.ZH_CN, ActorField.OVERVIEW, _SYSTEM_ZH, "简介译")
+    assert await cache.get("似鳥は女優", Language.ZH_CN, ActorField.OVERVIEW, _SYSTEM_ZH) == "简介译"
+    assert await cache.get("似鳥は女優", Language.ZH_CN, MetadataField.PLOT, _SYSTEM_ZH) == "剧情译"
+    await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_actor_field_prompt_reaches_model(cache):
+    """演员字段使用演员侧内置说明, 并可用同键覆盖."""
+    model, calls = _recording_model("译文")
+    t = _translator(model, field_prompts={ActorField.OVERVIEW: "保留人物经历."})
+    await t.translate("似鳥は日本の女優。", Language.ZH_CN, ActorField.OVERVIEW)
+    system, user = calls[0]
+    assert "保留人物经历." in system
+    assert "你是专业的影视元数据翻译" in system  # 指令与影片侧共用
+    assert user == "似鳥は日本の女優。"
 
 
 @pytest.mark.asyncio

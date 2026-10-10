@@ -43,6 +43,7 @@ import {
   renameFacetMutation,
   scrapeActorMutation,
   setActorLocksMutation,
+  translateActorMutation,
   updateActorMutation,
 } from "@/client/@tanstack/react-query.gen";
 import type { ActorField, ActorResponse, CacheKind } from "@/client/types.gen";
@@ -55,6 +56,7 @@ import { ClearPersonNotice } from "@/components/media/clear-person-notice";
 import { FanartLightbox } from "@/components/media/fanart-lightbox";
 import { LockChip, LockToggle, type LockProps } from "@/components/media/field-lock";
 import { PosterGrid } from "@/components/media/poster-grid";
+import { TranslationButton, useTranslationNotice } from "@/components/media/translation-button";
 import { ACTOR_FIELD_LABEL_KEY, LOCKABLE_ACTOR_FIELDS } from "@/lib/actors/fields";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
@@ -166,6 +168,22 @@ function ActorDetailPage() {
     onSuccess: () => {
       notifications.show({ message: t("common:toast.metadataUpdated"), color: "blue" });
       setEditOpen(false);
+      invalidate();
+    },
+    onError: (err) =>
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      }),
+  });
+
+  const translationNotice = useTranslationNotice();
+
+  const translateMutation = useMutation({
+    ...translateActorMutation(),
+    onSuccess: (data) => {
+      const notice = translationNotice(data.outcomes);
+      notifications.show({ message: notice.message, color: notice.color });
       invalidate();
     },
     onError: (err) =>
@@ -367,6 +385,8 @@ function ActorDetailPage() {
               body: { use_cache: useCache },
             })
           }
+          translatePending={translateMutation.isPending}
+          onTranslate={() => translateMutation.mutate({ path: { actor_id: id } })}
           onEdit={() => setEditOpen(true)}
           onCrop={() => setCropOpen(true)}
           onClear={() => void handleClear()}
@@ -444,6 +464,8 @@ function ActorHero({
   onToggleLock,
   onApplyLocks,
   onScrape,
+  onTranslate,
+  translatePending,
   onEdit,
   onCrop,
   onClear,
@@ -460,6 +482,8 @@ function ActorHero({
   onToggleLock: (field: ActorField) => void;
   onApplyLocks: (fields: readonly ActorField[]) => void;
   onScrape: (useCache: CacheKind[]) => void;
+  onTranslate: () => void;
+  translatePending: boolean;
   onEdit: () => void;
   onCrop: () => void;
   onClear: () => void;
@@ -726,6 +750,7 @@ function ActorHero({
           <Button size="xs" variant="light" leftSection={<IconPencil size={14} />} onClick={onEdit}>
             {t("common:actions.edit")}
           </Button>
+          <TranslationButton pending={translatePending} onClick={onTranslate} />
           <Menu shadow="md" position="bottom-start">
             <Menu.Target>
               <Button

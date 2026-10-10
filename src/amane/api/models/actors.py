@@ -68,7 +68,7 @@ class ActorListResponse(BaseModel):
 class ActorScrapeRequest(BaseModel):
     use_cache: set[CacheKind] = Field(
         default_factory=lambda: {CacheKind.metadata, CacheKind.trans},
-        description="启用的缓存种类 (metadata: 复用 Actor.raw; trans: 预留译文). 空集 = 全部强制刷新",
+        description="启用的缓存种类 (metadata: 复用 Actor.raw; trans: 复用演员译文). 空集 = 全部强制刷新",
     )
 
 

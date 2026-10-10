@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import httpx2 as httpx
 import structlog
 
-from ..config import R18Config
+from ..config import LLMConfig, R18Config
 from ..crawlers import actor_registry, registry
 from ..crawlers.base import CrawlerProfile
 from ..crawlers.factory import CrawlerFactory
@@ -32,7 +32,7 @@ from ..handlers import (
     UpscaleHandler,
 )
 from ..library import InventoryStore
-from ..llm import TranslationCache, build_translator
+from ..llm import TranslationCache, Translator, build_translator
 from ..media.watermarks import user_watermark_dir
 from ..net.browser import BrowserPool
 from ..net.http import RateLimiters, WebClient, site_proxy_overrides
@@ -214,6 +214,8 @@ class AppRuntime:
     safe_dirs: list[Path] | None = field(default_factory=list)
     api_token: str | None = None
     translation_cache: TranslationCache | None = None
+    translator: Translator | None = None
+    """刮削管线与独立翻译端点共用的翻译面; 未启用或缺密钥时为 None. 重建判据见 ``_rebuild``."""
     r18_db: R18Database | None = None
     agent_service: AgentService | None = None
     plugin_manager: PluginManager | None = None
@@ -225,6 +227,8 @@ class AppRuntime:
     r18_handle: R18Handle | None = None
 
     _r18_config: R18Config | None = field(default=None, repr=False)
+    _translator_config: LLMConfig | None = field(default=None, repr=False)
+    _translator_proxy: str | None = field(default=None, repr=False)
     _browser_key: tuple[BrowserConfig, str | None] | None = field(default=None, repr=False)
     _rebuild_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _retiring: list[RetiringWorker] = field(default_factory=list, repr=False)
@@ -235,6 +239,10 @@ class AppRuntime:
     def __post_init__(self) -> None:
         if self._r18_config is None:
             self._r18_config = self.config.hot.r18.model_copy(deep=True)
+        if self._translator_config is None:
+            # 构造方已按同一份 hot.llm 装配过 translator; 记下判据, 首次热重载不重复构造.
+            self._translator_config = self.config.hot.llm.model_copy(deep=True)
+            self._translator_proxy = self.config.hot.network.proxy
         if self.r18_handle is None and self.r18_db is not None:
             self.r18_handle = R18Handle(self.r18_db)
         self._browser_key = self._current_browser_key()
@@ -261,6 +269,14 @@ class AppRuntime:
             self.r18_db = build_r18_db(hot.r18)
             self.r18_handle = R18Handle(self.r18_db) if self.r18_db is not None else None
             self._r18_config = hot.r18.model_copy(deep=True)
+
+        # translator 自建 httpx 客户端, 因此只在 LLM 相关配置或代理变化时重建; 与 r18 同款判据.
+        # 被换下的实例不在此关闭: 退役 worker 可能仍在跑用它的任务, 且 build_network_stack 换下的
+        # 旧 web_client 同样是退出序列才关.
+        if hot.llm != self._translator_config or hot.network.proxy != self._translator_proxy:
+            self.translator = build_hot_translator(hot, self.translation_cache)
+            self._translator_config = hot.llm.model_copy(deep=True)
+            self._translator_proxy = hot.network.proxy
 
         # 浏览器池只在其生命周期键变化时重建; 复用同一实例保留已解决的挑战会话
         browser_key = self._current_browser_key()
@@ -296,6 +312,7 @@ class AppRuntime:
                 self.plugin_manager,
                 library_locks=self.library_locks,
                 inventory_store=self.inventory_store,
+                translator=self.translator,
             ),
             concurrency=hot.worker.concurrency,
             poll_interval=hot.worker.poll_interval,
@@ -488,6 +505,25 @@ class AppRuntime:
         return manager
 
 
+def build_hot_translator(hot: HotSettings, cache: TranslationCache | None) -> Translator | None:
+    """按 ``hot.llm`` 装配翻译面; 未启用或缺密钥返回 ``None``. 代理沿用 ``network.proxy``.
+
+    两个字段族的提示词覆盖在装配处合并: 键不相交 (见 ``TranslateField``), 合并不丢项.
+    """
+    return build_translator(
+        enabled=hot.llm.enabled,
+        api_type=hot.llm.api_type,
+        api_key=hot.llm.api_key,
+        base_url=hot.llm.base_url,
+        model=hot.llm.model,
+        rate_limit=hot.llm.rate_limit,
+        proxy=hot.network.proxy,
+        system_prompt=hot.llm.system_prompt,
+        field_prompts={**hot.llm.field_prompts, **hot.llm.actor_field_prompts},
+        cache=cache,
+    )
+
+
 def build_handlers(
     repo: Repository,
     factory: CrawlerFactory,
@@ -500,22 +536,13 @@ def build_handlers(
     plugin_manager: PluginManager | None = None,
     library_locks: LibraryTaskLocks | None = None,
     inventory_store: InventoryStore | None = None,
+    translator: Translator | None = None,
 ) -> dict[TaskType, TaskHandler[Any, Any]]:
-    # 未启用/缺密钥时 translator 为 None, ScrapeHandler 跳过翻译.
-    # 经 _rebuild() 热重载; 代理沿用 network.proxy.
-    # 译文缓存是会话级, 热重载时复用同一实例.
-    translator = build_translator(
-        enabled=hot.llm.enabled,
-        api_type=hot.llm.api_type,
-        api_key=hot.llm.api_key,
-        base_url=hot.llm.base_url,
-        model=hot.llm.model,
-        rate_limit=hot.llm.rate_limit,
-        proxy=hot.network.proxy,
-        system_prompt=hot.llm.system_prompt,
-        field_prompts=hot.llm.field_prompts,
-        cache=translation_cache,
-    )
+    # 调用方 (AppRuntime / bootstrap) 传入会话级实例, 使端点与 worker 共用同一限速桶与客户端;
+    # 未传入时自行构造, 供精简构造与直接调用本函数的测试使用.
+    # 未启用/缺密钥时为 None, 两个刮削 handler 都跳过翻译.
+    if translator is None:
+        translator = build_hot_translator(hot, translation_cache)
     if library_locks is None:
         library_locks = LibraryTaskLocks()
     # 缺省自建只服务精简构造 (测试); 生产必须传入 AppRuntime 的那一份, 否则扫描写进的清单
@@ -533,7 +560,7 @@ def build_handlers(
             translator,
             plugin_manager.descriptors() if plugin_manager is not None else None,
         ),
-        TaskType.ACTOR_SCRAPE: ActorScrapeHandler(repo, factory, resource_store, hot, web_client),
+        TaskType.ACTOR_SCRAPE: ActorScrapeHandler(repo, factory, resource_store, hot, web_client, translator),
         TaskType.ORGANIZE: OrganizeHandler(
             repo,
             hot,

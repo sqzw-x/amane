@@ -75,8 +75,11 @@ _LOCK_FIELD_COLUMN: dict[MetadataField, str] = {
 _LOCK_COLUMN_FIELD: dict[str, MetadataField] = {column: field for field, column in _LOCK_FIELD_COLUMN.items()}
 
 
-def _locked_fields_of(meta: Metadata) -> set[MetadataField]:
-    """库内锁定集合; 非法存量值忽略."""
+def locked_fields_of(meta: Metadata) -> set[MetadataField]:
+    """库内锁定集合; 非法存量值忽略.
+
+    公开供只读判定使用 (API 层的写入前判定): 锁语义只在这里一份, 调用方不要再解析 ``locked_fields``.
+    """
     locked: set[MetadataField] = set()
     for name in meta.locked_fields or []:
         try:
@@ -242,7 +245,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             existing = result.first()
             if existing:
-                fields = _filter_locked(fields, _locked_fields_of(existing), existing.field_sources or {})
+                fields = _filter_locked(fields, locked_fields_of(existing), existing.field_sources or {})
                 for key, value in fields.items():
                     setattr(existing, key, value)
                 existing.updated_at = _utcnow()
@@ -278,7 +281,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             metadata = await session.get(Metadata, metadata_id)
             if metadata is None:
                 return None
-            locked = _locked_fields_of(metadata)
+            locked = locked_fields_of(metadata)
             if mode is WriteMode.AUTO:
                 updates = _filter_locked(updates, locked, metadata.field_sources or {})
             else:

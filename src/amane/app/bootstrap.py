@@ -30,7 +30,7 @@ from ..scheduler.service import WatcherService
 from ..scheduler.worker import AsyncWorker
 from ..utils.random_logging import run_random_logging
 from .proxy_failure_cache import ProxyFailureCache
-from .runtime import AppRuntime, build_handlers, build_network_stack, build_r18_db
+from .runtime import AppRuntime, build_handlers, build_hot_translator, build_network_stack, build_r18_db
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -164,6 +164,8 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
 
     library_locks = LibraryTaskLocks()
     inventory_store = InventoryStore()
+    # 会话级翻译面: worker 的刮削任务与独立翻译端点共用同一实例 (同一客户端与限速桶).
+    translator = build_hot_translator(hot, translation_cache)
     handlers = build_handlers(
         repo,
         factory,
@@ -176,6 +178,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         plugin_manager,
         library_locks=library_locks,
         inventory_store=inventory_store,
+        translator=translator,
     )
 
     worker = AsyncWorker(
@@ -231,6 +234,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         safe_dirs=safe_dirs,
         api_token=api_token,
         translation_cache=translation_cache,
+        translator=translator,
         r18_db=r18_db,
         agent_service=agent_service,
         plugin_manager=plugin_manager,

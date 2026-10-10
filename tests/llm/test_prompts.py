@@ -9,11 +9,13 @@ from pydantic import ValidationError
 
 from amane.config import LLMConfig
 from amane.config.manager import PROMPT_MAX_LENGTH
-from amane.enums import Language, MetadataField
+from amane.enums import ActorField, Language, MetadataField, TranslateField
 from amane.llm import TARGET_LANG_PLACEHOLDER, build_system_prompt
 
 _TITLE_HINT = "这是一部影片的标题, 翻译应简洁自然, 保留专有名词与番号."
 _PLOT_HINT = "这是一部影片的简介, 完整通顺地翻译全部内容."
+_OVERVIEW_HINT = "这是一位演员的简介, 完整通顺地翻译全部内容."
+_TAGLINE_HINT = "这是一位演员的标语, 翻译应简洁自然."
 _OUTPUT_CONSTRAINT = "只输出译文本身, 不要解释、不要引号、不要附加任何内容."
 
 
@@ -30,6 +32,17 @@ _ZH_TW = _instruction("繁體中文")
     [
         # 未配置: 指令 + 内置字段说明 + 输出约束
         (Language.ZH_CN, MetadataField.TITLE, None, None, f"{_ZH} {_TITLE_HINT} {_OUTPUT_CONSTRAINT}"),
+        # 演员字段走同一套组装: 指令共用, 字段说明取演员侧内置
+        (Language.ZH_CN, ActorField.OVERVIEW, None, None, f"{_ZH} {_OVERVIEW_HINT} {_OUTPUT_CONSTRAINT}"),
+        (Language.ZH_CN, ActorField.TAGLINE, None, None, f"{_ZH} {_TAGLINE_HINT} {_OUTPUT_CONSTRAINT}"),
+        # 演员字段说明可覆盖, 影片字段说明不影响演员字段
+        (
+            Language.ZH_TW,
+            ActorField.OVERVIEW,
+            None,
+            {ActorField.OVERVIEW: "只保留人物经历."},
+            f"{_ZH_TW} 只保留人物经历. {_OUTPUT_CONSTRAINT}",
+        ),
         # 无内置说明的字段: 不追加空说明, 也不留下多余空格
         (Language.ZH_CN, MetadataField.SCORE, None, None, f"{_ZH} {_OUTPUT_CONSTRAINT}"),
         # 自定义指令: 占位符替换为目标语言名
@@ -78,9 +91,9 @@ _ZH_TW = _instruction("繁體中文")
 )
 def test_build_system_prompt(
     target: Language,
-    field: MetadataField,
+    field: TranslateField,
     system_prompt: str | None,
-    field_prompts: dict[MetadataField, str] | None,
+    field_prompts: dict[TranslateField, str] | None,
     expected: str,
 ) -> None:
     assert build_system_prompt(target, field, system_prompt=system_prompt, field_prompts=field_prompts) == expected
@@ -108,6 +121,35 @@ def test_llm_config_prompt_normalization(
     cfg = LLMConfig.model_validate(payload)
     assert cfg.system_prompt == expected_system
     assert cfg.field_prompts == expected_fields
+
+
+def test_llm_config_actor_prompt_normalization() -> None:
+    cfg = LLMConfig.model_validate({"actor_field_prompts": {"overview": " 完整翻译 ", "tagline": "   "}})
+    assert cfg.actor_field_prompts == {ActorField.OVERVIEW: "完整翻译"}
+
+
+@pytest.mark.parametrize(
+    ("payload", "match"),
+    [
+        # 演员字段名受 ActorField 约束; 影片字段名不能写进演员表
+        ({"actor_field_prompts": {"nope": "完整翻译"}}, "actor_field_prompts.nope"),
+        ({"actor_field_prompts": {"title": "完整翻译"}}, "actor_field_prompts.title"),
+        # 翻译字段清单同样受枚举约束
+        ({"actor_translate_fields": ["nope"]}, "actor_translate_fields.0"),
+        ({"actor_language": "nope"}, "actor_language"),
+    ],
+)
+def test_llm_config_rejects_invalid_actor_fields(payload: dict, match: str) -> None:
+    with pytest.raises(ValidationError, match=match):
+        LLMConfig.model_validate(payload)
+
+
+def test_llm_config_actor_defaults() -> None:
+    """演员侧默认开启简介翻译; 标题清洗默认关闭."""
+    cfg = LLMConfig()
+    assert cfg.actor_translate_fields == [ActorField.OVERVIEW]
+    assert cfg.actor_language == Language.ZH_CN
+    assert cfg.strip_actor_names_from_title is False
 
 
 @pytest.mark.parametrize(

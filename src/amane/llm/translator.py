@@ -14,7 +14,7 @@ from pydantic_ai.direct import model_request
 from pydantic_ai.messages import ModelMessage, ModelRequest, SystemPromptPart, UserPromptPart
 from pydantic_ai.models import Model
 
-from ..enums import ApiType, Language, MetadataField
+from ..enums import ActorField, ApiType, Language, MetadataField, TranslateField
 from ..utils.language import needs_llm_translation
 from .cache import TranslationCache
 from .model import build_model
@@ -40,9 +40,11 @@ _LANG_NAME: dict[Language, str] = {
     Language.EN: "English",
 }
 
-_FIELD_HINT: dict[MetadataField, str] = {
+_FIELD_HINT: dict[TranslateField, str] = {
     MetadataField.TITLE: "这是一部影片的标题, 翻译应简洁自然, 保留专有名词与番号.",
     MetadataField.PLOT: "这是一部影片的简介, 完整通顺地翻译全部内容.",
+    ActorField.OVERVIEW: "这是一位演员的简介, 完整通顺地翻译全部内容.",
+    ActorField.TAGLINE: "这是一位演员的标语, 翻译应简洁自然.",
 }
 
 TARGET_LANG_PLACEHOLDER = "{target_lang}"
@@ -55,10 +57,10 @@ _OUTPUT_CONSTRAINT = "只输出译文本身, 不要解释、不要引号、不�
 
 def build_system_prompt(
     target: Language,
-    field: MetadataField,
+    field: TranslateField,
     *,
     system_prompt: str | None = None,
-    field_prompts: Mapping[MetadataField, str] | None = None,
+    field_prompts: Mapping[TranslateField, str] | None = None,
 ) -> str:
     """组装 system 提示词 = 指令 + 字段说明 + 固定输出约束.
 
@@ -89,7 +91,7 @@ class LLMTranslator:
         *,
         rate_limit: float = 2.0,
         system_prompt: str | None = None,
-        field_prompts: Mapping[MetadataField, str] | None = None,
+        field_prompts: Mapping[TranslateField, str] | None = None,
     ) -> None:
         self._model = model
         self._cache = cache
@@ -97,10 +99,10 @@ class LLMTranslator:
         # 包住一次翻译调用; 该调用内部的重试由 SDK 客户端承担.
         self._limiter = AsyncLimiter(1, 1 / rate_limit)
         self._system_prompt = system_prompt
-        self._field_prompts: Mapping[MetadataField, str] = field_prompts or {}
+        self._field_prompts: Mapping[TranslateField, str] = field_prompts or {}
 
     async def translate(
-        self, text: str, target: Language, field: MetadataField, *, use_cache: bool = True
+        self, text: str, target: Language, field: TranslateField, *, use_cache: bool = True
     ) -> str | None:
         text = text.strip()
         if not text:
@@ -160,10 +162,13 @@ def build_translator(
     rate_limit: float,
     proxy: str | None = None,
     system_prompt: str | None = None,
-    field_prompts: Mapping[MetadataField, str] | None = None,
+    field_prompts: Mapping[TranslateField, str] | None = None,
     cache: TranslationCache | None = None,
 ) -> LLMTranslator | None:
-    """未启用或缺密钥时返回 ``None``. ``cache`` 热重载时复用同一实例."""
+    """未启用或缺密钥时返回 ``None``. ``cache`` 热重载时复用同一实例.
+
+    ``field_prompts`` 覆盖影片与演员两侧的字段说明, 两个字段族的键不相交 (见 ``TranslateField``).
+    """
     if not enabled or not api_key:
         return None
     # 翻译路径自建传输客户端 (proxy + 超时) 并交给 provider; 助理不传, 由 pydantic-ai 构造默认客户端.

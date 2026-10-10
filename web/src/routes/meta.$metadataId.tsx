@@ -51,6 +51,7 @@ import {
   listMetadataQueryKey,
   setMetadataLocksMutation,
   submitTaskMutation,
+  translateMetadataMutation,
   updateMetadataMutation,
 } from "@/client/@tanstack/react-query.gen";
 import { getMetadataSchema } from "@/client/sdk.gen";
@@ -61,6 +62,7 @@ import { UserTagActions } from "@/components/media/user-tag-add";
 import { FanartLightbox, FanartStrip } from "@/components/media/fanart-lightbox";
 import { FilePhaseBadges, FilePhaseOverlay } from "@/components/media/file-phase-badges";
 import { PosterCropDialog } from "@/components/media/poster-crop-dialog";
+import { TranslationButton, useTranslationNotice } from "@/components/media/translation-button";
 import { MergeDialog } from "@/components/metadata/merge-dialog";
 import { type JSONSchemaObject, resolveSchema } from "@/components/schema-form/schema";
 import { SchemaForm } from "@/components/schema-form/schema-form";
@@ -190,6 +192,22 @@ function TitleDetailPage() {
     onSuccess: () => {
       notifications.show({ message: t("common:toast.scrapeStarted"), color: "blue" });
       void queryClient.invalidateQueries({ queryKey: listMetadataQueryKey() });
+    },
+    onError: (err) =>
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      }),
+  });
+
+  const translationNotice = useTranslationNotice();
+
+  const translateMutation = useMutation({
+    ...translateMetadataMutation(),
+    onSuccess: (data) => {
+      const notice = translationNotice(data.outcomes);
+      notifications.show({ message: notice.message, color: notice.color });
+      invalidateDetail();
     },
     onError: (err) =>
       notifications.show({
@@ -813,6 +831,10 @@ function TitleDetailPage() {
                 ))}
               </Menu.Dropdown>
             </Menu>
+            <TranslationButton
+              pending={translateMutation.isPending}
+              onClick={() => translateMutation.mutate({ path: { metadata_id: id } })}
+            />
             <Button
               size="xs"
               variant="light"
