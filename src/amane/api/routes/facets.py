@@ -106,6 +106,9 @@ async def set_facets_favorite(
 
     语义与单条端点一致, 但幂等判定作用于整批: 已处于目标取值的条目保持不动, 不存在的 id
     计入 ``missing`` 而不报 404 — 批量请求里某个 id 失效不该让整批无结果.
+
+    路由顺序: 本路径与 ``PUT /{kind}/{facet_id}/favorite`` 同为 ``/{kind}/`` 下的三段路径, 排在
+    后面时 ``batch`` 会先被那条通用路由当成 facet_id 解析而返回 422.
     """
     if kind not in FAVORITE_FACET_KINDS:
         raise HTTPException(status_code=400, detail="该分类不支持收藏")
