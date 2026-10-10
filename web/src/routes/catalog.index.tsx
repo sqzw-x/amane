@@ -45,11 +45,21 @@ function FacetChip({ kind, facet }: { kind: CatalogKind; facet: FacetResponse })
   );
 }
 
+/** 单个 kind 的收藏列表结果. */
+type FavoriteGroup = {
+  items: FacetResponse[];
+  total: number;
+  pending: boolean;
+};
+
 /**
  * 收藏汇总: 五个 kind 各取一次收藏列表.
  *
  * 五个查询全部就绪且至少一项非空才渲染整块 — 区块位于种类区块之上, 加载期先渲染标题或骨架都会
  * 造成跳动; 板块为空时它整块不存在, 不占位.
+ *
+ * 结果按 kind 装进 `Record<FavoriteKind, …>`, 渲染顺序再由 `FAVORITE_FACET_KINDS` 驱动:
+ * 新增可收藏分类时这里漏键即编译失败, 索引页不会静默漏掉该分类.
  */
 function FavoriteSection() {
   const { t } = useTranslation("metadata");
@@ -59,44 +69,35 @@ function FavoriteSection() {
   const studio = useQuery(listFacetsOptions({ path: { kind: "studio" }, query }));
   const publisher = useQuery(listFacetsOptions({ path: { kind: "publisher" }, query }));
   const series = useQuery(listFacetsOptions({ path: { kind: "series" }, query }));
-  const groups: Array<{
-    kind: FavoriteKind;
-    items: FacetResponse[];
-    total: number;
-    pending: boolean;
-  }> = [
-    {
-      kind: "director",
+  const results: Record<FavoriteKind, FavoriteGroup> = {
+    director: {
       items: director.data?.items ?? [],
       total: director.data?.total ?? 0,
       pending: director.isPending,
     },
-    {
-      kind: "tag",
+    tag: {
       items: tag.data?.items ?? [],
       total: tag.data?.total ?? 0,
       pending: tag.isPending,
     },
-    {
-      kind: "studio",
+    studio: {
       items: studio.data?.items ?? [],
       total: studio.data?.total ?? 0,
       pending: studio.isPending,
     },
-    {
-      kind: "publisher",
+    publisher: {
       items: publisher.data?.items ?? [],
       total: publisher.data?.total ?? 0,
       pending: publisher.isPending,
     },
-    {
-      kind: "series",
+    series: {
       items: series.data?.items ?? [],
       total: series.data?.total ?? 0,
       pending: series.isPending,
     },
-  ];
+  };
 
+  const groups = FAVORITE_FACET_KINDS.map((kind) => ({ kind, ...results[kind] }));
   const visible = groups.filter((group) => group.items.length > 0);
   if (groups.some((group) => group.pending) || visible.length === 0) return null;
 
