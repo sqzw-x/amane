@@ -1747,6 +1747,60 @@ export const ErrorRowSchema = {
     description: '回合异常; 文案直接进助手气泡.'
 } as const;
 
+export const FacetFavoriteBatchRequestSchema = {
+    properties: {
+        facet_ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Facet Ids',
+            description: '分类 ID 列表'
+        },
+        is_favorite: {
+            type: 'boolean',
+            title: 'Is Favorite',
+            description: '是否收藏'
+        }
+    },
+    type: 'object',
+    required: [
+        'facet_ids',
+        'is_favorite'
+    ],
+    title: 'FacetFavoriteBatchRequest',
+    description: '一批分类的收藏位整体赋同一个取值; 重复提交同一批不改变结果.'
+} as const;
+
+export const FacetFavoriteBatchResponseSchema = {
+    properties: {
+        changed: {
+            type: 'integer',
+            title: 'Changed',
+            description: '收藏位发生写入的分类数'
+        },
+        unchanged: {
+            type: 'integer',
+            title: 'Unchanged',
+            description: '已处于目标取值的分类数'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing',
+            description: '不存在的分类 id 数'
+        }
+    },
+    type: 'object',
+    required: [
+        'changed',
+        'unchanged',
+        'missing'
+    ],
+    title: 'FacetFavoriteBatchResponse',
+    description: '批量收藏赋值的结果计数; 三个字段之和等于去重后的条目数.'
+} as const;
+
 export const FacetFavoriteRequestSchema = {
     properties: {
         is_favorite: {

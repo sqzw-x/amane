@@ -1016,6 +1016,52 @@ export type ErrorRow = {
 };
 
 /**
+ * FacetFavoriteBatchRequest
+ *
+ * 一批分类的收藏位整体赋同一个取值; 重复提交同一批不改变结果.
+ */
+export type FacetFavoriteBatchRequest = {
+    /**
+     * Facet Ids
+     *
+     * 分类 ID 列表
+     */
+    facet_ids: Array<number>;
+    /**
+     * Is Favorite
+     *
+     * 是否收藏
+     */
+    is_favorite: boolean;
+};
+
+/**
+ * FacetFavoriteBatchResponse
+ *
+ * 批量收藏赋值的结果计数; 三个字段之和等于去重后的条目数.
+ */
+export type FacetFavoriteBatchResponse = {
+    /**
+     * Changed
+     *
+     * 收藏位发生写入的分类数
+     */
+    changed: number;
+    /**
+     * Unchanged
+     *
+     * 已处于目标取值的分类数
+     */
+    unchanged: number;
+    /**
+     * Missing
+     *
+     * 不存在的分类 id 数
+     */
+    missing: number;
+};
+
+/**
  * FacetFavoriteRequest
  *
  * 收藏位整体赋值; 重复提交同一取值不改变结果.
@@ -6759,6 +6805,33 @@ export type DeleteFacetRuleResponses = {
 };
 
 export type DeleteFacetRuleResponse = DeleteFacetRuleResponses[keyof DeleteFacetRuleResponses];
+
+export type SetFacetsFavoriteData = {
+    body: FacetFavoriteBatchRequest;
+    path: {
+        kind: FacetKind;
+    };
+    query?: never;
+    url: '/api/facets/{kind}/batch/favorite';
+};
+
+export type SetFacetsFavoriteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetFacetsFavoriteError = SetFacetsFavoriteErrors[keyof SetFacetsFavoriteErrors];
+
+export type SetFacetsFavoriteResponses = {
+    /**
+     * Successful Response
+     */
+    200: FacetFavoriteBatchResponse;
+};
+
+export type SetFacetsFavoriteResponse = SetFacetsFavoriteResponses[keyof SetFacetsFavoriteResponses];
 
 export type DeleteFacetData = {
     body?: never;

@@ -8,6 +8,8 @@ from ...db.repo_types import FacetItem
 from ...utils.model import to_resp
 from ..deps import RepoDep
 from ..models import (
+    FacetFavoriteBatchRequest,
+    FacetFavoriteBatchResponse,
     FacetFavoriteRequest,
     FacetListResponse,
     FacetMergeRequest,
@@ -94,6 +96,29 @@ async def delete_facet_rule(kind: FacetKind, rule_id: int, repo: RepoDep) -> Res
         raise HTTPException(status_code=404, detail="规则不存在")
     logger.info("facet rule deleted", kind=kind, rule_id=rule_id)
     return Response(status_code=204)
+
+
+@router.put("/{kind}/batch/favorite")
+async def set_facets_favorite(
+    kind: FacetKind, req: FacetFavoriteBatchRequest, repo: RepoDep
+) -> FacetFavoriteBatchResponse:
+    """对一批分类整体赋值同一个收藏位, 单个事务; 分类不支持收藏返回 400.
+
+    语义与单条端点一致, 但幂等判定作用于整批: 已处于目标取值的条目保持不动, 不存在的 id
+    计入 ``missing`` 而不报 404 — 批量请求里某个 id 失效不该让整批无结果.
+    """
+    if kind not in FAVORITE_FACET_KINDS:
+        raise HTTPException(status_code=400, detail="该分类不支持收藏")
+    result = await repo.set_facets_favorite(kind, req.facet_ids, req.is_favorite)
+    logger.info(
+        "facet favorites set",
+        kind=kind,
+        is_favorite=req.is_favorite,
+        changed=result.changed,
+        unchanged=result.unchanged,
+        missing=result.missing,
+    )
+    return FacetFavoriteBatchResponse(changed=result.changed, unchanged=result.unchanged, missing=result.missing)
 
 
 @router.get("/{kind}/{facet_id}")

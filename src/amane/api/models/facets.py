@@ -19,6 +19,27 @@ class FacetFavoriteRequest(BaseModel):
     is_favorite: bool = Field(description="是否收藏")
 
 
+class FacetFavoriteBatchRequest(BaseModel):
+    """一批分类的收藏位整体赋同一个取值; 重复提交同一批不改变结果."""
+
+    facet_ids: list[int] = Field(min_length=1, description="分类 ID 列表")
+    is_favorite: bool = Field(description="是否收藏")
+
+    @field_validator("facet_ids")
+    @classmethod
+    def _normalize(cls, value: list[int]) -> list[int]:
+        """重复 id 去重, 使结果计数以去重后的条目数为准."""
+        return list(dict.fromkeys(value))
+
+
+class FacetFavoriteBatchResponse(BaseModel):
+    """批量收藏赋值的结果计数; 三个字段之和等于去重后的条目数."""
+
+    changed: int = Field(description="收藏位发生写入的分类数")
+    unchanged: int = Field(description="已处于目标取值的分类数")
+    missing: int = Field(description="不存在的分类 id 数")
+
+
 class FacetListResponse(BaseModel):
     items: list[FacetResponse]
     total: int
