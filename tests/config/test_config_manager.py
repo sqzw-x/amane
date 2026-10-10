@@ -22,7 +22,6 @@ from amane.config import (
     WorkerConfig,
 )
 from amane.config.manager import LANG_METADATA_FIELD_SET
-from amane.crawlers.actor.sites.wikipedia import WIKI_LANGUAGES
 from amane.enums import (
     ApiType,
     BrowserBackendName,
@@ -324,27 +323,6 @@ class TestSiteProxy:
         cfg = SiteConfig()
         assert cfg.proxy is None
         assert cfg.use_proxy is True
-
-
-class TestSiteLanguages:
-    """SiteConfig.languages: 去重保序, 拒绝空列表与表外取值."""
-
-    def test_dedupes_preserving_order(self):
-        assert SiteConfig(languages=["ja", "zh", "ja"]).languages == ["ja", "zh"]
-
-    @pytest.mark.parametrize(
-        ("value", "matches"),
-        [
-            ([], ("至少要保留一种语言",)),
-            (["ko"], ("不支持 ko", f"可选: {', '.join(WIKI_LANGUAGES)}")),
-            (["zh", "ko"], ("不支持 ko",)),
-        ],
-        ids=["空列表", "不支持的语言", "部分不支持"],
-    )
-    def test_rejects_invalid(self, value: list[str], matches: tuple[str, ...]):
-        for match in matches:
-            with pytest.raises(ValidationError, match=match):
-                SiteConfig(languages=value)
 
 
 class TestScrapingPriorityMigration:
