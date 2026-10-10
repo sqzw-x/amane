@@ -9,7 +9,6 @@ import {
   Group,
   Input,
   NumberInput,
-  SegmentedControl,
   Select,
   Stack,
   Text,
@@ -19,6 +18,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { listFacetsOptions } from "@/client/@tanstack/react-query.gen";
 import type { ActorGender } from "@/client/types.gen";
+import { TriStateSegment } from "@/components/common/tri-state-segment";
 import { useResettingState } from "@/hooks/use-resetting-state";
 import {
   ACTOR_GENDERS,
@@ -26,7 +26,6 @@ import {
   type ActorFilterPatch,
   type ActorFilterValues,
   type ActorRangeFilter,
-  type ActorTriBool,
   actorFiltersEqual,
   actorFilterFingerprint,
   cloneActorFilterValues,
@@ -195,39 +194,6 @@ function RangeFilterControl({
   );
 }
 
-function TriStateSegment({
-  label,
-  value,
-  yesLabel,
-  noLabel,
-  onChange,
-}: {
-  label: string;
-  value: ActorTriBool | undefined;
-  yesLabel: string;
-  noLabel: string;
-  onChange: (next: ActorTriBool | undefined) => void;
-}) {
-  const { t } = useTranslation("metadata");
-  return (
-    <Input.Wrapper label={label} size="sm">
-      <SegmentedControl
-        size="sm"
-        value={value ?? "any"}
-        onChange={(v) => {
-          if (v === "true" || v === "false") onChange(v);
-          else onChange(undefined);
-        }}
-        data={[
-          { value: "any", label: t("search.hasFilesAny") },
-          { value: "true", label: yesLabel },
-          { value: "false", label: noLabel },
-        ]}
-      />
-    </Input.Wrapper>
-  );
-}
-
 function applyPatch(prev: ActorFilterValues, patch: ActorFilterPatch): ActorFilterValues {
   const next: ActorFilterValues = {
     ...prev,
@@ -293,6 +259,7 @@ export function ActorFilterControls({ opened, committed, onApply }: ActorFilterC
           <TriStateSegment
             label={t("actors.filterPerson")}
             value={draft.has_person}
+            anyLabel={t("search.hasFilesAny")}
             yesLabel={t("actors.filterHasPerson")}
             noLabel={t("actors.filterNoPerson")}
             onChange={(has_person) => patchDraft({ has_person })}
@@ -300,6 +267,7 @@ export function ActorFilterControls({ opened, committed, onApply }: ActorFilterC
           <TriStateSegment
             label={t("actors.filterImage")}
             value={draft.has_image}
+            anyLabel={t("search.hasFilesAny")}
             yesLabel={t("actors.filterHasImage")}
             noLabel={t("actors.filterNoImage")}
             onChange={(has_image) => patchDraft({ has_image })}

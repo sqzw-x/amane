@@ -20,7 +20,7 @@ from amane.db.models import (
     SortOrder,
     UserTag,
 )
-from amane.db.repo_types import ActorBrowseParams
+from amane.db.repo_types import ActorBrowseParams, FacetBatchResult
 from amane.enums import ActorGender
 
 if TYPE_CHECKING:
@@ -390,6 +390,19 @@ _SCALAR_KINDS: tuple[tuple[FacetKind, str], ...] = (
     (FacetKind.PUBLISHER, "publisher"),
     (FacetKind.SERIES, "series"),
 )
+_FAVORITE_KINDS: tuple[tuple[FacetKind, str], ...] = (
+    (FacetKind.DIRECTOR, "director"),
+    (FacetKind.TAG, "tags"),
+    (FacetKind.STUDIO, "studio"),
+    (FacetKind.PUBLISHER, "publisher"),
+    (FacetKind.SERIES, "series"),
+)
+
+
+async def _seed_favorite_facet(repo: Repository, number: str, kind: FacetKind, value: str) -> Metadata:
+    if kind in (FacetKind.DIRECTOR, FacetKind.TAG):
+        return await _seed_list(repo, number, kind, [value])
+    return await _seed_scalar(repo, number, kind, value)
 
 
 async def _facet_id(repo: Repository, kind: FacetKind, name: str) -> int:
@@ -693,6 +706,109 @@ class TestFacetRenameMergeDelete:
         assert await repo.get_actor_aliases(target_id) == ["OtherName", "Roma"]
         rules = await repo.list_facet_rules(FacetKind.ACTOR)
         assert not any(r.action == FacetRuleAction.ALIAS for r in rules)
+
+
+class TestFacetFavorites:
+    """分类收藏: 五种分类各持一位手工状态, 与刮削投影正交."""
+
+    async def test_set_and_filter_by_kind(self, repo: Repository) -> None:
+        for kind, _field in _FAVORITE_KINDS:
+            await _seed_favorite_facet(repo, f"FV-{kind}-1", kind, "Marked")
+            await _seed_favorite_facet(repo, f"FV-{kind}-2", kind, "Plain")
+            marked = await _facet_id(repo, kind, "Marked")
+            plain = await _facet_id(repo, kind, "Plain")
+
+            # 三位状态: 省略为不过滤
+            items, _ = await repo.list_facets(kind)
+            assert all(not i.is_favorite for i in items)
+            assert await repo.list_facets(kind, favorite=True) == ([], 0)
+
+            updated = await repo.set_facets_favorite(kind, [marked], True)
+            assert updated == FacetBatchResult(changed=1, unchanged=0, missing=0)
+            assert [i.name for i in (await repo.list_facets(kind, favorite=True))[0]] == ["Marked"]
+            assert [i.name for i in (await repo.list_facets(kind, favorite=False))[0]] == ["Plain"]
+            got = await repo.get_facet(kind, marked)
+            assert got is not None and got.is_favorite is True
+            untouched = await repo.get_facet(kind, plain)
+            assert untouched is not None and untouched.is_favorite is False
+
+            # 筛选与搜索叠加时列表与总数口径一致
+            assert await repo.list_facets(kind, search="Plain", favorite=True) == ([], 0)
+            assert [i.name for i in (await repo.list_facets(kind, search="Mark", favorite=True))[0]] == ["Marked"]
+
+            # 幂等: 重复提交同一取值不产生写入
+            again = await repo.set_facets_favorite(kind, [marked], True)
+            assert again == FacetBatchResult(changed=0, unchanged=1, missing=0)
+            got = await repo.get_facet(kind, marked)
+            assert got is not None and got.is_favorite is True
+            cleared = await repo.set_facets_favorite(kind, [marked], False)
+            assert cleared == FacetBatchResult(changed=1, unchanged=0, missing=0)
+            assert await repo.list_facets(kind, favorite=True) == ([], 0)
+
+            # 不存在的 id 计入 missing, 存在的条目照常处理
+            partial = await repo.set_facets_favorite(kind, [marked, 9999], True)
+            assert partial == FacetBatchResult(changed=1, unchanged=0, missing=1)
+            got = await repo.get_facet(kind, marked)
+            assert got is not None and got.is_favorite is True
+            assert await repo.get_facet(kind, 9999) is None
+
+    async def test_unsupported_kinds_rejected(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="FV-UNSUPPORTED", actors=["Alice"], directors=["DirA"])
+        assert (await _tag(repo, "fav-check")).id is not None
+        for kind in (FacetKind.ACTOR, FacetKind.USER_TAG):
+            with pytest.raises(ValueError):
+                await repo.set_facets_favorite(kind, [1], True)
+            with pytest.raises(ValueError):
+                await repo.list_facets(kind, favorite=True)
+            items, _ = await repo.list_facets(kind)
+            assert all(not i.is_favorite for i in items)
+
+    async def test_survives_rescrape_and_rename(self, repo: Repository) -> None:
+        await _seed_scalar(repo, "FV-KEEP-1", FacetKind.STUDIO, "StudioKeep")
+        studio_id = await _facet_id(repo, FacetKind.STUDIO, "StudioKeep")
+        assert await repo.set_facets_favorite(FacetKind.STUDIO, [studio_id], True) == (
+            FacetBatchResult(changed=1, unchanged=0, missing=0)
+        )
+
+        # 重刮重建投影时同名实体取回原行, 收藏不丢
+        await _seed_scalar(repo, "FV-KEEP-2", FacetKind.STUDIO, "StudioKeep")
+        kept = await repo.get_facet(FacetKind.STUDIO, studio_id)
+        assert kept is not None and kept.is_favorite is True
+
+        renamed = await repo.rename_facet(FacetKind.STUDIO, studio_id, "StudioRenamed")
+        assert renamed is not None and renamed.is_favorite is True
+
+    async def test_merge_carries_favorite(self, repo: Repository) -> None:
+        # 链接分类 (tag) 与标量分类 (studio) 的合并路径不同, 两种各跑一次
+        for kind in (FacetKind.TAG, FacetKind.STUDIO):
+            await _seed_favorite_facet(repo, f"FV-MG-{kind}-a", kind, "Src")
+            await _seed_favorite_facet(repo, f"FV-MG-{kind}-b", kind, "Dst")
+            target = await _facet_id(repo, kind, "Dst")
+            source = await _facet_id(repo, kind, "Src")
+            assert await repo.set_facets_favorite(kind, [source], True) == (
+                FacetBatchResult(changed=1, unchanged=0, missing=0)
+            )
+
+            merged = await repo.merge_facets(kind, target, [source])
+            assert merged is not None and merged.is_favorite is True
+            assert await repo.get_facet(kind, source) is None
+            assert [i.name for i in (await repo.list_facets(kind, favorite=True))[0]] == ["Dst"]
+
+            # 目标已收藏时合并不取消
+            await _seed_favorite_facet(repo, f"FV-MG-{kind}-c", kind, "Plain")
+            plain = await _facet_id(repo, kind, "Plain")
+            assert await repo.merge_facets(kind, target, [plain]) is not None
+            kept = await repo.get_facet(kind, target)
+            assert kept is not None and kept.is_favorite is True
+
+            # 双方都未收藏时不产生收藏
+            await _seed_favorite_facet(repo, f"FV-MG-{kind}-d", kind, "Cold")
+            assert await repo.set_facets_favorite(kind, [target], False) == (
+                FacetBatchResult(changed=1, unchanged=0, missing=0)
+            )
+            cold = await _facet_id(repo, kind, "Cold")
+            assert await repo.merge_facets(kind, target, [cold]) is not None
+            assert await repo.list_facets(kind, favorite=True) == ([], 0)
 
 
 class TestActorUserTags:

@@ -1747,6 +1747,69 @@ export const ErrorRowSchema = {
     description: '回合异常; 文案直接进助手气泡.'
 } as const;
 
+export const FacetBatchActionSchema = {
+    type: 'string',
+    enum: [
+        'favorite',
+        'unfavorite'
+    ],
+    title: 'FacetBatchAction',
+    description: '分类批量动作; 两个动作都是整体赋值且幂等.\n\n不设逐项取反 (toggle): 多选混合态下点「收藏」必须保持收藏, 取反会取消已收藏的条目. 枚举是\n动作信封的扩展位, 新增动作 (如批量删除) 时 ``FacetBatchResponse`` 的字段按动作解释.'
+} as const;
+
+export const FacetBatchRequestSchema = {
+    properties: {
+        facet_ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Facet Ids',
+            description: '分类 ID 列表'
+        },
+        action: {
+            $ref: '#/components/schemas/FacetBatchAction',
+            description: 'favorite 置为已收藏, unfavorite 置为未收藏; 两者均幂等'
+        }
+    },
+    type: 'object',
+    required: [
+        'facet_ids',
+        'action'
+    ],
+    title: 'FacetBatchRequest',
+    description: '对一批分类执行同一个动作; 重复 id 去重, 使结果计数以去重后的条目数为准.'
+} as const;
+
+export const FacetBatchResponseSchema = {
+    properties: {
+        changed: {
+            type: 'integer',
+            title: 'Changed',
+            description: '收藏位确实发生写入的分类数'
+        },
+        unchanged: {
+            type: 'integer',
+            title: 'Unchanged',
+            description: '已处于目标取值的分类数'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing',
+            description: '不存在的分类 id 数'
+        }
+    },
+    type: 'object',
+    required: [
+        'changed',
+        'unchanged',
+        'missing'
+    ],
+    title: 'FacetBatchResponse',
+    description: '批量动作的结果计数, 字段按 action 解释; 两个已实现动作下三者之和等于去重后的条目数.'
+} as const;
+
 export const FacetKindSchema = {
     type: 'string',
     enum: [
@@ -1836,13 +1899,18 @@ export const FacetResponseSchema = {
         count: {
             type: 'integer',
             title: 'Count'
+        },
+        is_favorite: {
+            type: 'boolean',
+            title: 'Is Favorite'
         }
     },
     type: 'object',
     required: [
         'id',
         'name',
-        'count'
+        'count',
+        'is_favorite'
     ],
     title: 'FacetResponse'
 } as const;

@@ -1016,6 +1016,60 @@ export type ErrorRow = {
 };
 
 /**
+ * FacetBatchAction
+ *
+ * 分类批量动作; 两个动作都是整体赋值且幂等.
+ *
+ * 不设逐项取反 (toggle): 多选混合态下点「收藏」必须保持收藏, 取反会取消已收藏的条目. 枚举是
+ * 动作信封的扩展位, 新增动作 (如批量删除) 时 ``FacetBatchResponse`` 的字段按动作解释.
+ */
+export type FacetBatchAction = 'favorite' | 'unfavorite';
+
+/**
+ * FacetBatchRequest
+ *
+ * 对一批分类执行同一个动作; 重复 id 去重, 使结果计数以去重后的条目数为准.
+ */
+export type FacetBatchRequest = {
+    /**
+     * Facet Ids
+     *
+     * 分类 ID 列表
+     */
+    facet_ids: Array<number>;
+    /**
+     * favorite 置为已收藏, unfavorite 置为未收藏; 两者均幂等
+     */
+    action: FacetBatchAction;
+};
+
+/**
+ * FacetBatchResponse
+ *
+ * 批量动作的结果计数, 字段按 action 解释; 两个已实现动作下三者之和等于去重后的条目数.
+ */
+export type FacetBatchResponse = {
+    /**
+     * Changed
+     *
+     * 收藏位确实发生写入的分类数
+     */
+    changed: number;
+    /**
+     * Unchanged
+     *
+     * 已处于目标取值的分类数
+     */
+    unchanged: number;
+    /**
+     * Missing
+     *
+     * 不存在的分类 id 数
+     */
+    missing: number;
+};
+
+/**
  * FacetKind
  */
 export type FacetKind = 'actor' | 'director' | 'tag' | 'studio' | 'publisher' | 'series' | 'user_tag';
@@ -1078,6 +1132,10 @@ export type FacetResponse = {
      * Count
      */
     count: number;
+    /**
+     * Is Favorite
+     */
+    is_favorite: boolean;
 };
 
 /**
@@ -6641,6 +6699,12 @@ export type ListFacetsData = {
          */
         search?: string | null;
         /**
+         * Favorite
+         *
+         * Filter by favorite marker
+         */
+        favorite?: boolean | null;
+        /**
          * Offset
          */
         offset?: number;
@@ -6735,6 +6799,33 @@ export type DeleteFacetRuleResponses = {
 };
 
 export type DeleteFacetRuleResponse = DeleteFacetRuleResponses[keyof DeleteFacetRuleResponses];
+
+export type BatchFacetsData = {
+    body: FacetBatchRequest;
+    path: {
+        kind: FacetKind;
+    };
+    query?: never;
+    url: '/api/facets/{kind}/batch';
+};
+
+export type BatchFacetsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BatchFacetsError = BatchFacetsErrors[keyof BatchFacetsErrors];
+
+export type BatchFacetsResponses = {
+    /**
+     * Successful Response
+     */
+    200: FacetBatchResponse;
+};
+
+export type BatchFacetsResponse = BatchFacetsResponses[keyof BatchFacetsResponses];
 
 export type DeleteFacetData = {
     body?: never;

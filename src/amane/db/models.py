@@ -519,6 +519,7 @@ class Director(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, nullable=False, index=True)
+    is_favorite: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -530,6 +531,8 @@ class Tag(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, nullable=False, index=True)
+    # 用户手工状态, 与刮削投影正交: 投影重建只按 name get-or-create.
+    is_favorite: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -539,6 +542,7 @@ class Studio(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, nullable=False, index=True)
+    is_favorite: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -548,6 +552,7 @@ class Publisher(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, nullable=False, index=True)
+    is_favorite: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -557,8 +562,22 @@ class Series(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, nullable=False, index=True)
+    is_favorite: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+
+
+#: 可收藏的分类种类 → 实体模型. 新增可收藏的分类时在此登记, 并在该实体表加 ``is_favorite`` 列;
+#: 路由的 400 判定与 repo 的列表达式一律从这里派生, 不另写 kind 名单.
+FAVORITE_FACET_ENTITIES: dict[FacetKind, type[Director] | type[Tag] | type[Studio] | type[Publisher] | type[Series]] = {
+    FacetKind.DIRECTOR: Director,
+    FacetKind.TAG: Tag,
+    FacetKind.STUDIO: Studio,
+    FacetKind.PUBLISHER: Publisher,
+    FacetKind.SERIES: Series,
+}
+
+FAVORITE_FACET_KINDS: frozenset[FacetKind] = frozenset(FAVORITE_FACET_ENTITIES)
 
 
 class FacetRule(SQLModel, table=True):

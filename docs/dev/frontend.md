@@ -35,6 +35,8 @@
 
 **入口分流**: 非演员实体进 `/catalog/$kind/$facetId`, 演员进 `/actors/$actorId` (演员不进入 `/catalog`); `FacetBadge` 默认深链分类, 筛选深链 `/meta`.
 
+**分类收藏**: 星形控件在分类列表的动作列与分类详情页标题行 (窄屏动作列只容一个按钮, 一律走详情页), 词云与索引页徽章只有只读星标; 单条与列表多选都提交 `POST /api/facets/{kind}/batch` 的 `favorite` / `unfavorite` 动作, 单条提交单元素列表, 两者都是整体赋值, 界面不做逐项取反; 「收藏」筛选与演员页的「有头像 / 无头像」同形, 用共享的三态分段控件放在高级筛选区, 取值是 URL search 上的字符串三态, 只在支持收藏的 kind 上渲染与发送; 索引页顶部的收藏区块按五个 kind 各取一次列表, 全部就绪且至少一项非空才渲染.
+
 **评论**: 排序与编辑态只在组件内, 不写地址栏. 影片详情与演员详情的用户标签与刮削标签分栏; 加减菜单一次提交多名, 但固定为两次请求 — 待新建的名称先经 `POST /api/facets/user_tag` 换成 id, 再与已选 id 一起交给所在页的挂载端点 (影片 `/api/metadata/batch/user-tags`, 演员 `/api/actors/batch/user-tags`), 端点语义见 [api.md](api.md). 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`; 演员详情出演作品的排序项与片库同源 (`lib/media/browse.ts` 的 `METADATA_SORT_OPTIONS`), 记忆落在 ui store 的 `actorWorksSort`.
 
 **播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺, 失败信息条给出重试入口. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 主机侧契约见 [plugins.md](plugins.md), 手势、全屏与浮层的约定见 `components/media/playback-panel.tsx` 与 `playback-player.tsx` 的文件注释.

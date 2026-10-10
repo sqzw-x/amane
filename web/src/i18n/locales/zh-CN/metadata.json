@@ -194,6 +194,17 @@
     "list": "列表",
     "cloud": "词云"
   },
+  "favorite": {
+    "add": "收藏",
+    "remove": "取消收藏",
+    "batchUpdated": "已更新 {{count}} 个分类的收藏",
+    "missing": "该分类已不存在",
+    "filterLabel": "收藏",
+    "filterAny": "不限",
+    "filterYes": "已收藏",
+    "filterNo": "未收藏",
+    "sectionTitle": "收藏"
+  },
   "actors": {
     "title": "演员",
     "searchPlaceholder": "搜索姓名或别名…",

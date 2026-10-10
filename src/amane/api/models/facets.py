@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -9,6 +10,39 @@ class FacetResponse(BaseModel):
     id: int
     name: str
     count: int
+    #: 不支持收藏的分类恒为假.
+    is_favorite: bool
+
+
+class FacetBatchAction(StrEnum):
+    """分类批量动作; 两个动作都是整体赋值且幂等.
+
+    不设逐项取反 (toggle): 多选混合态下点「收藏」必须保持收藏, 取反会取消已收藏的条目. 枚举是
+    动作信封的扩展位, 新增动作 (如批量删除) 时 ``FacetBatchResponse`` 的字段按动作解释.
+    """
+
+    FAVORITE = "favorite"
+    UNFAVORITE = "unfavorite"
+
+
+class FacetBatchRequest(BaseModel):
+    """对一批分类执行同一个动作; 重复 id 去重, 使结果计数以去重后的条目数为准."""
+
+    facet_ids: list[int] = Field(min_length=1, description="分类 ID 列表")
+    action: FacetBatchAction = Field(description="favorite 置为已收藏, unfavorite 置为未收藏; 两者均幂等")
+
+    @field_validator("facet_ids")
+    @classmethod
+    def _normalize(cls, value: list[int]) -> list[int]:
+        return list(dict.fromkeys(value))
+
+
+class FacetBatchResponse(BaseModel):
+    """批量动作的结果计数, 字段按 action 解释; 两个已实现动作下三者之和等于去重后的条目数."""
+
+    changed: int = Field(description="收藏位确实发生写入的分类数")
+    unchanged: int = Field(description="已处于目标取值的分类数")
+    missing: int = Field(description="不存在的分类 id 数")
 
 
 class FacetListResponse(BaseModel):

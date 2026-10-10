@@ -38,10 +38,11 @@ class TestFacetsApi:
         resp = await client.get(f"facets/actor/{actor_id}")
         assert resp.status_code == 200
         catalog = resp.json()
-        assert set(catalog) == {"id", "name", "count"}
+        assert set(catalog) == {"id", "name", "count", "is_favorite"}
         assert catalog["id"] == actor_id
         assert catalog["name"] == "Alice"
         assert catalog["count"] >= 1
+        assert catalog["is_favorite"] is False  # 演员不支持收藏
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_unknown_kind(self, client: AsyncClient) -> None:

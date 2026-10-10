@@ -198,6 +198,18 @@
     "list": "List",
     "cloud": "Cloud"
   },
+  "favorite": {
+    "add": "Favorite",
+    "remove": "Unfavorite",
+    "filterLabel": "Favorite",
+    "filterAny": "Any",
+    "filterYes": "Favorited",
+    "filterNo": "Not favorited",
+    "sectionTitle": "Favorites",
+    "batchUpdated_one": "Favorite updated on {{count}} category",
+    "batchUpdated_other": "Favorites updated on {{count}} categories",
+    "missing": "This category no longer exists"
+  },
   "actors": {
     "title": "Actors",
     "searchPlaceholder": "Search name or alias…",
