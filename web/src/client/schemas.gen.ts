@@ -3785,72 +3785,6 @@ export const LibraryIngestSchema = {
     description: '媒体库文件发现通道. automation=none 时两边都不收事件.'
 } as const;
 
-export const LibraryLastOrganizeSchema = {
-    properties: {
-        status: {
-            $ref: '#/components/schemas/LibraryLastOrganizeStatus'
-        },
-        at: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'At'
-        },
-        organized: {
-            type: 'integer',
-            title: 'Organized',
-            default: 0
-        },
-        skipped: {
-            type: 'integer',
-            title: 'Skipped',
-            default: 0
-        },
-        conflicted: {
-            type: 'integer',
-            title: 'Conflicted',
-            default: 0
-        },
-        failed: {
-            type: 'integer',
-            title: 'Failed',
-            default: 0
-        },
-        error: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Error'
-        }
-    },
-    type: 'object',
-    required: [
-        'status'
-    ],
-    title: 'LibraryLastOrganize',
-    description: '该库最近一次终态整理任务的结果 (真值在任务里, 这里只做库级读取).\n\n手动整理与自动整理不区分; 失败任务没有结果载荷时 `error` 承载原因, 计数为 0.'
-} as const;
-
-export const LibraryLastOrganizeStatusSchema = {
-    type: 'string',
-    enum: [
-        'done',
-        'failed'
-    ],
-    title: 'LibraryLastOrganizeStatus'
-} as const;
-
 export const LibraryListResponseSchema = {
     properties: {
         items: {
@@ -3888,16 +3822,6 @@ export const LibraryResponseSchema = {
         auto_organize: {
             type: 'boolean',
             title: 'Auto Organize'
-        },
-        last_organize: {
-            anyOf: [
-                {
-                    $ref: '#/components/schemas/LibraryLastOrganize'
-                },
-                {
-                    type: 'null'
-                }
-            ]
         },
         ingest: {
             $ref: '#/components/schemas/LibraryIngest'

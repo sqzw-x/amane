@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from amane.db.models import TaskStatus, TaskType
+from amane.db.models import TaskType
 from amane.organize import VIDEO_TEMPLATE_DEFAULT
 
 if TYPE_CHECKING:
@@ -311,8 +311,6 @@ class TestAutoOrganize:
         assert stored is not None
         assert stored.auto_organize is True
 
-        assert patched.json()["last_organize"] is None
-
     @pytest.mark.asyncio(loop_scope="function")
     async def test_create_with_flag(self, client: AsyncClient, repo: Repository, safe_path: Path) -> None:
         target = safe_path / "auto-create"
@@ -324,75 +322,3 @@ class TestAutoOrganize:
         stored = await repo.get_library(created.json()["id"])
         assert stored is not None
         assert stored.auto_organize is True
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_last_organize_summary_follows_latest_task(
-        self, client: AsyncClient, repo: Repository, safe_path: Path, stop_worker: None
-    ) -> None:
-        """摘要来自最近一条终态 ORGANIZE; 失败任务没有结果载荷时仍显示原因."""
-        target = safe_path / "hist"
-        target.mkdir()
-        library_id = (await client.post("libraries", json={"path": str(target), "scan": False})).json()["id"]
-
-        done = await repo.create_task(TaskType.ORGANIZE, payload={"library_id": library_id, "path": str(target)})
-        assert done.id is not None
-        claimed = await repo.claim_next_task()
-        assert claimed is not None
-        assert claimed.id is not None
-        await repo.complete_task_with_followups(
-            claimed.id, result={"organized": 2, "skipped": 1, "conflicted": 0, "failed": 0}, followups=[]
-        )
-
-        summary = (await client.get(f"libraries/{library_id}")).json()["last_organize"]
-        assert summary["status"] == "done"
-        assert (summary["organized"], summary["skipped"]) == (2, 1)
-        assert (summary["conflicted"], summary["failed"]) == (0, 0)
-        assert summary["at"] is not None
-        assert summary["error"] is None
-        listed = (await client.get("libraries")).json()["items"][0]
-        assert listed["last_organize"]["organized"] == 2
-
-        failed = await repo.create_task(TaskType.ORGANIZE, payload={"library_id": library_id})
-        assert failed.id is not None
-        claimed_failed = await repo.claim_next_task()
-        assert claimed_failed is not None
-        assert claimed_failed.id is not None
-        await repo.fail_task(claimed_failed.id, error="不是目录: /gone")
-
-        after = (await client.get(f"libraries/{library_id}")).json()["last_organize"]
-        assert after["status"] == "failed"
-        assert after["error"] == "不是目录: /gone"
-        assert after["organized"] == 0
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_summary_survives_other_libraries_history(
-        self, client: AsyncClient, repo: Repository, safe_path: Path, stop_worker: None
-    ) -> None:
-        """别的库堆出大量新整理任务, 不把久未整理的库显示成「从未整理」."""
-        quiet = safe_path / "quiet"
-        busy = safe_path / "busy"
-        quiet.mkdir()
-        busy.mkdir()
-        quiet_id = (await client.post("libraries", json={"path": str(quiet), "scan": False})).json()["id"]
-        busy_id = (await client.post("libraries", json={"path": str(busy), "scan": False})).json()["id"]
-
-        done = await repo.create_task(TaskType.ORGANIZE, payload={"library_id": quiet_id})
-        assert done.id is not None
-        claimed = await repo.claim_next_task()
-        assert claimed is not None
-        assert claimed.id is not None
-        await repo.complete_task_with_followups(claimed.id, result={"organized": 1}, followups=[])
-
-        await repo.create_tasks(TaskType.ORGANIZE, [{"library_id": busy_id, "media_file_ids": [n]} for n in range(260)])
-        await repo.fail_queued_tasks(error="boom", task_types=[TaskType.ORGANIZE])
-        # worker 已停, 计数确定: 静库那条 DONE + 忙库 260 条 FAILED, 足以挤掉旧记录的窗口远小于此.
-        terminal = await repo.count_tasks(statuses=[TaskStatus.DONE, TaskStatus.FAILED], task_types=[TaskType.ORGANIZE])
-        assert terminal == 261
-
-        summary = (await client.get(f"libraries/{quiet_id}")).json()["last_organize"]
-        assert summary is not None
-        assert summary["status"] == "done"
-        assert summary["organized"] == 1
-        listed = {item["id"]: item["last_organize"] for item in (await client.get("libraries")).json()["items"]}
-        assert listed[quiet_id]["organized"] == 1
-        assert listed[busy_id] is not None

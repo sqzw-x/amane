@@ -1925,46 +1925,6 @@ export type LibraryCreateRequest = {
 export type LibraryIngest = 'native' | 'clouddrive';
 
 /**
- * LibraryLastOrganize
- *
- * 该库最近一次终态整理任务的结果 (真值在任务里, 这里只做库级读取).
- *
- * 手动整理与自动整理不区分; 失败任务没有结果载荷时 `error` 承载原因, 计数为 0.
- */
-export type LibraryLastOrganize = {
-    status: LibraryLastOrganizeStatus;
-    /**
-     * At
-     */
-    at?: string | null;
-    /**
-     * Organized
-     */
-    organized?: number;
-    /**
-     * Skipped
-     */
-    skipped?: number;
-    /**
-     * Conflicted
-     */
-    conflicted?: number;
-    /**
-     * Failed
-     */
-    failed?: number;
-    /**
-     * Error
-     */
-    error?: string | null;
-};
-
-/**
- * LibraryLastOrganizeStatus
- */
-export type LibraryLastOrganizeStatus = 'done' | 'failed';
-
-/**
  * LibraryListResponse
  */
 export type LibraryListResponse = {
@@ -1995,7 +1955,6 @@ export type LibraryResponse = {
      * Auto Organize
      */
     auto_organize: boolean;
-    last_organize?: LibraryLastOrganize | null;
     ingest: LibraryIngest;
     /**
      * Cloud Path

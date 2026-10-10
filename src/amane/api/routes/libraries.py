@@ -14,15 +14,12 @@ from ..models import (
     LibraryResponse,
     LibraryUpdateRequest,
     PathTemplateSchemaResponse,
-    last_organize_from_task,
     path_template_schema,
 )
 from ..support.path_validation import validate_directory_path
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-    from ...db import Library, Task
+    from ...db import Library
     from ...db.repo_types import LibraryUpdates
 
 logger = structlog.get_logger()
@@ -30,17 +27,8 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/libraries", tags=["libraries"])
 
 
-def _library_response(lib: Library, latest: Mapping[int, Task] | None = None) -> LibraryResponse:
-    resp = to_resp(LibraryResponse, lib)
-    task = None if latest is None or lib.id is None else latest.get(lib.id)
-    resp.last_organize = last_organize_from_task(task)
-    return resp
-
-
-async def _library_response_with_history(repo: RepoDep, lib: Library) -> LibraryResponse:
-    assert lib.id is not None
-    latest = await repo.latest_organize_tasks([lib.id])
-    return _library_response(lib, latest)
+def _library_response(lib: Library) -> LibraryResponse:
+    return to_resp(LibraryResponse, lib)
 
 
 @router.get("/path-template-schema")
@@ -52,8 +40,7 @@ async def get_path_template_schema() -> PathTemplateSchemaResponse:
 @router.get("")
 async def list_libraries(repo: RepoDep) -> LibraryListResponse:
     items = await repo.list_libraries()
-    latest = await repo.latest_organize_tasks([lib.id for lib in items if lib.id is not None])
-    return LibraryListResponse(items=[_library_response(lib, latest) for lib in items])
+    return LibraryListResponse(items=[_library_response(lib) for lib in items])
 
 
 @router.post("", status_code=201)
@@ -131,7 +118,7 @@ async def get_library(library_id: int, repo: RepoDep) -> LibraryResponse:
     lib = await repo.get_library(library_id)
     if lib is None:
         raise HTTPException(status_code=404, detail="媒体库不存在")
-    return await _library_response_with_history(repo, lib)
+    return _library_response(lib)
 
 
 @router.patch("/{library_id}")
@@ -174,7 +161,7 @@ async def update_library(
     if "path" in updates:
         runtime.inventory_store.drop_library(library_id)
 
-    return await _library_response_with_history(repo, lib)
+    return _library_response(lib)
 
 
 @router.delete("/{library_id}", status_code=204)
