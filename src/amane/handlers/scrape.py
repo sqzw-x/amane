@@ -11,6 +11,7 @@ from ..enums import ActorGender, MetadataField
 from ..media import materialize_images
 from ..observability import current
 from ..observability.models import SiteOutcomeKind
+from ..parsing import EMPTY_NUMBER_RULES, NumberRules, search_aliases_for
 from ..plugins.models import SourceDescriptor, SourceTrait
 from ._common import ensure_oshash, finalize_media_file
 from .models import ActorScrapePayload, CacheKind, ScrapePayload, ScrapeResult
@@ -43,11 +44,13 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         web_client: WebClient | None = None,
         translator: Translator | None = None,
         source_catalog: Sequence[SourceDescriptor] | None = None,
+        number_rules: NumberRules = EMPTY_NUMBER_RULES,
     ):
         super().__init__(payload_t=ScrapePayload, result_t=ScrapeResult)
         self._repo = repo
         self._factory = factory
         self._config = pipeline_config
+        self._number_rules = number_rules
         self._web_client = web_client
         self._resource_store = resource_store
         self._translator = translator
@@ -97,6 +100,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             file.path if file else None,
             file_hash,
             payload.content_type,
+            search_aliases_for(payload.number, self._number_rules),
         )
 
         field_priority = compile_priority(

@@ -50,11 +50,13 @@ CrawlerFactory (缓存实例)
 
 落库 `Metadata.number` 也是这份 payload 原样 (UNIQUE 忽略大小写, 保留首次写入的大小写), 因此补刮 / RESCRAPE 可能再次把无横线手填号送入爬虫.
 
+同一部片在别的站点可能写别的形态 (素人号 `300MIUM-123` 在 javdb 是 `MIUM-123`). 这类写法经 `SearchQuery.alternate_numbers` 传入: 爬虫按 `number` 与候选依次检索, 候选由 `handlers/scrape.py` 从 `hot.parsing` 算出 (自动别名见 [config.md](config.md)); 候选不改变 `SearchQuery.number`, 也不改写回填的 `MediaMetadata.number`.
+
 ## 检索命中
 
 站点检索是模糊匹配, 与「哪条结果算命中」有关的比对都由爬虫自行处理:
 
-- 番号: 站内 ID 带 `-` 时, 入参 `HEYZO-3607` 与 `HEYZO3607` 都应能对上 (大小写, 短横线与空格不参与比对). 不允许把 `_` 改写为 `-`, 除非该站把两种当成同一部. 欧美日期号 (`Studio.YY.MM.DD`) 的年份 2 位与 4 位写法视为同一番号. 比对与归一用 `crawlers/parsing.py` 的 `fold_number` / `is_same_number` / `leading_token`.
+- 番号: 站内 ID 带 `-` 时, 入参 `HEYZO-3607` 与 `HEYZO3607` 都应能对上 (大小写, 短横线与空格不参与比对). 用了检索别名时, 命中判定还要接受**当次实际使用的检索词** (`is_same_number(found, term)`), 否则站内写别名形态的条目会被判成未命中. 不允许把 `_` 改写为 `-`, 除非该站把两种当成同一部. 欧美日期号 (`Studio.YY.MM.DD`) 的年份 2 位与 4 位写法视为同一番号. 比对与归一用 `crawlers/parsing.py` 的 `fold_number` / `is_same_number` / `leading_token`.
 - 演员: 检索行或实体的名字 (含别名) 与查找名相等才算命中, 用 `normalize_name` / `fold_name` / `is_same_name`; 站内的注记括号, 拆名规则由各站自行剥离.
 - 确认不了的结果视为该来源无此番号 / 无此演员, 不允许回退首条. 站点特例见 [content-routes.md](content-routes.md).
 

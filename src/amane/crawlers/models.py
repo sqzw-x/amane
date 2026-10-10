@@ -19,9 +19,27 @@ class SearchQuery:
     file_path: str | None = None
     file_hash: str | None = None
     content_type: ContentType | None = None
+    alternate_numbers: tuple[str, ...] = ()
+    """同一部片在别处的番号写法, 按顺序在 ``number`` 之后尝试; 去重与剔除同形项在构造期完成."""
     # 前序来源的单源字段聚合结果, 只读; 仅 ``SourceTrait.NEEDS_PARTIAL`` 来源非空.
     # 为 ``None`` 当且仅当本次来源不在第二段; 单源路由下是空对象而非 ``None``.
     partial_result: AggregatedMetadata | None = None
+
+    def __post_init__(self) -> None:
+        """同一番号不重复检索属于本类型的不变量, 因此在构造期收口 (含测试里手工构造的实例).
+
+        折叠口径与跨来源比对一致 (大小写 / 短横线 / 空格), 但下划线不折叠.
+        """
+        seen = {self.number.casefold().replace("-", "").replace(" ", "")}
+        alternates: list[str] = []
+        for raw in self.alternate_numbers:
+            term = raw.strip()
+            folded = term.casefold().replace("-", "").replace(" ", "")
+            if not term or folded in seen:
+                continue
+            seen.add(folded)
+            alternates.append(term)
+        self.alternate_numbers = tuple(alternates)
 
 
 @dataclass

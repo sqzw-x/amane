@@ -143,7 +143,9 @@ async def batch_delete_metadata(req: MetadataBatchIdsRequest, repo: RepoDep) -> 
 
 
 @router.post("/batch/scrape", status_code=202)
-async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) -> MetadataBatchScrapeResponse:
+async def batch_scrape_metadata(
+    req: MetadataBatchScrapeRequest, repo: RepoDep, runtime: RuntimeDep
+) -> MetadataBatchScrapeResponse:
     """以各自 number 重新刮削."""
     task_ids: list[int] = []
     missing = 0
@@ -163,7 +165,9 @@ async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) 
             number=metadata.number,
             content_type=req.content_type
             if req.content_type is not None
-            else infer_content_type(metadata.number, first_path_by_metadata.get(metadata_id)),
+            else infer_content_type(
+                metadata.number, first_path_by_metadata.get(metadata_id), rules=runtime.number_rules
+            ),
             use_cache=req.use_cache,
         )
         task = await repo.create_task(task_type=TaskType.SCRAPE, payload=payload)

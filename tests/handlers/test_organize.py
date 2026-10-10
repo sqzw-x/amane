@@ -17,6 +17,7 @@ from amane.handlers.file import FileOperationsResult, _record_conflicts, commit_
 from amane.handlers.models import ORGANIZE_CONFLICT_LIMIT
 from amane.library import DeleteOutcome, InventoryStore, LibraryScan, scan_inventory
 from amane.observability.models import OrganizeConflict, OrganizeConflictReason
+from amane.parsing import EMPTY_NUMBER_RULES
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -97,10 +98,20 @@ async def test_organize_target_occupied_skips_and_reports(
     assert meta.id is not None
 
     phantom = await repo.create_media_file(
-        lib.id, path=str(ghost), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(ghost),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     source = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert phantom.id is not None and source.id is not None
 
@@ -142,7 +153,12 @@ async def test_organize_unknown_target_state_counts_failed(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert source.id is not None
 
@@ -188,7 +204,12 @@ async def test_organize_subtitle_target_occupied_is_reported(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert source.id is not None
 
@@ -234,7 +255,12 @@ async def test_template_extension_does_not_fake_conflict(
     meta = await repo.upsert_metadata(number="NSFS-041", studio="Studio")
     assert meta.id is not None
     await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-041", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-041",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
@@ -278,7 +304,12 @@ async def test_organize_appends_cd_suffix(repo: Repository, resource_store: Reso
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert source.id is not None
 
@@ -310,7 +341,12 @@ async def test_organize_dash_number_suffix(repo: Repository, resource_store: Res
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert source.id is not None
 
@@ -344,10 +380,20 @@ async def test_organize_cd_pair_no_collision(repo: Repository, resource_store: R
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     first = await repo.create_media_file(
-        lib.id, path=str(src1), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src1),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     second = await repo.create_media_file(
-        lib.id, path=str(src2), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src2),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert first.id is not None and second.id is not None
 
@@ -390,7 +436,12 @@ async def test_organize_custom_cd_suffix(repo: Repository, resource_store: Resou
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert source.id is not None
 
@@ -424,10 +475,20 @@ async def test_organize_writes_subtitle_tag(repo: Repository, resource_store: Re
     meta_b = await repo.upsert_metadata(number="NSFS-040", studio="Studio")
     assert meta_c.id is not None and meta_b.id is not None
     src_c = await repo.create_media_file(
-        lib.id, path=str(tagged), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta_c.id
+        lib.id,
+        path=str(tagged),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta_c.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     src_b = await repo.create_media_file(
-        lib.id, path=str(bare), number="NSFS-040", status=MediaFileStatus.SCRAPED, metadata_id=meta_b.id
+        lib.id,
+        path=str(bare),
+        number="NSFS-040",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta_b.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert src_c.id is not None and src_b.id is not None
 
@@ -465,7 +526,12 @@ async def test_organize_does_not_trash_blacklisted(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(video),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert source.id is not None
 
@@ -496,10 +562,20 @@ async def test_organize_media_file_ids_only(repo: Repository, resource_store: Re
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta_keep.id is not None and meta.id is not None
     kept = await repo.create_media_file(
-        lib.id, path=str(keep), number="KEEP-001", status=MediaFileStatus.SCRAPED, metadata_id=meta_keep.id
+        lib.id,
+        path=str(keep),
+        number="KEEP-001",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta_keep.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     source = await repo.create_media_file(
-        lib.id, path=str(target), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(target),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert kept.id is not None and source.id is not None
 
@@ -532,9 +608,14 @@ async def test_organize_path_prefix_does_not_prune_outside(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(video),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
-    stale = await repo.create_media_file(lib.id, path=str(ghost), number="GONE-001")
+    stale = await repo.create_media_file(lib.id, path=str(ghost), number="GONE-001", rules=EMPTY_NUMBER_RULES)
     assert source.id is not None and stale.id is not None
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
@@ -566,7 +647,7 @@ async def test_organize_resolve_rejects_foreign_ids(repo: Repository, tmp_path: 
     lib = await repo.create_library(name="t", path=str(lib_root))
     other = await repo.create_library(name="o", path=str(other_root))
     assert lib.id is not None and other.id is not None
-    foreign = await repo.create_media_file(other.id, path=str(other_root / "a.mp4"))
+    foreign = await repo.create_media_file(other.id, path=str(other_root / "a.mp4"), rules=EMPTY_NUMBER_RULES)
     assert foreign.id is not None
     payload = OrganizePayload(library_id=lib.id, media_file_ids=[foreign.id])
     with pytest.raises(HTTPException) as ei:
@@ -602,7 +683,12 @@ async def test_organize_ids_requires_library_root(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     media = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert media.id is not None
     lib_root.rename(tmp_path / "gone")
@@ -639,7 +725,12 @@ async def test_organize_skips_rule_hits(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     media = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert media.id is not None
 
@@ -677,7 +768,12 @@ async def test_organize_serializes_same_library(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(video),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert source.id is not None
 
@@ -707,7 +803,12 @@ async def test_organize_and_delete_do_not_overlap(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     await repo.create_media_file(
-        lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(video),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
 
     inflight = 0
@@ -772,7 +873,12 @@ async def test_organize_moves_same_dir_subtitles(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert source.id is not None
 
@@ -810,7 +916,12 @@ async def test_organize_subtitles_follow_cd(repo: Repository, resource_store: Re
     assert meta.id is not None
     for src in (src1, src2):
         mf = await repo.create_media_file(
-            lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+            lib.id,
+            path=str(src),
+            number="NSFS-039",
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta.id,
+            rules=EMPTY_NUMBER_RULES,
         )
         assert mf.id is not None
 
@@ -844,7 +955,12 @@ async def test_organize_empty_subtitle_extensions_leaves_subs(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
@@ -879,7 +995,12 @@ async def test_organize_pairs_flat_subtitles_by_number(
         (second, "DEF-456", meta_b.id),
     ):
         mf = await repo.create_media_file(
-            lib.id, path=str(src), number=number, status=MediaFileStatus.SCRAPED, metadata_id=meta_id
+            lib.id,
+            path=str(src),
+            number=number,
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta_id,
+            rules=EMPTY_NUMBER_RULES,
         )
         assert mf.id is not None
 
@@ -932,7 +1053,12 @@ async def test_organize_pairs_number_and_cd_with_multi_lang(
         ("DEF-456-CD2.mp4", "DEF-456", meta_b.id),
     ):
         mf = await repo.create_media_file(
-            lib.id, path=str(src_dir / name), number=number, status=MediaFileStatus.SCRAPED, metadata_id=meta_id
+            lib.id,
+            path=str(src_dir / name),
+            number=number,
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta_id,
+            rules=EMPTY_NUMBER_RULES,
         )
         assert mf.id is not None
 
@@ -978,7 +1104,12 @@ async def test_organize_writes_strm_and_nfo_next_to_link(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     media = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert media.id is not None
 
@@ -1027,7 +1158,12 @@ async def test_organize_strm_content_template_uses_actual_dest(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     media = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert media.id is not None
 
@@ -1089,9 +1225,14 @@ async def test_reports_progress(repo: Repository, resource_store: ResourceStore,
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     await repo.create_media_file(
-        lib.id, path=str(src1), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src1),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
-    await repo.create_media_file(lib.id, path=str(src2), number="SKIP-001")
+    await repo.create_media_file(lib.id, path=str(src2), number="SKIP-001", rules=EMPTY_NUMBER_RULES)
 
     result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
     assert result.success is True
@@ -1135,7 +1276,12 @@ async def test_commit_organized_media_file(repo: Repository, tmp_path: Path, cas
     if case == "inside_update":
         src.write_bytes(b"v")
         media = await repo.create_media_file(
-            lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+            lib.id,
+            path=str(src),
+            number="NSFS-039",
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta.id,
+            rules=EMPTY_NUMBER_RULES,
         )
         assert media.id is not None
         await commit_organized_media_file(repo, media, placed, lib_root)
@@ -1153,8 +1299,9 @@ async def test_commit_organized_media_file(repo: Repository, tmp_path: Path, cas
             status=MediaFileStatus.SCRAPED,
             metadata_id=meta.id,
             oshash="abc",
+            rules=EMPTY_NUMBER_RULES,
         )
-        occupant = await repo.create_media_file(lib.id, path=str(placed), number=None)
+        occupant = await repo.create_media_file(lib.id, path=str(placed), number=None, rules=EMPTY_NUMBER_RULES)
         assert media.id is not None and occupant.id is not None
         await commit_organized_media_file(repo, media, placed, lib_root)
         assert await repo.get_media_file(media.id) is None
@@ -1168,7 +1315,12 @@ async def test_commit_organized_media_file(repo: Repository, tmp_path: Path, cas
 
     if case == "outside_source_gone":
         media = await repo.create_media_file(
-            lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+            lib.id,
+            path=str(src),
+            number="NSFS-039",
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta.id,
+            rules=EMPTY_NUMBER_RULES,
         )
         assert media.id is not None
         outside.parent.mkdir()
@@ -1180,7 +1332,12 @@ async def test_commit_organized_media_file(repo: Repository, tmp_path: Path, cas
 
     src.write_bytes(b"v")
     media = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert media.id is not None
     outside.parent.mkdir()
@@ -1220,9 +1377,14 @@ async def test_organize_placed_outside_library(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     source = await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
-    occupant = await repo.create_media_file(store_lib.id, path=str(placed), number="NSFS-039")
+    occupant = await repo.create_media_file(store_lib.id, path=str(placed), number="NSFS-039", rules=EMPTY_NUMBER_RULES)
     assert source.id is not None and occupant.id is not None
 
     org = OrganizeHandler(repo, HotSettings(), resource_store, safe_dirs=[tmp_path])
@@ -1256,7 +1418,7 @@ async def test_organize_prunes_path_outside_library_root(
     stray.write_bytes(b"out")
     lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
     assert lib.id is not None
-    stray_row = await repo.create_media_file(lib.id, path=str(stray), number="NSFS-039")
+    stray_row = await repo.create_media_file(lib.id, path=str(stray), number="NSFS-039", rules=EMPTY_NUMBER_RULES)
     assert stray_row.id is not None
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)
@@ -1277,7 +1439,12 @@ async def _seed_movable_video(repo: Repository, lib_root: Path) -> tuple[int, Pa
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     return lib.id, src
 
@@ -1342,7 +1509,12 @@ async def test_organize_other_modes_leave_source_dir(
     meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
     assert meta.id is not None
     await repo.create_media_file(
-        lib.id, path=str(src), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        lib.id,
+        path=str(src),
+        number="NSFS-039",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
 
     org = OrganizeHandler(repo, HotSettings(), resource_store)

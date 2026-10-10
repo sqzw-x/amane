@@ -31,7 +31,7 @@ from amane.db.repo_types import (
 )
 from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataField
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
-from amane.parsing import ContentType, Mosaic
+from amane.parsing import EMPTY_NUMBER_RULES, ContentType, Mosaic
 from amane.utils.path import resolved_path
 from tests.helpers import assert_exhaustive_enum
 
@@ -58,7 +58,9 @@ def test_metadata_sort_field_map_covers_columns():
 class TestMediaFileRepo:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_create_and_get(self, repo: Repository):
-        media = await repo.create_media_file(library_id=1, path="/video/ABC-123.mp4", number="ABC-123")
+        media = await repo.create_media_file(
+            library_id=1, path="/video/ABC-123.mp4", number="ABC-123", rules=EMPTY_NUMBER_RULES
+        )
         assert media.id is not None
         assert media.status == MediaFileStatus.PENDING
 
@@ -70,7 +72,9 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_get_by_path(self, repo: Repository):
-        await repo.create_media_file(library_id=1, path="/video/ABC-123.mp4", number="ABC-123")
+        await repo.create_media_file(
+            library_id=1, path="/video/ABC-123.mp4", number="ABC-123", rules=EMPTY_NUMBER_RULES
+        )
         found = await repo.get_media_file_by_path("/video/ABC-123.mp4")
         assert found is not None
         assert found.number == "ABC-123"
@@ -85,14 +89,14 @@ class TestMediaFileRepo:
         nfc = "/video/\u3058.mp4"
         nfd = "/video/\u3057\u3099.mp4"
         assert nfc != nfd
-        created = await repo.create_media_file(library_id=1, path=nfd, number="NFC-1")
+        created = await repo.create_media_file(library_id=1, path=nfd, number="NFC-1", rules=EMPTY_NUMBER_RULES)
         assert created.id is not None
         assert created.path == nfc
         found = await repo.get_media_file_by_path(nfd)
         assert found is not None
         assert found.id == created.id
         assert found.path == nfc
-        updated = await repo.update_media_file(created.id, path=nfd)
+        updated = await repo.rewrite_media_path(created.id, nfd, rules=EMPTY_NUMBER_RULES, library=None)
         assert updated is not None
         assert updated.path == nfc
         valid = await repo.get_valid([nfd])
@@ -102,7 +106,7 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_status(self, repo: Repository):
-        media = await repo.create_media_file(library_id=1, path="/video/X.mp4")
+        media = await repo.create_media_file(library_id=1, path="/video/X.mp4", rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
         await repo.update_media_file(media.id, status=MediaFileStatus.SCRAPED)
         fetched = await repo.get_media_file(media.id)
@@ -111,9 +115,9 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_by_status(self, repo: Repository):
-        await repo.create_media_file(library_id=1, path="/a.mp4")
-        await repo.create_media_file(library_id=1, path="/b.mp4")
-        m3 = await repo.create_media_file(library_id=1, path="/c.mp4")
+        await repo.create_media_file(library_id=1, path="/a.mp4", rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=1, path="/b.mp4", rules=EMPTY_NUMBER_RULES)
+        m3 = await repo.create_media_file(library_id=1, path="/c.mp4", rules=EMPTY_NUMBER_RULES)
         assert m3.id is not None
         await repo.update_media_file(m3.id, status=MediaFileStatus.SCRAPED)
 
@@ -129,8 +133,8 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_get_existing_paths(self, repo: Repository):
-        await repo.create_media_file(library_id=1, path="/video/A.mp4")
-        await repo.create_media_file(library_id=1, path="/video/B.mp4")
+        await repo.create_media_file(library_id=1, path="/video/A.mp4", rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=1, path="/video/B.mp4", rules=EMPTY_NUMBER_RULES)
 
         result = await repo.get_valid(["/video/A.mp4", "/video/C.mp4", "/video/B.mp4"])
         assert {f.path for f in result} == {"/video/A.mp4", "/video/B.mp4"}
@@ -143,7 +147,7 @@ class TestMediaFileRepo:
         monkeypatch.setattr(media_mod, "SQL_IN_CHUNK_SIZE", 2)
         paths = [f"/video/{i}.mp4" for i in range(5)]
         for path in paths:
-            await repo.create_media_file(library_id=1, path=path)
+            await repo.create_media_file(library_id=1, path=path, rules=EMPTY_NUMBER_RULES)
         result = await repo.get_valid([*paths, "/video/missing.mp4"])
         assert {f.path for f in result} == set(paths)
 
@@ -154,8 +158,8 @@ class TestMediaFileRepo:
         assert lib.id is not None
         keep_other = await repo.create_library(name="other", path="/o")
         assert keep_other.id is not None
-        gone = await repo.create_media_file(library_id=lib.id, path="/e/1.mp4")
-        await repo.create_media_file(library_id=keep_other.id, path="/o/1.mp4")
+        gone = await repo.create_media_file(library_id=lib.id, path="/e/1.mp4", rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=keep_other.id, path="/o/1.mp4", rules=EMPTY_NUMBER_RULES)
         invalid = await repo.get_invalid([], library_id=lib.id)
         assert {f.id for f in invalid} == {gone.id}
 
@@ -165,9 +169,9 @@ class TestMediaFileRepo:
         lib_a = await repo.create_library(name="a", path="/a")
         lib_b = await repo.create_library(name="b", path="/b")
         assert lib_a.id is not None and lib_b.id is not None
-        await repo.create_media_file(library_id=lib_a.id, path="/a/1.mp4")
-        gone = await repo.create_media_file(library_id=lib_a.id, path="/a/missing.mp4")
-        keep_b = await repo.create_media_file(library_id=lib_b.id, path="/b/1.mp4")
+        await repo.create_media_file(library_id=lib_a.id, path="/a/1.mp4", rules=EMPTY_NUMBER_RULES)
+        gone = await repo.create_media_file(library_id=lib_a.id, path="/a/missing.mp4", rules=EMPTY_NUMBER_RULES)
+        keep_b = await repo.create_media_file(library_id=lib_b.id, path="/b/1.mp4", rules=EMPTY_NUMBER_RULES)
         assert gone.id is not None and keep_b.id is not None
 
         invalid = await repo.get_invalid(["/a/1.mp4"], library_id=lib_a.id)
@@ -176,10 +180,14 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_media_file(self, repo: Repository):
-        media = await repo.create_media_file(library_id=1, path="/video/OLD.mp4", number="OLD-001")
+        media = await repo.create_media_file(
+            library_id=1, path="/video/OLD.mp4", number="OLD-001", rules=EMPTY_NUMBER_RULES
+        )
         assert media.id is not None
 
-        updated = await repo.update_media_file(media.id, path="/video/NEW.mp4", number="NEW-001", size=1024)
+        updated = await repo.rewrite_media_path(
+            media.id, "/video/NEW.mp4", rules=EMPTY_NUMBER_RULES, library=None, number="NEW-001", size=1024
+        )
         assert updated is not None
         assert updated.path == "/video/NEW.mp4"
         assert updated.number == "NEW-001"
@@ -187,32 +195,34 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_create_media_file_parses_phase_from_path(self, repo: Repository):
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123-UC-4K.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123-UC-4K.mp4", rules=EMPTY_NUMBER_RULES)
         assert media.content_type is ContentType.CENSORED
         assert media.mosaic is Mosaic.CRACKED
         assert media.has_subtitle is True
         assert media.definition == "4K"
 
-        heyzo = await repo.create_media_file(library_id=1, path="/media/HEYZO-1234.mp4")
+        heyzo = await repo.create_media_file(library_id=1, path="/media/HEYZO-1234.mp4", rules=EMPTY_NUMBER_RULES)
         assert heyzo.content_type is ContentType.UNCENSORED
         assert heyzo.mosaic is Mosaic.UNCENSORED
         assert heyzo.has_subtitle is False
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_path_recomputes_phase(self, repo: Repository):
-        media = await repo.create_media_file(library_id=1, path="/video/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/video/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
         assert media.mosaic is Mosaic.CENSORED
-        updated = await repo.update_media_file(media.id, path="/video/MIDV-123-U.mp4")
+        updated = await repo.rewrite_media_path(
+            media.id, "/video/MIDV-123-U.mp4", rules=EMPTY_NUMBER_RULES, library=None
+        )
         assert updated is not None
         assert updated.mosaic is Mosaic.CRACKED
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_phase_filters(self, repo: Repository):
-        await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
-        await repo.create_media_file(library_id=1, path="/v/MIDV-002-无码.mp4")
-        await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4")
-        await repo.create_media_file(library_id=1, path="/v/MIDV-003-U.mp4")
+        await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4", rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=1, path="/v/MIDV-002-无码.mp4", rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4", rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=1, path="/v/MIDV-003-U.mp4", rules=EMPTY_NUMBER_RULES)
 
         subs = await repo.list_media_files(has_subtitle=True, limit=None)
         assert {f.path for f in subs} == {"/v/MIDV-001-C.mp4"}
@@ -226,9 +236,9 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_has_subtitle_filter_unions_both_sources(self, repo: Repository):
-        by_name = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
-        by_file = await repo.create_media_file(library_id=1, path="/v/MIDV-002.mp4")
-        plain = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4")
+        by_name = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4", rules=EMPTY_NUMBER_RULES)
+        by_file = await repo.create_media_file(library_id=1, path="/v/MIDV-002.mp4", rules=EMPTY_NUMBER_RULES)
+        plain = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4", rules=EMPTY_NUMBER_RULES)
         assert by_file.id is not None
         updated = await repo.update_media_file(by_file.id, has_external_subtitle=True)
         assert updated is not None
@@ -250,9 +260,9 @@ class TestMediaFileRepo:
         by_file = await repo.upsert_metadata(number="SUB-FILE")
         plain = await repo.upsert_metadata(number="SUB-PLAIN")
         assert by_name.id and by_file.id and plain.id
-        named = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
-        external = await repo.create_media_file(library_id=1, path="/v/MIDV-002.mp4")
-        rest = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4")
+        named = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4", rules=EMPTY_NUMBER_RULES)
+        external = await repo.create_media_file(library_id=1, path="/v/MIDV-002.mp4", rules=EMPTY_NUMBER_RULES)
+        rest = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4", rules=EMPTY_NUMBER_RULES)
         assert named.id and external.id and rest.id
         await repo.update_media_file(named.id, metadata_id=by_name.id)
         await repo.update_media_file(external.id, metadata_id=by_file.id, has_external_subtitle=True)
@@ -269,7 +279,7 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_media_file_not_found(self, repo: Repository):
-        result = await repo.update_media_file(9999, path="/x.mp4")
+        result = await repo.rewrite_media_path(9999, "/x.mp4", rules=EMPTY_NUMBER_RULES, library=None)
         assert result is None
 
     @pytest.mark.asyncio(loop_scope="function")
@@ -279,8 +289,12 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_with_search(self, repo: Repository):
-        await repo.create_media_file(library_id=1, path="/video/MIDV-123.mp4", number="MIDV-123")
-        await repo.create_media_file(library_id=1, path="/video/ABC-456.mp4", number="ABC-456")
+        await repo.create_media_file(
+            library_id=1, path="/video/MIDV-123.mp4", number="MIDV-123", rules=EMPTY_NUMBER_RULES
+        )
+        await repo.create_media_file(
+            library_id=1, path="/video/ABC-456.mp4", number="ABC-456", rules=EMPTY_NUMBER_RULES
+        )
 
         result = await repo.list_media_files(search="MIDV")
         assert len(result) == 1
@@ -288,8 +302,12 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_search_by_path(self, repo: Repository):
-        await repo.create_media_file(library_id=1, path="/video/MIDV-123.mp4", number="MIDV-123")
-        await repo.create_media_file(library_id=1, path="/other/ABC-456.mp4", number="ABC-456")
+        await repo.create_media_file(
+            library_id=1, path="/video/MIDV-123.mp4", number="MIDV-123", rules=EMPTY_NUMBER_RULES
+        )
+        await repo.create_media_file(
+            library_id=1, path="/other/ABC-456.mp4", number="ABC-456", rules=EMPTY_NUMBER_RULES
+        )
 
         result = await repo.list_media_files(search="other")
         assert len(result) == 1
@@ -297,7 +315,7 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_empty_ids(self, repo: Repository):
-        await repo.create_media_file(library_id=1, path="/video/A.mp4")
+        await repo.create_media_file(library_id=1, path="/video/A.mp4", rules=EMPTY_NUMBER_RULES)
         assert await repo.list_media_files(ids=[], limit=None) == []
 
     @pytest.mark.asyncio(loop_scope="function")
@@ -306,7 +324,10 @@ class TestMediaFileRepo:
         from amane.db.repos import media as media_mod
 
         monkeypatch.setattr(media_mod, "SQL_IN_CHUNK_SIZE", 2)
-        created = [await repo.create_media_file(library_id=1, path=f"/video/{i}.mp4") for i in range(5)]
+        created = [
+            await repo.create_media_file(library_id=1, path=f"/video/{i}.mp4", rules=EMPTY_NUMBER_RULES)
+            for i in range(5)
+        ]
         ids = [m.id for m in created if m.id is not None]
         result = await repo.list_media_files(ids=ids, limit=None)
         assert {f.path for f in result} == {f"/video/{i}.mp4" for i in range(5)}
@@ -323,9 +344,15 @@ class TestMediaFileRepo:
     )
     @pytest.mark.asyncio(loop_scope="function")
     async def test_count_media_files(self, repo: Repository, status_filter, search, expected_count):
-        await repo.create_media_file(library_id=1, path="/video/ABC-123.mp4", number="ABC-123")
-        await repo.create_media_file(library_id=1, path="/video/ABC-456.mp4", number="ABC-456")
-        m3 = await repo.create_media_file(library_id=1, path="/video/XYZ-789.mp4", number="XYZ-789")
+        await repo.create_media_file(
+            library_id=1, path="/video/ABC-123.mp4", number="ABC-123", rules=EMPTY_NUMBER_RULES
+        )
+        await repo.create_media_file(
+            library_id=1, path="/video/ABC-456.mp4", number="ABC-456", rules=EMPTY_NUMBER_RULES
+        )
+        m3 = await repo.create_media_file(
+            library_id=1, path="/video/XYZ-789.mp4", number="XYZ-789", rules=EMPTY_NUMBER_RULES
+        )
         assert m3.id is not None
         await repo.update_media_file(m3.id, status=MediaFileStatus.SCRAPED)
 
@@ -621,16 +648,16 @@ class TestMetadataRepo:
         await repo.upsert_metadata(number="NONE-1", title="Orphan")
         assert has1.id is not None and has2.id is not None
 
-        m1 = await repo.create_media_file(library_id=1, path="/v/has1.mp4", number="HAS-1")
+        m1 = await repo.create_media_file(library_id=1, path="/v/has1.mp4", number="HAS-1", rules=EMPTY_NUMBER_RULES)
         assert m1.id is not None
         await repo.update_media_file(m1.id, metadata_id=has1.id)
-        m2a = await repo.create_media_file(library_id=1, path="/v/has2a.mp4", number="HAS-2")
-        m2b = await repo.create_media_file(library_id=1, path="/v/has2b.mp4", number="HAS-2")
+        m2a = await repo.create_media_file(library_id=1, path="/v/has2a.mp4", number="HAS-2", rules=EMPTY_NUMBER_RULES)
+        m2b = await repo.create_media_file(library_id=1, path="/v/has2b.mp4", number="HAS-2", rules=EMPTY_NUMBER_RULES)
         assert m2a.id is not None and m2b.id is not None
         await repo.update_media_file(m2a.id, metadata_id=has2.id)
         await repo.update_media_file(m2b.id, metadata_id=has2.id)
         # 未关联 metadata 的文件不应影响筛选
-        await repo.create_media_file(library_id=1, path="/v/orphan-file.mp4", number="ORPHAN")
+        await repo.create_media_file(library_id=1, path="/v/orphan-file.mp4", number="ORPHAN", rules=EMPTY_NUMBER_RULES)
 
         items, total = await repo.list_metadata(
             has_files=has_files, sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC
@@ -654,11 +681,11 @@ class TestMetadataRepo:
         two = await repo.upsert_metadata(number="TWO", title="Two")
         assert none.id is not None and one.id is not None and two.id is not None
 
-        m1 = await repo.create_media_file(library_id=1, path="/v/one.mp4", number="ONE")
+        m1 = await repo.create_media_file(library_id=1, path="/v/one.mp4", number="ONE", rules=EMPTY_NUMBER_RULES)
         assert m1.id is not None
         await repo.update_media_file(m1.id, metadata_id=one.id)
-        m2a = await repo.create_media_file(library_id=1, path="/v/two-a.mp4", number="TWO")
-        m2b = await repo.create_media_file(library_id=1, path="/v/two-b.mp4", number="TWO")
+        m2a = await repo.create_media_file(library_id=1, path="/v/two-a.mp4", number="TWO", rules=EMPTY_NUMBER_RULES)
+        m2b = await repo.create_media_file(library_id=1, path="/v/two-b.mp4", number="TWO", rules=EMPTY_NUMBER_RULES)
         assert m2a.id is not None and m2b.id is not None
         await repo.update_media_file(m2a.id, metadata_id=two.id)
         await repo.update_media_file(m2b.id, metadata_id=two.id)
@@ -673,7 +700,9 @@ class TestMetadataRepo:
         await repo.upsert_metadata(number="NONE-1", title="Alpha Orphan")
         await repo.upsert_metadata(number="OTHER", title="Beta Linked")
         assert linked.id is not None
-        media = await repo.create_media_file(library_id=1, path="/v/link.mp4", number="LINK-1")
+        media = await repo.create_media_file(
+            library_id=1, path="/v/link.mp4", number="LINK-1", rules=EMPTY_NUMBER_RULES
+        )
         assert media.id is not None
         await repo.update_media_file(media.id, metadata_id=linked.id)
 
@@ -688,11 +717,11 @@ class TestMetadataRepo:
         c = await repo.upsert_metadata(number="CNT-C", title="C")
         assert a.id is not None and b.id is not None and c.id is not None
 
-        ma = await repo.create_media_file(library_id=1, path="/v/a.mp4", number="CNT-A")
+        ma = await repo.create_media_file(library_id=1, path="/v/a.mp4", number="CNT-A", rules=EMPTY_NUMBER_RULES)
         assert ma.id is not None
         await repo.update_media_file(ma.id, metadata_id=a.id)
-        mb1 = await repo.create_media_file(library_id=1, path="/v/b1.mp4", number="CNT-B")
-        mb2 = await repo.create_media_file(library_id=1, path="/v/b2.mp4", number="CNT-B")
+        mb1 = await repo.create_media_file(library_id=1, path="/v/b1.mp4", number="CNT-B", rules=EMPTY_NUMBER_RULES)
+        mb2 = await repo.create_media_file(library_id=1, path="/v/b2.mp4", number="CNT-B", rules=EMPTY_NUMBER_RULES)
         assert mb1.id is not None and mb2.id is not None
         await repo.update_media_file(mb1.id, metadata_id=b.id)
         await repo.update_media_file(mb2.id, metadata_id=b.id)
@@ -709,10 +738,10 @@ class TestMetadataRepo:
         plain = await repo.upsert_metadata(number="PLAIN-1")
         assert sub.id and u_file.id and heyzo.id and plain.id
 
-        m_sub = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
-        m_u = await repo.create_media_file(library_id=1, path="/v/MIDV-002-无码.mp4")
-        m_h = await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4")
-        m_p = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4")
+        m_sub = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4", rules=EMPTY_NUMBER_RULES)
+        m_u = await repo.create_media_file(library_id=1, path="/v/MIDV-002-无码.mp4", rules=EMPTY_NUMBER_RULES)
+        m_h = await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4", rules=EMPTY_NUMBER_RULES)
+        m_p = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4", rules=EMPTY_NUMBER_RULES)
         assert m_sub.id and m_u.id and m_h.id and m_p.id
         await repo.update_media_file(m_sub.id, metadata_id=sub.id)
         await repo.update_media_file(m_u.id, metadata_id=u_file.id)
@@ -783,7 +812,9 @@ class TestMetadataRepo:
         assert meta.id is not None
 
         # 创建关联的 MediaFile
-        media = await repo.create_media_file(library_id=1, path="/video/ABC-001.mp4", number="ABC-001")
+        media = await repo.create_media_file(
+            library_id=1, path="/video/ABC-001.mp4", number="ABC-001", rules=EMPTY_NUMBER_RULES
+        )
         assert media.id is not None
         await repo.update_media_file(media.id, status=MediaFileStatus.SCRAPED, metadata_id=meta.id)
 
@@ -800,7 +831,9 @@ class TestMetadataRepo:
         m1 = await repo.upsert_metadata(number="BD-001")
         m2 = await repo.upsert_metadata(number="BD-002")
         assert m1.id is not None and m2.id is not None
-        media = await repo.create_media_file(library_id=1, path="/video/BD-001.mp4", number="BD-001")
+        media = await repo.create_media_file(
+            library_id=1, path="/video/BD-001.mp4", number="BD-001", rules=EMPTY_NUMBER_RULES
+        )
         assert media.id is not None
         await repo.update_media_file(media.id, status=MediaFileStatus.SCRAPED, metadata_id=m1.id)
 
@@ -821,8 +854,12 @@ class TestMetadataRepo:
         meta = await repo.upsert_metadata(number="ABC-001", title="Test")
         assert meta.id is not None
 
-        await repo.create_media_file(library_id=1, path="/video/ABC-001-a.mp4", number="ABC-001")
-        await repo.create_media_file(library_id=1, path="/video/ABC-001-b.mp4", number="ABC-001")
+        await repo.create_media_file(
+            library_id=1, path="/video/ABC-001-a.mp4", number="ABC-001", rules=EMPTY_NUMBER_RULES
+        )
+        await repo.create_media_file(
+            library_id=1, path="/video/ABC-001-b.mp4", number="ABC-001", rules=EMPTY_NUMBER_RULES
+        )
 
         # 关联 MediaFile 到 Metadata
         media_files = await repo.list_media_files()
@@ -1591,9 +1628,9 @@ class TestListSorting:
     async def test_media_sort(
         self, repo: Repository, sort_by: MediaSortField, order: SortOrder, expected_numbers: list[str]
     ):
-        await repo.create_media_file(library_id=1, path="/m/a.mp4", number="A-1")
-        await repo.create_media_file(library_id=1, path="/m/b.mp4", number="B-2")
-        await repo.create_media_file(library_id=1, path="/m/c.mp4", number="C-3")
+        await repo.create_media_file(library_id=1, path="/m/a.mp4", number="A-1", rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=1, path="/m/b.mp4", number="B-2", rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=1, path="/m/c.mp4", number="C-3", rules=EMPTY_NUMBER_RULES)
 
         items = await repo.list_media_files(sort_by=sort_by, order=order)
         assert [m.number for m in items] == expected_numbers
@@ -1602,7 +1639,7 @@ class TestListSorting:
     async def test_pagination_stable_on_ties(self, repo: Repository):
         """主排序键全部并列时, 次级 id 键保证分页不重不漏."""
         for i in range(6):
-            await repo.create_media_file(library_id=1, path=f"/m/{i}.mp4", number="SAME")
+            await repo.create_media_file(library_id=1, path=f"/m/{i}.mp4", number="SAME", rules=EMPTY_NUMBER_RULES)
 
         page1 = await repo.list_media_files(sort_by=MediaSortField.NUMBER, order=SortOrder.ASC, limit=3, offset=0)
         page2 = await repo.list_media_files(sort_by=MediaSortField.NUMBER, order=SortOrder.ASC, limit=3, offset=3)
@@ -1639,9 +1676,9 @@ class TestLibraryRepo:
         other = await repo.create_library(name="y", path="/media/y")
         assert lib.id is not None and other.id is not None
 
-        await repo.create_media_file(library_id=lib.id, path="/media/x/a.mp4")
-        await repo.create_media_file(library_id=lib.id, path="/media/x/b.mp4")
-        keep = await repo.create_media_file(library_id=other.id, path="/media/y/c.mp4")
+        await repo.create_media_file(library_id=lib.id, path="/media/x/a.mp4", rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=lib.id, path="/media/x/b.mp4", rules=EMPTY_NUMBER_RULES)
+        keep = await repo.create_media_file(library_id=other.id, path="/media/y/c.mp4", rules=EMPTY_NUMBER_RULES)
         assert keep.id is not None
 
         removed = await repo.delete_library(lib.id)

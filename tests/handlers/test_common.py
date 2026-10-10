@@ -9,11 +9,11 @@ from amane.db import MediaFileStatus
 from amane.handlers._common import (
     ensure_oshash,
     finalize_media_file,
-    refresh_external_subtitle,
     register_media_file,
     scan_library,
 )
 from amane.library import LibraryFileKind, LibraryHit, LibraryScan
+from amane.parsing import EMPTY_NUMBER_RULES
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -94,7 +94,7 @@ class TestEnsureOshash:
     async def test_computes_and_persists(self, repo: Repository, tmp_path):
         video = tmp_path / "MIDV-123.mkv"
         video.write_bytes(bytes(range(256)) * (65536 * 2 // 256))
-        media = await repo.create_media_file(library_id=1, path=str(video))
+        media = await repo.create_media_file(library_id=1, path=str(video), rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
         assert await ensure_oshash(repo, media) == "a0601fdf9f610000"
         stored = await repo.get_media_file(media.id)
@@ -103,7 +103,7 @@ class TestEnsureOshash:
 
     @pytest.mark.asyncio
     async def test_reuses_existing(self, repo: Repository):
-        media = await repo.create_media_file(library_id=1, path="/nope.mp4")
+        media = await repo.create_media_file(library_id=1, path="/nope.mp4", rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
         await repo.update_media_file(media.id, oshash="already")
         media = await repo.get_media_file(media.id)
@@ -114,7 +114,7 @@ class TestEnsureOshash:
     async def test_tiny_file_stays_none(self, repo: Repository, tmp_path):
         video = tmp_path / "MIDV-123.mp4"
         video.write_bytes(b"tiny")
-        media = await repo.create_media_file(library_id=1, path=str(video))
+        media = await repo.create_media_file(library_id=1, path=str(video), rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
         assert await ensure_oshash(repo, media) is None
         stored = await repo.get_media_file(media.id)
@@ -127,7 +127,7 @@ class TestFinalizeMediaFile:
 
     @pytest.mark.asyncio
     async def test_updates_status_and_metadata(self, repo: Repository):
-        media = await repo.create_media_file(library_id=1, path="/m/ABC-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/m/ABC-123.mp4", rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
         await finalize_media_file(repo, media.id, metadata_id=42)
 
@@ -143,7 +143,7 @@ class TestFinalizeMediaFile:
 
     @pytest.mark.asyncio
     async def test_none_metadata_id_still_marks_scraped(self, repo: Repository):
-        media = await repo.create_media_file(library_id=1, path="/m/ABC-456.mp4")
+        media = await repo.create_media_file(library_id=1, path="/m/ABC-456.mp4", rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
         await finalize_media_file(repo, media.id, metadata_id=None)
 
@@ -192,11 +192,11 @@ class TestExternalSubtitle:
         assert media.id is not None
         assert media.has_external_subtitle is True
 
-        await refresh_external_subtitle(repo, media, library)
+        await repo.refresh_external_subtitle(media, library)
         assert media.has_external_subtitle is True
 
         subtitle.unlink()
-        await refresh_external_subtitle(repo, media, library)
+        await repo.refresh_external_subtitle(media, library)
         assert media.has_external_subtitle is False
         stored = await repo.get_media_file(media.id)
         assert stored is not None

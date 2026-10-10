@@ -10,6 +10,7 @@ import pytest
 
 from amane.library import FootprintNotice, FootprintNoticeKind, InventoryEntryKind, InventoryReason, build_footprint
 from amane.library.cleanup import footprint as footprint_module
+from amane.parsing import EMPTY_NUMBER_RULES
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -32,7 +33,12 @@ class TestFootprint:
         meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
         assert meta.id is not None
         item = await repo.create_media_file(
-            lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+            lib.id,
+            path=str(video),
+            number="NSFS-039",
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta.id,
+            rules=EMPTY_NUMBER_RULES,
         )
         return lib, {meta.id: meta}, item, video
 
@@ -119,7 +125,12 @@ class TestFootprint:
         sibling.write_bytes(b"v" * 100)
         metadata_id = next(iter(metas))
         other = await repo.create_media_file(
-            lib.id, path=str(sibling), number="NSFS-040", status=MediaFileStatus.SCRAPED, metadata_id=metadata_id
+            lib.id,
+            path=str(sibling),
+            number="NSFS-040",
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=metadata_id,
+            rules=EMPTY_NUMBER_RULES,
         )
 
         outcome = build_footprint.sync(
@@ -213,7 +224,12 @@ class TestFootprint:
         meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
         assert meta.id is not None
         item = await repo.create_media_file(
-            lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+            lib.id,
+            path=str(video),
+            number="NSFS-039",
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta.id,
+            rules=EMPTY_NUMBER_RULES,
         )
 
         outcome = build_footprint.sync(
@@ -248,7 +264,12 @@ class TestFootprint:
         meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
         assert meta.id is not None
         item = await repo.create_media_file(
-            lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+            lib.id,
+            path=str(video),
+            number="NSFS-039",
+            status=MediaFileStatus.SCRAPED,
+            metadata_id=meta.id,
+            rules=EMPTY_NUMBER_RULES,
         )
 
         outcome = build_footprint.sync(
@@ -281,6 +302,7 @@ class TestFootprint:
             number="NSFS-039",
             status=MediaFileStatus.SCRAPED,
             metadata_id=meta.id,
+            rules=EMPTY_NUMBER_RULES,
         )
 
         outcome = build_footprint.sync(
@@ -307,7 +329,9 @@ class TestFootprint:
         video.write_bytes(b"v" * 100)
         lib = await repo.create_library(name="t", path=str(root))
         assert lib.id is not None
-        item = await repo.create_media_file(lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED)
+        item = await repo.create_media_file(
+            lib.id, path=str(video), number="NSFS-039", status=MediaFileStatus.SCRAPED, rules=EMPTY_NUMBER_RULES
+        )
         monkeypatch.setattr(footprint_module, "is_name_surrogate_dir", lambda path: path.name == "linked")
 
         outcome = build_footprint.sync(library=lib, items=[item], indexed=[item], metas={}, include_work_dir=True)

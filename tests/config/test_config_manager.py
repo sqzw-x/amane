@@ -20,6 +20,7 @@ from amane.config import (
     SiteConfig,
     WatermarkConfig,
     WorkerConfig,
+    build_number_rules,
 )
 from amane.config.manager import LANG_METADATA_FIELD_SET
 from amane.enums import (
@@ -649,3 +650,50 @@ class TestLLMConfig:
 
         with pytest.raises(ValidationError, match=r"Input should be 'chat', 'response' or 'anthropic'"):
             mgr.update({"llm": {"api_type": "bogus"}})
+
+
+class TestParsingConfig:
+    """parsing 配置: 剔除串、前缀类型、检索别名."""
+
+    def test_round_trip_and_normalization(self, mgr: ConfigManager):
+        mgr.update(
+            {
+                "parsing": {
+                    "escape_strings": ["  HHD800.COM@  ", "", "HHD800.COM@"],
+                    "prefix_types": {"mium": "amateur", "MIDV-": "uncensored"},
+                    "search_aliases": {" 300MIUM ": [" MIUM-999 ", ""]},
+                }
+            }
+        )
+
+        reloaded = ConfigManager.with_cold(mgr.cold)
+        parsing = reloaded.hot.parsing
+
+        assert parsing.escape_strings == ["HHD800.COM@"]
+        assert parsing.prefix_types == {"MIUM": ContentType.AMATEUR, "MIDV": ContentType.UNCENSORED}
+        assert parsing.search_aliases == {"300MIUM": ["MIUM-999"]}
+
+    def test_defaults_are_inert(self, mgr: ConfigManager):
+        """默认全空且自动别名开启; 空配置不写入 TOML."""
+        assert mgr.hot.parsing.escape_strings == []
+        assert mgr.hot.parsing.prefix_types == {}
+        assert mgr.hot.parsing.search_aliases == {}
+        assert mgr.hot.parsing.auto_search_aliases is True
+
+        rules = build_number_rules(mgr.hot.parsing)
+
+        assert rules.escape_strings == ()
+        assert rules.prefix_types == {}
+        assert rules.search_aliases  # 自动别名仍在
+
+    def test_rejects_empty_prefix_key(self, mgr: ConfigManager):
+        with pytest.raises(ValidationError, match=r"parse|不得为空"):
+            mgr.update({"parsing": {"prefix_types": {"  ": "amateur"}}})
+
+    def test_rejects_unknown_content_type(self, mgr: ConfigManager):
+        with pytest.raises(ValidationError):
+            mgr.update({"parsing": {"prefix_types": {"MIDV": "not-a-type"}}})
+
+    def test_rejects_empty_alias_key(self, mgr: ConfigManager):
+        with pytest.raises(ValidationError, match=r"parse|不得为空"):
+            mgr.update({"parsing": {"search_aliases": {" ": ["X"]}}})

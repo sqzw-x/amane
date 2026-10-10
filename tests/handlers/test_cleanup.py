@@ -17,6 +17,7 @@ from amane.db.repository import Repository
 from amane.handlers import CleanupHandler, CleanupPayload
 from amane.media import ResourceStore
 from amane.media.resource_store import RESOURCE_URL_PREFIX
+from amane.parsing import EMPTY_NUMBER_RULES
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -67,6 +68,7 @@ async def test_removes_missing_media_files_keeps_metadata(cleanup_env):
         number="ABC-001",
         status=MediaFileStatus.SCRAPED,
         metadata_id=meta.id,
+        rules=EMPTY_NUMBER_RULES,
     )
     assert mf.id is not None
     assert not ghost.exists()
@@ -87,7 +89,7 @@ async def test_missing_file_exists_does_not_block_event_loop(cleanup_env, monkey
     lib = await repo.create_library(name="L", path=str(tmp_path / "lib"))
     assert lib.id is not None
     ghost = tmp_path / "gone.mp4"
-    await repo.create_media_file(lib.id, path=str(ghost))
+    await repo.create_media_file(lib.id, path=str(ghost), rules=EMPTY_NUMBER_RULES)
 
     order: list[str] = []
     real_exists = Path.exists

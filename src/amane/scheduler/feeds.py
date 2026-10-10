@@ -14,7 +14,7 @@ from ..db.models import TaskType
 from ..handlers.models import build_feed_scrape_payload
 from ..net.errors import RequestError
 from ..net.http import WebClient
-from ..parsing import extract_number
+from ..parsing import EMPTY_NUMBER_RULES, NumberRules, extract_number
 from .rss import ParsedFeedEntry, parse_feed_bytes
 
 if TYPE_CHECKING:
@@ -48,19 +48,22 @@ def apply_number_pattern(pattern: str, *texts: str | None) -> str | None:
     return None
 
 
-def resolve_entry_number(feed: Feed, entry: ParsedFeedEntry) -> str | None:
+def resolve_entry_number(feed: Feed, entry: ParsedFeedEntry, *, rules: NumberRules = EMPTY_NUMBER_RULES) -> str | None:
     """有 number_pattern 则仅用该正则, 否则 extract_number."""
     if feed.number_pattern:
         return apply_number_pattern(feed.number_pattern, entry.title, entry.description, entry.link)
-    return extract_number(entry.title) or (extract_number(entry.description) if entry.description else None)
+    return extract_number(entry.title, rules=rules) or (
+        extract_number(entry.description, rules=rules) if entry.description else None
+    )
 
 
 class FeedService:
     """到期 Feed 拉取与去重; auto_enqueue 时按源顺序入队, 同番号取最新一条."""
 
-    def __init__(self, repo: Repository, web_client: WebClient) -> None:
+    def __init__(self, repo: Repository, web_client: WebClient, number_rules: NumberRules = EMPTY_NUMBER_RULES) -> None:
         self._repo = repo
         self._web = web_client
+        self._number_rules = number_rules
         self._running = False
         self._locks: dict[int, asyncio.Lock] = {}
         self._locks_guard = asyncio.Lock()
@@ -182,7 +185,7 @@ class FeedService:
                 if entry.published_at is not None:
                     published_backfill[entry.item_key] = entry.published_at
                 continue
-            number = resolve_entry_number(feed, entry)
+            number = resolve_entry_number(feed, entry, rules=self._number_rules)
             new_entries.append((entry, number))
             seen.add(entry.item_key)
             if number is None:
@@ -222,7 +225,7 @@ class FeedService:
                 enqueued_numbers.add(number)
                 await self._repo.create_task(
                     task_type=TaskType.SCRAPE,
-                    payload=build_feed_scrape_payload(feed, number),
+                    payload=build_feed_scrape_payload(feed, number, rules=self._number_rules),
                     priority=_SCRAPE_PRIORITY,
                 )
                 enqueued += 1

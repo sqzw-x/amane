@@ -8,6 +8,7 @@ import pytest
 
 from amane.db.models import TaskType
 from amane.organize import VIDEO_TEMPLATE_DEFAULT
+from amane.parsing import EMPTY_NUMBER_RULES
 
 if TYPE_CHECKING:
     from httpx2 import AsyncClient
@@ -131,8 +132,8 @@ class TestLibraries:
         assert (await client.patch(f"libraries/{lib_id}", json={"patterns": None})).status_code == 422
         assert (await client.patch("libraries/9999", json={"automation": "none"})).status_code == 404
 
-        await repo.create_media_file(library_id=lib_id, path=str(target / "a.mp4"))
-        await repo.create_media_file(library_id=lib_id, path=str(target / "b.mp4"))
+        await repo.create_media_file(library_id=lib_id, path=str(target / "a.mp4"), rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=lib_id, path=str(target / "b.mp4"), rules=EMPTY_NUMBER_RULES)
         deleted = await client.delete(f"libraries/{lib_id}")
         assert deleted.status_code == 204
         assert await repo.count_media_files(library_id=lib_id) == 0

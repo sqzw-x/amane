@@ -14,30 +14,15 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
+
+from .rules import EMPTY_NUMBER_RULES, NumberRules, match_prefix_rule
+from .types import ContentType, Mosaic
 
 # ---------------------------------------------------------------------------
 # Types
 # ---------------------------------------------------------------------------
-
-
-class ContentType(StrEnum):
-    CENSORED = "censored"
-    UNCENSORED = "uncensored"
-    CHINESE = "chinese"
-    WESTERN = "western"
-    FC2 = "fc2"
-    AMATEUR = "amateur"
-    HENTAI = "hentai"
-
-
-class Mosaic(StrEnum):
-    CENSORED = "censored"
-    UNCENSORED = "uncensored"
-    CRACKED = "cracked"
-    LEAKED = "leaked"
 
 
 @dataclass(frozen=True)
@@ -131,6 +116,9 @@ _SUREN_PREFIXES: dict[str, str] = {
     "MAAN-": "300MAAN-",
 }
 
+# 检索别名与短前缀都由这张表派生 (config/manager.py), 改这里两处一起变.
+SUREN_PREFIXES = _SUREN_PREFIXES
+
 _WESTERN_NAMES: dict[str, str] = {
     "vixen": "Vixen",
     "blacked": "Blacked",
@@ -180,6 +168,9 @@ _ESCAPE_MARKERS = (
     "PRT",
 )
 
+_UNSET_ESCAPE: Any = object()
+"""未传 ``escape_strings`` 的哨兵: 与「显式传空列表」区分 (后者表示这次不做剔除)."""
+
 _ROOT_PARTS = frozenset({"/", ".", ""})
 _CD_DIR = re.compile(r"^(?:CD|PART)(\d{1,2})$", re.IGNORECASE)
 _DIR_BRACKET_STRIP = "[]【】()（）"
@@ -223,7 +214,11 @@ DEFINITION_VALUES: tuple[str, ...] = tuple(dict.fromkeys(value for value, _ in _
 
 
 def parse_file_info(
-    path: str | Path | None = None, *, text: str | None = None, escape_strings: list[str] | None = None
+    path: str | Path | None = None,
+    *,
+    text: str | None = None,
+    escape_strings: list[str] | None = _UNSET_ESCAPE,
+    rules: NumberRules = EMPTY_NUMBER_RULES,
 ) -> FileInfo:
     """有路径则解析路径, 否则解析 ``text``. 两者至少要有一个.
 
@@ -231,16 +226,20 @@ def parse_file_info(
     目录关键词 (欧美 / 里番 / getchu) 可覆盖类型. 分集还可认直接父目录 CD/PART.
     文本: 只执行番号规则, 未命中 ``number is None`` (不能把原文当番号). 文件相位只依据该字符串
     (``Path(text).stem``, 与中字分集检测一致), 不依据目录.
+
+    ``escape_strings`` 传入时 (含空列表) 完整替代 ``rules.escape_strings``; 不传则用规则里的.
     """
     if path is None and text is None:
         raise ValueError("path or text required")
-    escape = escape_strings or []
+    escape = list(rules.escape_strings) if escape_strings is _UNSET_ESCAPE else list(escape_strings or [])
     if path is not None:
         # 路径: 文件名优先识别; 目录可覆盖类型, 分集可回退父目录.
         p = Path(path)
         stem = p.stem
         dirs = _dir_names(p)
         number, content_type = _identify(stem.strip(), dirs, escape, fallback=True)
+        # 用户约定的前缀类型压过内置判定; 目录关键词是更具体的声明, 因此最后由它覆盖.
+        content_type = _prefix_type(number, rules) or content_type
         content_type = _classify_from_path(stem, dirs) or content_type
         basename = stem.upper()
         cd = _detect_cd(basename)
@@ -252,6 +251,7 @@ def parse_file_info(
         assert text is not None
         dirs = ()
         number, content_type = _identify(text, dirs, escape, fallback=False)
+        content_type = _prefix_type(number, rules) or content_type
         basename = Path(text).stem.upper()
         cd = _detect_cd(basename)
         mosaic = _detect_mosaic(basename)
@@ -266,14 +266,20 @@ def parse_file_info(
     )
 
 
-def extract_number(text: str, escape_strings: list[str] | None = None) -> str | None:
-    """未命中返回 None, 不能把原文冒充番号."""
-    return parse_file_info(text=text, escape_strings=escape_strings).number
+def extract_number(
+    text: str, escape_strings: list[str] | None = _UNSET_ESCAPE, *, rules: NumberRules = EMPTY_NUMBER_RULES
+) -> str | None:
+    """未命中返回 None, 不能把原文冒充番号. ``escape_strings`` 不传时用规则里的."""
+    if escape_strings is _UNSET_ESCAPE:
+        return parse_file_info(text=text, rules=rules).number
+    return parse_file_info(text=text, escape_strings=escape_strings, rules=rules).number
 
 
-def infer_content_type(number: str, file_path: str | None = None) -> ContentType:
+def infer_content_type(
+    number: str, file_path: str | None = None, *, rules: NumberRules = EMPTY_NUMBER_RULES
+) -> ContentType:
     """有挂载文件按路径, 否则按番号; 未命中已知形态则欧美."""
-    return parse_file_info(file_path, text=number).content_type
+    return parse_file_info(file_path, text=number, rules=rules).content_type
 
 
 def detect_cd(filename: str | Path) -> int | None:
@@ -302,8 +308,8 @@ def is_amateur(number: str) -> bool:
     return infer_content_type(number) == ContentType.AMATEUR
 
 
-def file_phase_from_path(path: str | Path) -> FilePhase:
-    info = parse_file_info(path)
+def file_phase_from_path(path: str | Path, *, rules: NumberRules = EMPTY_NUMBER_RULES) -> FilePhase:
+    info = parse_file_info(path, rules=rules)
     return FilePhase(
         content_type=info.content_type,
         mosaic=info.mosaic,
@@ -604,6 +610,23 @@ def _detect_subtitle(basename: str) -> bool:
     if re.search(r"-U?C(?![A-Z0-9])", basename):
         return True
     return bool(re.search(r"[字幕中文]", basename))
+
+
+def _prefix_type(number: str | None, rules: NumberRules) -> ContentType | None:
+    """用户约定的前缀类型. 先按 `_prefix` 的输出直接命中, 未命中再按其短形态查一次 (长形态优先).
+
+    两个映射都为空时整段跳过: 本函数在每次解析、每条字幕、每个足迹条目上都会执行.
+    """
+    if number is None or not rules.prefix_types:
+        return None
+    prefix = _prefix(number)
+    found = match_prefix_rule(prefix, rules.prefix_types)
+    if found is not None:
+        return found
+    short = rules.prefix_short_forms.get(prefix.rstrip("-_. "))
+    if short is None:
+        return None
+    return rules.prefix_types.get(short)
 
 
 def _fill_mosaic(mosaic: Mosaic | None, content_type: ContentType) -> Mosaic | None:

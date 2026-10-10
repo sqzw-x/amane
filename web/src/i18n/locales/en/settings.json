@@ -10,7 +10,8 @@
     "logging": "Logging",
     "sr": "Super Resolution",
     "llm": "LLM Translation",
-    "watermark": "Watermark"
+    "watermark": "Watermark",
+    "parsing": "Number Parsing"
   },
   "config": {
     "loadError": "Failed to load configuration"
@@ -29,6 +30,44 @@
     "appVersion": "APP version"
   },
   "fields": {
+    "parsing": {
+      "escape_strings": {
+        "label": "Strings to strip",
+        "description": "Removed whole from file and directory names before parsing; for names carrying a site prefix such as HHD800.COM@"
+      },
+      "prefix_types": {
+        "label": "Type by prefix",
+        "description": "Content type per number prefix, e.g. MIUM=amateur; directory names 里番 / 欧美 / getchu override this",
+        "options": {
+          "censored": "Censored",
+          "uncensored": "Uncensored",
+          "chinese": "Chinese",
+          "western": "Western",
+          "fc2": "FC2",
+          "amateur": "Amateur",
+          "hentai": "Hentai"
+        },
+        "$": {
+          "options": {
+            "censored": "Censored",
+            "uncensored": "Uncensored",
+            "chinese": "Chinese",
+            "western": "Western",
+            "fc2": "FC2",
+            "amateur": "Amateur",
+            "hentai": "Hentai"
+          }
+        }
+      },
+      "search_aliases": {
+        "label": "Search aliases",
+        "description": "Search terms that override the automatic ones for a number prefix, e.g. 300MIUM=MIUM-999; order is the try order"
+      },
+      "auto_search_aliases": {
+        "label": "Automatic search aliases",
+        "description": "Add search terms from the built-in alias map (300MIUM and MIUM complement each other)"
+      }
+    },
     "scraping": {
       "download_resources": {
         "label": "Download on scrape",

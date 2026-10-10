@@ -253,7 +253,9 @@ async def list_feed_items(
 
 
 @router.post("/{feed_id}/items/batch", response_model_exclude_unset=True)
-async def batch_feed_items(feed_id: int, req: FeedItemBatchRequest, repo: RepoDep) -> FeedItemBatchResponse:
+async def batch_feed_items(
+    feed_id: int, req: FeedItemBatchRequest, repo: RepoDep, runtime: RuntimeDep
+) -> FeedItemBatchResponse:
     feed = await repo.get_feed(feed_id)
     if feed is None:
         raise HTTPException(status_code=404, detail="订阅源不存在")
@@ -288,7 +290,7 @@ async def batch_feed_items(feed_id: int, req: FeedItemBatchRequest, repo: RepoDe
                 if key in seen_numbers:
                     continue
                 seen_numbers.add(key)
-                payloads.append(build_feed_scrape_payload(feed, item.number))
+                payloads.append(build_feed_scrape_payload(feed, item.number, rules=runtime.number_rules))
 
             tasks = await repo.create_tasks(TaskType.SCRAPE, payloads, priority=0)
             task_ids = [task.id for task in tasks if task.id is not None]

@@ -10,6 +10,7 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from ..db.models import SavedQueryEntity
 from ..db.repository import Repository
+from ..parsing import EMPTY_NUMBER_RULES, NumberRules
 from .bridge import AgentRuntimeBridge
 from .cache import CachedResult
 from .executor import QueryExecutor, extract_entity_ids
@@ -53,6 +54,7 @@ class AgentDeps:
     sql_timeout_ms: int
     sample_limit: int = 20
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
+    number_rules: NumberRules = EMPTY_NUMBER_RULES
 
 
 def require_approval(

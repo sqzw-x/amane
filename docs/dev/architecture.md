@@ -9,7 +9,7 @@
 
 | 包 | 边界 | 不变量 |
 |----|------|--------|
-| `parsing/` | 完整路径 / 自由文本 → 番号 + 类型 + 文件相位标记 | 纯函数, 无 I/O 与配置依赖; 路径解析会重写番号 (见 [crawlers.md](crawlers.md)) |
+| `parsing/` | 完整路径 / 自由文本 → 番号 + 类型 + 文件相位标记 | 纯函数, 无 I/O 与配置依赖: 用户规则经入参 `NumberRules` 注入, 由调用方从 `hot.parsing` 构造 (见 [config.md](config.md)); 路径解析会重写番号 (见 [crawlers.md](crawlers.md)) |
 | `crawlers/` | 番号 → `MediaMetadata`; 演员名 → `ActorMetadata` | 无状态; HTTP 与配置在构造期注入; 影片 / 演员分 registry |
 | `plugin/` | 第三方来源导入的公开接口 | 插件只导入这里; 主机不导入 |
 | `plugins/` | 来源插件主机 (发现 / 落盘 / Factory) | 作者不导入; 契约见 [plugins.md](plugins.md) |

@@ -251,6 +251,7 @@ async def expand_cleanup_selection(
         indexed=await repo.list_media_files(library_id=library_id, limit=None),
         metas=metas,
         include_work_dir=req.include_work_dir,
+        rules=runtime.number_rules,
     )
     if not outcome.inventory.entries:
         return SelectionSummaryResponse(exists=False, notices=_notices(outcome.inventory, outcome.notices))

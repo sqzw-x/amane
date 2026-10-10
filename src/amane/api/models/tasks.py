@@ -28,7 +28,7 @@ from ...handlers import (
     UpscalePayload,
     UpscaleResult,
 )
-from ...parsing import ContentType, infer_content_type, parse_file_info
+from ...parsing import EMPTY_NUMBER_RULES, ContentType, NumberRules, infer_content_type, parse_file_info
 
 
 class TaskChildStatusCounts(BaseModel):
@@ -175,7 +175,7 @@ class ScrapeRequest(BaseModel):
             raise ValueError("Either 'number' or 'media_id' must be provided")
         return self
 
-    async def resolve(self, repo: Repository) -> ScrapePayload:
+    async def resolve(self, repo: Repository, *, rules: NumberRules = EMPTY_NUMBER_RULES) -> ScrapePayload:
         """media 不存在时抛 HTTPException(404)."""
         if self.media_id is not None:
             media = await repo.get_media_file(self.media_id)
@@ -184,11 +184,11 @@ class ScrapeRequest(BaseModel):
             if self.number is not None:
                 return ScrapePayload(
                     number=self.number,
-                    content_type=self.content_type or infer_content_type(self.number),
+                    content_type=self.content_type or infer_content_type(self.number, rules=rules),
                     media_file_id=self.media_id,
                     use_cache=self.use_cache,
                 )
-            parsed = parse_file_info(media.path)
+            parsed = parse_file_info(media.path, rules=rules)
             assert parsed.number is not None
             return ScrapePayload(
                 number=parsed.number,
@@ -199,7 +199,7 @@ class ScrapeRequest(BaseModel):
         assert self.number is not None
         return ScrapePayload(
             number=self.number,
-            content_type=self.content_type or infer_content_type(self.number),
+            content_type=self.content_type or infer_content_type(self.number, rules=rules),
             use_cache=self.use_cache,
         )
 

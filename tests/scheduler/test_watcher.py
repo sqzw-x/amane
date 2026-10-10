@@ -22,6 +22,7 @@ from amane.db.repository import Repository
 from amane.enums import LibraryAutomation
 from amane.events import EventBus
 from amane.library import LibraryScan
+from amane.parsing import EMPTY_NUMBER_RULES
 from amane.scheduler.service import WatcherService
 from amane.scheduler.watcher import DEBOUNCE_SECONDS, FileWatcher, _Handler
 from amane.utils.path import path_is_under
@@ -492,7 +493,7 @@ class TestWatcherService:
         test_file.write_bytes(b"\x00" * 100)
 
         # 先注册文件
-        media = await repo.create_media_file(library_id=1, path=str(test_file))
+        media = await repo.create_media_file(library_id=1, path=str(test_file), rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
 
         # 调用删除处理器
@@ -517,9 +518,9 @@ class TestWatcherService:
         video = nested / "a.mp4"
         sibling = tmp_path / "show2" / "b.mp4"
         other_video = tmp_path / "other" / "c.mp4"
-        await repo.create_media_file(library_id=lib.id, path=str(video))
-        await repo.create_media_file(library_id=lib.id, path=str(sibling))
-        await repo.create_media_file(library_id=other.id, path=str(other_video))
+        await repo.create_media_file(library_id=lib.id, path=str(video), rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=lib.id, path=str(sibling), rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=other.id, path=str(other_video), rules=EMPTY_NUMBER_RULES)
         await service._delete_under(lib.id, nested)
         assert await repo.get_media_file_by_path(str(video)) is None
         assert await repo.get_media_file_by_path(str(sibling)) is not None
@@ -532,8 +533,8 @@ class TestWatcherService:
         assert lib.id is not None
         video = tmp_path / "a.mp4"
         sibling = tmp_path / "b.mp4"
-        await repo.create_media_file(library_id=lib.id, path=str(video))
-        await repo.create_media_file(library_id=lib.id, path=str(sibling))
+        await repo.create_media_file(library_id=lib.id, path=str(video), rules=EMPTY_NUMBER_RULES)
+        await repo.create_media_file(library_id=lib.id, path=str(sibling), rules=EMPTY_NUMBER_RULES)
         await service._delete_under(lib.id, video)
         assert await repo.get_media_file_by_path(str(video)) is None
         assert await repo.get_media_file_by_path(str(sibling)) is not None
@@ -544,7 +545,7 @@ class TestWatcherService:
         assert lib.id is not None
         nested = tmp_path / "show"
         video = nested / "a.mp4"
-        await repo.create_media_file(library_id=lib.id, path=str(video))
+        await repo.create_media_file(library_id=lib.id, path=str(video), rules=EMPTY_NUMBER_RULES)
         await service.start()
         handler = service._watcher._handlers[0]
         handler._pending_dir_deletes[str(nested)] = time.time() - DEBOUNCE_SECONDS - 1
@@ -562,7 +563,7 @@ class TestWatcherService:
         dest = tmp_path / "new.mp4"
         src.write_bytes(b"\x00" * 100)
 
-        media = await repo.create_media_file(library_id=1, path=str(src))
+        media = await repo.create_media_file(library_id=1, path=str(src), rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
 
         await service._on_file_moved(src, dest, 1)

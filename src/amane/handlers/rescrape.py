@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from ..db import ActorSortField, TaskType
 from ..db.models import MetadataSortField, SortOrder
-from ..parsing import infer_content_type
+from ..parsing import EMPTY_NUMBER_RULES, NumberRules, infer_content_type
 from .models import (
     ActorScrapePayload,
     CacheKind,
@@ -25,9 +25,10 @@ _USE_CACHE = {CacheKind.metadata, CacheKind.trans}
 
 
 class RescrapeHandler(TaskHandler[RescrapePayload, RescrapeResult]):
-    def __init__(self, repo: Repository) -> None:
+    def __init__(self, repo: Repository, number_rules: NumberRules = EMPTY_NUMBER_RULES) -> None:
         super().__init__(payload_t=RescrapePayload, result_t=RescrapeResult)
         self._repo = repo
+        self._number_rules = number_rules
 
     async def handle(self, payload: RescrapePayload) -> TaskResult[RescrapeResult]:
         updated_before = (
@@ -77,7 +78,9 @@ class RescrapeHandler(TaskHandler[RescrapePayload, RescrapeResult]):
                 task_type=TaskType.SCRAPE,
                 payload=ScrapePayload(
                     number=meta.number,
-                    content_type=infer_content_type(meta.number, first_path_by_metadata.get(meta_id)),
+                    content_type=infer_content_type(
+                        meta.number, first_path_by_metadata.get(meta_id), rules=self._number_rules
+                    ),
                     use_cache=_USE_CACHE,
                 ).model_dump(mode="json"),
                 priority=-1,

@@ -2712,6 +2712,15 @@ export const HealthResponseSchema = {
 
 export const HotSettingsSchema = {
     properties: {
+        parsing: {
+            $ref: '#/components/schemas/ParsingConfig',
+            default: {
+                escape_strings: [],
+                prefix_types: {},
+                search_aliases: {},
+                auto_search_aliases: true
+            }
+        },
         scraping: {
             $ref: '#/components/schemas/ScrapingConfig',
             default: {
@@ -5760,6 +5769,46 @@ export const OrganizeSubmissionSchema = {
         'type'
     ],
     title: 'OrganizeSubmission'
+} as const;
+
+export const ParsingConfigSchema = {
+    properties: {
+        escape_strings: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Escape Strings',
+            default: []
+        },
+        prefix_types: {
+            additionalProperties: {
+                $ref: '#/components/schemas/ContentType'
+            },
+            type: 'object',
+            title: 'Prefix Types',
+            default: {}
+        },
+        search_aliases: {
+            additionalProperties: {
+                items: {
+                    type: 'string'
+                },
+                type: 'array'
+            },
+            type: 'object',
+            title: 'Search Aliases',
+            default: {}
+        },
+        auto_search_aliases: {
+            type: 'boolean',
+            title: 'Auto Search Aliases',
+            default: true
+        }
+    },
+    type: 'object',
+    title: 'ParsingConfig',
+    description: '番号解析与检索的用户约定; 同时服务扫描 (watcher / REFRESH)、整理与刮削.'
 } as const;
 
 export const PathTemplatePlaceholderSchema = {

@@ -36,7 +36,7 @@ class JavDBCrawler(Crawler):
         欧美日期号在站内两套年份写法并存, 检索词只命中其中一套, 因此未命中时用另一种写法再检索一次.
         """
         number = query.number
-        terms = [number]
+        terms = [number, *query.alternate_numbers]
         western = parse_western_number(number)
         if western is not None and western.alternate != number:
             terms.append(western.alternate)
@@ -48,13 +48,17 @@ class JavDBCrawler(Crawler):
         return None
 
     async def _search_term(self, term: str, number: str) -> str | None:
+        """命中判定同时接受原番号与该次实际使用的检索词: 别名检索拿到的条目写的是别名形态.
+
+        放宽只作用于「是否接受这一次命中」, 不回写番号.
+        """
         text = await self.client.get_html(f"{self.base_url}/search?q={quote(term)}&locale=zh", cookies=self.cookies)
         html = Selector(text=text)
 
         for item in html.xpath("//a[@class='box']"):
             href = extract_text(item, "@href")
             found = extract_text(item, "div[@class='video-title']/strong/text()")
-            if href and found and is_same_number(found, number):
+            if href and found and (is_same_number(found, number) or is_same_number(found, term)):
                 return urljoin(self.base_url, href)
         return None
 

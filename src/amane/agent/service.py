@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from ..config import AgentConfig, AgentThinkingMode
 from ..db.models import DEFAULT_SESSION_TITLE, AgentSession, AgentSessionStatus
+from ..parsing import EMPTY_NUMBER_RULES, NumberRules
 from .bridge import AgentRuntimeBridge
 from .cache import ResultCache
 from .executor import QueryExecutor
@@ -37,6 +38,7 @@ class AgentService:
     agent: Agent[AgentDeps, str | DeferredToolRequests] | None = field(init=False, default=None)
     naming_model: Model | None = field(init=False, default=None)
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
+    number_rules: NumberRules = EMPTY_NUMBER_RULES
     _stores: dict[int, SessionStore] = field(default_factory=dict)
     _turn_tasks: dict[int, asyncio.Task[None]] = field(default_factory=dict)
 
@@ -137,6 +139,7 @@ class AgentService:
             session_id=session_id,
             sql_timeout_ms=self.config.sql_timeout_ms,
             bridge=self.bridge,
+            number_rules=self.number_rules,
         )
 
     async def cancel_turn(self, session_id: int) -> bool:

@@ -33,7 +33,8 @@ from ..enums import (
     WatermarkCorner,
     WatermarkKind,
 )
-from ..parsing import ContentType
+from ..parsing import ContentType, NumberRules
+from ..parsing.file_info import SUREN_PREFIXES
 from ..plugins.models import PluginConfig
 from ..sr import SrPreset
 from ..utils.model import kv
@@ -528,6 +529,102 @@ class WatcherConfig(BaseModel):
     )
 
 
+class ParsingConfig(BaseModel):
+    """番号解析与检索的用户约定; 同时服务扫描 (watcher / REFRESH)、整理与刮削."""
+
+    escape_strings: list[str] = []
+    """解析前整段剔除的串, 文件名与目录名都适用; 用于带网址或站点署名的文件名."""
+
+    prefix_types: dict[str, ContentType] = {}
+    """番号前缀 → 内容类型; 键大小写不敏感, 覆盖内置判定, 但目录名关键词仍优先."""
+
+    search_aliases: dict[str, list[str]] = {}
+    """番号前缀 → 检索别名番号; 非空即覆盖该前缀的自动别名, 顺序即尝试顺序."""
+
+    auto_search_aliases: bool = True
+    """按内置别名映射自动补检索词 (如 300MIUM 与 MIUM 互补)."""
+
+    @field_validator("escape_strings")
+    @classmethod
+    def _normalize_escape_strings(cls, values: list[str]) -> list[str]:
+        """去首尾空白、丢空串、保序去重."""
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @field_validator("prefix_types", mode="before")
+    @classmethod
+    def _normalize_prefix_types(cls, values: object) -> object:
+        """键归一为大写并去掉尾部分隔符 (`MIUM-` 与 `MIUM` 是同一条); 取值由枚举校验."""
+        if not isinstance(values, dict):
+            return values
+        return {key.strip().upper().rstrip(_PREFIX_SEPARATORS): value for key, value in values.items()}
+
+    @field_validator("prefix_types")
+    @classmethod
+    def _reject_empty_prefix_types(cls, values: dict[str, ContentType]) -> dict[str, ContentType]:
+        if any(not key for key in values):
+            raise ValueError("prefix_types 的前缀不得为空")
+        return values
+
+    @field_validator("search_aliases", mode="before")
+    @classmethod
+    def _normalize_search_aliases(cls, values: object) -> object:
+        """键归一为大写, 值去空白、丢空串、保序去重."""
+        if not isinstance(values, dict):
+            return values
+        normalized: dict[str, list[str]] = {}
+        for key, aliases in values.items():
+            normalized[key.strip().upper().rstrip(_PREFIX_SEPARATORS)] = list(
+                dict.fromkeys(alias.strip() for alias in aliases if alias.strip())
+            )
+        if any(not key for key in normalized):
+            raise ValueError("search_aliases 的前缀不得为空")
+        return normalized
+
+
+_PREFIX_SEPARATORS = "-_. "
+
+
+def _short_forms() -> dict[str, str]:
+    """把带枚举前缀的番号折算到用户实际书写的形态: `300MIUM` → `MIUM`.
+
+    只登记内置别名表里「长前缀对应一个更短的书写形态」的那些 (`259LUXU` → `LUXU`); 键本身已经是
+    书写形态的 (如 `LUXU`) 不需要折算. 与用户配置无关: 写了 `MIUM` 就该命中 `300MIUM`.
+    """
+    # SUREN_PREFIXES 是 短前缀 → 长前缀.
+    forms: dict[str, str] = {}
+    for short, long in SUREN_PREFIXES.items():
+        short_form = short.rstrip(_PREFIX_SEPARATORS)
+        long_form = long.rstrip(_PREFIX_SEPARATORS)
+        if short_form == long_form:
+            continue
+        forms[long] = short
+        forms[long_form] = short_form
+    return forms
+
+
+def _search_aliases(config: ParsingConfig) -> dict[str, tuple[str, ...]]:
+    """用户别名原样保留; 自动别名按内置映射的键 ∪ 值双向补齐, 用户写了就不补."""
+    aliases: dict[str, tuple[str, ...]] = {key: tuple(values) for key, values in config.search_aliases.items()}
+    if not config.auto_search_aliases:
+        return aliases
+    for short, long in SUREN_PREFIXES.items():
+        short_key = short.rstrip(_PREFIX_SEPARATORS)
+        long_key = long.rstrip(_PREFIX_SEPARATORS)
+        aliases.setdefault(long_key, (short_key,))
+        aliases.setdefault(short_key, (long_key,))
+    return aliases
+
+
+def build_number_rules(config: ParsingConfig) -> NumberRules:
+    """配置 → 解析规则的唯一入口; 归一由 ``ParsingConfig`` 的校验器完成."""
+    return NumberRules(
+        escape_strings=tuple(config.escape_strings),
+        prefix_types=dict(config.prefix_types),
+        search_aliases=_search_aliases(config),
+        prefix_short_forms=_short_forms(),
+    )
+
+
 class LoggingConfig(BaseModel):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO")
     debug_capture: bool = False
@@ -724,6 +821,7 @@ class HotSettings(BaseModel):
         browser.setdefault("timeout", timeout)
         return data
 
+    parsing: ParsingConfig = ParsingConfig()
     scraping: ScrapingConfig = ScrapingConfig()
     actor_scraping: ActorScrapingConfig = ActorScrapingConfig()
     agent: AgentConfig = AgentConfig()

@@ -170,8 +170,8 @@ async def get_task_children(
 
 
 @router.post("", status_code=202)
-async def submit_task(req: Annotated[TaskSubmission, Body(...)], repo: RepoDep) -> TaskResponse:
-    task_type, payload = await resolve_submission(req, repo)
+async def submit_task(req: Annotated[TaskSubmission, Body(...)], repo: RepoDep, runtime: RuntimeDep) -> TaskResponse:
+    task_type, payload = await resolve_submission(req, repo, rules=runtime.number_rules)
     task = await repo.create_task(task_type=task_type, payload=payload)
     # mode="json": 该日志经 WS 广播时会被 json 序列化, payload 中的 set/enum 等需转为原生类型.
     logger.info("task submitted", task_id=task.id, task_type=task_type, payload=payload.model_dump(mode="json"))

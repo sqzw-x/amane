@@ -15,6 +15,7 @@ from ...handlers import (
     ScrapePayload,
     UpscalePayload,
 )
+from ...parsing import EMPTY_NUMBER_RULES
 from ..models import (
     ActorScrapeSubmission,
     CleanupSubmission,
@@ -31,6 +32,7 @@ from ..models import (
 
 if TYPE_CHECKING:
     from ...db.repository import Repository
+    from ...parsing import NumberRules
 
 ResolvedPayload = (
     RefreshPayload
@@ -46,7 +48,9 @@ ResolvedPayload = (
 )
 
 
-async def resolve_submission(req: TaskSubmission, repo: Repository) -> tuple[TaskType, ResolvedPayload]:
+async def resolve_submission(
+    req: TaskSubmission, repo: Repository, *, rules: NumberRules | None = None
+) -> tuple[TaskType, ResolvedPayload]:
     match req:
         case RefreshSubmission():
             await req.resolve(repo)
@@ -60,7 +64,7 @@ async def resolve_submission(req: TaskSubmission, repo: Repository) -> tuple[Tas
             await req.resolve(repo)
             return TaskType.SCAN_INVALID, req
         case ScrapeSubmission():
-            return TaskType.SCRAPE, await req.resolve(repo)
+            return TaskType.SCRAPE, await req.resolve(repo, rules=rules if rules is not None else EMPTY_NUMBER_RULES)
         case CleanupSubmission():
             return TaskType.CLEANUP, CleanupPayload(
                 remove_missing_files=req.remove_missing_files,

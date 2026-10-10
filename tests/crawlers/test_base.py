@@ -286,3 +286,23 @@ async def test_actor_fetch_bubbles_request_error():
 
     with pytest.raises(RequestError, match="timeout"):
         await ErrActor(client=AsyncMock(spec=HttpClient)).fetch("Alice")
+
+
+class TestSearchQueryAlternates:
+    """别名候选在构造期收口: 同形与空项丢弃, 顺序保留."""
+
+    def test_drops_duplicates_and_self(self):
+        query = SearchQuery("300MIUM-123", alternate_numbers=("MIUM-123", "300mium123", " MIUM-123 ", ""))
+        assert query.alternate_numbers == ("MIUM-123",)
+
+    def test_keeps_order(self):
+        query = SearchQuery("A-1", alternate_numbers=("B-2", "C-3"))
+        assert query.alternate_numbers == ("B-2", "C-3")
+
+    def test_empty_by_default(self):
+        assert SearchQuery("A-1").alternate_numbers == ()
+
+    def test_underscore_is_not_folded(self):
+        """下划线不当短横线: 010115_001 与 010115-001 是两部片."""
+        query = SearchQuery("010115-001", alternate_numbers=("010115_001",))
+        assert query.alternate_numbers == ("010115_001",)

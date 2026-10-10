@@ -12,10 +12,10 @@ import structlog
 from ..db.models import Library, TaskType
 from ..enums import LibraryAutomation, LibraryIngest
 from ..events import EventBus, EventType
-from ..handlers._common import refresh_external_subtitle, register_media_file, scan_library
+from ..handlers._common import register_media_file, scan_library
 from ..handlers.models import ScrapePayload
 from ..library import LibraryFileKind, LibraryScan
-from ..parsing import parse_file_info
+from ..parsing import EMPTY_NUMBER_RULES, NumberRules, parse_file_info
 from ..utils.path import is_descendant, path_is_under
 from .clouddrive import CloudDriveChange, CloudDriveRoute, local_for, match_route
 from .watcher import FileWatcher
@@ -66,11 +66,14 @@ class WatcherService:
         debounce_seconds: float = 3.0,
         check_interval: float = _CHECK_INTERVAL,
         observer_timeout: float = 1.0,
+        number_rules: NumberRules = EMPTY_NUMBER_RULES,
     ):
         self._repo = repo
         self._event_bus = event_bus
         self._use_polling = use_polling
         self._media_extensions = media_extensions
+        # 解析规则随热配置变化: AppRuntime._rebuild() 经 set_number_rules 替换, 构造期参数只给初始值.
+        self._number_rules = number_rules
         self._debounce_seconds = debounce_seconds
         self._check_interval = check_interval
         self._observer_timeout = observer_timeout
@@ -82,6 +85,10 @@ class WatcherService:
     @property
     def is_running(self) -> bool:
         return self._running
+
+    def set_number_rules(self, rules: NumberRules) -> None:
+        """热重载时替换解析规则; watcher 不重建, 因此由 AppRuntime 调用."""
+        self._number_rules = rules
 
     def _new_watcher(self) -> FileWatcher:
         return FileWatcher(
@@ -431,9 +438,7 @@ class WatcherService:
             if src_route.library_id == dest_route.library_id:
                 if self._accept_cloud_file(dest_route, dest):
                     library = await self._repo.get_library(dest_route.library_id)
-                    updated = await self._repo.update_media_file(media.id, path=str(dest))
-                    if updated is not None and library is not None:
-                        await refresh_external_subtitle(self._repo, updated, library)
+                    await self._repo.rewrite_media_path(media.id, str(dest), rules=self._number_rules, library=library)
                 else:
                     await self._on_file_deleted(Path(media.path))
                 continue
@@ -468,13 +473,14 @@ class WatcherService:
             logger.debug("file already tracked", path=path_str)
             return
 
+        rules = self._number_rules
         library = await self._repo.get_library(library_id)
-        media = await register_media_file(self._repo, library_id, path, library=library)
+        media = await register_media_file(self._repo, library_id, path, library=library, rules=rules)
         assert media.id is not None
         logger.info("file discovered", path=path_str, media_file_id=media.id, library_id=library_id)
 
         try:
-            parsed = parse_file_info(path_str)
+            parsed = parse_file_info(path_str, rules=rules)
         except Exception:
             logger.debug("cannot parse number", path=path_str)
             parsed = None
@@ -515,9 +521,7 @@ class WatcherService:
 
         assert media.id is not None
         library = await self._repo.get_library(library_id)
-        updated = await self._repo.update_media_file(media.id, path=dest_str)
-        if updated is not None and library is not None:
-            await refresh_external_subtitle(self._repo, updated, library)
+        await self._repo.rewrite_media_path(media.id, dest_str, rules=self._number_rules, library=library)
         logger.info("file path updated", src=src_str, dest=dest_str, media_file_id=media.id)
 
     async def _debounce_loop(self) -> None:

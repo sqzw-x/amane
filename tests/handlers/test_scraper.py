@@ -16,7 +16,7 @@ from amane.enums import MetadataField, SiteName
 from amane.handlers import RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
 from amane.library import CleanupInventory, InventorySource, InventoryStore, LibraryFileKind, LibraryHit, scan_inventory
 from amane.observability import Recorder
-from amane.parsing import ContentType
+from amane.parsing import EMPTY_NUMBER_RULES, ContentType
 from amane.plugins.models import SourceDescriptor
 
 if TYPE_CHECKING:
@@ -92,7 +92,7 @@ def handler(repo, factory, resource_store):
 class TestScrapeHandler:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_successful_scrape(self, repo: Repository, handler):
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         result = await handler.handle(
             ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
         )
@@ -111,7 +111,7 @@ class TestScrapeHandler:
         assert seeded.id is not None
         await repo.set_metadata_locks(seeded.id, [MetadataField.TITLE])
 
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         result = await handler.handle(
             ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
         )
@@ -133,7 +133,7 @@ class TestScrapeHandler:
             events.append((current, total, message))
 
         handler.set_progress_callback(capture)
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         result = await handler.handle(
             ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
         )
@@ -152,7 +152,7 @@ class TestScrapeHandler:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_updates_media_file_status(self, repo: Repository, handler):
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
         await handler.handle(
             ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
@@ -177,7 +177,7 @@ class TestScrapeHandler:
             resource_store=resource_store,
             pipeline_config=HotSettings(),
         )
-        media = await repo.create_media_file(library_id=1, path="/media/TEST-001.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/TEST-001.mp4", rules=EMPTY_NUMBER_RULES)
         # 站点明细来自 `Recorder`, 没有它时失败载荷只有 `failed_sites`.
         recorder = Recorder.begin(
             tmp_path, Task(id=91, type=TaskType.SCRAPE, status=TaskStatus.RUNNING, payload={}), HotSettings()
@@ -217,7 +217,7 @@ class TestScrapeHandler:
             resource_store=resource_store,
             pipeline_config=HotSettings(),
         )
-        media = await repo.create_media_file(library_id=1, path="/media/POSTER-001.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/POSTER-001.mp4", rules=EMPTY_NUMBER_RULES)
         result = await h.handle(
             ScrapePayload(media_file_id=media.id, number="POSTER-001", content_type=ContentType.CENSORED)
         )
@@ -250,7 +250,7 @@ class TestScrapeHandler:
             resource_store=resource_store,
             pipeline_config=HotSettings(),
         )
-        media = await repo.create_media_file(library_id=1, path="/media/POSTER-001.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/POSTER-001.mp4", rules=EMPTY_NUMBER_RULES)
         result = await h.handle(
             ScrapePayload(media_file_id=media.id, number="POSTER-001", content_type=ContentType.CENSORED)
         )
@@ -285,7 +285,7 @@ class TestScrapeHandler:
             pipeline_config=HotSettings(),
             source_catalog=catalog,
         )
-        media = await repo.create_media_file(library_id=1, path="/media/PHASE-001.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/PHASE-001.mp4", rules=EMPTY_NUMBER_RULES)
         result = await h.handle(
             ScrapePayload(media_file_id=media.id, number="PHASE-001", content_type=ContentType.CENSORED)
         )
@@ -318,7 +318,7 @@ class TestScrapeHandler:
             resource_store=resource_store,
             pipeline_config=_config_with({ContentType.CENSORED: [SiteName.DMM, SiteName.OFFICIAL]}),
         )
-        media = await repo.create_media_file(library_id=1, path="/media/PHASE-002.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/PHASE-002.mp4", rules=EMPTY_NUMBER_RULES)
         result = await h.handle(
             ScrapePayload(media_file_id=media.id, number="PHASE-002", content_type=ContentType.CENSORED)
         )
@@ -373,7 +373,7 @@ class TestScrapeHandler:
             pipeline_config=HotSettings(),
             web_client=cast("WebClient", FakeWebClient()),
         )
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         result = await h.handle(
             ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
         )
@@ -422,7 +422,7 @@ class TestContentRoutesFiltering:
         config = _config_with({ContentType.CENSORED: [SiteName.JAVDB, SiteName.DMM]})
         h = ScrapeHandler(repo=repo, factory=factory, resource_store=resource_store, pipeline_config=config)
 
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         await h.handle(ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED))
 
         assert set(factory.requested) == {SiteName.JAVDB, SiteName.DMM}
@@ -435,7 +435,7 @@ class TestContentRoutesFiltering:
         config = _config_with({ContentType.CENSORED: [SiteName.JAVBUS], ContentType.FC2: []})
         h = ScrapeHandler(repo=repo, factory=factory, resource_store=resource_store, pipeline_config=config)
 
-        media = await repo.create_media_file(library_id=1, path="/media/FC2-1.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/FC2-1.mp4", rules=EMPTY_NUMBER_RULES)
         result = await h.handle(ScrapePayload(media_file_id=media.id, number="FC2-1", content_type=ContentType.FC2))
 
         assert result.success is False
@@ -455,7 +455,7 @@ class TestContentRoutesFiltering:
         )
         h = ScrapeHandler(repo=repo, factory=factory, resource_store=resource_store, pipeline_config=config)
 
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         await h.handle(ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED))
 
         assert list(factory.requested) == [SiteName.JAVDB]
@@ -487,7 +487,7 @@ class TestContentRoutesFiltering:
         )
         h = ScrapeHandler(repo=repo, factory=factory, resource_store=resource_store, pipeline_config=config)
 
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         result = await h.handle(
             ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
         )
@@ -523,7 +523,7 @@ class TestScrapeTranslation:
             pipeline_config=config,
             translator=StubTranslator(),
         )
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         await h.handle(ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED))
 
         metadata = await repo.get_metadata_by_number("MIDV-123")
@@ -548,7 +548,7 @@ class TestScrapeTranslation:
             pipeline_config=config,
             translator=BrokenTranslator(),
         )
-        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
+        media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4", rules=EMPTY_NUMBER_RULES)
         result = await h.handle(
             ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
         )
@@ -634,7 +634,9 @@ class TestRefreshHandler:
         assert lib.id is not None
         rows = []
         for index in range(20):
-            row = await repo.create_media_file(lib.id, path=str(tmp_path / f"NSFS-{index:03d}.mp4"))
+            row = await repo.create_media_file(
+                lib.id, path=str(tmp_path / f"NSFS-{index:03d}.mp4"), rules=EMPTY_NUMBER_RULES
+            )
             assert row.id is not None
             rows.append(row)
 
@@ -669,7 +671,9 @@ class TestRefreshHandler:
             path = tmp_path / name
             path.write_bytes(b"\x00" * 100)
             if db:
-                return await repo.create_media_file(library_id=1, path=str(path), status=status)
+                return await repo.create_media_file(
+                    library_id=1, path=str(path), status=status, rules=EMPTY_NUMBER_RULES
+                )
             return None
 
         await new_file("MIDV-123.mp4", db=True, status=MediaFileStatus.PENDING)  # 已注册 PENDING -> 刮削
@@ -742,7 +746,9 @@ class TestRefreshHandler:
         ad = tmp_path / "新片广告.mp4"
         ad.write_bytes(b"\x00" * 100)
         (tmp_path / "MIDV-123.mp4").write_bytes(b"\x00" * 100)
-        old = await repo.create_media_file(lib.id, path=str(ad), status=MediaFileStatus.SCRAPED, metadata_id=42)
+        old = await repo.create_media_file(
+            lib.id, path=str(ad), status=MediaFileStatus.SCRAPED, metadata_id=42, rules=EMPTY_NUMBER_RULES
+        )
         assert old.id is not None
 
         handler = RefreshHandler(repo=repo)
@@ -772,7 +778,9 @@ class TestRefreshHandler:
         ad.write_bytes(b"tiny")
         (tmp_path / "MIDV-123.mp4").write_bytes(b"x" * 100)
         (tmp_path / "note.nfo").write_bytes(b"nfo")
-        old = await repo.create_media_file(lib.id, path=str(ad), status=MediaFileStatus.SCRAPED, metadata_id=42)
+        old = await repo.create_media_file(
+            lib.id, path=str(ad), status=MediaFileStatus.SCRAPED, metadata_id=42, rules=EMPTY_NUMBER_RULES
+        )
         assert old.id is not None
 
         handler = RefreshHandler(repo=repo)
@@ -800,8 +808,8 @@ class TestRefreshHandler:
         assert lib.id is not None
         keep = tmp_path / "MIDV-123.mp4"
         keep.write_bytes(b"\x00" * 100)
-        await repo.create_media_file(lib.id, path=str(keep))
-        gone = await repo.create_media_file(lib.id, path=str(tmp_path / "missing.mp4"))
+        await repo.create_media_file(lib.id, path=str(keep), rules=EMPTY_NUMBER_RULES)
+        gone = await repo.create_media_file(lib.id, path=str(tmp_path / "missing.mp4"), rules=EMPTY_NUMBER_RULES)
         assert gone.id is not None
 
         result = await RefreshHandler(repo=repo).handle(
@@ -822,7 +830,7 @@ class TestRefreshHandler:
         nfd.write_bytes(b"\x00" * 100)
         lib = await repo.create_library(name="t", path=str(tmp_path))
         assert lib.id is not None
-        media = await repo.create_media_file(lib.id, path=str(nfd))
+        media = await repo.create_media_file(lib.id, path=str(nfd), rules=EMPTY_NUMBER_RULES)
         assert media.id is not None
         assert media.path == str(tmp_path / "\u3058.mp4")
 
@@ -845,7 +853,7 @@ class TestRefreshHandler:
         assert lib.id is not None
         stored = tmp_path / f"{nfc}.mp4"
         stored.write_bytes(b"\x00" * 100)
-        media = await repo.create_media_file(lib.id, path=str(stored))
+        media = await repo.create_media_file(lib.id, path=str(stored), rules=EMPTY_NUMBER_RULES)
         assert media.path == str(stored)
 
         listed = tmp_path / f"{nfd}.mp4"
@@ -949,7 +957,10 @@ class TestRefreshHandler:
         n = 51
         for i in range(n):
             await repo.create_media_file(
-                library_id=1, path=str(tmp_path / f"MIDV-{i:03d}.mp4"), status=MediaFileStatus.PENDING
+                library_id=1,
+                path=str(tmp_path / f"MIDV-{i:03d}.mp4"),
+                status=MediaFileStatus.PENDING,
+                rules=EMPTY_NUMBER_RULES,
             )
 
         handler = RefreshHandler(repo=repo)
