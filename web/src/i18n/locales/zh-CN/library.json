@@ -78,10 +78,20 @@
   "invalidId": "无效的媒体库 ID",
   "automation": {
     "label": "自动化",
-    "hint": "控制监控与自动刮削. 整理仍需手动触发",
+    "hint": "控制监控与自动刮削",
     "none": "关闭",
     "watch": "仅监控",
     "scrape": "监控+刮削"
+  },
+  "autoOrganize": {
+    "label": "自动整理",
+    "hint": "刮削完成后自动把该文件整理到库路径; 关闭只影响之后的任务, 已入队的整理仍会执行"
+  },
+  "lastOrganize": {
+    "label": "最近一次整理",
+    "counts": "最近一次整理 {{time}}: 整理 {{organized}} · 跳过 {{skipped}} · 冲突 {{conflicted}} · 失败 {{failed}}",
+    "failed": "整理失败: {{error}}",
+    "justNow": "刚刚"
   },
   "ingest": {
     "label": "文件发现方式",

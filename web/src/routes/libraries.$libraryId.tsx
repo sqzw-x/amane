@@ -46,6 +46,7 @@ import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { extractErrorMessage } from "@/lib/api-error";
 import { isOneOf } from "@/lib/exhaustive";
 import { MEDIA_FILE_STATUSES, MEDIA_SORT_FIELDS, SORT_ORDERS } from "@/lib/exhaustive-maps";
+import { formatRelativeTime } from "@/lib/format-relative-time";
 import { useUIStore } from "@/stores/ui";
 
 const libraryDetailSearchSchema = z.object({
@@ -90,7 +91,7 @@ function LibraryDetailPage() {
   const { libraryId } = Route.useParams();
   const search = Route.useSearch();
   const routeNavigate = Route.useNavigate();
-  const { t } = useTranslation(["library", "common"]);
+  const { t, i18n } = useTranslation(["library", "common"]);
   const navigate = useNavigate();
   const narrow = useNarrowViewport("md");
   const queryClient = useQueryClient();
@@ -234,9 +235,30 @@ function LibraryDetailPage() {
           </Stack>
         }
         summary={
-          <Text size="sm" c="dimmed">
-            {t("common:pagination.totalItems", { count: total })}
-          </Text>
+          <Stack gap={2}>
+            <Text size="sm" c="dimmed">
+              {t("common:pagination.totalItems", { count: total })}
+            </Text>
+            {library.last_organize && (
+              <Text size="xs" c={library.last_organize.status === "failed" ? "red" : "dimmed"}>
+                {library.last_organize.status === "failed"
+                  ? t("lastOrganize.failed", { error: library.last_organize.error ?? "" })
+                  : t("lastOrganize.counts", {
+                      time: library.last_organize.at
+                        ? formatRelativeTime(
+                            library.last_organize.at,
+                            i18n.language,
+                            t("lastOrganize.justNow"),
+                          )
+                        : "",
+                      organized: library.last_organize.organized,
+                      skipped: library.last_organize.skipped,
+                      conflicted: library.last_organize.conflicted,
+                      failed: library.last_organize.failed,
+                    })}
+              </Text>
+            )}
+          </Stack>
         }
         search={
           <TextInput

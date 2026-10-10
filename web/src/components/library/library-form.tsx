@@ -108,6 +108,7 @@ export interface LibraryFormState {
   trailer_template: string;
   subtitle_template: string;
   automation: LibraryAutomation;
+  auto_organize: boolean;
   ingest: LibraryIngest;
   cloud_path: string;
   scan: boolean;
@@ -141,6 +142,7 @@ export function emptyLibraryForm(schema?: PathTemplateSchemaResponse | null): Li
     trailer_template: defaults?.trailer_template ?? "",
     subtitle_template: defaults?.subtitle_template ?? "",
     automation: "scrape",
+    auto_organize: false,
     ingest: "native",
     cloud_path: "",
     scan: true,
@@ -172,6 +174,7 @@ export function libraryFormFromResponse(lib: LibraryResponse): LibraryFormState 
     trailer_template: lib.trailer_template ?? "",
     subtitle_template: lib.subtitle_template ?? "",
     automation: lib.automation,
+    auto_organize: lib.auto_organize,
     ingest: lib.ingest,
     cloud_path: lib.cloud_path ?? "",
     scan: false,
@@ -218,6 +221,7 @@ function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
     trailer_template: form.trailer_template.trim(),
     subtitle_template: form.subtitle_template.trim(),
     automation: form.automation,
+    auto_organize: form.auto_organize,
     ingest: form.ingest,
     cloud_path: form.ingest === "clouddrive" ? form.cloud_path.trim() : "",
   };
@@ -547,6 +551,13 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
             value={value.automation}
             onChange={(automation) => onChange({ ...value, automation })}
             getLabel={(level) => t(`automation.${level}`)}
+          />
+        </FieldChrome>
+        <FieldChrome label={t("autoOrganize.label")} description={t("autoOrganize.hint")}>
+          <Switch
+            checked={value.auto_organize}
+            onChange={(e) => onChange({ ...value, auto_organize: e.currentTarget.checked })}
+            aria-label={t("autoOrganize.label")}
           />
         </FieldChrome>
         {showCreateOnly && (
