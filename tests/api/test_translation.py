@@ -221,3 +221,25 @@ class TestActorTranslation:
         resp = await client.post(f"translation/actors/{actor_id}")
 
         assert resp.status_code == 503
+
+
+class TestTranslatorOwnership:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_rebuild_key(self, app: Any, client: AsyncClient) -> None:
+        """LLM 无关的热配置变更不换翻译面; llm 段或代理变更才换."""
+        runtime = app.state.runtime
+        assert runtime.translator is None
+
+        resp = await client.patch("config", json={"llm": {"enabled": True, "api_key": "k", "model": "m"}})
+        assert resp.status_code == 200
+        first = runtime.translator
+        assert first is not None
+
+        resp = await client.patch("config", json={"logging": {"level": "DEBUG"}})
+        assert resp.status_code == 200
+        assert runtime.translator is first
+
+        resp = await client.patch("config", json={"llm": {"model": "m2"}})
+        assert resp.status_code == 200
+        assert runtime.translator is not first
+        assert runtime.translator is not None
