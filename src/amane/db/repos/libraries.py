@@ -149,8 +149,9 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         """各库最近一条终态 ORGANIZE 任务; 未整理过的库不出现在结果中.
 
         覆盖子任务: 自动整理挂在各文件的 SCRAPE 链下, 不能按链根还原 (链根是 SCRAPE).
-        库归属在 payload 里, 用 json_extract 逐库反查: 每个库各取 id 最大的一条, 命中即停,
-        因此不会像「取全局最近 N 条再筛」那样把久未整理的库误报成从未整理.
+        库归属在 payload 里 (JSON 列), 没有能定位它的索引列, 因此逐库用 json_extract 反查:
+        每个库各取 id 最大的一条, 命中即停, 库本身从未整理时走满该索引. 结果是确定的,
+        与库在其它库的整理历史里排第几无关.
         """
         out: dict[int, Task] = {}
         async with self._session() as session:
