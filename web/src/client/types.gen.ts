@@ -3977,6 +3977,12 @@ export type SiteConfig = {
      * Rate Limit
      */
     rate_limit?: number | null;
+    /**
+     * Wiki Languages
+     *
+     * 维基百科词条语言优先级, 依序取第一个有正文的词条
+     */
+    wiki_languages?: Array<'zh' | 'ja' | 'en'>;
 };
 
 /**

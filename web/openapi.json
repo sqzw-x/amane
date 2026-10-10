@@ -8787,189 +8787,324 @@
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "avbase": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "avsox": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "dahlia": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "dmm": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "faleno": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "fc2": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "fc2club": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "fc2ppvdb": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "freejavbt": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "getchu": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "gfriends": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "giga": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "iqqtv": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "jav321": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "javbus": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "javdb": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "javlibrary": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "kin8": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "mgstage": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "minnano": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "official": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "prestige": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "r18dev": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "theporndb": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "wikipedia": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 },
                 "xcity": {
                   "cookie": {},
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
-                  "use_proxy": true
+                  "use_proxy": true,
+                  "wiki_languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ]
                 }
               }
             }
@@ -13603,6 +13738,23 @@
             ],
             "title": "Rate Limit",
             "default": 2
+          },
+          "wiki_languages": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "zh",
+                "ja",
+                "en"
+              ]
+            },
+            "type": "array",
+            "title": "Wiki Languages",
+            "description": "维基百科词条语言优先级, 依序取第一个有正文的词条",
+            "x-ordered": true,
+            "x-visible-keys": [
+              "wikipedia"
+            ]
           }
         },
         "type": "object",
