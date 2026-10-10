@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from amane.db.models import Library
 from amane.library.rules import (
     compile_skip_patterns,
+    has_companion_subtitle,
     is_in_trash,
     is_skipped_media,
     is_undersized_video,
@@ -178,3 +179,31 @@ def test_is_undersized_video_broken_symlink_is_not_undersized(tmp_path: Path):
 
 def test_is_undersized_video_stat_failure_is_not_undersized(tmp_path: Path):
     assert is_undersized_video(tmp_path / "missing.mp4", 10) is False
+
+
+COMPANION_SUBTITLE_CASES = [
+    (["video.mp4", "video.srt"], [".srt"], "video.mp4", True),
+    (["video.mp4", "other.ass"], [".srt", ".ass"], "video.mp4", True),
+    (["video.mp4", "sub.SRT"], [".srt"], "video.mp4", True),
+    (["video.mp4", "video.ass"], [".SRT", ".ASS"], "video.mp4", True),
+    (["video.mp4", "video.txt"], [".srt"], "video.mp4", False),
+    (["video.mp4", "video.srt"], [], "video.mp4", False),
+    (["video.mp4", "video.srt"], ["srt"], "video.mp4", False),
+]
+
+
+@pytest.mark.parametrize(("names", "extensions", "video", "found"), COMPANION_SUBTITLE_CASES)
+def test_has_companion_subtitle(tmp_path: Path, names: list[str], extensions: list[str], video: str, found: bool):
+    for name in names:
+        (tmp_path / name).touch()
+    assert has_companion_subtitle.sync(tmp_path / video, extensions) is found
+
+
+def test_has_companion_subtitle_ignores_directories(tmp_path: Path):
+    (tmp_path / "video.mp4").touch()
+    (tmp_path / "nested.srt").mkdir()
+    assert has_companion_subtitle.sync(tmp_path / "video.mp4", [".srt"]) is False
+
+
+def test_has_companion_subtitle_missing_directory_is_false(tmp_path: Path):
+    assert has_companion_subtitle.sync(tmp_path / "gone" / "video.mp4", [".srt"]) is False

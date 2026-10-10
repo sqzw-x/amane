@@ -1,16 +1,21 @@
 """tests for amane.handlers._common -- handler 间共享单元."""
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 from amane.db import MediaFileStatus
-from amane.handlers._common import ensure_oshash, finalize_media_file, scan_library
+from amane.handlers._common import (
+    ensure_oshash,
+    finalize_media_file,
+    refresh_external_subtitle,
+    register_media_file,
+    scan_library,
+)
 from amane.library import LibraryFileKind, LibraryHit, LibraryScan
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from amane.db.repository import Repository
 
 
@@ -145,3 +150,66 @@ class TestFinalizeMediaFile:
         updated = await repo.get_media_file(media.id)
         assert updated is not None
         assert updated.status == MediaFileStatus.SCRAPED
+
+
+class TestExternalSubtitle:
+    """登记与改 path 时的同目录字幕检查."""
+
+    @pytest.mark.asyncio
+    async def test_register_media_file_reads_library_extensions(self, repo: Repository, tmp_path: Path):
+        (tmp_path / "MIDV-001.mp4").touch()
+        (tmp_path / "MIDV-001.chs.srt").touch()
+        library = await repo.create_library(name="t", path=str(tmp_path), subtitle_extensions=[".srt"])
+        assert library.id is not None
+
+        media = await register_media_file(repo, library.id, tmp_path / "MIDV-001.mp4", library=library)
+        assert media.has_subtitle is True
+        assert media.has_external_subtitle is True
+        assert media.has_subtitle_in_name is False
+        assert media.id is not None
+        stored = await repo.get_media_file(media.id)
+        assert stored is not None
+        assert stored.has_external_subtitle is True
+
+    @pytest.mark.asyncio
+    async def test_register_media_file_without_library_leaves_flag(self, repo: Repository, tmp_path: Path):
+        (tmp_path / "MIDV-002.mp4").touch()
+        (tmp_path / "MIDV-002.srt").touch()
+
+        media = await register_media_file(repo, 1, tmp_path / "MIDV-002.mp4")
+        assert media.has_external_subtitle is False
+
+    @pytest.mark.asyncio
+    async def test_refresh_clears_stale_flag(self, repo: Repository, tmp_path: Path):
+        video = tmp_path / "MIDV-003.mp4"
+        video.touch()
+        subtitle = tmp_path / "MIDV-003.srt"
+        subtitle.touch()
+        library = await repo.create_library(name="t", path=str(tmp_path), subtitle_extensions=[".srt"])
+        assert library.id is not None
+
+        media = await register_media_file(repo, library.id, video, library=library)
+        assert media.id is not None
+        assert media.has_external_subtitle is True
+
+        await refresh_external_subtitle(repo, media, library)
+        assert media.has_external_subtitle is True
+
+        subtitle.unlink()
+        await refresh_external_subtitle(repo, media, library)
+        assert media.has_external_subtitle is False
+        stored = await repo.get_media_file(media.id)
+        assert stored is not None
+        assert stored.has_subtitle is False
+
+    @pytest.mark.asyncio
+    async def test_refresh_without_path_change_keeps_name_marker(self, repo: Repository, tmp_path: Path):
+        video = tmp_path / "MIDV-004-C.mp4"
+        video.touch()
+        library = await repo.create_library(name="t", path=str(tmp_path), subtitle_extensions=[])
+        assert library.id is not None
+
+        media = await register_media_file(repo, library.id, video, library=library)
+        assert media.has_subtitle_in_name is True
+        assert media.has_external_subtitle is False
+        assert media.has_subtitle is True

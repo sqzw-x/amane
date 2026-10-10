@@ -100,7 +100,7 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
                     if walked % _WALK_LOG_EVERY == 0:
                         logger.info("scan walking", path=payload.path, seen=walked, added=added)
                     if path_key not in existing_by_path:
-                        media = await register_media_file(self._repo, payload.library_id, file_path)
+                        media = await register_media_file(self._repo, payload.library_id, file_path, library=library)
                         existing_by_path[path_key] = media
                         added += 1
                 if added:

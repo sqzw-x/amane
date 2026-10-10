@@ -1,5 +1,7 @@
 """SQLModel 表约束: 唯一性由 SQLite 强制, 不经 Repository."""
 
+from collections.abc import Callable
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, create_engine
@@ -42,3 +44,33 @@ class TestMetadata:
         session.add(m2)
         with pytest.raises(IntegrityError):
             session.commit()
+
+
+class TestMediaFileHasSubtitle:
+    """`MediaFile.has_subtitle` 是实例专属属性: 类属性上的比较与真值判断必须报错.
+
+    否则该名字写进 SQL 表达式会静默编译出 ``WHERE false``, 返回空集.
+    """
+
+    @pytest.mark.parametrize(
+        "misuse",
+        [
+            pytest.param(lambda: MediaFile.has_subtitle == True, id="eq-true"),  # noqa: E712
+            pytest.param(lambda: MediaFile.has_subtitle == False, id="eq-false"),  # noqa: E712
+            pytest.param(lambda: MediaFile.has_subtitle != True, id="ne-true"),  # noqa: E712
+            pytest.param(lambda: not MediaFile.has_subtitle, id="bool"),
+        ],
+    )
+    def test_class_level_use_raises(self, misuse: Callable[[], object]):
+        with pytest.raises(TypeError, match="SQL 判定请用 has_subtitle_predicate"):
+            misuse()
+
+    @pytest.mark.parametrize(
+        ("in_name", "external", "expected"),
+        [(True, False, True), (False, True, True), (False, False, False)],
+    )
+    def test_instance_use_returns_union(self, in_name: bool, external: bool, expected: bool):
+        media = MediaFile(
+            path="/v/MIDV-001.mp4", library_id=1, has_subtitle_in_name=in_name, has_external_subtitle=external
+        )
+        assert media.has_subtitle is expected
