@@ -7,6 +7,8 @@ Create Date: 2026-10-10 10:16:38.018011
 ``vr`` 与 ``score_rank`` 都是既有列的投影, 因此建列之后必须按现有数据回填一次:
 存量影片重算这两个判定不需要重新刮削. 回填逻辑与写入路径共用 `is_vr` 与 ``Metadata.score`` 的口径.
 
+建列与回填合在一个事务里 (契约见 migrations/env.py): 中途失败时库回到迁移前状态, 不留半成品, 重跑即可.
+
 down_revision 取建列时的 main head. #259 (ws-subtitle-detect) 也在 1f050b272f7d 上新增 revision,
 两条链合并后是 2 个 head; 合入顺序为 #259 在前, 本 PR 在合并前把本文件最早一条 revision 的
 down_revision 改成 d9dec3f83da7, 不手写 revision id.
@@ -27,7 +29,6 @@ down_revision: str | None = "1f050b272f7d"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# 单条 UPDATE 提交一批, 避免全表回填把整个迁移塞进一个事务.
 _BATCH = 2000
 
 
@@ -71,21 +72,26 @@ def _stored_score(raw: object) -> float | None:
 
 
 def _backfill() -> None:
-    """按现有 ``number`` / ``tags`` / ``scores`` 重算两列; 分批提交以便中断后可见进度."""
+    """按现有 ``number`` / ``tags`` / ``scores`` 重算两列.
+
+    禁止中途提交: 本 revision 的 DDL 与回填必须在同一个事务里, 否则失败后留下「列已建 + 部分行已回填 +
+    版本号未推进」的半成品, 重跑 upgrade 因 ``duplicate column name`` 失败 (契约见 migrations/env.py).
+    分批只为限制单条语句的绑定参数个数, 不改变事务边界.
+    """
     conn = op.get_bind()
     rows = conn.execute(text("SELECT id, number, tags, scores FROM metadata ORDER BY id")).all()
     for start in range(0, len(rows), _BATCH):
-        batch = rows[start : start + _BATCH]
-        for row_id, number, raw_tags, raw_scores in batch:
-            conn.execute(
-                text("UPDATE metadata SET vr = :vr, score = :score WHERE id = :id"),
+        conn.execute(
+            text("UPDATE metadata SET vr = :vr, score = :score WHERE id = :id"),
+            [
                 {
                     "vr": is_vr(number, _stored_tags(raw_tags)),
                     "score": _stored_score(raw_scores),
                     "id": row_id,
-                },
-            )
-        conn.commit()
+                }
+                for row_id, number, raw_tags, raw_scores in rows[start : start + _BATCH]
+            ],
+        )
 
 
 def downgrade() -> None:
