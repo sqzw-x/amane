@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
+from ..crawlers.actor.sites.wikipedia import WIKI_LANGUAGES
 from ..crawlers.site_roles import (
     ACTOR_IMAGE_SITES,
     ACTOR_PROFILE_SITES,
@@ -56,6 +57,15 @@ LANG_METADATA_FIELD_SET: frozenset[MetadataField] = frozenset(
 
 # json_schema_extra 需要 JsonValue 兼容类型, 使用 list[Any] 避免 pyright invariance 问题
 _SITES_WITH_API_TOKEN: list[Any] = [SiteName.THEPORNDB]
+_SITES_WITH_WIKI_LANGUAGES: list[Any] = [SiteName.WIKIPEDIA]
+
+
+def _wiki_languages_schema(schema: dict[str, Any]) -> None:
+    """取值收窄到来源支持的维基语言; 仅在维基站点卡片展示."""
+    schema["items"] = {"type": "string", "enum": list(WIKI_LANGUAGES)}
+    schema["x-ordered"] = True
+    schema["x-visible-keys"] = _SITES_WITH_WIKI_LANGUAGES
+
 
 #: 各内容类型默认有序路由 (资格真值 + 该类型默认字段优先级).
 _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
@@ -284,6 +294,26 @@ class SiteConfig(BaseModel):
 
     rate_limit: float | None = Field(default=2, ge=0.1, le=100)
     """req/s. 全局 network.rate_limits 有此站点域名时全局优先."""
+
+    wiki_languages: list[str] = Field(
+        default_factory=lambda: list(WIKI_LANGUAGES),
+        json_schema_extra=_wiki_languages_schema,
+        description="维基百科词条语言优先级, 依序取第一个有正文的词条",
+    )
+    """只由 WikipediaActorCrawler 读取; 收窄列表不会减少 Wikidata 检索语言."""
+
+    @field_validator("wiki_languages")
+    @classmethod
+    def _supported_wiki_languages(cls, v: list[str]) -> list[str]:
+        languages = list(dict.fromkeys(v))
+        if not languages:
+            msg = "wiki_languages 至少要保留一种语言"
+            raise ValueError(msg)
+        unsupported = [lang for lang in languages if lang not in WIKI_LANGUAGES]
+        if unsupported:
+            msg = f"wiki_languages 不支持 {', '.join(unsupported)}; 可选: {', '.join(WIKI_LANGUAGES)}"
+            raise ValueError(msg)
+        return languages
 
 
 class ScrapingConfig(BaseModel):

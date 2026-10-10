@@ -369,6 +369,22 @@
           "rate_limit": {
             "label": "速率限制",
             "description": "该站点每秒请求上限"
+          },
+          "wiki_languages": {
+            "label": "维基词条语言",
+            "description": "按顺序取第一个有正文的维基词条",
+            "options": {
+              "zh": "中文",
+              "ja": "日文",
+              "en": "英文"
+            },
+            "$": {
+              "options": {
+                "zh": "中文",
+                "ja": "日文",
+                "en": "英文"
+              }
+            }
           }
         }
       },
