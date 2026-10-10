@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import structlog
 from sqlmodel import col, select
@@ -151,11 +152,19 @@ class ResourceStore:
 
         # 下载. 失败可能是站点拦下指纹 (403/406, 见 net/http.py 的轮换), 也可能是上游本来就没有图;
         # 两种失败都不写资源记录, 这里给出资源层的告警, 与上游的请求级日志区分开.
-        if not await client.download(url, dest):
-            # 分块下载先按 Content-Length 建文件, 失败会留下只写入一部分的文件.
-            dest.unlink(missing_ok=True)
-            logger.warning("resource download failed", url=url, host=urlsplit(url).hostname)
-            return None
+        #
+        # dest 只由 URL 决定, 而获取不按 URL 串行: 就地写 dest 再在失败时删掉它,
+        # 会删掉并发调用刚写好的完整文件. 因此先写调用独享的临时文件 (分块下载失败留下的残片也在其中),
+        # 成功后再原子改名到 dest, 失败只清理临时文件, 不触碰 dest.
+        # 临时文件保留原扩展名: download 的实现可能按扩展名决定写出的格式.
+        tmp = dest.with_name(f"{dest.stem}.{uuid4().hex}.part{dest.suffix}")
+        try:
+            if not await client.download(url, tmp):
+                logger.warning("resource download failed", url=url, host=urlsplit(url).hostname)
+                return None
+            tmp.replace(dest)
+        finally:
+            tmp.unlink(missing_ok=True)
 
         size = dest.stat().st_size if dest.exists() else None
         mime = mimetypes.guess_type(str(dest))[0]
