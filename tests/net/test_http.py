@@ -1,4 +1,4 @@
-"""HTTP 限速器缓存 / 覆盖; RequestError 状态分类; 同源 Referer 注入; 重试次数; 指纹轮换."""
+"""HTTP 限速器缓存 / 覆盖; RequestError 状态分类; 同源 Referer 注入; 重试次数; 指纹轮换; 站点代理."""
 
 import asyncio
 import random
@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 
 import pytest
 
+from amane.config import SiteConfig
 from amane.net.errors import FailureKind, FailureReason, RequestError, RequestFailure
 from amane.net.http import (
     _IMPERSONATE_OPTIONS,
@@ -14,6 +15,7 @@ from amane.net.http import (
     WebClient,
     _FingerprintPicker,
     _with_same_origin_referer,
+    site_proxy_overrides,
 )
 
 
@@ -293,3 +295,86 @@ class TestImpersonateRotation:
         # 首次用满预算 4 次, 第二次补齐剩余 2 个, 之后退回单次
         assert len(session.calls) == 4 + 2 + 1
         assert session.calls[-1]["impersonate"] == _IMPERSONATE_OPTIONS[-1]
+
+
+_GLOBAL_PROXY = "http://127.0.0.1:7890"
+_SITE_PROXY = "socks5://127.0.0.1:1080"
+
+
+class TestSiteProxyOverrides:
+    """站点级代理按 host 汇总, 与限速器取同一份 host 集合 (profile URL + 配置的 base_url)."""
+
+    @pytest.mark.parametrize(
+        ("config", "site_urls", "expected"),
+        [
+            # 站点代理: 该站点的每个 host 都映射到它, 配置的镜像域同样纳入
+            (
+                SiteConfig(proxy=_SITE_PROXY, base_url="https://mirror.example"),
+                {"javdb": ["https://javdb.com", "https://javdb365.com"]},
+                {"javdb.com": _SITE_PROXY, "javdb365.com": _SITE_PROXY, "mirror.example": _SITE_PROXY},
+            ),
+            # 站点关闭代理: 显式直连, 站点代理不再生效
+            (SiteConfig(use_proxy=False, proxy=_SITE_PROXY), {"javdb": ["https://javdb.com"]}, {"javdb.com": None}),
+            (SiteConfig(use_proxy=False), {"javdb": ["https://javdb.com"]}, {"javdb.com": None}),
+            # 未配置站点代理: 该站点不进入结果, 沿用全局代理
+            (SiteConfig(), {"javdb": ["https://javdb.com"]}, {}),
+            # 站点没有已知 host: 不产生映射
+            (SiteConfig(proxy=_SITE_PROXY), {}, {}),
+        ],
+    )
+    def test_collects_overrides(self, config: SiteConfig, site_urls: dict[str, list[str]], expected: dict):
+        assert site_proxy_overrides({"javdb": config}, site_urls) == expected
+
+    def test_shared_host_keeps_last_site(self):
+        """多个站点共享 host 时按遍历顺序最后一次写入生效 (与限速器同一口径)."""
+        overrides = site_proxy_overrides(
+            {"a": SiteConfig(proxy="http://127.0.0.1:1111"), "b": SiteConfig(proxy="http://127.0.0.1:2222")},
+            {"a": ["https://shared.example"], "b": ["https://shared.example"]},
+        )
+        assert overrides == {"shared.example": "http://127.0.0.1:2222"}
+
+
+class TestProxyResolution:
+    """代理按 host 解析: 站点级覆盖优先于全局, 调用方 ``use_proxy=False`` 强制直连."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("url", "use_proxy", "expected"),
+        [
+            ("https://global.example/x", True, _GLOBAL_PROXY),
+            ("https://site.example/x", True, _SITE_PROXY),
+            # 站点显式关闭代理
+            ("https://direct.example/x", True, None),
+            # 本机服务 (solver) 强制直连, 站点代理也不生效
+            ("https://site.example/x", False, None),
+        ],
+    )
+    async def test_request_uses_host_proxy(
+        self, monkeypatch: pytest.MonkeyPatch, url: str, use_proxy: bool, expected: str | None
+    ):
+        client = WebClient(
+            proxy=_GLOBAL_PROXY,
+            proxy_overrides={"site.example": _SITE_PROXY, "direct.example": None},
+            limiters=RateLimiters(default_rate=100),
+        )
+        session = _StubSession()
+        monkeypatch.setattr(client, "_session", session)
+
+        await client.request("GET", url, use_proxy=use_proxy)
+
+        assert session.calls[0]["proxy"] == expected
+
+    @pytest.mark.asyncio
+    async def test_download_follows_host_proxy(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
+        """下载的探测与正文请求走同一代理."""
+        client = WebClient(
+            proxy=_GLOBAL_PROXY,
+            proxy_overrides={"pics.example": _SITE_PROXY},
+            limiters=RateLimiters(default_rate=100),
+        )
+        session = _StubSession(_StubResponse(content=b"jpeg-bytes"))
+        monkeypatch.setattr(client, "_session", session)
+
+        assert await client.download("https://pics.example/a.jpg", tmp_path / "a.jpg") is True
+
+        assert {call["proxy"] for call in session.calls} == {_SITE_PROXY}

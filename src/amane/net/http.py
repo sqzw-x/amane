@@ -151,6 +151,26 @@ def _make_limiter(rate: float) -> AsyncLimiter:
     return AsyncLimiter(1, 1 / rate)
 
 
+def site_proxy_overrides(
+    site_configs: Mapping[str, SiteConfig],
+    site_urls: Mapping[str, list[str]],
+) -> dict[str, str | None]:
+    """按 host 汇总站点级代理: 值 ``None`` 表示该 host 直连 (站点关闭了代理).
+
+    host 取自来源 profile 的 URL 与配置的 ``base_url``, 与 ``RateLimiters.from_config`` 是同一份集合;
+    未出现在结果里的 host 使用全局 ``network.proxy``. 多个站点共享 host 时按遍历顺序最后一次写入生效.
+    """
+    overrides: dict[str, str | None] = {}
+    for site, cfg in site_configs.items():
+        if cfg.use_proxy and cfg.proxy is None:
+            continue
+        for url in (*site_urls.get(str(site), []), cfg.base_url):
+            host = httpx.URL(url).host if url else None
+            if host:
+                overrides[host] = cfg.proxy if cfg.use_proxy else None
+    return overrides
+
+
 def _failure_body(resp: Response | None) -> bytes | None:
     if resp is None:
         return None
@@ -180,12 +200,13 @@ def _with_same_origin_referer(
 
 
 class WebClient:
-    """出站 HTTP 通道. 指纹按 host 选用, 被拦后换下一个 (见 ``_FingerprintPicker``)."""
+    """出站 HTTP 通道. 代理按 host 解析 (站点级覆盖全局), 指纹按 host 选用, 被拦后换下一个."""
 
     def __init__(
         self,
         *,
         proxy: str | None = None,
+        proxy_overrides: Mapping[str, str | None] | None = None,
         timeout: float = 30.0,
         max_retries: int = 2,
         max_clients: int = 50,
@@ -193,6 +214,7 @@ class WebClient:
         same_origin_referer_hosts: frozenset[str] = frozenset(),
     ):
         self._proxy = proxy
+        self._proxy_overrides = dict(proxy_overrides or {})
         self._timeout = timeout
         self._max_retries = max_retries
         self._limiters = limiters
@@ -211,6 +233,12 @@ class WebClient:
     async def acquire(self, url: str) -> None:
         """按 host 取得限速许可. 供不经 ``request`` 的通道 (浏览器渲染 / solver) 复用同一限速."""
         await self._limiters.get(httpx.URL(url).host).acquire()
+
+    def _proxy_for(self, host: str | None) -> str | None:
+        """该 host 实际使用的代理: 站点级设定优先, 含显式直连 (值为 ``None``)."""
+        if host in self._proxy_overrides:
+            return self._proxy_overrides[host]
+        return self._proxy
 
     async def request(
         self,
@@ -232,6 +260,9 @@ class WebClient:
         ``max_retries`` 是首次请求之外的**重试次数** (``2`` → 最多发 3 次请求); ``max_attempts`` 是
         **总尝试次数** 上限, 供一次性的探测向下覆盖 (探测传 1 表示只发一次). 两者都至少发一次请求,
         配置 0 表示不重试而不是一次都不发.
+
+        ``use_proxy=False`` 强制直连 (本机 solver 服务用), 否则按 host 应用站点级代理, 未配置时用全局
+        ``network.proxy``. 代理地址由 ``_proxy_for`` 决定, 同一 host 的连续请求走同一代理.
 
         403/406 另按「站点拦下此指纹」处理: 换下一个未试过的指纹重发, 换过的指纹对该 host 保持.
         轮换不占重试次数, 单次请求最多换 ``_MAX_IMPERSONATE_ROTATIONS`` 次; 该 host 的指纹全部被拒后
@@ -263,7 +294,7 @@ class WebClient:
                     cookies=cookies,
                     data=data,
                     json=json,
-                    proxy=self._proxy if use_proxy else None,
+                    proxy=self._proxy_for(host) if use_proxy else None,
                     timeout=timeout or self._timeout,
                     allow_redirects=allow_redirects,
                     impersonate=impersonate,
