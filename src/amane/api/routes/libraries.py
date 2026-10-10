@@ -19,16 +19,11 @@ from ..models import (
 from ..support.path_validation import validate_directory_path
 
 if TYPE_CHECKING:
-    from ...db import Library
     from ...db.repo_types import LibraryUpdates
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/libraries", tags=["libraries"])
-
-
-def _library_response(lib: Library) -> LibraryResponse:
-    return to_resp(LibraryResponse, lib)
 
 
 @router.get("/path-template-schema")
@@ -40,7 +35,7 @@ async def get_path_template_schema() -> PathTemplateSchemaResponse:
 @router.get("")
 async def list_libraries(repo: RepoDep) -> LibraryListResponse:
     items = await repo.list_libraries()
-    return LibraryListResponse(items=[_library_response(lib) for lib in items])
+    return LibraryListResponse(items=[to_resp(LibraryResponse, lib) for lib in items])
 
 
 @router.post("", status_code=201)
@@ -110,7 +105,7 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
             ),
         )
 
-    return _library_response(lib)
+    return to_resp(LibraryResponse, lib)
 
 
 @router.get("/{library_id}")
@@ -118,7 +113,7 @@ async def get_library(library_id: int, repo: RepoDep) -> LibraryResponse:
     lib = await repo.get_library(library_id)
     if lib is None:
         raise HTTPException(status_code=404, detail="媒体库不存在")
-    return _library_response(lib)
+    return to_resp(LibraryResponse, lib)
 
 
 @router.patch("/{library_id}")
@@ -161,7 +156,7 @@ async def update_library(
     if "path" in updates:
         runtime.inventory_store.drop_library(library_id)
 
-    return _library_response(lib)
+    return to_resp(LibraryResponse, lib)
 
 
 @router.delete("/{library_id}", status_code=204)
