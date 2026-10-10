@@ -136,6 +136,14 @@
   },
   "fieldStrmContentTemplate": "STRM 内容模板",
   "fieldStrmContentTemplateHint": "链接方式为 STRM 时有效. 默认写入视频文件绝对路径",
+  "fieldNfoContentTemplate": "NFO 内容模板",
+  "fieldNfoContentTemplateHint": "写入 NFO 时有效. 留空使用默认模板; 修改后重跑整理才会改写已有 NFO",
+  "nfoTemplateUseDefault": "填入默认模板",
+  "nfoTemplateClear": "清空",
+  "nfoPlaceholders": {
+    "label": "NFO 占位符",
+    "hint": "点击复制; xml_ 开头的片段是固定展开器, 只能写在元素内容位置"
+  },
   "fieldInitialRefresh": "创建后立即扫描",
   "advancedTemplates": "附属资源模板",
   "advancedTemplatesHint": "留空使用默认值",
@@ -170,11 +178,26 @@
       "cd?": "[可空]分集序号",
       "sub?": "[可空]字幕情况",
       "video_dir": "整理后视频所在目录. 链接模板与附属资源模板可用",
-      "video_name": "整理后视频文件名 (不含扩展名). 链接模板与附属资源模板可用",
+      "video_name": "整理后视频文件名 (不含扩展名). 链接模板、附属资源模板与 NFO 内容模板可用",
       "video_relpath": "整理后视频相对库根目录的路径. 链接模板、附属资源模板与 STRM 内容模板可用",
       "link_dir": "链接所在目录; 未设置链接模板时同 {video_dir}",
       "link_name": "整理后链接文件名 (不含扩展名); 未设置链接模板时同 {video_name}",
-      "raw_srt_name": "字幕源文件名. 例 A/foo.zh.srt → foo.zh"
+      "raw_srt_name": "字幕源文件名. 例 A/foo.zh.srt → foo.zh",
+      "display_title": "NFO 显示标题: 番号 + 空格 + 片名; 片名为空时为空串",
+      "plot": "剧情简介; 换行保留",
+      "rating": "评分",
+      "criticrating": "评分 ×10 取整",
+      "runtime": "时长 (分钟)",
+      "poster": "海报 URL",
+      "cover": "封面 URL",
+      "trailer": "预告片 URL",
+      "directors": "全部导演, 逗号分隔",
+      "tags": "全部标签, 逗号分隔",
+      "xml_actor": "演员块, 每个演员一组 <actor>; 只能写在元素内容位置",
+      "xml_tag": "<tag> 列表, 每个标签一行; 只能写在元素内容位置",
+      "xml_genre": "<genre> 列表, 每个标签一行; 只能写在元素内容位置",
+      "xml_director": "<director> 列表; 只能写在元素内容位置",
+      "xml_external_id": "站点 ID 列表; 站点键不是合法 XML 名时跳过该行; 只能写在元素内容位置"
     }
   },
   "tpl": {
