@@ -7,7 +7,7 @@
  */
 
 import { notifications } from "@mantine/notifications";
-import { IconStar, IconStarOff } from "@tabler/icons-react";
+import { IconStar } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { getFacetQueryKey, setFacetFavoriteMutation } from "@/client/@tanstack/react-query.gen";
@@ -52,7 +52,7 @@ export function FacetFavoriteStar({ kind, facetId, isFavorite }: FacetFavoriteSt
         mutation.mutate({ path: { kind, facet_id: facetId }, body: { is_favorite: !isFavorite } })
       }
     >
-      {isFavorite ? <IconStar size={16} fill="currentColor" /> : <IconStarOff size={16} />}
+      {isFavorite ? <IconStar size={16} fill="currentColor" /> : <IconStar size={16} />}
     </HintedActionIcon>
   );
 }
