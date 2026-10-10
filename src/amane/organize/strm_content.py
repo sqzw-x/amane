@@ -28,7 +28,7 @@ def validate_strm_content_template(value: str) -> str:
     """必须为单行; 空白合法; 占位符语法与路径模板相同."""
     if "\n" in value or "\r" in value:
         raise ValueError("STRM 内容模板必须是单行")
-    Parser(value).parse()
+    Parser(value, "STRM 内容模板").parse()
     return value
 
 

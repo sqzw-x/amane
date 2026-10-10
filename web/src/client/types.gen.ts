@@ -1856,6 +1856,10 @@ export type LibraryCreateRequest = {
      */
     strm_content_template?: string | null;
     /**
+     * Nfo Content Template
+     */
+    nfo_content_template?: string | null;
+    /**
      * Thumb Template
      */
     thumb_template?: string | null;
@@ -1974,6 +1978,10 @@ export type LibraryResponse = {
      * Strm Content Template
      */
     strm_content_template?: string | null;
+    /**
+     * Nfo Content Template
+     */
+    nfo_content_template?: string | null;
     /**
      * Thumb Template
      */
@@ -2104,6 +2112,10 @@ export type LibraryUpdateRequest = {
      * Write Nfo
      */
     write_nfo?: boolean | null;
+    /**
+     * Nfo Content Template
+     */
+    nfo_content_template?: string | null;
     /**
      * Copy Resources
      */
@@ -2735,6 +2747,22 @@ export type NetworkConfig = {
      * Default Rate Limit
      */
     default_rate_limit?: number;
+};
+
+/**
+ * NfoContentTemplateSchemaResponse
+ *
+ * 与 render_nfo_content 同源.
+ */
+export type NfoContentTemplateSchemaResponse = {
+    /**
+     * Default Template
+     */
+    default_template: string;
+    /**
+     * Placeholders
+     */
+    placeholders: Array<PathTemplatePlaceholder>;
 };
 
 /**
@@ -7811,6 +7839,22 @@ export type GetPathTemplateSchemaResponses = {
 };
 
 export type GetPathTemplateSchemaResponse = GetPathTemplateSchemaResponses[keyof GetPathTemplateSchemaResponses];
+
+export type GetNfoContentTemplateSchemaData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/libraries/nfo-content-template-schema';
+};
+
+export type GetNfoContentTemplateSchemaResponses = {
+    /**
+     * Successful Response
+     */
+    200: NfoContentTemplateSchemaResponse;
+};
+
+export type GetNfoContentTemplateSchemaResponse = GetNfoContentTemplateSchemaResponses[keyof GetNfoContentTemplateSchemaResponses];
 
 export type ListLibrariesData = {
     body?: never;

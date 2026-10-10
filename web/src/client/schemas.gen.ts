@@ -3643,6 +3643,17 @@ export const LibraryCreateRequestSchema = {
             ],
             title: 'Strm Content Template'
         },
+        nfo_content_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Nfo Content Template'
+        },
         thumb_template: {
             anyOf: [
                 {
@@ -3871,6 +3882,17 @@ export const LibraryResponseSchema = {
                 }
             ],
             title: 'Strm Content Template'
+        },
+        nfo_content_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Nfo Content Template'
         },
         thumb_template: {
             anyOf: [
@@ -4238,6 +4260,17 @@ export const LibraryUpdateRequestSchema = {
                 }
             ],
             title: 'Write Nfo'
+        },
+        nfo_content_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Nfo Content Template'
         },
         copy_resources: {
             anyOf: [
@@ -5555,6 +5588,29 @@ export const NetworkConfigSchema = {
     },
     type: 'object',
     title: 'NetworkConfig'
+} as const;
+
+export const NfoContentTemplateSchemaResponseSchema = {
+    properties: {
+        default_template: {
+            type: 'string',
+            title: 'Default Template'
+        },
+        placeholders: {
+            items: {
+                $ref: '#/components/schemas/PathTemplatePlaceholder'
+            },
+            type: 'array',
+            title: 'Placeholders'
+        }
+    },
+    type: 'object',
+    required: [
+        'default_template',
+        'placeholders'
+    ],
+    title: 'NfoContentTemplateSchemaResponse',
+    description: '与 render_nfo_content 同源.'
 } as const;
 
 export const OptionalPathTemplateDefaultsSchema = {

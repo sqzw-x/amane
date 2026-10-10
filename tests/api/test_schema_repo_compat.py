@@ -454,6 +454,7 @@ _ROUNDTRIP = [
                 "trailer_template",
                 "subtitle_template",
                 "strm_content_template",
+                "nfo_content_template",
                 "ingest",
                 "cloud_path",
                 # path 解析为真实路径 (符号链接解析后), 与写入值不再逐字相同

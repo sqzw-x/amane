@@ -2,6 +2,7 @@ import {
   Accordion,
   Anchor,
   Badge,
+  Button,
   Checkbox,
   Group,
   Input,
@@ -19,7 +20,10 @@ import { useMemo, useState } from "react";
 import { notifications } from "@mantine/notifications";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { getPathTemplateSchemaOptions } from "@/client/@tanstack/react-query.gen";
+import {
+  getNfoContentTemplateSchemaOptions,
+  getPathTemplateSchemaOptions,
+} from "@/client/@tanstack/react-query.gen";
 import { LibraryCreateRequestSchema, LibraryResponseSchema } from "@/client/schemas.gen";
 import type {
   DownloadableResource,
@@ -94,6 +98,7 @@ export interface LibraryFormState {
   link_mode: LibraryResponse["link_mode"];
   strm_content_template: string;
   write_nfo: boolean;
+  nfo_content_template: string;
   copy_resources: DownloadableResource[];
   trailer_pattern: string;
   blacklist_patterns: string;
@@ -125,6 +130,7 @@ export function emptyLibraryForm(schema?: PathTemplateSchemaResponse | null): Li
     link_mode: "strm",
     strm_content_template: "",
     write_nfo: true,
+    nfo_content_template: "",
     copy_resources: DOWNLOADABLE_RESOURCES.filter((r) => r !== "trailer"),
     trailer_pattern: "(?i)trailer",
     blacklist_patterns: "",
@@ -158,6 +164,7 @@ export function libraryFormFromResponse(lib: LibraryResponse): LibraryFormState 
     link_mode: lib.link_mode,
     strm_content_template: lib.strm_content_template ?? "",
     write_nfo: lib.write_nfo,
+    nfo_content_template: lib.nfo_content_template ?? "",
     copy_resources: parseCopyResources(lib.copy_resources),
     trailer_pattern: lib.trailer_pattern,
     blacklist_patterns: lib.blacklist_patterns?.join("\n") ?? "",
@@ -204,6 +211,7 @@ function libraryFormValues(form: LibraryFormState): Record<string, unknown> {
     link_mode: form.link_mode,
     strm_content_template: form.strm_content_template.trim(),
     write_nfo: form.write_nfo,
+    nfo_content_template: form.nfo_content_template.trim(),
     copy_resources: form.copy_resources,
     trailer_pattern: form.trailer_pattern,
     blacklist_patterns: parseBlacklistPatterns(form.blacklist_patterns),
@@ -258,9 +266,11 @@ interface LibraryFormFieldsProps {
 export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFormFieldsProps) {
   const { t } = useTranslation("library");
   const { data: schema } = useQuery(getPathTemplateSchemaOptions());
+  const { data: nfoSchema } = useQuery(getNfoContentTemplateSchemaOptions());
   const [sidecarOpen, setSidecarOpen] = useState<string | null>(null);
 
   const placeholders = schema?.placeholders ?? [];
+  const nfoPlaceholders = nfoSchema?.placeholders ?? [];
   const catalog = useMemo(
     () => templateCatalogFromPlaceholders(schema?.placeholders ?? []),
     [schema?.placeholders],
@@ -407,6 +417,80 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
           </div>
         </div>
       </Stack>
+      {value.write_nfo && (
+        <Stack gap={4}>
+          <Textarea
+            label={t("fieldNfoContentTemplate")}
+            description={t("fieldNfoContentTemplateHint")}
+            autosize
+            minRows={6}
+            maxRows={20}
+            styles={{
+              input: { fontFamily: "var(--mantine-font-family-monospace)", fontSize: "0.8rem" },
+            }}
+            value={value.nfo_content_template}
+            onChange={(e) => onChange({ ...value, nfo_content_template: e.currentTarget.value })}
+          />
+          <Group gap="xs">
+            <Button
+              size="compact-xs"
+              variant="light"
+              onClick={() =>
+                onChange({ ...value, nfo_content_template: nfoSchema?.default_template ?? "" })
+              }
+            >
+              {t("nfoTemplateUseDefault")}
+            </Button>
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              color="gray"
+              onClick={() => onChange({ ...value, nfo_content_template: "" })}
+            >
+              {t("nfoTemplateClear")}
+            </Button>
+          </Group>
+          {nfoPlaceholders.length > 0 && (
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed">
+                {t("nfoPlaceholders.label")} · {t("nfoPlaceholders.hint")}{" "}
+                <Anchor
+                  href="https://sqzw-x.github.io/amane/user/libraries/#nfo-content-template"
+                  target="_blank"
+                  rel="noreferrer"
+                  size="xs"
+                >
+                  {t("placeholders.docs")}
+                </Anchor>
+              </Text>
+              <Group gap={4} wrap="wrap">
+                {nfoPlaceholders.map((p) => {
+                  const item = t(`placeholders.items.${p.name}`, { defaultValue: p.name });
+                  const keys = p.map_keys ?? [];
+                  const label =
+                    keys.length > 0
+                      ? `${item} · ${t("placeholders.mapKeys", { keys: keys.join(", ") })}`
+                      : item;
+                  return (
+                    <Tooltip key={p.name} label={label} multiline maw={280}>
+                      <Badge
+                        component="button"
+                        type="button"
+                        size="sm"
+                        variant="light"
+                        style={{ cursor: "pointer" }}
+                        onClick={() => void copyPlaceholder(p.name)}
+                      >
+                        {`{${p.name}}`}
+                      </Badge>
+                    </Tooltip>
+                  );
+                })}
+              </Group>
+            </Stack>
+          )}
+        </Stack>
+      )}
       <Checkbox.Group
         label={t("fieldCopyResources")}
         description={t("fieldCopyResourcesHint")}

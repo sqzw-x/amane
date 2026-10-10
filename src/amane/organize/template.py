@@ -94,19 +94,19 @@ class _Group:
 type _Node = _Literal | _Placeholder | _Group
 
 
-def _parse_placeholder_mapping(name: str, spec: str) -> tuple[tuple[str, str], ...]:
+def _parse_placeholder_mapping(name: str, spec: str, subject: str) -> tuple[tuple[str, str], ...]:
     if not spec.strip():
-        raise ValueError("路径模板里有空的占位符映射")
+        raise ValueError(f"{subject}里有空的占位符映射")
     pairs: list[tuple[str, str]] = []
     seen: set[str] = set()
     allowed = PLACEHOLDER_MAP_KEYS.get(name)
     for item in spec.split(","):
         if "=" not in item:
-            raise ValueError("路径模板里的占位符映射无效")
+            raise ValueError(f"{subject}里的占位符映射无效")
         key, value = item.split("=", 1)
         key = key.strip()
         if key in seen:
-            raise ValueError(f"路径模板里的映射键重复: {key!r}")
+            raise ValueError(f"{subject}里的映射键重复: {key!r}")
         if key and allowed is not None and key not in allowed:
             raise ValueError(f"{{{name}}} 的映射键未知: {key!r}")
         seen.add(key)
@@ -122,11 +122,13 @@ class Parser:
     `[[...]]` 同样, 有值时把结果包一层 ``[]``.
     名字里的 ``?`` 只是标识符的一部分, 没有运算含义.
     `{name|原值=输出}` 在查出值之后替换; `{name|=缺省}` 将空源值映成缺省.
+    报错信息带 ``subject``, 因为它由多套模板共用.
     """
 
-    def __init__(self, src: str) -> None:
+    def __init__(self, src: str, subject: str = "路径模板") -> None:
         self.src = src
         self.i = 0
+        self.subject = subject
 
     def parse(self) -> tuple[_Node, ...]:
         return tuple(self._parse_nodes(None))
@@ -160,12 +162,12 @@ class Parser:
                 nodes.append(self._parse_placeholder())
                 continue
             if self.src[self.i] == "]":
-                raise ValueError("路径模板里的 ] 没有匹配的 [")
+                raise ValueError(f"{self.subject}里的 ] 没有匹配的 [")
             buf.append(self.src[self.i])
             self.i += 1
         flush()
         if closer is not None:
-            raise ValueError("路径模板里的可选组未闭合")
+            raise ValueError(f"{self.subject}里的可选组未闭合")
         return nodes
 
     def _parse_placeholder(self) -> _Placeholder:
@@ -173,19 +175,19 @@ class Parser:
         start = self.i
         while self.i < len(self.src) and self.src[self.i] != "}":
             if self.src[self.i] == "{":
-                raise ValueError("路径模板的占位符里嵌套了花括号")
+                raise ValueError(f"{self.subject}的占位符里嵌套了花括号")
             self.i += 1
         if self.i >= len(self.src):
-            raise ValueError("路径模板里的占位符未闭合")
+            raise ValueError(f"{self.subject}里的占位符未闭合")
         body = self.src[start : self.i]
         self.i += 1
         if not body:
-            raise ValueError("路径模板里有空的占位符")
+            raise ValueError(f"{self.subject}里有空的占位符")
         name_part, sep, map_part = body.partition("|")
         name = name_part.strip()
         if not name:
-            raise ValueError("路径模板里有空的占位符")
-        mapping = _parse_placeholder_mapping(name, map_part) if sep else ()
+            raise ValueError(f"{self.subject}里有空的占位符")
+        mapping = _parse_placeholder_mapping(name, map_part, self.subject) if sep else ()
         return _Placeholder(name, mapping)
 
 
@@ -206,7 +208,17 @@ def _resolve(node: _Placeholder, variables: dict[str, str]) -> str:
     return mapped.get(raw, raw)
 
 
-def _render_nodes(nodes: Sequence[_Node], variables: dict[str, str]) -> str:
+def _nodes_use_any_placeholder(nodes: Sequence[_Node]) -> bool:
+    for node in nodes:
+        if isinstance(node, _Placeholder):
+            return True
+        if isinstance(node, _Group) and _nodes_use_any_placeholder(node.children):
+            return True
+    return False
+
+
+def _render_nodes(nodes: Sequence[_Node], variables: dict[str, str], *, plain_groups_literal: bool = False) -> str:
+    """`plain_groups_literal` 时, 子树内没有占位符的组没有条件可言, 连方括号一起原样输出."""
     parts: list[str] = []
     for node in nodes:
         if isinstance(node, _Literal):
@@ -217,7 +229,12 @@ def _render_nodes(nodes: Sequence[_Node], variables: dict[str, str]) -> str:
             slots = _direct_placeholders(node.children)
             if slots and all(_resolve(item, variables) == "" for item in slots):
                 continue
-            inner = _render_nodes(node.children, variables)
+            if plain_groups_literal and not node.wrap and not _nodes_use_any_placeholder(node.children):
+                # 组没有条件可言 (永远渲染), 方括号是用户要显示的字面量; 组内容为空时方括号同样保留.
+                inner = _render_nodes(node.children, variables, plain_groups_literal=True)
+                parts.append(f"[{inner}]")
+                continue
+            inner = _render_nodes(node.children, variables, plain_groups_literal=plain_groups_literal)
             parts.append(f"[{inner}]" if node.wrap else inner)
     return "".join(parts)
 
@@ -229,6 +246,22 @@ def _nodes_use_placeholder(nodes: Sequence[_Node], name: str) -> bool:
         if isinstance(node, _Group) and _nodes_use_placeholder(node.children, name):
             return True
     return False
+
+
+def _collect_placeholder_names(nodes: Sequence[_Node], names: list[str]) -> None:
+    for node in nodes:
+        if isinstance(node, _Placeholder):
+            if node.name not in names:
+                names.append(node.name)
+        elif isinstance(node, _Group):
+            _collect_placeholder_names(node.children, names)
+
+
+def placeholder_names(source: str, subject: str = "路径模板") -> tuple[str, ...]:
+    """模板引用到的占位符名, 按首次出现顺序去重. 语法非法时抛出 ValueError."""
+    names: list[str] = []
+    _collect_placeholder_names(Parser(source, subject).parse(), names)
+    return tuple(names)
 
 
 def _clip_field(value: str) -> str:
@@ -431,15 +464,20 @@ def _collapse_empty_segments(rendered: str, *, keep_absolute: bool) -> str:
 
 
 class TemplateEngine:
+    """模板名进报错信息; `plain_groups_literal` 控制无占位符的组是否按字面输出."""
+
+    subject: str = "路径模板"
+    plain_groups_literal: bool = False
+
     def __init__(self, source: str) -> None:
         self.source = source
-        self.tree = Parser(source).parse()
+        self.tree = Parser(source, self.subject).parse()
 
     def uses(self, name: str) -> bool:
         return _nodes_use_placeholder(self.tree, name)
 
     def fill(self, ctx: TemplateContext) -> str:
-        return _render_nodes(self.tree, ctx.variables)
+        return _render_nodes(self.tree, ctx.variables, plain_groups_literal=self.plain_groups_literal)
 
     def clean(self, filled: str, ctx: TemplateContext) -> str:
         return filled
@@ -453,7 +491,7 @@ class PathEngine(TemplateEngine):
 
     def fill(self, ctx: TemplateContext) -> str:
         variables = {name: _clip_field(value) if name in _CLIP_KEYS else value for name, value in ctx.variables.items()}
-        return _render_nodes(self.tree, variables)
+        return _render_nodes(self.tree, variables, plain_groups_literal=self.plain_groups_literal)
 
     def clean(self, filled: str, ctx: TemplateContext) -> str:
         return _collapse_empty_segments(filled, keep_absolute=_template_keeps_absolute(self.source, ctx.variables))
@@ -487,6 +525,8 @@ class PathEngine(TemplateEngine):
 
 class StrmEngine(TemplateEngine):
     """STRM 正文: 不折叠空段, 不截断 title / actor / actors / actress / actresses. 引用 `{video_relpath}` 时视频必须在本库内."""
+
+    subject = "STRM 内容模板"
 
     def clean(self, filled: str, ctx: TemplateContext) -> str:
         return filled if filled.endswith("\n") else f"{filled}\n"

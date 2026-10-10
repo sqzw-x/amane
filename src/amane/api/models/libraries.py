@@ -13,6 +13,12 @@ from ...library import (
     TrailerPattern,
     resolve_ingest_cloud_path,
 )
+from ...organize.nfo_content import (
+    NFO_CONTENT_TEMPLATE_DEFAULT,
+    NFO_PLACEHOLDER_MAP_KEYS,
+    NFO_PLACEHOLDERS,
+    NfoContentTemplate,
+)
 from ...organize.path_templates import (
     EXTRAFANART_TEMPLATE_DEFAULT,
     FANART_TEMPLATE_DEFAULT,
@@ -45,6 +51,7 @@ class LibraryCreateRequest(BaseModel):
     link_template: PathTemplate | None = None
     link_mode: LinkMode = LinkMode.STRM
     strm_content_template: StrmContentTemplate | None = None
+    nfo_content_template: NfoContentTemplate | None = None
     thumb_template: PathTemplate | None = None
     poster_template: PathTemplate | None = None
     fanart_template: PathTemplate | None = None
@@ -89,6 +96,7 @@ class LibraryResponse(BaseModel):
     link_template: str | None = None
     link_mode: LinkMode
     strm_content_template: str | None = None
+    nfo_content_template: str | None = None
     thumb_template: str | None = None
     poster_template: str | None = None
     fanart_template: str | None = None
@@ -158,4 +166,21 @@ def path_template_schema() -> PathTemplateSchemaResponse:
             for name in PLACEHOLDERS
         ],
         subtitle_extensions_default=list(DEFAULT_SUBTITLE_EXTENSIONS),
+    )
+
+
+class NfoContentTemplateSchemaResponse(BaseModel):
+    """与 render_nfo_content 同源."""
+
+    default_template: str
+    placeholders: list[PathTemplatePlaceholder]
+
+
+def nfo_content_template_schema() -> NfoContentTemplateSchemaResponse:
+    return NfoContentTemplateSchemaResponse(
+        default_template=NFO_CONTENT_TEMPLATE_DEFAULT,
+        placeholders=[
+            PathTemplatePlaceholder(name=name, map_keys=list(NFO_PLACEHOLDER_MAP_KEYS.get(name, ())))
+            for name in NFO_PLACEHOLDERS
+        ],
     )

@@ -98,7 +98,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 ## Library 整理布局
 
-每个 Library 持有 `move_mode` (move / copy / hardlink / symlink)、一组按资源类型独立的路径模板与整理默认 (`write_nfo` / `copy_resources`), 因此同一进程里各库可以不同. `copy_resources` 与刮削热配置 `scraping.download_resources` 共用 `DownloadableResource` 枚举但互不读写 — 前者控制复制到库路径, 后者控制写入 Resource 目录. ORGANIZE payload 上对应字段为 `None` 时沿用库设置, 非空则只覆盖该次任务.
+每个 Library 持有 `move_mode` (move / copy / hardlink / symlink)、一组按资源类型独立的路径模板与整理默认 (`write_nfo` / `copy_resources`), 因此同一进程里各库可以不同. `nfo_content_template` 是整份 NFO 正文的模板, 空则用内置默认正文. `copy_resources` 与刮削热配置 `scraping.download_resources` 共用 `DownloadableResource` 枚举但互不读写 — 前者控制复制到库路径, 后者控制写入 Resource 目录. ORGANIZE payload 上对应字段为 `None` 时沿用库设置, 非空则只覆盖该次任务.
 
 `trailer_pattern` 只在库上: 对**文件名 (含扩展名)** 做正则搜索, 命中则 REFRESH 扫描与 watcher 都不把该文件当正片入库; 空串关闭. `min_file_size` (字节, 默认 0 关闭) 只过滤**扫描视频**: 后缀须属于该次扫描的视频扩展名白名单; 图片 / NFO / 字幕不适用, `.strm` 是路径指针也不参与判定; 符号链接跟随目标比较真实大小, 否则已整理的入口会被当作广告. 低于阈值与文件黑名单同语义: REFRESH / watcher 不入库, 整库扫描列为清理候选; stat 失败 (含悬空链接) 视为不匹配.
 
@@ -116,7 +116,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 `link_template` 为空则不创建链接, 非空时 ORGANIZE 在视频就位后按该模板写一条指向真实视频的链接 (`link_mode=strm` 写 `.strm`, `symlink` 做符号链接). 链接必须在库外, 否则 REFRESH 会把链接再扫描为媒体. `.strm` 正文由库级 `strm_content_template` 决定 (空则写一行视频绝对路径); 模板引用 `{video_relpath}` 且整理后路径不在本库内时失败, 不写出错误正文. 默认附属模板用 `{link_dir}`, 因此填链接模板后 NFO / 海报自动跟随链接.
 
-模板语言在 `organize/template.py`, 只约束以下几点: 占位符分相位注入 (`metadata` → file 相位 → `apply_video` → `apply_link`), file 相位未检出是**空串**不是 `Unknown`; 渲染时把 `{title}` / `{actor}` 等分量截到 200 UTF-8 字节 (不切开多字节字符), 但不截断渲染后的路径分量; 可选组 `[...]` 内直接占位符全空则整段丢弃, 有一个非空时其余输出空串. 普通占位符缺失回退 `Unknown`. **逃逸防护**: 校验对渲染结果做 realpath (跟随符号链接), 相对模板的真实写出路径必须在本库内 (`ALLOW_ALL` 也不例外), 绝对模板必须位于本库或 `safe_dirs` 内, 否则 `ValueError`; 多盘分存要求目标盘在 `safe_dirs` 内. 细则见 `organize/path_templates.py`.
+模板语言在 `organize/template.py`, 只约束以下几点: 占位符分相位注入 (`metadata` → file 相位 → `apply_video` → `apply_link`), file 相位未检出是**空串**不是 `Unknown`; 渲染时把 `{title}` / `{actor}` 等分量截到 200 UTF-8 字节 (不切开多字节字符), 但不截断渲染后的路径分量; 可选组 `[...]` 内直接占位符全空则整段丢弃, 有一个非空时其余输出空串. 普通占位符缺失回退 `Unknown`. NFO 内容模板与路径 / STRM 模板有三处差异: 取值全取刮削原始值、缺值为空串 (不清洗文件名、不回退 `Unknown`、不截断); 不含占位符的 `[...]` 没有条件可言, 连方括号原样输出; 渲染结果是要写出的整份 XML, 必须是良构文档, 否则不写文件并记 warning. 片段占位符 (`xml_` 前缀) 由代码展开成整段元素, 只能写在元素内容位置. 保存模板不写盘, 既有 NFO 由下一次 ORGANIZE 覆盖. **逃逸防护**: 校验对渲染结果做 realpath (跟随符号链接), 相对模板的真实写出路径必须在本库内 (`ALLOW_ALL` 也不例外), 绝对模板必须位于本库或 `safe_dirs` 内, 否则 `ValueError`; 多盘分存要求目标盘在 `safe_dirs` 内. 细则见 `organize/path_templates.py`.
 
 ## Resource (一等存储, 非缓存)
 

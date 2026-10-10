@@ -155,9 +155,22 @@ async def execute_file_operations(
         if link_result.outcome is not PlaceOutcome.PLACED:
             return FileOperationsResult(outcome=PlaceOutcome.FAILED, dest=org_result.dest, error=link_result.error)
 
-    # 写入 NFO.
+    # 写入 NFO; 渲染失败 (模板不是良构 XML) 不写文件, 记 warning 以免「整理成功但没有 NFO」无痕.
     if org_result.outcome is PlaceOutcome.PLACED and org_result.dest and write_nfo:
-        await write_nfo_file(metadata, paths.nfo)
+        written = await write_nfo_file(
+            metadata,
+            paths.nfo,
+            content_template=library.nfo_content_template if library is not None else None,
+            file_info=info,
+            video_name=org_result.dest.stem,
+        )
+        if not written:
+            logger.warning(
+                "nfo not written",
+                number=metadata.number,
+                library_id=media_file.library_id,
+                path=str(paths.nfo),
+            )
 
     # 字幕按模板落到 video_dest 侧.
     subtitle_conflicts: list[SubtitleConflict] = []
