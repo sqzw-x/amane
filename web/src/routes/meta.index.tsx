@@ -178,7 +178,7 @@ function MetaIndexPage() {
     definition: filePhase.definition ?? undefined,
     content_type: filePhase.content_type ?? undefined,
     ...filters,
-    // 收藏夹与用户标签互斥; 标签 id 只在目录里, 未收藏过时退化为不筛.
+    // 收藏夹折算成收藏标签 id; 与用户标签筛选取交 (见 `appendFacet`).
     ...(favoriteActive && favoriteTagId != null ? { user_tag_id: [favoriteTagId] } : {}),
     ...(search.saved_query_id != null ? { saved_query_id: search.saved_query_id } : {}),
   };
@@ -241,7 +241,7 @@ function MetaIndexPage() {
           kind,
           id,
         );
-        // 收藏夹与具体用户标签互斥: 指向同一查询参数, 同时启用会让后者被静默忽略.
+        // 用户标签与收藏夹是两种入口, 折算后落在同一查询参数上, 因此互相清除.
         return { ...prev, ...next, favorite: undefined, page: 1 };
       },
     });

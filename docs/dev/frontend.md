@@ -35,7 +35,7 @@
 
 **入口分流**: 非演员实体进 `/catalog/$kind/$facetId`, 演员进 `/actors/$actorId` (演员不进入 `/catalog`); `FacetBadge` 默认深链分类, 筛选深链 `/meta`.
 
-**收藏**: 影片与演员共用一枚固定名称的用户标签充当收藏夹 (`lib/media/user-tags.ts`); 该名称是存量数据的稳定标识, 界面按当前语言显示, 改名或删除会让两侧同时失去收藏. 详情页标题行的星标 (`components/media/user-tag-star.tsx`) 与标签菜单走同一个挂载端点, 列表页的收藏夹入口则先把布尔参数折算成该标签的 id — 后端只认 id.
+**收藏**: 影片与演员共用一枚固定名称的用户标签充当收藏夹 (`lib/media/user-tags.ts`); 标签名用界面上的显示名, 用户在标签面板里自建的同名标签会被一并复用, 改名或删除会让两侧同时失去收藏. 详情页标题行的星标 (`components/media/user-tag-star.tsx`) 与标签菜单走同一个挂载端点, 列表页的收藏夹入口则先把布尔参数折算成该标签的 id — 后端只认 id.
 
 **评论**: 排序与编辑态只在组件内, 不写地址栏. 影片详情与演员详情的用户标签与刮削标签分栏; 加减菜单一次提交多名, 但固定为两次请求 — 待新建的名称先经 `POST /api/facets/user_tag` 换成 id, 再与已选 id 一起交给所在页的挂载端点 (影片 `/api/metadata/batch/user-tags`, 演员 `/api/actors/batch/user-tags`), 端点语义见 [api.md](api.md). 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`; 演员详情出演作品的排序项与片库同源 (`lib/media/browse.ts` 的 `METADATA_SORT_OPTIONS`), 记忆落在 ui store 的 `actorWorksSort`.
 

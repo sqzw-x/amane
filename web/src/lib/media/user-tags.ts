@@ -4,8 +4,8 @@
  * 后端只认标签 id, 而该 id 由界面首次收藏时创建, 不是常量; 详情页与列表页因此都按名称判定, 再按
  * 目录里拿到的 id 挂载或筛选. 目录由 `lib/facets.ts` 的 `USER_TAG_FACET_LIST` 一次拉满.
  *
- * `FAVORITE_TAG_NAME` 是存量数据的稳定标识: 改名或删除会让两侧同时失去收藏. 界面按当前语言显示
- * (`metadata.json` 的 `detail.favorite`), 不把展示名写进标签.
+ * 标签名用界面上的显示名, 因此它在用户标签面板里自解释; 代价是用户自建的同类标签会被一并复用
+ * (同名即同一枚), 改名或删除会让两侧同时失去收藏.
  */
 
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -18,7 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { UserTagResponse } from "@/client/types.gen";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
 
-export const FAVORITE_TAG_NAME = "__favorite__";
+export const FAVORITE_TAG_NAME = "收藏夹";
 
 type NamedTag = Pick<UserTagResponse, "id" | "name">;
 
