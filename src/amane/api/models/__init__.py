@@ -94,6 +94,13 @@ from .tasks import (
     TaskWorkerResponse,
     UpscaleSubmission,
 )
+from .translation import (
+    ActorTranslationOutcome,
+    ActorTranslationResponse,
+    MetadataTranslationOutcome,
+    MetadataTranslationResponse,
+    TranslationStatus,
+)
 from .user_tags import UserTagLinksResponse, UserTagResponse
 
 __all__ = [
@@ -102,6 +109,8 @@ __all__ = [
     "ActorResponse",
     "ActorScrapeRequest",
     "ActorScrapeSubmission",
+    "ActorTranslationOutcome",
+    "ActorTranslationResponse",
     "ActorUpdateRequest",
     "ActorUserTagsRequest",
     "CleanupSubmission",
@@ -148,6 +157,8 @@ __all__ = [
     "MetadataDetailResponse",
     "MetadataListResponse",
     "MetadataResponse",
+    "MetadataTranslationOutcome",
+    "MetadataTranslationResponse",
     "MetadataUserTagsRequest",
     "OptionalPathTemplateDefaults",
     "OrganizeSubmission",
@@ -184,6 +195,7 @@ __all__ = [
     "TaskResponse",
     "TaskSubmission",
     "TaskWorkerResponse",
+    "TranslationStatus",
     "UpscaleSubmission",
     "UserTagLinksResponse",
     "UserTagResponse",

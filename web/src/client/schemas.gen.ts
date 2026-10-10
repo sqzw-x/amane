@@ -278,7 +278,7 @@ export const ActorScrapeRequestSchema = {
             type: 'array',
             uniqueItems: true,
             title: 'Use Cache',
-            description: '启用的缓存种类 (metadata: 复用 Actor.raw; trans: 预留译文). 空集 = 全部强制刷新'
+            description: '启用的缓存种类 (metadata: 复用 Actor.raw; trans: 复用演员译文). 空集 = 全部强制刷新'
         }
     },
     type: 'object',
@@ -430,6 +430,38 @@ export const ActorSortFieldSchema = {
         'cup'
     ],
     title: 'ActorSortField'
+} as const;
+
+export const ActorTranslationOutcomeSchema = {
+    properties: {
+        field: {
+            $ref: '#/components/schemas/ActorField'
+        },
+        status: {
+            $ref: '#/components/schemas/TranslationStatus'
+        }
+    },
+    type: 'object',
+    required: [
+        'field',
+        'status'
+    ],
+    title: 'ActorTranslationOutcome'
+} as const;
+
+export const ActorTranslationResponseSchema = {
+    properties: {
+        outcomes: {
+            items: {
+                $ref: '#/components/schemas/ActorTranslationOutcome'
+            },
+            type: 'array',
+            title: 'Outcomes'
+        }
+    },
+    type: 'object',
+    title: 'ActorTranslationResponse',
+    description: '演员独立翻译结果; 未配置或文本为空的字段不出现.'
 } as const;
 
 export const ActorUpdateRequestSchema = {
@@ -3055,7 +3087,13 @@ export const HotSettingsSchema = {
                     'title',
                     'plot'
                 ],
+                actor_translate_fields: [
+                    'overview'
+                ],
+                actor_language: 'zh_cn',
+                strip_actor_names_from_title: false,
                 field_prompts: {},
+                actor_field_prompts: {},
                 api_type: 'chat',
                 base_url: 'https://api.openai.com/v1',
                 model: '',
@@ -3474,6 +3512,22 @@ export const LLMConfigSchema = {
             type: 'array',
             title: 'Translate Fields'
         },
+        actor_translate_fields: {
+            items: {
+                $ref: '#/components/schemas/ActorField'
+            },
+            type: 'array',
+            title: 'Actor Translate Fields'
+        },
+        actor_language: {
+            $ref: '#/components/schemas/Language',
+            default: 'zh_cn'
+        },
+        strip_actor_names_from_title: {
+            type: 'boolean',
+            title: 'Strip Actor Names From Title',
+            default: false
+        },
         system_prompt: {
             anyOf: [
                 {
@@ -3498,6 +3552,18 @@ export const LLMConfigSchema = {
             },
             type: 'object',
             title: 'Field Prompts'
+        },
+        actor_field_prompts: {
+            additionalProperties: {
+                type: 'string',
+                maxLength: 2000,
+                'x-long': true
+            },
+            propertyNames: {
+                $ref: '#/components/schemas/ActorField'
+            },
+            type: 'object',
+            title: 'Actor Field Prompts'
         },
         api_key: {
             anyOf: [
@@ -5415,6 +5481,38 @@ export const MetadataSortFieldSchema = {
         'file_count'
     ],
     title: 'MetadataSortField'
+} as const;
+
+export const MetadataTranslationOutcomeSchema = {
+    properties: {
+        field: {
+            $ref: '#/components/schemas/MetadataField'
+        },
+        status: {
+            $ref: '#/components/schemas/TranslationStatus'
+        }
+    },
+    type: 'object',
+    required: [
+        'field',
+        'status'
+    ],
+    title: 'MetadataTranslationOutcome'
+} as const;
+
+export const MetadataTranslationResponseSchema = {
+    properties: {
+        outcomes: {
+            items: {
+                $ref: '#/components/schemas/MetadataTranslationOutcome'
+            },
+            type: 'array',
+            title: 'Outcomes'
+        }
+    },
+    type: 'object',
+    title: 'MetadataTranslationResponse',
+    description: '影片独立翻译结果; 未配置或文本为空的字段不出现.'
 } as const;
 
 export const MetadataUserTagsRequestSchema = {
@@ -8762,6 +8860,18 @@ export const ToolResultRowSchema = {
     ],
     title: 'ToolResultRow',
     description: '工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名).'
+} as const;
+
+export const TranslationStatusSchema = {
+    type: 'string',
+    enum: [
+        'translated',
+        'unchanged',
+        'locked',
+        'failed'
+    ],
+    title: 'TranslationStatus',
+    description: '逐字段的翻译结果.'
 } as const;
 
 export const TrashSummaryResponseSchema = {

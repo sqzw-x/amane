@@ -3185,6 +3185,92 @@
         }
       }
     },
+    "/api/translation/metadata/{metadata_id}": {
+      "post": {
+        "tags": [
+          "translation"
+        ],
+        "summary": "Translate Metadata",
+        "description": "按 ``llm.translate_fields`` 翻译标题与剧情并写回; 锁定字段跳过.",
+        "operationId": "translate_metadata",
+        "parameters": [
+          {
+            "name": "metadata_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Metadata Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataTranslationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/translation/actors/{actor_id}": {
+      "post": {
+        "tags": [
+          "translation"
+        ],
+        "summary": "Translate Actor",
+        "description": "按 ``llm.actor_translate_fields`` 翻译简介与标语并写回; 锁定字段跳过.",
+        "operationId": "translate_actor",
+        "parameters": [
+          {
+            "name": "actor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Actor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActorTranslationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/facets/user_tag": {
       "post": {
         "tags": [
@@ -6352,7 +6438,7 @@
             "type": "array",
             "uniqueItems": true,
             "title": "Use Cache",
-            "description": "启用的缓存种类 (metadata: 复用 Actor.raw; trans: 预留译文). 空集 = 全部强制刷新"
+            "description": "启用的缓存种类 (metadata: 复用 Actor.raw; trans: 复用演员译文). 空集 = 全部强制刷新"
           }
         },
         "type": "object",
@@ -6500,6 +6586,36 @@
           "cup"
         ],
         "title": "ActorSortField"
+      },
+      "ActorTranslationOutcome": {
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/ActorField"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TranslationStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "status"
+        ],
+        "title": "ActorTranslationOutcome"
+      },
+      "ActorTranslationResponse": {
+        "properties": {
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/ActorTranslationOutcome"
+            },
+            "type": "array",
+            "title": "Outcomes"
+          }
+        },
+        "type": "object",
+        "title": "ActorTranslationResponse",
+        "description": "演员独立翻译结果; 未配置或文本为空的字段不出现."
       },
       "ActorUpdateRequest": {
         "properties": {
@@ -9058,7 +9174,13 @@
                 "title",
                 "plot"
               ],
+              "actor_translate_fields": [
+                "overview"
+              ],
+              "actor_language": "zh_cn",
+              "strip_actor_names_from_title": false,
               "field_prompts": {},
+              "actor_field_prompts": {},
               "api_type": "chat",
               "base_url": "https://api.openai.com/v1",
               "model": "",
@@ -9469,6 +9591,22 @@
             "type": "array",
             "title": "Translate Fields"
           },
+          "actor_translate_fields": {
+            "items": {
+              "$ref": "#/components/schemas/ActorField"
+            },
+            "type": "array",
+            "title": "Actor Translate Fields"
+          },
+          "actor_language": {
+            "$ref": "#/components/schemas/Language",
+            "default": "zh_cn"
+          },
+          "strip_actor_names_from_title": {
+            "type": "boolean",
+            "title": "Strip Actor Names From Title",
+            "default": false
+          },
           "system_prompt": {
             "anyOf": [
               {
@@ -9493,6 +9631,18 @@
             },
             "type": "object",
             "title": "Field Prompts"
+          },
+          "actor_field_prompts": {
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 2000,
+              "x-long": true
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ActorField"
+            },
+            "type": "object",
+            "title": "Actor Field Prompts"
           },
           "api_key": {
             "anyOf": [
@@ -11383,6 +11533,36 @@
           "file_count"
         ],
         "title": "MetadataSortField"
+      },
+      "MetadataTranslationOutcome": {
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/MetadataField"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TranslationStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "status"
+        ],
+        "title": "MetadataTranslationOutcome"
+      },
+      "MetadataTranslationResponse": {
+        "properties": {
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/MetadataTranslationOutcome"
+            },
+            "type": "array",
+            "title": "Outcomes"
+          }
+        },
+        "type": "object",
+        "title": "MetadataTranslationResponse",
+        "description": "影片独立翻译结果; 未配置或文本为空的字段不出现."
       },
       "MetadataUserTagsRequest": {
         "properties": {
@@ -14648,6 +14828,17 @@
         ],
         "title": "ToolResultRow",
         "description": "工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名)."
+      },
+      "TranslationStatus": {
+        "type": "string",
+        "enum": [
+          "translated",
+          "unchanged",
+          "locked",
+          "failed"
+        ],
+        "title": "TranslationStatus",
+        "description": "逐字段的翻译结果."
       },
       "TrashSummaryResponse": {
         "properties": {

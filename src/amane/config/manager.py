@@ -23,6 +23,7 @@ from ..crawlers.site_roles import (
 )
 from ..crawlers.sites.official import Manufacturer
 from ..enums import (
+    ActorField,
     ApiType,
     BrowserBackendName,
     BrowserMode,
@@ -560,19 +561,32 @@ class LLMConfig(BaseModel):
     """关闭时刮削管线跳过翻译步骤."""
 
     translate_fields: list[MetadataField] = Field(default_factory=lambda: [MetadataField.TITLE, MetadataField.PLOT])
-    """当前仅支持文本标量字段 (title/plot)."""
+    """影片文本字段; 当前仅支持文本标量字段 (title/plot)."""
+
+    actor_translate_fields: list[ActorField] = Field(default_factory=lambda: [ActorField.OVERVIEW])
+    """演员文本字段; 当前仅支持 overview/tagline."""
+
+    actor_language: Language = Language.ZH_CN
+    """演员文本的目标语言. 影片侧逐字段取自 ``ScrapingConfig.field_language``."""
+
+    strip_actor_names_from_title: bool = False
+    """标题中出现演员名时剔除, 在翻译之前执行. 不依赖 ``enabled``: 未启用翻译时同样生效."""
 
     system_prompt: str | None = Field(default=None, max_length=PROMPT_MAX_LENGTH, json_schema_extra={"x-long": True})
     """自定义 system 提示词的指令部分; 空白等价于未配置, 使用内置.
 
     可用 ``{target_lang}`` 引用目标语言名; 字段说明与输出约束由 Amane 追加, 不受此值影响.
+    影片与演员共用这一段指令.
     """
 
     field_prompts: dict[MetadataField, PromptText] = Field(default_factory=dict)
-    """逐字段覆盖内置字段说明; 值为空白的条目等价于未配置.
+    """逐字段覆盖影片字段的内置说明; 值为空白的条目等价于未配置.
 
     可用 ``{target_lang}`` 引用目标语言名. 未列出的字段使用内置说明.
     """
+
+    actor_field_prompts: dict[ActorField, PromptText] = Field(default_factory=dict)
+    """逐字段覆盖演员字段的内置说明, 语义与 ``field_prompts`` 相同."""
 
     api_key: str | None = None
     """为空时即使 enabled 也不翻译."""
@@ -594,6 +608,12 @@ class LLMConfig(BaseModel):
     @field_validator("field_prompts")
     @classmethod
     def _blank_field_prompts_are_unset(cls, value: dict[MetadataField, str]) -> dict[MetadataField, str]:
+        """空白条目与缺席等价, 与可增减 key 的 dict 编码语义一致."""
+        return {field: text.strip() for field, text in value.items() if text.strip()}
+
+    @field_validator("actor_field_prompts")
+    @classmethod
+    def _blank_actor_field_prompts_are_unset(cls, value: dict[ActorField, str]) -> dict[ActorField, str]:
         """空白条目与缺席等价, 与可增减 key 的 dict 编码语义一致."""
         return {field: text.strip() for field, text in value.items() if text.strip()}
 

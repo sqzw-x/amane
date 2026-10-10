@@ -160,7 +160,7 @@ export type ActorScrapeRequest = {
     /**
      * Use Cache
      *
-     * 启用的缓存种类 (metadata: 复用 Actor.raw; trans: 预留译文). 空集 = 全部强制刷新
+     * 启用的缓存种类 (metadata: 复用 Actor.raw; trans: 复用演员译文). 空集 = 全部强制刷新
      */
     use_cache?: Array<CacheKind>;
 };
@@ -257,6 +257,26 @@ export type ActorScrapingConfig = {
  * ActorSortField
  */
 export type ActorSortField = 'name' | 'count' | 'updated_at' | 'has_image' | 'birthday' | 'height' | 'bust' | 'waist' | 'hip' | 'cup';
+
+/**
+ * ActorTranslationOutcome
+ */
+export type ActorTranslationOutcome = {
+    field: ActorField;
+    status: TranslationStatus;
+};
+
+/**
+ * ActorTranslationResponse
+ *
+ * 演员独立翻译结果; 未配置或文本为空的字段不出现.
+ */
+export type ActorTranslationResponse = {
+    /**
+     * Outcomes
+     */
+    outcomes?: Array<ActorTranslationOutcome>;
+};
 
 /**
  * ActorUpdateRequest
@@ -1775,6 +1795,15 @@ export type LlmConfig = {
      */
     translate_fields?: Array<MetadataField>;
     /**
+     * Actor Translate Fields
+     */
+    actor_translate_fields?: Array<ActorField>;
+    actor_language?: Language;
+    /**
+     * Strip Actor Names From Title
+     */
+    strip_actor_names_from_title?: boolean;
+    /**
      * System Prompt
      */
     system_prompt?: string | null;
@@ -1783,6 +1812,12 @@ export type LlmConfig = {
      */
     field_prompts?: {
         [key in MetadataField]?: string;
+    };
+    /**
+     * Actor Field Prompts
+     */
+    actor_field_prompts?: {
+        [key in ActorField]?: string;
     };
     /**
      * Api Key
@@ -2655,6 +2690,26 @@ export type MetadataResponse = {
  * MetadataSortField
  */
 export type MetadataSortField = 'number' | 'title' | 'studio' | 'release' | 'created_at' | 'updated_at' | 'file_count';
+
+/**
+ * MetadataTranslationOutcome
+ */
+export type MetadataTranslationOutcome = {
+    field: MetadataField;
+    status: TranslationStatus;
+};
+
+/**
+ * MetadataTranslationResponse
+ *
+ * 影片独立翻译结果; 未配置或文本为空的字段不出现.
+ */
+export type MetadataTranslationResponse = {
+    /**
+     * Outcomes
+     */
+    outcomes?: Array<MetadataTranslationOutcome>;
+};
 
 /**
  * MetadataUserTagsRequest
@@ -4531,6 +4586,13 @@ export type ToolResultRow = {
     tool_call_id: string;
     result: JsonValue;
 };
+
+/**
+ * TranslationStatus
+ *
+ * 逐字段的翻译结果.
+ */
+export type TranslationStatus = 'translated' | 'unchanged' | 'locked' | 'failed';
 
 /**
  * TrashSummaryResponse
@@ -6600,6 +6662,66 @@ export type ScrapeActorResponses = {
 };
 
 export type ScrapeActorResponse = ScrapeActorResponses[keyof ScrapeActorResponses];
+
+export type TranslateMetadataData = {
+    body?: never;
+    path: {
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+    };
+    query?: never;
+    url: '/api/translation/metadata/{metadata_id}';
+};
+
+export type TranslateMetadataErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TranslateMetadataError = TranslateMetadataErrors[keyof TranslateMetadataErrors];
+
+export type TranslateMetadataResponses = {
+    /**
+     * Successful Response
+     */
+    200: MetadataTranslationResponse;
+};
+
+export type TranslateMetadataResponse = TranslateMetadataResponses[keyof TranslateMetadataResponses];
+
+export type TranslateActorData = {
+    body?: never;
+    path: {
+        /**
+         * Actor Id
+         */
+        actor_id: number;
+    };
+    query?: never;
+    url: '/api/translation/actors/{actor_id}';
+};
+
+export type TranslateActorErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TranslateActorError = TranslateActorErrors[keyof TranslateActorErrors];
+
+export type TranslateActorResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActorTranslationResponse;
+};
+
+export type TranslateActorResponse = TranslateActorResponses[keyof TranslateActorResponses];
 
 export type CreateUserTagsData = {
     body: UserTagsCreateRequest;

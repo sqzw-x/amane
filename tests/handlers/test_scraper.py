@@ -962,3 +962,123 @@ class TestRefreshHandler:
         assert result.result.scrape == n
         scrapes = [f for f in (result.followups or []) if f.task_type == TaskType.SCRAPE]
         assert len(scrapes) == n
+
+
+class TitledCrawler:
+    """返回指定标题与出演者的爬虫, 供标题清洗用例使用."""
+
+    name = SiteName.JAVDB
+
+    def __init__(self, title: str, actors: list[str]) -> None:
+        self._title = title
+        self._actors = actors
+
+    async def fetch(self, query, options=None) -> MediaMetadata | None:
+        return MediaMetadata.model_validate({"number": "MIDV-123", "title": self._title, "actors": self._actors})
+
+
+class RecordingTranslator:
+    """记录收到的文本并按固定规则作答的协议级替身."""
+
+    def __init__(self) -> None:
+        self.texts: list[tuple[str, str]] = []
+
+    async def translate(self, text, target, field, *, use_cache=True):
+        self.texts.append((text, str(field)))
+        return f"[{target}]{text}"
+
+
+class TestScrapeTitleStrip:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_disabled_keeps_title(self, repo: Repository, resource_store):
+        config = HotSettings()
+        config.llm.strip_actor_names_from_title = False
+        h = ScrapeHandler(
+            repo=repo,
+            factory=FakeFactory({"javdb": TitledCrawler("似鳥[似鳥] ナースの告白", ["似鳥"])}),
+            resource_store=resource_store,
+            pipeline_config=config,
+        )
+
+        await h.handle(ScrapePayload(number="MIDV-123", content_type=ContentType.CENSORED))
+
+        metadata = await repo.get_metadata_by_number("MIDV-123")
+        assert metadata is not None
+        assert metadata.title == "似鳥[似鳥] ナースの告白"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_strips_before_translation(self, repo: Repository, resource_store):
+        """剔除必须发生在翻译之前: 翻译器收到的是清洗后的文本."""
+        from amane.enums import Language
+
+        config = HotSettings()
+        config.llm.strip_actor_names_from_title = True
+        config.scraping.field_language = {MetadataField.TITLE: Language.ZH_CN}
+        config.llm.translate_fields = [MetadataField.TITLE]
+        translator = RecordingTranslator()
+        h = ScrapeHandler(
+            repo=repo,
+            factory=FakeFactory({"javdb": TitledCrawler("似鳥[似鳥] ナースの告白", ["似鳥"])}),
+            resource_store=resource_store,
+            pipeline_config=config,
+            translator=translator,
+        )
+
+        await h.handle(ScrapePayload(number="MIDV-123", content_type=ContentType.CENSORED))
+
+        assert translator.texts == [("ナースの告白", "title")]
+        metadata = await repo.get_metadata_by_number("MIDV-123")
+        assert metadata is not None
+        assert metadata.title == "[zh_cn]ナースの告白"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_applies_without_translator(self, repo: Repository, resource_store):
+        """未启用 LLM 时清洗仍生效."""
+        config = HotSettings()
+        config.llm.strip_actor_names_from_title = True
+        h = ScrapeHandler(
+            repo=repo,
+            factory=FakeFactory({"javdb": TitledCrawler("似鳥 - 作品", ["似鳥"])}),
+            resource_store=resource_store,
+            pipeline_config=config,
+        )
+
+        await h.handle(ScrapePayload(number="MIDV-123", content_type=ContentType.CENSORED))
+
+        metadata = await repo.get_metadata_by_number("MIDV-123")
+        assert metadata is not None
+        assert metadata.title == "作品"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_keeps_title_when_strip_empties_it(self, repo: Repository, resource_store):
+        config = HotSettings()
+        config.llm.strip_actor_names_from_title = True
+        h = ScrapeHandler(
+            repo=repo,
+            factory=FakeFactory({"javdb": TitledCrawler("似鳥", ["似鳥"])}),
+            resource_store=resource_store,
+            pipeline_config=config,
+        )
+
+        await h.handle(ScrapePayload(number="MIDV-123", content_type=ContentType.CENSORED))
+
+        metadata = await repo.get_metadata_by_number("MIDV-123")
+        assert metadata is not None
+        assert metadata.title == "似鳥"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_ignores_unrelated_names(self, repo: Repository, resource_store):
+        config = HotSettings()
+        config.llm.strip_actor_names_from_title = True
+        h = ScrapeHandler(
+            repo=repo,
+            factory=FakeFactory({"javdb": TitledCrawler("作品名", ["似鳥", "花井"])}),
+            resource_store=resource_store,
+            pipeline_config=config,
+        )
+
+        await h.handle(ScrapePayload(number="MIDV-123", content_type=ContentType.CENSORED))
+
+        metadata = await repo.get_metadata_by_number("MIDV-123")
+        assert metadata is not None
+        assert metadata.title == "作品名"

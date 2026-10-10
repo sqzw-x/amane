@@ -12,6 +12,7 @@ from ..media import materialize_images
 from ..observability import current
 from ..observability.models import SiteOutcomeKind
 from ..plugins.models import SourceDescriptor, SourceTrait
+from ..utils.titles import strip_actor_names
 from ._common import ensure_oshash, finalize_media_file
 from .models import ActorScrapePayload, CacheKind, ScrapePayload, ScrapeResult
 from .protocol import FollowupTask, TaskHandler, TaskResult
@@ -141,6 +142,13 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
 
         # 获取结束: 进度分子对齐标量字段数, 其后为物化与持久化.
         await self.report_progress(len(SCALAR_FIELDS), progress_total, "fetch")
+
+        # 剔除标题里的演员名; 必须在翻译之前, 否则演员名会随标题一起被翻译.
+        # 不依赖 llm.enabled: 这是文本清洗, 与是否翻译无关.
+        if self._config.llm.strip_actor_names_from_title:
+            result.metadata.title = strip_actor_names(
+                result.metadata.title, [actor.name for actor in result.metadata.actors]
+            )
 
         # 翻译文本字段; 失败不阻断刮削.
         if self._translator is not None:

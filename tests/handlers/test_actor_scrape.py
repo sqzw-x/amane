@@ -525,3 +525,118 @@ async def test_actor_scrape_unexpected_records_unexpected(repo: Repository, hot:
         assert rec.summary.outcomes["minnano"].reason == FailureReason.UNEXPECTED
     finally:
         rec.close()
+
+
+class _RecordingTranslator:
+    """记录调用并按注入结果作答的翻译面替身."""
+
+    def __init__(self, result: str | None = "译文", *, raises: bool = False) -> None:
+        self._result = result
+        self._raises = raises
+        self.calls: list[tuple[str, str, str, bool]] = []
+
+    async def translate(self, text, target, field, *, use_cache: bool = True):
+        self.calls.append((text, str(target), str(field), use_cache))
+        if self._raises:
+            raise RuntimeError("llm down")
+        return self._result
+
+
+async def _scrape_with_overview(repo: Repository, hot: HotSettings, overview: str, translator: object | None) -> int:
+    actor_id = await _actor_id(repo, "Alice")
+    factory = _FakeFactory(
+        {
+            "minnano": _FakeActorCrawler({"Alice": ActorMetadata(name="Alice", overview=overview)}),
+            "gfriends": _FakeActorCrawler({"Alice": ActorMetadata(name="Alice")}),
+        }
+    )
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None, translator=translator)  # type: ignore[arg-type]
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id))
+    assert result.success
+    return actor_id
+
+
+class TestActorScrapeTranslation:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_translates_overview(self, repo: Repository, hot: HotSettings) -> None:
+        translator = _RecordingTranslator("似鸟是日本女演员.")
+        actor_id = await _scrape_with_overview(repo, hot, "似鳥は日本の女優。", translator)
+
+        assert [(text, target, field, use_cache) for text, target, field, use_cache in translator.calls] == [
+            ("似鳥は日本の女優。", "zh_cn", "overview", True)
+        ]
+        saved = await repo.get_actor(actor_id)
+        assert saved is not None
+        assert saved.overview == "似鸟是日本女演员."
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_skips_when_field_not_configured(self, repo: Repository, hot: HotSettings) -> None:
+        hot.llm.actor_translate_fields = []
+        translator = _RecordingTranslator()
+        actor_id = await _scrape_with_overview(repo, hot, "似鳥は日本の女優。", translator)
+
+        assert translator.calls == []
+        saved = await repo.get_actor(actor_id)
+        assert saved is not None
+        assert saved.overview == "似鳥は日本の女優。"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_keeps_original_on_failure(self, repo: Repository, hot: HotSettings) -> None:
+        translator = _RecordingTranslator(raises=True)
+        actor_id = await _scrape_with_overview(repo, hot, "似鳥は日本の女優。", translator)
+
+        saved = await repo.get_actor(actor_id)
+        assert saved is not None
+        assert saved.overview == "似鳥は日本の女優。"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_locked_overview_is_not_translated(self, repo: Repository, hot: HotSettings) -> None:
+        actor_id = await _actor_id(repo, "Alice")
+        existing = await repo.get_actor(actor_id)
+        assert existing is not None
+        existing.overview = "库内锁定值"
+        await repo.save_actor(existing)
+        await repo.set_actor_locks(actor_id, {ActorField.OVERVIEW})
+        translator = _RecordingTranslator()
+        factory = _FakeFactory(
+            {
+                "minnano": _FakeActorCrawler({"Alice": ActorMetadata(name="Alice", overview="似鳥は日本の女優。")}),
+                "gfriends": _FakeActorCrawler({"Alice": ActorMetadata(name="Alice")}),
+            }
+        )
+        handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None, translator=translator)  # type: ignore[arg-type]
+
+        await handler.handle(ActorScrapePayload(actor_id=actor_id))
+
+        assert translator.calls == []
+        saved = await repo.get_actor(actor_id)
+        assert saved is not None
+        assert saved.overview == "库内锁定值"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_without_translator_keeps_original(self, repo: Repository, hot: HotSettings) -> None:
+        actor_id = await _scrape_with_overview(repo, hot, "似鳥は日本の女優。", None)
+
+        saved = await repo.get_actor(actor_id)
+        assert saved is not None
+        assert saved.overview == "似鳥は日本の女優。"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_translation_cache_follows_use_cache(self, repo: Repository, hot: HotSettings) -> None:
+        """use_cache 不含 trans 时强制重译 (跳过缓存读取), 仍以 use_cache=False 调翻译面."""
+        for use_cache, expected in (({CacheKind.metadata, CacheKind.trans}, True), (set(), False)):
+            translator = _RecordingTranslator()
+            actor_id = await _actor_id(repo, f"Alice{expected}")
+            factory = _FakeFactory(
+                {
+                    "minnano": _FakeActorCrawler(
+                        {f"Alice{expected}": ActorMetadata(name=f"Alice{expected}", overview="似鳥は日本の女優。")}
+                    ),
+                    "gfriends": _FakeActorCrawler({f"Alice{expected}": ActorMetadata(name=f"Alice{expected}")}),
+                }
+            )
+            handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None, translator=translator)  # type: ignore[arg-type]
+
+            await handler.handle(ActorScrapePayload(actor_id=actor_id, use_cache=use_cache))
+
+            assert translator.calls[0][3] is expected

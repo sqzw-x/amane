@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from structlog.contextvars import bind_contextvars
 
 from ..aggregate import merge_actor_metadata, merge_actor_scrape_result
+from ..aggregate.actor import AggregatedActor
 from ..crawlers.actor import ActorFetcher, ActorMetadata, filter_sites_for_gender
 from ..crawlers.site_roles import is_actor_image_site, is_actor_profile_site
 from ..db.actor_person import (
@@ -12,7 +13,7 @@ from ..db.actor_person import (
     filter_locked_person_data,
     locked_fields_of,
 )
-from ..enums import SiteName
+from ..enums import ActorField, SiteName
 from ..net.errors import FailureReason, SourceError
 from ..observability import current, invoke_source
 from ..observability.models import SiteOutcomeKind
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 
     from ..config import HotSettings
     from ..db.repository import Repository
+    from ..llm import Translator
     from ..media import ResourceStore
     from ..net.http import WebClient
 
@@ -42,6 +44,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         resource_store: ResourceStore,
         pipeline_config: HotSettings,
         web_client: WebClient | None = None,
+        translator: Translator | None = None,
     ):
         super().__init__(payload_t=ActorScrapePayload, result_t=ActorScrapeResult)
         self._repo = repo
@@ -49,6 +52,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         self._config = pipeline_config
         self._resource_store = resource_store
         self._web_client = web_client
+        self._translator = translator
 
     def failure_result(self, payload: ActorScrapePayload) -> ActorScrapeResult | None:
         """抓取之后崩掉时, 站点明细仍要能看到."""
@@ -173,7 +177,12 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
         existing_aliases = await self._repo.get_actor_aliases(payload.actor_id)
         merged = merge_actor_scrape_result(site_agg, actor_to_aggregated(actor))
         # AUTO 写入: 锁定字段保留库内值; 下载与任务结果同以过滤后集合为准, 不为注定丢弃的新图下载.
-        merged = filter_locked_person_data(merged, locked=locked_fields_of(actor), current=actor_to_aggregated(actor))
+        locked = locked_fields_of(actor)
+        merged = filter_locked_person_data(merged, locked=locked, current=actor_to_aggregated(actor))
+
+        # 翻译步骤: 对本次写回的文本就地变换; 未装配 translator (未启用或缺密钥) 时整段跳过.
+        if self._translator is not None:
+            merged = await self._translate_person(merged, locked=locked, use_cache=CacheKind.trans in payload.use_cache)
 
         if cfg.download_images and merged.image_urls and self._web_client is not None:
             for url in merged.image_urls:
@@ -214,6 +223,34 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
                 outcomes=current().site_outcomes(),
             ),
         )
+
+    async def _translate_person(
+        self, data: AggregatedActor, *, locked: set[ActorField], use_cache: bool
+    ) -> AggregatedActor:
+        """翻译 ``llm.actor_translate_fields`` 中的演员文本字段; 单字段失败保留原值, 不抛.
+
+        锁定字段不翻译: 其值是库内值, 译文也会被 ``save_actor`` 的锁过滤丢弃.
+        返回新对象, 不就地修改入参 (无锁时 ``filter_locked_person_data`` 原样返回上游对象).
+        """
+        assert self._translator is not None
+        fields = self._config.llm.actor_translate_fields
+        target = self._config.llm.actor_language
+        updates: dict[str, str] = {}
+        for field in (ActorField.OVERVIEW, ActorField.TAGLINE):
+            if field not in fields or field in locked:
+                continue
+            value = data.overview if field is ActorField.OVERVIEW else data.tagline
+            if not value:
+                continue
+            try:
+                translated = await self._translator.translate(value, target, field, use_cache=use_cache)
+            except Exception as e:
+                current().warning("translation failed, keeping original", field=str(field), error=str(e))
+                continue
+            if translated:
+                current().debug("actor field translated", field=str(field), target=str(target))
+                updates[field.value] = translated
+        return data.model_copy(update=updates) if updates else data
 
 
 def _actor_from_raw(payload: object) -> ActorMetadata | None:

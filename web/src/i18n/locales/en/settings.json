@@ -586,28 +586,6 @@
         "label": "Enable LLM Translation",
         "description": "Translate text fields during scrape"
       },
-      "api_key": {
-        "label": "API Key",
-        "description": "Upstream service key; stored in the local config only"
-      },
-      "api_type": {
-        "label": "API Type",
-        "options": {
-          "chat": "Chat",
-          "response": "Responses",
-          "anthropic": "Anthropic"
-        }
-      },
-      "base_url": {
-        "label": "API Endpoint",
-        "description": "OpenAI-compatible API base URL"
-      },
-      "model": {
-        "label": "Model"
-      },
-      "rate_limit": {
-        "label": "Max requests per second"
-      },
       "translate_fields": {
         "label": "Fields to Translate",
         "description": "Currently only title and plot are supported",
@@ -630,6 +608,40 @@
             "score": "Score"
           }
         }
+      },
+      "actor_translate_fields": {
+        "label": "Actor Fields to Translate",
+        "description": "Currently only overview and tagline are supported",
+        "$": {
+          "options": {
+            "gender": "Gender",
+            "birthday": "Birthday",
+            "birthplace": "Birthplace",
+            "height": "Height",
+            "bust": "Bust",
+            "waist": "Waist",
+            "hip": "Hip",
+            "cup": "Cup",
+            "overview": "Overview",
+            "tagline": "Tagline",
+            "image_urls": "Images",
+            "aliases": "Aliases"
+          }
+        }
+      },
+      "actor_language": {
+        "label": "Actor Target Language",
+        "description": "Film target language is configured per field in scraping settings",
+        "options": {
+          "zh_cn": "Simplified Chinese",
+          "zh_tw": "Traditional Chinese",
+          "jp": "Japanese",
+          "en": "English"
+        }
+      },
+      "strip_actor_names_from_title": {
+        "label": "Strip Actor Names from Title",
+        "description": "Remove actor names found in the title before translation; independent of the LLM switch"
       },
       "system_prompt": {
         "label": "System Prompt"
@@ -656,6 +668,48 @@
           "extrafanart": "Stills",
           "score": "Score"
         }
+      },
+      "actor_field_prompts": {
+        "label": "Actor Field Prompts",
+        "options": {
+          "gender": "Gender",
+          "birthday": "Birthday",
+          "birthplace": "Birthplace",
+          "height": "Height",
+          "bust": "Bust",
+          "waist": "Waist",
+          "hip": "Hip",
+          "cup": "Cup",
+          "overview": "Overview",
+          "tagline": "Tagline",
+          "image_urls": "Images",
+          "aliases": "Aliases"
+        },
+        "$": {
+          "label": "Prompt"
+        }
+      },
+      "api_key": {
+        "label": "API Key",
+        "description": "Upstream service key; stored in the local config only"
+      },
+      "api_type": {
+        "label": "API Type",
+        "options": {
+          "chat": "Chat",
+          "response": "Responses",
+          "anthropic": "Anthropic"
+        }
+      },
+      "base_url": {
+        "label": "API Endpoint",
+        "description": "OpenAI-compatible API base URL"
+      },
+      "model": {
+        "label": "Model"
+      },
+      "rate_limit": {
+        "label": "Max requests per second"
       }
     },
     "agent": {
