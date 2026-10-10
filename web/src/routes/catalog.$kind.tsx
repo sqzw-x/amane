@@ -1,15 +1,15 @@
 import {
   Alert,
   Badge,
+  Collapse,
   Group,
   SegmentedControl,
-  Select,
   Stack,
   Tabs,
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconAlertCircle, IconSearch } from "@tabler/icons-react";
+import { IconAlertCircle, IconFilter, IconSearch } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
@@ -18,9 +18,11 @@ import { z } from "zod";
 import { listFacetsOptions } from "@/client/@tanstack/react-query.gen";
 import type { FacetKind, FacetResponse, FacetSortField } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListPagination } from "@/components/common/list-pagination";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { SortMenu } from "@/components/common/sort-menu";
+import { TriStateSegment } from "@/components/common/tri-state-segment";
 import { CatalogFacetTable } from "@/components/media/catalog-facet-table";
 import { FacetFavoriteMark } from "@/components/media/facet-favorite-star";
 import { isOneOf } from "@/lib/exhaustive";
@@ -109,6 +111,8 @@ function CatalogKindPage() {
   const narrow = useNarrowViewport("md");
 
   const [searchInput, setSearchInput] = useState(search.q ?? "");
+  // 带筛选进入时直接展开高级筛选区, 否则筛选项藏在折叠面板里而列表已被过滤.
+  const [advancedOpen, setAdvancedOpen] = useState(search.favorite != null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const validKind = isOneOf(CATALOG_FACET_KINDS, rawKind);
@@ -252,27 +256,16 @@ function CatalogKindPage() {
       }
       extras={
         <Group gap="xs" wrap="nowrap">
-          {supportsFavorite && (
-            <Select
-              aria-label={t("favorite.filterLabel")}
-              placeholder={t("favorite.filterAny")}
-              data={[
-                { value: "true", label: t("favorite.filterYes") },
-                { value: "false", label: t("favorite.filterNo") },
-              ]}
-              value={search.favorite ?? null}
-              onChange={(value) =>
-                void navigate({
-                  search: (prev) => ({
-                    ...prev,
-                    favorite: value === "true" || value === "false" ? value : undefined,
-                    page: 1,
-                  }),
-                })
-              }
-              w={110}
-              clearable
-            />
+          {/* 窄屏的筛选在底部面板里常驻展开, 该开关只在宽屏有意义. */}
+          {narrow || !supportsFavorite ? null : (
+            <HintedActionIcon
+              variant={advancedOpen || favoriteFilter != null ? "filled" : "default"}
+              size={36}
+              onClick={() => setAdvancedOpen((v) => !v)}
+              label={t("search.advanced")}
+            >
+              <IconFilter size={16} />
+            </HintedActionIcon>
           )}
           {!isList && (
             <SortMenu
@@ -292,6 +285,21 @@ function CatalogKindPage() {
             />
           )}
         </Group>
+      }
+      filterPanel={
+        supportsFavorite ? (
+          <Collapse expanded={narrow || advancedOpen}>
+            <TriStateSegment
+              label={t("favorite.filterLabel")}
+              value={search.favorite}
+              yesLabel={t("favorite.filterYes")}
+              noLabel={t("favorite.filterNo")}
+              onChange={(favorite) =>
+                void navigate({ search: (prev) => ({ ...prev, favorite, page: 1 }) })
+              }
+            />
+          </Collapse>
+        ) : undefined
       }
       pageSize={
         <PageSizeSelect
