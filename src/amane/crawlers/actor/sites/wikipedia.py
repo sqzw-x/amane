@@ -52,7 +52,7 @@ _AV_ROLE_RE = re.compile(r"\b(?:actress|actor|idol|model|star)\b", re.IGNORECASE
 _SEARCH_LANGUAGES: tuple[str, ...] = ("ja", "zh", "en")
 _SEARCH_CANDIDATE_LIMIT = 5
 
-# 词条语言: 取值集合与默认优先级同源 (SiteConfig.wiki_languages 从这里收窄枚举).
+# 词条语言: 取值集合与默认优先级同源 (SiteConfig.languages 从这里收窄枚举).
 # 检索仍覆盖上面三种语言: 收窄词条语言只影响取哪一版正文, 不影响能否检索到实体.
 WIKI_LANGUAGES: tuple[str, ...] = ("zh", "ja", "en")
 
@@ -460,7 +460,7 @@ def _provider_ids(qid: str, entity: dict[str, Any]) -> dict[str, str]:
 
 def _entry_languages(config: SiteConfig | None) -> tuple[str, ...]:
     """词条语言优先级; 未注入 SiteConfig (测试构造) 时取默认值."""
-    return WIKI_LANGUAGES if config is None else tuple(config.wiki_languages)
+    return WIKI_LANGUAGES if config is None else tuple(config.languages)
 
 
 def _wiki_url(sitelinks: dict[str, Any], lang: str) -> str | None:

@@ -370,14 +370,9 @@
             "label": "Rate Limit",
             "description": "Max requests per second for this site"
           },
-          "wiki_languages": {
-            "label": "Wikipedia Languages",
-            "description": "First wiki entry with body text wins",
-            "options": {
-              "zh": "Chinese",
-              "ja": "Japanese",
-              "en": "English"
-            },
+          "languages": {
+            "label": "Entry Languages",
+            "description": "First entry with body text wins",
             "$": {
               "options": {
                 "zh": "Chinese",

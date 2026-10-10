@@ -5,8 +5,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from amane.config.manager import ActorScrapingConfig, ScrapingConfig
+from amane.config.manager import ActorScrapingConfig, ScrapingConfig, SiteConfig
 from amane.crawlers import actor_registry, registry
+from amane.crawlers.actor.sites.wikipedia import WIKI_LANGUAGES
 from amane.crawlers.site_roles import ACTOR_IMAGE_SITES, ACTOR_PROFILE_SITES, FILM_METADATA_SITES
 from amane.enums import MetadataField, SiteName
 from amane.parsing import ContentType
@@ -48,6 +49,19 @@ class TestSiteCapabilitySchema:
         assert props["items"]["enum"] == list(FILM_METADATA_SITES)
         assert props.get("x-ordered") is not True
         assert schema["properties"]["field_blacklist"].get("x-frozen-keys") is not True
+
+
+class TestSiteLanguagesSchema:
+    """SiteConfig.languages 的取值集合与展示范围是前后端契约."""
+
+    def test_enum_is_source_languages(self):
+        prop = SiteConfig.model_json_schema()["properties"]["languages"]
+        assert prop["items"]["enum"] == list(WIKI_LANGUAGES)
+        assert prop.get("x-ordered") is True
+
+    def test_visible_only_for_consuming_site(self):
+        prop = SiteConfig.model_json_schema()["properties"]["languages"]
+        assert [str(key) for key in prop["x-visible-keys"]] == [str(SiteName.WIKIPEDIA)]
 
 
 class TestSiteCapabilityValidation:
