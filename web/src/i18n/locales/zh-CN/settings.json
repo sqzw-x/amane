@@ -371,7 +371,7 @@
             "description": "该站点每秒请求上限"
           },
           "languages": {
-            "label": "词条语言",
+            "label": "语言优先级",
             "description": "按顺序取第一个有正文的词条",
             "$": {
               "options": {
