@@ -24,7 +24,8 @@ _QID = "Q57538529"
 _NAME = "伊藤舞雪"
 _AV_DESCRIPTION = "日本のAV女優"
 _JA_URL = "https://ja.wikipedia.org/wiki/%E4%BC%8A%E8%97%A4%E8%88%9E%E9%9B%AA"
-_ZH_URL = "https://zh.wikipedia.org/wiki/%E4%BC%8A%E8%97%A4%E8%88%9E%E9%9B%AA"
+# 中文词条走简体变体路径, 见 wikipedia._WIKI_VARIANTS
+_ZH_URL = "https://zh.wikipedia.org/zh-hans/%E4%BC%8A%E8%97%A4%E8%88%9E%E9%9B%AA"
 
 
 def _page(body: str) -> str:
