@@ -90,9 +90,9 @@ Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 work
 
 ## `emby` (Hot)
 
-`url` 与 `api_key` 齐备才算启用 (`EmbyConfig.enabled`): 缺任一项时演员刮削不留同步后继, 手动提交的同步任务直接失败而不是静默跳过.
+`url` 与 `api_key` 齐备才算启用: 缺任一项时演员刮削不留同步后继, 手动提交的同步任务直接失败而不是静默跳过.
 
-`api_key` 是密钥字段: `needs_secrets_file` 与 `redact_hot` 两处都要覆盖它, 因此任务目录里的 `config.hot.json` 只有占位符, 明文进同目录的 secrets 副本 (机制见 [observability.md](observability.md)). 客户端不复用爬虫 `WebClient`, 也不读 `network.proxy`: 目标是局域网内的媒体服务器.
+`api_key` 是密钥字段: `needs_secrets_file` 与 `redact_hot` 两处都要覆盖它, 因此任务目录里的 `config.hot.json` 只有占位符, 明文进同目录的 secrets 副本 (机制见 [observability.md](observability.md)). 不读 `network.proxy`.
 
 `sync_on_actor_scrape` 只决定是否产生**新**后继, 关闭不撤销已入队的同步; `overwrite` 与任务 payload 的 `force` 的优先级见 [task-system.md](task-system.md).
 

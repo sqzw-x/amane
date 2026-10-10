@@ -1,8 +1,4 @@
-"""curl_cffi TLS 指纹模拟 + 限速 + 重试; 爬虫与图片等对外 HTTP 统一经此模块.
-
-局域网内的媒体服务器 (Emby / Jellyfin) 不走这里: 指纹伪装与站点限速对它们没有意义, 见
-``amane/emby/client.py``.
-"""
+"""curl_cffi TLS 指纹模拟 + 限速 + 重试; 爬虫与图片等对外 HTTP 统一经此模块, 局域网内的媒体服务器不经这里."""
 
 import asyncio
 import random
