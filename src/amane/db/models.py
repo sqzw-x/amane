@@ -14,6 +14,7 @@ from ..library import (
     SubtitleExtensions,
     TrailerPattern,
 )
+from ..organize.nfo_content import NfoContentTemplate
 from ..organize.path_templates import VIDEO_TEMPLATE_DEFAULT, PathTemplate
 from ..organize.strm_content import StrmContentTemplate
 from ..parsing import ContentType, Mosaic
@@ -311,6 +312,8 @@ class Library(SQLModel, table=True):
     )
     """ORGANIZE 时在视频同目录发现字幕的扩展名列表; 空列表关闭."""
     write_nfo: bool = Field(default=True)
+    nfo_content_template: NfoContentTemplate | None = None
+    """NFO 正文模板. 空则使用内置默认模板; 保存不写盘, 重跑 ORGANIZE 才覆盖既有 NFO."""
     copy_resources: list[DownloadableResource] = Field(
         default_factory=lambda: [r for r in DownloadableResource if r != DownloadableResource.trailer],
         sa_column=Column(JSON, nullable=False),

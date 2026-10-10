@@ -37,9 +37,11 @@ from .libraries import (
     LibraryListResponse,
     LibraryResponse,
     LibraryUpdateRequest,
+    NfoContentTemplateSchemaResponse,
     OptionalPathTemplateDefaults,
     PathTemplatePlaceholder,
     PathTemplateSchemaResponse,
+    nfo_content_template_schema,
     path_template_schema,
 )
 from .media import MediaFileResponse, MediaFileUpdateRequest, MediaListResponse
@@ -149,6 +151,7 @@ __all__ = [
     "MetadataListResponse",
     "MetadataResponse",
     "MetadataUserTagsRequest",
+    "NfoContentTemplateSchemaResponse",
     "OptionalPathTemplateDefaults",
     "OrganizeSubmission",
     "PartialMetadata",
@@ -189,6 +192,7 @@ __all__ = [
     "UserTagResponse",
     "UserTagsCreateRequest",
     "UserTagsCreateResponse",
+    "nfo_content_template_schema",
     "normalize_feed_group",
     "path_template_schema",
 ]

@@ -15,6 +15,7 @@ from ...library import (
     validate_min_file_size,
     validate_trailer_pattern,
 )
+from ...organize.nfo_content import normalize_nfo_content_template, validate_nfo_content_template
 from ...organize.path_templates import VIDEO_TEMPLATE_DEFAULT, normalize_link_template, validate_path_template
 from ...organize.strm_content import normalize_strm_content_template, validate_strm_content_template
 from ...utils.path import resolved_path
@@ -30,6 +31,11 @@ def _path_template_or_none(value: str | None) -> str | None:
 def _strm_content_or_none(value: str | None) -> str | None:
     normalized = normalize_strm_content_template(value)
     return None if normalized is None else validate_strm_content_template(normalized)
+
+
+def _nfo_content_or_none(value: str | None) -> str | None:
+    normalized = normalize_nfo_content_template(value)
+    return None if normalized is None else validate_nfo_content_template(normalized)
 
 
 async def _reject_overlapping_cloud_path(
@@ -62,6 +68,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         link_template: str | None = None,
         link_mode: LinkMode = LinkMode.STRM,
         strm_content_template: str | None = None,
+        nfo_content_template: str | None = None,
         thumb_template: str | None = None,
         poster_template: str | None = None,
         fanart_template: str | None = None,
@@ -81,6 +88,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         video_template = validate_path_template(video_template)
         link_template = _path_template_or_none(normalize_link_template(link_template))
         strm_content_template = _strm_content_or_none(strm_content_template)
+        nfo_content_template = _nfo_content_or_none(nfo_content_template)
         thumb_template = _path_template_or_none(thumb_template)
         poster_template = _path_template_or_none(poster_template)
         fanart_template = _path_template_or_none(fanart_template)
@@ -115,6 +123,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                     list(subtitle_extensions) if subtitle_extensions is not None else list(DEFAULT_SUBTITLE_EXTENSIONS)
                 ),
                 write_nfo=write_nfo,
+                nfo_content_template=nfo_content_template,
                 copy_resources=list(copy_resources) if copy_resources is not None else list(DownloadableResource),
                 trailer_pattern=validate_trailer_pattern(
                     trailer_pattern if trailer_pattern is not None else DEFAULT_TRAILER_PATTERN
@@ -230,6 +239,8 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 )
             if "write_nfo" in updates:
                 lib.write_nfo = updates["write_nfo"]
+            if "nfo_content_template" in updates:
+                lib.nfo_content_template = _nfo_content_or_none(updates["nfo_content_template"])
             if "copy_resources" in updates:
                 resources = updates["copy_resources"]
                 lib.copy_resources = resources if resources is not None else []

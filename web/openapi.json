@@ -5174,6 +5174,28 @@
         }
       }
     },
+    "/api/libraries/nfo-content-template-schema": {
+      "get": {
+        "tags": [
+          "libraries"
+        ],
+        "summary": "Get Nfo Content Template Schema",
+        "description": "与 render_nfo_content 同源.",
+        "operationId": "get_nfo_content_template_schema",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NfoContentTemplateSchemaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/libraries": {
       "get": {
         "tags": [
@@ -9635,6 +9657,17 @@
             ],
             "title": "Strm Content Template"
           },
+          "nfo_content_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nfo Content Template"
+          },
           "thumb_template": {
             "anyOf": [
               {
@@ -9860,6 +9893,17 @@
               }
             ],
             "title": "Strm Content Template"
+          },
+          "nfo_content_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nfo Content Template"
           },
           "thumb_template": {
             "anyOf": [
@@ -10226,6 +10270,17 @@
               }
             ],
             "title": "Write Nfo"
+          },
+          "nfo_content_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nfo Content Template"
           },
           "copy_resources": {
             "anyOf": [
@@ -11519,6 +11574,28 @@
         },
         "type": "object",
         "title": "NetworkConfig"
+      },
+      "NfoContentTemplateSchemaResponse": {
+        "properties": {
+          "default_template": {
+            "type": "string",
+            "title": "Default Template"
+          },
+          "placeholders": {
+            "items": {
+              "$ref": "#/components/schemas/PathTemplatePlaceholder"
+            },
+            "type": "array",
+            "title": "Placeholders"
+          }
+        },
+        "type": "object",
+        "required": [
+          "default_template",
+          "placeholders"
+        ],
+        "title": "NfoContentTemplateSchemaResponse",
+        "description": "与 render_nfo_content 同源."
       },
       "OptionalPathTemplateDefaults": {
         "properties": {

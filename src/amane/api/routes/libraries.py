@@ -13,7 +13,9 @@ from ..models import (
     LibraryListResponse,
     LibraryResponse,
     LibraryUpdateRequest,
+    NfoContentTemplateSchemaResponse,
     PathTemplateSchemaResponse,
+    nfo_content_template_schema,
     path_template_schema,
 )
 from ..support.path_validation import validate_directory_path
@@ -30,6 +32,12 @@ router = APIRouter(prefix="/libraries", tags=["libraries"])
 async def get_path_template_schema() -> PathTemplateSchemaResponse:
     """与 resolve_paths 同源."""
     return path_template_schema()
+
+
+@router.get("/nfo-content-template-schema")
+async def get_nfo_content_template_schema() -> NfoContentTemplateSchemaResponse:
+    """与 render_nfo_content 同源."""
+    return nfo_content_template_schema()
 
 
 @router.get("")
@@ -68,6 +76,7 @@ async def create_library(req: LibraryCreateRequest, repo: RepoDep, runtime: Runt
             subtitle_template=req.subtitle_template,
             subtitle_extensions=req.subtitle_extensions,
             write_nfo=req.write_nfo,
+            nfo_content_template=req.nfo_content_template,
             copy_resources=req.copy_resources,
             trailer_pattern=req.trailer_pattern,
             blacklist_patterns=req.blacklist_patterns,

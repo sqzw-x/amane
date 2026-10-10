@@ -36,6 +36,7 @@ _LIBRARY_UPDATE_KEYS = frozenset(
         "subtitle_template",
         "subtitle_extensions",
         "write_nfo",
+        "nfo_content_template",
         "copy_resources",
         "trailer_pattern",
         "blacklist_patterns",
