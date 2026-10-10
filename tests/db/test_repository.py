@@ -695,6 +695,74 @@ class TestMetadataRepo:
         assert summaries[plain.id].phase.uncensored is False
 
     @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("number", "tags", "expected"),
+        [
+            ("HUNVR-211", ["VR専用", "8KVR"], True),
+            ("VR-001", [], True),
+            ("8KVR-012", ["単体作品"], True),
+            ("IPX-123", ["VR"], True),
+            # 词表要求整体相等, 含 VR 字样的其它标签不算.
+            ("IPX-124", ["VRっぽい"], False),
+            ("ABP-123", ["巨乳"], False),
+        ],
+    )
+    async def test_metadata_vr_projection(self, repo: Repository, number: str, tags: list[str], expected: bool):
+        meta = await repo.upsert_metadata(number=number, tags=tags)
+        assert meta.vr is expected
+
+        items, total = await repo.list_metadata(vr=expected)
+        assert [m.number for m in items] == [number]
+        assert total == 1
+        assert await repo.list_metadata(vr=not expected) == ([], 0)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_metadata_vr_recomputed_on_tag_write(self, repo: Repository):
+        """判定跟着 tags 走: 改标签后重新投影, 不需要重新刮削."""
+        meta = await repo.upsert_metadata(number="IPX-200", tags=["巨乳"])
+        assert meta.id is not None
+        assert meta.vr is False
+
+        await repo.update_metadata(meta.id, tags=["VR専用"])
+        refreshed = await repo.get_metadata(meta.id)
+        assert refreshed is not None
+        assert refreshed.vr is True
+        items, _ = await repo.list_metadata(vr=True)
+        assert [m.number for m in items] == ["IPX-200"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("order", "expected_numbers"),
+        [
+            (SortOrder.DESC, ["BEST", "MID", "NONE"]),
+            (SortOrder.ASC, ["NONE", "MID", "BEST"]),
+        ],
+    )
+    async def test_list_metadata_sort_by_score(self, repo: Repository, order: SortOrder, expected_numbers: list[str]):
+        """口径是 scores 首值; 无评分的行按 NULL 参与排序, 不排除."""
+        await repo.upsert_metadata(number="BEST", scores={"dmm": 9.2, "javdb": 8.0})
+        await repo.upsert_metadata(number="MID", scores={"javdb": 6.5})
+        await repo.upsert_metadata(number="NONE")
+
+        items, total = await repo.list_metadata(sort_by=MetadataSortField.SCORE, order=order)
+        assert total == 3
+        assert [m.number for m in items] == expected_numbers
+        assert [m.score for m in items] == ([9.2, 6.5, None] if order == SortOrder.DESC else [None, 6.5, 9.2])
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_metadata_score_rank_follows_scores(self, repo: Repository):
+        """物化列跟着 scores 走; 空字典回到 NULL."""
+        meta = await repo.upsert_metadata(number="SCORE-1", scores={"dmm": 7.5})
+        assert meta.id is not None
+        assert meta.score_rank == 7.5
+
+        await repo.update_metadata(meta.id, scores={})
+        refreshed = await repo.get_metadata(meta.id)
+        assert refreshed is not None
+        assert refreshed.score_rank is None
+        assert refreshed.score is None
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_update_metadata(self, repo: Repository):
         meta = await repo.upsert_metadata(number="ABC-001", title="Old Title", actors=["A"])
         assert meta.id is not None

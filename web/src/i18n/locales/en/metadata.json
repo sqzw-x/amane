@@ -10,6 +10,9 @@
     "hasFilesYes": "Has files",
     "hasFilesNo": "No files",
     "hasSubtitle": "Chinese subtitles",
+    "vr": "2D/VR",
+    "vrOnly": "VR only",
+    "vrExcluded": "2D only",
     "uncensored": "Uncensored",
     "mosaic": "Mosaic mark",
     "definition": "Resolution",
@@ -70,6 +73,7 @@
       "release": "Release Date",
       "runtime": "Runtime",
       "score": "Score",
+      "vr": "VR",
       "series": "Series",
       "directors": "Directors",
       "actors": "Actors",
@@ -146,7 +150,8 @@
     "playbackCopyTimestamp": "Copy timestamp",
     "playbackCopyLink": "Copy link to current time",
     "playbackCopied": "Copied to clipboard",
-    "playbackCopyFailed": "Copy failed"
+    "playbackCopyFailed": "Copy failed",
+    "vr": ""
   },
   "browse": {
     "title": "Browse",

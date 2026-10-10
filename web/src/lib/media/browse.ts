@@ -29,6 +29,7 @@ export const METADATA_SORT_OPTIONS = [
   { value: "title", labelKey: "columns.title" },
   { value: "studio", labelKey: "columns.studio" },
   { value: "release", labelKey: "columns.release" },
+  { value: "score", labelKey: "columns.score" },
   { value: "file_count", labelKey: "columns.fileCount" },
 ] as const satisfies readonly {
   value: MetadataSortField;
@@ -64,6 +65,7 @@ export const metaSearchSchema = z.object({
   user_tag_id: idListSchema,
   has_files: z.enum(["true", "false"]).optional(),
   has_subtitle: z.enum(["true", "false"]).optional(),
+  vr: z.enum(["true", "false"]).optional(),
   uncensored: z.enum(["true", "false"]).optional(),
   mosaic: z.enum(MOSAICS).optional(),
   definition: z.enum(FILE_DEFINITIONS).optional(),

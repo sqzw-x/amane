@@ -42,6 +42,8 @@ _METADATA_SORT_COLUMNS: dict[MetadataSortField, Mapped[Any]] = {
     MetadataSortField.RELEASE: col(Metadata.release),
     MetadataSortField.CREATED_AT: col(Metadata.created_at),
     MetadataSortField.UPDATED_AT: col(Metadata.updated_at),
+    # 物化副本而非 score 属性: 排序按 SQL 列, 无评分的行排在最前 (NULL 在 SQLite 中最小).
+    MetadataSortField.SCORE: col(Metadata.score_rank),
 }
 
 _MEDIA_SORT_COLUMNS: dict[MediaSortField, Mapped[Any]] = {

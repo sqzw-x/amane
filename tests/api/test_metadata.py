@@ -222,3 +222,26 @@ class TestMetadataHttp:
         listed = await client.get("metadata?search=LOCK-102")
         assert listed.status_code == 200
         assert listed.json()["items"][0]["locked_fields"] == ["title"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_vr_filter_and_score_sort(self, client: AsyncClient, repo: Repository):
+        await repo.upsert_metadata(number="HUNVR-211", tags=["VR専用", "8KVR"], scores={"dmm": 8.5})
+        await repo.upsert_metadata(number="ABP-123", tags=["巨乳"], scores={"dmm": 9.0})
+        await repo.upsert_metadata(number="MIDV-001")
+
+        listed = await client.get("metadata?vr=true")
+        assert listed.status_code == 200
+        assert [item["number"] for item in listed.json()["items"]] == ["HUNVR-211"]
+        assert listed.json()["items"][0]["vr"] is True
+
+        excluded = await client.get("metadata?vr=false")
+        assert excluded.status_code == 200
+        assert sorted(item["number"] for item in excluded.json()["items"]) == ["ABP-123", "MIDV-001"]
+        assert all(item["vr"] is False for item in excluded.json()["items"])
+
+        by_score = await client.get("metadata?sort_by=score&order=desc")
+        assert by_score.status_code == 200
+        assert [item["number"] for item in by_score.json()["items"]] == ["ABP-123", "HUNVR-211", "MIDV-001"]
+        assert [item["score"] for item in by_score.json()["items"]] == [9.0, 8.5, None]
+
+        assert (await client.get("metadata?sort_by=bogus")).status_code == 422

@@ -58,6 +58,7 @@ import type { MetadataField, MetadataResponse } from "@/client/types.gen";
 import { FacetBadge } from "@/components/media/facet-badge";
 import { LockChip, LockToggle, type LockProps } from "@/components/media/field-lock";
 import { UserTagActions } from "@/components/media/user-tag-add";
+import { VrBadge } from "@/components/media/vr-badge";
 import { FanartLightbox, FanartStrip } from "@/components/media/fanart-lightbox";
 import { FilePhaseBadges, FilePhaseOverlay } from "@/components/media/file-phase-badges";
 import { PosterCropDialog } from "@/components/media/poster-crop-dialog";
@@ -633,6 +634,11 @@ function TitleDetailPage() {
                 <Badge color="yellow" variant="light" leftSection={<IconStar size={12} />}>
                   {item.score.toFixed(1)}
                 </Badge>
+              </FieldBlock>
+            )}
+            {item.vr && (
+              <FieldBlock label={t("detail.fields.vr")}>
+                <VrBadge />
               </FieldBlock>
             )}
           </Group>

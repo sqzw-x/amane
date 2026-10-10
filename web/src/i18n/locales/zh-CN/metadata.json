@@ -10,6 +10,9 @@
     "hasFilesYes": "有文件",
     "hasFilesNo": "无文件",
     "hasSubtitle": "中字",
+    "vr": "2D/VR",
+    "vrOnly": "仅 VR",
+    "vrExcluded": "仅 2D",
     "uncensored": "无码",
     "mosaic": "马赛克标记",
     "definition": "分辨率",
@@ -69,6 +72,7 @@
       "release": "发行日期",
       "runtime": "时长",
       "score": "评分",
+      "vr": "VR",
       "series": "系列",
       "directors": "导演",
       "actors": "演员",
@@ -143,7 +147,8 @@
     "playbackCopyTimestamp": "复制时间戳",
     "playbackCopyLink": "复制当前时间的链接",
     "playbackCopied": "已复制到剪贴板",
-    "playbackCopyFailed": "复制失败"
+    "playbackCopyFailed": "复制失败",
+    "vr": "detail.vr"
   },
   "browse": {
     "title": "分类浏览",

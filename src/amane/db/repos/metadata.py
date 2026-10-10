@@ -7,7 +7,7 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 
 from ...enums import ActorGender, MetadataField
-from ...parsing import ContentType, Mosaic
+from ...parsing import ContentType, Mosaic, is_vr
 from ...utils.text import normalize_long_text
 from ..models import (
     MediaFile,
@@ -85,6 +85,18 @@ def _locked_fields_of(meta: Metadata) -> set[MetadataField]:
     return locked
 
 
+def _project_derived(meta: Metadata) -> None:
+    """把派生自 JSON / 文本列的筛选与排序列投影回实体.
+
+    ``vr`` 来自 ``number`` / ``tags``, ``score_rank`` 来自 ``scores``; 两者都不进 ``MetadataFields``,
+    因此没有独立写入入口, 只能由写方法在改完真值后一次性投影. 调用点必须在
+    ``apply_facet_rules_to_metadata`` 之后 —— 规则会改写 ``tags``, 早于它投影会写入过期判定.
+    """
+    meta.vr = is_vr(meta.number, meta.tags or [])
+    scores = meta.scores or {}
+    meta.score_rank = float(next(iter(scores.values()))) if scores else None
+
+
 def _filter_locked(
     fields: MetadataFields, locked: set[MetadataField], existing_sources: Mapping[str, str]
 ) -> MetadataFields:
@@ -124,6 +136,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         user_tag_ids: Sequence[int] | None = None,
         has_files: bool | None = None,
         has_subtitle: bool | None = None,
+        vr: bool | None = None,
         mosaic: Mosaic | None = None,
         uncensored: bool | None = None,
         definition: str | None = None,
@@ -186,6 +199,8 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 base = base.where(col(Metadata.series).in_(series_names))
             if has_files is not None:
                 base = base.where(_metadata_has_files_clause(has_files=has_files))
+            if vr is not None:
+                base = base.where(col(Metadata.vr).is_(vr))
             if has_subtitle is True:
                 base = base.where(_metadata_linked_file_exists(col(MediaFile.has_subtitle).is_(True)))
             elif has_subtitle is False:
@@ -249,6 +264,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 await session.flush()
                 await clean_actor_names(session, existing, actor_genders)
                 await apply_facet_rules_to_metadata(session, existing)
+                _project_derived(existing)
                 await sync_metadata_facets(session, existing)
                 await session.commit()
                 await session.refresh(existing)
@@ -258,6 +274,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             await session.flush()
             await clean_actor_names(session, meta, actor_genders)
             await apply_facet_rules_to_metadata(session, meta)
+            _project_derived(meta)
             await sync_metadata_facets(session, meta)
             await session.commit()
             await session.refresh(meta)
@@ -326,6 +343,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             await session.flush()
             await clean_actor_names(session, metadata, actor_genders)
             await apply_facet_rules_to_metadata(session, metadata)
+            _project_derived(metadata)
             await sync_metadata_facets(session, metadata)
             await session.commit()
             await session.refresh(metadata)

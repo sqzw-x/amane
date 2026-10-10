@@ -5292,6 +5292,11 @@ export const MetadataResponseSchema = {
             ],
             title: 'Score'
         },
+        vr: {
+            type: 'boolean',
+            title: 'Vr',
+            default: false
+        },
         poster_urls: {
             items: {
                 type: 'string'
@@ -5412,7 +5417,8 @@ export const MetadataSortFieldSchema = {
         'release',
         'created_at',
         'updated_at',
-        'file_count'
+        'file_count',
+        'score'
     ],
     title: 'MetadataSortField'
 } as const;

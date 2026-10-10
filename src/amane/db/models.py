@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Column, Index, String, Text, UniqueConstraint, text
+from sqlalchemy import Column, Float, Index, String, Text, UniqueConstraint, text
 from sqlmodel import JSON, Field, SQLModel
 
 from ..enums import ActorGender, DownloadableResource, LibraryAutomation, LibraryIngest, LinkMode, MoveMode
@@ -85,6 +85,7 @@ class MetadataSortField(StrEnum):
     CREATED_AT = "created_at"
     UPDATED_AT = "updated_at"
     FILE_COUNT = "file_count"
+    SCORE = "score"
 
 
 class MediaSortField(StrEnum):
@@ -203,6 +204,8 @@ class Metadata(SQLModel, table=True):
     extrafanart_urls: dict[str, list[str]] = Field(default_factory=dict, sa_column=Column(JSON))
     # 每站独立, 禁止折成单值.
     scores: dict[str, float] = Field(default_factory=dict, sa_column=Column(JSON))
+    # ``score`` 的物化副本, 只为 SQL 排序 (JSON 列取不出首值). 读取一律走 ``score`` 属性.
+    score_rank: float | None = Field(default=None, sa_column=Column("score", Float, index=True))
     external_ids: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     source_urls: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     field_sources: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
@@ -212,6 +215,8 @@ class Metadata(SQLModel, table=True):
     locked_fields: list[str] = Field(
         default_factory=list, sa_column=Column(JSON, nullable=False, server_default=text("'[]'"))
     )
+    # VR 判定结果, 由 number / tags 投影而来; 写入路径见 db/repos/metadata.py 的 _project_derived.
+    vr: bool = Field(default=False, index=True)
 
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -237,6 +242,7 @@ class Metadata(SQLModel, table=True):
 
     @property
     def score(self) -> float | None:
+        """各站评分的首值; 与 ``_score`` 列同口径, 后者只为排序而物化."""
         if not self.scores:
             return None
         return float(next(iter(self.scores.values())))

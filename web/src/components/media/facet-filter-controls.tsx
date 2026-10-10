@@ -34,6 +34,9 @@ interface FacetFilterControlsProps {
   /** 当前关联文件筛选; null = 不限. */
   hasFiles: HasFilesFilter;
   onHasFilesChange: (value: HasFilesFilter) => void;
+  /** 片库级 VR 判定 (来自标签与番号前缀), 与文件相位无关. */
+  vr: HasFilesFilter;
+  onVrChange: (value: HasFilesFilter) => void;
   filePhase: FilePhaseFilters;
   onFilePhaseChange: (value: FilePhaseFilters) => void;
 }
@@ -131,6 +134,8 @@ export function FacetFilterControls({
   onSelect,
   hasFiles,
   onHasFilesChange,
+  vr,
+  onVrChange,
   filePhase,
   onFilePhaseChange,
 }: FacetFilterControlsProps) {
@@ -165,6 +170,18 @@ export function FacetFilterControls({
             ]}
             value={triSelectValue(hasFiles)}
             onChange={(v) => onHasFilesChange(parseTriSelect(v))}
+            clearable
+            size="sm"
+          />
+          <Select
+            label={t("search.vr")}
+            placeholder={t("search.any")}
+            data={[
+              { value: "true", label: t("search.vrOnly") },
+              { value: "false", label: t("search.vrExcluded") },
+            ]}
+            value={triSelectValue(vr)}
+            onChange={(v) => onVrChange(parseTriSelect(v))}
             clearable
             size="sm"
           />

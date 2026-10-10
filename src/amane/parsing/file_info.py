@@ -646,3 +646,24 @@ def _detect_definition(basename: str) -> str | None:
         if pattern.search(normalized):
             return value
     return None
+
+
+# ---------------------------------------------------------------------------
+# VR
+# ---------------------------------------------------------------------------
+
+# 番号前缀判定: VR 后必须紧跟连字符再跟数字, 因此 MDVR-123 一类的国产号不命中. 标签命中要求整体
+# 相等 (忽略大小写与首尾空白): 含 VR 字样的非 VR 标签不应被误判.
+_VR_NUMBER = re.compile(r"VR-?\d")
+_VR_TAGS = frozenset({"vr", "vr専用", "8kvr", "ハイクオリティvr", "vr専用作品", "vr作品"})
+
+
+def is_vr(number: str | None, tags: Iterable[str] = ()) -> bool:
+    """VR 判定: 番号前缀或标签词表命中其一即可.
+
+    两个来源都没有权威性 —— 标签看来源是否提供, 前缀防来源不给标签 —— 因此取并集而不设优先级.
+    判定输入是已入库的番号与标签, 故存量影片按现有数据重算即可, 不依赖重新刮削.
+    """
+    if number and _VR_NUMBER.search(number.upper()):
+        return True
+    return any(tag.strip().casefold() in _VR_TAGS for tag in tags)

@@ -1061,6 +1061,24 @@
             "description": "Filter by linked file subtitle marker"
           },
           {
+            "name": "vr",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by VR marker (title tags or number prefix)",
+              "title": "Vr"
+            },
+            "description": "Filter by VR marker (title tags or number prefix)"
+          },
+          {
             "name": "mosaic",
             "in": "query",
             "required": false,
@@ -11261,6 +11279,11 @@
             ],
             "title": "Score"
           },
+          "vr": {
+            "type": "boolean",
+            "title": "Vr",
+            "default": false
+          },
           "poster_urls": {
             "items": {
               "type": "string"
@@ -11380,7 +11403,8 @@
           "release",
           "created_at",
           "updated_at",
-          "file_count"
+          "file_count",
+          "score"
         ],
         "title": "MetadataSortField"
       },

@@ -190,6 +190,7 @@ export const METADATA_SORT_FIELDS = exhaustiveTuple<MetadataSortField>()(
   "title",
   "studio",
   "release",
+  "score",
   "created_at",
   "updated_at",
   "file_count",

@@ -27,6 +27,8 @@
 
 文件相位 (`content_type` / `mosaic` / `has_subtitle` / `definition`) 是 **path 的投影**, 只落在 `MediaFile`: 创建与修改 path 时用同一次 `parse_file_info` 回填, 不纳入对外 PATCH; `cd` 只用于 ORGANIZE 分集配对, 不落库. `content_type` 是番号 / 目录的内容类型 (决定刮削路由), `mosaic` 是这份文件的马赛克标记 (有码 / 无码 / 破解 / 流出); 词表未命中时按内容类型兜底 (有码 → `censored`, 无码 → `uncensored`, 国产 / FC2 / 欧美保持空), 已有的破解 / 流出 / 无码标记不覆盖. 无码展示与筛选是 `mosaic=uncensored OR content_type=uncensored`. `ContentType.chinese` 是国产, 不是中字 — 中字只依据 `has_subtitle`. Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase`): 任一挂载文件具备即亮, `definition` 取最高档; 没有挂载文件的 Metadata 不命中这些筛选. 模板占位符 `{mosaic?}` 输出判定后的 mosaic, `{content_type}` 输出内容类型.
 
+`Metadata` 的 `vr` 与 `score_rank` 也是**真值的投影** (分别来自 `number` / `tags` 与 `scores` 首值): 只由写方法在改完真值后重算, 不进对外 PATCH、不纳入锁定; 建列迁移按现有列回填, 因此存量影片不需要重新刮削. `score_rank` 与读取侧的 `score` 必须同口径 (字典首值, 每站独立禁止折成单值), 它存在只为让评分可 SQL 排序.
+
 ## Library 归属
 
 与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 发现通道 (`ingest`: native / clouddrive) + 跳过规则. `automation` 只控制发现侧 (不监控 / 仅登记 / 登记后自动刮削); `ingest=clouddrive` 必填 `cloud_path` 且不挂 watchdog Observer, 契约见 [watcher.md](watcher.md). **自动整理尚未开放**, 落盘只由手动 ORGANIZE 执行. **库路径在写入时解析为真实路径**, 但值没变就不改写形式: 老库的库根可能还没解析, 而索引行与它同一写法. 索引路径、模板产物与任务范围一律按字面路径比较, 别名与真实路径混用会把同一个文件算成两条索引 — 任务范围仅在该库路径已是真实路径时才跟着规范化.
