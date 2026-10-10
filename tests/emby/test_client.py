@@ -113,32 +113,42 @@ class TestUploadPrimaryImage:
 class TestListPersons:
     @pytest.mark.asyncio
     async def test_paginates_and_parses_person_fields(self):
-        page = {
-            "Items": [
-                {
-                    "Id": f"id-{i}",
-                    "Name": f"P{i}",
-                    "ImageTags": {"Primary": "3ad658cbfb0173e14bb09d255e84d64a"},
-                    "Overview": "bio",
-                }
-                for i in range(500)
-            ]
-        }
-        last = {
-            "Items": [{"Id": "last", "Name": "Last", "ProductionLocations": ["Tokyo"], "PremiereDate": "1990-01-02"}]
-        }
+        pages = [
+            {
+                "Items": [
+                    {
+                        "Id": f"id-{i}",
+                        "Name": f"P{i}",
+                        "ImageTags": {"Primary": "3ad658cbfb0173e14bb09d255e84d64a"},
+                        "Overview": "bio",
+                    }
+                    for i in range(500)
+                ]
+            },
+            {
+                "Items": [
+                    {
+                        "Id": "last",
+                        "Name": "Last",
+                        "ProductionLocations": ["Tokyo"],
+                        "PremiereDate": "1990-01-02",
+                    }
+                ]
+            },
+            {"Items": []},
+        ]
         starts: list[str] = []
 
         def handler(request: Request) -> Response:
             starts.append(request.url.params["startIndex"])
             assert request.url.params["fields"] == "Overview,ProductionLocations"
             assert request.url.params["enableImages"] == "true"
-            return Response(200, json=page if len(starts) == 1 else last)
+            return Response(200, json=pages[min(len(starts) - 1, len(pages) - 1)])
 
         async with _client(handler) as client:
             persons = await client.list_persons()
 
-        assert starts == ["0", "500"]
+        assert starts == ["0", "500", "501"]
         assert len(persons) == 501
         assert persons[0].has_primary_image is True
         assert persons[0].overview == "bio"
@@ -170,6 +180,39 @@ class TestListPersons:
 
         assert seen_starts == ["0", "100", "200"]
         assert [p.id for p in persons] == [f"id-{i}" for i in range(250)]
+
+    @pytest.mark.asyncio
+    async def test_capped_page_size_without_total_is_not_truncated(self):
+        """没有总数、页面又被服务器截断时, 继续按实际条数取到空页为止."""
+        all_persons = [{"Id": f"id-{i}", "Name": f"P{i}"} for i in range(120)]
+        seen_starts: list[str] = []
+
+        def handler(request: Request) -> Response:
+            start = int(request.url.params["startIndex"])
+            seen_starts.append(request.url.params["startIndex"])
+            return Response(200, json={"Items": all_persons[start : start + 100]})
+
+        async with _client(handler) as client:
+            persons = await client.list_persons()
+
+        assert seen_starts == ["0", "100", "120"]
+        assert len(persons) == 120
+
+    @pytest.mark.asyncio
+    async def test_repeated_page_ends_iteration(self):
+        """服务器重复返回同一整页而声明的总数取不到时, 不能一直请求下去."""
+        page = [{"Id": f"id-{i}", "Name": f"P{i}"} for i in range(100)]
+        calls: list[str] = []
+
+        def handler(request: Request) -> Response:
+            calls.append(request.url.params["startIndex"])
+            return Response(200, json={"Items": page, "TotalRecordCount": 10_000})
+
+        async with _client(handler) as client:
+            persons = await client.list_persons()
+
+        assert calls == ["0", "100"]
+        assert len(persons) == 100
 
     @pytest.mark.asyncio
     async def test_empty_page_ends_iteration(self):

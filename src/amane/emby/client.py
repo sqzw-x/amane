@@ -28,10 +28,11 @@ _TRANSPORT_ERRORS = (HTTPError, InvalidURL)
 (``http://host:port``) 时它在构造请求阶段就抛出, 漏掉会让原始异常穿到调用方."""
 
 _PAGE_SIZE = 500
-"""人物列表一页的条数; 逐页取到不足一页为止."""
+"""人物列表一页的条数; 逐页取到没有新条目为止."""
 
 _PERSON_FIELDS = "Overview,ProductionLocations"
-"""额外取回的字段. 生日是基础字段, 不在 ``fields`` 里."""
+"""经 ``fields`` 索取的两个字段. 生日 (``PremiereDate``) 无法这样索取, 它是否随列表默认返回也未验证,
+因此写回判据不依赖它."""
 
 
 class EmbyError(Exception):
@@ -47,6 +48,7 @@ class EmbyPerson:
     has_primary_image: bool
     overview: str | None = None
     premiere_date: str | None = None
+    """服务器返回的生日; 它是否随人物列表返回未验证, 因此不参与写回判据 (见 ``EmbySyncHandler``)."""
     production_locations: list[str] = field(default_factory=list)
 
     @classmethod
@@ -92,10 +94,12 @@ class EmbyClient:
         """取回服务器上的全部人物条目.
 
         以响应里的 ``TotalRecordCount`` 判定读完, 并按本次**实际返回**的条数推进 ``startIndex``:
-        服务器可以把 ``limit`` 收到自己的上限, 按请求值推进会跳过中间的人物. 响应没有总数时退回
-        「不足一页即读完」, 此时服务器的分页形态只能真机确认.
+        服务器可以把 ``limit`` 收到自己的上限, 按请求值推进会跳过中间的人物. 只看总数与条数会在
+        「服务器每页都返回整页、声明的总数大于实际可取条数」时不终止, 因此**没有新条目**也结束 —
+        重复返回同一页说明服务器的分页到此为止.
         """
         persons: list[EmbyPerson] = []
+        seen: set[str] = set()
         start = 0
         while True:
             payload = await self._get_json(
@@ -112,12 +116,17 @@ class EmbyClient:
                 raise EmbyError("人物列表响应缺少 Items")
             if not items:
                 return persons
-            persons.extend(person for item in items if isinstance(item, dict) and (person := EmbyPerson.from_dto(item)))
+            fresh = [
+                person
+                for item in items
+                if isinstance(item, dict) and (person := EmbyPerson.from_dto(item)) and person.id not in seen
+            ]
+            if not fresh:
+                return persons
+            seen.update(person.id for person in fresh)
+            persons.extend(fresh)
             total = payload.get("TotalRecordCount")
-            if isinstance(total, int):
-                if len(persons) >= total:
-                    return persons
-            elif len(items) < _PAGE_SIZE:
+            if isinstance(total, int) and len(persons) >= total:
                 return persons
             start += len(items)
 
