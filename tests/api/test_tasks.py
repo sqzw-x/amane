@@ -207,6 +207,16 @@ class TestGetTask:
         assert (await client.get(f"tasks/{cleanup.id}")).json()["title"] is None
 
 
+class TestSubmitEmbySync:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_submission_resolves_payload(self, client: AsyncClient, stop_worker: None):
+        """提交联合与 resolve_submission 的 emby_sync 分支: 手动触发路径."""
+        resp = await client.post("tasks", json={"type": "emby_sync", "actor_id": 7, "force": True})
+
+        assert resp.status_code == 202
+        assert resp.json()["payload"] == {"actor_id": 7, "force": True}
+
+
 class TestBatchTasks:
     """POST /tasks/batch 接线. 计数/跳过链/重试见 tests/db/test_task_batch.py."""
 

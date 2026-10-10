@@ -1710,6 +1710,164 @@ export const DownloadableResourceSchema = {
     description: '影片附属资源类型: 刮削写入 Resource, 整理时按库配置复制到库路径.'
 } as const;
 
+export const EmbyConfigSchema = {
+    properties: {
+        url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Url'
+        },
+        api_key: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Api Key'
+        },
+        sync_on_actor_scrape: {
+            type: 'boolean',
+            title: 'Sync On Actor Scrape',
+            default: true
+        },
+        sync_images: {
+            type: 'boolean',
+            title: 'Sync Images',
+            default: true
+        },
+        sync_profile: {
+            type: 'boolean',
+            title: 'Sync Profile',
+            default: true
+        },
+        overwrite: {
+            type: 'boolean',
+            title: 'Overwrite',
+            default: false
+        },
+        timeout: {
+            type: 'number',
+            maximum: 60,
+            minimum: 1,
+            title: 'Timeout',
+            default: 30
+        },
+        verify_tls: {
+            type: 'boolean',
+            title: 'Verify Tls',
+            default: true
+        }
+    },
+    type: 'object',
+    title: 'EmbyConfig',
+    description: 'Emby / Jellyfin 人物同步; ``url`` 与 ``api_key`` 齐备才启用.'
+} as const;
+
+export const EmbySyncResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'emby_sync',
+            title: 'Type',
+            default: 'emby_sync'
+        },
+        actors: {
+            type: 'integer',
+            title: 'Actors'
+        },
+        persons: {
+            type: 'integer',
+            title: 'Persons'
+        },
+        images: {
+            type: 'integer',
+            title: 'Images'
+        },
+        updated: {
+            type: 'integer',
+            title: 'Updated'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped'
+        },
+        not_found: {
+            type: 'integer',
+            title: 'Not Found'
+        },
+        no_image: {
+            type: 'integer',
+            title: 'No Image'
+        },
+        failed: {
+            type: 'integer',
+            title: 'Failed'
+        },
+        failures: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Failures'
+        }
+    },
+    type: 'object',
+    required: [
+        'actors',
+        'persons',
+        'images',
+        'updated',
+        'skipped',
+        'not_found',
+        'no_image',
+        'failed',
+        'failures'
+    ],
+    title: 'EmbySyncResult'
+} as const;
+
+export const EmbySyncSubmissionSchema = {
+    properties: {
+        actor_id: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Actor Id',
+            description: '只同步该演员; 缺省同步全部演员'
+        },
+        force: {
+            type: 'boolean',
+            title: 'Force',
+            description: '覆盖服务器上已有的头像与字段, 忽略 emby.overwrite',
+            default: false
+        },
+        type: {
+            type: 'string',
+            const: 'emby_sync',
+            title: 'Type'
+        }
+    },
+    type: 'object',
+    required: [
+        'type'
+    ],
+    title: 'EmbySyncSubmission'
+} as const;
+
 export const ErrorRowSchema = {
     properties: {
         seq: {
@@ -3070,6 +3228,17 @@ export const HotSettingsSchema = {
                 read_password: 'r18dev_readonly',
                 read_timeout: 30,
                 psql_path: 'psql'
+            }
+        },
+        emby: {
+            $ref: '#/components/schemas/EmbyConfig',
+            default: {
+                sync_on_actor_scrape: true,
+                sync_images: true,
+                sync_profile: true,
+                overwrite: false,
+                timeout: 30,
+                verify_tls: true
             }
         },
         watcher: {
@@ -8545,6 +8714,9 @@ export const TaskResponseSchema = {
                         },
                         {
                             $ref: '#/components/schemas/RescrapeResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/EmbySyncResult'
                         }
                     ],
                     discriminator: {
@@ -8553,6 +8725,7 @@ export const TaskResponseSchema = {
                             actor_scrape: '#/components/schemas/ActorScrapeResult',
                             cleanup: '#/components/schemas/CleanupResult',
                             delete: '#/components/schemas/DeleteResult',
+                            emby_sync: '#/components/schemas/EmbySyncResult',
                             organize: '#/components/schemas/OrganizeResult',
                             r18_import: '#/components/schemas/R18ImportResult',
                             refresh: '#/components/schemas/RefreshResult',
@@ -8616,7 +8789,8 @@ export const TaskTypeSchema = {
         'actor_scrape',
         'rescrape',
         'scan_invalid',
-        'delete'
+        'delete',
+        'emby_sync'
     ],
     title: 'TaskType'
 } as const;

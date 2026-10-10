@@ -30,13 +30,16 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 # 标题取库名的任务类型: payload 带 `library_id` 的库内任务.
 _LIBRARY_TASK_TYPES = (TaskType.REFRESH, TaskType.ORGANIZE, TaskType.SCAN_INVALID, TaskType.DELETE)
 
+# 标题取演员名的任务类型: payload 可带 `actor_id`; 不带时标题留空 (全量同步没有单一主体).
+_ACTOR_TASK_TYPES = (TaskType.ACTOR_SCRAPE, TaskType.EMBY_SYNC)
+
 
 async def _task_titles(repo: RepoDep, tasks: Sequence[Task]) -> dict[int, str | None]:
-    """scrape→番号, actor_scrape→演员名, 库内任务→库名. 批量查库, 避免列表 N+1."""
+    """scrape→番号, 演员任务→演员名, 库内任务→库名. 批量查库, 避免列表 N+1."""
     actor_ids = {
         int(p["actor_id"])
         for t in tasks
-        if t.type == TaskType.ACTOR_SCRAPE and isinstance((p := t.payload or {}).get("actor_id"), int)
+        if t.type in _ACTOR_TASK_TYPES and isinstance((p := t.payload or {}).get("actor_id"), int)
     }
     library_ids = {
         int(p["library_id"])
@@ -54,7 +57,7 @@ async def _task_titles(repo: RepoDep, tasks: Sequence[Task]) -> dict[int, str | 
         if t.type == TaskType.SCRAPE:
             number = payload.get("number")
             title = str(number) if number else None
-        elif t.type == TaskType.ACTOR_SCRAPE:
+        elif t.type in _ACTOR_TASK_TYPES:
             actor_id = payload.get("actor_id")
             title = actor_names.get(int(actor_id)) if isinstance(actor_id, int) else None
         elif t.type in _LIBRARY_TASK_TYPES:

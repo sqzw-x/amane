@@ -992,6 +992,114 @@ export type DesktopResponse = {
 export type DownloadableResource = 'thumb' | 'poster' | 'extrafanart' | 'trailer';
 
 /**
+ * EmbyConfig
+ *
+ * Emby / Jellyfin 人物同步; ``url`` 与 ``api_key`` 齐备才启用.
+ */
+export type EmbyConfig = {
+    /**
+     * Url
+     */
+    url?: string | null;
+    /**
+     * Api Key
+     */
+    api_key?: string | null;
+    /**
+     * Sync On Actor Scrape
+     */
+    sync_on_actor_scrape?: boolean;
+    /**
+     * Sync Images
+     */
+    sync_images?: boolean;
+    /**
+     * Sync Profile
+     */
+    sync_profile?: boolean;
+    /**
+     * Overwrite
+     */
+    overwrite?: boolean;
+    /**
+     * Timeout
+     */
+    timeout?: number;
+    /**
+     * Verify Tls
+     */
+    verify_tls?: boolean;
+};
+
+/**
+ * EmbySyncResult
+ */
+export type EmbySyncResult = {
+    /**
+     * Type
+     */
+    type?: 'emby_sync';
+    /**
+     * Actors
+     */
+    actors: number;
+    /**
+     * Persons
+     */
+    persons: number;
+    /**
+     * Images
+     */
+    images: number;
+    /**
+     * Updated
+     */
+    updated: number;
+    /**
+     * Skipped
+     */
+    skipped: number;
+    /**
+     * Not Found
+     */
+    not_found: number;
+    /**
+     * No Image
+     */
+    no_image: number;
+    /**
+     * Failed
+     */
+    failed: number;
+    /**
+     * Failures
+     */
+    failures: Array<string>;
+};
+
+/**
+ * EmbySyncSubmission
+ */
+export type EmbySyncSubmission = {
+    /**
+     * Actor Id
+     *
+     * 只同步该演员; 缺省同步全部演员
+     */
+    actor_id?: number | null;
+    /**
+     * Force
+     *
+     * 覆盖服务器上已有的头像与字段, 忽略 emby.overwrite
+     */
+    force?: boolean;
+    /**
+     * Type
+     */
+    type: 'emby_sync';
+};
+
+/**
  * ErrorRow
  *
  * 回合异常; 文案直接进助手气泡.
@@ -1552,6 +1660,7 @@ export type HotSettings = {
     watermark?: WatermarkConfig;
     llm?: LlmConfig;
     r18?: R18Config;
+    emby?: EmbyConfig;
     watcher?: WatcherConfig;
     worker?: WorkerConfig;
     logging?: LoggingConfig;
@@ -4419,7 +4528,9 @@ export type TaskResponse = {
         type: 'actor_scrape';
     } & ActorScrapeResult) | ({
         type: 'rescrape';
-    } & RescrapeResult) | null;
+    } & RescrapeResult) | ({
+        type: 'emby_sync';
+    } & EmbySyncResult) | null;
 };
 
 /**
@@ -4435,7 +4546,7 @@ export type TaskStatus = 'queued' | 'running' | 'done' | 'failed';
 /**
  * TaskType
  */
-export type TaskType = 'scrape' | 'organize' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape' | 'scan_invalid' | 'delete';
+export type TaskType = 'scrape' | 'organize' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape' | 'scan_invalid' | 'delete' | 'emby_sync';
 
 /**
  * TaskWorkerResponse
@@ -7575,7 +7686,7 @@ export type SubmitTaskData = {
     /**
      * Req
      */
-    body: RefreshSubmission | OrganizeSubmission | ScanInvalidSubmission | DeleteSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission;
+    body: RefreshSubmission | OrganizeSubmission | ScanInvalidSubmission | DeleteSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission | EmbySyncSubmission;
     path?: never;
     query?: never;
     url: '/api/tasks';
