@@ -42,22 +42,22 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
 
     with engine.connect() as conn:
         columns = {column["name"] for column in inspect(conn).get_columns("media_files")}
-        assert {"content_type", "mosaic", "has_subtitle", "definition"} <= columns
+        assert {"content_type", "mosaic", "has_subtitle_in_name", "definition"} <= columns
         rows = {
             row.path: row
             for row in conn.execute(
-                text("SELECT path, content_type, mosaic, has_subtitle, definition FROM media_files")
+                text("SELECT path, content_type, mosaic, has_subtitle_in_name, definition FROM media_files")
             ).all()
         }
         midv = rows["/media/MIDV-123-UC-4K.mp4"]
         assert midv.content_type == "CENSORED"
         assert midv.mosaic == "CRACKED"
-        assert midv.has_subtitle in (1, True)
+        assert midv.has_subtitle_in_name in (1, True)
         assert midv.definition == "4K"
         heyzo = rows["/media/HEYZO-1234.mp4"]
         assert heyzo.content_type == "UNCENSORED"
         assert heyzo.mosaic == "UNCENSORED"
-        assert heyzo.has_subtitle in (0, False)
+        assert heyzo.has_subtitle_in_name in (0, False)
         assert heyzo.definition is None
 
     with Session(engine) as session:
@@ -110,7 +110,10 @@ def test_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
     command.upgrade(cfg, "head")
 
     with engine.connect() as conn:
-        rows = {row.path: row for row in conn.execute(text("SELECT path, mosaic, has_subtitle FROM media_files")).all()}
+        rows = {
+            row.path: row
+            for row in conn.execute(text("SELECT path, mosaic, has_subtitle_in_name FROM media_files")).all()
+        }
         assert rows["/media/MIDV-123-U.mp4"].mosaic == "CRACKED"
         assert rows["/media/MIDV-123-无码.mp4"].mosaic == "UNCENSORED"
         assert rows["/media/MIDV-123-無碼破解.mp4"].mosaic == "CRACKED"
