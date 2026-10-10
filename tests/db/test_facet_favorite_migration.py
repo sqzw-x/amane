@@ -1,4 +1,4 @@
-"""分类收藏列: 四张分类实体表各加一列 ``is_favorite``, 既有行取默认假值."""
+"""分类收藏列: 五张分类实体表各加一列 ``is_favorite``, 既有行取默认假值."""
 
 from pathlib import Path
 
@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from tests.helpers import alembic_config
 
 _PREVIOUS = "d9dec3f83da7"
-_TABLES = ("tags", "studios", "publishers", "series")
+_TABLES = ("directors", "tags", "studios", "publishers", "series")
 _INSERT = (
     "INSERT INTO {table} (name, created_at, updated_at) VALUES (:name, '2026-01-01 00:00:00', '2026-01-01 00:00:00')"
 )

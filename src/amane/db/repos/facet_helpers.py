@@ -1057,7 +1057,9 @@ async def merge_scalar_facets(
     return item
 
 
-def _favorite_entity(kind: FacetKind) -> type[Tag] | type[Studio] | type[Publisher] | type[Series] | None:
+def _favorite_entity(
+    kind: FacetKind,
+) -> type[Director] | type[Tag] | type[Studio] | type[Publisher] | type[Series] | None:
     """可收藏的实体模型; 不支持收藏的分类返回 None.
 
     收藏列与实体同源 (``FAVORITE_FACET_ENTITIES``): 列表 / 详情 / 写入 / 合并都经这里取,

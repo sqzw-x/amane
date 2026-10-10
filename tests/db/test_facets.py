@@ -391,6 +391,7 @@ _SCALAR_KINDS: tuple[tuple[FacetKind, str], ...] = (
     (FacetKind.SERIES, "series"),
 )
 _FAVORITE_KINDS: tuple[tuple[FacetKind, str], ...] = (
+    (FacetKind.DIRECTOR, "director"),
     (FacetKind.TAG, "tags"),
     (FacetKind.STUDIO, "studio"),
     (FacetKind.PUBLISHER, "publisher"),
@@ -399,8 +400,8 @@ _FAVORITE_KINDS: tuple[tuple[FacetKind, str], ...] = (
 
 
 async def _seed_favorite_facet(repo: Repository, number: str, kind: FacetKind, value: str) -> Metadata:
-    if kind == FacetKind.TAG:
-        return await repo.upsert_metadata(number=number, tags=[value])
+    if kind in (FacetKind.DIRECTOR, FacetKind.TAG):
+        return await _seed_list(repo, number, kind, [value])
     return await _seed_scalar(repo, number, kind, value)
 
 
@@ -708,7 +709,7 @@ class TestFacetRenameMergeDelete:
 
 
 class TestFacetFavorites:
-    """分类收藏: 四种分类各持一位手工状态, 与刮削投影正交."""
+    """分类收藏: 五种分类各持一位手工状态, 与刮削投影正交."""
 
     async def test_set_and_filter_by_kind(self, repo: Repository) -> None:
         for kind, _field in _FAVORITE_KINDS:
@@ -748,7 +749,7 @@ class TestFacetFavorites:
     async def test_unsupported_kinds_rejected(self, repo: Repository) -> None:
         await repo.upsert_metadata(number="FV-UNSUPPORTED", actors=["Alice"], directors=["DirA"])
         assert (await _tag(repo, "fav-check")).id is not None
-        for kind in (FacetKind.ACTOR, FacetKind.DIRECTOR, FacetKind.USER_TAG):
+        for kind in (FacetKind.ACTOR, FacetKind.USER_TAG):
             with pytest.raises(ValueError):
                 await repo.set_facet_favorite(kind, 1, True)
             with pytest.raises(ValueError):

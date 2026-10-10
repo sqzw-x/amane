@@ -198,7 +198,7 @@ async def test_facet_favorite_http(client: AsyncClient, repo: Repository) -> Non
     # 不支持收藏的分类: 写与筛选都是 400, 与筛选取值无关
     tag_id = await _facet_id(client, "tag", "FavTag")
     actor_id = await _facet_id(client, "actor", "Alice")
-    for kind, facet_id in (("actor", actor_id), ("director", 9999), ("user_tag", 9999)):
+    for kind, facet_id in (("actor", actor_id), ("user_tag", 9999)):
         assert (await client.put(f"facets/{kind}/{facet_id}/favorite", json={"is_favorite": True})).status_code == 400
         for value in ("true", "false"):
             assert (await client.get(f"facets/{kind}?favorite={value}")).status_code == 400
@@ -207,3 +207,33 @@ async def test_facet_favorite_http(client: AsyncClient, repo: Repository) -> Non
     # 链接分类 (tag) 与标量分类的列表都带该字段
     assert (await client.get("facets/tag")).json()["items"][0]["is_favorite"] is False
     assert await _facet_id(client, "tag", "FavTag") == tag_id
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_facet_favorite_http_director(client: AsyncClient, repo: Repository) -> None:
+    """导演与标签同属链接型分类, 收藏走同一条读写路径."""
+    await repo.upsert_metadata(number="HTTP-FVD-1", directors=["FavDirector"])
+    await repo.upsert_metadata(number="HTTP-FVD-2", directors=["PlainDirector"])
+    director_id = await _facet_id(client, "director", "FavDirector")
+
+    listed = (await client.get("facets/director")).json()["items"]
+    assert listed and all(i["is_favorite"] is False for i in listed)
+
+    marked = await client.put(f"facets/director/{director_id}/favorite", json={"is_favorite": True})
+    assert marked.status_code == 200
+    assert marked.json()["name"] == "FavDirector"
+    assert marked.json()["is_favorite"] is True
+    assert (await client.get(f"facets/director/{director_id}")).json()["is_favorite"] is True
+
+    only_favorite = (await client.get("facets/director?favorite=true")).json()
+    assert [i["name"] for i in only_favorite["items"]] == ["FavDirector"]
+    assert only_favorite["total"] == 1
+    without = (await client.get("facets/director?favorite=false")).json()
+    assert [i["name"] for i in without["items"]] == ["PlainDirector"]
+
+    cleared = await client.put(f"facets/director/{director_id}/favorite", json={"is_favorite": False})
+    assert cleared.status_code == 200 and cleared.json()["is_favorite"] is False
+    assert (await client.get("facets/director?favorite=true")).json()["items"] == []
+
+    assert (await client.put("facets/director/9999/favorite", json={"is_favorite": True})).status_code == 404
+    assert (await client.get("facets/director/9999")).status_code == 404
