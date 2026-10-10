@@ -17,16 +17,20 @@ SQL_IN_CHUNK_SIZE = 500
 
 
 def _apply_path_phase(media: MediaFile) -> None:
-    """path 是真值, 相位列是投影; 创建与改 path 时必须回填."""
+    """path 是真值, 相位列是投影; 创建与改 path 时必须回填.
+
+    只回填 path 能推出的相位. 同目录字幕不是 path 的投影, 由调用方另经
+    ``handlers._common.refresh_external_subtitle`` 写入.
+    """
     phase = file_phase_from_path(media.path)
     media.content_type = phase["content_type"]
     media.mosaic = phase["mosaic"]
-    media.has_subtitle = phase["has_subtitle"]
+    media.has_subtitle_in_name = phase["has_subtitle"]
     media.definition = phase["definition"]
 
 
 def file_phase_of(media: MediaFile) -> FilePhase:
-    """从已落库列组装, 不再解析 path."""
+    """从已落库列组装, 不再解析 path. 中字取文件名标记与同目录字幕的并集."""
     return FilePhase(
         content_type=media.content_type,
         mosaic=media.mosaic,
@@ -209,6 +213,8 @@ class MediaRepoMixin(RepositoryMixinBase):
                 media.status = updates["status"]
             if "metadata_id" in updates:
                 media.metadata_id = updates["metadata_id"]
+            if "has_external_subtitle" in updates:
+                media.has_external_subtitle = updates["has_external_subtitle"]
             media.updated_at = _utcnow()
             session.add(media)
             await session.commit()

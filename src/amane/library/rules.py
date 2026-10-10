@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 from pydantic import AfterValidator
+
+from ..utils.threads import in_thread
 
 if TYPE_CHECKING:
     from re import Pattern
@@ -147,3 +150,26 @@ def is_skipped_media(path: Path, pattern: str | None) -> bool:
 def is_in_trash(path: Path) -> bool:
     """路径任一深度组件为 `.amane_trash` 则视为回收目录内容: 不入库、不触发监控事件."""
     return any(part == TRASH_DIRNAME for part in path.parts)
+
+
+@in_thread
+def has_companion_subtitle(video_path: Path, subtitle_extensions: Sequence[str]) -> bool:
+    """视频同目录 (不递归) 存在库配置的字幕扩展名文件.
+
+    只认扩展名, 不看文件名与语言: 同目录其它视频共用的字幕同样算命中.
+    空扩展名列表关闭发现. 目录读不到 (不存在 / 无权限) 按无字幕处理.
+    """
+    extensions = {ext.lower() for ext in subtitle_extensions}
+    if not extensions:
+        return False
+    try:
+        if video_path.suffix.lower() in extensions:
+            return True
+        parent = video_path.parent
+        with os.scandir(parent) as entries:
+            for entry in entries:
+                if entry.is_file() and Path(entry.name).suffix.lower() in extensions:
+                    return True
+    except OSError:
+        return False
+    return False

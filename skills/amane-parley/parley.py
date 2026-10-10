@@ -104,7 +104,7 @@ def read_manifest(workspace: Path) -> dict[str, Any] | None:
         return None
     try:
         raw = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
+    except (OSError, ValueError):
         return None
     if not isinstance(raw, dict):
         return None

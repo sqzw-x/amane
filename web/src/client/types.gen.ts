@@ -3963,6 +3963,10 @@ export type SiteConfig = {
      * Use Proxy
      */
     use_proxy?: boolean;
+    /**
+     * Proxy
+     */
+    proxy?: string | null;
     use_browser?: BrowserMode;
     browser_backend?: BrowserBackendName | null;
     /**

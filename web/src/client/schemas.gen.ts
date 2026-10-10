@@ -7642,6 +7642,17 @@ export const SiteConfigSchema = {
             title: 'Use Proxy',
             default: true
         },
+        proxy: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Proxy'
+        },
         use_browser: {
             $ref: '#/components/schemas/BrowserMode',
             default: 'auto'
