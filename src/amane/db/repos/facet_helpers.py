@@ -42,7 +42,14 @@ from ..models import (
     Tag,
     UserTag,
 )
-from ..repo_types import FacetItem, UserTagLinkAction, UserTagLinkResult, _facet_primary_order, _utcnow
+from ..repo_types import (
+    FacetFavoriteBatchResult,
+    FacetItem,
+    UserTagLinkAction,
+    UserTagLinkResult,
+    _facet_primary_order,
+    _utcnow,
+)
 
 # 关联表投影: Metadata list JSON 为真值 (actor/director/tag), 或纯挂载 (user_tag).
 # 标量投影: Metadata.studio/publisher/series 字符串为真值, 实体表按 name 对齐.
@@ -1296,3 +1303,32 @@ async def set_facet_favorite(
     item = await get_facet(session, kind, facet_id)
     await session.commit()
     return item
+
+
+async def set_facets_favorite(
+    session: AsyncSession, kind: FacetKind, facet_ids: Sequence[int], is_favorite: bool
+) -> FacetFavoriteBatchResult:
+    """把一批分类的收藏位整体赋同一个取值, 单个事务; 分类不支持收藏抛 ``ValueError``.
+
+    只写取值与目标不同的行, 因此重复提交同一批不产生写入. 不存在的 id 计入 ``missing``,
+    其余照常处理 — 与单条端点返回 404 不同, 调用方拿到的仍是一次成功的部分结果.
+    """
+    entity = _favorite_entity(kind)
+    if entity is None:
+        raise ValueError(f"facet kind {kind} 不支持收藏")
+    unique_ids = list(dict.fromkeys(facet_ids))
+    rows = (await session.exec(select(entity).where(col(entity.id).in_(unique_ids)))).all()
+    changed = 0
+    for row in rows:
+        if row.is_favorite == is_favorite:
+            continue
+        row.is_favorite = is_favorite
+        row.updated_at = _utcnow()
+        session.add(row)
+        changed += 1
+    await session.commit()
+    return FacetFavoriteBatchResult(
+        changed=changed,
+        unchanged=len(rows) - changed,
+        missing=len(unique_ids) - len(rows),
+    )

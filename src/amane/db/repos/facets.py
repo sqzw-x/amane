@@ -40,6 +40,7 @@ from ..repo_types import (
     ActorBrowseParams,
     ActorPersonFields,
     CommentUpdates,
+    FacetFavoriteBatchResult,
     FacetItem,
     UserTagLinkAction,
     UserTagLinkResult,
@@ -68,6 +69,7 @@ from .facet_helpers import (
     rename_scalar_facet,
     replace_actor_aliases,
     set_facet_favorite,
+    set_facets_favorite,
 )
 
 
@@ -178,6 +180,13 @@ class FacetsRepoMixin(RepositoryMixinBase):
         """整体赋值收藏位; 分类不支持收藏抛 ``ValueError``, 实体不存在返回 None."""
         async with self._session() as session:
             return await set_facet_favorite(session, kind, facet_id, is_favorite)
+
+    async def set_facets_favorite(
+        self, kind: FacetKind, facet_ids: Sequence[int], is_favorite: bool
+    ) -> FacetFavoriteBatchResult:
+        """整体赋值一批分类的收藏位, 单个事务; 分类不支持收藏抛 ``ValueError``."""
+        async with self._session() as session:
+            return await set_facets_favorite(session, kind, facet_ids, is_favorite)
 
     async def get_facet(self, kind: FacetKind, facet_id: int) -> FacetItem | None:
         async with self._session() as session:
