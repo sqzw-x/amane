@@ -52,8 +52,7 @@ _AV_ROLE_RE = re.compile(r"\b(?:actress|actor|idol|model|star)\b", re.IGNORECASE
 _SEARCH_LANGUAGES: tuple[str, ...] = ("ja", "zh", "en")
 _SEARCH_CANDIDATE_LIMIT = 5
 
-# 词条语言: 取值集合与默认优先级同源 (SiteConfig.languages 从这里收窄枚举).
-# 检索仍覆盖上面三种语言: 收窄词条语言只影响取哪一版正文, 不影响能否检索到实体.
+# 词条语言只决定取哪一版正文, 不参与上面的实体检索; 取值集合与默认优先级同源, SiteConfig.languages 的枚举从这里收窄.
 WIKI_LANGUAGES: tuple[str, ...] = ("zh", "ja", "en")
 
 _PARSER_OUTPUT_CLASS = "mw-parser-output"
@@ -64,8 +63,8 @@ _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 _LIST_TAGS = frozenset({"ul", "ol"})
 _SKIP_WRAPPERS = frozenset({"table", "figure"})
 
-# 章节白名单: 这些章节讲人物生平, 命中即整节取用; 其余章节 (作品 / 出演 / 脚注等) 只保留导语.
-# 中 / 日维基同类章节用字不同 (歷 / 歴 / 历), 折叠成简体后再比对.
+# 章节白名单: 命中即整节取用, 未命中的章节 (作品 / 出演 / 脚注等) 只保留导语.
+# 中 / 日维基的同类章节用字不同 (歷 / 歴 与 历), 折叠成简体后再比对.
 _HEADING_FOLD = str.maketrans({"歷": "历", "歴": "历", "經": "经", "経": "经", "來": "来", "簡": "简", "藝": "艺"})
 _SECTION_KEYWORDS: tuple[str, ...] = (
     "人物",
@@ -191,7 +190,7 @@ class WikipediaActorCrawler(ActorCrawler):
         """按配置的语言优先级取第一个有正文的词条.
 
         单语言失败不阻断; 全部失败时冒泡最后一次异常. 各语言的词条都没有正文时,
-        仍返回优先级最高的可解析词条 (信息框字段照常取用).
+        仍返回优先级最高的可解析词条, 信息框字段照常取用.
         """
         fallback: _WikiPage | None = None
         last_error: SourceError | None = None
@@ -459,7 +458,7 @@ def _provider_ids(qid: str, entity: dict[str, Any]) -> dict[str, str]:
 
 
 def _entry_languages(config: SiteConfig | None) -> tuple[str, ...]:
-    """词条语言优先级; 未注入 SiteConfig (测试构造) 时取默认值."""
+    """未注入 SiteConfig 的构造 (测试) 取默认优先级."""
     return WIKI_LANGUAGES if config is None else tuple(config.languages)
 
 
@@ -488,8 +487,7 @@ def _parse_wiki_page(url: str, html_text: str) -> _WikiPage:
 def _overview_blocks(html: Selector) -> list[str]:
     """导语段落 + 白名单章节的段落与列表; 表格内的段落 (信息框 / 导航框) 不取.
 
-    标题层级决定归属: 白名单命中的章节层级以下的子章节同属该章节 (日文词条的
-    「経歴」把各年份写作 h3 子章节), 遇到同级或更高级标题才退出.
+    标题层级决定归属: 白名单章节层级以下的子章节同属该章节, 遇到同级或更高级标题才退出.
     """
     blocks: list[str] = []
     headings: list[tuple[int, str]] = []
@@ -545,7 +543,7 @@ def _clean_inline(text: str) -> str:
 
 
 def _has_ancestor(node: Any, tags: frozenset[str]) -> bool:
-    """在 ``.mw-parser-output`` 范围内向上找指定标签的祖先."""
+    """向上查找祖先; 到 ``.mw-parser-output`` 即停, 范围外的节点不参与判定."""
     for ancestor in node.iterancestors():
         tag = ancestor.tag
         if not isinstance(tag, str):
