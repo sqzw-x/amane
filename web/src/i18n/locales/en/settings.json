@@ -371,7 +371,7 @@
             "description": "Max requests per second for this site"
           },
           "languages": {
-            "label": "Entry Languages",
+            "label": "Language Priority",
             "description": "First entry with body text wins",
             "$": {
               "options": {
