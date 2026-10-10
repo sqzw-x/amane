@@ -63,6 +63,8 @@ description: >-
 uv run skills/amane-parley/parley.py <子命令> [选项]
 ```
 
+脚本兼容 Python 3.8 及以上, 项目内推荐仍用上面的 uv run 调用。
+
 子命令为 `init`、`next`、`publish`、`wait`、`status`. 全部输出为单个 JSON 信封:
 
 | 字段 | 用途 |
