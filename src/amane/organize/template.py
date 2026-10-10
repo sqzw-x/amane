@@ -526,6 +526,8 @@ class PathEngine(TemplateEngine):
 class StrmEngine(TemplateEngine):
     """STRM 正文: 不折叠空段, 不截断 title / actor / actors / actress / actresses. 引用 `{video_relpath}` 时视频必须在本库内."""
 
+    subject = "STRM 内容模板"
+
     def clean(self, filled: str, ctx: TemplateContext) -> str:
         return filled if filled.endswith("\n") else f"{filled}\n"
 

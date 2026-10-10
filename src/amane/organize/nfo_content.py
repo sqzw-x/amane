@@ -227,8 +227,7 @@ _XML_ERROR_HINTS: tuple[tuple[str, str], ...] = (
     ("unbound prefix", "用了未绑定的 XML 前缀"),
     (
         "not well-formed (invalid token)",
-        "字面量里的 `&` 要写成 `&amp;`、`<` 要写成 `&lt;` (取值由引擎转义, 字面量不转义); "
-        "另外检查属性值里是否有 `<`, 片段占位符只能写在元素内容位置",
+        "字面量里的 `&` 要写成 `&amp;`、`<` 要写成 `&lt;` (取值由引擎转义, 字面量不转义); 也检查属性值里是否混入了 `<`",
     ),
     ("no element found", "正文只剩可选组, 全部取值为空时没有任何元素"),
     ("junk after document element", "根元素之后还有内容"),
@@ -253,6 +252,21 @@ def _require_well_formed(rendered: str, subject: str) -> None:
         ET.fromstring(rendered)
     except ET.ParseError as exc:
         raise ValueError(_xml_error_message(exc, subject)) from exc
+
+
+def _fragment_in_tag(source: str) -> str | None:
+    """片段出现在标签内部 (属性位置) 的模板, 直接给出原因.
+
+    预检只看源文本: 该位置之前最后一个 `<` 若在最后一个 `>` 之后, 说明它落在某个标签里.
+    标签属性值里出现 `>` 的少数写法会漏判, 那时仍由探针的 XML 解析兜底.
+    """
+    for name in NFO_FRAGMENT_PLACEHOLDERS:
+        start = 0
+        while (index := source.find(f"{{{name}", start)) != -1:
+            if source.rfind("<", 0, index) > source.rfind(">", 0, index):
+                return name
+            start = index + 1
+    return None
 
 
 def _probe_variants() -> Iterator[dict[str, str]]:
@@ -284,6 +298,9 @@ def validate_nfo_content_template(value: str) -> str:
     unknown = [name for name in placeholder_names(value, _TEMPLATE_NAME) if name not in NFO_PLACEHOLDERS]
     if unknown:
         raise ValueError(f"{_TEMPLATE_NAME}包含未知占位符: {', '.join(unknown)}")
+    misplaced = _fragment_in_tag(value)
+    if misplaced is not None:
+        raise ValueError(f"{_TEMPLATE_NAME}里的 {{{misplaced}}} 写在标签内部: 片段占位符只能写在元素内容位置")
     for variables in _probe_variants():
         _require_well_formed(NfoEngine(value).render(TemplateContext(variables=variables)), _TEMPLATE_NAME)
     return value
