@@ -95,12 +95,14 @@ class EmbyClient:
 
         以响应里的 ``TotalRecordCount`` 判定读完, 并按本次**实际返回**的条数推进 ``startIndex``:
         服务器可以把 ``limit`` 收到自己的上限, 按请求值推进会跳过中间的人物. 只看总数与条数会在
-        「服务器每页都返回整页、声明的总数大于实际可取条数」时不终止, 因此**没有新条目**也结束 —
-        重复返回同一页说明服务器的分页到此为止.
+        「服务器每页都返回整页、声明的总数大于实际可取条数」时不终止, 因此**连续两次没有新条目**也结束 —
+        重复返回同一页说明服务器的分页到此为止. 要连续两次是因为服务器的分页顺序未必稳定, 单次没有新条目
+        可能只是同一批条目换了顺序, 后一页仍可能带出未读到的部分.
         """
         persons: list[EmbyPerson] = []
         seen: set[str] = set()
         start = 0
+        stalled = False
         while True:
             payload = await self._get_json(
                 "/Persons",
@@ -122,9 +124,13 @@ class EmbyClient:
                 if isinstance(item, dict) and (person := EmbyPerson.from_dto(item)) and person.id not in seen
             ]
             if not fresh:
-                return persons
-            seen.update(person.id for person in fresh)
-            persons.extend(fresh)
+                if stalled:
+                    return persons
+                stalled = True
+            else:
+                stalled = False
+                seen.update(person.id for person in fresh)
+                persons.extend(fresh)
             total = payload.get("TotalRecordCount")
             if isinstance(total, int) and len(persons) >= total:
                 return persons

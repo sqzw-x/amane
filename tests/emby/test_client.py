@@ -211,8 +211,26 @@ class TestListPersons:
         async with _client(handler) as client:
             persons = await client.list_persons()
 
-        assert calls == ["0", "100"]
+        assert calls == ["0", "100", "200"]
         assert len(persons) == 100
+
+    @pytest.mark.asyncio
+    async def test_single_page_without_new_persons_does_not_end_iteration(self):
+        """分页顺序不稳定时, 单次没有新条目仍要继续 — 后一页可能带出未读到的部分."""
+        first = [{"Id": f"id-{i}", "Name": f"P{i}"} for i in range(100)]
+        rest = [{"Id": f"id-{i}", "Name": f"P{i}"} for i in range(100, 110)]
+        pages = [first, first, rest, []]
+        starts: list[str] = []
+
+        def handler(request: Request) -> Response:
+            starts.append(request.url.params["startIndex"])
+            return Response(200, json={"Items": pages[min(len(starts) - 1, len(pages) - 1)]})
+
+        async with _client(handler) as client:
+            persons = await client.list_persons()
+
+        assert starts == ["0", "100", "200", "210"]
+        assert len(persons) == 110
 
     @pytest.mark.asyncio
     async def test_empty_page_ends_iteration(self):
