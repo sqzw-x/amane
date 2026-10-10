@@ -677,6 +677,28 @@ class ActorScrapingConfig(BaseModel):
         return assert_sites_allowed(v, frozenset(ACTOR_IMAGE_SITES), field="image_sites")
 
 
+class EmbyConfig(BaseModel):
+    """Emby / Jellyfin 人物同步; ``url`` 与 ``api_key`` 齐备才启用."""
+
+    url: str | None = None
+    api_key: str | None = None
+    sync_on_actor_scrape: bool = True
+    """演员刮削成功后入队一次该演员的同步."""
+    sync_images: bool = True
+    sync_profile: bool = True
+    """推送简介 / 生日 / 出身地."""
+    overwrite: bool = False
+    """覆盖服务器上已有的头像与人物字段; 关闭时只补服务器上仍为空的部分."""
+    timeout: float = Field(default=30.0, ge=1.0, le=60.0)
+    """单请求超时秒数, 读写共用. 默认偏大: ``/Persons`` 在大库上要现算人物条目, 首次同步在这里
+    超时会表现为整任务失败, 而写入卡住只是多等一会儿."""
+    verify_tls: bool = True
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.url and self.api_key)
+
+
 class HotSettings(BaseModel):
     """运行时可更新, 持久化到 TOML. extra=forbid, 未知字段须校验失败."""
 
@@ -732,6 +754,7 @@ class HotSettings(BaseModel):
     watermark: WatermarkConfig = WatermarkConfig()
     llm: LLMConfig = LLMConfig()
     r18: R18Config = R18Config()
+    emby: EmbyConfig = EmbyConfig()
     watcher: WatcherConfig = WatcherConfig()
     worker: WorkerConfig = WorkerConfig()
     logging: LoggingConfig = LoggingConfig()

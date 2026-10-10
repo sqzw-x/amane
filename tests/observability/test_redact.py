@@ -30,6 +30,8 @@ def test_hot_slice_scrape_drops_noise():
         ({"scraping": {"site_config": {}}, "llm": {}, "network": {}, "r18": {"dsn": "postgresql://u:p@h/db"}}, True),
         ({"scraping": {"site_config": {}}, "llm": {}, "network": {}, "r18": {"read_password": "default"}}, False),
         ({"plugins": {"acme.fake": {"config": {"api_token": "secret"}}}}, True),
+        ({"emby": {"url": "http://emby.local:8096", "api_key": "k"}}, True),
+        ({"emby": {"url": "http://emby.local:8096", "api_key": None}}, False),
     ],
 )
 def test_needs_secrets_file(dump: dict, expected: bool):
@@ -69,6 +71,13 @@ def test_needs_secrets_file(dump: dict, expected: bool):
             id="llm-api-key",
         ),
         pytest.param({"llm": {"api_key": None}}, lambda out: out["llm"]["api_key"] is None, id="llm-api-key-null"),
+        pytest.param(
+            {"emby": {"url": "http://emby.local:8096", "api_key": "k"}},
+            lambda out: (
+                out["emby"]["api_key"] == REDACTION_PLACEHOLDER and out["emby"]["url"] == "http://emby.local:8096"
+            ),
+            id="emby-api-key",
+        ),
         pytest.param(
             {"network": {"proxy": "socks5://user:pass@127.0.0.1:7890"}},
             lambda out: out["network"]["proxy"] == "socks5://127.0.0.1:7890",
