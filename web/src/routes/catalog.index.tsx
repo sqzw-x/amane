@@ -46,14 +46,15 @@ function FacetChip({ kind, facet }: { kind: CatalogKind; facet: FacetResponse })
 }
 
 /**
- * 收藏汇总: 四个 kind 各取一次收藏列表.
+ * 收藏汇总: 五个 kind 各取一次收藏列表.
  *
- * 四个查询全部就绪且至少一项非空才渲染整块 — 区块位于种类区块之上, 加载期先渲染标题或骨架都会
+ * 五个查询全部就绪且至少一项非空才渲染整块 — 区块位于种类区块之上, 加载期先渲染标题或骨架都会
  * 造成跳动; 板块为空时它整块不存在, 不占位.
  */
 function FavoriteSection() {
   const { t } = useTranslation("metadata");
   const query = { favorite: true, limit: FAVORITE_PREVIEW, offset: 0 } as const;
+  const director = useQuery(listFacetsOptions({ path: { kind: "director" }, query }));
   const tag = useQuery(listFacetsOptions({ path: { kind: "tag" }, query }));
   const studio = useQuery(listFacetsOptions({ path: { kind: "studio" }, query }));
   const publisher = useQuery(listFacetsOptions({ path: { kind: "publisher" }, query }));
@@ -64,6 +65,12 @@ function FavoriteSection() {
     total: number;
     pending: boolean;
   }> = [
+    {
+      kind: "director",
+      items: director.data?.items ?? [],
+      total: director.data?.total ?? 0,
+      pending: director.isPending,
+    },
     {
       kind: "tag",
       items: tag.data?.items ?? [],
