@@ -44,6 +44,7 @@ class TestLibraries:
         assert body["link_template"] is None
         assert body["link_mode"] == "strm"
         assert body["strm_content_template"] is None
+        assert body["nfo_content_template"] is None
         assert body["write_nfo"] is True
         assert set(body["copy_resources"]) == {"thumb", "poster", "extrafanart", "trailer"}
         assert body["trailer_pattern"] == "(?i)trailer"
@@ -103,6 +104,7 @@ class TestLibraries:
                 "link_template": str(safe_path / "emby" / "{number}" / "{number}.{ext}"),
                 "link_mode": "symlink",
                 "strm_content_template": "/{video_relpath}",
+                "nfo_content_template": "<movie><num>{number}</num></movie>",
             },
         )
         assert patched.status_code == 200
@@ -117,10 +119,15 @@ class TestLibraries:
         assert pbody["link_mode"] == "symlink"
         assert pbody["link_template"] == str(safe_path / "emby" / "{number}" / "{number}.{ext}")
         assert pbody["strm_content_template"] == "/{video_relpath}"
+        assert pbody["nfo_content_template"] == "<movie><num>{number}</num></movie>"
 
         cleared_strm = await client.patch(f"libraries/{lib_id}", json={"strm_content_template": "  "})
         assert cleared_strm.status_code == 200
         assert cleared_strm.json()["strm_content_template"] is None
+
+        cleared_nfo = await client.patch(f"libraries/{lib_id}", json={"nfo_content_template": "  \n "})
+        assert cleared_nfo.status_code == 200
+        assert cleared_nfo.json()["nfo_content_template"] is None
 
         cleared = await client.patch(f"libraries/{lib_id}", json={"patterns": []})
         assert cleared.status_code == 200
@@ -172,6 +179,15 @@ class TestLibraries:
         assert (
             await client.post("libraries", json={**base, "strm_content_template": "/{video_relpath}\n"})
         ).status_code == 422
+        assert (
+            await client.post("libraries", json={**base, "nfo_content_template": "<movie>{titel}</movie>"})
+        ).status_code == 422
+        assert (
+            await client.post("libraries", json={**base, "nfo_content_template": "<movie>{number}</title></movie>"})
+        ).status_code == 422
+        assert (
+            await client.post("libraries", json={**base, "nfo_content_template": "<movie>{number}</movie"})
+        ).status_code == 422
 
         ok_empty_trailer = await client.post("libraries", json={**base, "trailer_pattern": ""})
         assert ok_empty_trailer.status_code == 201
@@ -190,6 +206,16 @@ class TestLibraries:
         off = await client.post("libraries", json={"path": str(off_dir), "subtitle_extensions": [], "scan": False})
         assert off.status_code == 201
         assert off.json()["subtitle_extensions"] == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_nfo_content_template_schema(self, client: AsyncClient):
+        resp = await client.get("libraries/nfo-content-template-schema")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "<movie>" in body["default_template"]
+        names = {item["name"] for item in body["placeholders"]}
+        assert {"plot", "display_title", "video_name", "xml_actor"} <= names
+        assert "video_dir" not in names
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_allow_all_creates_library_outside_files_dir(self, allow_all_client: AsyncClient, tmp_path: Path):

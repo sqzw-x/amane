@@ -65,3 +65,33 @@ async def test_write_nfo_plot_is_plain_text(tmp_path: Path):
     root = ET.fromstring(content)
     assert root.findtext("plot") == "结尾 ]]> 之后 & <标签>\n\n第二段"
     assert root.findtext("outline") == root.findtext("plot")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_write_nfo_uses_library_content_template(tmp_path: Path, metadata: Metadata):
+    nfo_path = tmp_path / "custom.nfo"
+    ok = await write_nfo(metadata, nfo_path, content_template="<movie><t>{number} {title}</t>{xml_actor}</movie>")
+
+    assert ok is True
+    root = ET.fromstring(nfo_path.read_text(encoding="utf-8"))
+    assert root.findtext("t") == "MIDV-123 Test Title"
+    assert [node.findtext("name") for node in root.findall("actor")] == ["Actor A", "Actor B"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_write_nfo_blank_template_falls_back_to_default(tmp_path: Path, metadata: Metadata):
+    """空白模板与未设置等价, 仍写出完整默认正文."""
+    blank_path = tmp_path / "blank.nfo"
+    assert await write_nfo(metadata, blank_path, content_template="  \n ") is True
+    assert "<mpaa>JP-18+</mpaa>" in blank_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_write_nfo_rejects_non_xml_content(tmp_path: Path):
+    """渲染结果不是良构 XML 时不写文件 (写出前的兜底, 保存期校验才是第一道)."""
+    nfo_path = tmp_path / "broken.nfo"
+
+    assert (
+        await write_nfo(Metadata(number="BROKEN-1"), nfo_path, content_template="<movie><t>{number}</movie>") is False
+    )
+    assert not nfo_path.exists()
