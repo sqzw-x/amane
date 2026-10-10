@@ -181,9 +181,10 @@ class MetadataScoresError(ValueError):
 
 
 def first_numeric_score(scores: Mapping[str, object]) -> float | None:
-    """各站评分的首个数值, 非数值站点跳过. 读取侧与物化列共用这一条口径.
+    """各站评分的首个数值, 非数值站点跳过.
 
-    存量行可能带 NULL 或字符串评分: 跳过而不是抛错, 列表与 NFO 不因单行脏数据整体失败.
+    读取侧的 ``Metadata.score`` 与物化列共用这一条口径: 同一份 ``scores`` 在显示与排序上必须同值.
+    非数值站点只出现在手工修改过的库里 —— 写入侧经 ``project_derived_columns`` 拒绝它们.
     """
     for value in scores.values():
         if isinstance(value, int | float):
