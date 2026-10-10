@@ -13,6 +13,7 @@ from amane.db.models import (
     MediaFileStatus,
     MediaSortField,
     Metadata,
+    MetadataScoresError,
     MetadataSortField,
     RoutineType,
     SortOrder,
@@ -761,6 +762,31 @@ class TestMetadataRepo:
         assert refreshed is not None
         assert refreshed.score_rank is None
         assert refreshed.score is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        "scores",
+        [
+            {"dmm": None},
+            {"javdb": None, "dmm": 7.25},
+            {"dmm": "8.0"},
+            {"dmm": {"nested": 1}},
+            ["8.0"],
+        ],
+    )
+    async def test_update_metadata_rejects_invalid_scores(self, repo: Repository, scores: object) -> None:
+        """非法 scores 报明确错误并整体回滚: agent 工具的 cast 绕过 Pydantic, 不能让裸 TypeError 漏出去."""
+        meta = await repo.upsert_metadata(number="SCORE-BAD", scores={"dmm": 7.5})
+        assert meta.id is not None
+
+        with pytest.raises(MetadataScoresError, match="scores"):
+            await repo.update_metadata(meta.id, scores=cast("dict[str, float]", scores))
+
+        refreshed = await repo.get_metadata(meta.id)
+        assert refreshed is not None
+        assert refreshed.scores == {"dmm": 7.5}
+        assert refreshed.score_rank == 7.5
+        assert refreshed.score == 7.5
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_update_metadata(self, repo: Repository):

@@ -21,6 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import text
 
+from amane.db.models import first_numeric_score
 from amane.parsing import is_vr
 
 # revision identifiers, used by Alembic.
@@ -61,14 +62,11 @@ def _stored_tags(raw: object) -> list[str]:
 
 
 def _stored_score(raw: object) -> float | None:
-    """与 ``Metadata.score`` 同口径: 字典首值; 非数值的站内评分跳过."""
+    """与 ``Metadata.score`` 同口径 (``first_numeric_score``): 首个数值, 非数值的站内评分跳过."""
     decoded = _decode(raw)
     if not isinstance(decoded, dict):
         return None
-    for value in decoded.values():
-        if isinstance(value, int | float):
-            return float(value)
-    return None
+    return first_numeric_score(decoded)
 
 
 def _backfill() -> None:

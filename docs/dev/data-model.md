@@ -27,7 +27,7 @@
 
 文件相位 (`content_type` / `mosaic` / `has_subtitle` / `definition`) 是 **path 的投影**, 只落在 `MediaFile`: 创建与修改 path 时用同一次 `parse_file_info` 回填, 不纳入对外 PATCH; `cd` 只用于 ORGANIZE 分集配对, 不落库. `content_type` 是番号 / 目录的内容类型 (决定刮削路由), `mosaic` 是这份文件的马赛克标记 (有码 / 无码 / 破解 / 流出); 词表未命中时按内容类型兜底 (有码 → `censored`, 无码 → `uncensored`, 国产 / FC2 / 欧美保持空), 已有的破解 / 流出 / 无码标记不覆盖. 无码展示与筛选是 `mosaic=uncensored OR content_type=uncensored`. `ContentType.chinese` 是国产, 不是中字 — 中字只依据 `has_subtitle`. Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase`): 任一挂载文件具备即亮, `definition` 取最高档; 没有挂载文件的 Metadata 不命中这些筛选. 模板占位符 `{mosaic?}` 输出判定后的 mosaic, `{content_type}` 输出内容类型.
 
-`Metadata` 的 `vr` 与 `score_rank` 也是**真值的投影** (来自 `number` / `tags` 与 `scores` 首个数值): 改真值的入口都要重算 —— 含标签的改名 / 合并 / 删除, 不限于 PATCH —— 且不进对外 PATCH、不纳入锁定; 建列迁移按现有列回填, 存量影片不需要重新刮削. `score_rank` 与读取侧的 `score` 必须同口径 (字典首值, 每站独立禁止折成单值), 它存在只为让评分可 SQL 排序.
+`Metadata` 的 `vr` 与 `score_rank` 也是**真值的投影** (来自 `number` / `tags` 与 `scores` 首个数值): 改真值的入口都要重算 —— 含标签的改名 / 合并 / 删除, 不限于 PATCH —— 且不进对外 PATCH、不纳入锁定; 建列迁移按现有列回填, 存量影片不需要重新刮削. 读取侧的 `score` 与物化列共用 `db/models.py::first_numeric_score` (首个数值, 跳过 NULL / 字符串), 写入侧对非数值报 `MetadataScoresError`; 每站独立禁止折成单值, 物化列存在只为让评分可 SQL 排序.
 
 ## Library 归属
 

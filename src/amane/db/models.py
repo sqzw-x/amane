@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -175,6 +176,21 @@ class MediaFile(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow)
 
 
+class MetadataScoresError(ValueError):
+    """``Metadata.scores`` 非法: 整列必须是映射, 且各站评分只能是数值, 不接受 NULL / 字符串 / 嵌套结构."""
+
+
+def first_numeric_score(scores: Mapping[str, object]) -> float | None:
+    """各站评分的首个数值, 非数值站点跳过. 读取侧与物化列共用这一条口径.
+
+    存量行可能带 NULL 或字符串评分: 跳过而不是抛错, 列表与 NFO 不因单行脏数据整体失败.
+    """
+    for value in scores.values():
+        if isinstance(value, int | float):
+            return float(value)
+    return None
+
+
 class Metadata(SQLModel, table=True):
     __tablename__ = "metadata"  # type: ignore[assignment]
     # number 唯一性大小写不敏感 (COLLATE NOCASE); 存库保留首次写入的原始大小写.
@@ -242,10 +258,8 @@ class Metadata(SQLModel, table=True):
 
     @property
     def score(self) -> float | None:
-        """各站评分的首值; 与 ``_score`` 列同口径, 后者只为排序而物化."""
-        if not self.scores:
-            return None
-        return float(next(iter(self.scores.values())))
+        """各站评分的首个数值; 与 ``score`` 列同口径, 后者只为排序而物化."""
+        return first_numeric_score(self.scores)
 
 
 class Task(SQLModel, table=True):

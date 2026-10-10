@@ -32,6 +32,7 @@ from ..models import (
     Metadata,
     MetadataActor,
     MetadataDirector,
+    MetadataScoresError,
     MetadataTag,
     MetadataUserTag,
     Publisher,
@@ -40,6 +41,7 @@ from ..models import (
     Studio,
     Tag,
     UserTag,
+    first_numeric_score,
 )
 from ..repo_types import FacetItem, UserTagLinkAction, UserTagLinkResult, _facet_primary_order, _utcnow
 
@@ -840,10 +842,18 @@ def project_derived_columns(meta: Metadata) -> None:
     ``apply_facet_rules_to_metadata`` 之后 —— 规则会改写 ``tags``, 早于它投影会写入过期判定.
     修改 ``tags`` 的入口不止 ``update_metadata``: 标签的改名 / 合并 / 删除同样要投影,
     否则列与真值长期不一致.
+
+    写入侧要求 ``scores`` 是站点到数值的映射 (``agent.metadata_ops`` 的 cast 能绕过 Pydantic), 非法值直接报错,
+    而不是写入一个空的排序值; 读取侧见 ``Metadata.score``.
     """
     meta.vr = is_vr(meta.number, meta.tags or [])
-    scores = meta.scores or {}
-    meta.score_rank = float(next(iter(scores.values()))) if scores else None
+    raw_scores: object = meta.scores or {}
+    if not isinstance(raw_scores, Mapping):
+        raise MetadataScoresError(f"scores 必须是站点到数值的映射, 实际: {raw_scores!r}")
+    invalid = {site: value for site, value in raw_scores.items() if not isinstance(value, int | float)}
+    if invalid:
+        raise MetadataScoresError(f"scores 的值必须是数值, 非法项: {invalid!r}")
+    meta.score_rank = first_numeric_score(raw_scores)
 
 
 async def sync_metadata_facets(session: AsyncSession, meta: Metadata) -> None:

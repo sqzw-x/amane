@@ -33,6 +33,9 @@ _ROWS = [
     ("ABP-123", '["巨乳"]', '{"dmm": 0}', False, 0.0),
     ("MIDV-001", "[]", "null", False, None),
     ("MIDV-002", '"not-a-list"', '{"javdb": null}', False, None),
+    # 首个数值之前的非数值站点跳过, 与 Metadata.score 同一口径; 全角 / 字符串评分不算数值.
+    ("MIDV-003", "[]", '{"javdb": null, "dmm": 7.25}', False, 7.25),
+    ("MIDV-004", "[]", '{"javdb": "8.0"}', False, None),
 ]
 
 # 跨过迁移的第一批 (_BATCH = 2000): 只有第二批失败才能暴露中间提交留下的半成品.
