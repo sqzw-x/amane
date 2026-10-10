@@ -1,6 +1,7 @@
 import {
   Anchor,
   Badge,
+  Box,
   Button,
   Group,
   Modal,
@@ -13,7 +14,7 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowBackUp, IconExternalLink } from "@tabler/icons-react";
+import { IconArrowBackUp, IconDownload, IconExternalLink } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -738,8 +739,38 @@ function ResultMediaRow({
   );
 }
 
-/** Trailer URLs are video links - show as anchors; image fields use thumb strip. */
+/** 缩略图尺寸; 占位块与之同形同数, 加载前后布局不跳动. */
+const PREVIEW_THUMB_STYLE: CSSProperties = {
+  width: 56,
+  height: 40,
+  objectFit: "cover",
+  borderRadius: "var(--mantine-radius-sm)",
+  display: "block",
+};
+const PREVIEW_THUMB_LIMIT = 8;
+
+/** 占位块沿用缩略图条的外形, 用虚线与下载箭头表示尚未取图. */
+const PLACEHOLDER_TILE_STYLE: CSSProperties = {
+  ...PREVIEW_THUMB_STYLE,
+  display: "grid",
+  placeItems: "center",
+  border: "1px dashed var(--mantine-color-default-border)",
+  background: "var(--mantine-color-default-hover)",
+  color: "var(--mantine-color-dimmed)",
+};
+const PLACEHOLDER_MORE_STYLE: CSSProperties = {
+  ...PLACEHOLDER_TILE_STYLE,
+  width: "auto",
+  padding: "0 8px",
+  fontSize: "var(--mantine-font-size-xs)",
+};
+
+/** Trailer URLs are video links - show as anchors; image fields load on demand into a thumb strip. */
 function MediaPreview({ field, urls }: { field: MediaField; urls: string[] }) {
+  const { t } = useTranslation("metadata");
+  // 图片按需加载: 代理会下载上游原图并写入 Resource, 未被选中的站点快照不应因展开面板而回源.
+  const [loaded, setLoaded] = useResettingState(() => false, urls.join("\n"));
+
   if (urls.length === 0) {
     return (
       <Text size="xs" c="dimmed">
@@ -766,17 +797,81 @@ function MediaPreview({ field, urls }: { field: MediaField; urls: string[] }) {
       </Stack>
     );
   }
+  if (!loaded) {
+    return (
+      <MediaPlaceholder urls={urls} label={t("merge.loadImages")} onLoad={() => setLoaded(true)} />
+    );
+  }
   return (
     <FanartStrip
       images={urls}
-      maxVisible={8}
-      thumbStyle={{ width: 56, height: 40 }}
+      maxVisible={PREVIEW_THUMB_LIMIT}
+      thumbStyle={PREVIEW_THUMB_STYLE}
       empty={
         <Text size="xs" c="dimmed">
           —
         </Text>
       }
     />
+  );
+}
+
+/** 与缩略图条同形的占位块: 渲染它不发起请求, 点击后才加载该行的图片. */
+function MediaPlaceholder({
+  urls,
+  label,
+  onLoad,
+}: {
+  urls: string[];
+  /** 无障碍名称; 占位块自身已表达可点击. */
+  label: string;
+  onLoad: () => void;
+}) {
+  const shown = Math.min(urls.length, PREVIEW_THUMB_LIMIT);
+  const rest = urls.length - shown;
+  return (
+    <Box
+      component="button"
+      type="button"
+      aria-label={label}
+      onClick={(event) => {
+        // 条目本身点击即选中来源, 加载预览不触发选中.
+        event.stopPropagation();
+        onLoad();
+      }}
+      style={{
+        padding: 0,
+        border: "none",
+        background: "none",
+        lineHeight: 0,
+        cursor: "pointer",
+      }}
+    >
+      <Group gap={4} wrap="wrap">
+        {Array.from({ length: shown }, (_, index) => (
+          <Box
+            key={index}
+            aria-hidden
+            style={PLACEHOLDER_TILE_STYLE}
+            onMouseEnter={(event) => {
+              event.currentTarget.style.borderColor = "var(--mantine-color-brand-5)";
+              event.currentTarget.style.color = "var(--mantine-color-brand-5)";
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.borderColor = "var(--mantine-color-default-border)";
+              event.currentTarget.style.color = "var(--mantine-color-dimmed)";
+            }}
+          >
+            <IconDownload size={14} />
+          </Box>
+        ))}
+        {rest > 0 && (
+          <Box aria-hidden style={PLACEHOLDER_MORE_STYLE}>
+            +{rest}
+          </Box>
+        )}
+      </Group>
+    </Box>
   );
 }
 

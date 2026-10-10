@@ -343,7 +343,8 @@
     "revertAll": "全部回退",
     "current": "当前",
     "changedCount": "已修改 {{count}} 个字段",
-    "noChanges": "无修改"
+    "noChanges": "无修改",
+    "loadImages": "加载图片"
   },
   "lock": {
     "manage": "字段锁定",

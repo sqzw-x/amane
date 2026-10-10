@@ -365,7 +365,8 @@
     "changedCount": "{{count}} field(s) changed",
     "noChanges": "No changes",
     "changedCount_one": "{{count}} field(s) changed",
-    "changedCount_other": "{{count}} field(s) changed"
+    "changedCount_other": "{{count}} field(s) changed",
+    "loadImages": "Load images"
   },
   "lock": {
     "manage": "Field Locks",
