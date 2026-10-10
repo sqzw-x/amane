@@ -55,6 +55,9 @@ _SEARCH_CANDIDATE_LIMIT = 5
 # 词条语言只决定取哪一版正文, 不参与上面的实体检索; 取值集合与默认优先级同源, SiteConfig.languages 的枚举从这里收窄.
 WIKI_LANGUAGES: tuple[str, ...] = ("zh", "ja", "en")
 
+# 词条 URL 的变体路径段: 中文维基的 wiki/ 不转换原文, 取简体正文必须改用变体路径.
+_WIKI_VARIANTS: dict[str, str] = {"zh": "zh-hans"}
+
 _PARSER_OUTPUT_CLASS = "mw-parser-output"
 _PARSER_OUTPUT = f".{_PARSER_OUTPUT_CLASS}"
 _CONTENT_NODES = ".//h1|.//h2|.//h3|.//h4|.//h5|.//h6|.//p|.//ul|.//ol"
@@ -467,7 +470,8 @@ def _wiki_url(sitelinks: dict[str, Any], lang: str) -> str | None:
     title = link.get("title") if isinstance(link, dict) else None
     if not isinstance(title, str) or not title:
         return None
-    return f"https://{lang}.wikipedia.org/wiki/{quote(title.replace(' ', '_'), safe='()_')}"
+    prefix = _WIKI_VARIANTS.get(lang, "wiki")
+    return f"https://{lang}.wikipedia.org/{prefix}/{quote(title.replace(' ', '_'), safe='()_')}"
 
 
 class _WikiPage(NamedTuple):
