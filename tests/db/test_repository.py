@@ -283,6 +283,42 @@ class TestMediaFileRepo:
         assert result is None
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_rewrite_path_rechecks_external_subtitle_in_new_directory(self, repo: Repository, tmp_path: Path):
+        """改 path 的两件事合一: 相位按传入规则重算, 外挂字幕按**新目录**复查.
+
+        表里第二组钉住两件事: 复查读的是目标目录而不是旧目录, 且只认当次传入的库扩展名 ——
+        目标目录里另有一种字幕后缀 (`.sub`) 不算命中.
+        """
+        cases = [(["MIDV-002.srt"], True), (["MIDV-002.sub"], False)]
+        for case, (dest_subtitles, expected) in enumerate(cases):
+            target = tmp_path / f"dest-{case}"
+            source = tmp_path / f"source-{case}"
+            target.mkdir()
+            source.mkdir()
+            for name in dest_subtitles:
+                (target / name).touch()
+            video = f"MIDV-002-{case}.mp4"
+            library = await repo.create_library(name=f"t{case}", path=str(tmp_path), subtitle_extensions=[".srt"])
+            assert library.id is not None
+
+            media = await repo.create_media_file(
+                library_id=library.id, path=str(source / video), rules=EMPTY_NUMBER_RULES
+            )
+            assert media.id is not None
+            # 登记在源目录, 那里没有字幕: 命中与否只能来自改 path 之后的那次复查.
+            assert media.has_external_subtitle is False
+
+            updated = await repo.rewrite_media_path(
+                media.id, str(target / video), rules=EMPTY_NUMBER_RULES, library=library
+            )
+
+            assert updated is not None
+            assert updated.has_external_subtitle is expected
+            stored = await repo.get_media_file(media.id)
+            assert stored is not None
+            assert stored.has_subtitle is expected
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_delete_media_file_not_found(self, repo: Repository):
         result = await repo.delete_media_file(9999)
         assert result is False
