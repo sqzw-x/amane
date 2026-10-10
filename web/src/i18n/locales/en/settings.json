@@ -299,6 +299,10 @@
             "label": "Use Proxy",
             "description": "Route requests through the configured proxy"
           },
+          "proxy": {
+            "label": "Site Proxy",
+            "description": "Dedicated proxy for this site; empty uses the global proxy. Turns direct when \"Use Proxy\" is off"
+          },
           "use_browser": {
             "label": "Browser Mode",
             "options": {

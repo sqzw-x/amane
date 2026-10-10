@@ -1,5 +1,6 @@
-"""测试 ResourceStore 的派生资源 (裁剪) 与就地超分能力."""
+"""测试 ResourceStore 的派生资源 (裁剪), 就地超分与获取失败的收尾."""
 
+import asyncio
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import pytest
@@ -238,31 +239,37 @@ class TestResolveSource:
 
 
 class _StubResponse:
-    status_code = 200
     headers: ClassVar[dict[str, str]] = {}
 
-    def __init__(self, *, url: str, content: bytes = b"") -> None:
+    def __init__(self, *, url: str, content: bytes = b"", status: int = 200) -> None:
         self.url = url
         self.content = content
+        self.status_code = status
 
 
 class _StubSession:
     """替换 ``WebClient._session``: 按方法返回预设应答, 记录出站方法."""
 
-    def __init__(self, *, final_url: str, content: bytes = b"") -> None:
+    def __init__(self, *, final_url: str, content: bytes = b"", statuses: dict[str, int] | None = None) -> None:
         self.methods: list[str] = []
-        self._response = _StubResponse(url=final_url, content=content)
+        self._final_url = final_url
+        self._content = content
+        self._statuses = statuses or {}
 
     async def request(self, method: str, url: str, **kwargs: Any) -> _StubResponse:
         self.methods.append(method)
-        return self._response
+        return _StubResponse(url=self._final_url, content=self._content, status=self._statuses.get(method, 200))
 
 
 def _stub_client(
-    monkeypatch: pytest.MonkeyPatch, *, final_url: str, content: bytes = b""
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    final_url: str,
+    content: bytes = b"",
+    statuses: dict[str, int] | None = None,
 ) -> tuple[WebClient, _StubSession]:
     client = WebClient(limiters=RateLimiters(default_rate=100))
-    session = _StubSession(final_url=final_url, content=content)
+    session = _StubSession(final_url=final_url, content=content, statuses=statuses)
     monkeypatch.setattr(client, "_session", session)
     return client, session
 
@@ -304,3 +311,101 @@ class TestPlaceholderRedirect:
         assert path is not None and path.read_bytes() == b"jpeg-bytes"
         assert session.methods[0] == "HEAD" and "GET" in session.methods
         assert await resource_store.get_by_url(_REQUEST) is not None
+
+
+def _siblings(dest: Path) -> list[Path]:
+    """dest 所在目录里除 dest 之外的文件; 用于断言下载的临时文件已清理."""
+    if not dest.parent.exists():
+        return []
+    return sorted(p for p in dest.parent.iterdir() if p != dest)
+
+
+class TestAcquireFailure:
+    """获取失败既可能是站点拦下指纹, 也可能是上游没有该图; 两种失败都不写资源记录, 也不留残缺文件."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", [403, 404, 500])
+    async def test_failed_download_keeps_no_trace(
+        self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch, status: int
+    ):
+        client, session = _stub_client(monkeypatch, final_url=_REQUEST, statuses={"GET": status})
+        dest = resource_store._compute_path(_REQUEST)
+
+        assert await resource_store.acquire(_REQUEST, client) is None
+
+        assert not dest.exists()
+        assert _siblings(dest) == []  # 下载用的临时文件也已清理
+        assert await resource_store.get_by_url(_REQUEST) is None
+        assert session.methods[0] == "HEAD" and "GET" in session.methods
+
+    @pytest.mark.asyncio
+    async def test_partial_download_is_removed(self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch):
+        """分块下载先按 Content-Length 建文件, 失败会留下只写入一部分的文件: 残片必须落在临时文件上并被清理."""
+        client, _ = _stub_client(monkeypatch, final_url=_REQUEST)
+        dest = resource_store._compute_path(_REQUEST)
+        written: list[Path] = []
+
+        async def partial_download(url: str, target: Path, **kwargs: Any) -> bool:
+            written.append(target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"half")  # 只写入一部分
+            return False
+
+        monkeypatch.setattr(client, "download", partial_download)
+
+        assert await resource_store.acquire(_REQUEST, client) is None
+
+        assert written and written[0] != dest  # 不就地写 dest
+        assert written[0].parent == dest.parent  # 同目录, 改名才是原子的
+        assert written[0].suffix == dest.suffix  # 保留扩展名: download 的实现可能按扩展名推断格式
+        assert not written[0].exists()  # 残片已清理
+        assert not dest.exists()
+        assert _siblings(dest) == []
+
+    @pytest.mark.asyncio
+    async def test_failure_keeps_existing_file(self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch):
+        """dest 可能已被同一 URL 的另一个调用写好, 失败方不得删掉它."""
+        dest = resource_store._compute_path(_REQUEST)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"complete-bytes")
+        client, _ = _stub_client(monkeypatch, final_url=_REQUEST, statuses={"GET": 403})
+
+        assert await resource_store.acquire(_REQUEST, client) is None
+
+        assert dest.read_bytes() == b"complete-bytes"
+
+
+class TestAcquireConcurrency:
+    @pytest.mark.asyncio
+    async def test_failed_call_does_not_delete_completed_file(
+        self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch
+    ):
+        """并发获取同一 URL: 失败方要等成功方写完 dest 再失败, 成功方的文件与记录都必须还在."""
+        released = asyncio.Event()
+
+        class GatedSession(_StubSession):
+            """GET 先等成功方落盘, 保证失败方的收尾发生在 dest 写好之后."""
+
+            async def request(self, method: str, url: str, **kwargs: Any) -> _StubResponse:
+                if method == "GET":
+                    await released.wait()
+                return await super().request(method, url, **kwargs)
+
+        ok_client, _ = _stub_client(monkeypatch, final_url=_REQUEST, content=b"jpeg-bytes")
+        fail_client = WebClient(limiters=RateLimiters(default_rate=100))
+        monkeypatch.setattr(fail_client, "_session", GatedSession(final_url=_REQUEST, statuses={"GET": 403}))
+
+        failing = asyncio.create_task(resource_store.acquire(_REQUEST, fail_client))
+        try:
+            path = await resource_store.acquire(_REQUEST, ok_client)
+            assert path is not None and path.read_bytes() == b"jpeg-bytes"
+            released.set()
+
+            assert await failing is None
+
+            assert path.read_bytes() == b"jpeg-bytes"
+            record = await resource_store.get_by_url(_REQUEST)
+            assert record is not None and resource_store.full_path(record) == path
+        finally:
+            released.set()
+            await asyncio.gather(failing, return_exceptions=True)

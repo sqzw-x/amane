@@ -23,6 +23,7 @@ from .models import (
     SortOrder,
     Task,
     TaskSortField,
+    has_subtitle_predicate,
 )
 
 if TYPE_CHECKING:
@@ -108,7 +109,8 @@ def _apply_media_phase_filters(
 ) -> SelectOfScalar[MediaFile]:
     """None 表示该相位不过滤."""
     if has_subtitle is not None:
-        stmt = stmt.where(col(MediaFile.has_subtitle) == has_subtitle)
+        flag = has_subtitle_predicate()
+        stmt = stmt.where(flag if has_subtitle else ~flag)
     if mosaic is not None:
         stmt = stmt.where(col(MediaFile.mosaic) == mosaic)
     if uncensored is not None:
@@ -274,6 +276,7 @@ class MediaFileUpdates(TypedDict, total=False):
     codec: str | None
     status: MediaFileStatus
     metadata_id: int | None
+    has_external_subtitle: bool
 
 
 class LibraryUpdates(TypedDict, total=False):

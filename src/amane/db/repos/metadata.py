@@ -21,6 +21,7 @@ from ..models import (
     Series,
     SortOrder,
     Studio,
+    has_subtitle_predicate,
 )
 from ..repo_types import (
     MetadataFields,
@@ -191,9 +192,9 @@ class MetadataRepoMixin(RepositoryMixinBase):
             if vr is not None:
                 base = base.where(col(Metadata.vr).is_(vr))
             if has_subtitle is True:
-                base = base.where(_metadata_linked_file_exists(col(MediaFile.has_subtitle).is_(True)))
+                base = base.where(_metadata_linked_file_exists(has_subtitle_predicate()))
             elif has_subtitle is False:
-                base = base.where(~_metadata_linked_file_exists(col(MediaFile.has_subtitle).is_(True)))
+                base = base.where(~_metadata_linked_file_exists(has_subtitle_predicate()))
             if mosaic is not None:
                 base = base.where(_metadata_linked_file_exists(col(MediaFile.mosaic) == mosaic))
             if uncensored is True:

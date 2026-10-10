@@ -1,10 +1,11 @@
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, NoReturn
 
-from sqlalchemy import Column, Float, Index, String, Text, UniqueConstraint, text
-from sqlmodel import JSON, Field, SQLModel
+from sqlalchemy import Boolean, Column, Float, Index, String, Text, UniqueConstraint, or_, text
+from sqlalchemy.sql.elements import ColumnElement
+from sqlmodel import JSON, Field, SQLModel, col
 
 from ..enums import ActorGender, DownloadableResource, LibraryAutomation, LibraryIngest, LinkMode, MoveMode
 from ..library import (
@@ -153,6 +154,29 @@ SCRAPE_FACET_KINDS: frozenset[FacetKind] = frozenset(
 )
 
 
+class _HasSubtitleProperty(property):
+    """``MediaFile.has_subtitle`` 的实现, 只允许实例访问.
+
+    类属性访问得到的是描述符本身, 与布尔值比较恒不相等: 该名字写进 SQL 表达式
+    (例如 ``MediaFile.has_subtitle == True``) 不报错, 会静默编译出 ``WHERE false`` 并返回空集.
+    因此比较与真值判断直接报错, 该误用无法静默通过; SQL 判定中字一律用 ``has_subtitle_predicate()``.
+    """
+
+    __hash__ = property.__hash__
+
+    def _reject(self) -> NoReturn:
+        raise TypeError("MediaFile.has_subtitle 只可用于实例; SQL 判定请用 has_subtitle_predicate()")
+
+    def __eq__(self, other: object) -> bool:
+        self._reject()
+
+    def __ne__(self, other: object) -> bool:
+        self._reject()
+
+    def __bool__(self) -> bool:
+        self._reject()
+
+
 class MediaFile(SQLModel, table=True):
     __tablename__ = "media_files"  # type: ignore[assignment]
 
@@ -168,12 +192,28 @@ class MediaFile(SQLModel, table=True):
     # 文件相位: path 的投影, 随 path 写入/更新; 不进对外 PATCH.
     content_type: ContentType = Field(default=ContentType.WESTERN, index=True)
     mosaic: Mosaic | None = Field(default=None, index=True)
-    has_subtitle: bool = Field(default=False, index=True)
+    #: 文件名带中字标记, 只由 path 派生.
+    has_subtitle_in_name: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, index=True))
+    #: 同目录存在库 `subtitle_extensions` 命中的字幕; 只有登记与修改 path 时会重新检查.
+    has_external_subtitle: bool = Field(default=False, index=True)
     definition: str | None = Field(default=None, index=True)
     metadata_id: int | None = Field(default=None, foreign_key="metadata.id", index=True)
     library_id: int = Field(foreign_key="libraries.id", index=True)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+
+    @_HasSubtitleProperty
+    def has_subtitle(self) -> bool:
+        """文件名标记与同目录字幕命中任一即真."""
+        return self.has_subtitle_in_name or self.has_external_subtitle
+
+
+def has_subtitle_predicate() -> ColumnElement[bool]:
+    """`MediaFile.has_subtitle` 的 SQL 等价式: 文件名标记或同目录字幕命中.
+
+    判定中字的查询与筛选一律走这里, 与实例属性口径必须一致.
+    """
+    return or_(col(MediaFile.has_subtitle_in_name).is_(True), col(MediaFile.has_external_subtitle).is_(True))
 
 
 class MetadataScoresError(ValueError):

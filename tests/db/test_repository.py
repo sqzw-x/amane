@@ -226,6 +226,49 @@ class TestMediaFileRepo:
         assert await repo.count_media_files(uncensored=True) == 2
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_has_subtitle_filter_unions_both_sources(self, repo: Repository):
+        by_name = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
+        by_file = await repo.create_media_file(library_id=1, path="/v/MIDV-002.mp4")
+        plain = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4")
+        assert by_file.id is not None
+        updated = await repo.update_media_file(by_file.id, has_external_subtitle=True)
+        assert updated is not None
+
+        assert by_name.has_subtitle is True
+        assert updated.has_subtitle is True
+        assert plain.has_subtitle is False
+
+        found = await repo.list_media_files(has_subtitle=True, limit=None)
+        assert {f.path for f in found} == {"/v/MIDV-001-C.mp4", "/v/MIDV-002.mp4"}
+        without = await repo.list_media_files(has_subtitle=False, limit=None)
+        assert {f.path for f in without} == {"/v/MIDV-003.mp4"}
+        assert await repo.count_media_files(has_subtitle=True) == 2
+        assert await repo.count_media_files(has_subtitle=False) == 1
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_metadata_has_subtitle_filter_unions_both_sources(self, repo: Repository):
+        by_name = await repo.upsert_metadata(number="SUB-NAME")
+        by_file = await repo.upsert_metadata(number="SUB-FILE")
+        plain = await repo.upsert_metadata(number="SUB-PLAIN")
+        assert by_name.id and by_file.id and plain.id
+        named = await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
+        external = await repo.create_media_file(library_id=1, path="/v/MIDV-002.mp4")
+        rest = await repo.create_media_file(library_id=1, path="/v/MIDV-003.mp4")
+        assert named.id and external.id and rest.id
+        await repo.update_media_file(named.id, metadata_id=by_name.id)
+        await repo.update_media_file(external.id, metadata_id=by_file.id, has_external_subtitle=True)
+        await repo.update_media_file(rest.id, metadata_id=plain.id)
+
+        items, total = await repo.list_metadata(
+            has_subtitle=True, sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC
+        )
+        assert total == 2
+        assert [m.number for m in items] == ["SUB-FILE", "SUB-NAME"]
+        items, total = await repo.list_metadata(has_subtitle=False)
+        assert total == 1
+        assert items[0].number == "SUB-PLAIN"
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_update_media_file_not_found(self, repo: Repository):
         result = await repo.update_media_file(9999, path="/x.mp4")
         assert result is None

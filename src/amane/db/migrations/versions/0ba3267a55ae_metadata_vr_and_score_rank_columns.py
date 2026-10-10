@@ -1,7 +1,7 @@
 """metadata vr and score rank columns
 
 Revision ID: 0ba3267a55ae
-Revises: 1f050b272f7d
+Revises: d9dec3f83da7
 Create Date: 2026-10-10 10:16:38.018011
 
 ``vr`` 与 ``score_rank`` 都是既有列的投影, 因此建列之后必须按现有数据回填一次:
@@ -9,9 +9,8 @@ Create Date: 2026-10-10 10:16:38.018011
 
 建列与回填合在一个事务里 (契约见 migrations/env.py): 中途失败时库回到迁移前状态, 不留半成品, 重跑即可.
 
-down_revision 取建列时的 main head. #259 (ws-subtitle-detect) 也在 1f050b272f7d 上新增 revision,
-两条链合并后是 2 个 head; 合入顺序为 #259 在前, 本 PR 在合并前把本文件最早一条 revision 的
-down_revision 改成 d9dec3f83da7, 不手写 revision id.
+down_revision 是 #259 (ws-subtitle-detect) 的 revision: 两条链都建在 1f050b272f7d 上, 接成一条链
+可避免 Alembic 图分叉; 不 alembic merge、不手写 revision id.
 """
 
 import json
@@ -26,7 +25,7 @@ from amane.parsing import is_vr
 
 # revision identifiers, used by Alembic.
 revision: str = "0ba3267a55ae"
-down_revision: str | None = "1f050b272f7d"
+down_revision: str | None = "d9dec3f83da7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
