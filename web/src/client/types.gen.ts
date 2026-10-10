@@ -1811,7 +1811,7 @@ export type Language = 'zh_cn' | 'zh_tw' | 'jp' | 'en';
 /**
  * LibraryAutomation
  *
- * 媒体库自动化级别. 含更低级别的行为; 自动整理尚未开放.
+ * 媒体库自动化级别 (只控制发现侧). 含更低级别的行为; 自动整理由 `Library.auto_organize` 单独控制.
  */
 export type LibraryAutomation = 'none' | 'watch' | 'scrape';
 
@@ -1828,6 +1828,10 @@ export type LibraryCreateRequest = {
      */
     path: string;
     automation?: LibraryAutomation;
+    /**
+     * Auto Organize
+     */
+    auto_organize?: boolean;
     ingest?: LibraryIngest;
     /**
      * Cloud Path
@@ -1921,6 +1925,46 @@ export type LibraryCreateRequest = {
 export type LibraryIngest = 'native' | 'clouddrive';
 
 /**
+ * LibraryLastOrganize
+ *
+ * 该库最近一次终态整理任务的结果 (真值在任务里, 这里只做库级读取).
+ *
+ * 手动整理与自动整理不区分; 失败任务没有结果载荷时 `error` 承载原因, 计数为 0.
+ */
+export type LibraryLastOrganize = {
+    status: LibraryLastOrganizeStatus;
+    /**
+     * At
+     */
+    at?: string | null;
+    /**
+     * Organized
+     */
+    organized?: number;
+    /**
+     * Skipped
+     */
+    skipped?: number;
+    /**
+     * Conflicted
+     */
+    conflicted?: number;
+    /**
+     * Failed
+     */
+    failed?: number;
+    /**
+     * Error
+     */
+    error?: string | null;
+};
+
+/**
+ * LibraryLastOrganizeStatus
+ */
+export type LibraryLastOrganizeStatus = 'done' | 'failed';
+
+/**
  * LibraryListResponse
  */
 export type LibraryListResponse = {
@@ -1947,6 +1991,11 @@ export type LibraryResponse = {
      */
     path: string;
     automation: LibraryAutomation;
+    /**
+     * Auto Organize
+     */
+    auto_organize: boolean;
+    last_organize?: LibraryLastOrganize | null;
     ingest: LibraryIngest;
     /**
      * Cloud Path
@@ -2041,6 +2090,10 @@ export type LibraryUpdateRequest = {
      */
     path?: string | null;
     automation?: LibraryAutomation | null;
+    /**
+     * Auto Organize
+     */
+    auto_organize?: boolean | null;
     ingest?: LibraryIngest | null;
     /**
      * Cloud Path

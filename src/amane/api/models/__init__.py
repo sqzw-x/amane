@@ -34,12 +34,15 @@ from .feeds import (
 from .health import HealthResponse
 from .libraries import (
     LibraryCreateRequest,
+    LibraryLastOrganize,
+    LibraryLastOrganizeStatus,
     LibraryListResponse,
     LibraryResponse,
     LibraryUpdateRequest,
     OptionalPathTemplateDefaults,
     PathTemplatePlaceholder,
     PathTemplateSchemaResponse,
+    last_organize_from_task,
     path_template_schema,
 )
 from .media import MediaFileResponse, MediaFileUpdateRequest, MediaListResponse
@@ -134,6 +137,8 @@ __all__ = [
     "FilePhaseSummary",
     "HealthResponse",
     "LibraryCreateRequest",
+    "LibraryLastOrganize",
+    "LibraryLastOrganizeStatus",
     "LibraryListResponse",
     "LibraryResponse",
     "LibraryUpdateRequest",

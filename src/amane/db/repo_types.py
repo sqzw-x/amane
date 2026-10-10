@@ -278,6 +278,7 @@ class LibraryUpdates(TypedDict, total=False):
     name: str
     path: str
     automation: LibraryAutomation
+    auto_organize: bool
     ingest: LibraryIngest
     cloud_path: str | None
     recursive: bool

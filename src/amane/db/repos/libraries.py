@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from typing import Unpack
 
+from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -18,9 +19,12 @@ from ...library import (
 from ...organize.path_templates import VIDEO_TEMPLATE_DEFAULT, normalize_link_template, validate_path_template
 from ...organize.strm_content import normalize_strm_content_template, validate_strm_content_template
 from ...utils.path import resolved_path
-from ..models import Library, MediaFile
+from ..models import Library, MediaFile, Task, TaskStatus, TaskType
 from ..repo_types import LibraryUpdates
 from .base import RepositoryMixinBase
+
+# 库页面「最近一次整理」只看已终态的组织任务.
+_ORGANIZE_TERMINAL = (TaskStatus.DONE, TaskStatus.FAILED)
 
 
 def _path_template_or_none(value: str | None) -> str | None:
@@ -53,6 +57,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         name: str,
         path: str,
         automation: LibraryAutomation = LibraryAutomation.SCRAPE,
+        auto_organize: bool = False,
         ingest: LibraryIngest = LibraryIngest.NATIVE,
         cloud_path: str | None = None,
         recursive: bool = True,
@@ -95,6 +100,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 name=name,
                 path=str(resolved_path(path)),
                 automation=automation,
+                auto_organize=auto_organize,
                 ingest=ingest,
                 cloud_path=cloud_path,
                 recursive=recursive,
@@ -138,6 +144,31 @@ class LibrariesRepoMixin(RepositoryMixinBase):
     async def get_library(self, library_id: int) -> Library | None:
         async with self._session() as session:
             return await session.get(Library, library_id)
+
+    async def latest_organize_tasks(self, library_ids: Sequence[int]) -> dict[int, Task]:
+        """各库最近一条终态 ORGANIZE 任务; 未整理过的库不出现在结果中.
+
+        覆盖子任务: 自动整理挂在各文件的 SCRAPE 链下, 不能按链根还原 (链根是 SCRAPE).
+        库归属在 payload 里, 用 json_extract 逐库反查: 每个库各取 id 最大的一条, 命中即停,
+        因此不会像「取全局最近 N 条再筛」那样把久未整理的库误报成从未整理.
+        """
+        out: dict[int, Task] = {}
+        async with self._session() as session:
+            for library_id in dict.fromkeys(library_ids):
+                stmt = (
+                    select(Task)
+                    .where(
+                        col(Task.type) == TaskType.ORGANIZE,
+                        col(Task.status).in_(_ORGANIZE_TERMINAL),
+                        func.json_extract(Task.payload, "$.library_id") == library_id,
+                    )
+                    .order_by(col(Task.id).desc())
+                    .limit(1)
+                )
+                task = (await session.exec(stmt)).first()
+                if task is not None:
+                    out[int(library_id)] = task
+        return out
 
     async def get_library_names(self, library_ids: Sequence[int]) -> dict[int, str]:
         """不存在的 id 不出现在结果中."""
@@ -187,6 +218,8 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 lib.path = str(resolved_path(updates["path"]))
             if "automation" in updates:
                 lib.automation = updates["automation"]
+            if "auto_organize" in updates:
+                lib.auto_organize = updates["auto_organize"]
             if "ingest" in updates:
                 lib.ingest = updates["ingest"]
             if "cloud_path" in updates:

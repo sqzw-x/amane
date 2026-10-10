@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from amane.db.models import TaskType
+from amane.db.models import TaskStatus, TaskType
 from amane.organize import VIDEO_TEMPLATE_DEFAULT
 
 if TYPE_CHECKING:
@@ -289,3 +289,110 @@ class TestLibraries:
 
         assert changed.status_code == 200
         assert changed.json()["path"] == str(moved_real)
+
+
+class TestAutoOrganize:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_default_off_and_patch_persists(self, client: AsyncClient, repo: Repository, safe_path: Path) -> None:
+        """默认关闭; PATCH 后必须从库里读回 (响应字段与 repo 的显式赋值是两处)."""
+        target = safe_path / "auto"
+        target.mkdir()
+        created = await client.post("libraries", json={"path": str(target), "scan": False})
+
+        assert created.status_code == 201
+        assert created.json()["auto_organize"] is False
+        library_id = created.json()["id"]
+
+        patched = await client.patch(f"libraries/{library_id}", json={"auto_organize": True})
+
+        assert patched.status_code == 200
+        assert patched.json()["auto_organize"] is True
+        stored = await repo.get_library(library_id)
+        assert stored is not None
+        assert stored.auto_organize is True
+
+        assert patched.json()["last_organize"] is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_create_with_flag(self, client: AsyncClient, repo: Repository, safe_path: Path) -> None:
+        target = safe_path / "auto-create"
+        target.mkdir()
+        created = await client.post("libraries", json={"path": str(target), "auto_organize": True, "scan": False})
+
+        assert created.status_code == 201
+        assert created.json()["auto_organize"] is True
+        stored = await repo.get_library(created.json()["id"])
+        assert stored is not None
+        assert stored.auto_organize is True
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_last_organize_summary_follows_latest_task(
+        self, client: AsyncClient, repo: Repository, safe_path: Path
+    ) -> None:
+        """摘要来自最近一条终态 ORGANIZE; 失败任务没有结果载荷时仍显示原因."""
+        target = safe_path / "hist"
+        target.mkdir()
+        library_id = (await client.post("libraries", json={"path": str(target), "scan": False})).json()["id"]
+
+        done = await repo.create_task(TaskType.ORGANIZE, payload={"library_id": library_id, "path": str(target)})
+        assert done.id is not None
+        claimed = await repo.claim_next_task()
+        assert claimed is not None
+        assert claimed.id is not None
+        await repo.complete_task_with_followups(
+            claimed.id, result={"organized": 2, "skipped": 1, "conflicted": 0, "failed": 0}, followups=[]
+        )
+
+        summary = (await client.get(f"libraries/{library_id}")).json()["last_organize"]
+        assert summary["status"] == "done"
+        assert (summary["organized"], summary["skipped"]) == (2, 1)
+        assert (summary["conflicted"], summary["failed"]) == (0, 0)
+        assert summary["at"] is not None
+        assert summary["error"] is None
+        listed = (await client.get("libraries")).json()["items"][0]
+        assert listed["last_organize"]["organized"] == 2
+
+        failed = await repo.create_task(TaskType.ORGANIZE, payload={"library_id": library_id})
+        assert failed.id is not None
+        claimed_failed = await repo.claim_next_task()
+        assert claimed_failed is not None
+        assert claimed_failed.id is not None
+        await repo.fail_task(claimed_failed.id, error="不是目录: /gone")
+
+        after = (await client.get(f"libraries/{library_id}")).json()["last_organize"]
+        assert after["status"] == "failed"
+        assert after["error"] == "不是目录: /gone"
+        assert after["organized"] == 0
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_summary_survives_other_libraries_history(
+        self, client: AsyncClient, repo: Repository, safe_path: Path
+    ) -> None:
+        """别的库堆出大量新整理任务, 不把久未整理的库显示成「从未整理」."""
+        quiet = safe_path / "quiet"
+        busy = safe_path / "busy"
+        quiet.mkdir()
+        busy.mkdir()
+        quiet_id = (await client.post("libraries", json={"path": str(quiet), "scan": False})).json()["id"]
+        busy_id = (await client.post("libraries", json={"path": str(busy), "scan": False})).json()["id"]
+
+        done = await repo.create_task(TaskType.ORGANIZE, payload={"library_id": quiet_id})
+        assert done.id is not None
+        claimed = await repo.claim_next_task()
+        assert claimed is not None
+        assert claimed.id is not None
+        await repo.complete_task_with_followups(claimed.id, result={"organized": 1}, followups=[])
+
+        await repo.create_tasks(TaskType.ORGANIZE, [{"library_id": busy_id, "media_file_ids": [n]} for n in range(260)])
+        await repo.fail_queued_tasks(error="boom", task_types=[TaskType.ORGANIZE])
+        # 后台 worker 可能抢先认领了几条, 它们同样是终态; 只断言「新任务确实多到能挤掉旧记录」.
+        terminal = await repo.count_tasks(statuses=[TaskStatus.DONE, TaskStatus.FAILED], task_types=[TaskType.ORGANIZE])
+        assert terminal > 200
+
+        summary = (await client.get(f"libraries/{quiet_id}")).json()["last_organize"]
+        assert summary is not None
+        assert summary["status"] == "done"
+        assert summary["organized"] == 1
+        listed = {item["id"]: item["last_organize"] for item in (await client.get("libraries")).json()["items"]}
+        assert listed[quiet_id]["organized"] == 1
+        assert listed[busy_id] is not None

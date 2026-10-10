@@ -1,8 +1,10 @@
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from ...db import Library
+from ...db import Library, Task
 from ...enums import DownloadableResource, LibraryAutomation, LibraryIngest, LinkMode, MoveMode
 from ...library import (
     DEFAULT_SUBTITLE_EXTENSIONS,
@@ -35,6 +37,7 @@ class LibraryCreateRequest(BaseModel):
     """显示名; 留空则取路径 basename."""
     path: str
     automation: LibraryAutomation = LibraryAutomation.SCRAPE
+    auto_organize: bool = False
     ingest: LibraryIngest = LibraryIngest.NATIVE
     cloud_path: str | None = None
     """CloudDrive 虚拟路径 (POSIX, 如 /115open/云下载). ingest=clouddrive 时必填."""
@@ -75,11 +78,33 @@ if TYPE_CHECKING:
 LibraryUpdateRequest = create_partial_model(Library, ignore_fields=("id",), partial_cls_name="LibraryUpdateRequest")
 
 
+class LibraryLastOrganizeStatus(StrEnum):
+    DONE = "done"
+    FAILED = "failed"
+
+
+class LibraryLastOrganize(BaseModel):
+    """该库最近一次终态整理任务的结果 (真值在任务里, 这里只做库级读取).
+
+    手动整理与自动整理不区分; 失败任务没有结果载荷时 `error` 承载原因, 计数为 0.
+    """
+
+    status: LibraryLastOrganizeStatus
+    at: datetime | None = None
+    organized: int = 0
+    skipped: int = 0
+    conflicted: int = 0
+    failed: int = 0
+    error: str | None = None
+
+
 class LibraryResponse(BaseModel):
     id: int
     name: str
     path: str
     automation: LibraryAutomation
+    auto_organize: bool
+    last_organize: LibraryLastOrganize | None = None
     ingest: LibraryIngest
     cloud_path: str | None = None
     recursive: bool
@@ -106,6 +131,32 @@ class LibraryResponse(BaseModel):
 
 class LibraryListResponse(BaseModel):
     items: list[LibraryResponse]
+
+
+def last_organize_from_task(task: Task | None) -> LibraryLastOrganize | None:
+    """终态整理任务 → 库页面摘要; 失败任务没有结果载荷时保留 `error`.
+
+    `result` 是 JSON 列, 键缺失按 0 (失败行与旧行都可能不完整). SQLite 读回的 datetime 无 tzinfo, 补 UTC.
+    """
+    if task is None:
+        return None
+    result = task.result if isinstance(task.result, dict) else {}
+    return LibraryLastOrganize(
+        status=LibraryLastOrganizeStatus(task.status.value),
+        at=task.finished_at.replace(tzinfo=UTC)
+        if task.finished_at and task.finished_at.tzinfo is None
+        else task.finished_at,
+        organized=_count(result, "organized"),
+        skipped=_count(result, "skipped"),
+        conflicted=_count(result, "conflicted"),
+        failed=_count(result, "failed"),
+        error=task.error,
+    )
+
+
+def _count(result: dict[str, object], key: str) -> int:
+    value = result.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 @subset_of(Library, covariant=True)
