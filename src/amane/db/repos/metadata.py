@@ -37,6 +37,7 @@ from .facet_helpers import (
     apply_facet_rules_to_metadata,
     cascade_delete_metadata,
     clean_actor_names,
+    project_derived_columns,
     resolve_scalar_facet_names,
     sync_metadata_facets,
     unique_ids,
@@ -125,6 +126,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         user_tag_ids: Sequence[int] | None = None,
         has_files: bool | None = None,
         has_subtitle: bool | None = None,
+        vr: bool | None = None,
         mosaic: Mosaic | None = None,
         uncensored: bool | None = None,
         definition: str | None = None,
@@ -187,6 +189,8 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 base = base.where(col(Metadata.series).in_(series_names))
             if has_files is not None:
                 base = base.where(_metadata_has_files_clause(has_files=has_files))
+            if vr is not None:
+                base = base.where(col(Metadata.vr).is_(vr))
             if has_subtitle is True:
                 base = base.where(_metadata_linked_file_exists(has_subtitle_predicate()))
             elif has_subtitle is False:
@@ -250,6 +254,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 await session.flush()
                 await clean_actor_names(session, existing, actor_genders)
                 await apply_facet_rules_to_metadata(session, existing)
+                project_derived_columns(existing)
                 await sync_metadata_facets(session, existing)
                 await session.commit()
                 await session.refresh(existing)
@@ -259,6 +264,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             await session.flush()
             await clean_actor_names(session, meta, actor_genders)
             await apply_facet_rules_to_metadata(session, meta)
+            project_derived_columns(meta)
             await sync_metadata_facets(session, meta)
             await session.commit()
             await session.refresh(meta)
@@ -327,6 +333,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             await session.flush()
             await clean_actor_names(session, metadata, actor_genders)
             await apply_facet_rules_to_metadata(session, metadata)
+            project_derived_columns(metadata)
             await sync_metadata_facets(session, metadata)
             await session.commit()
             await session.refresh(metadata)

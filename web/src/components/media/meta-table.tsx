@@ -31,7 +31,7 @@ import {
 import type { MetadataResponse, MetadataSortField, SortOrder } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
-import { ResizableTh, SortableTh } from "@/components/common/sortable-th";
+import { SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { useResizableColumns } from "@/hooks/use-resizable-columns";
@@ -39,6 +39,7 @@ import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { type MetaTableColumnKey, useUIStore } from "@/stores/ui";
+import { VrBadge } from "./vr-badge";
 import classes from "./meta-table.module.css";
 
 const SORTABLE_COLUMNS = [
@@ -46,6 +47,7 @@ const SORTABLE_COLUMNS = [
   "title",
   "studio",
   "release",
+  "score",
   "updated_at",
   "file_count",
 ] as const satisfies readonly MetadataSortField[];
@@ -57,6 +59,7 @@ const COLUMN_I18N_KEY = {
   title: "title",
   studio: "studio",
   release: "release",
+  score: "score",
   updated_at: "updated",
   file_count: "fileCount",
 } as const satisfies Record<SortableColumn, string>;
@@ -111,6 +114,8 @@ function cellValue(item: MetadataResponse, field: SortableColumn): string {
       return item.studio ?? "";
     case "release":
       return item.release ?? "";
+    case "score":
+      return item.score != null ? item.score.toFixed(1) : "";
     case "updated_at":
       return item.updated_at ? item.updated_at.slice(0, 10) : "";
     case "file_count":
@@ -324,13 +329,16 @@ export function MetaTable({
                   resizeHandle={getResizeHandleProps(field)}
                 />
               ))}
-              <ResizableTh
+              <SortableTh
+                field="score"
+                label={t("columns.score")}
+                sortBy={effectiveSortBy}
+                order={effectiveOrder}
+                onSort={onSort}
                 w={columnWidth("score")}
                 visibleFrom={COLUMN_VISIBLE_FROM.score}
                 resizeHandle={getResizeHandleProps("score")}
-              >
-                {t("columns.score")}
-              </ResizableTh>
+              />
               <Table.Th ta="right" className={classes.actionsColumn}>
                 {t("columns.actions")}
               </Table.Th>
@@ -354,15 +362,24 @@ export function MetaTable({
                       visibleFrom={COLUMN_VISIBLE_FROM[field]}
                     >
                       {field === "number" ? (
-                        <Link
-                          to="/meta/$metadataId"
-                          params={{ metadataId: String(item.id) }}
-                          style={{ textDecoration: "none", display: "block", overflow: "hidden" }}
-                        >
-                          <Text component="span" size="sm" ff="monospace" truncate title={value}>
-                            {value}
-                          </Text>
-                        </Link>
+                        /* flex 容器不用 CELL_OVERFLOW 的 maxWidth: 0, 否则 VR 标识也被裁掉. */
+                        <Group gap={4} wrap="nowrap" style={{ overflow: "hidden" }}>
+                          <Link
+                            to="/meta/$metadataId"
+                            params={{ metadataId: String(item.id) }}
+                            style={{
+                              textDecoration: "none",
+                              minWidth: 0,
+                              flex: "0 1 auto",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <Text component="span" size="sm" ff="monospace" truncate title={value}>
+                              {value}
+                            </Text>
+                          </Link>
+                          {item.vr && <VrBadge />}
+                        </Group>
                       ) : (
                         <Text size="sm" truncate title={value || undefined}>
                           {value}

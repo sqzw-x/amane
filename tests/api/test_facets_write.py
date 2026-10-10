@@ -149,3 +149,83 @@ async def test_actor_merge_via_http_carries_user_tags(client: AsyncClient, repo:
     tags = (await client.get(f"actors/{target}")).json()["user_tags"]
     assert [t["name"] for t in tags] == ["收藏"]
     assert (await client.get(f"actors/{source}")).status_code == 404
+
+
+async def _facet_id(client: AsyncClient, kind: str, name: str) -> int:
+    items = (await client.get(f"facets/{kind}?search={name}")).json()["items"]
+    return next(i["id"] for i in items if i["name"] == name)
+
+
+async def _vr_of(client: AsyncClient, metadata_id: int) -> bool:
+    return (await client.get(f"metadata/{metadata_id}")).json()["metadata"]["vr"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_facet_tag_rename_reprojects_vr(client: AsyncClient, repo: Repository) -> None:
+    """标签改名后 vr 跟随真值: 改出 VR 标签命中, 把 VR 标签改走则不再命中."""
+    plain = await repo.upsert_metadata(number="HTTP-VR-RN-1", tags=["普通"])
+    vr = await repo.upsert_metadata(number="HTTP-VR-RN-2", tags=["VR"])
+    assert plain.id is not None and vr.id is not None
+    assert await _vr_of(client, plain.id) is False
+    assert await _vr_of(client, vr.id) is True
+
+    renamed_in = await client.patch(f"facets/tag/{await _facet_id(client, 'tag', '普通')}", json={"name": "8KVR"})
+    renamed_out = await client.patch(f"facets/tag/{await _facet_id(client, 'tag', 'VR')}", json={"name": "VRっぽい"})
+    assert renamed_in.status_code == 200 and renamed_out.status_code == 200
+
+    assert await _vr_of(client, plain.id) is True
+    assert await _vr_of(client, vr.id) is False
+    listed = (await client.get("metadata?vr=true")).json()
+    assert listed["total"] == 1
+    assert [item["number"] for item in listed["items"]] == ["HTTP-VR-RN-1"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_facet_tag_merge_reprojects_vr(client: AsyncClient, repo: Repository) -> None:
+    """合并到 VR 标签名后 vr 变为真; 反向合并则不再命中."""
+    plain = await repo.upsert_metadata(number="HTTP-VR-MG-1", tags=["普通"])
+    vr = await repo.upsert_metadata(number="HTTP-VR-MG-2", tags=["8KVR"])
+    assert plain.id is not None and vr.id is not None
+
+    merged_in = await client.post(
+        "facets/tag/merge",
+        json={
+            "target_id": await _facet_id(client, "tag", "8KVR"),
+            "source_ids": [await _facet_id(client, "tag", "普通")],
+        },
+    )
+    assert merged_in.status_code == 200
+    assert await _vr_of(client, plain.id) is True
+
+    plain2 = await repo.upsert_metadata(number="HTTP-VR-MG-3", tags=["普通3"])
+    vr2 = await repo.upsert_metadata(number="HTTP-VR-MG-4", tags=["VR専用"])
+    assert plain2.id is not None and vr2.id is not None
+    merged_out = await client.post(
+        "facets/tag/merge",
+        json={
+            "target_id": await _facet_id(client, "tag", "普通3"),
+            "source_ids": [await _facet_id(client, "tag", "VR専用")],
+        },
+    )
+    assert merged_out.status_code == 200
+    assert await _vr_of(client, vr2.id) is False
+
+    listed = (await client.get("metadata?vr=true")).json()
+    assert listed["total"] == 2
+    assert sorted(item["number"] for item in listed["items"]) == ["HTTP-VR-MG-1", "HTTP-VR-MG-2"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_facet_tag_delete_reprojects_vr(client: AsyncClient, repo: Repository) -> None:
+    """删除 VR 标签实体后, 行上的 tags 被剥离, vr 同时回到假."""
+    meta = await repo.upsert_metadata(number="HTTP-VR-DL-1", tags=["巨乳", "8KVR"])
+    assert meta.id is not None
+    assert await _vr_of(client, meta.id) is True
+
+    deleted = await client.delete(f"facets/tag/{await _facet_id(client, 'tag', '8KVR')}")
+    assert deleted.status_code == 204
+
+    detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+    assert detail["tags"] == ["巨乳"]
+    assert detail["vr"] is False
+    assert (await client.get("metadata?vr=true")).json()["total"] == 0

@@ -337,7 +337,22 @@ _DISCIPLINE = [
     ),
     (LibraryUpdateRequest, LibraryUpdates, Library, {"id"}),
     (ScheduleUpdateRequest, ScheduleUpdates, Schedule, {"id", "last_run", "next_run"}),
-    (PartialMetadata, MetadataFields, Metadata, {"id", "number", "created_at", "updated_at", "raw", "field_sources"}),
+    (
+        PartialMetadata,
+        MetadataFields,
+        Metadata,
+        {
+            "id",
+            "number",
+            "created_at",
+            "updated_at",
+            "raw",
+            "field_sources",
+            "locked_fields",
+            "vr",
+            "score_rank",
+        },
+    ),
     (
         FeedUpdateRequest,
         FeedUpdates,

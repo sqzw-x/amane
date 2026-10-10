@@ -2585,6 +2585,10 @@ export type MetadataResponse = {
      */
     score?: number | null;
     /**
+     * Vr
+     */
+    vr?: boolean;
+    /**
      * Poster Urls
      */
     poster_urls?: Array<string>;
@@ -2654,7 +2658,7 @@ export type MetadataResponse = {
 /**
  * MetadataSortField
  */
-export type MetadataSortField = 'number' | 'title' | 'studio' | 'release' | 'created_at' | 'updated_at' | 'file_count';
+export type MetadataSortField = 'number' | 'title' | 'studio' | 'release' | 'created_at' | 'updated_at' | 'file_count' | 'score';
 
 /**
  * MetadataUserTagsRequest
@@ -5423,6 +5427,12 @@ export type ListMetadataData = {
          * Filter by linked file subtitle marker
          */
         has_subtitle?: boolean | null;
+        /**
+         * Vr
+         *
+         * Filter by VR marker (title tags or number prefix)
+         */
+        vr?: boolean | null;
         /**
          * Mosaic
          *

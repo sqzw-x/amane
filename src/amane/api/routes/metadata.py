@@ -83,6 +83,7 @@ async def list_metadata(
     user_tag_id: Annotated[list[int] | None, Query(description="Filter by user tag id(s); AND")] = None,
     has_files: Annotated[bool | None, Query(description="Filter by presence of linked MediaFile(s)")] = None,
     has_subtitle: Annotated[bool | None, Query(description="Filter by linked file subtitle marker")] = None,
+    vr: Annotated[bool | None, Query(description="Filter by VR marker (title tags or number prefix)")] = None,
     mosaic: Annotated[Mosaic | None, Query(description="Filter by linked file mosaic marker")] = None,
     uncensored: Annotated[
         bool | None, Query(description="Filter by uncensored file (mosaic marker or uncensored content type)")
@@ -112,6 +113,7 @@ async def list_metadata(
         user_tag_ids=user_tag_id,
         has_files=has_files,
         has_subtitle=has_subtitle,
+        vr=vr,
         mosaic=mosaic,
         uncensored=uncensored,
         definition=definition,

@@ -1,8 +1,9 @@
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, NoReturn
 
-from sqlalchemy import Boolean, Column, Index, String, Text, UniqueConstraint, or_, text
+from sqlalchemy import Boolean, Column, Float, Index, String, Text, UniqueConstraint, or_, text
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import JSON, Field, SQLModel, col
 
@@ -86,6 +87,7 @@ class MetadataSortField(StrEnum):
     CREATED_AT = "created_at"
     UPDATED_AT = "updated_at"
     FILE_COUNT = "file_count"
+    SCORE = "score"
 
 
 class MediaSortField(StrEnum):
@@ -214,6 +216,22 @@ def has_subtitle_predicate() -> ColumnElement[bool]:
     return or_(col(MediaFile.has_subtitle_in_name).is_(True), col(MediaFile.has_external_subtitle).is_(True))
 
 
+class MetadataScoresError(ValueError):
+    """``Metadata.scores`` 非法: 整列必须是映射, 且各站评分只能是数值, 不接受 NULL / 字符串 / 嵌套结构."""
+
+
+def first_numeric_score(scores: Mapping[str, object]) -> float | None:
+    """各站评分的首个数值, 非数值站点跳过.
+
+    读取侧的 ``Metadata.score`` 与物化列共用这一条口径: 同一份 ``scores`` 在显示与排序上必须同值.
+    非数值站点只出现在手工修改过的库里 —— 写入侧经 ``project_derived_columns`` 拒绝它们.
+    """
+    for value in scores.values():
+        if isinstance(value, int | float):
+            return float(value)
+    return None
+
+
 class Metadata(SQLModel, table=True):
     __tablename__ = "metadata"  # type: ignore[assignment]
     # number 唯一性大小写不敏感 (COLLATE NOCASE); 存库保留首次写入的原始大小写.
@@ -243,6 +261,8 @@ class Metadata(SQLModel, table=True):
     extrafanart_urls: dict[str, list[str]] = Field(default_factory=dict, sa_column=Column(JSON))
     # 每站独立, 禁止折成单值.
     scores: dict[str, float] = Field(default_factory=dict, sa_column=Column(JSON))
+    # ``score`` 的物化副本, 只为 SQL 排序 (JSON 列取不出首值). 读取一律走 ``score`` 属性.
+    score_rank: float | None = Field(default=None, sa_column=Column("score", Float, index=True))
     external_ids: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     source_urls: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     field_sources: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
@@ -252,6 +272,8 @@ class Metadata(SQLModel, table=True):
     locked_fields: list[str] = Field(
         default_factory=list, sa_column=Column(JSON, nullable=False, server_default=text("'[]'"))
     )
+    # VR 判定结果, 由 number / tags 投影而来; 写入路径见 db/repos/facet_helpers.py 的 project_derived_columns.
+    vr: bool = Field(default=False, index=True)
 
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -277,9 +299,8 @@ class Metadata(SQLModel, table=True):
 
     @property
     def score(self) -> float | None:
-        if not self.scores:
-            return None
-        return float(next(iter(self.scores.values())))
+        """各站评分的首个数值; 与 ``score`` 列同口径, 后者只为排序而物化."""
+        return first_numeric_score(self.scores)
 
 
 class Task(SQLModel, table=True):

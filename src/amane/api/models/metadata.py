@@ -43,6 +43,7 @@ class MetadataResponse(BaseModel):
     trailer_url: str | None = None
     extrafanart: list[str] = []
     score: float | None = None
+    vr: bool = False
     poster_urls: list[str] = []
     thumb_urls: list[str] = []
     trailer_urls: list[str] = []
@@ -71,10 +72,21 @@ class MetadataResponse(BaseModel):
 if TYPE_CHECKING:
     type PartialMetadata = Metadata
 
-# 外部可写字段: 排除只读列 (id/number/时间戳), 仅后端可写字段 (raw/field_sources 由刮削写入) 与锁列 (经 PUT locks 管理).
+# 外部可写字段: 排除只读列 (id/number/时间戳)、仅后端可写字段 (raw/field_sources 由刮削写入)、
+# 投影列 (vr/score_rank 由写方法从真值重算) 与锁列 (经 PUT locks 管理).
 PartialMetadata = create_partial_model(
     Metadata,
-    ignore_fields=("id", "number", "created_at", "updated_at", "raw", "field_sources", "locked_fields"),
+    ignore_fields=(
+        "id",
+        "number",
+        "created_at",
+        "updated_at",
+        "raw",
+        "field_sources",
+        "locked_fields",
+        "vr",
+        "score_rank",
+    ),
     json_schema_extras={
         "extrafanart_urls": anyof_extras(kv({"v-x-long": True})),
         "release": anyof_extras(
