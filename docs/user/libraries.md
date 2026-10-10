@@ -102,13 +102,14 @@ Authorization = "Bearer <Amane API Token>"
 
 `{prefix}` / `{suffix}` 从刮削所得 `{number}` 拆出, 不依据源文件名. `MIDV-123` → 前缀 `MIDV`、剩余段 `123`; `MKY-HS-001` → `MKY-HS` / `001`.
 
-未列出范围的占位符在各模板与 STRM 内容模板中均可使用. 下表所列占位符有范围限制; 写在不可用的模板中会得到 `Unknown`.
+未列出范围的占位符在路径模板与 STRM 内容模板中均可使用. 下表所列占位符有范围限制; 写在不可用的模板中会得到 `Unknown`. NFO 内容模板另有一套**同名不同义**的取值, 见 [NFO 内容模板](#nfo-content-template).
 
 `{title}` 与演员类占位符 (`{actor}` / `{actors}` / `{actress}` / `{actresses}`) 超过 200 字节时截断, 末尾补 `…` (省略号计入上限); 截断不切开多字节字符.
 
 | 占位符 | 可用范围 |
 | -------- | -------- |
-| `{video_dir}` `{video_name}` `{video_relpath}` | 链接、附属、字幕、STRM 内容 |
+| `{video_dir}` `{video_relpath}` | 链接、附属、字幕、STRM 内容 |
+| `{video_name}` | 链接、附属、字幕、STRM 内容、NFO 内容 |
 | `{link_dir}` `{link_name}` | 附属、字幕、STRM 内容 |
 | `{raw_srt_name}` | 仅字幕 |
 
@@ -194,6 +195,53 @@ https://example.com/{video_relpath} -> https://example.com/ABC-123/ABC-123.mp4
 ```
 
 ### 使用场景
+
+## NFO 内容模板 {#nfo-content-template}
+
+整理写出的 NFO 是一份 Kodi `<movie>` XML, 供 Emby / Jellyfin / Kodi 读取: 影片信息、演员、标签与图片地址都写在这里. **写入 NFO** 开启时, `nfo_content_template` 决定这份文件的正文.
+
+留空使用内置默认正文 (与既有行为一致). 填入内容后, 渲染结果就是 NFO 文件的**全部内容**: XML 声明、根元素与所有标签都由模板决定.
+
+模板语法与路径模板相同 (`{占位符}`、`[...]` 可选组、`{name|原值=输出}` 映射, 见 [可用占位符](#placeholders)), 但有三处差别:
+
+- 取值是刮削原始值: 不做文件名清洗, 不截断到 200 字节; 缺值是空串, 不回退 `Unknown`. `{year}` 也按日期开头的四位数字判定, 与路径模板取前四位字符不同.
+- `[...]` 组内没有占位符时没有条件可言, 方括号按字面输出. 例如 `<sorttitle>[Blu-ray] {title}</sorttitle>` 写出 `[Blu-ray] ...`.
+- 正文必须是良构 XML: 保存模板时按几组取值试渲染并解析, 不合法会拒绝保存.
+
+### NFO 占位符
+
+| 占位符 | 取值 |
+| -------- | -------- |
+| `{display_title}` | NFO 显示标题: 番号 + 空格 + 片名; 片名为空时为空串 |
+| `{video_name}` | 整理后视频文件名 (不含扩展名) |
+| `{plot}` | 剧情简介 (换行保留) |
+| `{rating}` `{criticrating}` | 评分; `{criticrating}` 为评分 ×10 取整 |
+| `{runtime}` | 时长 (分钟) |
+| `{poster}` `{cover}` `{trailer}` | 海报 / 封面 / 预告片的 URL |
+| `{directors}` `{tags}` | 导演 / 标签, 逗号分隔 |
+| `{xml_actor}` `{xml_tag}` `{xml_genre}` `{xml_director}` `{xml_external_id}` | 片段: 按值产出多行同名元素, 已转义 |
+
+路径模板的其余占位符 (`{number}` / `{title}` / `{actors}` / `{studio}` / `{release}` / `{content_type}` / `{mosaic?}` / `{cd?}` / `{sub?}` 等) 在 NFO 模板中同样可用. 位置类占位符 (`{video_dir}` / `{link_dir}` / `{video_relpath}` / `{raw_dir}` / `{raw_srt_name}`) 不可用, 目录里没有的名字会被拒绝保存.
+
+片段是固定展开器: `{xml_actor}` 为每个演员输出一组 `<actor><name>…</name><type>Actor</type></actor>`, `{xml_tag}` 与 `{xml_genre}` 为每个标签输出一行, 内部结构不可修改. 片段只能写在元素内容位置, 写进属性会被拒绝.
+
+### 写法约束
+
+- 字面量原样输出, 占位符取值由引擎转义. 字面量里的 `&` 要写成 `&amp;`, `<` 要写成 `&lt;`.
+- 需要条件省略的方括号组里必须有占位符; 只想显示方括号时, 方括号内不要写占位符.
+- 根元素自定, 媒体服务器按根元素判断类型, 影片使用 `<movie>`.
+- 修改模板不会改写已有 NFO: 重跑整理才按新模板覆盖全库.
+- 「填入默认模板」把当前默认正文复制成该库自己的模板, 此后默认正文变化不再作用于该库; 清空即回到默认正文.
+
+常用写法:
+
+```
+标题用文件名: <title>{video_name}</title>
+标题带番号:   <title>{display_title}</title>
+只写自有标签: <movie>[<studio>{studio}</studio>]{xml_actor}</movie>
+```
+
+第一个写法对应「导入 Emby 后按文件名浏览」的诉求, 第二个对应「标题里保留番号」.
 
 ## 整理操作
 
