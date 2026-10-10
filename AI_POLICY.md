@@ -8,6 +8,8 @@ AI 可以有效提高开发效率, 但 AI 生成的内容并不会因此免除�
 
 ## 1. Issue
 
+Issue 须经 `.github/ISSUE_TEMPLATE/` 的模板创建; **禁止经 GitHub CLI 或 REST API 创建无模板的 Issue**。经 CLI 或 REST API 提交时, 正文必须与所用模板的字段一致。
+
 允许使用 AI 创建、撰写、翻译、整理、润色和修改 Issue, 包括但不限于:
 
 - 问题描述
