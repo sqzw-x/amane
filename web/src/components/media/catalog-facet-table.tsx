@@ -13,12 +13,24 @@ import {
   TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowMerge, IconDots, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
-import { useMutation } from "@tanstack/react-query";
+import {
+  IconArrowMerge,
+  IconDots,
+  IconPencil,
+  IconPlus,
+  IconStar,
+  IconTrash,
+} from "@tabler/icons-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { createUserTagsMutation, listFacetsQueryKey } from "@/client/@tanstack/react-query.gen";
+import {
+  createUserTagsMutation,
+  getFacetQueryKey,
+  listFacetsQueryKey,
+  setFacetsFavoriteMutation,
+} from "@/client/@tanstack/react-query.gen";
 import type { FacetKind, FacetResponse, FacetSortField, SortOrder } from "@/client/types.gen";
 import { FacetFavoriteStar } from "./facet-favorite-star";
 import { FacetRulesPanel } from "./facet-rules-panel";
@@ -59,9 +71,10 @@ export function CatalogFacetTable({
 }: CatalogFacetTableProps) {
   const { t } = useTranslation(["metadata", "common", "library"]);
   const limit = useUIStore((s) => s.pageSizes.catalogList);
+  const queryClient = useQueryClient();
   const pageIds = items.map((i) => i.id);
 
-  const { selected, toggleOne, toggleAll, isAllSelected, clear } = useIdSelection();
+  const { selected, selectedIds, toggleOne, toggleAll, isAllSelected, clear } = useIdSelection();
   const identity = useFacetIdentityActions({
     kind,
     listQueryKey: listFacetsQueryKey({ path: { kind } }),
@@ -85,6 +98,30 @@ export function CatalogFacetTable({
       });
       setNewTagName("");
       identity.invalidate();
+    },
+    onError: (err) =>
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      }),
+  });
+
+  // 批量收藏是整体赋值: 已处于目标取值的条目不动, 界面因此不做逐项取反.
+  const favoriteMutation = useMutation({
+    ...setFacetsFavoriteMutation(),
+    onSuccess: (res, variables) => {
+      notifications.show({
+        message: t("favorite.batchUpdated", { count: res.changed }),
+        color: "blue",
+      });
+      // 前缀失效覆盖该 kind 的任意筛选组合; 详情页读单个分类, 只失效列表会让自身不刷新.
+      void queryClient.invalidateQueries({ queryKey: [{ _id: "listFacets" }] });
+      for (const facetId of variables.body.facet_ids) {
+        void queryClient.invalidateQueries({
+          queryKey: getFacetQueryKey({ path: { kind, facet_id: facetId } }),
+        });
+      }
+      clear();
     },
     onError: (err) =>
       notifications.show({
@@ -131,7 +168,43 @@ export function CatalogFacetTable({
                 </Button>
               </Group>
             )}
-            <SelectionBar count={selected.size} hint={t("manage.mergeGuide")} />
+            <SelectionBar count={selected.size} hint={t("manage.mergeGuide")}>
+              {/* 不支持收藏的 kind 不渲染这两个动作: 端点对它们一律返回 400. */}
+              {isFavoriteKind && (
+                <>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    leftSection={<IconStar size={14} />}
+                    loading={favoriteMutation.isPending}
+                    disabled={selected.size === 0}
+                    onClick={() =>
+                      favoriteMutation.mutate({
+                        path: { kind },
+                        body: { facet_ids: selectedIds, is_favorite: true },
+                      })
+                    }
+                  >
+                    {t("favorite.add")}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    leftSection={<IconStar size={14} />}
+                    loading={favoriteMutation.isPending}
+                    disabled={selected.size === 0}
+                    onClick={() =>
+                      favoriteMutation.mutate({
+                        path: { kind },
+                        body: { facet_ids: selectedIds, is_favorite: false },
+                      })
+                    }
+                  >
+                    {t("favorite.remove")}
+                  </Button>
+                </>
+              )}
+            </SelectionBar>
           </Stack>
         }
         trailing={
