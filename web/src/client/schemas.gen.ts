@@ -2781,327 +2781,327 @@ export const HotSettingsSchema = {
                 site_config: {
                     airav: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     avbase: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     avsox: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     dahlia: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     dmm: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     faleno: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     fc2: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     fc2club: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     fc2ppvdb: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     freejavbt: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     getchu: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     gfriends: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     giga: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     iqqtv: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     jav321: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     javbus: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     javdb: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     javlibrary: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     kin8: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     mgstage: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     minnano: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     official: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     prestige: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     r18dev: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     theporndb: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     wikipedia: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     },
                     xcity: {
                         cookie: {},
-                        official_routes: {},
-                        rate_limit: 2,
-                        use_browser: 'auto',
-                        use_proxy: true,
-                        wiki_languages: [
+                        languages: [
                             'zh',
                             'ja',
                             'en'
-                        ]
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
                     }
                 }
             }
@@ -7828,7 +7828,7 @@ export const SiteConfigSchema = {
             title: 'Rate Limit',
             default: 2
         },
-        wiki_languages: {
+        languages: {
             items: {
                 type: 'string',
                 enum: [
@@ -7838,8 +7838,8 @@ export const SiteConfigSchema = {
                 ]
             },
             type: 'array',
-            title: 'Wiki Languages',
-            description: '维基百科词条语言优先级, 依序取第一个有正文的词条',
+            title: 'Languages',
+            description: '词条语言优先级, 依序取第一个有正文的词条',
             'x-ordered': true,
             'x-visible-keys': [
                 'wikipedia'

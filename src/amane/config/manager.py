@@ -10,7 +10,7 @@ from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 import tomli_w
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -57,14 +57,15 @@ LANG_METADATA_FIELD_SET: frozenset[MetadataField] = frozenset(
 
 # json_schema_extra 需要 JsonValue 兼容类型, 使用 list[Any] 避免 pyright invariance 问题
 _SITES_WITH_API_TOKEN: list[Any] = [SiteName.THEPORNDB]
-_SITES_WITH_WIKI_LANGUAGES: list[Any] = [SiteName.WIKIPEDIA]
+# 当前只有维基消费 languages, 因此只在该站点卡片展示; 其它来源要使用时去掉此项即可.
+_SITES_WITH_LANGUAGES: list[Any] = [SiteName.WIKIPEDIA]
 
 
-def _wiki_languages_schema(schema: dict[str, Any]) -> None:
-    """取值收窄到来源支持的维基语言; 仅在维基站点卡片展示."""
+def _languages_schema(schema: dict[str, Any]) -> None:
+    """取值收窄到来源支持的词条语言; 仅在已消费该字段的站点卡片展示."""
     schema["items"] = {"type": "string", "enum": list(WIKI_LANGUAGES)}
     schema["x-ordered"] = True
-    schema["x-visible-keys"] = _SITES_WITH_WIKI_LANGUAGES
+    schema["x-visible-keys"] = _SITES_WITH_LANGUAGES
 
 
 #: 各内容类型默认有序路由 (资格真值 + 该类型默认字段优先级).
@@ -295,23 +296,27 @@ class SiteConfig(BaseModel):
     rate_limit: float | None = Field(default=2, ge=0.1, le=100)
     """req/s. 全局 network.rate_limits 有此站点域名时全局优先."""
 
-    wiki_languages: list[str] = Field(
+    languages: list[str] = Field(
         default_factory=lambda: list(WIKI_LANGUAGES),
-        json_schema_extra=_wiki_languages_schema,
-        description="维基百科词条语言优先级, 依序取第一个有正文的词条",
+        json_schema_extra=_languages_schema,
+        description="词条语言优先级, 依序取第一个有正文的词条",
     )
-    """只由 WikipediaActorCrawler 读取; 收窄列表不会减少 Wikidata 检索语言."""
+    """该来源的词条语言优先级, 依序取第一个有正文的词条. 座位对全部来源通用, 当前取值集合来自维基支持的词条版本.
 
-    @field_validator("wiki_languages")
+    只由 WikipediaActorCrawler 读取; 收窄列表不会减少 Wikidata 检索语言. 集合收紧到 ``WIKI_LANGUAGES``
+    是为了让设置页只列出可用语言; 将来某个来源需要别的集合时, 再决定放宽集合还是改为按站声明.
+    """
+
+    @field_validator("languages")
     @classmethod
-    def _supported_wiki_languages(cls, v: list[str]) -> list[str]:
+    def _supported_languages(cls, v: list[str], info: ValidationInfo) -> list[str]:
         languages = list(dict.fromkeys(v))
         if not languages:
-            msg = "wiki_languages 至少要保留一种语言"
+            msg = f"{info.field_name} 至少要保留一种语言"
             raise ValueError(msg)
         unsupported = [lang for lang in languages if lang not in WIKI_LANGUAGES]
         if unsupported:
-            msg = f"wiki_languages 不支持 {', '.join(unsupported)}; 可选: {', '.join(WIKI_LANGUAGES)}"
+            msg = f"{info.field_name} 不支持 {', '.join(unsupported)}; 可选: {', '.join(WIKI_LANGUAGES)}"
             raise ValueError(msg)
         return languages
 

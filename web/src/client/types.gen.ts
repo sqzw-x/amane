@@ -3978,11 +3978,11 @@ export type SiteConfig = {
      */
     rate_limit?: number | null;
     /**
-     * Wiki Languages
+     * Languages
      *
-     * 维基百科词条语言优先级, 依序取第一个有正文的词条
+     * 词条语言优先级, 依序取第一个有正文的词条
      */
-    wiki_languages?: Array<'zh' | 'ja' | 'en'>;
+    languages?: Array<'zh' | 'ja' | 'en'>;
 };
 
 /**

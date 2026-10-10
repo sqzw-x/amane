@@ -1,7 +1,7 @@
-"""维基来源: 简介拼装、词条语言优先级与配置取值.
+"""维基来源: 简介拼装与词条语言回退.
 
-fixture 用例 (amane-testdata) 覆盖真实页面, 这里只覆盖规则与非法输入:
-章节白名单与层级归属、引用标记、长度上限、多语言回退, 以及 ``SiteConfig.wiki_languages`` 的收窄.
+fixture 用例 (amane-testdata) 覆盖真实页面, 这里只覆盖规则与无法搬进 TOML 的部分:
+章节白名单与层级归属、引用标记、长度上限、多语言回退与请求次数.
 """
 
 from __future__ import annotations
@@ -10,11 +10,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import ValidationError
 
 from amane.config import SiteConfig
 from amane.crawlers.actor.sites.wikipedia import (
-    WIKI_LANGUAGES,
     WikipediaActorCrawler,
     _parse_wiki_page,
 )
@@ -67,6 +65,8 @@ _OVERVIEW_CASES: list[tuple[str, str, str | None]] = [
     ("嵌套列表不重复", "<h2>人物</h2><ul><li>父项<ul><li>子项</li></ul></li></ul>", "父项子项"),
     ("列表内段落不重复", "<h2>人物</h2><ul><li><p>条目段落。</p></li></ul>", "条目段落。"),
     ("空段落跳过", "<p></p><p>  </p><p>正文。</p>", "正文。"),
+    # 文档文本不按子节点补空格, 否则「日本のAV女優」会写成带空格的形态.
+    ("节点真实文本", "<p>日本の<a href='/a'>AV女優</a>。</p>", "日本のAV女優。"),
     ("无 parser-output", "", None),
 ]
 _OVERVIEW_IDS = [case[0] for case in _OVERVIEW_CASES]
@@ -88,22 +88,22 @@ def test_overview_is_normalize_fixed_point(case_id: str, body: str, expected: st
     assert normalize_long_text(overview) == overview
 
 
-def test_overview_uses_document_text_not_node_joins() -> None:
-    """按子节点补空格会把「日本 の AV女優」写成带空格的形态."""
-    body = "<p>日本の<a href='/a'>AV女優</a>。</p>"
-    assert _parse_wiki_page(_JA_URL, _page(body)).overview == "日本のAV女優。"
+# (id, 整页 HTML, 期望简介): 这三项不能只给 parser-output 内文, _OVERVIEW_CASES 的 _page() 表达不了.
+_PAGE_CASES: list[tuple[str, str, str | None]] = [
+    # 页面先出现一个空的 mw-parser-output (Parsoid 试验标记) 时不能只看第一个.
+    (
+        "取第二个 parser-output",
+        '<html><body><div><div class="mw-parser-output"></div><div class="mw-parser-output"><p>正文。</p></div></div></body></html>',
+        "正文。",
+    ),
+    ("缺 parser-output", "<html><body><p>裸正文。</p></body></html>", None),
+]
+_PAGE_IDS = [case[0] for case in _PAGE_CASES]
 
 
-def test_overview_uses_second_parser_output() -> None:
-    """页面可能先出现一个空的 mw-parser-output (Parsoid 试验标记), 不能只看第一个."""
-    body = '<div class="mw-parser-output"></div><div class="mw-parser-output"><p>正文。</p></div>'
-    html = f"<html><body><div>{body}</div></body></html>"
-    assert _parse_wiki_page(_JA_URL, html).overview == "正文。"
-
-
-def test_overview_ignores_missing_parser_output() -> None:
-    page = _parse_wiki_page(_JA_URL, "<html><body><p>裸正文。</p></body></html>")
-    assert page.overview is None
+@pytest.mark.parametrize(("case_id", "html", "expected"), _PAGE_CASES, ids=_PAGE_IDS)
+def test_overview_page_shapes(case_id: str, html: str, expected: str | None) -> None:
+    assert _parse_wiki_page(_JA_URL, html).overview == expected
 
 
 def test_overview_truncates_at_sentence_end() -> None:
@@ -113,11 +113,6 @@ def test_overview_truncates_at_sentence_end() -> None:
     assert len(page.overview) <= 1500
     assert page.overview.endswith("…")
     assert page.overview[:-1].endswith("。")
-
-
-def test_overview_keeps_short_page_untruncated() -> None:
-    page = _parse_wiki_page(_JA_URL, _page("<h2>人物</h2><p>短文。</p>"))
-    assert page.overview == "短文。"
 
 
 def test_overview_drops_tail_below_minimum() -> None:
@@ -226,7 +221,7 @@ async def test_entry_language_config_overrides_default() -> None:
     crawler, fetched = _crawler(
         _entity(labels={"ja": _NAME}, sitelinks=_SITELINKS),
         {"ja.wikipedia.org": _JA_PAGE, "zh.wikipedia.org": _ZH_PAGE},
-        config=SiteConfig(wiki_languages=["ja", "zh"]),
+        config=SiteConfig(languages=["ja", "zh"]),
     )
     meta = await crawler.fetch(_NAME)
     assert meta is not None
@@ -290,32 +285,10 @@ async def test_entry_language_narrowed_list_without_sitelink() -> None:
     crawler, fetched = _crawler(
         _entity(labels={"ja": _NAME}, sitelinks={"ja": "伊藤舞雪"}),
         {"ja.wikipedia.org": _JA_PAGE},
-        config=SiteConfig(wiki_languages=["en"]),
+        config=SiteConfig(languages=["en"]),
     )
     meta = await crawler.fetch(_NAME)
     assert meta is not None
     assert meta.source_url == f"https://www.wikidata.org/wiki/{_QID}"
     assert meta.overview is None
     assert fetched == []
-
-
-def test_wiki_languages_default_and_schema() -> None:
-    assert SiteConfig().wiki_languages == list(WIKI_LANGUAGES)
-    schema = SiteConfig.model_json_schema()["properties"]["wiki_languages"]
-    assert schema["items"]["enum"] == list(WIKI_LANGUAGES)
-    assert schema["x-ordered"] is True
-    assert [str(key) for key in schema["x-visible-keys"]] == ["wikipedia"]
-
-
-def test_wiki_languages_dedupes_preserving_order() -> None:
-    assert SiteConfig(wiki_languages=["ja", "zh", "ja"]).wiki_languages == ["ja", "zh"]
-
-
-@pytest.mark.parametrize(
-    "value",
-    [[], ["ko"], ["zh", "ko"]],
-    ids=["空列表", "不支持的语言", "部分不支持"],
-)
-def test_wiki_languages_rejects_invalid(value: list[str]) -> None:
-    with pytest.raises(ValidationError):
-        SiteConfig(wiki_languages=value)
