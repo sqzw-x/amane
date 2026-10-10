@@ -81,6 +81,14 @@
       "extrafanart": "Fanart",
       "sourceUrls": "Source Links"
     },
+    "translate": {
+      "action": "Translate",
+      "translated": "Translated {{n}} field(s)",
+      "unchanged": "{{n}} field(s) need no translation",
+      "locked": "{{n}} field(s) locked, not translated",
+      "failed": "{{n}} field(s) failed to translate",
+      "nothing": "No field to translate"
+    },
     "connections": "Related Files",
     "noFiles": "No related files",
     "openInLibrary": "Open in library",

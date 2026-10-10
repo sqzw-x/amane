@@ -80,6 +80,14 @@
       "extrafanart": "剧照",
       "sourceUrls": "来源链接"
     },
+    "translate": {
+      "action": "翻译",
+      "translated": "已翻译 {{n}} 个字段",
+      "unchanged": "{{n}} 个字段无需翻译",
+      "locked": "{{n}} 个字段已锁定, 未翻译",
+      "failed": "{{n}} 个字段翻译失败",
+      "nothing": "没有可翻译的字段"
+    },
     "connections": "关联文件",
     "noFiles": "无关联文件",
     "openInLibrary": "在媒体库中查看",
