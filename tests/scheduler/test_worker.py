@@ -316,6 +316,10 @@ async def test_worker_respects_concurrency(repo: Repository) -> None:
     max_concurrent = 0
     current = 0
     lock = asyncio.Lock()
+    # 两个任务同时在跑才放行; 原先靠固定的 0.05s 睡眠窗, 认领慢时第二个任务
+    # 还没被认领第一个就已经结束, 观察不到并发.
+    both_running = asyncio.Event()
+    release = asyncio.Event()
 
     class ConcurrencyTracker(TaskHandler):
         def __init__(self):
@@ -326,7 +330,9 @@ async def test_worker_respects_concurrency(repo: Repository) -> None:
             async with lock:
                 current += 1
                 max_concurrent = max(max_concurrent, current)
-            await asyncio.sleep(0.05)
+                if current > 1:
+                    both_running.set()
+            await release.wait()
             async with lock:
                 current -= 1
             return TaskResult(success=True, result={})
@@ -338,6 +344,9 @@ async def test_worker_respects_concurrency(repo: Repository) -> None:
         await repo.create_task(TaskType.SCRAPE, payload={"i": i})
 
     worker.start()
+    async with asyncio.timeout(LOAD_TOLERANT_TIMEOUT):
+        await both_running.wait()
+    release.set()
     await recv(worker, 4)
     await stop_worker(worker)
 
