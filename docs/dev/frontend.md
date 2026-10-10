@@ -35,6 +35,8 @@
 
 **入口分流**: 非演员实体进 `/catalog/$kind/$facetId`, 演员进 `/actors/$actorId` (演员不进入 `/catalog`); `FacetBadge` 默认深链分类, 筛选深链 `/meta`.
 
+**收藏**: 影片与演员共用一枚固定名称的用户标签充当收藏夹 (`lib/media/user-tags.ts`); 该名称是存量数据的稳定标识, 界面按当前语言显示, 改名或删除会让两侧同时失去收藏. 详情页标题行的星标 (`components/media/user-tag-star.tsx`) 与标签菜单走同一个挂载端点, 列表页的收藏夹入口则先把布尔参数折算成该标签的 id — 后端只认 id.
+
 **评论**: 排序与编辑态只在组件内, 不写地址栏. 影片详情与演员详情的用户标签与刮削标签分栏; 加减菜单一次提交多名, 但固定为两次请求 — 待新建的名称先经 `POST /api/facets/user_tag` 换成 id, 再与已选 id 一起交给所在页的挂载端点 (影片 `/api/metadata/batch/user-tags`, 演员 `/api/actors/batch/user-tags`), 端点语义见 [api.md](api.md). 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`; 演员详情出演作品的排序项与片库同源 (`lib/media/browse.ts` 的 `METADATA_SORT_OPTIONS`), 记忆落在 ui store 的 `actorWorksSort`.
 
 **播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺, 失败信息条给出重试入口. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 主机侧契约见 [plugins.md](plugins.md), 手势、全屏与浮层的约定见 `components/media/playback-panel.tsx` 与 `playback-player.tsx` 的文件注释.
@@ -81,7 +83,7 @@ Settings、任务提交、定时创建、metadata 编辑共用 `components/schem
 | 高频流 (进度 / 日志) | Zustand |
 | 对话增量 | AG-UI 事件流 (与 WS 正交) |
 | 导航态 (筛选 / 排序 / page / view) | URL search |
-| 列表密度 / 列宽 / 主题 / 播放源顺序 / 列表默认参数 | Zustand (`amane-web`) |
+| 列表密度 / 列宽 / 主题 / 播放源顺序 / 列表默认参数 / 新增媒体库的创建配置 | Zustand (`amane-web`) |
 
 OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-maps.ts`, 禁止在路由里再手抄一份.
 

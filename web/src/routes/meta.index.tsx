@@ -3,7 +3,7 @@ import { notifications } from "@mantine/notifications";
 import { IconFilter, IconSearch, IconStar, IconTable, IconX } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getFacetOptions,
@@ -126,6 +126,16 @@ function MetaIndexPage() {
   const narrowViewport = useNarrowViewport("md");
   const { tagId: favoriteTagId, resolve: resolveFavoriteTag } = useFavoriteTag();
   const favoriteActive = search.favorite === "true";
+
+  /*
+   * 目录加载完成后仍取不到收藏标签时清除该参数: 标签被删掉后 URL 会留下一个筛不出来的收藏夹,
+   * 而「不筛」会让页面显示全部条目, 与收藏夹语义相反.
+   */
+  useEffect(() => {
+    if (favoriteActive && favoriteTagId == null) {
+      void navigate({ search: (prev) => ({ ...prev, favorite: undefined, page: 1 }) });
+    }
+  }, [favoriteActive, favoriteTagId, navigate]);
 
   const hasFiles = parseHasFiles(search.has_files);
   const vr = parseHasFiles(search.vr);
