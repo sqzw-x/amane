@@ -71,6 +71,15 @@ class TestAuth:
             with pytest.raises(EmbyError, match="HTTP 500: boom"):
                 await client.list_persons()
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("url", ["http://host:port", "http://[::1"])
+    async def test_malformed_url_becomes_emby_error(self, url: str):
+        """InvalidURL 不在 HTTPError 之下: 端口写错时不能让它穿到调用方."""
+        transport = MockTransport(lambda request: Response(200, json={"Items": []}))
+        async with EmbyClient(EmbyConfig(url=url, api_key=_KEY), client=AsyncClient(transport=transport)) as client:
+            with pytest.raises(EmbyError, match=r"emby\.url"):
+                await client.list_persons()
+
 
 class TestUploadPrimaryImage:
     @pytest.mark.asyncio
@@ -144,6 +153,37 @@ class TestListPersons:
         async with _client(handler) as client:
             with pytest.raises(EmbyError, match="Items"):
                 await client.list_persons()
+
+    @pytest.mark.asyncio
+    async def test_capped_page_size_does_not_skip_persons(self):
+        """服务器把 limit 收到自己的上限时按实际条数推进, 不能按请求值跳过中间的人物."""
+        all_persons = [{"Id": f"id-{i}", "Name": f"P{i}"} for i in range(250)]
+        seen_starts: list[str] = []
+
+        def handler(request: Request) -> Response:
+            start = int(request.url.params["startIndex"])
+            seen_starts.append(request.url.params["startIndex"])
+            return Response(200, json={"Items": all_persons[start : start + 100], "TotalRecordCount": len(all_persons)})
+
+        async with _client(handler) as client:
+            persons = await client.list_persons()
+
+        assert seen_starts == ["0", "100", "200"]
+        assert [p.id for p in persons] == [f"id-{i}" for i in range(250)]
+
+    @pytest.mark.asyncio
+    async def test_empty_page_ends_iteration(self):
+        """没有总数时, 空页也终止循环, 不会一直请求下去."""
+        calls: list[str] = []
+
+        def handler(request: Request) -> Response:
+            calls.append(request.url.params["startIndex"])
+            return Response(200, json={"Items": []})
+
+        async with _client(handler) as client:
+            assert await client.list_persons() == []
+
+        assert calls == ["0"]
 
     @pytest.mark.asyncio
     async def test_transport_error_becomes_emby_error(self):

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from httpx2 import AsyncClient, HTTPError, Timeout
+from httpx2 import AsyncClient, HTTPError, InvalidURL, Timeout
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -22,6 +22,10 @@ if TYPE_CHECKING:
     from ..config import EmbyConfig
 
 logger = structlog.get_logger()
+
+_TRANSPORT_ERRORS = (HTTPError, InvalidURL)
+"""要转成 ``EmbyError`` 的传输层异常. ``InvalidURL`` 不在 ``HTTPError`` 之下: ``emby.url`` 写错端口
+(``http://host:port``) 时它在构造请求阶段就抛出, 漏掉会让原始异常穿到调用方."""
 
 _PAGE_SIZE = 500
 """人物列表一页的条数; 逐页取到不足一页为止."""
@@ -85,7 +89,12 @@ class EmbyClient:
         await self._client.aclose()
 
     async def list_persons(self) -> list[EmbyPerson]:
-        """取回服务器上的全部人物条目."""
+        """取回服务器上的全部人物条目.
+
+        以响应里的 ``TotalRecordCount`` 判定读完, 并按本次**实际返回**的条数推进 ``startIndex``:
+        服务器可以把 ``limit`` 收到自己的上限, 按请求值推进会跳过中间的人物. 响应没有总数时退回
+        「不足一页即读完」, 此时服务器的分页形态只能真机确认.
+        """
         persons: list[EmbyPerson] = []
         start = 0
         while True:
@@ -101,11 +110,16 @@ class EmbyClient:
             items = payload.get("Items")
             if not isinstance(items, list):
                 raise EmbyError("人物列表响应缺少 Items")
-            page = [person for item in items if isinstance(item, dict) and (person := EmbyPerson.from_dto(item))]
-            persons.extend(page)
-            if len(items) < _PAGE_SIZE:
+            if not items:
                 return persons
-            start += _PAGE_SIZE
+            persons.extend(person for item in items if isinstance(item, dict) and (person := EmbyPerson.from_dto(item)))
+            total = payload.get("TotalRecordCount")
+            if isinstance(total, int):
+                if len(persons) >= total:
+                    return persons
+            elif len(items) < _PAGE_SIZE:
+                return persons
+            start += len(items)
 
     async def search_persons(self, term: str, *, limit: int = 50) -> list[EmbyPerson]:
         """按名字检索人物; 服务器的检索是模糊的, 精确匹配由调用方完成."""
@@ -136,8 +150,8 @@ class EmbyClient:
     async def _get_json(self, path: str, params: Mapping[str, Any]) -> dict[str, Any]:
         try:
             resp = await self._client.get(self._base + path, params=dict(params), headers=self._headers())
-        except HTTPError as exc:
-            raise EmbyError(f"连接失败: {exc}") from exc
+        except _TRANSPORT_ERRORS as exc:
+            raise EmbyError(f"连接失败: {exc} (检查 emby.url)") from exc
         self._raise_for_status(resp.status_code, resp.text)
         try:
             payload = resp.json()
@@ -159,8 +173,8 @@ class EmbyClient:
             resp = await self._client.post(
                 self._base + path, json=json, content=content, headers={**self._headers(), **(headers or {})}
             )
-        except HTTPError as exc:
-            raise EmbyError(f"连接失败: {exc}") from exc
+        except _TRANSPORT_ERRORS as exc:
+            raise EmbyError(f"连接失败: {exc} (检查 emby.url)") from exc
         self._raise_for_status(resp.status_code, resp.text)
 
     def _headers(self) -> dict[str, str]:
