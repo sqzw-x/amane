@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, NoReturn
 
 from sqlalchemy import Boolean, Column, Index, String, Text, UniqueConstraint, or_, text
 from sqlalchemy.sql.elements import ColumnElement
@@ -152,6 +152,29 @@ SCRAPE_FACET_KINDS: frozenset[FacetKind] = frozenset(
 )
 
 
+class _HasSubtitleProperty(property):
+    """``MediaFile.has_subtitle`` 的实现, 只允许实例访问.
+
+    类属性访问得到的是描述符本身, 与布尔值比较恒不相等: 该名字写进 SQL 表达式
+    (例如 ``MediaFile.has_subtitle == True``) 不报错, 会静默编译出 ``WHERE false`` 并返回空集.
+    因此比较与真值判断直接报错, 该误用无法静默通过; SQL 判定中字一律用 ``has_subtitle_predicate()``.
+    """
+
+    __hash__ = property.__hash__
+
+    def _reject(self) -> NoReturn:
+        raise TypeError("MediaFile.has_subtitle 只可用于实例; SQL 判定请用 has_subtitle_predicate()")
+
+    def __eq__(self, other: object) -> bool:
+        self._reject()
+
+    def __ne__(self, other: object) -> bool:
+        self._reject()
+
+    def __bool__(self) -> bool:
+        self._reject()
+
+
 class MediaFile(SQLModel, table=True):
     __tablename__ = "media_files"  # type: ignore[assignment]
 
@@ -177,7 +200,7 @@ class MediaFile(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
-    @property
+    @_HasSubtitleProperty
     def has_subtitle(self) -> bool:
         """文件名标记与同目录字幕命中任一即真."""
         return self.has_subtitle_in_name or self.has_external_subtitle
@@ -186,7 +209,7 @@ class MediaFile(SQLModel, table=True):
 def has_subtitle_predicate() -> ColumnElement[bool]:
     """`MediaFile.has_subtitle` 的 SQL 等价式: 文件名标记或同目录字幕命中.
 
-    该 property 不能出现在 SQL 表达式里, 判定中字的查询与筛选一律走这里; 两处口径必须一致.
+    判定中字的查询与筛选一律走这里, 与实例属性口径必须一致.
     """
     return or_(col(MediaFile.has_subtitle_in_name).is_(True), col(MediaFile.has_external_subtitle).is_(True))
 
