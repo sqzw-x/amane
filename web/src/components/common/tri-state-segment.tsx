@@ -6,7 +6,6 @@
  */
 
 import { Input, SegmentedControl } from "@mantine/core";
-import { useTranslation } from "react-i18next";
 
 /** URL 上的三态取值; 缺省为不限. */
 export type TriState = "true" | "false";
@@ -15,6 +14,7 @@ export interface TriStateSegmentProps {
   label: string;
   /** 缺省为不限. */
   value: TriState | undefined;
+  anyLabel: string;
   yesLabel: string;
   noLabel: string;
   onChange: (next: TriState | undefined) => void;
@@ -23,11 +23,11 @@ export interface TriStateSegmentProps {
 export function TriStateSegment({
   label,
   value,
+  anyLabel,
   yesLabel,
   noLabel,
   onChange,
 }: TriStateSegmentProps) {
-  const { t } = useTranslation("metadata");
   return (
     <Input.Wrapper label={label} size="sm">
       <SegmentedControl
@@ -38,7 +38,7 @@ export function TriStateSegment({
           else onChange(undefined);
         }}
         data={[
-          { value: "any", label: t("favorite.filterAny") },
+          { value: "any", label: anyLabel },
           { value: "true", label: yesLabel },
           { value: "false", label: noLabel },
         ]}

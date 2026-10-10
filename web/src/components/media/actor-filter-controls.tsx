@@ -259,6 +259,7 @@ export function ActorFilterControls({ opened, committed, onApply }: ActorFilterC
           <TriStateSegment
             label={t("actors.filterPerson")}
             value={draft.has_person}
+            anyLabel={t("search.hasFilesAny")}
             yesLabel={t("actors.filterHasPerson")}
             noLabel={t("actors.filterNoPerson")}
             onChange={(has_person) => patchDraft({ has_person })}
@@ -266,6 +267,7 @@ export function ActorFilterControls({ opened, committed, onApply }: ActorFilterC
           <TriStateSegment
             label={t("actors.filterImage")}
             value={draft.has_image}
+            anyLabel={t("search.hasFilesAny")}
             yesLabel={t("actors.filterHasImage")}
             noLabel={t("actors.filterNoImage")}
             onChange={(has_image) => patchDraft({ has_image })}

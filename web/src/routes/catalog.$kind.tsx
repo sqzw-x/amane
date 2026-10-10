@@ -292,6 +292,7 @@ function CatalogKindPage() {
             <TriStateSegment
               label={t("favorite.filterLabel")}
               value={search.favorite}
+              anyLabel={t("favorite.filterAny")}
               yesLabel={t("favorite.filterYes")}
               noLabel={t("favorite.filterNo")}
               onChange={(favorite) =>
