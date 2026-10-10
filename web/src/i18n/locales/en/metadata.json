@@ -201,7 +201,6 @@
   "favorite": {
     "add": "Favorite",
     "remove": "Unfavorite",
-    "batchUpdated": "Updated favorites for {{count}} categories",
     "filterLabel": "Favorite",
     "filterAny": "Any",
     "filterYes": "Favorited",
