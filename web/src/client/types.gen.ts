@@ -1016,6 +1016,20 @@ export type ErrorRow = {
 };
 
 /**
+ * FacetFavoriteRequest
+ *
+ * 收藏位整体赋值; 重复提交同一取值不改变结果.
+ */
+export type FacetFavoriteRequest = {
+    /**
+     * Is Favorite
+     *
+     * 是否收藏
+     */
+    is_favorite: boolean;
+};
+
+/**
  * FacetKind
  */
 export type FacetKind = 'actor' | 'director' | 'tag' | 'studio' | 'publisher' | 'series' | 'user_tag';
@@ -1078,6 +1092,10 @@ export type FacetResponse = {
      * Count
      */
     count: number;
+    /**
+     * Is Favorite
+     */
+    is_favorite: boolean;
 };
 
 /**
@@ -6641,6 +6659,12 @@ export type ListFacetsData = {
          */
         search?: string | null;
         /**
+         * Favorite
+         *
+         * Filter by favorite marker
+         */
+        favorite?: boolean | null;
+        /**
          * Offset
          */
         offset?: number;
@@ -6828,6 +6852,37 @@ export type RenameFacetResponses = {
 };
 
 export type RenameFacetResponse = RenameFacetResponses[keyof RenameFacetResponses];
+
+export type SetFacetFavoriteData = {
+    body: FacetFavoriteRequest;
+    path: {
+        kind: FacetKind;
+        /**
+         * Facet Id
+         */
+        facet_id: number;
+    };
+    query?: never;
+    url: '/api/facets/{kind}/{facet_id}/favorite';
+};
+
+export type SetFacetFavoriteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetFacetFavoriteError = SetFacetFavoriteErrors[keyof SetFacetFavoriteErrors];
+
+export type SetFacetFavoriteResponses = {
+    /**
+     * Successful Response
+     */
+    200: FacetResponse;
+};
+
+export type SetFacetFavoriteResponse = SetFacetFavoriteResponses[keyof SetFacetFavoriteResponses];
 
 export type MergeFacetsData = {
     body: FacetMergeRequest;

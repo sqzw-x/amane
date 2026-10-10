@@ -1747,6 +1747,22 @@ export const ErrorRowSchema = {
     description: '回合异常; 文案直接进助手气泡.'
 } as const;
 
+export const FacetFavoriteRequestSchema = {
+    properties: {
+        is_favorite: {
+            type: 'boolean',
+            title: 'Is Favorite',
+            description: '是否收藏'
+        }
+    },
+    type: 'object',
+    required: [
+        'is_favorite'
+    ],
+    title: 'FacetFavoriteRequest',
+    description: '收藏位整体赋值; 重复提交同一取值不改变结果.'
+} as const;
+
 export const FacetKindSchema = {
     type: 'string',
     enum: [
@@ -1836,13 +1852,18 @@ export const FacetResponseSchema = {
         count: {
             type: 'integer',
             title: 'Count'
+        },
+        is_favorite: {
+            type: 'boolean',
+            title: 'Is Favorite'
         }
     },
     type: 'object',
     required: [
         'id',
         'name',
-        'count'
+        'count',
+        'is_favorite'
     ],
     title: 'FacetResponse'
 } as const;

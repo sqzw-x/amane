@@ -9,6 +9,14 @@ class FacetResponse(BaseModel):
     id: int
     name: str
     count: int
+    #: 不支持收藏的分类恒为假.
+    is_favorite: bool
+
+
+class FacetFavoriteRequest(BaseModel):
+    """收藏位整体赋值; 重复提交同一取值不改变结果."""
+
+    is_favorite: bool = Field(description="是否收藏")
 
 
 class FacetListResponse(BaseModel):

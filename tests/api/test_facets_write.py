@@ -149,3 +149,61 @@ async def test_actor_merge_via_http_carries_user_tags(client: AsyncClient, repo:
     tags = (await client.get(f"actors/{target}")).json()["user_tags"]
     assert [t["name"] for t in tags] == ["收藏"]
     assert (await client.get(f"actors/{source}")).status_code == 404
+
+
+async def _facet_id(client: AsyncClient, kind: str, name: str) -> int:
+    """测试便捷入口: 按名称取回分类 id."""
+    resp = await client.get(f"facets/{kind}?search={name}")
+    assert resp.status_code == 200
+    return next(i["id"] for i in resp.json()["items"] if i["name"] == name)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_facet_favorite_http(client: AsyncClient, repo: Repository) -> None:
+    """收藏端点与筛选的接线: 状态码、响应字段与不支持收藏的分类."""
+    await repo.upsert_metadata(number="HTTP-FV-1", studio="FavStudio")
+    await repo.upsert_metadata(number="HTTP-FV-2", studio="PlainStudio", tags=["FavTag"], actors=["Alice"])
+    studio_id = await _facet_id(client, "studio", "FavStudio")
+
+    listed = (await client.get("facets/studio")).json()["items"]
+    assert listed and all(i["is_favorite"] is False for i in listed)
+
+    marked = await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": True})
+    assert marked.status_code == 200
+    assert marked.json()["is_favorite"] is True
+    assert marked.json()["name"] == "FavStudio"
+    assert (await client.get(f"facets/studio/{studio_id}")).json()["is_favorite"] is True
+
+    only_favorite = (await client.get("facets/studio?favorite=true")).json()
+    assert [i["name"] for i in only_favorite["items"]] == ["FavStudio"]
+    assert only_favorite["total"] == 1
+    without = (await client.get("facets/studio?favorite=false")).json()
+    assert [i["name"] for i in without["items"]] == ["PlainStudio"]
+
+    # 幂等: 重复提交同一取值, 取消后回到假值
+    assert (await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": True})).status_code == 200
+    cleared = await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": False})
+    assert cleared.status_code == 200 and cleared.json()["is_favorite"] is False
+    assert (await client.get("facets/studio?favorite=true")).json()["items"] == []
+
+    assert (await client.put("facets/studio/9999/favorite", json={"is_favorite": True})).status_code == 404
+    assert (await client.get("facets/studio/9999")).status_code == 404
+
+    # 非法请求体: 缺字段、类型不符与显式 null 都是 422; 未知分类同样由 schema 拒绝
+    assert (await client.put(f"facets/studio/{studio_id}/favorite", json={})).status_code == 422
+    assert (await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": "maybe"})).status_code == 422
+    assert (await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": None})).status_code == 422
+    assert (await client.put("facets/not_a_kind/1/favorite", json={"is_favorite": True})).status_code == 422
+
+    # 不支持收藏的分类: 写与筛选都是 400, 与筛选取值无关
+    tag_id = await _facet_id(client, "tag", "FavTag")
+    actor_id = await _facet_id(client, "actor", "Alice")
+    for kind, facet_id in (("actor", actor_id), ("director", 9999), ("user_tag", 9999)):
+        assert (await client.put(f"facets/{kind}/{facet_id}/favorite", json={"is_favorite": True})).status_code == 400
+        for value in ("true", "false"):
+            assert (await client.get(f"facets/{kind}?favorite={value}")).status_code == 400
+    assert (await client.get("facets/actor")).json()["items"][0]["is_favorite"] is False
+
+    # 链接分类 (tag) 与标量分类的列表都带该字段
+    assert (await client.get("facets/tag")).json()["items"][0]["is_favorite"] is False
+    assert await _facet_id(client, "tag", "FavTag") == tag_id

@@ -3,11 +3,12 @@ from typing import Annotated
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from ...db.models import SCRAPE_FACET_KINDS, FacetKind, FacetSortField, SortOrder
+from ...db.models import FAVORITE_FACET_KINDS, SCRAPE_FACET_KINDS, FacetKind, FacetSortField, SortOrder
 from ...db.repo_types import FacetItem
 from ...utils.model import to_resp
 from ..deps import RepoDep
 from ..models import (
+    FacetFavoriteRequest,
     FacetListResponse,
     FacetMergeRequest,
     FacetRenameRequest,
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/facets", tags=["facets"])
 
 
 def _facet_response(item: FacetItem) -> FacetResponse:
-    return FacetResponse(id=item.id, name=item.name, count=item.count)
+    return FacetResponse(id=item.id, name=item.name, count=item.count, is_favorite=item.is_favorite)
 
 
 @router.post("/user_tag")
@@ -41,12 +42,18 @@ async def list_facets(
     kind: FacetKind,
     repo: RepoDep,
     search: Annotated[str | None, Query()] = None,
+    favorite: Annotated[bool | None, Query(description="Filter by favorite marker")] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=1000)] = 50,
     sort_by: Annotated[FacetSortField, Query(description="Sort field")] = FacetSortField.NAME,
     order: Annotated[SortOrder, Query(description="Sort order")] = SortOrder.ASC,
 ) -> FacetListResponse:
-    items, total = await repo.list_facets(kind, search=search, offset=offset, limit=limit, sort_by=sort_by, order=order)
+    # 传了参数就要求该分类支持收藏, 与取值无关; 静默忽略会让调用方以为筛选生效.
+    if favorite is not None and kind not in FAVORITE_FACET_KINDS:
+        raise HTTPException(status_code=400, detail="该分类不支持收藏")
+    items, total = await repo.list_facets(
+        kind, search=search, favorite=favorite, offset=offset, limit=limit, sort_by=sort_by, order=order
+    )
     return FacetListResponse(items=[_facet_response(i) for i in items], total=total)
 
 
@@ -94,6 +101,18 @@ async def get_facet(kind: FacetKind, facet_id: int, repo: RepoDep) -> FacetRespo
     item = await repo.get_facet(kind, facet_id)
     if item is None:
         raise HTTPException(status_code=404, detail="分类不存在")
+    return _facet_response(item)
+
+
+@router.put("/{kind}/{facet_id}/favorite")
+async def set_facet_favorite(kind: FacetKind, facet_id: int, req: FacetFavoriteRequest, repo: RepoDep) -> FacetResponse:
+    """整体赋值收藏位; 重复提交同一取值不改变结果. 分类不支持收藏返回 400."""
+    if kind not in FAVORITE_FACET_KINDS:
+        raise HTTPException(status_code=400, detail="该分类不支持收藏")
+    item = await repo.set_facet_favorite(kind, facet_id, req.is_favorite)
+    if item is None:
+        raise HTTPException(status_code=404, detail="分类不存在")
+    logger.info("facet favorite set", kind=kind, facet_id=facet_id, is_favorite=req.is_favorite)
     return _facet_response(item)
 
 

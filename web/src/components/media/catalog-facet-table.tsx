@@ -20,6 +20,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createUserTagsMutation, listFacetsQueryKey } from "@/client/@tanstack/react-query.gen";
 import type { FacetKind, FacetResponse, FacetSortField, SortOrder } from "@/client/types.gen";
+import { FacetFavoriteStar } from "./facet-favorite-star";
 import { FacetRulesPanel } from "./facet-rules-panel";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
@@ -28,6 +29,8 @@ import { SortableTh } from "@/components/common/sortable-th";
 import { useFacetIdentityActions } from "@/hooks/use-facet-identity-actions";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { extractErrorMessage } from "@/lib/api-error";
+import { isOneOf } from "@/lib/exhaustive";
+import { FAVORITE_FACET_KINDS } from "@/lib/exhaustive-maps";
 import { useUIStore } from "@/stores/ui";
 import classes from "./catalog-facet-table.module.css";
 
@@ -66,6 +69,8 @@ export function CatalogFacetTable({
     onMerged: clear,
   });
   const { isUserTag } = identity;
+  // 收藏只在支持该分类的 kind 上渲染; 窄屏动作列只容得下一个按钮, 收藏改在详情页标题行.
+  const isFavoriteKind = isOneOf(FAVORITE_FACET_KINDS, kind);
 
   const [newTagName, setNewTagName] = useState("");
 
@@ -182,8 +187,15 @@ export function CatalogFacetTable({
                   <Badge variant="light">{facet.count}</Badge>
                 </Table.Td>
                 <Table.Td>
-                  {/* 窄屏动作列只容得下一个按钮, 三个动作移入菜单. */}
+                  {/* 窄屏动作列只容得下一个按钮, 其余动作移入菜单. */}
                   <Group gap={4} justify="flex-end" wrap="nowrap" visibleFrom="sm">
+                    {isFavoriteKind && (
+                      <FacetFavoriteStar
+                        kind={kind}
+                        facetId={facet.id}
+                        isFavorite={facet.is_favorite}
+                      />
+                    )}
                     <HintedActionIcon
                       variant="subtle"
                       label={t("common:actions.edit")}

@@ -23,9 +23,10 @@ import {
 import type { FacetKind } from "@/client/types.gen";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
 import { ActorCardGrid } from "@/components/media/actor-grid";
+import { FacetFavoriteStar } from "@/components/media/facet-favorite-star";
 import { PosterGrid } from "@/components/media/poster-grid";
 import { isOneOf } from "@/lib/exhaustive";
-import { CATALOG_FACET_KINDS } from "@/lib/exhaustive-maps";
+import { CATALOG_FACET_KINDS, FAVORITE_FACET_KINDS } from "@/lib/exhaustive-maps";
 import { FACET_FILTER_PARAM, metaSearchForFacet } from "@/lib/facets";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
 
@@ -102,6 +103,10 @@ function FacetDetailPage() {
       <Group gap="sm" align="center" justify="space-between" wrap="wrap">
         <Group gap="sm" align="center">
           {facetLoading ? <Loader size="sm" /> : <Title order={2}>{facet?.name}</Title>}
+          {/* 窄屏列表视图没有动作列, 收藏一律在这里操作. */}
+          {facet && isOneOf(FAVORITE_FACET_KINDS, kind) && (
+            <FacetFavoriteStar kind={kind} facetId={facet.id} isFavorite={facet.is_favorite} />
+          )}
           {facet && !isUserTag && (
             <Badge size="lg" variant="light">
               {t("browse.count", { count: facet.count })}

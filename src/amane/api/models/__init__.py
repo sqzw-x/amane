@@ -10,6 +10,7 @@ from .actors import (
 from .comments import CommentCreateRequest, CommentResponse, CommentUpdateRequest
 from .crop import CropBoxRequest
 from .facets import (
+    FacetFavoriteRequest,
     FacetListResponse,
     FacetMergeRequest,
     FacetRenameRequest,
@@ -116,6 +117,7 @@ __all__ = [
     "CropPosterRequest",
     "DeleteSubmission",
     "DesktopResponse",
+    "FacetFavoriteRequest",
     "FacetListResponse",
     "FacetMergeRequest",
     "FacetRenameRequest",

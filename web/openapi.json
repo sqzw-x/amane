@@ -3260,6 +3260,24 @@
             }
           },
           {
+            "name": "favorite",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by favorite marker",
+              "title": "Favorite"
+            },
+            "description": "Filter by favorite marker"
+          },
+          {
             "name": "offset",
             "in": "query",
             "required": false,
@@ -3551,6 +3569,67 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/facets/{kind}/{facet_id}/favorite": {
+      "put": {
+        "tags": [
+          "facets"
+        ],
+        "summary": "Set Facet Favorite",
+        "description": "整体赋值收藏位; 重复提交同一取值不改变结果. 分类不支持收藏返回 400.",
+        "operationId": "set_facet_favorite",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FacetKind"
+            }
+          },
+          {
+            "name": "facet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Facet Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacetFavoriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacetResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -7776,6 +7855,21 @@
         "title": "ErrorRow",
         "description": "回合异常; 文案直接进助手气泡."
       },
+      "FacetFavoriteRequest": {
+        "properties": {
+          "is_favorite": {
+            "type": "boolean",
+            "title": "Is Favorite",
+            "description": "是否收藏"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_favorite"
+        ],
+        "title": "FacetFavoriteRequest",
+        "description": "收藏位整体赋值; 重复提交同一取值不改变结果."
+      },
       "FacetKind": {
         "type": "string",
         "enum": [
@@ -7861,13 +7955,18 @@
           "count": {
             "type": "integer",
             "title": "Count"
+          },
+          "is_favorite": {
+            "type": "boolean",
+            "title": "Is Favorite"
           }
         },
         "type": "object",
         "required": [
           "id",
           "name",
-          "count"
+          "count",
+          "is_favorite"
         ],
         "title": "FacetResponse"
       },
