@@ -2849,6 +2849,11 @@ export const HotSettingsSchema = {
                 site_config: {
                     airav: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2856,6 +2861,11 @@ export const HotSettingsSchema = {
                     },
                     avbase: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2863,6 +2873,11 @@ export const HotSettingsSchema = {
                     },
                     avsox: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2870,6 +2885,11 @@ export const HotSettingsSchema = {
                     },
                     dahlia: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2877,6 +2897,11 @@ export const HotSettingsSchema = {
                     },
                     dmm: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2884,6 +2909,11 @@ export const HotSettingsSchema = {
                     },
                     faleno: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2891,6 +2921,11 @@ export const HotSettingsSchema = {
                     },
                     fc2: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2898,6 +2933,11 @@ export const HotSettingsSchema = {
                     },
                     fc2club: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2905,6 +2945,11 @@ export const HotSettingsSchema = {
                     },
                     fc2ppvdb: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2912,6 +2957,11 @@ export const HotSettingsSchema = {
                     },
                     freejavbt: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2919,6 +2969,11 @@ export const HotSettingsSchema = {
                     },
                     getchu: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2926,6 +2981,11 @@ export const HotSettingsSchema = {
                     },
                     gfriends: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2933,6 +2993,11 @@ export const HotSettingsSchema = {
                     },
                     giga: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2940,6 +3005,11 @@ export const HotSettingsSchema = {
                     },
                     iqqtv: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2947,6 +3017,11 @@ export const HotSettingsSchema = {
                     },
                     jav321: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2954,6 +3029,11 @@ export const HotSettingsSchema = {
                     },
                     javbus: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2961,6 +3041,11 @@ export const HotSettingsSchema = {
                     },
                     javdb: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2968,6 +3053,11 @@ export const HotSettingsSchema = {
                     },
                     javlibrary: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2975,6 +3065,11 @@ export const HotSettingsSchema = {
                     },
                     kin8: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2982,6 +3077,11 @@ export const HotSettingsSchema = {
                     },
                     mgstage: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2989,6 +3089,11 @@ export const HotSettingsSchema = {
                     },
                     minnano: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -2996,6 +3101,11 @@ export const HotSettingsSchema = {
                     },
                     official: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -3003,6 +3113,11 @@ export const HotSettingsSchema = {
                     },
                     prestige: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -3010,6 +3125,11 @@ export const HotSettingsSchema = {
                     },
                     r18dev: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -3017,6 +3137,11 @@ export const HotSettingsSchema = {
                     },
                     theporndb: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -3024,6 +3149,11 @@ export const HotSettingsSchema = {
                     },
                     wikipedia: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -3031,6 +3161,11 @@ export const HotSettingsSchema = {
                     },
                     xcity: {
                         cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
                         official_routes: {},
                         rate_limit: 2,
                         use_browser: 'auto',
@@ -7760,6 +7895,23 @@ export const SiteConfigSchema = {
             ],
             title: 'Rate Limit',
             default: 2
+        },
+        languages: {
+            items: {
+                type: 'string',
+                enum: [
+                    'zh',
+                    'ja',
+                    'en'
+                ]
+            },
+            type: 'array',
+            title: 'Languages',
+            description: '词条语言优先级, 依序取第一个有正文的词条',
+            'x-ordered': true,
+            'x-visible-keys': [
+                'wikipedia'
+            ]
         }
     },
     type: 'object',

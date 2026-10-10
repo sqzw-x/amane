@@ -8919,6 +8919,11 @@
               "site_config": {
                 "airav": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8926,6 +8931,11 @@
                 },
                 "avbase": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8933,6 +8943,11 @@
                 },
                 "avsox": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8940,6 +8955,11 @@
                 },
                 "dahlia": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8947,6 +8967,11 @@
                 },
                 "dmm": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8954,6 +8979,11 @@
                 },
                 "faleno": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8961,6 +8991,11 @@
                 },
                 "fc2": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8968,6 +9003,11 @@
                 },
                 "fc2club": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8975,6 +9015,11 @@
                 },
                 "fc2ppvdb": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8982,6 +9027,11 @@
                 },
                 "freejavbt": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8989,6 +9039,11 @@
                 },
                 "getchu": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -8996,6 +9051,11 @@
                 },
                 "gfriends": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9003,6 +9063,11 @@
                 },
                 "giga": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9010,6 +9075,11 @@
                 },
                 "iqqtv": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9017,6 +9087,11 @@
                 },
                 "jav321": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9024,6 +9099,11 @@
                 },
                 "javbus": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9031,6 +9111,11 @@
                 },
                 "javdb": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9038,6 +9123,11 @@
                 },
                 "javlibrary": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9045,6 +9135,11 @@
                 },
                 "kin8": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9052,6 +9147,11 @@
                 },
                 "mgstage": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9059,6 +9159,11 @@
                 },
                 "minnano": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9066,6 +9171,11 @@
                 },
                 "official": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9073,6 +9183,11 @@
                 },
                 "prestige": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9080,6 +9195,11 @@
                 },
                 "r18dev": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9087,6 +9207,11 @@
                 },
                 "theporndb": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9094,6 +9219,11 @@
                 },
                 "wikipedia": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -9101,6 +9231,11 @@
                 },
                 "xcity": {
                   "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
                   "official_routes": {},
                   "rate_limit": 2.0,
                   "use_browser": "auto",
@@ -13738,6 +13873,23 @@
             ],
             "title": "Rate Limit",
             "default": 2
+          },
+          "languages": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "zh",
+                "ja",
+                "en"
+              ]
+            },
+            "type": "array",
+            "title": "Languages",
+            "description": "词条语言优先级, 依序取第一个有正文的词条",
+            "x-ordered": true,
+            "x-visible-keys": [
+              "wikipedia"
+            ]
           }
         },
         "type": "object",

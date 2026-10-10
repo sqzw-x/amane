@@ -4035,6 +4035,12 @@ export type SiteConfig = {
      * Rate Limit
      */
     rate_limit?: number | null;
+    /**
+     * Languages
+     *
+     * 词条语言优先级, 依序取第一个有正文的词条
+     */
+    languages?: Array<'zh' | 'ja' | 'en'>;
 };
 
 /**

@@ -369,6 +369,17 @@
           "rate_limit": {
             "label": "速率限制",
             "description": "该站点每秒请求上限"
+          },
+          "languages": {
+            "label": "语言优先级",
+            "description": "按顺序取第一个有正文的词条",
+            "$": {
+              "options": {
+                "zh": "中文",
+                "ja": "日文",
+                "en": "英文"
+              }
+            }
           }
         }
       },
