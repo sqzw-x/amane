@@ -56,7 +56,7 @@ _SEARCH_CANDIDATE_LIMIT = 5
 WIKI_LANGUAGES: tuple[str, ...] = ("zh", "ja", "en")
 
 # 词条 URL 的变体路径段: 中文维基的 wiki/ 不转换原文, 取简体正文必须改用变体路径.
-_WIKI_VARIANTS: dict[str, str] = {"zh": "zh-hans"}
+_WIKI_VARIANTS: dict[str, str] = {"zh": "zh-cn"}
 
 _PARSER_OUTPUT_CLASS = "mw-parser-output"
 _PARSER_OUTPUT = f".{_PARSER_OUTPUT_CLASS}"
