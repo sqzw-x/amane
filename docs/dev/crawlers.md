@@ -103,7 +103,7 @@ Cloudflare managed challenge 只能执行 JS 越过, 因此受保护的来源经
 3. 导出后 `registry.register` / `actor_registry.register`. 双料站两个类用同一 `SiteName` 各注册一次; 不允许修改 `site_roles` 常量. 演员 `register` 顺序即默认 `profile_sites` 优先级. 需要 cookie / token 时给 `SiteConfig` 加字段.
 4. 加 TOML 用例 (见 [crawler-testing.md](crawler-testing.md)) 并 `just test`.
 
-长文本字段 (`plot` / 演员 `overview`) 由来源产出: 维基来源拼装导语与人物 / 简历类章节, 其余多为上游原文; HTML 片段、实体、异体空白由聚合输出统一归一, 契约见 [data-model.md](data-model.md). **爬虫不得自行 unescape / 转义 / 转换行** — 自行处理会让归一退化成二次解码.
+长文本字段 (`plot` / 演员 `overview`) 由来源产出: 维基来源拼装导语与人物 / 简历类章节, 其余多为上游原文; HTML 片段、实体、异体空白由聚合输出统一归一, 契约见 [data-model.md](data-model.md). **爬虫不得自行 unescape / 转义 / 转换行** — 这样会让归一退化成二次解码.
 
 ## 特殊数据源: r18.dev 离线 PG 镜像
 
