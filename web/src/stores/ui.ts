@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ColumnWidths } from "@/hooks/use-resizable-columns";
+import { type LibraryCreateConfig, libraryCreateConfigSchema } from "@/lib/library/create-config";
 import {
   DEFAULT_METADATA_SORT_PREFERENCE,
   type MetadataSortPreference,
@@ -83,6 +84,12 @@ interface UIState {
    * 该页没有其它导航态, 排序不写地址栏, 由这里在会话之间保留; 片库排序仍以 URL 为准.
    */
   actorWorksSort: MetadataSortPreference;
+  /**
+   * 「新增媒体库」上一次成功创建时填写的配置; 打开创建弹窗时作为初值.
+   *
+   * 读取经 `lib/library/create-config.ts` 的 schema 校验, 非法项整体丢弃 (字段间无兜底关系).
+   */
+  libraryCreateConfig: LibraryCreateConfig | undefined;
   toggleNavbar: () => void;
   setNavbarCollapsed: (collapsed: boolean) => void;
   setTheme: (theme: Theme) => void;
@@ -96,6 +103,7 @@ interface UIState {
   setListDefault: (update: NavListDefaultsUpdate) => void;
   clearListDefault: (key: NavListKey) => void;
   setActorWorksSort: (sort: MetadataSortPreference) => void;
+  setLibraryCreateConfig: (config: LibraryCreateConfig | undefined) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -112,6 +120,7 @@ export const useUIStore = create<UIState>()(
       playbackSourceOrder: [],
       listDefaults: {},
       actorWorksSort: { ...DEFAULT_METADATA_SORT_PREFERENCE },
+      libraryCreateConfig: undefined,
       toggleNavbar: () => set((s) => ({ navbarCollapsed: !s.navbarCollapsed })),
       setNavbarCollapsed: (collapsed) => set({ navbarCollapsed: collapsed }),
       setTheme: (theme) => set({ theme }),
@@ -130,6 +139,7 @@ export const useUIStore = create<UIState>()(
       clearListDefault: (key) =>
         set((state) => ({ listDefaults: withoutListDefault(state.listDefaults, key) })),
       setActorWorksSort: (sort) => set({ actorWorksSort: sort }),
+      setLibraryCreateConfig: (config) => set({ libraryCreateConfig: config }),
     }),
     {
       name: STORAGE_KEY,
@@ -159,6 +169,7 @@ export const useUIStore = create<UIState>()(
           actorWorksSort: metadataSortPreferenceSchema.safeParse(p?.actorWorksSort).data ?? {
             ...DEFAULT_METADATA_SORT_PREFERENCE,
           },
+          libraryCreateConfig: libraryCreateConfigSchema.safeParse(p?.libraryCreateConfig).data,
         };
       },
     },

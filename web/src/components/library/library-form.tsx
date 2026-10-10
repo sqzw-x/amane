@@ -40,6 +40,7 @@ import {
   LIBRARY_AUTOMATIONS,
   LIBRARY_INGESTS,
   LINK_MODES,
+  MOVE_MODES,
 } from "@/lib/exhaustive-maps";
 import classes from "./library-form.module.css";
 import { templateCatalogFromPlaceholders } from "./template-highlight";
@@ -65,8 +66,6 @@ const OPTIONAL_TEMPLATE_KEYS = [
   "trailer_template",
   "subtitle_template",
 ] as const satisfies readonly (keyof OptionalPathTemplateDefaults)[];
-
-const MOVE_MODES: readonly LibraryResponse["move_mode"][] = ["move", "copy", "hardlink", "symlink"];
 
 const BYTES_PER_MB = 1024 * 1024;
 

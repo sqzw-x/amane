@@ -33,6 +33,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  batchActorUserTagsMutation,
   clearActorPersonMutation,
   deleteFacetMutation,
   getActorOptions,
@@ -51,6 +52,7 @@ import { SortMenu } from "@/components/common/sort-menu";
 import { ActorAvatarCropDialog } from "@/components/media/actor-avatar-crop-dialog";
 import { ActorEditDialog } from "@/components/media/actor-edit-dialog";
 import { ActorUserTags } from "@/components/media/actor-user-tags";
+import { FavoriteStarToggle } from "@/components/media/user-tag-star";
 import { ClearPersonNotice } from "@/components/media/clear-person-notice";
 import { FanartLightbox } from "@/components/media/fanart-lightbox";
 import { LockChip, LockToggle, type LockProps } from "@/components/media/field-lock";
@@ -468,6 +470,8 @@ function ActorHero({
 }) {
   const { t } = useTranslation(["metadata", "common"]);
   const [lightboxOpen, lightbox] = useDisclosure(false);
+  const queryClient = useQueryClient();
+  const favoriteMutation = useMutation(batchActorUserTagsMutation());
   const imageUrls = actor.image_urls ?? [];
   const primaryImage = imageUrls[0];
   const aliases = actor.aliases ?? [];
@@ -486,6 +490,18 @@ function ActorHero({
       ? t("actors.birthdayWithAge", { date: actor.birthday, age })
       : actor.birthday
     : null;
+
+  /** 收藏星标的提交入口; 失败时抛出, 由星标回滚乐观状态并提示. 详情重取由星标统一发起. */
+  async function applyFavorite(favorited: boolean, tagId: number) {
+    await favoriteMutation.mutateAsync({
+      body: {
+        ids: [actor.id],
+        user_tag_ids: [tagId],
+        action: favorited ? "attach" : "detach",
+      },
+    });
+    void queryClient.invalidateQueries({ queryKey: listActorsQueryKey() });
+  }
 
   return (
     <Group align="flex-start" gap="xl" wrap="wrap" style={{ minWidth: 0 }}>
@@ -574,6 +590,11 @@ function ActorHero({
       <Stack gap="sm" style={{ flex: "1 1 20rem", minWidth: 0 }}>
         <Group gap="sm" align="center">
           <Title order={2}>{actor.name}</Title>
+          <FavoriteStarToggle
+            tags={actor.user_tags}
+            apply={applyFavorite}
+            queryKey={getActorQueryKey({ path: { actor_id: actor.id } })}
+          />
           <Badge size="lg" variant="light">
             {t("browse.count", { count: actor.count })}
           </Badge>

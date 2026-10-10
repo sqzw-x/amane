@@ -137,6 +137,7 @@
   "fieldStrmContentTemplate": "STRM 内容模板",
   "fieldStrmContentTemplateHint": "链接方式为 STRM 时有效. 默认写入视频文件绝对路径",
   "fieldInitialRefresh": "创建后立即扫描",
+  "createReset": "重置为默认值",
   "advancedTemplates": "附属资源模板",
   "advancedTemplatesHint": "留空使用默认值",
   "optionalTemplateDefault": "默认: {{default}}",

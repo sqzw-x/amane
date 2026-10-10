@@ -58,6 +58,7 @@ import type { MetadataField, MetadataResponse } from "@/client/types.gen";
 import { FacetBadge } from "@/components/media/facet-badge";
 import { LockChip, LockToggle, type LockProps } from "@/components/media/field-lock";
 import { UserTagActions } from "@/components/media/user-tag-add";
+import { FavoriteStarToggle } from "@/components/media/user-tag-star";
 import { VrBadge } from "@/components/media/vr-badge";
 import { FanartLightbox, FanartStrip } from "@/components/media/fanart-lightbox";
 import { FilePhaseBadges, FilePhaseOverlay } from "@/components/media/file-phase-badges";
@@ -351,6 +352,14 @@ function TitleDetailPage() {
     }
   }
 
+  /** 收藏星标的提交入口; 失败时抛出, 由星标回滚乐观状态并提示. */
+  async function applyFavorite(favorited: boolean, tagId: number) {
+    await applyTagsMutation.mutateAsync({
+      body: { ids: [id], user_tag_ids: [tagId], action: favorited ? "attach" : "detach" },
+    });
+    invalidateDetail();
+  }
+
   if (!validId) {
     return (
       <Alert color="red" icon={<IconAlertCircle size={18} />}>
@@ -592,9 +601,16 @@ function TitleDetailPage() {
 
         <Stack gap="sm" style={{ flex: "2 1 280px", minWidth: 260 }}>
           <div>
-            <Title order={2} ff="monospace">
-              {item.number}
-            </Title>
+            <Group gap={4} align="center" wrap="nowrap">
+              <Title order={2} ff="monospace">
+                {item.number}
+              </Title>
+              <FavoriteStarToggle
+                tags={data.user_tags}
+                apply={applyFavorite}
+                queryKey={getMetadataQueryKey({ path: { metadata_id: id } })}
+              />
+            </Group>
             {item.title && (
               <Group gap={4} align="center" wrap="nowrap">
                 <Text c="dimmed">{item.title}</Text>

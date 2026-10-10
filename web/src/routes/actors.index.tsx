@@ -1,5 +1,6 @@
 import { ActionIcon, Badge, Group, SegmentedControl, Text, TextInput, Title } from "@mantine/core";
-import { IconFilter, IconSearch, IconTable, IconX } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
+import { IconFilter, IconSearch, IconStar, IconTable, IconX } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
 import type { ParseKeys } from "i18next";
@@ -37,10 +38,12 @@ import {
   rangeValue,
   replaceActorFilters,
 } from "@/lib/actors/browse";
+import { extractErrorMessage } from "@/lib/api-error";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 import { ACTOR_SORT_FIELDS } from "@/lib/exhaustive-maps";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
+import { useFavoriteTag } from "@/lib/media/user-tags";
 import { actorListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
 
@@ -107,10 +110,14 @@ function ActorsIndexPage() {
   const navigate = Route.useNavigate();
   const { t } = useTranslation(["metadata", "common", "savedQueries"]);
   const listLimit = useUIStore((s) => s.pageSizes.actorsList);
+  const { tagId: favoriteTagId, resolve: resolveFavoriteTag } = useFavoriteTag();
+  const favoriteActive = search.is_favorite === "true";
 
   const filters = actorFilterValuesFromSearch(search);
-  const hasActiveFilters = hasActiveActorFilters(filters) || search.saved_query_id != null;
-  const hasNonDefaultFilters = hasNonDefaultActorFilters(filters) || search.saved_query_id != null;
+  const hasActiveFilters =
+    hasActiveActorFilters(filters) || favoriteActive || search.saved_query_id != null;
+  const hasNonDefaultFilters =
+    hasNonDefaultActorFilters(filters) || favoriteActive || search.saved_query_id != null;
 
   const [searchInput, setSearchInput] = useState(search.q ?? "");
   const [advancedOpen, setAdvancedOpen] = useState(hasNonDefaultFilters);
@@ -119,7 +126,13 @@ function ActorsIndexPage() {
 
   const isList = search.view === "list";
   const offset = (search.page - 1) * listLimit;
-  const listQueryParams = actorListQueryFromSearch(search);
+  // 演员浏览没有收藏参数, 收藏夹因此折算成 user_tag_ids; 目录里还没有该标签时不筛.
+  const baseQueryParams = actorListQueryFromSearch(search);
+  const listQueryParams = {
+    ...baseQueryParams,
+    user_tag_ids:
+      favoriteActive && favoriteTagId != null ? [favoriteTagId] : baseQueryParams.user_tag_ids,
+  };
 
   // list 仅 list 视图订阅; grid 不再并行预热, 避免和无限滚动/头像抢连接.
   const listQuery = useQuery({
@@ -200,6 +213,25 @@ function ActorsIndexPage() {
     });
   }
 
+  /** 空收藏夹与「还没有收藏标签」同形: 打开筛选时按需建标签, 用户点过一次后两者不再混淆. */
+  async function toggleFavorite() {
+    if (favoriteActive) {
+      void navigate({ search: (prev) => ({ ...prev, is_favorite: undefined, page: 1 }) });
+      return;
+    }
+    try {
+      await resolveFavoriteTag();
+      void navigate({
+        search: (prev) => ({ ...prev, is_favorite: "true", user_tag_id: undefined, page: 1 }),
+      });
+    } catch (err) {
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      });
+    }
+  }
+
   return (
     <BrowsePageShell
       fill={isList}
@@ -272,6 +304,15 @@ function ActorsIndexPage() {
               }
             />
           )}
+          <HintedActionIcon
+            variant={favoriteActive ? "filled" : "default"}
+            color={favoriteActive ? "yellow" : undefined}
+            size={36}
+            label={t("search.favorite")}
+            onClick={() => void toggleFavorite()}
+          >
+            <IconStar size={16} fill={favoriteActive ? "currentColor" : undefined} />
+          </HintedActionIcon>
         </>
       }
       pageSize={
@@ -344,6 +385,14 @@ function ActorsIndexPage() {
             <ActiveUserTagChip
               tagId={filters.user_tag_id}
               onClear={() => applyFilterPatch({ user_tag_id: undefined })}
+            />
+          )}
+          {favoriteActive && (
+            <ActiveFilterChip
+              label={t("actors.filterFavorite")}
+              onClear={() =>
+                void navigate({ search: (prev) => ({ ...prev, is_favorite: undefined, page: 1 }) })
+              }
             />
           )}
           {filters.has_person != null && (

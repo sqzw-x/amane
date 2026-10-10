@@ -22,6 +22,7 @@ export const DEFAULT_ACTOR_GENDER_FILTER = ["female"] as const satisfies readonl
 export const ACTOR_FILTER_KEYS = [
   "has_person",
   "has_image",
+  "is_favorite",
   "user_tag_id",
   "gender",
   "birthday_min",
@@ -51,6 +52,8 @@ export type ActorFilterValues = {
   gender: ActorGender[];
   has_person?: ActorTriBool;
   has_image?: ActorTriBool;
+  /** 收藏夹单选; 与 `user_tag_id` 互斥 */
+  is_favorite?: ActorTriBool;
   /** 用户标签 id; 不设多选, 与面板其余单选控件同形 */
   user_tag_id?: number;
   /** 周岁下界 - 仅面板草稿, 应用时 → birthday_max */
@@ -167,6 +170,8 @@ const optionalStrSchema = z.preprocess(coerceOptionalStr, z.string().optional())
 export const actorFilterSearchSchema = z.object({
   has_person: z.enum(["true", "false"]).optional(),
   has_image: z.enum(["true", "false"]).optional(),
+  /** 收藏夹筛选; 与 `user_tag_id` 互斥, 见 `actorListQueryFromSearch`. */
+  is_favorite: z.enum(["true", "false"]).optional(),
   user_tag_id: optionalIntSchema,
   gender: genderListSchema,
   birthday_min: optionalStrSchema,
@@ -207,11 +212,17 @@ function parseTriBool(value: ActorTriBool | undefined): boolean | undefined {
   return undefined;
 }
 
+/** 用户标签筛选的查询参数; 收藏夹打开时由调用方置空 (见 `actorListQueryFromSearch`). */
+function searchUserTagIds(search: Pick<ActorsBrowseSearch, "user_tag_id">): number[] | undefined {
+  return search.user_tag_id != null ? [search.user_tag_id] : undefined;
+}
+
 export function actorFilterValuesFromSearch(search: ActorsBrowseSearch): ActorFilterValues {
   return {
     gender: resolvedActorGenders(search),
     has_person: search.has_person,
     has_image: search.has_image,
+    is_favorite: search.is_favorite,
     user_tag_id: search.user_tag_id,
     birthday_min: search.birthday_min,
     birthday_max: search.birthday_max,
@@ -231,6 +242,8 @@ export function actorFilterValuesFromSearch(search: ActorsBrowseSearch): ActorFi
 
 export function actorListQueryFromSearch(search: ActorsBrowseSearch): ActorListQuery {
   const gender = resolvedActorGenders(search);
+  // 收藏夹与用户标签筛选互斥 (URL 层面已由调用方保证), 收藏优先.
+  const userTagIds = search.is_favorite === "true" ? undefined : searchUserTagIds(search);
   return {
     search: search.q || undefined,
     sort_by: search.sort_by,
@@ -238,7 +251,7 @@ export function actorListQueryFromSearch(search: ActorsBrowseSearch): ActorListQ
     has_person: parseTriBool(search.has_person),
     has_image: parseTriBool(search.has_image),
     gender: gender.length > 0 ? gender : undefined,
-    user_tag_ids: search.user_tag_id != null ? [search.user_tag_id] : undefined,
+    user_tag_ids: userTagIds,
     birthday_min: search.birthday_min,
     birthday_max: search.birthday_max,
     height_min: search.height_min,
@@ -266,7 +279,15 @@ export function mergeActorFilterPatch(
   }
   if ("has_person" in patch) next.has_person = patch.has_person;
   if ("has_image" in patch) next.has_image = patch.has_image;
-  if ("user_tag_id" in patch) next.user_tag_id = patch.user_tag_id;
+  if ("is_favorite" in patch) {
+    next.is_favorite = patch.is_favorite;
+    // 收藏夹与具体用户标签是两种入口, 指向同一查询参数, 因此互相清除.
+    if (patch.is_favorite) next.user_tag_id = undefined;
+  }
+  if ("user_tag_id" in patch) {
+    next.user_tag_id = patch.user_tag_id;
+    if (patch.user_tag_id != null) next.is_favorite = undefined;
+  }
   if ("birthday_min" in patch) next.birthday_min = patch.birthday_min;
   if ("birthday_max" in patch) next.birthday_max = patch.birthday_max;
   if ("height_min" in patch) next.height_min = patch.height_min;
@@ -293,6 +314,7 @@ export function replaceActorFilters(
     gender: filters.gender,
     has_person: filters.has_person,
     has_image: filters.has_image,
+    is_favorite: filters.is_favorite,
     user_tag_id: filters.user_tag_id,
     birthday_min: filters.birthday_min,
     birthday_max: filters.birthday_max,
@@ -371,6 +393,7 @@ export function normalizeActorFilterValues(
     gender: [...filters.gender],
     has_person: filters.has_person,
     has_image: filters.has_image,
+    is_favorite: filters.is_favorite,
     user_tag_id: filters.user_tag_id,
     birthday_min: fromAge.birthday_min,
     birthday_max: fromAge.birthday_max,
@@ -396,6 +419,7 @@ export function actorFiltersEqual(a: ActorFilterValues, b: ActorFilterValues): b
   return (
     a.has_person === b.has_person &&
     a.has_image === b.has_image &&
+    a.is_favorite === b.is_favorite &&
     a.user_tag_id === b.user_tag_id &&
     a.age_min === b.age_min &&
     a.age_max === b.age_max &&
@@ -443,7 +467,7 @@ function actorGenderFilterIsDefault(gender: readonly ActorGender[]): boolean {
 
 function hasNonGenderActorFilters(filters: ActorFilterValues): boolean {
   if (filters.has_person != null || filters.has_image != null) return true;
-  if (filters.user_tag_id != null) return true;
+  if (filters.is_favorite != null || filters.user_tag_id != null) return true;
   if (filters.birthplace != null) return true;
   for (const range of ACTOR_RANGE_FILTERS) {
     if (filters[range.min] != null || filters[range.max] != null) return true;

@@ -24,6 +24,7 @@ import type {
   MetadataField,
   MetadataSortField,
   Mosaic,
+  MoveMode,
   RescrapeTarget,
   RoutineType,
   SavedQueryEntity,
@@ -107,6 +108,8 @@ export const LIBRARY_AUTOMATIONS = exhaustiveTuple<LibraryAutomation>()("none", 
 export const LIBRARY_INGESTS = exhaustiveTuple<LibraryIngest>()("native", "clouddrive");
 
 export const LINK_MODES = exhaustiveTuple<LinkMode>()("strm", "symlink");
+
+export const MOVE_MODES = exhaustiveTuple<MoveMode>()("move", "copy", "hardlink", "symlink");
 
 export const MEDIA_FILE_STATUSES = exhaustiveTuple<MediaFileStatus>()(
   "pending",

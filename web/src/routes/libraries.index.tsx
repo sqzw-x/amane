@@ -1,6 +1,6 @@
 import { Anchor, Badge, Button, Group, Modal, Paper, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconFolders, IconPlus } from "@tabler/icons-react";
+import { IconFolders, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -24,6 +24,8 @@ import {
   type LibraryFormState,
 } from "@/components/library/library-form";
 import { extractErrorMessage } from "@/lib/api-error";
+import { applyLibraryCreateConfig, libraryCreateConfigFromForm } from "@/lib/library/create-config";
+import { useUIStore } from "@/stores/ui";
 
 export const Route = createFileRoute("/libraries/")({ component: LibrariesPage });
 
@@ -73,6 +75,8 @@ function LibrariesPage() {
   const { t } = useTranslation(["library", "common"]);
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery(listLibrariesOptions());
+  const rememberedCreateConfig = useUIStore((s) => s.libraryCreateConfig);
+  const setLibraryCreateConfig = useUIStore((s) => s.setLibraryCreateConfig);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<LibraryFormState>(emptyLibraryForm());
@@ -111,9 +115,23 @@ function LibrariesPage() {
   });
 
   function submitCreate() {
-    createMutation.mutate({
-      body: libraryFormToCreateBody(createForm),
-    });
+    const config = libraryCreateConfigFromForm(createForm);
+    createMutation.mutate(
+      { body: libraryFormToCreateBody(createForm) },
+      { onSuccess: () => setLibraryCreateConfig(config) },
+    );
+  }
+
+  /** 新增弹窗打开时的初值: 上次成功创建的配置之上留空 name / path / scan. */
+  function openCreate() {
+    setCreateForm(applyLibraryCreateConfig(emptyLibraryForm(), rememberedCreateConfig));
+    setCreateOpen(true);
+  }
+
+  /** 清空表单与记忆, 下次打开回到 schema 默认值. */
+  function resetCreate() {
+    setCreateForm(emptyLibraryForm());
+    setLibraryCreateConfig(undefined);
   }
 
   function submitEdit() {
@@ -128,7 +146,7 @@ function LibrariesPage() {
     <Stack gap="md">
       <Group justify="space-between">
         <Title order={2}>{t("title")}</Title>
-        <Button leftSection={<IconPlus size={16} />} onClick={() => setCreateOpen(true)}>
+        <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>
           {t("common:actions.add")}
         </Button>
       </Group>
@@ -161,17 +179,27 @@ function LibrariesPage() {
       >
         <Stack gap="md">
           <LibraryFormFields value={createForm} onChange={setCreateForm} showCreateOnly />
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setCreateOpen(false)}>
-              {t("common:actions.cancel")}
-            </Button>
+          <Group justify="space-between">
             <Button
-              loading={createMutation.isPending}
-              disabled={!createForm.path.trim() || !createForm.video_template.trim()}
-              onClick={submitCreate}
+              variant="subtle"
+              color="gray"
+              leftSection={<IconRefresh size={16} />}
+              onClick={resetCreate}
             >
-              {createMutation.isPending ? t("common:actions.saving") : t("common:actions.save")}
+              {t("createReset")}
             </Button>
+            <Group>
+              <Button variant="default" onClick={() => setCreateOpen(false)}>
+                {t("common:actions.cancel")}
+              </Button>
+              <Button
+                loading={createMutation.isPending}
+                disabled={!createForm.path.trim() || !createForm.video_template.trim()}
+                onClick={submitCreate}
+              >
+                {createMutation.isPending ? t("common:actions.saving") : t("common:actions.save")}
+              </Button>
+            </Group>
           </Group>
         </Stack>
       </Modal>

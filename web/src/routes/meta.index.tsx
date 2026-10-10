@@ -1,5 +1,6 @@
 import { ActionIcon, Badge, Group, SegmentedControl, Text, TextInput, Title } from "@mantine/core";
-import { IconFilter, IconSearch, IconTable, IconX } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
+import { IconFilter, IconSearch, IconStar, IconTable, IconX } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
@@ -24,10 +25,12 @@ import {
 } from "@/components/media/facet-filter-controls";
 import { MetaTable } from "@/components/media/meta-table";
 import { PosterGrid } from "@/components/media/poster-grid";
+import { extractErrorMessage } from "@/lib/api-error";
 import { activeFacetFilters, addFacetId, type FacetFilters, removeFacetId } from "@/lib/facets";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
 import { metaSearchSchema, METADATA_SORT_OPTIONS } from "@/lib/media/browse";
+import { useFavoriteTag } from "@/lib/media/user-tags";
 import { metaListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
 
@@ -108,12 +111,21 @@ function ActiveTriChip({ label, onClear }: { label: string; onClear: () => void 
   );
 }
 
+/** 收藏夹芯片: 标签 id 只存在于目录, 因此名称按当前 id 查分类端点. */
+function FavoriteChip({ tagId, onClear }: { tagId: number; onClear: () => void }) {
+  const { t } = useTranslation("metadata");
+  const { data } = useQuery(getFacetOptions({ path: { kind: "user_tag", facet_id: tagId } }));
+  return <ActiveTriChip label={data?.name ?? t("search.favorite")} onClear={onClear} />;
+}
+
 function MetaIndexPage() {
   const { t } = useTranslation(["metadata", "common", "savedQueries"]);
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const listLimit = useUIStore((s) => s.pageSizes.metaList);
   const narrowViewport = useNarrowViewport("md");
+  const { tagId: favoriteTagId, resolve: resolveFavoriteTag } = useFavoriteTag();
+  const favoriteActive = search.favorite === "true";
 
   const hasFiles = parseHasFiles(search.has_files);
   const vr = parseHasFiles(search.vr);
@@ -141,7 +153,7 @@ function MetaIndexPage() {
     studio_id: search.studio_id,
     publisher_id: search.publisher_id,
     series_id: search.series_id,
-    user_tag_id: search.user_tag_id,
+    user_tag_id: favoriteActive ? undefined : search.user_tag_id,
   };
 
   const listQueryParams = {
@@ -156,6 +168,8 @@ function MetaIndexPage() {
     definition: filePhase.definition ?? undefined,
     content_type: filePhase.content_type ?? undefined,
     ...filters,
+    // 收藏夹与用户标签互斥; 标签 id 只在目录里, 未收藏过时退化为不筛.
+    ...(favoriteActive && favoriteTagId != null ? { user_tag_id: [favoriteTagId] } : {}),
     ...(search.saved_query_id != null ? { saved_query_id: search.saved_query_id } : {}),
   };
 
@@ -217,7 +231,8 @@ function MetaIndexPage() {
           kind,
           id,
         );
-        return { ...prev, ...next, page: 1 };
+        // 收藏夹与具体用户标签互斥: 指向同一查询参数, 同时启用会让后者被静默忽略.
+        return { ...prev, ...next, favorite: undefined, page: 1 };
       },
     });
   }
@@ -263,6 +278,25 @@ function MetaIndexPage() {
     });
   }
 
+  /** 空收藏夹与「还没有收藏标签」同形: 打开筛选时按需建标签, 用户点过一次后两者不再混淆. */
+  async function toggleFavorite() {
+    if (favoriteActive) {
+      void navigate({ search: (prev) => ({ ...prev, favorite: undefined, page: 1 }) });
+      return;
+    }
+    try {
+      await resolveFavoriteTag();
+      void navigate({
+        search: (prev) => ({ ...prev, favorite: "true", user_tag_id: undefined, page: 1 }),
+      });
+    } catch (err) {
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      });
+    }
+  }
+
   function setFilePhaseFilter(value: FilePhaseFilters) {
     void navigate({
       search: (prev) => ({
@@ -295,6 +329,7 @@ function MetaIndexPage() {
     hasFiles !== null ||
     vr !== null ||
     phaseActive ||
+    favoriteActive ||
     search.saved_query_id != null;
 
   return (
@@ -362,6 +397,15 @@ function MetaIndexPage() {
               }
             />
           )}
+          <HintedActionIcon
+            variant={favoriteActive ? "filled" : "default"}
+            color={favoriteActive ? "yellow" : undefined}
+            size={36}
+            label={t("search.favorite")}
+            onClick={() => void toggleFavorite()}
+          >
+            <IconStar size={16} fill={favoriteActive ? "currentColor" : undefined} />
+          </HintedActionIcon>
         </>
       }
       pageSize={
@@ -423,6 +467,14 @@ function MetaIndexPage() {
             <ActiveHasFilesChip hasFiles={hasFiles} onClear={() => setHasFilesFilter(null)} />
           )}
           {vr !== null && <ActiveVrChip vr={vr} onClear={() => setVrFilter(null)} />}
+          {favoriteActive && favoriteTagId != null && (
+            <FavoriteChip
+              tagId={favoriteTagId}
+              onClear={() =>
+                void navigate({ search: (prev) => ({ ...prev, favorite: undefined, page: 1 }) })
+              }
+            />
+          )}
           {filePhase.has_subtitle !== null && (
             <ActiveTriChip
               label={`${t("search.hasSubtitle")}: ${filePhase.has_subtitle ? t("search.yes") : t("search.no")}`}

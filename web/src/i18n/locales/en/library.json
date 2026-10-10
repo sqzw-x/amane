@@ -139,6 +139,7 @@
   "fieldStrmContentTemplate": "STRM content template",
   "fieldStrmContentTemplateHint": "Applies when the link mode is STRM. Default writes the video file absolute path",
   "fieldInitialRefresh": "Refresh on Creation",
+  "createReset": "Reset to defaults",
   "advancedTemplates": "Sidecar Templates",
   "advancedTemplatesHint": "Leave empty to use defaults",
   "optionalTemplateDefault": "Default: {{default}}",

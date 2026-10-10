@@ -63,6 +63,8 @@ export const metaSearchSchema = z.object({
   publisher_id: idListSchema,
   series_id: idListSchema,
   user_tag_id: idListSchema,
+  /** 收藏夹筛选; 与 `user_tag_id` 互斥, 见 `parseTriBool`. */
+  favorite: z.enum(["true", "false"]).optional(),
   has_files: z.enum(["true", "false"]).optional(),
   has_subtitle: z.enum(["true", "false"]).optional(),
   vr: z.enum(["true", "false"]).optional(),
