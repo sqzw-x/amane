@@ -17,6 +17,8 @@ _ACTIVE_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING)
 # 其余类型每次新建; 同库串行由 handler 内的锁保证.
 _EXCLUSIVE_FIELDS: dict[TaskType, str] = {
     TaskType.ACTOR_SCRAPE: "actor_id",
+    # 逐演员同步: 同一演员重复提交复用在队任务; 全量同步 (payload 不带 actor_id) 每次新建.
+    TaskType.EMBY_SYNC: "actor_id",
 }
 
 
