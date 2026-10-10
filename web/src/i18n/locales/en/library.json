@@ -89,12 +89,6 @@
     "label": "Auto organize",
     "hint": "Organize each file right after it is scraped; turning it off only affects new tasks, queued runs still execute"
   },
-  "lastOrganize": {
-    "label": "Last organize",
-    "counts": "Last organize {{time}}: {{organized}} organized · {{skipped}} skipped · {{conflicted}} conflicted · {{failed}} failed",
-    "failed": "Organize failed: {{error}}",
-    "justNow": "just now"
-  },
   "ingest": {
     "label": "File discovery",
     "hint": "Webhook requires a CloudDrive2 membership; performs better than watching the mount path",

@@ -1,19 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 
-import {
-  listLibrariesQueryKey,
-  listMediaQueryKey,
-  listTasksQueryKey,
-} from "@/client/@tanstack/react-query.gen";
-import type { TaskType } from "@/client/types.gen";
+import { listMediaQueryKey, listTasksQueryKey } from "@/client/@tanstack/react-query.gen";
 import { assertNever, exhaustiveTuple, isOneOf } from "@/lib/exhaustive";
 import { isRecord } from "@/lib/utils";
 import { useConnectionStore } from "@/stores/connection";
 import { useLogStore } from "@/stores/logs";
 import { useProgressStore } from "@/stores/progress";
-
-/** 后端广播的任务类型字面量, 与生成的 `TaskType` 联合同源 (改值即编译失败). */
-const ORGANIZE_TASK_TYPE = "organize" satisfies TaskType;
 
 /* oxlint-disable unicorn/prefer-add-event-listener --
  * WebSocket 用 on* 才能在 teardown 里 `onclose = null`, 避免 close() 触发重连.
@@ -179,17 +171,6 @@ export function invalidateTaskQueries(queryClient: QueryClient): void {
   queryClient.invalidateQueries({ queryKey: [{ _id: "getTask" }] });
 }
 
-/**
- * 库响应带「最近一次整理」摘要, 只有整理任务终态会改变它.
- * 刮削 / 刷新的一次批量会产出大量终态事件, 按类型收窄, 不让它们各拖一次库查询.
- */
-function invalidateLibraryQueries(queryClient: QueryClient, taskType: unknown): void {
-  // 广播载荷的 type 是后端 TaskType 的值; 字面量已绑到生成的联合上, 后端改值会在此编译失败.
-  if (taskType !== ORGANIZE_TASK_TYPE) return;
-  queryClient.invalidateQueries({ queryKey: listLibrariesQueryKey() });
-  queryClient.invalidateQueries({ queryKey: [{ _id: "getLibrary" }] });
-}
-
 // 按 event.type 更新 store 并失效对应 query
 function handleEvent(queryClient: QueryClient, event: WSEvent) {
   switch (event.type) {
@@ -214,13 +195,11 @@ function handleEvent(queryClient: QueryClient, event: WSEvent) {
     case "task.completed":
       useProgressStore.getState().clearProgress(numField(event.data, "task_id", -1));
       invalidateTaskQueries(queryClient);
-      invalidateLibraryQueries(queryClient, event.data.type);
       queryClient.invalidateQueries({ queryKey: listMediaQueryKey() });
       break;
     case "task.failed":
       useProgressStore.getState().clearProgress(numField(event.data, "task_id", -1));
       invalidateTaskQueries(queryClient);
-      invalidateLibraryQueries(queryClient, event.data.type);
       break;
     case "file.discovered":
       queryClient.invalidateQueries({ queryKey: listMediaQueryKey() });
