@@ -1016,11 +1016,21 @@ export type ErrorRow = {
 };
 
 /**
- * FacetFavoriteBatchRequest
+ * FacetBatchAction
  *
- * 一批分类的收藏位整体赋同一个取值; 重复提交同一批不改变结果.
+ * 分类批量动作; 两个动作都是整体赋值且幂等.
+ *
+ * 不设逐项取反 (toggle): 多选混合态下点「收藏」必须保持收藏, 取反会取消已收藏的条目. 枚举是
+ * 动作信封的扩展位, 新增动作 (如批量删除) 时 ``FacetBatchResponse`` 的字段按动作解释.
  */
-export type FacetFavoriteBatchRequest = {
+export type FacetBatchAction = 'favorite' | 'unfavorite';
+
+/**
+ * FacetBatchRequest
+ *
+ * 对一批分类执行同一个动作; 重复 id 去重, 使结果计数以去重后的条目数为准.
+ */
+export type FacetBatchRequest = {
     /**
      * Facet Ids
      *
@@ -1028,23 +1038,21 @@ export type FacetFavoriteBatchRequest = {
      */
     facet_ids: Array<number>;
     /**
-     * Is Favorite
-     *
-     * 是否收藏
+     * favorite 置为已收藏, unfavorite 置为未收藏; 两者均幂等
      */
-    is_favorite: boolean;
+    action: FacetBatchAction;
 };
 
 /**
- * FacetFavoriteBatchResponse
+ * FacetBatchResponse
  *
- * 批量收藏赋值的结果计数; 三个字段之和等于去重后的条目数.
+ * 批量动作的结果计数, 字段按 action 解释; 两个已实现动作下三者之和等于去重后的条目数.
  */
-export type FacetFavoriteBatchResponse = {
+export type FacetBatchResponse = {
     /**
      * Changed
      *
-     * 收藏位发生写入的分类数
+     * 收藏位确实发生写入的分类数
      */
     changed: number;
     /**
@@ -1059,20 +1067,6 @@ export type FacetFavoriteBatchResponse = {
      * 不存在的分类 id 数
      */
     missing: number;
-};
-
-/**
- * FacetFavoriteRequest
- *
- * 收藏位整体赋值; 重复提交同一取值不改变结果.
- */
-export type FacetFavoriteRequest = {
-    /**
-     * Is Favorite
-     *
-     * 是否收藏
-     */
-    is_favorite: boolean;
 };
 
 /**
@@ -6806,32 +6800,32 @@ export type DeleteFacetRuleResponses = {
 
 export type DeleteFacetRuleResponse = DeleteFacetRuleResponses[keyof DeleteFacetRuleResponses];
 
-export type SetFacetsFavoriteData = {
-    body: FacetFavoriteBatchRequest;
+export type BatchFacetsData = {
+    body: FacetBatchRequest;
     path: {
         kind: FacetKind;
     };
     query?: never;
-    url: '/api/facets/{kind}/batch/favorite';
+    url: '/api/facets/{kind}/batch';
 };
 
-export type SetFacetsFavoriteErrors = {
+export type BatchFacetsErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type SetFacetsFavoriteError = SetFacetsFavoriteErrors[keyof SetFacetsFavoriteErrors];
+export type BatchFacetsError = BatchFacetsErrors[keyof BatchFacetsErrors];
 
-export type SetFacetsFavoriteResponses = {
+export type BatchFacetsResponses = {
     /**
      * Successful Response
      */
-    200: FacetFavoriteBatchResponse;
+    200: FacetBatchResponse;
 };
 
-export type SetFacetsFavoriteResponse = SetFacetsFavoriteResponses[keyof SetFacetsFavoriteResponses];
+export type BatchFacetsResponse = BatchFacetsResponses[keyof BatchFacetsResponses];
 
 export type DeleteFacetData = {
     body?: never;
@@ -6925,37 +6919,6 @@ export type RenameFacetResponses = {
 };
 
 export type RenameFacetResponse = RenameFacetResponses[keyof RenameFacetResponses];
-
-export type SetFacetFavoriteData = {
-    body: FacetFavoriteRequest;
-    path: {
-        kind: FacetKind;
-        /**
-         * Facet Id
-         */
-        facet_id: number;
-    };
-    query?: never;
-    url: '/api/facets/{kind}/{facet_id}/favorite';
-};
-
-export type SetFacetFavoriteErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type SetFacetFavoriteError = SetFacetFavoriteErrors[keyof SetFacetFavoriteErrors];
-
-export type SetFacetFavoriteResponses = {
-    /**
-     * Successful Response
-     */
-    200: FacetResponse;
-};
-
-export type SetFacetFavoriteResponse = SetFacetFavoriteResponses[keyof SetFacetFavoriteResponses];
 
 export type MergeFacetsData = {
     body: FacetMergeRequest;

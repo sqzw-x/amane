@@ -399,10 +399,10 @@ class UserTagLinkResult(NamedTuple):
     missing: int
 
 
-class FacetFavoriteBatchResult(NamedTuple):
-    """批量收藏赋值的结果计数, 三个字段均以条目 id 为单位.
+class FacetBatchResult(NamedTuple):
+    """分类批量动作的结果计数, 三个字段均以条目 id 为单位.
 
-    ``changed`` 为收藏位发生写入的条目数, ``unchanged`` 为已处于目标取值的条目数,
+    ``changed`` 为收藏位确实发生写入的条目数, ``unchanged`` 为已处于目标取值的条目数,
     ``missing`` 为不存在的条目 id 数; 三者之和等于去重后的条目数.
     """
 

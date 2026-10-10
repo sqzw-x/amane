@@ -158,12 +158,9 @@ async def _facet_id(client: AsyncClient, kind: str, name: str) -> int:
     return next(i["id"] for i in resp.json()["items"] if i["name"] == name)
 
 
-async def _batch_favorite(client: AsyncClient, kind: str, facet_ids: list[int], is_favorite: bool | str) -> Response:
-    """测试便捷入口: 提交一次批量收藏赋值; 字符串取值用于非法请求体的负例."""
-    return await client.put(
-        f"facets/{kind}/batch/favorite",
-        json={"facet_ids": facet_ids, "is_favorite": is_favorite},
-    )
+async def _batch(client: AsyncClient, kind: str, facet_ids: list[int], action: str | None) -> Response:
+    """测试便捷入口: 提交一次批量动作; 非枚举取值用于非法动作的负例."""
+    return await client.post(f"facets/{kind}/batch", json={"facet_ids": facet_ids, "action": action})
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -176,10 +173,10 @@ async def test_facet_favorite_http(client: AsyncClient, repo: Repository) -> Non
     listed = (await client.get("facets/studio")).json()["items"]
     assert listed and all(i["is_favorite"] is False for i in listed)
 
-    marked = await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": True})
+    # 单条写入经动作端点的单元素列表表达
+    marked = await _batch(client, "studio", [studio_id], "favorite")
     assert marked.status_code == 200
-    assert marked.json()["is_favorite"] is True
-    assert marked.json()["name"] == "FavStudio"
+    assert marked.json() == {"changed": 1, "unchanged": 0, "missing": 0}
     assert (await client.get(f"facets/studio/{studio_id}")).json()["is_favorite"] is True
 
     only_favorite = (await client.get("facets/studio?favorite=true")).json()
@@ -188,26 +185,41 @@ async def test_facet_favorite_http(client: AsyncClient, repo: Repository) -> Non
     without = (await client.get("facets/studio?favorite=false")).json()
     assert [i["name"] for i in without["items"]] == ["PlainStudio"]
 
-    # 幂等: 重复提交同一取值, 取消后回到假值
-    assert (await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": True})).status_code == 200
-    cleared = await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": False})
-    assert cleared.status_code == 200 and cleared.json()["is_favorite"] is False
+    # 幂等: 重复提交同一动作不产生写入; 取消收藏回到假值
+    assert (await _batch(client, "studio", [studio_id], "favorite")).json() == {
+        "changed": 0,
+        "unchanged": 1,
+        "missing": 0,
+    }
+    cleared = await _batch(client, "studio", [studio_id], "unfavorite")
+    assert cleared.status_code == 200
+    assert cleared.json() == {"changed": 1, "unchanged": 0, "missing": 0}
     assert (await client.get("facets/studio?favorite=true")).json()["items"] == []
 
-    assert (await client.put("facets/studio/9999/favorite", json={"is_favorite": True})).status_code == 404
+    # 写入已收敛到动作端点: 旧的单条路径不再存在
+    assert (await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": True})).status_code == 404
+
+    # 不存在的 id 计入 missing 而不报 404; 重复 id 去重后计数, 三者之和等于去重后的条目数
+    absent = await _batch(client, "studio", [9999, 9999], "favorite")
+    assert absent.status_code == 200
+    assert absent.json() == {"changed": 0, "unchanged": 0, "missing": 1}
     assert (await client.get("facets/studio/9999")).status_code == 404
 
-    # 非法请求体: 缺字段、类型不符与显式 null 都是 422; 未知分类同样由 schema 拒绝
-    assert (await client.put(f"facets/studio/{studio_id}/favorite", json={})).status_code == 422
-    assert (await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": "maybe"})).status_code == 422
-    assert (await client.put(f"facets/studio/{studio_id}/favorite", json={"is_favorite": None})).status_code == 422
-    assert (await client.put("facets/not_a_kind/1/favorite", json={"is_favorite": True})).status_code == 422
+    # 非法请求体: 空列表、缺字段、未知动作与大小写不符都是 422; 未知 kind 同样由 schema 拒绝
+    assert (await _batch(client, "studio", [], "favorite")).status_code == 422
+    assert (await _batch(client, "studio", [studio_id], "toggle")).status_code == 422
+    assert (await _batch(client, "studio", [studio_id], "FAVORITE")).status_code == 422
+    assert (await _batch(client, "studio", [studio_id], None)).status_code == 422
+    assert (await client.post("facets/studio/batch", json={"facet_ids": [studio_id]})).status_code == 422
+    assert (await client.post("facets/studio/batch", json={"action": "favorite"})).status_code == 422
+    assert (await _batch(client, "not_a_kind", [studio_id], "favorite")).status_code == 422
 
-    # 不支持收藏的分类: 写与筛选都是 400, 与筛选取值无关
+    # 不支持收藏的分类: 写与筛选都是 400, 与动作取值无关
     tag_id = await _facet_id(client, "tag", "FavTag")
     actor_id = await _facet_id(client, "actor", "Alice")
     for kind, facet_id in (("actor", actor_id), ("user_tag", 9999)):
-        assert (await client.put(f"facets/{kind}/{facet_id}/favorite", json={"is_favorite": True})).status_code == 400
+        for action in ("favorite", "unfavorite"):
+            assert (await _batch(client, kind, [facet_id], action)).status_code == 400
         for value in ("true", "false"):
             assert (await client.get(f"facets/{kind}?favorite={value}")).status_code == 400
     assert (await client.get("facets/actor")).json()["items"][0]["is_favorite"] is False
@@ -227,10 +239,9 @@ async def test_facet_favorite_http_director(client: AsyncClient, repo: Repositor
     listed = (await client.get("facets/director")).json()["items"]
     assert listed and all(i["is_favorite"] is False for i in listed)
 
-    marked = await client.put(f"facets/director/{director_id}/favorite", json={"is_favorite": True})
+    marked = await _batch(client, "director", [director_id], "favorite")
     assert marked.status_code == 200
-    assert marked.json()["name"] == "FavDirector"
-    assert marked.json()["is_favorite"] is True
+    assert marked.json() == {"changed": 1, "unchanged": 0, "missing": 0}
     assert (await client.get(f"facets/director/{director_id}")).json()["is_favorite"] is True
 
     only_favorite = (await client.get("facets/director?favorite=true")).json()
@@ -239,17 +250,17 @@ async def test_facet_favorite_http_director(client: AsyncClient, repo: Repositor
     without = (await client.get("facets/director?favorite=false")).json()
     assert [i["name"] for i in without["items"]] == ["PlainDirector"]
 
-    cleared = await client.put(f"facets/director/{director_id}/favorite", json={"is_favorite": False})
-    assert cleared.status_code == 200 and cleared.json()["is_favorite"] is False
+    cleared = await _batch(client, "director", [director_id], "unfavorite")
+    assert cleared.status_code == 200
+    assert cleared.json() == {"changed": 1, "unchanged": 0, "missing": 0}
     assert (await client.get("facets/director?favorite=true")).json()["items"] == []
 
-    assert (await client.put("facets/director/9999/favorite", json={"is_favorite": True})).status_code == 404
     assert (await client.get("facets/director/9999")).status_code == 404
 
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_facet_favorite_batch_http(client: AsyncClient, repo: Repository) -> None:
-    """批量收藏端点: 整体赋值而非翻转, 混合选择与重复提交的结果一致."""
+    """批量动作端点: 两个动作都是整体赋值而非翻转, 混合选择与重复提交的结果一致."""
     await repo.upsert_metadata(number="HTTP-FB-1", studio="FavA")
     await repo.upsert_metadata(number="HTTP-FB-2", studio="FavD")
     await repo.upsert_metadata(number="HTTP-FB-3", studio="FavB")
@@ -264,23 +275,27 @@ async def test_facet_favorite_batch_http(client: AsyncClient, repo: Repository) 
     marked_b = await _facet_id(client, "studio", "FavB")
     plain_d = await _facet_id(client, "studio", "FavD")
     marked_e = await _facet_id(client, "studio", "FavE")
-    await _batch_favorite(client, "studio", [marked_b, marked_e], True)
+    assert (await _batch(client, "studio", [marked_b, marked_e], "favorite")).json() == {
+        "changed": 2,
+        "unchanged": 0,
+        "missing": 0,
+    }
 
     # 混合选择: 已收藏的保持收藏, 未收藏的补齐; 重复 id 先去重, 不存在的 id 计入 missing 而不报 404
-    first = await _batch_favorite(client, "studio", [plain_a, marked_b, plain_d, marked_e, 9998, 9998], True)
+    first = await _batch(client, "studio", [plain_a, marked_b, plain_d, marked_e, 9998, 9998], "favorite")
     assert first.status_code == 200
     assert first.json() == {"changed": 2, "unchanged": 2, "missing": 1}
     assert sorted(await names_of("studio", "Fav", True)) == ["FavA", "FavB", "FavD", "FavE"]
     assert await names_of("studio", "Fav", False) == []
 
     # 幂等: 同一批连续提交两次结果一致, 第二次不产生写入
-    second = await _batch_favorite(client, "studio", [plain_a, marked_b, plain_d, marked_e, 9998], True)
+    second = await _batch(client, "studio", [plain_a, marked_b, plain_d, marked_e, 9998], "favorite")
     assert second.status_code == 200
     assert second.json() == {"changed": 0, "unchanged": 4, "missing": 1}
     assert sorted(await names_of("studio", "Fav", True)) == ["FavA", "FavB", "FavD", "FavE"]
 
-    # 取消收藏与单条端点同语义: 只有实际写库的计 changed
-    cleared = await _batch_favorite(client, "studio", [plain_a, marked_b, marked_e], False)
+    # unfavorite 与 favorite 对称: 只有实际写库的计 changed
+    cleared = await _batch(client, "studio", [plain_a, marked_b, marked_e], "unfavorite")
     assert cleared.status_code == 200
     assert cleared.json() == {"changed": 3, "unchanged": 0, "missing": 0}
     assert await names_of("studio", "FavA", True) == []
@@ -289,34 +304,31 @@ async def test_facet_favorite_batch_http(client: AsyncClient, repo: Repository) 
     assert await names_of("studio", "FavD", True) == ["FavD"]
 
     # 同一批再提交一次同样是整体赋值: 全部已处于目标取值
-    again = await _batch_favorite(client, "studio", [plain_a, marked_b, marked_e], False)
+    again = await _batch(client, "studio", [plain_a, marked_b, marked_e], "unfavorite")
     assert again.status_code == 200
     assert again.json() == {"changed": 0, "unchanged": 3, "missing": 0}
 
     # 混合已收藏与未收藏时以目标取值收尾, 不翻转任何一项
-    mixed = await _batch_favorite(client, "studio", [plain_a, plain_d], True)
+    mixed = await _batch(client, "studio", [plain_a, plain_d], "favorite")
     assert mixed.status_code == 200
     assert mixed.json() == {"changed": 1, "unchanged": 1, "missing": 0}
     assert sorted(await names_of("studio", "Fav", True)) == ["FavA", "FavD"]
 
     # 链接型分类走同一路径: 它与标量分类共用收藏列
     tag_id = await _facet_id(client, "tag", "FavTag")
-    assert (await _batch_favorite(client, "tag", [tag_id], True)).json() == {
+    assert (await _batch(client, "tag", [tag_id], "favorite")).json() == {
         "changed": 1,
         "unchanged": 0,
         "missing": 0,
     }
     assert await names_of("tag", "FavTag", True) == ["FavTag"]
 
-    # 非法请求体与非法 kind 由 schema 拒绝; 不支持收藏的分类是 400
-    assert (await _batch_favorite(client, "studio", [], True)).status_code == 422
-    assert (await _batch_favorite(client, "studio", [plain_d], "maybe")).status_code == 422
-    assert (await client.put("facets/studio/batch/favorite", json={"facet_ids": [plain_d]})).status_code == 422
-    assert (await _batch_favorite(client, "not_a_kind", [plain_d], True)).status_code == 422
+    # 不支持收藏的分类两个动作都是 400
     actor_id = await _facet_id(client, "actor", "FavActor")
-    assert (await _batch_favorite(client, "actor", [actor_id], True)).status_code == 400
-    assert (await _batch_favorite(client, "user_tag", [9999], True)).status_code == 400
+    for action in ("favorite", "unfavorite"):
+        assert (await _batch(client, "actor", [actor_id], action)).status_code == 400
+        assert (await _batch(client, "user_tag", [9999], action)).status_code == 400
 
-    # 单条端点与批量端点读到同一状态
+    # 详情读到的就是批量写入的结果
     assert (await client.get(f"facets/studio/{plain_a}")).json()["is_favorite"] is True
     assert (await client.get(f"facets/studio/{plain_d}")).json()["is_favorite"] is True

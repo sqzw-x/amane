@@ -198,6 +198,7 @@
     "add": "收藏",
     "remove": "取消收藏",
     "batchUpdated": "已更新 {{count}} 个分类的收藏",
+    "missing": "该分类已不存在",
     "filterLabel": "收藏",
     "filterAny": "不限",
     "filterYes": "已收藏",

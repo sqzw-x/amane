@@ -207,7 +207,8 @@
     "filterNo": "Not favorited",
     "sectionTitle": "Favorites",
     "batchUpdated_one": "Favorite updated on {{count}} category",
-    "batchUpdated_other": "Favorites updated on {{count}} categories"
+    "batchUpdated_other": "Favorites updated on {{count}} categories",
+    "missing": "This category no longer exists"
   },
   "actors": {
     "title": "Actors",

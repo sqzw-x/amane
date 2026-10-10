@@ -3432,14 +3432,14 @@
         }
       }
     },
-    "/api/facets/{kind}/batch/favorite": {
-      "put": {
+    "/api/facets/{kind}/batch": {
+      "post": {
         "tags": [
           "facets"
         ],
-        "summary": "Set Facets Favorite",
-        "description": "对一批分类整体赋值同一个收藏位, 单个事务; 分类不支持收藏返回 400.\n\n语义与单条端点一致, 但幂等判定作用于整批: 已处于目标取值的条目保持不动, 不存在的 id\n计入 ``missing`` 而不报 404 — 批量请求里某个 id 失效不该让整批无结果.\n\n路由顺序: 本路径与 ``PUT /{kind}/{facet_id}/favorite`` 同为 ``/{kind}/`` 下的三段路径, 排在\n后面时 ``batch`` 会先被那条通用路由当成 facet_id 解析而返回 422.",
-        "operationId": "set_facets_favorite",
+        "summary": "Batch Facets",
+        "description": "对一批分类执行同一个动作, 单个事务; 分类不支持收藏返回 400.\n\n不存在的 id 计入 ``missing`` 而不报 404 — 批量请求里某个 id 已失效不该让整批无结果. 动作语义\n与扩展位见 ``FacetBatchAction``.",
+        "operationId": "batch_facets",
         "parameters": [
           {
             "name": "kind",
@@ -3455,7 +3455,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FacetFavoriteBatchRequest"
+                "$ref": "#/components/schemas/FacetBatchRequest"
               }
             }
           }
@@ -3466,7 +3466,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FacetFavoriteBatchResponse"
+                  "$ref": "#/components/schemas/FacetBatchResponse"
                 }
               }
             }
@@ -3621,67 +3621,6 @@
         "responses": {
           "204": {
             "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/facets/{kind}/{facet_id}/favorite": {
-      "put": {
-        "tags": [
-          "facets"
-        ],
-        "summary": "Set Facet Favorite",
-        "description": "整体赋值收藏位; 重复提交同一取值不改变结果. 分类不支持收藏返回 400.",
-        "operationId": "set_facet_favorite",
-        "parameters": [
-          {
-            "name": "kind",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/FacetKind"
-            }
-          },
-          {
-            "name": "facet_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Facet Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FacetFavoriteRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FacetResponse"
-                }
-              }
-            }
           },
           "422": {
             "description": "Validation Error",
@@ -7907,7 +7846,16 @@
         "title": "ErrorRow",
         "description": "回合异常; 文案直接进助手气泡."
       },
-      "FacetFavoriteBatchRequest": {
+      "FacetBatchAction": {
+        "type": "string",
+        "enum": [
+          "favorite",
+          "unfavorite"
+        ],
+        "title": "FacetBatchAction",
+        "description": "分类批量动作; 两个动作都是整体赋值且幂等.\n\n不设逐项取反 (toggle): 多选混合态下点「收藏」必须保持收藏, 取反会取消已收藏的条目. 枚举是\n动作信封的扩展位, 新增动作 (如批量删除) 时 ``FacetBatchResponse`` 的字段按动作解释."
+      },
+      "FacetBatchRequest": {
         "properties": {
           "facet_ids": {
             "items": {
@@ -7918,26 +7866,25 @@
             "title": "Facet Ids",
             "description": "分类 ID 列表"
           },
-          "is_favorite": {
-            "type": "boolean",
-            "title": "Is Favorite",
-            "description": "是否收藏"
+          "action": {
+            "$ref": "#/components/schemas/FacetBatchAction",
+            "description": "favorite 置为已收藏, unfavorite 置为未收藏; 两者均幂等"
           }
         },
         "type": "object",
         "required": [
           "facet_ids",
-          "is_favorite"
+          "action"
         ],
-        "title": "FacetFavoriteBatchRequest",
-        "description": "一批分类的收藏位整体赋同一个取值; 重复提交同一批不改变结果."
+        "title": "FacetBatchRequest",
+        "description": "对一批分类执行同一个动作; 重复 id 去重, 使结果计数以去重后的条目数为准."
       },
-      "FacetFavoriteBatchResponse": {
+      "FacetBatchResponse": {
         "properties": {
           "changed": {
             "type": "integer",
             "title": "Changed",
-            "description": "收藏位发生写入的分类数"
+            "description": "收藏位确实发生写入的分类数"
           },
           "unchanged": {
             "type": "integer",
@@ -7956,23 +7903,8 @@
           "unchanged",
           "missing"
         ],
-        "title": "FacetFavoriteBatchResponse",
-        "description": "批量收藏赋值的结果计数; 三个字段之和等于去重后的条目数."
-      },
-      "FacetFavoriteRequest": {
-        "properties": {
-          "is_favorite": {
-            "type": "boolean",
-            "title": "Is Favorite",
-            "description": "是否收藏"
-          }
-        },
-        "type": "object",
-        "required": [
-          "is_favorite"
-        ],
-        "title": "FacetFavoriteRequest",
-        "description": "收藏位整体赋值; 重复提交同一取值不改变结果."
+        "title": "FacetBatchResponse",
+        "description": "批量动作的结果计数, 字段按 action 解释; 两个已实现动作下三者之和等于去重后的条目数."
       },
       "FacetKind": {
         "type": "string",

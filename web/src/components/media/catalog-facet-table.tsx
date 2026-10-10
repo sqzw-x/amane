@@ -26,10 +26,10 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  batchFacetsMutation,
   createUserTagsMutation,
   getFacetQueryKey,
   listFacetsQueryKey,
-  setFacetsFavoriteMutation,
 } from "@/client/@tanstack/react-query.gen";
 import type { FacetKind, FacetResponse, FacetSortField, SortOrder } from "@/client/types.gen";
 import { FacetFavoriteStar } from "./facet-favorite-star";
@@ -108,7 +108,7 @@ export function CatalogFacetTable({
 
   // 批量收藏是整体赋值: 已处于目标取值的条目不动, 界面因此不做逐项取反.
   const favoriteMutation = useMutation({
-    ...setFacetsFavoriteMutation(),
+    ...batchFacetsMutation(),
     onSuccess: (res, variables) => {
       notifications.show({
         message: t("favorite.batchUpdated", { count: res.changed }),
@@ -181,7 +181,7 @@ export function CatalogFacetTable({
                     onClick={() =>
                       favoriteMutation.mutate({
                         path: { kind },
-                        body: { facet_ids: selectedIds, is_favorite: true },
+                        body: { facet_ids: selectedIds, action: "favorite" },
                       })
                     }
                   >
@@ -196,7 +196,7 @@ export function CatalogFacetTable({
                     onClick={() =>
                       favoriteMutation.mutate({
                         path: { kind },
-                        body: { facet_ids: selectedIds, is_favorite: false },
+                        body: { facet_ids: selectedIds, action: "unfavorite" },
                       })
                     }
                   >

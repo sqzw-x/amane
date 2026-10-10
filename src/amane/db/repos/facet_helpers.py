@@ -43,7 +43,7 @@ from ..models import (
     UserTag,
 )
 from ..repo_types import (
-    FacetFavoriteBatchResult,
+    FacetBatchResult,
     FacetItem,
     UserTagLinkAction,
     UserTagLinkResult,
@@ -1285,33 +1285,13 @@ async def get_facet(session: AsyncSession, kind: FacetKind, facet_id: int) -> Fa
     return None
 
 
-async def set_facet_favorite(
-    session: AsyncSession, kind: FacetKind, facet_id: int, is_favorite: bool
-) -> FacetItem | None:
-    """整体赋值收藏位; 值未变时不写库. 实体不存在返回 None, 分类不支持收藏抛 ``ValueError``."""
-    entity = _favorite_entity(kind)
-    if entity is None:
-        raise ValueError(f"facet kind {kind} 不支持收藏")
-    row = await session.get(entity, facet_id)
-    if row is None:
-        return None
-    if row.is_favorite != is_favorite:
-        row.is_favorite = is_favorite
-        row.updated_at = _utcnow()
-        session.add(row)
-        await session.flush()
-    item = await get_facet(session, kind, facet_id)
-    await session.commit()
-    return item
-
-
 async def set_facets_favorite(
     session: AsyncSession, kind: FacetKind, facet_ids: Sequence[int], is_favorite: bool
-) -> FacetFavoriteBatchResult:
+) -> FacetBatchResult:
     """把一批分类的收藏位整体赋同一个取值, 单个事务; 分类不支持收藏抛 ``ValueError``.
 
-    只写取值与目标不同的行, 因此重复提交同一批不产生写入. 不存在的 id 计入 ``missing``,
-    其余照常处理 — 与单条端点返回 404 不同, 调用方拿到的仍是一次成功的部分结果.
+    只写取值与目标不同的行, 因此重复提交同一批不产生写入. 不存在的 id 计入 ``missing``, 其余
+    照常处理 — 批量请求里某个 id 已失效不该让整批无结果.
     """
     entity = _favorite_entity(kind)
     if entity is None:
@@ -1327,7 +1307,7 @@ async def set_facets_favorite(
         session.add(row)
         changed += 1
     await session.commit()
-    return FacetFavoriteBatchResult(
+    return FacetBatchResult(
         changed=changed,
         unchanged=len(rows) - changed,
         missing=len(unique_ids) - len(rows),
