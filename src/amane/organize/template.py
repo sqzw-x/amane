@@ -1,4 +1,4 @@
-"""路径模板折叠空段并约束写出路径. 填值时截断 title / actor / actors / actress / actresses. STRM 正文不折叠、不截断 (保留 `https://`), 不检查 safe_dirs."""
+"""路径模板折叠空段、按 Windows 创建结果规范化每个路径段, 并约束写出路径. 填值时截断 title / actor / actors / actress / actresses. STRM 正文不折叠、不截断 (保留 `https://`), 不检查 safe_dirs."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 _UNKNOWN = "Unknown"
 _DRIVE = re.compile(r"^[A-Za-z]:")
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 PATH_FIELD_MAX_BYTES = 200
 PATH_FIELD_ELLIPSIS = "…"
 _CLIP_KEYS = frozenset({"title", "actor", "actors", "actress", "actresses"})
@@ -249,10 +250,15 @@ def _clip_field(value: str) -> str:
 
 
 def _safe(value: str | None) -> str | None:
+    """元数据字段写入路径段或模板正文: 控制字符与目录分隔符替换为空格, Windows 保留字符删除.
+
+    控制字符留在名字里会让 Windows 创建失败 (ERROR_INVALID_NAME), 出现在 STRM 正文里会截断内容.
+    """
     if not value:
         return None
     return (
-        value.replace("/", " ")
+        _CONTROL_CHARS.sub(" ", value)
+        .replace("/", " ")
         .replace("\\", " ")
         .replace(":", " ")
         .replace("*", "")
@@ -415,16 +421,29 @@ def _template_keeps_absolute(template: str, variables: dict[str, str]) -> bool:
     return False
 
 
-def _collapse_empty_segments(rendered: str, *, keep_absolute: bool) -> str:
-    """丢弃空路径段: 空占位符不能把相对模板变成绝对路径.
+def _clean_segment(part: str) -> str:
+    """路径段的字面值: 控制字符替换为空格, 去掉段尾的 ``.`` 与空格.
 
-    锚 (UNC 共享 / 盘符 / 根) 由 ``PureWindowsPath`` 从渲染结果切出并原样保留, 空段折叠只作用于锚之后.
+    Windows 创建时静默丢弃段尾的 ``.`` 与空格, 而 ``os.path.abspath`` 的剥除规则与之不同 (多段路径里的
+    ``studio...`` 原样保留), 索引因此记录一个磁盘上不存在的名字. 先按创建结果对齐, 记录与磁盘便一致.
+    ``.`` 与 ``..`` 原样保留, 逃逸检查依赖它们.
+    """
+    if part in (".", ".."):
+        return part
+    return _CONTROL_CHARS.sub(" ", part).rstrip(" .")
+
+
+def _normalize_path_segments(rendered: str, *, keep_absolute: bool) -> str:
+    """规范化每个路径段的字面值, 并丢弃空段: 空占位符不能把相对模板变成绝对路径.
+
+    锚 (UNC 共享 / 盘符 / 根) 由 ``PureWindowsPath`` 从渲染结果切出并原样保留, 规范化只作用于锚之后.
     逐段重拼会把 UNC 的 ``\\\\`` 压成单个 ``/``, 而该结果在 Windows 上无盘符, 会被当成相对路径重新拼回
     库根, 触发误报的逃逸.
     """
     posix = rendered.replace("\\", "/")
     anchor = PureWindowsPath(rendered).anchor if keep_absolute else ""
-    parts = [part for part in posix[len(anchor) :].split("/") if part]
+    parts = [_clean_segment(part) for part in posix[len(anchor) :].split("/")]
+    parts = [part for part in parts if part]
     if not anchor:
         return "/".join(parts)
     return PureWindowsPath(anchor, *parts).as_posix()
@@ -449,14 +468,14 @@ class TemplateEngine:
 
 
 class PathEngine(TemplateEngine):
-    """路径输出: 填值时截断 title / actor / actors / actress / actresses, 折叠空段, 再按库根目录 / safe_dirs 写成字面绝对路径."""
+    """路径输出: 填值时截断 title / actor / actors / actress / actresses, 按 Windows 创建结果规范化每个路径段, 再按库根目录 / safe_dirs 写成字面绝对路径."""
 
     def fill(self, ctx: TemplateContext) -> str:
         variables = {name: _clip_field(value) if name in _CLIP_KEYS else value for name, value in ctx.variables.items()}
         return _render_nodes(self.tree, variables)
 
     def clean(self, filled: str, ctx: TemplateContext) -> str:
-        return _collapse_empty_segments(filled, keep_absolute=_template_keeps_absolute(self.source, ctx.variables))
+        return _normalize_path_segments(filled, keep_absolute=_template_keeps_absolute(self.source, ctx.variables))
 
     def resolve(self, ctx: TemplateContext, base_path: Path, safe_dirs: Sequence[Path] | None) -> Path:
         """渲染并得到字面绝对路径, 强制约束在允许的边界内.
