@@ -22,8 +22,9 @@ RUN uv sync --no-dev --frozen --no-editable
 
 # --- 最终镜像 ---
 FROM base
+# libgomp1: 超分二进制的运行时依赖, Real-ESRGAN 与 waifu2x 都动态链接 libgomp.
 # postgresql-client: r18.dev dump 导入走 psql -f 子进程 (见 docs/dev/crawlers.md). 不配 r18 时无害.
-RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 COPY alembic.ini ./
 COPY --from=web-builder /app/web/dist ./web/dist
