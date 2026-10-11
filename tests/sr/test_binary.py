@@ -8,37 +8,30 @@ from pathlib import Path
 import pytest
 
 from amane.sr import SrTool, get_binary_path, get_download_url, is_binary_available
-from amane.sr.tool import normalize_arch
+from amane.sr.tool import ANY_ARCH, get_tool_meta, normalize_arch
 
 
 class TestGetDownloadUrl:
     """按平台与架构选择下载包."""
 
-    def test_linux_uses_self_built_packages(self):
-        """linux 两个架构都取自建包: 上游无 arm64 包, 且其纯 CPU 模式段错误."""
-        arm64 = get_download_url(SrTool.WAIFU2X, "linux", "aarch64")
-        x86_64 = get_download_url(SrTool.WAIFU2X, "linux", "x86_64")
-        for url in (arm64, x86_64):
-            assert "/sqzw-x/waifu2x-ncnn-vulkan/" in url
-        assert arm64.endswith("-linux-arm64.zip")
-        assert x86_64.endswith("-linux-x86_64.zip")
+    @pytest.mark.parametrize("tool", list(SrTool))
+    def test_arch_keyed_platform_maps_arches_to_distinct_packages(self, tool: SrTool):
+        """分架构的平台必须为各架构解析到不同的包: 指向同一份会让其中一个架构跑到异构二进制."""
+        for target, by_arch in get_tool_meta(tool).download_urls.items():
+            if ANY_ARCH in by_arch:
+                continue
+            urls = [get_download_url(tool, target, arch) for arch in by_arch]
+            assert len(set(urls)) == len(urls), target
 
     def test_arch_agnostic_platform_shares_one_package(self):
         """平台包与架构无关时, 各架构取同一个包."""
         for tool in SrTool:
             assert get_download_url(tool, "darwin", "arm64") == get_download_url(tool, "darwin", "x86_64")
 
-    def test_machine_alias_normalized(self):
-        """AMD64 与 x86_64 等价, ARM64 与 aarch64 等价."""
-        assert get_download_url(SrTool.WAIFU2X, "win32", "AMD64") == get_download_url(SrTool.WAIFU2X, "win32", "x86_64")
-        assert get_download_url(SrTool.WAIFU2X, "linux", "ARM64") == get_download_url(
-            SrTool.WAIFU2X, "linux", "aarch64"
-        )
-
     @pytest.mark.parametrize("tool", list(SrTool))
-    def test_current_platform_supported(self, tool: SrTool):
-        """运行本测试的平台必须能取到包."""
-        assert get_download_url(tool, sys.platform, platform.machine()).startswith("https://")
+    def test_current_platform_resolves(self, tool: SrTool):
+        """本机平台必须落在表内: 键与 ``sys.platform`` / ``platform.machine()`` 的取值不符时只在运行期暴露."""
+        assert get_download_url(tool, sys.platform, platform.machine()).endswith(".zip")
 
     @pytest.mark.parametrize(
         ("tool", "target", "machine"),
