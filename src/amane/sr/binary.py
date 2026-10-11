@@ -1,6 +1,7 @@
-"""缓存在 ``{data_dir}/tools/{tool}/``. 首次 ensure_binary() 时从 GitHub Release 下载."""
+"""缓存在 ``{data_dir}/tools/{tool}/{平台}-{架构}/``. 首次 ensure_binary() 时从 GitHub Release 下载."""
 
 import os
+import platform
 import shutil
 import stat
 import sys
@@ -11,7 +12,7 @@ from pathlib import Path
 import httpx2 as httpx
 import structlog
 
-from .tool import SrTool, get_tool_meta
+from .tool import SrTool, get_download_url, get_tool_meta, normalize_arch
 
 logger = structlog.get_logger()
 
@@ -20,13 +21,17 @@ def get_tool_dir(data_dir: Path) -> Path:
     return data_dir.absolute() / "tools"
 
 
+def _install_dir(tool: SrTool, data_dir: Path) -> Path:
+    """按平台与架构隔离: 同一 data_dir 换平台或架构后不复用异构二进制."""
+    return get_tool_dir(data_dir) / tool / f"{sys.platform}-{normalize_arch(platform.machine())}"
+
+
 def get_binary_path(tool: SrTool, data_dir: Path) -> Path:
-    meta = get_tool_meta(tool)
-    name = meta.binary_name
+    name = get_tool_meta(tool).binary_name
     # Windows 官方包是 .exe; CreateProcess 在路径含目录时不会补后缀.
     if sys.platform == "win32":
         name = f"{name}.exe"
-    return get_tool_dir(data_dir) / tool / name
+    return _install_dir(tool, data_dir) / name
 
 
 def is_binary_available(tool: SrTool, data_dir: Path) -> bool:
@@ -65,10 +70,7 @@ async def ensure_binary(tool: SrTool, data_dir: Path, client: httpx.AsyncClient 
 
 
 async def _download_binary(tool: SrTool, dest_dir: Path, client: httpx.AsyncClient) -> None:
-    meta = get_tool_meta(tool)
-    download_url = meta.download_urls.get(sys.platform)
-    if download_url is None:
-        raise RuntimeError(f"不支持的操作系统: {sys.platform}")
+    download_url = get_download_url(tool, sys.platform, platform.machine())
 
     # 下载到临时文件
     logger.info("downloading sr binary", url=download_url)

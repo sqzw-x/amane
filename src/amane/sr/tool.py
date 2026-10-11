@@ -46,6 +46,15 @@ def get_preset_meta(preset: SrPreset) -> PresetMeta:
     return _PRESET_META[preset]
 
 
+ANY_ARCH = "any"
+"""架构键通配: 该平台上各架构共用同一个包."""
+
+
+def normalize_arch(machine: str) -> str:
+    """``platform.machine()`` → 规范架构名."""
+    return {"amd64": "x86_64", "arm64": "aarch64"}.get(machine.lower(), machine.lower())
+
+
 @dataclass(frozen=True, slots=True)
 class ToolMeta:
     binary_name: str
@@ -53,13 +62,17 @@ class ToolMeta:
     models: tuple[str, ...]
     native_scale: int
     scales: tuple[int, ...]
-    download_urls: dict[str, str] = field(default_factory=dict)
-    """sys.platform → 下载 URL. key: darwin/linux/win32."""
+    download_urls: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    """sys.platform → 架构 → 下载 URL. key: darwin/linux/win32."""
 
 
 _REALESRGAN_RELEASE = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0"
 
 _WAIFU2X_RELEASE = "https://github.com/nihui/waifu2x-ncnn-vulkan/releases/download/20250915"
+
+# 上游的 Linux 包在纯 CPU 模式下段错误 (缺少 Vulkan 设备时的 GPU 初始化, Net::set_vulkan_device,
+# 以及 sgemm 卷积路径引用的 Gemm 层未编入), 且不提供 arm64 包. 此处指向修正后的自建包.
+_WAIFU2X_SELF_RELEASE = "https://github.com/sqzw-x/waifu2x-ncnn-vulkan/releases/download/amane-linux-1"
 
 
 _TOOL_META: Mapping[SrTool, ToolMeta] = {
@@ -75,9 +88,9 @@ _TOOL_META: Mapping[SrTool, ToolMeta] = {
         native_scale=4,
         scales=(2, 3, 4),
         download_urls={
-            "darwin": f"{_REALESRGAN_RELEASE}/realesrgan-ncnn-vulkan-20220424-macos.zip",
-            "linux": f"{_REALESRGAN_RELEASE}/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
-            "win32": f"{_REALESRGAN_RELEASE}/realesrgan-ncnn-vulkan-20220424-windows.zip",
+            "darwin": {ANY_ARCH: f"{_REALESRGAN_RELEASE}/realesrgan-ncnn-vulkan-20220424-macos.zip"},
+            "linux": {"x86_64": f"{_REALESRGAN_RELEASE}/realesrgan-ncnn-vulkan-20220424-ubuntu.zip"},
+            "win32": {ANY_ARCH: f"{_REALESRGAN_RELEASE}/realesrgan-ncnn-vulkan-20220424-windows.zip"},
         },
     ),
     SrTool.WAIFU2X: ToolMeta(
@@ -91,9 +104,12 @@ _TOOL_META: Mapping[SrTool, ToolMeta] = {
         native_scale=2,
         scales=(1, 2, 4, 8, 16, 32),
         download_urls={
-            "darwin": f"{_WAIFU2X_RELEASE}/waifu2x-ncnn-vulkan-20250915-macos.zip",
-            "linux": f"{_WAIFU2X_RELEASE}/waifu2x-ncnn-vulkan-20250915-linux.zip",
-            "win32": f"{_WAIFU2X_RELEASE}/waifu2x-ncnn-vulkan-20250915-windows.zip",
+            "darwin": {ANY_ARCH: f"{_WAIFU2X_RELEASE}/waifu2x-ncnn-vulkan-20250915-macos.zip"},
+            "linux": {
+                "x86_64": f"{_WAIFU2X_SELF_RELEASE}/waifu2x-ncnn-vulkan-20250915-linux-x86_64.zip",
+                "aarch64": f"{_WAIFU2X_SELF_RELEASE}/waifu2x-ncnn-vulkan-20250915-linux-arm64.zip",
+            },
+            "win32": {ANY_ARCH: f"{_WAIFU2X_RELEASE}/waifu2x-ncnn-vulkan-20250915-windows.zip"},
         },
     ),
 }
@@ -101,3 +117,12 @@ _TOOL_META: Mapping[SrTool, ToolMeta] = {
 
 def get_tool_meta(tool: SrTool) -> ToolMeta:
     return _TOOL_META[tool]
+
+
+def get_download_url(tool: SrTool, platform: str, machine: str) -> str:
+    """按平台与架构取下载 URL; 该组合无可用包时抛 RuntimeError."""
+    by_arch = get_tool_meta(tool).download_urls.get(platform) or {}
+    url = by_arch.get(normalize_arch(machine)) or by_arch.get(ANY_ARCH)
+    if url is None:
+        raise RuntimeError(f"不支持的平台与架构: {platform} {machine}")
+    return url

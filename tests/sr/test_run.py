@@ -6,16 +6,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from amane.config import SrConfig
-from amane.sr import SrPreset, SrTool, run_SR
+from amane.sr import SrPreset, SrTool, get_binary_path, run_SR
 
-# 二进制查找路径: 项目根/SR/ 或 data_dir/tools/{tool}/
 _PROJ_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _find_binary(tool: SrTool) -> Path | None:
-    """查找二进制, 找不到返回 None."""
-    name = "realesrgan-ncnn-vulkan" if tool == SrTool.REALESRGAN else "waifu2x-ncnn-vulkan"
-    p = _PROJ_ROOT / "data" / "tools" / tool / name
+    """查找应用已缓存的二进制, 找不到返回 None."""
+    p = get_binary_path(tool, _PROJ_ROOT / "data")
     if p.is_file():
         return p
     return None
