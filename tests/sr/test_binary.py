@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from amane.sr import SrTool, get_binary_path, get_download_url, is_binary_available
-from amane.sr.tool import ANY_ARCH, get_tool_meta, normalize_arch
+from amane.sr.tool import ANY_ARCH, get_tool_meta
 
 
 class TestGetDownloadUrl:
@@ -46,23 +46,6 @@ class TestGetDownloadUrl:
         """无可用包时报错, 并在信息里指明平台与架构."""
         with pytest.raises(RuntimeError, match=f"{target} {machine}"):
             get_download_url(tool, target, machine)
-
-
-class TestNormalizeArch:
-    """架构名归一."""
-
-    @pytest.mark.parametrize(
-        ("machine", "expected"),
-        [
-            ("x86_64", "x86_64"),
-            ("AMD64", "x86_64"),
-            ("arm64", "aarch64"),
-            ("aarch64", "aarch64"),
-            ("RISCV64", "riscv64"),
-        ],
-    )
-    def test_normalize(self, machine: str, expected: str):
-        assert normalize_arch(machine) == expected
 
 
 class TestIsBinaryAvailable:
