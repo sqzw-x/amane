@@ -13,13 +13,26 @@ import {
   TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowMerge, IconDots, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
-import { useMutation } from "@tanstack/react-query";
+import {
+  IconArrowMerge,
+  IconDots,
+  IconPencil,
+  IconPlus,
+  IconStar,
+  IconTrash,
+} from "@tabler/icons-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { createUserTagsMutation, listFacetsQueryKey } from "@/client/@tanstack/react-query.gen";
+import {
+  batchFacetsMutation,
+  createUserTagsMutation,
+  getFacetQueryKey,
+  listFacetsQueryKey,
+} from "@/client/@tanstack/react-query.gen";
 import type { FacetKind, FacetResponse, FacetSortField, SortOrder } from "@/client/types.gen";
+import { FacetFavoriteStar } from "./facet-favorite-star";
 import { FacetRulesPanel } from "./facet-rules-panel";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
@@ -28,6 +41,8 @@ import { SortableTh } from "@/components/common/sortable-th";
 import { useFacetIdentityActions } from "@/hooks/use-facet-identity-actions";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { extractErrorMessage } from "@/lib/api-error";
+import { isOneOf } from "@/lib/exhaustive";
+import { FAVORITE_FACET_KINDS } from "@/lib/exhaustive-maps";
 import { useUIStore } from "@/stores/ui";
 import classes from "./catalog-facet-table.module.css";
 
@@ -56,9 +71,10 @@ export function CatalogFacetTable({
 }: CatalogFacetTableProps) {
   const { t } = useTranslation(["metadata", "common", "library"]);
   const limit = useUIStore((s) => s.pageSizes.catalogList);
+  const queryClient = useQueryClient();
   const pageIds = items.map((i) => i.id);
 
-  const { selected, toggleOne, toggleAll, isAllSelected, clear } = useIdSelection();
+  const { selected, selectedIds, toggleOne, toggleAll, isAllSelected, clear } = useIdSelection();
   const identity = useFacetIdentityActions({
     kind,
     listQueryKey: listFacetsQueryKey({ path: { kind } }),
@@ -66,6 +82,8 @@ export function CatalogFacetTable({
     onMerged: clear,
   });
   const { isUserTag } = identity;
+  // 收藏只在支持该分类的 kind 上渲染; 窄屏动作列只容得下一个按钮, 收藏改在详情页标题行.
+  const isFavoriteKind = isOneOf(FAVORITE_FACET_KINDS, kind);
 
   const [newTagName, setNewTagName] = useState("");
 
@@ -80,6 +98,30 @@ export function CatalogFacetTable({
       });
       setNewTagName("");
       identity.invalidate();
+    },
+    onError: (err) =>
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      }),
+  });
+
+  // 批量收藏是整体赋值: 已处于目标取值的条目不动, 界面因此不做逐项取反.
+  const favoriteMutation = useMutation({
+    ...batchFacetsMutation(),
+    onSuccess: (res, variables) => {
+      notifications.show({
+        message: t("favorite.batchUpdated", { count: res.changed }),
+        color: "blue",
+      });
+      // 前缀失效覆盖该 kind 的任意筛选组合; 详情页读单个分类, 只失效列表会让自身不刷新.
+      void queryClient.invalidateQueries({ queryKey: [{ _id: "listFacets" }] });
+      for (const facetId of variables.body.facet_ids) {
+        void queryClient.invalidateQueries({
+          queryKey: getFacetQueryKey({ path: { kind, facet_id: facetId } }),
+        });
+      }
+      clear();
     },
     onError: (err) =>
       notifications.show({
@@ -126,7 +168,43 @@ export function CatalogFacetTable({
                 </Button>
               </Group>
             )}
-            <SelectionBar count={selected.size} hint={t("manage.mergeGuide")} />
+            <SelectionBar count={selected.size} hint={t("manage.mergeGuide")}>
+              {/* 不支持收藏的 kind 不渲染这两个动作: 端点对它们一律返回 400. */}
+              {isFavoriteKind && (
+                <>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    leftSection={<IconStar size={14} />}
+                    loading={favoriteMutation.isPending}
+                    disabled={selected.size === 0}
+                    onClick={() =>
+                      favoriteMutation.mutate({
+                        path: { kind },
+                        body: { facet_ids: selectedIds, action: "favorite" },
+                      })
+                    }
+                  >
+                    {t("favorite.add")}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    leftSection={<IconStar size={14} />}
+                    loading={favoriteMutation.isPending}
+                    disabled={selected.size === 0}
+                    onClick={() =>
+                      favoriteMutation.mutate({
+                        path: { kind },
+                        body: { facet_ids: selectedIds, action: "unfavorite" },
+                      })
+                    }
+                  >
+                    {t("favorite.remove")}
+                  </Button>
+                </>
+              )}
+            </SelectionBar>
           </Stack>
         }
         trailing={
@@ -182,8 +260,15 @@ export function CatalogFacetTable({
                   <Badge variant="light">{facet.count}</Badge>
                 </Table.Td>
                 <Table.Td>
-                  {/* 窄屏动作列只容得下一个按钮, 三个动作移入菜单. */}
+                  {/* 窄屏动作列只容得下一个按钮, 其余动作移入菜单. */}
                   <Group gap={4} justify="flex-end" wrap="nowrap" visibleFrom="sm">
+                    {isFavoriteKind && (
+                      <FacetFavoriteStar
+                        kind={kind}
+                        facetId={facet.id}
+                        isFavorite={facet.is_favorite}
+                      />
+                    )}
                     <HintedActionIcon
                       variant="subtle"
                       label={t("common:actions.edit")}

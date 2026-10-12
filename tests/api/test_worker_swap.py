@@ -21,6 +21,7 @@ from amane.db.repository import Repository
 from amane.handlers.models import RefreshPayload, RefreshResult
 from amane.handlers.protocol import TaskHandler, TaskResult
 from amane.scheduler.worker import CANCEL_ERROR
+from tests.helpers import LOAD_TOLERANT_TIMEOUT
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -90,7 +91,9 @@ async def _submit_refresh(client: AsyncClient, library_id: int) -> int:
     return int(resp.json()["id"])
 
 
-async def _await_status(client: AsyncClient, task_id: int, status: str, timeout: float = 5.0) -> dict[str, Any]:
+async def _await_status(
+    client: AsyncClient, task_id: int, status: str, timeout: float = LOAD_TOLERANT_TIMEOUT
+) -> dict[str, Any]:
     async with asyncio.timeout(timeout):
         while True:
             resp = await client.get(f"tasks/{task_id}")
@@ -214,21 +217,21 @@ async def test_consecutive_changes_keep_each_task(
     library_id = await _create_library(client, safe_path)
 
     first = await _submit_refresh(client, library_id)
-    await asyncio.wait_for(blocker.generations[0][1].wait(), timeout=5)
+    await asyncio.wait_for(blocker.generations[0][1].wait(), timeout=LOAD_TOLERANT_TIMEOUT)
 
     resp = await client.patch("config", json={"watermark": {"enabled": True}})
     assert resp.status_code == 200
-    await asyncio.wait_for(runtime._retiring[-1].worker.wait_stopped(), timeout=5)
+    await asyncio.wait_for(runtime._retiring[-1].worker.wait_stopped(), timeout=LOAD_TOLERANT_TIMEOUT)
 
     second = await _submit_refresh(client, library_id)
-    await asyncio.wait_for(blocker.generations[1][1].wait(), timeout=5)
+    await asyncio.wait_for(blocker.generations[1][1].wait(), timeout=LOAD_TOLERANT_TIMEOUT)
 
     resp = await client.patch("config", json={"agent": {"model": "gpt-5"}})
     assert resp.status_code == 200
-    await asyncio.wait_for(runtime._retiring[-1].worker.wait_stopped(), timeout=5)
+    await asyncio.wait_for(runtime._retiring[-1].worker.wait_stopped(), timeout=LOAD_TOLERANT_TIMEOUT)
 
     third = await _submit_refresh(client, library_id)
-    await asyncio.wait_for(blocker.generations[2][1].wait(), timeout=5)
+    await asyncio.wait_for(blocker.generations[2][1].wait(), timeout=LOAD_TOLERANT_TIMEOUT)
     assert len(runtime._retiring) == 2
 
     for task_id in (first, second, third):

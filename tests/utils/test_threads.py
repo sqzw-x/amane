@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import time
 from pathlib import Path
 
 import pytest
 
 from amane.utils.threads import in_thread, path_exists, path_is_dir
+from tests.helpers import LoopProgressProbe
 
 
 @in_thread
@@ -64,20 +64,14 @@ class TestInThread:
 
     @pytest.mark.asyncio
     async def test_does_not_block_event_loop(self):
-        order: list[str] = []
+        probe = LoopProgressProbe()
 
         @in_thread
         def slow() -> None:
-            order.append("work_start")
-            time.sleep(0.15)
-            order.append("work_end")
+            probe.wait()
 
-        async def marker() -> None:
-            await asyncio.sleep(0.04)
-            order.append("marker")
-
-        await asyncio.gather(slow(), marker())
-        assert order.index("marker") < order.index("work_end")
+        await asyncio.gather(slow(), probe.marker())
+        assert probe.passed, "in_thread 没有把同步体移入线程: 事件循环已被它独占"
 
     @pytest.mark.asyncio
     async def test_path_exists_and_is_dir(self, tmp_path: Path):

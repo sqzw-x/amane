@@ -1,5 +1,6 @@
 import asyncio
 import subprocess
+import threading
 import time
 from collections.abc import Callable, Iterable
 from enum import Enum
@@ -16,6 +17,11 @@ if TYPE_CHECKING:
     from amane.db.models import TaskType
     from amane.db.repository import Repository
     from amane.handlers.protocol import TaskHandler
+
+
+# 等待「某个条件最终成立」时的预算. 超售的 CI runner 上单次事件循环轮转可达数百毫秒,
+# 秒级预算会把「慢」误判成「没发生」; 条件本身仍然由事件判定, 这里只放大上限.
+LOAD_TOLERANT_TIMEOUT = 30.0
 
 
 def make_junction(link: Path, target: Path) -> None:
@@ -194,3 +200,32 @@ async def await_for[T](
                 f"condition not met within {timeout}s (interval={interval}s). last error: {last_exc!r}"
             ) from last_exc
         await asyncio.sleep(interval)
+
+
+class LoopProgressProbe:
+    """判定一段同步调用是否阻塞了事件循环, 判据是事件顺序而不是各自的耗时.
+
+    把 ``wait`` 插入被测的同步路径, 把 ``marker`` 作为同一循环上的对照协程, 两者并发执行:
+    ``wait`` 只在 ``marker`` 已经在循环上执行过之后才返回. 循环确实被同步调用独占时
+    ``marker`` 没有机会运行, ``wait`` 到点返回失败, ``passed`` 保持 False.
+    """
+
+    def __init__(self, timeout: float = LOAD_TOLERANT_TIMEOUT) -> None:
+        self._entered = threading.Event()
+        self._released = threading.Event()
+        self._timeout = timeout
+        self.passed = False
+
+    def wait(self) -> None:
+        """在工作线程里等待 ``marker`` 放行."""
+        self._entered.set()
+        self.passed = self._released.wait(timeout=self._timeout)
+
+    async def marker(self) -> None:
+        """对照协程: 观察到 ``wait`` 已进入才放行它; 到点仍未进入则不再放行."""
+        deadline = asyncio.get_running_loop().time() + self._timeout
+        while not self._entered.is_set():
+            if asyncio.get_running_loop().time() >= deadline:
+                return
+            await asyncio.sleep(0.01)
+        self._released.set()

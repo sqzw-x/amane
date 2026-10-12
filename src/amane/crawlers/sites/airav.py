@@ -1,4 +1,3 @@
-import re
 from urllib.parse import quote, urljoin
 
 from parsel import Selector
@@ -28,22 +27,29 @@ class AiravCrawler(Crawler):
         return None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
+        """详情页的番号与标题同在一个 h1 里, 其余字段都在信息表的条目中; 页面只提供固定的试看时长, 因此不解析片长."""
         text = await self.client.get_html(url)
         html = Selector(text=text)
 
-        number = extract_text(html, '//span[@class="video_code"]/text()')
-        if not number:
+        number = extract_text(html, '//li[contains(text(), "番")]/span/text()')
+        heading = extract_text(html, '//div[contains(@class, "video-title")]//h1/text()')
+        if not number or not heading:
             return None
 
-        title = extract_text(html, '//h5[@class="video_title"]/text()')
-        actors = extract_all_texts(html, '//li[span[contains(text(),"演員")]]/a/text()')
-        studio = extract_text(html, '//li[span[contains(text(),"廠商")]]/a/text()')
-        release = extract_text(html, '//li[span[contains(text(),"日期")]]/text()[last()]')
-        runtime_str = extract_text(html, '//li[span[contains(text(),"時長")]]/text()')
-        runtime = self._parse_runtime(runtime_str)
-        tags = extract_all_texts(html, '//div[@class="tagBtnMargin"]/a/text()')
-        cover = extract_text(html, '//img[@id="video_jacket_img"]/@src')
-        plot = extract_text(html, '//div[@class="video_description"]/text()')
+        token = leading_token(heading)
+        title = heading[len(token) :].strip() if is_same_number(token, number) else heading
+
+        cover = extract_text(html, '//meta[@property="og:image"]/@content')
+        if cover and not cover.startswith("http"):
+            cover = urljoin(self.base_url, cover)
+
+        actors = extract_all_texts(html, '//a[contains(@href, "actor?id=")]/text()')
+        studio = extract_text(html, '//a[contains(@href, "tag?fid=")]/text()')
+        release = extract_text(
+            html, '//div[contains(@class, "video-item")]//i[contains(@class, "fa-clock")]/parent::*/text()'
+        )
+        tags = extract_all_texts(html, '//a[contains(@href, "tag?tid=")]/text()')
+        plot = extract_text(html, '//div[contains(@class, "video-info")]/p/text()')
 
         return MediaMetadata(
             number=number,
@@ -51,16 +57,8 @@ class AiravCrawler(Crawler):
             actors=film_actors(actors),
             studio=studio or None,
             release=release or None,
-            runtime=runtime,
             tags=tags,
             thumb_urls=[cover] if cover else [],
             plot=plot or None,
             source_url=url,
         )
-
-    @staticmethod
-    def _parse_runtime(text: str) -> int | None:
-        if not text:
-            return None
-        match = re.search(r"(\d+)", text)
-        return int(match.group(1)) if match else None

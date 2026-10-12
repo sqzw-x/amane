@@ -369,6 +369,17 @@
           "rate_limit": {
             "label": "Rate Limit",
             "description": "Max requests per second for this site"
+          },
+          "languages": {
+            "label": "Language Priority",
+            "description": "First entry with body text wins",
+            "$": {
+              "options": {
+                "zh": "Chinese",
+                "ja": "Japanese",
+                "en": "English"
+              }
+            }
           }
         }
       },

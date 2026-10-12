@@ -198,6 +198,18 @@
     "list": "List",
     "cloud": "Cloud"
   },
+  "favorite": {
+    "add": "Favorite",
+    "remove": "Unfavorite",
+    "filterLabel": "Favorite",
+    "filterAny": "Any",
+    "filterYes": "Favorited",
+    "filterNo": "Not favorited",
+    "sectionTitle": "Favorites",
+    "batchUpdated_one": "Favorite updated on {{count}} category",
+    "batchUpdated_other": "Favorites updated on {{count}} categories",
+    "missing": "This category no longer exists"
+  },
   "actors": {
     "title": "Actors",
     "searchPlaceholder": "Search name or alias…",
@@ -365,7 +377,8 @@
     "changedCount": "{{count}} field(s) changed",
     "noChanges": "No changes",
     "changedCount_one": "{{count}} field(s) changed",
-    "changedCount_other": "{{count}} field(s) changed"
+    "changedCount_other": "{{count}} field(s) changed",
+    "loadImages": "Load images"
   },
   "lock": {
     "manage": "Field Locks",

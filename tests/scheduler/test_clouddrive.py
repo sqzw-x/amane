@@ -1,13 +1,9 @@
 """CloudDrive webhook 分流与入库."""
 
 import asyncio
-import time
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import SQLModel
 
 from amane.db.repository import Repository
 from amane.enums import LibraryAutomation, LibraryIngest
@@ -36,13 +32,9 @@ class TestMatchRoute:
 
 
 class TestCloudDriveIngest:
-    @pytest_asyncio.fixture
-    async def repo(self):
-        engine = create_async_engine("sqlite+aiosqlite://", echo=False)
-        async with engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.create_all)
-        yield Repository(engine)
-        await engine.dispose()
+    """``repo`` 用 `tests/conftest.py` 的文件库: 去抖扫描与用例断言并发执行,
+    内存库 (StaticPool) 让两者的会话共用同一个连接, 会互相提交或回滚对方的事务.
+    """
 
     @pytest.fixture
     def service(self, repo: Repository) -> WatcherService:
@@ -222,7 +214,10 @@ class TestCloudDriveIngest:
         await service.stop()
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_dir_rename_into_library_scans_once(self, repo: Repository, tmp_path: Path) -> None:
+    async def test_dir_rename_into_library_scans_once(
+        self, repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """同一批变更里的多个目录 rename 合并为一次防抖扫描, 不是逐条各等一轮."""
         service = WatcherService(repo, EventBus(), use_polling=True, debounce_seconds=0.3, check_interval=0.05)
         first = tmp_path / "a"
         second = tmp_path / "b"
@@ -240,7 +235,17 @@ class TestCloudDriveIngest:
             automation=LibraryAutomation.WATCH,
         )
         await service.start()
-        started = time.monotonic()
+
+        # 逐条等待防抖的实现会为每个 rename 各排一次扫描, 批次大小就是判据
+        batches: list[int] = []
+        scan_batch = service._scan_collected_dirs
+
+        async def spy(dir_creates: list[tuple[int, str]]) -> None:
+            batches.append(len(dir_creates))
+            await scan_batch(dir_creates)
+
+        monkeypatch.setattr(service, "_scan_collected_dirs", spy)
+
         await service.ingest_clouddrive(
             [
                 CloudDriveChange(
@@ -257,8 +262,7 @@ class TestCloudDriveIngest:
                 ),
             ]
         )
-        elapsed = time.monotonic() - started
-        assert elapsed < 0.5
+        assert batches == [2]
         assert await repo.get_media_file_by_path(str(video_a)) is not None
         assert await repo.get_media_file_by_path(str(video_b)) is not None
         assert lib.id is not None

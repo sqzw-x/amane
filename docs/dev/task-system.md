@@ -128,7 +128,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ## 图像超分
 
-超分只在两处发生, serve 永不触发: scrape 期急切 (`sr.enabled` 时对低质本地副本) 与 UPSCALE 任务 (扫描 Resource, 补 `'sr' not in meta` 的低质图). **就地覆盖**: 不产生新 URL, 直接覆盖磁盘文件并在 `meta` 打 `'sr'`, 前端零感知; 预设只暴露两个, 屏蔽工具 / 模型 / 倍率; 二进制按需下到 `{data_dir}/tools/`.
+超分只在两处发生, serve 永不触发: scrape 期急切 (`sr.enabled` 时对低质本地副本) 与 UPSCALE 任务 (扫描 Resource, 补 `'sr' not in meta` 的低质图). **就地覆盖**: 不产生新 URL, 直接覆盖磁盘文件并在 `meta` 打 `'sr'`, 前端零感知; 预设只暴露两个, 屏蔽工具 / 模型 / 倍率; 二进制按需下到 `{data_dir}/tools/{tool}/{平台}-{架构}/`, 无可选包的目标在下载前即报错.
 
 ## Worker 并发
 

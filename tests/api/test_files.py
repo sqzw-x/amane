@@ -2,11 +2,12 @@
 
 import asyncio
 import os
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+
+from tests.helpers import LoopProgressProbe
 
 if TYPE_CHECKING:
     from httpx2 import AsyncClient
@@ -118,23 +119,17 @@ class TestListFiles:
     async def test_list_scandir_does_not_block_event_loop(self, client: AsyncClient, safe_path, monkeypatch):
         """scandir 在线程池: FUSE 上的慢目录不能阻塞同循环上的其它 coroutine."""
         real_scandir = os.scandir
-        order: list[str] = []
+        probe = LoopProgressProbe()
 
         def slow_scandir(path):
-            order.append("scandir_start")
-            time.sleep(0.2)
-            order.append("scandir_end")
+            probe.wait()
             return real_scandir(path)
 
         monkeypatch.setattr("amane.api.routes.files.os.scandir", slow_scandir)
 
-        async def marker() -> None:
-            await asyncio.sleep(0.05)
-            order.append("marker")
-
-        listed, _ = await asyncio.gather(client.get("files", params={"path": str(safe_path)}), marker())
+        listed, _ = await asyncio.gather(client.get("files", params={"path": str(safe_path)}), probe.marker())
         assert listed.status_code == 200
-        assert order.index("marker") < order.index("scandir_end")
+        assert probe.passed, "scandir 不在线程池: 事件循环已在整个目录枚举期间被独占"
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_entry_stat_error_skips_metadata(self, client: AsyncClient, safe_path, monkeypatch):
