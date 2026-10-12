@@ -29,6 +29,7 @@ _KIN8_CUTIE = _scene(
     scene_id="96842b9f-0405-481b-a44a-1c7fb5b0370c",
 )
 _KIN8_SHARED_HOUSE = _scene("4072", title="KIN8 Shared House", date="2025-07-31", studio="Kin8tengoku")
+_KIN8_0001 = _scene("0001", title="KIN8 First", date="2009-01-14", studio="Kin8tengoku")
 _OTHER_4072 = _scene("4072", title="Aiden Starr and Danny Wylde", date="2013-02-04", studio="Men In Pain")
 _SSIS_497 = _scene("SSIS-497", title="Sample Title", date="2024-01-01", studio="S1")
 _BLACKED = _scene("blacked:first-anal", title="First Anal", date="2026-03-29", studio="Blacked")
@@ -36,11 +37,16 @@ _BLACKED_SAME_DAY = _scene("blacked:another", title="Another", date="2026-03-29"
 _BLACKED_OTHER_STUDIO = _scene("blackedraw:first-anal", title="First Anal", date="2026-03-29", studio="BlackedRaw")
 
 PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] = [
-    # kin8 番号带站前缀, TPDB 的 code 是裸 4 位 movie_id
+    # kin8 番号带站前缀, TPDB 的 code 是站内 4 位补零 id
     ("KIN8-0236", [_KIN8_CUTIE], _KIN8_CUTIE),
     ("kin8-0236", [_KIN8_CUTIE], _KIN8_CUTIE),
     ("KIN8TENGOKU-0236", [_KIN8_CUTIE], _KIN8_CUTIE),
     ("KIN8 0236", [_KIN8_CUTIE], _KIN8_CUTIE),
+    # 番号数字段未补零或补零过头, 与站内 id 对齐后仍命中
+    ("KIN8-1", [_KIN8_0001], _KIN8_0001),
+    ("KIN8-001", [_KIN8_0001], _KIN8_0001),
+    ("KIN8-0001", [_KIN8_0001], _KIN8_0001),
+    ("KIN8-00001", [_KIN8_0001], _KIN8_0001),
     # 他厂同号: 有 kin8 条目时取 kin8, 只有他厂条目不回退首条, 序号不同也不命中
     ("KIN8-4072", [_OTHER_4072, _KIN8_SHARED_HOUSE], _KIN8_SHARED_HOUSE),
     ("KIN8-4072", [_OTHER_4072], None),
@@ -52,8 +58,11 @@ PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] 
     ("Blacked.26.03.29", [_BLACKED], _BLACKED),
     ("Blacked.26.03.29", [_BLACKED, _BLACKED_SAME_DAY], None),
     ("Blacked.26.03.29", [_BLACKED_OTHER_STUDIO], None),
-    # 缺前缀或空番号不命中
+    # 缺前缀、数字段全零或超出 4 位编号长度不命中
     ("KIN8-", [_KIN8_CUTIE], None),
+    ("KIN8-0", [_KIN8_0001], None),
+    ("KIN8-0000", [_KIN8_0001], None),
+    ("KIN8-10000", [_KIN8_0001], None),
     ("", [_KIN8_CUTIE], None),
 ]
 
@@ -77,6 +86,8 @@ FETCH_CASES: list[tuple[str, list[dict[str, Any]], tuple[str, str, str, str] | N
     # 带前缀的 kin8 番号命中, 应答按 code / title / date / studio 投影
     ("KIN8-0236", [_KIN8_CUTIE], ("0236", "Kin8 Cutie", "2010-05-27", "Kin8tengoku")),
     ("KIN8TENGOKU-0236", [_KIN8_CUTIE], ("0236", "Kin8 Cutie", "2010-05-27", "Kin8tengoku")),
+    # 未补零的番号与 TPDB 的 4 位 code 对齐
+    ("KIN8-1", [_KIN8_0001], ("0001", "KIN8 First", "2009-01-14", "Kin8tengoku")),
     # 他厂同号排在前面的候选被排除
     ("KIN8-4072", [_OTHER_4072, _KIN8_SHARED_HOUSE], ("4072", "KIN8 Shared House", "2025-07-31", "Kin8tengoku")),
     ("KIN8-4072", [_OTHER_4072], None),

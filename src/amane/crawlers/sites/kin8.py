@@ -1,4 +1,7 @@
-"""官网番号形如 ``KIN8-0001`` / ``KIN8TENGOKU-0001``, 详情页 id 是其数字段补零到 4 位."""
+"""官网番号形如 ``KIN8-0001`` / ``KIN8TENGOKU-0001``, 详情页 id 是其数字段补零到 4 位.
+
+TPDB 的 kin8 条目 ``code`` 用同一个 id, 比对键取自 ``movie_id``, 补零规则只在本文件维护.
+"""
 
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ _MOVIE_PATH = re.compile(r"/movie/(?P<id>\d+)")
 _SITE_TITLE_SEPARATOR = "|"
 
 
-def _movie_id(number: str) -> str | None:
+def movie_id(number: str) -> str | None:
     """番号 → 详情页 id; 前缀不符或数字段不是有效站点编号时返回 ``None``."""
     match = _NUMBER_PREFIX.match(number.strip().upper())
     if match is None:
@@ -41,10 +44,10 @@ class Kin8Crawler(Crawler):
         return CrawlerProfile(name=SiteName.KIN8, base_url="https://www.kin8tengoku.com")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        movie_id = _movie_id(query.number)
-        if movie_id is None:
+        detail_id = movie_id(query.number)
+        if detail_id is None:
             return None
-        url = f"{self.base_url}/movie/{movie_id}"
+        url = f"{self.base_url}/movie/{detail_id}"
         text = await self.client.get_html(url)
         if text and "title" in text.lower():
             return url
