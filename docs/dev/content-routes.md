@@ -57,7 +57,7 @@
 
 **getchu.com** — 美少女游戏 / 同人 / 动画周边, 商品是数字 id; 里番靠路径关键词分类, 所以是里番第一源.
 
-**kin8tengoku.com** — 单厂牌无碼站, 不纳入默认表 (用户按前缀自行加). 详情页 id 是 4 位补零数字, 须带 `kin8` / `kin8tengoku` 前缀, 无前缀不发 HTTP. 页是 Next.js 应用, 可解析字段只剩 `og:` 元标签与 CSS-module 类名.
+**kin8tengoku.com** — 单厂牌无碼站, 不纳入默认表 (用户按前缀自行加). 番号须带 `kin8` / `kin8tengoku` 前缀; 数字段在 1–9999 内时补零为 4 位再拼详情页, 越界或无前缀均不发 HTTP. 页是 Next.js 应用, 可解析字段只剩 `og:` 元标签与 CSS-module 类名.
 
 **theporndb.net** — 未登录跳转 `/login`; GraphQL 无 token 时影片 / 演员爬虫都直接 `None`. 欧美路由第一, 与影片共用 `site_config.api_token`. 欧美条目 `code` 是 `studio:title-slug`, 与文件名番号不同构, 日期号 (`Studio.YY.MM.DD`) 按片商 + 发布日期确认.
 

@@ -1,4 +1,4 @@
-"""官网番号形如 ``KIN8-0001`` / ``KIN8TENGOKU-0001``, 详情页 id 即其 4 位数字段."""
+"""官网番号形如 ``KIN8-0001`` / ``KIN8TENGOKU-0001``, 详情页 id 是其数字段补零到 4 位."""
 
 from __future__ import annotations
 
@@ -14,11 +14,25 @@ from ..parsing import extract_all_texts, extract_text
 # 只认本站前缀, 不认「任意番号里的首个数字串」: heyzo-1234 与 010115_001 都含数字, 拼出的是别人的 id.
 _NUMBER_PREFIX = re.compile(r"^KIN8(?:TENGOKU)?[-_ ]?(?P<id>\d+)$")
 
-# 官网 id 恒为 4 位补零, 不补零的形态 (/movie/1) 不存在.
+# 官网 id 恰好 4 位补零: 未补零的 `/movie/1`、超出 4 位的 `/movie/12345` 与全零的 `/movie/0000` 都不存在.
+_ID_DIGITS = 4
+
+# 从详情页 URL 反解 id.
 _MOVIE_PATH = re.compile(r"/movie/(?P<id>\d+)")
 
 # `<title>` / `og:title` 的站点名后缀, 如 ``… | 金髪洋物専門 無修正動画サイト 金髪天國``.
 _SITE_TITLE_SEPARATOR = "|"
+
+
+def _movie_id(number: str) -> str | None:
+    """番号 → 详情页 id; 前缀不符或数字段不是有效站点编号时返回 ``None``."""
+    match = _NUMBER_PREFIX.match(number.strip().upper())
+    if match is None:
+        return None
+    value = match["id"].lstrip("0")
+    if not value or len(value) > _ID_DIGITS:
+        return None
+    return value.zfill(_ID_DIGITS)
 
 
 class Kin8Crawler(Crawler):
@@ -27,10 +41,10 @@ class Kin8Crawler(Crawler):
         return CrawlerProfile(name=SiteName.KIN8, base_url="https://www.kin8tengoku.com")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        prefix_match = _NUMBER_PREFIX.match(query.number.strip().upper())
-        if prefix_match is None:
+        movie_id = _movie_id(query.number)
+        if movie_id is None:
             return None
-        url = f"{self.base_url}/movie/{prefix_match['id']}"
+        url = f"{self.base_url}/movie/{movie_id}"
         text = await self.client.get_html(url)
         if text and "title" in text.lower():
             return url
