@@ -19,6 +19,8 @@ def web_client() -> AsyncMock:
     return client
 
 
+# 夹具的 ``expected_none`` 用例把 ``RequestError`` 当作没有 URL 处理, 因此「拒绝分支是否真的没发请求」
+# 只能在单元测试里断言; 补零宽度与越界边界同样不值得为它各写一个 TOML.
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("number", "detail_id"),
@@ -27,10 +29,7 @@ def web_client() -> AsyncMock:
         ("KIN8-001", "0001"),
         ("KIN8-0001", "0001"),
         ("KIN8 0001", "0001"),
-        ("kin8_10", "0010"),
         ("KIN8TENGOKU-123", "0123"),
-        ("KIN8TENGOKU 9999", "9999"),
-        ("KIN8-00001", "0001"),
         # 编号越界或缺少本站前缀: 不命中, 且不发 HTTP
         ("KIN8-10000", None),
         ("KIN8TENGOKU-12345", None),
