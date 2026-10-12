@@ -14,6 +14,12 @@ from ..parsing import extract_all_texts, extract_text
 # 只认本站前缀, 不认「任意番号里的首个数字串」: heyzo-1234 与 010115_001 都含数字, 拼出的是别人的 id.
 _NUMBER_PREFIX = re.compile(r"^KIN8(?:TENGOKU)?[-_ ]?(?P<id>\d+)$")
 
+# 官网 id 恒为 4 位补零, 不补零的形态 (/movie/1) 不存在.
+_MOVIE_PATH = re.compile(r"/movie/(?P<id>\d+)")
+
+# `<title>` / `og:title` 的站点名后缀, 如 ``… | 金髪洋物専門 無修正動画サイト 金髪天國``.
+_SITE_TITLE_SEPARATOR = "|"
+
 
 class Kin8Crawler(Crawler):
     @classmethod
@@ -24,43 +30,36 @@ class Kin8Crawler(Crawler):
         prefix_match = _NUMBER_PREFIX.match(query.number.strip().upper())
         if prefix_match is None:
             return None
-        url = f"{self.base_url}/moviepages/{prefix_match['id']}/index.html"
+        url = f"{self.base_url}/movie/{prefix_match['id']}"
         text = await self.client.get_html(url)
         if text and "title" in text.lower():
             return url
         return None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
+        """配信日在首屏是骨架屏占位, 水合后才由客户端填入, 因此不解析 `release`."""
         text = await self.client.get_html(url)
         if not text:
             return None
 
         html = Selector(text=text)
 
-        title = extract_text(html, '//div[@id="title"]/h1/text()')
+        title = extract_text(html, '//meta[@property="og:title"]/@content', "//title/text()")
+        title = title.split(_SITE_TITLE_SEPARATOR, 1)[0].strip()
         if not title:
             return None
 
-        actors = extract_all_texts(html, '//div[@id="actress"]//a/text()')
-        cover = extract_text(html, '//div[@id="gallery"]//img/@src')
+        actors = extract_all_texts(html, '//div[starts-with(@class, "Movie_Detail_actor_")]//a/text()')
+        cover = extract_text(html, '//meta[@property="og:image"]/@content')
+        tags = extract_all_texts(html, '//div[contains(@class, "Movie_Detail_actor-type")]//a/text()')
 
-        release_raw = extract_text(html, '//div[@id="detail"]//li[contains(text(),"配信日")]/text()')
-        release = None
-        if release_raw:
-            date_match = re.search(r"(\d{4}[-/]\d{2}[-/]\d{2})", release_raw)
-            release = date_match.group(1) if date_match else release_raw
-
-        tags = extract_all_texts(html, '//div[@id="tag"]//a/text()')
-
-        # Extract ID from URL
-        id_match = re.search(r"/moviepages/(\d+)/", url)
-        number = id_match.group(1) if id_match else ""
+        id_match = _MOVIE_PATH.search(url)
+        number = id_match["id"] if id_match else ""
 
         return MediaMetadata(
             number=number,
             title=title,
             actors=film_actors(actors),
-            release=release,
             tags=tags,
             thumb_urls=[cover] if cover else [],
             source_url=url,

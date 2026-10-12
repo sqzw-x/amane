@@ -57,7 +57,7 @@
 
 **getchu.com** — 美少女游戏 / 同人 / 动画周边, 商品是数字 id; 里番靠路径关键词分类, 所以是里番第一源.
 
-**kin8tengoku.com** — 单厂牌无碼站, 番号须带 `kin8` / `kin8tengoku` 前缀 (含长短横线两种写法), 无前缀立即返回 `None`, 不发 HTTP.
+**kin8tengoku.com** — 单厂牌无碼站, 不纳入默认表 (用户按前缀自行加). 详情页 id 是 4 位补零数字, 须带 `kin8` / `kin8tengoku` 前缀, 无前缀不发 HTTP. 页是 Next.js 应用, 可解析字段只剩 `og:` 元标签与 CSS-module 类名.
 
 **theporndb.net** — 未登录跳转 `/login`; GraphQL 无 token 时影片 / 演员爬虫都直接 `None`. 欧美路由第一, 与影片共用 `site_config.api_token`. 欧美条目 `code` 是 `studio:title-slug`, 与文件名番号不同构, 日期号 (`Studio.YY.MM.DD`) 按片商 + 发布日期确认.
 
@@ -82,4 +82,4 @@
 
 ## 覆盖缺口
 
-**javdb 国产**: 国产路由以 iqqtv 为第一源, javdb 只当搜得到就用的兜底. **javdb 欧美**: 欧美不是主库存, 编号形态与 JAV 番号不同, 地域拦截时无法核列表; 欧美默认第一源为 theporndb, 未接入的 AVHEAT 优先级仍低于它.
+**javdb 国产**: 国产路由以 iqqtv 为第一源, javdb 只当搜得到就用的兜底. **javdb 欧美**: 欧美不是主库存, 编号形态与 JAV 番号不同, 地域拦截时无法核列表; 欧美默认第一源为 theporndb, 未接入的 AVHEAT 优先级仍低于它. **kin8**: 配信日由客户端水合产生, 首屏没有, 该来源的 `release` 恒为空.
