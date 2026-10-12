@@ -65,7 +65,7 @@
 
 **r18dev** — 未配 PG 直接 skip; dump 图片补全后是 DMM CDN, 见 [crawlers.md](crawlers.md).
 
-**prestige / faleno / dahlia / giga** — 单厂牌, 对每个候选 SKU 都发 API 请求, 不纳入默认表; faleno / dahlia 同属一个 WordPress `works` 主题 (共用 `sites/wp_works.py`), faleno.jp 兼发 maryGOLD 与 JimmyScandal, 发行商按番号前缀判定. **xcity.jp** 与 DMM 重叠且年龄墙严格, 同样不纳入.
+**prestige / faleno / dahlia / giga** — 单厂牌, 对每个候选 SKU 都发 API 请求, 不纳入默认表; faleno / dahlia 同属一个 WordPress `works` 主题 (共用 `sites/wp_works.py`), faleno.jp 兼发 maryGOLD 与 JimmyScandal, 发行商按番号前缀判定. **giga** 的检索与商品页要求年龄确认会话 (经 `/cookie_set.php` 领取) 与站内 Referer, 缺任一项都只回年龄确认页. **xcity.jp** 与 DMM 重叠且年龄墙严格, 同样不纳入.
 
 ## 官网与 FANZA
 
@@ -82,4 +82,4 @@
 
 ## 覆盖缺口
 
-**javdb 国产**: 国产路由以 iqqtv 为第一源, javdb 只当搜得到就用的兜底. **javdb 欧美**: 欧美不是主库存, 编号形态与 JAV 番号不同, 地域拦截时无法核列表; 欧美默认第一源为 theporndb, 未接入的 AVHEAT 优先级仍低于它. **kin8**: 配信日由客户端水合产生, 首屏没有, 该来源的 `release` 恒为空.
+**javdb 国产**: 国产路由以 iqqtv 为第一源, javdb 只当搜得到就用的兜底. **javdb 欧美**: 欧美不是主库存, 编号形态与 JAV 番号不同, 地域拦截时无法核列表; 欧美默认第一源为 theporndb, 未接入的 AVHEAT 优先级仍低于它. **kin8**: 配信日由客户端水合产生, 首屏没有, 该来源的 `release` 恒为空. **giga**: 商品页没有 genre 链接, 该来源的 `tags` 恒为空.
