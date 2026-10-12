@@ -405,14 +405,19 @@ class TestPlaceholderRedirect:
         assert await resource_store.get_by_url(_REQUEST) is None
 
     @pytest.mark.asyncio
-    async def test_acquire_keeps_plain_redirect(self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch):
+    async def test_acquire_records_downloaded_size(
+        self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch
+    ):
+        """普通重定向仍下载; 记录写回的 size 就是盘上这份字节的字节数."""
         client, session = _stub_client(monkeypatch, final_url=_REQUEST, content=b"jpeg-bytes")
 
         path = await resource_store.acquire(_REQUEST, client)
 
         assert path is not None and path.read_bytes() == b"jpeg-bytes"
         assert session.methods[0] == "HEAD" and "GET" in session.methods
-        assert await resource_store.get_by_url(_REQUEST) is not None
+        record = await resource_store.get_by_url(_REQUEST)
+        assert record is not None
+        assert record.size == resource_store.full_path(record).stat().st_size
 
 
 def _siblings(dest: Path) -> list[Path]:
