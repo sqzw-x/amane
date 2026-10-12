@@ -3,10 +3,6 @@
 派生资源用合成 locator ``derived:{sha256(src)}:{op}:{args}``.
 就地超分覆盖原文件, URL 不变, meta 打 ``sr`` 标记.
 内部 URL ``/api/resources/{hash}`` 是对既有 Resource 的引用, 解析为本地文件而不发请求.
-
-同一 locator 的内容写入由 ``_serialized`` 串行: 并发调用之间不存在「都判缓存未命中 → 都写同一
-路径 → 后写覆盖先写」的窗口, 因此记入 DB 的 ``content_hash`` / ``size`` / ``meta['sr']`` 恒对应
-磁盘上那一刻的字节. 见 docs/dev/data-model.md.
 """
 
 import asyncio
@@ -84,8 +80,6 @@ class AcquireResult:
 
 @dataclass
 class _LockEntry:
-    """一把 locator 锁与等待它的调用数; 归零后从 ``ResourceStore._guards`` 摘除."""
-
     lock: asyncio.Lock
     waiters: int = 0
 
@@ -99,7 +93,7 @@ class ResolvedSource:
 
 
 class UpscaleOutcome(StrEnum):
-    """``upscale_in_place`` 的结果. ``SKIPPED`` 表示盘上已是记录所指的那份字节, 调用方不应计作失败."""
+    """``SKIPPED`` 表示盘上已是记录所指的那份字节, 调用方不应计作失败."""
 
     UPSCALED = "upscaled"
     SKIPPED = "skipped"
@@ -330,9 +324,7 @@ class ResourceStore:
         sr_args: dict,
         producer: Callable[[Path, Path], Awaitable[bool]],
     ) -> UpscaleOutcome:
-        """就地超分 ``resource`` 指向的文件.
-
-        ``sr`` 标记的判据是该标记所指的那份字节仍在盘上; 磁盘已被换掉时按未超分处理, 重跑后重新
+        """``sr`` 标记的判据是该标记所指的那份字节仍在盘上; 磁盘已被换掉时按未超分处理, 重跑后重新
         记录 — 标记与内容因此不会永久不一致.
         """
         async with self._serialized(resource.url):
@@ -446,7 +438,7 @@ class ResourceStore:
         return h.hexdigest()
 
     def _matches_record(self, path: Path, record: Resource) -> bool:
-        """路径上的字节是否仍是 ``record`` 记的那份. 先比大小, 只有相等才付哈希的代价."""
+        """路径上的字节是否仍是 ``record`` 记的那份."""
         if record.content_hash is None or record.size is None or not path.exists():
             return False
         if path.stat().st_size != record.size:

@@ -58,7 +58,7 @@ class UpscaleHandler(TaskHandler[UpscalePayload, UpscaleResult]):
             full = self._store.full_path(res)
             size = probe_size(full)
             file_bytes = full.stat().st_size if full.exists() else 0
-            # 未达阈值则跳过. 已超分的图尺寸已达阈值, 同样在此跳过: 跳过判据不看 sr 标记.
+            # 超分处的判据是标记加盘上字节; 已超分的图尺寸已达阈值, 在此跳过.
             if not needs_upscale(size, file_bytes, max_dim_threshold=max_dim, max_bytes_threshold=max_bytes):
                 skipped += 1
                 continue
