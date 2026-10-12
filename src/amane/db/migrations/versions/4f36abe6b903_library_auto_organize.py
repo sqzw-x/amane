@@ -1,7 +1,7 @@
 """library auto organize
 
 Revision ID: 4f36abe6b903
-Revises: d9dec3f83da7
+Revises: 82643a46d07a
 Create Date: 2026-10-10 11:10:53.644283
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "4f36abe6b903"
-down_revision: str | None = "d9dec3f83da7"
+down_revision: str | None = "82643a46d07a"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
