@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from ..http import HttpClient
 
     class _ResponseHeaders(Protocol):
-        """响应头的取值面: 出站通道的 ``Headers`` 与离线回放的替身都满足."""
+        """响应头的取值面: 出站通道的 ``Headers`` 与离线回放的响应替代实现都满足."""
 
         def get_list(self, key: str) -> list[str | None]: ...
 

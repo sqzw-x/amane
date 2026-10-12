@@ -95,7 +95,7 @@ def test_age_gate_discriminant(filename: str, expected: bool) -> None:
 
 
 def test_issued_session_accepts_replay_response() -> None:
-    """离线回放的响应替身与 WebClient 的响应头同型: 没有 Set-Cookie 时按没领到处理, 不抛异常."""
+    """离线回放的响应替代实现与 WebClient 的响应头同型: 没有 Set-Cookie 时按没领到处理, 不抛异常."""
     resp = _ReplayResponse(status_code=302, content=b"", headers=Headers({"Content-Type": "text/html"}))
     assert _issued_session(resp.headers) is False
 

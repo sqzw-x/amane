@@ -154,7 +154,7 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
 
 
 def bare_response(set_cookie: str = "") -> SimpleNamespace:
-    """低层通道的应答替身: 来源只读它的 Set-Cookie 响应头 (没有正文)."""
+    """低层通道应答的替代实现: 来源只读它的 Set-Cookie 响应头 (没有正文)."""
     return SimpleNamespace(headers=Headers([("set-cookie", set_cookie)]) if set_cookie else Headers())
 
 
