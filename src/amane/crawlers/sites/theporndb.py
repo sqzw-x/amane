@@ -1,3 +1,4 @@
+import re
 from typing import TYPE_CHECKING, Any, override
 
 from ...enums import ActorGender, SiteName
@@ -6,12 +7,17 @@ from ...net.errors import FailureReason, RequestError
 from ...plugins.models import SourceTrait
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
-from ..parsing import fold_studio, is_same_number, parse_western_number
+from ..parsing import fold_number, fold_studio, is_same_number, parse_western_number
 
 _PERFORMER_GENDER: dict[str, ActorGender] = {
     "FEMALE": ActorGender.FEMALE,
     "MALE": ActorGender.MALE,
 }
+
+# kin8 站内番号带 ``KIN8`` / ``KIN8TENGOKU`` 前缀, TPDB 的 ``code`` 是裸 4 位 ``movie_id``;
+# 他厂会用同一数字当番号, 因此该形态的命中必须同时限定片商.
+_KIN8_NUMBER = re.compile(r"^KIN8(?:TENGOKU)?[-_ ]?(?P<id>\d+)$")
+_KIN8_STUDIO = fold_studio("Kin8tengoku")
 
 if TYPE_CHECKING:
     from ...parsing.file_info import ContentType
@@ -134,6 +140,7 @@ class ThePornDBCrawler(Crawler):
 
         data = await self.client.post_json(
             gql_url,
+            # 检索词保留番号原样: kin8 的站前缀才是命中它的条件, 换成裸 ``movie_id`` 后 TPDB 返回 0 条.
             json={"query": _SEARCH_QUERY, "variables": {"term": query.number}},
             headers=headers,
         )
@@ -211,12 +218,17 @@ def pick_scene(results: object, number: str) -> dict[str, Any] | None:
 
     ``code`` 与入参按同一番号判定, 欧美日期号的两种年份写法等价, 命中取应答里的首条.
     欧美条目的 ``code`` 是 ``studio:title-slug``, 与文件名番号不同构, 这类日期号按
-    片商 + 发布日期确认, 只认唯一命中.
+    片商 + 发布日期确认, 只认唯一命中. ``KIN8-####`` 按去掉站前缀后的裸 ``code`` 判定.
     """
     scenes = [item for item in results if isinstance(item, dict)] if isinstance(results, list) else []
+    kin8_id = _kin8_movie_id(number)
     for scene in scenes:
         code = scene.get("code")
-        if isinstance(code, str) and code and is_same_number(code, number):
+        if not isinstance(code, str) or not code:
+            continue
+        if is_same_number(code, number):
+            return scene
+        if kin8_id is not None and _is_kin8_scene(scene, code, kin8_id):
             return scene
 
     western = parse_western_number(number)
@@ -228,6 +240,16 @@ def pick_scene(results: object, number: str) -> dict[str, Any] | None:
         if _scene_date(scene) == western.date and fold_studio(_scene_studio(scene)) == western.studio
     ]
     return hits[0] if len(hits) == 1 else None
+
+
+def _kin8_movie_id(number: str) -> str | None:
+    """``KIN8-####`` / ``KIN8TENGOKU-####`` → 裸 ``movie_id`` 比较键; 其它形态返回 None."""
+    match = _KIN8_NUMBER.match(number.strip().upper())
+    return fold_number(match["id"]) if match is not None else None
+
+
+def _is_kin8_scene(scene: dict[str, Any], code: str, movie_id: str) -> bool:
+    return fold_number(code) == movie_id and fold_studio(_scene_studio(scene)) == _KIN8_STUDIO
 
 
 def _scene_studio(scene: dict[str, Any]) -> str:
