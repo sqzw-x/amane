@@ -16,7 +16,7 @@ from curl_cffi.requests import Headers
 from amane.crawlers.http import HttpClient
 from amane.crawlers.models import SearchQuery
 from amane.crawlers.sites.giga import GigaCrawler, _is_age_gate, _issued_session
-from amane.net.errors import FailureReason, SourceError
+from amane.net.errors import FailureReason, RequestError, SourceError
 from amane.observability.replay import _ReplayResponse
 
 from .driven import load_response_file
@@ -98,6 +98,18 @@ def test_issued_session_accepts_replay_response() -> None:
     """离线回放的响应替代实现与 WebClient 的响应头同型: 没有 Set-Cookie 时按没领到处理, 不抛异常."""
     resp = _ReplayResponse(status_code=302, content=b"", headers=Headers({"Content-Type": "text/html"}))
     assert _issued_session(resp.headers) is False
+
+
+@pytest.mark.asyncio
+async def test_entry_failure_propagates_without_retry() -> None:
+    """入口调用在通道层失败时上抛, 不忽略也不重试入口: 再请求一次会把该响应刚下发的会话删掉."""
+    web = AsyncMock()
+    web.request.side_effect = RequestError(ENTRY, "入口未带 Location")
+    crawler = GigaCrawler(client=HttpClient(web=web))
+
+    with pytest.raises(RequestError):
+        await crawler._search(SearchQuery("THPA-17"))
+    assert _calls(web) == ([], [ENTRY])
 
 
 @pytest.mark.asyncio

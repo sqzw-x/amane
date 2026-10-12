@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 from parsel import Selector
 
 from ...enums import SiteName
-from ...net.errors import FailureReason, RequestError, SourceError
+from ...net.errors import FailureReason, SourceError
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text
@@ -116,14 +116,14 @@ class GigaCrawler(Crawler):
         self.logger.warning("age gate issued no session")
 
     async def _request_age_gate(self) -> bool:
-        """请求一次入口, 返回站点是否下发了会话 cookie."""
-        try:
-            resp = await self.client.web_client.request(
-                "GET", f"{self.base_url}{_AGE_GATE_PATH}", headers=self._referer(), allow_redirects=False
-            )
-        except RequestError:
-            # 入口以 302 应答, 不带 Location 时出站通道判失败并抛 RequestError; 会话已随该响应下发, 因此吞掉.
-            return False
+        """请求一次入口, 返回站点是否下发了会话 cookie.
+
+        入口调用失败不得忽略: 302 不带 ``Location`` 时出站通道判失败并抛 ``RequestError``, 该响应下发的
+        会话读不到, 再请求一次入口只会把它删掉. 该形态线上未观察到.
+        """
+        resp = await self.client.web_client.request(
+            "GET", f"{self.base_url}{_AGE_GATE_PATH}", headers=self._referer(), allow_redirects=False
+        )
         return _issued_session(resp.headers)
 
     async def _get_html(self, url: str) -> str:
