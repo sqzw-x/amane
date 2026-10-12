@@ -1,14 +1,18 @@
 """测试刮削期资源管线 materialize_images (选源/裁剪/就地超分)."""
 
+import asyncio
+import contextlib
 from typing import TYPE_CHECKING, cast
 
 import pytest
+import sqlalchemy.exc
 from PIL import Image
 
-from amane.config import HotSettings
+from amane.config import HotSettings, SrConfig
 from amane.enums import DownloadableResource
 from amane.media import ResourceStore, manual_crop_image, materialize_images
 from amane.media import pipeline as pipeline_mod
+from tests.helpers import LOAD_TOLERANT_TIMEOUT, await_for
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -146,6 +150,100 @@ async def test_eager_sr_overwrites(resource_store: ResourceStore, tmp_path: Path
     assert thumb_res is not None
     assert thumb_res.meta is not None and "sr" in thumb_res.meta
     assert out.thumb_urls == ["https://s/t.jpg"]  # URL 不变 (就地覆盖)
+
+
+class _GatedClient:
+    """伪 WebClient: 下载开始时登记并停住, 由调用方放行 — 用于钉住「判缓存 → 落盘」的窗口.
+
+    只有首次下载过闸: 后续下载直接落盘, 于是「谁在什么时候覆盖了同一路径」可被断言.
+    """
+
+    def __init__(self, sizes: dict[str, tuple[int, int]], gate: asyncio.Future[None]):
+        self._sizes = sizes
+        self._gate = gate
+        self.downloaded: list[str] = []
+
+    async def download(self, url: str, dest: Path, **kwargs: object) -> bool:
+        first = not self.downloaded
+        self.downloaded.append(url)
+        if first:
+            await self._gate  # 停在这里时缓存里还没有这条记录
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", self._sizes[url], "blue").save(dest)
+        return True
+
+    async def get_filesize(self, url: str, **kwargs: object) -> int | None:
+        return None
+
+    async def resolve_final_url(self, url: str, **kwargs: object) -> str:
+        return url
+
+
+@pytest.mark.asyncio
+async def test_concurrent_materialize_keeps_sr_result(
+    resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """同一 URL 被两个影片任务并发物化: 后到的调用不得覆盖先落盘的超分结果.
+
+    第一个任务的下载停在闸门上 (此时缓存里还没有这条记录), 第二个任务同时越过缓存判据.
+    放行后第一个任务走完下载 / 落库 / 超分, 第二个任务若仍去下载, 就会把超分结果覆盖回原图;
+    它随后的落库被 url UNIQUE 拒绝, 磁盘退回原图而 DB 仍记 sr 标记与超分哈希 — 该图从此永久跳过.
+    """
+    from amane.config import ScrapingConfig
+    from amane.sr.run import SrResult
+
+    calls = 0
+
+    async def fake_run_sr(inp, out, cfg, data_dir, **kwargs):
+        nonlocal calls
+        calls += 1
+        Image.new("RGB", (1600, 1076), "green").save(out)
+        return SrResult(success=True, output=out)
+
+    monkeypatch.setattr(pipeline_mod, "run_SR", fake_run_sr)
+
+    gate = asyncio.get_running_loop().create_future()
+    client = _GatedClient({"https://s/t.jpg": (800, 538)}, gate)
+    cfg = HotSettings(
+        sr=SrConfig(enabled=True, max_bytes_threshold=64 * 1024),
+        scraping=ScrapingConfig(download_resources=[DownloadableResource.thumb], field_priority={}),
+    )
+
+    async def run() -> None:
+        # 重复下载的落库被 url UNIQUE 拒绝: 文件已覆盖, 记录没写成 — 正是本用例要暴露的路径.
+        with contextlib.suppress(sqlalchemy.exc.IntegrityError):
+            await materialize_images(
+                [], ["https://s/t.jpg"], [], resource_store, cast("WebClient", client), cfg, tmp_path
+            )
+
+    async def first_download_started() -> bool:
+        return bool(client.downloaded)
+
+    async def sr_done() -> bool:
+        return calls == 1
+
+    first = asyncio.create_task(run())
+    second = asyncio.create_task(run())
+    try:
+        await await_for(first_download_started, timeout=LOAD_TOLERANT_TIMEOUT)
+        gate.set_result(None)
+        # 等下载方完成超分再收尾: 覆盖点若存在, 就落在「磁盘已是超分结果」之后.
+        await await_for(sr_done, timeout=LOAD_TOLERANT_TIMEOUT)
+        await asyncio.gather(first, second)
+    finally:
+        if not gate.done():
+            gate.set_result(None)
+        await asyncio.gather(first, second, return_exceptions=True)
+
+    record = await resource_store.get_by_url("https://s/t.jpg")
+    assert record is not None
+    disk = resource_store.full_path(record)
+    assert record.meta is not None and "sr" in record.meta
+    assert disk.stat().st_size == record.size  # DB 记的字节就是盘上那份
+    assert resource_store._hash_file(disk) == record.content_hash
+    assert Image.open(disk).size == (1600, 1076)  # 磁盘是超分结果, 不是后写的原图
+    assert client.downloaded == ["https://s/t.jpg"]  # 记录写完即命中, 不重复下载
+    assert calls == 1
 
 
 @pytest.mark.asyncio

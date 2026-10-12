@@ -31,9 +31,9 @@ Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase
 
 ## Library 归属
 
-与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + 整理方式 (`move_mode`) + 自动化级别 (`automation`: none / watch / scrape) + 发现通道 (`ingest`: native / clouddrive) + 跳过规则. `automation` 只控制发现侧 (不监控 / 仅登记 / 登记后自动刮削); `ingest=clouddrive` 必填 `cloud_path` 且不挂 watchdog Observer, 契约见 [watcher.md](watcher.md). **自动整理**由库级 `auto_organize` (默认关闭, 与 `automation` 正交) 决定, 触发与次序见 [task-system.md](task-system.md); 关闭时落盘只由手动 ORGANIZE 执行. **库路径在写入时解析为真实路径**, 但值没变就不改写形式: 老库的库根可能还没解析, 而索引行与它同一写法. 索引路径、模板产物与任务范围一律按字面路径比较, 别名与真实路径混用会把同一个文件算成两条索引 — 任务范围仅在该库路径已是真实路径时才跟着规范化.
+与 Emby Library 概念对齐: 一个 Library = 一个根目录 + 一组路径模板 + `move_mode` + `automation` (none / watch / scrape) + `ingest` (native / clouddrive) + 跳过规则. `automation` 只控制发现侧 (不监控 / 仅登记 / 登记后自动刮削); `ingest=clouddrive` 必填 `cloud_path` 且不挂 watchdog Observer, 契约见 [watcher.md](watcher.md). **自动整理**由库级 `auto_organize` (默认关闭, 与 `automation` 正交) 决定, 触发与次序见 [task-system.md](task-system.md); 关闭时落盘只由手动 ORGANIZE 执行. **库路径在写入时解析为真实路径**, 值没变则不改写形式: 老库的库根可能还没解析, 而索引行与它同一写法. 索引路径、模板产物与任务范围一律按字面路径比较, 别名与真实路径混用会把同一个文件算成两条索引 — 任务范围仅在该库路径已是真实路径时才跟着规范化.
 
-**每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK). 归属在文件**入库时确定一次**, 入口行为一致: watcher 按监控根绑定的 `library_id`, scan 按 payload 自带, 手动 by-number scrape / RSS 发现与文件无关因而无归属. 库目录落盘只由 ORGANIZE 执行 — 读 `media_file.library_id` 取模板与整理方式, 是归属的唯一真值来源; SCRAPE 用 `media_file_id` 只作查询输入与回写关联, 不移动文件.
+**每个 `MediaFile` 必须持久关联到唯一 Library** (`MediaFile.library_id` 非空 FK), 归属在**入库时确定一次**: watcher 按监控根绑定的 `library_id`, scan 按 payload 自带, 手动 by-number scrape / RSS 发现与文件无关因而无归属. 库目录落盘只由 ORGANIZE 执行 — 读 `media_file.library_id` 取模板与整理方式, 是归属的唯一真值来源; SCRAPE 用 `media_file_id` 只作查询输入与回写关联, 不移动文件.
 
 一库一根目录, 目录不重叠由用户保证 (不强制校验); 不提供一库多目录, 多根须另建子表.
 
@@ -41,7 +41,7 @@ Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase
 
 | 字段类型 | 存储方式 | 取舍 |
 |----------|---------|----------|
-| 单源字段 (`title`, `studio`, `plot`, ...) | 沿链取首个非空值; 列表型 (演员 / 标签 / 导演) 整份列表取首个非空 | 覆盖大多数场景 | 覆盖大多数场景 |
+| 单源字段 (`title`, `studio`, `plot`, ...) | 沿链取首个非空值; 列表型 (演员 / 标签 / 导演) 整份列表取首个非空 | 覆盖大多数场景 |
 | 聚合类 URL (`poster_urls`, `thumb_urls`, ...) | list, 按字段站点顺序拼接各站非空值, 物化后按下载成功重排 (见 [task-system.md](task-system.md)) | 下载时顺序尝试, 某站失效不需重新刮削 |
 | `extrafanart_urls` | `dict[site, list[url]]` 按站点分组 | 剧照集合是站点特异的, 扁平合并会丢失站点上下文 |
 | `scores` | `dict[site, score]` | 不同评分体系 (5 分 vs 100 分) 需保留来源供前端分列展示 |
@@ -57,7 +57,7 @@ Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase
 
 ## 字段锁定
 
-`Metadata.locked_fields` / `Actor.locked_fields` 是字段级锁集合 (取值 `MetadataField` / `ActorField`, 空集为未锁定); 没有条目级开关, 「全部锁定」由前端写入全集. 可锁集合即各枚举全集; 身份、来源映射与刮削缓存字段不可锁 — 冻结后重刮与手动 merge 都失效. 别名可锁, 但真值在 `actor_aliases` 行: 锁判定落在该行的自动写入点, 不进值对象的锁定回填.
+`Metadata.locked_fields` / `Actor.locked_fields` 是字段级锁集合 (空集为未锁定), **取值即各枚举全集**; 没有条目级开关, 「全部锁定」由前端写入全集. 身份、来源映射与刮削缓存字段不可锁 — 冻结后重刮与手动 merge 都失效. 别名可锁, 但真值在 `actor_aliases` 行: 锁判定落在该行的自动写入点, 不进值对象的锁定回填.
 
 写入策略由 `WriteMode` 表达, repository 默认 `AUTO` (自动写入者漏传策略时只会未加锁, 不会误加锁; 手动调用点显式传 `MANUAL`):
 
@@ -65,7 +65,7 @@ Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase
 - `MANUAL`: 无视锁, 并把本次写入的可锁字段并入 `locked_fields`. 写入位置: 两端 REST PATCH / merge / crop 与 Agent 工具.
 - `set_metadata_locks` / `set_actor_locks` 整体替换锁集合; 锁集合本身的变更不刷新 `updated_at`.
 - 演员 `clear_actor_person` (REST clear-person) 清空档案 + `field_sources` + 锁 + `raw`, 保留 `name` / `gender`: 旧快照留着会在下次刮削被原样写回; 而 `raw` 非空是链式自动刮削的跳过判据, 清空后该演员重新入队, 代价是下次刮削全站重取.
-- 分类治理与实体 rename / delete 不读锁, 也不自动上锁 (用户显式操作); 演员实体 merge 例外: 源锁集并入 target, 而填空并入的未锁字段不额外上锁.
+- 分类治理与实体 rename / delete 不读锁, 也不自动上锁 (用户显式操作); 演员 merge 例外: 源锁集并入 target, 填空并入的未锁字段不额外上锁.
 
 ## 可写字段与 req↔repo 兼容性
 
@@ -77,9 +77,9 @@ Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase
 
 **可写字段约束** (无运行时反射):
 
-1. repo update 方法**显式逐字段赋值**, 不用 `setattr`; 字段名与类型兼容性由静态类型检查保证, TypedDict 与 DB 列漂移会直接编译期报错.
-2. 派生 req 的 req↔DB 字段 / 类型兼容性由 `create_partial_model` 的构造保证, 只需验证该函数正确; 显式声明的 req (`StringConstraints` 等约束无法经派生保留) 与手写响应模型一样登记进 `tests/api/test_schema_repo_compat.py` 的字段纪律表 — 字段名 ⊆ repo TypedDict ⊆ DB 列, 只读字段不得出现. 手写且必须是某表列字段子集的响应模型用 `@subset_of(..., covariant=)` 在导入时校验.
-3. 端点把窄的 req `model_dump` 结果传入宽的 repo 方法; 唯一运行时缝隙 (req 键须 ⊆ TypedDict 键, 否则多余键被 repo 静默丢弃) 由字段纪律测试兜底.
+1. repo update 方法**逐字段显式赋值**, 不用 `setattr`; 字段名与类型兼容性由静态类型检查保证, TypedDict 与 DB 列漂移会直接编译期报错.
+2. 派生 req 的 req↔DB 字段 / 类型兼容性由 `create_partial_model` 的构造保证, 只需验证该函数正确; 显式声明的 req (`StringConstraints` 等约束无法经派生保留) 与手写响应模型一样登记进 `tests/api/test_schema_repo_compat.py` 的字段纪律表 — 字段名 ⊆ repo TypedDict ⊆ DB 列, 只读字段不得出现. 手写且必须是某表列子集的响应模型用 `@subset_of(..., covariant=)` 在导入时校验.
+3. 端点把窄的 req `model_dump` 结果传入宽的 repo 方法; 唯一运行时缝隙 (req 键须 ⊆ TypedDict 键, 否则多余键被静默丢弃) 由字段纪律测试兜底.
 
 PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写入; **显式 `null`** 仅当源列本就可空时表示清空. 源列非 Optional 时显式 `null` 一律 422 — 派生模型由 `create_partial_model` 拒绝, 显式声明的模型自行校验. 空 glob 的合法写入是 `[]`.
 
@@ -122,11 +122,13 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 ## Resource (一等存储, 非缓存)
 
-`Resource.url` UNIQUE, 作**通用 locator key**: 原始外部图用真实外部 URL, 派生裁剪用合成串 `derived:{sha256(src_url)}:crop:{args}`. 手动裁切写入派生 Resource: 海报替换 `poster_urls`, 演员头像前插 `image_urls` 并保留原图; 均**不**修改库路径海报 (ORGANIZE 再复制). `file_path` 是相对于 `{data_dir}/resources/` 的两级散列路径.
+`Resource.url` UNIQUE, 作**通用 locator key**: 原始外部图用真实外部 URL, 派生裁剪用合成串 `derived:{sha256(src_url)}:crop:{args}`. 手动裁切写入派生 Resource: 海报替换 `poster_urls`, 演员头像前插 `image_urls` 并保留原图; 均**不**修改库路径海报 (ORGANIZE 再复制). `file_path` 相对 `{data_dir}/resources/`.
 
-`meta` (JSON, 默认 `{}`) 在派生 / 被处理资源上记录可逆来源与处理标记: 裁剪记 `{'op':'crop','src':底层locator,'args':str}` (不记 `/api/resources/{hash}` 内部 URL); 任意资源被超分后追加 `{'sr':{tool,model,scale}}` — 超分**就地覆盖**文件 (URL 不变), `'sr' in meta` 即去重依据.
+`meta` (JSON, 默认 `{}`) 记录可逆来源与处理标记: 裁剪记 `{'op':'crop','src':底层locator,'args':str}` (不记内部 URL); 超分追加 `{'sr':{tool,model,scale}}`, **就地覆盖**文件 (URL 不变). 跳过判据是该标记**且磁盘仍是记录的那份字节** (大小 + `content_hash`), 被改写过的图会重跑并重记, 不永久跳过.
 
-**一等存储, 按引用回收**: Resource 不是 LRU 缓存. 刮削换 URL / 修改裁剪参数后旧条目会留在库里, 直到 CLEANUP 的 `remove_unreferenced_resources` 删除未引用项 (含派生). 要原始像素须 invalidate 重下 (就地超分后原像素不可恢复). 其它保留规则见 [task-system.md](task-system.md) CLEANUP. `content_hash` (SHA-256) 作完整性校验与 ETag, 约定见 [api.md](api.md).
+**一等存储, 按引用回收**: 不是 LRU 缓存. 刮削换 URL / 改裁剪参数后旧条目留到 CLEANUP 回收未引用项 (含派生). 要原始像素须 invalidate 重下 (就地超分后不可恢复). 规则见 [task-system.md](task-system.md) CLEANUP. `content_hash` (SHA-256) 兼作 ETag, 见 [api.md](api.md).
+
+同一 locator 的写入按 URL 串行 (`ResourceStore._serialized`), 并发调用不会「都判未命中 → 都写同一路径 → 后写覆盖先写」; 落盘先于记录, `content_hash` / `size` / `meta['sr']` 恒是写完当时那份字节.
 
 ## 分类索引 (爬取侧投影)
 
