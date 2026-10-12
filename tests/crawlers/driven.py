@@ -142,15 +142,15 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
 
         mock_web.post_json.side_effect = post_json_side_effect
 
-    if request_map:
+    # 低层通道按 Set-Cookie 应答; 未声明的 URL 与 get_json / post_json 一样判失败. 路由不按条目数量
+    # 决定是否安装: 整个段落都没有 request 条目时同样必须失败, 否则夹具缺口静默通过.
+    async def request_side_effect(method: str, url: str, **kwargs: object) -> SimpleNamespace:
+        for pattern, set_cookie in request_map.items():
+            if pattern in url:
+                return bare_response(set_cookie)
+        raise RequestError(url, "no mock matched")
 
-        async def request_side_effect(method: str, url: str, **kwargs: object) -> SimpleNamespace:
-            for pattern, set_cookie in request_map.items():
-                if pattern in url:
-                    return bare_response(set_cookie)
-            return bare_response()
-
-        mock_web.request.side_effect = request_side_effect
+    mock_web.request.side_effect = request_side_effect
 
 
 def bare_response(set_cookie: str = "") -> SimpleNamespace:
