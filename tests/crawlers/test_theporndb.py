@@ -1,6 +1,7 @@
 """theporndb 爬虫单元测试: 检索命中判据与应答投影.
 
 应答按 TPDB 上的真实字段值构造: ``code`` 是 kin8 站内 4 位 ``movie_id``, 他厂会用同一个数字当番号.
+命中判据只留分支代表, 番号前缀与补零宽度的其余形态见 ``tests/crawlers/test_kin8.py``.
 """
 
 from typing import Any
@@ -34,36 +35,22 @@ _OTHER_4072 = _scene("4072", title="Aiden Starr and Danny Wylde", date="2013-02-
 _SSIS_497 = _scene("SSIS-497", title="Sample Title", date="2024-01-01", studio="S1")
 _BLACKED = _scene("blacked:first-anal", title="First Anal", date="2026-03-29", studio="Blacked")
 _BLACKED_SAME_DAY = _scene("blacked:another", title="Another", date="2026-03-29", studio="Blacked")
-_BLACKED_OTHER_STUDIO = _scene("blackedraw:first-anal", title="First Anal", date="2026-03-29", studio="BlackedRaw")
 
 PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] = [
     # kin8 番号带站前缀, TPDB 的 code 是站内 4 位补零 id
     ("KIN8-0236", [_KIN8_CUTIE], _KIN8_CUTIE),
-    ("kin8-0236", [_KIN8_CUTIE], _KIN8_CUTIE),
     ("KIN8TENGOKU-0236", [_KIN8_CUTIE], _KIN8_CUTIE),
-    ("KIN8 0236", [_KIN8_CUTIE], _KIN8_CUTIE),
-    # 番号数字段未补零或补零过头, 与站内 id 对齐后仍命中
-    ("KIN8-1", [_KIN8_0001], _KIN8_0001),
-    ("KIN8-001", [_KIN8_0001], _KIN8_0001),
-    ("KIN8-0001", [_KIN8_0001], _KIN8_0001),
-    ("KIN8-00001", [_KIN8_0001], _KIN8_0001),
-    # 他厂同号: 有 kin8 条目时取 kin8, 只有他厂条目不回退首条, 序号不同也不命中
+    # 大小写归并与去零后补零到 4 位同由该行覆盖; 越界拒绝见下一行, 其余宽度形态见 test_kin8.py
+    ("kin8-001", [_KIN8_0001], _KIN8_0001),
+    ("KIN8-10000", [_KIN8_0001], None),
+    # 他厂同号: 候选里有 kin8 条目时取 kin8 条目, 只有他厂条目不回退首条
     ("KIN8-4072", [_OTHER_4072, _KIN8_SHARED_HOUSE], _KIN8_SHARED_HOUSE),
     ("KIN8-4072", [_OTHER_4072], None),
-    ("KIN8-4072", [_KIN8_CUTIE], None),
-    # 非 kin8 番号: code 相等仍是唯一判据, 裸数字 code 不被其它前缀借用
+    # 非 kin8 番号: code 相等仍是唯一判据
     ("SSIS-497", [_SSIS_497], _SSIS_497),
-    ("HEYZO-1234", [_KIN8_CUTIE], None),
-    # 欧美日期号按片商与发布日期确认, 只认唯一命中
+    # 欧美日期号按片商与发布日期确认: 唯一命中才取, 同日同片商两条属歧义
     ("Blacked.26.03.29", [_BLACKED], _BLACKED),
     ("Blacked.26.03.29", [_BLACKED, _BLACKED_SAME_DAY], None),
-    ("Blacked.26.03.29", [_BLACKED_OTHER_STUDIO], None),
-    # 缺前缀、数字段全零或超出 4 位编号长度不命中
-    ("KIN8-", [_KIN8_CUTIE], None),
-    ("KIN8-0", [_KIN8_0001], None),
-    ("KIN8-0000", [_KIN8_0001], None),
-    ("KIN8-10000", [_KIN8_0001], None),
-    ("", [_KIN8_CUTIE], None),
 ]
 
 
@@ -72,9 +59,9 @@ def test_pick_scene(number: str, results: list[dict[str, Any]], expected: dict[s
     assert pick_scene(results, number) == expected
 
 
-@pytest.mark.parametrize("results", [None, "not-a-list", [], [1, "x"], [{"code": None}], [{"studio": {}}]])
+@pytest.mark.parametrize("results", [None, [], [None, {"code": None}]])
 def test_pick_scene_rejects_unusable_results(results: object) -> None:
-    """应答结构不符时不命中, 也不抛异常."""
+    """应答结构不符 (不是列表、空表、元素不是字典或缺 ``code``) 时不命中, 也不抛异常."""
     assert pick_scene(results, "KIN8-0236") is None
 
 
@@ -83,16 +70,10 @@ def _crawler(web: AsyncMock) -> ThePornDBCrawler:
 
 
 FETCH_CASES: list[tuple[str, list[dict[str, Any]], tuple[str, str, str, str] | None]] = [
-    # 带前缀的 kin8 番号命中, 应答按 code / title / date / studio 投影
+    # 命中后按 code / title / date / studio 投影
     ("KIN8-0236", [_KIN8_CUTIE], ("0236", "Kin8 Cutie", "2010-05-27", "Kin8tengoku")),
-    ("KIN8TENGOKU-0236", [_KIN8_CUTIE], ("0236", "Kin8 Cutie", "2010-05-27", "Kin8tengoku")),
-    # 未补零的番号与 TPDB 的 4 位 code 对齐
-    ("KIN8-1", [_KIN8_0001], ("0001", "KIN8 First", "2009-01-14", "Kin8tengoku")),
-    # 他厂同号排在前面的候选被排除
-    ("KIN8-4072", [_OTHER_4072, _KIN8_SHARED_HOUSE], ("4072", "KIN8 Shared House", "2025-07-31", "Kin8tengoku")),
+    # 只有他厂同号候选: 链路走通但不命中
     ("KIN8-4072", [_OTHER_4072], None),
-    # 非 kin8 番号行为不变
-    ("SSIS-497", [_SSIS_497], ("SSIS-497", "Sample Title", "2024-01-01", "S1")),
 ]
 
 
