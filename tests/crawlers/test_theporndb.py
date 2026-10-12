@@ -35,6 +35,7 @@ _OTHER_4072 = _scene("4072", title="Aiden Starr and Danny Wylde", date="2013-02-
 _SSIS_497 = _scene("SSIS-497", title="Sample Title", date="2024-01-01", studio="S1")
 _BLACKED = _scene("blacked:first-anal", title="First Anal", date="2026-03-29", studio="Blacked")
 _BLACKED_SAME_DAY = _scene("blacked:another", title="Another", date="2026-03-29", studio="Blacked")
+_BLACKED_OTHER_STUDIO = _scene("blackedraw:first-anal", title="First Anal", date="2026-03-29", studio="BlackedRaw")
 
 PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] = [
     # kin8 番号带站前缀, TPDB 的 code 是站内 4 位补零 id
@@ -48,8 +49,8 @@ PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] 
     ("KIN8-4072", [_OTHER_4072], None),
     # 非 kin8 番号: code 相等仍是唯一判据
     ("SSIS-497", [_SSIS_497], _SSIS_497),
-    # 欧美日期号按片商与发布日期确认: 唯一命中才取, 同日同片商两条属歧义
-    ("Blacked.26.03.29", [_BLACKED], _BLACKED),
+    # 欧美日期号按片商与发布日期确认: 同日的他厂候选不命中, 只认唯一命中
+    ("Blacked.26.03.29", [_BLACKED_OTHER_STUDIO, _BLACKED], _BLACKED),
     ("Blacked.26.03.29", [_BLACKED, _BLACKED_SAME_DAY], None),
 ]
 
