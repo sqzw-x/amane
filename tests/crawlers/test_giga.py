@@ -15,8 +15,9 @@ from curl_cffi.requests import Headers
 
 from amane.crawlers.http import HttpClient
 from amane.crawlers.models import SearchQuery
-from amane.crawlers.sites.giga import GigaCrawler, _is_age_gate
+from amane.crawlers.sites.giga import GigaCrawler, _is_age_gate, _issued_session
 from amane.net.errors import FailureReason, SourceError
+from amane.observability.replay import _ReplayResponse
 
 from .driven import load_response_file
 
@@ -91,6 +92,12 @@ def _calls(web: AsyncMock) -> tuple[list[str], list[str]]:
 def test_age_gate_discriminant(filename: str, expected: bool) -> None:
     """判据只认入口链接: 年龄页带它, 检索页 / 零结果页 / 商品页都不带."""
     assert _is_age_gate(_fixture(filename)) is expected
+
+
+def test_issued_session_accepts_replay_response() -> None:
+    """离线回放的响应替身与 WebClient 的响应头同型: 没有 Set-Cookie 时按没领到处理, 不抛异常."""
+    resp = _ReplayResponse(status_code=302, content=b"", headers=Headers({"Content-Type": "text/html"}))
+    assert _issued_session(resp.headers) is False
 
 
 @pytest.mark.asyncio

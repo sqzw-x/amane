@@ -11,10 +11,16 @@ from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text
 
 if TYPE_CHECKING:
-    from curl_cffi.requests import Response
+    from typing import Protocol
 
     from ...config import SiteConfig
     from ..http import HttpClient
+
+    class _ResponseHeaders(Protocol):
+        """响应头的取值面: 出站通道的 ``Headers`` 与离线回放的替身都满足."""
+
+        def get_list(self, key: str) -> list[str | None]: ...
+
 
 # 站点把搜索结果放在 ``div.thumBox`` 内, 条目的商品链接固定指向商品页; 锚点顺序不固定, 按前缀过滤.
 _PRODUCT_PATH = "/product/index.php"
@@ -33,11 +39,11 @@ def _is_age_gate(text: str) -> bool:
     return bool(Selector(text=text).xpath(f'//a[contains(@href, "{_AGE_GATE_PATH}")]'))
 
 
-def _issued_session(resp: Response) -> bool:
+def _issued_session(headers: _ResponseHeaders) -> bool:
     """入口响应是否下发了会话 cookie; 请求带着旧会话时它只回 ``PHPSESSID=deleted`` 与确认标记."""
     issued = f"{_SESSION_COOKIE}="
     deleted = f"{_SESSION_COOKIE}=deleted"
-    for header in resp.headers.get_list("set-cookie"):
+    for header in headers.get_list("set-cookie"):
         if header is not None and header.startswith(issued) and not header.startswith(deleted):
             return True
     return False
@@ -118,7 +124,7 @@ class GigaCrawler(Crawler):
         except RequestError:
             # 入口以 302 应答, 不带 Location 时出站通道判失败并抛 RequestError; 会话已随该响应下发, 因此吞掉.
             return False
-        return _issued_session(resp)
+        return _issued_session(resp.headers)
 
     async def _get_html(self, url: str) -> str:
         """取检索页或商品页; 命中年龄页时重领会话并重试一次, 重试仍命中即按来源失败上报."""

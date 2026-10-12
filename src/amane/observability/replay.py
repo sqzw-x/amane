@@ -1,4 +1,4 @@
-"""离线 HTTP 回放; duck-type 兼容 WebClient 的 text/json 接口."""
+"""离线 HTTP 回放; duck-type 兼容 WebClient 的 text/json/headers 接口."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+from curl_cffi.requests import Headers
 
 from ..net.errors import FailureKind, RequestError, RequestFailure
 from .models import HttpExchangeMeta
@@ -19,7 +21,7 @@ class _ReplayResponse:
 
     status_code: int
     content: bytes
-    headers: dict[str, str] = field(default_factory=dict)
+    headers: Headers = field(default_factory=Headers)
     encoding: str = "utf-8"
 
     @property
@@ -79,7 +81,7 @@ class ReplayWebClient:
             )
         body = entry.body or b""
         ct = entry.meta.content_type or "application/octet-stream"
-        return _ReplayResponse(status_code=status, content=body, headers={"Content-Type": ct})
+        return _ReplayResponse(status_code=status, content=body, headers=Headers({"Content-Type": ct}))
 
     async def get_text(
         self,
