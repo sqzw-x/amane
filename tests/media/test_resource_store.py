@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import pytest
 
-from amane.media import ResourceStore, derived_locator
+from amane.media import ResourceStore, UpscaleOutcome, derived_locator
 from amane.media.resource_store import RESOURCE_URL_PREFIX, _is_placeholder_url, internal_url_hash
 from amane.net.http import RateLimiters, WebClient
 
@@ -47,6 +47,38 @@ class TestAcquireDerived:
         assert calls["n"] == 1
 
     @pytest.mark.asyncio
+    async def test_direct_hit_requires_record_bytes(self, resource_store: ResourceStore):
+        """文件存在不等于命中: 盘上字节已不是记录那份时必须重跑 producer, 相符才直接出."""
+
+        async def producer(dest: Path) -> bool:
+            dest.write_bytes(b"cropped-bytes")
+            return True
+
+        r1 = await resource_store.acquire_derived("https://s/t.jpg", "crop", "0.7", producer)
+        assert r1 is not None
+
+        # 同一路径被就地改写 (超分 / 外部改写), 文件仍在而记录未变.
+        resource_store.full_path(r1).write_bytes(b"stale-other-bytes")
+        calls = {"n": 0}
+
+        async def rerun(dest: Path) -> bool:
+            calls["n"] += 1
+            dest.write_bytes(b"cropped-bytes")
+            return True
+
+        r2 = await resource_store.acquire_derived("https://s/t.jpg", "crop", "0.7", rerun)
+        assert calls["n"] == 1  # 字节不符 → producer 重跑
+        assert r2 is not None
+        assert r2.url == r1.url
+        assert r2.size == len(b"cropped-bytes")
+        assert r2.content_hash == ResourceStore._hash_file(resource_store.full_path(r2))
+
+        r3 = await resource_store.acquire_derived("https://s/t.jpg", "crop", "0.7", rerun)
+        assert calls["n"] == 1  # 字节相符 → 直接出
+        assert r3 is not None
+        assert r3.content_hash == r2.content_hash
+
+    @pytest.mark.asyncio
     async def test_producer_failure_returns_none(self, resource_store: ResourceStore):
         async def producer(dest: Path) -> bool:
             return False  # 不生成文件
@@ -83,7 +115,7 @@ class TestUpscaleInPlace:
             return True
 
         done = await resource_store.upscale_in_place(res, {"tool": "realesrgan", "scale": 4}, sr_producer)
-        assert done is True
+        assert done is UpscaleOutcome.UPSCALED
 
         updated = await resource_store.get_by_url(res.url)
         assert updated is not None
@@ -105,11 +137,11 @@ class TestUpscaleInPlace:
             out.write_bytes(b"sr1")
             return True
 
-        assert await resource_store.upscale_in_place(res, {"scale": 2}, sr_producer) is True
+        assert await resource_store.upscale_in_place(res, {"scale": 2}, sr_producer) is UpscaleOutcome.UPSCALED
         updated = await resource_store.get_by_url(res.url)
         assert updated is not None
         # 已有 sr 标记 → 再次调用跳过
-        assert await resource_store.upscale_in_place(updated, {"scale": 4}, sr_producer) is False
+        assert await resource_store.upscale_in_place(updated, {"scale": 4}, sr_producer) is UpscaleOutcome.SKIPPED
 
     @pytest.mark.asyncio
     async def test_producer_failure_keeps_original(self, resource_store: ResourceStore):
@@ -124,20 +156,23 @@ class TestUpscaleInPlace:
             return False
 
         done = await resource_store.upscale_in_place(res, {"scale": 4}, failing_sr)
-        assert done is False
+        assert done is UpscaleOutcome.FAILED
         updated = await resource_store.get_by_url(res.url)
         assert updated is not None
         assert updated.meta is not None and "sr" not in updated.meta  # 未标记
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("stale", "expect_rerun"),
+        ("overwrite", "expect_rerun"),
         [
-            (b"overwritten-by-a-later-download", True),  # 大小相同但内容不同: 必须重跑
+            (b"other", True),  # 大小相同而内容不同: 大小判据无分辨力, 必须落到哈希
+            (b"far-longer-than-sr1", True),  # 大小不同
             (b"sr1", False),  # 记录所指的字节仍在盘上: 跳过
         ],
     )
-    async def test_marker_follows_disk_content(self, resource_store: ResourceStore, stale: bytes, expect_rerun: bool):
+    async def test_marker_follows_disk_content(
+        self, resource_store: ResourceStore, overwrite: bytes, expect_rerun: bool
+    ):
         """sr 标记的判据是记录的那份字节仍在本文件: 磁盘已被换掉时必须重跑, 不能永久跳过."""
 
         async def producer(dest: Path) -> bool:
@@ -151,19 +186,19 @@ class TestUpscaleInPlace:
             out.write_bytes(b"sr1")
             return True
 
-        assert await resource_store.upscale_in_place(res, {"scale": 2}, sr_producer) is True
+        assert await resource_store.upscale_in_place(res, {"scale": 2}, sr_producer) is UpscaleOutcome.UPSCALED
 
         # 模拟并发刮削把文件覆盖回去: 记录不变, 盘上的字节变了.
-        resource_store.full_path(res).write_bytes(stale)
+        resource_store.full_path(res).write_bytes(overwrite)
 
         marked = await resource_store.get_by_url(res.url)
         assert marked is not None
         rerun = await resource_store.upscale_in_place(marked, {"scale": 4}, sr_producer)
 
-        assert rerun is expect_rerun
+        assert (rerun is UpscaleOutcome.UPSCALED) is expect_rerun
         final = await resource_store.get_by_url(res.url)
         assert final is not None
-        assert resource_store.full_path(final).read_bytes() == (b"sr1" if expect_rerun else stale)
+        assert resource_store.full_path(final).read_bytes() == (b"sr1" if expect_rerun else overwrite)
         assert final.content_hash == ResourceStore._hash_file(resource_store.full_path(final))
         assert final.size == resource_store.full_path(final).stat().st_size
 
@@ -183,7 +218,7 @@ class TestUpscaleInPlace:
             out.write_bytes(b"sr-bytes")
             return True
 
-        assert await resource_store.upscale_in_place(res, {"scale": 2}, sr_producer) is True
+        assert await resource_store.upscale_in_place(res, {"scale": 2}, sr_producer) is UpscaleOutcome.UPSCALED
 
         ran: list[bytes] = []
 
@@ -193,7 +228,7 @@ class TestUpscaleInPlace:
             return True
 
         # 仍拿着同一份过期副本: 记录已是超分结果且磁盘相符, 必须跳过.
-        assert await resource_store.upscale_in_place(res, {"scale": 4}, second_sr) is False
+        assert await resource_store.upscale_in_place(res, {"scale": 4}, second_sr) is UpscaleOutcome.SKIPPED
         assert ran == []
         after = await resource_store.get_by_url(res.url)
         assert after is not None

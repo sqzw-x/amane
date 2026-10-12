@@ -11,12 +11,13 @@ from .images import (
 )
 from .nfo import write_nfo
 from .pipeline import MaterializedImages, manual_crop_image, materialize_images
-from .resource_store import AcquireResult, ResourceStore, derived_locator
+from .resource_store import AcquireResult, ResourceStore, UpscaleOutcome, derived_locator
 
 __all__ = [
     "AcquireResult",
     "MaterializedImages",
     "ResourceStore",
+    "UpscaleOutcome",
     "apply_cover_watermarks",
     "apply_cover_watermarks_from_info",
     "crop_box",

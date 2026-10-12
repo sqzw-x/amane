@@ -14,6 +14,7 @@ import hashlib
 import mimetypes
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
@@ -95,6 +96,14 @@ class ResolvedSource:
 
     locator: str
     path: Path
+
+
+class UpscaleOutcome(StrEnum):
+    """``upscale_in_place`` 的结果. ``SKIPPED`` 表示盘上已是记录所指的那份字节, 调用方不应计作失败."""
+
+    UPSCALED = "upscaled"
+    SKIPPED = "skipped"
+    FAILED = "failed"
 
 
 class ResourceStore:
@@ -320,8 +329,8 @@ class ResourceStore:
         resource: Resource,
         sr_args: dict,
         producer: Callable[[Path, Path], Awaitable[bool]],
-    ) -> bool:
-        """就地超分 ``resource`` 指向的文件. 返回是否本次真的做了超分.
+    ) -> UpscaleOutcome:
+        """就地超分 ``resource`` 指向的文件.
 
         ``sr`` 标记的判据是该标记所指的那份字节仍在盘上; 磁盘已被换掉时按未超分处理, 重跑后重新
         记录 — 标记与内容因此不会永久不一致.
@@ -332,25 +341,25 @@ class ResourceStore:
                 result = await session.exec(select(Resource).where(Resource.url == resource.url))
                 record = result.first()
             if record is None:
-                return False
+                return UpscaleOutcome.SKIPPED
             src = self._base_dir / record.file_path
             if not src.exists():
                 logger.warning("upscale source missing", url=record.url, path=str(src))
-                return False
+                return UpscaleOutcome.SKIPPED
 
             # 临时文件按调用命名: 同一路径的并发超分不共用半截文件.
             tmp = src.with_name(f"{src.stem}.{uuid4().hex}.sr_tmp{src.suffix}")
             try:
                 if record.meta and "sr" in record.meta and self._matches_record(src, record):
-                    return False
+                    return UpscaleOutcome.SKIPPED
                 ok = await producer(src, tmp)
                 if not ok or not tmp.exists():
                     logger.warning("upscale producer failed", url=record.url)
-                    return False
+                    return UpscaleOutcome.FAILED
                 tmp.replace(src)
             except Exception as exc:
                 logger.warning("upscale in place error", url=record.url, error=str(exc))
-                return False
+                return UpscaleOutcome.FAILED
             finally:
                 tmp.unlink(missing_ok=True)
 
@@ -364,13 +373,13 @@ class ResourceStore:
                 result = await session.exec(select(Resource).where(Resource.url == record.url))
                 row = result.first()
                 if row is None:
-                    return False
+                    return UpscaleOutcome.SKIPPED
                 row.size = size
                 row.content_hash = content_hash
                 row.meta = new_meta
                 session.add(row)
                 await session.commit()
-            return True
+            return UpscaleOutcome.UPSCALED
 
     async def acquire_first(self, urls: list[str], client: WebClient) -> AcquireResult:
         if not urls:

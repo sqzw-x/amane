@@ -1,4 +1,4 @@
-"""就地超分低质图. 去重依据 Resource.meta 的 sr 键 (覆盖原文件, URL 不变).
+"""就地超分低质图. 跳过判据是 ``meta`` 的 sr 标记且磁盘仍是记录的那份字节 (覆盖原文件, URL 不变).
 单个失败不阻断整批.
 """
 
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from ..media import needs_upscale, probe_size
+from ..media import UpscaleOutcome, needs_upscale, probe_size
 from ..media.pipeline import sr_args_dict
 from ..sr import run_SR
 from .models import UpscalePayload, UpscaleResult
@@ -51,10 +51,6 @@ class UpscaleHandler(TaskHandler[UpscalePayload, UpscaleResult]):
                 break
             scanned += 1
 
-            # 已超分或非图则跳过.
-            if res.meta and "sr" in res.meta:
-                skipped += 1
-                continue
             if not _is_image(res.mime_type, res.file_path):
                 skipped += 1
                 continue
@@ -62,16 +58,19 @@ class UpscaleHandler(TaskHandler[UpscalePayload, UpscaleResult]):
             full = self._store.full_path(res)
             size = probe_size(full)
             file_bytes = full.stat().st_size if full.exists() else 0
-            # 未达阈值则跳过.
+            # 未达阈值则跳过. 已超分的图尺寸已达阈值, 同样在此跳过: 跳过判据不看 sr 标记.
             if not needs_upscale(size, file_bytes, max_dim_threshold=max_dim, max_bytes_threshold=max_bytes):
                 skipped += 1
                 continue
 
-            ok = await self._store.upscale_in_place(res, sr_args_dict(self._config.sr), self._sr_producer)
-            if ok:
+            # 存量标记与盘上字节不一致的行照常进入超分, 由锁内判据决定重跑或跳过.
+            outcome = await self._store.upscale_in_place(res, sr_args_dict(self._config.sr), self._sr_producer)
+            if outcome is UpscaleOutcome.UPSCALED:
                 upscaled += 1
-            else:
+            elif outcome is UpscaleOutcome.FAILED:
                 failed += 1
+            else:
+                skipped += 1
 
         logger.info("upscale completed", scanned=scanned, upscaled=upscaled, skipped=skipped, failed=failed)
         return TaskResult(

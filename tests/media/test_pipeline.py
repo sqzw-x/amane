@@ -187,7 +187,8 @@ async def test_concurrent_materialize_keeps_sr_result(
 
     第一个任务的下载停在闸门上 (此时缓存里还没有这条记录), 第二个任务同时越过缓存判据.
     放行后第一个任务走完下载 / 落库 / 超分, 第二个任务若仍去下载, 就会把超分结果覆盖回原图;
-    它随后的落库被 url UNIQUE 拒绝, 磁盘退回原图而 DB 仍记 sr 标记与超分哈希 — 该图从此永久跳过.
+    它随后的落库被 url UNIQUE 拒绝, 磁盘退回原图而 DB 仍记 sr 标记与超分哈希 — 此后 UPSCALE 任务
+    按记录与盘上字节的比对重跑该图, 不再凭标记跳过.
     """
     from amane.config import ScrapingConfig
     from amane.sr.run import SrResult

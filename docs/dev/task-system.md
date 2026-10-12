@@ -128,7 +128,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ## 图像超分
 
-超分只在两处发生, serve 永不触发: scrape 期急切 (`sr.enabled` 时对低质本地副本) 与 UPSCALE 任务 (扫描 Resource, 补 `'sr' not in meta` 的低质图). **就地覆盖**: 不产生新 URL, 直接覆盖磁盘文件并在 `meta` 打 `'sr'`, 前端零感知; 预设只暴露两个, 屏蔽工具 / 模型 / 倍率; 二进制按需下到 `{data_dir}/tools/{tool}/{平台}-{架构}/`, 无可选包的目标在下载前即报错.
+超分只在两处发生, serve 永不触发: scrape 期急切 (`sr.enabled` 时对低质本地副本) 与 UPSCALE 任务 (扫描 Resource, 补低质图); 跳过的判据是 `meta` 的 `'sr'` 标记且磁盘仍是记录的那份字节, 二者不符时重跑并重记. **就地覆盖**: 不产生新 URL, 直接覆盖磁盘文件并在 `meta` 打 `'sr'`, 前端零感知; 预设只暴露两个, 屏蔽工具 / 模型 / 倍率; 二进制按需下到 `{data_dir}/tools/{tool}/{平台}-{架构}/`, 无可选包的目标在下载前即报错.
 
 ## Worker 并发
 
@@ -186,7 +186,7 @@ Metadata 是一等公民, CLEANUP **从不**因「无关联 MediaFile」删除 M
 
 三者分属独立循环 (秒级反应、分钟级 routine、每源间隔的远程拉取), 合并会互相拖高 latency.
 
-**UPSCALE 例行任务**: 扫描全部 `Resource`, 对低质且未超分的就地超分, `limit` 限单次批量.
+**UPSCALE 例行任务**: 扫描全部 `Resource`, 就地超分低质图, `limit` 限单次批量.
 
 **RESCRAPE (滚动补刮)**: 与 `RefreshHandler` 同构的 fan-out — 批量任务只选目标并下发既有刮削. `targets` (`metadata` / `actor`) 每个已选项各自取一批旧条目, 以 `priority=-1` 入队非 force 任务 (见 `handlers/rescrape.py`). 复用 per-site raw 快照仅补缺失站点, 聚合阶段重放当前配置, 因此同时承担「配置变更后再次运行生效」; 它与 SCRAPE 成功后的链式 ACTOR_SCRAPE 正交 (链式跳过 `Actor.raw` 已非空的演员).
 
