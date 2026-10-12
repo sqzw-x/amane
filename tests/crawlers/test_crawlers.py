@@ -21,6 +21,9 @@ TOML 格式:
     responses = [{ url_contains = "...", method = "post_json", file = "response.json" }]
     expected_none = true                   # 可选: 期望 fetch() 返回 None (空搜索 / 未配凭据)
 
+    responses 项默认走 get_text; method = "post_json" / "get_json" 换通道,
+    method = "request" 是低层 ``web_client.request`` 的应答 (无正文, 用 set_cookie 给响应头).
+
     [scrape.expected]                     # 字段断言 (fetch 段同)
     field = value                         # 精确匹配
     field_contains = "x"                  # 子串/成员检查
@@ -31,7 +34,6 @@ TOML 格式:
 """
 
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -40,7 +42,7 @@ from amane.crawlers import registry
 from amane.crawlers.models import SearchQuery
 from amane.net.errors import SourceError
 
-from .driven import assert_expected, build_mock, discover_film_cases, http_client, load_toml
+from .driven import assert_expected, build_mock, build_mock_web, discover_film_cases, http_client, load_toml
 
 CASES = discover_film_cases(lambda site: registry.get(site) is not None)
 
@@ -60,7 +62,7 @@ async def test_crawler_scrape(case_id: str, toml_path: Path) -> None:
     crawler_cls = registry.get(site)
     assert crawler_cls is not None, f"Unknown crawler site: {site!r}"
 
-    mock_web = AsyncMock()
+    mock_web = build_mock_web()
     crawler = crawler_cls(client=http_client(mock_web))
 
     scrape_cfg = config["scrape"]
@@ -86,7 +88,7 @@ async def test_crawler_fetch(case_id: str, toml_path: Path) -> None:
     fetch_cfg = config["fetch"]
     site_config = SiteConfig(**fetch_cfg.get("config", {})) if fetch_cfg.get("config") else None
 
-    mock_web = AsyncMock()
+    mock_web = build_mock_web()
     crawler = crawler_cls(client=http_client(mock_web), config=site_config)
 
     build_mock(mock_web, toml_path.parent, fetch_cfg["responses"])
@@ -111,7 +113,7 @@ async def test_crawler_search(case_id: str, toml_path: Path) -> None:
     crawler_cls = registry.get(site)
     assert crawler_cls is not None, f"Unknown crawler site: {site!r}"
 
-    mock_web = AsyncMock()
+    mock_web = build_mock_web()
     crawler = crawler_cls(client=http_client(mock_web))
 
     search_cfg = config["search"]

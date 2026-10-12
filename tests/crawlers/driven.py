@@ -7,10 +7,12 @@ import math
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from curl_cffi.requests import Headers
 
 from amane.crawlers.http import HttpClient
 from amane.crawlers.registry import registry
@@ -86,12 +88,17 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
     """配置 mock_web 的 side_effects, 按 URL 模式路由."""
     get_text_map: dict[str, str | dict[str, Any]] = {}
     get_json_map: dict[str, str | dict[str, Any]] = {}
+    request_map: dict[str, str] = {}
     post_json_routes: list[tuple[str, str | None, str | dict[str, Any]]] = []
 
     for resp in responses:
-        data = load_response_file(case_dir, resp["file"])
         pattern = resp["url_contains"]
         method = resp.get("method", "get_text")
+        if method == "request":
+            # 低层通道没有正文; 来源读的是响应头, 夹具按 Set-Cookie 给出.
+            request_map[pattern] = str(resp["set_cookie"])
+            continue
+        data = load_response_file(case_dir, resp["file"])
         if method == "post_json":
             body = resp.get("body_contains")
             post_json_routes.append((pattern, body if isinstance(body, str) else None, data))
@@ -134,6 +141,28 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
             raise RequestError(url, "no mock matched")
 
         mock_web.post_json.side_effect = post_json_side_effect
+
+    if request_map:
+
+        async def request_side_effect(method: str, url: str, **kwargs: object) -> SimpleNamespace:
+            for pattern, set_cookie in request_map.items():
+                if pattern in url:
+                    return bare_response(set_cookie)
+            return bare_response()
+
+        mock_web.request.side_effect = request_side_effect
+
+
+def bare_response(set_cookie: str = "") -> SimpleNamespace:
+    """低层通道的应答替身: 来源只读它的 Set-Cookie 响应头 (没有正文)."""
+    return SimpleNamespace(headers=Headers([("set-cookie", set_cookie)]) if set_cookie else Headers())
+
+
+def build_mock_web() -> AsyncMock:
+    """mock 的低层通道. 来源直接经 ``web_client`` 发请求 (领取会话 cookie 等) 时不能是裸 AsyncMock."""
+    mock_web = AsyncMock()
+    mock_web.request.return_value = bare_response()
+    return mock_web
 
 
 def http_client(mock_web: AsyncMock) -> HttpClient:
