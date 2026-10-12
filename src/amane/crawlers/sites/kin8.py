@@ -1,5 +1,8 @@
+"""官网番号形如 ``KIN8-0001`` / ``KIN8TENGOKU-0001``, 详情页 id 即其 4 位数字段."""
+
+from __future__ import annotations
+
 import re
-from urllib.parse import urljoin
 
 from parsel import Selector
 
@@ -8,6 +11,9 @@ from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text
 
+# 只认本站前缀, 不认「任意番号里的首个数字串」: heyzo-1234 与 010115_001 都含数字, 拼出的是别人的 id.
+_NUMBER_PREFIX = re.compile(r"^KIN8(?:TENGOKU)?[-_ ]?(?P<id>\d+)$")
+
 
 class Kin8Crawler(Crawler):
     @classmethod
@@ -15,12 +21,10 @@ class Kin8Crawler(Crawler):
         return CrawlerProfile(name=SiteName.KIN8, base_url="https://www.kin8tengoku.com")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        number = query.number
-        match = re.search(r"(\d+)", number)
-        if not match:
+        prefix_match = _NUMBER_PREFIX.match(query.number.strip().upper())
+        if prefix_match is None:
             return None
-        movie_id = match.group(1)
-        url = f"{self.base_url}/moviepages/{movie_id}/index.html"
+        url = f"{self.base_url}/moviepages/{prefix_match['id']}/index.html"
         text = await self.client.get_html(url)
         if text and "title" in text.lower():
             return url
@@ -39,8 +43,6 @@ class Kin8Crawler(Crawler):
 
         actors = extract_all_texts(html, '//div[@id="actress"]//a/text()')
         cover = extract_text(html, '//div[@id="gallery"]//img/@src')
-        if cover and not cover.startswith("http"):
-            cover = urljoin(self.base_url, cover)
 
         release_raw = extract_text(html, '//div[@id="detail"]//li[contains(text(),"配信日")]/text()')
         release = None
