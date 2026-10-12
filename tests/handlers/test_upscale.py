@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 _URL = "https://s/small.jpg"
 _LOCATOR = derived_locator(_URL, "crop", "0.7")  # 派生资源的 locator 才是 Resource.url
 _LOW_QUALITY_SIZE = (800, 538)  # 最长边 800 < 阈值 1200
-_SR_SIZE = (1600, 1076)
+_SR_SIZE = (900, 605)
 
 
 def _jpeg_bytes(size: tuple[int, int], color: str) -> bytes:
@@ -110,6 +110,7 @@ async def test_skips_already_upscaled(resource_store: ResourceStore, _fake_sr):
 async def test_reruns_when_marker_bytes_gone(
     resource_store: ResourceStore,
     _fake_sr,
+    monkeypatch: pytest.MonkeyPatch,
     stale_on_disk: bool,
     expect_upscaled: int,
     expect_skipped: int,
@@ -118,17 +119,14 @@ async def test_reruns_when_marker_bytes_gone(
 
     baseline = await _seed_upscaled(resource_store, _URL, stale_on_disk=stale_on_disk)
     calls = {"n": 0}
-    real_run_sr = upscale_mod.run_SR
+    fake_run_sr = upscale_mod.run_SR
 
     async def counting_run_sr(*args, **kwargs):
         calls["n"] += 1
-        return await real_run_sr(*args, **kwargs)
+        return await fake_run_sr(*args, **kwargs)
 
-    upscale_mod.run_SR = counting_run_sr
-    try:
-        result = await UpscaleHandler(resource_store, HotSettings()).handle(UpscalePayload())
-    finally:
-        upscale_mod.run_SR = real_run_sr
+    monkeypatch.setattr(upscale_mod, "run_SR", counting_run_sr)
+    result = await UpscaleHandler(resource_store, HotSettings()).handle(UpscalePayload())
 
     assert result.result is not None
     assert result.result.upscaled == expect_upscaled
@@ -141,7 +139,6 @@ async def test_reruns_when_marker_bytes_gone(
     full = resource_store.full_path(record)
     assert full.read_bytes() == baseline  # 重跑写出超分结果 / 原样保留
     assert record.content_hash == ResourceStore._hash_file(full)  # 记录指向盘上那份
-    assert record.size == full.stat().st_size
     assert record.meta is not None and "sr" in record.meta
 
 

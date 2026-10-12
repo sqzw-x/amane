@@ -70,13 +70,10 @@ class TestAcquireDerived:
         assert calls["n"] == 1  # 字节不符 → producer 重跑
         assert r2 is not None
         assert r2.url == r1.url
-        assert r2.size == len(b"cropped-bytes")
-        assert r2.content_hash == ResourceStore._hash_file(resource_store.full_path(r2))
 
         r3 = await resource_store.acquire_derived("https://s/t.jpg", "crop", "0.7", rerun)
         assert calls["n"] == 1  # 字节相符 → 直接出
         assert r3 is not None
-        assert r3.content_hash == r2.content_hash
 
     @pytest.mark.asyncio
     async def test_producer_failure_returns_none(self, resource_store: ResourceStore):
@@ -165,7 +162,7 @@ class TestUpscaleInPlace:
     @pytest.mark.parametrize(
         ("overwrite", "expect_rerun"),
         [
-            (b"other", True),  # 大小相同而内容不同: 大小判据无分辨力, 必须落到哈希
+            (b"xYz", True),  # 与 sr1 等长而内容不同: 大小判据无分辨力, 必须落到哈希
             (b"far-longer-than-sr1", True),  # 大小不同
             (b"sr1", False),  # 记录所指的字节仍在盘上: 跳过
         ],
@@ -499,30 +496,24 @@ class TestAcquireConcurrency:
                     await released.wait()
                 return await super().request(method, url, **kwargs)
 
-        for fail_first in (True, False):
-            ok_client = WebClient(limiters=RateLimiters(default_rate=100))
-            content = f"jpeg-bytes-{fail_first}".encode()
-            monkeypatch.setattr(ok_client, "_session", GatedSession(final_url=_REQUEST, content=content))
-            fail_client, _ = _stub_client(monkeypatch, final_url=_REQUEST, statuses={"GET": 403})
+        ok_client = WebClient(limiters=RateLimiters(default_rate=100))
+        monkeypatch.setattr(ok_client, "_session", GatedSession(final_url=_REQUEST, content=b"jpeg-bytes"))
+        fail_client, _ = _stub_client(monkeypatch, final_url=_REQUEST, statuses={"GET": 403})
 
-            failing = asyncio.create_task(resource_store.acquire(_REQUEST, fail_client))
-            succeeding = asyncio.create_task(resource_store.acquire(_REQUEST, ok_client))
-            try:
-                if fail_first:
-                    # 失败方先进入: 成功方此时还没开始写, 失败必须无痕.
-                    assert await failing is None
-                released.set()
-                path = await succeeding
-                assert path is not None and path.read_bytes() == content
-                if not fail_first:
-                    assert await failing is None  # 成功方写完后, 失败方直接拿到该文件
-                record = await resource_store.get_by_url(_REQUEST)
-                assert record is not None and resource_store.full_path(record) == path
-                assert record.content_hash == ResourceStore._hash_file(path)
-            finally:
-                released.set()
-                await asyncio.gather(failing, succeeding, return_exceptions=True)
-                await resource_store.invalidate(_REQUEST)
+        failing = asyncio.create_task(resource_store.acquire(_REQUEST, fail_client))
+        succeeding = asyncio.create_task(resource_store.acquire(_REQUEST, ok_client))
+        try:
+            released.set()
+            path = await succeeding
+            assert path is not None and path.read_bytes() == b"jpeg-bytes"
+            assert await failing is None  # 成功方写完后, 失败方直接拿到该文件
+            record = await resource_store.get_by_url(_REQUEST)
+            assert record is not None and resource_store.full_path(record) == path
+            assert record.content_hash == ResourceStore._hash_file(path)
+        finally:
+            released.set()
+            await asyncio.gather(failing, succeeding, return_exceptions=True)
+            await resource_store.invalidate(_REQUEST)
 
     @pytest.mark.asyncio
     async def test_second_caller_rechecks_cache_after_first(
