@@ -458,8 +458,9 @@ def _match(basename: str, escape_strings: list[str], *, generic: bool) -> tuple[
             return m.group().replace("HEYZO", "HEYZO-"), ContentType.UNCENSORED
     if m := re.search(r"(H4610|C0930|H0930)-[A-Z]+\d{4,}", c):
         return m.group(), ContentType.UNCENSORED
+    # kin8 归欧美链 (theporndb 为第一源); 该类型表示路由归属, 与马赛克标记正交.
     if m := re.search(r"KIN8(TENGOKU)?-?\d{3,}", c):
-        return m.group().replace("TENGOKU", "-").replace("--", "-"), ContentType.UNCENSORED
+        return m.group().replace("TENGOKU", "-").replace("--", "-"), ContentType.WESTERN
     if (m := re.search(r"S2M[BD]*-\d{3,}", c)) or (m := re.search(r"MCB3D[BD]*-\d{2,}", c)):
         return m.group(), ContentType.UNCENSORED
     if m := _TMA_NUMBER.search(c):
