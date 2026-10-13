@@ -6,6 +6,7 @@ import re
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import quote
 
+import zhconv
 from parsel import Selector
 
 from amane.enums import ActorGender, SiteName
@@ -67,23 +68,29 @@ _LIST_TAGS = frozenset({"ul", "ol"})
 _SKIP_WRAPPERS = frozenset({"table", "figure"})
 
 # 章节白名单: 命中即整节取用, 未命中的章节 (作品 / 出演 / 脚注等) 只保留导语.
-# 中 / 日维基的同类章节用字不同 (歷 / 歴 与 历), 折叠成简体后再比对.
-_HEADING_FOLD = str.maketrans({"歷": "历", "歴": "历", "經": "经", "経": "经", "來": "来", "簡": "简", "藝": "艺"})
+# 标题写法在词条之间不统一, 漏收的写法会让该节整节丢弃, 新出现的写法要补进白名单.
+# 关键字只存简体形态; 比对前折叠标题: 中文繁体经 zhconv 转换, 日文词条不做变体转换, 新字体另见补充表.
+_JA_HEADING_FOLD = str.maketrans({"経": "经"})
 _SECTION_KEYWORDS: tuple[str, ...] = (
     "人物",
     "简历",
+    "简介",
     "经历",
     "履历",
     "略历",
     "来历",
     "生平",
-    "演艺生涯",
+    "生涯",
+    "背景",
+    "私生活",
+    "个人生活",
     "プロフィール",
     "生い立ち",
     "early life",
     "career",
     "biography",
     "personal life",
+    "background",
 )
 
 # 引用标记 [1] / [ 3 ] / [注 1] / [要出典]; 全角括号与内部空白一并容忍.
@@ -533,7 +540,7 @@ def _heading_text(node: Selector) -> str:
 
 
 def _is_section(title: str) -> bool:
-    folded = title.translate(_HEADING_FOLD).lower()
+    folded = zhconv.convert(title, "zh-cn").translate(_JA_HEADING_FOLD).lower()
     return any(keyword in folded for keyword in _SECTION_KEYWORDS)
 
 
