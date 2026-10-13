@@ -391,6 +391,7 @@ def _walk(
     entries = 0
     level_media = False
     level_veto = False
+    level_has_subtitle = False
     level_newest_mtime = 0.0
     subtree_media = False
     explainable = True
@@ -400,6 +401,8 @@ def _walk(
     blocked_in_subtree = False
     newest_mtime = 0.0
     bytes_total = 0
+    # 本层命中在 state.media 中的起点: 子目录递归发生在下面那个循环之后, 因此这一段切片只含本层.
+    media_start = len(state.media)
     subdirs: list[tuple[Path, os.stat_result]] = []
     companions: list[tuple[Path, os.stat_result]] = []
     noise: list[tuple[Path, os.stat_result]] = []
@@ -424,6 +427,8 @@ def _walk(
         level_newest_mtime = max(level_newest_mtime, child_stat.st_mtime)
         newest_mtime = max(newest_mtime, child_stat.st_mtime)
         is_dir = stat.S_ISDIR(child_stat.st_mode)
+        if not is_dir and path.suffix.lower() in scan.subtitle_extensions:
+            level_has_subtitle = True
         # 判定顺序是契约的一部分: 系统产物先于媒体判据 (._x.mp4 是伴生文件, 不是视频),
         # 媒体先于白名单 (用户可以把 .mp4 写进 subtitle_extensions).
         junk = classify_junk(path, is_dir=is_dir)
@@ -474,6 +479,10 @@ def _walk(
             companions.append((path, child_stat))
             continue
         explainable = False
+
+    # 字幕文件命中在枚举顺序上可能晚于媒体, 因此遍历结束后统一标记本层媒体命中.
+    if level_has_subtitle:
+        state.media[media_start:] = [replace(hit, has_companion_subtitle=True) for hit in state.media[media_start:]]
 
     level = _LevelFacts(
         has_media=level_media,

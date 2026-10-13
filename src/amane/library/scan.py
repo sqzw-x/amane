@@ -29,8 +29,16 @@ class UnwantedKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class LibraryHit:
+    """一次遍历命中的文件.
+
+    ``has_companion_subtitle`` 由同层子项的扩展名判定, 不额外读取磁盘; 与
+    `rules.has_companion_subtitle` 同口径, 区别只在悬空链接按文件计. 不经遍历构造命中
+    (云盘事件) 的调用方保持假值.
+    """
+
     path: Path
     kind: LibraryFileKind
+    has_companion_subtitle: bool = False
 
 
 class LibraryScan:
@@ -42,12 +50,14 @@ class LibraryScan:
         blacklist_patterns: Sequence[str] | None = None,
         min_file_size: int = 0,
         media_extensions: frozenset[str] | None = None,
+        subtitle_extensions: Sequence[str] | None = None,
     ) -> None:
         self.patterns = patterns
         self.trailer_pattern = trailer_pattern
         self.blacklist_patterns = list(blacklist_patterns or [])
         self.min_file_size = min_file_size
         self.media_extensions = MEDIA_EXTENSIONS if media_extensions is None else media_extensions
+        self.subtitle_extensions = frozenset(ext.lower() for ext in (subtitle_extensions or ()))
         self._trailer: list[Pattern[str]] | None = compile_skip_patterns([trailer_pattern])
         self._blacklist: list[Pattern[str]] | None = compile_skip_patterns(self.blacklist_patterns)
 

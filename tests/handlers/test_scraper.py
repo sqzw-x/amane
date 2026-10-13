@@ -580,6 +580,91 @@ class TestRefreshHandler:
         assert result.result.scrape == 2
 
     @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("subtitle_extensions", "subtitle_name", "stored", "expected"),
+        [
+            pytest.param([".srt"], "MIDV-771.srt", False, True, id="命中置真"),
+            pytest.param([".srt"], None, True, False, id="同目录无字幕置假"),
+            pytest.param([], "MIDV-771.srt", True, False, id="库关闭字幕发现置假"),
+        ],
+    )
+    async def test_scan_syncs_external_subtitle(
+        self,
+        repo: Repository,
+        tmp_path: Path,
+        subtitle_extensions: list[str],
+        subtitle_name: str | None,
+        stored: bool,
+        expected: bool,
+    ):
+        """存量行的外挂字幕标记只在库扫描时补齐: 迁移不回填, 登记与改 path 都不覆盖既有行."""
+        video = tmp_path / "MIDV-771.mp4"
+        video.write_bytes(b"\x00" * 100)
+        if subtitle_name is not None:
+            (tmp_path / subtitle_name).touch()
+        lib = await repo.create_library(
+            name="t", path=str(tmp_path), write_nfo=False, subtitle_extensions=subtitle_extensions
+        )
+        assert lib.id is not None
+        media = await repo.create_media_file(library_id=lib.id, path=str(video), has_external_subtitle=stored)
+        assert media.id is not None
+
+        result = await RefreshHandler(repo=repo).handle(
+            RefreshPayload(library_id=lib.id, path=str(tmp_path), scrape=set())
+        )
+
+        assert result.success is True
+        assert result.result is not None
+        assert result.result.added == 0
+        synced = await repo.get_media_file(media.id)
+        assert synced is not None
+        assert synced.has_external_subtitle is expected
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_scan_syncs_only_walked_rows(self, repo: Repository, tmp_path: Path):
+        """按遍历所见回写: 范围外的行不动, 已一致的行不写库."""
+        lib_root = tmp_path / "lib"
+        (lib_root / "hit").mkdir(parents=True)
+        (lib_root / "hit" / "MIDV-772.mp4").write_bytes(b"\x00" * 100)
+        (lib_root / "kept").mkdir()
+        (lib_root / "kept" / "MIDV-773.mp4").write_bytes(b"\x00" * 100)
+        (lib_root / "kept" / "MIDV-773.srt").touch()
+        (lib_root / "outside").mkdir()
+        (lib_root / "outside" / "MIDV-774.mp4").write_bytes(b"\x00" * 100)
+        (lib_root / "outside" / "MIDV-774.srt").touch()
+        lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, subtitle_extensions=[".srt"])
+        assert lib.id is not None
+        stale = await repo.create_media_file(
+            library_id=lib.id, path=str(lib_root / "hit" / "MIDV-772.mp4"), has_external_subtitle=True
+        )
+        kept = await repo.create_media_file(
+            library_id=lib.id, path=str(lib_root / "kept" / "MIDV-773.mp4"), has_external_subtitle=True
+        )
+        outside = await repo.create_media_file(
+            library_id=lib.id, path=str(lib_root / "outside" / "MIDV-774.mp4"), has_external_subtitle=False
+        )
+        assert stale.id is not None and kept.id is not None and outside.id is not None
+        kept_before = await repo.get_media_file(kept.id)
+        assert kept_before is not None
+
+        result = await RefreshHandler(repo=repo).handle(
+            RefreshPayload(library_id=lib.id, path=str(lib_root / "hit"), scrape=set())
+        )
+
+        assert result.success is True
+        synced = await repo.get_media_file(stale.id)
+        assert synced is not None
+        assert synced.has_external_subtitle is False
+        untouched_by_scope = await repo.get_media_file(outside.id)
+        assert untouched_by_scope is not None
+        assert untouched_by_scope.has_external_subtitle is False
+        # 范围内已一致的行不写库: 写库会刷新 updated_at.
+        kept_after = await repo.get_media_file(kept.id)
+        assert kept_after is not None
+        assert kept_after.has_external_subtitle is True
+        assert kept_after.updated_at == kept_before.updated_at
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_unscoped_scan_writes_cleanup_inventory(self, repo: Repository, tmp_path: Path):
         """整库范围的入库扫描顺带产出清单: 无效文件与空目录都在里面, 面板不必再扫一次."""
         (tmp_path / "MIDV-123.mp4").write_bytes(b"\x00" * 100)

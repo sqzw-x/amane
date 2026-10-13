@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..db import TaskType
-from ..library import MEDIA_EXTENSIONS, InventoryStore, LibraryScan, OrphanScan, scan_inventory
+from ..library import MEDIA_EXTENSIONS, InventoryStore, LibraryHit, LibraryScan, OrphanScan, scan_inventory
 from ..parsing import parse_file_info
 from ..utils.path import nfc_path
 from ..utils.threads import path_exists, path_is_dir
@@ -14,6 +14,7 @@ from .models import RefreshPayload, RefreshResult, ScanMode, ScrapePayload
 from .protocol import FollowupTask, TaskHandler, TaskResult
 
 if TYPE_CHECKING:
+    from ..db.models import MediaFile
     from ..db.repository import Repository
 
 logger = structlog.get_logger()
@@ -47,9 +48,10 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
             blacklist_patterns=library.blacklist_patterns if library is not None else None,
             min_file_size=library.min_file_size if library is not None else 0,
             media_extensions=self._media_extensions,
+            subtitle_extensions=library.subtitle_extensions if library is not None else None,
         )
 
-        added = removed = scrape = 0
+        added = removed = scrape = subtitles = 0
 
         existing = await self._repo.list_media_files(library_id=payload.library_id, limit=None)
         existing_by_path = {nfc_path(f.path): f for f in existing}
@@ -103,6 +105,8 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
                         media = await register_media_file(self._repo, payload.library_id, file_path, library=library)
                         existing_by_path[path_key] = media
                         added += 1
+                    else:
+                        subtitles += await self._sync_external_subtitle(existing_by_path[path_key], hit)
                 if added:
                     logger.info("new files discovered", path=payload.path, count=added)
 
@@ -147,6 +151,19 @@ class RefreshHandler(TaskHandler[RefreshPayload, RefreshResult]):
             )
             scrape += 1
 
-        logger.info("scan completed", path=payload.path, added=added, removed=removed, scrape=scrape)
+        logger.info(
+            "scan completed", path=payload.path, added=added, removed=removed, scrape=scrape, subtitles=subtitles
+        )
 
         return TaskResult(True, result=RefreshResult(added=added, removed=removed, scrape=scrape), followups=followups)
+
+    async def _sync_external_subtitle(self, media: MediaFile, hit: LibraryHit) -> int:
+        """按本次遍历所见回写已登记行的外挂字幕标记; 未变化返回 0.
+
+        标记的其它写入点是视频登记与换 path, 二者都不覆盖存量行, 因此库扫描是存量行唯一的补齐途径.
+        """
+        if media.has_external_subtitle == hit.has_companion_subtitle:
+            return 0
+        assert media.id is not None
+        await self._repo.update_media_file(media.id, has_external_subtitle=hit.has_companion_subtitle)
+        return 1

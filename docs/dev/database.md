@@ -38,6 +38,8 @@ pysqlite 只在 DML 之前发出 `BEGIN`, 纯 SELECT 落在事务之外 (SQLAlch
 2. **落后 head**: 先用 sqlite3 **online backup API** 写 `{db}.pre-migrate-{oldrev}-{utc}.bak` (含 WAL 一致快照; 同目录保留最近 5 份), 再升级.
 3. **迁移连接**单独 `autocommit=False` + Alembic `transactional_ddl=True`: 单次 revision 内 DDL 与 `alembic_version` 同事务, 失败则回滚, 避免「表已创建但版本未升」的半成品. 业务连接不修改事务模式, 仍只开 WAL + FK.
 
+迁移内不允许文件系统 I/O 与其它无界等待: 整条链共用一个事务, 中止即整体回滚、重试仍从零开始, 而网盘挂载点上逐目录列举会把启动阻塞数分钟以上且没有可见进度. 需要遍历磁盘的回填由运行期承担 (如 `REFRESH` 库扫描).
+
 CLI (`uv run alembic …`) 使用同一套 `env.py` 事务性 DDL, 但**不会**自动备份 — 依赖启动路径或手工 backup. `env.py` 自行创建的引擎在 upgrade 结束后必须 `dispose()`, 否则同一进程内多次升级 (测试) 会留下未关闭的连接.
 
 SQLite 不能直接存储 Python `datetime`, 迁移回填中的裸 `INSERT` 须依赖 `sqlite_migrate` 在导入时注册的字符串转换, 否则会触发 Python 3.12 已弃用的默认转换.

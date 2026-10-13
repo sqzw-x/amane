@@ -1,4 +1,8 @@
-"""外挂字幕列: 拆分文件名标记, 并按库 `subtitle_extensions` 回填同目录命中的行."""
+"""外挂字幕列: 拆分文件名标记与新增列, 存量行不回填.
+
+回填要逐目录读取磁盘, 媒体库位于网盘挂载点时整条迁移链会被阻塞数分钟以上且无法分批续跑,
+因此该列为空值由库扫描补齐 — 本测试固定这一契约.
+"""
 
 from pathlib import Path
 
@@ -33,7 +37,7 @@ def _insert_media_files(conn, library_id: int, rows: list[tuple[str, int]]) -> N
         )
 
 
-def test_external_subtitle_backfill(tmp_path: Path) -> None:
+def test_external_subtitle_no_backfill(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
 
@@ -41,26 +45,21 @@ def test_external_subtitle_backfill(tmp_path: Path) -> None:
     library_dir.mkdir()
     external = library_dir / "MIDV-001.mp4"
     external.touch()
+    # 同目录确有字幕: 迁移仍不读取磁盘, 该行保持假值.
     (library_dir / "MIDV-001.chs.srt").touch()
     named = library_dir / "MIDV-002-C.mp4"
     named.touch()
-    plain = tmp_path / "other" / "MIDV-003-C.mp4"
-    plain.parent.mkdir()
+    plain_dir = tmp_path / "other"
+    plain_dir.mkdir()
+    plain = plain_dir / "MIDV-003-C.mp4"
     plain.touch()
-    closed_dir = tmp_path / "closed"
-    closed_dir.mkdir()
-    closed = closed_dir / "MIDV-004.mp4"
-    closed.touch()
-    (closed_dir / "MIDV-004.srt").touch()
 
     command.upgrade(cfg, "1f050b272f7d")
 
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
-        open_library = _insert_library(conn, "open", library_dir, '[".srt"]')
-        closed_library = _insert_library(conn, "closed", closed_dir, "[]")
-        _insert_media_files(conn, open_library, [(str(external), 0), (str(named), 1), (str(plain), 1)])
-        _insert_media_files(conn, closed_library, [(str(closed), 0)])
+        library_id = _insert_library(conn, "open", library_dir, '[".srt"]')
+        _insert_media_files(conn, library_id, [(str(external), 0), (str(named), 1), (str(plain), 1)])
 
     command.upgrade(cfg, "head")
 
@@ -74,17 +73,11 @@ def test_external_subtitle_backfill(tmp_path: Path) -> None:
                 text("SELECT path, has_subtitle_in_name, has_external_subtitle FROM media_files")
             ).all()
         }
+        # 文件名标记仍是 path 的投影, 逐行沿用改名前的值.
         assert rows[str(external)].has_subtitle_in_name in (0, False)
-        assert rows[str(external)].has_external_subtitle in (1, True)
         assert rows[str(named)].has_subtitle_in_name in (1, True)
-        assert rows[str(named)].has_external_subtitle in (1, True)
         assert rows[str(plain)].has_subtitle_in_name in (1, True)
-        assert rows[str(plain)].has_external_subtitle in (0, False)
-        # 库关闭字幕发现时不回填, 即使同目录确实有字幕.
-        assert rows[str(closed)].has_external_subtitle in (0, False)
-
-    with engine.begin() as conn:
-        conn.execute(text("UPDATE media_files SET has_external_subtitle = 0"))
+        assert not any(row.has_external_subtitle for row in rows.values())
 
     command.downgrade(cfg, "1f050b272f7d")
 
