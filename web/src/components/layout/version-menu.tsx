@@ -22,7 +22,10 @@ export function VersionMenu({ visibleFrom }: { visibleFrom?: "sm" }) {
   const [opened, setOpened] = useState(false);
   const health = useQuery({ ...healthCheckOptions(), staleTime: 60_000 });
   const desktop = useQuery({ ...desktopInfoOptions(), enabled: opened });
-  const update = useQuery({ ...getReleaseOptions(), enabled: opened });
+  // 挂载即检查更新, 与菜单开合无关: 未展开菜单的会话看不到更新提示.
+  // `staleTime` 限制标签页聚焦触发的重取次数 (后端 `src/amane/release.py` 的缓存 TTL 为 1 小时, 重取通常只得到同一快照);
+  // 重取也是检查失败的唯一恢复途径 — 失败不写入缓存时刻, 故失败后不得依赖缓存判定.
+  const update = useQuery({ ...getReleaseOptions(), staleTime: 5 * 60_000, retry: 2 });
   const version = health.data?.version;
   const supervised = desktop.data?.supervised === true;
   const latest = update.data?.latest;
