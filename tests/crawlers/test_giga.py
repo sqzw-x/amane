@@ -1,10 +1,14 @@
-"""giga 的年龄确认会话: 领取时机, 站内 Referer, 会话失效后的重领与重试, 与零结果页的区分.
+"""giga 的年龄确认会话: 领取时机, 站内 Referer, 会话失效后的重领与重试, 并发取页的串行, 零结果页的区分.
 
-假出站通道按序回放两个通道 (低层 request 领会话, get_text 取页), 夹具是真实响应, 不打网络.
+顺序用例的假出站通道按序回放两个通道 (低层 request 领会话, get_text 取页), 夹具是真实响应, 不打网络;
+并发用例的假出站通道另按线上实测的年龄墙状态机应答.
 """
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -197,3 +201,123 @@ async def test_empty_result_page_is_not_reclaimed() -> None:
 
     assert await crawler._search(SearchQuery("ZZZZ-99999")) is None
     assert _calls(web) == ([EMPTY], [ENTRY])
+
+
+class _AgeGateSite:
+    """按线上实测的年龄墙状态机应答的假出站通道.
+
+    年龄确认态是罐里的一份会话: 页面请求不带确认会话时回年龄页并下发一个未确认会话 (覆盖罐里的确认
+    会话), 入口带会话时只删除, 不带时下发确认会话. 请求在发出时读取罐, 响应在返回时写入罐.
+    """
+
+    def __init__(self, *, pages: dict[str, str], age_page: str) -> None:
+        self._pages = pages
+        self._age_page = age_page
+        self.jar: dict[str, str] = {}
+        self.confirmed: set[str] = set()
+        self.entries = 0
+        self.max_in_flight = 0
+        self._in_flight = 0
+        self._issued = 0
+
+    async def get_text(self, url: str, **kwargs: object) -> str:
+        sent = dict(self.jar)
+        async with self._hop():
+            if sent.get("PHPSESSID") in self.confirmed:
+                body = next((body for needle, body in self._pages.items() if needle in url), None)
+                assert body is not None, f"未声明的页面: {url}"
+                return body
+            self.jar["PHPSESSID"] = self._issue()
+            return self._age_page
+
+    async def request(self, method: str, url: str, **kwargs: object) -> SimpleNamespace:
+        assert url == ENTRY, f"低层通道只用于入口: {url}"
+        sent = dict(self.jar)
+        async with self._hop():
+            self.entries += 1
+            if "PHPSESSID" in sent:
+                self.confirmed.discard(sent["PHPSESSID"])
+                self.jar.pop("PHPSESSID", None)
+                cookie = DELETED
+            else:
+                sid = self._issue()
+                self.jar["PHPSESSID"] = sid
+                self.confirmed.add(sid)
+                cookie = f"PHPSESSID={sid}; path=/; secure; SameSite=none"
+        return SimpleNamespace(headers=Headers([("set-cookie", cookie)]))
+
+    def web(self) -> AsyncMock:
+        web = AsyncMock()
+        web.get_text.side_effect = self.get_text
+        web.request.side_effect = self.request
+        return web
+
+    @asynccontextmanager
+    async def _hop(self) -> AsyncIterator[None]:
+        """进入一次请求: 记录同时在途的请求数, 并让出控制权数次 (真实往返期间其它任务会继续发出请求)."""
+        self._in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self._in_flight)
+        try:
+            for _ in range(3):
+                await asyncio.sleep(0)
+            yield
+        finally:
+            self._in_flight -= 1
+
+    def _issue(self) -> str:
+        self._issued += 1
+        return f"sid{self._issued}"
+
+
+def _age_gate_site() -> _AgeGateSite:
+    return _AgeGateSite(
+        pages={
+            "keyword=THPA-17": _fixture("thpa17_search.html"),
+            "product_id=7784": _fixture("thpa17_detail.html"),
+        },
+        age_page=_fixture("age_gate_search.html"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_concurrent_fetches_keep_one_claimed_session() -> None:
+    """并发 fetch 串行取页且只领一次会话: 并发的未确认请求会覆盖罐里的确认会话, 使各方都读到年龄页."""
+    site = _age_gate_site()
+    crawler = GigaCrawler(client=HttpClient(web=site.web()))
+
+    results = await asyncio.gather(*(crawler.fetch(SearchQuery("THPA-17")) for _ in range(4)))
+
+    assert [result.number if result else None for result in results] == ["THPA-17"] * 4
+    assert site.max_in_flight == 1
+    assert site.entries == 1
+
+
+@pytest.mark.asyncio
+async def test_claim_failure_is_not_recorded_as_claimed() -> None:
+    """入口没下发会话时不算已领取: 下一次取页仍会重领, 而不是永久跳过领取."""
+    age = _fixture("age_gate_search.html")
+    page = _fixture("thpa17_search.html")
+    # 入口未下发会话时的应答 (线上实录): 只有确认标记, 没有 PHPSESSID.
+    no_session = "old_check=yes; path=/"
+    web = _fake_web(
+        [
+            _entry(no_session),
+            _entry(no_session),
+            _fetch(SEARCH, age),
+            _entry(no_session),
+            _entry(no_session),
+            _fetch(SEARCH, age),
+            _entry(ISSUED),
+            _fetch(SEARCH, page),
+        ]
+    )
+    crawler = GigaCrawler(client=HttpClient(web=web))
+
+    with pytest.raises(SourceError) as excinfo:
+        await crawler._search(SearchQuery("THPA-17"))
+    assert excinfo.value.reason is FailureReason.AGE_VERIFICATION
+
+    assert await crawler._search(SearchQuery("THPA-17")) == PRODUCT
+    pages, entries = _calls(web)
+    assert pages == [SEARCH, SEARCH, SEARCH]
+    assert entries == [ENTRY] * 5
