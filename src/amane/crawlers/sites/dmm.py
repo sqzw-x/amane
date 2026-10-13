@@ -58,6 +58,32 @@ def _parse_category(url: str) -> Category:
     return Category.OTHER
 
 
+# 样品图块三代布局的地址位置: 通販的旧块在 a/@href, 新块与月額在 img/@src, レンタル在 img/@src.
+_EXTRAFANART_SELECTORS = (
+    "//div[@id='sample-image-block']/a/@href",
+    "//a[@name='sample-image']/img/@data-lazy",
+    "//a[@name='sample-image']/img/@src",
+    "//div[@id='sample-image-block']//img/@src",
+)
+_EXTRAFANART_NUM_RE = re.compile(r"-(?P<num>\d+)\.jpg$")
+
+
+def _extrafanart_urls(html: Selector) -> list[str]:
+    """样品图 → 高清剧照地址; 封面与其它非剧照地址跳过.
+
+    页面给中等尺寸 (`{cid}-N.jpg`) 或已是大图 (`{cid}jp-N.jpg`, 月額页带缩放参数), 两种都归一到 jp-N.
+    """
+    urls: list[str] = []
+    for raw in extract_all_texts(html, *_EXTRAFANART_SELECTORS):
+        url = raw.split("?", 1)[0].split("#", 1)[0]
+        match = _EXTRAFANART_NUM_RE.search(url)
+        if match is None:
+            continue
+        stem = url[: match.start()].removesuffix("jp")
+        urls.append(f"{stem}jp-{match.group('num')}.jpg")
+    return urls
+
+
 class DmmCrawler(Crawler):
     @classmethod
     def profile(cls) -> CrawlerProfile:
@@ -347,10 +373,7 @@ class DmmCrawler(Crawler):
         thumb_urls = image_candidates(cover_url) if cover_url else []
         poster_urls = poster_candidates(cover_url)
 
-        extrafanart_raw = extract_all_texts(
-            html, "//div[@id='sample-image-block']/a/@href", "//a[@name='sample-image']/img/@data-lazy"
-        )
-        extrafanart = [re.sub(r"-(\d+)\.jpg", r"jp-\1.jpg", i) for i in extrafanart_raw]
+        extrafanart = _extrafanart_urls(html)
 
         plot = "\n".join(extract_all_texts(html, CSSSelector(".wrapper-detailContents~div>p.mg-b20::text")))
 
@@ -419,7 +442,7 @@ class DmmCrawler(Crawler):
         thumb_urls = image_candidates(cover_url) if cover_url else []
         poster_urls = poster_candidates(cover_url)
 
-        extrafanart = extract_all_texts(html, "//a[@name='sample-image']/img/@src")
+        extrafanart = _extrafanart_urls(html)
         plot = extract_text(html, CSSSelector(".clear p::text"))
         score_text = extract_text(html, "//p[contains(@class,'d-review__average')]/strong/text()")
         score = self._parse_score(score_text)

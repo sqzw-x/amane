@@ -4,8 +4,9 @@
 """
 
 import pytest
+from parsel import Selector
 
-from amane.crawlers.sites.dmm import DmmCrawler
+from amane.crawlers.sites.dmm import DmmCrawler, _extrafanart_urls
 from amane.crawlers.sites.dmm_cdn import image_candidates, poster_candidates
 
 
@@ -111,6 +112,44 @@ def test_image_candidates(image_url: str, expected: list[str]) -> None:
 )
 def test_poster_candidates(cover_url: str, expected: list[str]) -> None:
     assert poster_candidates(cover_url) == expected
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        # 通販旧块: a/@href 给中等尺寸, 归一到 jp-N.
+        (
+            '<div id="sample-image-block"><a href="https://pics.dmm.co.jp/digital/video/118abf295/118abf295-1.jpg">'
+            "<img></a></div>",
+            ["https://pics.dmm.co.jp/digital/video/118abf295/118abf295jp-1.jpg"],
+        ),
+        # レンタル块: img/@src 给中等尺寸.
+        (
+            '<div id="sample-image-block"><a name="sample-image" id="sample-image1">'
+            '<img src="https://pics.dmm.co.jp/digital/video/118abf295/118abf295-2.jpg"></a></div>',
+            ["https://pics.dmm.co.jp/digital/video/118abf295/118abf295jp-2.jpg"],
+        ),
+        # 月額块: img/@src 已给高清地址并带缩放参数; 首图是封面, 跳过.
+        (
+            '<div id="sample-image-block">'
+            '<a class="js-image-modal"><img src="https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497pl.jpg'
+            '?w=384&amp;h=288&amp;t=margin&amp;f=webp"></a>'
+            '<a class="js-image-modal"><img src="https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497jp-1.jpg'
+            '?w=384&amp;h=288&amp;t=margin&amp;f=webp"></a></div>',
+            ["https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497jp-1.jpg"],
+        ),
+        # 高清地址给中等尺寸时同样归一到 jp-N.
+        (
+            '<div id="sample-image-block"><a><img src="https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/adn00431/adn00431-3.jpg"></a></div>',
+            ["https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/adn00431/adn00431jp-3.jpg"],
+        ),
+        # 没有样品图块时不给剧照.
+        ('<div id="sample-image-block"></div>', []),
+        ("<html><body><p>no gallery</p></body></html>", []),
+    ],
+)
+def test_extrafanart_urls(html: str, expected: list[str]) -> None:
+    assert _extrafanart_urls(Selector(text=html)) == expected
 
 
 @pytest.mark.parametrize(
