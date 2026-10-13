@@ -210,7 +210,7 @@ class DmmCrawler(Crawler):
         thumb_urls = [package_image.largeUrl] if package_image and package_image.largeUrl else []
         poster_urls = [package_image.mediumUrl] if package_image and package_image.mediumUrl else []
 
-        number = self._cid_to_number(cid)
+        number = self._cid_to_number(cid, retail=False)
 
         return MediaMetadata(
             number=number,
@@ -247,7 +247,8 @@ class DmmCrawler(Crawler):
 
         cid_match = re.search(r"(?:cid|id)=([^/&?]+)", url)
         number_raw = cid_match.group(1) if cid_match else ""
-        number = self._cid_to_number(number_raw)
+        # 只有 mono 柜台给通販 cid; 月額 / プレミアム 的 cid 与配信同形.
+        number = self._cid_to_number(number_raw, retail=_parse_category(url) is Category.MONO)
 
         _dd_span = self._DD_SPAN
         _dd_text = self._DD_TEXT
@@ -394,7 +395,7 @@ class DmmCrawler(Crawler):
 
         cid_match = re.search(r"(?:cid|id)=([^/&?]+)", url)
         number_raw = cid_match.group(1) if cid_match else ""
-        number = self._cid_to_number(number_raw)
+        number = self._cid_to_number(number_raw, retail=True)
 
         title = extract_text(html, '//h1[@id="title"]/text()', '//h1[@class="item fn bold"]/text()')
         runtime = self._parse_runtime(
@@ -537,17 +538,32 @@ class DmmCrawler(Crawler):
         )
 
     @staticmethod
-    def _cid_to_number(cid: str) -> str:
-        # 先去掉 n_709 / h_068 一类前缀, 再去掉 so/sp 等后缀, 最后拆出 PREFIX-数字.
-        cleaned = re.sub(r"^[a-z]_\d+", "", cid)
+    def _strip_store_prefix(cid: str) -> str:
+        """去掉通販 / レンタル cid 在番号前多出的厂商代码与限定版标记 (118abf295 / d2gvh891).
+
+        去掉后不是字母开头时保持原样: 数字开头的番号只出现在配信柜台 (13dsvr01968), 不走这里.
+        """
+        cleaned = re.sub(r"^(?:d\d+|\d+)", "", cid)
+        return cleaned if cleaned[:1].isalpha() else cid
+
+    @staticmethod
+    def _cid_to_number(cid: str, *, retail: bool) -> str:
+        """cid → 番号; 无法判定时返回 cid 大写.
+
+        ``retail`` 为通販 / レンタル cid: 番号前带厂商代码 (118abf295) 或限定版标记 (d2gvh891),
+        番号按原位数保留 (1sods098 → SODS-098). 配信与月額柜台的 cid 无前缀, 编号是 5 位补零,
+        去掉补零 (ssis00497 → SSIS-497); 数字开头的番号也只在这里出现 (13dsvr01968 → 13DSVR-1968).
+        """
+        cleaned = DmmCrawler._strip_store_prefix(cid) if retail else cid
+        # 去掉 n_709 / h_068 一类前缀与 so/sp 等后缀, 再拆出 PREFIX-数字.
+        cleaned = re.sub(r"^[a-z]_\d+", "", cleaned)
         cleaned = re.sub(r"(so|sp|tk|hd|hhb|hib)$", "", cleaned)
 
-        match = re.match(r"([a-z]+)0*(\d+)", cleaned)
+        match = re.match(r"(\d*[a-z]+)(0*)(\d+)", cleaned)
         if not match:
             return cid.upper()
-        prefix = match.group(1).upper()
-        digits = match.group(2)
-        return f"{prefix}-{digits}"
+        prefix, zeros, digits = match.groups()
+        return f"{prefix.upper()}-{zeros + digits if retail else digits}"
 
     @staticmethod
     def _parse_runtime(text: str) -> int | None:

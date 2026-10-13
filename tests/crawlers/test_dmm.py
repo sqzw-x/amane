@@ -1,10 +1,11 @@
-"""DMM 来源的图片候选地址.
+"""DMM 来源的图片候选地址与 cid → 番号.
 
-分类目录改写与候选顺序是 DMM 详情页与 r18 dump 共用的契约; 页面解析走 TOML 数据驱动.
+分类目录改写、候选顺序与 cid 形态是 DMM 详情页与 r18 dump 共用的契约; 页面解析走 TOML 数据驱动.
 """
 
 import pytest
 
+from amane.crawlers.sites.dmm import DmmCrawler
 from amane.crawlers.sites.dmm_cdn import image_candidates, poster_candidates
 
 
@@ -110,3 +111,35 @@ def test_image_candidates(image_url: str, expected: list[str]) -> None:
 )
 def test_poster_candidates(cover_url: str, expected: list[str]) -> None:
     assert poster_candidates(cover_url) == expected
+
+
+@pytest.mark.parametrize(
+    ("cid", "retail", "expected"),
+    [
+        # 通販 / レンタル cid 在番号前带厂商代码, 番号按原位数保留.
+        ("118abf295", True, "ABF-295"),
+        ("118abf295r", True, "ABF-295"),
+        ("118abf007r", True, "ABF-007"),
+        ("1dldss542", True, "DLDSS-542"),
+        ("1sods098", True, "SODS-098"),
+        ("9spone001", True, "SPONE-001"),
+        ("125umd1029", True, "UMD-1029"),
+        ("h_1059godr1287", True, "GODR-1287"),
+        # FANZA 限定版标记与番号后缀不参与番号.
+        ("d2gvh891", True, "GVH-891"),
+        ("1fns264tk1", True, "FNS-264"),
+        ("1sgki108v", True, "SGKI-108"),
+        # 配信 cid 无厂商代码, 编号是 5 位补零.
+        ("ssis00497", False, "SSIS-497"),
+        ("sora00652a", False, "SORA-652"),
+        ("adn00431", False, "ADN-431"),
+        # 数字开头的番号只出现在配信柜台.
+        ("13dsvr01968", False, "13DSVR-1968"),
+        # 无法判定时返回 cid 大写.
+        ("abc", True, "ABC"),
+        ("118", True, "118"),
+        ("", True, ""),
+    ],
+)
+def test_cid_to_number(cid: str, retail: bool, expected: str) -> None:
+    assert DmmCrawler._cid_to_number(cid, retail=retail) == expected
