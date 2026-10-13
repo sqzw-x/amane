@@ -282,6 +282,15 @@ class Metadata(SQLModel, table=True):
         return float(next(iter(self.scores.values())))
 
 
+def metadata_number_predicate(number: str) -> ColumnElement[bool]:
+    """番号相等判定, 大小写不敏感.
+
+    比较必须带 ``COLLATE NOCASE`` 才能命中 ``ix_metadata_number``; 等价式 ``lower(number) = lower(?)``
+    无法命中该索引, 计划退化为覆盖索引扫描, 成本随表行数增长.
+    """
+    return col(Metadata.number).collate("NOCASE") == number
+
+
 class Task(SQLModel, table=True):
     __tablename__ = "tasks"  # type: ignore[assignment]
 

@@ -2,7 +2,7 @@ from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from typing import Unpack, cast
 
-from sqlalchemy import func, or_, text
+from sqlalchemy import or_, text
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 
@@ -22,6 +22,7 @@ from ..models import (
     SortOrder,
     Studio,
     has_subtitle_predicate,
+    metadata_number_predicate,
 )
 from ..repo_types import (
     MetadataFields,
@@ -221,7 +222,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
     async def get_metadata_by_number(self, number: str) -> Metadata | None:
         """大小写不敏感; 返回行保留库内原始大小写."""
         async with self._session() as session:
-            stmt = select(Metadata).where(func.lower(Metadata.number) == number.lower())
+            stmt = select(Metadata).where(metadata_number_predicate(number))
             result = await session.exec(stmt)
             return result.first()
 
@@ -238,7 +239,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         """
         fields = _normalize_text_fields(kwargs)
         async with self._session() as session:
-            stmt = select(Metadata).where(func.lower(Metadata.number) == number.lower())
+            stmt = select(Metadata).where(metadata_number_predicate(number))
             result = await session.exec(stmt)
             existing = result.first()
             if existing:

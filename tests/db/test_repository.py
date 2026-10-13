@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast, get_type_hints
 
 import pytest
+from sqlmodel import select
 
 from amane.aggregate.actor import AggregatedActor
 from amane.db.models import (
@@ -19,6 +20,7 @@ from amane.db.models import (
     TaskSortField,
     TaskStatus,
     TaskType,
+    metadata_number_predicate,
 )
 from amane.db.repo_types import (
     _MEDIA_SORT_COLUMNS,
@@ -549,6 +551,19 @@ class TestMetadataRepo:
         items, total = await repo.list_metadata()
         assert total == 1
         assert items[0].number == "abc-001"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_number_lookup_seeks_index(self, repo: Repository):
+        """查号按 ix_metadata_number 查找: 计划退化为扫描后成本随表行数线性增长."""
+        await repo.upsert_metadata(number="MD-408", title="X")
+        stmt = select(Metadata.id).where(metadata_number_predicate("md-408"))
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        async with repo._session() as session:
+            connection = await session.connection()
+            rows = (await connection.exec_driver_sql(f"EXPLAIN QUERY PLAN {sql}")).all()
+        plan = " ".join(str(row[-1]) for row in rows)
+        assert "SEARCH" in plan
+        assert "SCAN" not in plan
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_metadata_empty(self, repo: Repository):
