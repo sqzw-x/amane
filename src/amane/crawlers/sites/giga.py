@@ -1,3 +1,4 @@
+import asyncio
 import re
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin
@@ -52,7 +53,11 @@ def _issued_session(headers: _ResponseHeaders) -> bool:
 class GigaCrawler(Crawler):
     def __init__(self, client: HttpClient, config: SiteConfig | None = None) -> None:
         super().__init__(client, config=config)
-        # 领取会换掉站点当前会话, 因此每个实例只主动领一次; 会话失效由响应里的年龄页触发重领.
+        # 本站请求必须串行 (同一时刻只允许一个在途): 年龄确认态是 cookie 罐里的一份会话, 不带它的页面请求
+        # 会换回一个未确认会话并覆盖罐里的确认会话, 因此只把领取放进锁不够, 取页也必须串行.
+        # 本站请求一律在 ``_get_html`` 的锁内发出.
+        self._lock = asyncio.Lock()
+        # 领取会换掉站点当前会话, 因此每实例只主动领一次; 置位的含义是罐里有确认会话, 领取失败不置位.
         self._session_claimed = False
 
     @classmethod
@@ -60,7 +65,6 @@ class GigaCrawler(Crawler):
         return CrawlerProfile(name=SiteName.GIGA, base_url="https://www.giga-web.jp")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        await self._ensure_session()
         text = await self._get_html(f"{self.base_url}/search/?keyword={query.number}")
         if not text:
             return None
@@ -71,7 +75,6 @@ class GigaCrawler(Crawler):
         return urls[0] if urls else None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
-        await self._ensure_session()
         text = await self._get_html(url)
         if not text:
             return None
@@ -98,21 +101,17 @@ class GigaCrawler(Crawler):
             source_url=url,
         )
 
-    async def _ensure_session(self) -> None:
-        """首次取页前领取年龄确认会话; 之后只在响应仍是年龄页时重领."""
-        if not self._session_claimed:
-            await self._claim_session()
-
     async def _claim_session(self) -> None:
         """经年龄确认入口领取会话; cookie 按 host 落进出站通道, 后续请求自动带上.
 
         判据是入口响应有没有下发会话, 不是罐里有没有这个名字的 cookie: 罐里留着旧会话时,
-        第一次入口调用只把它删掉并回确认标记, 要再领一次才拿到可用会话.
+        第一次入口调用只把它删掉并回确认标记, 要再领一次才拿到可用会话. 只在 ``_get_html`` 的锁内调用.
         """
-        self._session_claimed = True
         for _ in range(_AGE_GATE_ATTEMPTS):
             if await self._request_age_gate():
+                self._session_claimed = True
                 return
+        self._session_claimed = False
         self.logger.warning("age gate issued no session")
 
     async def _request_age_gate(self) -> bool:
@@ -127,16 +126,19 @@ class GigaCrawler(Crawler):
         return _issued_session(resp.headers)
 
     async def _get_html(self, url: str) -> str:
-        """取检索页或商品页; 命中年龄页时重领会话并重试一次, 重试仍命中即按来源失败上报."""
-        text = await self.client.get_html(url, headers=self._referer())
-        if not _is_age_gate(text):
-            return text
-        await self._claim_session()
-        retry = await self.client.get_html(url, headers=self._referer())
-        if _is_age_gate(retry):
+        """取检索页或商品页, 请求在 ``_lock`` 内串行发出; 命中年龄页时重领会话并重试一次, 重试仍命中即按来源失败上报."""
+        async with self._lock:
+            if not self._session_claimed:
+                await self._claim_session()
+            text = await self.client.get_html(url, headers=self._referer())
+            if not _is_age_gate(text):
+                return text
+            await self._claim_session()
+            retry = await self.client.get_html(url, headers=self._referer())
+            if not _is_age_gate(retry):
+                return retry
             # 会话拿不到与「站上没有这个番号」必须分开上报, 否则只剩 no_usable_metadata.
             raise SourceError(FailureReason.AGE_VERIFICATION, url=url, detail="年龄确认会话未被站点接受")
-        return retry
 
     @staticmethod
     def _work_field(label: str) -> str:
