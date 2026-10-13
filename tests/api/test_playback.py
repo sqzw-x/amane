@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import pytest
 
 from amane.playback.factory import SOURCE_ID_MAX_LEN
+from tests.helpers import HTTP_STUB_POLL_INTERVAL
 from tests.plugins.test_plugin_system import playback_plugin_source, write_plugin
 
 if TYPE_CHECKING:
@@ -77,7 +78,7 @@ async def _streams(client: AsyncClient, source_id: str, metadata_id: int) -> lis
 def _start_hls_origin(files: dict[str, tuple[str, bytes]]) -> tuple[ThreadingHTTPServer, str]:
     handler = type("HlsOrigin", (_HlsOriginHandler,), {"origin_files": files})
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = Thread(target=server.serve_forever, daemon=True)
+    thread = Thread(target=server.serve_forever, kwargs={"poll_interval": HTTP_STUB_POLL_INTERVAL}, daemon=True)
     thread.start()
     host, port = server.server_address[0], server.server_address[1]
     return server, f"http://{host}:{port}"

@@ -33,6 +33,7 @@ from amane.playback.proxy import (
     neutralized_hls_part_type,
 )
 from amane.plugins.api import UpstreamPlaybackTarget
+from tests.helpers import HTTP_STUB_POLL_INTERVAL
 
 
 @pytest.mark.parametrize(
@@ -209,7 +210,7 @@ def _serve(**kwargs: Any) -> tuple[ThreadingHTTPServer, dict[str, str | None], E
         },
     )
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = Thread(target=server.serve_forever, daemon=True)
+    thread = Thread(target=server.serve_forever, kwargs={"poll_interval": HTTP_STUB_POLL_INTERVAL}, daemon=True)
     thread.start()
     return server, captured, cancelled
 

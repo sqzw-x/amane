@@ -23,6 +23,11 @@ if TYPE_CHECKING:
 # 秒级预算会把「慢」误判成「没发生」; 条件本身仍然由事件判定, 这里只放大上限.
 LOAD_TOLERANT_TIMEOUT = 30.0
 
+# 测试内的 HTTP 桩交给 serve_forever 的轮询周期. 取 socketserver 默认的 0.5 时, 服务线程每轮
+# 阻塞等待最长 0.5 秒, 而 shutdown() 只置停机标志、不唤醒该等待, 每个用例的关停因此等 0-0.5 秒.
+# 单个用例是 0.2 秒量级, 累积到数十个用例即为秒级; 周期不参与被测语义.
+HTTP_STUB_POLL_INTERVAL = 0.01
+
 
 def make_junction(link: Path, target: Path) -> None:
     """Windows 专有: 建一个目录交接点. 其它平台没有等价物, 调用方自行 skip."""
