@@ -19,6 +19,17 @@ r18 库由项目导入 / 管理但 schema 不受我们控制, **不能纳入 Ale
 
 个人媒体库单机部署: 无需多进程并发写入, 零运维 (Docker 用户不必额外起数据库容器), 文件级备份方便. 已知约束是不支持部分 ALTER TABLE、写入排他锁、JSON 字段无法高效查询 — 个人规模可接受, 超过百万行需评估迁移到 PostgreSQL. 手工备份必须用 online backup, WAL 模式下不能只 `cp amane.db`.
 
+## 写入事务边界
+
+pysqlite 只在 DML 之前发出 `BEGIN`, 纯 SELECT 落在事务之外 (SQLAlchemy 的 autobegin 只是记账, 不发出语句). 因此「先查询判定, 再按判定写入」默认不构成一个事务: 并发调用双方都读到写入前的状态, 后写入者随后违反唯一约束. 这类写入必须自行取得写锁, 现用于 `src/amane/db/repos/metadata.py::MetadataRepoMixin.upsert_metadata` 的首句 `BEGIN IMMEDIATE`.
+
+- 写锁是库级的, 从取得写锁到提交之间其它写入被阻塞. 临界区内不允许出现联网或磁盘等待, 否则全库写入一并被拖住.
+- 会话在进入该调用之前不得已有未结束的数据库事务, 否则 `BEGIN IMMEDIATE` 失败.
+- 该写法依赖驱动不自行发出 `BEGIN`; 驱动或方言改为显式发出时失效.
+- 番号比较一律经 `src/amane/db/models.py::metadata_number_predicate`, 才能命中 `ix_metadata_number`.
+
+入队互斥用 Repository 上的进程内锁串行化, 见 [task-system.md](task-system.md).
+
 ## 启动期自动迁移与安全网
 
 `create_async_engine_from_path` (`db/engine.py`) 在创建业务引擎**之前**调用 `upgrade_sqlite_database` (`db/sqlite_migrate.py`):

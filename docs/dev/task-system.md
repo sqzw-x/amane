@@ -21,7 +21,7 @@ ORGANIZE 的入队来源只有三处: API / Agent 提交, retry 重跑, 库开�
 
 ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显式 `path` 按前缀过滤, `media_file_ids` 为勾选快照 (含其它库的 id 则 422); 后两者同时给出则 422. 库根必须是已存在的目录, 否则失败; `media_file_ids` 未给出且 path 为子目录时该子目录也必须存在 — 避免网络盘掉线时把选中行当失效索引删掉. 无 Metadata 的行与命中文件黑名单 / 最小视频大小 / 预告片规则的行跳过落盘; 路径落在 `.amane_trash` 内的行删除索引. SCAN_INVALID 的 `path` 同样可限定子目录. 整理默认与预告片跳过正则见 [data-model.md](data-model.md).
 
-入队互斥在 `create_task`: queued / running 的 ACTOR_SCRAPE 按 `payload.actor_id` 复用已有行; ORGANIZE 与 DELETE 每次提交都新建行, 禁止复用, 同库的二者共用 `LibraryTaskLocks` 在执行期串行 (都在同一棵树上动文件). 不同库 / 不同演员仍并行. API、Agent、链式入队、retry 都经由 `create_task`, Worker 不按类型加锁; 终态之后允许再入队; 互斥不比较 payload 其它字段. SQLite 默认 DEFERRED 事务里两个 session 的 SELECT 都会在写锁前看到空表, 因此检查与插入须在 Repository 上串行化 (单进程).
+入队互斥在 `create_task`: queued / running 的 ACTOR_SCRAPE 按 `payload.actor_id` 复用已有行; ORGANIZE 与 DELETE 每次提交都新建行, 禁止复用, 同库的二者共用 `LibraryTaskLocks` 在执行期串行 (都在同一棵树上动文件). 不同库 / 不同演员仍并行. API、Agent、链式入队、retry 都经由 `create_task`, Worker 不按类型加锁; 终态之后允许再入队; 互斥不比较 payload 其它字段. 检查与插入须在 Repository 上串行化 (单进程), 机制见 [database.md](database.md)「写入事务边界」.
 
 ## 任务图 (TaskLink)
 
