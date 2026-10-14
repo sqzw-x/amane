@@ -338,7 +338,7 @@ async def test_in_place_rewrites_existing_artifacts(resource_store: ResourceStor
     paths = _paths(tmp_path / "out")
     paths.video.parent.mkdir(parents=True)
     paths.video.write_bytes(b"movie")
-    paths.nfo.write_text("旧 NFO")
+    paths.nfo.write_text("旧 NFO", encoding="utf-8")
     stale = (paths.thumb, paths.poster, paths.fanart)
     before = {}
     for image in stale:
