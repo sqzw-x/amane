@@ -8,6 +8,7 @@ from PIL import Image
 
 from amane.config import HotSettings, WatermarkConfig
 from amane.db.models import MediaFile, Metadata
+from amane.enums import DownloadableResource
 from amane.handlers.file import execute_file_operations
 from amane.media import ResourceStore
 from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths
@@ -33,6 +34,11 @@ class FakeClient:
 
     async def resolve_final_url(self, url: str, **kwargs) -> str:
         return url
+
+
+def _pixel(path: Path) -> tuple[int, int, int]:
+    with Image.open(path) as img:
+        return cast("tuple[int, int, int]", img.convert("RGB").getpixel((0, 0)))
 
 
 def _paths(base: Path) -> ResolvedPaths:
@@ -174,8 +180,6 @@ async def test_unknown_target_state_returns_before_side_effects(
 @pytest.mark.asyncio
 async def test_copy_resources_skips_trailer(resource_store: ResourceStore, tmp_path: Path):
     """copy_resources 不含 trailer 时不落盘预告片, 仍复制封面."""
-    from amane.enums import DownloadableResource
-
     client = cast("WebClient", FakeClient())
     src = tmp_path / "src" / "MIDV-123.mp4"
     src.parent.mkdir(parents=True)
@@ -321,3 +325,88 @@ async def test_watermark_from_external_subtitle(resource_store: ResourceStore, t
         pixel = img.convert("RGB").getpixel((20, 20))
     assert isinstance(pixel, tuple)
     assert pixel[0] > 180 and pixel[2] < 80
+
+
+@pytest.mark.asyncio
+async def test_in_place_rewrites_existing_artifacts(resource_store: ResourceStore, tmp_path: Path) -> None:
+    """源已在目标路径上时仍重写库路径上的旧产物: NFO 按本次元数据, 图片与预告片按本次资源.
+
+    fanart 与 thumb 同源, 因此与 thumb 一同重写.
+    """
+    client = cast("WebClient", FakeClient())
+
+    paths = _paths(tmp_path / "out")
+    paths.video.parent.mkdir(parents=True)
+    paths.video.write_bytes(b"movie")
+    paths.nfo.write_text("旧 NFO")
+    stale = (paths.thumb, paths.poster, paths.fanart)
+    before = {}
+    for image in stale:
+        Image.new("RGB", (800, 538), "red").save(image)
+        before[image] = _pixel(image)
+    paths.trailer.write_bytes(b"old trailer")
+
+    mf = MediaFile(path=str(paths.video), library_id=1)
+    meta = Metadata(
+        number="MIDV-123",
+        title="新标题",
+        thumb_urls=["https://s/t.jpg"],
+        poster_urls=["https://s/p.jpg"],
+        trailer_urls=["https://s/trailer.mp4"],
+    )
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.MOVE,
+        resource_store=resource_store,
+        file_info=parse_file_info(paths.video),
+        web_client=client,
+        config=HotSettings(),
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    assert result.dest == paths.video
+    assert "新标题" in paths.nfo.read_text(encoding="utf-8")
+    for image in stale:
+        assert _pixel(image) != before[image]
+    assert paths.trailer.read_bytes() == b"video"
+
+
+@pytest.mark.parametrize("pre_existing", [True, False])
+@pytest.mark.asyncio
+async def test_fanart_follows_thumb_selection(
+    resource_store: ResourceStore, tmp_path: Path, pre_existing: bool
+) -> None:
+    """thumb 不在 copy_resources 时 fanart 既不重写也不补建."""
+    client = cast("WebClient", FakeClient())
+
+    paths = _paths(tmp_path / "out")
+    paths.video.parent.mkdir(parents=True)
+    paths.video.write_bytes(b"movie")
+    if pre_existing:
+        Image.new("RGB", (800, 538), "red").save(paths.fanart)
+    before = _pixel(paths.fanart) if pre_existing else None
+
+    mf = MediaFile(path=str(paths.video), library_id=1)
+    meta = Metadata(number="MIDV-123", thumb_urls=["https://s/t.jpg"], poster_urls=["https://s/p.jpg"])
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.MOVE,
+        resource_store=resource_store,
+        file_info=parse_file_info(paths.video),
+        web_client=client,
+        config=HotSettings(),
+        copy_resources=[DownloadableResource.poster],
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    assert not paths.thumb.exists()
+    assert paths.poster.exists()
+    assert paths.fanart.exists() is pre_existing
+    if before is not None:
+        assert _pixel(paths.fanart) == before

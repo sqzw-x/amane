@@ -311,13 +311,13 @@ def _place_library_images(
     file_info: FileInfo | None,
     watermark_dir: Path | None,
 ) -> None:
-    # 复制封面 / 海报 / 预告片 / extrafanart 到库路径.
+    # 复制封面 / 海报 / 预告片 / extrafanart 到库路径, 不判断目标上是否已有产物.
+    # fanart 没有刮削来源, 内容取 thumb, 随 thumb 一同重写.
     if thumb_local is not None and DownloadableResource.thumb in kinds:
         paths.thumb.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(thumb_local, paths.thumb)
         paths.fanart.parent.mkdir(parents=True, exist_ok=True)
-        if not paths.fanart.exists():
-            shutil.copy2(thumb_local, paths.fanart)
+        shutil.copy2(thumb_local, paths.fanart)
 
     if DownloadableResource.poster in kinds:
         if poster_local is not None:
