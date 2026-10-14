@@ -1,6 +1,6 @@
 import shutil
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -67,6 +67,17 @@ class FileOperationsResult:
     error: str | None = None
 
 
+def _with_external_subtitle(info: FileInfo, media_file: MediaFile) -> FileInfo:
+    """把同目录外挂字幕并进文件相位, 使封面中字角标与 ``{sub?}`` 与片库中字口径一致.
+
+    ``has_external_subtitle`` 在登记 / 换 path / 库扫描时已是同目录存在性检查的结果, 这里只读不重扫.
+    路径模板由调用方先渲染, 因此落盘路径与相位两处各并一次, 幂等.
+    """
+    if not media_file.has_external_subtitle:
+        return info
+    return replace(info, has_subtitle=True)
+
+
 async def execute_file_operations(
     media_file: MediaFile,
     metadata: Metadata,
@@ -89,7 +100,7 @@ async def execute_file_operations(
         logger.warning("source file missing", path=media_file.path)
         return FileOperationsResult(outcome=PlaceOutcome.FAILED, error=f"源文件不存在: {media_file.path}")
 
-    info = file_info if file_info is not None else parse_file_info(source_path)
+    info = _with_external_subtitle(file_info if file_info is not None else parse_file_info(source_path), media_file)
 
     # 目标被别的文件占用时立即返回: 不下载图片, 不写附属文件, 不改库内任何路径.
     # 读不出目标状态时同样立即返回, 但记为失败而不是冲突.
@@ -212,7 +223,7 @@ async def apply_file_operations(
 
     # 渲染路径后执行落盘.
     ext = Path(media_file.path).suffix.lstrip(".")
-    file_info = parse_file_info(media_file.path)
+    file_info = _with_external_subtitle(parse_file_info(media_file.path), media_file)
     actor_genders = {a.name: a.gender for a in await repo.get_actors_by_names(metadata.actors)}
     paths = resolve_paths(
         library,

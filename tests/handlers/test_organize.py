@@ -4,23 +4,27 @@ import asyncio
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
+from PIL import Image
 
-from amane.config import HotSettings
+from amane.config import HotSettings, WatermarkConfig
 from amane.db.models import MediaFileStatus
 from amane.enums import DownloadableResource, LinkMode, MoveMode
 from amane.handlers import DeleteHandler, DeletePayload, LibraryTaskLocks, OrganizeHandler, OrganizePayload
 from amane.handlers.file import FileOperationsResult, _record_conflicts, commit_organized_media_file
 from amane.handlers.models import ORGANIZE_CONFLICT_LIMIT
 from amane.library import DeleteOutcome, InventoryStore, LibraryScan, scan_inventory
+from amane.media import apply_cover_watermarks_from_info
 from amane.observability.models import OrganizeConflict, OrganizeConflictReason
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
     from amane.media import ResourceStore
+    from amane.net.http import WebClient
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -445,6 +449,80 @@ async def test_organize_writes_subtitle_tag(repo: Repository, resource_store: Re
     updated_b = await repo.get_media_file(src_b.id)
     assert updated_c is not None and updated_c.path == str(dest_c)
     assert updated_b is not None and updated_b.path == str(dest_b)
+
+
+class _FakeImageClient:
+    """只为 ResourceStore 供图: 下载写出真实 JPEG, 其余方法用不到."""
+
+    async def download(self, url: str, dest: Path, **kwargs) -> bool:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (200, 280), "blue").save(dest)
+        return True
+
+    async def resolve_final_url(self, url: str, **kwargs) -> str:
+        return url
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_writes_subtitle_tag_for_external_subtitle(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """源文件名无 -C 但同目录有字幕时, 落盘写出 -C, 封面与海报也打中字角标."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / "MIDV-123.mp4"
+    src.write_bytes(b"video")
+    (src_dir / "MIDV-123.srt").write_text("sub")
+
+    lib = await repo.create_library(
+        name="t",
+        path=str(lib_root),
+        write_nfo=False,
+        subtitle_extensions=["srt"],
+        video_template="{studio}/{number}/{number}[-{sub?}].{ext}",
+    )
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="MIDV-123", studio="Studio", thumb_urls=["https://s/t.jpg"])
+    assert meta.id is not None
+    source = await repo.create_media_file(
+        lib.id,
+        path=str(src),
+        number="MIDV-123",
+        status=MediaFileStatus.SCRAPED,
+        metadata_id=meta.id,
+        has_external_subtitle=True,
+    )
+    assert source.id is not None
+
+    paths_dir = lib_root / "Studio" / "MIDV-123"
+    watermark_dir = tmp_path / "watermarks"
+    watermark_dir.mkdir()
+    Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(watermark_dir / "subtitle.png")
+
+    config = HotSettings(watermark=WatermarkConfig(enabled=True, scale=0.2))
+    with patch(
+        "amane.handlers.file.apply_cover_watermarks_from_info", wraps=apply_cover_watermarks_from_info
+    ) as watermark:
+        org = OrganizeHandler(
+            repo, config, resource_store, web_client=cast("WebClient", _FakeImageClient()), watermark_dir=watermark_dir
+        )
+        result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert (result.result.organized, result.result.failed) == (1, 0)
+
+    dest = paths_dir / "MIDV-123-C.mp4"
+    assert dest.exists()
+    assert (paths_dir / "MIDV-123.srt").exists()
+    updated = await repo.get_media_file(source.id)
+    assert updated is not None and updated.path == str(dest)
+    assert [call.args[1].has_subtitle for call in watermark.call_args_list] == [True, True]
+    for image in (paths_dir / "thumb.jpg", paths_dir / "poster.jpg"):
+        with Image.open(image) as painted:
+            pixel = painted.convert("RGB").getpixel((20, 20))
+        assert isinstance(pixel, tuple)
+        assert pixel[0] > 180 and pixel[2] < 80
 
 
 @pytest.mark.asyncio(loop_scope="function")
