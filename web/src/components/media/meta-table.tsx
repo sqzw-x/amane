@@ -31,7 +31,7 @@ import {
 import type { MetadataResponse, MetadataSortField, SortOrder } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
-import { ResizableTh, SortableTh } from "@/components/common/sortable-th";
+import { SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { useResizableColumns } from "@/hooks/use-resizable-columns";
@@ -324,13 +324,17 @@ export function MetaTable({
                   resizeHandle={getResizeHandleProps(field)}
                 />
               ))}
-              <ResizableTh
+              {/* 评分列不入 SORTABLE_COLUMNS: 该数组同时生成表头与单元格, 而评分单元格是徽标而非文本. */}
+              <SortableTh
+                field="score"
+                label={t("columns.score")}
+                sortBy={effectiveSortBy}
+                order={effectiveOrder}
+                onSort={onSort}
                 w={columnWidth("score")}
                 visibleFrom={COLUMN_VISIBLE_FROM.score}
                 resizeHandle={getResizeHandleProps("score")}
-              >
-                {t("columns.score")}
-              </ResizableTh>
+              />
               <Table.Th ta="right" className={classes.actionsColumn}>
                 {t("columns.actions")}
               </Table.Th>

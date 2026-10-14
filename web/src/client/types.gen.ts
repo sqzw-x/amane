@@ -2724,7 +2724,7 @@ export type MetadataResponse = {
 /**
  * MetadataSortField
  */
-export type MetadataSortField = 'number' | 'title' | 'studio' | 'release' | 'created_at' | 'updated_at' | 'file_count';
+export type MetadataSortField = 'number' | 'title' | 'studio' | 'release' | 'created_at' | 'updated_at' | 'file_count' | 'score';
 
 /**
  * MetadataUserTagsRequest

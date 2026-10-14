@@ -91,6 +91,16 @@ class TestMetadataHttp:
         assert (await client.delete("metadata/9999")).status_code == 404
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_sort_by_score(self, client: AsyncClient, repo: Repository):
+        """HTTP 接线: 接受 score 排序, 响应 score 是 scores 首值而非最大值; 未知排序字段 422."""
+        await repo.upsert_metadata(number="S-1", title="One", scores={"a": 1.0, "b": 4.5})
+
+        listed = await client.get("metadata?sort_by=score&order=desc")
+        assert listed.status_code == 200
+        assert [i["score"] for i in listed.json()["items"]] == [1.0]
+        assert (await client.get("metadata?sort_by=bogus")).status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_schema_includes_editable_fields(self, client: AsyncClient):
         resp = await client.get("metadata/schema")
         assert resp.status_code == 200

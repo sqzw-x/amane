@@ -29,6 +29,7 @@ export const METADATA_SORT_OPTIONS = [
   { value: "title", labelKey: "columns.title" },
   { value: "studio", labelKey: "columns.studio" },
   { value: "release", labelKey: "columns.release" },
+  { value: "score", labelKey: "columns.score" },
   { value: "file_count", labelKey: "columns.fileCount" },
 ] as const satisfies readonly {
   value: MetadataSortField;

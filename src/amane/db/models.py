@@ -86,6 +86,7 @@ class MetadataSortField(StrEnum):
     CREATED_AT = "created_at"
     UPDATED_AT = "updated_at"
     FILE_COUNT = "file_count"
+    SCORE = "score"
 
 
 class MediaSortField(StrEnum):

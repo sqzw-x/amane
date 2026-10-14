@@ -53,8 +53,11 @@ def test_sort_field_map_exhaustive(sort_map, field_enum):
 
 
 def test_metadata_sort_field_map_covers_columns():
-    """FILE_COUNT 走关联计数表达式, 不进列映射; 其余排序字段必须有列."""
-    assert set(_METADATA_SORT_COLUMNS) == set(MetadataSortField) - {MetadataSortField.FILE_COUNT}
+    """FILE_COUNT 与 SCORE 走计算表达式, 不进列映射; 其余排序字段必须有列."""
+    assert set(_METADATA_SORT_COLUMNS) == set(MetadataSortField) - {
+        MetadataSortField.FILE_COUNT,
+        MetadataSortField.SCORE,
+    }
 
 
 class TestMediaFileRepo:
@@ -1611,6 +1614,32 @@ class TestListSorting:
 
         items, _ = await repo.list_metadata(sort_by=sort_by, order=order)
         assert [m.number for m in items] == expected_numbers
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("order", "expected_numbers", "expected_scores"),
+        [
+            (SortOrder.DESC, ["HIGH", "MULTI", "LOW", "NONE"], [4.5, 2.0, 1.0, None]),
+            (SortOrder.ASC, ["NONE", "LOW", "MULTI", "HIGH"], [None, 1.0, 2.0, 4.5]),
+        ],
+    )
+    async def test_metadata_sort_by_score(
+        self,
+        repo: Repository,
+        order: SortOrder,
+        expected_numbers: list[str],
+        expected_scores: list[float | None],
+    ):
+        """排序键取 scores 首值而非最大值, 与 `Metadata.score` 同值; 无评分的行按可空列语义参与排序, 不被排除."""
+        await repo.upsert_metadata(number="HIGH", title="High", scores={"a": 4.5})
+        await repo.upsert_metadata(number="MULTI", title="Multi", scores={"a": 2.0, "b": 9.0})
+        await repo.upsert_metadata(number="LOW", title="Low", scores={"a": 1.0})
+        await repo.upsert_metadata(number="NONE", title="None", scores={})
+
+        items, total = await repo.list_metadata(sort_by=MetadataSortField.SCORE, order=order)
+        assert total == 4
+        assert [m.number for m in items] == expected_numbers
+        assert [m.score for m in items] == expected_scores
 
     @pytest.mark.asyncio(loop_scope="function")
     @pytest.mark.parametrize(

@@ -5636,7 +5636,8 @@ export const MetadataSortFieldSchema = {
         'release',
         'created_at',
         'updated_at',
-        'file_count'
+        'file_count',
+        'score'
     ],
     title: 'MetadataSortField'
 } as const;

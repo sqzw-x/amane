@@ -202,6 +202,7 @@ export const METADATA_SORT_FIELDS = exhaustiveTuple<MetadataSortField>()(
   "created_at",
   "updated_at",
   "file_count",
+  "score",
 );
 
 export const FACET_SORT_FIELDS = exhaustiveTuple<FacetSortField>()("name", "count");

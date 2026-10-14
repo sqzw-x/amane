@@ -35,7 +35,7 @@ def _utcnow() -> datetime:
 
 
 # 显式枚举 → Column. 禁止 getattr 反射: 类型检查须能验证列存在;
-# 新增枚举值未映射须 KeyError, 禁止静默. FILE_COUNT 不在此表, 见 _metadata_primary_order.
+# 新增枚举值未映射须 KeyError, 禁止静默. FILE_COUNT 与 SCORE 不在此表, 见 _metadata_primary_order.
 _METADATA_SORT_COLUMNS: dict[MetadataSortField, Mapped[Any]] = {
     MetadataSortField.NUMBER: col(Metadata.number),
     MetadataSortField.TITLE: col(Metadata.title),
@@ -79,12 +79,24 @@ def _metadata_file_count_expr() -> ColumnElement[int]:
     )
 
 
+def _metadata_score_expr() -> ColumnElement[Any]:
+    """评分排序键: ``scores`` 首值而非最大值, 与 `Metadata.score` 同口径.
+
+    json_each 按 JSON 文档顺序产出, 与 dict 插入顺序一致; 无评分的行键为 NULL, 不被排除.
+    """
+    scores = func.json_each(col(Metadata.scores)).table_valued("value")
+    return select(scores.c.value).correlate(Metadata).limit(1).scalar_subquery()
+
+
 def _metadata_primary_order(sort_by: MetadataSortField, order: SortOrder) -> ColumnElement[Any]:
-    """FILE_COUNT 使用计数表达式, 其余使用列映射."""
+    """FILE_COUNT 与 SCORE 无对应列, 改用计算表达式."""
     if sort_by is MetadataSortField.FILE_COUNT:
-        expr = _metadata_file_count_expr()
-        return asc(expr) if order == SortOrder.ASC else desc(expr)
-    return _order_clause(_METADATA_SORT_COLUMNS[sort_by], order)
+        expr: ColumnElement[Any] = _metadata_file_count_expr()
+    elif sort_by is MetadataSortField.SCORE:
+        expr = _metadata_score_expr()
+    else:
+        return _order_clause(_METADATA_SORT_COLUMNS[sort_by], order)
+    return asc(expr) if order == SortOrder.ASC else desc(expr)
 
 
 def _metadata_has_files_clause(*, has_files: bool) -> ColumnElement[bool]:
