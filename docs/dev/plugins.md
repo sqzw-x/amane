@@ -33,7 +33,7 @@
 
 descriptor 声明来源能力、支持的内容类型、语言、访问 URL、`traits` 行为开关和默认速率. 路由校验在启动与配置热更新时执行: 已安装来源须声明影片元数据能力, 且若声明了内容类型集合则必须覆盖所配置的 `ContentType`; 尚未安装的合法第三方来源 ID 可以留在路由里, 只记日志.
 
-`traits` 承载来源的行为开关, 取值见 `SourceTrait`: `needs_partial` 决定来源是否排在聚合第二段, `multi_language` 决定是否按字段语言展开 `(source, language)` 获取节点, `uses_file_hash` 决定刮削前是否计算 oshash 并经 `SearchQuery.file_hash` 传入. 不允许只在爬虫内部根据配置猜测这些行为, 也不允许为同一开关另开 descriptor 字段; 未知取值被忽略, 插件可以声明为更新宿主准备的能力. `SearchQuery.partial_result` 属于插件契约且只读: 为 `None` 当且仅当该来源不在第二段, 单源路由下是空对象. 它是 `SearchQuery` 上唯一属于契约的注入状态; 主机侧的中间结果与站点快照不属于插件契约, 增删不递增 `PLUGIN_API_VERSION`. 内置影片来源的 descriptor 由 `crawlers/site_roles.py::builtin_descriptors` 从对应爬虫的 `CrawlerProfile` 合成, 不另维护名单; 刮削任务的调度事实只从这份目录读取, 与来源是内置还是插件无关.
+`traits` 承载来源的行为开关, 取值见 `SourceTrait`: `needs_partial` 决定来源是否排在聚合第二段, `multi_language` 决定是否按字段语言展开 `(source, language)` 获取节点, `uses_file_hash` 决定刮削前是否计算 oshash 并经 `SearchQuery.file_hash` 传入. 不允许只在爬虫内部根据配置猜测这些行为, 也不允许为同一开关另开 descriptor 字段; 未知取值被忽略, 插件可以声明为更新宿主准备的能力. `SearchQuery.partial_result` 属于插件契约且只读: 为 `None` 当且仅当该来源不在第二段, 单源路由下是空对象; 内容是前序已定值的单源标量与第一段各来源贡献的图片地址 (封面 / 缩略图 / 预告片, 顺序同字段链), 第二段自身的贡献不在其中, 因此它不等于最终图片列表的前缀. 它是 `SearchQuery` 上唯一属于契约的注入状态; 主机侧的中间结果与站点快照不属于插件契约, 增删不递增 `PLUGIN_API_VERSION`. 内置影片来源的 descriptor 由 `crawlers/site_roles.py::builtin_descriptors` 从对应爬虫的 `CrawlerProfile` 合成, 不另维护名单; 刮削任务的调度事实只从这份目录读取, 与来源是内置还是插件无关.
 
 ## 配置
 

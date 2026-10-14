@@ -264,7 +264,7 @@ class TestScrapeHandler:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_declared_source_receives_partial_result(self, repo: Repository, resource_store):
-        """第二段来源收到第一段已定值的标量, 第一段来源收到 None."""
+        """第二段来源收到第一段已定值的标量与已抓到的图片地址, 第一段来源收到 None."""
 
         class RecordingFetcher:
             def __init__(self, metadata: MediaMetadata) -> None:
@@ -275,8 +275,12 @@ class TestScrapeHandler:
                 self.partials.append(query.partial_result)
                 return self._metadata
 
-        declared = RecordingFetcher(MediaMetadata(number="PHASE-001", title="FromDeclared"))
-        first_phase = RecordingFetcher(MediaMetadata(number="PHASE-001", title="FromPhase1"))
+        declared = RecordingFetcher(
+            MediaMetadata(number="PHASE-001", title="FromDeclared", poster_urls=["http://p2.jpg"])
+        )
+        first_phase = RecordingFetcher(
+            MediaMetadata(number="PHASE-001", title="FromPhase1", poster_urls=["http://p1.jpg"])
+        )
         catalog = (SourceDescriptor(id="javdb", name="javdb", traits=frozenset({"needs_partial"})),)
         h = ScrapeHandler(
             repo=repo,
@@ -296,6 +300,11 @@ class TestScrapeHandler:
         # dmm 是默认路由里各标量字段的链首且在第一段已返回, 其取值必须出现在第二段的入参上.
         assert declared.partials[0] is not None
         assert declared.partials[0].title == "FromPhase1"
+        assert declared.partials[0].poster_urls == ["http://p1.jpg"]
+        # 段间只作参考: 入库列表仍按字段链拼接两段贡献.
+        metadata = await repo.get_metadata_by_number("PHASE-001")
+        assert metadata is not None
+        assert metadata.poster_urls == ["http://p1.jpg", "http://p2.jpg"]
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_builtin_trait_defers_without_injected_catalog(self, repo: Repository, resource_store):

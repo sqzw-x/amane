@@ -3,14 +3,14 @@
 建图: ``compile_priority`` 给出各字段的站点顺序, ``site + lang`` 唯一确定一次获取的节点;
 字段链是聚合真值, 单源字段取值顺序与多源字段拼接顺序都由它决定.
 执行: 未声明依赖的节点并发请求, 声明 ``SourceTrait.NEEDS_PARTIAL`` 的来源在第二段并发请求;
-段间把已定值的单源字段交给第二段 (只读). 单源字段沿链取第一个非空值, 链上存在未处理节点时中断该字段.
+段间把已定值的单源字段与第一段已抓到的图片地址交给第二段 (只读). 单源字段沿链取第一个非空值, 链上存在未处理节点时中断该字段.
 不在 crawlers 映射中的站点标成已处理空结果, 不写入 failed / sites_queried, 也不调用 invoke_source.
 """
 
 import asyncio
 import copy
 from collections import defaultdict
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Callable, Collection, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from dataclasses import field as _f
 from typing import Any, Protocol
@@ -180,7 +180,7 @@ async def execute_graph(
     on_progress: ProgressCallback | None = None,
     deferred_sites: frozenset[SourceName] = frozenset(),
 ) -> ExecutionState:
-    """两段并发请求; 段间给声明来源注入已定值的单源字段, 全部结束后按字段链拼接多源字段."""
+    """两段并发请求; 段间给声明来源注入已定值单源字段与第一段已抓到的图片地址, 全部结束后按字段链拼接多源字段."""
     snapshots = db_cache or {}
     state = ExecutionState(number=query.number)
     deferred = {str(site) for site in deferred_sites}
@@ -208,6 +208,8 @@ async def execute_graph(
     if second:
         # 链上未执行的节点会中断对应字段, 第二段结果不会被段间解析抢先定值.
         partial = copy.deepcopy(state.result)
+        # 段间图片地址只装配第一段节点: 第二段贡献尚未取得, 它在链上的位置也无从预知.
+        _assemble_url_fields(graph, state.fetched, partial, cache_keys={node.cache_key for node in first})
         await _fetch_phase(state, second, query, crawlers, snapshots, partial)
         _resolve_scalars(graph, state)
         await _report_progress(on_progress, state, second, field_total)
@@ -418,12 +420,22 @@ def _fill_scalar(
     result.field_sources[field] = source_key
 
 
-def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None:
-    """按各字段站点顺序拼接已抓结果. 空值与未返回的站跳过, 不改变相对顺序."""
+def _assemble_url_fields(
+    graph: FetchGraph,
+    fetched: Mapping[SourceKey, MediaMetadata | None],
+    result: AggregatedMetadata,
+    cache_keys: Collection[SourceKey] | None = None,
+) -> None:
+    """按各字段站点顺序拼接已抓结果的图片地址. 空值与未返回的站跳过, 不改变相对顺序.
+
+    ``cache_keys`` 限定参与拼接的节点, 段间注入只取第一段节点; 省略时取全部已抓结果.
+    """
     for field, dst in URL_FIELD_MAP.items():
         urls: list[str] = []
         for node in graph.field_chains[field]:
-            data = state.fetched.get(node.cache_key)
+            if cache_keys is not None and node.cache_key not in cache_keys:
+                continue
+            data = fetched.get(node.cache_key)
             if data is None:
                 continue
             value = getattr(data, field, None)
@@ -431,7 +443,12 @@ def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None
                 continue
             items = [value] if isinstance(value, str) else value
             urls.extend(v for v in items if v)
-        setattr(state.result, dst, urls)
+        setattr(result, dst, urls)
+
+
+def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None:
+    """按各字段站点顺序拼接已抓结果. 空值与未返回的站跳过, 不改变相对顺序."""
+    _assemble_url_fields(graph, state.fetched, state.result)
 
     extrafanart: dict[str, list[str]] = {}
     for node in graph.field_chains[MetadataField.EXTRAFANART]:

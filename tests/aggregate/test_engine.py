@@ -504,6 +504,53 @@ class TestTwoPhaseExecution:
         assert state.result.series == "FrmDB"
 
     @pytest.mark.asyncio
+    async def test_partial_carries_first_phase_image_urls(self):
+        """段间图片地址只含第一段贡献; 最终列表仍按字段链拼接两段."""
+        fp = defaultdict(lambda: [DB, OFF])
+        graph = build_graph(fp, {})
+
+        first = RecordingCrawler(
+            _full_metadata(number="X", poster_urls=["http://p1.jpg"], thumb_urls=["http://t1.jpg"])
+        )
+        declared = RecordingCrawler(
+            _full_metadata(
+                number="X",
+                poster_urls=["http://p2.jpg"],
+                thumb_urls=["http://t2.jpg"],
+                trailer_urls=["http://tr2.mp4"],
+            )
+        )
+
+        state = await execute_graph(
+            graph, {K1: first, str(OFF): declared}, SearchQuery("X"), deferred_sites=frozenset({OFF})
+        )
+
+        assert declared.partials[0] is not None
+        assert declared.partials[0].poster_urls == ["http://p1.jpg"]
+        assert declared.partials[0].thumb_urls == ["http://t1.jpg"]
+        assert declared.partials[0].trailer_urls == ["http://tr.mp4"]
+        assert state.result.poster_urls == ["http://p1.jpg", "http://p2.jpg"]
+        assert state.result.thumb_urls == ["http://t1.jpg", "http://t2.jpg"]
+        assert state.result.trailer_urls == ["http://tr.mp4", "http://tr2.mp4"]
+
+    @pytest.mark.asyncio
+    async def test_partial_images_exclude_declared_source_at_chain_head(self):
+        """第二段来源排在封面链首: 段间不含它的地址, 最终列表里它反而排在第一段贡献之前."""
+        fp = defaultdict(lambda: [DB, OFF], {MetadataField.POSTER_URLS: [OFF, DB]})
+        graph = build_graph(fp, {})
+
+        first = RecordingCrawler(_full_metadata(number="X", poster_urls=["http://p_db.jpg"]))
+        declared = RecordingCrawler(_full_metadata(number="X", poster_urls=["http://p_off.jpg"]))
+
+        state = await execute_graph(
+            graph, {K1: first, str(OFF): declared}, SearchQuery("X"), deferred_sites=frozenset({OFF})
+        )
+
+        assert declared.partials[0] is not None
+        assert declared.partials[0].poster_urls == ["http://p_db.jpg"]
+        assert state.result.poster_urls == ["http://p_off.jpg", "http://p_db.jpg"]
+
+    @pytest.mark.asyncio
     async def test_second_phase_nodes_share_one_partial_and_cannot_write_back(self):
         """同段共享同一个只读对象; 爬虫对它的改动不回写聚合结果."""
         fp = defaultdict(lambda: [DB, DMM, BUS])
