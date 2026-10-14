@@ -1,5 +1,4 @@
-# Compatible with prek (preferred) and pre-commit.
-# Install: uv run prek install (or just setup)
+# 配置格式兼容 prek (执行方) 与 pre-commit; 提交门禁见 scripts/githooks/pre-commit.
 #
 # 每个钩子只在相关文件变化时运行 (files 过滤, 见 prek docs#files):
 # - src/amane 后端源码变化 → 重新生成 OpenAPI + TS client

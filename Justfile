@@ -12,10 +12,10 @@ CHECK_DIRS := "src/amane tests scripts"
 host := env("AMANE_HOST", "127.0.0.1")
 port := env("AMANE_PORT", "8000")
 
-# Sync Python + web deps; pull test fixtures; install prek hooks
+# Sync Python + web deps; pull test fixtures; enable Git hooks
+# --replace-all 收敛 core.hooksPath 的多值残留: 普通 set 在该键已有多个取值时报错退出
 setup: sync fixtures
-    -git config --unset-all core.hooksPath
-    uv run prek install
+    git config --replace-all core.hooksPath scripts/githooks
 
 # Local: full Python (extras+dev+packaging) + web
 sync: _sync-python _web-install
