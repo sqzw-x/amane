@@ -8,7 +8,7 @@ from PIL import Image
 
 from amane.config import HotSettings, WatermarkConfig
 from amane.db.models import MediaFile, Metadata
-from amane.handlers.file import _with_external_subtitle, execute_file_operations
+from amane.handlers.file import execute_file_operations
 from amane.media import ResourceStore
 from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths
 from amane.parsing import parse_file_info
@@ -275,7 +275,7 @@ async def test_watermark_respects_enabled(resource_store: ResourceStore, tmp_pat
         paths=paths,
         move_mode=MoveMode.COPY,
         resource_store=resource_store,
-        file_info=_with_external_subtitle(parse_file_info(src), mf),
+        file_info=parse_file_info(src, has_external_subtitle=mf.has_external_subtitle),
         web_client=client,
         config=HotSettings(watermark=WatermarkConfig(enabled=enabled, scale=0.2)),
         watermark_dir=user_dir,
@@ -311,7 +311,7 @@ async def test_watermark_from_external_subtitle(resource_store: ResourceStore, t
         paths=paths,
         move_mode=MoveMode.COPY,
         resource_store=resource_store,
-        file_info=_with_external_subtitle(parse_file_info(src), mf),
+        file_info=parse_file_info(src, has_external_subtitle=mf.has_external_subtitle),
         web_client=client,
         config=HotSettings(watermark=WatermarkConfig(enabled=True, scale=0.2)),
         watermark_dir=user_dir,

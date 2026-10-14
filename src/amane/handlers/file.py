@@ -1,6 +1,6 @@
 import shutil
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -67,18 +67,6 @@ class FileOperationsResult:
     error: str | None = None
 
 
-def _with_external_subtitle(info: FileInfo, media_file: MediaFile) -> FileInfo:
-    """构造整理层的文件相位: 在 ``parse_file_info`` 的结果上并入库里的同目录字幕命中.
-
-    ``has_subtitle`` 是并集 —— 整理只消费这一份相位 (封面角标与 ``{sub?}`` 都取它), 而 ``FileInfo`` 本身
-    仍是文件名的投影, ``discover_subtitles`` 的字幕配对只看文件名. 命中只读 ``has_external_subtitle``,
-    不重扫目录: 该列在登记 / 换 path / 库扫描时已是同目录存在性检查的结果.
-    """
-    if not media_file.has_external_subtitle:
-        return info
-    return replace(info, has_subtitle=True)
-
-
 async def execute_file_operations(
     media_file: MediaFile,
     metadata: Metadata,
@@ -96,9 +84,9 @@ async def execute_file_operations(
     watermark_dir: Path | None = None,
     actor_genders: dict[str, ActorGender] | None = None,
 ) -> FileOperationsResult:
-    """``file_info`` 只接受 ``_with_external_subtitle`` 构造出的相位.
+    """``file_info`` 由渲染路径的那一次 ``parse_file_info`` 产出, 必须带上 ``has_external_subtitle``.
 
-    传入未并入库列的相位时函数不报错, 直接少打中字角标 — 调用方负责构造.
+    未带库列时函数不报错, 直接少打中字角标 — 调用方负责构造.
     """
     source_path = await existing_disk_path(Path(media_file.path))
     if source_path is None:
@@ -226,7 +214,7 @@ async def apply_file_operations(
 
     # 渲染路径后执行落盘.
     ext = Path(media_file.path).suffix.lstrip(".")
-    file_info = _with_external_subtitle(parse_file_info(media_file.path), media_file)
+    file_info = parse_file_info(media_file.path, has_external_subtitle=media_file.has_external_subtitle)
     actor_genders = {a.name: a.gender for a in await repo.get_actors_by_names(metadata.actors)}
     paths = resolve_paths(
         library,

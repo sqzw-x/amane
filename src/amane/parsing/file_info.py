@@ -46,9 +46,15 @@ class FileInfo:
     content_type: ContentType
     prefix: str
     cd: int | None = None
-    has_subtitle: bool = False
+    has_subtitle_in_name: bool = False
+    has_external_subtitle: bool = False
     mosaic: Mosaic | None = None
     definition: str | None = None
+
+    @property
+    def has_subtitle(self) -> bool:
+        """文件名标记与同目录外挂字幕命中任一即真; 后者由调用方经 ``parse_file_info`` 传入."""
+        return self.has_subtitle_in_name or self.has_external_subtitle
 
 
 class FilePhase(TypedDict):
@@ -223,7 +229,11 @@ DEFINITION_VALUES: tuple[str, ...] = tuple(dict.fromkeys(value for value, _ in _
 
 
 def parse_file_info(
-    path: str | Path | None = None, *, text: str | None = None, escape_strings: list[str] | None = None
+    path: str | Path | None = None,
+    *,
+    text: str | None = None,
+    has_external_subtitle: bool = False,
+    escape_strings: list[str] | None = None,
 ) -> FileInfo:
     """有路径则解析路径, 否则解析 ``text``. 两者至少要有一个.
 
@@ -231,6 +241,9 @@ def parse_file_info(
     目录关键词 (欧美 / 里番 / getchu) 可覆盖类型. 分集还可认直接父目录 CD/PART.
     文本: 只执行番号规则, 未命中 ``number is None`` (不能把原文当番号). 文件相位只依据该字符串
     (``Path(text).stem``, 与中字分集检测一致), 不依据目录.
+
+    ``has_external_subtitle`` 是路径之外的输入 (库里记录的同目录字幕命中), 只并进 ``has_subtitle``,
+    不参与其它相位.
     """
     if path is None and text is None:
         raise ValueError("path or text required")
@@ -260,7 +273,8 @@ def parse_file_info(
         content_type=content_type,
         prefix=_prefix(number) if number else "",
         cd=cd,
-        has_subtitle=_detect_subtitle(basename),
+        has_subtitle_in_name=_detect_subtitle(basename),
+        has_external_subtitle=has_external_subtitle,
         mosaic=_fill_mosaic(mosaic, content_type),
         definition=_detect_definition(basename),
     )
@@ -303,11 +317,12 @@ def is_amateur(number: str) -> bool:
 
 
 def file_phase_from_path(path: str | Path) -> FilePhase:
+    """入库相位只取路径能给出的部分: 外挂字幕命中不在路径里, 由 MediaFile 各自的列承载."""
     info = parse_file_info(path)
     return FilePhase(
         content_type=info.content_type,
         mosaic=info.mosaic,
-        has_subtitle=info.has_subtitle,
+        has_subtitle=info.has_subtitle_in_name,
         definition=info.definition,
     )
 
