@@ -193,7 +193,8 @@ class MediaFile(SQLModel, table=True):
     mosaic: Mosaic | None = Field(default=None, index=True)
     #: 文件名带中字标记, 只由 path 派生.
     has_subtitle_in_name: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, index=True))
-    #: 同目录存在库 `subtitle_extensions` 命中的字幕; 只有登记与修改 path 时会重新检查.
+    #: 同目录存在库 `subtitle_extensions` 命中的字幕; 登记 / 换 path / 库扫描时重新检查. 整理落盘在
+    #: `handlers/file.py::_with_external_subtitle` 并入文件相位.
     has_external_subtitle: bool = Field(default=False, index=True)
     definition: str | None = Field(default=None, index=True)
     metadata_id: int | None = Field(default=None, foreign_key="metadata.id", index=True)

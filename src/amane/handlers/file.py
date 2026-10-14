@@ -68,12 +68,11 @@ class FileOperationsResult:
 
 
 def _with_external_subtitle(info: FileInfo, media_file: MediaFile) -> FileInfo:
-    """与 ``parse_file_info`` 同级的构造门面: 文件名相位 + 库里的同目录字幕命中.
+    """构造整理层的文件相位: 在 ``parse_file_info`` 的结果上并入库里的同目录字幕命中.
 
-    ``FileInfo`` 是冻结 dataclass, 并集只能重建; 整理层收的就是 ``FileInfo``, 造平行类型会漏进
-    模板渲染与封面水印的每个签名. 因此这里 `replace` 出的就是整理层从头到尾消费的那一个值.
-
-    只读 ``has_external_subtitle``, 不重扫目录: 该列在登记 / 换 path / 库扫描时已是同目录存在性检查的结果.
+    ``has_subtitle`` 是并集 —— 整理只消费这一份相位 (封面角标与 ``{sub?}`` 都取它), 而 ``FileInfo`` 本身
+    仍是文件名的投影, ``discover_subtitles`` 的字幕配对只看文件名. 命中只读 ``has_external_subtitle``,
+    不重扫目录: 该列在登记 / 换 path / 库扫描时已是同目录存在性检查的结果.
     """
     if not media_file.has_external_subtitle:
         return info
