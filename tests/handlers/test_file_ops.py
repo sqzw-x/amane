@@ -36,7 +36,6 @@ class FakeClient:
 
 
 _TAGGED_INFO = FileInfo(number="MIDV-123", content_type=ContentType.CENSORED, prefix="MIDV", has_subtitle=True)
-_BARE_INFO = FileInfo(number="MIDV-123", content_type=ContentType.CENSORED, prefix="MIDV")
 
 
 def _paths(base: Path) -> ResolvedPaths:
@@ -290,7 +289,10 @@ async def test_watermark_respects_enabled(resource_store: ResourceStore, tmp_pat
 
 @pytest.mark.asyncio
 async def test_watermark_from_external_subtitle(resource_store: ResourceStore, tmp_path: Path):
-    """文件名没有 -C 时, 库里的同目录字幕命中同样打出封面中字角标."""
+    """文件名没有 -C 时, 库里的同目录字幕命中同样打出封面中字角标.
+
+    不传 ``file_info``, 走 handler 自己那次的并集构造.
+    """
     client = cast("WebClient", FakeClient())
     src = tmp_path / "src" / "MIDV-123.mp4"
     src.parent.mkdir(parents=True)
@@ -311,7 +313,6 @@ async def test_watermark_from_external_subtitle(resource_store: ResourceStore, t
         resource_store=resource_store,
         web_client=client,
         config=HotSettings(watermark=WatermarkConfig(enabled=True, scale=0.2)),
-        file_info=_BARE_INFO,
         watermark_dir=user_dir,
     )
     assert result.outcome is PlaceOutcome.PLACED

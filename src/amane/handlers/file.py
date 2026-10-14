@@ -68,10 +68,12 @@ class FileOperationsResult:
 
 
 def _with_external_subtitle(info: FileInfo, media_file: MediaFile) -> FileInfo:
-    """把同目录外挂字幕并进文件相位, 使封面中字角标与 ``{sub?}`` 与片库中字口径一致.
+    """与 ``parse_file_info`` 同级的构造门面: 文件名相位 + 库里的同目录字幕命中.
 
-    ``has_external_subtitle`` 在登记 / 换 path / 库扫描时已是同目录存在性检查的结果, 这里只读不重扫.
-    路径模板由调用方先渲染, 因此落盘路径与相位两处各并一次, 幂等.
+    ``FileInfo`` 是冻结 dataclass, 并集只能重建; 整理层收的就是 ``FileInfo``, 造平行类型会漏进
+    模板渲染与封面水印的每个签名. 因此这里 `replace` 出的就是整理层从头到尾消费的那一个值.
+
+    只读 ``has_external_subtitle``, 不重扫目录: 该列在登记 / 换 path / 库扫描时已是同目录存在性检查的结果.
     """
     if not media_file.has_external_subtitle:
         return info
@@ -100,7 +102,7 @@ async def execute_file_operations(
         logger.warning("source file missing", path=media_file.path)
         return FileOperationsResult(outcome=PlaceOutcome.FAILED, error=f"源文件不存在: {media_file.path}")
 
-    info = _with_external_subtitle(file_info if file_info is not None else parse_file_info(source_path), media_file)
+    info = file_info if file_info is not None else _with_external_subtitle(parse_file_info(source_path), media_file)
 
     # 目标被别的文件占用时立即返回: 不下载图片, 不写附属文件, 不改库内任何路径.
     # 读不出目标状态时同样立即返回, 但记为失败而不是冲突.
