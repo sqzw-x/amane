@@ -98,6 +98,65 @@ _CITATION_RE = re.compile(r"[\[［]\s*(?:\d+|注\s*\d*|注釈\s*\d*|要出典|�
 # 标题里的 [編集] / [edit] 是维基皮肤注入的编辑入口, 不属于标题文本.
 _EDIT_LINK_RE = re.compile(r"[\[［]\s*(?:編集|編輯|edit)\s*[\]］]", re.IGNORECASE)
 
+# 存档标注: 链接后的「页面存档备份, 存于互联网档案馆」一类模板后缀, 是导航不是正文, 一律删除.
+# 次序即优先级: 长的整句排在短的残句前面, 「页面存档备份」必须排在「存档于」之前才能匹配到句末.
+_ARCHIVE_CLAUSES: tuple[str, ...] = (
+    r"原始(?:内容|內容)(?:存档|存檔|归档|歸檔)(?:于|於)?\s*[\d年月日./\-－—]*",
+    r"(?:页面|頁面|网页|網頁)(?:存档|存檔)(?:备份|備份)\s*[，,、]?\s*"
+    r"存(?:于|於)(?:互联网档案馆|互聯網檔案館|網際網路檔案館)",
+    r"\d{4}年\d{1,2}月\d{1,2}日(?:時点|現在)?の?(?:オリジナル|オ[リり]ジナル)(?:より)?アーカイブ",
+    r"ウェイバックマシン(?:\s*[（(][^）)]{0,24}[）)])?",
+    r"(?:页面|頁面|网页|網頁)(?:存档|存檔)(?:备份|備份)",
+    r"(?:存档|存檔|归档|歸檔)(?:于|於)?\s*[\d年月日./\-－—]+",
+    r"存(?:于|於)(?:互联网档案馆|互聯網檔案館|網際網路檔案館)",
+    r"archived?\s+(?:from|at)\s+the\s+original(?:\s+on)?(?:[\s,]+[\w]{1,9}){0,4}[\s,]+\d[\d\-/.,]*",
+    r"(?:original\s+)?archived?\s+on(?:[\s,]+[\w]{1,9}){0,4}[\s,]+\d[\d\-/.,]*",
+    r"archived?\s+from\s+the\s+original",
+)
+_ARCHIVE_CLAUSES_RE = "|".join(_ARCHIVE_CLAUSES)
+# 整段被括号包裹的标注连同括号一起删; 没有括号的残句删到句读为止.
+_ARCHIVE_BRACKET_RE = re.compile(r"\s*[（(〔]\s*(?:" + _ARCHIVE_CLAUSES_RE + r")\s*[）)〕]", re.IGNORECASE)
+_ARCHIVE_TAIL_RE = re.compile(r"(?:" + _ARCHIVE_CLAUSES_RE + r")[。．.]?", re.IGNORECASE)
+# 「2020年1月15日閲覧」是引用模板注入的访问日期, 同样不属于正文.
+_ACCESS_DATE_RE = re.compile(r"[（(〔]\s*[\d年月日./\-－—\s]{2,24}(?:閲覧|閱覽|阅读|閱讀)\s*[）)〕]")
+# 上标序号与「↑」是参考文献列表的定位标记, 只可能来自被错误收录的列表.
+_REF_MARKER_RE = re.compile(r"[\ue000-\uf8ff↑]")
+# 删空括号后留下的空括号本身也要删除; 并排的句读合并为一个, 竖排省略号是正常写法, 不合并.
+_EMPTY_BRACKET_RE = re.compile(r"\s*[（(〔]\s*[）)〕]")
+_TIDY_PUNCT_RE = re.compile(r"([。．.！!？?])\1+|[、,，]\s*(?=[。．.、,，；;：:]|$)|[。．.、,，](?=[。．.、,，；;：:])")
+
+
+def _strip_archive_notes(text: str) -> str:
+    """删除存档标注、引用访问日期与参考文献定位标记.
+
+    删除处并排的句读一并合并; 其余文本原样保留 — 引用里的标点属于原文.
+    """
+    clauses: list[tuple[re.Match[str], int]] = []
+    for pattern, priority in ((_ARCHIVE_BRACKET_RE, 0), (_ACCESS_DATE_RE, 1), (_ARCHIVE_TAIL_RE, 2)):
+        clauses += [(m, priority) for m in pattern.finditer(text)]
+    clauses.sort(key=lambda item: (item[0].start(), item[1], -item[0].end()))
+
+    kept: list[str] = []
+    kept_len = 0
+    cuts: list[int] = []
+    pos = 0
+    for match, _ in clauses:
+        if match.start() < pos:
+            continue
+        kept.append(text[pos : match.start()])
+        kept_len += match.start() - pos
+        cuts.append(kept_len - 1)
+        pos = match.end()
+    kept.append(text[pos:])
+    text = "".join(kept)
+
+    def tidy(match: re.Match[str]) -> str:
+        return "" if any(cut <= match.start() <= cut + 1 for cut in cuts) else match.group(0)
+
+    text = _TIDY_PUNCT_RE.sub(tidy, text) if cuts else text
+    return _REF_MARKER_RE.sub("", _EMPTY_BRACKET_RE.sub("", text))
+
+
 # 简介上限: 段落级拼装, 放不下的那一段截到句末; 剩余空间不足 _MIN_TAIL_CHARS 就不再续接.
 _OVERVIEW_MAX_CHARS = 1500
 _MIN_TAIL_CHARS = 30
@@ -550,7 +609,7 @@ def _clean_text(node: Selector) -> str:
 
 
 def _clean_inline(text: str) -> str:
-    return re.sub(r"\s+", " ", _CITATION_RE.sub("", text)).strip()
+    return re.sub(r"\s+", " ", _strip_archive_notes(_CITATION_RE.sub("", text))).strip()
 
 
 def _has_ancestor(node: Any, tags: frozenset[str]) -> bool:
