@@ -2,11 +2,13 @@
 
 精确匹配 name / aliases, 不回退首条. deleted 跟随 merged_into_id, 无目标则丢弃.
 头像按宽×高排序. urls 写入 provider_ids (跳过本站). disambiguation 为 tagline.
+本站别名表会把本人的多个名字拼接为一条, 这类杂糅项按 token 判据丢弃 (见 `_drop_garbled_aliases`).
 stash-box 的 death_date / 出道年 / 发色瞳色 / ethnicity / breast_type / 纹身穿孔不写入列.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from amane.enums import ActorGender, SiteName
@@ -64,6 +66,10 @@ _URL_TYPE_KEYS: dict[str, str] = {
 }
 
 _MERGE_HOPS = 4
+
+# 批量导入留下的编号后缀: ``Satin Sat008`` 与 ``Mina ID1927`` / ``Mina 1927``.
+_IMPORT_CODE_RE = re.compile(r"^([A-Za-z][A-Za-z'\- ]*?)\s+[A-Za-z]{3}\d{2,4}$")
+_ID_SUFFIX_RE = re.compile(r"^(.+?)\s+(?:ID\s*\d{3,6}|\d{4,6})$", re.IGNORECASE)
 
 
 class ThePornDBActorCrawler(ActorCrawler):
@@ -153,6 +159,7 @@ def performer_to_metadata(perf: dict[str, Any]) -> ActorMetadata | None:
     raw_aliases = perf.get("aliases")
     alias_src = raw_aliases if isinstance(raw_aliases, list) else []
     aliases = _dedupe_preserve([a for a in (normalize_name(str(x)) for x in alias_src if x) if a != name])
+    aliases = _drop_garbled_aliases(aliases, name)
     raw_meas = perf.get("measurements")
     meas = raw_meas if isinstance(raw_meas, dict) else {}
     performer_id = str(perf.get("id") or "").strip()
@@ -229,6 +236,102 @@ def _dedupe_preserve(values: list[str]) -> list[str]:
         if v not in out:
             out.append(v)
     return out
+
+
+def _drop_garbled_aliases(aliases: list[str], name: str) -> list[str]:
+    """丢弃本站数据缺陷产生的杂糅别名.
+
+    本站把本人的名字重复一遍 (``Himari Himari``), 与其他名字拼接为一条
+    (``Himari Kinoshita Himari Hanazawa``), 或附带批量导入的编号 (``Satin Sat008``).
+    判据只看 token, 无法切分的长别名 (``Cruz De La Vega De Paris``) 一律保留.
+
+    同词集只丢弃后出现的那条 — 姓名换序的写法 (``Sasaki Aki``) 是与影片演员名匹配的实际形态,
+    一条不剩时保留最后一条; 与 ``name`` 词集相同但词序不同的别名一律保留.
+    """
+    normalized = [relaxed for alias in aliases if (relaxed := _strip_import_code(alias, name)) is not None]
+    signatures = [_token_signature(value) for value in normalized]
+    kept: list[str] = []
+    for position, (value, signature) in enumerate(zip(normalized, signatures, strict=True)):
+        if value == name:
+            continue
+        tokens = _tokens(value)
+        if _is_repeat(tokens, name):
+            continue
+        if _is_splice(tokens, name, kept):
+            continue
+        if _shares_signature(signature, kept) and signature in signatures[position + 1 :]:
+            continue
+        kept.append(value)
+    return kept
+
+
+def _strip_import_code(value: str, name: str) -> str | None:
+    """删除批量导入留下的编号后缀; 编号底名不是本人名字时返回 None.
+
+    两种形态都要求编号独立成段且与名字用空格分开, 以免删除 ``kickstand523`` 这类真实用户名:
+    ``Satin Sat008`` (三字母前缀 + 2-4 位序号) 与 ``Mina ID1927`` / ``Mina 1927``.
+    底名不符说明编号来自其他记录 (``Mina Luxx`` 的 ``Mina ID1927``), 整条丢弃.
+    """
+    match = _IMPORT_CODE_RE.match(value) or _ID_SUFFIX_RE.match(value)
+    if match is None:
+        return value
+    base = match.group(1).strip()
+    last = _tokens(name)[-1] if _tokens(name) else ""
+    return base if _tokens(base)[:1] == [last] else None
+
+
+def _is_repeat(tokens: list[str], name: str) -> bool:
+    """``name`` 被重复了一遍: ``Himari Himari`` / ``Hitomi Hitomi Tanaka`` / ``Rei Mizuna Rei Mizuna``.
+
+    要求别名只使用名字里的词、词序与名字一致、词数为名字的一到两倍. 后两条排除名字本身重复的
+    介词 —— ``Cruz De La Vega De Paris`` 的 ``paris`` 不在名字里, 不命中.
+    """
+    name_tokens = _tokens(name)
+    if not len(name_tokens) < len(tokens) <= 2 * len(name_tokens):
+        return False
+    if not set(tokens) <= set(name_tokens):
+        return False
+    return _contains_in_order(tokens, name_tokens)
+
+
+def _contains_in_order(tokens: list[str], expected: list[str]) -> bool:
+    """``expected`` 是否为 ``tokens`` 的子序列 (贪心扫描, 不允许回溯)."""
+    cursor = 0
+    for want in expected:
+        while cursor < len(tokens) and tokens[cursor] != want:
+            cursor += 1
+        if cursor == len(tokens):
+            return False
+        cursor += 1
+    return True
+
+
+def _shares_signature(signature: frozenset[str], known: list[str]) -> bool:
+    """词集与本人另一个别名相同 (仅词序或标点不同)."""
+    return any(signature == _token_signature(other) for other in known)
+
+
+def _is_splice(tokens: list[str], name: str, known: list[str]) -> bool:
+    """别名由本人两个已有名字拼接而成, 两个片段各自的词可以交错.
+
+    ``Kinoshita Himari Hanazawa Himari`` 命中: 切分为 ``Kinoshita Himari`` 与 ``Hanazawa Himari``.
+    每个片段至少 2 个词, 以免把单字词当作名字; 两个片段不能都匹配时保留.
+    """
+    signatures = {_token_signature(other) for other in (name, *known)}
+    if len(tokens) < 4:
+        return False
+    return any(
+        frozenset(tokens[:cut]) in signatures and frozenset(tokens[cut:]) in signatures
+        for cut in range(2, len(tokens) - 1)
+    )
+
+
+def _tokens(value: str) -> list[str]:
+    return re.findall(r"[\w']+", value.casefold())
+
+
+def _token_signature(value: str) -> frozenset[str]:
+    return frozenset(_tokens(value))
 
 
 def _positive_int(value: object) -> int | None:
