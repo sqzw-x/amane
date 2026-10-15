@@ -18,7 +18,7 @@ logger = structlog.get_logger()
 async def create_async_engine_from_path(db_path: Path | str, *, policy: DbLogPolicy | None = None) -> AsyncEngine:
     """先 ``upgrade_sqlite_database``, 再开业务引擎. 事务性 DDL 仅用于迁移连接.
 
-    ``policy`` 给出时挂上慢路径日志; 临时库与只读外部库不传.
+    ``policy`` 给出时注册慢路径日志.
     """
     path = Path(db_path)
     try:

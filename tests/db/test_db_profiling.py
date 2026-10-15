@@ -20,7 +20,7 @@ from amane.db.profiling import (
 
 
 class _FakeClock:
-    """限速只读时钟; 用例按秒推进, 不依赖真实等待."""
+    """只读时钟, 供限速判定; 用例按秒推进, 不等待真实时间."""
 
     def __init__(self) -> None:
         self.now = 0.0
@@ -33,7 +33,7 @@ class _FakeClock:
 
 
 def test_classify_db_error() -> None:
-    """只有 SQLite 的锁类错误归 locked, 其余一律 other, 不得误判为可重试."""
+    """锁类错误归 locked, 其余归 other."""
     assert classify_db_error(sqlite3.OperationalError("database is locked")) is DbErrorKind.LOCKED
     assert classify_db_error(sqlite3.OperationalError("database table is locked")) is DbErrorKind.LOCKED
     assert classify_db_error(sqlite3.OperationalError("disk I/O error")) is DbErrorKind.OTHER
@@ -41,7 +41,7 @@ def test_classify_db_error() -> None:
 
 
 def test_slow_commit_threshold() -> None:
-    """提交只在超过阈值时要求出日志, 不限速."""
+    """提交仅在达到阈值时要求记录日志, 不参与限速."""
     policy = DbLogPolicy()
 
     assert policy.slow_commit(SLOW_COMMIT_MS - 1) is False
@@ -50,14 +50,14 @@ def test_slow_commit_threshold() -> None:
 
 
 def test_slow_statement_threshold_and_suppressed_count() -> None:
-    """阈值内的语句不要求出日志; 窗口内被抑制的条数在窗口结束后的那次日志里交代."""
+    """阈值内的语句不要求记录日志; 被抑制的条数由窗口结束后的那次日志交代."""
     clock = _FakeClock()
     policy = DbLogPolicy(clock=clock)
 
     assert policy.slow_statement(SLOW_STATEMENT_MS - 1) is None
-    # 首次立刻出日志, count 为 1
+    # 首次立即记录, count 为 1
     assert policy.slow_statement(SLOW_STATEMENT_MS) == 1
-    # 窗口内被抑制, 但它们计入累计
+    # 窗口内被抑制, 但仍计入累计
     assert policy.slow_statement(SLOW_STATEMENT_MS) is None
     assert policy.slow_statement(SLOW_STATEMENT_MS) is None
     clock.advance(LOG_INTERVAL_S)
@@ -66,7 +66,7 @@ def test_slow_statement_threshold_and_suppressed_count() -> None:
 
 
 def test_error_rate_limit_is_per_kind() -> None:
-    """错误按类别各自限速, 互不影响; 累计条数随下次日志给出."""
+    """错误按类别分别限速, 互不影响; 累计条数由下一次日志给出."""
     clock = _FakeClock()
     policy = DbLogPolicy(clock=clock)
 
@@ -84,7 +84,7 @@ def test_error_rate_limit_is_per_kind() -> None:
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_engine_factory_installs_policy(tmp_path: Path) -> None:
-    """工厂传入 policy 时监听已挂上, 且不影响既有 pragma."""
+    """传入 policy 时注册了监听, 且不影响既有 pragma."""
     policy = DbLogPolicy()
     engine = await create_async_engine_from_path(tmp_path / "t.db", policy=policy)
 
@@ -98,7 +98,7 @@ async def test_engine_factory_installs_policy(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_locked_write_is_classified_without_replacing_error(tmp_path: Path) -> None:
-    """另一连接持写锁时归为 locked 且原异常类型不变; 释放后同一引擎仍可写入."""
+    """另一连接持写锁时归为 locked, 原异常类型不变; 释放后同一引擎仍可写入."""
     db = tmp_path / "locked.db"
     policy = DbLogPolicy()
     engine = create_async_engine(f"sqlite+aiosqlite:///{db}", connect_args={"timeout": 0.05})

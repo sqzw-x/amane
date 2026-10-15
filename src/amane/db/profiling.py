@@ -1,7 +1,6 @@
-"""数据库慢路径日志: 阈值与限速.
+"""数据库慢路径日志: 事件判定、限速与监听安装.
 
-只决定哪些事件写日志、一次日志涵盖多少条被抑制的事件; 不保存历史, 也不经接口下发.
-只记 SQL 文本, 不记 ``parameters``. 见 docs/dev/observability.md.
+只记录 SQL 文本, 不记录 ``parameters`` (可能含用户数据); 日志去向与覆盖范围见 docs/dev/observability.md.
 """
 
 import sqlite3
@@ -21,16 +20,16 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-# 超过该时长的提交与语句各记一条 WARNING.
+# 超过该时长各记一条 warning: 提交不限速, 语句受 LOG_INTERVAL_S 约束.
 SLOW_COMMIT_MS = 200.0
 SLOW_STATEMENT_MS = 100.0
-# 同一类事件两次日志之间的最小间隔; 窗口内被抑制的条数在下次日志里以 count 给出.
+# 同一类别两次日志之间的最小间隔; 窗口内被抑制的条数由下一次日志的 count 交代.
 LOG_INTERVAL_S = 30.0
-# 慢提交日志附带的本次事务语句轨迹.
+# 慢提交日志附带的事务语句轨迹: 条数上限与单条留存长度.
 _TRAIL_LIMIT = 5
-# 日志里 SQL 文本与错误消息的留存长度: 完整语句与事务轨迹各一档.
-_SNIPPET_LIMIT = 200
 _TRAIL_SNIPPET = 100
+# 慢语句与错误消息的留存长度.
+_SNIPPET_LIMIT = 200
 _LOCKED_MESSAGES = ("database is locked", "database table is locked")
 _TXN_T0_KEY = "_amane_db_txn_t0"
 _TXN_TRAIL_KEY = "_amane_db_txn_trail"
@@ -38,7 +37,7 @@ _STMT_T0_KEY = "_amane_db_stmt_t0"
 
 
 class DbErrorKind(StrEnum):
-    """数据库错误类别. ``locked`` 供后续的锁错误有界重试复用."""
+    """数据库错误类别; 限速按类别分别统计."""
 
     LOCKED = "locked"
     DISCONNECT = "disconnect"
@@ -46,7 +45,7 @@ class DbErrorKind(StrEnum):
 
 
 def classify_db_error(exc: BaseException) -> DbErrorKind:
-    """只认 SQLite 的锁类错误; 其余归 ``other``, 由调用方决定是否重试."""
+    """SQLite 锁类错误归 ``locked``, 其余归 ``other``."""
     if isinstance(exc, sqlite3.OperationalError) and any(m in str(exc).lower() for m in _LOCKED_MESSAGES):
         return DbErrorKind.LOCKED
     return DbErrorKind.OTHER
@@ -57,16 +56,16 @@ def _snippet(text: str) -> str:
 
 
 def _append_trail(conn: Connection, statement: str) -> None:
-    """记录本次事务内执行过的语句, 供慢提交日志指出是哪几条."""
+    """把本次事务执行过的语句追加进 ``conn.info``, 供慢提交日志引用."""
     trail = conn.info.setdefault(_TXN_TRAIL_KEY, [])
     if len(trail) < _TRAIL_LIMIT:
         trail.append(statement[:_TRAIL_SNIPPET])
 
 
 class DbLogPolicy:
-    """阈值与限速. 抑制窗口内的事件只累计条数, 由下一次日志的 ``count`` 交代.
+    """阈值判定与限速. 状态按键定界, 不随事件数量增长.
 
-    状态按事件类别定界 (错误类别最多 3 种), 不随事件数量增长. ``clock`` 供用例注入假时钟.
+    ``clock`` 供用例注入假时钟.
     """
 
     def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
@@ -77,11 +76,11 @@ class DbLogPolicy:
         self._suppressed_slow_statements = 0
 
     def slow_commit(self, duration_ms: float) -> bool:
-        """提交超过 ``SLOW_COMMIT_MS`` 就写日志, 不限速."""
+        """提交时长是否达到 ``SLOW_COMMIT_MS``; 提交日志不参与限速."""
         return duration_ms >= SLOW_COMMIT_MS
 
     def slow_statement(self, duration_ms: float) -> int | None:
-        """语句超过 ``SLOW_STATEMENT_MS`` 时返回窗口内累积条数; 未超阈值或限速中返回 None."""
+        """语句达到 ``SLOW_STATEMENT_MS`` 时返回窗口内累积条数; 未达阈值或处于限速窗口内返回 ``None``."""
         if duration_ms < SLOW_STATEMENT_MS:
             return None
         self._suppressed_slow_statements += 1
@@ -93,7 +92,7 @@ class DbLogPolicy:
         return count
 
     def error(self, kind: DbErrorKind) -> int | None:
-        """返回该类别窗口内累积条数; 限速中返回 None. 不同类别互不影响."""
+        """返回该类别窗口内累积条数; 处于限速窗口内返回 ``None``."""
         self._suppressed_errors[kind] = self._suppressed_errors.get(kind, 0) + 1
         last = self._last_error_log.get(kind)
         if last is not None and self._clock() - last < LOG_INTERVAL_S:
@@ -103,7 +102,7 @@ class DbLogPolicy:
 
 
 def install_profiling(engine: AsyncEngine, policy: DbLogPolicy) -> None:
-    """挂上监听. ``handle_error`` 返回 ``None``, 原异常照常抛出."""
+    """注册监听. ``handle_error`` 返回 ``None``, 原异常照常抛给调用方."""
 
     @event.listens_for(engine.sync_engine, "begin")
     def _begin(conn: Connection) -> None:
@@ -118,7 +117,7 @@ def install_profiling(engine: AsyncEngine, policy: DbLogPolicy) -> None:
             return
         duration_ms = (time.monotonic() - t0) * 1000
         if policy.slow_commit(duration_ms):
-            # 事务里执行过的语句, 用于判断是什么拖住了这次提交
+            # 事务内执行过的语句轨迹, 用于定位提交耗时的来源
             logger.warning("slow db commit", duration_ms=round(duration_ms, 1), statements=" | ".join(trail))
 
     @event.listens_for(engine.sync_engine, "rollback")

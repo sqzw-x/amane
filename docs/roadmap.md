@@ -4,6 +4,7 @@
 
 - 数据库与数据模型
   - [ ] 反思: 导演和演员分开是否有意义, 感觉可以将相关概念合并为 person, 加一个 role 字段
+  - [ ] 锁类错误的有界重试 (判定入口 `db/profiling.py::classify_db_error`)
 - 任务系统
   - [x] 任务后继图基础设施: TaskLink、`TaskResult.followups`、Worker 完成阶段统一派生子任务
     - [x] 现有 fan-out (REFRESH/RESCRAPE→SCRAPE, SCRAPE→ACTOR_SCRAPE) 迁入图
