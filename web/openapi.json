@@ -660,6 +660,48 @@
         }
       }
     },
+    "/api/media/batch/delete": {
+      "post": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Batch Delete Media",
+        "description": "批量删除媒体文件记录; 不存在的 id 计入 missing 而不是报错.",
+        "operationId": "batch_delete_media",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaBatchDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaBatchDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/media/{media_id}": {
       "get": {
         "tags": [
@@ -2884,6 +2926,90 @@
         }
       }
     },
+    "/api/actors/batch/gender": {
+      "post": {
+        "tags": [
+          "actors"
+        ],
+        "summary": "Batch Actor Gender",
+        "description": "批量写入性别; 写入字段与单条 PATCH 一样自动加锁, 不存在的演员 id 计入 missing.",
+        "operationId": "batch_actor_gender",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorGenderBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActorGenderBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/actors/batch/clear-person": {
+      "post": {
+        "tags": [
+          "actors"
+        ],
+        "summary": "Batch Clear Actor Person",
+        "description": "批量清空人物档案并解除全部锁 (保留 ``name`` / ``gender``); 不存在的演员 id 计入 missing.",
+        "operationId": "batch_clear_actor_person",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorClearPersonBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActorClearPersonBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/actors/{actor_id}": {
       "get": {
         "tags": [
@@ -3036,8 +3162,9 @@
           "actors"
         ],
         "summary": "Clear Actor Person",
-        "description": "清空人物档案与刮削缓存并解除全部锁 (保留 name / gender).",
+        "description": "已弃用: 改用 `POST /actors/batch/clear-person` 的单元素列表 (只回计数).",
         "operationId": "clear_actor_person",
+        "deprecated": true,
         "parameters": [
           {
             "name": "actor_id",
@@ -3132,7 +3259,9 @@
           "actors"
         ],
         "summary": "Scrape Actor",
+        "description": "已弃用: 改用 `POST /tasks/batch/submit` 的单元素 `actor_scrape` 提交.",
         "operationId": "scrape_actor",
+        "deprecated": true,
         "parameters": [
           {
             "name": "actor_id",
@@ -5127,6 +5256,48 @@
         }
       }
     },
+    "/api/tasks/batch/submit": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Batch Submit Tasks",
+        "description": "批量提交任务. 逐项解析同单条提交, 同类型合并为一次入队事务.\n\n``missing`` 只覆盖目标实体不存在 (404); 路径越界 / 参数互斥等仍是整批中断.",
+        "operationId": "batch_submit_tasks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskBatchSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskBatchSubmitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks/{task_id}": {
       "get": {
         "tags": [
@@ -6149,6 +6320,46 @@
   },
   "components": {
     "schemas": {
+      "ActorClearPersonBatchRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Ids",
+            "description": "演员 ID 列表; 上限防 SQLite 绑定变量超限"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "title": "ActorClearPersonBatchRequest",
+        "description": "批量清空人物档案并解除全部锁 (保留 ``name`` / ``gender``)."
+      },
+      "ActorClearPersonBatchResponse": {
+        "properties": {
+          "cleared": {
+            "type": "integer",
+            "title": "Cleared",
+            "description": "清空的演员数"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing",
+            "description": "不存在的演员 id 数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cleared",
+          "missing"
+        ],
+        "title": "ActorClearPersonBatchResponse"
+      },
       "ActorField": {
         "type": "string",
         "enum": [
@@ -6177,6 +6388,51 @@
         ],
         "title": "ActorGender",
         "description": "演员性别 - 用于展示与按站裁剪刮削源."
+      },
+      "ActorGenderBatchRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Ids",
+            "description": "演员 ID 列表; 上限防 SQLite 绑定变量超限"
+          },
+          "gender": {
+            "$ref": "#/components/schemas/ActorGender",
+            "description": "统一写入的性别"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids",
+          "gender"
+        ],
+        "title": "ActorGenderBatchRequest",
+        "description": "批量把同一性别写给一组演员; 写入字段按 MANUAL 语义加锁."
+      },
+      "ActorGenderBatchResponse": {
+        "properties": {
+          "updated": {
+            "type": "integer",
+            "title": "Updated",
+            "description": "实际写入的演员数"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing",
+            "description": "不存在的演员 id 数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated",
+          "missing"
+        ],
+        "title": "ActorGenderBatchResponse"
       },
       "ActorListResponse": {
         "properties": {
@@ -10639,6 +10895,46 @@
         ],
         "title": "Manufacturer"
       },
+      "MediaBatchDeleteRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Ids",
+            "description": "MediaFile ID 列表; 上限防 SQLite 绑定变量超限"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "title": "MediaBatchDeleteRequest",
+        "description": "批量删除媒体文件记录; 不存在的 id 计入 missing."
+      },
+      "MediaBatchDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted",
+            "description": "成功删除的数量"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing",
+            "description": "不存在的 id 数量"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "missing"
+        ],
+        "title": "MediaBatchDeleteResponse"
+      },
       "MediaFileResponse": {
         "properties": {
           "id": {
@@ -14296,6 +14592,102 @@
         },
         "type": "object",
         "title": "TaskBatchResponse"
+      },
+      "TaskBatchSubmitRequest": {
+        "properties": {
+          "submissions": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/RefreshSubmission"
+                },
+                {
+                  "$ref": "#/components/schemas/OrganizeSubmission"
+                },
+                {
+                  "$ref": "#/components/schemas/ScanInvalidSubmission"
+                },
+                {
+                  "$ref": "#/components/schemas/DeleteSubmission"
+                },
+                {
+                  "$ref": "#/components/schemas/ScrapeSubmission"
+                },
+                {
+                  "$ref": "#/components/schemas/CleanupSubmission"
+                },
+                {
+                  "$ref": "#/components/schemas/UpscaleSubmission"
+                },
+                {
+                  "$ref": "#/components/schemas/R18ImportSubmission"
+                },
+                {
+                  "$ref": "#/components/schemas/ActorScrapeSubmission"
+                },
+                {
+                  "$ref": "#/components/schemas/RescrapeSubmission"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "actor_scrape": "#/components/schemas/ActorScrapeSubmission",
+                  "cleanup": "#/components/schemas/CleanupSubmission",
+                  "delete": "#/components/schemas/DeleteSubmission",
+                  "organize": "#/components/schemas/OrganizeSubmission",
+                  "r18_import": "#/components/schemas/R18ImportSubmission",
+                  "refresh": "#/components/schemas/RefreshSubmission",
+                  "rescrape": "#/components/schemas/RescrapeSubmission",
+                  "scan_invalid": "#/components/schemas/ScanInvalidSubmission",
+                  "scrape": "#/components/schemas/ScrapeSubmission",
+                  "upscale": "#/components/schemas/UpscaleSubmission"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Submissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "submissions"
+        ],
+        "title": "TaskBatchSubmitRequest",
+        "description": "逐项与 ``POST /tasks`` 的 body 同形, 只是包成数组."
+      },
+      "TaskBatchSubmitResponse": {
+        "properties": {
+          "submitted": {
+            "type": "integer",
+            "title": "Submitted"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "task_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Task Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "submitted",
+          "missing",
+          "skipped",
+          "task_ids"
+        ],
+        "title": "TaskBatchSubmitResponse"
       },
       "TaskChildItem": {
         "properties": {

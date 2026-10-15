@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...db import MediaFile, MediaFileStatus
 from ...parsing import ContentType, Mosaic
@@ -30,6 +30,17 @@ class MediaFileResponse(BaseModel):
 class MediaListResponse(BaseModel):
     items: list[MediaFileResponse]
     total: int
+
+
+class MediaBatchDeleteRequest(BaseModel):
+    """批量删除媒体文件记录; 不存在的 id 计入 missing."""
+
+    ids: list[int] = Field(min_length=1, max_length=1000, description="MediaFile ID 列表; 上限防 SQLite 绑定变量超限")
+
+
+class MediaBatchDeleteResponse(BaseModel):
+    deleted: int = Field(description="成功删除的数量")
+    missing: int = Field(description="不存在的 id 数量")
 
 
 if TYPE_CHECKING:

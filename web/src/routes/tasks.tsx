@@ -44,7 +44,7 @@ import {
   pauseTaskWorkerMutation,
   resumeTaskWorkerMutation,
 } from "@/client/@tanstack/react-query.gen";
-import { submitTask } from "@/client/sdk.gen";
+import { batchSubmitTasks } from "@/client/sdk.gen";
 import type { TaskBatchAction, TaskStatus, TaskType } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
@@ -67,6 +67,9 @@ import { useUIStore } from "@/stores/ui";
  * 例: {% for i in (1..50) %}\nMIDV-{{ i | plus: 100 }}\n{% endfor %}
  */
 const engine = new Liquid();
+
+/** 与 `POST /tasks/batch/submit` 的 `submissions` 上限一致; 超出后端直接 422. */
+const MAX_BATCH_SUBMIT = 1000;
 
 const tasksSearchSchema = z.object({
   status: z.array(z.enum(TASK_STATUSES)).optional(),
@@ -176,7 +179,8 @@ function BatchScrapePanel({
   onSubmit,
   framed,
 }: BatchScrapePanelProps) {
-  const { t } = useTranslation("tasks");
+  const { t } = useTranslation(["tasks", "common"]);
+  const overLimit = preview.length > MAX_BATCH_SUBMIT;
   return (
     <Paper withBorder={framed} radius="md" p={framed ? "md" : undefined}>
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
@@ -228,8 +232,19 @@ function BatchScrapePanel({
           </ScrollArea.Autosize>
         </Stack>
       </SimpleGrid>
-      <Group justify="flex-end" mt="md">
-        <Button onClick={onSubmit} loading={submitting} disabled={preview.length === 0}>
+      <Group justify="space-between" align="center" mt="md">
+        {overLimit ? (
+          <Text size="xs" c="red">
+            {t("common:validation.maxItems", { limit: MAX_BATCH_SUBMIT })}
+          </Text>
+        ) : (
+          <span />
+        )}
+        <Button
+          onClick={onSubmit}
+          loading={submitting}
+          disabled={preview.length === 0 || overLimit}
+        >
           {t("batchScrape.submit", { count: preview.length })}
         </Button>
       </Group>
@@ -423,7 +438,8 @@ function TasksPage() {
             .split("\n")
             .map((l: string) => l.trim())
             .filter((l: string) => l.length > 0);
-          setPreview(lines);
+          // 同番号去重: 后端按 casefold 判重, 这里先对齐, 免得提交数少于预览数.
+          setPreview([...new Map(lines.map((line) => [line.toUpperCase(), line])).values()]);
         })
         .catch(() => setPreview([]));
     }, 300);
@@ -434,28 +450,35 @@ function TasksPage() {
 
   async function handleBatchSubmit() {
     setBatchSubmitting(true);
-    const results = await Promise.allSettled(
-      preview.map((number) => submitTask({ body: { type: "scrape", number }, throwOnError: true })),
-    );
-    setBatchSubmitting(false);
-    const failed = results.filter((r) => r.status === "rejected").length;
-    const ok = preview.length - failed;
-    if (ok > 0) {
-      notifications.show({
-        message: t("common:toast.batchScrapeStarted", { count: ok }),
-        color: "blue",
+    try {
+      const { data: result } = await batchSubmitTasks({
+        body: { submissions: preview.map((number) => ({ type: "scrape", number })) },
+        throwOnError: true,
       });
-    }
-    if (failed > 0) {
+      if (result.submitted > 0) {
+        notifications.show({
+          message: t("common:toast.batchScrapeStarted", { count: result.submitted }),
+          color: "blue",
+        });
+      }
+      if (result.missing + result.skipped > 0) {
+        notifications.show({
+          message: t("common:toast.batchScrapeFailed", { count: result.missing + result.skipped }),
+          color: "red",
+        });
+      }
+      setTemplate("");
+      setPreview([]);
+      setBatchOpen(false);
+      invalidate();
+    } catch (err) {
       notifications.show({
-        message: t("common:toast.batchScrapeFailed", { count: failed }),
+        message: extractErrorMessage(err, t("common:toast.batchScrapeFailed")),
         color: "red",
       });
+    } finally {
+      setBatchSubmitting(false);
     }
-    setTemplate("");
-    setPreview([]);
-    setBatchOpen(false);
-    invalidate();
   }
 
   const items = data?.items ?? [];

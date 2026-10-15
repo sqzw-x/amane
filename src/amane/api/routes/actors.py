@@ -13,6 +13,10 @@ from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
 from ..models import (
+    ActorClearPersonBatchRequest,
+    ActorClearPersonBatchResponse,
+    ActorGenderBatchRequest,
+    ActorGenderBatchResponse,
     ActorListResponse,
     ActorLocksRequest,
     ActorResponse,
@@ -126,6 +130,22 @@ async def batch_actor_user_tags(req: ActorUserTagsRequest, repo: RepoDep) -> Use
     return UserTagLinksResponse(changed=result.changed, unchanged=result.unchanged, missing=result.missing)
 
 
+@router.post("/batch/gender")
+async def batch_actor_gender(req: ActorGenderBatchRequest, repo: RepoDep) -> ActorGenderBatchResponse:
+    """批量写入性别; 写入字段与单条 PATCH 一样自动加锁, 不存在的演员 id 计入 missing."""
+    updated, missing = await repo.batch_set_actor_gender(req.ids, req.gender)
+    logger.info("actor gender batch updated", updated=updated, missing=missing)
+    return ActorGenderBatchResponse(updated=updated, missing=missing)
+
+
+@router.post("/batch/clear-person")
+async def batch_clear_actor_person(req: ActorClearPersonBatchRequest, repo: RepoDep) -> ActorClearPersonBatchResponse:
+    """批量清空人物档案并解除全部锁 (保留 ``name`` / ``gender``); 不存在的演员 id 计入 missing."""
+    cleared, missing = await repo.batch_clear_actor_person(req.ids)
+    logger.info("actor person batch cleared", cleared=cleared, missing=missing)
+    return ActorClearPersonBatchResponse(cleared=cleared, missing=missing)
+
+
 @router.get("/{actor_id}")
 async def get_actor(actor_id: int, repo: RepoDep) -> ActorResponse:
     item = await repo.get_facet(FacetKind.ACTOR, actor_id)
@@ -168,9 +188,9 @@ async def set_actor_locks(actor_id: int, req: ActorLocksRequest, repo: RepoDep) 
     return await _detail_response(repo, actor)
 
 
-@router.post("/{actor_id}/clear-person")
+@router.post("/{actor_id}/clear-person", deprecated=True)
 async def clear_actor_person(actor_id: int, repo: RepoDep) -> ActorResponse:
-    """清空人物档案与刮削缓存并解除全部锁 (保留 name / gender)."""
+    """已弃用: 改用 `POST /actors/batch/clear-person` 的单元素列表 (只回计数)."""
     actor = await repo.clear_actor_person(actor_id)
     if actor is None:
         raise HTTPException(status_code=404, detail="演员不存在")
@@ -216,8 +236,9 @@ async def crop_actor_avatar(
     return await _detail_response(repo, updated)
 
 
-@router.post("/{actor_id}/scrape", status_code=202)
+@router.post("/{actor_id}/scrape", status_code=202, deprecated=True)
 async def scrape_actor(actor_id: int, repo: RepoDep, req: ActorScrapeRequest | None = None) -> TaskResponse:
+    """已弃用: 改用 `POST /tasks/batch/submit` 的单元素 `actor_scrape` 提交."""
     actor = await repo.get_actor(actor_id)
     if actor is None:
         raise HTTPException(status_code=404, detail="演员不存在")

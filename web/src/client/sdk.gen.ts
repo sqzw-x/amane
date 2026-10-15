@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type ServerSentEventsResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { BatchActorUserTagsData, BatchActorUserTagsErrors, BatchActorUserTagsResponses, BatchDeleteMetadataData, BatchDeleteMetadataErrors, BatchDeleteMetadataResponses, BatchFacetsData, BatchFacetsErrors, BatchFacetsResponses, BatchFeedItemsData, BatchFeedItemsErrors, BatchFeedItemsResponses, BatchMetadataUserTagsData, BatchMetadataUserTagsErrors, BatchMetadataUserTagsResponses, BatchSavedQueriesData, BatchSavedQueriesErrors, BatchSavedQueriesResponses, BatchScrapeMetadataData, BatchScrapeMetadataErrors, BatchScrapeMetadataResponses, BatchTasksData, BatchTasksErrors, BatchTasksResponses, CancelAguiTurnData, CancelAguiTurnErrors, CancelAguiTurnResponses, CheckConnectivityData, CheckConnectivityErrors, CheckConnectivityResponses, ClearActorPersonData, ClearActorPersonErrors, ClearActorPersonResponses, ClouddriveNotifyData, ClouddriveNotifyErrors, ClouddriveNotifyResponses, CreateAgentSessionData, CreateAgentSessionErrors, CreateAgentSessionResponses, CreateCommentData, CreateCommentErrors, CreateCommentResponses, CreateFeedData, CreateFeedErrors, CreateFeedResponses, CreateLibraryData, CreateLibraryErrors, CreateLibraryResponses, CreateSavedQueryData, CreateSavedQueryErrors, CreateSavedQueryResponses, CreateScheduleData, CreateScheduleErrors, CreateScheduleResponses, CreateUserTagsData, CreateUserTagsErrors, CreateUserTagsResponses, CropActorAvatarData, CropActorAvatarErrors, CropActorAvatarResponses, CropPosterFromThumbData, CropPosterFromThumbErrors, CropPosterFromThumbResponses, DeleteAgentSessionData, DeleteAgentSessionErrors, DeleteAgentSessionResponses, DeleteCommentData, DeleteCommentErrors, DeleteCommentResponses, DeleteFacetData, DeleteFacetErrors, DeleteFacetResponses, DeleteFacetRuleData, DeleteFacetRuleErrors, DeleteFacetRuleResponses, DeleteFeedData, DeleteFeedErrors, DeleteFeedResponses, DeleteLibraryData, DeleteLibraryErrors, DeleteLibraryResponses, DeleteMediaData, DeleteMediaErrors, DeleteMediaResponses, DeleteMetadataData, DeleteMetadataErrors, DeleteMetadataResponses, DeleteScheduleData, DeleteScheduleErrors, DeleteScheduleResponses, DesktopInfoData, DesktopInfoResponses, ExpandCleanupSelectionData, ExpandCleanupSelectionErrors, ExpandCleanupSelectionResponses, FollowAgentEventsData, FollowAgentEventsErrors, FollowAgentEventsResponses, GenerateAgentSessionTitleData, GenerateAgentSessionTitleErrors, GenerateAgentSessionTitleResponses, GetActorData, GetActorErrors, GetActorResponses, GetAgentTraceData, GetAgentTraceErrors, GetAgentTraceResponses, GetCleanupInventoryData, GetCleanupInventoryErrors, GetCleanupInventoryNodesData, GetCleanupInventoryNodesErrors, GetCleanupInventoryNodesResponses, GetCleanupInventoryResponses, GetCleanupTrashData, GetCleanupTrashErrors, GetCleanupTrashResponses, GetConfigData, GetConfigResponses, GetConfigSchemaData, GetConfigSchemaResponses, GetFacetData, GetFacetErrors, GetFacetResponses, GetFeedData, GetFeedErrors, GetFeedResponses, GetLibraryData, GetLibraryErrors, GetLibraryResponses, GetMediaData, GetMediaErrors, GetMediaResponses, GetMetadataData, GetMetadataErrors, GetMetadataResponses, GetMetadataSchemaData, GetMetadataSchemaResponses, GetPathTemplateSchemaData, GetPathTemplateSchemaResponses, GetPluginData, GetPluginErrors, GetPluginResponses, GetReleaseData, GetReleaseResponses, GetSavedQueryData, GetSavedQueryErrors, GetSavedQueryResponses, GetSavedQueryResultData, GetSavedQueryResultErrors, GetSavedQueryResultResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetScheduleSchemaData, GetScheduleSchemaResponses, GetTaskChildrenData, GetTaskChildrenErrors, GetTaskChildrenResponses, GetTaskData, GetTaskErrors, GetTaskRecordData, GetTaskRecordErrors, GetTaskRecordResponses, GetTaskResponses, GetTaskSchemaData, GetTaskSchemaResponses, GetTaskWorkerData, GetTaskWorkerResponses, HealthCheckData, HealthCheckResponses, InstallPluginData, InstallPluginErrors, InstallPluginResponses, ListActorsData, ListActorsErrors, ListActorsResponses, ListAgentSessionsData, ListAgentSessionsResponses, ListAllFeedItemsData, ListAllFeedItemsErrors, ListAllFeedItemsResponses, ListFacetRulesData, ListFacetRulesErrors, ListFacetRulesResponses, ListFacetsData, ListFacetsErrors, ListFacetsResponses, ListFeedItemsData, ListFeedItemsErrors, ListFeedItemsResponses, ListFeedsData, ListFeedsResponses, ListFilesData, ListFilesErrors, ListFilesResponses, ListLibrariesData, ListLibrariesResponses, ListMediaData, ListMediaErrors, ListMediaResponses, ListMetadataData, ListMetadataErrors, ListMetadataResponses, ListPlaybackSourcesData, ListPlaybackSourcesResponses, ListPlaybackStreamsData, ListPlaybackStreamsErrors, ListPlaybackStreamsResponses, ListPluginsData, ListPluginsResponses, ListSavedQueriesData, ListSavedQueriesErrors, ListSavedQueriesResponses, ListSchedulesData, ListSchedulesResponses, ListTasksData, ListTasksErrors, ListTasksResponses, MergeFacetsData, MergeFacetsErrors, MergeFacetsResponses, MergeMetadataData, MergeMetadataErrors, MergeMetadataResponses, PauseTaskWorkerData, PauseTaskWorkerResponses, PlayMetadataData, PlayMetadataErrors, PlayMetadataHlsPartData, PlayMetadataHlsPartErrors, PlayMetadataHlsPartResponses, PlayMetadataPlaylistData, PlayMetadataPlaylistErrors, PlayMetadataPlaylistResponses, PlayMetadataResponses, PlayMetadataSubtitleData, PlayMetadataSubtitleErrors, PlayMetadataSubtitleResponses, PlayStreamData, PlayStreamErrors, PlayStreamHlsPartData, PlayStreamHlsPartErrors, PlayStreamHlsPartResponses, PlayStreamPlaylistData, PlayStreamPlaylistErrors, PlayStreamPlaylistResponses, PlayStreamResponses, PlayStreamSubtitleData, PlayStreamSubtitleErrors, PlayStreamSubtitleResponses, PollFeedData, PollFeedErrors, PollFeedResponses, ProxyImageData, ProxyImageErrors, ProxyImageResponses, ReloadPluginsData, ReloadPluginsResponses, RenameFacetData, RenameFacetErrors, RenameFacetResponses, RestartServerData, RestartServerResponses, ResumeTaskWorkerData, ResumeTaskWorkerResponses, RunAgentAguiData, RunAgentAguiErrors, RunAgentAguiResponses, ScrapeActorData, ScrapeActorErrors, ScrapeActorResponses, ServeResourceData, ServeResourceErrors, ServeResourceResponses, SetActorLocksData, SetActorLocksErrors, SetActorLocksResponses, SetMetadataLocksData, SetMetadataLocksErrors, SetMetadataLocksResponses, SubmitTaskData, SubmitTaskErrors, SubmitTaskResponses, TriggerScheduleData, TriggerScheduleErrors, TriggerScheduleResponses, UninstallPluginData, UninstallPluginErrors, UninstallPluginResponses, UpdateActorData, UpdateActorErrors, UpdateActorResponses, UpdateAgentSessionData, UpdateAgentSessionErrors, UpdateAgentSessionResponses, UpdateCommentData, UpdateCommentErrors, UpdateCommentResponses, UpdateConfigData, UpdateConfigErrors, UpdateConfigResponses, UpdateFeedData, UpdateFeedErrors, UpdateFeedResponses, UpdateLibraryData, UpdateLibraryErrors, UpdateLibraryResponses, UpdateMediaData, UpdateMediaErrors, UpdateMediaResponses, UpdateMetadataData, UpdateMetadataErrors, UpdateMetadataResponses, UpdatePluginData, UpdatePluginErrors, UpdatePluginResponses, UpdateSavedQueryData, UpdateSavedQueryErrors, UpdateSavedQueryResponses, UpdateScheduleData, UpdateScheduleErrors, UpdateScheduleResponses } from './types.gen';
+import type { BatchActorGenderData, BatchActorGenderErrors, BatchActorGenderResponses, BatchActorUserTagsData, BatchActorUserTagsErrors, BatchActorUserTagsResponses, BatchClearActorPersonData, BatchClearActorPersonErrors, BatchClearActorPersonResponses, BatchDeleteMediaData, BatchDeleteMediaErrors, BatchDeleteMediaResponses, BatchDeleteMetadataData, BatchDeleteMetadataErrors, BatchDeleteMetadataResponses, BatchFacetsData, BatchFacetsErrors, BatchFacetsResponses, BatchFeedItemsData, BatchFeedItemsErrors, BatchFeedItemsResponses, BatchMetadataUserTagsData, BatchMetadataUserTagsErrors, BatchMetadataUserTagsResponses, BatchSavedQueriesData, BatchSavedQueriesErrors, BatchSavedQueriesResponses, BatchScrapeMetadataData, BatchScrapeMetadataErrors, BatchScrapeMetadataResponses, BatchSubmitTasksData, BatchSubmitTasksErrors, BatchSubmitTasksResponses, BatchTasksData, BatchTasksErrors, BatchTasksResponses, CancelAguiTurnData, CancelAguiTurnErrors, CancelAguiTurnResponses, CheckConnectivityData, CheckConnectivityErrors, CheckConnectivityResponses, ClearActorPersonData, ClearActorPersonErrors, ClearActorPersonResponses, ClouddriveNotifyData, ClouddriveNotifyErrors, ClouddriveNotifyResponses, CreateAgentSessionData, CreateAgentSessionErrors, CreateAgentSessionResponses, CreateCommentData, CreateCommentErrors, CreateCommentResponses, CreateFeedData, CreateFeedErrors, CreateFeedResponses, CreateLibraryData, CreateLibraryErrors, CreateLibraryResponses, CreateSavedQueryData, CreateSavedQueryErrors, CreateSavedQueryResponses, CreateScheduleData, CreateScheduleErrors, CreateScheduleResponses, CreateUserTagsData, CreateUserTagsErrors, CreateUserTagsResponses, CropActorAvatarData, CropActorAvatarErrors, CropActorAvatarResponses, CropPosterFromThumbData, CropPosterFromThumbErrors, CropPosterFromThumbResponses, DeleteAgentSessionData, DeleteAgentSessionErrors, DeleteAgentSessionResponses, DeleteCommentData, DeleteCommentErrors, DeleteCommentResponses, DeleteFacetData, DeleteFacetErrors, DeleteFacetResponses, DeleteFacetRuleData, DeleteFacetRuleErrors, DeleteFacetRuleResponses, DeleteFeedData, DeleteFeedErrors, DeleteFeedResponses, DeleteLibraryData, DeleteLibraryErrors, DeleteLibraryResponses, DeleteMediaData, DeleteMediaErrors, DeleteMediaResponses, DeleteMetadataData, DeleteMetadataErrors, DeleteMetadataResponses, DeleteScheduleData, DeleteScheduleErrors, DeleteScheduleResponses, DesktopInfoData, DesktopInfoResponses, ExpandCleanupSelectionData, ExpandCleanupSelectionErrors, ExpandCleanupSelectionResponses, FollowAgentEventsData, FollowAgentEventsErrors, FollowAgentEventsResponses, GenerateAgentSessionTitleData, GenerateAgentSessionTitleErrors, GenerateAgentSessionTitleResponses, GetActorData, GetActorErrors, GetActorResponses, GetAgentTraceData, GetAgentTraceErrors, GetAgentTraceResponses, GetCleanupInventoryData, GetCleanupInventoryErrors, GetCleanupInventoryNodesData, GetCleanupInventoryNodesErrors, GetCleanupInventoryNodesResponses, GetCleanupInventoryResponses, GetCleanupTrashData, GetCleanupTrashErrors, GetCleanupTrashResponses, GetConfigData, GetConfigResponses, GetConfigSchemaData, GetConfigSchemaResponses, GetFacetData, GetFacetErrors, GetFacetResponses, GetFeedData, GetFeedErrors, GetFeedResponses, GetLibraryData, GetLibraryErrors, GetLibraryResponses, GetMediaData, GetMediaErrors, GetMediaResponses, GetMetadataData, GetMetadataErrors, GetMetadataResponses, GetMetadataSchemaData, GetMetadataSchemaResponses, GetPathTemplateSchemaData, GetPathTemplateSchemaResponses, GetPluginData, GetPluginErrors, GetPluginResponses, GetReleaseData, GetReleaseResponses, GetSavedQueryData, GetSavedQueryErrors, GetSavedQueryResponses, GetSavedQueryResultData, GetSavedQueryResultErrors, GetSavedQueryResultResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetScheduleSchemaData, GetScheduleSchemaResponses, GetTaskChildrenData, GetTaskChildrenErrors, GetTaskChildrenResponses, GetTaskData, GetTaskErrors, GetTaskRecordData, GetTaskRecordErrors, GetTaskRecordResponses, GetTaskResponses, GetTaskSchemaData, GetTaskSchemaResponses, GetTaskWorkerData, GetTaskWorkerResponses, HealthCheckData, HealthCheckResponses, InstallPluginData, InstallPluginErrors, InstallPluginResponses, ListActorsData, ListActorsErrors, ListActorsResponses, ListAgentSessionsData, ListAgentSessionsResponses, ListAllFeedItemsData, ListAllFeedItemsErrors, ListAllFeedItemsResponses, ListFacetRulesData, ListFacetRulesErrors, ListFacetRulesResponses, ListFacetsData, ListFacetsErrors, ListFacetsResponses, ListFeedItemsData, ListFeedItemsErrors, ListFeedItemsResponses, ListFeedsData, ListFeedsResponses, ListFilesData, ListFilesErrors, ListFilesResponses, ListLibrariesData, ListLibrariesResponses, ListMediaData, ListMediaErrors, ListMediaResponses, ListMetadataData, ListMetadataErrors, ListMetadataResponses, ListPlaybackSourcesData, ListPlaybackSourcesResponses, ListPlaybackStreamsData, ListPlaybackStreamsErrors, ListPlaybackStreamsResponses, ListPluginsData, ListPluginsResponses, ListSavedQueriesData, ListSavedQueriesErrors, ListSavedQueriesResponses, ListSchedulesData, ListSchedulesResponses, ListTasksData, ListTasksErrors, ListTasksResponses, MergeFacetsData, MergeFacetsErrors, MergeFacetsResponses, MergeMetadataData, MergeMetadataErrors, MergeMetadataResponses, PauseTaskWorkerData, PauseTaskWorkerResponses, PlayMetadataData, PlayMetadataErrors, PlayMetadataHlsPartData, PlayMetadataHlsPartErrors, PlayMetadataHlsPartResponses, PlayMetadataPlaylistData, PlayMetadataPlaylistErrors, PlayMetadataPlaylistResponses, PlayMetadataResponses, PlayMetadataSubtitleData, PlayMetadataSubtitleErrors, PlayMetadataSubtitleResponses, PlayStreamData, PlayStreamErrors, PlayStreamHlsPartData, PlayStreamHlsPartErrors, PlayStreamHlsPartResponses, PlayStreamPlaylistData, PlayStreamPlaylistErrors, PlayStreamPlaylistResponses, PlayStreamResponses, PlayStreamSubtitleData, PlayStreamSubtitleErrors, PlayStreamSubtitleResponses, PollFeedData, PollFeedErrors, PollFeedResponses, ProxyImageData, ProxyImageErrors, ProxyImageResponses, ReloadPluginsData, ReloadPluginsResponses, RenameFacetData, RenameFacetErrors, RenameFacetResponses, RestartServerData, RestartServerResponses, ResumeTaskWorkerData, ResumeTaskWorkerResponses, RunAgentAguiData, RunAgentAguiErrors, RunAgentAguiResponses, ScrapeActorData, ScrapeActorErrors, ScrapeActorResponses, ServeResourceData, ServeResourceErrors, ServeResourceResponses, SetActorLocksData, SetActorLocksErrors, SetActorLocksResponses, SetMetadataLocksData, SetMetadataLocksErrors, SetMetadataLocksResponses, SubmitTaskData, SubmitTaskErrors, SubmitTaskResponses, TriggerScheduleData, TriggerScheduleErrors, TriggerScheduleResponses, UninstallPluginData, UninstallPluginErrors, UninstallPluginResponses, UpdateActorData, UpdateActorErrors, UpdateActorResponses, UpdateAgentSessionData, UpdateAgentSessionErrors, UpdateAgentSessionResponses, UpdateCommentData, UpdateCommentErrors, UpdateCommentResponses, UpdateConfigData, UpdateConfigErrors, UpdateConfigResponses, UpdateFeedData, UpdateFeedErrors, UpdateFeedResponses, UpdateLibraryData, UpdateLibraryErrors, UpdateLibraryResponses, UpdateMediaData, UpdateMediaErrors, UpdateMediaResponses, UpdateMetadataData, UpdateMetadataErrors, UpdateMetadataResponses, UpdatePluginData, UpdatePluginErrors, UpdatePluginResponses, UpdateSavedQueryData, UpdateSavedQueryErrors, UpdateSavedQueryResponses, UpdateScheduleData, UpdateScheduleErrors, UpdateScheduleResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -99,6 +99,20 @@ export const listFiles = <ThrowOnError extends boolean = false>(options: Options
  * List Media
  */
 export const listMedia = <ThrowOnError extends boolean = false>(options?: Options<ListMediaData, ThrowOnError>): RequestResult<ListMediaResponses, ListMediaErrors, ThrowOnError> => (options?.client ?? client).get<ListMediaResponses, ListMediaErrors, ThrowOnError>({ url: '/api/media', ...options });
+
+/**
+ * Batch Delete Media
+ *
+ * 批量删除媒体文件记录; 不存在的 id 计入 missing 而不是报错.
+ */
+export const batchDeleteMedia = <ThrowOnError extends boolean = false>(options: Options<BatchDeleteMediaData, ThrowOnError>): RequestResult<BatchDeleteMediaResponses, BatchDeleteMediaErrors, ThrowOnError> => (options.client ?? client).post<BatchDeleteMediaResponses, BatchDeleteMediaErrors, ThrowOnError>({
+    url: '/api/media/batch/delete',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Delete Media
@@ -375,6 +389,34 @@ export const batchActorUserTags = <ThrowOnError extends boolean = false>(options
 });
 
 /**
+ * Batch Actor Gender
+ *
+ * 批量写入性别; 写入字段与单条 PATCH 一样自动加锁, 不存在的演员 id 计入 missing.
+ */
+export const batchActorGender = <ThrowOnError extends boolean = false>(options: Options<BatchActorGenderData, ThrowOnError>): RequestResult<BatchActorGenderResponses, BatchActorGenderErrors, ThrowOnError> => (options.client ?? client).post<BatchActorGenderResponses, BatchActorGenderErrors, ThrowOnError>({
+    url: '/api/actors/batch/gender',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Batch Clear Actor Person
+ *
+ * 批量清空人物档案并解除全部锁 (保留 ``name`` / ``gender``); 不存在的演员 id 计入 missing.
+ */
+export const batchClearActorPerson = <ThrowOnError extends boolean = false>(options: Options<BatchClearActorPersonData, ThrowOnError>): RequestResult<BatchClearActorPersonResponses, BatchClearActorPersonErrors, ThrowOnError> => (options.client ?? client).post<BatchClearActorPersonResponses, BatchClearActorPersonErrors, ThrowOnError>({
+    url: '/api/actors/batch/clear-person',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Get Actor
  */
 export const getActor = <ThrowOnError extends boolean = false>(options: Options<GetActorData, ThrowOnError>): RequestResult<GetActorResponses, GetActorErrors, ThrowOnError> => (options.client ?? client).get<GetActorResponses, GetActorErrors, ThrowOnError>({ url: '/api/actors/{actor_id}', ...options });
@@ -410,7 +452,9 @@ export const setActorLocks = <ThrowOnError extends boolean = false>(options: Opt
 /**
  * Clear Actor Person
  *
- * 清空人物档案与刮削缓存并解除全部锁 (保留 name / gender).
+ * 已弃用: 改用 `POST /actors/batch/clear-person` 的单元素列表 (只回计数).
+ *
+ * @deprecated
  */
 export const clearActorPerson = <ThrowOnError extends boolean = false>(options: Options<ClearActorPersonData, ThrowOnError>): RequestResult<ClearActorPersonResponses, ClearActorPersonErrors, ThrowOnError> => (options.client ?? client).post<ClearActorPersonResponses, ClearActorPersonErrors, ThrowOnError>({ url: '/api/actors/{actor_id}/clear-person', ...options });
 
@@ -430,6 +474,10 @@ export const cropActorAvatar = <ThrowOnError extends boolean = false>(options: O
 
 /**
  * Scrape Actor
+ *
+ * 已弃用: 改用 `POST /tasks/batch/submit` 的单元素 `actor_scrape` 提交.
+ *
+ * @deprecated
  */
 export const scrapeActor = <ThrowOnError extends boolean = false>(options: Options<ScrapeActorData, ThrowOnError>): RequestResult<ScrapeActorResponses, ScrapeActorErrors, ThrowOnError> => (options.client ?? client).post<ScrapeActorResponses, ScrapeActorErrors, ThrowOnError>({
     url: '/api/actors/{actor_id}/scrape',
@@ -764,6 +812,22 @@ export const resumeTaskWorker = <ThrowOnError extends boolean = false>(options?:
  */
 export const batchTasks = <ThrowOnError extends boolean = false>(options: Options<BatchTasksData, ThrowOnError>): RequestResult<BatchTasksResponses, BatchTasksErrors, ThrowOnError> => (options.client ?? client).post<BatchTasksResponses, BatchTasksErrors, ThrowOnError>({
     url: '/api/tasks/batch',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Batch Submit Tasks
+ *
+ * 批量提交任务. 逐项解析同单条提交, 同类型合并为一次入队事务.
+ *
+ * ``missing`` 只覆盖目标实体不存在 (404); 路径越界 / 参数互斥等仍是整批中断.
+ */
+export const batchSubmitTasks = <ThrowOnError extends boolean = false>(options: Options<BatchSubmitTasksData, ThrowOnError>): RequestResult<BatchSubmitTasksResponses, BatchSubmitTasksErrors, ThrowOnError> => (options.client ?? client).post<BatchSubmitTasksResponses, BatchSubmitTasksErrors, ThrowOnError>({
+    url: '/api/tasks/batch/submit',
     ...options,
     headers: {
         'Content-Type': 'application/json',

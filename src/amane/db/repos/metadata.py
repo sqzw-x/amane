@@ -8,6 +8,7 @@ from sqlmodel import col, select
 
 from ...enums import ActorGender, MetadataField
 from ...parsing import ContentType, Mosaic
+from ...utils.collections import unique_ids
 from ...utils.text import normalize_long_text
 from ..models import (
     MediaFile,
@@ -40,7 +41,6 @@ from .facet_helpers import (
     clean_actor_names,
     resolve_scalar_facet_names,
     sync_metadata_facets,
-    unique_ids,
 )
 
 

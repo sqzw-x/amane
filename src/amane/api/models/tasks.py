@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Self
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 
-from ...db import Repository, TaskStatus, TaskType
+from ...db import MediaFile, Repository, TaskStatus, TaskType
 from ...handlers import (
     ActorScrapeResult,
     CacheKind,
@@ -176,10 +176,17 @@ class ScrapeRequest(BaseModel):
 
     async def resolve(self, repo: Repository) -> ScrapePayload:
         """media 不存在时抛 HTTPException(404)."""
+        media = await repo.get_media_file(self.media_id) if self.media_id is not None else None
+        payload = self.build_payload(media)
+        if payload is None:
+            raise HTTPException(status_code=404, detail=f"媒体文件 {self.media_id} 不存在")
+        return payload
+
+    def build_payload(self, media: MediaFile | None) -> ScrapePayload | None:
+        """``media_id`` 非空时用调用方查到的行组装; 该行为 None 时返回 None, 由调用方决定计入 missing 还是 404."""
         if self.media_id is not None:
-            media = await repo.get_media_file(self.media_id)
             if media is None:
-                raise HTTPException(status_code=404, detail=f"媒体文件 {self.media_id} 不存在")
+                return None
             if self.number is not None:
                 return ScrapePayload(
                     number=self.number,
@@ -267,3 +274,21 @@ RoutineSubmission = Annotated[
     CleanupSubmission | UpscaleSubmission | R18ImportSubmission | RescrapeSubmission,
     Field(discriminator="type"),
 ]
+
+
+class TaskBatchSubmitRequest(BaseModel):
+    """逐项与 ``POST /tasks`` 的 body 同形, 只是包成数组."""
+
+    submissions: list[TaskSubmission] = Field(min_length=1, max_length=1000)
+    """上限是单次请求的任务条数, 与既有批量端点的 id 列表同口径."""
+
+
+class TaskBatchSubmitResponse(BaseModel):
+    submitted: int
+    """实际入队的条数; ACTOR_SCRAPE 复用既有 queued/running 任务时也计入."""
+    missing: int
+    """目标实体不存在的条数 (404). 三个计数之和等于请求的条数."""
+    skipped: int
+    """与同请求内前面某条语义重复 (同番号同文件 / 同演员) 而丢弃的条数."""
+    task_ids: list[int]
+    """与请求同序, 已去掉被丢弃的条目."""

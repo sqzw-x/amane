@@ -1,12 +1,14 @@
 from collections.abc import Iterable, Sequence
 from typing import NamedTuple, Unpack
 
+from sqlalchemy import delete as sqla_delete
 from sqlalchemy import func, or_
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.sql.expression import SelectOfScalar
 
 from ...parsing import ContentType, FilePhase, FilePhaseSummary, Mosaic, file_phase_from_path, summarize_file_phases
+from ...utils.collections import unique_ids
 from ...utils.path import nfc_path
 from ..models import MediaFile, MediaFileStatus, MediaSortField, SortOrder
 from ..repo_types import _MEDIA_SORT_COLUMNS, MediaFileUpdates, _apply_media_phase_filters, _order_clause, _utcnow
@@ -229,6 +231,23 @@ class MediaRepoMixin(RepositoryMixinBase):
             await session.delete(media)
             await session.commit()
             return True
+
+    async def batch_delete_media_files(self, media_ids: Sequence[int]) -> tuple[int, int]:
+        """按 id 批量删除记录, 返回 ``(删除数, 不存在的 id 数)``.
+
+        一条 DELETE 按 ``SQL_IN_CHUNK_SIZE`` 分批绑定变量, 整个批次只提交一次.
+        """
+        ids = unique_ids(media_ids)
+        if not ids:
+            return 0, 0
+        deleted = 0
+        async with self._session() as session:
+            for start in range(0, len(ids), SQL_IN_CHUNK_SIZE):
+                chunk = ids[start : start + SQL_IN_CHUNK_SIZE]
+                result = await session.exec(sqla_delete(MediaFile).where(col(MediaFile.id).in_(chunk)))
+                deleted += result.rowcount or 0
+            await session.commit()
+        return deleted, len(ids) - deleted
 
     async def count_media_by_metadata_ids(self, metadata_ids: Sequence[int]) -> dict[int, int]:
         """无关联的 id 不出现在结果中."""

@@ -13,6 +13,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...enums import ActorField, ActorGender
 from ...parsing import split_actor_aliases
+from ...utils.collections import unique_ids
 from ..actor_lookup import list_actor_aliases, resolve_actor_by_name
 from ..actor_person import locked_fields_of, merge_person_fields_into_target
 from ..facet_rules import RuleEntry, apply_metadata_facet_fields, empty_rules_by_kind
@@ -614,20 +615,6 @@ def normalize_names(names: list[str] | None) -> list[str]:
     if not names:
         return []
     return [n for n in names if isinstance(n, str) and n]
-
-
-def unique_ids(ids: Sequence[int] | None) -> list[int]:
-    """保序去重; None 或空 → []."""
-    if not ids:
-        return []
-    seen: set[int] = set()
-    out: list[int] = []
-    for i in ids:
-        if i in seen:
-            continue
-        seen.add(i)
-        out.append(i)
-    return out
 
 
 async def resolve_scalar_facet_names(

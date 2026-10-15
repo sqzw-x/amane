@@ -18,12 +18,12 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 | `libraries` | `/libraries` | 库 CRUD; create 可携首刷; 路径模板 schema |
 | `webhooks` | `/webhooks` | CloudDrive 回调; 见 [watcher.md](watcher.md) |
 | `feeds` | `/feeds` | 源 CRUD + 立即拉取 + 条目历史检索 / 批量操作 / 重刮削; 见 [feeds.md](feeds.md) |
-| `media` | `/media` | MediaFile |
+| `media` | `/media` | MediaFile + 记录批量删除 |
 | `metadata` | `/metadata` | 番号条目 + merge / crop / facet 筛选 / user-tag / batch / schema |
-| `actors` | `/actors` | 演员浏览 (含用户标签筛选)、人物 PATCH / 锁 / 清空、用户标签挂载、刮削; 身份治理经由 facets |
+| `actors` | `/actors` | 演员浏览 (含用户标签筛选)、人物 PATCH / 锁、批量性别与批量清空、用户标签挂载; 单条刮削与单条清空已弃用; 身份治理经由 facets |
 | `facets` | `/facets` | 分类目录与规则 |
 | `comments` | `/comments` | 评论修改与删除; 新建经由 metadata |
-| `tasks` | `/tasks` | 队列 + `POST /batch` + worker 暂停领队 + 终态 `record` |
+| `tasks` | `/tasks` | 队列 + `POST /batch`(操作既有) + `POST /batch/submit`(批量入队) + worker 暂停领队 + 终态 `record` |
 | `schedules` | `/schedules` | cron CRUD + trigger |
 | `config` | `/config` | HotSettings + schema |
 | `plugins` | `/plugins` | 插件目录、安装 / 卸载 / 热扫描、配置 schema 与启用状态 |
@@ -68,7 +68,8 @@ OpenAPI 列出参数, 不表达组合语义:
 
 **资源缓存**: `/resources/{hash}` 与 `/proxy` 因就地超分 URL 不变, 不可 immutable — `Cache-Control: public, no-cache` + `content_hash` ETag. proxy 上游失败 502, 进程内负缓存 15 分钟 (不纳入配置), 同 URL singleflight; 刮削下载不经由该缓存.
 
-**批量**: 不存在的 id 计入 `missing` / `skipped`, 存在的照常处理 (非事务 all-or-nothing). `POST /tasks/batch` 的选择集是 `task_ids` **或**与列表同形的 `status` / `type` (未传则不限): `cancel` 把排队 / 运行中标 `failed` 而不删行, `delete` 只动终态并清除磁盘产物, `retry` 只对 `failed` 按原 type / payload / priority 再入队并返回新 `task_ids`; 筛选范围与 action 允许状态求交后为空则 `affected=0`. FeedItem 的批量是单一 `POST /feeds/{feed_id}/items/batch`, 一个请求只携带一个 action, 语义见 [feeds.md](feeds.md). 用户标签挂载同样只有批量入口 (`POST /api/metadata/batch/user-tags`, 影片与标签两个维度都是集合, `action` 决定并入或移除): 未知标签 id 属请求级错误返回 404, 不存在的影片 id 计入 `missing`, 已处于目标态的影片计入 `unchanged`. 标签新建也是单一批量入口 (`POST /api/facets/user_tag`): 按名称取回或新建, 已存在的名称直接复用而不报错, 响应与入参同序. 演员侧挂载与影片侧同形 (`POST /api/actors/batch/user-tags`), 筛选参数为 `user_tag_ids`(多值为 AND).
+- **批量**: 命名分两层 — `batch` 后接**主体** (不接即资源本身), 动作进 body 的 `action` 当且仅当同一主体下的动作共享同一份参数 (`/tasks/batch` 的 cancel / delete / retry, `/facets/{kind}/batch` 的收藏, `/feeds/{id}/items/batch`, 两条 `batch/user-tags` 的 attach / detach); 参数形状不同或只有单动作时动作进路径 (`/metadata/batch/{delete,scrape}`, `/media/batch/delete`, `/actors/batch/{gender,clear-person}`, `/tasks/batch/submit`). 不存在的 id 计入 `missing` 而不报 404, 请求内重复条目计入 `skipped`, 参数级错误 (403 路径越界 / 422 参数互斥) 仍是整请求错误, 其余条目照常处理 (不是 all-or-nothing 事务); 计数口径为「实际处理数 + `missing` (+ `skipped`) = 请求条目数」. 单条写入复用所属批量端点 (单元素列表).
+- **批量落库**: 一个批量请求不在服务端逐条提交 — 实体批量写各自一次事务与一次 `IN` 查询; 任务批量入队 (`/tasks/batch/submit`) 逐项与 `POST /tasks` 同形且不设类型白名单, 按 `task_type` 合并为每类一次入队事务, 其 `missing` 只覆盖目标实体不存在的 404, 同番号不同文件各建一条 (逐文件结算不合并). 逐条循环提交不允许, 前端多选一律走批量端点 (见 [frontend.md](frontend.md)). `/tasks/batch` 的选择集是 `task_ids` **或**与列表同形的 `status` / `type` (两者互斥, 未传则不限): `cancel` 把排队 / 运行中标 `failed` 而不删行, `delete` 只动终态并清除磁盘产物, `retry` 只对 `failed` 按原 type / payload / priority 再入队并返回新 `task_ids`, 求交后为空则 `affected=0`. FeedItem 的历史操作是单端点 + 单一 action, 语义见 [feeds.md](feeds.md). 用户标签挂载 (影片 / 演员各一端点) 与标签新建 (`POST /facets/user_tag`: 按名称取回或新建, 响应与入参同序) 都只有批量入口: 未知标签 id 是请求级 404, 不存在的实体计入 `missing`, 已处于目标态计入 `unchanged`.
 
 ## WebSocket
 

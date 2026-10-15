@@ -8,6 +8,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...enums import ActorField, ActorGender
+from ...utils.collections import unique_ids
 from ...utils.text import normalize_long_text
 from ..actor_lookup import build_actor_lookup_names, list_actor_aliases, lookup_actors_by_name
 from ..actor_person import (
@@ -108,6 +109,73 @@ def _merge_written_locks(locked: set[ActorField], field_names: Collection[str]) 
     """MANUAL 写入: 把本次写入的可锁字段并入锁定集, 按枚举声明序输出."""
     written = {ActorField(name) for name in field_names if name in _ACTOR_FIELD_NAMES}
     return [str(field) for field in ActorField if field in locked | written]
+
+
+async def _apply_actor_updates(
+    session: AsyncSession, actor: Actor, updates: ActorPersonFields, *, mode: WriteMode
+) -> None:
+    """就地应用人物字段; ``MANUAL`` 时把写入字段并入锁定集. 提交由调用方负责."""
+    if "aliases" in updates:
+        await replace_actor_aliases(session, actor, updates["aliases"])
+    if "gender" in updates:
+        actor.gender = updates["gender"]
+    if "birthday" in updates:
+        actor.birthday = updates["birthday"]
+    if "birthplace" in updates:
+        actor.birthplace = updates["birthplace"]
+    if "height" in updates:
+        actor.height = updates["height"]
+    if "bust" in updates:
+        actor.bust = updates["bust"]
+    if "waist" in updates:
+        actor.waist = updates["waist"]
+    if "hip" in updates:
+        actor.hip = updates["hip"]
+    if "cup" in updates:
+        actor.cup = updates["cup"]
+    if "overview" in updates:
+        actor.overview = normalize_long_text(updates["overview"])
+    if "tagline" in updates:
+        actor.tagline = updates["tagline"]
+    if "image_urls" in updates:
+        actor.image_urls = updates["image_urls"]
+    if "provider_ids" in updates:
+        actor.provider_ids = updates["provider_ids"]
+    if "source_urls" in updates:
+        actor.source_urls = updates["source_urls"]
+    if "field_sources" in updates:
+        actor.field_sources = updates["field_sources"]
+    if "raw" in updates:
+        actor.raw = updates["raw"]
+    if mode is WriteMode.MANUAL:
+        actor.locked_fields = _merge_written_locks(locked_fields_of(actor), updates.keys())
+    actor.updated_at = _utcnow()
+    session.add(actor)
+
+
+async def _clear_person_fields(session: AsyncSession, actor: Actor) -> None:
+    """就地清空人物档案并解除全部锁 (保留 ``name`` / ``gender``); 提交由调用方负责.
+
+    ``field_sources`` 与 ``raw`` 一并清空: 残留来源指向空值, 而旧快照会在下次刮削被原样写回.
+    """
+    await replace_actor_aliases(session, actor, [])
+    actor.birthday = None
+    actor.birthplace = None
+    actor.height = None
+    actor.bust = None
+    actor.waist = None
+    actor.hip = None
+    actor.cup = None
+    actor.overview = None
+    actor.tagline = None
+    actor.image_urls = []
+    actor.provider_ids = {}
+    actor.source_urls = {}
+    actor.field_sources = {}
+    actor.raw = {}
+    actor.locked_fields = []
+    actor.updated_at = _utcnow()
+    session.add(actor)
 
 
 class FacetsRepoMixin(RepositoryMixinBase):
@@ -323,42 +391,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
                         **{key: value for key, value in sources.items() if key not in locked},
                     }
                 updates = cast("ActorPersonFields", filtered)
-            if "aliases" in updates:
-                await replace_actor_aliases(session, actor, updates["aliases"])
-            if "gender" in updates:
-                actor.gender = updates["gender"]
-            if "birthday" in updates:
-                actor.birthday = updates["birthday"]
-            if "birthplace" in updates:
-                actor.birthplace = updates["birthplace"]
-            if "height" in updates:
-                actor.height = updates["height"]
-            if "bust" in updates:
-                actor.bust = updates["bust"]
-            if "waist" in updates:
-                actor.waist = updates["waist"]
-            if "hip" in updates:
-                actor.hip = updates["hip"]
-            if "cup" in updates:
-                actor.cup = updates["cup"]
-            if "overview" in updates:
-                actor.overview = normalize_long_text(updates["overview"])
-            if "tagline" in updates:
-                actor.tagline = updates["tagline"]
-            if "image_urls" in updates:
-                actor.image_urls = updates["image_urls"]
-            if "provider_ids" in updates:
-                actor.provider_ids = updates["provider_ids"]
-            if "source_urls" in updates:
-                actor.source_urls = updates["source_urls"]
-            if "field_sources" in updates:
-                actor.field_sources = updates["field_sources"]
-            if "raw" in updates:
-                actor.raw = updates["raw"]
-            if mode is WriteMode.MANUAL:
-                actor.locked_fields = _merge_written_locks(locked, updates.keys())
-            actor.updated_at = _utcnow()
-            session.add(actor)
+            await _apply_actor_updates(session, actor, updates, mode=mode)
             await session.commit()
             await session.refresh(actor)
             return actor
@@ -377,35 +410,39 @@ class FacetsRepoMixin(RepositoryMixinBase):
             return actor
 
     async def clear_actor_person(self, actor_id: int) -> Actor | None:
-        """清空人物档案并解除全部锁 (保留 ``name`` / ``gender``). 不存在返回 None.
-
-        ``field_sources`` 与 ``raw`` 一并清空: 残留来源指向空值, 而旧快照会在下次刮削被原样写回.
-        """
+        """清空人物档案并解除全部锁 (保留 ``name`` / ``gender``). 不存在返回 None."""
         async with self._session() as session:
             actor = await session.get(Actor, actor_id)
             if actor is None:
                 return None
-            await replace_actor_aliases(session, actor, [])
-            actor.birthday = None
-            actor.birthplace = None
-            actor.height = None
-            actor.bust = None
-            actor.waist = None
-            actor.hip = None
-            actor.cup = None
-            actor.overview = None
-            actor.tagline = None
-            actor.image_urls = []
-            actor.provider_ids = {}
-            actor.source_urls = {}
-            actor.field_sources = {}
-            actor.raw = {}
-            actor.locked_fields = []
-            actor.updated_at = _utcnow()
-            session.add(actor)
+            await _clear_person_fields(session, actor)
             await session.commit()
             await session.refresh(actor)
             return actor
+
+    async def batch_set_actor_gender(self, actor_ids: Sequence[int], gender: ActorGender) -> tuple[int, int]:
+        """批量写入同一性别, 返回 ``(写入数, 不存在的 id 数)``; 整个批次只提交一次."""
+        ids = unique_ids(actor_ids)
+        if not ids:
+            return 0, 0
+        async with self._session() as session:
+            actors = (await session.exec(select(Actor).where(col(Actor.id).in_(ids)))).all()
+            for actor in actors:
+                await _apply_actor_updates(session, actor, {"gender": gender}, mode=WriteMode.MANUAL)
+            await session.commit()
+        return len(actors), len(ids) - len(actors)
+
+    async def batch_clear_actor_person(self, actor_ids: Sequence[int]) -> tuple[int, int]:
+        """批量清空人物档案, 返回 ``(清空数, 不存在的 id 数)``; 整个批次只提交一次."""
+        ids = unique_ids(actor_ids)
+        if not ids:
+            return 0, 0
+        async with self._session() as session:
+            actors = (await session.exec(select(Actor).where(col(Actor.id).in_(ids)))).all()
+            for actor in actors:
+                await _clear_person_fields(session, actor)
+            await session.commit()
+        return len(actors), len(ids) - len(actors)
 
     async def rename_facet(self, kind: FacetKind, facet_id: int, new_name: str) -> FacetItem | None:
         """先改 Metadata 真值再重投影. 爬取侧同时写单跳 alias, 否则重刮会回到旧名.

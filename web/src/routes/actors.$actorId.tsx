@@ -33,7 +33,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  clearActorPersonMutation,
+  batchClearActorPersonMutation,
+  batchSubmitTasksMutation,
   deleteFacetMutation,
   getActorOptions,
   getActorQueryKey,
@@ -41,7 +42,6 @@ import {
   listMetadataInfiniteOptions,
   listMetadataQueryKey,
   renameFacetMutation,
-  scrapeActorMutation,
   setActorLocksMutation,
   updateActorMutation,
 } from "@/client/@tanstack/react-query.gen";
@@ -149,10 +149,14 @@ function ActorDetailPage() {
   };
 
   const scrapeMutation = useMutation({
-    ...scrapeActorMutation(),
-    onSuccess: () => {
-      notifications.show({ message: t("browse.scrapeQueued"), color: "blue" });
-      invalidate();
+    ...batchSubmitTasksMutation(),
+    onSuccess: (res) => {
+      if (res.submitted > 0) {
+        notifications.show({ message: t("browse.scrapeQueued"), color: "blue" });
+        invalidate();
+        return;
+      }
+      notifications.show({ message: t("common:toast.operationFailed"), color: "red" });
     },
     onError: (err) =>
       notifications.show({
@@ -191,10 +195,14 @@ function ActorDetailPage() {
   });
 
   const clearMutation = useMutation({
-    ...clearActorPersonMutation(),
-    onSuccess: () => {
-      notifications.show({ message: t("actors.clearPersonDone"), color: "blue" });
-      invalidate();
+    ...batchClearActorPersonMutation(),
+    onSuccess: (res) => {
+      if (res.cleared > 0) {
+        notifications.show({ message: t("actors.clearPersonDone"), color: "blue" });
+        invalidate();
+        return;
+      }
+      notifications.show({ message: t("common:toast.operationFailed"), color: "red" });
     },
     onError: (err) =>
       notifications.show({
@@ -301,7 +309,7 @@ function ActorDetailPage() {
       confirmLabel: t("actors.clearPerson"),
     });
     if (!ok) return;
-    clearMutation.mutate({ path: { actor_id: id } });
+    clearMutation.mutate({ body: { ids: [id] } });
   }
 
   async function handleSetDisplay(alias: string) {
@@ -363,8 +371,7 @@ function ActorDetailPage() {
           onApplyLocks={applyLocks}
           onScrape={(useCache) =>
             scrapeMutation.mutate({
-              path: { actor_id: id },
-              body: { use_cache: useCache },
+              body: { submissions: [{ type: "actor_scrape", actor_id: id, use_cache: useCache }] },
             })
           }
           onEdit={() => setEditOpen(true)}

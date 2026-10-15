@@ -84,6 +84,29 @@ class ActorUserTagsRequest(BaseModel):
     action: Literal["attach", "detach"] = Field(description="attach 为并入, detach 为移除; 两者均幂等")
 
 
+class ActorGenderBatchRequest(BaseModel):
+    """批量把同一性别写给一组演员; 写入字段按 MANUAL 语义加锁."""
+
+    ids: list[int] = Field(min_length=1, max_length=1000, description="演员 ID 列表; 上限防 SQLite 绑定变量超限")
+    gender: ActorGender = Field(description="统一写入的性别")
+
+
+class ActorGenderBatchResponse(BaseModel):
+    updated: int = Field(description="实际写入的演员数")
+    missing: int = Field(description="不存在的演员 id 数")
+
+
+class ActorClearPersonBatchRequest(BaseModel):
+    """批量清空人物档案并解除全部锁 (保留 ``name`` / ``gender``)."""
+
+    ids: list[int] = Field(min_length=1, max_length=1000, description="演员 ID 列表; 上限防 SQLite 绑定变量超限")
+
+
+class ActorClearPersonBatchResponse(BaseModel):
+    cleared: int = Field(description="清空的演员数")
+    missing: int = Field(description="不存在的演员 id 数")
+
+
 class CropAvatarRequest(CropBoxRequest):
     """从当前主图按像素框裁切头像 (相对 image_urls[0] 当前本地文件像素; 含就地超分后尺寸)."""
 
@@ -101,6 +124,10 @@ ActorUpdateRequest = create_partial_model(
 )
 
 __all__ = [
+    "ActorClearPersonBatchRequest",
+    "ActorClearPersonBatchResponse",
+    "ActorGenderBatchRequest",
+    "ActorGenderBatchResponse",
     "ActorListResponse",
     "ActorLocksRequest",
     "ActorResponse",

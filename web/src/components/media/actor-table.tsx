@@ -37,7 +37,7 @@ import {
   listActorsQueryKey,
   listFacetsOptions,
 } from "@/client/@tanstack/react-query.gen";
-import { clearActorPerson, scrapeActor, updateActor } from "@/client/sdk.gen";
+import { batchActorGender, batchClearActorPerson, batchSubmitTasks } from "@/client/sdk.gen";
 import type {
   ActorGender,
   ActorResponse,
@@ -244,25 +244,36 @@ export function ActorTable({
   async function scrapeIds(ids: number[], useCache: CacheKind[]) {
     if (ids.length === 0) return;
     setBatchScraping(true);
-    const results = await Promise.allSettled(
-      ids.map((id) =>
-        scrapeActor({ path: { actor_id: id }, body: { use_cache: useCache }, throwOnError: true }),
-      ),
-    );
-    setBatchScraping(false);
-    const failed = results.filter((r) => r.status === "rejected").length;
-    const ok = ids.length - failed;
-    if (ok > 0) {
-      notifications.show({
-        message: t("common:toast.batchScrapeStarted", { count: ok }),
-        color: "blue",
+    try {
+      const { data } = await batchSubmitTasks({
+        body: {
+          submissions: ids.map((id) => ({
+            type: "actor_scrape",
+            actor_id: id,
+            use_cache: useCache,
+          })),
+        },
+        throwOnError: true,
       });
-    }
-    if (failed > 0) {
+      if (data.submitted > 0) {
+        notifications.show({
+          message: t("common:toast.batchScrapeStarted", { count: data.submitted }),
+          color: "blue",
+        });
+      }
+      if (data.missing > 0) {
+        notifications.show({
+          message: t("common:toast.batchScrapeFailed", { count: data.missing }),
+          color: "red",
+        });
+      }
+    } catch (err) {
       notifications.show({
-        message: t("common:toast.batchScrapeFailed", { count: failed }),
+        message: extractErrorMessage(err, t("common:toast.batchScrapeFailed")),
         color: "red",
       });
+    } finally {
+      setBatchScraping(false);
     }
   }
 
@@ -285,30 +296,35 @@ export function ActorTable({
   async function handleBatchGender(gender: ActorGender) {
     if (selectedIds.length === 0) return;
     setBatchGendering(true);
-    const results = await Promise.allSettled(
-      selectedIds.map((id) =>
-        updateActor({ path: { actor_id: id }, body: { gender }, throwOnError: true }),
-      ),
-    );
-    setBatchGendering(false);
-    const failed = results.filter((r) => r.status === "rejected").length;
-    const ok = selectedIds.length - failed;
-    if (ok > 0) {
-      notifications.show({
-        message: t("actors.batchGenderDone", {
-          count: ok,
-          gender: t(GENDER_I18N_KEY[gender]),
-        }),
-        color: "blue",
+    try {
+      const { data } = await batchActorGender({
+        body: { ids: selectedIds, gender },
+        throwOnError: true,
       });
-      clear();
-      void queryClient.invalidateQueries({ queryKey: listActorsQueryKey() });
-    }
-    if (failed > 0) {
+      if (data.updated > 0) {
+        notifications.show({
+          message: t("actors.batchGenderDone", {
+            count: data.updated,
+            gender: t(GENDER_I18N_KEY[gender]),
+          }),
+          color: "blue",
+        });
+        clear();
+        void queryClient.invalidateQueries({ queryKey: listActorsQueryKey() });
+      }
+      if (data.missing > 0) {
+        notifications.show({
+          message: t("actors.batchGenderFailed", { count: data.missing }),
+          color: "red",
+        });
+      }
+    } catch (err) {
       notifications.show({
-        message: t("actors.batchGenderFailed", { count: failed }),
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
         color: "red",
       });
+    } finally {
+      setBatchGendering(false);
     }
   }
 
@@ -332,28 +348,32 @@ export function ActorTable({
     });
     if (!ok) return;
     setBatchClearing(true);
-    const results = await Promise.allSettled(
-      ids.map((id) => clearActorPerson({ path: { actor_id: id }, throwOnError: true })),
-    );
-    setBatchClearing(false);
-    const failed = results.filter((r) => r.status === "rejected").length;
-    const succeeded = ids.length - failed;
-    if (succeeded > 0) {
+    try {
+      const { data } = await batchClearActorPerson({ body: { ids }, throwOnError: true });
+      if (data.cleared > 0) {
+        notifications.show({
+          message:
+            ids.length === 1
+              ? t("actors.clearPersonDone")
+              : t("actors.batchClearPersonDone", { count: data.cleared }),
+          color: "blue",
+        });
+        if (opts?.clearSelection) clear();
+        void queryClient.invalidateQueries({ queryKey: listActorsQueryKey() });
+      }
+      if (data.missing > 0) {
+        notifications.show({
+          message: t("actors.batchClearPersonFailed", { count: data.missing }),
+          color: "red",
+        });
+      }
+    } catch (err) {
       notifications.show({
-        message:
-          ids.length === 1
-            ? t("actors.clearPersonDone")
-            : t("actors.batchClearPersonDone", { count: succeeded }),
-        color: "blue",
-      });
-      if (opts?.clearSelection) clear();
-      void queryClient.invalidateQueries({ queryKey: listActorsQueryKey() });
-    }
-    if (failed > 0) {
-      notifications.show({
-        message: t("actors.batchClearPersonFailed", { count: failed }),
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
         color: "red",
       });
+    } finally {
+      setBatchClearing(false);
     }
   }
 

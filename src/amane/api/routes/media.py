@@ -7,7 +7,13 @@ from ...db.models import MediaFileStatus, MediaSortField, SortOrder
 from ...parsing import DEFINITION_VALUES, ContentType, Mosaic
 from ...utils.model import to_resp
 from ..deps import RepoDep
-from ..models import MediaFileResponse, MediaFileUpdateRequest, MediaListResponse
+from ..models import (
+    MediaBatchDeleteRequest,
+    MediaBatchDeleteResponse,
+    MediaFileResponse,
+    MediaFileUpdateRequest,
+    MediaListResponse,
+)
 
 if TYPE_CHECKING:
     from ...db.repo_types import MediaFileUpdates
@@ -70,6 +76,14 @@ async def list_media(
         content_type=content_type,
     )
     return MediaListResponse(items=[to_resp(MediaFileResponse, m) for m in items], total=total)
+
+
+@router.post("/batch/delete")
+async def batch_delete_media(req: MediaBatchDeleteRequest, repo: RepoDep) -> MediaBatchDeleteResponse:
+    """批量删除媒体文件记录; 不存在的 id 计入 missing 而不是报错."""
+    deleted, missing = await repo.batch_delete_media_files(req.ids)
+    logger.info("media files batch deleted", deleted=deleted, missing=missing)
+    return MediaBatchDeleteResponse(deleted=deleted, missing=missing)
 
 
 @router.get("/{media_id}")

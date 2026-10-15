@@ -5,6 +5,38 @@ export type ClientOptions = {
 };
 
 /**
+ * ActorClearPersonBatchRequest
+ *
+ * 批量清空人物档案并解除全部锁 (保留 ``name`` / ``gender``).
+ */
+export type ActorClearPersonBatchRequest = {
+    /**
+     * Ids
+     *
+     * 演员 ID 列表; 上限防 SQLite 绑定变量超限
+     */
+    ids: Array<number>;
+};
+
+/**
+ * ActorClearPersonBatchResponse
+ */
+export type ActorClearPersonBatchResponse = {
+    /**
+     * Cleared
+     *
+     * 清空的演员数
+     */
+    cleared: number;
+    /**
+     * Missing
+     *
+     * 不存在的演员 id 数
+     */
+    missing: number;
+};
+
+/**
  * ActorField
  *
  * 演员人物档案的可锁字段; 除 ``ALIASES`` 外取值与 Actor 列名同形.
@@ -17,6 +49,42 @@ export type ActorField = 'gender' | 'birthday' | 'birthplace' | 'height' | 'bust
  * 演员性别 - 用于展示与按站裁剪刮削源.
  */
 export type ActorGender = 'female' | 'male' | 'unknown';
+
+/**
+ * ActorGenderBatchRequest
+ *
+ * 批量把同一性别写给一组演员; 写入字段按 MANUAL 语义加锁.
+ */
+export type ActorGenderBatchRequest = {
+    /**
+     * Ids
+     *
+     * 演员 ID 列表; 上限防 SQLite 绑定变量超限
+     */
+    ids: Array<number>;
+    /**
+     * 统一写入的性别
+     */
+    gender: ActorGender;
+};
+
+/**
+ * ActorGenderBatchResponse
+ */
+export type ActorGenderBatchResponse = {
+    /**
+     * Updated
+     *
+     * 实际写入的演员数
+     */
+    updated: number;
+    /**
+     * Missing
+     *
+     * 不存在的演员 id 数
+     */
+    missing: number;
+};
 
 /**
  * ActorListResponse
@@ -2219,6 +2287,38 @@ export type LoggingConfig = {
 export type Manufacturer = 'attackers' | 'befree' | 'bi' | 'bibian' | 'das' | 'ebody' | 'fitch' | 'hajime_kikaku' | 'honnaka' | 'hunter' | 'idea_pocket' | 'kawaii' | 'kirakira' | 'madonna' | 'miman' | 'mko_labo' | 'moodyz' | 'muku' | 'mvg' | 'nanpa_japan' | 'oppai' | 'opera' | 'premium_beauty' | 'rookie' | 's1' | 'tameikegoro' | 'tosatsu' | 'v' | 'wanz_factory';
 
 /**
+ * MediaBatchDeleteRequest
+ *
+ * 批量删除媒体文件记录; 不存在的 id 计入 missing.
+ */
+export type MediaBatchDeleteRequest = {
+    /**
+     * Ids
+     *
+     * MediaFile ID 列表; 上限防 SQLite 绑定变量超限
+     */
+    ids: Array<number>;
+};
+
+/**
+ * MediaBatchDeleteResponse
+ */
+export type MediaBatchDeleteResponse = {
+    /**
+     * Deleted
+     *
+     * 成功删除的数量
+     */
+    deleted: number;
+    /**
+     * Missing
+     *
+     * 不存在的 id 数量
+     */
+    missing: number;
+};
+
+/**
  * MediaFileResponse
  */
 export type MediaFileResponse = {
@@ -4254,6 +4354,40 @@ export type TaskBatchResponse = {
 };
 
 /**
+ * TaskBatchSubmitRequest
+ *
+ * 逐项与 ``POST /tasks`` 的 body 同形, 只是包成数组.
+ */
+export type TaskBatchSubmitRequest = {
+    /**
+     * Submissions
+     */
+    submissions: Array<RefreshSubmission | OrganizeSubmission | ScanInvalidSubmission | DeleteSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission>;
+};
+
+/**
+ * TaskBatchSubmitResponse
+ */
+export type TaskBatchSubmitResponse = {
+    /**
+     * Submitted
+     */
+    submitted: number;
+    /**
+     * Missing
+     */
+    missing: number;
+    /**
+     * Skipped
+     */
+    skipped: number;
+    /**
+     * Task Ids
+     */
+    task_ids: Array<number>;
+};
+
+/**
  * TaskChildItem
  */
 export type TaskChildItem = {
@@ -5298,6 +5432,31 @@ export type ListMediaResponses = {
 };
 
 export type ListMediaResponse = ListMediaResponses[keyof ListMediaResponses];
+
+export type BatchDeleteMediaData = {
+    body: MediaBatchDeleteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/media/batch/delete';
+};
+
+export type BatchDeleteMediaErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BatchDeleteMediaError = BatchDeleteMediaErrors[keyof BatchDeleteMediaErrors];
+
+export type BatchDeleteMediaResponses = {
+    /**
+     * Successful Response
+     */
+    200: MediaBatchDeleteResponse;
+};
+
+export type BatchDeleteMediaResponse = BatchDeleteMediaResponses[keyof BatchDeleteMediaResponses];
 
 export type DeleteMediaData = {
     body?: never;
@@ -6485,6 +6644,56 @@ export type BatchActorUserTagsResponses = {
 };
 
 export type BatchActorUserTagsResponse = BatchActorUserTagsResponses[keyof BatchActorUserTagsResponses];
+
+export type BatchActorGenderData = {
+    body: ActorGenderBatchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/actors/batch/gender';
+};
+
+export type BatchActorGenderErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BatchActorGenderError = BatchActorGenderErrors[keyof BatchActorGenderErrors];
+
+export type BatchActorGenderResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActorGenderBatchResponse;
+};
+
+export type BatchActorGenderResponse = BatchActorGenderResponses[keyof BatchActorGenderResponses];
+
+export type BatchClearActorPersonData = {
+    body: ActorClearPersonBatchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/actors/batch/clear-person';
+};
+
+export type BatchClearActorPersonErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BatchClearActorPersonError = BatchClearActorPersonErrors[keyof BatchClearActorPersonErrors];
+
+export type BatchClearActorPersonResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActorClearPersonBatchResponse;
+};
+
+export type BatchClearActorPersonResponse = BatchClearActorPersonResponses[keyof BatchClearActorPersonResponses];
 
 export type GetActorData = {
     body?: never;
@@ -7831,6 +8040,31 @@ export type BatchTasksResponses = {
 };
 
 export type BatchTasksResponse = BatchTasksResponses[keyof BatchTasksResponses];
+
+export type BatchSubmitTasksData = {
+    body: TaskBatchSubmitRequest;
+    path?: never;
+    query?: never;
+    url: '/api/tasks/batch/submit';
+};
+
+export type BatchSubmitTasksErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BatchSubmitTasksError = BatchSubmitTasksErrors[keyof BatchSubmitTasksErrors];
+
+export type BatchSubmitTasksResponses = {
+    /**
+     * Successful Response
+     */
+    202: TaskBatchSubmitResponse;
+};
+
+export type BatchSubmitTasksResponse = BatchSubmitTasksResponses[keyof BatchSubmitTasksResponses];
 
 export type GetTaskData = {
     body?: never;

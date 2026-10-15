@@ -1,16 +1,22 @@
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 
+from ...db import MediaFile, Repository
 from ...db.models import SortOrder, Task, TaskSortField, TaskStatus, TaskType
+from ...handlers import ActorScrapePayload, ScrapePayload
 from ...observability import build_record_zip
 from ...utils.model import to_resp
 from ..deps import ConfigDep, RepoDep, RuntimeDep
 from ..models import (
+    ActorScrapeSubmission,
+    ScrapeSubmission,
+    TaskBatchSubmitRequest,
+    TaskBatchSubmitResponse,
     TaskChildItem,
     TaskChildListResponse,
     TaskChildStatusCounts,
@@ -226,6 +232,98 @@ async def batch_tasks(
         submitted=result.submitted,
     )
     return result
+
+
+async def _resolve_batch_submission(
+    submission: TaskSubmission,
+    repo: Repository,
+    files_by_id: dict[int, MediaFile],
+    known_actors: set[int],
+) -> tuple[TaskType, BaseModel] | None:
+    """解析单条提交; 目标实体不存在返回 None (计入 missing), 参数级错误照常抛出."""
+    if isinstance(submission, ScrapeSubmission):
+        media = files_by_id.get(submission.media_id) if submission.media_id is not None else None
+        payload = submission.build_payload(media)
+        return None if payload is None else (TaskType.SCRAPE, payload)
+    if isinstance(submission, ActorScrapeSubmission):
+        if submission.actor_id not in known_actors:
+            return None
+        return TaskType.ACTOR_SCRAPE, ActorScrapePayload(actor_id=submission.actor_id, use_cache=submission.use_cache)
+    return await resolve_submission(submission, repo)
+
+
+def _batch_dedupe_key(entry: tuple[TaskType, BaseModel]) -> tuple[TaskType, str, int | None] | None:
+    """同请求内语义重复的判别键; 其余类型各自独立, 不去重 (键为 None)."""
+    task_type, payload = entry
+    if task_type is TaskType.SCRAPE:
+        assert isinstance(payload, ScrapePayload)
+        # 同番号不同文件保留: 每个文件各有一次落库与自动整理
+        return TaskType.SCRAPE, payload.number.casefold(), payload.media_file_id
+    if task_type is TaskType.ACTOR_SCRAPE:
+        assert isinstance(payload, ActorScrapePayload)
+        return TaskType.ACTOR_SCRAPE, "", payload.actor_id
+    return None
+
+
+@router.post("/batch/submit", status_code=202)
+async def batch_submit_tasks(req: TaskBatchSubmitRequest, repo: RepoDep) -> TaskBatchSubmitResponse:
+    """批量提交任务. 逐项解析同单条提交, 同类型合并为一次入队事务.
+
+    ``missing`` 只覆盖目标实体不存在 (404); 路径越界 / 参数互斥等仍是整批中断.
+    """
+    submissions = req.submissions
+    media_ids = {s.media_id for s in submissions if isinstance(s, ScrapeSubmission) and s.media_id is not None}
+    files_by_id = (
+        {f.id: f for f in await repo.list_media_files(limit=None, ids=sorted(media_ids)) if f.id is not None}
+        if media_ids
+        else {}
+    )
+    actor_ids = {s.actor_id for s in submissions if isinstance(s, ActorScrapeSubmission)}
+    # 存在性检查借 get_actor_names: 不存在的 id 不出现在结果里.
+    known_actors = set(await repo.get_actor_names(sorted(actor_ids))) if actor_ids else set()
+
+    entries: list[tuple[TaskType, BaseModel] | None] = []
+    seen: set[tuple[TaskType, str, int | None]] = set()
+    missing = 0
+    skipped = 0
+    for submission in submissions:
+        try:
+            entry = await _resolve_batch_submission(submission, repo, files_by_id, known_actors)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            entry = None
+        if entry is None:
+            missing += 1
+            entries.append(None)
+            continue
+        key = _batch_dedupe_key(entry)
+        if key is not None:
+            if key in seen:
+                skipped += 1
+                entries.append(None)
+                continue
+            seen.add(key)
+        entries.append(entry)
+
+    grouped: dict[TaskType, list[BaseModel]] = {}
+    for entry in entries:
+        if entry is not None:
+            grouped.setdefault(entry[0], []).append(entry[1])
+
+    created: dict[TaskType, Iterator[Task]] = {
+        task_type: iter(await repo.create_tasks(task_type, payloads)) for task_type, payloads in grouped.items()
+    }
+    task_ids: list[int] = []
+    for entry in entries:
+        if entry is None:
+            continue
+        task = next(created[entry[0]])
+        if task.id is not None:
+            task_ids.append(task.id)
+
+    logger.info("tasks batch submitted", submitted=len(task_ids), missing=missing, skipped=skipped)
+    return TaskBatchSubmitResponse(submitted=len(task_ids), missing=missing, skipped=skipped, task_ids=task_ids)
 
 
 @router.get("/{task_id}")

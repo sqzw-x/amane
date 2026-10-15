@@ -31,8 +31,9 @@ class TestListTasks:
 class TestSubmitTask:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_submit_payloads_and_rejects(
-        self, client: AsyncClient, repo: Repository, safe_path, seed_library: Repository
+        self, client: AsyncClient, repo: Repository, safe_path, seed_library: Repository, stop_worker: None
     ):
+        """只验提交与校验; 独占 worker 以免后台任务与本用例的写并发抢 SQLite 写锁."""
         lib = await repo.create_library(name="t", path=str(safe_path), recursive=False, patterns=["*.mp4"])
         refresh = await client.post("tasks", json={"type": "refresh", "library_id": lib.id})
         assert refresh.status_code == 202

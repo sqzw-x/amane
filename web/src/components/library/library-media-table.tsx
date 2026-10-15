@@ -18,7 +18,7 @@ import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listMediaQueryKey } from "@/client/@tanstack/react-query.gen";
-import { deleteMedia, submitTask } from "@/client/sdk.gen";
+import { batchDeleteMedia, batchSubmitTasks, deleteMedia, submitTask } from "@/client/sdk.gen";
 import type {
   ContentType,
   MediaFileResponse,
@@ -176,23 +176,30 @@ export function LibraryMediaTable({
   async function handleBatchScrape() {
     const ids = selectedIds;
     setBatchScraping(true);
-    const results = await Promise.allSettled(
-      ids.map((id) => submitTask({ body: { type: "scrape", media_id: id }, throwOnError: true })),
-    );
-    setBatchScraping(false);
-    const failed = results.filter((r) => r.status === "rejected").length;
-    const ok = ids.length - failed;
-    if (ok > 0) {
-      notifications.show({
-        message: t("common:toast.batchScrapeStarted", { count: ok }),
-        color: "blue",
+    try {
+      const { data } = await batchSubmitTasks({
+        body: { submissions: ids.map((id) => ({ type: "scrape", media_id: id })) },
+        throwOnError: true,
       });
-    }
-    if (failed > 0) {
+      if (data.submitted > 0) {
+        notifications.show({
+          message: t("common:toast.batchScrapeStarted", { count: data.submitted }),
+          color: "blue",
+        });
+      }
+      if (data.missing > 0) {
+        notifications.show({
+          message: t("common:toast.batchScrapeFailed", { count: data.missing }),
+          color: "red",
+        });
+      }
+    } catch (err) {
       notifications.show({
-        message: t("common:toast.batchScrapeFailed", { count: failed }),
+        message: extractErrorMessage(err, t("common:toast.batchScrapeFailed")),
         color: "red",
       });
+    } finally {
+      setBatchScraping(false);
     }
     clear();
   }
@@ -229,18 +236,24 @@ export function LibraryMediaTable({
     if (!ok) return;
     const ids = selectedIds;
     setBatchDeleting(true);
-    const results = await Promise.allSettled(
-      ids.map((id) => deleteMedia({ path: { media_id: id }, throwOnError: true })),
-    );
-    setBatchDeleting(false);
-    const failed = results.filter((r) => r.status === "rejected").length;
-    const deleted = ids.length - failed;
-    if (deleted > 0) notifications.show({ message: t("common:toast.mediaDeleted"), color: "blue" });
-    if (failed > 0) {
+    try {
+      const { data } = await batchDeleteMedia({ body: { ids }, throwOnError: true });
+      if (data.deleted > 0) {
+        notifications.show({ message: t("common:toast.mediaDeleted"), color: "blue" });
+      }
+      if (data.missing > 0) {
+        notifications.show({
+          message: extractErrorMessage(null, t("common:toast.operationFailed")),
+          color: "red",
+        });
+      }
+    } catch (err) {
       notifications.show({
-        message: extractErrorMessage(null, t("common:toast.operationFailed")),
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
         color: "red",
       });
+    } finally {
+      setBatchDeleting(false);
     }
     clear();
     invalidate();
