@@ -27,13 +27,20 @@ class DbErrorStatResponse(BaseModel):
     last_at: datetime | None = None
 
 
+class SlowStatementResponse(BaseModel):
+    """留存的一条慢语句; 只含 SQL 文本, 不含绑定参数."""
+
+    statement: str
+    duration_ms: float
+    at: datetime
+
+
 class DatabaseMetricsResponse(BaseModel):
     """进程内累计, 重启清零. 提交时长含等待写锁与 fsync."""
 
     commits: int
     slow_commits: int
     max_commit_ms: float | None = None
-    slowest_statement: str | None = None
-    slowest_statement_ms: float | None = None
+    slow_statements: list[SlowStatementResponse] = Field(default_factory=list)
     pool_checked_out: int | None = None
     errors: list[DbErrorStatResponse] = Field(default_factory=list)

@@ -71,7 +71,13 @@ from .playback import (
 )
 from .plugins import PluginConfigUpdate, PluginListResponse, PluginResponse
 from .schedules import ScheduleCreateRequest, ScheduleListResponse, ScheduleResponse, ScheduleUpdateRequest
-from .system import DatabaseMetricsResponse, DbErrorStatResponse, DesktopResponse, ReleaseResponse
+from .system import (
+    DatabaseMetricsResponse,
+    DbErrorStatResponse,
+    DesktopResponse,
+    ReleaseResponse,
+    SlowStatementResponse,
+)
 from .tasks import (
     ActorScrapeSubmission,
     CleanupSubmission,
@@ -181,6 +187,7 @@ __all__ = [
     "ScheduleUpdateRequest",
     "ScrapeRequest",
     "ScrapeSubmission",
+    "SlowStatementResponse",
     "TaskBatchAction",
     "TaskBatchRequest",
     "TaskBatchResponse",

@@ -9,7 +9,13 @@ from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, Request,
 from ...release import is_newer
 from ...version import get_version
 from ..deps import ConfigDep, RuntimeDep
-from ..models import DatabaseMetricsResponse, DbErrorStatResponse, DesktopResponse, ReleaseResponse
+from ..models import (
+    DatabaseMetricsResponse,
+    DbErrorStatResponse,
+    DesktopResponse,
+    ReleaseResponse,
+    SlowStatementResponse,
+)
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -66,8 +72,10 @@ async def get_database_metrics(runtime: RuntimeDep) -> DatabaseMetricsResponse:
         commits=metrics.commits,
         slow_commits=metrics.slow_commits,
         max_commit_ms=metrics.max_commit_ms,
-        slowest_statement=metrics.slowest_statement,
-        slowest_statement_ms=metrics.slowest_statement_ms,
+        slow_statements=[
+            SlowStatementResponse(statement=item.statement, duration_ms=item.duration_ms, at=item.at)
+            for item in metrics.slow_statements
+        ],
         pool_checked_out=metrics.pool_checked_out,
         errors=[
             DbErrorStatResponse(

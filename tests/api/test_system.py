@@ -72,7 +72,7 @@ async def test_database_metrics(client: HttpxClient, repo: Repository, safe_path
 
     after = (await client.get("system/database")).json()
     assert after["commits"] > before["commits"]
-    assert after["slowest_statement_ms"] is not None
+    assert isinstance(after["slow_statements"], list)
 
 
 @pytest.mark.asyncio(loop_scope="function")

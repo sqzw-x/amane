@@ -1586,27 +1586,12 @@ export const DatabaseMetricsResponseSchema = {
             ],
             title: 'Max Commit Ms'
         },
-        slowest_statement: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Slowest Statement'
-        },
-        slowest_statement_ms: {
-            anyOf: [
-                {
-                    type: 'number'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Slowest Statement Ms'
+        slow_statements: {
+            items: {
+                $ref: '#/components/schemas/SlowStatementResponse'
+            },
+            type: 'array',
+            title: 'Slow Statements'
         },
         pool_checked_out: {
             anyOf: [
@@ -8176,6 +8161,32 @@ export const SkipReasonSchema = {
     ],
     title: 'SkipReason',
     description: '``SKIPPED`` 的原因.\n\n与 ``FailureReason`` 分开: 这一档不是失败, 文案也不进站点明细. 界面按它本地化, 因此每种原因\n都要能独立读懂, 不依赖 ``detail``.'
+} as const;
+
+export const SlowStatementResponseSchema = {
+    properties: {
+        statement: {
+            type: 'string',
+            title: 'Statement'
+        },
+        duration_ms: {
+            type: 'number',
+            title: 'Duration Ms'
+        },
+        at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'At'
+        }
+    },
+    type: 'object',
+    required: [
+        'statement',
+        'duration_ms',
+        'at'
+    ],
+    title: 'SlowStatementResponse',
+    description: '留存的一条慢语句; 只含 SQL 文本, 不含绑定参数.'
 } as const;
 
 export const SortOrderSchema = {

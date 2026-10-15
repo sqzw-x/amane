@@ -11,6 +11,8 @@ from amane.db.engine import create_async_engine_from_path
 from amane.db.profiling import (
     ERROR_LOG_INTERVAL_S,
     SLOW_COMMIT_MS,
+    SLOW_STATEMENT_MS,
+    SLOW_STATEMENTS_KEPT,
     DbErrorKind,
     DbMetrics,
     classify_db_error,
@@ -57,15 +59,33 @@ def test_record_commit_threshold_and_max() -> None:
     assert metrics.max_commit_ms == SLOW_COMMIT_MS + 1
 
 
-def test_record_statement_keeps_only_slowest() -> None:
+def test_record_statement_threshold_and_top_k() -> None:
+    """阈值以内不留存; 超阈值的留存按耗时倒序, 只保前 K 条."""
     metrics = DbMetrics()
 
-    metrics.record_statement(3.0, "SELECT 1")
-    metrics.record_statement(9.0, "SELECT 2")
-    metrics.record_statement(1.0, "SELECT 3")
+    assert metrics.record_statement(SLOW_STATEMENT_MS - 1, "SELECT fast") is False
+    assert metrics.slow_statements == []
 
-    assert metrics.slowest_statement_ms == 9.0
-    assert metrics.slowest_statement == "SELECT 2"
+    for index in range(SLOW_STATEMENTS_KEPT + 2):
+        assert metrics.record_statement(SLOW_STATEMENT_MS + index, f"SELECT slow {index}") in (True, False)
+
+    kept = metrics.slow_statements
+    assert len(kept) == SLOW_STATEMENTS_KEPT
+    assert kept[0].statement == f"SELECT slow {SLOW_STATEMENTS_KEPT + 1}"
+    assert kept[-1].statement == "SELECT slow 2"
+    assert all(item.at is not None for item in kept)
+
+
+def test_record_statement_log_rate_limit() -> None:
+    """慢语句日志全局限速, 但留存不受限速影响."""
+    clock = _FakeClock()
+    metrics = DbMetrics(clock=clock)
+
+    assert metrics.record_statement(SLOW_STATEMENT_MS + 1, "SELECT 1") is True
+    assert metrics.record_statement(SLOW_STATEMENT_MS + 2, "SELECT 2") is False
+    clock.advance(ERROR_LOG_INTERVAL_S)
+    assert metrics.record_statement(SLOW_STATEMENT_MS + 3, "SELECT 3") is True
+    assert [item.statement for item in metrics.slow_statements] == ["SELECT 3", "SELECT 2", "SELECT 1"]
 
 
 def test_record_error_rate_limits_per_kind() -> None:
@@ -99,7 +119,8 @@ async def test_engine_factory_installs_metrics(tmp_path: Path) -> None:
         await conn.exec_driver_sql("CREATE TABLE t(x)")
 
     assert metrics.commits >= 1
-    assert metrics.slowest_statement is not None
+    # 测试机上的建表远低于慢语句阈值, 因此不进入留存
+    assert metrics.slow_statements == []
     assert metrics.pool_checked_out is not None
     await engine.dispose()
 

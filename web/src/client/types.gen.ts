@@ -899,13 +899,9 @@ export type DatabaseMetricsResponse = {
      */
     max_commit_ms?: number | null;
     /**
-     * Slowest Statement
+     * Slow Statements
      */
-    slowest_statement?: string | null;
-    /**
-     * Slowest Statement Ms
-     */
-    slowest_statement_ms?: number | null;
+    slow_statements?: Array<SlowStatementResponse>;
     /**
      * Pool Checked Out
      */
@@ -4166,6 +4162,26 @@ export type SiteOutcomeRecord = {
  * 都要能独立读懂, 不依赖 ``detail``.
  */
 export type SkipReason = 'unknown_source' | 'no_http_upstream' | 'missing_credential' | 'undeclared' | 'no_url';
+
+/**
+ * SlowStatementResponse
+ *
+ * 留存的一条慢语句; 只含 SQL 文本, 不含绑定参数.
+ */
+export type SlowStatementResponse = {
+    /**
+     * Statement
+     */
+    statement: string;
+    /**
+     * Duration Ms
+     */
+    duration_ms: number;
+    /**
+     * At
+     */
+    at: string;
+};
 
 /**
  * SortOrder
