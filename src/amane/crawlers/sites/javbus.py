@@ -52,7 +52,13 @@ class JavBusCrawler(Crawler):
         # 未命中则回退搜索. 站内检索为模糊匹配, 会返回番号相近的条目, 因此逐条比对结果 <date> 中的
         # 番号, 不取首条.
         search_url = f"{self.base_url}/search/{number}&type=&parent=ce"
-        text = await self.client.get_html(search_url, cookies=self.cookies, headers=self.headers)
+        try:
+            text = await self.client.get_html(search_url, cookies=self.cookies, headers=self.headers)
+        except RequestError as exc:
+            # 检索词一条也匹配不上时站点直接 404, 与直达 404 同义, 判无此番号; 其余失败照旧上报.
+            if exc.http_status != 404:
+                raise
+            return None
         html = Selector(text=text)
         candidates = [
             (urljoin(self.base_url, href), found)
