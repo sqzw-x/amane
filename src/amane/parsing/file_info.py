@@ -91,6 +91,7 @@ _UNCENSORED_PREFIXES = (
     "DRC-",
     "DRG-",
     "GACHI-",
+    "GACHIG-",
     "HEYDOUGA",
     "JAV-",
     "LAF-",
@@ -114,6 +115,7 @@ _UNCENSORED_PREFIXES = (
     "SKY-",
     "SKYHD-",
     "SMD-",
+    "SMBD-",
     "SSDV-",
     "SSKP-",
     "TRG-",
@@ -505,7 +507,8 @@ def _match(basename: str, escape_strings: list[str], *, generic: bool) -> tuple[
         or (m := re.search(r"\d{3,}-[A-Z]{3,}", c))
     ):
         return m.group(), _type_of_catalog_id(m.group())
-    if m := re.search(r"([^A-Z]|^)(N\d{4})(\D|$)", c):
+    # 東京熱番号分 n / k 两系 (K1363), 两系都是无码.
+    if m := re.search(r"([^A-Z]|^)([NK]\d{4})(\D|$)", c):
         return m.group(2).lower(), ContentType.UNCENSORED
     if m := re.search(r"H_\d{3,}([A-Z]{2,})(\d{2,})", c):
         number = f"{m[1]}-{m[2]}"

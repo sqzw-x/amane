@@ -169,6 +169,8 @@ CASES: list[object] = [
         "/media/H4610-ki221218.mp4", mosaic="uncensored", number="H4610-KI221218", content_type=ContentType.UNCENSORED
     ),
     _Case("/media/S2MBD-006.mp4", mosaic="uncensored", number="S2MBD-006", content_type=ContentType.UNCENSORED),
+    _Case("/media/SMBD-005.mp4", mosaic="uncensored", number="SMBD-005", content_type=ContentType.UNCENSORED),
+    _Case("/media/gachig256.mp4", mosaic="uncensored", number="GACHIG-256", content_type=ContentType.UNCENSORED),
     _Case("/media/MD0165-1.mp4", cd=1, number="MD0165-1", content_type=ContentType.CHINESE),
     _Case("/media/259LUXU-1456.mp4", number="259LUXU-1456", content_type=ContentType.AMATEUR),
     _Case("/media/SIRO-4567.mp4", number="SIRO-4567", content_type=ContentType.AMATEUR),
@@ -249,6 +251,9 @@ CASES: list[object] = [
     _Case("/media/Vol.12/video.mp4", number="VIDEO", content_type=ContentType.WESTERN),
     _Case("/media/FC2-1111111/MIDV-123/video.mp4", number="MIDV-123"),
     _Case("/media/n1234/clip.mp4", mosaic="uncensored", number="n1234", content_type=ContentType.UNCENSORED),
+    _Case("/media/k1363/clip.mp4", mosaic="uncensored", number="k1363", content_type=ContentType.UNCENSORED),
+    # k 系要求字母前不是字母: MK1234 仍是普通有码番号
+    _Case("/media/MK1234.mp4", number="MK-1234", content_type=ContentType.CENSORED),
     # --- 完整路径: 分集只认直接父目录 CDn/PARTn ---
     _Case("/media/MIDV-123/CD1/video.mp4", cd=1, number="MIDV-123"),
     _Case("/media/MIDV-123/PART2/video.mp4", cd=2, number="MIDV-123"),
@@ -391,6 +396,7 @@ INFER_CONTENT_TYPE_CASES: list[tuple[str, str | None, ContentType]] = [
     ("HEYZO-1234", None, ContentType.UNCENSORED),
     ("CWP-123", None, ContentType.UNCENSORED),
     ("n1234", None, ContentType.UNCENSORED),
+    ("k1363", None, ContentType.UNCENSORED),
     ("SIRO-4567", None, ContentType.AMATEUR),
     ("259LUXU-1456", None, ContentType.AMATEUR),
     ("MD-0123", None, ContentType.CHINESE),
@@ -418,6 +424,7 @@ UNCENSORED_CASES: list[tuple[str, bool]] = [
     ("S2M-001", True),
     ("CWP-123", True),
     ("n1234", True),
+    ("k1363", True),
     ("BT-123", True),
     ("SKY-001", True),
     ("XXX-AV-12345", True),
