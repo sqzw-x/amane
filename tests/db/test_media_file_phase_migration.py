@@ -226,3 +226,64 @@ def test_kin8_media_file_reprojected_from_path(tmp_path: Path) -> None:
     assert _type_and_mosaic(engine) == expected
 
     engine.dispose()
+
+
+def test_uncensored_prefix_and_tokyo_hot_reprojected_from_path(tmp_path: Path) -> None:
+    """SMBD / GACHIG 前缀与東京熱 k 系行改判无码; 其它行保持原值, 重跑结果相同."""
+    db_path = tmp_path / "migrate.db"
+    cfg = alembic_config(db_path)
+
+    command.upgrade(cfg, "8dbd0fa0905e")
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO libraries "
+                "(name, path, automation, recursive, patterns, move_mode, link_mode, video_template, "
+                "write_nfo, copy_resources, trailer_pattern, blacklist_patterns, subtitle_extensions, "
+                "min_file_size) "
+                "VALUES ('t', '/m', 'SCRAPE', 1, '[]', 'MOVE', 'STRM', '{number}.{ext}', 1, "
+                "'[]', '', '[]', '[]', 0)"
+            )
+        )
+        lib_id = conn.execute(text("SELECT id FROM libraries")).scalar_one()
+        conn.execute(
+            text(
+                "INSERT INTO media_files "
+                "(path, status, library_id, created_at, updated_at, content_type, mosaic) VALUES "
+                "('/media/SMBD-005.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'CENSORED', 'CENSORED'), "
+                "('/media/GACHIG-256.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'CENSORED', 'CENSORED'), "
+                "('/media/K1363.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'WESTERN', NULL), "
+                "('/media/k1393/clip.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'WESTERN', NULL), "
+                "('/media/n1234.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'CENSORED', NULL), "
+                "('/media/MIDV-123.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                "'UNCENSORED', 'CRACKED')"
+            ),
+            {"lib": lib_id},
+        )
+
+    command.upgrade(cfg, "head")
+
+    # n 系改动前已判无码, 与 midv 一样不在谓词内, 因此保留写入时给的值
+    expected = {
+        "/media/SMBD-005.mp4": ("UNCENSORED", "UNCENSORED"),
+        "/media/GACHIG-256.mp4": ("UNCENSORED", "UNCENSORED"),
+        "/media/K1363.mp4": ("UNCENSORED", "UNCENSORED"),
+        "/media/k1393/clip.mp4": ("UNCENSORED", "UNCENSORED"),
+        "/media/n1234.mp4": ("CENSORED", None),
+        "/media/MIDV-123.mp4": ("UNCENSORED", "CRACKED"),
+    }
+    assert _type_and_mosaic(engine) == expected
+
+    # downgrade 留空 (数据迁移不可逆), 再次升级不改变已写入的值
+    command.downgrade(cfg, "8dbd0fa0905e")
+    command.upgrade(cfg, "head")
+    assert _type_and_mosaic(engine) == expected
+
+    engine.dispose()
