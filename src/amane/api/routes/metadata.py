@@ -145,7 +145,6 @@ async def batch_delete_metadata(req: MetadataBatchIdsRequest, repo: RepoDep) -> 
 @router.post("/batch/scrape", status_code=202)
 async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) -> MetadataBatchScrapeResponse:
     """以各自 number 重新刮削."""
-    task_ids: list[int] = []
     missing = 0
     # 挂载文件仅用于 content_type 推断 (req.content_type 显式给定时跳过).
     files = await repo.list_media_files(metadata_ids=req.ids, limit=None)
@@ -154,21 +153,24 @@ async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) 
         if f.metadata_id is not None and f.metadata_id not in first_path_by_metadata:
             first_path_by_metadata[f.metadata_id] = f.path
 
+    payloads: list[ScrapePayload] = []
     for metadata_id in req.ids:
         metadata = await repo.get_metadata(metadata_id)
         if metadata is None:
             missing += 1
             continue
-        payload = ScrapePayload(
-            number=metadata.number,
-            content_type=req.content_type
-            if req.content_type is not None
-            else infer_content_type(metadata.number, first_path_by_metadata.get(metadata_id)),
-            use_cache=req.use_cache,
+        payloads.append(
+            ScrapePayload(
+                number=metadata.number,
+                content_type=req.content_type
+                if req.content_type is not None
+                else infer_content_type(metadata.number, first_path_by_metadata.get(metadata_id)),
+                use_cache=req.use_cache,
+            )
         )
-        task = await repo.create_task(task_type=TaskType.SCRAPE, payload=payload)
-        assert task.id is not None
-        task_ids.append(task.id)
+    # 一次事务入队: 数百条批量提交不再逐条各写一个事务
+    tasks = await repo.create_tasks(TaskType.SCRAPE, payloads)
+    task_ids = [task.id for task in tasks if task.id is not None]
     logger.info("metadata batch scrape submitted", submitted=len(task_ids), missing=missing)
     return MetadataBatchScrapeResponse(submitted=len(task_ids), missing=missing, task_ids=task_ids)
 
