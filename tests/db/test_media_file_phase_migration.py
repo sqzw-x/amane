@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from alembic import command
 from sqlalchemy import Engine, create_engine, inspect, text
 from sqlmodel import Session, col, select
@@ -176,13 +177,8 @@ def _type_and_mosaic(engine: Engine) -> dict[str, tuple[str, str | None]]:
         }
 
 
-def test_kin8_media_file_reprojected_from_path(tmp_path: Path) -> None:
-    """kin8 行按当前规则重算类型与马赛克标记; 其它来源的行保持原值, 重跑结果相同."""
-    db_path = tmp_path / "migrate.db"
-    cfg = alembic_config(db_path)
-
-    command.upgrade(cfg, "4f36abe6b903")
-
+def _seed_rows(db_path: Path, rows: list[tuple[str, _Phase]]) -> None:
+    """建库并写入旧 schema 的媒体文件行, 只给相位两列, 其余列取默认."""
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
         conn.execute(
@@ -196,158 +192,81 @@ def test_kin8_media_file_reprojected_from_path(tmp_path: Path) -> None:
             )
         )
         lib_id = conn.execute(text("SELECT id FROM libraries")).scalar_one()
-        conn.execute(
-            text(
-                "INSERT INTO media_files "
-                "(path, status, library_id, created_at, updated_at, content_type, mosaic) VALUES "
-                "('/media/KIN8-0236.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'UNCENSORED', 'UNCENSORED'), "
-                "('/media/KIN8TENGOKU-4121-U.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', "
-                "'2026-01-01 00:00:00', 'UNCENSORED', 'LEAKED'), "
-                "('/media/MIDV-123.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'UNCENSORED', 'CRACKED')"
-            ),
-            {"lib": lib_id},
-        )
-
-    command.upgrade(cfg, "head")
-
-    # 该来源没有自动标记无码的规则, 马赛克标记按路径词表重算; 非 kin8 行不重算
-    expected = {
-        "/media/KIN8-0236.mp4": ("WESTERN", None),
-        "/media/KIN8TENGOKU-4121-U.mp4": ("WESTERN", "CRACKED"),
-        "/media/MIDV-123.mp4": ("UNCENSORED", "CRACKED"),
-    }
-    assert _type_and_mosaic(engine) == expected
-
-    # downgrade 留空 (数据迁移不可逆), 再次升级不改变已写入的值
-    command.downgrade(cfg, "4f36abe6b903")
-    command.upgrade(cfg, "head")
-    assert _type_and_mosaic(engine) == expected
-
+        for path, (content_type, mosaic) in rows:
+            conn.execute(
+                text(
+                    "INSERT INTO media_files "
+                    "(path, status, library_id, created_at, updated_at, content_type, mosaic) "
+                    "VALUES (:path, 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
+                    ":content_type, :mosaic)"
+                ),
+                {"path": path, "lib": lib_id, "content_type": content_type, "mosaic": mosaic},
+            )
     engine.dispose()
 
 
-def test_uncensored_prefix_and_tokyo_hot_reprojected_from_path(tmp_path: Path) -> None:
-    """SMBD / GACHIG 前缀与東京熱 k 系行改判无码; 其它行保持原值, 重跑结果相同."""
+#: 相位: 内容类型与马赛克标记.
+_Phase = tuple[str, str | None]
+
+#: 父 revision, 与每个文件行的 (路径, 升级前写入的相位, 升级后应有的相位).
+#: 两处相位相同表示该行不在谓词内, 重算应当原样跳过.
+_ReprojectCase = tuple[str, list[tuple[str, _Phase, _Phase]]]
+
+REPROJECT_CASES: list[_ReprojectCase] = [
+    (
+        "4f36abe6b903",
+        [
+            ("/media/KIN8-0236.mp4", ("UNCENSORED", "UNCENSORED"), ("WESTERN", None)),
+            ("/media/KIN8TENGOKU-4121-U.mp4", ("UNCENSORED", "LEAKED"), ("WESTERN", "CRACKED")),
+            ("/media/MIDV-123.mp4", ("UNCENSORED", "CRACKED"), ("UNCENSORED", "CRACKED")),
+        ],
+    ),
+    (
+        "8dbd0fa0905e",
+        [
+            ("/media/SMBD-005.mp4", ("CENSORED", "CENSORED"), ("UNCENSORED", "UNCENSORED")),
+            ("/media/GACHIG-256.mp4", ("CENSORED", "CENSORED"), ("UNCENSORED", "UNCENSORED")),
+            ("/media/K1363.mp4", ("WESTERN", None), ("UNCENSORED", "UNCENSORED")),
+            ("/media/k1393/clip.mp4", ("WESTERN", None), ("UNCENSORED", "UNCENSORED")),
+            ("/media/n1234.mp4", ("CENSORED", None), ("CENSORED", None)),
+            ("/media/MIDV-123.mp4", ("UNCENSORED", "CRACKED"), ("UNCENSORED", "CRACKED")),
+        ],
+    ),
+    (
+        "ea2ffb776110",
+        [
+            ("/media/DRGBD-045.mp4", ("CENSORED", "CENSORED"), ("UNCENSORED", "UNCENSORED")),
+            ("/media/DRGBD046.mp4", ("CENSORED", None), ("UNCENSORED", "UNCENSORED")),
+            ("/media/drgbd-047/clip.mp4", ("CENSORED", "CENSORED"), ("UNCENSORED", "UNCENSORED")),
+            ("/media/SMDV-028.mp4", ("CENSORED", "CENSORED"), ("UNCENSORED", "UNCENSORED")),
+            ("/media/smdv029.mp4", ("CENSORED", None), ("UNCENSORED", "UNCENSORED")),
+            ("/media/DRG-123.mp4", ("UNCENSORED", "UNCENSORED"), ("UNCENSORED", "UNCENSORED")),
+            ("/media/MIDV-123.mp4", ("UNCENSORED", "CRACKED"), ("UNCENSORED", "CRACKED")),
+        ],
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("parent", "rows"),
+    REPROJECT_CASES,
+    ids=["kin8", "uncensored-prefix-and-tokyo-hot", "drgbd-and-smdv"],
+)
+def test_media_file_reprojected_from_path(parent: str, rows: list[tuple[str, _Phase, _Phase]], tmp_path: Path) -> None:
+    """存量行按当前规则重算相位; 谓词之外的行保持原值, 重跑结果相同."""
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
 
-    command.upgrade(cfg, "8dbd0fa0905e")
+    command.upgrade(cfg, parent)
+    _seed_rows(db_path, [(path, before) for path, before, _ in rows])
+    command.upgrade(cfg, "head")
 
     engine = create_engine(f"sqlite:///{db_path}")
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                "INSERT INTO libraries "
-                "(name, path, automation, recursive, patterns, move_mode, link_mode, video_template, "
-                "write_nfo, copy_resources, trailer_pattern, blacklist_patterns, subtitle_extensions, "
-                "min_file_size) "
-                "VALUES ('t', '/m', 'SCRAPE', 1, '[]', 'MOVE', 'STRM', '{number}.{ext}', 1, "
-                "'[]', '', '[]', '[]', 0)"
-            )
-        )
-        lib_id = conn.execute(text("SELECT id FROM libraries")).scalar_one()
-        conn.execute(
-            text(
-                "INSERT INTO media_files "
-                "(path, status, library_id, created_at, updated_at, content_type, mosaic) VALUES "
-                "('/media/SMBD-005.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'CENSORED', 'CENSORED'), "
-                "('/media/GACHIG-256.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'CENSORED', 'CENSORED'), "
-                "('/media/K1363.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'WESTERN', NULL), "
-                "('/media/k1393/clip.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'WESTERN', NULL), "
-                "('/media/n1234.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'CENSORED', NULL), "
-                "('/media/MIDV-123.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'UNCENSORED', 'CRACKED')"
-            ),
-            {"lib": lib_id},
-        )
-
-    command.upgrade(cfg, "head")
-
-    # n 系改动前已判无码, 与 midv 一样不在谓词内, 因此保留写入时给的值
-    expected = {
-        "/media/SMBD-005.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/GACHIG-256.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/K1363.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/k1393/clip.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/n1234.mp4": ("CENSORED", None),
-        "/media/MIDV-123.mp4": ("UNCENSORED", "CRACKED"),
-    }
-    assert _type_and_mosaic(engine) == expected
+    assert _type_and_mosaic(engine) == {path: after for path, _, after in rows}
 
     # downgrade 留空 (数据迁移不可逆), 再次升级不改变已写入的值
-    command.downgrade(cfg, "8dbd0fa0905e")
+    command.downgrade(cfg, parent)
     command.upgrade(cfg, "head")
-    assert _type_and_mosaic(engine) == expected
-
-    engine.dispose()
-
-
-def test_drgbd_and_smdv_reprojected_from_path(tmp_path: Path) -> None:
-    """DRGBD / SMDV 行改判无码; 其它前缀的行保持原值, 重跑结果相同."""
-    db_path = tmp_path / "migrate.db"
-    cfg = alembic_config(db_path)
-
-    command.upgrade(cfg, "ea2ffb776110")
-
-    engine = create_engine(f"sqlite:///{db_path}")
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                "INSERT INTO libraries "
-                "(name, path, automation, recursive, patterns, move_mode, link_mode, video_template, "
-                "write_nfo, copy_resources, trailer_pattern, blacklist_patterns, subtitle_extensions, "
-                "min_file_size) "
-                "VALUES ('t', '/m', 'SCRAPE', 1, '[]', 'MOVE', 'STRM', '{number}.{ext}', 1, "
-                "'[]', '', '[]', '[]', 0)"
-            )
-        )
-        lib_id = conn.execute(text("SELECT id FROM libraries")).scalar_one()
-        conn.execute(
-            text(
-                "INSERT INTO media_files "
-                "(path, status, library_id, created_at, updated_at, content_type, mosaic) VALUES "
-                "('/media/DRGBD-045.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'CENSORED', 'CENSORED'), "
-                "('/media/DRGBD046.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'CENSORED', NULL), "
-                "('/media/drgbd-047/clip.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'CENSORED', 'CENSORED'), "
-                "('/media/SMDV-028.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'CENSORED', 'CENSORED'), "
-                "('/media/smdv029.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'CENSORED', NULL), "
-                "('/media/DRG-123.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'UNCENSORED', 'UNCENSORED'), "
-                "('/media/MIDV-123.mp4', 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', "
-                "'UNCENSORED', 'CRACKED')"
-            ),
-            {"lib": lib_id},
-        )
-
-    command.upgrade(cfg, "head")
-
-    # 谓词只认 DRGBD / SMDV 前缀, DRG 与 midv 不在其内, 保留写入时给的值
-    expected = {
-        "/media/DRGBD-045.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/DRGBD046.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/drgbd-047/clip.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/SMDV-028.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/smdv029.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/DRG-123.mp4": ("UNCENSORED", "UNCENSORED"),
-        "/media/MIDV-123.mp4": ("UNCENSORED", "CRACKED"),
-    }
-    assert _type_and_mosaic(engine) == expected
-
-    # downgrade 留空 (数据迁移不可逆), 再次升级不改变已写入的值
-    command.downgrade(cfg, "ea2ffb776110")
-    command.upgrade(cfg, "head")
-    assert _type_and_mosaic(engine) == expected
+    assert _type_and_mosaic(engine) == {path: after for path, _, after in rows}
 
     engine.dispose()
