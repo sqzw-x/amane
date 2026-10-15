@@ -7,7 +7,7 @@ from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text, fold_number
+from ..parsing import extract_all_texts, extract_text, select_number_index
 
 
 class JavBusCrawler(Crawler):
@@ -36,24 +36,19 @@ class JavBusCrawler(Crawler):
             if title:
                 return direct_url
 
-        # 未命中则回退搜索. 站内检索为模糊匹配, 会返回番号相近的条目, 因此逐条比对结果
-        # <date> 中的番号: 精确优先, 再忽略短横线与空格; 全不相符视为来源无此番号.
+        # 未命中则回退搜索. 站内检索为模糊匹配, 会返回番号相近的条目, 因此逐条比对结果 <date> 中的
+        # 番号; 站点恒不写开头的数字段, 由 select_number_index 的宽松一档承接.
         search_url = f"{self.base_url}/search/{number}&type=&parent=ce"
         text = await self.client.get_html(search_url, cookies=self.cookies, headers=self.headers)
         html = Selector(text=text)
-        folded = fold_number(number)
-        folded_hit: str | None = None
-        for item in html.xpath("//a[@class='movie-box']"):
-            href = item.xpath("./@href").get()
-            found = extract_text(item, "div[@class='photo-info']//date[1]/text()")
-            if not href or not found:
-                continue
-            url = urljoin(self.base_url, href)
-            if found.casefold() == number.casefold():
-                return url
-            if folded_hit is None and fold_number(found) == folded:
-                folded_hit = url
-        return folded_hit
+        candidates = [
+            (urljoin(self.base_url, href), found)
+            for item in html.xpath("//a[@class='movie-box']")
+            if (href := item.xpath("./@href").get())
+            and (found := extract_text(item, "div[@class='photo-info']//date[1]/text()"))
+        ]
+        index = select_number_index([found for _, found in candidates], number)
+        return candidates[index][0] if index is not None else None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         text = await self.client.get_html(url, cookies=self.cookies, headers=self.headers)

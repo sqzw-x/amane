@@ -5,6 +5,7 @@ from parsel import Selector
 
 from amane.crawlers.parsing import (
     CSSSelector,
+    NumberMatch,
     clean_string,
     extract_all_texts,
     extract_text,
@@ -13,7 +14,9 @@ from amane.crawlers.parsing import (
     is_same_number,
     leading_token,
     normalize_name,
+    number_match,
     parse_western_number,
+    select_number_index,
 )
 
 SAMPLE_HTML = """
@@ -129,10 +132,68 @@ def test_parse_western_number(number: str, expected: tuple[str, str, str] | None
         # ``_`` 与 ``-`` 是两部片
         ("010115_001", "010115-001", False),
         ("", "ABF-355", False),
+        # 数字段的宽松判定是 opt-in, 不进 is_same_number
+        ("JAC-079", "390JAC-079", False),
     ],
 )
 def test_is_same_number(left: str, right: str, expected: bool) -> None:
     assert is_same_number(left, right) is expected
+
+
+NUMBER_MATCH_CASES: list[tuple[str, str, NumberMatch]] = [
+    # 折叠后相等
+    ("ABF355", "ABF-355", NumberMatch.EXACT),
+    ("Heyzo-3607", "HEYZO3607", NumberMatch.EXACT),
+    # 欧美日期号: 年份 2 位与 4 位同番号
+    ("Blacked.2026.03.29", "Blacked.26.03.29", NumberMatch.EXACT),
+    # 只有一侧写了开头的数字段: 站点省略系列代码, 或入参本身没写
+    ("JAC-079", "390JAC-079", NumberMatch.WITHOUT_LEADING_DIGITS),
+    ("390JAC-079", "JAC-079", NumberMatch.WITHOUT_LEADING_DIGITS),
+    ("300MIUM-1219", "MIUM-1219", NumberMatch.WITHOUT_LEADING_DIGITS),
+    ("MIUM-1000", "200MIUM-1000", NumberMatch.WITHOUT_LEADING_DIGITS),
+    ("107HYPN-037", "HYPN-037", NumberMatch.WITHOUT_LEADING_DIGITS),
+    # 两侧都写了数字段却不同 = 不同系列号的同名番号
+    ("200MIUM-1000", "300MIUM-1000", NumberMatch.NONE),
+    # 相近番号与序号位数都不折叠
+    ("ABF-35", "ABF-355", NumberMatch.NONE),
+    ("SSIS-497", "SSIS-4970", NumberMatch.NONE),
+    ("JAC-79", "390JAC-079", NumberMatch.NONE),
+    ("JAC-079", "390JAC-078", NumberMatch.NONE),
+    # 裸数字号与无字母可剥的号不退化成空, 因此不会互相命中
+    ("010115-001", "001", NumberMatch.NONE),
+    ("n1234", "1234", NumberMatch.NONE),
+    ("010115_001", "010115-001", NumberMatch.NONE),
+    # 任一侧为空
+    ("", "390JAC-079", NumberMatch.NONE),
+    ("390JAC-079", "", NumberMatch.NONE),
+]
+
+
+@pytest.mark.parametrize(("found", "query", "expected"), NUMBER_MATCH_CASES)
+def test_number_match(found: str, query: str, expected: NumberMatch) -> None:
+    assert number_match(found, query) is expected
+
+
+SELECT_NUMBER_CASES: list[tuple[list[str], str, int | None]] = [
+    # 精确命中优先于宽松命中, 即使它排在后面
+    (["JAC-078", "JAC-079", "390JAC-079"], "JAC-079", 1),
+    # 只剩站点省略数字段这一种可能时取它
+    (["JAC-078", "JAC-079"], "390JAC-079", 1),
+    (["HYPN-038", "HYPN-037"], "107HYPN-037", 1),
+    # 宽松候选不唯一 = 站点上确有同名不同系列号的条目, 视为未命中
+    (["200MIUM-1000", "300MIUM-1000"], "MIUM-1000", None),
+    # 候选写了数字段且与入参不同, 不是同一部
+    (["200MIUM-1000"], "300MIUM-1000", None),
+    # 无命中 / 空候选
+    (["ABF-355"], "390JAC-079", None),
+    ([], "390JAC-079", None),
+    ([""], "390JAC-079", None),
+]
+
+
+@pytest.mark.parametrize(("found", "query", "expected"), SELECT_NUMBER_CASES)
+def test_select_number_index(found: list[str], query: str, expected: int | None) -> None:
+    assert select_number_index(found, query) == expected
 
 
 @pytest.mark.parametrize(

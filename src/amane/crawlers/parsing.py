@@ -3,7 +3,9 @@
 import json
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 from re import Pattern
 from typing import TYPE_CHECKING, Any
 
@@ -127,14 +129,73 @@ def parse_western_number(number: str) -> WesternNumber | None:
     return WesternNumber(studio=fold_studio(match["studio"]), date=date, alternate=alternate)
 
 
+#: 番号开头的数字段 (素人系的系列代码, 如 ``390JAC-079`` 的 ``390``). 站点写不写它不一致:
+#: javdb 恒不写, jav321 恒写, mgstage 逐部不同. 后面不是字母时不剥 (裸数字号不参与该判定).
+_LEADING_DIGITS = re.compile(r"^\d+(?=[a-z])")
+
+
+def _split_leading_digits(number: str) -> tuple[str, str]:
+    """折叠后的番号 → (开头的数字段, 其余部分); 没有数字段时数字段为空串."""
+    folded = fold_number(number)
+    match = _LEADING_DIGITS.match(folded)
+    return (match.group(), folded[match.end() :]) if match else ("", folded)
+
+
+class NumberMatch(StrEnum):
+    """站内番号与检索番号的同一性, 声明顺序即精确度."""
+
+    NONE = "none"
+    WITHOUT_LEADING_DIGITS = "without_leading_digits"
+    EXACT = "exact"
+
+
+def number_match(found: str, query: str) -> NumberMatch:
+    """站内番号与检索番号是否同一部, 以及精确度; 任一侧为空为 ``NONE``.
+
+    ``EXACT``: 折叠后相等, 或同为欧美日期号且片商与发布日期相同.
+    ``WITHOUT_LEADING_DIGITS``: 只有一侧写了开头的数字段 (站点省略系列代码, 或入参本身没写), 其余部分
+    仍须**全等** — 这样 ``ABF-35`` 不会命中 ``ABF-375``, 两侧都写了数字段却不同也判为不是同一部
+    (``200MIUM-1000`` 不是 ``300MIUM-1000``).
+    """
+    if not found or not query:
+        return NumberMatch.NONE
+    if fold_number(found) == fold_number(query):
+        return NumberMatch.EXACT
+    western = parse_western_number(found)
+    if western is not None and western == parse_western_number(query):
+        return NumberMatch.EXACT
+    found_digits, found_rest = _split_leading_digits(found)
+    query_digits, query_rest = _split_leading_digits(query)
+    if found_rest == query_rest and not (found_digits and query_digits):
+        return NumberMatch.WITHOUT_LEADING_DIGITS
+    return NumberMatch.NONE
+
+
 def is_same_number(left: str, right: str) -> bool:
     """两个番号是否同指一部: 折叠后相等, 或同为欧美日期号且片商与发布日期相同; 任一侧为空为假."""
-    if not left or not right:
-        return False
-    if fold_number(left) == fold_number(right):
-        return True
-    western = parse_western_number(left)
-    return western is not None and western == parse_western_number(right)
+    return number_match(left, right) is NumberMatch.EXACT
+
+
+def select_number_index(found: Sequence[str], query: str) -> int | None:
+    """候选番号中与 ``query`` 同一部者的下标; 无命中返回 ``None``.
+
+    精确优先; 退而只在「仅差数字段」的候选**唯一**时取它 — 出现两个及以上说明站点上确有同名不同系列号的
+    条目, 猜一个会返回无关影片, 因此视为未命中. 调用方按下标回填自己的条目 (URL 等).
+    """
+    exact: int | None = None
+    loose: list[int] = []
+    for index, item in enumerate(found):
+        match number_match(item, query):
+            case NumberMatch.EXACT:
+                if exact is None:
+                    exact = index
+            case NumberMatch.WITHOUT_LEADING_DIGITS:
+                loose.append(index)
+            case NumberMatch.NONE:
+                pass
+    if exact is not None:
+        return exact
+    return loose[0] if len(loose) == 1 else None
 
 
 def normalize_name(value: str) -> str:

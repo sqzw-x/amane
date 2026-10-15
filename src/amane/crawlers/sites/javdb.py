@@ -6,7 +6,7 @@ from parsel import Selector
 from ...enums import ActorGender, SiteName
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
-from ..parsing import extract_all_texts, extract_text, is_same_number, parse_western_number
+from ..parsing import extract_all_texts, extract_text, parse_western_number, select_number_index
 
 
 def _parse_actors(html: Selector) -> list[FilmActor]:
@@ -31,9 +31,10 @@ class JavDBCrawler(Crawler):
         return CrawlerProfile(name=SiteName.JAVDB, base_url="https://javdb.com")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        """结果番号取自条目声明的 ``div.video-title/strong``, 与入参不同者视为未命中.
+        """结果番号取自条目声明的 ``div.video-title/strong``, 与入参同一部才命中.
 
-        欧美日期号在站内两套年份写法并存, 检索词只命中其中一套, 因此未命中时用另一种写法再检索一次.
+        站点的番号恒省略开头的数字段, 由 ``select_number_index`` 的宽松一档承接. 欧美日期号在站内两套
+        年份写法并存, 检索词只命中其中一套, 因此未命中时用另一种写法再检索一次.
         """
         number = query.number
         terms = [number]
@@ -51,12 +52,14 @@ class JavDBCrawler(Crawler):
         text = await self.client.get_html(f"{self.base_url}/search?q={quote(term)}&locale=zh", cookies=self.cookies)
         html = Selector(text=text)
 
-        for item in html.xpath("//a[@class='box']"):
-            href = extract_text(item, "@href")
-            found = extract_text(item, "div[@class='video-title']/strong/text()")
-            if href and found and is_same_number(found, number):
-                return urljoin(self.base_url, href)
-        return None
+        candidates = [
+            (href, found)
+            for item in html.xpath("//a[@class='box']")
+            if (href := extract_text(item, "@href"))
+            and (found := extract_text(item, "div[@class='video-title']/strong/text()"))
+        ]
+        index = select_number_index([found for _, found in candidates], number)
+        return urljoin(self.base_url, candidates[index][0]) if index is not None else None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         text = await self.client.get_html(url, cookies=self.cookies)
