@@ -55,6 +55,7 @@ CrawlerFactory (缓存实例)
 站点检索是模糊匹配, 与「哪条结果算命中」有关的比对都由爬虫自行处理:
 
 - 番号: 站内 ID 带 `-` 时, 入参 `HEYZO-3607` 与 `HEYZO3607` 都应能对上 (大小写, 短横线与空格不参与比对). 不允许把 `_` 改写为 `-`, 除非该站把两种当成同一部. 欧美日期号 (`Studio.YY.MM.DD`) 的年份 2 位与 4 位写法视为同一番号. 比对与归一用 `crawlers/parsing.py` 的 `fold_number` / `is_same_number` / `leading_token`.
+- 检索形态: 站内写法省略番号开头的数字段时比对放宽到「仅差数字段」, 由 `select_number_index` 取条目 (精确优先, 仅差数字段者唯一时才取). 检索词与 URL 随形态而变的来源按 `crawlers/parsing.py::number_variants` 逐个形态尝试, 命中即止; 候选只由站点省略的数字段与素人系标签 (`parsing/file_info.py::SUREN_LABELS`) 两处产生.
 - 演员: 检索行或实体的名字 (含别名) 与查找名相等才算命中, 用 `normalize_name` / `fold_name` / `is_same_name`; 站内的注记括号, 拆名规则由各站自行剥离.
 - 确认不了的结果视为该来源无此番号 / 无此演员, 不允许回退首条. 站点特例见 [content-routes.md](content-routes.md).
 
