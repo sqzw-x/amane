@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -62,6 +63,7 @@ class FeedService:
         self._repo = repo
         self._web = web_client
         self._running = False
+        self._stop_signal = asyncio.Event()
         self._locks: dict[int, asyncio.Lock] = {}
         self._locks_guard = asyncio.Lock()
 
@@ -78,16 +80,20 @@ class FeedService:
 
     async def start(self) -> None:
         self._running = True
+        self._stop_signal.clear()
         logger.info("feed service started", check_interval=_CHECK_INTERVAL)
         while self._running:
             try:
                 await self._tick()
             except Exception:
                 logger.exception("feed service tick error")
-            await asyncio.sleep(_CHECK_INTERVAL)
+            # 可被 stop() 立刻唤醒, 不必等满 check_interval.
+            with suppress(TimeoutError):
+                await asyncio.wait_for(self._stop_signal.wait(), _CHECK_INTERVAL)
 
     async def stop(self) -> None:
         self._running = False
+        self._stop_signal.set()
         logger.info("feed service stopped")
 
     async def _tick(self) -> None:

@@ -1,6 +1,7 @@
 """到期 Schedule 创建对应 Task, 并更新 last_run / next_run."""
 
 import asyncio
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,7 @@ class CronScheduler:
     def __init__(self, repo: Repository):
         self._repo = repo
         self._running = False
+        self._stop_signal = asyncio.Event()
 
     @property
     def is_running(self) -> bool:
@@ -30,6 +32,7 @@ class CronScheduler:
 
     async def start(self) -> None:
         self._running = True
+        self._stop_signal.clear()
         logger.info("cron scheduler started", interval=_CHECK_INTERVAL)
 
         while self._running:
@@ -37,10 +40,13 @@ class CronScheduler:
                 await self._tick()
             except Exception:
                 logger.exception("cron scheduler tick error")
-            await asyncio.sleep(_CHECK_INTERVAL)
+            # 可被 stop() 立刻唤醒, 不必等满检查间隔.
+            with suppress(TimeoutError):
+                await asyncio.wait_for(self._stop_signal.wait(), _CHECK_INTERVAL)
 
     async def stop(self) -> None:
         self._running = False
+        self._stop_signal.set()
         logger.info("cron scheduler stopping")
 
     async def _tick(self) -> None:
