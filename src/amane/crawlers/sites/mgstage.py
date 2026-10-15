@@ -6,16 +6,26 @@ from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text
+from ..parsing import extract_all_texts, extract_text, number_variants, select_number_index
 
 
 class MGStageCrawler(Crawler):
+    #: 详情页地址里的番号段, 检索结果与直达地址共用同一形态.
+    _DETAIL_PATH = re.compile(r"/product/product_detail/([^/]+)/")
+
     @classmethod
     def profile(cls) -> CrawlerProfile:
         return CrawlerProfile(name=SiteName.MGSTAGE, base_url="https://www.mgstage.com", cookies={"adc": "1"})
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        number = query.number
+        """站内品番逐部不同地写不写开头的数字段, 因此按 ``number_variants`` 逐个形态尝试."""
+        for number in number_variants(query.number):
+            url = await self._search_number(number, query.number)
+            if url is not None:
+                return url
+        return None
+
+    async def _search_number(self, number: str, query_number: str) -> str | None:
         # 先尝试直接访问详情页.
         direct_url = f"{self.base_url}/product/product_detail/{number}/"
         try:
@@ -28,20 +38,21 @@ class MGStageCrawler(Crawler):
             if title:
                 return direct_url
 
-        # 未命中则回退搜索.
+        # 未命中则回退搜索; 结果按条目声明的番号确认, 不取首条.
         search_url = f"{self.base_url}/search/cSearch.php?search_word={number}"
         text = await self.client.get_html(search_url, cookies=self.cookies)
         html = Selector(text=text)
-        results = html.xpath('//a[contains(@href, "/product/product_detail/")]/@href').getall()
+        candidates: list[tuple[str, str]] = []
         seen: set[str] = set()
-        urls: list[str] = []
-        for r in results:
-            if r.startswith("/"):
-                r = self.base_url + r
-            if r not in seen:
-                seen.add(r)
-                urls.append(r)
-        return urls[0] if urls else None
+        for raw in html.xpath('//a[contains(@href, "/product/product_detail/")]/@href').getall():
+            url = f"{self.base_url}{raw}" if raw.startswith("/") else raw
+            match = self._DETAIL_PATH.search(url)
+            if match is None or url in seen:
+                continue
+            seen.add(url)
+            candidates.append((url, match[1]))
+        index = select_number_index([found for _, found in candidates], query_number)
+        return candidates[index][0] if index is not None else None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         text = await self.client.get_html(url, cookies=self.cookies)

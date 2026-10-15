@@ -7,7 +7,7 @@ from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text, select_number_index
+from ..parsing import extract_all_texts, extract_text, number_variants, select_number_index
 
 
 class JavBusCrawler(Crawler):
@@ -22,8 +22,21 @@ class JavBusCrawler(Crawler):
         )
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        number = query.number
+        """站内地址与检索词只写去掉开头数字段的番号, 因此按 ``number_variants`` 逐个形态尝试."""
+        last_error: RequestError | None = None
+        for number in number_variants(query.number):
+            try:
+                url = await self._search_number(number, query.number)
+            except RequestError as exc:
+                last_error = exc
+                continue
+            if url is not None:
+                return url
+        if last_error is not None:
+            raise last_error
+        return None
 
+    async def _search_number(self, number: str, query_number: str) -> str | None:
         # 先尝试直接访问详情页.
         direct_url = f"{self.base_url}/{number}"
         try:
@@ -37,7 +50,7 @@ class JavBusCrawler(Crawler):
                 return direct_url
 
         # 未命中则回退搜索. 站内检索为模糊匹配, 会返回番号相近的条目, 因此逐条比对结果 <date> 中的
-        # 番号; 站点恒不写开头的数字段, 由 select_number_index 的宽松一档承接.
+        # 番号, 不取首条.
         search_url = f"{self.base_url}/search/{number}&type=&parent=ce"
         text = await self.client.get_html(search_url, cookies=self.cookies, headers=self.headers)
         html = Selector(text=text)
@@ -47,7 +60,7 @@ class JavBusCrawler(Crawler):
             if (href := item.xpath("./@href").get())
             and (found := extract_text(item, "div[@class='photo-info']//date[1]/text()"))
         ]
-        index = select_number_index([found for _, found in candidates], number)
+        index = select_number_index([found for _, found in candidates], query_number)
         return candidates[index][0] if index is not None else None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:

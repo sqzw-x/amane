@@ -15,6 +15,7 @@ from amane.crawlers.parsing import (
     leading_token,
     normalize_name,
     number_match,
+    number_variants,
     parse_western_number,
     select_number_index,
 )
@@ -194,6 +195,28 @@ SELECT_NUMBER_CASES: list[tuple[list[str], str, int | None]] = [
 @pytest.mark.parametrize(("found", "query", "expected"), SELECT_NUMBER_CASES)
 def test_select_number_index(found: list[str], query: str, expected: int | None) -> None:
     assert select_number_index(found, query) == expected
+
+
+NUMBER_VARIANT_CASES: list[tuple[str, tuple[str, ...]]] = [
+    # 数字段写在番号里: 补上站点可能省略的写法
+    ("390JAC-079", ("390JAC-079", "JAC-079")),
+    ("107HYPN-037", ("107HYPN-037", "HYPN-037")),
+    ("300MIUM-1219", ("300MIUM-1219", "MIUM-1219")),
+    # 素人系标签已知站内写法: 补出数字段
+    ("MIUM-1219", ("MIUM-1219", "300MIUM-1219")),
+    ("ARA-423", ("ARA-423", "261ARA-423")),
+    # 只有原样: 标签须自番号开头起算, 裸数字号与无数字段的号不派生
+    ("GARA-006", ("GARA-006",)),
+    ("MIDV-123", ("MIDV-123",)),
+    ("n1234", ("n1234",)),
+    ("010115-001", ("010115-001",)),
+    ("", ("",)),
+]
+
+
+@pytest.mark.parametrize(("number", "expected"), NUMBER_VARIANT_CASES)
+def test_number_variants(number: str, expected: tuple[str, ...]) -> None:
+    assert number_variants(number) == expected
 
 
 @pytest.mark.parametrize(

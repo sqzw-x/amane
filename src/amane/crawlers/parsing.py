@@ -9,6 +9,7 @@ from enum import StrEnum
 from re import Pattern
 from typing import TYPE_CHECKING, Any
 
+from ..parsing.file_info import SUREN_LABELS
 from ..utils.dates import normalize_calendar_date
 
 if TYPE_CHECKING:
@@ -130,8 +131,8 @@ def parse_western_number(number: str) -> WesternNumber | None:
 
 
 #: 番号开头的数字段 (素人系的系列代码, 如 ``390JAC-079`` 的 ``390``). 站点写不写它不一致:
-#: javdb 恒不写, jav321 恒写, mgstage 逐部不同. 后面不是字母时不剥 (裸数字号不参与该判定).
-_LEADING_DIGITS = re.compile(r"^\d+(?=[a-z])")
+#: javdb 与 javbus 恒不写, jav321 恒写出, mgstage 逐部不同. 后面不是字母时不剥 (裸数字号不参与).
+_LEADING_DIGITS = re.compile(r"^\d+(?=[a-z])", re.IGNORECASE)
 
 
 def _split_leading_digits(number: str) -> tuple[str, str]:
@@ -139,6 +140,25 @@ def _split_leading_digits(number: str) -> tuple[str, str]:
     folded = fold_number(number)
     match = _LEADING_DIGITS.match(folded)
     return (match.group(), folded[match.end() :]) if match else ("", folded)
+
+
+def number_variants(number: str) -> tuple[str, ...]:
+    """该番号在站点上可能的检索词, 原样写法在前, 去重保序.
+
+    数字段以外的写法差异由来源自行承担, 这里只补两件事: 站点省略数字段时给出省略写法, 素人系标签已知
+    数字段时给出站内写法. 来源逐个尝试, 原样命中即不再试其余写法.
+    """
+    variants = [number]
+    match = _LEADING_DIGITS.match(number)
+    if match:
+        variants.append(number[match.end() :])
+    else:
+        upper = number.upper()
+        for label, digits in SUREN_LABELS.items():
+            if upper.startswith(label):
+                variants.append(f"{digits}{number}")
+                break
+    return tuple(dict.fromkeys(variants))
 
 
 class NumberMatch(StrEnum):
