@@ -9,13 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, Request,
 from ...release import is_newer
 from ...version import get_version
 from ..deps import ConfigDep, RuntimeDep
-from ..models import (
-    DatabaseMetricsResponse,
-    DbErrorStatResponse,
-    DesktopResponse,
-    ReleaseResponse,
-    SlowStatementResponse,
-)
+from ..models import DesktopResponse, ReleaseResponse
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -61,29 +55,4 @@ async def get_release(runtime: RuntimeDep) -> ReleaseResponse:
         latest=latest,
         html_url=snapshot.html_url,
         newer=is_newer(latest, current) if latest is not None else False,
-    )
-
-
-@router.get("/database", response_model=DatabaseMetricsResponse)
-async def get_database_metrics(runtime: RuntimeDep) -> DatabaseMetricsResponse:
-    """业务库的执行观测: 提交耗时、最慢语句与按类别分的错误; 进程内累计, 重启清零."""
-    metrics = runtime.db_metrics
-    return DatabaseMetricsResponse(
-        commits=metrics.commits,
-        slow_commits=metrics.slow_commits,
-        max_commit_ms=metrics.max_commit_ms,
-        slow_statements=[
-            SlowStatementResponse(statement=item.statement, duration_ms=item.duration_ms, at=item.at)
-            for item in metrics.slow_statements
-        ],
-        pool_checked_out=metrics.pool_checked_out,
-        errors=[
-            DbErrorStatResponse(
-                kind=kind,
-                count=stat.count,
-                last_message=stat.last_message,
-                last_at=stat.last_at,
-            )
-            for kind, stat in sorted(metrics.errors.items())
-        ],
     )

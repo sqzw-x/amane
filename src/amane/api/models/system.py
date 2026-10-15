@@ -1,8 +1,4 @@
-from datetime import datetime
-
-from pydantic import BaseModel, Field
-
-from ...db.profiling import DbErrorKind
+from pydantic import BaseModel
 
 
 class DesktopResponse(BaseModel):
@@ -16,31 +12,3 @@ class ReleaseResponse(BaseModel):
     latest: str | None
     html_url: str | None
     newer: bool
-
-
-class DbErrorStatResponse(BaseModel):
-    """按类别累计的数据库错误; ``last_message`` 与 ``last_at`` 取最后一次."""
-
-    kind: DbErrorKind
-    count: int
-    last_message: str | None = None
-    last_at: datetime | None = None
-
-
-class SlowStatementResponse(BaseModel):
-    """留存的一条慢语句; 只含 SQL 文本, 不含绑定参数."""
-
-    statement: str
-    duration_ms: float
-    at: datetime
-
-
-class DatabaseMetricsResponse(BaseModel):
-    """进程内累计, 重启清零. 提交时长含等待写锁与 fsync."""
-
-    commits: int
-    slow_commits: int
-    max_commit_ms: float | None = None
-    slow_statements: list[SlowStatementResponse] = Field(default_factory=list)
-    pool_checked_out: int | None = None
-    errors: list[DbErrorStatResponse] = Field(default_factory=list)

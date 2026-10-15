@@ -14,7 +14,7 @@ from ..agent import AgentService, ResultCache
 from ..config import SAFE_DIRS_ALLOW_ALL, ColdSettings, ConfigManager
 from ..config.token import resolve_api_token
 from ..db.engine import create_async_engine_from_path
-from ..db.profiling import DbMetrics
+from ..db.profiling import DbLogPolicy
 from ..db.repository import Repository
 from ..events import EventBus
 from ..handlers import LibraryTaskLocks
@@ -120,8 +120,8 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         )
     plugin_manager.validate_hot_settings(hot, require_available=False)
 
-    db_metrics = DbMetrics()
-    engine = await create_async_engine_from_path(cold.db_path, metrics=db_metrics)
+    db_log_policy = DbLogPolicy()
+    engine = await create_async_engine_from_path(cold.db_path, policy=db_log_policy)
     repo = Repository(engine)
 
     # 会话级只读引擎, 不纳入 Alembic; dsn 变更经 _rebuild() 重建
@@ -239,7 +239,6 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         playback_state=playback_state,
         library_locks=library_locks,
         inventory_store=inventory_store,
-        db_metrics=db_metrics,
         playback_factory=PlaybackFactory(
             plugin_manager=plugin_manager,
             plugin_configs=hot.plugins,

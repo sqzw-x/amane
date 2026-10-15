@@ -1,19 +1,16 @@
-"""数据库执行观测: 错误归类 + 提交与语句计时.
+"""数据库慢路径日志: 阈值与限速.
 
-计数始终精确; 日志按阈值与限速输出. 只记 SQL 文本, 不记 ``parameters``.
-挂在业务引擎上, 见 docs/dev/observability.md.
+只决定哪些事件写日志、一次日志涵盖多少条被抑制的事件; 不保存历史, 也不经接口下发.
+只记 SQL 文本, 不记 ``parameters``. 见 docs/dev/observability.md.
 """
 
 import sqlite3
 import time
-from dataclasses import dataclass
-from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 import structlog
 from sqlalchemy import event
-from sqlalchemy.pool import Pool, QueuePool
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -24,15 +21,14 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-# 超过该时长的提交与语句各记一条 WARNING; 阈值以内只累加计数.
+# 超过该时长的提交与语句各记一条 WARNING.
 SLOW_COMMIT_MS = 200.0
 SLOW_STATEMENT_MS = 100.0
-# 同类日志之间的最小间隔 (错误按类别, 慢语句全局), 防止一次性故障冲垮日志.
-ERROR_LOG_INTERVAL_S = 30.0
-# 留存供排查的慢语句条数, 与拼接日志时保留的事务语句轨迹.
-SLOW_STATEMENTS_KEPT = 5
+# 同一类事件两次日志之间的最小间隔; 窗口内被抑制的条数在下次日志里以 count 给出.
+LOG_INTERVAL_S = 30.0
+# 慢提交日志附带的本次事务语句轨迹.
 _TRAIL_LIMIT = 5
-# SQL 文本的留存长度: 完整语句与日志里的轨迹各一档.
+# 日志里 SQL 文本与错误消息的留存长度: 完整语句与事务轨迹各一档.
 _SNIPPET_LIMIT = 200
 _TRAIL_SNIPPET = 100
 _LOCKED_MESSAGES = ("database is locked", "database table is locked")
@@ -47,22 +43,6 @@ class DbErrorKind(StrEnum):
     LOCKED = "locked"
     DISCONNECT = "disconnect"
     OTHER = "other"
-
-
-@dataclass
-class DbErrorStat:
-    count: int = 0
-    last_message: str | None = None
-    last_at: datetime | None = None
-
-
-@dataclass
-class SlowStatement:
-    """留存的一条慢语句, 按耗时倒序最多保留 ``SLOW_STATEMENTS_KEPT`` 条."""
-
-    statement: str
-    duration_ms: float
-    at: datetime
 
 
 def classify_db_error(exc: BaseException) -> DbErrorKind:
@@ -83,74 +63,47 @@ def _append_trail(conn: Connection, statement: str) -> None:
         trail.append(statement[:_TRAIL_SNIPPET])
 
 
-class DbMetrics:
-    """进程内计数与极值; 重启清零, 不持久化.
+class DbLogPolicy:
+    """阈值与限速. 抑制窗口内的事件只累计条数, 由下一次日志的 ``count`` 交代.
 
-    ``clock`` 只用于日志限速, 供用例注入假时钟.
+    状态按事件类别定界 (错误类别最多 3 种), 不随事件数量增长. ``clock`` 供用例注入假时钟.
     """
 
     def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
-        self._pool: QueuePool | None = None
         self._last_error_log: dict[DbErrorKind, float] = {}
+        self._suppressed_errors: dict[DbErrorKind, int] = {}
         self._last_slow_statement_log = float("-inf")
-        self.commits = 0
-        self.slow_commits = 0
-        self.max_commit_ms: float | None = None
-        self.slow_statements: list[SlowStatement] = []
-        self.errors: dict[DbErrorKind, DbErrorStat] = {}
+        self._suppressed_slow_statements = 0
 
-    def bind_pool(self, pool: Pool) -> None:
-        """连接池占用只在队列池上可读; 其它池型留空."""
-        if isinstance(pool, QueuePool):
-            self._pool = pool
+    def slow_commit(self, duration_ms: float) -> bool:
+        """提交超过 ``SLOW_COMMIT_MS`` 就写日志, 不限速."""
+        return duration_ms >= SLOW_COMMIT_MS
 
-    @property
-    def pool_checked_out(self) -> int | None:
-        return None if self._pool is None else self._pool.checkedout()
-
-    def record_commit(self, duration_ms: float) -> bool:
-        """返回是否应当输出日志 (超过 ``SLOW_COMMIT_MS``)."""
-        self.commits += 1
-        if self.max_commit_ms is None or duration_ms > self.max_commit_ms:
-            self.max_commit_ms = duration_ms
-        if duration_ms < SLOW_COMMIT_MS:
-            return False
-        self.slow_commits += 1
-        return True
-
-    def record_statement(self, duration_ms: float, statement: str) -> bool:
-        """超过 ``SLOW_STATEMENT_MS`` 时留存该语句; 返回是否应当输出日志 (全局限速)."""
+    def slow_statement(self, duration_ms: float) -> int | None:
+        """语句超过 ``SLOW_STATEMENT_MS`` 时返回窗口内累积条数; 未超阈值或限速中返回 None."""
         if duration_ms < SLOW_STATEMENT_MS:
-            return False
-        self.slow_statements.append(
-            SlowStatement(statement=_snippet(statement), duration_ms=duration_ms, at=datetime.now(UTC))
-        )
-        self.slow_statements.sort(key=lambda item: item.duration_ms, reverse=True)
-        del self.slow_statements[SLOW_STATEMENTS_KEPT:]
-        now = self._clock()
-        if now - self._last_slow_statement_log < ERROR_LOG_INTERVAL_S:
-            return False
-        self._last_slow_statement_log = now
-        return True
+            return None
+        self._suppressed_slow_statements += 1
+        if self._clock() - self._last_slow_statement_log < LOG_INTERVAL_S:
+            return None
+        self._last_slow_statement_log = self._clock()
+        count = self._suppressed_slow_statements
+        self._suppressed_slow_statements = 0
+        return count
 
-    def record_error(self, kind: DbErrorKind, message: str) -> bool:
-        """返回是否应当输出日志 (同类错误受 ``ERROR_LOG_INTERVAL_S`` 限速)."""
-        stat = self.errors.setdefault(kind, DbErrorStat())
-        stat.count += 1
-        stat.last_message = _snippet(message)
-        stat.last_at = datetime.now(UTC)
-        now = self._clock()
+    def error(self, kind: DbErrorKind) -> int | None:
+        """返回该类别窗口内累积条数; 限速中返回 None. 不同类别互不影响."""
+        self._suppressed_errors[kind] = self._suppressed_errors.get(kind, 0) + 1
         last = self._last_error_log.get(kind)
-        if last is not None and now - last < ERROR_LOG_INTERVAL_S:
-            return False
-        self._last_error_log[kind] = now
-        return True
+        if last is not None and self._clock() - last < LOG_INTERVAL_S:
+            return None
+        self._last_error_log[kind] = self._clock()
+        return self._suppressed_errors.pop(kind)
 
 
-def install_profiling(engine: AsyncEngine, metrics: DbMetrics) -> None:
-    """挂上观测监听. ``handle_error`` 返回 ``None``, 原异常照常抛出."""
-    metrics.bind_pool(engine.pool)
+def install_profiling(engine: AsyncEngine, policy: DbLogPolicy) -> None:
+    """挂上监听. ``handle_error`` 返回 ``None``, 原异常照常抛出."""
 
     @event.listens_for(engine.sync_engine, "begin")
     def _begin(conn: Connection) -> None:
@@ -164,7 +117,7 @@ def install_profiling(engine: AsyncEngine, metrics: DbMetrics) -> None:
         if t0 is None:
             return
         duration_ms = (time.monotonic() - t0) * 1000
-        if metrics.record_commit(duration_ms):
+        if policy.slow_commit(duration_ms):
             # 事务里执行过的语句, 用于判断是什么拖住了这次提交
             logger.warning("slow db commit", duration_ms=round(duration_ms, 1), statements=" | ".join(trail))
 
@@ -198,21 +151,27 @@ def install_profiling(engine: AsyncEngine, metrics: DbMetrics) -> None:
         if t0 is None:
             return
         duration_ms = (time.monotonic() - t0) * 1000
-        if metrics.record_statement(duration_ms, statement):
-            logger.warning("slow db statement", duration_ms=round(duration_ms, 1), statement=_snippet(statement))
+        count = policy.slow_statement(duration_ms)
+        if count is not None:
+            logger.warning(
+                "slow db statement",
+                duration_ms=round(duration_ms, 1),
+                statement=_snippet(statement),
+                count=count,
+            )
 
     @event.listens_for(engine.sync_engine, "handle_error")
     def _error(context: ExceptionContext) -> None:
         kind = DbErrorKind.DISCONNECT if context.is_disconnect else classify_db_error(context.original_exception)
-        message = str(context.original_exception)
-        if not metrics.record_error(kind, message):
+        count = policy.error(kind)
+        if count is None:
             return
         log = logger.warning if kind is DbErrorKind.LOCKED else logger.error
         log(
             "database error",
             kind=str(kind),
-            message=message,
+            message=_snippet(str(context.original_exception)),
             statement=_snippet(context.statement or ""),
-            count=metrics.errors[kind].count,
+            count=count,
             exc_info=context.sqlalchemy_exception,
         )

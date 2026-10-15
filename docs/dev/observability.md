@@ -23,16 +23,16 @@ scrape 等 handler 只调用 `current()`; 其它代码仍可直接使用 `logger
 
 **打点约定**: Worker 在 `task started` 时打印 payload 全量; scrape 等 handler 用 `current().debug/info/...`. Recorder 活跃时, WebClient 对最终失败的 `request failed` 降为 debug — 结构化失败以 `http exchange` + `http/index.jsonl` 为准.
 
-## 数据库执行观测
+## 数据库慢路径日志
 
-`db/profiling.py::install_profiling` 挂在业务 SQLite 引擎上 (迁移连接、临时记录库与 r18 只读库不挂), 计数为进程内累计, 重启清零.
+`db/profiling.py::install_profiling` 挂在业务 SQLite 引擎上 (迁移连接、临时记录库与 r18 只读库不挂). 只写日志, 不落库也不经接口下发; 要看历史就查 `app.log` 或对应任务的 `task.log`, 界面 Logs 页只保留实时缓冲.
 
-- **错误归口**: `handle_error` 把 DBAPI 异常归为 `locked` / `disconnect` / `other` 并计数; 返回 `None`, 原异常照常抛给调用方, 各调用点行为不变. `classify_db_error` 是锁类判定的唯一出处, 供后续的锁错误有界重试复用.
-- **提交计时**: `begin`→`commit` 的时长含等待写锁与 fsync, 是区分「fsync 慢」与「排队久」的依据; 超过 `SLOW_COMMIT_MS` (200ms) 记一条 WARNING, 并附带本次事务执行过的语句轨迹 (最多 5 条, 各截断 100 字符).
-- **语句计时**: 超过 `SLOW_STATEMENT_MS` (100ms) 的语句进留存并记一条 WARNING; 留存按耗时倒序保留 `SLOW_STATEMENTS_KEPT` (5) 条, 日志全局限速.
-- **SQL 文本**: 只记 SQL 语句本身, 一律不记 `parameters` (可能含用户数据). 留存绕接口下发, 日志落在当前 structlog 上下文里, 任务内发生时同时落该任务的 `task.log`.
-- **限速**: 同一错误类别两次日志至少间隔 `ERROR_LOG_INTERVAL_S` (30s), 慢语句日志同一窗口内只记一次; 计数与留存始终精确. 阈值以内只做一次时钟读取与比较, 不格式化、不写盘.
-- **读取**: `GET /api/system/database` 返回提交次数、慢提交次数、最长提交耗时、慢语句留存、连接池占用与按类别分的错误统计.
+- **错误归口**: `handle_error` 把 DBAPI 异常归为 `locked` / `disconnect` / `other` 后记一条 (locked 为 warning, 其余 error); 返回 `None`, 原异常照常抛给调用方, 各调用点行为不变. `classify_db_error` 是锁类判定的唯一出处, 供后续的锁错误有界重试复用.
+- **慢提交**: `begin`→`commit` 的时长含等待写锁与 fsync; 超过 `SLOW_COMMIT_MS` (200ms) 记一条 warning, 并附带本次事务执行过的语句轨迹 (最多 5 条, 各截断 100 字符) — 据此判断是什么拖住了提交.
+- **慢语句**: 超过 `SLOW_STATEMENT_MS` (100ms) 记一条 warning, 带完整语句 (截断 200 字符).
+- **限速与计数**: 同一错误类别、以及慢语句, 两次日志之间至少间隔 `LOG_INTERVAL_S` (30s); 窗口内被抑制的条数由下一次日志的 `count` 字段交代, 因此日志里的条数即实际发生数.
+- **不记参数**: 只记 SQL 文本, 一律不记 `parameters` (可能含用户数据).
+- 状态按事件类别定界, 不随事件数量增长; 阈值以内只做一次时钟读取与比较, 不格式化、不写盘.
 
 ## Per-task 隔离
 

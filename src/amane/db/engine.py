@@ -6,7 +6,7 @@ import structlog
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
-from .profiling import DbMetrics, install_profiling
+from .profiling import DbLogPolicy, install_profiling
 from .sqlite_migrate import upgrade_sqlite_database
 
 if TYPE_CHECKING:
@@ -15,10 +15,10 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
-async def create_async_engine_from_path(db_path: Path | str, *, metrics: DbMetrics | None = None) -> AsyncEngine:
+async def create_async_engine_from_path(db_path: Path | str, *, policy: DbLogPolicy | None = None) -> AsyncEngine:
     """先 ``upgrade_sqlite_database``, 再开业务引擎. 事务性 DDL 仅用于迁移连接.
 
-    ``metrics`` 给出时挂上执行观测; 临时库与只读外部库不传.
+    ``policy`` 给出时挂上慢路径日志; 临时库与只读外部库不传.
     """
     path = Path(db_path)
     try:
@@ -37,8 +37,8 @@ async def create_async_engine_from_path(db_path: Path | str, *, metrics: DbMetri
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
-    if metrics is not None:
-        install_profiling(engine, metrics)
+    if policy is not None:
+        install_profiling(engine, policy)
 
     logger.info("database ready", path=str(path))
     return engine
