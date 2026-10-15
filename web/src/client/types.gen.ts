@@ -881,6 +881,70 @@ export type CropPosterRequest = {
 };
 
 /**
+ * DatabaseMetricsResponse
+ *
+ * 进程内累计, 重启清零. 提交时长含等待写锁与 fsync.
+ */
+export type DatabaseMetricsResponse = {
+    /**
+     * Commits
+     */
+    commits: number;
+    /**
+     * Slow Commits
+     */
+    slow_commits: number;
+    /**
+     * Max Commit Ms
+     */
+    max_commit_ms?: number | null;
+    /**
+     * Slowest Statement
+     */
+    slowest_statement?: string | null;
+    /**
+     * Slowest Statement Ms
+     */
+    slowest_statement_ms?: number | null;
+    /**
+     * Pool Checked Out
+     */
+    pool_checked_out?: number | null;
+    /**
+     * Errors
+     */
+    errors?: Array<DbErrorStatResponse>;
+};
+
+/**
+ * DbErrorKind
+ *
+ * 数据库错误类别. ``locked`` 供后续的锁错误有界重试复用.
+ */
+export type DbErrorKind = 'locked' | 'disconnect' | 'other';
+
+/**
+ * DbErrorStatResponse
+ *
+ * 按类别累计的数据库错误; ``last_message`` 与 ``last_at`` 取最后一次.
+ */
+export type DbErrorStatResponse = {
+    kind: DbErrorKind;
+    /**
+     * Count
+     */
+    count: number;
+    /**
+     * Last Message
+     */
+    last_message?: string | null;
+    /**
+     * Last At
+     */
+    last_at?: string | null;
+};
+
+/**
  * DeleteResult
  */
 export type DeleteResult = {
@@ -7611,6 +7675,22 @@ export type GetReleaseResponses = {
 };
 
 export type GetReleaseResponse = GetReleaseResponses[keyof GetReleaseResponses];
+
+export type GetDatabaseMetricsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/system/database';
+};
+
+export type GetDatabaseMetricsResponses = {
+    /**
+     * Successful Response
+     */
+    200: DatabaseMetricsResponse;
+};
+
+export type GetDatabaseMetricsResponse = GetDatabaseMetricsResponses[keyof GetDatabaseMetricsResponses];
 
 export type ListTasksData = {
     body?: never;

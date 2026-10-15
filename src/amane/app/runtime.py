@@ -17,6 +17,7 @@ from ..crawlers.factory import CrawlerFactory
 from ..crawlers.http import HttpClient
 from ..crawlers.r18dev import R18Database
 from ..db.models import TaskType
+from ..db.profiling import DbMetrics
 from ..enums import BrowserBackendName, BrowserMode, SiteName
 from ..handlers import (
     ActorScrapeHandler,
@@ -221,6 +222,7 @@ class AppRuntime:
     playback_state: PlaybackState = field(default_factory=PlaybackState)
     library_locks: LibraryTaskLocks = field(default_factory=LibraryTaskLocks)
     inventory_store: InventoryStore = field(default_factory=InventoryStore)
+    db_metrics: DbMetrics = field(default_factory=DbMetrics)
     browser: BrowserPool | None = None
     r18_handle: R18Handle | None = None
 

@@ -22,6 +22,8 @@ if TYPE_CHECKING:
 
     from httpx2 import AsyncClient as HttpxClient
 
+    from amane.db.repository import Repository
+
 
 @asynccontextmanager
 async def _supervised_app(tmp_path: Path) -> AsyncIterator[tuple[FastAPI, AsyncClient]]:
@@ -56,6 +58,21 @@ async def test_desktop_supervised_when_flag_set(tmp_path: Path) -> None:
         resp = await client.get("system/desktop")
         assert resp.status_code == 200
         assert resp.json()["supervised"] is True
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_database_metrics(client: HttpxClient, repo: Repository, safe_path: Path) -> None:
+    """业务库执行观测: 写入后提交计数增加, 计数对象与业务引擎的连接池已绑定."""
+    before = (await client.get("system/database")).json()
+    assert before["errors"] == []
+    assert before["slow_commits"] == 0
+    assert before["pool_checked_out"] is not None
+
+    await repo.create_library(name="t", path=str(safe_path), recursive=False, patterns=["*.mp4"])
+
+    after = (await client.get("system/database")).json()
+    assert after["commits"] > before["commits"]
+    assert after["slowest_statement_ms"] is not None
 
 
 @pytest.mark.asyncio(loop_scope="function")

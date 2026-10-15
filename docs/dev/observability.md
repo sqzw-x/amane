@@ -23,6 +23,15 @@ scrape 等 handler 只调用 `current()`; 其它代码仍可直接使用 `logger
 
 **打点约定**: Worker 在 `task started` 时打印 payload 全量; scrape 等 handler 用 `current().debug/info/...`. Recorder 活跃时, WebClient 对最终失败的 `request failed` 降为 debug — 结构化失败以 `http exchange` + `http/index.jsonl` 为准.
 
+## 数据库执行观测
+
+`db/profiling.py::install_profiling` 挂在业务 SQLite 引擎上 (迁移连接、临时记录库与 r18 只读库不挂), 计数为进程内累计, 重启清零.
+
+- **错误归口**: `handle_error` 把 DBAPI 异常归为 `locked` / `disconnect` / `other` 并计数; 返回 `None`, 原异常照常抛给调用方, 各调用点行为不变. `classify_db_error` 是锁类判定的唯一出处, 供后续的锁错误有界重试复用.
+- **提交计时**: `begin`→`commit` 的时长含等待写锁与 fsync, 是区分「fsync 慢」与「排队久」的依据; 超过 `SLOW_COMMIT_MS` (200ms) 记一条 WARNING. 语句只保留最慢一条, 不做逐条日志.
+- **限速**: 同一错误类别两次日志至少间隔 `ERROR_LOG_INTERVAL_S` (30s), 避免锁风暴冲垮日志; 计数与最后一次消息始终精确. 阈值以内只做一次时钟读取与比较, 不格式化、不写盘.
+- **读取**: `GET /api/system/database` 返回提交次数、慢提交次数、最长的提交与语句耗时、连接池占用与按类别分的错误统计; 错误行继承当前 structlog 上下文, 任务内发生时同时落该任务的 `task.log`.
+
 ## Per-task 隔离
 
 `ContextVar(task_id)` + 每 handler 一个 `TaskIdFilter`; `asyncio.create_task` 自动复制上下文. 生命周期: 删除任务时同步删除整个 `task-{id}/` (文件删除失败仅告警), `begin` 在 mkdir 后删除目录里已有的 `summary.json` — SQLite 可复用已删除任务的 id, 新任务不得沿用同 id 目录里残留的刮削摘要.

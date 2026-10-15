@@ -1565,6 +1565,130 @@ export const CropPosterRequestSchema = {
     description: '从封面图按像素框裁切海报 (相对 thumb 当前本地文件像素; 含就地超分后尺寸).'
 } as const;
 
+export const DatabaseMetricsResponseSchema = {
+    properties: {
+        commits: {
+            type: 'integer',
+            title: 'Commits'
+        },
+        slow_commits: {
+            type: 'integer',
+            title: 'Slow Commits'
+        },
+        max_commit_ms: {
+            anyOf: [
+                {
+                    type: 'number'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Max Commit Ms'
+        },
+        slowest_statement: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Slowest Statement'
+        },
+        slowest_statement_ms: {
+            anyOf: [
+                {
+                    type: 'number'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Slowest Statement Ms'
+        },
+        pool_checked_out: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Pool Checked Out'
+        },
+        errors: {
+            items: {
+                $ref: '#/components/schemas/DbErrorStatResponse'
+            },
+            type: 'array',
+            title: 'Errors'
+        }
+    },
+    type: 'object',
+    required: [
+        'commits',
+        'slow_commits'
+    ],
+    title: 'DatabaseMetricsResponse',
+    description: '进程内累计, 重启清零. 提交时长含等待写锁与 fsync.'
+} as const;
+
+export const DbErrorKindSchema = {
+    type: 'string',
+    enum: [
+        'locked',
+        'disconnect',
+        'other'
+    ],
+    title: 'DbErrorKind',
+    description: '数据库错误类别. ``locked`` 供后续的锁错误有界重试复用.'
+} as const;
+
+export const DbErrorStatResponseSchema = {
+    properties: {
+        kind: {
+            $ref: '#/components/schemas/DbErrorKind'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        },
+        last_message: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Message'
+        },
+        last_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last At'
+        }
+    },
+    type: 'object',
+    required: [
+        'kind',
+        'count'
+    ],
+    title: 'DbErrorStatResponse',
+    description: '按类别累计的数据库错误; ``last_message`` 与 ``last_at`` 取最后一次.'
+} as const;
+
 export const DeleteResultSchema = {
     properties: {
         type: {

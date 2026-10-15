@@ -71,7 +71,7 @@ from .playback import (
 )
 from .plugins import PluginConfigUpdate, PluginListResponse, PluginResponse
 from .schedules import ScheduleCreateRequest, ScheduleListResponse, ScheduleResponse, ScheduleUpdateRequest
-from .system import DesktopResponse, ReleaseResponse
+from .system import DatabaseMetricsResponse, DbErrorStatResponse, DesktopResponse, ReleaseResponse
 from .tasks import (
     ActorScrapeSubmission,
     CleanupSubmission,
@@ -117,6 +117,8 @@ __all__ = [
     "CropAvatarRequest",
     "CropBoxRequest",
     "CropPosterRequest",
+    "DatabaseMetricsResponse",
+    "DbErrorStatResponse",
     "DeleteSubmission",
     "DesktopResponse",
     "FacetBatchAction",
