@@ -447,6 +447,7 @@ AMATEUR_CASES: list[tuple[str, bool]] = [
     ("SIRO-1234", True),
     ("LUXU-1234", True),
     ("259LUXU-1456", True),
+    ("ARA-423", True),
     ("MIDV-123", False),
 ]
 
@@ -466,6 +467,11 @@ EXTRACT_NUMBER_CASES: list[tuple[str, str | None]] = [
     ("010115-001", "010115-001"),
     ("010115_001", "010115_001"),
     ("259LUXU-1456", "259LUXU-1456"),
+    # 站内写法带数字段而文件名常省略, 按标签补齐; 标签须从番号开头起算 (GARA 不含 ARA)
+    ("MIUM-1000", "300MIUM-1000"),
+    ("ARA-423", "261ARA-423"),
+    ("261ARA-423", "261ARA-423"),
+    ("GARA-006", "GARA-006"),
     ("今週の新作をお届けします", None),
     ("Weekly Update", None),
     ("", None),

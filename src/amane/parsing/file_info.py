@@ -131,12 +131,14 @@ _UNCENSORED_PREFIXES = (
     "MCB3D",
 )
 
-_SUREN_PREFIXES: dict[str, str] = {
-    "LUXU-": "259LUXU-",
-    "ARA-": "200GANA-",
-    "MIUM-": "300MIUM-",
-    "NTK-": "300NTK-",
-    "MAAN-": "300MAAN-",
+#: 素人系标签 → 站内番号开头的数字段. 文件名常省略数字段 (ARA-423), 站内两种写法并存
+#: (261ARA-423 与 MAAN-968); 数字段只用于补齐, 不参与相等判定.
+_SUREN_LABELS: dict[str, str] = {
+    "LUXU-": "259",
+    "ARA-": "261",
+    "MIUM-": "300",
+    "NTK-": "300",
+    "MAAN-": "300",
 }
 
 _WESTERN_NAMES: dict[str, str] = {
@@ -492,9 +494,9 @@ def _match(basename: str, escape_strings: list[str], *, generic: bool) -> tuple[
         return m.group(), ContentType.AMATEUR
     if m := _CATALOG_NUMBER.search(c):
         file_number = m.group()
-        for key, value in _SUREN_PREFIXES.items():
-            if key in file_number:
-                file_number = value.replace(key, "") + file_number
+        for label, digits in _SUREN_LABELS.items():
+            if file_number.startswith(label):
+                file_number = f"{digits}{file_number}"
                 break
         return file_number, _type_of_catalog_id(file_number)
     if m := _SIX_DIGIT_CATALOG.search(c):
@@ -549,7 +551,7 @@ def _type_of_catalog_id(number: str) -> ContentType:
         return ContentType.UNCENSORED
     if "SIRO" in upper or re.search(r"\d{3,}[A-Z]+-\d{2}", upper):
         return ContentType.AMATEUR
-    if any(upper.startswith(key.upper()) for key in _SUREN_PREFIXES):
+    if any(upper.startswith(label.upper()) for label in _SUREN_LABELS):
         return ContentType.AMATEUR
     if re.search(r"([^A-Z]|^)MD[A-Z-]*\d{4,}", upper) and "MDVR" not in upper:
         return ContentType.CHINESE
