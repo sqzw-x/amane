@@ -208,8 +208,8 @@ async def _apply_user_tags(
 
     未知标签 id 抛 ``ValueError`` (请求级错误); 不存在的条目 id 计入 ``missing``, 其余照常处理.
     """
-    entity_ids = list(dict.fromkeys(ids))
-    tag_ids = list(dict.fromkeys(user_tag_ids))
+    entity_ids = unique_ids(ids)
+    tag_ids = unique_ids(user_tag_ids)
     known_tags: set[int] = set()
     if tag_ids:
         tag_rows = (await session.exec(select(UserTag.id).where(col(UserTag.id).in_(tag_ids)))).all()
@@ -1283,8 +1283,8 @@ async def set_facets_favorite(
     entity = _favorite_entity(kind)
     if entity is None:
         raise ValueError(f"facet kind {kind} 不支持收藏")
-    unique_ids = list(dict.fromkeys(facet_ids))
-    rows = (await session.exec(select(entity).where(col(entity.id).in_(unique_ids)))).all()
+    ids = unique_ids(facet_ids)
+    rows = (await session.exec(select(entity).where(col(entity.id).in_(ids)))).all()
     changed = 0
     for row in rows:
         if row.is_favorite == is_favorite:
@@ -1297,5 +1297,5 @@ async def set_facets_favorite(
     return FacetBatchResult(
         changed=changed,
         unchanged=len(rows) - changed,
-        missing=len(unique_ids) - len(rows),
+        missing=len(ids) - len(rows),
     )

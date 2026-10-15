@@ -11,14 +11,11 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...parsing import ContentType
+from ...utils.collections import unique_ids
 from ..feed_keywords import item_matches_ignore_keywords
 from ..models import Feed, FeedItem, FeedItemReadState, FeedItemState, Metadata
 from ..repo_types import FeedUpdates
 from .base import RepositoryMixinBase
-
-
-def _unique_item_ids(item_ids: Sequence[int]) -> list[int]:
-    return list(dict.fromkeys(item_ids))
 
 
 class FeedsRepoMixin(RepositoryMixinBase):
@@ -171,7 +168,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
 
     async def list_feed_items_by_ids(self, feed_id: int, item_ids: Sequence[int]) -> tuple[list[FeedItem], int]:
         """只返回属于该 Feed 的行; 第二项为 missing 数."""
-        ids = _unique_item_ids(item_ids)
+        ids = unique_ids(item_ids)
         if not ids:
             return [], 0
 
@@ -355,7 +352,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
         return await self._set_feed_items_read(feed_id, item_ids, read=False)
 
     async def _set_feed_items_ignored(self, feed_id: int, item_ids: list[int], *, ignored: bool) -> tuple[int, int]:
-        ids = _unique_item_ids(item_ids)
+        ids = unique_ids(item_ids)
         if not ids:
             return 0, 0
 
@@ -376,7 +373,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
             return len(items), len(ids) - len(items)
 
     async def _set_feed_items_read(self, feed_id: int, item_ids: list[int], *, read: bool) -> tuple[int, int]:
-        ids = _unique_item_ids(item_ids)
+        ids = unique_ids(item_ids)
         if not ids:
             return 0, 0
 
@@ -398,7 +395,7 @@ class FeedsRepoMixin(RepositoryMixinBase):
 
     async def delete_feed_items(self, feed_id: int, item_ids: list[int]) -> tuple[int, int]:
         """只删属于该 Feed 的行; 不影响已创建任务或元数据."""
-        ids = _unique_item_ids(item_ids)
+        ids = unique_ids(item_ids)
         if not ids:
             return 0, 0
 

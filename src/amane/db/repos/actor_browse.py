@@ -9,6 +9,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...enums import ActorGender
+from ...utils.collections import unique_ids
 from ..models import Actor, ActorAlias, ActorSortField, ActorUserTag, MetadataActor, SortOrder
 from ..repo_types import ActorBrowseItem, ActorBrowseParams
 
@@ -90,7 +91,7 @@ def _build_browse_filters(
 ) -> list[ColumnElement[bool]]:
     filters: list[ColumnElement[bool]] = []
     if params.ids is not None:
-        id_list = list(dict.fromkeys(params.ids))
+        id_list = unique_ids(params.ids)
         if not id_list:
             filters.append(col(Actor.id).is_(None))  # 空集 → 无行
         else:
@@ -113,7 +114,7 @@ def _build_browse_filters(
         filters.append(~_has_person_expr())
     filters.extend(
         col(Actor.id).in_(select(ActorUserTag.actor_id).where(col(ActorUserTag.user_tag_id) == user_tag_id))
-        for user_tag_id in dict.fromkeys(params.user_tag_ids or [])
+        for user_tag_id in unique_ids(params.user_tag_ids)
     )
     if params.has_image is True:
         filters.append(_has_image_expr())

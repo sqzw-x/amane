@@ -3,6 +3,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
+from ...utils.collections import unique_ids
 from .user_tags import UserTagResponse
 
 
@@ -34,7 +35,7 @@ class FacetBatchRequest(BaseModel):
     @field_validator("facet_ids")
     @classmethod
     def _normalize(cls, value: list[int]) -> list[int]:
-        return list(dict.fromkeys(value))
+        return unique_ids(value)
 
 
 class FacetBatchResponse(BaseModel):

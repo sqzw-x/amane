@@ -7,6 +7,7 @@ from ...db.models import Task, TaskStatus, TaskType
 from ...db.repository import Repository
 from ...observability import remove_task_dir
 from ...scheduler.worker import CANCEL_ERROR
+from ...utils.collections import unique_ids
 from ..models.tasks import TaskBatchAction, TaskBatchResponse
 
 CancelRunning = Callable[[int], Awaitable[bool]]
@@ -59,9 +60,9 @@ async def execute_task_batch(
     """有 ``task_ids`` 则精确匹配, 否则按状态/类型筛选; CANCEL 区分 queued/running."""
     allowed = _ACTION_STATUSES[action]
     if task_ids is not None:
-        unique_ids = list(dict.fromkeys(task_ids))
-        found = await repo.find_tasks(task_ids=unique_ids)
-        missing = len(unique_ids) - len(found)
+        ids = unique_ids(task_ids)
+        found = await repo.find_tasks(task_ids=ids)
+        missing = len(ids) - len(found)
         return await _apply_found(
             action=action,
             repo=repo,

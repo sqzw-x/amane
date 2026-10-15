@@ -4,6 +4,7 @@ from typing import Unpack
 
 from sqlmodel import col, select
 
+from ...utils.collections import unique_ids
 from ..models import DEFAULT_SESSION_TITLE, AgentSession, AgentSessionStatus, SavedQuery, SavedQueryEntity
 from ..repo_types import SavedQueryUpdates, _utcnow
 from .base import RepositoryMixinBase
@@ -134,7 +135,7 @@ class AgentRepoMixin(RepositoryMixinBase):
 
     async def delete_saved_queries(self, ids: list[int]) -> tuple[int, int]:
         """重复 id 只处理一次; 不存在的 id 计入 missing."""
-        unique = list(dict.fromkeys(ids))
+        unique = unique_ids(ids)
         async with self._session() as session:
             rows = (await session.exec(select(SavedQuery).where(col(SavedQuery.id).in_(unique)))).all()
             for row in rows:
@@ -145,7 +146,7 @@ class AgentRepoMixin(RepositoryMixinBase):
 
     async def persist_saved_queries(self, ids: list[int]) -> tuple[int, int]:
         """置为已保留并解绑会话; 重复 id 只处理一次; 幂等: 已保留的行计入 persisted 且不重写."""
-        unique = list(dict.fromkeys(ids))
+        unique = unique_ids(ids)
         async with self._session() as session:
             rows = (await session.exec(select(SavedQuery).where(col(SavedQuery.id).in_(unique)))).all()
             for row in rows:

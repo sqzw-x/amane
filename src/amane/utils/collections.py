@@ -7,11 +7,4 @@ def unique_ids(ids: Sequence[int] | None) -> list[int]:
     """保序去重; None 或空 → []."""
     if not ids:
         return []
-    seen: set[int] = set()
-    out: list[int] = []
-    for i in ids:
-        if i in seen:
-            continue
-        seen.add(i)
-        out.append(i)
-    return out
+    return list(dict.fromkeys(ids))
