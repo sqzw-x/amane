@@ -6,6 +6,7 @@ import pytest
 from PIL import Image
 
 from amane.media.watermarks import is_stamp_stem, load_stamp
+from amane.parsing import DEFINITION_VALUES
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,27 +37,27 @@ def test_load_builtin_subtitle() -> None:
     assert img.getbbox() is not None
 
 
-def test_load_unknown_definition_without_user_file() -> None:
-    assert load_stamp("1080p", None) is None
+@pytest.mark.parametrize("stem", [value.casefold() for value in DEFINITION_VALUES])
+def test_load_builtin_definition(stem: str) -> None:
+    """每个分辨率档都要有内置角标: 缺一枚就静默不画."""
+    img = load_stamp(stem, None)
+    assert img is not None
+    assert img.getbbox() is not None
 
 
-def test_user_file_wins(tmp_path: Path) -> None:
+def test_load_unknown_stem_without_user_file() -> None:
+    assert load_stamp("bogus", None) is None
+
+
+@pytest.mark.parametrize("stem", ["subtitle", "1080p"])
+def test_user_file_wins(stem: str, tmp_path: Path) -> None:
     user_dir = tmp_path / "watermarks"
     user_dir.mkdir()
-    Image.new("RGBA", (8, 8), (0, 255, 0, 255)).save(user_dir / "subtitle.png")
-    img = load_stamp("subtitle", user_dir)
+    Image.new("RGBA", (8, 8), (0, 255, 0, 255)).save(user_dir / f"{stem}.png")
+    img = load_stamp(stem, user_dir)
     assert img is not None
     pixel = img.getpixel((0, 0))
     assert pixel == (0, 255, 0, 255)
-
-
-def test_user_1080p_without_builtin(tmp_path: Path) -> None:
-    user_dir = tmp_path / "watermarks"
-    user_dir.mkdir()
-    Image.new("RGBA", (8, 8), (0, 0, 255, 255)).save(user_dir / "1080p.png")
-    img = load_stamp("1080p", user_dir)
-    assert img is not None
-    assert img.getpixel((0, 0)) == (0, 0, 255, 255)
 
 
 def test_corrupt_user_falls_back(tmp_path: Path) -> None:

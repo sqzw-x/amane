@@ -15,7 +15,7 @@ from amane.media import (
     should_crop_poster,
     validate_crop_box,
 )
-from amane.parsing import Mosaic
+from amane.parsing import DEFINITION_VALUES, Mosaic
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -182,12 +182,25 @@ class TestCoverWatermarks:
         with Image.open(dest) as img:
             assert img.size == (200, 280)
 
-    def test_skips_when_definition_has_no_stamp(self, tmp_path: Path):
+    @pytest.mark.parametrize("definition", DEFINITION_VALUES)
+    def test_paints_each_definition(self, definition: str, tmp_path: Path):
+        """只带分辨率标记的文件也要画出一枚角标."""
         dest = tmp_path / "cover.jpg"
         Image.new("RGB", (200, 280), "blue").save(dest)
         before = dest.read_bytes()
         assert (
-            apply_cover_watermarks(dest, has_subtitle=False, uncensored=False, mosaic=None, definition="1080p") is False
+            apply_cover_watermarks(dest, has_subtitle=False, uncensored=False, mosaic=None, definition=definition)
+            is True
+        )
+        assert dest.read_bytes() != before
+
+    def test_skips_when_definition_has_no_stamp(self, tmp_path: Path):
+        """档位之外的取值没有内置 PNG: 整张图不动."""
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (200, 280), "blue").save(dest)
+        before = dest.read_bytes()
+        assert (
+            apply_cover_watermarks(dest, has_subtitle=False, uncensored=False, mosaic=None, definition="vhs") is False
         )
         assert dest.read_bytes() == before
 
