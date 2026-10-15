@@ -168,7 +168,7 @@ async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) 
                 use_cache=req.use_cache,
             )
         )
-    # 一次事务入队: 数百条批量提交不再逐条各写一个事务
+    # 批量提交动辄数百条, 逐条提交会重复付出事务开销
     tasks = await repo.create_tasks(TaskType.SCRAPE, payloads)
     task_ids = [task.id for task in tasks if task.id is not None]
     logger.info("metadata batch scrape submitted", submitted=len(task_ids), missing=missing)

@@ -29,7 +29,7 @@ def _intersect_statuses(requested: Sequence[TaskStatus] | None, allowed: frozens
 
 
 def cleanup_task_artifacts(task: Task, log_dir: Path) -> None:
-    """任务产物全在 ``task_dir_for`` 下, 按 id 整个删除."""
+    """任务产物全部位于 ``task_dir_for``, 按 id 整体删除."""
     if task.id is not None:
         remove_task_dir(log_dir, task.id)
 

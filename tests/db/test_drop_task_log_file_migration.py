@@ -1,4 +1,4 @@
-"""迁移: 删除 tasks.log_file 列. 任务日志路径由 id 派生, 不再入库."""
+"""迁移: 删除 tasks.log_file 列. 任务日志路径由 id 派生, 不落库."""
 
 from pathlib import Path
 
