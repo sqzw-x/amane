@@ -485,12 +485,3 @@ class TasksRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             await session.commit()
             return result.rowcount
-
-    async def update_task_log_file(self, task_id: int, log_file: str) -> None:
-        async with self._session() as session:
-            task = await session.get(Task, task_id)
-            if task is None:
-                return
-            task.log_file = log_file
-            session.add(task)
-            await session.commit()

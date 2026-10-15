@@ -14331,17 +14331,6 @@
             ],
             "title": "Error"
           },
-          "log_file": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Log File"
-          },
           "retries": {
             "type": "integer",
             "title": "Retries",
@@ -14503,17 +14492,6 @@
             ],
             "title": "Error"
           },
-          "log_file": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Log File"
-          },
           "retries": {
             "type": "integer",
             "title": "Retries",
@@ -14643,17 +14621,6 @@
               }
             ],
             "title": "Error"
-          },
-          "log_file": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Log File"
           },
           "retries": {
             "type": "integer",

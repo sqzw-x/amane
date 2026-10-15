@@ -4272,10 +4272,6 @@ export type TaskChildItem = {
      */
     error?: string | null;
     /**
-     * Log File
-     */
-    log_file?: string | null;
-    /**
      * Retries
      */
     retries?: number;
@@ -4369,10 +4365,6 @@ export type TaskListItem = {
      */
     error?: string | null;
     /**
-     * Log File
-     */
-    log_file?: string | null;
-    /**
      * Retries
      */
     retries?: number;
@@ -4437,10 +4429,6 @@ export type TaskResponse = {
      * Error
      */
     error?: string | null;
-    /**
-     * Log File
-     */
-    log_file?: string | null;
     /**
      * Retries
      */

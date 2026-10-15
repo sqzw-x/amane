@@ -302,7 +302,6 @@ class Task(SQLModel, table=True):
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
     result: dict | None = Field(default=None, sa_column=Column(JSON))
     error: str | None = None
-    log_file: str | None = None
     retries: int = Field(default=0)
     priority: int = Field(default=0)
     # 链根 id: 根任务指向自己, 裸任务为 None. 按此列一次取出整链.

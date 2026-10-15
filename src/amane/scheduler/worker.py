@@ -238,7 +238,6 @@ class AsyncWorker:
                     hot = self._get_hot() if self._get_hot is not None else HotSettings()
                     rec = Recorder.begin(self._log_dir, started, hot)
                     self._active_recorders[task_id] = rec
-                    await self._repo.update_task_log_file(task_id, f"tasks/task-{task_id}/task.log")
                 except Exception:
                     logger.exception("task recorder begin failed", task_id=task_id)
                     rec = None

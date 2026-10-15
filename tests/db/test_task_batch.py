@@ -9,6 +9,7 @@ import pytest
 from amane.api.models.tasks import TaskBatchAction
 from amane.api.support.task_batch import cleanup_task_artifacts, execute_task_batch
 from amane.db.models import TaskStatus, TaskType
+from amane.observability import task_dir_for
 from amane.scheduler.worker import CANCEL_ERROR
 
 if TYPE_CHECKING:
@@ -23,18 +24,14 @@ def _cancel(*, ok: bool = True) -> Callable[[int], Awaitable[bool]]:
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_cleanup_task_artifacts_removes_log(repo: Repository, tmp_path: Path) -> None:
+async def test_cleanup_task_artifacts_removes_task_dir(repo: Repository, tmp_path: Path) -> None:
     t = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
     assert t.id is not None
-    rel = f"tasks/task-{t.id}/task.log"
-    await repo.update_task_log_file(t.id, rel)
-    refreshed = await repo.get_task(t.id)
-    assert refreshed is not None
-    log_path = tmp_path / rel
-    log_path.parent.mkdir(parents=True)
-    log_path.write_text('{"event": "x"}\n', encoding="utf-8")
-    cleanup_task_artifacts(refreshed, tmp_path)
-    assert not log_path.exists()
+    task_dir = task_dir_for(tmp_path, t.id)
+    (task_dir / "http").mkdir(parents=True)
+    (task_dir / "task.log").write_text('{"event": "x"}\n', encoding="utf-8")
+    cleanup_task_artifacts(t, tmp_path)
+    assert not task_dir.exists()
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -132,11 +129,9 @@ async def test_batch_delete_mixed_tree_keeps_failed_under_root(repo: Repository,
     await repo.complete_task(done_child.id)
     await repo.fail_task(failed_child.id, error="boom")
 
-    rel = f"tasks/task-{parent.id}/task.log"
-    await repo.update_task_log_file(parent.id, rel)
-    log_path = tmp_path / rel
-    log_path.parent.mkdir(parents=True)
-    log_path.write_text('{"event": "parent"}\n', encoding="utf-8")
+    parent_dir = task_dir_for(tmp_path, parent.id)
+    parent_dir.mkdir(parents=True)
+    (parent_dir / "task.log").write_text('{"event": "parent"}\n', encoding="utf-8")
 
     cleared_done = await execute_task_batch(
         action=TaskBatchAction.DELETE,
@@ -151,7 +146,7 @@ async def test_batch_delete_mixed_tree_keeps_failed_under_root(repo: Repository,
     assert await repo.get_task(done_child.id) is None
     assert await repo.get_task(parent.id) is not None
     assert await repo.get_task(failed_child.id) is not None
-    assert log_path.is_file()
+    assert (parent_dir / "task.log").is_file()
     listed = await repo.list_tasks(statuses=[TaskStatus.FAILED], roots_only=True)
     assert parent.id in {t.id for t in listed}
 
@@ -179,7 +174,7 @@ async def test_batch_delete_mixed_tree_keeps_failed_under_root(repo: Repository,
     )
     assert cleared_empty.affected == 1
     assert await repo.get_task(parent.id) is None
-    assert not log_path.is_file()
+    assert not parent_dir.exists()
 
 
 @pytest.mark.asyncio(loop_scope="function")

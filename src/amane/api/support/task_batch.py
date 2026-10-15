@@ -1,6 +1,5 @@
 """按 ID 或与列表同形的 status/type 筛选."""
 
-import contextlib
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 
@@ -30,13 +29,9 @@ def _intersect_statuses(requested: Sequence[TaskStatus] | None, allowed: frozens
 
 
 def cleanup_task_artifacts(task: Task, log_dir: Path) -> None:
+    """任务产物全在 ``task_dir_for`` 下, 按 id 整个删除."""
     if task.id is not None:
         remove_task_dir(log_dir, task.id)
-    if task.log_file:
-        log_path = log_dir / task.log_file
-        if log_path.is_file():
-            with contextlib.suppress(OSError):
-                log_path.unlink(missing_ok=True)
 
 
 async def _cancel_running(cancel_task: CancelRunning, repo: Repository, tasks: Sequence[Task]) -> int:

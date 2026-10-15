@@ -8366,17 +8366,6 @@ export const TaskChildItemSchema = {
             ],
             title: 'Error'
         },
-        log_file: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Log File'
-        },
         retries: {
             type: 'integer',
             title: 'Retries',
@@ -8541,17 +8530,6 @@ export const TaskListItemSchema = {
             ],
             title: 'Error'
         },
-        log_file: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Log File'
-        },
         retries: {
             type: 'integer',
             title: 'Retries',
@@ -8683,17 +8661,6 @@ export const TaskResponseSchema = {
                 }
             ],
             title: 'Error'
-        },
-        log_file: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Log File'
         },
         retries: {
             type: 'integer',

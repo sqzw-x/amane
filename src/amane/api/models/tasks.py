@@ -67,7 +67,6 @@ class TaskListItem(BaseModel):
     title: str | None = None
     """scrape→番号, actor_scrape→演员名, refresh/organize/trash→库名."""
     error: str | None = None
-    log_file: str | None = None
     retries: int = 0
     priority: int = 0
     root_task_id: int | None = None

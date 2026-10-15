@@ -1431,17 +1431,6 @@ class TestTaskRepo:
         assert result is False
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_update_task_log_file(self, repo: Repository):
-        task = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
-        assert task.id is not None
-
-        await repo.update_task_log_file(task.id, "/logs/task-1.log")
-
-        fetched = await repo.get_task(task.id)
-        assert fetched is not None
-        assert fetched.log_file == "/logs/task-1.log"
-
-    @pytest.mark.asyncio(loop_scope="function")
     async def test_list_tasks_with_filters(self, repo: Repository):
         await repo.create_task(task_type=TaskType.SCRAPE, payload={})
         await repo.create_task(task_type=TaskType.REFRESH, payload={})
