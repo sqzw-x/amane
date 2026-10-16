@@ -310,6 +310,36 @@ class TestMediaFileRepo:
         assert items[0].number == "SUB-PLAIN"
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_metadata_vr_filter_reads_tags(self, repo: Repository):
+        """VR 判定只依据标签: 厂商前缀含 VR 的牌号 (MDVR) 与含 VR 字样的非 VR 番号 (SVR) 同样不命中."""
+        tagged = await repo.upsert_metadata(number="VR-001", tags=["VR専用", "単体作品"])
+        by_number = await repo.upsert_metadata(number="MDVR-123", tags=["単体作品"])
+        false_positive = await repo.upsert_metadata(number="SVR-123", tags=["ハイビジョン"])
+        assert (tagged.vr, by_number.vr, false_positive.vr) == (True, False, False)
+
+        items, total = await repo.list_metadata(vr=True, sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC)
+        assert total == 1
+        assert [(m.number, m.vr) for m in items] == [("VR-001", True)]
+        items, total = await repo.list_metadata(vr=False, sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC)
+        assert total == 2
+        assert [m.number for m in items] == ["MDVR-123", "SVR-123"]
+        items, total = await repo.list_metadata(sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC)
+        assert total == 3
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_metadata_vr_follows_tag_rewrite(self, repo: Repository):
+        """标签重命名后判定随之变化: 谓词现算, 没有物化列需要回填."""
+        meta = await repo.upsert_metadata(number="VR-002", tags=["バーチャル"])
+        assert meta.vr is False
+
+        tag_id = (await repo.list_facets(FacetKind.TAG, search="バーチャル"))[0][0].id
+        await repo.rename_facet(FacetKind.TAG, tag_id, "VR")
+
+        items, total = await repo.list_metadata(vr=True, sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC)
+        assert total == 1
+        assert [m.number for m in items] == ["VR-002"]
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_update_media_file_not_found(self, repo: Repository):
         result = await repo.update_media_file(9999, path="/x.mp4")
         assert result is None

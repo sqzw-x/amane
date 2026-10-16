@@ -19,7 +19,7 @@
 |------|------|----------|
 | censored | 中文索引 → FANZA 权威图文 → 稳定镜像 → 可空返回的官网 / r18 | 单厂牌 API (Prestige 等对每个候选 SKU 都请求); iqqtv (每部有碼片都会请求中文站; 需要时加入本路由再把 `field_priority.title` 提前) |
 | uncensored | 有独立无碼区的索引 + 无碼专站 | — |
-| fc2 | javdb 分类 + 专用索引 + 官方电子市场 + BT 排在链尾 | fc2club (跳转镜像不稳定) |
+| fc2 | javdb 分类 + 专用索引 + 官方电子市场 + BT 与在线看索引排在链尾 | fc2club (跳转镜像不稳定) |
 | chinese | 有國產区的中文站第一, 综合 / BT 兜底 | javdb 当第一源 |
 | amateur | MGS 第一; FANZA 有素人频道; javbus 首页能见到 `300MIUM-*` | MGS 不纳入有碼默认, 否则 MIDV 会请求 MGS |
 | western | TPDB 第一 (需 token 才真正请求); 有歐美分类的索引排在链尾 | javbus 欧美域 (目录空); 不实现该域爬虫 |
@@ -31,7 +31,7 @@
 
 **javbus.com** — 有碼首页、無碼 `/uncensored` (日期番号风格); 有碼首页会混素人号. 搜索回退带 `parent=ce`, 无碼主要靠 `/{number}` 直达. 有碼详情 `extrafanart` 热链 `pics.dmm.co.jp`, 发行日与 DMM 配信日相同, 片商用 DMM 日文名. 图片 (`/pics/`) 校验同源 Referer (见 [crawlers.md](crawlers.md)). **不解析 plot**; 无碼是另一套目录. 欧美入口指向 `javbus.org`: 正文可以是字面 `404`, 关公告后没有影片网格, `javbus.hair` 证书无效 — **欧美目录不可用**, 不允许放入欧美默认路由.
 
-**freejavbt.com** — 显式分有碼 / 無碼 / 歐美 / FC2, 首页还有「國產」「成人動畫」. 覆盖最宽的 BT 向索引, 元数据质量一般, 适合排在链尾.
+**freejavbt.com** — 显式分有碼 / 無碼 / 歐美 / FC2, 首页还有「國產」「成人動畫」. 覆盖最宽的 BT 向索引, 元数据质量一般, 适合排在链尾; 详情页按语言前缀 (`/zh` / `/en` / `/ru`) 给同一份内容, 栏位没有片商与发行商.
 
 **avsox.click** — 日本无码情报站. 同源 AVMOO = 有碼, AVHEAT = 欧美 (`avheat.shop`), 项目只接入 AVSOX. 搜索对有无短横线都能命中, `_` 与 `-` 是两部; 对不上不取首条.
 
@@ -41,7 +41,7 @@
 
 **avbase.net** — 名单来自用户投稿而非官方; 受 Cloudflare managed challenge 保护, 指纹不过关即拦截. 不纳入默认表: 进入 `censored` 会让每次刮削多一次可能退化为浏览器 / solver 的请求.
 
-**airav.io** — 中文标题补强, 不是国产分区; 国产路由里置于 iqqtv 之后.
+**airav.io** — 中文标题补强, 不是国产分区; 国产路由里置于 iqqtv 之后, fc2 路由里链尾 (官方电子市场下架的作品只剩这类索引站收录); 站内番号恒写 `FC2-PPV-<id>`, 检索词用该写法.
 
 **iqqtv** (`iqq5.xyz` 会跳转到 `iqqk4.quest` 一类轮换域) — 导航有國產区 (爱豆傳媒、杏吧傳媒等, 不是 MD 号为主), 国产路由第一源; 爬虫带 `/cn|/jp` 语言前缀.
 

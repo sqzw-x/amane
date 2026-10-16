@@ -39,6 +39,7 @@ import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { type MetaTableColumnKey, useUIStore } from "@/stores/ui";
+import { VrBadge } from "./vr-badge";
 import classes from "./meta-table.module.css";
 
 const SORTABLE_COLUMNS = [
@@ -358,15 +359,24 @@ export function MetaTable({
                       visibleFrom={COLUMN_VISIBLE_FROM[field]}
                     >
                       {field === "number" ? (
-                        <Link
-                          to="/meta/$metadataId"
-                          params={{ metadataId: String(item.id) }}
-                          style={{ textDecoration: "none", display: "block", overflow: "hidden" }}
-                        >
-                          <Text component="span" size="sm" ff="monospace" truncate title={value}>
-                            {value}
-                          </Text>
-                        </Link>
+                        /* flex 容器不用 CELL_OVERFLOW 的 maxWidth: 0, 否则 VR 标识也被裁掉. */
+                        <Group gap={4} wrap="nowrap" style={{ overflow: "hidden" }}>
+                          <Link
+                            to="/meta/$metadataId"
+                            params={{ metadataId: String(item.id) }}
+                            style={{
+                              textDecoration: "none",
+                              minWidth: 0,
+                              flex: "0 1 auto",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <Text component="span" size="sm" ff="monospace" truncate title={value}>
+                              {value}
+                            </Text>
+                          </Link>
+                          {item.vr && <VrBadge />}
+                        </Group>
                       ) : (
                         <Text size="sm" truncate title={value || undefined}>
                           {value}

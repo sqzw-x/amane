@@ -45,6 +45,7 @@ class MetadataResponse(BaseModel):
     trailer_url: str | None = None
     extrafanart: list[str] = []
     score: float | None = None
+    vr: bool = False
     poster_urls: list[str] = []
     thumb_urls: list[str] = []
     trailer_urls: list[str] = []

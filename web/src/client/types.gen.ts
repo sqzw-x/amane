@@ -2767,6 +2767,10 @@ export type MetadataResponse = {
      */
     score?: number | null;
     /**
+     * Vr
+     */
+    vr?: boolean;
+    /**
      * Poster Urls
      */
     poster_urls?: Array<string>;
@@ -5660,6 +5664,12 @@ export type ListMetadataData = {
          * Filter by linked file subtitle marker
          */
         has_subtitle?: boolean | null;
+        /**
+         * Vr
+         *
+         * Filter by VR marker (entry tag vocabulary)
+         */
+        vr?: boolean | null;
         /**
          * Mosaic
          *

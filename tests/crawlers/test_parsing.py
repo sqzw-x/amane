@@ -9,6 +9,7 @@ from amane.crawlers.parsing import (
     clean_string,
     extract_all_texts,
     extract_text,
+    fc2_article_id,
     fold_name,
     is_same_name,
     is_same_number,
@@ -126,6 +127,11 @@ def test_parse_western_number(number: str, expected: tuple[str, str, str] | None
         ("ABF-35", "ABF-355", False),
         ("SSIS-497", "SSIS-4970", False),
         ("FC2-2476386", "FC2-3476386", False),
+        # FC2 的 PPV 词缀不参与同一性, 商品 ID 相同才是同一部
+        ("FC2-PPV-4203531", "FC2-4203531", True),
+        ("FC2PPV4203531", "fc2_4203531", True),
+        ("FC2-PPV-4203531", "FC2-PPV-4203532", False),
+        ("FC2-4203531", "4203531", False),
         # 欧美日期号: 年份 2 位与 4 位同番号; 片商或发布日期不同则不是
         ("Blacked.26.03.29", "Blacked.2026.03.29", True),
         ("Blacked.26.03.29", "Blacked.2026.03.24", False),
@@ -147,6 +153,12 @@ NUMBER_MATCH_CASES: list[tuple[str, str, NumberMatch]] = [
     ("Heyzo-3607", "HEYZO3607", NumberMatch.EXACT),
     # 欧美日期号: 年份 2 位与 4 位同番号
     ("Blacked.2026.03.29", "Blacked.26.03.29", NumberMatch.EXACT),
+    # FC2: 官方电子市场写带 PPV 的写法, 索引站多写不带的写法, 商品 ID 相同即同一部
+    ("FC2-PPV-4203531", "FC2-4203531", NumberMatch.EXACT),
+    ("FC2-PPV-4203531", "FC2PPV4203531", NumberMatch.EXACT),
+    ("FC2-PPV-4203531", "FC2-PPV-4203532", NumberMatch.NONE),
+    # 裸商品 ID 不是番号写法
+    ("4203531", "FC2-4203531", NumberMatch.NONE),
     # 只有一侧写了开头的数字段: 站点省略系列代码, 或入参本身没写
     ("JAC-079", "390JAC-079", NumberMatch.WITHOUT_LEADING_DIGITS),
     ("390JAC-079", "JAC-079", NumberMatch.WITHOUT_LEADING_DIGITS),
@@ -205,6 +217,10 @@ NUMBER_VARIANT_CASES: list[tuple[str, tuple[str, ...]]] = [
     # 素人系标签已知站内写法: 补出数字段
     ("MIUM-1219", ("MIUM-1219", "300MIUM-1219")),
     ("ARA-423", ("ARA-423", "261ARA-423")),
+    # FC2: 补出另一种写法, 原样仍在前
+    ("FC2-4203531", ("FC2-4203531", "FC2-PPV-4203531")),
+    ("FC2-PPV-4203531", ("FC2-PPV-4203531", "FC2-4203531")),
+    ("FC2PPV-4203531", ("FC2PPV-4203531", "FC2-PPV-4203531", "FC2-4203531")),
     # 只有原样: 标签须自番号开头起算, 裸数字号与无数字段的号不派生
     ("GARA-006", ("GARA-006",)),
     ("MIDV-123", ("MIDV-123",)),
@@ -217,6 +233,24 @@ NUMBER_VARIANT_CASES: list[tuple[str, tuple[str, ...]]] = [
 @pytest.mark.parametrize(("number", "expected"), NUMBER_VARIANT_CASES)
 def test_number_variants(number: str, expected: tuple[str, ...]) -> None:
     assert number_variants(number) == expected
+
+
+FC2_ARTICLE_ID_CASES: list[tuple[str, str | None]] = [
+    ("FC2-4203531", "4203531"),
+    ("FC2-PPV-4203531", "4203531"),
+    ("fc2ppv4203531", "4203531"),
+    ("FC2_PPV_4203531", "4203531"),
+    # 非 FC2 形态与裸商品 ID 都不认
+    ("FC2PPVDB-123", None),
+    ("FC2-", None),
+    ("4203531", None),
+    ("", None),
+]
+
+
+@pytest.mark.parametrize(("number", "expected"), FC2_ARTICLE_ID_CASES)
+def test_fc2_article_id(number: str, expected: str | None) -> None:
+    assert fc2_article_id(number) == expected
 
 
 @pytest.mark.parametrize(

@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
+# 写锁等待上限. 驱动默认 5s, 并发 worker 与 API 同进程写单库、机械盘持锁时间长时不足.
+BUSY_TIMEOUT_MS = 30_000
+
 
 async def create_async_engine_from_path(db_path: Path | str, *, policy: DbLogPolicy | None = None) -> AsyncEngine:
     """先 ``upgrade_sqlite_database``, 再开业务引擎. 事务性 DDL 仅用于迁移连接.
@@ -31,9 +34,12 @@ async def create_async_engine_from_path(db_path: Path | str, *, policy: DbLogPol
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragma(dbapi_conn, connection_record):
-        # 每个新连接启用 WAL 并开启外键约束
+        # 这些设置都是连接级的: 每个新连接都必须重设, 漏设即退回驱动默认.
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
+        # WAL 下掉电最多丢最近若干已提交事务且不损坏库, 换来提交不再逐笔 fsync.
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 

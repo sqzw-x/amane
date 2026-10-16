@@ -29,12 +29,16 @@ CANCEL_ERROR = "已由用户取消"
 _DEFAULT_SHUTDOWN_TIMEOUT = 0
 # 关闭时等待主循环 (含尚未结算的认领) 退出的兜底阈值; 正常路径只等它自己退出.
 MAIN_LOOP_STOP_TIMEOUT = 5.0
+# 主循环崩溃后的退避重启: 首次等待与单次上限, 每次崩溃翻倍直到上限.
+LOOP_RESTART_DELAY = 1.0
+LOOP_RESTART_MAX_DELAY = 60.0
 
 
 class AsyncWorker:
     """任务执行循环, 以 ``is_main`` 标志控制是否认领.
 
     ``retire()`` 后主循环退出, 已认领任务继续运行; 调用方负责在活跃任务清零后释放该 worker 占用的资源.
+    崩溃的主循环由 ``_supervise`` 退避重启, ``retire()`` 后不再拉起.
     """
 
     def __init__(
@@ -96,7 +100,27 @@ class AsyncWorker:
 
     def start(self) -> None:
         self._stop_signal.clear()
-        self._main_task = asyncio.create_task(self._run_loop())
+        self._main_task = asyncio.create_task(self._supervise())
+
+    async def _supervise(self) -> None:
+        """守护主循环: 异常退出时退避重启, retire 后与正常退出一样返回.
+
+        主循环是唯一的认领入口, 一次未捕获异常 (典型是写锁等待超时) 就会让调度器永久停止认领;
+        崩溃只在退役与关闭路径经 ``wait_stopped`` 才能观察到, 运行期没有其它读取点. 重启前等待
+        ``_stop_signal``, 使 retire 不必等满退避.
+        """
+        delay = LOOP_RESTART_DELAY
+        while self._is_main:
+            try:
+                await self._run_loop()
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error("worker main loop crashed, restarting", delay=delay, exc_info=e)
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(self._stop_signal.wait(), delay)
+                delay = min(delay * 2, LOOP_RESTART_MAX_DELAY)
 
     def cancel_main_loop(self) -> None:
         """关闭路径等待超时后调用; 取消主循环, 尚未结算的认领事务可能无法完整结束."""
@@ -106,7 +130,8 @@ class AsyncWorker:
     async def wait_stopped(self) -> None:
         """等主循环退出 (含认领结算).
 
-        ``asyncio.wait`` 不因主循环被取消而向调用者抛出; 主循环异常在此记录并继续.
+        主循环崩溃由 ``_supervise`` 自行重启, 走到这里的异常来自 supervisor 自身; ``asyncio.wait``
+        不因主循环被取消而向调用者抛出, 因此被取消与失败在此记录并继续.
         """
         main = self._main_task
         if main is None:

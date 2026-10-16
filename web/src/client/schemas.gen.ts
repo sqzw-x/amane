@@ -2909,7 +2909,8 @@ export const HotSettingsSchema = {
                         'javdb',
                         'fc2ppvdb',
                         'fc2',
-                        'freejavbt'
+                        'freejavbt',
+                        'airav'
                     ],
                     hentai: [
                         'getchu',
@@ -5660,6 +5661,11 @@ export const MetadataResponseSchema = {
                 }
             ],
             title: 'Score'
+        },
+        vr: {
+            type: 'boolean',
+            title: 'Vr',
+            default: false
         },
         poster_urls: {
             items: {

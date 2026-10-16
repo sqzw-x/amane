@@ -151,6 +151,23 @@ class TestMetadataHttp:
         assert (await client.get("metadata?sort_by=bogus")).status_code == 422
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_vr_filter_and_field(self, client: AsyncClient, repo: Repository):
+        """HTTP 接线: vr 三态筛选与响应字段同源; 非法取值 422, 且不成为可写字段."""
+        await repo.upsert_metadata(number="VR-001", tags=["VR"])
+        await repo.upsert_metadata(number="MIDV-123", tags=["単体作品"])
+
+        listed = await client.get("metadata?vr=true&sort_by=number&order=asc")
+        assert listed.status_code == 200
+        assert [(i["number"], i["vr"]) for i in listed.json()["items"]] == [("VR-001", True)]
+        only_2d = await client.get("metadata?vr=false&sort_by=number&order=asc")
+        assert [(i["number"], i["vr"]) for i in only_2d.json()["items"]] == [("MIDV-123", False)]
+        both = await client.get("metadata?sort_by=number&order=asc")
+        assert [i["vr"] for i in both.json()["items"]] == [False, True]
+
+        assert (await client.get("metadata?vr=bogus")).status_code == 422
+        assert "vr" not in (await client.get("metadata/schema")).json()["properties"]
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_schema_includes_editable_fields(self, client: AsyncClient):
         resp = await client.get("metadata/schema")
         assert resp.status_code == 200

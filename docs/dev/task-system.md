@@ -134,6 +134,10 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 并发上限 `worker.concurrency`. 上限是经验值: curl_cffi 浏览器指纹 + 多站点并发下过高易触发反爬.
 
+### 主循环自愈
+
+认领循环由 `AsyncWorker._supervise` 守护: 未捕获异常 (典型是写锁等待超时) 记录 error 后退避重启, 退避上限 60s, `retire()` 打断退避且不再拉起. 崩溃只在退役与关闭路径经 `wait_stopped` 才能观察到, 运行期没有其它读取点, 不重启即等于调度器永久停止认领. 重启不重放崩溃瞬间的认领, 已提交未登记的行与其它 RUNNING 行一样等下次清扫.
+
 ### 暂停
 
 进程内 `_paused`, 不写入 HotSettings. 暂停只停 `claim_next_task`, 循环仍在, 已认领的继续运行, 入队不受影响. `_rebuild()` 把 pause 复制到新 worker, 避免 PATCH 配置时意外恢复领队. 与退役不同: 退役不可逆且主循环退出.

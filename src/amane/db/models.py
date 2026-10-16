@@ -2,9 +2,9 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, NoReturn
 
-from sqlalchemy import Boolean, Column, Index, String, Text, UniqueConstraint, or_, text
+from sqlalchemy import Boolean, Column, Index, String, Text, UniqueConstraint, exists, func, or_, text
 from sqlalchemy.sql.elements import ColumnElement
-from sqlmodel import JSON, Field, SQLModel, col
+from sqlmodel import JSON, Field, SQLModel, col, select
 
 from ..enums import ActorGender, DownloadableResource, LibraryAutomation, LibraryIngest, LinkMode, MoveMode
 from ..library import (
@@ -17,7 +17,7 @@ from ..library import (
 )
 from ..organize.path_templates import VIDEO_TEMPLATE_DEFAULT, PathTemplate
 from ..organize.strm_content import StrmContentTemplate
-from ..parsing import ContentType, Mosaic
+from ..parsing import VR_TAGS, ContentType, Mosaic, is_vr
 
 
 def _utcnow() -> datetime:
@@ -215,6 +215,29 @@ def has_subtitle_predicate() -> ColumnElement[bool]:
     return or_(col(MediaFile.has_subtitle_in_name).is_(True), col(MediaFile.has_external_subtitle).is_(True))
 
 
+class _VrProperty(property):
+    """``Metadata.vr`` 的实现, 只允许实例访问.
+
+    类属性访问得到的是描述符本身, 与布尔值比较恒不相等: 该名字写进 SQL 表达式
+    (例如 ``Metadata.vr == True``) 不报错, 会静默编译出 ``WHERE false`` 并返回空集.
+    因此比较与真值判断直接报错, 该误用无法静默通过; SQL 判定一律用 ``metadata_vr_predicate()``.
+    """
+
+    __hash__ = property.__hash__
+
+    def _reject(self) -> NoReturn:
+        raise TypeError("Metadata.vr 只可用于实例; SQL 判定请用 metadata_vr_predicate()")
+
+    def __eq__(self, other: object) -> bool:
+        self._reject()
+
+    def __ne__(self, other: object) -> bool:
+        self._reject()
+
+    def __bool__(self) -> bool:
+        self._reject()
+
+
 class Metadata(SQLModel, table=True):
     __tablename__ = "metadata"  # type: ignore[assignment]
     # number 唯一性大小写不敏感 (COLLATE NOCASE); 存库保留首次写入的原始大小写.
@@ -283,6 +306,20 @@ class Metadata(SQLModel, table=True):
         if not self.scores:
             return None
         return float(next(iter(self.scores.values())))
+
+    @_VrProperty
+    def vr(self) -> bool:
+        """判定口径与词表见 `parsing.is_vr`; 不物化列, 因此重命名 / 合并标签的路径都不需要重算."""
+        return is_vr(self.tags or [])
+
+
+def metadata_vr_predicate() -> ColumnElement[bool]:
+    """`Metadata.vr` 的 SQL 等价式: 标签整体命中 `parsing.VR_TAGS` (忽略大小写与首尾空白).
+
+    谓词在查询时现算而不走物化列: ``tags`` 是真值列, 修改它的路径不止一处, 逐处重算必漏.
+    """
+    tags = func.json_each(col(Metadata.tags)).table_valued("value")
+    return exists(select(1).select_from(tags).where(func.lower(func.trim(tags.c.value)).in_(VR_TAGS)))
 
 
 def metadata_number_predicate(number: str) -> ColumnElement[bool]:

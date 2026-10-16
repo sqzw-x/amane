@@ -7,6 +7,9 @@ from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery
 from ..parsing import extract_all_texts, extract_text
 
+#: 商品页独有的块. 商品不在售时站点回一个没有该块的「お探しの商品が見つかりませんでした」页 (HTTP 200).
+_ARTICLE_BLOCK = '//div[@data-section="userInfo"]'
+
 
 class FC2Crawler(Crawler):
     @classmethod
@@ -14,11 +17,13 @@ class FC2Crawler(Crawler):
         return CrawlerProfile(name=SiteName.FC2, base_url="https://adult.contents.fc2.com")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        number = query.number
-        clean_number = self._clean_number(number)
+        """地址由数字商品 ID 直接拼出, 因此取一次商品页确认在售, 不在售按无此番号收尾 (不报来源失败)."""
+        clean_number = self._clean_number(query.number)
         if not clean_number:
             return None
-        return f"{self.base_url}/article/{clean_number}/"
+        url = f"{self.base_url}/article/{clean_number}/"
+        html = Selector(text=await self.client.get_html(url))
+        return url if html.xpath(_ARTICLE_BLOCK) else None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         text = await self.client.get_html(url)
@@ -31,9 +36,8 @@ class FC2Crawler(Crawler):
         raw_number = number_match.group(1) if number_match else ""
         number = f"FC2-PPV-{raw_number}"
 
-        title_parts = html.xpath('//div[@data-section="userInfo"]//h3//text()').getall()
-        title = "".join(t.strip() for t in title_parts).strip() if title_parts else None
-
+        # 标题取主图 alt: 标题行里除标题外还有促销角标与站点插的隐藏水印 (1px 白字的内联样式 span).
+        title = extract_text(html, '//div[@class="items_article_MainitemThumb"]//img/@alt')
         if not title:
             return None
 
@@ -45,7 +49,7 @@ class FC2Crawler(Crawler):
         poster_raw = extract_text(html, '//div[@class="items_article_MainitemThumb"]/span/img/@src')
         poster_url = self._ensure_https(poster_raw) if poster_raw else None
 
-        release_raw = extract_text(html, '//div[@class="items_article_Releasedate"]/p/text()')
+        release_raw = extract_text(html, '//div[@class="items_article_softDevice"]/p[contains(text(),"販売日")]/text()')
         release = self._parse_release(release_raw)
 
         studio = extract_text(html, '//div[@class="items_article_headerInfo"]/ul/li[last()]/a/text()')

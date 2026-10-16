@@ -5,7 +5,7 @@ from parsel import Selector
 from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text, is_same_number, leading_token
+from ..parsing import extract_all_texts, extract_text, fc2_article_id, fc2_number, is_same_number, leading_token
 
 
 class AiravCrawler(Crawler):
@@ -14,9 +14,22 @@ class AiravCrawler(Crawler):
         return CrawlerProfile(name=SiteName.AIRAV, base_url="https://airav.io")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        """条目标题以番号开头, 与入参不同者视为未命中."""
+        """条目标题以番号开头, 与入参不同者视为未命中.
+
+        站内 FC2 恒写 ``FC2-PPV-<id>``, 该写法排在首位, 未命中时再尝试原样写法; 其余番号只用原样写法.
+        """
         number = query.number
-        url = f"{self.base_url}/search_result?kw={quote(number)}"
+        terms = [number]
+        if (article_id := fc2_article_id(number)) is not None:
+            terms.insert(0, fc2_number(article_id, ppv=True))
+        for term in dict.fromkeys(terms):
+            url = await self._search_term(term, number)
+            if url is not None:
+                return url
+        return None
+
+    async def _search_term(self, term: str, number: str) -> str | None:
+        url = f"{self.base_url}/search_result?kw={quote(term)}"
         text = await self.client.get_html(url)
         html = Selector(text=text)
         for item in html.xpath('//div[contains(@class,"oneVideo")]'):

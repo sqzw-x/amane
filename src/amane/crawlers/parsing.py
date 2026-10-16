@@ -142,15 +142,31 @@ def _split_leading_digits(number: str) -> tuple[str, str]:
     return (match.group(), folded[match.end() :]) if match else ("", folded)
 
 
+#: FC2 番号: 官方电子市场写 ``FC2-PPV-<id>``, 索引站多写 ``FC2-<id>``. 对折叠后的串匹配, 分隔符只可能剩 ``_``.
+_FC2_NUMBER = re.compile(r"^fc2(?:_?ppv)?_?(\d+)$")
+
+
+def fc2_article_id(number: str) -> str | None:
+    """FC2 番号的商品 ID; 不是 FC2 形态时 None. ``PPV`` 词缀与分隔符不参与识别."""
+    match = _FC2_NUMBER.match(fold_number(number))
+    return match.group(1) if match else None
+
+
+def fc2_number(article_id: str, *, ppv: bool) -> str:
+    """商品 ID → FC2 番号写法: ``ppv`` 为真给出官方市场的 ``FC2-PPV-<id>``, 否则 ``FC2-<id>``."""
+    return f"FC2-PPV-{article_id}" if ppv else f"FC2-{article_id}"
+
+
 def number_variants(number: str) -> tuple[str, ...]:
     """该番号在站点上可能的检索词, 原样写法在前, 去重保序.
 
-    数字段以外的写法差异由来源自行承担, 这里只补两件事: 站点省略数字段时给出省略写法, 素人系标签已知
-    数字段时给出站内写法. 来源逐个尝试, 原样命中即不再试其余写法.
+    数字段以外的写法差异由来源自行承担, 例外是 FC2 的 ``PPV`` 词缀: 官方电子市场与索引站各写一种, 由这里
+    一并给出. 来源逐个尝试, 原样命中即不再试其余写法.
     """
     variants = [number]
-    match = _LEADING_DIGITS.match(number)
-    if match:
+    if (article_id := fc2_article_id(number)) is not None:
+        variants.extend((fc2_number(article_id, ppv=True), fc2_number(article_id, ppv=False)))
+    elif match := _LEADING_DIGITS.match(number):
         variants.append(number[match.end() :])
     else:
         upper = number.upper()
@@ -172,7 +188,8 @@ class NumberMatch(StrEnum):
 def number_match(found: str, query: str) -> NumberMatch:
     """站内番号与检索番号是否同一部, 以及精确度; 任一侧为空为 ``NONE``.
 
-    ``EXACT``: 折叠后相等, 或同为欧美日期号且片商与发布日期相同.
+    ``EXACT``: 折叠后相等, 同为欧美日期号且片商与发布日期相同, 或同为 FC2 番号且商品 ID 相同 (官方电子
+    市场只写带 ``PPV`` 的写法, 索引站多写不带 PPV 的写法).
     ``WITHOUT_LEADING_DIGITS``: 只有一侧写了开头的数字段 (站点省略系列代码, 或入参本身没写), 其余部分
     仍须**全等** — 这样 ``ABF-35`` 不会命中 ``ABF-375``, 两侧都写了数字段却不同也判为不是同一部
     (``200MIUM-1000`` 不是 ``300MIUM-1000``).
@@ -180,6 +197,8 @@ def number_match(found: str, query: str) -> NumberMatch:
     if not found or not query:
         return NumberMatch.NONE
     if fold_number(found) == fold_number(query):
+        return NumberMatch.EXACT
+    if (article_id := fc2_article_id(found)) is not None and article_id == fc2_article_id(query):
         return NumberMatch.EXACT
     western = parse_western_number(found)
     if western is not None and western == parse_western_number(query):
@@ -192,7 +211,8 @@ def number_match(found: str, query: str) -> NumberMatch:
 
 
 def is_same_number(left: str, right: str) -> bool:
-    """两个番号是否同指一部: 折叠后相等, 或同为欧美日期号且片商与发布日期相同; 任一侧为空为假."""
+    """两个番号是否同指一部: 折叠后相等, 同为欧美日期号且片商与发布日期相同, 或同为 FC2 番号且商品 ID
+    相同; 任一侧为空为假."""
     return number_match(left, right) is NumberMatch.EXACT
 
 
