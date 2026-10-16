@@ -6,10 +6,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy.exc import OperationalError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from amane.db.models import TaskStatus, TaskType
+from amane.db.models import Task, TaskStatus, TaskType
 from amane.handlers.protocol import FollowupTask, TaskHandler, TaskResult
+from amane.scheduler import worker as worker_module
 from amane.scheduler.worker import CANCEL_ERROR, AsyncWorker
 from tests.helpers import LOAD_TOLERANT_TIMEOUT
 
@@ -168,6 +170,61 @@ async def test_worker_drain_waits_for_inflight_claim(repo: Repository, monkeypat
 
     # 事务已结束, 写锁释放: 后续写入不能撞上锁超时.
     await asyncio.wait_for(repo.create_task(TaskType.SCRAPE, payload={"i": 1}), timeout=5)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_worker_restarts_main_loop_after_crash(repo: Repository, monkeypatch: pytest.MonkeyPatch) -> None:
+    """认领抛出异常只中断一轮循环: 退避重启后继续认领, 任务不因崩溃留在队列里."""
+    monkeypatch.setattr(worker_module, "LOOP_RESTART_DELAY", 0.01)
+    monkeypatch.setattr(worker_module, "LOOP_RESTART_MAX_DELAY", 0.02)
+
+    crashes = 0
+    real_claim = repo.claim_next_task
+
+    async def flaky_claim() -> Task | None:
+        nonlocal crashes
+        crashes += 1
+        if crashes <= 2:
+            raise OperationalError("SELECT 1", None, Exception("database is locked"))
+        return await real_claim()
+
+    repo.claim_next_task = flaky_claim  # type: ignore[method-assign]
+
+    worker = AsyncWorker(repo=repo, handlers={TaskType.SCRAPE: SuccessHandler()}, poll_interval=0.05)
+    t = await repo.create_task(TaskType.SCRAPE, payload={"number": "RESTART-1"})
+    assert t.id is not None
+    worker.start()
+
+    assert await recv(worker, 1) == [t.id]
+    assert crashes > 2, "崩溃路径未被触发: 该用例失去鉴别力"
+    await stop_worker(worker)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_worker_retire_interrupts_restart_backoff(repo: Repository, monkeypatch: pytest.MonkeyPatch) -> None:
+    """retire 落在退避等待里: 立刻退出且不再拉起主循环, 不等满退避."""
+    monkeypatch.setattr(worker_module, "LOOP_RESTART_DELAY", 30.0)
+    monkeypatch.setattr(worker_module, "LOOP_RESTART_MAX_DELAY", 30.0)
+
+    crashed = asyncio.Event()
+    claims = 0
+
+    async def always_crash() -> Task | None:
+        nonlocal claims
+        claims += 1
+        crashed.set()
+        raise OperationalError("SELECT 1", None, Exception("database is locked"))
+
+    repo.claim_next_task = always_crash  # type: ignore[method-assign]
+
+    worker = AsyncWorker(repo=repo, handlers={}, poll_interval=0.05)
+    worker.start()
+    await asyncio.wait_for(crashed.wait(), timeout=5)
+    assert worker._main_task is not None and not worker._main_task.done(), "崩溃后 supervisor 已退出"
+
+    worker.retire()
+    await asyncio.wait_for(worker.wait_stopped(), timeout=5)
+    assert claims == 1, "retire 后又拉起了一轮主循环"
 
 
 @pytest.mark.asyncio(loop_scope="function")
