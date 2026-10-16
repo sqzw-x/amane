@@ -322,6 +322,18 @@ def is_amateur(number: str) -> bool:
     return infer_content_type(number) == ContentType.AMATEUR
 
 
+# 站点 genre 的惯用写法, 判定要求整体相等: 含 VR 字样的其它标签 (VRっぽい / 8K VR) 不命中.
+VR_TAGS = frozenset({"vr", "vr専用", "8kvr", "ハイクオリティvr", "vr専用作品", "vr作品"})
+
+
+def is_vr(tags: Iterable[str]) -> bool:
+    """VR 判定只依据标签. 番号里的 VR 混在厂商前缀里 (MDVR-123 是 VR, SVR-123 不是), 故不按番号判定.
+
+    站点不给 VR 标签时判定为否: 漏标可接受, 误标不可接受. 读取侧 ``Metadata.vr`` 与列表筛选共用本函数与 ``VR_TAGS``.
+    """
+    return any(tag.strip().casefold() in VR_TAGS for tag in tags)
+
+
 def file_phase_from_path(path: str | Path) -> FilePhase:
     """入库相位只取路径能给出的部分: 外挂字幕命中不在路径里, 由 MediaFile 各自的列承载."""
     info = parse_file_info(path)

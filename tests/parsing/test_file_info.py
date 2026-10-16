@@ -12,6 +12,7 @@ from amane.parsing import (
     infer_content_type,
     is_amateur,
     is_uncensored,
+    is_vr,
     parse_file_info,
     split_number,
 )
@@ -539,3 +540,30 @@ def test_mosaic_canonical_filename_roundtrip(source: str, canonical: str) -> Non
     assert info.mosaic == canonical
     again = parse_file_info(f"MIDV-123-{canonical}.mp4")
     assert again.mosaic == canonical
+
+
+VR_CASES: list[tuple[list[str], bool]] = [
+    ([], False),
+    (["単体作品", "ハイビジョン", "中出し"], False),
+    (["VR"], True),
+    (["vr"], True),
+    (["  VR専用  "], True),
+    (["8KVR"], True),
+    (["ハイクオリティVR"], True),
+    (["VR作品"], True),
+    (["VR専用作品"], True),
+    (["単体作品", "vr専用"], True),
+    # 含 VR 字样的其它标签不命中
+    (["VRっぽい"], False),
+    (["8K VR"], False),
+    (["ハイクオリティ VR"], False),
+    (["ＶＲ"], False),
+    # 番号不参与判定: 厂商前缀里的 VR 与含 VR 的非 VR 番号都无法区分
+    (["MDVR-123"], False),
+    (["SVR-123"], False),
+]
+
+
+@pytest.mark.parametrize(("tags", "expected"), VR_CASES)
+def test_is_vr(tags: list[str], expected: bool) -> None:
+    assert is_vr(tags) is expected

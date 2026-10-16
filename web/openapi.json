@@ -1103,6 +1103,24 @@
             "description": "Filter by linked file subtitle marker"
           },
           {
+            "name": "vr",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by VR marker (entry tag vocabulary)",
+              "title": "Vr"
+            },
+            "description": "Filter by VR marker (entry tag vocabulary)"
+          },
+          {
             "name": "mosaic",
             "in": "query",
             "required": false,
@@ -11848,6 +11866,11 @@
               }
             ],
             "title": "Score"
+          },
+          "vr": {
+            "type": "boolean",
+            "title": "Vr",
+            "default": false
           },
           "poster_urls": {
             "items": {

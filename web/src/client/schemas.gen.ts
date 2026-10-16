@@ -5648,6 +5648,11 @@ export const MetadataResponseSchema = {
             ],
             title: 'Score'
         },
+        vr: {
+            type: 'boolean',
+            title: 'Vr',
+            default: false
+        },
         poster_urls: {
             items: {
                 type: 'string'

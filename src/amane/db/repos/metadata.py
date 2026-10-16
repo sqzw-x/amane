@@ -24,6 +24,7 @@ from ..models import (
     Studio,
     has_subtitle_predicate,
     metadata_number_predicate,
+    metadata_vr_predicate,
 )
 from ..repo_types import (
     MetadataFields,
@@ -126,6 +127,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         user_tag_ids: Sequence[int] | None = None,
         has_files: bool | None = None,
         has_subtitle: bool | None = None,
+        vr: bool | None = None,
         mosaic: Mosaic | None = None,
         uncensored: bool | None = None,
         definition: str | None = None,
@@ -188,6 +190,10 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 base = base.where(col(Metadata.series).in_(series_names))
             if has_files is not None:
                 base = base.where(_metadata_has_files_clause(has_files=has_files))
+            if vr is True:
+                base = base.where(metadata_vr_predicate())
+            elif vr is False:
+                base = base.where(~metadata_vr_predicate())
             if has_subtitle is True:
                 base = base.where(_metadata_linked_file_exists(has_subtitle_predicate()))
             elif has_subtitle is False:

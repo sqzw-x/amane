@@ -27,7 +27,7 @@
 
 文件相位 (`content_type` / `mosaic` / `definition`) 是 **path 的投影**, 连同中字的文件名标记列落在 `MediaFile`: 创建与修改 path 时用同一次 `parse_file_info` 回填, 不纳入对外 PATCH; `cd` 只用于 ORGANIZE 分集配对, 不落库. `content_type` 是番号 / 目录的内容类型 (决定刮削路由), `mosaic` 是这份文件的马赛克标记 (有码 / 无码 / 破解 / 流出); 词表未命中时按内容类型兜底 (有码 → `censored`, 无码 → `uncensored`, 国产 / FC2 / 欧美保持空), 已有的破解 / 流出 / 无码标记不覆盖. 无码展示与筛选是 `mosaic=uncensored OR content_type=uncensored`. `ContentType.chinese` 是国产, 不是中字. 中字是两个来源的并集: 文件名的中字标记 (`has_subtitle_in_name`, path 的投影) 与视频同目录存在库 `subtitle_extensions` 命中的字幕 (`has_external_subtitle`, 在登记 / 修改 path / 库扫描时各检查一次; 外挂字幕只在整理落盘时作为 `parse_file_info` 的入参并进 `FileInfo.has_subtitle`, 不改变入库的路径投影). 两者都不校验语言文字, 与 ORGANIZE 的字幕配对口径相同; 目录读取不到时按无字幕处理. 只删除字幕不会触发复查, 视频重新登记、更换 path 或所在库被扫描时才回退. 并集在 Python 是 `MediaFile.has_subtitle` (property), SQL 侧必须改用 `db/models.py::has_subtitle_predicate`, 两处口径必须一致.
 
-Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase`): 任一挂载文件具备即亮, `definition` 取最高档; 没有挂载文件的 Metadata 不命中这些筛选. 模板占位符 `{mosaic?}` 输出判定后的 mosaic, `{content_type}` 输出内容类型.
+Metadata 列表的角标与筛选经由关联 EXISTS / 页级聚合 (`file_phase`): 任一挂载文件具备即亮, `definition` 取最高档; 没有挂载文件的 Metadata 不命中这些筛选. 模板占位符 `{mosaic?}` 输出判定后的 mosaic, `{content_type}` 输出内容类型. VR 标识与 `GET /metadata` 的 `vr` 筛选不来自文件相位, 也不物化: 只依据 `Metadata.tags` 与 `parsing/file_info.py::VR_TAGS` 的整体相等判定, 番号不参与; Python 与 SQL 两侧共用同一份词表 (`db/models.py::metadata_vr_predicate`, 用法同 `has_subtitle_predicate`), 因此重命名 / 合并标签后判定立即变化, 无需回填. 代价是判定随 `tags` 的单源取值: 字段链首个非空站点不给 VR 标签的条目判为否.
 
 ## Library 归属
 
