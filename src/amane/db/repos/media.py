@@ -257,7 +257,7 @@ class MediaRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             return {mid: n for mid, n in result.all() if mid is not None}
 
-    async def summarize_media_by_metadata_ids(self, metadata: Sequence[Metadata]) -> dict[int, MetadataFilesSummary]:
+    async def summarize_media_by_metadata(self, metadata: Sequence[Metadata]) -> dict[int, MetadataFilesSummary]:
         """每个入参条目都有结果: 相位由条目类型与挂载文件合成, 没有文件的条目 file_count 为 0."""
         entry_types = {m.id: m.content_type for m in metadata if m.id is not None}
         if not entry_types:

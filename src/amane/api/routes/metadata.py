@@ -119,7 +119,7 @@ async def list_metadata(
         content_type=content_type,
         id_subquery_sql=id_subquery_sql,
     )
-    summaries = await repo.summarize_media_by_metadata_ids(items)
+    summaries = await repo.summarize_media_by_metadata(items)
     responses: list[MetadataResponse] = []
     for m in items:
         summary = summaries.get(m.id) if m.id is not None else None

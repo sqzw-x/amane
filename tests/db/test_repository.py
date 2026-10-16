@@ -773,7 +773,7 @@ class TestMetadataRepo:
         items, total = await repo.list_metadata(mosaic=Mosaic.UNCENSORED)
         assert [m.number for m in items] == ["MIDV-002"]
 
-        summaries = await repo.summarize_media_by_metadata_ids([sub, marked, uncensored, plain])
+        summaries = await repo.summarize_media_by_metadata([sub, marked, uncensored, plain])
         assert summaries[sub.id].file_count == 1
         assert summaries[sub.id].phase.has_subtitle is True
         assert summaries[uncensored.id].file_count == 0
