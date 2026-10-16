@@ -623,6 +623,44 @@ function useFullscreenLandscape(controllerRef: RefObject<MediaControllerElement 
 }
 
 /**
+ * 触屏上开始播放即进入全屏.
+ *
+ * 判据是指针类型而不是宽度: 全屏是横屏, 视口很宽, 按宽度判断会退回鼠标形态. 请求经全屏按钮发出, 控制器据此
+ * 同步自身的全屏状态.
+ *
+ * 已在全屏时不允许再次请求: 该按钮按 `mediaIsFullscreen` 二选一派发进入与退出两种请求, 全屏中暂停后恢复播放
+ * 会被它退出全屏. 两个判据都不允许删除 —— `mediaIsFullscreen` 是按钮上的属性, 属性同步晚于 `fullscreenchange`
+ * 时由 `document.fullscreenElement` 补位; WebKit 的元素级全屏只写在属性上, 不进入该字段. 没有用户手势或内核
+ * 不支持时这次请求会被拒绝, 内联播放照常.
+ *
+ * 只负责进入全屏: 横屏由 `useFullscreenLandscape` 在进入全屏后锁方向.
+ */
+function useFullscreenOnPlay(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  fullscreenButtonRef: RefObject<MediaFullscreenButtonElement | null>,
+  enabled: boolean,
+) {
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!enabled || video == null) {
+      return;
+    }
+
+    const handlePlay = () => {
+      const button = fullscreenButtonRef.current;
+      if (button == null || button.mediaIsFullscreen || document.fullscreenElement != null) {
+        return;
+      }
+      // `handleClick` 只从事件里读取指针类型 (决定进入全屏后是否交还焦点), 因此普通事件即可, 不必真的点击.
+      button.handleClick(new Event("click"));
+    };
+
+    video.addEventListener("play", handlePlay);
+    return () => video.removeEventListener("play", handlePlay);
+  }, [enabled, fullscreenButtonRef, videoRef]);
+}
+
+/**
  * 挂载后立即开始播放.
  *
  * 由点击挂载的播放器 (预告片) 用: 自动播放被浏览器拒绝时保持暂停, 与手动开始播放同形.
@@ -1101,8 +1139,13 @@ export function PlaybackPlayer({
   /**
    * 粗指针 (触屏) 上倍速改成右侧滑出面板: 悬浮菜单靠指针进入展开, 触屏既没有悬停也没有离开 —
    * 全屏播放是横屏, 视口很宽, 靠宽度判断会退回鼠标形态, 因此按指针类型判定.
+   *
+   * 首帧就要取到真值, 不允许交给 effect 补: 预告片挂载后立即开始播放, 那次播放的监听得在这次挂载里就带上
+   * 粗指针.
    */
-  const coarsePointer = useMediaQuery("(pointer: coarse)");
+  const coarsePointer = useMediaQuery("(pointer: coarse)", undefined, {
+    getInitialValueInEffect: false,
+  });
   const [rateSheetOpen, setRateSheetOpen] = useState(false);
   const rateSheetVisible = coarsePointer && rateSheetOpen;
 
@@ -1406,6 +1449,8 @@ export function PlaybackPlayer({
 
   useFullscreenScrollRestore(controllerRef);
   useFullscreenLandscape(controllerRef);
+  // 起播的监听要先于起播本身挂上: 预告片挂载后立即起播, 那一次也要进全屏.
+  useFullscreenOnPlay(videoRef, fullscreenButtonRef, coarsePointer);
   useAutoPlay(videoRef, autoPlay);
 
   const applyPlaybackRate = useCallback(
