@@ -20,6 +20,15 @@ _DEFAULT_JPEG_QUALITY = 95
 CROP_BOX_ARGS_PREFIX = "box:"
 
 
+def _save_jpeg(img: Image.Image, path: Path, quality: int) -> None:
+    """落盘为 JPEG, 格式由本函数决定而非路径后缀.
+
+    带 alpha 的源图不能直接存 JPEG: Pillow 按 ``.jpg`` 后缀选中 JPEG 编码器后拒绝
+    RGBA. 源图是下载来的, 调用方无法预判它是否为 RGBA, 故转码不交给调用方.
+    """
+    img.convert("RGB").save(path, format="JPEG", quality=quality)
+
+
 def format_crop_box_args(left: int, top: int, right: int, bottom: int) -> str:
     return f"{CROP_BOX_ARGS_PREFIX}{left},{top},{right},{bottom}"
 
@@ -90,14 +99,14 @@ def crop_poster(
         target_w = int(h * poster_ratio)
         if target_w >= w:
             # 已足够窄, 整图作为海报.
-            img.save(poster_path, quality=jpeg_quality)
+            _save_jpeg(img, poster_path, jpeg_quality)
             return True
 
         # 从右侧裁剪.
         left = w - target_w
         cropped = img.crop((left, 0, w, h))
         poster_path.parent.mkdir(parents=True, exist_ok=True)
-        cropped.save(poster_path, quality=jpeg_quality)
+        _save_jpeg(cropped, poster_path, jpeg_quality)
         return True
     except Exception as e:
         logger.warning("poster crop failed", path=str(thumb_path), error=str(e))
@@ -124,7 +133,7 @@ def crop_box(
             return False
         cropped = img.crop(box)
         dest_path.parent.mkdir(parents=True, exist_ok=True)
-        cropped.save(dest_path, quality=jpeg_quality)
+        _save_jpeg(cropped, dest_path, jpeg_quality)
         return True
     except Exception as e:
         logger.warning("box crop failed", path=str(src_path), error=str(e))
@@ -262,8 +271,7 @@ def apply_cover_watermarks(
         if not any(grouped.values()):
             return False
         _paste_stamps(img, grouped, pad=pad, gap=gap)
-        rgb = img.convert("RGB")
-        rgb.save(path, quality=jpeg_quality)
+        _save_jpeg(img, path, jpeg_quality)
         return True
     except Exception as e:
         logger.warning("cover watermark failed", path=str(path), error=str(e))

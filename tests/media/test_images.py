@@ -95,6 +95,53 @@ class TestCropBox:
         assert crop_box(tmp_path / "missing.jpg", tmp_path / "out.jpg", (0, 0, 10, 10)) is False
 
 
+class TestAlphaSourceEncodesAsJpeg:
+    """带 alpha 的源图必须落盘为 JPEG.
+
+    图床返回 PNG 但 URL 带 ``.jpg`` 时, Pillow 按目标后缀选中 JPEG 编码器并拒绝 RGBA,
+    裁剪整体失败: 海报回退成未裁切的宽图, 手动框选同样不生效.
+    """
+
+    @pytest.mark.parametrize(
+        ("crop", "mode", "desc"),
+        [
+            ("poster", "RGBA", "自动裁切/alpha 通道"),
+            ("poster", "P", "自动裁切/调色板"),
+            ("box", "RGBA", "框选裁切/alpha 通道"),
+            ("box", "P", "框选裁切/调色板"),
+        ],
+    )
+    def test_alpha_source_encodes_as_jpeg(self, tmp_path: Path, crop: str, mode: str, desc: str):
+        src = tmp_path / "72b56e04abec0061.jpg"
+        Image.new(mode, (800, 538), "blue").save(src, format="PNG")
+        dest = tmp_path / "out.jpg"
+
+        if crop == "poster":
+            # 裁后 376x538; 比目标窄的整图分支由下面的原尺寸用例覆盖.
+            assert crop_poster(src, dest, poster_ratio=0.7) is True, desc
+        else:
+            assert crop_box(src, dest, (424, 0, 800, 538)) is True, desc
+        assert Image.open(dest).size == (376, 538), desc
+
+        with Image.open(dest) as out:
+            # 后缀为 .jpg, 但源是 PNG: 不显式指定格式会按源格式写出 PNG 内容.
+            assert out.format == "JPEG", desc
+            assert out.mode == "RGB", desc
+
+    def test_alpha_source_narrower_than_poster_ratio(self, tmp_path: Path):
+        """整图作为海报的分支同样要转码, 不能按源格式写出 PNG 内容."""
+        src = tmp_path / "72b56e04abec0061.jpg"
+        Image.new("RGBA", (100, 200), "blue").save(src, format="PNG")
+        dest = tmp_path / "out.jpg"
+
+        assert crop_poster(src, dest, poster_ratio=0.7) is True
+
+        with Image.open(dest) as out:
+            assert out.format == "JPEG"
+            assert out.mode == "RGB"
+            assert out.size == (100, 200)
+
+
 class TestProbeSize:
     def test_reads_size(self, tmp_path: Path):
         p = tmp_path / "img.jpg"
