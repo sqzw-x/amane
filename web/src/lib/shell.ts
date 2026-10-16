@@ -124,7 +124,7 @@ export interface ShellSystemLevels {
 /**
  * 取壳的系统音量与亮度接口; 桥不可用或壳版本早于这一组方法时返回 null.
  *
- * 返回 null 表示调用方必须退回元素音量与画面叠加层 —— 浏览器里没有别的可能.
+ * 返回 null 时调用方退回元素音量与画面叠加层: 浏览器内没有别的手段, 旧壳内则是降级.
  */
 export function shellSystemLevels(): ShellSystemLevels | null {
   const bridge = window.amaneshell;
@@ -145,12 +145,12 @@ export function shellSystemLevels(): ShellSystemLevels | null {
   ) {
     return null;
   }
-  // 每个动作都从 bridge 上取: Java 桥的方法带接收者, 拆出来单调用未必成立.
+  // 以桥为接收者调用, 不假设 Java 桥的方法可以拆出来单调用.
   return {
-    volume: () => bridge.mediaVolume?.() ?? 1,
-    setVolume: (value) => bridge.setMediaVolume?.(value),
-    brightness: () => bridge.screenBrightness?.() ?? 1,
-    setBrightness: (value) => bridge.setScreenBrightness?.(value),
-    clearBrightness: () => bridge.clearScreenBrightness?.(),
+    volume: () => mediaVolume.call(bridge),
+    setVolume: (value) => setMediaVolume.call(bridge, value),
+    brightness: () => screenBrightness.call(bridge),
+    setBrightness: (value) => setScreenBrightness.call(bridge, value),
+    clearBrightness: () => clearScreenBrightness.call(bridge),
   };
 }
