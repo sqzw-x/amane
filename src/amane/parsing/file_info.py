@@ -4,7 +4,7 @@
 只有字符串则按自由文本 (RSS 标题、已有番号), 未命中则 ``number is None``, 不能把原文冒充番号.
 常用字段投影是同一函数的包装.
 
-类型与文件相位分离: 类型是番号的属性, 落在条目上; 文件相位 (cd / 中字 / 马赛克标记 / 分辨率) 只描述这一份文件, 一律只依据路径 —— cd / 中字 / 分辨率看文件名, 马赛克标记看文件名与目录整段词表.
+类型与文件相位分离: 类型是番号的属性, 落在番号条目上; 文件相位 (cd / 中字 / 马赛克标记 / 分辨率) 只描述这一份文件, 一律依据路径 —— cd / 中字 / 分辨率依据文件名, 马赛克标记依据文件名与目录整段词表.
 """
 
 from __future__ import annotations
@@ -34,8 +34,20 @@ class ContentType(StrEnum):
 
 
 class Mosaic(StrEnum):
-    """文件级来路标记. 有码 / 无码是条目类型, 不出现在这里."""
+    """马赛克标记; 有码是条目类型, 不在此列."""
 
+    UNCENSORED = "uncensored"
+    CRACKED = "cracked"
+    LEAKED = "leaked"
+
+
+class MosaicNature(StrEnum):
+    """马赛克性质: 展示口径的 有码 / 无码 / 破解 / 流出, 不落库.
+
+    比 ``Mosaic`` 多一个 ``CENSORED``: 标记是这一份文件自己的证据, 性质是标记与条目类型合成后的结果.
+    """
+
+    CENSORED = "censored"
     UNCENSORED = "uncensored"
     CRACKED = "cracked"
     LEAKED = "leaked"
@@ -210,6 +222,7 @@ _MOSAIC_DIR_TOKENS: dict[str, Mosaic] = {
     )
 }
 MOSAIC_VALUES: tuple[Mosaic, ...] = tuple(Mosaic)
+MOSAIC_NATURE_VALUES: tuple[MosaicNature, ...] = tuple(MosaicNature)
 CONTENT_TYPE_VALUES: tuple[ContentType, ...] = tuple(ContentType)
 
 # 分辨率: 元组顺序即优先级; 2160p 归一为 4K.
@@ -333,9 +346,23 @@ def file_phase_from_path(path: str | Path) -> FilePhase:
     )
 
 
-def shows_uncensored(mosaic: Mosaic | None, content_type: ContentType) -> bool:
-    """无码: 条目类型为无码 (HEYZO 等不必带文件名无码标记), 或这一份文件带无码标记."""
+def shows_uncensored(mosaic: Mosaic | None, content_type: ContentType | None) -> bool:
+    """无码: 条目类型为无码 (HEYZO 等不必带文件名无码标记), 或这一份文件带无码标记.
+
+    ``content_type`` 为 None 时只看这一份文件 (未绑定条目的文件):
+    """
     return mosaic is Mosaic.UNCENSORED or content_type is ContentType.UNCENSORED
+
+
+def mosaic_nature(mosaic: Mosaic | None, content_type: ContentType | None) -> MosaicNature | None:
+    """马赛克性质: 标记优先, 没命中时继承条目类型的有码 / 无码, 其余类型为空."""
+    if mosaic is not None:
+        return MosaicNature(mosaic)
+    if content_type is ContentType.CENSORED:
+        return MosaicNature.CENSORED
+    if content_type is ContentType.UNCENSORED:
+        return MosaicNature.UNCENSORED
+    return None
 
 
 def max_definition(values: Iterable[str | None]) -> str | None:
@@ -354,7 +381,7 @@ def max_definition(values: Iterable[str | None]) -> str | None:
 
 
 def summarize_file_phases(phases: Iterable[FilePhase], content_type: ContentType) -> FilePhaseSummary:
-    """``content_type`` 是条目类型: 有码 / 无码由它在无文件时也成立, 无码再并上文件的无码标记; 其余按「任一文件具备」聚合."""
+    """``content_type`` 是条目类型: 有码取类型为有码, 无码取类型为无码或任一文件带无码标记; 其余按「任一文件具备」聚合."""
     items = list(phases)
     mosaic_present = {phase["mosaic"] for phase in items if phase["mosaic"] is not None}
     return FilePhaseSummary(
@@ -629,7 +656,7 @@ def _detect_subtitle(basename: str) -> bool:
 
 
 def _detect_mosaic(basename: str) -> Mosaic | None:
-    """basename 已大写. `CRACKED` / `-U` / `-UC` 是破解; 多标记时破解优先于流出, 流出优先于无码."""
+    """basename 已大写. `CRACKED` / `-U` / `-UC` 是破解; 多标记优先级见 docs/dev/data-model.md."""
     if re.search(r"破解|克破|CRACKED", basename) or re.search(r"-U(C)?(?![A-Z0-9])", basename):
         return Mosaic.CRACKED
     if re.search(r"流出|LEAKED", basename):

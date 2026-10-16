@@ -5821,7 +5821,7 @@ export const MosaicSchema = {
         'leaked'
     ],
     title: 'Mosaic',
-    description: '文件级来路标记. 有码 / 无码是条目类型, 不出现在这里.'
+    description: '马赛克标记; 有码是条目类型, 不在此列.'
 } as const;
 
 export const MoveModeSchema = {

@@ -6,8 +6,10 @@ from amane.parsing import (
     ContentType,
     FilePhase,
     Mosaic,
+    MosaicNature,
     file_phase_from_path,
     max_definition,
+    mosaic_nature,
     parse_file_info,
     shows_uncensored,
     summarize_file_phases,
@@ -39,10 +41,30 @@ def test_file_phase_from_path_keeps_marker_only(path: str, content_type: Content
         (Mosaic.CRACKED, ContentType.UNCENSORED, True),
         (None, ContentType.CENSORED, False),
         (Mosaic.CRACKED, ContentType.CENSORED, False),
+        # 未绑定条目的文件只看自身标记
+        (None, None, False),
+        (Mosaic.UNCENSORED, None, True),
     ],
 )
-def test_shows_uncensored(mosaic: Mosaic | None, content_type: ContentType, expected: bool) -> None:
+def test_shows_uncensored(mosaic: Mosaic | None, content_type: ContentType | None, expected: bool) -> None:
     assert shows_uncensored(mosaic, content_type) is expected
+
+
+@pytest.mark.parametrize(
+    ("mosaic", "content_type", "expected"),
+    [
+        (None, ContentType.CENSORED, MosaicNature.CENSORED),
+        (None, ContentType.UNCENSORED, MosaicNature.UNCENSORED),
+        (Mosaic.UNCENSORED, ContentType.CENSORED, MosaicNature.UNCENSORED),
+        (Mosaic.CRACKED, ContentType.UNCENSORED, MosaicNature.CRACKED),
+        (Mosaic.LEAKED, ContentType.CENSORED, MosaicNature.LEAKED),
+        (None, ContentType.CHINESE, None),
+        (None, None, None),
+    ],
+)
+def test_mosaic_nature(mosaic: Mosaic | None, content_type: ContentType | None, expected: MosaicNature | None) -> None:
+    """性质: 标记优先, 没命中时继承条目类型的有码 / 无码."""
+    assert mosaic_nature(mosaic, content_type) is expected
 
 
 @pytest.mark.parametrize(

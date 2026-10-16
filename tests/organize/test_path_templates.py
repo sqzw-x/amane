@@ -173,6 +173,37 @@ RENDER_CASES: tuple[_RenderCase, ...] = (
         "fc2/ABC-123.mp4",
         meta={"content_type": ContentType.FC2},
     ),
+    # --- 马赛克性质: 标记优先, 没命中时继承条目类型 ---
+    _RenderCase(
+        "MIDV-123.mp4",
+        "{mosaic?}/{number}.{ext}",
+        "censored/ABC-123.mp4",
+        meta={"content_type": ContentType.CENSORED},
+    ),
+    _RenderCase(
+        "MIDV-123.mp4",
+        "{mosaic?}/{number}.{ext}",
+        "uncensored/ABC-123.mp4",
+        meta={"content_type": ContentType.UNCENSORED},
+    ),
+    _RenderCase(
+        "MIDV-123-無碼.mp4",
+        "{mosaic?}/{number}.{ext}",
+        "uncensored/ABC-123.mp4",
+        meta={"content_type": ContentType.CENSORED},
+    ),
+    _RenderCase(
+        "MD-0123.mp4",
+        "[{mosaic?}]/{number}.{ext}",
+        "ABC-123.mp4",
+        meta={"content_type": ContentType.CHINESE},
+    ),
+    _RenderCase(
+        "MIDV-123.mp4",
+        "{mosaic?|censored=有码,uncensored=无码}/{number}.{ext}",
+        "有码/ABC-123.mp4",
+        meta={"content_type": ContentType.CENSORED},
+    ),
     # {cd} 不是 {cd?}, 视为未知 key
     _RenderCase("MIDV-123-CD1.mp4", "{number}[-CD{cd}].{ext}", "ABC-123-CDUnknown.mp4"),
     # metadata 缺省是字面量 Unknown; 映成空串后可选组省略, 路径空段折叠
@@ -268,6 +299,8 @@ class TestValidatePathTemplate:
         "template",
         [
             "{mosaic?|uncensored=U,cracked=破解}",
+            "{mosaic?|censored=有码}",
+            "{mosaic?|censored=,uncensored=无码}",
             "{mosaic?|cracked=破解}",
             "{mosaic?|leaked=流出}",
             "{mosaic?|cracked=U}",

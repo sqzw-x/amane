@@ -2856,7 +2856,7 @@ export type MetadataUserTagsRequest = {
 /**
  * Mosaic
  *
- * 文件级来路标记. 有码 / 无码是条目类型, 不出现在这里.
+ * 马赛克标记; 有码是条目类型, 不在此列.
  */
 export type Mosaic = 'uncensored' | 'cracked' | 'leaked';
 
