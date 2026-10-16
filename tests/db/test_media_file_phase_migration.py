@@ -140,6 +140,13 @@ def _entry_types(engine: Engine) -> dict[str, str]:
         }
 
 
+def _file_types(engine: Engine) -> dict[str, str]:
+    with engine.connect() as conn:
+        return {
+            row.path: row.content_type for row in conn.execute(text("SELECT path, content_type FROM media_files")).all()
+        }
+
+
 def test_metadata_content_type_backfilled_from_files_then_number(tmp_path: Path) -> None:
     """条目类型优先取首个挂载文件的路径, 没有文件时取番号; 回填可重跑."""
     db_path = tmp_path / "migrate.db"
@@ -187,8 +194,14 @@ def test_metadata_content_type_backfilled_from_files_then_number(tmp_path: Path)
     }
     assert "content_type" not in _columns(engine, "media_files")
 
-    # 类型由番号与路径推出, 回填可重跑
+    # downgrade 把条目类型放回文件列: 绑定文件取所属条目
     command.downgrade(cfg, "1fdf4d41aac1")
+    assert _file_types(engine) == {
+        "/media/HEYZO-1234.mp4": "UNCENSORED",
+        "/media/欧美/HEYZO-1234.mp4": "UNCENSORED",
+    }
+
+    # 回填可重跑
     command.upgrade(cfg, "head")
     assert _entry_types(engine) == {
         "東京熱 k1393": "UNCENSORED",
