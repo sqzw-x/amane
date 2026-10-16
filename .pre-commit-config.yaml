@@ -6,8 +6,8 @@
 # - web/ 下任何文件变化 → oxfmt/oxlint 修复 + web 全量检查
 # - 其余文件 (docs/md、yaml、Dockerfile 等) 不触发任何钩子
 #
-# 慢检查放在 pre-push: pyright 与测试的文件集取推送范围对远程 ref 的差异, 一次推送只运行一次, 与推送内的
-# 提交数无关, 提交阶段只留生成物、ruff 与 ty; 测试只运行 just test, 不含 coverage (coverage 留给 just check / CI).
+# 按耗时分流, 不按覆盖面: pyright 与 ty 都做完整类型检查, pyright 慢, 与测试同在 pre-push (文件集取推送范围对
+# 远程 ref 的差异, 一次推送只运行一次); 提交阶段只留生成物、ruff 与 ty, 测试只运行 just test, coverage 留给 just check / CI.
 #
 # 失败即停: 修复型钩子 (fix-*) 失败 = 文件被修改, 需重新 stage 再提交,
 # 后续检查钩子此刻跑也是必败, 直接停止省掉全量.

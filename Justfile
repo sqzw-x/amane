@@ -60,11 +60,11 @@ fix-web:
 
 typecheck: typecheck-pyright typecheck-ty
 
-# pre-push: 完整类型检查 (慢)
+# pre-push: pyright 类型检查 (TypeScript 实现, 慢于 ty)
 typecheck-pyright:
     uv run pyright
 
-# pre-commit: 快速类型检查
+# pre-commit: ty 类型检查 (Rust 实现)
 typecheck-ty:
     uv run ty check
 
