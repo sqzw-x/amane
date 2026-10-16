@@ -2361,6 +2361,14 @@ export type MediaFileResponse = {
     status: MediaFileStatus;
     mosaic?: Mosaic | null;
     /**
+     * Censored
+     */
+    censored?: boolean;
+    /**
+     * Uncensored
+     */
+    uncensored?: boolean;
+    /**
      * Has Subtitle
      */
     has_subtitle?: boolean;

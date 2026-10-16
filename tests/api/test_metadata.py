@@ -127,6 +127,20 @@ class TestMetadataHttp:
         assert (await client.delete("metadata/9999")).status_code == 404
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_detail_file_rows_carry_derived_phase(self, client: AsyncClient, repo: Repository):
+        """详情里的文件行与条目相位同源: 有码条目的文件行带 censored, 带无码标记的再带 uncensored."""
+        meta = await repo.upsert_metadata(number="MIDV-123")
+        assert meta.id is not None
+        plain = await repo.create_media_file(library_id=1, path="/video/MIDV-123.mp4", metadata_id=meta.id)
+        marked = await repo.create_media_file(library_id=1, path="/video/MIDV-124-无码.mp4", metadata_id=meta.id)
+        assert plain.id is not None and marked.id is not None
+
+        detail = await client.get(f"metadata/{meta.id}")
+        rows = {row["id"]: row for row in detail.json()["files"]}
+        assert (rows[plain.id]["censored"], rows[plain.id]["uncensored"]) == (True, False)
+        assert (rows[marked.id]["censored"], rows[marked.id]["uncensored"]) == (True, True)
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_list_sort_by_score(self, client: AsyncClient, repo: Repository):
         """HTTP 接线: 接受 score 排序, 响应 score 是 scores 首值而非最大值; 未知排序字段 422."""
         await repo.upsert_metadata(number="S-1", title="One", scores={"a": 1.0, "b": 4.5})

@@ -4806,6 +4806,16 @@ export const MediaFileResponseSchema = {
                 }
             ]
         },
+        censored: {
+            type: 'boolean',
+            title: 'Censored',
+            default: false
+        },
+        uncensored: {
+            type: 'boolean',
+            title: 'Uncensored',
+            default: false
+        },
         has_subtitle: {
             type: 'boolean',
             title: 'Has Subtitle',

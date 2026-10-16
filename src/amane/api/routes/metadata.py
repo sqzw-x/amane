@@ -19,7 +19,6 @@ from ..models import (
     CommentResponse,
     CropPosterRequest,
     FilePhaseSummary,
-    MediaFileResponse,
     MergeRequest,
     MetadataBatchDeleteResponse,
     MetadataBatchIdsRequest,
@@ -33,6 +32,7 @@ from ..models import (
     PartialMetadata,
     UserTagLinksResponse,
     UserTagResponse,
+    to_media_file_response,
 )
 from .saved_queries import resolve_saved_query_id_subquery
 
@@ -211,7 +211,7 @@ async def get_metadata(metadata_id: int, repo: RepoDep) -> MetadataDetailRespons
                 ),
             }
         ),
-        files=[to_resp(MediaFileResponse, f) for f in files],
+        files=[to_media_file_response(f, metadata.content_type) for f in files],
         user_tags=[to_resp(UserTagResponse, t) for t in user_tags],
         comments=[to_resp(CommentResponse, c) for c in comments],
         actor_ids=actor_ids,

@@ -225,6 +225,16 @@ class MetadataRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             return result.first()
 
+    async def content_types_by_metadata_ids(self, metadata_ids: Sequence[int]) -> dict[int, ContentType]:
+        """文件行派生相位用; 不存在的 id 不在结果里, 调用方按"没有条目"处理."""
+        unique = list(dict.fromkeys(metadata_ids))
+        if not unique:
+            return {}
+        async with self._session() as session:
+            stmt = select(col(Metadata.id), col(Metadata.content_type)).where(col(Metadata.id).in_(unique))
+            rows = (await session.exec(stmt)).all()
+            return {row_id: content_type for row_id, content_type in rows if row_id is not None}
+
     async def upsert_metadata(
         self,
         number: str,

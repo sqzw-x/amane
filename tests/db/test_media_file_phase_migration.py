@@ -165,6 +165,17 @@ def test_metadata_content_type_backfilled_from_files_then_number(tmp_path: Path)
                 "metadata_id": by_file,
             },
         )
+        # 只取 id 最小的那一份: 后挂的欧美路径不参与回填
+        conn.execute(
+            text(_MEDIA_INSERT),
+            {
+                "path": "/media/欧美/HEYZO-1234.mp4",
+                "lib": lib_id,
+                "content_type": "WESTERN",
+                "mosaic": None,
+                "metadata_id": by_file,
+            },
+        )
 
     command.upgrade(cfg, "head")
 

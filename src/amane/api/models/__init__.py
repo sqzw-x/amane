@@ -55,6 +55,7 @@ from .media import (
     MediaFileResponse,
     MediaFileUpdateRequest,
     MediaListResponse,
+    to_media_file_response,
 )
 from .metadata import (
     CropPosterRequest,
@@ -217,4 +218,5 @@ __all__ = [
     "UserTagsCreateResponse",
     "normalize_feed_group",
     "path_template_schema",
+    "to_media_file_response",
 ]

@@ -1,11 +1,11 @@
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, cast
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from ...db.models import MediaFileStatus, MediaSortField, SortOrder
+from ...db.models import MediaFile, MediaFileStatus, MediaSortField, SortOrder
 from ...parsing import DEFINITION_VALUES, Mosaic
-from ...utils.model import to_resp
 from ..deps import RepoDep
 from ..models import (
     MediaBatchDeleteRequest,
@@ -13,10 +13,12 @@ from ..models import (
     MediaFileResponse,
     MediaFileUpdateRequest,
     MediaListResponse,
+    to_media_file_response,
 )
 
 if TYPE_CHECKING:
     from ...db.repo_types import MediaFileUpdates
+    from ...db.repository import Repository
 
 logger = structlog.get_logger()
 
@@ -29,6 +31,12 @@ def _require_known_definition(definition: str | None) -> str | None:
     if definition not in DEFINITION_VALUES:
         raise HTTPException(status_code=422, detail=f"未知分辨率: {definition}")
     return definition
+
+
+async def _phase_responses(repo: Repository, items: Sequence[MediaFile]) -> list[MediaFileResponse]:
+    """文件行的有码 / 无码取自所属条目类型, 因此要批量补一次条目类型."""
+    types = await repo.content_types_by_metadata_ids([m.metadata_id for m in items if m.metadata_id is not None])
+    return [to_media_file_response(m, types.get(m.metadata_id) if m.metadata_id is not None else None) for m in items]
 
 
 @router.get("")
@@ -72,7 +80,7 @@ async def list_media(
         uncensored=uncensored,
         definition=definition,
     )
-    return MediaListResponse(items=[to_resp(MediaFileResponse, m) for m in items], total=total)
+    return MediaListResponse(items=await _phase_responses(repo, items), total=total)
 
 
 @router.post("/batch/delete")
@@ -88,7 +96,7 @@ async def get_media(media_id: int, repo: RepoDep) -> MediaFileResponse:
     media = await repo.get_media_file(media_id)
     if media is None:
         raise HTTPException(status_code=404, detail="媒体文件不存在")
-    return to_resp(MediaFileResponse, media)
+    return (await _phase_responses(repo, [media]))[0]
 
 
 @router.patch("/{media_id}")
@@ -100,7 +108,7 @@ async def update_media(media_id: int, req: MediaFileUpdateRequest, repo: RepoDep
     if media is None:
         raise HTTPException(status_code=404, detail="媒体文件不存在")
     logger.info("media file updated", media_id=media_id, fields=list(updates.keys()))
-    return to_resp(MediaFileResponse, media)
+    return (await _phase_responses(repo, [media]))[0]
 
 
 @router.delete("/{media_id}", status_code=204)
