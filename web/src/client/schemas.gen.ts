@@ -2823,7 +2823,7 @@ export const FilePhaseSummarySchema = {
     },
     type: 'object',
     title: 'FilePhaseSummary',
-    description: '条目相位聚合: 有码 / 无码取番号类别 (无文件也成立), 其余任一文件具备即亮; definition 取最高档.'
+    description: '条目相位聚合; 判定见 ``parsing/file_info.py::summarize_file_phases``, definition 取最高档.'
 } as const;
 
 export const FootprintNoticeKindSchema = {

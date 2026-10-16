@@ -1,6 +1,6 @@
 /**
  * 片库列表的高级 facet 筛选: 展开后每个 kind 独立短搜索框, 选中即追加到 URL search.
- * 另含关联文件与文件相位筛选.
+ * 另含条目类型与关联文件相位筛选.
  */
 
 import { Collapse, Select, SimpleGrid, Stack, Text } from "@mantine/core";

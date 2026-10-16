@@ -20,7 +20,7 @@ export type FilePhaseLike = {
   censored?: boolean;
   uncensored?: boolean;
   mosaics?: Array<Mosaic>;
-  /** 文件相位: 这一份文件自己的来路标记. */
+  /** 文件相位: 这一份文件自己的马赛克标记. */
   mosaic?: Mosaic | null;
   definition?: string | null;
 };
@@ -124,7 +124,7 @@ interface FilePhaseBadgesProps {
   size?: "xs" | "sm";
 }
 
-/** 条目与文件共用: 有码 / 无码取条目, 破解 / 流出 / 中字 / 分辨率取文件. */
+/** 条目相位与文件行共用: 有码 / 无码取条目相位, 破解 / 流出 / 中字 / 分辨率取文件行. */
 export function FilePhaseBadges({ phase, size = "xs" }: FilePhaseBadgesProps) {
   const { t } = useTranslation("metadata");
   if (phase == null) return null;

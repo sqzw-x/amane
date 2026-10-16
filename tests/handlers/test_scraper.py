@@ -103,6 +103,23 @@ class TestScrapeHandler:
         assert metadata.title == "Mock Title"
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_payload_content_type_lands_on_new_entry(self, repo: Repository, resource_store):
+        """payload 的条目类型写进新建条目, 不按番号重新推断."""
+        factory = RecordingFactory({"javdb": MockCrawler()})
+        config = _config_with({ContentType.WESTERN: [SiteName.JAVDB]})
+        h = ScrapeHandler(repo=repo, factory=factory, resource_store=resource_store, pipeline_config=config)
+
+        media = await repo.create_media_file(library_id=1, path="/media/MD-0123.mp4")
+        result = await h.handle(
+            ScrapePayload(media_file_id=media.id, number="MD-0123", content_type=ContentType.WESTERN)
+        )
+
+        assert result.success is True
+        metadata = await repo.get_metadata_by_number("MD-0123")
+        assert metadata is not None
+        assert metadata.content_type is ContentType.WESTERN
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_skips_locked_fields_end_to_end(self, repo: Repository, handler):
         """自动刮削跳过锁定字段, 未锁定字段正常更新, 锁定字段的来源标注保留."""
         seeded = await repo.upsert_metadata(

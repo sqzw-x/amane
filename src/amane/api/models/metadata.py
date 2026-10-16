@@ -17,7 +17,7 @@ _METADATA_FIELD_VALUES = frozenset(str(field) for field in MetadataField)
 
 
 class FilePhaseSummary(BaseModel):
-    """条目相位聚合: 有码 / 无码取番号类别 (无文件也成立), 其余任一文件具备即亮; definition 取最高档."""
+    """条目相位聚合; 判定见 ``parsing/file_info.py::summarize_file_phases``, definition 取最高档."""
 
     has_subtitle: bool = False
     censored: bool = False

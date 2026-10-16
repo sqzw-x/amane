@@ -338,7 +338,7 @@ class RescrapeTarget(StrEnum):
 
 class RescrapePayload(BaseModel):
     """按 updated_at 选取最久未更新的目标, 派生 priority=-1 的非 force 刮削.
-    类型与路由取各自条目列, 不依赖挂载文件.
+    类型取条目列 (进而决定路由), 不依赖挂载文件.
     """
 
     limit: int = Field(default=100, ge=1, le=1000, description="每个已选目标单次最多补刮的条数 (避免长占 worker 队列)")

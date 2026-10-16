@@ -247,7 +247,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         自动刮削写入; 锁定行为见 docs/dev/data-model.md.
         判定与写入同处一个写事务, 见 docs/dev/database.md; 临界区内不允许出现等待.
         ``actor_genders`` 只填 ``Actor.gender`` 空位, 不是 Metadata 列.
-        ``content_type`` 只在插入时落库, None 按番号推断: 类型是番号的属性, 番号不可改, 因此不随后续刮削漂移.
+        ``content_type`` 只在插入时落库, None 按番号推断; 已存在时不改写 (契约见 docs/dev/data-model.md).
         """
         fields = _normalize_text_fields(kwargs)
         async with self._session() as session:

@@ -288,7 +288,7 @@ def apply_cover_watermarks_from_info(
     scale: float = _DEFAULT_SCALE,
     corners: Mapping[WatermarkKind, WatermarkCorner] | None = None,
 ) -> bool:
-    """``content_type`` 是条目类型: 无码章由它与文件的马赛克标记共同决定, 与角标同源."""
+    """``content_type`` 是条目类型: 无码章与列表角标同用 ``parsing/file_info.py::shows_uncensored`` 的口径."""
     return apply_cover_watermarks(
         path,
         has_subtitle=info.has_subtitle,

@@ -81,3 +81,8 @@ class TestMediaHttp:
 
         single = await client.get(f"media/{inherited.id}")
         assert (single.json()["censored"], single.json()["uncensored"]) == (False, True)
+
+        # /media 已无 content_type 筛选: 遗留 query 静默忽略, 不过滤
+        legacy = await client.get("media?content_type=uncensored")
+        assert legacy.status_code == 200
+        assert legacy.json()["total"] == listed.json()["total"]

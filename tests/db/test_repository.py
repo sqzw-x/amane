@@ -226,15 +226,18 @@ class TestMediaFileRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_uncensored_joins_entry_type(self, repo: Repository):
-        """无码按所属条目的类型判定, 与这一份文件有没有标记无关."""
+        """无码按所属条目的类型判定, 与这一份文件有没有标记无关; 未绑定条目的文件只看自身标记."""
         meta = await repo.upsert_metadata(number="HEYZO-1234")
         assert meta.id is not None
         media = await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4")
         assert media.id is not None
         await repo.update_media_file(media.id, metadata_id=meta.id)
+        orphan = await repo.create_media_file(library_id=1, path="/v/PLAIN-1.mp4")
+        assert orphan.id is not None
 
         assert [f.path for f in await repo.list_media_files(uncensored=True, limit=None)] == ["/v/HEYZO-1234.mp4"]
-        assert await repo.count_media_files(uncensored=False) == 0
+        assert [f.path for f in await repo.list_media_files(uncensored=False, limit=None)] == ["/v/PLAIN-1.mp4"]
+        assert await repo.count_media_files(uncensored=False) == 1
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_has_subtitle_filter_unions_both_sources(self, repo: Repository):
@@ -377,12 +380,13 @@ class TestMetadataRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_upsert_update(self, repo: Repository):
-        await repo.upsert_metadata(number="MIDV-123", title="Old")
-        await repo.upsert_metadata(number="MIDV-123", title="New", actors=["C"])
+        await repo.upsert_metadata(number="MIDV-123", title="Old", content_type=ContentType.CENSORED)
+        await repo.upsert_metadata(number="MIDV-123", title="New", actors=["C"], content_type=ContentType.UNCENSORED)
         found = await repo.get_metadata_by_number("MIDV-123")
         assert found is not None
         assert found.title == "New"
         assert found.actors == ["C"]
+        assert found.content_type is ContentType.CENSORED
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_upsert_cleans_actor_alias_names(self, repo: Repository):

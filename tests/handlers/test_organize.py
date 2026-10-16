@@ -526,6 +526,47 @@ async def test_organize_writes_subtitle_tag_for_external_subtitle(
 
 
 @pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(("number", "stamped"), [("HEYZO-1234", True), ("MIDV-123", False)])
+async def test_organize_stamps_uncensored_from_entry_type(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path, number: str, stamped: bool
+) -> None:
+    """文件名没有标记时无码章由条目类型决定: 无码条目盖章, 有码条目留原图."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / f"{number}.mp4"
+    src.write_bytes(b"video")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, video_template="{number}.{ext}")
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number=number, thumb_urls=["https://s/t.jpg"])
+    assert meta.id is not None
+    source = await repo.create_media_file(
+        lib.id, path=str(src), number=number, status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert source.id is not None
+
+    watermark_dir = tmp_path / "watermarks"
+    watermark_dir.mkdir()
+    Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(watermark_dir / "uncensored.png")
+
+    config = HotSettings(watermark=WatermarkConfig(enabled=True, scale=0.2))
+    org = OrganizeHandler(
+        repo, config, resource_store, web_client=cast("WebClient", _FakeImageClient()), watermark_dir=watermark_dir
+    )
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert (result.result.organized, result.result.failed) == (1, 0)
+
+    for image in (lib_root / "thumb.jpg", lib_root / "poster.jpg"):
+        with Image.open(image) as painted:
+            pixel = painted.convert("RGB").getpixel((20, 20))
+        assert isinstance(pixel, tuple)
+        assert (pixel[0] > 180 and pixel[2] < 80) is stamped
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_organize_does_not_trash_blacklisted(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:

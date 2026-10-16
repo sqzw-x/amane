@@ -86,7 +86,7 @@ async def list_metadata(
     has_subtitle: Annotated[bool | None, Query(description="Filter by linked file subtitle marker")] = None,
     mosaic: Annotated[Mosaic | None, Query(description="Filter by linked file mosaic marker")] = None,
     uncensored: Annotated[
-        bool | None, Query(description="Filter by uncensored file (mosaic marker or uncensored content type)")
+        bool | None, Query(description="Filter by uncensored number (own content type or linked file marker)")
     ] = None,
     definition: Annotated[str | None, Query(description="Filter by linked file definition (8K/4K/1080p/…)")] = None,
     content_type: Annotated[ContentType | None, Query(description="Filter by number content type")] = None,

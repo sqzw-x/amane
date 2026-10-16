@@ -105,9 +105,15 @@ def _metadata_has_files_clause(*, has_files: bool) -> ColumnElement[bool]:
 
 
 def _media_file_uncensored_predicate() -> ColumnElement[bool]:
-    """文件视角的无码: 所属条目类型为无码, 或这一份文件带无码标记."""
-    uncensored_entries = select(col(Metadata.id)).where(col(Metadata.content_type) == ContentType.UNCENSORED)
-    return or_(col(MediaFile.mosaic) == Mosaic.UNCENSORED, col(MediaFile.metadata_id).in_(uncensored_entries))
+    """文件视角的无码: 所属条目类型为无码, 或这一份文件带无码标记.
+
+    两侧都要空值安全: ``mosaic`` 可空, 用 ``=`` 时 NULL 参与 ``OR`` 会让整个条件求值为 NULL, 取反后把没有标记
+    的文件一起排除; 子查询写成 ``IN`` 时未绑定条目 (``metadata_id IS NULL``) 同样求值为 NULL.
+    """
+    entry_uncensored = exists().where(
+        col(Metadata.id) == col(MediaFile.metadata_id), col(Metadata.content_type) == ContentType.UNCENSORED
+    )
+    return or_(col(MediaFile.mosaic).is_(Mosaic.UNCENSORED), entry_uncensored)
 
 
 def _apply_media_phase_filters(

@@ -328,7 +328,6 @@ _DISCIPLINE = [
             "library_id",
             "created_at",
             "updated_at",
-            "content_type",
             "mosaic",
             "has_subtitle_in_name",
             "has_external_subtitle",
@@ -337,7 +336,12 @@ _DISCIPLINE = [
     ),
     (LibraryUpdateRequest, LibraryUpdates, Library, {"id"}),
     (ScheduleUpdateRequest, ScheduleUpdates, Schedule, {"id", "last_run", "next_run"}),
-    (PartialMetadata, MetadataFields, Metadata, {"id", "number", "created_at", "updated_at", "raw", "field_sources"}),
+    (
+        PartialMetadata,
+        MetadataFields,
+        Metadata,
+        {"id", "number", "content_type", "created_at", "updated_at", "raw", "field_sources"},
+    ),
     (
         FeedUpdateRequest,
         FeedUpdates,

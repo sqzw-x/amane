@@ -1612,7 +1612,7 @@ export type FileListResponse = {
 /**
  * FilePhaseSummary
  *
- * 条目相位聚合: 有码 / 无码取番号类别 (无文件也成立), 其余任一文件具备即亮; definition 取最高档.
+ * 条目相位聚合; 判定见 ``parsing/file_info.py::summarize_file_phases``, definition 取最高档.
  */
 export type FilePhaseSummary = {
     /**
@@ -5662,7 +5662,7 @@ export type ListMetadataData = {
         /**
          * Uncensored
          *
-         * Filter by uncensored file (mosaic marker or uncensored content type)
+         * Filter by uncensored number (own content type or linked file marker)
          */
         uncensored?: boolean | null;
         /**

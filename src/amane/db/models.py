@@ -222,7 +222,7 @@ class Metadata(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     number: str = Field(nullable=False)
-    #: 番号类别; 只在条目创建与番号变更时由番号重算, 不随挂载文件变化, 也不进对外 PATCH.
+    #: 番号类型; 只在条目创建时落定 (契约见 docs/dev/data-model.md), 不随挂载文件或后续刮削变化, 也不进对外 PATCH.
     content_type: ContentType = Field(default=ContentType.WESTERN, index=True)
 
     title: str | None = None

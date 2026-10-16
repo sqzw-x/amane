@@ -1,6 +1,4 @@
-"""按 updated_at 选取目标并扇出刮削. 刮削的类型取条目列, 不依赖挂载文件是否存在.
-Metadata / Actor 各自判定.
-"""
+"""按 updated_at 选取目标并扇出刮削. Metadata / Actor 各自判定."""
 
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
