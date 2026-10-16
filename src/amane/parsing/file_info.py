@@ -4,7 +4,7 @@
 只有字符串则按自由文本 (RSS 标题、已有番号), 未命中则 ``number is None``, 不能把原文冒充番号.
 常用字段投影是同一函数的包装.
 
-文件相位 (cd / 中字 / 马赛克 / 分辨率) 与类型正交: cd / 中字 / 分辨率只依据文件名; 马赛克依据文件名与目录整段词表, 未命中时再依据番号分类 (有码类型为 censored, 无码类型为 uncensored; 其它类型为空).
+类型与文件相位分离: 类型是番号的属性, 落在条目上; 文件相位 (cd / 中字 / 马赛克标记 / 分辨率) 只描述这一份文件, 一律只依据路径 —— cd / 中字 / 分辨率看文件名, 马赛克标记看文件名与目录整段词表.
 """
 
 from __future__ import annotations
@@ -34,7 +34,8 @@ class ContentType(StrEnum):
 
 
 class Mosaic(StrEnum):
-    CENSORED = "censored"
+    """文件级来路标记. 有码 / 无码是条目类型, 不出现在这里."""
+
     UNCENSORED = "uncensored"
     CRACKED = "cracked"
     LEAKED = "leaked"
@@ -58,9 +59,8 @@ class FileInfo:
 
 
 class FilePhase(TypedDict):
-    """MediaFile 上持久化的文件相位 (path 的投影, 不含 number/cd)."""
+    """MediaFile 上持久化的文件相位 (path 的投影, 不含 number/cd/类型)."""
 
-    content_type: ContentType
     mosaic: Mosaic | None
     has_subtitle: bool
     definition: str | None
@@ -68,9 +68,10 @@ class FilePhase(TypedDict):
 
 @dataclass(frozen=True)
 class FilePhaseSummary:
-    """多文件相位聚合: 任一文件具备某性质即为真; definition 取最高档."""
+    """条目级聚合: 有码 / 无码取条目类型并并上文件标记, 其余任一文件具备即为真, definition 取最高档."""
 
     has_subtitle: bool = False
+    censored: bool = False
     uncensored: bool = False
     mosaics: tuple[Mosaic, ...] = ()
     definition: str | None = None
@@ -281,7 +282,7 @@ def parse_file_info(
         cd=cd,
         has_subtitle_in_name=_detect_subtitle(basename),
         has_external_subtitle=has_external_subtitle,
-        mosaic=_fill_mosaic(mosaic, content_type),
+        mosaic=mosaic,
         definition=_detect_definition(basename),
     )
 
@@ -326,16 +327,15 @@ def file_phase_from_path(path: str | Path) -> FilePhase:
     """入库相位只取路径能给出的部分: 外挂字幕命中不在路径里, 由 MediaFile 各自的列承载."""
     info = parse_file_info(path)
     return FilePhase(
-        content_type=info.content_type,
         mosaic=info.mosaic,
         has_subtitle=info.has_subtitle_in_name,
         definition=info.definition,
     )
 
 
-def file_shows_uncensored(mosaic: Mosaic | None, content_type: ContentType) -> bool:
-    """无码角标/筛选: 文件名无码标记或内容类型为无码 (HEYZO 等不必带文件名无码标记)."""
-    return mosaic == Mosaic.UNCENSORED or content_type == ContentType.UNCENSORED
+def shows_uncensored(mosaic: Mosaic | None, content_type: ContentType) -> bool:
+    """无码: 条目类型为无码 (HEYZO 等不必带文件名无码标记), 或这一份文件带无码标记."""
+    return mosaic is Mosaic.UNCENSORED or content_type is ContentType.UNCENSORED
 
 
 def max_definition(values: Iterable[str | None]) -> str | None:
@@ -353,15 +353,14 @@ def max_definition(values: Iterable[str | None]) -> str | None:
     return best
 
 
-def summarize_file_phases(phases: Iterable[FilePhase]) -> FilePhaseSummary:
-    """按「任一文件具备」聚合; mosaics 按 MOSAIC_VALUES 去重保序."""
+def summarize_file_phases(phases: Iterable[FilePhase], content_type: ContentType) -> FilePhaseSummary:
+    """``content_type`` 是条目类型: 有码 / 无码由它在无文件时也成立, 无码再并上文件的无码标记; 其余按「任一文件具备」聚合."""
     items = list(phases)
-    if not items:
-        return FilePhaseSummary()
     mosaic_present = {phase["mosaic"] for phase in items if phase["mosaic"] is not None}
     return FilePhaseSummary(
         has_subtitle=any(phase["has_subtitle"] for phase in items),
-        uncensored=any(file_shows_uncensored(phase["mosaic"], phase["content_type"]) for phase in items),
+        censored=content_type is ContentType.CENSORED,
+        uncensored=content_type is ContentType.UNCENSORED or Mosaic.UNCENSORED in mosaic_present,
         mosaics=tuple(mosaic for mosaic in MOSAIC_VALUES if mosaic in mosaic_present),
         definition=max_definition(phase["definition"] for phase in items),
     )
@@ -627,17 +626,6 @@ def _detect_subtitle(basename: str) -> bool:
     if re.search(r"-U?C(?![A-Z0-9])", basename):
         return True
     return bool(re.search(r"[字幕中文]", basename))
-
-
-def _fill_mosaic(mosaic: Mosaic | None, content_type: ContentType) -> Mosaic | None:
-    """词表未命中时: 有码类型为 censored, 无码类型为 uncensored; 其它类型为空. 已有标记不覆盖."""
-    if mosaic is not None:
-        return mosaic
-    if content_type is ContentType.CENSORED:
-        return Mosaic.CENSORED
-    if content_type is ContentType.UNCENSORED:
-        return Mosaic.UNCENSORED
-    return None
 
 
 def _detect_mosaic(basename: str) -> Mosaic | None:

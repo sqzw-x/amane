@@ -10,7 +10,7 @@ from ...db.repo_types import WriteMode
 from ...db.repos.media import file_phase_of
 from ...handlers import ScrapePayload
 from ...media import manual_crop_image
-from ...parsing import DEFINITION_VALUES, ContentType, Mosaic, infer_content_type, summarize_file_phases
+from ...parsing import DEFINITION_VALUES, ContentType, Mosaic, summarize_file_phases
 from ...parsing import FilePhaseSummary as ParsedFilePhase
 from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
@@ -47,6 +47,7 @@ router = APIRouter(prefix="/metadata", tags=["metadata"])
 def _file_phase_resp(summary: ParsedFilePhase) -> FilePhaseSummary:
     return FilePhaseSummary(
         has_subtitle=summary.has_subtitle,
+        censored=summary.censored,
         uncensored=summary.uncensored,
         mosaics=list(summary.mosaics),
         definition=summary.definition,
@@ -88,7 +89,7 @@ async def list_metadata(
         bool | None, Query(description="Filter by uncensored file (mosaic marker or uncensored content type)")
     ] = None,
     definition: Annotated[str | None, Query(description="Filter by linked file definition (8K/4K/1080p/…)")] = None,
-    content_type: Annotated[ContentType | None, Query(description="Filter by linked file content type")] = None,
+    content_type: Annotated[ContentType | None, Query(description="Filter by number content type")] = None,
     saved_query_id: Annotated[
         int | None, Query(description="Saved query preset id; AND with other filters via SQL subquery")
     ] = None,
@@ -118,20 +119,20 @@ async def list_metadata(
         content_type=content_type,
         id_subquery_sql=id_subquery_sql,
     )
-    summaries = await repo.summarize_media_by_metadata_ids([m.id for m in items if m.id is not None])
-    empty = FilePhaseSummary()
-    return MetadataListResponse(
-        items=[
-            to_resp(MetadataResponse, m).model_copy(
+    summaries = await repo.summarize_media_by_metadata_ids(items)
+    responses: list[MetadataResponse] = []
+    for m in items:
+        summary = summaries.get(m.id) if m.id is not None else None
+        response = to_resp(MetadataResponse, m)
+        if summary is not None:
+            response = response.model_copy(
                 update={
-                    "file_count": summaries[m.id].file_count if m.id in summaries else 0,
-                    "file_phase": _file_phase_resp(summaries[m.id].phase) if m.id in summaries else empty,
+                    "file_count": summary.file_count,
+                    "file_phase": _file_phase_resp(summary.phase),
                 }
             )
-            for m in items
-        ],
-        total=total,
-    )
+        responses.append(response)
+    return MetadataListResponse(items=responses, total=total)
 
 
 @router.post("/batch/delete")
@@ -146,13 +147,6 @@ async def batch_delete_metadata(req: MetadataBatchIdsRequest, repo: RepoDep) -> 
 async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) -> MetadataBatchScrapeResponse:
     """以各自 number 重新刮削."""
     missing = 0
-    # 挂载文件仅用于 content_type 推断 (req.content_type 显式给定时跳过).
-    files = await repo.list_media_files(metadata_ids=req.ids, limit=None)
-    first_path_by_metadata: dict[int, str] = {}
-    for f in files:
-        if f.metadata_id is not None and f.metadata_id not in first_path_by_metadata:
-            first_path_by_metadata[f.metadata_id] = f.path
-
     payloads: list[ScrapePayload] = []
     for metadata_id in req.ids:
         metadata = await repo.get_metadata(metadata_id)
@@ -162,9 +156,7 @@ async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) 
         payloads.append(
             ScrapePayload(
                 number=metadata.number,
-                content_type=req.content_type
-                if req.content_type is not None
-                else infer_content_type(metadata.number, first_path_by_metadata.get(metadata_id)),
+                content_type=req.content_type if req.content_type is not None else metadata.content_type,
                 use_cache=req.use_cache,
             )
         )
@@ -214,7 +206,9 @@ async def get_metadata(metadata_id: int, repo: RepoDep) -> MetadataDetailRespons
         metadata=to_resp(MetadataResponse, metadata).model_copy(
             update={
                 "file_count": len(files),
-                "file_phase": _file_phase_resp(summarize_file_phases(file_phase_of(f) for f in files)),
+                "file_phase": _file_phase_resp(
+                    summarize_file_phases((file_phase_of(f) for f in files), metadata.content_type)
+                ),
             }
         ),
         files=[to_resp(MediaFileResponse, f) for f in files],

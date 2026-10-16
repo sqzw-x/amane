@@ -25,7 +25,7 @@ def playback_query(
                 id=item.id,
                 path=item.path,
                 size=item.size,
-                content_type=item.content_type,
+                content_type=metadata.content_type,
                 mosaic=item.mosaic,
                 has_subtitle=item.has_subtitle,
                 definition=item.definition,

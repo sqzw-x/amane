@@ -44,12 +44,13 @@ async def test_fans_out_oldest_first_with_limit(repo: Repository):
 async def test_content_type_inference(repo: Repository):
     lib = await repo.create_library(name="L", path="/media")
     assert lib.id is not None
-    await repo.upsert_metadata(number="MIDV-123")  # 无文件 → 番号级 censored
-    await repo.upsert_metadata(number="FC2-PPV-1234567")  # 无文件 → fc2
-    hentai_id = await repo.upsert_metadata(number="MD-0123")
-    assert hentai_id.id is not None
-    await repo.create_media_file(lib.id, path="/media/里番/MD-0123.mp4", metadata_id=hentai_id.id)  # 路径优先 → hentai
-    await repo.upsert_metadata(number="MD-0456")  # 无文件 → 国产番号模式 chinese
+    await repo.upsert_metadata(number="MIDV-123")  # 番号级 censored
+    await repo.upsert_metadata(number="FC2-PPV-1234567")  # 番号级 fc2
+    chinese_id = await repo.upsert_metadata(number="MD-0123")  # 番号级 chinese
+    assert chinese_id.id is not None
+    # 条目类型只在创建时落定, 后挂的文件不改变它 (目录关键词不覆盖)
+    await repo.create_media_file(lib.id, path="/media/里番/MD-0123.mp4", metadata_id=chinese_id.id)
+    await repo.upsert_metadata(number="MD-0456")  # 国产番号模式 chinese
 
     handler = RescrapeHandler(repo)
     result = await handler.handle(RescrapePayload(limit=10))
@@ -61,7 +62,7 @@ async def test_content_type_inference(repo: Repository):
     assert by_number == {
         "MIDV-123": "censored",
         "FC2-PPV-1234567": "fc2",
-        "MD-0123": "hentai",
+        "MD-0123": "chinese",
         "MD-0456": "chinese",
     }
 

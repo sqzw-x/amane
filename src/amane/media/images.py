@@ -7,7 +7,7 @@ import structlog
 from PIL import Image
 
 from ..enums import WatermarkCorner, WatermarkKind
-from ..parsing import FileInfo, Mosaic, file_shows_uncensored
+from ..parsing import ContentType, FileInfo, Mosaic, shows_uncensored
 from .watermarks import load_stamp
 
 logger = structlog.get_logger()
@@ -281,16 +281,18 @@ def apply_cover_watermarks(
 def apply_cover_watermarks_from_info(
     path: Path,
     info: FileInfo,
+    content_type: ContentType,
     *,
     jpeg_quality: int = _DEFAULT_JPEG_QUALITY,
     watermark_dir: Path | None = None,
     scale: float = _DEFAULT_SCALE,
     corners: Mapping[WatermarkKind, WatermarkCorner] | None = None,
 ) -> bool:
+    """``content_type`` 是条目类型: 无码章由它与文件的马赛克标记共同决定, 与角标同源."""
     return apply_cover_watermarks(
         path,
         has_subtitle=info.has_subtitle,
-        uncensored=file_shows_uncensored(info.mosaic, info.content_type),
+        uncensored=shows_uncensored(info.mosaic, content_type),
         mosaic=info.mosaic,
         definition=info.definition,
         jpeg_quality=jpeg_quality,

@@ -1612,13 +1612,17 @@ export type FileListResponse = {
 /**
  * FilePhaseSummary
  *
- * 关联文件相位聚合: 任一文件具备即亮; definition 取最高档.
+ * 条目相位聚合: 有码 / 无码取番号类别 (无文件也成立), 其余任一文件具备即亮; definition 取最高档.
  */
 export type FilePhaseSummary = {
     /**
      * Has Subtitle
      */
     has_subtitle?: boolean;
+    /**
+     * Censored
+     */
+    censored?: boolean;
     /**
      * Uncensored
      */
@@ -2355,7 +2359,6 @@ export type MediaFileResponse = {
      */
     number?: string | null;
     status: MediaFileStatus;
-    content_type: ContentType;
     mosaic?: Mosaic | null;
     /**
      * Has Subtitle
@@ -2852,8 +2855,10 @@ export type MetadataUserTagsRequest = {
 
 /**
  * Mosaic
+ *
+ * 文件级来路标记. 有码 / 无码是条目类型, 不出现在这里.
  */
-export type Mosaic = 'censored' | 'uncensored' | 'cracked' | 'leaked';
+export type Mosaic = 'uncensored' | 'cracked' | 'leaked';
 
 /**
  * MoveMode
@@ -5380,7 +5385,7 @@ export type ListMediaData = {
         /**
          * Uncensored
          *
-         * Filter by uncensored (mosaic marker or uncensored content type)
+         * Filter by uncensored (own marker or uncensored number content type)
          */
         uncensored?: boolean | null;
         /**
@@ -5389,12 +5394,6 @@ export type ListMediaData = {
          * Filter by definition (8K/4K/1080p/…)
          */
         definition?: string | null;
-        /**
-         * Content Type
-         *
-         * Filter by content type
-         */
-        content_type?: ContentType | null;
         /**
          * Limit
          */
@@ -5667,7 +5666,7 @@ export type ListMetadataData = {
         /**
          * Content Type
          *
-         * Filter by linked file content type
+         * Filter by number content type
          */
         content_type?: ContentType | null;
         /**

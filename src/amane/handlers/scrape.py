@@ -175,6 +175,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         cast = result.metadata.actors
         meta = await self._repo.upsert_metadata(
             number=payload.number,
+            content_type=payload.content_type,
             actor_genders={item.name: item.gender for item in cast if item.gender != ActorGender.UNKNOWN},
             title=result.metadata.title,
             actors=[item.name for item in cast],

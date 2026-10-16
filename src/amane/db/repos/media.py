@@ -7,10 +7,10 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.sql.expression import SelectOfScalar
 
-from ...parsing import ContentType, FilePhase, FilePhaseSummary, Mosaic, file_phase_from_path, summarize_file_phases
+from ...parsing import FilePhase, FilePhaseSummary, Mosaic, file_phase_from_path, summarize_file_phases
 from ...utils.collections import unique_ids
 from ...utils.path import nfc_path
-from ..models import MediaFile, MediaFileStatus, MediaSortField, SortOrder
+from ..models import MediaFile, MediaFileStatus, MediaSortField, Metadata, SortOrder
 from ..repo_types import _MEDIA_SORT_COLUMNS, MediaFileUpdates, _apply_media_phase_filters, _order_clause, _utcnow
 from .base import RepositoryMixinBase
 
@@ -31,7 +31,6 @@ def _apply_path_phase(media: MediaFile) -> None:
     ``handlers._common.refresh_external_subtitle`` 写入.
     """
     phase = file_phase_from_path(media.path)
-    media.content_type = phase["content_type"]
     media.mosaic = phase["mosaic"]
     media.has_subtitle_in_name = phase["has_subtitle"]
     media.definition = phase["definition"]
@@ -40,7 +39,6 @@ def _apply_path_phase(media: MediaFile) -> None:
 def file_phase_of(media: MediaFile) -> FilePhase:
     """从已落库列组装, 不再解析 path. 中字取文件名标记与同目录字幕的并集."""
     return FilePhase(
-        content_type=media.content_type,
         mosaic=media.mosaic,
         has_subtitle=media.has_subtitle,
         definition=media.definition,
@@ -117,7 +115,6 @@ class MediaRepoMixin(RepositoryMixinBase):
         mosaic: Mosaic | None = None,
         uncensored: bool | None = None,
         definition: str | None = None,
-        content_type: ContentType | None = None,
     ) -> list[MediaFile]:
         """limit None 不分页. ids 为空列表时直接返回空, 不查库. ids 按 SQL_IN_CHUNK_SIZE 分批 IN."""
         id_list = list(ids) if ids is not None else None
@@ -143,7 +140,6 @@ class MediaRepoMixin(RepositoryMixinBase):
                     mosaic=mosaic,
                     uncensored=uncensored,
                     definition=definition,
-                    content_type=content_type,
                 )
 
             if id_list is not None and len(id_list) > SQL_IN_CHUNK_SIZE and limit is None:
@@ -173,7 +169,6 @@ class MediaRepoMixin(RepositoryMixinBase):
         mosaic: Mosaic | None = None,
         uncensored: bool | None = None,
         definition: str | None = None,
-        content_type: ContentType | None = None,
     ) -> int:
         async with self._session() as session:
             base = select(MediaFile)
@@ -190,7 +185,6 @@ class MediaRepoMixin(RepositoryMixinBase):
                 mosaic=mosaic,
                 uncensored=uncensored,
                 definition=definition,
-                content_type=content_type,
             )
             stmt = select(count()).select_from(base.subquery())
             result = await session.exec(stmt)
@@ -263,23 +257,26 @@ class MediaRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             return {mid: n for mid, n in result.all() if mid is not None}
 
-    async def summarize_media_by_metadata_ids(self, metadata_ids: Sequence[int]) -> dict[int, MetadataFilesSummary]:
-        """无关联的 id 不出现."""
-        ids = [i for i in metadata_ids if i]
-        if not ids:
+    async def summarize_media_by_metadata_ids(self, metadata: Sequence[Metadata]) -> dict[int, MetadataFilesSummary]:
+        """每个入参条目都有结果: 相位由条目类型与挂载文件合成, 没有文件的条目 file_count 为 0."""
+        entry_types = {m.id: m.content_type for m in metadata if m.id is not None}
+        if not entry_types:
             return {}
         async with self._session() as session:
-            stmt = select(MediaFile).where(col(MediaFile.metadata_id).in_(ids))
+            stmt = select(MediaFile).where(col(MediaFile.metadata_id).in_(list(entry_types)))
             result = await session.exec(stmt)
             grouped: dict[int, list[FilePhase]] = {}
             for media in result.all():
                 if media.metadata_id is None:
                     continue
                 grouped.setdefault(media.metadata_id, []).append(file_phase_of(media))
-            return {
-                mid: MetadataFilesSummary(file_count=len(phases), phase=summarize_file_phases(phases))
-                for mid, phases in grouped.items()
-            }
+        return {
+            mid: MetadataFilesSummary(
+                file_count=len(grouped.get(mid, [])),
+                phase=summarize_file_phases(grouped.get(mid, []), content_type),
+            )
+            for mid, content_type in entry_types.items()
+        }
 
     async def get_media_by_metadata_id(self, metadata_id: int) -> list[MediaFile]:
         """按入库顺序 (id 升序) 返回条目的文件.

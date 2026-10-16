@@ -1,5 +1,5 @@
-"""按 updated_at 选取目标并扇出刮削. 影片 content_type 不存表, 运行时按路径或番号推断.
-Metadata / Actor 各自判定, 不依赖挂载文件是否存在.
+"""按 updated_at 选取目标并扇出刮削. 刮削的类型取条目列, 不依赖挂载文件是否存在.
+Metadata / Actor 各自判定.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from ..db import ActorSortField, TaskType
 from ..db.models import MetadataSortField, SortOrder
-from ..parsing import infer_content_type
 from .models import (
     ActorScrapePayload,
     CacheKind,
@@ -64,20 +63,13 @@ class RescrapeHandler(TaskHandler[RescrapePayload, RescrapeResult]):
         if not identified:
             return []
 
-        # 挂载文件仅用于 content_type 推断: 每个 metadata 取第一个文件即可 (同号文件类型一致).
-        files = await self._repo.list_media_files(metadata_ids=[mid for _, mid in identified], limit=None)
-        first_path_by_metadata: dict[int, str] = {}
-        for f in files:
-            if f.metadata_id is not None and f.metadata_id not in first_path_by_metadata:
-                first_path_by_metadata[f.metadata_id] = f.path
-
         return [
             FollowupTask(
                 key=f"scrape:{meta_id}",
                 task_type=TaskType.SCRAPE,
                 payload=ScrapePayload(
                     number=meta.number,
-                    content_type=infer_content_type(meta.number, first_path_by_metadata.get(meta_id)),
+                    content_type=meta.content_type,
                     use_cache=_USE_CACHE,
                 ).model_dump(mode="json"),
                 priority=-1,

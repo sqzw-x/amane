@@ -32,7 +32,7 @@ from ..organize import (
     video_dest,
 )
 from ..organize.link import create_video_link
-from ..parsing import FileInfo, parse_file_info
+from ..parsing import ContentType, FileInfo, parse_file_info
 from ..utils.path import existing_disk_path as existing_disk_path_sync
 from ..utils.path import is_descendant, nfc_path, path_is_under
 from ..utils.threads import existing_disk_path, in_thread, path_is_dir
@@ -117,6 +117,7 @@ async def execute_file_operations(
             config,
             kinds,
             file_info=file_info,
+            content_type=metadata.content_type,
             watermark_dir=watermark_dir,
         )
 
@@ -309,6 +310,7 @@ def _place_library_images(
     kinds: set[DownloadableResource],
     config: HotSettings | None,
     file_info: FileInfo | None,
+    content_type: ContentType,
     watermark_dir: Path | None,
 ) -> None:
     # 复制封面 / 海报 / 预告片 / extrafanart 到库路径, 不判断目标上是否已有产物.
@@ -349,6 +351,7 @@ def _place_library_images(
             apply_cover_watermarks_from_info(
                 paths.thumb,
                 file_info,
+                content_type,
                 jpeg_quality=jpeg_quality,
                 watermark_dir=watermark_dir,
                 scale=wm.scale,
@@ -358,6 +361,7 @@ def _place_library_images(
             apply_cover_watermarks_from_info(
                 paths.poster,
                 file_info,
+                content_type,
                 jpeg_quality=jpeg_quality,
                 watermark_dir=watermark_dir,
                 scale=wm.scale,
@@ -372,7 +376,8 @@ async def _download_images_via_store(
     paths: ResolvedPaths,
     config: HotSettings | None,
     kinds: set[DownloadableResource],
-    file_info: FileInfo | None = None,
+    file_info: FileInfo | None,
+    content_type: ContentType,
     watermark_dir: Path | None = None,
 ) -> None:
     """优先用 Resource 已有文件; 缺失则现场 acquire."""
@@ -407,6 +412,7 @@ async def _download_images_via_store(
         kinds=kinds,
         config=config,
         file_info=file_info,
+        content_type=content_type,
         watermark_dir=watermark_dir,
     )
 

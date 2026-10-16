@@ -15,7 +15,6 @@ from ..parsing.file_info import (
     DEFINITION_VALUES,
     MOSAIC_VALUES,
     FileInfo,
-    parse_file_info,
     split_number,
 )
 from ..utils.path import is_any_descendant, is_descendant
@@ -341,11 +340,7 @@ def _build_variables(
         "raw_name": raw_name,
         "cd?": str(cd) if cd is not None else "",
         "sub?": "C" if file_info is not None and file_info.has_subtitle else "",
-        "content_type": (
-            str(file_info.content_type)
-            if file_info is not None
-            else (str(parse_file_info(text=metadata.number).content_type) if metadata.number else "")
-        ),
+        "content_type": str(metadata.content_type),
         "mosaic?": file_info.mosaic if file_info is not None and file_info.mosaic else "",
         "def?": file_info.definition if file_info is not None and file_info.definition else "",
         "video_dir": _UNKNOWN,

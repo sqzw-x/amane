@@ -10,17 +10,19 @@ import {
 import type { TFunction } from "i18next";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { ContentType, FilePhaseSummary, Mosaic } from "@/client/types.gen";
+import type { FilePhaseSummary, Mosaic } from "@/client/types.gen";
 import { OverlayChip, OverlayChipLabel } from "@/components/media/overlay-chip";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 
 export type FilePhaseLike = {
   has_subtitle?: boolean;
+  /** 条目相位才有: 有码 / 无码由条目类型决定, 与挂载文件无关. */
+  censored?: boolean;
   uncensored?: boolean;
   mosaics?: Array<Mosaic>;
+  /** 文件相位: 这一份文件自己的来路标记. */
   mosaic?: Mosaic | null;
   definition?: string | null;
-  content_type?: ContentType;
 };
 
 type PhaseChipKey = "sub" | "cen" | "u" | "crack" | "leak" | "def";
@@ -60,9 +62,15 @@ const PHASE_CHIP = exhaustiveRecord<PhaseChipKey>()({
   },
 });
 
+/** 有码只看条目; 文件行没有这个位, 因此永远不会亮. */
+function showsCensored(phase: FilePhaseLike): boolean {
+  return phase.censored === true;
+}
+
+/** 无码: 条目给了布尔值就用它 (类型已并上文件标记), 否则退回看这一份文件自己的标记. */
 function showsUncensored(phase: FilePhaseLike): boolean {
   if (phase.uncensored != null) return phase.uncensored;
-  return phase.mosaic === "uncensored" || phase.content_type === "uncensored";
+  return phase.mosaic === "uncensored";
 }
 
 function hasMosaic(phase: FilePhaseLike, mosaic: Mosaic): boolean {
@@ -72,7 +80,7 @@ function hasMosaic(phase: FilePhaseLike, mosaic: Mosaic): boolean {
 
 function mosaicChips(phase: FilePhaseLike, t: TFunction<"metadata">): PhaseChip[] {
   const chips: PhaseChip[] = [];
-  if (hasMosaic(phase, "censored")) {
+  if (showsCensored(phase)) {
     chips.push({ key: "cen", label: t("filePhase.censored") });
   }
   if (showsUncensored(phase)) {
@@ -116,7 +124,7 @@ interface FilePhaseBadgesProps {
   size?: "xs" | "sm";
 }
 
-/** 表格/详情文件列表: 中字 / 有码 / 无码 / 破解 / 流出 / 分辨率. 无码看 mosaic 或 content_type. */
+/** 条目与文件共用: 有码 / 无码取条目, 破解 / 流出 / 中字 / 分辨率取文件. */
 export function FilePhaseBadges({ phase, size = "xs" }: FilePhaseBadgesProps) {
   const { t } = useTranslation("metadata");
   if (phase == null) return null;
@@ -158,7 +166,7 @@ interface FilePhaseOverlayProps {
   bottomExtra?: ReactNode;
 }
 
-/** 海报/封面 CSS 水印. 左上马赛克, 左下中字+分辨率; 样式对齐评分/日期 chip. */
+/** 海报/封面 CSS 水印. 左上马赛克组, 左下中字+分辨率; 样式对齐评分/日期 chip. */
 export function FilePhaseOverlay({ phase, bottomExtra }: FilePhaseOverlayProps) {
   const { t } = useTranslation("metadata");
   const mosaic = phase != null ? mosaicChips(phase, t) : [];

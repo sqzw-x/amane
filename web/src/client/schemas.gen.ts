@@ -2791,6 +2791,11 @@ export const FilePhaseSummarySchema = {
             title: 'Has Subtitle',
             default: false
         },
+        censored: {
+            type: 'boolean',
+            title: 'Censored',
+            default: false
+        },
         uncensored: {
             type: 'boolean',
             title: 'Uncensored',
@@ -2818,7 +2823,7 @@ export const FilePhaseSummarySchema = {
     },
     type: 'object',
     title: 'FilePhaseSummary',
-    description: '关联文件相位聚合: 任一文件具备即亮; definition 取最高档.'
+    description: '条目相位聚合: 有码 / 无码取番号类别 (无文件也成立), 其余任一文件具备即亮; definition 取最高档.'
 } as const;
 
 export const FootprintNoticeKindSchema = {
@@ -4791,9 +4796,6 @@ export const MediaFileResponseSchema = {
         status: {
             $ref: '#/components/schemas/MediaFileStatus'
         },
-        content_type: {
-            $ref: '#/components/schemas/ContentType'
-        },
         mosaic: {
             anyOf: [
                 {
@@ -4861,8 +4863,7 @@ export const MediaFileResponseSchema = {
         'id',
         'library_id',
         'path',
-        'status',
-        'content_type'
+        'status'
     ],
     title: 'MediaFileResponse'
 } as const;
@@ -5815,12 +5816,12 @@ export const MetadataUserTagsRequestSchema = {
 export const MosaicSchema = {
     type: 'string',
     enum: [
-        'censored',
         'uncensored',
         'cracked',
         'leaked'
     ],
-    title: 'Mosaic'
+    title: 'Mosaic',
+    description: '文件级来路标记. 有码 / 无码是条目类型, 不出现在这里.'
 } as const;
 
 export const MoveModeSchema = {

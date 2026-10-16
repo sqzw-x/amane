@@ -189,7 +189,6 @@ class MediaFile(SQLModel, table=True):
     number: str | None = Field(default=None, index=True)
     status: MediaFileStatus = Field(default=MediaFileStatus.PENDING, index=True)
     # 文件相位: path 的投影, 随 path 写入/更新; 不进对外 PATCH.
-    content_type: ContentType = Field(default=ContentType.WESTERN, index=True)
     mosaic: Mosaic | None = Field(default=None, index=True)
     #: 文件名带中字标记, 只由 path 派生.
     has_subtitle_in_name: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, index=True))
@@ -223,6 +222,8 @@ class Metadata(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     number: str = Field(nullable=False)
+    #: 番号类别; 只在条目创建与番号变更时由番号重算, 不随挂载文件变化, 也不进对外 PATCH.
+    content_type: ContentType = Field(default=ContentType.WESTERN, index=True)
 
     title: str | None = None
     actors: list[str] = Field(default_factory=list, sa_column=Column(JSON))

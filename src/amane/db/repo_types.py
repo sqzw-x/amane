@@ -105,7 +105,9 @@ def _metadata_has_files_clause(*, has_files: bool) -> ColumnElement[bool]:
 
 
 def _media_file_uncensored_predicate() -> ColumnElement[bool]:
-    return or_(col(MediaFile.mosaic) == Mosaic.UNCENSORED, col(MediaFile.content_type) == ContentType.UNCENSORED)
+    """文件视角的无码: 所属条目类型为无码, 或这一份文件带无码标记."""
+    uncensored_entries = select(col(Metadata.id)).where(col(Metadata.content_type) == ContentType.UNCENSORED)
+    return or_(col(MediaFile.mosaic) == Mosaic.UNCENSORED, col(MediaFile.metadata_id).in_(uncensored_entries))
 
 
 def _apply_media_phase_filters(
@@ -115,7 +117,6 @@ def _apply_media_phase_filters(
     mosaic: Mosaic | None = None,
     uncensored: bool | None = None,
     definition: str | None = None,
-    content_type: ContentType | None = None,
 ) -> SelectOfScalar[MediaFile]:
     """None 表示该相位不过滤."""
     if has_subtitle is not None:
@@ -128,13 +129,19 @@ def _apply_media_phase_filters(
         stmt = stmt.where(flag if uncensored else ~flag)
     if definition is not None:
         stmt = stmt.where(col(MediaFile.definition) == definition)
-    if content_type is not None:
-        stmt = stmt.where(col(MediaFile.content_type) == content_type)
     return stmt
 
 
 def _metadata_linked_file_exists(*extra: ColumnElement[bool]) -> ColumnElement[bool]:
     return exists().where(col(MediaFile.metadata_id) == col(Metadata.id), *extra)
+
+
+def _metadata_uncensored_predicate() -> ColumnElement[bool]:
+    """条目无码: 类型为无码, 或存在带无码标记的文件. 没有挂载文件也成立."""
+    return or_(
+        col(Metadata.content_type) == ContentType.UNCENSORED,
+        _metadata_linked_file_exists(col(MediaFile.mosaic) == Mosaic.UNCENSORED),
+    )
 
 
 def _facet_primary_order(sort_by: FacetSortField, order: SortOrder, *, name_col: Any, count_expr: Any) -> Any:

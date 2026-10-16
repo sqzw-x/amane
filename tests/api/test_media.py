@@ -32,7 +32,7 @@ class TestMediaHttp:
         assert listed.status_code == 200
         item = listed.json()["items"][0]
         assert item["has_subtitle"] is True
-        assert item["content_type"] == "censored"
+        assert item["mosaic"] is None
 
         got = await client.get(f"media/{media.id}")
         assert got.status_code == 200

@@ -549,10 +549,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by uncensored (mosaic marker or uncensored content type)",
+              "description": "Filter by uncensored (own marker or uncensored number content type)",
               "title": "Uncensored"
             },
-            "description": "Filter by uncensored (mosaic marker or uncensored content type)"
+            "description": "Filter by uncensored (own marker or uncensored number content type)"
           },
           {
             "name": "definition",
@@ -571,24 +571,6 @@
               "title": "Definition"
             },
             "description": "Filter by definition (8K/4K/1080p/…)"
-          },
-          {
-            "name": "content_type",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/ContentType"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by content type",
-              "title": "Content Type"
-            },
-            "description": "Filter by content type"
           },
           {
             "name": "limit",
@@ -1169,10 +1151,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by linked file content type",
+              "description": "Filter by number content type",
               "title": "Content Type"
             },
-            "description": "Filter by linked file content type"
+            "description": "Filter by number content type"
           },
           {
             "name": "saved_query_id",
@@ -9032,6 +9014,11 @@
             "title": "Has Subtitle",
             "default": false
           },
+          "censored": {
+            "type": "boolean",
+            "title": "Censored",
+            "default": false
+          },
           "uncensored": {
             "type": "boolean",
             "title": "Uncensored",
@@ -9059,7 +9046,7 @@
         },
         "type": "object",
         "title": "FilePhaseSummary",
-        "description": "关联文件相位聚合: 任一文件具备即亮; definition 取最高档."
+        "description": "条目相位聚合: 有码 / 无码取番号类别 (无文件也成立), 其余任一文件具备即亮; definition 取最高档."
       },
       "FootprintNoticeKind": {
         "type": "string",
@@ -11007,9 +10994,6 @@
           "status": {
             "$ref": "#/components/schemas/MediaFileStatus"
           },
-          "content_type": {
-            "$ref": "#/components/schemas/ContentType"
-          },
           "mosaic": {
             "anyOf": [
               {
@@ -11077,8 +11061,7 @@
           "id",
           "library_id",
           "path",
-          "status",
-          "content_type"
+          "status"
         ],
         "title": "MediaFileResponse"
       },
@@ -12013,12 +11996,12 @@
       "Mosaic": {
         "type": "string",
         "enum": [
-          "censored",
           "uncensored",
           "cracked",
           "leaked"
         ],
-        "title": "Mosaic"
+        "title": "Mosaic",
+        "description": "文件级来路标记. 有码 / 无码是条目类型, 不出现在这里."
       },
       "MoveMode": {
         "type": "string",
