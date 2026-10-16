@@ -31,7 +31,7 @@
 
 **javbus.com** — 有碼首页、無碼 `/uncensored` (日期番号风格); 有碼首页会混素人号. 搜索回退带 `parent=ce`, 无碼主要靠 `/{number}` 直达. 有碼详情 `extrafanart` 热链 `pics.dmm.co.jp`, 发行日与 DMM 配信日相同, 片商用 DMM 日文名. 图片 (`/pics/`) 校验同源 Referer (见 [crawlers.md](crawlers.md)). **不解析 plot**; 无碼是另一套目录. 欧美入口指向 `javbus.org`: 正文可以是字面 `404`, 关公告后没有影片网格, `javbus.hair` 证书无效 — **欧美目录不可用**, 不允许放入欧美默认路由.
 
-**freejavbt.com** — 显式分有碼 / 無碼 / 歐美 / FC2, 首页还有「國產」「成人動畫」. 覆盖最宽的 BT 向索引, 元数据质量一般, 适合排在链尾.
+**freejavbt.com** — 显式分有碼 / 無碼 / 歐美 / FC2, 首页还有「國產」「成人動畫」. 覆盖最宽的 BT 向索引, 元数据质量一般, 适合排在链尾; 详情页按语言前缀 (`/zh` / `/en` / `/ru`) 给同一份内容, 栏位没有片商与发行商.
 
 **avsox.click** — 日本无码情报站. 同源 AVMOO = 有碼, AVHEAT = 欧美 (`avheat.shop`), 项目只接入 AVSOX. 搜索对有无短横线都能命中, `_` 与 `-` 是两部; 对不上不取首条.
 
