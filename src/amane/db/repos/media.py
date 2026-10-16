@@ -7,7 +7,7 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.sql.expression import SelectOfScalar
 
-from ...parsing import FilePhase, FilePhaseSummary, Mosaic, file_phase_from_path, summarize_file_phases
+from ...parsing import ContentType, FilePhase, FilePhaseSummary, Mosaic, file_phase_from_path, summarize_file_phases
 from ...utils.collections import unique_ids
 from ...utils.path import nfc_path
 from ..models import MediaFile, MediaFileStatus, MediaSortField, Metadata, SortOrder
@@ -115,6 +115,7 @@ class MediaRepoMixin(RepositoryMixinBase):
         mosaic: Mosaic | None = None,
         uncensored: bool | None = None,
         definition: str | None = None,
+        content_type: ContentType | None = None,
     ) -> list[MediaFile]:
         """limit None 不分页. ids 为空列表时直接返回空, 不查库. ids 按 SQL_IN_CHUNK_SIZE 分批 IN."""
         id_list = list(ids) if ids is not None else None
@@ -138,6 +139,7 @@ class MediaRepoMixin(RepositoryMixinBase):
                     stmt,
                     has_subtitle=has_subtitle,
                     mosaic=mosaic,
+                    content_type=content_type,
                     uncensored=uncensored,
                     definition=definition,
                 )
@@ -169,6 +171,7 @@ class MediaRepoMixin(RepositoryMixinBase):
         mosaic: Mosaic | None = None,
         uncensored: bool | None = None,
         definition: str | None = None,
+        content_type: ContentType | None = None,
     ) -> int:
         async with self._session() as session:
             base = select(MediaFile)
@@ -185,6 +188,7 @@ class MediaRepoMixin(RepositoryMixinBase):
                 mosaic=mosaic,
                 uncensored=uncensored,
                 definition=definition,
+                content_type=content_type,
             )
             stmt = select(count()).select_from(base.subquery())
             result = await session.exec(stmt)

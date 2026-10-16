@@ -2488,7 +2488,7 @@ export type MetadataBatchScrapeRequest = {
      */
     ids: Array<number>;
     /**
-     * 内容类型; None = 服务端推断 (挂载文件路径 → 番号模式)
+     * 内容类型; None = 用条目已落定的类型 (不重新推断)
      */
     content_type?: ContentType | null;
     /**
@@ -2705,6 +2705,7 @@ export type MetadataResponse = {
      * Number
      */
     number: string;
+    content_type: ContentType;
     /**
      * Title
      */
@@ -5402,6 +5403,12 @@ export type ListMediaData = {
          * Filter by definition (8K/4K/1080p/…)
          */
         definition?: string | null;
+        /**
+         * Content Type
+         *
+         * Filter by owning number content type
+         */
+        content_type?: ContentType | null;
         /**
          * Limit
          */

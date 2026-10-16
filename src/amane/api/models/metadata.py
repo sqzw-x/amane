@@ -29,6 +29,7 @@ class FilePhaseSummary(BaseModel):
 class MetadataResponse(BaseModel):
     id: int
     number: str
+    content_type: ContentType
     title: str | None = None
     actors: list[str] = []
     studio: str | None = None
@@ -142,7 +143,7 @@ class MetadataBatchDeleteResponse(BaseModel):
 class MetadataBatchScrapeRequest(BaseModel):
     ids: list[int] = Field(min_length=1, description="Metadata ID 列表")
     content_type: ContentType | None = Field(
-        default=None, description="内容类型; None = 服务端推断 (挂载文件路径 → 番号模式)"
+        default=None, description="内容类型; None = 用条目已落定的类型 (不重新推断)"
     )
     use_cache: set[CacheKind] = Field(
         default_factory=lambda: {CacheKind.metadata, CacheKind.trans},

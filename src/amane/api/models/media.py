@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from ...db import MediaFile, MediaFileStatus
-from ...parsing import ContentType, Mosaic, shows_uncensored
+from ...parsing import ContentType, Mosaic, MosaicNature, mosaic_nature, shows_uncensored
 from ...utils.model import create_partial_model, to_resp
 
 
@@ -29,14 +29,15 @@ class MediaFileResponse(BaseModel):
 
 
 def to_media_file_response(media: MediaFile, content_type: ContentType | None = None) -> MediaFileResponse:
-    """``censored`` / ``uncensored`` 由条目类型与 ``mosaic`` 派生, 与 metadata 的相位聚合同源.
+    """``censored`` / ``uncensored`` 是这一份文件的马赛克性质, 与 ``mosaic`` 及条目类型合成.
 
-    ``content_type`` 为 None (未绑定条目) 时只看这一份文件自己的标记.
+    ``censored`` 只看性质 (带无码标记的副本不算有码), ``uncensored`` 与列表的 ``uncensored`` 筛选同口径:
+    条目类型为无码, 或这一份带无码标记. ``content_type`` 为 None (未绑定条目) 时只看自身标记.
     """
     response = to_resp(MediaFileResponse, media)
     return response.model_copy(
         update={
-            "censored": content_type is ContentType.CENSORED,
+            "censored": mosaic_nature(media.mosaic, content_type) is MosaicNature.CENSORED,
             "uncensored": shows_uncensored(media.mosaic, content_type),
         }
     )

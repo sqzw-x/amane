@@ -5052,7 +5052,7 @@ export const MetadataBatchScrapeRequestSchema = {
                     type: 'null'
                 }
             ],
-            description: '内容类型; None = 服务端推断 (挂载文件路径 → 番号模式)'
+            description: '内容类型; None = 用条目已落定的类型 (不重新推断)'
         },
         use_cache: {
             items: {
@@ -5505,6 +5505,9 @@ export const MetadataResponseSchema = {
             type: 'string',
             title: 'Number'
         },
+        content_type: {
+            $ref: '#/components/schemas/ContentType'
+        },
         title: {
             anyOf: [
                 {
@@ -5764,7 +5767,8 @@ export const MetadataResponseSchema = {
     type: 'object',
     required: [
         'id',
-        'number'
+        'number',
+        'content_type'
     ],
     title: 'MetadataResponse'
 } as const;

@@ -74,7 +74,8 @@ class TestMediaHttp:
         listed = await client.get("media?limit=50")
         rows = {row["id"]: row for row in listed.json()["items"]}
         assert (rows[plain.id]["censored"], rows[plain.id]["uncensored"]) == (True, False)
-        assert (rows[marked.id]["censored"], rows[marked.id]["uncensored"]) == (True, True)
+        # 带无码标记的副本: 性质是无码, 不再同时挂有码
+        assert (rows[marked.id]["censored"], rows[marked.id]["uncensored"]) == (False, True)
         assert (rows[inherited.id]["censored"], rows[inherited.id]["uncensored"]) == (False, True)
         assert (rows[orphan.id]["censored"], rows[orphan.id]["uncensored"]) == (False, False)
         assert rows[marked.id]["mosaic"] == "uncensored"
@@ -82,7 +83,8 @@ class TestMediaHttp:
         single = await client.get(f"media/{inherited.id}")
         assert (single.json()["censored"], single.json()["uncensored"]) == (False, True)
 
-        # /media 已无 content_type 筛选: 遗留 query 静默忽略, 不过滤
-        legacy = await client.get("media?content_type=uncensored")
-        assert legacy.status_code == 200
-        assert legacy.json()["total"] == listed.json()["total"]
+        # 按所属条目类型筛: 未绑定条目的文件不命中任何类型
+        by_type = await client.get("media?content_type=uncensored")
+        assert [row["id"] for row in by_type.json()["items"]] == [inherited.id]
+        assert by_type.json()["total"] == 1
+        assert (await client.get("media?content_type=bogus")).status_code == 422

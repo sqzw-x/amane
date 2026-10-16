@@ -62,7 +62,7 @@ const PHASE_CHIP = exhaustiveRecord<PhaseChipKey>()({
   },
 });
 
-/** 有码只看条目; 文件行没有这个位, 因此永远不会亮. */
+/** 有码按性质给: 带无码标记的副本算无码, 不亮有码; 条目 overlay 与文件行共用. */
 function showsCensored(phase: FilePhaseLike): boolean {
   return phase.censored === true;
 }

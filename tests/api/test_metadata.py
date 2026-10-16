@@ -138,7 +138,7 @@ class TestMetadataHttp:
         detail = await client.get(f"metadata/{meta.id}")
         rows = {row["id"]: row for row in detail.json()["files"]}
         assert (rows[plain.id]["censored"], rows[plain.id]["uncensored"]) == (True, False)
-        assert (rows[marked.id]["censored"], rows[marked.id]["uncensored"]) == (True, True)
+        assert (rows[marked.id]["censored"], rows[marked.id]["uncensored"]) == (False, True)
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_sort_by_score(self, client: AsyncClient, repo: Repository):

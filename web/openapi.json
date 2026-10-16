@@ -573,6 +573,24 @@
             "description": "Filter by definition (8K/4K/1080p/…)"
           },
           {
+            "name": "content_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContentType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by owning number content type",
+              "title": "Content Type"
+            },
+            "description": "Filter by owning number content type"
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -11242,7 +11260,7 @@
                 "type": "null"
               }
             ],
-            "description": "内容类型; None = 服务端推断 (挂载文件路径 → 番号模式)"
+            "description": "内容类型; None = 用条目已落定的类型 (不重新推断)"
           },
           "use_cache": {
             "items": {
@@ -11688,6 +11706,9 @@
             "type": "string",
             "title": "Number"
           },
+          "content_type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
           "title": {
             "anyOf": [
               {
@@ -11947,7 +11968,8 @@
         "type": "object",
         "required": [
           "id",
-          "number"
+          "number",
+          "content_type"
         ],
         "title": "MetadataResponse"
       },

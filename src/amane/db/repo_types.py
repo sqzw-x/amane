@@ -104,6 +104,11 @@ def _metadata_has_files_clause(*, has_files: bool) -> ColumnElement[bool]:
     return file_exists if has_files else ~file_exists
 
 
+def _media_file_entry_type_predicate(content_type: ContentType) -> ColumnElement[bool]:
+    """文件列表按类型筛的是所属条目, 未绑定条目的文件不命中任何类型."""
+    return exists().where(col(Metadata.id) == col(MediaFile.metadata_id), col(Metadata.content_type) == content_type)
+
+
 def _media_file_uncensored_predicate() -> ColumnElement[bool]:
     """文件视角的无码: 所属条目类型为无码, 或这一份文件带无码标记.
 
@@ -123,8 +128,9 @@ def _apply_media_phase_filters(
     mosaic: Mosaic | None = None,
     uncensored: bool | None = None,
     definition: str | None = None,
+    content_type: ContentType | None = None,
 ) -> SelectOfScalar[MediaFile]:
-    """None 表示该相位不过滤."""
+    """None 表示该相位不过滤; content_type 按所属条目筛."""
     if has_subtitle is not None:
         flag = has_subtitle_predicate()
         stmt = stmt.where(flag if has_subtitle else ~flag)
@@ -135,6 +141,8 @@ def _apply_media_phase_filters(
         stmt = stmt.where(flag if uncensored else ~flag)
     if definition is not None:
         stmt = stmt.where(col(MediaFile.definition) == definition)
+    if content_type is not None:
+        stmt = stmt.where(_media_file_entry_type_predicate(content_type))
     return stmt
 
 

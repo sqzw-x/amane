@@ -29,7 +29,7 @@
 
 文件相位 (`mosaic` / `definition` 与中字的文件名标记列) 是 **path 的投影**, 落在 `MediaFile`: 创建与修改 path 时用同一次 `parse_file_info` 回填, 不纳入对外 PATCH; `cd` 只用于 ORGANIZE 分集配对, 不落库. `mosaic` 只写入文件名与目录整段词表命中的马赛克标记 (无码 / 破解 / 流出); 同一次解析命中多个标记时取破解, 其次流出, 再次无码. 中字是两个来源的并集: 文件名的中字标记 (`has_subtitle_in_name`, path 的投影) 与视频同目录存在库 `subtitle_extensions` 命中的字幕 (`has_external_subtitle`, 在登记 / 修改 path / 库扫描时各检查一次; 外挂字幕只在整理落盘时作为 `parse_file_info` 的入参并进 `FileInfo.has_subtitle`, 不改变入库的路径投影). 两者都不校验语言文字, 与 ORGANIZE 的字幕配对口径相同; 目录读取不到时按无字幕处理. 只删除字幕不会触发复查, 视频重新登记、更换 path 或所在库被扫描时才回退. 并集在 Python 是 `MediaFile.has_subtitle` (property), SQL 侧必须改用 `db/models.py::has_subtitle_predicate`, 两处口径必须一致.
 
-Metadata 列表与 `/media` 文件行的角标与筛选: 有码 / 无码取条目类型 (没有挂载文件也成立), 无码再并上「存在无码标记的文件」; 中字 / 分辨率 / 破解 / 流出按关联 EXISTS 或页级聚合 (`file_phase`) 判定, 任一挂载文件具备即亮, `definition` 取最高档; 布尔取值的口径见 [api.md](api.md). 文件行同样返回派生后的 `censored` / `uncensored`, 未绑定条目的文件只看自身标记.
+Metadata 列表与 `/media` 文件行的角标与筛选: 有码 / 无码取条目类型 (没有挂载文件也成立), 无码再并上「存在无码标记的文件」; 中字 / 分辨率 / 破解 / 流出按关联 EXISTS 或页级聚合 (`file_phase`) 判定, 任一挂载文件具备即亮, `definition` 取最高档; 布尔取值的口径见 [api.md](api.md). 文件行同样返回派生的 `censored` / `uncensored`: `censored` 取这一份文件的性质 (带无码标记的副本不算有码), `uncensored` 与列表筛选同口径, 未绑定条目的文件只看自身标记.
 
 马赛克性质 (`parsing/file_info.py::MosaicNature`) 是**展示口径**, 不落库: 词表标记优先, 没命中时继承条目类型的有码 / 无码 (HEYZO 等无标记的无码番因此也显示无码), 其余类型为空. 模板占位符 `{mosaic?}` 输出它 (`{content_type}` 输出条目类型), 因此 `censored=` 是合法映射键; 筛选参数与列仍只有标记三个取值.
 

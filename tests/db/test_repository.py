@@ -11,6 +11,7 @@ from amane.db.models import (
     Actor,
     FacetKind,
     FacetRuleAction,
+    MediaFile,
     MediaFileStatus,
     MediaSortField,
     Metadata,
@@ -227,17 +228,43 @@ class TestMediaFileRepo:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_uncensored_joins_entry_type(self, repo: Repository):
         """无码按所属条目的类型判定, 与这一份文件有没有标记无关; 未绑定条目的文件只看自身标记."""
+        uncensored_entry = await repo.upsert_metadata(number="HEYZO-1234")
+        censored_entry = await repo.upsert_metadata(number="MIDV-123")
+        assert uncensored_entry.id is not None and censored_entry.id is not None
+        inherited = await repo.create_media_file(
+            library_id=1, path="/v/HEYZO-1234.mp4", metadata_id=uncensored_entry.id
+        )
+        cracked = await repo.create_media_file(
+            library_id=1, path="/v/HEYZO-1235-U.mp4", metadata_id=uncensored_entry.id
+        )
+        plain = await repo.create_media_file(library_id=1, path="/v/MIDV-123.mp4", metadata_id=censored_entry.id)
+        marked = await repo.create_media_file(library_id=1, path="/v/MIDV-124-无码.mp4", metadata_id=censored_entry.id)
+        orphan_marked = await repo.create_media_file(library_id=1, path="/v/PLAIN-1-无码.mp4")
+        orphan = await repo.create_media_file(library_id=1, path="/v/PLAIN-2.mp4")
+        assert inherited.id and cracked.id and plain.id and marked.id and orphan_marked.id and orphan.id
+
+        def paths(files: list[MediaFile]) -> set[str]:
+            return {f.path for f in files}
+
+        yes = paths(await repo.list_media_files(uncensored=True, limit=None))
+        no = paths(await repo.list_media_files(uncensored=False, limit=None))
+        assert yes == {"/v/HEYZO-1234.mp4", "/v/HEYZO-1235-U.mp4", "/v/MIDV-124-无码.mp4", "/v/PLAIN-1-无码.mp4"}
+        assert no == {"/v/MIDV-123.mp4", "/v/PLAIN-2.mp4"}
+        # 两侧互补: 没有一行同时落空 (mosaic 为空的行尤其容易被 NULL 语义漏掉)
+        assert yes | no == paths(await repo.list_media_files(limit=None))
+        assert yes & no == set()
+        assert (
+            await repo.count_media_files(uncensored=True) + await repo.count_media_files(uncensored=False)
+            == await repo.count_media_files()
+        )
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_content_types_by_metadata_ids_skips_missing(self, repo: Repository):
+        """不存在的 id 不报错也不落进结果: 调用方按"没有条目"回退到只看标记."""
         meta = await repo.upsert_metadata(number="HEYZO-1234")
         assert meta.id is not None
-        media = await repo.create_media_file(library_id=1, path="/v/HEYZO-1234.mp4")
-        assert media.id is not None
-        await repo.update_media_file(media.id, metadata_id=meta.id)
-        orphan = await repo.create_media_file(library_id=1, path="/v/PLAIN-1.mp4")
-        assert orphan.id is not None
-
-        assert [f.path for f in await repo.list_media_files(uncensored=True, limit=None)] == ["/v/HEYZO-1234.mp4"]
-        assert [f.path for f in await repo.list_media_files(uncensored=False, limit=None)] == ["/v/PLAIN-1.mp4"]
-        assert await repo.count_media_files(uncensored=False) == 1
+        assert await repo.content_types_by_metadata_ids([meta.id, 9999]) == {meta.id: ContentType.UNCENSORED}
+        assert await repo.content_types_by_metadata_ids([]) == {}
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_has_subtitle_filter_unions_both_sources(self, repo: Repository):
