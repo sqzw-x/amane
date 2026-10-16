@@ -55,6 +55,7 @@ import { useTranslation } from "react-i18next";
 import type { PlaybackSubtitleItem } from "@/client/types.gen";
 import { useLatestRef } from "@/hooks/use-latest-ref";
 import i18n from "@/i18n";
+import { shellSystemLevels } from "@/lib/shell";
 
 import classes from "./playback-player.module.css";
 
@@ -1328,10 +1329,21 @@ export function PlaybackPlayer({
     [],
   );
 
+  /**
+   * 壳提供的系统音量与亮度; 不在壳内时为 null, 音量与亮度退回元素音量与画面叠加层.
+   *
+   * 只取一次: 桥的可用性在播放器存活期间不变, 而音量与亮度的手势回调必须是稳定引用.
+   */
+  const [systemLevels] = useState(shellSystemLevels);
+
   // 音量是唯一的音量状态: 静音即音量 0, 媒体元素的 `muted` 始终为假.
   // 值随存储初始化, 因此装载时滑杆与图标直接落在上次的音量上; 写入存储只由用户操作触发.
-  const [volume, setVolume] = useState(readStoredVolume);
+  // 壳内音量是系统值, 因此从系统读取, 存储的偏好留给浏览器路径.
+  const [volume, setVolume] = useState(() =>
+    systemLevels == null ? readStoredVolume() : systemLevels.volume(),
+  );
   // 亮度是画面叠加层的透明度 (网页拿不到系统亮度): 0.2 ~ 1 相对原片, 只在本次会话内有效.
+  // 壳内亮度写在窗口上, 这里保持 1 —— 叠加层再压暗一次会让手势的落点与画面不一致.
   const [brightness, setBrightness] = useState(1);
   // 手势的基值来自这两个 ref: 手势回调必须是稳定引用, 不能跟着 state 变.
   const volumeRef = useRef(volume);
@@ -1360,22 +1372,50 @@ export function PlaybackPlayer({
 
   // 音量变化只由用户操作发起 (滑杆、方向键、静音按钮), 因此提示与存储都在操作处处理, 不订阅 volumechange:
   // 订阅会把装载时的恢复也当成一次调整.
+  //
+  // 壳内落点是系统媒体音量: 元素音量保持满格, 否则两者相乘会让手势拖到满格只得到系统音量的一部分.
   const setVolumeFromUser = useCallback(
     (next: number) => {
+      if (systemLevels != null) {
+        systemLevels.setVolume(next);
+        const video = videoRef.current;
+        if (video != null && next > 0 && video.volume === 0) {
+          // 手势把音量调回来时一并取消本应用的静音 (静音只在这里由元素音量实现).
+          video.volume = 1;
+        }
+        setVolume(next);
+        showHud("volume", next);
+        return;
+      }
       applyVolume(next);
       showHud("volume", next);
       writeStoredVolume(next);
     },
-    [applyVolume, showHud],
+    [applyVolume, showHud, systemLevels, videoRef],
   );
 
   // 恢复存储的音量. 滑杆与提示的取值来自 React 状态, 这里只写媒体元素; 存在存储里的音量为 0 时即为静音.
+  // 壳内音量由系统值决定, 元素音量固定满格.
   useEffect(() => {
     const video = videoRef.current;
     if (video != null) {
-      video.volume = readStoredVolume();
+      video.volume = systemLevels == null ? readStoredVolume() : 1;
     }
-  }, []);
+  }, [systemLevels]);
+
+  // 壳内亮度写在窗口上, 离开播放器时交还系统值; 叠加层没有这份状态, 因此只在壳内需要.
+  // 整页卸载 (刷新 / 跳走) 不走 React 的清理, 因此另接 `pagehide` —— 否则窗口会一直停在播放期间的亮度.
+  useEffect(() => {
+    if (systemLevels == null) {
+      return;
+    }
+    const clear = () => systemLevels.clearBrightness();
+    window.addEventListener("pagehide", clear);
+    return () => {
+      window.removeEventListener("pagehide", clear);
+      clear();
+    };
+  }, [systemLevels]);
 
   // 从 0 起调与从任何音量起调同形: 逐级加减一档, 不做「恢复上次音量」的特例.
   const stepVolume = useCallback(
@@ -1388,9 +1428,21 @@ export function PlaybackPlayer({
 
   // 静音按钮与 `m` 快捷键都请求静音位; 本播放器把静音实现为音量 0, 因此在控制器上就地截下这两条请求,
   // 换成音量请求再重新派发. 必须用 stopImmediatePropagation: 控制器自己的监听挂在同一元素上.
+  //
+  // 壳内静音只作用于本应用: 把系统媒体音量置 0 会连带静音其它应用, 因此这里改元素音量.
   const toggleMute = useCallback(() => {
+    if (systemLevels != null) {
+      const video = videoRef.current;
+      if (video == null) {
+        return;
+      }
+      const muted = video.volume > 0;
+      video.volume = muted ? 0 : 1;
+      showHud("volume", muted ? 0 : systemLevels.volume());
+      return;
+    }
     setVolumeFromUser(volume === 0 ? lastNonZeroVolumeRef.current : 0);
-  }, [setVolumeFromUser, volume]);
+  }, [setVolumeFromUser, showHud, systemLevels, videoRef, volume]);
 
   useEffect(() => {
     const controller = controllerRef.current;
@@ -1418,9 +1470,15 @@ export function PlaybackPlayer({
   );
 
   // 手势的基值读取与写入都经稳定引用: 它们变化会重建手势监听, 正在进行的那次手势会丢.
+  // 壳内基值取系统当前值 —— 手势相对的是用户此刻看到的音量与亮度, 不是页面记住的值.
   const readLevel = useCallback(
-    (level: HudKind) => (level === "volume" ? volumeRef.current : brightnessRef.current),
-    [],
+    (level: HudKind) => {
+      if (systemLevels != null) {
+        return level === "volume" ? systemLevels.volume() : systemLevels.brightness();
+      }
+      return level === "volume" ? volumeRef.current : brightnessRef.current;
+    },
+    [systemLevels],
   );
   const handleLevelChange = useCallback(
     (level: HudKind, value: number) => {
@@ -1429,12 +1487,18 @@ export function PlaybackPlayer({
         setVolumeFromUser(value);
         return;
       }
+      if (systemLevels != null) {
+        // 壳内亮度写窗口亮度, 由屏幕自己定下限; 叠加层保持全透明.
+        systemLevels.setBrightness(value);
+        showHud("brightness", value);
+        return;
+      }
       // 亮度留 20% 的地板: 全黑没有意义, 也回不来.
       const next = Math.max(value, MIN_BRIGHTNESS);
       setBrightness(next);
       showHud("brightness", next);
     },
-    [setVolumeFromUser, showHud],
+    [setVolumeFromUser, showHud, systemLevels],
   );
 
   useTouchGestures(

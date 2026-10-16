@@ -15,6 +15,14 @@ interface AmaneShellBridge {
   webViewPackage(): string;
   /** 报告触点处是否还有可以向上滚的内容, 供壳决定下拉刷新是否接管手势; 旧版壳没有这个方法. */
   setPageScrollableUp?(scrollableUp: boolean): void;
+  /** 系统媒体音量, 0..1; 旧版壳没有这一组方法. */
+  mediaVolume?(): number;
+  setMediaVolume?(value: number): void;
+  /** 窗口亮度, 0..1. */
+  screenBrightness?(): number;
+  setScreenBrightness?(value: number): void;
+  /** 交还系统亮度. */
+  clearScreenBrightness?(): void;
 }
 
 declare global {
@@ -94,4 +102,55 @@ export function shellSwitchServer(): boolean {
   if (!window.amaneshell) return false;
   window.amaneshell.switchServer();
   return true;
+}
+
+/**
+ * 壳内可直接写入的系统媒体音量与屏幕亮度.
+ *
+ * 页面没有设置这两个系统值的 API, 因此只在壳内存在; 取值与写入都经桥, 桥只能同步返回, 因此壳侧的读取
+ * 必须落在 JavaBridge 线程可读的字段上 (见 `BrowserActivity.screenBrightness`).
+ */
+export interface ShellSystemLevels {
+  /** 系统媒体音量, 0..1. */
+  volume(): number;
+  setVolume(value: number): void;
+  /** 窗口亮度, 0..1. */
+  brightness(): number;
+  setBrightness(value: number): void;
+  /** 交还系统亮度. */
+  clearBrightness(): void;
+}
+
+/**
+ * 取壳的系统音量与亮度接口; 桥不可用或壳版本早于这一组方法时返回 null.
+ *
+ * 返回 null 表示调用方必须退回元素音量与画面叠加层 —— 浏览器里没有别的可能.
+ */
+export function shellSystemLevels(): ShellSystemLevels | null {
+  const bridge = window.amaneshell;
+  if (bridge == null) return null;
+  const {
+    mediaVolume,
+    setMediaVolume,
+    screenBrightness,
+    setScreenBrightness,
+    clearScreenBrightness,
+  } = bridge;
+  if (
+    mediaVolume == null ||
+    setMediaVolume == null ||
+    screenBrightness == null ||
+    setScreenBrightness == null ||
+    clearScreenBrightness == null
+  ) {
+    return null;
+  }
+  // 每个动作都从 bridge 上取: Java 桥的方法带接收者, 拆出来单调用未必成立.
+  return {
+    volume: () => bridge.mediaVolume?.() ?? 1,
+    setVolume: (value) => bridge.setMediaVolume?.(value),
+    brightness: () => bridge.screenBrightness?.() ?? 1,
+    setBrightness: (value) => bridge.setScreenBrightness?.(value),
+    clearBrightness: () => bridge.clearScreenBrightness?.(),
+  };
 }

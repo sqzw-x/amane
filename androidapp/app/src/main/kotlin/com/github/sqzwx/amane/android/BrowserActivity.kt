@@ -8,10 +8,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
+import android.provider.Settings
 import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
@@ -39,6 +41,7 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import com.github.sqzwx.amane.android.databinding.ActivityBrowserBinding
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * 浏览器窗口: 壳的主体是 WebView, 页面是服务端同源提供的 SPA.
@@ -87,6 +90,14 @@ open class BrowserActivity : AppCompatActivity() {
      */
     @Volatile
     private var pageScrollableUp = false
+
+    /**
+     * 本应用设置的窗口亮度; `BRIGHTNESS_OVERRIDE_NONE` 表示交还系统亮度
+     * (见 [ShellBridge.setScreenBrightness]). 窗口属性只能在 UI 线程改, 而桥的读取必须同步返回,
+     * 因此这里留一份 JavaBridge 线程可读的副本.
+     */
+    @Volatile
+    private var brightnessOverride: Float = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -438,6 +449,75 @@ open class BrowserActivity : AppCompatActivity() {
     /** 由 [ShellBridge] 从 JavaBridge 线程调用; 字段是 `@Volatile`, 不必切回 UI 线程. */
     internal fun setPageScrollableUp(scrollableUp: Boolean) {
         pageScrollableUp = scrollableUp
+    }
+
+    /**
+     * 系统媒体音量, 归一化到 0..1.
+     *
+     * 取媒体流而不是响铃或通知流: 页面调节的是播放音量. 音量档位由系统按机型定义, 因此读写都要经
+     * `getStreamMaxVolume` 归一化.
+     */
+    internal fun mediaVolume(): Double {
+        val manager = getSystemService(AudioManager::class.java) ?: return 1.0
+        val max = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) {
+            return 1.0
+        }
+        return manager.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / max
+    }
+
+    /** 写入系统媒体音量; 不弹出系统音量界面 —— 页面自己绘制提示. */
+    internal fun setMediaVolume(value: Double) {
+        val manager = getSystemService(AudioManager::class.java) ?: return
+        val max = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) {
+            return
+        }
+        val index = (value.coerceIn(0.0, 1.0) * max).roundToInt()
+        // 部分定制系统在后台或缺少权限时抛 SecurityException; 音量调不动不该让页面崩溃.
+        runCatching { manager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0) }
+    }
+
+    /**
+     * 当前亮度, 0..1.
+     *
+     * 本应用已经设置过时取该值, 否则取系统亮度 (`Settings.System.SCREEN_BRIGHTNESS`, 0..255):
+     * 手势的起手基值必须是用户此刻看到的亮度, 系统值才是它的来源.
+     */
+    internal fun screenBrightness(): Double {
+        val override = brightnessOverride
+        if (override >= 0f) {
+            return override.toDouble()
+        }
+        val system = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
+        return (system / 255.0).coerceIn(0.0, 1.0)
+    }
+
+    /**
+     * 写入窗口亮度.
+     *
+     * 只改本窗口: 系统亮度是用户的全局设置, 改它需要 `WRITE_SETTINGS` 特殊权限, 而窗口亮度在离开本应用后
+     * 自动失效. 0 是该屏幕能达到的最低亮度, 再暗就无从恢复.
+     */
+    internal fun setScreenBrightness(value: Double) {
+        val clamped = value.coerceIn(0.0, 1.0).toFloat()
+        brightnessOverride = clamped
+        applyBrightness(clamped)
+    }
+
+    /** 交还系统亮度, 由页面在离开播放器时调用. */
+    internal fun clearScreenBrightness() {
+        brightnessOverride = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        applyBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE)
+    }
+
+    /** 窗口属性只能在 UI 线程改; 桥的调用来自 JavaBridge 线程, 因此这里投递到 UI 线程. */
+    private fun applyBrightness(value: Float) {
+        runOnUiThread {
+            val attributes = window.attributes
+            attributes.screenBrightness = value
+            window.attributes = attributes
+        }
     }
 
     private fun handleBack() {

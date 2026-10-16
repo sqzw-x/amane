@@ -49,6 +49,7 @@ Android 端是**远程客户端**: 服务端 (FastAPI + SQLite + 运行期加载
 - **文件选择**: WebView 自身不实现文件选择器, `<input type="file">` 必须由系统选择器接管.
 - **下载**: `Content-Disposition: attachment` 交给 `DownloadManager`; 它在独立进程, 不共享 cookie 罐, 因此显式写入 `Cookie` 请求头. 附件型 `window.open` 同样交给它, 真页面才另起 `PopupActivity`.
 - **全屏视频**: `onShowCustomView` 的自定义视图 (`<video>` 与页面自己的 Fullscreen API 都经由这条路径), 同时收起系统栏并把方向锁到传感器横屏, 期间根容器的 inset 内边距归零; 返回键先请求页面退出全屏, 超时未退出则按原生方式收起; 全屏期间按 Home 键切换为画中画.
+- **音量与亮度**: 页面没有设置系统媒体音量与屏幕亮度的 API, 因此播放器的手势在壳内改系统值 —— 音量经 `AudioManager` 的媒体流 (元素音量固定满格, 两者相乘会让手势拖到满格只得到系统音量的一部分), 亮度经窗口属性 (只影响本应用, 页面离开播放器或整页卸载时交还系统亮度). 浏览器内退回元素音量与画面叠加层; 亮度是窗口属性而桥只能同步返回, 因此壳侧另存一份 JavaBridge 线程可读的副本. 跨端契约见 `ShellBridge.kt` 与 `web/src/lib/shell.ts`.
 - **浅色 / 深色**: 算法深色 (强深色) 必须在页面侧与壳侧都关掉, 只靠任何一侧都会漏. 页面自己按用户设置在深浅两套之间切换, 内核在系统深色时再叠一层会把浅色主题反转成另一种深色; 页面侧由 `web/src/global.css` 把壳内根元素 (`data-amane-shell`) 的 `color-scheme` 钉成 `dark`, 换掉这一项内核就不再套用算法深色; 壳侧新内核用 `setAlgorithmicDarkeningAllowed(false)`, 旧内核回退到 `setForceDark(FORCE_DARK_OFF)` — Android 13 以上且 targetSdk ≥ 33 时旧接口是空操作, 低于 Chromium 105 的 WebView 又不支持前者. `prefers-color-scheme` 由应用主题 (DayNight) 决定, 与这个开关无关.
 
 窗口 inset 以原生 padding 施加在根容器上, 页面不使用 `env(safe-area-inset-*)`: WebView 的视口因此等于安全区, SPA 既有视口高度计算无需改动 (见 [frontend.md](frontend.md)). 壳没有自己的栏, 状态栏区域显示系统背景 (跟随 DayNight), 页面头部不会被状态栏压住.

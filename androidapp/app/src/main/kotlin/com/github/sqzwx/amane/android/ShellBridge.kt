@@ -41,4 +41,34 @@ class ShellBridge(private val activity: BrowserActivity) {
         val info = WebViewCompat.getCurrentWebViewPackage(activity) ?: return ""
         return "${info.packageName} ${info.versionName.orEmpty()}".trim()
     }
+
+    /**
+     * 系统媒体音量, 0..1; 与 [setMediaVolume] 成对.
+     *
+     * 页面里的手势直接写系统值: 音量是系统值与元素音量的乘积, 只改元素音量时手势拖到满格也只能得到系统
+     * 音量的一部分. 页面没有设置系统音量的 API, 因此这条路径只存在于壳内 (见 `web/src/lib/shell.ts`).
+     */
+    @JavascriptInterface
+    fun mediaVolume(): Double = activity.mediaVolume()
+
+    @JavascriptInterface
+    fun setMediaVolume(value: Double) {
+        activity.setMediaVolume(value)
+    }
+
+    /** 当前亮度, 0..1; 与 [setScreenBrightness] 成对. */
+    @JavascriptInterface
+    fun screenBrightness(): Double = activity.screenBrightness()
+
+    /** 写入窗口亮度; 只影响本应用, 且在本应用没有设置过时以系统亮度为起手基值. */
+    @JavascriptInterface
+    fun setScreenBrightness(value: Double) {
+        activity.setScreenBrightness(value)
+    }
+
+    /** 交还系统亮度, 由页面在离开播放器时调用. */
+    @JavascriptInterface
+    fun clearScreenBrightness() {
+        activity.clearScreenBrightness()
+    }
 }

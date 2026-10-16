@@ -3,6 +3,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 播放器的手势经桥写入系统媒体音量 (AudioManager 的媒体流). 普通权限, 安装即授予. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
     <!-- 明文流量整体允许: 网络策略不能按用户在运行时填写的地址放开明文, 而自建服务默认是 http://<host>:8000.
          地址完全由用户输入, 非局域网部署应自备 HTTPS 反代 (见 docs/dev/android.md). -->
     <application
