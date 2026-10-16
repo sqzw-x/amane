@@ -100,9 +100,12 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
         ctx: RunContext[AgentDeps],
         metadata_ids: list[int],
         use_cache: set[CacheKind] | None = None,
-        content_type: ContentType = ContentType.CENSORED,
+        content_type: ContentType | None = None,
     ) -> dict[str, Any]:
-        """Enqueue SCRAPE tasks for metadata ids (by each row's number)."""
+        """Enqueue SCRAPE tasks for metadata ids (by each row's number).
+
+        content_type: None 用条目已落定的类型, 不重新推断.
+        """
         cache_kinds = use_cache if use_cache is not None else {CacheKind.metadata, CacheKind.trans}
         if not metadata_ids:
             return {"error": "metadata_ids 为空"}
@@ -113,7 +116,11 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
             if metadata is None:
                 missing += 1
                 continue
-            payload = ScrapePayload(number=metadata.number, content_type=content_type, use_cache=cache_kinds)
+            payload = ScrapePayload(
+                number=metadata.number,
+                content_type=content_type if content_type is not None else metadata.content_type,
+                use_cache=cache_kinds,
+            )
             await ctx.deps.repo.create_task(task_type=TaskType.SCRAPE, payload=payload)
             submitted += 1
         return {"submitted": submitted, "missing": missing}

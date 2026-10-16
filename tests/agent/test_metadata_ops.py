@@ -21,6 +21,7 @@ from amane.agent.tools import TOOL_OK, AgentDeps, build_explore_toolset
 from amane.config import AgentConfig
 from amane.db.repository import Repository
 from amane.enums import MetadataField
+from amane.parsing import ContentType
 from tests.agent.support import ToolCallContext, cap_toolset, tool_fn
 
 
@@ -76,6 +77,22 @@ def test_metadata_ops_capability_tools() -> None:
     assert "delete_metadata" in names
     assert "enqueue_scrape" in names
     assert "batch_user_tags" in names
+
+
+@pytest.mark.asyncio
+async def test_enqueue_scrape_takes_entry_content_type(write_deps: AgentDeps) -> None:
+    """补刮的类型取条目列; 显式传入才覆盖 (硬编码有码会让无码条目走错路由)."""
+    meta = await write_deps.repo.upsert_metadata(number="HEYZO-1234")
+    assert meta.id is not None
+
+    out = await _tool_fn("enqueue_scrape")(ToolCallContext(write_deps), metadata_ids=[meta.id])
+    assert out == {"submitted": 1, "missing": 0}
+    await _tool_fn("enqueue_scrape")(
+        ToolCallContext(write_deps), metadata_ids=[meta.id], content_type=ContentType.CENSORED
+    )
+
+    tasks = await write_deps.repo.list_tasks()
+    assert sorted(task.payload["content_type"] for task in tasks) == ["censored", "uncensored"]
 
 
 @pytest.mark.asyncio

@@ -67,6 +67,12 @@ def test_mosaic_nature(mosaic: Mosaic | None, content_type: ContentType | None, 
     assert mosaic_nature(mosaic, content_type) is expected
 
 
+def test_every_mosaic_marker_has_a_nature() -> None:
+    """标记与性质是两个枚举: 加标记时没同步, 整理落盘会在 mosaic_nature 抛 ValueError."""
+    for marker in Mosaic:
+        assert MosaicNature(marker) is not None
+
+
 @pytest.mark.parametrize(
     ("values", "expected"),
     [
