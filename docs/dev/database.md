@@ -28,6 +28,8 @@ pysqlite 只在 DML 之前发出 `BEGIN`, 纯 SELECT 落在事务之外 (SQLAlch
 - 该写法依赖驱动不自行发出 `BEGIN`; 驱动或方言改为显式发出时失效.
 - 番号比较一律经 `src/amane/db/models.py::metadata_number_predicate`, 才能命中 `ix_metadata_number`.
 
+连接级 PRAGMA (WAL / `synchronous=NORMAL` / `busy_timeout` / 外键) 只能在 `db/engine.py` 的连接钩子里逐连接下发, 别处另开业务引擎会退回驱动默认. 写锁被占用时连接等待至多 `busy_timeout` 才报 `database is locked`, 临界区短于该值即不失败. `synchronous=NORMAL` 的取舍限于 WAL 已开启: 掉电丢最近若干已提交事务而不损坏库, 换掉逐笔 fsync 拉长的持锁时间.
+
 入队互斥用 Repository 上的进程内锁串行化, 见 [task-system.md](task-system.md).
 
 ## 启动期自动迁移与安全网
