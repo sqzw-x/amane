@@ -16,7 +16,7 @@ import {
 import { IconChevronDown, IconRefresh } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -30,17 +30,11 @@ import {
   APP_SHELL_MAIN_HEIGHT,
 } from "@/components/layout/app-shell-metrics";
 import type { HlsFailure, SeekRequest } from "@/components/media/playback-player";
+import { LazyPlaybackPlayer } from "@/components/media/playback-player-lazy";
 import { extractErrorMessage } from "@/lib/api-error";
 import { apiFetch } from "@/lib/api-token";
 import { orderPlaybackSources } from "@/lib/media/source-order";
 import { useUIStore } from "@/stores/ui";
-
-// 播放器只在选中可播的流之后才需要, 单独成块懒加载, 与 hls.js 一样不进入主包.
-const PlaybackPlayer = lazy(() =>
-  import("@/components/media/playback-player").then((module) => ({
-    default: module.PlaybackPlayer,
-  })),
-);
 
 const EMPTY_SOURCES: PlaybackSourceOption[] = [];
 const EMPTY_STREAMS: PlaybackStreamItem[] = [];
@@ -495,15 +489,18 @@ export function PlaybackPanel({
             <PlayerMessage tone="neutral">{t("detail.playbackUnsupported")}</PlayerMessage>
           ) : (
             <Suspense fallback={<Skeleton height="100%" />}>
-              <PlaybackPlayer
+              <LazyPlaybackPlayer
                 // 地址不变时 hls.js 不会重新装载, 重试必须换掉 key 才会重挂.
                 key={`${selected.href}#${reloadNonce}`}
                 href={selected.href}
                 kind={kind}
                 seekable={selected.seekable}
                 tracks={selected.subtitles ?? []}
-                seekRequest={seekRequest}
-                onSeekHandled={onSeekHandled}
+                seek={
+                  seekRequest == null
+                    ? undefined
+                    : { request: seekRequest, onHandled: onSeekHandled }
+                }
                 onFailed={(failure) => {
                   void readPlaybackDetail(
                     selected.href,

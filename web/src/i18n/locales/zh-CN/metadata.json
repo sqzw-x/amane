@@ -107,6 +107,7 @@
     "deleteCommentMessage": "删除后无法恢复",
     "playTrailer": "播放预告片",
     "closeTrailer": "关闭预告片",
+    "trailerFailed": "无法播放此预告片",
     "coverUnavailable": "封面不可用",
     "playback": "播放",
     "playbackFailed": "无法播放此码流",

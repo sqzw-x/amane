@@ -10,6 +10,7 @@ import {
   Menu,
   Modal,
   SimpleGrid,
+  Skeleton,
   Stack,
   Text,
   Title,
@@ -37,7 +38,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import {
@@ -73,6 +74,7 @@ import { proxyImageUrl } from "@/lib/utils";
 import { ProxyImage } from "@/components/media/proxy-image";
 import { CommentSection } from "@/components/media/comment-section";
 import { PlaybackPanel } from "@/components/media/playback-panel";
+import { LazyPlaybackPlayer } from "@/components/media/playback-player-lazy";
 import type { SeekRequest } from "@/components/media/playback-player";
 
 /**
@@ -93,6 +95,20 @@ function formatRuntime(minutes?: number | null): string | null {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/**
+ * 预告片地址的媒体类型.
+ * 来源给出的地址大多是直链 MP4, 少数是 HLS 播放列表. 判据只取路径后缀, 并且偏向直链: 误判为 HLS 会把可以
+ * 直接播放的地址交给 hls.js (经 XHR 取分片, 需要上游允许跨源), 漏判在 Android 与 iOS 上仍由内核原生播放.
+ */
+function trailerKind(url: string): "video" | "hls" {
+  try {
+    return new URL(url).pathname.toLowerCase().endsWith(".m3u8") ? "hls" : "video";
+  } catch {
+    // 地址不能解析时按直链处理.
+    return "video";
+  }
 }
 
 function FieldBlock({
@@ -127,6 +143,8 @@ function TitleDetailPage() {
   const [cropOpen, setCropOpen] = useState(false);
   const [coverLightboxOpen, coverLightbox] = useDisclosure(false);
   const [playingTrailer, setPlayingTrailer] = useState(false);
+  // 播放失败的预告片地址: 只对该地址有效, 记录之外 (条目切换或重新刮削换了地址) 一律不算失败.
+  const [failedTrailerUrl, setFailedTrailerUrl] = useState<string | null>(null);
   const [thumbBroken, setThumbBroken] = useState(false);
   const [posterBroken, setPosterBroken] = useState(false);
   // 评论时间戳的跳转: 本地请求负责即时响应 (同一秒连点也要重新触发), 地址栏的 `t` 负责分享与刷新定位.
@@ -379,6 +397,8 @@ function TitleDetailPage() {
     thumbSrc && !thumbBroken ? thumbSrc : posterSrc && !posterBroken ? posterSrc : null;
   const coverUrl = proxyImageUrl(coverSrc);
   const coverFailed = Boolean((thumbSrc || posterSrc) && !coverUrl);
+  // 取成局部量, 供播放分支在回调里引用 (属性访问的收窄不进闭包).
+  const trailerUrl = item.trailer_url ?? null;
   const hasExtrafanart = item.extrafanart && item.extrafanart.length > 0;
   const runtime = formatRuntime(item.runtime);
   const allLocked = LOCKABLE_FIELDS.every((field) => lockedFields.has(field));
@@ -424,26 +444,33 @@ function TitleDetailPage() {
     }
   }
 
-  const trailerPlayButton = item.trailer_url ? (
-    <ActionIcon
-      variant="filled"
-      color="dark"
-      radius="xl"
-      size={56}
-      aria-label={t("detail.playTrailer")}
-      onClick={() => setPlayingTrailer(true)}
-      style={{
-        position: "absolute",
-        top: "50%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-        opacity: 0.88,
-        zIndex: 1,
-      }}
-    >
-      <IconPlayerPlay size={28} />
-    </ActionIcon>
-  ) : null;
+  // 失败记录按地址判定, 因此重新打开同一个地址时必须清除, 否则会直接显示上次的提示.
+  function openTrailer() {
+    setFailedTrailerUrl(null);
+    setPlayingTrailer(true);
+  }
+
+  const trailerPlayButton =
+    trailerUrl != null ? (
+      <ActionIcon
+        variant="filled"
+        color="dark"
+        radius="xl"
+        size={56}
+        aria-label={t("detail.playTrailer")}
+        onClick={openTrailer}
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          opacity: 0.88,
+          zIndex: 1,
+        }}
+      >
+        <IconPlayerPlay size={28} />
+      </ActionIcon>
+    ) : null;
 
   return (
     // 下沿留出的空白比其余三边大得多: 滚到底时末尾的卡片不贴视口底边, 还能再滚一截.
@@ -481,23 +508,38 @@ function TitleDetailPage() {
             )}
             {!playingTrailer && <FilePhaseOverlay phase={item.file_phase} />}
 
-            {playingTrailer && item.trailer_url ? (
+            {playingTrailer && trailerUrl != null ? (
               <>
-                <video
-                  key={item.trailer_url}
-                  src={item.trailer_url}
-                  controls
-                  autoPlay
-                  playsInline
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "contain",
-                    background: "#000",
-                  }}
-                />
+                {/* 绝对定位铺满封面所在的盒子: 盒子的高度由封面撑住, 播放器不能改写它.
+                    失败提示与点播面板同形: 播放器不渲染, 黑底给出说明. */}
+                <div style={{ position: "absolute", inset: 0, background: "#000" }}>
+                  {failedTrailerUrl === trailerUrl ? (
+                    <div
+                      style={{
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: 16,
+                      }}
+                    >
+                      <Alert color="red" variant="light" maw={520}>
+                        <Text size="sm">{t("detail.trailerFailed")}</Text>
+                      </Alert>
+                    </div>
+                  ) : (
+                    <Suspense fallback={<Skeleton height="100%" />}>
+                      <LazyPlaybackPlayer
+                        key={trailerUrl}
+                        href={trailerUrl}
+                        kind={trailerKind(trailerUrl)}
+                        seekable
+                        autoPlay
+                        onFailed={() => setFailedTrailerUrl(trailerUrl)}
+                      />
+                    </Suspense>
+                  )}
+                </div>
                 <ActionIcon
                   variant="filled"
                   color="dark"
@@ -554,14 +596,14 @@ function TitleDetailPage() {
                     {t("detail.coverUnavailable")}
                   </Text>
                 )}
-                {item.trailer_url && (
+                {trailerUrl != null && (
                   <ActionIcon
                     variant="filled"
                     color="dark"
                     radius="xl"
                     size={48}
                     aria-label={t("detail.playTrailer")}
-                    onClick={() => setPlayingTrailer(true)}
+                    onClick={openTrailer}
                     style={{ opacity: 0.88 }}
                   >
                     <IconPlayerPlay size={24} />

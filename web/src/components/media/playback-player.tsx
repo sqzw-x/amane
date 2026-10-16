@@ -623,6 +623,21 @@ function useFullscreenLandscape(controllerRef: RefObject<MediaControllerElement 
 }
 
 /**
+ * 挂载后立即开始播放.
+ *
+ * 由点击挂载的播放器 (预告片) 用: 自动播放被浏览器拒绝时保持暂停, 与手动开始播放同形.
+ */
+function useAutoPlay(videoRef: RefObject<HTMLVideoElement | null>, autoPlay: boolean) {
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!autoPlay || video == null) {
+      return;
+    }
+    void video.play().catch(() => undefined);
+  }, [autoPlay, videoRef]);
+}
+
+/**
  * 把焦点交还播放器, 但不让浏览器为此滚动页面.
  *
  * 播放器在视口里只露出一部分时, 聚焦会让浏览器把它整个滚进来 —— 收起菜单或倍速菜单之后页面
@@ -1037,11 +1052,12 @@ export type PlaybackPlayerProps = {
   href: string;
   kind: "video" | "hls";
   seekable: boolean;
-  tracks: PlaybackSubtitleItem[];
-  /** 评论时间戳的跳转请求; 同一秒数的重复点击靠新请求重新触发. */
-  seekRequest: SeekRequest | null;
-  /** 已经按请求定位之后回调, 由调用方清掉请求. */
-  onSeekHandled: () => void;
+  /** 字幕轨; 略过时表示没有字幕. */
+  tracks?: PlaybackSubtitleItem[];
+  /** 跳转请求与回执; 没有跳转入口的场合略过. */
+  seek?: PlaybackSeek;
+  /** 挂载后立即开始播放, 用于由点击挂载播放器的场合. */
+  autoPlay?: boolean;
   onFailed: (failure: HlsFailure | null) => void;
 };
 
@@ -1055,13 +1071,19 @@ export type SeekRequest = {
   nonce: number;
 };
 
+/** 跳转请求与它的回执. 两者必须成对给出: 播放器按请求定位后调用 `onHandled`, 由调用方清掉请求. */
+export type PlaybackSeek = {
+  request: SeekRequest;
+  onHandled: () => void;
+};
+
 export function PlaybackPlayer({
   href,
   kind,
   seekable,
-  tracks,
-  seekRequest,
-  onSeekHandled,
+  tracks = [],
+  seek,
+  autoPlay = false,
   onFailed,
 }: PlaybackPlayerProps) {
   const { t } = useTranslation("metadata");
@@ -1224,6 +1246,11 @@ export function PlaybackPlayer({
     };
   }, [applyPendingSeek, videoRef]);
 
+  // 请求与回执取自同一项: 类型上不存在只给出其中之一的跳转. 依赖取该项里的两个值, 调用方每次渲染重建整项
+  // 也不会让下面的副作用重新执行.
+  const seekRequest = seek?.request ?? null;
+  const onSeekHandled = seek?.onHandled;
+
   useEffect(() => {
     if (seekRequest == null || seekRequest.nonce === handledSeekRef.current) {
       return;
@@ -1231,7 +1258,7 @@ export function PlaybackPlayer({
     handledSeekRef.current = seekRequest.nonce;
     pendingSeekRef.current = seekRequest.seconds;
     applyPendingSeek();
-    onSeekHandled();
+    onSeekHandled?.();
   }, [applyPendingSeek, onSeekHandled, seekRequest]);
 
   // 调整提示 (音量 / 亮度) 由 React 状态控制显隐, 不随控件自动隐藏, 见渲染处的提示层.
@@ -1379,6 +1406,7 @@ export function PlaybackPlayer({
 
   useFullscreenScrollRestore(controllerRef);
   useFullscreenLandscape(controllerRef);
+  useAutoPlay(videoRef, autoPlay);
 
   const applyPlaybackRate = useCallback(
     (rate: number) => {
