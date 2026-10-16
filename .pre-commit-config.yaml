@@ -2,12 +2,12 @@
 #
 # 每个钩子只在相关文件变化时运行 (files 过滤, 见 prek docs#files):
 # - src/amane 后端源码变化 → 重新生成 OpenAPI + TS client
-# - Python 文件变化 → ruff 修复/检查 + pyright 类型检查
+# - Python 文件变化 → ruff 修复/检查 + ty 类型检查
 # - web/ 下任何文件变化 → oxfmt/oxlint 修复 + web 全量检查
 # - 其余文件 (docs/md、yaml、Dockerfile 等) 不触发任何钩子
 #
-# 测试最慢, 放在 pre-push: 文件集取推送范围对远程 ref 的差异, 一次推送只运行一次, 与推送内的提交数无关,
-# 且只运行 just test, 不含 coverage (coverage 留给 just check / CI); 其余检查留在 pre-commit 拦截每个提交.
+# 慢检查放在 pre-push: pyright 与测试的文件集取推送范围对远程 ref 的差异, 一次推送只运行一次, 与推送内的
+# 提交数无关, 提交阶段只留生成物、ruff 与 ty; 测试只运行 just test, 不含 coverage (coverage 留给 just check / CI).
 #
 # 失败即停: 修复型钩子 (fix-*) 失败 = 文件被修改, 需重新 stage 再提交,
 # 后续检查钩子此刻跑也是必败, 直接停止省掉全量.
@@ -47,9 +47,9 @@ repos:
         files: '\.(py|pyi)$|^ruff\.toml$'
         stages: [pre-commit]
 
-      - id: typecheck
-        name: pyright + ty
-        entry: just typecheck
+      - id: ty
+        name: ty check
+        entry: just typecheck-ty
         language: system
         pass_filenames: false
         files: '\.(py|pyi)$|^pyproject\.toml$'
@@ -62,6 +62,14 @@ repos:
         pass_filenames: false
         files: '^web/'
         stages: [pre-commit]
+
+      - id: pyright
+        name: pyright
+        entry: just typecheck-pyright
+        language: system
+        pass_filenames: false
+        files: '\.(py|pyi)$|^pyproject\.toml$'
+        stages: [pre-push]
 
       - id: test
         name: pytest -n auto
