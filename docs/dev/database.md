@@ -71,7 +71,7 @@ SQLite 没有原生 enum, 列仍是 VARCHAR. 不能使用 `Column(String)` 或 `
 - **已知噪声**: SQLite 无原生 enum, 反射把 SA Enum 列看成 VARCHAR, autogenerate 会报 `modify_type`; 与实际 schema 无关, 忽略.
 - **JSON 列内部结构** — `Metadata.raw` 等 blob 不在 autogenerate 视野里. 爬虫 / 聚合模型修改字段名或类型时**结果列与 raw 快照是两份数据**, 只修改列定义不够, 必须另写 data revision 遍历 JSON; 站点级复用会把 raw 直接交给 `MediaMetadata`, 旧 key 会被 Pydantic 静默丢弃.
 - **JSON 列表列** — 非空列的空集合存 `[]` 不是 JSON `null`, 改为 NOT NULL 须先 `UPDATE … '[]'` 回填 (含字面量 `'null'`), 再 `batch_alter_table` `nullable=False`.
-- **path 投影列** — `MediaFile.content_type` / `mosaic` 与 `status` 同为枚举列, `definition` 不是枚举.
+- **枚举列** — `Metadata.content_type` / `MediaFile.mosaic` 与 `status` 同为枚举列, 新增枚举值须写成 `sa.Enum(*Enum.__members__, name=...)` 并回填存量行; `definition` 不是枚举.
 
 ## 非空 FK 与数据回填
 
