@@ -359,6 +359,8 @@ class TestScrapingPriorityMigration:
         assert routes[ContentType.WESTERN][0] == SiteName.THEPORNDB
         assert SiteName.AVSOX in routes[ContentType.UNCENSORED]
         assert SiteName.FC2PPVDB in routes[ContentType.FC2]
+        # 官方电子市场下架的作品只剩索引站在线看站收录, airav 排在 fc2 路线的链尾
+        assert routes[ContentType.FC2][-1] == SiteName.AIRAV
         assert SiteName.OFFICIAL in routes[ContentType.CENSORED]
 
 

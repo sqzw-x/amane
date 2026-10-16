@@ -2904,7 +2904,8 @@ export const HotSettingsSchema = {
                         'javdb',
                         'fc2ppvdb',
                         'fc2',
-                        'freejavbt'
+                        'freejavbt',
+                        'airav'
                     ],
                     hentai: [
                         'getchu',

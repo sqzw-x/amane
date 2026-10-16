@@ -87,6 +87,7 @@ _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
         SiteName.FC2PPVDB,
         SiteName.FC2,
         SiteName.FREEJAVBT,
+        SiteName.AIRAV,
     ],
     ContentType.CHINESE: [
         SiteName.IQQTV,
