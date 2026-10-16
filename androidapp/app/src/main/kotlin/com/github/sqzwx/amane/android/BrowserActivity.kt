@@ -474,15 +474,15 @@ open class BrowserActivity : AppCompatActivity() {
             return
         }
         val index = (value.coerceIn(0.0, 1.0) * max).roundToInt()
-        // 部分定制系统在后台或缺少权限时抛 SecurityException; 音量调不动不该让页面崩溃.
+        // 缺 MODIFY_AUDIO_SETTINGS 时系统把 index 夹到权限允许的下限 (不含 0), 不抛异常, 因此调不动也要能收场.
         runCatching { manager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0) }
     }
 
     /**
      * 当前亮度, 0..1.
      *
-     * 本应用已经设置过时取该值, 否则取系统亮度 (`Settings.System.SCREEN_BRIGHTNESS`, 0..255):
-     * 手势的起手基值必须是用户此刻看到的亮度, 系统值才是它的来源.
+     * 本应用已经设置过时取该值, 否则取系统亮度 (`Settings.System.SCREEN_BRIGHTNESS`, 0..255). 后者只是近似:
+     * 设置值的下限通常高于 0, 自适应亮度下也不等于此刻的画面亮度, 因此本次会话的第一次滑动可能有小幅跳变.
      */
     internal fun screenBrightness(): Double {
         val override = brightnessOverride

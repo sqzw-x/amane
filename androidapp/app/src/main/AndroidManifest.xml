@@ -3,7 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- 播放器的手势经桥写入系统媒体音量 (AudioManager 的媒体流). 普通权限, 安装即授予. -->
+    <!-- 播放器的音量操作经桥写入系统的媒体流. 普通权限, 安装即授予; 也是音量能调到 0 (真静音) 的前提:
+         缺它时系统把写入夹在权限允许的下限上, 且不报错. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- 明文流量整体允许: 网络策略不能按用户在运行时填写的地址放开明文, 而自建服务默认是 http://<host>:8000.
