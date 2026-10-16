@@ -1,11 +1,13 @@
-# 配置格式兼容 prek (执行方) 与 pre-commit; 提交门禁见 scripts/githooks/pre-commit.
+# 配置格式兼容 prek (执行方) 与 pre-commit; 门禁见 scripts/githooks/ 下的同名 shim.
 #
 # 每个钩子只在相关文件变化时运行 (files 过滤, 见 prek docs#files):
 # - src/amane 后端源码变化 → 重新生成 OpenAPI + TS client
 # - Python 文件变化 → ruff 修复/检查 + pyright 类型检查
 # - web/ 下任何文件变化 → oxfmt/oxlint 修复 + web 全量检查
-# - src/amane 或 tests 变化 → 运行测试 (just test, 不含 coverage; coverage 留给 just check / CI)
 # - 其余文件 (docs/md、yaml、Dockerfile 等) 不触发任何钩子
+#
+# 测试最慢, 放在 pre-push: 文件集取推送范围对远程 ref 的差异, 一次推送只运行一次, 与推送内的提交数无关,
+# 且只运行 just test, 不含 coverage (coverage 留给 just check / CI); 其余检查留在 pre-commit 拦截每个提交.
 #
 # 失败即停: 修复型钩子 (fix-*) 失败 = 文件被修改, 需重新 stage 再提交,
 # 后续检查钩子此刻跑也是必败, 直接停止省掉全量.
@@ -67,4 +69,4 @@ repos:
         language: system
         pass_filenames: false
         files: '^(src/amane|tests)/.*\.py$'
-        stages: [pre-commit]
+        stages: [pre-push]

@@ -1,0 +1,24 @@
+#!/bin/sh
+# 推送门禁入口, 由 just setup 写入的 core.hooksPath 调用; 本文件不内嵌任何 checkout 的绝对路径.
+# 禁止执行 prek install: 它会用内嵌安装时所在 checkout 绝对路径的生成式 shim 覆盖本文件;
+# 该 worktree 删除后, 其余 worktree 的提交与推送全部失败.
+# 新增 hook type 时需要在 scripts/githooks/ 下提供同名文件.
+
+here=$PWD
+main_root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)")
+
+for candidate in \
+    "$here/.venv/bin/prek" "$here/.venv/Scripts/prek.exe" \
+    "$main_root/.venv/bin/prek" "$main_root/.venv/Scripts/prek.exe"
+do
+    if [ -x "$candidate" ]; then
+        exec "$candidate" hook-impl --hook-type=pre-push -- "$@"
+    fi
+done
+
+if command -v prek >/dev/null 2>&1; then
+    exec prek hook-impl --hook-type=pre-push -- "$@"
+fi
+
+echo "无法定位 prek: 在当前 worktree 执行 just setup 后重试" >&2
+exit 1
