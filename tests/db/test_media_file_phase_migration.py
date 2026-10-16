@@ -172,6 +172,17 @@ def test_metadata_content_type_backfilled_from_files_then_number(tmp_path: Path)
                 "metadata_id": by_file,
             },
         )
+        # 未绑定条目的文件: downgrade 时按路径重解析
+        conn.execute(
+            text(_MEDIA_INSERT),
+            {
+                "path": "/media/MD0165-1.mp4",
+                "lib": lib_id,
+                "content_type": "CENSORED",
+                "mosaic": None,
+                "metadata_id": None,
+            },
+        )
         # 只取 id 最小的那一份: 后挂的欧美路径不参与回填
         conn.execute(
             text(_MEDIA_INSERT),
@@ -199,6 +210,7 @@ def test_metadata_content_type_backfilled_from_files_then_number(tmp_path: Path)
     assert _file_types(engine) == {
         "/media/HEYZO-1234.mp4": "UNCENSORED",
         "/media/欧美/HEYZO-1234.mp4": "UNCENSORED",
+        "/media/MD0165-1.mp4": "CHINESE",
     }
 
     # 回填可重跑
