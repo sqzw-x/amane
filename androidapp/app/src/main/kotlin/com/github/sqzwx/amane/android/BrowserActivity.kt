@@ -531,6 +531,11 @@ open class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    /** 退出应用: 连任务一起收掉. 只在 UI 线程调用 (桥侧投递, 见 `ShellBridge.exitApp`). */
+    internal fun exitApp() {
+        finishAndRemoveTask()
+    }
+
     private fun handleBack() {
         when {
             customView != null -> exitFullscreen()

@@ -20,6 +20,17 @@ class ShellBridge(private val activity: BrowserActivity) {
     }
 
     /**
+     * 退出应用, 由页面的客户端设置页调用.
+     *
+     * 壳内的返回手势是后退 (见 `BrowserActivity.handleBack`), 退回首页后也只是结束当前活动, 因此需要
+     * 一个明确的退出入口; 连任务一起收掉, 免得从最近任务回来又落在这一屏.
+     */
+    @JavascriptInterface
+    fun exitApp() {
+        activity.runOnUiThread { activity.exitApp() }
+    }
+
+    /**
      * 页面报告"触点处是否还有可以向上滚的内容", 决定下拉刷新能否接管这次手势.
      *
      * 手势在 MOVE 越过阈值时才判定, 因此页面在 `touchstart` 里推来的值来得及生效. 这是状态推送而不是

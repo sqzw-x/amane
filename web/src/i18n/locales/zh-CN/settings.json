@@ -26,7 +26,8 @@
     "webViewUnknown": "未知",
     "chromiumOutdated": "Chromium {{major}} 低于前端需要的 {{min}}. 请更新系统 WebView, 否则布局与样式会残缺",
     "updateWebView": "打开 WebView 的商店页",
-    "appVersion": "APP 版本"
+    "appVersion": "APP 版本",
+    "exitApp": "退出 APP"
   },
   "fields": {
     "scraping": {

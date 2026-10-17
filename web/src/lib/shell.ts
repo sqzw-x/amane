@@ -11,6 +11,8 @@
 interface AmaneShellBridge {
   /** 打开壳的服务器设置页. */
   switchServer(): void;
+  /** 退出应用; 旧版壳没有这个方法. */
+  exitApp?(): void;
   /** 系统 WebView 的提供方与包版本; 取不到时为空串. */
   webViewPackage(): string;
   /** 报告触点处是否还有可以向上滚的内容, 供壳决定下拉刷新是否接管手势; 旧版壳没有这个方法. */
@@ -62,6 +64,8 @@ export interface ShellEnvironment {
   chromiumOutdated: boolean;
   /** JS 桥是否可用: 服务器切换依赖它. */
   bridgeAvailable: boolean;
+  /** 壳是否提供退出应用; 旧版壳没有, 退出入口因此不渲染. */
+  canExitApp: boolean;
 }
 
 /**
@@ -75,12 +79,14 @@ export function shellEnvironment(): ShellEnvironment | null {
 
   let packageLabel = "";
   let bridgeAvailable = false;
+  let canExitApp = false;
   const bridge = window.amaneshell;
   if (bridge) {
     // 读包信息失败不应影响"是否在壳内"的判断, 因此单独兜住.
     try {
       packageLabel = bridge.webViewPackage();
       bridgeAvailable = true;
+      canExitApp = bridge.exitApp != null;
     } catch {
       bridgeAvailable = false;
     }
@@ -96,6 +102,7 @@ export function shellEnvironment(): ShellEnvironment | null {
     chromiumMajor,
     chromiumOutdated: chromiumMajor !== null && chromiumMajor < MIN_CHROMIUM_MAJOR,
     bridgeAvailable,
+    canExitApp,
   };
 }
 
@@ -103,6 +110,14 @@ export function shellEnvironment(): ShellEnvironment | null {
 export function shellSwitchServer(): boolean {
   if (!window.amaneshell) return false;
   window.amaneshell.switchServer();
+  return true;
+}
+
+/** 退出壳; 旧版壳没有这个方法时返回 false, 由调用方决定是否提示. */
+export function shellExitApp(): boolean {
+  const bridge = window.amaneshell;
+  if (bridge?.exitApp == null) return false;
+  bridge.exitApp();
   return true;
 }
 

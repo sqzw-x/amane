@@ -1,11 +1,12 @@
 import { Alert, Anchor, Button, Code, Group, Stack, Text } from "@mantine/core";
-import { IconAlertTriangle, IconServer } from "@tabler/icons-react";
+import { IconAlertTriangle, IconLogout, IconServer } from "@tabler/icons-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   MIN_CHROMIUM_MAJOR,
   shellEnvironment,
+  shellExitApp,
   shellSwitchServer,
   webViewStoreUrl,
 } from "@/lib/shell";
@@ -80,6 +81,19 @@ export function ClientSettings() {
           </Alert>
         ) : null}
       </Stack>
+
+      {shell.canExitApp ? (
+        <Group>
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconLogout size={14} />}
+            onClick={() => run(shellExitApp)}
+          >
+            {t("client.exitApp")}
+          </Button>
+        </Group>
+      ) : null}
     </Stack>
   );
 }

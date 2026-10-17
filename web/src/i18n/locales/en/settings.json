@@ -26,7 +26,8 @@
     "webViewUnknown": "Unknown",
     "chromiumOutdated": "Chromium {{major}} is below the {{min}} this frontend needs. Update the system WebView, otherwise the layout and styles will be incomplete",
     "updateWebView": "Open the WebView store page",
-    "appVersion": "APP version"
+    "appVersion": "APP version",
+    "exitApp": "Exit app"
   },
   "fields": {
     "scraping": {
