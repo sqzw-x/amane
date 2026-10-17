@@ -486,6 +486,11 @@ function usePlayerKeys(
 
 /** 拖动进度条或音量条期间置位的属性: 手势层与画面点击都不再响应. */
 const GESTURES_DISABLED_ATTRIBUTE = "gesturesdisabled";
+/** media-chrome 的空闲状态属性: 控制条与进度条在它存在时被淡出 (暂停态除外, 那时是可见的). */
+const USER_INACTIVE_ATTRIBUTE = "userinactive";
+const MEDIA_PAUSED_ATTRIBUTE = "mediapaused";
+/** 本次触摸只用于呼出控制条: 由样式表据此屏蔽控件的指针事件. */
+const REVEAL_ATTRIBUTE = "data-amane-reveal";
 /**
  * 触屏手势进行中置位的属性: 控制条与进度条不参与 (见样式表).
  * 触摸按下即置位, 松手撤掉 — 撤掉的那一瞬在浏览器派发 click 之前, 点按切换控件显隐照常.
@@ -1005,12 +1010,28 @@ function useClickGestures(
     // 指针类型取自 pointerdown: click 事件在部分浏览器里不带该信息; 缺省值与手势层相同, 都按鼠标处理.
     let pointerType = "mouse";
     let pendingClick: number | null = null;
+    // 按下瞬间控制条是否只是被淡出. 触摸会立刻让控制条开始淡入, 因此这次触摸的后续动作必须在这里定死:
+    // 否则同一次触摸的 click 会落在已经"复活"的进度条与按钮上 —— 隐藏状态下点一下就跳进度或弹出菜单.
+    let revealOnly = false;
 
     const handlePointerDown = (event: PointerEvent) => {
       pointerType = event.pointerType;
+      revealOnly =
+        controller.hasAttribute(USER_INACTIVE_ATTRIBUTE) &&
+        !controller.hasAttribute(MEDIA_PAUSED_ATTRIBUTE);
+      // 标记要在事件派发给控件之前挂上: 触摸的定位动作从 `touchstart` 就开始, 只拦 pointerdown 挡不住它.
+      controller.toggleAttribute(REVEAL_ATTRIBUTE, revealOnly);
     };
 
     const handleClick = (event: MouseEvent) => {
+      const reveal = revealOnly;
+      revealOnly = false;
+      controller.removeAttribute(REVEAL_ATTRIBUTE);
+      if (reveal) {
+        // 只呼出控制条: 这次点击不落到任何控件, 也不当成画面的单击.
+        event.stopPropagation();
+        return;
+      }
       const video = videoRef.current;
       const target = event.composedPath()[0];
       if (video == null || (target !== video && target !== controller)) {
@@ -1041,12 +1062,19 @@ function useClickGestures(
       }
     };
 
+    const clearReveal = () => {
+      controller.removeAttribute(REVEAL_ATTRIBUTE);
+    };
+
     controller.addEventListener("pointerdown", handlePointerDown, true);
     controller.addEventListener("click", handleClick, true);
+    controller.addEventListener("pointercancel", clearReveal, true);
     return () => {
       cancelPendingClickRef.current = () => undefined;
       controller.removeEventListener("pointerdown", handlePointerDown, true);
       controller.removeEventListener("click", handleClick, true);
+      controller.removeEventListener("pointercancel", clearReveal, true);
+      clearReveal();
       if (pendingClick != null) {
         window.clearTimeout(pendingClick);
       }
@@ -1191,7 +1219,7 @@ export function PlaybackPlayer({
       return;
     }
     const pinned = controller.querySelectorAll(
-      `media-control-bar, media-time-range, .${classes.scrim}`,
+      `media-control-bar, media-time-range, .${classes.scrim}, .${classes.centerPlayLayer}`,
     );
     for (const element of pinned) {
       element.toggleAttribute("noautohide", rateSheetVisible);

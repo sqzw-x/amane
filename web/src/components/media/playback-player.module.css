@@ -95,6 +95,17 @@
   pointer-events: none;
 }
 
+/*
+  隐藏期间的第一次触摸只用来呼出控制条 (标记由组件在 pointerdown 时挂上): 控件整段不接受指针事件.
+  单靠上面的 `userinactive` 不够 —— 触摸一开始它就被摘掉, 而随后由同一次触摸派生的 `touchstart`
+  仍然可以落在进度条上, 于是"点一下呼出"变成"点一下跳转".
+*/
+.controller[data-amane-reveal] media-control-bar,
+.controller[data-amane-reveal] media-time-range,
+.controller[data-amane-reveal] media-control-bar * {
+  pointer-events: none;
+}
+
 /* 把右侧控件推到角落. */
 .barSpacer {
   flex: 1;
