@@ -84,9 +84,13 @@ class MGStageCrawler(Crawler):
         cover = extract_text(html, '//a[@id="EnlargeImage"]/@href', '//img[@class="enlarge_image"]/@src')
         thumb_url = cover or None
 
-        extrafanart = extract_all_texts(html, '//ul[@id="sample-photo"]/li/a/@href')
+        extrafanart = extract_all_texts(html, '//dl[@id="sample-photo"]//li/a/@href')
 
-        plot = extract_text(html, '//dl[@id="introduction"]/dd/p[@class="introduction"]/text()')
+        # 商品紹介的正文有两种标记 (直接在 p.txt.introduction 内, 或嵌在其中的 <p> 被解析器拍平为兄弟节点),
+        # 两者都收, 只排除「すべてを見る」.
+        plot = "\n".join(
+            extract_all_texts(html, '//dl[@id="introduction"]/dd/p[not(contains(@class, "more"))]//text()')
+        )
 
         return MediaMetadata(
             number=number,
