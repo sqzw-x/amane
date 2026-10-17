@@ -1,12 +1,14 @@
-"""HTTP 限速器缓存 / 覆盖; RequestError 状态分类; 同源 Referer 注入; 重试次数; 指纹轮换; 站点代理."""
+"""HTTP 限速器缓存 / 覆盖; RequestError 状态分类; 同源 Referer 注入; 重试次数; 指纹轮换; 站点代理; 分块下载."""
 
 import asyncio
 import random
-from typing import Any, ClassVar
+from collections import Counter
+from typing import Any
 
 import pytest
 
-from amane.config import SiteConfig
+from amane.app.runtime import build_network_stack
+from amane.config import HotSettings, SiteConfig
 from amane.net.errors import FailureKind, FailureReason, RequestError, RequestFailure
 from amane.net.http import (
     _IMPERSONATE_OPTIONS,
@@ -65,12 +67,13 @@ _JAVBUS = frozenset({"www.javbus.com"})
 
 
 class _StubResponse:
-    headers: ClassVar[dict[str, str]] = {}
-
-    def __init__(self, *, url: str = "", content: bytes = b"", status: int = 200) -> None:
+    def __init__(
+        self, *, url: str = "", content: bytes = b"", status: int = 200, headers: dict[str, str] | None = None
+    ) -> None:
         self.url = url
         self.content = content
         self.status_code = status
+        self.headers = headers or {}
 
 
 class _StubSession:
@@ -84,6 +87,29 @@ class _StubSession:
         self.calls.append({"method": method, "url": url, **kwargs})
         index = min(len(self.calls) - 1, len(self._responses) - 1)
         return self._responses[index]
+
+
+class _RangeStubSession:
+    """按 Range 应答的会话: 记录请求区间, 指定区间的前若干次返回失败状态, 其余返回 206 正文."""
+
+    def __init__(self, body: bytes, *, fail_times: dict[int, int] | None = None, fail_status: int = 503) -> None:
+        self._body = body
+        self._fail_times = dict(fail_times or {})
+        self._fail_status = fail_status
+        self.ranges: list[tuple[int, int]] = []
+
+    async def request(self, method: str, url: str, **kwargs: Any) -> _StubResponse:
+        if method == "HEAD":
+            return _StubResponse(url=url, headers={"Content-Length": str(len(self._body))})
+        rng = (kwargs.get("headers") or {}).get("Range")
+        if rng is None:
+            return _StubResponse(url=url, content=self._body)
+        start, end = (int(v) for v in rng.removeprefix("bytes=").split("-"))
+        self.ranges.append((start, end))
+        if self._fail_times.get(start, 0) > 0:
+            self._fail_times[start] -= 1
+            return _StubResponse(url=url, status=self._fail_status)
+        return _StubResponse(url=url, content=self._body[start : end + 1], status=206)
 
 
 class TestSameOriginReferer:
@@ -378,3 +404,83 @@ class TestProxyResolution:
         assert await client.download("https://pics.example/a.jpg", tmp_path / "a.jpg") is True
 
         assert {call["proxy"] for call in session.calls} == {_SITE_PROXY}
+
+
+_CHUNK_BODY = bytes(range(256)) * 4096  # 1 MiB, 便于按偏移断言
+_CHUNK = 256 * 1024
+_THRESHOLD = 512 * 1024  # NetworkConfig 的分块阈值下界
+
+
+def _network_client(
+    monkeypatch: pytest.MonkeyPatch, session: _RangeStubSession, *, threshold: int = _THRESHOLD, max_retries: int = 2
+) -> WebClient:
+    """按热配置经网络栈构造客户端: 分块参数的取值与接线在同一处断言."""
+    hot = HotSettings()
+    hot.network.chunked_threshold = threshold
+    hot.network.chunk_size = _CHUNK
+    hot.network.max_retries = max_retries
+    client = build_network_stack(hot).web_client
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+    monkeypatch.setattr(client, "_session", session)
+    return client
+
+
+class TestChunkedDownload:
+    @pytest.mark.asyncio
+    async def test_parts_follow_network_config(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
+        """分片区间来自 ``network`` 配置, 经网络栈落到下载路径."""
+        session = _RangeStubSession(_CHUNK_BODY)
+        client = _network_client(monkeypatch, session)
+
+        assert await client.download("https://pics.example/a.jpg", tmp_path / "a.jpg") is True
+
+        expected = [(_CHUNK * i, min(_CHUNK * (i + 1) - 1, len(_CHUNK_BODY) - 1)) for i in range(4)]
+        assert sorted(session.ranges) == expected
+        assert (tmp_path / "a.jpg").read_bytes() == _CHUNK_BODY
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("file_size", "expected_ranges"),
+        [
+            (_THRESHOLD, 0),
+            (_THRESHOLD + 1, 3),  # 刚过阈值: 两个整片加一个 1 字节的末片
+        ],
+    )
+    async def test_threshold_decides_chunking(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path, file_size: int, expected_ranges: int
+    ):
+        """超过阈值才分块; 阈值及以下整份下载."""
+        session = _RangeStubSession(_CHUNK_BODY[:file_size])
+        client = _network_client(monkeypatch, session)
+
+        assert await client.download("https://pics.example/a.jpg", tmp_path / "a.jpg") is True
+
+        assert len(session.ranges) == expected_ranges
+        assert (tmp_path / "a.jpg").read_bytes() == _CHUNK_BODY[:file_size]
+
+    @pytest.mark.asyncio
+    async def test_chunk_failure_fails_whole_download(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
+        """任一分片重试用尽即整份失败; 无外层重试, 每个区间只请求一次."""
+        session = _RangeStubSession(_CHUNK_BODY, fail_times={_CHUNK: 1})
+        client = _network_client(monkeypatch, session, max_retries=0)
+
+        assert await client.download("https://pics.example/a.jpg", tmp_path / "a.jpg") is False
+
+        assert sorted(session.ranges) == [
+            (0, _CHUNK - 1),
+            (_CHUNK, 2 * _CHUNK - 1),
+            (2 * _CHUNK, 3 * _CHUNK - 1),
+            (3 * _CHUNK, len(_CHUNK_BODY) - 1),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_retry_inside_chunk_covers_transient_failure(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
+        """分片内的重试按 ``network.max_retries`` 重发同一区间, 覆盖瞬时失败."""
+        session = _RangeStubSession(_CHUNK_BODY, fail_times={_CHUNK: 2})
+        client = _network_client(monkeypatch, session)
+
+        assert await client.download("https://pics.example/a.jpg", tmp_path / "a.jpg") is True
+
+        attempts = Counter(session.ranges)
+        assert attempts[(_CHUNK, 2 * _CHUNK - 1)] == 3
+        assert set(attempts.values()) == {1, 3}
