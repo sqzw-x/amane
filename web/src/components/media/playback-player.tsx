@@ -491,6 +491,8 @@ const USER_INACTIVE_ATTRIBUTE = "userinactive";
 const MEDIA_PAUSED_ATTRIBUTE = "mediapaused";
 /** 本次触摸只用于呼出控制条: 由样式表据此屏蔽控件的指针事件. */
 const REVEAL_ATTRIBUTE = "data-amane-reveal";
+/** 最近的交互来自指针: 样式表据此不给聚焦的控件画焦点环 (键盘交互会撤掉它). */
+const POINTER_FOCUS_ATTRIBUTE = "data-amane-pointer";
 /**
  * 触屏手势进行中置位的属性: 控制条与进度条不参与 (见样式表).
  * 触摸按下即置位, 松手撤掉 — 撤掉的那一瞬在浏览器派发 click 之前, 点按切换控件显隐照常.
@@ -498,8 +500,11 @@ const REVEAL_ATTRIBUTE = "data-amane-reveal";
 const GESTURE_ATTRIBUTE = "data-amane-gesture";
 /** 双击的判定窗口 (毫秒). 单击的动作须等过整个窗口, 才能确定没有第二次点击. */
 const DOUBLE_CLICK_MS = 250;
-/** 触屏长按多久算"按住加速" (毫秒); 与键盘 `HOLD_SEEK_DELAY_MS` 是同一条动作. */
-const TOUCH_LONG_PRESS_MS = 450;
+/**
+ * 触屏长按多久算"按住加速" (毫秒); 与键盘 `HOLD_SEEK_DELAY_MS` 是同一条动作.
+ * 比键盘长, 因为要避开点按; 但按住加速是"边看边用"的动作, 等太久会觉得没反应.
+ */
+const TOUCH_LONG_PRESS_MS = 300;
 /** 触屏手势的起手位移阈值 (像素): 超过它就不再是点按. */
 const TOUCH_MOVE_THRESHOLD_PX = 10;
 /** 横向滑过整个播放窗口对应的跳转秒数, 以及单次手势的跳转上限. */
@@ -761,6 +766,7 @@ function useTouchGestures(
     let longPressTimer: number | null = null;
     let lastTapAt = 0;
     let lastPointerType = "mouse";
+    let pausedAtStart = false;
 
     const clearLongPress = () => {
       if (longPressTimer != null) {
@@ -793,6 +799,8 @@ function useTouchGestures(
 
     const handlePointerDown = (event: PointerEvent) => {
       lastPointerType = event.pointerType;
+      // 上一次手势留下的隐藏在这里撤掉: 点按要能重新把控制条叫出来 (见 `handlePointerEnd`).
+      controller.removeAttribute(GESTURE_ATTRIBUTE);
       if (
         event.pointerType !== "touch" ||
         controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE) ||
@@ -805,9 +813,10 @@ function useTouchGestures(
         return;
       }
       // 暂停态只剩居中大按钮: 置位属性会让它在按下的一瞬整段消失、松手才回来, 看起来是闪烁.
-      const paused = video.paused;
-      if (!paused) {
-        // 手势期间不弹控制条: 提示由悬浮层给, 进度条只在拖动它自己时才需要.
+      pausedAtStart = video.paused;
+      // 播放中的闲置态本来就没有控制条, 从按下这一刻起就保持隐藏: 触摸带来的活跃态会先把进度条淡入,
+      // 等识别出手势再隐藏就成了"先闪一下再消失". 控制条此刻可见时不置位, 免得一次点按把它整段抹掉.
+      if (!pausedAtStart && controller.hasAttribute(USER_INACTIVE_ATTRIBUTE)) {
         controller.setAttribute(GESTURE_ATTRIBUTE, "");
       }
       pointerId = event.pointerId;
@@ -829,6 +838,10 @@ function useTouchGestures(
           return;
         }
         mode = "speed";
+        // 长按同样是手势: 期间不显示控制条, 否则暂停键与进度条会盖在画面上.
+        if (!pausedAtStart) {
+          controller.setAttribute(GESTURE_ATTRIBUTE, "");
+        }
         rateBeforeHold = current.playbackRate;
         current.playbackRate = HOLD_SEEK_RATE;
         onSpeedHold(true);
@@ -855,6 +868,10 @@ function useTouchGestures(
           return;
         }
         clearLongPress();
+        // 控制条此刻可见时到这里才隐藏 (按下那刻隐藏会让一次点按把它整段抹掉); 已隐藏的早在按下时就置位了.
+        if (!pausedAtStart) {
+          controller.setAttribute(GESTURE_ATTRIBUTE, "");
+        }
         if (Math.abs(dy) > Math.abs(dx)) {
           // 竖直: 左半屏调亮度, 右半屏调音量. 基值在手势起点读一次, 之后不再随状态变化.
           const rect = controller.getBoundingClientRect();
@@ -895,11 +912,16 @@ function useTouchGestures(
         return;
       }
       clearLongPress();
-      controller.removeAttribute(GESTURE_ATTRIBUTE);
       const video = videoRef.current;
       const ended = mode;
       mode = "idle";
       pointerId = null;
+      // 拖动与长按结束后继续隐藏: 抬手时把控制条弹出来是多余的动作, 下一次触摸的指针按下会撤掉它.
+      if (ended !== "idle" && !pausedAtStart) {
+        controller.setAttribute(GESTURE_ATTRIBUTE, "");
+      } else {
+        controller.removeAttribute(GESTURE_ATTRIBUTE);
+      }
       // 系统撤销这次触摸 (通知栏下拉, 系统手势, 窗口失焦): 跳转不落地, 也不能被记成一次点按 —
       // 否则紧随其后的一次真点按会凑成双击, 意外切换播放状态.
       if (event.type === "pointercancel") {
@@ -1631,6 +1653,22 @@ export function PlaybackPlayer({
     readLevel,
   );
 
+  // 指针点按不留焦点环: 壳内的 WebView 会给聚焦的元素画一圈方框; 键盘交互时撤掉标记, 反馈照旧.
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller == null) {
+      return;
+    }
+    const markPointer = () => controller.setAttribute(POINTER_FOCUS_ATTRIBUTE, "");
+    const markKeyboard = () => controller.removeAttribute(POINTER_FOCUS_ATTRIBUTE);
+    controller.addEventListener("pointerdown", markPointer, true);
+    controller.addEventListener("keydown", markKeyboard, true);
+    return () => {
+      controller.removeEventListener("pointerdown", markPointer, true);
+      controller.removeEventListener("keydown", markKeyboard, true);
+    };
+  }, [controllerRef]);
+
   useFullscreenScrollRestore(controllerRef);
   useFullscreenLandscape(controllerRef);
   // 起播的监听要先于起播本身挂上: 预告片挂载后立即起播, 那一次也要进全屏.
@@ -1763,6 +1801,7 @@ export function PlaybackPlayer({
             <button
               type="button"
               className={classes.centerPlay}
+              tabIndex={-1}
               aria-label={t("detail.playbackToggle")}
               onClick={() => togglePlayback(videoRef.current)}
             >
