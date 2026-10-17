@@ -82,6 +82,20 @@
   align-items: center;
 }
 
+/*
+  播放中控制条与进度条被淡出时只是 `opacity: 0`: 盒子仍在原地, 点击直接落在进度条与按钮上 —— 想的是
+  "点一下把控制条叫出来", 结果跳了进度或弹出倍速菜单. 淡出期间一律不接受指针事件, 点击因此落到底下的浮层,
+  由控制器把控制条叫回来.
+
+  `userinactive` 在暂停时同样存在 (见下方居中按钮的规则), 因此必须同时排除暂停态: 那时控制条是可见的.
+  播放中也不会有别的形态让这两者同时成立.
+*/
+.controller[userinactive]:not([mediapaused]) media-control-bar,
+.controller[userinactive]:not([mediapaused]) media-time-range,
+.controller[userinactive]:not([mediapaused]) media-control-bar * {
+  pointer-events: none;
+}
+
 /* 把右侧控件推到角落. */
 .barSpacer {
   flex: 1;
