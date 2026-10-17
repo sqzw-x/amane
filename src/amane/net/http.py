@@ -212,6 +212,9 @@ class WebClient:
         max_clients: int = 50,
         limiters: RateLimiters,
         same_origin_referer_hosts: frozenset[str] = frozenset(),
+        chunked_threshold: int = 2 * 1024**2,
+        chunk_size: int = 1 * 1024**2,
+        download_concurrency: int = 10,
     ):
         self._proxy = proxy
         self._proxy_overrides = dict(proxy_overrides or {})
@@ -219,6 +222,9 @@ class WebClient:
         self._max_retries = max_retries
         self._limiters = limiters
         self._same_origin_referer_hosts = same_origin_referer_hosts
+        self._chunked_threshold = chunked_threshold
+        self._chunk_size = chunk_size
+        self._download_concurrency = download_concurrency
         self._fingerprints = _FingerprintPicker(_IMPERSONATE_OPTIONS)
         self._session = AsyncSession(
             max_clients=max_clients,
@@ -515,23 +521,12 @@ class WebClient:
         _, final_url = await self._probe(url, use_proxy=use_proxy)
         return final_url
 
-    async def download(
-        self,
-        url: str,
-        dest: Path,
-        *,
-        use_proxy: bool = True,
-        chunked_threshold: int = 2 * 1024**2,
-        chunk_size: int = 1 * 1024**2,
-        download_concurrency: int = 10,
-    ) -> bool:
-        """大于 chunked_threshold 时分块并发下载. 失败返回 False, 并按状态与原因记日志."""
+    async def download(self, url: str, dest: Path, *, use_proxy: bool = True) -> bool:
+        """下载. 分块阈值、分片大小与并发数取自 ``network`` 配置. 失败返回 False, 并按状态与原因记日志."""
         file_size, _ = await self._probe(url, use_proxy=use_proxy)
 
-        if file_size and file_size > chunked_threshold:
-            return await self._download_chunked(
-                url, dest, file_size, use_proxy=use_proxy, chunk_size=chunk_size, concurrency=download_concurrency
-            )
+        if file_size and file_size > self._chunked_threshold:
+            return await self._download_chunked(url, dest, file_size, use_proxy=use_proxy)
 
         try:
             content = await self.get_bytes(url, use_proxy=use_proxy)
@@ -554,16 +549,8 @@ class WebClient:
             logger.error("file write failed", path=str(dest), error=str(e))
             return False
 
-    async def _download_chunked(
-        self,
-        url: str,
-        dest: Path,
-        file_size: int,
-        *,
-        use_proxy: bool = True,
-        chunk_size: int = 1 * 1024**2,
-        concurrency: int = 10,
-    ) -> bool:
+    async def _download_chunked(self, url: str, dest: Path, file_size: int, *, use_proxy: bool = True) -> bool:
+        chunk_size = self._chunk_size
         parts = [(s, min(s + chunk_size - 1, file_size - 1)) for s in range(0, file_size, chunk_size)]
 
         logger.info("chunked download started", url=url, chunks=len(parts), size=file_size)
@@ -576,7 +563,7 @@ class WebClient:
             logger.error("file create failed", path=str(dest), error=str(e))
             return False
 
-        semaphore = asyncio.Semaphore(concurrency)
+        semaphore = asyncio.Semaphore(self._download_concurrency)
 
         async def _fetch_chunk(start: int, end: int) -> RequestFailure | None:
             async with semaphore:

@@ -128,6 +128,9 @@ def build_network_stack(
         max_clients=hot.network.max_clients,
         limiters=limiters,
         same_origin_referer_hosts=frozenset(referer_hosts),
+        chunked_threshold=hot.network.chunked_threshold,
+        chunk_size=hot.network.chunk_size,
+        download_concurrency=hot.network.concurrency,
     )
     if browser is None:
         browser = BrowserPool(

@@ -562,7 +562,10 @@ class NetworkConfig(BaseModel):
     """超过此大小 (字节) 启用分块并发下载."""
 
     chunk_size: int = Field(default=1 * 1024**2, ge=256 * 1024, le=50 * 1024**2)
+    """单个分片的大小 (字节). 分片须能在 ``timeout`` 内下完, 否则每个分片都以超时告终, 重试不改变结果."""
+
     concurrency: int = Field(default=10, ge=1, le=50)
+    """分块下载的最大并行数. 带宽受限时并发越高, 单个分片分到的带宽越低, 越容易撞上 ``timeout``."""
     rate_limits: dict[str, float] = Field(default_factory=dict)
     """优先级高于站点配置."""
 
