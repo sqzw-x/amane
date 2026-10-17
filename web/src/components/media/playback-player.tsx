@@ -662,6 +662,38 @@ function useFullscreenOnPlay(
 }
 
 /**
+ * 播放结束即退出全屏.
+ *
+ * 结束时画面停在最后一帧, 全屏里没有出口. 退出与进入走同一个按钮: 它按 `mediaIsFullscreen` 二选一派发进入与
+ * 退出请求, 控制器据此同步自身状态, 直接调 `document.exitFullscreen` 会让按钮的属性与 DOM 脱节.
+ *
+ * 与进入同判据: 只在会自动进入全屏的形态下退出, 桌面上的手动全屏不受影响.
+ */
+function useExitFullscreenOnEnded(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  fullscreenButtonRef: RefObject<MediaFullscreenButtonElement | null>,
+  enabled: boolean,
+) {
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!enabled || video == null) {
+      return;
+    }
+
+    const handleEnded = () => {
+      const button = fullscreenButtonRef.current;
+      if (button == null || !button.mediaIsFullscreen) {
+        return;
+      }
+      button.handleClick(new Event("click"));
+    };
+
+    video.addEventListener("ended", handleEnded);
+    return () => video.removeEventListener("ended", handleEnded);
+  }, [enabled, fullscreenButtonRef, videoRef]);
+}
+
+/**
  * 挂载后立即开始播放.
  *
  * 由点击挂载的播放器 (预告片) 用: 自动播放被浏览器拒绝时保持暂停, 与手动开始播放同形.
@@ -1557,6 +1589,7 @@ export function PlaybackPlayer({
   useFullscreenLandscape(controllerRef);
   // 起播的监听要先于起播本身挂上: 预告片挂载后立即起播, 那一次也要进全屏.
   useFullscreenOnPlay(videoRef, fullscreenButtonRef, coarsePointer);
+  useExitFullscreenOnEnded(videoRef, fullscreenButtonRef, coarsePointer);
   useAutoPlay(videoRef, autoPlay);
 
   const applyPlaybackRate = useCallback(
