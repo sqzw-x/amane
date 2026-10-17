@@ -761,6 +761,7 @@ function useTouchGestures(
     let longPressTimer: number | null = null;
     let lastTapAt = 0;
     let lastPointerType = "mouse";
+    let pausedAtStart = false;
 
     const clearLongPress = () => {
       if (longPressTimer != null) {
@@ -805,11 +806,7 @@ function useTouchGestures(
         return;
       }
       // 暂停态只剩居中大按钮: 置位属性会让它在按下的一瞬整段消失、松手才回来, 看起来是闪烁.
-      const paused = video.paused;
-      if (!paused) {
-        // 手势期间不弹控制条: 提示由悬浮层给, 进度条只在拖动它自己时才需要.
-        controller.setAttribute(GESTURE_ATTRIBUTE, "");
-      }
+      pausedAtStart = video.paused;
       pointerId = event.pointerId;
       startX = event.clientX;
       startY = event.clientY;
@@ -855,6 +852,10 @@ function useTouchGestures(
           return;
         }
         clearLongPress();
+        // 手势成立之后才隐藏控制条: 在 `pointerdown` 就挂, 一次点按也会让它整段消失 ~50ms, 看起来是闪一下.
+        if (!pausedAtStart) {
+          controller.setAttribute(GESTURE_ATTRIBUTE, "");
+        }
         if (Math.abs(dy) > Math.abs(dx)) {
           // 竖直: 左半屏调亮度, 右半屏调音量. 基值在手势起点读一次, 之后不再随状态变化.
           const rect = controller.getBoundingClientRect();
@@ -1763,6 +1764,7 @@ export function PlaybackPlayer({
             <button
               type="button"
               className={classes.centerPlay}
+              tabIndex={-1}
               aria-label={t("detail.playbackToggle")}
               onClick={() => togglePlayback(videoRef.current)}
             >
