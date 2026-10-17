@@ -9,8 +9,8 @@ on:
       - "docs/**"
       - "LICENSE"
       - ".gitignore"
+  # 不限制 base 分支: 堆叠 PR 的 base 是上一层分支, 按 base 过滤会让整条栈没有检查.
   pull_request:
-    branches: [main, develop]
     paths-ignore:
       - "**.md"
       - "docs/**"
