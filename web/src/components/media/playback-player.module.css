@@ -1,12 +1,12 @@
 /*
-  media-chrome 的控件在 shadow DOM 内, 颜色、尺寸与字体只能经 CSS 变量对接 Mantine 主题.
-  这里按主流播放器的形态组织: 贴底的渐变遮罩承载控件, 进度条独占一行, 按钮不各自画底色.
+  media-chrome 的控件位于 shadow DOM 内, 颜色、尺寸与字体只能经 CSS 变量对接 Mantine 主题.
+  本文件按主流播放器的形态组织: 固定在底部的渐变遮罩承载控件, 进度条独占一行, 按钮不逐个绘制底色.
 */
 .controller {
-  /* 触屏点按高亮在 WebView 上是一层方框, 点哪儿都不该出现. */
+  /* 触屏点按高亮在 WebView 上呈现为方框; 任意位置的点按都不应出现该高亮. */
   -webkit-tap-highlight-color: transparent;
   --media-primary-color: #fff;
-  /* 逐按钮画深色底会让控件在任何画面下都像一块块补丁, 底色交给遮罩. */
+  /* 控件底色统一由遮罩提供: 逐个按钮绘制深色底会在任何画面上形成成块的深色矩形. */
   --media-secondary-color: transparent;
   --media-control-background: transparent;
   --media-control-hover-background: rgb(255 255 255 / 0.18);
@@ -31,18 +31,18 @@
   --media-range-thumb-transition: transform 0.15s ease-out;
   --media-time-range-buffered-color: rgb(255 255 255 / 0.4);
 
-  /* 控件不带悬浮说明; 无障碍名称仍由各控件自带的 aria-label 提供. */
+  /* 控件不显示悬浮说明; 无障碍名称仍由各控件自带的 aria-label 提供. */
   --media-tooltip-display: none;
 
   /* 音量浮层与倍速菜单共用的实心底色. */
   --amane-player-panel-background: rgb(24 24 27);
-  /* 悬浮提示压在画面上, 底色半透明: 遮住画面又不必让整块变黑. */
+  /* 悬浮提示显示在画面之上, 底色取半透明: 遮住画面, 同时不必让整块区域变为黑色. */
   --amane-player-indicator-background: rgb(24 24 27 / 0.6);
-  /* 菜单条目自己渲染, 取不到 media-chrome 给自动生成条目用的默认选中底色. */
+  /* 菜单条目由前端渲染, 取不到 media-chrome 为自动生成条目提供的默认选中底色. */
   --media-menu-item-checked-background: rgb(255 255 255 / 0.18);
 
-  /* 触屏: 横向与纵向手势都由播放器接管 (横滑拖进度, 竖直调亮度/音量). 声明在控制器上即覆盖内部所有层;
-     菜单与滑出面板自己声明 `pan-y`, 因此它们内部仍可滚动. */
+  /* 触屏: 横向与纵向手势都由控制器处理 (横向滑动调整进度, 纵向滑动调整亮度与音量). 声明在控制器上即
+     覆盖内部所有层; 菜单与滑出面板自行声明 `pan-y`, 因此其内部仍可滚动. */
   touch-action: none;
 
   display: block;
@@ -51,7 +51,7 @@
   background: #000;
 }
 
-/* 亮度靠叠加层压暗画面: 对视频元素加 CSS filter 会让它退出硬件合成路径. 透明度由 React 写. */
+/* 画面亮度由该叠加层降低: 对视频元素应用 CSS filter 会使它退出硬件合成路径. 透明度由 React 写入. */
 .dim {
   position: absolute;
   inset: 0;
@@ -60,7 +60,7 @@
   pointer-events: none;
 }
 
-/* 遮罩独立成层: 控件在播放中会被 media-chrome 淡出, 遮罩随之淡出才不留下一条黑带. */
+/* 遮罩独立为一层: 播放中控件会被 media-chrome 淡出, 遮罩随之淡出才不会留下黑带. */
 .scrim {
   position: absolute;
   inset-inline: 0;
@@ -73,8 +73,8 @@
 
 /*
   控制条必须排在进度条之上 (进度条 1, 遮罩 0).
-  控制条带 z-index 会自成层叠上下文, 浮层在其中的 z-index 再高也越不出这一层; 进度条是它的兄弟节点,
-  同层时按 DOM 顺序绘制, 排在后面就会盖住浮层并把指针截走, 浮层悬停中途断掉.
+  控制条带 z-index 会自成层叠上下文, 浮层在其中的 z-index 再高也无法越出该层; 进度条是控制条的兄弟节点,
+  同层时按 DOM 顺序绘制, 排在后面会遮挡浮层并接收指针事件, 浮层的悬停状态中途中断.
 */
 .controller media-control-bar {
   position: relative;
@@ -85,11 +85,11 @@
 }
 
 /*
-  播放中控制条与进度条被淡出时只是 `opacity: 0`: 盒子仍在原地, 点击直接落在进度条与按钮上 —— 想的是
-  "点一下把控制条叫出来", 结果跳了进度或弹出倍速菜单. 淡出期间一律不接受指针事件, 点击因此落到底下的浮层,
-  由控制器把控制条叫回来.
+  播放中控制条与进度条淡出时只设置 `opacity: 0`: 盒子仍在原位, 点击会由进度条与按钮接收, 后果是跳转
+  进度或展开倍速菜单. 淡出期间这些元素一律不接受指针事件, 点击由下方的浮层接收, 控制条再由控制器重新
+  显示.
 
-  `userinactive` 在暂停时同样存在 (见下方居中按钮的规则), 而那时控制条是可见的.
+  `userinactive` 在暂停时同样存在 (见下方居中按钮的规则), 而暂停时控制条可见.
 */
 .controller[userinactive]:not([mediapaused]) media-control-bar,
 .controller[userinactive]:not([mediapaused]) media-time-range,
@@ -98,9 +98,9 @@
 }
 
 /*
-  隐藏期间的第一次触摸只用来呼出控制条 (标记由组件在 pointerdown 时挂上): 控件整段不接受指针事件.
-  单靠上面的 `userinactive` 不够 —— 触摸一开始它就被摘掉, 而随后由同一次触摸派生的 `touchstart`
-  仍然可以落在进度条上, 于是"点一下呼出"变成"点一下跳转".
+  隐藏期间的第一次触摸只用于显示控制条 (该标记由组件在 `pointerdown` 时设置): 控件整段不接受指针事件.
+  仅靠上面的 `userinactive` 并不足够 — 触摸一开始它即被移除, 而随后由同一次触摸派生的 `touchstart`
+  仍会由进度条接收, 于是这次点按会跳转进度, 无法仅显示控制条.
 */
 .controller[data-amane-reveal] media-control-bar,
 .controller[data-amane-reveal] media-time-range,
@@ -108,13 +108,12 @@
   pointer-events: none;
 }
 
-/* 把右侧控件推到角落. */
 .barSpacer {
   flex: 1;
   pointer-events: none;
 }
 
-/* 音量提示: 键盘调音量与静音时显示在画面中央, 由 React 状态控制显隐. */
+/* 音量提示: 键盘调整音量与静音时显示在画面中央, 显隐由 React 状态控制. */
 .volumeIndicatorLayer {
   position: absolute;
   inset: 0;
@@ -127,9 +126,9 @@
 
 /*
   画面内浮层 (调整与跳转提示、倍速徽标、右键菜单): 显隐只由组件状态决定, 不随控制条的自动隐藏消失.
-  media-chrome 在 `userinactive` 时给控制器的每个子节点写 `opacity`. 本文档的规则与它写在 shadow 内的
-  `::slotted` 规则相比属于外层声明, 普通声明之间外层优先, 因此不需要 `!important`.
-  层仍留在控制器内 — 全屏只渲染控制器子树, 放在外面会随全屏消失.
+  media-chrome 在 `userinactive` 时给控制器的每个子节点写入 `opacity`. 本文件的规则与 media-chrome 写在
+  shadow 内的 `::slotted` 规则相比属于外层声明, 普通声明之间外层优先, 因此不需要 `!important`.
+  该层必须留在控制器内: 全屏只渲染控制器子树, 放在控制器外会随全屏消失.
 */
 .controller .volumeIndicatorLayer,
 .controller .speedBadgeLayer,
@@ -139,8 +138,8 @@
 }
 
 /*
-  控制器内部的行高是 0 (media-chrome 给它的 chrome 用的), 提示与面板里的文字必须自己带行高,
-  否则行盒高度为 0: 文字看起来正常, 但盒子只剩内边距, 比文字还矮.
+  控制器内部的行高是 0 (media-chrome 为其内部 chrome 设置), 提示与面板中的文字必须自带行高,
+  否则行盒高度为 0: 文字看似正常, 但盒子只剩内边距, 比文字更矮.
 */
 .volumeIndicator {
   line-height: var(--mantine-line-height);
@@ -156,14 +155,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 手势提示沿用音量提示的外观, 内容是目标时间 (偏移) / 总长度. */
+/* 手势提示沿用音量提示的外观, 内容为目标时间 (偏移) / 总长度. */
 .gestureIndicator {
   font-size: var(--mantine-font-size-lg);
   font-weight: 600;
   padding: 15px 20px;
 }
 
-/* 按住加速的标记: 靠上居中, 不遮挡画面中央. 顶距按宽度取百分比, 手机上约为 30px. */
+/* 按住加速的标记: 在顶部居中显示, 不遮挡画面中央. 顶距按宽度取百分比, 手机上约为 30px. */
 .speedBadgeLayer {
   position: absolute;
   inset: 0;
@@ -191,8 +190,8 @@
 }
 
 /*
-  徽标里两个向右的箭头: 在灰与白之间交替闪烁, 表示画面正在加速.
-  第二个箭头错开半个周期, 两个箭头因此一亮一暗; 灰比徽标文本浅一档.
+  徽标中两个向右的箭头: 颜色在灰与白之间交替变化, 表示画面正在加速.
+  第二个箭头错开半个周期, 两个箭头因此一亮一暗; 箭头基色为半透明白色, 显示上比徽标文本更暗.
 */
 .speedBadgeArrows {
   display: flex;
@@ -214,7 +213,7 @@
   }
 }
 
-/* 闪烁是装饰, 关掉动效时改成常亮. */
+/* 闪烁属于装饰, 关闭动效时改为常亮. */
 @media (prefers-reduced-motion: reduce) {
   .speedBadgeArrow {
     color: rgb(255 255 255 / 0.8);
@@ -223,8 +222,8 @@
 }
 
 /*
-  触屏倍速的滑出面板: 留在控制器内, 因此全屏下同样可见; 自身可滚动, 因此声明 `pan-y` 抵消控制器的
-  `touch-action: none`.
+  触屏倍速的滑出面板: 与浮层一样位于控制器内, 因此全屏下同样可见; 面板自身可滚动, 因此声明 `pan-y`
+  抵消控制器的 `touch-action: none`.
 */
 .sheetBackdrop {
   position: absolute;
@@ -232,7 +231,7 @@
   z-index: 4;
   padding: 0;
   border: 0;
-  /* 只作「点面板外关闭」的接收面: 面板展开不该让画面变暗. */
+  /* 该遮罩只用于接收面板之外的点击并收起面板: 面板展开不应使画面变暗. */
   background: transparent;
 }
 
@@ -261,7 +260,7 @@
   }
 }
 
-/* 关掉动效时直接出现, 不留一段静止的滑入. */
+/* 关闭动效时面板直接出现, 不保留一段静止的滑入过程. */
 @media (prefers-reduced-motion: reduce) {
   .rateSheet {
     animation: none;
@@ -312,11 +311,12 @@
 }
 
 /*
-  触屏手势进行中: 控制条与进度条都不出现. 媒体的手势接收层把任何指针活动都当成"用户在操作", 控件随之淡入,
-  横滑跳转时不需要它, 提示由悬浮层给. 属性由 playback-player.tsx 置位.
-  进度条同样在清单内: 隐藏会让它的盒子塌成 0, 因此起手落在它上面的触摸不得置位该属性, 见 `startsOnSeekBar`.
-  清单内必须同形: 这里用 `display: none` 立即隐藏, 不受该属性约束的元素只随 media-chrome 的 `userinactive`
-  淡出 (1s), 出现与消失都比其余的慢.
+  触屏手势进行中: 控制条与进度条都不出现. 媒体元素的手势接收层将任何指针活动都视为"用户在操作", 控件
+  随之淡入; 横向滑动跳转不需要控件出现, 提示改由悬浮层给出. 该属性由 playback-player.tsx 设置.
+  进度条同样在清单内: 隐藏会使它的盒子尺寸变为 0, 因此起始于进度条的触摸不得设置该属性,
+  见 `startsOnSeekBar`.
+  清单内必须同形: 这里用 `display: none` 立即隐藏; 不受该属性约束的元素只随 media-chrome 的
+  `userinactive` 淡出 (1s), 出现与消失均慢于其余元素.
 */
 .controller[data-amane-gesture] media-control-bar,
 .controller[data-amane-gesture] media-time-range,
@@ -326,13 +326,9 @@
 }
 
 /*
-  指针点按不留焦点环: 壳内的 WebView 会给聚焦的按钮画一圈方框, 那是键盘操作的反馈, 点按不该出现.
-  键盘操作仍由 `:focus-visible` 给出反馈.
-*/
-/*
-  指针点按不留焦点环: 壳内的 WebView 会给聚焦的元素画一圈方框. media-chrome 的控件用
-  `--media-focus-box-shadow` 画环, 中央按钮与控制器用 outline, 两者都按交互来源屏蔽;
-  键盘操作 (那时标记已撤掉) 仍然给出反馈.
+  指针点按不留下焦点环: 壳内的 WebView 会给聚焦的元素绘制方框. media-chrome 的控件经
+  `--media-focus-box-shadow` 绘制焦点环, 中央按钮与控制器使用 outline, 两者都按交互来源屏蔽;
+  键盘操作 (那时该标记已经撤除) 仍然给出反馈.
 */
 .controller[data-amane-pointer] *:focus,
 .controller[data-amane-pointer]:focus,
@@ -342,8 +338,8 @@
 }
 
 /*
-  触屏上的居中大按钮: 控制条里的播放键只有 32px, 手机上不好按.
-  淡出后必须让出指针: 画面中央那一片仍要留给"点按切换控件显隐", 否则会变成点按切换播放.
+  触屏上的居中大按钮: 控制条里的播放键只有 32px, 在手机上不易点按.
+  淡出后必须释放指针事件: 画面中央区域仍用于"点按切换控件显隐", 否则点按会变为切换播放与暂停.
 */
 .centerPlayLayer {
   position: absolute;
@@ -355,7 +351,8 @@
   pointer-events: none;
 }
 
-/* 属性名取自 media-chrome 写出的实际状态: 暂停时控制器带 `mediapaused`, 而 `userinactive` 两种状态下都在. */
+/* 属性名取自 media-chrome 实际写出的状态: 暂停时控制器带 `mediapaused`, `userinactive` 在播放与暂停
+   两种状态下都存在. */
 .controller[userinactive]:not([mediapaused]) .centerPlay {
   pointer-events: none;
 }
@@ -387,7 +384,7 @@
 
 /*
   触屏暂停态: 只留居中大按钮, 控制条、进度条与底部渐变遮罩都不出现.
-  鼠标端不适用 — 那边没有居中大按钮, 收起控制条会让暂停态失去全部入口.
+  鼠标端不适用 — 鼠标端没有居中大按钮, 隐藏控制条会使暂停态没有任何可操作的控件.
 */
 @media (pointer: coarse) {
   .controller[mediapaused] media-control-bar,
@@ -397,16 +394,16 @@
   }
 }
 
-/* 进度条独占一行, 铺满播放器宽度并贴在控制条上方. */
+/* 进度条独占一行, 铺满播放器宽度并位于控制条上方. */
 .controller media-time-range {
   position: absolute;
   inset-inline: 12px;
   bottom: 52px;
   z-index: 1;
   height: 16px;
-  /* 控件本身带 `width: 100px` 的默认值, 脱离控制条后必须交回给左右定位决定宽度. */
+  /* 控件自带 `width: 100px` 的默认值, 脱离控制条后宽度必须由左右定位决定. */
   width: auto;
-  /* 触屏拖动进度条时, 目标时间的预览盒给出精确落点. */
+  /* 拖动进度条时, 目标时间的预览盒给出精确的目标位置. */
   --media-preview-box-display: none;
   min-height: 0;
 }
@@ -425,9 +422,9 @@
 }
 
 /*
-  悬停浮层: 音量与倍速都收在按钮上方, 指针进入按钮才展开.
-  浮层与按钮之间留 8px, 这段空隙用浮层自己的伪元素补上, 指针经过时悬停不会中断.
-  两者都不画底色, 滑杆与条目直接叠在画面上, 条目自带悬停与选中底色.
+  悬停浮层: 音量与倍速面板都位于按钮上方, 指针进入按钮才展开.
+  浮层与按钮之间留 8px, 这段空隙由浮层自己的伪元素填补, 指针经过该空隙时悬停状态不会中断.
+  两者都不绘制底色, 滑杆与条目直接显示在画面上; 条目自带悬停与选中底色.
 */
 .popupHost {
   position: relative;
@@ -478,7 +475,7 @@
   border-radius: var(--mantine-radius-sm);
 }
 
-/* 画面明亮时图标仍要看得清. */
+/* 画面明亮时图标仍需清晰可辨. */
 .controller media-control-bar media-play-button,
 .controller media-control-bar media-mute-button,
 .controller media-control-bar media-playback-rate-menu-button,
@@ -490,23 +487,23 @@
 
 /*
   菜单由前端定位.
-  media-chrome 只在 ResizeObserver 回调里计算菜单位置, 而它在展开时重新 observe 目标元素,
-  浏览器不保证这次重新 observe 会再投递一次回调 —— 实测控制器与菜单都不会收到, 菜单因此停在
-  静态位置 (控制条行内), 大部分被控制器的 overflow: hidden 裁掉.
-  倍速菜单挂在按钮的浮层里, 相对按钮定位; 字幕菜单仍挂在控制条下, 相对控制条右上角定位.
+  media-chrome 只在 ResizeObserver 回调中计算菜单位置, 而它在展开时重新 observe 目标元素,
+  浏览器不保证这次重新 observe 会再次投递回调 — 实测控制器与菜单都不会收到, 菜单因此保持在
+  静态位置 (控制条行内), 大部分被控制器的 overflow: hidden 裁剪.
+  倍速菜单位于按钮的浮层内, 相对按钮定位; 字幕菜单为控制条的子节点, 相对控制条右上角定位.
 */
 .controller media-chrome-menu {
   position: absolute;
   left: auto;
   top: auto;
-  /* 控制器声明了 `touch-action: none`, 菜单自己要留回纵向滚动. */
+  /* 控制器已声明 `touch-action: none`, 菜单需要保留自身的纵向滚动. */
   touch-action: pan-y;
   border-radius: var(--mantine-radius-md);
   background: var(--amane-player-panel-background);
   box-shadow: var(--mantine-shadow-md);
-  /* 条目自带悬停与选中底色, 实心底色之上仍需区分. */
+  /* 条目自带悬停与选中底色; 在实心底色之上仍需区分. */
   --media-menu-item-hover-background: rgb(255 255 255 / 0.16);
-  /* 菜单自身可滚动; 上限取播放器内的可用高度, 短播放器下也不越出画面. */
+  /* 菜单自身可滚动; 高度上限取播放器内的可用高度, 播放器较矮时也不会超出画面. */
   max-height: min(300px, calc(var(--amane-vh) * 0.55));
 }
 
@@ -521,8 +518,8 @@
 }
 
 /*
-  右键菜单: 在指针处展开, 落在控制器内部.
-  控制器等宽高由容器决定, 因此坐标用相对控制器的像素值; 下方放不下时向上展开, 由 top 翻到底边.
+  右键菜单: 在指针处展开, 位于控制器内部.
+  控制器的宽度与高度由容器决定, 因此坐标采用相对控制器的像素值; 下方空间不足时向上展开, 锚点改取底边.
   条目按应用内的菜单密度排布 (14px 字号, 36px 行高), 在深色画面上用描边把面板与画面分开.
 */
 .contextMenu {
@@ -579,8 +576,8 @@
 
 /*
   右键菜单的遮罩: 占满播放器, 层级低于菜单、高于画面与控制条.
-  菜单之外的点击落在它身上, 因此不会命中画面 (不切换播放/暂停) 或控制条按钮; 它只负责收起菜单.
-  全屏时同样覆盖整个播放器. 这里不能用 Portal —— 全屏下只渲染控制器子树.
+  菜单之外的点击由该遮罩接收, 因此不会命中画面 (不切换播放与暂停) 或控制条按钮; 该遮罩只负责收起菜单.
+  全屏时同样覆盖整个播放器. 不得改用 Portal — 全屏只渲染控制器子树, Portal 的节点位于该子树之外.
 */
 .contextMenuBackdrop {
   position: absolute;

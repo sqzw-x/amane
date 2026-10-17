@@ -39,41 +39,44 @@ import { useUIStore } from "@/stores/ui";
 const EMPTY_SOURCES: PlaybackSourceOption[] = [];
 const EMPTY_STREAMS: PlaybackStreamItem[] = [];
 /**
- * 播放卡片内除播放窗口以外的高度: 上下 padding (`p="md"`)、上下边框、`Stack` 间距与标题行.
- * 末项是标题行里的来源与流选择控件 (`SegmentedControl` 的 `sm` 尺寸) 的高度; 换成更高的控件时
- * 本值必须同步, 否则整张卡片会溢出一屏.
+ * 播放卡片内除播放窗口以外的高度: 上下 padding (`p="md"`)、上下边框、`Stack` 间距与标题行. 式中的末项
+ * 取标题行里来源与流选择控件的高度 (`SegmentedControl` 的 `sm` 尺寸; 选项过多改用下拉菜单时控件更矮,
+ * 该值仍为上限); 标题行改用更高的控件时本值必须同步, 否则整张卡片会溢出一屏.
  */
 const PLAYBACK_CARD_CHROME =
   "calc(2 * var(--mantine-spacing-md) + 2px + var(--mantine-spacing-xs) + 2.25rem)";
 
 /**
  * 播放卡片宽度上限: 按内容区高度换算播放窗口的宽度, 再加回卡片自身的左右 padding 与边框, 使整张卡片
- * (含标题行的来源与流选择) 落在一屏之内. 上限加在卡片而不是播放窗口上, 后者会让标题行溢出视口.
+ * (含标题行的来源与流选择) 不超出一屏. 上限必须加在卡片上, 不得加在播放窗口上: 加在播放窗口上会让标题行
+ * 溢出视口.
  *
  * 可用区宽高比大于 16:9 时高度项生效, 卡片窄于内容区并居中; 小于 16:9 时 `100%` 生效; 恰好 16:9 时
- * 两者相等, 正好铺满. 限制宽度而不是高度, 是因为后者会让替换元素的盒子比例宽于素材比例, 左右留黑边.
+ * 两者相等, 恰好铺满. 本上限只作用于宽度, 不得限制高度: 高度受限时替换元素的盒子比例宽于素材比例,
+ * 左右留黑边.
  *
- * 只能经 `style` 写入. Mantine 样式属性把字符串里的裸数字当作像素并转成 rem, `calc()` 内于是出现
- * 长度相乘, 声明在计算时判为无效, 上限退回 `none`; 约束详见 `docs/dev/frontend.md`.
+ * 本值只能经 `style` 写入: Mantine 样式属性把字符串里的裸数字当作像素并转成 rem, `calc()` 内于是出现
+ * 长度相乘, 该声明在计算时判为无效, 上限退回 `none`; 约束详见 `docs/dev/frontend.md`.
  * 式中的 `16 / 9` 与 `PlayerFrame` 的 `AspectRatio` 取值必须一致.
  */
 const PLAYBACK_CARD_MAX_WIDTH = `min(100%, calc((${APP_SHELL_MAIN_HEIGHT} - ${PLAYBACK_CARD_CHROME}) * 16 / 9 + 2 * var(--mantine-spacing-md) + 2px))`;
-/** 短枚举平铺展示; 超过该数量时换行难以阅读, 回退为下拉菜单. */
+/** 短枚举采用平铺展示; 选项数量超过该值时换行难以阅读, 因此回退为下拉菜单. */
 const MAX_TOGGLE_ITEMS = 4;
 
-// 流的 key 在来源内唯一; 来源整个不可用的那一行没有 key, 用空串占位, 此时选择器只有这一行, 不渲染.
+// 流的 key 在来源内唯一; 来源整体不可用的那一行没有 key, 改用空串占位. 该情形下流列表只有这一行,
+// 选择器不渲染.
 function streamKey(item: PlaybackStreamItem): string {
   return item.key ?? "";
 }
 
-// 探测超时、上游失败等故障由非空 detail 说明; 为空表示条目没有内容或来源已停用, 不属于故障.
+// 探测超时与上游失败等故障由非空的 detail 说明; detail 为空表示条目没有内容或来源已经停用, 不属于故障.
 function failureReason(item: PlaybackStreamItem): string | null {
   const detail = item.detail;
   return detail == null || detail === "" ? null : detail;
 }
 
-// 无显式选择时选中第一条可用流; 全部不可用时选中第一条带原因的流, 用于展示不可用原因.
-// 不可用项同样可以选中: 选中后不渲染播放器, 未在标签里说明的原因显示在下方的提示里.
+// 无显式选择时选中第一条可用流; 全部流都不可用时选中第一条带原因的流, 用于展示不可用原因.
+// 不可用项同样可以选中: 选中后不渲染播放器, 标签中未说明的原因显示在下方的提示里.
 function pickStream(
   items: PlaybackStreamItem[],
   pickedKey: string | null,
@@ -108,7 +111,7 @@ function hlsFailureMessage(failure: HlsFailure, t: TFunction<"metadata">): strin
       });
 }
 
-// 后端 detail 缺失时的提示来源: hls.js 错误原因优先, 其次为探测响应的 HTTP 状态码, 最后为基础文案.
+// 后端 detail 缺失时的提示取值顺序: hls.js 错误原因优先, 其次为探测响应的 HTTP 状态码, 最后为基础文案.
 type PlaybackFallback = {
   plain: string;
   withStatus: (status: number) => string;
@@ -122,7 +125,7 @@ function fallbackMessage(fallback: PlaybackFallback, status: number | null): str
   return status == null ? fallback.plain : fallback.withStatus(status);
 }
 
-// 提示的取值顺序: 后端 detail 优先, 后端没有给出 detail 时采用 fallback 说明的原因或状态码.
+// 提示的取值顺序: 后端 detail 优先; 后端没有给出 detail 时, 采用 fallback 给出的原因或状态码.
 async function readPlaybackDetail(
   href: string,
   fallback: PlaybackFallback,
@@ -133,7 +136,7 @@ async function readPlaybackDetail(
       href,
       options.ranged ? { headers: { Range: "bytes=0-0" } } : undefined,
     );
-    // 2xx 表示探测本身成功, 该响应的状态码不含失败信息.
+    // 2xx 表示探测本身已经成功, 该响应的状态码不含失败信息.
     if (response.ok || response.status === 206) {
       return fallbackMessage(fallback, null);
     }
@@ -158,7 +161,7 @@ type PickerOption = {
   label: string;
 };
 
-// 选项过多时用下拉菜单: 标签是主机拼好的完整名称, 菜单给长名称留出宽度.
+// 选项过多时改用下拉菜单: 标签是主机拼好的完整名称, 菜单为长名称留出宽度.
 function PickerMenu({
   options,
   value,
@@ -204,9 +207,9 @@ function PickerMenu({
 
 /**
  * 播放器的固定比例外框, 也是出错时的播放窗口.
- * 切换来源时流列表要按新的 key 重新探测, 期间用同一外框占位: 否则播放器一收一放会让页面高度骤变,
- * 已经滚下去的位置会被浏览器夹回顶部. 底色与播放器一致, 提示直接落在窗口里.
- * 顶端固定头部会盖住对齐到视口上沿的元素, 因此外框带走头部高度的滚动边距.
+ * 切换来源时流列表要按新的 key 重新探测, 期间由同一外框占位: 否则播放器的高度骤变, 已经滚下去的
+ * 位置会被浏览器夹回顶部. 底色与播放器一致, 提示直接在窗口内显示.
+ * 顶端固定头部会遮挡对齐到视口上沿的元素, 因此外框的滚动边距取头部高度.
  */
 function PlayerFrame({
   children,
@@ -223,9 +226,9 @@ function PlayerFrame({
 }
 
 /**
- * 播放窗口内的提示: 探测失败、播放失败与不支持的媒体类型都在窗口里居中显示.
+ * 播放窗口内的提示: 探测失败、播放失败与不支持的媒体类型均在窗口内居中显示.
  *
- * 失败提示带重试入口; 媒体类型不支持属于内容本身的限制, 重试不会改变结果, 因此不给入口.
+ * 失败提示带重试入口; 媒体类型不支持属于内容本身的限制, 重试不会改变结果, 因此不提供重试入口.
  */
 function PlayerMessage({
   tone = "error",
@@ -235,7 +238,7 @@ function PlayerMessage({
 }: {
   tone?: "error" | "neutral";
   onRetry?: () => void;
-  /** 重试请求在途: 流列表重取期间为真, 播放器重挂无从观察, 恒为假. */
+  /** 重试请求正在进行: 流列表重取期间为真; 播放器的重新挂载无从观察, 恒为假. */
   retrying?: boolean;
   children: ReactNode;
 }) {
@@ -263,7 +266,7 @@ function PlayerMessage({
   );
 }
 
-/** 一级选择: 少量选项平铺 (EnumToggle), 过多则回退为下拉菜单. */ function LevelPicker({
+/** 一级选择: 少量选项采用平铺展示 (EnumToggle), 选项过多时回退为下拉菜单. */ function LevelPicker({
   label,
   options,
   value,
@@ -299,18 +302,18 @@ export function PlaybackPanel({
   metadataId: number;
   /** 评论时间戳的跳转请求; 为空表示没有待处理的跳转. */
   seekRequest: SeekRequest | null;
-  /** 播放器已经按请求定位之后回调, 由调用方清掉请求. */
+  /** 播放器已经按请求定位之后回调, 由调用方清除请求. */
   onSeekHandled: () => void;
-  /** 当前能否跳转, 供评论里的时间戳决定是否可点. */
+  /** 当前能否跳转, 供评论里的时间戳决定是否允许点击. */
   onCanSeekChange: (canSeek: boolean) => void;
 }) {
   const { t } = useTranslation("metadata");
-  // 来源列表不调用插件, 因此打开面板就能渲染; 探测推迟到用户切到某个来源时.
+  // 来源列表不调用插件, 因此打开面板即可渲染; 探测推迟到用户切换到某个来源时执行.
   const sourcesQuery = useQuery({
     ...listPlaybackSourcesOptions(),
     enabled: metadataId > 0,
   });
-  // 后端按来源 ID 返回; 用户顺序在插件页维护, 位置 0 即本面板默认探测的来源.
+  // 后端按来源 ID 返回; 用户顺序在插件页维护, 位置 0 的来源即本面板默认探测的来源.
   const sourceOrder = useUIStore((state) => state.playbackSourceOrder);
   const sources = orderPlaybackSources(
     sourcesQuery.data?.items ?? EMPTY_SOURCES,
@@ -320,12 +323,12 @@ export function PlaybackPanel({
   const [pickedSourceId, setPickedSourceId] = useState<string | null>(null);
   const [pickedStream, setPickedStream] = useState<{ sourceId: string; key: string } | null>(null);
   const [error, setError] = useState<{ href: string; message: string } | null>(null);
-  // 播放失败的重试计数: 地址不变时播放器不会重新装载, 由它换掉 key 触发重挂.
+  // 播放失败的重试计数: 地址不变时播放器不会重新装载, 该计数改变 key 之后才会重新挂载.
   const [reloadNonce, setReloadNonce] = useState(0);
 
-  // 来源列表变化后原选择可能不存在 (来源被停用或卸载), 回退到第一个来源.
+  // 来源列表变化后原选择可能不存在 (来源被停用或卸载), 此时回退到第一个来源.
   const source = sources.find((item) => item.source_id === pickedSourceId) ?? sources[0];
-  // 当前来源的流在挂载时与切换来源时加载; 没有来源时查询不启用, 不发请求.
+  // 当前来源的流在挂载时与切换来源时加载; 没有来源时查询不启用, 不发出请求.
   const streamsQuery = useQuery({
     ...listPlaybackStreamsOptions({
       path: { source_id: source?.source_id ?? "", metadata_id: metadataId },
@@ -333,7 +336,8 @@ export function PlaybackPanel({
     enabled: metadataId > 0 && source != null,
   });
   const streams = streamsQuery.data?.items ?? EMPTY_STREAMS;
-  // 流的选择连同所属来源一起记: 切换来源后 key 不属于新来源, 选择回到该来源的默认值, 不会指向另一个来源的流.
+  // 流的选择连同所属来源一并记录: 切换来源后 key 不属于新来源, 选择回到该来源的默认值,
+  // 不会指向另一个来源的流.
   const pickedKey =
     pickedStream != null && pickedStream.sourceId === source?.source_id ? pickedStream.key : null;
   const selected = pickStream(streams, pickedKey);
@@ -346,7 +350,7 @@ export function PlaybackPanel({
     : null;
   const kind = selected == null ? "other" : mediaKind(selected.content_type);
   const shownError = selected != null && error?.href === selected.href ? error.message : null;
-  // 不可用项不渲染播放器, 其 href 上的失败记录来自该源此前仍可用的状态, 故探测原因优先.
+  // 不可用项不渲染播放器, 其 href 上的失败记录来自该来源此前仍可用的状态, 因此探测原因优先.
   const notice =
     streamError ??
     (selected == null
@@ -358,8 +362,8 @@ export function PlaybackPanel({
   /**
    * 失败重试: 探测与列表失败重新探测该来源, 播放失败只重新挂载播放器.
    *
-   * 探测失败不写入后端探测缓存, 重取必定重新调用插件; 播放失败不重取流列表 —— 重取会让已失效
-   * 的选择静默回退到另一条流. 两处都先清除失败记录: 它按 href 记住, 不清除时播放器不会重新渲染.
+   * 探测失败不写入后端探测缓存, 重取必定重新调用插件; 播放失败不重取流列表 — 重取会让已经失效的
+   * 选择静默回退到另一条流. 两处都先清除失败记录: 该记录按 href 保存, 不清除时播放器不会重新渲染.
    */
   const retryStreams = () => {
     setError(null);
@@ -384,9 +388,9 @@ export function PlaybackPanel({
     onCanSeekChange(canSeek);
   }, [canSeek, onCanSeekChange]);
 
-  // 评论就在播放窗口下方, 点时间戳通常不必移动页面: 窗口还有一部分在视野里就不滚动, 完全滑出视野时才
-  // 把它带回屏幕, 并对齐上沿而不是居中 —— 居中会把刚点的那条评论一起挪出视野.
-  // 依赖流的选择: 流列表到位之前播放窗口尚未渲染, 带 `t` 的地址要在这里补一次.
+  // 评论位于播放窗口下方, 点按时间戳通常不必移动页面: 窗口还有一部分在视野内时不滚动, 完全滑出视野时
+  // 才将它滚动回视口, 并对齐上沿 — 居中会把刚点的那条评论一并移出视野.
+  // 依赖流的选择: 流列表到位之前播放窗口尚未渲染, 带 `t` 的地址要在窗口渲染后于此补做一次滚动.
   useEffect(() => {
     if (seekRequest == null || selected == null) {
       return;
@@ -419,12 +423,12 @@ export function PlaybackPanel({
       </Card>
     );
   }
-  // 来源列表为空表示没有已启用的播放源, 此时无从选择, 整块不渲染.
+  // 来源列表为空表示没有已启用的播放源, 此时无法选择来源, 整块不渲染.
   if (source == null) {
     return null;
   }
 
-  // 当前来源的流正在探测: 用与控件等宽的占位, 避免控件出现时行高跳动.
+  // 当前来源的流正在探测: 使用与控件等宽的占位, 避免控件出现时行高跳动.
   const streamPicker = streamsQuery.isPending ? (
     <Skeleton height={30} width={200} radius="sm" />
   ) : streams.length > 1 && selected != null ? (
@@ -448,7 +452,7 @@ export function PlaybackPanel({
       p="md"
       w="100%"
       mx="auto"
-      // flex 列容器里 `margin-inline: auto` 会取消拉伸, 必须同时给 `w="100%"`.
+      // flex 列容器中 `margin-inline: auto` 会取消拉伸, 因此必须同时设置 `w="100%"`.
       style={{ maxWidth: PLAYBACK_CARD_MAX_WIDTH }}
     >
       <Stack gap="xs">
@@ -470,7 +474,7 @@ export function PlaybackPanel({
             {streamPicker}
           </Group>
         </Group>
-        {/* 播放窗口常驻: 探测中、出错、类型不支持都在同一外框内呈现, 页面高度不随状态突变. */}
+        {/* 播放窗口常驻: 探测中、出错与类型不支持均在同一外框内呈现, 页面高度不随状态突变. */}
         <PlayerFrame frameRef={playerFrameRef}>
           {streamsQuery.isPending ? (
             <Skeleton height="100%" />
@@ -490,7 +494,7 @@ export function PlaybackPanel({
           ) : (
             <Suspense fallback={<Skeleton height="100%" />}>
               <LazyPlaybackPlayer
-                // 地址不变时 hls.js 不会重新装载, 重试必须换掉 key 才会重挂.
+                // 地址不变时 hls.js 不会重新装载, 重试必须更换 key 才会重新挂载.
                 key={`${selected.href}#${reloadNonce}`}
                 href={selected.href}
                 kind={kind}

@@ -73,34 +73,34 @@ const HOLD_SEEK_DELAY_MS = 400;
 const HOLD_SEEK_RATE = 2;
 /**
  * 倍速档位, 由高到低.
- * 菜单按这里的顺序渲染, 因此最快的一档在最上面; media-chrome 自带的倍速菜单固定升序, 所以这里自己列条目.
+ * 菜单按此顺序渲染, 最快的一档位于顶部; media-chrome 自带的倍速菜单固定升序, 因此档位在本组件内列出.
  */
 const PLAYBACK_RATES = [2, 1.5, 1.25, 1, 0.75, 0.5];
-/** 指针离开倍速按钮后延迟收起菜单的毫秒数, 让指针有时间移到菜单上. */
+/** 指针离开倍速按钮后延迟收起菜单的毫秒数, 使指针能够移动到菜单上. */
 const HOVER_CLOSE_DELAY_MS = 160;
-/** 倍速菜单的 id: 菜单按钮经 `invoketarget` 找它, 不再依赖 media-chrome 自带的倍速菜单. */
+/** 倍速菜单的 id: 菜单按钮经 `invoketarget` 定位该菜单, 不依赖 media-chrome 自带的倍速菜单. */
 const RATE_MENU_ID = "amane-playback-rate-menu";
-/** 右键菜单的尺寸下限估算, 只用于把菜单夹在播放窗口内; 实际宽度由条目文案决定. */
+/** 右键菜单的尺寸下限估算值, 仅用于将菜单限制在播放窗口内; 实际宽度由条目文案决定. */
 const CONTEXT_MENU_MIN_WIDTH = 200;
 const CONTEXT_MENU_MAX_HEIGHT = 96;
 /**
- * 关掉 media-chrome 自带的四个方向键.
- * 它在松开按键时才执行且只执行一次: 左右键因此与「短按跳 5 秒, 按住加速」冲突, 上下键则无法按住连续调节音量.
+ * 关闭 media-chrome 自带的四个方向键.
+ * 自带处理在松开按键时执行且只执行一次: 左右键与「短按跳转、按住加速」冲突, 上下键无法按住连续调节音量.
  */
 const ARROW_HOTKEYS_OFF = "noarrowleft noarrowright noarrowup noarrowdown";
 /**
  * 音量偏好的存储键.
  *
- * media-chrome 自带一份音量与静音偏好 (`media-chrome-pref-volume` / `-muted`), 两者互相独立,
- * 与本播放器的音量模型冲突, 因此由控制器上的 `novolumepref` / `nomutedpref` 关掉, 只留这一份.
- * 静音就是音量 0, 不单独记录.
+ * media-chrome 自带一份音量与静音偏好 (`media-chrome-pref-volume` / `-muted`), 两者相互独立并与本播放器的
+ * 音量模型冲突, 因此控制器使用 `novolumepref` / `nomutedpref` 关闭自带偏好, 只保留此键. 静音即音量 0,
+ * 不单独记录.
  */
 const VOLUME_PREF_KEY = "amane-playback-volume";
 
-/** 读取存储的音量; 未存储、损坏或越界时回到满音量. */
+/** 读取存储的音量; 未存储、损坏或越界时返回满音量. */
 function readStoredVolume(): number {
   try {
-    // 必须先判空: `Number(null)` 为 0, 直接转换会把「没有存储」当成静音.
+    // 必须先判断为空: `Number(null)` 为 0, 直接转换会将「没有存储」判断为静音.
     const stored = window.localStorage.getItem(VOLUME_PREF_KEY);
     if (stored == null) {
       return 1;
@@ -116,12 +116,12 @@ function writeStoredVolume(volume: number): void {
   try {
     window.localStorage.setItem(VOLUME_PREF_KEY, String(volume));
   } catch {
-    // 无痕模式等场景下存储不可用, 音量只在本次会话内生效.
+    // 无痕模式等场景下存储不可用, 音量仅在本次会话内生效.
   }
 }
 
 /**
- * 秒数写成时间戳, 与评论里可点击的时间戳同形 (`mm:ss`, 满一小时才带小时).
+ * 秒数格式化为时间戳, 与评论中可点击的时间戳同形 (`mm:ss`, 满一小时才带小时).
  * 向下取整: 复制或跳转回到当前正在播放的这一秒.
  */
 function formatClock(seconds: number): string {
@@ -132,7 +132,7 @@ function formatClock(seconds: number): string {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-/** 跳转提示的文案: `目标时间 (偏移) / 总长度`, 偏移相对手势起手位置, 总长度未知时省略后半. */
+/** 跳转提示的文案: `目标时间 (偏移) / 总长度`. 偏移相对手势起手位置; 总长度未知时省略后半. */
 function formatSeekPreview(preview: SeekPreview): string {
   const offset = Math.round(preview.delta);
   const signed = `${offset >= 0 ? "+" : "-"}${Math.abs(offset)}`;
@@ -141,8 +141,8 @@ function formatSeekPreview(preview: SeekPreview): string {
 }
 
 /**
- * 播放位置的分享地址: 在现有地址上换掉 `t` 参数, 其余参数 (来源、流等) 原样保留.
- * 位置不足一秒时不写 `t` —— `0` 与缺省等价, 写上去只是噪声.
+ * 播放位置的分享地址: 在现有地址上替换 `t` 参数, 其余参数 (来源、流等) 原样保留.
+ * 位置不足一秒时不写 `t`: `0` 与缺省等价.
  */
 function shareableTimeUrl(seconds: number): string {
   const current = new URL(window.location.href);
@@ -155,7 +155,7 @@ function shareableTimeUrl(seconds: number): string {
 }
 
 // media-chrome 的控制条文案来自其自带语言包, 语言与 i18next 保持一致.
-// 该模块随播放器一起懒加载, 因此界面语言切换后需要重新挂载播放器才会生效.
+// 该模块随播放器一并懒加载, 因此界面语言切换后需要重新挂载播放器才会生效.
 setLanguage(i18n.resolvedLanguage ?? i18n.language);
 
 /** hls.js 致命错误中构成提示文案的字段, 后端没有给出 detail 时使用. */
@@ -197,9 +197,8 @@ function SubtitleTracks({ tracks }: { tracks: PlaybackSubtitleItem[] }) {
 /**
  * 画面的右键菜单.
  *
- * 监听挂在控制器上而不是使用 React 的 `onContextMenu`: 该事件不会派发到自定义元素上的 React 监听
- * (普通元素正常), 控制器收不到回调. 判定与画面的单击、双击一致 —— 只有视频与控制器自身算数,
- * 控制条与菜单保留浏览器原生右键菜单.
+ * 监听必须挂在控制器上: React 的 `onContextMenu` 不会派发到自定义元素, 控制器收不到回调. 判定与画面的
+ * 单击、双击一致: 只有视频与控制器自身响应, 控制条与菜单保留浏览器原生右键菜单.
  */
 function useVideoContextMenu(
   controllerRef: RefObject<MediaControllerElement | null>,
@@ -230,11 +229,11 @@ function useVideoContextMenu(
 type ContextMenuAnchor = {
   left: number;
   top: number;
-  /** 下方放不下时向上展开: 锚点改取底边 (右键处的指针). */
+  /** 下方空间不足时向上展开: 锚点改取底边 (右键的指针位置). */
   upward: boolean;
 };
 
-/** 右键菜单在指针处展开, 越出播放窗口的部分夹回窗口内. */
+/** 右键菜单在指针处展开; 超出播放窗口的部分限制回窗口内. */
 function contextMenuAnchor(
   controller: MediaControllerElement,
   event: MouseEvent,
@@ -256,16 +255,16 @@ function contextMenuAnchor(
 /**
  * 画面上的右键菜单: 复制当前时间戳与带时间参数的分享地址.
  *
- * 菜单必须留在控制器内部: 控制器的容器带 `overflow: hidden`, 挂到控制器外会被裁掉; 全屏时也只有控制器
- * 的子树可见 (Mantine 的 Portal 挂到 `document.body`, 全屏下不可见).
+ * 菜单必须位于控制器内部: 控制器的容器带 `overflow: hidden`, 移至控制器外会被裁剪; 全屏时也只有控制器
+ * 的子树可见 (Mantine 的 Portal 目标为 `document.body`, 全屏下不可见).
  *
- * 复制的秒数在点按条目时读取, 不是展开菜单时的那一秒 —— 菜单展开期间画面仍在播放.
+ * 复制的秒数在点按条目时读取, 而非展开菜单时的位置 — 菜单展开期间画面仍在播放.
  *
- * 展开期间在菜单下面盖一层透明遮罩, 菜单之外的点击都由它接住: 这次点击的 target 不是视频,
- * 因此画面不会切换播放/暂停 (画面点击只认视频与控制器自身), 控制条也不会被误触. 收起判断
- * 因此只看"点在不在菜单里", 不依赖事件传播次序.
+ * 展开期间在菜单下面放置一层透明遮罩, 菜单之外的点击由遮罩接收: 该点击的目标元素不是视频, 因此画面
+ * 不会切换播放/暂停 (画面点击只依据视频与控制器自身), 控制条也不会被误触. 收起判断因此只依据点击目标
+ * 是否位于菜单内, 不依赖事件传播次序.
  *
- * 不可寻址的流没有可复制的跳转目标, 两项都禁用.
+ * 不可寻址的流没有可复制的跳转目标, 两项均禁用.
  *
  * 菜单与遮罩的显隐只由状态决定, 不随控制条的自动隐藏消失 (画面内浮层的统一约定见 docs/dev/frontend.md).
  */
@@ -279,7 +278,7 @@ function ContextMenu({
   seekable: boolean;
   /** 读取当前播放位置, 在点按条目时调用. */
   readSeconds: () => number;
-  /** 收起菜单; 参数为真时把焦点交还播放器 (复制之后焦点留在菜单项上). */
+  /** 收起菜单; 参数为真时将焦点交还播放器 (复制之后焦点位于菜单项上). */
   onClose: (restoreFocus: boolean) => void;
 }) {
   const { t } = useTranslation("metadata");
@@ -289,8 +288,8 @@ function ContextMenu({
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       const target = event.target;
-      // 菜单自己的点击由条目收起; 其余任何点击 (含画面、控制条、页面别处) 都收起. 这次点击照常
-      // 生效, 因此点画面同时会切换播放/暂停.
+      // 菜单内部点击由条目自行收起; 其余任何点击 (包含画面、控制条与页面其它位置) 均收起菜单.
+      // 该点击照常生效, 因此点击画面同时会切换播放/暂停.
       if (target instanceof Node && menuRef.current?.contains(target)) {
         return;
       }
@@ -301,7 +300,7 @@ function ContextMenu({
         onClose(false);
       }
     };
-    // 捕获阶段之外另加冒泡阶段: 页面其它层的阻止传播不会让菜单留在画面上.
+    // 捕获阶段之外另加冒泡阶段: 页面其它层阻止传播时, 菜单不会残留在画面上.
     document.addEventListener("click", handleClick, true);
     document.addEventListener("click", handleClick);
     document.addEventListener("keydown", handleKeyDown);
@@ -324,7 +323,7 @@ function ContextMenu({
 
   return (
     <>
-      {/* 遮罩占满播放器: 菜单之外的点击落在它身上, 不会落到画面或控制条上; 点击只用于收起菜单. */}
+      {/* 遮罩覆盖整个播放器: 菜单之外的点击由遮罩接收, 不会落到画面或控制条上; 该点击只用于收起菜单. */}
       <div
         className={classes.contextMenuBackdrop}
         aria-hidden="true"
@@ -337,7 +336,7 @@ function ContextMenu({
         role="menu"
         data-upward={anchor.upward ? "true" : undefined}
         style={{ left: anchor.left, top: anchor.top }}
-        // 菜单上的右键不改写点按位置, 也不允许浏览器原生菜单叠上来. 这是普通元素, 合成事件正常触发.
+        // 菜单上的右键不改写点按位置, 同时阻止浏览器原生菜单覆盖显示. 菜单为普通元素, 合成事件正常触发.
         onContextMenu={(event) => event.preventDefault()}
       >
         <button
@@ -368,16 +367,16 @@ function ContextMenu({
 /**
  * 四个方向键.
  *
- * 左右: 跳转在松开按键时执行, 因此短按跳 `SEEK_STEP_SECONDS` 秒, 长按不跳转. 按住右键超过
- * `HOLD_SEEK_DELAY_MS` 之后把播放倍速提到 `HOLD_SEEK_RATE`, 倍速按钮会同步显示该值. 松开按键、
- * 窗口失焦、切换标签页时恢复用户设定的倍速 — 后两种时机用于兜住丢失的 keyup.
+ * 左右: 跳转在松开按键时执行, 因此短按跳转 `SEEK_STEP_SECONDS` 秒, 长按不跳转. 按住右键超过
+ * `HOLD_SEEK_DELAY_MS` 之后将播放倍速提高到 `HOLD_SEEK_RATE`, 倍速按钮同步显示该值. 松开按键、窗口
+ * 失焦、切换标签页时恢复用户设定的倍速 — 后两种时机用于覆盖丢失的 keyup.
  *
- * 加速只属于右键: 倒放无法用倍速实现 (`HTMLMediaElement.playbackRate` 不接受非正值), 左键长按
- * 因此没有动作. 加速归属按下时记下的键, 松开另一个键不打断长按.
+ * 加速只属于右键: 倒放无法用倍速实现 (`HTMLMediaElement.playbackRate` 不接受非正值), 左键长按因此没有
+ * 动作. 加速归属于按下时记录的键, 松开另一个键不打断长按.
  *
- * 上下: 每次 keydown 调整一次音量, 按住时浏览器持续派发 keydown, 因此可以连续调节.
+ * 上下: 每次 keydown 调整一次音量; 按住时浏览器持续派发 keydown, 因此可以连续调节.
  *
- * 不可寻址的流 (列表给出 `seekable` 为假) 不接管左右键, 避免出现能按但跳不动的操作.
+ * 不可寻址的流 (列表给出 `seekable` 为假) 不接管左右键, 避免出现能够按下但无法跳转的操作.
  */
 function usePlayerKeys(
   controllerRef: RefObject<MediaControllerElement | null>,
@@ -402,7 +401,7 @@ function usePlayerKeys(
       savedRateRef.current = null;
     }
     heldKeyRef.current = null;
-    // 按住加速的标记与触屏长按同源: 键盘松开也要撤掉.
+    // 按住加速的标记由键盘长按与触屏长按共用, 键盘松开时同样需要清除.
     onSpeedHold(false);
   }, [onSpeedHold, videoRef]);
 
@@ -413,8 +412,8 @@ function usePlayerKeys(
     }
     window.addEventListener("blur", releaseHold);
     document.addEventListener("visibilitychange", releaseHold);
-    // 焦点离开播放器后 keyup 不会再回到控制器, 长按状态必须在这里复位, 否则下一次按方向键
-    // 会被当成「已有键按住」而忽略, 其松开时又按短按跳转.
+    // 焦点离开播放器后 keyup 不再派发到控制器, 长按状态必须在此复位; 否则下一次按方向键会被判断为
+    // 「已有键按住」而忽略, 该次松开又按短按执行跳转.
     controller.addEventListener("blur", releaseHold);
     return () => {
       window.removeEventListener("blur", releaseHold);
@@ -435,7 +434,7 @@ function usePlayerKeys(
         return;
       }
       event.preventDefault();
-      // 按住期间浏览器持续派发 keydown; 已经有按下的键时不重新计时, 也不改归属.
+      // 按住期间浏览器持续派发 keydown; 已经有按下的键时不重新计时, 也不更改归属.
       if (event.repeat || heldKeyRef.current != null) {
         return;
       }
@@ -486,23 +485,24 @@ function usePlayerKeys(
 
 /** 拖动进度条或音量条期间置位的属性: 手势层与画面点击都不再响应. */
 const GESTURES_DISABLED_ATTRIBUTE = "gesturesdisabled";
-/** media-chrome 的空闲状态属性: 控制条与进度条在它存在时被淡出 (暂停态除外, 那时是可见的). */
+/** media-chrome 的空闲状态属性: 该属性存在时控制条与进度条淡出 (暂停态除外, 此时保持可见). */
 const USER_INACTIVE_ATTRIBUTE = "userinactive";
 const MEDIA_PAUSED_ATTRIBUTE = "mediapaused";
 /** 本次触摸只用于呼出控制条: 由样式表据此屏蔽控件的指针事件. */
 const REVEAL_ATTRIBUTE = "data-amane-reveal";
-/** 最近的交互来自指针: 样式表据此不给聚焦的控件画焦点环 (键盘交互会撤掉它). */
+/** 最近的交互来自指针: 样式表据此不对聚焦的控件绘制焦点环 (键盘交互移除该属性). */
 const POINTER_FOCUS_ATTRIBUTE = "data-amane-pointer";
 /**
- * 触屏手势进行中置位的属性: 控制条与进度条不参与 (见样式表).
- * 触摸按下即置位, 松手撤掉 — 撤掉的那一瞬在浏览器派发 click 之前, 点按切换控件显隐照常.
+ * 触屏手势进行中设置的属性: 样式表据此隐藏控制条与进度条.
+ * 控制条处于隐藏状态时, 指针按下即设置该属性 (触摸会使控制条淡入); 手势结束后保留该属性, 由下一次触摸
+ * 的指针按下清除.
  */
 const GESTURE_ATTRIBUTE = "data-amane-gesture";
 /** 双击的判定窗口 (毫秒). 单击的动作须等过整个窗口, 才能确定没有第二次点击. */
 const DOUBLE_CLICK_MS = 250;
 /**
- * 触屏长按多久算"按住加速" (毫秒); 与键盘 `HOLD_SEEK_DELAY_MS` 是同一条动作.
- * 比键盘长, 因为要避开点按; 但按住加速是"边看边用"的动作, 等太久会觉得没反应.
+ * 触屏长按判断为"按住加速"的时长 (毫秒); 与键盘 `HOLD_SEEK_DELAY_MS` 属于同一条动作.
+ * 取值需高于一次点按的时长, 同时避免按住加速的等待过长.
  */
 const TOUCH_LONG_PRESS_MS = 300;
 /** 触屏手势的起手位移阈值 (像素): 超过它就不再是点按. */
@@ -512,7 +512,7 @@ const TOUCH_SEEK_SPAN_SECONDS = 120;
 const TOUCH_SEEK_MAX_SECONDS = 90;
 /** 竖直滑动覆盖音量 (右半屏) 或亮度 (左半屏) 全量程所需的像素数, 向上为增. */
 const TOUCH_LEVEL_FULL_SPAN_PX = 220;
-/** 亮度下限: 全黑既没有意义也回不来. */
+/** 亮度下限: 全黑无法恢复, 且没有实际意义. */
 const MIN_BRIGHTNESS = 0.2;
 /** 调整提示的类型: 音量与亮度共用同一套提示. */
 type HudKind = "volume" | "brightness";
@@ -601,11 +601,11 @@ function useFullscreenScrollRestore(controllerRef: RefObject<MediaControllerElem
 }
 
 /**
- * 全屏播放转横屏.
+ * 全屏播放时转为横屏.
  *
- * 手机上竖屏全屏会让画面挤在中间一条, 主流播放器都转成横屏. 壳里由原生层锁方向 (见 docs/dev/android.md),
- * 浏览器只能由页面自己锁: Screen Orientation API 只在全屏期间可锁, 退出时交还系统. 由其它元素发起的
- * 全屏不介入; 没有该 API 的浏览器 (iOS Safari、桌面浏览器) 与锁失败都静默忽略, 系统旋转仍然生效.
+ * 手机上竖屏全屏会使画面只占中间一条区域, 因此全屏播放需要横屏. 壳内由原生层锁定方向 (见 docs/dev/android.md),
+ * 浏览器内只能由页面锁定: Screen Orientation API 仅在全屏期间可锁, 退出全屏时交还系统. 由其它元素发起的
+ * 全屏不介入; 没有该 API 的浏览器 (iOS Safari、桌面浏览器) 与锁定失败均静默忽略, 系统旋转仍然生效.
  */
 function useFullscreenLandscape(controllerRef: RefObject<MediaControllerElement | null>) {
   useEffect(() => {
@@ -636,15 +636,15 @@ function useFullscreenLandscape(controllerRef: RefObject<MediaControllerElement 
 /**
  * 触屏上开始播放即进入全屏.
  *
- * 判据是指针类型而不是宽度: 全屏是横屏, 视口很宽, 按宽度判断会退回鼠标形态. 请求经全屏按钮发出, 控制器据此
- * 同步自身的全屏状态.
+ * 判据是指针类型: 全屏为横屏, 视口很宽, 依据宽度判断会退回鼠标形态. 请求经全屏按钮发出, 控制器据此同步
+ * 自身的全屏状态.
  *
- * 已在全屏时不允许再次请求: 该按钮按 `mediaIsFullscreen` 二选一派发进入与退出两种请求, 全屏中暂停后恢复播放
- * 会被它退出全屏. 两个判据都不允许删除 —— `mediaIsFullscreen` 是按钮上的属性, 属性同步晚于 `fullscreenchange`
- * 时由 `document.fullscreenElement` 补位; WebKit 的元素级全屏只写在属性上, 不进入该字段. 没有用户手势或内核
- * 不支持时这次请求会被拒绝, 内联播放照常.
+ * 已在全屏时不允许再次请求: 该按钮按 `mediaIsFullscreen` 二选一派发进入与退出两种请求, 全屏中暂停后恢复
+ * 播放会被它退出全屏. 两个判据都不允许删除 — `mediaIsFullscreen` 是按钮上的属性, 它与 `fullscreenchange`
+ * 的同步存在先后, 未同步时由 `document.fullscreenElement` 补充; WebKit 的元素级全屏只写在属性上, 不进入
+ * 该字段. 没有用户手势或内核不支持时这次请求会被拒绝, 内联播放照常.
  *
- * 只负责进入全屏: 横屏由 `useFullscreenLandscape` 在进入全屏后锁方向.
+ * 只负责进入全屏: 横屏由 `useFullscreenLandscape` 在进入全屏后锁定方向.
  */
 function useFullscreenOnPlay(
   videoRef: RefObject<HTMLVideoElement | null>,
@@ -674,10 +674,11 @@ function useFullscreenOnPlay(
 /**
  * 播放结束即退出全屏.
  *
- * 结束时画面停在最后一帧, 全屏里没有出口. 退出与进入走同一个按钮: 它按 `mediaIsFullscreen` 二选一派发进入与
- * 退出请求, 控制器据此同步自身状态, 直接调 `document.exitFullscreen` 会让按钮的属性与 DOM 脱节.
+ * 结束时画面停在最后一帧, 全屏状态下没有退出入口. 退出与进入均经由同一个按钮: 它按 `mediaIsFullscreen`
+ * 二选一派发进入与退出请求, 控制器据此同步自身状态; 直接调用 `document.exitFullscreen` 会使按钮属性与
+ * DOM 状态不一致.
  *
- * 与进入同判据: 只在会自动进入全屏的形态下退出, 桌面上的手动全屏不受影响.
+ * 判据与进入一致: 只在会自动进入全屏的形态下退出, 桌面上的手动全屏不受影响.
  */
 function useExitFullscreenOnEnded(
   videoRef: RefObject<HTMLVideoElement | null>,
@@ -719,25 +720,25 @@ function useAutoPlay(videoRef: RefObject<HTMLVideoElement | null>, autoPlay: boo
 }
 
 /**
- * 把焦点交还播放器, 但不让浏览器为此滚动页面.
+ * 把焦点交还播放器, 同时阻止浏览器为此滚动页面.
  *
- * 播放器在视口里只露出一部分时, 聚焦会让浏览器把它整个滚进来 —— 收起菜单或倍速菜单之后页面
- * 会突然跳到播放器顶端. 焦点只影响快捷键, 不需要改变滚动位置.
+ * 播放器在视口中只露出一部分时, 聚焦会使浏览器将播放器完整滚动到视口内 — 收起右键菜单或倍速菜单之后
+ * 页面会跳至播放器顶端. 焦点只影响快捷键, 不需要改变滚动位置.
  */
 function focusPlayer(controllerRef: RefObject<MediaControllerElement | null>): void {
   controllerRef.current?.focus({ preventScroll: true });
 }
 
 /**
- * 触屏手势, 只认 `pointerType === "touch"`: 鼠标的单击 / 双击 / 右键保持原样.
+ * 触屏手势, 只处理 `pointerType === "touch"`: 鼠标的单击 / 双击 / 右键保持原样.
  *
  * 长按加速; 横滑拖进度; 双击播放 / 暂停; 竖直滑动调亮度或音量 — 按起手的半屏分派, 左半屏亮度, 右半屏音量.
- * 视频区域因此不再把纵向手势留给页面滚动. 落点由调用方决定: 浏览器内是媒体元素音量与画面叠加层, 壳内是
+ * 视频区域因此不把纵向手势留给页面滚动. 作用对象由调用方决定: 浏览器内是媒体元素音量与画面叠加层, 壳内是
  * 系统媒体音量与窗口亮度 (见 `readLevel` 与 `handleLevelChange`).
  *
- * 长按在 Chromium 里同时会派发 `contextmenu`, 这里在捕获阶段拦掉那一次, 不打开右键菜单.
+ * 长按在 Chromium 里同时会派发 `contextmenu`, 这里在捕获阶段拦截该次事件, 不打开右键菜单.
  *
- * 三个回调与 `readLevel` 必须都是稳定引用: 引用变化会重建监听, 正在进行的手势会丢.
+ * 三个回调与 `readLevel` 必须都是稳定引用: 引用变化会重建监听, 正在进行的手势会中断.
  */
 function useTouchGestures(
   controllerRef: RefObject<MediaControllerElement | null>,
@@ -776,21 +777,21 @@ function useTouchGestures(
     };
 
     /**
-     * 拖动进度条 / 音量条期间媒体手势让位 — 那条拖动由控件自己处理.
+     * 拖动进度条 / 音量条期间媒体手势不生效 — 该次拖动由控件处理.
      *
-     * 判定不能只在 `pointerdown` 做一次: 拖动标记是控件的 `pointerdown` 里置位的, 而那个处理在冒泡阶段,
-     * 落在捕获阶段的这里之后; 起手落在进度条上时, 手势会先接上, 再在移动或松手时把控件那一次拖动改掉
-     * (拖动中还会多出一条横滑提示).
+     * 判定不能只在 `pointerdown` 执行一次: 拖动标记在控件的 `pointerdown` 里设置, 而该处理位于冒泡阶段,
+     * 晚于捕获阶段的此处; 起手位于进度条上时, 手势层会先接管该次触摸, 再在移动或松开时覆盖控件的那次拖动
+     * (拖动期间还会多出一条横滑提示).
      */
     const gesturesDisabled = () => controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE);
 
     /**
-     * 起手落在进度条上的触摸由控件自己处理, 这一层不接.
+     * 起手位于进度条上的触摸由控件处理, 本层不接管.
      *
-     * 接上就会置位 `GESTURE_ATTRIBUTE`, 样式表随之把进度条整段隐藏, 它的盒子塌成 0 —— 控件按自己的
-     * 盒子算点按位置, 于是拖动与点按一律落到片头.
+     * 接管会设置 `GESTURE_ATTRIBUTE`, 样式表随之隐藏进度条, 其盒子的尺寸变为 0 — 控件依据自身盒子的尺寸
+     * 计算点按位置, 于是拖动与点按均被判断为片头位置.
      *
-     * 判定只能用事件路径: 控件置位的拖动标记在冒泡阶段, 捕获阶段的此刻还读不到.
+     * 判定只能依据事件路径: 控件的拖动标记在冒泡阶段设置, 捕获阶段的此刻尚不可读取.
      */
     const startsOnSeekBar = (event: PointerEvent) =>
       event
@@ -799,7 +800,7 @@ function useTouchGestures(
 
     const handlePointerDown = (event: PointerEvent) => {
       lastPointerType = event.pointerType;
-      // 上一次手势留下的隐藏在这里撤掉: 点按要能重新把控制条叫出来 (见 `handlePointerEnd`).
+      // 上一次手势保留的隐藏属性在这里清除: 点按照旧能够呼出控制条 (见 `handlePointerEnd`).
       controller.removeAttribute(GESTURE_ATTRIBUTE);
       if (
         event.pointerType !== "touch" ||
@@ -812,10 +813,10 @@ function useTouchGestures(
       if (video == null) {
         return;
       }
-      // 暂停态只剩居中大按钮: 置位属性会让它在按下的一瞬整段消失、松手才回来, 看起来是闪烁.
+      // 暂停态只剩居中大按钮: 设置该属性会使它在按下的瞬间隐藏、松开时恢复, 表现为闪烁.
       pausedAtStart = video.paused;
-      // 播放中的闲置态本来就没有控制条, 从按下这一刻起就保持隐藏: 触摸带来的活跃态会先把进度条淡入,
-      // 等识别出手势再隐藏就成了"先闪一下再消失". 控制条此刻可见时不置位, 免得一次点按把它整段抹掉.
+      // 播放中的闲置态本就没有控制条, 指针按下即保持隐藏: 触摸带来的活跃态会先使进度条淡入,
+      // 等到识别出手势再隐藏会表现为一次闪烁. 控制条此刻可见时不设置该属性, 否则一次点按会使其完全隐藏.
       if (!pausedAtStart && controller.hasAttribute(USER_INACTIVE_ATTRIBUTE)) {
         controller.setAttribute(GESTURE_ATTRIBUTE, "");
       }
@@ -828,17 +829,17 @@ function useTouchGestures(
       clearLongPress();
       longPressTimer = window.setTimeout(() => {
         longPressTimer = null;
-        // 手指还停在原处, 但这次起手可能已被控件认成拖动 (进度条), 此时不再算按住加速.
+        // 指针仍停在原处, 但该次起手可能已被控件判断为拖动 (进度条), 此时不再判断为按住加速.
         if (gesturesDisabled()) {
           return;
         }
         const current = videoRef.current;
-        // 暂停时没有加速可言: 起手时可能还在播放, 按住期间才暂停.
+        // 暂停时没有加速动作: 起手时可能仍在播放, 按住期间才暂停.
         if (current == null || current.paused) {
           return;
         }
         mode = "speed";
-        // 长按同样是手势: 期间不显示控制条, 否则暂停键与进度条会盖在画面上.
+        // 长按同样属于手势: 期间不显示控制条, 否则暂停键与进度条会覆盖画面.
         if (!pausedAtStart) {
           controller.setAttribute(GESTURE_ATTRIBUTE, "");
         }
@@ -854,8 +855,8 @@ function useTouchGestures(
       }
       if (gesturesDisabled()) {
         clearLongPress();
-        // 让位时也要把自己的标记撤掉: 控件在 `pointerdown` 里置位拖动标记的同时隐藏了控制条与进度条,
-        // 属性留在这里就没有人再摘它 —— 松手时 `pointerId` 已清空, 那一次 `pointerup` 直接被跳过.
+        // 控件接管时同样需要清除本层的标志: 控件的 `pointerdown` 在设置拖动标志的同时隐藏了控制条与进度条,
+        // 而该次 `pointerup` 会被跳过 (`pointerId` 已清空), 标志否则不会有人清除.
         controller.removeAttribute(GESTURE_ATTRIBUTE);
         pointerId = null;
         mode = "idle";
@@ -868,12 +869,12 @@ function useTouchGestures(
           return;
         }
         clearLongPress();
-        // 控制条此刻可见时到这里才隐藏 (按下那刻隐藏会让一次点按把它整段抹掉); 已隐藏的早在按下时就置位了.
+        // 控制条此刻可见时在此处隐藏 (按下即隐藏会使一次点按将其完全隐藏); 已隐藏的控制条在按下时即设置该属性.
         if (!pausedAtStart) {
           controller.setAttribute(GESTURE_ATTRIBUTE, "");
         }
         if (Math.abs(dy) > Math.abs(dx)) {
-          // 竖直: 左半屏调亮度, 右半屏调音量. 基值在手势起点读一次, 之后不再随状态变化.
+          // 竖直: 左半屏调整亮度, 右半屏调整音量. 基值在手势起点读取一次, 之后不随状态变化.
           const rect = controller.getBoundingClientRect();
           levelKind = event.clientX < rect.left + rect.width / 2 ? "brightness" : "volume";
           baseLevel = readLevel(levelKind);
@@ -881,7 +882,7 @@ function useTouchGestures(
         } else if (seekable) {
           mode = "seek";
         } else {
-          // 不可定位的流 (直播 / 上游不声明) 不做进度, 这次手势作废.
+          // 不可定位的流 (直播 / 上游不声明) 不提供进度, 该次手势作废.
           pointerId = null;
           return;
         }
@@ -894,12 +895,12 @@ function useTouchGestures(
       const span = Math.max(controller.clientWidth, 1);
       const raw = (dx / span) * TOUCH_SEEK_SPAN_SECONDS;
       deltaSeconds = Math.min(Math.max(raw, -TOUCH_SEEK_MAX_SECONDS), TOUCH_SEEK_MAX_SECONDS);
-      // 总长度在这里读: 它随媒体加载出现, 订阅它会让整个播放器跟着重渲染.
+      // 总长度在此处读取: 它随媒体加载出现, 订阅它会使整个播放器重新渲染.
       const live = videoRef.current;
       const total =
         live != null && Number.isFinite(live.duration) && live.duration > 0 ? live.duration : null;
       const target = Math.max(baseSeconds + deltaSeconds, 0);
-      // 提示里的目标时间与点按位置一致: 超过总长时按总长显示.
+      // 提示中的目标时间与点按位置一致: 超过总长时按总长显示.
       onSeekPreview({
         target: total == null ? target : Math.min(target, total),
         total,
@@ -916,14 +917,14 @@ function useTouchGestures(
       const ended = mode;
       mode = "idle";
       pointerId = null;
-      // 拖动与长按结束后继续隐藏: 抬手时把控制条弹出来是多余的动作, 下一次触摸的指针按下会撤掉它.
+      // 拖动与长按结束后继续隐藏: 松开时弹出控制条是多余的动作; 下一次触摸的指针按下会清除该属性.
       if (ended !== "idle" && !pausedAtStart) {
         controller.setAttribute(GESTURE_ATTRIBUTE, "");
       } else {
         controller.removeAttribute(GESTURE_ATTRIBUTE);
       }
-      // 系统撤销这次触摸 (通知栏下拉, 系统手势, 窗口失焦): 跳转不落地, 也不能被记成一次点按 —
-      // 否则紧随其后的一次真点按会凑成双击, 意外切换播放状态.
+      // 系统撤销该次触摸 (通知栏下拉、系统手势、窗口失焦): 跳转不生效, 也不记录为一次点按 —
+      // 否则紧随其后的一次点按会构成双击, 意外切换播放状态.
       if (event.type === "pointercancel") {
         if (ended === "speed" && video != null) {
           video.playbackRate = rateBeforeHold;
@@ -934,7 +935,7 @@ function useTouchGestures(
         return;
       }
       if (gesturesDisabled()) {
-        // 控件接管了这次触摸 (拖动进度条 / 音量条): 已生效的加速要还回去, 跳转与提示都不做.
+        // 控件接管了该次触摸 (拖动进度条 / 音量条): 已生效的加速需要恢复, 跳转与提示均不执行.
         if (ended === "speed" && video != null) {
           video.playbackRate = rateBeforeHold;
         }
@@ -978,7 +979,7 @@ function useTouchGestures(
       if (lastPointerType !== "touch") {
         return;
       }
-      // 捕获阶段拦下: 事件因此不会到达画面, 视频右键菜单的监听不会展开.
+      // 在捕获阶段拦截: 事件因此不会到达画面, 视频右键菜单的监听不会展开.
       event.preventDefault();
       event.stopPropagation();
     };
@@ -1003,25 +1004,25 @@ function useTouchGestures(
 /**
  * 画面的单击与双击.
  *
- * media-chrome 的手势层对每次 click 立即切换播放/暂停, 双击因此会先暂停再恢复, 画面停顿一次.
- * 鼠标与触控笔的点击改由这里接管: 第一次单击等过 `DOUBLE_CLICK_MS` 再执行, 窗口内出现第二次点击则
- * 改为切换全屏. 触摸的点击不接管, 仍由手势层即时切换 — 以双击切换全屏会与触摸平台的连击手势冲突.
+ * media-chrome 的手势层对每次 click 立即切换播放/暂停, 双击因此会先暂停再恢复, 画面停顿一次. 鼠标与触控笔
+ * 的点击由本层接管: 第一次单击等待超过 `DOUBLE_CLICK_MS` 再执行, 窗口内出现第二次点击则切换全屏. 触摸的
+ * 点击不接管, 仍由手势层即时切换 — 以双击切换全屏会与触摸平台的连击手势冲突.
  *
- * 判定与手势层保持一致, 否则会出现一边响应而另一边不响应的分歧: 目标须为视频或控制器自身 (画面上的
- * 控件各自处理点击; 拖动进度条后在画面上松手时, 浏览器把 click 的目标定为两者的最近公共祖先, 即控制
- * 器), 拖动期间 (`gesturesdisabled`) 不计数.
+ * 判定与手势层保持一致, 否则两处判定会出现分歧: 目标须为视频或控制器自身 (画面上的控件各自处理点击;
+ * 拖动进度条后在画面上松开时, 浏览器把 click 的目标定为两者的最近公共祖先, 即控制器), 拖动期间
+ * (`gesturesdisabled`) 不计数.
  *
- * 接管后这些点击在控制器处停止传播: 手势层挂在控制器上的监听与更外层的冒泡阶段监听都收不到. 控制条
- * 按钮、菜单与浮层的点击目标不是画面, 不进入这条路径.
+ * 接管后这些点击在控制器处停止传播: 手势层挂在控制器上的监听与更外层的冒泡阶段监听均收不到. 控制条按钮、
+ * 菜单与浮层的点击目标不是画面, 不进入这条路径.
  *
- * 返回的函数用于撤掉已排队的那次单击 (右键菜单收起时调用).
+ * 返回的函数用于取消已排队的那次单击 (右键菜单收起时调用).
  */
 function useClickGestures(
   controllerRef: RefObject<MediaControllerElement | null>,
   videoRef: RefObject<HTMLVideoElement | null>,
   fullscreenButtonRef: RefObject<MediaFullscreenButtonElement | null>,
 ) {
-  // 已排队但还没执行的那次单击; 菜单展开时撤掉它, 那次点击只用于收起菜单.
+  // 已排队但尚未执行的那次单击; 菜单展开时取消它, 该次点击只用于收起菜单.
   const cancelPendingClickRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
@@ -1029,11 +1030,11 @@ function useClickGestures(
     if (controller == null) {
       return;
     }
-    // 指针类型取自 pointerdown: click 事件在部分浏览器里不带该信息; 缺省值与手势层相同, 都按鼠标处理.
+    // 指针类型取自 pointerdown: click 事件在部分浏览器里不带该信息; 缺省值与手势层一致, 均按鼠标处理.
     let pointerType = "mouse";
     let pendingClick: number | null = null;
-    // 按下瞬间控制条是否只是被淡出. 触摸会立刻让控制条开始淡入, 因此这次触摸的后续动作必须在这里定死:
-    // 否则同一次触摸的 click 会落在已经"复活"的进度条与按钮上 —— 隐藏状态下点一下就跳进度或弹出菜单.
+    // 按下瞬间控制条是否仅处于淡出状态. 触摸会立即让控制条开始淡入, 因此该次触摸的后续动作必须在此处确定:
+    // 否则同一次触摸的 click 会落在已经恢复显示的进度条与按钮上 — 隐藏状态下的一次点按会跳转进度或展开菜单.
     let revealOnly = false;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -1041,7 +1042,7 @@ function useClickGestures(
       revealOnly =
         controller.hasAttribute(USER_INACTIVE_ATTRIBUTE) &&
         !controller.hasAttribute(MEDIA_PAUSED_ATTRIBUTE);
-      // 标记要在事件派发给控件之前挂上: 触摸的定位动作从 `touchstart` 就开始, 只拦 pointerdown 挡不住它.
+      // 标志必须在事件派发到控件之前设置: 触摸的定位动作从 `touchstart` 开始, 只拦截 pointerdown 无法阻止它.
       controller.toggleAttribute(REVEAL_ATTRIBUTE, revealOnly);
     };
 
@@ -1050,7 +1051,7 @@ function useClickGestures(
       revealOnly = false;
       controller.removeAttribute(REVEAL_ATTRIBUTE);
       if (reveal) {
-        // 只呼出控制条: 这次点击不落到任何控件, 也不当成画面的单击.
+        // 只呼出控制条: 该次点击不落到任何控件, 也不判断为画面的单击.
         event.stopPropagation();
         return;
       }
@@ -1062,7 +1063,7 @@ function useClickGestures(
       if (pointerType === "touch" || controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE)) {
         return;
       }
-      // 手势层的 click 监听挂在控制器上; 捕获阶段拦下它, 这次点击才不会同时被它当成单击.
+      // 手势层的 click 监听挂在控制器上; 在捕获阶段拦截, 该次点击才不会被它同时判断为单击.
       event.stopPropagation();
       if (pendingClick != null) {
         window.clearTimeout(pendingClick);
@@ -1107,14 +1108,14 @@ function useClickGestures(
 }
 
 /**
- * 拖动进度条或音量条期间关掉媒体手势层.
+ * 拖动进度条或音量条期间关闭媒体手势层.
  *
- * 指针若松在画面上, 浏览器会把随后的 click 目标定为控制器 —— 按下与松开的最近公共祖先; 手势层按
- * 「目标在允许列表内且坐标落在播放器里」判定, 于是把这次拖动当成点击, 切换播放/暂停. 拖动期间设
- * `gesturesdisabled`, 手势层被隐藏、自身盒子为 0, 命中判定落空.
+ * 指针若在画面上松开, 浏览器会把随后的 click 目标定为控制器 — 按下与松开的最近公共祖先; 手势层按「目标在
+ * 允许列表内且坐标位于播放器内」判定, 于是把该次拖动判断为点击, 切换播放/暂停. 拖动期间设置
+ * `gesturesdisabled`, 手势层被隐藏且自身盒子为 0, 命中判定不成立.
  *
- * 撤销必须晚于那次 click: 在捕获阶段就撤销的话, 手势层又变回有盒子, 判定照样成立. 先挂一次性的
- * 捕获监听等这次 click 过去, 再推到下一个任务里恢复; 指针在窗口外松开时不会有 click, 用兜底定时器收尾.
+ * 撤销必须晚于该次 click: 在捕获阶段撤销时手势层恢复为有盒子, 判定同样成立. 先注册一次性的捕获监听等待
+ * 该次 click 结束, 再在下一个任务中恢复; 指针在窗口外松开时不会产生 click, 由兜底定时器收尾.
  */
 const DRAG_GUARD_MAX_MS = 400;
 
@@ -1185,15 +1186,15 @@ export type PlaybackPlayerProps = {
 
 /**
  * 跳转请求.
- * `nonce` 必须由调用方严格递增: 播放器按它与已处理的请求判重, 复用同一个值会被当成已处理而忽略,
- * 请求被清空后重新从 1 计数就会命中这种情况.
+ * `nonce` 必须由调用方严格递增: 播放器依据它与已处理的请求判重, 复用同一个值会被判断为已处理而忽略;
+ * 请求被清空后重新从 1 计数即会命中该情况.
  */
 export type SeekRequest = {
   seconds: number;
   nonce: number;
 };
 
-/** 跳转请求与它的回执. 两者必须成对给出: 播放器按请求定位后调用 `onHandled`, 由调用方清掉请求. */
+/** 跳转请求与它的回执. 两者必须成对给出: 播放器按请求定位后调用 `onHandled`, 由调用方清除请求. */
 export type PlaybackSeek = {
   request: SeekRequest;
   onHandled: () => void;
@@ -1221,11 +1222,11 @@ export function PlaybackPlayer({
   const [playbackRate, setPlaybackRate] = useState(1);
 
   /**
-   * 粗指针 (触屏) 上倍速改成右侧滑出面板: 悬浮菜单靠指针进入展开, 触屏既没有悬停也没有离开 —
-   * 全屏播放是横屏, 视口很宽, 靠宽度判断会退回鼠标形态, 因此按指针类型判定.
+   * 粗指针 (触屏) 上倍速改为右侧滑出面板: 悬浮菜单依靠指针进入展开, 触屏既没有悬停也没有离开 —
+   * 全屏播放为横屏, 视口很宽, 依据宽度判断会退回鼠标形态, 因此按指针类型判定.
    *
-   * 首帧就要取到真值, 不允许交给 effect 补: 预告片挂载后立即开始播放, 那次播放的监听得在这次挂载里就带上
-   * 粗指针.
+   * 首帧必须取到真值, 不允许交由 effect 补充: 预告片挂载后立即开始播放, 该次播放的监听必须在此次挂载内
+   * 即具备粗指针.
    */
   const coarsePointer = useMediaQuery("(pointer: coarse)", undefined, {
     getInitialValueInEffect: false,
@@ -1233,8 +1234,8 @@ export function PlaybackPlayer({
   const [rateSheetOpen, setRateSheetOpen] = useState(false);
   const rateSheetVisible = coarsePointer && rateSheetOpen;
 
-  // 面板展开期间钉住控制条与进度条: 展开本身重置了 media-chrome 的空闲计时, 随后它们又淡出, 看起来是进度条闪一下.
-  // `noautohide` 必须加在被淡出的元素本身 —— 控制器上的同名属性只管控制器自己的行为, 不加在子元素上它们照旧淡出.
+  // 面板展开期间固定控制条与进度条: 展开本身重置了 media-chrome 的空闲计时, 随后它们再次淡出, 表现为进度条闪烁.
+  // `noautohide` 必须加在被淡出的元素本身 — 控制器上的同名属性只作用于控制器自身的行为, 不加在子元素上它们照旧淡出.
   useEffect(() => {
     const controller = controllerRef.current;
     if (controller == null) {
@@ -1248,11 +1249,11 @@ export function PlaybackPlayer({
     }
   }, [controllerRef, rateSheetVisible]);
 
-  // 右键菜单: 只记点按位置. 复制的秒数在点按条目时读取, 因此不订阅 timeupdate (订阅会让整个播放器
-  // 每秒重渲染).
+  // 右键菜单: 只记录点按位置. 复制的秒数在点按条目时读取, 因此不订阅 timeupdate (订阅会使整个播放器
+  // 每秒重新渲染).
   const [contextMenu, setContextMenu] = useState<ContextMenuAnchor | null>(null);
 
-  // 画面的单击、双击与它们的排队状态: 菜单开合都要能撤掉排队中的那次单击.
+  // 画面的单击、双击与它们的排队状态: 菜单开合都要能取消排队中的那次单击.
   const cancelPendingClickRef = useClickGestures(controllerRef, videoRef, fullscreenButtonRef);
 
   // 触屏手势的提示: 长按加速与横滑拖进度, 与音量提示同形 (渲染位置见下方提示层).
@@ -1261,7 +1262,7 @@ export function PlaybackPlayer({
 
   const openContextMenu = useCallback(
     (anchor: ContextMenuAnchor) => {
-      // 右键之前若已经有一次左键单击在排队 (先左键后右键的连击), 它不该在菜单展开后切播放状态.
+      // 右键之前若已有一次左键单击在排队 (先左键后右键的连击), 它不应在菜单展开后切换播放状态.
       cancelPendingClickRef.current();
       setContextMenu(anchor);
     },
@@ -1271,8 +1272,8 @@ export function PlaybackPlayer({
 
   const readSeconds = useCallback(() => videoRef.current?.currentTime ?? 0, [videoRef]);
 
-  // 收起菜单的那一次点击只用于收起: 撤掉它排队中的单击, 否则画面会跟着切换播放/暂停.
-  // 交还焦点只发生在点菜单条目之后 (那时焦点在菜单项上), 点击别处收起时不夺回焦点.
+  // 收起菜单的那一次点击只用于收起: 取消它排队中的单击, 否则画面会同时切换播放/暂停.
+  // 交还焦点只发生在点按菜单条目之后 (此时焦点位于菜单项上), 点击其它位置收起时不收回焦点.
   const closeContextMenu = useCallback(
     (restoreFocus: boolean) => {
       cancelPendingClickRef.current();
@@ -1295,19 +1296,19 @@ export function PlaybackPlayer({
     const menu = rateMenuRef.current;
     if (menu != null && !menu.hidden) {
       rateButtonRef.current?.handleClick();
-      // 菜单展开时会把焦点拿到自己身上, 收起后交还播放器, 否则方向键等快捷键不再生效.
+      // 菜单展开时会将焦点移至自身, 收起后交还播放器; 否则方向键等快捷键不再生效.
       focusPlayer(controllerRef);
     }
   }, []);
 
-  // media-chrome 的菜单只响应点击, 这里在指针进入按钮时展开; 触屏没有悬停, 那次进入要忽略.
+  // media-chrome 的菜单只响应点击, 这里在指针进入按钮时展开; 触屏没有悬停, 该次进入忽略.
   const openRateMenu = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (event.pointerType !== "mouse") {
         return;
       }
       cancelRateClose();
-      // 鼠标形态下不会渲染滑出菜单, 顺手清掉它可能留下的展开态.
+      // 鼠标形态下不渲染滑出菜单, 一并清除它可能留下的展开态.
       setRateSheetOpen(false);
       const video = videoRef.current;
       if (video != null) {
@@ -1331,7 +1332,7 @@ export function PlaybackPlayer({
 
   const closeRateSheet = useCallback(() => setRateSheetOpen(false), []);
 
-  // 粗指针下倍速按钮的点击改开滑出菜单: 在捕获阶段截下, media-chrome 的菜单不会展开.
+  // 粗指针下倍速按钮的点击改为展开滑出菜单: 在捕获阶段截获, media-chrome 的菜单不会展开.
   const interceptRateButtonClick = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       if (!coarsePointer) {
@@ -1355,11 +1356,11 @@ export function PlaybackPlayer({
   useEffect(() => cancelRateClose, [cancelRateClose]);
 
   // 评论时间戳的跳转: 定位后立即播放, 与主流播放器点击时间戳的行为一致.
-  // 同一秒数可能被连点, 因此按 nonce 判重, 不按内容判重.
+  // 同一秒数可能被连续点按, 因此依据 nonce 判重, 不依据内容判重.
   //
-  // 元素尚未拿到媒体资源 (readyState 为 HAVE_NOTHING) 时写 currentTime 只记下默认播放起点, 不产生
-  // seeking 事件; hls.js 的起点只来自 seeking 事件与自身配置, 于是它从片头开始加载, 这一次跳转不生效.
-  // 目标因此先记下, 等元素能定位 (loadedmetadata / canplay) 时再写入.
+  // 元素尚未取得媒体资源 (readyState 为 HAVE_NOTHING) 时写 currentTime 只记录默认播放起点, 不产生
+  // seeking 事件; hls.js 的起点只来自 seeking 事件与自身配置, 于是它从片头开始加载, 该次跳转不生效.
+  // 目标因此先记录, 待元素能够定位 (loadedmetadata / canplay) 时再写入.
   const handledSeekRef = useRef(0);
   const pendingSeekRef = useRef<number | null>(null);
 
@@ -1443,8 +1444,8 @@ export function PlaybackPlayer({
   // 壳内本应用的静音状态: 静音只压住本应用, 系统媒体音量不变 (把系统音量置 0 会连带静音其它应用).
   // 浏览器内静音就是音量 0, 没有这一层.
   const [muted, setMuted] = useState(false);
-  // 亮度是画面叠加层的透明度 (网页拿不到系统亮度): 0.2 ~ 1 相对原片, 只在本次会话内有效.
-  // 壳内亮度写在窗口上, 这里保持 1 —— 叠加层再压暗一次会让手势的落点与画面不一致.
+  // 亮度是画面叠加层的透明度 (网页无法读取系统亮度): 0.2 ~ 1 相对原片, 只在本次会话内有效.
+  // 壳内亮度写在窗口上, 这里保持 1 —— 叠加层再压暗一次会使手势的作用位置与画面不一致.
   const [brightness, setBrightness] = useState(1);
   // 手势的基值来自这几个 ref: 手势回调必须是稳定引用, 不能跟着 state 变.
   const volumeRef = useRef(volume);
@@ -1458,7 +1459,7 @@ export function PlaybackPlayer({
   }, [brightness, muted, volume]);
   // 取消静音要回到的音量. 存储里只有当前音量, 0 之后无从取回, 因此这份记忆只保留在本次会话内.
   const lastNonZeroVolumeRef = useRef(volume === 0 ? 1 : volume);
-  // 最近一次真正落到系统上的音量与亮度: 系统值按档位/灰度生效, 同档重复写只是白跑一次跨进程调用.
+  // 最近一次真正写入系统的音量与亮度: 系统值按档位 / 灰度生效, 同档重复写入只是多一次跨进程调用.
   const landedVolumeRef = useRef<number | null>(null);
   const landedBrightnessRef = useRef<number | null>(null);
 
@@ -1477,14 +1478,15 @@ export function PlaybackPlayer({
   );
 
   // 音量变化只由用户操作发起 (滑杆、方向键、手势、静音按钮), 因此提示与存储都在操作处处理, 不订阅
-  // volumechange: 订阅会把装载时的恢复也当成一次调整.
+  // volumechange: 订阅会把装载时的恢复也判断为一次调整.
   //
-  // 壳内落点是系统媒体音量, 元素音量只在静音时归 0 —— 两者相乘会让手势拖到满格只得到系统音量的一部分.
-  // 归 0 即手机媒体静音, 与浏览器内「静音即音量 0」同形; 静音按钮不走这里, 它只压住本应用.
+  // 壳内的写入目标是系统媒体音量, 元素音量只在静音时为 0 — 两者相乘会使手势拖到满格只得到系统音量的
+  // 一部分. 元素音量为 0 即手机媒体静音, 与浏览器内「静音即音量 0」同形; 静音按钮不经由此路径, 它只作用
+  // 于本应用.
   //
-  // 写入前先取整到系统档位并丢掉同档的重复请求: 音量按档位生效, 一档之内写多少次都是同一个结果, 而每次
-  // 写入都要跨进程进 AudioService 并触发系统音量变更广播; 手势每个触摸点都请求一次, 到手写上百次,
-  // 音频流在静音那一步被反复切换, 画面随之卡顿.
+  // 写入前先取整到系统档位并排除同档的重复请求: 音量按档位生效, 一档之内写入多少次都是同一个结果, 而
+  // 每次写入都要跨进程进入 AudioService 并触发系统音量变更广播; 一次手势会写入上百次, 音频流在静音那一
+  // 步被反复切换, 画面随之卡顿.
   const setVolumeFromUser = useCallback(
     (next: number) => {
       if (systemLevels != null) {
@@ -1496,9 +1498,9 @@ export function PlaybackPlayer({
         }
         landedVolumeRef.current = level;
         systemLevels.setVolume(level);
-        // 元素音量不随音量操作改变: 声音由系统音量决定, 而在拖动途中改元素音量会让 WebView 的音频轨在静音点
-        // 停掉、拉回来再重连, 画面随之卡顿 —— 这正是"卡在静音点"与"从静音拉起像被暂停"的来源.
-        // 只有本应用静音过 (元素为 0, 由静音按钮压下) 时, 音量回升才需要还原它.
+        // 元素音量不随音量操作改变: 声音由系统音量决定, 而在拖动途中修改元素音量会使 WebView 的音频轨在静音点
+        // 停止、恢复时重新连接, 画面随之卡顿. 只有本应用处于静音 (元素为 0, 由静音按钮设置) 时, 音量回升才需要
+        // 还原元素音量.
         const video = videoRef.current;
         if (video != null && level > 0 && video.volume === 0) {
           video.volume = 1;
@@ -1538,8 +1540,8 @@ export function PlaybackPlayer({
     };
   }, [systemLevels]);
 
-  // 手势与逐级调整的基值读取都经稳定引用: 它们变化会重建手势监听, 正在进行的那次手势会丢.
-  // 壳内基值取系统当前值 —— 手势相对的是用户此刻看到的音量与亮度, 不是页面记住的值; 本应用静音时音量读作 0.
+  // 手势与逐级调整的基值读取都经由稳定引用: 它们变化会重建手势监听, 正在进行的手势会中断.
+  // 壳内基值取系统当前值 — 手势相对的是用户此刻看到的音量与亮度, 不是页面记住的值; 本应用静音时音量读作 0.
   const readLevel = useCallback(
     (level: HudKind) => {
       if (systemLevels != null) {
@@ -1568,10 +1570,10 @@ export function PlaybackPlayer({
     [readLevel, setVolumeFromUser],
   );
 
-  // 静音按钮与 `m` 快捷键都请求静音位; 浏览器内本播放器把静音实现为音量 0, 因此在控制器上就地截下这两条请求,
-  // 换成音量请求再重新派发. 必须用 stopImmediatePropagation: 控制器自己的监听挂在同一元素上.
+  // 静音按钮与 `m` 快捷键都请求静音位; 浏览器内本播放器把静音实现为音量 0, 因此在控制器上就地截获这两条请求,
+  // 换成音量请求再重新派发. 必须使用 stopImmediatePropagation: 控制器自身的监听挂在同一元素上.
   //
-  // 壳内静音只作用于本应用: 把系统媒体音量置 0 会连带静音其它应用, 因此这里改元素音量并记下静音状态;
+  // 壳内静音只作用于本应用: 把系统媒体音量置 0 会连带静音其它应用, 因此这里修改元素音量并记录静音状态;
   // 音量轴仍以系统值为准, 所以解除静音要回到系统当前值.
   const toggleMute = useCallback(() => {
     if (systemLevels != null) {
@@ -1581,7 +1583,7 @@ export function PlaybackPlayer({
       }
       const level = muted ? systemLevels.volume() : 0;
       video.volume = muted ? 1 : 0;
-      // 静音不动系统音量, 但它改变了页面呈现的音量: 记下来, 免得下一次拖动被当成同档而丢掉第一次调整.
+      // 静音不改变系统音量, 但它改变了页面呈现的音量: 记录下来, 否则下一次拖动会被判断为同档而丢弃第一次调整.
       landedVolumeRef.current = level;
       setMuted(!muted);
       setVolume(level);
@@ -1624,8 +1626,8 @@ export function PlaybackPlayer({
         return;
       }
       if (systemLevels != null) {
-        // 壳内亮度写窗口亮度, 由屏幕自己定下限; 叠加层保持全透明. 窗口亮度只有 8 位有用, 同一灰度
-        // 不重复写 —— 手势每个触摸点都请求一次, 亮度没变时那些调用都是白跑的跨进程写入.
+        // 壳内亮度写入窗口亮度, 由屏幕决定下限; 叠加层保持全透明. 窗口亮度只有 8 位有效, 同一灰度不重复写入 —
+        // 一次手势会写入上百次, 亮度未变化时那些调用都是多余的跨进程写入.
         const landed = landedBrightnessRef.current;
         if (landed != null && Math.round(landed * 255) === Math.round(value * 255)) {
           return;
@@ -1635,7 +1637,7 @@ export function PlaybackPlayer({
         showHud("brightness", value);
         return;
       }
-      // 亮度留 20% 的地板: 全黑没有意义, 也回不来.
+      // 亮度保留 20% 的下限: 全黑无法恢复, 且没有实际意义.
       const next = Math.max(value, MIN_BRIGHTNESS);
       setBrightness(next);
       showHud("brightness", next);
@@ -1653,7 +1655,7 @@ export function PlaybackPlayer({
     readLevel,
   );
 
-  // 指针点按不留焦点环: 壳内的 WebView 会给聚焦的元素画一圈方框; 键盘交互时撤掉标记, 反馈照旧.
+  // 指针点按不留下焦点环: 壳内的 WebView 会给聚焦的元素绘制一圈方框; 键盘交互时移除该标志, 反馈照旧.
   useEffect(() => {
     const controller = controllerRef.current;
     if (controller == null) {
@@ -1671,7 +1673,7 @@ export function PlaybackPlayer({
 
   useFullscreenScrollRestore(controllerRef);
   useFullscreenLandscape(controllerRef);
-  // 起播的监听要先于起播本身挂上: 预告片挂载后立即起播, 那一次也要进全屏.
+  // 起播的监听必须先于起播本身注册: 预告片挂载后立即起播, 该次起播同样要进入全屏.
   useFullscreenOnPlay(videoRef, fullscreenButtonRef, coarsePointer);
   useExitFullscreenOnEnded(videoRef, fullscreenButtonRef, coarsePointer);
   useAutoPlay(videoRef, autoPlay);
@@ -1687,7 +1689,7 @@ export function PlaybackPlayer({
     [videoRef],
   );
 
-  // 音量条的焦点落在 shadow DOM 里, `:focus-within` 在 WebKit 下不匹配宿主, 因此自己跟踪指针与焦点.
+  // 音量条的焦点位于 shadow DOM 内, `:focus-within` 在 WebKit 下不匹配宿主, 因此自行跟踪指针与焦点.
   const [volumePanelOpen, setVolumePanelOpen] = useState(false);
   // 拖动期间即使指针移出浮层也保持展开, 否则滑杆会拖到一半消失.
   const [volumeDragging, setVolumeDragging] = useState(false);
@@ -1703,7 +1705,7 @@ export function PlaybackPlayer({
 
   const openVolumePanel = useCallback(() => setVolumePanelOpen(true), []);
 
-  // 只认键盘焦点: 程序化交还的焦点 (例如倍速菜单收起时把焦点还给音量条) 不该把浮层带出来.
+  // 只处理键盘焦点: 程序化交还的焦点 (例如倍速菜单收起时把焦点还给音量条) 不应展开浮层.
   const handleVolumeFocus = useCallback(
     (event: FocusEvent<HTMLDivElement>) => {
       const target = event.target;
@@ -1828,8 +1830,8 @@ export function PlaybackPlayer({
             onBlur={handleVolumeBlur}
           >
             <MediaMuteButton />
-            {/* 触屏上不铺拖动的滑杆: 音量使用竖直滑动 (见 useTouchGestures), 按钮只管静音.
-                判据是指针类型而不是宽度 — 鼠标在窄窗口里既没有滑杆也没有触屏手势, 用宽度判定会让他两头落空. */}
+            {/* 触屏上不提供拖动的滑杆: 音量使用竖直滑动 (见 useTouchGestures), 按钮只处理静音.
+                判据是指针类型: 鼠标在窄窗口里既没有滑杆也没有触屏手势, 依据宽度判定会使两者都不成立. */}
             {coarsePointer ? null : (
               <div className={classes.volumePanel} onPointerDown={startVolumeDrag}>
                 <Slider
@@ -1918,7 +1920,7 @@ export function PlaybackPlayer({
           />
         ) : null}
         {/* 调整提示: 键盘调音量 / 静音与触屏竖直滑动 (音量或亮度) 时显示.
-          画面内浮层 (本层、跳转提示、倍速徽标、右键菜单) 都留在控制器内 — 全屏只渲染控制器子树, 放在外面会随
+          画面内浮层 (本层、跳转提示、倍速徽标、右键菜单) 都留在控制器内 — 全屏只渲染控制器子树, 移至控制器外会随
           全屏消失 — 显隐只由状态决定, 不随控制条的自动隐藏消失. */}
         {hud != null ? (
           <div className={classes.volumeIndicatorLayer}>
@@ -1946,7 +1948,7 @@ export function PlaybackPlayer({
             </div>
           </div>
         ) : null}
-        {/* 按住加速的标记: 触屏长按与键盘按住都会置位, 从菜单里选的倍速不显示. 箭头是装饰, 闪烁见样式表. */}
+        {/* 按住加速的标记: 触屏长按与键盘按住都会设置, 从菜单里选的倍速不显示. 箭头为装饰, 闪烁见样式表. */}
         {speedHold ? (
           <div className={classes.speedBadgeLayer}>
             <div className={classes.speedBadge} role="status" aria-live="polite">
