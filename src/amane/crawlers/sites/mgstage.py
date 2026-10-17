@@ -8,6 +8,18 @@ from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text, number_variants, select_number_index
 
+#: 竖版海报与横版放大图同目录同名, 只差文件名前缀; 详情页只引用后者, 海报地址由封面推导.
+_COVER_PREFIX = "pb_e_"
+_POSTER_PREFIX = "pf_e_"
+
+
+def _poster_url(cover_url: str) -> str | None:
+    """横版封面地址 → 同目录竖版海报地址; 非 ``pb_e_`` 形态返回 ``None``."""
+    directory, _, filename = cover_url.rpartition("/")
+    if not directory or not filename.startswith(_COVER_PREFIX):
+        return None
+    return f"{directory}/{_POSTER_PREFIX}{filename.removeprefix(_COVER_PREFIX)}"
+
 
 class MGStageCrawler(Crawler):
     #: 详情页地址里的番号段, 检索结果与直达地址共用同一形态.
@@ -83,6 +95,7 @@ class MGStageCrawler(Crawler):
 
         cover = extract_text(html, '//a[@id="EnlargeImage"]/@href', '//img[@class="enlarge_image"]/@src')
         thumb_url = cover or None
+        poster_url = _poster_url(cover)
 
         extrafanart = extract_all_texts(html, '//dl[@id="sample-photo"]//li/a/@href')
 
@@ -103,6 +116,7 @@ class MGStageCrawler(Crawler):
             tags=tags,
             series=series or None,
             plot=plot or None,
+            poster_urls=[poster_url] if poster_url else [],
             thumb_urls=[thumb_url] if thumb_url else [],
             extrafanart=extrafanart,
             source_url=url,
