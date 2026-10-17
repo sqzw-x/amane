@@ -1,7 +1,8 @@
-"""Wikidata 搜索 + 维基百科简介. CJK 不允许单独匹配「女優/女优/男優」."""
+"""Wikidata 搜索 + 维基百科简介与信息框身材行. CJK 不允许单独匹配「女優/女优/男優」."""
 
 from __future__ import annotations
 
+import math
 import re
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import quote
@@ -177,6 +178,9 @@ _P21_GENDER: dict[str, ActorGender] = {
     "Q6581097": ActorGender.MALE,
 }
 
+# Wikidata 的厘米单位; 其它单位的量值不换算, 一律丢弃.
+_CENTIMETRE = "http://www.wikidata.org/entity/Q174728"
+
 
 class WikipediaActorCrawler(ActorCrawler):
     @classmethod
@@ -304,13 +308,18 @@ class WikipediaActorCrawler(ActorCrawler):
         overview: str | None = None
         birthplace: str | None = None
         source_url: str | None = None
+        figure = _NO_FIGURE
         page = await self._fetch_wiki_page(sitelinks)
         if page is not None:
             source_url = page.url
             overview = page.overview
             birthplace = page.birthplace
+            figure = page.figure
             if not birthday:
                 birthday = page.birthday
+
+        # 身高另有 Wikidata P2048; 信息框所在词条优先于实体声明.
+        height = figure.height if figure.height is not None else _claim_quantity(entity, "P2048", unit=_CENTIMETRE)
 
         if not source_url:
             source_url = f"https://www.wikidata.org/wiki/{qid}"
@@ -331,6 +340,11 @@ class WikipediaActorCrawler(ActorCrawler):
             gender=gender,
             birthday=birthday,
             birthplace=birthplace,
+            height=height,
+            bust=figure.bust,
+            waist=figure.waist,
+            hip=figure.hip,
+            cup=figure.cup,
             overview=overview,
             tagline=tagline,
             image_urls=[image_url] if image_url else [],
@@ -456,6 +470,33 @@ def _claim_time(entity: dict[str, Any], pid: str) -> str | None:
     return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
 
 
+def _claim_quantity(entity: dict[str, Any], pid: str, *, unit: str) -> int | None:
+    """取单条 quantity 声明的整数值; 单位不是 ``unit`` 的量值返回 ``None``."""
+    claims = entity.get("claims")
+    if not isinstance(claims, dict):
+        return None
+    entries = claims.get(pid)
+    if not isinstance(entries, list) or not entries:
+        return None
+    snak = entries[0].get("mainsnak") if isinstance(entries[0], dict) else None
+    if not isinstance(snak, dict):
+        return None
+    datavalue = snak.get("datavalue")
+    if not isinstance(datavalue, dict):
+        return None
+    value = datavalue.get("value")
+    if not isinstance(value, dict) or value.get("unit") != unit:
+        return None
+    amount = value.get("amount")
+    if not isinstance(amount, str):
+        return None
+    try:
+        number = float(amount)
+    except ValueError:
+        return None
+    return int(number) if number.is_integer() else None
+
+
 def _claim_gender(entity: dict[str, Any]) -> ActorGender | None:
     claims = entity.get("claims")
     if not isinstance(claims, dict):
@@ -540,18 +581,30 @@ def _wiki_url(sitelinks: dict[str, Any], lang: str) -> str | None:
     return f"https://{lang}.wikipedia.org/{prefix}/{quote(title.replace(' ', '_'), safe='()_')}"
 
 
+class _Figure(NamedTuple):
+    height: int | None
+    bust: int | None
+    waist: int | None
+    hip: int | None
+    cup: str | None
+
+
+_NO_FIGURE = _Figure(height=None, bust=None, waist=None, hip=None, cup=None)
+
+
 class _WikiPage(NamedTuple):
     url: str
     overview: str | None
     birthplace: str | None
     birthday: str | None
+    figure: _Figure
 
 
 def _parse_wiki_page(url: str, html_text: str) -> _WikiPage:
     html = Selector(text=html_text)
     overview = _clip_blocks(_overview_blocks(html)) or None
-    birthplace, birthday = _parse_infobox(html)
-    return _WikiPage(url=url, overview=overview, birthplace=birthplace, birthday=birthday)
+    birthplace, birthday, figure = _parse_infobox(html)
+    return _WikiPage(url=url, overview=overview, birthplace=birthplace, birthday=birthday, figure=figure)
 
 
 def _overview_blocks(html: Selector) -> list[str]:
@@ -648,10 +701,49 @@ def _cut_at_sentence(text: str, limit: int) -> str:
     return f"{head.rstrip()}…"
 
 
-def _parse_infobox(html: Selector) -> tuple[str | None, str | None]:
-    """信息框的出身地与出生日期; 与词条语言无关, 命中即取."""
+# 标签随词条语言一套: 中文 (简体) 与日文. 繁体渲染只出现在 zh-tw 变体, 而中文词条固定取 zh-cn, 因此不收.
+_HEIGHT_LABELS: tuple[str, ...] = ("身長", "身高")
+_SIZES_LABELS: tuple[str, ...] = ("スリーサイズ", "三围")
+_CUP_LABELS: tuple[str, ...] = ("ブラサイズ", "罩杯")
+# 信息框底部的「计量单位换算 / 英米単位系」折叠块渲染出同名的英制行 (5英尺3英寸 / 32 - 23 - 34 英寸).
+# 单位不可省: 只认公制, 否则英寸会被当厘米写进身高与三围.
+_METRIC = r"(?:cm|厘米)"
+_CM = r"(\d{2,3}(?:\.\d+)?)"
+_HEIGHT_RE = re.compile(rf"^{_CM}\s*{_METRIC}")
+_SIZES_RE = re.compile(rf"^{_CM}\s*-\s*{_CM}\s*-\s*{_CM}\s*{_METRIC}")
+# 罩杯是字母加可选下标: C / C70 / C-65 (下标为下胸围).
+_CUP_RE = re.compile(r"^([A-Za-z]{1,2})\s*-?\s*\d{0,3}$")
+
+
+def _round_cm(raw: str) -> int:
+    """长度取整到厘米; 信息框偶尔写小数 (深田えいみ的三围), 四舍五入而非丢弃."""
+    return math.floor(float(raw) + 0.5)
+
+
+def _fill_figure(figure: _Figure, label: str, value: str) -> _Figure:
+    """按标签填空: 取第一条解析得出的值, 同名行不覆盖 (英制换算是同名行的后手)."""
+    text = _clean_inline(value)
+    if figure.height is None and any(keyword in label for keyword in _HEIGHT_LABELS):
+        match = _HEIGHT_RE.match(text)
+        return figure._replace(height=_round_cm(match.group(1))) if match else figure
+    if figure.bust is None and any(keyword in label for keyword in _SIZES_LABELS):
+        match = _SIZES_RE.match(text)
+        if match:
+            return figure._replace(
+                bust=_round_cm(match.group(1)), waist=_round_cm(match.group(2)), hip=_round_cm(match.group(3))
+            )
+        return figure
+    if figure.cup is None and any(keyword in label for keyword in _CUP_LABELS):
+        match = _CUP_RE.match(text)
+        return figure._replace(cup=match.group(1).upper()) if match else figure
+    return figure
+
+
+def _parse_infobox(html: Selector) -> tuple[str | None, str | None, _Figure]:
+    """信息框的出身地、出生日期与身材; 与词条语言无关, 命中即取."""
     birthplace = None
     birthday = None
+    figure = _NO_FIGURE
     for row in html.css("table.infobox tr, .infobox tr"):
         label = (extract_text(row, "string(./th)") or extract_text(row, "string(.//th)") or "").strip()
         value = (extract_text(row, "string(./td)") or extract_text(row, "string(.//td)") or "").strip()
@@ -661,4 +753,5 @@ def _parse_infobox(html: Selector) -> tuple[str | None, str | None]:
             birthplace = _clean_inline(value)
         if ("生年" in label or "出生" in label) and not birthday:
             birthday = normalize_calendar_date(value)
-    return birthplace, birthday
+        figure = _fill_figure(figure, label, value)
+    return birthplace, birthday, figure

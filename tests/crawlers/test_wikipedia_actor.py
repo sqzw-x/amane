@@ -1,7 +1,7 @@
-"""维基来源: 简介拼装与词条语言回退.
+"""维基来源: 简介拼装、信息框字段与词条语言回退.
 
 fixture 用例 (amane-testdata) 覆盖真实页面, 这里只覆盖规则与无法搬进 TOML 的部分:
-章节白名单与层级归属、引用标记、长度上限、多语言回退与请求次数.
+章节白名单与层级归属、引用标记、长度上限、信息框身材行的取值规则、多语言回退与请求次数.
 """
 
 from __future__ import annotations
@@ -204,12 +204,37 @@ def test_infobox_fields(case_id: str, infobox: str, birthplace: str | None, birt
     assert (page.birthplace, page.birthday) == (birthplace, birthday)
 
 
-def _entity(*, labels: dict[str, str], sitelinks: dict[str, str], birthday: str | None = None) -> dict[str, Any]:
+def test_infobox_figure_rejects_imperial_rows() -> None:
+    """只有英制行时身材字段必须留空.
+
+    真实页面里的英制行永远排在公制行之后, 只按「首个可解析值胜出」也能通过 fixture 用例,
+    因此单位校验这条守卫只能用构造的信息框覆盖 (其余身材形态见 amane-testdata 的 wikipedia 目录).
+    """
+    infobox = (
+        "<table class='infobox'><tr><th>身長 / 体重</th><td>5 ft 3 in / ― lb</td></tr>"
+        "<tr><th>スリーサイズ</th><td>35 - 21 - 35 in</td></tr>"
+        "<tr><th>ブラサイズ</th><td>F</td></tr></table>"
+    )
+    page = _parse_wiki_page(_JA_URL, _page(f"{infobox}<p>导语。</p>"))
+    figure = page.figure
+    assert (figure.height, figure.bust, figure.waist, figure.hip, figure.cup) == (None, None, None, None, "F")
+
+
+def _entity(
+    *,
+    labels: dict[str, str],
+    sitelinks: dict[str, str],
+    birthday: str | None = None,
+    height: tuple[str, str] | None = None,
+) -> dict[str, Any]:
     claims: dict[str, Any] = {
         "P106": [{"mainsnak": {"datavalue": {"value": {"id": "Q1079215"}}}}],
     }
     if birthday is not None:
         claims["P569"] = [{"mainsnak": {"datavalue": {"value": {"time": f"+{birthday}T00:00:00Z"}}}}]
+    if height is not None:
+        amount, unit = height
+        claims["P2048"] = [{"mainsnak": {"datavalue": {"value": {"amount": amount, "unit": unit}}}}]
     return {
         "labels": {lang: {"value": value} for lang, value in labels.items()},
         "descriptions": {"ja": {"value": _AV_DESCRIPTION}},
@@ -344,3 +369,50 @@ async def test_entry_language_narrowed_list_without_sitelink() -> None:
     assert meta.source_url == f"https://www.wikidata.org/wiki/{_QID}"
     assert meta.overview is None
     assert fetched == []
+
+
+_CM_UNIT = "http://www.wikidata.org/entity/Q174728"
+_INCH_UNIT = "http://www.wikidata.org/entity/Q218593"
+_HEIGHT_INFOBOX = "<table class='infobox'><tr><th>身長 / 体重</th><td>160 cm / ― kg</td></tr></table>"
+
+# (id, 信息框, P2048 (量值, 单位), 期望身高): 身高以词条信息框为准, 实体声明只作兜底.
+# 声明是构造的: 真实 entity fixture 的量值与信息框同值, 用真实数据区分不出优先级与单位守卫.
+_HEIGHT_CLAIM_CASES: list[tuple[str, str, tuple[str, str] | None, int | None]] = [
+    ("信息框优先", _HEIGHT_INFOBOX, ("+159", _CM_UNIT), 160),
+    ("无身材行取声明", "<table class='infobox'></table>", ("+159", _CM_UNIT), 159),
+    ("单位不是厘米", "<table class='infobox'></table>", ("+63", _INCH_UNIT), None),
+    ("小数声明", "<table class='infobox'></table>", ("+159.5", _CM_UNIT), None),
+    ("缺声明", "<table class='infobox'></table>", None, None),
+]
+_HEIGHT_CLAIM_IDS = [case[0] for case in _HEIGHT_CLAIM_CASES]
+
+
+@pytest.mark.parametrize(("case_id", "infobox", "height", "expected"), _HEIGHT_CLAIM_CASES, ids=_HEIGHT_CLAIM_IDS)
+@pytest.mark.asyncio
+async def test_height_claim_fallback(
+    case_id: str, infobox: str, height: tuple[str, str] | None, expected: int | None
+) -> None:
+    crawler, _ = _crawler(
+        _entity(labels={"ja": _NAME}, sitelinks={"ja": "伊藤舞雪"}, height=height),
+        {"ja.wikipedia.org": _page(f"{infobox}<p>导语。</p>")},
+    )
+    meta = await crawler.fetch(_NAME)
+    assert meta is not None
+    assert meta.height == expected
+
+
+@pytest.mark.asyncio
+async def test_figure_reaches_metadata() -> None:
+    """信息框身材行必须落进 ActorMetadata, 三围与罩杯同源."""
+    infobox = (
+        "<table class='infobox'><tr><th>身長 / 体重</th><td>149 cm / ― kg</td></tr>"
+        "<tr><th>スリーサイズ</th><td>79 - 52 - 78 cm</td></tr>"
+        "<tr><th>ブラサイズ</th><td>H</td></tr></table>"
+    )
+    crawler, _ = _crawler(
+        _entity(labels={"ja": _NAME}, sitelinks={"ja": "伊藤舞雪"}),
+        {"ja.wikipedia.org": _page(infobox)},
+    )
+    meta = await crawler.fetch(_NAME)
+    assert meta is not None
+    assert (meta.height, meta.bust, meta.waist, meta.hip, meta.cup) == (149, 79, 52, 78, "H")
