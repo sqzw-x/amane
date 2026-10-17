@@ -11,6 +11,8 @@ from ..parsing import extract_all_texts, extract_text, number_variants, select_n
 #: 竖版海报与横版放大图同目录同名, 只差文件名前缀; 详情页只引用后者, 海报地址由封面推导.
 _COVER_PREFIX = "pb_e_"
 _POSTER_PREFIX = "pf_e_"
+#: 素人条目的出演栏写的是站点的代名 (名字后跟年龄与职业), 不是可对齐的演员身份.
+_AMATEUR_TAG = "素人"
 
 
 def _poster_url(cover_url: str) -> str | None:
@@ -80,7 +82,14 @@ class MGStageCrawler(Crawler):
         number_match = re.search(r"/product_detail/([^/]+)", url)
         number = number_match.group(1) if number_match else ""
 
-        actors = extract_all_texts(html, '//th[contains(text(),"出演")]/following-sibling::td/a/text()')
+        tags = extract_all_texts(html, '//th[contains(text(),"ジャンル")]/following-sibling::td/a/text()')
+
+        # 素人条目的出演值是站点代名; 演员字段按首个非空来源锁定, 写入即顶掉 javdb 记的本人, 故不取.
+        actors = (
+            []
+            if any(_AMATEUR_TAG in tag for tag in tags)
+            else extract_all_texts(html, '//th[contains(text(),"出演")]/following-sibling::td/a/text()')
+        )
         studio = extract_text(html, '//th[contains(text(),"メーカー")]/following-sibling::td/a/text()')
         publisher = extract_text(html, '//th[contains(text(),"レーベル")]/following-sibling::td/a/text()')
         series = extract_text(html, '//th[contains(text(),"シリーズ")]/following-sibling::td/a/text()')
@@ -90,8 +99,6 @@ class MGStageCrawler(Crawler):
 
         release_raw = extract_text(html, '//th[contains(text(),"配信開始日")]/following-sibling::td/text()')
         release = release_raw.strip() if release_raw else None
-
-        tags = extract_all_texts(html, '//th[contains(text(),"ジャンル")]/following-sibling::td/a/text()')
 
         cover = extract_text(html, '//a[@id="EnlargeImage"]/@href', '//img[@class="enlarge_image"]/@src')
         thumb_url = cover or None
