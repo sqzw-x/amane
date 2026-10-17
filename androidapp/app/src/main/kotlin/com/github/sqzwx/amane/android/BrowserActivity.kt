@@ -466,6 +466,17 @@ open class BrowserActivity : AppCompatActivity() {
         return manager.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / max
     }
 
+    /**
+     * 系统媒体音量的一档大小 (1 / 档位数), 取不到时为 0.
+     *
+     * 音量按档位生效, 一档之内写多少次都是同一个结果; 页面据此取整, 免得一次拖动写出上百次跨进程调用.
+     */
+    internal fun mediaVolumeStep(): Double {
+        val manager = getSystemService(AudioManager::class.java) ?: return 0.0
+        val max = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        return if (max > 0) 1.0 / max else 0.0
+    }
+
     /** 写入系统媒体音量; 不弹出系统音量界面 —— 页面自己绘制提示. */
     internal fun setMediaVolume(value: Double) {
         val manager = getSystemService(AudioManager::class.java) ?: return

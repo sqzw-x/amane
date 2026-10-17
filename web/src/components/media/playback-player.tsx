@@ -1361,6 +1361,9 @@ export function PlaybackPlayer({
   }, [brightness, muted, volume]);
   // 取消静音要回到的音量. 存储里只有当前音量, 0 之后无从取回, 因此这份记忆只保留在本次会话内.
   const lastNonZeroVolumeRef = useRef(volume === 0 ? 1 : volume);
+  // 最近一次真正落到系统上的音量与亮度: 系统值按档位/灰度生效, 同档重复写只是白跑一次跨进程调用.
+  const landedVolumeRef = useRef<number | null>(null);
+  const landedBrightnessRef = useRef<number | null>(null);
 
   const applyVolume = useCallback(
     (next: number) => {
@@ -1381,17 +1384,28 @@ export function PlaybackPlayer({
   //
   // 壳内落点是系统媒体音量, 元素音量只在静音时归 0 —— 两者相乘会让手势拖到满格只得到系统音量的一部分.
   // 归 0 即手机媒体静音, 与浏览器内「静音即音量 0」同形; 静音按钮不走这里, 它只压住本应用.
+  //
+  // 写入前先取整到系统档位并丢掉同档的重复请求: 音量按档位生效, 一档之内写多少次都是同一个结果, 而每次
+  // 写入都要跨进程进 AudioService 并触发系统音量变更广播; 手势每个触摸点都请求一次, 到手写上百次,
+  // 音频流在静音那一步被反复切换, 画面随之卡顿.
   const setVolumeFromUser = useCallback(
     (next: number) => {
       if (systemLevels != null) {
-        systemLevels.setVolume(next);
+        const step = systemLevels.volumeStep;
+        const level = step > 0 ? Math.min(Math.round(next / step) * step, 1) : next;
+        const landed = landedVolumeRef.current;
+        if (landed != null && Math.abs(level - landed) < (step > 0 ? step : 0.001) / 2) {
+          return;
+        }
+        landedVolumeRef.current = level;
+        systemLevels.setVolume(level);
         const video = videoRef.current;
         if (video != null) {
-          video.volume = next > 0 ? 1 : 0;
+          video.volume = level > 0 ? 1 : 0;
         }
-        setMuted(next === 0);
-        setVolume(next);
-        showHud("volume", next);
+        setMuted(level === 0);
+        setVolume(level);
+        showHud("volume", level);
         return;
       }
       applyVolume(next);
@@ -1467,6 +1481,8 @@ export function PlaybackPlayer({
       }
       const level = muted ? systemLevels.volume() : 0;
       video.volume = muted ? 1 : 0;
+      // 静音不动系统音量, 但它改变了页面呈现的音量: 记下来, 免得下一次拖动被当成同档而丢掉第一次调整.
+      landedVolumeRef.current = level;
       setMuted(!muted);
       setVolume(level);
       showHud("volume", level);
@@ -1508,7 +1524,13 @@ export function PlaybackPlayer({
         return;
       }
       if (systemLevels != null) {
-        // 壳内亮度写窗口亮度, 由屏幕自己定下限; 叠加层保持全透明.
+        // 壳内亮度写窗口亮度, 由屏幕自己定下限; 叠加层保持全透明. 窗口亮度只有 8 位有用, 同一灰度
+        // 不重复写 —— 手势每个触摸点都请求一次, 亮度没变时那些调用都是白跑的跨进程写入.
+        const landed = landedBrightnessRef.current;
+        if (landed != null && Math.round(landed * 255) === Math.round(value * 255)) {
+          return;
+        }
+        landedBrightnessRef.current = value;
         systemLevels.setBrightness(value);
         showHud("brightness", value);
         return;

@@ -18,6 +18,8 @@ interface AmaneShellBridge {
   /** 系统媒体音量, 0..1; 旧版壳没有这一组方法. */
   mediaVolume?(): number;
   setMediaVolume?(value: number): void;
+  /** 系统媒体音量的一档大小; 与上一组一并出现, 但另行判空 —— 已装出去的壳可能只有上一组. */
+  mediaVolumeStep?(): number;
   /** 窗口亮度, 0..1. */
   screenBrightness?(): number;
   setScreenBrightness?(value: number): void;
@@ -114,6 +116,13 @@ export interface ShellSystemLevels {
   /** 系统媒体音量, 0..1. */
   volume(): number;
   setVolume(value: number): void;
+  /**
+   * 系统媒体音量的一档大小 (1 / 档位数); 旧壳不提供时为 0, 调用方按值去重即可.
+   *
+   * 音量按档位生效: 一档之内写多少次都是同一个结果, 而每次写入都要跨进程进 AudioService,
+   * 因此调用方按它取整, 只在跨档时写.
+   */
+  volumeStep: number;
   /** 窗口亮度, 0..1. */
   brightness(): number;
   setBrightness(value: number): void;
@@ -146,9 +155,12 @@ export function shellSystemLevels(): ShellSystemLevels | null {
     return null;
   }
   // 以桥为接收者调用, 不假设 Java 桥的方法可以拆出来单调用.
+  // 档位是可选方法: 已装出去的壳没有它, 缺了只是不去重, 不影响音量本身.
+  const { mediaVolumeStep } = bridge;
   return {
     volume: () => mediaVolume.call(bridge),
     setVolume: (value) => setMediaVolume.call(bridge, value),
+    volumeStep: mediaVolumeStep == null ? 0 : mediaVolumeStep.call(bridge),
     brightness: () => screenBrightness.call(bridge),
     setBrightness: (value) => setScreenBrightness.call(bridge, value),
     clearBrightness: () => clearScreenBrightness.call(bridge),

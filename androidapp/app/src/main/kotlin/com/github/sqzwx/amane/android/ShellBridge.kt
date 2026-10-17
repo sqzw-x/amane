@@ -56,6 +56,10 @@ class ShellBridge(private val activity: BrowserActivity) {
         activity.setMediaVolume(value)
     }
 
+    /** 系统媒体音量的一档大小, 供页面把连读的手势值取整到档位; 取不到时为 0. */
+    @JavascriptInterface
+    fun mediaVolumeStep(): Double = activity.mediaVolumeStep()
+
     /** 当前亮度, 0..1; 与 [setScreenBrightness] 成对. */
     @JavascriptInterface
     fun screenBrightness(): Double = activity.screenBrightness()
