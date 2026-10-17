@@ -87,8 +87,7 @@
   "点一下把控制条叫出来", 结果跳了进度或弹出倍速菜单. 淡出期间一律不接受指针事件, 点击因此落到底下的浮层,
   由控制器把控制条叫回来.
 
-  `userinactive` 在暂停时同样存在 (见下方居中按钮的规则), 因此必须同时排除暂停态: 那时控制条是可见的.
-  播放中也不会有别的形态让这两者同时成立.
+  `userinactive` 在暂停时同样存在 (见下方居中按钮的规则), 而那时控制条是可见的.
 */
 .controller[userinactive]:not([mediapaused]) media-control-bar,
 .controller[userinactive]:not([mediapaused]) media-time-range,
@@ -220,7 +219,8 @@
   z-index: 4;
   padding: 0;
   border: 0;
-  background: rgb(0 0 0 / 0.35);
+  /* 只作「点面板外关闭」的接收面: 面板展开不该让画面变暗. */
+  background: transparent;
 }
 
 .rateSheet {
@@ -239,6 +239,20 @@
   touch-action: pan-y;
   background: var(--amane-player-panel-background);
   box-shadow: var(--mantine-shadow-md);
+  animation: rateSheetIn 0.18s ease-out;
+}
+
+@keyframes rateSheetIn {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+/* 关掉动效时直接出现, 不留一段静止的滑入. */
+@media (prefers-reduced-motion: reduce) {
+  .rateSheet {
+    animation: none;
+  }
 }
 
 .rateSheetTitle {

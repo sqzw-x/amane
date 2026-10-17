@@ -1183,6 +1183,21 @@ export function PlaybackPlayer({
   const [rateSheetOpen, setRateSheetOpen] = useState(false);
   const rateSheetVisible = coarsePointer && rateSheetOpen;
 
+  // 面板展开期间钉住控制条与进度条: 展开本身重置了 media-chrome 的空闲计时, 随后它们又淡出, 看起来是进度条闪一下.
+  // `noautohide` 必须加在被淡出的元素本身 —— 控制器上的同名属性只管控制器自己的行为, 不加在子元素上它们照旧淡出.
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller == null) {
+      return;
+    }
+    const pinned = controller.querySelectorAll(
+      `media-control-bar, media-time-range, .${classes.scrim}`,
+    );
+    for (const element of pinned) {
+      element.toggleAttribute("noautohide", rateSheetVisible);
+    }
+  }, [controllerRef, rateSheetVisible]);
+
   // 右键菜单: 只记点按位置. 复制的秒数在点按条目时读取, 因此不订阅 timeupdate (订阅会让整个播放器
   // 每秒重渲染).
   const [contextMenu, setContextMenu] = useState<ContextMenuAnchor | null>(null);
