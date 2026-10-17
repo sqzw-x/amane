@@ -500,8 +500,11 @@ const POINTER_FOCUS_ATTRIBUTE = "data-amane-pointer";
 const GESTURE_ATTRIBUTE = "data-amane-gesture";
 /** 双击的判定窗口 (毫秒). 单击的动作须等过整个窗口, 才能确定没有第二次点击. */
 const DOUBLE_CLICK_MS = 250;
-/** 触屏长按多久算"按住加速" (毫秒); 与键盘 `HOLD_SEEK_DELAY_MS` 是同一条动作. */
-const TOUCH_LONG_PRESS_MS = 450;
+/**
+ * 触屏长按多久算"按住加速" (毫秒); 与键盘 `HOLD_SEEK_DELAY_MS` 是同一条动作.
+ * 比键盘长, 因为要避开点按; 但按住加速是"边看边用"的动作, 等太久会觉得没反应.
+ */
+const TOUCH_LONG_PRESS_MS = 300;
 /** 触屏手势的起手位移阈值 (像素): 超过它就不再是点按. */
 const TOUCH_MOVE_THRESHOLD_PX = 10;
 /** 横向滑过整个播放窗口对应的跳转秒数, 以及单次手势的跳转上限. */
@@ -811,6 +814,11 @@ function useTouchGestures(
       }
       // 暂停态只剩居中大按钮: 置位属性会让它在按下的一瞬整段消失、松手才回来, 看起来是闪烁.
       pausedAtStart = video.paused;
+      // 播放中的闲置态本来就没有控制条, 从按下这一刻起就保持隐藏: 触摸带来的活跃态会先把进度条淡入,
+      // 等识别出手势再隐藏就成了"先闪一下再消失". 控制条此刻可见时不置位, 免得一次点按把它整段抹掉.
+      if (!pausedAtStart && controller.hasAttribute(USER_INACTIVE_ATTRIBUTE)) {
+        controller.setAttribute(GESTURE_ATTRIBUTE, "");
+      }
       pointerId = event.pointerId;
       startX = event.clientX;
       startY = event.clientY;
@@ -860,7 +868,7 @@ function useTouchGestures(
           return;
         }
         clearLongPress();
-        // 手势成立之后才隐藏控制条: 在 `pointerdown` 就挂, 一次点按也会让它整段消失 ~50ms, 看起来是闪一下.
+        // 控制条此刻可见时到这里才隐藏 (按下那刻隐藏会让一次点按把它整段抹掉); 已隐藏的早在按下时就置位了.
         if (!pausedAtStart) {
           controller.setAttribute(GESTURE_ATTRIBUTE, "");
         }
