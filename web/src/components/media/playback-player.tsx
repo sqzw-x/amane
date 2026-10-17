@@ -1474,9 +1474,12 @@ export function PlaybackPlayer({
         }
         landedVolumeRef.current = level;
         systemLevels.setVolume(level);
+        // 元素音量不随音量操作改变: 声音由系统音量决定, 而在拖动途中改元素音量会让 WebView 的音频轨在静音点
+        // 停掉、拉回来再重连, 画面随之卡顿 —— 这正是"卡在静音点"与"从静音拉起像被暂停"的来源.
+        // 只有本应用静音过 (元素为 0, 由静音按钮压下) 时, 音量回升才需要还原它.
         const video = videoRef.current;
-        if (video != null) {
-          video.volume = level > 0 ? 1 : 0;
+        if (video != null && level > 0 && video.volume === 0) {
+          video.volume = 1;
         }
         setMuted(level === 0);
         setVolume(level);
