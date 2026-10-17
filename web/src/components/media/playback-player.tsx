@@ -491,6 +491,8 @@ const USER_INACTIVE_ATTRIBUTE = "userinactive";
 const MEDIA_PAUSED_ATTRIBUTE = "mediapaused";
 /** 本次触摸只用于呼出控制条: 由样式表据此屏蔽控件的指针事件. */
 const REVEAL_ATTRIBUTE = "data-amane-reveal";
+/** 最近的交互来自指针: 样式表据此不给聚焦的控件画焦点环 (键盘交互会撤掉它). */
+const POINTER_FOCUS_ATTRIBUTE = "data-amane-pointer";
 /**
  * 触屏手势进行中置位的属性: 控制条与进度条不参与 (见样式表).
  * 触摸按下即置位, 松手撤掉 — 撤掉的那一瞬在浏览器派发 click 之前, 点按切换控件显隐照常.
@@ -794,6 +796,8 @@ function useTouchGestures(
 
     const handlePointerDown = (event: PointerEvent) => {
       lastPointerType = event.pointerType;
+      // 上一次手势留下的隐藏在这里撤掉: 点按要能重新把控制条叫出来 (见 `handlePointerEnd`).
+      controller.removeAttribute(GESTURE_ATTRIBUTE);
       if (
         event.pointerType !== "touch" ||
         controller.hasAttribute(GESTURES_DISABLED_ATTRIBUTE) ||
@@ -826,6 +830,10 @@ function useTouchGestures(
           return;
         }
         mode = "speed";
+        // 长按同样是手势: 期间不显示控制条, 否则暂停键与进度条会盖在画面上.
+        if (!pausedAtStart) {
+          controller.setAttribute(GESTURE_ATTRIBUTE, "");
+        }
         rateBeforeHold = current.playbackRate;
         current.playbackRate = HOLD_SEEK_RATE;
         onSpeedHold(true);
@@ -896,11 +904,16 @@ function useTouchGestures(
         return;
       }
       clearLongPress();
-      controller.removeAttribute(GESTURE_ATTRIBUTE);
       const video = videoRef.current;
       const ended = mode;
       mode = "idle";
       pointerId = null;
+      // 拖动与长按结束后继续隐藏: 抬手时把控制条弹出来是多余的动作, 下一次触摸的指针按下会撤掉它.
+      if (ended !== "idle" && !pausedAtStart) {
+        controller.setAttribute(GESTURE_ATTRIBUTE, "");
+      } else {
+        controller.removeAttribute(GESTURE_ATTRIBUTE);
+      }
       // 系统撤销这次触摸 (通知栏下拉, 系统手势, 窗口失焦): 跳转不落地, 也不能被记成一次点按 —
       // 否则紧随其后的一次真点按会凑成双击, 意外切换播放状态.
       if (event.type === "pointercancel") {
@@ -1631,6 +1644,22 @@ export function PlaybackPlayer({
     handleLevelChange,
     readLevel,
   );
+
+  // 指针点按不留焦点环: 壳内的 WebView 会给聚焦的元素画一圈方框; 键盘交互时撤掉标记, 反馈照旧.
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller == null) {
+      return;
+    }
+    const markPointer = () => controller.setAttribute(POINTER_FOCUS_ATTRIBUTE, "");
+    const markKeyboard = () => controller.removeAttribute(POINTER_FOCUS_ATTRIBUTE);
+    controller.addEventListener("pointerdown", markPointer, true);
+    controller.addEventListener("keydown", markKeyboard, true);
+    return () => {
+      controller.removeEventListener("pointerdown", markPointer, true);
+      controller.removeEventListener("keydown", markKeyboard, true);
+    };
+  }, [controllerRef]);
 
   useFullscreenScrollRestore(controllerRef);
   useFullscreenLandscape(controllerRef);

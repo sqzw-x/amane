@@ -3,6 +3,8 @@
   这里按主流播放器的形态组织: 贴底的渐变遮罩承载控件, 进度条独占一行, 按钮不各自画底色.
 */
 .controller {
+  /* 触屏点按高亮在 WebView 上是一层方框, 点哪儿都不该出现. */
+  -webkit-tap-highlight-color: transparent;
   --media-primary-color: #fff;
   /* 逐按钮画深色底会让控件在任何画面下都像一块块补丁, 底色交给遮罩. */
   --media-secondary-color: transparent;
@@ -327,13 +329,16 @@
   指针点按不留焦点环: 壳内的 WebView 会给聚焦的按钮画一圈方框, 那是键盘操作的反馈, 点按不该出现.
   键盘操作仍由 `:focus-visible` 给出反馈.
 */
-/* 中央按钮不参与 Tab 焦点 (见 JSX 的 `tabIndex`), 因此任何来源的聚焦都不需要焦点环. */
+/*
+  指针点按不留焦点环: 壳内的 WebView 会给聚焦的元素画一圈方框. media-chrome 的控件用
+  `--media-focus-box-shadow` 画环, 中央按钮与控制器用 outline, 两者都按交互来源屏蔽;
+  键盘操作 (那时标记已撤掉) 仍然给出反馈.
+*/
+.controller[data-amane-pointer] *:focus,
+.controller[data-amane-pointer]:focus,
 .centerPlay:focus {
   outline: none;
-}
-
-.controller:focus:not(:focus-visible) {
-  outline: none;
+  box-shadow: none;
 }
 
 /*
