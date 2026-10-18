@@ -11,8 +11,11 @@ on:
   # 绝对数量门槛: 起始线之后还没进过日报的条目不足 min 条时, 整条 run 在
   # pre-activation 阶段跳过, 不启动 runner, 不起 agent. 积压到够数再出.
   # 查询必须是编译期字面量: 该检查排在 on.steps 之前, 取不到本次运行算出的值.
+  # 起始线同时决定日报的覆盖范围与门槛的计数范围, 两者必须一致.
+  # 2026-10-11 是首版起始线, 目的是把最近的积压拉进覆盖范围以便调优;
+  # 等存量都收录干净后, 删掉 created 条件即可退回"全量未收录"口径.
   skip-if-no-match:
-    query: "is:issue is:open created:>=2026-10-19 -label:digest:done"
+    query: "is:issue is:open created:>=2026-10-11 -label:digest:done"
     min: 10
   workflow_dispatch:
     inputs:
@@ -63,7 +66,7 @@ mcp-scripts:
     inputs:
       since:
         type: string
-        default: "2026-10-19"
+        default: "2026-10-11"
         description: "起始线 (YYYY-MM-DD)"
       label_filter:
         type: string
@@ -94,7 +97,7 @@ mcp-scripts:
     inputs:
       since:
         type: string
-        default: "2026-10-19"
+        default: "2026-10-11"
         description: "起始线 (YYYY-MM-DD)"
     run: |
       set -euo pipefail
