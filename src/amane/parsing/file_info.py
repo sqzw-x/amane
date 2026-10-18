@@ -146,6 +146,10 @@ _UNCENSORED_PREFIXES = (
     "MCB3D",
 )
 
+#: 前缀内含数字的有码番号前缀 (R18-292 的 R18). 只参与类型判定, 不参与番号抽取;
+#: 未收录的前缀维持分类器的默认判定, 不从形态推断类型.
+_CENSORED_PREFIXES = ("R18-",)
+
 #: 素人系标签 → 站内番号开头的数字段. 文件名常省略数字段 (ARA-423), 站内两种写法并存
 #: (261ARA-423 与 MAAN-968); 数字段只用于补齐, 不参与相等判定.
 SUREN_LABELS: dict[str, str] = {
@@ -173,6 +177,8 @@ _WESTERN_NAMES: dict[str, str] = {
 }
 
 _CATALOG_NUMBER = re.compile(r"[A-Z]{2,}-\d{2,}[Z]?")
+#: 字母与数字同在前缀内的番号 (R18-292). 过宽回退会匹配其中的 18-292, 因此须在其之前按整段提取.
+_DIGIT_PREFIX_CATALOG = re.compile(r"[A-Z]{1,4}\d{1,4}-\d{2,4}[A-Z]?")
 _DMM_CONCAT = re.compile(r"([A-Z]{2,})00(\d{3})")
 _TMA_NUMBER = re.compile(r"T\d{2}-?\d{3,}")
 _SIX_DIGIT_CATALOG = re.compile(r"(?<!\d)\d{6}[-_]\d{2,4}(?!\d)")
@@ -542,6 +548,9 @@ def _match(basename: str, escape_strings: list[str], *, generic: bool) -> tuple[
     if m := _SIX_DIGIT_CATALOG.search(c):
         # 六位数字 + 短横线或下划线 + 序号 (010115-001 / 010115_001 是两部). 短于六位的数字号不命中.
         return m.group(), ContentType.UNCENSORED
+    # 前缀内含数字的番号按整段提取; 类型仍由分类器查表判定, 未收录前缀维持原结果.
+    if m := _DIGIT_PREFIX_CATALOG.search(c):
+        return m.group(), _type_of_catalog_id(m.group())
     # 过宽回退仅对文件名 (generic); 目录匹配不进入.
     if generic and (
         (m := re.search(r"[A-Z]+-[A-Z]\d+", c))
@@ -589,6 +598,8 @@ def _type_of_catalog_id(number: str) -> ContentType:
     upper = number.upper()
     if any(upper.startswith(prefix.upper()) for prefix in _UNCENSORED_PREFIXES):
         return ContentType.UNCENSORED
+    if any(upper.startswith(prefix.upper()) for prefix in _CENSORED_PREFIXES):
+        return ContentType.CENSORED
     if "SIRO" in upper or re.search(r"\d{3,}[A-Z]+-\d{2}", upper):
         return ContentType.AMATEUR
     if any(upper.startswith(label.upper()) for label in SUREN_LABELS):
@@ -614,6 +625,9 @@ def _prefix(number: str) -> str:
     if m := re.search(r"(MKY-[A-Z]+)-\d{3,}", upper):
         return m[1]
     if m := re.search(r"(H4610|C0930|H0930)", upper):
+        return m[1]
+    # 前缀内含数字时取整段作前缀 (R18-292 → R18); 下方的通用规则只取首个字母段.
+    if m := re.match(r"([A-Z]{1,4}\d{1,3})[-_. ]", upper):
         return m[1]
     if m := re.search(r"(\d*[A-Za-z]+)\d*", number):
         return m[1].upper()
