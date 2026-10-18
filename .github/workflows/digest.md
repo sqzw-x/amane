@@ -19,6 +19,11 @@ on:
     min: 10
   workflow_dispatch:
     inputs:
+      dry_run:
+        description: "试运行 (只在日志里预览日报正文, 不开 issue, 不打标签)"
+        required: false
+        type: boolean
+        default: true
       since:
         description: "覆盖起始线 (YYYY-MM-DD). 留空则用默认起始线"
         required: false
@@ -121,6 +126,8 @@ tools:
   bash: ["cat", "ls", "head", "tail", "wc"]
   # NOTE: mcp-scripts 属于根级字段, 不是 tools 的子字段.
 safe-outputs:
+  # 手动触发时默认试运行; 定时触发时 inputs 为空, 即正常落地.
+  staged: ${{ inputs.dry_run }}
   report-failure-as-issue: false
   create-issue:
     title-prefix: "[日报] "
