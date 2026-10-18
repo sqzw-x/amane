@@ -21,6 +21,8 @@ _BG_URL_RE = re.compile(r"url\(\s*['\"]?(https?://[^)'\"]+)['\"]?\s*\)", re.IGNO
 _PLACEHOLDER_AVATAR_RE = re.compile(r"actor_unknow", re.IGNORECASE)
 # 影片数标注随语言变化; 可能写入 aliases.
 _FILM_COUNT_RE = re.compile(r"\d+\s*(?:部影片|movie\(s\))", re.IGNORECASE)
+# 无码条目的名字带站点标记后缀 ((無碼) / (Uncensored)); 全角括号已由 normalize_name 的 NFKC 折叠归一.
+_UNCENSORED_MARKER_RE = re.compile(r"\s*\((?:無碼|无码|uncensored)\)\s*$", re.IGNORECASE)
 _GENDER_TOKENS: dict[str, ActorGender] = {
     "男優": ActorGender.MALE,
     "男优": ActorGender.MALE,
@@ -118,7 +120,12 @@ def parse_javdb_actor_detail(html_text: str, *, page_url: str, base_url: str) ->
 def _split_names(raw: str) -> list[str]:
     if not raw:
         return []
-    return [p for p in (normalize_name(part) for part in re.split(r"[,，]", raw)) if p]
+    names: list[str] = []
+    for part in re.split(r"[,，]", raw):
+        name = _UNCENSORED_MARKER_RE.sub("", normalize_name(part))
+        if name:
+            names.append(name)
+    return names
 
 
 def _dedupe_preserve(values: list[str]) -> list[str]:
