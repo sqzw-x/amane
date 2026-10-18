@@ -183,9 +183,7 @@ safe-outputs:
 
 **第三组 功能请求** —— `kind:feature` 或 `kind:enhancement`, 且无 `status:needs-info` 与结论性状态; 每条只写 `- #编号`. 按优先级分小标题: `### 高优先级`(`priority:critical` / `priority:high`), `### 中低优先级`(`priority:medium` / `priority:low`), `### 未定级`(无 priority 标签).
 
-**第四组 其他** —— 其余条目, 每条只写 `- #编号`.
-
-带结论性状态的条目(如 `status:duplicate`, `status:invalid`, `status:wontfix`, `status:stale`)和其他各种 label 的一律归入本组, 不进入第二, 三组. 如有必要可按状态或主题自行细分小标题, 便于分辨其性质.
+**第四组 其他** —— 未归入上述分组的其余 issue 全部归入本组, 每条只写 `- #编号`. 可按状态或主题自行细分小标题.
 
 ## 报告格式
 
