@@ -168,7 +168,7 @@ safe-outputs:
 
 ## 分组
 
-分入四组, 顺序即输出顺序; 无内容的分组整节省略. 未归入任何一组的条目不写入日报, 但仍须打标签.
+全部清单条目都必须归入下列四组之一并写入日报, 顺序即输出顺序; 无内容的分组整节省略.
 
 **第一组 需重新判断** —— 候选取自 `needs-info-candidates`.
 
@@ -179,11 +179,13 @@ safe-outputs:
 - 无人类评论, 或人类评论均早于分诊回复时, 不属于该组.
 - 每条写作 `- #编号 - 用户已在 <日期> 补充信息`.
 
-**第二组 待处理的 Bug** —— `kind:bug` 且无 `status:needs-info`; 每条只写 `- #编号`, 不深究内容.
+**第二组 待处理的 Bug** —— `kind:bug`, 且无 `status:needs-info` 与结论性状态; 每条只写 `- #编号`, 不深究内容.
 
-**第三组 功能请求** —— `kind:feature` 或 `kind:enhancement` 且无 `status:needs-info`; 每条只写 `- #编号`. 按优先级分小标题: `### 高优先级`(`priority:critical` / `priority:high`), `### 中低优先级`(`priority:medium` / `priority:low`), `### 未定级`(无 priority 标签).
+**第三组 功能请求** —— `kind:feature` 或 `kind:enhancement`, 且无 `status:needs-info` 与结论性状态; 每条只写 `- #编号`. 按优先级分小标题: `### 高优先级`(`priority:critical` / `priority:high`), `### 中低优先级`(`priority:medium` / `priority:low`), `### 未定级`(无 priority 标签).
 
-**第四组 其他** —— 其余条目,每条只写 `- #编号`
+**第四组 其他** —— 其余条目, 每条只写 `- #编号`.
+
+带结论性状态的条目(如 `status:duplicate`, `status:invalid`, `status:wontfix`, `status:stale`)和其他各种 label 的一律归入本组, 不进入第二, 三组. 如有必要可按状态或主题自行细分小标题, 便于分辨其性质.
 
 ## 报告格式
 
@@ -204,6 +206,6 @@ safe-outputs:
 
 日报创建成功后, 为全部清单条目添加 `digest:done`, 以表明已分析
 
-- 每个 issue 一次 `add_labels` 调用, 编号取自清单.
-- 漏标issue后续会重复分析, 必须确保全部添加.
+方法: 每个 issue 一次 `add_labels` 调用
 
+清单非空时必须全部打标签: 打标签只在创建日报时执行, 漏标会导致重复分析
