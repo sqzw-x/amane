@@ -143,12 +143,16 @@ safe-outputs:
 
 ## 你要看的东西
 
-本次运行的清单由工具给出, 不要自己去搜索 issue:
+本次运行的清单由两个自定义工具给出, 不要自己去搜索 issue.
 
-1. 调用 `pending-issues`, `since` 传 `${{ inputs.since }}`, `label_filter` 传 `${{ inputs.label_filter }}`.
+工具名带 `mcpscripts-` 前缀, 缺了这个前缀会被判为未知工具:
+
+1. 调用 `mcpscripts-pending-issues`, 参数 `since` 传 `${{ inputs.since }}`, `label_filter` 传 `${{ inputs.label_filter }}`.
    两个参数传空值时, 工具会回落到默认起始线, 并处理全部标签.
    返回每行一条: `编号 <TAB> 创建日 <TAB> 最后更新日 <TAB> 标签 <TAB> 评论数 <TAB> 标题`.
-2. 调用 `needs-info-candidates`, `since` 同上.
+2. 调用 `mcpscripts-needs-info-candidates`, `since` 同上.
+
+若某个工具报未知工具, 先执行 `mcpscripts --help` 看实际可用的名称, 不要换着名字反复重试. 两个工具都失败时直接停下, 在结论里说明原因, 不要改用别的方式去猜清单.
    返回带 `status:needs-info` 的 issue, 以及其中**人类评论**(bot 评论已被工具过滤掉)的日期, 作者和正文前 300 字.
 
 除这两个工具外不要读 issue 正文, 不要读评论, 不要看代码和文档. 需要判断的信息都已经在返回结果里.
