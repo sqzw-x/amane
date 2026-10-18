@@ -1,19 +1,19 @@
 ---
 emoji: "📋"
 on:
-  # 模糊调度: 编译时按文件路径散列成具体时刻, 避开整点高峰.
+  # 模糊调度: 编译时依据文件路径分布具体时刻, 避开整点高峰.
   schedule: daily around 10:00 utc+8
-  # 兜底防线: 距上次真正启动过 agent 的 run 不足 22 小时则跳过.
-  # 日切由下面的 skip-if-match 负责, 这里只防"手动补跑后当天又自动跑".
+  # 附加约束: 距上次启动过 agent 的运行不足 22 小时则跳过启动.
+  # 同日重复由 skip-if-match 负责, 此处只阻止手动补跑后当日再自动运行.
   cooldown: 22h
-  # 最高每天一次: 今天已出过日报就不再出.
+  # 每日上限: 当日已存在 open 的日报时跳过.
   skip-if-match: 'is:issue is:open label:report in:title "[日报]" created:>=2026-10-19'
-  # 绝对数量门槛: 起始线之后还没进过日报的条目不足 min 条时, 整条 run 在
-  # pre-activation 阶段跳过, 不启动 runner, 不起 agent. 积压到够数再出.
-  # 查询必须是编译期字面量: 该检查排在 on.steps 之前, 取不到本次运行算出的值.
+  # 数量门槛: 起始线之后未收录的条目不足 min 条时, 整个运行在
+  # pre-activation 阶段终止, 不启动 runner, 不启动 agent, 待累计达到门槛.
+  # 查询必须使用编译期字面量: 该检查排在 on.steps 之前, 无法取得本次运行计算的值.
   # 起始线同时决定日报的覆盖范围与门槛的计数范围, 两者必须一致.
-  # 2026-10-11 是首版起始线, 目的是把最近的积压拉进覆盖范围以便调优;
-  # 等存量都收录干净后, 删掉 created 条件即可退回"全量未收录"口径.
+  # 2026-10-11 为首版起始线, 用于把近期积压纳入覆盖范围以便调优.
+  # 存量收录完毕后删除 created 条件, 即退回全部未收录口径.
   skip-if-no-match:
     query: "is:issue is:open created:>=2026-10-11 -label:digest:done"
     min: 10
@@ -33,7 +33,7 @@ on:
         required: false
         type: string
   reaction: none
-# 手动触发时每次 Run 独立; 定时触发时同一时刻只会有一个 run 在跑.
+# 手动触发时每次运行独占; 定时触发时同一时刻只会有一个运行在跑.
 concurrency:
   job-discriminator: ${{ github.run_id }}
 permissions:
@@ -62,12 +62,12 @@ models:
 max-ai-credits: 8
 max-turns: 15
 timeout-minutes: 10
-# 清单由 mcp-scripts 用 gh CLI 确定性取出, 不另开 GitHub MCP 只读工具:
-# 检索分页与标签过滤的细节留在脚本里, agent 只负责分类与判断.
+# 清单由 mcp-scripts 经 gh 取得, 不启用 GitHub MCP 只读工具:
+# 检索, 分页与标签过滤留在脚本内, agent 只承担分类与判断.
 mcp-scripts:
-  # 待处理清单: 起始线之后创建, 尚未进过日报, 且仍在 open 的 issue.
+  # 待处理清单: 起始线之后创建, 尚未收录, 且仍为 open 的 issue.
   pending-issues:
-    description: "列出起始线之后创建、未进过日报的 open issue 清单"
+    description: "列出起始线之后创建、未收录的 open issue 清单"
     inputs:
       since:
         type: string
@@ -77,11 +77,14 @@ mcp-scripts:
         type: string
         default: ""
         description: "只列出带该标签的 issue, 留空表示不过滤"
+    # 清单规模可达百条, 默认 60 秒不足.
+    timeout: 120
     run: |
       set -euo pipefail
-      query="is:issue is:open created:>=${INPUT_SINCE} -label:digest:done"
       if [ -n "${INPUT_LABEL_FILTER}" ]; then
-        query="${query} label:${INPUT_LABEL_FILTER}"
+        query="is:issue is:open created:>=${INPUT_SINCE} -label:digest:done label:${INPUT_LABEL_FILTER}"
+      else
+        query="is:issue is:open created:>=${INPUT_SINCE} -label:digest:done"
       fi
       gh issue list --repo "$GH_AW_REPO" --limit 100 --state open \
         --search "$query" \
@@ -95,8 +98,8 @@ mcp-scripts:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_AW_REPO: ${{ github.repository }}
-  # 补充信息候选: 带 status:needs-info 的 open issue, 附最近 3 条人类评论.
-  # bot 评论不返回, 因此"有没有回复"由数据本身回答, 不需要再查评论接口.
+  # 补充信息候选: 带 status:needs-info 的 open issue. 不返回 bot 评论,
+  # 因此是否存在回复由数据本身确定, 无需再查评论接口.
   needs-info-candidates:
     description: "列出带 status:needs-info 的 open issue 及其最近人类评论"
     inputs:
@@ -104,6 +107,8 @@ mcp-scripts:
         type: string
         default: "2026-10-11"
         description: "起始线 (YYYY-MM-DD)"
+    # 逐条读取评论, 耗时随条目数增长.
+    timeout: 180
     run: |
       set -euo pipefail
       query="is:issue is:open created:>=${INPUT_SINCE} label:status:needs-info"
@@ -142,102 +147,71 @@ safe-outputs:
     target: "*"
     max: 60
 ---
+
 # 日报
 
-你是维护者的收件箱整理员. 这条流程唯一的作用是**提醒维护者: 还有哪些可以做、但他还没做的事**.
+把清单条目分入下列分组, 生成一份日报. 日报只用于提醒维护者尚有未处理事项.
 
-不是分析报告, 不是进度汇报, 不要评价任何 issue 的质量, 不要给实现建议, 不要预估工作量.
+## 数据来源
 
-## 你要看的东西
+清单由两个工具取得, 名称必须带 `mcpscripts-` 前缀:
 
-本次运行的清单由两个自定义工具给出, 不要自己去搜索 issue.
+1. `mcpscripts-pending-issues`: 传入 `since=${{ inputs.since }}` 与 `label_filter=${{ inputs.label_filter }}`.
+   参数为空时工具使用默认起始线并处理全部标签. 每行格式:
+   `编号 <TAB> 创建日 <TAB> 最后更新日 <TAB> 标签 <TAB> 评论数 <TAB> 标题`.
+2. `mcpscripts-needs-info-candidates`: 传 `since` 同上. 返回带 `status:needs-info` 的 issue, 以及其中人类评论
+   (bot 评论已由工具剔除)的日期, 作者与正文前 300 字.
 
-工具名带 `mcpscripts-` 前缀, 缺了这个前缀会被判为未知工具:
+不读取 issue 正文, 评论, 代码与文档: 判断所需信息均在返回值内.
 
-1. 调用 `mcpscripts-pending-issues`, 参数 `since` 传 `${{ inputs.since }}`, `label_filter` 传 `${{ inputs.label_filter }}`.
-   两个参数传空值时, 工具会回落到默认起始线, 并处理全部标签.
-   返回每行一条: `编号 <TAB> 创建日 <TAB> 最后更新日 <TAB> 标签 <TAB> 评论数 <TAB> 标题`.
-2. 调用 `mcpscripts-needs-info-candidates`, `since` 同上. 返回带 `status:needs-info` 的 issue, 以及其中**人类评论**(bot 评论已被工具过滤掉)的日期, 作者和正文前 300 字.
+工具报未知名称时执行 `mcpscripts --help` 确认可用名称, 禁止改名重试; 两个工具均失败时终止并说明原因, 禁止改用其他方式推演清单.
 
-若某个工具报未知工具, 先执行 `mcpscripts --help` 看实际可用的名称, 不要换着名字反复重试. 两个工具都失败时直接停下, 在结论里说明原因, 不要改用别的方式去猜清单.
-
-除这两个工具外不要读 issue 正文, 不要读评论, 不要看代码和文档. 需要判断的信息都已经在返回结果里.
-
-## 分组规则
-
-只做一件事: 把清单里的条目分到下面四组, 顺序即输出顺序. 没有内容的分组整节省略. 不属于任何一组的条目不写进日报, 但**照常打标签**(见末尾).
-
-### 条目格式
-
-所有分组共用一种条目, 两种形态:
+## 条目格式
 
 - `- #编号`
-- `- #编号 - 简短说明`
+- `- #编号 - 说明`
 
-`#编号` 由 GitHub 渲染成指向该 issue 的链接, **渲染时自动带出标题**. 因此说明文字只写标题里没有的信息 —— 补充状态, 时间点, 或分类依据 —— **绝不复述标题**, 否则正文里会出现两遍标题. 没有额外信息时只写编号.
+`#编号` 由 GitHub 渲染为指向该 issue 的链接, 渲染时自动带出标题, 因此说明只写标题之外的信息(状态, 时间点, 分类依据), 禁止复述标题. 无额外信息时只写编号.
 
-` - ` 是空格加连字符加空格. 每条一行, 不换行, 不缩进续写.
+` - ` 为空格加连字符加空格. 每条一行, 不换行, 不缩进续写.
 
-### 第一组: 需重新判断
+## 分组
 
-候选来自 `needs-info-candidates`. 这一组是日报的重点.
+分入四组, 顺序即输出顺序; 无内容的分组整节省略. 未归入任何一组的条目不写入日报, 但仍须打标签.
 
-判断方式: 该 issue 标注 `status:needs-info` 之后, **issue 作者本人**(或另一位普通用户)是否又做了**形式上的补充** —— 即是否针对分诊提出的问题给出了新信息, 新步骤, 新日志或明确答复.
-以下不算补充, 剔除: 单纯的催促, 顶帖, "我也遇到", "同问", 情绪表达, 与问题无关的闲聊, 只有一次复述原问题而没有新内容的回复, 以及**维护者自己**(`sqzw-x`)的追问与说明.
+**第一组 需重新判断** —— 候选取自 `needs-info-candidates`.
 
-- 只判断"是否在回应分诊提出的问题", **不判断补充是否充分, 是否正确, 是否能让人直接动手做**. 那是维护者自己的判断.
-- 拿不准时**保留**在组内 —— 这一组的成本是维护者多看一眼, 漏掉的成本是一个 issue 永远停摆.
-- 没有人类评论, 或人类评论都早于分诊回复, 则不属于本组.
+- 判据: 标注 `status:needs-info` 之后, 作者本人或其他普通用户是否就分诊提出的问题给出新信息, 新步骤, 新日志或明确答复.
+- 不构成补充: 催促, 顶帖, 情绪表达, 与问题无关的内容, 复述原问题而无新内容, 维护者(`sqzw-x`)的追问与说明.
+- 只判断是否回应分诊提出的问题, 不判断补充是否充分, 是否正确, 以及是否足以动手实现.
+- 无法确定时保留在组内.
+- 无人类评论, 或人类评论均早于分诊回复时, 不属于该组.
+- 每条写作 `- #编号 - 用户已在 <日期> 补充信息`.
 
-每条的写法: `- #编号 - 用户已在 <日期> 补充信息`. 不要附上 issue 标题.
+**第二组 待处理的 Bug** —— `kind:bug` 且无 `status:needs-info`; 每条只写 `- #编号`, 不深究内容.
 
-### 第二组: 待处理的 Bug
+**第三组 功能请求** —— `kind:feature` 或 `kind:enhancement` 且无 `status:needs-info`; 每条只写 `- #编号`. 按优先级分小标题: `### 高优先级`(`priority:critical` / `priority:high`), `### 中低优先级`(`priority:medium` / `priority:low`), `### 未定级`(无 priority 标签).
 
-`kind:bug` 且不带 `status:needs-info`. 这些是已判定有效但还没人动手的缺陷.
+**第四组 其他** —— 其余条目, 含 `kind:question`, `eco:project`, `kind:other` 与无 kind 标签者; 每条只写 `- #编号`.
 
-只列出来, 不要深究内容, 不要复现, 不要判断严重程度. 每条就写 `- #编号`, 不写说明.
+**不写入日报**: `status:duplicate` / `status:invalid` / `status:wontfix` / `status:stale`(已有结论), 以及已分配给他人的 issue.
 
-### 第三组: 功能请求
+## 正文
 
-`kind:feature` 或 `kind:enhancement`, 且不带 `status:needs-info`.
+首段为概览: 起始线, 运行日期, 清单条数, 已有结论而不列出的条数, 以及正文收录条数按组的分布. 清单条数与正文条数分别写明, 使差额可辨认为规则过滤.
 
-按标签分小标题, 仅用于整理, **不要提醒维护者去做**:
+禁止与上期日报对比或描述趋势. 各条措辞直接陈述事实, 不添加客套与总结.
 
-- `### 高优先级` —— `priority:critical` / `priority:high`
-- `### 中低优先级` —— `priority:medium` / `priority:low`
-- `### 未定级` —— 无 priority 标签
+## 打标签
 
-每条就写 `- #编号`, 不写说明.
+日报创建成功后, 为全部清单条目(含未写入正文者)逐条添加 `digest:done`.
 
-### 第四组: 其他
+- 每个 issue 一次 `add_labels` 调用, 编号取自清单.
+- 语义为维护者已知悉该条目, 与是否写入正文无关.
+- 漏标条目会在下期重复出现, 必须逐条执行.
 
-其余条目, 包括 `kind:question` / `eco:project` / `kind:other` / 没有 kind 标签的. 用无序列表简单提及, 每条一行, 不展开.
+## 无可提醒条目
 
-### 不写进日报的
+清单为空, 或条目均属不写入日报的类别时, 仍须创建日报, 仅写概览并注明"起始线以来无待办条目", 不调用 `noop`.
 
-- `status:duplicate` / `status:invalid` / `status:wontfix` / `status:stale` —— 已有结论, 不是待办.
-- 分配给他人的 issue.
-
-## 日报正文
-
-开头一个"概览": 本次覆盖的起始线和运行日期; 清单共多少条; 其中多少条已有结论不列出; 正文收录多少条, 按组各多少条.
-
-清单条数与正文条数必须分别写清, 让人一眼看出差额是规则过滤而不是漏报.
-
-**不要对比上次日报**, 不要写趋势, 不要写"较上期增加/减少".
-
-然后按上面四组的顺序排列. 措辞直白, 像给同事留便条, 不要客套, 不要总结陈词.
-
-## 收尾: 打标签
-
-日报创建成功后, 给**所有进入清单的条目**(包括没写进正文的那些, 以及被剔除出第一组的)逐个打上 `digest:done`.
-
-- 每个 issue 一次 `add_labels` 调用, 编号用清单里的 `#编号`.
-- 语义是"维护者已经知道它了", 不是"已经处理完了". 所以打标签与是否值得写进正文无关.
-- 漏打的条目会在下期日报里重复出现, 所以这一步必须做完, 不要挑着打.
-
-## 没有可提醒的条目时
-
-清单为空, 或清单里所有条目都属于"不写进日报的"类别时: **仍然创建日报**, 只写概览, 加一句"起始线以来无待办条目". 不要调用 `noop`.
-
-日报必须每期都出, 因为 `digest:done` 只在创建日报时才落地. 若这一期不出日报, 条目就会一直留在清单里, 数量门槛被永久抬高; 而"清单里没有值得提醒的条目"这个结论本身, 也已经由维护者看过一眼了.
+打标签只在创建日报时落地: 本期不出日报会使条目长期留在清单内, 抬高数量门槛.
