@@ -11,6 +11,7 @@ TOML 格式:
     responses = [{ url_contains = "...", file = "response.html" }]
     expected_urls = [...]                  # 可选: 精确匹配
     expected_none = true                   # 可选: 期望 _search 返回 None (空搜索 / 拦截页)
+    expected_error = "login_required"      # 可选: 期望抛出该 reason 的 SourceError
 
     [scrape]                              # 可选: 测试 scrape()
     url = "https://..."
@@ -40,9 +41,16 @@ import pytest
 from amane.config import SiteConfig
 from amane.crawlers import registry
 from amane.crawlers.models import SearchQuery
-from amane.net.errors import SourceError
 
-from .driven import assert_expected, build_mock, build_mock_web, discover_film_cases, http_client, load_toml
+from .driven import (
+    assert_expected,
+    build_mock,
+    build_mock_web,
+    call_step,
+    discover_film_cases,
+    http_client,
+    load_toml,
+)
 
 CASES = discover_film_cases(lambda site: registry.get(site) is not None)
 
@@ -68,7 +76,9 @@ async def test_crawler_scrape(case_id: str, toml_path: Path) -> None:
     scrape_cfg = config["scrape"]
     build_mock(mock_web, toml_path.parent, scrape_cfg["responses"])
 
-    result = await crawler._scrape(scrape_cfg["url"])
+    result = await call_step(crawler._scrape(scrape_cfg["url"]), scrape_cfg)
+    if scrape_cfg.get("expected_error"):
+        return
     assert result is not None, f"_scrape() returned None for {scrape_cfg['url']}"
     assert_expected(result, scrape_cfg["expected"])
 
@@ -93,7 +103,9 @@ async def test_crawler_fetch(case_id: str, toml_path: Path) -> None:
 
     build_mock(mock_web, toml_path.parent, fetch_cfg["responses"])
 
-    result = await crawler.fetch(SearchQuery(fetch_cfg["number"]))
+    result = await call_step(crawler.fetch(SearchQuery(fetch_cfg["number"])), fetch_cfg)
+    if fetch_cfg.get("expected_error"):
+        return
     if fetch_cfg.get("expected_none"):
         assert result is None, f"fetch({fetch_cfg['number']!r}) should return None, got {result!r}"
         return
@@ -119,14 +131,9 @@ async def test_crawler_search(case_id: str, toml_path: Path) -> None:
     search_cfg = config["search"]
     build_mock(mock_web, toml_path.parent, search_cfg["responses"])
 
-    try:
-        url = await crawler._search(SearchQuery(search_cfg["number"]))
-    except SourceError:
-        # 拦截页由 get_html 抛出; 直接测 _search 时与「无 URL」同类
-        if search_cfg.get("expected_none"):
-            return
-        raise
-
+    url = await call_step(crawler._search(SearchQuery(search_cfg["number"])), search_cfg)
+    if search_cfg.get("expected_error"):
+        return
     if search_cfg.get("expected_none"):
         assert url is None, f"_search({search_cfg['number']!r}) should return None, got {url!r}"
     elif "expected_urls" in search_cfg:

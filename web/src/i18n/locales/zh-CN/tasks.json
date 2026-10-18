@@ -80,6 +80,7 @@
     "ip_banned": "IP 被封禁",
     "geo_restricted": "地域受限",
     "age_verification": "年龄验证拦截",
+    "login_required": "需要登录",
     "empty_response": "空响应",
     "no_usable_metadata": "无可用元数据",
     "parse_error": "站点响应解析失败",

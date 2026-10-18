@@ -92,6 +92,7 @@
     "ip_banned": "IP banned",
     "geo_restricted": "Not available in your region",
     "age_verification": "Age verification required",
+    "login_required": "Login required",
     "empty_response": "Empty response",
     "no_usable_metadata": "No usable metadata",
     "parse_error": "Failed to parse the site response",

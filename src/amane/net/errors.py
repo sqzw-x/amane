@@ -53,6 +53,8 @@ class FailureReason(StrEnum):
     IP_BANNED = "ip_banned"
     GEO_RESTRICTED = "geo_restricted"
     AGE_VERIFICATION = "age_verification"
+    LOGIN_REQUIRED = "login_required"
+    """站点要求登录而凭据缺失或已失效; 受限页面被重定向到登录页."""
     EMPTY_RESPONSE = "empty_response"
     NO_USABLE_METADATA = "no_usable_metadata"
     """请求成功但未解析出元数据; 区别于 NOT_FOUND 的 HTTP 404."""

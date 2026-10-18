@@ -12,6 +12,7 @@ from amane.plugins.models import SourceCapability
 
 from ...base import CrawlerProfile
 from ...parsing import extract_text, is_same_name, normalize_name
+from ...sites.javdb import reject_login_page
 from ..base import ActorCrawler
 from ..models import ActorMetadata
 
@@ -49,6 +50,7 @@ class JavDBActorCrawler(ActorCrawler):
         search_url = f"{self.base_url}/search?q={q}&f=actor&locale=zh"
         text = await self.client.get_html(search_url, cookies=self.cookies)
         html = Selector(text=text)
+        reject_login_page(html, url=search_url)
         # 精确命中偶发落到详情页.
         if html.css("span.actor-section-name").get():
             detail = extract_text(html, '//link[@rel="canonical"]/@href')
@@ -57,6 +59,7 @@ class JavDBActorCrawler(ActorCrawler):
 
     async def _scrape(self, url: str) -> ActorMetadata | None:
         text = await self.client.get_html(url, cookies=self.cookies)
+        reject_login_page(Selector(text=text), url=url)
         return parse_javdb_actor_detail(text, page_url=url, base_url=self.base_url)
 
 

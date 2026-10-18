@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -16,7 +16,7 @@ from curl_cffi.requests import Headers
 
 from amane.crawlers.http import HttpClient
 from amane.crawlers.registry import registry
-from amane.net.errors import RequestError
+from amane.net.errors import RequestError, SourceError
 
 CASES_DIR = Path(__file__).parent / "cases"
 
@@ -167,6 +167,24 @@ def build_mock_web() -> AsyncMock:
 
 def http_client(mock_web: AsyncMock) -> HttpClient:
     return HttpClient(web=mock_web, browser=None)
+
+
+async def call_step[T](coro: Coroutine[Any, Any, T], section: dict[str, Any]) -> T | None:
+    """执行用例的一步调用, 并按 ``expected_error`` 断言失败原因.
+
+    ``expected_error`` 给出时, 调用必须抛出该 reason 的 ``SourceError``, 结果由本函数断言完毕.
+    未给出时异常照常抛出, 返回 None 表示该步确实没有结果 (由调用方按 ``expected_none`` 判断).
+    """
+    expected = section.get("expected_error")
+    try:
+        result = await coro
+    except SourceError as exc:
+        if expected is None:
+            raise
+        assert exc.reason == expected, f"expected error {expected!r}, got {exc.reason!r}"
+        return None
+    assert expected is None, f"expected error {expected!r}, got {result!r}"
+    return result
 
 
 def _is_finite_number(value: object) -> bool:

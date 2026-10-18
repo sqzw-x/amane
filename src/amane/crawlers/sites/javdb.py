@@ -4,6 +4,7 @@ from urllib.parse import quote, urljoin
 from parsel import Selector
 
 from ...enums import ActorGender, SiteName
+from ...net.errors import FailureReason, SourceError
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
 from ..parsing import extract_all_texts, extract_text, parse_western_number, select_number_index
@@ -23,6 +24,20 @@ def _parse_actors(html: Selector) -> list[FilmActor]:
         gender = ActorGender.FEMALE if "actor-female" in classes else ActorGender.MALE
         actors.append(FilmActor(name=name, gender=gender))
     return actors
+
+
+def reject_login_page(html: Selector, *, url: str) -> None:
+    """无码条目与无码演员档案要求登录: 未登录时站点重定向到登录页, 状态码与正常页同为 200.
+
+    判据取登录表单自身 (会话表单的动作地址与密码框). 公开页面 (搜索页, 有码详情页) 的导航同样带「登入」
+    字样, 按文案判定会误伤; 只认动作地址则可能把带注销控件的已登录页面判成登录页.
+    """
+    if html.xpath('//form[contains(@action, "user_sessions")]//input[@type="password"]'):
+        raise SourceError(
+            FailureReason.LOGIN_REQUIRED,
+            url=url,
+            detail="scraping.site_config.javdb.cookie",
+        )
 
 
 class JavDBCrawler(Crawler):
@@ -49,8 +64,10 @@ class JavDBCrawler(Crawler):
         return None
 
     async def _search_term(self, term: str, number: str) -> str | None:
-        text = await self.client.get_html(f"{self.base_url}/search?q={quote(term)}&locale=zh", cookies=self.cookies)
+        search_url = f"{self.base_url}/search?q={quote(term)}&locale=zh"
+        text = await self.client.get_html(search_url, cookies=self.cookies)
         html = Selector(text=text)
+        reject_login_page(html, url=search_url)
 
         candidates = [
             (href, found)
@@ -64,6 +81,7 @@ class JavDBCrawler(Crawler):
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         text = await self.client.get_html(url, cookies=self.cookies)
         html = Selector(text=text)
+        reject_login_page(html, url=url)
 
         number = extract_text(html, '//a[@class="button is-white copy-to-clipboard"]/@data-clipboard-text')
         if not number:

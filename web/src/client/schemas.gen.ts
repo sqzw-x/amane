@@ -2109,6 +2109,7 @@ export const FailureReasonSchema = {
         'ip_banned',
         'geo_restricted',
         'age_verification',
+        'login_required',
         'empty_response',
         'no_usable_metadata',
         'parse_error',

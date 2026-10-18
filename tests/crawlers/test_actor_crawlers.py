@@ -12,9 +12,8 @@ from amane.config import SiteConfig
 from amane.crawlers.actor import GFriendsActorCrawler, actor_registry
 from amane.crawlers.actor.base import ActorCrawler
 from amane.crawlers.http import HttpClient
-from amane.net.errors import SourceError
 
-from .driven import assert_expected, build_mock, discover_actor_cases, http_client, load_toml
+from .driven import assert_expected, build_mock, call_step, discover_actor_cases, http_client, load_toml
 
 CASES = discover_actor_cases(lambda site: actor_registry.get(site) is not None)
 
@@ -47,7 +46,9 @@ async def test_actor_scrape(case_id: str, toml_path: Path, tmp_path: Path) -> No
     crawler = _actor(config["site"], http_client(mock_web), data_dir=tmp_path, config=_site_config(scrape_cfg))
     build_mock(mock_web, toml_path.parent, scrape_cfg["responses"])
 
-    result = await crawler._scrape(scrape_cfg["url"])
+    result = await call_step(crawler._scrape(scrape_cfg["url"]), scrape_cfg)
+    if scrape_cfg.get("expected_error"):
+        return
     assert result is not None, f"_scrape() returned None for {scrape_cfg['url']}"
     assert_expected(result, scrape_cfg["expected"])
 
@@ -64,7 +65,9 @@ async def test_actor_fetch(case_id: str, toml_path: Path, tmp_path: Path) -> Non
     crawler = _actor(config["site"], http_client(mock_web), data_dir=tmp_path, config=_site_config(fetch_cfg))
     build_mock(mock_web, toml_path.parent, fetch_cfg["responses"])
 
-    result = await crawler.fetch(fetch_cfg["name"])
+    result = await call_step(crawler.fetch(fetch_cfg["name"]), fetch_cfg)
+    if fetch_cfg.get("expected_error"):
+        return
     if fetch_cfg.get("expected_none"):
         assert result is None, f"fetch({fetch_cfg['name']!r}) should return None, got {result!r}"
         return
@@ -84,13 +87,9 @@ async def test_actor_search(case_id: str, toml_path: Path, tmp_path: Path) -> No
     crawler = _actor(config["site"], http_client(mock_web), data_dir=tmp_path, config=_site_config(search_cfg))
     build_mock(mock_web, toml_path.parent, search_cfg["responses"])
 
-    try:
-        url = await crawler._search(search_cfg["name"])
-    except SourceError:
-        if search_cfg.get("expected_none"):
-            return
-        raise
-
+    url = await call_step(crawler._search(search_cfg["name"]), search_cfg)
+    if search_cfg.get("expected_error"):
+        return
     if search_cfg.get("expected_none"):
         assert url is None, f"_search({search_cfg['name']!r}) should return None, got {url!r}"
     elif "expected_urls" in search_cfg:

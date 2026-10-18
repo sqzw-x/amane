@@ -5,7 +5,7 @@
 
 ## 数据驱动
 
-新增用例只增加 TOML 与真实响应, 不修改 Python. 真实 HTML / JSON 原样保存 (禁止编造、禁止裁剪); 同一爬虫多场景各自独立 TOML.
+新增用例只增加 TOML 与真实响应, 不修改 Python. 真实 HTML / JSON 原样保存 (禁止编造、禁止裁剪); 同一爬虫多场景各自独立 TOML. 失败路径同样数据驱动: `expected_error` 给出 `FailureReason` 取值, 断言该步抛出该 reason 的 `SourceError`.
 
 ## Fixture 仓库
 
