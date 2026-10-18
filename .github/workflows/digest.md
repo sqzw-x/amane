@@ -140,12 +140,42 @@ safe-outputs:
     max: 1
     # 只留最新一期: 出新的就关掉旧的并反向链接, 邮箱与列表里不堆积历史日报.
     close-older-issues: true
-  # 收录过的条目打上 digest:done, 下次不再进清单.
-  # target 必须是 "*": 默认值 "triggering" 要求触发项是 issue, 而本流程由定时触发.
-  add-labels:
-    allowed: ["digest:done"]
-    target: "*"
-    max: 60
+  # 打标签由 mark-digested 任务用同一检索条件确定性执行, 不经过 agent:
+  # agent 逐条发 add_labels 会漏发, 且 N 条清单一事一议.
+  jobs:
+    mark-digested:
+      description: "为本次日报收录的全部 issue 添加 digest:done 标签, 无需参数"
+      runs-on: ubuntu-latest
+      output: "已为清单内全部条目添加 digest:done"
+      permissions:
+        issues: write
+      inputs:
+        note:
+          description: "补充说明, 留空即可"
+          required: false
+          type: string
+      steps:
+        - name: Add digest:done to pending issues
+          env:
+            GH_TOKEN: ${{ github.token }}
+            SINCE: "2026-10-11"
+          run: |
+            set -euo pipefail
+            if [ "${GH_AW_SAFE_OUTPUTS_STAGED:-false}" = "true" ]; then
+              echo "staged: 跳过打标签"
+              exit 0
+            fi
+            query="repo:${GITHUB_REPOSITORY} is:issue is:open created:>=${SINCE} -label:digest:done"
+            encoded=$(jq -rn --arg q "$query" '$q|@uri')
+            gh api "search/issues?q=${encoded}&per_page=100" --jq '.items[].number' > /tmp/pending.txt
+            total=$(wc -l < /tmp/pending.txt | tr -d ' ')
+            echo "待打标签: ${total} 条"
+            while read -r n; do
+              [ -n "$n" ] || continue
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${n}/labels" -f "labels[]=digest:done" > /dev/null
+            done < /tmp/pending.txt
+            echo "完成: ${total} 条"
+
 ---
 
 # 日报
@@ -202,8 +232,6 @@ safe-outputs:
 
 ## 打标签
 
-日报创建成功后, 为全部清单条目添加 `digest:done`, 以表明已分析
-
-方法: 每个 issue 一次 `add_labels` 调用
+日报创建成功后调用 `mark_digested` 工具, 无需传参数. 该任务按清单检索条件自行完成打标签, 不要改用其他方式写标签.
 
 清单非空时必须全部打标签: 打标签只在创建日报时执行, 漏标会导致重复分析
