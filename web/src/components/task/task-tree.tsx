@@ -11,14 +11,9 @@ import {
   TaskRowActions,
 } from "@/components/task/task-detail-panel";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
+import { formatDuration } from "@/lib/format-duration";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
-import {
-  childCountOf,
-  childStatusOf,
-  formatDuration,
-  statusColor,
-  TASK_ICONS,
-} from "@/lib/task/display";
+import { childCountOf, childStatusOf, statusColor, TASK_ICONS } from "@/lib/task/display";
 import { bindExpandedPane } from "@/lib/task/focus-pane";
 import type { TaskProgress } from "@/stores/progress";
 import classes from "./task-tree.module.css";

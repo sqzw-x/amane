@@ -27,7 +27,8 @@ import type { TaskListItem } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { TaskLogView } from "@/components/log/task-log-view";
 import { TaskResultPanel } from "@/components/task/task-result-panel";
-import { formatDuration, statusColor } from "@/lib/task/display";
+import { formatDuration } from "@/lib/format-duration";
+import { statusColor } from "@/lib/task/display";
 import { useProgressStore } from "@/stores/progress";
 
 export interface TaskNodeActions {
