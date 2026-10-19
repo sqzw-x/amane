@@ -14,7 +14,7 @@
   "approvalRejected": "Rejected",
   "approvalRejectReason": "Rejected by the user",
   "presets": "Saved queries",
-  "presetsEmpty": "No queries to show yet. Delivered results appear here automatically",
+  "presetsEmpty": "No queries in this session yet. Delivered results appear here automatically",
   "disabled": "Configure Amane in Settings first",
   "you": "You",
   "assistant": "Amane",

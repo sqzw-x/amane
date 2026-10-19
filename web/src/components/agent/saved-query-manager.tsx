@@ -103,17 +103,11 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
                 <Badge size="sm" variant="light" color={SAVED_QUERY_BADGE_COLOR[item.entity]}>
                   {entityLabel}
                 </Badge>
-                {item.persisted ? (
-                  <Badge size="sm" variant="outline" color="teal">
-                    {t("persistedBadge", { ns: "savedQueries" })}
+                <Tooltip label={t("sessionTooltip", { ns: "savedQueries" })}>
+                  <Badge size="sm" variant="light" color="gray">
+                    {t("sessionBadge", { ns: "savedQueries" })}
                   </Badge>
-                ) : (
-                  <Tooltip label={t("sessionTooltip", { ns: "savedQueries" })}>
-                    <Badge size="sm" variant="light" color="gray">
-                      {t("sessionBadge", { ns: "savedQueries" })}
-                    </Badge>
-                  </Tooltip>
-                )}
+                </Tooltip>
                 <Text size="xs" c="dimmed" ff="monospace">
                   #{item.id}
                 </Text>
@@ -161,19 +155,15 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
           >
             {t(SAVED_QUERY_OPEN_LABEL_KEY.data, { ns: "savedQueries" })}
           </Button>
-          {!item.persisted && (
-            <Button
-              size="compact-sm"
-              variant="default"
-              leftSection={<IconBookmark size={14} />}
-              loading={persistMutation.isPending}
-              onClick={() =>
-                persistMutation.mutate({ body: { action: "persist", ids: [item.id] } })
-              }
-            >
-              {t("persist", { ns: "savedQueries" })}
-            </Button>
-          )}
+          <Button
+            size="compact-sm"
+            variant="default"
+            leftSection={<IconBookmark size={14} />}
+            loading={persistMutation.isPending}
+            onClick={() => persistMutation.mutate({ body: { action: "persist", ids: [item.id] } })}
+          >
+            {t("persist", { ns: "savedQueries" })}
+          </Button>
           <Button
             size="compact-sm"
             variant="default"
@@ -200,27 +190,13 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
   );
 }
 
-/** 合并两次受限查询并按 updated_at 倒序, 与列表接口排序一致; id 去重. */
-function mergePresets(
-  persisted: SavedQueryResponse[] | undefined,
-  session: SavedQueryResponse[] | undefined,
-): SavedQueryResponse[] {
-  const byId = new Map<number, SavedQueryResponse>();
-  for (const item of [...(persisted ?? []), ...(session ?? [])]) byId.set(item.id, item);
-  return [...byId.values()].toSorted((a, b) => b.updated_at.localeCompare(a.updated_at));
-}
-
-/** 会话页的预设入口: 展示已保留的全部预设与当前会话的临时预设, 靠标签区分. */
+/** 会话页的预设入口: 只列当前会话的临时预设; 已保留的预设只在 `/saved-queries` 管理页列出. */
 export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
   const { t } = useTranslation(["agent", "savedQueries", "common"]);
   const qc = useQueryClient();
   const [opened, setOpened] = useState(false);
 
-  // 两次受限请求: 已保留预设 + 当前会话临时预设, 不拉取其它会话的临时预设.
-  const persistedQuery = useQuery({
-    ...listSavedQueriesOptions({ query: { persisted_only: true } }),
-    enabled: opened,
-  });
+  // 保留预设已解绑会话, 故按会话过滤即排除它们; 也不拉取其它会话的临时预设.
   const sessionQuery = useQuery({
     ...listSavedQueriesOptions({ query: { session_id: sessionId } }),
     enabled: opened && sessionId != null,
@@ -232,11 +208,11 @@ export function SavedQueryManager({ sessionId }: { sessionId: number | null }) {
     void qc.invalidateQueries({ queryKey: [{ _id: "getSavedQuery" }] });
   }
 
-  const items = mergePresets(persistedQuery.data?.items, sessionQuery.data?.items);
-  const isLoading = persistedQuery.isPending || (sessionId != null && sessionQuery.isPending);
-  const isError = persistedQuery.isError || (sessionId != null && sessionQuery.isError);
-  const queryError = persistedQuery.error ?? sessionQuery.error;
-  const errorMessage = queryError instanceof Error ? queryError.message : t("common:status.error");
+  const items = sessionQuery.data?.items ?? [];
+  const isLoading = sessionId != null && sessionQuery.isPending;
+  const isError = sessionQuery.isError;
+  const errorMessage =
+    sessionQuery.error instanceof Error ? sessionQuery.error.message : t("common:status.error");
 
   return (
     <Menu
