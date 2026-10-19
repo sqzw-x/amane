@@ -1,11 +1,11 @@
 """数据落在页面内嵌的 Next.js 服务端结构, 站点无公开 API (``/api`` 404 且 robots 禁止), 因此解析 ``__NEXT_DATA__`` 而不做 DOM 启发式.
 
 番号不能直达: ``/works/{番号}`` 返回 404, 规范条目是 ``/works/{prefix}:{work_id}``. 检索 ``/works?q=``
-是模糊匹配, 取首条会误命中同前缀的其它作品, 因此只接受 ``work_id`` 归一后相等的候选.
-站点对分隔符的容忍度不一致 (有的番号去掉短横线可检索到, 有的必须带), 故逐个尝试候选查询形态.
+是模糊匹配, 取首条会误命中同前缀的其它作品, 因此只接受 ``work_id`` 归一后相等的候选, 或仅差开头数字段且唯一的候选.
+站点对分隔符与开头数字段的容忍度不一致 (有的番号去掉短横线可检索到, 有的必须带; 有的省略数字段), 故逐个尝试候选查询形态.
 
 ``casts[].actor.note`` 是唯一性别线索, 只有 ``男優`` 判为男优, 其余保持 ``unknown`` —— 自由文本无法
-推出女优. 封面 / 剧照 / 预告全部指向 DMM CDN, ``iteminfo.description`` 是截断文本, 均不取.
+推出女优. 封面 / 海报 / 剧照取自 ``work.products``; ``iteminfo.description`` 是截断文本, 不取.
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ from amane.enums import ActorGender, SiteName
 
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
-from ..parsing import next_data_props
+from ..parsing import NumberMatch, next_data_props, number_match, number_variants
+from .dmm_cdn import PICS_CDN, image_candidates, poster_candidates
 
 # JS Date.toString(): "Thu Feb 18 2021 09:00:00 GMT+0900 (Japan Standard Time)"; 星期前缀可选.
 _JS_DATE_RE = re.compile(r"^(?:[A-Za-z]{3} )?(?P<mon>[A-Za-z]{3}) (?P<day>\d{1,2}) (?P<year>\d{4})\b")
@@ -26,6 +27,8 @@ _JS_DATE_RE = re.compile(r"^(?:[A-Za-z]{3} )?(?P<mon>[A-Za-z]{3}) (?P<day>\d{1,2
 _CLOCK_RE = re.compile(r"^(?P<h>\d+):(?P<min>\d{2}):(?P<sec>\d{2})$")
 # 无分隔符番号插入短横线: 字母结尾 + 数字尾段 (SSIS497 → SSIS-497); 含 "_" 的日期号不匹配.
 _DASHABLE_RE = re.compile(r"^(?P<head>.*[A-Za-z])(?P<digits>\d+)$")
+# DMM 样品图编号: medium 是 js-N / -N, 高清副本是 jp-N.
+_SAMPLE_NUM_RE = re.compile(r"-(?P<num>\d+)\.jpg$")
 _MONTHS: dict[str, int] = {
     "jan": 1,
     "feb": 2,
@@ -55,10 +58,11 @@ class AvbaseCrawler(Crawler):
         key = work_key(number)
         if not key:
             return None
-        for form in query_forms(number):
-            url = await self._search_form(form, key)
-            if url:
-                return url
+        for variant in number_variants(number):
+            for form in query_forms(variant):
+                url = await self._search_form(form, key)
+                if url:
+                    return url
         return None
 
     async def _search_form(self, term: str, key: str) -> str | None:
@@ -67,7 +71,7 @@ class AvbaseCrawler(Crawler):
         works = props.get("works") if props else None
         if not isinstance(works, list):
             return None
-        candidates = [w for w in works if isinstance(w, dict) and work_key(_text(w.get("work_id"))) == key]
+        candidates = _select_works(works, key)
         picked = pick_candidate(candidates, key)
         if picked is None:
             return None
@@ -110,6 +114,27 @@ def work_key(value: str) -> str:
     return "".join(str(int(part)) if part.isdigit() else part for part in re.findall(r"\d+|[a-z]+", compact))
 
 
+def _select_works(works: list[Any], key: str) -> list[dict[str, Any]]:
+    """同一 ``work_id`` 的条目全保留, 供 ``pick_candidate`` 打破平局.
+
+    work_id 可能省略番号开头的数字段 (GGH-009 对应 723GGH-009); 精确优先, 仅差数字段时该
+    work_id 须唯一, 与 javdb / javbus / mgstage 的判定一致.
+    """
+    candidates = [w for w in works if isinstance(w, dict)]
+    exact: list[dict[str, Any]] = []
+    loose: dict[str, list[dict[str, Any]]] = {}
+    for work in candidates:
+        found = work_key(_text(work.get("work_id")))
+        match = number_match(found, key)
+        if found == key or match is NumberMatch.EXACT:
+            exact.append(work)
+        elif match is NumberMatch.WITHOUT_LEADING_DIGITS:
+            loose.setdefault(found, []).append(work)
+    if exact:
+        return exact
+    return next(iter(loose.values())) if len(loose) == 1 else []
+
+
 def pick_candidate(candidates: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
     """同 ``work_id`` 多条目时择一: 先取 products 含本番号的候选, 再取无 prefix 的规范条目.
 
@@ -147,6 +172,7 @@ def build_metadata(work: dict[str, Any], *, url: str) -> MediaMetadata | None:
         return None
     raw_products = work.get("products")
     products = [p for p in raw_products if isinstance(p, dict)] if isinstance(raw_products, list) else []
+    poster_urls, thumb_urls, extrafanart = _build_images(products)
     return MediaMetadata(
         number=number,
         title=_text(work.get("title")) or None,
@@ -158,8 +184,67 @@ def build_metadata(work: dict[str, Any], *, url: str) -> MediaMetadata | None:
         runtime=first_runtime(products),
         tags=_build_tags(work.get("genres")),
         directors=_build_directors(products),
+        poster_urls=poster_urls,
+        thumb_urls=thumb_urls,
+        extrafanart=extrafanart,
         source_url=url,
     )
+
+
+def _build_images(products: list[dict[str, Any]]) -> tuple[list[str], list[str], list[str]]:
+    """商品图 → (海报, 封面, 剧照).
+
+    同一作品常有多店商品 (fanza / mgstage / duga); 封面与海报成对的商品优先, 只有单图的商品排在其后.
+    """
+    product = _image_product(products)
+    if product is None:
+        return [], [], []
+    cover = _text(product.get("image_url"))
+    poster = _text(product.get("thumbnail_url"))
+    poster_urls = image_candidates(poster) if poster else (poster_candidates(cover) if cover else [])
+    thumb_urls = image_candidates(cover) if cover else []
+    return poster_urls, thumb_urls, _sample_urls(products, preferred=product)
+
+
+def _image_product(products: list[dict[str, Any]]) -> dict[str, Any] | None:
+    candidates = [p for p in products if _text(p.get("image_url")) or _text(p.get("thumbnail_url"))]
+    if not candidates:
+        return None
+    for product in candidates:
+        cover = _text(product.get("image_url"))
+        poster = _text(product.get("thumbnail_url"))
+        if cover and poster and cover != poster:
+            return product
+    return candidates[0]
+
+
+def _sample_urls(products: list[dict[str, Any]], *, preferred: dict[str, Any]) -> list[str]:
+    """优先取选中商品的剧照; 该商品没有剧照时回退到第一个有剧照的商品."""
+    for product in (preferred, *products):
+        raw = product.get("sample_image_urls")
+        if not isinstance(raw, list):
+            continue
+        urls: list[str] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            url = _text(item.get("l")) or _text(item.get("s"))
+            if url:
+                urls.append(_sample_url(url))
+        if urls:
+            return list(dict.fromkeys(urls))
+    return []
+
+
+def _sample_url(url: str) -> str:
+    """DMM 商品把 medium 样品图放在 l 字段 (js-N / -N); 同 CDN 的高清副本是 jp-N, 其它 CDN 原样."""
+    if not url.startswith(f"{PICS_CDN}/"):
+        return url
+    match = _SAMPLE_NUM_RE.search(url)
+    if match is None:
+        return url
+    stem = url[: match.start()].removesuffix("js").removesuffix("jp")
+    return f"{stem}jp-{match.group('num')}.jpg"
 
 
 def _build_actors(casts: object) -> list[FilmActor]:

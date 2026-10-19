@@ -192,8 +192,9 @@ def digital_payload(cid: str) -> dict:
 
 
 class _DigitalPackageImage(BaseModel):
-    largeUrl: str = ""
-    mediumUrl: str = ""
+    # 素人条目只给 mediumUrl (jp.jpg), largeUrl 为 null; 两个字段都可能单独缺省.
+    largeUrl: str | None = None
+    mediumUrl: str | None = None
 
 
 class _DigitalSampleImage(BaseModel):

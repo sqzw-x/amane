@@ -426,7 +426,7 @@ def _assemble_url_fields(
     result: AggregatedMetadata,
     cache_keys: Collection[SourceKey] | None = None,
 ) -> None:
-    """按各字段站点顺序拼接已抓结果的图片地址. 空值与未返回的站跳过, 不改变相对顺序.
+    """按各字段站点顺序拼接已抓结果的图片地址, 相同地址只保留首次出现. 空值与未返回的站跳过, 不改变相对顺序.
 
     ``cache_keys`` 限定参与拼接的节点, 段间注入只取第一段节点; 省略时取全部已抓结果.
     """
@@ -443,7 +443,7 @@ def _assemble_url_fields(
                 continue
             items = [value] if isinstance(value, str) else value
             urls.extend(v for v in items if v)
-        setattr(result, dst, urls)
+        setattr(result, dst, list(dict.fromkeys(urls)))
 
 
 def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None:

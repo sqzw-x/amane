@@ -898,6 +898,25 @@ class TestComplexScenarios:
         assert state.result.thumb_urls == ["http://javdb/t.jpg", "http://plugin/t.jpg"]
         assert [s.site for s in state.result.scores] == [PLUGIN_K, "javdb"]
 
+    @pytest.mark.asyncio
+    async def test_duplicate_url_keeps_first_occurrence(self):
+        """多源给出同一地址时只保留首次出现, 后续不同地址仍按链拼接."""
+        fp = compile_priority([DMM, PLUGIN_K], {})
+        graph = build_graph(fp, {})
+
+        state = await execute_graph(
+            graph,
+            {
+                "dmm": MockCrawler(MediaMetadata(number="X", thumb_urls=["http://dmm/pl.jpg"])),
+                PLUGIN_K: MockCrawler(
+                    MediaMetadata(number="X", thumb_urls=["http://dmm/pl.jpg", "http://pics/pl.jpg"])
+                ),
+            },
+            SearchQuery("X"),
+        )
+
+        assert state.result.thumb_urls == ["http://dmm/pl.jpg", "http://pics/pl.jpg"]
+
 
 # ============================================================
 # 进度回调与列表清理

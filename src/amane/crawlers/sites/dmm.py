@@ -232,8 +232,10 @@ class DmmCrawler(Crawler):
         sample_movie = data.sample2DMovie
         trailer_urls = [sample_movie.highestMovieUrl] if sample_movie and sample_movie.highestMovieUrl else []
 
+        # 素人条目只有 mediumUrl (jp.jpg), 没有 largeUrl; 这一张同时作封面与海报.
         package_image = data.packageImage
-        thumb_urls = [package_image.largeUrl] if package_image and package_image.largeUrl else []
+        thumb_url = (package_image.largeUrl or package_image.mediumUrl) if package_image else None
+        thumb_urls = [thumb_url] if thumb_url else []
         poster_urls = [package_image.mediumUrl] if package_image and package_image.mediumUrl else []
 
         number = self._cid_to_number(cid, retail=False)
