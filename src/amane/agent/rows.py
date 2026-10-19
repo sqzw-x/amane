@@ -4,7 +4,8 @@
 用量位置、未决中断还原) 都在这里定形. 前端只按到达顺序折叠, 不认识 `ag_ui` 事件.
 
 联合以 `type` 判别, 经 OpenAPI 生成前端类型: 加字段或改字段名即在前端编译期暴露.
-`seq` 与 `at` 由 `SessionStore` 落盘时补; 读取路径容忍手改文件缺 `seq`, 这类行不参与跟随.
+`seq` 与 `at` 由 `SessionStore` 落盘时补; 读取路径容忍手改文件缺其中之一: 缺 `seq` 的行不参与跟随,
+缺 `at` 的行不进活动块的耗时统计.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ def _utcnow_iso() -> str:
 
 
 class RowBase(BaseModel):
-    """行的信封. `seq` 与 `at` 由 `SessionStore` 落盘时补, 供日志自身定位与排障, 页面不读."""
+    """行的信封. `seq` 与 `at` 由 `SessionStore` 落盘时补: `seq` 供跟随定位, `at` 供日志定位与页面汇总活动块耗时."""
 
     model_config = ConfigDict(extra="forbid")
 

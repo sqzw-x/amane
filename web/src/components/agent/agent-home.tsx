@@ -35,6 +35,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
+  IconBrain,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
@@ -84,6 +85,7 @@ import {
   type AgentToolCallPart,
   type TraceRow,
 } from "@/lib/agent/trace";
+import { formatDuration } from "@/lib/format-duration";
 import { downloadSavedQueryResult } from "@/lib/saved-query/download";
 import { TokenUsageBar, RequestUsageBar } from "@/components/agent/token-usage-bar";
 import { confirm } from "@/lib/confirm";
@@ -110,34 +112,53 @@ function TextPart({ text, streaming }: { text: string; streaming: boolean }) {
   return <MarkdownContent text={text} streaming={streaming} />;
 }
 
-/** 折叠块: 标题行固定为一行说明, 展开内容统一左缩进; 折叠与标题位置保持见 useFold. */
-function FoldBlock({
-  label,
-  running,
+/** 折叠条: 整行可点的标题行与框内内容, 活动组与思考段共用 (工具卡片另有常驻的审批入口).
+
+    折叠与标题位置的保持见 useFold. 未决审批在框内时保持展开: 批准入口在框内, 折叠后不可达.
+*/
+function FoldBar({
+  header,
+  aside,
+  attention = false,
   children,
 }: {
-  label: string;
-  running?: boolean;
+  /** 标题行左侧 (图标、标题与状态); 拿得到展开状态, 收起给摘要而展开换成固定的标签. */
+  header: (expanded: boolean) => ReactNode;
+  /** 标题行右侧、箭头之前的内容, 例如耗时. */
+  aside?: ReactNode;
+  attention?: boolean;
   children: ReactNode;
 }) {
   const { open, toggle, headerRef } = useFold();
+  const expanded = open || attention;
   return (
-    <Box mb="xs">
-      <UnstyledButton ref={headerRef} onClick={toggle}>
-        <Group gap={4} wrap="nowrap">
-          {open ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
-          <Text size="xs" c="dimmed">
-            {label}
-          </Text>
-          {running && <Loader size={12} />}
+    <Box
+      mb="xs"
+      style={{
+        border: "1px solid var(--mantine-color-default-border)",
+        borderRadius: "var(--mantine-radius-md)",
+        overflow: "hidden",
+      }}
+    >
+      <UnstyledButton ref={headerRef} px="sm" py={6} w="100%" onClick={toggle}>
+        <Group gap={6} wrap="nowrap">
+          {header(expanded)}
+          <Box
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              lineHeight: 0,
+            }}
+          >
+            {aside}
+            {expanded ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
+          </Box>
         </Group>
       </UnstyledButton>
-      {open && (
-        <Box
-          pl="sm"
-          mt="xs"
-          style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}
-        >
+      {expanded && (
+        <Box px="sm" pb="sm">
           {children}
         </Box>
       )}
@@ -145,12 +166,44 @@ function FoldBlock({
   );
 }
 
-/** 单段思考正文; 折叠由 FoldBlock 统一负责. */
-function ReasoningPart({ text }: { text: string }) {
+/** 标题行里可截断的文本: 不设 `minWidth`, flex 子项不会缩到内容宽度以下, 截断就不会发生. */
+function BarText({ children }: { children: ReactNode }) {
   return (
-    <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
-      {text}
+    <Text size="xs" c="dimmed" truncate style={{ minWidth: 0 }}>
+      {children}
     </Text>
+  );
+}
+
+/** 思考段的标题: 取首个非空行, 过长交给 CSS 截断; 整段都是空白时退回「思考」. */
+function thoughtPreview(text: string): string {
+  return (
+    text
+      .split("\n")
+      .find((line) => line.trim() !== "")
+      ?.trim() ?? ""
+  );
+}
+
+/** 思考段: 与工具卡片同形的条形块, 收起时标题给首行摘要, 展开后换成「思考」并显示全文. */
+function ReasoningPart({ text }: { text: string }) {
+  const { t } = useTranslation("agent");
+  const preview = thoughtPreview(text);
+  return (
+    <FoldBar
+      header={(expanded) => (
+        <>
+          <Box c="dimmed" style={{ display: "flex", lineHeight: 0 }}>
+            <IconBrain size={14} stroke={1.6} />
+          </Box>
+          <BarText>{expanded || preview === "" ? t("thinking.label") : preview}</BarText>
+        </>
+      )}
+    >
+      <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
+        {text}
+      </Text>
+    </FoldBar>
   );
 }
 
@@ -170,95 +223,135 @@ function Part({ part, streaming }: { part: AgentPart; streaming: boolean }) {
   }
 }
 
-/** 一段活动里工具调用超过这个数就整组折叠. */
-const ACTIVITY_TOOL_LIMIT = 3;
+/** 展示分段: `plain` 逐部件直出 (正文与紧随其后的用量条), `activity` 收进活动块 (思考与工具调用). */
+type PartChunk = { kind: "plain"; indices: number[] } | { kind: "activity"; indices: number[] };
 
-type PartChunk = { kind: "reasoning"; indices: number[] } | { kind: "part"; index: number };
+/** 按部件类型分段: 思考与工具调用聚成一段活动, 其余直出.
 
-/** 把 [start, end) 切成连续思考块与单部件. */
-function partChunks(parts: readonly AgentPart[], start: number, end: number): PartChunk[] {
+    正文因此不与活动同块: 夹在工具与思考之间的回复照常显示, 不随活动一起折叠, 活动也就被正文切成若干块.
+    逐请求用量紧跟在这次响应的产出之后, 随前一段走而不另起一段, 也不把活动切开; 回合总计是整轮的页脚,
+    落在活动块之后时自起一段, 不跟着收进折叠.
+*/
+function partChunks(parts: readonly AgentPart[]): PartChunk[] {
   const chunks: PartChunk[] = [];
-  let index = start;
-  while (index < end) {
-    if (parts[index]?.type !== "reasoning") {
-      chunks.push({ kind: "part", index });
-      index += 1;
+  for (const [index, part] of parts.entries()) {
+    const trailing = part.type === "data-request-usage";
+    const activity = part.type === "reasoning" || part.type === "tool-call";
+    const open = chunks.at(-1);
+    if (open !== undefined && (trailing || activity === (open.kind === "activity"))) {
+      open.indices.push(index);
       continue;
     }
-    const indices: number[] = [];
-    while (index < end && parts[index]?.type === "reasoning") {
-      indices.push(index);
-      index += 1;
-    }
-    chunks.push({ kind: "reasoning", indices });
+    chunks.push(
+      activity ? { kind: "activity", indices: [index] } : { kind: "plain", indices: [index] },
+    );
   }
   return chunks;
 }
 
-/** 一段部件: 连续思考合并成一块折叠, 其余各归各. 光标与转圈只给消息的最后一段. */
-function PartRun({
+/** 块内耗时: 首个成员成形到末个成员收尾 (工具回执即执行结束).
+
+    行缺 `at` (手改日志) 时给不出区间; 显示精度到秒, 更短的块报 `<1s`. 响应增量被中转缓冲时,
+    一整轮思考加工具可能还不到一秒, 这类块照样给个数, 免得标题上看不出它是否已经收束.
+*/
+function activityElapsed(members: readonly AgentPart[]): string | null {
+  const spans = members.flatMap((member) =>
+    member.type === "reasoning" || member.type === "tool-call" ? [member] : [],
+  );
+  const starts = spans.flatMap((span) => (span.startedAt === undefined ? [] : [span.startedAt]));
+  const ends = spans.flatMap((span) => (span.endedAt === undefined ? [] : [span.endedAt]));
+  if (starts.length === 0 || ends.length === 0) return null;
+  const startedAt = starts.reduce((min, at) => (Date.parse(at) < Date.parse(min) ? at : min));
+  const endedAt = ends.reduce((max, at) => (Date.parse(at) > Date.parse(max) ? at : max));
+  const elapsed = Date.parse(endedAt) - Date.parse(startedAt);
+  if (!Number.isFinite(elapsed)) return null;
+  return elapsed < 1000 ? "<1s" : formatDuration(startedAt, endedAt);
+}
+
+/** 活动块: 一段连续的思考与工具调用, 总是收起; 块内的思考段与工具调用各自成条, 可单独展开.
+
+    正文不在其中 (见 partChunks). 标题给出块内计数, 产出中补当前状态, 收束后补块内耗时.
+*/
+function ActivityBlock({
   parts,
-  start,
-  end,
+  indices,
   streaming,
 }: {
   parts: readonly AgentPart[];
-  start: number;
-  end: number;
+  indices: readonly number[];
   streaming: boolean;
 }) {
   const { t } = useTranslation("agent");
-  const chunks = useMemo(() => partChunks(parts, start, end), [parts, start, end]);
+  const approval = useContext(ApprovalContext);
+  const members = indices.map((index) => parts[index]);
+  const calls = members.flatMap((member) => (member.type === "tool-call" ? [member] : []));
+  const thoughts = members.filter((member) => member.type === "reasoning").length;
+  /** 这块就是消息的末段: 回合还在跑时, 它是要么在等工具回执, 要么在等模型产出下一步的那一块. */
+  const active = streaming && indices.at(-1) === parts.length - 1;
+  const calling = active && calls.some((call) => call.result === undefined);
+  // 未决审批在块内时保持展开, 否则批准入口会被折叠隐藏.
+  const attention = calls.some((call) =>
+    approval?.interrupts.some((interrupt) => interrupt.toolCallId === call.toolCallId),
+  );
+  const label = [
+    thoughts === 0 ? null : t("thoughtCount", { n: thoughts }),
+    calls.length === 0 ? null : t("toolCallsCount", { n: calls.length }),
+  ]
+    .filter((item): item is string => item !== null)
+    .join(" · ");
+  // 未收束的块不给耗时: 它还会接着长, 中途的读数没有意义
+  const status = calling ? t("toolRunning") : active ? t("thinkingRunning") : null;
+  const elapsed = status === null ? activityElapsed(members) : null;
+
+  return (
+    <FoldBar
+      attention={attention}
+      header={() => (
+        <>
+          <BarText>{label}</BarText>
+          {status !== null && (
+            <Text size="xs" c="dimmed" fs="italic">
+              {status}
+            </Text>
+          )}
+          {status !== null && <Loader size={12} />}
+        </>
+      )}
+      aside={
+        elapsed === null ? null : (
+          <Text size="xs" c="dimmed" ff="monospace">
+            {elapsed}
+          </Text>
+        )
+      }
+    >
+      {indices.map((index) => (
+        <Part key={index} part={parts[index]} streaming={streaming} />
+      ))}
+    </FoldBar>
+  );
+}
+
+/** 助手部件: 正文直出, 思考与工具调用一律收进活动块 —— 不设阈值, 首屏即收起态. */
+function AssistantParts({ parts, streaming }: { parts: readonly AgentPart[]; streaming: boolean }) {
+  const chunks = useMemo(() => partChunks(parts), [parts]);
   const lastIndex = parts.length - 1;
   return (
     <>
       {chunks.map((chunk) =>
-        chunk.kind === "reasoning" ? (
-          <FoldBlock
-            key={`thought-${chunk.indices[0]}`}
-            label={t("thinking.label")}
-            running={streaming && chunk.indices.at(-1) === lastIndex}
-          >
-            {chunk.indices.map((index) => (
-              <Part key={index} part={parts[index]} streaming={false} />
-            ))}
-          </FoldBlock>
-        ) : (
-          <Part
-            key={chunk.index}
-            part={parts[chunk.index]}
-            streaming={streaming && chunk.index === lastIndex}
+        chunk.kind === "activity" ? (
+          <ActivityBlock
+            key={`activity-${chunk.indices[0]}`}
+            parts={parts}
+            indices={chunk.indices}
+            streaming={streaming}
           />
+        ) : (
+          chunk.indices.map((index) => (
+            <Part key={index} part={parts[index]} streaming={streaming && index === lastIndex} />
+          ))
         ),
       )}
-    </>
-  );
-}
-
-/** 助手部件: 默认折叠思考; 整条消息工具调用够多时, 首尾活动 (含夹在中间的文本) 折叠为一块. */
-function AssistantParts({ parts, streaming }: { parts: readonly AgentPart[]; streaming: boolean }) {
-  const { t } = useTranslation("agent");
-  const approval = useContext(ApprovalContext);
-  const tools = parts.flatMap((part) => (part.type === "tool-call" ? [part.toolCallId] : []));
-  const first = parts.findIndex((part) => part.type === "reasoning" || part.type === "tool-call");
-  const last = parts.findLastIndex(
-    (part) => part.type === "reasoning" || part.type === "tool-call",
-  );
-  // 未决审批在活动里时保持展开, 否则批准入口会被折叠隐藏.
-  const awaiting = tools.some((id) =>
-    approval?.interrupts.some((interrupt) => interrupt.toolCallId === id),
-  );
-
-  if (tools.length <= ACTIVITY_TOOL_LIMIT || first < 0 || awaiting) {
-    return <PartRun parts={parts} start={0} end={parts.length} streaming={streaming} />;
-  }
-  return (
-    <>
-      <PartRun parts={parts} start={0} end={first} streaming={streaming} />
-      <FoldBlock label={t("toolCallsCount", { n: tools.length })}>
-        <PartRun parts={parts} start={first} end={last + 1} streaming={streaming} />
-      </FoldBlock>
-      <PartRun parts={parts} start={last + 1} end={parts.length} streaming={streaming} />
     </>
   );
 }
@@ -892,8 +985,13 @@ function AgUiThread({
                   {t("continueHint")}
                 </Text>
               ) : null}
-              {messages.map((message) => (
-                <Message key={message.id} message={message} streaming={serverTurn} />
+              {messages.map((message, index) => (
+                // 流式提示只给末条消息: 往轮的光标与转圈不该在下一轮里亮着
+                <Message
+                  key={message.id}
+                  message={message}
+                  streaming={serverTurn && index === messages.length - 1}
+                />
               ))}
               {pendingText !== null && <UserMessage text={pendingText} />}
             </Box>
