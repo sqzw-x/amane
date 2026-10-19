@@ -23,14 +23,23 @@ export type TraceRow = AgentTraceResponse["events"][number];
 /** 未决审批寄存的位置: 库读消息 metadata 的这一项来恢复审批入口 (键名由库约定). */
 const AGUI_METADATA_KEY = "agui";
 
+/** 部件的时间跨度: 成形行与末次更新行 (工具回执即执行结束) 的时刻, 供活动块汇总块内耗时.
+
+    行缺 `at` (手改日志) 时留空, 页面据此不显示耗时.
+*/
+export type PartSpan = {
+  readonly startedAt?: string;
+  readonly endedAt?: string;
+};
+
 /** 正文: 一段回复或一轮里的若干段, 归块键是协议给的块 id. */
-export type AgentTextPart = { readonly type: "text"; readonly text: string };
+export type AgentTextPart = PartSpan & { readonly type: "text"; readonly text: string };
 
 /** 思考: 与正文同处一条消息, 渲染时相邻的若干段合成一个折叠块. */
-export type AgentReasoningPart = { readonly type: "reasoning"; readonly text: string };
+export type AgentReasoningPart = PartSpan & { readonly type: "reasoning"; readonly text: string };
 
 /** 工具调用: 参数只留 JSON 文本, `result` 为空表示这次调用还没有回执. */
-export type AgentToolCallPart = {
+export type AgentToolCallPart = PartSpan & {
   readonly type: "tool-call";
   readonly toolCallId: string;
   readonly toolName: string;
@@ -104,14 +113,20 @@ export function foldTrace(rows: readonly TraceRow[]): AgentMessage[] {
 
   const at = (key: string) => keys.indexOf(key);
 
-  const appendDelta = (key: string, kind: "text" | "reasoning", text: string) => {
+  /** 增量归入同键同类的部件, 并把末次更新时刻推到这个部件上 (工具回执同此, 见下). */
+  const appendDelta = (
+    key: string,
+    kind: "text" | "reasoning",
+    text: string,
+    stamp: string | undefined,
+  ) => {
     const index = at(key);
     const part = index < 0 ? undefined : parts[index];
     if (part?.type === kind) {
-      parts[index] = { ...part, text: part.text + text };
+      parts[index] = { ...part, text: part.text + text, endedAt: stamp };
       return;
     }
-    push(key, { type: kind, text });
+    push(key, { type: kind, text, startedAt: stamp, endedAt: stamp });
   };
 
   for (const row of rows) {
@@ -127,11 +142,11 @@ export function foldTrace(rows: readonly TraceRow[]): AgentMessage[] {
       }
 
       case "reasoning_delta":
-        appendDelta(blockKey("reasoning", row.block_id), "reasoning", row.text);
+        appendDelta(blockKey("reasoning", row.block_id), "reasoning", row.text, row.at);
         break;
 
       case "text_delta":
-        appendDelta(blockKey("text", row.block_id), "text", row.text);
+        appendDelta(blockKey("text", row.block_id), "text", row.text, row.at);
         break;
 
       case "tool_call":
@@ -141,6 +156,8 @@ export function foldTrace(rows: readonly TraceRow[]): AgentMessage[] {
           toolCallId: row.tool_call_id,
           toolName: row.name,
           argsText: jsonText(row.args),
+          startedAt: row.at,
+          endedAt: row.at,
         });
         break;
 
@@ -149,7 +166,7 @@ export function foldTrace(rows: readonly TraceRow[]): AgentMessage[] {
         const index = at(toolKey(row.tool_call_id));
         const part = index < 0 ? undefined : parts[index];
         if (part?.type === "tool-call") {
-          parts[index] = { ...part, result: row.result };
+          parts[index] = { ...part, result: row.result, endedAt: row.at };
         } else {
           console.warn("[agent] 工具回执找不到对应的调用, 已丢弃", row);
         }
