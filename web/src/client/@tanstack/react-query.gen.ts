@@ -595,6 +595,8 @@ export const setMetadataLocksMutation = (options?: Partial<Options<SetMetadataLo
  * Crop Poster From Thumb
  *
  * 从封面 (thumb) 按像素框裁切海报, 写入派生 Resource 并更新 poster_urls.
+ *
+ * 先按 EXIF 转正、再顺时针旋转 ``req.rotation``, 框相对旋转后的图像.
  */
 export const cropPosterFromThumbMutation = (options?: Partial<Options<CropPosterFromThumbData>>): UseMutationOptions<CropPosterFromThumbResponse, CropPosterFromThumbError, Options<CropPosterFromThumbData>> => {
     const mutationOptions: UseMutationOptions<CropPosterFromThumbResponse, CropPosterFromThumbError, Options<CropPosterFromThumbData>> = {
@@ -1126,6 +1128,8 @@ export const clearActorPersonMutation = (options?: Partial<Options<ClearActorPer
  * Crop Actor Avatar
  *
  * 从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图.
+ *
+ * 先按 EXIF 转正、再顺时针旋转 ``req.rotation``, 框相对旋转后的图像.
  */
 export const cropActorAvatarMutation = (options?: Partial<Options<CropActorAvatarData>>): UseMutationOptions<CropActorAvatarResponse, CropActorAvatarError, Options<CropActorAvatarData>> => {
     const mutationOptions: UseMutationOptions<CropActorAvatarResponse, CropActorAvatarError, Options<CropActorAvatarData>> = {

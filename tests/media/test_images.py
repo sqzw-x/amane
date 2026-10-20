@@ -7,11 +7,15 @@ from PIL import Image
 
 from amane.enums import WatermarkCorner, WatermarkKind
 from amane.media import (
+    CropRotation,
     apply_cover_watermarks,
     crop_box,
     crop_poster,
+    format_crop_box_args,
     needs_upscale,
+    probe_oriented_size,
     probe_size,
+    rotated_size,
     should_crop_poster,
     validate_crop_box,
 )
@@ -19,6 +23,31 @@ from amane.parsing import DEFINITION_VALUES, Mosaic
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+_RED = (255, 0, 0)
+_GREEN = (0, 255, 0)
+_BLUE = (0, 0, 255)
+_WHITE = (255, 255, 255)
+_Q_W, _Q_H = 40, 20
+
+
+def _quadrants() -> Image.Image:
+    """左上红 / 右上绿 / 左下蓝 / 右下白; 用于验证旋转后的像素落位."""
+    img = Image.new("RGB", (_Q_W, _Q_H))
+    for y in range(_Q_H):
+        for x in range(_Q_W):
+            if x < _Q_W // 2:
+                img.putpixel((x, y), _RED if y < _Q_H // 2 else _BLUE)
+            else:
+                img.putpixel((x, y), _GREEN if y < _Q_H // 2 else _WHITE)
+    return img
+
+
+def _near(color: tuple[int, ...] | float | None, expected: tuple[int, int, int], tolerance: int = 40) -> bool:
+    """JPEG 有损编码后比较纯色区块, 允许色度泄漏; 非 RGB 取值直接判否."""
+    if not isinstance(color, tuple) or len(color) != 3:
+        return False
+    return all(abs(actual - target) <= tolerance for actual, target in zip(color, expected, strict=True))
 
 
 class TestCropPoster:
@@ -94,6 +123,54 @@ class TestCropBox:
     def test_missing_source_returns_false(self, tmp_path: Path):
         assert crop_box(tmp_path / "missing.jpg", tmp_path / "out.jpg", (0, 0, 10, 10)) is False
 
+    @pytest.mark.parametrize(
+        ("rotation", "order", "desc"),
+        [
+            (0, (_RED, _GREEN, _BLUE, _WHITE), "不转"),
+            (90, (_BLUE, _RED, _WHITE, _GREEN), "顺时针 90°"),
+            (180, (_WHITE, _BLUE, _GREEN, _RED), "顺时针 180°"),
+            (270, (_GREEN, _WHITE, _RED, _BLUE), "顺时针 270°"),
+        ],
+    )
+    def test_rotation_maps_quadrants(self, tmp_path: Path, rotation: CropRotation, order: tuple, desc: str):
+        """顺时针旋转后原四象限的落位; 顺带证明输出尺寸随 90° / 270° 互换."""
+        src = tmp_path / "src.png"
+        _quadrants().save(src)
+        dest = tmp_path / "out.jpg"
+
+        width, height = rotated_size((_Q_W, _Q_H), rotation)
+        assert crop_box(src, dest, (0, 0, width, height), rotation=rotation) is True, desc
+
+        with Image.open(dest) as out:
+            assert out.size == (width, height), desc
+            spots = ((width // 4, height // 4), (width * 3 // 4, height // 4))
+            spots += ((width // 4, height * 3 // 4), (width * 3 // 4, height * 3 // 4))
+            for (x, y), expected in zip(spots, order, strict=True):
+                assert _near(out.getpixel((x, y)), expected), f"{desc} 象限落位错误"
+
+    def test_exif_orientation_transposed_before_crop(self, tmp_path: Path):
+        """方向 6 的源图按转正后的尺寸裁切: 原始 40x20 显示为 20x40."""
+        src = tmp_path / "src.jpg"
+        img = _quadrants()
+        exif = img.getexif()
+        exif[274] = 6
+        img.save(src, exif=exif, quality=95)
+        dest = tmp_path / "out.jpg"
+
+        assert crop_box(src, dest, (0, 0, 20, 40)) is True
+
+        with Image.open(dest) as out:
+            assert out.size == (20, 40)
+            # 方向 6 = 显示前顺时针 90°: 原左上 (红) 落到右上.
+            assert _near(out.getpixel((15, 10)), _RED)
+            assert _near(out.getpixel((5, 10)), _BLUE)
+
+    def test_rotated_size_bound_check(self, tmp_path: Path):
+        """旋转后宽高互换, 按未旋转尺寸的框必须判无效."""
+        src = tmp_path / "src.jpg"
+        Image.new("RGB", (40, 20), "blue").save(src)
+        assert crop_box(src, tmp_path / "out.jpg", (0, 0, 40, 20), rotation=90) is False
+
 
 class TestAlphaSourceEncodesAsJpeg:
     """带 alpha 的源图必须落盘为 JPEG.
@@ -140,6 +217,67 @@ class TestAlphaSourceEncodesAsJpeg:
             assert out.format == "JPEG"
             assert out.mode == "RGB"
             assert out.size == (100, 200)
+
+
+class TestFormatCropBoxArgs:
+    @pytest.mark.parametrize(
+        ("rotation", "expected", "desc"),
+        [
+            (0, "box:1,2,3,4", "默认不带标记"),
+            (90, "box:1,2,3,4:r90", "顺时针 90°"),
+            (180, "box:1,2,3,4:r180", "顺时针 180°"),
+            (270, "box:1,2,3,4:r270", "顺时针 270°"),
+        ],
+    )
+    def test_args(self, rotation: CropRotation, expected: str, desc: str):
+        assert format_crop_box_args(1, 2, 3, 4, rotation=rotation) == expected, desc
+
+
+class TestRotatedSize:
+    @pytest.mark.parametrize(
+        ("rotation", "expected", "desc"),
+        [
+            (0, (40, 20), "不转"),
+            (90, (20, 40), "90° 互换"),
+            (180, (40, 20), "180° 不变"),
+            (270, (20, 40), "270° 互换"),
+        ],
+    )
+    def test_size(self, rotation: CropRotation, expected: tuple[int, int], desc: str):
+        assert rotated_size((40, 20), rotation) == expected, desc
+
+
+class TestProbeOrientedSize:
+    @pytest.mark.parametrize(
+        ("orientation", "expected", "desc"),
+        [
+            (None, (40, 20), "无方向标记"),
+            (1, (40, 20), "正常"),
+            (3, (40, 20), "旋转 180° 不换宽高"),
+            (6, (20, 40), "顺时针 90° 换宽高"),
+            (8, (20, 40), "逆时针 90° 换宽高"),
+        ],
+    )
+    def test_reads_oriented_size(self, tmp_path: Path, orientation: int | None, expected: tuple[int, int], desc: str):
+        p = tmp_path / "img.jpg"
+        img = _quadrants()
+        if orientation is not None:
+            exif = img.getexif()
+            exif[274] = orientation
+            img.save(p, exif=exif, quality=95)
+        else:
+            img.save(p)
+        assert probe_oriented_size(p) == expected, desc
+
+    @pytest.mark.parametrize(
+        ("setup", "desc"),
+        [("missing", "文件不存在"), ("garbage", "非图像内容")],
+    )
+    def test_invalid_returns_none(self, tmp_path: Path, setup: str, desc: str):
+        p = tmp_path / "x.jpg"
+        if setup == "garbage":
+            p.write_bytes(b"not an image at all")
+        assert probe_oriented_size(p) is None, desc
 
 
 class TestProbeSize:

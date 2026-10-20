@@ -10,7 +10,7 @@ from PIL import Image
 
 from amane.config import HotSettings, SrConfig
 from amane.enums import DownloadableResource
-from amane.media import ResourceStore, manual_crop_image, materialize_images
+from amane.media import CropRotation, ResourceStore, manual_crop_image, materialize_images
 from amane.media import pipeline as pipeline_mod
 from tests.helpers import LOAD_TOLERANT_TIMEOUT, await_for
 
@@ -23,9 +23,15 @@ if TYPE_CHECKING:
 class FakeClient:
     """伪 WebClient: download 按 url 写出预设尺寸的图片 (或视频占位); fail 集合内 URL 下载失败."""
 
-    def __init__(self, sizes: dict[str, tuple[int, int]], fail: set[str] | None = None):
+    def __init__(
+        self,
+        sizes: dict[str, tuple[int, int]],
+        fail: set[str] | None = None,
+        orientations: dict[str, int] | None = None,
+    ):
         self._sizes = sizes
         self.fail = fail or set()
+        self.orientations = orientations or {}
         self.downloaded: list[str] = []
 
     async def download(self, url: str, dest: Path, **kwargs) -> bool:
@@ -37,7 +43,14 @@ class FakeClient:
         if size is None:
             dest.write_bytes(b"video-bytes")  # trailer 等非图
             return True
-        Image.new("RGB", size, "blue").save(dest)
+        img = Image.new("RGB", size, "blue")
+        orientation = self.orientations.get(url)
+        if orientation is None:
+            img.save(dest)
+        else:
+            exif = img.getexif()
+            exif[274] = orientation
+            img.save(dest, exif=exif)
         return True
 
     async def get_filesize(self, url: str, **kwargs) -> int | None:
@@ -348,6 +361,42 @@ async def test_manual_crop_image_external_source(resource_store: ResourceStore, 
 
 
 @pytest.mark.asyncio
+async def test_manual_crop_image_rotation_records_args_and_dims(resource_store: ResourceStore, tmp_path: Path):
+    """旋转后按互换的宽高校验并裁切; 派生键带角度, 与不转的结果分开."""
+    client = FakeClient({"https://s/a.jpg": (800, 538)})
+    common = (resource_store, cast("WebClient", client), HotSettings(), tmp_path)
+
+    rotated = await manual_crop_image("https://s/a.jpg", (0, 0, 538, 538), *common, subject="封面图", rotation=90)
+    got = await resource_store.get_by_url_hash(rotated.rsplit("/", 1)[-1])
+    assert got is not None
+    record, path = got
+    assert record.meta == {"op": "crop", "src": "https://s/a.jpg", "args": "box:0,0,538,538:r90"}
+    assert Image.open(path).size == (538, 538)
+
+    plain = await manual_crop_image("https://s/a.jpg", (0, 0, 538, 538), *common, subject="封面图")
+    assert plain != rotated
+    again = await manual_crop_image("https://s/a.jpg", (0, 0, 538, 538), *common, subject="封面图", rotation=90)
+    assert again == rotated  # 同角度同框命中缓存
+
+
+@pytest.mark.asyncio
+async def test_manual_crop_image_exif_source_uses_oriented_size(resource_store: ResourceStore, tmp_path: Path):
+    """方向 6 的源图 (400x300) 按转正后 300x400 校验与裁切."""
+    client = FakeClient({"https://s/o6.jpg": (400, 300)}, orientations={"https://s/o6.jpg": 6})
+    args = (resource_store, cast("WebClient", client), HotSettings(), tmp_path)
+
+    url = await manual_crop_image("https://s/o6.jpg", (0, 0, 300, 400), *args, subject="头像")
+    got = await resource_store.get_by_url_hash(url.rsplit("/", 1)[-1])
+    assert got is not None
+    record, path = got
+    assert record.meta == {"op": "crop", "src": "https://s/o6.jpg", "args": "box:0,0,300,400"}
+    assert Image.open(path).size == (300, 400)
+
+    with pytest.raises(ValueError, match="裁切区域无效"):
+        await manual_crop_image("https://s/o6.jpg", (0, 0, 400, 300), *args, subject="头像")
+
+
+@pytest.mark.asyncio
 async def test_manual_crop_image_internal_source_records_locator(resource_store: ResourceStore, tmp_path: Path):
     async def producer(dest: Path) -> bool:
         Image.new("RGB", (400, 538), "blue").save(dest)
@@ -381,21 +430,34 @@ async def test_manual_crop_image_internal_source_records_locator(resource_store:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("source_url", "box", "message"),
+    ("source_url", "box", "rotation", "message"),
     [
-        ("https://s/missing.jpg", (0, 0, 10, 10), "无法获取头像"),
-        ("data:image/png;base64,AAAA", (0, 0, 10, 10), "无法获取头像"),
-        ("https://s/video.mp4", (0, 0, 10, 10), "头像无法读取"),
-        ("https://s/a.jpg", (10, 0, 5, 10), "裁切区域无效"),
+        ("https://s/missing.jpg", (0, 0, 10, 10), 0, "无法获取头像"),
+        ("data:image/png;base64,AAAA", (0, 0, 10, 10), 0, "无法获取头像"),
+        ("https://s/video.mp4", (0, 0, 10, 10), 0, "头像无法读取"),
+        ("https://s/a.jpg", (10, 0, 5, 10), 0, "裁切区域无效"),
+        ("https://s/a.jpg", (0, 0, 800, 538), 90, "裁切区域无效"),
     ],
 )
 async def test_manual_crop_image_invalid_inputs(
-    resource_store: ResourceStore, tmp_path: Path, source_url: str, box: tuple[int, int, int, int], message: str
+    resource_store: ResourceStore,
+    tmp_path: Path,
+    source_url: str,
+    box: tuple[int, int, int, int],
+    rotation: CropRotation,
+    message: str,
 ):
     client = FakeClient({"https://s/a.jpg": (800, 538)}, fail={"https://s/missing.jpg"})
     with pytest.raises(ValueError, match=message):
         await manual_crop_image(
-            source_url, box, resource_store, cast("WebClient", client), HotSettings(), tmp_path, subject="头像"
+            source_url,
+            box,
+            resource_store,
+            cast("WebClient", client),
+            HotSettings(),
+            tmp_path,
+            subject="头像",
+            rotation=rotation,
         )
 
 

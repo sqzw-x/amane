@@ -1,10 +1,11 @@
-"""海报裁剪与封面角标. 判定函数只依赖尺寸与阈值, 无 I/O."""
+"""海报裁剪与封面角标. 判定函数只依赖尺寸与阈值."""
 
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 import structlog
-from PIL import Image
+from PIL import Image, ImageOps
 
 from ..enums import WatermarkCorner, WatermarkKind
 from ..parsing import ContentType, FileInfo, Mosaic, shows_uncensored
@@ -18,6 +19,21 @@ _DEFAULT_JPEG_QUALITY = 95
 
 # 与自动右侧比 `0.7000` 共存于 op=crop.
 CROP_BOX_ARGS_PREFIX = "box:"
+# 派生键中附加的变换: 顺时针旋转.
+_CROP_ROTATION_TOKEN = "r"
+
+_EXIF_ORIENTATION_TAG = 0x0112
+# EXIF 方向 5-8 是转置类变换, 宽高互换.
+_SWAPPED_ORIENTATIONS = frozenset((5, 6, 7, 8))
+# 顺时针角度 → Pillow 的逆时针转置.
+_TRANSPOSE_BY_ROTATION: dict[int, Image.Transpose] = {
+    90: Image.Transpose.ROTATE_270,
+    180: Image.Transpose.ROTATE_180,
+    270: Image.Transpose.ROTATE_90,
+}
+
+# 裁切前施加的顺时针旋转, 仅 90° 整数倍: 走像素矩阵转置, 不重采样.
+CropRotation = Literal[0, 90, 180, 270]
 
 
 def _save_jpeg(img: Image.Image, path: Path, quality: int) -> None:
@@ -29,8 +45,46 @@ def _save_jpeg(img: Image.Image, path: Path, quality: int) -> None:
     img.convert("RGB").save(path, format="JPEG", quality=quality)
 
 
-def format_crop_box_args(left: int, top: int, right: int, bottom: int) -> str:
-    return f"{CROP_BOX_ARGS_PREFIX}{left},{top},{right},{bottom}"
+def format_crop_box_args(left: int, top: int, right: int, bottom: int, *, rotation: CropRotation = 0) -> str:
+    """派生键: 像素框 + 非 0 的旋转, 否则换角度会命中同一结果."""
+    args = f"{CROP_BOX_ARGS_PREFIX}{left},{top},{right},{bottom}"
+    if rotation:
+        args += f":{_CROP_ROTATION_TOKEN}{rotation}"
+    return args
+
+
+def rotated_size(size: tuple[int, int], rotation: CropRotation) -> tuple[int, int]:
+    """90° / 270° 旋转后的尺寸: 宽高互换."""
+    return (size[1], size[0]) if rotation in (90, 270) else size
+
+
+def _read_orientation(img: Image.Image) -> int:
+    """EXIF 方向标记; 缺失 / 非法按 1 (正常) 处理, 不因坏 EXIF 拒绝整张图."""
+    try:
+        value = img.getexif().get(_EXIF_ORIENTATION_TAG)
+    except Exception as e:
+        logger.debug("read exif orientation failed", error=str(e))
+        return 1
+    return value if isinstance(value, int) and 1 <= value <= 8 else 1
+
+
+def probe_oriented_size(path: Path) -> tuple[int, int] | None:
+    """EXIF 转正后的像素尺寸. 损坏 / 非图像返回 None."""
+    try:
+        with Image.open(path) as img:
+            orientation = _read_orientation(img)
+            width, height = img.size
+    except Exception as e:
+        logger.debug("probe_oriented_size failed", path=str(path), error=str(e))
+        return None
+    if orientation in _SWAPPED_ORIENTATIONS:
+        return (height, width)
+    return (width, height)
+
+
+def _apply_rotation(img: Image.Image, rotation: CropRotation) -> Image.Image:
+    method = _TRANSPOSE_BY_ROTATION.get(rotation)
+    return img.transpose(method) if method is not None else img
 
 
 def validate_crop_box(box: tuple[int, int, int, int], image_size: tuple[int, int]) -> bool:
@@ -118,22 +172,27 @@ def crop_box(
     dest_path: Path,
     box: tuple[int, int, int, int],
     *,
+    rotation: CropRotation = 0,
     jpeg_quality: int = _DEFAULT_JPEG_QUALITY,
 ) -> bool:
-    """框须落在图像范围内且面积为正 (见 ``validate_crop_box``)."""
+    """先按 EXIF 转正、再顺时针旋转, 最后裁切; 框相对旋转后的图像 (见 ``validate_crop_box``)."""
     try:
-        img = Image.open(src_path)
-        if not validate_crop_box(box, img.size):
-            logger.warning(
-                "crop box invalid",
-                path=str(src_path),
-                box=box,
-                size=img.size,
-            )
-            return False
-        cropped = img.crop(box)
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        _save_jpeg(cropped, dest_path, jpeg_quality)
+        with Image.open(src_path) as src:
+            orientation = _read_orientation(src)
+            img = ImageOps.exif_transpose(src) if orientation != 1 else src
+            img = _apply_rotation(img, rotation)
+            if not validate_crop_box(box, img.size):
+                logger.warning(
+                    "crop box invalid",
+                    path=str(src_path),
+                    box=box,
+                    rotation=rotation,
+                    size=img.size,
+                )
+                return False
+            cropped = img.crop(box)
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            _save_jpeg(cropped, dest_path, jpeg_quality)
         return True
     except Exception as e:
         logger.warning("box crop failed", path=str(src_path), error=str(e))

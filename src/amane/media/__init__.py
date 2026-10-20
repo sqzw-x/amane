@@ -1,11 +1,14 @@
 from .images import (
+    CropRotation,
     apply_cover_watermarks,
     apply_cover_watermarks_from_info,
     crop_box,
     crop_poster,
     format_crop_box_args,
     needs_upscale,
+    probe_oriented_size,
     probe_size,
+    rotated_size,
     should_crop_poster,
     validate_crop_box,
 )
@@ -15,6 +18,7 @@ from .resource_store import AcquireResult, ResourceStore, UpscaleOutcome, derive
 
 __all__ = [
     "AcquireResult",
+    "CropRotation",
     "MaterializedImages",
     "ResourceStore",
     "UpscaleOutcome",
@@ -27,7 +31,9 @@ __all__ = [
     "manual_crop_image",
     "materialize_images",
     "needs_upscale",
+    "probe_oriented_size",
     "probe_size",
+    "rotated_size",
     "should_crop_poster",
     "validate_crop_box",
     "write_nfo",

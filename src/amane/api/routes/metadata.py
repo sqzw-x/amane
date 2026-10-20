@@ -272,7 +272,10 @@ async def crop_poster_from_thumb(
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> MetadataResponse:
-    """从封面 (thumb) 按像素框裁切海报, 写入派生 Resource 并更新 poster_urls."""
+    """从封面 (thumb) 按像素框裁切海报, 写入派生 Resource 并更新 poster_urls.
+
+    先按 EXIF 转正、再顺时针旋转 ``req.rotation``, 框相对旋转后的图像.
+    """
     metadata = await repo.get_metadata(metadata_id)
     if metadata is None:
         raise HTTPException(status_code=404, detail="影片不存在")
@@ -291,6 +294,7 @@ async def crop_poster_from_thumb(
             runtime.config.hot,
             runtime.config.cold.data_dir,
             subject="封面图",
+            rotation=req.rotation,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -302,6 +306,7 @@ async def crop_poster_from_thumb(
         "poster cropped",
         metadata_id=metadata_id,
         box=box,
+        rotation=req.rotation,
         poster_url=poster_url,
     )
     return to_resp(MetadataResponse, updated)

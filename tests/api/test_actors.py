@@ -295,3 +295,24 @@ class TestActorsApi:
         assert "头像" in no_image.json()["detail"]
         missing = await client.post("actors/99999/crop-avatar", json={"left": 0, "top": 0, "right": 10, "bottom": 10})
         assert missing.status_code == 404
+
+        # 顺时针 90°: 源为当前主图 (200x269), 旋转后宽高互换
+        rotated = await client.post(
+            f"actors/{actor_id}/crop-avatar",
+            json={"left": 0, "top": 0, "right": 200, "bottom": 200, "rotation": 90},
+        )
+        assert rotated.status_code == 200
+        assert rotated.json()["image_urls"][0] != second_urls[0]
+        # 按未旋转尺寸的框在旋转后越界
+        assert (
+            await client.post(
+                f"actors/{actor_id}/crop-avatar",
+                json={"left": 0, "top": 0, "right": 269, "bottom": 200, "rotation": 90},
+            )
+        ).status_code == 400
+        assert (
+            await client.post(
+                f"actors/{actor_id}/crop-avatar",
+                json={"left": 0, "top": 0, "right": 200, "bottom": 200, "rotation": 180.5},
+            )
+        ).status_code == 422

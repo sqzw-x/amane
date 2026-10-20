@@ -230,6 +230,27 @@ class TestMetadataHttp:
         # 裁切写入 poster_urls 并自动锁定.
         assert data["locked_fields"] == ["poster_urls"]
 
+        # 顺时针 90° 后宽高互换: 同一份封面换角度得到另一份派生结果
+        rotated = await client.post(
+            f"metadata/{meta.id}/crop-poster",
+            json={"left": 0, "top": 0, "right": 538, "bottom": 538, "rotation": 90},
+        )
+        assert rotated.status_code == 200
+        assert rotated.json()["poster_urls"] != data["poster_urls"]
+        # 按未旋转尺寸的框在旋转后越界
+        assert (
+            await client.post(
+                f"metadata/{meta.id}/crop-poster",
+                json={"left": 0, "top": 0, "right": 800, "bottom": 538, "rotation": 90},
+            )
+        ).status_code == 400
+        assert (
+            await client.post(
+                f"metadata/{meta.id}/crop-poster",
+                json={"left": 0, "top": 0, "right": 538, "bottom": 538, "rotation": 45},
+            )
+        ).status_code == 422
+
         no_thumb = await repo.upsert_metadata(number="CROP-003", poster_urls=["https://example.com/p.jpg"])
         assert no_thumb.id is not None
         missing_thumb = await client.post(

@@ -1545,7 +1545,7 @@
           "metadata"
         ],
         "summary": "Crop Poster From Thumb",
-        "description": "从封面 (thumb) 按像素框裁切海报, 写入派生 Resource 并更新 poster_urls.",
+        "description": "从封面 (thumb) 按像素框裁切海报, 写入派生 Resource 并更新 poster_urls.\n\n先按 EXIF 转正、再顺时针旋转 ``req.rotation``, 框相对旋转后的图像.",
         "operationId": "crop_poster_from_thumb",
         "parameters": [
           {
@@ -3224,7 +3224,7 @@
           "actors"
         ],
         "summary": "Crop Actor Avatar",
-        "description": "从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图.",
+        "description": "从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图.\n\n先按 EXIF 转正、再顺时针旋转 ``req.rotation``, 框相对旋转后的图像.",
         "operationId": "crop_actor_avatar",
         "parameters": [
           {
@@ -7894,6 +7894,18 @@
             "exclusiveMinimum": 0.0,
             "title": "Bottom",
             "description": "裁切框下边界 (不含)"
+          },
+          "rotation": {
+            "type": "integer",
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ],
+            "title": "Rotation",
+            "description": "裁切前顺时针旋转的角度 (仅 90° 整数倍); 90° / 270° 后宽高互换",
+            "default": 0
           }
         },
         "type": "object",
@@ -7931,6 +7943,18 @@
             "exclusiveMinimum": 0.0,
             "title": "Bottom",
             "description": "裁切框下边界 (不含)"
+          },
+          "rotation": {
+            "type": "integer",
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ],
+            "title": "Rotation",
+            "description": "裁切前顺时针旋转的角度 (仅 90° 整数倍); 90° / 270° 后宽高互换",
+            "default": 0
           }
         },
         "type": "object",

@@ -914,6 +914,12 @@ export type CropAvatarRequest = {
      * 裁切框下边界 (不含)
      */
     bottom: number;
+    /**
+     * Rotation
+     *
+     * 裁切前顺时针旋转的角度 (仅 90° 整数倍); 90° / 270° 后宽高互换
+     */
+    rotation?: 0 | 90 | 180 | 270;
 };
 
 /**
@@ -946,6 +952,12 @@ export type CropPosterRequest = {
      * 裁切框下边界 (不含)
      */
     bottom: number;
+    /**
+     * Rotation
+     *
+     * 裁切前顺时针旋转的角度 (仅 90° 整数倍); 90° / 270° 后宽高互换
+     */
+    rotation?: 0 | 90 | 180 | 270;
 };
 
 /**

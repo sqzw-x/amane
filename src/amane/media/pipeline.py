@@ -12,11 +12,14 @@ import structlog
 from ..config import DownloadableResource
 from ..sr import get_preset_meta, run_SR
 from .images import (
+    CropRotation,
     crop_box,
     crop_poster,
     format_crop_box_args,
     needs_upscale,
+    probe_oriented_size,
     probe_size,
+    rotated_size,
     should_crop_poster,
     validate_crop_box,
 )
@@ -200,26 +203,28 @@ async def manual_crop_image(
     data_dir: Path,
     *,
     subject: str,
+    rotation: CropRotation = 0,
 ) -> str:
     """手动裁切源图, 返回内部 URL. 源可为外部 http(s) 或 ``/api/resources/{hash}``.
 
-    失败抛 ``ValueError`` (消息可直接作 API detail); ``subject`` 组装提示文案 (如「封面图」「头像」).
+    先按 EXIF 转正、再顺时针旋转 ``rotation``, 之后按 ``box`` 裁切; 失败抛 ``ValueError``
+    (消息可直接作 API detail); ``subject`` 组装提示文案 (如「封面图」「头像」).
     """
     source = await store.resolve_source(source_url, client)
     if source is None:
         raise ValueError(f"无法获取{subject}")
 
-    size = probe_size(source.path)
+    size = probe_oriented_size(source.path)
     if size is None:
         raise ValueError(f"{subject}无法读取")
-    if not validate_crop_box(box, size):
+    if not validate_crop_box(box, rotated_size(size, rotation)):
         raise ValueError("裁切区域无效")
 
-    args = format_crop_box_args(*box)
+    args = format_crop_box_args(*box, rotation=rotation)
     jpeg_quality = config.scraping.jpeg_quality
 
     async def producer(dest: Path) -> bool:
-        return crop_box(source.path, dest, box, jpeg_quality=jpeg_quality)
+        return crop_box(source.path, dest, box, rotation=rotation, jpeg_quality=jpeg_quality)
 
     crop_res = await store.acquire_derived(source.locator, "crop", args, producer)
     if crop_res is None:

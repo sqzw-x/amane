@@ -228,6 +228,8 @@ export const setMetadataLocks = <ThrowOnError extends boolean = false>(options: 
  * Crop Poster From Thumb
  *
  * 从封面 (thumb) 按像素框裁切海报, 写入派生 Resource 并更新 poster_urls.
+ *
+ * 先按 EXIF 转正、再顺时针旋转 ``req.rotation``, 框相对旋转后的图像.
  */
 export const cropPosterFromThumb = <ThrowOnError extends boolean = false>(options: Options<CropPosterFromThumbData, ThrowOnError>): RequestResult<CropPosterFromThumbResponses, CropPosterFromThumbErrors, ThrowOnError> => (options.client ?? client).post<CropPosterFromThumbResponses, CropPosterFromThumbErrors, ThrowOnError>({
     url: '/api/metadata/{metadata_id}/crop-poster',
@@ -462,6 +464,8 @@ export const clearActorPerson = <ThrowOnError extends boolean = false>(options: 
  * Crop Actor Avatar
  *
  * 从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图.
+ *
+ * 先按 EXIF 转正、再顺时针旋转 ``req.rotation``, 框相对旋转后的图像.
  */
 export const cropActorAvatar = <ThrowOnError extends boolean = false>(options: Options<CropActorAvatarData, ThrowOnError>): RequestResult<CropActorAvatarResponses, CropActorAvatarErrors, ThrowOnError> => (options.client ?? client).post<CropActorAvatarResponses, CropActorAvatarErrors, ThrowOnError>({
     url: '/api/actors/{actor_id}/crop-avatar',

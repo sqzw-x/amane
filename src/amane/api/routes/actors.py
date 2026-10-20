@@ -205,7 +205,10 @@ async def crop_actor_avatar(
     repo: RepoDep,
     runtime: RuntimeDep,
 ) -> ActorResponse:
-    """从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图."""
+    """从当前主图 (image_urls[0]) 按像素框裁切头像, 结果前插为主图并保留原图.
+
+    先按 EXIF 转正、再顺时针旋转 ``req.rotation``, 框相对旋转后的图像.
+    """
     actor = await repo.get_actor(actor_id)
     if actor is None:
         raise HTTPException(status_code=404, detail="演员不存在")
@@ -223,6 +226,7 @@ async def crop_actor_avatar(
             runtime.config.hot,
             runtime.config.cold.data_dir,
             subject="头像",
+            rotation=req.rotation,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -232,7 +236,7 @@ async def crop_actor_avatar(
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="演员不存在")
-    logger.info("actor avatar cropped", actor_id=actor_id, box=box, image_url=cropped_url)
+    logger.info("actor avatar cropped", actor_id=actor_id, box=box, rotation=req.rotation, image_url=cropped_url)
     return await _detail_response(repo, updated)
 
 

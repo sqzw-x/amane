@@ -1603,6 +1603,18 @@ export const CropAvatarRequestSchema = {
             exclusiveMinimum: 0,
             title: 'Bottom',
             description: '裁切框下边界 (不含)'
+        },
+        rotation: {
+            type: 'integer',
+            enum: [
+                0,
+                90,
+                180,
+                270
+            ],
+            title: 'Rotation',
+            description: '裁切前顺时针旋转的角度 (仅 90° 整数倍); 90° / 270° 后宽高互换',
+            default: 0
         }
     },
     type: 'object',
@@ -1641,6 +1653,18 @@ export const CropPosterRequestSchema = {
             exclusiveMinimum: 0,
             title: 'Bottom',
             description: '裁切框下边界 (不含)'
+        },
+        rotation: {
+            type: 'integer',
+            enum: [
+                0,
+                90,
+                180,
+                270
+            ],
+            title: 'Rotation',
+            description: '裁切前顺时针旋转的角度 (仅 90° 整数倍); 90° / 270° 后宽高互换',
+            default: 0
         }
     },
     type: 'object',
