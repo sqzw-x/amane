@@ -53,7 +53,9 @@ export function PosterCropDialog({
       defaultAspect={configRatio}
       initialAnchor="right"
       submitting={mutation.isPending}
-      onSubmit={(box) => mutation.mutate({ path: { metadata_id: metadataId }, body: box })}
+      onSubmit={(box, rotation) =>
+        mutation.mutate({ path: { metadata_id: metadataId }, body: { ...box, rotation } })
+      }
       labels={{
         title: t("detail.cropPoster.title"),
         confirm: t("detail.cropPoster.confirm"),
@@ -66,6 +68,9 @@ export function PosterCropDialog({
         width: t("detail.cropPoster.width"),
         height: t("detail.cropPoster.height"),
         cancel: t("common:actions.cancel"),
+        rotateLeft: t("detail.cropPoster.rotateLeft"),
+        rotateRight: t("detail.cropPoster.rotateRight"),
+        resetRotation: t("detail.cropPoster.resetRotation"),
       }}
     />
   );

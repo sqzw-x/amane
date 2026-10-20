@@ -51,7 +51,9 @@ export function ActorAvatarCropDialog({
       defaultAspect={AVATAR_RATIO}
       initialAnchor="center"
       submitting={mutation.isPending}
-      onSubmit={(box) => mutation.mutate({ path: { actor_id: actorId }, body: box })}
+      onSubmit={(box, rotation) =>
+        mutation.mutate({ path: { actor_id: actorId }, body: { ...box, rotation } })
+      }
       labels={{
         title: t("actors.cropAvatar.title"),
         confirm: t("detail.cropPoster.confirm"),
@@ -64,6 +66,9 @@ export function ActorAvatarCropDialog({
         width: t("detail.cropPoster.width"),
         height: t("detail.cropPoster.height"),
         cancel: t("common:actions.cancel"),
+        rotateLeft: t("detail.cropPoster.rotateLeft"),
+        rotateRight: t("detail.cropPoster.rotateRight"),
+        resetRotation: t("detail.cropPoster.resetRotation"),
       }}
     />
   );
