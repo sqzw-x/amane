@@ -1,4 +1,14 @@
-import { Badge, Button, Card, Group, Stack, Text, Textarea, Title } from "@mantine/core";
+import {
+  Badge,
+  Button,
+  Card,
+  Group,
+  SegmentedControl,
+  Stack,
+  Text,
+  Textarea,
+  Title,
+} from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconPencil, IconSend, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -26,6 +36,12 @@ const MAX_BODY_LENGTH = 10000;
 
 const SORTS = ["newest", "oldest"] as const;
 type CommentSort = (typeof SORTS)[number];
+
+const COMMENT_MODES = ["write", "preview"] as const;
+type CommentMode = (typeof COMMENT_MODES)[number];
+
+/** 预览中的时间戳不参与跳转. */
+const IGNORE_SEEK = () => undefined;
 
 type CommentSectionProps = {
   metadataId: number;
@@ -70,6 +86,44 @@ function submitOnShortcut(event: KeyboardEvent<HTMLTextAreaElement>, submit: () 
   }
 }
 
+function CommentModeToggle({
+  value,
+  onChange,
+  writeLabel,
+  previewLabel,
+}: {
+  value: CommentMode;
+  onChange: (mode: CommentMode) => void;
+  writeLabel: string;
+  previewLabel: string;
+}) {
+  return (
+    <SegmentedControl
+      size="xs"
+      value={value}
+      onChange={(next) => onChange(next === "preview" ? "preview" : "write")}
+      data={[
+        { label: writeLabel, value: "write" },
+        { label: previewLabel, value: "preview" },
+      ]}
+    />
+  );
+}
+
+function CommentPreview({ body, emptyLabel }: { body: string; emptyLabel: string }) {
+  return (
+    <div className={classes.preview}>
+      {body.trim().length > 0 ? (
+        <CommentBody body={body} canSeek={false} onSeek={IGNORE_SEEK} interactive={false} compact />
+      ) : (
+        <Text size="xs" c="dimmed">
+          {emptyLabel}
+        </Text>
+      )}
+    </div>
+  );
+}
+
 /**
  * 评论区: 列表 + 发表与编辑.
  *
@@ -82,6 +136,8 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
   const [body, setBody] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editBody, setEditBody] = useState("");
+  const [composerMode, setComposerMode] = useState<CommentMode>("write");
+  const [editMode, setEditMode] = useState<CommentMode>("write");
   const rows = useMemo(() => buildRows(comments, sort), [comments, sort]);
   const locale = i18n.language;
 
@@ -103,6 +159,7 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
     onSuccess: () => {
       notifications.show({ message: t("common:toast.commentCreated"), color: "blue" });
       setBody("");
+      setComposerMode("write");
       invalidateDetail();
     },
     onError: notifyError,
@@ -113,6 +170,7 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
     onSuccess: () => {
       notifications.show({ message: t("common:toast.commentUpdated"), color: "blue" });
       setEditingId(null);
+      setEditMode("write");
       invalidateDetail();
     },
     onError: notifyError,
@@ -123,6 +181,7 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
     onSuccess: () => {
       notifications.show({ message: t("common:toast.commentDeleted"), color: "blue" });
       setEditingId(null);
+      setEditMode("write");
       invalidateDetail();
     },
     onError: notifyError,
@@ -205,6 +264,7 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
                     onClick={() => {
                       setEditingId(comment.id);
                       setEditBody(comment.body);
+                      setEditMode("write");
                     }}
                   >
                     <IconPencil size={14} />
@@ -223,29 +283,48 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
 
               {editingId === comment.id ? (
                 <Stack gap={6} mt={8}>
-                  <Textarea
-                    value={editBody}
-                    onChange={(event) => setEditBody(event.currentTarget.value)}
-                    aria-label={t("detail.editComment")}
-                    autosize
-                    minRows={2}
-                    maxRows={10}
-                    maxLength={MAX_BODY_LENGTH}
-                    autoFocus
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        setEditingId(null);
-                        return;
-                      }
-                      submitOnShortcut(event, () => saveEdit(comment));
-                    }}
-                  />
+                  <Group justify="space-between" align="center" gap="sm">
+                    <CommentModeToggle
+                      value={editMode}
+                      onChange={setEditMode}
+                      writeLabel={t("detail.commentWrite")}
+                      previewLabel={t("detail.commentPreview")}
+                    />
+                    <Text size="xs" c="dimmed">
+                      {t("detail.commentMarkdownHint")}
+                    </Text>
+                  </Group>
+                  {editMode === "preview" ? (
+                    <CommentPreview body={editBody} emptyLabel={t("detail.commentPreviewEmpty")} />
+                  ) : (
+                    <Textarea
+                      value={editBody}
+                      onChange={(event) => setEditBody(event.currentTarget.value)}
+                      aria-label={t("detail.editComment")}
+                      autosize
+                      minRows={2}
+                      maxRows={10}
+                      maxLength={MAX_BODY_LENGTH}
+                      autoFocus
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          setEditingId(null);
+                          setEditMode("write");
+                          return;
+                        }
+                        submitOnShortcut(event, () => saveEdit(comment));
+                      }}
+                    />
+                  )}
                   <Group justify="space-between" align="center" gap="sm">
                     <Group gap="xs" align="center">
                       <Button
                         size="compact-sm"
                         variant="default"
-                        onClick={() => setEditingId(null)}
+                        onClick={() => {
+                          setEditingId(null);
+                          setEditMode("write");
+                        }}
                       >
                         {t("common:actions.cancel")}
                       </Button>
@@ -272,16 +351,31 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
       )}
 
       <Stack gap={6} pt="md">
-        <Textarea
-          value={body}
-          onChange={(event) => setBody(event.currentTarget.value)}
-          placeholder={t("detail.commentPlaceholder")}
-          autosize
-          minRows={2}
-          maxRows={8}
-          maxLength={MAX_BODY_LENGTH}
-          onKeyDown={(event) => submitOnShortcut(event, submitComment)}
-        />
+        <Group justify="space-between" align="center" gap="sm">
+          <CommentModeToggle
+            value={composerMode}
+            onChange={setComposerMode}
+            writeLabel={t("detail.commentWrite")}
+            previewLabel={t("detail.commentPreview")}
+          />
+          <Text size="xs" c="dimmed">
+            {t("detail.commentMarkdownHint")}
+          </Text>
+        </Group>
+        {composerMode === "preview" ? (
+          <CommentPreview body={body} emptyLabel={t("detail.commentPreviewEmpty")} />
+        ) : (
+          <Textarea
+            value={body}
+            onChange={(event) => setBody(event.currentTarget.value)}
+            placeholder={t("detail.commentPlaceholder")}
+            autosize
+            minRows={2}
+            maxRows={8}
+            maxLength={MAX_BODY_LENGTH}
+            onKeyDown={(event) => submitOnShortcut(event, submitComment)}
+          />
+        )}
         <Group justify="space-between" align="center" gap="sm">
           <Button
             size="compact-sm"
