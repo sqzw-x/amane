@@ -1,5 +1,6 @@
 /* 正文: 保留用户输入的换行, 长串 (URL 等) 不撑破卡片. */
 .body {
+  min-height: 56px;
   margin-top: 6px;
   color: var(--mantine-color-text);
   line-height: 1.65;

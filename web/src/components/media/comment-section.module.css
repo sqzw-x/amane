@@ -7,6 +7,12 @@
   background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-5));
 }
 
+/* 编辑预览与阅读态同高; 内容超出时在本区域内滚动. */
+.editBody {
+  margin-top: 6px;
+  overflow-y: auto;
+}
+
 /* 预览区用边框与浅底色同已发布评论分开; 高度随内容增长. */
 .preview {
   padding: 8px 10px;

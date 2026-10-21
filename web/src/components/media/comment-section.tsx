@@ -12,7 +12,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { IconPencil, IconSend, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -33,6 +33,9 @@ import classes from "./comment-section.module.css";
 
 /** 与后端 `CommentBody` 的上限一致. */
 const MAX_BODY_LENGTH = 10000;
+
+/** 与 `comment-body.module.css` 的 `.body` 最小高度一致: 一行评论也保留可编辑高度. */
+const MIN_BODY_HEIGHT = 56;
 
 const SORTS = ["newest", "oldest"] as const;
 type CommentSort = (typeof SORTS)[number];
@@ -138,6 +141,8 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
   const [editBody, setEditBody] = useState("");
   const [composerMode, setComposerMode] = useState<CommentMode>("write");
   const [editMode, setEditMode] = useState<CommentMode>("write");
+  const [editorHeight, setEditorHeight] = useState(MIN_BODY_HEIGHT);
+  const bodyRefs = useRef(new Map<number, HTMLDivElement>());
   const rows = useMemo(() => buildRows(comments, sort), [comments, sort]);
   const locale = i18n.language;
 
@@ -152,6 +157,28 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
       message: extractErrorMessage(error, t("common:toast.operationFailed")),
       color: "red",
     });
+  }
+
+  const setBodyNode = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    const id = Number(node.dataset.commentId);
+    if (Number.isInteger(id)) {
+      bodyRefs.current.set(id, node);
+    }
+  }, []);
+
+  function startEdit(comment: CommentResponse) {
+    const measured =
+      bodyRefs.current.get(comment.id)?.firstElementChild?.getBoundingClientRect().height ?? 0;
+    setEditorHeight(Math.max(measured, MIN_BODY_HEIGHT));
+    setEditingId(comment.id);
+    setEditBody(comment.body);
+    setEditMode("write");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditMode("write");
   }
 
   const createComment = useMutation({
@@ -239,114 +266,117 @@ export function CommentSection({ metadataId, comments, canSeek, onSeek }: Commen
 
       {rows.length > 0 && (
         <Stack gap={0} mt="xs">
-          {rows.map(({ comment, floor }) => (
-            <div key={comment.id} className={classes.item}>
-              {/* 相对时间与「已编辑」在窄屏折行, 否则英文文案会把行内操作顶出卡片. */}
-              <Group gap={8} align="center" wrap="wrap">
-                <span className={classes.floor}>#{floor}</span>
-                <Text size="xs" c="dimmed">
-                  {formatRelativeTime(comment.created_at, locale, t("detail.commentJustNow"))}
-                  {isEdited(comment) &&
-                    ` ${t("detail.commentEditedAt", {
-                      time: formatRelativeTime(
-                        comment.updated_at,
-                        locale,
-                        t("detail.commentJustNow"),
-                      ),
-                    })}`}
-                </Text>
-                <Group gap={2} align="center" wrap="nowrap" className={classes.actions}>
-                  <HintedActionIcon
-                    size="sm"
-                    variant="subtle"
-                    color="gray"
-                    label={t("detail.editComment")}
-                    onClick={() => {
-                      setEditingId(comment.id);
-                      setEditBody(comment.body);
-                      setEditMode("write");
-                    }}
-                  >
-                    <IconPencil size={14} />
-                  </HintedActionIcon>
-                  <HintedActionIcon
-                    size="sm"
-                    variant="subtle"
-                    color="red"
-                    label={t("common:actions.delete")}
-                    onClick={() => void removeComment(comment)}
-                  >
-                    <IconTrash size={14} />
-                  </HintedActionIcon>
-                </Group>
-              </Group>
-
-              {editingId === comment.id ? (
-                <Stack gap={6} mt={8}>
-                  <Group justify="space-between" align="center" gap="sm">
-                    <CommentModeToggle
-                      value={editMode}
-                      onChange={setEditMode}
-                      writeLabel={t("detail.commentWrite")}
-                      previewLabel={t("detail.commentPreview")}
-                    />
-                    <Text size="xs" c="dimmed">
-                      {t("detail.commentMarkdownHint")}
-                    </Text>
-                  </Group>
-                  {editMode === "preview" ? (
-                    <CommentPreview body={editBody} emptyLabel={t("detail.commentPreviewEmpty")} />
-                  ) : (
-                    <Textarea
-                      value={editBody}
-                      onChange={(event) => setEditBody(event.currentTarget.value)}
-                      aria-label={t("detail.editComment")}
-                      autosize
-                      minRows={2}
-                      maxRows={10}
-                      maxLength={MAX_BODY_LENGTH}
-                      autoFocus
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          setEditingId(null);
-                          setEditMode("write");
-                          return;
-                        }
-                        submitOnShortcut(event, () => saveEdit(comment));
-                      }}
-                    />
-                  )}
-                  <Group justify="space-between" align="center" gap="sm">
-                    <Group gap="xs" align="center">
-                      <Button
-                        size="compact-sm"
-                        variant="default"
-                        onClick={() => {
-                          setEditingId(null);
-                          setEditMode("write");
-                        }}
-                      >
+          {rows.map(({ comment, floor }) => {
+            const editing = editingId === comment.id;
+            const canSave = editBody.trim().length > 0 && editBody.trim() !== comment.body;
+            return (
+              <div key={comment.id} className={classes.item}>
+                {/* 相对时间与「已编辑」在窄屏折行, 否则英文文案会把行内操作顶出卡片. */}
+                <Group gap={8} align="center" wrap="wrap">
+                  <span className={classes.floor}>#{floor}</span>
+                  <Text size="xs" c="dimmed">
+                    {formatRelativeTime(comment.created_at, locale, t("detail.commentJustNow"))}
+                    {isEdited(comment) &&
+                      ` ${t("detail.commentEditedAt", {
+                        time: formatRelativeTime(
+                          comment.updated_at,
+                          locale,
+                          t("detail.commentJustNow"),
+                        ),
+                      })}`}
+                  </Text>
+                  {editing ? (
+                    <Group gap={6} align="center" wrap="nowrap">
+                      <CommentModeToggle
+                        value={editMode}
+                        onChange={setEditMode}
+                        writeLabel={t("detail.commentWrite")}
+                        previewLabel={t("detail.commentPreview")}
+                      />
+                      <Text size="xs" c="dimmed" visibleFrom="sm">
+                        {editBody.length} / {MAX_BODY_LENGTH}
+                      </Text>
+                      <Button size="compact-sm" variant="default" onClick={cancelEdit}>
                         {t("common:actions.cancel")}
                       </Button>
                       <Button
                         size="compact-sm"
                         loading={updateComment.isPending}
-                        disabled={editBody.trim().length === 0 || editBody.trim() === comment.body}
+                        disabled={!canSave || updateComment.isPending}
                         onClick={() => saveEdit(comment)}
                       >
                         {t("common:actions.save")}
                       </Button>
                     </Group>
-                    <Text size="xs" c="dimmed">
-                      {editBody.length} / {MAX_BODY_LENGTH}
-                    </Text>
-                  </Group>
-                </Stack>
-              ) : (
-                <CommentBody body={comment.body} canSeek={canSeek} onSeek={onSeek} />
-              )}
-            </div>
-          ))}
+                  ) : (
+                    <Group gap={2} align="center" wrap="nowrap" className={classes.actions}>
+                      <HintedActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="gray"
+                        label={t("detail.editComment")}
+                        onClick={() => startEdit(comment)}
+                      >
+                        <IconPencil size={14} />
+                      </HintedActionIcon>
+                      <HintedActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="red"
+                        label={t("common:actions.delete")}
+                        onClick={() => void removeComment(comment)}
+                      >
+                        <IconTrash size={14} />
+                      </HintedActionIcon>
+                    </Group>
+                  )}
+                </Group>
+
+                {editing ? (
+                  editMode === "preview" ? (
+                    <div className={classes.editBody} style={{ height: editorHeight }}>
+                      {editBody.trim().length > 0 ? (
+                        <CommentBody
+                          body={editBody}
+                          canSeek={false}
+                          onSeek={IGNORE_SEEK}
+                          interactive={false}
+                          compact
+                        />
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          {t("detail.commentPreviewEmpty")}
+                        </Text>
+                      )}
+                    </div>
+                  ) : (
+                    <Textarea
+                      value={editBody}
+                      onChange={(event) => setEditBody(event.currentTarget.value)}
+                      aria-label={t("detail.editComment")}
+                      autosize={false}
+                      resize="none"
+                      mt={6}
+                      maxLength={MAX_BODY_LENGTH}
+                      autoFocus
+                      styles={{ input: { height: editorHeight, overflowY: "auto" } }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          cancelEdit();
+                          return;
+                        }
+                        submitOnShortcut(event, () => saveEdit(comment));
+                      }}
+                    />
+                  )
+                ) : (
+                  <div ref={setBodyNode} data-comment-id={comment.id}>
+                    <CommentBody body={comment.body} canSeek={canSeek} onSeek={onSeek} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </Stack>
       )}
 
