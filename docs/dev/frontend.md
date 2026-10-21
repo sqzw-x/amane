@@ -37,7 +37,7 @@
 
 **分类收藏**: 星形控件在分类列表的动作列与分类详情页标题行 (窄屏动作列只容一个按钮, 一律走详情页), 词云与索引页徽章只有只读星标; 单条与列表多选都提交 `POST /api/facets/{kind}/batch` 的 `favorite` / `unfavorite` 动作, 单条提交单元素列表, 两者都是整体赋值, 界面不做逐项取反; 「收藏」筛选与演员页的「有头像 / 无头像」同形, 用共享的三态分段控件放在高级筛选区, 取值是 URL search 上的字符串三态, 只在支持收藏的 kind 上渲染与发送; 索引页顶部的收藏区块按五个 kind 各取一次列表, 全部就绪且至少一项非空才渲染.
 
-**评论**: 排序与编辑态只在组件内, 不写地址栏. 正文按 GFM 渲染; 时间戳经 rehype 插件改写, 链接与代码内的文本不参与; 预览与正式渲染共用组件, 预览中的时间戳不响应点击. 自动链接边界由 GFM 决定, 全角标点后的中文会并入地址. 影片详情与演员详情的用户标签与刮削标签分栏; 加减菜单一次提交多名, 但固定为两次请求 — 待新建的名称先经 `POST /api/facets/user_tag` 换成 id, 再与已选 id 一起交给所在页的挂载端点 (影片 `/api/metadata/batch/user-tags`, 演员 `/api/actors/batch/user-tags`), 端点语义见 [api.md](api.md). 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`; 演员详情出演作品的排序项与片库同源 (`lib/media/browse.ts` 的 `METADATA_SORT_OPTIONS`), 记忆落在 ui store 的 `actorWorksSort`.
+**评论**: 排序与编辑态只在组件内, 不写地址栏. 正文按 GFM 渲染; 时间戳经 rehype 插件改写, 链接与代码内的文本不参与; 预览与正式渲染共用组件, 预览中的时间戳不响应点击; 图片直接内联. 自动链接边界由 GFM 决定, 全角标点后的中文会并入地址. 影片详情与演员详情的用户标签与刮削标签分栏; 加减菜单一次提交多名, 但固定为两次请求 — 待新建的名称先经 `POST /api/facets/user_tag` 换成 id, 再与已选 id 一起交给所在页的挂载端点 (影片 `/api/metadata/batch/user-tags`, 演员 `/api/actors/batch/user-tags`), 端点语义见 [api.md](api.md). 演员浏览经由 `/api/actors`, 身份治理仍调用 `/api/facets/actor`, 筛选字段的单一事实源是 `lib/actors/browse.ts`; 演员详情出演作品的排序项与片库同源 (`lib/media/browse.ts` 的 `METADATA_SORT_OPTIONS`), 记忆落在 ui store 的 `actorWorksSort`.
 
 **播放**: 面板先取来源列表 (不调用插件因此立刻渲染), 流列表按需加载; 两级选择经 `EnumToggle` 平铺, 失败信息条给出重试入口. 来源顺序由用户在插件页 `PlaybackOrderSection` 维护, 面板按它重排, **位置 0 即默认探测的来源**. 详情页的预告片与点播经 `playback-player-lazy.ts` 共用同一份播放器声明, 播放画面只由该播放器渲染; 主机侧契约见 [plugins.md](plugins.md), 手势、全屏与浮层的约定见 `components/media/playback-panel.tsx` 与 `playback-player.tsx` 的文件注释.
 
@@ -89,7 +89,7 @@ OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-ma
 
 ## 图片
 
-外站图经由 `/api/resources/proxy` (`proxyImageUrl`); `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是源图 (海报 `thumb_urls[0]`, 演员头像 `image_urls[0]`) 对应的 Resource 本地文件; 两者共用 `ImageCropDialog`, 只提交像素坐标, 不上传 blob.
+外站图经由 `/api/resources/proxy` (`proxyImageUrl`); 评论正文的图片例外: 直接内联, 懒加载且不发送 Referer, 失败降级为链接 — 代理会写入 `Resource`, 评论 URL 不在清理存活集合内. `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是源图 (海报 `thumb_urls[0]`, 演员头像 `image_urls[0]`) 对应的 Resource 本地文件; 两者共用 `ImageCropDialog`, 只提交像素坐标, 不上传 blob.
 
 相位水印是 CSS overlay (`FilePhaseOverlay`), 读列表聚合的 `file_phase`, 不修改 Resource 像素; 表格与文件列表仍用 `FilePhaseBadges`. `FanartLightbox` 必须 Portal 到 `document.body`. 外链图片的并发限流见 `components/media/proxy-image.tsx` 与 `lib/image-loader.ts` 的注释; 代理会下载上游原图并写入 `Resource`, 因此「对比来源」面板 (`components/metadata/merge-dialog.tsx`) 的图先渲染为与缩略图同形的占位块, 点击后才加载 — 展开面板不得触发回源.
 

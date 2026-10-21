@@ -11,6 +11,21 @@
   margin-top: 0;
 }
 
+/* 评论图片直接内联; 限制高度, 长图不撑开卡片. */
+.imageLink {
+  display: inline-block;
+  max-width: 100%;
+  margin: 8px 0;
+}
+
+.image {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  height: auto;
+  border-radius: var(--mantine-radius-sm);
+}
+
 /* 时间戳是正文里的跳转入口, 用浅色胶囊与正文分开; 颜色取品牌色的两端, 深色下比正文底色亮一档. */
 .timestamp,
 .timestampStatic {

@@ -1,6 +1,6 @@
 import { Anchor, Tooltip } from "@mantine/core";
 import type { Element } from "hast";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Components, Options } from "react-markdown";
 
@@ -31,11 +31,35 @@ function readSeek(node: Readonly<Element> | undefined): SeekInfo | null {
   return { seconds, time };
 }
 
+/** 图片加载失败时降级为链接; 按失败的地址记录, 编辑后换地址可以重试. */
+function CommentImage({ src, alt }: { src: string; alt: string }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (failedSrc === src) {
+    return (
+      <Anchor className={classes.link} href={src} target="_blank" rel="noreferrer">
+        {alt || src}
+      </Anchor>
+    );
+  }
+  return (
+    <Anchor className={classes.imageLink} href={src} target="_blank" rel="noreferrer">
+      <img
+        className={classes.image}
+        src={src}
+        alt={alt}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailedSrc(src)}
+      />
+    </Anchor>
+  );
+}
+
 /**
  * 评论正文: 按 GFM 渲染, 时间戳渲染为跳转入口, 链接在新标签页打开.
  *
- * 原始 HTML 由 `react-markdown` 转义; 图片不自动加载, 避免绕过图片代理与撑破卡片. 当前没有可跳转的
- * 播放时置灰, 悬浮说明给出原因 (与可见文案不同, 因此允许包 Tooltip).
+ * 原始 HTML 由 `react-markdown` 转义; 图片直接内联, 懒加载且不发送 Referer, 加载失败降级为链接.
+ * 当前没有可跳转的播放时置灰, 悬浮说明给出原因 (与可见文案不同, 因此允许包 Tooltip).
  */
 export const CommentBody = memo(function CommentBody({
   body,
@@ -85,12 +109,7 @@ export const CommentBody = memo(function CommentBody({
         ) : (
           <>{children}</>
         ),
-      img: ({ src, alt }) =>
-        src ? (
-          <Anchor className={classes.link} href={src} target="_blank" rel="noreferrer">
-            {alt || src}
-          </Anchor>
-        ) : null,
+      img: ({ src, alt }) => (src ? <CommentImage src={src} alt={alt ?? ""} /> : null),
     }),
     [canSeek, interactive, onSeek, t],
   );
