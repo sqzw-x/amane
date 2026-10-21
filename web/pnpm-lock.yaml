@@ -102,6 +102,9 @@ importers:
       '@tanstack/router-vite-plugin':
         specifier: ^1.167.42
         version: 1.167.42(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(rolldown@1.2.13)(vite@8.3.4(@types/node@26.6.4)(jiti@2.7.0)(sugarss@5.0.1(postcss@8.5.29))(terser@5.51.2)(yaml@2.9.0))
+      '@types/hast':
+        specifier: ^3.0.5
+        version: 3.0.5
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4

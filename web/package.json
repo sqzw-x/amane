@@ -51,6 +51,7 @@
     "@hey-api/openapi-ts": "^0.99.0",
     "@tanstack/router-cli": "^1.167.40",
     "@tanstack/router-vite-plugin": "^1.167.42",
+    "@types/hast": "^3.0.5",
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

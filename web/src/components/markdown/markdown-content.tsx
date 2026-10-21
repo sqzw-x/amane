@@ -1,9 +1,9 @@
 import { Anchor, Code, List, Table, Text, Title } from "@mantine/core";
-import type { Components } from "react-markdown";
+import type { Components, Options } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-const components: Components = {
+const DEFAULT_COMPONENTS: Components = {
   p: ({ children }) => (
     <Text size="sm" mb="xs" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
       {children}
@@ -109,18 +109,33 @@ const components: Components = {
   ),
 };
 
+const REMARK_PLUGINS = [remarkGfm];
+
+export type MarkdownContentProps = {
+  text: string;
+  streaming?: boolean;
+  className?: string;
+  /** 覆盖默认元素渲染, 与默认映射浅合并. */
+  components?: Components;
+  rehypePlugins?: Options["rehypePlugins"];
+};
+
 export function MarkdownContent({
   text,
   streaming = false,
-}: {
-  text: string;
-  streaming?: boolean;
-}) {
+  className,
+  components,
+  rehypePlugins,
+}: MarkdownContentProps) {
   if (!text && !streaming) return null;
   return (
-    <div style={{ fontSize: "var(--mantine-font-size-sm)" }}>
+    <div className={className} style={{ fontSize: "var(--mantine-font-size-sm)" }}>
       {text ? (
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        <ReactMarkdown
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={rehypePlugins}
+          components={components ? { ...DEFAULT_COMPONENTS, ...components } : DEFAULT_COMPONENTS}
+        >
           {text}
         </ReactMarkdown>
       ) : null}

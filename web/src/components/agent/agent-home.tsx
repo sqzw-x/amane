@@ -70,7 +70,7 @@ import {
 import { cancelAguiTurn, getAgentTrace } from "@/client/sdk.gen";
 import type { AgentSessionResponse } from "@/client/types.gen";
 import { ChatComposer, parseThinking, type ThinkingValue } from "@/components/agent/chat-composer";
-import { MarkdownContent } from "@/components/agent/markdown-content";
+import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { SavedQueryActions } from "@/components/agent/saved-query-actions";
 import { SavedQueryManager } from "@/components/agent/saved-query-manager";
 import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";

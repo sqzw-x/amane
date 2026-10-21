@@ -7,8 +7,13 @@
   overflow-wrap: anywhere;
 }
 
+.bodyCompact {
+  margin-top: 0;
+}
+
 /* 时间戳是正文里的跳转入口, 用浅色胶囊与正文分开; 颜色取品牌色的两端, 深色下比正文底色亮一档. */
-.timestamp {
+.timestamp,
+.timestampStatic {
   padding: 0 4px;
   border: 0;
   border-radius: 4px;
@@ -16,6 +21,9 @@
   font: inherit;
   font-weight: 600;
   color: light-dark(var(--mantine-color-brand-8), var(--mantine-color-brand-3));
+}
+
+.timestamp {
   cursor: pointer;
 }
 
@@ -26,6 +34,11 @@
 .timestamp:focus-visible {
   outline: 2px solid var(--mantine-color-brand-5);
   outline-offset: 1px;
+}
+
+/* 预览中的时间戳只保留样式, 不响应点击. */
+.timestampStatic {
+  cursor: default;
 }
 
 /* 当前没有可跳转的播放时保留时间戳的样子, 但不给点击. */

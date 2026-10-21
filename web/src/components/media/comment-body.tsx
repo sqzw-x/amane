@@ -1,61 +1,106 @@
-import classes from "./comment-body.module.css";
-import { Text, Tooltip } from "@mantine/core";
-import { Fragment } from "react";
+import { Anchor, Tooltip } from "@mantine/core";
+import type { Element } from "hast";
+import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import type { Components, Options } from "react-markdown";
 
-import { splitCommentSegments } from "@/lib/media/comment-segments";
+import { MarkdownContent } from "@/components/markdown/markdown-content";
+import { rehypeCommentTimestamps } from "@/lib/media/comment-markdown";
 
-/**
- * 评论正文: 其中的时间戳渲染为可点击的跳转, 链接渲染为新标签页打开的锚点.
- *
- * 当前没有可跳转的播放时置灰, 悬浮说明给出原因 (与可见文案不同, 因此允许包 Tooltip).
- */
-export function CommentBody({
-  body,
-  canSeek,
-  onSeek,
-}: {
+import classes from "./comment-body.module.css";
+
+const REHYPE_PLUGINS: Options["rehypePlugins"] = [rehypeCommentTimestamps];
+
+type CommentBodyProps = {
   body: string;
   canSeek: boolean;
   onSeek: (seconds: number) => void;
-}) {
+  /** 预览中只保留时间戳的样式, 不响应点击, 也不提示播放状态. */
+  interactive?: boolean;
+  /** 预览区自带内边距, 去掉正文上方的额外间距. */
+  compact?: boolean;
+};
+
+type SeekInfo = { seconds: number; time: string };
+
+function readSeek(node: Readonly<Element> | undefined): SeekInfo | null {
+  const seconds = node?.properties["data-seek"];
+  const time = node?.properties["data-time"];
+  if (typeof seconds !== "number" || typeof time !== "string") return null;
+  if (!Number.isSafeInteger(seconds) || seconds < 0) return null;
+  return { seconds, time };
+}
+
+/**
+ * 评论正文: 按 GFM 渲染, 时间戳渲染为跳转入口, 链接在新标签页打开.
+ *
+ * 原始 HTML 由 `react-markdown` 转义; 图片不自动加载, 避免绕过图片代理与撑破卡片. 当前没有可跳转的
+ * 播放时置灰, 悬浮说明给出原因 (与可见文案不同, 因此允许包 Tooltip).
+ */
+export const CommentBody = memo(function CommentBody({
+  body,
+  canSeek,
+  onSeek,
+  interactive = true,
+  compact = false,
+}: CommentBodyProps) {
   const { t } = useTranslation("metadata");
-  return (
-    <Text size="sm" className={classes.body}>
-      {splitCommentSegments(body).map((segment, index) => {
-        if (segment.kind === "text") {
-          return <Fragment key={index}>{segment.text}</Fragment>;
+  const components = useMemo<Components>(
+    () => ({
+      span: ({ node, children }) => {
+        const seek = readSeek(node);
+        if (seek == null) {
+          return <span>{children}</span>;
         }
-        // 地址只来自 `http://` 与 `https://` 开头的文本, 不可能是其它协议.
-        if (segment.kind === "link") {
-          return (
-            <a
-              key={index}
-              className={classes.link}
-              href={segment.href}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {segment.href}
-            </a>
-          );
+        if (!interactive) {
+          return <span className={classes.timestampStatic}>{children}</span>;
         }
         return canSeek ? (
-          <Tooltip key={index} label={t("detail.commentSeek", { time: segment.text })}>
+          <Tooltip label={t("detail.commentSeek", { time: seek.time })}>
             <button
               type="button"
               className={classes.timestamp}
-              onClick={() => onSeek(segment.seconds)}
+              onClick={() => onSeek(seek.seconds)}
             >
-              {segment.text}
+              {children}
             </button>
           </Tooltip>
         ) : (
-          <Tooltip key={index} label={t("detail.playbackUnavailable")}>
-            <span className={classes.disabledTimestamp}>{segment.text}</span>
+          <Tooltip label={t("detail.playbackUnavailable")}>
+            <span className={classes.disabledTimestamp}>{children}</span>
           </Tooltip>
         );
-      })}
-    </Text>
+      },
+      a: ({ href, title, children }) =>
+        href ? (
+          <Anchor
+            className={classes.link}
+            href={href}
+            title={title}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {children}
+          </Anchor>
+        ) : (
+          <>{children}</>
+        ),
+      img: ({ src, alt }) =>
+        src ? (
+          <Anchor className={classes.link} href={src} target="_blank" rel="noreferrer">
+            {alt || src}
+          </Anchor>
+        ) : null,
+    }),
+    [canSeek, interactive, onSeek, t],
   );
-}
+
+  return (
+    <MarkdownContent
+      text={body}
+      className={compact ? `${classes.body} ${classes.bodyCompact}` : classes.body}
+      components={components}
+      rehypePlugins={REHYPE_PLUGINS}
+    />
+  );
+});
