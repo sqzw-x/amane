@@ -54,6 +54,14 @@ def test_relpath_outside_library_raises(tmp_path: Path) -> None:
         render_strm_content("/{video_relpath}", tmp_path / "outside" / "A.mp4", tmp_path / "lib", _meta())
 
 
+def test_raw_relpath_in_strm_content(tmp_path: Path) -> None:
+    """{raw_relpath} 取源文件相对库根的路径, 可直接拼接远程地址."""
+    root = tmp_path / "lib"
+    dest = root / "A" / "C.mp4"
+    body = render_strm_content("https://example.com/{raw_relpath}", dest, root, _meta(), source_path=dest)
+    assert body == "https://example.com/A/C.mp4\n"
+
+
 def test_title_control_chars_replaced(tmp_path: Path) -> None:
     """标题里的控制字符替换为空格: 正文不会在中间断行."""
     root = tmp_path / "lib"
