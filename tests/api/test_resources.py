@@ -125,36 +125,38 @@ class TestProxyImage:
 
     @pytest.mark.asyncio(loop_scope="function")
     @pytest.mark.parametrize(
-        "url",
+        ("url", "detail"),
         [
-            "http://127.0.0.1:8000/api/config",
-            "http://169.254.169.254/latest/meta-data/",
-            "http://10.0.0.5/a.png",
-            "http://[::1]/a.png",
-            "http://2130706433/a.png",
-            "http://0177.0.0.1/a.png",
+            ("http://127.0.0.1:8000/api/config", "仅支持公网地址"),
+            ("http://169.254.169.254/latest/meta-data/", "仅支持公网地址"),
+            ("http://10.0.0.5/a.png", "仅支持公网地址"),
+            ("http://[::1]/a.png", "仅支持公网地址"),
+            # 数值写法与非法端口不是「地址不公网」, 错误信息要能区分
+            ("http://2130706433/a.png", "URL 不受支持"),
+            ("http://0177.0.0.1/a.png", "URL 不受支持"),
+            ("http://example.com:99999/a.png", "URL 不受支持"),
         ],
     )
     async def test_non_public_target_rejected(
-        self, client: AsyncClient, app, monkeypatch: pytest.MonkeyPatch, url: str
+        self, client: AsyncClient, app, monkeypatch: pytest.MonkeyPatch, url: str, detail: str
     ):
-        """私网 / 回环 / 元数据地址与非规范数值写法都在出站前被拒, 不进入下载通道."""
+        """私网 / 回环 / 元数据地址与不合法目标都在出站前被拒, 不进入下载通道."""
         mock_store = AsyncMock()
         monkeypatch.setattr(app.state.runtime, "resource_store", mock_store)
 
         resp = await client.get("resources/proxy", params={"url": url})
 
         assert resp.status_code == 400
-        assert resp.json()["detail"] == "仅支持公网地址"
+        assert resp.json()["detail"] == detail
         assert mock_store.acquire.await_count == 0
 
     @pytest.mark.asyncio(loop_scope="function")
-    @pytest.mark.parametrize("url", ["http://[::1/a.png", "http://example.com:99999/a.png"])
-    async def test_malformed_url_rejected(self, client: AsyncClient, url: str):
+    async def test_malformed_url_rejected(self, client: AsyncClient):
         """解析不了的 URL 回 400, 不能落到未捕获异常变成 500."""
-        resp = await client.get("resources/proxy", params={"url": url})
+        resp = await client.get("resources/proxy", params={"url": "http://[::1/a.png"})
 
         assert resp.status_code == 400
+        assert resp.json()["detail"] == "URL 无法解析"
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_resolution_failure_is_upstream_error(
@@ -171,7 +173,8 @@ class TestProxyImage:
         resp = await client.get("resources/proxy", params={"url": url})
 
         assert resp.status_code == 502
-        assert app.state.runtime.proxy_failure_cache.is_blocked(url)
+        # 解析失败多为瞬态: 不进 15 分钟负缓存, 网络恢复后同一地址还能重试
+        assert not app.state.runtime.proxy_failure_cache.is_blocked(url)
 
 
 @pytest.mark.asyncio(loop_scope="function")

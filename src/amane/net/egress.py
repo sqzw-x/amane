@@ -27,8 +27,8 @@ _FAKE_IP_NETWORKS = (ip_network("198.18.0.0/15"),)
 目标由代理解析与路由决定. 需要严格限制来源时, 判据不能只有地址."""
 
 
-def _rejected(url: str, message: str) -> EgressRejected:
-    return EgressRejected(url, RequestFailure(kind=FailureKind.UNEXPECTED, message=message))
+def _rejected(url: str, message: str, *, detail: str = "URL 不受支持") -> EgressRejected:
+    return EgressRejected(url, message, detail=detail)
 
 
 def _unresolved(url: str, message: str) -> RequestError:
@@ -124,4 +124,4 @@ class EgressPolicy:
         # 任一地址落在私网就整体拒绝: 双栈主机可能同时给出公网与内网地址, 放行等于让 curl 自己选.
         for address in addresses:
             if not is_public_address(address):
-                raise _rejected(url, f"地址不在公网范围: {address}")
+                raise _rejected(url, f"地址不在公网范围: {address}", detail="仅支持公网地址")

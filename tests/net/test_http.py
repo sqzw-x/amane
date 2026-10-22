@@ -82,14 +82,15 @@ class _StubResponse:
         status: int = 200,
         headers: dict[str, str] | None = None,
         chunks: list[bytes] | None = None,
+        stream: bool = False,
     ) -> None:
         self.url = url
         self.content = content
         self.status_code = status
         self.headers = headers or {}
         self._chunks = chunks if chunks is not None else [content]
-        # 真实 SDK 只在 stream 模式建这个事件; ``_close`` 据此中止传输
-        self.quit_now: asyncio.Event | None = asyncio.Event()
+        # 真实 SDK 只在 stream 模式建这个事件; ``_close`` 据此中止传输, 非流式应答上该分支为空操作
+        self.quit_now: asyncio.Event | None = asyncio.Event() if stream else None
 
     async def aiter_content(self) -> AsyncIterator[bytes]:
         for chunk in self._chunks:
@@ -654,7 +655,7 @@ class TestBoundedDownload:
     async def test_aborts_when_cap_exceeded(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
         """第三个分块越界时中止: 已写入的不超过上限, 且必须切断上游而不是只停止消费."""
         client = WebClient(limiters=RateLimiters(default_rate=100))
-        response = _StubResponse(chunks=[b"a" * 1024, b"b" * 1024, b"c" * 1024])
+        response = _StubResponse(chunks=[b"a" * 1024, b"b" * 1024, b"c" * 1024], stream=True)
         session = _StubSession(response)
         monkeypatch.setattr(client, "_session", session)
 
@@ -667,7 +668,7 @@ class TestBoundedDownload:
     @pytest.mark.asyncio
     async def test_cap_cuts_upstream_transfer(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
         """真实上游: 超限后连接被切断, 不会把整份正文传完 (只停止消费时服务端会发满)."""
-        total = 16 * 1024 * 1024
+        total = 64 * 1024 * 1024
         chunk = b"x" * 65536
         sent = 0
         finished = asyncio.Event()
@@ -702,7 +703,8 @@ class TestBoundedDownload:
             await server.wait_closed()
             await client.close()
 
-        assert sent < total
+        # 判别边界落在「有没有切断」: 内核收发缓冲会吃掉几 MiB, 不能按 MB 级余量断言
+        assert sent < total // 2
 
     @pytest.mark.asyncio
     async def test_chunk_count_capped(self, monkeypatch: pytest.MonkeyPatch, tmp_path):

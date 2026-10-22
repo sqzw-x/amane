@@ -46,11 +46,11 @@ async def proxy_image(
         await _PROXY_EGRESS.ensure_allowed(url)
     except EgressRejected as e:
         logger.warning("proxy image address rejected", url=url, reason=e.message)
-        raise HTTPException(status_code=400, detail="仅支持公网地址") from e
+        raise HTTPException(status_code=400, detail=e.detail) from e
     except RequestError as e:
-        # 解析失败是上游不可达, 不是地址不合规: 与下载失败同样返回 502 并进入负缓存.
+        # 解析失败是上游不可达, 不是地址不合规: 回 502 但不进负缓存 — 解析失败多为瞬态,
+        # 缓存 15 分钟会让网络恢复后同一地址继续失败.
         logger.warning("proxy image host unreachable", url=url, reason=e.message)
-        failures.remember(url)
         raise HTTPException(status_code=502, detail="上游图片获取失败") from e
 
     # 负缓存命中则直接 502
