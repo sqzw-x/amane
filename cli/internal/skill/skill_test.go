@@ -5,40 +5,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/sqzw-x/amane/cli/internal/api"
 )
 
-func testCatalog() *api.Catalog {
-	return &api.Catalog{
-		Version: "0.22.1",
-		Paths: api.CatalogPaths{
-			DataDir:    "/data",
-			LogDir:     "/data/logs",
-			DBPath:     "/data/amane.db",
-			ConfigPath: "/data/config.toml",
-			Env:        []string{"AMANE_DATA_DIR", "AMANE_TOKEN"},
-		},
-		Tools: []api.ToolSummary{
-			{Name: "update_metadata", Group: "metadata-ops", Summary: "修改番号条目", Signature: "number: string"},
-			{Name: "sql_explore", Group: "sql", Summary: "执行只读 SQL", Signature: "sql: string"},
-		},
-	}
-}
-
-func TestRenderIncludesPaths(t *testing.T) {
-	files := Render(testCatalog(), "0.1.0", "test")
+func TestRenderIncludesCommands(t *testing.T) {
+	files := Render("0.1.0")
 	for _, name := range []string{MainFile, VersionFile} {
 		if _, ok := files[name]; !ok {
 			t.Fatalf("缺少文件 %s", name)
 		}
 	}
-	if got := strings.TrimSpace(string(files[VersionFile])); got != "0.22.1" {
+	if got := strings.TrimSpace(string(files[VersionFile])); got != "0.1.0" {
 		t.Fatalf("version 文件为 %q", got)
 	}
 
 	main := string(files[MainFile])
-	for _, want := range []string{"审批礼仪", "amane doctor", "amane wait", "amane catalog", "amane schema", "0.22.1", "/data/logs", "/data/amane.db", "/data/config.toml"} {
+	for _, want := range []string{"审批礼仪", "amane doctor", "amane wait", "amane catalog", "amane schema", "0.1.0", "--profile <名字>", "amane config list"} {
 		if !strings.Contains(main, want) {
 			t.Errorf("SKILL.md 缺少 %q", want)
 		}
@@ -47,7 +28,7 @@ func TestRenderIncludesPaths(t *testing.T) {
 
 // 工具清单不进 Skill: 它会随实例变化, 且一次会话用不到全部工具.
 func TestRenderOmitsToolList(t *testing.T) {
-	main := string(Render(testCatalog(), "0.1.0", "test")[MainFile])
+	main := string(Render("0.1.0")[MainFile])
 	for _, unwanted := range []string{"update_metadata", "sql_explore", "metadata-ops", "number: string"} {
 		if strings.Contains(main, unwanted) {
 			t.Errorf("SKILL.md 不应包含工具清单内容 %q", unwanted)
@@ -56,8 +37,8 @@ func TestRenderOmitsToolList(t *testing.T) {
 }
 
 func TestRenderStable(t *testing.T) {
-	first := Render(testCatalog(), "0.1.0", "test")
-	second := Render(testCatalog(), "0.1.0", "test")
+	first := Render("0.1.0")
+	second := Render("0.1.0")
 	for name := range first {
 		if string(first[name]) != string(second[name]) {
 			t.Fatalf("%s 两次生成结果不一致", name)
@@ -65,8 +46,8 @@ func TestRenderStable(t *testing.T) {
 	}
 }
 
-func TestRenderEmptyCatalog(t *testing.T) {
-	files := Render(&api.Catalog{}, "dev", "test")
+func TestRenderEmptyVersion(t *testing.T) {
+	files := Render("")
 	if got := strings.TrimSpace(string(files[VersionFile])); got != "未知" {
 		t.Fatalf("version 文件为 %q", got)
 	}
@@ -77,7 +58,7 @@ func TestRenderEmptyCatalog(t *testing.T) {
 
 func TestInstallWritesAllFiles(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "amane")
-	files := Render(testCatalog(), "0.22.1", "test")
+	files := Render("0.22.1")
 
 	if err := Install(dir, files); err != nil {
 		t.Fatalf("未预期的错误: %v", err)

@@ -8,8 +8,6 @@
 
 # 下发到二进制的版本号, 构建时可用 VERSION 覆盖
 version := env("VERSION", "dev")
-# 发布用的版本号: 省略时取 pyproject
-dist_version := env("VERSION", `uv version --short`)
 dist_dir := env("DIST", "dist")
 exe := if os() == "windows" { ".exe" } else { "" }
 
@@ -44,9 +42,9 @@ cli-build:
 # CLI: 交叉编译五个平台并生成 SHA256SUMS
 [working-directory('cli')]
 cli-dist:
-    go run ./internal/tools/dist -version "{{dist_version}}" -out {{dist_dir}}
+    go run ./internal/tools/release -version "{{ env("VERSION", `uv version --short`) }}" -out {{dist_dir}}
 
 # CLI: 清理产物
 [working-directory('cli')]
 cli-clean:
-    go run ./internal/tools/dist -clean -out {{dist_dir}}
+    go run ./internal/tools/release -clean -out {{dist_dir}}

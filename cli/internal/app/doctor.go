@@ -24,11 +24,7 @@ func (r *runner) cmdSkill(ctx context.Context) error {
 	}
 }
 
-func (r *runner) skillInstall(ctx context.Context) error {
-	cat, err := r.fetchCatalog(ctx)
-	if err != nil {
-		return err
-	}
+func (r *runner) skillInstall(_ context.Context) error {
 	dir := r.p.dir
 	if dir == "" {
 		home, err := r.homeDir()
@@ -39,20 +35,20 @@ func (r *runner) skillInstall(ctx context.Context) error {
 	} else {
 		dir = skill.ResolveTarget(dir)
 	}
-	// 多实例共存时 Skill 以最新版本为准: 已装的版本不低就保留, 避免被旧实例降级.
+	// Skill 的版本跟随 CLI: 已装的版本不低就保留, 避免被旧 CLI 降级.
 	// 判断不了版本高低时照常写入, 与「没装过」同样处理.
 	if installed, err := skill.InstalledVersion(dir); err == nil {
-		if cmp, ok := version.Compare(installed, cat.Version); ok && cmp >= 0 {
-			fmt.Fprintf(r.env.Stdout, "Skill 已是最新: %s 版本 %s 不低于实例版本 %s, 保留不动\n", dir, installed, cat.Version)
+		if cmp, ok := version.Compare(installed, r.env.Version); ok && cmp >= 0 {
+			fmt.Fprintf(r.env.Stdout, "Skill 已是最新: %s 版本 %s 不低于 CLI 版本 %s, 保留不动\n", dir, installed, r.env.Version)
 			return nil
 		}
 	}
 
-	files := skill.Render(cat, r.env.Version, r.p.profile)
+	files := skill.Render(r.env.Version)
 	if err := skill.Install(dir, files); err != nil {
 		return err
 	}
-	fmt.Fprintf(r.env.Stdout, "Skill 已安装到 %s (实例版本 %s)\n", dir, cat.Version)
+	fmt.Fprintf(r.env.Stdout, "Skill 已安装到 %s (CLI 版本 %s)\n", dir, r.env.Version)
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)
@@ -64,12 +60,8 @@ func (r *runner) skillInstall(ctx context.Context) error {
 	return nil
 }
 
-func (r *runner) skillShow(ctx context.Context) error {
-	cat, err := r.fetchCatalog(ctx)
-	if err != nil {
-		return err
-	}
-	files := skill.Render(cat, r.env.Version, r.p.profile)
+func (r *runner) skillShow(_ context.Context) error {
+	files := skill.Render(r.env.Version)
 	for _, name := range []string{skill.MainFile, skill.VersionFile} {
 		if _, err := fmt.Fprintf(r.env.Stdout, "<!-- ===== %s ===== -->\n%s\n", name, files[name]); err != nil {
 			return err

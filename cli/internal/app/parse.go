@@ -304,7 +304,7 @@ const usageText = `amane — Amane 实例的外部智能体接口客户端
 用法:
   amane [全局选项] <命令> [参数]
 
-命令 (除 upgrade 与 config list/delete 外都要带 --profile):
+命令 (除 upgrade、skill 与 config list/delete 外都要带 --profile):
   catalog [<tool>]                打印工具索引; 指定工具时打印其完整入参
   schema                          打印库结构摘要, 编写只读 SQL 时参考
   call <tool> [--file <路径>|-|JSON]  派发工具调用; 入参来自文件、标准输入或 JSON 字面量
@@ -316,7 +316,7 @@ const usageText = `amane — Amane 实例的外部智能体接口客户端
                                   写入一份 profile; 终端下 token 不回显
   config [list|delete <名字>]     列出或删除 profile
   config --profile <名字>         查看某个 profile
-  skill install [--dir <path>]    生成 Skill 文件并写入目录
+  skill install [--dir <path>]    生成 Skill 文件并写入目录 (不连接实例)
   skill show                      打印 Skill 内容, 不写文件
 
 全局选项:
@@ -361,7 +361,7 @@ skill install 选项:
 // 会让漏写参数的命令打到别人那台实例上. config 与 upgrade 不碰实例, 不在此列.
 func needsProfile(cmd string) bool {
 	switch cmd {
-	case "catalog", "schema", "call", "wait", "api", "doctor", "login", "skill":
+	case "catalog", "schema", "call", "wait", "api", "doctor", "login":
 		return true
 	}
 	return false

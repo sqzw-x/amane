@@ -49,8 +49,8 @@ CLI 可管理多个实例, 每个实例是一份 profile, 存在 CLI 配置文�
 
 1. 可用 skill 里已有 `amane` 就直接加载, 本阶段结束.
 
-2. 就安装位置征求同意 (常见 ~/.agents/skills), 运行
-   `amane skill install --dir <path> --profile <名字>`. CLI 会自己创建 <path>/amane 子目录.
+2. 就安装位置征求同意 (常见 ~/.agents/skills), 运行 `amane skill install --dir <path>`.
+   它只由 CLI 生成, 不连接实例也不用给 profile; 生成的命令用 <名字> 占位, 由你填上正在操作的 profile.
 
 3. 运行 `amane doctor --profile <名字>` 应当通过.
 

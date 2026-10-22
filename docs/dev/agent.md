@@ -119,7 +119,7 @@
 
 签名由 `src/amane/agent/signature.py` 从同一份 Schema 生成, 是有损的紧凑表示: 保留类型、必填性、枚举、数值范围与嵌套结构. 校验仍在服务端, 参数错了回字段路径, 这个闭环让有损压缩安全. 返回结构不对外: 调用方从响应体直接看.
 
-Skill 只生成 `SKILL.md` 与记录实例版本的 `version` 两个文件, 工具清单不进 Skill: 清单随实例变化, 写进文件既会过期, 又让每次会话都为全部工具付一遍 token; 运行时用 `amane catalog` 取.
+Skill 只生成 `SKILL.md` 与记录 CLI 版本的 `version` 两个文件, 安装时不连接实例, 工具清单不进 Skill: 清单随实例变化, 写进文件既会过期, 又让每次会话都为全部工具付一遍 token; 运行时用 `amane catalog` 取.
 
 ### 客户端
 

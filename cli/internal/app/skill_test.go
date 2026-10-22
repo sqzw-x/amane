@@ -1,8 +1,6 @@
 package app
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,13 +8,10 @@ import (
 )
 
 func TestSkillInstallWithDir(t *testing.T) {
-	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
-	defer srv.Close()
-
-	h := newHarness(t, srv.URL)
+	h := newHarness(t, "")
 	parent := filepath.Join(h.dir, "skill")
 	target := filepath.Join(parent, "amane")
-	if code := h.run("skill", "--profile", "default", "install", "--dir", parent); code != ExitOK {
+	if code := h.run("skill", "install", "--dir", parent); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	for _, name := range []string{"SKILL.md", "version"} {
@@ -24,7 +19,7 @@ func TestSkillInstallWithDir(t *testing.T) {
 			t.Fatalf("缺少 %s: %v", name, err)
 		}
 	}
-	if !strings.Contains(h.out(), target) || !strings.Contains(h.out(), "0.22.1") {
+	if !strings.Contains(h.out(), target) || !strings.Contains(h.out(), "0.1.0") {
 		t.Fatalf("输出为 %q", h.out())
 	}
 	if strings.Contains(h.out()+h.errOut(), testToken) {
@@ -41,16 +36,13 @@ func TestSkillInstallWithDir(t *testing.T) {
 }
 
 func TestSkillInstallKeepsNewerInstalled(t *testing.T) {
-	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
-	defer srv.Close()
-
-	h := newHarness(t, srv.URL)
+	h := newHarness(t, "")
 	parent := filepath.Join(h.home, "skills")
 	dir := filepath.Join(parent, "amane")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("准备目录失败: %v", err)
 	}
-	// 模拟已从更新的实例装过 Skill: 不能被这次 0.22.1 覆盖.
+	// 模拟已由更新的 CLI 装过 Skill: 不能被这次 0.1.0 覆盖.
 	if err := os.WriteFile(filepath.Join(dir, "version"), []byte("0.30.0\n"), 0o644); err != nil {
 		t.Fatalf("写入版本文件失败: %v", err)
 	}
@@ -58,7 +50,7 @@ func TestSkillInstallKeepsNewerInstalled(t *testing.T) {
 		t.Fatalf("写入 SKILL.md 失败: %v", err)
 	}
 
-	if code := h.run("skill", "--profile", "default", "install", "--dir", parent); code != ExitOK {
+	if code := h.run("skill", "install", "--dir", parent); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	version, err := os.ReadFile(filepath.Join(dir, "version"))
@@ -81,37 +73,31 @@ func TestSkillInstallKeepsNewerInstalled(t *testing.T) {
 }
 
 func TestSkillInstallUpgradesOlderInstalled(t *testing.T) {
-	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
-	defer srv.Close()
-
-	h := newHarness(t, srv.URL)
+	h := newHarness(t, "")
 	parent := filepath.Join(h.home, "skills")
 	dir := filepath.Join(parent, "amane")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("准备目录失败: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "version"), []byte("0.21.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "version"), []byte("0.0.1\n"), 0o644); err != nil {
 		t.Fatalf("写入版本文件失败: %v", err)
 	}
 
-	if code := h.run("skill", "--profile", "default", "install", "--dir", parent); code != ExitOK {
+	if code := h.run("skill", "install", "--dir", parent); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	version, err := os.ReadFile(filepath.Join(dir, "version"))
 	if err != nil {
 		t.Fatalf("读取版本失败: %v", err)
 	}
-	if strings.TrimSpace(string(version)) != "0.22.1" {
+	if strings.TrimSpace(string(version)) != "0.1.0" {
 		t.Fatalf("未升级, 版本为 %q", strings.TrimSpace(string(version)))
 	}
 }
 
 func TestSkillInstallDefaultDir(t *testing.T) {
-	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
-	defer srv.Close()
-
-	h := newHarness(t, srv.URL)
-	if code := h.run("skill", "--profile", "default", "install"); code != ExitOK {
+	h := newHarness(t, "")
+	if code := h.run("skill", "install"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	// 父目录不必预先存在: 默认位置是确定的, 不是探测出来的.
@@ -122,12 +108,9 @@ func TestSkillInstallDefaultDir(t *testing.T) {
 }
 
 func TestSkillInstallDirIsParent(t *testing.T) {
-	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
-	defer srv.Close()
-
-	h := newHarness(t, srv.URL)
+	h := newHarness(t, "")
 	parent := filepath.Join(h.home, "custom-skills")
-	if code := h.run("skill", "--profile", "default", "install", "--dir", parent); code != ExitOK {
+	if code := h.run("skill", "install", "--dir", parent); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	// --dir 给的是父目录, 与默认位置同构: 文件落在 amane 子目录下, 不污染父目录.
@@ -140,12 +123,9 @@ func TestSkillInstallDirIsParent(t *testing.T) {
 }
 
 func TestSkillInstallDirAlreadyTarget(t *testing.T) {
-	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
-	defer srv.Close()
-
-	h := newHarness(t, srv.URL)
+	h := newHarness(t, "")
 	target := filepath.Join(h.home, "skills", "amane")
-	if code := h.run("skill", "--profile", "default", "install", "--dir", target); code != ExitOK {
+	if code := h.run("skill", "install", "--dir", target); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	if _, err := os.Stat(filepath.Join(target, "SKILL.md")); err != nil {
@@ -157,11 +137,8 @@ func TestSkillInstallDirAlreadyTarget(t *testing.T) {
 }
 
 func TestSkillShowWritesNothing(t *testing.T) {
-	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
-	defer srv.Close()
-
-	h := newHarness(t, srv.URL)
-	if code := h.run("skill", "--profile", "default", "show"); code != ExitOK {
+	h := newHarness(t, "")
+	if code := h.run("skill", "show"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	for _, want := range []string{"SKILL.md", "version", "审批礼仪", "amane catalog"} {
@@ -180,7 +157,7 @@ func TestSkillShowWritesNothing(t *testing.T) {
 
 func TestSkillUnknownSubcommand(t *testing.T) {
 	h := newHarness(t, "http://127.0.0.1:1")
-	if code := h.run("skill", "--profile", "default", "frob"); code != ExitUsage {
+	if code := h.run("skill", "frob"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
 }
