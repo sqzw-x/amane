@@ -2,8 +2,9 @@ package app
 
 import (
 	"context"
+	"net/http"
+	"time"
 
-	"github.com/sqzw-x/amane/cli/internal/httpx"
 	"github.com/sqzw-x/amane/cli/internal/upgrade"
 )
 
@@ -25,27 +26,19 @@ func (r *runner) cmdUpgrade(ctx context.Context) error {
 	if base == "" {
 		base = upgrade.DefaultBaseURL
 	}
-	latestURL := r.env.UpgradeLatestURL
-	if latestURL == "" {
-		latestURL = upgrade.DefaultLatestURL
-	}
-	client := r.httpClient()
-	// 下载单独给时限: 版本检查与实例请求仍是 15 秒, 但 10 MB 级的产物传输需要更宽的总时长.
-	downloadTimeout := httpx.DownloadTimeout
-	if r.p.timeoutSet {
-		downloadTimeout = r.p.timeout
+	client := r.env.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Minute}
 	}
 	return upgrade.Run(ctx, upgrade.Options{
-		BaseURL:         base,
-		LatestURL:       latestURL,
-		GOOS:            r.env.GOOS,
-		GOARCH:          r.env.GOARCH,
-		CurrentVersion:  r.env.Version,
-		DownloadTimeout: downloadTimeout,
-		TargetPath:      target,
-		DryRun:          r.p.dryRun,
-		HTTP:            client,
-		Out:             r.env.Stdout,
-		Err:             r.env.Stderr,
+		BaseURL:        base,
+		GOOS:           r.env.GOOS,
+		GOARCH:         r.env.GOARCH,
+		CurrentVersion: r.env.Version,
+		TargetPath:     target,
+		DryRun:         r.p.dryRun,
+		HTTP:           client,
+		Out:            r.env.Stdout,
+		Err:            r.env.Stderr,
 	})
 }

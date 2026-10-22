@@ -109,10 +109,6 @@ func renderDetail(detail *api.ToolDetail, pretty bool) string {
 		return b.String()
 	}
 	b.WriteString("\n入参:\n")
-	if !pretty {
-		b.Write(detail.Params)
-		return b.String()
-	}
 	var buf bytes.Buffer
 	if err := json.Indent(&buf, detail.Params, "", "  "); err == nil {
 		b.Write(buf.Bytes())

@@ -14,8 +14,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/sqzw-x/amane/cli/internal/httpx"
 )
 
 // maxBody 是单次响应的读取上限, 避免异常响应耗尽内存.
@@ -87,7 +85,7 @@ func (c *Client) httpClient() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
 	}
-	return httpx.Client()
+	return http.DefaultClient
 }
 
 // Get 发起 GET 请求. path 须以 / 开头.
@@ -128,15 +126,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (*Res
 		return nil, &TransportError{Err: err}
 	}
 	defer resp.Body.Close()
-	// 多读一字节用于判定是否超限: 静默截断会让调用方拿到一个看起来完整的坏响应,
-	// 例如被截断的任务记录包.
-	limited := io.LimitReader(resp.Body, maxBody+1)
-	data, err := io.ReadAll(limited)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
 		return nil, &TransportError{Err: err}
-	}
-	if len(data) > maxBody {
-		return nil, &TransportError{Err: fmt.Errorf("响应超过 %d MiB 上限", maxBody>>20)}
 	}
 	return &Response{Status: resp.StatusCode, Body: data, Header: resp.Header}, nil
 }
@@ -171,7 +163,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args json.RawMessage
 	return c.PostJSON(ctx, "/api/tools/"+name, payload)
 }
 
-// APIPath 把用户给出的路径补成 /api 前缀. 已带 /api 前缀时原样返回.
+// APIPath 把用户给出的路径补成 /api 前缀. 已带 /api 或 /public 前缀时原样返回.
 func APIPath(p string) (string, error) {
 	s := strings.TrimSpace(p)
 	if s == "" {

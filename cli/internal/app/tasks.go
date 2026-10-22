@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -36,13 +37,8 @@ func (r *runner) cmdWait(ctx context.Context) error {
 		if api.IsAuthFailure(resp.Status) {
 			return nil, connf("鉴权失败 (HTTP %d): %s", resp.Status, detailOf(resp.Body))
 		}
-		// 非 2xx 不能交给终态判断: 解不出 status 会被当成「已完成」, 502 的 HTML 与
-		// 路径写错被回退的页面都会让调用方以为任务真的到终态了.
-		if resp.Status < 200 || resp.Status >= 300 {
-			return nil, connf("读取任务失败 (HTTP %d): %s", resp.Status, detailOf(resp.Body))
-		}
-		if wait.StatusOf(resp.Body) == "" {
-			return nil, connf("响应里没有 status 字段, 不是任务详情: %s", detailOf(resp.Body))
+		if resp.Status != 200 {
+			fmt.Fprintf(r.env.Stderr, "amane: 响应 HTTP %d\n", resp.Status)
 		}
 		return resp.Body, nil
 	}
@@ -91,5 +87,5 @@ func (r *runner) cmdAPI(ctx context.Context) error {
 	if err := r.checkStatus(resp); err != nil {
 		return err
 	}
-	return r.writeDownloadable(resp)
+	return r.writeBody(resp.Body)
 }

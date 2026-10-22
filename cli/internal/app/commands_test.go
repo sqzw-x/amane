@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -280,16 +279,18 @@ func TestCallBusinessErrorStaysZero(t *testing.T) {
 	}
 }
 
-func TestCallRejectedByServerExitsFour(t *testing.T) {
+func TestCallValidationFailureStaysZero(t *testing.T) {
 	srv := httptest.NewServer(jsonHandler(t, http.StatusUnprocessableEntity, `{"detail":[{"loc":["body","args","task_id"],"msg":"field required"}]}`, nil))
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	// 参数校验失败是「服务端拒绝了这次请求」, 与工具返回 error 不同, 不能报成 0.
-	if code := h.run("call", "retry_task", "{}"); code != ExitServer {
-		t.Fatalf("退出码为 %d, 期望 %d", code, ExitServer)
+	if code := h.run("call", "retry_task", "{}"); code != ExitOK {
+		t.Fatalf("退出码为 %d, 期望 0", code)
 	}
-	if !strings.Contains(h.errOut(), "task_id") {
+	if !strings.Contains(h.out(), "task_id") {
+		t.Fatalf("输出为 %q", h.out())
+	}
+	if !strings.Contains(h.errOut(), "HTTP 422") {
 		t.Fatalf("标准错误为 %q", h.errOut())
 	}
 }
@@ -352,12 +353,11 @@ func TestWaitUnknownTask(t *testing.T) {
 
 	h := newHarness(t, srv.URL)
 	h.useClock()
-	// 任务不存在不是终态: 交给调用方的必须是失败, 否则智能体会当成「已完成」继续.
-	if code := h.run("wait", "99"); code != ExitConnection {
-		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
+	if code := h.run("wait", "99"); code != ExitOK {
+		t.Fatalf("退出码为 %d, 期望 0", code)
 	}
-	if !strings.Contains(h.errOut(), "不存在") {
-		t.Fatalf("标准错误为 %q", h.errOut())
+	if !strings.Contains(h.out(), "不存在") {
+		t.Fatalf("输出为 %q", h.out())
 	}
 	if !strings.Contains(h.errOut(), "HTTP 404") {
 		t.Fatalf("标准错误为 %q", h.errOut())
@@ -439,11 +439,8 @@ func TestLoginWritesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取权限失败: %v", err)
 	}
-	// Windows 上普通文件的 Perm() 恒为 0666 (只读才是 0444), 权限由目录 ACL 保证.
-	if runtime.GOOS != "windows" {
-		if mode := info.Mode().Perm(); mode != 0o600 {
-			t.Fatalf("权限为 %o, 期望 600", mode)
-		}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("权限为 %o, 期望 600", mode)
 	}
 }
 
@@ -452,7 +449,7 @@ func TestLoginEmptyStdin(t *testing.T) {
 	if code := h.run("login", "--server", "http://127.0.0.1:8000"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
-	if !strings.Contains(h.errOut(), "没有读到 token") {
+	if !strings.Contains(h.errOut(), "标准输入为空") {
 		t.Fatalf("标准错误为 %q", h.errOut())
 	}
 }
@@ -590,8 +587,9 @@ func TestCatalogToolDetailUnknown(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("catalog", "no_such_tool"); code != ExitServer {
-		t.Fatalf("退出码为 %d, 期望 %d", code, ExitServer)
+	// 与 call 一致: 非 2xx 只在 stderr 报状态码, 退出码仍为 0 (传输已完成).
+	if code := h.run("catalog", "no_such_tool"); code != ExitOK {
+		t.Fatalf("退出码为 %d", code)
 	}
 	if !strings.Contains(h.errOut(), "HTTP 404") {
 		t.Fatalf("stderr 为 %q", h.errOut())
