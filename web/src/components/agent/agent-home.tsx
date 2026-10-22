@@ -90,10 +90,6 @@ import { downloadSavedQueryResult } from "@/lib/saved-query/download";
 import { TokenUsageBar, RequestUsageBar } from "@/components/agent/token-usage-bar";
 import { confirm } from "@/lib/confirm";
 
-function apiBase(): string {
-  return import.meta.env.VITE_API_URL || "";
-}
-
 /** 非 null 且非数组的对象. 工具参数与回执的形状判定需要排除数组, 故不用 `lib/utils.ts::isRecord` (含数组). */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -522,7 +518,7 @@ async function followTraceRows(
   onRows: (rows: TraceRow[]) => void,
 ): Promise<void> {
   const response = await apiFetch(
-    `${apiBase()}/api/agent/sessions/${sessionId}/agui/events?after_seq=${afterSeq}`,
+    `/api/agent/sessions/${sessionId}/agui/events?after_seq=${afterSeq}`,
     { signal },
   );
   if (!response.ok || response.body === null) return;
@@ -799,7 +795,7 @@ function AgUiThread({
   const agent = useMemo(
     () =>
       new HttpAgent({
-        url: `${apiBase()}/api/agent/sessions/${sessionId}/agui`,
+        url: `/api/agent/sessions/${sessionId}/agui`,
         threadId: String(sessionId),
         fetch: apiFetch,
       }),

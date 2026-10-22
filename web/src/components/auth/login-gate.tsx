@@ -36,7 +36,7 @@ export function LoginGate({ onAuthed }: LoginGateProps) {
     setSubmitting(true);
     setError(null);
     try {
-      const resp = await apiFetch(`${import.meta.env.VITE_API_URL || ""}/api/system/desktop`, {
+      const resp = await apiFetch("/api/system/desktop", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (resp.ok) {

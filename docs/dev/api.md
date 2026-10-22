@@ -33,8 +33,8 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 | `resources` | `/resources` | 本地资源 + `GET /proxy` |
 | `agent` | `/agent` | 会话 CRUD / 标题 / trace / AG-UI; 见 [agent.md](agent.md) |
 | `saved-queries` | `/saved-queries` | 查询预设 CRUD / 结果 / 批量; 见 [agent.md](agent.md) |
-| `tools` | `/tools` | 外部智能体的工具目录与派发; 见 [agent.md](agent.md)「外部接入」 |
-| `bootstrap` | `/public/agent` | 免鉴权的接入引导, 固定文本; **不**在 `/api` 下 |
+| `tools` | `/tools` | 外部智能体的工具索引、单工具入参与派发; 见 [agent.md](agent.md)「外部接入」 |
+| `bootstrap` | `/api/agent-guide` | 免鉴权的接入引导, 固定文本; 豁免见 `middleware.py::_TOKEN_EXEMPT` |
 | `ws` | `/ws` | EventBus 广播 |
 
 OpenAPI 列出参数, 不表达组合语义:
@@ -57,6 +57,8 @@ OpenAPI 列出参数, 不表达组合语义:
 ## 中间件顺序
 
 `create_app` 先 `include_router` 再 `mount_spa` (SPA catch-all 会截获 `/api`), 最后注册 `LoggingMiddleware`. `add_middleware` 后注册者在栈外层 (`insert(0)`), 故 LoggingMiddleware 包住 TokenAuth / CORS / SPA fallback, 401 / 403 直返与内层中间件自身异常也进入请求日志. **新增自定义中间件时 LoggingMiddleware 必须仍为最外层.**
+
+**免鉴权只有两条**, 都在 `middleware.py::_TOKEN_EXEMPT` 里显式登记: `/api/health` 与接入引导 `/api/agent-guide`. 其余 `/api/*` 一律要 token; 非 `/api` 路径 (SPA 静态资源) 不校验. 接口文档挂在 `/api/docs`, schema 在 `/api/docs/openapi.json`, 因此同样受校验 —— 它们完整暴露接口结构, 不对匿名开放; 根级 `/docs` / `/redoc` / `/openapi.json` 已不注册.
 
 `TokenAuthMiddleware` 与 `LoggingMiddleware` 都是 `BaseHTTPMiddleware`: 它交给下游的是包装过的 `receive`, 必须真正挂起等待才会收到 `http.disconnect`, 因此 `Request.is_disconnected()` (立刻取消式探测) 在本栈内恒为 `False`; 需要感知客户端离开的长响应改用 `DisconnectSignal` (见 [plugins.md](plugins.md)).
 

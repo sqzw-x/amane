@@ -16,7 +16,7 @@
 
 API 鉴权是冷配置: 中间件在请求路径上, 不能在进程内 rebuild 中替换.
 
-- **未设置 (auto, 默认)**: 启动时生成随机 token 并持久化到 `data_dir/token` (0600, 重启复用). 除 `GET /api/health` 外 `/api/*` 需 `Authorization: Bearer` 或中间件下发的 HttpOnly SameSite=Lax cookie; `/public/*` (仅接入引导) 不在 `/api` 下, 因此不受校验; 浏览器侧全部经由 cookie, token 不落 localStorage, 不出现在 URL 与访问日志. 启动日志打印 token, 容器从 `docker logs` 取.
+- **未设置 (auto, 默认)**: 启动时生成随机 token 并持久化到 `data_dir/token` (0600, 重启复用). 除 `middleware.py::_TOKEN_EXEMPT` 登记的两条 (`/api/health` 与接入引导 `/api/agent-guide`) 外, `/api/*` 需 `Authorization: Bearer` 或中间件下发的 HttpOnly SameSite=Lax cookie; 浏览器侧全部经由 cookie, token 不落 localStorage, 不出现在 URL 与访问日志. 启动日志打印 token, 容器从 `docker logs` 取.
 - **`AMANE_TOKEN=off`**: 显式关闭, 仅当反代已实现等价鉴权时使用.
 - **`AMANE_TOKEN=<value>`**: 显式 token.
 

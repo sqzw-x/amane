@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from .actors import router as actors_router
 from .agent import router as agent_router
 from .agent_agui import router as agent_agui_router
-from .bootstrap import public_router
+from .bootstrap import router as bootstrap_router
 from .cleanup import router as cleanup_router
 from .comments import router as comments_router
 from .config import router as config_router
@@ -30,6 +30,7 @@ API_PREFIX = "/api"
 
 router = APIRouter(prefix=API_PREFIX)
 router.include_router(health_router)
+router.include_router(bootstrap_router)
 router.include_router(config_router)
 router.include_router(cleanup_router)
 router.include_router(files_router)

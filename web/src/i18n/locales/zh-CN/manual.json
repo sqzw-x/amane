@@ -1,0 +1,19 @@
+{
+  "title": "用户手册",
+  "connect": {
+    "title": "配置外部 Agent",
+    "copyHint": "复制这段文本并发送给 Agent",
+    "instruction": "访问 {{address}} 并按其中步骤进行",
+    "copy": "复制",
+    "copied": "已复制",
+    "effect": "此指令将指导 Agent 安装 Amane CLI 与 skill.",
+    "token": {
+      "title": "关于 token",
+      "body": "如果 Amane 不在本机, 需按 Agent 说明手动通过 CLI 配置 token; 本机安装的桌面版会自动获取, 无需配置. token 保存在本机配置文件里, 不会出现在对话中. 不要把 token 粘贴给 Agent."
+    },
+    "permission": {
+      "title": "Agent 权限",
+      "body": "Agent 可执行内置智能体的所有操作且无需审批. skill 中已明确要求其在执行修改操作前征求你的同意, 但这仅是文本约束. 因此务必使用指令遵循较好的模型, 以避免模型误操作导致数据丢失."
+    }
+  }
+}

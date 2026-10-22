@@ -42,10 +42,9 @@ if (shellEnvironment() !== null) {
   document.documentElement.dataset.amaneShell = "";
 }
 
-client.setConfig({
-  baseUrl: import.meta.env.VITE_API_URL || "",
-  fetch: apiFetch,
-});
+// 基址恒为当前 origin: 开发时由 Vite 代理 /api 与 /public 转发到后端, 生产由后端托管 SPA.
+// 不引入运行期 API 地址: 跨源会让 cookie 鉴权与 WS 握手失效 (见 docs/dev/android.md).
+client.setConfig({ baseUrl: "", fetch: apiFetch });
 initConnection(queryClient);
 
 // 路由组件按路由拆分, 悬停/聚焦时预取对应 chunk, 点击后无需等待下载.
@@ -91,7 +90,7 @@ function Root() {
   // 挂载探活: cookie 有效则直接进入应用, 无 cookie 则等登录门引导.
   useEffect(() => {
     let alive = true;
-    void apiFetch(`${import.meta.env.VITE_API_URL || ""}/api/system/desktop`)
+    void apiFetch("/api/system/desktop")
       .then((resp) => {
         if (alive) setAuthed(resp.ok);
       })

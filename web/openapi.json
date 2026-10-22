@@ -5,27 +5,6 @@
     "version": "0.22.1"
   },
   "paths": {
-    "/public/agent": {
-      "get": {
-        "tags": [
-          "agent-guide"
-        ],
-        "summary": "Get Agent Guide",
-        "operationId": "get_agent_guide",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/health": {
       "get": {
         "tags": [
@@ -40,6 +19,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-guide": {
+      "get": {
+        "tags": [
+          "agent-guide"
+        ],
+        "summary": "Get Agent Guide",
+        "operationId": "get_agent_guide",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -5438,7 +5438,7 @@
           "tools"
         ],
         "summary": "Get Tool Catalog",
-        "description": "工具目录兼说明书: 客户端据此生成调用, 不必内置工具清单.",
+        "description": "工具索引: 客户端据此选工具, 不必内置工具清单.",
         "operationId": "get_tool_catalog",
         "responses": {
           "200": {
@@ -5455,6 +5455,47 @@
       }
     },
     "/api/tools/{name}": {
+      "get": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Get Tool Detail",
+        "description": "单个工具的完整入参.",
+        "operationId": "get_tool_detail",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "tools"
@@ -5500,6 +5541,32 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/db-schema": {
+      "get": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Get Db Schema",
+        "description": "库结构摘要, 供编写只读 SQL 时参考.",
+        "operationId": "get_db_schema",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Get Db Schema"
                 }
               }
             }
@@ -15503,16 +15570,12 @@
             "type": "string",
             "title": "Version"
           },
-          "schema_doc": {
-            "type": "string",
-            "title": "Schema Doc"
-          },
           "paths": {
             "$ref": "#/components/schemas/RuntimePaths"
           },
           "tools": {
             "items": {
-              "$ref": "#/components/schemas/ToolInfo"
+              "$ref": "#/components/schemas/ToolSummary"
             },
             "type": "array",
             "title": "Tools"
@@ -15521,13 +15584,12 @@
         "type": "object",
         "required": [
           "version",
-          "schema_doc",
           "paths",
           "tools"
         ],
         "title": "ToolCatalog"
       },
-      "ToolInfo": {
+      "ToolDetail": {
         "properties": {
           "name": {
             "type": "string",
@@ -15545,11 +15607,6 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Params"
-          },
-          "returns": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Returns"
           }
         },
         "type": "object",
@@ -15557,10 +15614,10 @@
           "name",
           "group",
           "description",
-          "params",
-          "returns"
+          "params"
         ],
-        "title": "ToolInfo"
+        "title": "ToolDetail",
+        "description": "单个工具的完整入参. 返回结构不对外: 调用方从响应体直接看."
       },
       "ToolResultRow": {
         "properties": {
@@ -15601,6 +15658,35 @@
         ],
         "title": "ToolResultRow",
         "description": "工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名)."
+      },
+      "ToolSummary": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "signature": {
+            "type": "string",
+            "title": "Signature"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "group",
+          "summary",
+          "signature"
+        ],
+        "title": "ToolSummary",
+        "description": "目录索引里的一条: 够选工具, 不够直接构造复杂入参."
       },
       "TrashSummaryResponse": {
         "properties": {

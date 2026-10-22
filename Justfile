@@ -124,6 +124,8 @@ _dev-servers: _dev-uvicorn _dev-web
 _dev-uvicorn:
     uv run uvicorn amane.api.app:create_app --factory --reload --host {{ host }} --port {{ port }}
 
+# 代理目标由 vite.config.ts 从 AMANE_PORT 读出, 因此端口可任意改; 前端代码不读 API 地址.
+[env('AMANE_PORT', port)]
 [working-directory('web')]
 _dev-web:
     pnpm dev
@@ -185,3 +187,13 @@ strip-commas *args:
 # Replay a scrape task from a task record (dir or zip)
 repro path *args:
     uv run python -m amane.observability {{ path }} {{ args }}
+
+# CLI (Go): 当前平台的格式 / vet / 单测
+[working-directory('cli')]
+cli-check:
+    make check
+
+# CLI (Go): 交叉编译全平台并生成 SHA256SUMS, 版本取自 pyproject
+[working-directory('cli')]
+cli-dist:
+    make dist VERSION=$(uv version --short)

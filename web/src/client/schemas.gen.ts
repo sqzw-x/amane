@@ -9275,16 +9275,12 @@ export const ToolCatalogSchema = {
             type: 'string',
             title: 'Version'
         },
-        schema_doc: {
-            type: 'string',
-            title: 'Schema Doc'
-        },
         paths: {
             $ref: '#/components/schemas/RuntimePaths'
         },
         tools: {
             items: {
-                $ref: '#/components/schemas/ToolInfo'
+                $ref: '#/components/schemas/ToolSummary'
             },
             type: 'array',
             title: 'Tools'
@@ -9293,14 +9289,13 @@ export const ToolCatalogSchema = {
     type: 'object',
     required: [
         'version',
-        'schema_doc',
         'paths',
         'tools'
     ],
     title: 'ToolCatalog'
 } as const;
 
-export const ToolInfoSchema = {
+export const ToolDetailSchema = {
     properties: {
         name: {
             type: 'string',
@@ -9318,11 +9313,6 @@ export const ToolInfoSchema = {
             additionalProperties: true,
             type: 'object',
             title: 'Params'
-        },
-        returns: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Returns'
         }
     },
     type: 'object',
@@ -9330,10 +9320,10 @@ export const ToolInfoSchema = {
         'name',
         'group',
         'description',
-        'params',
-        'returns'
+        'params'
     ],
-    title: 'ToolInfo'
+    title: 'ToolDetail',
+    description: '单个工具的完整入参. 返回结构不对外: 调用方从响应体直接看.'
 } as const;
 
 export const ToolResultRowSchema = {
@@ -9375,6 +9365,36 @@ export const ToolResultRowSchema = {
     ],
     title: 'ToolResultRow',
     description: '工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名).'
+} as const;
+
+export const ToolSummarySchema = {
+    properties: {
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        group: {
+            type: 'string',
+            title: 'Group'
+        },
+        summary: {
+            type: 'string',
+            title: 'Summary'
+        },
+        signature: {
+            type: 'string',
+            title: 'Signature'
+        }
+    },
+    type: 'object',
+    required: [
+        'name',
+        'group',
+        'summary',
+        'signature'
+    ],
+    title: 'ToolSummary',
+    description: '目录索引里的一条: 够选工具, 不够直接构造复杂入参.'
 } as const;
 
 export const TrashSummaryResponseSchema = {

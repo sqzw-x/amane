@@ -11,6 +11,7 @@ from ..db.models import DEFAULT_SESSION_TITLE, AgentSession, AgentSessionStatus
 from .bridge import AgentRuntimeBridge
 from .cache import ResultCache
 from .executor import QueryExecutor
+from .external import ToolSpec, build_registry
 from .naming import generate_title
 from .rows import CancelledRow, no_approvals
 from .runtime import build_agent, build_model, parse_session_thinking
@@ -36,6 +37,8 @@ class AgentService:
     executor: QueryExecutor = field(init=False)
     agent: Agent[AgentDeps, str | DeferredToolRequests] | None = field(init=False, default=None)
     naming_model: Model | None = field(init=False, default=None)
+    tool_registry: dict[str, ToolSpec] = field(init=False)
+    """外部接入的工具目录. 与配置无关, 因此只在构造时建一次, 不随 ``rebuild`` 重建."""
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
     _stores: dict[int, SessionStore] = field(default_factory=dict)
     _turn_tasks: dict[int, asyncio.Task[None]] = field(default_factory=dict)
@@ -43,6 +46,7 @@ class AgentService:
     def __post_init__(self) -> None:
         self.sandbox = ReadonlySqlSandbox(self.db_path)
         self.executor = QueryExecutor(self.sandbox, self.cache)
+        self.tool_registry = build_registry()
         self.rebuild(self.config)
 
     def rebuild(self, config: AgentConfig) -> None:

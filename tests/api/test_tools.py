@@ -63,12 +63,50 @@ async def test_catalog_lists_every_tool(client: AsyncClient) -> None:
     assert {"sql_explore", "sql_deliver", "inspect_result"} <= set(names)
     assert {"update_metadata", "delete_metadata", "submit_task", "create_library"} <= set(names)
 
+    by_name = {tool["name"]: tool for tool in body["tools"]}
     for tool in body["tools"]:
         assert tool["group"], f"{tool['name']} 缺少工具组"
-        assert tool["params"].get("type") == "object", f"{tool['name']} 参数不是对象 Schema"
-        assert tool["description"], f"{tool['name']} 缺少描述"
+        assert tool["summary"], f"{tool['name']} 缺少一行描述"
 
-    assert body["schema_doc"].startswith("Read-only SQLite schema")
+    # 无参工具的签名为空, 是「不需要入参」的表达, 不是缺字段.
+    assert by_name["delete_metadata"]["signature"] == "metadata_id: int"
+    assert by_name["list_feeds"]["signature"] == ""
+
+    assert "schema_doc" not in body, "库结构体积大且只在写 SQL 时需要, 单独取"
+    assert "returns" not in body["tools"][0], "返回结构不对外"
+
+
+@pytest.mark.asyncio
+async def test_catalog_omits_params(client: AsyncClient) -> None:
+    """索引只给签名: 完整 Schema 一个工具约 160 tokens, 索引里一个约 30."""
+    body = (await client.get("tools")).json()
+    assert all("params" not in tool for tool in body["tools"])
+
+
+@pytest.mark.asyncio
+async def test_tool_detail_gives_full_params(client: AsyncClient) -> None:
+    resp = await client.get("tools/update_metadata")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "update_metadata"
+    assert body["params"]["type"] == "object"
+    assert "metadata_id" in body["params"]["properties"]
+    assert body["description"]
+    assert "returns" not in body
+
+
+@pytest.mark.asyncio
+async def test_tool_detail_unknown_is_404(client: AsyncClient) -> None:
+    resp = await client.get("tools/no_such_tool")
+    assert resp.status_code == 404
+    assert "no_such_tool" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_schema_doc_is_separate(client: AsyncClient) -> None:
+    resp = await client.get("db-schema")
+    assert resp.status_code == 200
+    assert resp.json()["schema_doc"].startswith("Read-only SQLite schema")
 
 
 @pytest.mark.asyncio
@@ -82,6 +120,19 @@ async def test_catalog_reports_runtime_paths(client: AsyncClient, app: FastAPI) 
     assert paths["db_path"] == str(cold.db_path.resolve())
     assert paths["log_dir"] == str(cold.log_dir.resolve())
     assert "AMANE_TOKEN" in paths["env"]
+
+
+@pytest.mark.asyncio
+async def test_registry_is_built_once(client: AsyncClient, app: FastAPI) -> None:
+    """工具目录由工具组装配而成, 单次约十几毫秒. 每次请求重建会让每个调用白付这笔开销."""
+    service = app.state.runtime.agent_service
+    assert service is not None
+    registry = service.tool_registry
+
+    await client.get("tools")
+    await client.post("tools/sql_explore", json={"args": {"sql": "SELECT 1"}})
+
+    assert service.tool_registry is registry, "派发与目录必须复用同一份注册表"
 
 
 @pytest.mark.asyncio
@@ -164,8 +215,8 @@ async def test_guide_is_public_and_constant(token_app: tuple[FastAPI, Path]) -> 
     """引导端点免鉴权, 且响应是常量: 两次请求逐字相同, 不含任何实例数据."""
     app, data_dir = token_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        first = await client.get("/public/agent")
-        second = await client.get("/public/agent")
+        first = await client.get("/api/agent-guide")
+        second = await client.get("/api/agent-guide")
 
     assert first.status_code == 200, "引导端点必须免鉴权"
     assert first.text == second.text
@@ -176,8 +227,42 @@ async def test_guide_is_public_and_constant(token_app: tuple[FastAPI, Path]) -> 
 
 @pytest.mark.asyncio
 async def test_tools_require_token(token_app: tuple[FastAPI, Path]) -> None:
-    """派发端点仍需 token: 只有引导端点公开."""
+    """派发端点仍需 token: 免鉴权只有 health 与引导两条, 均在豁免表里显式登记."""
     app, _ = token_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url=f"http://test{API_PREFIX}/") as client:
         assert (await client.get("tools")).status_code == 401
         assert (await client.post("tools/sql_explore", json={"args": {"sql": "SELECT 1"}})).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_api_docs_require_token(token_app: tuple[FastAPI, Path]) -> None:
+    """文档与 schema 暴露全部接口结构, 因此和普通 API 一样要 token."""
+    app, _ = token_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.get("/api/docs")).status_code == 401
+        assert (await client.get("/api/docs/openapi.json")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_api_docs_work_with_bearer(token_app: tuple[FastAPI, Path]) -> None:
+    """带上 token 后可正常打开: 能力保留, 只是不再对匿名开放."""
+    app, _ = token_app
+    auth = {"Authorization": f"Bearer {TOKEN}"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        page = await client.get("/api/docs", headers=auth)
+        schema = await client.get("/api/docs/openapi.json", headers=auth)
+
+    assert page.status_code == 200
+    assert "swagger" in page.text.lower()
+    assert schema.status_code == 200
+    assert schema.json()["info"]["title"] == "Amane API"
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+@pytest.mark.asyncio
+async def test_legacy_doc_paths_are_gone(token_app: tuple[FastAPI, Path], path: str) -> None:
+    """根级文档路径不再提供; 即便带 token 也是 404, 避免留着一条无人维护的公开入口."""
+    app, _ = token_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get(path, headers={"Authorization": f"Bearer {TOKEN}"})
+    assert resp.status_code == 404

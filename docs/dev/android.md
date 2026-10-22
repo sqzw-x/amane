@@ -14,7 +14,7 @@ Android 端是**远程客户端**: 服务端 (FastAPI + SQLite + 运行期加载
 - 鉴权是 HttpOnly cookie (`middleware.py::TokenAuthMiddleware`), 服务端 CORS 显式关闭了凭据 (`api/app.py` 的 `allow_credentials=False`), 跨源带凭据的请求不可能通过.
 - 子资源请求无法携带 `Authorization`: 图片代理 (`<img>`)、WebSocket 握手、SSE 与播放的 Range 请求都只能依赖 cookie, 换成自带资源的本地 origin 后这几条链路全部返回 401.
 
-由此推出: 前端不需要运行期 API 地址 (`VITE_API_URL` 仍是构建期变量), 也不需要为壳做条件分支.
+由此推出: 前端不读任何 API 地址, 一律用相对路径或 `window.location`; 开发时由 Vite 代理转发到后端 (见 [frontend.md](frontend.md)), 也不需要为壳做条件分支.
 
 ## 登录
 

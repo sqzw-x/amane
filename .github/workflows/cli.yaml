@@ -1,0 +1,63 @@
+name: CLI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # CLI 是独立的 Go module, 与 Python 侧不共享代码; 只有 cli/ 变动才需要检查它.
+  # 不能用工作流级的 `paths` 过滤: 那样整个工作流不触发, 被设为必需的门禁检查会一直停在 pending.
+  cli-changes:
+    name: CLI changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 三点 diff 需要与 base 的共同祖先, 浅克隆取不到.
+          fetch-depth: 0
+
+      - name: Check for CLI changes
+        id: filter
+        env:
+          # PR 用 base 分支的提交; push 用推送前的提交 (新建分支时为全零, 那时一律跑).
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet "$BASE_SHA...$GITHUB_SHA" -- \
+            cli \
+            Justfile \
+            .github/workflows/cli.yaml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  cli:
+    name: Go check
+    needs: cli-changes
+    if: needs.cli-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: cli/go.mod
+          # 没有第三方依赖 (无 go.sum), 缓存无事可做.
+          cache: false
+
+      - name: Setup just
+        uses: extractions/setup-just@v4
+
+      # gofmt 检查 + go vet + go test
+      - name: just cli-check
+        run: just cli-check

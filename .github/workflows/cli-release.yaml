@@ -1,0 +1,74 @@
+name: CLI release
+
+# 只在打 tag 时发布, 与检查 (cli.yaml) 分开: tag 推送不该把门禁检查再跑一遍.
+# 桌面 App 各自也有独立的发布工作流, 此处与之同构: 同样用 `if` 卡住非 tag 触发, 同样带正文.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已有的 tag (如 v0.22.1), 用于重跑一次发布"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Cross-compile and publish
+    # 手动触发时 github.ref 是分支, 而 action-gh-release 需要 tag, 因此从输入取.
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.tag != '' }}
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: cli/go.mod
+          # 没有第三方依赖 (无 go.sum), 缓存无事可做.
+          cache: false
+
+      - name: Setup just
+        uses: extractions/setup-just@v4
+
+      # tag 与 pyproject 不一致时产物里的版本号会说谎: 升级会看到「最新 > 自身」→ 下载 →
+      # 新文件仍是旧号 → 下次会话再下一遍.
+      - name: Tag matches project version
+        run: |
+          tag="${RELEASE_TAG#v}"
+          version="$(uv version --short)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag $RELEASE_TAG 与 pyproject 版本 $version 不一致"
+            exit 1
+          fi
+
+      # 每个 tag 都出产物, 不按「Go 代码有没有变」跳过:
+      # 接入引导与 README 直链 releases/latest/download/amane-*, 而 latest 只指最新那个
+      # Release — 一旦某次跳过上传, 该版本的下载链接就静默失效.
+      - name: just cli-dist
+        run: just cli-dist
+
+      - name: Release notes from CHANGELOG
+        run: uv run python scripts/changelog.py extract "$RELEASE_TAG" > release-notes.md
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          body_path: release-notes.md
+          files: |
+            cli/dist/amane-*
+            cli/dist/SHA256SUMS
+          fail_on_unmatched_files: true

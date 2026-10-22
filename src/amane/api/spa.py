@@ -35,8 +35,10 @@ def _default_dist() -> Path:
     return _project_root() / "web" / "dist"
 
 
-# 不应被 SPA 拦截的路径前缀
-_RESERVED_PREFIXES = ("/api/", "/public/", "/docs", "/redoc", "/openapi.json", "/assets")
+# 不应被 SPA 拦截的路径前缀.
+# `/docs` / `/redoc` / `/openapi.json` 已不再注册 (文档与 schema 移到 `/api/docs` 下以便鉴权),
+# 仍列在此处是为了让它们走到路由层拿 404, 而不是被回退成 index.html 而看着像存在.
+_RESERVED_PREFIXES = ("/api/", "/docs", "/redoc", "/openapi.json", "/assets")
 
 # 入口文档与 dist 里未改名的文件必须每次校验: 文件名不带 hash, 直接用缓存会让壳停在旧的那份.
 # 加 `public` 是与 `support/http_cache.py` 的写法一致 (文档不含用户数据, 共享缓存也可以存).

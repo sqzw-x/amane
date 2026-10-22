@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger("amane.request")
 
-#: token 校验豁免的 API 路径 (就绪检查, 探活/healthcheck 需要)
-_TOKEN_EXEMPT = {"/api/health"}
+#: token 校验豁免的 API 路径: 就绪检查与接入引导. 免鉴权在此显式登记, 便于集中审查.
+_TOKEN_EXEMPT = {"/api/health", "/api/agent-guide"}
 
 #: 高频轮询/静态资源降噪: 不写入 info 级, 仅在 DEBUG 可见
 #: (/api/ws 长连接受 EventBus 事件驱动; /api/system/desktop 是菜单栏 bar 每 3s 轮询, 见 desktop.md)

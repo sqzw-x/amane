@@ -4787,21 +4787,19 @@ export type ToolCatalog = {
      * Version
      */
     version: string;
-    /**
-     * Schema Doc
-     */
-    schema_doc: string;
     paths: RuntimePaths;
     /**
      * Tools
      */
-    tools: Array<ToolInfo>;
+    tools: Array<ToolSummary>;
 };
 
 /**
- * ToolInfo
+ * ToolDetail
+ *
+ * 单个工具的完整入参. 返回结构不对外: 调用方从响应体直接看.
  */
-export type ToolInfo = {
+export type ToolDetail = {
     /**
      * Name
      */
@@ -4818,12 +4816,6 @@ export type ToolInfo = {
      * Params
      */
     params: {
-        [key: string]: unknown;
-    };
-    /**
-     * Returns
-     */
-    returns: {
         [key: string]: unknown;
     };
 };
@@ -4851,6 +4843,30 @@ export type ToolResultRow = {
      */
     tool_call_id: string;
     result: JsonValue;
+};
+
+/**
+ * ToolSummary
+ *
+ * 目录索引里的一条: 够选工具, 不够直接构造复杂入参.
+ */
+export type ToolSummary = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Group
+     */
+    group: string;
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Signature
+     */
+    signature: string;
 };
 
 /**
@@ -5185,22 +5201,6 @@ export type WorkerConfig = {
     shutdown_timeout?: number;
 };
 
-export type GetAgentGuideData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/public/agent';
-};
-
-export type GetAgentGuideResponses = {
-    /**
-     * Successful Response
-     */
-    200: string;
-};
-
-export type GetAgentGuideResponse = GetAgentGuideResponses[keyof GetAgentGuideResponses];
-
 export type HealthCheckData = {
     body?: never;
     path?: never;
@@ -5216,6 +5216,22 @@ export type HealthCheckResponses = {
 };
 
 export type HealthCheckResponse = HealthCheckResponses[keyof HealthCheckResponses];
+
+export type GetAgentGuideData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent-guide';
+};
+
+export type GetAgentGuideResponses = {
+    /**
+     * Successful Response
+     */
+    200: string;
+};
+
+export type GetAgentGuideResponse = GetAgentGuideResponses[keyof GetAgentGuideResponses];
 
 export type GetConfigData = {
     body?: never;
@@ -8288,6 +8304,36 @@ export type GetToolCatalogResponses = {
 
 export type GetToolCatalogResponse = GetToolCatalogResponses[keyof GetToolCatalogResponses];
 
+export type GetToolDetailData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/tools/{name}';
+};
+
+export type GetToolDetailErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetToolDetailError = GetToolDetailErrors[keyof GetToolDetailErrors];
+
+export type GetToolDetailResponses = {
+    /**
+     * Successful Response
+     */
+    200: ToolDetail;
+};
+
+export type GetToolDetailResponse = GetToolDetailResponses[keyof GetToolDetailResponses];
+
 export type CallToolData = {
     body: ToolCallRequest;
     path: {
@@ -8317,6 +8363,26 @@ export type CallToolResponses = {
      */
     200: unknown;
 };
+
+export type GetDbSchemaData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/db-schema';
+};
+
+export type GetDbSchemaResponses = {
+    /**
+     * Response Get Db Schema
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: string;
+    };
+};
+
+export type GetDbSchemaResponse = GetDbSchemaResponses[keyof GetDbSchemaResponses];
 
 export type GetPathTemplateSchemaData = {
     body?: never;

@@ -24,6 +24,7 @@ from .feed_ops import build_feed_ops_capability
 from .library_ops import build_library_ops_capability
 from .metadata_ops import build_metadata_ops_capability
 from .schedule_ops import build_schedule_ops_capability
+from .signature import signature, summary
 from .task_ops import build_task_ops_capability
 from .tools import AgentDeps, build_explore_toolset
 
@@ -37,7 +38,11 @@ class ToolSpec:
     group: str
     description: str
     params: dict[str, Any]
-    returns: dict[str, Any]
+    """完整入参 Schema, 只在按名字取单个工具时给出."""
+    signature: str
+    """一行参数签名, 目录索引里用它代替完整 Schema."""
+    summary: str
+    """描述的首行, 目录索引里每个工具只占一行."""
     toolset: FunctionToolset[AgentDeps]
 
 
@@ -94,12 +99,15 @@ def build_registry() -> dict[str, ToolSpec]:
             if name in registry:
                 raise ValueError(f"工具名重复: {name}")
             schema = tool.function_schema
+            description = (tool.description or "").strip()
+            params = dict(schema.json_schema)
             registry[name] = ToolSpec(
                 name=name,
                 group=group,
-                description=(tool.description or "").strip(),
-                params=dict(schema.json_schema),
-                returns=dict(schema.return_schema),
+                description=description,
+                params=params,
+                signature=signature(params),
+                summary=summary(description),
                 toolset=toolset,
             )
     return registry

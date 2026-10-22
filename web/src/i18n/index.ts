@@ -11,6 +11,7 @@ import { initReactI18next } from "react-i18next";
 // English namespaces
 import enAgent from "./locales/en/agent.json";
 import enCommon from "./locales/en/common.json";
+import enManual from "./locales/en/manual.json";
 import enNetworkCheck from "./locales/en/networkCheck.json";
 import enFeeds from "./locales/en/feeds.json";
 import enFileBrowser from "./locales/en/fileBrowser.json";
@@ -25,6 +26,7 @@ import enTasks from "./locales/en/tasks.json";
 // Chinese (Simplified) namespaces - source language
 import zhCNAgent from "./locales/zh-CN/agent.json";
 import zhCNCommon from "./locales/zh-CN/common.json";
+import zhCNManual from "./locales/zh-CN/manual.json";
 import zhCNNetworkCheck from "./locales/zh-CN/networkCheck.json";
 import zhCNFeeds from "./locales/zh-CN/feeds.json";
 import zhCNFileBrowser from "./locales/zh-CN/fileBrowser.json";
@@ -43,6 +45,7 @@ export const supportedLanguages = ["zh-CN", "en"] as const;
 export const resources = {
   "zh-CN": {
     common: zhCNCommon,
+    manual: zhCNManual,
     networkCheck: zhCNNetworkCheck,
     feeds: zhCNFeeds,
     fileBrowser: zhCNFileBrowser,
@@ -58,6 +61,7 @@ export const resources = {
   },
   en: {
     common: enCommon,
+    manual: enManual,
     networkCheck: enNetworkCheck,
     feeds: enFeeds,
     fileBrowser: enFileBrowser,

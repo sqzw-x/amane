@@ -16,6 +16,7 @@ import { Route as ClientRouteImport } from './routes/client'
 import { Route as FeedsRouteImport } from './routes/feeds'
 import { Route as LibrariesRouteImport } from './routes/libraries'
 import { Route as LogsRouteImport } from './routes/logs'
+import { Route as ManualRouteImport } from './routes/manual'
 import { Route as MetaRouteImport } from './routes/meta'
 import { Route as NetworkRouteImport } from './routes/network'
 import { Route as PluginsRouteImport } from './routes/plugins'
@@ -70,6 +71,11 @@ const LibrariesRoute = LibrariesRouteImport.update({
 const LogsRoute = LogsRouteImport.update({
   id: '/logs',
   path: '/logs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManualRoute = ManualRouteImport.update({
+  id: '/manual',
+  path: '/manual',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MetaRoute = MetaRouteImport.update({
@@ -181,6 +187,7 @@ export interface FileRoutesByFullPath {
   '/feeds': typeof FeedsRouteWithChildren
   '/libraries': typeof LibrariesRouteWithChildren
   '/logs': typeof LogsRoute
+  '/manual': typeof ManualRoute
   '/meta': typeof MetaRouteWithChildren
   '/network': typeof NetworkRoute
   '/plugins': typeof PluginsRoute
@@ -206,6 +213,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/client': typeof ClientRoute
   '/logs': typeof LogsRoute
+  '/manual': typeof ManualRoute
   '/network': typeof NetworkRoute
   '/plugins': typeof PluginsRoute
   '/schedules': typeof SchedulesRoute
@@ -234,6 +242,7 @@ export interface FileRoutesById {
   '/feeds': typeof FeedsRouteWithChildren
   '/libraries': typeof LibrariesRouteWithChildren
   '/logs': typeof LogsRoute
+  '/manual': typeof ManualRoute
   '/meta': typeof MetaRouteWithChildren
   '/network': typeof NetworkRoute
   '/plugins': typeof PluginsRoute
@@ -265,6 +274,7 @@ export interface FileRouteTypes {
     | '/feeds'
     | '/libraries'
     | '/logs'
+    | '/manual'
     | '/meta'
     | '/network'
     | '/plugins'
@@ -290,6 +300,7 @@ export interface FileRouteTypes {
     | '/'
     | '/client'
     | '/logs'
+    | '/manual'
     | '/network'
     | '/plugins'
     | '/schedules'
@@ -317,6 +328,7 @@ export interface FileRouteTypes {
     | '/feeds'
     | '/libraries'
     | '/logs'
+    | '/manual'
     | '/meta'
     | '/network'
     | '/plugins'
@@ -347,6 +359,7 @@ export interface RootRouteChildren {
   FeedsRoute: typeof FeedsRouteWithChildren
   LibrariesRoute: typeof LibrariesRouteWithChildren
   LogsRoute: typeof LogsRoute
+  ManualRoute: typeof ManualRoute
   MetaRoute: typeof MetaRouteWithChildren
   NetworkRoute: typeof NetworkRoute
   PluginsRoute: typeof PluginsRoute
@@ -405,6 +418,13 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/logs'
       preLoaderRoute: typeof LogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/manual': {
+      id: '/manual'
+      path: '/manual'
+      fullPath: '/manual'
+      preLoaderRoute: typeof ManualRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/meta': {
@@ -638,6 +658,7 @@ const rootRouteChildren: RootRouteChildren = {
   FeedsRoute: FeedsRouteWithChildren,
   LibrariesRoute: LibrariesRouteWithChildren,
   LogsRoute: LogsRoute,
+  ManualRoute: ManualRoute,
   MetaRoute: MetaRouteWithChildren,
   NetworkRoute: NetworkRoute,
   PluginsRoute: PluginsRoute,

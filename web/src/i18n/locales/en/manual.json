@@ -1,0 +1,19 @@
+{
+  "title": "User manual",
+  "connect": {
+    "title": "Configure an external agent",
+    "copyHint": "Copy this text and send it to the agent",
+    "instruction": "Visit {{address}} and follow the steps there",
+    "copy": "Copy",
+    "copied": "Copied",
+    "effect": "This instruction tells the agent to install the Amane CLI and its skill.",
+    "token": {
+      "title": "About the token",
+      "body": "If Amane is not on this machine, the agent will walk you through setting up the token via the CLI. The desktop app on this machine picks it up automatically, so nothing to configure. The token is stored in the local config file and never appears in the conversation. Do not paste the token to the agent."
+    },
+    "permission": {
+      "title": "Agent permissions",
+      "body": "The agent can perform every operation the built-in assistant can, and does so without approval. The skill instructs it to ask for your consent before any modifying operation, but that is a text-level constraint only. Use a model that follows instructions well; a careless one can lose data."
+    }
+  }
+}

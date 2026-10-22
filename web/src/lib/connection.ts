@@ -54,12 +54,7 @@ function parseWSEvent(raw: unknown): WSEvent | null {
 function getWsUrl(): string {
   // 浏览器 WebSocket 无法自定义 header; 握手即同源 HTTP GET, 自动携带
   // amane_token cookie (首次 Bearer 认证后由服务端下发) — token 不写入 URL.
-  const apiUrl = import.meta.env.VITE_API_URL;
-  if (apiUrl) {
-    const url = new URL(apiUrl);
-    const wsProtocol = url.protocol === "https:" ? "wss:" : "ws:";
-    return `${wsProtocol}//${url.host}/api/ws`;
-  }
+  // 因此必须同源: 开发时由 Vite 代理的 `ws: true` 转发到后端.
   const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${wsProtocol}//${window.location.host}/api/ws`;
 }
