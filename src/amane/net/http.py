@@ -7,6 +7,7 @@ import asyncio
 import random
 import time
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urljoin
 
 import aiofiles
 import httpx2 as httpx
@@ -15,6 +16,7 @@ from aiolimiter import AsyncLimiter
 from curl_cffi import CurlError
 from curl_cffi.requests import AsyncSession, BrowserTypeLiteral, Response
 
+from .egress import EgressPolicy, ensure_http_scheme
 from .errors import FailureKind, RequestError, RequestFailure
 from .recording import get_bound_http_recorder, skip_body_recording
 
@@ -40,6 +42,14 @@ _IMPERSONATE_OPTIONS: tuple[BrowserTypeLiteral, ...] = (
 """进程内可用的指纹; 轮换按此顺序取下一个."""
 
 _RETRYABLE_STATUS_CODES = frozenset({408, 429, 503, 504})
+
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+_BODY_REWRITTEN_REDIRECTS = frozenset({301, 302, 303})
+"""这几类重定向把方法改成 GET; 307/308 保留原方法 (与 curl 的跟随语义一致)."""
+
+_MAX_CHUNKS = 4096
+"""分片下载的区间数上限. 上游自称的 ``Content-Length`` 直接决定区间数, 不设上限即内存与任务数无界."""
 
 _IMPERSONATE_REJECTED_STATUSES = frozenset({403, 406})
 """判定「站点拦下此指纹」的状态码: 站点按 TLS 指纹放行时给出的典型响应;
@@ -260,6 +270,8 @@ class WebClient:
         allow_redirects: bool = True,
         ok_statuses: frozenset[int] | None = None,
         max_attempts: int | None = None,
+        egress: EgressPolicy | None = None,
+        stream: bool = False,
     ) -> Response:
         """``ok_statuses`` 额外视为成功 (例如 RSS 304), 不重试、不当失败. 重试用尽后抛 ``RequestError``.
 
@@ -270,10 +282,77 @@ class WebClient:
         ``use_proxy=False`` 强制直连 (本机 solver 服务用), 否则按 host 应用站点级代理, 未配置时用全局
         ``network.proxy``. 代理地址由 ``_proxy_for`` 决定, 同一 host 的连续请求走同一代理.
 
+        ``egress`` 给定时重定向不由 curl 跟随, 而是每一跳先过 ``EgressPolicy.ensure_allowed`` 再发;
+        URL 来自第三方数据时使用 (见 ``docs/dev/api.md``). ``stream=True`` 返回未读完的应答, 调用方
+        负责 ``aclose``.
+
         403/406 另按「站点拦下此指纹」处理: 换下一个未试过的指纹重发, 换过的指纹对该 host 保持.
         轮换不占重试次数, 单次请求最多换 ``_MAX_IMPERSONATE_ROTATIONS`` 次; 该 host 的指纹全部被拒后
         不再轮换, 按原状态失败.
         """
+        ensure_http_scheme(url)
+        if egress is None:
+            return await self._send(
+                method,
+                url,
+                headers=headers,
+                cookies=cookies,
+                data=data,
+                json=json,
+                use_proxy=use_proxy,
+                timeout=timeout,
+                allow_redirects=allow_redirects,
+                ok_statuses=ok_statuses,
+                max_attempts=max_attempts,
+                stream=stream,
+            )
+
+        current_method: HttpMethod = method
+        current_url = url
+        for _ in range(egress.max_redirects + 1):
+            # 逐跳复查: curl 自带的跟随只看首跳, 一个公网 URL 可以 302 到内网.
+            await egress.ensure_allowed(current_url)
+            resp = await self._send(
+                current_method,
+                current_url,
+                headers=headers,
+                cookies=cookies,
+                data=data,
+                json=json,
+                use_proxy=use_proxy,
+                timeout=timeout,
+                allow_redirects=False,
+                ok_statuses=ok_statuses,
+                max_attempts=max_attempts,
+                stream=stream,
+            )
+            location = resp.headers.get("Location") if resp.status_code in _REDIRECT_STATUSES else None
+            if not location:
+                return resp
+            await resp.aclose()
+            current_url = urljoin(current_url, location)
+            if resp.status_code in _BODY_REWRITTEN_REDIRECTS:
+                current_method = "GET"
+
+        raise RequestError(url, RequestFailure(kind=FailureKind.CURL, message=f"重定向超过 {egress.max_redirects} 跳"))
+
+    async def _send(
+        self,
+        method: HttpMethod,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
+        data: Any | None = None,
+        json: Any | None = None,
+        use_proxy: bool = True,
+        timeout: float | None = None,
+        allow_redirects: bool = True,
+        ok_statuses: frozenset[int] | None = None,
+        max_attempts: int | None = None,
+        stream: bool = False,
+    ) -> Response:
+        """单次请求的尝试循环; 重定向策略由 ``request`` 决定."""
         host = httpx.URL(url).host
         headers = _with_same_origin_referer(host, headers, self._same_origin_referer_hosts)
         await self._limiters.get(host).acquire()
@@ -304,12 +383,13 @@ class WebClient:
                     timeout=timeout or self._timeout,
                     allow_redirects=allow_redirects,
                     impersonate=impersonate,
+                    stream=stream,
                 )
                 extra_ok = ok_statuses or frozenset()
                 if (
                     resp.status_code < 300
                     or resp.status_code in extra_ok
-                    or (resp.status_code in (301, 302, 307, 308) and resp.headers.get("Location"))
+                    or (resp.status_code in _REDIRECT_STATUSES and resp.headers.get("Location"))
                 ):
                     self._record_exchange(method, url, resp=resp, error=None, t0=t0)
                     return resp
@@ -347,6 +427,7 @@ class WebClient:
                     )
                     # 轮换重发是同一 host 的额外请求, 与首次请求一样先取限速许可: 严格平滑桶不允许突发.
                     await self._limiters.get(host).acquire()
+                    await self._close(resp)
                     continue
 
             if not should_retry or retries >= attempts - 1:
@@ -362,8 +443,10 @@ class WebClient:
                 error=failure.message if failure else None,
                 retry_in=wait,
             )
+            await self._close(resp)
             await asyncio.sleep(wait)
 
+        await self._close(resp)
         log_failed = logger.debug if get_bound_http_recorder() is not None else logger.error
         log_failed(
             "request failed",
@@ -410,6 +493,12 @@ class WebClient:
             attempts=attempts,
         )
 
+    @staticmethod
+    async def _close(resp: Response | None) -> None:
+        """丢弃的应答交还 curl 收尾. 非流式应答上关闭是空操作, 流式连不关会留下未完成的句柄."""
+        if resp is not None:
+            await resp.aclose()
+
     async def get_text(
         self,
         url: str,
@@ -449,9 +538,10 @@ class WebClient:
         headers: dict[str, str] | None = None,
         cookies: dict[str, str] | None = None,
         use_proxy: bool = True,
+        egress: EgressPolicy | None = None,
     ) -> bytes:
         with skip_body_recording():
-            resp = await self.request("GET", url, headers=headers, cookies=cookies, use_proxy=use_proxy)
+            resp = await self.request("GET", url, headers=headers, cookies=cookies, use_proxy=use_proxy, egress=egress)
         return resp.content
 
     async def post_text(
@@ -494,10 +584,10 @@ class WebClient:
                 url, RequestFailure(kind=FailureKind.UNEXPECTED, message=f"JSON parse error: {e}")
             ) from e
 
-    async def _probe(self, url: str, *, use_proxy: bool) -> tuple[int | None, str]:
+    async def _probe(self, url: str, *, use_proxy: bool, egress: EgressPolicy | None = None) -> tuple[int | None, str]:
         """HEAD 探测 Content-Length 与重定向终址; 探测失败时终址回退为 ``url``."""
         try:
-            resp = await self.request("HEAD", url, use_proxy=use_proxy)
+            resp = await self.request("HEAD", url, use_proxy=use_proxy, egress=egress)
         except RequestError:
             return None, url
         final_url = str(resp.url) if resp.url else url
@@ -513,23 +603,38 @@ class WebClient:
         size, _ = await self._probe(url, use_proxy=use_proxy)
         return size
 
-    async def resolve_final_url(self, url: str, *, use_proxy: bool = True) -> str:
+    async def resolve_final_url(self, url: str, *, use_proxy: bool = True, egress: EgressPolicy | None = None) -> str:
         """跟随重定向后的终址; 探测失败时返回 ``url``.
 
-        调用方据此判定上游是否改派了别的资源 (如占位图).
+        调用方据此判定上游是否改派了别的资源 (如占位图). ``egress`` 给定时每一跳都复查.
         """
-        _, final_url = await self._probe(url, use_proxy=use_proxy)
+        _, final_url = await self._probe(url, use_proxy=use_proxy, egress=egress)
         return final_url
 
-    async def download(self, url: str, dest: Path, *, use_proxy: bool = True) -> bool:
-        """下载. 分块阈值、分片大小与并发数取自 ``network`` 配置. 失败返回 False, 并按状态与原因记日志."""
-        file_size, _ = await self._probe(url, use_proxy=use_proxy)
+    async def download(
+        self,
+        url: str,
+        dest: Path,
+        *,
+        use_proxy: bool = True,
+        egress: EgressPolicy | None = None,
+        max_bytes: int | None = None,
+    ) -> bool:
+        """下载. 分块阈值、分片大小与并发数取自 ``network`` 配置. 失败返回 False, 并按状态与原因记日志.
+
+        ``max_bytes`` 给定时不信任 ``Content-Length``, 走流式写入并在超过上限时中止: 上游谎报长度
+        或直接不给长度时, 整份读入内存会耗尽进程内存.
+        """
+        if max_bytes is not None:
+            return await self._download_bounded(url, dest, use_proxy=use_proxy, egress=egress, max_bytes=max_bytes)
+
+        file_size, _ = await self._probe(url, use_proxy=use_proxy, egress=egress)
 
         if file_size and file_size > self._chunked_threshold:
-            return await self._download_chunked(url, dest, file_size, use_proxy=use_proxy)
+            return await self._download_chunked(url, dest, file_size, use_proxy=use_proxy, egress=egress)
 
         try:
-            content = await self.get_bytes(url, use_proxy=use_proxy)
+            content = await self.get_bytes(url, use_proxy=use_proxy, egress=egress)
         except RequestError as e:
             logger.error(
                 "download failed",
@@ -549,9 +654,59 @@ class WebClient:
             logger.error("file write failed", path=str(dest), error=str(e))
             return False
 
-    async def _download_chunked(self, url: str, dest: Path, file_size: int, *, use_proxy: bool = True) -> bool:
+    async def _download_bounded(
+        self,
+        url: str,
+        dest: Path,
+        *,
+        use_proxy: bool,
+        egress: EgressPolicy | None,
+        max_bytes: int,
+    ) -> bool:
+        """限长下载: 边接收边写入, 超限即中止, 不把正文攒在内存里."""
+        try:
+            resp = await self.request("GET", url, use_proxy=use_proxy, egress=egress, stream=True)
+        except RequestError as e:
+            logger.error(
+                "download failed",
+                url=url,
+                status=e.failure.status if e.failure else None,
+                reason=e.reason,
+                error=e.message,
+            )
+            return False
+
+        written = 0
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            async with aiofiles.open(dest, "wb") as f:
+                async for chunk in resp.aiter_content():
+                    written += len(chunk)
+                    if written > max_bytes:
+                        logger.error("download exceeds size cap", url=url, bytes=written, cap=max_bytes)
+                        return False
+                    await f.write(chunk)
+            return True
+        except Exception as e:
+            logger.error("file write failed", path=str(dest), error=str(e))
+            return False
+        finally:
+            await resp.aclose()
+
+    async def _download_chunked(
+        self,
+        url: str,
+        dest: Path,
+        file_size: int,
+        *,
+        use_proxy: bool = True,
+        egress: EgressPolicy | None = None,
+    ) -> bool:
         chunk_size = self._chunk_size
         parts = [(s, min(s + chunk_size - 1, file_size - 1)) for s in range(0, file_size, chunk_size)]
+        if len(parts) > _MAX_CHUNKS:
+            logger.error("download split into too many chunks", url=url, chunks=len(parts), size=file_size)
+            return False
 
         logger.info("chunked download started", url=url, chunks=len(parts), size=file_size)
 
@@ -569,7 +724,11 @@ class WebClient:
             async with semaphore:
                 try:
                     resp = await self.request(
-                        "GET", url, headers={"Range": f"bytes={start}-{end}"}, use_proxy=use_proxy
+                        "GET",
+                        url,
+                        headers={"Range": f"bytes={start}-{end}"},
+                        use_proxy=use_proxy,
+                        egress=egress,
                     )
                 except RequestError as e:
                     return e.failure or RequestFailure(kind=FailureKind.UNEXPECTED, message=e.message)
