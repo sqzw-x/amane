@@ -102,7 +102,7 @@ func renderMain(cat *api.Catalog, version, cliVersion string) string {
 	b.WriteString("2. 参数不确定时运行 `amane catalog <tool>` 取该工具的完整入参, 不要为其他工具一起取. 嵌套入参写入文件, 再用 `amane call <tool> @args.json` 传入, 避免在 shell 里嵌套引号.\n")
 	b.WriteString("3. 写只读 SQL 前先运行 `amane schema` 取库结构.\n")
 	b.WriteString("4. 入队类工具返回 `task_id`, 用 `amane wait <task_id>` 阻塞到终态, 不要自己写查询循环; 长任务加 `--timeout` 兜底, 否则会一直等到出结果.\n")
-	b.WriteString("5. 退出码 0 表示请求已完成, 业务结果仍看响应体 (工具失败时是 `error` 字段); 非 0 表示这次调用失败, 不要当成完成: 2 用法错误, 3 连接或鉴权, 4 服务端拒绝 (参数不对、工具不存在).\n")
+	b.WriteString("5. 退出码 0 表示请求已完成, 业务结果仍看响应体 (工具失败时是 `error` 字段); 非 0 表示这次调用失败, 不要当成完成: 1 本机问题 (配置损坏、目录不可写), 2 用法错误, 3 连接或鉴权, 4 服务端拒绝 (参数不对、工具不存在).\n")
 	b.WriteString("6. 连接或鉴权失败时先运行 `amane doctor`, 按它的结论处理, 不要反复试探.\n")
 
 	b.WriteString("\n## 调用约定\n\n")
