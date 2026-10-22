@@ -10,10 +10,36 @@
     "logging": "Logging",
     "sr": "Super Resolution",
     "llm": "LLM Translation",
-    "watermark": "Watermark"
+    "watermark": "Watermark",
+    "field_replacements": "Field Replacements"
   },
   "config": {
     "loadError": "Failed to load configuration"
+  },
+  "fieldReplacements": {
+    "title": "Field Replacements",
+    "enabled": "Enable field replacements",
+    "enabledDescription": "Apply these rules when generating new integrated values; source data stays unchanged.",
+    "guideTitle": "Instructions",
+    "guideIntro": "Each field has its own section. Start a section with the field identifier in square brackets. Fields without a section are not changed.",
+    "guideFields": "Available fields:",
+    "ruleSyntax": "find=replace",
+    "guideRule": "Write one rule per line. Plain searches match literal text.",
+    "guideRegex": "Prefix the search with re: to parse it as a Python regular expression; otherwise it is matched as plain text.",
+    "guideDelete": "Leave the text after the equals sign empty to remove matches.",
+    "guideOrder": "Rules within each field run from top to bottom. Lines beginning with # are comments and are ignored.",
+    "rulesLabel": "Replacement rules",
+    "placeholder": "Enter field replacement rules",
+    "saveError": "Could not save. Check the rule syntax; server validation errors include the line number.",
+    "validation": {
+      "header": "Line {{line}}: field header must use the form [title].",
+      "unknownField": "Line {{line}}: unknown field. Check the available fields in the guide.",
+      "duplicateField": "Line {{line}}: field header is declared more than once.",
+      "missingHeader": "Line {{line}}: declare a field before its rules.",
+      "ruleFormat": "Line {{line}}: rule must use the form find=replace.",
+      "emptyFind": "Line {{line}}: the search text cannot be empty.",
+      "invalidRegex": "Line {{line}}: invalid regular expression."
+    }
   },
   "client": {
     "title": "Client settings",
@@ -30,6 +56,16 @@
     "exitApp": "Exit app"
   },
   "fields": {
+    "field_replacements": {
+      "enabled": {
+        "label": "Enable field replacements",
+        "description": "Apply rules when generating new integrated values"
+      },
+      "rules": {
+        "label": "Replacement rules",
+        "description": "One rule per line, grouped by field"
+      }
+    },
     "scraping": {
       "download_resources": {
         "label": "Download on scrape",

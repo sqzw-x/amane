@@ -118,7 +118,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ## 刮削期资源物化
 
-`ScrapeHandler` 在聚合后、`upsert_metadata` 前调用 `materialize_images` (`src/amane/media/pipeline.py`) — 二进制写入 Resource 目录的主路径, 与是否整理无关:
+`ScrapeHandler` 在聚合后按顺序翻译文本、替换配置字段, 再物化图片并写入 `Metadata`; 派生文本只进入整合字段, 不修改 `raw`. 来源对比提交也从 `raw` 重新选择字段后应用同一替换规则:
 
 - **`scraping.download_resources`** 控制本步下载哪些类型 (thumb / poster / extrafanart / trailer).
 - **URL 重排契约**: 被下载类型的 URL 列表按本次下载成功 (含缓存命中) 稳定分区 — 成功者保序前置, 失败者保序沉底. 死 URL 不再占据首位, 但保留在尾部, 来源恢复后下次物化可重新尝试. 未选中下载的类型无成败信息, 保持聚合优先级原序; extrafanart 为站点分组 dict, 不重排. `raw` 快照保持站点原始数据.

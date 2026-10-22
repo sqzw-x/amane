@@ -315,7 +315,7 @@ class AppRuntime:
         self.worker.set_paused(paused)
 
         if self.agent_service is not None:
-            self.agent_service.rebuild(hot.agent)
+            self.agent_service.rebuild(hot.agent, hot.field_replacements.active_rules)
 
         previous_playback = self.playback_factory
         # 新的 Factory 构造时丢弃解析结果缓存 (配置改动可能更换凭据); token 表与探测缓存仍在

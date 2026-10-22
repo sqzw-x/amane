@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from pydantic_ai import ApprovalRequired, RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
+from ..config.manager import FieldReplacementRule
 from ..db.models import SavedQueryEntity
 from ..db.repository import Repository
 from .bridge import AgentRuntimeBridge
@@ -51,6 +52,7 @@ class AgentDeps:
     executor: QueryExecutor
     session_id: int
     sql_timeout_ms: int
+    field_replacements: list[FieldReplacementRule] = field(default_factory=list)
     sample_limit: int = 20
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
 

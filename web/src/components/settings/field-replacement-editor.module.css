@@ -1,0 +1,69 @@
+.editor {
+  position: relative;
+}
+
+.highlight {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: auto;
+  margin: 0;
+  padding: var(--mantine-spacing-xs);
+  border: 1px solid transparent;
+  color: var(--mantine-color-text);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 400;
+  line-height: var(--mantine-line-height);
+  pointer-events: none;
+  white-space: pre;
+}
+
+.line {
+  display: inline;
+}
+
+.header {
+  color: light-dark(var(--mantine-color-blue-7), var(--mantine-color-blue-4));
+}
+
+.comment {
+  color: var(--mantine-color-dimmed);
+}
+
+.rule {
+  color: light-dark(var(--mantine-color-teal-7), var(--mantine-color-teal-4));
+}
+
+.regex {
+  color: light-dark(var(--mantine-color-grape-7), var(--mantine-color-grape-4));
+  font-weight: 700;
+}
+
+.separator {
+  color: var(--mantine-color-dimmed);
+}
+
+.invalid {
+  color: var(--mantine-color-red-6);
+  text-decoration: underline wavy;
+}
+
+.input {
+  position: relative;
+  z-index: 2;
+  min-height: 18rem;
+  color: transparent;
+  background-color: transparent;
+  caret-color: var(--mantine-color-text);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 400;
+  line-height: var(--mantine-line-height);
+  padding: var(--mantine-spacing-xs);
+  tab-size: 2;
+}
+
+.input::placeholder {
+  color: var(--mantine-color-dimmed);
+}

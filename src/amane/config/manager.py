@@ -1,6 +1,7 @@
 import contextlib
 import importlib
 import os
+import re
 import tempfile
 import tomllib
 from copy import copy
@@ -319,6 +320,98 @@ class SiteConfig(BaseModel):
             msg = f"{info.field_name} 不支持 {', '.join(unsupported)}; 可选: {', '.join(WIKI_LANGUAGES)}"
             raise ValueError(msg)
         return languages
+
+
+FieldReplacementField = Literal["title", "actors", "studio", "publisher", "tags", "series", "plot", "directors"]
+
+
+class FieldReplacementRule(BaseModel):
+    field: FieldReplacementField
+    find: str
+    replace: str
+
+    @field_validator("find")
+    @classmethod
+    def _valid_replacement_pattern(cls, value: str) -> str:
+        pattern = value.removeprefix("re:")
+        if not pattern:
+            raise ValueError("查找内容不能为空")
+        if value.startswith("re:"):
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"无效正则表达式: {exc}") from exc
+        return value
+
+
+_FIELD_REPLACEMENT_FIELDS: dict[str, FieldReplacementField] = {
+    "title": "title",
+    "actors": "actors",
+    "studio": "studio",
+    "publisher": "publisher",
+    "tags": "tags",
+    "series": "series",
+    "plot": "plot",
+    "directors": "directors",
+}
+
+
+def parse_field_replacement_rules(text: str) -> list[FieldReplacementRule]:
+    rules: list[FieldReplacementRule] = []
+    fields: set[str] = set()
+    current_field: str | None = None
+
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        if line.startswith("["):
+            if not line.endswith("]"):
+                raise ValueError(f"第 {line_number} 行：字段抬头格式应为 [title]")
+            field_name = line[1:-1].strip()
+            field = _FIELD_REPLACEMENT_FIELDS.get(field_name)
+            if field is None:
+                raise ValueError(f"第 {line_number} 行：未知字段 [{field_name}]")
+            if field in fields:
+                raise ValueError(f"第 {line_number} 行：字段 [{field}] 重复声明")
+            current_field = field
+            fields.add(field)
+            continue
+
+        if current_field is None:
+            raise ValueError(f"第 {line_number} 行：规则前需要先声明字段，例如 [title]")
+        if "=" not in line:
+            raise ValueError(f"第 {line_number} 行：规则格式应为 查找内容=替换内容")
+
+        find, replacement = (part.strip() for part in line.split("=", maxsplit=1))
+        if not find:
+            raise ValueError(f"第 {line_number} 行：查找内容不能为空")
+        if find.startswith("re:"):
+            try:
+                re.compile(find.removeprefix("re:"))
+            except re.error as exc:
+                raise ValueError(f"第 {line_number} 行：无效正则表达式：{exc}") from exc
+        try:
+            rules.append(FieldReplacementRule(field=current_field, find=find, replace=replacement))
+        except ValueError as exc:
+            raise ValueError(f"第 {line_number} 行：{exc}") from exc
+
+    return rules
+
+
+class FieldReplacementConfig(BaseModel):
+    enabled: bool = False
+    rules: str = ""
+
+    @model_validator(mode="after")
+    def _validate_rules(self) -> FieldReplacementConfig:
+        parse_field_replacement_rules(self.rules)
+        return self
+
+    @property
+    def active_rules(self) -> list[FieldReplacementRule]:
+        return parse_field_replacement_rules(self.rules) if self.enabled else []
 
 
 class ScrapingConfig(BaseModel):
@@ -755,6 +848,33 @@ class HotSettings(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def _migrate_field_replacements(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        scraping = data.get("scraping")
+        if not isinstance(scraping, dict) or "field_replacements" not in scraping:
+            return data
+
+        legacy_rules = scraping.pop("field_replacements")
+        if "field_replacements" in data or not isinstance(legacy_rules, list):
+            return data
+
+        by_field: dict[str, list[str]] = {}
+        for item in legacy_rules:
+            if not isinstance(item, dict):
+                continue
+            field = item.get("field")
+            find = item.get("find")
+            replacement = item.get("replace", "")
+            if isinstance(field, str) and isinstance(find, str) and isinstance(replacement, str):
+                by_field.setdefault(field, []).append(f"{find}={replacement}")
+
+        lines = [line for field, entries in by_field.items() for line in (f"[{field}]", *entries)]
+        data["field_replacements"] = {"enabled": bool(lines), "rules": "\n".join(lines)}
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def _migrate_debug_capture(cls, data: Any) -> Any:
         """scraping.debug_capture → logging.debug_capture."""
         if not isinstance(data, dict):
@@ -788,6 +908,7 @@ class HotSettings(BaseModel):
         return data
 
     scraping: ScrapingConfig = ScrapingConfig()
+    field_replacements: FieldReplacementConfig = FieldReplacementConfig()
     actor_scraping: ActorScrapingConfig = ActorScrapingConfig()
     agent: AgentConfig = AgentConfig()
     network: NetworkConfig = NetworkConfig()

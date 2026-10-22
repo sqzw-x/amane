@@ -16,8 +16,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import type { HotSettings } from "@/client/types.gen";
 import { isHidden, resolveSchema } from "@/components/schema-form/schema";
 import { SchemaForm } from "@/components/schema-form/schema-form";
+import { FieldReplacementsSettings } from "@/components/settings/field-replacements-settings";
 import { useConfig, useConfigSchema, useUpdateConfig } from "@/hooks/use-config";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { extractErrorMessage } from "@/lib/api-error";
@@ -113,6 +115,30 @@ function SettingsPage() {
               if (!sectionSchema || typeof sectionSchema === "boolean") return null;
               // Schema 顶层 key 运行时才知; 桥接到按 section 切分的表单 values.
               const sectionValues = (values as Record<string, Record<string, unknown>>)[key] ?? {};
+              if (key === "field_replacements") {
+                return (
+                  <Paper key={key} withBorder p="md">
+                    <Text fw={600} mb="md">
+                      {t(`tabs.${key}` as never, { defaultValue: key })}
+                    </Text>
+                    <FieldReplacementsSettings
+                      value={(values as HotSettings).field_replacements ?? {}}
+                      saving={saveMutation.isPending}
+                      saveError={
+                        saveMutation.isError
+                          ? extractErrorMessage(
+                              saveMutation.error,
+                              t("fieldReplacements.saveError"),
+                            )
+                          : null
+                      }
+                      onSave={(patch) =>
+                        saveMutation.mutate({ body: { field_replacements: patch } })
+                      }
+                    />
+                  </Paper>
+                );
+              }
               return (
                 <Paper key={key} withBorder p="md">
                   <Text fw={600} mb="md">

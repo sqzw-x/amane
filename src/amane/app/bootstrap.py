@@ -152,6 +152,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         repo=repo,
         cache=ResultCache(ttl_s=hot.agent.result_cache_ttl_s, max_entries=hot.agent.result_cache_max_entries),
         config=hot.agent,
+        field_replacements=hot.field_replacements.active_rules,
     )
 
     # 信任边界: 安全目录 + API token

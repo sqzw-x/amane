@@ -19,6 +19,7 @@ from .engine import (
 )
 from .merge import compute_merge_updates
 from .models import AggregatedMetadata, AggregateResult, SourcedScore
+from .replacements import apply_metadata_replacements
 
 __all__ = [
     "ALL_FIELDS",
@@ -36,6 +37,7 @@ __all__ = [
     "SourceKey",
     "SourcedScore",
     "aggregate",
+    "apply_metadata_replacements",
     "build_graph",
     "compile_priority",
     "compute_merge_updates",

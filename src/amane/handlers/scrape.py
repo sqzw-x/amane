@@ -3,7 +3,15 @@ from typing import TYPE_CHECKING, Protocol
 
 from structlog.contextvars import bind_contextvars
 
-from ..aggregate import SCALAR_FIELDS, AggregatedMetadata, CrawlerLike, FieldLanguage, aggregate, compile_priority
+from ..aggregate import (
+    SCALAR_FIELDS,
+    AggregatedMetadata,
+    CrawlerLike,
+    FieldLanguage,
+    aggregate,
+    apply_metadata_replacements,
+    compile_priority,
+)
 from ..crawlers.models import SearchQuery
 from ..crawlers.site_roles import builtin_descriptors
 from ..db.models import TaskType
@@ -146,6 +154,8 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         # 翻译文本字段; 失败不阻断刮削.
         if self._translator is not None:
             await self._translate_metadata(result.metadata, field_language, CacheKind.trans in payload.use_cache)
+
+        apply_metadata_replacements(result.metadata, self._config.field_replacements.active_rules)
 
         # 物化到 Resource; 失败保留原始 URL.
         poster_out = result.metadata.poster_urls

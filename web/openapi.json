@@ -8984,6 +8984,22 @@
         "type": "object",
         "title": "FeedUpdateRequest"
       },
+      "FieldReplacementConfig": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "rules": {
+            "type": "string",
+            "title": "Rules",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "FieldReplacementConfig"
+      },
       "FileItem": {
         "properties": {
           "name": {
@@ -9547,6 +9563,13 @@
                   "use_proxy": true
                 }
               }
+            }
+          },
+          "field_replacements": {
+            "$ref": "#/components/schemas/FieldReplacementConfig",
+            "default": {
+              "enabled": false,
+              "rules": ""
             }
           },
           "actor_scraping": {

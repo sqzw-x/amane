@@ -2723,6 +2723,23 @@ export const FeedUpdateRequestSchema = {
     title: 'FeedUpdateRequest'
 } as const;
 
+export const FieldReplacementConfigSchema = {
+    properties: {
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled',
+            default: false
+        },
+        rules: {
+            type: 'string',
+            title: 'Rules',
+            default: ''
+        }
+    },
+    type: 'object',
+    title: 'FieldReplacementConfig'
+} as const;
+
 export const FileItemSchema = {
     properties: {
         name: {
@@ -3292,6 +3309,13 @@ export const HotSettingsSchema = {
                         use_proxy: true
                     }
                 }
+            }
+        },
+        field_replacements: {
+            $ref: '#/components/schemas/FieldReplacementConfig',
+            default: {
+                enabled: false,
+                rules: ''
             }
         },
         actor_scraping: {

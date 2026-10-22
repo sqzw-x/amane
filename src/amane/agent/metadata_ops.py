@@ -87,7 +87,12 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
         if metadata is None:
             return {"error": f"metadata {metadata_id} 不存在"}
         try:
-            updates = compute_merge_updates(metadata.raw, metadata.field_sources, selections)
+            updates = compute_merge_updates(
+                metadata.raw,
+                metadata.field_sources,
+                selections,
+                ctx.deps.field_replacements,
+            )
         except ValueError as exc:
             return {"error": str(exc)}
         if not updates:

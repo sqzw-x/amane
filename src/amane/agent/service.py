@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..config import AgentConfig, AgentThinkingMode
+from ..config import AgentConfig, AgentThinkingMode, FieldReplacementRule
 from ..db.models import DEFAULT_SESSION_TITLE, AgentSession, AgentSessionStatus
 from .bridge import AgentRuntimeBridge
 from .cache import ResultCache
@@ -32,6 +32,7 @@ class AgentService:
     repo: Repository
     cache: ResultCache
     config: AgentConfig
+    field_replacements: list[FieldReplacementRule] = field(default_factory=list)
     sandbox: ReadonlySqlSandbox = field(init=False)
     executor: QueryExecutor = field(init=False)
     agent: Agent[AgentDeps, str | DeferredToolRequests] | None = field(init=False, default=None)
@@ -45,8 +46,14 @@ class AgentService:
         self.executor = QueryExecutor(self.sandbox, self.cache)
         self.rebuild(self.config)
 
-    def rebuild(self, config: AgentConfig) -> None:
+    def rebuild(
+        self,
+        config: AgentConfig,
+        field_replacements: list[FieldReplacementRule] | None = None,
+    ) -> None:
         self.config = config
+        if field_replacements is not None:
+            self.field_replacements = field_replacements
         self.cache.configure(ttl_s=config.result_cache_ttl_s, max_entries=config.result_cache_max_entries)
         self.agent = build_agent(config)
         self.naming_model = build_model(config) if config.api_key else None
@@ -136,6 +143,7 @@ class AgentService:
             executor=self.executor,
             session_id=session_id,
             sql_timeout_ms=self.config.sql_timeout_ms,
+            field_replacements=self.field_replacements,
             bridge=self.bridge,
         )
 

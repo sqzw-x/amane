@@ -77,6 +77,10 @@ Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 work
 
 建图对编译后站点链的消费见 [task-system.md](task-system.md), 默认表取舍见 [content-routes.md](content-routes.md).
 
+## `field_replacements` (Hot)
+
+顶层配置负责将规则文本解析为按字段顺序执行的替换规则. `re:` 前缀使用 Python 正则, 其余查找按字面文本处理. 刮削及手动来源合并在生成整合值时应用规则; 来源快照不变, 配置变更不批量重写已有值.
+
 ## `actor_scraping` (Hot)
 
 演员刮削与影片 `scraping` 分 section: 影片管线不读演员站列表, 演员任务也不读 `field_priority` / `field_blacklist`. 契约 (实现见 `ActorScrapeHandler` / `aggregate.actor`):

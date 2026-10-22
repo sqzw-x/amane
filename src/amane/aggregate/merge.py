@@ -1,6 +1,10 @@
 """按用户选择从来源 raw 算出 ``update_metadata`` 的 updates. 无 I/O."""
 
+from collections.abc import Sequence
+
+from ..config.manager import FieldReplacementRule
 from .engine import RAW_TO_DB_FIELD, SCALAR_FIELD_NAMES
+from .replacements import replace_text, replace_text_list
 
 
 def _actor_names_from_raw(value: object) -> object:
@@ -19,7 +23,10 @@ def _actor_names_from_raw(value: object) -> object:
 
 
 def compute_merge_updates(
-    raw: dict[str, dict[str, object]], field_sources: dict[str, str], selections: dict[str, str]
+    raw: dict[str, dict[str, object]],
+    field_sources: dict[str, str],
+    selections: dict[str, str],
+    replacements: Sequence[FieldReplacementRule] = (),
 ) -> dict[str, object]:
     """未知来源或字段抛 ``ValueError``; 值为 ``None`` 的项跳过.
 
@@ -40,6 +47,10 @@ def compute_merge_updates(
 
         db_field = RAW_TO_DB_FIELD.get(field, field)
         merged = _actor_names_from_raw(value) if field == "actors" else value
+        if isinstance(merged, str):
+            merged = replace_text(field, merged, replacements)
+        elif isinstance(merged, list) and all(isinstance(item, str) for item in merged):
+            merged = replace_text_list(field, merged, replacements)
         updates[db_field] = {source: merged} if db_field != field else merged
 
         if field in SCALAR_FIELD_NAMES:

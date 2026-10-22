@@ -14,7 +14,7 @@ from ...parsing import DEFINITION_VALUES, ContentType, Mosaic, summarize_file_ph
 from ...parsing import FilePhaseSummary as ParsedFilePhase
 from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
-from ..deps import RepoDep, RuntimeDep
+from ..deps import ConfigDep, RepoDep, RuntimeDep
 from ..models import (
     CommentResponse,
     CropPosterRequest,
@@ -313,7 +313,7 @@ async def crop_poster_from_thumb(
 
 
 @router.post("/{metadata_id}/merge")
-async def merge_metadata(metadata_id: int, req: MergeRequest, repo: RepoDep) -> MetadataResponse:
+async def merge_metadata(metadata_id: int, req: MergeRequest, repo: RepoDep, config: ConfigDep) -> MetadataResponse:
     if not req.selections:
         raise HTTPException(status_code=400, detail="未提供选择项")
 
@@ -323,7 +323,12 @@ async def merge_metadata(metadata_id: int, req: MergeRequest, repo: RepoDep) -> 
 
     # 按 selections 从 raw 合并字段
     try:
-        updates = compute_merge_updates(metadata.raw, metadata.field_sources, req.selections)
+        updates = compute_merge_updates(
+            metadata.raw,
+            metadata.field_sources,
+            req.selections,
+            config.hot.field_replacements.active_rules,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 

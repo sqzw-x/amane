@@ -1562,6 +1562,20 @@ export type FeedUpdateRequest = {
 };
 
 /**
+ * FieldReplacementConfig
+ */
+export type FieldReplacementConfig = {
+    /**
+     * Enabled
+     */
+    enabled?: boolean;
+    /**
+     * Rules
+     */
+    rules?: string;
+};
+
+/**
  * FileItem
  */
 export type FileItem = {
@@ -1687,6 +1701,7 @@ export type HealthResponse = {
  */
 export type HotSettings = {
     scraping?: ScrapingConfig;
+    field_replacements?: FieldReplacementConfig;
     actor_scraping?: ActorScrapingConfig;
     agent?: AgentConfig;
     network?: NetworkConfig;

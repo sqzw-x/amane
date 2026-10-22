@@ -10,10 +10,36 @@
     "logging": "日志",
     "sr": "图像超分",
     "llm": "LLM 翻译",
-    "watermark": "水印"
+    "watermark": "水印",
+    "field_replacements": "字段替换"
   },
   "config": {
     "loadError": "加载配置失败"
+  },
+  "fieldReplacements": {
+    "title": "字段替换",
+    "enabled": "启用字段替换",
+    "enabledDescription": "在生成新的整合值时应用下方规则；来源原始数据保持不变。",
+    "guideTitle": "使用说明",
+    "guideIntro": "每个字段使用独立的字段段落。字段段落以方括号中的字段标识符开头；未声明的字段不进行替换。",
+    "guideFields": "可用字段：",
+    "ruleSyntax": "查找内容=替换内容",
+    "guideRule": "每行填写一条规则。普通查找按字面文本匹配。",
+    "guideRegex": "查找内容以 re: 开头时，后续内容按 Python 正则表达式解析；否则按普通文本查找。",
+    "guideDelete": "等号右侧为空时，删除匹配内容。",
+    "guideOrder": "同一字段内的规则按从上到下的顺序依次执行。以 # 开头的行作为注释，不执行替换。",
+    "rulesLabel": "替换规则",
+    "placeholder": "在此输入字段替换规则",
+    "saveError": "保存失败，请检查规则格式；服务端错误会包含具体行号。",
+    "validation": {
+      "header": "第 {{line}} 行：字段抬头格式应为 [title]。",
+      "unknownField": "第 {{line}} 行：字段名无效，请检查教程中的可用字段。",
+      "duplicateField": "第 {{line}} 行：字段抬头重复。",
+      "missingHeader": "第 {{line}} 行：规则前需要先声明字段。",
+      "ruleFormat": "第 {{line}} 行：规则格式应为 查找内容=替换内容。",
+      "emptyFind": "第 {{line}} 行：查找内容不能为空。",
+      "invalidRegex": "第 {{line}} 行：正则表达式无效。"
+    }
   },
   "client": {
     "title": "客户端设置",
@@ -30,6 +56,16 @@
     "exitApp": "退出 APP"
   },
   "fields": {
+    "field_replacements": {
+      "enabled": {
+        "label": "启用字段替换",
+        "description": "在新整合值生成时应用规则"
+      },
+      "rules": {
+        "label": "替换规则",
+        "description": "每行一条规则，按字段分组"
+      }
+    },
     "scraping": {
       "download_resources": {
         "label": "刮削时下载",
