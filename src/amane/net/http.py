@@ -6,7 +6,7 @@
 import asyncio
 import random
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urljoin
 
 import aiofiles
@@ -45,8 +45,13 @@ _RETRYABLE_STATUS_CODES = frozenset({408, 429, 503, 504})
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
-_BODY_REWRITTEN_REDIRECTS = frozenset({301, 302, 303})
-"""这几类重定向把方法改成 GET; 307/308 保留原方法 (与 curl 的跟随语义一致)."""
+
+def _rewrites_to_get(status: int, method: str) -> bool:
+    """重定向是否把方法改成 GET. 301/302 只改 POST, 303 除 HEAD 外都改 (与 curl 的跟随语义一致)."""
+    if status == 303:
+        return method not in ("GET", "HEAD")
+    return status in (301, 302) and method == "POST"
+
 
 _MAX_CHUNKS = 4096
 """分片下载的区间数上限. 上游自称的 ``Content-Length`` 直接决定区间数, 不设上限即内存与任务数无界."""
@@ -282,9 +287,9 @@ class WebClient:
         ``use_proxy=False`` 强制直连 (本机 solver 服务用), 否则按 host 应用站点级代理, 未配置时用全局
         ``network.proxy``. 代理地址由 ``_proxy_for`` 决定, 同一 host 的连续请求走同一代理.
 
-        ``egress`` 给定时重定向不由 curl 跟随, 而是每一跳先过 ``EgressPolicy.ensure_allowed`` 再发;
-        URL 来自第三方数据时使用 (见 ``docs/dev/api.md``). ``stream=True`` 返回未读完的应答, 调用方
-        负责 ``aclose``.
+        ``egress`` 给定时重定向不由 curl 跟随, 而是每一跳先过 ``EgressPolicy.ensure_allowed`` 再发,
+        ``allow_redirects`` 因此不再生效; URL 来自第三方数据时使用 (见 ``docs/dev/api.md``).
+        ``stream=True`` 返回未读完的应答, 调用方用 ``_close`` 收尾.
 
         403/406 另按「站点拦下此指纹」处理: 换下一个未试过的指纹重发, 换过的指纹对该 host 保持.
         轮换不占重试次数, 单次请求最多换 ``_MAX_IMPERSONATE_ROTATIONS`` 次; 该 host 的指纹全部被拒后
@@ -329,10 +334,13 @@ class WebClient:
             location = resp.headers.get("Location") if resp.status_code in _REDIRECT_STATUSES else None
             if not location:
                 return resp
-            await resp.aclose()
+            await self._close(resp)
             current_url = urljoin(current_url, location)
-            if resp.status_code in _BODY_REWRITTEN_REDIRECTS:
+            if _rewrites_to_get(resp.status_code, current_method):
                 current_method = "GET"
+                # 改写成 GET 的跳转按语义丢弃请求体; 否则 curl 会把 body 重新设回去.
+                data = None
+                json = None
 
         raise RequestError(url, RequestFailure(kind=FailureKind.CURL, message=f"重定向超过 {egress.max_redirects} 跳"))
 
@@ -495,9 +503,20 @@ class WebClient:
 
     @staticmethod
     async def _close(resp: Response | None) -> None:
-        """丢弃的应答交还 curl 收尾. 非流式应答上关闭是空操作, 流式连不关会留下未完成的句柄."""
-        if resp is not None:
+        """丢弃的应答: 先中止传输再关闭. 非流式应答上两步都是空操作.
+
+        流式应答的正文由 curl 后台任务持续写入队列, 只停止消费不会停止传输 — 不先置中止标志,
+        ``aclose`` 会等到整份正文传完, 上限也就挡不住内存占用.
+        """
+        if resp is None:
+            return
+        quit_now = cast("asyncio.Event | None", resp.quit_now)
+        if quit_now is not None:
+            quit_now.set()
+        try:
             await resp.aclose()
+        except Exception as e:
+            logger.debug("stream close error (ignored)", error=str(e))
 
     async def get_text(
         self,
@@ -623,7 +642,8 @@ class WebClient:
         """下载. 分块阈值、分片大小与并发数取自 ``network`` 配置. 失败返回 False, 并按状态与原因记日志.
 
         ``max_bytes`` 给定时不信任 ``Content-Length``, 走流式写入并在超过上限时中止: 上游谎报长度
-        或直接不给长度时, 整份读入内存会耗尽进程内存.
+        或直接不给长度时, 整份读入内存会耗尽进程内存. 返回 False 时 ``dest`` 可能已有部分内容,
+        由调用方决定清理.
         """
         if max_bytes is not None:
             return await self._download_bounded(url, dest, use_proxy=use_proxy, egress=egress, max_bytes=max_bytes)
@@ -687,11 +707,14 @@ class WebClient:
                         return False
                     await f.write(chunk)
             return True
-        except Exception as e:
+        except OSError as e:
             logger.error("file write failed", path=str(dest), error=str(e))
             return False
+        except Exception as e:
+            logger.error("download stream failed", url=url, error=f"{type(e).__name__}: {e}")
+            return False
         finally:
-            await resp.aclose()
+            await self._close(resp)
 
     async def _download_chunked(
         self,
