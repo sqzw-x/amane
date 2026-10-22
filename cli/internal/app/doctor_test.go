@@ -38,7 +38,7 @@ func TestDoctorAllPass(t *testing.T) {
 	h := newHarness(t, srv.URL)
 	h.env.ExecutablePath = filepath.Join(h.dir, "amane")
 
-	if code := h.run("doctor"); code != ExitOK {
+	if code := h.run("doctor", "--profile", "default"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s\nstdout: %s", code, h.errOut(), h.out())
 	}
 	for _, want := range []string{"[通过] CLI", "[通过] 实例", "[通过] 鉴权"} {
@@ -58,7 +58,7 @@ func TestDoctorJSON(t *testing.T) {
 	h := newHarness(t, srv.URL)
 	h.env.ExecutablePath = filepath.Join(h.dir, "amane")
 
-	if code := h.run("doctor", "--json"); code != ExitOK {
+	if code := h.run("doctor", "--profile", "default", "--json"); code != ExitOK {
 		t.Fatalf("退出码为 %d", code)
 	}
 	var out struct {
@@ -81,7 +81,7 @@ func TestDoctorAuthFailure(t *testing.T) {
 
 	h := newHarness(t, srv.URL)
 	h.env.ExecutablePath = filepath.Join(h.dir, "amane")
-	if code := h.run("doctor"); code != ExitConnection {
+	if code := h.run("doctor", "--profile", "default"); code != ExitConnection {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
 	}
 	if !strings.Contains(h.out(), "[通过] 实例") {
@@ -102,7 +102,7 @@ func TestDoctorUnreachable(t *testing.T) {
 
 	h := newHarness(t, "http://"+addr)
 	h.env.ExecutablePath = filepath.Join(h.dir, "amane")
-	if code := h.run("doctor"); code != ExitConnection {
+	if code := h.run("doctor", "--profile", "default"); code != ExitConnection {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
 	}
 	if !strings.Contains(h.out(), "[失败] 实例") {
@@ -113,10 +113,10 @@ func TestDoctorUnreachable(t *testing.T) {
 func TestDoctorWithoutServer(t *testing.T) {
 	h := newHarness(t, "")
 	h.env.ExecutablePath = filepath.Join(h.dir, "amane")
-	if code := h.run("doctor"); code != ExitConnection {
+	if code := h.run("doctor", "--profile", "default"); code != ExitConnection {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
 	}
-	if !strings.Contains(h.out(), "login") {
+	if !strings.Contains(h.out(), "不存在或没有实例地址") {
 		t.Fatalf("输出为 %q", h.out())
 	}
 }

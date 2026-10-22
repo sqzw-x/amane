@@ -106,7 +106,8 @@ func Run(args []string, env *Env) int {
 	env.fillDefaults()
 	p, err := parseArgs(args)
 	if err != nil {
-		fmt.Fprintf(env.Stderr, "amane: %v\n\n%s", err, usageText)
+		// 只报错, 不打帮助: 输出会进 Agent 的上下文, 想看全文让它显式 amane --help.
+		fmt.Fprintf(env.Stderr, "amane: %v\n", err)
 		return ExitUsage
 	}
 	if p.version {
@@ -118,11 +119,11 @@ func Run(args []string, env *Env) int {
 		return ExitOK
 	}
 	if p.cmd == "" {
-		fmt.Fprintf(env.Stderr, "amane: 缺少命令\n\n%s", usageText)
+		fmt.Fprintln(env.Stderr, "amane: 缺少命令; 用 amane --help 查看用法")
 		return ExitUsage
 	}
 	if err := p.validate(); err != nil {
-		fmt.Fprintf(env.Stderr, "amane: %v\n\n%s", err, usageText)
+		fmt.Fprintf(env.Stderr, "amane: %v\n", err)
 		return ExitUsage
 	}
 
@@ -183,13 +184,21 @@ func (r *runner) arg(i int) string {
 	return ""
 }
 
-// requireArg 取必需的位置参数.
+// requireArg 取必需的位置参数. name 带尖括号, 如 "<task-id>".
 func (r *runner) requireArg(i int, name string) (string, error) {
 	v := strings.TrimSpace(r.arg(i))
 	if v == "" {
-		return "", usagef("缺少参数 <%s>", name)
+		return "", usagef("缺少 %s", name)
 	}
 	return v, nil
+}
+
+// subcommandError 报告子命令缺失或未知, 并列出可用的. sub 为空即为缺失.
+func subcommandError(cmd, sub string, available ...string) error {
+	if strings.TrimSpace(sub) == "" {
+		return usagef("%s 缺少子命令; 可用: %s", cmd, strings.Join(available, ", "))
+	}
+	return usagef("%s 未知子命令 %q; 可用: %s", cmd, sub, strings.Join(available, ", "))
 }
 
 // config 惰性加载配置文件.
@@ -223,12 +232,9 @@ func (r *runner) server() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name, profile, ok := cfg.Select(r.p.profile)
+	profile, ok := cfg.Profiles[r.p.profile]
 	if !ok || strings.TrimSpace(profile.Server) == "" {
-		if r.p.profile != "" {
-			return "", usagef("profile %q 不存在或没有实例地址; 用 amane config list 查看已有 profile", name)
-		}
-		return "", usagef("未配置实例地址, 先运行 amane login --server <地址>")
+		return "", usagef("profile %q 不存在或没有实例地址; 先运行 amane login --server <地址> --profile %s, 或 amane config list 查看已有 profile", r.p.profile, r.p.profile)
 	}
 	return config.NormalizeServer(profile.Server)
 }
@@ -239,8 +245,7 @@ func (r *runner) token() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	_, profile, _ := cfg.Select(r.p.profile)
-	token, source := config.ResolveToken(profile, r.env.Getenv)
+	token, source := config.ResolveToken(cfg.Profiles[r.p.profile], r.env.Getenv)
 	return token, source, nil
 }
 

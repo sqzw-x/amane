@@ -149,7 +149,7 @@ func TestLoadMissingReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("未预期的错误: %v", err)
 	}
-	if f.Current != DefaultProfile || len(f.Profiles) != 0 {
+	if len(f.Profiles) != 0 {
 		t.Fatalf("得到 %+v, 期望空配置", f)
 	}
 }
@@ -166,7 +166,7 @@ func TestLoadInvalidJSON(t *testing.T) {
 
 func TestSaveRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "cli.json")
-	f := &File{Current: "work", Profiles: map[string]Profile{
+	f := &File{Profiles: map[string]Profile{
 		"work": {Server: "http://192.168.1.2:8000", Token: "0123456789abcdef"},
 	}}
 	if err := f.Save(path); err != nil {
@@ -185,27 +185,8 @@ func TestSaveRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取失败: %v", err)
 	}
-	if got.Current != "work" || got.Profiles["work"].Token != "0123456789abcdef" {
+	if got.Profiles["work"].Token != "0123456789abcdef" {
 		t.Fatalf("往返不一致: %+v", got)
-	}
-}
-
-func TestSelect(t *testing.T) {
-	f := &File{Current: "default", Profiles: map[string]Profile{
-		"default": {Server: "http://127.0.0.1:8000"},
-		"work":    {Server: "http://10.0.0.2:8000"},
-	}}
-
-	name, p, ok := f.Select("")
-	if !ok || name != "default" || p.Server != "http://127.0.0.1:8000" {
-		t.Fatalf("得到 (%q, %+v, %v)", name, p, ok)
-	}
-	name, p, ok = f.Select("work")
-	if !ok || name != "work" || p.Server != "http://10.0.0.2:8000" {
-		t.Fatalf("得到 (%q, %+v, %v)", name, p, ok)
-	}
-	if _, _, ok := f.Select("missing"); ok {
-		t.Fatal("不存在的 profile 不应存在")
 	}
 }
 

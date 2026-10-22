@@ -20,7 +20,7 @@ func (r *runner) cmdSkill(ctx context.Context) error {
 	case "show":
 		return r.skillShow(ctx)
 	default:
-		return usagef("未知的 skill 子命令 %q, 可用: install, show", sub)
+		return subcommandError("skill", sub, skillSubcommands...)
 	}
 }
 
@@ -48,7 +48,7 @@ func (r *runner) skillInstall(ctx context.Context) error {
 		}
 	}
 
-	files := skill.Render(cat, r.env.Version)
+	files := skill.Render(cat, r.env.Version, r.p.profile)
 	if err := skill.Install(dir, files); err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (r *runner) skillShow(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	files := skill.Render(cat, r.env.Version)
+	files := skill.Render(cat, r.env.Version, r.p.profile)
 	for _, name := range []string{skill.MainFile, skill.VersionFile} {
 		if _, err := fmt.Fprintf(r.env.Stdout, "<!-- ===== %s ===== -->\n%s\n", name, files[name]); err != nil {
 			return err

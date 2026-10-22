@@ -131,7 +131,12 @@ func TestValidateErrors(t *testing.T) {
 		want string
 	}{
 		{name: "未知命令", args: []string{"frobnicate"}, want: "未知命令"},
-		{name: "call 缺少参数", args: []string{"call"}, want: "缺少参数"},
+		{name: "call 缺少工具名", args: []string{"call"}, want: "缺少 <tool>"},
+		{name: "wait 缺少 task-id", args: []string{"wait"}, want: "缺少 <task-id>"},
+		{name: "api 缺少 path", args: []string{"api"}, want: "缺少 <path>"},
+		{name: "skill 缺少子命令", args: []string{"skill"}, want: "skill 缺少子命令; 可用: install, show"},
+		{name: "skill 未知子命令", args: []string{"skill", "get"}, want: `skill 未知子命令 "get"; 可用: install, show`},
+		{name: "config 未知子命令", args: []string{"config", "foo"}, want: `config 未知子命令 "foo"; 可用: list, delete`},
 		{name: "call 参数过多", args: []string{"call", "a", "b", "c"}, want: "位置参数"},
 		{name: "api 非 GET", args: []string{"api", "x", "--method", "POST"}, want: "只允许 GET"},
 		{name: "interval 只用于 wait", args: []string{"catalog", "--interval", "1s"}, want: "--interval 只用于 wait"},

@@ -27,7 +27,7 @@ func testCatalog() *api.Catalog {
 }
 
 func TestRenderIncludesPaths(t *testing.T) {
-	files := Render(testCatalog(), "0.1.0")
+	files := Render(testCatalog(), "0.1.0", "test")
 	for _, name := range []string{MainFile, VersionFile} {
 		if _, ok := files[name]; !ok {
 			t.Fatalf("缺少文件 %s", name)
@@ -47,7 +47,7 @@ func TestRenderIncludesPaths(t *testing.T) {
 
 // 工具清单不进 Skill: 它会随实例变化, 且一次会话用不到全部工具.
 func TestRenderOmitsToolList(t *testing.T) {
-	main := string(Render(testCatalog(), "0.1.0")[MainFile])
+	main := string(Render(testCatalog(), "0.1.0", "test")[MainFile])
 	for _, unwanted := range []string{"update_metadata", "sql_explore", "metadata-ops", "number: string"} {
 		if strings.Contains(main, unwanted) {
 			t.Errorf("SKILL.md 不应包含工具清单内容 %q", unwanted)
@@ -56,8 +56,8 @@ func TestRenderOmitsToolList(t *testing.T) {
 }
 
 func TestRenderStable(t *testing.T) {
-	first := Render(testCatalog(), "0.1.0")
-	second := Render(testCatalog(), "0.1.0")
+	first := Render(testCatalog(), "0.1.0", "test")
+	second := Render(testCatalog(), "0.1.0", "test")
 	for name := range first {
 		if string(first[name]) != string(second[name]) {
 			t.Fatalf("%s 两次生成结果不一致", name)
@@ -66,7 +66,7 @@ func TestRenderStable(t *testing.T) {
 }
 
 func TestRenderEmptyCatalog(t *testing.T) {
-	files := Render(&api.Catalog{}, "dev")
+	files := Render(&api.Catalog{}, "dev", "test")
 	if got := strings.TrimSpace(string(files[VersionFile])); got != "未知" {
 		t.Fatalf("version 文件为 %q", got)
 	}
@@ -77,7 +77,7 @@ func TestRenderEmptyCatalog(t *testing.T) {
 
 func TestInstallWritesAllFiles(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "amane")
-	files := Render(testCatalog(), "0.22.1")
+	files := Render(testCatalog(), "0.22.1", "test")
 
 	if err := Install(dir, files); err != nil {
 		t.Fatalf("未预期的错误: %v", err)

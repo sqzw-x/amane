@@ -21,7 +21,7 @@ func TestCatalogRendersIndex(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("catalog"); code != ExitOK {
+	if code := h.run("--profile", "default", "catalog"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	for _, want := range []string{"0.22.1", "sql", "sql_explore(sql: string)", "执行只读 SQL", "amane catalog <tool>"} {
@@ -36,7 +36,7 @@ func TestCatalogJSON(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("catalog", "--json"); code != ExitOK {
+	if code := h.run("--profile", "default", "catalog", "--json"); code != ExitOK {
 		t.Fatalf("退出码为 %d", code)
 	}
 	if h.out() != catalogBody+"\n" {
@@ -49,7 +49,7 @@ func TestCatalogPretty(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("catalog", "--json", "--pretty"); code != ExitOK {
+	if code := h.run("--profile", "default", "catalog", "--json", "--pretty"); code != ExitOK {
 		t.Fatalf("退出码为 %d", code)
 	}
 	if !strings.Contains(h.out(), "\n  \"version\"") {
@@ -67,7 +67,7 @@ func TestCatalogSendsBearer(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("catalog"); code != ExitOK {
+	if code := h.run("--profile", "default", "catalog"); code != ExitOK {
 		t.Fatalf("退出码为 %d", code)
 	}
 	if gotAuth != "Bearer "+testToken {
@@ -80,7 +80,7 @@ func TestCatalogAuthFailure(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("catalog"); code != ExitConnection {
+	if code := h.run("--profile", "default", "catalog"); code != ExitConnection {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
 	}
 	if h.out() != "" {
@@ -103,7 +103,7 @@ func TestNetworkFailureExitCode(t *testing.T) {
 	_ = ln.Close()
 
 	h := newHarness(t, "http://"+addr)
-	if code := h.run("catalog"); code != ExitConnection {
+	if code := h.run("--profile", "default", "catalog"); code != ExitConnection {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
 	}
 	if !strings.Contains(h.errOut(), "连接实例失败") {
@@ -113,7 +113,7 @@ func TestNetworkFailureExitCode(t *testing.T) {
 
 func TestNoProfileIsUsageError(t *testing.T) {
 	h := newHarness(t, "")
-	if code := h.run("catalog"); code != ExitUsage {
+	if code := h.run("--profile", "default", "catalog"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
 	if !strings.Contains(h.errOut(), "login") {
@@ -131,7 +131,7 @@ func TestPlaintextWarning(t *testing.T) {
 	h.env.HTTPClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{}}, nil
 	})}
-	if code := h.run("catalog", "--server", "http://192.168.1.10:8000"); code != ExitOK {
+	if code := h.run("--profile", "default", "catalog", "--server", "http://192.168.1.10:8000"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	if !strings.Contains(h.errOut(), "明文 http") {
@@ -160,7 +160,7 @@ func TestCallArgumentSources(t *testing.T) {
 			name: "文件",
 			setup: func(h *harness) []string {
 				path := h.writeFile("args.json", `{"number":"ABC-123"}`)
-				return []string{"call", "update_metadata", "@" + path}
+				return []string{"call", "update_metadata", "--file", path}
 			},
 			wantArg: `{"number":"ABC-123"}`,
 		},
@@ -201,7 +201,7 @@ func TestCallArgumentSources(t *testing.T) {
 			bodies = nil
 			h := newHarness(t, srv.URL)
 			args := c.setup(h)
-			if code := h.run(args...); code != ExitOK {
+			if code := h.run(append([]string{"--profile", "default"}, args...)...); code != ExitOK {
 				t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 			}
 			if len(bodies) != 1 {
@@ -245,7 +245,7 @@ func TestCallArgumentErrors(t *testing.T) {
 		},
 		{
 			name:  "文件不存在",
-			setup: func(h *harness) []string { return []string{"call", "sql_explore", "@/nonexistent/args.json"} },
+			setup: func(h *harness) []string { return []string{"call", "sql_explore", "--file", "/nonexistent/args.json"} },
 			want:  "读取入参文件失败",
 		},
 		{
@@ -257,7 +257,7 @@ func TestCallArgumentErrors(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			h := newHarness(t, srv.URL)
-			if code := h.run(c.setup(h)...); code != ExitUsage {
+			if code := h.run(append([]string{"--profile", "default"}, c.setup(h)...)...); code != ExitUsage {
 				t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 			}
 			if !strings.Contains(h.errOut(), c.want) {
@@ -272,7 +272,7 @@ func TestCallBusinessErrorStaysZero(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("call", "retry_task", `{"task_id":1}`); code != ExitOK {
+	if code := h.run("--profile", "default", "call", "retry_task", `{"task_id":1}`); code != ExitOK {
 		t.Fatalf("退出码为 %d, 期望 0", code)
 	}
 	if !strings.Contains(h.out(), "任务不存在") {
@@ -286,7 +286,7 @@ func TestCallRejectedByServerExitsFour(t *testing.T) {
 
 	h := newHarness(t, srv.URL)
 	// 参数校验失败是「服务端拒绝了这次请求」, 与工具返回 error 不同, 不能报成 0.
-	if code := h.run("call", "retry_task", "{}"); code != ExitServer {
+	if code := h.run("--profile", "default", "call", "retry_task", "{}"); code != ExitServer {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitServer)
 	}
 	if !strings.Contains(h.errOut(), "task_id") {
@@ -315,7 +315,7 @@ func TestWaitPollsUntilTerminal(t *testing.T) {
 
 	h := newHarness(t, srv.URL)
 	clock := h.useClock()
-	if code := h.run("wait", "7"); code != ExitOK {
+	if code := h.run("--profile", "default", "wait", "7"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	if got := atomic.LoadInt32(&calls); got != 3 {
@@ -335,7 +335,7 @@ func TestWaitTimeoutExitsThree(t *testing.T) {
 
 	h := newHarness(t, srv.URL)
 	h.useClock()
-	if code := h.run("wait", "7", "--timeout", "5s"); code != ExitConnection {
+	if code := h.run("--profile", "default", "wait", "7", "--timeout", "5s"); code != ExitConnection {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
 	}
 	if !strings.Contains(h.errOut(), "等待超时") {
@@ -353,7 +353,7 @@ func TestWaitUnknownTask(t *testing.T) {
 	h := newHarness(t, srv.URL)
 	h.useClock()
 	// 任务不存在不是终态; 它属于「服务端拒绝」, 不是网络问题.
-	if code := h.run("wait", "99"); code != ExitServer {
+	if code := h.run("--profile", "default", "wait", "99"); code != ExitServer {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitServer)
 	}
 	if !strings.Contains(h.errOut(), "不存在") {
@@ -366,7 +366,7 @@ func TestWaitUnknownTask(t *testing.T) {
 
 func TestWaitInvalidTaskID(t *testing.T) {
 	h := newHarness(t, "http://127.0.0.1:1")
-	if code := h.run("wait", "abc"); code != ExitUsage {
+	if code := h.run("--profile", "default", "wait", "abc"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
 }
@@ -387,7 +387,7 @@ func TestAPIPathPrefix(t *testing.T) {
 	for in, want := range cases {
 		paths = nil
 		h := newHarness(t, srv.URL)
-		if code := h.run("api", in); code != ExitOK {
+		if code := h.run("--profile", "default", "api", in); code != ExitOK {
 			t.Fatalf("%s: 退出码为 %d, stderr: %s", in, code, h.errOut())
 		}
 		if len(paths) != 1 || paths[0] != want {
@@ -404,7 +404,7 @@ func TestAPINonGETRejectedWithoutRequest(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("api", "tasks/1", "--method", "POST"); code != ExitUsage {
+	if code := h.run("--profile", "default", "api", "tasks/1", "--method", "POST"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
 	if atomic.LoadInt32(&calls) != 0 {
@@ -415,7 +415,7 @@ func TestAPINonGETRejectedWithoutRequest(t *testing.T) {
 func TestLoginWritesConfig(t *testing.T) {
 	h := newHarness(t, "")
 	h.stdin("secret-token-0123456789\n")
-	if code := h.run("login", "--server", "127.0.0.1:8000"); code != ExitOK {
+	if code := h.run("login", "--profile", "default", "--server", "127.0.0.1:8000"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	if strings.Contains(h.out()+h.errOut(), "secret-token-0123456789") {
@@ -432,9 +432,6 @@ func TestLoginWritesConfig(t *testing.T) {
 	if profile.Token != "secret-token-0123456789" {
 		t.Fatalf("token 未写入")
 	}
-	if cfg.Current != "default" {
-		t.Fatalf("当前 profile 为 %q", cfg.Current)
-	}
 	info, err := os.Stat(h.env.ConfigPath)
 	if err != nil {
 		t.Fatalf("读取权限失败: %v", err)
@@ -449,7 +446,7 @@ func TestLoginWritesConfig(t *testing.T) {
 
 func TestLoginEmptyStdin(t *testing.T) {
 	h := newHarness(t, "")
-	if code := h.run("login", "--server", "http://127.0.0.1:8000"); code != ExitUsage {
+	if code := h.run("login", "--profile", "default", "--server", "http://127.0.0.1:8000"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
 	if !strings.Contains(h.errOut(), "没有读到 token") {
@@ -468,24 +465,20 @@ func TestLoginWithoutServerRequiresFlag(t *testing.T) {
 	}
 }
 
-func TestLoginKeepsExistingServer(t *testing.T) {
+func TestLoginRequiresServer(t *testing.T) {
 	h := newHarness(t, "http://127.0.0.1:9000")
 	h.stdin("new-token")
-	if code := h.run("login"); code != ExitOK {
-		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	if code := h.run("login", "--profile", "default"); code != ExitUsage {
+		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
-	cfg := h.loadConfig(t)
-	if got := cfg.Profiles["default"].Server; got != "http://127.0.0.1:9000" {
-		t.Fatalf("地址为 %q", got)
-	}
-	if got := cfg.Profiles["default"].Token; got != "new-token" {
-		t.Fatalf("token 未更新")
+	if !strings.Contains(h.errOut(), "缺少 --server") {
+		t.Fatalf("标准错误为 %q", h.errOut())
 	}
 }
 
 func TestConfigMasksToken(t *testing.T) {
 	h := newHarness(t, "http://127.0.0.1:8000")
-	if code := h.run("config"); code != ExitOK {
+	if code := h.run("config", "--profile", "default"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	var out struct {
@@ -505,7 +498,7 @@ func TestConfigMasksToken(t *testing.T) {
 	}
 }
 
-func TestConfigUseAndList(t *testing.T) {
+func TestConfigListAndDelete(t *testing.T) {
 	h := newHarness(t, "http://127.0.0.1:8000")
 	cfg := h.loadConfig(t)
 	cfg.Profiles["work"] = config.Profile{Server: "http://10.0.0.2:8000"}
@@ -513,19 +506,10 @@ func TestConfigUseAndList(t *testing.T) {
 		t.Fatalf("写入失败: %v", err)
 	}
 
-	if code := h.run("config", "use", "work"); code != ExitOK {
-		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
-	}
-	if got := h.loadConfig(t).Current; got != "work" {
-		t.Fatalf("当前 profile 为 %q", got)
-	}
-
-	h.stdout.Reset()
 	if code := h.run("config", "list"); code != ExitOK {
 		t.Fatalf("退出码为 %d", code)
 	}
 	var out struct {
-		Current  string `json:"current"`
 		Profiles []struct {
 			Name   string `json:"name"`
 			Server string `json:"server"`
@@ -533,15 +517,21 @@ func TestConfigUseAndList(t *testing.T) {
 		} `json:"profiles"`
 	}
 	h.decodeJSON(t, &out)
-	if out.Current != "work" || len(out.Profiles) != 2 {
+	if len(out.Profiles) != 2 {
 		t.Fatalf("输出为 %+v", out)
 	}
 	if out.Profiles[0].Name != "default" || out.Profiles[1].Name != "work" {
 		t.Fatalf("profile 未按名字排序: %+v", out.Profiles)
 	}
 
-	if code := h.run("config", "use", "missing"); code != ExitUsage {
-		t.Fatalf("未知 profile 的退出码为 %d", code)
+	if code := h.run("config", "delete", "work"); code != ExitOK {
+		t.Fatalf("删除的退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	if _, ok := h.loadConfig(t).Profiles["work"]; ok {
+		t.Fatalf("profile 未删除")
+	}
+	if code := h.run("config", "delete", "missing"); code != ExitUsage {
+		t.Fatalf("删除不存在的 profile 退出码为 %d", code)
 	}
 }
 
@@ -557,7 +547,7 @@ func TestConfigDirIsCreated(t *testing.T) {
 	// 配置文件路径指向尚不存在的子目录.
 	h.env.ConfigPath = filepath.Join(h.dir, "deep", "nested", "cli.json")
 	h.stdin("t")
-	if code := h.run("login", "--server", "http://127.0.0.1:8000"); code != ExitOK {
+	if code := h.run("login", "--profile", "default", "--server", "http://127.0.0.1:8000"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	if _, err := os.Stat(h.env.ConfigPath); err != nil {
@@ -575,7 +565,7 @@ func TestCatalogToolDetail(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("catalog", "sql_explore"); code != ExitOK {
+	if code := h.run("--profile", "default", "catalog", "sql_explore"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	for _, want := range []string{"sql_explore (sql)", "执行只读 SQL", "入参:", `"sql"`} {
@@ -590,7 +580,7 @@ func TestCatalogToolDetailUnknown(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("catalog", "no_such_tool"); code != ExitServer {
+	if code := h.run("--profile", "default", "catalog", "no_such_tool"); code != ExitServer {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitServer)
 	}
 	if !strings.Contains(h.errOut(), "HTTP 404") {
@@ -600,7 +590,7 @@ func TestCatalogToolDetailUnknown(t *testing.T) {
 
 func TestCatalogRejectsBadToolName(t *testing.T) {
 	h := newHarness(t, "http://127.0.0.1:1")
-	if code := h.run("catalog", "bad name"); code != ExitUsage {
+	if code := h.run("--profile", "default", "catalog", "bad name"); code != ExitUsage {
 		t.Fatalf("退出码为 %d", code)
 	}
 	if !strings.Contains(h.errOut(), "不合法") {
@@ -618,7 +608,7 @@ func TestSchemaPrintsDoc(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("schema"); code != ExitOK {
+	if code := h.run("--profile", "default", "schema"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	if strings.TrimSpace(h.out()) != "CREATE TABLE t (id INTEGER);" {
@@ -647,7 +637,7 @@ func TestExplicitMissingProfileDoesNotFallBack(t *testing.T) {
 		}
 		return ""
 	}
-	if code := h.run("catalog", "--profile", "missing"); code != ExitUsage {
+	if code := h.run("--profile", "default", "catalog", "--profile", "missing"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
 	if got := atomic.LoadInt32(&hits); got != 0 {
@@ -660,14 +650,14 @@ func TestLoginReadsOneLineInTTY(t *testing.T) {
 	h.stdin("secret-token\nignored")
 	h.terminal(true)
 
-	if code := h.run("login", "--server", "http://127.0.0.1:8000"); code != ExitOK {
+	if code := h.run("login", "--profile", "default", "--server", "http://127.0.0.1:8000"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	if !strings.Contains(h.errOut(), "粘贴") {
 		t.Fatalf("终端下应给出提示, 标准错误为 %q", h.errOut())
 	}
 	cfg := h.loadConfig(t)
-	if got := cfg.Profiles[config.DefaultProfile].Token; got != "secret-token" {
+	if got := cfg.Profiles["default"].Token; got != "secret-token" {
 		t.Fatalf("token 为 %q", got)
 	}
 }
@@ -682,7 +672,7 @@ func TestAPIBinaryVerbatim(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("api", "/api/tasks/7/record"); code != ExitOK {
+	if code := h.run("--profile", "default", "api", "/api/tasks/7/record"); code != ExitOK {
 		t.Fatalf("退出码为 %d", code)
 	}
 	if got := h.out(); got != string(payload) {
@@ -710,7 +700,7 @@ func TestWaitRejectsUnexpectedResponses(t *testing.T) {
 
 			h := newHarness(t, srv.URL)
 			h.useClock()
-			if code := h.run("wait", "7"); code != ExitServer {
+			if code := h.run("--profile", "default", "wait", "7"); code != ExitServer {
 				t.Fatalf("退出码为 %d, 期望 %d", code, ExitServer)
 			}
 			if h.out() != "" {
@@ -760,11 +750,11 @@ func TestLoginUsesLocalTokenOnLoopback(t *testing.T) {
 	}
 	h.terminal(true)
 
-	if code := h.run("login", "--server", srv.URL); code != ExitOK {
+	if code := h.run("login", "--profile", "default", "--server", srv.URL); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	cfg := h.loadConfig(t)
-	if got := cfg.Profiles[config.DefaultProfile].Token; got != "desktop-token" {
+	if got := cfg.Profiles["default"].Token; got != "desktop-token" {
 		t.Fatalf("token 为 %q", got)
 	}
 	if !strings.Contains(h.errOut(), "已保存") {
@@ -798,11 +788,11 @@ func TestLoginPromptsWhenLocalTokenRejected(t *testing.T) {
 	h.stdin("typed-token\n")
 	h.terminal(true)
 
-	if code := h.run("login", "--server", srv.URL); code != ExitOK {
+	if code := h.run("login", "--profile", "default", "--server", srv.URL); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	cfg := h.loadConfig(t)
-	if got := cfg.Profiles[config.DefaultProfile].Token; got != "typed-token" {
+	if got := cfg.Profiles["default"].Token; got != "typed-token" {
 		t.Fatalf("token 为 %q", got)
 	}
 	if !strings.Contains(h.errOut(), "请粘贴") {
@@ -838,10 +828,10 @@ func TestLoginUsesLocalTokenWithEmptyPipe(t *testing.T) {
 	h.stdin("")
 	h.terminal(false)
 
-	if code := h.run("login", "--server", srv.URL); code != ExitOK {
+	if code := h.run("login", "--profile", "default", "--server", srv.URL); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
-	if got := h.loadConfig(t).Profiles[config.DefaultProfile].Token; got != "desktop-token" {
+	if got := h.loadConfig(t).Profiles["default"].Token; got != "desktop-token" {
 		t.Fatalf("token 为 %q", got)
 	}
 	if strings.Contains(h.errOut(), "粘贴") {
@@ -864,7 +854,7 @@ func TestLoginEmptyPipeWithoutLocalTokenIsActionable(t *testing.T) {
 	h.stdin("")
 	h.terminal(false)
 
-	if code := h.run("login", "--server", srv.URL); code != ExitConnection {
+	if code := h.run("login", "--profile", "default", "--server", srv.URL); code != ExitConnection {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
 	}
 	if !strings.Contains(h.errOut(), "需引导用户手动登录") {
@@ -892,10 +882,10 @@ func TestLoginIgnoresLocalTokenForRemote(t *testing.T) {
 	h.stdin("typed-token\n")
 	h.terminal(false)
 
-	if code := h.run("login", "--server", "http://192.168.1.5:8000"); code != ExitOK {
+	if code := h.run("login", "--profile", "default", "--server", "http://192.168.1.5:8000"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
-	if got := h.loadConfig(t).Profiles[config.DefaultProfile].Token; got != "typed-token" {
+	if got := h.loadConfig(t).Profiles["default"].Token; got != "typed-token" {
 		t.Fatalf("token 为 %q", got)
 	}
 	if strings.Contains(h.errOut(), "本机 token 文件") {
@@ -921,7 +911,7 @@ func TestLoginUnreachableLocalExitsThree(t *testing.T) {
 	h.terminal(false)
 
 	// 127.0.0.1:1 上没有服务.
-	if code := h.run("login", "--server", "http://127.0.0.1:1"); code != ExitConnection {
+	if code := h.run("login", "--profile", "default", "--server", "http://127.0.0.1:1"); code != ExitConnection {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
 	}
 	if !strings.Contains(h.errOut(), "连接") {

@@ -17,9 +17,6 @@ import (
 	"strings"
 )
 
-// DefaultProfile 是未指定 --profile 且配置为空时使用的 profile 名.
-const DefaultProfile = "default"
-
 // FileName 是配置文件的名字.
 //
 // 不用 config.json: Windows 上它与桌面应用共用数据目录, 那份目录里已经有实例的 config.toml,
@@ -39,8 +36,10 @@ type Profile struct {
 }
 
 // File 是配置文件的完整内容.
+//
+// 不记录「当前 profile」: 多个智能体可能同时用不同 profile 操作不同实例, 一个全局的
+// 当前项会让漏写 --profile 的命令打到别人那台实例上. 每条命令都必须显式指定.
 type File struct {
-	Current  string             `json:"current"`
 	Profiles map[string]Profile `json:"profiles"`
 }
 
@@ -91,7 +90,7 @@ func dirFor(goos string, getenv func(string) string, home, configDir func() (str
 func Load(path string) (*File, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return &File{Current: DefaultProfile, Profiles: map[string]Profile{}}, nil
+		return &File{Profiles: map[string]Profile{}}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)
@@ -133,21 +132,6 @@ func (f *File) normalize() {
 	if f.Profiles == nil {
 		f.Profiles = map[string]Profile{}
 	}
-	if f.Current == "" {
-		f.Current = DefaultProfile
-	}
-}
-
-// Select 返回指定 profile 及其是否存在. 传入空名时使用当前 profile.
-func (f *File) Select(name string) (string, Profile, bool) {
-	if name == "" {
-		name = f.Current
-	}
-	if name == "" {
-		name = DefaultProfile
-	}
-	p, ok := f.Profiles[name]
-	return name, p, ok
 }
 
 // ResolveToken 按 profile → 环境变量 → 本机 token 文件的顺序取 token,

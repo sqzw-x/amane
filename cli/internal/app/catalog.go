@@ -150,7 +150,7 @@ func (r *runner) cmdSchema(ctx context.Context) error {
 
 // cmdCall 派发一次工具调用.
 func (r *runner) cmdCall(ctx context.Context) error {
-	tool, err := r.requireArg(0, "tool")
+	tool, err := r.requireArg(0, "<tool>")
 	if err != nil {
 		return err
 	}
@@ -175,15 +175,21 @@ func (r *runner) cmdCall(ctx context.Context) error {
 	return r.writeBody(resp.Body)
 }
 
-// readArgs 读取工具入参: @文件、- (标准输入)、JSON 字面量, 或无参数时的管道输入.
+// readArgs 读取工具入参: --file 指定的文件、- (标准输入)、JSON 字面量, 或无参数时的管道输入.
 func (r *runner) readArgs() (json.RawMessage, error) {
 	source := r.arg(1)
 
 	var data []byte
 	switch {
+	case r.p.fileSet:
+		read, err := os.ReadFile(r.p.file)
+		if err != nil {
+			return nil, usagef("读取入参文件失败: %v", err)
+		}
+		data = read
 	case source == "":
 		if r.env.StdinIsTerminal {
-			return nil, usagef("缺少入参: 用 @文件、- 从标准输入读取, 或直接给出 JSON 字面量")
+			return nil, usagef("缺少入参: 用 --file <路径>、- 从标准输入读取, 或直接给出 JSON 字面量")
 		}
 		read, err := io.ReadAll(r.env.Stdin)
 		if err != nil {
@@ -194,16 +200,6 @@ func (r *runner) readArgs() (json.RawMessage, error) {
 		read, err := io.ReadAll(r.env.Stdin)
 		if err != nil {
 			return nil, usagef("读取标准输入失败: %v", err)
-		}
-		data = read
-	case strings.HasPrefix(source, "@"):
-		path := strings.TrimPrefix(source, "@")
-		if path == "" {
-			return nil, usagef("@ 后需要文件路径")
-		}
-		read, err := os.ReadFile(path)
-		if err != nil {
-			return nil, usagef("读取入参文件失败: %v", err)
 		}
 		data = read
 	default:

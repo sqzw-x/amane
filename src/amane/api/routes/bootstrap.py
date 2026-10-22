@@ -37,22 +37,26 @@ Amane 通过 CLI 工具提供外部控制接口, 需单独在本机安装
    装到 PATH 中的路径下以方便调用并避免重复安装
    需修改 PATH 时, 给出预览经用户同意后执行, 禁止擅自改系统配置.
 
-4. 登录. 先判断 origin 的主机: 127.0.0.1 / localhost / ::1 算本机.
-   - 本机: 运行 `amane login --server <origin>`. CLI 会自己去找桌面版留在数据目录里的 token,
-     并当场验证一次; 成功即可继续, 用户不需要粘贴任何东西.
-     若 login 失败 (本机没有可用凭据、或读不到 token), 不要重试, 按下面「不在本机」处理.
+4. 登录. 先给这个实例起一个 profile 名: 用 origin 的主机与端口, 短横线连接, 例如
+   localhost-5173 或 192-168-1-5-8000. 之后每条命令都要带 `--profile <名字>` ——
+   同一台机器上可能接入多个实例, CLI 不会替你猜是哪一个.
+   再判断 origin 的主机: 127.0.0.1 / localhost / ::1 算本机.
+   - 本机: 运行 `amane login --server <origin> --profile <名字>`. CLI 会自己去找桌面版留在
+     数据目录里的 token 并当场验证; 成功即可继续, 用户不需要粘贴任何东西.
+     若 login 失败, 不要重试, 按下面「不在本机」处理.
    - 不在本机, 或本机没有可用凭据: 不要代为执行, 也不要向用户索要 token. 请用户在自己的
-     终端运行 `amane login --server <origin>` 并自行粘贴; 告诉用户可以去桌面应用菜单
-     「复制 API Token」, 或实例的启动日志里找.
+     终端运行 `amane login --server <origin> --profile <名字>` 并自行粘贴; 告诉用户可以去
+     桌面应用菜单「复制 API Token」, 或实例的启动日志里找.
      你自己不要去取: 不读 token 文件, 不读日志里的 token, 也不从进程环境、`ps`、源码或
      任何其它途径翻找. 拿不到就停下来等用户, 这是唯一正确的做法. 用户完成后你再继续.
 
 ## 阶段二: 安装 Skill
 
 1. 就 skill 安装位置提供建议并征求用户同意, 这可能和用户安装的 agent 工具相关, 例如 ~/.agents/skills 等
-   然后运行 `amane skill install --dir <path>`, 注意 CLI 会自动创建 <path>/amane 子目录并放置 skill 文件, 无需手动创建
+   然后运行 `amane skill install --dir <path> --profile <名字>`, 注意 CLI 会自动创建 <path>/amane
+   子目录并放置 skill 文件, 无需手动创建. Skill 里会写入这个 profile 名, 之后每条命令都带着它.
 
-2. 运行 `amane doctor` 应该通过
+2. 运行 `amane doctor --profile <名字>` 应该通过
 
 3. 取决于用户使用的 Agent 工具, skill 可能立刻可见或需要重启. 加载 skill 并按指引操作.
 """

@@ -17,7 +17,7 @@ import (
 // get_task_submission_schema), 因此直接读 GET /api/tasks/{id}, 与 api 命令同一条路径.
 // 终态为 done 与 failed: 取消的任务也是 failed, 没有 cancelled.
 func (r *runner) cmdWait(ctx context.Context) error {
-	id, err := r.requireArg(0, "task-id")
+	id, err := r.requireArg(0, "<task-id>")
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (r *runner) cmdWait(ctx context.Context) error {
 
 // cmdAPI 直通 GET 请求.
 func (r *runner) cmdAPI(ctx context.Context) error {
-	raw, err := r.requireArg(0, "path")
+	raw, err := r.requireArg(0, "<path>")
 	if err != nil {
 		return err
 	}

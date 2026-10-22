@@ -45,13 +45,13 @@ func ResolveTarget(dir string) string {
 }
 
 // Render 由目录生成全部 Skill 文件. 输出对同一目录稳定.
-func Render(cat *api.Catalog, cliVersion string) map[string][]byte {
+func Render(cat *api.Catalog, cliVersion, profile string) map[string][]byte {
 	version := strings.TrimSpace(cat.Version)
 	if version == "" {
 		version = "未知"
 	}
 	return map[string][]byte{
-		MainFile:    []byte(renderMain(cat, version, cliVersion)),
+		MainFile:    []byte(renderMain(cat, version, cliVersion, profile)),
 		VersionFile: []byte(version + "\n"),
 	}
 }
@@ -83,13 +83,13 @@ func InstalledVersion(dir string) (string, error) {
 	return version, nil
 }
 
-func renderMain(cat *api.Catalog, version, cliVersion string) string {
+func renderMain(cat *api.Catalog, version, cliVersion, profile string) string {
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("name: amane\n")
 	b.WriteString("description: 通过 amane CLI 管理 Amane 实例 (影片元数据管理服务): 查询与修改番号条目、演员、分类、媒体库、订阅源、定时任务, 执行只读 SQL, 等待任务到终态.\n")
 	b.WriteString("---\n\n")
-	fmt.Fprintf(&b, "# Amane\n\n本文件由 `amane skill install` 生成, 对应实例版本 %s, CLI 版本 %s. 实例升级后重新运行 `amane skill install`.\n", version, cliVersion)
+	fmt.Fprintf(&b, "# Amane\n\n本文件由 `amane skill install` 生成, 对应实例版本 %s, CLI 版本 %s, profile `%s`. 实例升级后重新运行 `amane skill install`.\n", version, cliVersion, profile)
 
 	b.WriteString("\n## 何时使用\n\n")
 	b.WriteString("用户要求管理或查询 Amane 实例中的影片元数据、演员、分类、媒体库、订阅源、定时任务与任务队列时使用. 用户说「用我的 Amane 做什么」也属于此范围.\n")
@@ -97,23 +97,24 @@ func renderMain(cat *api.Catalog, version, cliVersion string) string {
 	b.WriteString("\n## 开始前\n\n")
 	b.WriteString("先运行 `amane upgrade`: 它比对 GitHub 上的最新版本, 已是最新时什么都不做. 失败时 (离线、GitHub 不可达等) 不要重试, 也不要停下来, 直接用当前版本继续.\n")
 
+	pf := " --profile " + profile
 	b.WriteString("\n## 工作方式\n\n")
-	b.WriteString("1. 先运行 `amane catalog` 取工具索引, 按名字选择工具, 不要自行猜测工具名. 索引只给一行签名, 足够选出工具.\n")
-	b.WriteString("2. 参数不确定时运行 `amane catalog <tool>` 取该工具的完整入参, 不要为其他工具一起取. 嵌套入参写入文件, 再用 `amane call <tool> @args.json` 传入, 避免在 shell 里嵌套引号.\n")
-	b.WriteString("3. 写只读 SQL 前先运行 `amane schema` 取库结构.\n")
-	b.WriteString("4. 入队类工具返回 `task_id`, 用 `amane wait <task_id>` 阻塞到终态, 不要自己写查询循环; 长任务加 `--timeout` 兜底, 否则会一直等到出结果.\n")
+	fmt.Fprintf(&b, "1. 先运行 `amane catalog%s` 取工具索引, 按名字选择工具, 不要自行猜测工具名. 索引只给一行签名, 足够选出工具.\n", pf)
+	fmt.Fprintf(&b, "2. 参数不确定时运行 `amane catalog <tool>%s` 取该工具的完整入参, 不要为其他工具一起取. 嵌套入参写入文件, 再用 `amane call <tool> --file <路径>%s` 传入, 避免在 shell 里嵌套引号.\n", pf, pf)
+	fmt.Fprintf(&b, "3. 写只读 SQL 前先运行 `amane schema%s` 取库结构.\n", pf)
+	fmt.Fprintf(&b, "4. 入队类工具返回 `task_id`, 用 `amane wait <task_id>%s` 阻塞到终态, 不要自己写查询循环; 长任务加 `--timeout` 兜底, 否则会一直等到出结果.\n", pf)
 	b.WriteString("5. 退出码 0 表示请求已完成, 业务结果仍看响应体 (工具失败时是 `error` 字段); 非 0 表示这次调用失败, 不要当成完成: 1 本机问题 (配置损坏、目录不可写), 2 用法错误, 3 连接或鉴权, 4 服务端拒绝 (参数不对、工具不存在).\n")
-	b.WriteString("6. 连接或鉴权失败时先运行 `amane doctor`, 按它的结论处理, 不要反复试探.\n")
+	fmt.Fprintf(&b, "6. 连接或鉴权失败时先运行 `amane doctor%s`, 按它的结论处理, 不要反复试探.\n", pf)
 
 	b.WriteString("\n## 调用约定\n\n")
-	b.WriteString("所有操作经由 CLI, 不要自己拼 HTTP 请求. 命令表固定, 不随实例工具变化:\n\n")
+	fmt.Fprintf(&b, "所有操作经由 CLI, 不要自己拼 HTTP 请求. 命令固定, 且每条都要带 `--profile %s` —— 本机可能同时在管多个实例, 漏掉就会打到别的实例上:\n\n", profile)
 	b.WriteString("```sh\n")
-	b.WriteString("amane catalog [<tool>]       # 工具索引 / 单个工具的完整入参\n")
-	b.WriteString("amane schema                 # 库结构摘要\n")
-	b.WriteString("amane call <tool> [@file|-]  # 派发调用\n")
-	b.WriteString("amane wait <task-id>         # 轮询到终态\n")
-	b.WriteString("amane api <path>             # 直通 GET\n")
-	b.WriteString("amane doctor                 # 自检\n")
+	fmt.Fprintf(&b, "amane catalog [<tool>]%s       # 工具索引 / 单个工具的完整入参\n", pf)
+	fmt.Fprintf(&b, "amane schema%s                 # 库结构摘要\n", pf)
+	fmt.Fprintf(&b, "amane call <tool> --file <路径>%s  # 派发调用\n", pf)
+	fmt.Fprintf(&b, "amane wait <task-id>%s         # 轮询到终态\n", pf)
+	fmt.Fprintf(&b, "amane api <path>%s             # 直通 GET\n", pf)
+	fmt.Fprintf(&b, "amane doctor%s                 # 自检\n", pf)
 	b.WriteString("```\n")
 	b.WriteString("\n除 `wait` 外, 其余命令都可加 `--timeout <时长>` 放宽单个请求的超时 (默认 15s). 只有慢查询这类耗时才需要.\n")
 
@@ -130,7 +131,7 @@ func renderMain(cat *api.Catalog, version, cliVersion string) string {
 	b.WriteString(renderSelfService(cat))
 
 	b.WriteString("\n## 鉴权\n\n")
-	b.WriteString("token 由 CLI 保管, 不进入对话. 不要读取、回显或写入 token, 也不要向用户索要 token 后代为输入; 需要登录时请用户自己在终端执行 `amane login --server <地址>` 并粘贴 token.\n")
+	b.WriteString("token 由 CLI 保管, 不进入对话. 不要读取、回显或写入 token, 也不要向用户索要 token 后代为输入; 需要登录时请用户自己在终端执行 `amane login --server <地址> --profile <名字>` 并粘贴 token.\n")
 	b.WriteString("\n持有 token 等同于实例所有者. 不把本 Skill 的调用能力转交给第三方.\n")
 	return b.String()
 }

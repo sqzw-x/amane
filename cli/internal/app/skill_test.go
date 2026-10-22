@@ -16,7 +16,7 @@ func TestSkillInstallWithDir(t *testing.T) {
 	h := newHarness(t, srv.URL)
 	parent := filepath.Join(h.dir, "skill")
 	target := filepath.Join(parent, "amane")
-	if code := h.run("skill", "install", "--dir", parent); code != ExitOK {
+	if code := h.run("skill", "--profile", "default", "install", "--dir", parent); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	for _, name := range []string{"SKILL.md", "version"} {
@@ -58,7 +58,7 @@ func TestSkillInstallKeepsNewerInstalled(t *testing.T) {
 		t.Fatalf("写入 SKILL.md 失败: %v", err)
 	}
 
-	if code := h.run("skill", "install", "--dir", parent); code != ExitOK {
+	if code := h.run("skill", "--profile", "default", "install", "--dir", parent); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	version, err := os.ReadFile(filepath.Join(dir, "version"))
@@ -94,7 +94,7 @@ func TestSkillInstallUpgradesOlderInstalled(t *testing.T) {
 		t.Fatalf("写入版本文件失败: %v", err)
 	}
 
-	if code := h.run("skill", "install", "--dir", parent); code != ExitOK {
+	if code := h.run("skill", "--profile", "default", "install", "--dir", parent); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	version, err := os.ReadFile(filepath.Join(dir, "version"))
@@ -111,7 +111,7 @@ func TestSkillInstallDefaultDir(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("skill", "install"); code != ExitOK {
+	if code := h.run("skill", "--profile", "default", "install"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	// 父目录不必预先存在: 默认位置是确定的, 不是探测出来的.
@@ -127,7 +127,7 @@ func TestSkillInstallDirIsParent(t *testing.T) {
 
 	h := newHarness(t, srv.URL)
 	parent := filepath.Join(h.home, "custom-skills")
-	if code := h.run("skill", "install", "--dir", parent); code != ExitOK {
+	if code := h.run("skill", "--profile", "default", "install", "--dir", parent); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	// --dir 给的是父目录, 与默认位置同构: 文件落在 amane 子目录下, 不污染父目录.
@@ -145,7 +145,7 @@ func TestSkillInstallDirAlreadyTarget(t *testing.T) {
 
 	h := newHarness(t, srv.URL)
 	target := filepath.Join(h.home, "skills", "amane")
-	if code := h.run("skill", "install", "--dir", target); code != ExitOK {
+	if code := h.run("skill", "--profile", "default", "install", "--dir", target); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	if _, err := os.Stat(filepath.Join(target, "SKILL.md")); err != nil {
@@ -161,7 +161,7 @@ func TestSkillShowWritesNothing(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("skill", "show"); code != ExitOK {
+	if code := h.run("skill", "--profile", "default", "show"); code != ExitOK {
 		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
 	}
 	for _, want := range []string{"SKILL.md", "version", "审批礼仪", "amane catalog"} {
@@ -180,7 +180,7 @@ func TestSkillShowWritesNothing(t *testing.T) {
 
 func TestSkillUnknownSubcommand(t *testing.T) {
 	h := newHarness(t, "http://127.0.0.1:1")
-	if code := h.run("skill", "frob"); code != ExitUsage {
+	if code := h.run("skill", "--profile", "default", "frob"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
 }

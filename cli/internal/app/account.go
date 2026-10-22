@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
 	"github.com/sqzw-x/amane/cli/internal/api"
+	"golang.org/x/term"
+
 	"github.com/sqzw-x/amane/cli/internal/config"
 )
 
@@ -23,60 +26,46 @@ func (r *runner) cmdLogin(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	server, err := r.loginServer(cfg)
+	server, err := config.NormalizeServer(r.p.server)
 	if err != nil {
-		return err
+		return usagef("%v", err)
 	}
+	name := strings.TrimSpace(r.p.profile)
+
+	// 同名 profile 已存在时按地址分两种: 地址一致说明用户想刷新凭据, 先看旧的还能不能
+	// 用; 地址不一致多半是重名, 默认不动它, 要覆盖得显式说.
+	if existing, ok := cfg.Profiles[name]; ok && !r.p.force {
+		stored, err := config.NormalizeServer(existing.Server)
+		if err != nil || stored != server {
+			return usagef("profile %q 已存在并指向 %s; 要改成 %s 请加 --force", name, existing.Server, server)
+		}
+		switch err := r.verifyToken(ctx, server, existing.Token); {
+		case err == nil:
+			fmt.Fprintf(r.env.Stderr, "amane: profile %q 已存在且凭据可用, 无需登录\n", name)
+			return nil
+		case api.IsTransport(err):
+			return r.loginConnectError(server, err)
+		}
+	}
+
 	if config.PlaintextWarning(server) {
 		fmt.Fprintf(r.env.Stderr, "amane: 提示: %s 是明文 http 且不在本机, token 会以明文传输, 建议改用 https 或反向代理\n", server)
 	}
 
-	token, source, err := r.loginToken(ctx, server)
+	token, _, err := r.loginToken(ctx, server)
 	if err != nil {
 		return err
 	}
 	if token == "" {
 		return usagef("没有读到 token: 用管道传入, 或在终端里粘贴")
 	}
-	if source != "" {
-		fmt.Fprintf(r.env.Stderr, "amane: token 取自 %s\n", source)
-	}
 
-	name := r.p.profile
-	if name == "" {
-		name = cfg.Current
-	}
 	cfg.Profiles[name] = config.Profile{Server: server, Token: token}
-	cfg.Current = name
 	if err := cfg.Save(r.cfgPath); err != nil {
 		return err
 	}
-	fmt.Fprintf(r.env.Stderr, "amane: 已保存 %s 的凭据\n", server)
+	fmt.Fprintf(r.env.Stderr, "amane: 已保存 profile %q (%s)\n", name, server)
 	return nil
-}
-
-// loginServer 取本次要写入的实例地址.
-func (r *runner) loginServer(cfg *config.File) (string, error) {
-	if raw := strings.TrimSpace(r.p.server); raw != "" {
-		server, err := config.NormalizeServer(raw)
-		if err != nil {
-			return "", usagef("%v", err)
-		}
-		return server, nil
-	}
-	name := r.p.profile
-	if name == "" {
-		name = cfg.Current
-	}
-	existing, ok := cfg.Profiles[name]
-	if !ok || strings.TrimSpace(existing.Server) == "" {
-		return "", usagef("缺少 --server: amane login --server <实例地址>")
-	}
-	server, err := config.NormalizeServer(existing.Server)
-	if err != nil {
-		return "", usagef("%v", err)
-	}
-	return server, nil
 }
 
 // loginToken 选一个 token: 显式给出的优先, 其次本机桌面版留下的, 最后问用户.
@@ -117,16 +106,27 @@ func (r *runner) loginToken(ctx context.Context, server string) (string, string,
 		}
 		return "", "", &cliError{
 			code: ExitConnection,
-			msg:  fmt.Sprintf("此实例无法自动鉴权, 需引导用户手动登录\n示例: amane login --server %s", server),
+			msg:  fmt.Sprintf("此实例无法自动鉴权, 需引导用户手动登录\n示例: amane login --server %s --profile %s", server, r.p.profile),
 		}
 	}
 
-	fmt.Fprintln(r.env.Stderr, "请粘贴该实例的 API Token 后回车:")
-	token, err := readToken(r.env.Stdin, true)
+	fmt.Fprintln(r.env.Stderr, "请粘贴该实例的 API Token 后回车 (输入不回显):")
+	token, err := r.readSecret()
 	if err != nil {
 		return "", "", usagef("读取标准输入失败: %v", err)
 	}
 	return token, "", nil
+}
+
+// readSecret 读取用户粘贴的 token. 终端下关闭回显, 免得凭据留在屏幕上.
+func (r *runner) readSecret() (string, error) {
+	if file, ok := r.env.Stdin.(*os.File); ok && r.env.StdinIsTerminal {
+		if typed, err := term.ReadPassword(int(file.Fd())); err == nil {
+			fmt.Fprintln(r.env.Stderr)
+			return strings.TrimSpace(string(typed)), nil
+		}
+	}
+	return readToken(r.env.Stdin, r.env.StdinIsTerminal)
 }
 
 // pingInstance 用免鉴权的健康检查确认该地址上有实例在跑.
@@ -180,12 +180,12 @@ func (r *runner) cmdConfig(_ context.Context) error {
 	}
 	switch sub := r.arg(0); sub {
 	case "":
-		name, profile, ok := cfg.Select(r.p.profile)
+		if strings.TrimSpace(r.p.profile) == "" {
+			return usagef("缺少 --profile: amane config --profile <名字>, 或 amane config list 查看全部")
+		}
+		profile, ok := cfg.Profiles[r.p.profile]
 		if !ok {
-			if r.p.profile != "" {
-				return usagef("profile %q 不存在; 用 amane config list 查看已有 profile", name)
-			}
-			return usagef("未配置实例地址, 先运行 amane login --server <地址>")
+			return usagef("profile %q 不存在; 用 amane config list 查看已有 profile", r.p.profile)
 		}
 		token, source := config.ResolveToken(profile, r.env.Getenv)
 		return r.writeJSON(struct {
@@ -195,25 +195,25 @@ func (r *runner) cmdConfig(_ context.Context) error {
 			TokenSource string `json:"token_source"`
 			ConfigPath  string `json:"config_path"`
 		}{
-			Profile:     name,
+			Profile:     r.p.profile,
 			Server:      profile.Server,
 			Token:       config.Mask(token),
 			TokenSource: source,
 			ConfigPath:  r.cfgPath,
 		})
-	case "use":
-		name, err := r.requireArg(1, "profile")
+	case "delete", "rm":
+		name, err := r.requireArg(1, "<名字>")
 		if err != nil {
 			return err
 		}
 		if _, ok := cfg.Profiles[name]; !ok {
-			return usagef("profile %q 不存在; 先运行 amane login --server <地址> --profile %s 创建", name, name)
+			return usagef("profile %q 不存在; 用 amane config list 查看已有 profile", name)
 		}
-		cfg.Current = name
+		delete(cfg.Profiles, name)
 		if err := cfg.Save(r.cfgPath); err != nil {
 			return err
 		}
-		fmt.Fprintf(r.env.Stderr, "amane: 已切换到 profile %s\n", name)
+		fmt.Fprintf(r.env.Stderr, "amane: 已删除 profile %q\n", name)
 		return nil
 	case "list":
 		type entry struct {
@@ -233,11 +233,10 @@ func (r *runner) cmdConfig(_ context.Context) error {
 			entries = append(entries, entry{Name: name, Server: profile.Server, Token: config.Mask(token)})
 		}
 		return r.writeJSON(struct {
-			Current  string  `json:"current"`
 			Profiles []entry `json:"profiles"`
-		}{Current: cfg.Current, Profiles: entries})
+		}{Profiles: entries})
 	default:
-		return usagef("未知的 config 子命令 %q, 可用: use, list", sub)
+		return subcommandError("config", sub, configSubcommands...)
 	}
 }
 

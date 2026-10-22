@@ -36,9 +36,9 @@ func newHarness(t *testing.T, serverURL string) *harness {
 		t.Fatalf("准备主目录失败: %v", err)
 	}
 	cfgPath := filepath.Join(dir, "cli.json")
-	cfg := &config.File{Current: config.DefaultProfile, Profiles: map[string]config.Profile{}}
+	cfg := &config.File{Profiles: map[string]config.Profile{}}
 	if serverURL != "" {
-		cfg.Profiles[config.DefaultProfile] = config.Profile{Server: serverURL, Token: testToken}
+		cfg.Profiles["default"] = config.Profile{Server: serverURL, Token: testToken}
 	}
 	if err := cfg.Save(cfgPath); err != nil {
 		t.Fatalf("写入配置失败: %v", err)

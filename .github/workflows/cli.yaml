@@ -52,8 +52,8 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: cli/go.mod
-          # 没有第三方依赖 (无 go.sum), 缓存无事可做.
-          cache: false
+          # 依赖 golang.org/x/term, 缓存按 go.sum 走.
+          cache: true
 
       - name: Setup just
         uses: extractions/setup-just@v4

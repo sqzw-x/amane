@@ -2,7 +2,7 @@
 
 Amane 实例的外部智能体接口客户端. 它是实例派发端点的薄客户端: 只保管 token、组装入参、折叠轮询与自检, 不认识任何具体工具名. 设计背景见 [docs/dev/agent.md](../../docs/dev/agent.md).
 
-仅依赖 Go 标准库, 交叉编译为单一静态二进制.
+除 `golang.org/x/term` (读取密码不回显) 外只依赖标准库, 交叉编译为单一静态二进制.
 
 ## 安装
 
@@ -25,10 +25,10 @@ cd cli && go build -o amane ./cmd/amane
 ## 登录
 
 ```sh
-amane login --server <实例地址>                 # 本机实例无需粘贴, CLI 自己取 token
+amane login --server <实例地址> --profile <名字>  # 本机实例无需粘贴, CLI 自己取 token
 ```
 
-token 只从标准输入读取, 不接受命令行参数 (会进 shell 历史与 `ps`). 交互终端下读一行并给出提示, 但终端本身会回显; 想不让它出现在屏幕上就用管道. 权限 0600:
+`--profile` 与 `--server` 都必填: 同一台机器上可能接入多个实例, 缺省选一个「当前 profile」会让漏写参数的命令打到别的实例上. token 只从标准输入读取, 不接受命令行参数 (会进 shell 历史与 `ps`); 交互终端下用不回显的方式读取. 权限 0600:
 
 | 平台 | 路径 | 说明 |
 |------|------|------|
@@ -36,38 +36,38 @@ token 只从标准输入读取, 不接受命令行参数 (会进 shell 历史与
 | Linux | `$XDG_CONFIG_HOME/amane/cli.json`, 默认 `~/.config/amane/cli.json` | 同上 |
 | Windows | `%LOCALAPPDATA%\Amane\cli.json` | 与桌面应用共用数据目录, 与实例的 `config.toml` / `token` 并列 |
 
-`login` 的地址只能由 `--server` 或已有 profile 给出, CLI 不推断端口 — 调用方本来就知道实例地址 (智能体从引导的 URL 拿)。地址指向本机 (127.0.0.1 / localhost / ::1) 时, `login` 会自己去找桌面版留下的 `token` 文件并当场验一次鉴权, 通过就直接写入 profile; 取不到或验不过才提示粘贴。本机 token 文件依次找 `AMANE_DATA_DIR`、桌面应用的数据目录 (macOS `~/Library/Application Support/Amane`, Windows `%LOCALAPPDATA%\Amane`)、`./data`。
+`login` 不推断端口 — 地址由 `--server` 给出, 调用方本来就知道 (智能体从引导的 URL 拿). 同名 profile 已存在且地址一致时先验旧凭据, 可用就直接返回; 地址不同则要求 `--force` 才覆盖.地址指向本机 (127.0.0.1 / localhost / ::1) 时, `login` 会自己去找桌面版留下的 `token` 文件并当场验一次鉴权, 通过就直接写入 profile; 取不到或验不过才提示粘贴。本机 token 文件依次找 `AMANE_DATA_DIR`、桌面应用的数据目录 (macOS `~/Library/Application Support/Amane`, Windows `%LOCALAPPDATA%\Amane`)、`./data`。
 
 实例地址指向非回环地址且为明文 `http://` 时, 在标准错误给一次警告, 不阻断.
 
 ## 常用命令
 
 ```sh
-amane catalog                          # 工具索引, 按域分组的一行制文本
-amane catalog update_metadata          # 单个工具的完整入参
-amane catalog --json                   # 索引原文 (JSON)
-amane schema                           # 库结构摘要, 写只读 SQL 时参考
+# 每个操作实例的命令都要带 --profile; 名字由 amane login 时指定.
+amane catalog --profile work               # 工具索引, 按域分组的一行制文本
+amane catalog update_metadata --profile work  # 单个工具的完整入参
+amane catalog --json --profile work        # 索引原文 (JSON)
+amane schema --profile work                # 库结构摘要, 写只读 SQL 时参考
 
-amane call update_metadata @args.json        # 入参来自文件
-amane call sql_explore -                     # 入参来自标准输入
-amane call sql_explore '{"sql":"select 1"}'  # 入参字面量
+amane call update_metadata --file args.json --profile work   # 入参来自文件
+amane call sql_explore - --profile work                       # 入参来自标准输入
+amane call sql_explore '{"sql":"select 1"}' --profile work    # 入参字面量
 
-amane wait 42                          # 轮询任务到终态
-amane wait 42 --interval 1s --timeout 10m
+amane wait 42 --profile work               # 轮询任务到终态
+amane wait 42 --interval 1s --timeout 10m --profile work
 
-amane api tasks/42                     # 直通 GET, 自动补 /api 前缀
-amane doctor                           # 自检: CLI、实例、鉴权
-amane doctor --json
-amane upgrade                          # 比对最新版本, 较新时下载替换
-amane upgrade --dry-run                # 只打印判断结果与下载计划
-amane skill install                    # 默认写入 ~/.agents/skills/amane
-amane skill install --dir ~/my-skills  # 指定父目录, 自动追加 amane
-amane skill show                       # 打印 Skill 内容, 不写文件
+amane api tasks/42 --profile work          # 直通 GET, 自动补 /api 前缀
+amane doctor --profile work                # 自检: CLI、实例、鉴权、版本
+amane upgrade                              # 比对最新版本, 较新时下载替换 (不碰实例)
+amane upgrade --dry-run                    # 只打印判断结果与下载计划
+amane skill install --dir ~/my-skills --profile work  # 写入 Skill, 内含 profile 名
+amane skill show --profile work            # 打印 Skill 内容, 不写文件
 
-amane config                           # 当前 profile (token 打码)
-amane config use work
-amane config list
+amane config --profile work                # 某个 profile (token 打码)
+amane config list                          # 列出全部 profile
+amane config delete work                   # 删除 profile
 ```
+
 
 全局选项: `--server <url>`、`--profile <name>`、`--pretty`、`--json`、`--timeout <时长>` (单个请求的超时, 默认 15s; 升级下载同样受它约束, 慢网下自行放宽)、`--version`、`--help`. `catalog` 与 `schema` 默认输出紧凑文本, `--json` 取原文.
 
