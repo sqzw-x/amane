@@ -94,3 +94,17 @@
 `AgentService` 挂载于 `AppRuntime`: `_rebuild()` 按 `hot.agent` 重建工厂, **不清除** ResultCache; bootstrap 装配 `bridge` (safe_dirs / watcher / 动态 Worker 取消 / `FeedService.poll_one`).
 
 上游协议由 `hot.agent.api_type` 选择, 模型构造与翻译共用 `llm/model.py::build_model`; `base_url` / `api_key` / `model` 原样交给对应 Provider (Anthropic 需填 Anthropic 端点, 无隐式改写). 身份与规则经 agent `instructions` 注入而**不是** `system_prompt`: Responses 协议把 agent instructions 放在 API 顶层 `instructions` 字段, 服务端插在 `input` 之前; `system_prompt` 会变成 `input` 里的 system 消息, 于是各 capability 的注意事项反而排在身份定位之前. 思考强度: 全局 `hot.agent.thinking` 为默认 (`None` = 不传), 会话覆盖在 `meta.json`; 每回合经由 `model_settings` 注入 thinking 与 `hot.agent.max_tokens`. 运行使用无上限的 `UsageLimits`.
+
+## 外部接入
+
+外部智能体 (用户自己的 CLI 工具) 经同一套工具定义管理实例, 入口 `src/amane/agent/external.py`. 目录按名字暴露入参 / 返回 Schema, 派发按名字调用工具函数本体, **不重写任何领域逻辑**; 工具名因此是对外契约, 改名按破坏性变更处理.
+
+与内置助理的三处差异, 都源于外部通道没有界面:
+
+- **无审批**: 派发始终以已批准的上下文执行, 工具内的闸门只对内置助理生效. 破坏性操作的约束交给工具描述与 Skill 的审批礼仪, 服务端不校验.
+- **无会话**: 依赖里的 `session_id` 为空, 交付的查询预设因此与会话解耦并直接 `persisted`; 探查视图仍不保留, 只按 id 取行.
+- **不依赖模型配置**: 目录从工具组构造, 不经助理工厂, 未配置模型时照常可用.
+
+`GET /public/agent` 是唯一免鉴权端点, 只回固定文本 (装 CLI / 鉴权 / 装 Skill / 约束), **不拼接实例地址、版本、路径或 token** — 实例地址由调用方从请求 URL 推得. 正文随发布更新, 不得引入任何随实例变化的内容. 该路由注册在 SPA catch-all 之前, `/public/` 是 SPA 保留前缀.
+
+读取日志、配置、数据库不做接口: 目录响应的 `paths` 给出位置, 由智能体自行读文件; 远端实例退回记录导出.

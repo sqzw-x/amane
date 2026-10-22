@@ -9,7 +9,7 @@ from pydantic import AfterValidator
 
 from ..enums import ActorGender, LinkMode
 from ..parsing.file_info import FileInfo
-from ..utils.path import is_descendant, path_key
+from ..utils.path import is_descendant
 from .template import PLACEHOLDER_MAP_KEYS as PLACEHOLDER_MAP_KEYS
 from .template import PLACEHOLDERS as PLACEHOLDERS
 from .template import Parser, PathEngine, TemplateContext
@@ -81,14 +81,10 @@ def resolve_paths(
         file_info=file_info,
         cd=cd,
         actor_genders=actor_genders,
-        library_root=base_path,
     )
 
     # 先渲染视频, 注入 `{video_*}` 后再渲染链接与刮削产物.
     video = PathEngine(library.video_template).resolve(ctx, base_path, safe_dirs)
-    if path_key(video) == path_key(base_path):
-        # 空模板或唯一占位符取值落空时, 视频路径退化为库根目录; 后续会以与原因无关的错误失败, 或按库根名在库外落盘.
-        raise ValueError(f"视频模板解析为库根目录: {library.video_template!r}")
     ctx.apply_video(video, base_path)
     link = _resolve_link_path(library, ctx, base_path, safe_dirs)
     ctx.apply_link(link)
@@ -151,7 +147,7 @@ def resolve_subtitle_path(
     safe_dirs: Sequence[Path] | None = (),
     actor_genders: Mapping[str, ActorGender] | None = None,
 ) -> Path:
-    """`{ext}` / `{raw_srt_name}` 取自该字幕源文件; `{raw_name}` / `{raw_dir}` / `{raw_relpath}` 仍是视频源.
+    """`{ext}` / `{raw_srt_name}` 取自该字幕源文件; `{raw_name}` / `{raw_dir}` 仍是视频源.
     `{video_dir}` / `{video_name}` 为整理后视频父目录与文件名 (不含扩展名);
     `{video_relpath}` 为整理后视频相对库根目录的路径 (`video_dest` 未传时为空);
     `{link_dir}` / `{link_name}` 为链接父目录与文件名 (未设置链接时分别与视频侧相同).
@@ -159,11 +155,7 @@ def resolve_subtitle_path(
     """
     base_path = Path(library.path)
     ctx = TemplateContext.from_metadata(
-        metadata,
-        source_path=source_path,
-        file_info=file_info,
-        actor_genders=actor_genders,
-        library_root=base_path,
+        metadata, source_path=source_path, file_info=file_info, actor_genders=actor_genders
     )
     if video_dest is not None:
         ctx.apply_video(video_dest, base_path)

@@ -2,7 +2,6 @@
 
 import os
 from contextlib import contextmanager
-from ipaddress import ip_address
 from typing import TYPE_CHECKING
 
 import pytest
@@ -19,19 +18,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from sqlalchemy.ext.asyncio import AsyncEngine
-
-
-@pytest.fixture
-def public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
-    """把域名解析成公网地址, 地址字面量按原值: 出站策略的用例不访问网络."""
-
-    async def _resolve(host: str, port: int) -> set[str]:
-        try:
-            return {str(ip_address(host))}
-        except ValueError:
-            return {"93.184.216.34"}
-
-    monkeypatch.setattr("amane.net.egress.resolve_addresses", _resolve)
 
 
 @pytest.fixture

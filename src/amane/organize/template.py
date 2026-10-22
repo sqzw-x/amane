@@ -51,7 +51,6 @@ TemplateVariables = TypedDict(
         "ext": str,
         "raw_dir": str,
         "raw_name": str,
-        "raw_relpath": str,
         "cd?": str,
         "sub?": str,
         "content_type": str,
@@ -277,26 +276,22 @@ def _lexical_abs(path: Path) -> Path:
     return Path(os.path.abspath(os.fspath(path)))  # noqa: PTH100
 
 
-def _relpath_or_empty(path: Path | None, library_root: Path | None) -> str:
-    """路径相对库根目录的 POSIX 路径; 缺任一侧或不在库根之下时为空串.
-
-    按字面路径求相对, 不解析符号链接: 源在库内的符号链接目录下时仍保留源路径形式.
-    """
-    if path is None or library_root is None:
-        return ""
-    try:
-        rel = _lexical_abs(path).relative_to(_lexical_abs(library_root))
-    except ValueError:
-        return ""
-    return rel.as_posix() if rel.parts else ""
-
-
 def video_relpath(dest: Path, library_root: Path) -> str:
     """视频必须在本库内; 返回相对库根目录的 POSIX 路径."""
-    rel = _relpath_or_empty(dest, library_root)
-    if not rel:
-        raise ValueError(f"视频目标路径 {_lexical_abs(dest)} 不在库根 {_lexical_abs(library_root)} 之下")
-    return rel
+    dest_abs = _lexical_abs(dest)
+    root_abs = _lexical_abs(library_root)
+    try:
+        rel = dest_abs.relative_to(root_abs)
+    except ValueError as exc:
+        raise ValueError(f"视频目标路径 {dest_abs} 位于库根 {root_abs} 之外") from exc
+    return rel.as_posix()
+
+
+def _video_relpath_or_empty(dest: Path, library_root: Path) -> str:
+    try:
+        return video_relpath(dest, library_root)
+    except ValueError:
+        return ""
 
 
 def actress_names(actors: Sequence[str], genders: Mapping[str, ActorGender] | None = None) -> list[str]:
@@ -315,7 +310,6 @@ def _build_variables(
     file_info: FileInfo | None = None,
     cd: int | None = None,
     actor_genders: Mapping[str, ActorGender] | None = None,
-    library_root: Path | None = None,
 ) -> TemplateVariables:
     year = metadata.release[:4] if metadata.release and len(metadata.release) >= 4 else None
     actor = metadata.actors[0] if metadata.actors else None
@@ -345,7 +339,6 @@ def _build_variables(
         "ext": ext,
         "raw_dir": raw_dir,
         "raw_name": raw_name,
-        "raw_relpath": _relpath_or_empty(source_path, library_root),
         "cd?": str(cd) if cd is not None else "",
         "sub?": "C" if file_info is not None and file_info.has_subtitle else "",
         "content_type": str(metadata.content_type),
@@ -384,20 +377,19 @@ class TemplateContext:
         file_info: FileInfo | None = None,
         cd: int | None = None,
         actor_genders: Mapping[str, ActorGender] | None = None,
-        library_root: Path | None = None,
     ) -> TemplateContext:
-        built = _build_variables(metadata, ext, source_path, file_info, cd, actor_genders, library_root)
+        built = _build_variables(metadata, ext, source_path, file_info, cd, actor_genders)
         variables = cast(dict[str, str], {**built})
         # {dir} 是 {raw_dir} 的别名, 不下发 schema.
         variables["dir"] = built["raw_dir"]
-        return cls(variables=variables, library_root=library_root)
+        return cls(variables=variables)
 
     def apply_video(self, dest: Path, library_root: Path) -> None:
         self.dest = dest
         self.library_root = library_root
         self.variables["video_dir"] = str(dest.parent)
         self.variables["video_name"] = dest.stem
-        self.variables["video_relpath"] = _relpath_or_empty(dest, library_root)
+        self.variables["video_relpath"] = _video_relpath_or_empty(dest, library_root)
 
     def apply_link(self, link: Path | None) -> None:
         if link is not None:

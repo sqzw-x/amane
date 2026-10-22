@@ -462,13 +462,6 @@ class TestResolvePathsEdgeCases:
         # 段尾的点按 Windows 创建结果剥除, 各平台结果一致.
         assert result.video.name == "ABC-123"
 
-    @pytest.mark.parametrize("template", ["", "{raw_relpath}"])
-    def test_video_target_library_root_raises(self, media: Path, template: str):
-        """视频路径不能退化为库根目录: 空模板或唯一占位符取值落空时报错, 不按库根名在库外落盘."""
-        wp = Library(name="t", path=str(media), video_template=template)
-        with pytest.raises(ValueError, match="库根目录"):
-            resolve_paths(wp, _meta(), ext="mp4")
-
     def test_video_dir_computed_from_absolute_video(self, media: Path, other: Path):
         wp = Library(name="t", path=str(media), video_template=str(other / "{number}" / "{number}.{ext}"))
         meta = _meta()
@@ -486,7 +479,7 @@ class TestResolvePathsEdgeCases:
 
 
 class TestSourceVariables:
-    """源文件变量 {raw_dir} / {raw_name} / {raw_relpath}."""
+    """源文件变量 {raw_dir} / {raw_name}."""
 
     def test_raw_dir_is_source_parent_name(self, media: Path):
         """{raw_dir}: A/B/C.mp4 → B."""
@@ -502,70 +495,6 @@ class TestSourceVariables:
         meta = _meta()
         result = resolve_paths(wp, meta, ext="mp4", source_path=media / "A" / "B.mp4")
         assert result.video == media / "StudioX" / "ABC-123" / "B.mp4"
-
-    @pytest.mark.parametrize(
-        ("source_rel", "expected"),
-        [
-            ("C.mp4", "C.mp4"),
-            ("A/B/C.mp4", "A/B/C.mp4"),
-        ],
-    )
-    def test_raw_relpath_is_source_relative_to_library_root(self, media: Path, source_rel: str, expected: str):
-        """{raw_relpath}: 保留库根之下的完整相对路径, 含文件名与扩展名."""
-        wp = Library(name="t", path=str(media), video_template="{raw_relpath}")
-        result = resolve_paths(wp, _meta(), ext="mp4", source_path=media / source_rel)
-        assert result.video == media / expected
-
-    def test_raw_relpath_empty_when_no_source_path(self, media: Path):
-        """不传 source_path 时 {raw_relpath} 降级为空串 (非首段, 多余分隔符被 resolve 折叠)."""
-        wp = Library(name="t", path=str(media), video_template="sub/{raw_relpath}/{number}.{ext}")
-        result = resolve_paths(wp, _meta(), ext="mp4")
-        assert result.video == media / "sub" / "ABC-123.mp4"
-
-    def test_raw_relpath_empty_when_source_outside_library(self, media: Path):
-        """源在库根之外时无法取相对路径, 降级为空串 (非首段, 多余分隔符被 resolve 折叠)."""
-        wp = Library(name="t", path=str(media), video_template="sub/{raw_relpath}/{number}.{ext}")
-        result = resolve_paths(wp, _meta(), ext="mp4", source_path=media.parent / "outside" / "C.mp4")
-        assert result.video == media / "sub" / "ABC-123.mp4"
-
-    def test_raw_relpath_keeps_video_and_sidecars_at_source(self, media: Path):
-        """只引用 {raw_relpath} 时视频原地不动, 附属模板默认落在源目录."""
-        source = media / "A" / "B" / "MIDV-123.mp4"
-        wp = Library(name="t", path=str(media), video_template="{raw_relpath}")
-        result = resolve_paths(wp, _meta(), ext="mp4", source_path=source)
-        assert result.video == source
-        assert result.poster == source.parent / "poster.jpg"
-        assert result.nfo == source.parent / "MIDV-123.nfo"
-
-    def test_raw_relpath_in_subtitle_template_refers_to_video_source(self, media: Path):
-        """字幕模板里的 {raw_relpath} 仍取视频源 (含视频文件名), {ext} 取字幕扩展名."""
-        source = media / "A" / "C.mp4"
-        wp = Library(
-            name="t",
-            path=str(media),
-            video_template="{raw_relpath}",
-            subtitle_template="{raw_relpath}.{ext}",
-        )
-        sub = resolve_subtitle_path(
-            wp,
-            _meta(),
-            media / "A" / "C.zh.srt",
-            video_dir=source.parent,
-            video_dest=source,
-            source_path=source,
-        )
-        assert sub == media / "A" / "C.mp4.srt"
-
-    def test_raw_relpath_keeps_lexical_source_path(self, media: Path):
-        """库内符号链接子目录按字面路径计算: 解析后路径与源路径不同, 结果仍取源路径形式."""
-        target = media / "A"
-        target.mkdir(parents=True)
-        (target / "C.mp4").write_text("x")
-        (media / "link").symlink_to(target, target_is_directory=True)
-        source = media / "link" / "C.mp4"
-        wp = Library(name="t", path=str(media), video_template="{raw_relpath}")
-        result = resolve_paths(wp, _meta(), ext="mp4", source_path=source)
-        assert result.video == source
 
     def test_raw_dir_empty_when_no_source_path(self, media: Path):
         """不传 source_path 时 {raw_dir} 降级为空串 (非首段, 多余分隔符被 resolve 折叠)."""

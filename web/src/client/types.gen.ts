@@ -3603,6 +3603,34 @@ export type RescrapeTarget = 'metadata' | 'actor';
 export type RoutineType = 'cleanup' | 'upscale' | 'r18_import' | 'rescrape';
 
 /**
+ * RuntimePaths
+ *
+ * 智能体可直接读取的位置; 供它自行查日志 / 配置 / 数据库, 不为这些能力做接口.
+ */
+export type RuntimePaths = {
+    /**
+     * Data Dir
+     */
+    data_dir: string;
+    /**
+     * Log Dir
+     */
+    log_dir: string;
+    /**
+     * Db Path
+     */
+    db_path: string;
+    /**
+     * Config Path
+     */
+    config_path: string;
+    /**
+     * Env
+     */
+    env: Array<string>;
+};
+
+/**
  * SavedQueryBatchAction
  */
 export type SavedQueryBatchAction = 'delete' | 'persist';
@@ -4708,6 +4736,18 @@ export type TextDeltaRow = {
 };
 
 /**
+ * ToolCallRequest
+ */
+export type ToolCallRequest = {
+    /**
+     * Args
+     */
+    args?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
  * ToolCallRow
  *
  * 工具调用成形 (协议按增量传参, 这里已解析). 卡片的名字与参数由此行给出.
@@ -4737,6 +4777,55 @@ export type ToolCallRow = {
      */
     name: string;
     args: JsonValue;
+};
+
+/**
+ * ToolCatalog
+ */
+export type ToolCatalog = {
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * Schema Doc
+     */
+    schema_doc: string;
+    paths: RuntimePaths;
+    /**
+     * Tools
+     */
+    tools: Array<ToolInfo>;
+};
+
+/**
+ * ToolInfo
+ */
+export type ToolInfo = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Group
+     */
+    group: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Params
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    /**
+     * Returns
+     */
+    returns: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -5095,6 +5184,22 @@ export type WorkerConfig = {
      */
     shutdown_timeout?: number;
 };
+
+export type GetAgentGuideData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/public/agent';
+};
+
+export type GetAgentGuideResponses = {
+    /**
+     * Successful Response
+     */
+    200: string;
+};
+
+export type GetAgentGuideResponse = GetAgentGuideResponses[keyof GetAgentGuideResponses];
 
 export type HealthCheckData = {
     body?: never;
@@ -8162,6 +8267,52 @@ export type GetTaskRecordError = GetTaskRecordErrors[keyof GetTaskRecordErrors];
 
 export type GetTaskRecordResponses = {
     /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type GetToolCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/tools';
+};
+
+export type GetToolCatalogResponses = {
+    /**
+     * Successful Response
+     */
+    200: ToolCatalog;
+};
+
+export type GetToolCatalogResponse = GetToolCatalogResponses[keyof GetToolCatalogResponses];
+
+export type CallToolData = {
+    body: ToolCallRequest;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/tools/{name}';
+};
+
+export type CallToolErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CallToolError = CallToolErrors[keyof CallToolErrors];
+
+export type CallToolResponses = {
+    /**
+     * Response Call Tool
+     *
      * Successful Response
      */
     200: unknown;

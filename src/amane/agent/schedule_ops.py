@@ -158,7 +158,10 @@ def build_schedule_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_schedule(ctx: RunContext[AgentDeps], schedule_id: int) -> str | dict[str, object]:
-        """Delete a routine schedule."""
+        """Delete a routine schedule.
+
+        Tasks it already created keep running; only future triggers stop. Not undoable.
+        """
         detail = f"删除定时任务 id={schedule_id}"
         require_approval(ctx, sql=detail, tool="delete_schedule", extra={"schedule_id": schedule_id})
         if not await ctx.deps.repo.delete_schedule(schedule_id):

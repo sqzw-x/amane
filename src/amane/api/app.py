@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from ..app.bootstrap import start_app
 from ..version import get_version
 from .middleware import LoggingMiddleware, TokenAuthMiddleware
-from .routes import router
+from .routes import public_router, router
 from .spa import mount_spa
 
 if TYPE_CHECKING:
@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
     )
     app.state.exit_code = 0
     app.state.server = None
+    app.include_router(public_router)  # 免鉴权, 不属于 /api
     app.include_router(router)
     mount_spa(app)  # 必须在 API 路由之后, 以免 catch-all 覆盖 API
     app.add_middleware(TokenAuthMiddleware)

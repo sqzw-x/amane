@@ -58,7 +58,6 @@ def render_strm_content(
         source_path=source_path,
         file_info=file_info,
         actor_genders=actor_genders,
-        library_root=library_root,
     )
     ctx.apply_video(dest, library_root)
     ctx.apply_link(link)

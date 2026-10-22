@@ -157,7 +157,11 @@ def build_library_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_library(ctx: RunContext[AgentDeps], library_id: int) -> str | dict[str, Any]:
-        """Delete a library and its MediaFile index rows."""
+        """Delete a library and its MediaFile index rows.
+
+        Only the index is removed: files on disk stay untouched, and metadata rows survive.
+        Not undoable.
+        """
         detail = f"删除媒体库 id={library_id} (仅索引, 不动磁盘文件)"
         require_approval(
             ctx,

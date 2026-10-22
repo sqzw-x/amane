@@ -71,7 +71,7 @@ class TestProxyImage:
         assert "仅支持 http/https" in resp.json()["detail"]
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_upstream_error_and_negative_cache(self, client: AsyncClient, app, monkeypatch, public_dns: None):
+    async def test_upstream_error_and_negative_cache(self, client: AsyncClient, app, monkeypatch):
         """上游失败 → 502 + 负缓存, 二次请求不再打 acquire."""
         mock_store = AsyncMock()
         mock_store.acquire = AsyncMock(return_value=None)
@@ -88,9 +88,7 @@ class TestProxyImage:
         assert mock_store.acquire.await_count == 1
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_proxy_image_success_and_etag(
-        self, client: AsyncClient, app, monkeypatch, tmp_path, public_dns: None
-    ):
+    async def test_proxy_image_success_and_etag(self, client: AsyncClient, app, monkeypatch, tmp_path):
         """代理成功返回图片 (no-cache + ETag); If-None-Match 命中 → 304."""
         png_data = (
             b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
@@ -114,7 +112,6 @@ class TestProxyImage:
         assert resp.content == png_data
         assert "no-cache" in resp.headers.get("cache-control", "")
         assert resp.headers["etag"] == '"abc123hash"'
-        assert resp.headers["x-content-type-options"] == "nosniff"
         assert not app.state.runtime.proxy_failure_cache.is_blocked(url)
 
         cached = await client.get(f"resources/proxy?url={url}", headers={"If-None-Match": '"abc123hash"'})
@@ -122,78 +119,3 @@ class TestProxyImage:
         assert cached.content == b""
         assert cached.headers["etag"] == '"abc123hash"'
         assert "no-cache" in cached.headers.get("cache-control", "")
-
-    @pytest.mark.asyncio(loop_scope="function")
-    @pytest.mark.parametrize(
-        ("url", "detail"),
-        [
-            ("http://127.0.0.1:8000/api/config", "仅支持公网地址"),
-            ("http://169.254.169.254/latest/meta-data/", "仅支持公网地址"),
-            ("http://10.0.0.5/a.png", "仅支持公网地址"),
-            ("http://[::1]/a.png", "仅支持公网地址"),
-            # 数值写法与非法端口不是「地址不公网」, 错误信息要能区分
-            ("http://2130706433/a.png", "URL 不受支持"),
-            ("http://0177.0.0.1/a.png", "URL 不受支持"),
-            ("http://example.com:99999/a.png", "URL 不受支持"),
-        ],
-    )
-    async def test_non_public_target_rejected(
-        self, client: AsyncClient, app, monkeypatch: pytest.MonkeyPatch, url: str, detail: str
-    ):
-        """私网 / 回环 / 元数据地址与不合法目标都在出站前被拒, 不进入下载通道."""
-        mock_store = AsyncMock()
-        monkeypatch.setattr(app.state.runtime, "resource_store", mock_store)
-
-        resp = await client.get("resources/proxy", params={"url": url})
-
-        assert resp.status_code == 400
-        assert resp.json()["detail"] == detail
-        assert mock_store.acquire.await_count == 0
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_malformed_url_rejected(self, client: AsyncClient):
-        """解析不了的 URL 回 400, 不能落到未捕获异常变成 500."""
-        resp = await client.get("resources/proxy", params={"url": "http://[::1/a.png"})
-
-        assert resp.status_code == 400
-        assert resp.json()["detail"] == "URL 无法解析"
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_resolution_failure_is_upstream_error(
-        self, client: AsyncClient, app, monkeypatch: pytest.MonkeyPatch
-    ):
-        """公网域名解析失败属于上游不可达: 回 502 并进入负缓存, 不说成地址不合规."""
-        url = "https://pics.example/a.png"
-
-        async def _resolve(host: str, port: int) -> set[str]:
-            raise OSError("resolver down")
-
-        monkeypatch.setattr("amane.net.egress.resolve_addresses", _resolve)
-
-        resp = await client.get("resources/proxy", params={"url": url})
-
-        assert resp.status_code == 502
-        # 解析失败多为瞬态: 不进 15 分钟负缓存, 网络恢复后同一地址还能重试
-        assert not app.state.runtime.proxy_failure_cache.is_blocked(url)
-
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_resource_text_served_as_attachment(app: FastAPI, client: AsyncClient):
-    """资源字节来自第三方: 记录里的 MIME 是 text/html 时也不能按该类型回放."""
-    store = app.state.runtime.resource_store
-    payload = b"<html><script>alert(1)</script></html>"
-
-    async def producer(dest: Path) -> bool:
-        dest.write_bytes(payload)
-        return True
-
-    res = await store.acquire_derived("https://evil.example/x.html", "crop", "0", producer, ext=".html")
-    assert res is not None
-
-    resp = await client.get(f"resources/{ResourceStore.url_hash(res.url)}")
-
-    assert resp.status_code == 200
-    assert resp.headers["content-type"] == "application/octet-stream"
-    assert resp.headers["x-content-type-options"] == "nosniff"
-    assert resp.headers["content-disposition"] == "attachment"
-    assert resp.content == payload

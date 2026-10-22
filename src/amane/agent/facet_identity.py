@@ -24,7 +24,10 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
     async def rename_facet(
         ctx: RunContext[AgentDeps], kind: FacetKind, facet_id: int, name: str
     ) -> str | dict[str, Any]:
-        """Rename a facet. Conflicting name → error (use merge_facets)."""
+        """Rename a facet. Conflicting name → error (use merge_facets).
+
+        Only the display name changes; links stay. Reversible by renaming back.
+        """
         cleaned = name.strip()
         if not cleaned:
             return {"error": "名称不能为空"}
@@ -40,7 +43,11 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
     async def merge_facets(
         ctx: RunContext[AgentDeps], kind: FacetKind, target_id: int, source_ids: list[int]
     ) -> str | dict[str, Any]:
-        """Merge source facet ids into target; sources are deleted."""
+        """Merge source facet ids into target; sources are deleted.
+
+        Links move to the target and the source entries disappear, so this is not undoable.
+        Scrape kinds also record the merged names as aliases.
+        """
         if not source_ids:
             return {"error": "source_ids 为空"}
         detail = f"合并 {kind}: sources={source_ids} → target={target_id}"
@@ -56,7 +63,11 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_facet(ctx: RunContext[AgentDeps], kind: FacetKind, facet_id: int) -> str | dict[str, Any]:
-        """Delete a facet (scrape kinds → block rule)."""
+        """Delete a facet (scrape kinds → block rule).
+
+        Scrape kinds keep blocking future scrapes under that name; user tags drop their links.
+        Not undoable.
+        """
         detail = f"删除分类 {kind} id={facet_id}"
         require_approval(
             ctx,
@@ -90,7 +101,10 @@ def build_facet_identity_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_facet_rule(ctx: RunContext[AgentDeps], kind: FacetKind, rule_id: int) -> str | dict[str, Any]:
-        """Delete one facet rule (does not backfill metadata)."""
+        """Delete one facet rule (does not backfill metadata).
+
+        Rows already matched by the rule keep their current values; only future scrapes change.
+        """
         if kind not in SCRAPE_FACET_KINDS:
             return {"error": "该分类不支持规则"}
         detail = f"删除分类规则 {kind} rule_id={rule_id}"

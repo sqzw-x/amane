@@ -49,7 +49,8 @@ class InspectResult(BaseModel):
 class AgentDeps:
     repo: Repository
     executor: QueryExecutor
-    session_id: int
+    session_id: int | None
+    """None = 外部派发: 交付的查询预设与会话解耦, 直接进入预设列表."""
     sql_timeout_ms: int
     sample_limit: int = 20
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
@@ -90,6 +91,7 @@ async def materialize_saved_query(
     entity: SavedQueryEntity | None,
     name: str | None,
     description: str | None = None,
+    persisted: bool = False,
     result: SqlResult,
 ) -> tuple[int, str, list[int]]:
     """把全量 SQL 结果写成会话 SavedQuery 并入缓存.
@@ -108,7 +110,7 @@ async def materialize_saved_query(
         sql=sql,
         entity=entity,
         session_id=deps.session_id,
-        persisted=False,
+        persisted=persisted,
     )
     assert saved.id is not None
     deps.executor.cache.put(CachedResult(saved_query_id=saved.id, sql=sql, columns=result.columns, rows=result.rows))
@@ -216,6 +218,7 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
                 entity=entity,
                 name=name,
                 description=description,
+                persisted=ctx.deps.session_id is None,
                 result=result,
             )
         except ValueError as exc:

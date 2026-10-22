@@ -127,7 +127,11 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_metadata(ctx: RunContext[AgentDeps], metadata_id: int) -> str | dict[str, Any]:
-        """Delete one metadata row."""
+        """Delete one metadata row.
+
+        Media files stay but lose their binding and return to pending; actor / director / tag
+        entries survive. Comments and tag links of this row are removed. Not undoable.
+        """
         detail = f"删除元数据 id={metadata_id}"
         require_approval(
             ctx,
@@ -141,7 +145,10 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def batch_delete_metadata(ctx: RunContext[AgentDeps], metadata_ids: list[int]) -> dict[str, Any]:
-        """Delete many metadata rows."""
+        """Delete many metadata rows.
+
+        Same cascade as delete_metadata, one transaction. Not undoable.
+        """
         if not metadata_ids:
             return {"error": "metadata_ids 为空"}
         detail = f"批量删除元数据 ids={metadata_ids}"

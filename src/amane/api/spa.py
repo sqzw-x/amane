@@ -36,7 +36,7 @@ def _default_dist() -> Path:
 
 
 # 不应被 SPA 拦截的路径前缀
-_RESERVED_PREFIXES = ("/api/", "/docs", "/redoc", "/openapi.json", "/assets")
+_RESERVED_PREFIXES = ("/api/", "/public/", "/docs", "/redoc", "/openapi.json", "/assets")
 
 # 入口文档与 dist 里未改名的文件必须每次校验: 文件名不带 hash, 直接用缓存会让壳停在旧的那份.
 # 加 `public` 是与 `support/http_cache.py` 的写法一致 (文档不含用户数据, 共享缓存也可以存).

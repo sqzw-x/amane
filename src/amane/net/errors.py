@@ -100,18 +100,6 @@ class RequestError(SourceError):
         Exception.__init__(self, f"{url}: {self.message}")
 
 
-class EgressRejected(RequestError):
-    """出站策略拒绝 (协议 / 目标地址不合规).
-
-    与上游故障分开: 调用方据此返回客户端错误, 而不是当作网络故障重试或计入失败缓存.
-    ``detail`` 是给调用方直接回给终端用户的口径, 与 ``message`` 的诊断用途分开.
-    """
-
-    def __init__(self, url: str, message: str, *, detail: str = "URL 不受支持") -> None:
-        super().__init__(url, RequestFailure(kind=FailureKind.UNEXPECTED, message=message))
-        self.detail = detail
-
-
 def parse_detail(exc: ValidationError) -> str:
     """把读模型校验失败压成字段路径 (如 ``data.ppvContent.sample2DMovie``).
 

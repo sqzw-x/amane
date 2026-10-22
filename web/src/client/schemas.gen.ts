@@ -6994,6 +6994,44 @@ export const RoutineTypeSchema = {
     title: 'RoutineType'
 } as const;
 
+export const RuntimePathsSchema = {
+    properties: {
+        data_dir: {
+            type: 'string',
+            title: 'Data Dir'
+        },
+        log_dir: {
+            type: 'string',
+            title: 'Log Dir'
+        },
+        db_path: {
+            type: 'string',
+            title: 'Db Path'
+        },
+        config_path: {
+            type: 'string',
+            title: 'Config Path'
+        },
+        env: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Env'
+        }
+    },
+    type: 'object',
+    required: [
+        'data_dir',
+        'log_dir',
+        'db_path',
+        'config_path',
+        'env'
+    ],
+    title: 'RuntimePaths',
+    description: '智能体可直接读取的位置; 供它自行查日志 / 配置 / 数据库, 不为这些能力做接口.'
+} as const;
+
 export const SavedQueryBatchActionSchema = {
     type: 'string',
     enum: [
@@ -9172,6 +9210,19 @@ export const TextDeltaRowSchema = {
     description: '正文增量; 归块同 `ReasoningDeltaRow`.'
 } as const;
 
+export const ToolCallRequestSchema = {
+    properties: {
+        args: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Args',
+            default: {}
+        }
+    },
+    type: 'object',
+    title: 'ToolCallRequest'
+} as const;
+
 export const ToolCallRowSchema = {
     properties: {
         seq: {
@@ -9216,6 +9267,73 @@ export const ToolCallRowSchema = {
     ],
     title: 'ToolCallRow',
     description: '工具调用成形 (协议按增量传参, 这里已解析). 卡片的名字与参数由此行给出.\n\n`args` 在生成的 TS 类型里退化为 `unknown` (pydantic 的 `JsonValue` 无法表达到 schema),\n类型层面的保证到后端为止.'
+} as const;
+
+export const ToolCatalogSchema = {
+    properties: {
+        version: {
+            type: 'string',
+            title: 'Version'
+        },
+        schema_doc: {
+            type: 'string',
+            title: 'Schema Doc'
+        },
+        paths: {
+            $ref: '#/components/schemas/RuntimePaths'
+        },
+        tools: {
+            items: {
+                $ref: '#/components/schemas/ToolInfo'
+            },
+            type: 'array',
+            title: 'Tools'
+        }
+    },
+    type: 'object',
+    required: [
+        'version',
+        'schema_doc',
+        'paths',
+        'tools'
+    ],
+    title: 'ToolCatalog'
+} as const;
+
+export const ToolInfoSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        group: {
+            type: 'string',
+            title: 'Group'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        params: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Params'
+        },
+        returns: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Returns'
+        }
+    },
+    type: 'object',
+    required: [
+        'name',
+        'group',
+        'description',
+        'params',
+        'returns'
+    ],
+    title: 'ToolInfo'
 } as const;
 
 export const ToolResultRowSchema = {

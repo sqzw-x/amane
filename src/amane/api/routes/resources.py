@@ -2,7 +2,6 @@
 SR 可能就地覆盖 (URL 不变, 字节变), 须 ETag + no-cache 再验证.
 """
 
-from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
 
@@ -10,21 +9,22 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 
-from ...net.egress import EgressPolicy
-from ...net.errors import EgressRejected, RequestError
 from ..deps import RuntimeDep
 from ..support.http_cache import RESOURCE_CACHE_HEADERS, format_etag, maybe_not_modified
-from ..support.media_type import media_type_and_headers
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/resources", tags=["resources"])
 
-_PROXY_EGRESS = EgressPolicy()
-"""代理端点只接受公网 http(s): URL 来自外站元数据, 私网地址即 SSRF 入口, 重定向逐跳复查."""
-
-_PROXY_MAX_BYTES = 32 * 1024 * 1024
-"""代理图片的正文上限. 超过即中止下载, 不把上游自称的长度当作可信边界."""
+_EXT_TO_MIME = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".avif": "image/avif",
+    ".mp4": "video/mp4",
+}
 
 
 @router.get("/proxy")
@@ -34,38 +34,18 @@ async def proxy_image(
     """上游失败记入进程内负缓存 (15 分钟), 窗口内同 URL 直接 502.
     同 URL 进行中请求合并为一次 acquire.
     """
-    try:
-        parsed = urlparse(url)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail="URL 无法解析") from e
+    parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=400, detail="仅支持 http/https URL")
 
-    failures = runtime.proxy_failure_cache
-    try:
-        await _PROXY_EGRESS.ensure_allowed(url)
-    except EgressRejected as e:
-        logger.warning("proxy image address rejected", url=url, reason=e.message)
-        raise HTTPException(status_code=400, detail=e.detail) from e
-    except RequestError as e:
-        # 解析失败是上游不可达, 不是地址不合规: 回 502 但不进负缓存 — 解析失败多为瞬态,
-        # 缓存 15 分钟会让网络恢复后同一地址继续失败.
-        logger.warning("proxy image host unreachable", url=url, reason=e.message)
-        raise HTTPException(status_code=502, detail="上游图片获取失败") from e
-
     # 负缓存命中则直接 502
+    failures = runtime.proxy_failure_cache
     if failures.is_blocked(url):
         raise HTTPException(status_code=502, detail="上游图片获取失败")
 
-    # 同 URL 进行中的 acquire 合并为一次; 并发额度只由真正发起下载的那一方持有,
-    # 否则等待同一 URL 的请求也会占额度.
+    # 同 URL 进行中的 acquire 合并为一次
     store = runtime.resource_store
-
-    async def _acquire() -> Path | None:
-        async with runtime.proxy_downloads:
-            return await store.acquire(url, runtime.web_client, egress=_PROXY_EGRESS, max_bytes=_PROXY_MAX_BYTES)
-
-    local_path = await failures.coalesce(url, _acquire)
+    local_path = await failures.coalesce(url, lambda: store.acquire(url, runtime.web_client))
     if local_path is None:
         failures.remember(url)
         logger.warning("proxy image acquire failed", url=url)
@@ -80,11 +60,12 @@ async def proxy_image(
     if not_modified is not None:
         return not_modified
 
-    media_type, headers = media_type_and_headers(local_path)
-    headers.update(RESOURCE_CACHE_HEADERS)
+    headers = dict(RESOURCE_CACHE_HEADERS)
     if content_hash:
         headers["ETag"] = format_etag(content_hash)
-    return FileResponse(path=local_path, media_type=media_type, headers=headers)
+    return FileResponse(
+        path=local_path, media_type=_EXT_TO_MIME.get(local_path.suffix.lower(), "image/jpeg"), headers=headers
+    )
 
 
 @router.get("/{url_hash}")
@@ -98,8 +79,8 @@ async def serve_resource(url_hash: str, request: Request, runtime: RuntimeDep) -
     if not_modified is not None:
         return not_modified
 
-    media_type, headers = media_type_and_headers(path)
-    headers.update(RESOURCE_CACHE_HEADERS)
+    headers = dict(RESOURCE_CACHE_HEADERS)
     if record.content_hash:
         headers["ETag"] = format_etag(record.content_hash)
+    media_type = record.mime_type or _EXT_TO_MIME.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path=path, media_type=media_type, headers=headers)
