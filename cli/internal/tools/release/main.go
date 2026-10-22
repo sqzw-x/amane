@@ -13,7 +13,10 @@ import (
 	"path/filepath"
 )
 
-// targets 是发布产物覆盖的平台. 没有产物的组合不要在这里补, 发布页与引导都按实际存在处理.
+// targets 决定 dist/ 里生成哪些文件, 也是发布页的产物清单.
+//
+// 接入引导 (src/amane/api/routes/bootstrap.py::AGENT_GUIDE) 按同样的组合告诉用户下载什么,
+// 并在末尾声明其余组合没有产物. 增删平台时两处一起改, 否则引导会指向不存在的文件.
 var targets = []struct{ os, arch string }{
 	{"linux", "amd64"},
 	{"linux", "arm64"},
