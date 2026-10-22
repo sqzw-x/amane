@@ -52,19 +52,31 @@ func (r *runner) cmdLogin(ctx context.Context) error {
 		fmt.Fprintf(r.env.Stderr, "amane: 提示: %s 是明文 http 且不在本机, token 会以明文传输, 建议改用 https 或反向代理\n", server)
 	}
 
-	token, _, err := r.loginToken(ctx, server)
+	token, verified, err := r.loginToken(ctx, server)
 	if err != nil {
 		return err
 	}
 	if token == "" {
 		return usagef("没有读到 token: 用管道传入, 或在终端里粘贴")
 	}
+	// 人给的 token 也验一次: 粘错了当场就知道, 而不是下一条命令才 401. 连不上实例时
+	// 验不了, 仍按原样保存 —— 离线或实例尚未启动的场景不该挡住登录.
+	var note string
+	if !verified {
+		switch err := r.verifyToken(ctx, server, token); {
+		case err == nil:
+		case api.IsTransport(err):
+			note = "; 未能验证, 连不上实例"
+		default:
+			return connf("token 未被实例接受 (%v); 确认复制完整后重试", err)
+		}
+	}
 
 	cfg.Profiles[name] = config.Profile{Server: server, Token: token}
 	if err := cfg.Save(r.cfgPath); err != nil {
 		return err
 	}
-	fmt.Fprintf(r.env.Stderr, "amane: 已保存 profile %q (%s)\n", name, server)
+	fmt.Fprintf(r.env.Stderr, "amane: 已保存 profile %q (%s)%s\n", name, server, note)
 	return nil
 }
 
@@ -72,15 +84,15 @@ func (r *runner) cmdLogin(ctx context.Context) error {
 //
 // 空管道不等于「没有凭据」: 智能体的执行器常把 stdin 接到空 pipe 或 /dev/null,
 // 这时仍要继续找本机 token, 否则引导承诺的「本机无需粘贴」对这类调用方直接失效.
-func (r *runner) loginToken(ctx context.Context, server string) (string, string, error) {
+func (r *runner) loginToken(ctx context.Context, server string) (string, bool, error) {
 	terminal := r.env.StdinIsTerminal
 	if !terminal {
 		data, err := io.ReadAll(r.env.Stdin)
 		if err != nil {
-			return "", "", usagef("读取标准输入失败: %v", err)
+			return "", false, usagef("读取标准输入失败: %v", err)
 		}
 		if token := strings.TrimSpace(string(data)); token != "" {
-			return token, "标准输入", nil
+			return token, false, nil
 		}
 	}
 
@@ -89,9 +101,9 @@ func (r *runner) loginToken(ctx context.Context, server string) (string, string,
 	if config.IsLoopback(server) {
 		if token, _ := config.LocalToken(r.env.Getenv); token != "" {
 			if err := r.verifyToken(ctx, server, token); err == nil {
-				return token, "", nil
+				return token, true, nil
 			} else if api.IsTransport(err) {
-				return "", "", r.loginConnectError(server, err)
+				return "", false, r.loginConnectError(server, err)
 			}
 		}
 	}
@@ -102,9 +114,9 @@ func (r *runner) loginToken(ctx context.Context, server string) (string, string,
 	// 只在非交互时探: 终端里由人当场粘贴, 先探一次只会让人多等一个来回.
 	if !terminal {
 		if err := r.pingInstance(ctx, server); err != nil {
-			return "", "", r.loginConnectError(server, err)
+			return "", false, r.loginConnectError(server, err)
 		}
-		return "", "", &cliError{
+		return "", false, &cliError{
 			code: ExitConnection,
 			msg:  fmt.Sprintf("此实例无法自动鉴权, 需引导用户手动登录\n示例: amane login --server %s --profile %s", server, r.p.profile),
 		}
@@ -113,9 +125,9 @@ func (r *runner) loginToken(ctx context.Context, server string) (string, string,
 	fmt.Fprintln(r.env.Stderr, "请粘贴该实例的 API Token 后回车 (输入不回显):")
 	token, err := r.readSecret()
 	if err != nil {
-		return "", "", usagef("读取标准输入失败: %v", err)
+		return "", false, usagef("读取标准输入失败: %v", err)
 	}
-	return token, "", nil
+	return token, false, nil
 }
 
 // readSecret 读取用户粘贴的 token. 终端下关闭回显, 免得凭据留在屏幕上.
@@ -156,7 +168,8 @@ func (r *runner) loginConnectError(server string, err error) error {
 	}
 }
 
-// verifyToken 用一次需要鉴权的请求确认 token 可用, 只用于自动取到的本机凭据.
+// verifyToken 用一次需要鉴权的请求确认 token 可用. 传输错误原样返回, 由调用方决定
+// 是当作「连不上」还是「凭据不对」.
 //
 // 端点用 /api/system/desktop: 菜单栏每三秒轮询它, 是历来版本都有的路径; 换成新端点会
 // 让旧服务端上的本机登录被判成「凭据不可用」. 只有 401/403 算不可用 —— 其他状态说明不了
@@ -165,7 +178,7 @@ func (r *runner) verifyToken(ctx context.Context, server, token string) error {
 	client := &api.Client{BaseURL: server, Token: token, UserAgent: "amane-cli/" + r.env.Version, HTTP: r.httpClient()}
 	resp, err := client.Get(ctx, "/api/system/desktop")
 	if err != nil {
-		return r.connErr(server, err)
+		return err
 	}
 	if api.IsAuthFailure(resp.Status) {
 		return fmt.Errorf("鉴权失败 (HTTP %d)", resp.Status)

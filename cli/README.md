@@ -36,7 +36,7 @@ amane login --server <实例地址> --profile <名字>  # 本机实例无需粘�
 | Linux | `$XDG_CONFIG_HOME/amane/cli.json`, 默认 `~/.config/amane/cli.json` | 同上 |
 | Windows | `%LOCALAPPDATA%\Amane\cli.json` | 与桌面应用共用数据目录, 与实例的 `config.toml` / `token` 并列 |
 
-`login` 不推断端口 — 地址由 `--server` 给出, 调用方本来就知道 (智能体从引导的 URL 拿). 同名 profile 已存在且地址一致时先验旧凭据, 可用就直接返回; 地址不同则要求 `--force` 才覆盖.地址指向本机 (127.0.0.1 / localhost / ::1) 时, `login` 会自己去找桌面版留下的 `token` 文件并当场验一次鉴权, 通过就直接写入 profile; 取不到或验不过才提示粘贴。本机 token 文件依次找 `AMANE_DATA_DIR`、桌面应用的数据目录 (macOS `~/Library/Application Support/Amane`, Windows `%LOCALAPPDATA%\Amane`)、`./data`。
+`login` 不推断端口 — 地址由 `--server` 给出, 调用方本来就知道 (智能体从引导的 URL 拿). 同名 profile 已存在且地址一致时先验旧凭据, 可用就直接返回; 地址不同则要求 `--force` 才覆盖. 要写入的 token 也验一次: 被拒就不落盘, 连不上实例时先存下并注明未能验证. 地址指向本机 (127.0.0.1 / localhost / ::1) 时, `login` 会自己去找桌面版留下的 `token` 文件并当场验一次鉴权, 通过就直接写入 profile; 取不到或验不过才提示粘贴。本机 token 文件依次找 `AMANE_DATA_DIR`、桌面应用的数据目录 (macOS `~/Library/Application Support/Amane`, Windows `%LOCALAPPDATA%\Amane`)、`./data`。
 
 实例地址指向非回环地址且为明文 `http://` 时, 在标准错误给一次警告, 不阻断.
 

@@ -768,6 +768,11 @@ func TestLoginUsesLocalTokenOnLoopback(t *testing.T) {
 func TestLoginPromptsWhenLocalTokenRejected(t *testing.T) {
 	// 本机地址上跑的可能不是桌面版: 本机凭据过不了鉴权, 就该让用户粘贴.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer typed-token" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"detail":"unauthorized"}`))
 	}))
@@ -797,6 +802,42 @@ func TestLoginPromptsWhenLocalTokenRejected(t *testing.T) {
 	}
 	if !strings.Contains(h.errOut(), "请粘贴") {
 		t.Fatalf("应改为请用户手动输入, 标准错误为 %q", h.errOut())
+	}
+}
+
+// 人给的 token 也要验: 粘错了当场就说, 而不是存下来等下一条命令 401.
+func TestLoginRejectsTokenBeforeSaving(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"detail":"unauthorized"}`))
+	}))
+	defer srv.Close()
+
+	h := newHarness(t, "")
+	h.stdin("bad-token\n")
+	if code := h.run("login", "--profile", "work", "--server", srv.URL); code != ExitConnection {
+		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
+	}
+	if !strings.Contains(h.errOut(), "未被实例接受") {
+		t.Fatalf("标准错误为 %q", h.errOut())
+	}
+	if _, ok := h.loadConfig(t).Profiles["work"]; ok {
+		t.Fatal("被拒的 token 不应写入配置")
+	}
+}
+
+// 连不上实例时验不了, 不该挡住登录: 离线或实例尚未启动也会先存下来.
+func TestLoginSavesTokenWhenInstanceUnreachable(t *testing.T) {
+	h := newHarness(t, "")
+	h.stdin("pending-token\n")
+	if code := h.run("login", "--profile", "work", "--server", "http://127.0.0.1:1"); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	if !strings.Contains(h.errOut(), "未能验证") {
+		t.Fatalf("标准错误为 %q", h.errOut())
+	}
+	if got := h.loadConfig(t).Profiles["work"].Token; got != "pending-token" {
+		t.Fatalf("token 为 %q", got)
 	}
 }
 
