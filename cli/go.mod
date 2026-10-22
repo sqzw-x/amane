@@ -1,7 +1,7 @@
 module github.com/sqzw-x/amane/cli
 
-go 1.23.0
+go 1.27.3
 
-require golang.org/x/term v0.30.0
+require golang.org/x/term v0.47.0
 
-require golang.org/x/sys v0.31.0 // indirect
+require golang.org/x/sys v0.49.0 // indirect

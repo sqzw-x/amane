@@ -20,10 +20,10 @@ cli-check: cli-fmt-check cli-vet cli-test
 cli-fmt:
     gofmt -w .
 
-# CLI: 只检查格式, 不改文件. gofmt 不以退出码表达结果, 由 fmtcheck 转成退出码
+# CLI: 只检查格式, 不改文件. Go 1.26 起 gofmt -d 有差异时退出 1
 [working-directory('cli')]
 cli-fmt-check:
-    go run ./internal/tools/fmtcheck
+    gofmt -d .
 
 [working-directory('cli')]
 cli-vet:
