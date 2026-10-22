@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncEngine
 
+    from ..net.egress import EgressPolicy
     from ..net.http import WebClient
 
 logger = structlog.get_logger()
@@ -165,7 +166,15 @@ class ResourceStore:
 
             return full_path
 
-    async def acquire(self, url: str, client: WebClient) -> Path | None:
+    async def acquire(
+        self,
+        url: str,
+        client: WebClient,
+        *,
+        egress: EgressPolicy | None = None,
+        max_bytes: int | None = None,
+    ) -> Path | None:
+        """``egress`` / ``max_bytes`` 原样交给下载通道: URL 来自第三方数据时由调用方给出策略."""
         # 内部 URL 是对既有 Resource 的引用: 直接解析本地文件, 不下载也不写记录.
         internal = internal_url_hash(url)
         if internal is not None:
@@ -175,16 +184,23 @@ class ResourceStore:
         # 同一 URL 的内容写入串行: 一起到达的调用都判缓存未命中, 若各自下载并改名到同一路径,
         # 后写会覆盖先写 (含先写方刚做完的就地超分), 而先写方的记录仍然作数.
         async with self._serialized(url):
-            return await self._acquire_locked(url, client)
+            return await self._acquire_locked(url, client, egress=egress, max_bytes=max_bytes)
 
-    async def _acquire_locked(self, url: str, client: WebClient) -> Path | None:
+    async def _acquire_locked(
+        self,
+        url: str,
+        client: WebClient,
+        *,
+        egress: EgressPolicy | None,
+        max_bytes: int | None,
+    ) -> Path | None:
         # 缓存命中且文件存在则直出. 判据是记录 + 文件存在, 不看哈希: 超分是就地覆盖, 哈希每次都会变.
         cached = await self.resolve(url)
         if cached:
             return cached
 
         # 上游改派占位图时跳过, 不占用 dest 也不写记录.
-        final_url = await client.resolve_final_url(url)
+        final_url = await client.resolve_final_url(url, egress=egress)
         if _is_placeholder_url(final_url):
             logger.warning("resource is upstream placeholder", url=url, final_url=final_url)
             return None
@@ -200,7 +216,7 @@ class ResourceStore:
         # 临时文件保留原扩展名: download 的实现可能按扩展名决定写出的格式.
         tmp = dest.with_name(f"{dest.stem}.{uuid4().hex}.part{dest.suffix}")
         try:
-            if not await client.download(url, tmp):
+            if not await client.download(url, tmp, egress=egress, max_bytes=max_bytes):
                 logger.warning("resource download failed", url=url, host=urlsplit(url).hostname)
                 return None
             tmp.replace(dest)

@@ -9,22 +9,21 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 
+from ...net.egress import EgressPolicy
+from ...net.errors import RequestError
 from ..deps import RuntimeDep
 from ..support.http_cache import RESOURCE_CACHE_HEADERS, format_etag, maybe_not_modified
+from ..support.media_type import media_type_and_headers
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/resources", tags=["resources"])
 
-_EXT_TO_MIME = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".webp": "image/webp",
-    ".gif": "image/gif",
-    ".avif": "image/avif",
-    ".mp4": "video/mp4",
-}
+_PROXY_EGRESS = EgressPolicy()
+"""代理端点只接受公网 http(s): URL 来自外站元数据, 私网地址即 SSRF 入口, 重定向逐跳复查."""
+
+_PROXY_MAX_BYTES = 32 * 1024 * 1024
+"""代理图片的正文上限. 超过即中止下载, 不把上游自称的长度当作可信边界."""
 
 
 @router.get("/proxy")
@@ -38,6 +37,12 @@ async def proxy_image(
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=400, detail="仅支持 http/https URL")
 
+    try:
+        await _PROXY_EGRESS.ensure_allowed(url)
+    except RequestError as e:
+        logger.warning("proxy image address blocked", url=url, reason=e.message)
+        raise HTTPException(status_code=400, detail="仅支持公网地址") from e
+
     # 负缓存命中则直接 502
     failures = runtime.proxy_failure_cache
     if failures.is_blocked(url):
@@ -45,7 +50,11 @@ async def proxy_image(
 
     # 同 URL 进行中的 acquire 合并为一次
     store = runtime.resource_store
-    local_path = await failures.coalesce(url, lambda: store.acquire(url, runtime.web_client))
+    async with runtime.proxy_downloads:
+        local_path = await failures.coalesce(
+            url,
+            lambda: store.acquire(url, runtime.web_client, egress=_PROXY_EGRESS, max_bytes=_PROXY_MAX_BYTES),
+        )
     if local_path is None:
         failures.remember(url)
         logger.warning("proxy image acquire failed", url=url)
@@ -60,12 +69,11 @@ async def proxy_image(
     if not_modified is not None:
         return not_modified
 
-    headers = dict(RESOURCE_CACHE_HEADERS)
+    media_type, headers = media_type_and_headers(local_path)
+    headers.update(RESOURCE_CACHE_HEADERS)
     if content_hash:
         headers["ETag"] = format_etag(content_hash)
-    return FileResponse(
-        path=local_path, media_type=_EXT_TO_MIME.get(local_path.suffix.lower(), "image/jpeg"), headers=headers
-    )
+    return FileResponse(path=local_path, media_type=media_type, headers=headers)
 
 
 @router.get("/{url_hash}")
@@ -79,8 +87,8 @@ async def serve_resource(url_hash: str, request: Request, runtime: RuntimeDep) -
     if not_modified is not None:
         return not_modified
 
-    headers = dict(RESOURCE_CACHE_HEADERS)
+    media_type, headers = media_type_and_headers(path)
+    headers.update(RESOURCE_CACHE_HEADERS)
     if record.content_hash:
         headers["ETag"] = format_etag(record.content_hash)
-    media_type = record.mime_type or _EXT_TO_MIME.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path=path, media_type=media_type, headers=headers)

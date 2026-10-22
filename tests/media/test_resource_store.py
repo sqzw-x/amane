@@ -348,6 +348,9 @@ class _StubResponse:
         self.content = content
         self.status_code = status
 
+    async def aclose(self) -> None:
+        return
+
 
 class _StubSession:
     """替换 ``WebClient._session``: 按方法返回预设应答, 记录出站方法."""

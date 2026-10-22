@@ -58,6 +58,10 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
+PROXY_DOWNLOAD_CONCURRENCY = 16
+"""``GET /resources/proxy`` 的并发上限. 每个请求都起一次出站下载, 该端点由用户点击触发, 需要端点级上限."""
+
+
 @dataclass
 class NetworkStack:
     """limiters → web_client → http_client → factory 的一次构造结果."""
@@ -212,6 +216,7 @@ class AppRuntime:
     release_checker: ReleaseChecker
     resource_store: ResourceStore
     proxy_failure_cache: ProxyFailureCache
+    proxy_downloads: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(PROXY_DOWNLOAD_CONCURRENCY))
     watcher_service: WatcherService | None = None
     feed_service: FeedService | None = None
     safe_dirs: list[Path] | None = field(default_factory=list)
