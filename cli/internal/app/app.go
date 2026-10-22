@@ -223,12 +223,16 @@ func (r *runner) server() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_, profile, ok := cfg.Select(r.p.profile)
+	name, profile, ok := cfg.Select(r.p.profile)
+	if r.p.profile != "" && (!ok || strings.TrimSpace(profile.Server) == "") {
+		// 显式指定了 profile 就必须用它: 名字拼错时静默换成本机实例, 等于换了个操作对象.
+		return "", usagef("profile %q 不存在或没有实例地址; 用 amane config list 查看已有 profile", name)
+	}
 	if !ok || strings.TrimSpace(profile.Server) == "" {
 		// 与实例同机: 没配置过 profile, 但凭据就在本机数据目录里.
 		// 这条路径是桌面版的常态, 引导里「无需操作」指的就是它.
-		if _, path := config.LocalToken(r.env.Getenv); path != "" {
-			return config.DefaultLocalServer(r.env.Getenv), nil
+		if inst, found := config.FindLocalInstance(r.env.Getenv); found {
+			return config.DefaultLocalServer(r.env.Getenv, inst.DataDir), nil
 		}
 		return "", usagef("未配置实例地址, 先运行 amane login --server <地址>")
 	}

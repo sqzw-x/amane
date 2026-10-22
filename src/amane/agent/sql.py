@@ -88,7 +88,7 @@ class ReadonlySqlSandbox:
         """执行只读 SQL.
 
         ``allow_slow`` 且未 ``approved`` 时不执行, 抛 ``SqlNeedsApproval``.
-        ``approved`` 时取消超时上限 (仍受调用方传入的 timeout_ms 约束; 批准路径传更大值).
+        ``approved`` 只跳过这道闸门, 超时仍取 ``timeout_ms`` — 它不随批准自动放宽.
         """
         if allow_slow and not approved:
             raise SqlNeedsApproval(sql)

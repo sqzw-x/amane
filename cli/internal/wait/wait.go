@@ -79,6 +79,12 @@ func Run(ctx context.Context, fetch Fetcher, opts Options) ([]byte, error) {
 	start := now()
 	var last []byte
 	for {
+		// 到点就不要再发请求: 判断放在 fetch 之前, 否则会多问一次, 最坏再等满一个
+		// HTTP 超时. 已经发出但未返回的那一次无法撤回, 因此实际误差上界是
+		// Timeout + 一次请求的耗时.
+		if opts.Timeout > 0 && now().Sub(start) >= opts.Timeout {
+			return last, &TimeoutError{Timeout: opts.Timeout, Last: last}
+		}
 		body, err := fetch(ctx)
 		if err != nil {
 			return nil, err

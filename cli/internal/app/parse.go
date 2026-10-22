@@ -233,7 +233,7 @@ const usageText = `amane — Amane 实例的外部智能体接口客户端
   api <path>                   直通 GET 请求, 自动补 /api 前缀
   doctor                       自检: CLI、实例可达性、token
   upgrade [--dry-run]          比对最新版本, 较新时下载并替换自身
-  login --server <url>         从标准输入读取 token 并写入配置文件
+  login --server <url>         读取 token 并写入配置文件 (终端下读一行)
   config [use <profile>|list]  查看当前配置, 切换或列出 profile
   skill install [--dir <path>] 生成 Skill 文件并写入目录
   skill show                   打印 Skill 内容, 不写文件
@@ -243,7 +243,7 @@ const usageText = `amane — Amane 实例的外部智能体接口客户端
   --profile <name>    使用指定 profile
   --pretty            缩进输出 JSON
   --json              以 JSON 输出原文; catalog 与 schema 默认输出文本
-  --timeout <时长>    HTTP 超时, 默认 30s; wait 中为轮询截止时间, 默认 0 (不超时)
+  --timeout <时长>    单请求超时, 省略时 15s (须为正数); wait 中为轮询截止时间, 省略表示不设限
   --version           打印版本
   --help              打印本帮助
 
@@ -264,6 +264,8 @@ skill install 选项:
 
 退出码:
   0  请求完成 (含工具返回的业务 error, 结果以响应体为准)
+  1  本机问题: 配置损坏、目录不可写、平台没有产物
   2  用法错误
-  3  连接失败或鉴权失败
+  3  连接失败、鉴权失败或超时
+  4  服务端拒绝了这次请求 (4xx/5xx)
 `

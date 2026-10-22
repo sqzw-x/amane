@@ -136,7 +136,8 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (*Res
 		return nil, &TransportError{Err: err}
 	}
 	if len(data) > maxBody {
-		return nil, &TransportError{Err: fmt.Errorf("响应超过 %d MiB 上限", maxBody>>20)}
+		// 不是传输失败: 对端把响应发过来了, 只是超过了本地上限.
+		return nil, fmt.Errorf("响应超过 %d MiB 上限", maxBody>>20)
 	}
 	return &Response{Status: resp.StatusCode, Body: data, Header: resp.Header}, nil
 }

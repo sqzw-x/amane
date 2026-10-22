@@ -5,6 +5,8 @@
 package httpx
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"time"
 )
@@ -25,10 +27,14 @@ var defaultClient = &http.Client{Timeout: DefaultTimeout}
 // Client 返回兜底客户端.
 func Client() *http.Client { return defaultClient }
 
-// Download 返回用于下载发布产物的客户端: 首字节限时 DefaultTimeout, 总时长交给 timeout.
+// Download 返回用于下载发布产物的客户端.
 //
-// http.Client.Timeout 是整段请求的时限, 套用 15 秒会让慢链路上的 10 MB 下载永远失败;
-// 而完全放开又会让不可达的地址占住会话. 拆成「首字节等多久」与「总量给多久」两件事.
+// http.Client.Timeout 是整段请求的时限: 套用 15 秒会让慢链路上的 10 MB 下载永远失败,
+// 完全放开又会让不可达的地址占住会话. 因此拆开 — 建立连接、TLS 握手与响应头都限时
+// DefaultTimeout, 正文的传输总量给 timeout. 正文开始后若对端卡住, 仍会占满 timeout,
+// 这是「慢但活着」与「卡死」无法用同一把尺子区分的代价.
+//
+// 只有调用方没带自定义 Transport 时才这样配; 带了的原样使用.
 func Download(base *http.Client, timeout time.Duration) *http.Client {
 	if base == nil {
 		base = Client()
@@ -38,12 +44,23 @@ func Download(base *http.Client, timeout time.Duration) *http.Client {
 	}
 	c := *base
 	c.Timeout = timeout
-	if c.Transport == nil {
-		if transport, ok := http.DefaultTransport.(*http.Transport); ok {
-			clone := transport.Clone()
-			clone.ResponseHeaderTimeout = DefaultTimeout
-			c.Transport = clone
+	if c.Transport != nil {
+		return &c
+	}
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return &c
+	}
+	clone := transport.Clone()
+	clone.ResponseHeaderTimeout = DefaultTimeout
+	clone.TLSHandshakeTimeout = DefaultTimeout
+	if dial := clone.DialContext; dial != nil {
+		clone.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
+			defer cancel()
+			return dial(ctx, network, addr)
 		}
 	}
+	c.Transport = clone
 	return &c
 }

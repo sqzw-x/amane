@@ -37,6 +37,8 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 | `bootstrap` | `/agent-guide` | 免鉴权的接入引导, 固定文本; 豁免见 `middleware.py::_TOKEN_EXEMPT` |
 | `ws` | `/ws` | EventBus 广播 |
 
+接口文档在 `/api/docs` (schema 在 `/api/docs/openapi.json`), 同样要 token: 浏览器无法加 `Authorization`, 只能靠登录下发的 cookie (`path=/api`), 因此先在 Web 登录再访问; 命令行与智能体用 Bearer.
+
 OpenAPI 列出参数, 不表达组合语义:
 
 - metadata 同 kind 的筛选: 关联类 AND / 标量类 OR; 跨 kind 始终 AND. `saved_query_id` 与其它筛选项 AND; `data` 实体不可作列表筛选 (400). 关联文件相位筛选与 `has_files` 一样 AND (布尔项 True = 至少一份具备, False = 没有任何一份具备), 列表项带聚合 `file_phase`. 见 [data-model.md](data-model.md) / [agent.md](agent.md).

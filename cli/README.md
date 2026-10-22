@@ -25,7 +25,7 @@ cd cli && go build -o amane ./cmd/amane
 ## 登录
 
 ```sh
-echo <token> | amane login --server http://127.0.0.1:8000
+echo <token> | amane login --server <实例地址>   # 桌面版默认 18000, 源码与 Docker 默认 8000
 ```
 
 token 只从标准输入读取, 不接受命令行参数 (会进 shell 历史与 `ps`). 交互终端下读一行并给出提示, 但终端本身会回显; 想不让它出现在屏幕上就用管道. 权限 0600:
@@ -36,7 +36,7 @@ token 只从标准输入读取, 不接受命令行参数 (会进 shell 历史与
 | Linux | `$XDG_CONFIG_HOME/amane/cli.json`, 默认 `~/.config/amane/cli.json` | 同上 |
 | Windows | `%LOCALAPPDATA%\Amane\cli.json` | 与桌面应用共用数据目录, 与实例的 `config.toml` / `token` 并列 |
 
-token 的取值顺序: profile → 环境变量 `AMANE_TOKEN` → 本机 `token` 文件. 后者依次找 `AMANE_DATA_DIR`、桌面应用的数据目录 (macOS `~/Library/Application Support/Amane`, Windows `%LOCALAPPDATA%\Amane`)、`./data`. 与实例同机时通常无需 `login`: 没有 profile 而本机 `token` 文件可读时, 地址取 `http://127.0.0.1:8000` (实例改过 `AMANE_PORT` 则需 `amane login --server` 指明地址).
+token 的取值顺序: profile → 环境变量 `AMANE_TOKEN` → 本机 `token` 文件. 后者依次找 `AMANE_DATA_DIR`、桌面应用的数据目录 (macOS `~/Library/Application Support/Amane`, Windows `%LOCALAPPDATA%\Amane`)、`./data`. 与实例同机时通常无需 `login`: 没有 profile 而本机 `token` 文件可读时, 端口按桌面壳的规则取 — 环境变量 `AMANE_PORT` > 数据目录 `desktop.env` 的 `AMANE_PORT` > 桌面默认 18000 (源码与 Docker 默认 8000). 端口对不上时才需 `amane login --server` 指明地址.
 
 实例地址指向非回环地址且为明文 `http://` 时, 在标准错误给一次警告, 不阻断.
 

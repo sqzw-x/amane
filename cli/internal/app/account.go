@@ -29,9 +29,9 @@ func (r *runner) cmdLogin(_ context.Context) error {
 	}
 	if token == "" {
 		// 与实例同机时凭据已在数据目录里, 用户不必粘贴.
-		if local, path := config.LocalToken(r.env.Getenv); local != "" {
-			token = local
-			fmt.Fprintf(r.env.Stderr, "amane: token 取自本机文件 %s\n", path)
+		if inst, ok := config.FindLocalInstance(r.env.Getenv); ok {
+			token = inst.Token
+			fmt.Fprintf(r.env.Stderr, "amane: token 取自本机文件 %s\n", inst.Path)
 		}
 	}
 	if token == "" {
@@ -80,9 +80,13 @@ func (r *runner) cmdConfig(_ context.Context) error {
 	switch sub := r.arg(0); sub {
 	case "":
 		name, profile, ok := cfg.Select(r.p.profile)
+		if r.p.profile != "" && (!ok || strings.TrimSpace(profile.Server) == "") {
+			// 与 server() 一致: 显式指定的 profile 必须生效, 拼错时报错而不是换一台实例.
+			return usagef("profile %q 不存在或没有实例地址; 用 amane config list 查看已有 profile", name)
+		}
 		if !ok {
 			// 与实例同机时不需要任何 profile: 地址取默认, token 取本机文件.
-			if token, path := config.LocalToken(r.env.Getenv); path != "" {
+			if inst, ok := config.FindLocalInstance(r.env.Getenv); ok {
 				return r.writeJSON(struct {
 					Profile     string `json:"profile"`
 					Server      string `json:"server"`
@@ -90,9 +94,9 @@ func (r *runner) cmdConfig(_ context.Context) error {
 					TokenSource string `json:"token_source"`
 					ConfigPath  string `json:"config_path"`
 				}{
-					Server:      config.DefaultLocalServer(r.env.Getenv),
-					Token:       config.Mask(token),
-					TokenSource: "本机 token 文件 " + path,
+					Server:      config.DefaultLocalServer(r.env.Getenv, inst.DataDir),
+					Token:       config.Mask(inst.Token),
+					TokenSource: "本机 token 文件 " + inst.Path,
 					ConfigPath:  r.cfgPath,
 				})
 			}

@@ -162,3 +162,27 @@ func TestRunContextCancel(t *testing.T) {
 		t.Fatalf("期望取消错误, 实际 %v", err)
 	}
 }
+
+func TestRunStopsAskingAfterDeadline(t *testing.T) {
+	// 到点后不应再发请求: 否则会多问一次, 最坏再等满一个 HTTP 超时.
+	clock := &fakeClock{now: time.Unix(0, 0)}
+	calls := 0
+	fetch := func(context.Context) ([]byte, error) {
+		calls++
+		clock.now = clock.now.Add(3 * time.Second)
+		return []byte(`{"status":"running"}`), nil
+	}
+	_, err := Run(context.Background(), fetch, Options{
+		Interval: time.Second,
+		Timeout:  5 * time.Second,
+		Now:      clock.Now,
+		Sleep:    clock.Sleep,
+	})
+	var te *TimeoutError
+	if !errors.As(err, &te) {
+		t.Fatalf("期望超时, 实际 %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("发了 %d 次请求, 期望 2 次", calls)
+	}
+}

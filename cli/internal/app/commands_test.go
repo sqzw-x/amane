@@ -352,9 +352,9 @@ func TestWaitUnknownTask(t *testing.T) {
 
 	h := newHarness(t, srv.URL)
 	h.useClock()
-	// 任务不存在不是终态: 交给调用方的必须是失败, 否则智能体会当成「已完成」继续.
-	if code := h.run("wait", "99"); code != ExitConnection {
-		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
+	// 任务不存在不是终态; 它属于「服务端拒绝」, 不是网络问题.
+	if code := h.run("wait", "99"); code != ExitServer {
+		t.Fatalf("退出码为 %d, 期望 %d", code, ExitServer)
 	}
 	if !strings.Contains(h.errOut(), "不存在") {
 		t.Fatalf("标准错误为 %q", h.errOut())
@@ -623,5 +623,148 @@ func TestSchemaPrintsDoc(t *testing.T) {
 	}
 	if strings.TrimSpace(h.out()) != "CREATE TABLE t (id INTEGER);" {
 		t.Fatalf("输出为 %q", h.out())
+	}
+}
+
+func TestServerFallsBackOnlyWithoutProfile(t *testing.T) {
+	// 显式 profile 拼错时必须报错: 静默换成本机实例等于换了个操作对象.
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("local-token"), 0o600); err != nil {
+		t.Fatalf("准备 token 失败: %v", err)
+	}
+
+	h := newHarness(t, "")
+	h.env.Getenv = func(k string) string {
+		if k == "AMANE_DATA_DIR" {
+			return dataDir
+		}
+		return ""
+	}
+	if code := h.run("catalog", "--profile", "missing"); code != ExitUsage {
+		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
+	}
+	if got := atomic.LoadInt32(&hits); got != 0 {
+		t.Fatalf("不应发起请求, 实际 %d 次", got)
+	}
+}
+
+func TestServerFallsBackToLocalInstance(t *testing.T) {
+	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
+	defer srv.Close()
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("local-token"), 0o600); err != nil {
+		t.Fatalf("准备 token 失败: %v", err)
+	}
+
+	h := newHarness(t, "")
+	h.env.Getenv = func(k string) string {
+		switch k {
+		case "AMANE_DATA_DIR":
+			return dataDir
+		case "AMANE_PORT":
+			return port
+		}
+		return ""
+	}
+	if code := h.run("catalog"); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	if !strings.Contains(h.out(), "tool") {
+		t.Fatalf("输出为 %q", h.out())
+	}
+}
+
+func TestLoginReadsOneLineInTTY(t *testing.T) {
+	h := newHarness(t, "")
+	h.stdin("secret-token\nignored")
+	h.terminal(true)
+
+	if code := h.run("login", "--server", "http://127.0.0.1:8000"); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	if !strings.Contains(h.errOut(), "粘贴") {
+		t.Fatalf("终端下应给出提示, 标准错误为 %q", h.errOut())
+	}
+	cfg := h.loadConfig(t)
+	if got := cfg.Profiles[config.DefaultProfile].Token; got != "secret-token" {
+		t.Fatalf("token 为 %q", got)
+	}
+}
+
+func TestAPIBinaryVerbatim(t *testing.T) {
+	// 任务记录包是二进制; 补换行或缩进都会写坏它.
+	payload := []byte{0x50, 0x4b, 0x03, 0x04, 0x00}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	h := newHarness(t, srv.URL)
+	if code := h.run("api", "/api/tasks/7/record"); code != ExitOK {
+		t.Fatalf("退出码为 %d", code)
+	}
+	if got := h.out(); got != string(payload) {
+		t.Fatalf("输出为 %v", []byte(got))
+	}
+}
+
+func TestWaitRejectsUnexpectedResponses(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "网关错误", status: http.StatusBadGateway, body: "<html>502</html>"},
+		{name: "服务端错误", status: http.StatusInternalServerError, body: `{"detail":"boom"}`},
+		{name: "200 但不是任务详情", status: http.StatusOK, body: "<html>index</html>"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(c.status)
+				_, _ = w.Write([]byte(c.body))
+			}))
+			defer srv.Close()
+
+			h := newHarness(t, srv.URL)
+			h.useClock()
+			if code := h.run("wait", "7"); code != ExitServer {
+				t.Fatalf("退出码为 %d, 期望 %d", code, ExitServer)
+			}
+			if h.out() != "" {
+				t.Fatalf("不应输出正文, 实际 %q", h.out())
+			}
+		})
+	}
+}
+
+func TestConfigRejectsMissingProfile(t *testing.T) {
+	// 与 server() 一致: 显式 profile 拼错时不能回落成一份「本机实例」的配置.
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("local-token"), 0o600); err != nil {
+		t.Fatalf("准备 token 失败: %v", err)
+	}
+	h := newHarness(t, "")
+	h.env.Getenv = func(k string) string {
+		if k == "AMANE_DATA_DIR" {
+			return dataDir
+		}
+		return ""
+	}
+	if code := h.run("config", "--profile", "missing"); code != ExitUsage {
+		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
+	}
+	if strings.Contains(h.out(), "127.0.0.1") {
+		t.Fatalf("不应输出本机地址, 实际 %q", h.out())
 	}
 }

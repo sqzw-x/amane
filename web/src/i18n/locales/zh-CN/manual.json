@@ -9,7 +9,7 @@
     "effect": "此指令将指导 Agent 安装 Amane CLI 与 skill.",
     "token": {
       "title": "关于 token",
-      "body": "如果 Amane 不在本机, 需按 Agent 说明手动通过 CLI 配置 token; 本机安装的桌面版会自动获取, 无需配置. token 保存在本机配置文件里, 不会出现在对话中. 不要把 token 粘贴给 Agent."
+      "body": "如果 Amane 不在本机, 需按 Agent 说明手动通过 CLI 配置 token; 本机安装的桌面版会自动获取, 无需配置 (桌面默认端口 18000; 改过端口时按 Agent 说明指明地址). token 保存在本机配置文件里, 不会出现在对话中. 不要把 token 粘贴给 Agent."
     },
     "permission": {
       "title": "Agent 权限",
