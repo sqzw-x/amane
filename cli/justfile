@@ -20,11 +20,10 @@ cli-check: cli-fmt-check cli-vet cli-test
 cli-fmt:
     gofmt -w .
 
-# CLI: 只检查格式, 不改文件
-#
-# 反引号由 just 在仓库根求值, 不受 working-directory 影响, 因此路径写 cli 而不是 .
+# CLI: 只检查格式, 不改文件. gofmt 不以退出码表达结果, 由 fmtcheck 转成退出码
+[working-directory('cli')]
 cli-fmt-check:
-    @{{ if `gofmt -l cli` == "" { "echo 格式检查通过" } else { error("以下文件未格式化:\n" + `gofmt -l cli`) } }}
+    go run ./internal/tools/fmtcheck
 
 [working-directory('cli')]
 cli-vet:
