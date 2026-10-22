@@ -626,8 +626,8 @@ func TestSchemaPrintsDoc(t *testing.T) {
 	}
 }
 
-func TestServerFallsBackOnlyWithoutProfile(t *testing.T) {
-	// 显式 profile 拼错时必须报错: 静默换成本机实例等于换了个操作对象.
+func TestExplicitMissingProfileDoesNotFallBack(t *testing.T) {
+	// 显式 profile 拼错时必须报错, 不能改用别的 profile.
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
@@ -652,34 +652,6 @@ func TestServerFallsBackOnlyWithoutProfile(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&hits); got != 0 {
 		t.Fatalf("不应发起请求, 实际 %d 次", got)
-	}
-}
-
-func TestServerFallsBackToLocalInstance(t *testing.T) {
-	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
-	defer srv.Close()
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-
-	dataDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("local-token"), 0o600); err != nil {
-		t.Fatalf("准备 token 失败: %v", err)
-	}
-
-	h := newHarness(t, "")
-	h.env.Getenv = func(k string) string {
-		switch k {
-		case "AMANE_DATA_DIR":
-			return dataDir
-		case "AMANE_PORT":
-			return port
-		}
-		return ""
-	}
-	if code := h.run("catalog"); code != ExitOK {
-		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
-	}
-	if !strings.Contains(h.out(), "tool") {
-		t.Fatalf("输出为 %q", h.out())
 	}
 }
 
@@ -766,5 +738,193 @@ func TestConfigRejectsMissingProfile(t *testing.T) {
 	}
 	if strings.Contains(h.out(), "127.0.0.1") {
 		t.Fatalf("不应输出本机地址, 实际 %q", h.out())
+	}
+}
+
+func TestLoginUsesLocalTokenOnLoopback(t *testing.T) {
+	// 本机实例: CLI 自己取数据目录里的 token, 用户不粘贴任何东西.
+	srv := httptest.NewServer(jsonHandler(t, http.StatusOK, catalogBody, nil))
+	defer srv.Close()
+
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("desktop-token"), 0o600); err != nil {
+		t.Fatalf("准备 token 失败: %v", err)
+	}
+
+	h := newHarness(t, "")
+	h.env.Getenv = func(k string) string {
+		if k == "AMANE_DATA_DIR" {
+			return dataDir
+		}
+		return ""
+	}
+	h.terminal(true)
+
+	if code := h.run("login", "--server", srv.URL); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	cfg := h.loadConfig(t)
+	if got := cfg.Profiles[config.DefaultProfile].Token; got != "desktop-token" {
+		t.Fatalf("token 为 %q", got)
+	}
+	if !strings.Contains(h.errOut(), "已保存") {
+		t.Fatalf("应确认写入成功, 标准错误为 %q", h.errOut())
+	}
+	if strings.Contains(h.errOut(), "粘贴") {
+		t.Fatalf("不应提示粘贴, 标准错误为 %q", h.errOut())
+	}
+}
+
+func TestLoginPromptsWhenLocalTokenRejected(t *testing.T) {
+	// 本机地址上跑的可能不是桌面版: 本机凭据过不了鉴权, 就该让用户粘贴.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"detail":"unauthorized"}`))
+	}))
+	defer srv.Close()
+
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("stale-token"), 0o600); err != nil {
+		t.Fatalf("准备 token 失败: %v", err)
+	}
+
+	h := newHarness(t, "")
+	h.env.Getenv = func(k string) string {
+		if k == "AMANE_DATA_DIR" {
+			return dataDir
+		}
+		return ""
+	}
+	h.stdin("typed-token\n")
+	h.terminal(true)
+
+	if code := h.run("login", "--server", srv.URL); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	cfg := h.loadConfig(t)
+	if got := cfg.Profiles[config.DefaultProfile].Token; got != "typed-token" {
+		t.Fatalf("token 为 %q", got)
+	}
+	if !strings.Contains(h.errOut(), "请粘贴") {
+		t.Fatalf("应改为请用户手动输入, 标准错误为 %q", h.errOut())
+	}
+}
+
+func TestLoginUsesLocalTokenWithEmptyPipe(t *testing.T) {
+	// 智能体的执行器常把 stdin 接到空管道: 这不是「没有凭据」, 仍要去找本机 token.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/system/desktop" {
+			t.Errorf("路径为 %q", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") == "" {
+			t.Errorf("验证请求应带 token")
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("desktop-token"), 0o600); err != nil {
+		t.Fatalf("准备 token 失败: %v", err)
+	}
+
+	h := newHarness(t, "")
+	h.env.Getenv = func(k string) string {
+		if k == "AMANE_DATA_DIR" {
+			return dataDir
+		}
+		return ""
+	}
+	h.stdin("")
+	h.terminal(false)
+
+	if code := h.run("login", "--server", srv.URL); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	if got := h.loadConfig(t).Profiles[config.DefaultProfile].Token; got != "desktop-token" {
+		t.Fatalf("token 为 %q", got)
+	}
+	if strings.Contains(h.errOut(), "粘贴") {
+		t.Fatalf("不应提示粘贴, 标准错误为 %q", h.errOut())
+	}
+}
+
+func TestLoginEmptyPipeWithoutLocalTokenIsActionable(t *testing.T) {
+	// 实例在, 但自动取不到能用的凭据: 引导用户手动登录, 而不是让 Agent 去翻别的来源.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/health" {
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	h := newHarness(t, "")
+	h.stdin("")
+	h.terminal(false)
+
+	if code := h.run("login", "--server", srv.URL); code != ExitConnection {
+		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
+	}
+	if !strings.Contains(h.errOut(), "需引导用户手动登录") {
+		t.Fatalf("应引导用户登录, 标准错误为 %q", h.errOut())
+	}
+	if !strings.Contains(h.errOut(), "amane login --server") {
+		t.Fatalf("应给出示例命令, 标准错误为 %q", h.errOut())
+	}
+}
+
+func TestLoginIgnoresLocalTokenForRemote(t *testing.T) {
+	// 地址不在本机时不碰本机 token: 那份凭据属于另一台实例.
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("local-token"), 0o600); err != nil {
+		t.Fatalf("准备 token 失败: %v", err)
+	}
+
+	h := newHarness(t, "")
+	h.env.Getenv = func(k string) string {
+		if k == "AMANE_DATA_DIR" {
+			return dataDir
+		}
+		return ""
+	}
+	h.stdin("typed-token\n")
+	h.terminal(false)
+
+	if code := h.run("login", "--server", "http://192.168.1.5:8000"); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	if got := h.loadConfig(t).Profiles[config.DefaultProfile].Token; got != "typed-token" {
+		t.Fatalf("token 为 %q", got)
+	}
+	if strings.Contains(h.errOut(), "本机 token 文件") {
+		t.Fatalf("不应读取本机 token, 标准错误为 %q", h.errOut())
+	}
+}
+
+func TestLoginUnreachableLocalExitsThree(t *testing.T) {
+	// 实例没起来时不能说「凭据不可用」: 真正的病是连不上, 退出码也该是连接失败.
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("desktop-token"), 0o600); err != nil {
+		t.Fatalf("准备 token 失败: %v", err)
+	}
+
+	h := newHarness(t, "")
+	h.env.Getenv = func(k string) string {
+		if k == "AMANE_DATA_DIR" {
+			return dataDir
+		}
+		return ""
+	}
+	h.stdin("")
+	h.terminal(false)
+
+	// 127.0.0.1:1 上没有服务.
+	if code := h.run("login", "--server", "http://127.0.0.1:1"); code != ExitConnection {
+		t.Fatalf("退出码为 %d, 期望 %d", code, ExitConnection)
+	}
+	if !strings.Contains(h.errOut(), "连接") {
+		t.Fatalf("标准错误为 %q", h.errOut())
 	}
 }

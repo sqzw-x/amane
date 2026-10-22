@@ -169,96 +169,38 @@ func ResolveToken(p Profile, getenv func(string) string) (string, string) {
 	return "", ""
 }
 
-// LocalInstance 描述与本机实例有关的凭据, 用于「与实例同机」这条路径:
-// 用户没有粘贴过任何东西, 但 token 就在数据目录里.
-type LocalInstance struct {
-	Token   string
-	DataDir string
-	Path    string
-}
-
-// FindLocalInstance 按 LocalTokenFiles 的顺序找本机实例; 找不到时 ok=false.
-func FindLocalInstance(getenv func(string) string) (LocalInstance, bool) {
+// LocalToken 从本机实例的 token 文件取凭据, 不读配置与环境变量.
+//
+// 用于 login 判断「这是不是本机桌面版」: 桌面版把 token 放在数据目录里, 用户无需粘贴.
+// 返回 token 与来源文件路径.
+func LocalToken(getenv func(string) string) (string, string) {
 	for _, path := range LocalTokenFiles(getenv) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
 		if token := strings.TrimSpace(string(data)); token != "" {
-			return LocalInstance{Token: token, DataDir: filepath.Dir(path), Path: path}, true
+			return token, path
 		}
 	}
-	return LocalInstance{}, false
+	return "", ""
 }
 
-// 桌面应用与源码/Docker 跑的实例用不同的默认端口:
-// 桌面壳把端口写进数据目录的 desktop.env (模板默认 18000), 源码与 Docker 用 8000.
-const (
-	DesktopDefaultPort = "18000"
-	DefaultPort        = "8000"
-)
-
-// DefaultLocalServer 返回本机实例的默认地址.
-func DefaultLocalServer(getenv func(string) string, dataDir string) string {
-	return localServer(getenv, dataDir, desktopDataDir(getenv))
-}
-
-// localServer 与 DefaultLocalServer 同义, 但把桌面数据目录作为参数: 端口决策因此可以在
-// 任何平台上测, 不必依赖运行时的默认目录.
+// IsLoopback 判断实例地址是否指向本机.
 //
-// 取值顺序与桌面壳一致: 真实环境变量 > desktop.env > 平台默认. CLI 从终端启动时通常
-// 继承不到 AMANE_PORT (那是壳注入给子进程的), 所以 desktop.env 是主要来源.
-func localServer(getenv func(string) string, dataDir, desktopDir string) string {
-	port := defaultPort(getenv, dataDir, desktopDir)
-	host := strings.TrimSpace(getenv("AMANE_HOST"))
-	if host == "" {
-		host = desktopEnvValue(dataDir, "AMANE_HOST")
-	}
-	// 监听通配地址时本机仍要连回环.
-	switch host {
-	case "", "0.0.0.0", "::", "[::]":
-		host = "127.0.0.1"
-	}
-	return "http://" + net.JoinHostPort(host, port)
-}
-
-// defaultPort 决定本机实例的端口: 环境变量 > desktop.env > 桌面默认 18000 / 其余 8000.
-func defaultPort(getenv func(string) string, dataDir, desktopDir string) string {
-	if port := strings.TrimSpace(getenv("AMANE_PORT")); port != "" {
-		return port
-	}
-	if port := desktopEnvValue(dataDir, "AMANE_PORT"); port != "" {
-		return port
-	}
-	if desktopDir != "" && dataDir == desktopDir {
-		return DesktopDefaultPort
-	}
-	return DefaultPort
-}
-
-// desktopEnvValue 从数据目录的 desktop.env 读一个键, 没有该文件或该键时返回空串.
-//
-// 格式是壳定义的子集: 每行 KEY=VALUE, # 开头为注释. 这里只取值, 不做变量展开.
-func desktopEnvValue(dataDir, key string) string {
-	if dataDir == "" {
-		return ""
-	}
-	data, err := os.ReadFile(filepath.Join(dataDir, "desktop.env"))
+// 只用于 login 决定要不要尝试桌面版留下的 token: 判断错了也只是多读一个文件,
+// 真正的凭据是否可用由一次鉴权请求决定.
+func IsLoopback(server string) bool {
+	u, err := url.Parse(server)
 	if err != nil {
-		return ""
+		return false
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		name, value, ok := strings.Cut(line, "=")
-		if !ok || strings.TrimSpace(name) != key {
-			continue
-		}
-		return strings.Trim(strings.TrimSpace(value), `"'`)
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
 	}
-	return ""
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // LocalTokenFiles 按优先级列出本机实例的 token 文件候选.

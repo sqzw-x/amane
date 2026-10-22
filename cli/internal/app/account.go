@@ -9,69 +9,170 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/sqzw-x/amane/cli/internal/api"
 	"github.com/sqzw-x/amane/cli/internal/config"
 )
 
-// cmdLogin 从标准输入读取 token 并写入配置文件.
-func (r *runner) cmdLogin(_ context.Context) error {
+// cmdLogin 解析实例地址并写入一份 profile.
+//
+// token 有三个来源, 按「用户可能已经做过什么」排序: 显式给出的 (管道或终端输入)、
+// 本机桌面版留下的 token 文件、现场提示用户粘贴. 本机文件这条要当场验一次鉴权 ——
+// 实例未必是桌面版, 猜来的凭据写进配置只会让后续每条命令都 401.
+func (r *runner) cmdLogin(ctx context.Context) error {
 	cfg, err := r.config()
 	if err != nil {
 		return err
 	}
-	if r.env.StdinIsTerminal {
-		// 交互终端里 ReadAll 要等到 EOF 才返回, 用户会以为命令卡住; 读一行即可.
-		// token 在终端下必然回显, 想避免就用管道.
-		fmt.Fprintln(r.env.Stderr, "请粘贴实例的 API Token 后回车:")
-	}
-	token, err := readToken(r.env.Stdin, r.env.StdinIsTerminal)
+	server, err := r.loginServer(cfg)
 	if err != nil {
-		return usagef("读取标准输入失败: %v", err)
+		return err
+	}
+	if config.PlaintextWarning(server) {
+		fmt.Fprintf(r.env.Stderr, "amane: 提示: %s 是明文 http 且不在本机, token 会以明文传输, 建议改用 https 或反向代理\n", server)
+	}
+
+	token, source, err := r.loginToken(ctx, server)
+	if err != nil {
+		return err
 	}
 	if token == "" {
-		// 与实例同机时凭据已在数据目录里, 用户不必粘贴.
-		if inst, ok := config.FindLocalInstance(r.env.Getenv); ok {
-			token = inst.Token
-			fmt.Fprintf(r.env.Stderr, "amane: token 取自本机文件 %s\n", inst.Path)
-		}
+		return usagef("没有读到 token: 用管道传入, 或在终端里粘贴")
 	}
-	if token == "" {
-		return usagef("没有读到 token: 用法 echo <token> | amane login --server <地址>")
+	if source != "" {
+		fmt.Fprintf(r.env.Stderr, "amane: token 取自 %s\n", source)
 	}
 
 	name := r.p.profile
 	if name == "" {
 		name = cfg.Current
 	}
-	var server string
-	if raw := strings.TrimSpace(r.p.server); raw != "" {
-		server, err = config.NormalizeServer(raw)
-		if err != nil {
-			return usagef("%v", err)
-		}
-	} else {
-		existing, ok := cfg.Profiles[name]
-		if !ok || strings.TrimSpace(existing.Server) == "" {
-			return usagef("缺少 --server: amane login --server <地址>")
-		}
-		server, err = config.NormalizeServer(existing.Server)
-		if err != nil {
-			return usagef("%v", err)
-		}
-	}
-	if config.PlaintextWarning(server) {
-		fmt.Fprintf(r.env.Stderr, "amane: 提示: %s 是明文 http 且不在本机, token 会以明文传输, 建议改用 https 或反向代理\n", server)
-	}
-
 	cfg.Profiles[name] = config.Profile{Server: server, Token: token}
 	cfg.Current = name
 	if err := cfg.Save(r.cfgPath); err != nil {
 		return err
 	}
-	fmt.Fprintf(r.env.Stderr, "amane: 已保存 profile %s (%s), token 写入 %s (权限 0600)\n", name, server, r.cfgPath)
+	fmt.Fprintf(r.env.Stderr, "amane: 已保存 %s 的凭据\n", server)
 	return nil
 }
 
-// cmdConfig 查看配置、切换 profile 或列出全部 profile.
+// loginServer 取本次要写入的实例地址.
+func (r *runner) loginServer(cfg *config.File) (string, error) {
+	if raw := strings.TrimSpace(r.p.server); raw != "" {
+		server, err := config.NormalizeServer(raw)
+		if err != nil {
+			return "", usagef("%v", err)
+		}
+		return server, nil
+	}
+	name := r.p.profile
+	if name == "" {
+		name = cfg.Current
+	}
+	existing, ok := cfg.Profiles[name]
+	if !ok || strings.TrimSpace(existing.Server) == "" {
+		return "", usagef("缺少 --server: amane login --server <实例地址>")
+	}
+	server, err := config.NormalizeServer(existing.Server)
+	if err != nil {
+		return "", usagef("%v", err)
+	}
+	return server, nil
+}
+
+// loginToken 选一个 token: 显式给出的优先, 其次本机桌面版留下的, 最后问用户.
+//
+// 空管道不等于「没有凭据」: 智能体的执行器常把 stdin 接到空 pipe 或 /dev/null,
+// 这时仍要继续找本机 token, 否则引导承诺的「本机无需粘贴」对这类调用方直接失效.
+func (r *runner) loginToken(ctx context.Context, server string) (string, string, error) {
+	terminal := r.env.StdinIsTerminal
+	if !terminal {
+		data, err := io.ReadAll(r.env.Stdin)
+		if err != nil {
+			return "", "", usagef("读取标准输入失败: %v", err)
+		}
+		if token := strings.TrimSpace(string(data)); token != "" {
+			return token, "标准输入", nil
+		}
+	}
+
+	// 地址指向本机时才去找桌面版留下的凭据. 找到要当场验一次: 这个地址上跑的不一定
+	// 是桌面版, 属于别处的凭据写进配置只会让后续每条命令都 401.
+	if config.IsLoopback(server) {
+		if token, _ := config.LocalToken(r.env.Getenv); token != "" {
+			if err := r.verifyToken(ctx, server, token); err == nil {
+				return token, "", nil
+			} else if api.IsTransport(err) {
+				return "", "", r.loginConnectError(server, err)
+			}
+		}
+	}
+
+	// 后面的文案要区分「实例在但不认这个凭据」与「这个地址上没有实例」, 否则会引导
+	// 用户去给一台不存在的实例登录. 探活走免鉴权的健康检查.
+	//
+	// 只在非交互时探: 终端里由人当场粘贴, 先探一次只会让人多等一个来回.
+	if !terminal {
+		if err := r.pingInstance(ctx, server); err != nil {
+			return "", "", r.loginConnectError(server, err)
+		}
+		return "", "", &cliError{
+			code: ExitConnection,
+			msg:  fmt.Sprintf("此实例无法自动鉴权, 需引导用户手动登录\n示例: amane login --server %s", server),
+		}
+	}
+
+	fmt.Fprintln(r.env.Stderr, "请粘贴该实例的 API Token 后回车:")
+	token, err := readToken(r.env.Stdin, true)
+	if err != nil {
+		return "", "", usagef("读取标准输入失败: %v", err)
+	}
+	return token, "", nil
+}
+
+// pingInstance 用免鉴权的健康检查确认该地址上有实例在跑.
+func (r *runner) pingInstance(ctx context.Context, server string) error {
+	client := &api.Client{BaseURL: server, UserAgent: "amane-cli/" + r.env.Version, HTTP: r.httpClient()}
+	resp, err := client.Get(ctx, "/api/health")
+	if err != nil {
+		return err
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		return fmt.Errorf("健康检查返回 HTTP %d", resp.Status)
+	}
+	return nil
+}
+
+// loginConnectError 给出连不上时的下一步: 该确认地址或启动实例, 不是去登录.
+func (r *runner) loginConnectError(server string, err error) error {
+	if api.IsRefused(err) {
+		return &cliError{
+			code: ExitConnection,
+			msg:  fmt.Sprintf("连接实例失败 (%s): 端口上没有实例在监听\n请向用户确认实例地址, 或让用户先启动实例", server),
+		}
+	}
+	return &cliError{
+		code: ExitConnection,
+		msg:  fmt.Sprintf("连接实例失败 (%s): %v\n请向用户确认实例地址与网络", server, err),
+	}
+}
+
+// verifyToken 用一次需要鉴权的请求确认 token 可用, 只用于自动取到的本机凭据.
+//
+// 端点用 /api/system/desktop: 菜单栏每三秒轮询它, 是历来版本都有的路径; 换成新端点会
+// 让旧服务端上的本机登录被判成「凭据不可用」. 只有 401/403 算不可用 —— 其他状态说明不了
+// token 的对错, 留给 doctor 报告.
+func (r *runner) verifyToken(ctx context.Context, server, token string) error {
+	client := &api.Client{BaseURL: server, Token: token, UserAgent: "amane-cli/" + r.env.Version, HTTP: r.httpClient()}
+	resp, err := client.Get(ctx, "/api/system/desktop")
+	if err != nil {
+		return r.connErr(server, err)
+	}
+	if api.IsAuthFailure(resp.Status) {
+		return fmt.Errorf("鉴权失败 (HTTP %d)", resp.Status)
+	}
+	return nil
+}
+
 func (r *runner) cmdConfig(_ context.Context) error {
 	cfg, err := r.config()
 	if err != nil {
@@ -80,27 +181,11 @@ func (r *runner) cmdConfig(_ context.Context) error {
 	switch sub := r.arg(0); sub {
 	case "":
 		name, profile, ok := cfg.Select(r.p.profile)
-		if r.p.profile != "" && (!ok || strings.TrimSpace(profile.Server) == "") {
-			// 与 server() 一致: 显式指定的 profile 必须生效, 拼错时报错而不是换一台实例.
-			return usagef("profile %q 不存在或没有实例地址; 用 amane config list 查看已有 profile", name)
-		}
 		if !ok {
-			// 与实例同机时不需要任何 profile: 地址取默认, token 取本机文件.
-			if inst, ok := config.FindLocalInstance(r.env.Getenv); ok {
-				return r.writeJSON(struct {
-					Profile     string `json:"profile"`
-					Server      string `json:"server"`
-					Token       string `json:"token"`
-					TokenSource string `json:"token_source"`
-					ConfigPath  string `json:"config_path"`
-				}{
-					Server:      config.DefaultLocalServer(r.env.Getenv, inst.DataDir),
-					Token:       config.Mask(inst.Token),
-					TokenSource: "本机 token 文件 " + inst.Path,
-					ConfigPath:  r.cfgPath,
-				})
+			if r.p.profile != "" {
+				return usagef("profile %q 不存在; 用 amane config list 查看已有 profile", name)
 			}
-			return usagef("profile %q 不存在; 先运行 amane login --server <地址>, 或用 amane config list 查看已有 profile", name)
+			return usagef("未配置实例地址, 先运行 amane login --server <地址>")
 		}
 		token, source := config.ResolveToken(profile, r.env.Getenv)
 		return r.writeJSON(struct {

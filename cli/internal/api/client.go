@@ -12,8 +12,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"syscall"
 
 	"github.com/sqzw-x/amane/cli/internal/httpx"
 )
@@ -68,6 +70,17 @@ type TransportError struct {
 func (e *TransportError) Error() string { return e.Err.Error() }
 
 func (e *TransportError) Unwrap() error { return e.Err }
+
+// IsRefused 判断错误是否为「连上了但对方端口没有监听」.
+//
+// 与其它网络错误的区别决定文案: 拒绝连接说明该地址上没有实例在跑, 而超时说明不了.
+func IsRefused(err error) bool {
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) {
+		return false
+	}
+	return errors.Is(opErr.Err, syscall.ECONNREFUSED)
+}
 
 // IsTransport 判断错误是否为网络层失败.
 func IsTransport(err error) bool {

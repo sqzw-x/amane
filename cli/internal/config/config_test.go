@@ -260,7 +260,7 @@ func TestDirForWindowsWithoutLocalAppData(t *testing.T) {
 	}
 }
 
-func TestFindLocalInstance(t *testing.T) {
+func TestLocalToken(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "token"), []byte("  abc123\n"), 0o600); err != nil {
 		t.Fatalf("准备 token 失败: %v", err)
@@ -271,81 +271,40 @@ func TestFindLocalInstance(t *testing.T) {
 	}
 
 	cases := []struct {
-		name    string
-		env     map[string]string
-		wantDir string
-		wantOK  bool
+		name string
+		env  map[string]string
+		want string
 	}{
-		{name: "取自 AMANE_DATA_DIR", env: map[string]string{"AMANE_DATA_DIR": dir}, wantDir: dir, wantOK: true},
-		{name: "跳过空 token 文件", env: map[string]string{"AMANE_DATA_DIR": empty}, wantOK: false},
-		{name: "都没有", env: map[string]string{}, wantOK: false},
+		{name: "取自 AMANE_DATA_DIR", env: map[string]string{"AMANE_DATA_DIR": dir}, want: "abc123"},
+		{name: "跳过空 token 文件", env: map[string]string{"AMANE_DATA_DIR": empty}, want: ""},
+		{name: "都没有", env: map[string]string{}, want: ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, ok := FindLocalInstance(func(k string) string { return c.env[k] })
-			if ok != c.wantOK {
-				t.Fatalf("ok = %v, 期望 %v (得到 %+v)", ok, c.wantOK, got)
+			token, path := LocalToken(func(k string) string { return c.env[k] })
+			if token != c.want {
+				t.Fatalf("token 为 %q, 期望 %q", token, c.want)
 			}
-			if !ok {
-				return
-			}
-			if got.Token != "abc123" {
-				t.Fatalf("token 为 %q", got.Token)
-			}
-			if got.DataDir != c.wantDir {
-				t.Fatalf("数据目录为 %q, 期望 %q", got.DataDir, c.wantDir)
+			if token != "" && path == "" {
+				t.Fatalf("取得 token 时应给出文件路径")
 			}
 		})
 	}
 }
 
-func TestLocalServer(t *testing.T) {
-	// 端口决策抽成 localServer(desktopDir 由参数给出), 因此任何平台都能测.
-	plainDesktop := t.TempDir()  // 没有 desktop.env 的桌面目录
-	statedDesktop := t.TempDir() // 写了 desktop.env 的桌面目录
-	devDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(statedDesktop, "desktop.env"), []byte("AMANE_HOST=0.0.0.0\nAMANE_PORT=20000\n"), 0o600); err != nil {
-		t.Fatalf("准备 desktop.env 失败: %v", err)
+func TestIsLoopback(t *testing.T) {
+	cases := map[string]bool{
+		"http://127.0.0.1:18000":    true,
+		"http://localhost:8000":     true,
+		"http://[::1]:8000":         true,
+		"http://127.0.0.2:8000":     true,
+		"http://LOCALHOST:8000":     true,
+		"http://192.168.1.5:8000":   false,
+		"https://amane.example.com": false,
 	}
-
-	cases := []struct {
-		name       string
-		env        map[string]string
-		dataDir    string
-		desktopDir string
-		want       string
-	}{
-		{name: "桌面默认 18000", env: map[string]string{}, dataDir: plainDesktop, desktopDir: plainDesktop, want: "http://127.0.0.1:18000"},
-		{name: "源码默认 8000", env: map[string]string{}, dataDir: devDir, desktopDir: plainDesktop, want: "http://127.0.0.1:8000"},
-		{name: "没有任何桌面目录", env: map[string]string{}, dataDir: devDir, desktopDir: "", want: "http://127.0.0.1:8000"},
-		{
-			name:       "desktop.env 覆盖默认, 通配监听回落回环",
-			env:        map[string]string{},
-			dataDir:    statedDesktop,
-			desktopDir: statedDesktop,
-			want:       "http://127.0.0.1:20000",
-		},
-		{
-			name:       "环境变量优先于 desktop.env",
-			env:        map[string]string{"AMANE_PORT": "21000"},
-			dataDir:    statedDesktop,
-			desktopDir: statedDesktop,
-			want:       "http://127.0.0.1:21000",
-		},
-		{
-			name:       "环境变量指定主机",
-			env:        map[string]string{"AMANE_HOST": "192.168.1.5", "AMANE_PORT": "8000"},
-			dataDir:    devDir,
-			desktopDir: plainDesktop,
-			want:       "http://192.168.1.5:8000",
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := localServer(func(k string) string { return c.env[k] }, c.dataDir, c.desktopDir)
-			if got != c.want {
-				t.Fatalf("得到 %q, 期望 %q", got, c.want)
-			}
-		})
+	for server, want := range cases {
+		if got := IsLoopback(server); got != want {
+			t.Errorf("IsLoopback(%q) = %v, 期望 %v", server, got, want)
+		}
 	}
 }
