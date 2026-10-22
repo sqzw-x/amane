@@ -60,7 +60,8 @@ func run(version, out string, clean bool) error {
 		path := filepath.Join(out, name)
 		fmt.Println("构建", path)
 
-		build := exec.Command("go", "build", "-trimpath", "-ldflags", "-X main.version="+version, "-o", path, "./cmd/amane")
+		flags := "-s -w -X main.version=" + version
+		build := exec.Command("go", "build", "-trimpath", "-ldflags", flags, "-o", path, "./cmd/amane")
 		build.Env = append(os.Environ(), "GOOS="+target.os, "GOARCH="+target.arch, "CGO_ENABLED=0")
 		build.Stdout, build.Stderr = os.Stdout, os.Stderr
 		if err := build.Run(); err != nil {

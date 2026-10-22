@@ -36,7 +36,7 @@ cli-test:
 # CLI: 当前平台的二进制到 dist/amane
 [working-directory('cli')]
 cli-build:
-    go build -trimpath -ldflags "-X main.version={{version}}" -o {{dist_dir}}/amane{{exe}} ./cmd/amane
+    go build -trimpath -ldflags "-s -w -X main.version={{version}}" -o {{dist_dir}}/amane{{exe}} ./cmd/amane
 
 # CLI: 交叉编译五个平台并生成 SHA256SUMS
 [working-directory('cli')]
