@@ -3,7 +3,7 @@
 // 内容只与 CLI 自身有关: 命令、退出码与审批礼仪都不随实例变化, 所以生成时不连接实例,
 // 版本也跟随 CLI. 实例相关的位置 (数据目录、日志) 由 `amane catalog --json` 运行时取.
 //
-// 只生成一个文件: 工具清单不进 Skill. 清单随实例变化, 写进文件既会过期,
+// 只生成 SKILL.md 与 version 两个文件; 工具清单不进 Skill, 清单随实例变化, 写进文件既会过期,
 // 又让每次会话都为全部工具付一遍 token; 改为运行时用 `amane catalog` 取索引.
 package skill
 
@@ -142,14 +142,14 @@ func renderMain(version string) string {
 	fmt.Fprintf(&b, "amane api <path>%s             # 直通 GET\n", pf)
 	fmt.Fprintf(&b, "amane doctor%s                 # 自检\n", pf)
 	b.WriteString("```\n")
-	b.WriteString("\n除 `wait` 外, 其余命令都可加 `--timeout <时长>` 放宽单个请求的超时 (默认 15s). 只有慢查询这类耗时才需要.\n")
+	b.WriteString("\n`--timeout` 在 `wait` 上是轮询截止时间, 在其余命令上是单次请求超时 (默认 15s). 只有慢查询这类耗时才需要.\n")
 
 	b.WriteString("\n## 审批礼仪\n\n")
 	b.WriteString("服务端不设审批闸门, 是否执行由你与用户的对话决定. 下列操作执行前必须先向用户复述影响面 (修改什么、涉及多少条、能否撤销), 得到明确同意后才调用:\n\n")
 	b.WriteString("- 删除番号条目、演员、演员别名、分类、媒体库、订阅源、定时任务.\n")
 	b.WriteString("- 合并分类或番号条目, 以及任何批量修改.\n")
 	b.WriteString("- 批量删除或批量修改用户标签、订阅源条目.\n")
-	b.WriteString("- 预计耗时较长的查询 (allow_slow 只跳过实例的慢查询闸门, 时限仍由 sql_timeout_ms 决定), 以及任何会全表写入的 SQL.\n")
+	b.WriteString("- 预计耗时较长的查询 (allow_slow 只跳过实例的慢查询闸门, 时限仍由 sql_timeout_ms 决定), 以及任何预计会全表扫描的 SQL.\n")
 	b.WriteString("\n用户未答复或答复含糊时不执行. 不要用 `--yes` 之类的开关跳过这一步: CLI 不提供它.\n")
 
 	b.WriteString("\n## 自服务\n\n")

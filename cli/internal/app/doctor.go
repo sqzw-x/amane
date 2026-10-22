@@ -70,25 +70,6 @@ func (r *runner) skillShow(_ context.Context) error {
 	return nil
 }
 
-// fetchCatalog 取工具目录. 非 2xx 响应在这里转换为错误, 因为生成 Skill 必须有目录.
-func (r *runner) fetchCatalog(ctx context.Context) (*api.Catalog, error) {
-	client, err := r.client()
-	if err != nil {
-		return nil, err
-	}
-	cat, resp, err := client.Catalog(ctx)
-	if err != nil {
-		return nil, r.connErr(client.BaseURL, err)
-	}
-	if err := r.checkStatus(resp); err != nil {
-		return nil, err
-	}
-	if cat == nil {
-		return nil, connf("目录响应不可用 (HTTP %d): %s", resp.Status, detailOf(resp.Body))
-	}
-	return cat, nil
-}
-
 // doctorCheck 是一条自检结果.
 type doctorCheck struct {
 	Name   string `json:"name"`

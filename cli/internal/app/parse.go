@@ -345,7 +345,7 @@ upgrade 选项:
   --dry-run           只打印将要执行的操作
 
 skill install 选项:
-  --dir <path>        安装到的父目录, 省略时为 ~/.agents/skills
+  --dir <path>        安装到的父目录, 省略时写入 ~/.agents/skills/amane
 
 退出码:
   0  请求完成 (含工具返回的业务 error, 结果以响应体为准)

@@ -13,7 +13,7 @@ class ToolSummary(BaseModel):
 
 
 class ToolDetail(BaseModel):
-    """单个工具的完整入参. 返回结构不对外: 调用方从响应体直接看."""
+    """单个工具的完整入参. 响应不声明返回 Schema, 调用方按实际响应体处理."""
 
     name: str
     group: str
