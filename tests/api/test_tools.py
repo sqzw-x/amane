@@ -119,7 +119,8 @@ async def test_catalog_reports_runtime_paths(client: AsyncClient, app: FastAPI) 
     assert paths["data_dir"] == str(cold.data_dir.resolve())
     assert paths["db_path"] == str(cold.db_path.resolve())
     assert paths["log_dir"] == str(cold.log_dir.resolve())
-    assert "AMANE_TOKEN" in paths["env"]
+    # 只列决定这些路径的环境变量; AMANE_TOKEN 是鉴权用的, 与路径无关.
+    assert "AMANE_TOKEN" not in paths["env"]
 
 
 @pytest.mark.asyncio

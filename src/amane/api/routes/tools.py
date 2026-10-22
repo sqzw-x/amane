@@ -50,7 +50,7 @@ async def get_tool_catalog(agent: AgentDep, config: ConfigDep) -> ToolCatalog:
             log_dir=str(cold.log_dir.resolve()),
             db_path=str(cold.db_path.resolve()),
             config_path=str(cold.config_path.resolve()),
-            env=["AMANE_DATA_DIR", "AMANE_LOG_DIR", "AMANE_TOKEN"],
+            env=["AMANE_DATA_DIR", "AMANE_LOG_DIR"],
         ),
         tools=[
             ToolSummary(
@@ -108,6 +108,13 @@ async def call_tool(name: str, body: ToolCallRequest, agent: AgentDep) -> Any:
     except ValidationError as exc:
         logger.info("external tool rejected", tool=name, outcome="invalid_args", fields=list(body.args))
         raise HTTPException(422, detail=_format_validation_error(exc)) from exc
+    except Exception:
+        # 工具抛出未被处理的异常时也要留痕: 否则这次调用只剩请求日志里的路径,
+        # 事后无法回答「被拒的是哪个工具」.
+        logger.info(
+            "external tool called", tool=name, group=registry[name].group, outcome="exception", fields=sorted(body.args)
+        )
+        raise
 
     # 只记字段名不记取值: 入参可能含用户数据, 审计需要的是「动了哪个工具」而不是内容.
     logger.info(

@@ -9,7 +9,7 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 
 ## 路由划分
 
-除 `bootstrap` 外全部挂载于 `/api` (`API_PREFIX`). 新端点纳入对应资源模块; 全新资源则新建模块并在 `routes/__init__.py` 注册.
+全部挂载于 `/api` (`API_PREFIX`); `bootstrap` 不是例外, 它的前缀同样是 `/api`. 新端点纳入对应资源模块; 全新资源则新建模块并在 `routes/__init__.py` 注册.
 
 | 模块 | 前缀 | 职责 |
 |------|------|------|
@@ -34,7 +34,7 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 | `agent` | `/agent` | 会话 CRUD / 标题 / trace / AG-UI; 见 [agent.md](agent.md) |
 | `saved-queries` | `/saved-queries` | 查询预设 CRUD / 结果 / 批量; 见 [agent.md](agent.md) |
 | `tools` | `/tools` | 外部智能体的工具索引、单工具入参与派发; 见 [agent.md](agent.md)「外部接入」 |
-| `bootstrap` | `/api/agent-guide` | 免鉴权的接入引导, 固定文本; 豁免见 `middleware.py::_TOKEN_EXEMPT` |
+| `bootstrap` | `/agent-guide` | 免鉴权的接入引导, 固定文本; 豁免见 `middleware.py::_TOKEN_EXEMPT` |
 | `ws` | `/ws` | EventBus 广播 |
 
 OpenAPI 列出参数, 不表达组合语义:

@@ -25,10 +25,12 @@ Amane 通过 CLI 工具提供外部控制接口, 需单独在本机安装
 
 1. 检查本机是否已安装 CLI 工具: 运行 `amane --version`. 若已安装跳过此步骤
 
-2. 判断本机系统及架构 (darwin / linux / windows, amd64 / arm64),
-   从 GitHub Releases 下载对应产物并校验 SHA256SUMS:
+2. 判断本机系统及架构, 从 GitHub Releases 下载对应产物并校验 SHA256SUMS:
    https://github.com/sqzw-x/amane/releases/latest/download/amane-{os}-{arch}
+   产物名就是 amane-{os}-{arch}, Windows 另加 .exe. 覆盖 linux/darwin 的 amd64 与 arm64,
+   Windows 只有 amd64 — 其余组合没有产物, 不要按公式硬拼.
    用 curl/wget 等下载, 不要用浏览器 — macOS 下浏览器给文件加隔离属性, 导致无法运行.
+   下载后 chmod +x (Windows 无需), 再移动到第 3 步选定的位置.
 
 3. 就安装位置提供建议并征求用户同意, 例如 ~/.local/bin/amane
    (Windows 的 %LOCALAPPDATA%\\Amane\\bin\\amane.exe) 等
@@ -36,11 +38,13 @@ Amane 通过 CLI 工具提供外部控制接口, 需单独在本机安装
    需修改 PATH 时, 给出预览经用户同意后执行, 禁止擅自改系统配置.
 
 4. 鉴权. 分情况:
-   - 本机 localhost 上运行的桌面版: CLI 会自动读取实例数据目录里的 token, 用户无需操作.
+   - 本机运行的桌面版: CLI 自动读取实例数据目录里的 token, 并按 http://127.0.0.1:8000 连接,
+     用户无需操作. 实例改过 AMANE_PORT 时地址不同, 需运行 `amane login --server http://127.0.0.1:<端口>`
+     指明地址 (token 仍由 CLI 自己取, 用户不必粘贴).
    - 否则需要用户手动登录一次: 运行 `amane login --server <实例地址>`,
-     CLI 会提示用户粘贴 token. token 的来源: 桌面应用 菜单 - 复制 API Token,
-     或服务端启动日志, 或数据目录下的 token 文件.
-     让用户自己粘贴. 禁止向用户索要 token 后代为输入, 禁止读取或回显它.
+     CLI 会提示用户粘贴 token. token 的来源: 桌面应用 菜单 - 复制 API Token, 或服务端启动日志.
+     让用户自己在终端粘贴, 不要向用户索要 token 后代为输入, 也不要读取或回显它.
+     数据目录下的 token 文件由 CLI 自己读取, 你不要去读.
 
 ## 阶段二: 安装 Skill
 
