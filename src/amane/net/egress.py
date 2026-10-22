@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from ipaddress import IPv6Address, ip_address, ip_network
 from urllib.parse import SplitResult, urlsplit
 
-from .errors import FailureKind, RequestError, RequestFailure
+from .errors import EgressRejected, FailureKind, RequestError, RequestFailure
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 
@@ -21,25 +21,33 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 _FAKE_IP_NETWORKS = (ip_network("198.18.0.0/15"),)
 """fake-IP DNS 的默认段 (Clash / Mihomo / Surge). 代理环境下公网域名解析到这里, 按「非公网」拒绝会让
-外链图片全部失败; 该段在普通网络上不可路由, 放行不扩大可达面."""
+外链图片全部失败.
+
+这是有意的取舍: 该段在直连网络上不可路由, 但 fake-IP + TUN 环境里地址判定对域名基本失效 — 真正的
+目标由代理解析与路由决定. 需要严格限制来源时, 判据不能只有地址."""
 
 
-def _blocked(url: str, message: str) -> RequestError:
-    return RequestError(url, RequestFailure(kind=FailureKind.UNEXPECTED, message=message))
+def _rejected(url: str, message: str) -> EgressRejected:
+    return EgressRejected(url, RequestFailure(kind=FailureKind.UNEXPECTED, message=message))
+
+
+def _unresolved(url: str, message: str) -> RequestError:
+    """解析失败按网络故障处理: 它不是策略拒绝, 调用方不应据此判断地址不合规."""
+    return RequestError(url, RequestFailure(kind=FailureKind.CURL, message=message))
 
 
 def _split(url: str) -> SplitResult:
     try:
         return urlsplit(url)
     except ValueError as exc:
-        raise _blocked(url, f"URL 无法解析: {exc}") from exc
+        raise _rejected(url, f"URL 无法解析: {exc}") from exc
 
 
 def ensure_http_scheme(url: str) -> None:
     """出站 URL 只接受 http(s): 其余协议不进入 curl."""
     scheme = _split(url).scheme.lower()
     if scheme not in _ALLOWED_SCHEMES:
-        raise _blocked(url, f"拒绝的协议: {scheme or '(空)'}")
+        raise _rejected(url, f"拒绝的协议: {scheme or '(空)'}")
 
 
 def is_public_address(address: str) -> bool:
@@ -78,8 +86,11 @@ class EgressPolicy:
     """``allow_private=False`` 时解析 URL 主机并拒绝任何非公网地址.
 
     逐跳复查由 ``WebClient.request`` 负责: 每一跳都调用 ``ensure_allowed``, 重定向不能把一个
-    已校验的 URL 带到内网. 代价是校验与 curl 的解析之间存在时间窗 (DNS rebinding), 因此只用于
-    入口已知可控的调用点.
+    已校验的 URL 带到内网.
+
+    **不防御 DNS rebinding**: 校验用 ``resolve_addresses`` 的结果, 真正连接由 curl 再解析一次,
+    窗口内改派到内网的域名不会被发现. 当前没有 IP pin 手段 (curl 侧不暴露 resolve / connect-to),
+    因此只能把 URL 来源当作可信来使用.
     """
 
     allow_private: bool = False
@@ -93,24 +104,24 @@ class EgressPolicy:
         parsed = _split(url)
         host = parsed.hostname
         if not host:
-            raise _blocked(url, "URL 缺少主机名")
+            raise _rejected(url, "URL 缺少主机名")
         # curl 自己解析数值主机: 0177.0.0.1 是八进制、2130706433 是十进制, 与 getaddrinfo 的解释不同,
         # 只按解析结果判定会漏掉这些写法. 因此数值形态必须是规范写法.
         if _looks_numeric(host) and not _is_canonical_ip(host):
-            raise _blocked(url, f"非规范的数值主机: {host}")
+            raise _rejected(url, f"非规范的数值主机: {host}")
         try:
             port = parsed.port or _DEFAULT_PORTS[parsed.scheme.lower()]
         except ValueError as exc:
-            raise _blocked(url, f"端口非法: {exc}") from exc
+            raise _rejected(url, f"端口非法: {exc}") from exc
 
         try:
             addresses = await resolve_addresses(host, port)
         except (OSError, UnicodeError) as exc:
-            raise _blocked(url, f"主机解析失败: {exc}") from exc
+            raise _unresolved(url, f"主机解析失败: {exc}") from exc
         if not addresses:
-            raise _blocked(url, "主机解析无结果")
+            raise _unresolved(url, "主机解析无结果")
 
         # 任一地址落在私网就整体拒绝: 双栈主机可能同时给出公网与内网地址, 放行等于让 curl 自己选.
         for address in addresses:
             if not is_public_address(address):
-                raise _blocked(url, f"地址不在公网范围: {address}")
+                raise _rejected(url, f"地址不在公网范围: {address}")

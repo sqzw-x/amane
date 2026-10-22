@@ -1,6 +1,5 @@
 """测试资源 serve 端点 (哑文件服务 + 外链反代)."""
 
-from ipaddress import ip_address
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
@@ -14,19 +13,6 @@ if TYPE_CHECKING:
 
     from fastapi import FastAPI
     from httpx2 import AsyncClient
-
-
-@pytest.fixture
-def public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
-    """代理端点会解析目标地址: 用例不依赖真实 DNS, 字面量按原值返回."""
-
-    async def _resolve(host: str, port: int) -> set[str]:
-        try:
-            return {str(ip_address(host))}
-        except ValueError:
-            return {"93.184.216.34"}
-
-    monkeypatch.setattr("amane.net.egress.resolve_addresses", _resolve)
 
 
 async def _make_derived(store: ResourceStore) -> tuple[str, str]:
@@ -161,6 +147,31 @@ class TestProxyImage:
         assert resp.status_code == 400
         assert resp.json()["detail"] == "仅支持公网地址"
         assert mock_store.acquire.await_count == 0
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize("url", ["http://[::1/a.png", "http://example.com:99999/a.png"])
+    async def test_malformed_url_rejected(self, client: AsyncClient, url: str):
+        """解析不了的 URL 回 400, 不能落到未捕获异常变成 500."""
+        resp = await client.get("resources/proxy", params={"url": url})
+
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_resolution_failure_is_upstream_error(
+        self, client: AsyncClient, app, monkeypatch: pytest.MonkeyPatch
+    ):
+        """公网域名解析失败属于上游不可达: 回 502 并进入负缓存, 不说成地址不合规."""
+        url = "https://pics.example/a.png"
+
+        async def _resolve(host: str, port: int) -> set[str]:
+            raise OSError("resolver down")
+
+        monkeypatch.setattr("amane.net.egress.resolve_addresses", _resolve)
+
+        resp = await client.get("resources/proxy", params={"url": url})
+
+        assert resp.status_code == 502
+        assert app.state.runtime.proxy_failure_cache.is_blocked(url)
 
 
 @pytest.mark.asyncio(loop_scope="function")

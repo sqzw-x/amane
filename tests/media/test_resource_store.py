@@ -2,11 +2,13 @@
 
 import asyncio
 from typing import TYPE_CHECKING, Any, ClassVar
+from unittest.mock import AsyncMock
 
 import pytest
 
 from amane.media import ResourceStore, UpscaleOutcome, derived_locator
 from amane.media.resource_store import RESOURCE_URL_PREFIX, _is_placeholder_url, internal_url_hash
+from amane.net.egress import EgressPolicy
 from amane.net.http import RateLimiters, WebClient
 
 if TYPE_CHECKING:
@@ -347,6 +349,7 @@ class _StubResponse:
         self.url = url
         self.content = content
         self.status_code = status
+        self.quit_now = None
 
     async def aclose(self) -> None:
         return
@@ -377,6 +380,25 @@ def _stub_client(
     session = _StubSession(final_url=final_url, content=content, statuses=statuses)
     monkeypatch.setattr(client, "_session", session)
     return client, session
+
+
+@pytest.mark.asyncio
+async def test_acquire_forwards_egress_policy(
+    resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """策略与上限必须原样到下载通道: 漏传等于端点上的限制静默失效."""
+    policy = EgressPolicy()
+    client = AsyncMock()
+    client.resolve_final_url = AsyncMock(return_value=_REQUEST)
+    client.download = AsyncMock(return_value=False)
+    monkeypatch.setattr(resource_store, "_compute_path", lambda url: tmp_path / "a.jpg")
+
+    assert await resource_store.acquire(_REQUEST, client, egress=policy, max_bytes=1024) is None
+
+    client.resolve_final_url.assert_awaited_once_with(_REQUEST, egress=policy)
+    kwargs = client.download.await_args.kwargs
+    assert kwargs["egress"] is policy
+    assert kwargs["max_bytes"] == 1024
 
 
 _REQUEST = "https://pics.dmm.co.jp/digital/video/mide00030/mide00030pl.jpg"

@@ -20,6 +20,7 @@ EXTENSION_MEDIA_TYPES: dict[str, str] = {
 }
 
 NOSNIFF = {"X-Content-Type-Options": "nosniff"}
+"""播放代理另有一份同名常量: 两侧的中和策略独立 (那边按播放用途改写类型), 共享会把两件事绑在一起."""
 
 _BMFF_BRANDS: dict[str, str] = {
     "avif": "image/avif",

@@ -2,6 +2,7 @@
 SR 可能就地覆盖 (URL 不变, 字节变), 须 ETag + no-cache 再验证.
 """
 
+from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
 
@@ -10,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 
 from ...net.egress import EgressPolicy
-from ...net.errors import RequestError
+from ...net.errors import EgressRejected, RequestError
 from ..deps import RuntimeDep
 from ..support.http_cache import RESOURCE_CACHE_HEADERS, format_etag, maybe_not_modified
 from ..support.media_type import media_type_and_headers
@@ -33,28 +34,38 @@ async def proxy_image(
     """上游失败记入进程内负缓存 (15 分钟), 窗口内同 URL 直接 502.
     同 URL 进行中请求合并为一次 acquire.
     """
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="URL 无法解析") from e
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=400, detail="仅支持 http/https URL")
 
+    failures = runtime.proxy_failure_cache
     try:
         await _PROXY_EGRESS.ensure_allowed(url)
-    except RequestError as e:
-        logger.warning("proxy image address blocked", url=url, reason=e.message)
+    except EgressRejected as e:
+        logger.warning("proxy image address rejected", url=url, reason=e.message)
         raise HTTPException(status_code=400, detail="仅支持公网地址") from e
+    except RequestError as e:
+        # 解析失败是上游不可达, 不是地址不合规: 与下载失败同样返回 502 并进入负缓存.
+        logger.warning("proxy image host unreachable", url=url, reason=e.message)
+        failures.remember(url)
+        raise HTTPException(status_code=502, detail="上游图片获取失败") from e
 
     # 负缓存命中则直接 502
-    failures = runtime.proxy_failure_cache
     if failures.is_blocked(url):
         raise HTTPException(status_code=502, detail="上游图片获取失败")
 
-    # 同 URL 进行中的 acquire 合并为一次
+    # 同 URL 进行中的 acquire 合并为一次; 并发额度只由真正发起下载的那一方持有,
+    # 否则等待同一 URL 的请求也会占额度.
     store = runtime.resource_store
-    async with runtime.proxy_downloads:
-        local_path = await failures.coalesce(
-            url,
-            lambda: store.acquire(url, runtime.web_client, egress=_PROXY_EGRESS, max_bytes=_PROXY_MAX_BYTES),
-        )
+
+    async def _acquire() -> Path | None:
+        async with runtime.proxy_downloads:
+            return await store.acquire(url, runtime.web_client, egress=_PROXY_EGRESS, max_bytes=_PROXY_MAX_BYTES)
+
+    local_path = await failures.coalesce(url, _acquire)
     if local_path is None:
         failures.remember(url)
         logger.warning("proxy image acquire failed", url=url)

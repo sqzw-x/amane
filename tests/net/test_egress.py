@@ -1,9 +1,9 @@
-"""出站策略: 协议白名单与公网地址判定. 用例不访问网络: 地址全部是字面量或替换解析."""
+"""出站策略: 协议白名单与公网地址判定. 用例不发起 HTTP 请求: 地址取自字面量或本机 hosts, 解析可替换."""
 
 import pytest
 
 from amane.net.egress import EgressPolicy, is_public_address
-from amane.net.errors import RequestError
+from amane.net.errors import EgressRejected, RequestError
 
 
 class TestScheme:
@@ -54,7 +54,7 @@ class TestAddress:
         ],
     )
     async def test_rejects_non_public(self, url: str):
-        with pytest.raises(RequestError):
+        with pytest.raises(EgressRejected):
             await EgressPolicy().ensure_allowed(url)
 
     @pytest.mark.asyncio
@@ -99,6 +99,31 @@ class TestAddress:
 
         with pytest.raises(RequestError):
             await EgressPolicy().ensure_allowed("https://empty.example/a.jpg")
+
+    @pytest.mark.asyncio
+    async def test_resolution_failure_is_not_a_rejection(self, monkeypatch: pytest.MonkeyPatch):
+        """解析失败属于网络故障: 调用方不能据此告诉用户地址不合规."""
+
+        async def _resolve(host: str, port: int) -> set[str]:
+            raise OSError("resolver down")
+
+        monkeypatch.setattr("amane.net.egress.resolve_addresses", _resolve)
+
+        with pytest.raises(RequestError) as excinfo:
+            await EgressPolicy().ensure_allowed("https://nx.example/a.jpg")
+
+        assert not isinstance(excinfo.value, EgressRejected)
+
+    @pytest.mark.asyncio
+    async def test_fake_ip_resolution_allowed(self, monkeypatch: pytest.MonkeyPatch):
+        """fake-IP 环境的公网域名解析到基准测试段: 拒绝会让外链图片全部失败."""
+
+        async def _resolve(host: str, port: int) -> set[str]:
+            return {"198.18.18.132"}
+
+        monkeypatch.setattr("amane.net.egress.resolve_addresses", _resolve)
+
+        await EgressPolicy().ensure_allowed("https://pics.example/a.jpg")
 
     @pytest.mark.asyncio
     async def test_allow_private_skips_resolution(self, monkeypatch: pytest.MonkeyPatch):
