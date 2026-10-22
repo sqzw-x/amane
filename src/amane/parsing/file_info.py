@@ -521,6 +521,11 @@ def _match(basename: str, escape_strings: list[str], *, generic: bool) -> tuple[
             return m.group(), ContentType.UNCENSORED
         if m := re.search(r"HEYZO\d{3,}", hz):
             return m.group().replace("HEYZO", "HEYZO-"), ContentType.UNCENSORED
+    # heydouga 番号由系列号与作品号两段组成 (heydouga-4037-1002); 通用的字母前缀规则只取到第一段.
+    if "HEYDOUGA" in c:
+        hd = re.sub(r"[-_. ]+", "-", c)
+        if m := re.search(r"HEYDOUGA-?(\d{2,4})-(\d{1,4})", hd):
+            return f"HEYDOUGA-{m[1]}-{m[2]}", ContentType.UNCENSORED
     if m := re.search(r"(H4610|C0930|H0930)-[A-Z]+\d{4,}", c):
         return m.group(), ContentType.UNCENSORED
     # kin8 归欧美链 (theporndb 为第一源); 该类型表示路由归属, 与马赛克标记正交.
