@@ -42,7 +42,7 @@ if (shellEnvironment() !== null) {
   document.documentElement.dataset.amaneShell = "";
 }
 
-// 基址恒为当前 origin: 开发时由 Vite 代理 /api 与 /public 转发到后端, 生产由后端托管 SPA.
+// 基址恒为当前 origin: 开发时由 Vite 把 /api 代理到后端, 生产由后端托管 SPA.
 // 不引入运行期 API 地址: 跨源会让 cookie 鉴权与 WS 握手失效 (见 docs/dev/android.md).
 client.setConfig({ baseUrl: "", fetch: apiFetch });
 initConnection(queryClient);

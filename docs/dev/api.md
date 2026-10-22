@@ -9,7 +9,7 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 
 ## 路由划分
 
-全部挂载于 `/api` (`API_PREFIX`); `bootstrap` 不是例外, 它的前缀同样是 `/api`. 新端点纳入对应资源模块; 全新资源则新建模块并在 `routes/__init__.py` 注册.
+全部挂载于 `/api` (`API_PREFIX`); `bootstrap` 自身不设前缀, 路由为 `/agent-guide`, 随全局前缀暴露. 新端点纳入对应资源模块; 全新资源则新建模块并在 `routes/__init__.py` 注册.
 
 | 模块 | 前缀 | 职责 |
 |------|------|------|
@@ -37,8 +37,6 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 | `bootstrap` | `/agent-guide` | 免鉴权的接入引导, 固定文本; 豁免见 `middleware.py::_TOKEN_EXEMPT` |
 | `ws` | `/ws` | EventBus 广播 |
 
-接口文档在 `/api/docs` (schema 在 `/api/docs/openapi.json`), 同样要 token: 浏览器无法加 `Authorization`, 只能靠登录下发的 cookie (`path=/api`), 因此先在 Web 登录再访问; 命令行与智能体用 Bearer.
-
 OpenAPI 列出参数, 不表达组合语义:
 
 - metadata 同 kind 的筛选: 关联类 AND / 标量类 OR; 跨 kind 始终 AND. `saved_query_id` 与其它筛选项 AND; `data` 实体不可作列表筛选 (400). 关联文件相位筛选与 `has_files` 一样 AND (布尔项 True = 至少一份具备, False = 没有任何一份具备), 列表项带聚合 `file_phase`. 见 [data-model.md](data-model.md) / [agent.md](agent.md).
@@ -60,7 +58,7 @@ OpenAPI 列出参数, 不表达组合语义:
 
 `create_app` 先 `include_router` 再 `mount_spa` (SPA catch-all 会截获 `/api`), 最后注册 `LoggingMiddleware`. `add_middleware` 后注册者在栈外层 (`insert(0)`), 故 LoggingMiddleware 包住 TokenAuth / CORS / SPA fallback, 401 / 403 直返与内层中间件自身异常也进入请求日志. **新增自定义中间件时 LoggingMiddleware 必须仍为最外层.**
 
-**免鉴权只有两条**, 都在 `middleware.py::_TOKEN_EXEMPT` 里显式登记: `/api/health` 与接入引导 `/api/agent-guide`. 其余 `/api/*` 一律要 token; 非 `/api` 路径 (SPA 静态资源) 不校验. 接口文档挂在 `/api/docs`, schema 在 `/api/docs/openapi.json`, 因此同样受校验 —— 它们完整暴露接口结构, 不对匿名开放; 根级 `/docs` / `/redoc` / `/openapi.json` 已不注册.
+**免鉴权只有两条**, 都在 `middleware.py::_TOKEN_EXEMPT` 里显式登记: `/api/health` 与接入引导 `/api/agent-guide`. 其余 `/api/*` 一律要 token; 非 `/api` 路径 (SPA 静态资源) 不校验. 接口文档挂在 `/api/docs`, schema 在 `/api/docs/openapi.json`, 同样受校验 —— 它们完整暴露接口结构, 不对匿名开放; 根级 `/docs` / `/redoc` / `/openapi.json` 已不注册. 浏览器无法加 `Authorization`, 只能靠登录下发的 cookie (`path=/api`), 先在 Web 登录再访问; 命令行与智能体用 Bearer.
 
 `TokenAuthMiddleware` 与 `LoggingMiddleware` 都是 `BaseHTTPMiddleware`: 它交给下游的是包装过的 `receive`, 必须真正挂起等待才会收到 `http.disconnect`, 因此 `Request.is_disconnected()` (立刻取消式探测) 在本栈内恒为 `False`; 需要感知客户端离开的长响应改用 `DisconnectSignal` (见 [plugins.md](plugins.md)).
 
