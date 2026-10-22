@@ -83,13 +83,37 @@ func InstalledVersion(dir string) (string, error) {
 	return version, nil
 }
 
+// skillDescription 是 frontmatter 里的描述.
+const skillDescription = "通过 amane CLI 管理 Amane 实例 (影片元数据管理服务): 查询与修改番号条目、演员、分类、媒体库、订阅源、定时任务, 执行只读 SQL, 等待任务到终态."
+
+// yamlQuote 写成 YAML 双引号标量. 描述里的 ": " 会让未加引号的值解析失败, 而解析失败
+// 的 frontmatter 会让部分 Agent 工具直接忽略整个 Skill.
+func yamlQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
 func renderMain(cat *api.Catalog, version, cliVersion, profile string) string {
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("name: amane\n")
-	b.WriteString("description: 通过 amane CLI 管理 Amane 实例 (影片元数据管理服务): 查询与修改番号条目、演员、分类、媒体库、订阅源、定时任务, 执行只读 SQL, 等待任务到终态.\n")
+	b.WriteString("description: " + yamlQuote(skillDescription) + "\n")
 	b.WriteString("---\n\n")
-	fmt.Fprintf(&b, "# Amane\n\n本文件由 `amane skill install` 生成, 对应实例版本 %s, CLI 版本 %s, profile `%s`. 实例升级后重新运行 `amane skill install`.\n", version, cliVersion, profile)
+	fmt.Fprintf(&b, "# Amane\n\n本文件由 `amane skill install --profile %s` 生成: 该命令从服务端拉取文本写入本文件, 生成时的服务端版本为 %s, CLI 版本 %s. 下文命令里的 `--profile %s` 指向这个实例. 若你操作的服务端版本更高, 用该实例的 profile 重新生成; 反过来不必 — 新版的 Skill 对旧的服务端向后兼容.\n", profile, version, cliVersion, profile)
 
 	b.WriteString("\n## 何时使用\n\n")
 	b.WriteString("用户要求管理或查询 Amane 实例中的影片元数据、演员、分类、媒体库、订阅源、定时任务与任务队列时使用. 用户说「用我的 Amane 做什么」也属于此范围.\n")
@@ -107,7 +131,8 @@ func renderMain(cat *api.Catalog, version, cliVersion, profile string) string {
 	fmt.Fprintf(&b, "6. 连接或鉴权失败时先运行 `amane doctor%s`, 按它的结论处理, 不要反复试探.\n", pf)
 
 	b.WriteString("\n## 调用约定\n\n")
-	fmt.Fprintf(&b, "所有操作经由 CLI, 不要自己拼 HTTP 请求. 命令固定, 且每条都要带 `--profile %s` —— 本机可能同时在管多个实例, 漏掉就会打到别的实例上:\n\n", profile)
+	b.WriteString("CLI 用 profile 区分实例: 一份 profile 记一个实例的地址与 token, `amane config list` 列出本机全部.\n")
+	fmt.Fprintf(&b, "所有操作经由 CLI, 不要自己拼 HTTP 请求. 每条命令都带 `--profile %s`, 操作别的实例就换成它对应的 profile:\n\n", profile)
 	b.WriteString("```sh\n")
 	fmt.Fprintf(&b, "amane catalog [<tool>]%s       # 工具索引 / 单个工具的完整入参\n", pf)
 	fmt.Fprintf(&b, "amane schema%s                 # 库结构摘要\n", pf)
@@ -128,15 +153,15 @@ func renderMain(cat *api.Catalog, version, cliVersion, profile string) string {
 
 	b.WriteString("\n## 自服务\n\n")
 	b.WriteString("很多事不需要接口, 直接读文件更快:\n\n")
-	b.WriteString(renderSelfService(cat))
+	b.WriteString(renderSelfService(cat, profile))
 
 	b.WriteString("\n## 鉴权\n\n")
-	b.WriteString("token 由 CLI 保管, 不进入对话. 不要读取、回显或写入 token, 也不要向用户索要 token 后代为输入; 需要登录时请用户自己在终端执行 `amane login --server <地址> --profile <名字>` 并粘贴 token.\n")
+	fmt.Fprintf(&b, "token 由 CLI 保管, 不进入对话. 不要读取、回显或写入 token, 也不要向用户索要 token 后代为输入; 需要登录时请用户自己在终端执行 `amane login --server <地址> --profile %s` 并粘贴 token.\n", profile)
 	b.WriteString("\n持有 token 等同于实例所有者. 不把本 Skill 的调用能力转交给第三方.\n")
 	return b.String()
 }
 
-func renderSelfService(cat *api.Catalog) string {
+func renderSelfService(cat *api.Catalog, profile string) string {
 	var b strings.Builder
 	paths := cat.Paths
 	if paths.DataDir != "" {
@@ -154,7 +179,7 @@ func renderSelfService(cat *api.Catalog) string {
 	if len(paths.Env) > 0 {
 		fmt.Fprintf(&b, "- 决定上述路径的环境变量: %s\n", strings.Join(paths.Env, ", "))
 	}
-	b.WriteString("- 远端实例无法访问服务端文件系统时, 改用 `amane api /api/tasks/<id>/record` 取任务记录包\n")
+	fmt.Fprintf(&b, "- 远端实例无法访问服务端文件系统时, 改用 `amane api /api/tasks/<id>/record --profile %s` 取任务记录包\n", profile)
 	b.WriteString("\n")
 	return b.String()
 }

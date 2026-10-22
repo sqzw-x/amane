@@ -14,51 +14,49 @@ router = APIRouter(tags=["agent-guide"])
 
 AGENT_GUIDE = """# 接入 Amane
 
-你在帮用户通过命令行管理一个 Amane 实例 (媒体元数据管理服务)
-实例地址 = 本文档 URL 的 origin, 例如 http://localhost:8000
+你在帮用户用命令行管理一个 Amane 实例 (媒体元数据管理服务).
+实例地址 = 本文来源 URL 的 origin; 拿不到来源 URL 时问用户.
 
-步骤如下, 每个阶段动手前先向用户说明, 必要时征求同意.
+动手前先向用户说明, 必要时征求同意.
 
 ## 阶段一: 安装 CLI
 
-Amane 通过 CLI 工具提供外部控制接口, 需单独在本机安装
+CLI 可管理多个实例, 每个实例是一份 profile, 存在 CLI 配置文件里.
 
-1. 检查本机是否已安装 CLI 工具: 运行 `amane --version`. 若已安装跳过此步骤
+1. 运行 `amane --version`, 已安装则跳过下一步.
 
-2. 判断本机系统及架构, 从 GitHub Releases 下载对应产物并校验 SHA256SUMS:
+2. 按本机系统与架构从 GitHub Releases 取 amane-{os}-{arch} 并校验 SHA256SUMS:
    https://github.com/sqzw-x/amane/releases/latest/download/amane-{os}-{arch}
-   产物名就是 amane-{os}-{arch}, Windows 另加 .exe. 覆盖 linux/darwin 的 amd64 与 arm64,
-   Windows 只有 amd64 — 其余组合没有产物, 不要按公式硬拼.
-   用 curl/wget 等下载, 不要用浏览器 — macOS 下浏览器给文件加隔离属性, 导致无法运行.
-   下载后 chmod +x (Windows 无需), 再移动到第 3 步选定的位置.
+   只有 linux/darwin 的 amd64 与 arm64, 以及 Windows amd64 (加 .exe), 其余组合没有产物.
+   用 curl/wget 下载, 不要用浏览器: macOS 下浏览器会加隔离属性, 导致无法运行.
+   chmod +x (Windows 无需) 后移到第 3 步选定的位置.
 
-3. 就安装位置提供建议并征求用户同意, 例如 ~/.local/bin/amane
-   (Windows 的 %LOCALAPPDATA%\\Amane\\bin\\amane.exe) 等
-   装到 PATH 中的路径下以方便调用并避免重复安装
-   需修改 PATH 时, 给出预览经用户同意后执行, 禁止擅自改系统配置.
+3. 就安装位置征求同意, 建议 PATH 内的路径, 例如 ~/.local/bin/amane
+   (Windows 为 %LOCALAPPDATA%\\Programs\\amane\\amane.exe).
+   要改 PATH 时先给预览并征得同意, 不要擅自改系统配置.
 
-4. 登录. 先给这个实例起一个 profile 名: 用 origin 的主机与端口, 短横线连接, 例如
-   localhost-5173 或 192-168-1-5-8000. 之后每条命令都要带 `--profile <名字>` ——
-   同一台机器上可能接入多个实例, CLI 不会替你猜是哪一个.
-   再判断 origin 的主机: 127.0.0.1 / localhost / ::1 算本机.
-   - 本机: 运行 `amane login --server <origin> --profile <名字>`. CLI 会自己去找桌面版留在
-     数据目录里的 token 并当场验证; 成功即可继续, 用户不需要粘贴任何东西.
-     若 login 失败, 不要重试, 按下面「不在本机」处理.
-   - 不在本机, 或本机没有可用凭据: 不要代为执行, 也不要向用户索要 token. 请用户在自己的
-     终端运行 `amane login --server <origin> --profile <名字>` 并自行粘贴; 告诉用户可以去
-     桌面应用菜单「复制 API Token」, 或实例的启动日志里找.
-     你自己不要去取: 不读 token 文件, 不读日志里的 token, 也不从进程环境、`ps`、源码或
-     任何其它途径翻找. 拿不到就停下来等用户, 这是唯一正确的做法. 用户完成后你再继续.
+4. 运行 `amane config list`, 已有 server 等于实例地址的 profile 就记下名字,
+   用 `amane doctor --profile <名字>` 验证; 通过则直接进入阶段二.
+
+5. 登录. profile 名取实例地址的主机与端口, 例如 localhost-5173.
+   - 本机 (127.0.0.1 / localhost / ::1): `amane login --server <实例地址> --profile <名字>`,
+     CLI 会自己找桌面版留下的 token 并当场验证, 用户无需粘贴. 失败则按下面处理.
+   - 其它情况: 不要代跑, 也不要向用户索要 token, 请用户在自己的终端执行同一条命令并粘贴
+     (token 可在桌面应用菜单「复制 API Token」或启动日志里找到).
+     不要从文件、日志、进程环境、`ps` 或源码里翻 token; 拿不到就停下来等用户.
 
 ## 阶段二: 安装 Skill
 
-1. 就 skill 安装位置提供建议并征求用户同意, 这可能和用户安装的 agent 工具相关, 例如 ~/.agents/skills 等
-   然后运行 `amane skill install --dir <path> --profile <名字>`, 注意 CLI 会自动创建 <path>/amane
-   子目录并放置 skill 文件, 无需手动创建. Skill 里会写入这个 profile 名, 之后每条命令都带着它.
+1. 可用 skill 里已有 `amane` 就直接加载, 本阶段结束.
 
-2. 运行 `amane doctor --profile <名字>` 应该通过
+2. 就安装位置征求同意 (常见 ~/.agents/skills), 运行
+   `amane skill install --dir <path> --profile <名字>`. CLI 会自己创建 <path>/amane 子目录.
 
-3. 取决于用户使用的 Agent 工具, skill 可能立刻可见或需要重启. 加载 skill 并按指引操作.
+3. 运行 `amane doctor --profile <名字>` 应当通过.
+
+4. 视 Agent 工具而定, skill 可能需要重启才可见; 加载后按它的指引操作.
+
+本文档到此结束.
 """
 
 
