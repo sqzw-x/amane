@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -16,13 +18,24 @@ func (r *runner) cmdLogin(_ context.Context) error {
 	if err != nil {
 		return err
 	}
-	data, err := io.ReadAll(r.env.Stdin)
+	if r.env.StdinIsTerminal {
+		// 交互终端里 ReadAll 要等到 EOF 才返回, 用户会以为命令卡住; 读一行即可.
+		// token 在终端下必然回显, 想避免就用管道.
+		fmt.Fprintln(r.env.Stderr, "请粘贴实例的 API Token 后回车:")
+	}
+	token, err := readToken(r.env.Stdin, r.env.StdinIsTerminal)
 	if err != nil {
 		return usagef("读取标准输入失败: %v", err)
 	}
-	token := strings.TrimSpace(string(data))
 	if token == "" {
-		return usagef("标准输入为空: 用法 echo <token> | amane login --server <地址>")
+		// 与实例同机时凭据已在数据目录里, 用户不必粘贴.
+		if local, path := config.LocalToken(r.env.Getenv); local != "" {
+			token = local
+			fmt.Fprintf(r.env.Stderr, "amane: token 取自本机文件 %s\n", path)
+		}
+	}
+	if token == "" {
+		return usagef("没有读到 token: 用法 echo <token> | amane login --server <地址>")
 	}
 
 	name := r.p.profile
@@ -68,6 +81,21 @@ func (r *runner) cmdConfig(_ context.Context) error {
 	case "":
 		name, profile, ok := cfg.Select(r.p.profile)
 		if !ok {
+			// 与实例同机时不需要任何 profile: 地址取默认, token 取本机文件.
+			if token, path := config.LocalToken(r.env.Getenv); path != "" {
+				return r.writeJSON(struct {
+					Profile     string `json:"profile"`
+					Server      string `json:"server"`
+					Token       string `json:"token"`
+					TokenSource string `json:"token_source"`
+					ConfigPath  string `json:"config_path"`
+				}{
+					Server:      config.DefaultLocalServer(r.env.Getenv),
+					Token:       config.Mask(token),
+					TokenSource: "本机 token 文件 " + path,
+					ConfigPath:  r.cfgPath,
+				})
+			}
 			return usagef("profile %q 不存在; 先运行 amane login --server <地址>, 或用 amane config list 查看已有 profile", name)
 		}
 		token, source := config.ResolveToken(profile, r.env.Getenv)
@@ -122,4 +150,21 @@ func (r *runner) cmdConfig(_ context.Context) error {
 	default:
 		return usagef("未知的 config 子命令 %q, 可用: use, list", sub)
 	}
+}
+
+// readToken 读取 token: 交互终端读一行, 管道读全部.
+func readToken(stdin io.Reader, terminal bool) (string, error) {
+	if terminal {
+		line, err := bufio.NewReader(stdin).ReadString('\n')
+		// EOF 只说明没按回车就结束了, 已读到的部分仍然有效.
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+		return strings.TrimSpace(line), nil
+	}
+	data, err := io.ReadAll(stdin)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
 }

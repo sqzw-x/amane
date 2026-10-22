@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/sqzw-x/amane/cli/internal/api"
@@ -84,59 +83,6 @@ func InstalledVersion(dir string) (string, error) {
 	return version, nil
 }
 
-// CompareVersions 按点分数字比较两个版本, 返回 -1 / 0 / 1.
-//
-// 只处理本项目的版本形态 (如 0.22.1); 任何一侧解析不出数字时返回 ok=false,
-// 调用方据此按「无法判断」处理, 不要把它当成相等.
-func CompareVersions(a, b string) (int, bool) {
-	as, okA := parseVersion(a)
-	bs, okB := parseVersion(b)
-	if !okA || !okB {
-		return 0, false
-	}
-	for i := 0; i < max(len(as), len(bs)); i++ {
-		var av, bv int
-		if i < len(as) {
-			av = as[i]
-		}
-		if i < len(bs) {
-			bv = bs[i]
-		}
-		switch {
-		case av < bv:
-			return -1, true
-		case av > bv:
-			return 1, true
-		}
-	}
-	return 0, true
-}
-
-func parseVersion(v string) ([]int, bool) {
-	trimmed := strings.TrimPrefix(strings.TrimSpace(v), "v")
-	if trimmed == "" {
-		return nil, false
-	}
-	parts := strings.Split(trimmed, ".")
-	out := make([]int, 0, len(parts))
-	for _, part := range parts {
-		// 预发布后缀 (1.2.0-rc1) 只取数字前缀, 与主干版本同序.
-		digits := part
-		if i := strings.IndexFunc(part, func(r rune) bool { return r < '0' || r > '9' }); i >= 0 {
-			digits = part[:i]
-		}
-		if digits == "" {
-			return nil, false
-		}
-		n, err := strconv.Atoi(digits)
-		if err != nil {
-			return nil, false
-		}
-		out = append(out, n)
-	}
-	return out, true
-}
-
 func renderMain(cat *api.Catalog, version, cliVersion string) string {
 	var b strings.Builder
 	b.WriteString("---\n")
@@ -148,12 +94,15 @@ func renderMain(cat *api.Catalog, version, cliVersion string) string {
 	b.WriteString("\n## 何时使用\n\n")
 	b.WriteString("用户要求管理或查询 Amane 实例中的影片元数据、演员、分类、媒体库、订阅源、定时任务与任务队列时使用. 用户说「用我的 Amane 做什么」也属于此范围.\n")
 
+	b.WriteString("\n## 开始前\n\n")
+	b.WriteString("先运行 `amane upgrade`: 它比对 GitHub 上的最新版本, 已是最新时什么都不做. 失败时 (离线、GitHub 不可达等) 不要重试, 也不要停下来, 直接用当前版本继续.\n")
+
 	b.WriteString("\n## 工作方式\n\n")
 	b.WriteString("1. 先运行 `amane catalog` 取工具索引, 按名字选择工具, 不要自行猜测工具名. 索引只给一行签名, 足够选出工具.\n")
 	b.WriteString("2. 参数不确定时运行 `amane catalog <tool>` 取该工具的完整入参, 不要为其他工具一起取. 嵌套入参写入文件, 再用 `amane call <tool> @args.json` 传入, 避免在 shell 里嵌套引号.\n")
 	b.WriteString("3. 写只读 SQL 前先运行 `amane schema` 取库结构.\n")
 	b.WriteString("4. 入队类工具返回 `task_id`, 用 `amane wait <task_id>` 阻塞到终态, 不要自己写查询循环.\n")
-	b.WriteString("5. 业务错误在响应体的 `error` 字段, 退出码为 0 表示请求已完成, 不代表操作成功.\n")
+	b.WriteString("5. 退出码 0 表示请求已完成, 业务结果仍看响应体 (工具失败时是 `error` 字段); 非 0 表示这次调用失败, 不要当成完成: 2 用法错误, 3 连接或鉴权, 4 服务端拒绝 (参数不对、工具不存在).\n")
 	b.WriteString("6. 连接或鉴权失败时先运行 `amane doctor`, 按它的结论处理, 不要反复试探.\n")
 
 	b.WriteString("\n## 调用约定\n\n")
@@ -166,6 +115,7 @@ func renderMain(cat *api.Catalog, version, cliVersion string) string {
 	b.WriteString("amane api <path>             # 直通 GET\n")
 	b.WriteString("amane doctor                 # 自检\n")
 	b.WriteString("```\n")
+	b.WriteString("\n除 `wait` 外, 其余命令都可加 `--timeout <时长>` 放宽单个请求的超时 (默认 15s). 只有慢查询这类耗时才需要.\n")
 
 	b.WriteString("\n## 审批礼仪\n\n")
 	b.WriteString("服务端不设审批闸门, 是否执行由你与用户的对话决定. 下列操作执行前必须先向用户复述影响面 (修改什么、涉及多少条、能否撤销), 得到明确同意后才调用:\n\n")

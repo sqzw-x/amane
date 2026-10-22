@@ -13,13 +13,24 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/sqzw-x/amane/cli/internal/httpx"
+	"github.com/sqzw-x/amane/cli/internal/version"
 )
 
 // DefaultBaseURL 是发布产物的下载根地址.
 const DefaultBaseURL = "https://github.com/sqzw-x/amane/releases/latest/download"
 
+// DefaultLatestURL 是「最新发布」页, 访问它但不跟随重定向, 借重定向目标取版本号.
+const DefaultLatestURL = "https://github.com/sqzw-x/amane/releases/latest"
+
 // checksumFile 是校验和文件名.
 const checksumFile = "SHA256SUMS"
+
+// latestTimeout 限制版本检查的耗时. 它只读一个重定向, 比一次普通请求更快失败:
+// 离线时每个会话都会先跑这一步, 不该等满整个 HTTP 超时.
+const latestTimeout = 10 * time.Second
 
 // supported 是发布覆盖的平台.
 var supported = map[string][]string{
@@ -141,7 +152,12 @@ func Replace(target string, data []byte, goos string) error {
 		return fmt.Errorf("无法重命名正在运行的 %s: %w", target, err)
 	}
 	if err := os.Rename(tmpName, target); err != nil {
-		_ = os.Rename(old, target)
+		// 改名也失败时用户只剩备份文件, 必须把它的路径告诉用户.
+		if restoreErr := os.Rename(old, target); restoreErr != nil {
+			cleanup()
+			return fmt.Errorf("写入 %s 失败: %w; 备份留在 %s, 请手动改回", target, err, old)
+		}
+		cleanup()
 		return fmt.Errorf("写入 %s 失败: %w", target, err)
 	}
 	// 旧文件可能仍被系统占用, 删除失败不视为升级失败.
@@ -152,17 +168,23 @@ func Replace(target string, data []byte, goos string) error {
 // Options 是一次升级的全部输入.
 type Options struct {
 	BaseURL        string
+	LatestURL      string
 	GOOS           string
 	GOARCH         string
 	CurrentVersion string
-	TargetPath     string
-	DryRun         bool
-	HTTP           *http.Client
-	Out            io.Writer
-	Err            io.Writer
+	// DownloadTimeout 为 0 时取 httpx.DownloadTimeout.
+	DownloadTimeout time.Duration
+	TargetPath      string
+	DryRun          bool
+	HTTP            *http.Client
+	Out             io.Writer
+	Err             io.Writer
 }
 
-// Run 执行升级. DryRun 时只报告将要执行的下载与替换.
+// Run 先取最新版本, 确实较新时才下载替换. DryRun 只报告判断结果与下载计划.
+//
+// 版本比较不出来时 (本地构建的 dev, 或对端返回意外形态) 一律不替换: 无法判断新旧时
+// 保持现状, 比赌一把更安全.
 func Run(ctx context.Context, opts Options) error {
 	base := strings.TrimRight(strings.TrimSpace(opts.BaseURL), "/")
 	if base == "" {
@@ -175,9 +197,24 @@ func Run(ctx context.Context, opts Options) error {
 	assetURL := base + "/" + name
 	sumsURL := base + "/" + checksumFile
 
+	latest, err := LatestTag(ctx, opts.HTTP, opts.LatestURL)
+	if err != nil {
+		return fmt.Errorf("查询最新版本失败: %w", err)
+	}
+	cmp, comparable := version.Compare(opts.CurrentVersion, latest)
+
 	if opts.DryRun {
 		fmt.Fprintf(opts.Out, "平台: %s/%s\n", opts.GOOS, opts.GOARCH)
 		fmt.Fprintf(opts.Out, "当前版本: %s\n", opts.CurrentVersion)
+		fmt.Fprintf(opts.Out, "最新版本: %s\n", latest)
+		switch {
+		case !comparable:
+			fmt.Fprintln(opts.Out, "结论: 版本无法比较, 不会升级")
+		case cmp >= 0:
+			fmt.Fprintln(opts.Out, "结论: 已是最新, 不会下载")
+		default:
+			fmt.Fprintln(opts.Out, "结论: 需要升级")
+		}
 		fmt.Fprintf(opts.Out, "当前路径: %s\n", opts.TargetPath)
 		fmt.Fprintf(opts.Out, "下载地址: %s\n", assetURL)
 		fmt.Fprintf(opts.Out, "校验文件: %s\n", sumsURL)
@@ -185,7 +222,18 @@ func Run(ctx context.Context, opts Options) error {
 		return nil
 	}
 
-	sums, err := fetch(ctx, opts.HTTP, sumsURL)
+	if !comparable {
+		fmt.Fprintf(opts.Out, "当前版本 %s 与最新版本 %s 无法比较, 保持现状\n", opts.CurrentVersion, latest)
+		return nil
+	}
+	if cmp >= 0 {
+		fmt.Fprintf(opts.Out, "已是最新版本 %s\n", latest)
+		return nil
+	}
+	fmt.Fprintf(opts.Out, "发现新版本 %s (当前 %s), 开始下载\n", latest, opts.CurrentVersion)
+
+	download := httpx.Download(opts.HTTP, opts.DownloadTimeout)
+	sums, err := fetch(ctx, download, sumsURL)
 	if err != nil {
 		return fmt.Errorf("下载校验文件失败: %w", err)
 	}
@@ -193,7 +241,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	data, err := fetch(ctx, opts.HTTP, assetURL)
+	data, err := fetch(ctx, download, assetURL)
 	if err != nil {
 		return fmt.Errorf("下载 %s 失败: %w", name, err)
 	}
@@ -209,7 +257,7 @@ func Run(ctx context.Context, opts Options) error {
 
 func fetch(ctx context.Context, client *http.Client, url string) ([]byte, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpx.Client()
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -224,4 +272,42 @@ func fetch(ctx context.Context, client *http.Client, url string) ([]byte, error)
 		return nil, fmt.Errorf("%s 返回 HTTP %d", url, resp.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 256<<20))
+}
+
+// LatestTag 取最新发布的 tag (如 v0.22.1).
+//
+// 不去调 GitHub API: 那有未认证的调用限额. 改为请求 releases/latest 并拦下重定向,
+// 从 Location 里的 /tag/ 段取出版本.
+func LatestTag(ctx context.Context, client *http.Client, url string) (string, error) {
+	if url == "" {
+		url = DefaultLatestURL
+	}
+	if client == nil {
+		client = httpx.Client()
+	}
+	c := *client
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	ctx, cancel := context.WithTimeout(ctx, latestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+
+	loc := strings.TrimSuffix(resp.Header.Get("Location"), "/")
+	if loc == "" {
+		return "", fmt.Errorf("%s 返回 HTTP %d 且无重定向, 无法确定最新版本", url, resp.StatusCode)
+	}
+	const marker = "/tag/"
+	i := strings.LastIndex(loc, marker)
+	if i < 0 || i+len(marker) >= len(loc) {
+		return "", fmt.Errorf("无法从 %s 解析版本", loc)
+	}
+	return loc[i+len(marker):], nil
 }

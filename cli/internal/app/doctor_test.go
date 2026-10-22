@@ -66,8 +66,12 @@ func TestDoctorJSON(t *testing.T) {
 		Checks []doctorCheck `json:"checks"`
 	}
 	h.decodeJSON(t, &out)
-	if !out.OK || len(out.Checks) != 3 {
+	// CLI、实例、鉴权、版本.
+	if !out.OK || len(out.Checks) != 4 {
 		t.Fatalf("输出为 %+v", out)
+	}
+	if out.Checks[3].Name != "版本" || !out.Checks[3].OK {
+		t.Fatalf("版本项为 %+v", out.Checks[3])
 	}
 }
 

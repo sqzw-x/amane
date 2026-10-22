@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/sqzw-x/amane/cli/internal/api"
 	"github.com/sqzw-x/amane/cli/internal/config"
 	"github.com/sqzw-x/amane/cli/internal/skill"
+	"github.com/sqzw-x/amane/cli/internal/version"
 )
 
 // cmdSkill 生成或打印 Skill.
@@ -40,7 +42,7 @@ func (r *runner) skillInstall(ctx context.Context) error {
 	// 多实例共存时 Skill 以最新版本为准: 已装的版本不低就保留, 避免被旧实例降级.
 	// 判断不了版本高低时照常写入, 与「没装过」同样处理.
 	if installed, err := skill.InstalledVersion(dir); err == nil {
-		if cmp, ok := skill.CompareVersions(installed, cat.Version); ok && cmp >= 0 {
+		if cmp, ok := version.Compare(installed, cat.Version); ok && cmp >= 0 {
 			fmt.Fprintf(r.env.Stdout, "Skill 已是最新: %s 版本 %s 不低于实例版本 %s, 保留不动\n", dir, installed, cat.Version)
 			return nil
 		}
@@ -117,8 +119,11 @@ func (r *runner) cmdDoctor(ctx context.Context) error {
 
 	checks = append(checks, r.checkReachable(ctx, server))
 
-	_, authCheck := r.checkAuth(ctx, server)
+	instance, authCheck := r.checkAuth(ctx, server)
 	checks = append(checks, authCheck)
+	if authCheck.OK {
+		checks = append(checks, r.checkVersion(instance))
+	}
 
 	return r.reportDoctor(checks)
 }
@@ -172,6 +177,25 @@ func (r *runner) checkAuth(ctx context.Context, server string) (string, doctorCh
 		detail = "实例未启用 token 校验"
 	}
 	return cat.Version, doctorCheck{Name: "鉴权", OK: true, Detail: detail}
+}
+
+// checkVersion 对比 CLI 与实例版本. 落后只提示, 不算自检失败.
+//
+// 两边都是本命令已经拿到的值, 不额外发请求.
+func (r *runner) checkVersion(instance string) doctorCheck {
+	instance = strings.TrimSpace(instance)
+	if instance == "" {
+		return doctorCheck{Name: "版本", OK: true, Detail: "实例未报告版本"}
+	}
+	cmp, comparable := version.Compare(r.env.Version, instance)
+	switch {
+	case !comparable:
+		return doctorCheck{Name: "版本", OK: true, Detail: fmt.Sprintf("CLI %s / 实例 %s, 无法比较", r.env.Version, instance)}
+	case cmp < 0:
+		return doctorCheck{Name: "版本", OK: true, Detail: fmt.Sprintf("CLI %s 比实例 %s 旧, 运行 amane upgrade", r.env.Version, instance)}
+	default:
+		return doctorCheck{Name: "版本", OK: true, Detail: fmt.Sprintf("CLI %s / 实例 %s", r.env.Version, instance)}
+	}
 }
 
 func (r *runner) reportDoctor(checks []doctorCheck) error {

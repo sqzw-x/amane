@@ -1,0 +1,48 @@
+name: CLI release
+
+# 只在打 tag 时发布, 与检查 (cli.yaml) 分开: tag 推送不该把门禁检查再跑一遍.
+# 桌面 App 各自也有独立的发布工作流 (macos-app.yml / windows-app.yml), 此处与之同构.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Cross-compile and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: cli/go.mod
+          # 没有第三方依赖 (无 go.sum), 缓存无事可做.
+          cache: false
+
+      - name: Setup just
+        uses: extractions/setup-just@v4
+
+      # 每个 tag 都出产物, 不按「Go 代码有没有变」跳过:
+      # 接入引导与 README 直链 releases/latest/download/amane-*, 而 latest 只指最新那个
+      # Release — 一旦某次跳过上传, 该版本的下载链接就静默失效.
+      - name: just cli-dist
+        run: just cli-dist
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            cli/dist/amane-*
+            cli/dist/SHA256SUMS
+          fail_on_unmatched_files: true

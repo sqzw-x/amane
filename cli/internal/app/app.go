@@ -19,17 +19,24 @@ import (
 
 	"github.com/sqzw-x/amane/cli/internal/api"
 	"github.com/sqzw-x/amane/cli/internal/config"
+	"github.com/sqzw-x/amane/cli/internal/httpx"
 )
 
-// 退出码. 业务结果只在响应体里, 不用退出码重复表达.
+// 退出码.
+//
+// 0 表示请求已完成, 业务结果仍在响应体里; 4 表示服务端拒绝了这次请求 (4xx/5xx),
+// 与「工具返回了 error」不是一回事. 本地失败 (配置损坏、目录不可写) 单独给 1,
+// 免得让调用方以为该去修网络.
 const (
 	ExitOK         = 0
+	ExitLocal      = 1
 	ExitUsage      = 2
 	ExitConnection = 3
+	ExitServer     = 4
 )
 
-// defaultHTTPTimeout 是单个 HTTP 请求的默认超时.
-const defaultHTTPTimeout = 30 * time.Second
+// defaultHTTPTimeout 取统一的默认超时, 见 internal/httpx.
+const defaultHTTPTimeout = httpx.DefaultTimeout
 
 // Env 是 Run 的依赖注入点: 标准输入输出、环境变量、时钟与平台信息.
 // 零值字段在 Run 入口补齐.
@@ -42,15 +49,16 @@ type Env struct {
 	Version         string
 
 	// 下列字段供测试覆盖, 为空时取真实值.
-	ConfigPath     string
-	HTTPClient     *http.Client
-	Now            func() time.Time
-	Sleep          func(context.Context, time.Duration) error
-	ExecutablePath string
-	HomeDir        string
-	UpgradeBaseURL string
-	GOOS           string
-	GOARCH         string
+	ConfigPath       string
+	HTTPClient       *http.Client
+	Now              func() time.Time
+	Sleep            func(context.Context, time.Duration) error
+	ExecutablePath   string
+	HomeDir          string
+	UpgradeBaseURL   string
+	UpgradeLatestURL string
+	GOOS             string
+	GOARCH           string
 }
 
 func (e *Env) fillDefaults() {
@@ -121,7 +129,7 @@ func Run(args []string, env *Env) int {
 	r := &runner{env: env, p: p}
 	ctx := context.Background()
 	if err := r.dispatch(ctx); err != nil {
-		code := ExitConnection
+		code := ExitLocal
 		var ce *cliError
 		if errors.As(err, &ce) {
 			code = ce.code
@@ -217,6 +225,11 @@ func (r *runner) server() (string, error) {
 	}
 	_, profile, ok := cfg.Select(r.p.profile)
 	if !ok || strings.TrimSpace(profile.Server) == "" {
+		// 与实例同机: 没配置过 profile, 但凭据就在本机数据目录里.
+		// 这条路径是桌面版的常态, 引导里「无需操作」指的就是它.
+		if _, path := config.LocalToken(r.env.Getenv); path != "" {
+			return config.DefaultLocalServer(r.env.Getenv), nil
+		}
 		return "", usagef("未配置实例地址, 先运行 amane login --server <地址>")
 	}
 	return config.NormalizeServer(profile.Server)
@@ -293,6 +306,30 @@ func (r *runner) writeBody(body []byte) error {
 	return r.writeRaw(data)
 }
 
+// writeDownloadable 写出直通端点的响应, 二进制原样落盘.
+//
+// `amane api` 能取到任务记录包 (application/zip) 这类二进制; 统一补换行会把包写坏,
+// 因此只在文本响应上补, 并且不做任何解码.
+func (r *runner) writeDownloadable(resp *api.Response) error {
+	body := resp.Body
+	contentType := resp.Header.Get("Content-Type")
+	textual := strings.HasPrefix(contentType, "application/json") || strings.HasPrefix(contentType, "text/")
+	if textual && r.p.pretty {
+		var buf bytes.Buffer
+		if err := json.Indent(&buf, body, "", "  "); err == nil {
+			body = buf.Bytes()
+		}
+	}
+	if _, err := r.env.Stdout.Write(body); err != nil {
+		return err
+	}
+	if textual && len(body) > 0 && body[len(body)-1] != '\n' {
+		_, err := io.WriteString(r.env.Stdout, "\n")
+		return err
+	}
+	return nil
+}
+
 // writeRaw 原样写出数据, 补一个换行.
 func (r *runner) writeRaw(data []byte) error {
 	if len(data) == 0 {
@@ -317,8 +354,10 @@ func (r *runner) checkStatus(resp *api.Response) error {
 	if api.IsAuthFailure(resp.Status) {
 		return connf("鉴权失败 (HTTP %d): %s; token 由 amane login 写入, 或由环境变量 %s 提供", resp.Status, detailOf(resp.Body), config.EnvToken)
 	}
-	fmt.Fprintf(r.env.Stderr, "amane: 响应 HTTP %d\n", resp.Status)
-	return nil
+	return &cliError{
+		code: ExitServer,
+		msg:  fmt.Sprintf("服务端拒绝 (HTTP %d): %s", resp.Status, detailOf(resp.Body)),
+	}
 }
 
 // detailOf 从错误响应中取出可读说明.

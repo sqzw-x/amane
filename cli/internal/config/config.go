@@ -168,6 +168,33 @@ func ResolveToken(p Profile, getenv func(string) string) (string, string) {
 	return "", ""
 }
 
+// LocalToken 只从本机实例的 token 文件取 token, 不读配置与环境变量.
+//
+// 用于「与实例同机」这条路径: 用户没有粘贴过任何东西, 但凭据就在数据目录里.
+// 返回 token 与来源文件路径, 都取不到时为空串.
+func LocalToken(getenv func(string) string) (string, string) {
+	for _, path := range LocalTokenFiles(getenv) {
+		if data, err := os.ReadFile(path); err == nil {
+			if t := strings.TrimSpace(string(data)); t != "" {
+				return t, path
+			}
+		}
+	}
+	return "", ""
+}
+
+// DefaultLocalServer 返回本机实例的默认地址.
+//
+// 端口与实例的 AMANE_PORT 一致; 桌面版把实例跑在本机, CLI 通常继承不到该变量,
+// 因此 8000 是更常见的取值.
+func DefaultLocalServer(getenv func(string) string) string {
+	port := strings.TrimSpace(getenv("AMANE_PORT"))
+	if port == "" {
+		port = "8000"
+	}
+	return "http://127.0.0.1:" + port
+}
+
 // LocalTokenFiles 按优先级列出本机实例的 token 文件候选.
 //
 // 桌面应用把数据目录放在平台默认位置而不是 ./data, 同机场景下这是最常见的一个, 因此必须包含,
@@ -230,6 +257,9 @@ func NormalizeServer(raw string) (string, error) {
 	}
 	if u.Host == "" {
 		return "", fmt.Errorf("实例地址缺少主机名: %q", raw)
+	}
+	if u.User != nil {
+		return "", errors.New("实例地址不能包含用户名或密码: token 由 amane login 单独保存")
 	}
 	u.Path = strings.TrimRight(u.Path, "/")
 	u.RawQuery = ""

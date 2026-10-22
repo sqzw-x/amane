@@ -188,6 +188,10 @@ func (p *parsed) validate() error {
 	if p.methodSet && !strings.EqualFold(p.method, "GET") {
 		return usagef("api 只允许 GET, 收到 %s", p.method)
 	}
+	// http.Client 里 0 与负值都表示不超时, 与本项目「每个请求都有超时」的约定相反.
+	if p.timeoutSet && p.timeout <= 0 {
+		return usagef("--timeout 须为正数, 收到 %s", p.timeout)
+	}
 	if p.dryRun && p.cmd != "upgrade" {
 		return usagef("--dry-run 只用于 upgrade")
 	}
@@ -228,7 +232,7 @@ const usageText = `amane — Amane 实例的外部智能体接口客户端
   wait <task-id>               轮询任务到终态并输出最后一次响应
   api <path>                   直通 GET 请求, 自动补 /api 前缀
   doctor                       自检: CLI、实例可达性、token
-  upgrade [--dry-run]          从 GitHub Releases 下载并替换自身
+  upgrade [--dry-run]          比对最新版本, 较新时下载并替换自身
   login --server <url>         从标准输入读取 token 并写入配置文件
   config [use <profile>|list]  查看当前配置, 切换或列出 profile
   skill install [--dir <path>] 生成 Skill 文件并写入目录
