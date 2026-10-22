@@ -4,10 +4,13 @@
 [windows]
 set shell := ["pwsh", "-NoProfile", "-Command"]
 
-default:
-    @just --list
+# CLI (Go) 的构建入口单独一份, 与根一样同时兼容 sh 与 pwsh
+import 'cli/justfile'
 
 CHECK_DIRS := "src/amane tests scripts"
+
+default:
+    @just --list
 
 host := env("AMANE_HOST", "127.0.0.1")
 port := env("AMANE_PORT", "8000")
@@ -187,13 +190,3 @@ strip-commas *args:
 # Replay a scrape task from a task record (dir or zip)
 repro path *args:
     uv run python -m amane.observability {{ path }} {{ args }}
-
-# CLI (Go): 当前平台的格式 / vet / 单测
-[working-directory('cli')]
-cli-check:
-    make check
-
-# CLI (Go): 交叉编译全平台并生成 SHA256SUMS, 版本取自 pyproject
-[working-directory('cli')]
-cli-dist:
-    make dist VERSION=$(uv version --short)

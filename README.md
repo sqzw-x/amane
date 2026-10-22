@@ -19,8 +19,6 @@ AI 时代的私人影库
 - [桌面应用 (macOS / Windows)](https://github.com/sqzw-x/amane/releases) — 下载即用
 - [Docker](https://sqzw-x.github.io/amane/user/#docker) — 服务端部署
 
-装好之后, 可以用你自己的 AI 智能体管理影库, 见 [使用 AI 智能体](https://sqzw-x.github.io/amane/user/agent/).
-
 更多说明见 [用户文档](https://sqzw-x.github.io/amane/).
 
 ## 反馈

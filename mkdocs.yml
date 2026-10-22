@@ -45,7 +45,6 @@ nav:
       - 媒体库管理: user/libraries.md
       - 刮削指南: user/scraping.md
       - 插件: user/plugins.md
-      - 使用 AI 智能体: user/agent.md
       - 常见问题: user/faq.md
 
 markdown_extensions:

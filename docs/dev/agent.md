@@ -129,4 +129,4 @@ Skill 只生成 `SKILL.md` 与记录实例版本的 `version` 两个文件, 工�
 
 二进制经 GitHub Releases 分发, 不随实例或桌面包发布: 协议只有四个端点, 版本错配由 `doctor` 报告而不阻断. macOS 上必须用 `curl` 下载, 浏览器下载会带隔离属性而被 Gatekeeper 拦下.
 
-Go 由独立工作流 (`.github/workflows/cli.yaml`) 跑 `just cli-check`, 只在 `cli/` 变动时执行. `cli-check` / `cli-dist` 经 `cli/Makefile` 依赖 POSIX shell, Windows 上不能跑, 那里用 `go test ./...`. `just check` 与 `just ci` 都不含它, 改完 CLI 要单独跑.
+Go 由独立工作流 (`.github/workflows/cli.yaml`) 跑 `just cli-check`, 只在 `cli/` 变动时执行. CLI 的 recipe 在 `cli/justfile`, 由根 Justfile import, 与根一样同时兼容 sh 与 pwsh. `just check` 与 `just ci` 都不含它, 改完 CLI 要单独跑.

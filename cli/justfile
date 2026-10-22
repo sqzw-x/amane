@@ -1,0 +1,50 @@
+# amane CLI (Go) 的构建入口.
+#
+# 由根目录 justfile import, 所以这里不写 set shell —— 根目录已按平台选好.
+# 也意味着要在仓库根运行 `just cli-check`, 直接 just -f cli/justfile 会因为
+# working-directory 相对仓库根解析而找不到模块.
+#
+# recipe 行必须同时兼容 sh 与 pwsh, 不写只有其中一种 shell 认得的语法.
+
+# 下发到二进制的版本号, 构建时可用 VERSION 覆盖
+version := env("VERSION", "dev")
+dist_dir := env("DIST", "dist")
+exe := if os() == "windows" { ".exe" } else { "" }
+
+# CLI: 格式检查 + go vet + go test
+[working-directory('cli')]
+cli-check: cli-fmt-check cli-vet cli-test
+
+# CLI: 就地格式化
+[working-directory('cli')]
+cli-fmt:
+    gofmt -w .
+
+# CLI: 只检查格式, 不改文件
+#
+# 反引号由 just 在仓库根求值, 不受 working-directory 影响, 因此路径写 cli 而不是 .
+cli-fmt-check:
+    @{{ if `gofmt -l cli` == "" { "echo 格式检查通过" } else { error("以下文件未格式化:\n" + `gofmt -l cli`) } }}
+
+[working-directory('cli')]
+cli-vet:
+    go vet ./...
+
+[working-directory('cli')]
+cli-test:
+    go test ./...
+
+# CLI: 当前平台的二进制到 dist/amane
+[working-directory('cli')]
+cli-build:
+    go build -trimpath -ldflags "-X main.version={{version}}" -o {{dist_dir}}/amane{{exe}} ./cmd/amane
+
+# CLI: 交叉编译五个平台并生成 SHA256SUMS
+[working-directory('cli')]
+cli-dist:
+    go run ./internal/tools/release -version "{{ env("VERSION", `uv version --short`) }}" -out {{dist_dir}}
+
+# CLI: 清理产物
+[working-directory('cli')]
+cli-clean:
+    go run ./internal/tools/release -clean -out {{dist_dir}}
