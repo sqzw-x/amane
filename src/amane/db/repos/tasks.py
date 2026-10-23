@@ -10,7 +10,7 @@ from sqlmodel.sql.expression import SelectOfScalar
 
 from ..models import SortOrder, Task, TaskLink, TaskSortField, TaskStatus, TaskType
 from ..repo_types import _TASK_SORT_COLUMNS, _order_clause, _utcnow
-from .base import RepositoryMixinBase
+from .base import RepositoryMixinBase, chunks
 
 _ACTIVE_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING)
 # 互斥键在 payload 里; 同键已有 queued/running 则复用, 不另建行.
@@ -97,17 +97,19 @@ async def _ids_with_external_descendants(session: AsyncSession, ids: Sequence[in
     frontier = list(id_set)
     visited = set(id_set)
     while frontier:
-        rows = await session.exec(
-            select(TaskLink.parent_task_id, TaskLink.child_task_id).where(col(TaskLink.parent_task_id).in_(frontier))
-        )
         next_frontier: list[int] = []
-        for parent, child in rows.all():
-            if parent is None or child is None:
-                continue
-            children_of.setdefault(parent, []).append(child)
-            if child not in visited:
-                visited.add(child)
-                next_frontier.append(child)
+        # 每层可达上千个节点, 整批放进一条 IN 会超过绑定变量上限.
+        for chunk in chunks(frontier):
+            rows = await session.exec(
+                select(TaskLink.parent_task_id, TaskLink.child_task_id).where(col(TaskLink.parent_task_id).in_(chunk))
+            )
+            for parent, child in rows.all():
+                if parent is None or child is None:
+                    continue
+                children_of.setdefault(parent, []).append(child)
+                if child not in visited:
+                    visited.add(child)
+                    next_frontier.append(child)
         frontier = next_frontier
     external = visited - id_set
     if not external:
@@ -386,17 +388,19 @@ class TasksRepoMixin(RepositoryMixinBase):
         statuses: Iterable[TaskStatus] | None = None,
         task_types: Iterable[TaskType] | None = None,
     ) -> list[Task]:
-        """不分页. task_ids 为空可迭代视为无匹配."""
-        if task_ids is not None:
+        """不分页. task_ids 为空可迭代视为无匹配; 大批 id 分批绑定."""
+        async with self._session() as session:
+            if task_ids is None:
+                stmt = _scope_tasks(select(Task), statuses=statuses, task_types=task_types)
+                return list((await session.exec(stmt)).all())
             ids = list(task_ids)
             if not ids:
                 return []
-        else:
-            ids = None
-        async with self._session() as session:
-            stmt = _scope_tasks(select(Task), task_ids=ids, statuses=statuses, task_types=task_types)
-            result = await session.exec(stmt)
-            return list(result.all())
+            found: list[Task] = []
+            for chunk in chunks(ids):
+                stmt = _scope_tasks(select(Task), task_ids=chunk, statuses=statuses, task_types=task_types)
+                found.extend((await session.exec(stmt)).all())
+            return found
 
     async def fail_queued_tasks(
         self,
@@ -467,7 +471,7 @@ class TasksRepoMixin(RepositoryMixinBase):
             return True
 
     async def delete_tasks(self, task_ids: Iterable[int | None]) -> int:
-        """含相关后继边. 存在集合外后裔的行跳过."""
+        """含相关后继边. 存在集合外后裔的行跳过. 边与行都分批删除, 一次提交."""
         ids = [i for i in task_ids if i is not None]
         if not ids:
             return 0
@@ -476,12 +480,16 @@ class TasksRepoMixin(RepositoryMixinBase):
             deletable = [i for i in ids if i not in protected]
             if not deletable:
                 return 0
-            await session.exec(
-                sqla_delete(TaskLink).where(
-                    (col(TaskLink.parent_task_id).in_(deletable)) | (col(TaskLink.child_task_id).in_(deletable))
+            # 整批任务组可达上万行, 单条语句绑定全部 id 会超过 SQLite 变量上限.
+            for chunk in chunks(deletable):
+                await session.exec(
+                    sqla_delete(TaskLink).where(
+                        (col(TaskLink.parent_task_id).in_(chunk)) | (col(TaskLink.child_task_id).in_(chunk))
+                    )
                 )
-            )
-            stmt = sqla_delete(Task).where(col(Task.id).in_(deletable))
-            result = await session.exec(stmt)
+            deleted = 0
+            for chunk in chunks(deletable):
+                result = await session.exec(sqla_delete(Task).where(col(Task.id).in_(chunk)))
+                deleted += result.rowcount or 0
             await session.commit()
-            return result.rowcount
+            return deleted
