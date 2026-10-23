@@ -31,7 +31,7 @@
 
 `published_at` 是源给出的发布时间 (RSS `pubDate` / Atom `published`, 没有再用 `updated`); 历史列表按它新→旧, 没有才回退 `created_at`, 再按 `id`. `created_at` 只是首次写入历史的时间, 同一次拉取里多条可能落在同一秒, 不能当主排序. `ignored_at` 非空表示用户忽略, `read_at` 非空表示用户已读 — 二者都与忽略正交, 不改变 `(feed_id, item_key)` 去重关系. `description` 与 `published_at` 只在首次写入或当时为空时回填, 不随源更新.
 
-历史列表默认只返回未忽略条目, `state=active|ignored|all` 切换忽略视图, `read=unread|read|all` 切换已读视图 (**默认 `all`**, 调用方不传时结果集不变), 两项同时生效. `search` 同时检索标题、番号、正文、链接和 `item_key`. 响应保留 `ignored_at` / `read_at` / `published_at`, 由前端据此展示状态与时间; 日期分段标题与「同番号折叠」都是前端显示层, 不改 API 排序.
+历史列表默认只返回未忽略条目, `state=active|ignored|all` 切换忽略视图, `read=unread|read|all` 切换已读视图 (**默认 `all`**, 调用方不传时结果集不变), 两项同时生效. `search` 同时检索标题、番号、正文、链接和 `item_key`. 响应保留 `ignored_at` / `read_at` / `published_at`, 由前端据此展示状态与时间; 日期分段标题与「同番号折叠」都是前端显示层, 不改 API 排序, 但折叠行的已读/未读按整组条目提交 — 只写代表行会让重复条目留在反状态.
 
 跨源列表 `GET /feeds/items` (注册顺序见 [api.md](api.md)): `feed_id` 优先于 `group`; `group` 缺省为全部, 空串只含未分组源, 非空为前缀匹配. 单源列表经由 `GET /feeds/{id}/items`.
 
