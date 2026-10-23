@@ -107,14 +107,14 @@ func yamlQuote(s string) string {
 }
 
 func renderMain(version string) string {
-	const pf = " --profile <名字>"
+	const pf = " --profile <name>"
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("name: amane\n")
 	b.WriteString("description: " + yamlQuote(skillDescription) + "\n")
 	b.WriteString("---\n\n")
 	fmt.Fprintf(&b, "# Amane\n\n本文件由 `amane skill install` 生成, 对应 CLI 版本 %s. CLI 升级后重新运行同一条命令.\n", version)
-	b.WriteString("本文件不绑定具体实例: 下文命令里的 `<名字>` 是 profile 名, `amane config list` 列出本机有哪些, 选你在操作的那一份填进去.\n")
+	b.WriteString("本文件不绑定具体实例: 下文命令里的 `<name>` 是 profile 名, `amane config list` 列出本机有哪些, 选你在操作的那一份填进去.\n")
 
 	b.WriteString("\n## 何时使用\n\n")
 	b.WriteString("用户要求管理或查询 Amane 实例中的影片元数据、演员、分类、媒体库、订阅源、定时任务与任务队列时使用. 用户说「用我的 Amane 做什么」也属于此范围.\n")
@@ -133,7 +133,7 @@ func renderMain(version string) string {
 
 	b.WriteString("\n## 调用约定\n\n")
 	b.WriteString("CLI 用 profile 区分实例: 一份 profile 记一个实例的地址与 token, `amane config list` 列出本机全部.\n")
-	b.WriteString("所有操作经由 CLI, 不要自己拼 HTTP 请求. 每条命令都带 `--profile <名字>`, 换成你正在操作的那一份:\n\n")
+	b.WriteString("所有操作经由 CLI, 不要自己拼 HTTP 请求. 每条命令都带 `--profile <name>`, 换成你正在操作的那一份:\n\n")
 	b.WriteString("```sh\n")
 	fmt.Fprintf(&b, "amane catalog [<tool>]%s       # 工具索引 / 单个工具的完整入参\n", pf)
 	fmt.Fprintf(&b, "amane schema%s                 # 库结构摘要\n", pf)
@@ -154,14 +154,14 @@ func renderMain(version string) string {
 
 	b.WriteString("\n## 自服务\n\n")
 	b.WriteString("实例与本机同机时, 直接读文件比走接口快:\n\n")
-	b.WriteString("- 位置由实例给出: `amane catalog --json --profile <名字>` 的 `paths` 里有数据目录、日志目录、数据库与配置文件\n")
+	b.WriteString("- 位置由实例给出: `amane catalog --json --profile <name>` 的 `paths` 里有数据目录、日志目录、数据库与配置文件\n")
 	b.WriteString("- 单任务日志、配置快照与出站 HTTP 记录在日志目录的 `tasks/task-{id}/` 下, 失败排查先读这里\n")
 	b.WriteString("- 数据库: 只读查询优先用目录中的 SQL 探查工具, 它复用沙箱、超时与查询预设\n")
 	b.WriteString("- 配置文件含站点密钥, 读取时不得回显\n")
-	b.WriteString("- 远端实例无法访问服务端文件系统时, 改用 `amane api /api/tasks/<id>/record --profile <名字>` 取任务记录包\n")
+	b.WriteString("- 远端实例无法访问服务端文件系统时, 改用 `amane api /api/tasks/<id>/record --profile <name>` 取任务记录包\n")
 
 	b.WriteString("\n## 鉴权\n\n")
-	b.WriteString("token 由 CLI 保管, 不进入对话. 不要读取、回显或写入 token, 也不要向用户索要 token 后代为输入; 需要登录时请用户自己在终端执行 `amane login --server <实例地址> --profile <名字>` 并粘贴 token.\n")
+	b.WriteString("token 由 CLI 保管, 不进入对话. 不要读取、回显或写入 token, 也不要向用户索要 token 后代为输入; 需要登录时请用户自己在终端执行 `amane login --server <实例地址> --profile <name>` 并粘贴 token.\n")
 	b.WriteString("\n持有 token 等同于实例所有者. 不把本 Skill 的调用能力转交给第三方.\n")
 	return b.String()
 }
