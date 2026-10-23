@@ -17,6 +17,7 @@ from pydantic_ai.models import Model
 from ..enums import ApiType, Language, MetadataField
 from ..utils.language import needs_llm_translation
 from .cache import TranslationCache
+from .coalescer import TranslationCoalescer
 from .model import build_model
 
 logger = structlog.get_logger()
@@ -87,12 +88,15 @@ class LLMTranslator:
         model: Model,
         cache: TranslationCache | None = None,
         *,
+        coalescer: TranslationCoalescer | None = None,
         rate_limit: float = 2.0,
         system_prompt: str | None = None,
         field_prompts: Mapping[MetadataField, str] | None = None,
     ) -> None:
         self._model = model
         self._cache = cache
+        # 热重载会重建 translator; 生产环境传入会话级实例, 使过渡期内旧、新 worker 共用请求.
+        self._coalescer = coalescer if coalescer is not None else TranslationCoalescer()
         # LLM 端点独立限速, 与站点 host 限速隔离: 桶容量 1, 严格平滑.
         # 包住一次翻译调用; 该调用内部的重试由 SDK 客户端承担.
         self._limiter = AsyncLimiter(1, 1 / rate_limit)
@@ -113,19 +117,12 @@ class LLMTranslator:
                 system_prompt=self._system_prompt,
                 field_prompts=self._field_prompts,
             )
-            # 缓存命中即跳过 LLM: 全缓存重刮, 配置不变时不重复翻译, 也避免 temperature 漂移.
-            # 键含 system 提示词, 改提示词后旧译文不再命中. use_cache=False 时跳过读取
-            # (强制重译), 但仍回写以刷新缓存.
-            if self._cache is not None and use_cache:
-                cached = await self._cache.get(text, target, field, system)
-                if cached is not None:
-                    return cached
-            result = await self._ask(system_prompt=system, user_prompt=text)
-            if not result:
-                return None
-            if self._cache is not None:
-                await self._cache.put(text, target, field, system, result)
-            return result
+            # 同一文本的并发翻译合并为一次请求: 分集并发刮削时各任务拿到同一译文, 不因采样漂移.
+            # 缓存读取也放在合并范围内: 若在登记之外读取, 命中与登记之间仍可能各自请求一次.
+            return await self._coalescer.run(
+                (text, target, field, system),
+                lambda: self._translate_llm(text, target, field, system, use_cache=use_cache),
+            )
 
         # 中文文本: 简繁字形转换 (幂等); 共用字/已是目标变体则结果等于原文 → 返回 None 省去写回.
         locale = _ZHCONV_LOCALE.get(target)
@@ -134,6 +131,24 @@ class LLMTranslator:
             return converted if converted != text else None
 
         return None
+
+    async def _translate_llm(
+        self, text: str, target: Language, field: MetadataField, system_prompt: str, *, use_cache: bool
+    ) -> str | None:
+        """合并键内的一次完整翻译: 读缓存, 请求模型, 回写缓存."""
+        # 缓存命中即跳过 LLM: 全缓存重刮, 配置不变时不重复翻译, 也避免 temperature 漂移.
+        # 键含 system 提示词, 改提示词后旧译文不再命中. use_cache=False 时跳过读取
+        # (强制重译), 但仍回写以刷新缓存.
+        if self._cache is not None and use_cache:
+            cached = await self._cache.get(text, target, field, system_prompt)
+            if cached is not None:
+                return cached
+        result = await self._ask(system_prompt=system_prompt, user_prompt=text)
+        if not result:
+            return None
+        if self._cache is not None:
+            await self._cache.put(text, target, field, system_prompt, result)
+        return result
 
     async def _ask(self, *, system_prompt: str, user_prompt: str) -> str | None:
         """单轮请求. 重试由 SDK 客户端承担; 无内容或抛异常时返回 ``None``, 不抛异常."""
@@ -162,8 +177,9 @@ def build_translator(
     system_prompt: str | None = None,
     field_prompts: Mapping[MetadataField, str] | None = None,
     cache: TranslationCache | None = None,
+    coalescer: TranslationCoalescer | None = None,
 ) -> LLMTranslator | None:
-    """未启用或缺密钥时返回 ``None``. ``cache`` 热重载时复用同一实例."""
+    """未启用或缺密钥时返回 ``None``. ``cache`` 与 ``coalescer`` 热重载时复用同一实例."""
     if not enabled or not api_key:
         return None
     # 翻译路径自建传输客户端 (proxy + 超时) 并交给 provider; 助理不传, 由 pydantic-ai 构造默认客户端.
@@ -171,6 +187,7 @@ def build_translator(
     return LLMTranslator(
         build_model(api_type, base_url=base_url, api_key=api_key, model=model, http_client=http_client),
         cache,
+        coalescer=coalescer,
         rate_limit=rate_limit,
         system_prompt=system_prompt,
         field_prompts=field_prompts,

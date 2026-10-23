@@ -19,7 +19,7 @@ from ..db.repository import Repository
 from ..events import EventBus
 from ..handlers import LibraryTaskLocks
 from ..library import InventoryStore
-from ..llm import TranslationCache
+from ..llm import TranslationCache, TranslationCoalescer
 from ..media import ResourceStore
 from ..observability import setup_logging
 from ..playback import PlaybackFactory, PlaybackState
@@ -144,6 +144,8 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
 
     # 独立 SQLite, 不纳入 Alembic; 删除文件即清空. 惰性建连.
     translation_cache = TranslationCache(cold.data_dir / "translations.db")
+    # 同一文本的并发翻译合并为一个请求; 与缓存同属会话级, 热重载时复用.
+    translation_coalescer = TranslationCoalescer()
 
     # 会话级 ResultCache; rebuild 只换工厂, 不清除缓存
     agent_service = AgentService(
@@ -174,6 +176,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         hot,
         safe_dirs,
         translation_cache,
+        translation_coalescer,
         cold.data_dir,
         plugin_manager,
         library_locks=library_locks,
@@ -233,6 +236,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         safe_dirs=safe_dirs,
         api_token=api_token,
         translation_cache=translation_cache,
+        translation_coalescer=translation_coalescer,
         r18_db=r18_db,
         agent_service=agent_service,
         plugin_manager=plugin_manager,

@@ -42,7 +42,8 @@
 - **独立 SQLite 文件** (`data_dir/translations.db`), **不纳入主库、不经由 Alembic**: 纯缓存, 仅 `CREATE TABLE IF NOT EXISTS`, 可安全直接删除并在下次自动重建. 现有表的列集合与当前 schema 不符时整表 `DROP` 重建.
 - **会话级注入**: `start_app` 创建 → `AppRuntime.translation_cache` → 穿过 `build_handlers` / `build_translator`; 与 `ResourceStore` 同属不随热重载重建的对象, `_rebuild()` 复用同一实例 (修改 LLM 配置不会丢弃缓存).
 - **只缓存 LLM 路径**: 中文简繁 (zhconv) 廉价且确定, 不进缓存; 模型返回空也不写, 下次重试.
-- **不合并并发翻译**: 同一段源文本会被并发翻译多次并各自请求模型, 同一番号的多分片并发刮削时即此情形.
+- **并发合并**: 同一键的并发翻译只发出一次请求, 后到的调用等待并复用其结果. 合并范围包含缓存读取, 否则命中与登记之间仍会各自请求一次; 合并键与缓存键相同, 跨番号的相同文本一并合并. 状态与会话同生命周期 (`llm/coalescer.py::TranslationCoalescer`), 热重载重建 translator 时复用.
+- **失败与取消**: 首个请求失败或被取消时后到的调用得到 `None` 并保留原值, 失败不写缓存, 下次刮削重新请求. `use_cache=False` 的并发调用同样复用同一次翻译 (含先到请求的缓存命中), 重译请求只发出一次.
 
 刮削 `use_cache` 的 `trans` 档控制是否读此缓存 (仍回写), 与 `metadata` 档的分工见 [task-system.md](task-system.md); 前端「强制刮削」发 `use_cache=["trans"]`, 即重爬元数据、源文本不变则零 token. 换模型后想重译可直接删除 `translations.db` (model 不在键里); 修改提示词不需要删缓存 (指纹已在键中).
 
