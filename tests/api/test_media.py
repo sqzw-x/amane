@@ -5,7 +5,11 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_asyncio
 
+import amane.api.routes.media as media_routes
+
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from httpx2 import AsyncClient
 
     from amane.db.repository import Repository
@@ -88,3 +92,63 @@ class TestMediaHttp:
         assert [row["id"] for row in by_type.json()["items"]] == [inherited.id]
         assert by_type.json()["total"] == 1
         assert (await client.get("media?content_type=bogus")).status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_open_local_video(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        safe_path: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        opened: list[Path] = []
+
+        async def _open(path: Path) -> None:
+            opened.append(path)
+
+        monkeypatch.setattr(media_routes, "can_open_desktop_file", lambda: False)
+        assert (await client.post("media/999/open")).status_code == 403
+
+        monkeypatch.setattr(media_routes, "can_open_desktop_file", lambda: True)
+        monkeypatch.setattr(media_routes, "open_desktop_file", _open)
+        assert (await client.post("media/999/open")).status_code == 404
+
+        missing = await repo.create_media_file(library_id=1, path=str(safe_path / "missing.mp4"))
+        missing_response = await client.post(f"media/{missing.id}/open")
+        assert (missing_response.status_code, missing_response.json()["detail"]) == (
+            404,
+            f"路径不存在: {safe_path / 'missing.mp4'}",
+        )
+
+        text_file = safe_path / "not-video.txt"
+        text_file.write_text("not video", encoding="utf-8")
+        text = await repo.create_media_file(library_id=1, path=str(text_file))
+        text_response = await client.post(f"media/{text.id}/open")
+        assert (text_response.status_code, text_response.json()["detail"]) == (
+            422,
+            "关联文件不是已配置的视频类型",
+        )
+
+        outside = tmp_path / "outside.mp4"
+        outside.write_bytes(b"video")
+        escaped = await repo.create_media_file(library_id=1, path=str(outside))
+        escaped_response = await client.post(f"media/{escaped.id}/open")
+        assert escaped_response.status_code == 403
+
+        video = safe_path / "ABF-195.mp4"
+        video.write_bytes(b"video")
+        media = await repo.create_media_file(library_id=1, path=str(video))
+        response = await client.post(f"media/{media.id}/open")
+        assert response.status_code == 204
+        assert opened == [video.resolve()]
+
+        async def _fail(_path: Path) -> None:
+            raise OSError("没有默认播放器")
+
+        monkeypatch.setattr(media_routes, "open_desktop_file", _fail)
+        failed_response = await client.post(f"media/{media.id}/open")
+        assert (failed_response.status_code, failed_response.json()["detail"]) == (
+            500,
+            "无法打开本机播放器: 没有默认播放器",
+        )

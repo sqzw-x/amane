@@ -85,6 +85,8 @@
     "connections": "Related Files",
     "noFiles": "No related files",
     "openInLibrary": "Open in library",
+    "openInLocalPlayer": "Open in local player",
+    "openedInLocalPlayer": "Opened in local player",
     "userTags": "User tags",
     "noUserTags": "No user tags yet",
     "selectUserTag": "Select or type a user tag…",

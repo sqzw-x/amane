@@ -1062,6 +1062,10 @@ export type DesktopResponse = {
      * Supervised
      */
     supervised?: boolean;
+    /**
+     * Can Open Local Files
+     */
+    can_open_local_files?: boolean;
 };
 
 /**
@@ -5577,6 +5581,36 @@ export type UpdateMediaResponses = {
 };
 
 export type UpdateMediaResponse = UpdateMediaResponses[keyof UpdateMediaResponses];
+
+export type OpenMediaFileData = {
+    body?: never;
+    path: {
+        /**
+         * Media Id
+         */
+        media_id: number;
+    };
+    query?: never;
+    url: '/api/media/{media_id}/open';
+};
+
+export type OpenMediaFileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OpenMediaFileError = OpenMediaFileErrors[keyof OpenMediaFileErrors];
+
+export type OpenMediaFileResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type OpenMediaFileResponse = OpenMediaFileResponses[keyof OpenMediaFileResponses];
 
 export type GetMetadataSchemaData = {
     body?: never;

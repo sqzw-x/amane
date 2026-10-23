@@ -1801,6 +1801,11 @@ export const DesktopResponseSchema = {
             type: 'boolean',
             title: 'Supervised',
             default: false
+        },
+        can_open_local_files: {
+            type: 'boolean',
+            title: 'Can Open Local Files',
+            default: false
         }
     },
     type: 'object',
