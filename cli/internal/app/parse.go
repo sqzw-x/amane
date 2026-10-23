@@ -231,8 +231,11 @@ func (p *parsed) validate() error {
 		if err := p.expectArgs(0, 2, ""); err != nil {
 			return err
 		}
-		if err := checkSubcommand("config", p.args, configSubcommands, false); err != nil {
+		if err := checkSubcommand("config", p.args, configSubcommands, true); err != nil {
 			return err
+		}
+		if strings.TrimSpace(p.profile) != "" {
+			return usagef("config 不接受 --profile: 用 amane config list 查看全部 profile")
 		}
 	case "skill":
 		if err := p.expectArgs(0, 2, ""); err != nil {
@@ -304,7 +307,7 @@ const usageText = `amane — Amane 实例的外部智能体接口客户端
 用法:
   amane [全局选项] <命令> [参数]
 
-命令 (除 upgrade、skill 与 config list/delete 外都要带 --profile):
+命令 (除 upgrade、skill 与 config 外都要带 --profile):
   catalog [<tool>]                打印工具索引; 指定工具时打印其完整入参
   schema                          打印库结构摘要, 编写只读 SQL 时参考
   call <tool> [--file <路径>|-|JSON]  派发工具调用; 入参来自文件、标准输入或 JSON 字面量
@@ -315,7 +318,6 @@ const usageText = `amane — Amane 实例的外部智能体接口客户端
   login --server <url> --profile <名字> [--force]
                                   写入一份 profile; 终端下 token 不回显
   config [list|delete <名字>]     列出或删除 profile
-  config --profile <名字>         查看某个 profile
   skill install [--dir <path>]    生成 Skill 文件并写入目录 (不连接实例)
   skill show                      打印 Skill 内容, 不写文件
 

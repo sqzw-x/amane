@@ -476,28 +476,6 @@ func TestLoginRequiresServer(t *testing.T) {
 	}
 }
 
-func TestConfigMasksToken(t *testing.T) {
-	h := newHarness(t, "http://127.0.0.1:8000")
-	if code := h.run("config", "--profile", "default"); code != ExitOK {
-		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
-	}
-	var out struct {
-		Profile string `json:"profile"`
-		Server  string `json:"server"`
-		Token   string `json:"token"`
-	}
-	h.decodeJSON(t, &out)
-	if out.Token != "tok-****cdef" {
-		t.Fatalf("打码结果为 %q", out.Token)
-	}
-	if strings.Contains(h.out(), testToken) {
-		t.Fatal("完整 token 不应出现")
-	}
-	if out.Profile != "default" || out.Server != "http://127.0.0.1:8000" {
-		t.Fatalf("输出为 %+v", out)
-	}
-}
-
 func TestConfigListAndDelete(t *testing.T) {
 	h := newHarness(t, "http://127.0.0.1:8000")
 	cfg := h.loadConfig(t)
@@ -522,6 +500,12 @@ func TestConfigListAndDelete(t *testing.T) {
 	}
 	if out.Profiles[0].Name != "default" || out.Profiles[1].Name != "work" {
 		t.Fatalf("profile 未按名字排序: %+v", out.Profiles)
+	}
+	if strings.Contains(h.out(), testToken) {
+		t.Fatal("完整 token 不应出现在输出中")
+	}
+	if !strings.Contains(out.Profiles[0].Token, "**") {
+		t.Fatalf("token 未打码: %q", out.Profiles[0].Token)
 	}
 
 	if code := h.run("config", "delete", "work"); code != ExitOK {
@@ -710,8 +694,8 @@ func TestWaitRejectsUnexpectedResponses(t *testing.T) {
 	}
 }
 
-func TestConfigRejectsMissingProfile(t *testing.T) {
-	// 与 server() 一致: 显式 profile 拼错时不能回落成一份「本机实例」的配置.
+func TestCommandRejectsMissingProfile(t *testing.T) {
+	// 显式 profile 拼错时不能回落成一份「本机实例」的配置.
 	dataDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("local-token"), 0o600); err != nil {
 		t.Fatalf("准备 token 失败: %v", err)
@@ -723,7 +707,7 @@ func TestConfigRejectsMissingProfile(t *testing.T) {
 		}
 		return ""
 	}
-	if code := h.run("config", "--profile", "missing"); code != ExitUsage {
+	if code := h.run("--profile", "missing", "catalog"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
 	if strings.Contains(h.out(), "127.0.0.1") {

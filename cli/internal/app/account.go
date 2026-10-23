@@ -192,29 +192,7 @@ func (r *runner) cmdConfig(_ context.Context) error {
 		return err
 	}
 	switch sub := r.arg(0); sub {
-	case "":
-		if strings.TrimSpace(r.p.profile) == "" {
-			return usagef("缺少 --profile: amane config --profile <名字>, 或 amane config list 查看全部")
-		}
-		profile, ok := cfg.Profiles[r.p.profile]
-		if !ok {
-			return usagef("profile %q 不存在; 用 amane config list 查看已有 profile", r.p.profile)
-		}
-		token, source := config.ResolveToken(profile, r.env.Getenv)
-		return r.writeJSON(struct {
-			Profile     string `json:"profile"`
-			Server      string `json:"server"`
-			Token       string `json:"token"`
-			TokenSource string `json:"token_source"`
-			ConfigPath  string `json:"config_path"`
-		}{
-			Profile:     r.p.profile,
-			Server:      profile.Server,
-			Token:       config.Mask(token),
-			TokenSource: source,
-			ConfigPath:  r.cfgPath,
-		})
-	case "delete", "rm":
+	case "delete":
 		name, err := r.requireArg(1, "<名字>")
 		if err != nil {
 			return err
