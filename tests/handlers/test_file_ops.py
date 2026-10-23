@@ -1,5 +1,7 @@
 """测试 file ops 消费已物化 URL (内部派生 / 外部) + trailer 落盘."""
 
+import os
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -9,7 +11,7 @@ from PIL import Image
 from amane.config import HotSettings, WatermarkConfig
 from amane.db.models import MediaFile, Metadata
 from amane.enums import DownloadableResource
-from amane.handlers.file import execute_file_operations
+from amane.handlers.file import _copy_into_library, execute_file_operations
 from amane.media import ResourceStore
 from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths
 from amane.parsing import parse_file_info
@@ -410,3 +412,107 @@ async def test_fanart_follows_thumb_selection(
     assert paths.fanart.exists() is pre_existing
     if before is not None:
         assert _pixel(paths.fanart) == before
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        PermissionError(1, "Operation not permitted"),
+        OSError(95, "Operation not supported"),
+    ],
+)
+def test_copy_into_library_tolerates_metadata_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError
+) -> None:
+    """目标挂载拒绝 utime、chmod 时, 内容照常落盘."""
+    src = tmp_path / "src.jpg"
+    src.write_bytes(b"image")
+    dst = tmp_path / "dst.jpg"
+
+    def reject(*args: object, **kwargs: object) -> None:
+        raise error
+
+    monkeypatch.setattr("amane.handlers.file.shutil.copystat", reject)
+
+    _copy_into_library(src, dst)
+
+    assert dst.read_bytes() == b"image"
+
+
+def test_copy_into_library_propagates_content_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """内容写不进去时照常抛出, 不掩盖真实错误."""
+
+    def reject(*args: object, **kwargs: object) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr("amane.handlers.file.shutil.copyfile", reject)
+
+    with pytest.raises(PermissionError):
+        _copy_into_library(tmp_path / "src.jpg", tmp_path / "dst.jpg")
+
+
+def test_copy_into_library_preserves_metadata_when_possible(tmp_path: Path) -> None:
+    """挂载允许写元数据时, mtime 仍随源文件."""
+    src = tmp_path / "src.jpg"
+    src.write_bytes(b"image")
+    stamp = 1_000_000_000
+    os.utime(src, (stamp, stamp))
+    dst = tmp_path / "dst.jpg"
+
+    _copy_into_library(src, dst)
+
+    assert int(dst.stat().st_mtime) == stamp
+
+
+def test_copy_into_library_keeps_copy2_on_success_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """成功路径必须与 copy2 一致: Windows 上即 CopyFile2, 该调用不能被绕开."""
+    src = tmp_path / "src.jpg"
+    src.write_bytes(b"image")
+    dst = tmp_path / "dst.jpg"
+    calls: list[tuple[Path, Path]] = []
+    real_copy2 = shutil.copy2
+
+    def spy(s: Path, d: Path) -> Path | str:
+        calls.append((s, d))
+        return real_copy2(s, d)
+
+    monkeypatch.setattr("amane.handlers.file.shutil.copy2", spy)
+
+    _copy_into_library(src, dst)
+
+    assert calls == [(src, dst)]
+    assert dst.read_bytes() == b"image"
+
+
+@pytest.mark.asyncio
+async def test_images_placed_when_metadata_copy_denied(
+    resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """目标挂载拒绝元数据时, 整理仍应完成并留下图片."""
+    client = cast("WebClient", FakeClient())
+
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+    paths = _paths(tmp_path / "out")
+
+    def reject(*args: object, **kwargs: object) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr("amane.handlers.file.shutil.copystat", reject)
+
+    result = await execute_file_operations(
+        media_file=MediaFile(path=str(src), library_id=1),
+        metadata=Metadata(number="MIDV-123", thumb_urls=["https://s/t.jpg"], poster_urls=["https://s/p.jpg"]),
+        paths=paths,
+        move_mode=MoveMode.COPY,
+        resource_store=resource_store,
+        file_info=parse_file_info(src),
+        web_client=client,
+        config=HotSettings(),
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    assert paths.thumb.exists()
+    assert paths.poster.exists()
+    assert paths.fanart.read_bytes() == paths.thumb.read_bytes()

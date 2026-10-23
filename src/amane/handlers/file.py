@@ -299,6 +299,24 @@ async def _acquire_first_local(urls: list[str], store: ResourceStore, client: We
     return None
 
 
+def _copy_into_library(src: Path, dst: Path) -> None:
+    """复制到媒体库, 元数据复制失败不算失败.
+
+    成功路径保持 copy2 的全部行为 (Windows 的 CopyFile2 与其余平台的 copyfile + copystat).
+    网盘 / FUSE 挂载 (CloudDrive2 等) 常对 utime、chmod 返回 EPERM: copy2 在内容写入之后
+    抛错, 而元数据缺失不影响产物可用, 不应让整个整理任务失败.
+    """
+    try:
+        shutil.copy2(src, dst)
+    except OSError:
+        # 内容可能已经写好, 重拷一次以区分内容失败与元数据失败: 内容失败会在此再次抛出.
+        shutil.copyfile(src, dst)
+        try:
+            shutil.copystat(src, dst)
+        except OSError as exc:
+            logger.debug("copy metadata skipped", src=str(src), dst=str(dst), error=str(exc))
+
+
 @in_thread
 def _place_library_images(
     paths: ResolvedPaths,
@@ -317,14 +335,14 @@ def _place_library_images(
     # fanart 没有刮削来源, 内容取 thumb, 随 thumb 一同重写.
     if thumb_local is not None and DownloadableResource.thumb in kinds:
         paths.thumb.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(thumb_local, paths.thumb)
+        _copy_into_library(thumb_local, paths.thumb)
         paths.fanart.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(thumb_local, paths.fanart)
+        _copy_into_library(thumb_local, paths.fanart)
 
     if DownloadableResource.poster in kinds:
         if poster_local is not None:
             paths.poster.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(poster_local, paths.poster)
+            _copy_into_library(poster_local, paths.poster)
         elif thumb_local is not None and config is not None and config.scraping.crop_poster:
             paths.poster.parent.mkdir(parents=True, exist_ok=True)
             crop_poster(
@@ -336,12 +354,12 @@ def _place_library_images(
 
     if trailer_local is not None and DownloadableResource.trailer in kinds:
         paths.trailer.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(trailer_local, paths.trailer)
+        _copy_into_library(trailer_local, paths.trailer)
 
     if extrafanart and DownloadableResource.extrafanart in kinds:
         paths.extrafanart_dir.mkdir(parents=True, exist_ok=True)
         for i, p in enumerate(extrafanart):
-            shutil.copy2(p, paths.extrafanart_dir / f"{i + 1}.jpg")
+            _copy_into_library(p, paths.extrafanart_dir / f"{i + 1}.jpg")
 
     # 叠加水印 (thumb / poster).
     wm = config.watermark if config is not None else WatermarkConfig()
