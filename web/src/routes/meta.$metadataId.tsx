@@ -45,11 +45,13 @@ import {
   batchMetadataUserTagsMutation,
   createUserTagsMutation,
   deleteMetadataMutation,
+  desktopInfoOptions,
   getMetadataOptions,
   getMetadataQueryKey,
   listFacetsOptions,
   listFacetsQueryKey,
   listMetadataQueryKey,
+  openMediaFileMutation,
   setMetadataLocksMutation,
   submitTaskMutation,
   updateMetadataMutation,
@@ -197,6 +199,10 @@ function TitleDetailPage() {
     ...getMetadataOptions({ path: { metadata_id: id } }),
     enabled: validId,
   });
+  const { data: desktop } = useQuery({
+    ...desktopInfoOptions(),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
 
   const invalidateDetail = () => {
     void queryClient.invalidateQueries({
@@ -223,6 +229,18 @@ function TitleDetailPage() {
       notifications.show({ message: t("common:toast.metadataDeleted"), color: "blue" });
       void queryClient.invalidateQueries({ queryKey: listMetadataQueryKey() });
       void navigate({ to: "/meta" });
+    },
+    onError: (err) =>
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      }),
+  });
+
+  const openMediaMutation = useMutation({
+    ...openMediaFileMutation(),
+    onSuccess: () => {
+      notifications.show({ message: t("detail.openedInLocalPlayer"), color: "blue" });
     },
     onError: (err) =>
       notifications.show({
@@ -929,6 +947,23 @@ function TitleDetailPage() {
                   >
                     <IconFolders size={16} />
                   </ActionIcon>
+                  {desktop?.can_open_local_files === true && (
+                    <Tooltip label={t("detail.openInLocalPlayer")}>
+                      <ActionIcon
+                        variant="subtle"
+                        size="sm"
+                        aria-label={t("detail.openInLocalPlayer")}
+                        loading={
+                          openMediaMutation.isPending &&
+                          openMediaMutation.variables?.path.media_id === f.id
+                        }
+                        disabled={openMediaMutation.isPending}
+                        onClick={() => openMediaMutation.mutate({ path: { media_id: f.id } })}
+                      >
+                        <IconPlayerPlay size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
                 </Group>
               ))}
             </Stack>

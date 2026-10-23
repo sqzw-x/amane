@@ -84,6 +84,8 @@
     "connections": "关联文件",
     "noFiles": "无关联文件",
     "openInLibrary": "在媒体库中查看",
+    "openInLocalPlayer": "使用本机播放器打开",
+    "openedInLocalPlayer": "已交给本机播放器",
     "userTags": "用户标签",
     "noUserTags": "暂无用户标签",
     "selectUserTag": "选择或输入用户标签…",

@@ -13,6 +13,7 @@ from httpx2 import ASGITransport, AsyncClient
 from amane.api.routes import API_PREFIX
 from amane.api.routes.system import EXIT_RESTART
 from amane.config import HotSettings
+from amane.desktop_file import can_open_desktop_file
 from amane.release import ReleaseSnapshot
 from amane.server import EXIT_RESTART as SERVER_EXIT_RESTART
 from tests.api.conftest import make_app
@@ -44,6 +45,7 @@ async def test_desktop_info(client: HttpxClient) -> None:
     assert data["version"]
     assert data["data_dir"].endswith("data")
     assert data["supervised"] is False
+    assert data["can_open_local_files"] is can_open_desktop_file()
     health = await client.get("health")
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
@@ -56,6 +58,7 @@ async def test_desktop_supervised_when_flag_set(tmp_path: Path) -> None:
         resp = await client.get("system/desktop")
         assert resp.status_code == 200
         assert resp.json()["supervised"] is True
+        assert resp.json()["can_open_local_files"] is can_open_desktop_file()
 
 
 @pytest.mark.asyncio(loop_scope="function")

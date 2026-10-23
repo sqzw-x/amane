@@ -827,6 +827,42 @@
         }
       }
     },
+    "/api/media/{media_id}/open": {
+      "post": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Open Media File",
+        "description": "在运行 Amane 的桌面主机上使用默认播放器打开已登记的视频文件.",
+        "operationId": "open_media_file",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Media Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata/schema": {
       "get": {
         "tags": [
@@ -8087,6 +8123,11 @@
           "supervised": {
             "type": "boolean",
             "title": "Supervised",
+            "default": false
+          },
+          "can_open_local_files": {
+            "type": "boolean",
+            "title": "Can Open Local Files",
             "default": false
           }
         },

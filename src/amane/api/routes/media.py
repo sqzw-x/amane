@@ -5,8 +5,10 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from ...db.models import MediaFile, MediaFileStatus, MediaSortField, SortOrder
+from ...desktop_file import can_open_desktop_file, open_desktop_file
+from ...library.rules import is_video_media
 from ...parsing import DEFINITION_VALUES, ContentType, Mosaic
-from ..deps import RepoDep
+from ..deps import RepoDep, RuntimeDep
 from ..models import (
     MediaBatchDeleteRequest,
     MediaBatchDeleteResponse,
@@ -15,6 +17,7 @@ from ..models import (
     MediaListResponse,
     to_media_file_response,
 )
+from ..support.path_validation import validate_file_path
 
 if TYPE_CHECKING:
     from ...db.repo_types import MediaFileUpdates
@@ -100,6 +103,28 @@ async def get_media(media_id: int, repo: RepoDep) -> MediaFileResponse:
     if media is None:
         raise HTTPException(status_code=404, detail="媒体文件不存在")
     return (await _phase_responses(repo, [media]))[0]
+
+
+@router.post("/{media_id}/open", status_code=204)
+async def open_media_file(media_id: int, runtime: RuntimeDep) -> Response:
+    """在运行 Amane 的桌面主机上使用默认播放器打开已登记的视频文件."""
+    if not can_open_desktop_file():
+        raise HTTPException(status_code=403, detail="当前运行环境不支持本机播放器")
+
+    media = await runtime.repo.get_media_file(media_id)
+    if media is None:
+        raise HTTPException(status_code=404, detail="媒体文件不存在")
+
+    path = await validate_file_path(media.path, runtime.safe_dirs)
+    media_extensions = frozenset(runtime.config.hot.watcher.media_extensions)
+    if not is_video_media(path, media_extensions):
+        raise HTTPException(status_code=422, detail="关联文件不是已配置的视频类型")
+
+    try:
+        await open_desktop_file(path)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"无法打开本机播放器: {exc}") from exc
+    return Response(status_code=204)
 
 
 @router.patch("/{media_id}")

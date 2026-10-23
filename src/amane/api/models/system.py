@@ -5,6 +5,7 @@ class DesktopResponse(BaseModel):
     version: str
     data_dir: str
     supervised: bool = False
+    can_open_local_files: bool = False
 
 
 class ReleaseResponse(BaseModel):
