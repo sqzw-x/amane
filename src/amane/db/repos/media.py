@@ -1,4 +1,4 @@
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Sequence
 from typing import NamedTuple, Unpack
 
 from sqlalchemy import delete as sqla_delete
@@ -12,16 +12,7 @@ from ...utils.collections import unique_ids
 from ...utils.path import nfc_path
 from ..models import MediaFile, MediaFileStatus, MediaSortField, Metadata, SortOrder
 from ..repo_types import _MEDIA_SORT_COLUMNS, MediaFileUpdates, _apply_media_phase_filters, _order_clause, _utcnow
-from .base import RepositoryMixinBase
-
-# SQLite 绑定变量上限. 500 给语句里其它占位留余量.
-SQL_IN_CHUNK_SIZE = 500
-
-
-def _chunks[T](items: list[T]) -> Iterator[list[T]]:
-    """按 ``SQL_IN_CHUNK_SIZE`` 分批绑定 ``IN`` 的变量."""
-    for start in range(0, len(items), SQL_IN_CHUNK_SIZE):
-        yield items[start : start + SQL_IN_CHUNK_SIZE]
+from .base import RepositoryMixinBase, chunks
 
 
 def _apply_path_phase(media: MediaFile) -> None:
@@ -74,13 +65,13 @@ class MediaRepoMixin(RepositoryMixinBase):
             return result.first()
 
     async def get_valid(self, disk_paths: Iterable[str]) -> Sequence[MediaFile]:
-        """路径按 SQL_IN_CHUNK_SIZE 分批 IN, 避开绑定变量上限. 比较前统一 NFC."""
+        """路径按 ``chunks`` 分批 IN, 避开绑定变量上限. 比较前统一 NFC."""
         paths = [nfc_path(p) for p in disk_paths]
         if not paths:
             return []
         found: list[MediaFile] = []
         async with self._session() as session:
-            for chunk in _chunks(paths):
+            for chunk in chunks(paths):
                 stmt = select(MediaFile).where(col(MediaFile.path).in_(chunk))
                 result = await session.exec(stmt)
                 found.extend(result.all())
@@ -117,7 +108,7 @@ class MediaRepoMixin(RepositoryMixinBase):
         definition: str | None = None,
         content_type: ContentType | None = None,
     ) -> list[MediaFile]:
-        """limit None 不分页. ids 为空列表时直接返回空, 不查库. ids 按 SQL_IN_CHUNK_SIZE 分批 IN."""
+        """limit None 不分页, ids 分批 IN; 分页时不分批 (offset 与 limit 会按批重新计算). ids 为空列表时直接返回空."""
         id_list = list(ids) if ids is not None else None
         if id_list is not None and not id_list:
             return []
@@ -144,9 +135,9 @@ class MediaRepoMixin(RepositoryMixinBase):
                     definition=definition,
                 )
 
-            if id_list is not None and len(id_list) > SQL_IN_CHUNK_SIZE and limit is None:
+            if id_list is not None and limit is None:
                 found: list[MediaFile] = []
-                for chunk in _chunks(id_list):
+                for chunk in chunks(id_list):
                     stmt = apply_filters(select(MediaFile), chunk)
                     result = await session.exec(stmt)
                     found.extend(result.all())
@@ -241,7 +232,7 @@ class MediaRepoMixin(RepositoryMixinBase):
             return 0, 0
         deleted = 0
         async with self._session() as session:
-            for chunk in _chunks(ids):
+            for chunk in chunks(ids):
                 result = await session.exec(sqla_delete(MediaFile).where(col(MediaFile.id).in_(chunk)))
                 deleted += result.rowcount or 0
             await session.commit()

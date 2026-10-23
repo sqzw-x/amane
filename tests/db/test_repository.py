@@ -143,9 +143,9 @@ class TestMediaFileRepo:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_get_valid_chunks_union(self, repo: Repository, monkeypatch: pytest.MonkeyPatch):
         """路径多于 SQL_IN_CHUNK_SIZE 时分批 IN, 并集完整、不含缺失路径."""
-        from amane.db.repos import media as media_mod
+        from amane.db.repos import base as repos_base
 
-        monkeypatch.setattr(media_mod, "SQL_IN_CHUNK_SIZE", 2)
+        monkeypatch.setattr(repos_base, "SQL_IN_CHUNK_SIZE", 2)
         paths = [f"/video/{i}.mp4" for i in range(5)]
         for path in paths:
             await repo.create_media_file(library_id=1, path=path)
@@ -375,9 +375,9 @@ class TestMediaFileRepo:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_ids_chunks(self, repo: Repository, monkeypatch: pytest.MonkeyPatch):
         """ids 多于 SQL_IN_CHUNK_SIZE 且 limit None 时分批 IN, 并集完整."""
-        from amane.db.repos import media as media_mod
+        from amane.db.repos import base as repos_base
 
-        monkeypatch.setattr(media_mod, "SQL_IN_CHUNK_SIZE", 2)
+        monkeypatch.setattr(repos_base, "SQL_IN_CHUNK_SIZE", 2)
         created = [await repo.create_media_file(library_id=1, path=f"/video/{i}.mp4") for i in range(5)]
         ids = [m.id for m in created if m.id is not None]
         result = await repo.list_media_files(ids=ids, limit=None)
