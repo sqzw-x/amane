@@ -37,7 +37,7 @@ def make_token_app(tmp_path: Path, token_env: str | None, image_token_env: str |
         os.environ["AMANE_TOKEN"] = ""
     else:
         os.environ["AMANE_TOKEN"] = token_env
-    # 同 token_env: None 走 auto 生成
+    # 与 token_env 相同: None 采用自动生成
     os.environ["AMANE_IMAGE_TOKEN"] = "" if image_token_env is None else image_token_env
     (tmp_path / "data").mkdir(parents=True, exist_ok=True)
     (tmp_path / "files").mkdir(parents=True, exist_ok=True)
@@ -63,7 +63,7 @@ async def token_client(tmp_path: Path):
 
 
 async def _derived_hash(app: FastAPI) -> str:
-    """造一个派生资源, 返回 url hash; 图片 token 须能直出它."""
+    """创建派生资源并返回 url hash, 供图片 token 测试使用."""
 
     async def producer(dest: Path) -> bool:
         dest.write_bytes(b"image-bytes")
@@ -105,13 +105,13 @@ class TestTokenAuth:
         h = await _derived_hash(app)
         bearer = {"Authorization": f"Bearer {IMAGE_TOKEN}"}
 
-        # query 与 Bearer 两种传递方式; 图片 token 不落 cookie
+        # query 与 Bearer 两种传递方式; 图片 token 不下发 cookie
         for params, headers in (({"token": IMAGE_TOKEN}, None), (None, bearer)):
             ok = await client.get(f"resources/{h}", params=params, headers=headers)
             assert ok.status_code == 200
             assert "set-cookie" not in ok.headers
 
-        # 端点范围与非法输入: 错误 / 空 / 非 ASCII 一律 401, 不因比较函数报错变成 500
+        # 端点范围与非法输入: 错误 / 空 / 非 ASCII 一律 401, 不因 token 比较抛错变成 500
         rejected: list[tuple[str, dict[str, str] | None, dict[str, str] | None]] = [
             ("libraries", {"token": IMAGE_TOKEN}, None),
             ("libraries", None, bearer),
@@ -180,7 +180,7 @@ class TestTokenAuth:
         ctx = app.router.lifespan_context(app)
         await ctx.__aenter__()
         try:
-            # 校验关闭时图片 token 不生成: 资源端点本就免鉴权
+            # 校验关闭时资源端点免鉴权, 不生成图片 token
             assert app.state.runtime.image_token is None
             async with AsyncClient(transport=ASGITransport(app=app), base_url=f"http://test{API_PREFIX}/") as client:
                 resp = await client.get("libraries")

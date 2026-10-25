@@ -122,7 +122,7 @@ class TestProxyImage:
 
 
 class TestImageToken:
-    """图片 token: 代理只直出缓存, 未命中不触网; 主 token 仍走完整代理."""
+    """图片 token: 代理只从缓存读取, 未命中不发起请求; 主 token 仍按完整代理流程处理."""
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_proxy_reads_cache_only(self, client: AsyncClient, app, monkeypatch, tmp_path):

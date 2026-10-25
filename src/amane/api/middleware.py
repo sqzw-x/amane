@@ -15,7 +15,8 @@ logger = structlog.get_logger("amane.request")
 #: token 校验豁免的 API 路径: 就绪检查与接入引导. 免鉴权在此显式登记, 便于集中审查.
 _TOKEN_EXEMPT = {"/api/health", "/api/agent-guide"}
 
-#: 图片 token 只在资源路径的 GET 上生效, 供无法附加请求头的消费方 (Jellyfin / Emby 宿主) 取图.
+#: 图片 token 只对 ``/api/resources/*`` 的 GET 请求生效, 供无法附加请求头的消费方
+#: (Jellyfin / Emby 宿主) 获取图片.
 _IMAGE_TOKEN_PREFIX = "/api/resources/"
 _IMAGE_TOKEN_QUERY = "token"
 
@@ -27,13 +28,13 @@ _NOISY_PATHS = frozenset({"/api/ws", "/favicon.ico", "/api/system/desktop"})
 #: 与 WebSocket 握手无法带 Authorization header, 首次 Bearer 认证成功后由中间件
 #: 下发同值 cookie 供其使用. SameSite=Lax + host-only 使跨站嵌入 / 跨站 fetch 不
 #: 带 cookie — rebinding 防线不弱化. API token 本身不出现在 URL / 访问日志;
-#: 图片 token 是唯一经 URL 传递的凭证.
+#: 图片 token 是唯一经由 URL 传递的凭证.
 API_TOKEN_COOKIE = "amane_token"
 _COOKIE_MAX_AGE = 30 * 24 * 3600
 
 
 def _token_matches(presented: str | None, expected: str) -> bool:
-    """常量时间比较; 非 ASCII 输入编码后比较, ``compare_digest`` 不接受非 ASCII str."""
+    """常量时间比较. ``compare_digest`` 对非 ASCII 的 ``str`` 抛出 ``TypeError``, 故先按 UTF-8 编码."""
     return presented is not None and hmac.compare_digest(presented.encode(), expected.encode())
 
 
@@ -46,7 +47,7 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint):
-        # 资源端点据此区分凭证: 图片 token 的代理请求只读缓存
+        # 资源端点据此区分凭证: 图片 token 的代理请求只从缓存读取资源
         request.state.via_image_token = False
 
         # WS 握手是 HTTP 请求, 但浏览器无法自定义 header, token 经由 cookie;

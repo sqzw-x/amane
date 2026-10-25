@@ -163,7 +163,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
     else:
         logger.info("safe dirs for file browser", dirs=[str(d) for d in safe_dirs])
     api_token = resolve_api_token(cold.token, cold.data_dir)
-    # 校验关闭时不生成图片 token: 资源端点本就免鉴权, 该凭证无意义.
+    # 校验关闭时资源端点免鉴权, 图片 token 无意义.
     image_token = resolve_image_token(cold.image_token, cold.data_dir) if api_token is not None else None
     if api_token is not None:
         logger.info("api token auth enabled", token=api_token)

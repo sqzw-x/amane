@@ -17,7 +17,7 @@ Amane 的配置分为两层:
 | `AMANE_IMAGE_TOKEN` | (自动生成) | (自动生成) | 图片 Token; `off` 关闭, 只用于图片资源地址 |
 | `AMANE_SAFE_DIRS` | (自动推导) | `ALLOW_ALL` | 文件浏览器与库路径的边界目录, 逗号分隔; `ALLOW_ALL` 关闭校验 |
 
-图片 Token 供无法附加请求头的取图方使用 (Jellyfin / Emby 宿主、第三方插件): 放在资源地址的查询参数 `token` 中, 或作为 `Authorization: Bearer` 发送. 它只对 `/api/resources/*` 生效; 代理地址在该 Token 下只返回已缓存的图片, 未缓存时返回 404. 启动日志与数据目录的 `image_token` 文件可查看.
+图片 Token 供无法附加请求头的客户端使用 (Jellyfin / Emby 宿主、第三方插件): 放在资源地址的查询参数 `token` 中, 或作为 `Authorization: Bearer` 发送. 它只对 `/api/resources/*` 生效; 代理地址在该 Token 下只返回已缓存的图片, 未缓存时返回 404. 启动日志与数据目录的 `image_token` 文件可查看.
 
 桌面版会读取固定位置的配置文件以设置环境变量, 文件位于:
 
