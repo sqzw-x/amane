@@ -2,6 +2,7 @@
 SR 可能就地覆盖 (URL 不变, 字节变), 须 ETag + no-cache 再验证.
 """
 
+from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
 
@@ -27,16 +28,36 @@ _EXT_TO_MIME = {
 }
 
 
+def _image_response(request: Request, path: Path, content_hash: str | None) -> Response:
+    not_modified = maybe_not_modified(request, content_hash)
+    if not_modified is not None:
+        return not_modified
+
+    headers = dict(RESOURCE_CACHE_HEADERS)
+    if content_hash:
+        headers["ETag"] = format_etag(content_hash)
+    return FileResponse(path=path, media_type=_EXT_TO_MIME.get(path.suffix.lower(), "image/jpeg"), headers=headers)
+
+
 @router.get("/proxy")
 async def proxy_image(
     runtime: RuntimeDep, request: Request, url: Annotated[str, Query(description="External image URL to proxy")]
 ) -> Response:
     """上游失败记入进程内负缓存 (15 分钟), 窗口内同 URL 直接 502.
     同 URL 进行中请求合并为一次 acquire.
+    图片 token 请求只读取已缓存资源: 未命中 404, 不发起对外请求, 不写负缓存.
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=400, detail="仅支持 http/https URL")
+
+    store = runtime.resource_store
+    if request.state.via_image_token:
+        local_path = await store.resolve(url)
+        if local_path is None:
+            raise HTTPException(status_code=404, detail="资源不在本地缓存")
+        record = await store.get_by_url(url)
+        return _image_response(request, local_path, record.content_hash if record is not None else None)
 
     # 负缓存命中则直接 502
     failures = runtime.proxy_failure_cache
@@ -44,7 +65,6 @@ async def proxy_image(
         raise HTTPException(status_code=502, detail="上游图片获取失败")
 
     # 同 URL 进行中的 acquire 合并为一次
-    store = runtime.resource_store
     local_path = await failures.coalesce(url, lambda: store.acquire(url, runtime.web_client))
     if local_path is None:
         failures.remember(url)
@@ -55,17 +75,7 @@ async def proxy_image(
     failures.forget(url)
 
     record = await store.get_by_url(url)
-    content_hash = record.content_hash if record is not None else None
-    not_modified = maybe_not_modified(request, content_hash)
-    if not_modified is not None:
-        return not_modified
-
-    headers = dict(RESOURCE_CACHE_HEADERS)
-    if content_hash:
-        headers["ETag"] = format_etag(content_hash)
-    return FileResponse(
-        path=local_path, media_type=_EXT_TO_MIME.get(local_path.suffix.lower(), "image/jpeg"), headers=headers
-    )
+    return _image_response(request, local_path, record.content_hash if record is not None else None)
 
 
 @router.get("/{url_hash}")

@@ -12,7 +12,7 @@ import structlog
 
 from ..agent import AgentService, ResultCache
 from ..config import SAFE_DIRS_ALLOW_ALL, ColdSettings, ConfigManager
-from ..config.token import resolve_api_token
+from ..config.token import resolve_api_token, resolve_image_token
 from ..db.engine import create_async_engine_from_path
 from ..db.profiling import DbLogPolicy
 from ..db.repository import Repository
@@ -163,8 +163,12 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
     else:
         logger.info("safe dirs for file browser", dirs=[str(d) for d in safe_dirs])
     api_token = resolve_api_token(cold.token, cold.data_dir)
+    # 校验关闭时不生成图片 token: 资源端点本就免鉴权, 该凭证无意义.
+    image_token = resolve_image_token(cold.image_token, cold.data_dir) if api_token is not None else None
     if api_token is not None:
         logger.info("api token auth enabled", token=api_token)
+    if image_token is not None:
+        logger.info("image token auth enabled", token=image_token)
 
     library_locks = LibraryTaskLocks()
     inventory_store = InventoryStore()
@@ -235,6 +239,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         feed_service=feed_service,
         safe_dirs=safe_dirs,
         api_token=api_token,
+        image_token=image_token,
         translation_cache=translation_cache,
         translation_coalescer=translation_coalescer,
         r18_db=r18_db,

@@ -50,6 +50,7 @@ def make_app(
     os.environ["AMANE_SAFE_DIRS"] = str(files_dir) if safe_dirs is None else safe_dirs
     os.environ["AMANE_LOG_DIR"] = str(log_dir)
     os.environ["AMANE_TOKEN"] = "off"
+    os.environ["AMANE_IMAGE_TOKEN"] = "off"
     os.environ["AMANE_SUPERVISED"] = "1" if supervised else "0"
 
     data_dir.mkdir(parents=True, exist_ok=True)

@@ -194,6 +194,9 @@ class ColdSettings(BaseSettings):
     token: str | None = None
     """``off`` 显式关闭; 为空时自动生成并持久化到 data_dir/token."""
 
+    image_token: str | None = None
+    """``off`` 显式关闭; 为空时自动生成并持久化到 data_dir/image_token. 只用于资源端点."""
+
     supervised: bool = False
     """为真时挂载重启端点 (AMANE_SUPERVISED=1)."""
 

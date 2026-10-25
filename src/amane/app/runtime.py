@@ -216,6 +216,7 @@ class AppRuntime:
     feed_service: FeedService | None = None
     safe_dirs: list[Path] | None = field(default_factory=list)
     api_token: str | None = None
+    image_token: str | None = None
     translation_cache: TranslationCache | None = None
     translation_coalescer: TranslationCoalescer | None = None
     r18_db: R18Database | None = None
