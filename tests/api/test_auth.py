@@ -103,22 +103,24 @@ class TestTokenAuth:
     async def test_image_token_scope(self, token_client):
         client, app = token_client
         h = await _derived_hash(app)
+        bearer = {"Authorization": f"Bearer {IMAGE_TOKEN}"}
 
         # query 与 Bearer 两种传递方式; 图片 token 不落 cookie
-        query_ok = await client.get(f"resources/{h}", params={"token": IMAGE_TOKEN})
-        assert query_ok.status_code == 200
-        assert "set-cookie" not in query_ok.headers
-        bearer_ok = await client.get(f"resources/{h}", headers={"Authorization": f"Bearer {IMAGE_TOKEN}"})
-        assert bearer_ok.status_code == 200
+        for params, headers in (({"token": IMAGE_TOKEN}, None), (None, bearer)):
+            ok = await client.get(f"resources/{h}", params=params, headers=headers)
+            assert ok.status_code == 200
+            assert "set-cookie" not in ok.headers
 
-        # 只覆盖资源端点
-        assert (await client.get("libraries", params={"token": IMAGE_TOKEN})).status_code == 401
-        assert (await client.get("libraries", headers={"Authorization": f"Bearer {IMAGE_TOKEN}"})).status_code == 401
-
-        # 错误 / 空 / 非 ASCII 一律 401, 不因比较函数报错变成 500
-        assert (await client.get(f"resources/{h}", params={"token": "wrong"})).status_code == 401
-        assert (await client.get(f"resources/{h}", params={"token": ""})).status_code == 401
-        assert (await client.get(f"resources/{h}", params={"token": "中文"})).status_code == 401
+        # 端点范围与非法输入: 错误 / 空 / 非 ASCII 一律 401, 不因比较函数报错变成 500
+        rejected: list[tuple[str, dict[str, str] | None, dict[str, str] | None]] = [
+            ("libraries", {"token": IMAGE_TOKEN}, None),
+            ("libraries", None, bearer),
+            (f"resources/{h}", {"token": "wrong"}, None),
+            (f"resources/{h}", {"token": ""}, None),
+            (f"resources/{h}", {"token": "中文"}, None),
+        ]
+        for path, params, headers in rejected:
+            assert (await client.get(path, params=params, headers=headers)).status_code == 401
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_image_token_off(self, tmp_path: Path):

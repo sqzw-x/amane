@@ -15,10 +15,8 @@ logger = structlog.get_logger("amane.request")
 #: token 校验豁免的 API 路径: 就绪检查与接入引导. 免鉴权在此显式登记, 便于集中审查.
 _TOKEN_EXEMPT = {"/api/health", "/api/agent-guide"}
 
-#: 图片 token 只在这些端点与方法上生效: 资源直出与代理. 供无法附加请求头的消费方
-#: (Jellyfin / Emby 宿主) 取图; query ``token`` 与 ``Authorization: Bearer`` 均可传递.
+#: 图片 token 只在资源路径的 GET 上生效, 供无法附加请求头的消费方 (Jellyfin / Emby 宿主) 取图.
 _IMAGE_TOKEN_PREFIX = "/api/resources/"
-_IMAGE_TOKEN_METHODS = frozenset({"GET", "HEAD"})
 _IMAGE_TOKEN_QUERY = "token"
 
 #: 高频轮询/静态资源降噪: 不写入 info 级, 仅在 DEBUG 可见
@@ -29,7 +27,7 @@ _NOISY_PATHS = frozenset({"/api/ws", "/favicon.ico", "/api/system/desktop"})
 #: 与 WebSocket 握手无法带 Authorization header, 首次 Bearer 认证成功后由中间件
 #: 下发同值 cookie 供其使用. SameSite=Lax + host-only 使跨站嵌入 / 跨站 fetch 不
 #: 带 cookie — rebinding 防线不弱化. API token 本身不出现在 URL / 访问日志;
-#: 图片 token 是唯一出现在 URL 中的凭证, 只覆盖资源端点.
+#: 图片 token 是唯一经 URL 传递的凭证.
 API_TOKEN_COOKIE = "amane_token"
 _COOKIE_MAX_AGE = 30 * 24 * 3600
 
@@ -86,7 +84,7 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         if (
             image_token is not None
             and path.startswith(_IMAGE_TOKEN_PREFIX)
-            and request.method in _IMAGE_TOKEN_METHODS
+            and request.method == "GET"
             and (
                 _token_matches(request.query_params.get(_IMAGE_TOKEN_QUERY), image_token)
                 or _token_matches(auth, f"Bearer {image_token}")
