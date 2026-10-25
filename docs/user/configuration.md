@@ -14,7 +14,10 @@ Amane 的配置分为两层:
 | `AMANE_DATA_DIR` | `/data` | 系统应用数据目录 | 数据库、资源与配置的存放位置; 修改后不会迁移已有数据 |
 | `AMANE_LOG_DIR` | `/data/logs` | 数据目录下的 `logs` | 日志输出位置 |
 | `AMANE_TOKEN` | (自动生成) | (自动生成) | API Token; `off` 关闭鉴权 |
+| `AMANE_IMAGE_TOKEN` | (自动生成) | (自动生成) | 图片 Token; `off` 关闭, 只用于图片资源地址 |
 | `AMANE_SAFE_DIRS` | (自动推导) | `ALLOW_ALL` | 文件浏览器与库路径的边界目录, 逗号分隔; `ALLOW_ALL` 关闭校验 |
+
+图片 Token 供无法附加请求头的取图方使用 (Jellyfin / Emby 宿主、第三方插件): 放在资源地址的查询参数 `token` 中, 或作为 `Authorization: Bearer` 发送. 它只对 `/api/resources/*` 生效; 代理地址在该 Token 下只返回已缓存的图片, 未缓存时返回 404. 启动日志与数据目录的 `image_token` 文件可查看.
 
 桌面版会读取固定位置的配置文件以设置环境变量, 文件位于:
 
@@ -29,6 +32,7 @@ Amane 的配置分为两层:
 data/
 ├── amane.db          SQLite 数据库
 ├── token             API Token (自动生成)
+├── image_token       图片 Token (自动生成)
 ├── translations.db   LLM 翻译缓存
 ├── resources/        下载的图片、预告片等资源
 ├── agent/            AI 助理会话数据

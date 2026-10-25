@@ -22,6 +22,15 @@ API 鉴权是冷配置: 中间件在请求路径上, 不能在进程内 rebuild 
 
 信任边界: 持有 token 即视为用户本人, `safe_dirs` 只作纵深防御, 同机能读 `data_dir/token` 视为已信任. `AMANE_SAFE_DIRS=ALLOW_ALL` 关闭路径边界 (桌面壳默认); Docker 与无哨兵时仍按目录名单约束. 桌面 argv 取得 token 的方式见 [desktop.md](desktop.md).
 
+## 图片 token (`AMANE_IMAGE_TOKEN`, Cold)
+
+无法附加请求头的消费方 (Jellyfin / Emby 宿主的裸 HttpClient、直嵌图片的浏览器) 用独立凭证读取资源.
+
+- 取值语义与 API token 相同: 未设置时自动生成并持久化到 `data_dir/image_token` (0600), `off` 关闭, 显式值直接采用; 启动日志打印. `AMANE_TOKEN=off` 时不生成.
+- 只对 `GET` / `HEAD` 的 `/api/resources/{hash}` 与 `/api/resources/proxy` 生效, 经 query `token` 或 `Authorization: Bearer` 传递. 主 token 与 cookie 在这些端点上的行为不变, 且主 token 优先.
+- `/api/resources/proxy` 在该 token 下只直出已缓存资源: 未命中 404, 不发起对外请求, 不进入负缓存; 需要回源的取图仍须主 token.
+- 该 token 会出现在 URL 中 (浏览器历史、宿主数据库、反向代理访问日志); Amane 自身请求日志只记录路径.
+
 ## 进程内 rebuild
 
 `AppRuntime._rebuild()` 重建依赖 HotSettings 的对象链:

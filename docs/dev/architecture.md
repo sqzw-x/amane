@@ -40,7 +40,7 @@
 ```
 EventBus → 日志 → 来源插件发现 → 主 DB engine + Repository → r18 只读引擎 (可选)
         → RateLimiters → WebClient → HttpClient → CrawlerFactory
-        → ResourceStore → TranslationCache → AgentService → safe_dirs + api_token
+        → ResourceStore → TranslationCache → AgentService → safe_dirs + api_token + image_token
         → Handlers → AsyncWorker → CronScheduler → FeedService → WatcherService
 ```
 
