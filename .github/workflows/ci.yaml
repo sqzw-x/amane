@@ -17,6 +17,11 @@ on:
       - "LICENSE"
       - ".gitignore"
 
+# 同一分支 (含 main) 与同一 PR 只保留最新一次运行: 连续推送或连续合并多个 PR 时, 旧运行直接取消.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   NODE_VERSION: "24"
   PNPM_VERSION: "11"
