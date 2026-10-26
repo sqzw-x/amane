@@ -81,7 +81,7 @@ test: fixtures
 
 # Test with coverage (CI artifact)
 test-cov: fixtures
-    uv run pytest tests/ -n auto --dist worksteal --cov=amane --cov-report=term-missing --cov-report=html:coverage_html --cov-report=xml:coverage.xml
+    uv run pytest tests/ -n auto --dist worksteal --durations=20 --cov=amane --cov-report=term-missing --cov-report=html:coverage_html --cov-report=xml:coverage.xml
 
 check: lint typecheck check-web test-cov
 
@@ -96,7 +96,7 @@ ci: ci-sync _check-openapi check build
 # 与 OS 无关, 由 Ubuntu `just ci` 覆盖. 不获取 crawler fixture (采集用例不依赖盘符).
 ci-windows:
     uv sync --frozen --all-extras --dev
-    uv run pytest tests/ -q -n auto --dist worksteal
+    uv run pytest tests/ -n auto --dist worksteal --durations=20
 
 deps: _deps-python _web-deps
 
