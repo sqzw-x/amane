@@ -22,8 +22,8 @@ env:
   PNPM_VERSION: "11"
 
 jobs:
-  check:
-    name: just ci
+  static:
+    name: just ci-static
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -48,10 +48,27 @@ jobs:
       - name: Setup just
         uses: extractions/setup-just@v4
 
-      - name: just ci
+      - name: just ci-static
+        run: just ci-static
+
+  test:
+    name: just ci-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Setup just
+        uses: extractions/setup-just@v4
+
+      - name: just ci-test
         env:
           FIXTURES_DEPLOY_KEY: ${{ secrets.FIXTURES_DEPLOY_KEY }}
-        run: just ci
+        run: just ci-test
 
       - name: Upload coverage report
         if: always()

@@ -35,7 +35,7 @@ _web-install:
 fixtures:
     uv run python scripts/fetch_fixtures.py
 
-# CI check job: frozen Python(dev+extras) + frozen web
+# CI static job: frozen Python(dev+extras) + frozen web
 ci-sync: _ci-sync-python _web-install-ci
 
 _ci-sync-python:
@@ -90,9 +90,14 @@ check: lint typecheck check-web test-cov
 _check-openapi: generate
     git diff --exit-code --stat web/openapi.json web/src/client
 
-# Full CI gate after tool setup (uv/pnpm/node/just)
+# Full CI gate after tool setup (uv/pnpm/node/just); GitHub Actions 中两者由两个 job 并行执行
+ci: ci-static ci-test
+
 # 前端只打包: check-web 已做完整 tsc 检查, 而 noEmit 下 `tsc -b` 没有可复用的增量结果, 再跑一次是同样的全量检查
-ci: ci-sync _check-openapi check _web-bundle
+ci-static: ci-sync _check-openapi lint typecheck check-web _web-bundle
+
+# 测试不依赖 Node 与前端产物, CI 的 test job 因此不安装 Node / pnpm
+ci-test: _ci-sync-python test-cov
 
 # Windows CI: 仅 Python 测试. generate / 前端 / lint / typecheck / coverage
 # 与 OS 无关, 由 Ubuntu `just ci` 覆盖. 不获取 crawler fixture (采集用例不依赖盘符).
