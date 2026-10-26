@@ -8,11 +8,12 @@ import io
 import shutil
 import sys
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from .api import FilmSourcePlugin, PlaybackPlugin
-from .models import validate_external_source_id
+from .api import FilmSourcePlugin, InstalledPlugin, PlaybackPlugin
+from .models import PLUGIN_API_VERSION, SourceCapability, SourceDescriptor, validate_external_source_id
 
 PLUGIN_ENTRY = "plugin.py"
 PLUGIN_CLASS_NAME = "Plugin"
@@ -21,6 +22,14 @@ EXT_MODULE_PREFIX = "amane_ext_"
 MAX_ZIP_BYTES = 20 * 1024 * 1024
 MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 _SKIP_EXTRACT_DIRS = frozenset({"__macosx", ".ds_store"})
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedPlugin:
+    """A plugin instance that passed the shared install / discover checks."""
+
+    plugin: InstalledPlugin
+    descriptor: SourceDescriptor
 
 
 def sources_root(data_dir: Path) -> Path:
@@ -62,18 +71,35 @@ def load_plugin_module(plugin_id: str, directory: Path) -> ModuleType:
     return module
 
 
+def load_plugin(module_id: str, directory: Path) -> LoadedPlugin:
+    """Import ``plugin.py`` under ``module_id`` and validate the exported ``Plugin``.
+
+    Install and discover share this check so a tree that installs successfully is
+    never rejected on the next discovery. Directory-name and duplicate-id checks
+    depend on the catalog and stay in ``PluginManager.discover``.
+    """
+    module = load_plugin_module(module_id, directory)
+    plugin = _instantiate_plugin(module.__dict__.get(PLUGIN_CLASS_NAME))
+    descriptor = plugin.descriptor()
+    if descriptor.api_version != PLUGIN_API_VERSION:
+        raise ValueError(f"unsupported plugin API version {descriptor.api_version!r}; expected {PLUGIN_API_VERSION!r}")
+    _require_matching_capabilities(plugin, descriptor)
+    validate_external_source_id(descriptor.id)
+    return LoadedPlugin(plugin=plugin, descriptor=descriptor)
+
+
 def inspect_plugin_id(directory: Path) -> str:
-    """Load a staging copy of plugin.py and return ``Plugin.descriptor().id``."""
+    """Load a staging copy of plugin.py, run the discovery checks, and return its source id."""
     staging_id = "_staging.inspect"
     try:
-        module = load_plugin_module(staging_id, directory)
-        plugin_id = _descriptor_id_from_module(module)
-        validate_external_source_id(plugin_id)
-        return plugin_id
+        return load_plugin(staging_id, directory).descriptor.id
     except ImportError as exc:
         # 安装是用户操作: 插件 import 不到模块 (第三方依赖未随主机提供, 或打包版缺该标准库模块)
         # 必须当作可读的载荷错误上报, 而不是让路由给出 500.
         raise ValueError(f"插件导入失败: {exc}") from exc
+    except Exception as exc:
+        # plugin.py 是不受控的第三方代码, 抛出任何异常都属于载荷错误; 与 discover 的兜底口径一致.
+        raise ValueError(f"插件加载失败: {type(exc).__name__}: {exc}") from exc
     finally:
         staging = module_name(staging_id)
         sys.modules.pop(staging, None)
@@ -156,15 +182,34 @@ def uninstall_plugin_tree(data_dir: Path, plugin_id: str) -> None:
     shutil.rmtree(dest)
 
 
-def _descriptor_id_from_module(module: ModuleType) -> str:
-    candidate = module.__dict__.get(PLUGIN_CLASS_NAME)
+def _instantiate_plugin(candidate: object) -> InstalledPlugin:
     if not isinstance(candidate, type) or not (
         issubclass(candidate, FilmSourcePlugin) or issubclass(candidate, PlaybackPlugin)
     ):
         raise TypeError(
             f"{PLUGIN_ENTRY} must define a FilmSourcePlugin or PlaybackPlugin subclass named {PLUGIN_CLASS_NAME}"
         )
-    return candidate().descriptor().id
+    plugin = candidate()
+    if not isinstance(plugin, FilmSourcePlugin | PlaybackPlugin):
+        raise TypeError(f"{PLUGIN_CLASS_NAME} must be a FilmSourcePlugin or PlaybackPlugin")
+    return plugin
+
+
+def _require_matching_capabilities(plugin: InstalledPlugin, descriptor: SourceDescriptor) -> None:
+    has_film = descriptor.supports(SourceCapability.FILM_METADATA)
+    has_playback = descriptor.supports(SourceCapability.PLAYBACK)
+    is_film = isinstance(plugin, FilmSourcePlugin)
+    is_playback = isinstance(plugin, PlaybackPlugin)
+    if not has_film and not has_playback:
+        raise ValueError("descriptor must advertise film_metadata or playback")
+    if has_film and not is_film:
+        raise ValueError("descriptor advertises film_metadata but Plugin is not a FilmSourcePlugin")
+    if has_playback and not is_playback:
+        raise ValueError("descriptor advertises playback but Plugin is not a PlaybackPlugin")
+    if is_film and not has_film:
+        raise ValueError("FilmSourcePlugin must advertise the film_metadata capability")
+    if is_playback and not has_playback:
+        raise ValueError("PlaybackPlugin must advertise the playback capability")
 
 
 def _plugin_dir_from_extract(root: Path) -> Path:
@@ -178,7 +223,12 @@ def _plugin_dir_from_extract(root: Path) -> Path:
 
 
 def _extract_zip(payload: bytes, dest: Path) -> None:
-    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(payload))
+    except zipfile.BadZipFile as exc:
+        # BadZipFile 不是 ValueError, 不转换的话路由会给出 500.
+        raise ValueError("不是有效的 zip 文件") from exc
+    with archive:
         total = 0
         for info in archive.infolist():
             name = Path(info.filename.replace("\\", "/"))

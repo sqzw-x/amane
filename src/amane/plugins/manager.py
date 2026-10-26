@@ -19,7 +19,6 @@ from .api import (
     PluginContext,
 )
 from .models import (
-    PLUGIN_API_VERSION,
     PluginConfig,
     PluginOrigin,
     SourceCapability,
@@ -29,8 +28,7 @@ from .models import (
     validate_external_source_id,
 )
 from .packaging import (
-    PLUGIN_CLASS_NAME,
-    load_plugin_module,
+    load_plugin,
     module_name,
     plugin_entry,
     purge_imported_plugin_modules,
@@ -48,36 +46,6 @@ class PluginLoadFailure(BaseModel):
     name: str
     value: str
     error: str
-
-
-def _instantiate_dropin(candidate: object) -> InstalledPlugin:
-    if not isinstance(candidate, type) or not (
-        issubclass(candidate, FilmSourcePlugin) or issubclass(candidate, PlaybackPlugin)
-    ):
-        raise TypeError(
-            f"plugin.py must define a FilmSourcePlugin or PlaybackPlugin subclass named {PLUGIN_CLASS_NAME}"
-        )
-    plugin = candidate()
-    if not isinstance(plugin, FilmSourcePlugin | PlaybackPlugin):
-        raise TypeError(f"{PLUGIN_CLASS_NAME} must be a FilmSourcePlugin or PlaybackPlugin")
-    return plugin
-
-
-def _require_matching_capabilities(plugin: InstalledPlugin, descriptor: SourceDescriptor) -> None:
-    has_film = descriptor.supports(SourceCapability.FILM_METADATA)
-    has_playback = descriptor.supports(SourceCapability.PLAYBACK)
-    is_film = isinstance(plugin, FilmSourcePlugin)
-    is_playback = isinstance(plugin, PlaybackPlugin)
-    if not has_film and not has_playback:
-        raise ValueError("descriptor must advertise film_metadata or playback")
-    if has_film and not is_film:
-        raise ValueError("descriptor advertises film_metadata but Plugin is not a FilmSourcePlugin")
-    if has_playback and not is_playback:
-        raise ValueError("descriptor advertises playback but Plugin is not a PlaybackPlugin")
-    if is_film and not has_film:
-        raise ValueError("FilmSourcePlugin must advertise the film_metadata capability")
-    if is_playback and not has_playback:
-        raise ValueError("PlaybackPlugin must advertise the playback capability")
 
 
 class PluginManager:
@@ -117,15 +85,8 @@ class PluginManager:
                 validate_external_source_id(plugin_id)
                 if not entry.is_file():
                     raise FileNotFoundError(f"missing {entry.name}")
-                module = load_plugin_module(plugin_id, child)
-                candidate = module.__dict__.get(PLUGIN_CLASS_NAME)
-                plugin = _instantiate_dropin(candidate)
-                descriptor = plugin.descriptor()
-                if descriptor.api_version != PLUGIN_API_VERSION:
-                    raise ValueError(
-                        f"unsupported plugin API version {descriptor.api_version!r}; expected {PLUGIN_API_VERSION!r}"
-                    )
-                _require_matching_capabilities(plugin, descriptor)
+                loaded = load_plugin(plugin_id, child)
+                plugin, descriptor = loaded.plugin, loaded.descriptor
                 unknown_traits = sorted(trait for trait in descriptor.traits if trait not in _KNOWN_TRAITS)
                 if unknown_traits:
                     # 未知取值降级为忽略: 插件可能针对更新的宿主声明了本版本还不认识的 trait.
@@ -133,7 +94,6 @@ class PluginManager:
                         "unknown source traits ignored",
                         extra={"plugin": plugin_id, "traits": unknown_traits},
                     )
-                validate_external_source_id(descriptor.id)
                 if descriptor.id != plugin_id:
                     raise ValueError(f"descriptor id {descriptor.id!r} does not match directory name {plugin_id!r}")
                 if descriptor.id in builtin_ids or descriptor.id in plugins:

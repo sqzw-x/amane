@@ -85,13 +85,57 @@ def test_install_rejects_missing_entry(tmp_path: Path) -> None:
         install_plugin_zip(tmp_path, _zip_bytes({"readme.txt": "nope"}))
 
 
-def test_install_reports_unimportable_module_as_payload_error(tmp_path: Path) -> None:
-    """插件 import 不到的模块是载荷错误 (路由据此报 422), 不是未处理异常."""
-    source = plugin_source("acme.fake") + "\nimport amane_missing_test_dependency\n"
-    with pytest.raises(ValueError, match=r"导入失败.*amane_missing_test_dependency"):
-        install_plugin_zip(tmp_path, _zip_bytes({PLUGIN_ENTRY: source}))
-    assert not (sources_root(tmp_path) / "acme.fake").exists()
+_WORKING = plugin_source("acme.fake")
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        pytest.param(
+            _zip_bytes({PLUGIN_ENTRY: _WORKING + "\nimport amane_missing_test_dependency\n"}),
+            r"导入失败.*amane_missing_test_dependency",
+            id="unimportable-module",
+        ),
+        pytest.param(
+            _zip_bytes({PLUGIN_ENTRY: plugin_source("acme.fake", api_version="0")}),
+            r"unsupported plugin API version '0'",
+            id="api-version-mismatch",
+        ),
+        pytest.param(
+            _zip_bytes({PLUGIN_ENTRY: playback_plugin_source("acme.fake", capabilities=None)}),
+            r"advertises film_metadata but Plugin is not a FilmSourcePlugin",
+            id="capability-mismatch",
+        ),
+        pytest.param(
+            _zip_bytes({PLUGIN_ENTRY: plugin_source("acme.fake", class_name="Other")}),
+            r"TypeError: .*subclass named Plugin",
+            id="missing-plugin-class",
+        ),
+        pytest.param(
+            _zip_bytes({PLUGIN_ENTRY: _WORKING + "\ndef broken(:\n"}),
+            r"插件加载失败: SyntaxError",
+            id="syntax-error",
+        ),
+        pytest.param(
+            _zip_bytes({PLUGIN_ENTRY: _WORKING + "\nundefined_name\n"}),
+            r"插件加载失败: NameError: .*undefined_name",
+            id="module-level-error",
+        ),
+        pytest.param(b"not a zip", r"不是有效的 zip", id="corrupt-zip"),
+    ],
+)
+def test_install_rejects_invalid_plugin_and_keeps_installed_version(
+    tmp_path: Path, payload: bytes, message: str
+) -> None:
+    """安装与发现共用校验: 被拒绝的载荷以可读的 ValueError 报出 (路由据此报 422), 且不覆盖已装的可用版本."""
+    install_plugin_zip(tmp_path, _zip_bytes({PLUGIN_ENTRY: _WORKING}))
+    with pytest.raises(ValueError, match=message):
+        install_plugin_zip(tmp_path, payload)
+    assert (sources_root(tmp_path) / "acme.fake" / PLUGIN_ENTRY).read_text(encoding="utf-8") == _WORKING
     assert not (sources_root(tmp_path) / ".staging").exists()
+    manager = PluginManager.discover(tmp_path)
+    assert manager.has_film_plugin("acme.fake")
+    assert manager.failures == ()
 
 
 def test_install_path_copies_directory(tmp_path: Path) -> None:
