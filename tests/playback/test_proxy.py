@@ -471,10 +471,20 @@ async def test_upstream_request_errors_do_not_leak_gate_permits() -> None:
     (``GLOBAL_CONCURRENCY``) 之后所有播放请求固定 503. 这里先发起远多于上限的失败请求,
     再确认同一客户端仍能完成正常请求.
     """
-    server, _captured, _cancelled = _serve()
+    body = b"abcdef" * 20
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "refused.example":
+            raise httpx.ConnectError("连接被拒", request=request)
+        return httpx.Response(200, headers={"content-type": "video/mp4"}, content=body)
+
     stream = StreamClient()
-    refused = UpstreamPlaybackTarget(url="http://127.0.0.1:9/video")
-    good = UpstreamPlaybackTarget(url=_origin(server), headers={"Authorization": "Bearer secret"})
+    # 连接被拒在 Windows 上约 2 秒后才报错, 失败请求按次累计; 替换为 MockTransport
+    # 直接抛出 ConnectError, 与真实拒绝进入同一异常分支.
+    original = stream._client
+    stream._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    refused = UpstreamPlaybackTarget(url="http://refused.example/video")
+    good = UpstreamPlaybackTarget(url="http://cdn.example/ok.mp4")
 
     app = FastAPI()
 
@@ -498,12 +508,12 @@ async def test_upstream_request_errors_do_not_leak_gate_permits() -> None:
                 assert resp.status_code == 502
                 assert resp.json()["detail"] == "播放来源不可达"
 
-            assert await stream.fetch_bytes(source_id="acme.play", target=good) == b"abcdef" * 20
+            assert await stream.fetch_bytes(source_id="acme.play", target=good) == body
             ok = await client.get("/good")
             assert ok.status_code == 200
     finally:
         await stream.aclose()
-        server.shutdown()
+        await original.aclose()
 
 
 @pytest.mark.asyncio
