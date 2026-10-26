@@ -217,7 +217,11 @@ class TestMetadataHttp:
             Image.new("RGB", (800, 538), "blue").save(dest)
             return True
 
+        async def fake_resolve(url: str, **kwargs: object) -> str:
+            return url
+
         app.state.runtime.web_client.download = fake_download  # type: ignore[method-assign]
+        app.state.runtime.web_client.resolve_final_url = fake_resolve  # type: ignore[method-assign]
 
         resp = await client.post(
             f"metadata/{meta.id}/crop-poster", json={"left": 421, "top": 0, "right": 800, "bottom": 538}
