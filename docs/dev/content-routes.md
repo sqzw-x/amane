@@ -61,7 +61,7 @@
 
 **kin8tengoku.com** — 单厂牌, 不纳入默认表. 番号 `KIN8-####` 的类型归欧美链 (第一源 theporndb, 按 4 位 `movie_id` 对齐), `release` 恒为空; 番号须带 `kin8` / `kin8tengoku` 前缀, 数字段 1–9999 补零为 4 位拼详情页, 越界或无前缀不发 HTTP. 页是 Next.js 应用, 可解析的只剩 `og:` 元标签与 CSS-module 类名.
 
-**theporndb.net** — 未登录跳转 `/login`; 无 token 时影片 / 演员爬虫都直接 `None`. 欧美路由第一, 与影片共用 `site_config.api_token`. 欧美条目 `code` 是 `studio:title-slug`, 与文件名番号不同构, 日期号 (`Studio.YY.MM.DD`) 按片商 + 发布日期确认.
+**theporndb.net** — 未登录跳转 `/login`; 无 token 时影片 / 演员爬虫都直接 `None`. 欧美路由第一, 与影片共用 `site_config.api_token`. 欧美条目 `code` 是 `studio:title-slug`, 与文件名番号不同构, 日期号 (`Studio.YY.MM.DD`) 按片商 + 发布日期确认. GraphQL 面是自研的 stash-box 兼容层, 可空标注与上游不一致: 请求按上游最严的形态构造, 应答按最宽松的形态解析.
 
 **official** — Will / Outvision 官网集群; 前缀对不上不发 HTTP.
 

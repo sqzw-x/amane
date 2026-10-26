@@ -1,4 +1,4 @@
-"""theporndb 爬虫单元测试: 检索命中判据与应答投影.
+"""theporndb 爬虫单元测试: 检索与指纹的命中判据、应答投影.
 
 应答按 TPDB 上的真实字段值构造: ``code`` 是 kin8 站内 4 位 ``movie_id``, 他厂会用同一个数字当番号.
 命中判据只留分支代表, 番号前缀与补零宽度的其余形态见 ``tests/crawlers/test_kin8.py``.
@@ -12,10 +12,11 @@ import pytest
 from amane.config import SiteConfig
 from amane.crawlers.http import HttpClient
 from amane.crawlers.models import SearchQuery
-from amane.crawlers.sites.theporndb import ThePornDBCrawler, pick_scene
+from amane.crawlers.sites.theporndb import ThePornDBCrawler, pick_fingerprint_scene, pick_scene
 from amane.parsing import ContentType
 
 _TOKEN = "test-token"
+_OSHASH = "859a35d864c0184b"
 
 
 def _scene(code: str, *, title: str, date: str, studio: str, scene_id: str = "scene-1") -> dict[str, Any]:
@@ -108,3 +109,66 @@ async def test_fetch_western_type_filter() -> None:
     assert metadata is not None
     assert metadata.number == "0236"
     assert web.post_json.await_args.args[0] == "https://theporndb.net/graphql?type=Scene"
+
+
+FINGERPRINT_SHAPES: list[tuple[object, dict[str, Any] | None]] = [
+    ([[_BLACKED]], _BLACKED),
+    # 同一个指纹会挂多条 OSHASH 变体, 应答里的首条即命中
+    ([[_BLACKED, _BLACKED_SAME_DAY]], _BLACKED),
+    ([[]], None),
+    # 外层按入参逐条对应, 只发一个指纹, 第二组不参与判定
+    ([[], [_BLACKED]], None),
+    # 上游两层非空, TPDB 的兼容实现都可空: 缺值不能抛, 也不能当成命中
+    ([None], None),
+    ([[None]], None),
+    (None, None),
+    ({}, None),
+]
+
+
+@pytest.mark.parametrize(("results", "expected"), FINGERPRINT_SHAPES)
+def test_pick_fingerprint_scene(results: object, expected: dict[str, Any] | None) -> None:
+    """批量指纹应答逐层按可空展开, 只看第一组."""
+    assert pick_fingerprint_scene(results) == expected
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_fingerprint() -> None:
+    """指纹命中走 stash-box 批量字段, 命中后不再发番号检索."""
+    web = AsyncMock()
+    web.post_json.return_value = {"data": {"findScenesBySceneFingerprints": [[_BLACKED]]}}
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="Blacked.26.03.29", file_hash=_OSHASH))
+
+    assert metadata is not None
+    assert (metadata.number, metadata.studio) == ("blacked:first-anal", "Blacked")
+    assert web.post_json.await_count == 1
+    body = web.post_json.await_args.kwargs["json"]
+    # 变量按上游最严格的可空标注声明, TPDB 的宽松声明同样接受
+    assert "$fingerprints: [[FingerprintQueryInput!]!]!" in body["query"]
+    assert body["variables"] == {"fingerprints": [[{"hash": _OSHASH, "algorithm": "OSHASH"}]]}
+
+
+FINGERPRINT_MISS_CASES: list[dict[str, Any]] = [
+    {"data": {"findScenesBySceneFingerprints": [[]]}},
+    {"data": {"findScenesBySceneFingerprints": [None]}},
+    {"data": None},
+    # HTTP 200 但 GraphQL 层报错: 不能中断整次刮削
+    {"errors": [{"message": 'Cannot query field "findScenesBySceneFingerprints"'}]},
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fingerprint_payload", FINGERPRINT_MISS_CASES)
+async def test_fingerprint_miss_falls_back_to_search(fingerprint_payload: dict[str, Any]) -> None:
+    """指纹没命中或应答不可用时按番号检索, 结果照常投影."""
+    web = AsyncMock()
+    web.post_json.side_effect = [fingerprint_payload, {"data": {"searchScene": [_KIN8_CUTIE]}}]
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="KIN8-0236", file_hash=_OSHASH))
+
+    assert metadata is not None
+    assert metadata.number == "0236"
+    assert web.post_json.await_count == 2
