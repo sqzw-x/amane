@@ -1,15 +1,20 @@
+import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
 from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan
 from ..library.rules import is_in_trash
-from ..utils.path import path_is_under
+from ..utils.path import path_is_under, path_key
+
+if sys.platform == "win32":
+    from .watcher_win import WindowsObserver as _NativeObserver
+else:
+    from watchdog.observers import Observer as _NativeObserver
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -29,11 +34,13 @@ class _Handler(FileSystemEventHandler):
     def __init__(
         self,
         library_id: int,
+        root: str,
         scan: LibraryScan | None = None,
         debounce_seconds: float = _DEFAULT_DEBOUNCE_SECONDS,
     ):
         super().__init__()
         self.library_id = library_id
+        self._root_key = path_key(root)
         self._scan = scan if scan is not None else LibraryScan()
         self._debounce_seconds = debounce_seconds
         self._pending: dict[str, float] = {}
@@ -46,6 +53,10 @@ class _Handler(FileSystemEventHandler):
             self._handle(str(event.src_path))
 
     def on_deleted(self, event):
+        # 库根自身的删除事件不代表库内文件被移除: watchdog 在读取目录失败时 (以及停止过程中)
+        # 合成一条 src_path 为监控根的删除事件, 其前缀覆盖整库. 整库失效由 REFRESH 的 remove 模式处理.
+        if path_key(str(event.src_path)) == self._root_key:
+            return
         # 前缀含路径自身: 文件删除只命中这一条; 目录删除命中子树.
         # Windows 删除通知不区分文件与目录, 一律按前缀处理.
         self._record_prefix_delete(str(event.src_path))
@@ -206,6 +217,7 @@ class FileWatcher:
         """
         handler = _Handler(
             library_id,
+            path,
             scan=LibraryScan(
                 patterns=patterns,
                 blacklist_patterns=[p for p in skip_patterns if p] if skip_patterns else None,
@@ -217,7 +229,7 @@ class FileWatcher:
         self._handlers.append(handler)
         self._watching.append((path, recursive, patterns))
         if self._observer is None:
-            observer_class = PollingObserver if self._use_polling else Observer
+            observer_class = PollingObserver if self._use_polling else _NativeObserver
             self._observer = observer_class(timeout=self._observer_timeout)
         self._watches[library_id] = self._observer.schedule(handler, path, recursive=recursive)
 

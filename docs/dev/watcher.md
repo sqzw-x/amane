@@ -14,6 +14,10 @@
 
 `use_polling` 仍是进程级、仅作用于 native 库, 不能按库混用 FSEvents 与轮询.
 
+Windows 原生监控的 emitter 由 `watcher_win.WindowsObserver` 替换: watchdog 6.0.0 的 `stop()` 与 emitter 线程并发关闭目录句柄, 该线程随后崩溃, 因此依赖上限钉在 `watchdog<7`; 上游修好后删除该模块.
+
+native 通道只在**库内**路径上认定索引失效: 监控根自身被删 (watchdog 在读取目录失败时合成这类事件) 不进入删除流程, 整库记录失效由 REFRESH 的 `remove` 模式处理.
+
 ## CloudDrive 路径
 
 Webhook 的 `source_file` / `destination_file` 是 CloudDrive **虚拟路径** (POSIX, 以 `/` 分段), 不是宿主挂载路径; Windows 上同样是这套 VFS 字符串, **不允许用本机 `pathlib.Path` 去解析**. `Library.cloud_path` 是该库根在 VFS 里的对应前缀, `ingest=clouddrive` 时必填; 本地 `Library.path` 仍是可扫描的挂载目录.

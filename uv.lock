@@ -144,7 +144,7 @@ requires-dist = [
     { name = "structlog", specifier = ">=25.0.0" },
     { name = "tomli-w", specifier = ">=1.2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.46.0" },
-    { name = "watchdog", specifier = ">=6.0.0" },
+    { name = "watchdog", specifier = ">=6.0.0,<7" },
     { name = "zhconv", specifier = ">=1.4.3" },
 ]
 provides-extras = ["browser"]
