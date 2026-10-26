@@ -91,7 +91,8 @@ _check-openapi: generate
     git diff --exit-code --stat web/openapi.json web/src/client
 
 # Full CI gate after tool setup (uv/pnpm/node/just)
-ci: ci-sync _check-openapi check build
+# 前端只打包: check-web 已做完整 tsc 检查, 而 noEmit 下 `tsc -b` 没有可复用的增量结果, 再跑一次是同样的全量检查
+ci: ci-sync _check-openapi check _web-bundle
 
 # Windows CI: 仅 Python 测试. generate / 前端 / lint / typecheck / coverage
 # 与 OS 无关, 由 Ubuntu `just ci` 覆盖. 不获取 crawler fixture (采集用例不依赖盘符).
@@ -139,6 +140,10 @@ build: generate _web-build
 [working-directory('web')]
 _web-build:
     pnpm build
+
+[working-directory('web')]
+_web-bundle:
+    pnpm exec vite build
 
 [env('AMANE_HOST', host)]
 [env('AMANE_PORT', port)]
