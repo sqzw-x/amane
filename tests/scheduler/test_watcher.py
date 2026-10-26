@@ -173,7 +173,7 @@ class TestHandler:
         assert handler._pending_dir_deletes == {}
 
     def test_on_deleted_ignores_watch_root(self):
-        """库根自身的删除事件不按前缀删除索引 (watchdog 读取失败时合成的事件)."""
+        """库根自身的删除事件不按前缀删除索引."""
         handler = _Handler(library_id=1, root="/lib")
         handler.on_created(FileCreatedEvent(src_path="/lib/show/a.mp4"))
         handler.on_deleted(DirDeletedEvent(src_path="/lib"))
@@ -388,10 +388,7 @@ class TestFileWatcher:
 
     @pytest.mark.skipif(sys.platform != "win32", reason="原生目录句柄只在 Windows 存在")
     def test_native_handle_closed_only_by_emitter_thread(self, tmp_path: Path, monkeypatch):
-        """句柄只由 emitter 线程关闭且只关一次: 停止方并发关闭会让该线程在失效句柄上崩溃.
-
-        watchdog 6.0.0 的 stop() 正是由调用线程关闭句柄, 这里断言它被换掉了.
-        """
+        """句柄只由 emitter 线程关闭且只关一次: 停止方并发关闭会让该线程在失效句柄上崩溃."""
         from amane.scheduler import watcher_win  # 只在 Windows 可导入
 
         closed: list[threading.Thread] = []
@@ -589,7 +586,7 @@ class TestWatcherService:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_library_root_delete_keeps_index(self, service, repo, tmp_path: Path):
-        """库根自身的删除事件不入清理流程; 子目录删除仍照常按前缀清."""
+        """库根自身的删除事件不进入清理流程; 子目录删除仍按前缀删除."""
         lib = await repo.create_library(name="t", path=str(tmp_path), automation=LibraryAutomation.WATCH)
         assert lib.id is not None
         await service.start()

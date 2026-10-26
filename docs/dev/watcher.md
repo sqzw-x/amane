@@ -9,14 +9,14 @@
 
 | ingest | 事件源 | Observer |
 |--------|--------|----------|
-| `native` (默认) | watchdog (`Observer` 或 `PollingObserver`) | 该库 `schedule` 到进程内**唯一** FileWatcher |
+| `native` (默认) | watchdog observer (Windows 原生为 `watcher_win.WindowsObserver`) | 该库 `schedule` 到进程内**唯一** FileWatcher |
 | `clouddrive` | `POST /api/webhooks/clouddrive` | **不** schedule, 避免 FUSE 挂载上没有 `FileCreated` 的 115 侧落盘被漏掉, 也避免与 webhook 双通道重复入库 |
 
 `use_polling` 仍是进程级、仅作用于 native 库, 不能按库混用 FSEvents 与轮询.
 
-Windows 原生监控的 emitter 由 `watcher_win.WindowsObserver` 替换: watchdog 6.0.0 的 `stop()` 与 emitter 线程并发关闭目录句柄, 该线程随后崩溃, 因此依赖上限钉在 `watchdog<7`; 上游修好后删除该模块.
+Windows observer 依赖 watchdog 私有字段与 `stop()` 时序, 因此 `watchdog` 上限固定在 7 之前; 升到 7 必须删除该模块.
 
-native 通道只在**库内**路径上认定索引失效: 监控根自身被删 (watchdog 在读取目录失败时合成这类事件) 不进入删除流程, 整库记录失效由 REFRESH 的 `remove` 模式处理.
+native 通道只在**库内**路径上认定索引失效: 监控根自身被删不触发清理 (watchdog 在读取目录失败时合成这类事件), 整库记录失效由 REFRESH 的 `remove` 模式处理.
 
 ## CloudDrive 路径
 

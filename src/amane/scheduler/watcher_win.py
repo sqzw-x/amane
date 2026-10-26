@@ -1,12 +1,11 @@
 """Windows 原生监控: 目录句柄只由 emitter 线程关闭.
 
 watchdog 6.0.0 的 ``WindowsApiEmitter`` 在 ``stop()`` 里由调用线程关闭目录句柄, 而 emitter
-线程此时可能仍在该句柄上执行 ``ReadDirectoryChangesW``. 句柄被并发关闭后, 该线程在已失效的
-句柄上退出, 表现为 access violation (整个进程崩溃) 或停止流程不返回.
+线程此时可能仍在该句柄上执行 ``ReadDirectoryChangesW``; 该线程在已失效的句柄上退出, 表现为
+access violation (整个进程崩溃) 或停止流程不返回.
 
-目录句柄的关闭因此只在 emitter 线程执行: 停止方反复 ``CancelIoEx`` 直到该线程退出. 必须重复
-—— 单次取消可能早于线程进入读取而不产生效果, 读取随后仍然阻塞. 本模块依赖 ``_whandle`` 与
-``stop()`` 的调用时序, 因此 ``watchdog`` 上限钉在 7 之前; 上游发版修好该竞态后删除本模块.
+句柄的关闭因此只在 emitter 线程执行, 停止方反复 ``CancelIoEx`` 直到该线程退出 —— 单次取消可能
+早于线程进入读取而不产生效果. 本模块依赖 ``_whandle`` 与 ``stop()`` 的调用时序.
 """
 
 from __future__ import annotations

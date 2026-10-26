@@ -53,8 +53,8 @@ class _Handler(FileSystemEventHandler):
             self._handle(str(event.src_path))
 
     def on_deleted(self, event):
-        # 库根自身的删除事件不代表库内文件被移除: watchdog 在读取目录失败时 (以及停止过程中)
-        # 合成一条 src_path 为监控根的删除事件, 其前缀覆盖整库. 整库失效由 REFRESH 的 remove 模式处理.
+        # 库根自身的删除事件不代表库内文件被移除: watchdog 在读取目录失败或停止过程中会合成一条
+        # 路径为监控根的删除事件, 按前缀会删除整库索引; 整库清理走 REFRESH 的 remove 模式.
         if path_key(str(event.src_path)) == self._root_key:
             return
         # 前缀含路径自身: 文件删除只命中这一条; 目录删除命中子树.
