@@ -68,9 +68,6 @@ export function UserTagActions({
   const { t } = useTranslation("metadata");
   const ime = useImeLock();
   const addBox = useCombobox({
-    onDropdownOpen: () => {
-      window.setTimeout(() => searchRef.current?.focus(), 0);
-    },
     onDropdownClose: () => {
       setSearch("");
       setAddIds(new Set());
@@ -85,7 +82,6 @@ export function UserTagActions({
   const [addIds, setAddIds] = useState(new Set<number>());
   const [createNames, setCreateNames] = useState(new Set<string>());
   const [removeIds, setRemoveIds] = useState(new Set<number>());
-  const searchRef = useRef<HTMLInputElement>(null);
 
   const query = search.trim();
   const filtered = candidates.filter((tag) => tag.name.toLowerCase().includes(query.toLowerCase()));
@@ -173,9 +169,8 @@ export function UserTagActions({
         </Combobox.Target>
         <Combobox.Dropdown>
           <Combobox.Search
-            ref={searchRef}
             value={search}
-            placeholder={t("detail.selectUserTag")}
+            placeholder={t("detail.newUserTagPlaceholder")}
             withKeyboardNavigation={false}
             onChange={(e) => setSearch(e.currentTarget.value)}
             onCompositionStart={ime.onCompositionStart}
