@@ -76,12 +76,13 @@ typecheck-ty:
 check-web:
     pnpm check
 
+# worker 数按逻辑核计: `-n auto` 按物理核计, 在超线程机器 (含 GitHub runner, 4 vCPU / 2 物理核) 上只开一半
 test: fixtures
-    uv run pytest tests/ -q -n auto --dist worksteal
+    uv run pytest tests/ -q -n logical --dist worksteal
 
 # Test with coverage (CI artifact)
 test-cov: fixtures
-    uv run pytest tests/ -n auto --dist worksteal --durations=20 --cov=amane --cov-report=term-missing --cov-report=html:coverage_html --cov-report=xml:coverage.xml
+    uv run pytest tests/ -n logical --dist worksteal --durations=20 --cov=amane --cov-report=term-missing --cov-report=html:coverage_html --cov-report=xml:coverage.xml
 
 check: lint typecheck check-web test-cov
 
@@ -96,7 +97,7 @@ ci: ci-sync _check-openapi check build
 # 与 OS 无关, 由 Ubuntu `just ci` 覆盖. 不获取 crawler fixture (采集用例不依赖盘符).
 ci-windows:
     uv sync --frozen --all-extras --dev
-    uv run pytest tests/ -n auto --dist worksteal --durations=20
+    uv run pytest tests/ -n logical --dist worksteal --durations=20
 
 deps: _deps-python _web-deps
 
