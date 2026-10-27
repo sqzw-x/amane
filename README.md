@@ -6,8 +6,7 @@
 
 **AI 时代的私人影库**
 
-Amane 以番号为单位管理影片元数据. 同一部影片的数据来自多个站点, 逐字段择优后连同图片与译文保存在本地.
-海报墙、多维筛选与智能体用于浏览和修订; 本地有视频时, 还能整理成 Emby / Jellyfin 可直接识别的 NFO 与图片.
+多源刮削 · 元数据管理 · 字段级择优 · 数据私有 · 自托管服务 · 智能体协同 · 多端覆盖 · 开放扩展 · Emby / Jellyfin 适配
 
 [![Release](https://img.shields.io/github/v/release/sqzw-x/amane?label=Release)](https://github.com/sqzw-x/amane/releases)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/sqzw-x/amane/pkgs/container/amane)
