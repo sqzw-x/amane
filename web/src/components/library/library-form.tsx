@@ -465,7 +465,7 @@ export function LibraryFormFields({ value, onChange, showCreateOnly }: LibraryFo
           <Text size="xs" c="dimmed">
             {t("placeholders.label")} · {t("placeholders.hint")}{" "}
             <Anchor
-              href="https://sqzw-x.github.io/amane/user/libraries/#placeholders"
+              href="https://sqzw-x.github.io/amane/user/organize/#placeholders"
               target="_blank"
               rel="noreferrer"
               size="xs"
