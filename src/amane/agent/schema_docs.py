@@ -6,8 +6,43 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Table
+from typing import Any
+
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, Table
+from sqlalchemy.types import TypeDecorator, TypeEngine
 from sqlmodel import SQLModel
+
+_TYPE_NAMES: tuple[tuple[type[TypeEngine[Any]], str], ...] = (
+    (Boolean, "bool"),
+    (Integer, "int"),
+    (Float, "float"),
+    (DateTime, "datetime"),
+    (JSON, "json"),
+)
+"""伪类型: 只保留写查询需要的区分, 长度与 ``VARCHAR``/``TEXT`` 之别属存储细节."""
+
+
+def _base_type(type_: TypeEngine[Any]) -> TypeEngine[Any]:
+    """剥掉 SQLModel 的类型装饰器 (``AutoString`` / ``UTCDateTime``), 按内层类型分类."""
+    while isinstance(type_, TypeDecorator):
+        type_ = type_.impl_instance
+    return type_
+
+
+def _short_type(type_: TypeEngine[Any]) -> str:
+    base = _base_type(type_)
+    for python_type, name in _TYPE_NAMES:
+        if isinstance(base, python_type):
+            return name
+    return "str"
+
+
+def _column_text(column: Column[Any]) -> str:
+    """``id``/``*_id`` 与文本列不标注, 由摘要开头的两条规则给出."""
+    if column.name == "id" or column.name.endswith("_id"):
+        return column.name
+    short = _short_type(column.type)
+    return column.name if short == "str" else f"{column.name}:{short}"
 
 
 def _stems(table_name: str) -> frozenset[str]:
@@ -27,7 +62,7 @@ def _pk_clause(tables: list[tuple[str, Table]]) -> str:
         for name, table in tables
         if tuple(column.name for column in table.primary_key.columns) != ("id",)
     ]
-    base = "PK: integer `id` in every table"
+    base = "PK: `id` in every table"
     if not odd:
         return f"{base}."
     return f"{base}, except {', '.join(odd)}. `metadata`'s PK is `id`, never `metadata_id`."
@@ -49,11 +84,12 @@ def build_schema_docs() -> str:
     tables = sorted(SQLModel.metadata.tables.items(), key=lambda item: item[0])
     lines = [
         "Read-only SQLite schema (do NOT write):",
+        "Types: `id` and `*_id` columns are int; every other untyped column is str.",
         _pk_clause(tables),
         "",
     ]
     for name, table in tables:
-        columns = ", ".join(f"{column.name}:{column.type!s}" for column in table.columns)
+        columns = ", ".join(_column_text(column) for column in table.columns)
         lines.append(f"- {name}({columns})")
     lines += [
         "",
