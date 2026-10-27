@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, Table
+from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, Integer, LargeBinary, Numeric, String, Table, Time
 from sqlalchemy.types import TypeDecorator, TypeEngine
 from sqlmodel import SQLModel
 
@@ -16,10 +16,18 @@ _TYPE_NAMES: tuple[tuple[type[TypeEngine[Any]], str], ...] = (
     (Boolean, "bool"),
     (Integer, "int"),
     (Float, "float"),
+    (Numeric, "float"),
     (DateTime, "datetime"),
+    (Date, "date"),
+    (Time, "time"),
     (JSON, "json"),
+    (LargeBinary, "blob"),
+    (String, "str"),
 )
-"""伪类型: 只保留写查询需要的区分, 长度与 ``VARCHAR``/``TEXT`` 之别属存储细节."""
+"""伪类型: 只保留写查询需要的区分, 长度与 ``VARCHAR``/``TEXT`` 之别属存储细节.
+
+覆盖 SQLite 的存储类; 未登记的类型按类名输出, 不并入 ``str`` —— 猜错的类型会让查询静默出错.
+"""
 
 
 def _base_type(type_: TypeEngine[Any]) -> TypeEngine[Any]:
@@ -34,7 +42,7 @@ def _short_type(type_: TypeEngine[Any]) -> str:
     for python_type, name in _TYPE_NAMES:
         if isinstance(base, python_type):
             return name
-    return "str"
+    return type(base).__name__.lower()
 
 
 def _column_text(column: Column[Any]) -> str:
