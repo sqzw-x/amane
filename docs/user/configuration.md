@@ -1,122 +1,168 @@
-# 配置指南
+# 配置参考
 
-Amane 的配置分为两层:
+本页列出 Amane 的全部环境变量、数据目录结构、Token 规则, 以及「设置」页各分区的总览. 适用于部署与维护服务的用户; 各功能的详细设置在对应专题页说明.
 
-- **环境变量** — 进程启动时读取, 修改后需重启
-- **应用配置** — Web 界面「设置」页面, 实时生效
+## 配置的两个层次 {#layers}
 
-## 环境变量
+| 层次 | 位置 | 内容 | 生效时机 |
+|------|------|------|---------|
+| 环境变量 | 进程环境、`.env` 文件, 或桌面版的 [`desktop.env`](clients.md#desktop-env) | 监听地址、数据目录、Token、路径边界等进程级配置 | 重启服务后 |
+| 应用配置 | Web 界面「设置」页, 保存在数据目录的 `config.toml` | 刮削、网络、智能体等行为参数 | 保存后立即生效, 少数项需重启, 见 [设置页分区](#settings) |
 
-| 键 | Docker 默认 | 桌面默认 | 说明 |
-| ---------- | -------- | -------- | ------ |
-| `AMANE_HOST` | `0.0.0.0` | `127.0.0.1` | 监听地址; 桌面默认只接受本机连接 |
-| `AMANE_PORT` | `8000` | `18000` | API 监听端口 |
-| `AMANE_DATA_DIR` | `/data` | 系统应用数据目录 | 数据库、资源与配置的存放位置; 修改后不会迁移已有数据 |
-| `AMANE_LOG_DIR` | `/data/logs` | 数据目录下的 `logs` | 日志输出位置 |
-| `AMANE_TOKEN` | (自动生成) | (自动生成) | API Token; `off` 关闭鉴权 |
-| `AMANE_IMAGE_TOKEN` | (自动生成) | (自动生成) | 图片 Token; `off` 关闭, 只用于图片资源地址 |
-| `AMANE_SAFE_DIRS` | (自动推导) | `ALLOW_ALL` | 文件浏览器与库路径的边界目录, 逗号分隔; `ALLOW_ALL` 关闭校验 |
+## 环境变量 {#env}
 
-图片 Token 供无法附加请求头的客户端使用 (Jellyfin / Emby 宿主、第三方插件): 放在资源地址的查询参数 `token` 中, 或作为 `Authorization: Bearer` 发送. 它只对 `/api/resources/*` 生效; 代理地址在该 Token 下只返回已缓存的图片, 未缓存时返回 404. 启动日志与数据目录的 `image_token` 文件可查看.
+| 变量 | Docker 默认 | 桌面默认 | 源码默认 | 说明 |
+|------|-----------|---------|---------|------|
+| `AMANE_HOST` | `0.0.0.0` | `127.0.0.1` | `127.0.0.1` | 监听地址. `0.0.0.0` / `::` 接受所有网卡的连接 |
+| `AMANE_PORT` | `8000` | `18000` | `8000` | 监听端口 |
+| `AMANE_DATA_DIR` | `/data` | macOS `~/Library/Application Support/Amane`<br>Windows `%LOCALAPPDATA%\Amane` | `./data` | 数据目录, 见 [数据目录](#data-dir). 修改后不会迁移已有数据 |
+| `AMANE_LOG_DIR` | `/data/logs` | 数据目录下的 `logs` | `./logs` | 日志目录 |
+| `AMANE_TOKEN` | 自动生成 | 自动生成 | 自动生成 (`.env.dev` 中为 `off`) | API Token, 见 [Token](#token) |
+| `AMANE_IMAGE_TOKEN` | 自动生成 | 自动生成 | 自动生成 | 图片 Token, 见 [图片 Token](#image-token) |
+| `AMANE_SAFE_DIRS` | compose 模板中为 `/media` | `ALLOW_ALL` | `.env.dev` 中为 `ALLOW_ALL` | 路径边界, 见 [路径边界](#safe-dirs) |
+| `AMANE_SUPERVISED` | compose 模板中为 `1` | `1` (固定) | 不设置 | 声明有外部进程负责重启服务, 启用「重启服务器」 |
+| `AMANE_UPDATE_URL` | 空 | 空 | 空 | 版本检查查询的地址, 空为 GitHub 官方接口; 可指向镜像的发布列表或 `/releases/latest` |
 
-桌面版会读取固定位置的配置文件以设置环境变量, 文件位于:
+!!! warning "`AMANE_SUPERVISED` 的前提"
+    「重启服务器」使服务进程退出, 由外部进程再次启动. 只有存在这样的进程时才可设置该变量: 桌面版外壳, 或带 `restart` 策略的 Docker 容器. 在没有监督的环境中设置, 点击「重启服务器」后服务停止且不会恢复.
 
-- macOS `~/Library/Application Support/Amane/desktop.env`
-- Windows `%LOCALAPPDATA%\Amane\desktop.env`
+!!! note "Docker 修改端口"
+    更改 `AMANE_PORT` 时须同步修改 compose 中的端口映射与 `healthcheck` 访问的地址. 只需要更换宿主机端口时, 修改映射左侧即可 (如 `"9000:8000"`).
 
-可点击菜单中的「打开设置文件」进行编辑, 需重启服务器才能生效.
+??? note "开发与诊断用变量"
+    | 变量 | 说明 |
+    |------|------|
+    | `AMANE_SHOW_BROWSER` | 设置任意值时, 本机无头浏览器以有界面模式运行, 用于观察站点验证过程 |
+    | `AMANE_TEST_LOG` | 为 `1` 时随机产生日志, 供开发日志页使用 |
+    | `AMANE_RESTART_DELAY` | 桌面外壳在服务异常退出后等待的秒数, 默认 2. 只读取真实环境变量, 不能写入 `desktop.env` |
 
-### 数据目录结构
+### `.env` 文件 {#env-files}
 
+除 `AMANE_HOST` 与 `AMANE_PORT` 外, 上表变量还可以写入**工作目录**下的 `.env.dev` 与 `.env` 文件. 优先级为: 真实环境变量 > `.env` > `.env.dev` > 内置默认值. 值为空等同于未设置, 例如 `AMANE_TOKEN=` 表示自动生成.
+
+`AMANE_HOST` 与 `AMANE_PORT` 只读取真实环境变量. 桌面版的外壳会把 `desktop.env` 中的值作为真实环境变量传给服务, 因此桌面版可在 `desktop.env` 中设置它们.
+
+## Token {#token}
+
+除 `/api/health` 与外部智能体的接入引导外, 所有 `/api/*` 请求都需要凭据: 请求头 `Authorization: Bearer <Token>`, 或浏览器登录后获得的 Cookie. Web 页面本身无需凭据即可加载, 以便显示登录界面.
+
+| `AMANE_TOKEN` 取值 | 行为 |
+|-------------------|------|
+| 未设置或为空 | 首次启动生成随机 Token, 写入数据目录的 `token` 文件 (权限 0600), 之后每次启动沿用 |
+| 自定义字符串 | 使用该值; 不写入 `token` 文件 |
+| `off` | 关闭鉴权 |
+
+- **查看 Token**: 启动日志 `api token auth enabled` 一行、数据目录的 `token` 文件, 或桌面菜单「复制 API Token」.
+- **更换 Token**: 停止服务, 删除 `token` 文件后启动, 即生成新 Token; 或设置自定义值. 已登录的浏览器与 Android 客户端需要重新登录.
+- **登录状态**: 浏览器 Cookie 为 HttpOnly, 有效期 30 天, 只发往本站的 `/api` 路径.
+
+!!! danger
+    `off` 只应在反向代理已提供等价鉴权时使用. 持有 Token 等同于用户本人, 能读取与删除媒体库中的文件.
+
+### 图片 Token {#image-token}
+
+Emby / Jellyfin 等程序从 Amane 获取图片时无法附加请求头, 也没有登录 Cookie. 图片 Token 是为此提供的独立凭据, 只能读取图片等资源.
+
+| 项目 | 规则 |
+|------|------|
+| 取值 | 与 `AMANE_TOKEN` 相同: 未设置时自动生成并写入数据目录的 `image_token` 文件, 自定义值直接使用, `off` 关闭. `AMANE_TOKEN=off` 时不生成 |
+| 查看 | 启动日志 `image token auth enabled` 一行, 或 `image_token` 文件 |
+| 传递 | 资源地址的查询参数 `token`, 如 `/api/resources/...?token=<图片 Token>`; 或 `Authorization: Bearer` 请求头 |
+| 范围 | 只对 `/api/resources/*` 的 GET 请求生效, 不能调用其它接口 |
+| 远程图片 | 经由图片 Token 访问代理地址时, 只返回已缓存的图片; 未缓存时返回 404, 不会代为请求外部站点 |
+
+图片 Token 会出现在 URL 中, 因而可能留存在浏览器历史、媒体服务器的数据库与反向代理的访问日志里; 泄露后只影响资源读取, 更换方法与 API Token 相同 (删除 `image_token` 文件后重启). 在媒体服务器中的用法见 [对接 Emby / Jellyfin](media-server.md).
+
+## 路径边界 {#safe-dirs}
+
+`AMANE_SAFE_DIRS` 限定文件浏览器、媒体库路径与插件安装路径可以使用的目录范围.
+
+| 取值 | 行为 |
+|------|------|
+| 逗号分隔的目录列表 | 只允许这些目录及其子目录; 不存在的目录被忽略 |
+| `ALLOW_ALL` | 不限制, 桌面版的默认值. 须为整个取值, 区分大小写 |
+| 未设置 | 以启动时已有媒体库的路径为边界. 尚无媒体库时所有路径都被拒绝, 无法创建第一个媒体库 |
+
+Docker 中填写容器内路径, 并覆盖所有挂载的媒体目录, 如 `/media,/media2`. 修改后需重启服务.
+
+## 数据目录 {#data-dir}
+
+```text
+<AMANE_DATA_DIR>/
+├── amane.db                     数据库
+├── amane.db.pre-migrate-*.bak   升级迁移前的数据库备份, 保留最近 5 份
+├── config.toml                  应用配置 (「设置」页的内容)
+├── token                        API Token
+├── image_token                  图片 Token
+├── translations.db              LLM 翻译缓存
+├── gfriends.json                gFriends 头像索引缓存
+├── r18_import.json              r18.dev 导入状态
+├── resources/                   刮削下载的封面、海报、剧照、预告片与头像
+├── agent/sessions/              智能体会话记录
+├── plugins/                     插件代码 (sources/) 与各插件的数据
+├── tools/                       图像超分程序, 首次使用时按平台下载
+├── watermarks/                  可选, 自定义水印 PNG
+└── logs/                        日志 (默认位置, 见下文)
 ```
-data/
-├── amane.db          SQLite 数据库
-├── token             API Token (自动生成)
-├── image_token       图片 Token (自动生成)
-├── translations.db   LLM 翻译缓存
-├── resources/        下载的图片、预告片等资源
-├── agent/            AI 助理会话数据
-├── plugins/          已安装的插件
-├── tools/            超分工具二进制
-└── watermarks/       可选: 自定义水印 PNG (见下方)
-```
 
-`watermarks/` 自定义 (覆盖内置水印样式):
+`logs/` 的位置由 `AMANE_LOG_DIR` 决定, 包含:
 
-| 文件名 | 对应水印 |
-| -------- | ---------- |
-| `subtitle.png` | 中字 |
-| `uncensored.png` | 无码 |
-| `cracked.png` | 破解 |
-| `leaked.png` | 流出 |
-| `4k.png` / `8k.png` | 4K / 8K |
-| `1080p.png` 等 | 其它分辨率 (无内置图标) |
+| 文件 | 内容 |
+|------|------|
+| `app.log` | 服务日志 (JSON 行), 单个文件 10 MB, 轮转保留 5 份 |
+| `request.log` | HTTP 请求日志, 轮转规则相同 |
+| `tasks/task-<id>/` | 单个任务的日志、配置快照与站点请求记录, 随任务删除 |
 
-## 应用配置
+- **备份**: 停止服务后复制整个数据目录即可. 只复制 `amane.db` 会缺少配置、Token 与已下载的图片.
+- **`config.toml`**: 由「设置」页写入. 手动编辑后需重启服务; 文件中出现无法识别的字段时服务拒绝启动.
+- **水印**: `watermarks/` 中的同名 PNG 覆盖内置水印, 文件名规则见 [整理与路径模板](organize.md#watermark).
 
-应用配置通过 Web 界面「设置」页面实时修改, 无需重启.
+## 设置页分区 {#settings}
 
-### 刮削配置 (`scraping`)
+「设置」页按分区组织, 窄屏时分区以下拉框切换. 每个分区单独保存, 保存后大多数项立即生效: 进行中的任务按原配置完成, 新任务使用新配置.
 
-见 [刮削指南](scraping.md#刮削设置).
+| 分区 | 内容 | 详见 |
+|------|------|------|
+| 影片刮削 | 刮削时下载的资源、海报裁切、类型路由、字段优先级、字段排除、字段语言偏好、站点配置 | [刮削](scraping.md); 站点代理与登录 Cookie 见 [网络与站点访问](network.md) |
+| 演员刮削 | 演员资料与头像来源的优先级、下载头像、影片刮削后自动刮削演员、gFriends 仓库 | [刮削](scraping.md) |
+| 智能体 | API 类型、端点、密钥、模型、默认思考强度、输出上限 | [智能体](agent.md) |
+| 网络 | 代理、请求超时、重试、速率限制、浏览器渲染、分块下载 | [网络与站点访问](network.md) |
+| 图像超分 | 刮削时超分、尺寸与文件大小阈值、预设、输出格式 | [刮削](scraping.md) |
+| 水印 | 启用水印、水印大小、各类水印的位置 | [整理与路径模板](organize.md#watermark) |
+| LLM 翻译 | 启用翻译、翻译字段、API 配置、系统提示词与字段提示词 | [刮削](scraping.md) |
+| r18 | r18.dev 数据源: PostgreSQL 连接串、数据包地址、只读角色 | [刮削](scraping.md) |
+| 文件监控 | 轮询模式、防抖窗口、媒体扩展名 | [本页](#watcher) |
+| 任务引擎 | 并发数 | [本页](#worker) |
+| 日志 | 日志级别、调试捕获 | [本页](#logging) |
 
-### 水印 (`watermark`)
+插件的配置在「管理 → 插件」中设置, 不在「设置」页, 见 [插件](plugins.md).
 
-整理时添加到封面/海报:
+### 文件监控 {#watcher}
 
-- **启用水印**: 是否添加
-- **水印大小**: 相对图片高度的比例. 封面和海报通常同高, 水印会一样大
-- **水印位置**: 中字 / 无码 / 破解 / 流出 / 分辨率各自选四角之一. 同角按顺序向内叠
+| 设置项 | 默认值 | 范围 | 说明 |
+|--------|-------|------|------|
+| 轮询模式 | 关闭 | | 以定时轮询代替系统文件事件 |
+| 防抖窗口 | 3 秒 | 0.5–30 | 文件变动后等待稳定的时间, 避免同一文件重复触发 |
+| 媒体扩展名 | `.mp4, .mkv, .avi, .wmv, .flv, .mov, .ts, .iso, .strm` | | 视为视频的扩展名, 扫描、文件监控与清理共用 |
 
-### 演员刮削 (`actor_scraping`)
+- **生效时机**: 「轮询模式」与「防抖窗口」在服务重启后生效. 「媒体扩展名」保存后立即用于扫描与清理, 文件监控在重启后使用新值.
+- **何时启用轮询模式**: 媒体位于 NAS / NFS / SMB 挂载、macOS 上的 Docker Desktop 或 WSL2 等系统文件事件不可靠的位置时启用. 轮询模式开销更高, 本机磁盘无需开启.
+- **监控数量上限**: Linux 上目录过多时, 文件监控可能因 inotify 上限无法启动, 日志中出现 `Failed to start file watcher`. 此时调高 `/proc/sys/fs/inotify/max_user_watches`, 或启用轮询模式.
+- 文件监控只作用于「文件发现方式」为「本地文件」、且「自动化」不为「关闭」的媒体库. 「CD2 webhook」由 CloudDrive2 推送变更, 同样使用防抖窗口. 见 [媒体库](libraries.md).
 
-控制演员元数据的获取行为, 详细说明见 [刮削指南 - 演员刮削](scraping.md#_11).
+### 任务引擎 {#worker}
 
-### 网络配置 (`network`)
+| 设置项 | 默认值 | 范围 | 说明 |
+|--------|-------|------|------|
+| 并发数 | 10 | 1–64 | 同时执行的最大任务数 |
 
-- **代理**: SOCKS/HTTP 代理 URL (如 `socks5://127.0.0.1:7890`)
-- **超时**: HTTP 请求超时时间
-- **重试**: 请求的最大重试次数, 不含首次请求 (3 表示最多发 4 次请求, 0 表示只发一次)
-- **限速**: 全局和按域名的请求速率限制
+保存后立即生效, 进行中的任务不会被中断. 并发数影响同时刮削的影片数量; 单个站点的请求频率仍受 [网络](network.md) 分区的速率限制约束, 提高并发数不会突破站点限速. 任务队列与任务类型见 [任务与定时任务](tasks.md).
 
-### 任务引擎 (`worker`)
+### 日志 {#logging}
 
-- **并发数**: 最大并发任务执行数 (默认 10)
+| 设置项 | 默认值 | 说明 |
+|--------|-------|------|
+| 级别 | 信息 | 调试 / 信息 / 警告 / 错误 / 严重. 写入 `app.log` 与「运行 → 日志」页的最低级别 |
+| 调试捕获 | 关闭 | 打开时所有任务都保存站点的原始响应, 关闭时只有失败的任务保存 |
 
-### 文件监控 (`watcher`)
-
-- **轮询模式**: 在 NAS/NFS/Docker Desktop/WSL2 等场景下使用轮询替代原生事件. 只作用于文件监控为「本地文件」的库; CD2 webhook 见 [媒体库管理](libraries.md)
-- **防抖窗口**: 文件变动后等待的时间, 避免重复触发; CD2 webhook 目录 create 后的子树扫描也使用该窗口
-- **媒体扩展名**: 监控的文件类型白名单
-
-### AI 助理 (`agent`)
-
-- **API 类型**: 支持 OpenAI Chat / OpenAI Response / Anthropic
-- **API 密钥**: 对应提供商的密钥
-- **模型**: 使用的模型名称
-- **思考强度**: 推理深度 (off / minimal / low / medium / high / xhigh)
-
-### LLM 翻译 (`llm`)
-
-- **启用**: 是否启用 LLM 翻译
-- **翻译字段**: 需要翻译的字段 (title / plot)
-- **API 类型**: 支持 OpenAI Chat / OpenAI Response / Anthropic
-- **API 配置**: 端点和密钥
-- **自定义提示词**: 替换内置系统提示词的指令部分; 留空使用内置
-- **字段提示词**: 逐字段覆盖内置字段说明; 留空使用内置
-
-自定义提示词与字段提示词均可用 `{target_lang}` 引用目标语言名 (简体中文 / 繁體中文 / 日本語 / English). 单条上限 2000 字符. 提示词变化后缓存的旧译文自动失效, 详见 [刮削指南](scraping.md).
-
-### 图像超分 (`sr`)
-
-- **启用**: 刮削时是否自动超分低清图片
-- **尺寸阈值**: 最长边小于此值才超分
-- **预设**: waifu-photo-2x (默认) 或 realesr-photo-4x
-
-### r18 数据源 (`r18`)
-
-r18.dev 提供 PostgreSQL dump, 需要自备 PostgreSQL 实例:
-
-- **DSN**: 超级用户连接串 (需 CREATEDB/CREATEROLE 权限)
-- **下载地址**: dump 归档下载 URL
-- **数据库名**: 目标数据库名
+两项都在保存后立即生效. 原始响应保存在任务目录 `logs/tasks/task-<id>/` 中, 任务结束后可在任务详情中点击「任务记录」下载, 用于排查刮削问题或附在 Issue 中. 「调试捕获」会显著增加磁盘占用, 排查结束后应关闭. 日志页的用法见 [任务与定时任务](tasks.md).
