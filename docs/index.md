@@ -14,7 +14,7 @@ Amane 是一个影片元数据服务, 核心是数据库中以番号为单位的
 
 Amane 不是 Emby / Jellyfin 的替代品, 而是它们的元数据补充: 媒体服务器负责媒体文件的管理、播放与串流, Amane 提供多源元数据, 并以 NFO 与图片的形式写到视频旁.
 
-[安装与快速开始](user/index.md){ .md-button .md-button--primary }
+[快速开始](user/index.md){ .md-button .md-button--primary }
 [下载最新版本](https://github.com/sqzw-x/amane/releases){ .md-button }
 
 ![Amane 片库海报视图](assets/screenshots/meta-wall.webp#only-light)
