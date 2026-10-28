@@ -49,12 +49,12 @@
   "emptyValue": "—",
   "backend": {
     "title": "浏览器后端",
-    "description": "受保护站点经这些后端渲染; 选择不可用的后端在保存设置时会被拒绝.",
+    "description": "受保护站点经这些后端渲染; 本地引擎不在当前分发内时, 保存设置会被拒绝.",
     "refresh": "重新检测",
     "available": "可用",
     "unavailable": "不可用",
     "selected": "当前",
-    "version": "daemon {{version}}",
+    "version": "版本 {{version}}",
     "browsers": "已连接 {{names}}",
     "loadError": "读取后端状态失败",
     "hint": {

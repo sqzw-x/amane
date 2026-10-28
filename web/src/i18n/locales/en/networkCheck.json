@@ -49,12 +49,12 @@
   "emptyValue": "—",
   "backend": {
     "title": "Browser backends",
-    "description": "Protected sites are rendered through these backends; a backend that is unavailable is rejected when saving settings.",
+    "description": "Protected sites are rendered through these backends; a backend whose local engine is missing from this build is rejected when saving settings.",
     "refresh": "Check again",
     "available": "Available",
     "unavailable": "Unavailable",
     "selected": "Selected",
-    "version": "daemon {{version}}",
+    "version": "version {{version}}",
     "browsers": "connected {{names}}",
     "loadError": "Failed to read backend status",
     "hint": {

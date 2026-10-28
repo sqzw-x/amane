@@ -13,15 +13,23 @@ import { useQuery } from "@tanstack/react-query";
 import { IconRefresh } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import { browserBackendsOptions } from "@/client/@tanstack/react-query.gen";
-import type { BrowserBackendItemResponse } from "@/client/types.gen";
+import type { BrowserBackendItemResponse, BrowserBackendName } from "@/client/types.gen";
 
-/** 后端的展示名; 与 ``BrowserBackendName`` 的取值一一对应, 新增后端时同步补这里与 i18n. */
-const BACKEND_LABEL: Record<string, string> = {
-  patchright: "Patchright",
-  camoufox: "Camoufox",
-  bsk: "BrowserSkill",
-  solver: "Solver",
-};
+/** 后端的展示名; 穷举分支让新增后端在类型检查时报错, 品牌名不进 i18n. */
+function backendLabel(backend: BrowserBackendName): string {
+  switch (backend) {
+    case "patchright":
+      return "Patchright";
+    case "camoufox":
+      return "Camoufox";
+    case "bsk":
+      return "BrowserSkill";
+    case "solver":
+      return "Solver";
+    case "off":
+      return "";
+  }
+}
 
 const BSK_REPO = "https://github.com/Tencent/BrowserSkill";
 
@@ -102,7 +110,7 @@ export function BrowserBackendPanel() {
             <Stack key={item.backend} gap={2}>
               <Group gap="xs" wrap="nowrap">
                 <Text size="sm" fw={500}>
-                  {BACKEND_LABEL[item.backend] ?? item.backend}
+                  {backendLabel(item.backend)}
                 </Text>
                 {item.backend === data.selected && (
                   <Badge size="xs" variant="light">
@@ -112,9 +120,11 @@ export function BrowserBackendPanel() {
                 <Badge size="xs" color={item.available ? "teal" : "gray"} variant="light">
                   {item.available ? t("backend.available") : t("backend.unavailable")}
                 </Badge>
-                <Text size="xs" c="dimmed" truncate>
-                  {[item.detail, extras(item)].filter(Boolean).join(" · ")}
-                </Text>
+                <Tooltip label={[item.detail, extras(item)].filter(Boolean).join(" · ")}>
+                  <Text size="xs" c="dimmed" truncate>
+                    {[item.detail, extras(item)].filter(Boolean).join(" · ")}
+                  </Text>
+                </Tooltip>
               </Group>
               {!item.available && <BackendHint backend={item.backend} />}
             </Stack>
