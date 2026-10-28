@@ -45,6 +45,7 @@ internal static class Native
 
     internal const uint JobObjectInfoExtendedLimit = 9;
     internal const uint JobObjectLimitKillOnJobClose = 0x2000;
+    internal const uint JobObjectLimitBreakawayOk = 0x800;
 
     internal const uint GmemMoveable = 0x0002;
     internal const uint CfUnicodeText = 13;
