@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 import structlog
 
@@ -34,9 +35,11 @@ BrowserPageResult = tuple[str | None, RequestFailure | None]
 # 挑战页轮询间隔、浏览器空闲关闭时限与单次 CLI 调用的固定余量 (秒).
 _POLL_INTERVAL_S = 1.0
 # Agent Window 对用户可见, 空闲不能像无头引擎那样挂 10 分钟; 会话重启很便宜 (clearance 与 cookie
-# 存在 profile 里, 不随窗口消失), 因此留一拍给连续任务收尾即可.
+# 存在 profile 里, 不随窗口消失), 空闲期只需覆盖连续任务之间的间隔.
 _IDLE_TIMEOUT_S = 30.0
 _COMMAND_SLACK_S = 5.0
+# 会话关闭是清理动作, 失败不应拖住调用方.
+_STOP_TIMEOUT_S = 10.0
 # 桌面壳以无控制台方式启动服务端, Windows 会给其后创建的控制台程序新分配一个窗口; CREATE_NO_WINDOW
 # 让 CLI 不落在任何控制台上, 避免每次调用弹出控制台窗口.
 _CREATE_NO_WINDOW = 0x08000000
@@ -58,7 +61,7 @@ _INJECTED_STYLE_RE = re.compile(
 
 
 BskRunner = Callable[[str, Sequence[str], float], Awaitable[dict[str, object]]]
-"""执行一条 CLI 命令并返回解析后的 JSON; 生产用 ``_run``, 测试可注入进程内替身."""
+"""执行一条 CLI 命令并返回解析后的 JSON; 生产用 ``_run``, 测试可注入进程内替代实现."""
 
 
 class BskError(Exception):
@@ -86,6 +89,7 @@ class BskBrowser:
     name: str
     extension_version: str | None
     unresponsive: bool
+    version_skew: bool = False
 
 
 @dataclass(frozen=True)
@@ -139,20 +143,41 @@ async def probe_bsk(
     except TimeoutError:
         return BskStatus(available=False, detail="bsk status 超时: daemon 无响应")
     except BskError as exc:
-        return BskStatus(available=False, detail=f"bsk 不可用: {exc}")
+        # daemon 以 CREATE_BREAKAWAY_FROM_JOB 启动, 宿主进程被限制在不允许脱离的 Job 里时
+        # (安全软件、沙箱常见的全局 Job) 无法自行拉起; 只有前台模式不需要 breakaway.
+        if "Job Object" in str(exc):
+            return BskStatus(
+                available=False,
+                detail="bsk daemon 无法自行启动: 进程被系统 Job 限制, 请在终端运行 bsk daemon start --foreground 并保持窗口打开",
+            )
+        detail = f"bsk 不可用: {exc}"
+        return BskStatus(available=False, detail=f"{detail}; {exc.hint}" if exc.hint else detail)
     browsers = tuple(
         BskBrowser(
             instance_id=_str_field(item, "instance_id") or "",
             name=_str_field(item, "browser_name") or "unknown",
             extension_version=_str_field(item, "extension_version"),
             unresponsive=item.get("unresponsive") is True,
+            version_skew=item.get("version_skew") is True,
         )
         for item in _dict_list(data.get("browsers"))
     )
-    if not any(not browser.unresponsive for browser in browsers):
-        return BskStatus(
-            available=False, detail="bsk 已安装但浏览器未连接, 请打开浏览器并在扩展中连接", browsers=browsers
+    responsive = [browser for browser in browsers if not browser.unresponsive]
+    if not responsive:
+        detail = (
+            "bsk 已连接浏览器但扩展没有响应, 请重启浏览器扩展"
+            if browsers
+            else "bsk 已安装但浏览器未连接, 请打开浏览器并在扩展中连接"
         )
+        return BskStatus(available=False, detail=detail, browsers=browsers)
+    if len(responsive) > 1:
+        return BskStatus(
+            available=False,
+            detail="连接了多个浏览器, bsk 一次只能驱动一个, 请只保留一个浏览器的扩展连接",
+            browsers=browsers,
+        )
+    if any(browser.version_skew for browser in responsive):
+        return BskStatus(available=False, detail="浏览器扩展与 bsk daemon 版本不匹配, 请升级扩展", browsers=browsers)
     return BskStatus(
         available=True,
         detail="ok",
@@ -229,15 +254,10 @@ class _Session:
         self.lock = asyncio.Lock()
         self.session_id: str | None = None
         self.tabs: dict[str, int] = {}
-        self.cookies: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
+        self.cookies: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
         self.active = 0
         self.generation = 0
         self.idle_task: asyncio.Task[None] | None = None
-
-    def reset(self) -> None:
-        self.session_id = None
-        self.tabs.clear()
-        self.cookies.clear()
 
 
 class BskBackend:
@@ -341,11 +361,13 @@ class BskBackend:
             return None, RequestFailure(kind=FailureKind.TIMEOUT, message=f"browser timeout: {url}")
         except BskError as exc:
             if exc.code == "not_found":
-                session.reset()
+                await self._stop(session, timeout_s=_COMMAND_SLACK_S)
             return None, self._failure(exc, url)
 
     def _failure(self, exc: BskError, url: str) -> RequestFailure:
         detail = f"{exc} ({exc.code})" if exc.code else str(exc)
+        if exc.hint:
+            detail = f"{detail}; {exc.hint}"
         if exc.code == "spawn_failed":
             return RequestFailure(
                 kind=FailureKind.UNEXPECTED,
@@ -390,7 +412,7 @@ class BskBackend:
         """先落到目标域再写 cookie: CLI 没有 cookie 接口, 只有页面上下文能写."""
         if not cookies:
             return
-        key = (scope, tuple(sorted(cookies.items())))
+        key = (urlsplit(url).netloc, scope, tuple(sorted(cookies.items())))
         if key in session.cookies:
             return
         await self._navigate(session_id, tab_id, url, time.monotonic() + self._default_timeout / 1000)
@@ -424,15 +446,17 @@ class BskBackend:
         托管挑战通常自行消解, 但循环一段时间后 Cloudflare 会换成要求点击的 Turnstile: 此时按
         ``_CLICK_COOLDOWN_S`` 间隔持续取快照找复选框并原生点击 (复选框常晚于首屏出现, 探测只在
         截止时间停止), 同一个 ref 只点一次. 低于 ``_MIN_DOCUMENT_BYTES`` 的正文视为导航中间态继续等,
-        逾期则原样返回, 由上层判定.
+        连续两次读到相同正文 (导航已停在 404 / 空结果上) 或到期则原样返回, 由上层判定.
         """
         clicked: set[str] = set()
         clicks = 0
         last_probe = 0.0
+        previous: str | None = None
         while True:
-            html = await self._get_html(session_id, tab_id, deadline)
+            html = strip_injected_html(await self._get_html(session_id, tab_id, deadline))
             expired = time.monotonic() >= deadline
             if classify_block(html) is FailureReason.CLOUDFLARE_CHALLENGE:
+                previous = None
                 if expired:
                     raise _ChallengeUnresolved
                 now = time.monotonic()
@@ -440,8 +464,10 @@ class BskBackend:
                     last_probe = now
                     if await self._click_verification(session_id, tab_id, deadline, clicked):
                         clicks += 1
-            elif len(html) >= _MIN_DOCUMENT_BYTES or expired:
+            elif len(html) >= _MIN_DOCUMENT_BYTES or expired or html == previous:
                 return html
+            else:
+                previous = html
             await asyncio.sleep(min(self._poll_interval, max(0.0, deadline - time.monotonic())))
 
     async def _click_verification(self, session_id: str, tab_id: int, deadline: float, clicked: set[str]) -> bool:
@@ -467,7 +493,10 @@ class BskBackend:
             return False
         clicked.add(ref)
         try:
-            await self._call(("click", ref, "--session", session_id, "--tab-id", str(tab_id)))
+            await self._call(
+                ("click", ref, "--session", session_id, "--tab-id", str(tab_id)),
+                timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
+            )
         except BskError as exc:
             logger.debug("bsk click failed (ignored)", ref=ref, error=str(exc))
             return False
@@ -535,16 +564,22 @@ class BskBackend:
         async with session.lock:
             await self._stop(session)
 
-    async def _stop(self, session: _Session) -> None:
+    async def _stop(self, session: _Session, *, timeout_s: float = _STOP_TIMEOUT_S) -> None:
         session_id, session.session_id = session.session_id, None
         session.tabs.clear()
         session.cookies.clear()
         if session_id is None:
             return
         try:
-            await self._call(("session", "stop", session_id))
-        except (BskError, TimeoutError) as exc:
-            logger.debug("bsk session stop failed (ignored)", session=session_id, error=str(exc))
+            await self._call(("session", "stop", session_id), timeout_s=timeout_s)
+        except BskError as exc:
+            # 会话已经不存在是预期路径, 不该按失败告警.
+            if exc.code == "not_found":
+                logger.debug("bsk session already gone", session=session_id)
+            else:
+                logger.warning("bsk session stop failed", session=session_id, error=str(exc))
+        except TimeoutError as exc:
+            logger.warning("bsk session stop timed out", session=session_id, error=str(exc))
 
     async def close(self) -> None:
         self._closed = True

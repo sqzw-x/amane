@@ -21,7 +21,7 @@ TINY = "<html><body>stub</body></html>"
 
 
 class _FakeBsk:
-    """进程内替身: 与真实 CLI 一样用 calls.log 记录参数, 用 scenario.json 编排应答.
+    """进程内替代实现: 与真实 CLI 一样用 calls.log 记录参数, 用 scenario.json 编排应答.
 
     不起子进程, 因此各平台行为一致也快得多; 子进程层由 ``_run`` 自己的用例覆盖.
     """
@@ -225,7 +225,7 @@ async def test_interactive_challenge_is_clicked_then_clears(bsk_env: Path) -> No
 
 @pytest.mark.asyncio
 async def test_late_checkbox_is_still_clicked(bsk_env: Path) -> None:
-    """复选框常晚于首屏出现: 探测要持续到截止时间, 不能只试前几拍."""
+    """复选框常晚于首屏出现: 探测要持续到截止时间, 不能只试前几次."""
     _scenario(
         bsk_env,
         pages=[CHALLENGE] * 6 + [CLEAN],
@@ -420,7 +420,9 @@ async def test_lost_session_restarts_on_next_call(bsk_env: Path) -> None:
         assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
     finally:
         await backend.close()
-    assert _commands(bsk_env).count("session") == 3  # 两次 start + 一次 stop
+    stops = [args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]
+    assert [args[2] for args in stops] == ["sess-1", "sess-1"]  # 丢失的会话先用 stop 收尾, 关闭时再停一次
+    assert _commands(bsk_env).count("session") == 4
 
 
 @pytest.mark.asyncio
@@ -524,3 +526,142 @@ async def test_run_rejects_non_json_output() -> None:
         await _run(sys.executable, ("-c", "print('not-json')"), timeout_s=10)
     assert excinfo.value.code == "invalid_output"
     assert "not-json" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_run_surfaces_cli_error_body_and_exit_code() -> None:
+    """真实 CLI 失败时把错误体放在 stdout 并以非 0 退出; 解析后 hint 与 code 都要保留."""
+    script = (
+        "import json, sys; "
+        'print(json.dumps({"code": "not_found", "message": "no session", "hint": "run bsk session list"})); '
+        "sys.exit(1)"
+    )
+    with pytest.raises(BskError) as excinfo:
+        await _run(sys.executable, ("-c", script), timeout_s=10)
+    assert excinfo.value.code == "not_found"
+    assert excinfo.value.hint == "run bsk session list"
+    assert excinfo.value.exit_code == 1
+    assert "no session" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_run_kills_process_after_timeout() -> None:
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        await _run(sys.executable, ("-c", "import time; time.sleep(30)"), timeout_s=0.2)
+    assert time.monotonic() - started < 5
+
+
+def _status(browsers: list[dict[str, object]], skew: list[dict[str, object]] | None = None) -> dict[str, object]:
+    return {
+        "daemon_version": "0.3.3",
+        "protocol_version": "1.3",
+        "browsers": browsers,
+        "version_skew_browsers": skew or [],
+    }
+
+
+def _browser(version_skew: bool = False, unresponsive: bool = False) -> dict[str, object]:
+    return {
+        "instance_id": "b1",
+        "browser_name": "edge",
+        "extension_version": "0.3.3",
+        "unresponsive": unresponsive,
+        "version_skew": version_skew,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "available", "fragment"),
+    [
+        (_status([]), False, "未连接"),
+        (_status([_browser(unresponsive=True)]), False, "没有响应"),
+        (_status([_browser()]), True, "ok"),
+        (_status([_browser(), _browser()]), False, "多个浏览器"),
+        (_status([_browser(version_skew=True)]), False, "版本不匹配"),
+        (_status([_browser()], [_browser()]), True, "ok"),
+    ],
+)
+async def test_probe_reports_whether_fetching_can_succeed(
+    bsk_env: Path, status: dict[str, object], available: bool, fragment: str
+) -> None:
+    _scenario(bsk_env, status=status)
+    result = await probe_bsk(str(bsk_env / "bsk"), runner=_FakeBsk(bsk_env))
+    assert result.available is available
+    assert fragment in result.detail
+
+
+@pytest.mark.asyncio
+async def test_probe_explains_job_restricted_daemon(bsk_env: Path) -> None:
+    """宿主被限制在不允许 breakaway 的 Job 里时, 自动拉起必然失败, 提示要能直接照做."""
+    _scenario(
+        bsk_env,
+        status_error={
+            "code": "daemon_start_failed",
+            "message": "cannot start an independent Windows daemon; the host may prohibit Job Object breakaway",
+        },
+    )
+    result = await probe_bsk(str(bsk_env / "bsk"), runner=_FakeBsk(bsk_env))
+    assert result.available is False
+    assert "bsk daemon start --foreground" in result.detail
+
+
+@pytest.mark.asyncio
+async def test_small_document_returns_once_it_stops_changing(bsk_env: Path) -> None:
+    """小文档 (404 / 空结果) 不该等满整个超时: 连续两次读到相同正文即视为导航完成."""
+    _scenario(bsk_env, pages=[TINY, TINY])
+    backend = _backend(bsk_env, timeout=5000, poll_interval=0.01)
+    started = time.monotonic()
+    try:
+        assert await backend.get_page("https://a.example/404", scope="a") == (TINY, None)
+    finally:
+        await backend.close()
+    assert time.monotonic() - started < 1.0
+    assert _commands(bsk_env).count("get-html") == 2
+
+
+@pytest.mark.asyncio
+async def test_wait_for_keeps_real_budget_after_small_document(bsk_env: Path) -> None:
+    _scenario(bsk_env, pages=[TINY, TINY, CLEAN])
+    backend = _backend(bsk_env, timeout=5000, poll_interval=0.01)
+    try:
+        html, failure = await backend.get_page("https://a.example/", scope="a", wait_for="#row")
+    finally:
+        await backend.close()
+    assert (html, failure) == (CLEAN, None)
+    call = next(args for args in _calls(bsk_env) if args[0] == "wait-for-element")
+    assert call[call.index("--timeout") + 1] != "1ms"
+
+
+@pytest.mark.asyncio
+async def test_idle_timeout_closes_session_and_next_call_reopens(bsk_env: Path) -> None:
+    _scenario(bsk_env, pages=[CLEAN])
+    backend = BskBackend(
+        bsk_path=str(bsk_env / "bsk"),
+        runner=_FakeBsk(bsk_env),
+        default_timeout=500,
+        idle_timeout=0.05,
+    )
+    try:
+        await backend.get_page("https://a.example/1", scope="a")
+        await asyncio.sleep(0.3)
+        stops = [args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]
+        assert [args[2] for args in stops] == ["sess-1"]
+        await backend.get_page("https://a.example/2", scope="a")
+    finally:
+        await backend.close()
+    assert _commands(bsk_env).count("session") == 4
+
+
+@pytest.mark.asyncio
+async def test_cookie_bootstrap_repeats_per_host(bsk_env: Path) -> None:
+    """同一来源跨多个域名时, 每个域名都要真正写入 cookie."""
+    _scenario(bsk_env, pages=[CLEAN])
+    backend = _backend(bsk_env)
+    try:
+        await backend.get_page("https://a.example/1", scope="a", cookies={"k": "v"})
+        await backend.get_page("https://b.example/1", scope="a", cookies={"k": "v"})
+    finally:
+        await backend.close()
+    assert _commands(bsk_env).count("evaluate") == 2
