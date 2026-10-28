@@ -319,6 +319,7 @@
               "off": "Off",
               "patchright": "Patchright",
               "camoufox": "Camoufox",
+              "bsk": "BrowserSkill",
               "solver": "Solver"
             }
           },
@@ -479,12 +480,17 @@
       },
       "browser": {
         "label": "Browser Rendering",
+        "bsk_path": {
+          "label": "BrowserSkill Path",
+          "description": "Leave empty to look up PATH; the desktop app needs an absolute path"
+        },
         "backend": {
           "label": "Browser backend",
           "options": {
             "off": "Off",
             "patchright": "Patchright",
             "camoufox": "Camoufox",
+            "bsk": "BrowserSkill",
             "solver": "Solver"
           }
         },

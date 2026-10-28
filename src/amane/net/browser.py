@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, NotRequired, Protocol, TypedDict
 import structlog
 
 from ..enums import BrowserBackendName
+from .bsk import BskBackend
 from .errors import FailureKind, FailureReason, RequestError, RequestFailure, classify_block
 from .recording import skip_body_recording
 
@@ -90,12 +91,14 @@ class BrowserPool:
         proxy: str | None,
         web_client: WebClient,
         timeout_ms: float,
+        bsk_path: str | None = None,
     ) -> None:
         self._default = default_backend
         self._solver_url = solver_url
         self._proxy = proxy
         self._web = web_client
         self._timeout_ms = timeout_ms
+        self._bsk_path = bsk_path
         self._instances: dict[BrowserBackendName, BrowserBackend] = {}
         self._closed = False
 
@@ -144,6 +147,10 @@ class BrowserPool:
                 return PatchrightBackend(proxy=self._proxy, default_timeout=self._timeout_ms)
             case BrowserBackendName.CAMOUFOX:
                 return CamoufoxBackend(proxy=self._proxy, default_timeout=self._timeout_ms)
+            case BrowserBackendName.BSK:
+                if self._proxy:
+                    logger.warning("bsk backend ignores global proxy", proxy=self._proxy)
+                return BskBackend(bsk_path=self._bsk_path, default_timeout=self._timeout_ms)
             case BrowserBackendName.SOLVER:
                 return SolverBackend(
                     web_provider=lambda: self._web,

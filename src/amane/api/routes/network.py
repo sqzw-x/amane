@@ -5,8 +5,16 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ...crawlers.connectivity import ConnectivityChecker, SourceCheck
+from ...net.backends import BackendProbe, probe_backends
 from ..deps import RuntimeDep
-from ..models import ConnectivityCheckRequest, ConnectivityItemResponse, ConnectivityReportResponse
+from ..models import (
+    BrowserBackendItemResponse,
+    BrowserBackendReportResponse,
+    BrowserInstanceResponse,
+    ConnectivityCheckRequest,
+    ConnectivityItemResponse,
+    ConnectivityReportResponse,
+)
 
 router = APIRouter(prefix="/network", tags=["network"])
 
@@ -24,6 +32,38 @@ def _item(check: SourceCheck) -> ConnectivityItemResponse:
         skip_reason=outcome.skip_reason,
         detail=outcome.detail,
         elapsed_ms=check.elapsed_ms,
+    )
+
+
+def _backend_item(probe: BackendProbe) -> BrowserBackendItemResponse:
+    return BrowserBackendItemResponse(
+        backend=probe.backend,
+        available=probe.available,
+        detail=probe.detail,
+        version=probe.version,
+        browsers=[
+            BrowserInstanceResponse(
+                instance_id=browser.instance_id,
+                name=browser.name,
+                extension_version=browser.extension_version,
+                unresponsive=browser.unresponsive,
+            )
+            for browser in probe.browsers
+        ],
+    )
+
+
+@router.get("/browser", response_model=BrowserBackendReportResponse)
+async def browser_backends(runtime: RuntimeDep) -> BrowserBackendReportResponse:
+    """探测各浏览器后端是否可用于本实例.
+
+    结论就是响应体, 端点始终 200; ``selected`` 由当前热配置给出, 界面据此标出「已选但不可用」.
+    """
+    browser = runtime.config.hot.network.browser
+    probes = await probe_backends(solver_url=browser.solver_url, bsk_path=browser.bsk_path)
+    return BrowserBackendReportResponse(
+        selected=browser.backend,
+        items=[_backend_item(probe) for probe in probes],
     )
 
 

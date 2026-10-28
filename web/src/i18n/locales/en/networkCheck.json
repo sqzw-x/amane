@@ -46,5 +46,23 @@
   "retry": "Retry",
   "retrying": "Retrying...",
   "elapsedMs": "{{value}} ms",
-  "emptyValue": "—"
+  "emptyValue": "—",
+  "backend": {
+    "title": "Browser backends",
+    "description": "Protected sites are rendered through these backends; a backend that is unavailable is rejected when saving settings.",
+    "refresh": "Check again",
+    "available": "Available",
+    "unavailable": "Unavailable",
+    "selected": "Selected",
+    "version": "daemon {{version}}",
+    "browsers": "connected {{names}}",
+    "loadError": "Failed to read backend status",
+    "hint": {
+      "patchright": "This build does not include the engine; enable it by installing from source.",
+      "camoufox": "This build does not include the engine; enable it by installing from source.",
+      "bsk": "Install the bsk CLI and connect the BrowserSkill extension in Chrome or Edge.",
+      "bskLink": "Installation guide",
+      "solver": "Deploy a FlareSolverr-compatible service and set its address in the settings."
+    }
+  }
 }

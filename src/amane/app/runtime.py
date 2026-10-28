@@ -139,6 +139,7 @@ def build_network_stack(
             proxy=hot.network.proxy,
             web_client=web_client,
             timeout_ms=hot.network.browser.timeout,
+            bsk_path=hot.network.browser.bsk_path,
         )
     else:
         browser.rebind_web_client(web_client)

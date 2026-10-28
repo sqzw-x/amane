@@ -691,3 +691,30 @@ class TestLLMConfig:
 
         with pytest.raises(ValidationError, match=r"Input should be 'chat', 'response' or 'anthropic'"):
             mgr.update({"llm": {"api_type": "bogus"}})
+
+
+class TestBskBackendAvailability:
+    def test_missing_cli_rejects_global_backend(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr("amane.net.bsk.shutil.which", lambda name: None)
+        monkeypatch.delenv("AMANE_BSK_PATH", raising=False)
+
+        with pytest.raises(ValidationError, match="未找到 bsk CLI"):
+            BrowserConfig(backend=BrowserBackendName.BSK)
+        # 来源级覆盖看不到全局 bsk_path, 只在这一层放行, 运行期再报.
+        assert SiteConfig(browser_backend=BrowserBackendName.BSK).browser_backend is BrowserBackendName.BSK
+
+    def test_declared_path_is_enough(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
+        fake = tmp_path / "bsk"
+        fake.write_text("", encoding="utf-8")
+        monkeypatch.setattr("amane.net.bsk.shutil.which", lambda name: None)
+        monkeypatch.delenv("AMANE_BSK_PATH", raising=False)
+
+        config = BrowserConfig(bsk_path=str(fake), backend=BrowserBackendName.BSK)
+
+        assert config.backend is BrowserBackendName.BSK
+
+    def test_declared_path_must_exist_even_if_path_has_bsk(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
+        monkeypatch.setattr("amane.net.bsk.shutil.which", lambda name: "/usr/bin/bsk")
+
+        with pytest.raises(ValidationError, match="未找到 bsk CLI"):
+            BrowserConfig(bsk_path=str(tmp_path / "absent"), backend=BrowserBackendName.BSK)

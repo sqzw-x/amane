@@ -7,6 +7,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...crawlers.connectivity import SourceKind
+from ...enums import BrowserBackendName
 from ...net.connectivity import ConnectivityStatus, SkipReason
 from ...net.errors import FailureReason
 
@@ -44,3 +45,39 @@ class ConnectivityReportResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[ConnectivityItemResponse] = Field(default_factory=list)
+
+
+class BrowserInstanceResponse(BaseModel):
+    """bsk 已连接的浏览器实例; 只用于展示, 选择实例属于后续能力."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    instance_id: str
+    name: str
+    extension_version: str | None = None
+    unresponsive: bool = False
+
+
+class BrowserBackendItemResponse(BaseModel):
+    """一个后端的可用性.
+
+    ``detail`` 是环境抛出的原文 (缺模块、缺 CLI、浏览器未连接、solver 应答错误), 界面原样展示;
+    ``version`` 目前只有 bsk 有 (daemon 版本).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    backend: BrowserBackendName
+    available: bool
+    detail: str | None = None
+    version: str | None = None
+    browsers: list[BrowserInstanceResponse] = Field(default_factory=list)
+
+
+class BrowserBackendReportResponse(BaseModel):
+    """``selected`` 是当前生效的后端, 供界面标出「已选但不可用」这一种组合."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selected: BrowserBackendName
+    items: list[BrowserBackendItemResponse] = Field(default_factory=list)

@@ -103,9 +103,10 @@ Cloudflare 人机验证页只能通过执行 JavaScript 越过. 启用浏览器�
 | 关闭 (默认) | 不使用浏览器 | :material-check: | :material-check: | :material-check: |
 | Patchright | 启动本机安装的 Chrome | | | :material-check: |
 | Camoufox | 基于 Firefox 的浏览器, 首次启动时下载 | | | :material-check: |
+| BrowserSkill | 经 `bsk` CLI 驱动自己已登录的 Chrome / Edge | :material-check: | | :material-check: |
 | Solver 服务 | 外部 FlareSolverr 兼容服务 | :material-check: | :material-check: | :material-check: |
 
-桌面版与 Docker 镜像不包含本地浏览器引擎, 只能使用 Solver 服务; 选择不可用的后端时设置无法保存, 并提示改用 solver. 源码安装经 `just setup` 或 `just sync` 安装全部可选依赖后可以使用 Patchright 与 Camoufox.
+桌面版与 Docker 镜像不包含本地浏览器引擎; 桌面版可以安装 [BrowserSkill](https://github.com/Tencent/BrowserSkill) 的 CLI 与浏览器扩展后使用它, 其余情况使用 Solver 服务. 选择不可用的后端时设置无法保存, 并提示改用 solver. 源码安装经 `just setup` 或 `just sync` 安装全部可选依赖后可以使用 Patchright 与 Camoufox. 各后端当前是否可用在「网络检测」页顶部列出.
 
 | 设置项 | 默认 | 说明 |
 |--------|------|------|
@@ -126,6 +127,12 @@ Cloudflare 人机验证页只能通过执行 JavaScript 越过. 启用浏览器�
     1. 使用 Patchright 时确认本机已安装 Chrome.
     2. 「浏览器后端」选择对应后端.
     3. 浏览器在首次需要时启动, 使用全局代理; 空闲 10 分钟后关闭.
+
+=== "BrowserSkill"
+
+    1. 安装 [bsk CLI](https://github.com/Tencent/BrowserSkill), 并在 Chrome 或 Edge 中连接 BrowserSkill 扩展.
+    2. 「浏览器后端」选择「BrowserSkill」; 桌面版需填写 `bsk` 可执行文件的绝对路径 (应用不继承登录 shell 的 `PATH`).
+    3. 抓取受保护站点时会打开一个 Agent Window 并复用你已登录的状态; 该扩展能读到你任意已登录站点的数据, 只在可信环境中启用.
 
 !!! danger "Solver 服务不能暴露到公网"
     Solver 服务可以代替调用方访问任意地址, 暴露到公网会被滥用. 只监听本机或内网地址.

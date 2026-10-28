@@ -1166,19 +1166,104 @@ export const Body_install_pluginSchema = {
     title: 'Body_install_plugin'
 } as const;
 
+export const BrowserBackendItemResponseSchema = {
+    properties: {
+        backend: {
+            $ref: '#/components/schemas/BrowserBackendName'
+        },
+        available: {
+            type: 'boolean',
+            title: 'Available'
+        },
+        detail: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Detail'
+        },
+        version: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Version'
+        },
+        browsers: {
+            items: {
+                $ref: '#/components/schemas/BrowserInstanceResponse'
+            },
+            type: 'array',
+            title: 'Browsers'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'backend',
+        'available'
+    ],
+    title: 'BrowserBackendItemResponse',
+    description: '一个后端的可用性.\n\n``detail`` 是环境抛出的原文 (缺模块、缺 CLI、浏览器未连接、solver 应答错误), 界面原样展示;\n``version`` 目前只有 bsk 有 (daemon 版本).'
+} as const;
+
 export const BrowserBackendNameSchema = {
     type: 'string',
     enum: [
         'off',
         'patchright',
         'camoufox',
+        'bsk',
         'solver'
     ],
     title: 'BrowserBackendName'
 } as const;
 
+export const BrowserBackendReportResponseSchema = {
+    properties: {
+        selected: {
+            $ref: '#/components/schemas/BrowserBackendName'
+        },
+        items: {
+            items: {
+                $ref: '#/components/schemas/BrowserBackendItemResponse'
+            },
+            type: 'array',
+            title: 'Items'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'selected'
+    ],
+    title: 'BrowserBackendReportResponse',
+    description: '``selected`` 是当前生效的后端, 供界面标出「已选但不可用」这一种组合.'
+} as const;
+
 export const BrowserConfigSchema = {
     properties: {
+        bsk_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Bsk Path',
+            'x-path-type': 'file',
+            'x-widget': 'PathPicker'
+        },
         backend: {
             $ref: '#/components/schemas/BrowserBackendName',
             default: 'off'
@@ -1199,6 +1284,43 @@ export const BrowserConfigSchema = {
     },
     type: 'object',
     title: 'BrowserConfig'
+} as const;
+
+export const BrowserInstanceResponseSchema = {
+    properties: {
+        instance_id: {
+            type: 'string',
+            title: 'Instance Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        extension_version: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Extension Version'
+        },
+        unresponsive: {
+            type: 'boolean',
+            title: 'Unresponsive',
+            default: false
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'instance_id',
+        'name'
+    ],
+    title: 'BrowserInstanceResponse',
+    description: 'bsk 已连接的浏览器实例; 只用于展示, 选择实例属于后续能力.'
 } as const;
 
 export const BrowserModeSchema = {

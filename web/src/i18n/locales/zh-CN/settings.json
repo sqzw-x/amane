@@ -319,6 +319,7 @@
               "off": "关闭",
               "patchright": "Patchright",
               "camoufox": "Camoufox",
+              "bsk": "BrowserSkill",
               "solver": "Solver 服务"
             }
           },
@@ -479,12 +480,17 @@
       },
       "browser": {
         "label": "浏览器渲染",
+        "bsk_path": {
+          "label": "BrowserSkill 路径",
+          "description": "留空则从 PATH 查找; 桌面版需要填绝对路径"
+        },
         "backend": {
           "label": "浏览器后端",
           "options": {
             "off": "关闭",
             "patchright": "Patchright",
             "camoufox": "Camoufox",
+            "bsk": "BrowserSkill",
             "solver": "Solver 服务"
           }
         },

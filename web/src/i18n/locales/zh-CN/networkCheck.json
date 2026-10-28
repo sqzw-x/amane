@@ -46,5 +46,23 @@
   "retry": "重试",
   "retrying": "重试中...",
   "elapsedMs": "{{value}} ms",
-  "emptyValue": "—"
+  "emptyValue": "—",
+  "backend": {
+    "title": "浏览器后端",
+    "description": "受保护站点经这些后端渲染; 选择不可用的后端在保存设置时会被拒绝.",
+    "refresh": "重新检测",
+    "available": "可用",
+    "unavailable": "不可用",
+    "selected": "当前",
+    "version": "daemon {{version}}",
+    "browsers": "已连接 {{names}}",
+    "loadError": "读取后端状态失败",
+    "hint": {
+      "patchright": "当前分发包不含该引擎; 源码安装后可启用.",
+      "camoufox": "当前分发包不含该引擎; 源码安装后可启用.",
+      "bsk": "安装 bsk CLI, 并在 Chrome 或 Edge 中连接 BrowserSkill 扩展.",
+      "bskLink": "查看安装说明",
+      "solver": "部署 FlareSolverr 兼容服务, 并在设置中填写地址."
+    }
+  }
 }
