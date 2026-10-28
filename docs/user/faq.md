@@ -85,7 +85,7 @@
     演员资料按「演员资料优先级」逐项取第一个非空值, 各来源覆盖的字段不同: minnano 提供身高与三围, wikipedia 提供简介与信息框中的部分身材信息. 先在演员详情查看「刮削来源快照」, 再到演员刮削任务的结果中确认哪些来源失败. minnano 的检索页受人机验证保护, 桌面版与 Docker 需要 Solver 服务. 详见 [演员刮削](scraping.md#actor-scraping).
 
 ??? question "演员没有头像"
-    头像来自 gfriends 与各资料来源附带的图片. 演员性别为「未知」时不请求 gfriends, 在演员编辑界面设置性别后重新刮削. minnano 的图片受挑战保护, 需要 Solver 服务; 无码演员在 javdb 的头像需要 Cookie. 详见 [演员刮削](scraping.md#actor-scraping).
+    头像来自 gfriends 与各资料来源附带的图片. 演员性别为「未知」时先只请求同时覆盖两性的站点, 取得性别后再补查该性别的站点; 仍未取到头像时, 在演员编辑界面设置性别后重新刮削. minnano 的图片受挑战保护, 需要 Solver 服务; 无码演员在 javdb 的头像需要 Cookie. 详见 [演员刮削](scraping.md#actor-scraping).
 
 ??? question "男演员排在第一位, 或整理到错误的演员目录"
     `{actor}` 取聚合后演员列表的第一位, 顺序由「字段优先级 → 演员」决定; javdb 是同时写入男女演员的来源, 把它排在演员字段的后面即可. 也可以在影片编辑表单中调整演员顺序, 或改用 `{actress}` 取第一位女演员. 详见 [占位符](organize.md#placeholders).

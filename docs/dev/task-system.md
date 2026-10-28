@@ -174,7 +174,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 ## ACTOR_SCRAPE
 
-`ActorScrapeHandler` 按 `HotSettings.actor_scraping` 的资料来源 / 头像来源顺序获取 (见 [config.md](config.md)). **站点之间并发, 站内按查找名串行**: 只有「名字未命中」(`not_found` / `no_usable_metadata`) 才换下一个名, 其余 `SourceError` 立即中止本站并记该原因. 裁站按 `Actor.gender` 与各站 `profile().genders`: `unknown` 只请求同时覆盖两性的站, 其余站**暂缓**, 第一段结束后按资料链学到的性别再判一次 (学到 `female` 才补一段), 库内性别已知时以库内为准; 未查站不发 HTTP、不消费其 raw 缓存. 聚合是标量填空 (含 `gender`, `unknown` 当空) + 头像优先, 无影片字段 DAG. `use_cache` 与影片同型: 含 `metadata` 时按**已查**站复用 `Actor.raw` 跳过爬虫 (非法快照降级为重爬), 且只决定是否重新爬取, 不改变写回规则. 写回以本次聚合结果为准, 空位取库内值, 锁定字段保留库内值; 参与且有结果的站点整段覆盖 `Actor.raw`, 未参与站点的快照保留; 别名并入别名行.
+`ActorScrapeHandler` 按 `HotSettings.actor_scraping` 的资料来源 / 头像来源顺序获取 (见 [config.md](config.md)). **站点之间并发, 站内按查找名串行**: 只有「名字未命中」(`not_found` / `no_usable_metadata`) 才换下一个名, 其余 `SourceError` 立即中止本站并记该原因. 裁站按 `Actor.gender` 与各站 `profile().genders`: 性别为 `unknown` 时只先查同时覆盖两性的站, 其余站**暂缓**, 第一段结束后按学到的性别对暂缓站再判一次, 可用则补一段, 未取得性别则不补; 未查站不发 HTTP、不消费其 raw 缓存. 聚合是标量填空 (含 `gender`, `unknown` 当空) + 头像优先, 无影片字段 DAG. `use_cache` 与影片同型: 含 `metadata` 时按**已查**站复用 `Actor.raw` 跳过爬虫 (非法快照降级为重爬), 且只决定是否重新爬取, 不改变写回规则. 写回以本次聚合结果为准, 空位取库内值, 锁定字段保留库内值; 参与且有结果的站点整段覆盖 `Actor.raw`, 未参与站点的快照保留; 别名并入别名行.
 
 **链式自动触发**: `actor_scraping.auto_scrape` 开启 (默认) 时, 影片 SCRAPE 成功后在 `ScrapeHandler` 末尾按清洗解析后的 `meta.actors` 查询 Actor 实体, **`Actor.raw` 非空 (已刮过) 则跳过**, 其余以 **`priority=-1`** 入队 (不抢占影片任务优先级); 同 `actor_id` 已有 queued / running 时复用入队互斥. 链式块内异常只记录 warning, 不阻断刮削主流程.
 

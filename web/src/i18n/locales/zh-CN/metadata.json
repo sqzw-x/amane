@@ -262,8 +262,8 @@
       "title": "裁切头像",
       "success": "头像已更新"
     },
-    "genderHint": "未知时仅查询通用来源, 避免误匹配. 部分来源可自动获取此字段",
-    "genderUnknownHint": "无法判断时选此项; 刮削只请求同时覆盖两性的站点",
+    "genderHint": "未知时先查询通用来源, 取得性别后再补查该性别的站点. 部分来源可自动获取此字段",
+    "genderUnknownHint": "无法判断时选此项; 刮削先请求同时覆盖两性的站点, 取得性别后再补查该性别的站点",
     "aliasesHint": "回车或逗号添加, 点 × 删除",
     "setDisplayName": "设为展示名",
     "setDisplayNameBody": "将「{{alias}}」设为「{{name}}」的展示名？「{{name}}」会保留为别名",

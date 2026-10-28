@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from ..net.http import WebClient
 
 
-# 只有「这个查找名没命中」才值得换下一个名; 站点级故障换名重试会把同一个站再打 N 次.
+# 仅「名字未命中」可以换下一个查找名; 其余失败属于站点级故障, 换名会向同一站点重复发出请求.
 _LOOKUP_MISS_REASONS = frozenset({FailureReason.NOT_FOUND, FailureReason.NO_USABLE_METADATA})
 
 
@@ -99,7 +99,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
             return TaskResult(success=False, error="尚未配置演员刮削站点")
 
         gender = actor.gender
-        # 性别已知时被裁的站永久不查; unknown 时暂存, 由第一段学到的性别决定是否补一段. 被裁站不消费 raw 缓存.
+        # 性别已知时按该性别裁站; unknown 时其余站暂缓, 由第一段学到的性别决定是否补查.
         sites, gated = filter_sites_for_gender(configured, gender)
         deferred = gated if gender is ActorGender.UNKNOWN else []
 
@@ -147,7 +147,7 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
 
         await _fetch_phase(sites)
 
-        # 段间: 第一段学到的性别决定被裁站是否可用; 库内性别已知时以库内为准, 不因本次矛盾结果翻案.
+        # 段间: 用第一段学到的性别重判暂缓站; 未取得性别则维持不查.
         second: list[SiteName] = []
         learned = first_known_gender(results, profile_sites=all_profile_sites)
         if deferred and learned is not None:
@@ -215,7 +215,7 @@ async def _fetch_site(
     names: Sequence[str],
     raw_cache: Mapping[str, object],
 ) -> tuple[ActorMetadata | None, bool]:
-    """单站获取: 缓存命中 / 爬虫缺失 / 逐个查找名尝试. 返回结果与是否命中缓存."""
+    """单站获取. 缓存命中与爬虫缺失都不发请求; 其余按查找名逐个尝试. 返回结果与是否命中缓存."""
     rec = current()
     cached = _actor_from_raw(raw_cache.get(site))
     if cached is not None:

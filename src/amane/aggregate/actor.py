@@ -123,7 +123,7 @@ def first_known_gender(
 ) -> ActorGender | None:
     """沿资料来源顺序取第一个非 unknown 的性别, 无则返回 None.
 
-    与 ``merge_actor_metadata`` 的 gender 填空同序, 因此段间据此裁站时用的就是本次将要写回的性别.
+    与 ``merge_actor_metadata`` 的 gender 填空同序, 因此段间据此裁站用的就是本次聚合结果的性别.
     """
     for site in profile_sites:
         meta = results.get(site)

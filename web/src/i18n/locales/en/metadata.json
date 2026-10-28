@@ -277,8 +277,8 @@
       "title": "Crop photo",
       "success": "Photo updated"
     },
-    "genderHint": "When unknown, only generic sources are queried to avoid false matches. Some sources can fill this field automatically",
-    "genderUnknownHint": "Use when the gender cannot be determined; scraping only queries sites covering both",
+    "genderHint": "When unknown, generic sources are queried first, then sites for the learned gender. Some sources can fill this field automatically",
+    "genderUnknownHint": "Use when the gender cannot be determined; scraping queries sites covering both genders first, then sites for the learned gender",
     "aliasesHint": "Press Enter or comma to add; click × to remove",
     "setDisplayName": "Set as display name",
     "setDisplayNameBody": "Make \"{{alias}}\" the display name of \"{{name}}\"? \"{{name}}\" will be kept as an alias",
