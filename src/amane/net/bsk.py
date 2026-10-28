@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import time
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,7 +23,7 @@ import structlog
 from .errors import FailureKind, FailureReason, RequestFailure, classify_block
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
 
 logger = structlog.get_logger()
 
@@ -50,6 +51,10 @@ _INJECTED_STYLE_RE = re.compile(
     r"<style\b[^>]*\b(?:data-css-hash|data-rc-order)=[\"'][^\"']*[\"'][^>]*>.*?</style>",
     re.IGNORECASE | re.DOTALL,
 )
+
+
+BskRunner = Callable[[str, Sequence[str], float], Awaitable[dict[str, object]]]
+"""执行一条 CLI 命令并返回解析后的 JSON; 生产用 ``_run``, 测试可注入进程内替身."""
 
 
 class BskError(Exception):
@@ -118,13 +123,15 @@ def strip_injected_html(html: str) -> str:
     return cleaned
 
 
-async def probe_bsk(bsk_path: str | None = None, *, timeout_s: float = 10.0) -> BskStatus:
+async def probe_bsk(
+    bsk_path: str | None = None, *, timeout_s: float = 10.0, runner: BskRunner | None = None
+) -> BskStatus:
     """探测 CLI、daemon 与浏览器连接; 任何一步失败都只描述原因, 不抛异常."""
     path = bsk_path or resolve_bsk_path()
     if path is None or not Path(path).is_file():
         return BskStatus(available=False, detail="未找到 bsk CLI, 请先安装 BrowserSkill 并连接浏览器扩展")
     try:
-        data = await _run(path, ("status",), timeout_s=timeout_s)
+        data = await (runner or _run)(path, ("status",), timeout_s)
     except TimeoutError:
         return BskStatus(available=False, detail="bsk status 超时: daemon 无响应")
     except BskError as exc:
@@ -151,7 +158,7 @@ async def probe_bsk(bsk_path: str | None = None, *, timeout_s: float = 10.0) -> 
     )
 
 
-async def _run(path: str, args: Sequence[str], *, timeout_s: float) -> dict[str, object]:
+async def _run(path: str, args: Sequence[str], timeout_s: float = 30.0) -> dict[str, object]:
     """执行一条 CLI 命令并解析 JSON 输出; 失败一律抛 ``BskError`` 或 ``TimeoutError``."""
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -240,12 +247,14 @@ class BskBackend:
         poll_interval: float = _POLL_INTERVAL_S,
         idle_timeout: float = _IDLE_TIMEOUT_S,
         click_cooldown: float = _CLICK_COOLDOWN_S,
+        runner: BskRunner | None = None,
     ) -> None:
         self._path = bsk_path
         self._default_timeout = default_timeout
         self._poll_interval = max(0.05, poll_interval)
         self._idle_timeout = idle_timeout
         self._click_cooldown = click_cooldown
+        self._runner = runner or _run
         self._sessions = [_Session() for _ in range(max(1, max_sessions))]
         self._cursor = 0
         self._closed = False
@@ -502,7 +511,7 @@ class BskBackend:
         path = self._path or resolve_bsk_path()
         if path is None:
             raise BskError("未找到 bsk CLI", code="spawn_failed")
-        return await _run(path, args, timeout_s=timeout_s)
+        return await self._runner(path, args, timeout_s)
 
     def _schedule_idle(self, session: _Session) -> None:
         if self._idle_timeout <= 0:

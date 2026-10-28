@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -17,86 +19,110 @@ _PAD = "<!--pad-->" * 600
 CLEAN = f"<html><body><h1>三上悠亜</h1>{_PAD}</body></html>"
 TINY = "<html><body>stub</body></html>"
 
-_FAKE_CLI = """#!{python}
-import json, os, sys, time
-from pathlib import Path
 
-root = Path(os.environ["FAKE_BSK_DIR"])
-args = sys.argv[1:]
-with (root / "calls.log").open("a", encoding="utf-8") as fh:
-    fh.write(json.dumps(args) + "\\n")
-cfg = json.loads((root / "scenario.json").read_text(encoding="utf-8")) if (root / "scenario.json").exists() else {}
+class _FakeBsk:
+    """进程内替身: 与真实 CLI 一样用 calls.log 记录参数, 用 scenario.json 编排应答.
 
-def count(cmd):
-    n = 0
-    for line in (root / "calls.log").read_text(encoding="utf-8").splitlines():
-        try:
-            if json.loads(line)[0] == cmd:
-                n += 1
-        except Exception:
-            pass
-    return n
+    不起子进程, 因此各平台行为一致也快得多; 子进程层由 ``_run`` 自己的用例覆盖.
+    """
 
-def mark(kind, name):
-    with (root / "events.log").open("a", encoding="utf-8") as fh:
-        fh.write("%s %s %f\\n" % (kind, name, time.time()))
+    def __init__(self, root: Path) -> None:
+        self.root = root
 
-def emit(payload, code=0):
-    print(json.dumps(payload))
-    sys.exit(code)
+    def _config(self) -> dict[str, object]:
+        path = self.root / "scenario.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
-def error(key):
-    if key in cfg:
-        emit(cfg[key], cfg[key].get("exit_code", 1))
+    def _count(self, command: str) -> int:
+        path = self.root / "calls.log"
+        if not path.exists():
+            return 0
+        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if json.loads(line)[0] == command)
 
-cmd = args[0]
-if cmd == "status":
-    error("status_error")
-    emit(cfg.get("status", {"daemon_version": "0.3.3", "protocol_version": "1.3", "browsers": [
-        {"instance_id": "b1", "browser_name": "edge", "extension_version": "0.3.3", "unresponsive": False}]}))
-if cmd == "session":
-    if args[1] == "start":
-        error("session_error")
-        emit({"session_id": cfg.get("session_id", "sess-1")})
-    emit({"stopped": [args[2]]})
-if cmd == "tab":
-    error("tab_error")
-    emit({"tab_id": 100 + count("tab")})
-if cmd == "navigate":
-    mark("start", cmd)
-    time.sleep(cfg.get("sleep_ms", 0) / 1000)
-    mark("end", cmd)
-    error("navigate_error")
-    emit({"final_url": args[1], "reached": "domcontentloaded"})
-if cmd == "evaluate":
-    error("evaluate_error")
-    emit({"ok": True})
-if cmd == "snapshot":
-    error("snapshot_error")
-    texts = cfg.get("snapshot_texts")
-    if texts is None:
-        emit({"text": cfg.get("snapshot_text", ""), "ref_count": 0})
-    emit({"text": texts[min(count("snapshot") - 1, len(texts) - 1)], "ref_count": 0})
-if cmd == "click":
-    error("click_error")
-    emit({"clicked": args[1]})
-if cmd == "wait-for-element":
-    emit({"satisfied": cfg.get("satisfied", True)})
-if cmd == "get-html":
-    error("get_html_error")
-    pages = cfg.get("pages", ["<html>ok</html>"])
-    emit({"html": pages[min(count("get-html") - 1, len(pages) - 1)]})
-emit({"unexpected": cmd}, 2)
-"""
+    def _mark(self, kind: str, name: str) -> None:
+        with (self.root / "events.log").open("a", encoding="utf-8") as handle:
+            handle.write(f"{kind} {name} {time.time()}\n")
+
+    def _maybe_fail(self, config: dict[str, object], key: str) -> None:
+        payload = config.get(key)
+        if not isinstance(payload, dict):
+            return
+        raise BskError(
+            str(payload.get("message", key)),
+            code=payload.get("code") if isinstance(payload.get("code"), str) else None,
+            hint=payload.get("hint") if isinstance(payload.get("hint"), str) else None,
+            exit_code=1,
+        )
+
+    async def __call__(self, path: str, args: Sequence[str], timeout_s: float) -> dict[str, object]:
+        with (self.root / "calls.log").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(list(args)) + "\n")
+        config = self._config()
+        command = args[0]
+        if command == "status":
+            self._maybe_fail(config, "status_error")
+            status = config.get("status")
+            if isinstance(status, dict):
+                return status
+            return {
+                "daemon_version": "0.3.3",
+                "protocol_version": "1.3",
+                "browsers": [
+                    {
+                        "instance_id": "b1",
+                        "browser_name": "edge",
+                        "extension_version": "0.3.3",
+                        "unresponsive": False,
+                    }
+                ],
+            }
+        if command == "session":
+            if args[1] == "start":
+                self._maybe_fail(config, "session_error")
+                session_id = config.get("session_id")
+                return {"session_id": session_id if isinstance(session_id, str) else "sess-1"}
+            return {"stopped": [args[2]]}
+        if command == "tab":
+            self._maybe_fail(config, "tab_error")
+            return {"tab_id": 100 + self._count("tab")}
+        if command == "navigate":
+            self._mark("start", command)
+            sleep_ms = config.get("sleep_ms")
+            await asyncio.sleep(float(sleep_ms) / 1000 if isinstance(sleep_ms, int | float) else 0.0)
+            self._mark("end", command)
+            self._maybe_fail(config, "navigate_error")
+            return {"final_url": args[1], "reached": "domcontentloaded"}
+        if command == "evaluate":
+            self._maybe_fail(config, "evaluate_error")
+            return {"ok": True}
+        if command == "snapshot":
+            self._maybe_fail(config, "snapshot_error")
+            texts = config.get("snapshot_texts")
+            if isinstance(texts, list) and texts:
+                index = min(self._count("snapshot") - 1, len(texts) - 1)
+                return {"text": texts[index], "ref_count": 0}
+            return {"text": config.get("snapshot_text", ""), "ref_count": 0}
+        if command == "click":
+            self._maybe_fail(config, "click_error")
+            return {"clicked": args[1]}
+        if command == "wait-for-element":
+            return {"satisfied": config.get("satisfied", True)}
+        if command == "get-html":
+            self._maybe_fail(config, "get_html_error")
+            pages = config.get("pages")
+            page_list = [page for page in pages if isinstance(page, str)] if isinstance(pages, list) else []
+            index = min(self._count("get-html") - 1, len(page_list) - 1) if page_list else 0
+            return {"html": page_list[index] if page_list else "<html>ok</html>"}
+        raise BskError(f"unexpected command: {command}", code="unexpected")
 
 
 @pytest.fixture
-def bsk_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """装一个假 CLI: calls.log 记录调用, scenario.json 编排应答."""
-    script = tmp_path / "bsk"
-    script.write_text(_FAKE_CLI.replace("{python}", sys.executable), encoding="utf-8")
-    script.chmod(0o755)
-    monkeypatch.setenv("FAKE_BSK_DIR", str(tmp_path))
+def bsk_env(tmp_path: Path) -> Path:
+    """一个目录 + 进程内假 CLI: calls.log 记录调用, scenario.json 编排应答.
+
+    占位文件只为让 ``probe_bsk`` 的"可执行文件存在"检查通过, 真正执行的是注入的 runner.
+    """
+    (tmp_path / "bsk").write_text("", encoding="utf-8")
     return tmp_path
 
 
@@ -136,6 +162,7 @@ def _backend(
 ) -> BskBackend:
     return BskBackend(
         bsk_path=str(root / "bsk"),
+        runner=_FakeBsk(root),
         default_timeout=timeout,
         max_sessions=max_sessions,
         poll_interval=poll_interval,
@@ -439,11 +466,11 @@ async def test_close_stops_started_sessions(bsk_env: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_invalid_cli_output_is_a_failure(bsk_env: Path) -> None:
-    script = bsk_env / "broken"
-    script.write_text("#!/bin/sh\necho not-json\n", encoding="utf-8")
-    script.chmod(0o755)
-    backend = BskBackend(bsk_path=str(script), default_timeout=500)
+async def test_backend_reports_unparsable_output(bsk_env: Path) -> None:
+    async def broken(path: str, args: Sequence[str], timeout_s: float) -> dict[str, object]:
+        raise BskError("bsk session 输出不是 JSON: not-json", code="invalid_output")
+
+    backend = BskBackend(bsk_path=str(bsk_env / "bsk"), runner=broken, default_timeout=500)
     try:
         html, failure = await backend.get_page("https://a.example/", scope="a")
     finally:
@@ -454,7 +481,7 @@ async def test_invalid_cli_output_is_a_failure(bsk_env: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_probe_reports_connected_browser(bsk_env: Path) -> None:
-    status = await probe_bsk(str(bsk_env / "bsk"))
+    status = await probe_bsk(str(bsk_env / "bsk"), runner=_FakeBsk(bsk_env))
     assert status.available and status.connected
     assert status.daemon_version == "0.3.3"
     assert status.browsers[0].name == "edge"
@@ -463,7 +490,7 @@ async def test_probe_reports_connected_browser(bsk_env: Path) -> None:
 @pytest.mark.asyncio
 async def test_probe_without_browser_is_unavailable(bsk_env: Path) -> None:
     _scenario(bsk_env, status={"daemon_version": "0.3.3", "protocol_version": "1.3", "browsers": []})
-    status = await probe_bsk(str(bsk_env / "bsk"))
+    status = await probe_bsk(str(bsk_env / "bsk"), runner=_FakeBsk(bsk_env))
     assert not status.available
     assert "浏览器未连接" in status.detail
 
@@ -485,10 +512,15 @@ def test_resolve_bsk_path_prefers_env(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_run_rejects_non_object_payload(bsk_env: Path) -> None:
-    script = bsk_env / "listy"
-    script.write_text("#!/bin/sh\necho '[1,2]'\n", encoding="utf-8")
-    script.chmod(0o755)
+async def test_run_rejects_non_object_payload() -> None:
     with pytest.raises(BskError) as excinfo:
-        await _run(str(script), ("status",), timeout_s=5)
+        await _run(sys.executable, ("-c", "print('[1,2]')"), timeout_s=10)
     assert excinfo.value.code == "invalid_output"
+
+
+@pytest.mark.asyncio
+async def test_run_rejects_non_json_output() -> None:
+    with pytest.raises(BskError) as excinfo:
+        await _run(sys.executable, ("-c", "print('not-json')"), timeout_s=10)
+    assert excinfo.value.code == "invalid_output"
+    assert "not-json" in str(excinfo.value)
