@@ -564,12 +564,10 @@ class BrowserConfig(BaseModel):
     solver_url: str = Field(default="http://127.0.0.1:8191", pattern=r"^https?://.+")
     """FlareSolverr 兼容服务地址; 仅 ``solver`` 后端使用. 服务不允许暴露到公网."""
 
-    @field_validator("backend")
-    @classmethod
-    def _engine_available(cls, v: BrowserBackendName, info: ValidationInfo) -> BrowserBackendName:
-        # bsk_path 声明在 backend 之前, 因此这里能从已校验字段里读到它.
-        declared = info.data.get("bsk_path")
-        return _require_browser_engine(v, bsk_path=declared if isinstance(declared, str) else None)
+    @model_validator(mode="after")
+    def _engine_available(self) -> BrowserConfig:
+        _require_browser_engine(self.backend, bsk_path=self.bsk_path)
+        return self
 
 
 class NetworkConfig(BaseModel):
