@@ -50,7 +50,7 @@ macOS UI argv (`AmaneUI --base-url http://127.0.0.1:PORT [--token <token>] [--wa
 
 **macOS**: 打开 App → 设置环境 → spawn Python → 等 token 文件 → spawn UI; 第二次打开由 Launch Services 拦截. UI 意外退出或 Python 崩溃 (其它非 0) 时应用进程退避后再次启动, 另一方不受影响. 菜单「重启服务器」→ Python `exit 3` → 立刻再次启动 Python, UI 还在并重新连上. 对 onedir / Amane Force Quit (SIGKILL) 当成崩溃再次启动, 停 App 用菜单或结束应用进程.
 
-**Windows**: 打开 exe 时先抢 Mutex, 已有实例则立刻退出. 菜单「退出」置 stopping、停 Python、卸托盘、结束消息循环; 「重启服务器」同 macOS. Python 崩溃退避后再次启动, 托盘不拆; 任务管理器结束 `Amane.exe` 时 Job Object 结束 Python; explorer.exe 重启后收到 `TaskbarCreated` 再 `NIM_ADD`.
+**Windows**: 打开 exe 时先抢 Mutex, 已有实例则立刻退出. 菜单「退出」置 stopping、停 Python、卸托盘、结束消息循环; 「重启服务器」同 macOS. Python 崩溃退避后再次启动, 托盘不拆; 任务管理器结束 `Amane.exe` 时 Job Object 结束 Python; explorer.exe 重启后收到 `TaskbarCreated` 再 `NIM_ADD`. 该 Job 设 `KILL_ON_JOB_CLOSE | BREAKAWAY_OK`: Python 仍随壳结束, 而 bsk 以 `CREATE_BREAKAWAY_FROM_JOB` 脱离后拉起的 daemon 不随壳结束 — daemon 是跨应用复用的浏览器服务, 不能绑在 Amane 的生命周期上; 停止它用 `bsk daemon stop`.
 
 ## 桌面设置文件
 

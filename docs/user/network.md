@@ -21,7 +21,7 @@ socks5h://127.0.0.1:1080
 
 `socks5h://` 经由代理解析域名, 适用于本地 DNS 受污染的网络.
 
-全局代理用于站点请求、图片下载、订阅源拉取、LLM 翻译、插件播放源、更新检查与本地浏览器 (Patchright / Camoufox). Solver 服务与图像超分工具的下载不使用该代理.
+全局代理用于站点请求、图片下载、订阅源拉取、LLM 翻译、插件播放源、更新检查与本地浏览器 (Patchright / Camoufox). Solver 服务与图像超分工具的下载不使用该代理; BrowserSkill 驱动的是你已登录的浏览器, 走浏览器自身的网络设置, 该代理不作用于它.
 
 ### 按站点代理或直连 {#site-proxy}
 
@@ -37,7 +37,7 @@ socks5h://127.0.0.1:1080
 
 - 站点设置只作用于该站点自身的域名 (默认域名与「自定义域名」). 图片 CDN 等其它域名仍使用全局代理.
 - 演员站点 (minnano、gfriends、wikipedia 等) 也在同一列表中设置.
-- 经由浏览器的请求不受站点代理与「使用代理」影响: 本地浏览器只使用全局代理, Solver 服务使用其自身的代理配置.
+- 经由浏览器的请求不受站点代理与「使用代理」影响: 本地浏览器只使用全局代理, Solver 服务使用其自身的代理配置, BrowserSkill 使用浏览器自身的网络设置.
 
 !!! example "示例"
     国内可直连的站点关闭「使用代理」, 其余站点使用全局代理; 访问 GitHub 受限时, 为 gfriends 单独填写站点代理.
@@ -106,7 +106,7 @@ Cloudflare 人机验证页只能通过执行 JavaScript 越过. 启用浏览器�
 | BrowserSkill | 经 `bsk` CLI 驱动自己已登录的 Chrome / Edge | :material-check: | | :material-check: |
 | Solver 服务 | 外部 FlareSolverr 兼容服务 | :material-check: | :material-check: | :material-check: |
 
-桌面版与 Docker 镜像不包含本地浏览器引擎; 桌面版可以安装 [BrowserSkill](https://github.com/Tencent/BrowserSkill) 的 CLI 与浏览器扩展后使用它, 其余情况使用 Solver 服务. 选择不可用的后端时设置无法保存, 并提示改用 solver. 源码安装经 `just setup` 或 `just sync` 安装全部可选依赖后可以使用 Patchright 与 Camoufox. 各后端当前是否可用在「网络检测」页顶部列出.
+桌面版与 Docker 镜像不包含本地浏览器引擎; 桌面版可以安装 [BrowserSkill](https://github.com/Tencent/BrowserSkill) 的 CLI 与浏览器扩展后使用它, 其余情况使用 Solver 服务. 本地引擎不在当前分发内 (或找不到 bsk CLI) 时保存会被拒绝, 并提示改用 solver. 源码安装经 `just setup` 或 `just sync` 安装全部可选依赖后可以使用 Patchright 与 Camoufox. 各后端当前是否可用在「网络检测」页顶部列出.
 
 | 设置项 | 默认 | 说明 |
 |--------|------|------|
@@ -132,8 +132,10 @@ Cloudflare 人机验证页只能通过执行 JavaScript 越过. 启用浏览器�
 
     1. 安装 [bsk CLI](https://github.com/Tencent/BrowserSkill), 并在 Chrome 或 Edge 中连接 BrowserSkill 扩展.
     2. 「浏览器后端」选择「BrowserSkill」; 桌面版需填写 `bsk` 可执行文件的绝对路径 (应用不继承登录 shell 的 `PATH`).
-    3. 抓取受保护站点时会打开一个 Agent Window 并复用你已登录的状态; 出现「请验证您是真人」时会自动点击一次, 连续失败则任务报错.
-    4. 该扩展能读到你任意已登录站点的数据, 只在可信环境中启用.
+    3. 只保留一个浏览器连接: bsk 一次只驱动一个浏览器实例, 同时连接多个时「网络检测」页会提示.
+    4. 抓取受保护站点时会打开一个浏览器窗口并复用你已登录的状态; 出现「请验证您是真人」时会自动点击, 同一页面最多 3 次, 连续失败则任务报错.
+    5. 窗口在空闲 30 秒后自动关闭.
+    6. 该扩展能读到你任意已登录站点的数据, 只在可信环境中启用.
 
 !!! danger "Solver 服务不能暴露到公网"
     Solver 服务可以代替调用方访问任意地址, 暴露到公网会被滥用. 只监听本机或内网地址.
