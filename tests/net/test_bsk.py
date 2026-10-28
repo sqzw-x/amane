@@ -71,6 +71,12 @@ if cmd == "navigate":
 if cmd == "evaluate":
     error("evaluate_error")
     emit({"ok": True})
+if cmd == "snapshot":
+    error("snapshot_error")
+    emit({"text": cfg.get("snapshot_text", ""), "ref_count": 0})
+if cmd == "click":
+    error("click_error")
+    emit({"clicked": args[1]})
 if cmd == "wait-for-element":
     emit({"satisfied": cfg.get("satisfied", True)})
 if cmd == "get-html":
@@ -166,6 +172,51 @@ async def test_challenge_polled_until_cleared(bsk_env: Path) -> None:
     finally:
         await backend.close()
     assert _commands(bsk_env).count("get-html") == 3
+
+
+@pytest.mark.asyncio
+async def test_interactive_challenge_is_clicked_then_clears(bsk_env: Path) -> None:
+    _scenario(
+        bsk_env,
+        pages=[CHALLENGE, CHALLENGE, CLEAN],
+        snapshot_text='@e1 checkbox "请验证您是真人"',
+    )
+    backend = _backend(bsk_env, poll_interval=0.01)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    clicks = [args for args in _calls(bsk_env) if args[0] == "click"]
+    assert len(clicks) == 1
+    assert clicks[0][1] == "@e1"
+
+
+@pytest.mark.asyncio
+async def test_challenge_without_verification_node_never_clicks(bsk_env: Path) -> None:
+    _scenario(bsk_env, pages=[CHALLENGE], snapshot_text='@e1 button "setting"')
+    backend = _backend(bsk_env, timeout=150, poll_interval=0.01)
+    try:
+        html, failure = await backend.get_page("https://a.example/", scope="a")
+    finally:
+        await backend.close()
+    assert html is None
+    assert failure is not None and failure.reason is FailureReason.CLOUDFLARE_CHALLENGE
+    assert not [args for args in _calls(bsk_env) if args[0] == "click"]
+
+
+@pytest.mark.asyncio
+async def test_click_failure_keeps_polling(bsk_env: Path) -> None:
+    _scenario(
+        bsk_env,
+        pages=[CHALLENGE, CLEAN],
+        snapshot_text='@e1 checkbox "请验证您是真人"',
+        click_error={"code": "not_found", "message": "ref is stale", "exit_code": 1},
+    )
+    backend = _backend(bsk_env, poll_interval=0.01)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
 
 
 @pytest.mark.asyncio

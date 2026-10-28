@@ -37,6 +37,11 @@ _COMMAND_SLACK_S = 5.0
 _MAX_HTML_BYTES = 8 * 1024 * 1024
 # 导航刚提交时可能读到中间态 (跳转桩 / 空文档); 低于此长度不当成最终正文.
 _MIN_DOCUMENT_BYTES = 4096
+# 交互式 Turnstile: 无障碍树里的复选框节点, 角色 + 人机验证字样, 避免误点页面上的其他按钮.
+_VERIFY_NODE_RE = re.compile(r"(@e\d+)\s+(?:checkbox|button)\b[^\n]*?(验证|真人|verify|human)", re.IGNORECASE)
+# 挑战页上最多探测几次快照 (每次之间隔一拍) 并点击; 点完仍不放开就按未解决处理.
+_CLICK_ATTEMPTS = 3
+_CLICK_COOLDOWN_S = 2.0
 # 扩展注入的样式 (antd cssinjs) 带 data-css-hash / data-rc-order, 页面自身样式不受影响.
 _INJECTED_STYLE_RE = re.compile(
     r"<style\b[^>]*\b(?:data-css-hash|data-rc-order)=[\"'][^\"']*[\"'][^>]*>.*?</style>",
@@ -397,17 +402,51 @@ class BskBackend:
     async def _settle(self, session_id: str, tab_id: int, deadline: float) -> str:
         """轮询正文直到挑战消解; 其余拦截原因原样交给 ``HttpClient`` 分类.
 
+        托管挑战通常自行消解, 但循环一段时间后 Cloudflare 会换成要求点击的 Turnstile: 此时按
+        ``_CLICK_COOLDOWN_S`` 间隔取快照找复选框并原生点击, 最多 ``_CLICK_ATTEMPTS`` 次.
         低于 ``_MIN_DOCUMENT_BYTES`` 的正文视为导航中间态继续等, 逾期则原样返回, 由上层判定.
         """
+        attempts = 0
+        last_probe = 0.0
         while True:
             html = await self._get_html(session_id, tab_id, deadline)
             expired = time.monotonic() >= deadline
             if classify_block(html) is FailureReason.CLOUDFLARE_CHALLENGE:
                 if expired:
                     raise _ChallengeUnresolved
+                now = time.monotonic()
+                if attempts < _CLICK_ATTEMPTS and now - last_probe >= _CLICK_COOLDOWN_S:
+                    attempts += 1
+                    last_probe = now
+                    await self._click_verification(session_id, tab_id, deadline)
             elif len(html) >= _MIN_DOCUMENT_BYTES or expired:
                 return html
             await asyncio.sleep(min(self._poll_interval, max(0.0, deadline - time.monotonic())))
+
+    async def _click_verification(self, session_id: str, tab_id: int, deadline: float) -> None:
+        """交互式 Turnstile: 从无障碍树里取复选框 ref 后原生点击; 找不到节点就继续轮询.
+
+        复选框在跨域 iframe 里, 选择器够不到, 只有快照 ref 能定位; 点击是输入事件而非 DOM 调用.
+        """
+        try:
+            data = await self._call(
+                ("snapshot", "--session", session_id, "--tab-id", str(tab_id), "--max-tokens", "4000"),
+                timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
+            )
+        except BskError as exc:
+            logger.debug("bsk snapshot failed (ignored)", error=str(exc))
+            return
+        text = _str_field(data, "text") or ""
+        match = _VERIFY_NODE_RE.search(text)
+        if match is None:
+            return
+        ref = match.group(1)
+        try:
+            await self._call(("click", ref, "--session", session_id, "--tab-id", str(tab_id)))
+        except BskError as exc:
+            logger.debug("bsk click failed (ignored)", ref=ref, error=str(exc))
+            return
+        logger.info("bsk clicked cloudflare verification", ref=ref)
 
     async def _wait_for(self, session_id: str, tab_id: int, selector: str, deadline: float) -> None:
         data = await self._call(

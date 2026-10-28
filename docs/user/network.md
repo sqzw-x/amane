@@ -132,7 +132,8 @@ Cloudflare 人机验证页只能通过执行 JavaScript 越过. 启用浏览器�
 
     1. 安装 [bsk CLI](https://github.com/Tencent/BrowserSkill), 并在 Chrome 或 Edge 中连接 BrowserSkill 扩展.
     2. 「浏览器后端」选择「BrowserSkill」; 桌面版需填写 `bsk` 可执行文件的绝对路径 (应用不继承登录 shell 的 `PATH`).
-    3. 抓取受保护站点时会打开一个 Agent Window 并复用你已登录的状态; 该扩展能读到你任意已登录站点的数据, 只在可信环境中启用.
+    3. 抓取受保护站点时会打开一个 Agent Window 并复用你已登录的状态; 出现「请验证您是真人」时会自动点击一次, 连续失败则任务报错.
+    4. 该扩展能读到你任意已登录站点的数据, 只在可信环境中启用.
 
 !!! danger "Solver 服务不能暴露到公网"
     Solver 服务可以代替调用方访问任意地址, 暴露到公网会被滥用. 只监听本机或内网地址.
