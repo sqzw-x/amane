@@ -40,6 +40,9 @@ _IDLE_TIMEOUT_S = 30.0
 _COMMAND_SLACK_S = 5.0
 # 会话关闭是清理动作, 失败不应拖住调用方.
 _STOP_TIMEOUT_S = 10.0
+# 前台 daemon 从启动到接受连接的上限与轮询间隔.
+_DAEMON_START_TIMEOUT_S = 15.0
+_DAEMON_POLL_INTERVAL_S = 0.25
 # 桌面壳以无控制台方式启动服务端, Windows 会给其后创建的控制台程序新分配一个窗口; CREATE_NO_WINDOW
 # 让 CLI 不落在任何控制台上, 避免每次调用弹出控制台窗口.
 _CREATE_NO_WINDOW = 0x08000000
@@ -62,6 +65,9 @@ _INJECTED_STYLE_RE = re.compile(
 
 BskRunner = Callable[[str, Sequence[str], float], Awaitable[dict[str, object]]]
 """执行一条 CLI 命令并返回解析后的 JSON; 生产用 ``_run``, 测试可注入进程内替代实现."""
+
+BskDaemonStarter = Callable[[], Awaitable[None]]
+"""在 CLI 无法自行分离 daemon 的宿主里, 由后台自己拉起前台 daemon."""
 
 
 class BskError(Exception):
@@ -242,6 +248,17 @@ def _dict_list(value: object) -> list[dict[str, object]]:
     return [item for item in value if isinstance(item, dict)]
 
 
+def _daemon_metadata_path() -> Path:
+    """CLI 与 daemon 共用的元数据文件位置 (``BSK_HOME`` 可覆盖默认的 ``~/.bsk``)."""
+    home = os.environ.get("BSK_HOME")
+    return Path(home).expanduser() / "daemon.json" if home else Path.home() / ".bsk" / "daemon.json"
+
+
+def _is_daemon_start_failure(exc: BskError) -> bool:
+    """CLI 因宿主 Job 限制而不肯分离 daemon 时的错误; 前台模式可以绕开."""
+    return "Job Object" in str(exc)
+
+
 def _seconds(ms: float) -> str:
     """CLI 的 ``--timeout`` 语法."""
     return f"{max(1, int(ms))}ms"
@@ -273,6 +290,7 @@ class BskBackend:
         idle_timeout: float = _IDLE_TIMEOUT_S,
         click_cooldown: float = _CLICK_COOLDOWN_S,
         runner: BskRunner | None = None,
+        daemon_starter: BskDaemonStarter | None = None,
     ) -> None:
         self._path = bsk_path
         self._default_timeout = default_timeout
@@ -280,6 +298,8 @@ class BskBackend:
         self._idle_timeout = idle_timeout
         self._click_cooldown = click_cooldown
         self._runner = runner or _run
+        self._daemon_starter = daemon_starter or self._start_foreground_daemon
+        self._daemon: asyncio.subprocess.Process | None = None
         self._sessions = [_Session() for _ in range(max(1, max_sessions))]
         self._cursor = 0
         self._closed = False
@@ -545,7 +565,67 @@ class BskBackend:
         path = self._path or resolve_bsk_path()
         if path is None:
             raise BskError("未找到 bsk CLI", code="spawn_failed")
-        return await self._runner(path, args, timeout_s)
+        try:
+            return await self._runner(path, args, timeout_s)
+        except BskError as exc:
+            if not _is_daemon_start_failure(exc):
+                raise
+            # CLI 无法从宿主的 Job 里分离 daemon (Windows 上常见): 自己起前台 daemon 再重试.
+            await self._daemon_starter()
+            path = self._path or resolve_bsk_path()
+            if path is None:
+                raise BskError("未找到 bsk CLI", code="spawn_failed") from exc
+            return await self._runner(path, args, timeout_s)
+
+    async def _start_foreground_daemon(self) -> None:
+        """拉起 ``bsk daemon start --foreground`` 并等它就绪; 进程随服务退出一并结束.
+
+        宿主被不允许 breakaway 的 Job 罩住时 (Windows 11 的会话自带嵌套 Job), 分离模式
+        一定失败; 前台模式不需要脱离 Job. 无控制台窗口, 与普通 CLI 调用共用同一个 BSK_HOME.
+        """
+        if self._daemon is not None and self._daemon.returncode is None:
+            return
+        path = self._path or resolve_bsk_path()
+        if path is None:
+            raise BskError("未找到 bsk CLI", code="spawn_failed")
+        try:
+            self._daemon = await asyncio.create_subprocess_exec(
+                path,
+                "daemon",
+                "start",
+                "--foreground",
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                creationflags=_CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            )
+        except OSError as exc:
+            raise BskError(f"无法启动 bsk 前台 daemon: {exc}", code="spawn_failed") from exc
+        # 就绪信号看 daemon 自己写的元数据文件: 启动期间反复跑 status 会撞上 CLI 的自动拉起,
+        # 在受限宿主里那个流程会自己卡住, 比直接读文件慢得多.
+        meta = _daemon_metadata_path()
+        deadline = time.monotonic() + _DAEMON_START_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if self._daemon.returncode is not None:
+                self._daemon = None
+                raise BskError("bsk 前台 daemon 启动失败", code="daemon_start_failed")
+            try:
+                info = json.loads(meta.read_text(encoding="utf-8"))
+            except OSError, json.JSONDecodeError:
+                info = {}
+            if info.get("pid") == self._daemon.pid:
+                try:
+                    data = await self._runner(path, ("status",), 10.0)
+                except BskError, TimeoutError:
+                    data = {}
+                if _int_field(data, "pid") is not None:
+                    logger.info("bsk foreground daemon ready")
+                    return
+            await asyncio.sleep(_DAEMON_POLL_INTERVAL_S)
+        self._daemon.kill()
+        await self._daemon.wait()
+        self._daemon = None
+        raise BskError("bsk 前台 daemon 未就绪", code="daemon_start_failed")
 
     def _schedule_idle(self, session: _Session) -> None:
         if self._idle_timeout <= 0:

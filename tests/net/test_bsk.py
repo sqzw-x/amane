@@ -665,3 +665,55 @@ async def test_cookie_bootstrap_repeats_per_host(bsk_env: Path) -> None:
     finally:
         await backend.close()
     assert _commands(bsk_env).count("evaluate") == 2
+
+
+@pytest.mark.asyncio
+async def test_job_restricted_cli_falls_back_to_foreground_daemon(bsk_env: Path) -> None:
+    """宿主 Job 不允许脱离时 (Windows 11 的默认会话), CLI 自起 daemon 必然失败, 由后台起前台 daemon."""
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        session_error={
+            "code": "daemon_start_failed",
+            "message": "cannot start an independent Windows daemon; the host may prohibit Job Object breakaway",
+        },
+    )
+    started: list[bool] = []
+
+    async def start_daemon() -> None:
+        started.append(True)
+        _scenario(bsk_env, pages=[CLEAN])  # 前台 daemon 已就绪, 重试不再撞上启动失败
+
+    backend = BskBackend(
+        bsk_path=str(bsk_env / "bsk"),
+        runner=_FakeBsk(bsk_env),
+        default_timeout=500,
+        daemon_starter=start_daemon,
+    )
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    assert started == [True]
+
+
+@pytest.mark.asyncio
+async def test_other_failures_do_not_start_daemon(bsk_env: Path) -> None:
+    _scenario(bsk_env, pages=[CLEAN], session_error={"code": "not_found", "message": "session not registered"})
+    started: list[bool] = []
+
+    async def start_daemon() -> None:
+        started.append(True)
+
+    backend = BskBackend(
+        bsk_path=str(bsk_env / "bsk"),
+        runner=_FakeBsk(bsk_env),
+        default_timeout=500,
+        daemon_starter=start_daemon,
+    )
+    try:
+        html, failure = await backend.get_page("https://a.example/", scope="a")
+    finally:
+        await backend.close()
+    assert html is None and failure is not None
+    assert started == []
