@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -36,6 +37,9 @@ _POLL_INTERVAL_S = 1.0
 # 存在 profile 里, 不随窗口消失), 因此留一拍给连续任务收尾即可.
 _IDLE_TIMEOUT_S = 30.0
 _COMMAND_SLACK_S = 5.0
+# 桌面壳以无控制台方式启动服务端, Windows 会给其后创建的控制台程序新分配一个窗口; CREATE_NO_WINDOW
+# 让 CLI 不落在任何控制台上, 避免每次调用弹出控制台窗口.
+_CREATE_NO_WINDOW = 0x08000000
 # get-html 的取回上限; 超限 CLI 会截断并在 stderr 告警, 正文长度按站点规模留足余量.
 _MAX_HTML_BYTES = 8 * 1024 * 1024
 # 导航刚提交时可能读到中间态 (跳转桩 / 空文档); 低于此长度不当成最终正文.
@@ -167,6 +171,7 @@ async def _run(path: str, args: Sequence[str], timeout_s: float = 30.0) -> dict[
             "--json",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            creationflags=_CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
     except OSError as exc:
         raise BskError(f"无法启动 bsk: {exc}", code="spawn_failed") from exc
