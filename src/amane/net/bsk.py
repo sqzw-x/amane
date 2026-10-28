@@ -31,7 +31,9 @@ BrowserPageResult = tuple[str | None, RequestFailure | None]
 
 # 挑战页轮询间隔、浏览器空闲关闭时限与单次 CLI 调用的固定余量 (秒).
 _POLL_INTERVAL_S = 1.0
-_IDLE_TIMEOUT_S = 600.0
+# Agent Window 对用户可见, 空闲不能像无头引擎那样挂 10 分钟; 会话重启很便宜 (clearance 与 cookie
+# 存在 profile 里, 不随窗口消失), 因此留一拍给连续任务收尾即可.
+_IDLE_TIMEOUT_S = 30.0
 _COMMAND_SLACK_S = 5.0
 # get-html 的取回上限; 超限 CLI 会截断并在 stderr 告警, 正文长度按站点规模留足余量.
 _MAX_HTML_BYTES = 8 * 1024 * 1024
@@ -39,9 +41,10 @@ _MAX_HTML_BYTES = 8 * 1024 * 1024
 _MIN_DOCUMENT_BYTES = 4096
 # 交互式 Turnstile: 无障碍树里的复选框节点, 角色 + 人机验证字样, 避免误点页面上的其他按钮.
 _VERIFY_NODE_RE = re.compile(r"(@e\d+)\s+(?:checkbox|button)\b[^\n]*?(验证|真人|verify|human)", re.IGNORECASE)
-# 挑战页上最多探测几次快照 (每次之间隔一拍) 并点击; 点完仍不放开就按未解决处理.
-_CLICK_ATTEMPTS = 3
+# 交互式验证: 两次快照之间至少间隔这么久 (复选框出现得比首屏晚, 探测要持续到截止时间),
+# 以及单个页面最多点击几次, 避免把预算耗在同一处反复点.
 _CLICK_COOLDOWN_S = 2.0
+_MAX_CLICKS = 3
 # 扩展注入的样式 (antd cssinjs) 带 data-css-hash / data-rc-order, 页面自身样式不受影响.
 _INJECTED_STYLE_RE = re.compile(
     r"<style\b[^>]*\b(?:data-css-hash|data-rc-order)=[\"'][^\"']*[\"'][^>]*>.*?</style>",
@@ -236,11 +239,13 @@ class BskBackend:
         max_sessions: int = 2,
         poll_interval: float = _POLL_INTERVAL_S,
         idle_timeout: float = _IDLE_TIMEOUT_S,
+        click_cooldown: float = _CLICK_COOLDOWN_S,
     ) -> None:
         self._path = bsk_path
         self._default_timeout = default_timeout
         self._poll_interval = max(0.05, poll_interval)
         self._idle_timeout = idle_timeout
+        self._click_cooldown = click_cooldown
         self._sessions = [_Session() for _ in range(max(1, max_sessions))]
         self._cursor = 0
         self._closed = False
@@ -403,10 +408,12 @@ class BskBackend:
         """轮询正文直到挑战消解; 其余拦截原因原样交给 ``HttpClient`` 分类.
 
         托管挑战通常自行消解, 但循环一段时间后 Cloudflare 会换成要求点击的 Turnstile: 此时按
-        ``_CLICK_COOLDOWN_S`` 间隔取快照找复选框并原生点击, 最多 ``_CLICK_ATTEMPTS`` 次.
-        低于 ``_MIN_DOCUMENT_BYTES`` 的正文视为导航中间态继续等, 逾期则原样返回, 由上层判定.
+        ``_CLICK_COOLDOWN_S`` 间隔持续取快照找复选框并原生点击 (复选框常晚于首屏出现, 探测只在
+        截止时间停止), 同一个 ref 只点一次. 低于 ``_MIN_DOCUMENT_BYTES`` 的正文视为导航中间态继续等,
+        逾期则原样返回, 由上层判定.
         """
-        attempts = 0
+        clicked: set[str] = set()
+        clicks = 0
         last_probe = 0.0
         while True:
             html = await self._get_html(session_id, tab_id, deadline)
@@ -415,18 +422,19 @@ class BskBackend:
                 if expired:
                     raise _ChallengeUnresolved
                 now = time.monotonic()
-                if attempts < _CLICK_ATTEMPTS and now - last_probe >= _CLICK_COOLDOWN_S:
-                    attempts += 1
+                if clicks < _MAX_CLICKS and now - last_probe >= self._click_cooldown:
                     last_probe = now
-                    await self._click_verification(session_id, tab_id, deadline)
+                    if await self._click_verification(session_id, tab_id, deadline, clicked):
+                        clicks += 1
             elif len(html) >= _MIN_DOCUMENT_BYTES or expired:
                 return html
             await asyncio.sleep(min(self._poll_interval, max(0.0, deadline - time.monotonic())))
 
-    async def _click_verification(self, session_id: str, tab_id: int, deadline: float) -> None:
-        """交互式 Turnstile: 从无障碍树里取复选框 ref 后原生点击; 找不到节点就继续轮询.
+    async def _click_verification(self, session_id: str, tab_id: int, deadline: float, clicked: set[str]) -> bool:
+        """交互式 Turnstile: 从无障碍树里取复选框 ref 后原生点击.
 
         复选框在跨域 iframe 里, 选择器够不到, 只有快照 ref 能定位; 点击是输入事件而非 DOM 调用.
+        同一个 ref 只点一次 — 页面重绘会换 ref, 没换说明点了也没变化, 再点只是浪费预算.
         """
         try:
             data = await self._call(
@@ -435,18 +443,22 @@ class BskBackend:
             )
         except BskError as exc:
             logger.debug("bsk snapshot failed (ignored)", error=str(exc))
-            return
+            return False
         text = _str_field(data, "text") or ""
         match = _VERIFY_NODE_RE.search(text)
         if match is None:
-            return
+            return False
         ref = match.group(1)
+        if ref in clicked:
+            return False
+        clicked.add(ref)
         try:
             await self._call(("click", ref, "--session", session_id, "--tab-id", str(tab_id)))
         except BskError as exc:
             logger.debug("bsk click failed (ignored)", ref=ref, error=str(exc))
-            return
+            return False
         logger.info("bsk clicked cloudflare verification", ref=ref)
+        return True
 
     async def _wait_for(self, session_id: str, tab_id: int, selector: str, deadline: float) -> None:
         data = await self._call(

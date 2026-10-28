@@ -73,7 +73,10 @@ if cmd == "evaluate":
     emit({"ok": True})
 if cmd == "snapshot":
     error("snapshot_error")
-    emit({"text": cfg.get("snapshot_text", ""), "ref_count": 0})
+    texts = cfg.get("snapshot_texts")
+    if texts is None:
+        emit({"text": cfg.get("snapshot_text", ""), "ref_count": 0})
+    emit({"text": texts[min(count("snapshot") - 1, len(texts) - 1)], "ref_count": 0})
 if cmd == "click":
     error("click_error")
     emit({"clicked": args[1]})
@@ -129,12 +132,14 @@ def _backend(
     timeout: float = 500,
     max_sessions: int = 2,
     poll_interval: float = 1.0,
+    click_cooldown: float = 2.0,
 ) -> BskBackend:
     return BskBackend(
         bsk_path=str(root / "bsk"),
         default_timeout=timeout,
         max_sessions=max_sessions,
         poll_interval=poll_interval,
+        click_cooldown=click_cooldown,
     )
 
 
@@ -189,6 +194,35 @@ async def test_interactive_challenge_is_clicked_then_clears(bsk_env: Path) -> No
     clicks = [args for args in _calls(bsk_env) if args[0] == "click"]
     assert len(clicks) == 1
     assert clicks[0][1] == "@e1"
+
+
+@pytest.mark.asyncio
+async def test_late_checkbox_is_still_clicked(bsk_env: Path) -> None:
+    """复选框常晚于首屏出现: 探测要持续到截止时间, 不能只试前几拍."""
+    _scenario(
+        bsk_env,
+        pages=[CHALLENGE] * 6 + [CLEAN],
+        snapshot_texts=["", "", "", '@e1 checkbox "请验证您是真人"', '@e1 checkbox "请验证您是真人"'],
+    )
+    backend = _backend(bsk_env, timeout=3000, poll_interval=0.01, click_cooldown=0.01)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    clicks = [args for args in _calls(bsk_env) if args[0] == "click"]
+    assert len(clicks) == 1
+
+
+@pytest.mark.asyncio
+async def test_same_ref_is_clicked_once(bsk_env: Path) -> None:
+    _scenario(bsk_env, pages=[CHALLENGE] * 8, snapshot_text='@e1 checkbox "请验证您是真人"')
+    backend = _backend(bsk_env, timeout=200, poll_interval=0.01, click_cooldown=0.01)
+    try:
+        html, failure = await backend.get_page("https://a.example/", scope="a")
+    finally:
+        await backend.close()
+    assert html is None and failure is not None and failure.reason is FailureReason.CLOUDFLARE_CHALLENGE
+    assert len([args for args in _calls(bsk_env) if args[0] == "click"]) == 1
 
 
 @pytest.mark.asyncio
