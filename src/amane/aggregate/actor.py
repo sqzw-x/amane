@@ -10,7 +10,7 @@ from ..crawlers.actor import ActorMetadata
 from ..enums import ActorGender, SiteName
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
 
 # 先到先得 (空才填). source_urls 为多源字典, 不在此列.
@@ -116,6 +116,22 @@ def merge_actor_metadata(
                 break
 
     return out
+
+
+def first_known_gender(
+    results: Mapping[SiteName, ActorMetadata | None], *, profile_sites: Sequence[SiteName]
+) -> ActorGender | None:
+    """沿资料来源顺序取第一个非 unknown 的性别, 无则返回 None.
+
+    与 ``merge_actor_metadata`` 的 gender 填空同序, 因此段间据此裁站时用的就是本次将要写回的性别.
+    """
+    for site in profile_sites:
+        meta = results.get(site)
+        if meta is None:
+            continue
+        if meta.gender not in (None, ActorGender.UNKNOWN):
+            return meta.gender
+    return None
 
 
 def merge_actor_rows_fill_empty(target: AggregatedActor, source: AggregatedActor) -> AggregatedActor:

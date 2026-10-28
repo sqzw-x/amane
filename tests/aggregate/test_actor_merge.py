@@ -6,6 +6,7 @@ import pytest
 
 from amane.aggregate.actor import (
     AggregatedActor,
+    first_known_gender,
     merge_actor_metadata,
     merge_actor_rows_fill_empty,
     merge_actor_scrape_result,
@@ -19,6 +20,14 @@ from amane.db.actor_person import (
 )
 from amane.db.models import Actor
 from amane.enums import ActorField, ActorGender, SiteName
+
+MINNANO, WIKIPEDIA, GFRIENDS = SiteName.MINNANO, SiteName.WIKIPEDIA, SiteName.GFRIENDS
+FEMALE, MALE, UNKNOWN = ActorGender.FEMALE, ActorGender.MALE, ActorGender.UNKNOWN
+
+
+def _gender(value: ActorGender) -> ActorMetadata:
+    """只带性别的站点结果."""
+    return ActorMetadata(gender=value)
 
 
 class TestMergeActorMetadata:
@@ -99,6 +108,48 @@ class TestMergeActorMetadata:
         merged = merge_actor_rows_fill_empty(target, source)
         assert merged.gender == ActorGender.MALE
         assert merged.overview == "keep"
+
+
+class TestFirstKnownGender:
+    @pytest.mark.parametrize(
+        ("desc", "results", "profile_sites", "expected"),
+        [
+            (
+                "取资料链上靠前站的性别",
+                {MINNANO: _gender(FEMALE), WIKIPEDIA: _gender(MALE)},
+                [MINNANO, WIKIPEDIA],
+                FEMALE,
+            ),
+            (
+                "链序优先于字典顺序",
+                {WIKIPEDIA: _gender(MALE), MINNANO: _gender(FEMALE)},
+                [MINNANO, WIKIPEDIA],
+                FEMALE,
+            ),
+            ("跳过未命中的站", {MINNANO: None, WIKIPEDIA: _gender(MALE)}, [MINNANO, WIKIPEDIA], MALE),
+            ("跳过 unknown", {MINNANO: _gender(UNKNOWN), WIKIPEDIA: _gender(MALE)}, [MINNANO, WIKIPEDIA], MALE),
+            ("全为 unknown 或未命中", {MINNANO: _gender(UNKNOWN), WIKIPEDIA: None}, [MINNANO, WIKIPEDIA], None),
+            ("空结果", {}, [MINNANO, WIKIPEDIA], None),
+            ("不在资料链上的站不参与", {GFRIENDS: _gender(FEMALE)}, [MINNANO], None),
+        ],
+        ids=[
+            "first_in_chain",
+            "chain_order_not_dict_order",
+            "skip_miss",
+            "skip_unknown",
+            "all_unknown",
+            "empty",
+            "off_chain_site",
+        ],
+    )
+    def test_picks_first_known(
+        self,
+        desc: str,
+        results: dict[SiteName, ActorMetadata | None],
+        profile_sites: list[SiteName],
+        expected: ActorGender | None,
+    ) -> None:
+        assert first_known_gender(results, profile_sites=profile_sites) == expected
 
 
 class TestMergeActorRows:

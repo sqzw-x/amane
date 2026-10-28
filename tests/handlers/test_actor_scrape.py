@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -43,6 +44,37 @@ class _FakeFactory:
 
     async def get_actor_crawlers(self, names: Iterable[str]) -> dict[str, ActorFetcher]:
         return {n: self._crawlers[n] for n in names if n in self._crawlers}
+
+
+class _LoggedActorCrawler:
+    """记录开始与结束并让出事件循环, 用于观察站与站之间是否重叠."""
+
+    def __init__(self, site: str, log: list[str], meta: ActorMetadata | None):
+        self._site = site
+        self._log = log
+        self._meta = meta
+
+    async def fetch(self, name: str) -> ActorMetadata | None:
+        self._log.append(f"start:{self._site}")
+        await asyncio.sleep(0)
+        self._log.append(f"end:{self._site}")
+        return self._meta
+
+
+class _ScriptedActorCrawler:
+    """除指定查找名外一律抛 SourceError."""
+
+    def __init__(self, hit_name: str, meta: ActorMetadata, reason: FailureReason):
+        self._hit_name = hit_name
+        self._meta = meta
+        self._reason = reason
+        self.calls: list[str] = []
+
+    async def fetch(self, name: str) -> ActorMetadata | None:
+        self.calls.append(name)
+        if name == self._hit_name:
+            return self._meta
+        raise SourceError(self._reason, detail="scripted")
 
 
 @pytest.fixture
@@ -525,3 +557,154 @@ async def test_actor_scrape_unexpected_records_unexpected(repo: Repository, hot:
         assert rec.summary.outcomes["minnano"].reason == FailureReason.UNEXPECTED
     finally:
         rec.close()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_fetches_sites_concurrently(repo: Repository, hot: HotSettings) -> None:
+    """站与站并发: 串行实现下日志必然是 start/end 成对, 不会交错."""
+    hot.actor_scraping.profile_sites = [SiteName.MINNANO, SiteName.WIKIPEDIA]
+    hot.actor_scraping.image_sites = []
+    actor_id = await _actor_id(repo, "Parallel")
+
+    log: list[str] = []
+    factory = _FakeFactory(
+        {
+            "minnano": _LoggedActorCrawler("minnano", log, ActorMetadata(height=160)),
+            "wikipedia": _LoggedActorCrawler("wikipedia", log, ActorMetadata(overview="bio")),
+        }
+    )
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id))
+
+    assert result.success
+    assert log == ["start:minnano", "start:wikipedia", "end:minnano", "end:wikipedia"]
+    saved = await repo.get_actor(actor_id)
+    assert saved is not None
+    assert saved.height == 160
+    assert saved.overview == "bio"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_second_phase_after_gender_learned(repo: Repository, hot: HotSettings) -> None:
+    """性别 unknown 时被裁的站等第一段学到 female 后才查, 不与该段重叠."""
+    hot.actor_scraping.profile_sites = [SiteName.WIKIPEDIA, SiteName.MINNANO]
+    hot.actor_scraping.image_sites = []
+    actor_id = await _actor_id(repo, "Learned", gender=ActorGender.UNKNOWN)
+
+    log: list[str] = []
+    factory = _FakeFactory(
+        {
+            "wikipedia": _LoggedActorCrawler(
+                "wikipedia", log, ActorMetadata(gender=ActorGender.FEMALE, overview="bio")
+            ),
+            "minnano": _LoggedActorCrawler("minnano", log, ActorMetadata(birthday="1990-05-06", height=158)),
+        }
+    )
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id))
+
+    assert result.success
+    assert log == ["start:wikipedia", "end:wikipedia", "start:minnano", "end:minnano"]
+    saved = await repo.get_actor(actor_id)
+    assert saved is not None
+    assert saved.gender == ActorGender.FEMALE
+    assert saved.overview == "bio"
+    assert saved.birthday == "1990-05-06"
+    assert saved.height == 158
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(
+    ("desc", "reason", "expected_calls", "expected_height", "expected_outcome", "expected_reason"),
+    [
+        (
+            "查找名未命中 (not_found) 继续下一个名",
+            FailureReason.NOT_FOUND,
+            ["Canon", "旧名1", "旧名2"],
+            170,
+            SiteOutcomeKind.OK,
+            None,
+        ),
+        (
+            "站点级故障 (ip_banned) 立即中止本站, 不逐名重试",
+            FailureReason.IP_BANNED,
+            ["Canon"],
+            None,
+            SiteOutcomeKind.FAILED,
+            FailureReason.IP_BANNED,
+        ),
+    ],
+    ids=["lookup_miss_continues", "site_failure_aborts"],
+)
+async def test_actor_scrape_lookup_name_retry_policy(
+    repo: Repository,
+    hot: HotSettings,
+    tmp_path: Path,
+    desc: str,
+    reason: FailureReason,
+    expected_calls: list[str],
+    expected_height: int | None,
+    expected_outcome: SiteOutcomeKind,
+    expected_reason: FailureReason | None,
+) -> None:
+    hot.actor_scraping.profile_sites = [SiteName.MINNANO]
+    hot.actor_scraping.image_sites = []
+    actor_id = await _actor_id(repo, "Canon")
+    actor = await repo.get_actor(actor_id)
+    assert actor is not None
+    await repo.save_actor(actor, aliases=["旧名1", "旧名2"])
+
+    crawler = _ScriptedActorCrawler("旧名2", ActorMetadata(name="旧名2", height=170), reason)
+    handler = ActorScrapeHandler(repo, _FakeFactory({"minnano": crawler}), AsyncMock(), hot, web_client=None)
+
+    task = Task(id=81, type=TaskType.ACTOR_SCRAPE, status=TaskStatus.RUNNING, payload={"actor_id": actor_id})
+    rec = Recorder.begin(tmp_path, task, hot)
+    try:
+        result = await handler.handle(ActorScrapePayload(actor_id=actor_id, use_cache=set()))
+        assert result.success
+        assert crawler.calls == expected_calls
+        assert rec.summary.outcomes["minnano"].outcome is expected_outcome
+        assert rec.summary.outcomes["minnano"].reason == expected_reason
+    finally:
+        rec.close()
+
+    saved = await repo.get_actor(actor_id)
+    assert saved is not None
+    assert saved.height == expected_height
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_reports_determinate_progress(repo: Repository, hot: HotSettings) -> None:
+    """分母取暂缓站的上限并恒定, current 单调且终态满格; 学不到可用性别时暂缓站不查."""
+    hot.actor_scraping.profile_sites = [SiteName.WIKIPEDIA, SiteName.MINNANO]
+    hot.actor_scraping.image_sites = [SiteName.GFRIENDS]
+    actor_id = await _actor_id(repo, "Progressed", gender=ActorGender.UNKNOWN)
+
+    minnano = _FakeActorCrawler({"Progressed": ActorMetadata(birthday="1990-01-01")})
+    gfriends = _FakeActorCrawler({"Progressed": ActorMetadata(image_urls=["https://x/y.jpg"])})
+    factory = _FakeFactory(
+        {
+            "wikipedia": _FakeActorCrawler({"Progressed": ActorMetadata(gender=ActorGender.MALE, overview="bio")}),
+            "minnano": minnano,
+            "gfriends": gfriends,
+        }
+    )
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
+    events: list[tuple[int, int, str]] = []
+
+    async def capture(current: int, total: int, message: str = "") -> None:
+        events.append((current, total, message))
+
+    handler.set_progress_callback(capture)
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id, use_cache=set()))
+
+    assert result.success
+    assert minnano.calls == []
+    assert gfriends.calls == []
+    totals = {total for _, total, _ in events}
+    assert len(totals) == 1
+    assert events[-1] == (events[-1][1], events[-1][1], "saved")
+    assert [current for current, _, _ in events] == sorted(current for current, _, _ in events)
+    assert all(0 < current <= total for current, total, _ in events)
