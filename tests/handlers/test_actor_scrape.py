@@ -462,10 +462,18 @@ async def test_actor_scrape_male_skips_female_only_sites_and_raw(repo: Repositor
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_actor_scrape_unknown_skips_female_only_like_male(repo: Repository, hot: HotSettings) -> None:
+async def test_actor_scrape_learned_male_keeps_gated_sites_unqueried(repo: Repository, hot: HotSettings) -> None:
+    """第一段学到男性: 只覆盖女性的站不再请求, 其 raw 快照也不参与本次合并."""
     hot.actor_scraping.profile_sites = [SiteName.MINNANO, SiteName.WIKIPEDIA]
     hot.actor_scraping.image_sites = [SiteName.GFRIENDS]
     actor_id = await _actor_id(repo, "Unk", gender=ActorGender.UNKNOWN)
+    actor = await repo.get_actor(actor_id)
+    assert actor is not None
+    actor.raw = {
+        "minnano": {"name": "Unk", "birthday": "1990-01-01"},
+        "gfriends": {"name": "Unk", "image_urls": ["https://x/y.jpg"]},
+    }
+    await repo.save_actor(actor)
 
     minnano = _FakeActorCrawler({"Unk": ActorMetadata(name="Unk", birthday="1990-01-01")})
     wiki = _FakeActorCrawler({"Unk": ActorMetadata(name="Unk", gender=ActorGender.MALE, overview="wiki")})
@@ -473,7 +481,7 @@ async def test_actor_scrape_unknown_skips_female_only_like_male(repo: Repository
     factory = _FakeFactory({"minnano": minnano, "wikipedia": wiki, "gfriends": gfriends})
     handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
 
-    result = await handler.handle(ActorScrapePayload(actor_id=actor_id, use_cache=set()))
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id, use_cache={CacheKind.metadata}))
     assert result.success
     assert minnano.calls == []
     assert gfriends.calls == []
@@ -484,6 +492,9 @@ async def test_actor_scrape_unknown_skips_female_only_like_male(repo: Repository
     assert saved.overview == "wiki"
     assert saved.birthday is None
     assert saved.image_urls == []
+    # 未参与站点的快照原样保留, 但其中的字段不进本次结果.
+    assert saved.raw["minnano"] == {"name": "Unk", "birthday": "1990-01-01"}
+    assert saved.raw["gfriends"] == {"name": "Unk", "image_urls": ["https://x/y.jpg"]}
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -586,8 +597,10 @@ async def test_actor_scrape_fetches_sites_concurrently(repo: Repository, hot: Ho
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_actor_scrape_second_phase_after_gender_learned(repo: Repository, hot: HotSettings) -> None:
-    """性别 unknown 时被裁的站等第一段学到 female 后才查, 不与该段重叠."""
+async def test_actor_scrape_second_phase_after_gender_learned(
+    repo: Repository, hot: HotSettings, tmp_path: Path
+) -> None:
+    """性别 unknown 时被裁的站等第一段学到 female 后才查, 不与该段同时进行."""
     hot.actor_scraping.profile_sites = [SiteName.WIKIPEDIA, SiteName.MINNANO]
     hot.actor_scraping.image_sites = []
     actor_id = await _actor_id(repo, "Learned", gender=ActorGender.UNKNOWN)
@@ -603,9 +616,18 @@ async def test_actor_scrape_second_phase_after_gender_learned(repo: Repository, 
     )
     handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
 
-    result = await handler.handle(ActorScrapePayload(actor_id=actor_id))
+    task = Task(id=82, type=TaskType.ACTOR_SCRAPE, status=TaskStatus.RUNNING, payload={"actor_id": actor_id})
+    rec = Recorder.begin(tmp_path, task, hot)
+    try:
+        result = await handler.handle(ActorScrapePayload(actor_id=actor_id))
+        assert result.success
+        # 第二段发起前同步调度顺序, 否则任务的站点明细缺第二段.
+        assert rec.summary.sites_queried == ["wikipedia", "minnano"]
+        assert result.result is not None
+        assert [row.site for row in result.result.outcomes] == ["wikipedia", "minnano"]
+    finally:
+        rec.close()
 
-    assert result.success
     assert log == ["start:wikipedia", "end:wikipedia", "start:minnano", "end:minnano"]
     saved = await repo.get_actor(actor_id)
     assert saved is not None
@@ -616,11 +638,49 @@ async def test_actor_scrape_second_phase_after_gender_learned(repo: Repository, 
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_second_phase_reuses_raw_snapshot(repo: Repository, hot: HotSettings) -> None:
+    """暂缓站随学到的性别进入第二段时读 raw 快照, 不发请求."""
+    hot.actor_scraping.profile_sites = [SiteName.WIKIPEDIA, SiteName.MINNANO]
+    hot.actor_scraping.image_sites = [SiteName.GFRIENDS]
+    actor_id = await _actor_id(repo, "Cached", gender=ActorGender.UNKNOWN)
+    actor = await repo.get_actor(actor_id)
+    assert actor is not None
+    actor.raw = {
+        "minnano": {"name": "Cached", "birthday": "1991-02-03"},
+        "gfriends": {"name": "Cached", "image_urls": ["https://img.example/cached.jpg"]},
+    }
+    await repo.save_actor(actor)
+
+    minnano = _FakeActorCrawler({})
+    gfriends = _FakeActorCrawler({})
+    factory = _FakeFactory(
+        {
+            "wikipedia": _FakeActorCrawler({"Cached": ActorMetadata(gender=ActorGender.FEMALE, overview="bio")}),
+            "minnano": minnano,
+            "gfriends": gfriends,
+        }
+    )
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id, use_cache={CacheKind.metadata}))
+
+    assert result.success
+    assert minnano.calls == []
+    assert gfriends.calls == []
+    saved = await repo.get_actor(actor_id)
+    assert saved is not None
+    assert saved.gender == ActorGender.FEMALE
+    assert saved.birthday == "1991-02-03"
+    assert saved.image_urls == ["https://img.example/cached.jpg"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
 @pytest.mark.parametrize(
-    ("desc", "reason", "expected_calls", "expected_height", "expected_outcome", "expected_reason"),
+    ("desc", "hit_name", "reason", "expected_calls", "expected_height", "expected_outcome", "expected_reason"),
     [
         (
             "查找名未命中 (not_found) 继续下一个名",
+            "旧名2",
             FailureReason.NOT_FOUND,
             ["Canon", "旧名1", "旧名2"],
             170,
@@ -628,21 +688,41 @@ async def test_actor_scrape_second_phase_after_gender_learned(repo: Repository, 
             None,
         ),
         (
+            "站点无元数据 (no_usable_metadata) 同样继续下一个名",
+            "旧名2",
+            FailureReason.NO_USABLE_METADATA,
+            ["Canon", "旧名1", "旧名2"],
+            170,
+            SiteOutcomeKind.OK,
+            None,
+        ),
+        (
             "站点级故障 (ip_banned) 立即中止本站, 不逐名重试",
+            "旧名2",
             FailureReason.IP_BANNED,
             ["Canon"],
             None,
             SiteOutcomeKind.FAILED,
             FailureReason.IP_BANNED,
         ),
+        (
+            "全部查找名都未命中时上报最后一个失败",
+            "__never__",
+            FailureReason.NOT_FOUND,
+            ["Canon", "旧名1", "旧名2"],
+            None,
+            SiteOutcomeKind.FAILED,
+            FailureReason.NOT_FOUND,
+        ),
     ],
-    ids=["lookup_miss_continues", "site_failure_aborts"],
+    ids=["lookup_miss_continues", "empty_result_continues", "site_failure_aborts", "all_names_miss"],
 )
 async def test_actor_scrape_lookup_name_retry_policy(
     repo: Repository,
     hot: HotSettings,
     tmp_path: Path,
     desc: str,
+    hit_name: str,
     reason: FailureReason,
     expected_calls: list[str],
     expected_height: int | None,
@@ -656,7 +736,7 @@ async def test_actor_scrape_lookup_name_retry_policy(
     assert actor is not None
     await repo.save_actor(actor, aliases=["旧名1", "旧名2"])
 
-    crawler = _ScriptedActorCrawler("旧名2", ActorMetadata(name="旧名2", height=170), reason)
+    crawler = _ScriptedActorCrawler(hit_name, ActorMetadata(name=hit_name, height=170), reason)
     handler = ActorScrapeHandler(repo, _FakeFactory({"minnano": crawler}), AsyncMock(), hot, web_client=None)
 
     task = Task(id=81, type=TaskType.ACTOR_SCRAPE, status=TaskStatus.RUNNING, payload={"actor_id": actor_id})
@@ -677,7 +757,7 @@ async def test_actor_scrape_lookup_name_retry_policy(
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_actor_scrape_reports_determinate_progress(repo: Repository, hot: HotSettings) -> None:
-    """分母取暂缓站的上限并恒定, current 单调且终态满格; 学不到可用性别时暂缓站不查."""
+    """分母取暂缓站的上限并恒定, current 单调且终态满格; 学到的性别使暂缓站仍不可用时不查."""
     hot.actor_scraping.profile_sites = [SiteName.WIKIPEDIA, SiteName.MINNANO]
     hot.actor_scraping.image_sites = [SiteName.GFRIENDS]
     actor_id = await _actor_id(repo, "Progressed", gender=ActorGender.UNKNOWN)
@@ -703,8 +783,7 @@ async def test_actor_scrape_reports_determinate_progress(repo: Repository, hot: 
     assert result.success
     assert minnano.calls == []
     assert gfriends.calls == []
-    totals = {total for _, total, _ in events}
-    assert len(totals) == 1
-    assert events[-1] == (events[-1][1], events[-1][1], "saved")
+    # 分母 = 第一段 1 站 + 暂缓 2 站 + 图片与保存 2 步; 只按已查站计数会得到 3.
+    assert {total for _, total, _ in events} == {5}
+    assert events[-1] == (5, 5, "saved")
     assert [current for current, _, _ in events] == sorted(current for current, _, _ in events)
-    assert all(0 < current <= total for current, total, _ in events)
