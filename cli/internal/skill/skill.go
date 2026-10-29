@@ -139,10 +139,19 @@ func renderMain(version string) string {
 	fmt.Fprintf(&b, "amane schema%s                 # 库结构摘要\n", pf)
 	fmt.Fprintf(&b, "amane call <tool> --file <路径>%s  # 派发调用\n", pf)
 	fmt.Fprintf(&b, "amane wait <task-id>%s         # 轮询到终态\n", pf)
-	fmt.Fprintf(&b, "amane api <path>%s             # 直通 GET\n", pf)
+	fmt.Fprintf(&b, "amane api <path> [--method <方法>] [--file <路径>|-]%s  # 直通 REST, 工具做不到时用\n", pf)
 	fmt.Fprintf(&b, "amane doctor%s                 # 自检\n", pf)
 	b.WriteString("```\n")
 	b.WriteString("\n`--timeout` 在 `wait` 上是轮询截止时间, 在其余命令上是单次请求超时 (默认 15s). 只有慢查询这类耗时才需要.\n")
+
+	b.WriteString("\n## REST 兜底\n\n")
+	b.WriteString("工具目录是主路径: 目录里有等价工具时不要用 REST, 工具做不到时才直通. 形状先看 OpenAPI, 只取要用的那一段:\n\n")
+	b.WriteString("```sh\n")
+	fmt.Fprintf(&b, "amane api /docs/openapi.json%s | jq '.paths | keys'\n", pf)
+	fmt.Fprintf(&b, "amane api /docs/openapi.json%s | jq '.paths[\"/api/comments/{comment_id}\"]'\n", pf)
+	b.WriteString("```\n")
+	b.WriteString("\nREST 供实例自己的界面使用, 不为智能体设计: 不保证兼容性与易用性, 形状随版本变化, 也不压缩体积. 整份文档数百 KB, 不要整份读进上下文.\n")
+	b.WriteString("写操作照常受「审批礼仪」约束; 经 REST 的写入不进工具审计, 事后只有请求记录里的方法与路径.\n")
 
 	b.WriteString("\n## 审批礼仪\n\n")
 	b.WriteString("服务端不设审批闸门, 是否执行由你与用户的对话决定. 下列操作执行前必须先向用户复述影响面 (修改什么、涉及多少条、能否撤销), 得到明确同意后才调用:\n\n")
@@ -150,6 +159,7 @@ func renderMain(version string) string {
 	b.WriteString("- 合并分类或番号条目, 以及任何批量修改.\n")
 	b.WriteString("- 批量删除或批量修改用户标签、订阅源条目.\n")
 	b.WriteString("- 预计耗时较长的查询 (allow_slow 只跳过实例的慢查询闸门, 时限仍由 sql_timeout_ms 决定), 以及任何预计会全表扫描的 SQL.\n")
+	b.WriteString("- 经 REST 的删除、合并与批量修改与工具调用同等对待, 不因绕开工具而放宽.\n")
 	b.WriteString("\n用户未答复或答复含糊时不执行. 不要用 `--yes` 之类的开关跳过这一步: CLI 不提供它.\n")
 
 	b.WriteString("\n## 自服务\n\n")

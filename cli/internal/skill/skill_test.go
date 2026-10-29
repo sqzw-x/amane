@@ -19,7 +19,7 @@ func TestRenderIncludesCommands(t *testing.T) {
 	}
 
 	main := string(files[MainFile])
-	for _, want := range []string{"审批礼仪", "amane doctor", "amane wait", "amane catalog", "amane schema", "0.1.0", "--profile <name>", "amane config list"} {
+	for _, want := range []string{"审批礼仪", "REST 兜底", "--method", "amane doctor", "amane wait", "amane catalog", "amane schema", "0.1.0", "--profile <name>", "amane config list"} {
 		if !strings.Contains(main, want) {
 			t.Errorf("SKILL.md 缺少 %q", want)
 		}
