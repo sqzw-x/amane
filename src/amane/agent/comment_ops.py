@@ -16,7 +16,7 @@ from .tools import TOOL_OK, AgentDeps, require_approval
 
 
 def _clean_body(body: str) -> str:
-    """与 ``CommentBody`` 同一条约束: 先去首尾空白, 再拒绝空正文与超长."""
+    """与 ``CommentBody`` 同一组约束 (先 strip 再判空与上界); 上界取自同一常量."""
     cleaned = body.strip()
     if not cleaned:
         raise ValueError("评论正文不能为空")
