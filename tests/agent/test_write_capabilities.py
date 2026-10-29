@@ -14,19 +14,21 @@ from pydantic_ai import ApprovalRequired
 
 from amane.agent.actor_ops import build_actor_ops_capability
 from amane.agent.bridge import AgentRuntimeBridge
-from amane.agent.cache import ResultCache
+from amane.agent.cache import CachedResult, ResultCache
+from amane.agent.capabilities import build_capabilities
+from amane.agent.comment_ops import build_comment_ops_capability
 from amane.agent.executor import QueryExecutor
 from amane.agent.facet_identity import build_facet_identity_capability
-from amane.agent.feed_ops import build_feed_ops_capability
 from amane.agent.library_ops import build_library_ops_capability
 from amane.agent.metadata_ops import build_metadata_ops_capability
 from amane.agent.runtime import build_agent
-from amane.agent.schedule_ops import build_schedule_ops_capability
+from amane.agent.saved_query_ops import build_saved_query_ops_capability
 from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.task_ops import build_task_ops_capability
 from amane.agent.tools import TOOL_OK, AgentDeps
+from amane.api.models.comments import COMMENT_BODY_MAX
 from amane.config import AgentConfig
-from amane.db.models import FacetKind, TaskStatus, TaskType
+from amane.db.models import FacetKind, SavedQueryEntity, TaskStatus, TaskType
 from amane.db.repository import Repository
 from amane.enums import ApiType
 from amane.handlers.models import ScrapePayload
@@ -60,6 +62,8 @@ def test_build_agent_wires_all_write_capabilities() -> None:
         "metadata-ops",
         "actor-ops",
         "facet-identity",
+        "comment-ops",
+        "saved-query-ops",
         "library-ops",
         "feed-ops",
         "schedule-ops",
@@ -237,6 +241,141 @@ async def test_task_retry_rejects_non_failed(write_deps: AgentDeps) -> None:
     assert "error" in out
 
 
+@pytest.mark.asyncio
+async def test_comment_tools(write_deps: AgentDeps) -> None:
+    meta = await write_deps.repo.upsert_metadata(number="CMT-001", title="t")
+    assert meta.id is not None
+    cap = build_comment_ops_capability()
+
+    created = await tool_fn(cap, "create_comment")(ToolCallContext(write_deps), metadata_id=meta.id, body="  第一条  ")
+    comment_id = int(created["comment_id"])
+    assert [c.body for c in await write_deps.repo.list_comments(meta.id)] == ["第一条"]
+
+    updated = await tool_fn(cap, "update_comment")(ToolCallContext(write_deps), comment_id=comment_id, body="改过")
+    assert updated == TOOL_OK
+    rows = await write_deps.repo.list_comments(meta.id)
+    assert rows[0].body == "改过"
+    assert rows[0].updated_at > rows[0].created_at
+
+    with pytest.raises(ApprovalRequired) as exc:
+        await tool_fn(cap, "delete_comment")(ToolCallContext(write_deps, tool_call_id="tc-cmt"), comment_id=comment_id)
+    assert (exc.value.metadata or {})["tool"] == "delete_comment"
+    deleted = await tool_fn(cap, "delete_comment")(
+        ToolCallContext(write_deps, tool_call_id="tc-cmt", tool_call_approved=True), comment_id=comment_id
+    )
+    assert deleted == TOOL_OK
+    assert await write_deps.repo.list_comments(meta.id) == []
+
+
+@pytest.mark.asyncio
+async def test_comment_tool_rejects_bad_body(write_deps: AgentDeps) -> None:
+    cap = build_comment_ops_capability()
+    for body in ("   ", "x" * (COMMENT_BODY_MAX + 1)):
+        out = await tool_fn(cap, "create_comment")(ToolCallContext(write_deps), metadata_id=1, body=body)
+        assert "error" in out
+
+    missing = await tool_fn(cap, "create_comment")(ToolCallContext(write_deps), metadata_id=999999, body="ok")
+    assert missing == {"error": "metadata 999999 不存在"}
+    absent = await tool_fn(cap, "update_comment")(ToolCallContext(write_deps), comment_id=999999, body="ok")
+    assert "error" in absent
+
+
+@pytest.mark.asyncio
+async def test_ensure_user_tags_and_attach(write_deps: AgentDeps) -> None:
+    meta = await write_deps.repo.upsert_metadata(number="TAG-001", title="t")
+    assert meta.id is not None
+    facet_cap = build_facet_identity_capability()
+
+    out = await tool_fn(facet_cap, "ensure_user_tags")(ToolCallContext(write_deps), names=[" 精选 ", "精选", "新标签"])
+    assert out["created"] == 2
+    assert [tag["name"] for tag in out["tags"]] == ["精选", "新标签"]
+    ids = [tag["id"] for tag in out["tags"]]
+
+    again = await tool_fn(facet_cap, "ensure_user_tags")(ToolCallContext(write_deps), names=["精选"])
+    assert again["created"] == 0
+    assert again["tags"][0]["id"] == ids[0]
+
+    attached = await tool_fn(build_metadata_ops_capability(), "batch_user_tags")(
+        ToolCallContext(write_deps), metadata_ids=[meta.id], user_tag_ids=ids
+    )
+    assert attached == {"changed": 1, "unchanged": 0, "missing": 0}
+    assert sorted(tag.name for tag in await write_deps.repo.list_metadata_user_tags(meta.id)) == ["新标签", "精选"]
+
+    blank = await tool_fn(facet_cap, "ensure_user_tags")(ToolCallContext(write_deps), names=["  ", ""])
+    assert "error" in blank
+
+
+@pytest.mark.asyncio
+async def test_actor_user_tags_and_lock_release(write_deps: AgentDeps) -> None:
+    await write_deps.repo.upsert_metadata(number="ACT-002", title="t", actors=["Bob"])
+    items, _ = await write_deps.repo.list_facets(FacetKind.ACTOR, limit=10)
+    actor_id = items[0].id
+    assert actor_id is not None
+
+    tags = await tool_fn(build_facet_identity_capability(), "ensure_user_tags")(
+        ToolCallContext(write_deps), names=["待补"]
+    )
+    tag_id = int(tags["tags"][0]["id"])
+    attached = await tool_fn(build_actor_ops_capability(), "batch_actor_user_tags")(
+        ToolCallContext(write_deps), actor_ids=[actor_id], user_tag_ids=[tag_id]
+    )
+    assert attached == {"changed": 1, "unchanged": 0, "missing": 0}
+    assert [tag.name for tag in await write_deps.repo.list_actor_user_tags(actor_id)] == ["待补"]
+    unknown = await tool_fn(build_actor_ops_capability(), "batch_actor_user_tags")(
+        ToolCallContext(write_deps), actor_ids=[actor_id], user_tag_ids=[999999]
+    )
+    assert "error" in unknown
+
+    # update_actor 属 MANUAL 写入, 改过的字段自动上锁; 只有 set_actor_locks 能释放.
+    await tool_fn(build_actor_ops_capability(), "update_actor")(
+        ToolCallContext(write_deps), actor_id=actor_id, patch={"overview": "bio"}
+    )
+    locked = await write_deps.repo.get_actor(actor_id)
+    assert locked is not None and "overview" in locked.locked_fields
+    released = await tool_fn(build_actor_ops_capability(), "set_actor_locks")(
+        ToolCallContext(write_deps), actor_id=actor_id, fields=[]
+    )
+    assert released == TOOL_OK
+    row = await write_deps.repo.get_actor(actor_id)
+    assert row is not None and row.locked_fields == []
+    wrong = await tool_fn(build_actor_ops_capability(), "set_actor_locks")(
+        ToolCallContext(write_deps), actor_id=999999, fields=[]
+    )
+    assert "error" in wrong
+
+
+@pytest.mark.asyncio
+async def test_saved_query_rename_and_delete(write_deps: AgentDeps) -> None:
+    query = await write_deps.repo.create_saved_query(
+        name="旧名", sql="SELECT 1", entity=SavedQueryEntity.DATA, persisted=True
+    )
+    assert query.id is not None
+    write_deps.executor.cache.put(CachedResult(saved_query_id=query.id, sql=query.sql, columns=["x"], rows=[[1]]))
+    cap = build_saved_query_ops_capability()
+
+    renamed = await tool_fn(cap, "update_saved_query")(
+        ToolCallContext(write_deps), query_id=query.id, name=" 新名 ", description=" 说明 "
+    )
+    assert renamed == TOOL_OK
+    row = await write_deps.repo.get_saved_query(query.id)
+    assert row is not None and (row.name, row.description) == ("新名", "说明")
+    for kwargs in ({"name": "   "}, {}):
+        rejected = await tool_fn(cap, "update_saved_query")(ToolCallContext(write_deps), query_id=query.id, **kwargs)
+        assert "error" in rejected
+    missing = await tool_fn(cap, "update_saved_query")(ToolCallContext(write_deps), query_id=999999, name="x")
+    assert "error" in missing
+
+    with pytest.raises(ApprovalRequired) as exc:
+        await tool_fn(cap, "delete_saved_queries")(ToolCallContext(write_deps, tool_call_id="tc-sq"), ids=[query.id])
+    assert (exc.value.metadata or {})["tool"] == "delete_saved_queries"
+    deleted = await tool_fn(cap, "delete_saved_queries")(
+        ToolCallContext(write_deps, tool_call_id="tc-sq", tool_call_approved=True), ids=[query.id, 999999]
+    )
+    assert deleted == {"deleted": 1, "missing": 1}
+    assert await write_deps.repo.get_saved_query(query.id) is None
+    assert write_deps.executor.cache.get(query.id, query.sql) is None
+
+
 def _tool_names(payload: dict[str, Any]) -> list[str]:
     """Responses 用 ``name``, Chat Completions 嵌在 ``function`` 里."""
     return [tool.get("name") or tool["function"]["name"] for tool in payload.get("tools") or []]
@@ -282,15 +421,7 @@ _DONE: dict[ApiType, dict[str, Any]] = {
 
 
 def _write_tool_names() -> set[str]:
-    caps = [
-        build_metadata_ops_capability(),
-        build_actor_ops_capability(),
-        build_facet_identity_capability(),
-        build_library_ops_capability(),
-        build_feed_ops_capability(),
-        build_schedule_ops_capability(),
-        build_task_ops_capability(),
-    ]
+    caps = build_capabilities()
     return {name for cap in caps for name in cap_toolset(cap).tools}
 
 
