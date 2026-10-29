@@ -19,17 +19,19 @@
 | `sql_deliver` | 面向用户的结果 → `saved_query` + 内存结果缓存. `entity=metadata\|actor` 交付须含主键列 `id`, 可作片库 / 演员筛选并深链; 省略 entity (或 `data`) 交付任意只读结果, 只进入数据页 |
 | `inspect_result` | 按 `saved_query_id` 取行 (交付或探查视图) |
 
-写操作工具按域分组为 `Capability`, **不做延迟载入**: 每个请求都声明全部工具. 兼容端点 (DeepSeek 等) 没有「声明了但不开放」的通道, 逐次载入只能通过修改 `tools` 实现, 而工具定义渲染在 system 之后、对话之前, 每载入一次即重读整段对话前缀; 全量声明的固定前缀恒定不变, 首轮即命中缓存. 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务.
+写操作工具按域分组为 `Capability`, 清单在 `agent/capabilities.py`, 内置助理与外部派发共用同一份 (名字即对外契约, 只登记一处才不会让两侧漂移). **不做延迟载入**: 每个请求都声明全部工具. 兼容端点 (DeepSeek 等) 没有「声明了但不开放」的通道, 逐次载入只能通过修改 `tools` 实现, 而工具定义渲染在 system 之后、对话之前, 每载入一次即重读整段对话前缀; 全量声明的固定前缀恒定不变, 首轮即命中缓存. 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务.
 
 | `id` | 覆盖 |
 |------|------|
-| `metadata-ops` | 修改字段、合并、user tag、刮削入队、删除 |
-| `actor-ops` | 演员人物字段、别名行 (查询 / 解析 / 增删)、展示名切换、演员刮削入队 |
-| `facet-identity` | rename / merge / delete / 规则列表与删除 |
+| `metadata-ops` | 修改字段、字段锁、合并、user tag、刮削入队、删除 |
+| `actor-ops` | 演员人物字段、字段锁、别名行 (查询 / 解析 / 增删)、展示名切换、user tag、演员刮削入队 |
+| `facet-identity` | rename / merge / delete / 规则列表与删除 / user tag 按名取回 |
+| `comment-ops` | 评论增删改 |
 | `library-ops` | 库 CRUD、REFRESH 入队 |
 | `feed-ops` | 源 CRUD、立即拉取、FeedItem 历史批量操作 |
 | `schedule-ops` | CLEANUP / UPSCALE / R18_IMPORT / RESCRAPE 定时 CRUD 与触发 |
 | `task-ops` | 统一提交 / 取消 / 重试 (入队, 不代为运行) |
+| `saved-query-ops` | 预设改名 / 删除 |
 
 任务与定时任务的入参 (即 `submit_task` / `create_schedule` 的 `submission`) **不随工具签名内联**: 联合体大小远大于其余工具定义, 改为 `get_task_submission_schema` / `get_routine_submission_schema` 按需返回, 与提交时的校验共用同一个 `TypeAdapter`; 校验失败返回出错字段 (最多三条)、可用类型与该类型的字段定义, 模型无需再次试探形状.
 
@@ -47,13 +49,19 @@
 
 执行前只修改实际调用与落入 `messages.json` 的 `tool_name`: `__` 最后一段恰好是当前可调用名时裁成该段; 名字已在可调用集合里或后缀对不上则原样交给框架 (未知工具仍 `ModelRetry`). 工具卡片仍可能显示模型原始名.
 
+MANUAL 写入会把所改字段并入锁集合 (见 [data-model.md](data-model.md)「字段锁定」), 因此两域各有一个 `set_*_locks`: 与 REST 一样整体替换, 空列表即解锁全部, 解锁后字段才会被下一次刮削覆盖.
+
+用户标签有两步: `facet-identity.ensure_user_tags` 按名取回或新建并回 id, 再由 `batch_user_tags` / `batch_actor_user_tags` 挂载; 挂载工具只接受 id, 未知 id 报错而不是静默新建.
+
+`comment-ops` 只管正文, 评论 id 取自 `sql_explore` 的 `comments` 表; 正文按 Markdown 原文存储, 长度上界与请求模型共用 `api/models/comments.py::COMMENT_BODY_MAX`. `saved-query-ops` 不改 SQL (改 SQL 须先过只读沙箱, 那条路径留在 REST), 删除时与 REST 一样失效内存缓存.
+
 `actor-ops` 的别名工具对应别名模型 (见 [data-model.md](data-model.md) 演员身份): 别名是一对多行, `resolve_actor_name` 多命中即歧义, 应交由用户决定; `set_actor_display_name` 与 `facet-identity.rename_facet(kind=actor)` 等价, 二者任一即可, 不允许重复调用. `PATCH /config` **不**暴露为工具.
 
 `feed-ops` 只通过 `FeedService.poll_one` 触发远程拉取; 新条目是否入队 SCRAPE 由 Feed 的 `auto_enqueue` 决定, Agent 不在工具内解析 RSS 或直接运行刮削. 删除源或删除条目历史须批准. 条目 `scrape` 沿用该 Feed 当前配置, 语义见 [feeds.md](feeds.md).
 
 `schedule-ops` 创建时只接受 `RoutineSubmission`; 更新只允许 `name` / `cron` / `enabled`, 任务类型或 payload 变化须删除后重建. `trigger_schedule` 只把 `next_run` 设为当前时间, 实际 Task 由 `CronScheduler` 下一次 tick 创建, 不是同步执行.
 
-**批准流**: SQL 非法或 SQLite 运行时错误 → 工具返回 `error` 字符串, **不**升格为回合错误打断整轮. 慢查询 (`allow_slow`) 与破坏性写 (metadata / facet merge·delete·删规则 / 删库) 在工具体内 `raise ApprovalRequired`; 适配器把 `DeferredToolRequests` 映射成 AG-UI 中断 (`RUN_FINISHED.outcome.interrupts`), 中断 `id` 为 `int-{tool_call_id}`, 文案取自工具给的 metadata. 一次 `resume[]` 必须回答**全部**打开的中断, 故前端逐项暂存决定、集齐后整批提交, 批量批准即全部置 approve. 批准 → 工具体再次进入且 `tool_call_approved=True`; 拒绝 → `ToolDenied`. 模型只看见普通 tool return, **无**「用户已批准…」类附加说明; 刷新后用回放行末尾的中断还原待批状态. 
+**批准流**: SQL 非法或 SQLite 运行时错误 → 工具返回 `error` 字符串, **不**升格为回合错误打断整轮. 慢查询 (`allow_slow`) 与破坏性写 (metadata / facet merge·delete·删规则 / 删库 / 删评论 / 删预设) 在工具体内 `raise ApprovalRequired`; 适配器把 `DeferredToolRequests` 映射成 AG-UI 中断 (`RUN_FINISHED.outcome.interrupts`), 中断 `id` 为 `int-{tool_call_id}`, 文案取自工具给的 metadata. 一次 `resume[]` 必须回答**全部**打开的中断, 故前端逐项暂存决定、集齐后整批提交, 批量批准即全部置 approve. 批准 → 工具体再次进入且 `tool_call_approved=True`; 拒绝 → `ToolDenied`. 模型只看见普通 tool return, **无**「用户已批准…」类附加说明; 刷新后用回放行末尾的中断还原待批状态. 
 
 ## 会话数据
 
@@ -113,7 +121,7 @@
 
 目录是模型上下文的主要成本, 按「什么时候需要」拆三级, 不一次给全:
 
-- `GET /api/tools` 索引: 每个工具一行 (名字、一行描述、参数签名), 约 1400 tokens, 够选工具.
+- `GET /api/tools` 索引: 每个工具一行 (名字、一行描述、参数签名), 约 1700 tokens, 够选工具.
 - `GET /api/tools/{name}` 详情: 单个工具的完整入参, 约 170 tokens, 参数不确定时才取.
 - `GET /api/db-schema` 库结构: 写只读 SQL 时才取.
 
