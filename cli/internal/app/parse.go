@@ -1,6 +1,7 @@
 package app
 
 import (
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -248,8 +249,8 @@ func (p *parsed) validate() error {
 		return usagef("未知命令 %q; 用 amane --help 查看命令表", p.cmd)
 	}
 
-	if p.fileSet && p.cmd != "call" {
-		return usagef("--file 只用于 call")
+	if p.fileSet && p.cmd != "call" && p.cmd != "api" {
+		return usagef("--file 只用于 call 与 api")
 	}
 	if p.fileSet && len(p.args) > 1 {
 		return usagef("入参要么用 --file, 要么用位置参数, 不要同时给")
@@ -263,8 +264,12 @@ func (p *parsed) validate() error {
 	if p.methodSet && p.cmd != "api" {
 		return usagef("--method 只用于 api")
 	}
-	if p.methodSet && !strings.EqualFold(p.method, "GET") {
-		return usagef("api 只允许 GET, 收到 %s", p.method)
+	if p.methodSet {
+		method := strings.ToUpper(strings.TrimSpace(p.method))
+		if !validMethod(method) {
+			return usagef("未知方法 %q; 可用 GET, POST, PUT, PATCH, DELETE", p.method)
+		}
+		p.method = method
 	}
 	// http.Client 里 0 与负值都表示不超时, 与本项目「每个请求都有超时」的约定相反.
 	if p.timeoutSet && p.timeout <= 0 {
@@ -301,6 +306,16 @@ func (p *parsed) arg(i int) string {
 	return ""
 }
 
+// validMethod 报告 api 命令是否接受该方法. 只列实例真正用到的五个: HEAD / OPTIONS 不面向调用方.
+func validMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
 // usageText 是帮助文本, 输出到 stdout.
 const usageText = `amane — Amane 实例的外部智能体接口客户端
 
@@ -312,7 +327,8 @@ const usageText = `amane — Amane 实例的外部智能体接口客户端
   schema                          打印库结构摘要, 编写只读 SQL 时参考
   call <tool> [--file <路径>|-|JSON]  派发工具调用; 入参来自文件、标准输入或 JSON 字面量
   wait <task-id>                  轮询任务到终态并输出最后一次响应
-  api <path>                      直通 GET 请求, 自动补 /api 前缀
+  api <path> [--method <方法>] [--file <路径>|-]
+                                  直通 REST 请求, 自动补 /api 前缀; 方法缺省 GET
   doctor                          自检: CLI、实例可达性、token、版本
   upgrade [--dry-run]             比对最新版本, 较新时下载并替换自身
   login --server <url> --profile <名字> [--force]
@@ -341,7 +357,8 @@ call 选项:
   --file, -f <路径>   从文件读入参, 与位置参数二选一
 
 api 选项:
-  --method <方法>     只允许 GET
+  --method, -X <方法>  GET / POST / PUT / PATCH / DELETE, 缺省 GET
+  --file, -f <路径>    请求体来源; 传 - 从标准输入读取, 省略则不带请求体
 
 upgrade 选项:
   --dry-run           只打印将要执行的操作

@@ -1,7 +1,7 @@
 // Package api 是与 Amane 实例通信的 HTTP 客户端.
 //
-// 只覆盖 CLI 用到的三个端点: 目录 GET /api/tools, 派发 POST /api/tools/{name},
-// 以及直通 GET 请求. 网络层失败与 HTTP 响应分开表示: 前者返回 *TransportError,
+// 覆盖 CLI 用到的三类请求: 目录 GET /api/tools, 派发 POST /api/tools/{name},
+// 以及直通任意方法与路径的请求. 网络层失败与 HTTP 响应分开表示: 前者返回 *TransportError,
 // 后者一律返回 *Response, 由调用方按状态码处理.
 package api
 
@@ -111,6 +111,11 @@ func (c *Client) Get(ctx context.Context, path string) (*Response, error) {
 // PostJSON 发起 POST 请求, body 为已序列化的 JSON.
 func (c *Client) PostJSON(ctx context.Context, path string, body []byte) (*Response, error) {
 	return c.do(ctx, http.MethodPost, path, body)
+}
+
+// Do 按给定方法发起请求; body 为 nil 时不带请求体. path 须以 / 开头.
+func (c *Client) Do(ctx context.Context, method, path string, body []byte) (*Response, error) {
+	return c.do(ctx, method, path, body)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body []byte) (*Response, error) {

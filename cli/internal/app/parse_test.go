@@ -70,10 +70,13 @@ func TestParseArgs(t *testing.T) {
 			},
 		},
 		{
-			name: "api 的方法",
-			args: []string{"api", "tasks/1", "--method", "GET"},
+			name: "api 的方法统一大写",
+			args: []string{"api", "tasks/1", "--method", "post", "--profile", "default"},
 			check: func(t *testing.T, p *parsed) {
-				if !p.methodSet || p.method != "GET" {
+				if err := p.validate(); err != nil {
+					t.Fatalf("校验失败: %v", err)
+				}
+				if !p.methodSet || p.method != "POST" {
 					t.Fatalf("method 为 %q", p.method)
 				}
 			},
@@ -140,7 +143,7 @@ func TestValidateErrors(t *testing.T) {
 		{name: "config 未知子命令", args: []string{"config", "foo"}, want: `config 未知子命令 "foo"; 可用: list, delete`},
 		{name: "config 不接受 profile", args: []string{"config", "list", "--profile", "work"}, want: "config 不接受 --profile"},
 		{name: "call 参数过多", args: []string{"call", "a", "b", "c"}, want: "位置参数"},
-		{name: "api 非 GET", args: []string{"api", "x", "--method", "POST"}, want: "只允许 GET"},
+		{name: "api 未知方法", args: []string{"api", "x", "--method", "TRACE"}, want: "未知方法"},
 		{name: "interval 只用于 wait", args: []string{"catalog", "--interval", "1s"}, want: "--interval 只用于 wait"},
 		{name: "method 只用于 api", args: []string{"catalog", "--method", "GET"}, want: "--method 只用于 api"},
 		{name: "dry-run 只用于 upgrade", args: []string{"catalog", "--dry-run"}, want: "--dry-run 只用于 upgrade"},
@@ -170,7 +173,7 @@ func TestExitCodeUsage(t *testing.T) {
 		{name: "缺少命令", args: nil},
 		{name: "未知命令", args: []string{"frobnicate"}},
 		{name: "未知选项", args: []string{"catalog", "--nope"}},
-		{name: "api 非 GET", args: []string{"api", "tasks/1", "--method", "DELETE"}},
+		{name: "api 未知方法", args: []string{"api", "tasks/1", "--method", "HEAD"}},
 		{name: "call 缺入参且 stdin 是终端", args: []string{"call", "sql_explore"}},
 	}
 	for _, c := range cases {

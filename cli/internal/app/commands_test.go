@@ -396,7 +396,7 @@ func TestAPIPathPrefix(t *testing.T) {
 	}
 }
 
-func TestAPINonGETRejectedWithoutRequest(t *testing.T) {
+func TestAPIUnknownMethodRejectedWithoutRequest(t *testing.T) {
 	var calls int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
@@ -404,11 +404,108 @@ func TestAPINonGETRejectedWithoutRequest(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, srv.URL)
-	if code := h.run("--profile", "default", "api", "tasks/1", "--method", "POST"); code != ExitUsage {
+	if code := h.run("--profile", "default", "api", "tasks/1", "--method", "HEAD"); code != ExitUsage {
 		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
 	}
 	if atomic.LoadInt32(&calls) != 0 {
-		t.Fatal("非 GET 请求不应发出")
+		t.Fatal("用法错误不应发出请求")
+	}
+}
+
+// captureRequest 记录一次请求的方法、路径与请求体.
+type captureRequest struct {
+	method string
+	path   string
+	body   string
+	ctype  string
+}
+
+func captureServer(t *testing.T, got *captureRequest, status int, respBody string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		*got = captureRequest{
+			method: r.Method,
+			path:   r.URL.Path,
+			body:   string(raw),
+			ctype:  r.Header.Get("Content-Type"),
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(respBody))
+	}))
+}
+
+func TestAPIForwardsMethodAndFileBody(t *testing.T) {
+	var got captureRequest
+	srv := captureServer(t, &got, http.StatusCreated, `{"comment_id":3}`)
+	defer srv.Close()
+
+	bodyPath := filepath.Join(t.TempDir(), "comment.json")
+	if err := os.WriteFile(bodyPath, []byte(`{"body":"hi"}`), 0o600); err != nil {
+		t.Fatalf("准备请求体失败: %v", err)
+	}
+
+	h := newHarness(t, srv.URL)
+	if code := h.run("--profile", "default", "api", "/metadata/5/comments", "-X", "post", "--file", bodyPath); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	if got.method != http.MethodPost || got.path != "/api/metadata/5/comments" {
+		t.Fatalf("请求为 %s %s", got.method, got.path)
+	}
+	if got.body != `{"body":"hi"}` || got.ctype != "application/json" {
+		t.Fatalf("请求体为 %q, Content-Type 为 %q", got.body, got.ctype)
+	}
+	if h.out() != "{\"comment_id\":3}\n" {
+		t.Fatalf("输出为 %q", h.out())
+	}
+}
+
+func TestAPIForwardsStdinBody(t *testing.T) {
+	var got captureRequest
+	srv := captureServer(t, &got, http.StatusOK, `{}`)
+	defer srv.Close()
+
+	h := newHarness(t, srv.URL).stdin(`{"body":"from stdin"}`)
+	if code := h.run("--profile", "default", "api", "/comments/7", "--method", "PATCH", "--file", "-"); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	if got.method != http.MethodPatch || got.body != `{"body":"from stdin"}` {
+		t.Fatalf("请求为 %s, 请求体为 %q", got.method, got.body)
+	}
+}
+
+func TestAPIDefaultsToGETWithoutBody(t *testing.T) {
+	var got captureRequest
+	srv := captureServer(t, &got, http.StatusOK, `{}`)
+	defer srv.Close()
+
+	h := newHarness(t, srv.URL)
+	if code := h.run("--profile", "default", "api", "tasks/1"); code != ExitOK {
+		t.Fatalf("退出码为 %d, stderr: %s", code, h.errOut())
+	}
+	if got.method != http.MethodGet || got.body != "" || got.ctype != "" {
+		t.Fatalf("请求为 %s, 请求体 %q, Content-Type %q", got.method, got.body, got.ctype)
+	}
+}
+
+func TestAPIEmptyBodyIsUsageError(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+	}))
+	defer srv.Close()
+
+	bodyPath := filepath.Join(t.TempDir(), "empty.json")
+	if err := os.WriteFile(bodyPath, []byte("  \n"), 0o600); err != nil {
+		t.Fatalf("准备请求体失败: %v", err)
+	}
+
+	h := newHarness(t, srv.URL)
+	if code := h.run("--profile", "default", "api", "comments/1", "-X", "DELETE", "--file", bodyPath); code != ExitUsage {
+		t.Fatalf("退出码为 %d, 期望 %d", code, ExitUsage)
+	}
+	if atomic.LoadInt32(&calls) != 0 {
+		t.Fatal("空请求体不应发出请求")
 	}
 }
 

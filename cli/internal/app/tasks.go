@@ -1,9 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -71,7 +75,10 @@ func (r *runner) cmdWait(ctx context.Context) error {
 	return r.writeBody(body)
 }
 
-// cmdAPI 直通 GET 请求.
+// cmdAPI 直通 REST 请求.
+//
+// REST 供实例自己的界面使用, 不为智能体设计: 形状随版本变化, 也不保证易用.
+// 这里是工具目录覆盖不到时的兜底, 方法与路径原样送出, 响应不解释.
 func (r *runner) cmdAPI(ctx context.Context) error {
 	raw, err := r.requireArg(0, "<path>")
 	if err != nil {
@@ -81,11 +88,19 @@ func (r *runner) cmdAPI(ctx context.Context) error {
 	if err != nil {
 		return usagef("%v", err)
 	}
+	body, err := r.readRequestBody()
+	if err != nil {
+		return err
+	}
+	method := r.p.method
+	if method == "" {
+		method = http.MethodGet
+	}
 	client, err := r.client()
 	if err != nil {
 		return err
 	}
-	resp, err := client.Get(ctx, path)
+	resp, err := client.Do(ctx, method, path, body)
 	if err != nil {
 		return r.connErr(client.BaseURL, err)
 	}
@@ -93,4 +108,28 @@ func (r *runner) cmdAPI(ctx context.Context) error {
 		return err
 	}
 	return r.writeDownloadable(resp)
+}
+
+// readRequestBody 读取 api 请求体: 只认 --file, 传 - 时读标准输入; 未给来源时不带请求体.
+func (r *runner) readRequestBody() ([]byte, error) {
+	if !r.p.fileSet {
+		return nil, nil
+	}
+	var (
+		data []byte
+		err  error
+	)
+	if r.p.file == "-" {
+		data, err = io.ReadAll(r.env.Stdin)
+	} else {
+		data, err = os.ReadFile(r.p.file)
+	}
+	if err != nil {
+		return nil, usagef("读取请求体失败: %v", err)
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return nil, usagef("请求体为空: %s", r.p.file)
+	}
+	return trimmed, nil
 }
