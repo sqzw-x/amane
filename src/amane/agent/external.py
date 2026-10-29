@@ -18,14 +18,8 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.toolsets import FunctionToolset
 
-from .actor_ops import build_actor_ops_capability
-from .facet_identity import build_facet_identity_capability
-from .feed_ops import build_feed_ops_capability
-from .library_ops import build_library_ops_capability
-from .metadata_ops import build_metadata_ops_capability
-from .schedule_ops import build_schedule_ops_capability
+from .capabilities import build_capabilities
 from .signature import signature, summary
-from .task_ops import build_task_ops_capability
 from .tools import AgentDeps, build_explore_toolset
 
 EXPLORE_GROUP = "explore"
@@ -58,18 +52,6 @@ class ToolCallContext:
     tool_call_id: str = "external"
     tool_call_approved: bool = False
     """默认未批准: 只有派发层显式置真, 避免其它调用点无意绕过闸门."""
-
-
-def build_capabilities() -> list[Capability[AgentDeps]]:
-    return [
-        build_metadata_ops_capability(),
-        build_actor_ops_capability(),
-        build_facet_identity_capability(),
-        build_library_ops_capability(),
-        build_feed_ops_capability(),
-        build_schedule_ops_capability(),
-        build_task_ops_capability(),
-    ]
 
 
 def _capability_toolset(cap: Capability[AgentDeps]) -> FunctionToolset[AgentDeps]:

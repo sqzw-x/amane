@@ -9,14 +9,8 @@ from pydantic_ai.usage import UsageLimits
 
 from ..config import AgentConfig, AgentThinkingMode
 from ..llm import build_model as build_llm_model
-from .actor_ops import build_actor_ops_capability
-from .facet_identity import build_facet_identity_capability
-from .feed_ops import build_feed_ops_capability
-from .library_ops import build_library_ops_capability
-from .metadata_ops import build_metadata_ops_capability
-from .schedule_ops import build_schedule_ops_capability
+from .capabilities import build_capabilities
 from .schema_docs import build_schema_docs
-from .task_ops import build_task_ops_capability
 from .tool_names import ToolNameAlias
 from .tools import AgentDeps, build_explore_toolset
 
@@ -117,14 +111,5 @@ def build_agent(config: AgentConfig) -> Agent[AgentDeps, str | DeferredToolReque
         instructions=_SYSTEM + build_schema_docs(),
         retries=_AGENT_RETRIES,
         toolsets=[build_explore_toolset()],
-        capabilities=[
-            ToolNameAlias(),
-            build_metadata_ops_capability(),
-            build_actor_ops_capability(),
-            build_facet_identity_capability(),
-            build_library_ops_capability(),
-            build_feed_ops_capability(),
-            build_schedule_ops_capability(),
-            build_task_ops_capability(),
-        ],
+        capabilities=[ToolNameAlias(), *build_capabilities()],
     )
