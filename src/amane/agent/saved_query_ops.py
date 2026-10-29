@@ -11,6 +11,11 @@ from typing import Any
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 
+from ..api.models.saved_queries import (
+    SAVED_QUERY_DESCRIPTION_MAX,
+    SAVED_QUERY_IDS_MAX,
+    SAVED_QUERY_NAME_MAX,
+)
 from ..db.repo_types import SavedQueryUpdates
 from .tools import TOOL_OK, AgentDeps, require_approval
 
@@ -32,9 +37,14 @@ def build_saved_query_ops_capability() -> Capability[AgentDeps]:
             cleaned = name.strip()
             if not cleaned:
                 return {"error": "名称不能为空"}
+            if len(cleaned) > SAVED_QUERY_NAME_MAX:
+                return {"error": f"名称最多 {SAVED_QUERY_NAME_MAX} 个字符"}
             updates["name"] = cleaned
         if description is not None:
-            updates["description"] = description.strip()
+            cleaned_description = description.strip()
+            if len(cleaned_description) > SAVED_QUERY_DESCRIPTION_MAX:
+                return {"error": f"描述最多 {SAVED_QUERY_DESCRIPTION_MAX} 个字符"}
+            updates["description"] = cleaned_description
         if not updates:
             return {"error": "name 与 description 至少给一个"}
         if await ctx.deps.repo.update_saved_query(query_id, **updates) is None:
@@ -46,6 +56,8 @@ def build_saved_query_ops_capability() -> Capability[AgentDeps]:
         """Delete presets by id. Not undoable."""
         if not ids:
             return {"error": "ids 为空"}
+        if len(ids) > SAVED_QUERY_IDS_MAX:
+            return {"error": f"一次最多删除 {SAVED_QUERY_IDS_MAX} 个预设"}
         detail = f"删除查询预设 ids={list(ids)}"
         require_approval(
             ctx,

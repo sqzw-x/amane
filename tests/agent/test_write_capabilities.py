@@ -27,6 +27,11 @@ from amane.agent.sql import ReadonlySqlSandbox
 from amane.agent.task_ops import build_task_ops_capability
 from amane.agent.tools import TOOL_OK, AgentDeps
 from amane.api.models.comments import COMMENT_BODY_MAX
+from amane.api.models.saved_queries import (
+    SAVED_QUERY_DESCRIPTION_MAX,
+    SAVED_QUERY_IDS_MAX,
+    SAVED_QUERY_NAME_MAX,
+)
 from amane.config import AgentConfig
 from amane.db.models import FacetKind, SavedQueryEntity, TaskStatus, TaskType
 from amane.db.repository import Repository
@@ -364,6 +369,26 @@ async def test_saved_query_rename_and_delete(write_deps: AgentDeps) -> None:
         assert "error" in rejected
     missing = await tool_fn(cap, "update_saved_query")(ToolCallContext(write_deps), query_id=999999, name="x")
     assert "error" in missing
+
+    # 与 REST 的请求模型同一条上界: 工具不成为绕过校验的第三条写入路径.
+    for kwargs in (
+        {"name": "x" * (SAVED_QUERY_NAME_MAX + 1)},
+        {"description": "x" * (SAVED_QUERY_DESCRIPTION_MAX + 1)},
+    ):
+        rejected = await tool_fn(cap, "update_saved_query")(ToolCallContext(write_deps), query_id=query.id, **kwargs)
+        assert "error" in rejected
+    boundary = await tool_fn(cap, "update_saved_query")(
+        ToolCallContext(write_deps),
+        query_id=query.id,
+        name="x" * SAVED_QUERY_NAME_MAX,
+        description="y" * SAVED_QUERY_DESCRIPTION_MAX,
+    )
+    assert boundary == TOOL_OK
+
+    too_many = await tool_fn(cap, "delete_saved_queries")(
+        ToolCallContext(write_deps, tool_call_approved=True), ids=list(range(SAVED_QUERY_IDS_MAX + 1))
+    )
+    assert "error" in too_many
 
     with pytest.raises(ApprovalRequired) as exc:
         await tool_fn(cap, "delete_saved_queries")(ToolCallContext(write_deps, tool_call_id="tc-sq"), ids=[query.id])
