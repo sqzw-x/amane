@@ -58,11 +58,11 @@ async def test_catalog_lists_every_tool(client: AsyncClient) -> None:
 
     names = [tool["name"] for tool in body["tools"]]
     assert names == sorted(names), "目录按名字排序, 便于逐字比对"
-    assert len(names) == len(set(names)), "工具名是对外契约, 不允许重复"
+    assert len(names) == len(set(names)), "派发按名字寻址, 名字不允许重复"
 
     assert {"sql_explore", "sql_deliver", "inspect_result"} <= set(names)
     assert {"update_metadata", "delete_metadata", "submit_task", "create_library"} <= set(names)
-    # 对外契约: 新增写入能力即新增一行, 改名按破坏性变更处理.
+    # 新增能力必须出现在目录里, 否则调用方无从发现.
     assert {"create_comment", "ensure_user_tags", "set_metadata_locks", "delete_saved_queries"} <= set(names)
 
     by_name = {tool["name"]: tool for tool in body["tools"]}
