@@ -1,4 +1,6 @@
 import { Button, SegmentedControl, Select } from "@mantine/core";
+import { useWindowEvent } from "@mantine/hooks";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import classes from "./enum-toggle.module.css";
 
@@ -22,19 +24,40 @@ type EnumToggleMultiple<T extends string | number> = EnumToggleBase<T> & {
   onChange: (next: T[]) => void;
 };
 
-/** 窄屏回退为下拉菜单的选项数阈值: 选项数大于该值时, SegmentedControl 的段宽不足以容纳标签. */
-const NARROW_SELECT_MIN_OPTIONS = 4;
-
 /**
  * Segmented enum: sliding indicator, item separators; `fullWidth` fills the row.
- * 窄屏下 (宽度小于 sm) 且选项数大于 `NARROW_SELECT_MIN_OPTIONS` 时改用 `Select`,
- * 多选分支改为允许换行的按钮组.
+ * 标签在容器内放不下时改用 `Select` —— SegmentedControl 自带 `overflow: hidden`,
+ * 被裁掉的段点不到. 多选分支改用按钮组, 窄屏允许换行.
  */
 export function EnumToggle<T extends string | number>(
   props: EnumToggleSingle<T> | EnumToggleMultiple<T>,
 ) {
   const { options, getLabel, multiple, disabled, fullWidth = false } = props;
   const narrow = useNarrowViewport();
+
+  const data = options.map((opt, i) => ({ value: String(opt), label: getLabel(opt, i) }));
+  const labelsKey = data.map((item) => item.label).join("\u0000");
+
+  const controlRef = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
+
+  // 窗口变宽时先回到 Segmented, 由下面的 effect 在绘制前重测; 否则一次变窄就永远停在下拉.
+  useWindowEvent("resize", () => setClipped(false));
+
+  // 裁切下 `scrollWidth` 仍是内容宽度, 与可视宽度比较即可知道放不放得下.
+  // 用 ResizeObserver 而非只测一次: 弹窗动画期间宽度为 0, 容器宽度也常在挂载之后才确定.
+  useLayoutEffect(() => {
+    const el = controlRef.current;
+    if (el === null) return;
+    const measure = () => {
+      if (!el.isConnected || el.clientWidth === 0) return;
+      setClipped(el.scrollWidth > el.clientWidth + 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [labelsKey, clipped]);
 
   if (multiple) {
     return (
@@ -72,7 +95,7 @@ export function EnumToggle<T extends string | number>(
     );
   }
 
-  if (narrow && options.length > NARROW_SELECT_MIN_OPTIONS) {
+  if (clipped) {
     return (
       <Select
         size="sm"
@@ -87,16 +110,14 @@ export function EnumToggle<T extends string | number>(
           if (next === undefined || props.value === next) return;
           props.onChange(next);
         }}
-        data={options.map((opt, i) => ({
-          value: String(opt),
-          label: getLabel(opt, i),
-        }))}
+        data={data}
       />
     );
   }
 
   return (
     <SegmentedControl
+      ref={controlRef}
       size="sm"
       radius="sm"
       withItemsBorders
@@ -113,10 +134,7 @@ export function EnumToggle<T extends string | number>(
         if (next === undefined || props.value === next) return;
         props.onChange(next);
       }}
-      data={options.map((opt, i) => ({
-        value: String(opt),
-        label: getLabel(opt, i),
-      }))}
+      data={data}
     />
   );
 }
