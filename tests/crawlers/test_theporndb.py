@@ -98,6 +98,39 @@ async def test_fetch(number: str, scenes: list[dict[str, Any]], expected: tuple[
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://theporndb.net/scenes/96842b9f-0405-481b-a44a-1c7fb5b0370c",
+        "https://theporndb.net/scenes/96842b9f-0405-481b-a44a-1c7fb5b0370c/some-title",
+        "gql://scene/96842b9f-0405-481b-a44a-1c7fb5b0370c",
+    ],
+)
+async def test_fetch_by_url_queries_scene_id(url: str) -> None:
+    """公开作品页与内部检索地址都按 id 取单条, 不经过检索."""
+    web = AsyncMock()
+    web.post_json.return_value = {"data": {"findScene": _KIN8_CUTIE}}
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="", url=url))
+
+    assert metadata is not None
+    assert metadata.number == "0236"
+    assert web.post_json.await_args.kwargs["json"]["variables"] == {"id": "96842b9f-0405-481b-a44a-1c7fb5b0370c"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_url_rejects_non_scene_path() -> None:
+    web = AsyncMock()
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="", url="https://theporndb.net/movies/123"))
+
+    assert metadata is None
+    web.post_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_fetch_western_type_filter() -> None:
     """kin8 归欧美链后经 ``?type=Scene`` 检索."""
     web = AsyncMock()

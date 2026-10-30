@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, Any, override
+from urllib.parse import urlsplit
 
 from ...enums import ActorGender, SiteName
 from ...net.connectivity import ConnectivityOutcome, SkipReason, assess_response
@@ -68,7 +69,6 @@ class ThePornDBCrawler(Crawler):
             name=SiteName.THEPORNDB,
             base_url="https://theporndb.net/graphql",
             traits=frozenset({SourceTrait.USES_FILE_HASH}),
-            url_scrape=False,
         )
 
     @override
@@ -109,7 +109,13 @@ class ThePornDBCrawler(Crawler):
         return assess_response(url, resp)
 
     async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:
-        """检索应答已含详情字段, 因此不必再按 id 取一次."""
+        """检索应答已含详情字段, 因此不必再按 id 取一次.
+
+        指定网址时由基类直接取该场景, 不经过检索.
+        """
+        if query.url:
+            return await super().fetch(query, options)
+
         token = self.config.api_token if self.config else None
         if not token:
             return None
@@ -153,10 +159,10 @@ class ThePornDBCrawler(Crawler):
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         token = self.config.api_token if self.config else None
-        if not token or not url.startswith("gql://scene/"):
+        scene_id = _scene_id_from_url(url)
+        if not token or scene_id is None:
             return None
 
-        scene_id = url.removeprefix("gql://scene/")
         headers = {"Authorization": f"Bearer {token}"}
 
         data = await self.client.post_json(
@@ -291,6 +297,17 @@ def _runtime_minutes(duration: object) -> int | None:
 def _scene_url(scene: dict[str, Any] | None) -> str | None:
     scene_id = scene.get("id") if scene is not None else None
     return f"gql://scene/{scene_id}" if isinstance(scene_id, str) and scene_id else None
+
+
+def _scene_id_from_url(url: str) -> str | None:
+    """内部检索地址 ``gql://scene/<id>`` 或公开作品页 ``/scenes/<id>``."""
+    internal_prefix = "gql://scene/"
+    if url.startswith(internal_prefix):
+        return url.removeprefix(internal_prefix) or None
+    segments = [segment for segment in urlsplit(url).path.split("/") if segment]
+    if len(segments) >= 2 and segments[0] == "scenes":
+        return segments[1]
+    return None
 
 
 def _gql_field(payload: object, key: str) -> object:

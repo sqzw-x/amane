@@ -16,6 +16,7 @@ from amane.crawlers.url_routing import resolve_url_source
         ("http://javdb.com/v/abcd1", "javdb"),
         ("https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=midv00123/", "dmm"),
         ("https://attackers.net/works/detail/abc", "official"),
+        ("https://theporndb.net/scenes/abc", "theporndb"),
         ("https://faleno.jp/top/works/abc-001/", "faleno"),
         ("https://javdb.com:8443/v/abcd1", "javdb"),
     ],
@@ -27,7 +28,6 @@ def test_resolves_declared_host(url: str, expected: str) -> None:
 @pytest.mark.parametrize(
     "url",
     [
-        "https://theporndb.net/scenes/123",
         "https://r18.dev/videos/vod/movies/detail/-/dvd_id=abc",
         "https://www.prestige-av.com/item/abc",
         "https://unknown.example/detail/1",

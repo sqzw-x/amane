@@ -52,7 +52,7 @@ CrawlerFactory (缓存实例)
 
 ## 指定网址刮削
 
-`ScrapePayload.url` 与 `number` 二选一. Handler 用 `crawlers/url_routing.py::resolve_url_source` 从内置来源声明的域名反推单一来源, 命中优先级为站点配置的 `base_url` → 来源自带入口 → 来源的备用地址; 不读类型路由, 因此网址刮削不受路由成员与顺序影响. 插件来源不参与, 见 [plugins.md](plugins.md). `CrawlerProfile.url_scrape=False` 的来源 (离线库, GraphQL 检索) 同样不参与.
+`ScrapePayload.url` 与 `number` 二选一. Handler 用 `crawlers/url_routing.py::resolve_url_source` 从内置来源声明的域名反推单一来源, 命中优先级为站点配置的 `base_url` → 来源自带入口 → 来源的备用地址; 不读类型路由, 因此网址刮削不受路由成员与顺序影响. 插件来源不参与, 见 [plugins.md](plugins.md). `CrawlerProfile.url_scrape=False` 的来源 (离线库, 或只接受内部 API 地址) 同样不参与.
 
 `SearchQuery.url` 让 `Crawler.fetch` 跳过 `_search` 直接调用 `_scrape`. 番号由页面给出: 聚合结果的 `number` 为空时取第一个声明了番号的来源, 仍为空则任务失败且不入库. 内容类型缺省时按该番号推断. 元数据缓存不可用 (番号在抓取后才确定), 译文缓存照常; 已存在的条目按该来源重建字段与来源快照, 锁定字段保留.
 
@@ -107,7 +107,7 @@ Cloudflare managed challenge 只能执行 JS 越过, 因此受保护的来源经
 ## 新爬虫接入
 
 1. `enums.py` 加 `SiteName` (frozen dict 加载时按代码枚举补默认槽, 见 [config.md](config.md)).
-2. 影片: `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`); 演员: `crawlers/actor/sites/{site}.py`, `profile()` 声明 `capabilities` 与 `genders`. 消费 language 的影片爬虫在 `traits` 声明 `multi_language`, 需要文件指纹的声明 `uses_file_hash`; 没有可解码详情页的来源 (GraphQL / 离线库) 在 `profile()` 声明 `url_scrape=False`. 测试须覆盖番号有无短横线两种形态.
+2. 影片: `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`); 演员: `crawlers/actor/sites/{site}.py`, `profile()` 声明 `capabilities` 与 `genders`. 消费 language 的影片爬虫在 `traits` 声明 `multi_language`, 需要文件指纹的声明 `uses_file_hash`; 没有可解码详情页的来源 (离线库, 或只接受内部 API 地址) 在 `profile()` 声明 `url_scrape=False`. 测试须覆盖番号有无短横线两种形态.
 3. 导出后 `registry.register` / `actor_registry.register`. 双料站两个类用同一 `SiteName` 各注册一次; 不允许修改 `site_roles` 常量. 演员 `register` 顺序即默认 `profile_sites` 优先级. 需要 cookie / token 时给 `SiteConfig` 加字段.
 4. 加 TOML 用例 (见 [crawler-testing.md](crawler-testing.md)) 并 `just test`.
 
