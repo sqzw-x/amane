@@ -62,7 +62,7 @@ const CHUNK = 30;
 
 const SEMANTIC_KIND_OPTIONS = ["all", ...EMBEDDING_KINDS] as const;
 
-/** 分段控件回传 string; "all" 与未知值都还原为缺省 (封面与剧照都参与). */
+/** 分段控件回传 string; "all" 与未知值均视为缺省 (封面与剧照都参与). */
 function toEmbeddingKind(value: string): EmbeddingKind | undefined {
   return EMBEDDING_KINDS.find((kind) => kind === value);
 }
@@ -211,7 +211,7 @@ function MetaIndexPage() {
     useQuery(semanticStatusOptions());
   const semanticAvailable = semanticStatus?.available === true;
 
-  // 进入语义模式时再取一次: 索引任务可能刚在别处完成, 缓存的空索引状态会过期.
+  // 进入语义模式时重新获取: 索引任务可能刚在别处完成, 缓存的状态会过期.
   useEffect(() => {
     if (semanticMode) void refetchSemanticStatus();
   }, [semanticMode, refetchSemanticStatus]);
@@ -228,7 +228,7 @@ function MetaIndexPage() {
           : !semanticStatus.has_embeddings
             ? t("semantic.noEmbeddings")
             : null;
-  // 语义状态未到或不可检索时不发列表请求, 避免先按普通排序闪一屏.
+  // 语义状态未返回或不可检索时不发送列表请求, 避免先按普通排序渲染一屏.
   const listEnabled = !semanticActive || (semanticStatus != null && semanticNotice == null);
 
   const gridQuery = useInfiniteQuery({
@@ -288,7 +288,7 @@ function MetaIndexPage() {
   }
 
   function toggleSemantic() {
-    // 切换搜索方式时清空输入, 避免把关键词当成画面描述或反过来.
+    // 切换搜索方式时清空输入, 避免将关键词作为画面描述提交, 或反向提交.
     setSearchInput("");
     void navigate({
       search: (prev) => ({
@@ -400,7 +400,7 @@ function MetaIndexPage() {
   return (
     <BrowsePageShell
       fill={isList}
-      // 搜索槽内还有语义切换按钮, 放宽到 560 让输入框本身保持接近其他页的 480 宽
+      // 搜索槽内另有语义切换按钮, 放宽到 560, 使输入框宽度接近其他页面的 480
       searchMaxWidth={560}
       title={<Title order={2}>{t("common:nav.meta")}</Title>}
       actions={<ListDefaultActions update={{ key: "meta", value: metaListDefaults(search) }} />}

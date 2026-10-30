@@ -73,7 +73,7 @@ def load_tokenizer(path: Path) -> Tokenizer:
 
 
 def artifact_present(path: Path) -> bool:
-    """模型文件或其编译产物存在; Core ML 编译后可以删掉原包省磁盘."""
+    """模型文件或其编译产物存在; Core ML 编译后可删除原包以减少磁盘占用."""
     if path.exists():
         return True
     if path.suffix == ".mlpackage":
@@ -87,10 +87,10 @@ def _require(label: str, path: Path) -> None:
 
 
 def build_image_encoder(paths: ModelPaths) -> ImageEncoder:
-    """加载视觉塔; 阻塞, 调用方负责放到线程里."""
+    """加载视觉塔; 阻塞调用, 调用方负责在线程中执行."""
     _require("视觉模型", paths.vision)
     if paths.backend == "coreml":
-        # 可选重依赖: 只在真正用到时导入, 避免拖慢普通启动.
+        # 可选的重型依赖: 仅在真正使用时导入, 避免延长普通启动时间.
         from .coreml import CoreMlImageEncoder
 
         return CoreMlImageEncoder(paths.vision, paths.spec.dim)
@@ -100,7 +100,7 @@ def build_image_encoder(paths: ModelPaths) -> ImageEncoder:
 
 
 def build_text_encoder(paths: ModelPaths) -> TextEncoder:
-    """加载文本塔与 tokenizer; 阻塞, 调用方负责放到线程里."""
+    """加载文本塔与 tokenizer; 阻塞调用, 调用方负责在线程中执行."""
     _require("文本模型", paths.text)
     if paths.backend == "coreml":
         from .coreml import CoreMlTextEncoder

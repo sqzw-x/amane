@@ -4401,7 +4401,7 @@ export type SemanticDiagnosticsResponse = {
 /**
  * SemanticHitInfo
  *
- * 语义检索命中图: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身.
+ * 语义检索的命中图片: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身.
  */
 export type SemanticHitInfo = {
     /**

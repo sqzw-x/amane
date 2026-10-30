@@ -57,7 +57,7 @@ class SemanticDiagnosticsResponse(BaseModel):
     embeddings_bytes: int = 0
     """向量库及其 WAL 文件占用的字节数."""
     indexed_metadata: int = 0
-    """当前模型下已建有向量的条目数."""
+    """当前模型下已建立向量的条目数."""
     indexed_at: str | None = None
     """当前模型最后一次写入向量的时间; 未建索引时为 null."""
     models: dict[str, SemanticModelCounts] = {}

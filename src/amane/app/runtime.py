@@ -257,13 +257,13 @@ class AppRuntime:
         self._bind_semantic_bridge()
 
     def _bind_semantic_bridge(self) -> None:
-        """Agent 的语义工具只经 bridge 拿检索能力, 不直接依赖运行时. 热重载换服务后要重绑."""
+        """Agent 的语义工具只经 bridge 获取检索能力, 不直接依赖运行时. 热重载替换服务后须重新绑定."""
         if self.agent_service is not None and self.semantic is not None:
             self.agent_service.bridge.semantic_search = self.semantic.search
 
     @property
     def embeddings(self) -> EmbeddingStore | None:
-        """sidecar 向量库; 生命周期与会话一致, 热重载复用同一实例."""
+        """sidecar 向量库; 生命周期与应用实例一致, 热重载复用同一实例."""
         return self.repo.embeddings
 
     def _current_browser_key(self) -> tuple[BrowserConfig, str | None]:
@@ -308,12 +308,12 @@ class AppRuntime:
         if self.feed_service is not None:
             self.feed_service.set_web_client(self.web_client)
 
-        # 语义检索的配置变化才重建服务; 未变化时保留已加载的模型与索引缓存.
+        # 仅在语义检索配置变化时重建服务; 未变化时保留已加载的模型与索引缓存.
         if self.semantic is None or self.semantic.config != hot.semantic:
             previous = self.semantic
             self.semantic = SemanticService(self.repo, self.resource_store, self.config.cold.data_dir, hot.semantic)
             if previous is not None:
-                # 配置变了但模型没变: 交接已装载的索引, 别让下一次检索同步重装整份矩阵.
+                # 配置已变更但模型未变: 交接已装载的索引, 避免下一次检索同步重装整份索引.
                 self.semantic.handoff(previous)
                 previous.close()
             self.repo.set_media_hook(self.semantic)

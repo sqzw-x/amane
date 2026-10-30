@@ -1,4 +1,4 @@
-"""ONNX Runtime 后端 (全平台): 视觉塔吃 float32 像素, 文本塔吃 int64 token id."""
+"""ONNX Runtime 后端 (全平台): 视觉塔输入 float32 像素, 文本塔输入 int64 token id."""
 
 from __future__ import annotations
 

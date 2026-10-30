@@ -326,7 +326,7 @@ class SemanticBenchmarkResult(BaseModel):
     load_ms: float
     """本次测试冷加载两塔的耗时; 测试前已加载则为 0."""
     samples: int
-    """参与测速的图片数."""
+    """参与测量的图片数."""
     measured_at: str
     """测量完成的本地时间 (ISO 8601)."""
 

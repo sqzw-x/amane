@@ -1,4 +1,4 @@
-"""语义检索任务: 索引对账与性能测试, 分别见 ``SemanticService.build_index`` / ``benchmark``.
+"""语义检索任务: 索引比对与性能测试, 分别见 ``SemanticService.build_index`` / ``benchmark``.
 
 模型文件只在索引任务里按需下载; 单张图失败只计数, 不阻断整批.
 """

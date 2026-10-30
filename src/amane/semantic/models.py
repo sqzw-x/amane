@@ -1,9 +1,9 @@
 """托管模型的清单与下载.
 
-模型文件放在 ``{data_dir}/models/{name}/{version}``, 只由索引任务补齐 (检索只查本地); 下载走 HuggingFace 直链,
-断点续传 + 重试 + SHA256 校验. Core ML 的 ``.mlpackage`` 以 zip 分发, 校验后解压并删掉压缩包.
+模型文件放在 ``{data_dir}/models/{name}/{version}``, 只由索引任务补齐 (检索只读取本地文件); 下载使用 HuggingFace 直链,
+断点续传 + 重试 + SHA256 校验. Core ML 的 ``.mlpackage`` 以 zip 分发, 校验后解压并删除压缩包.
 
-清单是代码常量: 换模型 = 加一条清单并改 ``DEFAULT_SPEC``, 不扫描目录猜测.
+清单是代码常量: 更换模型须新增清单项并修改 ``DEFAULT_SPEC``, 不遍历目录推断.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ BASE_URL = "https://huggingface.co/sqzwx/amane-siglip2-base/resolve/v1"
 Backend = Literal["coreml", "onnx"]
 
 RETRIES = 4
-"""单个文件的下载尝试次数; 每次失败前会删掉残缺文件, 避免按错误偏移续传."""
+"""单个文件的下载尝试次数; 每次失败前删除残缺文件, 避免按错误偏移续传."""
 
 CHUNK = 1 << 20
 
@@ -131,7 +131,7 @@ _SIGLIP2_BASE_V1 = ModelSpec(
 SPECS: dict[tuple[str, str], ModelSpec] = {(_SIGLIP2_BASE_V1.name, _SIGLIP2_BASE_V1.version): _SIGLIP2_BASE_V1}
 
 DEFAULT_SPEC = _SIGLIP2_BASE_V1
-"""服务固定使用的模型; 多模型时由状态接口列出可选清单, 不交给用户填配置."""
+"""服务固定使用的模型; 多模型时由状态接口列出可选清单, 不交由用户填写配置."""
 
 
 def spec_for(name: str, version: str) -> ModelSpec | None:
@@ -139,7 +139,7 @@ def spec_for(name: str, version: str) -> ModelSpec | None:
 
 
 def backend_for_platform() -> Backend:
-    """macOS 用 Core ML (ANE), 其余平台用 ONNX Runtime."""
+    """macOS 使用 Core ML (ANE), 其余平台使用 ONNX Runtime."""
     return "coreml" if sys.platform == "darwin" else "onnx"
 
 
@@ -282,7 +282,7 @@ def tower_sizes(spec: ModelSpec, backend: Backend) -> tuple[int, int]:
 
 
 def readiness(spec: ModelSpec, backend: Backend, data_dir: Path) -> Readiness:
-    """按塔分别判断本地文件, 不看就绪标记: 文件在下载完成前不会以最终名字出现."""
+    """按塔分别检查本地文件, 不依据就绪标记: 文件在下载完成前不会以最终名称出现."""
     paths = model_paths(spec, backend, data_dir)
     return Readiness(
         search=paths.tokenizer.exists() and artifact_present(paths.text),
@@ -291,7 +291,7 @@ def readiness(spec: ModelSpec, backend: Backend, data_dir: Path) -> Readiness:
 
 
 async def ensure_model_files(spec: ModelSpec, backend: Backend, data_dir: Path) -> ModelPaths:
-    """按需下载缺失文件并返回三个路径; 已就绪时只做存在性检查."""
+    """按需下载缺失文件并返回三个路径; 已就绪时仅执行存在性检查."""
     paths = model_paths(spec, backend, data_dir)
     if model_ready(spec, backend, data_dir):
         return paths

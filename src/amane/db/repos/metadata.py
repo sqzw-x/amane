@@ -61,7 +61,7 @@ def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
 
 
 def _image_signature(metadata: Metadata) -> tuple[list[str], list[str], dict[str, list[str]]]:
-    """封面与剧照的来源字段; 变化即向量失效 (缩略图是封面兜底, 一并纳入)."""
+    """封面与剧照的来源字段; 变化即向量失效 (缩略图作为封面回退, 一并纳入)."""
     return (metadata.poster_urls, metadata.thumb_urls, metadata.extrafanart_urls)
 
 
@@ -517,8 +517,8 @@ class MetadataRepoMixin(RepositoryMixinBase):
         return len(removed), missing
 
     async def _drop_embeddings(self, metadata_ids: list[int]) -> None:
-        """主库提交之后清 sidecar: 跨库没有事务, 先删向量会在主库回滚时丢掉仍有效的数据.
-        清理失败只留孤儿行: 检索侧回查主库时会滤掉, 下次全量索引清掉, 故只记日志."""
+        """主库提交之后清除 sidecar: 跨库没有事务, 先删除向量会在主库回滚时丢弃仍有效的数据.
+        清理失败只留下孤儿行: 检索侧回查主库时会将其过滤, 下次全量索引再删除, 因此仅记录日志."""
         if self._embeddings is None or not metadata_ids:
             return
         try:

@@ -51,7 +51,7 @@ export const Route = createFileRoute("/manual")({
 const GUIDE_PATH = "/api/agent-guide";
 
 /**
- * 用户手册. 运行时诊断与配置指引按主题分 tab, 版心与其他信息页一致.
+ * 用户手册. 运行时诊断与配置指引按主题分标签页, 内容宽度与其他信息页一致.
  */
 function ManualPage() {
   const { t } = useTranslation("manual");
@@ -145,7 +145,7 @@ function ConnectSection() {
 /** 语义检索的运行时状态: 模型与索引各自一张卡片, 只保留不重复的数字. */
 function SemanticSection() {
   const { t, i18n } = useTranslation("manual");
-  // 塔会随任务与闲置超时进出内存, 面板定期刷新才能反映当前状态.
+  // 视觉塔与文本塔会随任务与闲置超时加载或释放, 面板须定期刷新才能反映当前状态.
   const { data: status } = useQuery({ ...semanticDiagnosticsOptions(), refetchInterval: 30_000 });
 
   if (status == null) {
@@ -300,11 +300,11 @@ function SemanticSection() {
   );
 }
 
-/** 手动触发一次性能测试, 并展示最近一次完成的结果; 进行中禁用按钮避免重复入队. */
+/** 手动触发一次性能测试, 并展示最近一次完成的结果; 触发期间禁用按钮, 避免重复入队. */
 function BenchmarkCard() {
   const { t } = useTranslation("manual");
   const queryClient = useQueryClient();
-  // 最近一次任务决定按钮与失败提示; 结果取最近一次成功的任务, 列表项不带 result 只能再查详情.
+  // 最近一次任务决定按钮与失败提示; 结果取最近一次成功的任务, 列表项不包含 result, 只能再查询详情.
   const latest = useQuery({
     ...listTasksOptions({ query: { type: ["semantic_benchmark"], limit: 1 } }),
     refetchInterval: 3_000,

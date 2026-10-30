@@ -1,12 +1,12 @@
 """封面与剧照语义检索: 向量入库、内存索引与相似度查询.
 
-向量按 ``(条目, 模型, 图片)`` 存在 sidecar 库 (见 :class:`amane.db.embeddings.EmbeddingStore`),
-检索时整表装入内存做一次点积. 封面与剧照共用同一个视觉塔与同一次点积, 结果用 ``kind`` 区分来源;
-图片只取已经落盘的 Resource.
+向量按 ``(条目, 模型, 图片)`` 保存在 sidecar 库 (见 :class:`amane.db.embeddings.EmbeddingStore`),
+检索时整表装入内存做一次点积. 封面与剧照共用同一个视觉塔与同一次点积, 结果以 ``kind`` 区分来源;
+图片只读取已写入磁盘的 Resource.
 
-索引常驻, 生命周期跟着服务而不是最后一次查询. 写库后代次前进, 旧索引继续服务, 后台单飞重装,
-装好再原子换掉; 删除条目则在写入返回前就地清位图, 不必等重装. 一次查询的图片分数与条目排名按
-``(查询, 模型, 代次)`` 缓存, 翻页和改筛选只在这份排名上切, 不再点积.
+索引常驻, 生命周期随服务实例而非最后一次查询. 提交成功后写入代次递增, 旧索引继续服务, 后台串行重装,
+装载完成后原子替换; 删除条目则在写入返回前就地清除位图, 无须等待重装. 一次查询的图片分数与条目排名按
+``(查询, 模型, 代次)`` 缓存, 翻页与筛选变化只在该排名上截取, 不再计算点积.
 """
 
 from __future__ import annotations
@@ -218,7 +218,7 @@ class _Image:
 
 @dataclass(frozen=True)
 class _Snapshot:
-    """检索读到的一整套数组; 删条目时就地清 :attr:`alive`, 重装后整体换掉."""
+    """检索读到的一整套数组; 删除条目时就地清除 :attr:`alive`, 重装后整体替换."""
 
     index: EmbeddingIndex
     alive: np.ndarray
@@ -272,7 +272,7 @@ def _embed_batch(encoder: ImageEncoder, paths: Sequence[Path]) -> tuple[np.ndarr
                 with Image.open(path) as image:
                     images.append(image.convert("RGB"))
             except Exception:
-                # 资源目录里有下载不完整的图 (后缀是 .jpg 但字节不可识别), 跳过而不是拖垮整批.
+                # 资源目录中存在下载不完整的图片 (后缀为 .jpg 但字节不可识别), 跳过该图而不使整批失败.
                 logger.warning("embedding image decode failed", path=str(path))
                 continue
             kept.append(index)
@@ -297,7 +297,7 @@ def _diff(
 def _writes(
     metadata_id: int, images: Sequence[_Image], vectors: np.ndarray, kept: Sequence[int]
 ) -> list[EmbeddingWrite]:
-    # ``kept`` 存批内下标, 向量按存活顺序压缩: 两套下标不能混用.
+    # ``kept`` 保存批内下标, 向量按存活顺序压缩: 两套下标不能混用.
     return [
         EmbeddingWrite(
             metadata_id=metadata_id,
@@ -311,12 +311,12 @@ def _writes(
 
 
 class SemanticService:
-    """两个塔分开加载: 检索只用文本塔 (空闲 ``TEXT_IDLE_SECONDS`` 后释放), 索引只用视觉塔.
+    """两个塔分开加载: 检索只使用文本塔 (空闲 ``TEXT_IDLE_SECONDS`` 后释放), 索引只使用视觉塔.
 
-    模型文件只在 :meth:`build_index` 里下载; 其余入口只认本地已就绪的文件. 每个塔的加载与推理
-    各由一把锁串行化: 后端实例不保证线程安全, 索引任务与增量维护可能同时用到视觉塔.
+    模型文件只在 :meth:`build_index` 中下载; 其余入口只接受本地已就绪的文件. 每个塔的加载与推理
+    各由一把锁串行化: 后端实例不保证线程安全, 索引任务与增量维护可能同时使用视觉塔.
 
-    内存索引常驻: 文本塔空闲释放不再丢掉它, 写入后由后台任务单飞重装 (见 :meth:`_reload_loop`).
+    内存索引常驻: 文本塔空闲释放不会删除该索引, 写入后由后台任务串行重装 (见 :meth:`_reload_loop`).
     """
 
     def __init__(self, repo: Repository, store: ResourceStore, data_dir: Path, config: SemanticConfig) -> None:
@@ -336,13 +336,13 @@ class SemanticService:
         self._vectors: OrderedDict[str, np.ndarray] = OrderedDict()
         self._reload_task: asyncio.Task[None] | None = None
         self._reload_retry_at = 0.0
-        """上次重装失败后的冷却; 读盘持续失败时不至于每个请求都去撞一次."""
+        """上次重装失败后的冷却; 磁盘读取持续失败时避免每个请求都触发重装."""
         self._dirty_at = 0.0
         self._dirty_since: float | None = None
         self._reload_now = False
         self._building = False
         self._tombstones: list[tuple[int, int]] = []
-        """``(产生时的代次, 条目 id)``; 只用于切换索引时给快照里仍未删掉的行补刀."""
+        """``(产生时的代次, 条目 id)``; 只用于切换索引时清除快照中尚未删除的行."""
         if repo.embeddings is not None:
             repo.embeddings.add_write_listener(self._on_store_write)
 
@@ -426,7 +426,7 @@ class SemanticService:
         self._text_idle = asyncio.get_running_loop().call_later(TEXT_IDLE_SECONDS, self._release_text)
 
     def _release_text(self) -> None:
-        """空闲到期: 正在推理的调用持有局部引用, 置空不影响它. 内存索引不受影响, 它常驻."""
+        """空闲到期: 正在推理的调用持有局部引用, 置空不影响该调用. 内存索引不受影响, 保持常驻."""
         self._text_idle = None
         self._text = None
 
@@ -436,7 +436,7 @@ class SemanticService:
     def release_index(self) -> None:
         """丢弃内存索引与查询缓存; 下次检索重新装载. 索引默认常驻, 只有显式调用才释放.
 
-        模型行缓存一并丢掉: sidecar 被删掉重建后模型 id 会变, 留着旧 id 只会一直读到空索引.
+        模型行缓存一并丢弃: sidecar 被删除并重建后模型 id 会变, 保留旧 id 只会持续读到空索引.
         """
         self._snapshot = None
         self._model = None
@@ -454,13 +454,13 @@ class SemanticService:
         self._text = None
 
     def close(self) -> None:
-        """断开写通知并停掉后台重装; 热重载换服务与进程退出时调用."""
+        """断开写通知并停止后台重装; 热重载替换服务时与进程退出时调用."""
         if self.repo.embeddings is not None:
             self.repo.embeddings.remove_write_listener(self._on_store_write)
         self._cancel_reload()
 
     def handoff(self, previous: SemanticService) -> None:
-        """热重载交接: 复用旧服务已装载的索引与缓存, 避免配置变更后同步重装整份矩阵."""
+        """热重载交接: 复用旧服务已装载的索引与缓存, 避免配置变更后同步重装整份索引."""
         snapshot = previous._snapshot
         if snapshot is None or self._snapshot is not None:
             return
@@ -489,7 +489,7 @@ class SemanticService:
         return ref
 
     async def status(self) -> SemanticStatus:
-        """轻量状态: 只做文件存在性与当前模型是否有向量的检查, 不扫模型目录或向量表."""
+        """轻量状态: 只检查文件存在性与当前模型是否有向量, 不扫描模型目录或向量表."""
         spec = self.spec
         enabled = self.enabled
         search_ready = self.search_ready
@@ -570,7 +570,7 @@ class SemanticService:
         return [self._hit(snapshot.index, scores, ranking, kind, int(slot)) for slot in picks]
 
     async def count(self, kind: EmbeddingKind | None = None, allowed_ids: Sequence[int] | None = None) -> int:
-        """候选集里去重后的条目数; 列表分页要总分, 不编码文本也不排名."""
+        """候选集内去重后的条目数; 列表分页需要总数, 不编码文本也不排名."""
         snapshot = await self._read_snapshot()
         visible = self._visible(snapshot, kind, allowed_ids)
         return 0 if visible is None else int(np.count_nonzero(visible))
@@ -579,7 +579,7 @@ class SemanticService:
     def _visible(
         snapshot: _Snapshot, kind: EmbeddingKind | None, allowed_ids: Sequence[int] | None
     ) -> np.ndarray | None:
-        """条目位图: 未删除、有所请求来源、在候选集内. 排名里没有这些条件, 所以改筛选不动缓存."""
+        """条目位图: 未删除、含有请求的图片来源、在候选集内. 排名中不包含这些条件, 因此修改筛选条件不会使缓存失效."""
         visible = snapshot.alive
         if kind is not None:
             visible = visible & snapshot.index.kind_layout(kind).present
@@ -603,7 +603,7 @@ class SemanticService:
         )
 
     async def _text_vector(self, query: str) -> np.ndarray:
-        """先编码再碰向量库: 文本塔缺失时不该顺手建出 sidecar 文件."""
+        """先编码再访问向量库: 文本塔缺失时不得因此创建 sidecar 文件."""
         vector = self._vectors.get(query)
         if vector is None:
             vector = (await self._embed_texts([query]))[0]
@@ -655,12 +655,12 @@ class SemanticService:
                 try:
                     snapshot = self._install(await self.embeddings.load(ref.id, ref.dim))
                 except EmbeddingSnapshotError as exc:
-                    # 不缓存空快照: 报给请求, 下次再试.
+                    # 不缓存空快照: 错误直接返回请求方, 下次请求重新尝试.
                     raise SemanticUnavailable("语义索引读取失败, 请检查向量库文件") from exc
             return snapshot
 
     def _install(self, index: EmbeddingIndex) -> _Snapshot:
-        """换上新索引: 重建位图, 丢掉按旧代次缓存的排名."""
+        """切换至新索引: 重建位图, 丢弃按旧代次缓存的排名."""
         alive = np.ones(index.entry_count, dtype=bool)
         self._tombstones = [item for item in self._tombstones if item[0] > index.generation]
         for _, metadata_id in self._tombstones:
@@ -681,7 +681,7 @@ class SemanticService:
         if self._dirty_since is None:
             self._dirty_since = now
         if event.deleted_ids:
-            # 冷装载期间也要记: 正在装的快照代次早于这次删除, 装好后要靠墓碑把它摘掉.
+            # 冷装载期间也须记录: 正在装载的快照代次早于本次删除, 装载完成后依据墓碑移除该行.
             self._tombstones.extend((event.generation, metadata_id) for metadata_id in event.deleted_ids)
             snapshot = self._snapshot
             if snapshot is not None:
@@ -709,7 +709,7 @@ class SemanticService:
             task.cancel()
 
     async def _reload_loop(self) -> None:
-        """后台单飞重装: 装好再替换, 装的过程中旧索引一直可用."""
+        """后台串行重装: 装载完成后替换, 装载期间旧索引持续可用."""
         try:
             while True:
                 snapshot = self._snapshot
@@ -729,10 +729,10 @@ class SemanticService:
             self._reload_task = None
 
     async def _reload_delay(self, snapshot: _Snapshot) -> float:
-        """还要等多久再重装; 返回 0 表示立刻装."""
+        """距下次重装还需等待多久; 返回 0 表示立即重装."""
         now = time.monotonic()
         if self._building:
-            # 全量索引任务自己会写很久: 按时间与行数双条件限流, 任务结束再强制补一次.
+            # 全量索引任务持续时间较长: 按时间与行数两个条件限流, 任务结束后强制补一次重装.
             waited = now - snapshot.loaded_at
             if waited < BUILD_RELOAD_SECONDS:
                 return BUILD_RELOAD_SECONDS - waited
@@ -773,9 +773,9 @@ class SemanticService:
         progress: ProgressCallback | None = None,
         kinds: Sequence[EmbeddingKind] | None = None,
     ) -> IndexStats:
-        """全量对账: 只算当前模型与请求的图片种类, 逐条目比较 ``(resource_url, content_hash)``.
+        """全量比对: 只计算当前模型与请求的图片种类, 逐条目比较 ``(resource_url, content_hash)``.
 
-        唯一会下载模型的入口. 剧照只取已落盘的资源, 不主动下载; 没有封面的条目不建向量.
+        唯一会下载模型的入口. 剧照只取已写入磁盘的资源, 不主动下载; 没有封面的条目不建立向量.
         未选中的种类既不重算也不删除, 便于先只索引封面、之后再补剧照.
         """
         selected = frozenset(kinds) if kinds is not None else frozenset(EmbeddingKind)
@@ -814,7 +814,7 @@ class SemanticService:
                 stale.clear()
 
         try:
-            # 先加载视觉塔: 下载或加载失败应让任务失败, 而不是逐批计入 failed.
+            # 先加载视觉塔: 下载或加载失败须使整个任务失败, 而非逐批计入 failed.
             async with self._vision_lock:
                 if self._vision is None:
                     self._vision = await self._load_vision(download=True)
@@ -849,12 +849,12 @@ class SemanticService:
                     break
             await flush()
             if limit is None:
-                # 条目删除后 sidecar 清理失败留下的孤儿行; 只有完整遍历才能判定.
+                # 条目删除后 sidecar 清理失败留下的孤儿行; 仅在完整遍历后才能判定.
                 orphans = [metadata_id for metadata_id in existing if metadata_id not in seen]
                 await self.embeddings.delete_metadata(orphans, model_id=ref.id)
         finally:
             if not self.config.auto_maintain:
-                # 手动 / 定时索引算完即释放; auto_maintain 常驻以承接后续增量.
+                # 手动 / 定时索引在任务完成后释放; ``auto_maintain`` 常驻以承接后续增量.
                 self.release_vision()
             await self._settle_index()
         if progress is not None:
@@ -871,9 +871,9 @@ class SemanticService:
         return IndexStats(scanned=scanned, indexed=indexed, skipped=skipped, missing=missing, failed=failed)
 
     async def benchmark(self) -> BenchmarkStats:
-        """在本机抽样测编码与查询速度; 不写向量库, 模型未下载时直接失败.
+        """在本机抽样测量编码与查询速度; 不写入向量库, 模型未下载时直接失败.
 
-        图片按端到端计时 (解码 + 推理), 与索引任务同一条路径; 查询只测文本编码, 冷加载单独记.
+        图片按端到端计时 (解码 + 推理), 与索引任务使用同一条路径; 查询只测量文本编码, 冷加载单独记录.
         """
         if not self.search_ready or not self.index_ready:
             raise SemanticUnavailable("模型尚未下载, 请先运行一次语义索引任务")
@@ -918,7 +918,7 @@ class SemanticService:
         return (time.perf_counter() - started) * 1000
 
     async def _sample_images(self) -> list[_Image]:
-        """封面与剧照各抽若干张; 只看已落盘资源, 不下载."""
+        """封面与剧照各抽取若干张; 只读取已写入磁盘的资源, 不触发下载."""
         covers: list[_Image] = []
         stills: list[_Image] = []
         offset = 0
@@ -940,10 +940,10 @@ class SemanticService:
     async def metadata_changed(self, metadata_id: int) -> None:
         """元数据写库后的失效入口 (见 ``Repository.set_media_hook``).
 
-        只删 url 或 content_hash 变了的行, 不加载模型; ``auto_maintain`` 打开且模型已下载时
-        再补算这些图. 失败只记日志: 刮削 / 编辑不应因向量库写失败而回滚.
+        只删除 url 或 content_hash 发生变化的行, 不加载模型; ``auto_maintain`` 打开且模型已下载时
+        再补算这些图. 失败仅记录日志: 刮削 / 编辑不应因向量库写失败而回滚.
 
-        写入走 store 的写通知: 这里不等重装, 检索侧在切换索引前仍用旧向量.
+        写入经由 store 的写通知: 这里不等待重装, 检索侧在切换索引前仍使用旧向量.
         """
         try:
             if not self.enabled or not self.embeddings.exists:
@@ -968,7 +968,7 @@ class SemanticService:
             logger.warning("semantic invalidation failed", metadata_id=metadata_id, exc_info=True)
 
     async def _resolve_images(self, metadata: Metadata) -> list[_Image]:
-        """封面优先; 剧照取站点优先级最高且已有落盘图的那个站点 (同 ``ResourceStore.acquire_extrafanart``).
+        """封面优先; 剧照取优先级最高且已有磁盘图片的站点 (同 ``ResourceStore.acquire_extrafanart``).
 
         无封面则整个条目跳过.
         """
@@ -995,7 +995,7 @@ class SemanticService:
         return images
 
     async def _resolve_cover(self, metadata: Metadata) -> _Image | None:
-        """海报优先, 缩略图兜底; 只认已经落盘的 Resource."""
+        """海报优先, 缩略图作为回退; 只接受已写入磁盘的 Resource."""
         for url in (metadata.poster_url, metadata.thumb_url):
             if not url:
                 continue

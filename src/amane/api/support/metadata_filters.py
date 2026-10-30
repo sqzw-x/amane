@@ -1,6 +1,6 @@
 """列表与语义检索共用的筛选参数.
 
-两处端点暴露同一组 query 参数: 列表用它分页, 语义检索用它把候选集收窄到筛选结果内部.
+两处端点暴露同一组 query 参数: 列表使用这些参数分页, 语义检索使用它们将候选集限制在筛选结果内.
 """
 
 from dataclasses import dataclass
@@ -31,7 +31,7 @@ class MetadataFilters:
 
     @property
     def active(self) -> bool:
-        """任一项非空才需要查候选 id; 全空时语义检索直接扫整个索引."""
+        """任一项非空才需要查询候选 id; 全空时语义检索直接扫描整个索引."""
         return any(
             (
                 self.actor_id,

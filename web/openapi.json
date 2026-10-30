@@ -14900,7 +14900,7 @@
           "similarity"
         ],
         "title": "SemanticHitInfo",
-        "description": "语义检索命中图: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身."
+        "description": "语义检索的命中图片: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身."
       },
       "SemanticIndexResult": {
         "properties": {

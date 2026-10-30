@@ -41,7 +41,7 @@ class Repository(
         return self._embeddings
 
     def set_media_hook(self, hook: MediaChangeHook | None) -> None:
-        """热重载换语义服务时重设; 元数据写库路径据此重算向量."""
+        """热重载替换语义服务时重设; 元数据写库路径据此重算向量."""
         self._media_hook = hook
 
     async def notify_media_changed(self, metadata_id: int) -> None:

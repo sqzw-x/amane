@@ -1,4 +1,4 @@
-/* 语义模式的彩色外圈: 渐变沿边框缓慢流动, 提示当前输入会编码成图像描述.
+/* 语义模式的彩色外圈: 渐变沿边框缓慢流动, 提示当前输入按画面描述检索.
    外圈画在 ::before 上并向外溢出 2px, 不占布局, 切换模式时搜索栏高度不变. */
 .flowRing {
   position: relative;
@@ -27,7 +27,7 @@
 }
 
 /* 进入语义模式的按钮: 与搜索框同一组流动渐变, 画在按钮自身的边框上.
-   Mantine Button 带 overflow: hidden, 不能复用搜索框向外溢出的 ::before. */
+   Mantine Button 设置了 overflow: hidden, 无法复用搜索框向外溢出的 ::before. */
 .semanticToggle {
   border-color: transparent;
   background:

@@ -129,7 +129,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
 
     db_log_policy = DbLogPolicy()
     engine = await create_async_engine_from_path(cold.db_path, policy=db_log_policy)
-    # 向量 sidecar, 不纳入 Alembic; 删除文件即清空. 惰性建连, 未使用语义检索时不创建文件.
+    # 向量 sidecar, 不纳入 Alembic; 删除该文件即清空索引. 惰性建立连接, 未使用语义检索时不创建文件.
     embeddings = EmbeddingStore(cold.data_dir / "embeddings.db")
     repo = Repository(engine, embeddings=embeddings)
 

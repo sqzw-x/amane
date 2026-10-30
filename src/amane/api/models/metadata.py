@@ -101,12 +101,12 @@ PartialMetadata = create_partial_model(
 
 
 class SemanticHitInfo(BaseModel):
-    """语义检索命中图: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身."""
+    """语义检索的命中图片: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身."""
 
     id: int
     kind: EmbeddingKind
     resource_url: str
-    """命中图片的 locator; 剧照前端经资源代理渲染."""
+    """命中图片的资源定位串; 剧照由前端经资源代理渲染."""
     similarity: float
     """同一次查询内的排序分; 跨查询不可比."""
 

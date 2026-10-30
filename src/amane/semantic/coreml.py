@@ -1,7 +1,7 @@
-"""Core ML 后端 (macOS): 直接调系统 Core ML 框架, 不依赖 coremltools 运行时.
+"""Core ML 后端 (macOS): 直接调用系统 Core ML 框架, 不依赖 coremltools 运行时.
 
-模型可以是 ``.mlpackage`` 或已编译的 ``.mlmodelc``; 前者会编译到模型同级的 ``compiled/``
-目录并复用, 否则每次启动都要重做 ANE 特化 (实测 8–15 s). 计算单元先试 ANE, 失败回退 CPU.
+模型可以是 ``.mlpackage`` 或已编译的 ``.mlmodelc``; ``.mlpackage`` 会编译到模型同级的 ``compiled/``
+目录并复用, 否则每次启动都须重新执行 ANE 特化 (实测 8–15 s). 计算单元优先使用 ANE, 失败时回退 CPU.
 """
 
 from __future__ import annotations

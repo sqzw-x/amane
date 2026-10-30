@@ -16,9 +16,9 @@ interface PosterCardProps {
   item: MetadataResponse;
   /** 传入时按影片发行日标注演员当时年龄 (演员详情出演墙). */
   actorBirthday?: string | null;
-  /** 覆盖卡片图片 (语义检索命中剧照); 未给则用条目的海报. */
+  /** 覆盖卡片图片 (语义检索命中剧照); 未给则使用条目的海报. */
   imageUrl?: string | null;
-  /** 图片宽高比; 剧照用 16:9, 默认按海报竖版. */
+  /** 图片宽高比; 剧照按 16:9 显示, 默认为海报竖版宽高比. */
   imageRatio?: number;
 }
 

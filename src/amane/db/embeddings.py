@@ -3,7 +3,7 @@
 向量是派生数据, 可随时重建: 删除该文件即关闭语义索引, 下次用到时自动重建. 独立 SQLite,
 不经 Alembic; 库内没有跨库外键, 条目删除后由 :class:`Repository` 在主库提交之后清理.
 
-检索时整表装入内存做一次点积, 所以只取点积要用的列. 装载用独立的只读连接与只读事务: 快照内的
+检索时整表装入内存做一次点积, 所以只取点积所需的列. 装载使用独立的只读连接与只读事务: 快照内的
 行数与行内容自洽, 也不与写入共用 aiosqlite 连接. ``vector`` 为 L2 归一化的 float32 小端字节串.
 
 ``generation`` 是进程内的写入代次, 只增不减; 提交成功后同步通知监听者, 检索侧据此判断内存索引
@@ -66,7 +66,7 @@ class EmbeddingKind(StrEnum):
 
 
 _KINDS: tuple[EmbeddingKind, ...] = tuple(EmbeddingKind)
-"""内存索引里 ``kind`` 按此顺序存 uint8 码; 库内仍存字符串."""
+"""内存索引按此顺序将 ``kind`` 编码为 uint8 码; 库内仍保存字符串."""
 _KIND_CODE = {kind: code for code, kind in enumerate(_KINDS)}
 
 Signatures = dict[int, dict[str, tuple[EmbeddingKind, str | None]]]
@@ -74,9 +74,9 @@ Signatures = dict[int, dict[str, tuple[EmbeddingKind, str | None]]]
 
 
 class EmbeddingSnapshotError(RuntimeError):
-    """sidecar 存在但读不出来 (磁盘或锁问题).
+    """sidecar 存在但无法读取 (磁盘或锁问题).
 
-    调用方要保留手上已有的索引: 把读失败当成空库会让检索静默失效, 直到下一次写入才恢复.
+    调用方须保留当前已有的索引: 将读取失败视为空库会使检索静默失效, 直到下一次写入才恢复.
     """
 
 
@@ -96,7 +96,7 @@ class EmbeddingWriteEvent:
     """一次提交成功的写入.
 
     ``deleted_ids`` 只在整条删除 (``delete_metadata`` 不带模型) 时非空: 检索侧要在删除请求返回前
-    把这些条目从结果里摘掉, 而不必等索引重装.
+    将这些条目从结果中移除, 而无须等待索引重装.
     """
 
     generation: int
@@ -143,8 +143,8 @@ class KindLayout:
 class EmbeddingIndex:
     """一次装载的结果; 检索对 ``matrix`` 做点积, 命中项按条目槽位回查其余数组.
 
-    装载后按 ``(metadata_id, kind)`` 重排一次下标得到 :attr:`row_order`; 矩阵本身不动, 聚合时只
-    gather 分数向量. 不要在 SQL 里 ``ORDER BY``: 实测会建临时 B 树, 比装载后再排慢一个量级.
+    装载后按 ``(metadata_id, kind)`` 重排一次下标得到 :attr:`row_order`; 矩阵本身不变, 聚合时只
+    按新下标收集分数向量. 不要在 SQL 语句中使用 ``ORDER BY``: 实测会建临时 B 树, 比装载后再排慢一个量级.
     """
 
     model_id: int
@@ -258,8 +258,8 @@ def _as_bytes(vector: np.ndarray) -> bytes:
 class EmbeddingStore:
     """单连接 (aiosqlite 内部串行化) 的向量库; 首次读写时才建库建表.
 
-    ``generation`` 与写通知只覆盖经本实例的写入. 外部直接改 sidecar、多实例共享 ``data_dir`` 不受
-    支持: 那些写入不通知检索侧, 需重启或显式释放索引.
+    ``generation`` 与写通知只覆盖经本实例的写入. 外部直接修改 sidecar、多实例共享 ``data_dir`` 不受
+    支持: 那些写入不通知检索侧, 须重启或显式释放索引.
     """
 
     def __init__(self, db_path: Path | str) -> None:
@@ -283,7 +283,7 @@ class EmbeddingStore:
         return self._generation
 
     def add_write_listener(self, listener: Callable[[EmbeddingWriteEvent], None]) -> None:
-        """监听器在写入提交之后、事件循环里同步调用; 只能做轻量登记, 不能 await."""
+        """监听器在写入提交之后、事件循环内同步调用; 只能执行轻量登记, 不能 await."""
         self._listeners.append(listener)
 
     def remove_write_listener(self, listener: Callable[[EmbeddingWriteEvent], None]) -> None:
@@ -297,7 +297,7 @@ class EmbeddingStore:
             try:
                 listener(event)
             except Exception:
-                # 写入已经提交: 监听者的毛病不能变成写入方的失败, 也不能挡住后面的人.
+                # 写入已经提交: 监听器异常不得导致写入方失败, 也不得阻断后续监听器.
                 logger.warning("embedding write listener failed", exc_info=True)
 
     async def _ensure(self) -> aiosqlite.Connection:
@@ -370,7 +370,7 @@ class EmbeddingStore:
         return int(row[0]) if row is not None else None
 
     async def has_embeddings(self, model_id: int) -> bool:
-        """模型下是否已有任意向量; 走 ``model_id`` 覆盖索引, 不扫向量表."""
+        """模型下是否已有任意向量; 经由 ``model_id`` 覆盖索引, 不扫描向量表."""
         if not self.exists:
             return False
         conn = await self._ensure()
@@ -412,7 +412,7 @@ class EmbeddingStore:
         return int(row[0]) if row is not None else 0
 
     async def signatures(self, model_id: int, metadata_id: int | None = None) -> Signatures:
-        """按条目分组, 对账时逐条目取用; 建索引时据此跳过未变化的向量."""
+        """按条目分组, 比对时逐条目读取; 建索引时据此跳过未变化的向量."""
         if not self.exists:
             return {}
         conn = await self._ensure()
@@ -429,7 +429,7 @@ class EmbeddingStore:
         return grouped
 
     async def load(self, model_id: int, dim: int) -> EmbeddingIndex:
-        """装一次快照; 代次在打开读事务之前捕获, 之后提交的写入留给下一轮重装."""
+        """装载一次快照; 代次在打开读事务之前捕获, 之后提交的写入留给下一轮重装."""
         generation = self._generation
         return await asyncio.to_thread(self._load_snapshot, model_id, dim, generation)
 
@@ -531,7 +531,7 @@ class EmbeddingStore:
         return len(keys)
 
     async def delete_metadata(self, metadata_ids: Sequence[int], model_id: int | None = None) -> int:
-        """删条目的全部向量; ``model_id`` 为 None 时连同其它模型一起删 (级联删除用). 分批绑定, 避开变量上限."""
+        """删除条目的全部向量; ``model_id`` 为 None 时连同其它模型一起删除 (级联删除用). 分批绑定, 避开变量上限."""
         if not metadata_ids or not self.exists:
             return 0
         conn = await self._ensure()

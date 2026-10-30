@@ -28,7 +28,7 @@ class RepositoryMixinBase:
     """子类须提供 ``_session()``. 任务 mixin 还依赖 ``_task_insert_lock`` 串行化入队互斥."""
 
     _task_insert_lock: asyncio.Lock
-    # 向量 sidecar 与图片变化的通知; 仅条目写路径与级联删除使用.
+    # 向量 sidecar 与图片变化通知的钩子; 仅条目写路径与级联删除使用.
     _embeddings: EmbeddingStore | None
     _media_hook: MediaChangeHook | None
 

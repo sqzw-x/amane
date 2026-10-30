@@ -20,7 +20,7 @@ export interface BrowsePageShellProps {
   summary?: ReactNode;
   /** 搜索框 - 与 extras / pageSize 组成居中控件组. */
   search: ReactNode;
-  /** 搜索槽最大宽度 (px), 默认 480; 搜索槽内还带按钮时可放宽, 保证输入框本身不被挤短. */
+  /** 搜索槽最大宽度 (px), 默认 480; 搜索槽内另有按钮时可放宽, 以免输入框被压缩. */
   searchMaxWidth?: number;
   /** 搜索右侧附属控件 (排序, 筛选). */
   extras?: ReactNode;
