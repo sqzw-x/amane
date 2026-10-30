@@ -97,6 +97,12 @@ Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 work
 
 跨角色站点写入会被 section validator 拒绝. 发请求前仍按 `Actor.gender` 与站点性别覆盖再过滤 (见 [crawlers.md](crawlers.md)).
 
+## `semantic` (Hot)
+
+只有 `auto_maintain`: 打开且视觉塔就绪时, 图片变化的条目立即增量重算且视觉塔常驻; 否则只删变动图片的旧向量, 等下次索引重建.
+
+模型身份是代码常量 (`src/amane/semantic/models.py` 的 `DEFAULT_SPEC`), 不进配置: 换模型 = 换清单, 旧模型的向量按清单的 `(name, version)` 保留. 两个塔分别判断就绪 — 检索要 tokenizer + 文本塔, 索引要视觉塔, `/semantic/status` 的 `search_ready` / `index_ready` 各对应一个; 检索未就绪时 503. 只有 `SEMANTIC_INDEX` 任务会下载缺失文件到 `{data_dir}/models/` (断点续传 + SHA256 校验), 检索与增量维护只认本地文件. 后端按平台决定 (macOS Core ML, 其余 ONNX Runtime); 分发精度: 视觉塔只发 fp16 (量化后余弦明显掉点), 文本塔 Core ML 用 8bit palettization (p8)、ONNX 用 fp16. 文本塔空闲超时后释放.
+
 ## `watermark` (Hot)
 
 只在 ORGANIZE 落盘封面时绘制, 不修改 Resource; 片库 CSS overlay 不读 `enabled`. 角标高度 = 图高 × `scale` (不按宽、不按 PNG 原图像素); `corners` 是 `x-frozen-keys` 五类到四角的映射, 同角按中字 / 无码 / 破解 / 流出 / 分辨率向内叠. PNG 覆盖仍是 `{data_dir}/watermarks/{stem}.png`.

@@ -4,9 +4,11 @@ import {
   IconDatabase,
   IconEraser,
   IconFolder,
+  IconGauge,
   IconRefresh,
   IconRepeat,
   IconSearch,
+  IconSparkles,
   IconTrashX,
   IconUser,
   IconZoomExclamation,
@@ -35,6 +37,8 @@ export const TASK_ICONS: Record<TaskType, Icon> = exhaustiveRecord<TaskType>()({
   rescrape: IconRepeat,
   scan_invalid: IconZoomExclamation,
   delete: IconTrashX,
+  semantic_index: IconSparkles,
+  semantic_benchmark: IconGauge,
 });
 
 const EMPTY_CHILD_STATUS: Required<TaskChildStatusCounts> = {

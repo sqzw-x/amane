@@ -18,8 +18,9 @@
 | `sql_explore` | 中间推理; 默认只回样例. `create_view=true` 物化会话内 SavedQuery 供 `inspect_result` 翻页 — 视图是**纯行数组**, 无 entity / `id` 列要求, **不**纳入交付结果 |
 | `sql_deliver` | 面向用户的结果 → `saved_query` + 内存结果缓存. `entity=metadata\|actor` 交付须含主键列 `id`, 可作片库 / 演员筛选并深链; 省略 entity (或 `data`) 交付任意只读结果, 只进入数据页 |
 | `inspect_result` | 按 `saved_query_id` 取行 (交付或探查视图) |
+| `semantic_search` | 单次整句语义检索; 可传 `saved_query_id` 或返回 `id` 列的只读 SQL, 只在该候选集内排名 |
 
-写操作工具按域分组为 `Capability`, 清单在 `src/amane/agent/capabilities.py`, 内置助理与外部派发共用同一份 (两侧必须一致, 只登记一处才不会漂移). **不做延迟载入**: 每个请求都声明全部工具. 兼容端点 (DeepSeek 等) 没有「声明了但不开放」的通道, 逐次载入只能通过修改 `tools` 实现, 而工具定义渲染在 system 之后、对话之前, 每载入一次即重读整段对话前缀; 全量声明的固定前缀恒定不变, 首轮即命中缓存. 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务.
+写操作工具按域分组为 `Capability`, 清单在 `src/amane/agent/capabilities.py`, 内置助理与外部派发共用同一份 (两侧必须一致, 只登记一处才不会漂移). **不做延迟载入**: 每个请求都声明全部工具. 兼容端点 (DeepSeek 等) 没有「声明了但不开放」的通道, 逐次载入只能通过修改 `tools` 实现, 而工具定义渲染在 system 之后、对话之前, 每载入一次即重读整段对话前缀; 全量声明的固定前缀恒定不变, 首轮即命中缓存. 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务 / 语义检索回调.
 
 | `id` | 覆盖 |
 |------|------|

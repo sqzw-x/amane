@@ -71,8 +71,20 @@ class TestSchedules:
         assert set(rescrape.json()["payload"]["targets"]) == {"metadata", "actor"}
         assert isinstance(rescrape.json()["payload"]["targets"], list)
 
+        semantic = await client.post(
+            "schedules", json={"cron": "0 3 * * *", "submission": {"type": "semantic_index", "limit": 20}}
+        )
+        assert semantic.status_code == 201
+        assert semantic.json()["task_type"] == "semantic_index"
+        assert semantic.json()["payload"] == {
+            "type": "semantic_index",
+            "limit": 20,
+            "force": False,
+            "kinds": ["cover", "still"],
+        }
+
         listed = await client.get("schedules")
-        assert listed.json()["total"] == 4
+        assert listed.json()["total"] == 5
 
         sched = await repo.create_schedule(cron="0 0 * * *", task_type=RoutineType.CLEANUP, payload={}, name="old")
         sparse = await client.get(f"schedules/{sched.id}")

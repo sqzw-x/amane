@@ -10,7 +10,7 @@ from croniter import croniter
 from structlog.contextvars import bound_contextvars
 
 from ..db import RoutineType, TaskType
-from ..handlers import CleanupPayload, R18ImportPayload, RescrapePayload, UpscalePayload
+from ..handlers import CleanupPayload, R18ImportPayload, RescrapePayload, SemanticIndexPayload, UpscalePayload
 
 if TYPE_CHECKING:
     from ..db.repository import Repository
@@ -100,5 +100,7 @@ class CronScheduler:
                 await self._repo.create_task(TaskType.R18_IMPORT, R18ImportPayload(force=payload.get("force", False)))
             case RoutineType.RESCRAPE:
                 await self._repo.create_task(TaskType.RESCRAPE, RescrapePayload.model_validate(payload))
+            case RoutineType.SEMANTIC_INDEX:
+                await self._repo.create_task(TaskType.SEMANTIC_INDEX, SemanticIndexPayload.model_validate(payload))
             case _:
                 logger.warning("unknown task type", task_type=task_type)

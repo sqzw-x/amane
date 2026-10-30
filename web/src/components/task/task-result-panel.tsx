@@ -70,6 +70,15 @@ function resultBranch(result: TaskResult, failed: boolean): ReactNode {
         </>
       );
     }
+    case "semantic_index":
+      return (
+        <>
+          <SemanticCounts result={result} />
+          <EmptyHint visible={!failed} />
+        </>
+      );
+    case "semantic_benchmark":
+      return <BenchmarkFigures result={result} />;
     case "refresh":
     case "cleanup":
     case "upscale":
@@ -81,6 +90,49 @@ function resultBranch(result: TaskResult, failed: boolean): ReactNode {
     default:
       return assertNever(result, "TaskResult");
   }
+}
+
+function SemanticCounts({ result }: { result: Extract<TaskResult, { type: "semantic_index" }> }) {
+  const { t } = useTranslation("tasks");
+  return (
+    <Group gap="xs">
+      <Badge variant="light" color="teal">
+        {t("result.semanticIndexed", { value: result.indexed })}
+      </Badge>
+      <Badge variant="light" color="gray">
+        {t("result.semanticSkipped", { value: result.skipped })}
+      </Badge>
+      {result.missing > 0 && (
+        <Badge variant="light" color="yellow">
+          {t("result.semanticMissing", { value: result.missing })}
+        </Badge>
+      )}
+      {result.failed > 0 && (
+        <Badge variant="light" color="red">
+          {t("result.semanticFailed", { value: result.failed })}
+        </Badge>
+      )}
+    </Group>
+  );
+}
+
+function BenchmarkFigures({
+  result,
+}: {
+  result: Extract<TaskResult, { type: "semantic_benchmark" }>;
+}) {
+  const { t } = useTranslation("tasks");
+  return (
+    <>
+      <Text size="sm">
+        {t("benchmark.imagesPerSecond", { value: result.images_per_second.toFixed(1) })}
+      </Text>
+      <Text size="sm">{t("benchmark.queryMs", { value: result.query_ms.toFixed(1) })}</Text>
+      <Text size="sm" c="dimmed">
+        {t("benchmark.samples", { count: result.samples })}
+      </Text>
+    </>
+  );
 }
 
 function ResultHeadline({

@@ -1945,6 +1945,15 @@ export const DownloadableResourceSchema = {
     description: '影片附属资源类型: 刮削写入 Resource, 整理时按库配置复制到库路径.'
 } as const;
 
+export const EmbeddingKindSchema = {
+    type: 'string',
+    enum: [
+        'cover',
+        'still'
+    ],
+    title: 'EmbeddingKind'
+} as const;
+
 export const ErrorRowSchema = {
     properties: {
         seq: {
@@ -3476,6 +3485,12 @@ export const HotSettingsSchema = {
                 preset: 'waifu-photo-2x',
                 output_format: 'jpg',
                 tta: false
+            }
+        },
+        semantic: {
+            $ref: '#/components/schemas/SemanticConfig',
+            default: {
+                auto_maintain: false
             }
         },
         watermark: {
@@ -5385,6 +5400,13 @@ export const MetadataListResponseSchema = {
         total: {
             type: 'integer',
             title: 'Total'
+        },
+        semantic_hits: {
+            items: {
+                $ref: '#/components/schemas/SemanticHitInfo'
+            },
+            type: 'array',
+            title: 'Semantic Hits'
         }
     },
     type: 'object',
@@ -7111,7 +7133,8 @@ export const RoutineTypeSchema = {
         'cleanup',
         'upscale',
         'r18_import',
-        'rescrape'
+        'rescrape',
+        'semantic_index'
     ],
     title: 'RoutineType'
 } as const;
@@ -7584,6 +7607,9 @@ export const ScheduleCreateRequestSchema = {
                 },
                 {
                     $ref: '#/components/schemas/RescrapeSubmission'
+                },
+                {
+                    $ref: '#/components/schemas/SemanticIndexSubmission'
                 }
             ],
             title: 'Submission',
@@ -7593,6 +7619,7 @@ export const ScheduleCreateRequestSchema = {
                     cleanup: '#/components/schemas/CleanupSubmission',
                     r18_import: '#/components/schemas/R18ImportSubmission',
                     rescrape: '#/components/schemas/RescrapeSubmission',
+                    semantic_index: '#/components/schemas/SemanticIndexSubmission',
                     upscale: '#/components/schemas/UpscaleSubmission'
                 }
             }
@@ -7665,6 +7692,9 @@ export const ScheduleResponseSchema = {
                 },
                 {
                     $ref: '#/components/schemas/RescrapeSubmission'
+                },
+                {
+                    $ref: '#/components/schemas/SemanticIndexSubmission'
                 }
             ],
             title: 'Payload',
@@ -7674,6 +7704,7 @@ export const ScheduleResponseSchema = {
                     cleanup: '#/components/schemas/CleanupSubmission',
                     r18_import: '#/components/schemas/R18ImportSubmission',
                     rescrape: '#/components/schemas/RescrapeSubmission',
+                    semantic_index: '#/components/schemas/SemanticIndexSubmission',
                     upscale: '#/components/schemas/UpscaleSubmission'
                 }
             }
@@ -8163,6 +8194,359 @@ export const SelectionSummaryResponseSchema = {
     ],
     title: 'SelectionSummaryResponse',
     description: '展开结果. 条目自库根展开 (库外产物挂在根下), 面板按分页接口读取.'
+} as const;
+
+export const SemanticBenchmarkResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'semantic_benchmark',
+            title: 'Type',
+            default: 'semantic_benchmark'
+        },
+        backend: {
+            type: 'string',
+            title: 'Backend'
+        },
+        model: {
+            type: 'string',
+            title: 'Model'
+        },
+        images_per_second: {
+            type: 'number',
+            title: 'Images Per Second'
+        },
+        query_ms: {
+            type: 'number',
+            title: 'Query Ms'
+        },
+        load_ms: {
+            type: 'number',
+            title: 'Load Ms'
+        },
+        samples: {
+            type: 'integer',
+            title: 'Samples'
+        },
+        measured_at: {
+            type: 'string',
+            title: 'Measured At'
+        }
+    },
+    type: 'object',
+    required: [
+        'backend',
+        'model',
+        'images_per_second',
+        'query_ms',
+        'load_ms',
+        'samples',
+        'measured_at'
+    ],
+    title: 'SemanticBenchmarkResult'
+} as const;
+
+export const SemanticBenchmarkSubmissionSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'semantic_benchmark',
+            title: 'Type'
+        }
+    },
+    type: 'object',
+    required: [
+        'type'
+    ],
+    title: 'SemanticBenchmarkSubmission'
+} as const;
+
+export const SemanticConfigSchema = {
+    properties: {
+        auto_maintain: {
+            type: 'boolean',
+            title: 'Auto Maintain',
+            description: '条目图片变化后立即增量索引; 打开时视觉模型常驻',
+            default: false
+        }
+    },
+    type: 'object',
+    title: 'SemanticConfig',
+    description: '封面与剧照语义检索. 模型身份由 ``semantic/models.py`` 的清单决定, 不随配置变化.'
+} as const;
+
+export const SemanticHitInfoSchema = {
+    properties: {
+        id: {
+            type: 'integer',
+            title: 'Id'
+        },
+        kind: {
+            $ref: '#/components/schemas/EmbeddingKind'
+        },
+        resource_url: {
+            type: 'string',
+            title: 'Resource Url'
+        },
+        similarity: {
+            type: 'number',
+            title: 'Similarity'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'kind',
+        'resource_url',
+        'similarity'
+    ],
+    title: 'SemanticHitInfo',
+    description: '语义检索命中图: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身.'
+} as const;
+
+export const SemanticIndexResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'semantic_index',
+            title: 'Type',
+            default: 'semantic_index'
+        },
+        scanned: {
+            type: 'integer',
+            title: 'Scanned'
+        },
+        indexed: {
+            type: 'integer',
+            title: 'Indexed'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing'
+        },
+        failed: {
+            type: 'integer',
+            title: 'Failed'
+        }
+    },
+    type: 'object',
+    required: [
+        'scanned',
+        'indexed',
+        'skipped',
+        'missing',
+        'failed'
+    ],
+    title: 'SemanticIndexResult'
+} as const;
+
+export const SemanticIndexSubmissionSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'semantic_index',
+            title: 'Type'
+        },
+        limit: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Limit',
+            description: '单次最多处理的条目数; 空表示全库'
+        },
+        force: {
+            type: 'boolean',
+            title: 'Force',
+            description: '忽略未变化的跳过判据, 全部重算',
+            default: false
+        },
+        kinds: {
+            items: {
+                $ref: '#/components/schemas/EmbeddingKind'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Kinds'
+        }
+    },
+    type: 'object',
+    required: [
+        'type'
+    ],
+    title: 'SemanticIndexSubmission'
+} as const;
+
+export const SemanticModelCountsSchema = {
+    properties: {
+        count: {
+            type: 'integer',
+            title: 'Count'
+        },
+        covers: {
+            type: 'integer',
+            title: 'Covers'
+        },
+        stills: {
+            type: 'integer',
+            title: 'Stills'
+        }
+    },
+    type: 'object',
+    required: [
+        'count',
+        'covers',
+        'stills'
+    ],
+    title: 'SemanticModelCounts',
+    description: '单个模型的向量条数, 按来源拆分.'
+} as const;
+
+export const SemanticStatusResponseSchema = {
+    properties: {
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        backend: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Backend'
+        },
+        current_model: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Current Model'
+        },
+        current_model_label: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Current Model Label'
+        },
+        backend_label: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Backend Label'
+        },
+        text_loaded: {
+            type: 'boolean',
+            title: 'Text Loaded',
+            default: false
+        },
+        vision_loaded: {
+            type: 'boolean',
+            title: 'Vision Loaded',
+            default: false
+        },
+        search_ready: {
+            type: 'boolean',
+            title: 'Search Ready',
+            default: false
+        },
+        index_ready: {
+            type: 'boolean',
+            title: 'Index Ready',
+            default: false
+        },
+        download_size: {
+            type: 'integer',
+            title: 'Download Size',
+            default: 0
+        },
+        vision_size: {
+            type: 'integer',
+            title: 'Vision Size',
+            default: 0
+        },
+        text_size: {
+            type: 'integer',
+            title: 'Text Size',
+            default: 0
+        },
+        model_path: {
+            type: 'string',
+            title: 'Model Path',
+            default: ''
+        },
+        model_bytes: {
+            type: 'integer',
+            title: 'Model Bytes',
+            default: 0
+        },
+        embeddings_path: {
+            type: 'string',
+            title: 'Embeddings Path',
+            default: ''
+        },
+        embeddings_bytes: {
+            type: 'integer',
+            title: 'Embeddings Bytes',
+            default: 0
+        },
+        indexed_metadata: {
+            type: 'integer',
+            title: 'Indexed Metadata',
+            default: 0
+        },
+        indexed_at: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Indexed At'
+        },
+        models: {
+            additionalProperties: {
+                $ref: '#/components/schemas/SemanticModelCounts'
+            },
+            type: 'object',
+            title: 'Models',
+            default: {}
+        }
+    },
+    type: 'object',
+    required: [
+        'enabled'
+    ],
+    title: 'SemanticStatusResponse',
+    description: '语义检索状态: 当前模型、各模型条数与后端; 不触发模型下载或加载.'
 } as const;
 
 export const SiteConfigSchema = {
@@ -8703,6 +9087,12 @@ export const TaskBatchSubmitRequestSchema = {
                     },
                     {
                         $ref: '#/components/schemas/RescrapeSubmission'
+                    },
+                    {
+                        $ref: '#/components/schemas/SemanticIndexSubmission'
+                    },
+                    {
+                        $ref: '#/components/schemas/SemanticBenchmarkSubmission'
                     }
                 ],
                 discriminator: {
@@ -8717,6 +9107,8 @@ export const TaskBatchSubmitRequestSchema = {
                         rescrape: '#/components/schemas/RescrapeSubmission',
                         scan_invalid: '#/components/schemas/ScanInvalidSubmission',
                         scrape: '#/components/schemas/ScrapeSubmission',
+                        semantic_benchmark: '#/components/schemas/SemanticBenchmarkSubmission',
+                        semantic_index: '#/components/schemas/SemanticIndexSubmission',
                         upscale: '#/components/schemas/UpscaleSubmission'
                     }
                 }
@@ -9200,6 +9592,12 @@ export const TaskResponseSchema = {
                         },
                         {
                             $ref: '#/components/schemas/RescrapeResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/SemanticIndexResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/SemanticBenchmarkResult'
                         }
                     ],
                     discriminator: {
@@ -9214,6 +9612,8 @@ export const TaskResponseSchema = {
                             rescrape: '#/components/schemas/RescrapeResult',
                             scan_invalid: '#/components/schemas/ScanInvalidResult',
                             scrape: '#/components/schemas/ScrapeResult',
+                            semantic_benchmark: '#/components/schemas/SemanticBenchmarkResult',
+                            semantic_index: '#/components/schemas/SemanticIndexResult',
                             upscale: '#/components/schemas/UpscaleResult'
                         }
                     }
@@ -9271,7 +9671,9 @@ export const TaskTypeSchema = {
         'actor_scrape',
         'rescrape',
         'scan_invalid',
-        'delete'
+        'delete',
+        'semantic_index',
+        'semantic_benchmark'
     ],
     title: 'TaskType'
 } as const;

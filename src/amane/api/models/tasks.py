@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 
 from ...db import MediaFile, Repository, TaskStatus, TaskType
+from ...db.embeddings import EmbeddingKind
 from ...handlers import (
     ActorScrapeResult,
     CacheKind,
@@ -25,6 +26,8 @@ from ...handlers import (
     ScanInvalidResult,
     ScrapePayload,
     ScrapeResult,
+    SemanticBenchmarkResult,
+    SemanticIndexResult,
     UpscalePayload,
     UpscaleResult,
 )
@@ -50,7 +53,9 @@ TaskResultPayload = Annotated[
     | UpscaleResult
     | R18ImportResult
     | ActorScrapeResult
-    | RescrapeResult,
+    | RescrapeResult
+    | SemanticIndexResult
+    | SemanticBenchmarkResult,
     Field(discriminator="type"),
 ]
 """任务结果按任务类型判别; 各成员自带 `type` 字面量, 前端据此收窄."""
@@ -246,6 +251,20 @@ class RescrapeSubmission(RescrapePayload):
     type: Literal["rescrape"]
 
 
+class SemanticIndexSubmission(BaseModel):
+    type: Literal["semantic_index"]
+    limit: int | None = Field(default=None, ge=1, description="单次最多处理的条目数; 空表示全库")
+    force: bool = Field(default=False, description="忽略未变化的跳过判据, 全部重算")
+    kinds: list[EmbeddingKind] = Field(
+        default_factory=lambda: list(EmbeddingKind),
+        min_length=1,
+    )
+
+
+class SemanticBenchmarkSubmission(BaseModel):
+    type: Literal["semantic_benchmark"]
+
+
 class ActorScrapeSubmission(BaseModel):
     type: Literal["actor_scrape"]
     actor_id: int = Field(description="Actor 实体 ID")
@@ -265,13 +284,15 @@ TaskSubmission = Annotated[
     | UpscaleSubmission
     | R18ImportSubmission
     | ActorScrapeSubmission
-    | RescrapeSubmission,
+    | RescrapeSubmission
+    | SemanticIndexSubmission
+    | SemanticBenchmarkSubmission,
     Field(discriminator="type"),
 ]
 
 
 RoutineSubmission = Annotated[
-    CleanupSubmission | UpscaleSubmission | R18ImportSubmission | RescrapeSubmission,
+    CleanupSubmission | UpscaleSubmission | R18ImportSubmission | RescrapeSubmission | SemanticIndexSubmission,
     Field(discriminator="type"),
 ]
 

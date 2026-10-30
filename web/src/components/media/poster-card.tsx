@@ -16,13 +16,17 @@ interface PosterCardProps {
   item: MetadataResponse;
   /** 传入时按影片发行日标注演员当时年龄 (演员详情出演墙). */
   actorBirthday?: string | null;
+  /** 覆盖卡片图片 (语义检索命中剧照); 未给则用条目的海报. */
+  imageUrl?: string | null;
+  /** 图片宽高比; 剧照用 16:9, 默认按海报竖版. */
+  imageRatio?: number;
 }
 
 /** 加载失败退化为番号占位块. */
-export function PosterCard({ item, actorBirthday }: PosterCardProps) {
+export function PosterCard({ item, actorBirthday, imageUrl, imageRatio = 0.7 }: PosterCardProps) {
   const { t } = useTranslation("metadata");
   const [errored, setErrored] = useState(false);
-  const posterUrl = proxyImageUrl(item.poster_url ?? item.poster_urls?.[0]);
+  const posterUrl = proxyImageUrl(imageUrl ?? item.poster_url ?? item.poster_urls?.[0]);
   const showImage = posterUrl && !errored;
   const actors = item.actors ?? [];
   const actorsLabel = actors.length > 0 ? actors.join(" / ") : null;
@@ -37,7 +41,7 @@ export function PosterCard({ item, actorBirthday }: PosterCardProps) {
     >
       <Card padding={0} radius="md" withBorder style={{ overflow: "hidden" }}>
         <Box pos="relative">
-          <AspectRatio ratio={0.7}>
+          <AspectRatio ratio={imageRatio}>
             {showImage ? (
               <ProxyImage
                 src={posterUrl}

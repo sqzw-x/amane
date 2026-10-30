@@ -56,6 +56,13 @@
     "progress": "Progress"
   },
   "empty": "No tasks",
+  "benchmark": {
+    "imagesPerSecond": "Image embedding {{value}} images/s",
+    "queryMs": "Single query {{value}} ms",
+    "samples": "{{count}} samples",
+    "samples_one": "benchmark.samples",
+    "samples_other": "benchmark.samples"
+  },
   "filters": {
     "all": "All",
     "queued": "Queued",
@@ -71,7 +78,9 @@
     "actor_scrape": "Actor Scrape",
     "rescrape": "Rescrape",
     "scan_invalid": "Scan unwanted",
-    "delete": "Delete"
+    "delete": "Delete",
+    "semantic_index": "Semantic index",
+    "semantic_benchmark": "Benchmark"
   },
   "loadMoreChildren": "Load more ({{count}})",
   "loadMoreChildren_one": "Load more ({{count}})",
@@ -141,7 +150,17 @@
     },
     "detailTruncated": "Truncated",
     "loadFailed": "Failed to load details",
-    "noResultHint": "No result payload for this task; the task record keeps the full detail"
+    "noResultHint": "No result payload for this task; the task record keeps the full detail",
+    "semanticIndexed": "{{value}} indexed",
+    "semanticSkipped": "{{value}} skipped",
+    "semanticMissing": "{{value}} without images",
+    "semanticFailed": "{{value}} failed",
+    "semanticIndexed_one": "result.semanticIndexed",
+    "semanticIndexed_other": "result.semanticIndexed",
+    "semanticSkipped_one": "result.semanticSkipped",
+    "semanticSkipped_other": "result.semanticSkipped",
+    "semanticFailed_one": "result.semanticFailed",
+    "semanticFailed_other": "result.semanticFailed"
   },
   "status": {
     "queued": "Queued",
@@ -162,7 +181,9 @@
       "actor_scrape": "Actor Scrape",
       "rescrape": "Rescrape",
       "scan_invalid": "Scan unwanted",
-      "delete": "Delete"
+      "delete": "Delete",
+      "semantic_index": "Semantic index",
+      "semantic_benchmark": "Benchmark"
     },
     "cleanup": {
       "remove_missing_files": {
@@ -387,6 +408,25 @@
       "prune_empty_dirs": {
         "label": "Prune emptied directories",
         "description": "Library root and .amane_trash excluded"
+      }
+    },
+    "semantic_index": {
+      "limit": {
+        "label": "Limit",
+        "description": "Maximum entries per run; empty means the whole library"
+      },
+      "force": {
+        "label": "Force",
+        "description": "Ignore the unchanged skip check and re-encode everything"
+      },
+      "kinds": {
+        "label": "Sources",
+        "$": {
+          "options": {
+            "cover": "Covers",
+            "still": "Stills"
+          }
+        }
       }
     }
   },

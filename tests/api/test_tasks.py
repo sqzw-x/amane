@@ -173,6 +173,15 @@ class TestSubmitTask:
         assert not missing, f"TaskSubmission missing: {missing}. Add submission model to TaskSubmission union."
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_submit_semantic_benchmark(self, client: AsyncClient, stop_worker: None):
+        response = await client.post("tasks", json={"type": "semantic_benchmark"})
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["type"] == "semantic_benchmark"
+        assert body["payload"] == {}
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_submit_organize_creates_new_when_active(
         self, client: AsyncClient, repo: Repository, safe_path, stop_worker: None
     ):

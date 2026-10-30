@@ -70,6 +70,12 @@
     "rescrape": {
       "limit": "每类 {{limit}} 条",
       "minAge": "超过 {{days}} 天未更新"
+    },
+    "semantic_index": {
+      "skipUnchanged": "跳过未变化的图片",
+      "force": "全部重新编码",
+      "limit": "最多 {{limit}} 条",
+      "kinds": "索引范围 {{kinds}}"
     }
   },
   "labels": {

@@ -63,6 +63,8 @@ $StdlibArgs = @()
     --exclude-module camoufox `
     --exclude-module playwright `
     --exclude-module IPython `
+    --exclude-module huggingface_hub `
+    --exclude-module hf_xet `
     --collect-all pydantic_ai `
     --collect-all pydantic_graph `
     --collect-all genai_prices `

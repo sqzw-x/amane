@@ -10,7 +10,8 @@
     "logging": "Logging",
     "sr": "Super Resolution",
     "llm": "LLM Translation",
-    "watermark": "Watermark"
+    "watermark": "Watermark",
+    "semantic": "Semantic Search"
   },
   "config": {
     "loadError": "Failed to load configuration"
@@ -847,6 +848,12 @@
       "config": {
         "label": "Plugin configuration",
         "description": "Configuration fields provided by the plugin"
+      }
+    },
+    "semantic": {
+      "auto_maintain": {
+        "label": "Auto-maintain",
+        "description": "Recompute an entry's vectors as soon as its images change; keeps the model resident"
       }
     }
   }

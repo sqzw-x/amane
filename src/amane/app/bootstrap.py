@@ -13,6 +13,7 @@ import structlog
 from ..agent import AgentService, ResultCache
 from ..config import SAFE_DIRS_ALLOW_ALL, ColdSettings, ConfigManager
 from ..config.token import resolve_api_token, resolve_image_token
+from ..db.embeddings import EmbeddingStore
 from ..db.engine import create_async_engine_from_path
 from ..db.profiling import DbLogPolicy
 from ..db.repository import Repository
@@ -29,6 +30,7 @@ from ..scheduler.cron import CronScheduler
 from ..scheduler.feeds import FeedService
 from ..scheduler.service import WatcherService
 from ..scheduler.worker import AsyncWorker
+from ..semantic import SemanticService
 from ..utils.random_logging import run_random_logging
 from .proxy_failure_cache import ProxyFailureCache
 from .runtime import AppRuntime, build_handlers, build_network_stack, build_r18_db
@@ -94,6 +96,11 @@ class AppSession:
         await self.runtime.web_client.close()
         if self.runtime.translation_cache is not None:
             await self.runtime.translation_cache.close()
+        if self.runtime.semantic is not None:
+            self.runtime.semantic.close()
+        embeddings = self.runtime.embeddings
+        if embeddings is not None:
+            await embeddings.close()
         await self._engine.dispose()
         logger.info("amane service stopped")
 
@@ -122,7 +129,9 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
 
     db_log_policy = DbLogPolicy()
     engine = await create_async_engine_from_path(cold.db_path, policy=db_log_policy)
-    repo = Repository(engine)
+    # 向量 sidecar, 不纳入 Alembic; 删除文件即清空. 惰性建连, 未使用语义检索时不创建文件.
+    embeddings = EmbeddingStore(cold.data_dir / "embeddings.db")
+    repo = Repository(engine, embeddings=embeddings)
 
     # 会话级只读引擎, 不纳入 Alembic; dsn 变更经 _rebuild() 重建
     r18_db = build_r18_db(hot.r18)
@@ -172,6 +181,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
 
     library_locks = LibraryTaskLocks()
     inventory_store = InventoryStore()
+    semantic_service = SemanticService(repo, resource_store, cold.data_dir, hot.semantic)
     handlers = build_handlers(
         repo,
         factory,
@@ -185,6 +195,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         plugin_manager,
         library_locks=library_locks,
         inventory_store=inventory_store,
+        semantic=semantic_service,
     )
 
     worker = AsyncWorker(
@@ -248,6 +259,7 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         playback_state=playback_state,
         library_locks=library_locks,
         inventory_store=inventory_store,
+        semantic=semantic_service,
         playback_factory=PlaybackFactory(
             plugin_manager=plugin_manager,
             plugin_configs=hot.plugins,

@@ -1141,6 +1141,11 @@ export type DesktopResponse = {
 export type DownloadableResource = 'thumb' | 'poster' | 'extrafanart' | 'trailer';
 
 /**
+ * EmbeddingKind
+ */
+export type EmbeddingKind = 'cover' | 'still';
+
+/**
  * ErrorRow
  *
  * 回合异常; 文案直接进助手气泡.
@@ -1760,6 +1765,7 @@ export type HotSettings = {
     agent?: AgentConfig;
     network?: NetworkConfig;
     sr?: SrConfig;
+    semantic?: SemanticConfig;
     watermark?: WatermarkConfig;
     llm?: LlmConfig;
     r18?: R18Config;
@@ -2676,6 +2682,10 @@ export type MetadataListResponse = {
      * Total
      */
     total: number;
+    /**
+     * Semantic Hits
+     */
+    semantic_hits?: Array<SemanticHitInfo>;
 };
 
 /**
@@ -3669,7 +3679,7 @@ export type RescrapeTarget = 'metadata' | 'actor';
 /**
  * RoutineType
  */
-export type RoutineType = 'cleanup' | 'upscale' | 'r18_import' | 'rescrape';
+export type RoutineType = 'cleanup' | 'upscale' | 'r18_import' | 'rescrape' | 'semantic_index';
 
 /**
  * RuntimePaths
@@ -3973,7 +3983,9 @@ export type ScheduleCreateRequest = {
         type: 'r18_import';
     } & R18ImportSubmission) | ({
         type: 'rescrape';
-    } & RescrapeSubmission);
+    } & RescrapeSubmission) | ({
+        type: 'semantic_index';
+    } & SemanticIndexSubmission);
 };
 
 /**
@@ -4018,7 +4030,9 @@ export type ScheduleResponse = {
         type: 'r18_import';
     } & R18ImportSubmission) | ({
         type: 'rescrape';
-    } & RescrapeSubmission);
+    } & RescrapeSubmission) | ({
+        type: 'semantic_index';
+    } & SemanticIndexSubmission);
     /**
      * Enabled
      */
@@ -4234,6 +4248,251 @@ export type SelectionSummaryResponse = {
      * Dropped
      */
     dropped?: number;
+};
+
+/**
+ * SemanticBenchmarkResult
+ */
+export type SemanticBenchmarkResult = {
+    /**
+     * Type
+     */
+    type?: 'semantic_benchmark';
+    /**
+     * Backend
+     */
+    backend: string;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Images Per Second
+     */
+    images_per_second: number;
+    /**
+     * Query Ms
+     */
+    query_ms: number;
+    /**
+     * Load Ms
+     */
+    load_ms: number;
+    /**
+     * Samples
+     */
+    samples: number;
+    /**
+     * Measured At
+     */
+    measured_at: string;
+};
+
+/**
+ * SemanticBenchmarkSubmission
+ */
+export type SemanticBenchmarkSubmission = {
+    /**
+     * Type
+     */
+    type: 'semantic_benchmark';
+};
+
+/**
+ * SemanticConfig
+ *
+ * 封面与剧照语义检索. 模型身份由 ``semantic/models.py`` 的清单决定, 不随配置变化.
+ */
+export type SemanticConfig = {
+    /**
+     * Auto Maintain
+     *
+     * 条目图片变化后立即增量索引; 打开时视觉模型常驻
+     */
+    auto_maintain?: boolean;
+};
+
+/**
+ * SemanticHitInfo
+ *
+ * 语义检索命中图: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身.
+ */
+export type SemanticHitInfo = {
+    /**
+     * Id
+     */
+    id: number;
+    kind: EmbeddingKind;
+    /**
+     * Resource Url
+     */
+    resource_url: string;
+    /**
+     * Similarity
+     */
+    similarity: number;
+};
+
+/**
+ * SemanticIndexResult
+ */
+export type SemanticIndexResult = {
+    /**
+     * Type
+     */
+    type?: 'semantic_index';
+    /**
+     * Scanned
+     */
+    scanned: number;
+    /**
+     * Indexed
+     */
+    indexed: number;
+    /**
+     * Skipped
+     */
+    skipped: number;
+    /**
+     * Missing
+     */
+    missing: number;
+    /**
+     * Failed
+     */
+    failed: number;
+};
+
+/**
+ * SemanticIndexSubmission
+ */
+export type SemanticIndexSubmission = {
+    /**
+     * Type
+     */
+    type: 'semantic_index';
+    /**
+     * Limit
+     *
+     * 单次最多处理的条目数; 空表示全库
+     */
+    limit?: number | null;
+    /**
+     * Force
+     *
+     * 忽略未变化的跳过判据, 全部重算
+     */
+    force?: boolean;
+    /**
+     * Kinds
+     */
+    kinds?: Array<EmbeddingKind>;
+};
+
+/**
+ * SemanticModelCounts
+ *
+ * 单个模型的向量条数, 按来源拆分.
+ */
+export type SemanticModelCounts = {
+    /**
+     * Count
+     */
+    count: number;
+    /**
+     * Covers
+     */
+    covers: number;
+    /**
+     * Stills
+     */
+    stills: number;
+};
+
+/**
+ * SemanticStatusResponse
+ *
+ * 语义检索状态: 当前模型、各模型条数与后端; 不触发模型下载或加载.
+ */
+export type SemanticStatusResponse = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Backend
+     */
+    backend?: string | null;
+    /**
+     * Current Model
+     */
+    current_model?: string | null;
+    /**
+     * Current Model Label
+     */
+    current_model_label?: string | null;
+    /**
+     * Backend Label
+     */
+    backend_label?: string | null;
+    /**
+     * Text Loaded
+     */
+    text_loaded?: boolean;
+    /**
+     * Vision Loaded
+     */
+    vision_loaded?: boolean;
+    /**
+     * Search Ready
+     */
+    search_ready?: boolean;
+    /**
+     * Index Ready
+     */
+    index_ready?: boolean;
+    /**
+     * Download Size
+     */
+    download_size?: number;
+    /**
+     * Vision Size
+     */
+    vision_size?: number;
+    /**
+     * Text Size
+     */
+    text_size?: number;
+    /**
+     * Model Path
+     */
+    model_path?: string;
+    /**
+     * Model Bytes
+     */
+    model_bytes?: number;
+    /**
+     * Embeddings Path
+     */
+    embeddings_path?: string;
+    /**
+     * Embeddings Bytes
+     */
+    embeddings_bytes?: number;
+    /**
+     * Indexed Metadata
+     */
+    indexed_metadata?: number;
+    /**
+     * Indexed At
+     */
+    indexed_at?: string | null;
+    /**
+     * Models
+     */
+    models?: {
+        [key: string]: SemanticModelCounts;
+    };
 };
 
 /**
@@ -4489,7 +4748,7 @@ export type TaskBatchSubmitRequest = {
     /**
      * Submissions
      */
-    submissions: Array<RefreshSubmission | OrganizeSubmission | ScanInvalidSubmission | DeleteSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission>;
+    submissions: Array<RefreshSubmission | OrganizeSubmission | ScanInvalidSubmission | DeleteSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission | SemanticIndexSubmission | SemanticBenchmarkSubmission>;
 };
 
 /**
@@ -4748,7 +5007,11 @@ export type TaskResponse = {
         type: 'actor_scrape';
     } & ActorScrapeResult) | ({
         type: 'rescrape';
-    } & RescrapeResult) | null;
+    } & RescrapeResult) | ({
+        type: 'semantic_index';
+    } & SemanticIndexResult) | ({
+        type: 'semantic_benchmark';
+    } & SemanticBenchmarkResult) | null;
 };
 
 /**
@@ -4764,7 +5027,7 @@ export type TaskStatus = 'queued' | 'running' | 'done' | 'failed';
 /**
  * TaskType
  */
-export type TaskType = 'scrape' | 'organize' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape' | 'scan_invalid' | 'delete';
+export type TaskType = 'scrape' | 'organize' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape' | 'scan_invalid' | 'delete' | 'semantic_index' | 'semantic_benchmark';
 
 /**
  * TaskWorkerResponse
@@ -5812,6 +6075,18 @@ export type ListMetadataData = {
          * Sort order
          */
         order?: SortOrder;
+        /**
+         * Semantic Query
+         *
+         * 按画面描述排序; 提供时忽略 sort_by / order
+         */
+        semantic_query?: string | null;
+        /**
+         * Semantic Kind
+         *
+         * 参与语义排序的图片来源
+         */
+        semantic_kind?: 'all' | 'cover' | 'still';
         /**
          * Actor Id
          *
@@ -8147,7 +8422,11 @@ export type SubmitTaskData = {
         type: 'actor_scrape';
     } & ActorScrapeSubmission) | ({
         type: 'rescrape';
-    } & RescrapeSubmission);
+    } & RescrapeSubmission) | ({
+        type: 'semantic_index';
+    } & SemanticIndexSubmission) | ({
+        type: 'semantic_benchmark';
+    } & SemanticBenchmarkSubmission);
     path?: never;
     query?: never;
     url: '/api/tasks';
@@ -9102,3 +9381,35 @@ export type GetSavedQueryResultResponses = {
 };
 
 export type GetSavedQueryResultResponse = GetSavedQueryResultResponses[keyof GetSavedQueryResultResponses];
+
+export type SemanticStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/semantic/status';
+};
+
+export type SemanticStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: SemanticStatusResponse;
+};
+
+export type SemanticStatusResponse2 = SemanticStatusResponses[keyof SemanticStatusResponses];
+
+export type ReleaseSemanticData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/semantic/release';
+};
+
+export type ReleaseSemanticResponses = {
+    /**
+     * Successful Response
+     */
+    200: SemanticStatusResponse;
+};
+
+export type ReleaseSemanticResponse = ReleaseSemanticResponses[keyof ReleaseSemanticResponses];

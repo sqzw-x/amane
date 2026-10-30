@@ -13,6 +13,8 @@ from ...handlers import (
     RescrapePayload,
     ScanInvalidPayload,
     ScrapePayload,
+    SemanticBenchmarkPayload,
+    SemanticIndexPayload,
     UpscalePayload,
 )
 from ..models import (
@@ -25,6 +27,8 @@ from ..models import (
     RescrapeSubmission,
     ScanInvalidSubmission,
     ScrapeSubmission,
+    SemanticBenchmarkSubmission,
+    SemanticIndexSubmission,
     TaskSubmission,
     UpscaleSubmission,
 )
@@ -43,6 +47,8 @@ ResolvedPayload = (
     | R18ImportPayload
     | ActorScrapePayload
     | RescrapePayload
+    | SemanticIndexPayload
+    | SemanticBenchmarkPayload
 )
 
 
@@ -78,5 +84,9 @@ async def resolve_submission(req: TaskSubmission, repo: Repository) -> tuple[Tas
             return TaskType.RESCRAPE, RescrapePayload(
                 limit=req.limit, min_age_days=req.min_age_days, targets=req.targets
             )
+        case SemanticIndexSubmission():
+            return TaskType.SEMANTIC_INDEX, SemanticIndexPayload(limit=req.limit, force=req.force, kinds=req.kinds)
+        case SemanticBenchmarkSubmission():
+            return TaskType.SEMANTIC_BENCHMARK, SemanticBenchmarkPayload()
         case _:
             assert_never(req)

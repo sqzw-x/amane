@@ -32,6 +32,10 @@ dependencies = [
     "feedparser>=6.0.14",
     "packaging>=26.3",
     "python-multipart>=0.0.32",
+    "numpy>=2.5.0",
+    "onnxruntime>=1.31.0; sys_platform != 'darwin'",
+    "tokenizers>=0.23.0",
+    "pyobjc-framework-CoreML>=12.2.0; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]
@@ -98,6 +102,12 @@ reportAttributeAccessIssue = "warning"
 
 [tool.ty]
 src = { include = ["src/amane/", "scripts/"], exclude = ["src/amane/db/migrations/"] }
+
+[[tool.ty.overrides]]
+include = ["src/amane/semantic/onnx.py"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,4 +1,18 @@
 {
+  "semantic": {
+    "toggle": "Semantic",
+    "back": "Back",
+    "placeholder": "Describe the picture, e.g. white shirt / lace / seaside",
+    "submit": "Search",
+    "kinds": {
+      "all": "All",
+      "cover": "Covers",
+      "still": "Stills"
+    },
+    "modelMissing": "The required model is missing. Submit a semantic index task and it will be downloaded automatically (about {{size}} MB).",
+    "unavailableTitle": "Semantic search unavailable",
+    "noEmbeddings": "Image embeddings have not been created yet. Submit a semantic index task; depending on this machine and the number of images it may take from minutes to tens of minutes."
+  },
   "search": {
     "placeholder": "Search number, title…",
     "advanced": "Advanced search",

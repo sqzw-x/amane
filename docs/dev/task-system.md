@@ -14,6 +14,8 @@
 | `ORGANIZE` | 范围内已有 Metadata 的 MediaFile 按路径模板落盘, 并删除本次腾空的目录; 缺资源时 `acquire` 可出站 HTTP | 扫描磁盘、运行爬虫、修改 Metadata |
 | `SCAN_INVALID` | 遍历库产出清理清单 (文件黑名单 / 小于最小视频大小 / 残留目录 / 空目录), 写入进程内清单存放 | 一切写操作 |
 | `DELETE` | 按清单标识删除文件与目录, 删对应索引, 按需剪枝 | 整库重新扫描、重新生成清单、写 NFO、回收 Resource |
+| `SEMANTIC_INDEX` | 遍历 Metadata 编码封面与剧照, 对账写 `{data_dir}/embeddings.db`; 首次运行会下载模型 | 不动文件、不写 Metadata |
+| `SEMANTIC_BENCHMARK` | 抽样本地封面与剧照测嵌入吞吐与文本查询延迟, 不写索引 | 不动文件、不写 Metadata / 向量 |
 
 `CLEANUP` / `UPSCALE` 扫描 DB / Resource; `ACTOR_SCRAPE` 刮人物; `R18_IMPORT` 导入 dump. 上述类型均不执行影片落盘.
 
@@ -170,7 +172,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 **即时** (`POST /tasks`): 接收 `TaskSubmission` (含全部即时 type), 经 `resolve_submission` 得到 `(TaskType, Payload)` 后建 Task. REFRESH / ORGANIZE / SCAN_INVALID 只接受 `library_id`, resolve 时由 library 派生 `path` (submission 可显式覆盖) 与 `recursive` / `patterns`; ORGANIZE 还可带 `media_file_ids`, 与显式 `path` 互斥且不含扫描字段. SCRAPE 采用 number / media_id, 二者可同时提交; **`content_type` 可空**, 为空时仅 media_id 按文件路径解析, 有 number 时按番号推断. 覆盖只作用于这一次 `POST /tasks`. ACTOR_SCRAPE 采用 `actor_id`.
 
-**定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape`). 触发时由 `CronScheduler` 用对应 Payload 的 `model_validate` 入队; 编辑只修改 name / cron / enabled, 修改任务类型或 payload 须删除后重建 (见 [api.md](api.md)).
+**定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape` / `semantic_index`). 触发时由 `CronScheduler` 用对应 Payload 的 `model_validate` 入队; 编辑只修改 name / cron / enabled, 修改任务类型或 payload 须删除后重建 (见 [api.md](api.md)).
 
 ## ACTOR_SCRAPE
 

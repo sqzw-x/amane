@@ -12,6 +12,7 @@ import { z } from "zod";
 import type { MetadataSortField } from "@/client/types.gen";
 import {
   CONTENT_TYPES,
+  EMBEDDING_KINDS,
   FILE_DEFINITIONS,
   METADATA_SORT_FIELDS,
   MOSAICS,
@@ -52,6 +53,9 @@ export const DEFAULT_METADATA_SORT_PREFERENCE: MetadataSortPreference = {
 
 export const metaSearchSchema = z.object({
   q: z.string().optional(),
+  semantic: z.literal(1).optional(),
+  /** 语义检索的图片来源; 缺省为封面与剧照都参与. */
+  kind: z.enum(EMBEDDING_KINDS).optional().catch(undefined),
   view: z.enum(["grid", "list"]).catch("grid").default("grid"),
   sort_by: z.enum(METADATA_SORT_FIELDS).optional(),
   order: z.enum(SORT_ORDERS).optional(),

@@ -1,0 +1,103 @@
+/* 语义模式的彩色外圈: 渐变沿边框缓慢流动, 提示当前输入会编码成图像描述.
+   外圈画在 ::before 上并向外溢出 2px, 不占布局, 切换模式时搜索栏高度不变. */
+.flowRing {
+  position: relative;
+  isolation: isolate;
+}
+
+.flowRing::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: calc(var(--mantine-radius-default) + 2px);
+  background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #a29bfe, #ff9ff3, #6bcb77, #ff6b6b);
+  background-size: 300% 100%;
+  animation: semantic-flow 6s linear infinite;
+}
+
+.searchBox {
+  flex: 1;
+  min-width: 0;
+}
+
+.semanticInput :global(.mantine-TextInput-input),
+.semanticInput :global(.mantine-TextInput-input:focus) {
+  border-color: transparent;
+}
+
+/* 进入语义模式的按钮: 与搜索框同一组流动渐变, 画在按钮自身的边框上.
+   Mantine Button 带 overflow: hidden, 不能复用搜索框向外溢出的 ::before. */
+.semanticToggle {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--mantine-color-body), var(--mantine-color-body)) padding-box,
+    linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #a29bfe, #ff9ff3, #6bcb77, #ff6b6b) border-box;
+  background-size:
+    100% 100%,
+    300% 100%;
+  animation: semantic-border-flow 6s linear infinite;
+}
+
+.semanticToggle:hover {
+  background:
+    linear-gradient(var(--mantine-color-default-hover), var(--mantine-color-default-hover))
+      padding-box,
+    linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #a29bfe, #ff9ff3, #6bcb77, #ff6b6b) border-box;
+  background-size:
+    100% 100%,
+    300% 100%;
+}
+
+@keyframes semantic-border-flow {
+  from {
+    background-position:
+      0 0,
+      0% 50%;
+  }
+  to {
+    background-position:
+      0 0,
+      300% 50%;
+  }
+}
+
+.gradientText {
+  background: linear-gradient(90deg, #ff6b6b, #a29bfe, #48dbfb, #ff6b6b);
+  background-size: 300% 100%;
+  background-clip: text;
+  color: transparent;
+  font-weight: 600;
+  animation: semantic-flow 6s linear infinite;
+}
+
+@keyframes semantic-flow {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 300% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flowRing::before,
+  .semanticToggle,
+  .gradientText,
+  .glowIcon {
+    animation: none;
+  }
+}
+
+.glowIcon {
+  display: flex;
+  color: #ff6ec7;
+  filter: drop-shadow(0 0 3px rgba(255, 110, 199, 0.9));
+  animation: semantic-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes semantic-glow {
+  50% {
+    filter: drop-shadow(0 0 7px rgba(255, 110, 199, 1));
+  }
+}

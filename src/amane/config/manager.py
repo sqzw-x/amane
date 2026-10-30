@@ -760,6 +760,12 @@ class ActorScrapingConfig(BaseModel):
         return assert_sites_allowed(v, frozenset(ACTOR_IMAGE_SITES), field="image_sites")
 
 
+class SemanticConfig(BaseModel):
+    """封面与剧照语义检索. 模型身份由 ``semantic/models.py`` 的清单决定, 不随配置变化."""
+
+    auto_maintain: bool = Field(default=False, description="条目图片变化后立即增量索引; 打开时视觉模型常驻")
+
+
 class HotSettings(BaseModel):
     """运行时可更新, 持久化到 TOML. extra=forbid, 未知字段须校验失败."""
 
@@ -812,6 +818,7 @@ class HotSettings(BaseModel):
     agent: AgentConfig = AgentConfig()
     network: NetworkConfig = NetworkConfig()
     sr: SrConfig = SrConfig()
+    semantic: SemanticConfig = SemanticConfig()
     watermark: WatermarkConfig = WatermarkConfig()
     llm: LLMConfig = LLMConfig()
     r18: R18Config = R18Config()

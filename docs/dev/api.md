@@ -31,6 +31,7 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 | `playback` | `/playback` | 播放源列表与码流 |
 | `files` | `/files` | 目录浏览; 契约见下 |
 | `resources` | `/resources` | 本地资源 + `GET /proxy` |
+| `semantic` | `/semantic` | 语义检索的状态与分模型统计、手动释放内存索引; 查询并入 `/metadata` 的 `semantic_query`. 索引走 `SEMANTIC_INDEX` 任务, 性能测试走 `SEMANTIC_BENCHMARK` 任务 |
 | `agent` | `/agent` | 会话 CRUD / 标题 / trace / AG-UI; 见 [agent.md](agent.md) |
 | `saved-queries` | `/saved-queries` | 查询预设 CRUD / 结果 / 批量; 见 [agent.md](agent.md) |
 | `tools` | `/tools` | 外部智能体的工具索引、单工具入参与派发; 见 [agent.md](agent.md)「外部接入」 |
@@ -49,6 +50,7 @@ OpenAPI 列出参数, 不表达组合语义:
 - `/network/browser` 探测浏览器后端能否用于本实例: 本地引擎查模块是否在分发包内, `bsk` 调 CLI 的 `status` (HTTP 200 恒定, 结论就是响应体), Solver 只做一次 `sessions.list` 协议握手, 不渲染页面 — 真实抓取由 `/network/check` 覆盖.
 - `/network/check` 的探测范围 = 当前热配置真正会请求的来源 (各类型路由的并集 + 演员资料来源 / 头像来源), 省略 `source_ids` 即全量. `source_id` 是 `str` 而非 `SiteName` 枚举 (第三方来源是 `namespace.local`, 且来源集合随插件增删变化), 未知值无法用 schema 拒绝, 不存在的 ID 计入条目返回 `SKIPPED`. 逐来源的失败只进条目, 端点始终 200 — 探测结果本身就是响应体; `reason` 只在失败时给出, `skip_reason` 只在未探测时给出, `detail` 是语言中立的补充说明 (界面原样渲染, 不翻译). 探测不进入任务队列, 也不写入站点 outcome (那是刮削任务的记录).
 - 评论正文先去除首尾空白再校验长度, 全空白与超过 10000 字符均为 422. `updated_at` 晚于 `created_at` 表示正文被编辑过: PATCH 提交与库中一致的正文不写库, 也不刷新 `updated_at`, 前端据此判定「已编辑」; 排序由前端在详情响应上完成, 端点不提供 order 参数; 正文按 Markdown 存储与返回, 服务端不解析.
+- `/metadata` 的语义参数: `semantic_query` 出现时接管排序, 整句只编码一次, 封面与剧照共用一次点积; 候选集来自同一套筛选 (含 `search` 与 `saved_query_id`), 无筛选时扫全索引. `semantic_kind=all|cover|still` 选参与排名的图片来源; `sort_by` / `order` 被忽略, `offset` / `limit` (上限 200) 直接分页, `total` 是候选条目总数 (按条目去重). `items` 仍是 `MetadataResponse`, 命中图放在并列的 `semantic_hits` (`id` / `kind` / `resource_url` / `similarity`), 同一条目只保留名次最高的那张图; `similarity` 只在同一次查询内可比, 不设阈值; 同分按条目 id 升序, 翻页稳定. 模型未就绪时仅该参数出现时 503; 索引生命周期见 [semantic.md](semantic.md).
 - `/files`: 路径解析为非严格 (虚拟 / 网络挂载盘无法规范化查询时按字面兜底), 相对 `path` 经 `base` 参数解析 (缺省 = 首个安全目录). 响应含规范 `path` (resolve 后的绝对路径), 前端文件浏览器以它为面包屑的唯一权威形态, 不做分段拼接.
 
 ## 依赖注入

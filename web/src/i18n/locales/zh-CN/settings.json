@@ -10,7 +10,8 @@
     "logging": "日志",
     "sr": "图像超分",
     "llm": "LLM 翻译",
-    "watermark": "水印"
+    "watermark": "水印",
+    "semantic": "语义检索"
   },
   "config": {
     "loadError": "加载配置失败"
@@ -847,6 +848,12 @@
       "config": {
         "label": "插件配置",
         "description": "由插件提供的配置项"
+      }
+    },
+    "semantic": {
+      "auto_maintain": {
+        "label": "自动维护",
+        "description": "图片变化后立即重算该条目的向量; 打开时模型常驻内存"
       }
     }
   }

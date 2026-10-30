@@ -132,6 +132,10 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 **按引用回收**: 不是 LRU 缓存. 刮削换 URL / 改裁剪参数后旧条目留到 CLEANUP 回收未引用项 (含派生). 原始像素须 invalidate 重下 (就地超分后不可恢复). 见 [task-system.md](task-system.md) CLEANUP. `content_hash` 兼作 ETag, 见 [api.md](api.md); 同一 locator 的写入按 locator 串行 (`ResourceStore._serialized`), 先写文件再写记录, 二者恒对应盘上那份字节.
 
+## 图片向量 (`media_embeddings`, sidecar)
+
+语义检索的派生数据, 可随时重建: 存 `{data_dir}/embeddings.db` (独立 SQLite, 不经 Alembic, 删除文件即关闭功能). `semantic_models` 按 `(name, version, dim)` 注册模型, 其 id 是向量的命名空间; `media_embeddings` 每 `(条目, 模型, 图片 locator)` 一行, 存 `kind` (`cover` / `still`)、`content_hash` 与 L2 归一化的 float32 字节串. 封面取 `poster_url` 优先、`thumb_url` 兜底; 剧照取 `Metadata.extrafanart` 中第一个有已落盘 Resource 的站点 (与 `ResourceStore.acquire_extrafanart` 的取舍一致), 按 `content_hash` 去重; 没有封面的条目不建向量. 跨库无外键: 删除条目在主库提交后再清 sidecar (清理失败留下的孤儿行由下一次完整索引删掉), 图片字段变化由 `Repository.set_media_hook` 通知, 只删 url 或 `content_hash` 变了的行; 就地超分只改 `content_hash`, 建索引时据此重算. 检索时整表装载, 缓存键为 `(条数, 最后写入时间)`; 筛选条件先由主库解析成条目 id 集合, 再据此屏蔽向量索引的行.
+
 ## 分类索引 (爬取侧投影)
 
 `Metadata` 上的 `actors` / `tags` / `directors` (JSON list) 与 `studio` / `publisher` / `series` (标量) **仍是刮削聚合、NFO、路径模板的真值来源**. 分类实体表 + 关联表是**查询投影**: `upsert_metadata` / `update_metadata` 写入后重建 (按 name get-or-create; list 字段带 `position` 保序).

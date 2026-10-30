@@ -20,6 +20,7 @@
 | 表结构 / 迁移 | [database.md](database.md) |
 | 翻译 / LLM | [llm.md](llm.md) |
 | 助理 (首页对话) | [agent.md](agent.md) |
+| 语义检索 (向量 sidecar / 索引生命周期) | [semantic.md](semantic.md) |
 | 排障 / 回放刮削 | [observability.md](observability.md) |
 | RSS/Atom 远程发现 | [feeds.md](feeds.md) |
 | 文件发现 / CloudDrive webhook | [watcher.md](watcher.md) |

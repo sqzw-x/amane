@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from starlette.status import HTTP_403_FORBIDDEN
 
 from ..db import Library, MediaFileStatus, Repository
+from ..db.embeddings import EmbeddingKind
 from ..db.models import TaskType
 from ..enums import DownloadableResource
 from ..observability.models import OrganizeConflict, SiteOutcomeRecord
@@ -285,6 +286,49 @@ class UpscaleResult(BaseModel):
     upscaled: int
     skipped: int
     failed: int
+
+
+# --- SEMANTIC_INDEX ---
+
+
+class SemanticIndexPayload(BaseModel):
+    limit: int | None = Field(default=None, ge=1)
+    """单次最多处理的条目数; None 表示全库."""
+    force: bool = False
+    """True 时忽略 (resource_url, content_hash) 未变的跳过判据, 全部重算."""
+    kinds: list[EmbeddingKind] = Field(default_factory=lambda: list(EmbeddingKind), min_length=1)
+    """要建立向量的图片来源."""
+
+
+class SemanticIndexResult(BaseModel):
+    type: Literal[TaskType.SEMANTIC_INDEX] = TaskType.SEMANTIC_INDEX
+    scanned: int
+    indexed: int
+    skipped: int
+    missing: int
+    failed: int
+
+
+class SemanticBenchmarkPayload(BaseModel):
+    """留空: 样本与轮次固定, 由服务决定."""
+
+
+class SemanticBenchmarkResult(BaseModel):
+    type: Literal[TaskType.SEMANTIC_BENCHMARK] = TaskType.SEMANTIC_BENCHMARK
+    backend: str
+    """推理后端展示名."""
+    model: str
+    """模型展示名."""
+    images_per_second: float
+    """端到端编码速度 (解码 + 推理)."""
+    query_ms: float
+    """单次查询的文本编码耗时中位数."""
+    load_ms: float
+    """本次测试冷加载两塔的耗时; 测试前已加载则为 0."""
+    samples: int
+    """参与测速的图片数."""
+    measured_at: str
+    """测量完成的本地时间 (ISO 8601)."""
 
 
 # --- R18 IMPORT ---

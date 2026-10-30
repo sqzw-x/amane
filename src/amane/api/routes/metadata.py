@@ -1,17 +1,20 @@
-from typing import TYPE_CHECKING, Annotated, cast
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Annotated, Literal, cast
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import TypeAdapter
 
 from ...aggregate import compute_merge_updates
-from ...db.models import MetadataSortField, SavedQueryEntity, SortOrder, TaskType
+from ...db.embeddings import EmbeddingKind
+from ...db.models import Metadata, MetadataSortField, SavedQueryEntity, SortOrder, TaskType
 from ...db.repo_types import WriteMode
 from ...db.repos.media import file_phase_of
 from ...handlers import ScrapePayload
 from ...media import manual_crop_image
-from ...parsing import DEFINITION_VALUES, ContentType, Mosaic, summarize_file_phases
 from ...parsing import FilePhaseSummary as ParsedFilePhase
+from ...parsing import summarize_file_phases
+from ...semantic import SemanticUnavailable
 from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
@@ -30,10 +33,12 @@ from ..models import (
     MetadataResponse,
     MetadataUserTagsRequest,
     PartialMetadata,
+    SemanticHitInfo,
     UserTagLinksResponse,
     UserTagResponse,
     to_media_file_response,
 )
+from ..support.metadata_filters import MetadataFilters, parse_metadata_filters, require_known_definition
 from .saved_queries import resolve_saved_query_id_subquery
 
 if TYPE_CHECKING:
@@ -44,83 +49,8 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/metadata", tags=["metadata"])
 
 
-def _file_phase_resp(summary: ParsedFilePhase) -> FilePhaseSummary:
-    return FilePhaseSummary(
-        has_subtitle=summary.has_subtitle,
-        censored=summary.censored,
-        uncensored=summary.uncensored,
-        mosaics=list(summary.mosaics),
-        definition=summary.definition,
-    )
-
-
-def _require_known_definition(definition: str | None) -> str | None:
-    if definition is None:
-        return None
-    if definition not in DEFINITION_VALUES:
-        raise HTTPException(status_code=422, detail=f"未知分辨率: {definition}")
-    return definition
-
-
-@router.get("/schema")
-async def get_metadata_schema() -> dict:
-    return TypeAdapter(PartialMetadata).json_schema()
-
-
-@router.get("")
-async def list_metadata(
-    repo: RepoDep,
-    search: Annotated[str | None, Query()] = None,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=200)] = 20,
-    sort_by: Annotated[MetadataSortField, Query(description="Sort field")] = MetadataSortField.UPDATED_AT,
-    order: Annotated[SortOrder, Query(description="Sort order")] = SortOrder.DESC,
-    actor_id: Annotated[list[int] | None, Query(description="Filter by actor facet id(s); AND")] = None,
-    director_id: Annotated[list[int] | None, Query(description="Filter by director facet id(s); AND")] = None,
-    tag_id: Annotated[list[int] | None, Query(description="Filter by scraped tag facet id(s); AND")] = None,
-    studio_id: Annotated[list[int] | None, Query(description="Filter by studio facet id(s); OR")] = None,
-    publisher_id: Annotated[list[int] | None, Query(description="Filter by publisher facet id(s); OR")] = None,
-    series_id: Annotated[list[int] | None, Query(description="Filter by series facet id(s); OR")] = None,
-    user_tag_id: Annotated[list[int] | None, Query(description="Filter by user tag id(s); AND")] = None,
-    has_files: Annotated[bool | None, Query(description="Filter by presence of linked MediaFile(s)")] = None,
-    has_subtitle: Annotated[bool | None, Query(description="Filter by linked file subtitle marker")] = None,
-    vr: Annotated[bool | None, Query(description="Filter by VR marker (entry tag vocabulary)")] = None,
-    mosaic: Annotated[Mosaic | None, Query(description="Filter by linked file mosaic marker")] = None,
-    uncensored: Annotated[
-        bool | None, Query(description="Filter by uncensored number (own content type or linked file marker)")
-    ] = None,
-    definition: Annotated[str | None, Query(description="Filter by linked file definition (8K/4K/1080p/…)")] = None,
-    content_type: Annotated[ContentType | None, Query(description="Filter by number content type")] = None,
-    saved_query_id: Annotated[
-        int | None, Query(description="Saved query preset id; AND with other filters via SQL subquery")
-    ] = None,
-) -> MetadataListResponse:
-    definition = _require_known_definition(definition)
-    id_subquery_sql = None
-    if saved_query_id is not None:
-        id_subquery_sql = await resolve_saved_query_id_subquery(repo, saved_query_id, SavedQueryEntity.METADATA)
-    items, total = await repo.list_metadata(
-        keyword=search,
-        offset=offset,
-        limit=limit,
-        sort_by=sort_by,
-        order=order,
-        actor_ids=actor_id,
-        director_ids=director_id,
-        tag_ids=tag_id,
-        studio_ids=studio_id,
-        publisher_ids=publisher_id,
-        series_ids=series_id,
-        user_tag_ids=user_tag_id,
-        has_files=has_files,
-        has_subtitle=has_subtitle,
-        vr=vr,
-        mosaic=mosaic,
-        uncensored=uncensored,
-        definition=definition,
-        content_type=content_type,
-        id_subquery_sql=id_subquery_sql,
-    )
+async def build_metadata_responses(repo: RepoDep, items: Sequence[Metadata]) -> list[MetadataResponse]:
+    """列表与语义检索共用: 补 file_count / file_phase 聚合."""
     summaries = await repo.summarize_media_by_metadata(items)
     responses: list[MetadataResponse] = []
     for m in items:
@@ -134,7 +64,145 @@ async def list_metadata(
                 }
             )
         responses.append(response)
-    return MetadataListResponse(items=responses, total=total)
+    return responses
+
+
+def _file_phase_resp(summary: ParsedFilePhase) -> FilePhaseSummary:
+    return FilePhaseSummary(
+        has_subtitle=summary.has_subtitle,
+        censored=summary.censored,
+        uncensored=summary.uncensored,
+        mosaics=list(summary.mosaics),
+        definition=summary.definition,
+    )
+
+
+@router.get("/schema")
+async def get_metadata_schema() -> dict:
+    return TypeAdapter(PartialMetadata).json_schema()
+
+
+@router.get("")
+async def list_metadata(
+    repo: RepoDep,
+    runtime: RuntimeDep,
+    filters: Annotated[MetadataFilters, Depends(parse_metadata_filters)],
+    search: Annotated[str | None, Query()] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 20,
+    sort_by: Annotated[MetadataSortField, Query(description="Sort field")] = MetadataSortField.UPDATED_AT,
+    order: Annotated[SortOrder, Query(description="Sort order")] = SortOrder.DESC,
+    semantic_query: Annotated[
+        str | None, Query(min_length=1, max_length=200, description="按画面描述排序; 提供时忽略 sort_by / order")
+    ] = None,
+    semantic_kind: Annotated[Literal["all", "cover", "still"], Query(description="参与语义排序的图片来源")] = "all",
+) -> MetadataListResponse:
+    definition = require_known_definition(filters.definition)
+    id_subquery_sql = None
+    if filters.saved_query_id is not None:
+        id_subquery_sql = await resolve_saved_query_id_subquery(repo, filters.saved_query_id, SavedQueryEntity.METADATA)
+    if semantic_query is not None:
+        return await _semantic_list(
+            runtime=runtime,
+            repo=repo,
+            filters=filters,
+            search=search,
+            semantic_query=semantic_query,
+            semantic_kind=semantic_kind,
+            definition=definition,
+            id_subquery_sql=id_subquery_sql,
+            offset=offset,
+            limit=limit,
+        )
+    items, total = await repo.list_metadata(
+        keyword=search,
+        offset=offset,
+        limit=limit,
+        sort_by=sort_by,
+        order=order,
+        actor_ids=filters.actor_id,
+        director_ids=filters.director_id,
+        tag_ids=filters.tag_id,
+        studio_ids=filters.studio_id,
+        publisher_ids=filters.publisher_id,
+        series_ids=filters.series_id,
+        user_tag_ids=filters.user_tag_id,
+        has_files=filters.has_files,
+        has_subtitle=filters.has_subtitle,
+        vr=filters.vr,
+        mosaic=filters.mosaic,
+        uncensored=filters.uncensored,
+        definition=definition,
+        content_type=filters.content_type,
+        id_subquery_sql=id_subquery_sql,
+    )
+    return MetadataListResponse(items=await build_metadata_responses(repo, items), total=total)
+
+
+async def _semantic_list(
+    *,
+    runtime: RuntimeDep,
+    repo: RepoDep,
+    filters: MetadataFilters,
+    search: str | None,
+    semantic_query: str,
+    semantic_kind: Literal["all", "cover", "still"],
+    definition: str | None,
+    id_subquery_sql: str | None,
+    offset: int,
+    limit: int,
+) -> MetadataListResponse:
+    """语义参数出现时接管排序: 候选集来自同一套筛选, 返回结构与普通列表一致."""
+    service = runtime.semantic
+    if service is None or not service.enabled:
+        raise HTTPException(status_code=503, detail="语义检索未启用")
+    allowed_ids = None
+    if filters.active or search:
+        allowed_ids = await repo.list_metadata_ids(
+            keyword=search,
+            actor_ids=filters.actor_id,
+            director_ids=filters.director_id,
+            tag_ids=filters.tag_id,
+            studio_ids=filters.studio_id,
+            publisher_ids=filters.publisher_id,
+            series_ids=filters.series_id,
+            user_tag_ids=filters.user_tag_id,
+            has_files=filters.has_files,
+            has_subtitle=filters.has_subtitle,
+            vr=filters.vr,
+            mosaic=filters.mosaic,
+            uncensored=filters.uncensored,
+            definition=definition,
+            content_type=filters.content_type,
+            id_subquery_sql=id_subquery_sql,
+        )
+    kind = None if semantic_kind == "all" else EmbeddingKind(semantic_kind)
+    try:
+        hits = await service.search(semantic_query, limit, kind, allowed_ids, offset)
+        total = await service.count(kind, allowed_ids)
+    except SemanticUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not hits:
+        return MetadataListResponse(items=[], total=total)
+    ids = [hit.metadata_id for hit in hits]
+    items, _ = await repo.list_metadata(ids=ids, limit=len(ids))
+    by_id = {item.id: item for item in items}
+    ordered = [by_id[hit.metadata_id] for hit in hits if hit.metadata_id in by_id]
+    responses = {response.id: response for response in await build_metadata_responses(repo, ordered)}
+    return MetadataListResponse(
+        items=[responses[hit.metadata_id] for hit in hits if hit.metadata_id in responses],
+        total=total,
+        semantic_hits=[
+            SemanticHitInfo(
+                id=hit.metadata_id,
+                kind=hit.kind,
+                resource_url=hit.resource_url,
+                similarity=hit.score,
+            )
+            for hit in hits
+            if hit.metadata_id in responses
+        ],
+    )
 
 
 @router.post("/batch/delete")

@@ -9,6 +9,7 @@ import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from amane.db.embeddings import EmbeddingStore
 from amane.db.repository import Repository
 from amane.media import ResourceStore
 from tests.schema_template import copy_schema
@@ -70,7 +71,10 @@ async def repo(tmp_path: Path) -> AsyncGenerator[Repository]:
     db_path = tmp_path / "amane.db"
     copy_schema(db_path)
     engine = _file_engine(db_path)
-    yield Repository(engine)
+    embeddings = EmbeddingStore(tmp_path / "embeddings.db")
+    yield Repository(engine, embeddings=embeddings)
+
+    await embeddings.close()
 
     await engine.dispose()
 

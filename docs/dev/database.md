@@ -11,6 +11,7 @@
 |----|------|------|------------|
 | `amane.db` | SQLite | 主业务库 (metadata / tasks / resources ...) | ✅ 启动期 `upgrade head` |
 | `translations.db` | SQLite | LLM 译文缓存 (会话级, 删文件即清空) | ❌ 自建表, 见 [llm.md](llm.md) |
+| `embeddings.db` | SQLite | 语义向量 sidecar (删文件即清空) | ❌ 自建表, 见 [data-model.md](data-model.md) |
 | r18.dev 镜像 | **PostgreSQL** | 外部只读数据源 (用户自备实例) | ❌ schema 由 r18 dump 决定, 项目不拥有 |
 
 r18 库由项目导入 / 管理但 schema 不受我们控制, **不能纳入 Alembic** — 项目对其只读; 兼容性靠导入期探针校验, 不靠迁移, 见 [crawlers.md](crawlers.md).

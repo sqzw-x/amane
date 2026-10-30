@@ -11,6 +11,9 @@ interface PosterGridProps {
   emptyMessage?: string;
   /** 传入时海报显示演员出演时年龄. */
   actorBirthday?: string | null;
+  /** 逐条覆盖卡片图片与宽高比 (语义检索的剧照结果). */
+  imageUrlOf?: (item: MetadataResponse) => string | null | undefined;
+  imageRatioOf?: (item: MetadataResponse) => number | undefined;
 }
 
 export function PosterGrid({
@@ -18,6 +21,8 @@ export function PosterGrid({
   loading = false,
   emptyMessage,
   actorBirthday,
+  imageUrlOf,
+  imageRatioOf,
 }: PosterGridProps) {
   if (loading) {
     return (
@@ -47,7 +52,13 @@ export function PosterGrid({
   return (
     <SimpleGrid cols={GRID_COLS} spacing="md">
       {items.map((item) => (
-        <PosterCard key={item.id} item={item} actorBirthday={actorBirthday} />
+        <PosterCard
+          key={item.id}
+          item={item}
+          actorBirthday={actorBirthday}
+          imageUrl={imageUrlOf?.(item)}
+          imageRatio={imageRatioOf?.(item)}
+        />
       ))}
     </SimpleGrid>
   );

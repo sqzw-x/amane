@@ -13,6 +13,8 @@ from httpx2 import ASGITransport, AsyncClient
 
 from amane.api.app import create_app
 from amane.api.routes import API_PREFIX
+from amane.db.models import SavedQueryEntity
+from amane.semantic import SemanticHit
 from tests.api.conftest import hot_for_tests
 from tests.schema_template import copy_schema
 
@@ -123,6 +125,46 @@ async def test_catalog_reports_runtime_paths(client: AsyncClient, app: FastAPI) 
     assert paths["log_dir"] == str(cold.log_dir.resolve())
     # 只列决定这些路径的环境变量; AMANE_TOKEN 是鉴权用的, 与路径无关.
     assert "AMANE_TOKEN" not in paths["env"]
+
+
+@pytest.mark.asyncio
+async def test_semantic_search_tool_restricts_candidates(client: AsyncClient, app: FastAPI) -> None:
+    """预设与 SQL 都先变成 id 集合再交给检索; 工具本身不做词拆分或二次筛选."""
+    service = app.state.runtime.agent_service
+    assert service is not None
+    repo = app.state.runtime.repo
+    first = await repo.upsert_metadata(number="TOOL-001")
+    second = await repo.upsert_metadata(number="TOOL-002")
+    assert first.id is not None and second.id is not None
+    saved = await repo.create_saved_query(
+        name="only second",
+        sql="SELECT id FROM metadata WHERE number = 'TOOL-002'",
+        entity=SavedQueryEntity.METADATA,
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_search(query: str, limit: int, kind: object, allowed_ids: list[int] | None) -> list[SemanticHit]:
+        captured.update(query=query, limit=limit, kind=kind, allowed_ids=allowed_ids)
+        return []
+
+    service.bridge.semantic_search = fake_search
+
+    response = await client.post("tools/semantic_search", json={"args": {"query": "红色", "saved_query_id": saved.id}})
+    assert response.status_code == 200
+    assert captured["allowed_ids"] == [second.id]
+
+    response = await client.post(
+        "tools/semantic_search",
+        json={"args": {"query": "红色", "sql": "SELECT id FROM metadata WHERE number = 'TOOL-001'"}},
+    )
+    assert response.status_code == 200
+    assert captured["allowed_ids"] == [first.id]
+
+    both = await client.post(
+        "tools/semantic_search",
+        json={"args": {"query": "红色", "saved_query_id": saved.id, "sql": "SELECT 1"}},
+    )
+    assert "只能传一个" in both.json()["error"]
 
 
 @pytest.mark.asyncio

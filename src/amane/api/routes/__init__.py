@@ -20,6 +20,7 @@ from .plugins import router as plugins_router
 from .resources import router as resources_router
 from .saved_queries import router as saved_queries_router
 from .schedules import router as schedules_router
+from .semantic import router as semantic_router
 from .system import router as system_router
 from .tasks import router as tasks_router
 from .tools import router as tools_router
@@ -53,4 +54,5 @@ router.include_router(webhooks_router)
 router.include_router(agent_router)
 router.include_router(agent_agui_router)
 router.include_router(saved_queries_router)
+router.include_router(semantic_router)
 router.include_router(ws_router)

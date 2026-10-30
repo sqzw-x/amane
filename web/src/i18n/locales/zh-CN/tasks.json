@@ -46,6 +46,11 @@
     "progress": "进度"
   },
   "empty": "暂无任务",
+  "benchmark": {
+    "imagesPerSecond": "图片嵌入 {{value}} 张/秒",
+    "queryMs": "单次查询 {{value}} ms",
+    "samples": "样本 {{count}} 张"
+  },
   "filters": {
     "all": "全部",
     "queued": "排队中",
@@ -61,7 +66,9 @@
     "actor_scrape": "演员刮削",
     "rescrape": "重新刮削",
     "scan_invalid": "扫描无效文件",
-    "delete": "删除"
+    "delete": "删除",
+    "semantic_index": "语义索引",
+    "semantic_benchmark": "性能测试"
   },
   "loadMoreChildren": "加载更多 ({{count}})",
   "logView": {
@@ -118,7 +125,11 @@
     },
     "detailTruncated": "已截断",
     "loadFailed": "详情加载失败",
-    "noResultHint": "该任务没有结果载荷; 完整明细在任务记录里"
+    "noResultHint": "该任务没有结果载荷; 完整明细在任务记录里",
+    "semanticIndexed": "已索引 {{value}}",
+    "semanticSkipped": "跳过 {{value}}",
+    "semanticMissing": "无图片 {{value}}",
+    "semanticFailed": "失败 {{value}}"
   },
   "status": {
     "queued": "排队中",
@@ -138,7 +149,9 @@
       "actor_scrape": "演员刮削",
       "rescrape": "重新刮削",
       "scan_invalid": "扫描无效文件",
-      "delete": "删除"
+      "delete": "删除",
+      "semantic_index": "语义索引",
+      "semantic_benchmark": "性能测试"
     },
     "cleanup": {
       "remove_missing_files": {
@@ -364,6 +377,25 @@
       "prune_empty_dirs": {
         "label": "删除腾空的目录",
         "description": "库根与 .amane_trash 除外"
+      }
+    },
+    "semantic_index": {
+      "limit": {
+        "label": "数量上限",
+        "description": "单次最多处理的条目数; 留空表示全库"
+      },
+      "force": {
+        "label": "强制重算",
+        "description": "忽略未变化的跳过判据, 全部重新编码"
+      },
+      "kinds": {
+        "label": "索引范围",
+        "$": {
+          "options": {
+            "cover": "封面",
+            "still": "剧照"
+          }
+        }
       }
     }
   },

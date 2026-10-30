@@ -23,6 +23,8 @@ from amane.handlers.models import (
     RescrapeResult,
     ScanInvalidResult,
     ScrapeResult,
+    SemanticBenchmarkResult,
+    SemanticIndexResult,
     UpscaleResult,
 )
 from amane.handlers.protocol import TaskResult
@@ -81,6 +83,7 @@ RESULT_CASES = [
     pytest.param(RefreshResult(added=2, removed=1, scrape=2), id="refresh"),
     pytest.param(CleanupResult(files_removed=1, resources_removed=0), id="cleanup"),
     pytest.param(UpscaleResult(scanned=3, upscaled=1, skipped=1, failed=1), id="upscale"),
+    pytest.param(SemanticIndexResult(scanned=10, indexed=8, skipped=1, missing=1, failed=0), id="semantic_index"),
     pytest.param(R18ImportResult(imported=True, etag=None), id="r18_import"),
     pytest.param(RescrapeResult(submitted=5, metadata=3, actors=2), id="rescrape"),
     pytest.param(
@@ -109,6 +112,18 @@ RESULT_CASES = [
             reverify_rejected=1,
         ),
         id="delete",
+    ),
+    pytest.param(
+        SemanticBenchmarkResult(
+            backend="Core ML",
+            model="SigLIP2 Base v1",
+            images_per_second=63.5,
+            query_ms=28.4,
+            load_ms=512.0,
+            samples=16,
+            measured_at="2026-10-30T02:55:00+08:00",
+        ),
+        id="semantic_benchmark",
     ),
 ]
 

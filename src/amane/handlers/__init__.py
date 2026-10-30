@@ -9,4 +9,5 @@ from .refresh import *
 from .rescrape import *
 from .scan_invalid import *
 from .scrape import *
+from .semantic import *
 from .upscale import *
