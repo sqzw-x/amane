@@ -1,7 +1,6 @@
 {
   "title": "用户手册",
   "connect": {
-    "title": "配置外部 Agent",
     "copyHint": "复制这段文本并发送给 Agent",
     "instruction": "访问 {{address}} 并按其中步骤进行",
     "copy": "复制",
@@ -15,5 +14,70 @@
       "title": "Agent 权限",
       "body": "Agent 可执行内置智能体的所有操作且无需审批. skill 中已明确要求其在执行修改操作前征求你的同意, 但这仅是文本约束. 因此务必使用指令遵循较好的模型, 以避免模型误操作导致数据丢失."
     }
+  },
+  "semantic": {
+    "title": "语义检索",
+    "intro": "用自然语言查询封面与剧照。除首次下载模型外无需网络，图片索引构建与检索均为纯本地操作",
+    "model": {
+      "title": "模型",
+      "name": "模型",
+      "backend": "推理后端",
+      "state": "本地状态",
+      "ready": "就绪",
+      "missing": "文件缺失",
+      "notDownloaded": "未下载",
+      "disk": "磁盘占用",
+      "download": "下载体积",
+      "downloadHint": "首次索引时自动下载",
+      "path": "存储位置",
+      "visionTower": "图像塔",
+      "textTower": "文本塔",
+      "loaded": "已加载",
+      "notLoaded": "未加载",
+      "towerState": "{{state}}（{{size}}）"
+    },
+    "index": {
+      "title": "索引",
+      "created": "已建立",
+      "empty": "未建立",
+      "entries": "已索引影片",
+      "images": "已索引图片",
+      "breakdown": "封面 {{covers}} · 剧照 {{stills}}",
+      "updated": "上次更新",
+      "disk": "磁盘占用",
+      "path": "存储位置",
+      "justNow": "刚刚",
+      "updatedAt": "{{relative}}（{{exact}}）"
+    },
+    "unavailable": "语义检索不可用",
+    "benchmark": {
+      "title": "性能测试",
+      "intro": "在本机抽样编码封面与剧照，测量图片嵌入速度与文本查询延迟；不写入索引。",
+      "start": "开始测试",
+      "running": "测试中，完成后显示结果",
+      "runningButton": "测试中…",
+      "empty": "尚无测试记录",
+      "imagesPerSecond": "图片嵌入",
+      "imagesPerSecondValue": "{{value}} 张/秒",
+      "queryMs": "单次查询",
+      "queryMsValue": "{{value}} ms",
+      "loadMs": "模型加载",
+      "loadMsValue": "{{value}} s",
+      "samples": "样本 {{count}} 张",
+      "backend": "{{backend}} · {{samples}} 张样本",
+      "measuredAt": "测试于 {{time}}",
+      "failed": "任务失败，请查看任务详情"
+    },
+    "tips": {
+      "title": "查询技巧",
+      "elements": "模型只理解画面中的元素，不理解剧情、内涵等更深的含义。",
+      "simple": "尽量用简单词汇与单一属性描述，不要叠加多个属性或方位。",
+      "language": "同一个意思，英文描述可能比中文更准确。",
+      "positive": "避免否定式描述（如「不是黑发」），改用正向描述（如「彩色头发」）。"
+    }
+  },
+  "tabs": {
+    "agent": "Agent 接入",
+    "semantic": "语义检索"
   }
 }

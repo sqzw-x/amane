@@ -1,7 +1,6 @@
 {
   "title": "User manual",
   "connect": {
-    "title": "Configure an external agent",
     "copyHint": "Copy this text and send it to the agent",
     "instruction": "Visit {{address}} and follow the steps there",
     "copy": "Copy",
@@ -15,5 +14,70 @@
       "title": "Agent permissions",
       "body": "The agent can perform every operation the built-in assistant can, and does so without approval. The skill instructs it to ask for your consent before any modifying operation, but that is a text-level constraint only. Use a model that follows instructions well; a careless one can lose data."
     }
+  },
+  "semantic": {
+    "title": "Semantic search",
+    "intro": "Query covers and stills with natural language. Apart from the initial model download, no network is required; both image indexing and retrieval run entirely locally.",
+    "model": {
+      "title": "Model",
+      "name": "Model",
+      "backend": "Backend",
+      "state": "State",
+      "ready": "Ready",
+      "missing": "Files missing",
+      "notDownloaded": "Not downloaded",
+      "disk": "On disk",
+      "download": "Download",
+      "downloadHint": "downloaded on first index",
+      "path": "Location",
+      "visionTower": "Vision tower",
+      "textTower": "Text tower",
+      "loaded": "Loaded",
+      "notLoaded": "Not loaded",
+      "towerState": "{{state}} ({{size}})"
+    },
+    "index": {
+      "title": "Index",
+      "created": "Ready",
+      "empty": "Empty",
+      "entries": "Indexed movies",
+      "images": "Indexed images",
+      "breakdown": "covers {{covers}} · stills {{stills}}",
+      "updated": "Last update",
+      "disk": "On disk",
+      "path": "Location",
+      "justNow": "just now",
+      "updatedAt": "{{relative}} ({{exact}})"
+    },
+    "unavailable": "Semantic search is unavailable",
+    "benchmark": {
+      "title": "Benchmark",
+      "intro": "Embed a sample of covers and stills locally to measure image throughput and text query latency; nothing is written to the index.",
+      "start": "Run benchmark",
+      "running": "Running; results appear when it finishes",
+      "runningButton": "Running…",
+      "empty": "No benchmark yet",
+      "imagesPerSecond": "Image embedding",
+      "imagesPerSecondValue": "{{value}} img/s",
+      "queryMs": "Single query",
+      "queryMsValue": "{{value}} ms",
+      "loadMs": "Model load",
+      "loadMsValue": "{{value}} s",
+      "samples": "{{count}} samples",
+      "backend": "{{backend}} · {{samples}} samples",
+      "measuredAt": "Measured {{time}}",
+      "failed": "Task failed; see task details"
+    },
+    "tips": {
+      "title": "Query tips",
+      "elements": "The model only understands elements visible in the image; plot, meaning and similar deeper context are out of scope.",
+      "simple": "Use simple words and a single attribute instead of stacking several attributes or directions.",
+      "language": "English descriptions may be more accurate than Chinese for the same meaning.",
+      "positive": "Avoid negative phrasing such as \"not black hair\"; describe the positive, e.g. \"colored hair\"."
+    }
+  },
+  "tabs": {
+    "agent": "Agent access",
+    "semantic": "Semantic search"
   }
 }
