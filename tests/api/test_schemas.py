@@ -54,6 +54,7 @@ class TestTaskSubmission:
         [
             {"type": "scrape"},
             {"type": "scrape", "number": "MIDV-001", "url": "https://javdb.com/v/abcd1"},
+            {"type": "scrape", "number": "https://javdb.com/v/abcd1"},
             {"type": "scrape", "url": "ftp://javdb.com/v/abcd1"},
             {"type": "scrape", "url": "javdb.com/v/abcd1"},
         ],

@@ -199,6 +199,8 @@ class ScrapeRequest(BaseModel):
 
     @model_validator(mode="after")
     def _check_source(self) -> Self:
+        if self.number is not None and self.number.casefold().startswith(("http://", "https://")):
+            raise ValueError("number 只接受番号; 网址请填写在 url 字段")
         if self.number is not None and self.url is not None:
             raise ValueError("number 与 url 不能同时指定")
         if self.number is None and self.url is None and self.media_id is None:
