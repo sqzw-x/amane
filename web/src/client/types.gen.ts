@@ -4313,6 +4313,92 @@ export type SemanticConfig = {
 };
 
 /**
+ * SemanticDiagnosticsResponse
+ *
+ * 用户手册的诊断数据: 运行时状态、路径、占用与索引统计; 不触发下载或加载.
+ */
+export type SemanticDiagnosticsResponse = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Backend
+     */
+    backend?: string | null;
+    /**
+     * Current Model
+     */
+    current_model?: string | null;
+    /**
+     * Current Model Label
+     */
+    current_model_label?: string | null;
+    /**
+     * Backend Label
+     */
+    backend_label?: string | null;
+    /**
+     * Text Loaded
+     */
+    text_loaded?: boolean;
+    /**
+     * Vision Loaded
+     */
+    vision_loaded?: boolean;
+    /**
+     * Search Ready
+     */
+    search_ready?: boolean;
+    /**
+     * Index Ready
+     */
+    index_ready?: boolean;
+    /**
+     * Download Size
+     */
+    download_size?: number;
+    /**
+     * Vision Size
+     */
+    vision_size?: number;
+    /**
+     * Text Size
+     */
+    text_size?: number;
+    /**
+     * Model Path
+     */
+    model_path?: string;
+    /**
+     * Model Bytes
+     */
+    model_bytes?: number;
+    /**
+     * Embeddings Path
+     */
+    embeddings_path?: string;
+    /**
+     * Embeddings Bytes
+     */
+    embeddings_bytes?: number;
+    /**
+     * Indexed Metadata
+     */
+    indexed_metadata?: number;
+    /**
+     * Indexed At
+     */
+    indexed_at?: string | null;
+    /**
+     * Models
+     */
+    models?: {
+        [key: string]: SemanticModelCounts;
+    };
+};
+
+/**
  * SemanticHitInfo
  *
  * 语义检索命中图: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身.
@@ -4412,87 +4498,29 @@ export type SemanticModelCounts = {
 /**
  * SemanticStatusResponse
  *
- * 语义检索状态: 当前模型、各模型条数与后端; 不触发模型下载或加载.
+ * 语义检索的轻量状态: 页面据此决定入口与提示, 不读取存储统计.
  */
 export type SemanticStatusResponse = {
     /**
      * Enabled
      */
-    enabled: boolean;
+    enabled?: boolean;
     /**
-     * Backend
+     * Available
      */
-    backend?: string | null;
-    /**
-     * Current Model
-     */
-    current_model?: string | null;
-    /**
-     * Current Model Label
-     */
-    current_model_label?: string | null;
-    /**
-     * Backend Label
-     */
-    backend_label?: string | null;
-    /**
-     * Text Loaded
-     */
-    text_loaded?: boolean;
-    /**
-     * Vision Loaded
-     */
-    vision_loaded?: boolean;
+    available?: boolean;
     /**
      * Search Ready
      */
     search_ready?: boolean;
     /**
-     * Index Ready
+     * Has Embeddings
      */
-    index_ready?: boolean;
+    has_embeddings?: boolean;
     /**
      * Download Size
      */
     download_size?: number;
-    /**
-     * Vision Size
-     */
-    vision_size?: number;
-    /**
-     * Text Size
-     */
-    text_size?: number;
-    /**
-     * Model Path
-     */
-    model_path?: string;
-    /**
-     * Model Bytes
-     */
-    model_bytes?: number;
-    /**
-     * Embeddings Path
-     */
-    embeddings_path?: string;
-    /**
-     * Embeddings Bytes
-     */
-    embeddings_bytes?: number;
-    /**
-     * Indexed Metadata
-     */
-    indexed_metadata?: number;
-    /**
-     * Indexed At
-     */
-    indexed_at?: string | null;
-    /**
-     * Models
-     */
-    models?: {
-        [key: string]: SemanticModelCounts;
-    };
 };
 
 /**
@@ -9397,6 +9425,22 @@ export type SemanticStatusResponses = {
 };
 
 export type SemanticStatusResponse2 = SemanticStatusResponses[keyof SemanticStatusResponses];
+
+export type SemanticDiagnosticsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/semantic/diagnostics';
+};
+
+export type SemanticDiagnosticsResponses = {
+    /**
+     * Successful Response
+     */
+    200: SemanticDiagnosticsResponse;
+};
+
+export type SemanticDiagnosticsResponse2 = SemanticDiagnosticsResponses[keyof SemanticDiagnosticsResponses];
 
 export type ReleaseSemanticData = {
     body?: never;

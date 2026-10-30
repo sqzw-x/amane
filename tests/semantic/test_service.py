@@ -378,11 +378,18 @@ async def test_cascade_delete_removes_sidecar_rows(repo: Repository, tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_status_reports_counts_per_model(repo: Repository, tmp_path: Path) -> None:
+async def test_status_and_diagnostics_report_counts_per_model(repo: Repository, tmp_path: Path) -> None:
     store = ResourceStore(engine=repo._engine, base_dir=tmp_path / "resources")
     service = _service(repo, store)
     status = await service.status()
-    assert (status.enabled, status.model, status.models) == (True, MODEL, [])
+    assert (status.enabled, status.available, status.search_ready, status.has_embeddings) == (
+        True,
+        True,
+        True,
+        False,
+    )
+    diagnostics = await service.diagnostics()
+    assert (diagnostics.enabled, diagnostics.model, diagnostics.models) == (True, MODEL, [])
     # 真实服务只查本地文件; 测试数据目录里没有模型.
     assert SemanticService(repo, store, store.data_dir, SemanticConfig()).search_ready is False
 
@@ -396,7 +403,9 @@ async def test_status_reports_counts_per_model(repo: Repository, tmp_path: Path)
     assert (await service.build_index()).indexed == 2
 
     status = await service.status()
-    assert [(stats.ref.name, stats.covers, stats.stills) for stats in status.models] == [("siglip2-base", 1, 1)]
+    assert status.has_embeddings is True
+    diagnostics = await service.diagnostics()
+    assert [(stats.ref.name, stats.covers, stats.stills) for stats in diagnostics.models] == [("siglip2-base", 1, 1)]
 
 
 @pytest.mark.asyncio

@@ -56,6 +56,26 @@ async def test_models_is_empty_without_creating_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_model_id_and_has_embeddings_are_read_only(tmp_path: Path) -> None:
+    instance = EmbeddingStore(tmp_path / "embeddings.db")
+    assert await instance.model_id("siglip2-base", "v1") is None
+    assert await instance.has_embeddings(1) is False
+    assert not instance.exists
+    await instance.close()
+
+
+@pytest.mark.asyncio
+async def test_has_embeddings_reports_current_model_rows(store: EmbeddingStore) -> None:
+    assert await store.model_id("siglip2-base", "v1") is None
+    model = await store.ensure_model("siglip2-base", "v1", 4)
+    assert await store.model_id("siglip2-base", "v1") == model.id
+    assert await store.has_embeddings(model.id) is False
+
+    await store.upsert(model.id, [EmbeddingWrite(1, EmbeddingKind.COVER, "http://a/1.jpg", "h1", _vec(1, 0, 0, 0))])
+    assert await store.has_embeddings(model.id) is True
+
+
+@pytest.mark.asyncio
 async def test_upsert_overwrites_same_scope_and_counts_kinds(store: EmbeddingStore) -> None:
     model = await store.ensure_model("siglip2-base", "v1", 4)
     await store.upsert(

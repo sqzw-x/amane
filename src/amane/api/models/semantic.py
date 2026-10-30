@@ -10,7 +10,21 @@ class SemanticModelCounts(BaseModel):
 
 
 class SemanticStatusResponse(BaseModel):
-    """语义检索状态: 当前模型、各模型条数与后端; 不触发模型下载或加载."""
+    """语义检索的轻量状态: 页面据此决定入口与提示, 不读取存储统计."""
+
+    enabled: bool = False
+    available: bool = False
+    """配置允许且检索所需文件就绪, 可以进入语义检索."""
+    search_ready: bool = False
+    """文本塔与 tokenizer 已在本地就绪; 未就绪时检索返回 503."""
+    has_embeddings: bool = False
+    """当前模型是否已有任意向量; 索引为空时页面提示先建索引."""
+    download_size: int = 0
+    """当前后端首次下载模型的总字节数; 供缺模型提示展示."""
+
+
+class SemanticDiagnosticsResponse(BaseModel):
+    """用户手册的诊断数据: 运行时状态、路径、占用与索引统计; 不触发下载或加载."""
 
     enabled: bool
     backend: str | None = None

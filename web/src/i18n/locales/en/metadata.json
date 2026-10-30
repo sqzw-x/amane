@@ -11,6 +11,7 @@
     },
     "modelMissing": "The required model is missing. Submit a semantic index task and it will be downloaded automatically (about {{size}} MB).",
     "unavailableTitle": "Semantic search unavailable",
+    "disabled": "Semantic search is not enabled on this instance.",
     "noEmbeddings": "Image embeddings have not been created yet. Submit a semantic index task; depending on this machine and the number of images it may take from minutes to tens of minutes."
   },
   "search": {

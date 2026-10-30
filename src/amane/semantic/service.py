@@ -135,6 +135,23 @@ class SemanticHit:
 
 @dataclass(frozen=True)
 class SemanticStatus:
+    """轻量状态: 只够页面决定是否显示入口与提示, 不读取存储统计."""
+
+    enabled: bool
+    available: bool
+    """配置允许且检索所需文件就绪, 可以进入语义检索."""
+    search_ready: bool
+    """文本塔与 tokenizer 就绪, 检索可用."""
+    has_embeddings: bool
+    """当前模型是否已有任意向量; 索引为空时页面提示先建索引."""
+    download_size: int
+    """当前后端首次下载的总字节数, 供缺模型提示展示."""
+
+
+@dataclass(frozen=True)
+class SemanticDiagnostics:
+    """用户手册的诊断数据: 运行时状态、路径、占用与索引统计."""
+
     enabled: bool
     backend: str | None
     model: str | None
@@ -472,8 +489,29 @@ class SemanticService:
         return ref
 
     async def status(self) -> SemanticStatus:
-        """只查文件系统与向量库, 不下载也不加载模型."""
+        """轻量状态: 只做文件存在性与当前模型是否有向量的检查, 不扫模型目录或向量表."""
         spec = self.spec
+        enabled = self.enabled
+        search_ready = self.search_ready
+        has_embeddings = False
+        if enabled and search_ready:
+            store = self.repo.embeddings
+            if store is not None:
+                model_id = await store.model_id(spec.name, spec.version)
+                if model_id is not None:
+                    has_embeddings = await store.has_embeddings(model_id)
+        return SemanticStatus(
+            enabled=enabled,
+            available=enabled and search_ready,
+            search_ready=search_ready,
+            has_embeddings=has_embeddings,
+            download_size=download_size(spec, backend_for_platform()),
+        )
+
+    async def diagnostics(self) -> SemanticDiagnostics:
+        """手册诊断: 额外统计模型目录、sidecar 与索引; 不要用于页面预检."""
+        spec = self.spec
+        backend = backend_for_platform()
         model_dir = model_root(self.data_dir, spec)
         models = await self.embeddings.models()
         current = next(
@@ -486,18 +524,19 @@ class SemanticService:
         indexed_metadata, indexed_at = (
             await self.embeddings.index_stats(current.ref.id) if current is not None else (0, None)
         )
-        vision_size, text_size = tower_sizes(spec, backend_for_platform())
-        return SemanticStatus(
+        readiness = self.readiness()
+        vision_size, text_size = tower_sizes(spec, backend)
+        return SemanticDiagnostics(
             enabled=self.enabled,
-            backend=self.backend,
-            backend_label=backend_label(backend_for_platform()),
+            backend=backend,
+            backend_label=backend_label(backend),
             model=self.model,
             model_label=self.model_label,
             text_loaded=self._text is not None,
             vision_loaded=self._vision is not None,
-            search_ready=self.search_ready,
-            index_ready=self.index_ready,
-            download_size=download_size(spec, backend_for_platform()),
+            search_ready=readiness.search,
+            index_ready=readiness.index,
+            download_size=download_size(spec, backend),
             vision_size=vision_size,
             text_size=text_size,
             model_path=str(model_dir),

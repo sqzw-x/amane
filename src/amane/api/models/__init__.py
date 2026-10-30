@@ -90,7 +90,7 @@ from .playback import (
 )
 from .plugins import PluginConfigUpdate, PluginListResponse, PluginResponse
 from .schedules import ScheduleCreateRequest, ScheduleListResponse, ScheduleResponse, ScheduleUpdateRequest
-from .semantic import SemanticModelCounts, SemanticStatusResponse
+from .semantic import SemanticDiagnosticsResponse, SemanticModelCounts, SemanticStatusResponse
 from .system import DesktopResponse, ReleaseResponse
 from .tasks import (
     ActorScrapeSubmission,
@@ -213,6 +213,7 @@ __all__ = [
     "ScrapeRequest",
     "ScrapeSubmission",
     "SemanticBenchmarkSubmission",
+    "SemanticDiagnosticsResponse",
     "SemanticHitInfo",
     "SemanticIndexSubmission",
     "SemanticModelCounts",

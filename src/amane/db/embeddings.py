@@ -358,6 +358,25 @@ class EmbeddingStore:
             for row in rows
         ]
 
+    async def model_id(self, name: str, version: str) -> int | None:
+        """按清单 key 取模型行 id; 库不存在或未注册时返回 ``None``, 不为查询创建库文件."""
+        if not self.exists:
+            return None
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT id FROM semantic_models WHERE name = ? AND version = ?", (name, version)
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row is not None else None
+
+    async def has_embeddings(self, model_id: int) -> bool:
+        """模型下是否已有任意向量; 走 ``model_id`` 覆盖索引, 不扫向量表."""
+        if not self.exists:
+            return False
+        conn = await self._ensure()
+        async with conn.execute("SELECT 1 FROM media_embeddings WHERE model_id = ? LIMIT 1", (model_id,)) as cur:
+            return await cur.fetchone() is not None
+
     async def index_stats(self, model_id: int) -> tuple[int, str | None]:
         """``(已建向量的条目数, 最后写入时间)``; 库文件不存在时返回 ``(0, None)``, 不为统计创建文件."""
         if not self.exists:

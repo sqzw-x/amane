@@ -8275,6 +8275,144 @@ export const SemanticConfigSchema = {
     description: '封面与剧照语义检索. 模型身份由 ``semantic/models.py`` 的清单决定, 不随配置变化.'
 } as const;
 
+export const SemanticDiagnosticsResponseSchema = {
+    properties: {
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        backend: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Backend'
+        },
+        current_model: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Current Model'
+        },
+        current_model_label: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Current Model Label'
+        },
+        backend_label: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Backend Label'
+        },
+        text_loaded: {
+            type: 'boolean',
+            title: 'Text Loaded',
+            default: false
+        },
+        vision_loaded: {
+            type: 'boolean',
+            title: 'Vision Loaded',
+            default: false
+        },
+        search_ready: {
+            type: 'boolean',
+            title: 'Search Ready',
+            default: false
+        },
+        index_ready: {
+            type: 'boolean',
+            title: 'Index Ready',
+            default: false
+        },
+        download_size: {
+            type: 'integer',
+            title: 'Download Size',
+            default: 0
+        },
+        vision_size: {
+            type: 'integer',
+            title: 'Vision Size',
+            default: 0
+        },
+        text_size: {
+            type: 'integer',
+            title: 'Text Size',
+            default: 0
+        },
+        model_path: {
+            type: 'string',
+            title: 'Model Path',
+            default: ''
+        },
+        model_bytes: {
+            type: 'integer',
+            title: 'Model Bytes',
+            default: 0
+        },
+        embeddings_path: {
+            type: 'string',
+            title: 'Embeddings Path',
+            default: ''
+        },
+        embeddings_bytes: {
+            type: 'integer',
+            title: 'Embeddings Bytes',
+            default: 0
+        },
+        indexed_metadata: {
+            type: 'integer',
+            title: 'Indexed Metadata',
+            default: 0
+        },
+        indexed_at: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Indexed At'
+        },
+        models: {
+            additionalProperties: {
+                $ref: '#/components/schemas/SemanticModelCounts'
+            },
+            type: 'object',
+            title: 'Models',
+            default: {}
+        }
+    },
+    type: 'object',
+    required: [
+        'enabled'
+    ],
+    title: 'SemanticDiagnosticsResponse',
+    description: '用户手册的诊断数据: 运行时状态、路径、占用与索引统计; 不触发下载或加载.'
+} as const;
+
 export const SemanticHitInfoSchema = {
     properties: {
         id: {
@@ -8415,60 +8553,12 @@ export const SemanticStatusResponseSchema = {
     properties: {
         enabled: {
             type: 'boolean',
-            title: 'Enabled'
-        },
-        backend: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Backend'
-        },
-        current_model: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Current Model'
-        },
-        current_model_label: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Current Model Label'
-        },
-        backend_label: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Backend Label'
-        },
-        text_loaded: {
-            type: 'boolean',
-            title: 'Text Loaded',
+            title: 'Enabled',
             default: false
         },
-        vision_loaded: {
+        available: {
             type: 'boolean',
-            title: 'Vision Loaded',
+            title: 'Available',
             default: false
         },
         search_ready: {
@@ -8476,77 +8566,20 @@ export const SemanticStatusResponseSchema = {
             title: 'Search Ready',
             default: false
         },
-        index_ready: {
+        has_embeddings: {
             type: 'boolean',
-            title: 'Index Ready',
+            title: 'Has Embeddings',
             default: false
         },
         download_size: {
             type: 'integer',
             title: 'Download Size',
             default: 0
-        },
-        vision_size: {
-            type: 'integer',
-            title: 'Vision Size',
-            default: 0
-        },
-        text_size: {
-            type: 'integer',
-            title: 'Text Size',
-            default: 0
-        },
-        model_path: {
-            type: 'string',
-            title: 'Model Path',
-            default: ''
-        },
-        model_bytes: {
-            type: 'integer',
-            title: 'Model Bytes',
-            default: 0
-        },
-        embeddings_path: {
-            type: 'string',
-            title: 'Embeddings Path',
-            default: ''
-        },
-        embeddings_bytes: {
-            type: 'integer',
-            title: 'Embeddings Bytes',
-            default: 0
-        },
-        indexed_metadata: {
-            type: 'integer',
-            title: 'Indexed Metadata',
-            default: 0
-        },
-        indexed_at: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Indexed At'
-        },
-        models: {
-            additionalProperties: {
-                $ref: '#/components/schemas/SemanticModelCounts'
-            },
-            type: 'object',
-            title: 'Models',
-            default: {}
         }
     },
     type: 'object',
-    required: [
-        'enabled'
-    ],
     title: 'SemanticStatusResponse',
-    description: '语义检索状态: 当前模型、各模型条数与后端; 不触发模型下载或加载.'
+    description: '语义检索的轻量状态: 页面据此决定入口与提示, 不读取存储统计.'
 } as const;
 
 export const SiteConfigSchema = {

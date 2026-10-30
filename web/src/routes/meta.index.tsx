@@ -20,7 +20,7 @@ import {
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getFacetOptions,
@@ -207,24 +207,27 @@ function MetaIndexPage() {
   };
 
   const isList = search.view === "list";
-  const { data: semanticStatus } = useQuery({
-    ...semanticStatusOptions(),
-    enabled: semanticActive,
-  });
-  const semanticCounts =
-    semanticStatus?.current_model != null
-      ? semanticStatus.models?.[semanticStatus.current_model]
-      : undefined;
+  const { data: semanticStatus, refetch: refetchSemanticStatus } =
+    useQuery(semanticStatusOptions());
+  const semanticAvailable = semanticStatus?.available === true;
+
+  // 进入语义模式时再取一次: 索引任务可能刚在别处完成, 缓存的空索引状态会过期.
+  useEffect(() => {
+    if (semanticMode) void refetchSemanticStatus();
+  }, [semanticMode, refetchSemanticStatus]);
+
   const semanticNotice =
     !semanticActive || semanticStatus == null
       ? null
-      : !semanticStatus.search_ready
-        ? t("semantic.modelMissing", {
-            size: Math.round((semanticStatus.download_size ?? 0) / 1024 / 1024),
-          })
-        : (semanticCounts?.count ?? 0) === 0
-          ? t("semantic.noEmbeddings")
-          : null;
+      : !semanticStatus.enabled
+        ? t("semantic.disabled")
+        : !semanticStatus.search_ready
+          ? t("semantic.modelMissing", {
+              size: Math.round((semanticStatus.download_size ?? 0) / 1024 / 1024),
+            })
+          : !semanticStatus.has_embeddings
+            ? t("semantic.noEmbeddings")
+            : null;
   // 语义状态未到或不可检索时不发列表请求, 避免先按普通排序闪一屏.
   const listEnabled = !semanticActive || (semanticStatus != null && semanticNotice == null);
 
@@ -473,7 +476,7 @@ function MetaIndexPage() {
             >
               {t("semantic.back")}
             </Button>
-          ) : (
+          ) : semanticAvailable ? (
             <Button
               variant="default"
               className={classes.semanticToggle}
@@ -486,7 +489,7 @@ function MetaIndexPage() {
             >
               <span className={classes.gradientText}>{t("semantic.toggle")}</span>
             </Button>
-          )}
+          ) : null}
         </Group>
       }
       extras={

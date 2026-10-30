@@ -26,7 +26,7 @@ import {
   getTaskOptions,
   listTasksOptions,
   listTasksQueryKey,
-  semanticStatusOptions,
+  semanticDiagnosticsOptions,
   submitTaskMutation,
 } from "@/client/@tanstack/react-query.gen";
 import { extractErrorMessage } from "@/lib/api-error";
@@ -146,7 +146,7 @@ function ConnectSection() {
 function SemanticSection() {
   const { t, i18n } = useTranslation("manual");
   // 塔会随任务与闲置超时进出内存, 面板定期刷新才能反映当前状态.
-  const { data: status } = useQuery({ ...semanticStatusOptions(), refetchInterval: 10_000 });
+  const { data: status } = useQuery({ ...semanticDiagnosticsOptions(), refetchInterval: 30_000 });
 
   if (status == null) {
     return (

@@ -67,9 +67,17 @@ class _FakeService(SemanticService):
         return _FakeEncoder()
 
 
-def _install_service(app: FastAPI) -> _FakeService:
+class _ReadyFakeService(_FakeService):
+    """文件检查恒过, 用于覆盖轻量状态里的可用性分支."""
+
+    @property
+    def search_ready(self) -> bool:
+        return True
+
+
+def _install_service(app: FastAPI, service_type: type[_FakeService] = _FakeService) -> _FakeService:
     runtime = app.state.runtime
-    service = _FakeService(
+    service = service_type(
         runtime.repo, runtime.resource_store, runtime.config.cold.data_dir, runtime.config.hot.semantic
     )
     runtime.semantic = service
@@ -107,8 +115,24 @@ async def semantic_client(semantic_app: FastAPI) -> AsyncGenerator[AsyncClient]:
 
 
 @pytest.mark.asyncio
-async def test_status_does_not_create_store_or_load_model(semantic_app: FastAPI, semantic_client: AsyncClient) -> None:
+async def test_status_is_light_and_does_not_create_store(semantic_app: FastAPI, semantic_client: AsyncClient) -> None:
     response = await semantic_client.get("semantic/status")
+    assert response.status_code == 200
+    assert response.json() == {
+        "enabled": True,
+        "available": False,
+        "search_ready": False,
+        "has_embeddings": False,
+        "download_size": download_size(DEFAULT_SPEC, backend_for_platform()),
+    }
+    assert not (semantic_app.state.runtime.config.cold.data_dir / "embeddings.db").exists()
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_does_not_create_store_or_load_model(
+    semantic_app: FastAPI, semantic_client: AsyncClient
+) -> None:
+    response = await semantic_client.get("semantic/diagnostics")
     vision_size, text_size = tower_sizes(DEFAULT_SPEC, backend_for_platform())
     assert response.status_code == 200
     assert response.json() == {
@@ -136,6 +160,23 @@ async def test_status_does_not_create_store_or_load_model(semantic_app: FastAPI,
 
 
 @pytest.mark.asyncio
+async def test_status_reports_availability_and_has_embeddings(
+    semantic_app: FastAPI, semantic_client: AsyncClient
+) -> None:
+    service = _install_service(semantic_app, _ReadyFakeService)
+    body = (await semantic_client.get("semantic/status")).json()
+    assert (body["available"], body["search_ready"], body["has_embeddings"]) == (True, True, False)
+
+    runtime = semantic_app.state.runtime
+    metadata = await runtime.repo.upsert_metadata(number="SEM-AV", poster_urls=["http://example.com/a.jpg"])
+    await _seed_image(semantic_app, metadata, "http://example.com/a.jpg", 10)
+    assert (await service.build_index()).indexed == 1
+
+    body = (await semantic_client.get("semantic/status")).json()
+    assert (body["available"], body["search_ready"], body["has_embeddings"]) == (True, True, True)
+
+
+@pytest.mark.asyncio
 async def test_status_counts_cover_and_stills(semantic_app: FastAPI, semantic_client: AsyncClient) -> None:
     service = _install_service(semantic_app)
     runtime = semantic_app.state.runtime
@@ -148,7 +189,7 @@ async def test_status_counts_cover_and_stills(semantic_app: FastAPI, semantic_cl
     await _seed_image(semantic_app, metadata, "http://example.com/s.jpg", 20)
     assert (await service.build_index()).indexed == 2
 
-    body = (await semantic_client.get("semantic/status")).json()
+    body = (await semantic_client.get("semantic/diagnostics")).json()
     assert body["models"] == {MODEL: {"count": 2, "covers": 1, "stills": 1}}
 
 
@@ -291,8 +332,9 @@ async def test_release_drops_memory_index_but_keeps_vectors(
 
     body = (await semantic_client.post("semantic/release")).json()
 
-    assert body["models"] == {MODEL: {"count": 1, "covers": 1, "stills": 0}}
-    assert body["text_loaded"] is False
+    assert body["has_embeddings"] is False
+    assert body["search_ready"] is False
+    assert body["available"] is False
     assert service._snapshot is None
     assert service._text is None
 
