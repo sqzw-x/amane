@@ -5,6 +5,7 @@ from structlog.contextvars import bind_contextvars
 
 from ..aggregate import SCALAR_FIELDS, AggregatedMetadata, CrawlerLike, FieldLanguage, aggregate, compile_priority
 from ..crawlers.models import SearchQuery
+from ..crawlers.parsing import is_same_number
 from ..crawlers.site_roles import builtin_descriptors
 from ..crawlers.url_routing import resolve_url_source
 from ..db.models import TaskType
@@ -170,6 +171,10 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
                     outcomes=current().site_outcomes(),
                 ),
             )
+        # 库内文件已有番号且与页面结果同一部时沿用文件写法: 同一部作品的年份写法可能不同
+        # (18 / 2018), 按页面生成会再建一条. 对不上则采用页面番号, 网址仍能纠正错误番号.
+        if payload.url is not None and file is not None and file.number and is_same_number(file.number, number):
+            number = file.number
         if content_type is None:
             content_type = infer_content_type(number)
 

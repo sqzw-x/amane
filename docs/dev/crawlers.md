@@ -54,7 +54,7 @@ CrawlerFactory (缓存实例)
 
 `ScrapePayload.url` 与 `number` 二选一. Handler 用 `crawlers/url_routing.py::resolve_url_source` 从内置来源声明的域名反推单一来源, 命中优先级为站点配置的 `base_url` → 来源自带入口 → 来源的备用地址; 不读类型路由, 因此网址刮削不受路由成员与顺序影响. 插件来源不参与, 见 [plugins.md](plugins.md). `CrawlerProfile.url_scrape=False` 的来源 (离线库, 或只接受内部 API 地址) 同样不参与.
 
-`SearchQuery.url` 让 `Crawler.fetch` 跳过 `_search` 直接调用 `_scrape`. 番号由页面给出: 聚合结果的 `number` 为空时取第一个声明了番号的来源, 仍为空则任务失败且不入库. 内容类型缺省时按该番号推断. 元数据缓存不可用 (番号在抓取后才确定), 译文缓存照常; 已存在的条目按该来源重建字段与来源快照, 锁定字段保留.
+`SearchQuery.url` 让 `Crawler.fetch` 跳过 `_search` 直接调用 `_scrape`. 番号由页面给出: 聚合结果的 `number` 为空时取第一个声明了番号的来源, 仍为空则任务失败且不入库. 内容类型缺省时按该番号推断. 元数据缓存不可用 (番号在抓取后才确定), 译文缓存照常; 已存在的条目按该来源重建字段与来源快照, 锁定字段保留. 从库内文件发起时, 文件番号与页面番号指同一部 (``is_same_number``) 则沿用文件写法, 避免欧美年份的 2 位 / 4 位写法各建一条; 指不同部时仍采用页面番号.
 
 theporndb 的公开作品页路径是 ``/scenes/<slug>``, 其 GraphQL ``findScene`` 接受 slug, 因此该来源按网址刮削不需额外解析. 欧美条目的 ``code`` 是 ``studio:title-slug``, 与文件侧番号不同构; 网址刮削按 ``studio`` 与 ``date`` 生成 ``Studio.YY.MM.DD``, 否则会建出与文件番号对不上的条目.
 

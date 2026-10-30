@@ -134,6 +134,21 @@ async def test_scrape_url_attaches_media_file(repo: Repository):
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_scrape_url_prefers_matching_file_number(repo: Repository):
+    """文件番号与页面结果同一部时沿用文件写法, 不因年份写法不同再建一条."""
+    crawler = UrlCrawler(MediaMetadata(number="Tushy.18.02.05", title="From URL"))
+    handler, _ = _handler(repo, crawler)
+    media = await repo.create_media_file(library_id=1, path="/media/Tushy.2018.02.05.mp4", number="Tushy.2018.02.05")
+    assert media.id is not None
+
+    result = await handler.handle(ScrapePayload(url="https://javdb.com/v/abcd1", media_file_id=media.id))
+
+    assert result.success is True
+    assert await repo.get_metadata_by_number("Tushy.2018.02.05") is not None
+    assert await repo.get_metadata_by_number("Tushy.18.02.05") is None
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_scrape_url_ignores_metadata_cache(repo: Repository):
     """网址刮削抓完才知道番号, 因此不复用该番号的站点快照."""
     seeded = await repo.upsert_metadata(
