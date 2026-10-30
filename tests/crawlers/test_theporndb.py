@@ -44,6 +44,13 @@ _TUSHY = _scene(
     studio="Tushy",
     scene_id="69e638f5-c687-4ae3-ae68-a46f691f38a2",
 )
+_SEXART = _scene(
+    "20120413_sexart",
+    title="SexArt",
+    date="2012-04-13",
+    studio="SexArt",
+    scene_id="0b9d67e2-bc43-4041-bb13-3ef81a33a89f",
+)
 
 PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] = [
     # kin8 番号带站前缀, TPDB 的 code 是站内 4 位补零 id
@@ -138,16 +145,36 @@ async def test_fetch_by_url_rejects_non_scene_path() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_by_url_uses_western_date_number() -> None:
-    """欧美条目的 code 是 studio:slug; 条目按文件侧的 Studio.YY.MM.DD 建立."""
+@pytest.mark.parametrize(
+    ("scene", "slug", "expected"),
+    [
+        (_TUSHY, "tushy-i-only-gape-for-you", "Tushy.18.02.05"),
+        (_SEXART, "sexart-sexart", "SexArt.12.04.13"),
+    ],
+)
+async def test_fetch_by_url_uses_western_date_number(scene: dict[str, Any], slug: str, expected: str) -> None:
+    """欧美条目的 code 不是番号; 条目按文件侧的 Studio.YY.MM.DD 建立."""
     web = AsyncMock()
-    web.post_json.return_value = {"data": {"findScene": _TUSHY}}
+    web.post_json.return_value = {"data": {"findScene": scene}}
     crawler = _crawler(web)
 
-    metadata = await crawler.fetch(SearchQuery(number="", url="https://theporndb.net/scenes/tushy-i-only-gape-for-you"))
+    metadata = await crawler.fetch(SearchQuery(number="", url=f"https://theporndb.net/scenes/{slug}"))
 
     assert metadata is not None
-    assert metadata.number == "Tushy.18.02.05"
+    assert metadata.number == expected
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_url_keeps_jav_number() -> None:
+    """JAV 的 code 本身就是番号, 不按欧美日期号改写."""
+    web = AsyncMock()
+    web.post_json.return_value = {"data": {"findScene": _SSIS_497}}
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="", url="https://theporndb.net/scenes/ssis-497"))
+
+    assert metadata is not None
+    assert metadata.number == "SSIS-497"
 
 
 @pytest.mark.asyncio

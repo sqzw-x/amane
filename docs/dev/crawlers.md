@@ -56,7 +56,7 @@ CrawlerFactory (缓存实例)
 
 `SearchQuery.url` 让 `Crawler.fetch` 跳过 `_search` 直接调用 `_scrape`. 番号由页面给出: 聚合结果的 `number` 为空时取第一个声明了番号的来源, 仍为空则任务失败且不入库. 内容类型缺省时按该番号推断. 元数据缓存不可用 (番号在抓取后才确定), 译文缓存照常; 已存在的条目按该来源重建字段与来源快照, 锁定字段保留. 从库内文件发起时, 文件番号与页面番号指同一部 (``is_same_number``) 则沿用文件写法, 避免欧美年份的 2 位 / 4 位写法各建一条; 指不同部时仍采用页面番号.
 
-theporndb 的公开作品页路径是 ``/scenes/<slug>``, 其 GraphQL ``findScene`` 接受 slug, 因此该来源按网址刮削不需额外解析. 欧美条目的 ``code`` 是 ``studio:title-slug``, 与文件侧番号不同构; 网址刮削按 ``studio`` 与 ``date`` 生成 ``Studio.YY.MM.DD``, 否则会建出与文件番号对不上的条目.
+theporndb 的公开作品页路径是 ``/scenes/<slug>``, 其 GraphQL ``findScene`` 接受 slug, 因此该来源按网址刮削不需额外解析. 欧美条目的 ``code`` 不是文件番号, 常见 ``studio:title-slug`` 与 ``YYYYMMDD_title``; 这两种形态按 ``studio`` 与 ``date`` 生成 ``Studio.YY.MM.DD``, 其余形态 (JAV / FC2 等) 的 ``code`` 本身就是番号.
 
 
 ## 检索命中

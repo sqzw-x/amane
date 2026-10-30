@@ -315,17 +315,29 @@ def _scene_id_from_url(url: str) -> str | None:
     return None
 
 
+_WESTERN_DATE_CODE = re.compile(r"^\d{8}_")
+
+
 def _western_number(scene: dict[str, Any]) -> str | None:
-    """欧美条目 → ``Studio.YY.MM.DD``; code 不带 ``:`` 时不是欧美条目, 返回 ``None``."""
+    """欧美条目 → ``Studio.YY.MM.DD``; 非欧美形态返回 ``None``.
+
+    TPDB 的欧美 ``code`` 不是文件番号: 常见 ``studio:title-slug`` 与 ``YYYYMMDD_title``,
+    两种形态都按 ``studio`` 与 ``date`` 生成. JAV / FC2 等 ``code`` 本身是番号, 原样保留.
+    """
     code = scene.get("code")
     date = scene.get("date")
-    if not isinstance(code, str) or ":" not in code or not isinstance(date, str):
+    if not isinstance(code, str) or not isinstance(date, str):
         return None
-    studio, _, _ = code.partition(":")
+    if ":" not in code and _WESTERN_DATE_CODE.match(code) is None:
+        return None
     match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", date)
-    if not studio or match is None:
+    if match is None:
         return None
-    return f"{studio}.{match.group(1)[2:]}.{match.group(2)}.{match.group(3)}".capitalize()
+    studio = _scene_studio(scene).strip() or code.partition(":")[0]
+    studio = "".join(studio.split())
+    if not studio:
+        return None
+    return f"{studio[0].upper()}{studio[1:]}.{match.group(1)[2:]}.{match.group(2)}.{match.group(3)}"
 
 
 def _gql_field(payload: object, key: str) -> object:
