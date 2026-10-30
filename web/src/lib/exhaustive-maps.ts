@@ -41,8 +41,8 @@ export type TaskPayload = SubmitTaskData["body"];
 
 export type SubmittableTaskType = TaskPayload["type"];
 
-/** 面板专用类型: 只能由清理面板连同清单标识提交, 不出现在手动提交入口. */
-export type PanelOnlyTaskType = "delete";
+/** 面板专用类型: 由页内面板发起, 不出现在手动提交入口. */
+export type PanelOnlyTaskType = "delete" | "semantic_benchmark";
 
 export type ManualTaskType = Exclude<SubmittableTaskType, PanelOnlyTaskType>;
 
@@ -192,7 +192,6 @@ export const MANUAL_TASK_TYPES = exhaustiveTuple<ManualTaskType>()(
   "actor_scrape",
   "rescrape",
   "semantic_index",
-  "semantic_benchmark",
 );
 
 /** 刮削站点结果分组顺序. */
