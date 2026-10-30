@@ -100,6 +100,29 @@ class TestTaskBatchSubmit:
         assert body["task_ids"] == [existing.id]
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_url_scrapes_dedupe_by_url(
+        self, client: AsyncClient, seed_library: Repository, stop_worker: None
+    ) -> None:
+        """网址刮削没有番号: 同一网址去重, 不同网址各自入队."""
+        resp = await client.post(
+            "tasks/batch/submit",
+            json={
+                "submissions": [
+                    {"type": "scrape", "url": "https://javdb.com/v/aaa"},
+                    {"type": "scrape", "url": "https://javdb.com/v/bbb"},
+                    {"type": "scrape", "url": "https://javdb.com/v/aaa"},
+                ]
+            },
+        )
+        assert resp.status_code == 202
+        body = resp.json()
+        assert (body["submitted"], body["skipped"]) == (2, 1)
+        first = await seed_library.get_task(body["task_ids"][0])
+        assert first is not None
+        assert first.payload["url"] == "https://javdb.com/v/aaa"
+        assert first.payload["number"] == ""
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_other_types_resolve_per_item(
         self, client: AsyncClient, seed_library: Repository, stop_worker: None, safe_path: Path
     ) -> None:

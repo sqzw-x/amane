@@ -59,7 +59,8 @@ async def _task_titles(repo: RepoDep, tasks: Sequence[Task]) -> dict[int, str | 
         title: str | None = None
         if t.type == TaskType.SCRAPE:
             number = payload.get("number")
-            title = str(number) if number else None
+            url = payload.get("url")
+            title = str(number) if number else (str(url) if url else None)
         elif t.type == TaskType.ACTOR_SCRAPE:
             actor_id = payload.get("actor_id")
             title = actor_names.get(int(actor_id)) if isinstance(actor_id, int) else None
@@ -257,8 +258,9 @@ def _batch_dedupe_key(entry: tuple[TaskType, BaseModel]) -> tuple[TaskType, str,
     task_type, payload = entry
     if task_type is TaskType.SCRAPE:
         assert isinstance(payload, ScrapePayload)
-        # 同番号不同文件保留: 每个文件各有一次落库与自动整理
-        return TaskType.SCRAPE, payload.number.casefold(), payload.media_file_id
+        # 同番号不同文件保留: 每个文件各有一次落库与自动整理. 网址刮削没有番号, 按网址判重.
+        target = payload.number.casefold() if payload.number else (payload.url or "")
+        return TaskType.SCRAPE, target, payload.media_file_id
     if task_type is TaskType.ACTOR_SCRAPE:
         assert isinstance(payload, ActorScrapePayload)
         return TaskType.ACTOR_SCRAPE, "", payload.actor_id

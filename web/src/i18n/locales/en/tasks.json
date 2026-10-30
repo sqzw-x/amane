@@ -236,7 +236,12 @@
     },
     "scrape": {
       "number": {
-        "label": "Number"
+        "label": "Number",
+        "description": "Fill either this or the URL"
+      },
+      "url": {
+        "label": "URL",
+        "description": "Only this URL's source is parsed; fill either this or the number"
       },
       "media_id": {
         "label": "File ID",

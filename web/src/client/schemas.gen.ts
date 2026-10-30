@@ -7849,7 +7849,20 @@ export const ScrapeSubmissionSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Number'
+            title: 'Number',
+            description: '番号; 与 url 二选一'
+        },
+        url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Url',
+            description: '详情页网址; 只解析该网址所在的来源, 不经过类型路由与番号检索, 与 number 二选一'
         },
         media_id: {
             anyOf: [
@@ -7872,7 +7885,7 @@ export const ScrapeSubmissionSchema = {
                     type: 'null'
                 }
             ],
-            description: '内容类型; 未给出时: 仅 media_id 按文件路径推断, 有 number 时按番号推断'
+            description: '内容类型; 未给出时: 仅 media_id 按文件路径推断, 有 number 时按番号推断, 有 url 时按页面中的番号推断'
         },
         use_cache: {
             items: {

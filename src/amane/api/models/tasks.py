@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Self
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
@@ -70,7 +71,7 @@ class TaskListItem(BaseModel):
     type: TaskType
     status: TaskStatus
     title: str | None = None
-    """scrape→番号, actor_scrape→演员名, refresh/organize/trash→库名."""
+    """scrape→番号或网址, actor_scrape→演员名, refresh/organize/trash→库名."""
     error: str | None = None
     retries: int = 0
     priority: int = 0
@@ -155,10 +156,15 @@ class TaskWorkerResponse(BaseModel):
 
 
 class ScrapeRequest(BaseModel):
-    number: str | None = Field(default=None)
+    number: str | None = Field(default=None, description="番号; 与 url 二选一")
+    url: str | None = Field(
+        default=None,
+        description="详情页网址; 只解析该网址所在的来源, 不经过类型路由与番号检索, 与 number 二选一",
+    )
     media_id: int | None = Field(default=None, description="MediaFile ID. 通常仅用于内部提交任务，手动提交无需指定")
     content_type: ContentType | None = Field(
-        default=None, description="内容类型; 未给出时: 仅 media_id 按文件路径推断, 有 number 时按番号推断"
+        default=None,
+        description="内容类型; 未给出时: 仅 media_id 按文件路径推断, 有 number 时按番号推断, 有 url 时按页面中的番号推断",
     )
     use_cache: set[CacheKind] = Field(
         default_factory=lambda: {CacheKind.metadata, CacheKind.trans},
@@ -173,10 +179,30 @@ class ScrapeRequest(BaseModel):
             return stripped or None
         return value
 
+    @field_validator("url", mode="before")
+    @classmethod
+    def _normalize_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = urlsplit(value)
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise ValueError("网址必须是 http(s) 地址")
+        return value
+
     @model_validator(mode="after")
     def _check_source(self) -> Self:
-        if self.number is None and self.media_id is None:
-            raise ValueError("Either 'number' or 'media_id' must be provided")
+        if self.number is not None and self.url is not None:
+            raise ValueError("number 与 url 不能同时指定")
+        if self.number is None and self.url is None and self.media_id is None:
+            raise ValueError("Either 'number', 'url' or 'media_id' must be provided")
         return self
 
     async def resolve(self, repo: Repository) -> ScrapePayload:
@@ -192,6 +218,13 @@ class ScrapeRequest(BaseModel):
         if self.media_id is not None:
             if media is None:
                 return None
+            if self.url is not None:
+                return ScrapePayload(
+                    url=self.url,
+                    content_type=self.content_type,
+                    media_file_id=self.media_id,
+                    use_cache=self.use_cache,
+                )
             if self.number is not None:
                 return ScrapePayload(
                     number=self.number,
@@ -207,6 +240,8 @@ class ScrapeRequest(BaseModel):
                 media_file_id=self.media_id,
                 use_cache=self.use_cache,
             )
+        if self.url is not None:
+            return ScrapePayload(url=self.url, content_type=self.content_type, use_cache=self.use_cache)
         assert self.number is not None
         return ScrapePayload(
             number=self.number,

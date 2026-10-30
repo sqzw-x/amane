@@ -156,6 +156,12 @@ class WordPressWorksCrawler(Crawler):
         return url
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
+        if "/wp-json/" not in url:
+            # 指定网址刮削给的是作品页; 解析仍走 REST 接口.
+            slug = url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+            if not slug:
+                return None
+            url = self._api_url(slug)
         posts = self._posts(await self.client.get_json(url))
         post = posts[0] if posts else None
         if post is None or not post.slug:

@@ -6,11 +6,13 @@ from structlog.contextvars import bind_contextvars
 from ..aggregate import SCALAR_FIELDS, AggregatedMetadata, CrawlerLike, FieldLanguage, aggregate, compile_priority
 from ..crawlers.models import SearchQuery
 from ..crawlers.site_roles import builtin_descriptors
+from ..crawlers.url_routing import resolve_url_source
 from ..db.models import TaskType
 from ..enums import ActorGender, MetadataField
 from ..media import materialize_images
 from ..observability import current
 from ..observability.models import SiteOutcomeKind
+from ..parsing import infer_content_type
 from ..plugins.models import SourceDescriptor, SourceTrait
 from ._common import ensure_oshash, finalize_media_file
 from .models import ActorScrapePayload, CacheKind, OrganizePayload, ScrapePayload, ScrapeResult
@@ -59,30 +61,42 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         self._file_hash_sources = frozenset(d.id for d in catalog if SourceTrait.USES_FILE_HASH in d.traits)
 
     async def handle(self, payload: ScrapePayload) -> TaskResult[ScrapeResult]:
-        bind_contextvars(number=payload.number)
+        bind_contextvars(number=payload.number or None, url=payload.url)
 
         content_type = payload.content_type
         progress_total = len(SCALAR_FIELDS) + _PROGRESS_POST_STEPS
         rec = current()
 
-        # 启用 metadata 缓存时读取 raw 快照.
-        use_metadata_cache = CacheKind.metadata in payload.use_cache
-        db_data = await self._repo.get_metadata_by_number(payload.number) if use_metadata_cache else None
-        if db_data is not None and db_data.raw:
-            rec.write_raw_cache(db_data.raw)
+        # 启用 metadata 缓存时读取 raw 快照. 网址刮削要抓完才知道番号, 因此不复用该缓存.
+        db_data = None
+        if payload.url is None and CacheKind.metadata in payload.use_cache:
+            db_data = await self._repo.get_metadata_by_number(payload.number)
+            if db_data is not None and db_data.raw:
+                rec.write_raw_cache(db_data.raw)
 
-        # 校验 content_type 路由; 无资格站点则失败.
-        route = self._config.scraping.content_routes.get(content_type)
-        if not route:
-            rec.warning("no eligible crawlers for content type", content_type=content_type)
-            return TaskResult(success=False, error=f"内容类型 {content_type} 没有可用来源")
-        rec.info("scraping started", content_type=str(content_type), crawlers=route)
-        rec.update_summary(eligible_sites=[str(s) for s in route])
+        if payload.url is not None:
+            source = resolve_url_source(payload.url, self._config.scraping.site_config)
+            if source is None:
+                rec.warning("no source for url", url=payload.url)
+                return TaskResult(success=False, error=f"网址 {payload.url} 不属于任何支持按网址刮削的来源")
+            route: Sequence[str] = [source]
+            rec.info("scraping started by url", url=payload.url, source=source)
+            rec.update_summary(eligible_sites=[source])
+        else:
+            content_type = content_type or infer_content_type(payload.number)
+            # 校验 content_type 路由; 无资格站点则失败.
+            route = self._config.scraping.content_routes.get(content_type, [])
+            if not route:
+                rec.warning("no eligible crawlers for content type", content_type=content_type)
+                return TaskResult(success=False, error=f"内容类型 {content_type} 没有可用来源")
+            rec.info("scraping started", content_type=str(content_type), crawlers=route)
+            rec.update_summary(eligible_sites=[str(s) for s in route])
 
         crawlers = await self._factory.get_crawlers(route)
         if not crawlers:
             current().warning("no crawlers available", requested=route)
-            return TaskResult(success=False, error=f"番号 {payload.number} 没有可用来源")
+            target = payload.url or payload.number
+            return TaskResult(success=False, error=f"{target} 没有可用来源")
 
         file = None
         if payload.media_file_id:
@@ -97,7 +111,8 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             payload.number,
             file.path if file else None,
             file_hash,
-            payload.content_type,
+            content_type,
+            url=payload.url,
         )
 
         field_priority = compile_priority(
@@ -112,6 +127,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             await self.report_progress(current, progress_total, message)
 
         # 出站: 执行获取图 (execute_graph), 声明依赖的来源在第二段; 按 use_cache 复用 raw 快照.
+        # 网址刮削只有单一来源, 且同一页面按语言重复获取没有意义, 因此不展开 (site, lang) 节点.
         result = await aggregate(
             q,
             crawlers,
@@ -119,7 +135,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             field_language,
             db_data.raw if db_data else None,
             on_progress=_on_fetch_progress,
-            multi_lang_sites=self._multi_language_sources,
+            multi_lang_sites=frozenset() if payload.url is not None else self._multi_language_sources,
             deferred_sites=frozenset(name for name in crawlers if name in self._partial_sources),
         )
 
@@ -129,16 +145,33 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         # 标量可以全空: 只要有来源返回结果, 海报 / 评分 / external_id 仍可入库.
         if not result.raw:
             current().warning("no data found from any source", failed_sites=result.failed_sites)
+            target = payload.url or payload.number
             # 失败也要能回答"为什么刮不到": 站点明细随失败结果落库.
             return TaskResult(
                 success=False,
-                error=f"未找到 {payload.number} 的元数据",
+                error=f"未找到 {target} 的元数据",
                 result=ScrapeResult(
                     field_sources=result.field_sources,
                     failed_sites=list(result.failed_sites),
                     outcomes=current().site_outcomes(),
                 ),
             )
+
+        # 网址刮削的番号来自页面; 页面不写番号时无法确定条目, 不入库.
+        number = payload.number or result.metadata.number
+        if not number:
+            current().warning("number not found in page", url=payload.url)
+            return TaskResult(
+                success=False,
+                error=f"未能从网址 {payload.url} 识别番号",
+                result=ScrapeResult(
+                    field_sources=result.field_sources,
+                    failed_sites=list(result.failed_sites),
+                    outcomes=current().site_outcomes(),
+                ),
+            )
+        if content_type is None:
+            content_type = infer_content_type(number)
 
         # 获取结束: 进度分子对齐标量字段数, 其后为物化与持久化.
         await self.report_progress(len(SCALAR_FIELDS), progress_total, "fetch")
@@ -167,15 +200,15 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
                 thumb_out = materialized.thumb_urls
                 trailer_out = materialized.trailer_urls
             except Exception:
-                current().warning("image materialization failed, keeping raw urls", number=payload.number)
+                current().warning("image materialization failed, keeping raw urls", number=number)
 
         await self.report_progress(len(SCALAR_FIELDS) + 1, progress_total, "materialize")
 
         # 写库并关联 MediaFile. Metadata.actors 仍是展示名; 性别写入 Actor 空位.
         cast = result.metadata.actors
         meta = await self._repo.upsert_metadata(
-            number=payload.number,
-            content_type=payload.content_type,
+            number=number,
+            content_type=content_type,
             actor_genders={item.name: item.gender for item in cast if item.gender != ActorGender.UNKNOWN},
             title=result.metadata.title,
             actors=[item.name for item in cast],

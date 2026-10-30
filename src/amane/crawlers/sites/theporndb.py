@@ -68,6 +68,7 @@ class ThePornDBCrawler(Crawler):
             name=SiteName.THEPORNDB,
             base_url="https://theporndb.net/graphql",
             traits=frozenset({SourceTrait.USES_FILE_HASH}),
+            url_scrape=False,
         )
 
     @override

@@ -164,6 +164,7 @@ class TestFeedsCrud:
         assert task.priority == 0
         assert task.payload == {
             "number": "ABC-001",
+            "url": None,
             "content_type": "western",
             "media_file_id": None,
             "use_cache": [],
