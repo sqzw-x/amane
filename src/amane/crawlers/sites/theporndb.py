@@ -1,3 +1,4 @@
+import re
 from typing import TYPE_CHECKING, Any, override
 from urllib.parse import urlsplit
 
@@ -177,7 +178,11 @@ class ThePornDBCrawler(Crawler):
         scene = _gql_field(data, "findScene")
         if not isinstance(scene, dict):
             return None
-        return self._scene_to_metadata(scene)
+        metadata = self._scene_to_metadata(scene)
+        # 欧美条目的 code 是 ``studio:title-slug``, 与文件名里的 ``Studio.YY.MM.DD`` 不同构;
+        # 指定网址时条目按后者建立, 否则会生成一个与文件番号对不上的新条目.
+        western_number = _western_number(scene)
+        return metadata.model_copy(update={"number": western_number}) if western_number else metadata
 
     def _gql_url(self, content_type: ContentType | None) -> str:
         if content_type:
@@ -308,6 +313,19 @@ def _scene_id_from_url(url: str) -> str | None:
     if len(segments) >= 2 and segments[0] == "scenes":
         return segments[1]
     return None
+
+
+def _western_number(scene: dict[str, Any]) -> str | None:
+    """欧美条目 → ``Studio.YY.MM.DD``; code 不带 ``:`` 时不是欧美条目, 返回 ``None``."""
+    code = scene.get("code")
+    date = scene.get("date")
+    if not isinstance(code, str) or ":" not in code or not isinstance(date, str):
+        return None
+    studio, _, _ = code.partition(":")
+    match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", date)
+    if not studio or match is None:
+        return None
+    return f"{studio}.{match.group(1)[2:]}.{match.group(2)}.{match.group(3)}".capitalize()
 
 
 def _gql_field(payload: object, key: str) -> object:

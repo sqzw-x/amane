@@ -37,6 +37,13 @@ _SSIS_497 = _scene("SSIS-497", title="Sample Title", date="2024-01-01", studio="
 _BLACKED = _scene("blacked:first-anal", title="First Anal", date="2026-03-29", studio="Blacked")
 _BLACKED_SAME_DAY = _scene("blacked:another", title="Another", date="2026-03-29", studio="Blacked")
 _BLACKED_OTHER_STUDIO = _scene("blackedraw:first-anal", title="First Anal", date="2026-03-29", studio="BlackedRaw")
+_TUSHY = _scene(
+    "tushy:i-only-gape-for-you",
+    title="I Only Gape for You",
+    date="2018-02-05",
+    studio="Tushy",
+    scene_id="69e638f5-c687-4ae3-ae68-a46f691f38a2",
+)
 
 PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] = [
     # kin8 番号带站前缀, TPDB 的 code 是站内 4 位补零 id
@@ -128,6 +135,19 @@ async def test_fetch_by_url_rejects_non_scene_path() -> None:
 
     assert metadata is None
     web.post_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_url_uses_western_date_number() -> None:
+    """欧美条目的 code 是 studio:slug; 条目按文件侧的 Studio.YY.MM.DD 建立."""
+    web = AsyncMock()
+    web.post_json.return_value = {"data": {"findScene": _TUSHY}}
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="", url="https://theporndb.net/scenes/tushy-i-only-gape-for-you"))
+
+    assert metadata is not None
+    assert metadata.number == "Tushy.18.02.05"
 
 
 @pytest.mark.asyncio
