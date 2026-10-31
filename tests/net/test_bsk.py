@@ -133,11 +133,20 @@ class _FakeBsk:
                 "tab_id": int(tab_id),
                 "context_id": context_id,
                 "kind": "baseline",
-                "observation": {"text": text, "ref_count": 0},
+                "observation": {"text": text, "ref_count": 0, "truncated": bool(config.get("sync_truncated"))},
             }
         if command == "wait-for-element":
             return {"satisfied": config.get("satisfied", True)}
         if command == "get-html":
+            once = config.pop("get_html_error_once", None)
+            if isinstance(once, dict):
+                (self.root / "scenario.json").write_text(json.dumps(config), encoding="utf-8")
+                raise BskError(
+                    str(once.get("message", "get-html failed")),
+                    code=once.get("code") if isinstance(once.get("code"), str) else None,
+                    hint=once.get("hint") if isinstance(once.get("hint"), str) else None,
+                    exit_code=1,
+                )
             self._maybe_fail(config, "get_html_error")
             pages = config.get("pages")
             page_list = [page for page in pages if isinstance(page, str)] if isinstance(pages, list) else []
@@ -169,6 +178,11 @@ def _calls(root: Path) -> list[list[str]]:
 
 def _commands(root: Path) -> list[str]:
     return [args[0] for args in _calls(root)]
+
+
+def _creates(root: Path) -> int:
+    """``tab`` 子命令里只数创建; 关页同样走 ``tab``."""
+    return sum(1 for args in _calls(root) if args[:2] == ["tab", "create"])
 
 
 def _navigate_spans(root: Path) -> list[tuple[float, float]]:
@@ -213,16 +227,70 @@ async def test_each_request_navigates_a_fresh_tab(bsk_env: Path) -> None:
     finally:
         await backend.close()
     assert _commands(bsk_env).count("session") == 2
-    assert _commands(bsk_env).count("tab") == 2
+    assert _creates(bsk_env) == 2
     navigations = [args for args in _calls(bsk_env) if args[0] == "navigate"]
     tabs = {args[args.index("--tab-id") + 1] for args in navigations}
     assert len(tabs) == 2
 
 
 @pytest.mark.asyncio
-async def test_session_rotates_after_tab_budget(bsk_env: Path) -> None:
-    """关标签页也要上下文, 清理靠会话轮换: 标签页到上限时停会话再开新的."""
+async def test_tab_is_closed_after_fetch(bsk_env: Path) -> None:
+    """取完正文就关掉标签页; 关页成功时标签页计数回落, 上限不会先被撑爆."""
     _scenario(bsk_env, pages=[CLEAN])
+    backend = _backend(bsk_env, max_tabs=1)
+    try:
+        assert await backend.get_page("https://a.example/1", scope="a") == (CLEAN, None)
+        assert await backend.get_page("https://a.example/2", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    closes = [args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]
+    assert len(closes) == 2
+    assert all("--context" in args for args in closes)
+    assert _commands(bsk_env).count("session") == 2  # 没有轮换
+
+
+@pytest.mark.asyncio
+async def test_user_aborted_fails_without_retry(bsk_env: Path) -> None:
+    """用户在浏览器里点了停止: 不再自动换会话重试, 也不关他正在操作的窗口."""
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        navigate_error={"code": "user_aborted", "message": "The user stopped this task"},
+    )
+    backend = _backend(bsk_env)
+    try:
+        html, failure = await backend.get_page("https://a.example/", scope="a")
+    finally:
+        await backend.close()
+    assert html is None and failure is not None
+    assert "停止" in failure.message
+    assert _commands(bsk_env).count("session") == 2
+    assert _commands(bsk_env).count("tab") == 1
+
+
+@pytest.mark.asyncio
+async def test_truncated_sync_text_falls_back_to_snapshot_ref(bsk_env: Path) -> None:
+    """同步正文被截断时复选框可能落在截断之外, 不能据此判定页面没有该节点."""
+    _scenario(
+        bsk_env,
+        pages=[CHALLENGE, CLEAN],
+        snapshot_text='@e7 checkbox "请验证您是真人"',
+        sync_text="",
+        sync_truncated=True,
+    )
+    backend = _backend(bsk_env, poll_interval=0.01)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    clicks = [args for args in _calls(bsk_env) if args[0] == "click"]
+    assert len(clicks) == 1 and clicks[0][1] == "@e7"
+
+
+@pytest.mark.asyncio
+async def test_session_rotates_when_tabs_cannot_be_closed(bsk_env: Path) -> None:
+    """关页也要上下文: 拿不到时标签页会累积, 到上限就换会话, 这是兜底清理."""
+    _scenario(bsk_env, pages=[CLEAN], cooperate_error={"code": "timeout", "message": "sync unavailable"})
     backend = _backend(bsk_env, max_tabs=2)
     try:
         for index in range(3):
@@ -230,7 +298,7 @@ async def test_session_rotates_after_tab_budget(bsk_env: Path) -> None:
     finally:
         await backend.close()
     commands = _commands(bsk_env)
-    assert commands.count("tab") == 3
+    assert _creates(bsk_env) == 3
     stops = [args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]
     assert len(stops) == 2  # 轮换一次 + close 收尾一次
     assert commands.count("session") == 4
@@ -837,6 +905,8 @@ async def test_permission_denied_reports_human_coordination(bsk_env: Path) -> No
         await backend.close()
     assert html is None and failure is not None
     assert "人工协作" in failure.message
+    # 只是这个动作被拒, 会话本身完好: 不能把它当成会话死亡去关窗口
+    assert _commands(bsk_env).count("session") == 2
 
 
 @pytest.mark.asyncio
@@ -858,8 +928,9 @@ async def test_cookie_bootstrap_failure_does_not_block_page(bsk_env: Path) -> No
         await backend.close()
     commands = _commands(bsk_env)
     assert "evaluate" not in commands
-    assert commands.count("cooperate") == 1
-    assert len([args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]) == 2
+    # 第一次两张标签页 (cookie 引导 + 取页), 冷却期内第二次只开一张
+    assert _creates(bsk_env) == 3
+    assert commands.count("session") == 2
 
 
 @pytest.mark.asyncio
@@ -886,3 +957,18 @@ async def test_click_uses_snapshot_ref_when_sync_is_incremental(bsk_env: Path) -
 )
 def test_parse_protocol(raw: str | None, expected: tuple[int, int] | None) -> None:
     assert _parse_protocol(raw) == expected
+
+
+@pytest.mark.asyncio
+async def test_transient_cdp_read_error_keeps_polling(bsk_env: Path) -> None:
+    """导航中间态读正文会撞上失效节点; 只读失败要重试到截止时间, 不能直接判死."""
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        get_html_error_once={"code": "cdp_failed", "message": "Could not find node with given id"},
+    )
+    backend = _backend(bsk_env, poll_interval=0.01)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
