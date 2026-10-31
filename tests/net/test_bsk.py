@@ -91,6 +91,9 @@ class _FakeBsk:
                 return {"session_id": session_id if isinstance(session_id, str) else "sess-1"}
             return {"stopped": [args[2]]}
         if command == "tab":
+            if args[1] == "close":
+                self._maybe_fail(config, "tab_close_error")
+                return {"tab_id": int(args[-1])}
             self._maybe_fail(config, "tab_error")
             return {"tab_id": 100 + self._count("tab")}
         if command == "navigate":
@@ -972,3 +975,17 @@ async def test_transient_cdp_read_error_keeps_polling(bsk_env: Path) -> None:
         assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
     finally:
         await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_cookies_are_cached_across_sessions(bsk_env: Path) -> None:
+    """cookie 罐是整个浏览器共享的: 换会话不该把已经写好的 cookie 再写一遍."""
+    _scenario(bsk_env, pages=[CLEAN], tab_close_error={"code": "cdp_failed", "message": "close failed"})
+    backend = _backend(bsk_env, max_tabs=1)
+    try:
+        assert await backend.get_page("https://a.example/1", scope="a", cookies={"k": "v"}) == (CLEAN, None)
+        assert await backend.get_page("https://a.example/2", scope="a", cookies={"k": "v"}) == (CLEAN, None)
+    finally:
+        await backend.close()
+    assert _commands(bsk_env).count("evaluate") == 1
+    assert _commands(bsk_env).count("session") >= 4  # 关不掉标签页触发了轮换

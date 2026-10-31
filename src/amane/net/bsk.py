@@ -346,7 +346,6 @@ class _Session:
         self.lock = asyncio.Lock()
         self.session_id: str | None = None
         self.tabs_open = 0
-        self.cookies: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
         self.active = 0
         self.generation = 0
         self.idle_task: asyncio.Task[None] | None = None
@@ -378,7 +377,8 @@ class BskBackend:
         self._daemon_starter = daemon_starter or self._start_foreground_daemon
         self._daemon: asyncio.subprocess.Process | None = None
         self._sessions = [_Session() for _ in range(max(1, max_sessions))]
-        # 该 (域名, 来源, cookie) 写不进去后冷却到哪个时刻; cookie 罐整个浏览器共享, 命中过就跨会话有效.
+        # cookie 罐整个浏览器共享, 因此写入记录与冷却都放在 backend 上, 换会话不重做.
+        self._cookie_applied: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
         self._cookie_retry_at: dict[tuple[str, str, tuple[tuple[str, str], ...]], float] = {}
         self._closed = False
 
@@ -530,7 +530,7 @@ class BskBackend:
         站点接下来会以被拦或要求验证的形式表现出来, 由调用方按结果处理.
         """
         key = (urlsplit(url).netloc, scope, tuple(sorted(cookies.items())))
-        if key in session.cookies or time.monotonic() < self._cookie_retry_at.get(key, 0.0):
+        if key in self._cookie_applied or time.monotonic() < self._cookie_retry_at.get(key, 0.0):
             return session_id
         session_id, tab_id = await self._open_tab(session, session_id)
         deadline = time.monotonic() + self._default_timeout / 1000
@@ -562,7 +562,7 @@ class BskBackend:
             return self._skip_cookies(key, scope, str(exc), session_id)
         except TimeoutError as exc:
             return self._skip_cookies(key, scope, str(exc), session_id)
-        session.cookies.add(key)
+        self._cookie_applied.add(key)
         logger.debug("bsk cookies applied in page", scope=scope, names=sorted(cookies))
         return session_id
 
@@ -848,7 +848,6 @@ class BskBackend:
     async def _stop(self, session: _Session, *, timeout_s: float = _STOP_TIMEOUT_S) -> None:
         session_id, session.session_id = session.session_id, None
         session.tabs_open = 0
-        session.cookies.clear()
         if session_id is None:
             return
         try:
