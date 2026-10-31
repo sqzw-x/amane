@@ -42,6 +42,23 @@ function hasAutoHit(phase: FilePhaseSummary | null | undefined): boolean {
   );
 }
 
+/** 切到手动时的初始勾选: 自动模式下已经命中的类别与档位, 有码不预选. */
+function autoHitSelection(phase: FilePhaseSummary | null | undefined): {
+  kinds: WatermarkKind[];
+  definition: string | null;
+} {
+  if (phase == null) return { kinds: [], definition: null };
+  const kinds: WatermarkKind[] = [];
+  if (phase.has_subtitle === true) kinds.push("subtitle");
+  if (phase.uncensored === true) kinds.push("uncensored");
+  if (phase.mosaics?.includes("cracked")) kinds.push("cracked");
+  if (phase.mosaics?.includes("leaked")) kinds.push("leaked");
+  const definition =
+    phase.definition != null && isDefinition(phase.definition) ? phase.definition : null;
+  if (definition !== null) kinds.push("definition");
+  return { kinds, definition };
+}
+
 function withDefinition(kinds: WatermarkKind[]): WatermarkKind[] {
   return kinds.includes("definition") ? kinds : [...kinds, "definition"];
 }
@@ -153,12 +170,9 @@ export function WatermarkPicker({
                 save(true, kinds, definition);
                 return;
               }
-              // 手动的分辨率必须有档位, 缺档位的条目不带这一项.
-              const manualKinds =
-                kinds.includes("definition") && definition === null
-                  ? withoutDefinition(kinds)
-                  : kinds;
-              save(false, manualKinds, manualKinds.includes("definition") ? definition : null);
+              // 从自动切到手动: 以当前命中的类别为起点, 用户再增删.
+              const hits = autoHitSelection(phase);
+              save(false, hits.kinds, hits.definition);
             }}
             data={[
               { value: "auto", label: t("detail.watermark.auto") },
