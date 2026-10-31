@@ -89,7 +89,7 @@ OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-ma
 
 ## 图片
 
-外站图经由 `/api/resources/proxy` (`proxyImageUrl`); 评论正文的图片例外: 直接内联, 懒加载且不发送 Referer, 失败降级为链接 — 代理会写入 `Resource`, 评论 URL 不在清理存活集合内. `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是源图 (海报 `thumb_urls[0]`, 演员头像 `image_urls[0]`) 对应的 Resource 本地文件; 两者共用 `ImageCropDialog`, 只提交像素坐标, 不上传 blob. 影片编辑的图片字段 (海报 / 封面) 带 `x-image-upload`, 渲染为图片卡片而不是逗号分隔的文本; 本地文件先经 `POST /api/resources/upload` 换成内部资源 URL 再进列表, 与粘贴的外链同处一列, 保存时才随字段提交 — 上传本身不写字段, 放弃编辑留下的资源由 CLEANUP 回收.
+外站图经由 `/api/resources/proxy` (`proxyImageUrl`); 评论正文的图片例外: 直接内联, 懒加载且不发送 Referer, 失败降级为链接 — 代理会写入 `Resource`, 评论 URL 不在清理存活集合内. `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是源图 (海报 `thumb_urls[0]`, 演员头像 `image_urls[0]`) 对应的 Resource 本地文件; 两者共用 `ImageCropDialog`, 只提交像素坐标, 不上传 blob. 影片编辑的图片字段 (海报 / 封面) 带 `x-image-upload`, 渲染为单图卡片而不是逗号分隔的文本; 上传经 `POST /api/resources/upload` 换成内部资源 URL, 上传、粘贴与移除一律整体替换成单元素列表或空列表, 保存时才随字段提交 — 字段值里的其余候选由刮削维护, 不在此编辑 (多来源取值在「对比来源」里挑).
 
 相位水印是 CSS overlay (`FilePhaseOverlay`), 读列表聚合的 `file_phase`, 不修改 Resource 像素; 表格与文件列表仍用 `FilePhaseBadges`. `FanartLightbox` 必须 Portal 到 `document.body`. 外链图片的并发限流见 `components/media/proxy-image.tsx` 与 `lib/image-loader.ts` 的注释; 代理会下载上游原图并写入 `Resource`, 因此「对比来源」面板 (`components/metadata/merge-dialog.tsx`) 的图先渲染为与缩略图同形的占位块, 点击后才加载 — 展开面板不得触发回源.
 

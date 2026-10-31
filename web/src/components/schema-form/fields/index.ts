@@ -5,7 +5,7 @@ export { EnumArrayField } from "./enum-array-field";
 export { EnumField } from "./enum-field";
 export { EnumToggle, EnumToggleField } from "./enum-toggle-field";
 export { FieldRouter } from "./field-router";
-export { ImageArrayField } from "./image-array-field";
+export { ImageField } from "./image-field";
 export { LibraryField } from "./library-field";
 export { NumericField } from "./numeric-field";
 export { ObjectArrayField } from "./object-array-field";

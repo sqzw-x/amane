@@ -49,8 +49,8 @@ export interface AmaneArrayExtensions extends AmaneBaseExtensions {
   /** 固定高度滚动, 不自由换行铺开. */
   "x-long"?: boolean;
   /**
-   * 图片 URL 列表: 渲染为图片卡片 (上传本地文件 / 粘贴地址 / 拖拽排序 / 点击预览),
-   * 首项是该字段的主图. 只对 `items.type === "string"` 成立.
+   * 单图字段: 数组字段值只保留生效的那一张, 渲染为图片卡片并支持本地上传.
+   * 只对 `items.type === "string"` 成立; 其余候选由刮削维护, 不在此编辑.
    */
   "x-image-upload"?: boolean;
 }

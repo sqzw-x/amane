@@ -21,7 +21,7 @@ import { DictField } from "./dict-field";
 import { EnumArrayField } from "./enum-array-field";
 import { EnumField } from "./enum-field";
 import classes from "./field-router.module.css";
-import { ImageArrayField } from "./image-array-field";
+import { ImageField } from "./image-field";
 import { LibraryField } from "./library-field";
 import { NumericField } from "./numeric-field";
 import { ObjectArrayField } from "./object-array-field";
@@ -157,8 +157,8 @@ export function FieldRouter({
     // i18nPath 加 `.$,` 表示 array item 层级, 与 DictField 行为一致.
     const itemBasic = { ...basic, i18nPath: `${effectiveI18nPath}.$` };
     if (isImageUpload(schema) && isText(itemSchema)) {
-      devLog.info(TAG, `→ ImageArrayField: ${name}`);
-      return <ImageArrayField schema={schema} itemSchema={itemSchema} {...itemBasic} />;
+      devLog.info(TAG, `→ ImageField: ${name}`);
+      return <ImageField schema={schema} itemSchema={itemSchema} {...itemBasic} />;
     }
     if (isEnum(itemSchema)) {
       devLog.info(TAG, `→ EnumArrayField: ${name}`);

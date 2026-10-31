@@ -145,13 +145,13 @@
     "selected_other": "{{count}} selected"
   },
   "imageField": {
-    "empty": "No images",
-    "primary": "Primary",
-    "remove": "Remove this image",
-    "reorder": "Drag to reorder; the first is primary",
+    "empty": "No image",
+    "preview": "Open larger view",
+    "remove": "Remove image",
+    "upload": "Upload image",
+    "replace": "Replace image",
     "urlPlaceholder": "Paste an image URL…",
-    "addUrl": "Add image URL",
-    "upload": "Upload image"
+    "addUrl": "Apply image URL"
   },
   "about": {
     "version": "v{{version}}",
