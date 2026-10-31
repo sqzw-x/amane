@@ -1,4 +1,4 @@
-"""bsk 通道: CLI 输出解析, 会话复用, cookie 引导, 并发与失败映射."""
+"""bsk 通道: CLI 输出解析, 标签页轮换, cookie 引导, 并发与失败映射."""
 
 from __future__ import annotations
 
@@ -11,7 +11,15 @@ from pathlib import Path
 
 import pytest
 
-from amane.net.bsk import BskBackend, BskError, _run, probe_bsk, resolve_bsk_path, strip_injected_html
+from amane.net.bsk import (
+    BskBackend,
+    BskError,
+    _parse_protocol,
+    _run,
+    probe_bsk,
+    resolve_bsk_path,
+    strip_injected_html,
+)
 from amane.net.errors import FailureKind, FailureReason
 
 CHALLENGE = "<html><script>window._cf_chl_opt={};</script></html>"
@@ -65,13 +73,13 @@ class _FakeBsk:
             if isinstance(status, dict):
                 return status
             return {
-                "daemon_version": "0.3.3",
-                "protocol_version": "1.3",
+                "daemon_version": "0.4.0",
+                "protocol_version": "1.7",
                 "browsers": [
                     {
                         "instance_id": "b1",
                         "browser_name": "edge",
-                        "extension_version": "0.3.3",
+                        "extension_version": "0.4.0",
                         "unresponsive": False,
                     }
                 ],
@@ -86,6 +94,15 @@ class _FakeBsk:
             self._maybe_fail(config, "tab_error")
             return {"tab_id": 100 + self._count("tab")}
         if command == "navigate":
+            once = config.pop("navigate_error_once", None)
+            if isinstance(once, dict):
+                (self.root / "scenario.json").write_text(json.dumps(config), encoding="utf-8")
+                raise BskError(
+                    str(once.get("message", "navigate failed")),
+                    code=once.get("code") if isinstance(once.get("code"), str) else None,
+                    hint=once.get("hint") if isinstance(once.get("hint"), str) else None,
+                    exit_code=1,
+                )
             self._mark("start", command)
             sleep_ms = config.get("sleep_ms")
             await asyncio.sleep(float(sleep_ms) / 1000 if isinstance(sleep_ms, int | float) else 0.0)
@@ -105,6 +122,19 @@ class _FakeBsk:
         if command == "click":
             self._maybe_fail(config, "click_error")
             return {"clicked": args[1]}
+        if command == "cooperate":
+            self._maybe_fail(config, "cooperate_error")
+            context_id = f"ctx-{self._count('cooperate')}"
+            tab_id = args[args.index("--tab-id") + 1]
+            if config.get("sync_delta"):
+                return {"tab_id": int(tab_id), "context_id": context_id, "kind": "delta", "changes": []}
+            text = config.get("sync_text", config.get("snapshot_text", ""))
+            return {
+                "tab_id": int(tab_id),
+                "context_id": context_id,
+                "kind": "baseline",
+                "observation": {"text": text, "ref_count": 0},
+            }
         if command == "wait-for-element":
             return {"satisfied": config.get("satisfied", True)}
         if command == "get-html":
@@ -159,6 +189,7 @@ def _backend(
     max_sessions: int = 2,
     poll_interval: float = 1.0,
     click_cooldown: float = 2.0,
+    max_tabs: int = 12,
 ) -> BskBackend:
     return BskBackend(
         bsk_path=str(root / "bsk"),
@@ -167,11 +198,13 @@ def _backend(
         max_sessions=max_sessions,
         poll_interval=poll_interval,
         click_cooldown=click_cooldown,
+        max_tabs=max_tabs,
     )
 
 
 @pytest.mark.asyncio
-async def test_get_page_returns_html_and_reuses_session_and_tab(bsk_env: Path) -> None:
+async def test_each_request_navigates_a_fresh_tab(bsk_env: Path) -> None:
+    """复用标签页的第二次导航要上下文; 每请求一张空白页才能让导航保持免费."""
     _scenario(bsk_env, pages=[CLEAN])
     backend = _backend(bsk_env)
     try:
@@ -180,19 +213,27 @@ async def test_get_page_returns_html_and_reuses_session_and_tab(bsk_env: Path) -
     finally:
         await backend.close()
     assert _commands(bsk_env).count("session") == 2
-    assert _commands(bsk_env).count("tab") == 1
+    assert _commands(bsk_env).count("tab") == 2
+    navigations = [args for args in _calls(bsk_env) if args[0] == "navigate"]
+    tabs = {args[args.index("--tab-id") + 1] for args in navigations}
+    assert len(tabs) == 2
 
 
 @pytest.mark.asyncio
-async def test_separate_scope_gets_its_own_tab(bsk_env: Path) -> None:
+async def test_session_rotates_after_tab_budget(bsk_env: Path) -> None:
+    """关标签页也要上下文, 清理靠会话轮换: 标签页到上限时停会话再开新的."""
     _scenario(bsk_env, pages=[CLEAN])
-    backend = _backend(bsk_env)
+    backend = _backend(bsk_env, max_tabs=2)
     try:
-        await backend.get_page("https://a.example/1", scope="a")
-        await backend.get_page("https://b.example/1", scope="b")
+        for index in range(3):
+            assert await backend.get_page(f"https://a.example/{index}", scope="a") == (CLEAN, None)
     finally:
         await backend.close()
-    assert _commands(bsk_env).count("tab") == 2
+    commands = _commands(bsk_env)
+    assert commands.count("tab") == 3
+    stops = [args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]
+    assert len(stops) == 2  # 轮换一次 + close 收尾一次
+    assert commands.count("session") == 4
 
 
 @pytest.mark.asyncio
@@ -207,11 +248,27 @@ async def test_challenge_polled_until_cleared(bsk_env: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_challenge_tab_is_brought_to_front_once(bsk_env: Path) -> None:
+    """窗口里可能堆了多张标签页; 出现挑战时切到那一张, 用户才找得到要验证的页面."""
+    _scenario(bsk_env, pages=[CHALLENGE, CHALLENGE, CLEAN])
+    backend = _backend(bsk_env, poll_interval=0.01)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    selects = [args for args in _calls(bsk_env) if args[:2] == ["tab", "select"]]
+    assert len(selects) == 1
+    navigation = next(args for args in _calls(bsk_env) if args[0] == "navigate")
+    assert selects[0][2] == navigation[navigation.index("--tab-id") + 1]
+
+
+@pytest.mark.asyncio
 async def test_interactive_challenge_is_clicked_then_clears(bsk_env: Path) -> None:
     _scenario(
         bsk_env,
         pages=[CHALLENGE, CHALLENGE, CLEAN],
         snapshot_text='@e1 checkbox "请验证您是真人"',
+        sync_text='@e1 checkbox "请验证您是真人"',
     )
     backend = _backend(bsk_env, poll_interval=0.01)
     try:
@@ -221,6 +278,7 @@ async def test_interactive_challenge_is_clicked_then_clears(bsk_env: Path) -> No
     clicks = [args for args in _calls(bsk_env) if args[0] == "click"]
     assert len(clicks) == 1
     assert clicks[0][1] == "@e1"
+    assert clicks[0][clicks[0].index("--context") + 1].startswith("ctx-")
 
 
 @pytest.mark.asyncio
@@ -230,6 +288,7 @@ async def test_late_checkbox_is_still_clicked(bsk_env: Path) -> None:
         bsk_env,
         pages=[CHALLENGE] * 6 + [CLEAN],
         snapshot_texts=["", "", "", '@e1 checkbox "请验证您是真人"', '@e1 checkbox "请验证您是真人"'],
+        sync_text='@e1 checkbox "请验证您是真人"',
     )
     backend = _backend(bsk_env, timeout=3000, poll_interval=0.01, click_cooldown=0.01)
     try:
@@ -242,7 +301,12 @@ async def test_late_checkbox_is_still_clicked(bsk_env: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_same_ref_is_clicked_once(bsk_env: Path) -> None:
-    _scenario(bsk_env, pages=[CHALLENGE] * 8, snapshot_text='@e1 checkbox "请验证您是真人"')
+    _scenario(
+        bsk_env,
+        pages=[CHALLENGE] * 8,
+        snapshot_text='@e1 checkbox "请验证您是真人"',
+        sync_text='@e1 checkbox "请验证您是真人"',
+    )
     backend = _backend(bsk_env, timeout=200, poll_interval=0.01, click_cooldown=0.01)
     try:
         html, failure = await backend.get_page("https://a.example/", scope="a")
@@ -263,6 +327,7 @@ async def test_challenge_without_verification_node_never_clicks(bsk_env: Path) -
     assert html is None
     assert failure is not None and failure.reason is FailureReason.CLOUDFLARE_CHALLENGE
     assert not [args for args in _calls(bsk_env) if args[0] == "click"]
+    assert "cooperate" not in _commands(bsk_env)  # 没有复选框就不该付同步的代价
 
 
 @pytest.mark.asyncio
@@ -271,6 +336,7 @@ async def test_click_failure_keeps_polling(bsk_env: Path) -> None:
         bsk_env,
         pages=[CHALLENGE, CLEAN],
         snapshot_text='@e1 checkbox "请验证您是真人"',
+        sync_text='@e1 checkbox "请验证您是真人"',
         click_error={"code": "not_found", "message": "ref is stale", "exit_code": 1},
     )
     backend = _backend(bsk_env, poll_interval=0.01)
@@ -305,6 +371,7 @@ async def test_cookies_applied_once_per_scope(bsk_env: Path) -> None:
     evaluate = [args for args in _calls(bsk_env) if args[0] == "evaluate"]
     assert len(evaluate) == 1
     assert "age_verified=1; path=/" in evaluate[0][1]
+    assert evaluate[0][evaluate[0].index("--context") + 1].startswith("ctx-")
 
 
 @pytest.mark.asyncio
@@ -421,7 +488,25 @@ async def test_lost_session_restarts_on_next_call(bsk_env: Path) -> None:
     finally:
         await backend.close()
     stops = [args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]
-    assert [args[2] for args in stops] == ["sess-1", "sess-1"]  # 丢失的会话先用 stop 收尾, 关闭时再停一次
+    assert len(stops) == 3  # 两次尝试各收尾一次, 关闭时再停一次
+    assert _commands(bsk_env).count("session") == 6
+
+
+@pytest.mark.asyncio
+async def test_control_lost_retries_on_a_fresh_session(bsk_env: Path) -> None:
+    """目标页可能把扩展连接拖坏, 同一会话的后续动作全会失败; 丢掉会话重试, 请求仍能成功."""
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        navigate_error_once={"code": "permission_denied", "message": "Could not establish connection"},
+    )
+    backend = _backend(bsk_env)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    stops = [args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]
+    assert len(stops) == 2  # 换会话一次, 关闭时再停一次
     assert _commands(bsk_env).count("session") == 4
 
 
@@ -485,13 +570,13 @@ async def test_backend_reports_unparsable_output(bsk_env: Path) -> None:
 async def test_probe_reports_connected_browser(bsk_env: Path) -> None:
     status = await probe_bsk(str(bsk_env / "bsk"), runner=_FakeBsk(bsk_env))
     assert status.available and status.connected
-    assert status.daemon_version == "0.3.3"
+    assert status.daemon_version == "0.4.0"
     assert status.browsers[0].name == "edge"
 
 
 @pytest.mark.asyncio
 async def test_probe_without_browser_is_unavailable(bsk_env: Path) -> None:
-    _scenario(bsk_env, status={"daemon_version": "0.3.3", "protocol_version": "1.3", "browsers": []})
+    _scenario(bsk_env, status={"daemon_version": "0.4.0", "protocol_version": "1.7", "browsers": []})
     status = await probe_bsk(str(bsk_env / "bsk"), runner=_FakeBsk(bsk_env))
     assert not status.available
     assert "浏览器未连接" in status.detail
@@ -562,10 +647,15 @@ async def test_run_kills_process_after_timeout() -> None:
     assert time.monotonic() - started < 5
 
 
-def _status(browsers: list[dict[str, object]], skew: list[dict[str, object]] | None = None) -> dict[str, object]:
+def _status(
+    browsers: list[dict[str, object]],
+    skew: list[dict[str, object]] | None = None,
+    *,
+    protocol: str = "1.7",
+) -> dict[str, object]:
     return {
-        "daemon_version": "0.3.3",
-        "protocol_version": "1.3",
+        "daemon_version": "0.4.0",
+        "protocol_version": protocol,
         "browsers": browsers,
         "version_skew_browsers": skew or [],
     }
@@ -575,7 +665,7 @@ def _browser(version_skew: bool = False, unresponsive: bool = False) -> dict[str
     return {
         "instance_id": "b1",
         "browser_name": "edge",
-        "extension_version": "0.3.3",
+        "extension_version": "0.4.0",
         "unresponsive": unresponsive,
         "version_skew": version_skew,
     }
@@ -591,6 +681,7 @@ def _browser(version_skew: bool = False, unresponsive: bool = False) -> dict[str
         (_status([_browser(), _browser()]), False, "多个浏览器"),
         (_status([_browser(version_skew=True)]), False, "版本不匹配"),
         (_status([_browser()], [_browser()]), True, "ok"),
+        (_status([_browser()], protocol="1.3"), False, "0.4.0"),
     ],
 )
 async def test_probe_reports_whether_fetching_can_succeed(
@@ -603,8 +694,8 @@ async def test_probe_reports_whether_fetching_can_succeed(
 
 
 @pytest.mark.asyncio
-async def test_probe_explains_job_restricted_daemon(bsk_env: Path) -> None:
-    """宿主被限制在不允许 breakaway 的 Job 里时, 自动拉起必然失败, 提示要能直接照做."""
+async def test_probe_treats_job_restricted_daemon_as_recoverable(bsk_env: Path) -> None:
+    """宿主 Job 不允许 breakaway 时抓取会改起前台 daemon; 探测判死会让用户白折腾."""
     _scenario(
         bsk_env,
         status_error={
@@ -613,8 +704,8 @@ async def test_probe_explains_job_restricted_daemon(bsk_env: Path) -> None:
         },
     )
     result = await probe_bsk(str(bsk_env / "bsk"), runner=_FakeBsk(bsk_env))
-    assert result.available is False
-    assert "bsk daemon start --foreground" in result.detail
+    assert result.available is True
+    assert "前台模式" in result.detail
 
 
 @pytest.mark.asyncio
@@ -727,3 +818,71 @@ async def test_other_failures_do_not_start_daemon(bsk_env: Path) -> None:
         await backend.close()
     assert html is None and failure is not None
     assert started == []
+
+
+@pytest.mark.asyncio
+async def test_permission_denied_reports_human_coordination(bsk_env: Path) -> None:
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        navigate_error={
+            "code": "permission_denied",
+            "message": "This action requires the context returned by the latest cooperate sync",
+        },
+    )
+    backend = _backend(bsk_env)
+    try:
+        html, failure = await backend.get_page("https://a.example/", scope="a")
+    finally:
+        await backend.close()
+    assert html is None and failure is not None
+    assert "人工协作" in failure.message
+
+
+@pytest.mark.asyncio
+async def test_cookie_bootstrap_failure_does_not_block_page(bsk_env: Path) -> None:
+    """写 cookie 失败只降级: 页面照取, 站点会以被拦的形式暴露真实状态.
+
+    目标页的观察面失效会把整个会话拖坏, 所以要换会话; 同一组合不再重试, 免得每个请求都赔一个会话.
+    """
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        cooperate_error={"code": "permission_denied", "message": "the user is operating this tab"},
+    )
+    backend = _backend(bsk_env)
+    try:
+        assert await backend.get_page("https://a.example/1", scope="a", cookies={"k": "v"}) == (CLEAN, None)
+        assert await backend.get_page("https://a.example/2", scope="a", cookies={"k": "v"}) == (CLEAN, None)
+    finally:
+        await backend.close()
+    commands = _commands(bsk_env)
+    assert "evaluate" not in commands
+    assert commands.count("cooperate") == 1
+    assert len([args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]) == 2
+
+
+@pytest.mark.asyncio
+async def test_click_uses_snapshot_ref_when_sync_is_incremental(bsk_env: Path) -> None:
+    """增量同步不带正文; 引用表没变, 沿用快照里的 ref."""
+    _scenario(
+        bsk_env,
+        pages=[CHALLENGE, CLEAN],
+        snapshot_text='@e7 checkbox "请验证您是真人"',
+        sync_delta=True,
+    )
+    backend = _backend(bsk_env, poll_interval=0.01)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    clicks = [args for args in _calls(bsk_env) if args[0] == "click"]
+    assert len(clicks) == 1 and clicks[0][1] == "@e7"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("1.7", (1, 7)), ("1.3", (1, 3)), ("2.0.1", (2, 0)), ("1", None), ("1.x", None), ("", None), (None, None)],
+)
+def test_parse_protocol(raw: str | None, expected: tuple[int, int] | None) -> None:
+    assert _parse_protocol(raw) == expected
