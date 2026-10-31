@@ -1251,6 +1251,10 @@ export const BrowserBackendReportResponseSchema = {
 
 export const BrowserConfigSchema = {
     properties: {
+        backend: {
+            $ref: '#/components/schemas/BrowserBackendName',
+            default: 'off'
+        },
         bsk_path: {
             anyOf: [
                 {
@@ -1263,10 +1267,6 @@ export const BrowserConfigSchema = {
             title: 'Bsk Path',
             'x-path-type': 'file',
             'x-widget': 'PathPicker'
-        },
-        backend: {
-            $ref: '#/components/schemas/BrowserBackendName',
-            default: 'off'
         },
         timeout: {
             type: 'integer',

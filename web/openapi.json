@@ -7865,6 +7865,10 @@
       },
       "BrowserConfig": {
         "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/BrowserBackendName",
+            "default": "off"
+          },
           "bsk_path": {
             "anyOf": [
               {
@@ -7877,10 +7881,6 @@
             "title": "Bsk Path",
             "x-path-type": "file",
             "x-widget": "PathPicker"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/BrowserBackendName",
-            "default": "off"
           },
           "timeout": {
             "type": "integer",

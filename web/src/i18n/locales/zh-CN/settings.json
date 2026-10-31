@@ -482,8 +482,8 @@
       "browser": {
         "label": "浏览器渲染",
         "bsk_path": {
-          "label": "BrowserSkill 路径",
-          "description": "留空则从 PATH 查找; 桌面版需要填绝对路径"
+          "label": "bsk 路径",
+          "description": "BrowserSkill CLI; 留空则从 PATH 查找; 桌面版需要填绝对路径"
         },
         "backend": {
           "label": "浏览器后端",
