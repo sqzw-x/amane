@@ -105,4 +105,4 @@ Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 work
 
 ## `watermark` (Hot)
 
-只在 ORGANIZE 落盘封面时绘制, 不修改 Resource; 片库 CSS overlay 不读 `enabled`. 角标高度 = 图高 × `scale` (不按宽、不按 PNG 原图像素); `corners` 是 `x-frozen-keys` 五类到四角的映射, 同角按中字 / 无码 / 破解 / 流出 / 分辨率向内叠. PNG 覆盖仍是 `{data_dir}/watermarks/{stem}.png`.
+只在 ORGANIZE 落盘封面时绘制, 不修改 Resource; 片库 CSS overlay 不读 `enabled`, 但读条目级覆盖 (手动时只显示勾选类别). 角标高度 = 图高 × `scale` (不按宽、不按 PNG 原图像素); `corners` 是 `x-frozen-keys` 六类到四角的映射, 同角按中字 / 无码 / 有码 / 破解 / 流出 / 分辨率向内叠. 条目级覆盖存在 `Metadata.watermark_auto` / `watermark_kinds` / `watermark_definition` (经 `PUT /metadata/{id}/watermark`), 不进本配置: 手动完全替换自动规则, 空集 = 不打, 有码只在手动出现, 手动选了分辨率就必须带档位 (缺失 422), 自动模式不看档位. PNG 覆盖仍是 `{data_dir}/watermarks/{stem}.png`.
