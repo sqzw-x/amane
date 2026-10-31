@@ -443,6 +443,9 @@ async def test_cookies_applied_once_per_scope(bsk_env: Path) -> None:
     assert len(evaluate) == 1
     assert "age_verified=1; path=/" in evaluate[0][1]
     assert evaluate[0][evaluate[0].index("--context") + 1].startswith("ctx-")
+    # 两张取页标签页 + 一张 cookie 引导页, 全部关掉
+    assert _creates(bsk_env) == 3
+    assert len([args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]) == 3
 
 
 @pytest.mark.asyncio

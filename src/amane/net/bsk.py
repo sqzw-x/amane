@@ -533,35 +533,40 @@ class BskBackend:
         if key in self._cookie_applied or time.monotonic() < self._cookie_retry_at.get(key, 0.0):
             return session_id
         session_id, tab_id = await self._open_tab(session, session_id)
-        deadline = time.monotonic() + self._default_timeout / 1000
-        await self._navigate(session_id, tab_id, url, deadline)
-        script = "; ".join(
-            f"document.cookie={json.dumps(f'{name}={value}; path=/')}" for name, value in cookies.items()
-        )
         try:
-            context_id = await self._sync_context(session_id, tab_id)
-            if context_id is None:
-                return self._skip_cookies(key, scope, "观察面不可用", session_id)
-            await self._call(
-                (
-                    "evaluate",
-                    script,
-                    "--session",
-                    session_id,
-                    "--tab-id",
-                    str(tab_id),
-                    "--context",
-                    context_id,
-                ),
-                timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
+            deadline = time.monotonic() + self._default_timeout / 1000
+            await self._navigate(session_id, tab_id, url, deadline)
+            script = "; ".join(
+                f"document.cookie={json.dumps(f'{name}={value}; path=/')}" for name, value in cookies.items()
             )
-        except BskError as exc:
-            if _is_dead_session(exc):
-                await self._stop(session, timeout_s=_COMMAND_SLACK_S)
-                raise _DeadSession(exc) from exc
-            return self._skip_cookies(key, scope, str(exc), session_id)
-        except TimeoutError as exc:
-            return self._skip_cookies(key, scope, str(exc), session_id)
+            try:
+                context_id = await self._sync_context(session_id, tab_id)
+                if context_id is None:
+                    return self._skip_cookies(key, scope, "观察面不可用", session_id)
+                await self._call(
+                    (
+                        "evaluate",
+                        script,
+                        "--session",
+                        session_id,
+                        "--tab-id",
+                        str(tab_id),
+                        "--context",
+                        context_id,
+                    ),
+                    timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
+                )
+            except BskError as exc:
+                if _is_dead_session(exc):
+                    await self._stop(session, timeout_s=_COMMAND_SLACK_S)
+                    raise _DeadSession(exc) from exc
+                return self._skip_cookies(key, scope, str(exc), session_id)
+            except TimeoutError as exc:
+                return self._skip_cookies(key, scope, str(exc), session_id)
+        finally:
+            # 引导页也是这个会话里的标签页, 三条路 (成功/拿不到上下文/抛错) 都要收掉, 否则会顶到上限.
+            if session.session_id == session_id:
+                await self._close_tab(session, session_id, tab_id)
         self._cookie_applied.add(key)
         logger.debug("bsk cookies applied in page", scope=scope, names=sorted(cookies))
         return session_id
