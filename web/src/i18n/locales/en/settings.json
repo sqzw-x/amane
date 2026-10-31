@@ -482,8 +482,8 @@
       "browser": {
         "label": "Browser Rendering",
         "bsk_path": {
-          "label": "BrowserSkill Path",
-          "description": "Leave empty to look up PATH; the desktop app needs an absolute path"
+          "label": "bsk Path",
+          "description": "BrowserSkill CLI; leave empty to look up PATH; the desktop app needs an absolute path"
         },
         "backend": {
           "label": "Browser backend",

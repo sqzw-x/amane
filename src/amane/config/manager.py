@@ -553,12 +553,12 @@ def _require_browser_engine(
 
 
 class BrowserConfig(BaseModel):
+    backend: BrowserBackendName = BrowserBackendName.OFF
     bsk_path: str | None = Field(
         default=None,
         json_schema_extra={"x-widget": "PathPicker", "x-path-type": "file"},
     )
-    """``bsk`` CLI 的路径; 桌面壳的 PATH 不含登录 shell 条目, 留空时从 PATH / ``AMANE_BSK_PATH`` 查找."""
-    backend: BrowserBackendName = BrowserBackendName.OFF
+    """``bsk`` CLI 的路径; 桌面壳的 PATH 不含登录 shell 条目, 留空时从 PATH 查找."""
     timeout: int = Field(default=30000, ge=5000, le=120000)
     """页面导航默认超时 (毫秒); 单次渲染可覆盖."""
     solver_url: str = Field(default="http://127.0.0.1:8191", pattern=r"^https?://.+")

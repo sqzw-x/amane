@@ -689,11 +689,11 @@ export type BrowserBackendReportResponse = {
  * BrowserConfig
  */
 export type BrowserConfig = {
+    backend?: BrowserBackendName;
     /**
      * Bsk Path
      */
     bsk_path?: string | null;
-    backend?: BrowserBackendName;
     /**
      * Timeout
      */

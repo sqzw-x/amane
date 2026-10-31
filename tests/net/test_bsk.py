@@ -504,13 +504,23 @@ async def test_probe_missing_cli_reports_install_hint(tmp_path: Path) -> None:
     assert "未找到 bsk CLI" in status.detail
 
 
-def test_resolve_bsk_path_prefers_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(("which", "expected"), [("/usr/bin/bsk", "/usr/bin/bsk"), (None, None)])
+def test_resolve_bsk_path_falls_back_to_path(
+    monkeypatch: pytest.MonkeyPatch, which: str | None, expected: str | None
+) -> None:
+    monkeypatch.setattr("amane.net.bsk.shutil.which", lambda name: which)
+    assert resolve_bsk_path() == expected
+
+
+def test_resolve_bsk_path_prefers_explicit_and_never_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     fake = tmp_path / "bsk"
     fake.write_text("", encoding="utf-8")
-    monkeypatch.setenv("AMANE_BSK_PATH", str(fake))
-    assert resolve_bsk_path() == str(fake)
-    monkeypatch.setenv("AMANE_BSK_PATH", str(tmp_path / "missing"))
-    assert resolve_bsk_path() is None
+    monkeypatch.setattr("amane.net.bsk.shutil.which", lambda name: "/usr/bin/bsk")
+
+    assert resolve_bsk_path(str(fake)) == str(fake)
+    assert resolve_bsk_path(str(tmp_path / "absent")) is None
 
 
 @pytest.mark.asyncio

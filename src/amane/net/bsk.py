@@ -118,14 +118,13 @@ class _ChallengeUnresolved(Exception):
 
 
 def resolve_bsk_path(explicit: str | None = None) -> str | None:
-    """配置里的路径优先, 其次 ``AMANE_BSK_PATH``, 最后 PATH 上的 ``bsk``.
+    """配置里的路径优先, 否则 PATH 上的 ``bsk``.
 
     桌面壳的 PATH 不含登录 shell 的条目, 因此必须允许显式指定; 显式值无效时不回退,
     以免悄悄换成另一个二进制.
     """
-    for candidate in (explicit, os.getenv("AMANE_BSK_PATH")):
-        if candidate:
-            return candidate if Path(candidate).is_file() else None
+    if explicit:
+        return explicit if Path(explicit).is_file() else None
     return shutil.which("bsk")
 
 

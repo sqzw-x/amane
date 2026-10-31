@@ -696,7 +696,6 @@ class TestLLMConfig:
 class TestBskBackendAvailability:
     def test_missing_cli_rejects_global_backend(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr("amane.net.bsk.shutil.which", lambda name: None)
-        monkeypatch.delenv("AMANE_BSK_PATH", raising=False)
 
         with pytest.raises(ValidationError, match="未找到 bsk CLI"):
             BrowserConfig(backend=BrowserBackendName.BSK)
@@ -707,7 +706,6 @@ class TestBskBackendAvailability:
         fake = tmp_path / "bsk"
         fake.write_text("", encoding="utf-8")
         monkeypatch.setattr("amane.net.bsk.shutil.which", lambda name: None)
-        monkeypatch.delenv("AMANE_BSK_PATH", raising=False)
 
         config = BrowserConfig(bsk_path=str(fake), backend=BrowserBackendName.BSK)
 
