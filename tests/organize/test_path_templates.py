@@ -947,12 +947,13 @@ class TestRenderedNamePlaceholders:
         assert sub == media / "ABC-123" / "ABC-123-CD2.srt"
 
 
-# あ = 3 字节. 66 字 = 198 字节 (不超过上限). 超限时预留 … (3 字节) → 65 字 + ….
-_JP_65 = "あ" * 65
-_JP_66 = "あ" * 66
-_JP_67 = "あ" * 67
+# あ = 3 字节. 60 字 = 180 字节 (不超过上限). 超限时预留 … (3 字节) → 59 字 + ….
+_JP_58 = "あ" * 58
+_JP_59 = "あ" * 59
+_JP_60 = "あ" * 60
+_JP_61 = "あ" * 61
 _JP_90 = "あ" * 90
-_CLIPPED_JP = f"{_JP_65}{PATH_FIELD_ELLIPSIS}"
+_CLIPPED_JP = f"{_JP_59}{PATH_FIELD_ELLIPSIS}"
 
 
 class _FieldClipCase(NamedTuple):
@@ -991,7 +992,7 @@ FIELD_CLIP_CASES: tuple[_FieldClipCase, ...] = (
         "actors-joined-clips",
         "{actors}",
         {"actors": f"X,{_JP_90}"},
-        f"X,{_JP_65}{PATH_FIELD_ELLIPSIS}",
+        f"X,{_JP_58}{PATH_FIELD_ELLIPSIS}",
     ),
     _FieldClipCase(
         "actress-clips",
@@ -1003,7 +1004,7 @@ FIELD_CLIP_CASES: tuple[_FieldClipCase, ...] = (
         "actresses-joined-clips",
         "{actresses}",
         {"actresses": f"X,{_JP_90}"},
-        f"X,{_JP_65}{PATH_FIELD_ELLIPSIS}",
+        f"X,{_JP_58}{PATH_FIELD_ELLIPSIS}",
     ),
     _FieldClipCase(
         "number-not-clipped",
@@ -1024,15 +1025,15 @@ FIELD_CLIP_CASES: tuple[_FieldClipCase, ...] = (
         f"ABC-123-{_CLIPPED_JP}-CD1.mp4",
     ),
     _FieldClipCase(
-        "cjk-66-under-limit-kept",
+        "cjk-60-under-limit-kept",
         "{title}",
-        {"title": _JP_66},
-        _JP_66,
+        {"title": _JP_60},
+        _JP_60,
     ),
     _FieldClipCase(
-        "cjk-67-clips-with-ellipsis",
+        "cjk-61-clips-with-ellipsis",
         "{title}",
-        {"title": _JP_67},
+        {"title": _JP_61},
         _CLIPPED_JP,
     ),
 )

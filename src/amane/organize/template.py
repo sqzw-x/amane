@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 _UNKNOWN = "Unknown"
 _DRIVE = re.compile(r"^[A-Za-z]:")
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
-PATH_FIELD_MAX_BYTES = 200
+PATH_FIELD_MAX_BYTES = 180
 PATH_FIELD_ELLIPSIS = "…"
 _CLIP_KEYS = frozenset({"title", "actor", "actors", "actress", "actresses"})
 _ELLIPSIS_BYTES = len(PATH_FIELD_ELLIPSIS.encode("utf-8"))
