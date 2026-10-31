@@ -1,8 +1,9 @@
-import { ActionIcon, Button, FileButton, Group, Stack, Text, TextInput } from "@mantine/core";
+import { ActionIcon, FileButton, Group, Loader, Stack, Text, TextInput } from "@mantine/core";
 import { IconPlus, IconUpload } from "@tabler/icons-react";
 import type { AnyFieldApi } from "@tanstack/react-form";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { FanartLightbox } from "@/components/media/fanart-lightbox";
 import { SortableImageList } from "@/components/media/sortable-image-list";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
@@ -140,15 +141,15 @@ function ImageArrayBody({ id, value, onChange, onAppend }: ImageArrayBodyProps) 
           multiple
         >
           {(props) => (
-            <Button
+            <HintedActionIcon
               {...props}
-              size="xs"
               variant="light"
-              leftSection={<IconUpload size={14} />}
-              loading={upload.isPending}
+              size="md"
+              label={t("imageField.upload")}
+              disabled={upload.isPending}
             >
-              {t("imageField.upload")}
-            </Button>
+              {upload.isPending ? <Loader size={12} /> : <IconUpload size={14} />}
+            </HintedActionIcon>
           )}
         </FileButton>
       </Group>
