@@ -232,6 +232,7 @@ async def test_list_and_batch_feed_items(feed_deps: AgentDeps) -> None:
     assert len(tasks) == 1
     assert tasks[0].payload == {
         "number": "ABC-001",
+        "url": None,
         "content_type": "western",
         "media_file_id": None,
         "use_cache": [],

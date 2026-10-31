@@ -313,6 +313,25 @@ class TestExecuteGraph:
         assert state.failed == []
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("query_number", "expected"),
+        [
+            ("", "MIDV-123"),
+            ("ABC-001", "ABC-001"),
+        ],
+        ids=["take_from_source", "keep_query_number"],
+    )
+    async def test_result_number_falls_back_to_source(self, query_number: str, expected: str):
+        """指定网址刮削没有入参番号: 结果番号取来源; 有入参番号时保持入参."""
+        fp = defaultdict(lambda: [DB])
+        graph = build_graph(fp, {})
+        crawler = MockCrawler(MediaMetadata(number="MIDV-123", title="T"))
+
+        state = await execute_graph(graph, {K1: crawler}, SearchQuery(query_number))
+
+        assert state.result.number == expected
+
+    @pytest.mark.asyncio
     async def test_failure_falls_back_to_next_priority(self):
         """javdb 失败 → 单源字段取 dmm 的值."""
         fp = defaultdict(lambda: [DB, DMM, BUS])

@@ -204,7 +204,12 @@
     },
     "scrape": {
       "number": {
-        "label": "番号"
+        "label": "番号",
+        "description": "与网址二选一"
+      },
+      "url": {
+        "label": "网址",
+        "description": "只解析该网址对应的来源; 与番号二选一"
       },
       "media_id": {
         "label": "文件 ID",

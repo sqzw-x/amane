@@ -72,7 +72,7 @@ async def run_record(record_path: Path, *, online: bool = False) -> int:
 
             # 可选: 注入 raw_cache, 以便覆盖 metadata cache 路径
             raw_path = root / "raw_cache.json"
-            if raw_path.is_file() and CacheKind.metadata in payload.use_cache:
+            if raw_path.is_file() and payload.number and CacheKind.metadata in payload.use_cache:
                 raw = json.loads(raw_path.read_text(encoding="utf-8"))
                 await repo.upsert_metadata(payload.number, raw=raw)
 
