@@ -1,5 +1,6 @@
 """/metadata HTTP 接线: 状态码、JSON 形状、422. 列表筛选/级联删除见 tests/db; 合并规则见 tests/aggregate."""
 
+import io
 from typing import TYPE_CHECKING
 
 import pytest
@@ -176,6 +177,11 @@ class TestMetadataHttp:
             assert key in props
         # 锁列由 PUT /locks 管理, 不经 PATCH 写入.
         assert "locked_fields" not in props
+        # 图片字段在前端渲染为可上传的图片卡片; 其余 URL 列表仍按文本编辑.
+        assert {key for key, schema in props.items() if "x-image-upload" in str(schema)} == {
+            "poster_urls",
+            "thumb_urls",
+        }
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_merge_http(self, client: AsyncClient, repo: Repository):
@@ -270,6 +276,27 @@ class TestMetadataHttp:
         assert (
             await client.post("metadata/99999/crop-poster", json={"left": 0, "top": 0, "right": 10, "bottom": 10})
         ).status_code == 404
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_patch_accepts_uploaded_image_url(self, client: AsyncClient, repo: Repository):
+        """本地上传的图片直接作为海报写入: 前端编辑走的就是这条路."""
+        buf = io.BytesIO()
+        Image.new("RGB", (376, 538), "blue").save(buf, format="JPEG")
+        uploaded = await client.post("resources/upload", files={"file": ("poster.jpg", buf.getvalue(), "image/jpeg")})
+        assert uploaded.status_code == 200
+        url = uploaded.json()["url"]
+
+        meta = await repo.upsert_metadata(number="UPL-001")
+        assert meta.id is not None
+        patched = await client.patch(f"metadata/{meta.id}", json={"poster_urls": [url]})
+        assert patched.status_code == 200
+        assert patched.json()["poster_urls"] == [url]
+        assert patched.json()["poster_url"] == url
+        # 手动写入即锁定, 后续刮削不覆盖.
+        assert patched.json()["locked_fields"] == ["poster_urls"]
+
+        detail = await client.get(f"metadata/{meta.id}")
+        assert detail.json()["metadata"]["poster_url"] == url
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_locks_http(self, client: AsyncClient, repo: Repository):

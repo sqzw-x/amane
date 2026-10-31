@@ -15,6 +15,7 @@ from .images import (
     CropRotation,
     crop_box,
     crop_poster,
+    detect_upload_image,
     format_crop_box_args,
     needs_upscale,
     probe_oriented_size,
@@ -23,7 +24,7 @@ from .images import (
     should_crop_poster,
     validate_crop_box,
 )
-from .resource_store import RESOURCE_URL_PREFIX
+from .resource_store import internal_url
 
 if TYPE_CHECKING:
     from ..config import HotSettings, SrConfig
@@ -41,10 +42,6 @@ class MaterializedImages:
     poster_urls: list[str]
     thumb_urls: list[str]
     trailer_urls: list[str]
-
-
-def _internal_url(store: ResourceStore, locator_url: str) -> str:
-    return f"{RESOURCE_URL_PREFIX}/{store.url_hash(locator_url)}"
 
 
 def _success_first(urls: list[str], succeeded: set[str]) -> list[str]:
@@ -154,7 +151,7 @@ async def materialize_images(
             crop_res = await store.acquire_derived(thumb_src or "", "crop", args, crop_producer)
             if crop_res:
                 await _maybe_upscale(store, crop_res, config, data_dir)
-                result_poster_urls = [_internal_url(store, crop_res.url)]
+                result_poster_urls = [internal_url(crop_res.url)]
             else:
                 result_poster_urls = _success_first(poster_urls, poster_ok)
         else:
@@ -231,4 +228,20 @@ async def manual_crop_image(
         raise ValueError("裁切失败")
 
     await _maybe_upscale(store, crop_res, config, data_dir)
-    return _internal_url(store, crop_res.url)
+    return internal_url(crop_res.url)
+
+
+async def store_uploaded_image(data: bytes, store: ResourceStore) -> str:
+    """保存手动上传的图片, 返回内部 URL. 空内容 / 不可解码 / 格式不支持抛 ``ValueError``.
+
+    体积上限在传输入口按块截断 (见 ``api/routes/resources.py``), 这里只认内容.
+    上传的原图**不**就地超分: 用户给的这份字节原样留存.
+    """
+    if not data:
+        raise ValueError("图片内容为空")
+    detected = detect_upload_image(data)
+    if detected is None:
+        raise ValueError("只接受 JPEG / PNG / WebP 图片")
+    ext, mime = detected
+    record = await store.store_upload(data, ext=ext, mime=mime)
+    return internal_url(record.url)

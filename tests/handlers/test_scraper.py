@@ -361,7 +361,7 @@ class TestScrapeHandler:
 
         from PIL import Image
 
-        from amane.media.pipeline import RESOURCE_URL_PREFIX
+        from amane.media.resource_store import RESOURCE_URL_PREFIX
         from amane.net.http import WebClient
 
         class ImgCrawler:

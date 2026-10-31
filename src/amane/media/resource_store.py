@@ -1,6 +1,6 @@
 """URL 级下载缓存. 未被 Metadata 引用的条目由 CLEANUP 回收, 不做 LRU.
 
-派生资源用合成 locator ``derived:{sha256(src)}:{op}:{args}``.
+派生资源用合成 locator ``derived:{sha256(src)}:{op}:{args}``, 本地上传用 ``upload:{sha256(bytes)}``.
 就地超分覆盖原文件, URL 不变, meta 打 ``sr`` 标记.
 内部 URL ``/api/resources/{hash}`` 是对既有 Resource 的引用, 解析为本地文件而不发请求.
 """
@@ -54,6 +54,16 @@ def internal_url_hash(url: str) -> str | None:
 
 def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:16]
+
+
+def internal_url(locator: str) -> str:
+    """对既有 Resource 的引用 URL; 解析本地文件而不发请求."""
+    return f"{RESOURCE_URL_PREFIX}/{_url_hash(locator)}"
+
+
+def upload_locator(data: bytes) -> str:
+    """上传字节的内容寻址 locator: 同一份字节恒得同一串, 重复上传复用同一条资源."""
+    return f"upload:{hashlib.sha256(data).hexdigest()}"
 
 
 def derived_locator(src_url: str, op: str, args: str) -> str:
@@ -313,6 +323,50 @@ class ResourceStore:
                     size=size,
                     mime_type=mime,
                     meta=meta,
+                )
+                session.add(record)
+                await session.commit()
+                return record
+
+    async def store_upload(self, data: bytes, *, ext: str, mime: str) -> Resource:
+        """保存本地上传的字节, 返回其记录.
+
+        ``ext`` / ``mime`` 由调用方按内容判定 (上传时的文件名与 Content-Type 都可伪造). locator 取内容
+        哈希, 因此同一份字节重复上传命中同一条记录, 不再写文件.
+        """
+        locator = upload_locator(data)
+        dest = self._compute_path(locator, ext=ext)
+        async with self._serialized(locator):
+            existing = await self.get_by_url(locator)
+            if existing is not None and self._matches_record(self.full_path(existing), existing):
+                return existing
+
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dest.with_name(f"{dest.stem}.{uuid4().hex}.part{dest.suffix}")
+            try:
+                tmp.write_bytes(data)
+                tmp.replace(dest)
+            finally:
+                tmp.unlink(missing_ok=True)
+
+            size = dest.stat().st_size
+            content_hash = self._hash_file(dest)
+
+            async with self._session() as session:
+                if existing is not None:
+                    existing.file_path = self._relative_path(dest)
+                    existing.content_hash = content_hash
+                    existing.size = size
+                    existing.mime_type = mime
+                    session.add(existing)
+                    await session.commit()
+                    return existing
+                record = Resource(
+                    url=locator,
+                    file_path=self._relative_path(dest),
+                    content_hash=content_hash,
+                    size=size,
+                    mime_type=mime,
                 )
                 session.add(record)
                 await session.commit()

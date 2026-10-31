@@ -4552,6 +4552,48 @@
         }
       }
     },
+    "/api/resources/upload": {
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Upload Resource",
+        "description": "保存本地上传的图片, 返回可写入图片字段的内部 URL.\n\n只认内容不认文件名与 Content-Type; 同一份字节重复上传复用同一条资源.",
+        "operationId": "upload_resource",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_resource"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/resources/proxy": {
       "get": {
         "tags": [
@@ -7782,6 +7824,21 @@
         },
         "type": "object",
         "title": "Body_install_plugin"
+      },
+      "Body_upload_resource": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "JPEG / PNG / WebP 图片"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_resource"
       },
       "BrowserBackendItemResponse": {
         "properties": {
@@ -12089,7 +12146,8 @@
                 "items": {
                   "type": "string"
                 },
-                "type": "array"
+                "type": "array",
+                "x-image-upload": true
               },
               {
                 "type": "null"
@@ -12103,7 +12161,8 @@
                 "items": {
                   "type": "string"
                 },
-                "type": "array"
+                "type": "array",
+                "x-image-upload": true
               },
               {
                 "type": "null"
@@ -13615,6 +13674,21 @@
         ],
         "title": "RescrapeTarget",
         "description": "滚动补刮选取的实体种类. 每个已选项各自选取 limit 条."
+      },
+      "ResourceUploadResponse": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "内部资源 URL (/api/resources/{hash}), 可直接写入影片的图片字段"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "ResourceUploadResponse",
+        "description": "上传后的资源引用; 内容相同的重复上传返回同一个 URL."
       },
       "RoutineType": {
         "type": "string",

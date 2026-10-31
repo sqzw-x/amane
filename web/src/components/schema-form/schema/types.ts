@@ -48,6 +48,11 @@ export interface AmaneArrayExtensions extends AmaneBaseExtensions {
   "x-ordered"?: boolean;
   /** 固定高度滚动, 不自由换行铺开. */
   "x-long"?: boolean;
+  /**
+   * 图片 URL 列表: 渲染为图片卡片 (上传本地文件 / 粘贴地址 / 拖拽排序 / 点击预览),
+   * 首项是该字段的主图. 只对 `items.type === "string"` 成立.
+   */
+  "x-image-upload"?: boolean;
 }
 
 /** 仅用于 type: "object" */

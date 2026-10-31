@@ -144,6 +144,15 @@
     "selected_one": "{{count}} selected",
     "selected_other": "{{count}} selected"
   },
+  "imageField": {
+    "empty": "No images",
+    "primary": "Primary",
+    "remove": "Remove this image",
+    "reorder": "Drag to reorder; the first is primary",
+    "urlPlaceholder": "Paste an image URL…",
+    "addUrl": "Add image URL",
+    "upload": "Upload image"
+  },
   "about": {
     "version": "v{{version}}",
     "github": "GitHub",

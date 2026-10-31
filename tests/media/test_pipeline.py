@@ -12,6 +12,7 @@ from amane.config import HotSettings, SrConfig
 from amane.enums import DownloadableResource
 from amane.media import CropRotation, ResourceStore, manual_crop_image, materialize_images
 from amane.media import pipeline as pipeline_mod
+from amane.media.resource_store import RESOURCE_URL_PREFIX
 from tests.helpers import LOAD_TOLERANT_TIMEOUT, await_for
 
 if TYPE_CHECKING:
@@ -75,7 +76,7 @@ async def test_poster_cropped_when_candidate_small(resource_store: ResourceStore
     )
     assert out.thumb_urls == ["https://s/t.jpg"]  # 外部列表原样
     assert len(out.poster_urls) == 1
-    assert out.poster_urls[0].startswith(pipeline_mod.RESOURCE_URL_PREFIX)  # 内部派生
+    assert out.poster_urls[0].startswith(RESOURCE_URL_PREFIX)  # 内部派生
     # 派生 args 为配置比例, 非候选 300/420
     url_hash = out.poster_urls[0].rsplit("/", 1)[-1]
     got = await resource_store.get_by_url_hash(url_hash)
@@ -110,7 +111,7 @@ async def test_no_poster_source_crops_from_thumb(resource_store: ResourceStore, 
         [], ["https://s/t.jpg"], [], resource_store, cast("WebClient", client), HotSettings(), tmp_path
     )
     assert len(out.poster_urls) == 1
-    assert out.poster_urls[0].startswith(pipeline_mod.RESOURCE_URL_PREFIX)
+    assert out.poster_urls[0].startswith(RESOURCE_URL_PREFIX)
 
 
 @pytest.mark.asyncio
@@ -352,7 +353,7 @@ async def test_manual_crop_image_external_source(resource_store: ResourceStore, 
         subject="头像",
     )
 
-    assert url.startswith(pipeline_mod.RESOURCE_URL_PREFIX)
+    assert url.startswith(RESOURCE_URL_PREFIX)
     got = await resource_store.get_by_url_hash(url.rsplit("/", 1)[-1])
     assert got is not None
     record, path = got
@@ -404,7 +405,7 @@ async def test_manual_crop_image_internal_source_records_locator(resource_store:
 
     seed = await resource_store.acquire_derived("https://s/orig.jpg", "crop", "box:0,0,400,538", producer)
     assert seed is not None
-    internal = f"{pipeline_mod.RESOURCE_URL_PREFIX}/{ResourceStore.url_hash(seed.url)}"
+    internal = f"{RESOURCE_URL_PREFIX}/{ResourceStore.url_hash(seed.url)}"
 
     class _ExplodingClient:
         async def download(self, url: str, dest: Path, **kwargs: object) -> bool:

@@ -129,6 +129,11 @@ export function isOrdered(schema: ArrayJSONSchema): boolean {
   return schema["x-ordered"] === true;
 }
 
+/** Check if array schema renders as an image list with local upload (x-image-upload) */
+export function isImageUpload(schema: ArrayJSONSchema): boolean {
+  return schema["x-image-upload"] === true;
+}
+
 /** Check if field is hidden */
 export function isHidden(schema: JSONSchemaObject): boolean {
   return schema["x-hidden"] === true;

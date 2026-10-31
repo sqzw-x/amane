@@ -135,6 +135,15 @@
   "batch": {
     "selected": "已选 {{count}} 项"
   },
+  "imageField": {
+    "empty": "暂无图片",
+    "primary": "主图",
+    "remove": "移除这张图片",
+    "reorder": "拖拽排序, 首张为主图",
+    "urlPlaceholder": "粘贴图片地址…",
+    "addUrl": "添加图片地址",
+    "upload": "上传本地图片"
+  },
   "about": {
     "version": "v{{version}}",
     "github": "GitHub",

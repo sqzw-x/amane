@@ -1,11 +1,13 @@
-"""测试资源 serve 端点 (哑文件服务 + 外链反代)."""
+"""测试资源 serve 端点 (哑文件服务 + 外链反代) 与本地上传."""
 
+import io
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
 import pytest
 from PIL import Image
 
+from amane.api.routes import resources as resources_route
 from amane.media import ResourceStore
 
 if TYPE_CHECKING:
@@ -119,6 +121,65 @@ class TestProxyImage:
         assert cached.content == b""
         assert cached.headers["etag"] == '"abc123hash"'
         assert "no-cache" in cached.headers.get("cache-control", "")
+
+
+class TestUploadResource:
+    """POST /resources/upload - 本地上传的图片存成 Resource, 返回可写入图片字段的内部 URL."""
+
+    @staticmethod
+    def _png(size: tuple[int, int] = (4, 3)) -> bytes:
+        buf = io.BytesIO()
+        Image.new("RGB", size, "blue").save(buf, format="PNG")
+        return buf.getvalue()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upload_then_serve_and_dedupe(self, client: AsyncClient):
+        data = self._png()
+        resp = await client.post("resources/upload", files={"file": ("poster.png", data, "image/png")})
+        assert resp.status_code == 200
+        url = resp.json()["url"]
+        assert url.startswith("/api/resources/")
+
+        served = await client.get(url.removeprefix("/api/"))
+        assert served.status_code == 200
+        assert served.headers["content-type"] == "image/png"
+        assert served.content == data
+
+        # 同一份字节再传一次: 复用同一条资源.
+        again = await client.post("resources/upload", files={"file": ("other.png", data, "image/png")})
+        assert again.status_code == 200
+        assert again.json()["url"] == url
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_disguised_filename_rejected(self, client: AsyncClient):
+        """扩展名与 Content-Type 都是 image/png, 内容却不是图片."""
+        resp = await client.post(
+            "resources/upload", files={"file": ("poster.png", b"definitely-not-an-image", "image/png")}
+        )
+        assert resp.status_code == 422
+        assert "JPEG / PNG / WebP" in resp.json()["detail"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_unsupported_format_rejected(self, client: AsyncClient):
+        buf = io.BytesIO()
+        Image.new("RGB", (4, 3), "blue").save(buf, format="GIF")
+        resp = await client.post("resources/upload", files={"file": ("poster.gif", buf.getvalue(), "image/gif")})
+        assert resp.status_code == 422
+        assert "JPEG / PNG / WebP" in resp.json()["detail"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_empty_file_rejected(self, client: AsyncClient):
+        resp = await client.post("resources/upload", files={"file": ("poster.png", b"", "image/png")})
+        assert resp.status_code == 422
+        assert "为空" in resp.json()["detail"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_oversize_rejected(self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+        """上限按块截断, 不把整份请求体读进来."""
+        monkeypatch.setattr(resources_route, "MAX_IMAGE_UPLOAD_BYTES", 16)
+        resp = await client.post("resources/upload", files={"file": ("poster.png", self._png((40, 40)), "image/png")})
+        assert resp.status_code == 413
+        assert "MB" in resp.json()["detail"]
 
 
 class TestImageToken:
