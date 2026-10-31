@@ -109,6 +109,23 @@
     "applyRemoveUserTags": "移除 {{count}} 个",
     "createUserTag": "创建「{{name}}」",
     "detachUserTag": "从此影片移除",
+    "watermark": {
+      "title": "封面水印",
+      "auto": "自动",
+      "manual": "手动",
+      "autoNone": "当前无命中",
+      "level": "档位",
+      "levelRequired": "选择档位后才会打分辨率角标",
+      "none": "未勾选任何类别: 这张封面不打水印 (下次整理生效)",
+      "kinds": {
+        "subtitle": "中字",
+        "uncensored": "无码",
+        "censored": "有码",
+        "cracked": "破解",
+        "leaked": "流出",
+        "definition": "分辨率"
+      }
+    },
     "comments": "评论",
     "commentPlaceholder": "写下评论…",
     "commentWrite": "撰写",

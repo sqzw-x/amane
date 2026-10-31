@@ -1,6 +1,6 @@
 """海报裁剪与封面角标. 判定函数只依赖尺寸与阈值."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -206,7 +206,13 @@ _SCALE_MAX = 0.25
 _STAMP_MIN_HEIGHT = 16
 
 _FIXED_KINDS: frozenset[str] = frozenset(
-    (WatermarkKind.SUBTITLE, WatermarkKind.UNCENSORED, WatermarkKind.CRACKED, WatermarkKind.LEAKED)
+    (
+        WatermarkKind.SUBTITLE,
+        WatermarkKind.UNCENSORED,
+        WatermarkKind.CENSORED,
+        WatermarkKind.CRACKED,
+        WatermarkKind.LEAKED,
+    )
 )
 _RIGHT_CORNERS = frozenset((WatermarkCorner.TOP_RIGHT, WatermarkCorner.BOTTOM_RIGHT))
 _BOTTOM_CORNERS = frozenset((WatermarkCorner.BOTTOM_LEFT, WatermarkCorner.BOTTOM_RIGHT))
@@ -218,8 +224,17 @@ def _stamp_stems(
     uncensored: bool,
     mosaic: Mosaic | None,
     definition: str | None,
+    kinds: Sequence[WatermarkKind] | None = None,
+    definition_override: str | None = None,
 ) -> list[str]:
-    """相位 → PNG 主干, 顺序: 中字 / 无码 / 破解 / 流出 / 分辨率."""
+    """相位 → PNG 主干, 顺序: 中字 / 无码 / 有码 / 破解 / 流出 / 分辨率.
+
+    ``kinds`` 为 None 走自动规则 (只有无码, 不含有码); 给定时只打勾选的类别, 与相位无关.
+    ``definition_override`` 只作用于手动模式, 且是分辨率的唯一来源: None 表示没选档位, 跳过该枚.
+    自动模式仍用这一份文件检测出的 ``definition``.
+    """
+    if kinds is not None:
+        return _manual_stems(kinds, definition_override)
     stems: list[str] = []
     if has_subtitle:
         stems.append("subtitle")
@@ -231,6 +246,20 @@ def _stamp_stems(
         stems.append("leaked")
     if definition:
         stems.append(definition.casefold())
+    return stems
+
+
+def _manual_stems(kinds: Sequence[WatermarkKind], definition: str | None) -> list[str]:
+    """按 ``WatermarkKind`` 顺序落主干, 与勾选顺序无关: 同角叠放顺序因此稳定."""
+    stems: list[str] = []
+    for kind in WatermarkKind:
+        if kind not in kinds:
+            continue
+        if kind is WatermarkKind.DEFINITION:
+            if definition:
+                stems.append(definition.casefold())
+            continue
+        stems.append(str(kind))
     return stems
 
 
@@ -303,9 +332,21 @@ def apply_cover_watermarks(
     watermark_dir: Path | None = None,
     scale: float = _DEFAULT_SCALE,
     corners: Mapping[WatermarkKind, WatermarkCorner] | None = None,
+    kinds: Sequence[WatermarkKind] | None = None,
+    definition_override: str | None = None,
 ) -> bool:
-    """叠到库路径封面/海报. 无标记或无图则不动. 不修改 Resource 原图."""
-    stems = _stamp_stems(has_subtitle=has_subtitle, uncensored=uncensored, mosaic=mosaic, definition=definition)
+    """叠到库路径封面/海报. 无标记或无图则不动. 不修改 Resource 原图.
+
+    ``kinds`` 为条目级手动勾选, None 表示自动规则; ``definition_override`` 为手动档位 (见 ``_stamp_stems``).
+    """
+    stems = _stamp_stems(
+        has_subtitle=has_subtitle,
+        uncensored=uncensored,
+        mosaic=mosaic,
+        definition=definition,
+        kinds=kinds,
+        definition_override=definition_override,
+    )
     if not stems:
         return False
     try:
@@ -346,6 +387,8 @@ def apply_cover_watermarks_from_info(
     watermark_dir: Path | None = None,
     scale: float = _DEFAULT_SCALE,
     corners: Mapping[WatermarkKind, WatermarkCorner] | None = None,
+    kinds: Sequence[WatermarkKind] | None = None,
+    definition_override: str | None = None,
 ) -> bool:
     """``content_type`` 是条目类型: 无码章与列表角标同用 ``parsing/file_info.py::shows_uncensored`` 的口径."""
     return apply_cover_watermarks(
@@ -358,4 +401,6 @@ def apply_cover_watermarks_from_info(
         watermark_dir=watermark_dir,
         scale=scale,
         corners=corners,
+        kinds=kinds,
+        definition_override=definition_override,
     )

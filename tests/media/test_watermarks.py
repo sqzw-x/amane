@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 from PIL import Image
 
+from amane.enums import WatermarkKind
 from amane.media.watermarks import is_stamp_stem, load_stamp
 from amane.parsing import DEFINITION_VALUES
 
@@ -41,6 +42,14 @@ def test_load_builtin_subtitle() -> None:
 def test_load_builtin_definition(stem: str) -> None:
     """每个分辨率档都要有内置角标: 缺一枚就静默不画."""
     img = load_stamp(stem, None)
+    assert img is not None
+    assert img.getbbox() is not None
+
+
+@pytest.mark.parametrize("kind", [kind for kind in WatermarkKind if kind is not WatermarkKind.DEFINITION])
+def test_every_fixed_kind_has_builtin_stamp(kind: WatermarkKind) -> None:
+    """手动勾选也要有图可打: 新增类别时忘带素材会在这里失败 (分辨率按档位另行覆盖)."""
+    img = load_stamp(str(kind), None)
     assert img is not None
     assert img.getbbox() is not None
 

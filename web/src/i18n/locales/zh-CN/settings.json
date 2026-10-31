@@ -779,10 +779,11 @@
       },
       "corners": {
         "label": "水印位置",
-        "description": "同角多个按中字 → 无码 → 破解 → 流出 → 分辨率顺序叠加",
+        "description": "同角多个按中字 → 无码 → 有码 → 破解 → 流出 → 分辨率顺序叠加",
         "options": {
           "subtitle": "中字",
           "uncensored": "无码",
+          "censored": "有码",
           "cracked": "破解",
           "leaked": "流出",
           "definition": "分辨率"

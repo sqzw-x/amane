@@ -779,10 +779,11 @@
       },
       "corners": {
         "label": "Watermark position",
-        "description": "Multiple in the same corner stack in order: subtitle → uncensored → cracked → leaked → resolution",
+        "description": "Multiple in the same corner stack in order: subtitle → uncensored → censored → cracked → leaked → resolution",
         "options": {
           "subtitle": "Subtitle",
           "uncensored": "Uncensored",
+          "censored": "Censored",
           "cracked": "Cracked",
           "leaked": "Leaked",
           "definition": "Resolution"

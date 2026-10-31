@@ -531,3 +531,135 @@ class TestCoverWatermarks:
             assert isinstance(top, tuple) and isinstance(bottom, tuple)
             assert top[2] > 180 and top[0] < 80
             assert bottom[0] > 180 and bottom[2] < 80
+
+    def test_manual_kinds_ignore_auto_rules(self, tmp_path: Path):
+        """手动勾选与相位无关: 没有任何标记的封面也能打勾选的类别."""
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (400, 300), "blue").save(dest)
+        user_dir = tmp_path / "watermarks"
+        user_dir.mkdir()
+        Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(user_dir / "uncensored.png")
+        assert apply_cover_watermarks(
+            dest,
+            has_subtitle=False,
+            uncensored=False,
+            mosaic=None,
+            definition=None,
+            watermark_dir=user_dir,
+            scale=0.2,
+            kinds=[WatermarkKind.UNCENSORED],
+        )
+        with Image.open(dest) as img:
+            pixel = img.convert("RGB").getpixel((20, 20))
+        assert isinstance(pixel, tuple)
+        assert pixel[0] > 180 and pixel[2] < 80
+
+    def test_manual_empty_kinds_paints_nothing(self, tmp_path: Path):
+        """手动但一枚都不勾 = 这张封面不打任何水印."""
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (400, 300), "blue").save(dest)
+        before = dest.read_bytes()
+        assert (
+            apply_cover_watermarks(
+                dest,
+                has_subtitle=True,
+                uncensored=True,
+                mosaic=Mosaic.CRACKED,
+                definition="1080p",
+                kinds=[],
+            )
+            is False
+        )
+        assert dest.read_bytes() == before
+
+    @pytest.mark.parametrize("definition", [None, "1080p"])
+    def test_manual_definition_without_pick_skips(self, tmp_path: Path, definition: str | None):
+        """手动选了分辨率但没给档位时不打: 不再借用文件名里的档位."""
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (400, 300), "blue").save(dest)
+        before = dest.read_bytes()
+        user_dir = tmp_path / "watermarks"
+        user_dir.mkdir()
+        Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(user_dir / "1080p.png")
+        assert (
+            apply_cover_watermarks(
+                dest,
+                has_subtitle=False,
+                uncensored=False,
+                mosaic=None,
+                definition=definition,
+                watermark_dir=user_dir,
+                scale=0.2,
+                kinds=[WatermarkKind.DEFINITION],
+            )
+            is False
+        )
+        assert dest.read_bytes() == before
+
+    def test_manual_censored_uses_censored_stamp(self, tmp_path: Path):
+        """有码不在自动规则里, 只能手动勾选; 勾了就按 censored.png 绘制."""
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (400, 300), "blue").save(dest)
+        user_dir = tmp_path / "watermarks"
+        user_dir.mkdir()
+        Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(user_dir / "censored.png")
+        assert apply_cover_watermarks(
+            dest,
+            has_subtitle=False,
+            uncensored=False,
+            mosaic=None,
+            definition=None,
+            watermark_dir=user_dir,
+            scale=0.2,
+            kinds=[WatermarkKind.CENSORED],
+        )
+        with Image.open(dest) as img:
+            pixel = img.convert("RGB").getpixel((20, 20))
+        assert isinstance(pixel, tuple)
+        assert pixel[0] > 180 and pixel[2] < 80
+
+    @pytest.mark.parametrize(
+        ("definition", "override", "channel"),
+        [
+            ("720p", "1080p", 0),
+            ("720p", "720p", 1),
+            (None, "1080p", 0),
+            ("720p", "vhs", None),
+        ],
+    )
+    def test_manual_definition_override(
+        self,
+        tmp_path: Path,
+        definition: str | None,
+        override: str | None,
+        channel: int | None,
+    ):
+        """手动档位是唯一来源: 覆盖文件名档位, 文件没有档位也能打; 未知档位整张不动."""
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (400, 300), "blue").save(dest)
+        before = dest.read_bytes()
+        user_dir = tmp_path / "watermarks"
+        user_dir.mkdir()
+        Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(user_dir / "1080p.png")
+        Image.new("RGBA", (40, 20), (0, 255, 0, 255)).save(user_dir / "720p.png")
+        painted = apply_cover_watermarks(
+            dest,
+            has_subtitle=False,
+            uncensored=False,
+            mosaic=None,
+            definition=definition,
+            watermark_dir=user_dir,
+            scale=0.2,
+            kinds=[WatermarkKind.DEFINITION],
+            definition_override=override,
+        )
+        if channel is None:
+            assert painted is False
+            assert dest.read_bytes() == before
+            return
+        assert painted is True
+        with Image.open(dest) as img:
+            pixel = img.convert("RGB").getpixel((20, 20))
+        assert isinstance(pixel, tuple)
+        assert pixel[channel] > 180
+        assert all(pixel[i] < 80 for i in range(3) if i != channel)

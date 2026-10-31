@@ -1,13 +1,13 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Self
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...db import Metadata
 from ...db.embeddings import EmbeddingKind
-from ...enums import ActorGender, MetadataField
+from ...enums import ActorGender, MetadataField, WatermarkKind
 from ...handlers import CacheKind
-from ...parsing import ContentType, Mosaic
+from ...parsing import DEFINITION_VALUES, ContentType, Mosaic
 from ...utils.model import anyof_extras, create_partial_model, kv
 from .comments import CommentResponse
 from .crop import CropBoxRequest
@@ -15,6 +15,7 @@ from .media import MediaFileResponse
 from .user_tags import UserTagResponse
 
 _METADATA_FIELD_VALUES = frozenset(str(field) for field in MetadataField)
+_WATERMARK_KIND_VALUES = frozenset(str(kind) for kind in WatermarkKind)
 
 
 class FilePhaseSummary(BaseModel):
@@ -57,6 +58,9 @@ class MetadataResponse(BaseModel):
     field_sources: dict = {}
     raw: dict = {}
     locked_fields: list[MetadataField] = []
+    watermark_auto: bool = True
+    watermark_kinds: list[WatermarkKind] = []
+    watermark_definition: str | None = None
 
     @field_validator("locked_fields", mode="before")
     @classmethod
@@ -65,6 +69,21 @@ class MetadataResponse(BaseModel):
         if not isinstance(value, list):
             return []
         return list(dict.fromkeys(item for item in value if isinstance(item, str) and item in _METADATA_FIELD_VALUES))
+
+    @field_validator("watermark_kinds", mode="before")
+    @classmethod
+    def _drop_unknown_watermarks(cls, value: object) -> object:
+        """非法存量角标值忽略, 顺序按枚举声明序."""
+        if not isinstance(value, list):
+            return []
+        wanted = {item for item in value if isinstance(item, str) and item in _WATERMARK_KIND_VALUES}
+        return [str(kind) for kind in WatermarkKind if str(kind) in wanted]
+
+    @field_validator("watermark_definition", mode="before")
+    @classmethod
+    def _drop_unknown_definition(cls, value: object) -> object:
+        """非法存量档位按「跟随文件」处理."""
+        return value if isinstance(value, str) and value in DEFINITION_VALUES else None
 
     file_count: int = 0
     file_phase: FilePhaseSummary = Field(default_factory=FilePhaseSummary)
@@ -75,7 +94,8 @@ class MetadataResponse(BaseModel):
 if TYPE_CHECKING:
     type PartialMetadata = Metadata
 
-# 外部可写字段: 排除只读列 (id/number/content_type/时间戳), 仅后端可写字段 (raw/field_sources 由刮削写入) 与锁列 (经 PUT locks 管理).
+# 外部可写字段: 排除只读列 (id/number/content_type/时间戳), 仅后端可写字段 (raw/field_sources 由刮削写入),
+# 锁列 (经 PUT locks 管理) 与封面角标覆盖 (经 PUT watermark 管理).
 PartialMetadata = create_partial_model(
     Metadata,
     ignore_fields=(
@@ -87,6 +107,9 @@ PartialMetadata = create_partial_model(
         "raw",
         "field_sources",
         "locked_fields",
+        "watermark_auto",
+        "watermark_kinds",
+        "watermark_definition",
     ),
     json_schema_extras={
         "extrafanart_urls": anyof_extras(kv({"v-x-long": True})),
@@ -139,6 +162,32 @@ class MetadataLocksRequest(BaseModel):
     """整体替换锁定字段集合."""
 
     fields: list[MetadataField] = Field(default_factory=list, description="锁定的字段集合; 空集解除全部锁定")
+
+
+class MetadataWatermarkRequest(BaseModel):
+    """整体替换条目级封面角标覆盖. ``auto`` 时不看 ``kinds`` / ``definition``; 手动且空集表示不打任何角标."""
+
+    auto: bool = Field(default=True, description="true = 自动规则; false = 只打 kinds 中勾选的类别")
+    kinds: list[WatermarkKind] = Field(default_factory=list, description="手动模式下的角标类别")
+    definition: str | None = Field(default=None, description="手动模式下的分辨率档位; 选了分辨率就必填")
+
+    @field_validator("definition")
+    @classmethod
+    def _canonical_definition(cls, value: str | None) -> str | None:
+        """大小写不敏感接受档位, 落库为规范写法; 未知档位拒绝."""
+        if value is None:
+            return None
+        for candidate in DEFINITION_VALUES:
+            if candidate.casefold() == value.strip().casefold():
+                return candidate
+        raise ValueError(f"未知分辨率档位: {value}")
+
+    @model_validator(mode="after")
+    def _require_definition_for_manual(self) -> Self:
+        """手动勾了分辨率却没有档位不算选择成功."""
+        if not self.auto and WatermarkKind.DEFINITION in self.kinds and self.definition is None:
+            raise ValueError("手动选择分辨率时必须指定档位")
+        return self
 
 
 class CropPosterRequest(CropBoxRequest):

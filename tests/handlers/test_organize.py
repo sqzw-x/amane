@@ -13,7 +13,7 @@ from PIL import Image
 
 from amane.config import HotSettings, WatermarkConfig
 from amane.db.models import MediaFileStatus
-from amane.enums import DownloadableResource, LinkMode, MoveMode
+from amane.enums import DownloadableResource, LinkMode, MoveMode, WatermarkKind
 from amane.handlers import DeleteHandler, DeletePayload, LibraryTaskLocks, OrganizeHandler, OrganizePayload
 from amane.handlers.file import FileOperationsResult, _record_conflicts, commit_organized_media_file
 from amane.handlers.models import ORGANIZE_CONFLICT_LIMIT
@@ -564,6 +564,97 @@ async def test_organize_stamps_uncensored_from_entry_type(
             pixel = painted.convert("RGB").getpixel((20, 20))
         assert isinstance(pixel, tuple)
         assert (pixel[0] > 180 and pixel[2] < 80) is stamped
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(
+    ("kinds", "stamped"),
+    [([WatermarkKind.UNCENSORED], True), ([], False)],
+)
+async def test_organize_uses_entry_watermark_override(
+    repo: Repository,
+    resource_store: ResourceStore,
+    tmp_path: Path,
+    kinds: list[WatermarkKind],
+    stamped: bool,
+) -> None:
+    """条目级手动勾选取代自动规则: 无相位标记的文件也按勾选打, 空集则一枚都不打."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / "MIDV-123.mp4"
+    src.write_bytes(b"video")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, video_template="{number}.{ext}")
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="MIDV-123", thumb_urls=["https://s/t.jpg"])
+    assert meta.id is not None
+    await repo.set_metadata_watermark(meta.id, auto=False, kinds=kinds, definition=None)
+    source = await repo.create_media_file(
+        lib.id, path=str(src), number="MIDV-123", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert source.id is not None
+
+    watermark_dir = tmp_path / "watermarks"
+    watermark_dir.mkdir()
+    Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(watermark_dir / "uncensored.png")
+
+    config = HotSettings(watermark=WatermarkConfig(enabled=True, scale=0.2))
+    org = OrganizeHandler(
+        repo, config, resource_store, web_client=cast("WebClient", _FakeImageClient()), watermark_dir=watermark_dir
+    )
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert (result.result.organized, result.result.failed) == (1, 0)
+
+    for image in (lib_root / "thumb.jpg", lib_root / "poster.jpg"):
+        with Image.open(image) as painted:
+            pixel = painted.convert("RGB").getpixel((20, 20))
+        assert isinstance(pixel, tuple)
+        assert (pixel[0] > 180 and pixel[2] < 80) is stamped
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_manual_definition_override(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """手动选的档位覆盖文件名检测出的档位."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    src = src_dir / "MIDV-123 720p.mp4"
+    src.write_bytes(b"video")
+
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False, video_template="{number}.{ext}")
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="MIDV-123", thumb_urls=["https://s/t.jpg"])
+    assert meta.id is not None
+    await repo.set_metadata_watermark(meta.id, auto=False, kinds=[WatermarkKind.DEFINITION], definition="1080p")
+    source = await repo.create_media_file(
+        lib.id, path=str(src), number="MIDV-123", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    assert source.id is not None
+
+    watermark_dir = tmp_path / "watermarks"
+    watermark_dir.mkdir()
+    Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(watermark_dir / "1080p.png")
+    Image.new("RGBA", (40, 20), (0, 255, 0, 255)).save(watermark_dir / "720p.png")
+
+    config = HotSettings(watermark=WatermarkConfig(enabled=True, scale=0.2))
+    org = OrganizeHandler(
+        repo, config, resource_store, web_client=cast("WebClient", _FakeImageClient()), watermark_dir=watermark_dir
+    )
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert (result.result.organized, result.result.failed) == (1, 0)
+
+    for image in (lib_root / "thumb.jpg", lib_root / "poster.jpg"):
+        with Image.open(image) as painted:
+            pixel = painted.convert("RGB").getpixel((20, 20))
+        assert isinstance(pixel, tuple)
+        assert pixel[0] > 180 and pixel[1] < 80
 
 
 @pytest.mark.asyncio(loop_scope="function")
