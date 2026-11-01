@@ -1,6 +1,6 @@
 """浏览器后端: 协议、按来源会话复用与失败映射.
 
-``HttpClient.get_rendered`` 经 ``BrowserClient`` 协议调用; 本地引擎与外部 solver 服务可互换.
+``HttpClient`` 的渲染路径经 ``BrowserClient`` 协议调用; 本地引擎与外部 solver 服务可互换.
 后端不感知爬虫层: 结果以 ``BrowserPageResult`` 返回, 失败语义由 ``RequestFailure`` 表达, 由
 ``HttpClient`` 统一分类. 协议中的 ``timeout`` 与 ``BrowserPool`` 的超时参数均为毫秒 (与 Playwright 一致).
 """
@@ -53,6 +53,7 @@ class BrowserBackend(Protocol):
         headers: Mapping[str, str] | None = None,
         wait_for: str | None = None,
         timeout: float | None = None,
+        network_idle_timeout: float | None = None,
     ) -> BrowserPageResult: ...
 
     async def close(self) -> None: ...
@@ -73,6 +74,7 @@ class BrowserClient(Protocol):
         headers: Mapping[str, str] | None = None,
         wait_for: str | None = None,
         timeout: float | None = None,
+        network_idle_timeout: float | None = None,
     ) -> BrowserPageResult: ...
 
 
@@ -122,6 +124,7 @@ class BrowserPool:
         headers: Mapping[str, str] | None = None,
         wait_for: str | None = None,
         timeout: float | None = None,
+        network_idle_timeout: float | None = None,
     ) -> BrowserPageResult:
         name = self.resolve(backend)
         if name is None:
@@ -139,6 +142,7 @@ class BrowserPool:
             headers=headers,
             wait_for=wait_for,
             timeout=timeout if timeout is not None else self._timeout_ms,
+            network_idle_timeout=network_idle_timeout,
         )
 
     def _create(self, name: BrowserBackendName) -> BrowserBackend:
@@ -212,6 +216,10 @@ class _PageLike(Protocol):
 
     async def content(self) -> str: ...
 
+    async def wait_for_load_state(
+        self, state: Literal["load", "domcontentloaded", "networkidle"], *, timeout: float
+    ) -> object: ...
+
     async def wait_for_selector(self, selector: str, *, timeout: float) -> object: ...
 
     async def close(self) -> None: ...
@@ -267,6 +275,7 @@ class _LocalBackend(ABC):
         headers: Mapping[str, str] | None = None,
         wait_for: str | None = None,
         timeout: float | None = None,
+        network_idle_timeout: float | None = None,
     ) -> BrowserPageResult:
         effective = timeout if timeout is not None else self._default_timeout
         self._active += 1
@@ -280,6 +289,7 @@ class _LocalBackend(ABC):
                     headers=headers,
                     wait_for=wait_for,
                     timeout=effective,
+                    network_idle_timeout=network_idle_timeout,
                 )
         finally:
             self._active -= 1
@@ -293,6 +303,7 @@ class _LocalBackend(ABC):
         headers: Mapping[str, str] | None,
         wait_for: str | None,
         timeout: float,
+        network_idle_timeout: float | None,
     ) -> BrowserPageResult:
         page: _PageLike | None = None
         try:
@@ -309,6 +320,8 @@ class _LocalBackend(ABC):
             page = await context.new_page()
             await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
             content = await self._settle_challenge(page, deadline)
+            if network_idle_timeout is not None:
+                content = await self._idle_content(page, content, network_idle_timeout, deadline)
             if wait_for is not None:
                 remaining = max(1.0, (deadline - time.monotonic()) * 1000)
                 await page.wait_for_selector(wait_for, timeout=remaining)
@@ -342,6 +355,27 @@ class _LocalBackend(ABC):
                     await page.close()
                 except Exception as exc:
                     logger.debug("browser page close failed (ignored)", url=url, error=str(exc))
+
+    async def _idle_content(self, page: _PageLike, settled: str, timeout_ms: float, deadline: float) -> str:
+        """等网络静默到上限再读正文; 挑战页与长轮询不会 idle, 到点按当前正文继续.
+
+        ``wait_for_load_state`` 判的是当前状态, 已静默立即返回, 所以放在挑战消解之后不会空等.
+        静默期间可能发生导航, 重读撞上框架重建时沿用已消解挑战的正文, 不把整次渲染判死.
+        """
+        budget = min(timeout_ms, _remaining_ms(deadline))
+        if budget > 0:
+            try:
+                await page.wait_for_load_state("networkidle", timeout=budget)
+            except Exception as exc:
+                if _is_timeout(exc):
+                    logger.debug("network idle wait timed out", timeout_ms=budget)
+                else:
+                    logger.warning("network idle wait failed", error=str(exc))
+        try:
+            return await page.content()
+        except Exception as exc:
+            logger.debug("content reread after idle failed; keep settled content", error=str(exc))
+            return settled
 
     async def _settle_challenge(self, page: _PageLike, deadline: float) -> str:
         """轮询正文直到挑战消解; 超时抛 ``_ChallengeUnresolved`` 或 ``_PageUnreadable``.
@@ -503,7 +537,10 @@ class SolverBackend:
         headers: Mapping[str, str] | None = None,
         wait_for: str | None = None,
         timeout: float | None = None,
+        network_idle_timeout: float | None = None,
     ) -> BrowserPageResult:
+        if wait_for is not None or network_idle_timeout is not None:
+            logger.debug("solver ignores wait_for and network idle timeout", scope=scope)
         effective = timeout if timeout is not None else self._default_timeout
         async with self._semaphore, self._lock_for(scope):
             try:
@@ -638,6 +675,10 @@ def _is_missing_session(message: str) -> bool:
 def _is_existing_session(message: str) -> bool:
     lower = message.lower()
     return "session" in lower and ("already" in lower or "exist" in lower)
+
+
+def _remaining_ms(deadline: float) -> float:
+    return max(0.0, (deadline - time.monotonic()) * 1000)
 
 
 def _is_timeout(exc: BaseException) -> bool:

@@ -111,7 +111,16 @@ class _FakeBsk:
             await asyncio.sleep(float(sleep_ms) / 1000 if isinstance(sleep_ms, int | float) else 0.0)
             self._mark("end", command)
             self._maybe_fail(config, "navigate_error")
-            return {"final_url": args[1], "reached": "domcontentloaded"}
+            wait_until = args[args.index("--wait-until") + 1] if "--wait-until" in args else "load"
+            if config.get("navigate_timeout"):
+                # 真实 CLI 的另一种退出码 4: 页面操作超时, 提交与否不确定.
+                raise BskError(
+                    "page operation timed out and extension cleanup could not be confirmed",
+                    code="timeout",
+                    exit_code=4,
+                    reason="cancel_cleanup_timeout",
+                )
+            return {"final_url": args[1], "reached": wait_until}
         if command == "evaluate":
             self._maybe_fail(config, "evaluate_error")
             return {"ok": True}
@@ -217,6 +226,38 @@ def _backend(
         click_cooldown=click_cooldown,
         max_tabs=max_tabs,
     )
+
+
+@pytest.mark.asyncio
+async def test_bsk_ignores_network_idle_timeout(bsk_env: Path) -> None:
+    """浏览器侧只有事件式等待, 静默参数不改变导航; 需要就绪用 wait_for."""
+    _scenario(bsk_env, pages=[CLEAN])
+    backend = _backend(bsk_env, timeout=10000)
+    try:
+        html, failure = await backend.get_page("https://a.example/", scope="a", network_idle_timeout=3000)
+    finally:
+        await backend.close()
+
+    assert (html, failure) == (CLEAN, None)
+    calls = _calls(bsk_env)
+    nav = next(args for args in calls if args[0] == "navigate")
+    assert nav[nav.index("--wait-until") + 1] == "domcontentloaded"
+    assert not any(args[0] == "wait-for-navigation" for args in calls)
+
+
+@pytest.mark.asyncio
+async def test_navigation_timeout_maps_to_timeout_failure(bsk_env: Path) -> None:
+    """页面操作超时 (code=timeout) 不能当成"已提交只是不静默"继续读页."""
+    _scenario(bsk_env, pages=[CLEAN], navigate_timeout=True)
+    backend = _backend(bsk_env)
+    try:
+        html, failure = await backend.get_page("https://a.example/", scope="a")
+    finally:
+        await backend.close()
+
+    assert html is None
+    assert failure is not None
+    assert failure.kind is FailureKind.TIMEOUT
 
 
 @pytest.mark.asyncio

@@ -197,8 +197,12 @@ class _FakePage:
         self.contents = contents
         self.closed = False
         self.waited: list[str] = []
+        self.idle_waits: list[tuple[str, float]] = []
         self.raise_on_goto: BaseException | None = None
+        self.raise_on_idle: BaseException | None = None
         self.content_error: BaseException | None = None
+        self.fail_content_on_call: int | None = None
+        self._content_calls = 0
         self._content_failures = content_failures
 
     async def goto(self, url: str, *, timeout: float, wait_until: str) -> None:
@@ -206,12 +210,20 @@ class _FakePage:
             raise self.raise_on_goto
 
     async def content(self) -> str:
+        self._content_calls += 1
+        if self.fail_content_on_call == self._content_calls:
+            raise RuntimeError("Execution context was destroyed, most likely because of a navigation")
         if self.content_error is not None:
             raise self.content_error
         if self._content_failures > 0:
             self._content_failures -= 1
             raise RuntimeError("execution context destroyed")
         return self.contents[0] if len(self.contents) == 1 else self.contents.pop(0)
+
+    async def wait_for_load_state(self, state: str, *, timeout: float) -> None:
+        self.idle_waits.append((state, timeout))
+        if self.raise_on_idle is not None:
+            raise self.raise_on_idle
 
     async def wait_for_selector(self, selector: str, *, timeout: float) -> None:
         self.waited.append(selector)
@@ -309,6 +321,59 @@ async def test_local_backend_retries_transient_content_read_failure(monkeypatch:
     html, failure = await backend.get_page("https://a.example/", scope="site-a", timeout=5000)
 
     assert (html, failure) == ("<html>solved</html>", None)
+
+
+@pytest.mark.asyncio
+async def test_local_backend_waits_network_idle_before_reading():
+    """挑战消解后等网络静默再读正文; 预算取静默上限与剩余时限的较小者."""
+    page = _FakePage(["<html>ok</html>"])
+    backend = _FakeLocalBackend(page)
+
+    html, failure = await backend.get_page(
+        "https://a.example/", scope="site-a", timeout=10000, network_idle_timeout=3000
+    )
+
+    assert (html, failure) == ("<html>ok</html>", None)
+    assert page.idle_waits == [("networkidle", 3000)]
+
+
+@pytest.mark.asyncio
+async def test_local_backend_caps_idle_budget_by_remaining_deadline(monkeypatch: pytest.MonkeyPatch):
+    page = _FakePage(["<html>ok</html>"])
+    backend = _FakeLocalBackend(page)
+    monkeypatch.setattr("amane.net.browser._remaining_ms", lambda deadline: 42.0)
+
+    await backend.get_page("https://a.example/", scope="site-a", network_idle_timeout=3000)
+
+    assert page.idle_waits == [("networkidle", 42.0)]
+
+
+@pytest.mark.asyncio
+async def test_local_backend_keeps_content_when_idle_wait_times_out():
+    """挑战页与长轮询永远不 idle; 到点按已消解挑战的正文继续."""
+    page = _FakePage(["<html>ok</html>"])
+    page.raise_on_idle = TimeoutError()
+    backend = _FakeLocalBackend(page)
+
+    html, failure = await backend.get_page(
+        "https://a.example/", scope="site-a", timeout=10000, network_idle_timeout=3000
+    )
+
+    assert (html, failure) == ("<html>ok</html>", None)
+
+
+@pytest.mark.asyncio
+async def test_local_backend_falls_back_when_reread_fails_after_idle():
+    """静默期间发生导航, 重读撞上框架重建时沿用已消解挑战的正文."""
+    page = _FakePage(["<html>ok</html>"])
+    page.fail_content_on_call = 2
+    backend = _FakeLocalBackend(page)
+
+    html, failure = await backend.get_page(
+        "https://a.example/", scope="site-a", timeout=10000, network_idle_timeout=3000
+    )
+
+    assert (html, failure) == ("<html>ok</html>", None)
 
 
 @pytest.mark.asyncio

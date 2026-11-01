@@ -391,11 +391,15 @@ class BskBackend:
         headers: Mapping[str, str] | None = None,
         wait_for: str | None = None,
         timeout: float | None = None,
+        network_idle_timeout: float | None = None,
     ) -> BrowserPageResult:
         if self._closed:
             return None, RequestFailure(kind=FailureKind.UNEXPECTED, message="browser backend closed")
         if headers:
             logger.debug("bsk ignores request headers", scope=scope, keys=sorted(headers))
+        if network_idle_timeout is not None:
+            # 浏览器侧只有事件式等待, 导航里等静默会把提交和静默绑进同一个时限; 需要就绪用 wait_for.
+            logger.debug("bsk ignores network idle timeout", scope=scope)
         dead: BskError | None = None
         for _ in range(2):
             session = self._next_session()
