@@ -79,6 +79,11 @@ def _translator(
         # 跨语系 → 调模型
         ("こんにちは世界", Language.ZH_CN, True),
         ("Hello world", Language.ZH_CN, True),
+        # 排版字符与变音字母不改分流
+        ("It won’t stop", Language.ZH_CN, True),
+        ("Café Müller", Language.ZH_CN, True),
+        # 中文标题带中点 U+30FB 不判日文
+        ("Rei Lakeside Lovers・神木麗", Language.ZH_CN, False),
         # 中文内部 → zhconv, 不调模型
         ("後愛上你", Language.ZH_CN, False),
         ("你好世界", Language.ZH_CN, False),
