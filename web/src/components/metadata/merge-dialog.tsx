@@ -211,6 +211,7 @@ export function MergeDialog({ metadata, opened, onClose, onMerged }: MergeDialog
     (): Record<string, string> => ({}),
     opened ? metadata.id : "closed",
   );
+  const [loadAll, setLoadAll] = useResettingState(() => false, opened ? metadata.id : "closed");
 
   const { textFields, mediaFields, scoreEntries, fieldData, originalSources, mediaSources } =
     useMemo(() => {
@@ -401,6 +402,7 @@ export function MergeDialog({ metadata, opened, onClose, onMerged }: MergeDialog
                       urls={urls}
                       sourceBadge={effective ?? t("merge.current")}
                       changed={changed}
+                      loadAll={loadAll}
                       onRevert={() => revert(field)}
                       revertLabel={t("merge.revert")}
                     />
@@ -409,7 +411,21 @@ export function MergeDialog({ metadata, opened, onClose, onMerged }: MergeDialog
               </Stack>
             </Panel>
 
-            <Panel title="Compare">
+            <Panel
+              title="Compare"
+              trailing={
+                !loadAll && mediaFields.length > 0 ? (
+                  <Button
+                    variant="subtle"
+                    size="compact-xs"
+                    leftSection={<IconDownload size={14} />}
+                    onClick={() => setLoadAll(true)}
+                  >
+                    {t("merge.loadAllImages")}
+                  </Button>
+                ) : undefined
+              }
+            >
               <Stack gap="md">
                 {textFields.map((field) => {
                   const entries = fieldData[field];
@@ -544,7 +560,7 @@ export function MergeDialog({ metadata, opened, onClose, onMerged }: MergeDialog
                                     </Badge>
                                   )}
                                 </Group>
-                                <MediaPreview field={field} urls={urls} />
+                                <MediaPreview field={field} urls={urls} loadAll={loadAll} />
                               </Stack>
                             </Paper>
                           );
@@ -703,6 +719,7 @@ function ResultMediaRow({
   urls,
   sourceBadge,
   changed,
+  loadAll,
   onRevert,
   revertLabel,
 }: {
@@ -711,6 +728,7 @@ function ResultMediaRow({
   urls: string[];
   sourceBadge: string;
   changed: boolean;
+  loadAll: boolean;
   onRevert: () => void;
   revertLabel: string;
 }) {
@@ -734,7 +752,7 @@ function ResultMediaRow({
           {changed && <ActionRevert onClick={onRevert} label={revertLabel} />}
         </Group>
       </Group>
-      <MediaPreview field={field} urls={urls} />
+      <MediaPreview field={field} urls={urls} loadAll={loadAll} />
     </Stack>
   );
 }
@@ -766,7 +784,16 @@ const PLACEHOLDER_MORE_STYLE: CSSProperties = {
 };
 
 /** Trailer URLs are video links - show as anchors; image fields load on demand into a thumb strip. */
-function MediaPreview({ field, urls }: { field: MediaField; urls: string[] }) {
+function MediaPreview({
+  field,
+  urls,
+  loadAll,
+}: {
+  field: MediaField;
+  urls: string[];
+  /** 面板头的一键加载; 为真时各行的占位块直接展开. */
+  loadAll: boolean;
+}) {
   const { t } = useTranslation("metadata");
   // 图片按需加载: 代理会下载上游原图并写入 Resource, 未被选中的站点快照不应因展开面板而回源.
   const [loaded, setLoaded] = useResettingState(() => false, urls.join("\n"));
@@ -797,7 +824,7 @@ function MediaPreview({ field, urls }: { field: MediaField; urls: string[] }) {
       </Stack>
     );
   }
-  if (!loaded) {
+  if (!loaded && !loadAll) {
     return (
       <MediaPlaceholder urls={urls} label={t("merge.loadImages")} onLoad={() => setLoaded(true)} />
     );
