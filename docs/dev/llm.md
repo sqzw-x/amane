@@ -41,7 +41,7 @@
 - **键 = `(源文本 sha256, 目标语言, 字段, system 提示词 sha256)`**. 不含 number (翻译输出只取决于文本, 系列共用简介天然去重), 含 field (不同字段用不同说明), 含 system 提示词指纹 (实际发给模型的 system 内容变化即失效); 不含 model / temperature.
 - **独立 SQLite 文件** (`data_dir/translations.db`), **不纳入主库、不经由 Alembic**: 纯缓存, 仅 `CREATE TABLE IF NOT EXISTS`, 可安全直接删除并在下次自动重建. 现有表的列集合与当前 schema 不符时整表 `DROP` 重建.
 - **会话级注入**: `start_app` 创建 → `AppRuntime.translation_cache` → 穿过 `build_handlers` / `build_translator`; 与 `ResourceStore` 同属不随热重载重建的对象, `_rebuild()` 复用同一实例 (修改 LLM 配置不会丢弃缓存).
-- **只缓存 LLM 路径**: 中文简繁 (zhconv) 廉价且确定, 不进缓存; 模型返回空也不写, 下次重试.
+- **只缓存 LLM 路径**: 中文简繁 (内置 zhconv) 廉价且确定, 不进缓存; 模型返回空也不写, 下次重试.
 - **并发合并**: 同一键的并发翻译只发出一次请求, 后到的调用等待并复用其结果. 合并范围包含缓存读取, 否则命中与登记之间仍会各自请求一次; 合并键与缓存键相同, 跨番号的相同文本一并合并. 状态与会话同生命周期 (`llm/coalescer.py::TranslationCoalescer`), 热重载重建 translator 时复用.
 - **失败与取消**: 首个请求失败或被取消时后到的调用得到 `None` 并保留原值, 失败不写缓存, 下次刮削重新请求. `use_cache=False` 的并发调用同样复用同一次翻译 (含先到请求的缓存命中), 重译请求只发出一次.
 
@@ -52,7 +52,8 @@
 判定逻辑在 `src/amane/utils/language.py`, 服务于「是否需要翻译」的决策, 非通用语言识别:
 
 - **句子级前提**: 标题 / 简介必含假名 → 「含假名」即判日文; 纯汉字日文只出现在词级 (标签 / 人名), 不在翻译范围.
-- **简繁不经由 LLM**: 简繁是字形差异而非语言差异, 中文文本一律交 `zhconv.convert` (幂等); 共用字转换后等于原文则返回 `None`, 调用方保留原值 — **无需检测**文本是简还是繁.
+- **简繁不经由 LLM**: 简繁是字形差异而非语言差异, 中文文本交内置 `zhconv.convert`; 转换前用 `issimp` 判断变体, 已是目标变体直接跳过 — 转换对正确繁体并非幂等, 重复转换会改写字形 (如 `干擾` → `幹擾`).
+- **词表同步**: `scripts/sync_zhcdict.py` 从 MediaWiki 的 ZhConversion 表更新; 默认只报差异, 写入按 merge 只增不删. `SIMPONLY` / `TRADONLY` 上游已不导出, 保留本地值. 项目修正词条在 `zhconv_overrides.json`, 与代码分离, 更新后无需改代码.
 - 仅日↔中、英↔中等**跨语系**才调 LLM (`needs_llm_translation`).
 
 > 判据取字符证据, 不用 ASCII 白名单: 假名判日文, 汉字判中文, 其余含字母的文本走 LLM, 无字母 (数字 / 符号 / emoji) 不翻译. 禁止以 ASCII 白名单判定英文 — 弯引号、破折号与变音字母会落入中文分支, 静默跳过翻译.

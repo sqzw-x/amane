@@ -163,6 +163,10 @@ docs:
 icons:
     uv run python scripts/generate_icons.py
 
+# 同步 MediaWiki 简繁词表; 默认只报告差异, 写入加 --write
+sync-zhcdict:
+    uv run python scripts/sync_zhcdict.py
+
 # macOS-only: sync → web → frontend build → PyInstaller .app
 macos-app: sync build
     bash scripts/build_macos_app.sh

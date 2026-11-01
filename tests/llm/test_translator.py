@@ -106,11 +106,32 @@ async def test_translate_routing(text, target, model_called):
 
 @pytest.mark.asyncio
 async def test_zhconv_conversion():
-    """繁→简由 zhconv 完成, 不经模型."""
+    """繁→简由内置 zhconv 完成, 不经模型."""
     model, calls = _recording_model()
     t = _translator(model)
     assert await t.translate("後愛上你", Language.ZH_CN, MetadataField.TITLE) == "后爱上你"
     assert not calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text,target,expected",
+    [
+        # 已是目标变体: 直接返回 None, 不得二次改写
+        ("头发", Language.ZH_CN, None),
+        ("干擾", Language.ZH_TW, None),
+        ("公里", Language.ZH_TW, None),
+        # 变体不一致时转换
+        ("頭髮", Language.ZH_CN, "头发"),
+        ("干扰", Language.ZH_TW, "干擾"),
+        ("这次來拍", Language.ZH_CN, "这次来拍"),  # 混合文本
+        # 共用字: 转换等于原文
+        ("你好世界", Language.ZH_CN, None),
+    ],
+)
+async def test_chinese_variant_conversion(text, target, expected):
+    t = _translator(_recording_model()[0])
+    assert await t.translate(text, target, MetadataField.TITLE) == expected
 
 
 @pytest.mark.asyncio

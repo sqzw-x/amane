@@ -95,7 +95,6 @@ dependencies = [
     { name = "tomli-w" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchdog" },
-    { name = "zhconv" },
 ]
 
 [package.optional-dependencies]
@@ -153,7 +152,6 @@ requires-dist = [
     { name = "tomli-w", specifier = ">=1.2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.46.0" },
     { name = "watchdog", specifier = ">=6.0.0,<7" },
-    { name = "zhconv", specifier = ">=1.4.3" },
 ]
 provides-extras = ["browser"]
 
@@ -3372,12 +3370,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/7a/3b/5a0d2670bab661164
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/e9/c362d47ed2b1928d65d61888c1419fae8ef69417fba2067d2fd3da1d400b/xmod-1.10.0-py3-none-any.whl", hash = "sha256:bebf8493b7ac63097401590a329c9ed20da224de0583a522e7ccb634af122f5a", size = 4661, upload-time = "2026-05-09T13:46:45.776Z" },
 ]
-
-[[package]]
-name = "zhconv"
-version = "1.4.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/25/47/c8ae2d5d4025e253211ff3d8c163f457db1da94976cb582337a5ab76cb87/zhconv-1.4.3.tar.gz", hash = "sha256:ad42d9057ca0605f8e41d62b67ca797f879f58193ee6840562c51459b2698c45", size = 211571, upload-time = "2021-10-31T05:59:44.096Z" }
 
 [[package]]
 name = "zstandard"

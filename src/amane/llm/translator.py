@@ -7,7 +7,6 @@ import re
 from collections.abc import Mapping
 
 import structlog
-import zhconv
 from aiolimiter import AsyncLimiter
 from httpx2 import AsyncClient, Timeout
 from pydantic_ai.direct import model_request
@@ -15,6 +14,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, SystemPromptPart, U
 from pydantic_ai.models import Model
 
 from ..enums import ApiType, Language, MetadataField
+from ..utils import zhconv
 from ..utils.language import needs_llm_translation
 from .cache import TranslationCache
 from .coalescer import TranslationCoalescer
@@ -124,9 +124,11 @@ class LLMTranslator:
                 lambda: self._translate_llm(text, target, field, system, use_cache=use_cache),
             )
 
-        # 中文文本: 简繁字形转换 (幂等); 共用字/已是目标变体则结果等于原文 → 返回 None 省去写回.
+        # 中文文本: 已是目标变体直接返回, 否则做字形与地区词转换; 转换后等于原文同样返回 None.
         locale = _ZHCONV_LOCALE.get(target)
         if locale is not None:
+            if zhconv.issimp(text, full=True) is (target == Language.ZH_CN):
+                return None
             converted = zhconv.convert(text, locale)
             return converted if converted != text else None
 

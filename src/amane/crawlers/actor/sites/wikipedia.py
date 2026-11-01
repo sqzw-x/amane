@@ -7,12 +7,12 @@ import re
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import quote
 
-import zhconv
 from parsel import Selector
 
 from amane.enums import ActorGender, SiteName
 from amane.net.errors import SourceError
 from amane.plugins.models import SourceCapability
+from amane.utils import zhconv
 from amane.utils.dates import normalize_calendar_date
 
 from ...base import CrawlerProfile
