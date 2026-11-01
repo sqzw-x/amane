@@ -1,5 +1,10 @@
 """BrowserSkill (``bsk``) 通道: 经 CLI 驱动用户已连接的浏览器.
 
+bsk 0.4 起默认开启共享控制: 除了空白标签页的首次导航, 会改动页面的命令都要带一次
+``cooperate sync`` 返回的上下文, 且那份上下文只能用一次. 因此每个请求开一张新标签页,
+正文走只读的 ``get-html`` 轮询 —— 人工在窗口里过验证不会打断轮询; 只有写 cookie 与点
+Turnstile 需要上下文. 关标签页同样要上下文, 清理靠会话轮换与空闲关闭.
+
 同一 session 的命令在 daemon 侧串行, 并发只能靠多 session; 每个 session 对应浏览器里的一个
 Agent Window, 因此按并发度而非按来源分配. CLI 不提供 cookie 与请求头注入: cookie 只能先导航到
 目标域再用页面上下文写入, 请求头丢弃. 扩展会把自身样式注入页面 DOM, 返回前剥掉.
@@ -56,6 +61,21 @@ _VERIFY_NODE_RE = re.compile(r"(@e\d+)\s+(?:checkbox|button)\b[^\n]*?(验证|真
 # 以及单个页面最多点击几次, 避免把预算耗在同一处反复点.
 _CLICK_COOLDOWN_S = 2.0
 _MAX_CLICKS = 3
+# 共享控制 (bsk 0.4) 的协议下限: 低于它的 daemon 没有 cooperate, 页面变更会被拒.
+_MIN_PROTOCOL = (1, 7)
+# 每个会话累计创建的标签页上限. 关标签页也要上下文, 达到上限直接换会话, 由 daemon 关掉
+# 没被人工碰过的标签页.
+_MAX_TABS_PER_SESSION = 12
+# cooperate sync 在后台做一次完整观察, 重页要数秒; 它按自己的超时计, 不吃渲染截止时间.
+_SYNC_TIMEOUT_S = 30.0
+# 会话真的没了: 只有实体消失或扩展连接断开才丢会话. ``permission_denied`` 只表示某个动作缺上下文
+# 或人工正持有控制, 会话本身完好, 不能据此关掉用户正在操作的窗口.
+_DEAD_SESSION_CODES = frozenset({"not_found", "session_closed", "session_window_closed"})
+_DEAD_SESSION_MARKERS = ("could not establish connection", "receiving end does not exist", "extension disconnected")
+# 写 cookie 失败后冷却这么久再试: 瞬时失败不该让该来源在进程内一直带着旧页面.
+_COOKIE_RETRY_COOLDOWN_S = 120.0
+# 取完正文后关标签页的同步预算: 拿不到上下文就不关, 交给会话轮换.
+_CLOSE_SYNC_TIMEOUT_S = 5.0
 # 扩展注入的样式 (antd cssinjs) 带 data-css-hash / data-rc-order, 页面自身样式不受影响.
 _INJECTED_STYLE_RE = re.compile(
     r"<style\b[^>]*\b(?:data-css-hash|data-rc-order)=[\"'][^\"']*[\"'][^>]*>.*?</style>",
@@ -71,7 +91,7 @@ BskDaemonStarter = Callable[[], Awaitable[None]]
 
 
 class BskError(Exception):
-    """``bsk`` 命令失败; ``code`` 取自 CLI 的 JSON 错误体, 输出不可解析时为 None."""
+    """``bsk`` 命令失败; ``code``/``reason`` 取自 CLI 的 JSON 错误体, 输出不可解析时为 None."""
 
     def __init__(
         self,
@@ -80,11 +100,13 @@ class BskError(Exception):
         code: str | None = None,
         hint: str | None = None,
         exit_code: int | None = None,
+        reason: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.hint = hint
         self.exit_code = exit_code
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -115,6 +137,14 @@ class BskStatus:
 
 class _ChallengeUnresolved(Exception):
     """等待期内正文仍被判为拦截页."""
+
+
+class _DeadSession(Exception):
+    """会话已不可用 (窗口被关、控制权被人工改动、目标页拖坏扩展连接), 换会话重试一次."""
+
+    def __init__(self, exc: BskError) -> None:
+        super().__init__(str(exc))
+        self.exc = exc
 
 
 def resolve_bsk_path(explicit: str | None = None) -> str | None:
@@ -149,14 +179,25 @@ async def probe_bsk(
         return BskStatus(available=False, detail="bsk status 超时: daemon 无响应")
     except BskError as exc:
         # daemon 以 CREATE_BREAKAWAY_FROM_JOB 启动, 宿主进程被限制在不允许脱离的 Job 里时
-        # (安全软件、沙箱常见的全局 Job) 无法自行拉起; 只有前台模式不需要 breakaway.
-        if "Job Object" in str(exc):
+        # (安全软件、沙箱常见的全局 Job) 无法自行拉起; 抓取时改由后台拉起前台 daemon,
+        # 探测本身不能替调用方持有那个进程, 因此这里报告可用而不是判死.
+        if _is_daemon_start_failure(exc):
             return BskStatus(
-                available=False,
-                detail="bsk daemon 无法自行启动: 进程被系统 Job 限制, 请在终端运行 bsk daemon start --foreground 并保持窗口打开",
+                available=True,
+                detail="bsk daemon 受系统 Job 限制, 首次抓取时会以前台模式自动启动; 若一直不可用, 请在终端运行 bsk daemon start --foreground",
             )
         detail = f"bsk 不可用: {exc}"
         return BskStatus(available=False, detail=f"{detail}; {exc.hint}" if exc.hint else detail)
+    protocol = _str_field(data, "protocol_version")
+    version = _parse_protocol(protocol)
+    if version is None or version < _MIN_PROTOCOL:
+        # 0.4 起页面变更要一次性上下文; 旧 daemon 没有 cooperate, 抓取会在每个动作上失败.
+        return BskStatus(
+            available=False,
+            detail=f"bsk 版本不支持共享控制 (协议 {protocol or '未知'}), 需要 0.4.0 及以上; 请升级 CLI 与浏览器扩展后重启 daemon",
+            daemon_version=_str_field(data, "daemon_version"),
+            protocol_version=protocol,
+        )
     browsers = tuple(
         BskBrowser(
             instance_id=_str_field(item, "instance_id") or "",
@@ -222,11 +263,13 @@ async def _run(path: str, args: Sequence[str], timeout_s: float = 30.0) -> dict[
     if not isinstance(data, dict):
         raise BskError(f"bsk {args[0]} 输出不是对象: {text[:300]}", code="invalid_output")
     if proc.returncode != 0:
+        payload = data.get("data")
         raise BskError(
             _str_field(data, "message") or f"bsk {args[0]} 失败 (退出码 {proc.returncode})",
             code=_str_field(data, "code"),
             hint=_str_field(data, "hint"),
             exit_code=proc.returncode,
+            reason=_str_field(payload, "reason") if isinstance(payload, dict) else None,
         )
     return {str(key): value for key, value in data.items()}
 
@@ -239,6 +282,39 @@ def _str_field(data: Mapping[str, object], key: str) -> str | None:
 def _int_field(data: Mapping[str, object], key: str) -> int | None:
     value = data.get(key)
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _is_dead_session(exc: BskError) -> bool:
+    """扩展连接断开或会话实体消失; 这些才是换会话重试的依据."""
+    if exc.code in _DEAD_SESSION_CODES:
+        return True
+    message = str(exc).lower()
+    return any(marker in message for marker in _DEAD_SESSION_MARKERS)
+
+
+def _parse_protocol(raw: str | None) -> tuple[int, int] | None:
+    """``1.7`` → ``(1, 7)``; 只比较主次版本, 补丁号不参与."""
+    if raw is None:
+        return None
+    major, _, rest = raw.partition(".")
+    try:
+        return int(major), int(rest.split(".", 1)[0])
+    except ValueError:
+        return None
+
+
+def _observation_text(data: Mapping[str, object]) -> str | None:
+    """``cooperate sync`` 基线应答里的 VOM 文本; 增量应答不带正文."""
+    observation = data.get("observation")
+    if not isinstance(observation, dict):
+        return None
+    return _str_field(observation, "text")
+
+
+def _observation_truncated(data: Mapping[str, object]) -> bool:
+    """正文是否被截断; 截断时 ref 可能不在正文里, 不能据此判定页面上没有该节点."""
+    observation = data.get("observation")
+    return isinstance(observation, dict) and observation.get("truncated") is True
 
 
 def _dict_list(value: object) -> list[dict[str, object]]:
@@ -264,13 +340,12 @@ def _seconds(ms: float) -> str:
 
 
 class _Session:
-    """一个 Agent Window 及其标签页与串行锁; ``tabs`` 按来源复用, 保住 clearance."""
+    """一个 Agent Window 及其串行锁; 标签页按请求创建, 只在会话内累计计数."""
 
     def __init__(self) -> None:
         self.lock = asyncio.Lock()
         self.session_id: str | None = None
-        self.tabs: dict[str, int] = {}
-        self.cookies: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
+        self.tabs_open = 0
         self.active = 0
         self.generation = 0
         self.idle_task: asyncio.Task[None] | None = None
@@ -288,6 +363,7 @@ class BskBackend:
         poll_interval: float = _POLL_INTERVAL_S,
         idle_timeout: float = _IDLE_TIMEOUT_S,
         click_cooldown: float = _CLICK_COOLDOWN_S,
+        max_tabs: int = _MAX_TABS_PER_SESSION,
         runner: BskRunner | None = None,
         daemon_starter: BskDaemonStarter | None = None,
     ) -> None:
@@ -296,11 +372,14 @@ class BskBackend:
         self._poll_interval = max(0.05, poll_interval)
         self._idle_timeout = idle_timeout
         self._click_cooldown = click_cooldown
+        self._max_tabs = max(1, max_tabs)
         self._runner = runner or _run
         self._daemon_starter = daemon_starter or self._start_foreground_daemon
         self._daemon: asyncio.subprocess.Process | None = None
         self._sessions = [_Session() for _ in range(max(1, max_sessions))]
-        self._cursor = 0
+        # cookie 罐整个浏览器共享, 因此写入记录与冷却都放在 backend 上, 换会话不重做.
+        self._cookie_applied: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
+        self._cookie_retry_at: dict[tuple[str, str, tuple[tuple[str, str], ...]], float] = {}
         self._closed = False
 
     async def get_page(
@@ -317,36 +396,36 @@ class BskBackend:
             return None, RequestFailure(kind=FailureKind.UNEXPECTED, message="browser backend closed")
         if headers:
             logger.debug("bsk ignores request headers", scope=scope, keys=sorted(headers))
-        session = self._next_session(scope)
-        session.active += 1
-        try:
-            async with session.lock:
-                return await self._fetch(
-                    session,
-                    url,
-                    scope=scope,
-                    cookies={} if cookies is None else dict(cookies),
-                    wait_for=wait_for,
-                    timeout_ms=timeout if timeout is not None else self._default_timeout,
-                )
-        finally:
-            session.active -= 1
-            self._schedule_idle(session)
+        dead: BskError | None = None
+        for _ in range(2):
+            session = self._next_session()
+            session.active += 1
+            try:
+                async with session.lock:
+                    try:
+                        return await self._fetch(
+                            session,
+                            url,
+                            scope=scope,
+                            cookies={} if cookies is None else dict(cookies),
+                            wait_for=wait_for,
+                            timeout_ms=timeout if timeout is not None else self._default_timeout,
+                        )
+                    except _DeadSession as exc:
+                        dead = exc.exc
+            finally:
+                session.active -= 1
+                self._schedule_idle(session)
+        assert dead is not None
+        return None, self._failure(dead, url)
 
-    def _next_session(self, scope: str) -> _Session:
-        """已有该来源标签页的会话优先, 否则取在途最少的会话.
+    def _next_session(self) -> _Session:
+        """取在途最少的会话; 空闲时固定用第一个.
 
-        来源粘住会话才能复用标签页、挑战 clearance 与一次性 cookie 引导; 不同来源分散到
-        不同会话才能并发, 因为同一会话的命令在 daemon 侧串行.
+        标签页不再按来源复用 (复用标签页的第二次导航要一次上下文), 所以按下标兜底就够:
+        串行请求落回同一个窗口, 并发请求才摊到不同会话 —— 同一会话的命令在 daemon 侧串行.
         """
-        for session in self._sessions:
-            if scope in session.tabs:
-                return session
-        count = len(self._sessions)
-        start = self._cursor % count
-        self._cursor += 1
-        order = [(start + offset) % count for offset in range(count)]
-        return self._sessions[min(order, key=lambda index: self._sessions[index].active)]
+        return min(self._sessions, key=lambda session: session.active)
 
     async def _fetch(
         self,
@@ -360,16 +439,18 @@ class BskBackend:
     ) -> BrowserPageResult:
         try:
             session_id = await self._ensure_session(session)
-            tab_id = await self._ensure_tab(session, scope, session_id)
-            await self._apply_cookies(session, session_id, tab_id, scope, url, cookies)
-            # 会话与引导导航不计入单次渲染时限, 与本地引擎启动的语义一致.
+            if cookies:
+                session_id = await self._apply_cookies(session, session_id, scope, url, cookies)
+            session_id, tab_id = await self._open_tab(session, session_id)
+            # 会话与 cookie 引导不计入单次渲染时限, 与本地引擎启动的语义一致.
             deadline = time.monotonic() + timeout_ms / 1000
             await self._navigate(session_id, tab_id, url, deadline)
             html = await self._settle(session_id, tab_id, deadline)
             if wait_for is not None:
                 await self._wait_for(session_id, tab_id, wait_for, deadline)
-                html = await self._get_html(session_id, tab_id, deadline)
-            return strip_injected_html(html), None
+                html = strip_injected_html(await self._get_html(session_id, tab_id, deadline))
+            await self._close_tab(session, session_id, tab_id)
+            return html, None
         except _ChallengeUnresolved:
             return None, RequestFailure(
                 kind=FailureKind.UNEXPECTED,
@@ -379,8 +460,9 @@ class BskBackend:
         except TimeoutError:
             return None, RequestFailure(kind=FailureKind.TIMEOUT, message=f"browser timeout: {url}")
         except BskError as exc:
-            if exc.code == "not_found":
+            if _is_dead_session(exc):
                 await self._stop(session, timeout_s=_COMMAND_SLACK_S)
+                raise _DeadSession(exc) from exc
             return None, self._failure(exc, url)
 
     def _failure(self, exc: BskError, url: str) -> RequestFailure:
@@ -394,6 +476,21 @@ class BskBackend:
             )
         if exc.code == "timeout" or (exc.hint is not None and "busy" in exc.hint):
             return RequestFailure(kind=FailureKind.TIMEOUT, message=f"bsk timeout: {url}: {detail}")
+        if exc.code in {"unknown_method", "version_mismatch", "protocol_mismatch"}:
+            return RequestFailure(
+                kind=FailureKind.UNEXPECTED,
+                message=f"bsk 与 daemon 协议不匹配, 请升级 CLI 与浏览器扩展并重启 daemon: {detail}",
+            )
+        if exc.code == "user_aborted":
+            return RequestFailure(
+                kind=FailureKind.UNEXPECTED,
+                message=f"bsk 任务被用户在浏览器里停止, 请确认后重试: {detail}",
+            )
+        if exc.code == "permission_denied":
+            return RequestFailure(
+                kind=FailureKind.UNEXPECTED,
+                message=f"bsk 等待人工协作, 请在浏览器窗口完成验证后重试: {detail}",
+            )
         logger.error("bsk page fetch failed", url=url, error=detail)
         return RequestFailure(kind=FailureKind.UNEXPECTED, message=f"bsk error: {detail}")
 
@@ -408,39 +505,111 @@ class BskBackend:
         logger.debug("bsk session started", session=session_id)
         return session_id
 
-    async def _ensure_tab(self, session: _Session, scope: str, session_id: str) -> int:
-        tab_id = session.tabs.get(scope)
-        if tab_id is not None:
-            return tab_id
+    async def _open_tab(self, session: _Session, session_id: str) -> tuple[str, int]:
+        """开一张空白标签页: 共享控制只放行空白页的首次导航.
+
+        关标签页也要上下文, 达到上限时停掉会话 (daemon 顺带关掉没被人工碰过的标签页)
+        再开新的, 由会话轮换承担清理.
+        """
+        if session.tabs_open >= self._max_tabs:
+            await self._stop(session)
+            session_id = await self._ensure_session(session)
         data = await self._call(("tab", "create", "--session", session_id))
-        created = _int_field(data, "tab_id")
-        if created is None:
+        tab_id = _int_field(data, "tab_id")
+        if tab_id is None:
             raise BskError("bsk tab create 未返回 tab_id", code="invalid_output")
-        session.tabs[scope] = created
-        return created
+        session.tabs_open += 1
+        return session_id, tab_id
 
     async def _apply_cookies(
-        self,
-        session: _Session,
-        session_id: str,
-        tab_id: int,
-        scope: str,
-        url: str,
-        cookies: dict[str, str],
-    ) -> None:
-        """先落到目标域再写 cookie: CLI 没有 cookie 接口, 只有页面上下文能写."""
-        if not cookies:
-            return
+        self, session: _Session, session_id: str, scope: str, url: str, cookies: dict[str, str]
+    ) -> str:
+        """先落到目标域再写 cookie: CLI 没有 cookie 接口, 只有页面上下文能写.
+
+        用一张独立的空白标签页完成, 让取页标签页的首次导航保持免费. 写入失败只告警:
+        站点接下来会以被拦或要求验证的形式表现出来, 由调用方按结果处理.
+        """
         key = (urlsplit(url).netloc, scope, tuple(sorted(cookies.items())))
-        if key in session.cookies:
-            return
-        await self._navigate(session_id, tab_id, url, time.monotonic() + self._default_timeout / 1000)
-        script = "; ".join(
-            f"document.cookie={json.dumps(f'{name}={value}; path=/')}" for name, value in cookies.items()
-        )
-        await self._call(("evaluate", script, "--session", session_id, "--tab-id", str(tab_id)))
-        session.cookies.add(key)
+        if key in self._cookie_applied or time.monotonic() < self._cookie_retry_at.get(key, 0.0):
+            return session_id
+        session_id, tab_id = await self._open_tab(session, session_id)
+        try:
+            deadline = time.monotonic() + self._default_timeout / 1000
+            await self._navigate(session_id, tab_id, url, deadline)
+            script = "; ".join(
+                f"document.cookie={json.dumps(f'{name}={value}; path=/')}" for name, value in cookies.items()
+            )
+            try:
+                context_id = await self._sync_context(session_id, tab_id)
+                if context_id is None:
+                    return self._skip_cookies(key, scope, "观察面不可用", session_id)
+                await self._call(
+                    (
+                        "evaluate",
+                        script,
+                        "--session",
+                        session_id,
+                        "--tab-id",
+                        str(tab_id),
+                        "--context",
+                        context_id,
+                    ),
+                    timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
+                )
+            except BskError as exc:
+                if _is_dead_session(exc):
+                    await self._stop(session, timeout_s=_COMMAND_SLACK_S)
+                    raise _DeadSession(exc) from exc
+                return self._skip_cookies(key, scope, str(exc), session_id)
+            except TimeoutError as exc:
+                return self._skip_cookies(key, scope, str(exc), session_id)
+        finally:
+            # 引导页也是这个会话里的标签页, 三条路 (成功/拿不到上下文/抛错) 都要收掉, 否则会顶到上限.
+            if session.session_id == session_id:
+                await self._close_tab(session, session_id, tab_id)
+        self._cookie_applied.add(key)
         logger.debug("bsk cookies applied in page", scope=scope, names=sorted(cookies))
+        return session_id
+
+    def _skip_cookies(
+        self, key: tuple[str, str, tuple[tuple[str, str], ...]], scope: str, reason: str, session_id: str
+    ) -> str:
+        """cookie 写不进去时只冷却, 不换会话也不永久放弃: 页面照抓, 冷却后换新页面再试.
+
+        冷却是跨会话的按组合记录; 失败原因多为目标页不可观察 (同步拿不到上下文) 或用户临时持有控制.
+        """
+        self._cookie_retry_at[key] = time.monotonic() + _COOKIE_RETRY_COOLDOWN_S
+        logger.warning("bsk cookie bootstrap skipped", scope=scope, error=reason)
+        return session_id
+
+    async def _close_tab(self, session: _Session, session_id: str, tab_id: int) -> None:
+        """取完正文就关掉这张标签页; 关标签页也要一次性上下文, 拿不到就留给会话轮换."""
+        try:
+            context_id = await self._sync_context(session_id, tab_id, timeout_s=_CLOSE_SYNC_TIMEOUT_S)
+            if context_id is None:
+                return
+            await self._call(
+                ("tab", "close", "--session", session_id, "--context", context_id, str(tab_id)),
+                timeout_s=_COMMAND_SLACK_S * 2,
+            )
+        except (BskError, TimeoutError) as exc:
+            logger.debug("bsk tab close skipped", error=str(exc))
+            return
+        session.tabs_open = max(0, session.tabs_open - 1)
+
+    async def _sync(self, session_id: str, tab_id: int, *, timeout_s: float = _SYNC_TIMEOUT_S) -> dict[str, object]:
+        """取一份只能授权一次页面动作的观察; 不可用时由调用方降级.
+
+        ``--settle`` 让 CLI 自己重试动态页面上的只读拒绝, 省掉这边的重试循环.
+        """
+        return await self._call(
+            ("cooperate", "sync", "--session", session_id, "--tab-id", str(tab_id), "--settle"),
+            timeout_s=timeout_s,
+        )
+
+    async def _sync_context(self, session_id: str, tab_id: int, *, timeout_s: float = _SYNC_TIMEOUT_S) -> str | None:
+        data = await self._sync(session_id, tab_id, timeout_s=timeout_s)
+        return _str_field(data, "context_id")
 
     async def _navigate(self, session_id: str, tab_id: int, url: str, deadline: float) -> None:
         await self._call(
@@ -471,13 +640,27 @@ class BskBackend:
         clicks = 0
         last_probe = 0.0
         previous: str | None = None
+        shown = False
         while True:
-            html = strip_injected_html(await self._get_html(session_id, tab_id, deadline))
+            try:
+                html = strip_injected_html(await self._get_html(session_id, tab_id, deadline))
+            except BskError as exc:
+                # 导航中间态读正文会撞上失效的节点 id; 只读取失败, 继续轮询到截止时间.
+                if exc.code != "cdp_failed":
+                    raise
+                if time.monotonic() >= deadline:
+                    raise
+                await asyncio.sleep(min(self._poll_interval, max(0.0, deadline - time.monotonic())))
+                continue
             expired = time.monotonic() >= deadline
             if classify_block(html) is FailureReason.CLOUDFLARE_CHALLENGE:
                 previous = None
                 if expired:
                     raise _ChallengeUnresolved
+                if not shown:
+                    # 窗口里可能已经堆了别的标签页; 切到这一张, 用户找得到要验证的页面.
+                    shown = True
+                    await self._select_tab(session_id, tab_id)
                 now = time.monotonic()
                 if clicks < _MAX_CLICKS and now - last_probe >= self._click_cooldown:
                     last_probe = now
@@ -489,31 +672,55 @@ class BskBackend:
                 previous = html
             await asyncio.sleep(min(self._poll_interval, max(0.0, deadline - time.monotonic())))
 
-    async def _click_verification(self, session_id: str, tab_id: int, deadline: float, clicked: set[str]) -> bool:
-        """交互式 Turnstile: 从无障碍树里取复选框 ref 后原生点击.
+    async def _select_tab(self, session_id: str, tab_id: int) -> None:
+        """切到要验证的标签页; 只是给用户看的可见性动作, 失败不影响轮询."""
+        try:
+            await self._call(("tab", "select", str(tab_id), "--session", session_id), timeout_s=_COMMAND_SLACK_S)
+        except (BskError, TimeoutError) as exc:
+            logger.debug("bsk tab select failed (ignored)", error=str(exc))
 
-        复选框在跨域 iframe 里, 选择器够不到, 只有快照 ref 能定位; 点击是输入事件而非 DOM 调用.
-        同一个 ref 只点一次 — 页面重绘会换 ref, 没换说明点了也没变化, 再点只是浪费预算.
+    async def _click_verification(self, session_id: str, tab_id: int, deadline: float, clicked: set[str]) -> bool:
+        """交互式 Turnstile: 从观察里取复选框 ref 后原生点击.
+
+        复选框在跨域 iframe 里, 选择器够不到, 只有无障碍树的 ref 能定位. 点击要一次性上下文,
+        所以先用只读快照确认真的有复选框, 再取同步上下文 —— 没有复选框时不该为一次点击付同步的代价.
+        同步会重读页面, 引用表以它为准. 同一个 ref 只点一次: 页面重绘会换 ref, 没换说明点了也没变化.
         """
         try:
-            data = await self._call(
+            snapshot = await self._call(
                 ("snapshot", "--session", session_id, "--tab-id", str(tab_id), "--max-tokens", "4000"),
                 timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
             )
-        except BskError as exc:
+        except (BskError, TimeoutError) as exc:
             logger.debug("bsk snapshot failed (ignored)", error=str(exc))
             return False
-        text = _str_field(data, "text") or ""
-        match = _VERIFY_NODE_RE.search(text)
-        if match is None:
+        match = _VERIFY_NODE_RE.search(_str_field(snapshot, "text") or "")
+        if match is None or match.group(1) in clicked:
             return False
-        ref = match.group(1)
+        try:
+            timeout_s = min(_SYNC_TIMEOUT_S, _remaining(deadline) + _COMMAND_SLACK_S)
+            data = await self._sync(session_id, tab_id, timeout_s=timeout_s)
+        except (BskError, TimeoutError) as exc:
+            logger.debug("bsk sync failed (ignored)", error=str(exc))
+            return False
+        context_id = _str_field(data, "context_id")
+        if context_id is None:
+            return False
+        text = _observation_text(data)
+        synced = None if text is None else _VERIFY_NODE_RE.search(text)
+        if synced is not None:
+            ref = synced.group(1)
+        elif text is not None and not _observation_truncated(data):
+            return False
+        else:
+            # 增量应答没有正文, 或正文被截断: ref 可能不在可见部分, 沿用快照里找到的那个.
+            ref = match.group(1)
         if ref in clicked:
             return False
         clicked.add(ref)
         try:
             await self._call(
-                ("click", ref, "--session", session_id, "--tab-id", str(tab_id)),
+                ("click", ref, "--session", session_id, "--tab-id", str(tab_id), "--context", context_id),
                 timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
             )
         except BskError as exc:
@@ -645,8 +852,7 @@ class BskBackend:
 
     async def _stop(self, session: _Session, *, timeout_s: float = _STOP_TIMEOUT_S) -> None:
         session_id, session.session_id = session.session_id, None
-        session.tabs.clear()
-        session.cookies.clear()
+        session.tabs_open = 0
         if session_id is None:
             return
         try:
