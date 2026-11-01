@@ -53,7 +53,7 @@
 
 - **句子级前提**: 标题 / 简介必含假名 → 「含假名」即判日文; 纯汉字日文只出现在词级 (标签 / 人名), 不在翻译范围.
 - **简繁不经由 LLM**: 简繁是字形差异而非语言差异, 中文文本交内置 `zhconv.convert`; 转换前用 `issimp` 判断变体, 已是目标变体直接跳过 — 转换对正确繁体并非幂等, 重复转换会改写字形 (如 `干擾` → `幹擾`).
-- **词表同步**: `scripts/sync_zhcdict.py` 从 MediaWiki 的 ZhConversion 表更新; 默认只报差异, 写入按 merge 只增不删. `SIMPONLY` / `TRADONLY` 上游已不导出, 保留本地值.
+- **词表同步**: `scripts/sync_zhcdict.py` 从 MediaWiki 的 ZhConversion 表更新; 默认只报差异, 写入按 merge 只增不删. `SIMPONLY` / `TRADONLY` 上游已不导出, 保留本地值. 项目修正词条在 `zhconv_overrides.json`, 与代码分离, 更新后无需改代码.
 - 仅日↔中、英↔中等**跨语系**才调 LLM (`needs_llm_translation`).
 
 > 判据取字符证据, 不用 ASCII 白名单: 假名判日文, 汉字判中文, 其余含字母的文本走 LLM, 无字母 (数字 / 符号 / emoji) 不翻译. 禁止以 ASCII 白名单判定英文 — 弯引号、破折号与变音字母会落入中文分支, 静默跳过翻译.

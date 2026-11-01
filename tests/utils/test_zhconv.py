@@ -1,6 +1,6 @@
 import pytest
 
-from amane.utils.zhconv import convert, issimp
+from amane.utils.zhconv import _parse_overrides, convert, issimp
 
 
 @pytest.mark.parametrize(
@@ -17,6 +17,10 @@ from amane.utils.zhconv import convert, issimp
         ("头发", "zh-tw", "頭髮"),
         ("软件", "zh-tw", "軟體"),
         ("台湾", "zh-tw", "臺灣"),
+        # 项目修正词条 (zhconv_overrides.json)
+        ("公里", "zh-tw", "公里"),
+        ("干擾", "zh-tw", "干擾"),
+        ("舞台", "zh-tw", "舞臺"),
         # 未命中的字符原样保留
         ("abc 123", "zh-cn", "abc 123"),
         ("", "zh-cn", ""),
@@ -57,3 +61,22 @@ def test_issimp_full(s, expected):
 )
 def test_issimp_first_hit(s, expected):
     assert issimp(s) == expected
+
+
+def test_parse_overrides():
+    parsed = _parse_overrides('{"zh-tw": {"干扰": "干擾"}}'.encode())
+    assert parsed == {"zh-tw": {"干扰": "干擾"}}
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"[]",
+        b'{"zh-hk": {}}',
+        b'{"zh-tw": {"a": 1}}',
+        b'{"zh-tw": []}',
+    ],
+)
+def test_parse_overrides_rejects(raw):
+    with pytest.raises(ValueError):
+        _parse_overrides(raw)

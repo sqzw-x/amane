@@ -4,7 +4,8 @@
 (GPLv2+), 项目按 GPLv3 分发. 只保留 ``convert`` 与 ``issimp`` 以及 zh-cn / zh-tw 两种变体:
 最大正向匹配, 不做分词, 不解析 MediaWiki 的转换语法. 不追求通用转换质量, 只服务元数据字形归一.
 
-词表数据是独立的 ``zhcdict.json``, 不在静态导入图内, 打包 (wheel / PyInstaller) 须显式收集.
+词表数据是独立的 ``zhcdict.json``, 项目修正词条在 ``zhconv_overrides.json``; 两者都不在静态导入图内,
+打包 (wheel / PyInstaller) 须显式收集.
 """
 
 from __future__ import annotations
@@ -16,17 +17,6 @@ from typing import TypedDict, cast
 
 LOCALES = ("zh-cn", "zh-tw")
 """支持的地区变体. 其余 locale 原样返回."""
-
-_OVERRIDES: dict[str, dict[str, str]] = {
-    "zh-tw": {
-        "公里": "公里",
-        "干擾": "干擾",
-        "干扰": "干擾",
-        "邻里": "鄰里",
-        "鄰里": "鄰里",
-        "舞台": "舞臺",
-    },
-}
 
 
 class _Dictionary(TypedDict):
@@ -45,17 +35,39 @@ def _dictionary() -> _Dictionary:
     return cast("_Dictionary", json.loads(files("amane.utils").joinpath("zhcdict.json").read_bytes()))
 
 
+def _parse_overrides(raw: bytes) -> dict[str, dict[str, str]]:
+    """校验 ``zhconv_overrides.json``: 顶层是 locale → 词条映射, 所有值都是字符串."""
+    data: object = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("zhconv_overrides.json 顶层必须是对象")
+    overrides: dict[str, dict[str, str]] = {}
+    for locale, table in data.items():
+        if locale not in LOCALES:
+            raise ValueError(f"zhconv_overrides.json 含未知 locale: {locale!r}")
+        if not isinstance(table, dict) or not all(
+            isinstance(word, str) and isinstance(target, str) for word, target in table.items()
+        ):
+            raise ValueError(f"zhconv_overrides.json 的 {locale} 必须是字符串映射")
+        overrides[locale] = dict(table)
+    return overrides
+
+
+@lru_cache(maxsize=1)
+def _overrides() -> dict[str, dict[str, str]]:
+    return _parse_overrides(files("amane.utils").joinpath("zhconv_overrides.json").read_bytes())
+
+
 @lru_cache(maxsize=2)
 def _table(locale: str) -> dict[str, str]:
     """字形表叠加地区词表, 再叠加项目修正词条; 都是「最长匹配优先」的候选.
 
-    修正词条针对 MediaWiki 表的缺词与同形字: 「干扰」缺词会被逐字译成「幹擾」,
-    「公里」「干擾」本身已是合法繁体, 二次转换会把它们改坏. 新增条目须对两种目标变体都无回归.
+    修正词条在 ``zhconv_overrides.json``, 针对 MediaWiki 表的缺词与同形字: 「干扰」缺词会被逐字
+    译成「幹擾」, 「公里」「干擾」本身已是合法繁体, 二次转换会把它们改坏. 新增条目须对两种目标变体都无回归.
     """
     data = _dictionary()
     table = dict(data["zh2Hans"]) if locale == "zh-cn" else dict(data["zh2Hant"])
     table.update(data["zh2CN"] if locale == "zh-cn" else data["zh2TW"])
-    table.update(_OVERRIDES.get(locale, {}))
+    table.update(_overrides().get(locale, {}))
     return table
 
 
