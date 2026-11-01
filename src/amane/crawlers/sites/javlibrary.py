@@ -20,19 +20,22 @@ class JavLibraryCrawler(Crawler):
         text = await self.client.get_html(url)
         html = Selector(text=text)
 
-        links = html.xpath('//div[@class="video"]//a/@href').getall()
-        results = []
-        for href in links:
-            full_url = urljoin(self.base_url, href)
-            results.append(full_url)
+        # 每个结果只有一个带 href 的链接, 其余 "我想要" 之类没有 href;
+        # 链接相对检索页的 /cn/ 目录, 必须按检索 URL 解析, 按基址解析会落到 404.
+        fallback: str | None = None
+        target = number.upper()
+        for item in html.xpath('//div[@class="video"]'):
+            href = item.xpath(".//a[@href]/@href").get()
+            if not href:
+                continue
+            full_url = urljoin(url, href)
+            if fallback is None:
+                fallback = full_url
+            title = item.xpath(".//a[@href]/@title").get() or ""
+            if target in title.upper():
+                return full_url
 
-        # Filter by number match in title
-        titles = html.xpath('//div[@class="video"]//a/@title').getall()
-        for i, title in enumerate(titles):
-            if number.upper() in title.upper() and i < len(results):
-                return results[i]
-
-        return results[0] if results else None
+        return fallback
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         text = await self.client.get_html(url)
@@ -42,13 +45,13 @@ class JavLibraryCrawler(Crawler):
         if not number:
             return None
 
-        title = extract_text(html, '//h3[@class="post-title"]/a/text()')
+        title = extract_text(html, '//h3[contains(@class, "post-title")]/a/text()')
         release = extract_text(html, '//div[@id="video_date"]//td[@class="text"]/text()')
         runtime_str = extract_text(html, '//div[@id="video_length"]//td/span[@class="text"]/text()')
         runtime = self._parse_runtime(runtime_str)
-        director = extract_text(html, '//div[@id="video_director"]//td[@class="text"]/a/text()')
-        studio = extract_text(html, '//div[@id="video_maker"]//td[@class="text"]/a/text()')
-        publisher = extract_text(html, '//div[@id="video_label"]//td[@class="text"]/a/text()')
+        director = extract_text(html, '//div[@id="video_director"]//td[@class="text"]//a/text()')
+        studio = extract_text(html, '//div[@id="video_maker"]//td[@class="text"]//a/text()')
+        publisher = extract_text(html, '//div[@id="video_label"]//td[@class="text"]//a/text()')
         actors = extract_all_texts(html, '//span[@class="cast"]/span[@class="star"]/a/text()')
         tags = extract_all_texts(html, '//div[@id="video_genres"]//td[@class="text"]/span[@class="genre"]/a/text()')
         cover = extract_text(html, '//img[@id="video_jacket_img"]/@src')
