@@ -115,6 +115,78 @@ export type ActorLocksRequest = {
 };
 
 /**
+ * ActorPushResult
+ */
+export type ActorPushResult = {
+    /**
+     * Type
+     */
+    type?: 'actor_push';
+    /**
+     * Requested
+     */
+    requested: number;
+    /**
+     * Matched
+     */
+    matched: number;
+    /**
+     * Updated
+     */
+    updated: number;
+    /**
+     * Images
+     */
+    images: number;
+    /**
+     * Skipped
+     */
+    skipped: number;
+    /**
+     * Not Found
+     */
+    not_found: number;
+    /**
+     * No Image
+     */
+    no_image: number;
+    /**
+     * Missing
+     */
+    missing: number;
+    /**
+     * Failed
+     */
+    failed: number;
+    /**
+     * Failures
+     */
+    failures: Array<string>;
+};
+
+/**
+ * ActorPushSubmission
+ */
+export type ActorPushSubmission = {
+    /**
+     * Actor Ids
+     *
+     * 要推送的演员 ID; 空表示全部演员
+     */
+    actor_ids?: Array<number>;
+    /**
+     * Force
+     *
+     * 覆盖媒体服务器上已有的头像与人物字段
+     */
+    force?: boolean;
+    /**
+     * Type
+     */
+    type: 'actor_push';
+};
+
+/**
  * ActorResponse
  *
  * 详情填全量; 列表 (`GET /actors`) 只填卡片/表格字段, 其余 (简介/别名/标签/源字典/raw/锁) 为空.
@@ -313,6 +385,12 @@ export type ActorScrapingConfig = {
      * Auto Scrape
      */
     auto_scrape?: boolean;
+    /**
+     * Auto Push
+     *
+     * 演员刮削成功后自动将该演员推送到媒体服务器
+     */
+    auto_push?: boolean;
     /**
      * Gfriends Repo
      *
@@ -1761,6 +1839,7 @@ export type HealthResponse = {
  */
 export type HotSettings = {
     scraping?: ScrapingConfig;
+    media_server?: MediaServerConfig;
     actor_scraping?: ActorScrapingConfig;
     agent?: AgentConfig;
     network?: NetworkConfig;
@@ -2513,6 +2592,38 @@ export type MediaListResponse = {
      * Total
      */
     total: number;
+};
+
+/**
+ * MediaServerConfig
+ *
+ * Emby / Jellyfin 人物推送; url 与 api_key 齐备才启用.
+ */
+export type MediaServerConfig = {
+    /**
+     * Kind
+     *
+     * 媒体服务器类型
+     */
+    kind?: 'emby' | 'jellyfin';
+    /**
+     * Url
+     *
+     * 服务器地址, 含协议、端口与可选子路径
+     */
+    url?: string | null;
+    /**
+     * Api Key
+     *
+     * 管理员 API Key
+     */
+    api_key?: string | null;
+    /**
+     * Verify Tls
+     *
+     * 校验 HTTPS 证书; 自签名证书可关闭
+     */
+    verify_tls?: boolean;
 };
 
 /**
@@ -4794,7 +4905,7 @@ export type TaskBatchSubmitRequest = {
     /**
      * Submissions
      */
-    submissions: Array<RefreshSubmission | OrganizeSubmission | ScanInvalidSubmission | DeleteSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | RescrapeSubmission | SemanticIndexSubmission | SemanticBenchmarkSubmission>;
+    submissions: Array<RefreshSubmission | OrganizeSubmission | ScanInvalidSubmission | DeleteSubmission | ScrapeSubmission | CleanupSubmission | UpscaleSubmission | R18ImportSubmission | ActorScrapeSubmission | ActorPushSubmission | RescrapeSubmission | SemanticIndexSubmission | SemanticBenchmarkSubmission>;
 };
 
 /**
@@ -5052,6 +5163,8 @@ export type TaskResponse = {
     } & R18ImportResult) | ({
         type: 'actor_scrape';
     } & ActorScrapeResult) | ({
+        type: 'actor_push';
+    } & ActorPushResult) | ({
         type: 'rescrape';
     } & RescrapeResult) | ({
         type: 'semantic_index';
@@ -5073,7 +5186,7 @@ export type TaskStatus = 'queued' | 'running' | 'done' | 'failed';
 /**
  * TaskType
  */
-export type TaskType = 'scrape' | 'organize' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape' | 'scan_invalid' | 'delete' | 'semantic_index' | 'semantic_benchmark';
+export type TaskType = 'scrape' | 'organize' | 'refresh' | 'cleanup' | 'upscale' | 'r18_import' | 'actor_scrape' | 'rescrape' | 'scan_invalid' | 'delete' | 'semantic_index' | 'semantic_benchmark' | 'actor_push';
 
 /**
  * TaskWorkerResponse
@@ -8492,6 +8605,8 @@ export type SubmitTaskData = {
     } & R18ImportSubmission) | ({
         type: 'actor_scrape';
     } & ActorScrapeSubmission) | ({
+        type: 'actor_push';
+    } & ActorPushSubmission) | ({
         type: 'rescrape';
     } & RescrapeSubmission) | ({
         type: 'semantic_index';

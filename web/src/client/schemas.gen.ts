@@ -158,6 +158,103 @@ export const ActorLocksRequestSchema = {
     description: '整体替换锁定字段集合.'
 } as const;
 
+export const ActorPushResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'actor_push',
+            title: 'Type',
+            default: 'actor_push'
+        },
+        requested: {
+            type: 'integer',
+            title: 'Requested'
+        },
+        matched: {
+            type: 'integer',
+            title: 'Matched'
+        },
+        updated: {
+            type: 'integer',
+            title: 'Updated'
+        },
+        images: {
+            type: 'integer',
+            title: 'Images'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped'
+        },
+        not_found: {
+            type: 'integer',
+            title: 'Not Found'
+        },
+        no_image: {
+            type: 'integer',
+            title: 'No Image'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing'
+        },
+        failed: {
+            type: 'integer',
+            title: 'Failed'
+        },
+        failures: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Failures'
+        }
+    },
+    type: 'object',
+    required: [
+        'requested',
+        'matched',
+        'updated',
+        'images',
+        'skipped',
+        'not_found',
+        'no_image',
+        'missing',
+        'failed',
+        'failures'
+    ],
+    title: 'ActorPushResult'
+} as const;
+
+export const ActorPushSubmissionSchema = {
+    properties: {
+        actor_ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            title: 'Actor Ids',
+            description: '要推送的演员 ID; 空表示全部演员'
+        },
+        force: {
+            type: 'boolean',
+            title: 'Force',
+            description: '覆盖媒体服务器上已有的头像与人物字段',
+            default: false
+        },
+        type: {
+            type: 'string',
+            const: 'actor_push',
+            title: 'Type'
+        }
+    },
+    type: 'object',
+    required: [
+        'type'
+    ],
+    title: 'ActorPushSubmission'
+} as const;
+
 export const ActorResponseSchema = {
     properties: {
         id: {
@@ -491,6 +588,12 @@ export const ActorScrapingConfigSchema = {
             type: 'boolean',
             title: 'Auto Scrape',
             default: true
+        },
+        auto_push: {
+            type: 'boolean',
+            title: 'Auto Push',
+            description: '演员刮削成功后自动将该演员推送到媒体服务器',
+            default: false
         },
         gfriends_repo: {
             type: 'string',
@@ -3425,6 +3528,13 @@ export const HotSettingsSchema = {
                 }
             }
         },
+        media_server: {
+            $ref: '#/components/schemas/MediaServerConfig',
+            default: {
+                kind: 'jellyfin',
+                verify_tls: true
+            }
+        },
         actor_scraping: {
             $ref: '#/components/schemas/ActorScrapingConfig',
             default: {
@@ -3440,6 +3550,7 @@ export const HotSettingsSchema = {
                 ],
                 download_images: true,
                 auto_scrape: true,
+                auto_push: false,
                 gfriends_repo: 'https://github.com/gfriends/gfriends'
             }
         },
@@ -5122,6 +5233,54 @@ export const MediaListResponseSchema = {
         'total'
     ],
     title: 'MediaListResponse'
+} as const;
+
+export const MediaServerConfigSchema = {
+    properties: {
+        kind: {
+            type: 'string',
+            enum: [
+                'emby',
+                'jellyfin'
+            ],
+            title: 'Kind',
+            description: '媒体服务器类型',
+            default: 'jellyfin'
+        },
+        url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Url',
+            description: '服务器地址, 含协议、端口与可选子路径'
+        },
+        api_key: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Api Key',
+            description: '管理员 API Key'
+        },
+        verify_tls: {
+            type: 'boolean',
+            title: 'Verify Tls',
+            description: '校验 HTTPS 证书; 自签名证书可关闭',
+            default: true
+        }
+    },
+    type: 'object',
+    title: 'MediaServerConfig',
+    description: 'Emby / Jellyfin 人物推送; url 与 api_key 齐备才启用.'
 } as const;
 
 export const MediaSortFieldSchema = {
@@ -9144,6 +9303,9 @@ export const TaskBatchSubmitRequestSchema = {
                         $ref: '#/components/schemas/ActorScrapeSubmission'
                     },
                     {
+                        $ref: '#/components/schemas/ActorPushSubmission'
+                    },
+                    {
                         $ref: '#/components/schemas/RescrapeSubmission'
                     },
                     {
@@ -9156,6 +9318,7 @@ export const TaskBatchSubmitRequestSchema = {
                 discriminator: {
                     propertyName: 'type',
                     mapping: {
+                        actor_push: '#/components/schemas/ActorPushSubmission',
                         actor_scrape: '#/components/schemas/ActorScrapeSubmission',
                         cleanup: '#/components/schemas/CleanupSubmission',
                         delete: '#/components/schemas/DeleteSubmission',
@@ -9649,6 +9812,9 @@ export const TaskResponseSchema = {
                             $ref: '#/components/schemas/ActorScrapeResult'
                         },
                         {
+                            $ref: '#/components/schemas/ActorPushResult'
+                        },
+                        {
                             $ref: '#/components/schemas/RescrapeResult'
                         },
                         {
@@ -9661,6 +9827,7 @@ export const TaskResponseSchema = {
                     discriminator: {
                         propertyName: 'type',
                         mapping: {
+                            actor_push: '#/components/schemas/ActorPushResult',
                             actor_scrape: '#/components/schemas/ActorScrapeResult',
                             cleanup: '#/components/schemas/CleanupResult',
                             delete: '#/components/schemas/DeleteResult',
@@ -9731,7 +9898,8 @@ export const TaskTypeSchema = {
         'scan_invalid',
         'delete',
         'semantic_index',
-        'semantic_benchmark'
+        'semantic_benchmark',
+        'actor_push'
     ],
     title: 'TaskType'
 } as const;

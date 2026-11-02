@@ -79,6 +79,8 @@ function resultBranch(result: TaskResult, failed: boolean): ReactNode {
       );
     case "semantic_benchmark":
       return <BenchmarkFigures result={result} />;
+    case "actor_push":
+      return <ActorPushSummary result={result} />;
     case "refresh":
     case "cleanup":
     case "upscale":
@@ -113,6 +115,55 @@ function SemanticCounts({ result }: { result: Extract<TaskResult, { type: "seman
         </Badge>
       )}
     </Group>
+  );
+}
+
+function ActorPushSummary({ result }: { result: Extract<TaskResult, { type: "actor_push" }> }) {
+  const { t } = useTranslation("tasks");
+  return (
+    <Stack gap="xs">
+      <Group gap="xs">
+        <Badge variant="light" color="blue">
+          {t("result.actorPushMatched", { value: result.matched })}
+        </Badge>
+        <Badge variant="light" color="teal">
+          {t("result.actorPushUpdated", { value: result.updated })}
+        </Badge>
+        <Badge variant="light" color="teal">
+          {t("result.actorPushImages", { value: result.images })}
+        </Badge>
+        {result.skipped > 0 && (
+          <Badge variant="light" color="gray">
+            {t("result.actorPushSkipped", { value: result.skipped })}
+          </Badge>
+        )}
+        {result.not_found > 0 && (
+          <Badge variant="light" color="yellow">
+            {t("result.actorPushNotFound", { value: result.not_found })}
+          </Badge>
+        )}
+        {result.no_image > 0 && (
+          <Badge variant="light" color="gray">
+            {t("result.actorPushNoImage", { value: result.no_image })}
+          </Badge>
+        )}
+        {result.missing > 0 && (
+          <Badge variant="light" color="yellow">
+            {t("result.actorPushMissing", { value: result.missing })}
+          </Badge>
+        )}
+        {result.failed > 0 && (
+          <Badge variant="light" color="red">
+            {t("result.actorPushFailed", { value: result.failed })}
+          </Badge>
+        )}
+      </Group>
+      {result.failures.map((failure, index) => (
+        <Text key={`${failure}-${index}`} size="sm" c="red">
+          {failure}
+        </Text>
+      ))}
+    </Stack>
   );
 }
 

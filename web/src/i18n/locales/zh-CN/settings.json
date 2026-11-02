@@ -2,6 +2,7 @@
   "title": "设置",
   "tabs": {
     "scraping": "影片刮削",
+    "media_server": "媒体服务器",
     "actor_scraping": "演员刮削",
     "agent": "智能体",
     "network": "网络",
@@ -462,6 +463,28 @@
         }
       }
     },
+    "media_server": {
+      "label": "媒体服务器",
+      "kind": {
+        "label": "类型",
+        "options": {
+          "emby": "Emby",
+          "jellyfin": "Jellyfin"
+        }
+      },
+      "url": {
+        "label": "地址",
+        "description": "服务器地址, 含协议、端口与可选子路径"
+      },
+      "api_key": {
+        "label": "API Key",
+        "description": "管理员 API Key"
+      },
+      "verify_tls": {
+        "label": "校验证书",
+        "description": "校验 HTTPS 证书; 自签名证书可关闭"
+      }
+    },
     "network": {
       "proxy": {
         "label": "代理",
@@ -838,6 +861,10 @@
       "gfriends_repo": {
         "label": "gFriends 仓库",
         "description": "gFriends GitHub 仓库 URL"
+      },
+      "auto_push": {
+        "label": "自动推送",
+        "description": "演员刮削成功后自动推送到媒体服务器"
       }
     },
     "plugins": {
