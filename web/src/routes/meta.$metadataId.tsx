@@ -60,16 +60,19 @@ import { FacetBadge } from "@/components/media/facet-badge";
 import { LockChip, LockToggle, type LockProps } from "@/components/media/field-lock";
 import { UserTagActions } from "@/components/media/user-tag-add";
 import { VrBadge } from "@/components/media/vr-badge";
+import { WatermarkPicker } from "@/components/media/watermark-picker";
 import { FanartLightbox, FanartStrip } from "@/components/media/fanart-lightbox";
 import { FilePhaseBadges, FilePhaseOverlay } from "@/components/media/file-phase-badges";
 import { PosterCropDialog } from "@/components/media/poster-crop-dialog";
 import { MergeDialog } from "@/components/metadata/merge-dialog";
 import { type JSONSchemaObject, resolveSchema } from "@/components/schema-form/schema";
 import { SchemaForm } from "@/components/schema-form/schema-form";
+import { useConfig } from "@/hooks/use-config";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { FIELD_LABEL_KEY, LOCKABLE_FIELDS } from "@/lib/media/metadata-fields";
+import { overlayPhase } from "@/lib/media/watermark-phase";
 import { proxyImageUrl } from "@/lib/utils";
 import { ProxyImage } from "@/components/media/proxy-image";
 import { CommentSection } from "@/components/media/comment-section";
@@ -185,6 +188,7 @@ function TitleDetailPage() {
 
   const id = Number(metadataId);
   const validId = Number.isInteger(id) && id > 0;
+  const { data: config } = useConfig();
   const [prevId, setPrevId] = useState(id);
   if (id !== prevId) {
     setPrevId(id);
@@ -506,7 +510,9 @@ function TitleDetailPage() {
                 placeholder={<div style={{ aspectRatio: "16 / 9" }} aria-hidden />}
               />
             )}
-            {!playingTrailer && <FilePhaseOverlay phase={item.file_phase} />}
+            {!playingTrailer && (
+              <FilePhaseOverlay phase={overlayPhase(item, config?.watermark?.enabled === true)} />
+            )}
 
             {playingTrailer && trailerUrl != null ? (
               <>
@@ -737,6 +743,19 @@ function TitleDetailPage() {
               />
             </Group>
           </FieldBlock>
+
+          <WatermarkPicker
+            metadataId={id}
+            auto={item.watermark_auto ?? true}
+            kinds={item.watermark_kinds ?? []}
+            definition={item.watermark_definition ?? null}
+            phase={item.file_phase}
+            onSaved={() => {
+              invalidateDetail();
+              // 片库海报角标也读逐片覆盖, 列表里的卡片要一起刷新.
+              void queryClient.invalidateQueries({ queryKey: listMetadataQueryKey() });
+            }}
+          />
 
           {item.source_urls && Object.keys(item.source_urls).length > 0 && (
             <FieldBlock label={t("detail.fields.sourceUrls")}>

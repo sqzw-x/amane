@@ -306,21 +306,86 @@ class TestMetadataHttp:
         assert (await client.put("metadata/9999/locks", json={"fields": []})).status_code == 404
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_watermark_http(self, client: AsyncClient, repo: Repository):
+        meta = await repo.upsert_metadata(number="WM-101", title="X")
+        assert meta.id is not None
+
+        # 默认自动; 响应带出字段供界面渲染.
+        default = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert default["watermark_auto"] is True
+        assert default["watermark_kinds"] == []
+        assert default["watermark_definition"] is None
+
+        manual = await client.put(
+            f"metadata/{meta.id}/watermark",
+            json={"auto": False, "kinds": ["definition", "censored", "censored"], "definition": "1080P"},
+        )
+        assert manual.status_code == 200
+        # 按枚举声明序去重, 档位归一成规范写法.
+        assert manual.json()["watermark_auto"] is False
+        assert manual.json()["watermark_kinds"] == ["censored", "definition"]
+        assert manual.json()["watermark_definition"] == "1080p"
+
+        # 档位大小写不敏感, 落库为规范写法.
+        forced = await client.put(
+            f"metadata/{meta.id}/watermark",
+            json={"auto": False, "kinds": ["definition"], "definition": "4k"},
+        )
+        assert forced.status_code == 200
+        assert forced.json()["watermark_definition"] == "4K"
+
+        # 手动勾了分辨率却没给档位不算选择成功.
+        missing_level = await client.put(
+            f"metadata/{meta.id}/watermark",
+            json={"auto": False, "kinds": ["definition"], "definition": None},
+        )
+        assert missing_level.status_code == 422
+
+        # 空集 = 手动且一枚都不打.
+        empty = await client.put(f"metadata/{meta.id}/watermark", json={"auto": False, "kinds": []})
+        assert empty.status_code == 200
+        assert empty.json()["watermark_kinds"] == []
+        assert empty.json()["watermark_definition"] is None
+
+        # auto 时保留 kinds / definition, 但渲染不看它们 (也不校验档位).
+        back = await client.put(
+            f"metadata/{meta.id}/watermark",
+            json={"auto": True, "kinds": ["definition"], "definition": None},
+        )
+        assert back.status_code == 200
+        assert back.json()["watermark_auto"] is True
+        assert back.json()["watermark_kinds"] == ["definition"]
+        assert back.json()["watermark_definition"] is None
+
+        bad = await client.put(f"metadata/{meta.id}/watermark", json={"auto": False, "kinds": ["bogus"]})
+        assert bad.status_code == 422
+        bad_definition = await client.put(
+            f"metadata/{meta.id}/watermark", json={"auto": False, "kinds": ["definition"], "definition": "vhs"}
+        )
+        assert bad_definition.status_code == 422
+        assert (await client.put("metadata/9999/watermark", json={"auto": True, "kinds": []})).status_code == 404
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_response_drops_unknown_locked_values(self, client: AsyncClient, repo: Repository):
-        """库内非法存量锁值不使读路径 500, 并去重."""
+        """库内非法存量锁值与角标值不使读路径 500, 并去重."""
         meta = await repo.upsert_metadata(number="LOCK-102")
         assert meta.id is not None
         async with repo._session() as session:
             row = await session.get(Metadata, meta.id)
             assert row is not None
             row.locked_fields = ["title", "title", "bogus"]
+            row.watermark_kinds = ["definition", "bogus", "definition"]  # type: ignore[assignment]
+            row.watermark_definition = "vhs"
             session.add(row)
             await session.commit()
 
         detail = await client.get(f"metadata/{meta.id}")
         assert detail.status_code == 200
         assert detail.json()["metadata"]["locked_fields"] == ["title"]
+        assert detail.json()["metadata"]["watermark_kinds"] == ["definition"]
+        assert detail.json()["metadata"]["watermark_definition"] is None
 
         listed = await client.get("metadata?search=LOCK-102")
         assert listed.status_code == 200
         assert listed.json()["items"][0]["locked_fields"] == ["title"]
+        assert listed.json()["items"][0]["watermark_kinds"] == ["definition"]

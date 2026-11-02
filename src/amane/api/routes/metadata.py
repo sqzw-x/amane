@@ -32,6 +32,7 @@ from ..models import (
     MetadataLocksRequest,
     MetadataResponse,
     MetadataUserTagsRequest,
+    MetadataWatermarkRequest,
     PartialMetadata,
     SemanticHitInfo,
     UserTagLinksResponse,
@@ -322,6 +323,22 @@ async def set_metadata_locks(metadata_id: int, req: MetadataLocksRequest, repo: 
     if metadata is None:
         raise HTTPException(status_code=404, detail="影片不存在")
     logger.info("metadata locks updated", metadata_id=metadata_id, fields=[str(field) for field in req.fields])
+    return to_resp(MetadataResponse, metadata)
+
+
+@router.put("/{metadata_id}/watermark")
+async def set_metadata_watermark(metadata_id: int, req: MetadataWatermarkRequest, repo: RepoDep) -> MetadataResponse:
+    """整体替换条目级封面角标覆盖: auto 忽略 kinds / definition, 手动空集表示不打."""
+    metadata = await repo.set_metadata_watermark(metadata_id, auto=req.auto, kinds=req.kinds, definition=req.definition)
+    if metadata is None:
+        raise HTTPException(status_code=404, detail="影片不存在")
+    logger.info(
+        "metadata watermark updated",
+        metadata_id=metadata_id,
+        auto=req.auto,
+        kinds=req.kinds,
+        definition=req.definition,
+    )
     return to_resp(MetadataResponse, metadata)
 
 

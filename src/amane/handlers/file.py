@@ -9,7 +9,7 @@ import structlog
 from ..config import HotSettings, WatermarkConfig
 from ..db.models import Library, MediaFile
 from ..db.repo_types import MediaFileUpdates
-from ..enums import ActorGender, DownloadableResource, LinkMode
+from ..enums import ActorGender, DownloadableResource, LinkMode, WatermarkKind
 from ..library import MEDIA_EXTENSIONS, LibraryFileKind, LibraryScan, ancestor_dirs, prune_empty_dirs
 from ..library.rules import is_in_trash
 from ..media import ResourceStore, apply_cover_watermarks_from_info, crop_poster
@@ -330,6 +330,8 @@ def _place_library_images(
     file_info: FileInfo | None,
     content_type: ContentType,
     watermark_dir: Path | None,
+    watermark_kinds: Sequence[WatermarkKind] | None,
+    watermark_definition: str | None,
 ) -> None:
     # 复制封面 / 海报 / 预告片 / extrafanart 到库路径, 不判断目标上是否已有产物.
     # fanart 没有刮削来源, 内容取 thumb, 随 thumb 一同重写.
@@ -374,6 +376,8 @@ def _place_library_images(
                 watermark_dir=watermark_dir,
                 scale=wm.scale,
                 corners=wm.corners,
+                kinds=watermark_kinds,
+                definition_override=watermark_definition,
             )
         if paths.poster.exists():
             apply_cover_watermarks_from_info(
@@ -384,6 +388,8 @@ def _place_library_images(
                 watermark_dir=watermark_dir,
                 scale=wm.scale,
                 corners=wm.corners,
+                kinds=watermark_kinds,
+                definition_override=watermark_definition,
             )
 
 
@@ -399,6 +405,9 @@ async def _download_images_via_store(
     watermark_dir: Path | None = None,
 ) -> None:
     """优先用 Resource 已有文件; 缺失则现场 acquire."""
+    # 条目级覆盖: auto 交给自动规则, 手动则只打勾选的类别与指定档位.
+    watermark_kinds = None if metadata.watermark_auto else list(metadata.watermark_kinds)
+    watermark_definition = None if metadata.watermark_auto else metadata.watermark_definition
     thumb_local = None
     if DownloadableResource.thumb in kinds:
         thumb_urls = metadata.thumb_urls
@@ -432,6 +441,8 @@ async def _download_images_via_store(
         file_info=file_info,
         content_type=content_type,
         watermark_dir=watermark_dir,
+        watermark_kinds=watermark_kinds,
+        watermark_definition=watermark_definition,
     )
 
 

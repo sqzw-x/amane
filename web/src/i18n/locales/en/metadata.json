@@ -112,6 +112,23 @@
     "applyRemoveUserTags_other": "Remove {{count}}",
     "createUserTag": "Create \"{{name}}\"",
     "detachUserTag": "Remove from this title",
+    "watermark": {
+      "title": "Cover watermark",
+      "auto": "Auto",
+      "manual": "Manual",
+      "autoNone": "Nothing matched",
+      "level": "Level",
+      "levelRequired": "Pick a level to include the resolution badge",
+      "none": "No category selected: this cover gets no watermark (applies on next organize)",
+      "kinds": {
+        "subtitle": "Subtitle",
+        "uncensored": "Uncensored",
+        "censored": "Censored",
+        "cracked": "Cracked",
+        "leaked": "Leaked",
+        "definition": "Resolution"
+      }
+    },
     "comments": "Comments",
     "commentPlaceholder": "Write a comment…",
     "commentWrite": "Write",

@@ -70,6 +70,7 @@ from .metadata import (
     MetadataLocksRequest,
     MetadataResponse,
     MetadataUserTagsRequest,
+    MetadataWatermarkRequest,
     PartialMetadata,
     SemanticHitInfo,
 )
@@ -188,6 +189,7 @@ __all__ = [
     "MetadataListResponse",
     "MetadataResponse",
     "MetadataUserTagsRequest",
+    "MetadataWatermarkRequest",
     "OptionalPathTemplateDefaults",
     "OrganizeSubmission",
     "PartialMetadata",

@@ -2914,6 +2914,18 @@ export type MetadataResponse = {
      */
     locked_fields?: Array<MetadataField>;
     /**
+     * Watermark Auto
+     */
+    watermark_auto?: boolean;
+    /**
+     * Watermark Kinds
+     */
+    watermark_kinds?: Array<WatermarkKind>;
+    /**
+     * Watermark Definition
+     */
+    watermark_definition?: string | null;
+    /**
      * File Count
      */
     file_count?: number;
@@ -2955,6 +2967,32 @@ export type MetadataUserTagsRequest = {
      * attach 为并入, detach 为移除; 两者均幂等
      */
     action: 'attach' | 'detach';
+};
+
+/**
+ * MetadataWatermarkRequest
+ *
+ * 整体替换条目级封面角标覆盖. ``auto`` 时不看 ``kinds`` / ``definition``; 手动且空集表示不打任何角标.
+ */
+export type MetadataWatermarkRequest = {
+    /**
+     * Auto
+     *
+     * true = 自动规则; false = 只打 kinds 中勾选的类别
+     */
+    auto?: boolean;
+    /**
+     * Kinds
+     *
+     * 手动模式下的角标类别
+     */
+    kinds?: Array<WatermarkKind>;
+    /**
+     * Definition
+     *
+     * 手动模式下的分辨率档位; 选了分辨率就必填
+     */
+    definition?: string | null;
 };
 
 /**
@@ -5540,8 +5578,10 @@ export type WatermarkCorner = 'top_left' | 'top_right' | 'bottom_left' | 'bottom
  * WatermarkKind
  *
  * 整理落盘封面角标类别. 分辨率共用 definition, 不论 4K/1080p.
+ *
+ * 有码只在逐条手动选择时出现, 自动规则不产出 (自动规则见 ``media/images.py::_stamp_stems``).
  */
-export type WatermarkKind = 'subtitle' | 'uncensored' | 'cracked' | 'leaked' | 'definition';
+export type WatermarkKind = 'subtitle' | 'uncensored' | 'censored' | 'cracked' | 'leaked' | 'definition';
 
 /**
  * WorkerConfig
@@ -6421,6 +6461,36 @@ export type SetMetadataLocksResponses = {
 };
 
 export type SetMetadataLocksResponse = SetMetadataLocksResponses[keyof SetMetadataLocksResponses];
+
+export type SetMetadataWatermarkData = {
+    body: MetadataWatermarkRequest;
+    path: {
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+    };
+    query?: never;
+    url: '/api/metadata/{metadata_id}/watermark';
+};
+
+export type SetMetadataWatermarkErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetMetadataWatermarkError = SetMetadataWatermarkErrors[keyof SetMetadataWatermarkErrors];
+
+export type SetMetadataWatermarkResponses = {
+    /**
+     * Successful Response
+     */
+    200: MetadataResponse;
+};
+
+export type SetMetadataWatermarkResponse = SetMetadataWatermarkResponses[keyof SetMetadataWatermarkResponses];
 
 export type CropPosterFromThumbData = {
     body: CropPosterRequest;

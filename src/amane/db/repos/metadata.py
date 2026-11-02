@@ -8,7 +8,7 @@ from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from ...enums import ActorGender, MetadataField
+from ...enums import ActorGender, MetadataField, WatermarkKind
 from ...parsing import ContentType, Mosaic, infer_content_type
 from ...utils.collections import unique_ids
 from ...utils.text import normalize_long_text
@@ -474,6 +474,27 @@ class MetadataRepoMixin(RepositoryMixinBase):
             await session.refresh(metadata)
             if _image_signature(metadata) != before:
                 await self.notify_media_changed(metadata_id)
+            return metadata
+
+    async def set_metadata_watermark(
+        self, metadata_id: int, *, auto: bool, kinds: Collection[WatermarkKind], definition: str | None
+    ) -> Metadata | None:
+        """整体替换条目级封面角标覆盖; 不存在返回 None.
+
+        按 ``WatermarkKind`` 顺序去重归一, 与请求里的勾选顺序无关; ``definition`` 已是规范档位或 None.
+        """
+        async with self._session() as session:
+            metadata = await session.get(Metadata, metadata_id)
+            if metadata is None:
+                return None
+            wanted = set(kinds)
+            metadata.watermark_auto = auto
+            metadata.watermark_kinds = [kind for kind in WatermarkKind if kind in wanted]
+            metadata.watermark_definition = definition
+            metadata.updated_at = _utcnow()
+            session.add(metadata)
+            await session.commit()
+            await session.refresh(metadata)
             return metadata
 
     async def set_metadata_locks(self, metadata_id: int, fields: Collection[MetadataField]) -> Metadata | None:

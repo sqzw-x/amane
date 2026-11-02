@@ -152,10 +152,14 @@ class ActorField(StrEnum):
 
 
 class WatermarkKind(StrEnum):
-    """整理落盘封面角标类别. 分辨率共用 definition, 不论 4K/1080p."""
+    """整理落盘封面角标类别. 分辨率共用 definition, 不论 4K/1080p.
+
+    有码只在逐条手动选择时出现, 自动规则不产出 (自动规则见 ``media/images.py::_stamp_stems``).
+    """
 
     SUBTITLE = "subtitle"
     UNCENSORED = "uncensored"
+    CENSORED = "censored"
     CRACKED = "cracked"
     LEAKED = "leaked"
     DEFINITION = "definition"

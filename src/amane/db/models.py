@@ -6,7 +6,15 @@ from sqlalchemy import Boolean, Column, Index, String, Text, UniqueConstraint, e
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import JSON, Field, SQLModel, col, select
 
-from ..enums import ActorGender, DownloadableResource, LibraryAutomation, LibraryIngest, LinkMode, MoveMode
+from ..enums import (
+    ActorGender,
+    DownloadableResource,
+    LibraryAutomation,
+    LibraryIngest,
+    LinkMode,
+    MoveMode,
+    WatermarkKind,
+)
 from ..library import (
     DEFAULT_SUBTITLE_EXTENSIONS,
     DEFAULT_TRAILER_PATTERN,
@@ -281,6 +289,13 @@ class Metadata(SQLModel, table=True):
     locked_fields: list[str] = Field(
         default_factory=list, sa_column=Column(JSON, nullable=False, server_default=text("'[]'"))
     )
+    # 封面角标: 条目级覆盖, 只影响下次整理. auto 走自动规则; manual 只打 kinds 中勾选的类别 (空 = 不打).
+    watermark_auto: bool = Field(default=True, sa_column=Column(Boolean, nullable=False, server_default=text("1")))
+    watermark_kinds: list[WatermarkKind] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False, server_default=text("'[]'"))
+    )
+    # 手动模式下的分辨率档位; 手动选了分辨率就必须有档位, 为空只可能来自旧数据 (跳过该枚).
+    watermark_definition: str | None = None
 
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)

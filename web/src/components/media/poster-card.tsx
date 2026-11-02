@@ -8,8 +8,10 @@ import { FilePhaseOverlay } from "@/components/media/file-phase-badges";
 import { OverlayChip, OverlayChipLabel } from "@/components/media/overlay-chip";
 import { ProxyImage } from "@/components/media/proxy-image";
 import { VrOverlayChip } from "@/components/media/vr-badge";
+import { useConfig } from "@/hooks/use-config";
 import { ageAtRelease } from "@/lib/format-birthday";
 import { formatReleaseYearMonth } from "@/lib/format-release";
+import { overlayPhase } from "@/lib/media/watermark-phase";
 import { proxyImageUrl } from "@/lib/utils";
 
 interface PosterCardProps {
@@ -25,6 +27,7 @@ interface PosterCardProps {
 /** 加载失败退化为番号占位块. */
 export function PosterCard({ item, actorBirthday, imageUrl, imageRatio = 0.7 }: PosterCardProps) {
   const { t } = useTranslation("metadata");
+  const { data: config } = useConfig();
   const [errored, setErrored] = useState(false);
   const posterUrl = proxyImageUrl(imageUrl ?? item.poster_url ?? item.poster_urls?.[0]);
   const showImage = posterUrl && !errored;
@@ -60,7 +63,7 @@ export function PosterCard({ item, actorBirthday, imageUrl, imageRatio = 0.7 }: 
             )}
           </AspectRatio>
           <FilePhaseOverlay
-            phase={item.file_phase}
+            phase={overlayPhase(item, config?.watermark?.enabled === true)}
             bottomExtra={
               ageThen != null ? (
                 <OverlayChip>

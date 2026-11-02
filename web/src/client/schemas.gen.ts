@@ -3499,6 +3499,7 @@ export const HotSettingsSchema = {
                 enabled: false,
                 scale: 0.08,
                 corners: {
+                    censored: 'top_left',
                     cracked: 'top_left',
                     definition: 'top_left',
                     leaked: 'top_left',
@@ -5906,6 +5907,30 @@ export const MetadataResponseSchema = {
             title: 'Locked Fields',
             default: []
         },
+        watermark_auto: {
+            type: 'boolean',
+            title: 'Watermark Auto',
+            default: true
+        },
+        watermark_kinds: {
+            items: {
+                $ref: '#/components/schemas/WatermarkKind'
+            },
+            type: 'array',
+            title: 'Watermark Kinds',
+            default: []
+        },
+        watermark_definition: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Watermark Definition'
+        },
         file_count: {
             type: 'integer',
             title: 'File Count',
@@ -6000,6 +6025,40 @@ export const MetadataUserTagsRequestSchema = {
         'action'
     ],
     title: 'MetadataUserTagsRequest'
+} as const;
+
+export const MetadataWatermarkRequestSchema = {
+    properties: {
+        auto: {
+            type: 'boolean',
+            title: 'Auto',
+            description: 'true = 自动规则; false = 只打 kinds 中勾选的类别',
+            default: true
+        },
+        kinds: {
+            items: {
+                $ref: '#/components/schemas/WatermarkKind'
+            },
+            type: 'array',
+            title: 'Kinds',
+            description: '手动模式下的角标类别'
+        },
+        definition: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Definition',
+            description: '手动模式下的分辨率档位; 选了分辨率就必填'
+        }
+    },
+    type: 'object',
+    title: 'MetadataWatermarkRequest',
+    description: '整体替换条目级封面角标覆盖. ``auto`` 时不看 ``kinds`` / ``definition``; 手动且空集表示不打任何角标.'
 } as const;
 
 export const MosaicSchema = {
@@ -10415,12 +10474,13 @@ export const WatermarkKindSchema = {
     enum: [
         'subtitle',
         'uncensored',
+        'censored',
         'cracked',
         'leaked',
         'definition'
     ],
     title: 'WatermarkKind',
-    description: '整理落盘封面角标类别. 分辨率共用 definition, 不论 4K/1080p.'
+    description: '整理落盘封面角标类别. 分辨率共用 definition, 不论 4K/1080p.\n\n有码只在逐条手动选择时出现, 自动规则不产出 (自动规则见 ``media/images.py::_stamp_stems``).'
 } as const;
 
 export const WorkerConfigSchema = {
