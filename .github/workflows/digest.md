@@ -3,20 +3,21 @@ emoji: "📋"
 on:
   # 模糊调度: 编译时自动产生一定偏差, 避免整点高峰.
   schedule: daily around 10:00 utc+8
-  # 附加约束: 距上次启动过 agent 的运行不足 22 小时则跳过启动.
-  # 同日重复由 skip-if-match 负责, 此处只阻止手动补跑后当日再自动运行.
+  # 距上次启动过 agent 的运行不足 22 小时则跳过启动. 定时触发每日仅一次,
+  # 同日重复全部由本约束负责.
+  # 禁止用 skip-if-match 表达当日上限: 其查询是编译期字面量, 只能写成固定日期,
+  # 一旦存在上一期 open 的日报就永久命中, 而解除条件正是创建新一期.
   cooldown: 22h
-  # 每日上限: 当日已存在 open 的日报时跳过.
-  skip-if-match: 'is:issue is:open label:report in:title "[日报]" created:>=2026-10-19'
   # skip-if-no-match 下限见下
   # 数量门槛: 起始线之后未收录的条目不足 min 条时, 整个运行在
   # pre-activation 阶段终止, 不启动 runner, 不启动 agent, 待累计达到门槛.
   # 查询必须使用编译期字面量: 该检查排在 on.steps 之前, 无法取得本次运行计算的值.
   # 起始线同时决定日报的覆盖范围与门槛的计数范围, 两者必须一致.
+  # 日报 issue 自身不得计入: 两份查询与 mark-digested 都排除 label:report.
   # 2026-10-11 为首版起始线, 用于把近期积压纳入覆盖范围以便调优.
   # 存量收录完毕后删除 created 条件, 即退回全部未收录口径.
   skip-if-no-match:
-    query: "is:issue is:open created:>=2026-10-11 -label:digest:done"
+    query: "is:issue is:open created:>=2026-10-11 -label:digest:done -label:report"
     min: 10
   workflow_dispatch:
     inputs:
@@ -66,7 +67,7 @@ timeout-minutes: 10
 # 清单由 mcp-scripts 经 gh 取得, 不启用 GitHub MCP 只读工具:
 # 检索, 分页与标签过滤留在脚本内, agent 只承担分类与判断.
 mcp-scripts:
-  # 待处理清单: 起始线之后创建, 尚未收录, 且仍为 open 的 issue.
+  # 待处理清单: 起始线之后创建, 尚未收录, 仍为 open, 且非日报 issue 自身.
   pending-issues:
     description: "列出起始线之后创建、未收录的 open issue 清单"
     inputs:
@@ -83,9 +84,9 @@ mcp-scripts:
     run: |
       set -euo pipefail
       if [ -n "${INPUT_LABEL_FILTER}" ]; then
-        query="is:issue is:open created:>=${INPUT_SINCE} -label:digest:done label:${INPUT_LABEL_FILTER}"
+        query="is:issue is:open created:>=${INPUT_SINCE} -label:digest:done -label:report label:${INPUT_LABEL_FILTER}"
       else
-        query="is:issue is:open created:>=${INPUT_SINCE} -label:digest:done"
+        query="is:issue is:open created:>=${INPUT_SINCE} -label:digest:done -label:report"
       fi
       gh issue list --repo "$GH_AW_REPO" --limit 100 --state open \
         --search "$query" \
@@ -141,7 +142,7 @@ safe-outputs:
     max: 1
     # 只留最新一期: 出新的就关掉旧的并反向链接, 邮箱与列表里不堆积历史日报.
     close-older-issues: true
-  # 打标签由 mark-digested 任务用同一检索条件确定性执行, 不经过 agent:
+  # 打标签由 mark-digested 任务按与门槛一致的检索条件确定性执行, 不经过 agent:
   # agent 逐条发 add_labels 会漏发, 且 N 条清单一事一议.
   jobs:
     mark-digested:
@@ -166,7 +167,7 @@ safe-outputs:
               echo "staged: 跳过打标签"
               exit 0
             fi
-            query="repo:${GITHUB_REPOSITORY} is:issue is:open created:>=${SINCE} -label:digest:done"
+            query="repo:${GITHUB_REPOSITORY} is:issue is:open created:>=${SINCE} -label:digest:done -label:report"
             encoded=$(jq -rn --arg q "$query" '$q|@uri')
             gh api "search/issues?q=${encoded}&per_page=100" --jq '.items[].number' > /tmp/pending.txt
             total=$(wc -l < /tmp/pending.txt | tr -d ' ')
