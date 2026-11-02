@@ -19,11 +19,6 @@ export interface UseFacetIdentityActionsOptions {
   kind: FacetKind;
   /** 列表缓存 key (actors → listActors; catalog → listFacets). */
   listQueryKey: QueryKey;
-  /**
-   * true (默认): openMerge 先经居中确认再提交.
-   * false: openMerge 有来源时直接提交 (演员表).
-   */
-  confirmMerge?: boolean;
   /** 合并成功后清空多选. */
   onMerged?: () => void;
 }
@@ -35,7 +30,6 @@ export interface UseFacetIdentityActionsOptions {
 export function useFacetIdentityActions({
   kind,
   listQueryKey,
-  confirmMerge = true,
   onMerged,
 }: UseFacetIdentityActionsOptions) {
   const { t } = useTranslation(["metadata", "common"]);
@@ -146,22 +140,20 @@ export function useFacetIdentityActions({
         });
         return;
       }
-      if (confirmMerge) {
-        const ok = await confirm({
-          title: t("manage.mergeConfirm"),
-          message: t("manage.mergeConfirmBody", { count: sources.length }),
-          confirmLabel: t("common:actions.confirm"),
-          danger: false,
-          confirmColor: "orange",
-        });
-        if (!ok) return;
-      }
+      const ok = await confirm({
+        title: t("manage.mergeConfirm"),
+        message: t("manage.mergeConfirmBody", { count: sources.length }),
+        confirmLabel: t("common:actions.confirm"),
+        danger: false,
+        confirmColor: "orange",
+      });
+      if (!ok) return;
       mergeMutation.mutate({
         path: { kind },
         body: { target_id: targetId, source_ids: sources },
       });
     },
-    [confirmMerge, mergeMutation, kind, t],
+    [mergeMutation, kind, t],
   );
 
   const busy = renameMutation.isPending || mergeMutation.isPending || deleteMutation.isPending;

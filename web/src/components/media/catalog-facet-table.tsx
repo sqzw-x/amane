@@ -78,7 +78,6 @@ export function CatalogFacetTable({
   const identity = useFacetIdentityActions({
     kind,
     listQueryKey: listFacetsQueryKey({ path: { kind } }),
-    confirmMerge: true,
     onMerged: clear,
   });
   const { isUserTag } = identity;

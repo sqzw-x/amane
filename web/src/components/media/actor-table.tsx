@@ -205,7 +205,6 @@ export function ActorTable({
   const identity = useFacetIdentityActions({
     kind,
     listQueryKey: listActorsQueryKey(),
-    confirmMerge: false,
     onMerged: clear,
   });
 
