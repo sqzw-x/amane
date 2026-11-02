@@ -348,10 +348,12 @@
       "label": "Directors"
     },
     "poster_urls": {
-      "label": "Poster URLs"
+      "label": "Poster",
+      "description": "Upload a local image or paste a URL to replace it; removing it clears the field"
     },
     "thumb_urls": {
-      "label": "Thumb URLs"
+      "label": "Thumb",
+      "description": "Upload a local image or paste a URL to replace it; removing it clears the field"
     },
     "trailer_urls": {
       "label": "Trailer URLs"

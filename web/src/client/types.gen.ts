@@ -640,6 +640,18 @@ export type BodyInstallPlugin = {
 };
 
 /**
+ * Body_upload_resource
+ */
+export type BodyUploadResource = {
+    /**
+     * File
+     *
+     * JPEG / PNG / WebP 图片
+     */
+    file: Blob | File;
+};
+
+/**
  * BrowserBackendItemResponse
  *
  * 一个后端的可用性.
@@ -3675,6 +3687,20 @@ export type RescrapeSubmission = {
  * 滚动补刮选取的实体种类. 每个已选项各自选取 limit 条.
  */
 export type RescrapeTarget = 'metadata' | 'actor';
+
+/**
+ * ResourceUploadResponse
+ *
+ * 上传后的资源引用; 内容相同的重复上传返回同一个 URL.
+ */
+export type ResourceUploadResponse = {
+    /**
+     * Url
+     *
+     * 内部资源 URL (/api/resources/{hash}), 可直接写入影片的图片字段
+     */
+    url: string;
+};
 
 /**
  * RoutineType
@@ -8080,6 +8106,31 @@ export type UpdateCommentResponses = {
 };
 
 export type UpdateCommentResponse = UpdateCommentResponses[keyof UpdateCommentResponses];
+
+export type UploadResourceData = {
+    body: BodyUploadResource;
+    path?: never;
+    query?: never;
+    url: '/api/resources/upload';
+};
+
+export type UploadResourceErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UploadResourceError = UploadResourceErrors[keyof UploadResourceErrors];
+
+export type UploadResourceResponses = {
+    /**
+     * Successful Response
+     */
+    200: ResourceUploadResponse;
+};
+
+export type UploadResourceResponse = UploadResourceResponses[keyof UploadResourceResponses];
 
 export type ProxyImageData = {
     body?: never;

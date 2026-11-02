@@ -89,6 +89,7 @@ from .playback import (
     PlaybackSubtitleItem,
 )
 from .plugins import PluginConfigUpdate, PluginListResponse, PluginResponse
+from .resources import ResourceUploadResponse
 from .schedules import ScheduleCreateRequest, ScheduleListResponse, ScheduleResponse, ScheduleUpdateRequest
 from .semantic import SemanticDiagnosticsResponse, SemanticModelCounts, SemanticStatusResponse
 from .system import DesktopResponse, ReleaseResponse
@@ -204,6 +205,7 @@ __all__ = [
     "RefreshSubmission",
     "ReleaseResponse",
     "RescrapeSubmission",
+    "ResourceUploadResponse",
     "RoutineSubmission",
     "ScanInvalidSubmission",
     "ScheduleCreateRequest",

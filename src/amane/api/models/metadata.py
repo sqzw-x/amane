@@ -89,6 +89,8 @@ PartialMetadata = create_partial_model(
         "locked_fields",
     ),
     json_schema_extras={
+        "poster_urls": anyof_extras(kv({"x-image-upload": True})),
+        "thumb_urls": anyof_extras(kv({"x-image-upload": True})),
         "extrafanart_urls": anyof_extras(kv({"v-x-long": True})),
         "release": anyof_extras(
             {

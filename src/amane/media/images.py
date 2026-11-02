@@ -1,5 +1,6 @@
 """海报裁剪与封面角标. 判定函数只依赖尺寸与阈值."""
 
+import io
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
@@ -103,6 +104,42 @@ def probe_size(path: Path) -> tuple[int, int] | None:
     except Exception as e:
         logger.debug("probe_size failed", path=str(path), error=str(e))
         return None
+
+
+# 可接收的上传图片: Pillow 格式名 → (扩展名, MIME). 只收这三种, 其余格式未必能走完裁剪 / 水印.
+_UPLOAD_IMAGE_FORMATS: dict[str, tuple[str, str]] = {
+    "JPEG": (".jpg", "image/jpeg"),
+    "PNG": (".png", "image/png"),
+    "WEBP": (".webp", "image/webp"),
+}
+
+# 单张封面 / 海报远超此值就不再是图片本身的大小.
+MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024
+
+# 解压炸弹防护: Pillow 自身在约 1.8 亿像素时才抛错, 这里更早截断.
+_MAX_UPLOAD_PIXELS = 100_000_000
+
+
+def detect_upload_image(data: bytes) -> tuple[str, str] | None:
+    """按内容判定上传图片, 返回 (扩展名, MIME); 不可解码或格式不受支持返回 None.
+
+    只认内容不认文件名: 客户端给的扩展名与 Content-Type 都可与真实字节不符.
+    """
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            fmt = img.format
+            width, height = img.size
+            img.verify()
+    except Exception as e:
+        logger.debug("upload image not decodable", error=str(e))
+        return None
+    if fmt is None or fmt not in _UPLOAD_IMAGE_FORMATS:
+        logger.debug("upload image format unsupported", image_format=fmt)
+        return None
+    if width * height > _MAX_UPLOAD_PIXELS:
+        logger.debug("upload image too large", width=width, height=height)
+        return None
+    return _UPLOAD_IMAGE_FORMATS[fmt]
 
 
 def should_crop_poster(

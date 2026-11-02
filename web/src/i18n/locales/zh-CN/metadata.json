@@ -329,10 +329,12 @@
       "label": "导演"
     },
     "poster_urls": {
-      "label": "海报 URL"
+      "label": "海报",
+      "description": "上传本地图片或粘贴地址即可替换; 移除表示无图"
     },
     "thumb_urls": {
-      "label": "封面 URL"
+      "label": "封面",
+      "description": "上传本地图片或粘贴地址即可替换; 移除表示无图"
     },
     "trailer_urls": {
       "label": "预告片 URL"

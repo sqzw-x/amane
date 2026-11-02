@@ -1,5 +1,6 @@
 """测试海报裁剪与图像判定纯函数 (图片下载已统一由 ResourceStore 承担)"""
 
+import io
 from typing import TYPE_CHECKING
 
 import pytest
@@ -11,6 +12,7 @@ from amane.media import (
     apply_cover_watermarks,
     crop_box,
     crop_poster,
+    detect_upload_image,
     format_crop_box_args,
     needs_upscale,
     probe_oriented_size,
@@ -48,6 +50,35 @@ def _near(color: tuple[int, ...] | float | None, expected: tuple[int, int, int],
     if not isinstance(color, tuple) or len(color) != 3:
         return False
     return all(abs(actual - target) <= tolerance for actual, target in zip(color, expected, strict=True))
+
+
+class TestDetectUploadImage:
+    """上传图片只按内容判定: 文件名与 Content-Type 都不作数."""
+
+    @staticmethod
+    def _encoded(fmt: str) -> bytes:
+        buf = io.BytesIO()
+        Image.new("RGB", (4, 3), "blue").save(buf, format=fmt)
+        return buf.getvalue()
+
+    @pytest.mark.parametrize(
+        ("fmt", "expected"),
+        [("JPEG", (".jpg", "image/jpeg")), ("PNG", (".png", "image/png")), ("WEBP", (".webp", "image/webp"))],
+    )
+    def test_supported_formats(self, fmt: str, expected: tuple[str, str]):
+        assert detect_upload_image(self._encoded(fmt)) == expected
+
+    def test_gif_rejected(self):
+        assert detect_upload_image(self._encoded("GIF")) is None
+
+    @pytest.mark.parametrize("data", [b"", b"not-an-image", b"\x89PNG\r\n\x1a\n" + b"\x00" * 32])
+    def test_undecodable_rejected(self, data: bytes):
+        assert detect_upload_image(data) is None
+
+    def test_truncated_rejected(self):
+        """能读出头部尺寸但数据不完整的图同样不收."""
+        data = self._encoded("PNG")
+        assert detect_upload_image(data[: len(data) // 2]) is None
 
 
 class TestCropPoster:

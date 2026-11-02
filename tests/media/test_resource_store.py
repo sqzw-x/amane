@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import pytest
 
-from amane.media import ResourceStore, UpscaleOutcome, derived_locator
+from amane.media import ResourceStore, UpscaleOutcome, derived_locator, internal_url
 from amane.media.resource_store import RESOURCE_URL_PREFIX, _is_placeholder_url, internal_url_hash
 from amane.net.http import RateLimiters, WebClient
 
@@ -296,6 +296,51 @@ class TestInternalUrl:
         client, session = _stub_client(monkeypatch, final_url="https://s/t.jpg")
         assert await resource_store.acquire(f"{RESOURCE_URL_PREFIX}/deadbeefdeadbeef", client) is None
         assert session.methods == []
+
+
+class TestStoreUpload:
+    @pytest.mark.asyncio
+    async def test_content_addressed_and_idempotent(self, resource_store: ResourceStore):
+        rec = await resource_store.store_upload(b"png-bytes", ext=".png", mime="image/png")
+        assert rec.url.startswith("upload:")
+        assert rec.mime_type == "image/png"
+        assert rec.size == len(b"png-bytes")
+        assert rec.content_hash is not None
+        path = resource_store.full_path(rec)
+        assert path.read_bytes() == b"png-bytes"
+        assert path.suffix == ".png"
+
+        # 同一份字节再次上传: 命中同一条记录, 不新增文件.
+        again = await resource_store.store_upload(b"png-bytes", ext=".png", mime="image/png")
+        assert again.url == rec.url
+        assert [p.name for p in path.parent.iterdir()] == [path.name]
+
+        other = await resource_store.store_upload(b"jpeg-bytes", ext=".jpg", mime="image/jpeg")
+        assert other.url != rec.url
+
+    @pytest.mark.asyncio
+    async def test_reachable_via_internal_url(self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch):
+        """引用它的内部 URL 直接解析到本地文件, 不发请求."""
+        rec = await resource_store.store_upload(b"bytes", ext=".jpg", mime="image/jpeg")
+        url = internal_url(rec.url)
+        assert url.startswith(f"{RESOURCE_URL_PREFIX}/")
+
+        client, session = _stub_client(monkeypatch, final_url="https://s/t.jpg")
+        assert await resource_store.acquire(url, client) == resource_store.full_path(rec)
+        assert session.methods == []
+
+        found = await resource_store.get_by_url_hash(ResourceStore.url_hash(rec.url))
+        assert found is not None
+
+    @pytest.mark.asyncio
+    async def test_rewrites_when_file_vanished(self, resource_store: ResourceStore):
+        rec = await resource_store.store_upload(b"lost-bytes", ext=".jpg", mime="image/jpeg")
+        resource_store.full_path(rec).unlink()
+
+        again = await resource_store.store_upload(b"lost-bytes", ext=".jpg", mime="image/jpeg")
+
+        assert again.url == rec.url
+        assert resource_store.full_path(again).read_bytes() == b"lost-bytes"
 
 
 class TestResolveSource:

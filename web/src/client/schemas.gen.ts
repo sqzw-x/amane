@@ -1166,6 +1166,22 @@ export const Body_install_pluginSchema = {
     title: 'Body_install_plugin'
 } as const;
 
+export const Body_upload_resourceSchema = {
+    properties: {
+        file: {
+            type: 'string',
+            contentMediaType: 'application/octet-stream',
+            title: 'File',
+            description: 'JPEG / PNG / WebP 图片'
+        }
+    },
+    type: 'object',
+    required: [
+        'file'
+    ],
+    title: 'Body_upload_resource'
+} as const;
+
 export const BrowserBackendItemResponseSchema = {
     properties: {
         backend: {
@@ -5564,7 +5580,8 @@ export const MetadataPartialSchema = {
                     items: {
                         type: 'string'
                     },
-                    type: 'array'
+                    type: 'array',
+                    'x-image-upload': true
                 },
                 {
                     type: 'null'
@@ -5578,7 +5595,8 @@ export const MetadataPartialSchema = {
                     items: {
                         type: 'string'
                     },
-                    type: 'array'
+                    type: 'array',
+                    'x-image-upload': true
                 },
                 {
                     type: 'null'
@@ -7125,6 +7143,22 @@ export const RescrapeTargetSchema = {
     ],
     title: 'RescrapeTarget',
     description: '滚动补刮选取的实体种类. 每个已选项各自选取 limit 条.'
+} as const;
+
+export const ResourceUploadResponseSchema = {
+    properties: {
+        url: {
+            type: 'string',
+            title: 'Url',
+            description: '内部资源 URL (/api/resources/{hash}), 可直接写入影片的图片字段'
+        }
+    },
+    type: 'object',
+    required: [
+        'url'
+    ],
+    title: 'ResourceUploadResponse',
+    description: '上传后的资源引用; 内容相同的重复上传返回同一个 URL.'
 } as const;
 
 export const RoutineTypeSchema = {

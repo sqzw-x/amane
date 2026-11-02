@@ -1,5 +1,6 @@
 """本地文件按 url hash 直出 (无选源/裁剪/超分).
 SR 可能就地覆盖 (URL 不变, 字节变), 须 ETag + no-cache 再验证.
+另收本地上传的图片: 按内容判定格式后存成 Resource, 供影片的图片字段引用.
 """
 
 from pathlib import Path
@@ -7,15 +8,20 @@ from typing import Annotated
 from urllib.parse import urlparse
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 
+from ...media import MAX_IMAGE_UPLOAD_BYTES, store_uploaded_image
 from ..deps import RuntimeDep
+from ..models import ResourceUploadResponse
 from ..support.http_cache import RESOURCE_CACHE_HEADERS, format_etag, maybe_not_modified
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/resources", tags=["resources"])
+
+# 上传按块读入, 超限立刻中断: 一次性 read() 会把任意大的请求体整个吃进内存.
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 _EXT_TO_MIME = {
     ".jpg": "image/jpeg",
@@ -37,6 +43,41 @@ def _image_response(request: Request, path: Path, content_hash: str | None) -> R
     if content_hash:
         headers["ETag"] = format_etag(content_hash)
     return FileResponse(path=path, media_type=_EXT_TO_MIME.get(path.suffix.lower(), "image/jpeg"), headers=headers)
+
+
+async def _read_upload(file: UploadFile, limit: int) -> bytes | None:
+    """按块读到 ``limit`` 字节为止; 超限返回 None, 不再继续读."""
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(_UPLOAD_CHUNK_BYTES):
+        total += len(chunk)
+        if total > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.post("/upload")
+async def upload_resource(
+    runtime: RuntimeDep,
+    file: Annotated[UploadFile, File(description="JPEG / PNG / WebP 图片")],
+) -> ResourceUploadResponse:
+    """保存本地上传的图片, 返回可写入图片字段的内部 URL.
+
+    只认内容不认文件名与 Content-Type; 同一份字节重复上传复用同一条资源.
+    """
+    data = await _read_upload(file, MAX_IMAGE_UPLOAD_BYTES)
+    if data is None:
+        raise HTTPException(
+            status_code=413,
+            detail=f"图片不能超过 {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB",
+        )
+    try:
+        url = await store_uploaded_image(data, runtime.resource_store)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    logger.info("resource uploaded", url=url, size=len(data))
+    return ResourceUploadResponse(url=url)
 
 
 @router.get("/proxy")

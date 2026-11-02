@@ -1,9 +1,11 @@
 from .images import (
+    MAX_IMAGE_UPLOAD_BYTES,
     CropRotation,
     apply_cover_watermarks,
     apply_cover_watermarks_from_info,
     crop_box,
     crop_poster,
+    detect_upload_image,
     format_crop_box_args,
     needs_upscale,
     probe_oriented_size,
@@ -13,10 +15,11 @@ from .images import (
     validate_crop_box,
 )
 from .nfo import write_nfo
-from .pipeline import MaterializedImages, manual_crop_image, materialize_images
-from .resource_store import AcquireResult, ResourceStore, UpscaleOutcome, derived_locator
+from .pipeline import MaterializedImages, manual_crop_image, materialize_images, store_uploaded_image
+from .resource_store import AcquireResult, ResourceStore, UpscaleOutcome, derived_locator, internal_url
 
 __all__ = [
+    "MAX_IMAGE_UPLOAD_BYTES",
     "AcquireResult",
     "CropRotation",
     "MaterializedImages",
@@ -27,7 +30,9 @@ __all__ = [
     "crop_box",
     "crop_poster",
     "derived_locator",
+    "detect_upload_image",
     "format_crop_box_args",
+    "internal_url",
     "manual_crop_image",
     "materialize_images",
     "needs_upscale",
@@ -35,6 +40,7 @@ __all__ = [
     "probe_size",
     "rotated_size",
     "should_crop_poster",
+    "store_uploaded_image",
     "validate_crop_box",
     "write_nfo",
 ]
