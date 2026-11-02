@@ -358,6 +358,7 @@
     "merge": "合并到此项",
     "mergeConfirm": "确认合并",
     "mergeConfirmBody": "将把 {{count}} 个来源合并到目标项",
+    "mergeEntriesConfirmBody": "将把 {{count}} 部影片的刮削来源快照并入「{{number}}」, 目标影片现有字段保持不变, 其余影片会被删除",
     "deleteFacetBody": "将从所有影片中移除「{{name}}」, 并加入剔除名单, 后续刮削时自动剔除",
     "deleteUserTagBody": "确定永久删除用户标签 「{{name}}」？将从所有影片上移除该标签",
     "rulesTitle": "分类规则",
