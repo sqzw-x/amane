@@ -86,6 +86,10 @@ Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 work
 
 建图对编译后站点链的消费见 [task-system.md](task-system.md), 默认表取舍见 [content-routes.md](content-routes.md).
 
+## `media_server` (Hot)
+
+单服务器, `url` 与 `api_key` 齐备才启用; `kind` 标识 Emby / Jellyfin, 两家接口同源. 客户端不读 `network.proxy`, 单请求超时固定 30s; `api_key` 与其他密钥一样进 secrets 脱敏. 配置变更经 `_rebuild()` 重建 handler 后对新任务生效, 运行中的推送继续使用旧客户端.
+
 ## `actor_scraping` (Hot)
 
 演员刮削与影片 `scraping` 分 section: 影片管线不读演员站列表, 演员任务也不读 `field_priority` / `field_blacklist`. 契约 (实现见 `ActorScrapeHandler` / `aggregate.actor`):
@@ -93,6 +97,7 @@ Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 work
 - **`profile_sites`** / **`image_sites`**: 资料来源与头像来源的顺序 (单源字段填空优先级, 头像优先于资料来源附图). 默认与 schema 枚举都是注册表里声明了对应能力的插入序, 不在配置层手写站点名单.
 - **`download_images`**: 是否经 ResourceStore 缓存头像 (URL 仍为远端 locator).
 - **`auto_scrape`**: 影片刮削成功后自动链式入队该片演员的 `ACTOR_SCRAPE` 任务; 见 [task-system.md](task-system.md).
+- **`auto_push`**: 演员刮削成功后链式入队该演员的 `ACTOR_PUSH`; `media_server` 未配置时静默跳过, 推送失败不回溯父任务.
 - **`gfriends_repo`**: gFriends 仓库 URL, Filetree 缓存在 `data_dir`.
 
 跨角色站点写入会被 section validator 拒绝. 发请求前仍按 `Actor.gender` 与站点性别覆盖再过滤 (见 [crawlers.md](crawlers.md)).
