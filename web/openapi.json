@@ -1419,6 +1419,48 @@
         }
       }
     },
+    "/api/metadata/merge-entries": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Merge Metadata Entries",
+        "description": "把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.",
+        "operationId": "merge_metadata_entries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataMergeEntriesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata/{metadata_id}": {
       "get": {
         "tags": [
@@ -11957,6 +11999,30 @@
         "type": "object",
         "title": "MetadataLocksRequest",
         "description": "整体替换锁定字段集合."
+      },
+      "MetadataMergeEntriesRequest": {
+        "properties": {
+          "target_id": {
+            "type": "integer",
+            "title": "Target Id",
+            "description": "合并目标 Metadata ID; 其字段与已有站点快照保持不变"
+          },
+          "source_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Source Ids",
+            "description": "待合并的 Metadata ID 列表; 按顺序补入 raw 快照"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_id",
+          "source_ids"
+        ],
+        "title": "MetadataMergeEntriesRequest"
       },
       "MetadataPartial": {
         "properties": {

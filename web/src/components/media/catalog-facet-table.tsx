@@ -78,7 +78,6 @@ export function CatalogFacetTable({
   const identity = useFacetIdentityActions({
     kind,
     listQueryKey: listFacetsQueryKey({ path: { kind } }),
-    confirmMerge: true,
     onMerged: clear,
   });
   const { isUserTag } = identity;
@@ -279,7 +278,9 @@ export function CatalogFacetTable({
                     <HintedActionIcon
                       variant="subtle"
                       label={t("manage.merge")}
-                      onClick={() => void identity.openMerge(facet.id, selected)}
+                      onClick={() =>
+                        void identity.openMerge({ id: facet.id, name: facet.name }, selected)
+                      }
                     >
                       <IconArrowMerge size={16} />
                     </HintedActionIcon>
@@ -309,7 +310,9 @@ export function CatalogFacetTable({
                         </Menu.Item>
                         <Menu.Item
                           leftSection={<IconArrowMerge size={14} />}
-                          onClick={() => void identity.openMerge(facet.id, selected)}
+                          onClick={() =>
+                            void identity.openMerge({ id: facet.id, name: facet.name }, selected)
+                          }
                         >
                           {t("manage.merge")}
                         </Menu.Item>

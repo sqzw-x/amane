@@ -14,7 +14,7 @@ import {
   type MantineBreakpoint,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconDots, IconRefresh, IconTag, IconTrash } from "@tabler/icons-react";
+import { IconArrowMerge, IconDots, IconRefresh, IconTag, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -24,8 +24,10 @@ import {
   batchMetadataUserTagsMutation,
   batchScrapeMetadataMutation,
   deleteMetadataMutation,
+  getMetadataQueryKey,
   listFacetsOptions,
   listMetadataQueryKey,
+  mergeMetadataEntriesMutation,
   submitTaskMutation,
 } from "@/client/@tanstack/react-query.gen";
 import type { MetadataResponse, MetadataSortField, SortOrder } from "@/client/types.gen";
@@ -33,6 +35,7 @@ import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
+import { MergeNotice } from "@/components/media/merge-notice";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { useResizableColumns } from "@/hooks/use-resizable-columns";
 import { extractErrorMessage } from "@/lib/api-error";
@@ -240,7 +243,58 @@ export function MetaTable({
       }),
   });
 
-  const busy = batchScrape.isPending || batchDelete.isPending || batchTags.isPending;
+  const mergeEntries = useMutation({
+    ...mergeMetadataEntriesMutation(),
+    onSuccess: (res) => {
+      notifications.show({
+        message: t("common:toast.metadataUpdated"),
+        color: "blue",
+      });
+      clear();
+      void queryClient.invalidateQueries({ queryKey: listMetadataQueryKey() });
+      void queryClient.invalidateQueries({
+        queryKey: getMetadataQueryKey({ path: { metadata_id: res.id } }),
+      });
+    },
+    onError: (err) =>
+      notifications.show({
+        message: extractErrorMessage(err, t("common:toast.operationFailed")),
+        color: "red",
+      }),
+  });
+
+  const busy =
+    batchScrape.isPending || batchDelete.isPending || batchTags.isPending || mergeEntries.isPending;
+
+  async function handleMergeEntries(target: MetadataResponse) {
+    const sourceIds = selectedIds.filter((id) => id !== target.id);
+    if (sourceIds.length === 0) {
+      notifications.show({
+        message: t("manage.mergeNeedSources"),
+        color: "yellow",
+      });
+      return;
+    }
+    const ok = await confirm({
+      title: t("manage.mergeConfirm"),
+      message: (
+        <MergeNotice
+          lead={t("manage.mergeEntriesLead", { count: sourceIds.length, number: target.number })}
+          items={[
+            t("manage.mergeEntriesKeep"),
+            t("manage.mergeEntriesRaw"),
+            t("manage.mergeEntriesLinks"),
+            t("manage.mergeEntriesDelete"),
+          ]}
+        />
+      ),
+      confirmLabel: t("common:actions.confirm"),
+      danger: false,
+      confirmColor: "orange",
+    });
+    if (!ok) return;
+    mergeEntries.mutate({ body: { target_id: target.id, source_ids: sourceIds } });
+  }
 
   const tagOptions = useMemo(
     () => (userTags?.items ?? []).map((tag) => ({ value: String(tag.id), label: tag.name })),
@@ -264,7 +318,7 @@ export function MetaTable({
         page={page}
         onChange={handlePageChange}
         header={
-          <SelectionBar count={selected.size}>
+          <SelectionBar count={selected.size} hint={t("manage.mergeGuide")}>
             <Button
               size="xs"
               variant="light"
@@ -393,7 +447,7 @@ export function MetaTable({
                   )}
                 </Table.Td>
                 <Table.Td>
-                  {/* 窄屏动作列只容得下一个按钮, 两个动作移入菜单. */}
+                  {/* 窄屏动作列只容得下一个按钮, 全部动作移入菜单. */}
                   <Group gap={4} justify="flex-end" wrap="nowrap" visibleFrom="sm">
                     <HintedActionIcon
                       variant="subtle"
@@ -403,6 +457,14 @@ export function MetaTable({
                       }
                     >
                       <IconRefresh size={16} />
+                    </HintedActionIcon>
+                    <HintedActionIcon
+                      variant="subtle"
+                      label={t("manage.merge")}
+                      disabled={mergeEntries.isPending}
+                      onClick={() => void handleMergeEntries(item)}
+                    >
+                      <IconArrowMerge size={16} />
                     </HintedActionIcon>
                     <HintedActionIcon
                       variant="subtle"
@@ -429,6 +491,13 @@ export function MetaTable({
                           }
                         >
                           {t("actions.scrape")}
+                        </Menu.Item>
+                        <Menu.Item
+                          leftSection={<IconArrowMerge size={14} />}
+                          disabled={mergeEntries.isPending}
+                          onClick={() => void handleMergeEntries(item)}
+                        >
+                          {t("manage.merge")}
                         </Menu.Item>
                         <Menu.Item
                           color="red"

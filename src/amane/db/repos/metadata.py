@@ -3,7 +3,8 @@ from datetime import datetime
 from typing import Unpack, cast
 
 import structlog
-from sqlalchemy import ColumnElement, or_, text
+from sqlalchemy import ColumnElement, or_, text, update
+from sqlalchemy import delete as sqla_delete
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -13,6 +14,7 @@ from ...parsing import ContentType, Mosaic, infer_content_type
 from ...utils.collections import unique_ids
 from ...utils.text import normalize_long_text
 from ..models import (
+    Comment,
     MediaFile,
     Metadata,
     MetadataActor,
@@ -63,6 +65,18 @@ def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
 def _image_signature(metadata: Metadata) -> tuple[list[str], list[str], dict[str, list[str]]]:
     """封面与剧照的来源字段; 变化即向量失效 (缩略图作为封面回退, 一并纳入)."""
     return (metadata.poster_urls, metadata.thumb_urls, metadata.extrafanart_urls)
+
+
+def _merge_raw_snapshots(
+    target: Mapping[str, Mapping[str, object]],
+    sources: Sequence[Mapping[str, Mapping[str, object]]],
+) -> dict[str, dict[str, object]]:
+    """按站点补入来源快照: 目标已有的站点保持不变, 来源之间按传入顺序先到先得."""
+    merged = {site: dict(snapshot) for site, snapshot in target.items()}
+    for source in sources:
+        for site, snapshot in source.items():
+            merged.setdefault(site, dict(snapshot))
+    return merged
 
 
 # 锁字段 (MetadataField) ↔ Metadata 列名; 仅 extrafanart / score 两名不同.
@@ -480,6 +494,71 @@ class MetadataRepoMixin(RepositoryMixinBase):
             if _image_signature(metadata) != before:
                 await self.notify_media_changed(metadata_id)
             return metadata
+
+    async def merge_metadata_entries(self, target_id: int, source_ids: Sequence[int]) -> Metadata | None:
+        """把来源条目的 raw 快照补入目标, 迁移关联记录后删除来源.
+
+        目标字段与锁定集合不变: raw 以目标为准, 来源按传入顺序补入目标缺失的站点, 不重新聚合.
+        媒体文件 / 评论 / 用户标签改挂目标 (标签去重), 分类投影随来源删除.
+        target 不存在返回 None; 来源为空 / 含 target / 不存在则抛 ``ValueError``.
+        """
+        source_id_list = list(dict.fromkeys(source_ids))
+        if target_id in source_id_list:
+            raise ValueError("合并目标不能是来源之一")
+        if not source_id_list:
+            raise ValueError("未提供要合并的影片")
+
+        async with self._session() as session:
+            target = await session.get(Metadata, target_id)
+            if target is None:
+                return None
+            sources: list[Metadata] = []
+            for source_id in source_id_list:
+                source = await session.get(Metadata, source_id)
+                if source is None:
+                    raise ValueError(f"影片 {source_id} 不存在")
+                sources.append(source)
+
+            target.raw = _merge_raw_snapshots(target.raw or {}, [source.raw or {} for source in sources])
+            target.updated_at = _utcnow()
+            session.add(target)
+
+            target_tag_ids = set(
+                (
+                    await session.exec(
+                        select(MetadataUserTag.user_tag_id).where(col(MetadataUserTag.metadata_id) == target_id)
+                    )
+                ).all()
+            )
+            now = _utcnow()
+            for source in sources:
+                assert source.id is not None
+                source_id = source.id
+                await session.exec(
+                    update(Comment).where(col(Comment.metadata_id) == source_id).values(metadata_id=target_id)
+                )
+                await session.exec(
+                    update(MediaFile)
+                    .where(col(MediaFile.metadata_id) == source_id)
+                    .values(metadata_id=target_id, updated_at=now)
+                )
+                source_tag_ids = set(
+                    (
+                        await session.exec(
+                            select(MetadataUserTag.user_tag_id).where(col(MetadataUserTag.metadata_id) == source_id)
+                        )
+                    ).all()
+                )
+                for tag_id in source_tag_ids - target_tag_ids:
+                    session.add(MetadataUserTag(metadata_id=target_id, user_tag_id=tag_id))
+                    target_tag_ids.add(tag_id)
+                await session.exec(sqla_delete(MetadataUserTag).where(col(MetadataUserTag.metadata_id) == source_id))
+                await cascade_delete_metadata(session, source)
+
+            await session.commit()
+            await session.refresh(target)
+        await self._drop_embeddings(source_id_list)
+        return target
 
     async def set_metadata_locks(self, metadata_id: int, fields: Collection[MetadataField]) -> Metadata | None:
         """整体替换锁定字段集合, 不修改 ``updated_at``. 不存在返回 None."""

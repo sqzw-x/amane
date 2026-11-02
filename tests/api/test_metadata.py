@@ -206,6 +206,38 @@ class TestMetadataHttp:
         assert "nonexistent" in bad.json()["detail"]
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_merge_entries_http(self, client: AsyncClient, repo: Repository):
+        target = await repo.upsert_metadata(number="MRG-100", title="target", raw={"javdb": {"title": "target"}})
+        source = await repo.upsert_metadata(number="MRG-0100", title="source", raw={"dmm": {"title": "source"}})
+        assert target.id is not None and source.id is not None
+
+        resp = await client.post(
+            "metadata/merge-entries",
+            json={"target_id": target.id, "source_ids": [source.id, source.id]},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == target.id
+        assert body["title"] == "target"
+        assert body["raw"] == {"javdb": {"title": "target"}, "dmm": {"title": "source"}}
+        assert (await client.get(f"metadata/{source.id}")).status_code == 404
+
+        extra = await repo.upsert_metadata(number="MRG-200")
+        assert extra.id is not None
+        empty = await client.post("metadata/merge-entries", json={"target_id": target.id, "source_ids": []})
+        assert empty.status_code == 422
+        assert (
+            await client.post("metadata/merge-entries", json={"target_id": 9999, "source_ids": [extra.id]})
+        ).status_code == 404
+        assert (
+            await client.post("metadata/merge-entries", json={"target_id": target.id, "source_ids": [target.id]})
+        ).status_code == 400
+        missing = await client.post("metadata/merge-entries", json={"target_id": target.id, "source_ids": [9999]})
+        assert missing.status_code == 400
+        assert "9999" in missing.json()["detail"]
+        assert (await client.get(f"metadata/{extra.id}")).status_code == 200
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_crop_poster_http(self, client: AsyncClient, repo: Repository, app: FastAPI):
         meta = await repo.upsert_metadata(
             number="CROP-001", thumb_urls=["https://example.com/t.jpg"], poster_urls=["https://example.com/old-p.jpg"]

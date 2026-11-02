@@ -5433,6 +5433,31 @@ export const MetadataLocksRequestSchema = {
     description: '整体替换锁定字段集合.'
 } as const;
 
+export const MetadataMergeEntriesRequestSchema = {
+    properties: {
+        target_id: {
+            type: 'integer',
+            title: 'Target Id',
+            description: '合并目标 Metadata ID; 其字段与已有站点快照保持不变'
+        },
+        source_ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Source Ids',
+            description: '待合并的 Metadata ID 列表; 按顺序补入 raw 快照'
+        }
+    },
+    type: 'object',
+    required: [
+        'target_id',
+        'source_ids'
+    ],
+    title: 'MetadataMergeEntriesRequest'
+} as const;
+
 export const MetadataPartialSchema = {
     properties: {
         title: {

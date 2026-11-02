@@ -1,6 +1,6 @@
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQueryClient, type QueryKey } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   deleteFacetMutation,
@@ -19,11 +19,8 @@ export interface UseFacetIdentityActionsOptions {
   kind: FacetKind;
   /** 列表缓存 key (actors → listActors; catalog → listFacets). */
   listQueryKey: QueryKey;
-  /**
-   * true (默认): openMerge 先经居中确认再提交.
-   * false: openMerge 有来源时直接提交 (演员表).
-   */
-  confirmMerge?: boolean;
+  /** 合并确认正文; 省略时使用通用一句话. */
+  mergeNotice?: (target: FacetNamedTarget, count: number) => ReactNode;
   /** 合并成功后清空多选. */
   onMerged?: () => void;
 }
@@ -35,7 +32,7 @@ export interface UseFacetIdentityActionsOptions {
 export function useFacetIdentityActions({
   kind,
   listQueryKey,
-  confirmMerge = true,
+  mergeNotice,
   onMerged,
 }: UseFacetIdentityActionsOptions) {
   const { t } = useTranslation(["metadata", "common"]);
@@ -137,8 +134,8 @@ export function useFacetIdentityActions({
   );
 
   const openMerge = useCallback(
-    async (targetId: number, selected: Set<number>) => {
-      const sources = [...selected].filter((id) => id !== targetId);
+    async (target: FacetNamedTarget, selected: Set<number>) => {
+      const sources = [...selected].filter((id) => id !== target.id);
       if (sources.length === 0) {
         notifications.show({
           message: t("manage.mergeNeedSources"),
@@ -146,22 +143,22 @@ export function useFacetIdentityActions({
         });
         return;
       }
-      if (confirmMerge) {
-        const ok = await confirm({
-          title: t("manage.mergeConfirm"),
-          message: t("manage.mergeConfirmBody", { count: sources.length }),
-          confirmLabel: t("common:actions.confirm"),
-          danger: false,
-          confirmColor: "orange",
-        });
-        if (!ok) return;
-      }
+      const ok = await confirm({
+        title: t("manage.mergeConfirm"),
+        message: mergeNotice
+          ? mergeNotice(target, sources.length)
+          : t("manage.mergeConfirmBody", { count: sources.length }),
+        confirmLabel: t("common:actions.confirm"),
+        danger: false,
+        confirmColor: "orange",
+      });
+      if (!ok) return;
       mergeMutation.mutate({
         path: { kind },
-        body: { target_id: targetId, source_ids: sources },
+        body: { target_id: target.id, source_ids: sources },
       });
     },
-    [confirmMerge, mergeMutation, kind, t],
+    [mergeNotice, mergeMutation, kind, t],
   );
 
   const busy = renameMutation.isPending || mergeMutation.isPending || deleteMutation.isPending;

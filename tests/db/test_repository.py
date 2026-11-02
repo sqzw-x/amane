@@ -32,6 +32,7 @@ from amane.db.repo_types import (
     MetadataFields,
     WriteMode,
 )
+from amane.db.repos.metadata import _merge_raw_snapshots
 from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataField
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
 from amane.parsing import ContentType, Mosaic
@@ -59,6 +60,35 @@ def test_metadata_sort_field_map_covers_columns():
         MetadataSortField.FILE_COUNT,
         MetadataSortField.SCORE,
     }
+
+
+@pytest.mark.parametrize(
+    ("target", "sources", "expect"),
+    [
+        (
+            {"javdb": {"title": "target"}},
+            [{"javdb": {"title": "source"}, "dmm": {"title": "a"}}],
+            {"javdb": {"title": "target"}, "dmm": {"title": "a"}},
+        ),
+        (
+            {"javdb": {"title": "target"}},
+            [
+                {"shared": {"from": "a"}},
+                {"shared": {"from": "b"}, "extra": {"from": "b"}},
+            ],
+            {"javdb": {"title": "target"}, "shared": {"from": "a"}, "extra": {"from": "b"}},
+        ),
+        ({}, [], {}),
+        ({}, [{}], {}),
+    ],
+    ids=["target_wins", "first_source_wins", "both_empty", "empty_snapshot"],
+)
+def test_merge_raw_snapshots(
+    target: dict[str, dict[str, object]],
+    sources: list[dict[str, dict[str, object]]],
+    expect: dict[str, dict[str, object]],
+) -> None:
+    assert _merge_raw_snapshots(target, sources) == expect
 
 
 class TestMediaFileRepo:
@@ -939,6 +969,78 @@ class TestMetadataRepo:
 
         zero, all_miss = await repo.batch_delete_metadata([8888, 7777])
         assert (zero, all_miss) == (0, 2)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_merge_metadata_entries_moves_links_and_merges_raw(self, repo: Repository):
+        target = await repo.upsert_metadata(
+            number="MRG-001",
+            title="target",
+            actors=["Target"],
+            field_sources={"title": "javdb"},
+            raw={"javdb": {"title": "target"}, "dmm": {"title": "target-dmm"}},
+        )
+        source_a = await repo.upsert_metadata(
+            number="MRG-0001",
+            title="source a",
+            raw={"javdb": {"title": "source-a"}, "shared": {"from": "a"}},
+        )
+        source_b = await repo.upsert_metadata(
+            number="MRG-0002",
+            title="source b",
+            raw={"shared": {"from": "b"}, "extra": {"from": "b"}},
+        )
+        assert target.id is not None and source_a.id is not None and source_b.id is not None
+        await repo.set_metadata_locks(target.id, [MetadataField.TITLE])
+        media = await repo.create_media_file(library_id=1, path="/video/MRG-0001.mp4", number="MRG-0001")
+        assert media.id is not None
+        await repo.update_media_file(media.id, status=MediaFileStatus.SCRAPED, metadata_id=source_a.id)
+        await repo.create_comment(source_a.id, "from a")
+        await repo.create_comment(source_b.id, "from b")
+        keep, added = (await repo.ensure_user_tags(["keep", "added"]))[0]
+        assert keep.id is not None and added.id is not None
+        await repo.apply_metadata_user_tags([target.id, source_a.id], [keep.id], action="attach")
+        await repo.apply_metadata_user_tags([source_b.id], [added.id], action="attach")
+
+        merged = await repo.merge_metadata_entries(target.id, [source_a.id, source_a.id, source_b.id])
+
+        assert merged is not None
+        assert merged.id == target.id
+        assert merged.title == "target"
+        assert merged.actors == ["Target"]
+        assert merged.field_sources == {"title": "javdb"}
+        assert merged.locked_fields == ["title"]
+        assert merged.raw == {
+            "javdb": {"title": "target"},
+            "dmm": {"title": "target-dmm"},
+            "shared": {"from": "a"},
+            "extra": {"from": "b"},
+        }
+        assert await repo.get_metadata(source_a.id) is None
+        assert await repo.get_metadata(source_b.id) is None
+
+        files = await repo.get_media_by_metadata_id(target.id)
+        assert [file.id for file in files] == [media.id]
+        assert files[0].status == MediaFileStatus.SCRAPED
+        assert [c.body for c in await repo.list_comments(target.id)] == ["from b", "from a"]
+        assert [tag.name for tag in await repo.list_metadata_user_tags(target.id)] == ["added", "keep"]
+        assert await repo.list_comments(source_a.id) == []
+        assert await repo.list_metadata_user_tags(source_b.id) == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_merge_metadata_entries_rejects_invalid_sources(self, repo: Repository):
+        target = await repo.upsert_metadata(number="MRG-010")
+        source = await repo.upsert_metadata(number="MRG-0011")
+        assert target.id is not None and source.id is not None
+
+        assert await repo.merge_metadata_entries(9999, [source.id]) is None
+        with pytest.raises(ValueError, match="合并目标不能是来源之一"):
+            await repo.merge_metadata_entries(target.id, [target.id])
+        with pytest.raises(ValueError, match="影片 9999 不存在"):
+            await repo.merge_metadata_entries(target.id, [9999])
+        with pytest.raises(ValueError, match="未提供要合并的影片"):
+            await repo.merge_metadata_entries(target.id, [])
+
+        assert await repo.get_metadata(source.id) is not None
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_get_media_by_metadata_id(self, repo: Repository):

@@ -19,7 +19,7 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 | `webhooks` | `/webhooks` | CloudDrive 回调; 见 [watcher.md](watcher.md) |
 | `feeds` | `/feeds` | 源 CRUD + 立即拉取 + 条目历史检索 / 批量操作 / 重刮削; 见 [feeds.md](feeds.md) |
 | `media` | `/media` | MediaFile + 记录批量删除 |
-| `metadata` | `/metadata` | 番号条目 + merge / crop / facet 筛选 / user-tag / batch / schema |
+| `metadata` | `/metadata` | 番号条目 + 字段 merge / 条目 merge / crop / facet 筛选 / user-tag / batch / schema |
 | `actors` | `/actors` | 演员浏览 (含用户标签筛选)、人物 PATCH / 锁、批量性别与批量清空、用户标签挂载; 单条刮削与单条清空已弃用; 身份治理经由 facets |
 | `facets` | `/facets` | 分类目录与规则 |
 | `comments` | `/comments` | 评论修改与删除; 新建经由 metadata |
