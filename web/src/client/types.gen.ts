@@ -2703,6 +2703,18 @@ export type MetadataLocksRequest = {
 };
 
 /**
+ * MetadataMergeEntriesRequest
+ */
+export type MetadataMergeEntriesRequest = {
+    /**
+     * Source Ids
+     *
+     * 待合并的 Metadata ID 列表; 按顺序补入 raw 快照
+     */
+    source_ids: Array<number>;
+};
+
+/**
  * MetadataPartial
  */
 export type MetadataPartial = {
@@ -6481,6 +6493,36 @@ export type MergeMetadataResponses = {
 };
 
 export type MergeMetadataResponse = MergeMetadataResponses[keyof MergeMetadataResponses];
+
+export type MergeMetadataEntriesData = {
+    body: MetadataMergeEntriesRequest;
+    path: {
+        /**
+         * Metadata Id
+         */
+        metadata_id: number;
+    };
+    query?: never;
+    url: '/api/metadata/{metadata_id}/merge-entries';
+};
+
+export type MergeMetadataEntriesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MergeMetadataEntriesError = MergeMetadataEntriesErrors[keyof MergeMetadataEntriesErrors];
+
+export type MergeMetadataEntriesResponses = {
+    /**
+     * Successful Response
+     */
+    200: MetadataResponse;
+};
+
+export type MergeMetadataEntriesResponse = MergeMetadataEntriesResponses[keyof MergeMetadataEntriesResponses];
 
 export type BrowserBackendsData = {
     body?: never;

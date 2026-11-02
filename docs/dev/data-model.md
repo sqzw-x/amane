@@ -95,6 +95,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 |------|---------|------|
 | `MediaFile` 删除 | 不级联 Metadata | Metadata 是一等公民; 文件索引消失不影响元数据条目 |
 | `Metadata` 删除 | **nullify** `MediaFile.metadata_id`, 状态回 `PENDING` | 应用层级联 (`delete_metadata`); 文件本身保留, 可再刮削 |
+| `Metadata` 合并 | 来源的 `MediaFile` / `Comment` / `MetadataUserTag` 改挂 target 并去重, 分类投影与来源条目删除 | `merge_metadata_entries`; target 字段与锁定不变, `raw` 只补目标缺失的站点 (来源之间按传入顺序), 不重新聚合 |
 | `Library` 删除 | **级联删除** `MediaFile` | 应用层级联 (`delete_library` 先 flush 删子表再删库, 无 ORM relationship). 仅删 DB 索引, 不动磁盘文件; 路由层同时 `remove_library` 停止监控 |
 | `Feed` 删除 | **级联删除** `FeedItem` | 应用层级联; 已入队的 SCRAPE / Metadata 不受影响 |
 | `UserTag` 删除 | **级联删除**两张关联表的挂载行 | 应用层级联 (不依赖 FK pragma); 合并用户标签时源标签的挂载先迁入 target 再删实体 |

@@ -1702,6 +1702,59 @@
         }
       }
     },
+    "/api/metadata/{metadata_id}/merge-entries": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Merge Metadata Entries",
+        "description": "把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.",
+        "operationId": "merge_metadata_entries",
+        "parameters": [
+          {
+            "name": "metadata_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Metadata Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataMergeEntriesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/network/browser": {
       "get": {
         "tags": [
@@ -11957,6 +12010,24 @@
         "type": "object",
         "title": "MetadataLocksRequest",
         "description": "整体替换锁定字段集合."
+      },
+      "MetadataMergeEntriesRequest": {
+        "properties": {
+          "source_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Source Ids",
+            "description": "待合并的 Metadata ID 列表; 按顺序补入 raw 快照"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_ids"
+        ],
+        "title": "MetadataMergeEntriesRequest"
       },
       "MetadataPartial": {
         "properties": {
