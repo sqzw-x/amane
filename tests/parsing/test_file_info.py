@@ -72,6 +72,12 @@ CASES: list[object] = [
     _Case("MIDV-123-U.mp4", mosaic="cracked", number="MIDV-123"),
     _Case("MIDV-123-C-U.mp4", has_subtitle=True, mosaic="cracked", number="MIDV-123"),
     _Case("MIDV-123-U-CD1.mp4", cd=1, mosaic="cracked", number="MIDV-123"),
+    # -LTX 是破解; 后面还可跟中字 / 分辨率. 裸 LTX 不是标记
+    _Case("SNIS-576-LTX.mp4", mosaic="cracked", number="SNIS-576"),
+    _Case("IPX-750-LTX-4K.mp4", mosaic="cracked", definition="4K", number="IPX-750"),
+    _Case("MIDV-123-LTX-C.mp4", has_subtitle=True, mosaic="cracked", number="MIDV-123"),
+    _Case("MIDV-123-ltx.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("LTX-123.mp4", number="LTX-123"),
     _Case("HEYZO-123.mp4", number="HEYZO-123"),
     _Case("HEYZO-123-1080p.mp4", definition="1080p", number="HEYZO-123"),
     _Case("HEYZO-123-流出.mp4", mosaic="leaked", number="HEYZO-123"),
@@ -340,6 +346,12 @@ CASES: list[object] = [
         has_subtitle=True,
         mosaic="cracked",
         number="MIDV-123",
+        content_type=ContentType.CENSORED,
+    ),
+    _Case(
+        "/media/SNIS-576-LTX/489155.com@SNIS-576-LTX.mp4",
+        mosaic="cracked",
+        number="SNIS-576",
         content_type=ContentType.CENSORED,
     ),
     _Case(
