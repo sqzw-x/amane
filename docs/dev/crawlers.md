@@ -71,7 +71,7 @@ CrawlerFactory (缓存实例)
 
 ### 拦截判定
 
-模式表在 `net/errors.py::classify_block` (正文启发式优先, 失败响应正文次之, HTTP 状态兜底). `get_html` 是 HTML 站的入口; 爬虫不得自行判定拦截、不得 import Recorder — 来源 outcome 只在 `invoke_source` 写入, 见 [observability.md](observability.md).
+模式表在 `net/errors.py::classify_block` (正文启发式优先, 失败响应正文次之, HTTP 状态兜底). `get_html` 是 HTML 站的入口, 表单 POST 用 `post_html`: 该路径只直连 (浏览器渲染只提供 GET), 拦截判定与 `get_html` 相同; 爬虫不得自行判定拦截、不得 import Recorder — 来源 outcome 只在 `invoke_source` 写入, 见 [observability.md](observability.md).
 
 ## 限速
 

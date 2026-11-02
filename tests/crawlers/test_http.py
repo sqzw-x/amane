@@ -60,6 +60,28 @@ async def test_get_html_raises_source_error_on_block(client, mock_web, html: str
 
 
 @pytest.mark.asyncio
+async def test_post_html_forwards_form(client, mock_web):
+    mock_web.post_text.return_value = "<html><body>Normal Page</body></html>"
+
+    assert await client.post_html("https://example.com/search", data={"sn": "SERO-025"}) == (
+        "<html><body>Normal Page</body></html>"
+    )
+    mock_web.post_text.assert_awaited_once_with(
+        "https://example.com/search", data={"sn": "SERO-025"}, headers=None, cookies=None, encoding="utf-8"
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_html_raises_source_error_on_block(client, mock_web):
+    mock_web.post_text.return_value = "just a moment... cloudflare challenge"
+
+    with pytest.raises(SourceError) as exc:
+        await client.post_html("https://example.com/search", data={"sn": "SERO-025"})
+
+    assert exc.value.reason == FailureReason.CLOUDFLARE_CHALLENGE
+
+
+@pytest.mark.asyncio
 async def test_render_returns_page_with_host_scope(client, mock_browser):
     mock_browser.get_page.return_value = ("<html><body>Rendered</body></html>", None)
 

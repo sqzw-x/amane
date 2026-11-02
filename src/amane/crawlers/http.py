@@ -132,6 +132,22 @@ class HttpClient:
             return await self._render(url, headers=headers, cookies=cookies, wait_for=wait_for)
         raise SourceError(reason, detail=url)
 
+    async def post_html(
+        self,
+        url: str,
+        *,
+        data: Any,
+        headers: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
+        encoding: str = "utf-8",
+    ) -> str:
+        """表单 POST 取 HTML. 浏览器渲染只提供 GET, 该路径一律直连, 拦截判定与 ``get_html`` 相同."""
+        text = await self._web.post_text(url, data=data, headers=headers, cookies=cookies, encoding=encoding)
+        reason = classify_block(text)
+        if reason is not None:
+            raise SourceError(reason, detail=url)
+        return text
+
     async def get_json(
         self,
         url: str,
