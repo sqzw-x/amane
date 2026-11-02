@@ -13,7 +13,7 @@ from amane.config import HotSettings, ScrapingConfig
 from amane.crawlers.models import MediaMetadata
 from amane.db.models import MediaFileStatus, Task, TaskStatus, TaskType
 from amane.enums import MetadataField, SiteName
-from amane.handlers import RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
+from amane.handlers import CacheKind, RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
 from amane.library import CleanupInventory, InventorySource, InventoryStore, LibraryFileKind, LibraryHit, scan_inventory
 from amane.observability import Recorder
 from amane.parsing import ContentType
@@ -524,6 +524,61 @@ class TestContentRoutesFiltering:
         assert metadata.title == "FromDMM"
         assert metadata.studio == "StudioJavDB"
         assert set(factory.requested) == {SiteName.JAVDB, SiteName.DMM}
+
+
+class TestRawCacheWriteback:
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("raw_sites", "use_cache", "expected_sites", "expected_title"),
+        [
+            (
+                frozenset({"freejavbt", "javdb"}),
+                frozenset({CacheKind.metadata}),
+                frozenset({"freejavbt", "javdb"}),
+                "CachedJavDB",
+            ),
+            (
+                frozenset({"freejavbt"}),
+                frozenset({CacheKind.metadata}),
+                frozenset({"freejavbt", "javdb"}),
+                "Mock Title",
+            ),
+            (frozenset({"freejavbt", "javdb"}), frozenset(), frozenset({"javdb"}), "Mock Title"),
+        ],
+        ids=["removed-site-preserved", "new-site-added", "force-replaces"],
+    )
+    async def test_metadata_cache_raw_is_replace_add_only(
+        self,
+        repo: Repository,
+        resource_store,
+        raw_sites: frozenset[str],
+        use_cache: frozenset[CacheKind],
+        expected_sites: frozenset[str],
+        expected_title: str,
+    ):
+        """metadata 缓存生效时 raw 只替换/新增; 强制刮削仍由本次结果整体替换."""
+        raw: dict[str, dict] = {}
+        if "freejavbt" in raw_sites:
+            raw["freejavbt"] = MediaMetadata.model_validate({"number": "MIDV-123", "title": "FreeTitle"}).model_dump()
+        if "javdb" in raw_sites:
+            raw["javdb"] = MediaMetadata.model_validate({"number": "MIDV-123", "title": "CachedJavDB"}).model_dump()
+        await repo.upsert_metadata("MIDV-123", raw=raw)
+
+        config = _config_with({ContentType.CENSORED: [SiteName.JAVDB]})
+        factory = RecordingFactory({"javdb": MockCrawler()})
+        h = ScrapeHandler(repo=repo, factory=factory, resource_store=resource_store, pipeline_config=config)
+
+        result = await h.handle(
+            ScrapePayload(number="MIDV-123", content_type=ContentType.CENSORED, use_cache=set(use_cache))
+        )
+        assert result.success is True
+
+        metadata = await repo.get_metadata_by_number("MIDV-123")
+        assert metadata is not None
+        assert set(metadata.raw) == expected_sites
+        assert metadata.raw["javdb"]["title"] == expected_title
+        if "freejavbt" in expected_sites:
+            assert metadata.raw["freejavbt"]["title"] == "FreeTitle"
 
 
 # --- 翻译集成测试 ---
