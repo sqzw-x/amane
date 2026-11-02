@@ -1,7 +1,8 @@
 """爬虫 HTTP 封装: HTML 按来源策略在直连与浏览器之间路由.
 
-``get_html`` 是唯一入口: ``use_browser=auto`` 先直连, 首次命中 Cloudflare 挑战后该来源改用浏览器并保持;
-``always`` 一律渲染; ``off`` 一律直连. 判定集中在 ``RenderPolicy``, 派生视图共享已切换的 scope.
+``get_html`` 是浏览器渲染的唯一入口: ``use_browser=auto`` 先直连, 首次命中 Cloudflare 挑战后该来源改用
+浏览器并保持; ``always`` 一律渲染; ``off`` 一律直连. 判定集中在 ``RenderPolicy``, 派生视图共享已切换的
+scope. 表单 POST 用 ``post_html``, 浏览器渲染只提供 GET, 因此该路径一律直连.
 ``get_json`` / ``get_bytes`` / ``download`` 永远直连, 不走 HTML 拦截启发式.
 """
 
