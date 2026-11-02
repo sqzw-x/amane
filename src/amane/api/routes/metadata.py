@@ -255,6 +255,19 @@ async def batch_metadata_user_tags(req: MetadataUserTagsRequest, repo: RepoDep) 
     return UserTagLinksResponse(changed=result.changed, unchanged=result.unchanged, missing=result.missing)
 
 
+@router.post("/merge-entries")
+async def merge_metadata_entries(req: MetadataMergeEntriesRequest, repo: RepoDep) -> MetadataResponse:
+    """把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标."""
+    try:
+        metadata = await repo.merge_metadata_entries(req.target_id, req.source_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if metadata is None:
+        raise HTTPException(status_code=404, detail="影片不存在")
+    logger.info("metadata entries merged", target_id=req.target_id, source_ids=req.source_ids)
+    return to_resp(MetadataResponse, metadata)
+
+
 @router.get("/{metadata_id}")
 async def get_metadata(metadata_id: int, repo: RepoDep) -> MetadataDetailResponse:
     metadata = await repo.get_metadata(metadata_id)
@@ -404,16 +417,3 @@ async def merge_metadata(metadata_id: int, req: MergeRequest, repo: RepoDep) -> 
     assert updated is not None
     logger.info("metadata merged", metadata_id=metadata_id, selections=req.selections)
     return to_resp(MetadataResponse, updated)
-
-
-@router.post("/{metadata_id}/merge-entries")
-async def merge_metadata_entries(metadata_id: int, req: MetadataMergeEntriesRequest, repo: RepoDep) -> MetadataResponse:
-    """把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标."""
-    try:
-        metadata = await repo.merge_metadata_entries(metadata_id, req.source_ids)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    if metadata is None:
-        raise HTTPException(status_code=404, detail="影片不存在")
-    logger.info("metadata entries merged", target_id=metadata_id, source_ids=req.source_ids)
-    return to_resp(MetadataResponse, metadata)

@@ -285,7 +285,7 @@ export function MetaTable({
       confirmColor: "orange",
     });
     if (!ok) return;
-    mergeEntries.mutate({ path: { metadata_id: target.id }, body: { source_ids: sourceIds } });
+    mergeEntries.mutate({ body: { target_id: target.id, source_ids: sourceIds } });
   }
 
   const tagOptions = useMemo(

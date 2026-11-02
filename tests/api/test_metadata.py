@@ -211,7 +211,10 @@ class TestMetadataHttp:
         source = await repo.upsert_metadata(number="MRG-0100", title="source", raw={"dmm": {"title": "source"}})
         assert target.id is not None and source.id is not None
 
-        resp = await client.post(f"metadata/{target.id}/merge-entries", json={"source_ids": [source.id, source.id]})
+        resp = await client.post(
+            "metadata/merge-entries",
+            json={"target_id": target.id, "source_ids": [source.id, source.id]},
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["id"] == target.id
@@ -221,13 +224,15 @@ class TestMetadataHttp:
 
         extra = await repo.upsert_metadata(number="MRG-200")
         assert extra.id is not None
-        empty = await client.post(f"metadata/{target.id}/merge-entries", json={"source_ids": []})
+        empty = await client.post("metadata/merge-entries", json={"target_id": target.id, "source_ids": []})
         assert empty.status_code == 422
-        assert (await client.post("metadata/9999/merge-entries", json={"source_ids": [extra.id]})).status_code == 404
         assert (
-            await client.post(f"metadata/{target.id}/merge-entries", json={"source_ids": [target.id]})
+            await client.post("metadata/merge-entries", json={"target_id": 9999, "source_ids": [extra.id]})
+        ).status_code == 404
+        assert (
+            await client.post("metadata/merge-entries", json={"target_id": target.id, "source_ids": [target.id]})
         ).status_code == 400
-        missing = await client.post(f"metadata/{target.id}/merge-entries", json={"source_ids": [9999]})
+        missing = await client.post("metadata/merge-entries", json={"target_id": target.id, "source_ids": [9999]})
         assert missing.status_code == 400
         assert "9999" in missing.json()["detail"]
         assert (await client.get(f"metadata/{extra.id}")).status_code == 200

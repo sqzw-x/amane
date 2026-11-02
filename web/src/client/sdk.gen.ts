@@ -194,6 +194,20 @@ export const batchMetadataUserTags = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
+ * Merge Metadata Entries
+ *
+ * 把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.
+ */
+export const mergeMetadataEntries = <ThrowOnError extends boolean = false>(options: Options<MergeMetadataEntriesData, ThrowOnError>): RequestResult<MergeMetadataEntriesResponses, MergeMetadataEntriesErrors, ThrowOnError> => (options.client ?? client).post<MergeMetadataEntriesResponses, MergeMetadataEntriesErrors, ThrowOnError>({
+    url: '/api/metadata/merge-entries',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Delete Metadata
  */
 export const deleteMetadata = <ThrowOnError extends boolean = false>(options: Options<DeleteMetadataData, ThrowOnError>): RequestResult<DeleteMetadataResponses, DeleteMetadataErrors, ThrowOnError> => (options.client ?? client).delete<DeleteMetadataResponses, DeleteMetadataErrors, ThrowOnError>({ url: '/api/metadata/{metadata_id}', ...options });
@@ -250,20 +264,6 @@ export const cropPosterFromThumb = <ThrowOnError extends boolean = false>(option
  */
 export const mergeMetadata = <ThrowOnError extends boolean = false>(options: Options<MergeMetadataData, ThrowOnError>): RequestResult<MergeMetadataResponses, MergeMetadataErrors, ThrowOnError> => (options.client ?? client).post<MergeMetadataResponses, MergeMetadataErrors, ThrowOnError>({
     url: '/api/metadata/{metadata_id}/merge',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Merge Metadata Entries
- *
- * 把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.
- */
-export const mergeMetadataEntries = <ThrowOnError extends boolean = false>(options: Options<MergeMetadataEntriesData, ThrowOnError>): RequestResult<MergeMetadataEntriesResponses, MergeMetadataEntriesErrors, ThrowOnError> => (options.client ?? client).post<MergeMetadataEntriesResponses, MergeMetadataEntriesErrors, ThrowOnError>({
-    url: '/api/metadata/{metadata_id}/merge-entries',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -136,6 +136,7 @@ class MergeRequest(BaseModel):
 
 
 class MetadataMergeEntriesRequest(BaseModel):
+    target_id: int = Field(description="合并目标 Metadata ID; 其字段与已有站点快照保持不变")
     source_ids: list[int] = Field(min_length=1, description="待合并的 Metadata ID 列表; 按顺序补入 raw 快照")
 
 

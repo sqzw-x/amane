@@ -5435,6 +5435,11 @@ export const MetadataLocksRequestSchema = {
 
 export const MetadataMergeEntriesRequestSchema = {
     properties: {
+        target_id: {
+            type: 'integer',
+            title: 'Target Id',
+            description: '合并目标 Metadata ID; 其字段与已有站点快照保持不变'
+        },
         source_ids: {
             items: {
                 type: 'integer'
@@ -5447,6 +5452,7 @@ export const MetadataMergeEntriesRequestSchema = {
     },
     type: 'object',
     required: [
+        'target_id',
         'source_ids'
     ],
     title: 'MetadataMergeEntriesRequest'

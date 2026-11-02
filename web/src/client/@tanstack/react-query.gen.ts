@@ -539,6 +539,25 @@ export const batchMetadataUserTagsMutation = (options?: Partial<Options<BatchMet
 };
 
 /**
+ * Merge Metadata Entries
+ *
+ * 把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.
+ */
+export const mergeMetadataEntriesMutation = (options?: Partial<Options<MergeMetadataEntriesData>>): UseMutationOptions<MergeMetadataEntriesResponse, MergeMetadataEntriesError, Options<MergeMetadataEntriesData>> => {
+    const mutationOptions: UseMutationOptions<MergeMetadataEntriesResponse, MergeMetadataEntriesError, Options<MergeMetadataEntriesData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await mergeMetadataEntries({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
  * Delete Metadata
  */
 export const deleteMetadataMutation = (options?: Partial<Options<DeleteMetadataData>>): UseMutationOptions<DeleteMetadataResponse, DeleteMetadataError, Options<DeleteMetadataData>> => {
@@ -637,25 +656,6 @@ export const mergeMetadataMutation = (options?: Partial<Options<MergeMetadataDat
     const mutationOptions: UseMutationOptions<MergeMetadataResponse, MergeMetadataError, Options<MergeMetadataData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await mergeMetadata({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
- * Merge Metadata Entries
- *
- * 把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.
- */
-export const mergeMetadataEntriesMutation = (options?: Partial<Options<MergeMetadataEntriesData>>): UseMutationOptions<MergeMetadataEntriesResponse, MergeMetadataEntriesError, Options<MergeMetadataEntriesData>> => {
-    const mutationOptions: UseMutationOptions<MergeMetadataEntriesResponse, MergeMetadataEntriesError, Options<MergeMetadataEntriesData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await mergeMetadataEntries({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
