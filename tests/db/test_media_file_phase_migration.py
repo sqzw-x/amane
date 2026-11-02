@@ -6,7 +6,7 @@ from alembic import command
 from sqlalchemy import Engine, create_engine, inspect, text
 from sqlmodel import Session, col, select
 
-from amane.db.models import MediaFile
+from amane.db.models import Library, MediaFile
 from amane.parsing import Mosaic
 from tests.helpers import alembic_config
 
@@ -52,6 +52,56 @@ def _file_phase(engine: Engine) -> dict[str, tuple[str | None, bool, str | None]
                 text("SELECT path, mosaic, has_subtitle_in_name, definition FROM media_files")
             ).all()
         }
+
+
+def _mosaics(engine: Engine) -> dict[str, str | None]:
+    with engine.connect() as conn:
+        return {row.path: row.mosaic for row in conn.execute(text("SELECT path, mosaic FROM media_files")).all()}
+
+
+def test_ltx_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
+    """文件名带 -LTX 的行重算马赛克标记; 谓词之外的行保持原值, 重跑结果相同."""
+    db_path = tmp_path / "migrate.db"
+    cfg = alembic_config(db_path)
+
+    command.upgrade(cfg, "9054ebacea29")
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    with Session(engine) as session:
+        library = Library(name="t", path="/m")
+        session.add(library)
+        session.commit()
+        assert library.id is not None
+        for path, mosaic in [
+            ("/media/SNIS-576-LTX/489155.com@SNIS-576-LTX.mp4", None),
+            ("/media/MIDV-123-LTX.mp4", None),
+            ("/media/MIDV-123-LTX-4K.mp4", None),
+            # 目录名带后缀不算文件名标记
+            ("/media/SNIS-576-LTX/video.mp4", None),
+            # 谓词之外的行保持原值
+            ("/media/MIDV-123.mp4", Mosaic.LEAKED),
+        ]:
+            session.add(MediaFile(path=path, library_id=library.id, mosaic=mosaic))
+        session.commit()
+    engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    expected = {
+        "/media/SNIS-576-LTX/489155.com@SNIS-576-LTX.mp4": "CRACKED",
+        "/media/MIDV-123-LTX.mp4": "CRACKED",
+        "/media/MIDV-123-LTX-4K.mp4": "CRACKED",
+        "/media/SNIS-576-LTX/video.mp4": None,
+        "/media/MIDV-123.mp4": "LEAKED",
+    }
+    assert _mosaics(engine) == expected
+
+    # downgrade 留空 (数据迁移不可逆), 再次升级不改变已写入的值
+    command.downgrade(cfg, "9054ebacea29")
+    command.upgrade(cfg, "head")
+    assert _mosaics(engine) == expected
+    engine.dispose()
 
 
 def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
