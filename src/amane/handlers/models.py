@@ -368,6 +368,38 @@ class ActorScrapeResult(BaseModel):
     """各来源的结果明细; 与记录里的 summary 同源."""
 
 
+# --- ACTOR PUSH ---
+
+
+class ActorPushPayload(BaseModel):
+    actor_ids: list[int] = Field(default_factory=list, description="要推送的演员 ID; 空表示全部演员")
+    force: bool = Field(default=False, description="覆盖媒体服务器上已有的头像与人物字段")
+
+
+class ActorPushResult(BaseModel):
+    type: Literal[TaskType.ACTOR_PUSH] = TaskType.ACTOR_PUSH
+    requested: int
+    """本次选中的演员数; 自带 ID 列表时含不存在的 id."""
+    matched: int
+    """媒体服务器上命中的同名人物条目数; 同一人物按 Id 只计一次."""
+    updated: int
+    """写入了至少一个字段的人物数."""
+    images: int
+    """上传的主图数."""
+    skipped: int
+    """无需写入的人物数; 写入失败只计 ``failed``."""
+    not_found: int
+    """媒体服务器上没有同名人物的演员数."""
+    no_image: int
+    """本地没有可推送头像的演员数."""
+    missing: int
+    """自带 ID 列表中不存在的演员数."""
+    failed: int
+    """失败的人物数; 明细见 ``failures``."""
+    failures: list[str]
+    """失败明细 (演员 / 人物: 原因), 有上限."""
+
+
 # --- RESCRAPE ---
 
 

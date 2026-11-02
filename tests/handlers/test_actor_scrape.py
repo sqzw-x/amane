@@ -10,13 +10,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from amane.config import ActorScrapingConfig, HotSettings
+from amane.config import ActorScrapingConfig, HotSettings, MediaServerConfig
 from amane.crawlers.actor import ActorFetcher, ActorMetadata
 from amane.crawlers.block import FailureReason
 from amane.db.models import FacetKind, Task, TaskStatus, TaskType
 from amane.enums import ActorField, ActorGender, SiteName
 from amane.handlers.actor_scrape import ActorScrapeHandler
-from amane.handlers.models import ActorScrapePayload, CacheKind
+from amane.handlers.models import ActorPushPayload, ActorScrapePayload, CacheKind
 from amane.media import ResourceStore
 from amane.media.resource_store import RESOURCE_URL_PREFIX
 from amane.net.errors import SourceError
@@ -787,3 +787,47 @@ async def test_actor_scrape_reports_determinate_progress(repo: Repository, hot: 
     assert {total for _, total, _ in events} == {5}
     assert events[-1] == (5, 5, "saved")
     assert [current for current, _, _ in events] == sorted(current for current, _, _ in events)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_enqueues_media_server_push(repo: Repository, hot: HotSettings) -> None:
+    """刮削成功后按开关与配置产生一个低优先级后继."""
+    hot.actor_scraping.auto_push = True
+    hot.media_server = MediaServerConfig(kind="jellyfin", url="http://media.local:8096", api_key="key")
+    actor_id = await _actor_id(repo, "Pushed")
+    factory = _FakeFactory(
+        {
+            "minnano": _FakeActorCrawler({"Pushed": ActorMetadata(name="Pushed", overview="bio")}),
+            "gfriends": _FakeActorCrawler({}),
+        }
+    )
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id))
+
+    assert result.success
+    assert len(result.followups) == 1
+    followup = result.followups[0]
+    assert followup.key == f"actor-push:{actor_id}"
+    assert followup.task_type is TaskType.ACTOR_PUSH
+    assert followup.priority == -1
+    assert ActorPushPayload.model_validate(followup.payload).actor_ids == [actor_id]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_actor_scrape_skips_push_when_unconfigured(repo: Repository, hot: HotSettings) -> None:
+    """开了开关但没有媒体服务器配置时不留下必失败的后继."""
+    hot.actor_scraping.auto_push = True
+    actor_id = await _actor_id(repo, "Unconfigured")
+    factory = _FakeFactory(
+        {
+            "minnano": _FakeActorCrawler({"Unconfigured": ActorMetadata(name="Unconfigured", overview="bio")}),
+            "gfriends": _FakeActorCrawler({}),
+        }
+    )
+    handler = ActorScrapeHandler(repo, factory, AsyncMock(), hot, web_client=None)
+
+    result = await handler.handle(ActorScrapePayload(actor_id=actor_id))
+
+    assert result.success
+    assert result.followups == []

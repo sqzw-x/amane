@@ -36,6 +36,9 @@ def needs_secrets_file(hot_dump: dict[str, Any]) -> bool:
     llm = hot_dump.get("llm")
     if isinstance(llm, dict) and llm.get("api_key"):
         return True
+    media_server = hot_dump.get("media_server")
+    if isinstance(media_server, dict) and media_server.get("api_key"):
+        return True
     network = hot_dump.get("network")
     if isinstance(network, dict) and network.get("proxy"):
         proxy = str(network["proxy"])
@@ -78,6 +81,10 @@ def redact_hot(data: dict[str, Any]) -> dict[str, Any]:
     llm = out.get("llm")
     if isinstance(llm, dict) and llm.get("api_key"):
         llm["api_key"] = REDACTION_PLACEHOLDER
+
+    media_server = out.get("media_server")
+    if isinstance(media_server, dict) and media_server.get("api_key"):
+        media_server["api_key"] = REDACTION_PLACEHOLDER
 
     network = out.get("network")
     if isinstance(network, dict) and network.get("proxy"):
