@@ -35,6 +35,7 @@ import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
+import { MergeNotice } from "@/components/media/merge-notice";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { useResizableColumns } from "@/hooks/use-resizable-columns";
 import { extractErrorMessage } from "@/lib/api-error";
@@ -276,10 +277,17 @@ export function MetaTable({
     }
     const ok = await confirm({
       title: t("manage.mergeConfirm"),
-      message: t("manage.mergeEntriesConfirmBody", {
-        count: sourceIds.length,
-        number: target.number,
-      }),
+      message: (
+        <MergeNotice
+          lead={t("manage.mergeEntriesLead", { count: sourceIds.length, number: target.number })}
+          items={[
+            t("manage.mergeEntriesKeep"),
+            t("manage.mergeEntriesRaw"),
+            t("manage.mergeEntriesLinks"),
+            t("manage.mergeEntriesDelete"),
+          ]}
+        />
+      ),
       confirmLabel: t("common:actions.confirm"),
       danger: false,
       confirmColor: "orange",
