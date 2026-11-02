@@ -358,6 +358,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         *,
         content_type: ContentType | None = None,
         actor_genders: Mapping[str, ActorGender] | None = None,
+        merge_raw: bool = False,
         **kwargs: Unpack[MetadataFields],
     ) -> Metadata:
         """查重忽略大小写; 已存在时不改写 number 的原始大小写, 也不改写类型.
@@ -365,6 +366,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         判定与写入同处一个写事务, 见 docs/dev/database.md; 临界区内不允许出现等待.
         ``actor_genders`` 只填 ``Actor.gender`` 空位, 不是 Metadata 列.
         ``content_type`` 只在插入时落库, None 按番号推断; 已存在时不改写 (契约见 docs/dev/data-model.md).
+        ``merge_raw`` 为真时把传入 ``raw`` 按站点合并进既有快照 (本次未取得的站点保留), 否则整体替换.
         """
         fields = _normalize_text_fields(kwargs)
         async with self._session() as session:
@@ -378,6 +380,9 @@ class MetadataRepoMixin(RepositoryMixinBase):
             if existing:
                 before = _image_signature(existing)
                 fields = _filter_locked(fields, _locked_fields_of(existing), existing.field_sources or {})
+                incoming_raw = fields.get("raw")
+                if merge_raw and incoming_raw is not None:
+                    fields["raw"] = {**(existing.raw or {}), **incoming_raw}
                 for key, value in fields.items():
                     setattr(existing, key, value)
                 existing.updated_at = _utcnow()

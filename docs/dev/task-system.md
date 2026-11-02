@@ -49,7 +49,7 @@ ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显
 
 ## 站点级复用
 
-SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完全不联网的纯整理由 ORGANIZE 承担. 它总是进入聚合, 但当 `CacheKind.metadata ∈ use_cache` 时把 `Metadata.raw` 作为 `cache` 传入, 请求某站前按 `cache_key` (`site` 或 `site:lang`) 查快照, 命中即还原并跳过爬虫调用, 未命中的站点按获取图请求. 不含 `metadata` 时全部站点强制重爬; 不含 `trans` 时跳过译文缓存读取 (仍写入), 见 [llm.md](llm.md). 复用与新结果统一写入 `fetched`, 输出 `raw` 为两者合并; 快照含非法字段时降级为正常 fetch.
+SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完全不联网的纯整理由 ORGANIZE 承担. 它总是进入聚合, 但当 `CacheKind.metadata ∈ use_cache` 时把 `Metadata.raw` 作为 `cache` 传入, 请求某站前按 `cache_key` (`site` 或 `site:lang`) 查快照, 命中即还原并跳过爬虫调用, 未命中的站点按获取图请求. 不含 `metadata` 时全部站点强制重爬; 不含 `trans` 时跳过译文缓存读取 (仍写入), 见 [llm.md](llm.md). 复用与新结果统一写入 `fetched`; 写回时以库内 `raw` 为基础, 本次结果按站点覆盖既有快照, 本次未取得的站点 (移出类型路由 / 未安装 / 禁用) 保留. 不含 `metadata` 时 `raw` 仍由本次结果整体替换. 快照含非法字段时降级为正常 fetch.
 
 ## 字段级多源聚合
 

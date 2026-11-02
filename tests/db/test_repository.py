@@ -446,6 +446,24 @@ class TestMetadataRepo:
         assert found.content_type is ContentType.CENSORED
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_merge_raw(self, repo: Repository):
+        """merge_raw 只替换/新增传入站点的快照; 默认仍整体替换."""
+        await repo.upsert_metadata(number="MIDV-123", raw={"a": {"title": "A"}})
+        await repo.upsert_metadata(
+            number="MIDV-123",
+            raw={"a": {"title": "A2"}, "b": {"title": "B"}},
+            merge_raw=True,
+        )
+        found = await repo.get_metadata_by_number("MIDV-123")
+        assert found is not None
+        assert found.raw == {"a": {"title": "A2"}, "b": {"title": "B"}}
+
+        await repo.upsert_metadata(number="MIDV-123", raw={"c": {"title": "C"}})
+        found = await repo.get_metadata_by_number("MIDV-123")
+        assert found is not None
+        assert found.raw == {"c": {"title": "C"}}
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_upsert_cleans_actor_alias_names(self, repo: Repository):
         meta = await repo.upsert_metadata(
             number="MIDV-123", title="X", actors=["河北彩花（河北彩伽）", "三上悠亜(みかみ ゆあ, Mikami Yua)"]
