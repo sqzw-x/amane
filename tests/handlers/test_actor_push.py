@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Self
 
 import pytest
 
-from amane.config import ActorScrapingConfig, HotSettings, MediaServerConfig
+from amane.config import HotSettings, MediaServerConfig
 from amane.db.repo_types import WriteMode
 from amane.handlers import ActorPushHandler, ActorPushPayload
 from amane.media import ResourceStore
@@ -66,11 +66,8 @@ class _FakeClient:
         self.images.append((person_id, content_type))
 
 
-def _hot(*, auto_push: bool = False) -> HotSettings:
-    return HotSettings(
-        media_server=MediaServerConfig(url="http://media.local:8096", api_key="key"),
-        actor_scraping=ActorScrapingConfig(auto_push=auto_push),
-    )
+def _hot() -> HotSettings:
+    return HotSettings(media_server=MediaServerConfig(url="http://media.local:8096", api_key="key"))
 
 
 class _TruncatedSearchClient(_FakeClient):
@@ -144,7 +141,7 @@ async def test_fills_missing_and_skips_existing(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path
 ) -> None:
     image_url = await _image_url(resource_store, tmp_path)
-    alice = await _actor(
+    await _actor(
         repo,
         "Alice",
         overview="new bio",
@@ -152,7 +149,7 @@ async def test_fills_missing_and_skips_existing(
         birthplace="Tokyo",
         image_urls=[image_url],
     )
-    bob = await _actor(repo, "Bob", overview="bob bio")
+    await _actor(repo, "Bob", overview="bob bio")
     client = _FakeClient(
         [
             _person("Alice"),
@@ -182,7 +179,6 @@ async def test_fills_missing_and_skips_existing(
     assert client.images == [("p-Alice", "image/png")]
     assert client.list_calls == 1
     assert client.search_calls == []
-    assert alice and bob
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -294,34 +290,47 @@ async def test_unconfigured_server_fails(repo: Repository, resource_store: Resou
     assert "media_server" in result.error
 
 
+@pytest.mark.parametrize(
+    ("names", "fail_updates", "fail_images", "success", "updated", "images", "failed", "failure"),
+    [
+        (("Alice", "Bob"), frozenset({"Alice"}), frozenset(), True, 1, 0, 1, None),
+        (("Alice",), frozenset({"Alice"}), frozenset(), False, 0, 0, 1, None),
+        (("Alice",), frozenset(), frozenset({"p-Alice"}), True, 1, 0, 1, "头像上传失败"),
+    ],
+    ids=["partial-update", "all-updates", "image-after-update"],
+)
 @pytest.mark.asyncio(loop_scope="function")
-async def test_partial_failure_stays_successful(repo: Repository, resource_store: ResourceStore) -> None:
-    await _actor(repo, "Alice", overview="bio")
-    await _actor(repo, "Bob", overview="bio")
-    client = _FakeClient([_person("Alice"), _person("Bob")], fail_updates=frozenset({"Alice"}))
+async def test_failure_outcomes(
+    repo: Repository,
+    resource_store: ResourceStore,
+    tmp_path: Path,
+    names: tuple[str, ...],
+    fail_updates: frozenset[str],
+    fail_images: frozenset[str],
+    success: bool,
+    updated: int,
+    images: int,
+    failed: int,
+    failure: str | None,
+) -> None:
+    """部分失败仍算成功, 全部失败则任务失败; 字段写入成功后头像失败不回滚字段."""
+    image_url = await _image_url(resource_store, tmp_path) if fail_images else None
+    persons = []
+    for name in names:
+        await _actor(repo, name, overview="bio", image_urls=[image_url] if image_url else [])
+        persons.append(_person(name))
+    client = _FakeClient(persons, fail_updates=fail_updates, fail_images=fail_images)
 
     handler = ActorPushHandler(repo, resource_store, _hot(), client_factory=lambda _: client)
     result = await handler.handle(ActorPushPayload())
 
-    assert result.success
+    assert result.success is success
     assert result.result is not None
-    assert result.result.updated == 1
-    assert result.result.failed == 1
-    assert result.result.failures
-
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_all_failures_fail_task(repo: Repository, resource_store: ResourceStore) -> None:
-    await _actor(repo, "Alice", overview="bio")
-    client = _FakeClient([_person("Alice")], fail_updates=frozenset({"Alice"}))
-
-    handler = ActorPushHandler(repo, resource_store, _hot(), client_factory=lambda _: client)
-    result = await handler.handle(ActorPushPayload())
-
-    assert not result.success
-    assert result.result is not None
-    assert result.result.updated == 0
-    assert result.result.failed == 1
+    assert result.result.updated == updated
+    assert result.result.images == images
+    assert result.result.failed == failed
+    if failure is not None:
+        assert any(failure in item for item in result.result.failures)
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -340,34 +349,18 @@ async def test_person_list_failure_fails_task(repo: Repository, resource_store: 
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_image_failure_stays_successful_with_metadata_update(
-    repo: Repository, resource_store: ResourceStore, tmp_path: Path
-) -> None:
-    image_url = await _image_url(resource_store, tmp_path)
-    await _actor(repo, "Alice", overview="bio", image_urls=[image_url])
-    client = _FakeClient([_person("Alice")], fail_images=frozenset({"p-Alice"}))
-
-    handler = ActorPushHandler(repo, resource_store, _hot(), client_factory=lambda _: client)
-    result = await handler.handle(ActorPushPayload())
-
-    assert result.success
-    assert result.result is not None
-    assert result.result.updated == 1
-    assert result.result.images == 0
-    assert result.result.failed == 1
-    assert any("头像上传失败" in item for item in result.result.failures)
-
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_no_image_still_pushes_metadata(repo: Repository, resource_store: ResourceStore) -> None:
+async def test_same_name_persons_all_update_once(repo: Repository, resource_store: ResourceStore) -> None:
+    """同名人物全部更新, 同一人物在一次任务中只处理一次."""
     await _actor(repo, "Alice", overview="bio")
-    client = _FakeClient([_person("Alice")])
+    client = _FakeClient(
+        [_person("Alice", person_id="p1"), _person("Alice", person_id="p1"), _person("Alice", person_id="p2")]
+    )
 
     handler = ActorPushHandler(repo, resource_store, _hot(), client_factory=lambda _: client)
     result = await handler.handle(ActorPushPayload())
 
     assert result.success
     assert result.result is not None
-    assert result.result.no_image == 1
-    assert result.result.updated == 1
-    assert result.result.images == 0
+    assert result.result.matched == 2
+    assert result.result.updated == 2
+    assert [call[0] for call in client.updates] == ["p1", "p2"]

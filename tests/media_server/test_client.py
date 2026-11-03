@@ -101,52 +101,40 @@ async def test_list_persons_paginates_and_keeps_auth_out_of_query() -> None:
     assert requests[0].headers["Authorization"] == 'MediaBrowser Token="secret"'
 
 
-@pytest.mark.asyncio(loop_scope="function")
-async def test_list_persons_fails_when_server_repeats_page() -> None:
-    requests: list[httpx2.Request] = []
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        requests.append(request)
-        return httpx2.Response(200, json={"Items": [_person_dto()], "TotalRecordCount": 2})
-
-    async with MediaServerClient(_CONFIG, client=_transport(handler)) as client:
-        with pytest.raises(MediaServerError, match="重复"):
-            await client.list_persons()
-
-    assert len(requests) == 2
-
-
 @pytest.mark.parametrize(
-    ("payload", "message"),
+    ("pages", "message"),
     [
-        ({"Items": [_person_dto()]}, "TotalRecordCount"),
-        ({"Items": [_person_dto()], "TotalRecordCount": 0}, "TotalRecordCount"),
-        ({"Items": [_person_dto()], "TotalRecordCount": -1}, "TotalRecordCount"),
-        ({"Items": [_person_dto(), _person_dto(person_id="p2")], "TotalRecordCount": 1}, "超过"),
+        (({"Items": [_person_dto()]},), "TotalRecordCount"),
+        (({"Items": [_person_dto()], "TotalRecordCount": 0},), "TotalRecordCount"),
+        (({"Items": [_person_dto()], "TotalRecordCount": -1},), "TotalRecordCount"),
+        (({"Items": [_person_dto(), _person_dto(person_id="p2")], "TotalRecordCount": 1},), "超过"),
+        (
+            (
+                {"Items": [_person_dto()], "TotalRecordCount": 2},
+                {"Items": [], "TotalRecordCount": 2},
+            ),
+            "空页",
+        ),
+        (({"Items": [_person_dto()], "TotalRecordCount": 2},) * 2, "重复"),
     ],
+    ids=["no-total", "zero-total", "negative-total", "over-total", "empty-page", "repeated-page"],
 )
 @pytest.mark.asyncio(loop_scope="function")
-async def test_list_persons_rejects_invalid_total(payload: dict, message: str) -> None:
-    async with MediaServerClient(_CONFIG, client=_transport(lambda _: httpx2.Response(200, json=payload))) as client:
+async def test_list_persons_rejects_incomplete_pages(pages: tuple[dict, ...], message: str) -> None:
+    """重复页、提前出现的空页和无效总数都不能当成读完."""
+    served = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal served
+        payload = pages[min(served, len(pages) - 1)]
+        served += 1
+        return httpx2.Response(200, json=payload)
+
+    async with MediaServerClient(_CONFIG, client=_transport(handler)) as client:
         with pytest.raises(MediaServerError, match=message):
             await client.list_persons()
 
-
-@pytest.mark.asyncio(loop_scope="function")
-async def test_list_persons_rejects_empty_page_before_total() -> None:
-    requests: list[httpx2.Request] = []
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        requests.append(request)
-        if len(requests) == 1:
-            return httpx2.Response(200, json={"Items": [_person_dto()], "TotalRecordCount": 2})
-        return httpx2.Response(200, json={"Items": [], "TotalRecordCount": 2})
-
-    async with MediaServerClient(_CONFIG, client=_transport(handler)) as client:
-        with pytest.raises(MediaServerError, match="空页"):
-            await client.list_persons()
-
-    assert len(requests) == 2
+    assert served == len(pages)
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -175,25 +163,26 @@ async def test_update_person_sends_current_dto_and_only_changes_requested_fields
 
     assert len(requests) == 1
     body = json.loads(requests[0].content)
-    assert body["Name"] == "Alice"
+    # 写回以读取到的当前值为底, 只替换请求的字段.
     assert body["Overview"] == "new"
-    assert body["ForcedSortName"] == "Alice Sort"
-    assert body["OriginalLanguage"] == "ja"
-    assert body["PremiereDate"] == "1990-01-01T00:00:00"
-    assert body["ProductionYear"] == 1990
-    assert body["PreferredMetadataLanguage"] == "ja"
-    assert body["LockData"] is True
     assert body["ProductionLocations"] == ["Japan"]
-    # 完整 DTO 原样写回: 更新接口只在非 null 时改这些字段, 省略会清空.
-    assert body["Genres"] == ["Drama"]
-    assert body["Tags"] == ["tag"]
-    assert body["LockedFields"] == []
-    assert body["ProviderIds"] == {"Imdb": "tt1"}
-    assert "ImageTags" not in body
-    assert "People" not in body
-    assert "UserData" not in body
-    assert "ServerId" not in body
-    assert "Type" not in body
+    carried = {
+        "Name": "Alice",
+        "ForcedSortName": "Alice Sort",
+        "OriginalLanguage": "ja",
+        "PremiereDate": "1990-01-01T00:00:00",
+        "ProductionYear": 1990,
+        "PreferredMetadataLanguage": "ja",
+        "PreferredMetadataCountryCode": "JP",
+        "LockData": True,
+        "LockedFields": [],
+        "Genres": ["Drama"],
+        "Tags": ["tag"],
+        "ProviderIds": {"Imdb": "tt1"},
+    }
+    assert {key: body[key] for key in carried} == carried
+    # 读取模型没有写回语义, 不能随请求发出.
+    assert {"ImageTags", "People", "UserData", "ServerId", "Type"}.isdisjoint(body)
 
 
 @pytest.mark.parametrize("lock_state", [None, "false", 0])
