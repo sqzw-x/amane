@@ -17,7 +17,7 @@ from ..library import (
 )
 from ..organize.path_templates import VIDEO_TEMPLATE_DEFAULT, PathTemplate
 from ..organize.strm_content import StrmContentTemplate
-from ..parsing import VR_TAGS, ContentType, Mosaic, is_vr
+from ..parsing import VR_TAGS, ContentType, Mosaic, VideoSize, is_vr
 
 
 def _utcnow() -> datetime:
@@ -190,15 +190,19 @@ class MediaFile(SQLModel, table=True):
     size: int | None = None
     duration: float | None = None
     codec: str | None = None
+    #: 画面尺寸: 刮削 / 整理时读取视频得到, 读取失败保持为空. 换 path 不清空, 同一份文件尺寸不变.
+    width: int | None = None
+    height: int | None = None
     number: str | None = Field(default=None, index=True)
     status: MediaFileStatus = Field(default=MediaFileStatus.PENDING, index=True)
-    # 文件相位: path 的投影, 随 path 写入/更新; 不进对外 PATCH.
+    # 文件相位: path 与画面尺寸的投影, 随两者写入/更新; 不进对外 PATCH.
     mosaic: Mosaic | None = Field(default=None, index=True)
     #: 文件名带中字标记, 只由 path 派生.
     has_subtitle_in_name: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, index=True))
     #: 同目录存在库 `subtitle_extensions` 命中的字幕; 登记 / 换 path / 库扫描时重新检查. 整理落盘时
     #: 作为 `parse_file_info` 的 `has_external_subtitle` 入参并入文件相位.
     has_external_subtitle: bool = Field(default=False, index=True)
+    #: 有画面尺寸时只依据尺寸, 否则依据文件名.
     definition: str | None = Field(default=None, index=True)
     metadata_id: int | None = Field(default=None, foreign_key="metadata.id", index=True)
     library_id: int = Field(foreign_key="libraries.id", index=True)
@@ -209,6 +213,13 @@ class MediaFile(SQLModel, table=True):
     def has_subtitle(self) -> bool:
         """文件名标记与同目录字幕命中任一即真."""
         return self.has_subtitle_in_name or self.has_external_subtitle
+
+    @property
+    def video_size(self) -> VideoSize | None:
+        """宽高都是正数才成立; 只有一项或非正数按未读取处理, 分辨率回退文件名."""
+        if self.width is None or self.height is None or self.width <= 0 or self.height <= 0:
+            return None
+        return VideoSize(self.width, self.height)
 
 
 def has_subtitle_predicate() -> ColumnElement[bool]:

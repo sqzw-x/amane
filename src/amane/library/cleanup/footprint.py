@@ -198,7 +198,7 @@ def _add_products(
             metadata,
             ext=source.suffix.lstrip("."),
             source_path=source,
-            file_info=parse_file_info(item.path),
+            file_info=parse_file_info(item.path, video_size=item.video_size),
             safe_dirs=None,
         )
     except ValueError as exc:
