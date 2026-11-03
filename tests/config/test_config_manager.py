@@ -16,6 +16,7 @@ from amane.config import (
     ConfigManager,
     DownloadableResource,
     HotSettings,
+    MediaServerConfig,
     ScrapingConfig,
     SiteConfig,
     WatermarkConfig,
@@ -154,6 +155,40 @@ class TestHotSettings:
         """worker.poll_interval > 10.0 被拒绝"""
         with pytest.raises(ValidationError, match=r"less than or equal to 10"):
             HotSettings(worker=WorkerConfig(poll_interval=11.0))
+
+
+class TestMediaServerConfig:
+    """Emby / Jellyfin 推送配置的归一化与启用判据."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (" http://media.local:8096/ ", "http://media.local:8096"),
+            ("https://media.example/api/", "https://media.example/api"),
+            (None, None),
+            ("", None),
+            ("   ", None),
+        ],
+    )
+    def test_url_normalized(self, raw: str | None, expected: str | None):
+        assert MediaServerConfig(url=raw).url == expected
+
+    def test_url_requires_scheme(self):
+        with pytest.raises(ValidationError, match=r"http://"):
+            MediaServerConfig(url="media.local:8096")
+
+    @pytest.mark.parametrize(
+        ("url", "api_key", "expected"),
+        [
+            ("http://media.local", "key", True),
+            ("http://media.local", None, False),
+            ("http://media.local", "   ", False),
+            (None, "key", False),
+            ("", "", False),
+        ],
+    )
+    def test_enabled(self, url: str, api_key: str | None, expected: bool):
+        assert MediaServerConfig(url=url, api_key=api_key).enabled is expected
 
 
 class TestScrapingDownloadResources:

@@ -96,6 +96,7 @@ export const TASK_TYPES = exhaustiveTuple<TaskType>()(
   "delete",
   "semantic_index",
   "semantic_benchmark",
+  "actor_push",
 );
 
 export const DOWNLOADABLE_RESOURCES = exhaustiveTuple<DownloadableResource>()(
@@ -192,6 +193,7 @@ export const MANUAL_TASK_TYPES = exhaustiveTuple<ManualTaskType>()(
   "actor_scrape",
   "rescrape",
   "semantic_index",
+  "actor_push",
 );
 
 /** 刮削站点结果分组顺序. */

@@ -13,12 +13,13 @@ from ..db.actor_person import (
     filter_locked_person_data,
     locked_fields_of,
 )
+from ..db.models import TaskType
 from ..enums import ActorGender, SiteName
 from ..net.errors import FailureReason, SourceError
 from ..observability import current, invoke_source
 from ..observability.models import SiteOutcomeKind
-from .models import ActorScrapePayload, ActorScrapeResult, CacheKind
-from .protocol import TaskHandler, TaskResult
+from .models import ActorPushPayload, ActorScrapePayload, ActorScrapeResult, CacheKind
+from .protocol import FollowupTask, TaskHandler, TaskResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -206,7 +207,21 @@ class ActorScrapeHandler(TaskHandler[ActorScrapePayload, ActorScrapeResult]):
                 image_count=len(merged.image_urls),
                 outcomes=current().site_outcomes(),
             ),
+            followups=self._media_server_followups(payload),
         )
+
+    def _media_server_followups(self, payload: ActorScrapePayload) -> list[FollowupTask]:
+        """刮削成功后把该演员推送到媒体服务器; 未配置或开关关闭时不入队."""
+        if not self._config.media_server.enabled or not self._config.actor_scraping.auto_push:
+            return []
+        return [
+            FollowupTask(
+                key=f"actor-push:{payload.actor_id}",
+                task_type=TaskType.ACTOR_PUSH,
+                payload=ActorPushPayload(actor_ids=[payload.actor_id]).model_dump(mode="json"),
+                priority=-1,
+            )
+        ]
 
 
 async def _fetch_site(

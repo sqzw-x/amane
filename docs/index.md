@@ -97,7 +97,7 @@ flowchart LR
 |------|------|
 | [媒体库](user/libraries.md) | 扫描与监控目录, 从文件名识别番号并提交刮削 |
 | [整理与路径模板](user/organize.md) | 按模板放置文件, 写出 NFO、图片、字幕与水印 |
-| [对接 Emby / Jellyfin](user/media-server.md) | 推荐的媒体服务器配置, 库外链接与 STRM |
+| [对接 Emby / Jellyfin](user/media-server.md) | 推荐的媒体服务器配置, 库外链接与 STRM, 人物推送 |
 | [播放](user/playback.md) | 内置播放器, 播放源由插件提供 |
 
 ## 获取帮助

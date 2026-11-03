@@ -80,7 +80,8 @@
     "scan_invalid": "Scan unwanted",
     "delete": "Delete",
     "semantic_index": "Semantic index",
-    "semantic_benchmark": "Benchmark"
+    "semantic_benchmark": "Benchmark",
+    "actor_push": "Push actors"
   },
   "loadMoreChildren": "Load more ({{count}})",
   "loadMoreChildren_one": "Load more ({{count}})",
@@ -160,7 +161,15 @@
     "semanticSkipped_one": "result.semanticSkipped",
     "semanticSkipped_other": "result.semanticSkipped",
     "semanticFailed_one": "result.semanticFailed",
-    "semanticFailed_other": "result.semanticFailed"
+    "semanticFailed_other": "result.semanticFailed",
+    "actorPushMatched": "Matched {{value}}",
+    "actorPushUpdated": "Updated {{value}}",
+    "actorPushImages": "Images {{value}}",
+    "actorPushSkipped": "Skipped {{value}}",
+    "actorPushNotFound": "Not found {{value}}",
+    "actorPushNoImage": "No image {{value}}",
+    "actorPushMissing": "Missing actors {{value}}",
+    "actorPushFailed": "Failed {{value}}"
   },
   "status": {
     "queued": "Queued",
@@ -183,7 +192,8 @@
       "scan_invalid": "Scan unwanted",
       "delete": "Delete",
       "semantic_index": "Semantic index",
-      "semantic_benchmark": "Benchmark"
+      "semantic_benchmark": "Benchmark",
+      "actor_push": "Push actors"
     },
     "cleanup": {
       "remove_missing_files": {
@@ -427,6 +437,16 @@
             "still": "Stills"
           }
         }
+      }
+    },
+    "actor_push": {
+      "actor_ids": {
+        "label": "Actor IDs",
+        "description": "Leave empty for all actors"
+      },
+      "force": {
+        "label": "Force overwrite",
+        "description": "Overwrite existing images and person fields on the media server"
       }
     }
   },

@@ -20,6 +20,7 @@ from ..actor_person import (
 from ..models import (
     SCRAPE_FACET_KINDS,
     Actor,
+    ActorAlias,
     ActorSortField,
     ActorUserTag,
     Comment,
@@ -266,6 +267,43 @@ class FacetsRepoMixin(RepositoryMixinBase):
         async with self._session() as session:
             rows = (await session.exec(select(Actor.id, Actor.name).where(col(Actor.id).in_(ids)))).all()
             return {int(i): str(n) for i, n in rows if i is not None}
+
+    async def get_actors(self, actor_ids: Sequence[int]) -> list[Actor]:
+        """按 ID 保序批量查; 不存在的 id 不出现."""
+        ids = unique_ids(actor_ids)
+        if not ids:
+            return []
+        by_id: dict[int, Actor] = {}
+        async with self._session() as session:
+            for start in range(0, len(ids), 500):
+                chunk = ids[start : start + 500]
+                rows = (await session.exec(select(Actor).where(col(Actor.id).in_(chunk)))).all()
+                by_id.update({int(actor.id): actor for actor in rows if actor.id is not None})
+        return [by_id[actor_id] for actor_id in ids if actor_id in by_id]
+
+    async def get_actor_aliases_map(self, actor_ids: Sequence[int] | None = None) -> dict[int, list[str]]:
+        """按 actor_id 分组的别名; ``None`` 取全表, 否则按 500 个 id 分批查."""
+        rows: list[tuple[int, str]] = []
+        async with self._session() as session:
+            if actor_ids is None:
+                stmt = select(ActorAlias.actor_id, ActorAlias.name).order_by(
+                    col(ActorAlias.actor_id), col(ActorAlias.position), col(ActorAlias.id)
+                )
+                rows = [(int(actor_id), str(name)) for actor_id, name in (await session.exec(stmt)).all()]
+            else:
+                ids = unique_ids(actor_ids)
+                for start in range(0, len(ids), 500):
+                    chunk = ids[start : start + 500]
+                    stmt = (
+                        select(ActorAlias.actor_id, ActorAlias.name)
+                        .where(col(ActorAlias.actor_id).in_(chunk))
+                        .order_by(col(ActorAlias.actor_id), col(ActorAlias.position), col(ActorAlias.id))
+                    )
+                    rows.extend((int(actor_id), str(name)) for actor_id, name in (await session.exec(stmt)).all())
+        out: dict[int, list[str]] = {}
+        for actor_id, name in rows:
+            out.setdefault(actor_id, []).append(name)
+        return out
 
     async def get_actors_by_names(self, names: Sequence[str]) -> list[Actor]:
         """按展示名批量查; 不存在的名字不出现."""

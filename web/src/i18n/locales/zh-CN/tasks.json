@@ -68,7 +68,8 @@
     "scan_invalid": "扫描无效文件",
     "delete": "删除",
     "semantic_index": "语义索引",
-    "semantic_benchmark": "性能测试"
+    "semantic_benchmark": "性能测试",
+    "actor_push": "推送演员"
   },
   "loadMoreChildren": "加载更多 ({{count}})",
   "logView": {
@@ -129,7 +130,15 @@
     "semanticIndexed": "已索引 {{value}}",
     "semanticSkipped": "跳过 {{value}}",
     "semanticMissing": "无图片 {{value}}",
-    "semanticFailed": "失败 {{value}}"
+    "semanticFailed": "失败 {{value}}",
+    "actorPushMatched": "匹配 {{value}}",
+    "actorPushUpdated": "更新 {{value}}",
+    "actorPushImages": "头像 {{value}}",
+    "actorPushSkipped": "跳过 {{value}}",
+    "actorPushNotFound": "未找到 {{value}}",
+    "actorPushNoImage": "无头像 {{value}}",
+    "actorPushMissing": "缺少演员 {{value}}",
+    "actorPushFailed": "失败 {{value}}"
   },
   "status": {
     "queued": "排队中",
@@ -151,7 +160,8 @@
       "scan_invalid": "扫描无效文件",
       "delete": "删除",
       "semantic_index": "语义索引",
-      "semantic_benchmark": "性能测试"
+      "semantic_benchmark": "性能测试",
+      "actor_push": "推送演员"
     },
     "cleanup": {
       "remove_missing_files": {
@@ -396,6 +406,16 @@
             "still": "剧照"
           }
         }
+      }
+    },
+    "actor_push": {
+      "actor_ids": {
+        "label": "演员 ID",
+        "description": "留空表示全部演员"
+      },
+      "force": {
+        "label": "强制覆盖",
+        "description": "覆盖媒体服务器上已有的头像与人物字段"
       }
     }
   },

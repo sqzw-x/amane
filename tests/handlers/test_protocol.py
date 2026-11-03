@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from amane.handlers import models as handler_models
 from amane.handlers.models import (
+    ActorPushResult,
     ActorScrapeResult,
     CleanupResult,
     DeleteResult,
@@ -64,6 +65,21 @@ RESULT_CASES = [
             outcomes=[SiteOutcomeRecord(site="wikipedia", outcome=SiteOutcomeKind.OK)],
         ),
         id="actor_scrape",
+    ),
+    pytest.param(
+        ActorPushResult(
+            requested=3,
+            matched=2,
+            updated=1,
+            images=1,
+            skipped=1,
+            not_found=1,
+            no_image=1,
+            missing=0,
+            failed=0,
+            failures=[],
+        ),
+        id="actor_push",
     ),
     pytest.param(
         OrganizeResult(

@@ -730,6 +730,36 @@ class AgentConfig(BaseModel):
         return data
 
 
+class MediaServerConfig(BaseModel):
+    """Emby / Jellyfin 人物推送; url 与 api_key 齐备才启用."""
+
+    kind: Literal["emby", "jellyfin"] = Field(default="jellyfin", description="媒体服务器类型")
+    url: str | None = Field(default=None, description="服务器地址, 含协议、端口与可选子路径")
+    api_key: str | None = Field(default=None, description="管理员 API Key")
+    verify_tls: bool = Field(default=True, description="校验 HTTPS 证书; 自签名证书可关闭")
+
+    @field_validator("url")
+    @classmethod
+    def _normalize_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        normalized = value.strip().rstrip("/")
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("media_server.url 必须以 http:// 或 https:// 开头")
+        return normalized
+
+    @field_validator("api_key")
+    @classmethod
+    def _normalize_api_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.url and self.api_key)
+
+
 class ActorScrapingConfig(BaseModel):
     """资料来源顺序填空, 头像来源优先."""
 
@@ -746,6 +776,9 @@ class ActorScrapingConfig(BaseModel):
     download_images: bool = True
     auto_scrape: bool = True
     """影片刮削成功后自动入队该片演员的 ACTOR_SCRAPE; 已刮过的 Actor 跳过."""
+
+    auto_push: bool = Field(default=False, description="演员刮削成功后自动将该演员推送到媒体服务器")
+    """媒体服务器未配置时静默跳过."""
 
     gfriends_repo: str = Field(default="https://github.com/gfriends/gfriends", description="gFriends GitHub 仓库 URL")
 
@@ -814,6 +847,7 @@ class HotSettings(BaseModel):
         return data
 
     scraping: ScrapingConfig = ScrapingConfig()
+    media_server: MediaServerConfig = MediaServerConfig()
     actor_scraping: ActorScrapingConfig = ActorScrapingConfig()
     agent: AgentConfig = AgentConfig()
     network: NetworkConfig = NetworkConfig()
