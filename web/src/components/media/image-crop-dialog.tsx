@@ -10,7 +10,7 @@ import {
   Text,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowBackUp, IconRotate } from "@tabler/icons-react";
+import { IconArrowBackUp, IconRotate, IconRotateClockwise } from "@tabler/icons-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactCrop, { type Crop, type PixelCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
@@ -64,7 +64,10 @@ export interface ImageCropDialogProps {
 }
 
 interface DecodedImage {
-  bitmap: ImageBitmap;
+  /** 已按 EXIF 转正的显示源, `drawImage` 可直接使用. */
+  element: HTMLImageElement;
+  /** 指向源字节的对象 URL, 替换或关闭时回收. */
+  url: string;
   width: number;
   height: number;
 }
@@ -108,7 +111,7 @@ function drawRotated(canvas: HTMLCanvasElement, image: DecodedImage, rotation: C
     ctx.translate(0, height);
     ctx.rotate(-Math.PI / 2);
   }
-  ctx.drawImage(image.bitmap, 0, 0);
+  ctx.drawImage(image.element, 0, 0);
   ctx.restore();
 }
 
@@ -237,6 +240,29 @@ function fitLockedBox(
 }
 
 /**
+ * blob → 已按 EXIF 转正的 `<img>`.
+ *
+ * 不走 `createImageBitmap`: 要它转正必须传 `imageOrientation: "from-image"`, 而该取值 Chromium 112 起才有,
+ * 下限内核 (99) 直接抛 TypeError; `<img>` 的默认 `image-orientation: from-image` 自 81 起生效.
+ * `drawImage` 接受 `<img>`, 旋转与坐标路径不变.
+ */
+async function decodeImage(blob: Blob): Promise<DecodedImage> {
+  const url = URL.createObjectURL(blob);
+  const element = new Image();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      element.addEventListener("load", () => resolve(), { once: true });
+      element.addEventListener("error", () => reject(new Error("图片解码失败")), { once: true });
+      element.src = url;
+    });
+  } catch (err) {
+    URL.revokeObjectURL(url);
+    throw err;
+  }
+  return { element, url, width: element.naturalWidth, height: element.naturalHeight };
+}
+
+/**
  * 通用像素框裁切对话框: 显示 `imageUrl` 当前字节, 只提交自然像素框与旋转角度.
  *
  * 角度变化时重绘 canvas (解码只做一次), 坐标始终是旋转后的像素系;
@@ -306,25 +332,29 @@ export function ImageCropDialog({
         const res = await apiFetch(proxied, { cache: "no-store", signal: ac.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
-        // 显式要求按 EXIF 方向解码: 与后端 `exif_transpose` 后的像素系一致.
-        const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
+        const image = await decodeImage(blob);
         if (ac.signal.aborted) {
-          bitmap.close();
+          URL.revokeObjectURL(image.url);
           return;
         }
-        setSource({ bitmap, width: bitmap.width, height: bitmap.height });
-      } catch {
-        if (!ac.signal.aborted) setLoadError(true);
+        setSource(image);
+      } catch (err) {
+        if (!ac.signal.aborted) {
+          console.error("[crop] 载入失败", err);
+          setLoadError(true);
+        }
       }
     })();
 
     return () => ac.abort();
   }, [opened, imageUrl]);
 
-  // 位图被替换或对话框关闭时释放.
+  // 解码结果被替换或对话框关闭时回收对象 URL.
   useEffect(() => {
-    const bitmap = source?.bitmap;
-    return () => bitmap?.close();
+    const url = source?.url;
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
   }, [source]);
 
   const syncBoxFromCrop = useCallback((pixelCrop: PixelCrop, canvas: HTMLCanvasElement) => {
@@ -512,7 +542,7 @@ export function ImageCropDialog({
             disabled={!source}
             aria-label={labels.rotateLeft}
           >
-            <IconRotate size={18} style={{ transform: "scaleX(-1)" }} />
+            <IconRotate size={18} />
           </ActionIcon>
           <ActionIcon
             variant="default"
@@ -521,7 +551,7 @@ export function ImageCropDialog({
             disabled={!source}
             aria-label={labels.rotateRight}
           >
-            <IconRotate size={18} />
+            <IconRotateClockwise size={18} />
           </ActionIcon>
           <ActionIcon
             variant="default"
