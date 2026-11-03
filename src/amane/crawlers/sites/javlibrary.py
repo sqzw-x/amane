@@ -6,7 +6,7 @@ from parsel import Selector
 from ...enums import SiteName
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
-from ..parsing import extract_all_texts, extract_text
+from ..parsing import extract_all_texts, extract_text, is_same_number
 
 
 class JavLibraryCrawler(Crawler):
@@ -19,6 +19,15 @@ class JavLibraryCrawler(Crawler):
         url = f"{self.base_url}/cn/vl_searchbyid.php?keyword={number}"
         text = await self.client.get_html(url)
         html = Selector(text=text)
+
+        # 站内唯一命中时检索地址直接 302 到详情页, 页面上没有结果列表: 详情页本身就是答案,
+        # 按 品番 确认后取它的规范地址. 相近番号同样会被重定向, 因此不能直接采用.
+        if not html.xpath('//div[@class="video"]'):
+            detail_number = extract_text(html, '//div[@id="video_id"]//td[@class="text"]/text()')
+            canonical = html.xpath('//link[@rel="canonical"]/@href').get()
+            if canonical and is_same_number(detail_number, number):
+                return urljoin(url, canonical)
+            return None
 
         # 每个结果只有一个带 href 的链接, 其余 "我想要" 之类没有 href;
         # 链接相对检索页的 /cn/ 目录, 必须按检索 URL 解析, 按基址解析会落到 404.
