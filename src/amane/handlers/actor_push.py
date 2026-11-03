@@ -1,6 +1,6 @@
 """把 Amane 的演员人物资料推送到 Emby / Jellyfin 的人物条目.
 
-只写人物条目, 不碰影片元数据. 更新必须带完整 DTO: 服务器按替换语义处理未提交字段.
+只写人物条目, 不碰影片元数据. 更新必须带上写回白名单中的当前值: 服务器按替换语义处理未提交字段.
 单个条目失败记入结果并继续; 人物列表读不出来 (不可达 / 认证失败) 才让整个任务失败.
 """
 
@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..media_server import (
+    SEARCH_LIMIT,
     MediaPerson,
     MediaServerClient,
     MediaServerClientLike,
@@ -203,7 +204,11 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
             return find_persons(index, names)
         candidates: dict[str, MediaPerson] = {}
         for name in names:
-            for person in await client.search_persons(name):
+            results = await client.search_persons(name)
+            if len(results) >= SEARCH_LIMIT:
+                # 模糊候选已到单页上限, 精确匹配可能被截断; 回退到全量索引.
+                return find_persons(index_persons(await client.list_persons()), names)
+            for person in results:
                 candidates.setdefault(person.id, person)
         return match_persons(names, candidates.values())
 

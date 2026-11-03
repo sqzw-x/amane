@@ -51,9 +51,14 @@ def _person_dto(
         "PreferredMetadataCountryCode": "JP",
         "LockData": lock_data,
         "LockedFields": [],
+        "Genres": ["Drama"],
         "Tags": ["tag"],
+        "People": [{"Name": "Bob", "Type": "Actor"}],
         "ProductionLocations": ["Japan"],
         "ProviderIds": {"Imdb": "tt1"},
+        "ServerId": "srv",
+        "Type": "Person",
+        "UserData": {"Played": True},
         "ImageTags": {"Primary": "tag"} if image else {},
     }
 
@@ -86,6 +91,9 @@ async def test_list_persons_paginates_and_keeps_auth_out_of_query() -> None:
     assert [request.url.params["startIndex"] for request in requests] == ["0", "2"]
     assert all("fields" in request.url.params for request in requests)
     assert "PremiereDate" in requests[0].url.params["fields"]
+    assert "Genres" in requests[0].url.params["fields"]
+    assert "Tags" in requests[0].url.params["fields"]
+    assert "People" in requests[0].url.params["fields"]
     assert "ProviderIds" in requests[0].url.params["fields"]
     assert all(request.url.params["enableImages"] == "true" for request in requests)
     assert all("secret" not in str(request.url) for request in requests)
@@ -94,7 +102,7 @@ async def test_list_persons_paginates_and_keeps_auth_out_of_query() -> None:
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_list_persons_stops_when_server_repeats_page() -> None:
+async def test_list_persons_fails_when_server_repeats_page() -> None:
     requests: list[httpx2.Request] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -102,10 +110,52 @@ async def test_list_persons_stops_when_server_repeats_page() -> None:
         return httpx2.Response(200, json={"Items": [_person_dto()], "TotalRecordCount": 2})
 
     async with MediaServerClient(_CONFIG, client=_transport(handler)) as client:
-        persons = await client.list_persons()
+        with pytest.raises(MediaServerError, match="重复"):
+            await client.list_persons()
 
-    assert [person.id for person in persons] == ["p1"]
-    assert len(requests) == 3
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"Items": [_person_dto()]}, "TotalRecordCount"),
+        ({"Items": [_person_dto()], "TotalRecordCount": 0}, "TotalRecordCount"),
+        ({"Items": [_person_dto()], "TotalRecordCount": -1}, "TotalRecordCount"),
+        ({"Items": [_person_dto(), _person_dto(person_id="p2")], "TotalRecordCount": 1}, "超过"),
+    ],
+)
+@pytest.mark.asyncio(loop_scope="function")
+async def test_list_persons_rejects_invalid_total(payload: dict, message: str) -> None:
+    async with MediaServerClient(_CONFIG, client=_transport(lambda _: httpx2.Response(200, json=payload))) as client:
+        with pytest.raises(MediaServerError, match=message):
+            await client.list_persons()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_list_persons_rejects_empty_page_before_total() -> None:
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx2.Response(200, json={"Items": [_person_dto()], "TotalRecordCount": 2})
+        return httpx2.Response(200, json={"Items": [], "TotalRecordCount": 2})
+
+    async with MediaServerClient(_CONFIG, client=_transport(handler)) as client:
+        with pytest.raises(MediaServerError, match="空页"):
+            await client.list_persons()
+
+    assert len(requests) == 2
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_list_persons_returns_empty_for_empty_server() -> None:
+    async with MediaServerClient(
+        _CONFIG,
+        client=_transport(lambda _: httpx2.Response(200, json={"Items": [], "TotalRecordCount": 0})),
+    ) as client:
+        assert await client.list_persons() == []
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -135,10 +185,15 @@ async def test_update_person_sends_current_dto_and_only_changes_requested_fields
     assert body["LockData"] is True
     assert body["ProductionLocations"] == ["Japan"]
     # 完整 DTO 原样写回: 更新接口只在非 null 时改这些字段, 省略会清空.
+    assert body["Genres"] == ["Drama"]
     assert body["Tags"] == ["tag"]
     assert body["LockedFields"] == []
     assert body["ProviderIds"] == {"Imdb": "tt1"}
-    assert body["ImageTags"] == {}
+    assert "ImageTags" not in body
+    assert "People" not in body
+    assert "UserData" not in body
+    assert "ServerId" not in body
+    assert "Type" not in body
 
 
 @pytest.mark.parametrize("lock_state", [None, "false", 0])

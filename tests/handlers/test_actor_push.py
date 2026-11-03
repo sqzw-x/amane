@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import pytest
 
@@ -10,7 +10,7 @@ from amane.config import ActorScrapingConfig, HotSettings, MediaServerConfig
 from amane.db.repo_types import WriteMode
 from amane.handlers import ActorPushHandler, ActorPushPayload
 from amane.media import ResourceStore
-from amane.media_server import MediaPerson, MediaServerError
+from amane.media_server import SEARCH_LIMIT, MediaPerson, MediaServerError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -39,7 +39,7 @@ class _FakeClient:
         self.updates: list[tuple[str, dict[str, object]]] = []
         self.images: list[tuple[str, str]] = []
 
-    async def __aenter__(self) -> _FakeClient:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *_: object) -> None:
@@ -71,6 +71,14 @@ def _hot(*, auto_push: bool = False) -> HotSettings:
         media_server=MediaServerConfig(url="http://media.local:8096", api_key="key"),
         actor_scraping=ActorScrapingConfig(auto_push=auto_push),
     )
+
+
+class _TruncatedSearchClient(_FakeClient):
+    """模拟服务器在 50 条上限处截断模糊检索, 真正同名条目只在全量列表中."""
+
+    async def search_persons(self, term: str) -> list[MediaPerson]:
+        self.search_calls.append(term)
+        return [MediaPerson(id=f"noise-{i}", name=f"Alice {i}") for i in range(SEARCH_LIMIT)]
 
 
 async def _actor(
@@ -243,6 +251,22 @@ async def _ids(repo: Repository, *names: str) -> list[int]:
         assert actor_id is not None
         out.append(actor_id)
     return out
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_search_limit_falls_back_to_full_index(repo: Repository, resource_store: ResourceStore) -> None:
+    actor_id = await _actor(repo, "Alice", overview="bio")
+    client = _TruncatedSearchClient([_person("Alice")])
+
+    handler = ActorPushHandler(repo, resource_store, _hot(), client_factory=lambda _: client)
+    result = await handler.handle(ActorPushPayload(actor_ids=[actor_id]))
+
+    assert result.success
+    assert result.result is not None
+    assert result.result.matched == 1
+    assert result.result.updated == 1
+    assert client.search_calls == ["Alice"]
+    assert client.list_calls == 1
 
 
 @pytest.mark.asyncio(loop_scope="function")

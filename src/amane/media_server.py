@@ -32,13 +32,64 @@ _TRANSPORT_ERRORS = (HTTPError, InvalidURL)
 _PAGE_SIZE = 500
 """人物列表一页的条数; 按服务器实际返回条数推进 ``startIndex``."""
 
-_FIELDS = "Overview,OriginalTitle,PremiereDate,ProductionYear,ProductionLocations,CustomRating,Settings,ProviderIds"
+_FIELDS = (
+    "Overview,OriginalTitle,PremiereDate,ProductionYear,ProductionLocations,"
+    "CustomRating,Genres,Tags,People,Settings,ProviderIds"
+)
 """经 ``fields`` 索取的可选字段.
 
-人物的 ``PremiereDate`` / ``ProductionYear`` 并非默认返回; 不索取就写回会把它们清空.
-``Settings`` 带 ``LockData``/``LockedFields``/``ForcedSortName``/``PreferredMetadata*``;
-没有 ``LockData`` 时无法安全写回 (省略它会让服务器解锁人物), 因此该字段缺失按失败处理.
+人物的 ``PremiereDate`` / ``ProductionYear``、``Genres`` / ``Tags`` / ``People`` 并非默认返回;
+不索取就写回会把它们清空. ``Settings`` 带 ``LockData``/``LockedFields``/``ForcedSortName``/
+``PreferredMetadata*``; 没有 ``LockData`` 时无法安全写回 (省略它会让服务器解锁人物), 因此该字段
+缺失按失败处理.
 """
+
+_WRITE_KEYS: tuple[str, ...] = (
+    "Name",
+    "ForcedSortName",
+    "OriginalTitle",
+    "OriginalLanguage",
+    "CriticRating",
+    "CommunityRating",
+    "IndexNumber",
+    "ParentIndexNumber",
+    "Overview",
+    "Genres",
+    "Taglines",
+    "Studios",
+    "DateCreated",
+    "EndDate",
+    "PremiereDate",
+    "ProductionYear",
+    "OfficialRating",
+    "CustomRating",
+    "Tags",
+    "ProductionLocations",
+    "PreferredMetadataCountryCode",
+    "PreferredMetadataLanguage",
+    "DisplayOrder",
+    "AspectRatio",
+    "LockData",
+    "LockedFields",
+    "ProviderIds",
+    "RunTimeTicks",
+    "Video3DFormat",
+    "AlbumArtists",
+    "ArtistItems",
+    "AirDays",
+    "AirTime",
+    "SeriesName",
+    "Status",
+    "Album",
+)
+"""``POST /Items/{id}`` 会读取的字段; 只把这些字段原样写回.
+
+``ImageTags`` / ``UserData`` / ``BackdropImageTags`` 等是读取模型, 没有写回语义; ``People`` 由
+独立的 ``UpdatePeople`` 路径处理, 不随本体 DTO 写回.
+"""
+
+SEARCH_LIMIT = 50
+"""逐名检索的单页上限; 达到上限时调用方回退到全量人物列表."""
 
 
 class MediaServerError(Exception):
@@ -165,13 +216,13 @@ class MediaServerClient:
     async def list_persons(self) -> list[MediaPerson]:
         """分页取回服务器上的全部人物.
 
-        以 ``TotalRecordCount`` 判定读完, 按本次实际返回条数推进 ``startIndex`` (服务器可能把
-        ``limit`` 收到自己的上限). 连续两次没有新条目也结束: 重复同一页说明分页到此为止.
+        只以空页或读到 ``TotalRecordCount`` 作为结束: Jellyfin 的 ``GetPersons`` 未指定排序时,
+        ``StartIndex`` 只作用于当次查询结果, 后一页可能重复已读 Id, 同时仍有未读条目. 出现
+        重复页、空页提前结束或总数异常时抛出 ``MediaServerError``, 不允许带着残缺索引继续.
         """
         persons: list[MediaPerson] = []
         seen: set[str] = set()
         start = 0
-        stalled = False
         while True:
             payload = await self._get_json(
                 "/Persons",
@@ -185,27 +236,32 @@ class MediaServerClient:
             items = payload.get("Items")
             if not isinstance(items, list):
                 raise MediaServerError("人物列表响应缺少 Items")
+            total = payload.get("TotalRecordCount")
             if not items:
-                return persons
+                # 空服务器合法地返回 TotalRecordCount=0; 首屏空页且无任何条目视为完整.
+                if not persons and total == 0:
+                    return []
+                if isinstance(total, int) and total > 0 and len(persons) >= total:
+                    return persons
+                raise MediaServerError("人物列表分页不完整: 空页时仍未读满 TotalRecordCount")
+            if not isinstance(total, int) or total <= 0:
+                raise MediaServerError("人物列表响应缺少有效的 TotalRecordCount")
             fresh = [
                 person
                 for item in items
                 if isinstance(item, dict) and (person := MediaPerson.from_dto(item)) and person.id not in seen
             ]
             if not fresh:
-                if stalled:
-                    return persons
-                stalled = True
-            else:
-                stalled = False
-                seen.update(person.id for person in fresh)
-                persons.extend(fresh)
-            total = payload.get("TotalRecordCount")
-            if isinstance(total, int) and total > 0 and len(persons) >= total:
+                raise MediaServerError("人物列表分页重复: 本页没有新条目, 无法确认完整性")
+            seen.update(person.id for person in fresh)
+            persons.extend(fresh)
+            if len(persons) > total:
+                raise MediaServerError("人物列表分页数量超过 TotalRecordCount")
+            if len(persons) == total:
                 return persons
             start += len(items)
 
-    async def search_persons(self, term: str, *, limit: int = 50) -> list[MediaPerson]:
+    async def search_persons(self, term: str, *, limit: int = SEARCH_LIMIT) -> list[MediaPerson]:
         """按名字检索; 服务器检索是模糊的, 精确匹配由调用方完成."""
         payload = await self._get_json(
             "/Persons",
@@ -217,13 +273,13 @@ class MediaServerClient:
         return [person for item in items if isinstance(item, dict) and (person := MediaPerson.from_dto(item))]
 
     async def update_person(self, person: MediaPerson, updates: Mapping[str, object]) -> None:
-        """以读到的当前 DTO 为底, 覆盖业务字段后整体写回.
+        """以白名单字段的当前值为底, 覆盖业务字段后整体写回.
 
         ``LockData`` 缺失时拒绝写入: 参数缺省会被服务器当成 ``false``, 把人物解锁.
         """
         if not isinstance(person.raw.get("LockData"), bool):
             raise MediaServerError("人物响应缺少 LockData, 无法安全写回")
-        payload: dict[str, object] = dict(person.raw)
+        payload: dict[str, object] = {key: person.raw[key] for key in _WRITE_KEYS if key in person.raw}
         payload["Name"] = person.name
         payload.update(updates)
         await self._post_json(f"/Items/{person.id}", payload)
