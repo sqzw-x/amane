@@ -83,15 +83,7 @@ def _is_canonical_ip(host: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class EgressPolicy:
-    """``allow_private=False`` 时解析 URL 主机并拒绝任何非公网地址.
-
-    逐跳复查由 ``WebClient.request`` 负责: 每一跳都调用 ``ensure_allowed``, 重定向不能把一个
-    已校验的 URL 带到内网.
-
-    **不防御 DNS rebinding**: 校验用 ``resolve_addresses`` 的结果, 真正连接由 curl 再解析一次,
-    窗口内改派到内网的域名不会被发现. 当前没有 IP pin 手段 (curl 侧不暴露 resolve / connect-to),
-    因此只能把 URL 来源当作可信来使用.
-    """
+    """出站目标判定: ``allow_private`` 决定是否接受非公网地址, ``max_redirects`` 是逐跳复查的跳数上限."""
 
     allow_private: bool = False
     max_redirects: int = 5

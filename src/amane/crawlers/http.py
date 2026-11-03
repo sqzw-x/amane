@@ -230,4 +230,5 @@ class HttpClient:
 
     async def download(self, url: str, dest: Path) -> bool:
         # 失败返回 False, 不抛异常.
+        # 不传 egress: 刮削要下载内网 LAN 镜像, 地址判定会让这些来源全部失败; 协议白名单仍是全局底线.
         return await self._web.download(url, dest)
