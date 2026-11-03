@@ -2,8 +2,8 @@
 
 bsk 0.4 起默认开启共享控制: 除了空白标签页的首次导航, 会改动页面的命令都要带一次
 ``cooperate sync`` 返回的上下文, 且那份上下文只能用一次. 因此每个请求开一张新标签页,
-正文走只读的 ``get-html`` 轮询 —— 人工在窗口里过验证不会打断轮询; 只有写 cookie 与点
-Turnstile 需要上下文. 关标签页同样要上下文, 清理靠会话轮换与空闲关闭.
+正文走只读的 ``get-html`` 轮询 —— 人工在窗口里过验证不会打断轮询; 写 cookie、点
+Turnstile 与关标签页要上下文, 其中关页与写脚本还要本次同步的观察 ID (0.4.1 起). 清理另靠会话轮换与空闲关闭.
 
 同一 session 的命令在 daemon 侧串行, 并发只能靠多 session; 每个 session 对应浏览器里的一个
 Agent Window, 因此按并发度而非按来源分配. CLI 不提供 cookie 与请求头注入: cookie 只能先导航到
@@ -351,6 +351,14 @@ class _Session:
         self.idle_task: asyncio.Task[None] | None = None
 
 
+@dataclass
+class _Control:
+    """一次同步换来的控制上下文与观察 ID; 观察 ID 只够授权一次动作, 新版 bsk 缺它会被拒."""
+
+    context_id: str
+    observation_id: str | None
+
+
 class BskBackend:
     """``BrowserBackend`` 的 bsk 实现: 多 session 摊并发, 单 session 内串行."""
 
@@ -544,8 +552,8 @@ class BskBackend:
                 f"document.cookie={json.dumps(f'{name}={value}; path=/')}" for name, value in cookies.items()
             )
             try:
-                context_id = await self._sync_context(session_id, tab_id)
-                if context_id is None:
+                control = await self._control(session_id, tab_id)
+                if control is None:
                     return self._skip_cookies(key, scope, "观察面不可用", session_id)
                 await self._call(
                     (
@@ -555,8 +563,7 @@ class BskBackend:
                         session_id,
                         "--tab-id",
                         str(tab_id),
-                        "--context",
-                        context_id,
+                        *_control_flags(control),
                     ),
                     timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
                 )
@@ -589,11 +596,11 @@ class BskBackend:
     async def _close_tab(self, session: _Session, session_id: str, tab_id: int) -> None:
         """取完正文就关掉这张标签页; 关标签页也要一次性上下文, 拿不到就留给会话轮换."""
         try:
-            context_id = await self._sync_context(session_id, tab_id, timeout_s=_CLOSE_SYNC_TIMEOUT_S)
-            if context_id is None:
+            control = await self._control(session_id, tab_id, timeout_s=_CLOSE_SYNC_TIMEOUT_S)
+            if control is None:
                 return
             await self._call(
-                ("tab", "close", "--session", session_id, "--context", context_id, str(tab_id)),
+                ("tab", "close", "--session", session_id, *_control_flags(control), str(tab_id)),
                 timeout_s=_COMMAND_SLACK_S * 2,
             )
         except (BskError, TimeoutError) as exc:
@@ -611,9 +618,13 @@ class BskBackend:
             timeout_s=timeout_s,
         )
 
-    async def _sync_context(self, session_id: str, tab_id: int, *, timeout_s: float = _SYNC_TIMEOUT_S) -> str | None:
+    async def _control(self, session_id: str, tab_id: int, *, timeout_s: float = _SYNC_TIMEOUT_S) -> _Control | None:
+        """取本次动作的控制上下文; 观察 ID 只有新版 bsk 才给, 老版本只带上下文."""
         data = await self._sync(session_id, tab_id, timeout_s=timeout_s)
-        return _str_field(data, "context_id")
+        context_id = _str_field(data, "context_id")
+        if context_id is None:
+            return None
+        return _Control(context_id=context_id, observation_id=_str_field(data, "observation_id"))
 
     async def _navigate(self, session_id: str, tab_id: int, url: str, deadline: float) -> None:
         await self._call(
@@ -886,6 +897,13 @@ class BskBackend:
     async def _stop_locked(self, session: _Session) -> None:
         async with session.lock:
             await self._stop(session)
+
+
+def _control_flags(control: _Control) -> tuple[str, ...]:
+    """``--context`` 与可选的 ``--observation``: 页面更改命令都按同一组标志传."""
+    if control.observation_id is None:
+        return ("--context", control.context_id)
+    return ("--context", control.context_id, "--observation", control.observation_id)
 
 
 def _remaining(deadline: float) -> float:
