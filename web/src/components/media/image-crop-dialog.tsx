@@ -10,7 +10,7 @@ import {
   Text,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowBackUp, IconRotate } from "@tabler/icons-react";
+import { IconArrowBackUp, IconRotate, IconRotateClockwise } from "@tabler/icons-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactCrop, { type Crop, type PixelCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
@@ -542,7 +542,7 @@ export function ImageCropDialog({
             disabled={!source}
             aria-label={labels.rotateLeft}
           >
-            <IconRotate size={18} style={{ transform: "scaleX(-1)" }} />
+            <IconRotate size={18} />
           </ActionIcon>
           <ActionIcon
             variant="default"
@@ -551,7 +551,7 @@ export function ImageCropDialog({
             disabled={!source}
             aria-label={labels.rotateRight}
           >
-            <IconRotate size={18} />
+            <IconRotateClockwise size={18} />
           </ActionIcon>
           <ActionIcon
             variant="default"
