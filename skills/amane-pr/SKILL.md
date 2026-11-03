@@ -19,6 +19,8 @@ git worktree add ../<repo>-<topic> -b <branch> main
 
 分支名用 `<type>/<topic>` (`fix/` `feat/` `docs/`). 收尾见「合入」一节.
 
+压提交优先 `git rebase -i`; 非用 `reset` 时 base 只取 `git merge-base HEAD origin/main`, 不取 `origin/main` — 分支落后时那会把 main 上新增的文件记成本次删除.
+
 ## 正文
 
 顺序: Summary → 接口与数据变更 → Implementation → Test plan → Close/Fix 或 Related.
@@ -59,6 +61,8 @@ git worktree add ../<repo>-<topic> -b <branch> main
 **推送时机**: 不要每提交一次就推一次. 本地先把改动做完, 由用户确认功能或修复已经完全实现之后再推 — 一轮 CI 要几分钟, 逐次推送会把同一套检查反复跑.
 
 推送时按情况压缩本地提交 (按逻辑变更 squash, 保留可分节的粒度), 不要把一个功能的十几次微调原样推上去.
+
+推送前用 `git diff --stat origin/main...HEAD` 对照正文范围: 出现自己没删过的 `D`, 或没写过的模块被改动, 停下查.
 
 推送之后必须跟踪这一轮 CI, 失败则尝试修复:
 
