@@ -10,22 +10,21 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 
+from ...net.egress import EgressPolicy
+from ...net.errors import EgressRejected, RequestError
 from ..deps import RuntimeDep
 from ..support.http_cache import RESOURCE_CACHE_HEADERS, format_etag, maybe_not_modified
+from ..support.media_type import media_type_and_headers
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/resources", tags=["resources"])
 
-_EXT_TO_MIME = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".webp": "image/webp",
-    ".gif": "image/gif",
-    ".avif": "image/avif",
-    ".mp4": "video/mp4",
-}
+_PROXY_EGRESS = EgressPolicy()
+"""代理端点只接受公网 http(s): URL 来自外站元数据, 私网地址即 SSRF 入口, 重定向逐跳复查."""
+
+_PROXY_MAX_BYTES = 32 * 1024 * 1024
+"""代理图片的正文上限. 超过即中止下载, 不把上游自称的长度当作可信边界."""
 
 
 def _image_response(request: Request, path: Path, content_hash: str | None) -> Response:
@@ -33,10 +32,11 @@ def _image_response(request: Request, path: Path, content_hash: str | None) -> R
     if not_modified is not None:
         return not_modified
 
-    headers = dict(RESOURCE_CACHE_HEADERS)
+    media_type, headers = media_type_and_headers(path)
+    headers.update(RESOURCE_CACHE_HEADERS)
     if content_hash:
         headers["ETag"] = format_etag(content_hash)
-    return FileResponse(path=path, media_type=_EXT_TO_MIME.get(path.suffix.lower(), "image/jpeg"), headers=headers)
+    return FileResponse(path=path, media_type=media_type, headers=headers)
 
 
 @router.get("/proxy")
@@ -47,7 +47,10 @@ async def proxy_image(
     同 URL 进行中请求合并为一次 acquire.
     使用图片 token 的请求只从缓存读取资源: 未命中返回 404, 不发起对外请求, 不写入负缓存.
     """
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="URL 无法解析") from e
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=400, detail="仅支持 http/https URL")
 
@@ -59,13 +62,29 @@ async def proxy_image(
         record = await store.get_by_url(url)
         return _image_response(request, local_path, record.content_hash if record is not None else None)
 
+    try:
+        await _PROXY_EGRESS.ensure_allowed(url)
+    except EgressRejected as e:
+        logger.warning("proxy image address rejected", url=url, reason=e.message)
+        raise HTTPException(status_code=400, detail=e.detail) from e
+    except RequestError as e:
+        # 解析失败是上游不可达, 不是地址不合规: 回 502 但不进负缓存 — 解析失败多为瞬态,
+        # 缓存 15 分钟会让网络恢复后同一地址继续失败.
+        logger.warning("proxy image host unreachable", url=url, reason=e.message)
+        raise HTTPException(status_code=502, detail="上游图片获取失败") from e
+
     # 负缓存命中则直接 502
     failures = runtime.proxy_failure_cache
     if failures.is_blocked(url):
         raise HTTPException(status_code=502, detail="上游图片获取失败")
 
-    # 同 URL 进行中的 acquire 合并为一次
-    local_path = await failures.coalesce(url, lambda: store.acquire(url, runtime.web_client))
+    # 同 URL 进行中的 acquire 合并为一次; 并发额度只由真正发起下载的那一方持有,
+    # 否则等待同一 URL 的请求也会占额度.
+    async def _acquire() -> Path | None:
+        async with runtime.proxy_downloads:
+            return await store.acquire(url, runtime.web_client, egress=_PROXY_EGRESS, max_bytes=_PROXY_MAX_BYTES)
+
+    local_path = await failures.coalesce(url, _acquire)
     if local_path is None:
         failures.remember(url)
         logger.warning("proxy image acquire failed", url=url)
@@ -89,8 +108,8 @@ async def serve_resource(url_hash: str, request: Request, runtime: RuntimeDep) -
     if not_modified is not None:
         return not_modified
 
-    headers = dict(RESOURCE_CACHE_HEADERS)
+    media_type, headers = media_type_and_headers(path)
+    headers.update(RESOURCE_CACHE_HEADERS)
     if record.content_hash:
         headers["ETag"] = format_etag(record.content_hash)
-    media_type = record.mime_type or _EXT_TO_MIME.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path=path, media_type=media_type, headers=headers)
