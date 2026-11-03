@@ -138,14 +138,23 @@ class _FakeBsk:
             self._maybe_fail(config, "cooperate_error")
             context_id = f"ctx-{self._count('cooperate')}"
             tab_id = args[args.index("--tab-id") + 1]
+            # 0.4.0 的同步不返回观察 ID; 新版缺了它, 关页与脚本执行都会被拒.
+            observation_id = None if config.get("omit_observation_id") else f"obs-{context_id}"
             if config.get("sync_delta"):
-                return {"tab_id": int(tab_id), "context_id": context_id, "kind": "delta", "changes": []}
+                return {
+                    "tab_id": int(tab_id),
+                    "context_id": context_id,
+                    "kind": "delta",
+                    "changes": [],
+                    "observation_id": observation_id,
+                }
             text = config.get("sync_text", config.get("snapshot_text", ""))
             return {
                 "tab_id": int(tab_id),
                 "context_id": context_id,
                 "kind": "baseline",
                 "observation": {"text": text, "ref_count": 0, "truncated": bool(config.get("sync_truncated"))},
+                "observation_id": observation_id,
             }
         if command == "wait-for-element":
             return {"satisfied": config.get("satisfied", True)}
@@ -289,8 +298,23 @@ async def test_tab_is_closed_after_fetch(bsk_env: Path) -> None:
         await backend.close()
     closes = [args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]
     assert len(closes) == 2
-    assert all("--context" in args for args in closes)
+    assert all(args[args.index("--context") + 1].startswith("ctx-") for args in closes)
+    assert all(args[args.index("--observation") + 1].startswith("obs-") for args in closes)
     assert _commands(bsk_env).count("session") == 2  # 没有轮换
+
+
+@pytest.mark.asyncio
+async def test_tab_close_omits_observation_when_bsk_does_not_return_it(bsk_env: Path) -> None:
+    """0.4.0 的同步不返回观察 ID: 只带上下文, 不能给它传不认识的参数."""
+    _scenario(bsk_env, pages=[CLEAN], omit_observation_id=True)
+    backend = _backend(bsk_env, max_tabs=1)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    closes = [args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]
+    assert len(closes) == 1
+    assert "--observation" not in closes[0]
 
 
 @pytest.mark.asyncio
@@ -484,6 +508,7 @@ async def test_cookies_applied_once_per_scope(bsk_env: Path) -> None:
     assert len(evaluate) == 1
     assert "age_verified=1; path=/" in evaluate[0][1]
     assert evaluate[0][evaluate[0].index("--context") + 1].startswith("ctx-")
+    assert evaluate[0][evaluate[0].index("--observation") + 1].startswith("obs-")
     # 两张取页标签页 + 一张 cookie 引导页, 全部关掉
     assert _creates(bsk_env) == 3
     assert len([args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]) == 3
