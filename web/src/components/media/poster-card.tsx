@@ -1,7 +1,7 @@
 import { AspectRatio, Box, Card, Center, Group, Stack, Text } from "@mantine/core";
 import { IconCalendar, IconStar, IconUser } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MetadataResponse } from "@/client/types.gen";
 import { FilePhaseOverlay } from "@/components/media/file-phase-badges";
@@ -10,7 +10,7 @@ import { ProxyImage } from "@/components/media/proxy-image";
 import { VrOverlayChip } from "@/components/media/vr-badge";
 import { ageAtRelease } from "@/lib/format-birthday";
 import { formatReleaseYearMonth } from "@/lib/format-release";
-import { proxyImageUrl } from "@/lib/utils";
+import { DEFAULT_POSTER_RATIO, posterImageUrl, rememberImageRatio } from "@/lib/media/poster-image";
 
 interface PosterCardProps {
   item: MetadataResponse;
@@ -20,18 +20,51 @@ interface PosterCardProps {
   imageUrl?: string | null;
   /** 图片宽高比; 剧照按 16:9 显示, 默认为海报竖版宽高比. */
   imageRatio?: number;
+  /** 实测到图片比例后通知外层重算行宽. */
+  onImageRatioChange?: () => void;
 }
 
-/** 加载失败退化为番号占位块. */
-export function PosterCard({ item, actorBirthday, imageUrl, imageRatio = 0.7 }: PosterCardProps) {
+/**
+ * 加载失败退化为番号占位块.
+ *
+ * 走 memo: 列表追加一页或比例到达时, 入参 (条目对象、地址、比例) 未变的卡片跳过重渲染.
+ */
+export const PosterCard = memo(function PosterCard({
+  item,
+  actorBirthday,
+  imageUrl,
+  imageRatio = DEFAULT_POSTER_RATIO,
+  onImageRatioChange,
+}: PosterCardProps) {
   const { t } = useTranslation("metadata");
   const [errored, setErrored] = useState(false);
-  const posterUrl = proxyImageUrl(imageUrl ?? item.poster_url ?? item.poster_urls?.[0]);
+  const posterUrl = posterImageUrl(item, imageUrl);
   const showImage = posterUrl && !errored;
   const actors = item.actors ?? [];
   const actorsLabel = actors.length > 0 ? actors.join(" / ") : null;
   const releaseLabel = formatReleaseYearMonth(item.release);
   const ageThen = ageAtRelease(actorBirthday, item.release);
+
+  const media = showImage ? (
+    <ProxyImage
+      src={posterUrl}
+      alt={item.number}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      style={{ display: "block" }}
+      onLoad={(event) => {
+        const { naturalWidth, naturalHeight } = event.currentTarget;
+        if (rememberImageRatio(posterUrl, naturalWidth, naturalHeight)) onImageRatioChange?.();
+      }}
+      onError={() => setErrored(true)}
+    />
+  ) : (
+    <Center bg="var(--mantine-color-default-hover)" h="100%">
+      <Text size="sm" ff="monospace" c="dimmed" ta="center" px="xs">
+        {item.number}
+      </Text>
+    </Center>
+  );
 
   return (
     <Link
@@ -41,24 +74,7 @@ export function PosterCard({ item, actorBirthday, imageUrl, imageRatio = 0.7 }: 
     >
       <Card padding={0} radius="md" withBorder style={{ overflow: "hidden" }}>
         <Box pos="relative">
-          <AspectRatio ratio={imageRatio}>
-            {showImage ? (
-              <ProxyImage
-                src={posterUrl}
-                alt={item.number}
-                loading="lazy"
-                referrerPolicy="no-referrer"
-                style={{ display: "block" }}
-                onError={() => setErrored(true)}
-              />
-            ) : (
-              <Center bg="var(--mantine-color-default-hover)" h="100%">
-                <Text size="sm" ff="monospace" c="dimmed" ta="center" px="xs">
-                  {item.number}
-                </Text>
-              </Center>
-            )}
-          </AspectRatio>
+          <AspectRatio ratio={imageRatio}>{media}</AspectRatio>
           <FilePhaseOverlay
             phase={item.file_phase}
             bottomExtra={
@@ -141,4 +157,4 @@ export function PosterCard({ item, actorBirthday, imageUrl, imageRatio = 0.7 }: 
       </Card>
     </Link>
   );
-}
+});

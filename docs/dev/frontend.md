@@ -49,6 +49,10 @@
 
 图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素.
 
+## 海报栅格
+
+片库 grid 短边锚定 (`layout="adaptive"`, 行切分见 `lib/media/adaptive.ts`), 演员墙与分类详情列宽相等. 两者都靠图片加载后的自然尺寸取比例: 缓存在 `lib/media/poster-image.ts`, 键是卡片实际请求的地址, 跨路由复用, 首屏混合比例的页面因此只重排一次. `ProxyImage` 的每个渲染分支都必须转发 `onLoad` / `onError`, 否则拿不到比例, 失败也不退化为番号占位.
+
 ## 窄屏
 
 **视口高度统一经 `--amane-vh`**: 默认 `100vh`, 入口检测到 `dvh` 时替换成 `100dvh`. 禁止在样式或组件属性里写死 `dvh` — Chromium < 108 的 WebView 会整条丢弃含它的声明; 第三方样式 (Mantine) 里的 `dvh` 由构建期替换成同一变量.
