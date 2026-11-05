@@ -23,7 +23,7 @@ def _insert_task(conn: Connection, task_type: str) -> int:
     result = conn.execute(
         text(
             "INSERT INTO tasks (type, status, payload, retries, priority, created_at) "
-            "VALUES (:type, 'done', '{}', 0, 0, CURRENT_TIMESTAMP)"
+            "VALUES (:type, 'DONE', '{}', 0, 0, CURRENT_TIMESTAMP)"
         ),
         {"type": task_type},
     )
@@ -31,7 +31,7 @@ def _insert_task(conn: Connection, task_type: str) -> int:
 
 
 def test_drop_retired_trash_tasks(alembic_cfg: Config) -> None:
-    """回收任务的历史行与其链上的边被删除; 其它类型的行与边不动."""
+    """回收任务的历史行与其链上的边被删除; 其它类型的行与边不动. 建行用真实形态: 枚举列存成员名."""
     command.upgrade(alembic_cfg, _PREVIOUS)
 
     url = alembic_cfg.get_main_option("sqlalchemy.url")
@@ -39,10 +39,10 @@ def test_drop_retired_trash_tasks(alembic_cfg: Config) -> None:
     engine = create_engine(url)
 
     with engine.begin() as conn:
-        trash_parent = _insert_task(conn, "trash")
-        trash_child = _insert_task(conn, "trash")
-        keep_parent = _insert_task(conn, "organize")
-        keep_child = _insert_task(conn, "scrape")
+        trash_parent = _insert_task(conn, "TRASH")
+        trash_child = _insert_task(conn, "TRASH")
+        keep_parent = _insert_task(conn, "ORGANIZE")
+        keep_child = _insert_task(conn, "SCRAPE")
         for parent, child in (
             (trash_parent, trash_child),
             (trash_parent, keep_child),
@@ -63,7 +63,7 @@ def test_drop_retired_trash_tasks(alembic_cfg: Config) -> None:
         types = conn.execute(text("SELECT type FROM tasks ORDER BY id")).scalars().all()
         links = conn.execute(text("SELECT parent_task_id, child_task_id FROM task_links")).all()
 
-    assert types == ["organize", "scrape"]
+    assert types == ["ORGANIZE", "SCRAPE"]
     assert links == [(keep_parent, keep_child)]
 
     engine.dispose()
