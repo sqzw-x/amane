@@ -708,8 +708,8 @@ class AgentConfig(BaseModel):
     """单次回复的输出上限. 超过模型上限时上游拒绝请求."""
 
     rate_limit: float = Field(default=2.0, ge=0.1, le=100)
-    sql_timeout_ms: int = Field(default=1000, ge=50, le=60_000, json_schema_extra={"x-hidden": True})
-    """只读 SQL 默认超时 (毫秒). 超过须用户批准放宽."""
+    sql_timeout_ms: int = Field(default=5000, ge=50, le=60_000, json_schema_extra={"x-hidden": True})
+    """只读 SQL 执行超时 (毫秒), 不计建连; 到期即中断语句."""
 
     result_cache_ttl_s: int = Field(default=3600, ge=60, le=86_400, json_schema_extra={"x-hidden": True})
     """过期后按 SQL 重新执行."""
