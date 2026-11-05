@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 from PIL import Image
 
-from amane.db.models import MediaFileStatus, Metadata
+from amane.db.models import MediaFileStatus, Metadata, TaskType
 from amane.enums import ActorGender
 
 if TYPE_CHECKING:
@@ -236,6 +236,31 @@ class TestMetadataHttp:
         assert missing.status_code == 400
         assert "9999" in missing.json()["detail"]
         assert (await client.get(f"metadata/{extra.id}")).status_code == 200
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_merge_entries_rescrape_http(self, client: AsyncClient, repo: Repository):
+        alone = await repo.upsert_metadata(number="MRG-300", raw={"javdb": {"title": "target"}})
+        gone = await repo.upsert_metadata(number="MRG-0300", raw={"dmm": {"title": "source"}})
+        assert alone.id is not None and gone.id is not None
+
+        defaults = await client.post("metadata/merge-entries", json={"target_id": alone.id, "source_ids": [gone.id]})
+        assert defaults.status_code == 200
+        assert await repo.list_tasks(task_types=[TaskType.SCRAPE]) == []
+
+        target = await repo.upsert_metadata(number="MRG-301", raw={"javdb": {"title": "target"}})
+        source = await repo.upsert_metadata(number="MRG-0301", raw={"dmm": {"title": "source"}})
+        assert target.id is not None and source.id is not None
+
+        resp = await client.post(
+            "metadata/merge-entries",
+            json={"target_id": target.id, "source_ids": [source.id], "rescrape": True},
+        )
+        assert resp.status_code == 200
+        tasks = await repo.list_tasks(task_types=[TaskType.SCRAPE])
+        assert len(tasks) == 1
+        assert tasks[0].payload["number"] == target.number
+        assert tasks[0].payload["content_type"] == target.content_type.value
+        assert set(tasks[0].payload["use_cache"]) == {"metadata", "trans"}
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_crop_poster_http(self, client: AsyncClient, repo: Repository, app: FastAPI):

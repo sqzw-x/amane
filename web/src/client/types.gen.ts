@@ -2829,6 +2829,12 @@ export type MetadataMergeEntriesRequest = {
      * 待合并的 Metadata ID 列表; 按顺序补入 raw 快照
      */
     source_ids: Array<number>;
+    /**
+     * Rescrape
+     *
+     * 合并后按当前优先级对目标番号入队 SCRAPE, 复用 raw 缓存重新聚合字段
+     */
+    rescrape?: boolean;
 };
 
 /**

@@ -39,7 +39,7 @@ import { MergeNotice } from "@/components/media/merge-notice";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { useResizableColumns } from "@/hooks/use-resizable-columns";
 import { extractErrorMessage } from "@/lib/api-error";
-import { confirm } from "@/lib/confirm";
+import { confirm, confirmWithCheckbox } from "@/lib/confirm";
 import { USER_TAG_FACET_LIST } from "@/lib/facets";
 import { type MetaTableColumnKey, useUIStore } from "@/stores/ui";
 import { VrBadge } from "./vr-badge";
@@ -269,9 +269,11 @@ export function MetaTable({
 
   const mergeEntries = useMutation({
     ...mergeMetadataEntriesMutation(),
-    onSuccess: (res) => {
+    onSuccess: (res, variables) => {
       notifications.show({
-        message: t("common:toast.metadataUpdated"),
+        message: variables.body.rescrape
+          ? t("common:toast.scrapeStarted")
+          : t("common:toast.metadataUpdated"),
         color: "blue",
       });
       clear();
@@ -299,7 +301,7 @@ export function MetaTable({
       });
       return;
     }
-    const ok = await confirm({
+    const result = await confirmWithCheckbox({
       title: t("manage.mergeConfirm"),
       message: (
         <MergeNotice
@@ -312,12 +314,16 @@ export function MetaTable({
           ]}
         />
       ),
+      // 勾选后改走重新刮削: 按当前优先级从 raw 聚合, 目标未锁定字段不再保持不变.
+      checkbox: { label: t("manage.mergeEntriesRescrape") },
       confirmLabel: t("common:actions.confirm"),
       danger: false,
       confirmColor: "orange",
     });
-    if (!ok) return;
-    mergeEntries.mutate({ body: { target_id: target.id, source_ids: sourceIds } });
+    if (!result.ok) return;
+    mergeEntries.mutate({
+      body: { target_id: target.id, source_ids: sourceIds, rescrape: result.checked },
+    });
   }
 
   const tagOptions = useMemo(

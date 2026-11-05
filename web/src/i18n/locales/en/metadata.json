@@ -386,6 +386,7 @@
     "mergeEntriesRaw": "Scraped source snapshots of the other films are merged into the target",
     "mergeEntriesLinks": "Comments, user tags and linked files move to the target",
     "mergeEntriesDelete": "The other films are deleted",
+    "mergeEntriesRescrape": "Re-scrape after merge (re-aggregate fields by priority)",
     "mergeActorLead": "Merge {{count}} actors into \"{{name}}\"",
     "mergeActorLead_one": "Merge {{count}} actor into \"{{name}}\"",
     "mergeActorLead_other": "Merge {{count}} actors into \"{{name}}\"",
