@@ -197,6 +197,9 @@ export const batchMetadataUserTags = <ThrowOnError extends boolean = false>(opti
  * Merge Metadata Entries
  *
  * 把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.
+ *
+ * ``rescrape`` 要求合并提交后再按目标番号入队 SCRAPE: 只有 raw 已落库, 复用快照的聚合
+ * 才能按当前优先级重建字段与站点级字典.
  */
 export const mergeMetadataEntries = <ThrowOnError extends boolean = false>(options: Options<MergeMetadataEntriesData, ThrowOnError>): RequestResult<MergeMetadataEntriesResponses, MergeMetadataEntriesErrors, ThrowOnError> => (options.client ?? client).post<MergeMetadataEntriesResponses, MergeMetadataEntriesErrors, ThrowOnError>({
     url: '/api/metadata/merge-entries',
