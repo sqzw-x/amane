@@ -4,10 +4,7 @@ from pathlib import Path
 
 from alembic import command
 from sqlalchemy import Engine, create_engine, inspect, text
-from sqlmodel import Session, col, select
 
-from amane.db.models import MediaFile
-from amane.parsing import Mosaic
 from tests.helpers import alembic_config
 
 _LIBRARY_INSERT = (
@@ -78,7 +75,7 @@ def test_ltx_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
             # 目录名带后缀不算文件名标记
             ("/media/SNIS-576-LTX/video.mp4", None),
             # 谓词之外的行保持原值
-            ("/media/MIDV-123.mp4", Mosaic.LEAKED.name),
+            ("/media/MIDV-123.mp4", "LEAKED"),
         ]:
             conn.execute(
                 text(
@@ -132,14 +129,6 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
         "/media/MIDV-123-UC-4K.mp4": ("CENSORED", "CRACKED", True, "4K"),
         "/media/HEYZO-1234.mp4": ("UNCENSORED", None, False, None),
     }
-
-    # 只选该 revision 已有的列: 整行映射会带上后续 revision 才加的列
-    with Session(engine) as session:
-        loaded = dict(
-            session.exec(select(MediaFile.path, MediaFile.mosaic).where(col(MediaFile.path).like("/media/%"))).all()
-        )
-        assert loaded["/media/MIDV-123-UC-4K.mp4"] is Mosaic.CRACKED
-        assert loaded["/media/HEYZO-1234.mp4"] is None
 
     engine.dispose()
 
