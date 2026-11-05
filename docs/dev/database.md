@@ -64,7 +64,7 @@ SQLite 不支持删列、改类型等 ALTER TABLE 操作, Alembic 通过 batch m
 | JSON 列、`Task.payload`、`translations.db` | value |
 | 枚举型表列 (`Field(Enum)`) | **成员名** |
 
-SQLite 没有原生 enum, 列仍是 VARCHAR. 不能使用 `Column(String)` 或 `values_callable` 按 value 落库 — ORM 会读出 `str`. 裸 SQL 绑定成员名; ORM 比较用 `is`.
+SQLite 没有原生 enum, 列仍是 VARCHAR. 不能使用 `Column(String)` 或 `values_callable` 按 value 落库 — ORM 会读出 `str`. 落库的是大写成员名 (如 `TRASH`), 不是小写值 (`trash`); 裸 SQL 的条件与写入也按成员名, ORM 比较用 `is`.
 
 ## Autogenerate 盲区
 
