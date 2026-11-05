@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -70,6 +69,15 @@ def as_id_subquery_sql(sql: str) -> str:
     return f"SELECT id FROM ({normalized}) AS _sq"
 
 
+_PROGRESS_STEPS = 10_000
+"""进度回调的间隔 (虚拟机指令数): 期限精度约在毫秒级, 实测不拖慢查询, 也不影响事件循环."""
+
+
+def _is_interrupted(exc: sqlite3.Error) -> bool:
+    """进度回调中断的语句报 SQLITE_INTERRUPT."""
+    return isinstance(exc, sqlite3.OperationalError) and exc.sqlite_errorcode == sqlite3.SQLITE_INTERRUPT
+
+
 class ReadonlySqlSandbox:
     """对主库文件开只读 URI 连接执行查询."""
 
@@ -96,44 +104,52 @@ class ReadonlySqlSandbox:
         normalized = sql.strip().rstrip(";").strip()
         if not normalized:
             raise SqlSandboxError("SQL 为空")
-        timeout_s = max(timeout_ms, 1) / 1000.0
         uri = self._db_path.resolve().as_uri() + "?mode=ro"
 
-        started = time.perf_counter()
         try:
-            return await asyncio.wait_for(self._run(uri, normalized, max_rows=max_rows), timeout=timeout_s)
-        except TimeoutError as exc:
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            raise SqlTimeoutError(f"查询超时 ({elapsed_ms:.0f}ms > {timeout_ms}ms)") from exc
+            return await self._run(uri, normalized, timeout_ms=timeout_ms, max_rows=max_rows)
         except sqlite3.Error as exc:
             # 列名/表名错误等必须变成工具可回收的 SqlSandboxError,
             # 否则会冒泡成 SSE StreamError 打断整轮 (模型无法自行修改 SQL 重试).
             raise SqlSandboxError(str(exc)) from exc
 
-    async def _run(self, uri: str, sql: str, *, max_rows: int | None) -> SqlResult:
-        started = time.perf_counter()
+    async def _run(self, uri: str, sql: str, *, timeout_ms: int, max_rows: int | None) -> SqlResult:
+        """超时只计执行与取行, 不计建连: 建连耗时随磁盘负载波动, 计入会让轻量查询被误判超时.
+
+        查询在 aiosqlite 的专属线程里运行, 取消协程停不下它; 只能由 SQLite 每隔
+        ``_PROGRESS_STEPS`` 条虚拟机指令回调一次, 越过期限即中断当前语句.
+        """
         async with aiosqlite.connect(uri, uri=True) as conn:
             await conn.execute("PRAGMA query_only = ON")
             await conn.set_authorizer(_readonly_authorizer)
             conn.row_factory = aiosqlite.Row
-            cursor = await conn.execute(sql)
+            started = time.perf_counter()
+            deadline = started + max(timeout_ms, 1) / 1000.0
+            await conn.set_progress_handler(lambda: time.perf_counter() > deadline, _PROGRESS_STEPS)
             try:
-                description = cursor.description or ()
-                columns = [col[0] for col in description]
-                if max_rows is None:
-                    raw_rows = await cursor.fetchall()
-                else:
-                    raw_rows = await cursor.fetchmany(max_rows)
-                rows = [list(row) for row in raw_rows]
-                # row_count: 若截断则至少为已取行数; 全量时等于 len(rows)
-                row_count = len(rows)
-                if max_rows is not None and len(rows) == max_rows:
-                    # 再取一行探测是否还有更多 - 不把探测行并入结果
-                    more = list(await cursor.fetchmany(1))
-                    if more:
-                        # 未知精确总数时用 -1 表示"至少 max_rows"
-                        row_count = -1
-            finally:
-                await cursor.close()
+                cursor = await conn.execute(sql)
+                try:
+                    description = cursor.description or ()
+                    columns = [col[0] for col in description]
+                    if max_rows is None:
+                        raw_rows = await cursor.fetchall()
+                    else:
+                        raw_rows = await cursor.fetchmany(max_rows)
+                    rows = [list(row) for row in raw_rows]
+                    # row_count: 若截断则至少为已取行数; 全量时等于 len(rows)
+                    row_count = len(rows)
+                    if max_rows is not None and len(rows) == max_rows:
+                        # 再取一行探测是否还有更多 - 不把探测行并入结果
+                        more = list(await cursor.fetchmany(1))
+                        if more:
+                            # 未知精确总数时用 -1 表示"至少 max_rows"
+                            row_count = -1
+                finally:
+                    await cursor.close()
+            except sqlite3.Error as exc:
+                if not _is_interrupted(exc):
+                    raise
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                raise SqlTimeoutError(f"查询超时 ({elapsed_ms:.0f}ms > {timeout_ms}ms)") from exc
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         return SqlResult(columns=columns, rows=rows, row_count=row_count, elapsed_ms=elapsed_ms)
