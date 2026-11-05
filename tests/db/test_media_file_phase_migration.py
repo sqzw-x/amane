@@ -23,6 +23,13 @@ _MEDIA_INSERT = (
 )
 
 
+_PHASE_MEDIA_INSERT = (
+    "INSERT INTO media_files "
+    "(path, status, library_id, created_at, updated_at, mosaic, has_subtitle_in_name, has_external_subtitle) "
+    "VALUES (:path, 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', :mosaic, 0, 0)"
+)
+
+
 def _seed_library(conn) -> int:
     conn.execute(text(_LIBRARY_INSERT))
     return conn.execute(text("SELECT id FROM libraries")).scalar_one()
@@ -72,6 +79,9 @@ def test_ltx_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
         session.add(library)
         session.commit()
         assert library.id is not None
+        library_id = library.id
+    # 当前 MediaFile 模型含后续 revision 新增的列, 旧表结构上只能按当时的列集合插入.
+    with engine.begin() as conn:
         for path, mosaic in [
             ("/media/SNIS-576-LTX/489155.com@SNIS-576-LTX.mp4", None),
             ("/media/MIDV-123-LTX.mp4", None),
@@ -81,8 +91,10 @@ def test_ltx_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
             # 谓词之外的行保持原值
             ("/media/MIDV-123.mp4", Mosaic.LEAKED),
         ]:
-            session.add(MediaFile(path=path, library_id=library.id, mosaic=mosaic))
-        session.commit()
+            conn.execute(
+                text(_PHASE_MEDIA_INSERT),
+                {"path": path, "lib": library_id, "mosaic": mosaic.name if mosaic is not None else None},
+            )
     engine.dispose()
 
     command.upgrade(cfg, "head")

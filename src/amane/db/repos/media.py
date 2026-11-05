@@ -16,12 +16,12 @@ from .base import RepositoryMixinBase, chunks
 
 
 def _apply_path_phase(media: MediaFile) -> None:
-    """path 是真值, 相位列是投影; 创建与改 path 时必须回填.
+    """path 与画面尺寸是真值, 相位列是投影; 创建、改 path 与写入画面尺寸时必须回填.
 
-    只回填 path 能推出的相位. 同目录字幕不是 path 的投影, 由调用方另经
+    只回填两者能推出的相位. 同目录字幕不是它们的投影, 由调用方另经
     ``handlers._common.refresh_external_subtitle`` 写入.
     """
-    phase = file_phase_from_path(media.path)
+    phase = file_phase_from_path(media.path, media.video_size)
     media.mosaic = phase["mosaic"]
     media.has_subtitle_in_name = phase["has_subtitle"]
     media.definition = phase["definition"]
@@ -193,6 +193,11 @@ class MediaRepoMixin(RepositoryMixinBase):
             # 显式赋值, 禁止 setattr; 字段集由 MediaFileUpdates 与 MediaFile 静态对齐.
             if "path" in updates:
                 media.path = nfc_path(updates["path"])
+            if "width" in updates:
+                media.width = updates["width"]
+            if "height" in updates:
+                media.height = updates["height"]
+            if updates.keys() & {"path", "width", "height"}:
                 _apply_path_phase(media)
             if "number" in updates:
                 media.number = updates["number"]

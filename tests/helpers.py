@@ -7,6 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import av
+import numpy as np
 from alembic.config import Config
 
 from amane.db.sqlite_migrate import migrations_dir
@@ -45,6 +47,21 @@ def alembic_config(db_path: Path) -> Config:
     cfg.set_main_option("script_location", str(migrations_dir()))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
     return cfg
+
+
+def write_video(path: Path, width: int, height: int) -> None:
+    """编码一帧黑色画面的真实视频; 容器按扩展名推断."""
+    with av.open(str(path), mode="w") as container:
+        stream = container.add_stream("mpeg4", rate=1)
+        stream.width = width
+        stream.height = height
+        stream.pix_fmt = "yuv420p"
+        black = np.zeros((height, width, 3), dtype=np.uint8)
+        frame = av.VideoFrame.from_ndarray(black, format="rgb24").reformat(format="yuv420p")
+        for packet in stream.encode(frame):
+            container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
 
 
 def patch_path(obj: type | Callable[..., object]) -> str:

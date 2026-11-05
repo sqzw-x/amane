@@ -61,6 +61,7 @@ from .rules import (
     validate_trailer_pattern,
 )
 from .scan import LibraryFileKind, LibraryHit, LibraryScan, UnwantedKind
+from .video import probe_video_size
 
 __all__ = [
     "DEFAULT_SUBTITLE_EXTENSIONS",
@@ -112,6 +113,7 @@ __all__ = [
     "normalize_cloud_path",
     "normalize_subtitle_extensions",
     "optional_cloud_path",
+    "probe_video_size",
     "prune_empty_dirs",
     "resolve_ingest_cloud_path",
     "same_path",

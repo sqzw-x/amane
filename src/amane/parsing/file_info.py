@@ -4,7 +4,9 @@
 只有字符串则按自由文本 (RSS 标题、已有番号), 未命中则 ``number is None``, 不能把原文冒充番号.
 常用字段投影是同一函数的包装.
 
-类型与文件相位分离: 类型是番号的属性, 落在番号条目上; 文件相位 (cd / 中字 / 马赛克标记 / 分辨率) 只描述这一份文件, 一律依据路径 —— cd / 中字 / 分辨率依据文件名, 马赛克标记依据文件名与目录整段词表.
+类型与文件相位分离: 类型是番号的属性, 落在番号条目上; 文件相位 (cd / 中字 / 马赛克标记 / 分辨率) 只描述这一份文件 ——
+cd / 中字依据文件名, 马赛克标记依据文件名与目录整段词表, 分辨率优先依据调用方读出的画面尺寸, 没有时依据文件名.
+本模块不读文件内容, 画面尺寸由调用方传入.
 """
 
 from __future__ import annotations
@@ -54,6 +56,18 @@ class MosaicNature(StrEnum):
 
 
 @dataclass(frozen=True)
+class VideoSize:
+    """视频首个画面流的编码尺寸 (像素), 不区分横竖方向."""
+
+    width: int
+    height: int
+
+    def __post_init__(self) -> None:
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError(f"画面尺寸必须是正整数, 实际为 {self.width}x{self.height}")
+
+
+@dataclass(frozen=True)
 class FileInfo:
     number: str | None
     content_type: ContentType
@@ -71,7 +85,7 @@ class FileInfo:
 
 
 class FilePhase(TypedDict):
-    """MediaFile 上持久化的文件相位 (path 的投影, 不含 number/cd/类型)."""
+    """MediaFile 上持久化的文件相位 (path 与画面尺寸的投影, 不含 number/cd/类型)."""
 
     mosaic: Mosaic | None
     has_subtitle: bool
@@ -248,6 +262,19 @@ _DEFINITION_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 DEFINITION_VALUES: tuple[str, ...] = tuple(dict.fromkeys(value for value, _ in _DEFINITION_MARKERS))
 
+# 画面尺寸归档: (档位, 长边下限, 短边下限), 自上而下取长边或短边先达到下限的一档, 都未达到为 SD.
+# 下限低于标准尺寸, 容许裁切黑边. 只依据短边会把 VR 等宽画幅 (7680x3840 是 8K) 与裁切后的宽银幕
+# (1920x800 是 1080p) 归入低档, 只依据高会把竖屏 (1080x1920) 归入 1440p; 长短边与方向无关, 旋转元数据不影响结果.
+_SIZE_TIERS: tuple[tuple[str, int, int], ...] = (
+    ("8K", 7000, 4000),
+    ("4K", 3600, 2000),
+    ("1440p", 2400, 1400),
+    ("1080p", 1800, 1000),
+    ("720p", 1200, 700),
+    ("480p", 800, 450),
+)
+_SIZE_TIER_FLOOR = "SD"
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -260,6 +287,7 @@ def parse_file_info(
     text: str | None = None,
     has_external_subtitle: bool = False,
     escape_strings: list[str] | None = None,
+    video_size: VideoSize | None = None,
 ) -> FileInfo:
     """有路径则解析路径, 否则解析 ``text``. 两者至少要有一个.
 
@@ -269,7 +297,8 @@ def parse_file_info(
     (``Path(text).stem``, 与中字分集检测一致), 不依据目录.
 
     ``has_external_subtitle`` 是路径之外的输入 (库里记录的同目录字幕命中), 只并进 ``has_subtitle``,
-    不参与其它相位.
+    不参与其它相位. ``video_size`` 同为路径之外的输入 (读取视频得到的画面尺寸): 给出时分辨率只依据它,
+    文件名的分辨率标记不参与.
     """
     if path is None and text is None:
         raise ValueError("path or text required")
@@ -302,7 +331,7 @@ def parse_file_info(
         has_subtitle_in_name=_detect_subtitle(basename),
         has_external_subtitle=has_external_subtitle,
         mosaic=mosaic,
-        definition=_detect_definition(basename),
+        definition=definition_of_size(video_size) if video_size is not None else _detect_definition(basename),
     )
 
 
@@ -354,14 +383,23 @@ def is_vr(tags: Iterable[str]) -> bool:
     return any(tag.strip().casefold() in VR_TAGS for tag in tags)
 
 
-def file_phase_from_path(path: str | Path) -> FilePhase:
-    """入库相位只取路径能给出的部分: 外挂字幕命中不在路径里, 由 MediaFile 各自的列承载."""
-    info = parse_file_info(path)
+def file_phase_from_path(path: str | Path, video_size: VideoSize | None = None) -> FilePhase:
+    """入库相位只取路径与画面尺寸能给出的部分: 外挂字幕命中不在路径里, 由 MediaFile 各自的列承载."""
+    info = parse_file_info(path, video_size=video_size)
     return FilePhase(
         mosaic=info.mosaic,
         has_subtitle=info.has_subtitle_in_name,
         definition=info.definition,
     )
+
+
+def definition_of_size(size: VideoSize) -> str:
+    """画面尺寸归档, 结果总在 ``DEFINITION_VALUES`` 内; 规则见 ``_SIZE_TIERS``."""
+    long_side, short_side = max(size.width, size.height), min(size.width, size.height)
+    for value, long_min, short_min in _SIZE_TIERS:
+        if long_side >= long_min or short_side >= short_min:
+            return value
+    return _SIZE_TIER_FLOOR
 
 
 def shows_uncensored(mosaic: Mosaic | None, content_type: ContentType | None) -> bool:
