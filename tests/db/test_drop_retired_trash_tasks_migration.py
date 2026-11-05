@@ -8,10 +8,13 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Connection, create_engine, text
+from sqlmodel import Session, col, select
 
+from amane.db.models import Task, TaskLink, TaskStatus, TaskType
 from tests.helpers import alembic_config
 
-_PREVIOUS = "fd5c8ad2c5db"
+_PREVIOUS = "6940e4cf8a80"
+_TARGET = "56fe451426ef"
 
 
 @pytest.fixture
@@ -20,18 +23,19 @@ def alembic_cfg(tmp_path: Path) -> Config:
 
 
 def _insert_task(conn: Connection, task_type: str) -> int:
+    """裸 SQL 建行: schema 停在旧 revision, 且已退役的取值无法用当前模型表达."""
     result = conn.execute(
         text(
             "INSERT INTO tasks (type, status, payload, retries, priority, created_at) "
-            "VALUES (:type, 'done', '{}', 0, 0, CURRENT_TIMESTAMP)"
+            "VALUES (:type, :status, '{}', 0, 0, CURRENT_TIMESTAMP)"
         ),
-        {"type": task_type},
+        {"type": task_type, "status": TaskStatus.DONE.name},
     )
     return int(result.lastrowid or 0)
 
 
 def test_drop_retired_trash_tasks(alembic_cfg: Config) -> None:
-    """回收任务的历史行与其链上的边被删除; 其它类型的行与边不动."""
+    """回收任务的历史行与其链上的边被删除; 其它类型不动, 读回仍能解成枚举."""
     command.upgrade(alembic_cfg, _PREVIOUS)
 
     url = alembic_cfg.get_main_option("sqlalchemy.url")
@@ -39,10 +43,10 @@ def test_drop_retired_trash_tasks(alembic_cfg: Config) -> None:
     engine = create_engine(url)
 
     with engine.begin() as conn:
-        trash_parent = _insert_task(conn, "trash")
-        trash_child = _insert_task(conn, "trash")
-        keep_parent = _insert_task(conn, "organize")
-        keep_child = _insert_task(conn, "scrape")
+        trash_parent = _insert_task(conn, "TRASH")
+        trash_child = _insert_task(conn, "TRASH")
+        keep_parent = _insert_task(conn, "ORGANIZE")
+        keep_child = _insert_task(conn, "SCRAPE")
         for parent, child in (
             (trash_parent, trash_child),
             (trash_parent, keep_child),
@@ -57,13 +61,14 @@ def test_drop_retired_trash_tasks(alembic_cfg: Config) -> None:
                 {"p": parent, "c": child, "k": f"{parent}-{child}"},
             )
 
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(alembic_cfg, _TARGET)
 
-    with engine.connect() as conn:
-        types = conn.execute(text("SELECT type FROM tasks ORDER BY id")).scalars().all()
-        links = conn.execute(text("SELECT parent_task_id, child_task_id FROM task_links")).all()
+    with Session(engine) as session:
+        # 读回走 ORM: 残留下已退役的取值会在这里抛 LookupError, 即真实的列表加载失败.
+        types = session.exec(select(Task.type).order_by(col(Task.id))).all()
+        links = [tuple(row) for row in session.exec(select(TaskLink.parent_task_id, TaskLink.child_task_id))]
 
-    assert types == ["organize", "scrape"]
+    assert types == [TaskType.ORGANIZE, TaskType.SCRAPE]
     assert links == [(keep_parent, keep_child)]
 
     engine.dispose()
