@@ -717,10 +717,16 @@ class TestBoundedDownload:
 
     @pytest.mark.asyncio
     async def test_cap_cuts_upstream_transfer(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
-        """真实上游: 超限后连接被切断, 不会把整份正文传完 (只停止消费时服务端会发满)."""
+        """真实上游: 超限后连接被切断, 不会把整份正文传完 (只停止消费时服务端会发满).
+
+        curl 在后台把正文读进无界队列, 消费方落后时 loopback 足以在越限之前传完整份正文, 判别随之失效.
+        服务端因此先发出越过上限的一段, 等客户端开始中止才继续发送: 剩余正文能否发满只取决于连接是否被切断.
+        """
         total = 64 * 1024 * 1024
+        head = 1024 * 1024
         chunk = b"x" * 65536
         sent = 0
+        aborting = asyncio.Event()
         finished = asyncio.Event()
 
         async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -730,10 +736,12 @@ class TestBoundedDownload:
             )
             try:
                 for _ in range(total // len(chunk)):
+                    if sent == head:
+                        await aborting.wait()
                     writer.write(chunk)
                     await writer.drain()
                     sent += len(chunk)
-            except ConnectionResetError, BrokenPipeError:
+            except ConnectionError:
                 pass
             finally:
                 finished.set()
@@ -744,8 +752,18 @@ class TestBoundedDownload:
         server = await asyncio.start_server(handler, "127.0.0.1", 0)
         port = server.sockets[0].getsockname()[1]
         client = WebClient(limiters=RateLimiters(default_rate=100))
+        close = client._close
+
+        async def close_after_signal(resp: Any) -> None:
+            aborting.set()
+            await close(resp)
+
+        monkeypatch.setattr(client, "_close", close_after_signal)
         try:
-            ok = await client.download(f"http://127.0.0.1:{port}/big.bin", tmp_path / "big.bin", max_bytes=128 * 1024)
+            ok = await asyncio.wait_for(
+                client.download(f"http://127.0.0.1:{port}/big.bin", tmp_path / "big.bin", max_bytes=128 * 1024),
+                timeout=10,
+            )
             assert ok is False
             await asyncio.wait_for(finished.wait(), timeout=10)
         finally:
