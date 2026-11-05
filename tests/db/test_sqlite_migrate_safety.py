@@ -354,7 +354,8 @@ class TestProjectAlembicPath:
         """别名袋与 actor alias 规则行化进 actor_aliases, 规则行删除 (block 保留)."""
         db = tmp_path / "amane.db"
         cfg = alembic_config(db)
-        command.upgrade(cfg, "5abbb79b1ae6")
+        previous, target = "5abbb79b1ae6", "fd00ba796b91"
+        command.upgrade(cfg, previous)
 
         now = "2026-01-01 00:00:00.000000"
         with closing(sqlite3.connect(db)) as conn:
@@ -371,7 +372,7 @@ class TestProjectAlembicPath:
             )
             conn.commit()
 
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, target)
 
         with closing(sqlite3.connect(db)) as conn:
             rows = conn.execute(
@@ -381,9 +382,9 @@ class TestProjectAlembicPath:
             # A: 规则入边先, 袋内 x 后, 与展示名相同的 A 剔除; Ghost→NoEntity 建实体
             assert rows == [("A", "旧A"), ("A", "x"), ("NoEntity", "Ghost")]
             remaining = conn.execute(
-                "select source_name, action from facet_rules where kind = 'ACTOR' order by source_name"
+                "select source_name, action from facet_rules where kind = 'actor' order by source_name"
             ).fetchall()
-            assert remaining == [("B", "BLOCK")]
+            assert remaining == [("B", "block")]
             cols = [r[1] for r in conn.execute("PRAGMA table_info(actors)").fetchall()]
             assert "aliases" not in cols
             assert "actor_aliases" in _tables(db)
