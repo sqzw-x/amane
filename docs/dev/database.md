@@ -86,7 +86,7 @@ SQLite 没有原生 enum, 列仍是 VARCHAR. 不能使用 `Column(String)` 或 `
 3. 匹配不到的行落入一个**兜底行** (如不可删的 `Unmanaged` library), 保证迁移不中止.
 4. 再 `batch_alter_table` 把回填好的列 `alter_column(nullable=False)` + `create_foreign_key` + `create_index`.
 
-迁移测试用临时文件 DB: `command.upgrade(cfg, "<prev>")` → 插旧 schema 数据 → `upgrade("<被测 revision>")` → 断言回填结果. 升到 head 会把后续无关迁移牵进断言.
+迁移测试用临时文件 DB: `command.upgrade(cfg, "<prev>")` → 插旧 schema 数据 → `upgrade("<被测 revision>")` → 断言回填结果. 升到 head 会把后续无关迁移牵进断言. ORM 模型对应 head schema: 旧 revision 下建行只用裸 SQL, ORM 读回只选该 revision 已有的列. 只有测启动期升级路径 (`sqlite_migrate`) 的用例才升到 head.
 
 ## 测试策略
 

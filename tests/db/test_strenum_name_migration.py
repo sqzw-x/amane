@@ -22,12 +22,15 @@ from amane.enums import ActorGender, LibraryAutomation, LinkMode, MoveMode
 from amane.parsing import ContentType
 from tests.helpers import alembic_config
 
+_PREVIOUS = "1ed95d44b077"
+_TARGET = "05ee7dd4c06d"
+
 
 def test_strenum_columns_value_to_name(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
 
-    command.upgrade(cfg, "1ed95d44b077")
+    command.upgrade(cfg, _PREVIOUS)
 
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
@@ -85,7 +88,7 @@ def test_strenum_columns_value_to_name(tmp_path: Path) -> None:
             )
         )
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, _TARGET)
 
     with engine.connect() as conn:
         lib = conn.execute(text("SELECT automation, move_mode, link_mode FROM libraries")).one()
@@ -99,22 +102,22 @@ def test_strenum_columns_value_to_name(tmp_path: Path) -> None:
         assert conn.execute(text("SELECT status FROM agent_sessions")).scalar_one() == "ACTIVE"
         assert conn.execute(text("SELECT entity FROM saved_queries")).scalar_one() == "METADATA"
 
+    # 只选枚举列: 整行映射会带上后续 revision 才加的列
     with Session(engine) as session:
-        library = session.exec(select(Library)).one()
-        assert library.automation is LibraryAutomation.SCRAPE
-        assert library.move_mode is MoveMode.MOVE
-        assert library.link_mode is LinkMode.STRM
-        actor = session.exec(select(Actor)).one()
-        assert actor.gender is ActorGender.FEMALE
-        rule_orm = session.exec(select(FacetRule)).one()
-        assert rule_orm.kind is FacetKind.ACTOR
-        assert rule_orm.action is FacetRuleAction.ALIAS
-        feeds = {row.name: row for row in session.exec(select(Feed)).all()}
-        assert feeds["f"].content_type is ContentType.WESTERN
-        assert feeds["bad"].content_type is None
-        session_row = session.exec(select(AgentSession)).one()
-        assert session_row.status is AgentSessionStatus.ACTIVE
-        query = session.exec(select(SavedQuery)).one()
-        assert query.entity is SavedQueryEntity.METADATA
+        automation, move_mode, link_mode = session.exec(
+            select(Library.automation, Library.move_mode, Library.link_mode)
+        ).one()
+        assert automation is LibraryAutomation.SCRAPE
+        assert move_mode is MoveMode.MOVE
+        assert link_mode is LinkMode.STRM
+        assert session.exec(select(Actor.gender)).one() is ActorGender.FEMALE
+        kind, action = session.exec(select(FacetRule.kind, FacetRule.action)).one()
+        assert kind is FacetKind.ACTOR
+        assert action is FacetRuleAction.ALIAS
+        feeds = dict(session.exec(select(Feed.name, Feed.content_type)).all())
+        assert feeds["f"] is ContentType.WESTERN
+        assert feeds["bad"] is None
+        assert session.exec(select(AgentSession.status)).one() is AgentSessionStatus.ACTIVE
+        assert session.exec(select(SavedQuery.entity)).one() is SavedQueryEntity.METADATA
 
     engine.dispose()

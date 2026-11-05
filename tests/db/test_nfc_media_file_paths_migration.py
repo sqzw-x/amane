@@ -7,12 +7,15 @@ from sqlalchemy import create_engine, text
 
 from tests.helpers import alembic_config
 
+_PREVIOUS = "9d6cb1706ad1"
+_TARGET = "c1334030b9f1"
+
 
 def test_nfc_media_file_paths_rewrites_and_merges(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
 
-    command.upgrade(cfg, "9d6cb1706ad1")
+    command.upgrade(cfg, _PREVIOUS)
 
     nfc = "/video/\u3058.mp4"
     nfd = "/video/\u3057\u3099.mp4"
@@ -44,7 +47,7 @@ def test_nfc_media_file_paths_rewrites_and_merges(tmp_path: Path) -> None:
             {"nfd": nfd, "nfc": nfc, "other": other_nfd, "lib": lib_id},
         )
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, _TARGET)
 
     with engine.connect() as conn:
         rows = conn.execute(text("SELECT path, status FROM media_files ORDER BY path")).all()
