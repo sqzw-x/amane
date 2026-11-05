@@ -60,6 +60,7 @@ class _FakeBsk:
             code=payload.get("code") if isinstance(payload.get("code"), str) else None,
             hint=payload.get("hint") if isinstance(payload.get("hint"), str) else None,
             exit_code=1,
+            reason=payload.get("reason") if isinstance(payload.get("reason"), str) else None,
         )
 
     async def __call__(self, path: str, args: Sequence[str], timeout_s: float) -> dict[str, object]:
@@ -415,7 +416,11 @@ async def test_sync_error_keeps_the_tab_and_the_window(bsk_env: Path) -> None:
     _scenario(
         bsk_env,
         pages=[CLEAN],
-        cooperate_error={"code": "permission_denied", "message": "the user is operating this tab"},
+        cooperate_error={
+            "code": "permission_denied",
+            "message": "the user has control of this tab",
+            "reason": "control_held",
+        },
     )
     backend = _backend(bsk_env)
     try:
@@ -424,6 +429,24 @@ async def test_sync_error_keeps_the_tab_and_the_window(bsk_env: Path) -> None:
         await backend.close()
     assert not [args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]
     assert _commands(bsk_env).count("session") == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["cooperation_sync_required", "frame_unobservable", "page_load_failed"])
+async def test_unsyncable_sync_error_takes_the_session_down(bsk_env: Path, reason: str) -> None:
+    """同步直接报「页面不可同步」时与「未就绪」是同一件事: 同一张页再试也没用, 收会话."""
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        cooperate_error={"code": "permission_denied", "message": "frames cannot be observed", "reason": reason},
+    )
+    backend = _backend(bsk_env)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    assert not [args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]
+    assert len([args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]) == 1
 
 
 @pytest.mark.asyncio

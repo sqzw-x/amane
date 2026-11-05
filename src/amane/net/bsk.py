@@ -79,6 +79,9 @@ _COOKIE_RETRY_COOLDOWN_S = 120.0
 # 取完正文后关标签页的同步预算; 每次关页重新同步, 动态页面上观察常在往返途中失效.
 _CLOSE_SYNC_TIMEOUT_S = 5.0
 _CLOSE_ATTEMPTS = 2
+# 同步报这些原因时就是页面不可同步 (共享控制的观察面不可用), 重试同一张页没有意义.
+# 0.4.1 把它表达成「成功但没给上下文」, 新版本会直接以 ``frame_unobservable`` 这类原因报错.
+_UNSYNCABLE_REASONS = frozenset({"cooperation_sync_required", "frame_unobservable", "page_load_failed"})
 # 扩展注入的样式 (antd cssinjs) 带 data-css-hash / data-rc-order, 页面自身样式不受影响.
 _INJECTED_STYLE_RE = re.compile(
     r"<style\b[^>]*\b(?:data-css-hash|data-rc-order)=[\"'][^\"']*[\"'][^>]*>.*?</style>",
@@ -613,14 +616,21 @@ class BskBackend:
 
         关页要一次同步换来的上下文与观察 ID. 页面不可同步 (观察面不可用) 时根本拿不到, 而且对
         同一张页重试也是同样的结果: 只有停掉会话才能连窗口一起关掉, 否则标签页会一直留在用户的
-        浏览器里. 同步本身报错时不动会话 —— 用户可能正握着这张页; 观察在往返途中失效则重取一次.
+        浏览器里. 同步因人工原因报错时不动会话 —— 窗口归他; 观察在往返途中失效则重取一次.
         """
         if session.session_id != session_id:
             return
         for attempt in range(_CLOSE_ATTEMPTS):
             try:
                 control = await self._control(session_id, tab_id, timeout_s=_CLOSE_SYNC_TIMEOUT_S)
-            except (BskError, TimeoutError) as exc:
+            except BskError as exc:
+                # 同步直接报「页面不可同步」与「回「未就绪」是同一件事的两种表达.
+                if exc.reason in _UNSYNCABLE_REASONS:
+                    await self._discard_session(session)
+                else:
+                    logger.debug("bsk tab close skipped", error=str(exc))
+                return
+            except TimeoutError as exc:
                 logger.debug("bsk tab close skipped", error=str(exc))
                 return
             if control is None:
