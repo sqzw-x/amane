@@ -655,6 +655,7 @@ function MetaIndexPage() {
       ) : (
         <>
           <PosterGrid
+            layout="adaptive"
             items={gridItems}
             loading={gridQuery.isLoading && gridItems.length === 0}
             emptyMessage={t("empty")}
