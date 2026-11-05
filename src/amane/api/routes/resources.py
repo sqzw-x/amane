@@ -21,7 +21,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/resources", tags=["resources"])
 
 _PROXY_EGRESS = EgressPolicy()
-"""代理端点只接受公网 http(s): URL 来自外站元数据, 私网地址即 SSRF 入口, 重定向逐跳复查."""
+"""代理端点的下载目标只接受公网 http(s): URL 来自外站元数据, 私网地址即 SSRF 入口, 重定向逐跳复查."""
 
 _PROXY_MAX_BYTES = 32 * 1024 * 1024
 """代理图片的正文上限. 超过即中止下载, 不把上游自称的长度当作可信边界."""
@@ -46,6 +46,7 @@ async def proxy_image(
     """上游失败记入进程内负缓存 (15 分钟), 窗口内同 URL 直接 502.
     同 URL 进行中请求合并为一次 acquire.
     使用图片 token 的请求只从缓存读取资源: 未命中返回 404, 不发起对外请求, 不写入负缓存.
+    缓存命中先于地址判定: 只有下载会发起对外请求, 已入库资源即使是私网地址也直接返回.
     """
     try:
         parsed = urlparse(url)
@@ -55,12 +56,12 @@ async def proxy_image(
         raise HTTPException(status_code=400, detail="仅支持 http/https URL")
 
     store = runtime.resource_store
-    if request.state.via_image_token:
-        local_path = await store.resolve(url)
-        if local_path is None:
-            raise HTTPException(status_code=404, detail="资源不在本地缓存")
+    local_path = await store.resolve(url)
+    if local_path is not None:
         record = await store.get_by_url(url)
         return _image_response(request, local_path, record.content_hash if record is not None else None)
+    if request.state.via_image_token:
+        raise HTTPException(status_code=404, detail="资源不在本地缓存")
 
     try:
         await _PROXY_EGRESS.ensure_allowed(url)

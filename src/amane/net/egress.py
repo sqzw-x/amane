@@ -19,11 +19,14 @@ _ALLOWED_SCHEMES = frozenset({"http", "https"})
 
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
-_FAKE_IP_NETWORKS = (ip_network("198.18.0.0/15"),)
-"""fake-IP DNS 的默认段 (Clash / Mihomo / Surge). 代理环境下公网域名解析到这里, 按「非公网」拒绝会让
-外链图片全部失败.
+_FAKE_IP_NETWORKS = (
+    ip_network("198.18.0.0/15"),
+    ip_network("2001:2::/48"),
+)
+"""fake-IP DNS 的常用段 (Clash / Mihomo / sing-box). 代理环境下公网域名解析到这里, 按「非公网」拒绝会让
+外链图片全部失败. 两者分别是 IPv4 / IPv6 的基准测试段.
 
-这是有意的取舍: 该段在直连网络上不可路由, 但 fake-IP + TUN 环境里地址判定对域名基本失效 — 真正的
+这是有意的取舍: 这些段在直连网络上不可路由, 但 fake-IP + TUN 环境里地址判定对域名基本失效 — 真正的
 目标由代理解析与路由决定. 需要严格限制来源时, 判据不能只有地址."""
 
 
