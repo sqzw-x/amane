@@ -75,7 +75,7 @@ OpenAPI 列出参数, 不表达组合语义:
 
 **资源缓存**: `/resources/{hash}` 与 `/proxy` 因就地超分 URL 不变, 不可 immutable — `Cache-Control: public, no-cache` + `content_hash` ETag. proxy 上游失败 502, 进程内负缓存 15 分钟 (不纳入配置), 同 URL singleflight; 刮削下载不经由该缓存. 图片 token 的 proxy 请求只从缓存读取: 未命中返回 404, 不经过负缓存与 singleflight, 也不发起请求.
 
-**资源出站**: 第三方 URL 进入下载通道前过 `net/egress` — 协议白名单对每次请求生效, 地址判定由调用点选择 (`/proxy` 只接受公网, 刮削下载允许私网以支持 LAN 镜像), 重定向逐跳复查. 不防御 DNS rebinding: 校验与实际连接是两次解析, 窗口内改派的地址不会被发现. fake-IP 只放行 Clash / Mihomo / Surge 的默认段, 用户自定义段按非公网拒绝. 浏览器渲染通道不经该客户端, 不受这条判定约束.
+**资源出站**: 第三方 URL 进入下载通道前过 `net/egress` — 协议白名单对每次请求生效, 地址判定由调用点选择 (`/proxy` 只在缓存未命中时判定, 命中直出; 刮削下载允许私网以支持 LAN 镜像), 重定向逐跳复查. 不防御 DNS rebinding: 校验与实际连接是两次解析, 窗口内改派的地址不会被发现. fake-IP 只放行 Clash / Mihomo / sing-box 常用的 IPv4 / IPv6 基准测试段, 用户自定义段按非公网拒绝. 浏览器渲染通道不经该客户端, 不受这条判定约束.
 
 **资源响应类型**: 按文件头判定, 扩展名白名单兜底, 都不命中时附件下载 + `nosniff`. 记录里的 MIME 由 URL 后缀推出, 不能决定浏览器按什么类型解释.
 
