@@ -9,14 +9,16 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel import select
 
 from amane.db.embeddings import EmbeddingStore
+from amane.db.models import Resource
 from amane.db.repository import Repository
 from amane.media import ResourceStore
 from tests.schema_template import copy_schema
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Iterator, Sequence
+    from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator, Sequence
     from pathlib import Path
 
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -105,3 +107,19 @@ async def resource_store(tmp_path: Path) -> AsyncGenerator[ResourceStore]:
     yield ResourceStore(engine=engine, base_dir=tmp_path / "resources")
 
     await engine.dispose()
+
+
+@pytest.fixture
+def set_resource_mime(resource_store: ResourceStore) -> Callable[[str, str | None], Awaitable[None]]:
+    """改写已落盘资源的 MIME; 用于构造入库判定之外的存量记录."""
+
+    async def apply(url: str, mime: str | None) -> None:
+        async with resource_store._session() as session:
+            result = await session.exec(select(Resource).where(Resource.url == url))
+            record = result.first()
+            assert record is not None
+            record.mime_type = mime
+            session.add(record)
+            await session.commit()
+
+    return apply

@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
-import mimetypes
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import structlog
 
+from ..media.file_type import IMAGE_MIME_PREFIX, detect_media_type_bytes
 from ..media_server import (
     SEARCH_LIMIT,
     MediaPerson,
@@ -67,6 +67,24 @@ class _Counts:
     def failure(self, name: str, reason: str) -> None:
         if len(self.failures) < _FAILURES_LIMIT:
             self.failures.append(f"{name}: {reason}")
+
+
+@dataclass(frozen=True)
+class _Portrait:
+    """已落盘且类型可用的头像."""
+
+    data: bytes
+    mime: str
+
+
+@dataclass(frozen=True)
+class _UnrecognizedPortrait:
+    """已落盘但不是可识别的图片: 上传只会被服务器拒绝, 不发送."""
+
+    source: str
+
+
+_PortraitSource = _Portrait | _UnrecognizedPortrait
 
 
 @in_thread
@@ -212,8 +230,13 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
                 candidates.setdefault(person.id, person)
         return match_persons(names, candidates.values())
 
-    async def _portrait(self, actor: Actor) -> tuple[str, bytes] | None:
-        """头像取 ``image_urls`` 里第一个已落盘的资源; 不在推送任务里补下载."""
+    async def _portrait(self, actor: Actor) -> _PortraitSource | None:
+        """头像取 ``image_urls`` 里第一个已落盘且类型可用的资源; 不在推送任务里补下载.
+
+        类型按内容判定 (文件头 → PIL); 内容无法判定时用记录里的 MIME 兜底, 覆盖入库时未能判定的
+        存量数据. 都不是图片时返回 ``_UnrecognizedPortrait``, 由调用方记失败.
+        """
+        unrecognized: str | None = None
         for url in actor.image_urls:
             record = await self._resource_store.get_by_url(url)
             if record is None:
@@ -224,15 +247,19 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
             except OSError as exc:
                 logger.warning("actor push: 头像文件读取失败", url=url, path=str(path), error=str(exc))
                 continue
-            mime = record.mime_type or mimetypes.guess_type(str(path))[0] or "image/jpeg"
-            return mime, data
-        return None
+            mime = detect_media_type_bytes(data) or record.mime_type
+            if mime is None or not mime.startswith(IMAGE_MIME_PREFIX):
+                logger.warning("actor push: 头像不是可识别的图片", url=url, path=str(path), mime=mime)
+                unrecognized = unrecognized or url
+                continue
+            return _Portrait(data=data, mime=mime)
+        return _UnrecognizedPortrait(source=unrecognized) if unrecognized else None
 
     async def _sync_person(
         self,
         actor: Actor,
         person: MediaPerson,
-        portrait: tuple[str, bytes] | None,
+        portrait: _PortraitSource | None,
         client: MediaServerClientLike,
         *,
         force: bool,
@@ -257,15 +284,20 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
 
         if needs_image:
             assert portrait is not None
-            mime, data = portrait
-            try:
-                await client.upload_primary_image(person.id, data, content_type=mime)
-            except MediaServerError as exc:
+            error: str | None = None
+            if isinstance(portrait, _UnrecognizedPortrait):
+                error = f"头像格式无法识别: {portrait.source}"
+            else:
+                try:
+                    await client.upload_primary_image(person.id, portrait.data, content_type=portrait.mime)
+                except MediaServerError as exc:
+                    error = f"头像上传失败: {exc}"
+                else:
+                    counts.images += 1
+            if error is not None:
                 if not person_failed:
                     counts.failed += 1
-                counts.failure(f"{actor.name} / {person.name}", f"头像上传失败: {exc}")
-            else:
-                counts.images += 1
+                counts.failure(f"{actor.name} / {person.name}", error)
 
     @staticmethod
     def _result(counts: _Counts) -> ActorPushResult:
