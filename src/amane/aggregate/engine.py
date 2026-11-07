@@ -216,6 +216,12 @@ async def execute_graph(
 
     _assemble_aggregate_fields(graph, state)
     _fill_actor_genders(state.result, state.fetched)
+    if not state.result.number:
+        # 指定网址刮削没有入参番号: 结果的番号取第一个声明了番号的来源.
+        state.result.number = next(
+            (data.number for data in state.fetched.values() if data is not None and data.number),
+            "",
+        )
     return state
 
 

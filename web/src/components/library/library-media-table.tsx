@@ -31,7 +31,7 @@ import { FilePhaseBadges } from "@/components/media/file-phase-badges";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
-import { ScrapeOverrideDialog } from "./scrape-override-dialog";
+import { ScrapeOverrideDialog, type ScrapeOverrideInput } from "./scrape-override-dialog";
 import { MediaDeleteDialog } from "./media-delete-dialog";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { extractErrorMessage } from "@/lib/api-error";
@@ -259,7 +259,10 @@ export function LibraryMediaTable({
     invalidate();
   }
 
-  async function handleOverrideScrape(number: string, contentType: ContentType | undefined) {
+  async function handleOverrideScrape(
+    source: ScrapeOverrideInput,
+    contentType: ContentType | undefined,
+  ) {
     if (overrideTarget == null) return;
     setOverrideSaving(true);
     try {
@@ -267,7 +270,7 @@ export function LibraryMediaTable({
         body: {
           type: "scrape",
           media_id: overrideTarget.id,
-          number,
+          ...source,
           ...(contentType != null ? { content_type: contentType } : {}),
         },
         throwOnError: true,
@@ -592,7 +595,7 @@ export function LibraryMediaTable({
         onClose={() => {
           if (!overrideSaving) setOverrideTarget(null);
         }}
-        onSubmit={(number, contentType) => void handleOverrideScrape(number, contentType)}
+        onSubmit={(source, contentType) => void handleOverrideScrape(source, contentType)}
       />
       <MediaDeleteDialog
         libraryId={libraryId}
