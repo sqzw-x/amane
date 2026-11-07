@@ -1,7 +1,6 @@
 """按内容判定媒体类型.
 
-判定顺序: 文件头给出的确定魔数 → PIL 能解码的格式. 资源文件的扩展名由 URL 推出, 不代表字节类型;
-入库时用这里的结果写入 ``Resource.mime_type``.
+判定顺序: 文件头魔数 → PIL 头部解析; 两者都给不出登记过的类型时返回 None.
 """
 
 from __future__ import annotations

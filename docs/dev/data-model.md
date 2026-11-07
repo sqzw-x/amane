@@ -127,7 +127,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 ## Resource (一等存储, 非缓存)
 
-`Resource.url` UNIQUE, 作**通用 locator key**: 原始外部图用真实外部 URL, 派生裁剪用合成串 `derived:{sha256(src_url)}:crop:{args}`. 手动裁切写入派生 Resource: 海报替换 `poster_urls`, 演员头像前插 `image_urls` 并保留原图; 均**不**修改库路径海报 (ORGANIZE 再复制). 文件路径相对 `{data_dir}/resources/`, 后缀由 URL 推出 (无后缀为 `.bin`); `mime_type` 在入库时按内容判定 (见 `src/amane/media/file_type.py::detect_media_type`), 判不出时为 `NULL`.
+`Resource.url` UNIQUE, 作**通用 locator key**: 原始外部图用真实外部 URL, 派生裁剪用合成串 `derived:{sha256(src_url)}:crop:{args}`. 手动裁切写入派生 Resource: 海报替换 `poster_urls`, 演员头像前插 `image_urls` 并保留原图; 均**不**修改库路径海报 (ORGANIZE 再复制). 文件路径相对 `{data_dir}/resources/`, 扩展名取 URL 后缀 (无后缀为 `.bin`, 派生资源由 `ext` 指定); `mime_type` 在入库与就地超分后按内容判定 (见 `src/amane/media/file_type.py::detect_media_type`), 判不出为 `NULL` — 存量行的值可能来自 URL 后缀, 读取方遇 `NULL` 或 `application/octet-stream` 须按内容复核.
 
 `meta` (JSON, 默认 `{}`) 记可逆来源与处理标记: 裁剪记 `{'op':'crop','src':底层locator,'args':str}` (不记内部 URL); `args` 为像素框, 顺时针旋转非 0 时追加 `:r90` — 键必须覆盖角度, 否则换角度命中旧结果. 超分追加 `{'sr':{tool,model,scale}}`, **就地覆盖**文件 (URL 不变).
 
@@ -135,7 +135,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 ## 图片向量 (`media_embeddings`, sidecar)
 
-语义检索的派生数据, 可随时重建: 存 `{data_dir}/embeddings.db` (独立 SQLite, 不经 Alembic, 删除文件即关闭功能). `semantic_models` 按 `(name, version, dim)` 注册模型, 其 id 是向量的命名空间; `media_embeddings` 每 `(条目, 模型, 图片 locator)` 一行, 存 `kind` (`cover` / `still`)、`content_hash` 与 L2 归一化的 float32 字节串. 封面取 `poster_url` 优先、`thumb_url` 兜底; 剧照取 `Metadata.extrafanart` 中第一个有已落盘 Resource 的站点 (与 `ResourceStore.acquire_extrafanart` 的取舍一致), 按 `content_hash` 去重; 没有封面的条目不建向量. 跨库无外键: 删除条目在主库提交后再清 sidecar (清理失败留下的孤儿行由下一次完整索引删掉), 图片字段变化由 `Repository.set_media_hook` 通知, 只删 url 或 `content_hash` 变了的行; 就地超分只改 `content_hash`, 建索引时据此重算. 检索时整表装载, 缓存键为 `(条数, 最后写入时间)`; 筛选条件先由主库解析成条目 id 集合, 再据此屏蔽向量索引的行.
+语义检索的派生数据, 可随时重建: 存 `{data_dir}/embeddings.db` (独立 SQLite, 不经 Alembic, 删除文件即关闭功能). `semantic_models` 按 `(name, version, dim)` 注册模型, 其 id 是向量的命名空间; `media_embeddings` 每 `(条目, 模型, 图片 locator)` 一行, 存 `kind` (`cover` / `still`)、`content_hash` 与 L2 归一化的 float32 字节串. 封面取 `poster_url` 优先、`thumb_url` 兜底; 剧照取 `Metadata.extrafanart` 中第一个有已落盘 Resource 的站点 (与 `ResourceStore.acquire_extrafanart` 的取舍一致), 按 `content_hash` 去重; 没有封面的条目不建向量. 跨库无外键: 删除条目在主库提交后再清 sidecar (清理失败留下的孤儿行由下一次完整索引删掉), 图片字段变化由 `Repository.set_media_hook` 通知, 只删 url 或 `content_hash` 变了的行; 就地超分只改 `content_hash` 与媒体类型, 建索引时据此重算. 检索时整表装载, 缓存键为 `(条数, 最后写入时间)`; 筛选条件先由主库解析成条目 id 集合, 再据此屏蔽向量索引的行.
 
 ## 分类索引 (爬取侧投影)
 

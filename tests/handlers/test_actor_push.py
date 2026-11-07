@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import io
 from typing import TYPE_CHECKING, Self
 
 import pytest
-from PIL import Image
 
 from amane.config import HotSettings, MediaServerConfig
 from amane.db.repo_types import WriteMode
@@ -120,7 +118,7 @@ async def _image_url(store: ResourceStore, tmp_path: Path) -> str:
 
 
 async def _bin_image_url(store: ResourceStore, set_mime: _SetMime, data: bytes, *, args: str) -> str:
-    """造存量记录: 无后缀 URL 落成的 ``.bin``, 入库时未判定类型 (通用二进制)."""
+    """造存量行: 先按正常入库写入, 再改写成改造前遗留的通用二进制形态."""
 
     async def producer(dest: Path) -> bool:
         dest.write_bytes(data)
@@ -130,12 +128,6 @@ async def _bin_image_url(store: ResourceStore, set_mime: _SetMime, data: bytes, 
     assert resource is not None
     await set_mime(resource.url, "application/octet-stream")
     return resource.url
-
-
-def _bmp_bytes() -> bytes:
-    buf = io.BytesIO()
-    Image.new("RGB", (8, 8), "red").save(buf, "BMP")
-    return buf.getvalue()
 
 
 def _person(
@@ -206,27 +198,31 @@ async def test_fills_missing_and_skips_existing(
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_content_type_wins_over_recorded_type(
+async def test_recorded_type_is_not_used_for_push(
     repo: Repository, resource_store: ResourceStore, set_resource_mime: _SetMime
 ) -> None:
-    """类型按内容判定; 记录里的 MIME 只在内容无法判定时兜底."""
+    """旧行标成图片而内容不是图片时不发送: 记录里的媒体类型不参与判定."""
 
     async def producer(dest: Path) -> bool:
-        dest.write_bytes(b"\xff\xd8\xff\xe0")
+        dest.write_bytes(b"<html>blocked</html>")
         return True
 
-    resource = await resource_store.acquire_derived(_URL, "crop", "recorded-type", producer, ext=".png")
+    resource = await resource_store.acquire_derived(_URL, "crop", "recorded-type", producer, ext=".jpg")
     assert resource is not None
-    await set_resource_mime(resource.url, "image/png")
+    await set_resource_mime(resource.url, "image/jpeg")
     await _actor(repo, "Alice", image_urls=[resource.url])
     client = _FakeClient([_person("Alice")])
 
     handler = ActorPushHandler(repo, resource_store, _hot(), client_factory=lambda _: client)
     result = await handler.handle(ActorPushPayload())
 
+    assert not result.success
     assert result.result is not None
-    assert result.result.images == 1
-    assert client.images == [("p-Alice", "image/jpeg")]
+    assert client.images == []
+    assert result.result.images == 0
+    assert result.result.no_image == 0
+    assert result.result.failed == 1
+    assert result.result.failures == [f"Alice / Alice: 头像格式无法识别: {resource.url}"]
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -250,10 +246,10 @@ async def test_uploads_octet_stream_avatar_by_content(
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_magic_miss_falls_back_to_pil(
-    repo: Repository, resource_store: ResourceStore, set_resource_mime: _SetMime
+    repo: Repository, resource_store: ResourceStore, set_resource_mime: _SetMime, bmp_bytes: bytes
 ) -> None:
     """文件头未登记的格式由 PIL 判定."""
-    image_url = await _bin_image_url(resource_store, set_resource_mime, _bmp_bytes(), args="octet-bmp")
+    image_url = await _bin_image_url(resource_store, set_resource_mime, bmp_bytes, args="octet-bmp")
     await _actor(repo, "Alice", image_urls=[image_url])
     client = _FakeClient([_person("Alice")])
 

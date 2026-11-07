@@ -1,10 +1,8 @@
 """按内容判定媒体类型: 文件头 → PIL."""
 
-import io
 from pathlib import Path
 
 import pytest
-from PIL import Image
 
 from amane.media.file_type import detect_media_type, detect_media_type_bytes, sniff_file, sniff_head
 
@@ -42,19 +40,13 @@ def test_sniff_missing_file():
     assert sniff_file(Path("/nonexistent/resource.bin")) is None
 
 
-def _bmp_bytes() -> bytes:
-    buf = io.BytesIO()
-    Image.new("RGB", (8, 8), "red").save(buf, "BMP")
-    return buf.getvalue()
-
-
-def test_detect_falls_back_to_pil(tmp_path: Path):
+def test_detect_falls_back_to_pil(tmp_path: Path, bmp_bytes: bytes):
     """文件头未登记的格式由 PIL 判定, 文件与字节两个入口一致."""
     path = tmp_path / "resource.bin"
-    path.write_bytes(_bmp_bytes())
+    path.write_bytes(bmp_bytes)
 
     assert detect_media_type(path) == "image/bmp"
-    assert detect_media_type_bytes(_bmp_bytes()) == "image/bmp"
+    assert detect_media_type_bytes(bmp_bytes) == "image/bmp"
 
 
 def test_detect_unknown_returns_none(tmp_path: Path):

@@ -1,5 +1,6 @@
 """全局测试 fixtures"""
 
+import io
 import os
 from contextlib import contextmanager
 from ipaddress import ip_address
@@ -7,9 +8,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 import pytest_asyncio
+from PIL import Image
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from amane.db.embeddings import EmbeddingStore
 from amane.db.models import Resource
@@ -96,30 +99,42 @@ async def repo(tmp_path: Path) -> AsyncGenerator[Repository]:
 
 
 @pytest_asyncio.fixture
-async def resource_store(tmp_path: Path) -> AsyncGenerator[ResourceStore]:
-    """独立的 ResourceStore (文件 DB + tmp 目录).
-
-    handler 现强制注入 ResourceStore; 测试不触发真实下载时仅作占位.
-    """
+async def resource_engine(tmp_path: Path) -> AsyncGenerator[AsyncEngine]:
     db_path = tmp_path / "resources.db"
     copy_schema(db_path)
     engine = _file_engine(db_path)
-    yield ResourceStore(engine=engine, base_dir=tmp_path / "resources")
+    yield engine
 
     await engine.dispose()
 
 
+@pytest_asyncio.fixture
+async def resource_store(resource_engine: AsyncEngine, tmp_path: Path) -> ResourceStore:
+    """独立的 ResourceStore (文件 DB + tmp 目录).
+
+    handler 现强制注入 ResourceStore; 测试不触发真实下载时仅作占位.
+    """
+    return ResourceStore(engine=resource_engine, base_dir=tmp_path / "resources")
+
+
 @pytest.fixture
-def set_resource_mime(resource_store: ResourceStore) -> Callable[[str, str | None], Awaitable[None]]:
-    """改写已落盘资源的 MIME; 用于构造入库判定之外的存量记录."""
+def set_resource_mime(resource_engine: AsyncEngine) -> Callable[[str, str | None], Awaitable[None]]:
+    """改写已落盘资源的媒体类型; 用于构造与盘上内容无关的存量行."""
 
     async def apply(url: str, mime: str | None) -> None:
-        async with resource_store._session() as session:
+        async with AsyncSession(resource_engine, expire_on_commit=False) as session:
             result = await session.exec(select(Resource).where(Resource.url == url))
             record = result.first()
             assert record is not None
             record.mime_type = mime
-            session.add(record)
             await session.commit()
 
     return apply
+
+
+@pytest.fixture
+def bmp_bytes() -> bytes:
+    """最小合法 BMP: 文件头未登记, 须由 PIL 判定."""
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), "red").save(buf, "BMP")
+    return buf.getvalue()

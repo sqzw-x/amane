@@ -81,15 +81,17 @@ class _Portrait:
 class _UnrecognizedPortrait:
     """已落盘但不是可识别的图片: 上传只会被服务器拒绝, 不发送."""
 
-    source: str
+    url: str
 
 
 _PortraitSource = _Portrait | _UnrecognizedPortrait
 
 
 @in_thread
-def _read_bytes(path: Path) -> bytes:
-    return path.read_bytes()
+def _read_portrait(path: Path) -> tuple[bytes, str | None]:
+    """读出头像字节并判定媒体类型; PIL 解析同样放在线程里, 不占用事件循环."""
+    data = path.read_bytes()
+    return data, detect_media_type_bytes(data)
 
 
 class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
@@ -231,10 +233,10 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
         return match_persons(names, candidates.values())
 
     async def _portrait(self, actor: Actor) -> _PortraitSource | None:
-        """头像取 ``image_urls`` 里第一个已落盘且类型可用的资源; 不在推送任务里补下载.
+        """头像取 ``image_urls`` 里第一个已落盘且内容判为图片的资源; 不在推送任务里补下载.
 
-        类型按内容判定 (文件头 → PIL); 内容无法判定时用记录里的 MIME 兜底, 覆盖入库时未能判定的
-        存量数据. 都不是图片时返回 ``_UnrecognizedPortrait``, 由调用方记失败.
+        记录里的媒体类型不参与: 旧数据由 URL 后缀推出, 与字节无关. 文件读取失败与未落盘同样
+        跳过 (最终计 ``no_image``); 内容判不出时不发送, 返回 ``_UnrecognizedPortrait`` 记失败.
         """
         unrecognized: str | None = None
         for url in actor.image_urls:
@@ -243,17 +245,16 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
                 continue
             path = self._resource_store.full_path(record)
             try:
-                data = await _read_bytes(path)
+                data, mime = await _read_portrait(path)
             except OSError as exc:
                 logger.warning("actor push: 头像文件读取失败", url=url, path=str(path), error=str(exc))
                 continue
-            mime = detect_media_type_bytes(data) or record.mime_type
             if mime is None or not mime.startswith(IMAGE_MIME_PREFIX):
                 logger.warning("actor push: 头像不是可识别的图片", url=url, path=str(path), mime=mime)
                 unrecognized = unrecognized or url
                 continue
             return _Portrait(data=data, mime=mime)
-        return _UnrecognizedPortrait(source=unrecognized) if unrecognized else None
+        return _UnrecognizedPortrait(url=unrecognized) if unrecognized else None
 
     async def _sync_person(
         self,
@@ -286,7 +287,7 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
             assert portrait is not None
             error: str | None = None
             if isinstance(portrait, _UnrecognizedPortrait):
-                error = f"头像格式无法识别: {portrait.source}"
+                error = f"头像格式无法识别: {portrait.url}"
             else:
                 try:
                     await client.upload_primary_image(person.id, portrait.data, content_type=portrait.mime)

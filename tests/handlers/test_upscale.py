@@ -29,6 +29,12 @@ def _jpeg_bytes(size: tuple[int, int], color: str) -> bytes:
     return buf.getvalue()
 
 
+def _png_bytes(size: tuple[int, int]) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", size, "blue").save(buf, "PNG")
+    return buf.getvalue()
+
+
 async def _seed_image(store: ResourceStore, url: str, size: tuple[int, int]) -> None:
     # 字节一律经 _jpeg_bytes 得到: PIL 写文件与写缓冲区的结果不逐字节相同.
     data = _jpeg_bytes(size, "blue")
@@ -41,7 +47,7 @@ async def _seed_image(store: ResourceStore, url: str, size: tuple[int, int]) -> 
 
 
 async def _seed_binary(store: ResourceStore, set_mime: _SetMime, url: str, data: bytes) -> None:
-    """造存量记录: 无后缀 URL 落成的 ``.bin``, 入库时未判定类型 (通用二进制)."""
+    """造存量行: 先按正常入库写入, 再改写成改造前遗留的通用二进制形态."""
 
     async def producer(dest: Path) -> bool:
         dest.write_bytes(data)
@@ -179,6 +185,28 @@ async def test_upscales_octet_stream_image(resource_store: ResourceStore, set_re
 
 
 @pytest.mark.asyncio
+async def test_upscale_refreshes_mime_type(resource_store: ResourceStore, _fake_sr):
+    """超分输出格式由配置决定: 就地改写后媒体类型必须与盘上字节一致."""
+    png = _png_bytes(_LOW_QUALITY_SIZE)
+
+    async def producer(dest: Path) -> bool:
+        dest.write_bytes(png)
+        return True
+
+    resource = await resource_store.acquire_derived("https://s/noext-png", "crop", "0.7", producer, ext=".png")
+    assert resource is not None
+    assert resource.mime_type == "image/png"
+
+    result = await UpscaleHandler(resource_store, HotSettings()).handle(UpscalePayload())
+    assert result.result is not None
+    assert result.result.upscaled == 1
+
+    record = await resource_store.get_by_url(resource.url)
+    assert record is not None
+    assert record.mime_type == "image/jpeg"
+
+
+@pytest.mark.asyncio
 async def test_skips_octet_stream_non_image(resource_store: ResourceStore, set_resource_mime: _SetMime):
     """内容不是图片的记录照常跳过."""
     await _seed_binary(
@@ -222,7 +250,7 @@ async def test_limit_caps_batch(resource_store: ResourceStore, _fake_sr):
     ids=["record-wins", "record-video", "placeholder-image", "placeholder-junk", "missing-image"],
 )
 def test_image_decision_order(tmp_path: Path, mime: str | None, data: bytes, expected: bool):
-    """记录优先; 类型未定时才按内容兜底, 后缀只兜最外层."""
+    """记录优先; 类型未定时按内容兜底."""
     path = tmp_path / "resource.bin"
     path.write_bytes(data)
 

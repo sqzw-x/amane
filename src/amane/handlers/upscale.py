@@ -20,17 +20,13 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
-
 
 def _is_image(mime: str | None, path: Path) -> bool:
+    # 记录给出确定类型时直接判定; 未定 (含通用二进制占位) 时按内容复核.
     if mime and mime != OCTET_STREAM_MIME:
         return mime.startswith(IMAGE_MIME_PREFIX)
-    # 记录未给出类型时按内容兜底 (文件头 → PIL).
     detected = detect_media_type(path)
-    if detected is not None:
-        return detected.startswith(IMAGE_MIME_PREFIX)
-    return mime is None and path.suffix.lower() in _IMAGE_EXTS
+    return detected is not None and detected.startswith(IMAGE_MIME_PREFIX)
 
 
 class UpscaleHandler(TaskHandler[UpscalePayload, UpscaleResult]):

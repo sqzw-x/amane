@@ -371,9 +371,10 @@ class ResourceStore:
             finally:
                 tmp.unlink(missing_ok=True)
 
-            # 原地替换后重新量取, 记入的就是盘上那份.
+            # 原地替换后重新量取, 记入的就是盘上那份. 输出格式由超分配置决定, 媒体类型须一并重算.
             size = src.stat().st_size
             content_hash = self._hash_file(src)
+            mime = detect_media_type(src)
             new_meta = dict(record.meta) if record.meta else {}
             new_meta["sr"] = sr_args
 
@@ -384,6 +385,7 @@ class ResourceStore:
                     return UpscaleOutcome.SKIPPED
                 row.size = size
                 row.content_hash = content_hash
+                row.mime_type = mime
                 row.meta = new_meta
                 session.add(row)
                 await session.commit()
