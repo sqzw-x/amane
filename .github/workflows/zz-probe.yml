@@ -1,0 +1,26 @@
+name: zz-probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List gateway models
+        env:
+          BASE: ${{ secrets.LLM_BASE_URL }}
+          KEY: ${{ secrets.CF_GATEWAY_TOKEN }}
+        run: |
+          echo "host: $(echo "$BASE" | sed -E 's#https?://([^/]+).*#\1#')"
+          echo "path depth: $(echo "$BASE" | awk -F/ '{print NF-3}')"
+          for p in models v1/models; do
+            code=$(curl -sS -o /tmp/m.json -w '%{http_code}' "${BASE%/}/$p" -H "Authorization: Bearer $KEY" || echo fail)
+            echo "== GET $p -> $code  bytes=$(wc -c </tmp/m.json)"
+            python3 -c "
+import json,sys
+try: d=json.load(open('/tmp/m.json'))
+except Exception as e: print('not json:', open('/tmp/m.json').read()[:200]); sys.exit()
+items=d.get('data') if isinstance(d,dict) else d
+ids=[i.get('id') for i in items] if isinstance(items,list) else d
+print('count', len(ids) if isinstance(ids,list) else '?')
+print([i for i in ids if isinstance(i,str) and any(k in i.lower() for k in ('vl','vision','gpt-4','gpt-5','gemini','claude','qwen','glm','internvl','pixtral','llama'))][:60] if isinstance(ids,list) else str(ids)[:500])
+"
+          done
