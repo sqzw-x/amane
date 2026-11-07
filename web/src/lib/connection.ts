@@ -159,11 +159,13 @@ function numField(data: Record<string, unknown>, key: string, fallback: number):
 /**
  * 失效任务列表 + 全部展开的子节点 query.
  * hey-api 的 query key 是 `[{ _id, ... }]`, 前缀匹配必须用同形对象, 不能写 `["getTaskChildren"]`.
+ * 日志详情一并失效: 起点与终点各补取一次落盘日志, 覆盖 WS 缓冲窗口之外的记录.
  */
 export function invalidateTaskQueries(queryClient: QueryClient): void {
   queryClient.invalidateQueries({ queryKey: listTasksQueryKey() });
   queryClient.invalidateQueries({ queryKey: [{ _id: "getTaskChildren" }] });
   queryClient.invalidateQueries({ queryKey: [{ _id: "getTask" }] });
+  queryClient.invalidateQueries({ queryKey: [{ _id: "getTaskLog" }] });
 }
 
 // 按 event.type 更新 store 并失效对应 query

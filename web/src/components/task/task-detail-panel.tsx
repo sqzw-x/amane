@@ -167,14 +167,12 @@ export function TaskDetailPanel({ task, linkKey, actions }: TaskDetailPanelProps
         </Text>
       ) : null}
 
-      {(task.status === "queued" || task.status === "running") && (
-        <div>
-          <Text size="sm" fw={600} mb={4}>
-            {t("detail.liveLogs")}
-          </Text>
-          <TaskLogView taskId={task.id} />
-        </div>
-      )}
+      <div>
+        <Text size="sm" fw={600} mb={4}>
+          {task.status === "running" ? t("detail.liveLogs") : t("detail.logs")}
+        </Text>
+        <TaskLogView taskId={task.id} />
+      </div>
 
       <Group gap="xs">
         {(task.status === "queued" || task.status === "running") && (

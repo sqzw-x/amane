@@ -31,34 +31,39 @@ function normalizeLevel(raw: unknown): LogLevel {
   return isOneOf(LOG_LEVELS, s) ? s : "INFO";
 }
 
+/** 实时事件与历史记录共用同一套归一化; 历史条目传负数 id 与实时条目区分. */
+export function normalizeLogEntry(raw: Record<string, unknown>, id: number): LogEntry {
+  // Parse timestamp: prefer the structlog ISO timestamp in data, fallback to now
+  let ts: number;
+  if (typeof raw.timestamp === "string") {
+    ts = new Date(raw.timestamp).getTime();
+    if (Number.isNaN(ts)) ts = Date.now();
+  } else if (typeof raw.timestamp === "number") {
+    ts = raw.timestamp;
+  } else {
+    ts = Date.now();
+  }
+
+  const entry: LogEntry = {
+    id,
+    timestamp: ts,
+    level: normalizeLevel(raw.level),
+    source: typeof raw.source === "string" ? raw.source : "server",
+    message: typeof raw.message === "string" ? raw.message : "",
+  };
+
+  // Spread all extra fields flat onto the entry
+  for (const [key, value] of Object.entries(raw)) {
+    if (LOG_ENTRY_BASE_KEYS.has(key)) continue;
+    entry[key] = value;
+  }
+  return entry;
+}
+
 export const useLogStore = create<LogState>((set) => ({
   entries: [],
   addEntry: (raw) => {
-    // Parse timestamp: prefer the structlog ISO timestamp in data, fallback to now
-    let ts: number;
-    if (typeof raw.timestamp === "string") {
-      ts = new Date(raw.timestamp).getTime();
-      if (Number.isNaN(ts)) ts = Date.now();
-    } else if (typeof raw.timestamp === "number") {
-      ts = raw.timestamp;
-    } else {
-      ts = Date.now();
-    }
-
-    const entry: LogEntry = {
-      id: nextId++,
-      timestamp: ts,
-      level: normalizeLevel(raw.level),
-      source: typeof raw.source === "string" ? raw.source : "server",
-      message: typeof raw.message === "string" ? raw.message : "",
-    };
-
-    // Spread all extra fields flat onto the entry
-    for (const [key, value] of Object.entries(raw)) {
-      if (LOG_ENTRY_BASE_KEYS.has(key)) continue;
-      entry[key] = value;
-    }
-
+    const entry = normalizeLogEntry(raw, nextId++);
     set((s) => ({ entries: [...s.entries, entry].slice(-5000) }));
   },
   purgeTask: (taskId) =>

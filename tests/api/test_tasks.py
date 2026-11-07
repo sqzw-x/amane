@@ -1,6 +1,7 @@
 """/tasks 端点测试"""
 
 import asyncio
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, get_args
 
@@ -11,6 +12,7 @@ from amane.api.models.tasks import TaskResultPayload
 from amane.db.models import TaskType
 from amane.enums import DownloadableResource
 from amane.handlers import models as handler_models
+from amane.observability.recorder import task_dir_for
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -561,3 +563,44 @@ class TestTaskRecord:
 
         assert submitted.status_code == 202
         assert submitted.json()["payload"]["path"] == str(real / "sub")
+
+
+class TestTaskLog:
+    """GET /tasks/{id}/log - 展开详情时按需读取 task.log 尾部"""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_log_tail_and_missing(self, app: FastAPI, client: AsyncClient, repo: Repository, stop_worker: None):
+        assert (await client.get("tasks/9999/log")).status_code == 404
+
+        task = await repo.create_task(task_type=TaskType.CLEANUP, payload={})
+        assert task.id is not None
+        missing = await client.get(f"tasks/{task.id}/log")
+        assert missing.status_code == 200
+        assert missing.json() == {"entries": [], "truncated": False}
+
+        root = task_dir_for(app.state.runtime.config.cold.log_dir, task.id)
+        root.mkdir(parents=True)
+        lines = [
+            {"event": "first", "task_id": task.id, "logger": "amane.scheduler.worker", "level": "info"},
+            "not json",
+            {"event": "second", "logger": "amane.handlers.file", "level": "warning", "files_removed": 2},
+            {"event": "third", "logger": "amane.scheduler.worker", "level": "info"},
+        ]
+        (root / "task.log").write_text("\n".join(line if isinstance(line, str) else json.dumps(line) for line in lines))
+
+        page = await client.get(f"tasks/{task.id}/log", params={"limit": 2})
+        assert page.status_code == 200
+        body = page.json()
+        assert body["truncated"] is True
+        assert [entry["message"] for entry in body["entries"]] == ["second", "third"]
+        assert body["entries"][0]["level"] == "WARNING"
+        assert body["entries"][0]["source"] == "file"
+        assert body["entries"][0]["context"] == {"files_removed": 2}
+
+        full = (await client.get(f"tasks/{task.id}/log")).json()
+        assert full["truncated"] is False
+        assert [entry["message"] for entry in full["entries"]] == ["first", "second", "third"]
+        assert full["entries"][0]["context"] == {"task_id": task.id}
+
+        assert (await client.get(f"tasks/{task.id}/log", params={"limit": 0})).status_code == 422
+        assert (await client.get(f"tasks/{task.id}/log", params={"limit": 5001})).status_code == 422

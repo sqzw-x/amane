@@ -9720,6 +9720,68 @@ export const TaskListResponseSchema = {
     title: 'TaskListResponse'
 } as const;
 
+export const TaskLogEntrySchema = {
+    properties: {
+        timestamp: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Timestamp'
+        },
+        level: {
+            type: 'string',
+            title: 'Level'
+        },
+        source: {
+            type: 'string',
+            title: 'Source'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        },
+        context: {
+            additionalProperties: {
+                $ref: '#/components/schemas/JsonValue'
+            },
+            type: 'object',
+            title: 'Context'
+        }
+    },
+    type: 'object',
+    required: [
+        'level',
+        'source',
+        'message'
+    ],
+    title: 'TaskLogEntry',
+    description: '与 WebSocket LOG 事件同形; ``context`` 是原日志里未映射到固定字段的键.'
+} as const;
+
+export const TaskLogPageSchema = {
+    properties: {
+        entries: {
+            items: {
+                $ref: '#/components/schemas/TaskLogEntry'
+            },
+            type: 'array',
+            title: 'Entries'
+        },
+        truncated: {
+            type: 'boolean',
+            title: 'Truncated',
+            default: false
+        }
+    },
+    type: 'object',
+    title: 'TaskLogPage'
+} as const;
+
 export const TaskResponseSchema = {
     properties: {
         id: {
