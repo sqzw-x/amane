@@ -1,4 +1,8 @@
-"""名字行 ``名前（かな / ローマ字）``; 注记括号不并入读音."""
+"""演员名字行: 名字后面跟一到多个括号组, 最右边一组是读音, 其余是注记.
+
+读音写作「假名 / 罗马字」并作为别名; 注记多为名字来源站点 (如 ``相川美羽(tenshigao)``),
+不进别名. 站点名也会被填进读音的位置, 用同页标签行 (演员所属站点与系列) 比对后丢弃.
+"""
 
 from __future__ import annotations
 
@@ -19,8 +23,11 @@ from ...parsing import extract_text, is_same_name, normalize_name
 from ..base import ActorCrawler
 from ..models import ActorMetadata
 
-# 名字段可能带注记括号 (如 ``相川美羽(tenshigao)``); kana 排除括号字符, 以免注记并入读音.
-_NAME_RE = re.compile(r"^(?P<name>.+?)\s*[（(]\s*(?P<kana>[^/（）()]+?)\s*/\s*(?P<roma>[^）)]+?)\s*[）)]\s*$")
+# 名字后面可能有多个括号组; 从右往左剥, 只有最右边一组是读音, 其余都是注记.
+_TRAILING_GROUP_RE = re.compile(r"^(?P<head>.*?)\s*[（(]\s*(?P<inner>[^（）()]*?)\s*[）)]\s*$")
+# 读音只由假名或拉丁字母构成; 站点名、系列名常带汉字或数字.
+_READING_RE = re.compile(r"^(?:[ぁ-んァ-ヶー・\s]+|[A-Za-z0-9][A-Za-z0-9 .'\-]*)$")
+_READING_SEPARATOR_RE = re.compile(r"[/／]")
 _FIGURE_RE = re.compile(
     r"T\s*(?P<t>\d+)\s*/\s*B\s*(?P<b>\d+)\s*"
     r"(?:\(\s*(?:<[^>]+>)?(?P<cup>[A-Z]+)(?:カップ)?(?:</[^>]+>)?\s*\))?\s*"
@@ -98,18 +105,21 @@ def parse_minnano_detail(html_text: str, *, page_url: str, base_url: str) -> Act
         return None
     profile = profiles[0]
 
+    tags = _tag_names(profile)
     raw_name = extract_text(profile, ".//h2/text()") or extract_text(profile, ".//h2//text()")
     if not raw_name:
         return None
-    name, aliases = _parse_name_line(raw_name)
+    name, aliases = _parse_name_line(raw_name, tags)
+    if not name:
+        return None
 
-    # 別名行可重复; 每行一个旧名 + 读音, 与名字行同构解析.
+    # 别名行可重复; 每行一个别名 + 读音, 与名字行同构解析.
     for row in profile.xpath('.//tr[td/span[normalize-space()="別名"]]'):
         raw_alias = extract_text(row, "string(./td/p)") or ""
-        alias_name, alias_readings = _parse_name_line(raw_alias.strip())
-        if alias_name:
+        alias_name, alias_readings = _parse_name_line(raw_alias.strip(), tags)
+        if alias_name and alias_name not in tags:
             aliases.append(alias_name)
-            aliases.extend(alias_readings)
+        aliases.extend(alias_readings)
     aliases = _dedupe_preserve([a for a in aliases if a and a != name])
 
     fields = _profile_fields(profile)
@@ -146,14 +156,41 @@ def parse_minnano_detail(html_text: str, *, page_url: str, base_url: str) -> Act
     )
 
 
-def _parse_name_line(raw: str) -> tuple[str, list[str]]:
+def _parse_name_line(raw: str, tags: frozenset[str]) -> tuple[str, list[str]]:
+    """剥掉末尾括号: 名字取括号前的主体, 只有最右边一组的假名或拉丁片段算读音."""
     text = normalize_name(raw)
-    m = _NAME_RE.match(text)
-    if not m:
+    groups: list[str] = []
+    while True:
+        m = _TRAILING_GROUP_RE.match(text)
+        if m is None:
+            break
+        head = m.group("head").strip()
+        if not head:
+            # 整串只有一个括号组: 没有名字可言.
+            return "", []
+        groups.append(m.group("inner"))
+        text = head
+    if not groups:
         return text, []
-    name = _strip_annotations(m.group("name").strip())
-    aliases = [a.strip() for a in (m.group("kana"), m.group("roma")) if a and a.strip()]
-    return name, aliases
+    return text, _alias_readings(groups[0], tags)
+
+
+def _alias_readings(inner: str, tags: frozenset[str]) -> list[str]:
+    """括号内容按斜杠切分; 与同页标签同名的片段是站点或系列名, 不是名字."""
+    out: list[str] = []
+    for token in _READING_SEPARATOR_RE.split(inner):
+        token = token.strip()
+        if token and token not in out and token not in tags and _READING_RE.match(token):
+            out.append(token)
+    return out
+
+
+def _tag_names(profile: Selector) -> frozenset[str]:
+    """同页标签行: 演员所属的站点与系列, 也是混进读音里的来源名的比对词表."""
+    values = profile.xpath(
+        './/tr[td/span[normalize-space()="タグ"]]//div[contains(@class,"tagarea")]//a/text()'
+    ).getall()
+    return frozenset(v for v in (normalize_name(t) for t in values) if v)
 
 
 def _strip_annotations(name: str) -> str:
