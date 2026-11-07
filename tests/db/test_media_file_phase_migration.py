@@ -4,10 +4,7 @@ from pathlib import Path
 
 from alembic import command
 from sqlalchemy import Engine, create_engine, inspect, text
-from sqlmodel import Session, col, select
 
-from amane.db.models import Library, MediaFile
-from amane.parsing import Mosaic
 from tests.helpers import alembic_config
 
 _LIBRARY_INSERT = (
@@ -20,13 +17,6 @@ _LIBRARY_INSERT = (
 _MEDIA_INSERT = (
     "INSERT INTO media_files (path, status, library_id, created_at, updated_at, content_type, mosaic, metadata_id) "
     "VALUES (:path, 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', :content_type, :mosaic, :metadata_id)"
-)
-
-
-_PHASE_MEDIA_INSERT = (
-    "INSERT INTO media_files "
-    "(path, status, library_id, created_at, updated_at, mosaic, has_subtitle_in_name, has_external_subtitle) "
-    "VALUES (:path, 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', :mosaic, 0, 0)"
 )
 
 
@@ -51,12 +41,13 @@ def _columns(engine: Engine, table: str) -> set[str]:
         return {column["name"] for column in inspect(conn).get_columns(table)}
 
 
-def _file_phase(engine: Engine) -> dict[str, tuple[str | None, bool, str | None]]:
+def _file_phase(engine: Engine) -> dict[str, tuple[str, str | None, bool, str | None]]:
+    """读回相位列; 只适用于 ``has_subtitle`` 拆分、``content_type`` 移到条目之前的 revision."""
     with engine.connect() as conn:
         return {
-            row.path: (row.mosaic, bool(row.has_subtitle_in_name), row.definition)
+            row.path: (row.content_type, row.mosaic, bool(row.has_subtitle), row.definition)
             for row in conn.execute(
-                text("SELECT path, mosaic, has_subtitle_in_name, definition FROM media_files")
+                text("SELECT path, content_type, mosaic, has_subtitle, definition FROM media_files")
             ).all()
         }
 
@@ -71,17 +62,12 @@ def test_ltx_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
 
-    command.upgrade(cfg, "9054ebacea29")
+    previous, target = "9054ebacea29", "6940e4cf8a80"
+    command.upgrade(cfg, previous)
 
     engine = create_engine(f"sqlite:///{db_path}")
-    with Session(engine) as session:
-        library = Library(name="t", path="/m")
-        session.add(library)
-        session.commit()
-        assert library.id is not None
-        library_id = library.id
-    # 当前 MediaFile 模型含后续 revision 新增的列, 旧表结构上只能按当时的列集合插入.
     with engine.begin() as conn:
+        lib_id = _seed_library(conn)
         for path, mosaic in [
             ("/media/SNIS-576-LTX/489155.com@SNIS-576-LTX.mp4", None),
             ("/media/MIDV-123-LTX.mp4", None),
@@ -89,17 +75,18 @@ def test_ltx_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
             # 目录名带后缀不算文件名标记
             ("/media/SNIS-576-LTX/video.mp4", None),
             # 谓词之外的行保持原值
-            ("/media/MIDV-123.mp4", Mosaic.LEAKED),
+            ("/media/MIDV-123.mp4", "LEAKED"),
         ]:
             conn.execute(
-                text(_PHASE_MEDIA_INSERT),
-                {"path": path, "lib": library_id, "mosaic": mosaic.name if mosaic is not None else None},
+                text(
+                    "INSERT INTO media_files (path, status, library_id, created_at, updated_at, mosaic) "
+                    "VALUES (:path, 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', :mosaic)"
+                ),
+                {"path": path, "lib": lib_id, "mosaic": mosaic},
             )
-    engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, target)
 
-    engine = create_engine(f"sqlite:///{db_path}")
     expected = {
         "/media/SNIS-576-LTX/489155.com@SNIS-576-LTX.mp4": "CRACKED",
         "/media/MIDV-123-LTX.mp4": "CRACKED",
@@ -110,8 +97,8 @@ def test_ltx_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
     assert _mosaics(engine) == expected
 
     # downgrade 留空 (数据迁移不可逆), 再次升级不改变已写入的值
-    command.downgrade(cfg, "9054ebacea29")
-    command.upgrade(cfg, "head")
+    command.downgrade(cfg, previous)
+    command.upgrade(cfg, target)
     assert _mosaics(engine) == expected
     engine.dispose()
 
@@ -120,7 +107,8 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
 
-    command.upgrade(cfg, "c3d8f95d2198")
+    previous, target = "c3d8f95d2198", "1ed95d44b077"
+    command.upgrade(cfg, previous)
 
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
@@ -134,21 +122,13 @@ def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
             {"lib": lib_id},
         )
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, target)
 
-    assert {"mosaic", "has_subtitle_in_name", "definition"} <= _columns(engine, "media_files")
-    assert "content_type" not in _columns(engine, "media_files")
+    assert {"content_type", "mosaic", "has_subtitle", "definition"} <= _columns(engine, "media_files")
     assert _file_phase(engine) == {
-        "/media/MIDV-123-UC-4K.mp4": ("CRACKED", True, "4K"),
-        "/media/HEYZO-1234.mp4": (None, False, None),
+        "/media/MIDV-123-UC-4K.mp4": ("CENSORED", "CRACKED", True, "4K"),
+        "/media/HEYZO-1234.mp4": ("UNCENSORED", None, False, None),
     }
-
-    with Session(engine) as session:
-        loaded = {
-            row.path: row for row in session.exec(select(MediaFile).where(col(MediaFile.path).like("/media/%"))).all()
-        }
-        assert loaded["/media/MIDV-123-UC-4K.mp4"].mosaic is Mosaic.CRACKED
-        assert loaded["/media/HEYZO-1234.mp4"].mosaic is None
 
     engine.dispose()
 
@@ -158,7 +138,8 @@ def test_media_file_mosaic_type_fill_cleared(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
 
-    command.upgrade(cfg, "668e214b1a76")
+    previous, target = "668e214b1a76", "0980003004e2"
+    command.upgrade(cfg, previous)
 
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
@@ -181,14 +162,14 @@ def test_media_file_mosaic_type_fill_cleared(tmp_path: Path) -> None:
                 },
             )
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, target)
 
     assert _file_phase(engine) == {
-        "/media/HEYZO-1234.mp4": (None, False, None),
-        "/media/HEYZO-1234-流出.mp4": ("LEAKED", False, None),
-        "/media/MIDV-123.mp4": (None, False, None),
-        "/media/MIDV-123-无码.mp4": ("UNCENSORED", False, None),
-        "/media/MD0165-1.mp4": (None, False, None),
+        "/media/HEYZO-1234.mp4": ("UNCENSORED", None, False, None),
+        "/media/HEYZO-1234-流出.mp4": ("UNCENSORED", "LEAKED", False, None),
+        "/media/MIDV-123.mp4": ("CENSORED", None, False, None),
+        "/media/MIDV-123-无码.mp4": ("CENSORED", "UNCENSORED", False, None),
+        "/media/MD0165-1.mp4": ("CHINESE", None, False, None),
     }
 
     engine.dispose()
@@ -214,7 +195,8 @@ def test_metadata_content_type_backfilled_from_files_then_number(tmp_path: Path)
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
 
-    command.upgrade(cfg, "1fdf4d41aac1")
+    previous, target = "1fdf4d41aac1", "9054ebacea29"
+    command.upgrade(cfg, previous)
 
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
@@ -257,7 +239,7 @@ def test_metadata_content_type_backfilled_from_files_then_number(tmp_path: Path)
             },
         )
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, target)
 
     assert _entry_types(engine) == {
         "東京熱 k1393": "UNCENSORED",
@@ -268,7 +250,7 @@ def test_metadata_content_type_backfilled_from_files_then_number(tmp_path: Path)
     assert "content_type" not in _columns(engine, "media_files")
 
     # downgrade 把条目类型放回文件列: 绑定文件取所属条目
-    command.downgrade(cfg, "1fdf4d41aac1")
+    command.downgrade(cfg, previous)
     assert _file_types(engine) == {
         "/media/HEYZO-1234.mp4": "UNCENSORED",
         "/media/欧美/HEYZO-1234.mp4": "UNCENSORED",
@@ -276,7 +258,7 @@ def test_metadata_content_type_backfilled_from_files_then_number(tmp_path: Path)
     }
 
     # 回填可重跑
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, target)
     assert _entry_types(engine) == {
         "東京熱 k1393": "UNCENSORED",
         "K1363": "UNCENSORED",

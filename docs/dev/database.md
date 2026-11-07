@@ -64,7 +64,7 @@ SQLite 不支持删列、改类型等 ALTER TABLE 操作, Alembic 通过 batch m
 | JSON 列、`Task.payload`、`translations.db` | value |
 | 枚举型表列 (`Field(Enum)`) | **成员名** |
 
-SQLite 没有原生 enum, 列仍是 VARCHAR. 不能使用 `Column(String)` 或 `values_callable` 按 value 落库 — ORM 会读出 `str`. 裸 SQL 绑定成员名; ORM 比较用 `is`.
+SQLite 没有原生 enum, 列仍是 VARCHAR. 不能使用 `Column(String)` 或 `values_callable` 按 value 落库 — ORM 会读出 `str`. 落库的是大写成员名 (如 `TRASH`), 不是小写值 (`trash`); 裸 SQL 的条件与写入也按成员名, ORM 比较用 `is`.
 
 ## Autogenerate 盲区
 
@@ -86,7 +86,7 @@ SQLite 没有原生 enum, 列仍是 VARCHAR. 不能使用 `Column(String)` 或 `
 3. 匹配不到的行落入一个**兜底行** (如不可删的 `Unmanaged` library), 保证迁移不中止.
 4. 再 `batch_alter_table` 把回填好的列 `alter_column(nullable=False)` + `create_foreign_key` + `create_index`.
 
-迁移测试用临时文件 DB: `command.upgrade(cfg, "<prev>")` → 插旧 schema 数据 → `upgrade("head")` → 断言回填结果.
+迁移测试用临时文件 DB: `command.upgrade(cfg, "<prev>")` → 插旧 schema 数据 → `upgrade("<被测 revision>")` → 断言回填结果. 升到 head 会把后续无关迁移牵进断言. ORM 模型与枚举对应 head schema, 后续迁移改列或改成员会让旧用例失效: 建行与断言都用裸 SQL 与字面量, 不得经 ORM 或引用当前枚举. 只有测启动期升级路径 (`sqlite_migrate`) 的用例才升到 head.
 
 ## 测试策略
 

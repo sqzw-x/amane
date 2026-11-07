@@ -12,6 +12,9 @@ from sqlalchemy import create_engine, inspect, text
 
 from tests.helpers import alembic_config
 
+_PREVIOUS = "e4f7dd7d4711"
+_TARGET = "fd5c8ad2c5db"
+
 
 @pytest.fixture
 def alembic_cfg(tmp_path: Path) -> Config:
@@ -35,7 +38,7 @@ def _index_sql(conn: Any, name: str) -> str:
 
 
 def test_actor_locked_fields_backfill(alembic_cfg: Config) -> None:
-    command.upgrade(alembic_cfg, "e4f7dd7d4711")
+    command.upgrade(alembic_cfg, _PREVIOUS)
 
     url = alembic_cfg.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -43,7 +46,7 @@ def test_actor_locked_fields_backfill(alembic_cfg: Config) -> None:
     with engine.begin() as conn:
         legacy_id = _insert_actor(conn, name="Legacy")
 
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(alembic_cfg, _TARGET)
 
     with engine.connect() as conn:
         columns = {column["name"]: column for column in inspect(conn).get_columns("actors")}
@@ -66,7 +69,7 @@ def test_actor_locked_fields_backfill(alembic_cfg: Config) -> None:
 
 
 def test_actor_locked_fields_downgrade_preserves_data_and_unique_index(alembic_cfg: Config) -> None:
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(alembic_cfg, _TARGET)
 
     url = alembic_cfg.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -82,7 +85,7 @@ def test_actor_locked_fields_downgrade_preserves_data_and_unique_index(alembic_c
             {"actor_id": actor_id2},
         )
 
-    command.downgrade(alembic_cfg, "e4f7dd7d4711")
+    command.downgrade(alembic_cfg, _PREVIOUS)
 
     with engine.connect() as conn:
         assert "locked_fields" not in {column["name"] for column in inspect(conn).get_columns("actors")}

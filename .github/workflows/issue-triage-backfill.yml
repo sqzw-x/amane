@@ -1,0 +1,37 @@
+# 补跑分诊: 选出近期漏处理的 issue 重新触发 issue-triage. 选择规则见 scripts/triage_backfill.py.
+name: Issue 分诊补跑
+
+on:
+  schedule:
+    - cron: "15 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 试运行 (只列出清单, 不触发)
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: read
+  # 读取分诊运行记录并触发 workflow_dispatch
+  actions: write
+
+concurrency:
+  group: issue-triage-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Dispatch triage for missed issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: python3 scripts/triage_backfill.py

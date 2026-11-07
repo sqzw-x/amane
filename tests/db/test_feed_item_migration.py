@@ -19,7 +19,8 @@ def alembic_cfg(tmp_path: Path) -> Config:
 
 
 def test_feed_item_ignore_state_migration_preserves_history(alembic_cfg: Config) -> None:
-    command.upgrade(alembic_cfg, "a0271ff198e5")
+    previous, target = "a0271ff198e5", "93228ccb7225"
+    command.upgrade(alembic_cfg, previous)
 
     url = alembic_cfg.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -40,14 +41,13 @@ def test_feed_item_ignore_state_migration_preserves_history(alembic_cfg: Config)
             {"feed_id": feed_id},
         )
 
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(alembic_cfg, target)
 
     with engine.connect() as conn:
         columns = {column["name"] for column in inspect(conn).get_columns("feed_items")}
         assert "ignored_at" in columns
         row = conn.execute(text("SELECT item_key, ignored_at FROM feed_items")).one()
         assert row == ("item-1", None)
-        assert "published_at" in columns
 
     with pytest.raises(IntegrityError), engine.begin() as conn:
         conn.execute(
@@ -61,7 +61,8 @@ def test_feed_item_ignore_state_migration_preserves_history(alembic_cfg: Config)
 
 
 def test_feed_item_list_indexes_migration(alembic_cfg: Config) -> None:
-    command.upgrade(alembic_cfg, "02e6ea96c41f")
+    previous, target = "02e6ea96c41f", "bb251537757f"
+    command.upgrade(alembic_cfg, previous)
 
     url = alembic_cfg.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -88,7 +89,7 @@ def test_feed_item_list_indexes_migration(alembic_cfg: Config) -> None:
         assert "ix_feed_items_ignored_at" not in before
         assert "ix_feed_items_list_order" not in before
 
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(alembic_cfg, target)
 
     with engine.connect() as conn:
         after = {
@@ -102,7 +103,7 @@ def test_feed_item_list_indexes_migration(alembic_cfg: Config) -> None:
         assert "coalesce(published_at, created_at)" in sql
         assert conn.execute(text("SELECT item_key FROM feed_items")).scalar_one() == "keep-me"
 
-    command.downgrade(alembic_cfg, "02e6ea96c41f")
+    command.downgrade(alembic_cfg, previous)
     with engine.connect() as conn:
         reverted = {
             row[0]
@@ -115,7 +116,8 @@ def test_feed_item_list_indexes_migration(alembic_cfg: Config) -> None:
 
 
 def test_feed_item_read_at_migration_preserves_history(alembic_cfg: Config) -> None:
-    command.upgrade(alembic_cfg, "a2e19df6190f")
+    previous, target = "a2e19df6190f", "ce561bbac32c"
+    command.upgrade(alembic_cfg, previous)
 
     url = alembic_cfg.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -138,7 +140,7 @@ def test_feed_item_read_at_migration_preserves_history(alembic_cfg: Config) -> N
         before = {column["name"] for column in inspect(conn).get_columns("feed_items")}
         assert "read_at" not in before
 
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(alembic_cfg, target)
 
     with engine.connect() as conn:
         columns = {column["name"] for column in inspect(conn).get_columns("feed_items")}
@@ -151,7 +153,7 @@ def test_feed_item_read_at_migration_preserves_history(alembic_cfg: Config) -> N
         }
         assert "ix_feed_items_read_at" in indexes
 
-    command.downgrade(alembic_cfg, "a2e19df6190f")
+    command.downgrade(alembic_cfg, previous)
     with engine.connect() as conn:
         reverted = {column["name"] for column in inspect(conn).get_columns("feed_items")}
         assert "read_at" not in reverted

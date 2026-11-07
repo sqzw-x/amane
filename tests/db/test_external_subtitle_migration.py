@@ -11,6 +11,8 @@ from sqlalchemy import create_engine, inspect, text
 
 from tests.helpers import alembic_config
 
+_PREVIOUS = "1f050b272f7d"
+_TARGET = "d9dec3f83da7"
 _INSERT_LIBRARY = (
     "INSERT INTO libraries "
     "(name, path, automation, recursive, patterns, move_mode, video_template, write_nfo, "
@@ -54,14 +56,14 @@ def test_external_subtitle_no_backfill(tmp_path: Path) -> None:
     plain = plain_dir / "MIDV-003-C.mp4"
     plain.touch()
 
-    command.upgrade(cfg, "1f050b272f7d")
+    command.upgrade(cfg, _PREVIOUS)
 
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
         library_id = _insert_library(conn, "open", library_dir, '[".srt"]')
         _insert_media_files(conn, library_id, [(str(external), 0), (str(named), 1), (str(plain), 1)])
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, _TARGET)
 
     with engine.connect() as conn:
         columns = {column["name"] for column in inspect(conn).get_columns("media_files")}
@@ -79,7 +81,7 @@ def test_external_subtitle_no_backfill(tmp_path: Path) -> None:
         assert rows[str(plain)].has_subtitle_in_name in (1, True)
         assert not any(row.has_external_subtitle for row in rows.values())
 
-    command.downgrade(cfg, "1f050b272f7d")
+    command.downgrade(cfg, _PREVIOUS)
 
     with engine.connect() as conn:
         columns = {column["name"] for column in inspect(conn).get_columns("media_files")}

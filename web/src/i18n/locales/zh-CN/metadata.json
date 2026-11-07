@@ -363,6 +363,7 @@
     "mergeEntriesRaw": "其余影片的刮削来源快照并入目标",
     "mergeEntriesLinks": "评论、用户标签与关联文件转移到目标",
     "mergeEntriesDelete": "其余影片会被删除",
+    "mergeEntriesRescrape": "合并后重新刮削 (按优先级重新聚合字段)",
     "mergeActorLead": "将 {{count}} 名演员合并到「{{name}}」",
     "mergeActorAlias": "来源演员的名字成为目标的别名",
     "mergeActorFill": "人物信息填补目标的空缺",

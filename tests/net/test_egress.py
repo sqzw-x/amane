@@ -115,11 +115,12 @@ class TestAddress:
         assert not isinstance(excinfo.value, EgressRejected)
 
     @pytest.mark.asyncio
-    async def test_fake_ip_resolution_allowed(self, monkeypatch: pytest.MonkeyPatch):
+    @pytest.mark.parametrize("address", ["198.18.18.132", "2001:2::8", "2001:2::7"])
+    async def test_fake_ip_resolution_allowed(self, monkeypatch: pytest.MonkeyPatch, address: str):
         """fake-IP 环境的公网域名解析到基准测试段: 拒绝会让外链图片全部失败."""
 
         async def _resolve(host: str, port: int) -> set[str]:
-            return {"198.18.18.132"}
+            return {address}
 
         monkeypatch.setattr("amane.net.egress.resolve_addresses", _resolve)
 
@@ -156,8 +157,13 @@ class TestPublicAddress:
             # fake-IP DNS 的解析段: 不可路由, 但代理环境下是公网域名的代表地址
             ("198.18.0.1", True),
             ("198.19.0.1", True),
+            ("2001:2::7", True),
+            ("2001:2::8", True),
             ("::1", False),
             ("fc00::1", False),
+            # 2001::/23 内的其他特殊用途地址不是 fake-IP, 仍按非公网拒绝
+            ("2001::1", False),
+            ("2001:db8::1", False),
             ("::ffff:127.0.0.1", False),
             ("::ffff:8.8.8.8", True),
         ],

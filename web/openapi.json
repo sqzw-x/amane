@@ -1425,7 +1425,7 @@
           "metadata"
         ],
         "summary": "Merge Metadata Entries",
-        "description": "把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.",
+        "description": "把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.\n\n``rescrape`` 要求合并提交后再按目标番号入队 SCRAPE: 只有 raw 已落库, 复用快照的聚合\n才能按当前优先级重建字段与站点级字典.",
         "operationId": "merge_metadata_entries",
         "requestBody": {
           "content": {
@@ -4600,7 +4600,7 @@
           "resources"
         ],
         "summary": "Proxy Image",
-        "description": "上游失败记入进程内负缓存 (15 分钟), 窗口内同 URL 直接 502.\n同 URL 进行中请求合并为一次 acquire.\n使用图片 token 的请求只从缓存读取资源: 未命中返回 404, 不发起对外请求, 不写入负缓存.",
+        "description": "上游失败记入进程内负缓存 (15 分钟), 窗口内同 URL 直接 502.\n同 URL 进行中请求合并为一次 acquire.\n使用图片 token 的请求只从缓存读取资源: 未命中返回 404, 不发起对外请求, 不写入负缓存.\n缓存命中先于地址判定: 只有下载会发起对外请求, 已入库资源即使是私网地址也直接返回.",
         "operationId": "proxy_image",
         "parameters": [
           {
@@ -7579,7 +7579,7 @@
             "maximum": 60000.0,
             "minimum": 50.0,
             "title": "Sql Timeout Ms",
-            "default": 1000,
+            "default": 5000,
             "x-hidden": true
           },
           "result_cache_ttl_s": {
@@ -10166,7 +10166,7 @@
               "model": "gpt-4o-mini",
               "max_tokens": 128000,
               "rate_limit": 2.0,
-              "sql_timeout_ms": 1000,
+              "sql_timeout_ms": 5000,
               "result_cache_ttl_s": 3600,
               "result_cache_max_entries": 64,
               "history_ttl_s": 3600,
@@ -12175,6 +12175,12 @@
             "minItems": 1,
             "title": "Source Ids",
             "description": "待合并的 Metadata ID 列表; 按顺序补入 raw 快照"
+          },
+          "rescrape": {
+            "type": "boolean",
+            "title": "Rescrape",
+            "description": "合并后按当前优先级对目标番号入队 SCRAPE, 复用 raw 缓存重新聚合字段",
+            "default": false
           }
         },
         "type": "object",

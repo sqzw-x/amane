@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from tests.helpers import alembic_config
 
 _PREVIOUS = "d9dec3f83da7"
+_TARGET = "82643a46d07a"
 _TABLES = ("directors", "tags", "studios", "publishers", "series")
 _INSERT = (
     "INSERT INTO {table} (name, created_at, updated_at) VALUES (:name, '2026-01-01 00:00:00', '2026-01-01 00:00:00')"
@@ -27,7 +28,7 @@ def test_facet_favorite_columns(tmp_path: Path) -> None:
         for table in _TABLES:
             conn.execute(text(_INSERT.format(table=table)), {"name": f"{table}-keep"})
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, _TARGET)
 
     with engine.begin() as conn:
         inspector = inspect(conn)

@@ -60,6 +60,7 @@ class _FakeBsk:
             code=payload.get("code") if isinstance(payload.get("code"), str) else None,
             hint=payload.get("hint") if isinstance(payload.get("hint"), str) else None,
             exit_code=1,
+            reason=payload.get("reason") if isinstance(payload.get("reason"), str) else None,
         )
 
     async def __call__(self, path: str, args: Sequence[str], timeout_s: float) -> dict[str, object]:
@@ -92,6 +93,15 @@ class _FakeBsk:
             return {"stopped": [args[2]]}
         if command == "tab":
             if args[1] == "close":
+                once = config.pop("tab_close_error_once", None)
+                if isinstance(once, dict):
+                    (self.root / "scenario.json").write_text(json.dumps(config), encoding="utf-8")
+                    raise BskError(
+                        str(once.get("message", "tab close failed")),
+                        code=once.get("code") if isinstance(once.get("code"), str) else None,
+                        hint=once.get("hint") if isinstance(once.get("hint"), str) else None,
+                        exit_code=1,
+                    )
                 self._maybe_fail(config, "tab_close_error")
                 return {"tab_id": int(args[-1])}
             self._maybe_fail(config, "tab_error")
@@ -138,6 +148,15 @@ class _FakeBsk:
             self._maybe_fail(config, "cooperate_error")
             context_id = f"ctx-{self._count('cooperate')}"
             tab_id = args[args.index("--tab-id") + 1]
+            if config.get("sync_no_context"):
+                # 页面不可同步 (minnano 这类有跨域广告框的页面): 严格策略、未就绪、没有上下文.
+                return {
+                    "tab_id": int(tab_id),
+                    "control_policy": "strict",
+                    "ready": False,
+                    "settle": {"outcome": "not_ready", "sync_attempts": 1},
+                    "state": {"editing": False, "mode": "unavailable", "revision": 1},
+                }
             # 0.4.0 的同步不返回观察 ID; 新版缺了它, 关页与脚本执行都会被拒.
             observation_id = None if config.get("omit_observation_id") else f"obs-{context_id}"
             if config.get("sync_delta"):
@@ -356,20 +375,97 @@ async def test_truncated_sync_text_falls_back_to_snapshot_ref(bsk_env: Path) -> 
 
 
 @pytest.mark.asyncio
-async def test_session_rotates_when_tabs_cannot_be_closed(bsk_env: Path) -> None:
-    """关页也要上下文: 拿不到时标签页会累积, 到上限就换会话, 这是兜底清理."""
-    _scenario(bsk_env, pages=[CLEAN], cooperate_error={"code": "timeout", "message": "sync unavailable"})
-    backend = _backend(bsk_env, max_tabs=2)
+async def test_unclosable_tab_takes_the_session_down(bsk_env: Path) -> None:
+    """页面不可同步时关页必然被拒: 收掉会话才能连窗口一起关掉, 不留标签页."""
+    _scenario(bsk_env, pages=[CLEAN], sync_no_context=True)
+    backend = _backend(bsk_env, max_tabs=1)
     try:
-        for index in range(3):
+        for index in range(2):
             assert await backend.get_page(f"https://a.example/{index}", scope="a") == (CLEAN, None)
     finally:
         await backend.close()
-    commands = _commands(bsk_env)
-    assert _creates(bsk_env) == 3
+    assert not [args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]
     stops = [args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]
-    assert len(stops) == 2  # 轮换一次 + close 收尾一次
-    assert commands.count("session") == 4
+    assert len(stops) == 2  # 每次取页各收一次; close() 时已无会话可停
+    assert _creates(bsk_env) == 2
+
+
+@pytest.mark.asyncio
+async def test_tab_close_retries_after_stale_observation(bsk_env: Path) -> None:
+    """观察在往返途中失效时重取一次同步: 动态页面上第二次往往就能关掉."""
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        tab_close_error_once={
+            "code": "permission_denied",
+            "message": "The strict observation changed before this action",
+        },
+    )
+    backend = _backend(bsk_env)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    assert len([args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]) == 2
+    assert _commands(bsk_env).count("session") == 2  # 只有启动与退出收尾, 没被整会话收掉
+
+
+@pytest.mark.asyncio
+async def test_sync_error_keeps_the_tab_and_the_window(bsk_env: Path) -> None:
+    """同步报错可能只是用户握着这张页: 不能据此收掉他正在用的窗口."""
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        cooperate_error={
+            "code": "permission_denied",
+            "message": "the user has control of this tab",
+            "reason": "control_held",
+        },
+    )
+    backend = _backend(bsk_env)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    assert not [args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]
+    assert _commands(bsk_env).count("session") == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["cooperation_sync_required", "frame_unobservable", "page_load_failed"])
+async def test_unsyncable_sync_error_takes_the_session_down(bsk_env: Path, reason: str) -> None:
+    """同步直接报「页面不可同步」时与「未就绪」是同一件事: 同一张页再试也没用, 收会话."""
+    _scenario(
+        bsk_env,
+        pages=[CLEAN],
+        cooperate_error={"code": "permission_denied", "message": "frames cannot be observed", "reason": reason},
+    )
+    backend = _backend(bsk_env)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a") == (CLEAN, None)
+    finally:
+        await backend.close()
+    assert not [args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]
+    assert len([args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]) == 1
+
+
+@pytest.mark.asyncio
+async def test_busy_session_is_recycled_before_next_tab(bsk_env: Path) -> None:
+    """还有请求在等这个会话时不能抢先收掉, 等下一次取页前再轮换."""
+    _scenario(bsk_env, pages=[CLEAN], sync_no_context=True, sleep_ms=50)
+    backend = _backend(bsk_env, max_sessions=1)
+    try:
+        first, second = await asyncio.gather(
+            backend.get_page("https://a.example/1", scope="a"),
+            backend.get_page("https://a.example/2", scope="a"),
+        )
+    finally:
+        await backend.close()
+    assert first == (CLEAN, None) and second == (CLEAN, None)
+    assert _creates(bsk_env) == 2
+    stops = [args for args in _calls(bsk_env) if args[:2] == ["session", "stop"]]
+    assert len(stops) == 2  # 轮换一次 + 收尾一次
+    assert _commands(bsk_env).count("session") == 4
 
 
 @pytest.mark.asyncio

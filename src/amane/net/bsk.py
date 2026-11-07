@@ -3,7 +3,9 @@
 bsk 0.4 起默认开启共享控制: 除了空白标签页的首次导航, 会改动页面的命令都要带一次
 ``cooperate sync`` 返回的上下文, 且那份上下文只能用一次. 因此每个请求开一张新标签页,
 正文走只读的 ``get-html`` 轮询 —— 人工在窗口里过验证不会打断轮询; 写 cookie、点
-Turnstile 与关标签页要上下文, 其中关页与写脚本还要本次同步的观察 ID (0.4.1 起). 清理另靠会话轮换与空闲关闭.
+Turnstile 与关标签页要上下文, 其中关页与写脚本还要本次同步的观察 ID (0.4.1 起). 页面不可
+同步 (共享控制的观察面不可用) 或观察在往返中失效时关页必然失败, 单张页关不掉就只能连会话
+一起收掉.
 
 同一 session 的命令在 daemon 侧串行, 并发只能靠多 session; 每个 session 对应浏览器里的一个
 Agent Window, 因此按并发度而非按来源分配. CLI 不提供 cookie 与请求头注入: cookie 只能先导航到
@@ -74,8 +76,12 @@ _DEAD_SESSION_CODES = frozenset({"not_found", "session_closed", "session_window_
 _DEAD_SESSION_MARKERS = ("could not establish connection", "receiving end does not exist", "extension disconnected")
 # 写 cookie 失败后冷却这么久再试: 瞬时失败不该让该来源在进程内一直带着旧页面.
 _COOKIE_RETRY_COOLDOWN_S = 120.0
-# 取完正文后关标签页的同步预算: 拿不到上下文就不关, 交给会话轮换.
+# 取完正文后关标签页的同步预算; 每次关页重新同步, 动态页面上观察常在往返途中失效.
 _CLOSE_SYNC_TIMEOUT_S = 5.0
+_CLOSE_ATTEMPTS = 2
+# 同步报这些原因时就是页面不可同步 (共享控制的观察面不可用), 重试同一张页没有意义.
+# 0.4.1 把它表达成「成功但没给上下文」, 新版本会直接以 ``frame_unobservable`` 这类原因报错.
+_UNSYNCABLE_REASONS = frozenset({"cooperation_sync_required", "frame_unobservable", "page_load_failed"})
 # 扩展注入的样式 (antd cssinjs) 带 data-css-hash / data-rc-order, 页面自身样式不受影响.
 _INJECTED_STYLE_RE = re.compile(
     r"<style\b[^>]*\b(?:data-css-hash|data-rc-order)=[\"'][^\"']*[\"'][^>]*>.*?</style>",
@@ -349,6 +355,7 @@ class _Session:
         self.active = 0
         self.generation = 0
         self.idle_task: asyncio.Task[None] | None = None
+        self.recycle = False
 
 
 @dataclass
@@ -449,11 +456,16 @@ class BskBackend:
         wait_for: str | None,
         timeout_ms: float,
     ) -> BrowserPageResult:
+        keep_tab = False
+        opened: tuple[str, int] | None = None
         try:
             session_id = await self._ensure_session(session)
             if cookies:
                 session_id = await self._apply_cookies(session, session_id, scope, url, cookies)
+                # 引导页关不掉时连会话一起收掉了, 取页前得重新确保.
+                session_id = await self._ensure_session(session)
             session_id, tab_id = await self._open_tab(session, session_id)
+            opened = (session_id, tab_id)
             # 会话与 cookie 引导不计入单次渲染时限, 与本地引擎启动的语义一致.
             deadline = time.monotonic() + timeout_ms / 1000
             await self._navigate(session_id, tab_id, url, deadline)
@@ -461,9 +473,10 @@ class BskBackend:
             if wait_for is not None:
                 await self._wait_for(session_id, tab_id, wait_for, deadline)
                 html = strip_injected_html(await self._get_html(session_id, tab_id, deadline))
-            await self._close_tab(session, session_id, tab_id)
             return html, None
         except _ChallengeUnresolved:
+            # 刚切到这张页给人工过验证, 收掉窗口会打断他.
+            keep_tab = True
             return None, RequestFailure(
                 kind=FailureKind.UNEXPECTED,
                 message=f"cloudflare challenge not resolved: {url}",
@@ -473,9 +486,15 @@ class BskBackend:
             return None, RequestFailure(kind=FailureKind.TIMEOUT, message=f"browser timeout: {url}")
         except BskError as exc:
             if _is_dead_session(exc):
+                keep_tab = True
                 await self._stop(session, timeout_s=_COMMAND_SLACK_S)
                 raise _DeadSession(exc) from exc
+            # 用户自己按了停止: 窗口归他, 不清理.
+            keep_tab = exc.code == "user_aborted"
             return None, self._failure(exc, url)
+        finally:
+            if opened is not None and not keep_tab:
+                await self._close_tab(session, *opened)
 
     def _failure(self, exc: BskError, url: str) -> RequestFailure:
         detail = f"{exc} ({exc.code})" if exc.code else str(exc)
@@ -520,10 +539,9 @@ class BskBackend:
     async def _open_tab(self, session: _Session, session_id: str) -> tuple[str, int]:
         """开一张空白标签页: 共享控制只放行空白页的首次导航.
 
-        关标签页也要上下文, 达到上限时停掉会话 (daemon 顺带关掉没被人工碰过的标签页)
-        再开新的, 由会话轮换承担清理.
+        待回收或有标签页关不掉的会话先停掉 (停会话会连 Agent Window 一起关) 再开新的.
         """
-        if session.tabs_open >= self._max_tabs:
+        if session.recycle or session.tabs_open >= self._max_tabs:
             await self._stop(session)
             session_id = await self._ensure_session(session)
         data = await self._call(("tab", "create", "--session", session_id))
@@ -594,19 +612,51 @@ class BskBackend:
         return session_id
 
     async def _close_tab(self, session: _Session, session_id: str, tab_id: int) -> None:
-        """取完正文就关掉这张标签页; 关标签页也要一次性上下文, 拿不到就留给会话轮换."""
-        try:
-            control = await self._control(session_id, tab_id, timeout_s=_CLOSE_SYNC_TIMEOUT_S)
-            if control is None:
-                return
-            await self._call(
-                ("tab", "close", "--session", session_id, *_control_flags(control), str(tab_id)),
-                timeout_s=_COMMAND_SLACK_S * 2,
-            )
-        except (BskError, TimeoutError) as exc:
-            logger.debug("bsk tab close skipped", error=str(exc))
+        """取完正文就关掉这张标签页; 页面不可同步时连会话一起收掉.
+
+        关页要一次同步换来的上下文与观察 ID. 页面不可同步 (观察面不可用) 时根本拿不到, 而且对
+        同一张页重试也是同样的结果: 只有停掉会话才能连窗口一起关掉, 否则标签页会一直留在用户的
+        浏览器里. 同步因人工原因报错时不动会话 —— 窗口归他; 观察在往返途中失效则重取一次.
+        """
+        if session.session_id != session_id:
             return
-        session.tabs_open = max(0, session.tabs_open - 1)
+        for attempt in range(_CLOSE_ATTEMPTS):
+            try:
+                control = await self._control(session_id, tab_id, timeout_s=_CLOSE_SYNC_TIMEOUT_S)
+            except BskError as exc:
+                # 同步直接报「页面不可同步」与「回「未就绪」是同一件事的两种表达.
+                if exc.reason in _UNSYNCABLE_REASONS:
+                    await self._discard_session(session)
+                else:
+                    logger.debug("bsk tab close skipped", error=str(exc))
+                return
+            except TimeoutError as exc:
+                logger.debug("bsk tab close skipped", error=str(exc))
+                return
+            if control is None:
+                await self._discard_session(session)
+                return
+            try:
+                await self._call(
+                    ("tab", "close", "--session", session_id, *_control_flags(control), str(tab_id)),
+                    timeout_s=_COMMAND_SLACK_S * 2,
+                )
+            except (BskError, TimeoutError) as exc:
+                logger.debug("bsk tab close failed", attempt=attempt, error=str(exc))
+                continue
+            session.tabs_open = max(0, session.tabs_open - 1)
+            return
+        logger.warning("bsk tab left open", tab_id=tab_id)
+
+    async def _discard_session(self, session: _Session) -> None:
+        """收掉会话: 停会话会连 Agent Window 与其中的标签页一起关掉.
+
+        还有别的请求在等这个会话时不能停, 标记待回收, 由下一次取页前轮换.
+        """
+        if session.active > 1:
+            session.recycle = True
+            return
+        await self._stop(session)
 
     async def _sync(self, session_id: str, tab_id: int, *, timeout_s: float = _SYNC_TIMEOUT_S) -> dict[str, object]:
         """取一份只能授权一次页面动作的观察; 不可用时由调用方降级.
@@ -868,6 +918,7 @@ class BskBackend:
     async def _stop(self, session: _Session, *, timeout_s: float = _STOP_TIMEOUT_S) -> None:
         session_id, session.session_id = session.session_id, None
         session.tabs_open = 0
+        session.recycle = False
         if session_id is None:
             return
         try:

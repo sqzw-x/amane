@@ -10,6 +10,7 @@ from sqlalchemy import Connection, create_engine, text
 from tests.helpers import alembic_config
 
 _PREVIOUS = "136fd7914700"
+_TARGET = "1fdf4d41aac1"
 
 _TASK_INDEXES = {"ix_tasks_type", "ix_tasks_status", "ix_tasks_root_task_id"}
 
@@ -49,7 +50,7 @@ def test_drop_task_log_file(alembic_cfg: Config) -> None:
             {"task_id": task_id},
         )
 
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(alembic_cfg, _TARGET)
 
     with engine.connect() as conn:
         assert "log_file" not in _task_columns(conn)

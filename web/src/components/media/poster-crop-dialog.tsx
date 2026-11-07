@@ -5,8 +5,7 @@ import { cropPosterFromThumbMutation } from "@/client/@tanstack/react-query.gen"
 import { ImageCropDialog } from "@/components/media/image-crop-dialog";
 import { useConfig } from "@/hooks/use-config";
 import { extractErrorMessage } from "@/lib/api-error";
-
-const DEFAULT_POSTER_RATIO = 0.7;
+import { DEFAULT_POSTER_RATIO } from "@/lib/media/poster-image";
 
 export interface PosterCropDialogProps {
   opened: boolean;

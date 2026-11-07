@@ -1,7 +1,7 @@
 """media file video size
 
 Revision ID: 39c66640fbfe
-Revises: 6940e4cf8a80
+Revises: 56fe451426ef
 Create Date: 2026-11-04 01:50:55.904014
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "39c66640fbfe"
-down_revision: str | None = "6940e4cf8a80"
+down_revision: str | None = "56fe451426ef"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

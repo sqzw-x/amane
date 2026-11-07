@@ -520,6 +520,7 @@ class Resource(SQLModel, table=True):
     """文件 SHA-256; 就地超分后必须更新."""
     size: int | None = None
     mime_type: str | None = None
+    """入库与就地超分后按内容判定; ``NULL`` 与 ``application/octet-stream`` 表示类型未定."""
     meta: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     """派生/处理追溯. 裁剪: {'op':'crop','src':源url,'args':str};
     任意资源被超分后追加 {'sr': {tool,model,scale}}. 原始未处理图为 {}."""

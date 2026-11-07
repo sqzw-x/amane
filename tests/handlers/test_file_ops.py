@@ -2,6 +2,7 @@
 
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -439,16 +440,41 @@ def test_copy_into_library_tolerates_metadata_failure(
     assert dst.read_bytes() == b"image"
 
 
-def test_copy_into_library_propagates_content_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """内容写不进去时照常抛出, 不掩盖真实错误."""
+def test_copy_into_library_logs_both_attempts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """内容写不进去时记录两次尝试的原文, 并原样抛出回退那次的错误."""
 
-    def reject(*args: object, **kwargs: object) -> None:
-        raise PermissionError(13, "Permission denied")
+    def reject(error: OSError) -> Callable[..., None]:
+        def _reject(*args: object, **kwargs: object) -> None:
+            raise error
 
-    monkeypatch.setattr("amane.handlers.file.shutil.copyfile", reject)
+        return _reject
 
-    with pytest.raises(PermissionError):
+    first = PermissionError(13, "Permission denied")
+    second = OSError(22, "Invalid argument")
+    monkeypatch.setattr("amane.handlers.file.shutil.copy2", reject(first))
+    monkeypatch.setattr("amane.handlers.file.shutil.copyfile", reject(second))
+    recorded: list[tuple[str, dict[str, object]]] = []
+
+    def record(event: str, **fields: object) -> None:
+        recorded.append((event, fields))
+
+    monkeypatch.setattr("amane.handlers.file.logger.error", record)
+
+    with pytest.raises(OSError) as excinfo:
         _copy_into_library(tmp_path / "src.jpg", tmp_path / "dst.jpg")
+
+    assert excinfo.value is second
+    assert recorded == [
+        (
+            "library copy failed",
+            {
+                "src": str(tmp_path / "src.jpg"),
+                "dst": str(tmp_path / "dst.jpg"),
+                "copy2_error": str(first),
+                "copyfile_error": str(second),
+            },
+        )
+    ]
 
 
 def test_copy_into_library_preserves_metadata_when_possible(tmp_path: Path) -> None:

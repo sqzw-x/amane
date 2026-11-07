@@ -401,6 +401,55 @@ async def test_acquire_forwards_egress_policy(
     assert kwargs["max_bytes"] == 1024
 
 
+@pytest.mark.asyncio
+async def test_acquire_records_content_type(
+    resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """入库按内容写 MIME: 无后缀 URL 的图片不再记成通用二进制."""
+    url = "https://img.example.com/actor/12345"
+    client = AsyncMock()
+    client.resolve_final_url = AsyncMock(return_value=url)
+
+    async def download(_url: str, dest: Path, **_kwargs: object) -> bool:
+        dest.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+        return True
+
+    client.download = AsyncMock(side_effect=download)
+    monkeypatch.setattr(resource_store, "_compute_path", lambda url: tmp_path / "resources" / "resource.bin")
+
+    assert await resource_store.acquire(url, client) is not None
+    record = await resource_store.get_by_url(url)
+    assert record is not None
+    assert record.mime_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_derived_mime_follows_content(resource_store: ResourceStore):
+    """派生资源同样按内容写类型; 盘上字节被换掉后重跑并覆盖记录."""
+    url = "https://s/derived.jpg"
+
+    async def png(dest: Path) -> bool:
+        dest.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return True
+
+    first = await resource_store.acquire_derived(url, "crop", "0.7", png)
+    assert first is not None
+    assert first.mime_type == "image/png"
+
+    # 盘上字节不再是记录所指的那份, 下一次调用必须重跑 producer.
+    resource_store.full_path(first).write_bytes(b"stale")
+
+    async def jpeg(dest: Path) -> bool:
+        dest.write_bytes(b"\xff\xd8\xff\xe0")
+        return True
+
+    second = await resource_store.acquire_derived(url, "crop", "0.7", jpeg)
+    assert second is not None
+    saved = await resource_store.get_by_url(first.url)
+    assert saved is not None
+    assert saved.mime_type == "image/jpeg"
+
+
 _REQUEST = "https://pics.dmm.co.jp/digital/video/mide00030/mide00030pl.jpg"
 _PLACEHOLDER = "https://pics.dmm.com/mono/movie/n/now_printing/now_printing.jpg"
 

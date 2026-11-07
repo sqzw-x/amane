@@ -12,6 +12,9 @@ from sqlalchemy import create_engine, text
 
 from tests.helpers import alembic_config
 
+_PREVIOUS = "3a0088a88ce7"
+_TARGET = "6d6ec00ff658"
+
 
 @pytest.fixture
 def alembic_cfg(tmp_path: Path) -> Config:
@@ -19,8 +22,8 @@ def alembic_cfg(tmp_path: Path) -> Config:
 
 
 def test_facet_backfill_from_metadata_json(alembic_cfg: Config, tmp_path: Path) -> None:
-    """旧库仅有 metadata JSON 列时, upgrade head 后应生成 actors/tags 等投影."""
-    command.upgrade(alembic_cfg, "3a0088a88ce7")
+    """旧库仅有 metadata JSON 列时, 升级后应生成 actors/tags 等投影."""
+    command.upgrade(alembic_cfg, _PREVIOUS)
 
     url = alembic_cfg.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -56,7 +59,7 @@ def test_facet_backfill_from_metadata_json(alembic_cfg: Config, tmp_path: Path) 
             },
         )
 
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(alembic_cfg, _TARGET)
 
     with engine.connect() as conn:
         actors = conn.execute(text("SELECT name FROM actors ORDER BY name")).fetchall()
@@ -69,7 +72,6 @@ def test_facet_backfill_from_metadata_json(alembic_cfg: Config, tmp_path: Path) 
         assert [r[0] for r in studios] == ["StudioM"]
         # 用户注解表存在且为空
         assert conn.execute(text("SELECT COUNT(*) FROM user_tags")).scalar() == 0
-        assert conn.execute(text("SELECT COUNT(*) FROM actor_user_tags")).scalar() == 0
         assert conn.execute(text("SELECT COUNT(*) FROM comments")).scalar() == 0
 
     engine.dispose()

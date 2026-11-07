@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
-import mimetypes
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import structlog
 
+from ..media.file_type import IMAGE_MIME_PREFIX, detect_media_type_bytes
 from ..media_server import (
     SEARCH_LIMIT,
     MediaPerson,
@@ -69,9 +69,29 @@ class _Counts:
             self.failures.append(f"{name}: {reason}")
 
 
+@dataclass(frozen=True)
+class _Portrait:
+    """已落盘且类型可用的头像."""
+
+    data: bytes
+    mime: str
+
+
+@dataclass(frozen=True)
+class _UnrecognizedPortrait:
+    """已落盘但不是可识别的图片: 上传只会被服务器拒绝, 不发送."""
+
+    url: str
+
+
+_PortraitSource = _Portrait | _UnrecognizedPortrait
+
+
 @in_thread
-def _read_bytes(path: Path) -> bytes:
-    return path.read_bytes()
+def _read_portrait(path: Path) -> tuple[bytes, str | None]:
+    """读出头像字节并判定媒体类型; PIL 解析同样放在线程里, 不占用事件循环."""
+    data = path.read_bytes()
+    return data, detect_media_type_bytes(data)
 
 
 class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
@@ -212,27 +232,35 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
                 candidates.setdefault(person.id, person)
         return match_persons(names, candidates.values())
 
-    async def _portrait(self, actor: Actor) -> tuple[str, bytes] | None:
-        """头像取 ``image_urls`` 里第一个已落盘的资源; 不在推送任务里补下载."""
+    async def _portrait(self, actor: Actor) -> _PortraitSource | None:
+        """头像取 ``image_urls`` 里第一个已落盘且内容判为图片的资源; 不在推送任务里补下载.
+
+        记录里的媒体类型不参与: 旧数据由 URL 后缀推出, 与字节无关. 文件读取失败与未落盘同样
+        跳过 (最终计 ``no_image``); 内容判不出时不发送, 返回 ``_UnrecognizedPortrait`` 记失败.
+        """
+        unrecognized: str | None = None
         for url in actor.image_urls:
             record = await self._resource_store.get_by_url(url)
             if record is None:
                 continue
             path = self._resource_store.full_path(record)
             try:
-                data = await _read_bytes(path)
+                data, mime = await _read_portrait(path)
             except OSError as exc:
                 logger.warning("actor push: 头像文件读取失败", url=url, path=str(path), error=str(exc))
                 continue
-            mime = record.mime_type or mimetypes.guess_type(str(path))[0] or "image/jpeg"
-            return mime, data
-        return None
+            if mime is None or not mime.startswith(IMAGE_MIME_PREFIX):
+                logger.warning("actor push: 头像不是可识别的图片", url=url, path=str(path), mime=mime)
+                unrecognized = unrecognized or url
+                continue
+            return _Portrait(data=data, mime=mime)
+        return _UnrecognizedPortrait(url=unrecognized) if unrecognized else None
 
     async def _sync_person(
         self,
         actor: Actor,
         person: MediaPerson,
-        portrait: tuple[str, bytes] | None,
+        portrait: _PortraitSource | None,
         client: MediaServerClientLike,
         *,
         force: bool,
@@ -257,15 +285,20 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
 
         if needs_image:
             assert portrait is not None
-            mime, data = portrait
-            try:
-                await client.upload_primary_image(person.id, data, content_type=mime)
-            except MediaServerError as exc:
+            error: str | None = None
+            if isinstance(portrait, _UnrecognizedPortrait):
+                error = f"头像格式无法识别: {portrait.url}"
+            else:
+                try:
+                    await client.upload_primary_image(person.id, portrait.data, content_type=portrait.mime)
+                except MediaServerError as exc:
+                    error = f"头像上传失败: {exc}"
+                else:
+                    counts.images += 1
+            if error is not None:
                 if not person_failed:
                     counts.failed += 1
-                counts.failure(f"{actor.name} / {person.name}", f"头像上传失败: {exc}")
-            else:
-                counts.images += 1
+                counts.failure(f"{actor.name} / {person.name}", error)
 
     @staticmethod
     def _result(counts: _Counts) -> ActorPushResult:
