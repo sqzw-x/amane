@@ -20,10 +20,11 @@ permissions:
   contents: read
   issues: write
 
-# 标签事件密集时只保留最后一次刷新.
+# 不取消进行中的运行: 通知运行被中途取消会推进状态而不发通知. 排队中的运行被新运行替换时,
+# 刷新运行沿用上次的通知状态, 新增条目顺延到下一次通知.
 concurrency:
   group: maintainer-queue
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update:

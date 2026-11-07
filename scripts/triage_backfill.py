@@ -96,11 +96,17 @@ def handled_in_comments(comments: list[object]) -> bool:
     return any(_TRIAGE_MARKER in _str(c, "body") or _str(c, "author_association") in _MAINTAINERS for c in comments)
 
 
+def _attempted(run: object) -> bool:
+    """只有 issue 事件与手动触发的运行才执行分诊. issue_comment 每条评论都产生一次运行, 未通过前置条件时
+    结论仍为 success, 计入会耗尽尝试次数并掩盖故障, 因此一律排除."""
+    return _str(run, "event") in ("issues", "workflow_dispatch") and _str(run, "conclusion") in ("success", "failure")
+
+
 def count_attempts(runs: list[object]) -> dict[int, int]:
-    """统计每个 issue 已有的分诊运行次数; 被前置条件跳过的运行不计入."""
+    """统计每个 issue 已有的分诊运行次数."""
     attempts: dict[int, int] = {}
     for run in runs:
-        if _str(run, "conclusion") == "skipped":
+        if not _attempted(run):
             continue
         match = _RUN_NUMBER.search(_str(run, "displayTitle"))
         if match:
@@ -111,7 +117,7 @@ def count_attempts(runs: list[object]) -> dict[int, int]:
 
 def outage_ongoing(runs: list[object]) -> bool:
     """按时间倒序取最近完成且未被跳过的运行, 全部失败时判定故障未恢复."""
-    finished = [_str(r, "conclusion") for r in runs if _str(r, "conclusion") in ("success", "failure")]
+    finished = [_str(r, "conclusion") for r in runs if _attempted(r)]
     recent = finished[:_BREAKER_RUNS]
     return len(recent) == _BREAKER_RUNS and all(c == "failure" for c in recent)
 
@@ -140,7 +146,7 @@ def main() -> int:
     runs = json.loads(
         _gh(
             "run", "list", "--repo", repo, "--workflow", _WORKFLOW, "--limit", "200",
-            "--created", f">={since[:10]}", "--json", "displayTitle,conclusion",
+            "--created", f">={since[:10]}", "--json", "displayTitle,conclusion,event",
         )
     )  # fmt: skip
     attempts = count_attempts(runs)

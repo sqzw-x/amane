@@ -38,8 +38,10 @@ _STATE_PATTERN = re.compile(r"<!-- maintainer-queue-state: (\{.*?\}) -->")
 _QUEUE_TITLE = "维护者待办"
 _QUEUE_LABEL = "report"
 _MAINTAINER_ROLES = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
-# 分诊在 issue 创建后通常几分钟内完成; 超过该时长仍无分诊评论视为漏处理.
+# 漏分诊的判定窗口与 scripts/triage_backfill.py 的选择条件一致: 该分组列出的是补跑本应处理的 issue.
+# 分诊在 issue 创建后通常几分钟内完成, 超过 _TRIAGE_GRACE 仍无分诊评论视为漏处理.
 _TRIAGE_GRACE = timedelta(hours=1)
+_TRIAGE_LOOKBACK = timedelta(days=7)
 # 已答复的用法问题在用户沉默该时长后列为可关闭; stale 工作流要 21 天才关闭.
 _QUESTION_QUIET = timedelta(days=3)
 _SNIPPET_CHARS = 80
@@ -258,7 +260,15 @@ def classify(issue: Issue, maintainers: frozenset[str], now: datetime) -> tuple[
 
     if issue.author_role in _MAINTAINER_ROLES or issue.assigned:
         return None
-    if not triaged and not maintainer_replied and issue.kind("kind:") and now - issue.created_at >= _TRIAGE_GRACE:
+    labeled_by_hand = issue.kind("status:") or issue.kind("priority:")
+    age = now - issue.created_at
+    if (
+        not triaged
+        and not maintainer_replied
+        and not labeled_by_hand
+        and issue.kind("kind:")
+        and _TRIAGE_GRACE <= age <= _TRIAGE_LOOKBACK
+    ):
         return "untriaged", Entry(issue.number, f"创建于 {issue.created_at:%m-%d}")
 
     settled = maintainer_replied or "status:triaged" in labels
@@ -315,7 +325,9 @@ def render(queue: Queue, now: datetime, state: dict[str, list[int]]) -> str:
         _section("需你决定", "分诊无法自行判断, 已整理为选择题.", queue.decisions),
         _section("可以关闭", "已判为重复, 或用法问题已答复且用户沉默.", queue.closable),
         _section("待确认的 bug", "分诊已通过, 维护者尚未回复或标记 `status:triaged`.", queue.bugs),
-        _section("漏分诊", "超过 1 小时仍无分诊评论; 补跑工作流会自动重试.", queue.untriaged),
+        _section(
+            "漏分诊", "近 7 天创建、超过 1 小时仍无分诊评论. 补跑每 6 小时重试, 每个 issue 至多 3 次.", queue.untriaged
+        ),
         _section("待评审的 PR", "非维护者提交、非草稿.", queue.pulls),
     ]
     backlog = ""
@@ -406,11 +418,15 @@ def main() -> int:
     issues, pulls = fetch(repo)
     queue = build_queue(issues, pulls, maintainers, now)
     existing = find_queue_issue(repo)
-    previous = read_state(existing[1]) if existing else {}
     current = queue.notify_keys()
-    added = new_items(previous, current) if notify else {}
-    # 只有通知运行才推进已通知状态, 其余运行沿用上次的记录.
-    state = current if notify else previous
+    if existing is None or _STATE_PATTERN.search(existing[1]) is None:
+        # 首次运行以当前清单为基线, 首次通知只列出此后新增的条目.
+        state, added = current, {}
+    else:
+        previous = read_state(existing[1])
+        added = new_items(previous, current) if notify else {}
+        # 只有通知运行才推进已通知状态, 其余运行沿用上次的记录.
+        state = current if notify else previous
     body = render(queue, now, state)
 
     sys.stdout.write(body)
@@ -435,11 +451,12 @@ def main() -> int:
         number = int(url.strip().rsplit("/", 1)[-1])
         # 置顶失败不影响正文更新.
         subprocess.run(["gh", "issue", "pin", str(number), "--repo", repo], check=False)
-    else:
-        number = existing[0]
-        _gh("issue", "edit", str(number), "--repo", repo, "--body-file", "-", stdin=body)
+        return 0
+    number = existing[0]
+    # 先评论再推进正文中的状态: 中途失败时下次重复通知, 而不是漏掉通知.
     if any(added.values()):
         _gh("issue", "comment", str(number), "--repo", repo, "--body-file", "-", stdin=render_notice(added))
+    _gh("issue", "edit", str(number), "--repo", repo, "--body-file", "-", stdin=body)
     return 0
 
 
