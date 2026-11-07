@@ -1,4 +1,4 @@
-# 维护者待办: 汇总需要维护者关注的 open issue 与 PR 到一个置顶 issue. 规则见 scripts/maintainer_queue.py.
+# 维护者待办: 汇总需要维护者关注的 open issue 与 PR 到一个 issue. 规则见 scripts/maintainer_queue.py.
 name: 维护者待办
 
 on:
