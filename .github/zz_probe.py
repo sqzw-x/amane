@@ -3,7 +3,7 @@ base = os.environ["BASE"].rstrip("/"); key = os.environ["KEY"]
 print("host:", re.sub(r"https?://([^/]+).*", r"\1", base), "| path segments:", base.split("/")[3:5], "... depth", len(base.split("/")) - 3)
 def call(method, url, payload=None):
     req = urllib.request.Request(url, method=method, data=json.dumps(payload).encode() if payload else None,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": os.environ.get("UA", "amane-issue-triage")})
     try:
         with urllib.request.urlopen(req, timeout=60) as r: return r.status, r.read()
     except urllib.error.HTTPError as e: return e.code, e.read()
