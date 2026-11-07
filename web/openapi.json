@@ -1125,6 +1125,27 @@
             "description": "Filter by user tag id(s); AND"
           },
           {
+            "name": "library_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by linked MediaFile library id(s); OR",
+              "title": "Library Id"
+            },
+            "description": "Filter by linked MediaFile library id(s); OR"
+          },
+          {
             "name": "has_files",
             "in": "query",
             "required": false,

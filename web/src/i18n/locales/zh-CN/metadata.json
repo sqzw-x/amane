@@ -20,6 +20,8 @@
     "advancedHint": "在对应类型中搜索并添加筛选条件",
     "facetPlaceholder": "搜索…",
     "facetEmpty": "无匹配",
+    "library": "媒体库",
+    "libraryAll": "全部媒体库",
     "hasFiles": "关联文件",
     "hasFilesAny": "不限",
     "hasFilesYes": "有文件",

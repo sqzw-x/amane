@@ -168,6 +168,30 @@ class TestMetadataHttp:
         assert "vr" not in (await client.get("metadata/schema")).json()["properties"]
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_library_filter(self, client: AsyncClient, repo: Repository):
+        """HTTP 接线: library_id 可重复, 多库取并集; 非法 id 422."""
+        second = await repo.create_library(name="second", path="/second")
+        assert second.id is not None
+        in_first = await repo.upsert_metadata(number="LIB-FIRST")
+        in_second = await repo.upsert_metadata(number="LIB-SECOND")
+        assert in_first.id is not None and in_second.id is not None
+        await repo.create_media_file(library_id=1, path="/lib/first.mp4", metadata_id=in_first.id)
+        await repo.create_media_file(library_id=second.id, path="/lib/second.mp4", metadata_id=in_second.id)
+
+        first = await client.get("metadata", params={"library_id": 1, "sort_by": "number", "order": "asc"})
+        assert first.status_code == 200
+        assert [i["number"] for i in first.json()["items"]] == ["LIB-FIRST"]
+
+        both = await client.get(
+            "metadata",
+            params=[("library_id", 1), ("library_id", second.id), ("sort_by", "number"), ("order", "asc")],
+        )
+        assert both.status_code == 200
+        assert [i["number"] for i in both.json()["items"]] == ["LIB-FIRST", "LIB-SECOND"]
+
+        assert (await client.get("metadata?library_id=abc")).status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_schema_includes_editable_fields(self, client: AsyncClient):
         resp = await client.get("metadata/schema")
         assert resp.status_code == 200

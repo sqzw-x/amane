@@ -67,6 +67,7 @@ export const metaSearchSchema = z.object({
   publisher_id: idListSchema,
   series_id: idListSchema,
   user_tag_id: idListSchema,
+  library_id: idListSchema,
   has_files: z.enum(["true", "false"]).optional(),
   has_subtitle: z.enum(["true", "false"]).optional(),
   vr: z.enum(["true", "false"]).optional(),

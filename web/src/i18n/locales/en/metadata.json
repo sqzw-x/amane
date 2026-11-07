@@ -20,6 +20,8 @@
     "advancedHint": "Search each type and add filters",
     "facetPlaceholder": "Search…",
     "facetEmpty": "No matches",
+    "library": "Library",
+    "libraryAll": "All libraries",
     "hasFiles": "Linked files",
     "hasFilesAny": "Any",
     "hasFilesYes": "Has files",

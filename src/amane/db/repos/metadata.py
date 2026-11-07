@@ -146,6 +146,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         publisher_ids: Sequence[int] | None = None,
         series_ids: Sequence[int] | None = None,
         user_tag_ids: Sequence[int] | None = None,
+        library_ids: Sequence[int] | None = None,
         has_files: bool | None = None,
         has_subtitle: bool | None = None,
         vr: bool | None = None,
@@ -204,6 +205,10 @@ class MetadataRepoMixin(RepositoryMixinBase):
             return None
         if series_names:
             conditions.append(col(Metadata.series).in_(series_names))
+        if library_ids:
+            conditions.append(
+                _metadata_linked_file_exists(col(MediaFile.library_id).in_(list(unique_ids(library_ids))))
+            )
         if has_files is not None:
             conditions.append(_metadata_has_files_clause(has_files=has_files))
         if vr is True:
@@ -241,6 +246,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         publisher_ids: Sequence[int] | None = None,
         series_ids: Sequence[int] | None = None,
         user_tag_ids: Sequence[int] | None = None,
+        library_ids: Sequence[int] | None = None,
         has_files: bool | None = None,
         has_subtitle: bool | None = None,
         vr: bool | None = None,
@@ -266,6 +272,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 publisher_ids=publisher_ids,
                 series_ids=series_ids,
                 user_tag_ids=user_tag_ids,
+                library_ids=library_ids,
                 has_files=has_files,
                 has_subtitle=has_subtitle,
                 vr=vr,
@@ -304,6 +311,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         publisher_ids: Sequence[int] | None = None,
         series_ids: Sequence[int] | None = None,
         user_tag_ids: Sequence[int] | None = None,
+        library_ids: Sequence[int] | None = None,
         has_files: bool | None = None,
         has_subtitle: bool | None = None,
         vr: bool | None = None,
@@ -327,6 +335,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 publisher_ids=publisher_ids,
                 series_ids=series_ids,
                 user_tag_ids=user_tag_ids,
+                library_ids=library_ids,
                 has_files=has_files,
                 has_subtitle=has_subtitle,
                 vr=vr,

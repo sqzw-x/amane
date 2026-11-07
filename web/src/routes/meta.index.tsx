@@ -24,6 +24,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getFacetOptions,
+  listLibrariesOptions,
   listMetadataInfiniteOptions,
   listMetadataOptions,
   semanticStatusOptions,
@@ -121,6 +122,20 @@ function ActiveHasFilesChip({ hasFiles, onClear }: { hasFiles: boolean; onClear:
   );
 }
 
+function ActiveLibrariesChip({
+  ids,
+  nameById,
+  onClear,
+}: {
+  ids: number[];
+  nameById: Map<number, string>;
+  onClear: () => void;
+}) {
+  const { t } = useTranslation("metadata");
+  const names = ids.map((id) => nameById.get(id) ?? `#${id}`).join(", ");
+  return <ActiveTriChip label={`${t("search.library")}: ${names}`} onClear={onClear} />;
+}
+
 function ActiveVrChip({ vr, onClear }: { vr: boolean; onClear: () => void }) {
   const { t } = useTranslation("metadata");
   return (
@@ -154,6 +169,10 @@ function MetaIndexPage() {
 
   const hasFiles = parseHasFiles(search.has_files);
   const vr = parseHasFiles(search.vr);
+  const libraryIds = search.library_id ?? [];
+  const { data: librariesData } = useQuery(listLibrariesOptions());
+  const libraries = librariesData?.items ?? [];
+  const libraryNameById = new Map(libraries.map((library) => [library.id, library.name]));
   const filePhase: FilePhaseFilters = {
     has_subtitle: parseHasFiles(search.has_subtitle),
     uncensored: parseHasFiles(search.uncensored),
@@ -168,7 +187,9 @@ function MetaIndexPage() {
     filePhase.definition != null ||
     filePhase.content_type != null;
   const [searchInput, setSearchInput] = useState(search.q ?? "");
-  const [advancedOpen, setAdvancedOpen] = useState(hasFiles !== null || vr !== null || phaseActive);
+  const [advancedOpen, setAdvancedOpen] = useState(
+    hasFiles !== null || vr !== null || phaseActive || libraryIds.length > 0,
+  );
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const filters: FacetFilters = {
@@ -182,6 +203,7 @@ function MetaIndexPage() {
   };
 
   const filterParams = {
+    library_id: libraryIds.length > 0 ? libraryIds : undefined,
     has_files: hasFiles === null ? undefined : hasFiles,
     vr: vr === null ? undefined : vr,
     has_subtitle: filePhase.has_subtitle === null ? undefined : filePhase.has_subtitle,
@@ -353,6 +375,16 @@ function MetaIndexPage() {
     });
   }
 
+  function setLibraryFilter(ids: number[]) {
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        library_id: ids.length > 0 ? ids : undefined,
+        page: 1,
+      }),
+    });
+  }
+
   function setVrFilter(value: HasFilesFilter) {
     void navigate({
       search: (prev) => ({
@@ -395,6 +427,7 @@ function MetaIndexPage() {
     hasFiles !== null ||
     vr !== null ||
     phaseActive ||
+    libraryIds.length > 0 ||
     search.saved_query_id != null;
 
   return (
@@ -548,6 +581,9 @@ function MetaIndexPage() {
         <FacetFilterControls
           opened={narrowViewport || advancedOpen}
           filters={filters}
+          libraryIds={libraryIds}
+          libraries={libraries}
+          onLibrariesChange={setLibraryFilter}
           onSelect={appendFacet}
           hasFiles={hasFiles}
           onHasFilesChange={setHasFilesFilter}
@@ -590,6 +626,13 @@ function MetaIndexPage() {
                 <IconX size={14} />
               </ActionIcon>
             </Group>
+          )}
+          {libraryIds.length > 0 && (
+            <ActiveLibrariesChip
+              ids={libraryIds}
+              nameById={libraryNameById}
+              onClear={() => setLibraryFilter([])}
+            />
           )}
           {hasFiles !== null && (
             <ActiveHasFilesChip hasFiles={hasFiles} onClear={() => setHasFilesFilter(null)} />
