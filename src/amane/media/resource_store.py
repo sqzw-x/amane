@@ -34,9 +34,9 @@ logger = structlog.get_logger()
 
 RESOURCE_URL_PREFIX = "/api/resources"
 
-# 上游把已下架资源重定向到 200 的占位图 (DMM 的 now_printing) 时不能算获取成功:
+# 上游把已下架资源重定向到 200 的占位图 (DMM 的 now_printing, up-timely 的 noimage) 时不能算获取成功:
 # 否则该 URL 会被判为可用并前置, 前端最终显示占位图本身.
-_PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/",)
+_PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/", "/noimage.")
 
 
 def _is_placeholder_url(url: str) -> bool:

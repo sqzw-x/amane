@@ -460,6 +460,7 @@ class TestPlaceholderRedirect:
         [
             (_PLACEHOLDER, True),
             ("https://imgsrc.dmm.com/pics/mono/movie/n/now_printing/now_printing.jpg?h=800&w=800", True),
+            ("https://cdn.up-timely.com/noimage.png", True),
             (_REQUEST, False),
             # 只匹配路径, 查询串里的同名字样不算
             ("https://pics.dmm.com/redirect?to=/now_printing/now_printing.jpg", False),

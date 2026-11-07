@@ -273,6 +273,20 @@ def _extract_series_prefix(number: str) -> str:
     return match.group(1).lower() if match else ""
 
 
+_THUMB_SUFFIX = "-pl.jpg"
+_POSTER_SUFFIX = "-ps.jpg"
+
+
+def _poster_urls(thumb_url: str | None) -> list[str]:
+    """旧图片目录的竖版海报与横版封面同目录, 只差文件名后缀; 新目录是哈希文件名, 无可推导地址.
+
+    详情页只引用横版封面, 所以竖版只能按命名推导.
+    """
+    if not thumb_url or not thumb_url.endswith(_THUMB_SUFFIX):
+        return []
+    return [f"{thumb_url.removesuffix(_THUMB_SUFFIX)}{_POSTER_SUFFIX}"]
+
+
 class OfficialCrawler(Crawler):
     @classmethod
     def profile(cls) -> CrawlerProfile:
@@ -340,7 +354,7 @@ class OfficialCrawler(Crawler):
             '//a[contains(@href,"/works/list/genre/")]/text()',
         )
 
-        # 官网只提供横版封面, 无竖版海报; thumb 取作品轮播首图.
+        # 页面只挂横版封面; 竖版海报由 thumb 推导, 见 _poster_urls.
         thumb_url = html.xpath(
             '//div[contains(@class,"p-slider")]//img[contains(@class,"swiper-lazy")]/@data-src'
         ).get()
@@ -360,6 +374,7 @@ class OfficialCrawler(Crawler):
             runtime=runtime,
             tags=tags,
             series=series or None,
+            poster_urls=_poster_urls(thumb_url),
             thumb_urls=[thumb_url] if thumb_url else [],
             source_url=url,
         )
