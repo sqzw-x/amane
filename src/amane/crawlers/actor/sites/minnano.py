@@ -28,12 +28,8 @@ _TRAILING_GROUP_RE = re.compile(r"^(?P<head>.*?)\s*[（(]\s*(?P<inner>[^（）()
 # 读音只由假名或拉丁字母构成; 站点名、系列名常带汉字或数字.
 _READING_RE = re.compile(r"^(?:[ぁ-んァ-ヶー・\s]+|[A-Za-z0-9][A-Za-z0-9 .'\-]*)$")
 _READING_SEPARATOR_RE = re.compile(r"[/／]")
-_FIGURE_RE = re.compile(
-    r"T\s*(?P<t>\d+)\s*/\s*B\s*(?P<b>\d+)\s*"
-    r"(?:\(\s*(?:<[^>]+>)?(?P<cup>[A-Z]+)(?:カップ)?(?:</[^>]+>)?\s*\))?\s*"
-    r"/\s*W\s*(?P<w>\d+)\s*/\s*H\s*(?P<h>\d+)",
-    re.IGNORECASE,
-)
+# T/B/W/H 缺值时标号仍留在行内, 逐项取值: 整行匹配会让一个空位带走其余各项.
+_FIGURE_RE = re.compile(r"(?<![A-Za-z])(?P<key>[TBWH])\s*(?P<value>\d+)", re.IGNORECASE)
 _CUP_RE = re.compile(r"([A-Z]+)カップ", re.IGNORECASE)
 _ACTRESS_HREF_RE = re.compile(r"actress\d+\.html", re.IGNORECASE)
 
@@ -235,21 +231,12 @@ def _parse_birthday(raw: str) -> str | None:
 
 def _parse_figure(raw: str) -> tuple[int | None, int | None, int | None, int | None, str | None]:
     text = unicodedata.normalize("NFKC", raw)
-    text = re.sub(r"<[^>]+>", "", text)
-    m = _FIGURE_RE.search(text)
-    cup_m = _CUP_RE.search(text)
-    cup = (m.group("cup") if m and m.group("cup") else None) or (cup_m.group(1) if cup_m else None)
-    if cup:
-        cup = cup.upper()
-    if not m:
-        return None, None, None, None, cup
-    return (
-        int(m.group("t")),
-        int(m.group("b")),
-        int(m.group("w")),
-        int(m.group("h")),
-        cup,
-    )
+    sizes: dict[str, int] = {}
+    for match in _FIGURE_RE.finditer(text):
+        sizes.setdefault(match.group("key").upper(), int(match.group("value")))
+    cup_match = _CUP_RE.search(text)
+    cup = cup_match.group(1).upper() if cup_match else None
+    return sizes.get("T"), sizes.get("B"), sizes.get("W"), sizes.get("H"), cup
 
 
 def _stable_url(url: str) -> str:
