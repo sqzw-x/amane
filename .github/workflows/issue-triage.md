@@ -118,7 +118,7 @@ safe-outputs:
   # 手动触发时由 dry_run 输入决定; 自动触发时 inputs 为空, 即正常落地.
   staged: ${{ inputs.dry_run }}
   # 默认会在 run 失败时自动开 issue (如 "produced no safe outputs"), 这里关掉.
-  report-failure-as-issue: false
+  report-failure-as-issue: false  # 补跑 workflow 负责汇总失败
   # issue-intent 会附带 rationale/confidence/suggest 元数据, GitHub 据此按仓库自动化
   # 级别处理变更: 默认 Cautious 只放行 HIGH, 其余停留在 issue 页的待审建议面板, 标签
   # 不生效而评论照发. 本流程不接受人工复核, 关闭该元数据, 使变更直接生效.
