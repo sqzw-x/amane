@@ -77,7 +77,7 @@ NFO 为 Kodi 格式, 根元素为 `<movie>`, 内容固定, 不提供自定义模
 
 | 元素 | 内容 |
 |------|------|
-| `<title>` `<originaltitle>` `<sorttitle>` | 番号 + 空格 + 标题, 如 `MIDV-123 Title Here` |
+| `<title>` `<originaltitle>` `<sorttitle>` | 番号 + 空格 + 标题; 标题已以番号开头时不再重复, 如 `MIDV-123 Title Here` |
 | `<num>` | 番号 |
 | `<plot>` `<outline>` | 剧情简介 (纯文本) |
 | `<premiered>` `<releasedate>` `<year>` | 发行日期与年份 |
