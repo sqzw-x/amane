@@ -32,6 +32,7 @@ _LIBRARY_UPDATE_KEYS = frozenset(
         "poster_template",
         "fanart_template",
         "extrafanart_template",
+        "extrafanart_name_template",
         "nfo_template",
         "trailer_template",
         "subtitle_template",

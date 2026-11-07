@@ -15,7 +15,7 @@ from ..library import (
     SubtitleExtensions,
     TrailerPattern,
 )
-from ..organize.path_templates import VIDEO_TEMPLATE_DEFAULT, PathTemplate
+from ..organize.path_templates import VIDEO_TEMPLATE_DEFAULT, ExtrafanartNameTemplate, PathTemplate
 from ..organize.strm_content import StrmContentTemplate
 from ..parsing import VR_TAGS, ContentType, Mosaic, is_vr
 
@@ -400,6 +400,8 @@ class Library(SQLModel, table=True):
     poster_template: PathTemplate | None = None
     fanart_template: PathTemplate | None = None
     extrafanart_template: PathTemplate | None = None
+    extrafanart_name_template: ExtrafanartNameTemplate | None = None
+    """剧照文件名模板; 空则 `{index}.jpg`. 只能是文件名, 必须含 `{index}` 或 `{index_padded}`."""
     nfo_template: PathTemplate | None = None
     trailer_template: PathTemplate | None = None
     subtitle_template: PathTemplate | None = None

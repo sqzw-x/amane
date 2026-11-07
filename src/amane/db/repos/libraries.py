@@ -15,7 +15,12 @@ from ...library import (
     validate_min_file_size,
     validate_trailer_pattern,
 )
-from ...organize.path_templates import VIDEO_TEMPLATE_DEFAULT, normalize_link_template, validate_path_template
+from ...organize.path_templates import (
+    VIDEO_TEMPLATE_DEFAULT,
+    normalize_link_template,
+    validate_extrafanart_name_template,
+    validate_path_template,
+)
 from ...organize.strm_content import normalize_strm_content_template, validate_strm_content_template
 from ...utils.path import resolved_path
 from ..models import Library, MediaFile
@@ -25,6 +30,14 @@ from .base import RepositoryMixinBase
 
 def _path_template_or_none(value: str | None) -> str | None:
     return None if value is None else validate_path_template(value)
+
+
+def _extrafanart_name_or_none(value: str | None) -> str | None:
+    """空白文件名模板按未设置处理, 交给默认值."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    return None if not stripped else validate_extrafanart_name_template(stripped)
 
 
 def _strm_content_or_none(value: str | None) -> str | None:
@@ -67,6 +80,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         poster_template: str | None = None,
         fanart_template: str | None = None,
         extrafanart_template: str | None = None,
+        extrafanart_name_template: str | None = None,
         nfo_template: str | None = None,
         trailer_template: str | None = None,
         subtitle_template: str | None = None,
@@ -86,6 +100,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
         poster_template = _path_template_or_none(poster_template)
         fanart_template = _path_template_or_none(fanart_template)
         extrafanart_template = _path_template_or_none(extrafanart_template)
+        extrafanart_name_template = _extrafanart_name_or_none(extrafanart_name_template)
         nfo_template = _path_template_or_none(nfo_template)
         trailer_template = _path_template_or_none(trailer_template)
         subtitle_template = _path_template_or_none(subtitle_template)
@@ -110,6 +125,7 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 poster_template=poster_template,
                 fanart_template=fanart_template,
                 extrafanart_template=extrafanart_template,
+                extrafanart_name_template=extrafanart_name_template,
                 nfo_template=nfo_template,
                 trailer_template=trailer_template,
                 subtitle_template=subtitle_template,
@@ -221,6 +237,8 @@ class LibrariesRepoMixin(RepositoryMixinBase):
                 lib.fanart_template = _path_template_or_none(updates["fanart_template"])
             if "extrafanart_template" in updates:
                 lib.extrafanart_template = _path_template_or_none(updates["extrafanart_template"])
+            if "extrafanart_name_template" in updates:
+                lib.extrafanart_name_template = _extrafanart_name_or_none(updates["extrafanart_name_template"])
             if "nfo_template" in updates:
                 lib.nfo_template = _path_template_or_none(updates["nfo_template"])
             if "trailer_template" in updates:

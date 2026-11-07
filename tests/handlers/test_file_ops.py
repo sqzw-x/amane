@@ -10,11 +10,11 @@ import pytest
 from PIL import Image
 
 from amane.config import HotSettings, WatermarkConfig
-from amane.db.models import MediaFile, Metadata
+from amane.db.models import Library, MediaFile, Metadata
 from amane.enums import DownloadableResource
 from amane.handlers.file import _copy_into_library, execute_file_operations
 from amane.media import ResourceStore
-from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths
+from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths, resolve_paths
 from amane.parsing import parse_file_info
 
 if TYPE_CHECKING:
@@ -542,3 +542,110 @@ async def test_images_placed_when_metadata_copy_denied(
     assert paths.thumb.exists()
     assert paths.poster.exists()
     assert paths.fanart.read_bytes() == paths.thumb.read_bytes()
+
+
+@pytest.mark.asyncio
+async def test_extrafanart_names_follow_library_template(resource_store: ResourceStore, tmp_path: Path):
+    """剧照文件名按库模板逐张渲染; 宽度由本轮数量决定."""
+    client = cast("WebClient", FakeClient())
+    root = tmp_path / "lib"
+    root.mkdir()
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(
+        number="MIDV-123",
+        extrafanart_urls={"dmm": [f"https://s/e{i}.jpg" for i in range(1, 11)]},
+    )
+    lib = Library(
+        name="t",
+        path=str(root),
+        video_template="{number}/{number}.{ext}",
+        extrafanart_name_template="{number}-{index_padded}.jpg",
+    )
+    paths = resolve_paths(lib, meta, ext="mp4", source_path=src)
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.COPY,
+        resource_store=resource_store,
+        file_info=parse_file_info(src),
+        web_client=client,
+        config=HotSettings(),
+        library=lib,
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    names = sorted(p.name for p in paths.extrafanart_dir.iterdir())
+    assert len(names) == 10
+    assert names[0] == "MIDV-123-01.jpg"
+    assert names[-1] == "MIDV-123-10.jpg"
+
+
+@pytest.mark.asyncio
+async def test_existing_stills_in_dir_are_left_alone(resource_store: ResourceStore, tmp_path: Path):
+    """换模板或张数跨位数后旧名字留在目录里: 本 PR 只写本次的写集, 不清理目录."""
+    client = cast("WebClient", FakeClient())
+    root = tmp_path / "lib"
+    root.mkdir()
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(number="MIDV-123", extrafanart_urls={"dmm": ["https://s/e1.jpg", "https://s/e2.jpg"]})
+    lib = Library(name="t", path=str(root), video_template="{number}/{number}.{ext}")
+    paths = resolve_paths(lib, meta, ext="mp4", source_path=src)
+    paths.extrafanart_dir.mkdir(parents=True)
+    stale = paths.extrafanart_dir / "99.jpg"
+    stale.write_bytes(b"old")
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.COPY,
+        resource_store=resource_store,
+        file_info=parse_file_info(src),
+        web_client=client,
+        config=HotSettings(),
+        library=lib,
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    assert stale.exists()
+    assert sorted(p.name for p in paths.extrafanart_dir.iterdir()) == ["1.jpg", "2.jpg", "99.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_extrafanart_names_fall_back_without_library(resource_store: ResourceStore, tmp_path: Path):
+    """未带库列时用默认模板, 与传入路径时的默认输出一致."""
+    client = cast("WebClient", FakeClient())
+    root = tmp_path / "lib"
+    root.mkdir()
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(number="MIDV-123", extrafanart_urls={"dmm": ["https://s/e1.jpg", "https://s/e2.jpg"]})
+    lib = Library(name="t", path=str(root), video_template="{number}/{number}.{ext}")
+    paths = resolve_paths(lib, meta, ext="mp4", source_path=src)
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.COPY,
+        resource_store=resource_store,
+        file_info=parse_file_info(src),
+        web_client=client,
+        config=HotSettings(),
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    assert sorted(p.name for p in paths.extrafanart_dir.iterdir()) == ["1.jpg", "2.jpg"]

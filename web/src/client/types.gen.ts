@@ -2172,6 +2172,10 @@ export type LibraryCreateRequest = {
      */
     extrafanart_template?: string | null;
     /**
+     * Extrafanart Name Template
+     */
+    extrafanart_name_template?: string | null;
+    /**
      * Nfo Template
      */
     nfo_template?: string | null;
@@ -2295,6 +2299,10 @@ export type LibraryResponse = {
      */
     extrafanart_template?: string | null;
     /**
+     * Extrafanart Name Template
+     */
+    extrafanart_name_template?: string | null;
+    /**
      * Nfo Template
      */
     nfo_template?: string | null;
@@ -2392,6 +2400,10 @@ export type LibraryUpdateRequest = {
      * Extrafanart Template
      */
     extrafanart_template?: string | null;
+    /**
+     * Extrafanart Name Template
+     */
+    extrafanart_name_template?: string | null;
     /**
      * Nfo Template
      */
@@ -3154,7 +3166,7 @@ export type NetworkConfig = {
 /**
  * OptionalPathTemplateDefaults
  *
- * 附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用).
+ * 附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用; 剧照文件名在写盘时按张数渲染).
  */
 export type OptionalPathTemplateDefaults = {
     /**
@@ -3173,6 +3185,10 @@ export type OptionalPathTemplateDefaults = {
      * Extrafanart Template
      */
     extrafanart_template: string;
+    /**
+     * Extrafanart Name Template
+     */
+    extrafanart_name_template: string;
     /**
      * Nfo Template
      */
@@ -3310,7 +3326,7 @@ export type PathTemplatePlaceholder = {
 /**
  * PathTemplateSchemaResponse
  *
- * 与 resolve_paths 同源.
+ * 与 ORGANIZE 实际使用的默认值同源; 路径模板由 resolve_paths 解析, 剧照文件名模板由写盘阶段渲染.
  */
 export type PathTemplateSchemaResponse = {
     /**

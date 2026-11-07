@@ -2283,7 +2283,7 @@ export const getPathTemplateSchemaQueryKey = (options?: Options<GetPathTemplateS
 /**
  * Get Path Template Schema
  *
- * 与 resolve_paths 同源.
+ * 与 ORGANIZE 实际使用的默认值同源.
  */
 export const getPathTemplateSchemaOptions = (options?: Options<GetPathTemplateSchemaData>) => queryOptions<GetPathTemplateSchemaResponse, DefaultError, GetPathTemplateSchemaResponse, ReturnType<typeof getPathTemplateSchemaQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
