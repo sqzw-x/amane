@@ -81,9 +81,9 @@ steps:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       ISSUE_API_URL: ${{ github.api_url }}
       ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
-      VISION_API_URL: ${{ vars.TRIAGE_VISION_URL || 'https://models.github.ai/inference/chat/completions' }}
-      VISION_API_KEY: ${{ secrets.GITHUB_TOKEN }}
-      VISION_MODEL: ${{ vars.TRIAGE_VISION_MODEL || 'openai/gpt-4.1-mini' }}
+      VISION_API_URL: ${{ vars.TRIAGE_VISION_URL || format('{0}/chat/completions', secrets.LLM_BASE_URL) }}
+      VISION_API_KEY: ${{ secrets.CF_GATEWAY_TOKEN }}
+      VISION_MODEL: ${{ vars.TRIAGE_VISION_MODEL || 'deepseek/deepseek-v4.1-flash' }}
       OUTPUT_PATH: /tmp/gh-aw/agent/attachments.md
     run: python3 scripts/issue_attachments.py
 tools:

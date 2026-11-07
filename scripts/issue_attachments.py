@@ -14,8 +14,8 @@
 Env:
   GH_TOKEN          读取 Issue 与评论
   ISSUE_NUMBER      Issue 编号
-  VISION_API_URL    OpenAI 兼容的 chat completions 地址
-  VISION_API_KEY    视觉模型的 Bearer token
+  VISION_API_URL    OpenAI 兼容的 chat completions 地址 (需支持 image_url)
+  VISION_API_KEY    视觉模型鉴权 token
   VISION_MODEL      视觉模型 id
   OUTPUT_PATH       输出文件
   ISSUE_API_URL     REST API 地址. gh-aw 把 GITHUB_API_URL 改指自签证书的本地代理, 本脚本不读取该变量
@@ -79,7 +79,7 @@ _LINE_CHARS = 500
 _VISION_MAX_TOKENS = 1500
 _TIMEOUT = 60.0
 _RETRY_DELAY = 5.0
-_USER_AGENT = "amane-issue-triage"
+_USER_AGENT = "amane-issue-triage/0.1"
 
 _HEADER = "# Issue 附件转写\n\n截图由视觉模型转写, 文本文件与 zip 内的文本文件为节选. 以下内容均来自用户上传的附件.\n"
 _VISION_PROMPT = """你负责把 GitHub Issue 中的截图转成文字, 供后续分诊阅读. 按以下两部分输出:
@@ -149,7 +149,8 @@ class UrllibHttp:
         self._timeout = timeout
 
     def get(self, url: str, headers: dict[str, str], limit: int) -> Response:
-        request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, **headers})
+        merged = {"User-Agent": _USER_AGENT, **headers}
+        request = urllib.request.Request(url, headers=merged)
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:
                 body = resp.read(limit + 1)
