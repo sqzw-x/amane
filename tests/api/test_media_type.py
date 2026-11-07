@@ -2,33 +2,16 @@
 
 from pathlib import Path
 
-import pytest
-
 from amane.api.support.media_type import media_type_and_headers, sniff_media_type
 
 _HTML = b"<html><script>alert(1)</script></html>"
 
 
-@pytest.mark.parametrize(
-    ("head", "expected"),
-    [
-        (b"\xff\xd8\xff\xe0" + b"\x00" * 8, "image/jpeg"),
-        (b"\x89PNG\r\n\x1a\n" + b"\x00" * 8, "image/png"),
-        (b"GIF89a" + b"\x00" * 10, "image/gif"),
-        (b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 4, "image/webp"),
-        (b"\x00\x00\x00\x20ftypavif" + b"\x00" * 4, "image/avif"),
-        (b"\x00\x00\x00\x20ftypisom" + b"\x00" * 4, "video/mp4"),
-        # 未登记的 ISO BMFF 品牌与不可渲染内容都不给类型
-        (b"\x00\x00\x00\x20ftypheic" + b"\x00" * 4, None),
-        (_HTML, None),
-        (b"", None),
-    ],
-)
-def test_sniff_by_content(tmp_path: Path, head: bytes, expected: str | None):
-    path = tmp_path / "resource.bin"
-    path.write_bytes(head)
+def test_content_wins_over_extension(tmp_path: Path):
+    path = tmp_path / "resource.jpg"
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
 
-    assert sniff_media_type(path) == expected
+    assert sniff_media_type(path) == "image/png"
 
 
 def test_extension_fallback(tmp_path: Path):

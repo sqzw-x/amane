@@ -7,7 +7,6 @@
 
 import asyncio
 import hashlib
-import mimetypes
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -21,6 +20,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ..db.models import Resource
+from .file_type import detect_media_type
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -224,7 +224,7 @@ class ResourceStore:
             tmp.unlink(missing_ok=True)
 
         size = dest.stat().st_size
-        mime = mimetypes.guess_type(str(dest))[0]
+        mime = detect_media_type(dest)
         content_hash = self._hash_file(dest)
 
         # 写入记录.
@@ -308,7 +308,7 @@ class ResourceStore:
                 return None
 
             size = dest.stat().st_size
-            mime = mimetypes.guess_type(str(dest))[0]
+            mime = detect_media_type(dest)
             content_hash = self._hash_file(dest)
             meta = {"op": op, "src": src_url, "args": args}
 
