@@ -331,6 +331,7 @@ class ScrapingConfig(BaseModel):
         description="刮削时自动下载到 Resource 目录的资源类型",
     )
     crop_poster: bool = True
+    """仅有码与无码从封面自动裁切生成海报."""
 
     poster_ratio: float = Field(default=0.7, ge=0.3, le=1.0)
     """海报裁剪宽高比 (w/h). 从封面右侧裁剪生成海报. 默认 0.7 (贴近常见 379x538 / 高清海报)."""

@@ -1,4 +1,4 @@
-"""海报裁剪与封面角标. 判定函数只依赖尺寸与阈值."""
+"""海报裁剪与封面角标. 裁切判定分为尺寸与内容类型两层."""
 
 from collections.abc import Mapping
 from pathlib import Path
@@ -16,6 +16,10 @@ logger = structlog.get_logger()
 # 标准 DVD 封面约 800x538, 海报为右侧约 379x538 (≈0.704); 默认取 0.7.
 _DEFAULT_POSTER_RATIO = 0.7
 _DEFAULT_JPEG_QUALITY = 95
+
+# 自动裁切假定封面是横版夹页: 右侧 height × poster_ratio 为竖版海报. 仅传统 JAV 类型符合;
+# 欧美与 FC2 的来源只给横版场景图, 国产 / 动漫 / 素人的封面不保证是夹页.
+_AUTO_CROP_CONTENT_TYPES: frozenset[ContentType] = frozenset({ContentType.CENSORED, ContentType.UNCENSORED})
 
 # 与自动右侧比 `0.7000` 共存于 op=crop.
 CROP_BOX_ARGS_PREFIX = "box:"
@@ -108,7 +112,7 @@ def probe_size(path: Path) -> tuple[int, int] | None:
 def should_crop_poster(
     thumb_size: tuple[int, int] | None, candidate_size: tuple[int, int] | None, *, skip_ratio: float = 0.9
 ) -> bool:
-    """无 thumb 尺寸则 False. 无 poster 候选则 True.
+    """只依据尺寸与阈值判定. 无 thumb 尺寸则 False. 无 poster 候选则 True.
 
     候选已足够高 (b/h ≥ skip_ratio) 则不裁剪: 裁剪有错位风险.
     """
@@ -121,6 +125,11 @@ def should_crop_poster(
     if h <= 0 or b <= 0:
         return False
     return (b / h) < skip_ratio
+
+
+def allows_poster_crop(content_type: ContentType) -> bool:
+    """自动裁切只对封面为横版夹页的类型启用."""
+    return content_type in _AUTO_CROP_CONTENT_TYPES
 
 
 def needs_upscale(

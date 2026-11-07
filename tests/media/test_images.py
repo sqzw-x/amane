@@ -8,6 +8,7 @@ from PIL import Image
 from amane.enums import WatermarkCorner, WatermarkKind
 from amane.media import (
     CropRotation,
+    allows_poster_crop,
     apply_cover_watermarks,
     crop_box,
     crop_poster,
@@ -19,7 +20,7 @@ from amane.media import (
     should_crop_poster,
     validate_crop_box,
 )
-from amane.parsing import DEFINITION_VALUES, Mosaic
+from amane.parsing import DEFINITION_VALUES, ContentType, Mosaic
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -320,6 +321,23 @@ class TestShouldCropPoster:
     )
     def test_decision(self, thumb, candidate, skip, expected, desc):
         assert should_crop_poster(thumb, candidate, skip_ratio=skip) is expected, desc
+
+
+class TestAllowsPosterCrop:
+    @pytest.mark.parametrize(
+        ("content_type", "expected", "desc"),
+        [
+            (ContentType.CENSORED, True, "有码"),
+            (ContentType.UNCENSORED, True, "无码"),
+            (ContentType.CHINESE, False, "国产"),
+            (ContentType.WESTERN, False, "欧美"),
+            (ContentType.FC2, False, "FC2"),
+            (ContentType.AMATEUR, False, "素人"),
+            (ContentType.HENTAI, False, "动漫"),
+        ],
+    )
+    def test_decision(self, content_type: ContentType, expected: bool, desc: str):
+        assert allows_poster_crop(content_type) is expected, desc
 
 
 class TestNeedsUpscale:

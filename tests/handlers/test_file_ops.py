@@ -15,7 +15,7 @@ from amane.enums import DownloadableResource
 from amane.handlers.file import _copy_into_library, execute_file_operations
 from amane.media import ResourceStore
 from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths, resolve_paths
-from amane.parsing import parse_file_info
+from amane.parsing import ContentType, parse_file_info
 
 if TYPE_CHECKING:
     from amane.net.http import WebClient
@@ -232,9 +232,18 @@ async def test_write_nfo_false_skips_nfo(resource_store: ResourceStore, tmp_path
     assert not paths.nfo.exists()
 
 
+@pytest.mark.parametrize(
+    ("content_type", "expected", "desc"),
+    [
+        (ContentType.CENSORED, True, "有码回退裁剪"),
+        (ContentType.WESTERN, False, "欧美不裁剪"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_missing_internal_resource_falls_back_to_crop(resource_store: ResourceStore, tmp_path: Path):
-    """poster 内部 URL 指向不存在资源 → 回退从 thumb 裁剪."""
+async def test_missing_internal_resource_crop_fallback_by_content_type(
+    resource_store: ResourceStore, tmp_path: Path, content_type: ContentType, expected: bool, desc: str
+):
+    """poster 内部 URL 指向不存在资源 → 仅允许的类型回退从 thumb 裁剪."""
     client = cast("WebClient", FakeClient())
     src = tmp_path / "src" / "MIDV-123.mp4"
     src.parent.mkdir(parents=True)
@@ -243,6 +252,7 @@ async def test_missing_internal_resource_falls_back_to_crop(resource_store: Reso
     mf = MediaFile(path=str(src), library_id=1)
     meta = Metadata(
         number="MIDV-123",
+        content_type=content_type,
         thumb_urls=["https://s/t.jpg"],
         poster_urls=["/api/resources/deadbeefdeadbeef"],  # 不存在
     )
@@ -258,7 +268,7 @@ async def test_missing_internal_resource_falls_back_to_crop(resource_store: Reso
         config=HotSettings(),
     )
     assert result.outcome is PlaceOutcome.PLACED
-    assert paths.poster.exists()  # 裁剪回退
+    assert paths.poster.exists() == expected, desc
 
 
 @pytest.mark.parametrize("enabled", [False, True])

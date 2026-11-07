@@ -53,7 +53,7 @@
       },
       "crop_poster": {
         "label": "Crop Poster",
-        "description": "Auto-crop poster from the cover image"
+        "description": "Auto-crop a poster from the cover image, censored and uncensored only"
       },
       "poster_crop_skip_ratio": {
         "label": "Poster crop skip threshold",
