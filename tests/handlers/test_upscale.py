@@ -12,7 +12,10 @@ from amane.handlers import upscale as upscale_mod
 from amane.media import ResourceStore, UpscaleOutcome, derived_locator
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from pathlib import Path
+
+    _SetMime = Callable[[str, str | None], Awaitable[None]]
 
 _URL = "https://s/small.jpg"
 _LOCATOR = derived_locator(_URL, "crop", "0.7")  # 派生资源的 locator 才是 Resource.url
@@ -35,6 +38,18 @@ async def _seed_image(store: ResourceStore, url: str, size: tuple[int, int]) -> 
         return True
 
     await store.acquire_derived(url, "crop", "0.7", producer)
+
+
+async def _seed_binary(store: ResourceStore, set_mime: _SetMime, url: str, data: bytes) -> None:
+    """造存量记录: 无后缀 URL 落成的 ``.bin``, 入库时未判定类型 (通用二进制)."""
+
+    async def producer(dest: Path) -> bool:
+        dest.write_bytes(data)
+        return True
+
+    resource = await store.acquire_derived(url, "crop", "0.7", producer, ext=".bin")
+    assert resource is not None
+    await set_mime(resource.url, "application/octet-stream")
 
 
 async def _seed_upscaled(store: ResourceStore, url: str, *, stale_on_disk: bool) -> bytes:
@@ -153,6 +168,30 @@ async def test_skips_high_resolution(resource_store: ResourceStore, _fake_sr):
 
 
 @pytest.mark.asyncio
+async def test_upscales_octet_stream_image(resource_store: ResourceStore, set_resource_mime: _SetMime, _fake_sr):
+    """存量记录类型未定: ``.bin`` 的图片按内容判定, 不能跳过."""
+    await _seed_binary(resource_store, set_resource_mime, "https://s/noext", _jpeg_bytes(_LOW_QUALITY_SIZE, "blue"))
+    result = await UpscaleHandler(resource_store, HotSettings()).handle(UpscalePayload())
+
+    assert result.result is not None
+    assert result.result.upscaled == 1
+    assert result.result.skipped == 0
+
+
+@pytest.mark.asyncio
+async def test_skips_octet_stream_non_image(resource_store: ResourceStore, set_resource_mime: _SetMime):
+    """内容不是图片的记录照常跳过."""
+    await _seed_binary(
+        resource_store, set_resource_mime, "https://s/noext-video", b"\x00\x00\x00\x20ftypisom" + b"\x00" * 8
+    )
+    result = await UpscaleHandler(resource_store, HotSettings()).handle(UpscalePayload())
+
+    assert result.result is not None
+    assert result.result.upscaled == 0
+    assert result.result.skipped == 1
+
+
+@pytest.mark.asyncio
 async def test_empty_store(resource_store: ResourceStore):
     handler = UpscaleHandler(resource_store, HotSettings())
     result = await handler.handle(UpscalePayload())
@@ -169,3 +208,22 @@ async def test_limit_caps_batch(resource_store: ResourceStore, _fake_sr):
     result = await handler.handle(UpscalePayload(limit=2))
     assert result.result is not None
     assert result.result.upscaled == 2  # 上限 2
+
+
+@pytest.mark.parametrize(
+    ("mime", "data", "expected"),
+    [
+        ("image/jpeg", b"<html>blocked</html>", True),  # 记录给出确定类型时不再读内容
+        ("video/mp4", b"\xff\xd8\xff\xe0", False),
+        ("application/octet-stream", b"\xff\xd8\xff\xe0", True),
+        ("application/octet-stream", b"<html>blocked</html>", False),
+        (None, b"\xff\xd8\xff\xe0", True),
+    ],
+    ids=["record-wins", "record-video", "placeholder-image", "placeholder-junk", "missing-image"],
+)
+def test_image_decision_order(tmp_path: Path, mime: str | None, data: bytes, expected: bool):
+    """记录优先; 类型未定时才按内容兜底, 后缀只兜最外层."""
+    path = tmp_path / "resource.bin"
+    path.write_bytes(data)
+
+    assert upscale_mod._is_image(mime, path) is expected

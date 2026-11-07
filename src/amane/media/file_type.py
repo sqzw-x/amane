@@ -13,6 +13,9 @@ from PIL import Image
 
 IMAGE_MIME_PREFIX = "image/"
 
+OCTET_STREAM_MIME = "application/octet-stream"
+"""``mime_type`` 为它时类型未定, 判定须按内容复核."""
+
 _HEAD_BYTES = 16
 
 _BMFF_BRANDS: dict[str, str] = {

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..media import UpscaleOutcome, needs_upscale, probe_size
+from ..media.file_type import IMAGE_MIME_PREFIX, OCTET_STREAM_MIME, detect_media_type
 from ..media.pipeline import sr_args_dict
 from ..sr import run_SR
 from .models import UpscalePayload, UpscaleResult
@@ -19,14 +20,17 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-_IMAGE_MIME_PREFIX = "image/"
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
-def _is_image(mime: str | None, file_path: str) -> bool:
-    if mime:
-        return mime.startswith(_IMAGE_MIME_PREFIX)
-    return Path(file_path).suffix.lower() in _IMAGE_EXTS
+def _is_image(mime: str | None, path: Path) -> bool:
+    if mime and mime != OCTET_STREAM_MIME:
+        return mime.startswith(IMAGE_MIME_PREFIX)
+    # 记录未给出类型时按内容兜底 (文件头 → PIL).
+    detected = detect_media_type(path)
+    if detected is not None:
+        return detected.startswith(IMAGE_MIME_PREFIX)
+    return mime is None and path.suffix.lower() in _IMAGE_EXTS
 
 
 class UpscaleHandler(TaskHandler[UpscalePayload, UpscaleResult]):
@@ -51,11 +55,11 @@ class UpscaleHandler(TaskHandler[UpscalePayload, UpscaleResult]):
                 break
             scanned += 1
 
-            if not _is_image(res.mime_type, res.file_path):
+            full = self._store.full_path(res)
+            if not _is_image(res.mime_type, full):
                 skipped += 1
                 continue
 
-            full = self._store.full_path(res)
             size = probe_size(full)
             file_bytes = full.stat().st_size if full.exists() else 0
             # 超分处的判据是标记加盘上字节; 已超分的图尺寸已达阈值, 在此跳过.
