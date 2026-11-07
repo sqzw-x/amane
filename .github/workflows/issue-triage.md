@@ -117,8 +117,17 @@ tools:
 safe-outputs:
   # 手动触发时由 dry_run 输入决定; 自动触发时 inputs 为空, 即正常落地.
   staged: ${{ inputs.dry_run }}
-  # 默认会在 run 失败时自动开 issue (如 "produced no safe outputs"), 这里关掉.
-  report-failure-as-issue: false  # 补跑 workflow 负责汇总失败
+  # 只上报模型服务与预算类故障: 这类故障会让一批 issue 同时漏处理, 必须让维护者看到.
+  # agent 自身判断未完成等情况不上报. 同类失败归入同一个父 issue, 不逐次新开.
+  report-failure-as-issue:
+    - inference_access_error
+    - ai_credits_rate_limit_error
+    - max_ai_credits_exceeded
+    - agent_startup_failure
+    - engine_driver_failure
+    - daily_ai_credits_exceeded
+    - daily_ai_credits_unknown
+  group-reports: true
   # issue-intent 会附带 rationale/confidence/suggest 元数据, GitHub 据此按仓库自动化
   # 级别处理变更: 默认 Cautious 只放行 HIGH, 其余停留在 issue 页的待审建议面板, 标签
   # 不生效而评论照发. 本流程不接受人工复核, 关闭该元数据, 使变更直接生效.
