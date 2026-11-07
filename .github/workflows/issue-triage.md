@@ -161,7 +161,13 @@ safe-outputs:
       - status:needs-info
       - status:duplicate
       - status:invalid
-    max: 3
+      - effort:s
+      - effort:m
+      - effort:l
+      - effort:xl
+      - effort:xxl
+    # 一次分诊通常只打类型、优先级与工作量各一个.
+    max: 4
   remove-labels:
     # 手动触发 (含补跑) 的事件里没有 issue, 必须显式指定目标; 固定为本次处理的编号, 不允许 agent 另选.
     target: ${{ github.event.issue.number || inputs.issue_number }}
@@ -210,9 +216,9 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 只有两个:
 
 1. **挡掉低质量 Issue** —— 信息不足或无法推进的, 尽早收拢, 不进入后续处理.
-2. **让留下来的 Issue 便于接手** —— 类型准确, 标题能看出主题, 优先级清楚, 信息足够动手.
+2. **让留下来的 Issue 便于接手** —— 类型准确, 标题能看出主题, 优先级与工作量清楚, 信息足够动手.
 
-你不实现功能, 不评估工作量, 不承诺排期, 不替维护者做决定.
+你不实现功能, 不承诺排期, 不替维护者做决定.
 
 ### 判断倾向
 
@@ -375,12 +381,34 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 
 ---
 
-## 任务 5. 优先级与状态
+## 任务 5. 优先级、工作量与状态
+
+### 优先级
 
 只在下列情况打优先级, 其余一律不打 —— 常规的中低优先级由维护者人工判断:
 
 - `priority:critical`: 阻塞, 安全问题, 数据损坏
 - `priority:high`: 功能回归或主要功能不可用, 且无合理绕行方案
+
+### 工作量
+
+维护者依据工作量挑选要处理的 issue. 判据只有需要修改的范围, 与需求热度、优先级和 issue 篇幅无关.
+
+| 标签 | 范围 | 判据 |
+|---|---|---|
+| `effort:s` | 局部修改 | 一两个文件; 不新增 API 端点、配置项与表字段. 修复单个来源的解析、修改文案或默认值、修改文档都属此档 |
+| `effort:m` | 单个模块内 | 同一模块内的多个文件, 可以新增配置项 (设置页按配置自动生成, 不算前后端联动); 不新增 API 端点与表字段. 新增一个刮削来源属此档 |
+| `effort:l` | 跨模块或前后端联动 | 同时修改两个以上模块, 或新增、修改 API 端点并修改前端; 不修改表结构 |
+| `effort:xl` | 数据模型或完整功能 | 需要数据库迁移, 修改多源聚合规则, 或新增一条从后端到前端的完整功能 (含新页面) |
+| `effort:xxl` | 架构级 | 修改模块边界、启动顺序或配置分层, 或大规模重构; 单个 PR 无法完成, 需要先出设计方案 |
+
+规则:
+
+- 只给最终类型为 `kind:bug` / `kind:enhancement` / `kind:feature` / `kind:docs` 的 issue 打工作量. 判为信息不足、无效、重复、`kind:question`、`eco:project`, 要求拆分或超出范围的, 不打.
+- 模块划分依据 `docs/dev/architecture.md` 的「模块边界」, 涉及的机制依据按主题选读的开发文档. 不为估计工作量阅读代码.
+- bug 的修改范围取决于根因: 现象与报错已指明出错的功能时, 按该功能估计; 指明不了时不打, 不为估计工作量追查根因.
+- 在相邻两档之间犹豫时, 选择较大的一档.
+- issue 上已有 `effort:*` 时不再打.
 
 `status:triaged` 由维护者人工添加, 你一律不要打 —— 一个 issue 是否"已确认有效"由人判断.
 
@@ -447,7 +475,7 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 - 不出现内部代码路径, 文件名, 函数名或内部标识符.
 - 面向使用方法的问题: 引用相关文档链接或一句话说明即可, 不展开教程.
 - 拆分请求与范围外回绝: 简短说明理由, 不展开.
-- 不使用夸张措辞, 不承诺排期, 不给出工作量估计.
+- 不使用夸张措辞, 不承诺排期. 工作量只体现为标签, 评论中不写.
 
 ### 引用文档
 

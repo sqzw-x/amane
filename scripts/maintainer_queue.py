@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""维护者待办: 把需要维护者处理的 open issue 与 PR 汇总到一个置顶 issue 的正文.
+"""维护者待办: 把需要维护者处理的 open issue 与 PR 汇总到一个 issue 的正文.
 
 由 `.github/workflows/maintainer-queue.yml` 定时执行, 不调用模型: 分组只依据标签、评论顺序与分诊评论中的
 固定行首, 每次从当前状态全量计算, 不在 issue 上留下「已收录」之类的标记.
@@ -7,8 +7,9 @@
 约束:
 - 分组依据分诊评论的两个契约: gh-aw 写入的隐藏标记 `_TRIAGE_MARKER`, 以及「需维护者决定:」行首
   (格式见 `.github/workflows/issue-triage.md` 的「评论写法」). 两处任一改动都要同步本脚本.
-- 置顶 issue 由正文中的 `_QUEUE_MARKER` 识别; 上次通知过的条目记录在正文末尾的隐藏注释里,
-  只有 `NOTIFY=true` 的运行才对比并评论新增条目, 其余运行只刷新正文.
+- 待办 issue 由 `_QUEUE_LABEL` 与正文中的 `_QUEUE_MARKER` 识别, 每次运行原地编辑正文; 找不到 open 的待办 issue
+  时新建. 上次通知过的条目记录在正文末尾的隐藏注释里, 只有 `NOTIFY=true` 的运行才对比并评论新增条目,
+  其余运行只刷新正文.
 - 运行于 runner 自带的 python3, 只能使用标准库与 3.12 已有的语法.
 
 Env:
@@ -110,9 +111,13 @@ class Issue:
 class Entry:
     number: int
     note: str = ""
+    # 长文本 (用户回复摘要、待决问题) 另起一行: GitHub 把列表项里的 issue 引用展开为标题, 同行接续的文本与标题难以区分.
+    detail: str = ""
 
     def render(self) -> str:
-        return f"- #{self.number}" + (f" · {self.note}" if self.note else "")
+        line = f"- #{self.number}" + (f" · {self.note}" if self.note else "")
+        # 续行缩进两格, 仍属同一列表项; issue 正文中的单个换行渲染为换行.
+        return line + (f"\n  {self.detail}" if self.detail else "")
 
 
 @dataclass
@@ -231,7 +236,7 @@ def classify(issue: Issue, maintainers: frozenset[str], now: datetime) -> tuple[
     # 用户在最后一次处理 (分诊或维护者回复) 之后发言: 轮到维护者.
     if acted and acted[-1][0] == "user":
         last = acted[-1][1]
-        return "waiting", Entry(issue.number, f"{last.login} {last.created_at:%m-%d}: {snippet(last.body)}")
+        return "waiting", Entry(issue.number, detail=f"{last.login} {last.created_at:%m-%d}: {snippet(last.body)}")
 
     latest_triage = next((c for c in reversed(issue.comments) if c.is_triage and not c.minimized), None)
     if latest_triage is not None and not any(
@@ -242,7 +247,7 @@ def classify(issue: Issue, maintainers: frozenset[str], now: datetime) -> tuple[
             None,
         )
         if question is not None:
-            return "decisions", Entry(issue.number, question.removeprefix(_DECISION_PREFIX).strip())
+            return "decisions", Entry(issue.number, detail=question.removeprefix(_DECISION_PREFIX).strip())
 
     if "status:duplicate" in labels:
         return "closable", Entry(issue.number, "已判为重复")
@@ -449,8 +454,6 @@ def main() -> int:
             stdin=body,
         )
         number = int(url.strip().rsplit("/", 1)[-1])
-        # 置顶失败不影响正文更新.
-        subprocess.run(["gh", "issue", "pin", str(number), "--repo", repo], check=False)
         return 0
     number = existing[0]
     # 先评论再推进正文中的状态: 中途失败时下次重复通知, 而不是漏掉通知.
