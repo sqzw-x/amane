@@ -305,16 +305,29 @@ def _copy_into_library(src: Path, dst: Path) -> None:
     成功路径保持 copy2 的全部行为 (Windows 的 CopyFile2 与其余平台的 copyfile + copystat).
     网盘 / FUSE 挂载 (CloudDrive2 等) 常对 utime、chmod 返回 EPERM: copy2 在内容写入之后
     抛错, 而元数据缺失不影响产物可用, 不应让整个整理任务失败.
+    内容失败时记录两次尝试的原文, 并原样抛出回退那次的错误.
     """
     try:
         shutil.copy2(src, dst)
-    except OSError:
+        return
+    except OSError as first:
         # 内容可能已经写好, 重拷一次以区分内容失败与元数据失败: 内容失败会在此再次抛出.
-        shutil.copyfile(src, dst)
         try:
-            shutil.copystat(src, dst)
-        except OSError as exc:
-            logger.debug("copy metadata skipped", src=str(src), dst=str(dst), error=str(exc))
+            shutil.copyfile(src, dst)
+        except OSError as second:
+            # 回退复制经 CRT 打开文件, Win32 码会被压成 EINVAL, 两次的原文都要留下.
+            logger.error(
+                "library copy failed",
+                src=str(src),
+                dst=str(dst),
+                copy2_error=str(first),
+                copyfile_error=str(second),
+            )
+            raise
+    try:
+        shutil.copystat(src, dst)
+    except OSError as exc:
+        logger.debug("copy metadata skipped", src=str(src), dst=str(dst), error=str(exc))
 
 
 @in_thread
