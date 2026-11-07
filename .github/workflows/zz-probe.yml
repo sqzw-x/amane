@@ -1,5 +1,8 @@
 name: zz-probe
-on: workflow_dispatch
+on:
+  push:
+    branches: [feat/triage-attachments]
+    paths: [.github/workflows/zz-probe.yml]
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -24,3 +27,4 @@ print('count', len(ids) if isinstance(ids,list) else '?')
 print([i for i in ids if isinstance(i,str) and any(k in i.lower() for k in ('vl','vision','gpt-4','gpt-5','gemini','claude','qwen','glm','internvl','pixtral','llama'))][:60] if isinstance(ids,list) else str(ids)[:500])
 "
           done
+# probe
