@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,8 @@ class ResolvedPaths:
     nfo: Path
     trailer: Path
     link: Path | None = None
+    context: TemplateContext | None = None
+    """渲染剧照文件名需要的同一份取值 (含 ``{video_*}`` / ``{link_*}``); 手工构造时可为 None."""
 
 
 VIDEO_TEMPLATE_DEFAULT = "{studio}/{number}/{number}[-CD{cd?}][-{sub?}].{ext}"
@@ -35,6 +38,8 @@ THUMB_TEMPLATE_DEFAULT = "{link_dir}/thumb.jpg"
 POSTER_TEMPLATE_DEFAULT = "{link_dir}/poster.jpg"
 FANART_TEMPLATE_DEFAULT = "{link_dir}/fanart.jpg"
 EXTRAFANART_TEMPLATE_DEFAULT = "{link_dir}/extrafanart"
+EXTRAFANART_NAME_TEMPLATE_DEFAULT = "{index}.jpg"
+"""剧照文件名, 写盘时逐张渲染. 补零宽度取数量位数, 见 `render_extrafanart_names`."""
 # 媒体服务器按视频文件名匹配 NFO, 所以默认跟随 {video_name} (含 CD / 中字段).
 NFO_TEMPLATE_DEFAULT = "{link_dir}/{video_name}.nfo"
 TRAILER_TEMPLATE_DEFAULT = "{link_dir}/trailer.mp4"
@@ -55,7 +60,75 @@ def validate_path_template(value: str) -> str:
     return value
 
 
+# 常规取值含目录分隔符的占位符. `{raw_relpath}` / `{video_relpath}` 在源文件与链接都不在本库时是空串,
+# 但按取值逐个判断不值得: 静态拒绝一条规则就够, 运行时检查兜住剩下的.
+_PATH_VALUED_PLACEHOLDERS = ("video_dir", "link_dir", "video_relpath", "raw_relpath")
+
+_INDEX_PLACEHOLDERS = ("index", "index_padded")
+_PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
+
+
+def _extrafanart_index_placeholder(template: str) -> str | None:
+    engine = PathEngine(template)
+    return next((name for name in _INDEX_PLACEHOLDERS if engine.uses(name)), None)
+
+
+def _unsupported_index_placeholder(template: str) -> str | None:
+    """带宽度写法的序号占位符 (`{index:02}`), 名字本身不是可用占位符."""
+    for body in _PLACEHOLDER_RE.findall(template):
+        name = body.partition("|")[0].strip()
+        if name.startswith("index") and name not in _INDEX_PLACEHOLDERS:
+            return name
+    return None
+
+
+def validate_extrafanart_name_template(value: str) -> str:
+    """剧照文件名必须落在目录内, 且带序号占位符, 否则多张剧照写成一个文件. 空串表示用默认值."""
+    if not value.strip():
+        return value
+    Parser(value).parse()
+    if "/" in value or "\\" in value:
+        raise ValueError("剧照文件名模板只能是文件名, 不能含目录分隔符")
+    unsupported = _unsupported_index_placeholder(value)
+    if unsupported is not None:
+        raise ValueError(f"剧照文件名模板不支持 {{{unsupported}}}: 补零用 {{index_padded}}, 宽度按张数自动推导")
+    if _extrafanart_index_placeholder(value) is None:
+        raise ValueError("剧照文件名模板必须含 {index} 或 {index_padded}")
+    engine = PathEngine(value)
+    busy = next((name for name in _PATH_VALUED_PLACEHOLDERS if engine.uses(name)), None)
+    if busy is not None:
+        raise ValueError(f"剧照文件名模板不能使用 {{{busy}}}: 它的取值是路径, 写不出文件名")
+    return value
+
+
 PathTemplate = Annotated[str, AfterValidator(validate_path_template)]
+ExtrafanartNameTemplate = Annotated[str, AfterValidator(validate_extrafanart_name_template)]
+
+
+def render_extrafanart_names(template: str, context: TemplateContext | None, count: int) -> list[str]:
+    """按 1..count 渲染文件名; 宽度取数量位数, 同目录内字典序与序号一致.
+
+    宽度按本轮数量算, 数量跨位数时全部名字变宽, 旧名字成为孤儿.
+    结果不含目录: 由调用方拼到 ``ResolvedPaths.extrafanart_dir`` 上.
+    """
+    if count <= 0:
+        return []
+    if context is None:
+        raise ValueError("剧照文件名需要路径渲染上下文")
+    engine = PathEngine(template)
+    width = len(str(count))
+    names: list[str] = []
+    for index in range(1, count + 1):
+        variables = {**context.variables, "index": str(index), "index_padded": f"{index:0{width}d}"}
+        name = engine.render(TemplateContext.from_mapping(variables))
+        # 隐藏文件与无主干的名字媒体服务器不认, 分隔符会写到目录之外.
+        if not name or name.startswith(".") or "/" in name or "\\" in name:
+            raise ValueError(f"剧照文件名模板 {template!r} 渲染结果不是合法的文件名: {name!r}")
+        if name in names:
+            # 映射语法可以把不同序号映到同一个名字, 静默覆盖会让剧照少几张.
+            raise ValueError(f"剧照文件名模板 {template!r} 渲染出重复名字: {name!r} (第 {index} 张)")
+        names.append(name)
+    return names
 
 
 def render_path_template(template: str, variables: dict[str, str]) -> str:
@@ -111,6 +184,7 @@ def resolve_paths(
         nfo=nfo,
         trailer=trailer,
         link=link,
+        context=ctx,
     )
 
 

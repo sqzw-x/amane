@@ -14,11 +14,14 @@ import pytest
 from amane.db.models import Library, Metadata
 from amane.enums import ActorGender, LinkMode
 from amane.organize import (
+    EXTRAFANART_NAME_TEMPLATE_DEFAULT,
     VIDEO_TEMPLATE_DEFAULT,
     normalize_link_template,
+    render_extrafanart_names,
     render_path_template,
     resolve_paths,
     resolve_subtitle_path,
+    validate_extrafanart_name_template,
     validate_path_template,
 )
 from amane.organize.template import (
@@ -336,6 +339,103 @@ class TestValidatePathTemplate:
     def test_value_mapping_rejected(self, template: str, match: str):
         with pytest.raises(ValueError, match=match):
             validate_path_template(template)
+
+
+class TestExtrafanartTemplates:
+    """剧照文件名模板: 单段, 必须带序号占位符; 目录模板不接受序号占位符."""
+
+    @pytest.mark.parametrize(
+        ("template", "accepted"),
+        [
+            ("{index}.jpg", True),
+            ("{number}-{index_padded}.jpg", True),
+            ("fanart{index_padded}", True),
+            ("[{index}].jpg", True),
+            ("", True),
+            ("1.jpg", False),
+            ("{index:02}.jpg", False),
+            ("gallery/{index}.jpg", False),
+            ("{index}\\x.jpg", False),
+            ("{video_dir}-{index}.jpg", False),
+            ("{link_dir}-{index}.jpg", False),
+            ("{video_relpath}-{index}.jpg", False),
+            ("{raw_relpath}-{index}.jpg", False),
+        ],
+    )
+    def test_name_template_validation(self, template: str, accepted: bool):
+        if accepted:
+            assert validate_extrafanart_name_template(template) == template
+            return
+        with pytest.raises(ValueError):
+            validate_extrafanart_name_template(template)
+
+    def test_index_is_unpadded(self):
+        ctx = TemplateContext.from_mapping({"number": "ABC-123"})
+        names = render_extrafanart_names("{index}.jpg", ctx, 12)
+        assert names[:2] == ["1.jpg", "2.jpg"]
+        assert names[-1] == "12.jpg"
+
+    @pytest.mark.parametrize(
+        ("count", "first", "last"),
+        [(1, "1", "1"), (9, "1", "9"), (10, "01", "10"), (12, "01", "12"), (100, "001", "100")],
+    )
+    def test_index_padded_width(self, count: int, first: str, last: str):
+        ctx = TemplateContext.from_mapping({"number": "ABC-123"})
+        names = render_extrafanart_names("{index_padded}.jpg", ctx, count)
+        assert names[0] == f"{first}.jpg"
+        assert names[-1] == f"{last}.jpg"
+        # 宽度按数量算, 同目录内字典序与序号一致
+        assert names == sorted(names)
+
+    def test_nothing_to_name(self):
+        ctx = TemplateContext.from_mapping({"number": "ABC-123"})
+        assert render_extrafanart_names("{index}.jpg", ctx, 0) == []
+
+    def test_render_rejects_separator(self):
+        """取值带分隔符时整张名字会跑出目录, 必须报错而不是静默写到别处."""
+        ctx = TemplateContext.from_mapping({"number": "A/B"})
+        with pytest.raises(ValueError, match="不是合法的文件名"):
+            render_extrafanart_names("{number}-{index}.jpg", ctx, 2)
+
+    def test_explicit_width_points_to_index_padded(self):
+        """Issue 里提的 `{index:02}` 是最可能被先试的写法, 报错要指路."""
+        with pytest.raises(ValueError, match="index_padded"):
+            validate_extrafanart_name_template("{number}-{index:02}.jpg")
+
+    def test_render_rejects_hidden_name(self):
+        """映射结果为空主干时得到的是隐藏文件, 媒体服务器不认."""
+        ctx = TemplateContext.from_mapping({"number": "ABC-123"})
+        with pytest.raises(ValueError, match="不是合法的文件名"):
+            render_extrafanart_names("{index|1=}.jpg", ctx, 2)
+
+    def test_render_rejects_duplicate_names(self):
+        """映射可把不同序号映到同一个名字, 静默覆盖会让剧照少几张."""
+        ctx = TemplateContext.from_mapping({"number": "ABC-123"})
+        with pytest.raises(ValueError, match="重复名字"):
+            render_extrafanart_names("{index|1=x,2=x}.jpg", ctx, 3)
+
+    def test_default_keeps_raw_names(self, media: Path):
+        assert EXTRAFANART_NAME_TEMPLATE_DEFAULT == "{index}.jpg"
+        wp = Library(name="t", path=str(media), video_template="{number}/{number}.{ext}")
+        paths = resolve_paths(wp, _meta(), ext="mp4")
+
+        names = render_extrafanart_names(EXTRAFANART_NAME_TEMPLATE_DEFAULT, paths.context, 12)
+
+        assert names == [f"{i}.jpg" for i in range(1, 13)]
+        assert paths.extrafanart_dir == media / "ABC-123" / "extrafanart"
+
+    def test_render_uses_placeholders_from_paths(self, media: Path):
+        wp = Library(
+            name="t",
+            path=str(media),
+            video_template="{number}/{number}.{ext}",
+            extrafanart_name_template="{video_name}-{index}.jpg",
+        )
+        paths = resolve_paths(wp, _meta(), ext="mp4")
+        template = wp.extrafanart_name_template
+        assert template is not None
+
+        assert render_extrafanart_names(template, paths.context, 2) == ["ABC-123-1.jpg", "ABC-123-2.jpg"]
 
 
 class TestResolvePathsDefaults:

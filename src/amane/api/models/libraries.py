@@ -14,6 +14,7 @@ from ...library import (
     resolve_ingest_cloud_path,
 )
 from ...organize.path_templates import (
+    EXTRAFANART_NAME_TEMPLATE_DEFAULT,
     EXTRAFANART_TEMPLATE_DEFAULT,
     FANART_TEMPLATE_DEFAULT,
     NFO_TEMPLATE_DEFAULT,
@@ -24,6 +25,7 @@ from ...organize.path_templates import (
     THUMB_TEMPLATE_DEFAULT,
     TRAILER_TEMPLATE_DEFAULT,
     VIDEO_TEMPLATE_DEFAULT,
+    ExtrafanartNameTemplate,
     PathTemplate,
 )
 from ...organize.strm_content import StrmContentTemplate
@@ -50,6 +52,7 @@ class LibraryCreateRequest(BaseModel):
     poster_template: PathTemplate | None = None
     fanart_template: PathTemplate | None = None
     extrafanart_template: PathTemplate | None = None
+    extrafanart_name_template: ExtrafanartNameTemplate | None = None
     nfo_template: PathTemplate | None = None
     trailer_template: PathTemplate | None = None
     subtitle_template: PathTemplate | None = None
@@ -95,6 +98,7 @@ class LibraryResponse(BaseModel):
     poster_template: str | None = None
     fanart_template: str | None = None
     extrafanart_template: str | None = None
+    extrafanart_name_template: str | None = None
     nfo_template: str | None = None
     trailer_template: str | None = None
     subtitle_template: str | None = None
@@ -112,12 +116,13 @@ class LibraryListResponse(BaseModel):
 
 @subset_of(Library, covariant=True)
 class OptionalPathTemplateDefaults(BaseModel):
-    """附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用)."""
+    """附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用; 剧照文件名在写盘时按张数渲染)."""
 
     thumb_template: PathTemplate
     poster_template: PathTemplate
     fanart_template: PathTemplate
     extrafanart_template: PathTemplate
+    extrafanart_name_template: ExtrafanartNameTemplate
     nfo_template: PathTemplate
     trailer_template: PathTemplate
     subtitle_template: PathTemplate
@@ -128,6 +133,7 @@ OPTIONAL_TEMPLATE_DEFAULTS = OptionalPathTemplateDefaults(
     poster_template=POSTER_TEMPLATE_DEFAULT,
     fanart_template=FANART_TEMPLATE_DEFAULT,
     extrafanart_template=EXTRAFANART_TEMPLATE_DEFAULT,
+    extrafanart_name_template=EXTRAFANART_NAME_TEMPLATE_DEFAULT,
     nfo_template=NFO_TEMPLATE_DEFAULT,
     trailer_template=TRAILER_TEMPLATE_DEFAULT,
     subtitle_template=SUBTITLE_TEMPLATE_DEFAULT,
@@ -143,7 +149,7 @@ class PathTemplatePlaceholder(BaseModel):
 
 
 class PathTemplateSchemaResponse(BaseModel):
-    """与 resolve_paths 同源."""
+    """与 ORGANIZE 实际使用的默认值同源; 路径模板由 resolve_paths 解析, 剧照文件名模板由写盘阶段渲染."""
 
     video_default: str
     optional_defaults: OptionalPathTemplateDefaults

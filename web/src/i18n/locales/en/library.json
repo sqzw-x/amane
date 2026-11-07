@@ -181,7 +181,9 @@
       "video_relpath": "Rendered video path relative to the library root. Link, sidecar, and STRM content templates",
       "link_dir": "Directory of the link; same as {video_dir} when the link template is unset",
       "link_name": "Rendered link filename (no extension); same as {video_name} when the link template is unset",
-      "raw_srt_name": "Source subtitle filename. e.g. A/foo.zh.srt → foo.zh"
+      "raw_srt_name": "Source subtitle filename. e.g. A/foo.zh.srt → foo.zh",
+      "index": "Still index, starting at 1. Only available in the stills filename template",
+      "index_padded": "Zero-padded still index; width is the digit count of the stills count. Only available in the stills filename template"
     }
   },
   "tpl": {
@@ -189,6 +191,7 @@
     "poster": "Poster Template",
     "fanart": "Fanart Template",
     "extrafanart": "Extrafanart Template",
+    "extrafanartName": "Stills filename template",
     "nfo": "NFO Template",
     "trailer": "Trailer Template",
     "subtitle": "Subtitle Template"

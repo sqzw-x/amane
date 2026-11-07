@@ -925,7 +925,7 @@ export const getDbSchema = <ThrowOnError extends boolean = false>(options?: Opti
 /**
  * Get Path Template Schema
  *
- * 与 resolve_paths 同源.
+ * 与 ORGANIZE 实际使用的默认值同源.
  */
 export const getPathTemplateSchema = <ThrowOnError extends boolean = false>(options?: Options<GetPathTemplateSchemaData, ThrowOnError>): RequestResult<GetPathTemplateSchemaResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetPathTemplateSchemaResponses, unknown, ThrowOnError>({ url: '/api/libraries/path-template-schema', ...options });
 

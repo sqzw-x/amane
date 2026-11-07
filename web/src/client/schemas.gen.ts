@@ -4263,6 +4263,17 @@ export const LibraryCreateRequestSchema = {
             ],
             title: 'Extrafanart Template'
         },
+        extrafanart_name_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Extrafanart Name Template'
+        },
         nfo_template: {
             anyOf: [
                 {
@@ -4495,6 +4506,17 @@ export const LibraryResponseSchema = {
                 }
             ],
             title: 'Extrafanart Template'
+        },
+        extrafanart_name_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Extrafanart Name Template'
         },
         nfo_template: {
             anyOf: [
@@ -4772,6 +4794,17 @@ export const LibraryUpdateRequestSchema = {
                 }
             ],
             title: 'Extrafanart Template'
+        },
+        extrafanart_name_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Extrafanart Name Template'
         },
         nfo_template: {
             anyOf: [
@@ -6311,6 +6344,10 @@ export const OptionalPathTemplateDefaultsSchema = {
             type: 'string',
             title: 'Extrafanart Template'
         },
+        extrafanart_name_template: {
+            type: 'string',
+            title: 'Extrafanart Name Template'
+        },
         nfo_template: {
             type: 'string',
             title: 'Nfo Template'
@@ -6330,12 +6367,13 @@ export const OptionalPathTemplateDefaultsSchema = {
         'poster_template',
         'fanart_template',
         'extrafanart_template',
+        'extrafanart_name_template',
         'nfo_template',
         'trailer_template',
         'subtitle_template'
     ],
     title: 'OptionalPathTemplateDefaults',
-    description: '附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用).'
+    description: '附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用; 剧照文件名在写盘时按张数渲染).'
 } as const;
 
 export const OrganizeConflictSchema = {
@@ -6552,7 +6590,7 @@ export const PathTemplateSchemaResponseSchema = {
         'subtitle_extensions_default'
     ],
     title: 'PathTemplateSchemaResponse',
-    description: '与 resolve_paths 同源.'
+    description: '与 ORGANIZE 实际使用的默认值同源; 路径模板由 resolve_paths 解析, 剧照文件名模板由写盘阶段渲染.'
 } as const;
 
 export const PlaybackSourceListResponseSchema = {

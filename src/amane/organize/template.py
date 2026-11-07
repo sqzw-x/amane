@@ -63,6 +63,8 @@ TemplateVariables = TypedDict(
         "link_dir": str,
         "link_name": str,
         "raw_srt_name": str,
+        "index": str,
+        "index_padded": str,
     },
 )
 PLACEHOLDERS: tuple[str, ...] = tuple(TemplateVariables.__annotations__)
@@ -359,6 +361,8 @@ def _build_variables(
         "link_dir": _UNKNOWN,
         "link_name": _UNKNOWN,
         "raw_srt_name": _UNKNOWN,
+        "index": _UNKNOWN,
+        "index_padded": _UNKNOWN,
     }
 
 

@@ -330,6 +330,7 @@ class LibraryUpdates(TypedDict, total=False):
     poster_template: str | None
     fanart_template: str | None
     extrafanart_template: str | None
+    extrafanart_name_template: str | None
     nfo_template: str | None
     trailer_template: str | None
     subtitle_template: str | None
