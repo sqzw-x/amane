@@ -9,6 +9,7 @@ from amane.enums import WatermarkCorner, WatermarkKind
 from amane.media import (
     CropRotation,
     apply_cover_watermarks,
+    apply_cover_watermarks_from_info,
     crop_box,
     crop_poster,
     format_crop_box_args,
@@ -19,7 +20,7 @@ from amane.media import (
     should_crop_poster,
     validate_crop_box,
 )
-from amane.parsing import DEFINITION_VALUES, Mosaic
+from amane.parsing import DEFINITION_VALUES, ContentType, Mosaic, parse_file_info
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -366,6 +367,44 @@ class TestCoverWatermarks:
         assert dest.read_bytes() != before
         with Image.open(dest) as img:
             assert img.size == (200, 280)
+
+    @pytest.mark.parametrize(
+        ("filename", "expected"),
+        [
+            ("MIDV-123-LTX.mp4", _GREEN),
+            ("MIDV-123-ltx-C.mp4", _GREEN),
+            ("MIDV-123-U.ltx.mp4", _GREEN),
+            ("MIDV-123-UC.ltx.mp4", _GREEN),
+            ("MIDV-123-U.mp4", _RED),
+            ("MIDV-123-U.ltx2.mp4", _RED),
+            ("MIDV-123-LTX2.mp4", None),
+            ("LTX-123.mp4", None),
+        ],
+    )
+    def test_ltx_uses_cracked_corner(
+        self, filename: str, expected: tuple[int, int, int] | None, tmp_path: Path
+    ) -> None:
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (400, 300), _BLUE).save(dest)
+        user_dir = tmp_path / "watermarks"
+        user_dir.mkdir()
+        Image.new("RGBA", (40, 20), (*_GREEN, 255)).save(user_dir / "ltx.png")
+        Image.new("RGBA", (40, 20), (*_RED, 255)).save(user_dir / "cracked.png")
+
+        assert apply_cover_watermarks_from_info(
+            dest,
+            parse_file_info(filename),
+            ContentType.CENSORED,
+            watermark_dir=user_dir,
+            scale=0.2,
+            corners={WatermarkKind.CRACKED: WatermarkCorner.TOP_RIGHT},
+        ) is (expected is not None)
+        with Image.open(dest) as img:
+            color = img.getpixel((380, 30))
+            below = img.getpixel((380, 100))
+            assert isinstance(color, tuple) and isinstance(below, tuple)
+            assert color == pytest.approx(expected or _BLUE, abs=5)
+            assert below == pytest.approx(_BLUE, abs=5)
 
     @pytest.mark.parametrize("definition", DEFINITION_VALUES)
     def test_paints_each_definition(self, definition: str, tmp_path: Path):

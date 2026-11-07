@@ -63,6 +63,7 @@ class FileInfo:
     has_external_subtitle: bool = False
     mosaic: Mosaic | None = None
     definition: str | None = None
+    has_ltx_marker: bool = False
 
     @property
     def has_subtitle(self) -> bool:
@@ -214,6 +215,7 @@ _ESCAPE_MARKERS = (
 _ROOT_PARTS = frozenset({"/", ".", ""})
 _CD_DIR = re.compile(r"^(?:CD|PART)(\d{1,2})$", re.IGNORECASE)
 _DIR_BRACKET_STRIP = "[]【】()（）"
+_LTX_MARKER = re.compile(r"(?:-|-UC?\.)LTX(?![A-Z0-9])")
 
 _MOSAIC_DIR_TOKENS: dict[str, Mosaic] = {
     k.casefold(): v
@@ -285,7 +287,6 @@ def parse_file_info(
         cd = _detect_cd(basename)
         if cd is None and dirs:
             cd = _detect_cd_from_parent(dirs[-1])
-        mosaic = _detect_mosaic(basename) or _detect_mosaic_from_dirs(dirs)
     else:
         # 文本: 只执行番号规则; 未命中则 number 为 None, 相位只依据该字符串.
         assert text is not None
@@ -293,7 +294,8 @@ def parse_file_info(
         number, content_type = _identify(text, dirs, escape, fallback=False)
         basename = Path(text).stem.upper()
         cd = _detect_cd(basename)
-        mosaic = _detect_mosaic(basename)
+    has_ltx_marker = _LTX_MARKER.search(basename) is not None
+    mosaic = Mosaic.CRACKED if has_ltx_marker else _detect_mosaic(basename) or _detect_mosaic_from_dirs(dirs)
     return FileInfo(
         number=number,
         content_type=content_type,
@@ -303,6 +305,7 @@ def parse_file_info(
         has_external_subtitle=has_external_subtitle,
         mosaic=mosaic,
         definition=_detect_definition(basename),
+        has_ltx_marker=has_ltx_marker,
     )
 
 
@@ -687,12 +690,8 @@ def _detect_subtitle(basename: str) -> bool:
 
 
 def _detect_mosaic(basename: str) -> Mosaic | None:
-    """basename 已大写. `CRACKED` / `-U` / `-UC` / `-LTX` 是破解; 多标记优先级见 docs/dev/data-model.md."""
-    if (
-        re.search(r"破解|克破|CRACKED", basename)
-        or re.search(r"-U(C)?(?![A-Z0-9])", basename)
-        or re.search(r"-LTX(?![A-Z0-9])", basename)
-    ):
+    """basename 已大写. 多标记优先级见 docs/dev/data-model.md."""
+    if re.search(r"破解|克破|CRACKED", basename) or re.search(r"-UC?(?![A-Z0-9])", basename):
         return Mosaic.CRACKED
     if re.search(r"流出|LEAKED", basename):
         return Mosaic.LEAKED

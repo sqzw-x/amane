@@ -218,6 +218,7 @@ def _stamp_stems(
     uncensored: bool,
     mosaic: Mosaic | None,
     definition: str | None,
+    has_ltx_marker: bool,
 ) -> list[str]:
     """相位 → PNG 主干, 顺序: 中字 / 无码 / 破解 / 流出 / 分辨率."""
     stems: list[str] = []
@@ -226,7 +227,7 @@ def _stamp_stems(
     if uncensored:
         stems.append("uncensored")
     if mosaic is Mosaic.CRACKED:
-        stems.append("cracked")
+        stems.append("ltx" if has_ltx_marker else "cracked")
     elif mosaic is Mosaic.LEAKED:
         stems.append("leaked")
     if definition:
@@ -235,6 +236,8 @@ def _stamp_stems(
 
 
 def _stamp_kind(stem: str) -> WatermarkKind:
+    if stem == "ltx":
+        return WatermarkKind.CRACKED
     if stem in _FIXED_KINDS:
         return WatermarkKind(stem)
     return WatermarkKind.DEFINITION
@@ -299,13 +302,20 @@ def apply_cover_watermarks(
     uncensored: bool,
     mosaic: Mosaic | None,
     definition: str | None,
+    has_ltx_marker: bool = False,
     jpeg_quality: int = _DEFAULT_JPEG_QUALITY,
     watermark_dir: Path | None = None,
     scale: float = _DEFAULT_SCALE,
     corners: Mapping[WatermarkKind, WatermarkCorner] | None = None,
 ) -> bool:
     """叠到库路径封面/海报. 无标记或无图则不动. 不修改 Resource 原图."""
-    stems = _stamp_stems(has_subtitle=has_subtitle, uncensored=uncensored, mosaic=mosaic, definition=definition)
+    stems = _stamp_stems(
+        has_subtitle=has_subtitle,
+        uncensored=uncensored,
+        mosaic=mosaic,
+        definition=definition,
+        has_ltx_marker=has_ltx_marker,
+    )
     if not stems:
         return False
     try:
@@ -354,6 +364,7 @@ def apply_cover_watermarks_from_info(
         uncensored=shows_uncensored(info.mosaic, content_type),
         mosaic=info.mosaic,
         definition=info.definition,
+        has_ltx_marker=info.has_ltx_marker,
         jpeg_quality=jpeg_quality,
         watermark_dir=watermark_dir,
         scale=scale,
