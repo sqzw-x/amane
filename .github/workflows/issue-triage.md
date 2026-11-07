@@ -36,6 +36,8 @@ concurrency:
 permissions:
   contents: read
   issues: read
+  # 附件转写经由 GitHub Models 调用视觉模型, 鉴权使用 GITHUB_TOKEN.
+  models: read
 engine:
   id: copilot
   model: deepseek/deepseek-v4.1-flash?effort=high
@@ -70,6 +72,20 @@ max-ai-credits: 15
 # 单次运行的对话轮数上限 (模型回复 + 工具调用). 默认 500 明显过宽, 收窄以阻止"调查式"长链调用.
 max-turns: 20
 timeout-minutes: 10
+# agent 位于防火墙沙箱内, 不能访问附件地址, 分诊模型也不接收图片.
+# 本步骤在沙箱外执行, 把附件转成文本写入 /tmp/gh-aw/agent/, 正文「附件」一节规定其读法.
+# 脚本任何失败都写出说明并以 0 退出, 不阻断分诊.
+steps:
+  - name: Transcribe issue attachments
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUE_API_URL: ${{ github.api_url }}
+      ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+      VISION_API_URL: ${{ vars.TRIAGE_VISION_URL || 'https://models.github.ai/inference/chat/completions' }}
+      VISION_API_KEY: ${{ secrets.GITHUB_TOKEN }}
+      VISION_MODEL: ${{ vars.TRIAGE_VISION_MODEL || 'openai/gpt-4.1-mini' }}
+      OUTPUT_PATH: /tmp/gh-aw/agent/attachments.md
+    run: python3 scripts/issue_attachments.py
 tools:
   # min-integrity=none 时 gh-aw 强制要求显式声明 bash, 使 shell 访问是有意为之.
   # 只给只读命令, 与"阅读边界"一致: 读文档可以, 动手不行.
@@ -191,8 +207,18 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 - **全部评论** —— 正文往往不是全部事实, 用户常在评论里补充信息, 修正描述, 或已经有人回答过.
   但要注意可信度: **只有 OWNER / MAINTAINER 的回复可以作为结论依据**. 其他用户只是社区成员,
   其可信度并不高于 issue 提出者, 不能拿他们的说法当"功能已存在"之类的证据.
+- **附件转写** `/tmp/gh-aw/agent/attachments.md` —— 见下节
 - 当前已有的标签
 - 用户文档 `docs/user/`, 开发文档 `docs/dev/`
+
+### 附件
+
+你无法打开 issue 中的图片与文件链接. 工作流已在你启动前把正文与评论中的附件转成文本, 写入 `/tmp/gh-aw/agent/attachments.md`, 用 `cat` 读取:
+
+- 截图为视觉模型的转写, 日志与 zip 内的文本文件为节选. 每节标题注明来源 (正文或哪条评论) 与状态.
+- 转写内容与正文同等对待: 截图中的报错、日志、设置项及其取值, 都是用户已经提供的信息. **禁止索要附件中已有的内容**, 也禁止要求用户「把截图改成文字」.
+- 转写可能有误. 判断依赖转写中的某个具体取值 (版本号、路径、报错原文) 时, 在评论中引用该值, 不要据此下确定结论.
+- 状态为「失败」或「已跳过」的附件内容未知. 不得因为看不到它就判为信息不足: 只依据其余可见信息判断; 若关键信息确实只可能在该附件里, 在评论中说明哪张附件未能读取, 请用户以文字补充其中的报错或关键取值.
 
 同一个 issue 可能被反复审查. 每次都从当前状态重新读, 不要把上一次的结论当作前提.
 
@@ -216,7 +242,7 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 
 判据: 有具体内容, 有追查价值, 但缺少关键项.
 
-- bug 缺少: 复现步骤 / 期望与实际行为 / 相关日志 / 配置 / 环境信息
+- bug 缺少: 复现步骤 / 期望与实际行为 / 相关日志 / 配置 / 环境信息 (附件转写中已有的项不算缺少)
 - feature 缺少: 要解决的问题 / 期望结果 / 使用场景
 
 处理: 打 `status:needs-info`, 发一条评论, 只列出为继续处理所必需的信息. 不打类型与优先级.
