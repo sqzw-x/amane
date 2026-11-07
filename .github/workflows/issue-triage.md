@@ -6,6 +6,10 @@ on:
   labels: [retriage]
   issues:
     types: [opened, reopened, labeled]
+  # 补充信息后的重审: 只认带 status:needs-info 的 open issue 上非维护者、非 bot 的新评论, 见 Gate 步骤.
+  # issue_comment 同样覆盖 PR 评论, 由 Gate 排除.
+  issue_comment:
+    types: [created]
   # issues 属"不安全触发", gh-aw 默认只允许 admin/maintainer/write 触发.
   # issue 作者通常是外部用户, 不放开则工作流永不执行.
   roles: all
@@ -27,7 +31,13 @@ on:
       # 无标签的 issue 由 Issues 工作流按"未走模板"关闭, 不归分诊处理.
       # 条件写在 if 里而非 exit code: 步骤跳过时 outcome 是 skipped,
       # pre_activation 不会因此判失败, 整条 run 保持绿色.
-      if: github.event_name == 'issues' && github.event.issue.labels[0] != null
+      if: >-
+        (github.event_name == 'issues' && github.event.issue.labels[0] != null) ||
+        (github.event_name == 'issue_comment' && !github.event.issue.pull_request &&
+         github.event.issue.state == 'open' &&
+         contains(github.event.issue.labels.*.name, 'status:needs-info') &&
+         github.event.comment.user.type != 'Bot' &&
+         !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
       env:
         LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
       run: 'echo "issue 标签 $LABELS"'
@@ -142,15 +152,12 @@ safe-outputs:
     issue-intent: false
     allowed:
       - kind:bug
-      - kind:feature
       - kind:enhancement
       - kind:docs
       - kind:question
       - eco:project
       - priority:critical
       - priority:high
-      - priority:medium
-      - priority:low
       - status:needs-info
       - status:duplicate
       - status:invalid
@@ -165,8 +172,15 @@ safe-outputs:
       - kind:docs
       - kind:question
       - eco:project
+      - status:needs-info
       - retriage
     max: 3
+  # 只用于关闭重复 issue (任务 4). 关闭原因固定为 duplicate.
+  close-issue:
+    # 手动触发 (含补跑) 的事件里没有 issue, 必须显式指定目标; 固定为本次处理的编号, 不允许 agent 另选.
+    target: ${{ github.event.issue.number || inputs.issue_number }}
+    state-reason: duplicate
+    max: 1
   update-issue:
     # 手动触发 (含补跑) 的事件里没有 issue, 必须显式指定目标; 固定为本次处理的编号, 不允许 agent 另选.
     target: ${{ github.event.issue.number || inputs.issue_number }}
@@ -189,6 +203,8 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 
 本次处理的 Issue: #${{ github.event.issue.number || inputs.issue_number }}
 
+触发事件: `${{ github.event_name }}`. 为 `issue_comment` 时按「补充信息后的重审」一节处理.
+
 ## 你的目标
 
 只有两个:
@@ -200,11 +216,12 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 
 ### 判断倾向
 
-根本目标是让 issue 尽快进入可处理的状态. 在证据不充分时, 优先从严处理:
+根本目标是减少维护者的处理量. 每一次多余的追问都要用户与维护者各多处理一轮, 每一个错判都要维护者亲自纠正.
 
-- 信息补充: 拿不准时, 选择更明确的那一侧 —— 判为需要补充信息、需要澄清, 或与已有内容重复 —— 而不是让它带着不确定性继续往下走.
-- 不怕误判: 把正常 issue 判为不合理, 只需多一轮沟通即可纠正; 但让信息不足价值不大的 issue 混过去, 则会持续占用处理成本.
-- 存疑时不要停在"待定". 只有确实涉及产品、架构或跨模块决策时, 才把结论留给人来判断 —— 那是决策, 不是分诊.
+- **能答先答**: 能依据文档或维护者既往结论直接回答的, 直接回答, 不先追问.
+- **追问从宽**: 只有缺少的信息挡住了一切下一步时才追问. 能先给出判断或推测的, 先给出, 再附带至多一项确认.
+- **不确定就不改**: 改判类型、判为重复、改标题都需要具体依据; 依据不足时维持原状, 不要为了给出结论而猜测.
+- **决策留给人**: 涉及产品取舍、架构或跨模块的问题, 写成一道维护者可以一句话回答的选择题 (见「评论写法」), 不要只写"待维护者判断".
 
 ### 阅读边界
 
@@ -228,7 +245,7 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
   其可信度并不高于 issue 提出者, 不能拿他们的说法当"功能已存在"之类的证据.
 - **附件转写** `/tmp/gh-aw/agent/attachments.md` —— 见下节
 - 当前已有的标签
-- 用户文档 `docs/user/`, 开发文档 `docs/dev/`
+- 用户文档 `docs/user/` (其中 `faq.md` 收录维护者的既往结论: 范围外需求、按设计如此的行为、不归项目负责的事项), 开发文档 `docs/dev/`
 
 ### 附件
 
@@ -249,7 +266,7 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 
 ### 1a. 无信息量 → `status:invalid`, 不回复
 
-判据: 正文中没有任何可追查的具体信息.
+判据: 正文、评论与附件转写中都没有任何可追查的具体信息. 只有截图的 issue 依据转写内容判断; 转写失败的截图不能作为判为 1a 的依据.
 
 - 只有一句诉求或求助: "报错了", "有 bug", "希望增加功能", "请问怎么用"
 - 正文为空, 或只有模板残留而没有实际内容
@@ -264,14 +281,21 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 - bug 缺少: 复现步骤 / 期望与实际行为 / 相关日志 / 配置 / 环境信息 (附件转写中已有的项不算缺少)
 - feature 缺少: 要解决的问题 / 期望结果 / 使用场景
 
-处理: 打 `status:needs-info`, 发一条评论, 只列出为继续处理所必需的信息. 不打类型与优先级.
+处理: 打 `status:needs-info`, 发一条评论. 不打类型与优先级.
 
-**闸门从严**: 拿不准一个 issue 是否已经具备继续处理的条件, 就让它停在闸门这里, 不要放进后续分诊.
+追问的限制:
 
-- 分不清 1a 还是 1b → 按 1b.
-- 拿不准是否需要补充信息 → 按"需要补充信息".
+- **至多两项**. 只问决定下一步走向的信息, 不按模板逐项索要. 环境、版本等模板栏目已填写的不再询问.
+- 先写出你目前的判断或最可能的原因, 再写需要确认的项. 用户据此往往一次就能答全.
+- 能从文档回答的部分直接回答, 不放进追问.
 
-闸门的作用是让不值得继续处理的 issue 尽早停下, 而不是给每个 issue 都给出一个结论.
+以下情况**不属于** 1b, 继续后续任务:
+
+- 现象与报错已经足以判断问题所在, 只缺复现细节.
+- 缺的信息只影响修复方式, 不影响判断它是否为缺陷.
+- 能用文档或既往结论直接回答.
+
+分不清 1a 还是 1b → 按 1b.
 
 ---
 
@@ -282,8 +306,7 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 | 实际情况 | 应改为 |
 |---|---|
 | 报的是 bug / feature, 实际是用法问题, 功能已存在, 或理解偏差 | `kind:question` |
-| 报的是 bug, 实际是需求 | `kind:feature` |
-| 报的是 feature, 实际是现有功能的改进 | `kind:enhancement` |
+| 报的是 bug, 实际是需求或改进 | `kind:enhancement` |
 | 内容只涉及文档 | `kind:docs` |
 | 分享自建的插件或外部工具, 而非要求本仓库改动 | `eco:project` |
 
@@ -297,8 +320,9 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 **既有配置可达成**: feature request 未必需要写代码 —— 也可能靠调整既有配置做到 (例如改路径模板, 换放置方式).
 判定前先问一句: 用现有配置能不能做到? 能, 就按 `kind:question` 处理, 并在评论里说明怎么做.
 
-**存疑倾向**: 若一个需求**可能**已由现有能力覆盖, 就按 `kind:question` 处理.
-不要因为"不确定"就维持原分类 —— 那会让不确定状态继续往下传.
+新增功能与改进既有功能统一用 `kind:enhancement`, 不区分 `kind:feature`. 已带 `kind:feature` 的不改.
+
+改判为 `kind:question` 必须能在评论里写出具体做法 (哪个设置项、哪个模板写法). 只是"可能已经支持"而写不出做法的, 维持原分类.
 
 ---
 
@@ -322,21 +346,27 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 
 ## 任务 4. 重复识别
 
-- 证据支持就判重复: 打 `status:duplicate` 并引用对应 issue 编号. 不要因为把握不到十足就放过去 —— 漏判重复会让同一件事被处理两次.
-- 判据必须有实质重合: 相同的症状, 报错, 需求或组件.
+- 判据必须有实质重合: 相同的症状、报错、需求或组件. 不得仅凭标题相似就判定重复.
 - 仅相关但不重复: 在评论中提及, 不打标签.
-- 不得仅凭标题相似就判定重复.
+
+判为重复时, 按目标 issue 的状态处理:
+
+| 目标 issue | 处理 |
+|---|---|
+| 仍为 open | 打 `status:duplicate`, 评论引用目标编号并说明重合点, 用 `close-issue` 以 `duplicate` 关闭, 附 `duplicate_of` |
+| 已关闭且已实现 | 不判重复. 说明已在哪个版本或哪个 issue 中实现; 用户报告的是该功能的问题时按 bug 处理 |
+| 已关闭且维护者拒绝或暂不考虑 | 打 `status:duplicate`, 评论引用维护者在目标 issue 中的结论, 不关闭 —— 由维护者决定是否重新考虑 |
+
+只有把握充分时才关闭. 拿不准是否实质重合时, 在评论中提及相关 issue, 不打标签, 不关闭.
 
 ---
 
 ## 任务 5. 优先级与状态
 
+只在下列情况打优先级, 其余一律不打 —— 常规的中低优先级由维护者人工判断:
+
 - `priority:critical`: 阻塞, 安全问题, 数据损坏
 - `priority:high`: 功能回归或主要功能不可用, 且无合理绕行方案
-- `priority:medium`: 正常可处理的缺陷或需求
-- `priority:low`: 边缘场景, 优化类, 以及超出当前范围但仍有保留价值的需求
-
-依据不足时宁可不打, 不要猜.
 
 `status:triaged` 由维护者人工添加, 你一律不要打 —— 一个 issue 是否"已确认有效"由人判断.
 
@@ -344,11 +374,10 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 
 ## 任务 6. 可交接性
 
-判断是否已具备交给 coding agent 的条件:
+判断下一步由谁处理, 写入评论的「下一步」:
 
-- 需求与验收标准明确, 范围自洽 → 适合
-- 仍需补充信息 → 待补充
-- 需要产品, 架构或跨模块决策 → 待维护者判断
+- 需求与验收标准明确, 范围自洽 → 可交给 coding agent
+- 需要产品、架构或跨模块决策 → 写成「需维护者决定」的选择题, 格式见「评论写法」
 
 只做判断, 不给出实现方案.
 
@@ -356,11 +385,11 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 
 ## Feature request 的额外处理
 
-**超出边界**: 需求明显超出项目范围时, 直接说明不在项目范围内并结束, 不要进一步分析, 不要给出替代方案. 部分超范围但仍有价值的需求可以保留, 并设为 `priority:low`. 不关闭 issue.
+**超出边界**: 需求明显超出项目范围时, 直接说明不在项目范围内并结束, 不要进一步分析, 不要给出替代方案. 不关闭 issue.
 
 **包含多个不相关的需求**: 一个 issue 中提出多个彼此独立, 需要分别实现的需求时, 只回复要求拆分, 不要进行进一步调查, 不要给出实现建议, 不加任何标签.
 
-**范围外清单**: <待补充 —— 后续由 FAQ 汇总>
+**范围外清单**: 见 `docs/user/faq.md` 中维护者的既往结论. 命中其中一条时引用它, 不再重新论证.
 
 ---
 
@@ -374,17 +403,28 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 **<一句话结论>**
 
 - 类型: ...
-- 优先级: ...
 - 下一步: ...
+```
+
+打了优先级时加一行「优先级」. 没有打的不写.
+
+**需维护者决定**
+
+「下一步」需要维护者拍板时, 单独写一行, 行首固定为 `需维护者决定:`, 其后是一道可以一句话回答的是非题或选择题, 列出选项. 日报按该行首汇总待决事项, 不得改写行首.
+
+```markdown
+需维护者决定: 新增只含目录的占位符, 还是修改 `{raw_relpath}` 的语义? (后者影响已有模板)
 ```
 
 **信息不足**
 
 ```markdown
-**需要补充信息才能继续处理.**
+**<目前的判断或最可能的原因>**
+
+需要确认:
 
 - <问题 1>
-- <问题 2>
+- <问题 2 (可选)>
 ```
 
 规则:
@@ -409,6 +449,15 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 
 ---
 
+## 补充信息后的重审
+
+触发事件为 `issue_comment` 时, issue 带 `status:needs-info`, 且有用户发表了新评论. 先读该评论与此前的分诊评论, 再判断:
+
+- **补充了此前追问的信息** (部分补充也算): 用 `remove-labels` 移除 `status:needs-info`, 再从任务 2 起完成分诊. 仍缺关键项时, 评论中只追问剩下的部分, 并重新打上 `status:needs-info`.
+- **没有新信息** (催促、顶帖、情绪表达、与追问无关): 不打标签, 不发评论, 用 `noop` 结束.
+
+不要重复此前已经问过且用户已回答的问题.
+
 ## 直接跳过
 
 以下情况不做任何操作:
@@ -417,6 +466,9 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 - 作者是 bot
 - 已分配给他人
 - 已带 `status:triaged` / `status:duplicate` / `status:invalid`
+- 维护者 (OWNER / MEMBER / COLLABORATOR) 已在评论中回复, 且回复之后没有其他用户的新评论 —— 维护者已经接手
+
+`status:needs-info` 不在跳过条件内: 触发事件为 `issue_comment` 时正是要处理它.
 
 **例外 —— 重审**: issue 上带 `retriage` 标签时, 忽略除"作者是 bot"以外的全部跳过条件. 这是维护者主动发起的重新判断, 每次都从当前状态重新读.
 
@@ -427,6 +479,6 @@ if: github.event_name == 'workflow_dispatch' || needs.pre_activation.outputs.lab
 ## 硬约束
 
 - 只使用允许列表中的标签, 列表中不存在的标签一律不要尝试.
-- 不关闭 issue, 不修改正文.
+- 只在任务 4 判为重复且目标 issue 仍为 open 时关闭 issue, 其余情况一律不关闭. 不修改正文.
 - 标题只在任务 3 的条件下修改.
 - 阅读范围严格遵守"阅读边界": 文档优先, 代码最多一到两个文件, 不做大面积阅读.
