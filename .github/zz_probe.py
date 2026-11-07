@@ -15,6 +15,13 @@ for p in ("models", "v1/models"):
         ids = [i.get("id") for i in items] if isinstance(items, list) else []
         print("count", len(ids)); print([i for i in ids if re.search(r"vl|vision|gpt-4|gpt-5|gemini|claude|qwen|glm|pixtral|llama|kimi|doubao", str(i), re.I)][:80])
     except Exception: print("not json:", body[:200])
+# test text inference works
+for m in ["deepseek/deepseek-v4.1-flash"]:
+    pl = {"model": m, "max_tokens": 10, "messages": [{"role": "user", "content": "say hi"}]}
+    c, b = call("POST", f"{base}/chat/completions", pl)
+    try: r = json.loads(b)["choices"][0]["message"]["content"]
+    except Exception: r = b[:240]
+    print("== text", m, c, r)
 # tiny red png 2x2
 png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMAAAAUAAQ0E1KcAAAAASUVORK5CYII=")
 for model in os.environ.get("CANDIDATES", "").split():
