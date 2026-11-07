@@ -31,6 +31,8 @@ on:
       env:
         LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
       run: 'echo "issue 标签 $LABELS"'
+# 补跑按运行名中的编号统计每个 issue 的尝试次数, 格式变更时同步 scripts/triage_backfill.py.
+run-name: "Issue 整理 #${{ github.event.issue.number || inputs.issue_number }}"
 concurrency:
   job-discriminator: ${{ github.event.issue.number || github.run_id }}
 permissions:
@@ -135,6 +137,8 @@ safe-outputs:
   # "No labels to add", 消息仍计为成功, 整条 run 保持绿色. 正文新增标签动作时
   # 必须同步这里.
   add-labels:
+    # 手动触发 (含补跑) 的事件里没有 issue, 必须显式指定目标; 固定为本次处理的编号, 不允许 agent 另选.
+    target: ${{ github.event.issue.number || inputs.issue_number }}
     issue-intent: false
     allowed:
       - kind:bug
@@ -152,6 +156,8 @@ safe-outputs:
       - status:invalid
     max: 3
   remove-labels:
+    # 手动触发 (含补跑) 的事件里没有 issue, 必须显式指定目标; 固定为本次处理的编号, 不允许 agent 另选.
+    target: ${{ github.event.issue.number || inputs.issue_number }}
     allowed:
       - kind:bug
       - kind:feature
@@ -162,9 +168,13 @@ safe-outputs:
       - retriage
     max: 3
   update-issue:
+    # 手动触发 (含补跑) 的事件里没有 issue, 必须显式指定目标; 固定为本次处理的编号, 不允许 agent 另选.
+    target: ${{ github.event.issue.number || inputs.issue_number }}
     title:
     max: 1
   add-comment:
+    # 手动触发 (含补跑) 的事件里没有 issue, 必须显式指定目标; 固定为本次处理的编号, 不允许 agent 另选.
+    target: ${{ github.event.issue.number || inputs.issue_number }}
     max: 1
     # 重复审查同一 issue 时, 把本流程先前发的评论折叠为 outdated, 避免堆叠
     hide-older-comments: true

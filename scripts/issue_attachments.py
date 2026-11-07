@@ -76,7 +76,8 @@ _EXCERPT_CHARS = 4000
 _ZIP_EXCERPT_CHARS = 8000
 _TOTAL_CHARS = 16000
 _LINE_CHARS = 500
-_VISION_MAX_TOKENS = 1500
+# 视觉模型为推理模型, 推理 token 与正文共用该上限; 过小时正文被截断或为空.
+_VISION_MAX_TOKENS = 8000
 _TIMEOUT = 60.0
 _RETRY_DELAY = 5.0
 _USER_AGENT = "amane-issue-triage/0.1"
@@ -338,7 +339,8 @@ def transcribe_image(http: Http, vision: VisionConfig, data: bytes, media_type: 
     message = _field(choices[0], "message") if isinstance(choices, list) and choices else None
     content = _text(message, "content").strip()
     if not content:
-        raise FetchError(f"响应中没有转写内容: {json.dumps(result, ensure_ascii=False)[:200]}")
+        reason = _text(choices[0], "finish_reason") if isinstance(choices, list) and choices else ""
+        raise FetchError(f"模型未返回转写内容 (finish_reason={reason or '未知'})")
     return content
 
 

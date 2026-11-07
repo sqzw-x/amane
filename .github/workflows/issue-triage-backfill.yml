@@ -1,80 +1,37 @@
+# 补跑分诊: 选出近期漏处理的 issue 重新触发 issue-triage. 选择规则见 scripts/triage_backfill.py.
 name: Issue 分诊补跑
+
 on:
   schedule:
-    - cron: '15 */6 * * *'  # 每 6 小时一次, 错开主分诊
+    - cron: "15 */6 * * *"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 试运行 (只列出清单, 不触发)
+        required: false
+        type: boolean
+        default: true
+
 permissions:
   contents: read
   issues: read
-  actions: read
+  # 读取分诊运行记录并触发 workflow_dispatch
+  actions: write
+
+concurrency:
+  group: issue-triage-backfill
+  cancel-in-progress: false
+
 jobs:
   backfill:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Find untriaged issues and dispatch
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Dispatch triage for missed issues
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "=== 补跑分诊: 查找最近 10 天内遗漏的 Issue ==="
-          gh api graphql -f query='
-          query($owner: String!, $repo: String!) {
-            repository(owner: $owner, name: $repo) {
-              issues(first: 100, states: OPEN, orderBy: {field: CREATED_AT, direction: DESC}, filterBy: {since: "'$(date -u -d '10 days ago' +%Y-%m-%dT%H:%M:%SZ)'"}) {
-                nodes {
-                  number
-                  createdAt
-                  author { login, ... on Bot { id } }
-                  labels(first: 10) { nodes { name } }
-                  assignees(first: 1) { totalCount }
-                  comments(first: 50) { nodes { author { login } body } }
-                }
-              }
-            }
-          }' -f owner=sqzw-x -f repo=amane > /tmp/issues.json
-          
-          # 筛选: 有模板标签, 无 status/duplicate/invalid, 未分配, 非 bot, 缺少 github-actions 的分诊评论
-          python3 - <<'PY'
-import json, os, subprocess, sys
-data = json.load(open('/tmp/issues.json'))
-issues = data['data']['repository']['issues']['nodes']
-skip_labels = {'status:triaged', 'status:duplicate', 'status:invalid', 'status:needs-info'}
-template_labels = {'bug_report_cn', 'feature_request_cn', 'proposal_cn', 'question'}
-untriaged = []
-for issue in issues:
-    labels = {l['name'] for l in issue['labels']['nodes']}
-    if not (labels & template_labels): continue
-    if labels & skip_labels: continue
-    if issue['assignees']['totalCount'] > 0: continue
-    author = issue.get('author') or {}
-    if author.get('__typename') == 'Bot': continue
-    comments = issue.get('comments', {}).get('nodes', [])
-    if any(c.get('author', {}).get('login') == 'github-actions' and '分诊' in c.get('body', '') for c in comments):
-        continue
-    untriaged.append(issue['number'])
-print(f"未分诊 Issue 清单: {untriaged}")
-if not untriaged:
-    print("无需补跑"); sys.exit(0)
-
-# 检查最近 5 次主分诊运行, 若全部失败则暂停补跑 (熔断)
-runs = subprocess.check_output(['gh', 'run', 'list', '--workflow', 'issue-triage.lock.yml', '--limit', '5', '--json', 'conclusion', '-q', '.[].conclusion'], text=True).splitlines()
-if runs and all(r == 'failure' for r in runs):
-    print(f"最近 {len(runs)} 次主分诊全部失败, 熔断补跑"); sys.exit(0)
-
-# 查询已 dispatch 过的 Issue (通过 run display 中的 #N 判断), 每个 Issue 最多重试 3 次
-dispatched = subprocess.check_output(['gh', 'run', 'list', '--workflow', 'issue-triage.lock.yml', '--created', '>=10 days ago', '--limit', '200', '--json', 'displayTitle,conclusion'], text=True)
-dispatch_counts = {}
-for run in json.loads(dispatched):
-    title = run.get('displayTitle', '')
-    for n in untriaged:
-        if f'#{n}' in title:
-            dispatch_counts[n] = dispatch_counts.get(n, 0) + 1
-            break
-
-# 最多补 5 个 Issue, 按创建时间倒序 (先补最新的)
-candidates = [n for n in untriaged if dispatch_counts.get(n, 0) < 3][:5]
-print(f"本次补跑: {candidates} (其余已超过 3 次重试或当前无需补跑)")
-for n in candidates:
-    print(f"dispatch #{n}")
-    subprocess.run(['gh', 'workflow', 'run', 'issue-triage.lock.yml', '-f', f'issue_number={n}', '-f', 'dry_run=false'], check=False)
-PY
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: python3 scripts/triage_backfill.py
