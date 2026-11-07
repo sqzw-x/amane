@@ -20,6 +20,7 @@ class MetadataFilters:
     publisher_id: list[int] | None = None
     series_id: list[int] | None = None
     user_tag_id: list[int] | None = None
+    library_id: list[int] | None = None
     has_files: bool | None = None
     has_subtitle: bool | None = None
     vr: bool | None = None
@@ -41,6 +42,7 @@ class MetadataFilters:
                 self.publisher_id,
                 self.series_id,
                 self.user_tag_id,
+                self.library_id,
                 self.has_files is not None,
                 self.has_subtitle is not None,
                 self.vr is not None,
@@ -61,6 +63,7 @@ async def parse_metadata_filters(
     publisher_id: Annotated[list[int] | None, Query(description="Filter by publisher facet id(s); OR")] = None,
     series_id: Annotated[list[int] | None, Query(description="Filter by series facet id(s); OR")] = None,
     user_tag_id: Annotated[list[int] | None, Query(description="Filter by user tag id(s); AND")] = None,
+    library_id: Annotated[list[int] | None, Query(description="Filter by linked MediaFile library id(s); OR")] = None,
     has_files: Annotated[bool | None, Query(description="Filter by presence of linked MediaFile(s)")] = None,
     has_subtitle: Annotated[bool | None, Query(description="Filter by linked file subtitle marker")] = None,
     vr: Annotated[bool | None, Query(description="Filter by VR marker (entry tag vocabulary)")] = None,
@@ -82,6 +85,7 @@ async def parse_metadata_filters(
         publisher_id=publisher_id,
         series_id=series_id,
         user_tag_id=user_tag_id,
+        library_id=library_id,
         has_files=has_files,
         has_subtitle=has_subtitle,
         vr=vr,

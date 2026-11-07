@@ -834,6 +834,51 @@ class TestMetadataRepo:
         assert items[0].number == "LINK-1"
 
     @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("selected", "expected_numbers"),
+        [
+            ("a", ["L-A", "L-CROSS"]),
+            ("b", ["L-B", "L-CROSS"]),
+            (("a", "b"), ["L-A", "L-B", "L-CROSS"]),
+            (("missing",), []),
+            (None, ["L-A", "L-B", "L-CROSS", "L-NONE"]),
+        ],
+    )
+    async def test_list_metadata_library_filter(
+        self,
+        repo: Repository,
+        selected: str | tuple[str, ...] | None,
+        expected_numbers: list[str],
+    ):
+        """同一筛选内多库取并集; 跨库条目只出现一次; 无关联文件的条目不命中任何库."""
+        lib_a = await repo.create_library(name="a", path="/lib/a")
+        lib_b = await repo.create_library(name="b", path="/lib/b")
+        assert lib_a.id is not None and lib_b.id is not None
+
+        only_a = await repo.upsert_metadata(number="L-A")
+        only_b = await repo.upsert_metadata(number="L-B")
+        cross = await repo.upsert_metadata(number="L-CROSS")
+        await repo.upsert_metadata(number="L-NONE")
+        assert only_a.id is not None and only_b.id is not None and cross.id is not None
+
+        await repo.create_media_file(library_id=lib_a.id, path="/lib/a/a.mp4", metadata_id=only_a.id)
+        await repo.create_media_file(library_id=lib_b.id, path="/lib/b/b.mp4", metadata_id=only_b.id)
+        await repo.create_media_file(library_id=lib_a.id, path="/lib/a/cross.mp4", metadata_id=cross.id)
+        await repo.create_media_file(library_id=lib_b.id, path="/lib/b/cross.mp4", metadata_id=cross.id)
+
+        keys = [selected] if isinstance(selected, str) else list(selected or [])
+        known = {"a": lib_a.id, "b": lib_b.id}
+        library_ids = [known.get(key, 9999) for key in keys] or None
+
+        items, total = await repo.list_metadata(
+            library_ids=library_ids, sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC
+        )
+        assert total == len(expected_numbers)
+        assert [m.number for m in items] == expected_numbers
+        ids = await repo.list_metadata_ids(library_ids=library_ids)
+        assert {m.id for m in items} == set(ids)
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_count_media_by_metadata_ids(self, repo: Repository):
         a = await repo.upsert_metadata(number="CNT-A", title="A")
         b = await repo.upsert_metadata(number="CNT-B", title="B")
