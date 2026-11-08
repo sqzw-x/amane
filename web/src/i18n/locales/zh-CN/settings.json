@@ -53,7 +53,7 @@
       },
       "crop_poster": {
         "label": "裁切海报",
-        "description": "从封面自动裁切生成海报"
+        "description": "从封面自动裁切生成海报, 仅有码与无码生效"
       },
       "poster_crop_skip_ratio": {
         "label": "海报裁切跳过阈值比例",

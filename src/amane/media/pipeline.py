@@ -10,9 +10,11 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ..config import DownloadableResource
+from ..parsing import ContentType
 from ..sr import get_preset_meta, run_SR
 from .images import (
     CropRotation,
+    allows_poster_crop,
     crop_box,
     crop_poster,
     format_crop_box_args,
@@ -92,14 +94,17 @@ async def materialize_images(
     config: HotSettings,
     data_dir: Path,
     *,
+    content_type: ContentType,
     extrafanart_urls: dict[str, list[str]] | None = None,
 ) -> MaterializedImages:
     """仅下载集合内的类型; 未选中的保留聚合 URL.
 
     死 URL 保序置于尾部, 供来源恢复后重试.
     extrafanart 仅下载到 Resource, 站点分组结构不重排.
+    海报裁切只对 ``allows_poster_crop`` 放行的类型执行.
     """
     kinds = set(config.scraping.download_resources)
+    crop_enabled = config.scraping.crop_poster and allows_poster_crop(content_type)
 
     # 下载 thumb.
     thumb_ok: set[str] = set()
@@ -128,8 +133,8 @@ async def materialize_images(
                 if poster_candidate_local is None:
                     poster_candidate_local = local
 
-        # 裁剪需要 thumb 本地文件; 若未选 thumb 下载, 为裁剪临时 acquire 首个 thumb.
-        if thumb_local is None and thumb_urls and config.scraping.crop_poster:
+        # 裁剪需要 thumb 本地文件; 若未选 thumb 下载, 为裁切临时 acquire 首个 thumb.
+        if thumb_local is None and thumb_urls and crop_enabled:
             for url in thumb_urls:
                 local = await store.acquire(url, client)
                 if local:
@@ -140,7 +145,7 @@ async def materialize_images(
         cand_size = probe_size(poster_candidate_local) if poster_candidate_local else None
 
         if (
-            config.scraping.crop_poster
+            crop_enabled
             and should_crop_poster(thumb_size, cand_size, skip_ratio=config.scraping.poster_crop_skip_ratio)
             and thumb_local
         ):
