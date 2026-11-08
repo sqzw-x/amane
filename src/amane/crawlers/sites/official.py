@@ -361,10 +361,13 @@ class OfficialCrawler(Crawler):
             '//a[contains(@href,"/works/list/genre/")]/text()',
         )
 
-        # 作品页 slider 首张是横版封面, 其余是剧照; 没有 slider 的厂牌 (BeFree) 两者都取不到.
+        # 作品页 slider 首张是横版封面, 其余是剧照. 只有一张图的条目不走懒加载 (BeFree 的总集编),
+        # 它把地址直接写在 img/@src 里, 缺这条回退就整部没有封面.
         slides = extract_all_texts(
             html, '//div[contains(@class,"p-slider")]//img[contains(@class,"swiper-lazy")]/@data-src'
         )
+        if not slides:
+            slides = extract_all_texts(html, '//div[contains(@class,"p-slider")]//img/@src')
         thumb_url = slides[0] if slides else None
 
         directors = _values_without_placeholder(
