@@ -13,6 +13,8 @@ _COVER_PREFIX = "pb_e_"
 _POSTER_PREFIX = "pf_e_"
 #: 素人条目的出演栏写的是站点的代名 (名字后跟年龄与职业), 不是可对齐的演员身份.
 _AMATEUR_TAG = "素人"
+#: 番号尾部的数字段, 供站点多写了一段前导数字时反查.
+_TAIL_DIGITS = re.compile(r"(\d+)\s*$")
 
 
 def _poster_url(cover_url: str) -> str | None:
@@ -37,6 +39,11 @@ class MGStageCrawler(Crawler):
             url = await self._search_number(number, query.number)
             if url is not None:
                 return url
+        # 站点在番号前多写一段数字时 (529STCV-605 对 STCV-605) 上面几条都落空: 站内检索只做
+        # token 前缀匹配 (529 / 529STCV / 605 能查到, STCV 查不到), 前缀又无法推导, 因此用尾号再检一次.
+        tail = _TAIL_DIGITS.search(query.number)
+        if tail is not None and tail.group(1) != query.number:
+            return await self._search_keyword(tail.group(1), query.number)
         return None
 
     async def _search_number(self, number: str, query_number: str) -> str | None:
@@ -51,8 +58,10 @@ class MGStageCrawler(Crawler):
             title = extract_text(html, '//*[@id="center_column"]/div[1]/h1/text()')
             if title:
                 return direct_url
+        return await self._search_keyword(number, query_number)
 
-        # 未命中则回退搜索; 结果按条目声明的番号确认, 不取首条.
+    async def _search_keyword(self, number: str, query_number: str) -> str | None:
+        # 检索结果按条目声明的番号确认, 不取首条.
         search_url = f"{self.base_url}/search/cSearch.php?search_word={number}"
         text = await self.client.get_html(search_url, cookies=self.cookies)
         html = Selector(text=text)

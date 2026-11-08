@@ -47,7 +47,7 @@
 
 ## 类型专属 / 官方
 
-**mgstage.com** (`adc=1` 通过年龄墙) — Prestige 集团素人站; 首页同时有 `ABF-*` (有碼号, 番号分类会判成 censored) 与 `300MIUM-*`. 素人路由第一源; 竖版海报由封面地址推导 (`pb_e_` → `pf_e_`), 页面不引用. 素人条目的出演栏是站点代名 (名字后跟年龄与职业), 不写出演者 — 该字段留给 javdb 记的本人.
+**mgstage.com** (`adc=1` 通过年龄墙) — Prestige 集团素人站; 首页同时有 `ABF-*` (有碼号, 番号分类会判成 censored) 与 `300MIUM-*`. 素人路由第一源; 竖版海报由封面地址推导 (`pb_e_` → `pf_e_`), 页面不引用. 素人条目的出演栏是站点代名 (名字后跟年龄与职业), 不写出演者 — 该字段留给 javdb 记的本人. 站内检索只做 token 前缀匹配 (前导数字段或尾号), 站点比入参多写一段数字时按尾号反查, 候选仍按声明番号确认.
 
 **dmm.co.jp / FANZA** — 有碼权威源, 高清图, 字段齐全 (含 plot), 覆盖几乎全部有碼厂; 也是素人第二源, 动漫可排在链尾. 不是 FC2 / 欧美 / 国产站.
 
@@ -67,7 +67,7 @@
 
 **r18dev** — 未配 PG 直接 skip; dump 图片补全后是 DMM CDN, 见 [crawlers.md](crawlers.md).
 
-**prestige / faleno / dahlia / giga** — 单厂牌, 对每个候选 SKU 都发 API 请求, 不纳入默认表; faleno / dahlia 同属一个 WordPress `works` 主题 (共用 `sites/wp_works.py`), faleno.jp 兼发 maryGOLD 与 JimmyScandal, 发行商按番号前缀判定. **giga** 的检索与商品页要求年龄确认会话 (经 `/cookie_set.php` 领取) 与站内 Referer, 缺任一项都只回年龄确认页; 确认态是出站通道 cookie 罐里的一份会话, 未确认的请求会覆盖它, 因此该来源同一时刻只允许一个请求在途 (领取与取页都在内). **xcity.jp** 与 DMM 重叠且年龄墙严格, 同样不纳入.
+**prestige / faleno / dahlia / giga** — 单厂牌, 对每个候选 SKU 都发 API 请求, 不纳入默认表; faleno / dahlia 同属一个 WordPress `works` 主题 (共用 `sites/wp_works.py`), faleno.jp 兼发 maryGOLD 与 JimmyScandal, 发行商按番号前缀判定. **giga** 的检索与商品页要求年龄确认会话 (经 `/cookie_set.php` 领取) 与站内 Referer, 缺任一项都只回年龄确认页; 确认态是出站通道 cookie 罐里的一份会话, 未确认的请求会覆盖它, 因此该来源同一时刻只允许一个请求在途 (领取与取页都在内). **xcity.jp** 与 DMM 重叠且年龄墙严格, 同样不纳入; 检索与详情要求站内 Referer, 检索结果行没有品番, 只能按详情页确认.
 
 ## 官网与 FANZA
 
