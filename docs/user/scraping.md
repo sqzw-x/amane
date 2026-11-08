@@ -116,7 +116,7 @@
 | prestige | prestige-av.com | | | 单一制作商; 对每个番号都会发出多次请求 |
 | faleno | faleno.jp | | | 单一制作商, 含 maryGOLD 与 JimmyScandal |
 | dahlia | dahlia-av.jp | | | 单一制作商 |
-| giga | giga-web.jp | | | 单一制作商; 自动完成年龄确认, 同一时刻只处理一个请求; 不提供标签 |
+| giga | giga-web.jp | | | 单一制作商; 自动完成年龄确认, 同一时刻只处理一个请求 |
 | kin8 | kin8tengoku.com | | | 单一制作商, 番号形如 `KIN8-1234`, 类型为欧美 |
 | fc2club | fc2club.top | | | 跳转镜像, 访问不稳定 |
 
