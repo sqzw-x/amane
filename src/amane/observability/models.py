@@ -54,8 +54,7 @@ class TaskLogEntry(BaseModel):
 
 class TaskLogPage(BaseModel):
     entries: list[TaskLogEntry] = Field(default_factory=list)
-    truncated: bool = False
-    """``entries`` 之前还有未下发的行."""
+    truncated: bool = Field(default=False, description="``entries`` 之前还有未下发的行")
 
 
 class SiteOutcomeKind(StrEnum):

@@ -10,6 +10,7 @@ from .models import TaskLogEntry, TaskLogPage
 from .recorder import task_dir_for
 
 _TAIL_CHUNK_SIZE = 64 * 1024
+_MAX_TAIL_BYTES = 8 * 1024 * 1024
 _RESERVED_KEYS = frozenset({"event", "logger", "level", "timestamp"})
 _DEFAULT_SOURCE = "server"
 _DEFAULT_LEVEL = "INFO"
@@ -22,9 +23,11 @@ def _read_tail_lines(path: Path, limit: int) -> tuple[list[bytes], bool]:
         pos = f.tell()
         chunks: list[bytes] = []
         newlines = 0
-        while pos > 0 and newlines <= limit:
-            size = min(_TAIL_CHUNK_SIZE, pos)
+        remaining_bytes = _MAX_TAIL_BYTES
+        while pos > 0 and newlines <= limit and remaining_bytes > 0:
+            size = min(_TAIL_CHUNK_SIZE, pos, remaining_bytes)
             pos -= size
+            remaining_bytes -= size
             f.seek(pos)
             chunk = f.read(size)
             chunks.append(chunk)
@@ -73,6 +76,9 @@ def read_task_log(log_dir: Path, task_id: int, *, limit: int) -> TaskLogPage:
     path = task_dir_for(log_dir, task_id) / "task.log"
     if not path.is_file():
         return TaskLogPage()
-    lines, truncated = _read_tail_lines(path, limit)
+    try:
+        lines, truncated = _read_tail_lines(path, limit)
+    except FileNotFoundError:
+        return TaskLogPage()
     entries = [entry for line in lines if (entry := _parse_line(line)) is not None]
     return TaskLogPage(entries=entries, truncated=truncated)

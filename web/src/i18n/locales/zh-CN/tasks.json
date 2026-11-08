@@ -78,7 +78,7 @@
     "empty": "暂无日志",
     "loading": "日志加载中",
     "loadFailed": "日志加载失败",
-    "truncated": "日志较长，仅显示最近部分；完整内容请导出任务记录"
+    "truncated": "日志较长，仅显示最近部分"
   },
   "reason": {
     "http_error": "请求被站点拒绝",

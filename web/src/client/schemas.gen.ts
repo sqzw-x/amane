@@ -9775,6 +9775,7 @@ export const TaskLogPageSchema = {
         truncated: {
             type: 'boolean',
             title: 'Truncated',
+            description: '``entries`` 之前还有未下发的行',
             default: false
         }
     },

@@ -5148,6 +5148,8 @@ export type TaskLogPage = {
     entries?: Array<TaskLogEntry>;
     /**
      * Truncated
+     *
+     * ``entries`` 之前还有未下发的行
      */
     truncated?: boolean;
 };

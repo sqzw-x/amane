@@ -37,8 +37,10 @@ export function TaskLogView({ taskId, height = 220 }: TaskLogViewProps) {
     () => mergeTaskLogEntries(historyQuery.data?.entries ?? [], live),
     [historyQuery.data, live],
   );
+  const entriesToRender = merged.entries;
+  const truncated = merged.truncated || Boolean(historyQuery.data?.truncated);
 
-  if (merged.length === 0) {
+  if (entriesToRender.length === 0) {
     if (historyQuery.isPending) {
       return (
         <Text size="xs" c="dimmed" ta="center" py="md">
@@ -55,7 +57,7 @@ export function TaskLogView({ taskId, height = 220 }: TaskLogViewProps) {
 
   return (
     <div>
-      {historyQuery.data?.truncated ? (
+      {truncated ? (
         <Text size="xs" c="dimmed" mb={4}>
           {t("logView.truncated")}
         </Text>
@@ -69,8 +71,8 @@ export function TaskLogView({ taskId, height = 220 }: TaskLogViewProps) {
       >
         <Virtuoso
           style={{ height: "100%" }}
-          data={merged}
-          initialTopMostItemIndex={merged.length - 1}
+          data={entriesToRender}
+          initialTopMostItemIndex={entriesToRender.length - 1}
           followOutput="auto"
           itemContent={renderTaskLogRow}
         />

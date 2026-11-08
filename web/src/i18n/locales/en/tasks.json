@@ -92,7 +92,7 @@
     "empty": "No logs",
     "loading": "Loading logs",
     "loadFailed": "Failed to load logs",
-    "truncated": "Log is long; only the latest entries are shown. Export the task record for the full log."
+    "truncated": "Log is long; only the latest entries are shown"
   },
   "reason": {
     "http_error": "Request rejected by the site",
