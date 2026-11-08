@@ -37,7 +37,7 @@ def _timestamp(
 
 # 共享处理器链 (渲染前注入上下文). app.log / task.log 的 foreign_pre_chain 也复用这份,
 # 否则 stdlib 记录落盘时没有 level / logger / timestamp, 与 WS 事件不同形.
-SHARED_PROCESSORS: list[structlog.types.Processor] = [
+SHARED_PROCESSORS: tuple[structlog.types.Processor, ...] = (
     structlog.contextvars.merge_contextvars,
     structlog.stdlib.add_logger_name,
     structlog.stdlib.add_log_level,
@@ -45,7 +45,7 @@ SHARED_PROCESSORS: list[structlog.types.Processor] = [
     structlog.processors.StackInfoRenderer(),
     structlog.processors.ExceptionRenderer(),
     structlog.stdlib.ExtraAdder(),
-]
+)
 
 
 class WSEventLogHandler(logging.Handler):

@@ -1,5 +1,6 @@
 """task.log 尾部读取与 JSONL 解析."""
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -9,23 +10,51 @@ import structlog
 
 from amane.config import HotSettings
 from amane.db.models import Task, TaskStatus, TaskType
+from amane.events import EventBus, EventType
 from amane.observability import read_task_log, setup_logging
 from amane.observability.recorder import Recorder, task_dir_for
+
+
+class _CapturingEventBus(EventBus):
+    def __init__(self) -> None:
+        super().__init__()
+        self.events: list[tuple[EventType, dict]] = []
+
+    async def emit(self, event_type: EventType, data: dict | None = None) -> None:
+        self.events.append((event_type, data or {}))
+
+
+def _reset_logging_state() -> logging.Logger:
+    root = logging.getLogger("amane")
+    root.handlers.clear()
+    structlog.contextvars.clear_contextvars()
+    structlog.reset_defaults()
+    return root
+
+
+def _cleanup_logging_state(root: logging.Logger) -> None:
+    root.handlers.clear()
+    logging.getLogger("amane.request").handlers.clear()
+    structlog.contextvars.clear_contextvars()
+    structlog.reset_defaults()
 
 
 @pytest.fixture
 def logging_pipeline(tmp_path: Path):
     """Recorder 依赖进程级 structlog / logging 配置; 每个用到的用例独享一份并清理."""
-    root = logging.getLogger("amane")
-    root.handlers.clear()
-    structlog.contextvars.clear_contextvars()
-    structlog.reset_defaults()
+    root = _reset_logging_state()
     setup_logging(level="DEBUG", log_dir=tmp_path / "app")
     yield
-    root.handlers.clear()
-    logging.getLogger("amane.request").handlers.clear()
-    structlog.contextvars.clear_contextvars()
-    structlog.reset_defaults()
+    _cleanup_logging_state(root)
+
+
+@pytest.fixture
+def event_bus_logging(tmp_path: Path):
+    root = _reset_logging_state()
+    bus = _CapturingEventBus()
+    setup_logging(level="DEBUG", event_bus=bus, log_dir=tmp_path / "app")
+    yield bus
+    _cleanup_logging_state(root)
 
 
 def _write_log(tmp_path: Path, task_id: int, data: str) -> None:
@@ -178,3 +207,32 @@ def test_byte_cap_keeps_truncated_flag(tmp_path: Path, monkeypatch: pytest.Monke
     assert page.truncated is True
     assert page.entries
     assert all(entry.message.startswith("line-") for entry in page.entries)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_recorder_task_log_matches_ws_event(tmp_path: Path, event_bus_logging: _CapturingEventBus):
+    """同一条 stdlib 记录在 WS 事件与 task.log 里的时间戳与字段必须一致."""
+    structlog.contextvars.bind_contextvars(task_id=42, task_type="scrape")
+    task = Task(id=42, type=TaskType.SCRAPE, status=TaskStatus.RUNNING, payload={}, priority=0)
+    rec = Recorder.begin(tmp_path, task, HotSettings())
+    try:
+        logging.getLogger("amane.test").warning("stdlib", extra={"foo": 2})
+        await asyncio.sleep(0.01)
+    finally:
+        rec.close()
+
+    page = read_task_log(tmp_path, 42, limit=10)
+    assert len(page.entries) == 1
+    entry = page.entries[0]
+    events = [
+        data
+        for event_type, data in event_bus_logging.events
+        if event_type is EventType.LOG and data.get("task_id") == 42
+    ]
+    assert len(events) == 1
+    ws = events[0]
+    assert ws["timestamp"] == entry.timestamp
+    assert ws["level"] == entry.level
+    assert ws["source"] == entry.source
+    assert ws["message"] == entry.message
+    assert ws["foo"] == entry.context["foo"]
