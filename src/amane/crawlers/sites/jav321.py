@@ -44,7 +44,12 @@ class Jav321Crawler(Crawler):
 
         studio = _field_links(html, "メーカー")
         series = _field_links(html, "シリーズ")
-        cover = html.xpath('//div[@class="panel-body"]//img/@src').get()
+        # 信息面板首图是竖版缩略 (DMM 系 ps.jpg / Prestige 系 pf_o1), 只能作海报.
+        panel_image = html.xpath('//div[@class="panel-body"]//img/@src').get()
+        # 快照序列首张是横版封面, 其余是剧照; 缺图的编号指向 now_printing, 由下载层按重定向终址拒收.
+        samples = [_clean_url(url) for url in extract_all_texts(html, '//a[starts-with(@href,"/snapshot/")]/img/@src')]
+        # 没有快照区的条目退回面板图, 与本层补齐前的取值一致.
+        cover = samples[0] if samples else panel_image
         plot = extract_text(html, '//div[@class="panel-body"]/div[@class="row"]/div[@class="col-md-12"]/text()')
 
         return MediaMetadata(
@@ -57,6 +62,8 @@ class Jav321Crawler(Crawler):
             tags=_field_links(html, "ジャンル"),
             series=series[0] if series else None,
             thumb_urls=[cover] if cover else [],
+            poster_urls=[panel_image] if panel_image else [],
+            extrafanart=samples[1:],
             plot=plot or None,
             source_url=url,
         )
@@ -67,6 +74,15 @@ class Jav321Crawler(Crawler):
             return None
         match = re.search(r"(\d+)", text)
         return int(match.group(1)) if match else None
+
+
+def _clean_url(url: str) -> str:
+    """折叠 host 之后多余的前导斜杠: 页面里的图片地址有 ``pics.dmm.co.jp//digital/...`` 这种写法."""
+    scheme, separator, rest = url.partition("://")
+    if not separator:
+        return url
+    host, slash, path = rest.partition("/")
+    return f"{scheme}://{host}/{path.lstrip('/')}" if slash else url
 
 
 def _field_text(html: Selector, label: str) -> str:

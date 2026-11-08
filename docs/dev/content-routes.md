@@ -35,7 +35,7 @@
 
 **avsox.click** — 日本无码情报站. 同源 AVMOO = 有碼, AVHEAT = 欧美 (`avheat.shop`), 项目只接入 AVSOX. 搜索对有无短横线都能命中, `_` 与 `-` 是两部; 对不上不取首条.
 
-**jav321.com** — DMM 目录镜像; 有碼与素人排链尾, 无无碼 / FC2 / 欧美入口. 检索是 POST `sn` 表单, 详情地址为站内 content id; 相近番号也会被重定向, 必须按详情页的 品番 确认.
+**jav321.com** — DMM 目录镜像; 有碼与素人排链尾, 无无碼 / FC2 / 欧美入口. 检索是 POST `sn` 表单, 详情地址为站内 content id; 相近番号也会被重定向, 必须按详情页的 品番 确认. 信息面板首图是竖版缩略 (`ps.jpg` 或 Prestige 系的 `pf_o1`), 横版封面与剧照在快照序列: 首张是封面, 其余 `jp-N` / `cap_e_N` 是剧照.
 
 **javlibrary.com** — 常命中 Cloudflare 等待页, 不纳入默认表.
 
