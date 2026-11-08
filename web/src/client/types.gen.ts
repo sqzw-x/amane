@@ -5109,6 +5109,52 @@ export type TaskListResponse = {
 };
 
 /**
+ * TaskLogEntry
+ *
+ * 与 WebSocket LOG 事件同形; ``context`` 是原日志里未映射到固定字段的键.
+ */
+export type TaskLogEntry = {
+    /**
+     * Timestamp
+     */
+    timestamp?: string | null;
+    /**
+     * Level
+     */
+    level: string;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Context
+     */
+    context?: {
+        [key: string]: JsonValue;
+    };
+};
+
+/**
+ * TaskLogPage
+ */
+export type TaskLogPage = {
+    /**
+     * Entries
+     */
+    entries?: Array<TaskLogEntry>;
+    /**
+     * Truncated
+     *
+     * ``entries`` 之前还有未下发的行
+     */
+    truncated?: boolean;
+};
+
+/**
  * TaskResponse
  *
  * 详情: 额外带 payload 与按类型的 result.
@@ -8850,6 +8896,43 @@ export type GetTaskResponses = {
 };
 
 export type GetTaskResponse = GetTaskResponses[keyof GetTaskResponses];
+
+export type GetTaskLogData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: number;
+    };
+    query?: {
+        /**
+         * Limit
+         *
+         * Max entries from the end of task.log
+         */
+        limit?: number;
+    };
+    url: '/api/tasks/{task_id}/log';
+};
+
+export type GetTaskLogErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTaskLogError = GetTaskLogErrors[keyof GetTaskLogErrors];
+
+export type GetTaskLogResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskLogPage;
+};
+
+export type GetTaskLogResponse = GetTaskLogResponses[keyof GetTaskLogResponses];
 
 export type GetTaskRecordData = {
     body?: never;

@@ -41,6 +41,8 @@ scrape 等 handler 只调用 `current()`; 其它代码仍可直接使用 `logger
 
 导出: `GET /api/tasks/{id}/record?include_secrets=false` → `task-{id}-record.zip`, 仅终态可导出. 界面读任务结果的 JSON: 站点明细在任务结束时经 `Recorder.site_outcomes()` 写进 SCRAPE / ACTOR_SCRAPE 的结果 (失败侧来自 handler 的失败返回, 或 worker 崩溃 / 取消时 `TaskHandler.failure_result` 的补交; 边界见 [task-system.md](task-system.md) 的结果侧), 与 summary.json 是**同一结构** (`SiteOutcomeRecord`) 的不同序列化, `detail` 在入结果前截断并置 `detail_truncated`, 完整文本只留在记录里; 结果不解析任何文本. 出站 HTTP (含 ORGANIZE 缺资源时的 `acquire`) 只写入 `http/`, **不是**站点 outcome.
 
+`GET /api/tasks/{id}/log?limit=` 读取 `task.log` 尾部 (默认与上限 5000 行), 逐行解析为与 WS `log` 事件同形的条目 (`context` 承接额外字段); 坏行跳过, 文件缺失返回空页. 记录导出包含完整 `task.log`.
+
 ### 分层
 
 | 问题 | 位置 |

@@ -5528,6 +5528,63 @@
         }
       }
     },
+    "/api/tasks/{task_id}/log": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get Task Log",
+        "description": "任务日志尾部. 记录文件不存在时返回空页.",
+        "operationId": "get_task_log",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5000,
+              "minimum": 1,
+              "description": "Max entries from the end of task.log",
+              "default": 5000,
+              "title": "Limit"
+            },
+            "description": "Max entries from the end of task.log"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskLogPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks/{task_id}/record": {
       "get": {
         "tags": [
@@ -16218,6 +16275,67 @@
           "total"
         ],
         "title": "TaskListResponse"
+      },
+      "TaskLogEntry": {
+        "properties": {
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "context": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "level",
+          "source",
+          "message"
+        ],
+        "title": "TaskLogEntry",
+        "description": "与 WebSocket LOG 事件同形; ``context`` 是原日志里未映射到固定字段的键."
+      },
+      "TaskLogPage": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/TaskLogEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "description": "``entries`` 之前还有未下发的行",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "TaskLogPage"
       },
       "TaskResponse": {
         "properties": {

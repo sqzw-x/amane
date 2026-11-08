@@ -9,7 +9,7 @@ from pydantic import BaseModel, TypeAdapter
 from ...db import MediaFile, Repository
 from ...db.models import SortOrder, Task, TaskSortField, TaskStatus, TaskType
 from ...handlers import ActorScrapePayload, ScrapePayload
-from ...observability import build_record_zip
+from ...observability import TaskLogPage, build_record_zip, read_task_log
 from ...utils.model import to_resp
 from ..deps import ConfigDep, RepoDep, RuntimeDep
 from ..models import (
@@ -332,6 +332,19 @@ async def get_task(task_id: int, repo: RepoDep) -> TaskResponse:
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
     return await _to_resp(repo, task)
+
+
+@router.get("/{task_id}/log")
+async def get_task_log(
+    task_id: int,
+    repo: RepoDep,
+    config: ConfigDep,
+    limit: Annotated[int, Query(ge=1, le=5000, description="Max entries from the end of task.log")] = 5000,
+) -> TaskLogPage:
+    """任务日志尾部. 记录文件不存在时返回空页."""
+    if await repo.get_task(task_id) is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return read_task_log(config.cold.log_dir, task_id, limit=limit)
 
 
 @router.get("/{task_id}/record")

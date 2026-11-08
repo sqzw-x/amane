@@ -43,7 +43,8 @@
     "payload": "参数",
     "result": "结果",
     "liveLogs": "实时日志",
-    "progress": "进度"
+    "progress": "进度",
+    "logs": "任务日志"
   },
   "empty": "暂无任务",
   "listLoadFailed": "任务列表加载失败",
@@ -74,7 +75,10 @@
   },
   "loadMoreChildren": "加载更多 ({{count}})",
   "logView": {
-    "empty": "暂无日志"
+    "empty": "暂无日志",
+    "loading": "日志加载中",
+    "loadFailed": "日志加载失败",
+    "truncated": "日志较长，仅显示最近部分"
   },
   "reason": {
     "http_error": "请求被站点拒绝",

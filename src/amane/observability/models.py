@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from ..net.errors import FailureReason
 
@@ -40,6 +40,21 @@ class TaskSnapshot(BaseModel):
     created_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+class TaskLogEntry(BaseModel):
+    """与 WebSocket LOG 事件同形; ``context`` 是原日志里未映射到固定字段的键."""
+
+    timestamp: str | None = None
+    level: str
+    source: str
+    message: str
+    context: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class TaskLogPage(BaseModel):
+    entries: list[TaskLogEntry] = Field(default_factory=list)
+    truncated: bool = Field(default=False, description="``entries`` 之前还有未下发的行")
 
 
 class SiteOutcomeKind(StrEnum):

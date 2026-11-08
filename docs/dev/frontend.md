@@ -84,7 +84,7 @@ Settings、任务提交、定时创建、metadata 编辑共用 `components/schem
 | 数据 | 存储位置 |
 |------|--------|
 | 列表 / 详情 | TanStack Query (invalidate) |
-| 高频流 (进度 / 日志) | Zustand |
+| 高频流 (进度 / 日志) | Zustand; 任务日志历史在展开详情时经 `GET /tasks/{id}/log` 取, 与实时条目按记录去重合并 (`lib/task/log.ts`) |
 | 对话增量 | AG-UI 事件流 (与 WS 正交) |
 | 导航态 (筛选 / 排序 / page / view) | URL search |
 | 列表密度 / 列宽 / 主题 / 播放源顺序 / 列表默认参数 | Zustand (`amane-web`) |

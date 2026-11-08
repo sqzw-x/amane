@@ -8,6 +8,8 @@ from .models import (
     RecordManifest,
     SiteOutcomeKind,
     SiteOutcomeRecord,
+    TaskLogEntry,
+    TaskLogPage,
     TaskSnapshot,
     TaskSummary,
 )
@@ -23,6 +25,7 @@ from .recorder import (
 )
 from .redact import hot_slice_for_task, needs_secrets_file, redact_dsn, redact_hot, redact_proxy
 from .source import invoke_source
+from .task_log import read_task_log
 
 __all__ = [
     "RECORD_VERSION",
@@ -34,6 +37,8 @@ __all__ = [
     "SiteOutcomeKind",
     "SiteOutcomeRecord",
     "TaskIdFilter",
+    "TaskLogEntry",
+    "TaskLogPage",
     "TaskSnapshot",
     "TaskSummary",
     "WSEventLogHandler",
@@ -45,6 +50,7 @@ __all__ = [
     "invoke_source",
     "load_http_index",
     "needs_secrets_file",
+    "read_task_log",
     "redact_dsn",
     "redact_hot",
     "redact_proxy",

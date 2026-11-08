@@ -53,7 +53,8 @@
     "payload": "Payload",
     "result": "Result",
     "liveLogs": "Live Logs",
-    "progress": "Progress"
+    "progress": "Progress",
+    "logs": "Task Logs"
   },
   "empty": "No tasks",
   "listLoadFailed": "Failed to load tasks",
@@ -88,7 +89,10 @@
   "loadMoreChildren_one": "Load more ({{count}})",
   "loadMoreChildren_other": "Load more ({{count}})",
   "logView": {
-    "empty": "No logs"
+    "empty": "No logs",
+    "loading": "Loading logs",
+    "loadFailed": "Failed to load logs",
+    "truncated": "Log is long; only the latest entries are shown"
   },
   "reason": {
     "http_error": "Request rejected by the site",
