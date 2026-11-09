@@ -372,18 +372,23 @@ async def test_download_resources_gates_acquire(resource_store: ResourceStore, t
     assert "https://s/trailer.mp4" not in client.downloaded
 
 
-def test_success_first_partition():
-    """稳定分区: 成功保序前置, 失败保序排到末尾; 空成功集幂等."""
-    cases = [
-        (["d1", "l1", "d2", "l2"], {"l1", "l2"}, ["l1", "l2", "d1", "d2"]),
-        (["a", "b"], {"a", "b"}, ["a", "b"]),  # 全成功
-        (["a", "b"], set(), ["a", "b"]),  # 全失败
-        (["a", "b", "c"], {"c"}, ["c", "a", "b"]),  # 尾部成功提至首位
-        (["a", "b", "c"], {"b"}, ["b", "a", "c"]),  # 中部成功前置
-        ([], set(), []),
-    ]
-    for urls, ok, expected in cases:
-        assert pipeline_mod._success_first(urls, ok) == expected
+@pytest.mark.asyncio
+async def test_redundant_candidate_not_downloaded(resource_store: ResourceStore, tmp_path: Path):
+    """首选候选成功即停: 同一张图的后续地址不下载, 只在元数据里留作回退."""
+    client = FakeClient(sizes={"https://s/hi.jpg": (800, 538), "https://s/std.jpg": (800, 538)})
+    out = await materialize_images(
+        ["https://s/hi.jpg", "https://s/std.jpg"],
+        [],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        HotSettings(),
+        tmp_path,
+        content_type=ContentType.CENSORED,
+    )
+    assert out.poster_urls == ["https://s/hi.jpg", "https://s/std.jpg"]
+    assert client.downloaded == ["https://s/hi.jpg"]
+    assert await resource_store.get_by_url("https://s/std.jpg") is None
 
 
 @pytest.mark.asyncio
