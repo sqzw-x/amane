@@ -157,17 +157,17 @@ class TestProxyImage:
     @pytest.mark.parametrize(
         ("url", "detail"),
         [
-            ("http://127.0.0.1:8000/api/config", "仅支持公网地址"),
-            ("http://169.254.169.254/latest/meta-data/", "仅支持公网地址"),
-            ("http://10.0.0.5/a.png", "仅支持公网地址"),
-            ("http://[::1]/a.png", "仅支持公网地址"),
-            # 数值写法与非法端口不是「地址不公网」, 错误信息要能区分
+            ("http://127.0.0.1:8000/api/config", "不支持内网地址"),
+            ("http://169.254.169.254/latest/meta-data/", "不支持内网地址"),
+            ("http://10.0.0.5/a.png", "不支持内网地址"),
+            ("http://[::1]/a.png", "不支持内网地址"),
+            # 数值写法与非法端口不是「地址指向内网」, 错误信息要能区分
             ("http://2130706433/a.png", "URL 不受支持"),
             ("http://0177.0.0.1/a.png", "URL 不受支持"),
             ("http://example.com:99999/a.png", "URL 不受支持"),
         ],
     )
-    async def test_non_public_target_rejected(
+    async def test_internal_target_rejected(
         self, client: AsyncClient, app, monkeypatch: pytest.MonkeyPatch, url: str, detail: str
     ):
         """私网 / 回环 / 元数据地址与不合法目标都在出站前被拒, 不进入下载通道."""
