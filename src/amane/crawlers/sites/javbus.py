@@ -9,6 +9,21 @@ from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text, number_variants, select_number_index
 
+_COVER_PATH_RE = re.compile(r"/cover/(?P<stem>[^/]+?)(?:_b)?\.jpg$")
+
+
+def poster_url_for(base_url: str, cover: str | None) -> str | None:
+    """封面地址 → 竖版海报.
+
+    封面有两个根 (``/pics/cover/`` 与 ``/imgs/cover/``, 后者是无码条目), 海报却只有 ``/pics/thumb/``
+    一份: 沿用封面所在的根会得到 404 的 ``/imgs/thumb/``.
+    """
+    path = cover.split("?", 1)[0] if cover else ""
+    match = _COVER_PATH_RE.search(path)
+    if match is None:
+        return None
+    return urljoin(base_url, f"/pics/thumb/{match.group('stem')}.jpg")
+
 
 class JavBusCrawler(Crawler):
     @classmethod
@@ -88,11 +103,7 @@ class JavBusCrawler(Crawler):
         cover = extract_text(html, '//a[@class="bigImage"]/@href')
         thumb_url = urljoin(url, cover) if cover else None
 
-        # poster: /cover/ -> /thumb/, _b.jpg -> .jpg
-        poster_url = None
-        if cover:
-            poster = cover.replace("/cover/", "/thumb/").replace("_b.jpg", ".jpg")
-            poster_url = urljoin(url, poster)
+        poster_url = poster_url_for(self.base_url, cover)
 
         release_raw = extract_text(html, '//span[@class="header"][contains(text(), "發行日期:")]/parent::p/text()')
         release = release_raw.strip() if release_raw else None
