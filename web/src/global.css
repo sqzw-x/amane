@@ -1,9 +1,13 @@
 /*
   视口高度单位: 默认 vh, 支持 dvh 的引擎由 main.tsx 在入口替换成 dvh.
   自己的代码一律取该变量; 取值理由与第三方样式的兜底见 docs/dev/frontend.md.
+  视觉视口的高度与上沿由入口写入 (--amane-vvh / --amane-vv-top), 供浮层定位;
+  浮层不得按布局视口定位, 理由见同一文档.
 */
 :root {
   --amane-vh: 100vh;
+  --amane-vvh: var(--amane-vh);
+  --amane-vv-top: 0px;
 }
 
 /*

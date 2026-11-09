@@ -1,4 +1,4 @@
-import { createTheme, type MantineColorsTuple } from "@mantine/core";
+import { createTheme, Drawer, type MantineColorsTuple } from "@mantine/core";
 
 const brand: MantineColorsTuple = [
   "#e8f3ff",
@@ -22,5 +22,13 @@ export const theme = createTheme({
   headings: {
     fontFamily: '"IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif',
     fontWeight: "600",
+  },
+  components: {
+    Drawer: Drawer.extend({
+      styles: {
+        // 抽屉的定位容器贴住视觉视口: 上沿取 --amane-vv-top, 高度取 --amane-vvh (理由见 docs/dev/frontend.md).
+        inner: { top: "var(--amane-vv-top)", bottom: "auto", height: "var(--amane-vvh)" },
+      },
+    }),
   },
 });
