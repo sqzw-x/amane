@@ -170,6 +170,10 @@ class TestInternalAddress:
             ("64:ff9b::a00:1", True),
             ("64:ff9b::7f00:1", True),
             ("64:ff9b::808:808", False),
+            # 本地 NAT64 前缀的内嵌位置不固定, 整段拒绝
+            ("64:ff9b:1::a00:1", True),
+            ("64:ff9b:1:ffff:ffff:ffff:ffff:ffff", True),
+            ("64:ff9b:2::1", False),
             # 6to4 内嵌的是隧道端点, 连接不会到达 10.0.0.1
             ("2002:a00:1::", False),
         ],
