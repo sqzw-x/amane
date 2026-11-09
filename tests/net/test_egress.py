@@ -174,7 +174,7 @@ class TestInternalAddress:
             ("64:ff9b:1::a00:1", True),
             ("64:ff9b:1:ffff:ffff:ffff:ffff:ffff", True),
             ("64:ff9b:2::1", False),
-            # 6to4 内嵌的是隧道端点, 连接不会到达 10.0.0.1
+            # 6to4 内嵌的是隧道端点, 协议 41 的包发往该地址, 但到不了其上的 TCP 服务
             ("2002:a00:1::", False),
         ],
     )
