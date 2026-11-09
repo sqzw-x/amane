@@ -1709,7 +1709,8 @@ export const proxyImageQueryKey = (options: Options<ProxyImageData>) => createQu
  * 上游失败记入进程内负缓存 (15 分钟), 窗口内同 URL 直接 502.
  * 同 URL 进行中请求合并为一次 acquire.
  * 使用图片 token 的请求只从缓存读取资源: 未命中返回 404, 不发起对外请求, 不写入负缓存.
- * 缓存命中先于地址判定: 只有下载会发起对外请求, 已入库资源即使是私网地址也直接返回.
+ * 缓存命中先于地址判定: 只有下载会发起对外请求, 已缓存的资源即使指向内网也直接返回.
+ * 不论是否命中缓存, 内容不是图片时一律 502, 不回放正文.
  */
 export const proxyImageOptions = (options: Options<ProxyImageData>) => queryOptions<unknown, ProxyImageError, unknown, ReturnType<typeof proxyImageQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {

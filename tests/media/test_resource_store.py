@@ -424,6 +424,32 @@ async def test_acquire_records_content_type(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content", "image_only", "stored"),
+    [
+        (b"<html>challenge</html>", True, False),
+        (b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00", True, False),  # 能识别, 但不是图片
+        (b"", True, False),
+        (b"\x89PNG\r\n\x1a\n" + b"\x00" * 8, True, True),
+        (b"<html>challenge</html>", False, True),  # 缺省不限制内容类型 (刮削下载)
+    ],
+)
+async def test_acquire_image_only(
+    resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch, content: bytes, image_only: bool, stored: bool
+):
+    """``image_only`` 下非图片内容不写入记录、不保留文件; 缺省时照常写入."""
+    client, _ = _stub_client(monkeypatch, final_url=_REQUEST, content=content)
+    dest = resource_store._compute_path(_REQUEST)
+
+    path = await resource_store.acquire(_REQUEST, client, image_only=image_only)
+
+    assert (path is not None) is stored
+    assert (await resource_store.get_by_url(_REQUEST) is not None) is stored
+    assert dest.exists() is stored
+    assert _siblings(dest) == []
+
+
+@pytest.mark.asyncio
 async def test_derived_mime_follows_content(resource_store: ResourceStore):
     """派生资源同样按内容写类型; 盘上字节被换掉后重跑并覆盖记录."""
     url = "https://s/derived.jpg"
