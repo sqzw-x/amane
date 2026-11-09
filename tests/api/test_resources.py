@@ -157,17 +157,17 @@ class TestProxyImage:
     @pytest.mark.parametrize(
         ("url", "detail"),
         [
-            ("http://127.0.0.1:8000/api/config", "仅支持公网地址"),
-            ("http://169.254.169.254/latest/meta-data/", "仅支持公网地址"),
-            ("http://10.0.0.5/a.png", "仅支持公网地址"),
-            ("http://[::1]/a.png", "仅支持公网地址"),
-            # 数值写法与非法端口不是「地址不公网」, 错误信息要能区分
+            ("http://127.0.0.1:8000/api/config", "不支持内网地址"),
+            ("http://169.254.169.254/latest/meta-data/", "不支持内网地址"),
+            ("http://10.0.0.5/a.png", "不支持内网地址"),
+            ("http://[::1]/a.png", "不支持内网地址"),
+            # 数值写法与非法端口不是「地址指向内网」, 错误信息要能区分
             ("http://2130706433/a.png", "URL 不受支持"),
             ("http://0177.0.0.1/a.png", "URL 不受支持"),
             ("http://example.com:99999/a.png", "URL 不受支持"),
         ],
     )
-    async def test_non_public_target_rejected(
+    async def test_internal_target_rejected(
         self, client: AsyncClient, app, monkeypatch: pytest.MonkeyPatch, url: str, detail: str
     ):
         """私网 / 回环 / 元数据地址与不合法目标都在出站前被拒, 不进入下载通道."""
@@ -206,6 +206,37 @@ class TestProxyImage:
         assert resp.status_code == 502
         # 解析失败多为瞬态: 不进 15 分钟负缓存, 网络恢复后同一地址还能重试
         assert not app.state.runtime.proxy_failure_cache.is_blocked(url)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_non_image_content_never_replayed(
+        self, client: AsyncClient, app, monkeypatch: pytest.MonkeyPatch, public_dns: None
+    ):
+        """地址判定被绕过时的兜底: 下载到的非图片不写入资源记录并进入负缓存, 已缓存的非图片也不回放."""
+        secret = b'{"AccessKeyId": "secret"}'
+        store = app.state.runtime.resource_store
+        web_client = AsyncMock()
+        web_client.resolve_final_url = AsyncMock(side_effect=lambda url, **_: url)
+
+        async def download(_url: str, dest: Path, **_kwargs: object) -> bool:
+            dest.write_bytes(secret)
+            return True
+
+        web_client.download = AsyncMock(side_effect=download)
+        monkeypatch.setattr(app.state.runtime, "web_client", web_client)
+
+        fetched = "http://rebind.example/a.jpg"
+        resp = await client.get("resources/proxy", params={"url": fetched})
+        assert resp.status_code == 502
+        assert secret not in resp.content
+        assert await store.get_by_url(fetched) is None
+        assert app.state.runtime.proxy_failure_cache.is_blocked(fetched)
+
+        # 刮削下载不限制内容类型, 同一 URL 的非图片可能已经缓存
+        cached = "http://scraped.example/b.jpg"
+        assert await store.acquire(cached, web_client) is not None
+        resp = await client.get("resources/proxy", params={"url": cached})
+        assert resp.status_code == 502
+        assert secret not in resp.content
 
 
 class TestImageToken:

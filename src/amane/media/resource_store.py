@@ -20,7 +20,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ..db.models import Resource
-from .file_type import detect_media_type
+from .file_type import detect_media_type, is_image_mime
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -173,8 +173,10 @@ class ResourceStore:
         *,
         egress: EgressPolicy | None = None,
         max_bytes: int | None = None,
+        image_only: bool = False,
     ) -> Path | None:
-        """``egress`` / ``max_bytes`` 原样交给下载通道: URL 来自第三方数据时由调用方给出策略."""
+        """``egress`` / ``max_bytes`` 原样交给下载通道: URL 来自第三方数据时由调用方给出策略.
+        ``image_only`` 只约束本次下载: 内容不是图片时丢弃下载结果, 不写入记录; 缓存命中照常返回."""
         # 内部 URL 是对既有 Resource 的引用: 直接解析本地文件, 不下载也不写记录.
         internal = internal_url_hash(url)
         if internal is not None:
@@ -184,7 +186,7 @@ class ResourceStore:
         # 同一 URL 的内容写入串行: 一起到达的调用都判缓存未命中, 若各自下载并改名到同一路径,
         # 后写会覆盖先写 (含先写方刚做完的就地超分), 而先写方的记录仍然作数.
         async with self._serialized(url):
-            return await self._acquire_locked(url, client, egress=egress, max_bytes=max_bytes)
+            return await self._acquire_locked(url, client, egress=egress, max_bytes=max_bytes, image_only=image_only)
 
     async def _acquire_locked(
         self,
@@ -193,6 +195,7 @@ class ResourceStore:
         *,
         egress: EgressPolicy | None,
         max_bytes: int | None,
+        image_only: bool,
     ) -> Path | None:
         # 缓存命中且文件存在则直出. 判据是记录 + 文件存在, 不看哈希: 超分是就地覆盖, 哈希每次都会变.
         cached = await self.resolve(url)
@@ -219,12 +222,15 @@ class ResourceStore:
             if not await client.download(url, tmp, egress=egress, max_bytes=max_bytes):
                 logger.warning("resource download failed", url=url, host=urlsplit(url).hostname)
                 return None
+            mime = detect_media_type(tmp)
+            if image_only and not is_image_mime(mime):
+                logger.warning("resource is not an image", url=url, mime=mime)
+                return None
             tmp.replace(dest)
         finally:
             tmp.unlink(missing_ok=True)
 
         size = dest.stat().st_size
-        mime = detect_media_type(dest)
         content_hash = self._hash_file(dest)
 
         # 写入记录.

@@ -75,3 +75,7 @@ def detect_media_type(path: Path) -> str | None:
 def detect_media_type_bytes(data: bytes) -> str | None:
     """判定字节类型: 文件头 → PIL; 都不识别时返回 None."""
     return sniff_head(data) or _pil_media_type(io.BytesIO(data))
+
+
+def is_image_mime(mime: str | None) -> bool:
+    return mime is not None and mime.startswith(IMAGE_MIME_PREFIX)

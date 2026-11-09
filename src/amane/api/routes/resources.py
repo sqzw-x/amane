@@ -10,6 +10,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 
+from ...media.file_type import detect_media_type, is_image_mime
 from ...net.egress import EgressPolicy
 from ...net.errors import EgressRejected, RequestError
 from ..deps import RuntimeDep
@@ -21,13 +22,19 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/resources", tags=["resources"])
 
 _PROXY_EGRESS = EgressPolicy()
-"""代理端点的下载目标只接受公网 http(s): URL 来自外站元数据, 私网地址即 SSRF 入口, 重定向逐跳复查."""
+"""代理端点的下载目标不接受内网地址: URL 来自外站元数据, 内网地址即 SSRF 入口, 重定向逐跳复查."""
 
 _PROXY_MAX_BYTES = 32 * 1024 * 1024
 """代理图片的正文上限. 超过即中止下载, 不把上游自称的长度当作可信边界."""
 
 
-def _image_response(request: Request, path: Path, content_hash: str | None) -> Response:
+def _image_response(request: Request, url: str, path: Path, content_hash: str | None) -> Response:
+    # 只回放按内容判定为图片的文件, 扩展名不作依据 (URL 路径由上游决定). 地址判定无法防御 DNS rebinding,
+    # 也无法约束由代理解析的目标; 缓存命中的资源还可能来自不做地址判定的刮削下载.
+    if not is_image_mime(detect_media_type(path)):
+        logger.warning("proxy image content is not an image", url=url)
+        raise HTTPException(status_code=502, detail="上游内容不是图片")
+
     not_modified = maybe_not_modified(request, content_hash)
     if not_modified is not None:
         return not_modified
@@ -46,7 +53,8 @@ async def proxy_image(
     """上游失败记入进程内负缓存 (15 分钟), 窗口内同 URL 直接 502.
     同 URL 进行中请求合并为一次 acquire.
     使用图片 token 的请求只从缓存读取资源: 未命中返回 404, 不发起对外请求, 不写入负缓存.
-    缓存命中先于地址判定: 只有下载会发起对外请求, 已入库资源即使是私网地址也直接返回.
+    缓存命中先于地址判定: 只有下载会发起对外请求, 已缓存的资源即使指向内网也直接返回.
+    不论是否命中缓存, 内容不是图片时一律 502, 不回放正文.
     """
     try:
         parsed = urlparse(url)
@@ -59,7 +67,7 @@ async def proxy_image(
     local_path = await store.resolve(url)
     if local_path is not None:
         record = await store.get_by_url(url)
-        return _image_response(request, local_path, record.content_hash if record is not None else None)
+        return _image_response(request, url, local_path, record.content_hash if record is not None else None)
     if request.state.via_image_token:
         raise HTTPException(status_code=404, detail="资源不在本地缓存")
 
@@ -83,7 +91,9 @@ async def proxy_image(
     # 否则等待同一 URL 的请求也会占额度.
     async def _acquire() -> Path | None:
         async with runtime.proxy_downloads:
-            return await store.acquire(url, runtime.web_client, egress=_PROXY_EGRESS, max_bytes=_PROXY_MAX_BYTES)
+            return await store.acquire(
+                url, runtime.web_client, egress=_PROXY_EGRESS, max_bytes=_PROXY_MAX_BYTES, image_only=True
+            )
 
     local_path = await failures.coalesce(url, _acquire)
     if local_path is None:
@@ -95,7 +105,7 @@ async def proxy_image(
     failures.forget(url)
 
     record = await store.get_by_url(url)
-    return _image_response(request, local_path, record.content_hash if record is not None else None)
+    return _image_response(request, url, local_path, record.content_hash if record is not None else None)
 
 
 @router.get("/{url_hash}")
