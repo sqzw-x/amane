@@ -2,7 +2,7 @@ from collections.abc import Iterable, Sequence
 from typing import NamedTuple
 
 from pydantic import BaseModel
-from sqlalchemy import asc, func, update
+from sqlalchemy import asc, func, insert, update
 from sqlalchemy import delete as sqla_delete
 from sqlalchemy.sql.functions import coalesce, count
 from sqlmodel import col, select
@@ -14,6 +14,8 @@ from ..repo_types import _TASK_SORT_COLUMNS, _order_clause, _utcnow
 from .base import RepositoryMixinBase, chunks
 
 _ACTIVE_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING)
+# 单条 INSERT 的行数上限. 每行 7 个绑定变量, 留出余量后仍低于连接级上限被调低到 1000 的情形.
+_INSERT_CHUNK_SIZE = 100
 # 互斥键在 payload 里; 同键已有 queued/running 则复用, 不另建行.
 # 其余类型每次新建; 同库串行由 handler 内的锁保证.
 _EXCLUSIVE_FIELDS: dict[TaskType, str] = {
@@ -134,11 +136,29 @@ async def _insert_tasks(session: AsyncSession, pending: Sequence[_PendingTask]) 
         new_rows.append(row)
         new_indexes.append(index)
 
-    for index, row in zip(new_indexes, new_rows, strict=True):
-        task = Task(type=row.task_type, payload=row.payload, priority=row.priority, root_task_id=row.root_task_id)
-        session.add(task)
-        await session.flush()
-        slots[index] = task
+    if new_rows:
+        stmt = insert(Task).returning(Task).execution_options(sort_by_parameter_order=True)
+        for start in range(0, len(new_rows), _INSERT_CHUNK_SIZE):
+            batch = new_rows[start : start + _INSERT_CHUNK_SIZE]
+            inserted = list(
+                (
+                    await session.exec(
+                        stmt,
+                        params=[
+                            {
+                                "type": row.task_type,
+                                "payload": row.payload,
+                                "priority": row.priority,
+                                "root_task_id": row.root_task_id,
+                            }
+                            for row in batch
+                        ],
+                    )
+                ).scalars()
+            )
+            assert len(inserted) == len(batch)
+            for index, task in zip(new_indexes[start : start + _INSERT_CHUNK_SIZE], inserted, strict=True):
+                slots[index] = task
     for index, first in aliases.items():
         slots[index] = slots[first]
     assert all(slot is not None for slot in slots)
@@ -219,8 +239,6 @@ class TasksRepoMixin(RepositoryMixinBase):
         async with self._task_insert_lock, self._session() as session:
             tasks = await _insert_tasks(session, pending)
             await session.commit()
-            for task in tasks:
-                await session.refresh(task)
             return tasks
 
     async def get_task(self, task_id: int) -> Task | None:
@@ -305,12 +323,13 @@ class TasksRepoMixin(RepositoryMixinBase):
                 pending.append(_PendingTask(task_type, payload, priority, root_id))
                 keys.append(key)
             children = await _insert_tasks(session, pending)
+            links: list[dict[str, object]] = []
             for child, key in zip(children, keys, strict=True):
                 assert child.id is not None
-                session.add(TaskLink(parent_task_id=task_id, child_task_id=child.id, key=key))
+                links.append({"parent_task_id": task_id, "child_task_id": child.id, "key": key})
+            for start in range(0, len(links), _INSERT_CHUNK_SIZE):
+                await session.exec(insert(TaskLink), params=links[start : start + _INSERT_CHUNK_SIZE])
             await session.commit()
-            for child in children:
-                await session.refresh(child)
             return children
 
     async def fail_task(self, task_id: int, error: str, result: dict[str, object] | None = None) -> bool:
@@ -540,8 +559,6 @@ class TasksRepoMixin(RepositoryMixinBase):
         async with self._task_insert_lock, self._session() as session:
             clones = await _insert_tasks(session, pending)
             await session.commit()
-            for clone in clones:
-                await session.refresh(clone)
             created: list[Task] = []
             seen: set[int] = set()
             for clone in clones:
