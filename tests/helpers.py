@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from alembic.config import Config
+from sqlalchemy import update
+from sqlmodel import col
 
+from amane.db.models import Task, TaskStatus
 from amane.db.sqlite_migrate import migrations_dir
 
 if TYPE_CHECKING:
@@ -234,3 +237,14 @@ class LoopProgressProbe:
                 return
             await asyncio.sleep(0.01)
         self._released.set()
+
+
+async def finish_task(repo: Repository, task_id: int, result: dict[str, object] | None = None) -> None:
+    """测试 setup: 把任务推进到终态, 不依赖队列顺序或 worker.
+
+    状态迁移是条件 UPDATE, 未认领的 QUEUED 行不能被完成; 只需要终态行的用例先直接置 RUNNING.
+    """
+    async with repo._session() as session:
+        await session.exec(update(Task).where(col(Task.id) == task_id).values(status=TaskStatus.RUNNING))
+        await session.commit()
+    assert await repo.complete_task(task_id, result) is True

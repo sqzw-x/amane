@@ -217,6 +217,9 @@ async def test_task_submit_cancel_retry(write_deps: AgentDeps) -> None:
     task = await write_deps.repo.get_task(task_id)
     assert task is not None
     assert task.status == TaskStatus.FAILED
+    # 已终态的任务不再回执成功: 取消必须真的改到状态.
+    again = await tool_fn(build_task_ops_capability(), "cancel_task")(ToolCallContext(write_deps), task_id=task_id)
+    assert again != TOOL_OK
     # force failed with same payload for retry path when already failed
     retried = await tool_fn(build_task_ops_capability(), "retry_task")(ToolCallContext(write_deps), task_id=task_id)
     new_task_id = int(retried["task_id"])
