@@ -207,6 +207,7 @@ async def _apply_user_tags(
     """把一组用户标签应用到一组条目: attach 为并入, detach 为移除, 两者均幂等.
 
     未知标签 id 抛 ``ValueError`` (请求级错误); 不存在的条目 id 计入 ``missing``, 其余照常处理.
+    提交由调用方负责.
     """
     entity_ids = unique_ids(ids)
     tag_ids = unique_ids(user_tag_ids)
@@ -257,7 +258,6 @@ async def _apply_user_tags(
             if added:
                 changed += 1
 
-    await session.commit()
     return UserTagLinkResult(
         changed=changed,
         unchanged=len(known_entities) - changed,
@@ -578,6 +578,7 @@ async def _actor_delete_block_names(session: AsyncSession, actor: Actor) -> set[
 
 
 async def delete_link_facet(session: AsyncSession, spec: _LinkFacetSpec, facet_id: int) -> bool:
+    """写剔除规则并从真值移除名字后删除实体; 提交由调用方负责."""
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return False
@@ -596,18 +597,17 @@ async def delete_link_facet(session: AsyncSession, spec: _LinkFacetSpec, facet_i
         await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == facet_id))
         await session.exec(sqla_delete(ActorUserTag).where(col(ActorUserTag.actor_id) == facet_id))
     await session.delete(entity)
-    await session.commit()
     return True
 
 
 async def delete_scalar_facet(session: AsyncSession, spec: _ScalarFacetSpec, facet_id: int) -> bool:
+    """写剔除规则并清空真值里的该标量; 提交由调用方负责."""
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return False
     blocked = await _upsert_block(session, spec.kind, entity.name)
     await _strip_names_from_scalar_metadata(session, spec.kind, blocked)
     await session.delete(entity)
-    await session.commit()
     return True
 
 
@@ -904,6 +904,7 @@ async def rename_link_facet(
     facet_id: int,
     new_name: str,
 ) -> FacetItem | None:
+    """实体原位改名并重投影; 提交由调用方负责."""
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return None
@@ -933,9 +934,7 @@ async def rename_link_facet(
                 await session.flush()
                 await apply_facet_rules_to_metadata(session, meta)
                 await sync_metadata_facets(session, meta)
-    item = await get_facet(session, spec.kind, facet_id)
-    await session.commit()
-    return item
+    return await get_facet(session, spec.kind, facet_id)
 
 
 async def rename_scalar_facet(
@@ -958,9 +957,7 @@ async def rename_scalar_facet(
         entity.updated_at = _utcnow()
         session.add(entity)
         await session.flush()
-    item = await get_facet(session, spec.kind, facet_id)
-    await session.commit()
-    return item
+    return await get_facet(session, spec.kind, facet_id)
 
 
 async def _merge_user_tag_facets(session: AsyncSession, target_id: int, source_id_set: set[int]) -> FacetItem | None:
@@ -971,9 +968,7 @@ async def _merge_user_tag_facets(session: AsyncSession, target_id: int, source_i
     await move_user_tag_links(session, target_id, source_id_set)
     for src in sources:
         await session.delete(src)
-    item = await get_facet(session, FacetKind.USER_TAG, target_id)
-    await session.commit()
-    return item
+    return await get_facet(session, FacetKind.USER_TAG, target_id)
 
 
 async def merge_link_facets(
@@ -982,6 +977,7 @@ async def merge_link_facets(
     target_id: int,
     source_id_set: set[int],
 ) -> FacetItem | None:
+    """关联迁到 target 并删除 source; 提交由调用方负责."""
     if spec.kind == FacetKind.USER_TAG:
         return await _merge_user_tag_facets(session, target_id, source_id_set)
 
@@ -1024,9 +1020,7 @@ async def merge_link_facets(
     await _carry_favorites_into_target(session, spec.kind, target_id, source_id_set)
     for src in sources:
         await session.delete(src)
-    item = await get_facet(session, spec.kind, target_id)
-    await session.commit()
-    return item
+    return await get_facet(session, spec.kind, target_id)
 
 
 async def merge_scalar_facets(
@@ -1046,9 +1040,7 @@ async def merge_scalar_facets(
     await _carry_favorites_into_target(session, spec.kind, target_id, source_id_set)
     for src in sources:
         await session.delete(src)
-    item = await get_facet(session, spec.kind, target_id)
-    await session.commit()
-    return item
+    return await get_facet(session, spec.kind, target_id)
 
 
 def _favorite_entity(
@@ -1278,7 +1270,7 @@ async def set_facets_favorite(
     """把一批分类的收藏位整体赋同一个取值, 单个事务; 分类不支持收藏抛 ``ValueError``.
 
     只写取值与目标不同的行, 因此重复提交同一批不产生写入. 不存在的 id 计入 ``missing``, 其余
-    照常处理 — 批量请求里某个 id 已失效不该让整批无结果.
+    照常处理 — 批量请求里某个 id 已失效不该让整批无结果. 提交由调用方负责.
     """
     entity = _favorite_entity(kind)
     if entity is None:
@@ -1293,7 +1285,6 @@ async def set_facets_favorite(
         row.updated_at = _utcnow()
         session.add(row)
         changed += 1
-    await session.commit()
     return FacetBatchResult(
         changed=changed,
         unchanged=len(rows) - changed,
