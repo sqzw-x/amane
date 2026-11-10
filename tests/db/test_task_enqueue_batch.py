@@ -52,7 +52,9 @@ async def test_followup_batch_scale(repo: Repository, count: int, budget: float)
     parent_id = parent.id
     claimed = await repo.claim_next_task()
     assert claimed is not None and claimed.id == parent_id
-    followups = [(f"actor-scrape:{i}", TaskType.ACTOR_SCRAPE, {"actor_id": i}, -1) for i in range(count)]
+    followups: list[tuple[str, TaskType, dict[str, object], int]] = [
+        (f"actor-scrape:{i}", TaskType.ACTOR_SCRAPE, {"actor_id": i}, -1) for i in range(count)
+    ]
 
     with _capture_statements(repo) as captured:
         started = time.perf_counter()
@@ -61,8 +63,8 @@ async def test_followup_batch_scale(repo: Repository, count: int, budget: float)
 
     assert len(children) == count
     assert [child.payload["actor_id"] for child in children] == list(range(count))
-    ids = [child.id for child in children]
-    assert None not in ids
+    ids = [child.id for child in children if child.id is not None]
+    assert len(ids) == count
     assert len(set(ids)) == count
     # 插入顺序即出边顺序: TaskLink 列表按边 id 排序时须回到同一批子任务.
     assert ids == sorted(ids)
@@ -133,7 +135,7 @@ async def test_followups_reuse_active_rows_and_link_them(repo: Repository) -> No
     assert claimed_actor is not None and claimed_actor.id == running.id
     queued = await repo.create_task(TaskType.ACTOR_SCRAPE, {"actor_id": 7})
 
-    followups = [
+    followups: list[tuple[str, TaskType, dict[str, object], int]] = [
         ("actor:7", TaskType.ACTOR_SCRAPE, {"actor_id": 7}, -1),
         ("actor:8", TaskType.ACTOR_SCRAPE, {"actor_id": 8}, -1),
         ("actor:9", TaskType.ACTOR_SCRAPE, {"actor_id": 9}, -1),
@@ -149,11 +151,14 @@ async def test_followups_reuse_active_rows_and_link_them(repo: Repository) -> No
         {"actor_id": 9},
         {"number": "A"},
     ]
+    assert queued.id is not None and running.id is not None
     assert children[0].id == queued.id
     assert children[1].id == running.id
     assert children[2].id == children[3].id
     assert children[2].id not in {queued.id, running.id}
-    for reused_id in (queued.id, running.id):
+    queued_id, running_id = queued.id, running.id
+    assert queued_id is not None and running_id is not None
+    for reused_id in (queued_id, running_id):
         reused = await repo.get_task(reused_id)
         assert reused is not None and reused.root_task_id == parent.id
     assert await repo.count_tasks(task_types=[TaskType.ACTOR_SCRAPE]) == 3
@@ -171,7 +176,9 @@ async def test_concurrent_completion_shares_followup_batch(repo: Repository) -> 
     assert a.id is not None and b.id is not None
     assert await repo.claim_next_task() is not None
     assert await repo.claim_next_task() is not None
-    followups = [(f"actor:{i}", TaskType.ACTOR_SCRAPE, {"actor_id": i}, -1) for i in range(1_000)]
+    followups: list[tuple[str, TaskType, dict[str, object], int]] = [
+        (f"actor:{i}", TaskType.ACTOR_SCRAPE, {"actor_id": i}, -1) for i in range(1_000)
+    ]
 
     results = await asyncio.gather(
         repo.complete_task_with_followups(a.id, {}, followups),
@@ -188,7 +195,7 @@ async def test_concurrent_completion_shares_followup_batch(repo: Repository) -> 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_create_tasks_reuses_active_batch_at_scale(repo: Repository) -> None:
     """万级活跃行上再入队同一批: 互斥键只查一次, 不按 payload 重扫活跃集."""
-    payloads = [{"actor_id": i} for i in range(10_000)]
+    payloads: list[dict[str, object]] = [{"actor_id": i} for i in range(10_000)]
     first = await repo.create_tasks(TaskType.ACTOR_SCRAPE, payloads, priority=-1)
     assert len(first) == len(payloads)
 
