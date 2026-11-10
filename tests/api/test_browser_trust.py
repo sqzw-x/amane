@@ -1,6 +1,7 @@
-"""浏览器信任边界: cookie 写请求与 WS 握手的来源检查.
+"""浏览器信任边界: cookie 写请求的来源检查与 token 关闭时的 CORS.
 
-信任模型见 docs/dev/api.md: SameSite=Lax 只挡跨站, 同站其它端口的页面同样会带 cookie.
+信任模型见 docs/dev/api.md: SameSite=Lax 只挡跨站, 同站其它端口的页面同样会带 cookie;
+token 关闭时 API 没有凭证门槛, 跨源放开等于让任意页面操作本机服务.
 """
 
 from contextlib import asynccontextmanager
@@ -190,3 +191,71 @@ class TestWebSocketSource:
 
             with client.websocket_connect("/ws", headers={**COOKIE, "Origin": "http://ui.example:4000"}):
                 pass
+
+
+class TestTokenOffCORS:
+    """token 关闭时不放开跨源; 白名单需显式配置."""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_no_cors_headers(self, tmp_path: Path):
+        app = make_app(HotSettings(), tmp_path / "data", tmp_path / "logs", tmp_path / "files")
+        async with _running_client(app) as client:
+            resp = await client.get("libraries", headers={"Origin": "http://evil.example"})
+            assert resp.status_code == 200
+            assert "access-control-allow-origin" not in resp.headers
+
+            preflight = await client.options(
+                "libraries",
+                headers={
+                    "Origin": "http://evil.example",
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+            assert preflight.status_code == 400
+            assert "access-control-allow-origin" not in preflight.headers
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_configured_origin_allowed(self, tmp_path: Path):
+        app = make_app(
+            HotSettings(),
+            tmp_path / "data",
+            tmp_path / "logs",
+            tmp_path / "files",
+            cors_origins="http://ui.example:8080",
+        )
+        async with _running_client(app) as client:
+            resp = await client.get("libraries", headers={"Origin": "http://ui.example:8080"})
+            assert resp.headers["access-control-allow-origin"] == "http://ui.example:8080"
+            assert (
+                "access-control-allow-origin"
+                not in (await client.get("libraries", headers={"Origin": "http://evil.example"})).headers
+            )
+
+            preflight = await client.options(
+                "libraries",
+                headers={
+                    "Origin": "http://ui.example:8080",
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+            assert preflight.status_code == 200
+            assert preflight.headers["access-control-allow-origin"] == "http://ui.example:8080"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_token_on_keeps_open_cors(self, tmp_path: Path):
+        app = make_app(HotSettings(), tmp_path / "data", tmp_path / "logs", tmp_path / "files", token=TOKEN)
+        async with _running_client(app) as client:
+            auth = {"Authorization": f"Bearer {TOKEN}"}
+            resp = await client.get("libraries", headers={**auth, "Origin": "http://evil.example"})
+            assert resp.status_code == 200
+            assert resp.headers["access-control-allow-origin"] == "*"
+
+            preflight = await client.options(
+                "libraries",
+                headers={
+                    "Origin": "http://evil.example",
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+            assert preflight.status_code == 200
+            assert preflight.headers["access-control-allow-origin"] == "*"

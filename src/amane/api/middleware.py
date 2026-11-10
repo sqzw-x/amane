@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 
     from starlette.datastructures import Headers
     from starlette.requests import Request
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = structlog.get_logger("amane.request")
 
@@ -97,6 +99,51 @@ def browser_source_allowed(headers: Headers, configured_origins: Sequence[str]) 
 def _token_matches(presented: str | None, expected: str) -> bool:
     """常量时间比较. ``compare_digest`` 对非 ASCII 的 ``str`` 抛出 ``TypeError``, 故先按 UTF-8 编码."""
     return presented is not None and hmac.compare_digest(presented.encode(), expected.encode())
+
+
+class CORSPolicyMiddleware:
+    """按 token 状态决定是否放开跨源.
+
+    token 开启时沿用 ``allow_origins=["*"]`` (无凭据, 跨源也读不到 cookie). token 关闭时任何人可直接读写 API,
+    此时跨源放开等于让任意页面操作本机服务, 因此只允许 cold ``cors_origins``; 默认空 = 不返回 CORS 头,
+    预检不通过, 同源页面照常可用. ``runtime.api_token`` 请求期才存在, 故不能用 ``create_app`` 的配置构造 CORS.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+        self._open = CORSMiddleware(
+            app,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        self._restricted: CORSMiddleware | None = None
+        self._restricted_origins: tuple[str, ...] | None = None
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        runtime = scope["app"].state.runtime
+        if runtime.api_token is not None:
+            await self._open(scope, receive, send)
+            return
+
+        origins = tuple(runtime.config.cold.cors_origins)
+        restricted = self._restricted
+        if restricted is None or origins != self._restricted_origins:
+            restricted = CORSMiddleware(
+                self._app,
+                allow_origins=list(origins),
+                allow_credentials=False,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+            self._restricted = restricted
+            self._restricted_origins = origins
+        await restricted(scope, receive, send)
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):

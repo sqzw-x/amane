@@ -202,13 +202,16 @@ class ColdSettings(BaseSettings):
     """cookie 写请求缺少 Sec-Fetch-Site 时信任的来源 (AMANE_TRUSTED_ORIGINS, 逗号分隔).
     为空时信任开发默认 (:5173); 非空则替换开发默认."""
 
+    cors_origins: Annotated[list[str], NoDecode] = []
+    """token 关闭时允许的跨源来源 (AMANE_CORS_ORIGINS, 逗号分隔). 为空则不放开 CORS, 只服务同源页面."""
+
     supervised: bool = False
     """为真时挂载重启端点 (AMANE_SUPERVISED=1)."""
 
     update_url: str | None = None
     """覆盖 GitHub /releases/latest. 空 = 官方 API."""
 
-    @field_validator("trusted_origins", mode="before")
+    @field_validator("trusted_origins", "cors_origins", mode="before")
     @classmethod
     def _parse_origins(cls, v: object) -> list[str]:
         """逗号分隔的 ``scheme://host[:port]``; 规范化后保存, 非法值拒绝启动."""
