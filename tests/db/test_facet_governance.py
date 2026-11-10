@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from sqlmodel import col, select
@@ -299,7 +299,7 @@ async def _pause_on_metadata_get(
     original = AsyncSession.get
     armed = True
 
-    async def paused_get(self: AsyncSession, entity: type, ident: object, **kwargs: object) -> object:
+    async def paused_get(self: AsyncSession, entity: type, ident: object, **kwargs: Any) -> Any:
         nonlocal armed
         obj = await original(self, entity, ident, **kwargs)
         if armed and entity is Metadata and ident == metadata_id:

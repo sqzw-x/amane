@@ -55,7 +55,11 @@ async def _seed_shared_tag(repo: Repository) -> tuple[int, int]:
         await connection.execute(
             insert(Tag), [{"name": name} for name in ["hot", "shared", *(f"t{index}" for index in range(50))]]
         )
-        tag_ids = {str(name): int(tag_id) for tag_id, name in (await session.exec(select(Tag.id, Tag.name))).all()}
+        tag_ids = {
+            str(name): int(tag_id)
+            for tag_id, name in (await session.exec(select(Tag.id, Tag.name))).all()
+            if tag_id is not None
+        }
         await connection.execute(
             insert(MetadataTag),
             [
@@ -74,6 +78,7 @@ async def _assert_projection_matches_truth(repo: Repository) -> None:
         truth = {
             int(metadata_id): [str(name) for name in tags]
             for metadata_id, tags in (await session.exec(select(col(Metadata.id), col(Metadata.tags)))).all()
+            if metadata_id is not None
         }
         rows = (
             await session.exec(
