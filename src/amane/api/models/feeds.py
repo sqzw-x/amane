@@ -127,7 +127,7 @@ _FeedUpdateRequest = create_partial_model(
 )
 
 
-class FeedUpdateRequest(_FeedUpdateRequest):
+class FeedUpdateRequest(_FeedUpdateRequest):  # pyright: ignore[reportGeneralTypeIssues]  # 动态生成的 partial 基类
     # 校验必须落在请求模型: 路由里抛出的 ValueError 是 500, 而同一非法值经 POST 是 422.
     # 校验器都放行 null (显式 null 由派生模型的非空列检查拒绝), 保证只作用于显式提供的值.
 
