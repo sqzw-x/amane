@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.exc import IntegrityError
 
 from ...db import Feed, FeedItem, FeedItemReadState, FeedItemState, TaskType
-from ...handlers.models import CacheKind, ScrapePayload, build_feed_scrape_payload
+from ...handlers.models import ScrapePayload, build_feed_scrape_payload
 from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
 from ..models.feeds import (
@@ -18,10 +18,8 @@ from ..models.feeds import (
     FeedListResponse,
     FeedResponse,
     FeedUpdateRequest,
-    _validate_http_url,
-    _validate_number_pattern,
     normalize_feed_group,
-    normalize_ignore_keywords,
+    use_cache_values,
 )
 
 if TYPE_CHECKING:
@@ -30,13 +28,6 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/feeds", tags=["feeds"])
-
-
-_CACHE_KIND_ORDER = (CacheKind.metadata, CacheKind.trans)
-
-
-def _use_cache_values(use_cache: set[CacheKind]) -> list[str]:
-    return [kind for kind in _CACHE_KIND_ORDER if kind in use_cache]
 
 
 def _with_unread(feed: Feed, unread_count: int) -> FeedResponse:
@@ -92,7 +83,7 @@ async def create_feed(req: FeedCreateRequest, repo: RepoDep, runtime: RuntimeDep
             interval_seconds=req.interval_seconds,
             number_pattern=req.number_pattern,
             content_type=req.content_type,
-            use_cache=_use_cache_values(req.use_cache),
+            use_cache=use_cache_values(req.use_cache),
             ignore_keywords=req.ignore_keywords,
         )
     except IntegrityError as exc:
@@ -153,48 +144,15 @@ async def get_feed(feed_id: int, repo: RepoDep) -> FeedResponse:
 
 @router.patch("/{feed_id}")
 async def update_feed(feed_id: int, req: FeedUpdateRequest, repo: RepoDep) -> FeedResponse:
+    # 字段校验在请求模型; 这里只剩必须在库内判定的 URL 唯一性.
     feed = await repo.get_feed(feed_id)
     if feed is None:
         raise HTTPException(status_code=404, detail="订阅源不存在")
     updates = cast("FeedUpdates", req.model_dump(exclude_unset=True))
     if "url" in updates:
-        updates["url"] = _validate_http_url(str(updates["url"]))
         existing = await repo.get_feed_by_url(updates["url"])
         if existing is not None and existing.id != feed_id:
             raise HTTPException(status_code=409, detail="该订阅源 URL 已存在")
-    if "number_pattern" in updates:
-        updates["number_pattern"] = _validate_number_pattern(
-            str(updates["number_pattern"]) if updates["number_pattern"] is not None else None
-        )
-    if "name" in updates:
-        updates["name"] = str(updates["name"]).strip()
-    if "group" in updates:
-        try:
-            updates["group"] = normalize_feed_group(str(updates["group"]) if updates["group"] is not None else "")
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if "interval_seconds" in updates:
-        interval = int(updates["interval_seconds"])
-        if interval < 60 or interval > 86400:
-            raise HTTPException(status_code=422, detail="interval_seconds 必须在 60 到 86400 之间")
-        updates["interval_seconds"] = interval
-    if "use_cache" in updates:
-        raw = updates["use_cache"]
-        kinds: set[CacheKind] = set()
-        for item in raw:
-            try:
-                kinds.add(CacheKind(item))
-            except TypeError, ValueError:
-                continue
-        updates["use_cache"] = _use_cache_values(kinds)
-    if "ignore_keywords" in updates:
-        raw_keywords = updates["ignore_keywords"]
-        if not isinstance(raw_keywords, list) or any(not isinstance(item, str) for item in raw_keywords):
-            raise HTTPException(status_code=422, detail="ignore_keywords 必须是字符串列表")
-        try:
-            updates["ignore_keywords"] = normalize_ignore_keywords(raw_keywords)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         updated = await repo.update_feed(feed_id, **updates)
     except IntegrityError as exc:
