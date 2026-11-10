@@ -25,7 +25,33 @@ async def _seed_library(repo: Repository) -> None:
         await repo.create_library(name="default", path="/")
 
 
+_FILTER_LIMIT_CASES = [
+    ({"actor_id": range(101)}, 422, "actor_id"),
+    ({"actor_id": range(100), "tag_id": range(100), "director_id": range(1)}, 422, "合计"),
+    ({"actor_id": range(100)}, 200, None),
+]
+
+
+def _filter_params(groups: dict[str, range]) -> dict[str, list[int]]:
+    return {name: list(values) for name, values in groups.items()}
+
+
 class TestMetadataHttp:
+    @pytest.mark.parametrize(
+        ("groups", "status", "detail_part"),
+        _FILTER_LIMIT_CASES,
+        ids=["per-group-over", "total-over", "at-limit"],
+    )
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_filter_id_limits(
+        self, client: AsyncClient, groups: dict[str, range], status: int, detail_part: str | None
+    ):
+        """每组 ≤100、八组合计 ≤200; 超限 422 并指出是哪一项."""
+        response = await client.get("metadata", params=_filter_params(groups))
+        assert response.status_code == status
+        if detail_part is not None:
+            assert detail_part in response.json()["detail"]
+
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_phase_comes_from_number_without_files(self, client: AsyncClient, repo: Repository):
         """有码 / 无码取番号类别: 没有挂载文件也亮, 无码再并上文件的无码标记."""
