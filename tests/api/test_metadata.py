@@ -405,3 +405,54 @@ class TestMetadataHttp:
         listed = await client.get("metadata?search=LOCK-102")
         assert listed.status_code == 200
         assert listed.json()["items"][0]["locked_fields"] == ["title"]
+
+
+class TestMetadataPatch:
+    """PATCH 只写显式提供的字段: 省略键不改, 可空列给 null 即清空."""
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            ({"title": "新标题"}, {"title": "新标题", "studio": "原片商"}),
+            ({"title": None}, {"title": None, "studio": "原片商"}),
+            ({"studio": None}, {"studio": None, "title": "原标题"}),
+            ({"release": None}, {"release": None}),
+            ({"release": "2020-02-02T00:00:00Z"}, {"release": "2020-02-02"}),
+        ],
+    )
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_writes_only_given_fields(
+        self, client: AsyncClient, repo: Repository, payload: dict[str, object], expected: dict[str, object]
+    ):
+        meta = await repo.upsert_metadata(number="PATCH-001", title="原标题", studio="原片商", release="2020-01-15")
+        assert meta.id is not None
+
+        resp = await client.patch(f"metadata/{meta.id}", json=payload)
+        assert resp.status_code == 200
+        detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        for field, value in expected.items():
+            assert detail[field] == value
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"number": None},
+            {"actors": None},
+            {"release": "not-a-date"},
+            {"release": 20200101},
+            {"runtime": "not_an_int"},
+        ],
+    )
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_rejects_empty_body_and_invalid_values(
+        self, client: AsyncClient, repo: Repository, payload: dict[str, object]
+    ):
+        """number 不在可写字段集内, 其显式 null 落到「没有需要修改的字段」; actors 等非空列由派生模型拒绝."""
+        meta = await repo.upsert_metadata(number="PATCH-002", title="原标题")
+        assert meta.id is not None
+
+        resp = await client.patch(f"metadata/{meta.id}", json=payload)
+        assert resp.status_code == 422
+        detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert detail["title"] == "原标题"
