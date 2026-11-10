@@ -12,6 +12,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from alembic.util.exc import CommandError
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Connection, Engine
 
@@ -130,8 +131,25 @@ def _alembic_head_revs(script_location: str, versions_mtime: float) -> frozenset
     return frozenset(ScriptDirectory.from_config(cfg).get_heads())
 
 
+def _unknown_revisions(script_location: Path, current: set[str]) -> list[str]:
+    """当前 revision 中不存在于脚本树的部分; 缺失项说明库由更新版本写过."""
+    cfg = Config()
+    cfg.set_main_option("script_location", str(script_location))
+    script = ScriptDirectory.from_config(cfg)
+    unknown: list[str] = []
+    for rev in sorted(current):
+        try:
+            script.get_revision(rev)
+        except CommandError:
+            unknown.append(rev)
+    return unknown
+
+
 def needs_upgrade(db_path: Path, *, script_location: Path | None = None) -> bool:
-    """当前 revision 是否落后于脚本 head. 空库视为需要升级."""
+    """当前 revision 是否落后于脚本 head. 空库视为需要升级.
+
+    库中 revision 不在脚本树内时抛 ``RuntimeError``: 库版本高于当前代码, 不能备份或升级.
+    """
     if not db_path.is_file() or db_path.stat().st_size == 0:
         return True
 
@@ -147,7 +165,16 @@ def needs_upgrade(db_path: Path, *, script_location: Path | None = None) -> bool
             current = set(context.get_current_heads())
     finally:
         engine.dispose()
-    return current != head_revs
+
+    if current == head_revs:
+        return False
+    unknown = _unknown_revisions(script_location, current)
+    if unknown:
+        raise RuntimeError(
+            f"数据库 {db_path} 的 alembic revision {', '.join(unknown)} 不在当前代码的迁移脚本中; "
+            "库版本高于当前代码, 未创建备份, 也未执行升级; 请升级程序, 或从已有备份恢复"
+        )
+    return True
 
 
 def _attach_transactional_ddl(engine: Engine) -> None:
@@ -164,7 +191,10 @@ def upgrade_sqlite_database(
     backup_keep: int = _DEFAULT_KEEP,
     connection: Connection | None = None,
 ) -> Path | None:
-    """落后 head 且 ``backup`` 时先做 WAL 安全备份. 单次 revision 失败须回滚 DDL 与 version."""
+    """落后 head 且 ``backup`` 时先做 WAL 安全备份. 单次 revision 失败须回滚 DDL 与 version.
+
+    库中 revision 不在脚本树内时抛 ``RuntimeError``, 不写备份.
+    """
     script_location = script_location or migrations_dir()
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
