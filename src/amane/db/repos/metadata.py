@@ -39,7 +39,7 @@ from ..repo_types import (
     _metadata_uncensored_predicate,
     _utcnow,
 )
-from .base import RepositoryMixinBase
+from .base import RepositoryMixinBase, acquire_write_lock
 from .facet_helpers import (
     apply_facet_rules_to_metadata,
     cascade_delete_metadata,
@@ -395,8 +395,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         async with self._session() as session:
             # pysqlite 只在 DML 之前发出 BEGIN, 查号落在事务之外时并发同号写入会双双判定为「无行」,
             # 后者在插入时违反 ix_metadata_number. 手工取得写锁后判定与写入同处一个事务.
-            connection = await session.connection()
-            await connection.exec_driver_sql("BEGIN IMMEDIATE")
+            await acquire_write_lock(session)
             stmt = select(Metadata).where(metadata_number_predicate(number))
             result = await session.exec(stmt)
             existing = result.first()
@@ -444,6 +443,8 @@ class MetadataRepoMixin(RepositoryMixinBase):
         """不存在返回 None; 写入策略见 WriteMode."""
         updates = _normalize_text_fields(updates)
         async with self._session() as session:
+            # 读改写须同事务: 锁定集合合并、投影重建都依据本次读到的值, 见 docs/dev/database.md.
+            await acquire_write_lock(session)
             metadata = await session.get(Metadata, metadata_id)
             if metadata is None:
                 return None
@@ -518,6 +519,8 @@ class MetadataRepoMixin(RepositoryMixinBase):
             raise ValueError("未提供要合并的影片")
 
         async with self._session() as session:
+            # 来源判定、raw 合并与关联迁移同处一个写事务: 否则会按旧快照整体写回 raw.
+            await acquire_write_lock(session)
             target = await session.get(Metadata, target_id)
             if target is None:
                 return None

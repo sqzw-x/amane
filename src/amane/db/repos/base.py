@@ -24,6 +24,17 @@ def chunks[T](items: list[T]) -> Iterator[list[T]]:
         yield items[start : start + SQL_IN_CHUNK_SIZE]
 
 
+async def acquire_write_lock(session: AsyncSession) -> None:
+    """读改写路径先取得写锁, 使判定与写入同处一个事务.
+
+    pysqlite 只在 DML 前发出 ``BEGIN``, 纯 SELECT 落在事务之外, 先查后写的判定会被并发
+    提交绕开. 会话此前不得已有未结束的事务, 临界区内不允许出现联网或磁盘等待.
+    见 docs/dev/database.md.
+    """
+    connection = await session.connection()
+    await connection.exec_driver_sql("BEGIN IMMEDIATE")
+
+
 class RepositoryMixinBase:
     """子类须提供 ``_session()``. 任务 mixin 还依赖 ``_task_insert_lock`` 串行化入队互斥."""
 

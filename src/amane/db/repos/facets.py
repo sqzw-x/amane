@@ -51,7 +51,7 @@ from ..repo_types import (
     _utcnow,
 )
 from .actor_browse import browse_actors
-from .base import RepositoryMixinBase
+from .base import RepositoryMixinBase, acquire_write_lock
 from .facet_helpers import (
     LINK_FACETS,
     SCALAR_FACETS,
@@ -248,6 +248,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
     ) -> FacetBatchResult:
         """整体赋值一批分类的收藏位, 单个事务; 分类不支持收藏抛 ``ValueError``."""
         async with self._session() as session:
+            await acquire_write_lock(session)
             result = await set_facets_favorite(session, kind, facet_ids, is_favorite)
             await session.commit()
             return result
@@ -490,6 +491,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
         冲突判定与写入同处一个写事务: 并发同名改名不会双双通过判定后撞唯一索引.
         """
         async with self._session() as session:
+            await acquire_write_lock(session)
             if kind in LINK_FACETS:
                 item = await rename_link_facet(session, LINK_FACETS[kind], facet_id, new_name)
             elif kind in SCALAR_FACETS:
@@ -508,6 +510,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
             raise ValueError("合并目标不能是来源之一")
 
         async with self._session() as session:
+            await acquire_write_lock(session)
             if kind in LINK_FACETS:
                 item = await merge_link_facets(session, LINK_FACETS[kind], target_id, source_id_set)
             elif kind in SCALAR_FACETS:
@@ -520,6 +523,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
     async def delete_facet(self, kind: FacetKind, facet_id: int) -> bool:
         """爬取侧写 block 并从真值剔除后再删实体. user_tag 硬删挂载与实体, 不写规则. 不存在返回 False."""
         async with self._session() as session:
+            await acquire_write_lock(session)
             if kind == FacetKind.USER_TAG:
                 tag = await session.get(UserTag, facet_id)
                 if tag is None:
@@ -571,6 +575,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
         if not unique:
             return [], 0
         async with self._session() as session:
+            await acquire_write_lock(session)
             try:
                 tags, created = await _ensure_user_tags_once(session, unique)
             except IntegrityError:
@@ -636,6 +641,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
     ) -> UserTagLinkResult:
         """把一组用户标签应用到一组影片; 标签与条目的判定和写入同处一个写事务."""
         async with self._session() as session:
+            await acquire_write_lock(session)
             result = await apply_user_tags_to_metadata(session, ids, user_tag_ids, action)
             await session.commit()
             return result
@@ -649,6 +655,7 @@ class FacetsRepoMixin(RepositoryMixinBase):
     ) -> UserTagLinkResult:
         """把一组用户标签应用到一组演员; 标签与条目的判定和写入同处一个写事务."""
         async with self._session() as session:
+            await acquire_write_lock(session)
             result = await apply_user_tags_to_actors(session, ids, user_tag_ids, action)
             await session.commit()
             return result
