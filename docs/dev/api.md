@@ -50,7 +50,7 @@ OpenAPI 列出参数, 不表达组合语义:
 - `/network/browser` 探测浏览器后端能否用于本实例: 本地引擎查模块是否在分发包内, `bsk` 调 CLI 的 `status` (HTTP 200 恒定, 结论就是响应体), Solver 只做一次 `sessions.list` 协议握手, 不渲染页面 — 真实抓取由 `/network/check` 覆盖.
 - `/network/check` 的探测范围 = 当前热配置真正会请求的来源 (各类型路由的并集 + 演员资料来源 / 头像来源), 省略 `source_ids` 即全量. `source_id` 是 `str` 而非 `SiteName` 枚举 (第三方来源是 `namespace.local`, 且来源集合随插件增删变化), 未知值无法用 schema 拒绝, 不存在的 ID 计入条目返回 `SKIPPED`. 逐来源的失败只进条目, 端点始终 200 — 探测结果本身就是响应体; `reason` 只在失败时给出, `skip_reason` 只在未探测时给出, `detail` 是语言中立的补充说明 (界面原样渲染, 不翻译). 探测不进入任务队列, 也不写入站点 outcome (那是刮削任务的记录).
 - 评论正文先去除首尾空白再校验长度, 全空白与超过 10000 字符均为 422. `updated_at` 晚于 `created_at` 表示正文被编辑过: PATCH 提交与库中一致的正文不写库, 也不刷新 `updated_at`, 前端据此判定「已编辑」; 排序由前端在详情响应上完成, 端点不提供 order 参数; 正文按 Markdown 存储与返回, 服务端不解析.
-- `/metadata` 的语义参数: `semantic_query` 出现时接管排序, 整句只编码一次, 封面与剧照共用一次点积; 候选集来自同一套筛选 (含 `search` 与 `saved_query_id`), 无筛选时扫全索引. `semantic_kind=all|cover|still` 选参与排名的图片来源; `sort_by` / `order` 被忽略, `offset` / `limit` (上限 200) 直接分页, `total` 是候选条目总数 (按条目去重). `items` 仍是 `MetadataResponse`, 命中图放在并列的 `semantic_hits` (`id` / `kind` / `resource_url` / `similarity`), 同一条目只保留名次最高的那张图; `similarity` 只在同一次查询内可比, 不设阈值; 同分按条目 id 升序, 翻页稳定. 模型未就绪时仅该参数出现时 503; 索引生命周期见 [semantic.md](semantic.md).
+- `/metadata` 的语义参数: `semantic_query` 出现时接管排序, 整句只编码一次, 封面与剧照共用一次点积; 候选集来自同一套筛选 (含 `search` 与 `saved_query_id`), 无筛选时扫全索引. `semantic_kind=all|cover|still` 选参与排名的图片来源; `sort_by` / `order` 被忽略, `offset` / `limit` (上限 200) 直接分页, `total` 是候选条目总数 (按条目去重). `items` 用同一列表项模型, 命中图放在并列的 `semantic_hits` (`id` / `kind` / `resource_url` / `similarity`), 同一条目只保留名次最高的那张图; `similarity` 只在同一次查询内可比, 不设阈值; 同分按条目 id 升序, 翻页稳定. 模型未就绪时仅该参数出现时 503; 索引生命周期见 [semantic.md](semantic.md).
 - `/files`: 路径解析为非严格 (虚拟 / 网络挂载盘无法规范化查询时按字面兜底), 相对 `path` 经 `base` 参数解析 (缺省 = 首个安全目录). 响应含规范 `path` (resolve 后的绝对路径), 前端文件浏览器以它为面包屑的唯一权威形态, 不做分段拼接.
 
 ## 依赖注入
@@ -69,7 +69,7 @@ OpenAPI 列出参数, 不表达组合语义:
 
 **错误**: `HTTPException(detail=中文)`. 路径校验位于 `support/path_validation.py` (存在 / 类型 / `safe_dirs` → 400 / 403 / 404; `ALLOW_ALL` 时跳过边界层). `/files` 的失败映射: 不存在 → 404, 不在 `safe_dirs` → 403, 空名单 → 500, `os.scandir` 的 `OSError` (含网络盘挂载失效) → 500 + strerror detail, `PermissionError` → 403. 错误日志统一由 LoggingMiddleware 打点 (见 [observability.md](observability.md)), handler 内不自行打印.
 
-**列表**: `media` / `metadata` / `tasks` / `facets` / `actors` 同构 `offset` + `limit` + `sort_by` + `order`, 响应 `{items, total}`; `sort_by` 是各资源 `*SortField` 枚举, 显式映射到列或计算表达式 (片库评分按 `scores` 首值, 与响应 `score` 同源), 禁止反射列名. 清理清单的 `cleanup/inventory/nodes` 同样分页, 顺序由树决定, 因此没有排序参数 (见 [task-system.md](task-system.md)). `libraries` / `schedules` / `feeds` 全量无分页. `GET /actors` 列表项不填简介 / 别名 / 用户标签 / 源字典 / `raw` (详情仍全量); `GET /tasks` 与其 `/children` 同样不带 `payload` 与 `result`, 展开单个任务时才取详情.
+**列表**: `media` / `metadata` / `tasks` / `facets` / `actors` 同构 `offset` + `limit` + `sort_by` + `order`, 响应 `{items, total}`; `sort_by` 是各资源 `*SortField` 枚举, 显式映射到列或计算表达式 (片库评分按 `scores` 首值, 与响应 `score` 同源), 禁止反射列名. 清理清单的 `cleanup/inventory/nodes` 同样分页, 顺序由树决定, 因此没有排序参数 (见 [task-system.md](task-system.md)). `libraries` / `schedules` / `feeds` 全量无分页. `GET /metadata` 列表项不含 `raw` / `field_sources` (详情才有); `GET /actors` 列表项不填简介 / 别名 / 用户标签 / 源字典 / `raw` (详情仍全量); `GET /tasks` 与其 `/children` 同样不带 `payload` 与 `result`, 展开单个任务时才取详情.
 
 **状态码**: 创建 201、任务入队 202、无返回体 204; 空 PATCH / 非法 cron → 422; 任务状态不允许的 record → 409.
 

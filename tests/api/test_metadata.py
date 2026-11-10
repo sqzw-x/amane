@@ -53,6 +53,28 @@ class TestMetadataHttp:
             assert detail_part in response.json()["detail"]
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_item_omits_raw_and_field_sources(self, client: AsyncClient, repo: Repository):
+        """列表项是精简模型, raw / field_sources 只在详情返回; 聚合字段仍在."""
+        meta = await repo.upsert_metadata(
+            number="SLIM-001",
+            title="Slim",
+            raw={"javdb": {"title": "Slim"}},
+            field_sources={"title": "javdb"},
+        )
+        assert meta.id is not None
+
+        listed = (await client.get("metadata?search=SLIM-001")).json()["items"][0]
+        assert "raw" not in listed
+        assert "field_sources" not in listed
+        assert listed["file_count"] == 0
+        assert "file_phase" in listed
+        assert listed["locked_fields"] == []
+
+        detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert detail["raw"] == {"javdb": {"title": "Slim"}}
+        assert detail["field_sources"] == {"title": "javdb"}
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_list_phase_comes_from_number_without_files(self, client: AsyncClient, repo: Repository):
         """有码 / 无码取番号类别: 没有挂载文件也亮, 无码再并上文件的无码标记."""
         uncensored = await repo.upsert_metadata(number="HEYZO-1234")

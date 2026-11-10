@@ -5599,11 +5599,283 @@ export const MetadataFieldSchema = {
     title: 'MetadataField'
 } as const;
 
+export const MetadataListItemSchema = {
+    properties: {
+        id: {
+            type: 'integer',
+            title: 'Id'
+        },
+        number: {
+            type: 'string',
+            title: 'Number'
+        },
+        content_type: {
+            $ref: '#/components/schemas/ContentType'
+        },
+        title: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Title'
+        },
+        actors: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Actors',
+            default: []
+        },
+        studio: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Studio'
+        },
+        publisher: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Publisher'
+        },
+        release: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Release'
+        },
+        runtime: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime'
+        },
+        tags: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Tags',
+            default: []
+        },
+        series: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Series'
+        },
+        plot: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Plot'
+        },
+        directors: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Directors',
+            default: []
+        },
+        poster_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Poster Url'
+        },
+        thumb_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Thumb Url'
+        },
+        trailer_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Trailer Url'
+        },
+        extrafanart: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Extrafanart',
+            default: []
+        },
+        score: {
+            anyOf: [
+                {
+                    type: 'number'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Score'
+        },
+        vr: {
+            type: 'boolean',
+            title: 'Vr',
+            default: false
+        },
+        poster_urls: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Poster Urls',
+            default: []
+        },
+        thumb_urls: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Thumb Urls',
+            default: []
+        },
+        trailer_urls: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Trailer Urls',
+            default: []
+        },
+        extrafanart_urls: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Extrafanart Urls',
+            default: {}
+        },
+        scores: {
+            additionalProperties: {
+                type: 'number'
+            },
+            type: 'object',
+            title: 'Scores',
+            default: {}
+        },
+        external_ids: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'External Ids',
+            default: {}
+        },
+        source_urls: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Source Urls',
+            default: {}
+        },
+        locked_fields: {
+            items: {
+                $ref: '#/components/schemas/MetadataField'
+            },
+            type: 'array',
+            title: 'Locked Fields',
+            default: []
+        },
+        file_count: {
+            type: 'integer',
+            title: 'File Count',
+            default: 0
+        },
+        file_phase: {
+            $ref: '#/components/schemas/FilePhaseSummary'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'number',
+        'content_type'
+    ],
+    title: 'MetadataListItem',
+    description: '列表与语义检索的条目: 不含 raw / field_sources, 详情才返回全量.'
+} as const;
+
 export const MetadataListResponseSchema = {
     properties: {
         items: {
             items: {
-                $ref: '#/components/schemas/MetadataResponse'
+                $ref: '#/components/schemas/MetadataListItem'
             },
             type: 'array',
             title: 'Items'
@@ -6129,18 +6401,6 @@ export const MetadataResponseSchema = {
             title: 'Source Urls',
             default: {}
         },
-        field_sources: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Field Sources',
-            default: {}
-        },
-        raw: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Raw',
-            default: {}
-        },
         locked_fields: {
             items: {
                 $ref: '#/components/schemas/MetadataField'
@@ -6180,6 +6440,18 @@ export const MetadataResponseSchema = {
                 }
             ],
             title: 'Updated At'
+        },
+        field_sources: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Field Sources',
+            default: {}
+        },
+        raw: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Raw',
+            default: {}
         }
     },
     type: 'object',
@@ -6188,7 +6460,8 @@ export const MetadataResponseSchema = {
         'number',
         'content_type'
     ],
-    title: 'MetadataResponse'
+    title: 'MetadataResponse',
+    description: '详情与单条写接口的全量条目: 在列表项之上补 raw / field_sources.'
 } as const;
 
 export const MetadataSortFieldSchema = {
@@ -8723,7 +8996,7 @@ export const SemanticHitInfoSchema = {
         'similarity'
     ],
     title: 'SemanticHitInfo',
-    description: '语义检索的命中图片: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身.'
+    description: '语义检索的命中图片: 与列表项按 id 对应, 不扩展列表项模型本身.'
 } as const;
 
 export const SemanticIndexResultSchema = {

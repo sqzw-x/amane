@@ -27,7 +27,9 @@ class FilePhaseSummary(BaseModel):
     definition: str | None = None
 
 
-class MetadataResponse(BaseModel):
+class MetadataListItem(BaseModel):
+    """列表与语义检索的条目: 不含 raw / field_sources, 详情才返回全量."""
+
     id: int
     number: str
     content_type: ContentType
@@ -54,8 +56,6 @@ class MetadataResponse(BaseModel):
     scores: dict[str, float] = {}
     external_ids: dict = {}
     source_urls: dict = {}
-    field_sources: dict = {}
-    raw: dict = {}
     locked_fields: list[MetadataField] = []
 
     @field_validator("locked_fields", mode="before")
@@ -70,6 +70,13 @@ class MetadataResponse(BaseModel):
     file_phase: FilePhaseSummary = Field(default_factory=FilePhaseSummary)
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class MetadataResponse(MetadataListItem):
+    """详情与单条写接口的全量条目: 在列表项之上补 raw / field_sources."""
+
+    field_sources: dict = {}
+    raw: dict = {}
 
 
 if TYPE_CHECKING:
@@ -101,7 +108,7 @@ PartialMetadata = create_partial_model(
 
 
 class SemanticHitInfo(BaseModel):
-    """语义检索的命中图片: 与列表项按 id 对应, 不扩展 ``MetadataResponse`` 本身."""
+    """语义检索的命中图片: 与列表项按 id 对应, 不扩展列表项模型本身."""
 
     id: int
     kind: EmbeddingKind
@@ -112,7 +119,7 @@ class SemanticHitInfo(BaseModel):
 
 
 class MetadataListResponse(BaseModel):
-    items: list[MetadataResponse]
+    items: list[MetadataListItem]
     total: int
     semantic_hits: list[SemanticHitInfo] = Field(default_factory=list)
 

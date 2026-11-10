@@ -29,6 +29,7 @@ from ..models import (
     MetadataBatchScrapeRequest,
     MetadataBatchScrapeResponse,
     MetadataDetailResponse,
+    MetadataListItem,
     MetadataListResponse,
     MetadataLocksRequest,
     MetadataMergeEntriesRequest,
@@ -51,13 +52,13 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/metadata", tags=["metadata"])
 
 
-async def build_metadata_responses(repo: RepoDep, items: Sequence[Metadata]) -> list[MetadataResponse]:
-    """列表与语义检索共用: 补 file_count / file_phase 聚合."""
+async def build_metadata_responses(repo: RepoDep, items: Sequence[Metadata]) -> list[MetadataListItem]:
+    """列表与语义检索共用: 补 file_count / file_phase 聚合; 列表项不含 raw / field_sources."""
     summaries = await repo.summarize_media_by_metadata(items)
-    responses: list[MetadataResponse] = []
+    responses: list[MetadataListItem] = []
     for m in items:
         summary = summaries.get(m.id) if m.id is not None else None
-        response = to_resp(MetadataResponse, m)
+        response = to_resp(MetadataListItem, m)
         if summary is not None:
             response = response.model_copy(
                 update={
