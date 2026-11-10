@@ -40,7 +40,7 @@ from ..repo_types import (
     _metadata_uncensored_predicate,
     _utcnow,
 )
-from .base import RepositoryMixinBase
+from .base import RepositoryMixinBase, chunks
 from .facet_helpers import (
     apply_facet_rules_to_metadata,
     cascade_delete_metadata,
@@ -372,6 +372,18 @@ class MetadataRepoMixin(RepositoryMixinBase):
         async with self._session() as session:
             return await session.get(Metadata, metadata_id)
 
+    async def get_metadata_by_ids(self, ids: Sequence[int]) -> list[Metadata]:
+        """按 id 批量取回, 顺序不保证; 调用方按需重排. 每批用 ``chunks`` 控制绑定变量数."""
+        id_list = list(unique_ids(ids))
+        if not id_list:
+            return []
+        async with self._session() as session:
+            result: list[Metadata] = []
+            for chunk in chunks(id_list):
+                rows = (await session.exec(select(Metadata).where(col(Metadata.id).in_(chunk)))).all()
+                result.extend(rows)
+            return result
+
     async def get_metadata_by_number(self, number: str) -> Metadata | None:
         """大小写不敏感; 返回行保留库内原始大小写."""
         async with self._session() as session:
@@ -612,7 +624,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         removed: list[int] = []
         async with self._session() as session:
             missing = 0
-            for metadata_id in ids:
+            for metadata_id in unique_ids(ids):
                 metadata = await session.get(Metadata, metadata_id)
                 if metadata is None:
                     missing += 1

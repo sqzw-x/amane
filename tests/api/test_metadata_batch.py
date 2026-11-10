@@ -27,10 +27,11 @@ class TestMetadataBatchHttp:
         assert m1.id is not None and m2.id is not None
         resp = await client.post("metadata/batch/delete", json={"ids": [m1.id, m2.id, 9999]})
         assert resp.status_code == 200
-        assert resp.json() == {"deleted": 2, "missing": 1}
+        assert resp.json() == {"deleted": 2, "missing": 1, "skipped": 0}
         assert (await client.post("metadata/batch/delete", json={"ids": [8888]})).json() == {
             "deleted": 0,
             "missing": 1,
+            "skipped": 0,
         }
         assert (await client.post("metadata/batch/delete", json={"ids": []})).status_code == 422
 
@@ -69,7 +70,7 @@ class TestMetadataBatchHttp:
 
         missing = await client.post("metadata/batch/scrape", json={"ids": [9999]})
         assert missing.status_code == 202
-        assert missing.json() == {"submitted": 0, "missing": 1, "task_ids": []}
+        assert missing.json() == {"submitted": 0, "missing": 1, "skipped": 0, "task_ids": []}
         assert (await client.post("metadata/batch/scrape", json={"ids": []})).status_code == 422
 
     @pytest.mark.asyncio(loop_scope="function")
@@ -85,7 +86,7 @@ class TestMetadataBatchHttp:
             json={"ids": [m1.id, m2.id, 9999], "user_tag_ids": [tag.id], "action": "attach"},
         )
         assert resp.status_code == 200
-        assert resp.json() == {"changed": 2, "unchanged": 0, "missing": 1}
+        assert resp.json() == {"changed": 2, "unchanged": 0, "missing": 1, "skipped": 0}
         detail = await client.get(f"metadata/{m1.id}")
         assert any(t["name"] == "watched" for t in detail.json()["user_tags"])
 
@@ -93,13 +94,13 @@ class TestMetadataBatchHttp:
             "metadata/batch/user-tags",
             json={"ids": [m1.id, m2.id], "user_tag_ids": [tag.id], "action": "detach"},
         )
-        assert detach.json() == {"changed": 2, "unchanged": 0, "missing": 0}
+        assert detach.json() == {"changed": 2, "unchanged": 0, "missing": 0, "skipped": 0}
         # 未挂载的条目在 detach 时计入 unchanged, 不是错误
         assert (
             await client.post(
                 "metadata/batch/user-tags", json={"ids": [m1.id], "user_tag_ids": [tag.id], "action": "detach"}
             )
-        ).json() == {"changed": 0, "unchanged": 1, "missing": 0}
+        ).json() == {"changed": 0, "unchanged": 1, "missing": 0, "skipped": 0}
         # 未知标签是请求级错误, 整请求不生效
         unknown = await client.post(
             "metadata/batch/user-tags", json={"ids": [m1.id], "user_tag_ids": [9999], "action": "attach"}
@@ -118,3 +119,30 @@ class TestMetadataBatchHttp:
                 "metadata/batch/user-tags", json={"ids": [], "user_tag_ids": [tag.id], "action": "attach"}
             )
         ).status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_batch_duplicate_ids_count_as_skipped(self, client: AsyncClient, repo: Repository, stop_worker: None):
+        """请求内重复的条目只处理一次, 原始数量与去重数量的差计入 skipped."""
+        m1 = await repo.upsert_metadata(number="BD-DUP-001")
+        m2 = await repo.upsert_metadata(number="BD-DUP-002")
+        m3 = await repo.upsert_metadata(number="BD-DUP-003")
+        assert m1.id is not None and m2.id is not None and m3.id is not None
+
+        scrape = await client.post("metadata/batch/scrape", json={"ids": [m3.id, m3.id, 9999, 9999]})
+        assert scrape.status_code == 202
+        assert scrape.json()["submitted"] == 1
+        assert scrape.json()["missing"] == 1
+        assert scrape.json()["skipped"] == 2
+
+        deleted = await client.post("metadata/batch/delete", json={"ids": [m1.id, m1.id, m2.id]})
+        assert deleted.json() == {"deleted": 2, "missing": 0, "skipped": 1}
+        assert await repo.get_metadata(m1.id) is None
+        assert await repo.get_metadata(m2.id) is None
+
+        tag = (await repo.ensure_user_tags(["dup"]))[0][0]
+        assert tag.id is not None
+        tagged = await client.post(
+            "metadata/batch/user-tags",
+            json={"ids": [m3.id, m3.id, 9999], "user_tag_ids": [tag.id, tag.id], "action": "attach"},
+        )
+        assert tagged.json() == {"changed": 1, "unchanged": 0, "missing": 1, "skipped": 1}

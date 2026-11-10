@@ -804,6 +804,7 @@ export const ActorUserTagsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids',
             description: '演员 ID 列表'
@@ -813,6 +814,7 @@ export const ActorUserTagsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'User Tag Ids',
             description: '用户标签 ID 列表'
@@ -2111,6 +2113,7 @@ export const FacetBatchRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Facet Ids',
             description: '分类 ID 列表'
@@ -2204,6 +2207,7 @@ export const FacetMergeRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Source Ids',
             description: '待合并的来源 facet id 列表'
@@ -2478,6 +2482,7 @@ export const FeedItemBatchRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids'
         }
@@ -5358,6 +5363,12 @@ export const MetadataBatchDeleteResponseSchema = {
             type: 'integer',
             title: 'Missing',
             description: '不存在的 id 数量'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped',
+            description: '请求内重复的 id 数量; 已去重',
+            default: 0
         }
     },
     type: 'object',
@@ -5375,6 +5386,7 @@ export const MetadataBatchIdsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids',
             description: 'Metadata ID 列表'
@@ -5394,6 +5406,7 @@ export const MetadataBatchScrapeRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids',
             description: 'Metadata ID 列表'
@@ -5437,6 +5450,12 @@ export const MetadataBatchScrapeResponseSchema = {
             type: 'integer',
             title: 'Missing',
             description: '不存在的 id 数量'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped',
+            description: '请求内重复的 id 数量; 已去重',
+            default: 0
         },
         task_ids: {
             items: {
@@ -5637,6 +5656,7 @@ export const MetadataMergeEntriesRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Source Ids',
             description: '待合并的 Metadata ID 列表; 按顺序补入 raw 快照'
@@ -6193,6 +6213,7 @@ export const MetadataUserTagsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids',
             description: 'Metadata ID 列表'
@@ -6202,6 +6223,7 @@ export const MetadataUserTagsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'User Tag Ids',
             description: '用户标签 ID 列表'
@@ -6223,6 +6245,39 @@ export const MetadataUserTagsRequestSchema = {
         'action'
     ],
     title: 'MetadataUserTagsRequest'
+} as const;
+
+export const MetadataUserTagsResponseSchema = {
+    properties: {
+        changed: {
+            type: 'integer',
+            title: 'Changed',
+            description: '至少一处挂载关系发生变更的条目数'
+        },
+        unchanged: {
+            type: 'integer',
+            title: 'Unchanged',
+            description: '已处于目标态、未修改的条目数'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing',
+            description: '不存在的条目 id 数'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped',
+            description: '请求内重复的条目 id 数量; 已去重',
+            default: 0
+        }
+    },
+    type: 'object',
+    required: [
+        'changed',
+        'unchanged',
+        'missing'
+    ],
+    title: 'MetadataUserTagsResponse'
 } as const;
 
 export const MosaicSchema = {
@@ -8361,6 +8416,7 @@ export const SelectionRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Media File Ids',
             description: '选中的媒体文件 ID; 必须属于该库'
@@ -9234,6 +9290,7 @@ export const TaskBatchRequestSchema = {
                         type: 'integer'
                     },
                     type: 'array',
+                    maxItems: 1000,
                     minItems: 1
                 },
                 {

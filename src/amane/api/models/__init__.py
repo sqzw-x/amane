@@ -71,6 +71,7 @@ from .metadata import (
     MetadataMergeEntriesRequest,
     MetadataResponse,
     MetadataUserTagsRequest,
+    MetadataUserTagsResponse,
     PartialMetadata,
     SemanticHitInfo,
 )
@@ -191,6 +192,7 @@ __all__ = [
     "MetadataListResponse",
     "MetadataResponse",
     "MetadataUserTagsRequest",
+    "MetadataUserTagsResponse",
     "OptionalPathTemplateDefaults",
     "OrganizeSubmission",
     "PartialMetadata",

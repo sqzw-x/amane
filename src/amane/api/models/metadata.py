@@ -12,7 +12,7 @@ from ...utils.model import anyof_extras, create_partial_model, kv
 from .comments import CommentResponse
 from .crop import CropBoxRequest
 from .media import MediaFileResponse
-from .user_tags import UserTagResponse
+from .user_tags import UserTagLinksResponse, UserTagResponse
 
 _METADATA_FIELD_VALUES = frozenset(str(field) for field in MetadataField)
 
@@ -137,7 +137,9 @@ class MergeRequest(BaseModel):
 
 class MetadataMergeEntriesRequest(BaseModel):
     target_id: int = Field(description="合并目标 Metadata ID; 其字段与已有站点快照保持不变")
-    source_ids: list[int] = Field(min_length=1, description="待合并的 Metadata ID 列表; 按顺序补入 raw 快照")
+    source_ids: list[int] = Field(
+        min_length=1, max_length=1000, description="待合并的 Metadata ID 列表; 按顺序补入 raw 快照"
+    )
     rescrape: bool = Field(
         default=False,
         description="合并后按当前优先级对目标番号入队 SCRAPE, 复用 raw 缓存重新聚合字段",
@@ -155,16 +157,17 @@ class CropPosterRequest(CropBoxRequest):
 
 
 class MetadataBatchIdsRequest(BaseModel):
-    ids: list[int] = Field(min_length=1, description="Metadata ID 列表")
+    ids: list[int] = Field(min_length=1, max_length=1000, description="Metadata ID 列表")
 
 
 class MetadataBatchDeleteResponse(BaseModel):
     deleted: int = Field(description="成功删除的数量")
     missing: int = Field(description="不存在的 id 数量")
+    skipped: int = Field(default=0, description="请求内重复的 id 数量; 已去重")
 
 
 class MetadataBatchScrapeRequest(BaseModel):
-    ids: list[int] = Field(min_length=1, description="Metadata ID 列表")
+    ids: list[int] = Field(min_length=1, max_length=1000, description="Metadata ID 列表")
     content_type: ContentType | None = Field(
         default=None, description="内容类型; None = 用条目已落定的类型 (不重新推断)"
     )
@@ -177,10 +180,15 @@ class MetadataBatchScrapeRequest(BaseModel):
 class MetadataBatchScrapeResponse(BaseModel):
     submitted: int = Field(description="成功提交的任务数")
     missing: int = Field(description="不存在的 id 数量")
+    skipped: int = Field(default=0, description="请求内重复的 id 数量; 已去重")
     task_ids: list[int] = Field(description="提交的任务 id 列表")
 
 
 class MetadataUserTagsRequest(BaseModel):
-    ids: list[int] = Field(min_length=1, description="Metadata ID 列表")
-    user_tag_ids: list[int] = Field(min_length=1, description="用户标签 ID 列表")
+    ids: list[int] = Field(min_length=1, max_length=1000, description="Metadata ID 列表")
+    user_tag_ids: list[int] = Field(min_length=1, max_length=1000, description="用户标签 ID 列表")
     action: Literal["attach", "detach"] = Field(description="attach 为并入, detach 为移除; 两者均幂等")
+
+
+class MetadataUserTagsResponse(UserTagLinksResponse):
+    skipped: int = Field(default=0, description="请求内重复的条目 id 数量; 已去重")

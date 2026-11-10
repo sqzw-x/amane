@@ -29,7 +29,7 @@ class FacetBatchAction(StrEnum):
 class FacetBatchRequest(BaseModel):
     """对一批分类执行同一个动作; 重复 id 去重, 使结果计数以去重后的条目数为准."""
 
-    facet_ids: list[int] = Field(min_length=1, description="分类 ID 列表")
+    facet_ids: list[int] = Field(min_length=1, max_length=1000, description="分类 ID 列表")
     action: FacetBatchAction = Field(description="favorite 置为已收藏, unfavorite 置为未收藏; 两者均幂等")
 
     @field_validator("facet_ids")
@@ -76,7 +76,7 @@ class FacetRenameRequest(BaseModel):
 
 class FacetMergeRequest(BaseModel):
     target_id: int
-    source_ids: list[int] = Field(min_length=1, description="待合并的来源 facet id 列表")
+    source_ids: list[int] = Field(min_length=1, max_length=1000, description="待合并的来源 facet id 列表")
 
 
 class FacetRuleResponse(BaseModel):

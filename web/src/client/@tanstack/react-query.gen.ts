@@ -484,7 +484,7 @@ export const listMetadataInfiniteOptions = (options?: Options<ListMetadataData>)
 /**
  * Batch Delete Metadata
  *
- * 级联行为与单条删除一致.
+ * 级联行为与单条删除一致; 重复 id 去重后只处理一次.
  */
 export const batchDeleteMetadataMutation = (options?: Partial<Options<BatchDeleteMetadataData>>): UseMutationOptions<BatchDeleteMetadataResponse, BatchDeleteMetadataError, Options<BatchDeleteMetadataData>> => {
     const mutationOptions: UseMutationOptions<BatchDeleteMetadataResponse, BatchDeleteMetadataError, Options<BatchDeleteMetadataData>> = {
@@ -503,7 +503,7 @@ export const batchDeleteMetadataMutation = (options?: Partial<Options<BatchDelet
 /**
  * Batch Scrape Metadata
  *
- * 以各自 number 重新刮削.
+ * 以各自 number 重新刮削; 重复 id 去重后只提交一次.
  */
 export const batchScrapeMetadataMutation = (options?: Partial<Options<BatchScrapeMetadataData>>): UseMutationOptions<BatchScrapeMetadataResponse, BatchScrapeMetadataError, Options<BatchScrapeMetadataData>> => {
     const mutationOptions: UseMutationOptions<BatchScrapeMetadataResponse, BatchScrapeMetadataError, Options<BatchScrapeMetadataData>> = {

@@ -15,6 +15,7 @@ from ...media import manual_crop_image
 from ...parsing import FilePhaseSummary as ParsedFilePhase
 from ...parsing import summarize_file_phases
 from ...semantic import SemanticUnavailable
+from ...utils.collections import unique_ids
 from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
 from ..deps import RepoDep, RuntimeDep
@@ -33,9 +34,9 @@ from ..models import (
     MetadataMergeEntriesRequest,
     MetadataResponse,
     MetadataUserTagsRequest,
+    MetadataUserTagsResponse,
     PartialMetadata,
     SemanticHitInfo,
-    UserTagLinksResponse,
     UserTagResponse,
     to_media_file_response,
 )
@@ -210,19 +211,23 @@ async def _semantic_list(
 
 @router.post("/batch/delete")
 async def batch_delete_metadata(req: MetadataBatchIdsRequest, repo: RepoDep) -> MetadataBatchDeleteResponse:
-    """级联行为与单条删除一致."""
-    deleted, missing = await repo.batch_delete_metadata(req.ids)
-    logger.info("metadata batch deleted", deleted=deleted, missing=missing)
-    return MetadataBatchDeleteResponse(deleted=deleted, missing=missing)
+    """级联行为与单条删除一致; 重复 id 去重后只处理一次."""
+    ids = unique_ids(req.ids)
+    deleted, missing = await repo.batch_delete_metadata(ids)
+    skipped = len(req.ids) - len(ids)
+    logger.info("metadata batch deleted", deleted=deleted, missing=missing, skipped=skipped)
+    return MetadataBatchDeleteResponse(deleted=deleted, missing=missing, skipped=skipped)
 
 
 @router.post("/batch/scrape", status_code=202)
 async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) -> MetadataBatchScrapeResponse:
-    """以各自 number 重新刮削."""
+    """以各自 number 重新刮削; 重复 id 去重后只提交一次."""
+    ids = unique_ids(req.ids)
+    metadata_by_id = {meta.id: meta for meta in await repo.get_metadata_by_ids(ids) if meta.id is not None}
     missing = 0
     payloads: list[ScrapePayload] = []
-    for metadata_id in req.ids:
-        metadata = await repo.get_metadata(metadata_id)
+    for metadata_id in ids:
+        metadata = metadata_by_id.get(metadata_id)
         if metadata is None:
             missing += 1
             continue
@@ -236,25 +241,31 @@ async def batch_scrape_metadata(req: MetadataBatchScrapeRequest, repo: RepoDep) 
     # 批量提交动辄数百条, 逐条提交会重复付出事务开销
     tasks = await repo.create_tasks(TaskType.SCRAPE, payloads)
     task_ids = [task.id for task in tasks if task.id is not None]
-    logger.info("metadata batch scrape submitted", submitted=len(task_ids), missing=missing)
-    return MetadataBatchScrapeResponse(submitted=len(task_ids), missing=missing, task_ids=task_ids)
+    skipped = len(req.ids) - len(ids)
+    logger.info("metadata batch scrape submitted", submitted=len(task_ids), missing=missing, skipped=skipped)
+    return MetadataBatchScrapeResponse(submitted=len(task_ids), missing=missing, skipped=skipped, task_ids=task_ids)
 
 
 @router.post("/batch/user-tags")
-async def batch_metadata_user_tags(req: MetadataUserTagsRequest, repo: RepoDep) -> UserTagLinksResponse:
+async def batch_metadata_user_tags(req: MetadataUserTagsRequest, repo: RepoDep) -> MetadataUserTagsResponse:
     """把一组用户标签应用到一组影片; 未知标签 id 返回 404, 不存在的影片 id 计入 missing."""
+    ids = unique_ids(req.ids)
     try:
-        result = await repo.apply_metadata_user_tags(req.ids, req.user_tag_ids, action=req.action)
+        result = await repo.apply_metadata_user_tags(ids, req.user_tag_ids, action=req.action)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    skipped = len(req.ids) - len(ids)
     logger.info(
         "metadata user tags applied",
         action=req.action,
         changed=result.changed,
         unchanged=result.unchanged,
         missing=result.missing,
+        skipped=skipped,
     )
-    return UserTagLinksResponse(changed=result.changed, unchanged=result.unchanged, missing=result.missing)
+    return MetadataUserTagsResponse(
+        changed=result.changed, unchanged=result.unchanged, missing=result.missing, skipped=skipped
+    )
 
 
 @router.post("/merge-entries")

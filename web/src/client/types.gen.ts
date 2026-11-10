@@ -2673,6 +2673,12 @@ export type MetadataBatchDeleteResponse = {
      * 不存在的 id 数量
      */
     missing: number;
+    /**
+     * Skipped
+     *
+     * 请求内重复的 id 数量; 已去重
+     */
+    skipped?: number;
 };
 
 /**
@@ -2725,6 +2731,12 @@ export type MetadataBatchScrapeResponse = {
      * 不存在的 id 数量
      */
     missing: number;
+    /**
+     * Skipped
+     *
+     * 请求内重复的 id 数量; 已去重
+     */
+    skipped?: number;
     /**
      * Task Ids
      *
@@ -3102,6 +3114,36 @@ export type MetadataUserTagsRequest = {
      * attach 为并入, detach 为移除; 两者均幂等
      */
     action: 'attach' | 'detach';
+};
+
+/**
+ * MetadataUserTagsResponse
+ */
+export type MetadataUserTagsResponse = {
+    /**
+     * Changed
+     *
+     * 至少一处挂载关系发生变更的条目数
+     */
+    changed: number;
+    /**
+     * Unchanged
+     *
+     * 已处于目标态、未修改的条目数
+     */
+    unchanged: number;
+    /**
+     * Missing
+     *
+     * 不存在的条目 id 数
+     */
+    missing: number;
+    /**
+     * Skipped
+     *
+     * 请求内重复的条目 id 数量; 已去重
+     */
+    skipped?: number;
 };
 
 /**
@@ -6502,7 +6544,7 @@ export type BatchMetadataUserTagsResponses = {
     /**
      * Successful Response
      */
-    200: UserTagLinksResponse;
+    200: MetadataUserTagsResponse;
 };
 
 export type BatchMetadataUserTagsResponse = BatchMetadataUserTagsResponses[keyof BatchMetadataUserTagsResponses];
