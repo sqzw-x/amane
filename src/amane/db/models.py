@@ -513,8 +513,8 @@ class Resource(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     url: str = Field(unique=True, nullable=False, index=True)
-    file_path: str = Field(nullable=False)
-    """相对 resources 目录的两级散列路径."""
+    file_path: str = Field(nullable=False, index=True)
+    """相对 resources 目录的两级散列路径; 按 hash 前缀定位时依赖其索引."""
     content_hash: str | None = None
     """文件 SHA-256; 就地超分后必须更新."""
     size: int | None = None

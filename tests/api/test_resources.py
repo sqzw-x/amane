@@ -56,9 +56,24 @@ async def test_serve_resource_etag(app: FastAPI, client: AsyncClient):
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_serve_missing_resource_404(client: AsyncClient):
-    resp = await client.get("resources/deadbeefdeadbeef")
-    assert resp.status_code == 404
+@pytest.mark.parametrize(
+    ("url_hash", "status"),
+    [
+        ("deadbeefdeadbeef", 404),
+        ("%", 422),
+        ("%2A", 422),
+        ("%2e%2e", 422),
+        ("DEADBEEFDEADBEEF", 422),
+        ("deadbeefdeadbee", 422),
+        ("deadbeefdeadbeef0", 422),
+        ("deadbeefdeadbeeg", 422),
+    ],
+    ids=["missing", "like-wildcard", "glob-star", "parent", "uppercase", "short", "long", "non-hex"],
+)
+async def test_serve_resource_hash_format(client: AsyncClient, url_hash: str, status: int):
+    """hash 只接受 _url_hash 的形状: 格式不符由路径校验挡下, 形状合法的才落到查询."""
+    resp = await client.get(f"resources/{url_hash}")
+    assert resp.status_code == status
 
 
 class TestProxyImage:
