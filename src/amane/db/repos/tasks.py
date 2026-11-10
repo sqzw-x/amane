@@ -1,7 +1,8 @@
 from collections.abc import Iterable, Sequence
+from typing import NamedTuple
 
 from pydantic import BaseModel
-from sqlalchemy import asc, update
+from sqlalchemy import asc, func, update
 from sqlalchemy import delete as sqla_delete
 from sqlalchemy.sql.functions import coalesce, count
 from sqlmodel import col, select
@@ -47,32 +48,101 @@ def _exclusive_value(payload: dict[str, object], field: str) -> int | None:
     return raw
 
 
-async def _find_active_exclusive(session: AsyncSession, task_type: TaskType, field: str, value: int) -> Task | None:
-    stmt = select(Task).where(col(Task.type) == task_type, col(Task.status).in_(_ACTIVE_STATUSES))
-    result = await session.exec(stmt)
-    for task in result.all():
-        if _exclusive_value(task.payload or {}, field) == value:
-            return task
-    return None
+class _PendingTask(NamedTuple):
+    """一条待入队任务. ``root_task_id`` 是所属链根, 裸任务为空."""
+
+    task_type: TaskType
+    payload: dict[str, object]
+    priority: int
+    root_task_id: int | None = None
 
 
-async def _insert_or_reuse(
-    session: AsyncSession,
-    task_type: TaskType,
-    payload: dict[str, object],
-    priority: int,
-) -> Task:
-    field = _EXCLUSIVE_FIELDS.get(task_type)
-    if field is not None:
-        value = _exclusive_value(payload, field)
+async def _active_exclusive_ids(session: AsyncSession, task_type: TaskType, field: str) -> dict[int, int]:
+    """一次查出该类型全部活跃行的互斥键 → 行 id, 供整批判重.
+
+    只认 JSON 整数: ``true`` / ``1.0`` / 字符串与 ``_exclusive_value`` 的口径一致, 都不参与互斥.
+    逐条 payload 各查一次时, 每条都要读出全部活跃行再在 Python 里比较, 后继一多就是平方级.
+    """
+    path = f"$.{field}"
+    extracted = func.json_extract(col(Task.payload), path)
+    stmt = select(extracted, col(Task.id)).where(
+        col(Task.type) == task_type,
+        col(Task.status).in_(_ACTIVE_STATUSES),
+        func.json_type(col(Task.payload), path) == "integer",
+    )
+    out: dict[int, int] = {}
+    for value, task_id in (await session.exec(stmt)).all():
+        assert task_id is not None
+        out[int(value)] = task_id
+    return out
+
+
+async def _insert_tasks(session: AsyncSession, pending: Sequence[_PendingTask]) -> list[Task]:
+    """一批入队, 返回值与 ``pending`` 同序.
+
+    互斥键在批内先占位: 已有活跃行直接复用, 批内同键也只建一行. 新行合成一批
+    ``INSERT ... RETURNING``, 不再逐条 flush; 提交后属性仍可读 (``expire_on_commit=False``).
+    """
+    if not pending:
+        return []
+
+    active: dict[TaskType, dict[int, int]] = {}
+    for task_type in dict.fromkeys(row.task_type for row in pending):
+        field = _EXCLUSIVE_FIELDS.get(task_type)
+        if field is not None:
+            active[task_type] = await _active_exclusive_ids(session, task_type, field)
+
+    values: list[int | None] = []
+    for row in pending:
+        field = _EXCLUSIVE_FIELDS.get(row.task_type)
+        values.append(_exclusive_value(row.payload, field) if field is not None else None)
+
+    # 命中的活跃行按 id 一次取回; 逐个 session.get 会让复用型的大批入队退化成逐行查询.
+    hit_ids = {
+        active[row.task_type][value]
+        for row, value in zip(pending, values, strict=True)
+        if value is not None and value in active[row.task_type]
+    }
+    reused: dict[int, Task] = {}
+    for chunk in chunks(sorted(hit_ids)):
+        for task in (await session.exec(select(Task).where(col(Task.id).in_(chunk)))).all():
+            assert task.id is not None
+            reused[task.id] = task
+
+    slots: list[Task | None] = [None] * len(pending)
+    aliases: dict[int, int] = {}
+    first_index: dict[tuple[TaskType, int], int] = {}
+    new_rows: list[_PendingTask] = []
+    new_indexes: list[int] = []
+    for index, row in enumerate(pending):
+        value = values[index]
         if value is not None:
-            existing = await _find_active_exclusive(session, task_type, field, value)
+            key = (row.task_type, value)
+            existing_id = active[row.task_type].get(value)
+            existing = reused.get(existing_id) if existing_id is not None else None
             if existing is not None:
-                return existing
-    task = Task(type=task_type, payload=payload, priority=priority)
-    session.add(task)
-    await session.flush()
-    return task
+                if row.root_task_id is not None and existing.root_task_id is None:
+                    existing.root_task_id = row.root_task_id
+                    session.add(existing)
+                slots[index] = existing
+                continue
+            first = first_index.get(key)
+            if first is not None:
+                aliases[index] = first
+                continue
+            first_index[key] = index
+        new_rows.append(row)
+        new_indexes.append(index)
+
+    for index, row in zip(new_indexes, new_rows, strict=True):
+        task = Task(type=row.task_type, payload=row.payload, priority=row.priority, root_task_id=row.root_task_id)
+        session.add(task)
+        await session.flush()
+        slots[index] = task
+    for index, first in aliases.items():
+        slots[index] = slots[first]
+    assert all(slot is not None for slot in slots)
+    return [slot for slot in slots if slot is not None]
 
 
 _IS_CHAIN_ROOT = (col(Task.root_task_id).is_(None)) | (col(Task.root_task_id) == col(Task.id))
@@ -145,10 +215,9 @@ class TasksRepoMixin(RepositoryMixinBase):
     ) -> list[Task]:
         if not payloads:
             return []
+        pending = [_PendingTask(task_type, _payload_dict(payload), priority) for payload in payloads]
         async with self._task_insert_lock, self._session() as session:
-            tasks = [
-                await _insert_or_reuse(session, task_type, _payload_dict(payload), priority) for payload in payloads
-            ]
+            tasks = await _insert_tasks(session, pending)
             await session.commit()
             for task in tasks:
                 await session.refresh(task)
@@ -208,7 +277,6 @@ class TasksRepoMixin(RepositoryMixinBase):
 
         先以条件 UPDATE 取得 ``RUNNING → DONE``; 命中 0 行说明父任务不在运行中 (已终态或已删除), 不创建后继.
         """
-        created: list[Task] = []
         async with self._task_insert_lock, self._session() as session:
             updated = await session.exec(
                 update(Task)
@@ -223,26 +291,27 @@ class TasksRepoMixin(RepositoryMixinBase):
             )
             if not updated.rowcount:
                 await session.rollback()
-                return created
+                return []
             task = await session.get(Task, task_id)
             assert task is not None
             root_id = task.root_task_id or task_id
             seen_keys: set[str] = set()
+            pending: list[_PendingTask] = []
+            keys: list[str] = []
             for key, task_type, payload, priority in followups:
                 if key in seen_keys:
                     continue
                 seen_keys.add(key)
-                child = await _insert_or_reuse(session, task_type, payload, priority)
-                if child.root_task_id is None:
-                    child.root_task_id = root_id
-                    session.add(child)
+                pending.append(_PendingTask(task_type, payload, priority, root_id))
+                keys.append(key)
+            children = await _insert_tasks(session, pending)
+            for child, key in zip(children, keys, strict=True):
                 assert child.id is not None
                 session.add(TaskLink(parent_task_id=task_id, child_task_id=child.id, key=key))
-                created.append(child)
             await session.commit()
-            for child in created:
+            for child in children:
                 await session.refresh(child)
-        return created
+            return children
 
     async def fail_task(self, task_id: int, error: str, result: dict[str, object] | None = None) -> bool:
         """把 QUEUED / RUNNING 标为 FAILED, 返回是否命中; 终态不覆盖.
@@ -464,22 +533,23 @@ class TasksRepoMixin(RepositoryMixinBase):
             return result.rowcount
 
     async def retry_tasks(self, tasks: Sequence[Task]) -> list[Task]:
-        """克隆为无根裸任务, 一次提交. 不保留原链归属, 否则会与原有后继冲突."""
+        """克隆为无根裸任务, 一批提交. 不保留原链归属, 否则会与原有后继冲突."""
         if not tasks:
             return []
+        pending = [_PendingTask(task.type, task.payload or {}, task.priority) for task in tasks]
         async with self._task_insert_lock, self._session() as session:
+            clones = await _insert_tasks(session, pending)
+            await session.commit()
+            for clone in clones:
+                await session.refresh(clone)
             created: list[Task] = []
             seen: set[int] = set()
-            for task in tasks:
-                row = await _insert_or_reuse(session, task.type, task.payload or {}, task.priority)
-                assert row.id is not None
-                if row.id in seen:
+            for clone in clones:
+                assert clone.id is not None
+                if clone.id in seen:
                     continue
-                seen.add(row.id)
-                created.append(row)
-            await session.commit()
-            for clone in created:
-                await session.refresh(clone)
+                seen.add(clone.id)
+                created.append(clone)
             return created
 
     async def delete_task(self, task_id: int) -> bool:
