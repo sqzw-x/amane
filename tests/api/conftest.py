@@ -45,13 +45,17 @@ def make_app(
     *,
     supervised: bool = False,
     safe_dirs: str | None = None,
+    token: str = "off",
+    trusted_origins: str = "",
 ) -> FastAPI:
     os.environ["AMANE_DATA_DIR"] = str(data_dir)
     os.environ["AMANE_SAFE_DIRS"] = str(files_dir) if safe_dirs is None else safe_dirs
     os.environ["AMANE_LOG_DIR"] = str(log_dir)
-    os.environ["AMANE_TOKEN"] = "off"
+    os.environ["AMANE_TOKEN"] = token
     os.environ["AMANE_IMAGE_TOKEN"] = "off"
     os.environ["AMANE_SUPERVISED"] = "1" if supervised else "0"
+    # 空串 = 未配置: 隔离外部环境, 每个用例的浏览器信任边界取默认值
+    os.environ["AMANE_TRUSTED_ORIGINS"] = trusted_origins
 
     data_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)

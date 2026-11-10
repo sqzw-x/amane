@@ -142,16 +142,23 @@ class TestTokenAuth:
     def test_ws_token_enforced(self):
         """WS 校验用最小 app 测 (TestClient 与完整中间件链的 WS 交互有已知
         怪癖, 现有 test_ws.py 同法避开; 生产路径由 uvicorn 实测)."""
+        from types import SimpleNamespace
+
         from fastapi import FastAPI
         from starlette.testclient import TestClient
         from starlette.websockets import WebSocketDisconnect
 
         from amane.api.routes.ws import router
+        from amane.config import ColdSettings
         from amane.events import EventBus
 
         app = FastAPI()
         app.include_router(router)
-        app.state.runtime = type("R", (), {"api_token": "tok-123", "event_bus": EventBus()})()
+        app.state.runtime = SimpleNamespace(
+            api_token="tok-123",
+            event_bus=EventBus(),
+            config=SimpleNamespace(cold=ColdSettings()),
+        )
         with TestClient(app) as client:
             # 无 cookie → 1008 拒绝
             with pytest.raises(WebSocketDisconnect) as exc_info, client.websocket_connect("ws"):

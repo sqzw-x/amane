@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 import tomli_w
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
 from ..crawlers.actor.sites.wikipedia import WIKI_LANGUAGES
@@ -198,11 +198,40 @@ class ColdSettings(BaseSettings):
     image_token: str | None = None
     """``off`` 显式关闭; 为空时自动生成并持久化到 data_dir/image_token. 只用于资源端点."""
 
+    trusted_origins: Annotated[list[str], NoDecode] = []
+    """cookie 写请求缺少 Sec-Fetch-Site 时信任的来源 (AMANE_TRUSTED_ORIGINS, 逗号分隔).
+    为空时信任开发默认 (:5173); 非空则替换开发默认."""
+
     supervised: bool = False
     """为真时挂载重启端点 (AMANE_SUPERVISED=1)."""
 
     update_url: str | None = None
     """覆盖 GitHub /releases/latest. 空 = 官方 API."""
+
+    @field_validator("trusted_origins", mode="before")
+    @classmethod
+    def _parse_origins(cls, v: object) -> list[str]:
+        """逗号分隔的 ``scheme://host[:port]``; 规范化后保存, 非法值拒绝启动."""
+        if v is None:
+            return []
+        parts = v.split(",") if isinstance(v, str) else v
+        if not isinstance(parts, (list, tuple)):
+            raise ValueError(f"来源列表格式无效: {v!r}")
+        origins: list[str] = []
+        for item in parts:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            parsed = urlsplit(item.strip())
+            if (
+                parsed.scheme.lower() not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.path not in ("", "/")
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(f"来源须形如 scheme://host[:port]: {item!r}")
+            origins.append(f"{parsed.scheme.lower()}://{parsed.netloc.lower()}")
+        return origins
 
     @field_validator("update_url", mode="before")
     @classmethod
