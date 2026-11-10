@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
@@ -332,3 +333,27 @@ async def test_facet_favorite_batch_http(client: AsyncClient, repo: Repository) 
     # 详情读到的就是批量写入的结果
     assert (await client.get(f"facets/studio/{plain_a}")).json()["is_favorite"] is True
     assert (await client.get(f"facets/studio/{plain_d}")).json()["is_favorite"] is True
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_concurrent_rename_same_name_returns_single_409(client: AsyncClient, repo: Repository) -> None:
+    """两个请求同时把不同分类改成同一名字: 一个成功, 另一个 409 而不是 500."""
+    await repo.upsert_metadata(number="HTTP-RACE-1", actors=["RaceA"])
+    await repo.upsert_metadata(number="HTTP-RACE-2", actors=["RaceB"])
+    ids = {
+        name: next(
+            item["id"]
+            for item in (await client.get(f"facets/actor?search={name}")).json()["items"]
+            if item["name"] == name
+        )
+        for name in ("RaceA", "RaceB")
+    }
+
+    responses = await asyncio.gather(
+        client.patch(f"facets/actor/{ids['RaceA']}", json={"name": "RaceSame"}),
+        client.patch(f"facets/actor/{ids['RaceB']}", json={"name": "RaceSame"}),
+    )
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    conflict = next(response for response in responses if response.status_code == 409)
+    assert "合并" in conflict.json()["detail"]
