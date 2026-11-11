@@ -10,13 +10,15 @@ import pytest
 import pytest_asyncio
 import tomli_w
 from httpx2 import ASGITransport, AsyncClient
+from starlette.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from amane.api.app import create_app
 from amane.api.middleware import API_TOKEN_COOKIE
 from amane.api.routes import API_PREFIX
 from amane.config.token import resolve_api_token, resolve_image_token
 from amane.media import ResourceStore
-from tests.api.conftest import hot_for_tests
+from tests.api.conftest import hot_for_tests, ws_app
 from tests.schema_template import copy_schema
 
 if TYPE_CHECKING:
@@ -39,6 +41,8 @@ def make_token_app(tmp_path: Path, token_env: str | None, image_token_env: str |
         os.environ["AMANE_TOKEN"] = token_env
     # 与 token_env 相同: None 采用自动生成
     os.environ["AMANE_IMAGE_TOKEN"] = "" if image_token_env is None else image_token_env
+    os.environ["AMANE_TRUSTED_ORIGINS"] = ""
+    os.environ["AMANE_CORS_ORIGINS"] = ""
     (tmp_path / "data").mkdir(parents=True, exist_ok=True)
     (tmp_path / "files").mkdir(parents=True, exist_ok=True)
     (tmp_path / "logs").mkdir(parents=True, exist_ok=True)
@@ -142,17 +146,7 @@ class TestTokenAuth:
     def test_ws_token_enforced(self):
         """WS 校验用最小 app 测 (TestClient 与完整中间件链的 WS 交互有已知
         怪癖, 现有 test_ws.py 同法避开; 生产路径由 uvicorn 实测)."""
-        from fastapi import FastAPI
-        from starlette.testclient import TestClient
-        from starlette.websockets import WebSocketDisconnect
-
-        from amane.api.routes.ws import router
-        from amane.events import EventBus
-
-        app = FastAPI()
-        app.include_router(router)
-        app.state.runtime = type("R", (), {"api_token": "tok-123", "event_bus": EventBus()})()
-        with TestClient(app) as client:
+        with TestClient(ws_app(token="tok-123")) as client:
             # 无 cookie → 1008 拒绝
             with pytest.raises(WebSocketDisconnect) as exc_info, client.websocket_connect("ws"):
                 pass
@@ -162,16 +156,7 @@ class TestTokenAuth:
                 pass
 
     def test_ws_token_off_passes(self):
-        from fastapi import FastAPI
-        from starlette.testclient import TestClient
-
-        from amane.api.routes.ws import router
-        from amane.events import EventBus
-
-        app = FastAPI()
-        app.include_router(router)
-        app.state.runtime = type("R", (), {"api_token": None, "event_bus": EventBus()})()
-        with TestClient(app) as client, client.websocket_connect("ws"):
+        with TestClient(ws_app(token=None)) as client, client.websocket_connect("ws"):
             pass
 
     @pytest.mark.asyncio(loop_scope="function")

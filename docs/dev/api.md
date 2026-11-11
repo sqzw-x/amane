@@ -65,6 +65,8 @@ OpenAPI 列出参数, 不表达组合语义:
 
 `TokenAuthMiddleware` 与 `LoggingMiddleware` 都是 `BaseHTTPMiddleware`: 它交给下游的是包装过的 `receive`, 必须真正挂起等待才会收到 `http.disconnect`, 因此 `Request.is_disconnected()` (立刻取消式探测) 在本栈内恒为 `False`; 需要感知客户端离开的长响应改用 `DisconnectSignal` (见 [plugins.md](plugins.md)).
 
+**浏览器来源**: cookie 认证的非安全方法要求 `Sec-Fetch-Site` 为 `same-origin` / `none`, `same-site` / `cross-site` 一律 403; 缺该头时退回 `Origin` — 无 `Origin` (脚本) 放行, 否则须与 `Host` 同 host:port 或命中 `AMANE_TRUSTED_ORIGINS` (未配置时信任开发默认 `http://localhost:5173` / `http://127.0.0.1:5173`, 因为 Vite 代理改写了 `Host`). Bearer 请求与只读方法不检查, `/ws` 握手同规则. CORS 只在 token 开启时全开 (`*`, 无凭据); token 关闭时只允许 `AMANE_CORS_ORIGINS` (默认空 = 同源可用, 预检不通过). 该检查按页面同源判定, 不防 DNS rebinding. 相关实现: `middleware.py::browser_source_allowed` / `::CORSPolicyMiddleware`.
+
 ## 约定
 
 **错误**: `HTTPException(detail=中文)`. 路径校验位于 `support/path_validation.py` (存在 / 类型 / `safe_dirs` → 400 / 403 / 404; `ALLOW_ALL` 时跳过边界层). `/files` 的失败映射: 不存在 → 404, 不在 `safe_dirs` → 403, 空名单 → 500, `os.scandir` 的 `OSError` (含网络盘挂载失效) → 500 + strerror detail, `PermissionError` → 403. 错误日志统一由 LoggingMiddleware 打点 (见 [observability.md](observability.md)), handler 内不自行打印.
