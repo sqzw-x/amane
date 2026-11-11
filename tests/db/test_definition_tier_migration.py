@@ -5,6 +5,7 @@ from pathlib import Path
 from alembic import command
 from sqlalchemy import create_engine, text
 
+from amane.organize import validate_path_template
 from tests.helpers import alembic_config
 
 
@@ -18,7 +19,8 @@ def test_definition_tiers_merged(tmp_path: Path) -> None:
         conn.execute(
             text(
                 "INSERT INTO libraries (name, path, recursive, patterns, video_template, poster_template) "
-                "VALUES ('t', '/m', 1, '[]', '{number}[[{def?|SD=标清,HD=高清}]].{ext}', '{number}.jpg')"
+                "VALUES ('t', '/m', 1, '[]', '{number}[[{def?|SD=标清,HD=高清}]].{ext}', '{number}.jpg'), "
+                "('t2', '/m2', 1, '[]', '{number}[[{def?|720p=高清,HD=标清}]].{ext}', '{number}.jpg')"
             )
         )
         conn.execute(
@@ -34,15 +36,20 @@ def test_definition_tiers_merged(tmp_path: Path) -> None:
 
     with engine.connect() as conn:
         definitions = dict(conn.execute(text("SELECT path, definition FROM media_files")).all())
-        video_template = conn.execute(text("SELECT video_template FROM libraries")).scalar_one()
-        poster_template = conn.execute(text("SELECT poster_template FROM libraries")).scalar_one()
+        templates = conn.execute(text("SELECT video_template FROM libraries ORDER BY id")).scalars().all()
+        poster_template = conn.execute(text("SELECT poster_template FROM libraries ORDER BY id LIMIT 1")).scalar_one()
 
     assert definitions == {
         "/video/ABC-123-SD.mp4": "480p",
         "/video/ABC-124-HD.mp4": "720p",
         "/video/ABC-125-4320P.mp4": "8K",
     }
-    assert video_template == "{number}[[{def?|480p=标清,720p=高清}]].{ext}"
+    assert templates == [
+        "{number}[[{def?|480p=标清,720p=高清}]].{ext}",
+        "{number}[[{def?|720p=高清}]].{ext}",
+    ]
+    for template in templates:
+        validate_path_template(template)
     assert poster_template == "{number}.jpg"
 
     engine.dispose()

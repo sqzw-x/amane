@@ -5,13 +5,15 @@ Revises: e377abaad72f
 Create Date: 2026-11-11 21:13:31.338244
 
 SD 并入 480p, HD 并入 720p: 相位列按当前 parser 复投影, 库路径模板里 {def?} 的映射键同步改名.
+改名后与已有键重复的那一对丢弃 (旧键让位于规范键), 否则模板会因键重复而无法解析.
 """
 
+import logging
 import re
 from collections.abc import Sequence
 
 from alembic import op
-from sqlalchemy import text
+from sqlalchemy import Connection, text
 
 from amane.parsing import parse_file_info
 
@@ -20,6 +22,8 @@ revision: str = "e06def65f72a"
 down_revision: str | None = "e377abaad72f"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+logger = logging.getLogger("alembic.runtime.migration")
 
 _TEMPLATE_COLUMNS = (
     "video_template",
@@ -35,35 +39,67 @@ _TEMPLATE_COLUMNS = (
     "subtitle_template",
 )
 
+#: 本 revision 落库时的改名口径; 不引用代码里的映射, 避免后续档位再改动时改写历史.
 _RENAMED_KEYS = {"SD": "480p", "HD": "720p"}
 
 _DEF_MAPPING = re.compile(r"\{def\?\|([^}]*)\}")
 
 
-def _rename_mapping_keys(template: str) -> str:
-    """只改 {def?} 的映射键, 其余占位符与字面量保持原样; 键按解析器口径去空白."""
+def _rename_mapping_keys(template: str, *, library_id: int, column: str) -> str:
+    """只改 {def?} 的映射键; 键按解析器口径去空白, 与既有键撞名的一对丢弃."""
 
     def rewrite(match: re.Match[str]) -> str:
+        items = match.group(1).split(",")
+        occupied = {item.partition("=")[0].strip() for item in items}
         pairs: list[str] = []
-        for item in match.group(1).split(","):
+        for item in items:
             key, sep, value = item.partition("=")
-            pairs.append(f"{_RENAMED_KEYS.get(key.strip(), key.strip())}{sep}{value}")
+            original = key.strip()
+            renamed = _RENAMED_KEYS.get(original, original)
+            if renamed != original and renamed in occupied:
+                logger.warning(
+                    "definition mapping key collision, dropping legacy pair",
+                    extra={"library_id": library_id, "column": column, "key": original, "kept": renamed},
+                )
+                continue
+            occupied.add(renamed)
+            pairs.append(f"{renamed}{sep}{value}")
         return "{def?|" + ",".join(pairs) + "}"
 
     return _DEF_MAPPING.sub(rewrite, template)
 
 
+def _warn_saved_query_literals(conn: Connection) -> None:
+    for value in _RENAMED_KEYS:
+        rows = conn.execute(
+            text("SELECT id FROM saved_queries WHERE sql LIKE :pattern"),
+            {"pattern": f"%'{value}'%"},
+        ).all()
+        if rows:
+            logger.warning(
+                "saved query still compares legacy definition literal",
+                extra={"value": value, "ids": [row[0] for row in rows]},
+            )
+
+
 def upgrade() -> None:
     conn = op.get_bind()
-    for row_id, path in conn.execute(text("SELECT id, path FROM media_files")).all():
+    scanned = changed = 0
+    for row_id, path, current in conn.execute(text("SELECT id, path, definition FROM media_files")).all():
+        scanned += 1
+        definition = parse_file_info(path).definition
+        if definition == current:
+            continue
         conn.execute(
             text("UPDATE media_files SET definition = :definition WHERE id = :id"),
-            {"definition": parse_file_info(path).definition, "id": row_id},
+            {"definition": definition, "id": row_id},
         )
+        changed += 1
+    logger.info("definition reprojected", extra={"scanned": scanned, "changed": changed})
 
     for row in conn.execute(text(f"SELECT id, {', '.join(_TEMPLATE_COLUMNS)} FROM libraries")).mappings():
         updates = {
-            column: _rename_mapping_keys(row[column])
+            column: _rename_mapping_keys(row[column], library_id=row["id"], column=column)
             for column in _TEMPLATE_COLUMNS
             if row[column] is not None and "{def?|" in row[column]
         }
@@ -71,6 +107,8 @@ def upgrade() -> None:
             continue
         assignments = ", ".join(f"{column} = :{column}" for column in updates)
         conn.execute(text(f"UPDATE libraries SET {assignments} WHERE id = :id"), {**updates, "id": row["id"]})
+
+    _warn_saved_query_literals(conn)
 
 
 def downgrade() -> None:
