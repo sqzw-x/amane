@@ -81,6 +81,12 @@ export const FILE_DEFINITIONS = exhaustiveTuple<
   "8K" | "4K" | "1440p" | "1080p" | "720p" | "480p"
 >()("8K", "4K", "1440p", "1080p", "720p", "480p");
 
+/** 合并前的档位名 → 现档位; 与后端筛选别名一致, 大小写不敏感. */
+export const LEGACY_FILE_DEFINITIONS: Record<string, (typeof FILE_DEFINITIONS)[number]> = {
+  sd: "480p",
+  hd: "720p",
+};
+
 export const TASK_STATUSES = exhaustiveTuple<TaskStatus>()("queued", "running", "done", "failed");
 
 export const TASK_TYPES = exhaustiveTuple<TaskType>()(
