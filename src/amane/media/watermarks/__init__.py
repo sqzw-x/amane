@@ -19,8 +19,16 @@ logger = structlog.get_logger()
 
 USER_DIRNAME = "watermarks"
 
+
+def _aliases_by_tier() -> dict[str, tuple[str, ...]]:
+    grouped: dict[str, list[str]] = {}
+    for alias, tier in LEGACY_DEFINITIONS.items():
+        grouped.setdefault(tier, []).append(alias.casefold())
+    return {tier: tuple(aliases) for tier, aliases in grouped.items()}
+
+
 #: 档位名的小写别名, 由旧档位表派生; 只在查找时作为后备.
-_ALIASES: dict[str, tuple[str, ...]] = {tier: (alias.casefold(),) for alias, tier in LEGACY_DEFINITIONS.items()}
+_ALIASES: dict[str, tuple[str, ...]] = _aliases_by_tier()
 _CANONICAL_STEM: dict[str, str] = {alias.casefold(): tier for alias, tier in LEGACY_DEFINITIONS.items()}
 
 _STEM_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
