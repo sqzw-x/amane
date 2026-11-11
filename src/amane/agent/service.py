@@ -74,7 +74,7 @@ class AgentService:
         """原子地检查并占位: 会话空闲返回 True, 已有回合返回 False.
 
         检查与登记之间不得出现 ``await``: 一旦让出事件循环, 同会话的并发请求会一起通过检查,
-        两个回合交错写同一份 trace. 占位只在本进程内, 不落盘, 因此准备阶段失败时没有残留状态.
+        两个回合交错写同一份 trace. 占位不落盘, 只在本进程内.
         """
         if session_id in self._turn_reservations or self.is_turn_running(session_id):
             return False
@@ -82,7 +82,7 @@ class AgentService:
         return True
 
     def abort_turn(self, session_id: int) -> None:
-        """撤销占位: 占位后未启动后台任务时调用, 会话不能因此一直 409 或停在 turn_running."""
+        """撤销占位: 占位后未能启动后台任务时调用, 否则该会话一直被 409 拒绝, 或停在 turn_running."""
         self._turn_reservations.discard(session_id)
         store = self._stores.get(session_id)
         if store is not None and store.turn_running and session_id not in self._turn_tasks:

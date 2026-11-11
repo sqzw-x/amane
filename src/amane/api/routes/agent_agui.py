@@ -323,7 +323,6 @@ async def run_agent_agui(
         task = asyncio.create_task(consume(), name=f"agui-turn-{session_id}")
         service.track_turn(session_id, task)
     except BaseException:
-        # 占位后未能启动后台任务 (适配器解析失败、请求取消等): 释放占位, 否则该会话会一直 409
         service.abort_turn(session_id)
         raise
     return StreamingResponse(_follow_agui(store, start_seq), media_type=SSE_CONTENT_TYPE)
