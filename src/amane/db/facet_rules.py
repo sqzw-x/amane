@@ -69,8 +69,7 @@ def apply_scalar(value: str | None, rules: RulesBySource) -> str | None:
 class FacetFieldValues:
     """六个爬取侧分类真值字段的取值.
 
-    批量治理 (改名 / 合并 / 删除) 在 ORM 之外变换这份值: 逐行取 ``Metadata`` 会把宽列
-    ``raw`` 一并读入, 而按值比较即可判断哪些行的投影需要重建.
+    批量治理 (改名 / 合并 / 删除) 在 ORM 之外变换这份值, 避免逐行读取 ``Metadata.raw`` 等宽列.
     """
 
     actors: list[str]

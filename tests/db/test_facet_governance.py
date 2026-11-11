@@ -14,9 +14,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from amane.db.models import (
     Actor,
+    Director,
     FacetKind,
+    FacetRule,
+    FacetRuleAction,
     Metadata,
     MetadataActor,
+    MetadataDirector,
     MetadataTag,
     Tag,
 )
@@ -48,6 +52,19 @@ async def _tag_projection(repo: Repository, metadata_id: int) -> list[tuple[int,
                 .join(Tag, col(MetadataTag.tag_id) == col(Tag.id))
                 .where(col(MetadataTag.metadata_id) == metadata_id)
                 .order_by(col(MetadataTag.position))
+            )
+        ).all()
+    return [(int(position), str(name)) for position, name in rows]
+
+
+async def _director_projection(repo: Repository, metadata_id: int) -> list[tuple[int, str]]:
+    async with repo._session() as session:
+        rows = (
+            await session.exec(
+                select(col(MetadataDirector.position), col(Director.name))
+                .join(Director, col(MetadataDirector.director_id) == col(Director.id))
+                .where(col(MetadataDirector.metadata_id) == metadata_id)
+                .order_by(col(MetadataDirector.position))
             )
         ).all()
     return [(int(position), str(name)) for position, name in rows]
@@ -124,6 +141,64 @@ class TestRenameProjection:
         assert await _tag_projection(repo, meta.id) == _expected(["Canonical", "Keep"])
         assert await repo.get_facet(FacetKind.TAG, canonical_id) is not None
 
+    @pytest.mark.parametrize("kind", [FacetKind.TAG, FacetKind.DIRECTOR])
+    @pytest.mark.parametrize(
+        "other_action",
+        [None, FacetRuleAction.ALIAS, FacetRuleAction.BLOCK],
+        ids=["unchanged", "scalar-alias", "actor-block"],
+    )
+    async def test_rename_back_rebuilds_unchanged_truth(
+        self,
+        repo: Repository,
+        kind: FacetKind,
+        other_action: FacetRuleAction | None,
+    ) -> None:
+        meta = await repo.upsert_metadata(
+            number="GOV-RN-BACK",
+            tags=["Keep", "Original"] if kind == FacetKind.TAG else [],
+            directors=["Keep", "Original"] if kind == FacetKind.DIRECTOR else [],
+            actors=["OldActor"],
+            studio="OldStudio",
+        )
+        assert meta.id is not None
+        facet_id = await _facet_id(repo, kind, "Original")
+        renamed = await repo.rename_facet(kind, facet_id, "Renamed")
+        assert renamed is not None and renamed.count == 1
+        before = await repo.get_metadata(meta.id)
+        assert before is not None
+        if other_action is not None:
+            async with repo._session() as session:
+                session.add(
+                    FacetRule(
+                        kind=FacetKind.STUDIO if other_action == FacetRuleAction.ALIAS else FacetKind.ACTOR,
+                        source_name="OldStudio" if other_action == FacetRuleAction.ALIAS else "OldActor",
+                        action=other_action,
+                        target_name="NewStudio" if other_action == FacetRuleAction.ALIAS else None,
+                    )
+                )
+                await session.commit()
+
+        restored = await repo.rename_facet(kind, facet_id, "Original")
+
+        got = await repo.get_metadata(meta.id)
+        assert got is not None
+        assert got.tags == before.tags
+        assert got.directors == before.directors
+        assert await _tag_projection(repo, meta.id) == _expected(got.tags)
+        assert await _director_projection(repo, meta.id) == _expected(got.directors)
+        assert restored is not None and restored.name == "Original" and restored.count == 0
+        canonical = await repo.get_facet(kind, await _facet_id(repo, kind, "Renamed"))
+        assert canonical is not None and canonical.id != facet_id and canonical.count == 1
+        assert got.actors == ([] if other_action == FacetRuleAction.BLOCK else ["OldActor"])
+        assert await _actor_projection(repo, meta.id) == _expected(got.actors)
+        assert got.studio == ("NewStudio" if other_action == FacetRuleAction.ALIAS else "OldStudio")
+        if other_action is None:
+            assert got.updated_at == before.updated_at
+        rules = await repo.list_facet_rules(kind)
+        assert [(rule.source_name, rule.action, rule.target_name) for rule in rules] == [
+            ("Original", FacetRuleAction.ALIAS, "Renamed")
+        ]
+
     async def test_rename_batch_does_not_rebuild_untouched_rows(self, repo: Repository) -> None:
         """一批影片共享同一标签: 改名后每行的真值与投影都逐项对应."""
         metas = [await repo.upsert_metadata(number=f"GOV-RN-B{i}", tags=["hot", f"t{i}"]) for i in range(20)]
@@ -169,6 +244,41 @@ class TestMergeProjection:
         assert got is not None
         assert got.tags == expected
         assert await _tag_projection(repo, meta.id) == _expected(expected)
+
+    @pytest.mark.parametrize("source_count", [500, 501])
+    async def test_merge_overlapping_chunks_with_other_kind_rule(self, repo: Repository, source_count: int) -> None:
+        meta = await repo.upsert_metadata(
+            number="GOV-MG-CHUNKS",
+            tags=[f"Source-{index}" for index in range(source_count)],
+            directors=["OldDirector", "KeepDirector"],
+        )
+        target_meta = await repo.upsert_metadata(number="GOV-MG-TARGET", tags=["Target"])
+        assert meta.id is not None and target_meta.id is not None
+        target_id = await _facet_id(repo, FacetKind.TAG, "Target")
+        sources, _ = await repo.list_facets(FacetKind.TAG, search="Source-", limit=source_count)
+        assert len(sources) == source_count
+        async with repo._session() as session:
+            session.add(
+                FacetRule(
+                    kind=FacetKind.DIRECTOR,
+                    source_name="OldDirector",
+                    action=FacetRuleAction.ALIAS,
+                    target_name="NewDirector",
+                )
+            )
+            await session.commit()
+
+        merged = await repo.merge_facets(FacetKind.TAG, target_id, [source.id for source in sources])
+
+        assert merged is not None and merged.count == 2
+        got = await repo.get_metadata(meta.id)
+        assert got is not None
+        assert got.tags == ["Target"]
+        assert got.directors == ["NewDirector", "KeepDirector"]
+        assert await _tag_projection(repo, meta.id) == _expected(got.tags)
+        assert await _director_projection(repo, meta.id) == _expected(got.directors)
+        assert await _tag_projection(repo, target_meta.id) == _expected(["Target"])
+        assert await repo.list_facets(FacetKind.TAG, search="Source-") == ([], 0)
 
     async def test_merge_actor_keeps_position_order(self, repo: Repository) -> None:
         meta = await repo.upsert_metadata(number="GOV-MGA-1", actors=["B", "A", "Other"])

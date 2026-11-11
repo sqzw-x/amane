@@ -432,8 +432,9 @@ async def _load_linked_facet_values(
     """受影响的影片真值六字段.
 
     只读治理需要的列: 逐部取 ``Metadata`` 会把 ``raw`` 等宽列一并读入, 万级关联时即成倍放大.
+    同一影片可命中多个来源分块, 按影片 id 去重.
     """
-    loaded: list[tuple[int, FacetFieldValues]] = []
+    loaded: dict[int, FacetFieldValues] = {}
     for chunk in chunks(list(unique_ids(link_ids))):
         relevant = col(Metadata.id).in_(select(spec.link.metadata_id).where(col(spec.link_fk).in_(chunk)))
         # 分两条取六列: 单条 select 的列数上限低于这里需要的列数.
@@ -463,20 +464,15 @@ async def _load_linked_facet_values(
             if metadata_id is None or metadata_id not in scalar_rows:
                 continue
             studio, publisher, series = scalar_rows[metadata_id]
-            loaded.append(
-                (
-                    metadata_id,
-                    FacetFieldValues(
-                        actors=list(actors or []),
-                        directors=list(directors or []),
-                        tags=list(tags or []),
-                        studio=studio,
-                        publisher=publisher,
-                        series=series,
-                    ),
-                )
+            loaded[metadata_id] = FacetFieldValues(
+                actors=list(actors or []),
+                directors=list(directors or []),
+                tags=list(tags or []),
+                studio=studio,
+                publisher=publisher,
+                series=series,
             )
-    return loaded
+    return list(loaded.items())
 
 
 async def _write_facet_values(
@@ -1161,10 +1157,10 @@ async def _rewrite_renamed_metadata(
     new_name: str,
     rules_by_kind: RulesByKind,
 ) -> None:
-    """改写改名涉及的影片真值; 只有名字序列变化的 kind 才重建投影.
+    """改写真值, 按最终实体与顺序重建投影.
 
-    先按"名字集合 / 顺序是否变化"分流: 实体原位改名时关联行的实体 id 与 position 都不变,
-    只批量写回真值列; 规则让名字增删或指向别的实体时仍按最终真值重建投影.
+    实体已经改名, 即使规则执行后的真值未变, 关联行也可能指向错误的名字;
+    本分类仅在原位改名仍满足最终真值时保留投影, 其它分类按真值变化重建.
     """
     rewrites: list[tuple[int, FacetFieldValues, FacetFieldValues]] = []
     rebuild: dict[FacetKind, list[tuple[int, list[str]]]] = {}
@@ -1172,14 +1168,12 @@ async def _rewrite_renamed_metadata(
         after = before.with_names(
             spec.kind, _replace_names_in_list(before.names(spec.kind), {old_name}, new_name)
         ).apply_rules(rules_by_kind)
-        if after == before:
-            continue
-        rewrites.append((metadata_id, before, after))
+        if after != before:
+            rewrites.append((metadata_id, before, after))
         in_place = _is_in_place_rename(before, after, spec.kind, old_name, new_name, rules_by_kind.get(spec.kind, {}))
         for kind in LINK_KINDS:
-            if kind == spec.kind and in_place:
-                continue
-            if before.names(kind) != after.names(kind):
+            needs_rebuild = not in_place if kind == spec.kind else before.names(kind) != after.names(kind)
+            if needs_rebuild:
                 rebuild.setdefault(kind, []).append((metadata_id, after.names(kind)))
     await _write_facet_values(session, rewrites, _utcnow())
     for kind, rows in rebuild.items():
