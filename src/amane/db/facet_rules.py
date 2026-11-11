@@ -17,7 +17,7 @@ class RuleEntry:
 type RulesBySource = Mapping[str, RuleEntry]
 type RulesByKind = Mapping[FacetKind, RulesBySource]
 
-# 真值字段对应的六个爬取侧分类; 治理按此顺序比较与写回.
+# 真值字段对应的六个爬取侧分类; ``FacetFieldValues.same_except`` 按此集合逐项比较.
 FACET_VALUE_KINDS: tuple[FacetKind, ...] = (
     FacetKind.ACTOR,
     FacetKind.DIRECTOR,

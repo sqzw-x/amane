@@ -437,7 +437,6 @@ async def _load_linked_facet_values(
     loaded: dict[int, FacetFieldValues] = {}
     for chunk in chunks(list(unique_ids(link_ids))):
         relevant = col(Metadata.id).in_(select(spec.link.metadata_id).where(col(spec.link_fk).in_(chunk)))
-        # 分两条取六列: 单条 select 的列数上限低于这里需要的列数.
         list_rows = (
             await session.exec(
                 select(col(Metadata.id), col(Metadata.actors), col(Metadata.directors), col(Metadata.tags)).where(
@@ -751,8 +750,8 @@ async def _upsert_block(session: AsyncSession, kind: FacetKind, name: str) -> se
 async def _strip_names_from_link_metadata(session: AsyncSession, spec: _LinkFacetSpec, names: set[str]) -> None:
     """从真值剔除名字并删除对应关联行; 不逐部影片重建投影.
 
-    剔除只会让名字从列表里消失, 剩余名字的相对顺序不变: 关联行按实体整体删除即可,
-    真值按变化列批量写回. 与逐个重建投影相比, 代价与命中的影片数无关.
+    剔除只会让名字从列表里消失, 剩余名字的相对顺序不变: 关联行按实体整体删除,
+    真值按变化列批量写回, 代价与命中的影片数无关.
     """
     if not names or spec.get_names is None or spec.build is None:
         return
@@ -1205,8 +1204,10 @@ async def rename_link_facet(
     facet_id: int,
     new_name: str,
 ) -> FacetItem | None:
-    """实体原位改名: 真值里的旧名换成新名, 只在实体或顺序变化时重建投影.
+    """实体原位改名: 真值里的旧名换成新名.
 
+    本分类的投影只在原位改名时保留 (只有旧名换成新名, 实体与 position 都不变); 新名经规则
+    解析后指向别的实体、真值因此增删或换序时, 即使真值文本未变也要按最终真值重建.
     调用方须先取得写锁并负责提交.
     """
     entity = await session.get(spec.entity, facet_id)

@@ -1,8 +1,7 @@
 """万级关联下的分类治理: 写锁时长与投影一致性.
 
 写锁从 ``BEGIN IMMEDIATE`` 持有到 ``commit``, 因此公开方法的墙钟时间就是写锁时长.
-10,000 部影片逐行重建投影的旧实现约 48s (2026-11 审计按 1148 部 6.1s 线性外推),
-预算按 15s 设定: 远低于逐部处理的量级, 又能容纳慢机器带来的数倍差异.
+同一数据量逐行重建投影需要数十秒; 预算取 15s, 低于该量级一个数量级, 又能容纳慢机器.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ LOCK_BUDGET_S = 15.0
 async def _seed_shared_tag(repo: Repository) -> tuple[int, int]:
     """建 10,000 部影片: 全部挂 ``hot``, 同时全部挂 ``shared`` (合并时必然要去重).
 
-    直接写表而不走 ``upsert_metadata``: 逐条建索引不是被测对象, 也不该拖慢用例.
+    直接写表而不走 ``upsert_metadata``: 逐条投影重建不是被测对象, 也不该拖慢用例.
     """
     async with repo._session() as session:
         connection = await session.connection()
