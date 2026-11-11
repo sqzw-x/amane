@@ -1,6 +1,6 @@
 """封面角标 PNG: `{data_dir}/watermarks/{stem}.png` 同名则覆盖包内文件.
 
-文件名与 FileInfo 相位对齐 (全小写): subtitle / uncensored / cracked / leaked,
+文件名与 FileInfo 相位对齐 (全小写): subtitle / uncensored / cracked / ltx / leaked,
 以及分辨率 `definition.casefold()` (内置覆盖 DEFINITION_VALUES 的每一档).
 缺文件则跳过该枚, 不回退文字. 有码 / VR / 3D 无对应相位, 不内置.
 """

@@ -30,8 +30,9 @@ def test_is_stamp_stem(stem: str, expected: bool) -> None:
     assert is_stamp_stem(stem) is expected
 
 
-def test_load_builtin_subtitle() -> None:
-    img = load_stamp("subtitle", None)
+@pytest.mark.parametrize("stem", ["subtitle", "ltx"])
+def test_load_builtin_stamp(stem: str) -> None:
+    img = load_stamp(stem, None)
     assert img is not None
     assert img.mode == "RGBA"
     assert img.getbbox() is not None

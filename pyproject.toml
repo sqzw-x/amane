@@ -74,6 +74,7 @@ packages = ["src/amane"]
 "src/amane/media/watermarks/subtitle.png" = "amane/media/watermarks/subtitle.png"
 "src/amane/media/watermarks/uncensored.png" = "amane/media/watermarks/uncensored.png"
 "src/amane/media/watermarks/cracked.png" = "amane/media/watermarks/cracked.png"
+"src/amane/media/watermarks/ltx.png" = "amane/media/watermarks/ltx.png"
 "src/amane/media/watermarks/leaked.png" = "amane/media/watermarks/leaked.png"
 "src/amane/media/watermarks/4k.png" = "amane/media/watermarks/4k.png"
 "src/amane/media/watermarks/8k.png" = "amane/media/watermarks/8k.png"
