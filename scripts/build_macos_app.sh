@@ -35,6 +35,14 @@ if [[ ! -f "$ROOT/assets/app.icns" ]]; then
   exit 1
 fi
 
+# 依赖必须按最低支持系统 (macOS 13) 装: 打包机是更新的系统, 默认会选到 numpy / orjson 的
+# 高版本变体, 源码构建 (watchdog) 也会以打包机的系统为部署目标, 产物便只能在打包机同版本上启动.
+case "$(uname -m)" in
+  arm64) UV_PLATFORM=aarch64-apple-darwin ;;
+  *) UV_PLATFORM=x86_64-apple-darwin ;;
+esac
+MACOSX_DEPLOYMENT_TARGET=13.0 uv sync --all-extras --all-groups --python-platform "$UV_PLATFORM"
+
 rm -rf "$WORK" "$OUT"
 mkdir -p "$WORK" "$(dirname "$OUT")"
 
@@ -119,7 +127,7 @@ cat > "$UI_APP/Contents/Info.plist" <<'UIEOF'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
-  <string>12.0</string>
+  <string>13.0</string>
   <key>LSUIElement</key>
   <true/>
 </dict>
@@ -148,7 +156,7 @@ cat > "$OUT/Contents/Info.plist" <<EOF
   <key>CFBundleShortVersionString</key>
   <string>${APP_VERSION}</string>
   <key>LSMinimumSystemVersion</key>
-  <string>12.0</string>
+  <string>13.0</string>
   <key>LSUIElement</key>
   <true/>
   <key>LSMultipleInstancesProhibited</key>
