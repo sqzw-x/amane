@@ -9,7 +9,7 @@ from PIL import Image, ImageOps
 
 from ..enums import WatermarkCorner, WatermarkKind
 from ..parsing import ContentType, FileInfo, Mosaic, shows_uncensored
-from .watermarks import DEFINITION_ALIASES, load_stamp
+from .watermarks import load_stamp
 
 logger = structlog.get_logger()
 
@@ -329,7 +329,7 @@ def apply_cover_watermarks(
         gap = max(4, target_h // 10)
         grouped: dict[WatermarkCorner, list[Image.Image]] = {corner: [] for corner in WatermarkCorner}
         for stem in stems:
-            raw = load_stamp(stem, watermark_dir, DEFINITION_ALIASES.get(stem, ()))
+            raw = load_stamp(stem, watermark_dir)
             if raw is None:
                 continue
             fitted = _fit_stamp(raw, target_h)

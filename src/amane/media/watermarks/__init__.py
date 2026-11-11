@@ -2,24 +2,26 @@
 
 文件名与 FileInfo 相位对齐 (全小写): subtitle / uncensored / cracked / leaked,
 以及分辨率 `definition.casefold()` (内置覆盖 DEFINITION_VALUES 的每一档).
-合并档位前的旧名仍在 `DEFINITION_ALIASES` 里: 用户目录整层优先, 层内先规范名再旧名,
+档位名先归一, 旧名 (`sd` / `hd`) 仍可作 stem 或文件名: 用户目录整层优先, 层内先规范名再别名,
 因此只替换了 `sd.png` 的用户不会被内置的 `480p.png` 抢先生效.
 缺文件则跳过该枚, 不回退文字. 有码 / VR / 3D 无对应相位, 不内置.
 """
 
-from collections.abc import Sequence
 from importlib.resources import files
 from pathlib import Path
 
 import structlog
 from PIL import Image
 
+from ...parsing import LEGACY_DEFINITIONS
+
 logger = structlog.get_logger()
 
 USER_DIRNAME = "watermarks"
 
-#: 合并档位前的水印名, 只在查找时作为后备; 写入与文档都以 DEFINITION_VALUES 为准.
-DEFINITION_ALIASES: dict[str, tuple[str, ...]] = {"480p": ("sd",), "720p": ("hd",)}
+#: 档位名的小写别名, 由旧档位表派生; 只在查找时作为后备.
+_ALIASES: dict[str, tuple[str, ...]] = {tier: (alias.casefold(),) for alias, tier in LEGACY_DEFINITIONS.items()}
+_CANONICAL_STEM: dict[str, str] = {alias.casefold(): tier for alias, tier in LEGACY_DEFINITIONS.items()}
 
 _STEM_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
 
@@ -32,9 +34,10 @@ def is_stamp_stem(stem: str) -> bool:
     return bool(stem) and all(ch in _STEM_CHARS for ch in stem)
 
 
-def load_stamp(stem: str, user_dir: Path | None, aliases: Sequence[str] = ()) -> Image.Image | None:
-    """用户文件优先; 损坏则回退内置; 都没有则 None. 别名只在本层内生效."""
-    names = [name for name in (stem, *aliases) if is_stamp_stem(name)]
+def load_stamp(stem: str, user_dir: Path | None) -> Image.Image | None:
+    """stem 先归一到现档位名; 用户文件优先, 层内规范名优先于别名. 都没有则 None."""
+    canonical = _CANONICAL_STEM.get(stem, stem)
+    names = [name for name in (canonical, *_ALIASES.get(canonical, ())) if is_stamp_stem(name)]
     if not names:
         return None
     if user_dir is not None:

@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 import pytest
 from PIL import Image
 
-from amane.media.watermarks import DEFINITION_ALIASES, is_stamp_stem, load_stamp
-from amane.parsing import DEFINITION_VALUES
+from amane.media.watermarks import is_stamp_stem, load_stamp
+from amane.parsing import DEFINITION_VALUES, LEGACY_DEFINITIONS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -60,26 +60,24 @@ def test_user_file_wins(stem: str, tmp_path: Path) -> None:
     assert pixel == (0, 255, 0, 255)
 
 
-def test_every_alias_key_is_a_tier() -> None:
-    """别名挂在现档位名下; 档位再改名时这里会先失败."""
-    assert set(DEFINITION_ALIASES) <= set(DEFINITION_VALUES)
+@pytest.mark.parametrize(("alias", "tier"), LEGACY_DEFINITIONS.items())
+def test_legacy_stem_resolves_to_current_stamp(alias: str, tier: str, tmp_path: Path) -> None:
+    """旧名既可作为传入的 stem, 也可作为用户目录里的文件名."""
+    assert load_stamp(alias.casefold(), None) is not None
 
-
-@pytest.mark.parametrize(("stem", "alias"), list(DEFINITION_ALIASES.items()))
-def test_user_alias_beats_builtin_canonical(stem: str, alias: tuple[str, ...], tmp_path: Path) -> None:
-    """只替换了旧名的用户仍生效: 用户层整层先于内置层."""
     user_dir = tmp_path / "watermarks"
     user_dir.mkdir()
-    Image.new("RGBA", (8, 8), (0, 255, 0, 255)).save(user_dir / f"{alias[0]}.png")
-    img = load_stamp(stem, user_dir, alias)
+    Image.new("RGBA", (8, 8), (0, 255, 0, 255)).save(user_dir / f"{alias.casefold()}.png")
+    img = load_stamp(tier, user_dir)
     assert img is not None
     assert img.getpixel((0, 0)) == (0, 255, 0, 255)
 
 
 def test_missing_alias_file_falls_back_to_builtin(tmp_path: Path) -> None:
+    """用户目录里没有对应文件时仍取内置图, 不会因为查别名而落空."""
     user_dir = tmp_path / "watermarks"
     user_dir.mkdir()
-    img = load_stamp("480p", user_dir, DEFINITION_ALIASES["480p"])
+    img = load_stamp("480p", user_dir)
     assert img is not None
     assert img.getpixel((0, 0)) != (0, 255, 0, 255)
 
