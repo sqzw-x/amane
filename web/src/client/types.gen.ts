@@ -6274,7 +6274,7 @@ export type ListMediaData = {
         /**
          * Definition
          *
-         * Filter by definition (8K/4K/1440p/1080p/720p/480p); SD/HD aliases)
+         * Filter by definition (8K/4K/1440p/1080p/720p/480p; SD/HD aliases)
          */
         definition?: string | null;
         /**
@@ -6573,7 +6573,7 @@ export type ListMetadataData = {
         /**
          * Definition
          *
-         * Filter by linked file definition (8K/4K/1440p/1080p/720p/480p); SD/HD aliases)
+         * Filter by linked file definition (8K/4K/1440p/1080p/720p/480p; SD/HD aliases)
          */
         definition?: string | null;
         /**

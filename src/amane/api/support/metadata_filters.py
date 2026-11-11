@@ -100,7 +100,7 @@ async def parse_metadata_filters(
         bool | None, Query(description="Filter by uncensored number (own content type or linked file marker)")
     ] = None,
     definition: Annotated[
-        str | None, Query(description="Filter by linked file definition (8K/4K/1440p/1080p/720p/480p); SD/HD aliases)")
+        str | None, Query(description="Filter by linked file definition (8K/4K/1440p/1080p/720p/480p; SD/HD aliases)")
     ] = None,
     content_type: Annotated[ContentType | None, Query(description="Filter by number content type")] = None,
     saved_query_id: Annotated[
