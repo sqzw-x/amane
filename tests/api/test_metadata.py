@@ -405,3 +405,39 @@ class TestMetadataHttp:
         listed = await client.get("metadata?search=LOCK-102")
         assert listed.status_code == 200
         assert listed.json()["items"][0]["locked_fields"] == ["title"]
+
+
+class TestMetadataPatch:
+    """PATCH 只写显式提供的字段: 省略键不改, 可空列给 null 即清空."""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_writes_only_given_fields(self, client: AsyncClient, repo: Repository):
+        cases = [
+            ({"title": "新标题"}, {"title": "新标题", "studio": "原片商"}),
+            ({"title": None}, {"title": None, "studio": "原片商"}),
+            ({"studio": None}, {"studio": None, "title": "原标题"}),
+            ({"release": None}, {"release": None}),
+        ]
+        for index, (payload, expected) in enumerate(cases):
+            meta = await repo.upsert_metadata(
+                number=f"PATCH-W-{index}", title="原标题", studio="原片商", release="2020-01-15"
+            )
+            assert meta.id is not None
+
+            resp = await client.patch(f"metadata/{meta.id}", json=payload)
+            assert resp.status_code == 200
+            detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+            for field, value in expected.items():
+                assert detail[field] == value, (payload, field)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_rejects_empty_body_and_invalid_values(self, client: AsyncClient, repo: Repository):
+        """number 不在可写字段集内, 其显式 null 落到「没有需要修改的字段」; actors 等非空列由派生模型拒绝."""
+        meta = await repo.upsert_metadata(number="PATCH-R", title="原标题")
+        assert meta.id is not None
+
+        for payload in ({}, {"number": None}, {"actors": None}, {"release": 20200101}):
+            resp = await client.patch(f"metadata/{meta.id}", json=payload)
+            assert resp.status_code == 422, payload
+        detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert detail["title"] == "原标题"

@@ -328,10 +328,11 @@ async def get_metadata(metadata_id: int, repo: RepoDep) -> MetadataDetailRespons
 
 @router.patch("/{metadata_id}")
 async def update_metadata(metadata_id: int, req: PartialMetadata, repo: RepoDep) -> MetadataResponse:
-    updates = cast("MetadataFields", {k: v for k, v in req.model_dump().items() if v is not None})
+    # exclude_unset 区分省略键与显式 null; 三态见 docs/dev/data-model.md.
+    updates = cast("MetadataFields", req.model_dump(exclude_unset=True))
     if not updates:
         raise HTTPException(status_code=422, detail="没有需要修改的字段")
-    if "release" in updates:
+    if "release" in updates and updates["release"] is not None:
         raw_release = updates["release"]
         if isinstance(raw_release, str):
             normalized = normalize_calendar_date(raw_release)

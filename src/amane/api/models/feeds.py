@@ -1,4 +1,5 @@
 import re
+from collections.abc import Collection
 from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -13,6 +14,26 @@ from ...utils.model import create_partial_model
 
 _DEFAULT_USE_CACHE = {CacheKind.metadata, CacheKind.trans}
 _GROUP_MAX_LEN = 256
+_INTERVAL_SECONDS_MIN = 60
+_INTERVAL_SECONDS_MAX = 86400
+_CACHE_KIND_ORDER = (CacheKind.metadata, CacheKind.trans)
+"""缓存种类的固定顺序; 库内与响应都按此顺序出现."""
+
+
+def use_cache_values(kinds: Collection[CacheKind]) -> list[str]:
+    """把缓存种类集合按固定顺序摊成名称列表 (库内只存名称)."""
+    return [kind.value for kind in _CACHE_KIND_ORDER if kind in kinds]
+
+
+def _parse_use_cache(values: Collection[str]) -> list[str]:
+    """非法名称报错而不是丢弃: PATCH 里静默忽略等于没改."""
+    kinds: set[CacheKind] = set()
+    for value in values:
+        try:
+            kinds.add(CacheKind(value))
+        except ValueError as exc:
+            raise ValueError(f"use_cache 只能是 {' / '.join(kind.value for kind in _CACHE_KIND_ORDER)}") from exc
+    return use_cache_values(kinds)
 
 
 def normalize_feed_group(value: str | None) -> str:
@@ -60,7 +81,7 @@ class FeedCreateRequest(BaseModel):
     group: str = ""
     enabled: bool = True
     auto_enqueue: bool = True
-    interval_seconds: int = Field(default=3600, ge=60, le=86400)
+    interval_seconds: int = Field(default=3600, ge=_INTERVAL_SECONDS_MIN, le=_INTERVAL_SECONDS_MAX)
     number_pattern: str | None = None
     content_type: ContentType | None = None
     use_cache: set[CacheKind] = Field(default_factory=lambda: set(_DEFAULT_USE_CACHE))
@@ -88,9 +109,10 @@ class FeedCreateRequest(BaseModel):
 
 
 if TYPE_CHECKING:
-    type FeedUpdateRequest = Feed
+    type _FeedUpdateRequest = Feed
 
-FeedUpdateRequest = create_partial_model(
+# 可写字段从 Feed 派生, 与 FeedCreateRequest 覆盖同一批列.
+_FeedUpdateRequest = create_partial_model(
     Feed,
     ignore_fields=(
         "id",
@@ -101,8 +123,50 @@ FeedUpdateRequest = create_partial_model(
         "last_error",
         "last_enqueued",
     ),
-    partial_cls_name="FeedUpdateRequest",
+    partial_cls_name="FeedUpdateRequestBase",
 )
+
+
+class FeedUpdateRequest(_FeedUpdateRequest):  # pyright: ignore[reportGeneralTypeIssues]  # 动态生成的 partial 基类
+    # 校验必须落在请求模型: 路由里抛出的 ValueError 是 500, 而同一非法值经 POST 是 422.
+    # 校验器都放行 null (显式 null 由派生模型的非空列检查拒绝), 保证只作用于显式提供的值.
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str | None) -> str | None:
+        return None if value is None else value.strip()
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, value: str | None) -> str | None:
+        return None if value is None else _validate_http_url(value)
+
+    @field_validator("group")
+    @classmethod
+    def _group(cls, value: str | None) -> str | None:
+        return None if value is None else normalize_feed_group(value)
+
+    @field_validator("interval_seconds")
+    @classmethod
+    def _interval_seconds(cls, value: int | None) -> int | None:
+        if value is not None and not _INTERVAL_SECONDS_MIN <= value <= _INTERVAL_SECONDS_MAX:
+            raise ValueError(f"interval_seconds 必须在 {_INTERVAL_SECONDS_MIN} 到 {_INTERVAL_SECONDS_MAX} 之间")
+        return value
+
+    @field_validator("number_pattern")
+    @classmethod
+    def _pattern(cls, value: str | None) -> str | None:
+        return _validate_number_pattern(value)
+
+    @field_validator("use_cache")
+    @classmethod
+    def _use_cache(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else _parse_use_cache(value)
+
+    @field_validator("ignore_keywords")
+    @classmethod
+    def _ignore_keywords(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else normalize_ignore_keywords(value)
 
 
 class FeedResponse(BaseModel):
