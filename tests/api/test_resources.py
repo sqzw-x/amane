@@ -56,24 +56,21 @@ async def test_serve_resource_etag(app: FastAPI, client: AsyncClient):
 
 
 @pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.parametrize(
-    ("url_hash", "status"),
-    [
-        ("deadbeefdeadbeef", 404),
-        ("%", 422),
-        ("%2A", 422),
-        ("%2e%2e", 422),
-        ("DEADBEEFDEADBEEF", 422),
-        ("deadbeefdeadbee", 422),
-        ("deadbeefdeadbeef0", 422),
-        ("deadbeefdeadbeeg", 422),
-    ],
-    ids=["missing", "like-wildcard", "glob-star", "parent", "uppercase", "short", "long", "non-hex"],
-)
-async def test_serve_resource_hash_format(client: AsyncClient, url_hash: str, status: int):
+async def test_serve_resource_hash_format(client: AsyncClient):
     """hash 只接受 _url_hash 的形状: 格式不符由路径校验挡下, 形状合法的才落到查询."""
-    resp = await client.get(f"resources/{url_hash}")
-    assert resp.status_code == status
+    cases = [
+        ("deadbeefdeadbeef", 404, "missing"),
+        ("%", 422, "like-wildcard"),
+        ("%2A", 422, "glob-star"),
+        ("%2e%2e", 422, "parent"),
+        ("DEADBEEFDEADBEEF", 422, "uppercase"),
+        ("deadbeefdeadbee", 422, "short"),
+        ("deadbeefdeadbeef0", 422, "long"),
+        ("deadbeefdeadbeeg", 422, "non-hex"),
+    ]
+    for url_hash, status, label in cases:
+        resp = await client.get(f"resources/{url_hash}")
+        assert resp.status_code == status, label
 
 
 class TestProxyImage:
