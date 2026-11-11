@@ -255,6 +255,58 @@ class TestGetByUrlHash:
     async def test_missing_hash_returns_none(self, resource_store: ResourceStore):
         assert await resource_store.get_by_url_hash("deadbeefdeadbeef") is None
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "url_hash",
+        [
+            "",
+            "%",
+            "*",
+            "?",
+            "..",
+            "ab%",
+            "ab_",
+            "DEADBEEFDEADBEEF",
+            "deadbeefdeadbee",
+            "deadbeefdeadbeef0",
+            "deadbeefdeadbeeg",
+        ],
+        ids=[
+            "empty",
+            "like-wildcard",
+            "glob-star",
+            "glob-question",
+            "parent",
+            "shard-like",
+            "shard-underscore",
+            "uppercase",
+            "short",
+            "long",
+            "non-hex",
+        ],
+    )
+    async def test_malformed_hash_returns_none(self, resource_store: ResourceStore, url_hash: str):
+        """形状不符一律当不存在: GLOB 的 `*` / `?` / `[` 与大小写都会让匹配越出该 hash 的分片."""
+        assert await resource_store.get_by_url_hash(url_hash) is None
+
+    @pytest.mark.asyncio
+    async def test_wildcard_does_not_reach_existing_record(self, resource_store: ResourceStore):
+        """库里有可命中的资源时, 通配输入也不能靠前缀把它取出来."""
+
+        async def producer(dest: Path) -> bool:
+            dest.write_bytes(b"img")
+            return True
+
+        res = await resource_store.acquire_derived("https://s/t.jpg", "crop", "0.7", producer)
+        assert res is not None
+        h = ResourceStore.url_hash(res.url)
+
+        for probe in ("%", "*", f"{h[:2]}%", f"{h[:2]}*", f"{h[:-1]}*"):
+            assert await resource_store.get_by_url_hash(probe) is None, probe
+
+        found = await resource_store.get_by_url_hash(h)
+        assert found is not None and found[0].url == res.url
+
 
 class TestInternalUrl:
     @pytest.mark.parametrize(

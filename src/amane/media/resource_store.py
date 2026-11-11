@@ -7,6 +7,7 @@
 
 import asyncio
 import hashlib
+import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -55,6 +56,12 @@ def internal_url_hash(url: str) -> str | None:
 
 def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:16]
+
+
+URL_HASH_PATTERN = r"^[0-9a-f]{16}$"
+"""资源 hash 的形状, 与 ``_url_hash`` 一致; 路由按它约束路径参数, 查询按它拒绝越出分片的输入."""
+
+_URL_HASH_RE = re.compile(URL_HASH_PATTERN)
 
 
 def derived_locator(src_url: str, op: str, args: str) -> str:
@@ -138,7 +145,7 @@ class ResourceStore:
         return self._base_dir / h[:2] / f"{h}{suffix}"
 
     def _relative_path(self, full_path: Path) -> str:
-        # 必须用 POSIX 分隔符; 否则 Windows 反斜杠路径与 LIKE '{h[:2]}/{h}.%' 匹配不到.
+        # 必须用 POSIX 分隔符; 否则 Windows 反斜杠路径与 GLOB '{h[:2]}/{h}.*' 匹配不到.
         return full_path.relative_to(self._base_dir).as_posix()
 
     def full_path(self, resource: Resource) -> Path:
@@ -274,10 +281,18 @@ class ResourceStore:
             return list(result.all())
 
     async def get_by_url_hash(self, url_hash: str) -> tuple[Resource, Path] | None:
-        # 文件名即 _url_hash(url); 按前缀匹配定位, 无需在 DB 存 hash 列.
+        """按 hash 定位资源; 文件名即 ``_url_hash(url)``, 无需在 DB 存 hash 列.
+
+        形状不符的输入直接当作不存在: GLOB 的 ``*`` / ``?`` / ``[`` 与大小写都会让匹配越出该 hash 的
+        分片, 命中别的资源的文件.
+        """
+        if _URL_HASH_RE.fullmatch(url_hash) is None:
+            return None
         async with self._session() as session:
-            pattern = f"{url_hash[:2]}/{url_hash}.%"
-            result = await session.exec(select(Resource).where(col(Resource.file_path).like(pattern)))
+            # GLOB 区分大小写且前缀是字面量, 命中 ix_resources_file_path 的范围查找; LIKE 不区分大小写,
+            # 普通 B-tree 索引用不上.
+            pattern = f"{url_hash[:2]}/{url_hash}.*"
+            result = await session.exec(select(Resource).where(col(Resource.file_path).op("GLOB")(pattern)))
             record = result.first()
             if record is None:
                 return None

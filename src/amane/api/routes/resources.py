@@ -2,15 +2,16 @@
 SR 可能就地覆盖 (URL 不变, 字节变), 须 ETag + no-cache 再验证.
 """
 
-from pathlib import Path
+import pathlib
 from typing import Annotated
 from urllib.parse import urlparse
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
 from fastapi.responses import FileResponse
 
 from ...media.file_type import detect_media_type, is_image_mime
+from ...media.resource_store import URL_HASH_PATTERN
 from ...net.egress import EgressPolicy
 from ...net.errors import EgressRejected, RequestError
 from ..deps import RuntimeDep
@@ -28,7 +29,7 @@ _PROXY_MAX_BYTES = 32 * 1024 * 1024
 """代理图片的正文上限. 超过即中止下载, 不把上游自称的长度当作可信边界."""
 
 
-def _image_response(request: Request, url: str, path: Path, content_hash: str | None) -> Response:
+def _image_response(request: Request, url: str, path: pathlib.Path, content_hash: str | None) -> Response:
     # 只回放按内容判定为图片的文件, 扩展名不作依据 (URL 路径由上游决定). 地址判定无法防御 DNS rebinding,
     # 也无法约束由代理解析的目标; 缓存命中的资源还可能来自不做地址判定的刮削下载.
     if not is_image_mime(detect_media_type(path)):
@@ -89,7 +90,7 @@ async def proxy_image(
 
     # 同 URL 进行中的 acquire 合并为一次; 并发额度只由真正发起下载的那一方持有,
     # 否则等待同一 URL 的请求也会占额度.
-    async def _acquire() -> Path | None:
+    async def _acquire() -> pathlib.Path | None:
         async with runtime.proxy_downloads:
             return await store.acquire(
                 url, runtime.web_client, egress=_PROXY_EGRESS, max_bytes=_PROXY_MAX_BYTES, image_only=True
@@ -109,7 +110,11 @@ async def proxy_image(
 
 
 @router.get("/{url_hash}")
-async def serve_resource(url_hash: str, request: Request, runtime: RuntimeDep) -> Response:
+async def serve_resource(
+    url_hash: Annotated[str, Path(pattern=URL_HASH_PATTERN)],
+    request: Request,
+    runtime: RuntimeDep,
+) -> Response:
     found = await runtime.resource_store.get_by_url_hash(url_hash)
     if found is None:
         raise HTTPException(status_code=404, detail="资源不存在")
