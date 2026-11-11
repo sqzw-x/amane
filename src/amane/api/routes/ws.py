@@ -27,7 +27,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         if not hmac.compare_digest(ws.cookies.get(API_TOKEN_COOKIE, ""), token):
             await ws.close(code=1008)  # policy violation
             return
-        # 握手同样按来源检查: 同站其它端口 / 跨站页面的 WS 不得借 cookie 接入.
+        # 握手同样按来源检查, 跨站页面不得借 cookie 接入
         if not browser_source_allowed(ws.headers, runtime.config.cold.trusted_origins):
             await ws.close(code=1008)
             return

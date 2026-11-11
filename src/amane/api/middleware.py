@@ -105,8 +105,8 @@ class CORSPolicyMiddleware:
     """按 token 状态决定是否放开跨源.
 
     token 开启时沿用 ``allow_origins=["*"]`` (无凭据, 跨源也读不到 cookie). token 关闭时任何人可直接读写 API,
-    此时跨源放开等于让任意页面操作本机服务, 因此只允许 cold ``cors_origins``; 默认空 = 不返回 CORS 头,
-    预检不通过, 同源页面照常可用. ``runtime.api_token`` 请求期才存在, 故不能用 ``create_app`` 的配置构造 CORS.
+    跨源放开等于让任意页面操作本机服务, 因此只允许配置的 ``cors_origins``; 默认空 = 不返回 CORS 头, 预检不通过,
+    同源页面照常可用. ``runtime.api_token`` 只在请求期存在, 故不能在 ``create_app`` 里构造静态 CORS.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -187,7 +187,7 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
                 )
             return response
         if _token_matches(request.cookies.get(API_TOKEN_COOKIE), token):
-            # cookie 是浏览器凭证: 非安全方法须来自同源页面. 同站另一端口的页面在 SameSite=Lax 下同样会带 cookie.
+            # cookie 是浏览器凭证, 非安全方法须来自同源页面
             if request.method not in _SAFE_METHODS and not browser_source_allowed(
                 request.headers, request.app.state.runtime.config.cold.trusted_origins
             ):

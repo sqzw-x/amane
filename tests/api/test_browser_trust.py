@@ -1,11 +1,6 @@
-"""浏览器信任边界: cookie 写请求的来源检查与 token 关闭时的 CORS.
-
-信任模型见 docs/dev/api.md: SameSite=Lax 只挡跨站, 同站其它端口的页面同样会带 cookie;
-token 关闭时 API 没有凭证门槛, 跨源放开等于让任意页面操作本机服务.
-"""
+"""浏览器信任边界: cookie 写请求的来源检查与 token 关闭时的 CORS; 契约见 docs/dev/api.md."""
 
 from contextlib import asynccontextmanager
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -16,10 +11,8 @@ from starlette.websockets import WebSocketDisconnect
 
 from amane.api.middleware import API_TOKEN_COOKIE
 from amane.api.routes import API_PREFIX
-from amane.api.routes.ws import router as ws_router
-from amane.config import ColdSettings, ConfigManager, HotSettings
-from amane.events import EventBus
-from tests.api.conftest import make_app
+from amane.config import HotSettings
+from tests.api.conftest import make_app, ws_app
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -133,24 +126,11 @@ class TestCookieWriteSource:
             assert resp.status_code == 401
 
 
-def _ws_app(*, token: str | None, trusted_origins: list[str] | None = None) -> FastAPI:
-    """最小 WS app: 端点在握手内自行校验, 不经 HTTP 中间件."""
-    app = FastAPI()
-    app.include_router(ws_router)
-    cold = ColdSettings(trusted_origins=trusted_origins or [])
-    app.state.runtime = SimpleNamespace(
-        api_token=token,
-        event_bus=EventBus(),
-        config=ConfigManager(cold=cold, hot=HotSettings()),
-    )
-    return app
-
-
 class TestWebSocketSource:
     """WS 握手带 cookie 时同样拒绝同站 / 跨站来源."""
 
     def test_origin_checked(self):
-        app = _ws_app(token=TOKEN)
+        app = ws_app(token=TOKEN)
         with TestClient(app) as client:
             rejected = [
                 {"Sec-Fetch-Site": "same-site"},
@@ -179,7 +159,7 @@ class TestWebSocketSource:
                     pass
 
     def test_configured_origins(self):
-        app = _ws_app(token=TOKEN, trusted_origins=["http://ui.example:4000"])
+        app = ws_app(token=TOKEN, trusted_origins=["http://ui.example:4000"])
         with TestClient(app) as client:
             for extra in [{"Origin": "http://localhost:5173"}, {"Origin": "http://evil.example"}]:
                 with (

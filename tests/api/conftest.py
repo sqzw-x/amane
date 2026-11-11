@@ -4,23 +4,25 @@
 """
 
 import os
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
 import pytest_asyncio
 import tomli_w
+from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 
 from amane.api.app import create_app
 from amane.api.routes import API_PREFIX
-from amane.config import HotSettings
+from amane.api.routes.ws import router as ws_router
+from amane.config import ColdSettings, ConfigManager, HotSettings
+from amane.events import EventBus
 from amane.net.errors import FailureKind, RequestError, RequestFailure
 from tests.schema_template import copy_schema
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    from fastapi import FastAPI
 
     from amane.db.repository import Repository
 
@@ -68,6 +70,18 @@ def make_app(
     copy_schema(data_dir / "amane.db")
 
     return create_app()
+
+
+def ws_app(*, token: str | None, trusted_origins: list[str] | None = None) -> FastAPI:
+    """最小 WS app: 握手里自行校验, 不经 HTTP 中间件链."""
+    app = FastAPI()
+    app.include_router(ws_router)
+    app.state.runtime = SimpleNamespace(
+        api_token=token,
+        event_bus=EventBus(),
+        config=ConfigManager(cold=ColdSettings(trusted_origins=trusted_origins or []), hot=HotSettings()),
+    )
+    return app
 
 
 class _SilentFeedHttp:
