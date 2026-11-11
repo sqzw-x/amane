@@ -14,7 +14,7 @@ from ..repo_types import _TASK_SORT_COLUMNS, _order_clause, _utcnow
 from .base import RepositoryMixinBase, chunks
 
 _ACTIVE_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING)
-# 单条 INSERT 的行数上限. 每行至多 8 个绑定变量, 留出余量后仍低于连接级上限被调低到 1000 的情形.
+# 单条 INSERT 的行数: 每行至多 8 个绑定变量, 100 行合 800, 仍在 SQLite 旧默认的 999 变量上限内.
 _INSERT_CHUNK_SIZE = 100
 # 互斥键在 payload 里; 同键已有 queued/running 则复用, 不另建行.
 # 其余类型每次新建; 同库串行由 handler 内的锁保证.

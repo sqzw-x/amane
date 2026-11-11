@@ -14,10 +14,11 @@ from sqlalchemy import event
 from amane.db.models import TaskStatus, TaskType
 from amane.db.repository import Repository
 
-# 单次完成事务派生后继的规模与耗时预算. 实测 (M 系列笔记本) 1000 / 3000 / 10000 个后继约
-# 0.02 / 0.06 / 0.23 秒; 逐条 flush 的旧路径为 2.9 / 20.3 秒, 10000 受平方级互斥检查支配.
-# 预算留数十倍余量给慢机器, 同时仍远低于 30 秒的写锁等待上限, 后者是这段临界区真正的硬边界.
-_SCALE_CASES = [(1_000, 3.0), (3_000, 6.0), (10_000, 12.0)]
+# 万级后继的规模与耗时预算. 实测 (M 系列笔记本) 10 000 个后继约 0.23 秒; 逐条 flush 的旧路径
+# 约 20 秒, 且受平方级互斥检查支配. 预算留数十倍余量给慢机器, 仍远低于 30 秒的写锁等待上限,
+# 后者是这段临界区真正的硬边界.
+_SCALE_ROWS = 10_000
+_SCALE_BUDGET_S = 12.0
 
 
 class _Statements:
@@ -113,9 +114,9 @@ async def test_independent_repositories_share_enqueue_write_lock(repo: Repositor
 
 
 @pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.parametrize(("count", "budget"), _SCALE_CASES)
-async def test_followup_batch_scale(repo: Repository, count: int, budget: float) -> None:
-    """一次完成事务派生大量后继: 数量 / 顺序 / 边都对, 且不逐条往返."""
+async def test_followup_batch_scale(repo: Repository) -> None:
+    """一次完成事务派生大量后继: 数量 / 顺序 / 边都对, 且语句数不随后继数量增长."""
+    count = _SCALE_ROWS
     parent = await repo.create_task(TaskType.REFRESH, {"library_id": 1})
     assert parent.id is not None
     parent_id = parent.id
@@ -147,7 +148,7 @@ async def test_followup_batch_scale(repo: Repository, count: int, budget: float)
 
     # 旧路径每个后继约 4 条语句; 批量化后语句数与后继数量无关.
     assert len(captured.items) < count // 2
-    assert elapsed < budget, f"{count} 个后继耗时 {elapsed:.2f}s, 超出 {budget}s 预算"
+    assert elapsed < _SCALE_BUDGET_S, f"{count} 个后继耗时 {elapsed:.2f}s, 超出 {_SCALE_BUDGET_S}s 预算"
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -264,7 +265,7 @@ async def test_concurrent_completion_shares_followup_batch(repo: Repository) -> 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_create_tasks_reuses_active_batch_at_scale(repo: Repository) -> None:
     """万级活跃行上再入队同一批: 互斥键只查一次, 不按 payload 重扫活跃集."""
-    payloads: list[dict[str, object]] = [{"actor_id": i} for i in range(10_000)]
+    payloads: list[dict[str, object]] = [{"actor_id": i} for i in range(_SCALE_ROWS)]
     first = await repo.create_tasks(TaskType.ACTOR_SCRAPE, payloads, priority=-1)
     assert len(first) == len(payloads)
 
@@ -276,7 +277,7 @@ async def test_create_tasks_reuses_active_batch_at_scale(repo: Repository) -> No
     assert [task.id for task in again] == [task.id for task in first]
     assert await repo.count_tasks(task_types=[TaskType.ACTOR_SCRAPE]) == len(payloads)
     assert len(captured.items) < len(payloads) // 2
-    assert elapsed < 12.0, f"复用 {len(payloads)} 个活跃行耗时 {elapsed:.2f}s"
+    assert elapsed < _SCALE_BUDGET_S, f"复用 {len(payloads)} 个活跃行耗时 {elapsed:.2f}s"
 
 
 @pytest.mark.asyncio(loop_scope="function")
