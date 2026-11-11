@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "amane"
-version = "0.27.0"
+version = "0.27.1"
 description = "Amane — media metadata management service"
 readme = "README.md"
 requires-python = ">=3.14"
