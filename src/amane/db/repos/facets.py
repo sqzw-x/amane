@@ -51,7 +51,7 @@ from ..repo_types import (
     _utcnow,
 )
 from .actor_browse import browse_actors
-from .base import RepositoryMixinBase
+from .base import RepositoryMixinBase, acquire_write_lock
 from .facet_helpers import (
     LINK_FACETS,
     SCALAR_FACETS,
@@ -85,7 +85,7 @@ async def _rows_by_names[T: Actor | Director | Tag | Studio | Publisher | Series
 
 
 async def _ensure_user_tags_once(session: AsyncSession, names: Sequence[str]) -> tuple[list[UserTag], int]:
-    """一次尝试: 按名称取回已存在的行, 其余插入; 撞唯一索引由调用方回滚重试."""
+    """一次尝试: 按名称取回已存在的行, 其余插入; 撞唯一索引由调用方回滚重试. 不提交."""
     existing = {
         row.name: row for row in (await session.exec(select(UserTag).where(col(UserTag.name).in_(names)))).all()
     }
@@ -99,7 +99,6 @@ async def _ensure_user_tags_once(session: AsyncSession, names: Sequence[str]) ->
         created += 1
     await session.flush()
     tags = [existing[name] for name in names]
-    await session.commit()
     return tags, created
 
 
@@ -249,7 +248,10 @@ class FacetsRepoMixin(RepositoryMixinBase):
     ) -> FacetBatchResult:
         """整体赋值一批分类的收藏位, 单个事务; 分类不支持收藏抛 ``ValueError``."""
         async with self._session() as session:
-            return await set_facets_favorite(session, kind, facet_ids, is_favorite)
+            await acquire_write_lock(session)
+            result = await set_facets_favorite(session, kind, facet_ids, is_favorite)
+            await session.commit()
+            return result
 
     async def get_facet(self, kind: FacetKind, facet_id: int) -> FacetItem | None:
         async with self._session() as session:
@@ -485,13 +487,19 @@ class FacetsRepoMixin(RepositoryMixinBase):
     async def rename_facet(self, kind: FacetKind, facet_id: int, new_name: str) -> FacetItem | None:
         """先改 Metadata 真值再重投影. 爬取侧同时写单跳 alias, 否则重刮会回到旧名.
         新名称与另一实体冲突时抛 ``ValueError``; 不存在返回 None.
+
+        冲突判定与写入同处一个写事务: 并发同名改名不会双双通过判定后撞唯一索引.
         """
         async with self._session() as session:
+            await acquire_write_lock(session)
             if kind in LINK_FACETS:
-                return await rename_link_facet(session, LINK_FACETS[kind], facet_id, new_name)
-            if kind in SCALAR_FACETS:
-                return await rename_scalar_facet(session, SCALAR_FACETS[kind], facet_id, new_name)
-            raise ValueError(f"unknown facet kind: {kind}")
+                item = await rename_link_facet(session, LINK_FACETS[kind], facet_id, new_name)
+            elif kind in SCALAR_FACETS:
+                item = await rename_scalar_facet(session, SCALAR_FACETS[kind], facet_id, new_name)
+            else:
+                raise ValueError(f"unknown facet kind: {kind}")
+            await session.commit()
+            return item
 
     async def merge_facets(self, kind: FacetKind, target_id: int, source_ids: list[int]) -> FacetItem | None:
         """关联迁到 target, 删除 source. 爬取侧同时写压缩后的 alias.
@@ -502,28 +510,36 @@ class FacetsRepoMixin(RepositoryMixinBase):
             raise ValueError("合并目标不能是来源之一")
 
         async with self._session() as session:
+            await acquire_write_lock(session)
             if kind in LINK_FACETS:
-                return await merge_link_facets(session, LINK_FACETS[kind], target_id, source_id_set)
-            if kind in SCALAR_FACETS:
-                return await merge_scalar_facets(session, SCALAR_FACETS[kind], target_id, source_id_set)
-            raise ValueError(f"unknown facet kind: {kind}")
+                item = await merge_link_facets(session, LINK_FACETS[kind], target_id, source_id_set)
+            elif kind in SCALAR_FACETS:
+                item = await merge_scalar_facets(session, SCALAR_FACETS[kind], target_id, source_id_set)
+            else:
+                raise ValueError(f"unknown facet kind: {kind}")
+            await session.commit()
+            return item
 
     async def delete_facet(self, kind: FacetKind, facet_id: int) -> bool:
         """爬取侧写 block 并从真值剔除后再删实体. user_tag 硬删挂载与实体, 不写规则. 不存在返回 False."""
         async with self._session() as session:
+            await acquire_write_lock(session)
             if kind == FacetKind.USER_TAG:
                 tag = await session.get(UserTag, facet_id)
                 if tag is None:
                     return False
                 await purge_user_tag_links(session, facet_id)
                 await session.delete(tag)
+                ok = True
+            elif kind in LINK_FACETS:
+                ok = await delete_link_facet(session, LINK_FACETS[kind], facet_id)
+            elif kind in SCALAR_FACETS:
+                ok = await delete_scalar_facet(session, SCALAR_FACETS[kind], facet_id)
+            else:
+                raise ValueError(f"unknown facet kind: {kind}")
+            if ok:
                 await session.commit()
-                return True
-            if kind in LINK_FACETS:
-                return await delete_link_facet(session, LINK_FACETS[kind], facet_id)
-            if kind in SCALAR_FACETS:
-                return await delete_scalar_facet(session, SCALAR_FACETS[kind], facet_id)
-            raise ValueError(f"unknown facet kind: {kind}")
+            return ok
 
     async def list_facet_rules(self, kind: FacetKind) -> list[FacetRule]:
         if kind not in SCRAPE_FACET_KINDS:
@@ -559,13 +575,16 @@ class FacetsRepoMixin(RepositoryMixinBase):
         if not unique:
             return [], 0
         async with self._session() as session:
+            await acquire_write_lock(session)
             try:
-                return await _ensure_user_tags_once(session, unique)
+                tags, created = await _ensure_user_tags_once(session, unique)
             except IntegrityError:
                 # 并发同名创建: 双方的 SELECT 都在对方提交前未命中, 后者撞唯一索引.
                 # 回滚重查即可取回对方刚提交的行, 不必把冲突暴露成 500.
                 await session.rollback()
-                return await _ensure_user_tags_once(session, unique)
+                tags, created = await _ensure_user_tags_once(session, unique)
+            await session.commit()
+            return tags, created
 
     async def update_user_tag(self, user_tag_id: int, **updates: Unpack[UserTagUpdates]) -> UserTag | None:
         async with self._session() as session:
@@ -620,9 +639,12 @@ class FacetsRepoMixin(RepositoryMixinBase):
         *,
         action: UserTagLinkAction,
     ) -> UserTagLinkResult:
-        """把一组用户标签应用到一组影片."""
+        """把一组用户标签应用到一组影片; 标签与条目的判定和写入同处一个写事务."""
         async with self._session() as session:
-            return await apply_user_tags_to_metadata(session, ids, user_tag_ids, action)
+            await acquire_write_lock(session)
+            result = await apply_user_tags_to_metadata(session, ids, user_tag_ids, action)
+            await session.commit()
+            return result
 
     async def apply_actor_user_tags(
         self,
@@ -631,9 +653,12 @@ class FacetsRepoMixin(RepositoryMixinBase):
         *,
         action: UserTagLinkAction,
     ) -> UserTagLinkResult:
-        """把一组用户标签应用到一组演员."""
+        """把一组用户标签应用到一组演员; 标签与条目的判定和写入同处一个写事务."""
         async with self._session() as session:
-            return await apply_user_tags_to_actors(session, ids, user_tag_ids, action)
+            await acquire_write_lock(session)
+            result = await apply_user_tags_to_actors(session, ids, user_tag_ids, action)
+            await session.commit()
+            return result
 
     async def list_comments(self, metadata_id: int) -> list[Comment]:
         async with self._session() as session:

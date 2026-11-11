@@ -22,7 +22,7 @@ r18 库由项目导入 / 管理但 schema 不受我们控制, **不能纳入 Ale
 
 ## 写入事务边界
 
-pysqlite 只在 DML 之前发出 `BEGIN`, 纯 SELECT 落在事务之外 (SQLAlchemy 的 autobegin 只是记账, 不发出语句). 因此「先查询判定, 再按判定写入」默认不构成一个事务: 并发调用双方都读到写入前的状态, 后写入者随后违反唯一约束. 这类写入必须自行取得写锁, 现用于 `src/amane/db/repos/metadata.py::MetadataRepoMixin.upsert_metadata` 的首句 `BEGIN IMMEDIATE`; 或写成带源状态谓词的单条 UPDATE 并检查命中行数, 见 `src/amane/db/repos/tasks.py` 的状态迁移.
+这类写入读取前统一经 `src/amane/db/repos/base.py::acquire_write_lock` 取得写锁 (条目的 upsert / update / merge、分类治理、用户标签挂载); 事务由 Repo 公开方法提交, `src/amane/db/repos/facet_helpers.py` 内的 helper 不提交. 也可写成带源状态谓词的单条 UPDATE 并检查命中行数 (任务状态迁移, 见 `src/amane/db/repos/tasks.py`).
 
 - 写锁是库级的, 从取得写锁到提交之间其它写入被阻塞. 临界区内不允许出现联网或磁盘等待, 否则全库写入一并被拖住.
 - 会话在进入该调用之前不得已有未结束的数据库事务, 否则 `BEGIN IMMEDIATE` 失败.

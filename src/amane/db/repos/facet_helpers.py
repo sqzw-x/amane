@@ -1,11 +1,12 @@
 """无前缀名为包内公开 API; 不经 ``amane.db.repos`` 导出面暴露."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
+from sqlalchemy import bindparam, literal, or_, update
 from sqlalchemy import delete as sqla_delete
-from sqlalchemy import literal, or_, update
 from sqlalchemy.orm import Mapped
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
@@ -16,7 +17,14 @@ from ...parsing import split_actor_aliases
 from ...utils.collections import unique_ids
 from ..actor_lookup import list_actor_aliases, resolve_actor_by_name
 from ..actor_person import locked_fields_of, merge_person_fields_into_target
-from ..facet_rules import RuleEntry, apply_metadata_facet_fields, empty_rules_by_kind
+from ..facet_rules import (
+    FacetFieldValues,
+    RuleEntry,
+    RulesByKind,
+    apply_metadata_facet_fields,
+    empty_rules_by_kind,
+    resolve_name,
+)
 from ..models import (
     FAVORITE_FACET_ENTITIES,
     SCRAPE_FACET_KINDS,
@@ -51,12 +59,16 @@ from ..repo_types import (
     _facet_primary_order,
     _utcnow,
 )
+from .base import chunks
 
 # 关联表投影: Metadata list JSON 为真值 (actor/director/tag), 或纯挂载 (user_tag).
 # 标量投影: Metadata.studio/publisher/series 字符串为真值, 实体表按 name 对齐.
 
 
 type _NamedEntity = Actor | Director | Tag | UserTag | Studio | Publisher | Series
+
+# 关联表投影对应的三个分类; 批量治理按 kind 分组重建.
+LINK_KINDS: tuple[FacetKind, ...] = (FacetKind.ACTOR, FacetKind.DIRECTOR, FacetKind.TAG)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,9 +77,13 @@ class _LinkFacetSpec:
     entity: type[Actor] | type[Director] | type[Tag] | type[UserTag]
     link: type[MetadataActor] | type[MetadataDirector] | type[MetadataTag] | type[MetadataUserTag]
     link_fk: Any
-    label: str
+    #: 关联表的 position 列; 用户标签挂载不保序, 没有该列.
+    link_position: Any = None
+    label: str = ""
     get_names: Callable[[Metadata], list[str]] | None = None
     set_names: Callable[[Metadata, list[str]], None] | None = None
+    #: 关联行工厂, 批量重建投影时按下标写 position.
+    build: Callable[[int, int, int], MetadataActor | MetadataDirector | MetadataTag] | None = None
     alias_model: type[ActorAlias] | None = None  # 仅 Actor 搜索一并命中别名行
 
 
@@ -109,9 +125,13 @@ LINK_FACETS: dict[FacetKind, _LinkFacetSpec] = {
         entity=Actor,
         link=MetadataActor,
         link_fk=MetadataActor.actor_id,
+        link_position=MetadataActor.position,
         label="演员",
         get_names=_get_actors,
         set_names=_set_actors,
+        build=lambda metadata_id, actor_id, position: MetadataActor(
+            metadata_id=metadata_id, actor_id=actor_id, position=position
+        ),
         alias_model=ActorAlias,
     ),
     FacetKind.DIRECTOR: _LinkFacetSpec(
@@ -119,18 +139,26 @@ LINK_FACETS: dict[FacetKind, _LinkFacetSpec] = {
         entity=Director,
         link=MetadataDirector,
         link_fk=MetadataDirector.director_id,
+        link_position=MetadataDirector.position,
         label="导演",
         get_names=_get_directors,
         set_names=_set_directors,
+        build=lambda metadata_id, director_id, position: MetadataDirector(
+            metadata_id=metadata_id, director_id=director_id, position=position
+        ),
     ),
     FacetKind.TAG: _LinkFacetSpec(
         kind=FacetKind.TAG,
         entity=Tag,
         link=MetadataTag,
         link_fk=MetadataTag.tag_id,
+        link_position=MetadataTag.position,
         label="标签",
         get_names=_get_tags,
         set_names=_set_tags,
+        build=lambda metadata_id, tag_id, position: MetadataTag(
+            metadata_id=metadata_id, tag_id=tag_id, position=position
+        ),
     ),
     FacetKind.USER_TAG: _LinkFacetSpec(
         kind=FacetKind.USER_TAG,
@@ -161,6 +189,16 @@ SCALAR_FACETS: dict[FacetKind, _ScalarFacetSpec] = {
         label="系列",
     ),
 }
+
+# 真值列: kind → (Metadata 列名, 取值函数). 批量写回按变化列分组, 组内一条 executemany.
+_FACET_COLUMNS: tuple[tuple[FacetKind, str, Callable[[FacetFieldValues], object]], ...] = (
+    (FacetKind.ACTOR, "actors", lambda values: values.actors),
+    (FacetKind.DIRECTOR, "directors", lambda values: values.directors),
+    (FacetKind.TAG, "tags", lambda values: values.tags),
+    (FacetKind.STUDIO, "studio", lambda values: values.studio),
+    (FacetKind.PUBLISHER, "publisher", lambda values: values.publisher),
+    (FacetKind.SERIES, "series", lambda values: values.series),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +245,7 @@ async def _apply_user_tags(
     """把一组用户标签应用到一组条目: attach 为并入, detach 为移除, 两者均幂等.
 
     未知标签 id 抛 ``ValueError`` (请求级错误); 不存在的条目 id 计入 ``missing``, 其余照常处理.
+    提交由调用方负责.
     """
     entity_ids = unique_ids(ids)
     tag_ids = unique_ids(user_tag_ids)
@@ -257,7 +296,6 @@ async def _apply_user_tags(
             if added:
                 changed += 1
 
-    await session.commit()
     return UserTagLinkResult(
         changed=changed,
         unchanged=len(known_entities) - changed,
@@ -362,7 +400,216 @@ async def _get_or_create_named[T: _NamedEntity](session: AsyncSession, model: ty
     return obj
 
 
-async def _load_rules_by_kind(session: AsyncSession) -> dict[FacetKind, dict[str, RuleEntry]]:
+async def _named_entity_ids[T: _NamedEntity](
+    session: AsyncSession, model: type[T], names: Iterable[str]
+) -> dict[str, int]:
+    """按名字批量取回实体 id; 不存在的名字不出现在结果里."""
+    found: dict[str, int] = {}
+    for chunk in chunks(sorted({name for name in names if name})):
+        rows = (await session.exec(select(model.name, model.id).where(col(model.name).in_(chunk)))).all()
+        found.update({str(name): int(entity_id) for name, entity_id in rows if entity_id is not None})
+    return found
+
+
+async def _ensure_named_entities[T: _NamedEntity](
+    session: AsyncSession, model: type[T], names: Iterable[str]
+) -> dict[str, int]:
+    """按名字批量 get-or-create: 缺失的名字一次插入后回读, 不逐名往返."""
+    wanted = {name for name in names if name}
+    found = await _named_entity_ids(session, model, wanted)
+    missing = sorted(wanted - found.keys())
+    if not missing:
+        return found
+    session.add_all([model(name=name) for name in missing])
+    await session.flush()
+    found.update(await _named_entity_ids(session, model, missing))
+    return found
+
+
+async def _load_linked_facet_values(
+    session: AsyncSession, spec: _LinkFacetSpec, link_ids: Sequence[int]
+) -> list[tuple[int, FacetFieldValues]]:
+    """受影响的影片真值六字段.
+
+    只读治理需要的列: 逐部取 ``Metadata`` 会把 ``raw`` 等宽列一并读入, 万级关联时即成倍放大.
+    同一影片可命中多个来源分块, 按影片 id 去重.
+    """
+    loaded: dict[int, FacetFieldValues] = {}
+    for chunk in chunks(list(unique_ids(link_ids))):
+        relevant = col(Metadata.id).in_(select(spec.link.metadata_id).where(col(spec.link_fk).in_(chunk)))
+        list_rows = (
+            await session.exec(
+                select(col(Metadata.id), col(Metadata.actors), col(Metadata.directors), col(Metadata.tags)).where(
+                    relevant
+                )
+            )
+        ).all()
+        scalars = (
+            await session.exec(
+                select(
+                    col(Metadata.id),
+                    col(Metadata.studio),
+                    col(Metadata.publisher),
+                    col(Metadata.series),
+                ).where(relevant)
+            )
+        ).all()
+        scalar_rows = {
+            metadata_id: (studio, publisher, series)
+            for metadata_id, studio, publisher, series in scalars
+            if metadata_id is not None
+        }
+        for metadata_id, actors, directors, tags in list_rows:
+            if metadata_id is None or metadata_id not in scalar_rows:
+                continue
+            studio, publisher, series = scalar_rows[metadata_id]
+            loaded[metadata_id] = FacetFieldValues(
+                actors=list(actors or []),
+                directors=list(directors or []),
+                tags=list(tags or []),
+                studio=studio,
+                publisher=publisher,
+                series=series,
+            )
+    return list(loaded.items())
+
+
+async def _write_facet_values(
+    session: AsyncSession,
+    rows: Sequence[tuple[int, FacetFieldValues, FacetFieldValues]],
+    now: datetime,
+) -> None:
+    """按变化列分组批量写回真值; 组内一条 executemany, 不逐行 flush."""
+    groups: dict[tuple[str, ...], list[dict[str, object]]] = {}
+    for metadata_id, before, after in rows:
+        changed = tuple(
+            (column, fetch) for kind, column, fetch in _FACET_COLUMNS if before.names(kind) != after.names(kind)
+        )
+        if not changed:
+            continue
+        groups.setdefault(tuple(column for column, _fetch in changed), []).append(
+            {
+                "b_metadata_id": metadata_id,
+                "b_updated_at": now,
+                **{f"b_{column}": fetch(after) for column, fetch in changed},
+            }
+        )
+    connection = await session.connection()
+    for columns, params in groups.items():
+        statement = (
+            update(Metadata)
+            .where(col(Metadata.id) == bindparam("b_metadata_id"))
+            .values(
+                {
+                    **{column: bindparam(f"b_{column}") for column in columns},
+                    "updated_at": bindparam("b_updated_at"),
+                }
+            )
+        )
+        await connection.execute(statement, params)
+
+
+async def _rebuild_link_projections(
+    session: AsyncSession, spec: _LinkFacetSpec, rows: Sequence[tuple[int, list[str]]]
+) -> None:
+    """按最终真值整体重写某个 kind 的关联行: 一次删除、一次批量插入, position 取列表下标."""
+    if not rows or spec.build is None:
+        return
+    ids_by_name = await _ensure_named_entities(
+        session, spec.entity, [name for _metadata_id, names in rows for name in names]
+    )
+    for chunk in chunks([metadata_id for metadata_id, _names in rows]):
+        await session.exec(sqla_delete(spec.link).where(col(spec.link.metadata_id).in_(chunk)))
+    session.add_all(
+        spec.build(metadata_id, ids_by_name[name], position)
+        for metadata_id, names in rows
+        for position, name in enumerate(normalize_names(names))
+    )
+    await session.flush()
+
+
+async def _align_link_positions(
+    session: AsyncSession, spec: _LinkFacetSpec, rows: Sequence[tuple[int, list[str]]]
+) -> None:
+    """按最终真值校正合并后的关联行: 顺序与真值不符的行整体重写, 其余保持原行.
+
+    批量 ``UPDATE OR IGNORE`` 只保证去重, 同一影片同时挂源与目标时保留下来的 position
+    不一定是真值里的位置; 只重写这部分行.
+    """
+    if not rows or spec.build is None or spec.link_position is None:
+        return
+    ids_by_name = await _ensure_named_entities(
+        session, spec.entity, [name for _metadata_id, names in rows for name in names]
+    )
+    desired = {metadata_id: [ids_by_name[name] for name in normalize_names(names)] for metadata_id, names in rows}
+    actual: dict[int, list[tuple[int, int]]] = {}
+    for chunk in chunks(list(desired)):
+        stmt = select(col(spec.link.metadata_id), col(spec.link_fk), col(spec.link_position)).where(
+            col(spec.link.metadata_id).in_(chunk)
+        )
+        for metadata_id, entity_id, position in (await session.exec(stmt)).all():
+            actual.setdefault(int(metadata_id), []).append((int(position), int(entity_id)))
+    # position 与真值列表下标逐项对应, 不只是 id 顺序相同.
+    rewrite = [
+        metadata_id
+        for metadata_id, entity_ids in desired.items()
+        if sorted(actual.get(metadata_id, [])) != list(enumerate(entity_ids))
+    ]
+    if not rewrite:
+        return
+    for chunk in chunks(rewrite):
+        await session.exec(sqla_delete(spec.link).where(col(spec.link.metadata_id).in_(chunk)))
+    session.add_all(
+        spec.build(metadata_id, entity_id, position)
+        for metadata_id in rewrite
+        for position, entity_id in enumerate(desired[metadata_id])
+    )
+    await session.flush()
+
+
+async def _ensure_scalar_entities(
+    session: AsyncSession, rows: Sequence[tuple[int, FacetFieldValues, FacetFieldValues]]
+) -> None:
+    """规则可能把标量分类改成还没建过的新名字; 标量投影没有关联行, 只需补实体."""
+    for kind, model in ((FacetKind.STUDIO, Studio), (FacetKind.PUBLISHER, Publisher), (FacetKind.SERIES, Series)):
+        names = {after.names(kind)[0] for _metadata_id, _before, after in rows if after.names(kind)}
+        if names:
+            await _ensure_named_entities(session, model, names)
+
+
+def _is_in_place_rename(
+    before: FacetFieldValues,
+    after: FacetFieldValues,
+    kind: FacetKind,
+    old_name: str,
+    new_name: str,
+    kind_rules: Mapping[str, RuleEntry],
+) -> bool:
+    """本 kind 是否为原位改名: 只有 ``old_name`` 换成 ``new_name``, 其余字段与顺序都不变.
+
+    还要求新名经规则解析后仍是它自己: 新名已被 alias 指向别的实体时, 真值里留下的名字
+    对应另一个实体, 投影必须重建. 满足条件时关联行的实体 id 与 position 都不变
+    (旧名与新名指向同一实体), 只需改写真值列.
+    """
+    if not before.same_except(kind, after):
+        return False
+    if resolve_name(new_name, kind_rules) != new_name:
+        return False
+    old_names = before.names(kind)
+    new_names = after.names(kind)
+    if len(old_names) != len(new_names) or new_names.count(new_name) != old_names.count(old_name):
+        return False
+    if new_name in old_names:
+        # 列表里本就有目标名: 该位置原本指向另一个实体, 改名后要合并, 投影必须重建.
+        return False
+    return all(
+        before_name == after_name or (before_name == old_name and after_name == new_name)
+        for before_name, after_name in zip(old_names, new_names, strict=True)
+    )
+
+
+async def load_rules_by_kind(session: AsyncSession) -> dict[FacetKind, dict[str, RuleEntry]]:
+    """一次读入全部治理规则; 调用方在循环外读好传给规则应用函数, 不在逐行路径上重读."""
     out = empty_rules_by_kind()
     rows = list((await session.exec(select(FacetRule))).all())
     for row in rows:
@@ -374,9 +621,9 @@ async def _load_rules_by_kind(session: AsyncSession) -> dict[FacetKind, dict[str
     return out
 
 
-async def apply_facet_rules_to_metadata(session: AsyncSession, meta: Metadata) -> None:
-    rules = await _load_rules_by_kind(session)
-    apply_metadata_facet_fields(meta, rules)
+async def apply_facet_rules_to_metadata(session: AsyncSession, meta: Metadata, rules_by_kind: RulesByKind) -> None:
+    """就地执行治理规则并落在当前事务; 规则表由调用方一次读好后复用."""
+    apply_metadata_facet_fields(meta, rules_by_kind)
     session.add(meta)
     await session.flush()
 
@@ -501,29 +748,28 @@ async def _upsert_block(session: AsyncSession, kind: FacetKind, name: str) -> se
 
 
 async def _strip_names_from_link_metadata(session: AsyncSession, spec: _LinkFacetSpec, names: set[str]) -> None:
-    if not names or spec.get_names is None or spec.set_names is None:
+    """从真值剔除名字并删除对应关联行; 不逐部影片重建投影.
+
+    剔除只会让名字从列表里消失, 剩余名字的相对顺序不变: 关联行按实体整体删除,
+    真值按变化列批量写回, 代价与命中的影片数无关.
+    """
+    if not names or spec.get_names is None or spec.build is None:
         return
-    entity_ids: list[int] = []
-    for name in names:
-        entity = (await session.exec(select(spec.entity).where(spec.entity.name == name))).first()
-        if entity is not None and entity.id is not None:
-            entity_ids.append(entity.id)
+    entity_ids = list((await _named_entity_ids(session, spec.entity, names)).values())
     if not entity_ids:
         return
-    stmt = select(Metadata).where(
-        col(Metadata.id).in_(select(spec.link.metadata_id).where(col(spec.link_fk).in_(entity_ids)))
+    loaded = await _load_linked_facet_values(session, spec, entity_ids)
+    rewrites = [
+        (metadata_id, before, before.with_names(spec.kind, [n for n in before.names(spec.kind) if n not in names]))
+        for metadata_id, before in loaded
+    ]
+    await _write_facet_values(session, rewrites, _utcnow())
+    await session.exec(sqla_delete(spec.link).where(col(spec.link_fk).in_(entity_ids)))
+    await session.flush()
+    # 关联行已删, 剩下的 position 出现空位; 按最终真值下标补齐, 与其它写入路径保持同一形态.
+    await _align_link_positions(
+        session, spec, [(metadata_id, after.names(spec.kind)) for metadata_id, _before, after in rewrites]
     )
-    metadatas = list((await session.exec(stmt)).all())
-    for meta in metadatas:
-        current = spec.get_names(meta)
-        stripped = [n for n in current if n not in names]
-        if stripped == current:
-            continue
-        spec.set_names(meta, stripped)
-        meta.updated_at = _utcnow()
-        session.add(meta)
-        await session.flush()
-        await sync_metadata_facets(session, meta)
 
 
 async def _strip_names_from_scalar_metadata(session: AsyncSession, kind: FacetKind, names: set[str]) -> None:
@@ -578,6 +824,7 @@ async def _actor_delete_block_names(session: AsyncSession, actor: Actor) -> set[
 
 
 async def delete_link_facet(session: AsyncSession, spec: _LinkFacetSpec, facet_id: int) -> bool:
+    """写剔除规则, 从真值移除名字后删除实体; 提交由调用方负责."""
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return False
@@ -596,18 +843,17 @@ async def delete_link_facet(session: AsyncSession, spec: _LinkFacetSpec, facet_i
         await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == facet_id))
         await session.exec(sqla_delete(ActorUserTag).where(col(ActorUserTag.actor_id) == facet_id))
     await session.delete(entity)
-    await session.commit()
     return True
 
 
 async def delete_scalar_facet(session: AsyncSession, spec: _ScalarFacetSpec, facet_id: int) -> bool:
+    """写剔除规则并清空真值里的该标量; 提交由调用方负责."""
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return False
     blocked = await _upsert_block(session, spec.kind, entity.name)
     await _strip_names_from_scalar_metadata(session, spec.kind, blocked)
     await session.delete(entity)
-    await session.commit()
     return True
 
 
@@ -776,18 +1022,19 @@ async def clean_actor_names(
     session: AsyncSession,
     meta: Metadata,
     actor_genders: Mapping[str, ActorGender] | None = None,
+    rules_by_kind: RulesByKind | None = None,
 ) -> None:
     """拆 ``name(alias1, alias2)``: 展示名留真值, 别名并入 ActorAlias.
     须在 ``apply_facet_rules_to_metadata`` 之前运行. block 在解析前查原始名、解析后查展示名.
     名单不变时不改 ``Metadata.actors``. ``Actor.gender`` 为 ``unknown`` 且入参给出
     ``female`` / ``male`` 时填空; 不覆盖已有性别, 不写入 ``field_sources``; 性别已锁则跳过.
-    别名并入同样跳过别名已锁的演员.
+    别名并入同样跳过别名已锁的演员. ``rules_by_kind`` 省略时现读规则表 (调用方已读好则复用).
     """
     raw_names = normalize_names(meta.actors)
     if not raw_names:
         return
     genders = actor_genders or {}
-    rules = await _load_rules_by_kind(session)
+    rules = rules_by_kind if rules_by_kind is not None else await load_rules_by_kind(session)
     actor_rules = rules.get(FacetKind.ACTOR, {})
     seen: set[str] = set()
     canonical: list[str] = []
@@ -863,13 +1110,16 @@ async def _load_named_sources[T: _NamedEntity](
     source_ids: set[int],
     label: str,
 ) -> list[T]:
-    sources: list[T] = []
-    for sid in source_ids:
-        src = await session.get(model, sid)
-        if src is None:
-            raise ValueError(f"来源{label} {sid} 不存在")
-        sources.append(src)
-    return sources
+    """按 id 批量取回来源实体; 缺失时抛 ``ValueError``."""
+    found: dict[int, T] = {}
+    ordered = sorted(source_ids)
+    for chunk in chunks(ordered):
+        rows = (await session.exec(select(model).where(col(model.id).in_(chunk)))).all()
+        found.update({int(row.id): row for row in rows if row.id is not None})
+    missing = [sid for sid in ordered if sid not in found]
+    if missing:
+        raise ValueError(f"来源{label} {missing[0]} 不存在")
+    return [found[sid] for sid in ordered]
 
 
 async def _bulk_set_scalar_field(
@@ -898,12 +1148,68 @@ async def _bulk_set_scalar_field(
         raise ValueError(f"not a scalar facet kind: {kind}")
 
 
+async def _rewrite_renamed_metadata(
+    session: AsyncSession,
+    spec: _LinkFacetSpec,
+    loaded: Sequence[tuple[int, FacetFieldValues]],
+    old_name: str,
+    new_name: str,
+    rules_by_kind: RulesByKind,
+) -> None:
+    """改写真值, 按最终实体与顺序重建投影.
+
+    实体已经改名, 即使规则执行后的真值未变, 关联行也可能指向错误的名字;
+    本分类仅在原位改名仍满足最终真值时保留投影, 其它分类按真值变化重建.
+    """
+    rewrites: list[tuple[int, FacetFieldValues, FacetFieldValues]] = []
+    rebuild: dict[FacetKind, list[tuple[int, list[str]]]] = {}
+    for metadata_id, before in loaded:
+        after = before.with_names(
+            spec.kind, _replace_names_in_list(before.names(spec.kind), {old_name}, new_name)
+        ).apply_rules(rules_by_kind)
+        if after != before:
+            rewrites.append((metadata_id, before, after))
+        in_place = _is_in_place_rename(before, after, spec.kind, old_name, new_name, rules_by_kind.get(spec.kind, {}))
+        for kind in LINK_KINDS:
+            needs_rebuild = not in_place if kind == spec.kind else before.names(kind) != after.names(kind)
+            if needs_rebuild:
+                rebuild.setdefault(kind, []).append((metadata_id, after.names(kind)))
+    await _write_facet_values(session, rewrites, _utcnow())
+    for kind, rows in rebuild.items():
+        await _rebuild_link_projections(session, LINK_FACETS[kind], rows)
+    await _ensure_scalar_entities(session, rewrites)
+
+
+async def _move_links_to_target(
+    session: AsyncSession, spec: _LinkFacetSpec, target_id: int, source_ids: set[int]
+) -> None:
+    """批量把源关联行改成 target; 该影片已有 target 行时保留既有行, 其余删掉.
+
+    ``UPDATE OR IGNORE`` 让重复的 (影片, target) 不违反主键; 剩下仍是源 id 的行即冲突行.
+    """
+    for chunk in chunks(sorted(source_ids)):
+        await session.exec(
+            update(spec.link)
+            .where(col(spec.link_fk).in_(chunk))
+            .values({spec.link_fk: target_id})
+            .prefix_with("OR IGNORE")
+        )
+        await session.exec(sqla_delete(spec.link).where(col(spec.link_fk).in_(chunk)))
+    await session.flush()
+
+
 async def rename_link_facet(
     session: AsyncSession,
     spec: _LinkFacetSpec,
     facet_id: int,
     new_name: str,
 ) -> FacetItem | None:
+    """实体原位改名: 真值里的旧名换成新名.
+
+    本分类的投影只在原位改名时保留 (只有旧名换成新名, 实体与 position 都不变); 新名经规则
+    解析后指向别的实体、真值因此增删或换序时, 即使真值文本未变也要按最终真值重建.
+    调用方须先取得写锁并负责提交.
+    """
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return None
@@ -912,6 +1218,7 @@ async def rename_link_facet(
         if conflict is not None:
             raise ValueError("名称已存在, 请使用合并")
         old_name = entity.name
+        # 治理规则先落库, 规则表随后一次读入: 新名字可能命中既有 alias / block.
         if spec.kind == FacetKind.ACTOR:
             assert isinstance(entity, Actor)
             await swap_actor_display_name(session, entity, old_name, new_name)
@@ -921,21 +1228,11 @@ async def rename_link_facet(
         entity.updated_at = _utcnow()
         session.add(entity)
         await session.flush()
-        if spec.get_names is not None and spec.set_names is not None:
-            stmt = select(Metadata).where(
-                col(Metadata.id).in_(select(spec.link.metadata_id).where(spec.link_fk == facet_id))
-            )
-            metadatas = list((await session.exec(stmt)).all())
-            for meta in metadatas:
-                spec.set_names(meta, _replace_names_in_list(spec.get_names(meta), {old_name}, new_name))
-                meta.updated_at = _utcnow()
-                session.add(meta)
-                await session.flush()
-                await apply_facet_rules_to_metadata(session, meta)
-                await sync_metadata_facets(session, meta)
-    item = await get_facet(session, spec.kind, facet_id)
-    await session.commit()
-    return item
+        if spec.get_names is not None:
+            rules_by_kind = await load_rules_by_kind(session)
+            loaded = await _load_linked_facet_values(session, spec, [facet_id])
+            await _rewrite_renamed_metadata(session, spec, loaded, old_name, new_name, rules_by_kind)
+    return await get_facet(session, spec.kind, facet_id)
 
 
 async def rename_scalar_facet(
@@ -944,6 +1241,7 @@ async def rename_scalar_facet(
     facet_id: int,
     new_name: str,
 ) -> FacetItem | None:
+    """标量分类改名: 写别名规则后批量改写真值列. 调用方须先取得写锁并负责提交."""
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return None
@@ -958,9 +1256,7 @@ async def rename_scalar_facet(
         entity.updated_at = _utcnow()
         session.add(entity)
         await session.flush()
-    item = await get_facet(session, spec.kind, facet_id)
-    await session.commit()
-    return item
+    return await get_facet(session, spec.kind, facet_id)
 
 
 async def _merge_user_tag_facets(session: AsyncSession, target_id: int, source_id_set: set[int]) -> FacetItem | None:
@@ -971,9 +1267,7 @@ async def _merge_user_tag_facets(session: AsyncSession, target_id: int, source_i
     await move_user_tag_links(session, target_id, source_id_set)
     for src in sources:
         await session.delete(src)
-    item = await get_facet(session, FacetKind.USER_TAG, target_id)
-    await session.commit()
-    return item
+    return await get_facet(session, FacetKind.USER_TAG, target_id)
 
 
 async def merge_link_facets(
@@ -982,36 +1276,52 @@ async def merge_link_facets(
     target_id: int,
     source_id_set: set[int],
 ) -> FacetItem | None:
+    """关联迁到 target 并删除 source.
+
+    真值里的源名替换为 target 名后仍按规则收敛; 关联行用批量 ``UPDATE OR IGNORE`` 去重,
+    再按最终真值的顺序校正 position. 调用方须先取得写锁并负责提交.
+    """
     if spec.kind == FacetKind.USER_TAG:
         return await _merge_user_tag_facets(session, target_id, source_id_set)
 
-    assert spec.get_names is not None and spec.set_names is not None
+    assert spec.get_names is not None
     target = await session.get(spec.entity, target_id)
     if target is None:
         return None
     sources = await _load_named_sources(session, spec.entity, source_id_set, spec.label)
-    old_names = {s.name for s in sources}
+    source_names = {source.name for source in sources}
+    actor_sources = [source for source in sources if isinstance(source, Actor)]
     if spec.kind == FacetKind.ACTOR:
         assert isinstance(target, Actor)
-        actor_sources = [s for s in sources if isinstance(s, Actor)]
         await move_actor_alias_rows(session, target, actor_sources)
     elif spec.kind in SCRAPE_FACET_KINDS:
-        for src_name in old_names:
-            await _upsert_alias(session, spec.kind, src_name, target.name)
-    stmt = select(Metadata).where(
-        col(Metadata.id).in_(select(spec.link.metadata_id).where(col(spec.link_fk).in_(source_id_set)))
-    )
-    metadatas = list((await session.exec(stmt)).all())
-    for meta in metadatas:
-        spec.set_names(meta, _replace_names_in_list(spec.get_names(meta), old_names, target.name))
-        meta.updated_at = _utcnow()
-        session.add(meta)
-        await session.flush()
-        await apply_facet_rules_to_metadata(session, meta)
-        await sync_metadata_facets(session, meta)
+        for source_name in sorted(source_names):
+            await _upsert_alias(session, spec.kind, source_name, target.name)
+    rules_by_kind = await load_rules_by_kind(session)
+    loaded = await _load_linked_facet_values(session, spec, sorted(source_id_set))
+    rewrites: list[tuple[int, FacetFieldValues, FacetFieldValues]] = []
+    final_names: list[tuple[int, list[str]]] = []
+    rebuild: dict[FacetKind, list[tuple[int, list[str]]]] = {}
+    for metadata_id, before in loaded:
+        after = before.with_names(
+            spec.kind, _replace_names_in_list(before.names(spec.kind), source_names, target.name)
+        ).apply_rules(rules_by_kind)
+        final_names.append((metadata_id, after.names(spec.kind)))
+        if after != before:
+            rewrites.append((metadata_id, before, after))
+        for kind in LINK_KINDS:
+            if kind == spec.kind:
+                continue  # 本 kind 由批量 UPDATE OR IGNORE 去重后再校正 position
+            if before.names(kind) != after.names(kind):
+                rebuild.setdefault(kind, []).append((metadata_id, after.names(kind)))
+    await _write_facet_values(session, rewrites, _utcnow())
+    await _move_links_to_target(session, spec, target_id, source_id_set)
+    await _align_link_positions(session, spec, final_names)
+    for kind, rows in rebuild.items():
+        await _rebuild_link_projections(session, LINK_FACETS[kind], rows)
+    await _ensure_scalar_entities(session, rewrites)
     if spec.kind == FacetKind.ACTOR:
         assert isinstance(target, Actor)
-        actor_sources = [s for s in sources if isinstance(s, Actor)]
         merge_person_fields_into_target(target, actor_sources)
         target.updated_at = _utcnow()
         session.add(target)
@@ -1022,11 +1332,9 @@ async def merge_link_facets(
             await session.exec(sqla_delete(ActorAlias).where(col(ActorAlias.actor_id) == src.id))
         await session.flush()
     await _carry_favorites_into_target(session, spec.kind, target_id, source_id_set)
-    for src in sources:
-        await session.delete(src)
-    item = await get_facet(session, spec.kind, target_id)
-    await session.commit()
-    return item
+    for source in sources:
+        await session.delete(source)
+    return await get_facet(session, spec.kind, target_id)
 
 
 async def merge_scalar_facets(
@@ -1035,6 +1343,7 @@ async def merge_scalar_facets(
     target_id: int,
     source_id_set: set[int],
 ) -> FacetItem | None:
+    """标量分类合并: 源名写成指向 target 的别名规则, 真值列一次批量改写."""
     target = await session.get(spec.entity, target_id)
     if target is None:
         return None
@@ -1046,9 +1355,7 @@ async def merge_scalar_facets(
     await _carry_favorites_into_target(session, spec.kind, target_id, source_id_set)
     for src in sources:
         await session.delete(src)
-    item = await get_facet(session, spec.kind, target_id)
-    await session.commit()
-    return item
+    return await get_facet(session, spec.kind, target_id)
 
 
 def _favorite_entity(
@@ -1278,7 +1585,7 @@ async def set_facets_favorite(
     """把一批分类的收藏位整体赋同一个取值, 单个事务; 分类不支持收藏抛 ``ValueError``.
 
     只写取值与目标不同的行, 因此重复提交同一批不产生写入. 不存在的 id 计入 ``missing``, 其余
-    照常处理 — 批量请求里某个 id 已失效不该让整批无结果.
+    照常处理 — 批量请求里某个 id 已失效不该让整批无结果. 提交由调用方负责.
     """
     entity = _favorite_entity(kind)
     if entity is None:
@@ -1293,7 +1600,6 @@ async def set_facets_favorite(
         row.updated_at = _utcnow()
         session.add(row)
         changed += 1
-    await session.commit()
     return FacetBatchResult(
         changed=changed,
         unchanged=len(rows) - changed,

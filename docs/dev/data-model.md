@@ -139,7 +139,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 ## 分类索引 (爬取侧投影)
 
-`Metadata` 上的 `actors` / `tags` / `directors` (JSON list) 与 `studio` / `publisher` / `series` (标量) **仍是刮削聚合、NFO、路径模板的真值来源**. 分类实体表 + 关联表是**查询投影**: `upsert_metadata` / `update_metadata` 写入后重建 (按 name get-or-create; list 字段带 `position` 保序).
+`Metadata` 上的 `actors` / `tags` / `directors` (JSON list) 与 `studio` / `publisher` / `series` (标量) **仍是刮削聚合、NFO、路径模板的真值来源**. 分类实体表 + 关联表是**查询投影**: `upsert_metadata` / `update_metadata` 写入后重建 (按 name get-or-create; list 字段带 `position` 保序, 值等于真值列表下标).
 
 写入时先清洗 `Metadata.actors` 的 `name(alias1, alias2)` 形式: 展示名留真值, 别名并入对应演员的 `ActorAlias` 行. 每个名字经 `resolve_actor_by_name` 解析 (展示名精确命中 → 别名唯一命中 → 歧义 / 无命中以名字本身为展示名新建实体), 因此站点给的**裸别名**会折到已认定演员, 不再另建重复实体; block 判定在解析前后各执行一次. 影片名单顺序由第一成功源锁定, 其后已抓源按展示名填空性别. 写入时若带 `FilmActor.gender`, 只对 `Actor.gender == unknown` 且 gender 未锁的行填空, 不覆盖已有值, 不写入 `field_sources`. `Metadata.actors` 存库始终是展示名, 站点 `raw` 快照保留原始带括号形式.
 
@@ -150,7 +150,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 | `alias` | 源名映射到目标名; **表内保持单跳规范形** (写入时压缩入边, apply 不递归). 演员不使用该规则, 由 `ActorAlias` 行承担 |
 | `block` | 源名永久剔除; 指向该名的 alias 入边一并压成 block |
 
-规则在投影重建之前对六个分类真值字段执行 (不修改 `raw`); 演员只有 block 会命中. 目录 API 的 rename / merge 对非演员写 alias 并修改已有 Metadata, delete 写 block 后从真值剔除再删实体. `user_tag` 与刮削隔离, 硬删且不写入规则表. 名称大小写敏感, 与源站原样一致, 不做模糊合并. `Actor` / `Director` 为一等实体, 无影片关联时**不自动删除**, 用户显式删除时删除实体并写 block. 删 `Metadata` 时清理关联 / 评论 / 用户 tag 挂载, 人物与目录实体保留.
+规则在投影重建之前对六个分类真值字段执行 (不修改 `raw`); 演员只有 block 会命中. 目录 API 的 rename / merge 对非演员写 alias 并修改已有 Metadata, delete 写 block 后从真值剔除再删实体. 三条治理路径均按最终真值维护投影, 仅批量写回变化的真值列; 实体改名后须独立判断投影是否仍有效, 真值未变不代表关联可保留. `user_tag` 与刮削隔离, 硬删且不写入规则表. 名称大小写敏感, 与源站原样一致, 不做模糊合并. `Actor` / `Director` 为一等实体, 无影片关联时**不自动删除**, 用户显式删除时删除实体并写 block. 删 `Metadata` 时清理关联 / 评论 / 用户 tag 挂载, 人物与目录实体保留.
 
 `directors` / `tags` / `studios` / `publishers` / `series` 另有一位用户手工状态 `is_favorite` (收藏): 与投影重建正交 — 重建只按 name get-or-create, 改名与规则都不清它, 合并时源的收藏并入目标, 删除随实体消失. `actors` 与 `user_tags` 没有这一列: 用户标签挂载到影片与演员, 演员收藏因此由标签表达; 导演没有标签挂载点, 与其余分类实体同列. 见「用户注解」.
 
