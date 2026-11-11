@@ -153,7 +153,7 @@
     sudo xattr -d com.apple.quarantine /Applications/Amane.app
     ```
 
-    每次覆盖更新后都需要重新执行. 系统要求为 macOS 13 及以上, 更早的系统不在支持范围内, 需要时可以从源码安装并自行解决依赖. 详见 [安装与快速开始](index.md#install).
+    每次覆盖更新后都需要重新执行. 系统要求为 macOS 13 及以上, 仅支持 Apple Silicon; 更早的系统与 Intel Mac 不在支持范围内, 需要时可以从源码安装并自行解决依赖. 详见 [安装与快速开始](index.md#install).
 
 ??? question "数据迁移与备份"
     Amane 的全部状态都在数据目录 (`AMANE_DATA_DIR`) 中:

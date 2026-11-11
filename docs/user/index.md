@@ -6,7 +6,7 @@
 
 | 方式 | 适用场景 | 获取 |
 |------|---------|------|
-| :material-apple: macOS 桌面版 | 在个人电脑上使用 | [Releases](https://github.com/sqzw-x/amane/releases) 中的 `Amane-v*-macos.app.zip`, 需 macOS 13 及以上 |
+| :material-apple: macOS 桌面版 | 在个人电脑上使用 | [Releases](https://github.com/sqzw-x/amane/releases) 中的 `Amane-v*-macos.app.zip`, 需 macOS 13 及以上, 仅 Apple Silicon |
 | :material-microsoft-windows: Windows 桌面版 | 同上 | [Releases](https://github.com/sqzw-x/amane/releases) 中的 `Amane-v*-windows-x64.zip`, 仅 x64 |
 | :material-docker: Docker | NAS、家庭服务器等长期运行的主机 | 镜像 `ghcr.io/sqzw-x/amane`, 支持 `linux/amd64` 与 `linux/arm64` |
 | :material-android: Android 客户端 | 在手机或电视盒上访问已部署的服务 | [Releases](https://github.com/sqzw-x/amane/releases) 中 `app-` 开头的发布, 见 [客户端](clients.md#android) |
@@ -20,6 +20,8 @@
 ## 安装 {#install}
 
 === "macOS"
+
+    系统要求 macOS 13 及以上, 仅 Apple Silicon.
 
     1. 下载 `Amane-v*-macos.app.zip`, 解压后将 `Amane.app` 拖入「应用程序」.
     2. 打开 Amane. 应用不在 Dock 中显示, 菜单栏出现 Amane 图标.
