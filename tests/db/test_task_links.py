@@ -8,6 +8,7 @@ from sqlalchemy import event
 
 from amane.db.models import TaskStatus, TaskType
 from amane.db.repos.base import SQL_IN_CHUNK_SIZE
+from tests.helpers import finish_task
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -204,9 +205,7 @@ async def test_delete_tasks_mixed_tree_keeps_root(repo: Repository):
     )
     done_child, failed_child = children
     assert done_child.id is not None and failed_child.id is not None
-    claimed_child = await repo.claim_next_task()
-    assert claimed_child is not None and claimed_child.id == done_child.id
-    assert await repo.complete_task(done_child.id) is True
+    await finish_task(repo, done_child.id)
     assert await repo.fail_task(failed_child.id, error="boom") is True
 
     assert await repo.delete_tasks([parent.id, done_child.id]) == 1

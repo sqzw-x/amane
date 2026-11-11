@@ -39,7 +39,7 @@ from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataFiel
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
 from amane.parsing import ContentType, Mosaic
 from amane.utils.path import resolved_path
-from tests.helpers import assert_exhaustive_enum
+from tests.helpers import assert_exhaustive_enum, finish_task
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -1753,8 +1753,7 @@ class TestTaskRepo:
         first = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         assert first.id is not None
         if status == TaskStatus.DONE:
-            assert (await repo.claim_next_task()) is not None
-            assert await repo.complete_task(first.id) is True
+            await finish_task(repo, first.id)
         else:
             assert await repo.fail_task(first.id, "boom") is True
         second = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})

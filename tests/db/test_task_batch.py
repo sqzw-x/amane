@@ -41,8 +41,7 @@ async def test_batch_delete_counts_and_skips_active_chain(repo: Repository, tmp_
     for _ in range(3):
         t = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
         assert t.id is not None
-        assert (await repo.claim_next_task()) is not None
-        assert await repo.complete_task(t.id) is True
+        await finish_task(repo, t.id)
         ids.append(t.id)
     queued = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
     assert queued.id is not None

@@ -206,7 +206,7 @@ class TasksRepoMixin(RepositoryMixinBase):
     ) -> list[Task]:
         """父完成与子创建须在同一事务. 同父同 key 只留第一条, UNIQUE(parent, key) 拒绝重复.
 
-        先以条件 UPDATE 取得 ``RUNNING → DONE``; 命中 0 行说明父任务已终态, 不创建后继.
+        先以条件 UPDATE 取得 ``RUNNING → DONE``; 命中 0 行说明父任务不在运行中 (已终态或已删除), 不创建后继.
         """
         created: list[Task] = []
         async with self._task_insert_lock, self._session() as session:
