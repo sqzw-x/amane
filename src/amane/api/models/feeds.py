@@ -225,7 +225,7 @@ class FeedItemBatchAction(StrEnum):
 
 class FeedItemBatchRequest(BaseModel):
     action: FeedItemBatchAction
-    ids: list[int] = Field(min_length=1)
+    ids: list[int] = Field(min_length=1, max_length=1000)
 
 
 class FeedItemBatchResponse(BaseModel):

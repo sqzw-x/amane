@@ -154,7 +154,7 @@ export const listMetadata = <ThrowOnError extends boolean = false>(options?: Opt
 /**
  * Batch Delete Metadata
  *
- * 级联行为与单条删除一致.
+ * 级联行为与单条删除一致; 重复 id 去重后只处理一次.
  */
 export const batchDeleteMetadata = <ThrowOnError extends boolean = false>(options: Options<BatchDeleteMetadataData, ThrowOnError>): RequestResult<BatchDeleteMetadataResponses, BatchDeleteMetadataErrors, ThrowOnError> => (options.client ?? client).post<BatchDeleteMetadataResponses, BatchDeleteMetadataErrors, ThrowOnError>({
     url: '/api/metadata/batch/delete',
@@ -168,7 +168,7 @@ export const batchDeleteMetadata = <ThrowOnError extends boolean = false>(option
 /**
  * Batch Scrape Metadata
  *
- * 以各自 number 重新刮削.
+ * 以各自 number 重新刮削; 重复 id 去重后只提交一次.
  */
 export const batchScrapeMetadata = <ThrowOnError extends boolean = false>(options: Options<BatchScrapeMetadataData, ThrowOnError>): RequestResult<BatchScrapeMetadataResponses, BatchScrapeMetadataErrors, ThrowOnError> => (options.client ?? client).post<BatchScrapeMetadataResponses, BatchScrapeMetadataErrors, ThrowOnError>({
     url: '/api/metadata/batch/scrape',

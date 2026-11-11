@@ -25,7 +25,45 @@ async def _seed_library(repo: Repository) -> None:
         await repo.create_library(name="default", path="/")
 
 
+_FILTER_LIMIT_CASES = [
+    ({"actor_id": list(range(101))}, 422, "actor_id"),
+    ({"actor_id": list(range(100)), "tag_id": list(range(100)), "director_id": [1]}, 422, "合计"),
+    ({"actor_id": list(range(100))}, 200, None),
+]
+
+
 class TestMetadataHttp:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_filter_id_limits(self, client: AsyncClient):
+        """每组 ≤100、八组合计 ≤200; 超限 422 并指出是哪一项."""
+        for params, status, detail_part in _FILTER_LIMIT_CASES:
+            response = await client.get("metadata", params=params)
+            assert response.status_code == status, (params, response.json())
+            if detail_part is not None:
+                assert detail_part in response.json()["detail"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_item_omits_raw_and_field_sources(self, client: AsyncClient, repo: Repository):
+        """列表项是精简模型, raw / field_sources 只在详情返回; 聚合字段仍在."""
+        meta = await repo.upsert_metadata(
+            number="SLIM-001",
+            title="Slim",
+            raw={"javdb": {"title": "Slim"}},
+            field_sources={"title": "javdb"},
+        )
+        assert meta.id is not None
+
+        listed = (await client.get("metadata?search=SLIM-001")).json()["items"][0]
+        assert "raw" not in listed
+        assert "field_sources" not in listed
+        assert listed["file_count"] == 0
+        assert "file_phase" in listed
+        assert listed["locked_fields"] == []
+
+        detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert detail["raw"] == {"javdb": {"title": "Slim"}}
+        assert detail["field_sources"] == {"title": "javdb"}
+
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_phase_comes_from_number_without_files(self, client: AsyncClient, repo: Repository):
         """有码 / 无码取番号类别: 没有挂载文件也亮, 无码再并上文件的无码标记."""

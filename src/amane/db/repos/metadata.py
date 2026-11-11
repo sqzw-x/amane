@@ -3,8 +3,9 @@ from datetime import datetime
 from typing import Unpack, cast
 
 import structlog
-from sqlalchemy import ColumnElement, or_, text, update
+from sqlalchemy import ColumnElement, distinct, or_, text, update
 from sqlalchemy import delete as sqla_delete
+from sqlalchemy.orm import Mapped
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -39,7 +40,7 @@ from ..repo_types import (
     _metadata_uncensored_predicate,
     _utcnow,
 )
-from .base import RepositoryMixinBase
+from .base import RepositoryMixinBase, chunks
 from .facet_helpers import (
     apply_facet_rules_to_metadata,
     cascade_delete_metadata,
@@ -77,6 +78,28 @@ def _merge_raw_snapshots(
         for site, snapshot in source.items():
             merged.setdefault(site, dict(snapshot))
     return merged
+
+
+def _facet_link_condition(
+    link_metadata_id: Mapped[int],
+    facet_column: Mapped[int],
+    facet_ids: Sequence[int] | None,
+) -> ColumnElement[bool] | None:
+    """同一 kind 的多个 id 聚合成一条子查询: 条目必须挂满全部去重后的 id (AND).
+
+    逐 id 各生成一条子查询会线性增加表达式深度, 约 1000 个 id 时 SQLite 报表达式过大;
+    聚合写法的语义不变: 未知 id 使计数不足, 结果为空; 空入参不生成条件.
+    """
+    id_list = list(unique_ids(facet_ids))
+    if not id_list:
+        return None
+    matched = (
+        select(link_metadata_id)
+        .where(facet_column.in_(id_list))
+        .group_by(link_metadata_id)
+        .having(count(distinct(facet_column)) == len(id_list))
+    )
+    return col(Metadata.id).in_(matched)
 
 
 # 锁字段 (MetadataField) ↔ Metadata 列名; 仅 extrafanart / score 两名不同.
@@ -172,24 +195,15 @@ class MetadataRepoMixin(RepositoryMixinBase):
             conditions.append(
                 or_(col(Metadata.number).ilike(search_pattern), col(Metadata.title).ilike(search_pattern))
             )
-        conditions.extend(
-            col(Metadata.id).in_(select(MetadataActor.metadata_id).where(MetadataActor.actor_id == actor_id))
-            for actor_id in unique_ids(actor_ids)
-        )
-        conditions.extend(
-            col(Metadata.id).in_(
-                select(MetadataDirector.metadata_id).where(MetadataDirector.director_id == director_id)
-            )
-            for director_id in unique_ids(director_ids)
-        )
-        conditions.extend(
-            col(Metadata.id).in_(select(MetadataTag.metadata_id).where(MetadataTag.tag_id == tag_id))
-            for tag_id in unique_ids(tag_ids)
-        )
-        conditions.extend(
-            col(Metadata.id).in_(select(MetadataUserTag.metadata_id).where(MetadataUserTag.user_tag_id == user_tag_id))
-            for user_tag_id in unique_ids(user_tag_ids)
-        )
+        for link_metadata_id, facet_column, facet_ids in (
+            (col(MetadataActor.metadata_id), col(MetadataActor.actor_id), actor_ids),
+            (col(MetadataDirector.metadata_id), col(MetadataDirector.director_id), director_ids),
+            (col(MetadataTag.metadata_id), col(MetadataTag.tag_id), tag_ids),
+            (col(MetadataUserTag.metadata_id), col(MetadataUserTag.user_tag_id), user_tag_ids),
+        ):
+            condition = _facet_link_condition(link_metadata_id, facet_column, facet_ids)
+            if condition is not None:
+                conditions.append(condition)
         studio_names = await resolve_scalar_facet_names(session, Studio, studio_ids)
         if studio_ids and not studio_names:
             return None
@@ -357,6 +371,18 @@ class MetadataRepoMixin(RepositoryMixinBase):
     async def get_metadata(self, metadata_id: int) -> Metadata | None:
         async with self._session() as session:
             return await session.get(Metadata, metadata_id)
+
+    async def get_metadata_by_ids(self, ids: Sequence[int]) -> list[Metadata]:
+        """按 id 批量取回, 顺序不保证; 调用方按需重排. 每批用 ``chunks`` 控制绑定变量数."""
+        id_list = list(unique_ids(ids))
+        if not id_list:
+            return []
+        async with self._session() as session:
+            result: list[Metadata] = []
+            for chunk in chunks(id_list):
+                rows = (await session.exec(select(Metadata).where(col(Metadata.id).in_(chunk)))).all()
+                result.extend(rows)
+            return result
 
     async def get_metadata_by_number(self, number: str) -> Metadata | None:
         """大小写不敏感; 返回行保留库内原始大小写."""
@@ -598,7 +624,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         removed: list[int] = []
         async with self._session() as session:
             missing = 0
-            for metadata_id in ids:
+            for metadata_id in unique_ids(ids):
                 metadata = await session.get(Metadata, metadata_id)
                 if metadata is None:
                     missing += 1

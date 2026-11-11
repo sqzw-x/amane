@@ -30,7 +30,7 @@ import {
   mergeMetadataEntriesMutation,
   submitTaskMutation,
 } from "@/client/@tanstack/react-query.gen";
-import type { CacheKind, MetadataResponse, MetadataSortField, SortOrder } from "@/client/types.gen";
+import type { CacheKind, MetadataListItem, MetadataSortField, SortOrder } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { ListToolbar } from "@/components/common/list-toolbar";
 import { SortableTh } from "@/components/common/sortable-th";
@@ -95,7 +95,7 @@ const COLUMN_VISIBLE_FROM: Partial<Record<MetaTableColumnKey, MantineBreakpoint>
 const CELL_OVERFLOW = { overflow: "hidden", maxWidth: 0 } as const;
 
 export interface MetaTableProps {
-  items: MetadataResponse[];
+  items: MetadataListItem[];
   isLoading: boolean;
   total: number;
   page: number;
@@ -105,7 +105,7 @@ export interface MetaTableProps {
   onSort: (field: MetadataSortField) => void;
 }
 
-function cellValue(item: MetadataResponse, field: SortableColumn): string {
+function cellValue(item: MetadataListItem, field: SortableColumn): string {
   switch (field) {
     case "number":
       return item.number;
@@ -292,7 +292,7 @@ export function MetaTable({
   const busy =
     batchScrape.isPending || batchDelete.isPending || batchTags.isPending || mergeEntries.isPending;
 
-  async function handleMergeEntries(target: MetadataResponse) {
+  async function handleMergeEntries(target: MetadataListItem) {
     const sourceIds = selectedIds.filter((id) => id !== target.id);
     if (sourceIds.length === 0) {
       notifications.show({

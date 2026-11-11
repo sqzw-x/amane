@@ -5,7 +5,7 @@
  * 否则缓存与 `<img>` 对不上. 比例只有图片加载完才有, 未加载与缺图一律按竖版海报比例参与布局.
  */
 
-import type { MetadataResponse } from "@/client/types.gen";
+import type { MetadataListItem } from "@/client/types.gen";
 import { proxyImageUrl } from "@/lib/utils";
 
 /** 竖版海报的缺省宽高比: 缺图条目与尚未加载完的图片按它占位. */
@@ -15,7 +15,7 @@ const ratios = new Map<string, number>();
 
 /** 卡片实际渲染的图片地址: 覆盖值 (语义检索的剧照) 优先, 其次条目的海报. */
 export function posterImageUrl(
-  item: MetadataResponse,
+  item: MetadataListItem,
   override?: string | null,
 ): string | undefined {
   return proxyImageUrl(override ?? item.poster_url ?? item.poster_urls?.[0]);
@@ -44,7 +44,7 @@ export function cachedImageRatio(url: string | undefined): number | undefined {
 
 /** 栅格逐条算好的图片地址与比例. */
 export interface PosterEntry {
-  item: MetadataResponse;
+  item: MetadataListItem;
   /** 卡片实际请求的地址; 缺图条目为空. */
   url: string | undefined;
   /** 实测优先, 其次调用方给的 (语义检索的剧照), 最后回落到竖版缺省. */
@@ -52,10 +52,10 @@ export interface PosterEntry {
 }
 
 export interface PosterEntriesSource {
-  items: readonly MetadataResponse[];
+  items: readonly MetadataListItem[];
   /** 逐条覆盖卡片图片与宽高比 (语义检索的剧照结果). */
-  imageUrlOf?: (item: MetadataResponse) => string | null | undefined;
-  imageRatioOf?: (item: MetadataResponse) => number | undefined;
+  imageUrlOf?: (item: MetadataListItem) => string | null | undefined;
+  imageRatioOf?: (item: MetadataListItem) => number | undefined;
 }
 
 export function posterEntries({
