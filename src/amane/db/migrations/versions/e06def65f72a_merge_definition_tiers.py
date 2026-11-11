@@ -45,8 +45,8 @@ _RENAMED_KEYS = {"SD": "480p", "HD": "720p"}
 _DEF_MAPPING = re.compile(r"\{def\?\|([^}]*)\}")
 
 
-def _rename_mapping_keys(template: str, *, library_id: int, column: str) -> str:
-    """只改 {def?} 的映射键; 键按解析器口径去空白, 与既有键撞名的一对丢弃."""
+def _rename_mapping_keys(template: str, dropped: list[str]) -> str:
+    """只改 {def?} 的映射键; 键按解析器口径去空白, 与既有键撞名的一对记入 dropped 并丢弃."""
 
     def rewrite(match: re.Match[str]) -> str:
         items = match.group(1).split(",")
@@ -57,10 +57,7 @@ def _rename_mapping_keys(template: str, *, library_id: int, column: str) -> str:
             original = key.strip()
             renamed = _RENAMED_KEYS.get(original, original)
             if renamed != original and renamed in occupied:
-                logger.warning(
-                    "definition mapping key collision, dropping legacy pair",
-                    extra={"library_id": library_id, "column": column, "key": original, "kept": renamed},
-                )
+                dropped.append(f"{original}->{renamed}")
                 continue
             occupied.add(renamed)
             pairs.append(f"{renamed}{sep}{value}")
@@ -71,15 +68,13 @@ def _rename_mapping_keys(template: str, *, library_id: int, column: str) -> str:
 
 def _warn_saved_query_literals(conn: Connection) -> None:
     for value in _RENAMED_KEYS:
-        rows = conn.execute(
-            text("SELECT id FROM saved_queries WHERE sql LIKE :pattern"),
-            {"pattern": f"%'{value}'%"},
-        ).all()
-        if rows:
-            logger.warning(
-                "saved query still compares legacy definition literal",
-                extra={"value": value, "ids": [row[0] for row in rows]},
+        ids: list[int] = []
+        for pattern in (f"%'{value}'%", f'%"{value}"%'):
+            ids.extend(
+                row[0] for row in conn.execute(text("SELECT id FROM saved_queries WHERE sql LIKE :p"), {"p": pattern})
             )
+        if ids:
+            logger.warning("saved query compares legacy definition literal: value=%s ids=%s", value, sorted(set(ids)))
 
 
 def upgrade() -> None:
@@ -95,14 +90,19 @@ def upgrade() -> None:
             {"definition": definition, "id": row_id},
         )
         changed += 1
-    logger.info("definition reprojected", extra={"scanned": scanned, "changed": changed})
+    logger.info("definition reprojected: scanned=%s changed=%s", scanned, changed)
 
     for row in conn.execute(text(f"SELECT id, {', '.join(_TEMPLATE_COLUMNS)} FROM libraries")).mappings():
-        updates = {
-            column: _rename_mapping_keys(row[column], library_id=row["id"], column=column)
-            for column in _TEMPLATE_COLUMNS
-            if row[column] is not None and "{def?|" in row[column]
-        }
+        updates: dict[str, str] = {}
+        for column in _TEMPLATE_COLUMNS:
+            if row[column] is None or "{def?|" not in row[column]:
+                continue
+            dropped: list[str] = []
+            updates[column] = _rename_mapping_keys(row[column], dropped)
+            if dropped:
+                logger.warning(
+                    "definition mapping keys dropped: library=%s column=%s pairs=%s", row["id"], column, dropped
+                )
         if not updates:
             continue
         assignments = ", ".join(f"{column} = :{column}" for column in updates)
