@@ -96,7 +96,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 `execute_file_operations` 是落盘执行单元, 仅 ORGANIZE 经 `apply_file_operations` 调用. 不变量:
 
-- **整理 = 复制到库路径**: 优先用 Resource 已有文件, 缺失才现场 `acquire`; 复制哪些类型由 `Library.copy_resources` (或 payload 覆盖) 决定 (见 [data-model.md](data-model.md)). 目标路径上已有的产物一律按本次内容覆盖, NFO 同理, 不判断是否已存在; fanart 没有刮削来源, 内容取 thumb, 因此随 thumb 一同重写, 该路径上的自备背景图会被覆盖, 也没有单独的关闭途径.
+- **整理 = 复制到库路径**: 优先用 Resource 已有文件, 缺失才现场 `acquire`; 复制哪些类型由 `Library.copy_resources` (或 payload 覆盖) 决定 (见 [data-model.md](data-model.md)). 目标路径上已有的产物一律按本次内容覆盖, 落盘按新文件处理 (临时文件加改名, 权限与 ACL 取自库目录而非 Resource), NFO 同理, 不判断是否已存在; fanart 没有刮削来源, 内容取 thumb, 因此随 thumb 一同重写, 该路径上的自备背景图会被覆盖, 也没有单独的关闭途径.
 - **封面角标**: `watermark.enabled` 时 poster / thumb 副本按源文件 FileInfo 与条目类型叠 PNG; Resource 原图与 fanart 不修改.
 - **海报缺失**: 有码与无码在 `scraping.crop_poster` 开启时从已落盘 thumb 裁剪兜底; 其余类型不裁.
 - **目标占用**: 判定分为四态: 空闲 / 已就位 / 被占用 / 无法判定. 源与目标已是同一文件 (含硬链同一 inode) 时视为就位, 只跳过视频落盘, 附属文件照常重写; 被占用时跳过该文件, 不改名、不覆盖、不移动, 视频与字幕一视同仁, 由调用方按冲突记账, 冲突条目 (源路径 + 被占用的目标路径; 字幕冲突的 `path` 记字幕源路径, 不记视频源路径) 写进任务结果供界面显示, 且 `conflicts` 恒为 `conflicted` 条数的前缀 (差额只留在任务日志里), 冲突不自动解决, 未落盘的行留在源路径, 由用户自行处理. 无法判定 (stat 失败, 或两者在两次读取之间被替换) 按失败记账并带上 stat 的错误说明, 不得计入冲突或放宽为空闲. 存在性与占用判定都经 `existing_disk_path` (跟随符号链接; 读不出状态时按不存在处理, 不抛异常): 目标位置是断链符号链接时按空闲处理, MOVE 会替换它, SYMLINK 因 EEXIST 记失败. 判定与落盘之间还有窗口, MOVE / COPY 期间目标被外部写入仍会覆盖, 这条保证是尽力而为.
