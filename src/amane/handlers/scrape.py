@@ -12,7 +12,7 @@ from ..media import materialize_images
 from ..observability import current
 from ..observability.models import SiteOutcomeKind
 from ..plugins.models import SourceDescriptor, SourceTrait
-from ._common import ensure_oshash, finalize_media_file
+from ._common import ensure_oshash, ensure_video_size, finalize_media_file
 from .models import ActorScrapePayload, CacheKind, OrganizePayload, ScrapePayload, ScrapeResult
 from .protocol import FollowupTask, TaskHandler, TaskResult
 
@@ -87,6 +87,9 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         file = None
         if payload.media_file_id:
             file = await self._repo.get_media_file(media_id=payload.media_file_id)
+        # 画面尺寸与刮削结果无关, 联网前读取一次并落库; 列表角标与整理共用该结果.
+        if file is not None:
+            file = await ensure_video_size(self._repo, file)
 
         # 仅当本次可用来源声明需要指纹时计算 oshash.
         file_hash = file.oshash if file else None

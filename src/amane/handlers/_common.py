@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..db import Library, MediaFileStatus
-from ..library import LibraryHit, LibraryScan, has_companion_subtitle
+from ..library import LibraryHit, LibraryScan, has_companion_subtitle, probe_video_size
 from ..utils.oshash import compute_oshash
 from ..utils.threads import existing_disk_path, in_thread
 
@@ -54,7 +54,7 @@ def scan_library(scan_dir: Path, *, recursive: bool, scan: LibraryScan) -> list[
 async def register_media_file(
     repo: Repository, library_id: int, path: Path, *, library: Library | None = None
 ) -> MediaFile:
-    """注册不读文件内容; oshash 留给刮削按需计算. 有库配置时立刻查一次同目录字幕."""
+    """注册不读文件内容; oshash 与画面尺寸留给刮削读取. 有库配置时立刻查一次同目录字幕."""
     media = await repo.create_media_file(library_id=library_id, path=str(path))
     if library is not None:
         await refresh_external_subtitle(repo, media, library)
@@ -86,6 +86,23 @@ async def ensure_oshash(repo: Repository, media: MediaFile) -> str | None:
         return None
     updated = await repo.update_media_file(media.id, oshash=media_hash)
     return updated.oshash if updated is not None else media_hash
+
+
+async def ensure_video_size(repo: Repository, media: MediaFile) -> MediaFile:
+    """已有画面尺寸直接返回; 读取失败保持为空, 分辨率继续依据文件名, 不阻断后续步骤.
+
+    写入后 ``definition`` 由 Repository 按画面尺寸回填, 调用方应改用返回的行.
+    """
+    if media.video_size is not None or media.id is None:
+        return media
+    disk = await existing_disk_path(Path(media.path))
+    if disk is None:
+        return media
+    size = await probe_video_size(disk)
+    if size is None:
+        return media
+    updated = await repo.update_media_file(media.id, width=size.width, height=size.height)
+    return updated if updated is not None else media
 
 
 async def finalize_media_file(repo: Repository, media_file_id: int | None, metadata_id: int | None) -> None:

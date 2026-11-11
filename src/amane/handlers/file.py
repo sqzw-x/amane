@@ -38,7 +38,7 @@ from ..parsing import ContentType, FileInfo, parse_file_info
 from ..utils.path import existing_disk_path as existing_disk_path_sync
 from ..utils.path import is_descendant, nfc_path, path_is_under
 from ..utils.threads import existing_disk_path, in_thread, path_is_dir
-from ._common import LibraryTaskLocks, refresh_external_subtitle
+from ._common import LibraryTaskLocks, ensure_video_size, refresh_external_subtitle
 from .models import (
     ORGANIZE_CONFLICT_LIMIT,
     CleanupPayload,
@@ -216,9 +216,14 @@ async def apply_file_operations(
     if library is None:
         return None
 
-    # 渲染路径后执行落盘.
+    # 渲染路径后执行落盘. 刮削未读出画面尺寸 (早于该功能入库或当时读取失败) 时在此补读.
+    media_file = await ensure_video_size(repo, media_file)
     ext = Path(media_file.path).suffix.lstrip(".")
-    file_info = parse_file_info(media_file.path, has_external_subtitle=media_file.has_external_subtitle)
+    file_info = parse_file_info(
+        media_file.path,
+        has_external_subtitle=media_file.has_external_subtitle,
+        video_size=media_file.video_size,
+    )
     actor_genders = {a.name: a.gender for a in await repo.get_actors_by_names(metadata.actors)}
     paths = resolve_paths(
         library,
@@ -256,7 +261,7 @@ async def commit_organized_media_file(
 ) -> None:
     """整理后的路径仍在本库内才改 path; 已离开本库且源路径不在磁盘上则删行.
 
-    目标路径已被另一行占用时删本行; 占用行缺少刮削字段则从本行补上.
+    目标路径已被另一行占用时删本行; 占用行缺少刮削字段或画面尺寸则从本行补上.
     """
     if media.id is None:
         return
@@ -282,6 +287,9 @@ async def commit_organized_media_file(
         occupant_updates["oshash"] = media.oshash
     if occupant.number is None and media.number is not None:
         occupant_updates["number"] = media.number
+    if occupant.video_size is None and media.video_size is not None:
+        occupant_updates["width"] = media.width
+        occupant_updates["height"] = media.height
     if occupant_updates:
         await repo.update_media_file(occupant.id, **occupant_updates)
     await repo.delete_media_file(media.id)

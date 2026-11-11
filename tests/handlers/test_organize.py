@@ -20,6 +20,7 @@ from amane.handlers.models import ORGANIZE_CONFLICT_LIMIT
 from amane.library import DeleteOutcome, InventoryStore, LibraryScan, scan_inventory
 from amane.media import apply_cover_watermarks_from_info
 from amane.observability.models import OrganizeConflict, OrganizeConflictReason
+from tests.helpers import write_video
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -449,6 +450,50 @@ async def test_organize_writes_subtitle_tag(repo: Repository, resource_store: Re
     updated_b = await repo.get_media_file(src_b.id)
     assert updated_c is not None and updated_c.path == str(dest_c)
     assert updated_b is not None and updated_b.path == str(dest_b)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_organize_definition_prefers_video_size(
+    repo: Repository, resource_store: ResourceStore, tmp_path: Path
+) -> None:
+    """{def?} 依据整理时读出的画面尺寸并落库; 读不出尺寸的文件回退文件名标记."""
+    lib_root = tmp_path / "lib"
+    src_dir = lib_root / "incoming"
+    src_dir.mkdir(parents=True)
+    video = src_dir / "NSFS-041-4K.mp4"
+    write_video(video, 854, 480)
+    junk = src_dir / "NSFS-042-1080p.mp4"
+    junk.write_bytes(b"not a video")
+
+    lib = await repo.create_library(
+        name="t", path=str(lib_root), write_nfo=False, video_template="{number}/{number}[-{def?}].{ext}"
+    )
+    assert lib.id is not None
+    sources: dict[str, int] = {}
+    for number, path in (("NSFS-041", video), ("NSFS-042", junk)):
+        meta = await repo.upsert_metadata(number=number, studio="Studio")
+        assert meta.id is not None
+        media = await repo.create_media_file(
+            lib.id, path=str(path), number=number, status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+        )
+        assert media.id is not None
+        sources[number] = media.id
+
+    org = OrganizeHandler(repo, HotSettings(), resource_store)
+    result = await org.handle(OrganizePayload(library_id=lib.id, path=str(src_dir)))
+    assert result.success is True
+    assert result.result is not None
+    assert result.result.failed == 0
+
+    probed = await repo.get_media_file(sources["NSFS-041"])
+    assert probed is not None
+    assert probed.path == str(lib_root / "NSFS-041" / "NSFS-041-480p.mp4")
+    assert (probed.width, probed.height, probed.definition) == (854, 480, "480p")
+    fallback = await repo.get_media_file(sources["NSFS-042"])
+    assert fallback is not None
+    assert fallback.path == str(lib_root / "NSFS-042" / "NSFS-042-1080p.mp4")
+    assert fallback.video_size is None
+    assert fallback.definition == "1080p"
 
 
 class _FakeImageClient:
@@ -1272,9 +1317,12 @@ async def test_commit_organized_media_file(repo: Repository, tmp_path: Path, cas
             status=MediaFileStatus.SCRAPED,
             metadata_id=meta.id,
             oshash="abc",
+            width=1920,
+            height=1080,
         )
         occupant = await repo.create_media_file(lib.id, path=str(placed), number=None)
         assert media.id is not None and occupant.id is not None
+        assert occupant.definition is None
         await commit_organized_media_file(repo, media, placed, lib_root)
         assert await repo.get_media_file(media.id) is None
         kept = await repo.get_media_file(occupant.id)
@@ -1283,6 +1331,8 @@ async def test_commit_organized_media_file(repo: Repository, tmp_path: Path, cas
         assert kept.status == MediaFileStatus.SCRAPED
         assert kept.oshash == "abc"
         assert kept.number == "NSFS-039"
+        # 画面尺寸随行合并, 分辨率按尺寸重新回填
+        assert (kept.width, kept.height, kept.definition) == (1920, 1080, "1080p")
         return
 
     if case == "outside_source_gone":

@@ -18,6 +18,7 @@ from amane.library import CleanupInventory, InventorySource, InventoryStore, Lib
 from amane.observability import Recorder
 from amane.parsing import ContentType
 from amane.plugins.models import SourceDescriptor
+from tests.helpers import write_video
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -177,6 +178,22 @@ class TestScrapeHandler:
         updated = await repo.get_media_file(media.id)
         assert updated is not None
         assert updated.status == MediaFileStatus.SCRAPED
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_persists_video_size(self, repo: Repository, handler, tmp_path: Path):
+        """刮削读取画面尺寸并落库, definition 随之改为依据尺寸."""
+        video = tmp_path / "MIDV-123-4K.mp4"
+        write_video(video, 1280, 720)
+        media = await repo.create_media_file(library_id=1, path=str(video))
+        assert media.id is not None
+        assert media.definition == "4K"
+        result = await handler.handle(
+            ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
+        )
+        assert result.success is True
+        updated = await repo.get_media_file(media.id)
+        assert updated is not None
+        assert (updated.width, updated.height, updated.definition) == (1280, 720, "720p")
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_missing_payload_fields_raises(self, handler):

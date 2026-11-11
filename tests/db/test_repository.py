@@ -243,6 +243,28 @@ class TestMediaFileRepo:
         assert updated.mosaic is Mosaic.CRACKED
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_video_size_overrides_filename_definition(self, repo: Repository):
+        """写入画面尺寸后 definition 只依据尺寸; 换 path 保留尺寸, 尺寸不完整回退文件名."""
+        media = await repo.create_media_file(library_id=1, path="/v/MIDV-123-4K.mp4")
+        assert media.id is not None
+        assert media.definition == "4K"
+
+        sized = await repo.update_media_file(media.id, width=1920, height=1080)
+        assert sized is not None and sized.definition == "1080p"
+        moved = await repo.update_media_file(media.id, path="/v/MIDV-123-720p.mp4")
+        assert moved is not None and moved.definition == "1080p"
+        assert await repo.count_media_files(definition="1080p") == 1
+        assert await repo.count_media_files(definition="720p") == 0
+
+        half = await repo.update_media_file(media.id, height=None)
+        assert half is not None and half.definition == "720p"
+        zero = await repo.update_media_file(media.id, height=0)
+        assert zero is not None and zero.definition == "720p"
+
+        created = await repo.create_media_file(library_id=1, path="/v/MIDV-456-1080p.mp4", width=7680, height=3840)
+        assert created.definition == "8K"
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_phase_filters(self, repo: Repository):
         await repo.create_media_file(library_id=1, path="/v/MIDV-001-C.mp4")
         await repo.create_media_file(library_id=1, path="/v/MIDV-002-无码.mp4")

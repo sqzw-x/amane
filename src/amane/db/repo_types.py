@@ -307,6 +307,8 @@ class MediaFileUpdates(TypedDict, total=False):
     size: int | None
     duration: float | None
     codec: str | None
+    width: int | None
+    height: int | None
     status: MediaFileStatus
     metadata_id: int | None
     has_external_subtitle: bool
