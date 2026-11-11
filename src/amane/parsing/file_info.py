@@ -253,15 +253,17 @@ _DEFINITION_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 DEFINITION_VALUES: tuple[str, ...] = tuple(dict.fromkeys(value for value, _ in _DEFINITION_MARKERS))
 
-#: 已合并的旧档位名: 读侧 (筛选参数、外部调用) 仍接受, 归一后再查询; 写入只落 DEFINITION_VALUES.
-_LEGACY_DEFINITIONS: dict[str, str] = {"SD": "480p", "HD": "720p"}
+#: 旧档位名 → 现档位: 读侧 (筛选参数、角标文件名) 仍接受, 写入只落 DEFINITION_VALUES.
+LEGACY_DEFINITIONS: dict[str, str] = {"SD": "480p", "HD": "720p"}
+
+_DEFINITION_BY_CASEFOLD: dict[str, str] = {value.casefold(): value for value in DEFINITION_VALUES} | {
+    alias.casefold(): value for alias, value in LEGACY_DEFINITIONS.items()
+}
 
 
 def canonical_definition(value: str) -> str | None:
-    """归一到现档位; 未知值返回 None."""
-    if value in DEFINITION_VALUES:
-        return value
-    return _LEGACY_DEFINITIONS.get(value.upper())
+    """大小写不敏感地归一到现档位; 未知值返回 None."""
+    return _DEFINITION_BY_CASEFOLD.get(value.casefold())
 
 
 # ---------------------------------------------------------------------------

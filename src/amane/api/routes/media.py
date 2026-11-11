@@ -43,7 +43,9 @@ async def list_media(
     uncensored: Annotated[
         bool | None, Query(description="Filter by uncensored (own marker or uncensored number content type)")
     ] = None,
-    definition: Annotated[str | None, Query(description="Filter by definition (8K/4K/1440p/1080p/720p/480p)")] = None,
+    definition: Annotated[
+        str | None, Query(description="Filter by definition (8K/4K/1440p/1080p/720p/480p); SD/HD aliases)")
+    ] = None,
     content_type: Annotated[ContentType | None, Query(description="Filter by owning number content type")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,

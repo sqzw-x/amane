@@ -6,6 +6,7 @@ import pytest
 
 from amane.parsing import (
     ContentType,
+    canonical_definition,
     detect_cd,
     extract_number,
     infer_content_type,
@@ -616,3 +617,21 @@ VR_CASES: list[tuple[list[str], bool]] = [
 @pytest.mark.parametrize(("tags", "expected"), VR_CASES)
 def test_is_vr(tags: list[str], expected: bool) -> None:
     assert is_vr(tags) is expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("480p", "480p"),
+        ("480P", "480p"),
+        ("8k", "8K"),
+        ("SD", "480p"),
+        ("sd", "480p"),
+        ("Hd", "720p"),
+        ("2160P", None),
+        ("", None),
+        ("bogus", None),
+    ],
+)
+def test_canonical_definition(value: str, expected: str | None) -> None:
+    assert canonical_definition(value) == expected

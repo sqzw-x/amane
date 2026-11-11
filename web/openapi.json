@@ -588,10 +588,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by definition (8K/4K/1440p/1080p/720p/480p)",
+              "description": "Filter by definition (8K/4K/1440p/1080p/720p/480p); SD/HD aliases)",
               "title": "Definition"
             },
-            "description": "Filter by definition (8K/4K/1440p/1080p/720p/480p)"
+            "description": "Filter by definition (8K/4K/1440p/1080p/720p/480p); SD/HD aliases)"
           },
           {
             "name": "content_type",
@@ -1248,10 +1248,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by linked file definition (8K/4K/1440p/1080p/720p/480p)",
+              "description": "Filter by linked file definition (8K/4K/1440p/1080p/720p/480p); SD/HD aliases)",
               "title": "Definition"
             },
-            "description": "Filter by linked file definition (8K/4K/1440p/1080p/720p/480p)"
+            "description": "Filter by linked file definition (8K/4K/1440p/1080p/720p/480p); SD/HD aliases)"
           },
           {
             "name": "content_type",
