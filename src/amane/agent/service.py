@@ -42,6 +42,8 @@ class AgentService:
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
     _stores: dict[int, SessionStore] = field(default_factory=dict)
     _turn_tasks: dict[int, asyncio.Task[None]] = field(default_factory=dict)
+    _turn_reservations: set[int] = field(default_factory=set)
+    """已占位但尚未登记后台任务的会话; 与 ``_turn_tasks`` 一起构成回合的唯一占用."""
 
     def __post_init__(self) -> None:
         self.sandbox = ReadonlySqlSandbox(self.db_path)
@@ -68,8 +70,27 @@ class AgentService:
             return True
         return self.store_for(session_id).turn_running
 
+    def try_begin_turn(self, session_id: int) -> bool:
+        """原子地检查并占位: 会话空闲返回 True, 已有回合返回 False.
+
+        检查与登记之间不得出现 ``await``: 一旦让出事件循环, 同会话的并发请求会一起通过检查,
+        两个回合交错写同一份 trace. 占位不落盘, 只在本进程内.
+        """
+        if session_id in self._turn_reservations or self.is_turn_running(session_id):
+            return False
+        self._turn_reservations.add(session_id)
+        return True
+
+    def abort_turn(self, session_id: int) -> None:
+        """撤销占位: 占位后未能启动后台任务时调用, 否则该会话一直被 409 拒绝, 或停在 turn_running."""
+        self._turn_reservations.discard(session_id)
+        store = self._stores.get(session_id)
+        if store is not None and store.turn_running and session_id not in self._turn_tasks:
+            store.set_turn_running(False)
+
     def track_turn(self, session_id: int, task: asyncio.Task[None]) -> None:
         """登记后台回合任务; 取消与删除会话据此终止它."""
+        self._turn_reservations.discard(session_id)
         self._turn_tasks[session_id] = task
 
         def _clear(finished: asyncio.Task[None]) -> None:
