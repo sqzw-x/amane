@@ -22,7 +22,7 @@ r18 库由项目导入 / 管理但 schema 不受我们控制, **不能纳入 Ale
 
 ## 写入事务边界
 
-pysqlite 只在 DML 之前发出 `BEGIN`, 纯 SELECT 落在事务之外 (SQLAlchemy 的 autobegin 只是记账, 不发出语句). 因此「先查询判定, 再按判定写入」默认不构成一个事务: 并发调用双方都读到写入前的状态, 后写入者随后违反唯一约束. 这类写入读取前统一经 `src/amane/db/repos/base.py::acquire_write_lock` 取得写锁: 条目的 upsert / update / merge, 分类治理与用户标签挂载. 事务所有权在 Repo 公开方法, `src/amane/db/repos/facet_helpers.py` 内的 helper 一律不提交, 才能组合进同一个写事务.
+这类写入读取前统一经 `src/amane/db/repos/base.py::acquire_write_lock` 取得写锁 (条目的 upsert / update / merge、分类治理、用户标签挂载); 事务由 Repo 公开方法提交, `src/amane/db/repos/facet_helpers.py` 内的 helper 不提交. 也可写成带源状态谓词的单条 UPDATE 并检查命中行数 (任务状态迁移, 见 `src/amane/db/repos/tasks.py`).
 
 - 写锁是库级的, 从取得写锁到提交之间其它写入被阻塞. 临界区内不允许出现联网或磁盘等待, 否则全库写入一并被拖住.
 - 会话在进入该调用之前不得已有未结束的数据库事务, 否则 `BEGIN IMMEDIATE` 失败.
@@ -32,15 +32,16 @@ pysqlite 只在 DML 之前发出 `BEGIN`, 纯 SELECT 落在事务之外 (SQLAlch
 
 连接级 PRAGMA (WAL / `synchronous=NORMAL` / `busy_timeout` / 外键) 只能在 `db/engine.py` 的连接钩子里逐连接下发, 别处另开业务引擎会退回驱动默认. 写锁被占用时连接等待至多 `busy_timeout` 才报 `database is locked`, 临界区短于该值即不失败. `synchronous=NORMAL` 的取舍限于 WAL 已开启: 掉电丢最近若干已提交事务而不损坏库, 换掉逐笔 fsync 拉长的持锁时间.
 
-入队互斥用 Repository 上的进程内锁串行化, 见 [task-system.md](task-system.md).
+任务入队在 SQLite 写锁内判定互斥并分配 id; 创建与重试先执行 `BEGIN IMMEDIATE`, 后继复用父完成 UPDATE 的事务. 进程内仍按 Repository 串行化, 见 [task-system.md](task-system.md).
 
 ## 启动期自动迁移与安全网
 
 `create_async_engine_from_path` (`db/engine.py`) 在创建业务引擎**之前**调用 `upgrade_sqlite_database` (`db/sqlite_migrate.py`):
 
 1. **当前 revision 已是 head**: 什么都不做 (不备份、不升级).
-2. **落后 head**: 先用 sqlite3 **online backup API** 写 `{db}.pre-migrate-{oldrev}-{utc}.bak` (含 WAL 一致快照; 同目录保留最近 5 份), 再升级.
-3. **迁移连接**单独 `autocommit=False` + Alembic `transactional_ddl=True`: 单次 revision 内 DDL 与 `alembic_version` 同事务, 失败则回滚, 避免「表已创建但版本未升」的半成品. 业务连接不修改事务模式, 仍只开 WAL + FK.
+2. **库中 revision 不在脚本树内** (程序被回退): 不备份、不升级, 直接报错, 保留现有备份待手工恢复.
+3. **落后 head**: 先用 sqlite3 **online backup API** 写 `{db}.pre-migrate-{oldrev}-{utc}.bak` (含 WAL 一致快照; 同目录保留最近 5 份), 再升级.
+4. **迁移连接**单独 `autocommit=False` + Alembic `transactional_ddl=True`: 单次 revision 内 DDL 与 `alembic_version` 同事务, 失败则回滚, 避免「表已创建但版本未升」的半成品. 业务连接不修改事务模式, 仍只开 WAL + FK.
 
 迁移内不允许文件系统 I/O 与其它无界等待: 整条链共用一个事务, 中止即整体回滚、重试仍从零开始, 而网盘挂载点上逐目录列举会把启动阻塞数分钟以上且没有可见进度. 需要遍历磁盘的回填由运行期承担 (如 `REFRESH` 库扫描). 迁移内也不允许中途 `commit()`: DDL 会随之提前落盘, 而 `alembic_version` 在 revision 返回后才推进, 失败后重跑报 `duplicate column name`.
 

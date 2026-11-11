@@ -25,7 +25,45 @@ async def _seed_library(repo: Repository) -> None:
         await repo.create_library(name="default", path="/")
 
 
+_FILTER_LIMIT_CASES = [
+    ({"actor_id": list(range(101))}, 422, "actor_id"),
+    ({"actor_id": list(range(100)), "tag_id": list(range(100)), "director_id": [1]}, 422, "合计"),
+    ({"actor_id": list(range(100))}, 200, None),
+]
+
+
 class TestMetadataHttp:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_filter_id_limits(self, client: AsyncClient):
+        """每组 ≤100、八组合计 ≤200; 超限 422 并指出是哪一项."""
+        for params, status, detail_part in _FILTER_LIMIT_CASES:
+            response = await client.get("metadata", params=params)
+            assert response.status_code == status, (params, response.json())
+            if detail_part is not None:
+                assert detail_part in response.json()["detail"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_item_omits_raw_and_field_sources(self, client: AsyncClient, repo: Repository):
+        """列表项是精简模型, raw / field_sources 只在详情返回; 聚合字段仍在."""
+        meta = await repo.upsert_metadata(
+            number="SLIM-001",
+            title="Slim",
+            raw={"javdb": {"title": "Slim"}},
+            field_sources={"title": "javdb"},
+        )
+        assert meta.id is not None
+
+        listed = (await client.get("metadata?search=SLIM-001")).json()["items"][0]
+        assert "raw" not in listed
+        assert "field_sources" not in listed
+        assert listed["file_count"] == 0
+        assert "file_phase" in listed
+        assert listed["locked_fields"] == []
+
+        detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert detail["raw"] == {"javdb": {"title": "Slim"}}
+        assert detail["field_sources"] == {"title": "javdb"}
+
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_phase_comes_from_number_without_files(self, client: AsyncClient, repo: Repository):
         """有码 / 无码取番号类别: 没有挂载文件也亮, 无码再并上文件的无码标记."""
@@ -405,3 +443,39 @@ class TestMetadataHttp:
         listed = await client.get("metadata?search=LOCK-102")
         assert listed.status_code == 200
         assert listed.json()["items"][0]["locked_fields"] == ["title"]
+
+
+class TestMetadataPatch:
+    """PATCH 只写显式提供的字段: 省略键不改, 可空列给 null 即清空."""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_writes_only_given_fields(self, client: AsyncClient, repo: Repository):
+        cases = [
+            ({"title": "新标题"}, {"title": "新标题", "studio": "原片商"}),
+            ({"title": None}, {"title": None, "studio": "原片商"}),
+            ({"studio": None}, {"studio": None, "title": "原标题"}),
+            ({"release": None}, {"release": None}),
+        ]
+        for index, (payload, expected) in enumerate(cases):
+            meta = await repo.upsert_metadata(
+                number=f"PATCH-W-{index}", title="原标题", studio="原片商", release="2020-01-15"
+            )
+            assert meta.id is not None
+
+            resp = await client.patch(f"metadata/{meta.id}", json=payload)
+            assert resp.status_code == 200
+            detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+            for field, value in expected.items():
+                assert detail[field] == value, (payload, field)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_rejects_empty_body_and_invalid_values(self, client: AsyncClient, repo: Repository):
+        """number 不在可写字段集内, 其显式 null 落到「没有需要修改的字段」; actors 等非空列由派生模型拒绝."""
+        meta = await repo.upsert_metadata(number="PATCH-R", title="原标题")
+        assert meta.id is not None
+
+        for payload in ({}, {"number": None}, {"actors": None}, {"release": 20200101}):
+            resp = await client.patch(f"metadata/{meta.id}", json=payload)
+            assert resp.status_code == 422, payload
+        detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert detail["title"] == "原标题"

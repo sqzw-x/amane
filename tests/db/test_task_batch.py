@@ -11,6 +11,7 @@ from amane.api.support.task_batch import cleanup_task_artifacts, execute_task_ba
 from amane.db.models import TaskStatus, TaskType
 from amane.observability import task_dir_for
 from amane.scheduler.worker import CANCEL_ERROR
+from tests.helpers import finish_task
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -40,7 +41,7 @@ async def test_batch_delete_counts_and_skips_active_chain(repo: Repository, tmp_
     for _ in range(3):
         t = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
         assert t.id is not None
-        await repo.complete_task(t.id)
+        await finish_task(repo, t.id)
         ids.append(t.id)
     queued = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
     assert queued.id is not None
@@ -74,7 +75,7 @@ async def test_batch_delete_counts_and_skips_active_chain(repo: Repository, tmp_
     )
     lone = await repo.create_task(task_type=TaskType.CLEANUP, payload={})
     assert lone.id is not None
-    await repo.complete_task(lone.id)
+    await finish_task(repo, lone.id)
     filtered = await execute_task_batch(
         action=TaskBatchAction.DELETE,
         repo=repo,
@@ -92,8 +93,8 @@ async def test_batch_delete_counts_and_skips_active_chain(repo: Repository, tmp_
     scrape = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
     refresh = await repo.create_task(task_type=TaskType.REFRESH, payload={})
     assert scrape.id is not None and refresh.id is not None
-    await repo.complete_task(scrape.id)
-    await repo.complete_task(refresh.id)
+    await finish_task(repo, scrape.id)
+    await finish_task(repo, refresh.id)
     by_type = await execute_task_batch(
         action=TaskBatchAction.DELETE,
         repo=repo,
@@ -126,7 +127,7 @@ async def test_batch_delete_mixed_tree_keeps_failed_under_root(repo: Repository,
     )
     done_child, failed_child = children
     assert done_child.id is not None and failed_child.id is not None
-    await repo.complete_task(done_child.id)
+    await finish_task(repo, done_child.id)
     await repo.fail_task(failed_child.id, error="boom")
 
     parent_dir = task_dir_for(tmp_path, parent.id)
@@ -198,7 +199,7 @@ async def test_batch_cancel_queued_running_and_filter(repo: Repository, tmp_path
 
     done = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
     assert done.id is not None
-    await repo.complete_task(done.id)
+    await finish_task(repo, done.id)
     skip = await execute_task_batch(
         action=TaskBatchAction.CANCEL,
         repo=repo,
@@ -304,7 +305,7 @@ async def test_batch_retry(repo: Repository, tmp_path: Path) -> None:
     b = await repo.create_task(task_type=TaskType.SCRAPE, payload={"n": 2})
     assert a.id is not None and b.id is not None
     await repo.fail_task(a.id, error="x")
-    await repo.complete_task(b.id)
+    await finish_task(repo, b.id)
     filtered = await execute_task_batch(
         action=TaskBatchAction.RETRY,
         repo=repo,

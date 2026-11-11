@@ -79,7 +79,7 @@ class TestUserTagsApi:
             json={"ids": [meta.id], "user_tag_ids": [tag_id, other_id], "action": "attach"},
         )
         assert resp.status_code == 200
-        assert resp.json() == {"changed": 1, "unchanged": 0, "missing": 0}
+        assert resp.json() == {"changed": 1, "unchanged": 0, "missing": 0, "skipped": 0}
 
         data = (await client.get(f"metadata/{meta.id}")).json()
         assert {t["name"] for t in data["user_tags"]} == {"watched", "later"}
@@ -89,13 +89,13 @@ class TestUserTagsApi:
             "metadata/batch/user-tags",
             json={"ids": [meta.id], "user_tag_ids": [tag_id], "action": "attach"},
         )
-        assert again.json() == {"changed": 0, "unchanged": 1, "missing": 0}
+        assert again.json() == {"changed": 0, "unchanged": 1, "missing": 0, "skipped": 0}
 
         removed = await client.post(
             "metadata/batch/user-tags",
             json={"ids": [meta.id], "user_tag_ids": [tag_id, other_id], "action": "detach"},
         )
-        assert removed.json() == {"changed": 1, "unchanged": 0, "missing": 0}
+        assert removed.json() == {"changed": 1, "unchanged": 0, "missing": 0, "skipped": 0}
         assert (await client.get(f"metadata/{meta.id}")).json()["user_tags"] == []
 
         denied = await client.post("facets/studio", json={"name": "Nope"})

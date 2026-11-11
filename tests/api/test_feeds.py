@@ -178,6 +178,62 @@ class TestFeedsCrud:
         assert (await client.post("feeds/9999/items/batch", json={"action": "ignore", "ids": [1]})).status_code == 404
 
 
+#: 在模型层就被拒绝的值: 非空列上的显式 null、非法枚举名、越界与非法格式.
+_INVALID_PATCH_VALUES: list[dict[str, object]] = [
+    # PATCH 的 URL 校验过去抛 ValueError 落成 500, POST 的用例覆盖不到这条路径
+    {"url": "ftp://example.com/rss"},
+    {"url": None},
+    {"name": None},
+    {"use_cache": None},
+    {"use_cache": ["bogus"]},
+    {"number_pattern": "("},
+    {"group": "a/../b"},
+    {"interval_seconds": 59},
+]
+
+
+class TestFeedPatchValidation:
+    """PATCH 与 POST 对同一非法值同为 422: 校验在请求模型里, 不落成 500, 也不被静默丢弃."""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_rejects_invalid_values(self, client: AsyncClient):
+        feed_id = (await client.post("feeds", json=_body())).json()["id"]
+        for index, payload in enumerate(_INVALID_PATCH_VALUES):
+            patched = await client.patch(f"feeds/{feed_id}", json=payload)
+            assert patched.status_code == 422, payload
+
+            posted = await client.post(
+                "feeds", json={**_body(url=f"https://example.com/reject-{index}.xml"), **payload}
+            )
+            assert posted.status_code == 422, payload
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_applies_valid_values(self, client: AsyncClient):
+        feed_id = (await client.post("feeds", json=_body())).json()["id"]
+
+        patched = await client.patch(
+            f"feeds/{feed_id}",
+            json={
+                "url": " https://example.com/patched.xml ",
+                "name": "  patched  ",
+                "number_pattern": " (?i)abc ",
+                "use_cache": ["trans", "trans", "metadata"],
+            },
+        )
+        assert patched.status_code == 200
+        data = patched.json()
+        assert data["url"] == "https://example.com/patched.xml"
+        assert data["name"] == "patched"
+        assert data["number_pattern"] == "(?i)abc"
+        assert data["use_cache"] == ["metadata", "trans"]
+
+        cleared = await client.patch(f"feeds/{feed_id}", json={"number_pattern": None})
+        assert cleared.status_code == 200
+        assert cleared.json()["number_pattern"] is None
+        fetched = await client.get(f"feeds/{feed_id}")
+        assert fetched.json()["number_pattern"] is None
+
+
 class TestFeedGroup:
     @pytest.mark.parametrize(
         ("raw", "expected"),

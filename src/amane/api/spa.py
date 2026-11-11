@@ -1,6 +1,6 @@
 import os
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 import structlog
@@ -68,8 +68,30 @@ class _DistFiles(StaticFiles):
         return response
 
 
+def _is_safe_dist_path(path: str) -> bool:
+    """判断请求路径能否按 dist 内的文件处理.
+
+    只做词法判定、不触盘, 因此 Windows 上的盘符与 UNC 形态在任何平台都能单测.
+    ``scope["path"]`` 已由 ASGI 服务器解码, ``%5C`` 到这里就是反斜杠.
+
+    反斜杠、冒号与 NUL 是 Windows 上 ``Path`` 把右侧当成绝对路径的条件 (盘符 / UNC / 设备名),
+    ``..`` 属遍历一并拒绝. 最后按 POSIX 语义再拼接一次, 确认词法上仍在 dist 内 — 黑名单挡不住
+    的写法不能走到 ``(dist / path).is_file()``.
+    """
+    if not path.startswith("/"):
+        return False
+    if "\x00" in path or "\\" in path or ":" in path:
+        return False
+    if ".." in path:
+        return False
+
+    candidate = PurePosixPath("/dist") / path.lstrip("/")
+    # PurePath 不折叠 ``..``, 因此用 parts 判断包含关系, 不能只看 relative_to 的前缀.
+    return candidate.parts[:2] == ("/", "dist") and ".." not in candidate.parts
+
+
 class _SPAFallbackMiddleware:
-    """未匹配 API 的 GET / HEAD 回退到 index.html. 含 ``..`` 的路径返回 400."""
+    """未匹配 API 的 GET / HEAD 回退到 index.html; 不安全的路径在触盘前返回 400."""
 
     def __init__(self, app: ASGIApp, dist_dir: Path) -> None:
         self._app = app
@@ -88,8 +110,9 @@ class _SPAFallbackMiddleware:
             await self._app(scope, receive, send)
             return
 
-        # 禁止路径遍历
-        if ".." in path:
+        # 触盘前先校验: scope["path"] 已经过 URL 解码, Windows 上 ``\`` / ``:`` 会改变
+        # pathlib 的拼接语义, 不能等到 is_file() 才发现.
+        if not _is_safe_dist_path(path):
             response: Response = HTMLResponse(status_code=400, content="Bad request")
             await response(scope, receive, send)
             return

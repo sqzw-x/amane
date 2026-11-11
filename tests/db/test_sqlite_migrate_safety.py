@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 import textwrap
@@ -349,6 +350,43 @@ class TestProjectAlembicPath:
         assert "b058160ffee4" in bak.name
         assert not needs_upgrade(db)
         assert "facet_rules" in _tables(db)
+
+    @pytest.mark.parametrize(
+        ("stored_revision", "expect_backup"),
+        [
+            pytest.param("b058160ffee4", True, id="behind-head"),
+            pytest.param("deadbeefdead", False, id="ahead-of-code"),
+        ],
+    )
+    def test_upgrade_backs_up_only_known_revision(
+        self, tmp_path: Path, stored_revision: str, expect_backup: bool
+    ) -> None:
+        """库 revision 不在脚本树内时不写备份也不轮转; 落后 head 仍先备份."""
+        db = tmp_path / "amane.db"
+        command.upgrade(alembic_config(db), "b058160ffee4")
+        with closing(sqlite3.connect(db)) as conn:
+            conn.execute("UPDATE alembic_version SET version_num = ?", (stored_revision,))
+            conn.commit()
+
+        # keep=1: 误写新备份会挤掉这份可恢复备份
+        precious = tmp_path / f"amane.db.pre-migrate-{stored_revision}-20260101T000000Z.bak"
+        shutil.copy2(db, precious)
+        os.utime(precious, (0, 0))
+
+        if not expect_backup:
+            with pytest.raises(RuntimeError, match=rf"{stored_revision}.*库版本高于当前代码"):
+                upgrade_sqlite_database(db, backup=True, backup_keep=1)
+            assert _version(db) == stored_revision
+            assert list(tmp_path.glob("amane.db.pre-migrate-*.bak")) == [precious]
+            assert "facet_rules" not in _tables(db)
+            return
+
+        bak = upgrade_sqlite_database(db, backup=True, backup_keep=1)
+        assert bak is not None
+        assert stored_revision in bak.name
+        assert not needs_upgrade(db)
+        assert "facet_rules" in _tables(db)
+        assert list(tmp_path.glob("amane.db.pre-migrate-*.bak")) == [bak]
 
     def test_actor_alias_migration_rows_out_bag_and_rules(self, tmp_path: Path) -> None:
         """别名袋与 actor alias 规则行化进 actor_aliases, 规则行删除 (block 保留)."""

@@ -259,68 +259,72 @@ async def run_agent_agui(
     session = await runtime.repo.get_agent_session(session_id)
     if session is None:
         raise HTTPException(404, detail="会话不存在")
-    if service.is_turn_running(session_id):
+    if not service.try_begin_turn(session_id):
         raise HTTPException(409, detail="会话已有进行中的回合")
 
-    store = service.store_for(session_id)
-    history: list[ModelMessage] = list(store.load_messages() or [])
-    adapter = await AGUIAdapter[AgentDeps, str | DeferredToolRequests].from_request(request, agent=agent)
-    incoming = _new_messages(list(adapter.run_input.messages), history)
-    adapter.run_input.messages = incoming
-    for text in _new_user_texts(incoming):
-        await store.append_row(UserMessageRow(type="user_message", text=text))
+    try:
+        store = service.store_for(session_id)
+        history: list[ModelMessage] = list(store.load_messages() or [])
+        adapter = await AGUIAdapter[AgentDeps, str | DeferredToolRequests].from_request(request, agent=agent)
+        incoming = _new_messages(list(adapter.run_input.messages), history)
+        adapter.run_input.messages = incoming
+        for text in _new_user_texts(incoming):
+            await store.append_row(UserMessageRow(type="user_message", text=text))
 
-    start_seq = store.last_seq
-    rows = _ReplayRows()
-    deps = service._make_deps(session_id)
-    store.set_turn_running(True)
+        start_seq = store.last_seq
+        rows = _ReplayRows()
+        deps = service._make_deps(session_id)
 
-    async def on_complete(result: AgentRunResult[Any]) -> AsyncIterator[BaseEvent]:
-        store.save_messages(list(result.all_messages()))
-        rows.usage = result.usage
-        output = result.output
-        pending = isinstance(output, DeferredToolRequests) and bool(output.approvals)
-        await runtime.repo.update_agent_session(
-            session_id,
-            status=AgentSessionStatus.AWAITING_APPROVAL if pending else AgentSessionStatus.ACTIVE,
-        )
-        return
-        yield
+        async def on_complete(result: AgentRunResult[Any]) -> AsyncIterator[BaseEvent]:
+            store.save_messages(list(result.all_messages()))
+            rows.usage = result.usage
+            output = result.output
+            pending = isinstance(output, DeferredToolRequests) and bool(output.approvals)
+            await runtime.repo.update_agent_session(
+                session_id,
+                status=AgentSessionStatus.AWAITING_APPROVAL if pending else AgentSessionStatus.ACTIVE,
+            )
+            return
+            yield
 
-    async def consume() -> None:
-        try:
-            async for event in adapter.run_stream(
-                message_history=history,
-                deps=deps,
-                capabilities=[_RequestUsageRows(store=store)],
-                model_settings=resolve_model_settings(
-                    service.config, session_thinking=service.session_thinking(session_id)
-                ),
-                usage_limits=UNLIMITED_USAGE,
-                on_complete=on_complete,
-            ):
-                if isinstance(event, RunFinishedEvent) and rows.usage is not None:
-                    event.usage = [_token_usage(rows.usage)]
-                await store.append_row(
-                    AguiEventRow(type="agui", event=event.model_dump(mode="json", by_alias=True, exclude_none=True))
-                )
-                for row in rows.feed(event):
-                    await store.append_row(row)
-        except asyncio.CancelledError:
-            await store.append_row(CancelledRow(type="cancelled"))
-            await store.append_row(no_approvals())
-            await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
-            raise
-        except Exception as exc:
-            await store.append_row(AguiEventRow(type="agui", event={"type": "RUN_ERROR", "message": str(exc)}))
-            await store.append_row(ErrorRow(type="error", message=str(exc)))
-            await store.append_row(no_approvals())
-            await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
-        finally:
-            store.set_turn_running(False)
+        async def consume() -> None:
+            try:
+                async for event in adapter.run_stream(
+                    message_history=history,
+                    deps=deps,
+                    capabilities=[_RequestUsageRows(store=store)],
+                    model_settings=resolve_model_settings(
+                        service.config, session_thinking=service.session_thinking(session_id)
+                    ),
+                    usage_limits=UNLIMITED_USAGE,
+                    on_complete=on_complete,
+                ):
+                    if isinstance(event, RunFinishedEvent) and rows.usage is not None:
+                        event.usage = [_token_usage(rows.usage)]
+                    await store.append_row(
+                        AguiEventRow(type="agui", event=event.model_dump(mode="json", by_alias=True, exclude_none=True))
+                    )
+                    for row in rows.feed(event):
+                        await store.append_row(row)
+            except asyncio.CancelledError:
+                await store.append_row(CancelledRow(type="cancelled"))
+                await store.append_row(no_approvals())
+                await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
+                raise
+            except Exception as exc:
+                await store.append_row(AguiEventRow(type="agui", event={"type": "RUN_ERROR", "message": str(exc)}))
+                await store.append_row(ErrorRow(type="error", message=str(exc)))
+                await store.append_row(no_approvals())
+                await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
+            finally:
+                store.set_turn_running(False)
 
-    task = asyncio.create_task(consume(), name=f"agui-turn-{session_id}")
-    service.track_turn(session_id, task)
+        store.set_turn_running(True)
+        task = asyncio.create_task(consume(), name=f"agui-turn-{session_id}")
+        service.track_turn(session_id, task)
+    except BaseException:
+        service.abort_turn(session_id)
+        raise
     return StreamingResponse(_follow_agui(store, start_seq), media_type=SSE_CONTENT_TYPE)
 
 

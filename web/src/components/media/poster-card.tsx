@@ -3,7 +3,7 @@ import { IconCalendar, IconStar, IconUser } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
 import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { MetadataResponse } from "@/client/types.gen";
+import type { MetadataListItem } from "@/client/types.gen";
 import { FilePhaseOverlay } from "@/components/media/file-phase-badges";
 import { OverlayChip, OverlayChipLabel } from "@/components/media/overlay-chip";
 import { ProxyImage } from "@/components/media/proxy-image";
@@ -13,7 +13,7 @@ import { formatReleaseYearMonth } from "@/lib/format-release";
 import { DEFAULT_POSTER_RATIO, posterImageUrl, rememberImageRatio } from "@/lib/media/poster-image";
 
 interface PosterCardProps {
-  item: MetadataResponse;
+  item: MetadataListItem;
   /** 传入时按影片发行日标注演员当时年龄 (演员详情出演墙). */
   actorBirthday?: string | null;
   /** 覆盖卡片图片 (语义检索命中剧照); 未给则使用条目的海报. */

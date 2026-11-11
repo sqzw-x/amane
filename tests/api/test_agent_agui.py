@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from ag_ui.core import AssistantMessage, UserMessage
+from fastapi import HTTPException
 from pydantic_ai import Agent, DeferredToolRequests, RunContext
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import (
@@ -20,6 +21,7 @@ from pydantic_ai.models.function import (
     FunctionModel,
 )
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
+from pydantic_ai.ui.ag_ui import AGUIAdapter
 
 from amane.agent.rows import (
     AguiEventRow,
@@ -122,14 +124,8 @@ def _install_agent(service: AgentService, stream: StreamRespond, *toolsets: Abst
     )
 
 
-async def _run(
-    client: AsyncClient,
-    session_id: int,
-    messages: list[dict[str, Any]],
-    *,
-    resume: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    body: dict[str, Any] = {
+def _body(session_id: int, messages: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
         "threadId": f"session-{session_id}",
         "runId": "run-1",
         "state": None,
@@ -138,6 +134,16 @@ async def _run(
         "context": [],
         "forwardedProps": {},
     }
+
+
+async def _run(
+    client: AsyncClient,
+    session_id: int,
+    messages: list[dict[str, Any]],
+    *,
+    resume: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    body = _body(session_id, messages)
     if resume is not None:
         body["resume"] = resume
     resp = await client.post(f"/agent/sessions/{session_id}/agui", json=body, headers={"Accept": "text/event-stream"})
@@ -712,6 +718,88 @@ async def test_second_turn_on_running_session_rejected(app: FastAPI, client: Asy
 
     release.set()
     assert (await asyncio.wait_for(run_task, timeout=5))[-1]["outcome"] == {"type": "success"}
+
+
+@pytest.mark.asyncio
+async def test_concurrent_turns_only_one_starts(
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """并发 POST 争同一会话: 检查与占位原子完成, 迟到的请求在准备阶段就 409.
+
+    第一个请求停在适配器解析 (占位已生效、后台任务尚未启动) 时发第二个请求:
+    占位若不在首个 await 之前完成, 第二个请求会同样通过检查并进入适配器.
+    """
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+    entered_count = 0
+    real_from_request = AGUIAdapter.from_request
+
+    async def stalled(_cls: Any, request: Any, **kwargs: Any) -> Any:
+        nonlocal entered_count
+        entered_count += 1
+        if entered_count == 1:
+            entered.set()
+            await gate.wait()
+        return await real_from_request(request, **kwargs)
+
+    monkeypatch.setattr(AGUIAdapter, "from_request", classmethod(stalled))
+
+    service = await service_of(app, client)
+    session = await service.create_session(title="race")
+    assert session.id is not None
+    _install_agent(service, _text_stream("先到的回合"))
+    url = f"/agent/sessions/{session.id}/agui"
+    body = _body(session.id, [_user("在吗")])
+
+    first = asyncio.create_task(client.post(url, json=body))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)  # 已占位, 停在首个 await 上
+        second = await client.post(url, json=body)
+        assert second.status_code == 409, "并发请求应恰有一个被占位挡下"
+    finally:
+        gate.set()
+        await asyncio.wait_for(first, timeout=5)
+    assert entered_count == 1, "被占位挡下的请求不应进入适配器解析"
+
+    started = first.result()
+    assert started.status_code == 200
+    events = _sse_events(started.text)
+    assert _types(events)[0] == "RUN_STARTED"
+    assert events[-1]["type"] == "RUN_FINISHED"
+
+    # 被拒的请求不得写用户消息行: 两个回合都通过检查时这里会出现两份
+    rows = service.store_for(session.id).read_events()
+    assert [row.text for row in rows if isinstance(row, UserMessageRow)] == ["在吗"]
+    assert not service.is_turn_running(session.id)
+
+
+@pytest.mark.asyncio
+async def test_preparation_failure_releases_turn(
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """占位后准备阶段失败: 释放占位并清掉 turn_running, 重试能正常启动回合."""
+
+    async def reject(*args: Any, **kwargs: Any) -> Any:
+        raise HTTPException(400, detail="参数非法")
+
+    service = await service_of(app, client)
+    session = await service.create_session(title="abort")
+    assert session.id is not None
+    _install_agent(service, _text_stream("重试成功"))
+    url = f"/agent/sessions/{session.id}/agui"
+    body = _body(session.id, [_user("在吗")])
+
+    with monkeypatch.context() as patch:
+        patch.setattr(AGUIAdapter, "from_request", classmethod(reject))
+        resp = await client.post(url, json=body)
+    assert resp.status_code == 400
+    assert not service.is_turn_running(session.id)
+    assert not service.store_for(session.id).turn_running
+
+    events = await _run(client, session.id, [_user("在吗")])
+    assert events[-1]["outcome"] == {"type": "success"}
+    rows = service.store_for(session.id).read_events()
+    assert [row.text for row in rows if isinstance(row, UserMessageRow)] == ["在吗"]
 
 
 def _agui_messages(*items: tuple[str, str]) -> list[UserMessage | AssistantMessage]:

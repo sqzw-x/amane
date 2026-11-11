@@ -130,7 +130,7 @@ class TaskBatchAction(StrEnum):
 
 class TaskBatchRequest(BaseModel):
     action: TaskBatchAction
-    task_ids: list[int] | None = Field(default=None, min_length=1)
+    task_ids: list[int] | None = Field(default=None, min_length=1, max_length=1000)
     """按 ID 操作; 与 status/type 互斥."""
     status: list[TaskStatus] | None = Field(default=None, min_length=1)
     """与列表查询同形; 未传则不限. 与 task_ids 互斥."""
