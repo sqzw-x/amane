@@ -13,6 +13,7 @@ from amane.db.models import TaskType
 from amane.enums import DownloadableResource
 from amane.handlers import models as handler_models
 from amane.observability.recorder import task_dir_for
+from tests.helpers import finish_task
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -240,7 +241,7 @@ class TestBatchTasks:
 
         t = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
         assert t.id is not None
-        await repo.complete_task(t.id)
+        await finish_task(repo, t.id)
         deleted = await client.post("tasks/batch", json={"action": "delete", "task_ids": [t.id, 999_999]})
         assert deleted.status_code == 200
         assert deleted.json()["affected"] == 1
@@ -355,7 +356,7 @@ class TestTaskResult:
         for task_type, result in cases:
             task = await repo.create_task(task_type=task_type, payload={})
             assert task.id is not None
-            await repo.complete_task(task.id, result=result)
+            await finish_task(repo, task.id, result)
 
             body = (await client.get(f"tasks/{task.id}")).json()
             assert body["result"] == result
@@ -381,7 +382,7 @@ class TestTaskResult:
         for stored in stored_cases:
             task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "SSIS-497"})
             assert task.id is not None
-            await repo.complete_task(task.id, result=stored)
+            await finish_task(repo, task.id, stored)
 
             resp = await client.get(f"tasks/{task.id}")
             assert resp.status_code == 200
@@ -439,7 +440,7 @@ class TestTaskResult:
         """结果成员的类型与任务类型不一致时置空."""
         task = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         assert task.id is not None
-        await repo.complete_task(task.id, result={"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
+        await finish_task(repo, task.id, {"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
 
         body = (await client.get(f"tasks/{task.id}")).json()
         assert body["result"] is None
@@ -449,7 +450,7 @@ class TestTaskResult:
         """列表不带 payload 与 result, 展开时再取详情."""
         task = await repo.create_task(task_type=TaskType.REFRESH, payload={"library_id": 3})
         assert task.id is not None
-        await repo.complete_task(task.id, result={"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
+        await finish_task(repo, task.id, {"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
 
         item = (await client.get("tasks")).json()["items"][0]
         assert "payload" not in item

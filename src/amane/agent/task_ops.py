@@ -51,23 +51,28 @@ def build_task_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def cancel_task(ctx: RunContext[AgentDeps], task_id: int) -> str | dict[str, Any]:
-        """Cancel a queued or running task."""
+        """Cancel a queued or running task; report when the state moved first."""
         task = await ctx.deps.repo.get_task(task_id)
         if task is None:
             return {"error": f"task {task_id} 不存在"}
+        if task.status == TaskStatus.QUEUED:
+            if await ctx.deps.repo.fail_queued_tasks(error=CANCEL_ERROR, task_ids=[task_id]):
+                return TOOL_OK
+            # 读取后被认领: 重读后按运行中取消, 不能把排队标记失败当作已停止.
+            latest = await ctx.deps.repo.get_task(task_id)
+            if latest is None:
+                return {"error": f"task {task_id} 不存在"}
+            if latest.status != TaskStatus.RUNNING:
+                return {"error": f"任务状态为 '{latest.status}', 未取消"}
+            task = latest
         if task.status == TaskStatus.RUNNING:
             cancel_fn = ctx.deps.bridge.cancel_running_task
-            if cancel_fn is None:
-                await ctx.deps.repo.fail_running_task(task_id, error=CANCEL_ERROR)
-            else:
-                cancelled = await cancel_fn(task_id)
-                if not cancelled:
-                    await ctx.deps.repo.fail_running_task(task_id, error=CANCEL_ERROR)
-        elif task.status == TaskStatus.QUEUED:
-            await ctx.deps.repo.fail_task(task_id, error=CANCEL_ERROR)
-        else:
-            return {"error": f"无法取消状态为 '{task.status}' 的任务"}
-        return TOOL_OK
+            if cancel_fn is not None and await cancel_fn(task_id):
+                return TOOL_OK
+            if await ctx.deps.repo.fail_running_task(task_id, error=CANCEL_ERROR):
+                return TOOL_OK
+            return {"error": "任务已结束, 未取消"}
+        return {"error": f"无法取消状态为 '{task.status}' 的任务"}
 
     @cap.tool
     async def retry_task(ctx: RunContext[AgentDeps], task_id: int) -> dict[str, Any]:

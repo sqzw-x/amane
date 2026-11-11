@@ -159,35 +159,44 @@ class TasksRepoMixin(RepositoryMixinBase):
             return await session.get(Task, task_id)
 
     async def claim_next_task(self) -> Task | None:
-        """认领优先级最高的 QUEUED 行, 标为 RUNNING."""
+        """认领优先级最高的 QUEUED 行, 标为 RUNNING.
+
+        选择与写入分两条语句, 因此 UPDATE 再带 ``status == QUEUED``: 候选在两步之间被取消,
+        或被并发的认领取走时命中 0 行, 本轮不认领 (下一轮再取).
+        """
         async with self._session() as session:
-            stmt = (
-                select(Task)
-                .where(Task.status == TaskStatus.QUEUED)
-                .order_by(col(Task.priority).desc(), asc(col(Task.created_at)))
-                .limit(1)
-            )
-            result = await session.exec(stmt)
-            task = result.first()
-            if task is None:
+            candidate = (
+                await session.exec(
+                    select(col(Task.id))
+                    .where(col(Task.status) == TaskStatus.QUEUED)
+                    .order_by(col(Task.priority).desc(), asc(col(Task.created_at)), col(Task.id).asc())
+                    .limit(1)
+                )
+            ).first()
+            if candidate is None:
                 return None
-            task.status = TaskStatus.RUNNING
-            task.started_at = _utcnow()
-            session.add(task)
+            updated = await session.exec(
+                update(Task)
+                .where(col(Task.id) == candidate, col(Task.status) == TaskStatus.QUEUED)
+                .values(status=TaskStatus.RUNNING, started_at=_utcnow())
+            )
+            if not updated.rowcount:
+                await session.rollback()
+                return None
+            task = await session.get(Task, candidate)
             await session.commit()
-            await session.refresh(task)
             return task
 
-    async def complete_task(self, task_id: int, result: dict[str, object] | None = None) -> None:
+    async def complete_task(self, task_id: int, result: dict[str, object] | None = None) -> bool:
+        """仅 ``RUNNING → DONE``, 返回是否命中. 已进入终态的行不被覆盖."""
         async with self._session() as session:
-            task = await session.get(Task, task_id)
-            if task is None:
-                return
-            task.status = TaskStatus.DONE
-            task.result = result
-            task.finished_at = _utcnow()
-            session.add(task)
+            updated = await session.exec(
+                update(Task)
+                .where(col(Task.id) == task_id, col(Task.status) == TaskStatus.RUNNING)
+                .values(status=TaskStatus.DONE, result=result, finished_at=_utcnow())
+            )
             await session.commit()
+            return bool(updated.rowcount)
 
     async def complete_task_with_followups(
         self,
@@ -195,21 +204,29 @@ class TasksRepoMixin(RepositoryMixinBase):
         result: dict[str, object] | None,
         followups: Sequence[tuple[str, TaskType, dict[str, object], int]],
     ) -> list[Task]:
-        """父完成与子创建须在同一事务. 同父同 key 只留第一条, UNIQUE(parent, key) 拒绝重复."""
+        """父完成与子创建须在同一事务. 同父同 key 只留第一条, UNIQUE(parent, key) 拒绝重复.
+
+        先以条件 UPDATE 取得 ``RUNNING → DONE``; 命中 0 行说明父任务不在运行中 (已终态或已删除), 不创建后继.
+        """
         created: list[Task] = []
         async with self._task_insert_lock, self._session() as session:
+            updated = await session.exec(
+                update(Task)
+                .where(col(Task.id) == task_id, col(Task.status) == TaskStatus.RUNNING)
+                .values(
+                    status=TaskStatus.DONE,
+                    result=result,
+                    finished_at=_utcnow(),
+                    # 裸任务成为链根: 指向自己.
+                    root_task_id=coalesce(col(Task.root_task_id), col(Task.id)),
+                )
+            )
+            if not updated.rowcount:
+                await session.rollback()
+                return created
             task = await session.get(Task, task_id)
-            if task is None:
-                return created
-            if task.status != TaskStatus.RUNNING:
-                return created
-            task.status = TaskStatus.DONE
-            task.result = result
-            task.finished_at = _utcnow()
-            if task.root_task_id is None:
-                task.root_task_id = task.id  # 裸任务成为链根: 指向自己
-            session.add(task)
-            root_id = task.root_task_id or task.id
+            assert task is not None
+            root_id = task.root_task_id or task_id
             seen_keys: set[str] = set()
             for key, task_type, payload, priority in followups:
                 if key in seen_keys:
@@ -227,19 +244,29 @@ class TasksRepoMixin(RepositoryMixinBase):
                 await session.refresh(child)
         return created
 
-    async def fail_task(self, task_id: int, error: str, result: dict[str, object] | None = None) -> None:
-        """失败也可带结果载荷: 刮削失败时站点明细仍要能展示; None 会清掉上一次运行的残留."""
+    async def fail_task(self, task_id: int, error: str, result: dict[str, object] | None = None) -> bool:
+        """把 QUEUED / RUNNING 标为 FAILED, 返回是否命中; 终态不覆盖.
+
+        排队中与已认领的任务都可能走到失败路径, 谓词因此是两种活动状态.
+        失败也可带结果载荷: 刮削失败时站点明细仍要能展示; None 会清掉上一次运行的残留.
+        """
         async with self._session() as session:
-            task = await session.get(Task, task_id)
-            if task is None:
-                return
-            task.status = TaskStatus.FAILED
-            task.error = error
-            task.result = result
-            task.retries += 1
-            task.finished_at = _utcnow()
-            session.add(task)
+            updated = await session.exec(
+                update(Task)
+                .where(
+                    col(Task.id) == task_id,
+                    col(Task.status).in_((TaskStatus.QUEUED, TaskStatus.RUNNING)),
+                )
+                .values(
+                    status=TaskStatus.FAILED,
+                    error=error,
+                    result=result,
+                    retries=col(Task.retries) + 1,
+                    finished_at=_utcnow(),
+                )
+            )
             await session.commit()
+            return bool(updated.rowcount)
 
     async def fail_running_task(self, task_id: int, error: str, result: dict[str, object] | None = None) -> bool:
         """仅当任务仍为 RUNNING 时标记失败; 返回是否命中.
@@ -247,17 +274,19 @@ class TasksRepoMixin(RepositoryMixinBase):
         取消回退与取消兜底使用: 已进入终态的任务不得被覆盖为 FAILED. 取消同样落库载荷.
         """
         async with self._session() as session:
-            task = await session.get(Task, task_id)
-            if task is None or task.status != TaskStatus.RUNNING:
-                return False
-            task.status = TaskStatus.FAILED
-            task.error = error
-            task.result = result
-            task.retries += 1
-            task.finished_at = _utcnow()
-            session.add(task)
+            updated = await session.exec(
+                update(Task)
+                .where(col(Task.id) == task_id, col(Task.status) == TaskStatus.RUNNING)
+                .values(
+                    status=TaskStatus.FAILED,
+                    error=error,
+                    result=result,
+                    retries=col(Task.retries) + 1,
+                    finished_at=_utcnow(),
+                )
+            )
             await session.commit()
-            return True
+            return bool(updated.rowcount)
 
     async def fail_all_running_tasks(self) -> int:
         """将全部 RUNNING 标为 FAILED (进程重启后的僵尸任务)."""

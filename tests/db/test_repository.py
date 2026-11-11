@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast, get_type_hints
 
 import pytest
-from sqlmodel import select
+from sqlalchemy import update
+from sqlmodel import col, select
 
 from amane.aggregate.actor import AggregatedActor
 from amane.db.models import (
@@ -18,6 +19,7 @@ from amane.db.models import (
     MetadataSortField,
     RoutineType,
     SortOrder,
+    Task,
     TaskSortField,
     TaskStatus,
     TaskType,
@@ -37,7 +39,7 @@ from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataFiel
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
 from amane.parsing import ContentType, Mosaic
 from amane.utils.path import resolved_path
-from tests.helpers import assert_exhaustive_enum
+from tests.helpers import assert_exhaustive_enum, finish_task
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -1638,13 +1640,15 @@ class TestTaskRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_fail_task_clears_previous_result(self, repo: Repository):
-        """不带载荷地失败会清掉上一次运行的残留 (带载荷落库由 worker 与 API 层测试覆盖)."""
+        """不带载荷地失败会清掉运行中行遗留的载荷 (带载荷落库由 worker 与 API 层测试覆盖)."""
         task = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
         assert task.id is not None
         await repo.claim_next_task()
-        await repo.complete_task(task.id, result={"type": "scrape", "metadata_id": None})
+        async with repo._session() as session:
+            await session.exec(update(Task).where(col(Task.id) == task.id).values(result={"old": True}))
+            await session.commit()
 
-        await repo.fail_task(task.id, error="again")
+        assert await repo.fail_task(task.id, error="again") is True
 
         fetched = await repo.get_task(task.id)
         assert fetched is not None
@@ -1749,9 +1753,9 @@ class TestTaskRepo:
         first = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         assert first.id is not None
         if status == TaskStatus.DONE:
-            await repo.complete_task(first.id)
+            await finish_task(repo, first.id)
         else:
-            await repo.fail_task(first.id, "boom")
+            assert await repo.fail_task(first.id, "boom") is True
         second = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         assert second.id is not None
         assert second.id != first.id
