@@ -9,27 +9,16 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from pytest import MonkeyPatch
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from amane.db.models import (
-    Actor,
-    Director,
-    FacetKind,
-    FacetRule,
-    FacetRuleAction,
-    Metadata,
-    MetadataActor,
-    MetadataDirector,
-    MetadataTag,
-    Tag,
-)
+from amane.db.models import FacetKind, FacetRule, FacetRuleAction, Metadata
 from amane.db.repo_types import FacetItem, WriteMode
+from amane.db.repos.facet_helpers import LINK_FACETS
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    import pytest as _pytest
 
     from amane.db.repository import Repository
 
@@ -43,41 +32,16 @@ async def _facet_id(repo: Repository, kind: FacetKind, name: str) -> int:
     return facet_id
 
 
-async def _tag_projection(repo: Repository, metadata_id: int) -> list[tuple[int, str]]:
-    """关联行按 position 排序的 (position, 标签名)."""
+async def _projection(repo: Repository, kind: FacetKind, metadata_id: int) -> list[tuple[int, str]]:
+    """关联行按 position 排序的 (position, 名字)."""
+    spec = LINK_FACETS[kind]
     async with repo._session() as session:
         rows = (
             await session.exec(
-                select(col(MetadataTag.position), col(Tag.name))
-                .join(Tag, col(MetadataTag.tag_id) == col(Tag.id))
-                .where(col(MetadataTag.metadata_id) == metadata_id)
-                .order_by(col(MetadataTag.position))
-            )
-        ).all()
-    return [(int(position), str(name)) for position, name in rows]
-
-
-async def _director_projection(repo: Repository, metadata_id: int) -> list[tuple[int, str]]:
-    async with repo._session() as session:
-        rows = (
-            await session.exec(
-                select(col(MetadataDirector.position), col(Director.name))
-                .join(Director, col(MetadataDirector.director_id) == col(Director.id))
-                .where(col(MetadataDirector.metadata_id) == metadata_id)
-                .order_by(col(MetadataDirector.position))
-            )
-        ).all()
-    return [(int(position), str(name)) for position, name in rows]
-
-
-async def _actor_projection(repo: Repository, metadata_id: int) -> list[tuple[int, str]]:
-    async with repo._session() as session:
-        rows = (
-            await session.exec(
-                select(col(MetadataActor.position), col(Actor.name))
-                .join(Actor, col(MetadataActor.actor_id) == col(Actor.id))
-                .where(col(MetadataActor.metadata_id) == metadata_id)
-                .order_by(col(MetadataActor.position))
+                select(spec.link_position, col(spec.entity.name))
+                .join(spec.entity, col(spec.link_fk) == col(spec.entity.id))
+                .where(col(spec.link.metadata_id) == metadata_id)
+                .order_by(spec.link_position)
             )
         ).all()
     return [(int(position), str(name)) for position, name in rows]
@@ -101,7 +65,7 @@ class TestRenameProjection:
         got = await repo.get_metadata(meta.id)
         assert got is not None
         assert got.tags == ["renamed", "b", "c"]
-        assert await _tag_projection(repo, meta.id) == _expected(["renamed", "b", "c"])
+        assert await _projection(repo, FacetKind.TAG, meta.id) == _expected(["renamed", "b", "c"])
 
     async def test_rename_to_blocked_name_drops_name(self, repo: Repository) -> None:
         """新名字命中 block: 真值里名字消失, 投影不得留下指向该实体的行."""
@@ -119,7 +83,7 @@ class TestRenameProjection:
         got = await repo.get_metadata(meta.id)
         assert got is not None
         assert got.tags == ["Keep"]
-        assert await _tag_projection(repo, meta.id) == _expected(["Keep"])
+        assert await _projection(repo, FacetKind.TAG, meta.id) == _expected(["Keep"])
 
     async def test_rename_to_aliased_name_follows_rule(self, repo: Repository) -> None:
         """新名字已是 alias: 真值落到别名目标, 投影必须指向目标实体而不是被改名的实体."""
@@ -138,7 +102,7 @@ class TestRenameProjection:
         got = await repo.get_metadata(meta.id)
         assert got is not None
         assert got.tags == ["Canonical", "Keep"]
-        assert await _tag_projection(repo, meta.id) == _expected(["Canonical", "Keep"])
+        assert await _projection(repo, FacetKind.TAG, meta.id) == _expected(["Canonical", "Keep"])
         assert await repo.get_facet(FacetKind.TAG, canonical_id) is not None
 
     @pytest.mark.parametrize("kind", [FacetKind.TAG, FacetKind.DIRECTOR])
@@ -184,13 +148,13 @@ class TestRenameProjection:
         assert got is not None
         assert got.tags == before.tags
         assert got.directors == before.directors
-        assert await _tag_projection(repo, meta.id) == _expected(got.tags)
-        assert await _director_projection(repo, meta.id) == _expected(got.directors)
+        assert await _projection(repo, FacetKind.TAG, meta.id) == _expected(got.tags)
+        assert await _projection(repo, FacetKind.DIRECTOR, meta.id) == _expected(got.directors)
         assert restored is not None and restored.name == "Original" and restored.count == 0
         canonical = await repo.get_facet(kind, await _facet_id(repo, kind, "Renamed"))
         assert canonical is not None and canonical.id != facet_id and canonical.count == 1
         assert got.actors == ([] if other_action == FacetRuleAction.BLOCK else ["OldActor"])
-        assert await _actor_projection(repo, meta.id) == _expected(got.actors)
+        assert await _projection(repo, FacetKind.ACTOR, meta.id) == _expected(got.actors)
         assert got.studio == ("NewStudio" if other_action == FacetRuleAction.ALIAS else "OldStudio")
         if other_action is None:
             assert got.updated_at == before.updated_at
@@ -211,7 +175,7 @@ class TestRenameProjection:
             got = await repo.get_metadata(meta.id)
             assert got is not None
             assert got.tags == ["renamed", f"t{index}"]
-            assert await _tag_projection(repo, meta.id) == _expected(["renamed", f"t{index}"])
+            assert await _projection(repo, FacetKind.TAG, meta.id) == _expected(["renamed", f"t{index}"])
 
 
 class TestMergeProjection:
@@ -226,6 +190,8 @@ class TestMergeProjection:
             (["Other", "B", "A"], ["Other", "A"]),
             (["B", "A"], ["A"]),
             (["A", "Other"], ["A", "Other"]),
+            # 目标名已在真值里: 去重后既有行保留, 源行删除
+            (["A", "B", "C"], ["A", "C"]),
         ],
     )
     async def test_merge_keeps_position_order(
@@ -243,7 +209,7 @@ class TestMergeProjection:
         got = await repo.get_metadata(meta.id)
         assert got is not None
         assert got.tags == expected
-        assert await _tag_projection(repo, meta.id) == _expected(expected)
+        assert await _projection(repo, FacetKind.TAG, meta.id) == _expected(expected)
 
     @pytest.mark.parametrize("source_count", [500, 501])
     async def test_merge_overlapping_chunks_with_other_kind_rule(self, repo: Repository, source_count: int) -> None:
@@ -275,9 +241,9 @@ class TestMergeProjection:
         assert got is not None
         assert got.tags == ["Target"]
         assert got.directors == ["NewDirector", "KeepDirector"]
-        assert await _tag_projection(repo, meta.id) == _expected(got.tags)
-        assert await _director_projection(repo, meta.id) == _expected(got.directors)
-        assert await _tag_projection(repo, target_meta.id) == _expected(["Target"])
+        assert await _projection(repo, FacetKind.TAG, meta.id) == _expected(got.tags)
+        assert await _projection(repo, FacetKind.DIRECTOR, meta.id) == _expected(got.directors)
+        assert await _projection(repo, FacetKind.TAG, target_meta.id) == _expected(["Target"])
         assert await repo.list_facets(FacetKind.TAG, search="Source-") == ([], 0)
 
     async def test_merge_actor_keeps_position_order(self, repo: Repository) -> None:
@@ -291,21 +257,7 @@ class TestMergeProjection:
         got = await repo.get_metadata(meta.id)
         assert got is not None
         assert got.actors == ["A", "Other"]
-        assert await _actor_projection(repo, meta.id) == _expected(["A", "Other"])
-
-    async def test_merge_named_by_rule_drops_source_rows(self, repo: Repository) -> None:
-        """目标名已在真值里: 去重后既有行保留, 源行删除, 顺序仍按最终真值."""
-        meta = await repo.upsert_metadata(number="GOV-MGD-1", tags=["A", "B", "C"])
-        assert meta.id is not None
-        target_id = await _facet_id(repo, FacetKind.TAG, "A")
-        source_id = await _facet_id(repo, FacetKind.TAG, "B")
-
-        assert await repo.merge_facets(FacetKind.TAG, target_id, [source_id]) is not None
-
-        got = await repo.get_metadata(meta.id)
-        assert got is not None
-        assert got.tags == ["A", "C"]
-        assert await _tag_projection(repo, meta.id) == _expected(["A", "C"])
+        assert await _projection(repo, FacetKind.ACTOR, meta.id) == _expected(["A", "Other"])
 
 
 class TestDeleteProjection:
@@ -319,15 +271,13 @@ class TestDeleteProjection:
         got = await repo.get_metadata(meta.id)
         assert got is not None
         assert got.tags == ["Keep"]
-        assert await _tag_projection(repo, meta.id) == _expected(["Keep"])
+        assert await _projection(repo, FacetKind.TAG, meta.id) == _expected(["Keep"])
 
 
 class TestGovernanceConcurrency:
     """两个写入方按固定交错执行: 写锁未释放时并发写入不得提交."""
 
-    async def test_update_metadata_and_upsert_interleaved(
-        self, repo: Repository, monkeypatch: _pytest.MonkeyPatch
-    ) -> None:
+    async def test_update_metadata_and_upsert_interleaved(self, repo: Repository, monkeypatch: MonkeyPatch) -> None:
         """PATCH 读到行后暂停, 并发 upsert 必须等它提交; 投影与真值保持一致."""
         meta = await repo.upsert_metadata(number="RACE-001", tags=["t1"], title="old")
         assert meta.id is not None
@@ -350,10 +300,10 @@ class TestGovernanceConcurrency:
         assert got is not None
         assert got.title == "patched"
         assert got.tags == ["t2"]
-        assert await _tag_projection(repo, metadata_id) == _expected(["t2"])
+        assert await _projection(repo, FacetKind.TAG, metadata_id) == _expected(["t2"])
 
     async def test_merge_entries_does_not_write_back_stale_raw(
-        self, repo: Repository, monkeypatch: _pytest.MonkeyPatch
+        self, repo: Repository, monkeypatch: MonkeyPatch
     ) -> None:
         """合并读到目标行后暂停; 并发写入的新 raw 不得被合并按旧快照整体覆盖."""
         target = await repo.upsert_metadata(number="RACE-RAW-1", raw={"javdb": {"title": "t"}})
@@ -401,9 +351,7 @@ class TestGovernanceConcurrency:
         assert await repo.get_facet(FacetKind.TAG, renamed_ids[0]) is not None
 
 
-async def _pause_on_metadata_get(
-    monkeypatch: _pytest.MonkeyPatch, metadata_id: int
-) -> tuple[asyncio.Event, asyncio.Event]:
+async def _pause_on_metadata_get(monkeypatch: MonkeyPatch, metadata_id: int) -> tuple[asyncio.Event, asyncio.Event]:
     """让 ``AsyncSession.get(Metadata, metadata_id)`` 返回后暂停一次, 返回 (已暂停, 放行)."""
     observed, release = asyncio.Event(), asyncio.Event()
     original = AsyncSession.get
