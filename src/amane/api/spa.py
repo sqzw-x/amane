@@ -74,9 +74,9 @@ def _is_safe_dist_path(path: str) -> bool:
     只做词法判定、不触盘, 因此 Windows 上的盘符与 UNC 形态在任何平台都能单测.
     ``scope["path"]`` 已由 ASGI 服务器解码, ``%5C`` 到这里就是反斜杠.
 
-    反斜杠、冒号与 NUL 是 Windows 上 ``Path`` 把右侧当成绝对路径的条件 (盘符 / UNC / 设备名);
-    ``..`` 沿用原有的遍历拦截. 最后按 POSIX 语义再拼接一次, 确认词法上仍在 dist 内 — 黑名单
-    挡不住的未来写法不能走到 ``(dist / path).is_file()``.
+    反斜杠、冒号与 NUL 是 Windows 上 ``Path`` 把右侧当成绝对路径的条件 (盘符 / UNC / 设备名),
+    ``..`` 属遍历一并拒绝. 最后按 POSIX 语义再拼接一次, 确认词法上仍在 dist 内 — 黑名单挡不住
+    的写法不能走到 ``(dist / path).is_file()``.
     """
     if not path.startswith("/"):
         return False
