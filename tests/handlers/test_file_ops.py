@@ -1,8 +1,6 @@
 """测试 file ops 消费已物化 URL (内部派生 / 外部) + trailer 落盘."""
 
-import os
-import shutil
-from collections.abc import Callable
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -12,7 +10,7 @@ from PIL import Image
 from amane.config import HotSettings, WatermarkConfig
 from amane.db.models import Library, MediaFile, Metadata
 from amane.enums import DownloadableResource
-from amane.handlers.file import _copy_into_library, execute_file_operations
+from amane.handlers.file import _write_into_library, execute_file_operations
 from amane.media import ResourceStore
 from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths, resolve_paths
 from amane.parsing import ContentType, parse_file_info
@@ -425,133 +423,63 @@ async def test_fanart_follows_thumb_selection(
         assert _pixel(paths.fanart) == before
 
 
-@pytest.mark.parametrize(
-    "error",
-    [
-        PermissionError(1, "Operation not permitted"),
-        OSError(95, "Operation not supported"),
-    ],
-)
-def test_copy_into_library_tolerates_metadata_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError
-) -> None:
-    """目标挂载拒绝 utime、chmod 时, 内容照常落盘."""
-    src = tmp_path / "src.jpg"
-    src.write_bytes(b"image")
-    dst = tmp_path / "dst.jpg"
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 无 POSIX 权限位")
+def test_write_into_library_takes_permissions_from_target(tmp_path: Path) -> None:
+    """模式位来自目标目录, 不继承源文件."""
+    source = tmp_path / "src.jpg"
+    source.write_bytes(b"image")
+    source.chmod(0o600)
+    probe = tmp_path / "probe"
+    probe.write_bytes(b"")
+    target = tmp_path / "dst.jpg"
 
-    def reject(*args: object, **kwargs: object) -> None:
-        raise error
+    _write_into_library(source, target)
 
-    monkeypatch.setattr("amane.handlers.file.shutil.copystat", reject)
-
-    _copy_into_library(src, dst)
-
-    assert dst.read_bytes() == b"image"
+    assert target.read_bytes() == b"image"
+    assert target.stat().st_mode & 0o777 == probe.stat().st_mode & 0o777
 
 
-def test_copy_into_library_logs_both_attempts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """内容写不进去时记录两次尝试的原文, 并原样抛出回退那次的错误."""
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 无 POSIX 权限位")
+def test_write_into_library_rewrites_existing_artifact(tmp_path: Path) -> None:
+    """目标已存在时按新文件重写, 旧产物的模式位不保留."""
+    source = tmp_path / "src.jpg"
+    source.write_bytes(b"new")
+    probe = tmp_path / "probe"
+    probe.write_bytes(b"")
+    target = tmp_path / "dst.jpg"
+    target.write_bytes(b"old")
+    target.chmod(0o600)
 
-    def reject(error: OSError) -> Callable[..., None]:
-        def _reject(*args: object, **kwargs: object) -> None:
-            raise error
+    _write_into_library(source, target)
 
-        return _reject
+    assert target.read_bytes() == b"new"
+    assert target.stat().st_mode & 0o777 == probe.stat().st_mode & 0o777
 
-    first = PermissionError(13, "Permission denied")
-    second = OSError(22, "Invalid argument")
-    monkeypatch.setattr("amane.handlers.file.shutil.copy2", reject(first))
-    monkeypatch.setattr("amane.handlers.file.shutil.copyfile", reject(second))
+
+def test_write_into_library_keeps_target_on_write_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """写入失败时保留旧产物, 不留下临时文件, 并带上路径记一条错误日志."""
+    source = tmp_path / "src.jpg"
+    target = tmp_path / "dst.jpg"
+    target.write_bytes(b"old")
     recorded: list[tuple[str, dict[str, object]]] = []
+
+    def reject(*args: object, **kwargs: object) -> Path:
+        raise OSError(22, "Invalid argument")
 
     def record(event: str, **fields: object) -> None:
         recorded.append((event, fields))
 
+    monkeypatch.setattr("amane.handlers.file.shutil.copyfile", reject)
     monkeypatch.setattr("amane.handlers.file.logger.error", record)
 
-    with pytest.raises(OSError) as excinfo:
-        _copy_into_library(tmp_path / "src.jpg", tmp_path / "dst.jpg")
+    with pytest.raises(OSError):
+        _write_into_library(source, target)
 
-    assert excinfo.value is second
-    assert recorded == [
-        (
-            "library copy failed",
-            {
-                "src": str(tmp_path / "src.jpg"),
-                "dst": str(tmp_path / "dst.jpg"),
-                "copy2_error": str(first),
-                "copyfile_error": str(second),
-            },
-        )
+    assert target.read_bytes() == b"old"
+    assert [p.name for p in tmp_path.iterdir()] == ["dst.jpg"]
+    assert [(event, fields["source"], fields["target"]) for event, fields in recorded] == [
+        ("library write failed", str(source), str(target))
     ]
-
-
-def test_copy_into_library_preserves_metadata_when_possible(tmp_path: Path) -> None:
-    """挂载允许写元数据时, mtime 仍随源文件."""
-    src = tmp_path / "src.jpg"
-    src.write_bytes(b"image")
-    stamp = 1_000_000_000
-    os.utime(src, (stamp, stamp))
-    dst = tmp_path / "dst.jpg"
-
-    _copy_into_library(src, dst)
-
-    assert int(dst.stat().st_mtime) == stamp
-
-
-def test_copy_into_library_keeps_copy2_on_success_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """成功路径必须与 copy2 一致: Windows 上即 CopyFile2, 该调用不能被绕开."""
-    src = tmp_path / "src.jpg"
-    src.write_bytes(b"image")
-    dst = tmp_path / "dst.jpg"
-    calls: list[tuple[Path, Path]] = []
-    real_copy2 = shutil.copy2
-
-    def spy(s: Path, d: Path) -> Path | str:
-        calls.append((s, d))
-        return real_copy2(s, d)
-
-    monkeypatch.setattr("amane.handlers.file.shutil.copy2", spy)
-
-    _copy_into_library(src, dst)
-
-    assert calls == [(src, dst)]
-    assert dst.read_bytes() == b"image"
-
-
-@pytest.mark.asyncio
-async def test_images_placed_when_metadata_copy_denied(
-    resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """目标挂载拒绝元数据时, 整理仍应完成并留下图片."""
-    client = cast("WebClient", FakeClient())
-
-    src = tmp_path / "src" / "MIDV-123.mp4"
-    src.parent.mkdir(parents=True)
-    src.write_bytes(b"movie")
-    paths = _paths(tmp_path / "out")
-
-    def reject(*args: object, **kwargs: object) -> None:
-        raise PermissionError(1, "Operation not permitted")
-
-    monkeypatch.setattr("amane.handlers.file.shutil.copystat", reject)
-
-    result = await execute_file_operations(
-        media_file=MediaFile(path=str(src), library_id=1),
-        metadata=Metadata(number="MIDV-123", thumb_urls=["https://s/t.jpg"], poster_urls=["https://s/p.jpg"]),
-        paths=paths,
-        move_mode=MoveMode.COPY,
-        resource_store=resource_store,
-        file_info=parse_file_info(src),
-        web_client=client,
-        config=HotSettings(),
-    )
-
-    assert result.outcome is PlaceOutcome.PLACED
-    assert paths.thumb.exists()
-    assert paths.poster.exists()
-    assert paths.fanart.read_bytes() == paths.thumb.read_bytes()
 
 
 @pytest.mark.asyncio
