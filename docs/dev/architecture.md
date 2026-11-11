@@ -61,5 +61,4 @@ EventBus → 日志 → 来源插件发现 → 主 DB engine + Repository → r1
 - **限速** — per-host 漏桶; 优先级见 [crawlers.md](crawlers.md).
 - **Resource** — URL → 本地文件, 一等存储非 LRU; 见 [data-model.md](data-model.md).
 - **日志** — 三流 + 任务 Recorder; 见 [observability.md](observability.md).
-- **事件循环上的同步 I/O** — 用户媒体目录与浏览路径 (含 FUSE / NAS) 上的 glob / stat / copy / move 一律经 `@in_thread` 提交线程池, 已在工作线程内用 `.sync`, 否则会阻塞健康检查与其它请求; 细则见 [task-system.md](task-system.md). `data_dir` 由进程管理, 同步读写仅限单次停顿不超过 5 ms 的操作: 单行 append、≤1 000 行任务日志解析、≤100 个文件的产物删除留在事件循环; 任务记录导出 zip、插件安装、>1 000 行任务日志解析、>200 个文件的产物删除、会话首次扫描超过 1 MiB 必须移入线程池. 多文件与元数据密集的操作还须按最慢目标盘折算 (机械盘与千兆 NAS 的文件数上限显著更低); 已开始执行的文件操作不可取消.
-- **事件循环上的 CPU** — 纯 CPU 计算同受 5 ms 预算约束, 超过即必须移入线程池或分片让出事件循环: >2 000 条目的清理清单目录树属于此类. `to_thread` 不能绕过 GIL 并行执行, 常态超限应降低输入上限或改为流式 / 分批处理.
+- **事件循环预算** — 单次停顿时限 5 ms, 超限的同步 I/O 与纯 CPU 计算一律经 `@in_thread` / `asyncio.to_thread` 提交线程池, 否则会阻塞健康检查与其它请求. 库路径与浏览路径 (含 FUSE / NAS) 上的 glob / stat / copy / move 已在工作线程内用 `.sync`, 见 [task-system.md](task-system.md). `data_dir` 的同步读写按该预算定界: 单行 append、≤1 000 行任务日志解析、≤100 个文件的产物删除留在事件循环; 任务记录导出 zip、插件安装、>1 000 行任务日志解析、>200 个文件的产物删除、会话首次扫描超过 1 MiB 必须移入线程池. 多文件操作还须按最慢目标盘折算 (机械盘与千兆 NAS 的文件数上限显著更低). 超过 2 000 条目的清理清单目录树属于 CPU 超限项; `to_thread` 不能绕过 GIL, 常态超限应降低输入上限或改为流式 / 分批处理.
