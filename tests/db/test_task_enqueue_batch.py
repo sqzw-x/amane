@@ -2,7 +2,6 @@
 
 import asyncio
 import sqlite3
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -14,11 +13,8 @@ from sqlalchemy import event
 from amane.db.models import TaskStatus, TaskType
 from amane.db.repository import Repository
 
-# 万级后继的规模与耗时预算. 实测 (M 系列笔记本) 10 000 个后继约 0.23 秒; 逐条 flush 的旧路径
-# 约 20 秒, 且受平方级互斥检查支配. 预算留数十倍余量给慢机器, 仍远低于 30 秒的写锁等待上限,
-# 后者是这段临界区真正的硬边界.
+# 万级后继的规模; 用语句数而不是墙钟时间判断是否退回逐条路径.
 _SCALE_ROWS = 10_000
-_SCALE_BUDGET_S = 12.0
 
 
 class _Statements:
@@ -127,9 +123,7 @@ async def test_followup_batch_scale(repo: Repository) -> None:
     ]
 
     with _capture_statements(repo) as captured:
-        started = time.perf_counter()
         children = await repo.complete_task_with_followups(parent_id, {}, followups)
-        elapsed = time.perf_counter() - started
 
     assert len(children) == count
     assert [child.payload["actor_id"] for child in children] == list(range(count))
@@ -148,7 +142,6 @@ async def test_followup_batch_scale(repo: Repository) -> None:
 
     # 旧路径每个后继约 4 条语句; 批量化后语句数与后继数量无关.
     assert len(captured.items) < count // 2
-    assert elapsed < _SCALE_BUDGET_S, f"{count} 个后继耗时 {elapsed:.2f}s, 超出 {_SCALE_BUDGET_S}s 预算"
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -270,14 +263,11 @@ async def test_create_tasks_reuses_active_batch_at_scale(repo: Repository) -> No
     assert len(first) == len(payloads)
 
     with _capture_statements(repo) as captured:
-        started = time.perf_counter()
         again = await repo.create_tasks(TaskType.ACTOR_SCRAPE, payloads, priority=-1)
-        elapsed = time.perf_counter() - started
 
     assert [task.id for task in again] == [task.id for task in first]
     assert await repo.count_tasks(task_types=[TaskType.ACTOR_SCRAPE]) == len(payloads)
     assert len(captured.items) < len(payloads) // 2
-    assert elapsed < _SCALE_BUDGET_S, f"复用 {len(payloads)} 个活跃行耗时 {elapsed:.2f}s"
 
 
 @pytest.mark.asyncio(loop_scope="function")
