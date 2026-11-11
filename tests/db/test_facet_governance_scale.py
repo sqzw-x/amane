@@ -1,17 +1,17 @@
-"""万级关联下的分类治理: 写锁时长与投影一致性.
+"""万级关联下的分类治理: 批量写入与投影一致性.
 
-写锁从 ``BEGIN IMMEDIATE`` 持有到 ``commit``, 因此公开方法的墙钟时间就是写锁时长.
-同一数据量逐行重建投影需要数十秒; 预算取 15s, 低于该量级一个数量级, 又能容纳慢机器.
+逐部影片重建投影会让 SQL 语句数随影片数增长; 这里用语句数而不是墙钟时间做回归判据.
 """
 
 from __future__ import annotations
 
-import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import event, insert
 from sqlmodel import col, select
 
 from amane.db.models import FacetKind, Metadata, MetadataTag, Tag
@@ -23,8 +23,29 @@ pytestmark = pytest.mark.asyncio
 
 #: 关联同一标签的影片数.
 FILMS = 10_000
-#: 单次治理操作的写锁预算 (秒).
-LOCK_BUDGET_S = 15.0
+#: 单次治理允许的语句数上限; 逐部重建会随影片数增长, 远超此值.
+MAX_GOVERNANCE_STATEMENTS = 500
+
+
+class _Statements:
+    def __init__(self) -> None:
+        self.items: list[str] = []
+
+    def __call__(
+        self, _conn: Any, _cursor: Any, statement: str, _parameters: Any, _context: Any, _executemany: bool
+    ) -> None:
+        self.items.append(statement)
+
+
+@contextmanager
+def _capture_statements(repo: Repository) -> Iterator[_Statements]:
+    captured = _Statements()
+    engine = repo._engine.sync_engine
+    event.listen(engine, "before_cursor_execute", captured)
+    try:
+        yield captured
+    finally:
+        event.remove(engine, "before_cursor_execute", captured)
 
 
 async def _seed_shared_tag(repo: Repository) -> tuple[int, int]:
@@ -102,27 +123,24 @@ class TestLargeFacetGovernance:
         hot_id, shared_id = await _seed_shared_tag(repo)
         await _assert_projection_matches_truth(repo)
 
-        started = time.perf_counter()
-        renamed = await repo.rename_facet(FacetKind.TAG, hot_id, "hot-renamed")
-        rename_lock_s = time.perf_counter() - started
+        with _capture_statements(repo) as renamed_statements:
+            renamed = await repo.rename_facet(FacetKind.TAG, hot_id, "hot-renamed")
         assert renamed is not None and renamed.count == FILMS
+        assert len(renamed_statements.items) < MAX_GOVERNANCE_STATEMENTS
         await _assert_projection_matches_truth(repo)
-        assert rename_lock_s < LOCK_BUDGET_S, f"改名写锁 {rename_lock_s:.2f}s 超出预算"
 
-        started = time.perf_counter()
-        merged = await repo.merge_facets(FacetKind.TAG, shared_id, [renamed.id])
-        merge_lock_s = time.perf_counter() - started
+        with _capture_statements(repo) as merged_statements:
+            merged = await repo.merge_facets(FacetKind.TAG, shared_id, [renamed.id])
         # 每部影片同时挂源与目标: 去重后每行的标签数减 1.
         assert merged is not None and merged.count == FILMS
+        assert len(merged_statements.items) < MAX_GOVERNANCE_STATEMENTS
         await _assert_projection_matches_truth(repo)
-        assert merge_lock_s < LOCK_BUDGET_S, f"合并写锁 {merge_lock_s:.2f}s 超出预算"
 
     async def test_delete_ten_thousand_links(self, repo: Repository) -> None:
         hot_id, _shared_id = await _seed_shared_tag(repo)
 
-        started = time.perf_counter()
-        assert await repo.delete_facet(FacetKind.TAG, hot_id) is True
-        delete_lock_s = time.perf_counter() - started
+        with _capture_statements(repo) as delete_statements:
+            assert await repo.delete_facet(FacetKind.TAG, hot_id) is True
+        assert len(delete_statements.items) < MAX_GOVERNANCE_STATEMENTS
 
         await _assert_projection_matches_truth(repo)
-        assert delete_lock_s < LOCK_BUDGET_S, f"删除写锁 {delete_lock_s:.2f}s 超出预算"
