@@ -56,7 +56,7 @@ class MetadataFilters:
         )
 
 
-# 列表 GET 的 id 组上限: 表达式深度随 id 数增长, 八组累计的 AND 条件同样占深度.
+# 列表 GET 的 id 组上限: 单个 IN 列表的表达式深度随 id 数增长, 各组累计的 AND 条件同样占深度.
 _MAX_IDS_PER_GROUP = 100
 _MAX_IDS_TOTAL = 200
 

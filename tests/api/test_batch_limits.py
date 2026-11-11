@@ -42,8 +42,9 @@ CASES = [
 ]
 
 
-@pytest.mark.parametrize(("path", "body"), [(path, body) for path, body, _label in CASES], ids=[c[2] for c in CASES])
 @pytest.mark.asyncio(loop_scope="function")
-async def test_batch_id_lists_reject_more_than_1000(client: AsyncClient, path: str, body: dict[str, object]) -> None:
-    response = await client.post(path, json=body)
-    assert response.status_code == 422
+async def test_batch_id_lists_reject_more_than_1000(client: AsyncClient) -> None:
+    """同一 lifespan 内逐个端点校验, 不为每个请求重建应用."""
+    for path, body, label in CASES:
+        response = await client.post(path, json=body)
+        assert response.status_code == 422, label
