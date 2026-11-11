@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import HTTPException, Query
 
-from ...parsing import DEFINITION_VALUES, ContentType, Mosaic
+from ...parsing import ContentType, Mosaic, canonical_definition
 from ...utils.collections import unique_ids
 
 
@@ -99,7 +99,9 @@ async def parse_metadata_filters(
     uncensored: Annotated[
         bool | None, Query(description="Filter by uncensored number (own content type or linked file marker)")
     ] = None,
-    definition: Annotated[str | None, Query(description="Filter by linked file definition (8K/4K/1080p/…)")] = None,
+    definition: Annotated[
+        str | None, Query(description="Filter by linked file definition (8K/4K/1440p/1080p/720p/480p; SD/HD aliases)")
+    ] = None,
     content_type: Annotated[ContentType | None, Query(description="Filter by number content type")] = None,
     saved_query_id: Annotated[
         int | None, Query(description="Saved query preset id; AND with other filters via SQL subquery")
@@ -128,8 +130,10 @@ async def parse_metadata_filters(
 
 
 def require_known_definition(definition: str | None) -> str | None:
+    """已合并的旧档位名 (SD / HD) 归一到现档位后照常筛选."""
     if definition is None:
         return None
-    if definition not in DEFINITION_VALUES:
+    canonical = canonical_definition(definition)
+    if canonical is None:
         raise HTTPException(status_code=422, detail=f"未知分辨率: {definition}")
-    return definition
+    return canonical

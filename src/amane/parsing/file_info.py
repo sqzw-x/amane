@@ -191,10 +191,12 @@ _ESCAPE_MARKERS = (
     "8K",
     # 数字分辨率须逐个列出. 未被剥除时其数字片段会被番号规则当作番号
     # (120115_318-mura-1080p → MURA-1080). 匹配要求两侧为分隔符, 故 1080p60 不受影响.
+    "4320P",
     "2160P",
     "1440P",
     "1080P",
     "720P",
+    "576P",
     "480P",
     "HD",
     "LR",
@@ -231,22 +233,37 @@ MOSAIC_VALUES: tuple[Mosaic, ...] = tuple(Mosaic)
 MOSAIC_NATURE_VALUES: tuple[MosaicNature, ...] = tuple(MosaicNature)
 CONTENT_TYPE_VALUES: tuple[ContentType, ...] = tuple(ContentType)
 
-# 分辨率: 元组顺序即优先级; 2160p 归一为 4K.
+# 分辨率: 元组顺序即优先级, 同一档可有多条写法 (SD / 576P / 480P 同为 480, HD 与 720P 同为 720;
+# 576P 是 PAL 标清, 与 480P 同档). 档位名沿用已有词汇, 数字写法与 K 写法共存.
 # 匹配作用于 _normalize_markers 之后的 basename:
 # - 数字标记允许紧跟帧率 (1080p60); K/p 后不得再接字母 (4KS / HDTV 不命中)
 # - HD/SD 不得是番号前缀: HD-123 / HD_123 (下划线归一成点后同形) 不命中
 _DEFINITION_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("8K", re.compile(r"\b8K(?:\d+)?\b")),
+    ("8K", re.compile(r"\b4320P(?:\d+)?\b")),
     ("4K", re.compile(r"\b4K(?:\d+)?\b")),
     ("4K", re.compile(r"\b2160P(?:\d+)?\b")),
     ("1440p", re.compile(r"\b1440P(?:\d+)?\b")),
     ("1080p", re.compile(r"\b1080P(?:\d+)?\b")),
     ("720p", re.compile(r"\b720P(?:\d+)?\b")),
+    ("720p", re.compile(r"\bHD\b(?![.-]\d)")),
     ("480p", re.compile(r"\b480P(?:\d+)?\b")),
-    ("HD", re.compile(r"\bHD\b(?![.-]\d)")),
-    ("SD", re.compile(r"\bSD\b(?![.-]\d)")),
+    ("480p", re.compile(r"\b576P(?:\d+)?\b")),
+    ("480p", re.compile(r"\bSD\b(?![.-]\d)")),
 )
 DEFINITION_VALUES: tuple[str, ...] = tuple(dict.fromkeys(value for value, _ in _DEFINITION_MARKERS))
+
+#: 旧档位名 → 现档位: 读侧 (筛选参数、角标文件名) 仍接受, 写入只落 DEFINITION_VALUES.
+LEGACY_DEFINITIONS: dict[str, str] = {"SD": "480p", "HD": "720p"}
+
+_DEFINITION_BY_CASEFOLD: dict[str, str] = {value.casefold(): value for value in DEFINITION_VALUES} | {
+    alias.casefold(): value for alias, value in LEGACY_DEFINITIONS.items()
+}
+
+
+def canonical_definition(value: str) -> str | None:
+    """大小写不敏感地归一到现档位; 未知值返回 None."""
+    return _DEFINITION_BY_CASEFOLD.get(value.casefold())
 
 
 # ---------------------------------------------------------------------------

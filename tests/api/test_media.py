@@ -34,6 +34,11 @@ class TestMediaHttp:
         assert item["has_subtitle"] is True
         assert item["mosaic"] is None
 
+        legacy = await repo.create_media_file(library_id=1, path="/video/MIDV-002-HD.mp4", number="XYZ-002")
+        for value in ("720p", "HD"):
+            filtered = await client.get("media", params={"definition": value})
+            assert [item["id"] for item in filtered.json()["items"]] == [legacy.id]
+
         got = await client.get(f"media/{media.id}")
         assert got.status_code == 200
         assert got.json()["number"] == "XYZ-001"

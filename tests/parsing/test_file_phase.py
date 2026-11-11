@@ -78,7 +78,7 @@ def test_every_mosaic_marker_has_a_nature() -> None:
         ((), None),
         ((None, None), None),
         (("1080p", "4K", "720p"), "4K"),
-        (("HD", "1080p"), "1080p"),
+        (("480p", "1080p"), "1080p"),
         (("unknown",), None),
     ],
 )

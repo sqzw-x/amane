@@ -78,8 +78,14 @@ export const MOSAICS = exhaustiveTuple<Mosaic>()("uncensored", "cracked", "leake
 
 /** 顺序即优先级 (高→低). 与后端 DEFINITION_VALUES 对齐. */
 export const FILE_DEFINITIONS = exhaustiveTuple<
-  "8K" | "4K" | "1440p" | "1080p" | "720p" | "480p" | "HD" | "SD"
->()("8K", "4K", "1440p", "1080p", "720p", "480p", "HD", "SD");
+  "8K" | "4K" | "1440p" | "1080p" | "720p" | "480p"
+>()("8K", "4K", "1440p", "1080p", "720p", "480p");
+
+/** 合并前的档位名 → 现档位; 与后端筛选别名一致, 大小写不敏感. */
+export const LEGACY_FILE_DEFINITIONS: Record<string, (typeof FILE_DEFINITIONS)[number]> = {
+  sd: "480p",
+  hd: "720p",
+};
 
 export const TASK_STATUSES = exhaustiveTuple<TaskStatus>()("queued", "running", "done", "failed");
 
