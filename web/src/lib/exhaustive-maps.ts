@@ -78,8 +78,8 @@ export const MOSAICS = exhaustiveTuple<Mosaic>()("uncensored", "cracked", "leake
 
 /** 顺序即优先级 (高→低). 与后端 DEFINITION_VALUES 对齐. */
 export const FILE_DEFINITIONS = exhaustiveTuple<
-  "8K" | "4K" | "1440p" | "1080p" | "720p" | "480p" | "HD" | "SD"
->()("8K", "4K", "1440p", "1080p", "720p", "480p", "HD", "SD");
+  "8K" | "4K" | "1440p" | "1080p" | "720p" | "480p"
+>()("8K", "4K", "1440p", "1080p", "720p", "480p");
 
 export const TASK_STATUSES = exhaustiveTuple<TaskStatus>()("queued", "running", "done", "failed");
 
