@@ -328,7 +328,7 @@ async def get_metadata(metadata_id: int, repo: RepoDep) -> MetadataDetailRespons
 
 @router.patch("/{metadata_id}")
 async def update_metadata(metadata_id: int, req: PartialMetadata, repo: RepoDep) -> MetadataResponse:
-    # 只写显式提供的字段: 省略键不改, 可空列给 null 即清空 (非空列上的 null 由派生模型拒绝).
+    # exclude_unset 区分省略键与显式 null; 三态见 docs/dev/data-model.md.
     updates = cast("MetadataFields", req.model_dump(exclude_unset=True))
     if not updates:
         raise HTTPException(status_code=422, detail="没有需要修改的字段")

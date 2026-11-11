@@ -111,7 +111,7 @@ class FeedCreateRequest(BaseModel):
 if TYPE_CHECKING:
     type _FeedUpdateRequest = Feed
 
-# 可写字段从 Feed 派生 (与 FeedCreateRequest 覆盖同一批列); 派生模型已拒绝非空列上的显式 null.
+# 可写字段从 Feed 派生, 与 FeedCreateRequest 覆盖同一批列.
 _FeedUpdateRequest = create_partial_model(
     Feed,
     ignore_fields=(
