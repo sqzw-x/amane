@@ -1,18 +1,18 @@
 """批量入队: 互斥复用、后继的数量 / 顺序 / 边, 以及逐条 flush 的回归预算."""
 
 import asyncio
+import sqlite3
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+import aiosqlite
 import pytest
 from sqlalchemy import event
 
 from amane.db.models import TaskStatus, TaskType
-
-if TYPE_CHECKING:
-    from amane.db.repository import Repository
+from amane.db.repository import Repository
 
 # 单次完成事务派生后继的规模与耗时预算. 实测 (M 系列笔记本) 1000 / 3000 / 10000 个后继约
 # 0.02 / 0.06 / 0.23 秒; 逐条 flush 的旧路径为 2.9 / 20.3 秒, 10000 受平方级互斥检查支配.
@@ -41,6 +41,75 @@ def _capture_statements(repo: Repository) -> Iterator[_Statements]:
         yield captured
     finally:
         event.remove(engine, "before_cursor_execute", captured)
+
+
+@pytest.fixture
+def shuffled_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """逆转驱动返回顺序, 验证任务与后继键的对应不依赖 RETURNING 顺序."""
+    original = aiosqlite.Cursor.fetchall
+
+    async def reversed_fetchall(cursor: aiosqlite.Cursor) -> list[sqlite3.Row]:
+        return list(await original(cursor))[::-1]
+
+    monkeypatch.setattr(aiosqlite.Cursor, "fetchall", reversed_fetchall)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.usefixtures("shuffled_rows")
+async def test_followup_keys_survive_shuffled_returning(repo: Repository) -> None:
+    parent = await repo.create_task(TaskType.REFRESH, {})
+    assert parent.id is not None
+    assert await repo.claim_next_task() is not None
+    existing = await repo.create_task(TaskType.ACTOR_SCRAPE, {"actor_id": -1})
+    followups: list[tuple[str, TaskType, dict[str, object], int]] = [
+        ("existing", TaskType.ACTOR_SCRAPE, {"actor_id": -1}, 0),
+        *[(f"actor:{i}", TaskType.ACTOR_SCRAPE, {"actor_id": i}, -i) for i in range(101)],
+        ("alias", TaskType.ACTOR_SCRAPE, {"actor_id": 100}, 0),
+        ("duplicate-key", TaskType.SCRAPE, {"number": "first"}, 0),
+        ("identical-a", TaskType.SCRAPE, {"number": "same"}, 0),
+        ("identical-b", TaskType.SCRAPE, {"number": "same"}, 0),
+    ]
+    children = await repo.complete_task_with_followups(
+        parent.id, {}, [*followups, ("duplicate-key", TaskType.SCRAPE, {"number": "discarded"}, 0)]
+    )
+    expected = {key: (task_type, payload) for key, task_type, payload, _ in followups}
+    assert [(child.type, child.payload) for child in children] == list(expected.values())
+    assert children[0].id == existing.id
+    assert children[101].id == children[102].id
+    assert children[-2].id != children[-1].id
+    links = await repo.list_children(parent.id)
+    assert {key: (child.type, child.payload) for child, key in links} == expected
+    assert {key: child.id for child, key in links} == {
+        key: child.id for key, child in zip(expected, children, strict=True)
+    }
+    assert all(child.root_task_id == parent.id for child in children)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.usefixtures("shuffled_rows")
+async def test_create_and_retry_survive_shuffled_returning(repo: Repository) -> None:
+    assert await repo.create_tasks(TaskType.SCRAPE, []) == []
+    assert await repo.retry_tasks([]) == []
+    payloads: list[dict[str, object]] = [{"number": f"N-{i}"} for i in range(101)]
+    originals = await repo.create_tasks(TaskType.SCRAPE, payloads)
+    assert [task.payload for task in originals] == payloads
+    assert await repo.fail_queued_tasks(error="retry") == len(payloads)
+    clones = await repo.retry_tasks(originals)
+    assert [task.payload for task in clones] == payloads
+    assert {task.id for task in clones}.isdisjoint(task.id for task in originals)
+    assert all(task.root_task_id is None for task in clones)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_independent_repositories_share_enqueue_write_lock(repo: Repository) -> None:
+    other = Repository(repo._engine)
+    payloads: list[dict[str, object]] = [{"actor_id": i} for i in range(101)]
+    first, second = await asyncio.gather(
+        repo.create_tasks(TaskType.ACTOR_SCRAPE, payloads),
+        other.create_tasks(TaskType.ACTOR_SCRAPE, payloads),
+    )
+    assert [task.id for task in first] == [task.id for task in second]
+    assert await repo.count_tasks() == len(payloads)
 
 
 @pytest.mark.asyncio(loop_scope="function")

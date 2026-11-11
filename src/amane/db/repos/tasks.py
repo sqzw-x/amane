@@ -14,7 +14,7 @@ from ..repo_types import _TASK_SORT_COLUMNS, _order_clause, _utcnow
 from .base import RepositoryMixinBase, chunks
 
 _ACTIVE_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING)
-# 单条 INSERT 的行数上限. 每行 7 个绑定变量, 留出余量后仍低于连接级上限被调低到 1000 的情形.
+# 单条 INSERT 的行数上限. 每行至多 8 个绑定变量, 留出余量后仍低于连接级上限被调低到 1000 的情形.
 _INSERT_CHUNK_SIZE = 100
 # 互斥键在 payload 里; 同键已有 queued/running 则复用, 不另建行.
 # 其余类型每次新建; 同库串行由 handler 内的锁保证.
@@ -82,8 +82,8 @@ async def _active_exclusive_ids(session: AsyncSession, task_type: TaskType, fiel
 async def _insert_tasks(session: AsyncSession, pending: Sequence[_PendingTask]) -> list[Task]:
     """一批入队, 返回值与 ``pending`` 同序.
 
-    互斥键在批内先占位: 已有活跃行直接复用, 批内同键也只建一行. 新行合成一批
-    ``INSERT ... RETURNING``, 不再逐条 flush; 提交后属性仍可读 (``expire_on_commit=False``).
+    调用方须在读取前取得 SQLite 写锁, 覆盖互斥判定与新行 id 分配. 返回行按显式 id 对应输入,
+    不依赖 ``RETURNING`` 顺序; SQLite 的有序 RETURNING 会退回逐行插入. 提交后属性仍可读.
     """
     if not pending:
         return []
@@ -137,28 +137,28 @@ async def _insert_tasks(session: AsyncSession, pending: Sequence[_PendingTask]) 
         new_indexes.append(index)
 
     if new_rows:
-        stmt = insert(Task).returning(Task).execution_options(sort_by_parameter_order=True)
+        last_id = (await session.exec(select(func.max(col(Task.id))))).one() or 0
+        stmt = insert(Task).returning(Task)
         for start in range(0, len(new_rows), _INSERT_CHUNK_SIZE):
             batch = new_rows[start : start + _INSERT_CHUNK_SIZE]
-            inserted = list(
-                (
-                    await session.exec(
-                        stmt,
-                        params=[
-                            {
-                                "type": row.task_type,
-                                "payload": row.payload,
-                                "priority": row.priority,
-                                "root_task_id": row.root_task_id,
-                            }
-                            for row in batch
-                        ],
-                    )
-                ).scalars()
-            )
-            assert len(inserted) == len(batch)
-            for index, task in zip(new_indexes[start : start + _INSERT_CHUNK_SIZE], inserted, strict=True):
-                slots[index] = task
+            inserted = (
+                await session.exec(
+                    stmt,
+                    params=[
+                        {
+                            "id": last_id + start + offset + 1,
+                            "type": row.task_type,
+                            "payload": row.payload,
+                            "priority": row.priority,
+                            "root_task_id": row.root_task_id,
+                        }
+                        for offset, row in enumerate(batch)
+                    ],
+                )
+            ).scalars()
+            by_id = {task.id: task for task in inserted}
+            for offset, index in enumerate(new_indexes[start : start + _INSERT_CHUNK_SIZE]):
+                slots[index] = by_id[last_id + start + offset + 1]
     for index, first in aliases.items():
         slots[index] = slots[first]
     assert all(slot is not None for slot in slots)
@@ -237,6 +237,8 @@ class TasksRepoMixin(RepositoryMixinBase):
             return []
         pending = [_PendingTask(task_type, _payload_dict(payload), priority) for payload in payloads]
         async with self._task_insert_lock, self._session() as session:
+            connection = await session.connection()
+            await connection.exec_driver_sql("BEGIN IMMEDIATE")
             tasks = await _insert_tasks(session, pending)
             await session.commit()
             return tasks
@@ -557,6 +559,8 @@ class TasksRepoMixin(RepositoryMixinBase):
             return []
         pending = [_PendingTask(task.type, task.payload or {}, task.priority) for task in tasks]
         async with self._task_insert_lock, self._session() as session:
+            connection = await session.connection()
+            await connection.exec_driver_sql("BEGIN IMMEDIATE")
             clones = await _insert_tasks(session, pending)
             await session.commit()
             created: list[Task] = []
