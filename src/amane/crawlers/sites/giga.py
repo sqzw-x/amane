@@ -89,6 +89,22 @@ class GigaCrawler(Crawler):
         cover = extract_text(html, '//div[@id="works_pic"]//img/@src')
         extrafanart = extract_all_texts(html, '//div[contains(@class,"gasatsu_images_pc")]//img/@src')
 
+        # 第一处 div#tag 是ジャンルタグ; 其后还有它的子集「キャラクタータグ」与改 tag 的 UI 容器.
+        tags = extract_all_texts(html, '(//div[@id="tag"])[1]//a[contains(@href,"tag_id=")]/text()')
+        # 監督行是 dd > a, 只取 dd 的文本节点读不到链接文字.
+        directors = extract_all_texts(
+            html,
+            '//div[@id="works_txt"]//dl[dt[text()="監督"]]/dd//a/text()',
+            '//div[@id="works_txt"]//dl[dt[text()="監督"]]/dd/text()',
+        )
+        # story_list1 是截断版 (末尾 …), 全文在 story_list2; 该块的开关链接不是正文.
+        plot = "\n".join(
+            extract_all_texts(
+                html,
+                '//div[@id="story_list2"]//li[contains(@class,"story_window")]//text()[not(ancestor::a)]',
+            )
+        )
+
         return MediaMetadata(
             number=extract_text(html, self._work_field("作品番号")),
             title=title,
@@ -96,6 +112,9 @@ class GigaCrawler(Crawler):
             studio="GIGA",
             release=extract_text(html, self._work_field("DVDリリース日")) or None,
             runtime=self._parse_runtime(extract_text(html, self._work_field("収録時間"))),
+            tags=tags,
+            directors=directors,
+            plot=plot or None,
             thumb_urls=[urljoin(url, cover)] if cover else [],
             extrafanart=[urljoin(url, u) for u in extrafanart],
             source_url=url,

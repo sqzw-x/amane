@@ -7,6 +7,7 @@
 - 自定义提示词进入请求, 以及提示词变化后的缓存失效
 """
 
+import asyncio
 from collections.abc import Mapping, Sequence
 
 import aiosqlite
@@ -45,6 +46,21 @@ def _recording_model(result: str | None = "TRANSLATED") -> tuple[FunctionModel, 
     return FunctionModel(respond), calls
 
 
+def _gate_model(result: str = "译文") -> tuple[FunctionModel, asyncio.Event, asyncio.Event, list[str]]:
+    """首个请求阻塞在 release 上, 用于构造确定的并发窗口; 返回模型、开始与放行事件、请求过的原文."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+    users: list[str] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        users.append(_prompts(messages)[1])
+        started.set()
+        await release.wait()
+        return ModelResponse(parts=[TextPart(result)])
+
+    return FunctionModel(respond), started, release, users
+
+
 def _translator(
     model: Model,
     cache: TranslationCache | None = None,
@@ -63,6 +79,11 @@ def _translator(
         # 跨语系 → 调模型
         ("こんにちは世界", Language.ZH_CN, True),
         ("Hello world", Language.ZH_CN, True),
+        # 排版字符与变音字母不改分流
+        ("It won’t stop", Language.ZH_CN, True),
+        ("Café Müller", Language.ZH_CN, True),
+        # 中文标题带中点 U+30FB 不判日文
+        ("Rei Lakeside Lovers・神木麗", Language.ZH_CN, False),
         # 中文内部 → zhconv, 不调模型
         ("後愛上你", Language.ZH_CN, False),
         ("你好世界", Language.ZH_CN, False),
@@ -85,11 +106,32 @@ async def test_translate_routing(text, target, model_called):
 
 @pytest.mark.asyncio
 async def test_zhconv_conversion():
-    """繁→简由 zhconv 完成, 不经模型."""
+    """繁→简由内置 zhconv 完成, 不经模型."""
     model, calls = _recording_model()
     t = _translator(model)
     assert await t.translate("後愛上你", Language.ZH_CN, MetadataField.TITLE) == "后爱上你"
     assert not calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text,target,expected",
+    [
+        # 已是目标变体: 直接返回 None, 不得二次改写
+        ("头发", Language.ZH_CN, None),
+        ("干擾", Language.ZH_TW, None),
+        ("公里", Language.ZH_TW, None),
+        # 变体不一致时转换
+        ("頭髮", Language.ZH_CN, "头发"),
+        ("干扰", Language.ZH_TW, "干擾"),
+        ("这次來拍", Language.ZH_CN, "这次来拍"),  # 混合文本
+        # 共用字: 转换等于原文
+        ("你好世界", Language.ZH_CN, None),
+    ],
+)
+async def test_chinese_variant_conversion(text, target, expected):
+    t = _translator(_recording_model()[0])
+    assert await t.translate(text, target, MetadataField.TITLE) == expected
 
 
 @pytest.mark.asyncio
@@ -363,5 +405,58 @@ async def test_use_cache_false_bypasses_read_but_refreshes(cache):
     assert result == "新译文"
     assert len(calls) == 1
     # 缓存被刷新为新译文
+    assert await cache.get("Hello world", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "新译文"
+    await cache.close()
+
+
+# --- 并发合并 ---
+
+
+@pytest.mark.asyncio
+async def test_concurrent_translations_share_one_request(cache):
+    """同一文本的并发翻译只请求一次模型: 分集并发刮削拿到同一译文, 不因采样漂移."""
+    model, started, release, users = _gate_model("同一译文")
+    t = _translator(model, cache)
+
+    first = asyncio.create_task(t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE))
+    await started.wait()
+    followers = [asyncio.create_task(t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE)) for _ in range(4)]
+    release.set()
+
+    assert await asyncio.gather(first, *followers) == ["同一译文"] * 5
+    assert users == ["Hello world"]
+    assert await cache.get("Hello world", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "同一译文"
+    await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_distinct_texts_translate_separately():
+    """不同原文是不同的合并键, 不互相复用."""
+    model, started, release, users = _gate_model()
+    t = _translator(model)
+
+    first = asyncio.create_task(t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE))
+    await started.wait()
+    second = asyncio.create_task(t.translate("Other text", Language.ZH_CN, MetadataField.TITLE))
+    release.set()
+
+    assert await asyncio.gather(first, second) == ["译文", "译文"]
+    assert users == ["Hello world", "Other text"]
+
+
+@pytest.mark.asyncio
+async def test_forced_translation_joins_in_flight_request(cache):
+    """use_cache=False 的并发调用不读取缓存, 但共用同一次重译, 不重复请求."""
+    await cache.put("Hello world", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH, "旧译文")
+    model, started, release, users = _gate_model("新译文")
+    t = _translator(model, cache)
+
+    first = asyncio.create_task(t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE, use_cache=False))
+    await started.wait()
+    follower = asyncio.create_task(t.translate("Hello world", Language.ZH_CN, MetadataField.TITLE, use_cache=False))
+    release.set()
+
+    assert await asyncio.gather(first, follower) == ["新译文"] * 2
+    assert users == ["Hello world"]
     assert await cache.get("Hello world", Language.ZH_CN, MetadataField.TITLE, _SYSTEM_ZH) == "新译文"
     await cache.close()

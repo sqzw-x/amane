@@ -3,8 +3,8 @@
 import { type DefaultError, type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { batchActorGender, batchActorUserTags, batchClearActorPerson, batchDeleteMedia, batchDeleteMetadata, batchFacets, batchFeedItems, batchMetadataUserTags, batchSavedQueries, batchScrapeMetadata, batchSubmitTasks, batchTasks, cancelAguiTurn, checkConnectivity, clearActorPerson, clouddriveNotify, createAgentSession, createComment, createFeed, createLibrary, createSavedQuery, createSchedule, createUserTags, cropActorAvatar, cropPosterFromThumb, deleteAgentSession, deleteComment, deleteFacet, deleteFacetRule, deleteFeed, deleteLibrary, deleteMedia, deleteMetadata, deleteSchedule, desktopInfo, expandCleanupSelection, generateAgentSessionTitle, getActor, getAgentTrace, getCleanupInventory, getCleanupInventoryNodes, getCleanupTrash, getConfig, getConfigSchema, getFacet, getFeed, getLibrary, getMedia, getMetadata, getMetadataSchema, getPathTemplateSchema, getPlugin, getRelease, getSavedQuery, getSavedQueryResult, getSchedule, getScheduleSchema, getTask, getTaskChildren, getTaskRecord, getTaskSchema, getTaskWorker, healthCheck, installPlugin, listActors, listAgentSessions, listAllFeedItems, listFacetRules, listFacets, listFeedItems, listFeeds, listFiles, listLibraries, listMedia, listMetadata, listPlaybackSources, listPlaybackStreams, listPlugins, listSavedQueries, listSchedules, listTasks, mergeFacets, mergeMetadata, openMediaFile, type Options, pauseTaskWorker, playMetadata, playMetadataHlsPart, playMetadataPlaylist, playMetadataSubtitle, playStream, playStreamHlsPart, playStreamPlaylist, playStreamSubtitle, pollFeed, proxyImage, reloadPlugins, renameFacet, restartServer, resumeTaskWorker, scrapeActor, serveResource, setActorLocks, setMetadataLocks, submitTask, triggerSchedule, uninstallPlugin, updateActor, updateAgentSession, updateComment, updateConfig, updateFeed, updateLibrary, updateMedia, updateMetadata, updatePlugin, updateSavedQuery, updateSchedule } from '../sdk.gen';
-import type { BatchActorGenderData, BatchActorGenderError, BatchActorGenderResponse, BatchActorUserTagsData, BatchActorUserTagsError, BatchActorUserTagsResponse, BatchClearActorPersonData, BatchClearActorPersonError, BatchClearActorPersonResponse, BatchDeleteMediaData, BatchDeleteMediaError, BatchDeleteMediaResponse, BatchDeleteMetadataData, BatchDeleteMetadataError, BatchDeleteMetadataResponse, BatchFacetsData, BatchFacetsError, BatchFacetsResponse, BatchFeedItemsData, BatchFeedItemsError, BatchFeedItemsResponse, BatchMetadataUserTagsData, BatchMetadataUserTagsError, BatchMetadataUserTagsResponse, BatchSavedQueriesData, BatchSavedQueriesError, BatchSavedQueriesResponse, BatchScrapeMetadataData, BatchScrapeMetadataError, BatchScrapeMetadataResponse, BatchSubmitTasksData, BatchSubmitTasksError, BatchSubmitTasksResponse, BatchTasksData, BatchTasksError, BatchTasksResponse, CancelAguiTurnData, CancelAguiTurnError, CancelAguiTurnResponse, CheckConnectivityData, CheckConnectivityError, CheckConnectivityResponse, ClearActorPersonData, ClearActorPersonError, ClearActorPersonResponse, ClouddriveNotifyData, ClouddriveNotifyError, ClouddriveNotifyResponse, CreateAgentSessionData, CreateAgentSessionError, CreateAgentSessionResponse, CreateCommentData, CreateCommentError, CreateCommentResponse, CreateFeedData, CreateFeedError, CreateFeedResponse, CreateLibraryData, CreateLibraryError, CreateLibraryResponse, CreateSavedQueryData, CreateSavedQueryError, CreateSavedQueryResponse, CreateScheduleData, CreateScheduleError, CreateScheduleResponse, CreateUserTagsData, CreateUserTagsError, CreateUserTagsResponse, CropActorAvatarData, CropActorAvatarError, CropActorAvatarResponse, CropPosterFromThumbData, CropPosterFromThumbError, CropPosterFromThumbResponse, DeleteAgentSessionData, DeleteAgentSessionError, DeleteAgentSessionResponse, DeleteCommentData, DeleteCommentError, DeleteCommentResponse, DeleteFacetData, DeleteFacetError, DeleteFacetResponse, DeleteFacetRuleData, DeleteFacetRuleError, DeleteFacetRuleResponse, DeleteFeedData, DeleteFeedError, DeleteFeedResponse, DeleteLibraryData, DeleteLibraryError, DeleteLibraryResponse, DeleteMediaData, DeleteMediaError, DeleteMediaResponse, DeleteMetadataData, DeleteMetadataError, DeleteMetadataResponse, DeleteScheduleData, DeleteScheduleError, DeleteScheduleResponse, DesktopInfoData, DesktopInfoResponse, ExpandCleanupSelectionData, ExpandCleanupSelectionError, ExpandCleanupSelectionResponse, GenerateAgentSessionTitleData, GenerateAgentSessionTitleError, GenerateAgentSessionTitleResponse, GetActorData, GetActorError, GetActorResponse, GetAgentTraceData, GetAgentTraceError, GetAgentTraceResponse, GetCleanupInventoryData, GetCleanupInventoryError, GetCleanupInventoryNodesData, GetCleanupInventoryNodesError, GetCleanupInventoryNodesResponse, GetCleanupInventoryResponse, GetCleanupTrashData, GetCleanupTrashError, GetCleanupTrashResponse, GetConfigData, GetConfigResponse, GetConfigSchemaData, GetConfigSchemaResponse, GetFacetData, GetFacetError, GetFacetResponse, GetFeedData, GetFeedError, GetFeedResponse, GetLibraryData, GetLibraryError, GetLibraryResponse, GetMediaData, GetMediaError, GetMediaResponse, GetMetadataData, GetMetadataError, GetMetadataResponse, GetMetadataSchemaData, GetMetadataSchemaResponse, GetPathTemplateSchemaData, GetPathTemplateSchemaResponse, GetPluginData, GetPluginError, GetPluginResponse, GetReleaseData, GetReleaseResponse, GetSavedQueryData, GetSavedQueryError, GetSavedQueryResponse, GetSavedQueryResultData, GetSavedQueryResultError, GetSavedQueryResultResponse, GetScheduleData, GetScheduleError, GetScheduleResponse, GetScheduleSchemaData, GetScheduleSchemaResponse, GetTaskChildrenData, GetTaskChildrenError, GetTaskChildrenResponse, GetTaskData, GetTaskError, GetTaskRecordData, GetTaskRecordError, GetTaskResponse, GetTaskSchemaData, GetTaskSchemaResponse, GetTaskWorkerData, GetTaskWorkerResponse, HealthCheckData, HealthCheckResponse, InstallPluginData, InstallPluginError, InstallPluginResponse, ListActorsData, ListActorsError, ListActorsResponse, ListAgentSessionsData, ListAgentSessionsResponse, ListAllFeedItemsData, ListAllFeedItemsError, ListAllFeedItemsResponse, ListFacetRulesData, ListFacetRulesError, ListFacetRulesResponse, ListFacetsData, ListFacetsError, ListFacetsResponse, ListFeedItemsData, ListFeedItemsError, ListFeedItemsResponse, ListFeedsData, ListFeedsResponse, ListFilesData, ListFilesError, ListFilesResponse, ListLibrariesData, ListLibrariesResponse, ListMediaData, ListMediaError, ListMediaResponse, ListMetadataData, ListMetadataError, ListMetadataResponse, ListPlaybackSourcesData, ListPlaybackSourcesResponse, ListPlaybackStreamsData, ListPlaybackStreamsError, ListPlaybackStreamsResponse, ListPluginsData, ListPluginsResponse, ListSavedQueriesData, ListSavedQueriesError, ListSavedQueriesResponse, ListSchedulesData, ListSchedulesResponse, ListTasksData, ListTasksError, ListTasksResponse, MergeFacetsData, MergeFacetsError, MergeFacetsResponse, MergeMetadataData, MergeMetadataError, MergeMetadataResponse, OpenMediaFileData, OpenMediaFileError, OpenMediaFileResponse, PauseTaskWorkerData, PauseTaskWorkerResponse, PlayMetadataData, PlayMetadataError, PlayMetadataHlsPartData, PlayMetadataHlsPartError, PlayMetadataPlaylistData, PlayMetadataPlaylistError, PlayMetadataSubtitleData, PlayMetadataSubtitleError, PlayStreamData, PlayStreamError, PlayStreamHlsPartData, PlayStreamHlsPartError, PlayStreamPlaylistData, PlayStreamPlaylistError, PlayStreamSubtitleData, PlayStreamSubtitleError, PollFeedData, PollFeedError, PollFeedResponse, ProxyImageData, ProxyImageError, ReloadPluginsData, ReloadPluginsResponse, RenameFacetData, RenameFacetError, RenameFacetResponse, RestartServerData, ResumeTaskWorkerData, ResumeTaskWorkerResponse, ScrapeActorData, ScrapeActorError, ScrapeActorResponse, ServeResourceData, ServeResourceError, SetActorLocksData, SetActorLocksError, SetActorLocksResponse, SetMetadataLocksData, SetMetadataLocksError, SetMetadataLocksResponse, SubmitTaskData, SubmitTaskError, SubmitTaskResponse, TriggerScheduleData, TriggerScheduleError, TriggerScheduleResponse, UninstallPluginData, UninstallPluginError, UninstallPluginResponse, UpdateActorData, UpdateActorError, UpdateActorResponse, UpdateAgentSessionData, UpdateAgentSessionError, UpdateAgentSessionResponse, UpdateCommentData, UpdateCommentError, UpdateCommentResponse, UpdateConfigData, UpdateConfigError, UpdateConfigResponse, UpdateFeedData, UpdateFeedError, UpdateFeedResponse, UpdateLibraryData, UpdateLibraryError, UpdateLibraryResponse, UpdateMediaData, UpdateMediaError, UpdateMediaResponse, UpdateMetadataData, UpdateMetadataError, UpdateMetadataResponse, UpdatePluginData, UpdatePluginError, UpdatePluginResponse, UpdateSavedQueryData, UpdateSavedQueryError, UpdateSavedQueryResponse, UpdateScheduleData, UpdateScheduleError, UpdateScheduleResponse } from '../types.gen';
+import { batchActorGender, batchActorUserTags, batchClearActorPerson, batchDeleteMedia, batchDeleteMetadata, batchFacets, batchFeedItems, batchMetadataUserTags, batchSavedQueries, batchScrapeMetadata, batchSubmitTasks, batchTasks, browserBackends, callTool, cancelAguiTurn, checkConnectivity, clearActorPerson, clouddriveNotify, createAgentSession, createComment, createFeed, createLibrary, createSavedQuery, createSchedule, createUserTags, cropActorAvatar, cropPosterFromThumb, deleteAgentSession, deleteComment, deleteFacet, deleteFacetRule, deleteFeed, deleteLibrary, deleteMedia, deleteMetadata, deleteSchedule, desktopInfo, expandCleanupSelection, generateAgentSessionTitle, getActor, getAgentGuide, getAgentTrace, getCleanupInventory, getCleanupInventoryNodes, getCleanupTrash, getConfig, getConfigSchema, getDbSchema, getFacet, getFeed, getLibrary, getMedia, getMetadata, getMetadataSchema, getPathTemplateSchema, getPlugin, getRelease, getSavedQuery, getSavedQueryResult, getSchedule, getScheduleSchema, getTask, getTaskChildren, getTaskLog, getTaskRecord, getTaskSchema, getTaskWorker, getToolCatalog, getToolDetail, healthCheck, installPlugin, listActors, listAgentSessions, listAllFeedItems, listFacetRules, listFacets, listFeedItems, listFeeds, listFiles, listLibraries, listMedia, listMetadata, listPlaybackSources, listPlaybackStreams, listPlugins, listSavedQueries, listSchedules, listTasks, mergeFacets, mergeMetadata, mergeMetadataEntries, openMediaFile, type Options, pauseTaskWorker, playMetadata, playMetadataHlsPart, playMetadataPlaylist, playMetadataSubtitle, playStream, playStreamHlsPart, playStreamPlaylist, playStreamSubtitle, pollFeed, proxyImage, releaseSemantic, reloadPlugins, renameFacet, restartServer, resumeTaskWorker, scrapeActor, semanticDiagnostics, semanticStatus, serveResource, setActorLocks, setMetadataLocks, submitTask, triggerSchedule, uninstallPlugin, updateActor, updateAgentSession, updateComment, updateConfig, updateFeed, updateLibrary, updateMedia, updateMetadata, updatePlugin, updateSavedQuery, updateSchedule } from '../sdk.gen';
+import type { BatchActorGenderData, BatchActorGenderError, BatchActorGenderResponse, BatchActorUserTagsData, BatchActorUserTagsError, BatchActorUserTagsResponse, BatchClearActorPersonData, BatchClearActorPersonError, BatchClearActorPersonResponse, BatchDeleteMediaData, BatchDeleteMediaError, BatchDeleteMediaResponse, BatchDeleteMetadataData, BatchDeleteMetadataError, BatchDeleteMetadataResponse, BatchFacetsData, BatchFacetsError, BatchFacetsResponse, BatchFeedItemsData, BatchFeedItemsError, BatchFeedItemsResponse, BatchMetadataUserTagsData, BatchMetadataUserTagsError, BatchMetadataUserTagsResponse, BatchSavedQueriesData, BatchSavedQueriesError, BatchSavedQueriesResponse, BatchScrapeMetadataData, BatchScrapeMetadataError, BatchScrapeMetadataResponse, BatchSubmitTasksData, BatchSubmitTasksError, BatchSubmitTasksResponse, BatchTasksData, BatchTasksError, BatchTasksResponse, BrowserBackendsData, BrowserBackendsResponse, CallToolData, CallToolError, CancelAguiTurnData, CancelAguiTurnError, CancelAguiTurnResponse, CheckConnectivityData, CheckConnectivityError, CheckConnectivityResponse, ClearActorPersonData, ClearActorPersonError, ClearActorPersonResponse, ClouddriveNotifyData, ClouddriveNotifyError, ClouddriveNotifyResponse, CreateAgentSessionData, CreateAgentSessionError, CreateAgentSessionResponse, CreateCommentData, CreateCommentError, CreateCommentResponse, CreateFeedData, CreateFeedError, CreateFeedResponse, CreateLibraryData, CreateLibraryError, CreateLibraryResponse, CreateSavedQueryData, CreateSavedQueryError, CreateSavedQueryResponse, CreateScheduleData, CreateScheduleError, CreateScheduleResponse, CreateUserTagsData, CreateUserTagsError, CreateUserTagsResponse, CropActorAvatarData, CropActorAvatarError, CropActorAvatarResponse, CropPosterFromThumbData, CropPosterFromThumbError, CropPosterFromThumbResponse, DeleteAgentSessionData, DeleteAgentSessionError, DeleteAgentSessionResponse, DeleteCommentData, DeleteCommentError, DeleteCommentResponse, DeleteFacetData, DeleteFacetError, DeleteFacetResponse, DeleteFacetRuleData, DeleteFacetRuleError, DeleteFacetRuleResponse, DeleteFeedData, DeleteFeedError, DeleteFeedResponse, DeleteLibraryData, DeleteLibraryError, DeleteLibraryResponse, DeleteMediaData, DeleteMediaError, DeleteMediaResponse, DeleteMetadataData, DeleteMetadataError, DeleteMetadataResponse, DeleteScheduleData, DeleteScheduleError, DeleteScheduleResponse, DesktopInfoData, DesktopInfoResponse, ExpandCleanupSelectionData, ExpandCleanupSelectionError, ExpandCleanupSelectionResponse, GenerateAgentSessionTitleData, GenerateAgentSessionTitleError, GenerateAgentSessionTitleResponse, GetActorData, GetActorError, GetActorResponse, GetAgentGuideData, GetAgentGuideResponse, GetAgentTraceData, GetAgentTraceError, GetAgentTraceResponse, GetCleanupInventoryData, GetCleanupInventoryError, GetCleanupInventoryNodesData, GetCleanupInventoryNodesError, GetCleanupInventoryNodesResponse, GetCleanupInventoryResponse, GetCleanupTrashData, GetCleanupTrashError, GetCleanupTrashResponse, GetConfigData, GetConfigResponse, GetConfigSchemaData, GetConfigSchemaResponse, GetDbSchemaData, GetDbSchemaResponse, GetFacetData, GetFacetError, GetFacetResponse, GetFeedData, GetFeedError, GetFeedResponse, GetLibraryData, GetLibraryError, GetLibraryResponse, GetMediaData, GetMediaError, GetMediaResponse, GetMetadataData, GetMetadataError, GetMetadataResponse, GetMetadataSchemaData, GetMetadataSchemaResponse, GetPathTemplateSchemaData, GetPathTemplateSchemaResponse, GetPluginData, GetPluginError, GetPluginResponse, GetReleaseData, GetReleaseResponse, GetSavedQueryData, GetSavedQueryError, GetSavedQueryResponse, GetSavedQueryResultData, GetSavedQueryResultError, GetSavedQueryResultResponse, GetScheduleData, GetScheduleError, GetScheduleResponse, GetScheduleSchemaData, GetScheduleSchemaResponse, GetTaskChildrenData, GetTaskChildrenError, GetTaskChildrenResponse, GetTaskData, GetTaskError, GetTaskLogData, GetTaskLogError, GetTaskLogResponse, GetTaskRecordData, GetTaskRecordError, GetTaskResponse, GetTaskSchemaData, GetTaskSchemaResponse, GetTaskWorkerData, GetTaskWorkerResponse, GetToolCatalogData, GetToolCatalogResponse, GetToolDetailData, GetToolDetailError, GetToolDetailResponse, HealthCheckData, HealthCheckResponse, InstallPluginData, InstallPluginError, InstallPluginResponse, ListActorsData, ListActorsError, ListActorsResponse, ListAgentSessionsData, ListAgentSessionsResponse, ListAllFeedItemsData, ListAllFeedItemsError, ListAllFeedItemsResponse, ListFacetRulesData, ListFacetRulesError, ListFacetRulesResponse, ListFacetsData, ListFacetsError, ListFacetsResponse, ListFeedItemsData, ListFeedItemsError, ListFeedItemsResponse, ListFeedsData, ListFeedsResponse, ListFilesData, ListFilesError, ListFilesResponse, ListLibrariesData, ListLibrariesResponse, ListMediaData, ListMediaError, ListMediaResponse, ListMetadataData, ListMetadataError, ListMetadataResponse, ListPlaybackSourcesData, ListPlaybackSourcesResponse, ListPlaybackStreamsData, ListPlaybackStreamsError, ListPlaybackStreamsResponse, ListPluginsData, ListPluginsResponse, ListSavedQueriesData, ListSavedQueriesError, ListSavedQueriesResponse, ListSchedulesData, ListSchedulesResponse, ListTasksData, ListTasksError, ListTasksResponse, MergeFacetsData, MergeFacetsError, MergeFacetsResponse, MergeMetadataData, MergeMetadataEntriesData, MergeMetadataEntriesError, MergeMetadataEntriesResponse, MergeMetadataError, MergeMetadataResponse, OpenMediaFileData, OpenMediaFileError, OpenMediaFileResponse, PauseTaskWorkerData, PauseTaskWorkerResponse, PlayMetadataData, PlayMetadataError, PlayMetadataHlsPartData, PlayMetadataHlsPartError, PlayMetadataPlaylistData, PlayMetadataPlaylistError, PlayMetadataSubtitleData, PlayMetadataSubtitleError, PlayStreamData, PlayStreamError, PlayStreamHlsPartData, PlayStreamHlsPartError, PlayStreamPlaylistData, PlayStreamPlaylistError, PlayStreamSubtitleData, PlayStreamSubtitleError, PollFeedData, PollFeedError, PollFeedResponse, ProxyImageData, ProxyImageError, ReleaseSemanticData, ReleaseSemanticResponse, ReloadPluginsData, ReloadPluginsResponse, RenameFacetData, RenameFacetError, RenameFacetResponse, RestartServerData, ResumeTaskWorkerData, ResumeTaskWorkerResponse, ScrapeActorData, ScrapeActorError, ScrapeActorResponse, SemanticDiagnosticsData, SemanticDiagnosticsResponse2, SemanticStatusData, SemanticStatusResponse2, ServeResourceData, ServeResourceError, SetActorLocksData, SetActorLocksError, SetActorLocksResponse, SetMetadataLocksData, SetMetadataLocksError, SetMetadataLocksResponse, SubmitTaskData, SubmitTaskError, SubmitTaskResponse, TriggerScheduleData, TriggerScheduleError, TriggerScheduleResponse, UninstallPluginData, UninstallPluginError, UninstallPluginResponse, UpdateActorData, UpdateActorError, UpdateActorResponse, UpdateAgentSessionData, UpdateAgentSessionError, UpdateAgentSessionResponse, UpdateCommentData, UpdateCommentError, UpdateCommentResponse, UpdateConfigData, UpdateConfigError, UpdateConfigResponse, UpdateFeedData, UpdateFeedError, UpdateFeedResponse, UpdateLibraryData, UpdateLibraryError, UpdateLibraryResponse, UpdateMediaData, UpdateMediaError, UpdateMediaResponse, UpdateMetadataData, UpdateMetadataError, UpdateMetadataResponse, UpdatePluginData, UpdatePluginError, UpdatePluginResponse, UpdateSavedQueryData, UpdateSavedQueryError, UpdateSavedQueryResponse, UpdateScheduleData, UpdateScheduleError, UpdateScheduleResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -55,6 +55,24 @@ export const healthCheckOptions = (options?: Options<HealthCheckData>) => queryO
         return data;
     },
     queryKey: healthCheckQueryKey(options)
+});
+
+export const getAgentGuideQueryKey = (options?: Options<GetAgentGuideData>) => createQueryKey('getAgentGuide', options);
+
+/**
+ * Get Agent Guide
+ */
+export const getAgentGuideOptions = (options?: Options<GetAgentGuideData>) => queryOptions<GetAgentGuideResponse, DefaultError, GetAgentGuideResponse, ReturnType<typeof getAgentGuideQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getAgentGuide({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getAgentGuideQueryKey(options)
 });
 
 export const getConfigQueryKey = (options?: Options<GetConfigData>) => createQueryKey('getConfig', options);
@@ -485,7 +503,7 @@ export const listMetadataInfiniteOptions = (options?: Options<ListMetadataData>)
 /**
  * Batch Delete Metadata
  *
- * 级联行为与单条删除一致.
+ * 级联行为与单条删除一致; 重复 id 去重后只处理一次.
  */
 export const batchDeleteMetadataMutation = (options?: Partial<Options<BatchDeleteMetadataData>>): UseMutationOptions<BatchDeleteMetadataResponse, BatchDeleteMetadataError, Options<BatchDeleteMetadataData>> => {
     const mutationOptions: UseMutationOptions<BatchDeleteMetadataResponse, BatchDeleteMetadataError, Options<BatchDeleteMetadataData>> = {
@@ -504,7 +522,7 @@ export const batchDeleteMetadataMutation = (options?: Partial<Options<BatchDelet
 /**
  * Batch Scrape Metadata
  *
- * 以各自 number 重新刮削.
+ * 以各自 number 重新刮削; 重复 id 去重后只提交一次.
  */
 export const batchScrapeMetadataMutation = (options?: Partial<Options<BatchScrapeMetadataData>>): UseMutationOptions<BatchScrapeMetadataResponse, BatchScrapeMetadataError, Options<BatchScrapeMetadataData>> => {
     const mutationOptions: UseMutationOptions<BatchScrapeMetadataResponse, BatchScrapeMetadataError, Options<BatchScrapeMetadataData>> = {
@@ -529,6 +547,28 @@ export const batchMetadataUserTagsMutation = (options?: Partial<Options<BatchMet
     const mutationOptions: UseMutationOptions<BatchMetadataUserTagsResponse, BatchMetadataUserTagsError, Options<BatchMetadataUserTagsData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await batchMetadataUserTags({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Merge Metadata Entries
+ *
+ * 把来源条目的 raw 快照补入目标并删除来源: 目标字段不变, 关联记录迁入目标.
+ *
+ * ``rescrape`` 要求合并提交后再按目标番号入队 SCRAPE: 只有 raw 已落库, 复用快照的聚合
+ * 才能按当前优先级重建字段与站点级字典.
+ */
+export const mergeMetadataEntriesMutation = (options?: Partial<Options<MergeMetadataEntriesData>>): UseMutationOptions<MergeMetadataEntriesResponse, MergeMetadataEntriesError, Options<MergeMetadataEntriesData>> => {
+    const mutationOptions: UseMutationOptions<MergeMetadataEntriesResponse, MergeMetadataEntriesError, Options<MergeMetadataEntriesData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await mergeMetadataEntries({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -647,6 +687,28 @@ export const mergeMetadataMutation = (options?: Partial<Options<MergeMetadataDat
     };
     return mutationOptions;
 };
+
+export const browserBackendsQueryKey = (options?: Options<BrowserBackendsData>) => createQueryKey('browserBackends', options);
+
+/**
+ * Browser Backends
+ *
+ * 探测各浏览器后端是否可用于本实例.
+ *
+ * 结论就是响应体, 端点始终 200; ``selected`` 由当前热配置给出, 界面据此标出「已选但不可用」.
+ */
+export const browserBackendsOptions = (options?: Options<BrowserBackendsData>) => queryOptions<BrowserBackendsResponse, DefaultError, BrowserBackendsResponse, ReturnType<typeof browserBackendsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await browserBackends({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: browserBackendsQueryKey(options)
+});
 
 /**
  * Check Connectivity
@@ -1665,6 +1727,9 @@ export const proxyImageQueryKey = (options: Options<ProxyImageData>) => createQu
  *
  * 上游失败记入进程内负缓存 (15 分钟), 窗口内同 URL 直接 502.
  * 同 URL 进行中请求合并为一次 acquire.
+ * 使用图片 token 的请求只从缓存读取资源: 未命中返回 404, 不发起对外请求, 不写入负缓存.
+ * 缓存命中先于地址判定: 只有下载会发起对外请求, 已缓存的资源即使指向内网也直接返回.
+ * 不论是否命中缓存, 内容不是图片时一律 502, 不回放正文.
  */
 export const proxyImageOptions = (options: Options<ProxyImageData>) => queryOptions<unknown, ProxyImageError, unknown, ReturnType<typeof proxyImageQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -2131,6 +2196,26 @@ export const getTaskOptions = (options: Options<GetTaskData>) => queryOptions<Ge
     queryKey: getTaskQueryKey(options)
 });
 
+export const getTaskLogQueryKey = (options: Options<GetTaskLogData>) => createQueryKey('getTaskLog', options);
+
+/**
+ * Get Task Log
+ *
+ * 任务日志尾部. 记录文件不存在时返回空页.
+ */
+export const getTaskLogOptions = (options: Options<GetTaskLogData>) => queryOptions<GetTaskLogResponse, GetTaskLogError, GetTaskLogResponse, ReturnType<typeof getTaskLogQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getTaskLog({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getTaskLogQueryKey(options)
+});
+
 export const getTaskRecordQueryKey = (options: Options<GetTaskRecordData>) => createQueryKey('getTaskRecord', options);
 
 /**
@@ -2151,12 +2236,94 @@ export const getTaskRecordOptions = (options: Options<GetTaskRecordData>) => que
     queryKey: getTaskRecordQueryKey(options)
 });
 
+export const getToolCatalogQueryKey = (options?: Options<GetToolCatalogData>) => createQueryKey('getToolCatalog', options);
+
+/**
+ * Get Tool Catalog
+ *
+ * 工具索引: 客户端据此选工具, 不必内置工具清单.
+ */
+export const getToolCatalogOptions = (options?: Options<GetToolCatalogData>) => queryOptions<GetToolCatalogResponse, DefaultError, GetToolCatalogResponse, ReturnType<typeof getToolCatalogQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getToolCatalog({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getToolCatalogQueryKey(options)
+});
+
+export const getToolDetailQueryKey = (options: Options<GetToolDetailData>) => createQueryKey('getToolDetail', options);
+
+/**
+ * Get Tool Detail
+ *
+ * 单个工具的完整入参.
+ */
+export const getToolDetailOptions = (options: Options<GetToolDetailData>) => queryOptions<GetToolDetailResponse, GetToolDetailError, GetToolDetailResponse, ReturnType<typeof getToolDetailQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getToolDetail({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getToolDetailQueryKey(options)
+});
+
+/**
+ * Call Tool
+ *
+ * 派发一次工具调用.
+ *
+ * 上下文固定为「已批准」且无会话: 外部通道没有可等用户点击的界面, 审批只对内置助理生效;
+ * 无会话使交付的查询预设直接保留并进入预设列表.
+ */
+export const callToolMutation = (options?: Partial<Options<CallToolData>>): UseMutationOptions<unknown, CallToolError, Options<CallToolData>> => {
+    const mutationOptions: UseMutationOptions<unknown, CallToolError, Options<CallToolData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await callTool({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const getDbSchemaQueryKey = (options?: Options<GetDbSchemaData>) => createQueryKey('getDbSchema', options);
+
+/**
+ * Get Db Schema
+ *
+ * 库结构摘要, 供编写只读 SQL 时参考.
+ */
+export const getDbSchemaOptions = (options?: Options<GetDbSchemaData>) => queryOptions<GetDbSchemaResponse, DefaultError, GetDbSchemaResponse, ReturnType<typeof getDbSchemaQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getDbSchema({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getDbSchemaQueryKey(options)
+});
+
 export const getPathTemplateSchemaQueryKey = (options?: Options<GetPathTemplateSchemaData>) => createQueryKey('getPathTemplateSchema', options);
 
 /**
  * Get Path Template Schema
  *
- * 与 resolve_paths 同源.
+ * 与 ORGANIZE 实际使用的默认值同源.
  */
 export const getPathTemplateSchemaOptions = (options?: Options<GetPathTemplateSchemaData>) => queryOptions<GetPathTemplateSchemaResponse, DefaultError, GetPathTemplateSchemaResponse, ReturnType<typeof getPathTemplateSchemaQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -2543,4 +2710,59 @@ export const getSavedQueryResultInfiniteOptions = (options: Options<GetSavedQuer
         queryKey: getSavedQueryResultInfiniteQueryKey(options)
     });
     return opts as Omit<typeof opts, 'initialData'>;
+};
+
+export const semanticStatusQueryKey = (options?: Options<SemanticStatusData>) => createQueryKey('semanticStatus', options);
+
+/**
+ * Semantic Status
+ */
+export const semanticStatusOptions = (options?: Options<SemanticStatusData>) => queryOptions<SemanticStatusResponse2, DefaultError, SemanticStatusResponse2, ReturnType<typeof semanticStatusQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await semanticStatus({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: semanticStatusQueryKey(options)
+});
+
+export const semanticDiagnosticsQueryKey = (options?: Options<SemanticDiagnosticsData>) => createQueryKey('semanticDiagnostics', options);
+
+/**
+ * Semantic Diagnostics
+ */
+export const semanticDiagnosticsOptions = (options?: Options<SemanticDiagnosticsData>) => queryOptions<SemanticDiagnosticsResponse2, DefaultError, SemanticDiagnosticsResponse2, ReturnType<typeof semanticDiagnosticsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await semanticDiagnostics({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: semanticDiagnosticsQueryKey(options)
+});
+
+/**
+ * Release Semantic
+ *
+ * 释放内存里的向量索引与两个塔; 下次检索重新装载. 内存紧张时手动触发, 不影响库内向量.
+ */
+export const releaseSemanticMutation = (options?: Partial<Options<ReleaseSemanticData>>): UseMutationOptions<ReleaseSemanticResponse, DefaultError, Options<ReleaseSemanticData>> => {
+    const mutationOptions: UseMutationOptions<ReleaseSemanticResponse, DefaultError, Options<ReleaseSemanticData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await releaseSemantic({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
 };

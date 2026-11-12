@@ -604,11 +604,25 @@ class TestEgressGuard:
         assert [call["method"] for call in session.calls] == [method, expected_method]
 
     @pytest.mark.asyncio
-    async def test_redirect_drops_body(self, monkeypatch: pytest.MonkeyPatch, public_dns: None):
-        """改写成 GET 的跳转不带请求体, 与 curl 自身的跟随一致."""
+    @pytest.mark.parametrize(
+        ("status", "expected_body"),
+        [
+            # 改写成 GET 的跳转丢弃请求体
+            (301, None),
+            (302, None),
+            (303, None),
+            # 非改写重定向保留方法与请求体
+            (307, b"payload"),
+            (308, b"payload"),
+        ],
+    )
+    async def test_redirect_body_follows_method(
+        self, monkeypatch: pytest.MonkeyPatch, public_dns: None, status: int, expected_body: bytes | None
+    ):
+        """请求体只随方法一起改写, 与 curl 自身的跟随一致."""
         client = WebClient(limiters=RateLimiters(default_rate=100))
         session = _StubSession(
-            _StubResponse(status=302, headers={"Location": "https://cdn.example/final.jpg"}),
+            _StubResponse(status=status, headers={"Location": "https://cdn.example/final.jpg"}),
             _StubResponse(content=b"ok"),
         )
         monkeypatch.setattr(client, "_session", session)
@@ -616,7 +630,7 @@ class TestEgressGuard:
         await client.request("POST", "https://public.example/form", data=b"payload", egress=EgressPolicy())
 
         assert session.calls[0]["data"] == b"payload"
-        assert session.calls[1]["data"] is None
+        assert session.calls[1]["data"] == expected_body
         assert session.calls[1]["json"] is None
 
     @pytest.mark.asyncio
@@ -629,6 +643,42 @@ class TestEgressGuard:
             await client.request("GET", "https://public.example/loop", egress=EgressPolicy(max_redirects=2))
 
         assert len(session.calls) == 3
+
+
+class TestCloseResponse:
+    """丢弃的应答: 先置中止标志再关闭; 关闭失败与空应答都不影响调用方."""
+
+    @staticmethod
+    def _stub(kind: str, records: list[str]) -> Any:
+        class _Resp:
+            def __init__(self) -> None:
+                self.quit_now = asyncio.Event() if kind == "stream" else None
+
+            async def aclose(self) -> None:
+                aborted = self.quit_now is not None and self.quit_now.is_set()
+                records.append("quit-then-close" if aborted else "close")
+                if kind == "raises":
+                    raise OSError("boom")
+
+        return None if kind == "none" else _Resp()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("kind", "expected"),
+        [
+            ("none", []),
+            ("plain", ["close"]),
+            # 非流式应答上置标志是空操作, 中止顺序只对流式应答可观察
+            ("stream", ["quit-then-close"]),
+            ("raises", ["close"]),
+        ],
+    )
+    async def test_aborts_before_close(self, kind: str, expected: list[str]):
+        records: list[str] = []
+
+        await WebClient._close(self._stub(kind, records))
+
+        assert records == expected
 
 
 class TestBoundedDownload:
@@ -667,10 +717,16 @@ class TestBoundedDownload:
 
     @pytest.mark.asyncio
     async def test_cap_cuts_upstream_transfer(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
-        """真实上游: 超限后连接被切断, 不会把整份正文传完 (只停止消费时服务端会发满)."""
+        """真实上游: 超限后连接被切断, 不会把整份正文传完 (只停止消费时服务端会发满).
+
+        curl 在后台把正文读进无界队列, 消费方落后时 loopback 足以在越限之前传完整份正文, 判别随之失效.
+        服务端因此先发出越过上限的一段, 等客户端开始中止才继续发送: 剩余正文能否发满只取决于连接是否被切断.
+        """
         total = 64 * 1024 * 1024
+        head = 1024 * 1024
         chunk = b"x" * 65536
         sent = 0
+        aborting = asyncio.Event()
         finished = asyncio.Event()
 
         async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -680,10 +736,12 @@ class TestBoundedDownload:
             )
             try:
                 for _ in range(total // len(chunk)):
+                    if sent == head:
+                        await aborting.wait()
                     writer.write(chunk)
                     await writer.drain()
                     sent += len(chunk)
-            except ConnectionResetError, BrokenPipeError:
+            except ConnectionError:
                 pass
             finally:
                 finished.set()
@@ -694,8 +752,18 @@ class TestBoundedDownload:
         server = await asyncio.start_server(handler, "127.0.0.1", 0)
         port = server.sockets[0].getsockname()[1]
         client = WebClient(limiters=RateLimiters(default_rate=100))
+        close = client._close
+
+        async def close_after_signal(resp: Any) -> None:
+            aborting.set()
+            await close(resp)
+
+        monkeypatch.setattr(client, "_close", close_after_signal)
         try:
-            ok = await client.download(f"http://127.0.0.1:{port}/big.bin", tmp_path / "big.bin", max_bytes=128 * 1024)
+            ok = await asyncio.wait_for(
+                client.download(f"http://127.0.0.1:{port}/big.bin", tmp_path / "big.bin", max_bytes=128 * 1024),
+                timeout=10,
+            )
             assert ok is False
             await asyncio.wait_for(finished.wait(), timeout=10)
         finally:

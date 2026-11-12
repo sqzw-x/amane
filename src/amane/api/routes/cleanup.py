@@ -239,12 +239,8 @@ async def expand_cleanup_selection(
     if len(items) != len(set(req.media_file_ids)):
         raise HTTPException(status_code=422, detail="media_file_ids 含不存在的文件")
 
-    metas = {}
-    for item in items:
-        if item.metadata_id is not None and item.metadata_id not in metas:
-            meta = await repo.get_metadata(item.metadata_id)
-            if meta is not None:
-                metas[item.metadata_id] = meta
+    metadata_ids = [item.metadata_id for item in items if item.metadata_id is not None]
+    metas = {meta.id: meta for meta in await repo.get_metadata_by_ids(metadata_ids) if meta.id is not None}
     outcome = await build_footprint(
         library=library,
         items=items,

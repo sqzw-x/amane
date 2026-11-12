@@ -35,9 +35,11 @@ query Search($term: String!) {{
   }}
 }}"""
 
+# stash-box 上游已删除单条指纹查询, 批量形态是唯一入口: 外层按入参逐条对应, 内层可空.
+# TPDB 是自研兼容层, 可空标注比上游宽松, 因此参数按上游最严的形态传, 应答按可空解析.
 _FINGERPRINT_QUERY = f"""
-query Find($hash: String!) {{
-  findSceneByFingerprint(fingerprint: {{hash: $hash, algorithm: OSHASH}}) {{{_SCENE_FIELDS}
+query Find($fingerprints: [[FingerprintQueryInput!]!]!) {{
+  findScenesBySceneFingerprints(fingerprints: $fingerprints) {{{_SCENE_FIELDS}
   }}
 }}"""
 
@@ -130,12 +132,15 @@ class ThePornDBCrawler(Crawler):
         if query.file_hash:
             data = await self.client.post_json(
                 gql_url,
-                json={"query": _FINGERPRINT_QUERY, "variables": {"hash": query.file_hash}},
+                json={
+                    "query": _FINGERPRINT_QUERY,
+                    "variables": {"fingerprints": [[{"hash": query.file_hash, "algorithm": "OSHASH"}]]},
+                },
                 headers=headers,
             )
-            results = _gql_field(data, "findSceneByFingerprint")
-            if isinstance(results, list) and results and isinstance(results[0], dict):
-                return results[0]
+            scene = pick_fingerprint_scene(_gql_field(data, "findScenesBySceneFingerprints"))
+            if scene is not None:
+                return scene
 
         data = await self.client.post_json(
             gql_url,
@@ -239,6 +244,25 @@ def pick_scene(results: object, number: str) -> dict[str, Any] | None:
         if _scene_date(scene) == western.date and fold_studio(_scene_studio(scene)) == western.studio
     ]
     return hits[0] if len(hits) == 1 else None
+
+
+def pick_fingerprint_scene(results: object) -> dict[str, Any] | None:
+    """批量指纹应答 → 首条条目; 只发一个指纹, 因此只看外层第一组.
+
+    上游把内外两层都声明为非空, TPDB 的兼容实现两层都可空, 逐层按可空展开,
+    结构不符或没有命中都返回 None.
+    """
+    groups = _as_list(results)
+    if not groups:
+        return None
+    for scene in _as_list(groups[0]):
+        if isinstance(scene, dict):
+            return scene
+    return None
+
+
+def _as_list(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
 
 
 def _is_kin8_scene(scene: dict[str, Any], code: str, kin8_id: str) -> bool:

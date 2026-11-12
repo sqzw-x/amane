@@ -1143,7 +1143,10 @@ internal sealed class App
         {
             BasicLimitInformation = new Native.JobObjectBasicLimitInformation
             {
-                LimitFlags = Native.JobObjectLimitKillOnJobClose,
+                // KILL_ON_JOB_CLOSE: 壳退出时连带结束 Python, 不留孤儿服务.
+                // BREAKAWAY_OK: 允许子进程显式脱离 (bsk daemon 以 CREATE_BREAKAWAY_FROM_JOB 启动,
+                // 需要活过 Amane; 没有这一位时 CreateProcess 直接被拒绝).
+                LimitFlags = Native.JobObjectLimitKillOnJobClose | Native.JobObjectLimitBreakawayOk,
             },
         };
         if (

@@ -58,6 +58,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import { getMetadataSchema } from "@/client/sdk.gen";
 import type { MetadataField, MetadataResponse } from "@/client/types.gen";
+import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { FacetBadge } from "@/components/media/facet-badge";
 import { LockChip, LockToggle, type LockProps } from "@/components/media/field-lock";
 import { UserTagActions } from "@/components/media/user-tag-add";
@@ -948,21 +949,19 @@ function TitleDetailPage() {
                     <IconFolders size={16} />
                   </ActionIcon>
                   {desktop?.can_open_local_files === true && (
-                    <Tooltip label={t("detail.openInLocalPlayer")}>
-                      <ActionIcon
-                        variant="subtle"
-                        size="sm"
-                        aria-label={t("detail.openInLocalPlayer")}
-                        loading={
-                          openMediaMutation.isPending &&
-                          openMediaMutation.variables?.path.media_id === f.id
-                        }
-                        disabled={openMediaMutation.isPending}
-                        onClick={() => openMediaMutation.mutate({ path: { media_id: f.id } })}
-                      >
-                        <IconPlayerPlay size={16} />
-                      </ActionIcon>
-                    </Tooltip>
+                    <HintedActionIcon
+                      label={t("detail.openInLocalPlayer")}
+                      variant="subtle"
+                      size="sm"
+                      loading={
+                        openMediaMutation.isPending &&
+                        openMediaMutation.variables?.path.media_id === f.id
+                      }
+                      disabled={openMediaMutation.isPending}
+                      onClick={() => openMediaMutation.mutate({ path: { media_id: f.id } })}
+                    >
+                      <IconPlayerPlay size={16} />
+                    </HintedActionIcon>
                   )}
                 </Group>
               ))}

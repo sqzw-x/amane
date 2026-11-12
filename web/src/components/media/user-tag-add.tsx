@@ -5,6 +5,9 @@ import { useTranslation } from "react-i18next";
 
 const CREATE_PREFIX = "create:";
 
+/** `Combobox.Options` 不自带滚动容器, 超出 `mah` 的候选由 `overflow-y` 承载; 滑到两端后余量不得传给外层页面. */
+const optionsScroll = { overflowY: "auto", overscrollBehavior: "contain" } as const;
+
 /** 与 Badge `sm` 同高; 加宽点击面, 合成一条胶囊以免像两枚小圆点. */
 const hitChrome = {
   variant: "subtle",
@@ -65,9 +68,6 @@ export function UserTagActions({
   const { t } = useTranslation("metadata");
   const ime = useImeLock();
   const addBox = useCombobox({
-    onDropdownOpen: () => {
-      window.setTimeout(() => searchRef.current?.focus(), 0);
-    },
     onDropdownClose: () => {
       setSearch("");
       setAddIds(new Set());
@@ -82,7 +82,6 @@ export function UserTagActions({
   const [addIds, setAddIds] = useState(new Set<number>());
   const [createNames, setCreateNames] = useState(new Set<string>());
   const [removeIds, setRemoveIds] = useState(new Set<number>());
-  const searchRef = useRef<HTMLInputElement>(null);
 
   const query = search.trim();
   const filtered = candidates.filter((tag) => tag.name.toLowerCase().includes(query.toLowerCase()));
@@ -170,9 +169,8 @@ export function UserTagActions({
         </Combobox.Target>
         <Combobox.Dropdown>
           <Combobox.Search
-            ref={searchRef}
             value={search}
-            placeholder={t("detail.selectUserTag")}
+            placeholder={t("detail.newUserTagPlaceholder")}
             withKeyboardNavigation={false}
             onChange={(e) => setSearch(e.currentTarget.value)}
             onCompositionStart={ime.onCompositionStart}
@@ -188,7 +186,7 @@ export function UserTagActions({
               applyAdd();
             }}
           />
-          <Combobox.Options mah={220}>
+          <Combobox.Options mah={220} style={optionsScroll}>
             {filtered.map((tag) => (
               <Combobox.Option value={String(tag.id)} key={tag.id} active={addIds.has(tag.id)}>
                 <OptionRow checked={addIds.has(tag.id)} label={tag.name} />
@@ -245,7 +243,7 @@ export function UserTagActions({
           </ActionIcon>
         </Combobox.Target>
         <Combobox.Dropdown>
-          <Combobox.Options mah={220}>
+          <Combobox.Options mah={220} style={optionsScroll}>
             {attached.map((tag) => (
               <Combobox.Option value={String(tag.id)} key={tag.id} active={removeIds.has(tag.id)}>
                 <OptionRow checked={removeIds.has(tag.id)} label={tag.name} />

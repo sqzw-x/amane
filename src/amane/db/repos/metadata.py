@@ -2,15 +2,20 @@ from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from typing import Unpack, cast
 
-from sqlalchemy import or_, text
+import structlog
+from sqlalchemy import ColumnElement, distinct, or_, text, update
+from sqlalchemy import delete as sqla_delete
+from sqlalchemy.orm import Mapped
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ...enums import ActorGender, MetadataField
 from ...parsing import ContentType, Mosaic, infer_content_type
 from ...utils.collections import unique_ids
 from ...utils.text import normalize_long_text
 from ..models import (
+    Comment,
     MediaFile,
     Metadata,
     MetadataActor,
@@ -35,14 +40,17 @@ from ..repo_types import (
     _metadata_uncensored_predicate,
     _utcnow,
 )
-from .base import RepositoryMixinBase
+from .base import RepositoryMixinBase, acquire_write_lock, chunks
 from .facet_helpers import (
     apply_facet_rules_to_metadata,
     cascade_delete_metadata,
     clean_actor_names,
+    load_rules_by_kind,
     resolve_scalar_facet_names,
     sync_metadata_facets,
 )
+
+logger = structlog.get_logger()
 
 
 def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
@@ -54,6 +62,45 @@ def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
     if not isinstance(plot, str):
         return fields
     return {**fields, "plot": normalize_long_text(plot)}
+
+
+def _image_signature(metadata: Metadata) -> tuple[list[str], list[str], dict[str, list[str]]]:
+    """封面与剧照的来源字段; 变化即向量失效 (缩略图作为封面回退, 一并纳入)."""
+    return (metadata.poster_urls, metadata.thumb_urls, metadata.extrafanart_urls)
+
+
+def _merge_raw_snapshots(
+    target: Mapping[str, Mapping[str, object]],
+    sources: Sequence[Mapping[str, Mapping[str, object]]],
+) -> dict[str, dict[str, object]]:
+    """按站点补入来源快照: 目标已有的站点保持不变, 来源之间按传入顺序先到先得."""
+    merged = {site: dict(snapshot) for site, snapshot in target.items()}
+    for source in sources:
+        for site, snapshot in source.items():
+            merged.setdefault(site, dict(snapshot))
+    return merged
+
+
+def _facet_link_condition(
+    link_metadata_id: Mapped[int],
+    facet_column: Mapped[int],
+    facet_ids: Sequence[int] | None,
+) -> ColumnElement[bool] | None:
+    """同一 kind 的多个 id 聚合成一条子查询: 条目必须挂满全部去重后的 id (AND).
+
+    逐 id 各生成一条子查询会线性增加表达式深度, 约 1000 个 id 时 SQLite 报表达式过大;
+    聚合写法的语义不变: 未知 id 使计数不足, 结果为空; 空入参不生成条件.
+    """
+    id_list = list(unique_ids(facet_ids))
+    if not id_list:
+        return None
+    matched = (
+        select(link_metadata_id)
+        .where(facet_column.in_(id_list))
+        .group_by(link_metadata_id)
+        .having(count(distinct(facet_column)) == len(id_list))
+    )
+    return col(Metadata.id).in_(matched)
 
 
 # 锁字段 (MetadataField) ↔ Metadata 列名; 仅 extrafanart / score 两名不同.
@@ -111,6 +158,95 @@ def _merge_auto_locks(fields: MetadataFields, locked: set[MetadataField]) -> lis
 
 
 class MetadataRepoMixin(RepositoryMixinBase):
+    async def _metadata_filter_conditions(
+        self,
+        session: AsyncSession,
+        *,
+        keyword: str | None = None,
+        actor_ids: Sequence[int] | None = None,
+        director_ids: Sequence[int] | None = None,
+        tag_ids: Sequence[int] | None = None,
+        studio_ids: Sequence[int] | None = None,
+        publisher_ids: Sequence[int] | None = None,
+        series_ids: Sequence[int] | None = None,
+        user_tag_ids: Sequence[int] | None = None,
+        library_ids: Sequence[int] | None = None,
+        has_files: bool | None = None,
+        has_subtitle: bool | None = None,
+        vr: bool | None = None,
+        mosaic: Mosaic | None = None,
+        uncensored: bool | None = None,
+        definition: str | None = None,
+        content_type: ContentType | None = None,
+        ids: Sequence[int] | None = None,
+        id_subquery_sql: str | None = None,
+        updated_before: datetime | None = None,
+    ) -> list[ColumnElement[bool]] | None:
+        """列表与候选集共用的 WHERE 条件; ``None`` 表示条件互斥, 结果必为空."""
+        conditions: list[ColumnElement[bool]] = []
+        if ids is not None:
+            id_list = list(unique_ids(ids))
+            if not id_list:
+                return None
+            conditions.append(col(Metadata.id).in_(id_list))
+        if id_subquery_sql is not None:
+            conditions.append(col(Metadata.id).in_(text(id_subquery_sql)))
+        if keyword:
+            search_pattern = f"%{keyword}%"
+            conditions.append(
+                or_(col(Metadata.number).ilike(search_pattern), col(Metadata.title).ilike(search_pattern))
+            )
+        for link_metadata_id, facet_column, facet_ids in (
+            (col(MetadataActor.metadata_id), col(MetadataActor.actor_id), actor_ids),
+            (col(MetadataDirector.metadata_id), col(MetadataDirector.director_id), director_ids),
+            (col(MetadataTag.metadata_id), col(MetadataTag.tag_id), tag_ids),
+            (col(MetadataUserTag.metadata_id), col(MetadataUserTag.user_tag_id), user_tag_ids),
+        ):
+            condition = _facet_link_condition(link_metadata_id, facet_column, facet_ids)
+            if condition is not None:
+                conditions.append(condition)
+        studio_names = await resolve_scalar_facet_names(session, Studio, studio_ids)
+        if studio_ids and not studio_names:
+            return None
+        if studio_names:
+            conditions.append(col(Metadata.studio).in_(studio_names))
+        publisher_names = await resolve_scalar_facet_names(session, Publisher, publisher_ids)
+        if publisher_ids and not publisher_names:
+            return None
+        if publisher_names:
+            conditions.append(col(Metadata.publisher).in_(publisher_names))
+        series_names = await resolve_scalar_facet_names(session, Series, series_ids)
+        if series_ids and not series_names:
+            return None
+        if series_names:
+            conditions.append(col(Metadata.series).in_(series_names))
+        if library_ids:
+            conditions.append(
+                _metadata_linked_file_exists(col(MediaFile.library_id).in_(list(unique_ids(library_ids))))
+            )
+        if has_files is not None:
+            conditions.append(_metadata_has_files_clause(has_files=has_files))
+        if vr is True:
+            conditions.append(metadata_vr_predicate())
+        elif vr is False:
+            conditions.append(~metadata_vr_predicate())
+        if has_subtitle is True:
+            conditions.append(_metadata_linked_file_exists(has_subtitle_predicate()))
+        elif has_subtitle is False:
+            conditions.append(~_metadata_linked_file_exists(has_subtitle_predicate()))
+        if mosaic is not None:
+            conditions.append(_metadata_linked_file_exists(col(MediaFile.mosaic) == mosaic))
+        if uncensored is not None:
+            flag = _metadata_uncensored_predicate()
+            conditions.append(flag if uncensored else ~flag)
+        if definition is not None:
+            conditions.append(_metadata_linked_file_exists(col(MediaFile.definition) == definition))
+        if content_type is not None:
+            conditions.append(col(Metadata.content_type) == content_type)
+        if updated_before is not None:
+            conditions.append(col(Metadata.updated_at) < updated_before)
+        return conditions
+
     async def list_metadata(
         self,
         keyword: str | None = None,
@@ -125,6 +261,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         publisher_ids: Sequence[int] | None = None,
         series_ids: Sequence[int] | None = None,
         user_tag_ids: Sequence[int] | None = None,
+        library_ids: Sequence[int] | None = None,
         has_files: bool | None = None,
         has_subtitle: bool | None = None,
         vr: bool | None = None,
@@ -140,75 +277,33 @@ class MetadataRepoMixin(RepositoryMixinBase):
         跨 kind 始终 AND. 相位筛选项: 布尔 True=至少一份具备, False=没有任何一份具备.
         """
         async with self._session() as session:
+            conditions = await self._metadata_filter_conditions(
+                session,
+                keyword=keyword,
+                actor_ids=actor_ids,
+                director_ids=director_ids,
+                tag_ids=tag_ids,
+                studio_ids=studio_ids,
+                publisher_ids=publisher_ids,
+                series_ids=series_ids,
+                user_tag_ids=user_tag_ids,
+                library_ids=library_ids,
+                has_files=has_files,
+                has_subtitle=has_subtitle,
+                vr=vr,
+                mosaic=mosaic,
+                uncensored=uncensored,
+                definition=definition,
+                content_type=content_type,
+                ids=ids,
+                id_subquery_sql=id_subquery_sql,
+                updated_before=updated_before,
+            )
+            if conditions is None:
+                return [], 0
             base = select(Metadata)
-            if ids is not None:
-                id_list = list(unique_ids(ids))
-                if not id_list:
-                    return [], 0
-                base = base.where(col(Metadata.id).in_(id_list))
-            if id_subquery_sql is not None:
-                base = base.where(col(Metadata.id).in_(text(id_subquery_sql)))
-            if keyword:
-                search_pattern = f"%{keyword}%"
-                base = base.where(
-                    or_(col(Metadata.number).ilike(search_pattern), col(Metadata.title).ilike(search_pattern))
-                )
-            for actor_id in unique_ids(actor_ids):
-                base = base.where(
-                    col(Metadata.id).in_(select(MetadataActor.metadata_id).where(MetadataActor.actor_id == actor_id))
-                )
-            for director_id in unique_ids(director_ids):
-                base = base.where(
-                    col(Metadata.id).in_(
-                        select(MetadataDirector.metadata_id).where(MetadataDirector.director_id == director_id)
-                    )
-                )
-            for tag_id in unique_ids(tag_ids):
-                base = base.where(
-                    col(Metadata.id).in_(select(MetadataTag.metadata_id).where(MetadataTag.tag_id == tag_id))
-                )
-            for user_tag_id in unique_ids(user_tag_ids):
-                base = base.where(
-                    col(Metadata.id).in_(
-                        select(MetadataUserTag.metadata_id).where(MetadataUserTag.user_tag_id == user_tag_id)
-                    )
-                )
-            studio_names = await resolve_scalar_facet_names(session, Studio, studio_ids)
-            if studio_ids and not studio_names:
-                return [], 0
-            if studio_names:
-                base = base.where(col(Metadata.studio).in_(studio_names))
-            publisher_names = await resolve_scalar_facet_names(session, Publisher, publisher_ids)
-            if publisher_ids and not publisher_names:
-                return [], 0
-            if publisher_names:
-                base = base.where(col(Metadata.publisher).in_(publisher_names))
-            series_names = await resolve_scalar_facet_names(session, Series, series_ids)
-            if series_ids and not series_names:
-                return [], 0
-            if series_names:
-                base = base.where(col(Metadata.series).in_(series_names))
-            if has_files is not None:
-                base = base.where(_metadata_has_files_clause(has_files=has_files))
-            if vr is True:
-                base = base.where(metadata_vr_predicate())
-            elif vr is False:
-                base = base.where(~metadata_vr_predicate())
-            if has_subtitle is True:
-                base = base.where(_metadata_linked_file_exists(has_subtitle_predicate()))
-            elif has_subtitle is False:
-                base = base.where(~_metadata_linked_file_exists(has_subtitle_predicate()))
-            if mosaic is not None:
-                base = base.where(_metadata_linked_file_exists(col(MediaFile.mosaic) == mosaic))
-            if uncensored is not None:
-                flag = _metadata_uncensored_predicate()
-                base = base.where(flag if uncensored else ~flag)
-            if definition is not None:
-                base = base.where(_metadata_linked_file_exists(col(MediaFile.definition) == definition))
-            if content_type is not None:
-                base = base.where(col(Metadata.content_type) == content_type)
-            if updated_before is not None:
-                base = base.where(col(Metadata.updated_at) < updated_before)
+            for condition in conditions:
+                base = base.where(condition)
 
             count_stmt = select(count()).select_from(base.subquery())
             total: int = (await session.exec(count_stmt)).one() or 0
@@ -220,9 +315,75 @@ class MetadataRepoMixin(RepositoryMixinBase):
             result = await session.exec(stmt)
             return list(result.all()), total
 
+    async def list_metadata_ids(
+        self,
+        *,
+        keyword: str | None = None,
+        actor_ids: Sequence[int] | None = None,
+        director_ids: Sequence[int] | None = None,
+        tag_ids: Sequence[int] | None = None,
+        studio_ids: Sequence[int] | None = None,
+        publisher_ids: Sequence[int] | None = None,
+        series_ids: Sequence[int] | None = None,
+        user_tag_ids: Sequence[int] | None = None,
+        library_ids: Sequence[int] | None = None,
+        has_files: bool | None = None,
+        has_subtitle: bool | None = None,
+        vr: bool | None = None,
+        mosaic: Mosaic | None = None,
+        uncensored: bool | None = None,
+        definition: str | None = None,
+        content_type: ContentType | None = None,
+        ids: Sequence[int] | None = None,
+        id_subquery_sql: str | None = None,
+        updated_before: datetime | None = None,
+    ) -> list[int]:
+        """与 :meth:`list_metadata` 同一套筛选, 只取 id; 供语义检索先收窄候选集."""
+        async with self._session() as session:
+            conditions = await self._metadata_filter_conditions(
+                session,
+                keyword=keyword,
+                actor_ids=actor_ids,
+                director_ids=director_ids,
+                tag_ids=tag_ids,
+                studio_ids=studio_ids,
+                publisher_ids=publisher_ids,
+                series_ids=series_ids,
+                user_tag_ids=user_tag_ids,
+                library_ids=library_ids,
+                has_files=has_files,
+                has_subtitle=has_subtitle,
+                vr=vr,
+                mosaic=mosaic,
+                uncensored=uncensored,
+                definition=definition,
+                content_type=content_type,
+                ids=ids,
+                id_subquery_sql=id_subquery_sql,
+                updated_before=updated_before,
+            )
+            if conditions is None:
+                return []
+            stmt = select(col(Metadata.id))
+            for condition in conditions:
+                stmt = stmt.where(condition)
+            return [row for row in (await session.exec(stmt)).all() if row is not None]
+
     async def get_metadata(self, metadata_id: int) -> Metadata | None:
         async with self._session() as session:
             return await session.get(Metadata, metadata_id)
+
+    async def get_metadata_by_ids(self, ids: Sequence[int]) -> list[Metadata]:
+        """按 id 批量取回, 顺序不保证; 调用方按需重排. 每批用 ``chunks`` 控制绑定变量数."""
+        id_list = list(unique_ids(ids))
+        if not id_list:
+            return []
+        async with self._session() as session:
+            result: list[Metadata] = []
+            for chunk in chunks(id_list):
+                rows = (await session.exec(select(Metadata).where(col(Metadata.id).in_(chunk)))).all()
+                result.extend(rows)
+            return result
 
     async def get_metadata_by_number(self, number: str) -> Metadata | None:
         """大小写不敏感; 返回行保留库内原始大小写."""
@@ -247,6 +408,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         *,
         content_type: ContentType | None = None,
         actor_genders: Mapping[str, ActorGender] | None = None,
+        merge_raw: bool = False,
         **kwargs: Unpack[MetadataFields],
     ) -> Metadata:
         """查重忽略大小写; 已存在时不改写 number 的原始大小写, 也不改写类型.
@@ -254,37 +416,48 @@ class MetadataRepoMixin(RepositoryMixinBase):
         判定与写入同处一个写事务, 见 docs/dev/database.md; 临界区内不允许出现等待.
         ``actor_genders`` 只填 ``Actor.gender`` 空位, 不是 Metadata 列.
         ``content_type`` 只在插入时落库, None 按番号推断; 已存在时不改写 (契约见 docs/dev/data-model.md).
+        ``merge_raw`` 为真时把传入 ``raw`` 按站点合并进既有快照 (本次未取得的站点保留), 否则整体替换.
         """
         fields = _normalize_text_fields(kwargs)
         async with self._session() as session:
             # pysqlite 只在 DML 之前发出 BEGIN, 查号落在事务之外时并发同号写入会双双判定为「无行」,
             # 后者在插入时违反 ix_metadata_number. 手工取得写锁后判定与写入同处一个事务.
-            connection = await session.connection()
-            await connection.exec_driver_sql("BEGIN IMMEDIATE")
+            await acquire_write_lock(session)
+            rules_by_kind = await load_rules_by_kind(session)
             stmt = select(Metadata).where(metadata_number_predicate(number))
             result = await session.exec(stmt)
             existing = result.first()
             if existing:
+                before = _image_signature(existing)
                 fields = _filter_locked(fields, _locked_fields_of(existing), existing.field_sources or {})
+                incoming_raw = fields.get("raw")
+                if merge_raw and incoming_raw is not None:
+                    fields["raw"] = {**(existing.raw or {}), **incoming_raw}
                 for key, value in fields.items():
                     setattr(existing, key, value)
                 existing.updated_at = _utcnow()
                 session.add(existing)
                 await session.flush()
-                await clean_actor_names(session, existing, actor_genders)
-                await apply_facet_rules_to_metadata(session, existing)
+                await clean_actor_names(session, existing, actor_genders, rules_by_kind)
+                await apply_facet_rules_to_metadata(session, existing, rules_by_kind)
                 await sync_metadata_facets(session, existing)
                 await session.commit()
                 await session.refresh(existing)
+                assert existing.id is not None
+                if _image_signature(existing) != before:
+                    await self.notify_media_changed(existing.id)
                 return existing
             meta = Metadata(number=number, content_type=content_type or infer_content_type(number), **fields)
             session.add(meta)
             await session.flush()
-            await clean_actor_names(session, meta, actor_genders)
-            await apply_facet_rules_to_metadata(session, meta)
+            await clean_actor_names(session, meta, actor_genders, rules_by_kind)
+            await apply_facet_rules_to_metadata(session, meta, rules_by_kind)
             await sync_metadata_facets(session, meta)
             await session.commit()
             await session.refresh(meta)
+            assert meta.id is not None
+            if any(_image_signature(meta)):
+                await self.notify_media_changed(meta.id)
             return meta
 
     async def update_metadata(
@@ -298,9 +471,13 @@ class MetadataRepoMixin(RepositoryMixinBase):
         """不存在返回 None; 写入策略见 WriteMode."""
         updates = _normalize_text_fields(updates)
         async with self._session() as session:
+            # 读改写须同事务: 锁定集合合并、投影重建都依据本次读到的值, 见 docs/dev/database.md.
+            await acquire_write_lock(session)
+            rules_by_kind = await load_rules_by_kind(session)
             metadata = await session.get(Metadata, metadata_id)
             if metadata is None:
                 return None
+            before = _image_signature(metadata)
             locked = _locked_fields_of(metadata)
             if mode is WriteMode.AUTO:
                 updates = _filter_locked(updates, locked, metadata.field_sources or {})
@@ -348,12 +525,81 @@ class MetadataRepoMixin(RepositoryMixinBase):
             metadata.updated_at = _utcnow()
             session.add(metadata)
             await session.flush()
-            await clean_actor_names(session, metadata, actor_genders)
-            await apply_facet_rules_to_metadata(session, metadata)
+            await clean_actor_names(session, metadata, actor_genders, rules_by_kind)
+            await apply_facet_rules_to_metadata(session, metadata, rules_by_kind)
             await sync_metadata_facets(session, metadata)
             await session.commit()
             await session.refresh(metadata)
+            if _image_signature(metadata) != before:
+                await self.notify_media_changed(metadata_id)
             return metadata
+
+    async def merge_metadata_entries(self, target_id: int, source_ids: Sequence[int]) -> Metadata | None:
+        """把来源条目的 raw 快照补入目标, 迁移关联记录后删除来源.
+
+        目标字段与锁定集合不变: raw 以目标为准, 来源按传入顺序补入目标缺失的站点, 不重新聚合.
+        媒体文件 / 评论 / 用户标签改挂目标 (标签去重), 分类投影随来源删除.
+        target 不存在返回 None; 来源为空 / 含 target / 不存在则抛 ``ValueError``.
+        """
+        source_id_list = list(dict.fromkeys(source_ids))
+        if target_id in source_id_list:
+            raise ValueError("合并目标不能是来源之一")
+        if not source_id_list:
+            raise ValueError("未提供要合并的影片")
+
+        async with self._session() as session:
+            # 来源判定、raw 合并与关联迁移同处一个写事务: 否则会按旧快照整体写回 raw.
+            await acquire_write_lock(session)
+            target = await session.get(Metadata, target_id)
+            if target is None:
+                return None
+            sources: list[Metadata] = []
+            for source_id in source_id_list:
+                source = await session.get(Metadata, source_id)
+                if source is None:
+                    raise ValueError(f"影片 {source_id} 不存在")
+                sources.append(source)
+
+            target.raw = _merge_raw_snapshots(target.raw or {}, [source.raw or {} for source in sources])
+            target.updated_at = _utcnow()
+            session.add(target)
+
+            target_tag_ids = set(
+                (
+                    await session.exec(
+                        select(MetadataUserTag.user_tag_id).where(col(MetadataUserTag.metadata_id) == target_id)
+                    )
+                ).all()
+            )
+            now = _utcnow()
+            for source in sources:
+                assert source.id is not None
+                source_id = source.id
+                await session.exec(
+                    update(Comment).where(col(Comment.metadata_id) == source_id).values(metadata_id=target_id)
+                )
+                await session.exec(
+                    update(MediaFile)
+                    .where(col(MediaFile.metadata_id) == source_id)
+                    .values(metadata_id=target_id, updated_at=now)
+                )
+                source_tag_ids = set(
+                    (
+                        await session.exec(
+                            select(MetadataUserTag.user_tag_id).where(col(MetadataUserTag.metadata_id) == source_id)
+                        )
+                    ).all()
+                )
+                for tag_id in source_tag_ids - target_tag_ids:
+                    session.add(MetadataUserTag(metadata_id=target_id, user_tag_id=tag_id))
+                    target_tag_ids.add(tag_id)
+                await session.exec(sqla_delete(MetadataUserTag).where(col(MetadataUserTag.metadata_id) == source_id))
+                await cascade_delete_metadata(session, source)
+
+            await session.commit()
+            await session.refresh(target)
+        await self._drop_embeddings(source_id_list)
+        return target
 
     async def set_metadata_locks(self, metadata_id: int, fields: Collection[MetadataField]) -> Metadata | None:
         """整体替换锁定字段集合, 不修改 ``updated_at``. 不存在返回 None."""
@@ -376,19 +622,31 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 return False
             await cascade_delete_metadata(session, metadata)
             await session.commit()
-            return True
+        await self._drop_embeddings([metadata_id])
+        return True
 
     async def batch_delete_metadata(self, ids: list[int]) -> tuple[int, int]:
         """级联与 :meth:`delete_metadata` 一致, 单个事务. 不存在的 id 计入 missing."""
+        removed: list[int] = []
         async with self._session() as session:
-            deleted = 0
             missing = 0
-            for metadata_id in ids:
+            for metadata_id in unique_ids(ids):
                 metadata = await session.get(Metadata, metadata_id)
                 if metadata is None:
                     missing += 1
                     continue
                 await cascade_delete_metadata(session, metadata)
-                deleted += 1
+                removed.append(metadata_id)
             await session.commit()
-            return deleted, missing
+        await self._drop_embeddings(removed)
+        return len(removed), missing
+
+    async def _drop_embeddings(self, metadata_ids: list[int]) -> None:
+        """主库提交之后清除 sidecar: 跨库没有事务, 先删除向量会在主库回滚时丢弃仍有效的数据.
+        清理失败只留下孤儿行: 检索侧回查主库时会将其过滤, 下次全量索引再删除, 因此仅记录日志."""
+        if self._embeddings is None or not metadata_ids:
+            return
+        try:
+            await self._embeddings.delete_metadata(metadata_ids)
+        except Exception:
+            logger.warning("embedding cleanup failed", metadata_ids=metadata_ids, exc_info=True)

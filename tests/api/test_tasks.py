@@ -1,6 +1,7 @@
 """/tasks 端点测试"""
 
 import asyncio
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, get_args
 
@@ -11,6 +12,8 @@ from amane.api.models.tasks import TaskResultPayload
 from amane.db.models import TaskType
 from amane.enums import DownloadableResource
 from amane.handlers import models as handler_models
+from amane.observability.recorder import task_dir_for
+from tests.helpers import finish_task
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -35,6 +38,16 @@ class TestSubmitTask:
     ):
         """只验提交与校验; 独占 worker 以免后台任务与本用例的写并发抢 SQLite 写锁."""
         lib = await repo.create_library(name="t", path=str(safe_path), recursive=False, patterns=["*.mp4"])
+        await repo.upsert_metadata(number="AP-1", actors=["Alice"])
+        actors = await repo.get_actors_by_names(["Alice"])
+        actor_id = actors[0].id
+        assert actor_id is not None
+        push = await client.post("tasks", json={"type": "actor_push", "actor_ids": [actor_id], "force": True})
+        assert push.status_code == 202
+        assert push.json()["payload"]["actor_ids"] == [actor_id]
+        assert push.json()["payload"]["force"] is True
+        assert (await client.post("tasks", json={"type": "actor_push", "actor_ids": "x"})).status_code == 422
+
         refresh = await client.post("tasks", json={"type": "refresh", "library_id": lib.id})
         assert refresh.status_code == 202
         payload = refresh.json()["payload"]
@@ -173,6 +186,15 @@ class TestSubmitTask:
         assert not missing, f"TaskSubmission missing: {missing}. Add submission model to TaskSubmission union."
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_submit_semantic_benchmark(self, client: AsyncClient, stop_worker: None):
+        response = await client.post("tasks", json={"type": "semantic_benchmark"})
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["type"] == "semantic_benchmark"
+        assert body["payload"] == {}
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_submit_organize_creates_new_when_active(
         self, client: AsyncClient, repo: Repository, safe_path, stop_worker: None
     ):
@@ -219,7 +241,7 @@ class TestBatchTasks:
 
         t = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
         assert t.id is not None
-        await repo.complete_task(t.id)
+        await finish_task(repo, t.id)
         deleted = await client.post("tasks/batch", json={"action": "delete", "task_ids": [t.id, 999_999]})
         assert deleted.status_code == 200
         assert deleted.json()["affected"] == 1
@@ -334,7 +356,7 @@ class TestTaskResult:
         for task_type, result in cases:
             task = await repo.create_task(task_type=task_type, payload={})
             assert task.id is not None
-            await repo.complete_task(task.id, result=result)
+            await finish_task(repo, task.id, result)
 
             body = (await client.get(f"tasks/{task.id}")).json()
             assert body["result"] == result
@@ -360,7 +382,7 @@ class TestTaskResult:
         for stored in stored_cases:
             task = await repo.create_task(task_type=TaskType.SCRAPE, payload={"number": "SSIS-497"})
             assert task.id is not None
-            await repo.complete_task(task.id, result=stored)
+            await finish_task(repo, task.id, stored)
 
             resp = await client.get(f"tasks/{task.id}")
             assert resp.status_code == 200
@@ -418,7 +440,7 @@ class TestTaskResult:
         """结果成员的类型与任务类型不一致时置空."""
         task = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         assert task.id is not None
-        await repo.complete_task(task.id, result={"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
+        await finish_task(repo, task.id, {"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
 
         body = (await client.get(f"tasks/{task.id}")).json()
         assert body["result"] is None
@@ -428,7 +450,7 @@ class TestTaskResult:
         """列表不带 payload 与 result, 展开时再取详情."""
         task = await repo.create_task(task_type=TaskType.REFRESH, payload={"library_id": 3})
         assert task.id is not None
-        await repo.complete_task(task.id, result={"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
+        await finish_task(repo, task.id, {"type": "refresh", "added": 1, "removed": 0, "scrape": 0})
 
         item = (await client.get("tasks")).json()["items"][0]
         assert "payload" not in item
@@ -542,3 +564,44 @@ class TestTaskRecord:
 
         assert submitted.status_code == 202
         assert submitted.json()["payload"]["path"] == str(real / "sub")
+
+
+class TestTaskLog:
+    """GET /tasks/{id}/log - 展开详情时按需读取 task.log 尾部"""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_log_tail_and_missing(self, app: FastAPI, client: AsyncClient, repo: Repository, stop_worker: None):
+        assert (await client.get("tasks/9999/log")).status_code == 404
+
+        task = await repo.create_task(task_type=TaskType.CLEANUP, payload={})
+        assert task.id is not None
+        missing = await client.get(f"tasks/{task.id}/log")
+        assert missing.status_code == 200
+        assert missing.json() == {"entries": [], "truncated": False}
+
+        root = task_dir_for(app.state.runtime.config.cold.log_dir, task.id)
+        root.mkdir(parents=True)
+        lines = [
+            {"event": "first", "task_id": task.id, "logger": "amane.scheduler.worker", "level": "info"},
+            "not json",
+            {"event": "second", "logger": "amane.handlers.file", "level": "warning", "files_removed": 2},
+            {"event": "third", "logger": "amane.scheduler.worker", "level": "info"},
+        ]
+        (root / "task.log").write_text("\n".join(line if isinstance(line, str) else json.dumps(line) for line in lines))
+
+        page = await client.get(f"tasks/{task.id}/log", params={"limit": 2})
+        assert page.status_code == 200
+        body = page.json()
+        assert body["truncated"] is True
+        assert [entry["message"] for entry in body["entries"]] == ["second", "third"]
+        assert body["entries"][0]["level"] == "WARNING"
+        assert body["entries"][0]["source"] == "file"
+        assert body["entries"][0]["context"] == {"files_removed": 2}
+
+        full = (await client.get(f"tasks/{task.id}/log")).json()
+        assert full["truncated"] is False
+        assert [entry["message"] for entry in full["entries"]] == ["first", "second", "third"]
+        assert full["entries"][0]["context"] == {"task_id": task.id}
+
+        assert (await client.get(f"tasks/{task.id}/log", params={"limit": 0})).status_code == 422
+        assert (await client.get(f"tasks/{task.id}/log", params={"limit": 5001})).status_code == 422

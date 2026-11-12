@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 from PIL import Image
 
-from amane.db.models import MediaFileStatus, Metadata
+from amane.db.models import MediaFileStatus, Metadata, TaskType
 from amane.enums import ActorGender
 
 if TYPE_CHECKING:
@@ -25,7 +25,45 @@ async def _seed_library(repo: Repository) -> None:
         await repo.create_library(name="default", path="/")
 
 
+_FILTER_LIMIT_CASES = [
+    ({"actor_id": list(range(101))}, 422, "actor_id"),
+    ({"actor_id": list(range(100)), "tag_id": list(range(100)), "director_id": [1]}, 422, "合计"),
+    ({"actor_id": list(range(100))}, 200, None),
+]
+
+
 class TestMetadataHttp:
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_filter_id_limits(self, client: AsyncClient):
+        """每组 ≤100、八组合计 ≤200; 超限 422 并指出是哪一项."""
+        for params, status, detail_part in _FILTER_LIMIT_CASES:
+            response = await client.get("metadata", params=params)
+            assert response.status_code == status, (params, response.json())
+            if detail_part is not None:
+                assert detail_part in response.json()["detail"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_item_omits_raw_and_field_sources(self, client: AsyncClient, repo: Repository):
+        """列表项是精简模型, raw / field_sources 只在详情返回; 聚合字段仍在."""
+        meta = await repo.upsert_metadata(
+            number="SLIM-001",
+            title="Slim",
+            raw={"javdb": {"title": "Slim"}},
+            field_sources={"title": "javdb"},
+        )
+        assert meta.id is not None
+
+        listed = (await client.get("metadata?search=SLIM-001")).json()["items"][0]
+        assert "raw" not in listed
+        assert "field_sources" not in listed
+        assert listed["file_count"] == 0
+        assert "file_phase" in listed
+        assert listed["locked_fields"] == []
+
+        detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert detail["raw"] == {"javdb": {"title": "Slim"}}
+        assert detail["field_sources"] == {"title": "javdb"}
+
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_phase_comes_from_number_without_files(self, client: AsyncClient, repo: Repository):
         """有码 / 无码取番号类别: 没有挂载文件也亮, 无码再并上文件的无码标记."""
@@ -168,6 +206,30 @@ class TestMetadataHttp:
         assert "vr" not in (await client.get("metadata/schema")).json()["properties"]
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_list_library_filter(self, client: AsyncClient, repo: Repository):
+        """HTTP 接线: library_id 可重复, 多库取并集; 非法 id 422."""
+        second = await repo.create_library(name="second", path="/second")
+        assert second.id is not None
+        in_first = await repo.upsert_metadata(number="LIB-FIRST")
+        in_second = await repo.upsert_metadata(number="LIB-SECOND")
+        assert in_first.id is not None and in_second.id is not None
+        await repo.create_media_file(library_id=1, path="/lib/first.mp4", metadata_id=in_first.id)
+        await repo.create_media_file(library_id=second.id, path="/lib/second.mp4", metadata_id=in_second.id)
+
+        first = await client.get("metadata", params={"library_id": 1, "sort_by": "number", "order": "asc"})
+        assert first.status_code == 200
+        assert [i["number"] for i in first.json()["items"]] == ["LIB-FIRST"]
+
+        both = await client.get(
+            "metadata",
+            params=[("library_id", 1), ("library_id", second.id), ("sort_by", "number"), ("order", "asc")],
+        )
+        assert both.status_code == 200
+        assert [i["number"] for i in both.json()["items"]] == ["LIB-FIRST", "LIB-SECOND"]
+
+        assert (await client.get("metadata?library_id=abc")).status_code == 422
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_schema_includes_editable_fields(self, client: AsyncClient):
         resp = await client.get("metadata/schema")
         assert resp.status_code == 200
@@ -206,6 +268,63 @@ class TestMetadataHttp:
         assert "nonexistent" in bad.json()["detail"]
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_merge_entries_http(self, client: AsyncClient, repo: Repository):
+        target = await repo.upsert_metadata(number="MRG-100", title="target", raw={"javdb": {"title": "target"}})
+        source = await repo.upsert_metadata(number="MRG-0100", title="source", raw={"dmm": {"title": "source"}})
+        assert target.id is not None and source.id is not None
+
+        resp = await client.post(
+            "metadata/merge-entries",
+            json={"target_id": target.id, "source_ids": [source.id, source.id]},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == target.id
+        assert body["title"] == "target"
+        assert body["raw"] == {"javdb": {"title": "target"}, "dmm": {"title": "source"}}
+        assert (await client.get(f"metadata/{source.id}")).status_code == 404
+
+        extra = await repo.upsert_metadata(number="MRG-200")
+        assert extra.id is not None
+        empty = await client.post("metadata/merge-entries", json={"target_id": target.id, "source_ids": []})
+        assert empty.status_code == 422
+        assert (
+            await client.post("metadata/merge-entries", json={"target_id": 9999, "source_ids": [extra.id]})
+        ).status_code == 404
+        assert (
+            await client.post("metadata/merge-entries", json={"target_id": target.id, "source_ids": [target.id]})
+        ).status_code == 400
+        missing = await client.post("metadata/merge-entries", json={"target_id": target.id, "source_ids": [9999]})
+        assert missing.status_code == 400
+        assert "9999" in missing.json()["detail"]
+        assert (await client.get(f"metadata/{extra.id}")).status_code == 200
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_merge_entries_rescrape_http(self, client: AsyncClient, repo: Repository):
+        alone = await repo.upsert_metadata(number="MRG-300", raw={"javdb": {"title": "target"}})
+        gone = await repo.upsert_metadata(number="MRG-0300", raw={"dmm": {"title": "source"}})
+        assert alone.id is not None and gone.id is not None
+
+        defaults = await client.post("metadata/merge-entries", json={"target_id": alone.id, "source_ids": [gone.id]})
+        assert defaults.status_code == 200
+        assert await repo.list_tasks(task_types=[TaskType.SCRAPE]) == []
+
+        target = await repo.upsert_metadata(number="MRG-301", raw={"javdb": {"title": "target"}})
+        source = await repo.upsert_metadata(number="MRG-0301", raw={"dmm": {"title": "source"}})
+        assert target.id is not None and source.id is not None
+
+        resp = await client.post(
+            "metadata/merge-entries",
+            json={"target_id": target.id, "source_ids": [source.id], "rescrape": True},
+        )
+        assert resp.status_code == 200
+        tasks = await repo.list_tasks(task_types=[TaskType.SCRAPE])
+        assert len(tasks) == 1
+        assert tasks[0].payload["number"] == target.number
+        assert tasks[0].payload["content_type"] == target.content_type.value
+        assert set(tasks[0].payload["use_cache"]) == {"metadata", "trans"}
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_crop_poster_http(self, client: AsyncClient, repo: Repository, app: FastAPI):
         meta = await repo.upsert_metadata(
             number="CROP-001", thumb_urls=["https://example.com/t.jpg"], poster_urls=["https://example.com/old-p.jpg"]
@@ -217,7 +336,11 @@ class TestMetadataHttp:
             Image.new("RGB", (800, 538), "blue").save(dest)
             return True
 
+        async def fake_resolve(url: str, **kwargs: object) -> str:
+            return url
+
         app.state.runtime.web_client.download = fake_download  # type: ignore[method-assign]
+        app.state.runtime.web_client.resolve_final_url = fake_resolve  # type: ignore[method-assign]
 
         resp = await client.post(
             f"metadata/{meta.id}/crop-poster", json={"left": 421, "top": 0, "right": 800, "bottom": 538}
@@ -320,3 +443,39 @@ class TestMetadataHttp:
         listed = await client.get("metadata?search=LOCK-102")
         assert listed.status_code == 200
         assert listed.json()["items"][0]["locked_fields"] == ["title"]
+
+
+class TestMetadataPatch:
+    """PATCH 只写显式提供的字段: 省略键不改, 可空列给 null 即清空."""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_writes_only_given_fields(self, client: AsyncClient, repo: Repository):
+        cases = [
+            ({"title": "新标题"}, {"title": "新标题", "studio": "原片商"}),
+            ({"title": None}, {"title": None, "studio": "原片商"}),
+            ({"studio": None}, {"studio": None, "title": "原标题"}),
+            ({"release": None}, {"release": None}),
+        ]
+        for index, (payload, expected) in enumerate(cases):
+            meta = await repo.upsert_metadata(
+                number=f"PATCH-W-{index}", title="原标题", studio="原片商", release="2020-01-15"
+            )
+            assert meta.id is not None
+
+            resp = await client.patch(f"metadata/{meta.id}", json=payload)
+            assert resp.status_code == 200
+            detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+            for field, value in expected.items():
+                assert detail[field] == value, (payload, field)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_rejects_empty_body_and_invalid_values(self, client: AsyncClient, repo: Repository):
+        """number 不在可写字段集内, 其显式 null 落到「没有需要修改的字段」; actors 等非空列由派生模型拒绝."""
+        meta = await repo.upsert_metadata(number="PATCH-R", title="原标题")
+        assert meta.id is not None
+
+        for payload in ({}, {"number": None}, {"actors": None}, {"release": 20200101}):
+            resp = await client.patch(f"metadata/{meta.id}", json=payload)
+            assert resp.status_code == 422, payload
+        detail = (await client.get(f"metadata/{meta.id}")).json()["metadata"]
+        assert detail["title"] == "原标题"

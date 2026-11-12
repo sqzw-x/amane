@@ -1,7 +1,7 @@
 """直调 Capability 工具函数的调用上下文与取用.
 
 工具函数只读 ``ctx.deps`` 与 ``ctx.tool_call_id`` / ``ctx.tool_call_approved``, 运行时的 RunContext 因此
-可以用 ``ToolCallContext`` 代替; 这类调用绕开模型, 直接覆盖工具自身的分支.
+可以用 ``amane.agent.external.ToolCallContext`` 代替; 这类调用绕开模型, 直接覆盖工具自身的分支.
 """
 
 from __future__ import annotations
@@ -12,20 +12,8 @@ from typing import Any, cast
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.toolsets import FunctionToolset
 
+from amane.agent.external import ToolCallContext as ToolCallContext
 from amane.agent.tools import AgentDeps
-
-
-class ToolCallContext:
-    def __init__(
-        self,
-        deps: AgentDeps,
-        *,
-        tool_call_id: str = "tc-test",
-        tool_call_approved: bool = False,
-    ) -> None:
-        self.deps = deps
-        self.tool_call_id = tool_call_id
-        self.tool_call_approved = tool_call_approved
 
 
 def cap_toolset(cap: Capability[AgentDeps]) -> FunctionToolset[AgentDeps]:

@@ -17,16 +17,18 @@
 | `aggregate/` | 多源优先级 → `AggregatedMetadata` / `AggregatedActor` | 影片按获取图两段并发执行; 演员为档案填空 + 头像优先; 不写 DB |
 | `handlers/` | DB Task → 副作用 (写 metadata / 移动文件 / 排队) | 编排层, 不实现解析 / 爬取 / IO 细节 |
 | `media/` `organize/` | 元数据 + 路径模板 → 磁盘文件 | 调用方传配置, 自身不读 `HotSettings` 全局 |
-| `llm/` | 大模型接入 + 翻译协议 + 译文缓存 | 管线只依赖 `Translator` 协议; provider 映射与 `agent/` 共用, 配置分离 |
+| `media_server.py` | Emby / Jellyfin 人物读取与写回 | 调用方传配置; 不读 `HotSettings`, 不负责匹配演员 |
+| `llm/` | 大模型接入 + 翻译协议 + 译文缓存与并发合并 | 管线只依赖 `Translator` 协议; provider 映射与 `agent/` 共用, 配置分离 |
 | `agent/` | 助理 Agent + Saved Query + 会话 trace | 读为只读 SQL, 写只经封装工具; 与 `llm/` 配置分离, 见 [agent.md](agent.md) |
 | `sr/` | 超分二进制封装 | 就地覆盖本地资源文件 |
+| `semantic/` | 封面与剧照语义检索: 视觉 / 文本塔推理 (Core ML 或 ONNX Runtime) 与内存向量索引 | 模型只在索引任务下载, 两塔分别懒加载且分别判就绪 (检索只要文本塔, 索引只要视觉塔); 向量是派生数据, 落 `{data_dir}/embeddings.db` |
 | `db/` | SQLModel 表 + 异步 Repository | 单一数据源; 启动期自动 `alembic upgrade head` |
 | `library/` | 库文件规则与归类 (`LibraryScan.classify`) + 清理清单 (`cleanup/` 子包) 与库内删除执行单元 + CloudDrive 虚拟路径规范 | 扩展名 / 预告片与文件黑名单正则 / `.amane_trash` / 大小阈值 / `cloud_path`; handlers 与 scheduler 共用, 只有 `cleanup/` 归清理功能 |
 | `scheduler/` | 队列消费 / cron / 文件监控 / CloudDrive webhook / RSS 发现 | 与 api 解耦, 经 EventBus 上报; webhook 契约见 [watcher.md](watcher.md) |
 | `observability/` | 进程级日志管线 + 单任务 Recorder | 叙事经 structlog; 任务产物落 `{log_dir}/tasks/task-{id}/` |
 | `app/` | 进程组合根 (`AppRuntime` / `build_*` / `start_app`) | HTTP 与 CLI / 回放共用; 不依赖 FastAPI; 拥有启停顺序 |
 | `api/` | FastAPI 适配 (路由 / WS / `create_app`) | 不持有业务状态与生命周期编排; lifespan 把 `AppSession` 写入 `app.state.runtime`; 约定见 [api.md](api.md) |
-| `net/` | curl_cffi WebClient + 按 host 的限速器 + 出站 URL 策略 | 限速器必须先于 WebClient 构造; HTTP 录制经 `net.recording` 可选绑定 |
+| `net/` | curl_cffi WebClient + 按 host 限速器 + 出站策略 | 限速器必须先于 WebClient 构造; HTTP 录制经 `net.recording` 可选绑定 |
 | `enums.py` | 跨包枚举 (站点名 / 字段名 / 语言) | 必须留在顶层; 拆进子包会形成循环依赖 |
 
 **导入约定:** 包内模块使用相对导入, 最多三点 (`...`), 再深则改用 `from amane...`. 迁移脚本必须使用绝对导入 — Alembic 按文件路径加载, 无法识别相对导入. 包外 (测试、第三方插件、独立脚本) 从顶层包导入已导出的稳定符号. 插件与主机的导入边界见 [plugins.md](plugins.md).
@@ -40,7 +42,7 @@
 ```
 EventBus → 日志 → 来源插件发现 → 主 DB engine + Repository → r18 只读引擎 (可选)
         → RateLimiters → WebClient → HttpClient → CrawlerFactory
-        → ResourceStore → TranslationCache → AgentService → safe_dirs + api_token
+        → ResourceStore → TranslationCache → AgentService → safe_dirs + api_token + image_token
         → Handlers → AsyncWorker → CronScheduler → FeedService → WatcherService
 ```
 
@@ -59,4 +61,4 @@ EventBus → 日志 → 来源插件发现 → 主 DB engine + Repository → r1
 - **限速** — per-host 漏桶; 优先级见 [crawlers.md](crawlers.md).
 - **Resource** — URL → 本地文件, 一等存储非 LRU; 见 [data-model.md](data-model.md).
 - **日志** — 三流 + 任务 Recorder; 见 [observability.md](observability.md).
-- **事件循环上的磁盘 I/O** — 用户媒体目录与浏览路径 (含 FUSE / NAS) 上的 glob / stat / copy / move 一律经 `@in_thread` 提交线程池, 否则会阻塞健康检查与其它请求; `data_dir` 由进程自己管理, 可同步读写. 细则见 [task-system.md](task-system.md).
+- **事件循环预算** — 单次停顿时限 5 ms, 超限的同步 I/O 与纯 CPU 计算一律经 `@in_thread` / `asyncio.to_thread` 提交线程池, 否则会阻塞健康检查与其它请求. 库路径与浏览路径 (含 FUSE / NAS) 上的 glob / stat / copy / move 已在工作线程内用 `.sync`, 见 [task-system.md](task-system.md). `data_dir` 的同步读写按该预算定界: 单行 append、≤1 000 行任务日志解析、≤100 个文件的产物删除留在事件循环; 任务记录导出 zip、插件安装、>1 000 行任务日志解析、>200 个文件的产物删除、会话首次扫描超过 1 MiB 必须移入线程池. 多文件操作还须按最慢目标盘折算 (机械盘与千兆 NAS 的文件数上限显著更低). 超过 2 000 条目的清理清单目录树属于 CPU 超限项; `to_thread` 不能绕过 GIL, 常态超限应降低输入上限或改为流式 / 分批处理.

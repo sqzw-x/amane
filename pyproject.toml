@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "amane"
-version = "0.22.1"
+version = "0.27.1"
 description = "Amane — media metadata management service"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -21,8 +21,7 @@ dependencies = [
     "aiosqlite>=0.22.0",
     "asyncpg>=0.30.0",
     "alembic>=1.18.0",
-    "watchdog>=6.0.0",
-    "zhconv>=1.4.3",
+    "watchdog>=6.0.0,<7",
     "structlog>=25.0.0",
     "fastapi>=0.136.0",
     "uvicorn[standard]>=0.46.0",
@@ -32,6 +31,10 @@ dependencies = [
     "feedparser>=6.0.14",
     "packaging>=26.3",
     "python-multipart>=0.0.32",
+    "numpy>=2.5.0",
+    "onnxruntime>=1.31.0; sys_platform != 'darwin'",
+    "tokenizers>=0.23.0",
+    "pyobjc-framework-CoreML>=12.2.0; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]
@@ -61,11 +64,14 @@ docs = [
 
 [tool.uv]
 package = true
+python-preference = "only-managed"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/amane"]
 
 [tool.hatch.build.targets.wheel.force-include]
+"src/amane/utils/zhcdict.json" = "amane/utils/zhcdict.json"
+"src/amane/utils/zhconv_overrides.json" = "amane/utils/zhconv_overrides.json"
 "src/amane/media/watermarks/subtitle.png" = "amane/media/watermarks/subtitle.png"
 "src/amane/media/watermarks/uncensored.png" = "amane/media/watermarks/uncensored.png"
 "src/amane/media/watermarks/cracked.png" = "amane/media/watermarks/cracked.png"
@@ -76,8 +82,6 @@ packages = ["src/amane"]
 "src/amane/media/watermarks/1080p.png" = "amane/media/watermarks/1080p.png"
 "src/amane/media/watermarks/720p.png" = "amane/media/watermarks/720p.png"
 "src/amane/media/watermarks/480p.png" = "amane/media/watermarks/480p.png"
-"src/amane/media/watermarks/hd.png" = "amane/media/watermarks/hd.png"
-"src/amane/media/watermarks/sd.png" = "amane/media/watermarks/sd.png"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["tests/", "docs/", "scripts/", "web/", ".github/"]
@@ -98,6 +102,12 @@ reportAttributeAccessIssue = "warning"
 
 [tool.ty]
 src = { include = ["src/amane/", "scripts/"], exclude = ["src/amane/db/migrations/"] }
+
+[[tool.ty.overrides]]
+include = ["src/amane/semantic/onnx.py"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -403,6 +403,21 @@ class TestCoverWatermarks:
             assert isinstance(pixel, tuple) and len(pixel) >= 3
             assert pixel[0] > 200 and pixel[1] < 50 and pixel[2] < 50
 
+    def test_user_legacy_stamp_name_still_paints(self, tmp_path: Path):
+        """合并档位前的旧文件名仍可用: 480p 档会依次找 480p.png 与 sd.png."""
+        dest = tmp_path / "cover.jpg"
+        Image.new("RGB", (200, 280), "blue").save(dest)
+        user_dir = tmp_path / "watermarks"
+        user_dir.mkdir()
+        Image.new("RGBA", (40, 20), (255, 0, 0, 255)).save(user_dir / "sd.png")
+        assert apply_cover_watermarks(
+            dest, has_subtitle=False, uncensored=False, mosaic=None, definition="480p", watermark_dir=user_dir
+        )
+        with Image.open(dest) as img:
+            pixel = img.convert("RGB").getpixel((6, 6))
+            assert isinstance(pixel, tuple) and len(pixel) >= 3
+            assert pixel[0] > 200 and pixel[1] < 50 and pixel[2] < 50
+
     def test_corrupt_user_stamp_falls_back_to_builtin(self, tmp_path: Path):
         dest = tmp_path / "cover.jpg"
         Image.new("RGB", (200, 280), "blue").save(dest)

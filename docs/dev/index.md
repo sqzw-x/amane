@@ -12,6 +12,7 @@
 | 主题 | 文档 |
 |---------|------|
 | 注释 / 文档 / 提交说明 / 对话 | [writing.md](writing.md) (遣词造句) · [terms.md](terms.md) (项目用词, 按需查) |
+| Issue 分诊 / 回答用户 (范围外、按设计如此、已定方向) | [decisions.md](decisions.md) |
 | 爬虫 / 采集 fixture | [crawlers.md](crawlers.md) (含番号入参) · [crawler-testing.md](crawler-testing.md) |
 | 来源插件 (影片刮削 / 播放) | [plugins.md](plugins.md) · [crawlers.md](crawlers.md) |
 | 站点覆盖 / 默认路由 | [content-routes.md](content-routes.md) |
@@ -20,6 +21,7 @@
 | 表结构 / 迁移 | [database.md](database.md) |
 | 翻译 / LLM | [llm.md](llm.md) |
 | 助理 (首页对话) | [agent.md](agent.md) |
+| 语义检索 (向量 sidecar / 索引生命周期) | [semantic.md](semantic.md) |
 | 排障 / 回放刮削 | [observability.md](observability.md) |
 | RSS/Atom 远程发现 | [feeds.md](feeds.md) |
 | 文件发现 / CloudDrive webhook | [watcher.md](watcher.md) |

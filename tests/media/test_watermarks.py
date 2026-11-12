@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 
 from amane.media.watermarks import is_stamp_stem, load_stamp
-from amane.parsing import DEFINITION_VALUES
+from amane.parsing import DEFINITION_VALUES, LEGACY_DEFINITIONS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -58,6 +58,28 @@ def test_user_file_wins(stem: str, tmp_path: Path) -> None:
     assert img is not None
     pixel = img.getpixel((0, 0))
     assert pixel == (0, 255, 0, 255)
+
+
+@pytest.mark.parametrize(("alias", "tier"), LEGACY_DEFINITIONS.items())
+def test_legacy_stem_resolves_to_current_stamp(alias: str, tier: str, tmp_path: Path) -> None:
+    """旧名既可作为传入的 stem, 也可作为用户目录里的文件名."""
+    assert load_stamp(alias.casefold(), None) is not None
+
+    user_dir = tmp_path / "watermarks"
+    user_dir.mkdir()
+    Image.new("RGBA", (8, 8), (0, 255, 0, 255)).save(user_dir / f"{alias.casefold()}.png")
+    img = load_stamp(tier, user_dir)
+    assert img is not None
+    assert img.getpixel((0, 0)) == (0, 255, 0, 255)
+
+
+def test_missing_alias_file_falls_back_to_builtin(tmp_path: Path) -> None:
+    """用户目录里没有对应文件时仍取内置图, 不会因为查别名而落空."""
+    user_dir = tmp_path / "watermarks"
+    user_dir.mkdir()
+    img = load_stamp("480p", user_dir)
+    assert img is not None
+    assert img.getpixel((0, 0)) != (0, 255, 0, 255)
 
 
 def test_corrupt_user_falls_back(tmp_path: Path) -> None:

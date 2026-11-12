@@ -12,7 +12,9 @@ import { z } from "zod";
 import type { MetadataSortField } from "@/client/types.gen";
 import {
   CONTENT_TYPES,
+  EMBEDDING_KINDS,
   FILE_DEFINITIONS,
+  LEGACY_FILE_DEFINITIONS,
   METADATA_SORT_FIELDS,
   MOSAICS,
   SORT_ORDERS,
@@ -50,8 +52,17 @@ export const DEFAULT_METADATA_SORT_PREFERENCE: MetadataSortPreference = {
   order: "desc",
 };
 
+/** 深链或侧栏默认里可能还留着旧档位名; 未知值交给枚举校验, 再由 catch 降级. */
+function normalizeDefinition(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  return LEGACY_FILE_DEFINITIONS[value.toLowerCase()] ?? value;
+}
+
 export const metaSearchSchema = z.object({
   q: z.string().optional(),
+  semantic: z.literal(1).optional(),
+  /** 语义检索的图片来源; 缺省时封面与剧照均参与. */
+  kind: z.enum(EMBEDDING_KINDS).optional().catch(undefined),
   view: z.enum(["grid", "list"]).catch("grid").default("grid"),
   sort_by: z.enum(METADATA_SORT_FIELDS).optional(),
   order: z.enum(SORT_ORDERS).optional(),
@@ -63,12 +74,16 @@ export const metaSearchSchema = z.object({
   publisher_id: idListSchema,
   series_id: idListSchema,
   user_tag_id: idListSchema,
+  library_id: idListSchema,
   has_files: z.enum(["true", "false"]).optional(),
   has_subtitle: z.enum(["true", "false"]).optional(),
   vr: z.enum(["true", "false"]).optional(),
   uncensored: z.enum(["true", "false"]).optional(),
   mosaic: z.enum(MOSAICS).optional(),
-  definition: z.enum(FILE_DEFINITIONS).optional(),
+  definition: z
+    .preprocess(normalizeDefinition, z.enum(FILE_DEFINITIONS))
+    .optional()
+    .catch(undefined),
   content_type: z.enum(CONTENT_TYPES).optional(),
   saved_query_id: z.coerce.number().int().positive().optional(),
 });

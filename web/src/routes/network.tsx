@@ -2,6 +2,7 @@ import { Stack, Title } from "@mantine/core";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { BrowserBackendPanel } from "@/components/network-check/browser-backend-panel";
 import { NetworkCheckPanel } from "@/components/network-check/network-check-panel";
 import { useNetworkCheck } from "@/hooks/use-network-check";
 
@@ -37,6 +38,8 @@ function NetworkCheckPage() {
   return (
     <Stack gap="lg" maw={PAGE_MAX_WIDTH} mx="auto" w="100%">
       <Title order={2}>{t("title")}</Title>
+
+      <BrowserBackendPanel />
 
       <NetworkCheckPanel
         report={report}

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Brand mark: vertical gradient badge (#3385ff → #0f4fc4) + letterform A with
+       play-triangle counter (media semantics). 18-unit glyph grid mapped to
+       6..26 / 5..25 (scale 20/18, translate 6 5). -->
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="32">
+      <stop offset="0" stop-color="#3385ff"/>
+      <stop offset="1" stop-color="#0f4fc4"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#g)"/>
+  <g transform="translate(6 5) scale(1.111111)">
+    <path
+      d="M9 0 L0 18 H18 Z"
+      fill="#fff"
+      stroke="#fff"
+      stroke-width="1.2"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M7 8.5 L7 14.5 L12.6 11.5 Z"
+      fill="url(#g)"
+      stroke="url(#g)"
+      stroke-width="1.6"
+      stroke-linejoin="round"
+    />
+  </g>
+</svg>

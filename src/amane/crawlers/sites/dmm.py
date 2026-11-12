@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Sequence
 from enum import StrEnum
 
 from parsel import Selector
@@ -13,7 +14,15 @@ from ..base import Crawler, CrawlerProfile
 from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import CSSSelector, extract_all_texts, extract_text
-from .dmm_api import DigitalResponse, DmmTvResponse, FanzaTvResponse, digital_payload, dmm_tv_payload, fanza_tv_payload
+from .dmm_api import (
+    DigitalResponse,
+    DmmTvResponse,
+    FanzaTvResponse,
+    _DigitalSampleImage,
+    digital_payload,
+    dmm_tv_payload,
+    fanza_tv_payload,
+)
 from .dmm_cdn import image_candidates, poster_candidates
 
 
@@ -68,19 +77,39 @@ _EXTRAFANART_SELECTORS = (
 _EXTRAFANART_NUM_RE = re.compile(r"-(?P<num>\d+)\.jpg$")
 
 
-def _extrafanart_urls(html: Selector) -> list[str]:
-    """样品图 → 高清剧照地址; 封面与其它非剧照地址跳过.
+def _high_res_sample(url: str | None) -> str | None:
+    """样品图地址 → 高清剧照地址; 封面与其它非剧照地址返回 None.
 
-    页面给中等尺寸 (`{cid}-N.jpg`) 或已是大图 (`{cid}jp-N.jpg`, 月額页带缩放参数), 两种都归一到 jp-N.
+    页面与 GraphQL 均返回中等尺寸 (`{cid}-N.jpg`), 高清副本统一为 `{cid}jp-N.jpg`;
+    已是高清地址 (月額页带缩放参数) 时归一结果不变.
     """
+    if not url:
+        return None
+    url = url.split("?", 1)[0].split("#", 1)[0]
+    match = _EXTRAFANART_NUM_RE.search(url)
+    if match is None:
+        return None
+    stem = url[: match.start()].removesuffix("jp")
+    return f"{stem}jp-{match.group('num')}.jpg"
+
+
+def _extrafanart_urls(html: Selector) -> list[str]:
+    """样品图块 → 高清剧照地址; 封面与其它非剧照地址跳过."""
     urls: list[str] = []
     for raw in extract_all_texts(html, *_EXTRAFANART_SELECTORS):
-        url = raw.split("?", 1)[0].split("#", 1)[0]
-        match = _EXTRAFANART_NUM_RE.search(url)
-        if match is None:
-            continue
-        stem = url[: match.start()].removesuffix("jp")
-        urls.append(f"{stem}jp-{match.group('num')}.jpg")
+        url = _high_res_sample(raw)
+        if url is not None:
+            urls.append(url)
+    return urls
+
+
+def _digital_extrafanart(images: Sequence[_DigitalSampleImage]) -> list[str]:
+    """GraphQL 样品图 → 高清剧照地址; 不可放大的老片缺 largeImageUrl, 回退 imageUrl 归一."""
+    urls: list[str] = []
+    for image in images:
+        url = _high_res_sample(image.largeImageUrl or image.imageUrl)
+        if url is not None:
+            urls.append(url)
     return urls
 
 
@@ -227,7 +256,7 @@ class DmmCrawler(Crawler):
 
         runtime = int(data.duration / 60) if data.duration else None
 
-        extrafanart = [si.largeImageUrl for si in data.sampleImages if si.largeImageUrl]
+        extrafanart = _digital_extrafanart(data.sampleImages)
 
         sample_movie = data.sample2DMovie
         trailer_urls = [sample_movie.highestMovieUrl] if sample_movie and sample_movie.highestMovieUrl else []

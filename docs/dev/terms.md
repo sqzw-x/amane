@@ -24,7 +24,6 @@
 | `AgentSession` | 会话 | 会话 |
 | `SavedQuery` | 查询预设 | 查询预设 |
 | `facet` / `FacetKind` | 分类 / 分类种类 | 分类 |
-| `agent` | 助理 | 智能体 |
 | `.amane_trash` | 回收目录 | 回收站 |
 
 ## 动作与任务

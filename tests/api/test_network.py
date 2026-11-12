@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import pytest
 
+from amane.enums import BrowserBackendName
+from amane.net.backends import BackendProbe, ConnectedBrowser
 from amane.net.errors import FailureKind, RequestError, RequestFailure
 
 if TYPE_CHECKING:
@@ -121,3 +123,39 @@ async def test_network_check(client: HttpxClient, app: FastAPI, monkeypatch: pyt
         assert resp.status_code == 200
         (item,) = resp.json()["items"]
         assert (item["status"], item["reason"], item["http_status"]) == ("failed", reason, http_status)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_browser_backend_report(client: HttpxClient, app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
+    """形状与来源: 每行一个后端, ``selected`` 取热配置, 探测参数取热配置."""
+    seen: dict[str, object] = {}
+
+    async def fake_probe(*, solver_url: str, bsk_path: str | None = None) -> tuple[BackendProbe, ...]:
+        seen["args"] = (solver_url, bsk_path)
+        return (
+            BackendProbe(
+                backend=BrowserBackendName.BSK,
+                available=True,
+                detail="ok",
+                version="0.3.3",
+                browsers=(ConnectedBrowser("b1", "edge", "0.3.3", False),),
+            ),
+            BackendProbe(backend=BrowserBackendName.SOLVER, available=False, detail="无法连接 solver"),
+        )
+
+    monkeypatch.setattr("amane.api.routes.network.probe_backends", fake_probe)
+
+    resp = await client.get("network/browser")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    browser = app.state.runtime.config.hot.network.browser
+    assert body["selected"] == browser.backend.value
+    assert seen["args"] == (browser.solver_url, browser.bsk_path)
+    assert [item["backend"] for item in body["items"]] == ["bsk", "solver"]
+    bsk, solver = body["items"]
+    assert (bsk["available"], bsk["version"], bsk["detail"]) == (True, "0.3.3", "ok")
+    assert bsk["browsers"] == [
+        {"instance_id": "b1", "name": "edge", "extension_version": "0.3.3", "unresponsive": False}
+    ]
+    assert (solver["available"], solver["detail"], solver["browsers"]) == (False, "无法连接 solver", [])

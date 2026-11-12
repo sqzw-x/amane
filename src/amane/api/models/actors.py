@@ -79,8 +79,8 @@ class ActorLocksRequest(BaseModel):
 
 
 class ActorUserTagsRequest(BaseModel):
-    ids: list[int] = Field(min_length=1, description="演员 ID 列表")
-    user_tag_ids: list[int] = Field(min_length=1, description="用户标签 ID 列表")
+    ids: list[int] = Field(min_length=1, max_length=1000, description="演员 ID 列表")
+    user_tag_ids: list[int] = Field(min_length=1, max_length=1000, description="用户标签 ID 列表")
     action: Literal["attach", "detach"] = Field(description="attach 为并入, detach 为移除; 两者均幂等")
 
 

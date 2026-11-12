@@ -8,6 +8,7 @@ from pydantic_ai.capabilities import Capability
 from ..aggregate import compute_merge_updates
 from ..db.models import TaskType
 from ..db.repo_types import MetadataFields, WriteMode
+from ..enums import MetadataField
 from ..handlers.models import CacheKind, ScrapePayload
 from ..parsing import ContentType
 from .tools import TOOL_OK, AgentDeps, require_approval, unknown_field_error
@@ -56,6 +57,19 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
         return TOOL_OK
 
     @cap.tool
+    async def set_metadata_locks(
+        ctx: RunContext[AgentDeps], metadata_id: int, fields: list[MetadataField]
+    ) -> str | dict[str, Any]:
+        """Replace the whole lock set; an empty list unlocks every field.
+
+        Rescrape skips locked fields, and update_metadata locks what it writes — unlock here
+        before a rescrape can overwrite those fields.
+        """
+        if await ctx.deps.repo.set_metadata_locks(metadata_id, fields) is None:
+            return {"error": f"metadata {metadata_id} 不存在"}
+        return TOOL_OK
+
+    @cap.tool
     async def batch_user_tags(
         ctx: RunContext[AgentDeps],
         metadata_ids: list[int],
@@ -64,7 +78,8 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
     ) -> str | dict[str, Any]:
         """Apply user tags to metadata rows: attach = union, detach = remove; both idempotent.
 
-        Counts are per metadata row (changed / unchanged / missing). Unknown tag ids → error.
+        Counts are per metadata row (changed / unchanged / missing). Unknown ids → error; get
+        ids from ensure_user_tags, which also creates new tags.
         """
         if not metadata_ids:
             return {"error": "metadata_ids 为空"}
@@ -127,7 +142,11 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_metadata(ctx: RunContext[AgentDeps], metadata_id: int) -> str | dict[str, Any]:
-        """Delete one metadata row."""
+        """Delete one metadata row.
+
+        Media files stay but lose their binding and return to pending; actor / director / tag
+        entries survive. Comments and tag links of this row are removed. Not undoable.
+        """
         detail = f"删除元数据 id={metadata_id}"
         require_approval(
             ctx,
@@ -141,7 +160,10 @@ def build_metadata_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def batch_delete_metadata(ctx: RunContext[AgentDeps], metadata_ids: list[int]) -> dict[str, Any]:
-        """Delete many metadata rows."""
+        """Delete many metadata rows.
+
+        Same cascade as delete_metadata, one transaction. Not undoable.
+        """
         if not metadata_ids:
             return {"error": "metadata_ids 为空"}
         detail = f"批量删除元数据 ids={metadata_ids}"

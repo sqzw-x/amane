@@ -7,7 +7,7 @@
 
 import asyncio
 import hashlib
-import mimetypes
+import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -21,6 +21,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ..db.models import Resource
+from .file_type import detect_media_type, is_image_mime
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -34,9 +35,9 @@ logger = structlog.get_logger()
 
 RESOURCE_URL_PREFIX = "/api/resources"
 
-# 上游把已下架资源重定向到 200 的占位图 (DMM 的 now_printing) 时不能算获取成功:
+# 上游把已下架资源重定向到 200 的占位图 (DMM 的 now_printing, up-timely 的 noimage) 时不能算获取成功:
 # 否则该 URL 会被判为可用并前置, 前端最终显示占位图本身.
-_PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/",)
+_PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/", "/noimage.")
 
 
 def _is_placeholder_url(url: str) -> bool:
@@ -55,6 +56,12 @@ def internal_url_hash(url: str) -> str | None:
 
 def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:16]
+
+
+URL_HASH_PATTERN = r"^[0-9a-f]{16}$"
+"""资源 hash 的形状, 与 ``_url_hash`` 一致; 路由按它约束路径参数, 查询按它拒绝越出分片的输入."""
+
+_URL_HASH_RE = re.compile(URL_HASH_PATTERN)
 
 
 def derived_locator(src_url: str, op: str, args: str) -> str:
@@ -138,7 +145,7 @@ class ResourceStore:
         return self._base_dir / h[:2] / f"{h}{suffix}"
 
     def _relative_path(self, full_path: Path) -> str:
-        # 必须用 POSIX 分隔符; 否则 Windows 反斜杠路径与 LIKE '{h[:2]}/{h}.%' 匹配不到.
+        # 必须用 POSIX 分隔符; 否则 Windows 反斜杠路径与 GLOB '{h[:2]}/{h}.*' 匹配不到.
         return full_path.relative_to(self._base_dir).as_posix()
 
     def full_path(self, resource: Resource) -> Path:
@@ -173,8 +180,10 @@ class ResourceStore:
         *,
         egress: EgressPolicy | None = None,
         max_bytes: int | None = None,
+        image_only: bool = False,
     ) -> Path | None:
-        """``egress`` / ``max_bytes`` 原样交给下载通道: URL 来自第三方数据时由调用方给出策略."""
+        """``egress`` / ``max_bytes`` 原样交给下载通道: URL 来自第三方数据时由调用方给出策略.
+        ``image_only`` 只约束本次下载: 内容不是图片时丢弃下载结果, 不写入记录; 缓存命中照常返回."""
         # 内部 URL 是对既有 Resource 的引用: 直接解析本地文件, 不下载也不写记录.
         internal = internal_url_hash(url)
         if internal is not None:
@@ -184,7 +193,7 @@ class ResourceStore:
         # 同一 URL 的内容写入串行: 一起到达的调用都判缓存未命中, 若各自下载并改名到同一路径,
         # 后写会覆盖先写 (含先写方刚做完的就地超分), 而先写方的记录仍然作数.
         async with self._serialized(url):
-            return await self._acquire_locked(url, client, egress=egress, max_bytes=max_bytes)
+            return await self._acquire_locked(url, client, egress=egress, max_bytes=max_bytes, image_only=image_only)
 
     async def _acquire_locked(
         self,
@@ -193,6 +202,7 @@ class ResourceStore:
         *,
         egress: EgressPolicy | None,
         max_bytes: int | None,
+        image_only: bool,
     ) -> Path | None:
         # 缓存命中且文件存在则直出. 判据是记录 + 文件存在, 不看哈希: 超分是就地覆盖, 哈希每次都会变.
         cached = await self.resolve(url)
@@ -219,12 +229,15 @@ class ResourceStore:
             if not await client.download(url, tmp, egress=egress, max_bytes=max_bytes):
                 logger.warning("resource download failed", url=url, host=urlsplit(url).hostname)
                 return None
+            mime = detect_media_type(tmp)
+            if image_only and not is_image_mime(mime):
+                logger.warning("resource is not an image", url=url, mime=mime)
+                return None
             tmp.replace(dest)
         finally:
             tmp.unlink(missing_ok=True)
 
         size = dest.stat().st_size
-        mime = mimetypes.guess_type(str(dest))[0]
         content_hash = self._hash_file(dest)
 
         # 写入记录.
@@ -268,10 +281,18 @@ class ResourceStore:
             return list(result.all())
 
     async def get_by_url_hash(self, url_hash: str) -> tuple[Resource, Path] | None:
-        # 文件名即 _url_hash(url); 按前缀匹配定位, 无需在 DB 存 hash 列.
+        """按 hash 定位资源; 文件名即 ``_url_hash(url)``, 无需在 DB 存 hash 列.
+
+        形状不符的输入直接当作不存在: GLOB 的 ``*`` / ``?`` / ``[`` 与大小写都会让匹配越出该 hash 的
+        分片, 命中别的资源的文件.
+        """
+        if _URL_HASH_RE.fullmatch(url_hash) is None:
+            return None
         async with self._session() as session:
-            pattern = f"{url_hash[:2]}/{url_hash}.%"
-            result = await session.exec(select(Resource).where(col(Resource.file_path).like(pattern)))
+            # GLOB 区分大小写且前缀是字面量, 命中 ix_resources_file_path 的范围查找; LIKE 不区分大小写,
+            # 普通 B-tree 索引用不上.
+            pattern = f"{url_hash[:2]}/{url_hash}.*"
+            result = await session.exec(select(Resource).where(col(Resource.file_path).op("GLOB")(pattern)))
             record = result.first()
             if record is None:
                 return None
@@ -308,7 +329,7 @@ class ResourceStore:
                 return None
 
             size = dest.stat().st_size
-            mime = mimetypes.guess_type(str(dest))[0]
+            mime = detect_media_type(dest)
             content_hash = self._hash_file(dest)
             meta = {"op": op, "src": src_url, "args": args}
 
@@ -371,9 +392,10 @@ class ResourceStore:
             finally:
                 tmp.unlink(missing_ok=True)
 
-            # 原地替换后重新量取, 记入的就是盘上那份.
+            # 原地替换后重新量取, 记入的就是盘上那份. 输出格式由超分配置决定, 媒体类型须一并重算.
             size = src.stat().st_size
             content_hash = self._hash_file(src)
+            mime = detect_media_type(src)
             new_meta = dict(record.meta) if record.meta else {}
             new_meta["sr"] = sr_args
 
@@ -384,6 +406,7 @@ class ResourceStore:
                     return UpscaleOutcome.SKIPPED
                 row.size = size
                 row.content_hash = content_hash
+                row.mime_type = mime
                 row.meta = new_meta
                 session.add(row)
                 await session.commit()

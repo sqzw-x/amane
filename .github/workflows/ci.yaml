@@ -17,13 +17,18 @@ on:
       - "LICENSE"
       - ".gitignore"
 
+# 同一分支 (含 main) 与同一 PR 只保留最新一次运行: 连续推送或连续合并多个 PR 时, 旧运行直接取消.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   NODE_VERSION: "24"
   PNPM_VERSION: "11"
 
 jobs:
-  check:
-    name: just ci
+  static:
+    name: just ci-static
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -48,10 +53,27 @@ jobs:
       - name: Setup just
         uses: extractions/setup-just@v4
 
-      - name: just ci
+      - name: just ci-static
+        run: just ci-static
+
+  test:
+    name: just ci-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Setup just
+        uses: extractions/setup-just@v4
+
+      - name: just ci-test
         env:
           FIXTURES_DEPLOY_KEY: ${{ secrets.FIXTURES_DEPLOY_KEY }}
-        run: just ci
+        run: just ci-test
 
       - name: Upload coverage report
         if: always()

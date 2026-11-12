@@ -161,6 +161,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
                     self._web_client,
                     self._config,
                     self._resource_store.data_dir,
+                    content_type=content_type,
                     extrafanart_urls=result.metadata.extrafanart_urls,
                 )
                 poster_out = materialized.poster_urls
@@ -196,6 +197,8 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             source_urls=result.metadata.source_urls,
             field_sources=result.field_sources,
             raw=result.raw,
+            # metadata 缓存生效时 raw 只替换/新增, 本次未取得的站点快照保留.
+            merge_raw=use_metadata_cache,
         )
 
         await finalize_media_file(self._repo, payload.media_file_id, meta.id)

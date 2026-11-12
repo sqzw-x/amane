@@ -1,6 +1,8 @@
 """DMM / Fanza TV GraphQL 响应模型. 只声明实际用到的字段."""
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from ..models import ResponseModel
 
 # --- Fanza TV (tv.dmm.co.jp) ---
 
@@ -39,27 +41,28 @@ def fanza_tv_payload(cid: str) -> dict:
     }
 
 
-class _NameItem(BaseModel):
+class _NameItem(ResponseModel):
     name: str = ""
 
 
-class _SamplePicture(BaseModel):
+class _SamplePicture(ResponseModel):
     imageLarge: str = ""
 
 
-class _SampleMovie(BaseModel):
+class _SampleMovie(ResponseModel):
     url: str = ""
 
 
-class _ReviewSummary(BaseModel):
-    averagePoint: float = 0.0
+class _ReviewSummary(ResponseModel):
+    # 缺评分以 None 表示; 0.0 会被聚合当作真实评分.
+    averagePoint: float | None = None
 
 
-class _PlayInfo(BaseModel):
+class _PlayInfo(ResponseModel):
     duration: int = 0
 
 
-class FanzaTvContent(BaseModel):
+class FanzaTvContent(ResponseModel):
     title: str = ""
     description: str = ""
     packageImage: str = ""
@@ -79,17 +82,17 @@ class FanzaTvContent(BaseModel):
     playInfo: _PlayInfo | None = None
 
 
-class _FanzaTvPlus(BaseModel):
+class _FanzaTvPlus(ResponseModel):
     # GraphQL 在内容不存在时返回 null
     content: FanzaTvContent | None = None
 
 
-class _FanzaData(BaseModel):
+class _FanzaData(ResponseModel):
     # GraphQL 在内容不存在时返回 null
     fanzaTvPlus: _FanzaTvPlus | None = None
 
 
-class FanzaTvResponse(BaseModel):
+class FanzaTvResponse(ResponseModel):
     data: _FanzaData = Field(default_factory=_FanzaData)
 
 
@@ -127,16 +130,16 @@ def dmm_tv_payload(season_id: str) -> dict:
     }
 
 
-class _Cast(BaseModel):
+class _Cast(ResponseModel):
     actorName: str = ""
 
 
-class _Staff(BaseModel):
+class _Staff(ResponseModel):
     roleName: str = ""
     staffName: str = ""
 
 
-class DmmTvVideo(BaseModel):
+class DmmTvVideo(ResponseModel):
     titleName: str = ""
     description: str = ""
     packageImage: str = ""
@@ -150,12 +153,12 @@ class DmmTvVideo(BaseModel):
     reviewSummary: _ReviewSummary | None = None
 
 
-class _DmmTvData(BaseModel):
+class _DmmTvData(ResponseModel):
     # GraphQL 在内容不存在时返回 null
     video: DmmTvVideo | None = None
 
 
-class DmmTvResponse(BaseModel):
+class DmmTvResponse(ResponseModel):
     data: _DmmTvData = Field(default_factory=_DmmTvData)
 
 
@@ -191,26 +194,27 @@ def digital_payload(cid: str) -> dict:
     }
 
 
-class _DigitalPackageImage(BaseModel):
+class _DigitalPackageImage(ResponseModel):
     # 素人条目只给 mediumUrl (jp.jpg), largeUrl 为 null; 两个字段都可能单独缺省.
     largeUrl: str | None = None
     mediumUrl: str | None = None
 
 
-class _DigitalSampleImage(BaseModel):
+class _DigitalSampleImage(ResponseModel):
     imageUrl: str = ""
     largeImageUrl: str = ""
 
 
-class _DigitalSampleMovie(BaseModel):
+class _DigitalSampleMovie(ResponseModel):
     highestMovieUrl: str = ""
 
 
-class _DigitalReviewSummary(BaseModel):
-    average: float = 0.0
+class _DigitalReviewSummary(ResponseModel):
+    # 缺评分以 None 表示; 0.0 会被聚合当作真实评分.
+    average: float | None = None
 
 
-class DigitalContent(BaseModel):
+class DigitalContent(ResponseModel):
     title: str = ""
     description: str = ""
     deliveryStartDate: str = ""
@@ -228,12 +232,12 @@ class DigitalContent(BaseModel):
     sample2DMovie: _DigitalSampleMovie | None = None
 
 
-class _DigitalData(BaseModel):
+class _DigitalData(ResponseModel):
     # GraphQL 在内容不存在时返回 null
     ppvContent: DigitalContent | None = None
     # GraphQL 在无评分时返回 null
     reviewSummary: _DigitalReviewSummary | None = None
 
 
-class DigitalResponse(BaseModel):
+class DigitalResponse(ResponseModel):
     data: _DigitalData = Field(default_factory=_DigitalData)

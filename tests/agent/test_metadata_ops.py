@@ -77,6 +77,32 @@ def test_metadata_ops_capability_tools() -> None:
     assert "delete_metadata" in names
     assert "enqueue_scrape" in names
     assert "batch_user_tags" in names
+    assert "set_metadata_locks" in names
+
+
+@pytest.mark.asyncio
+async def test_set_metadata_locks_releases_manual_lock(write_deps: AgentDeps) -> None:
+    """助理写入自动上锁, 因此必须有释放的口子: 空列表整体解锁."""
+    items, _total = await write_deps.repo.list_metadata(limit=10)
+    mid = items[0].id
+    assert mid is not None
+    assert (
+        await _tool_fn("update_metadata")(ToolCallContext(write_deps), metadata_id=mid, patch={"title": "x"}) == TOOL_OK
+    )
+
+    released = await _tool_fn("set_metadata_locks")(ToolCallContext(write_deps), metadata_id=mid, fields=[])
+    assert released == TOOL_OK
+    row = await write_deps.repo.get_metadata(mid)
+    assert row is not None and row.locked_fields == []
+
+    await _tool_fn("set_metadata_locks")(
+        ToolCallContext(write_deps), metadata_id=mid, fields=[MetadataField.TITLE, MetadataField.PLOT]
+    )
+    row = await write_deps.repo.get_metadata(mid)
+    assert row is not None and row.locked_fields == ["title", "plot"]
+
+    missing = await _tool_fn("set_metadata_locks")(ToolCallContext(write_deps), metadata_id=999999, fields=[])
+    assert "error" in missing
 
 
 @pytest.mark.asyncio

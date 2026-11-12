@@ -1,15 +1,41 @@
-import { ActionIcon, Badge, Group, SegmentedControl, Text, TextInput, Title } from "@mantine/core";
-import { IconFilter, IconSearch, IconTable, IconX } from "@tabler/icons-react";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Button,
+  Group,
+  SegmentedControl,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconFilter,
+  IconSearch,
+  IconSparkles,
+  IconTable,
+  IconX,
+} from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getFacetOptions,
+  listLibrariesOptions,
   listMetadataInfiniteOptions,
   listMetadataOptions,
+  semanticStatusOptions,
 } from "@/client/@tanstack/react-query.gen";
-import type { FacetKind, MetadataSortField } from "@/client/types.gen";
+import type {
+  EmbeddingKind,
+  FacetKind,
+  ListMetadataData,
+  MetadataSortField,
+  SemanticHitInfo,
+} from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
@@ -26,12 +52,21 @@ import { MetaTable } from "@/components/media/meta-table";
 import { PosterGrid } from "@/components/media/poster-grid";
 import { activeFacetFilters, addFacetId, type FacetFilters, removeFacetId } from "@/lib/facets";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
+import { EMBEDDING_KINDS } from "@/lib/exhaustive-maps";
 import { nextOffsetPageParam } from "@/lib/infinite-list";
 import { metaSearchSchema, METADATA_SORT_OPTIONS } from "@/lib/media/browse";
 import { metaListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
+import classes from "./meta.module.css";
 
 const CHUNK = 30;
+
+const SEMANTIC_KIND_OPTIONS = ["all", ...EMBEDDING_KINDS] as const;
+
+/** 分段控件回传 string; "all" 与未知值均视为缺省 (封面与剧照都参与). */
+function toEmbeddingKind(value: string): EmbeddingKind | undefined {
+  return EMBEDDING_KINDS.find((kind) => kind === value);
+}
 
 export const Route = createFileRoute("/meta/")({
   validateSearch: metaSearchSchema,
@@ -87,6 +122,20 @@ function ActiveHasFilesChip({ hasFiles, onClear }: { hasFiles: boolean; onClear:
   );
 }
 
+function ActiveLibrariesChip({
+  ids,
+  nameById,
+  onClear,
+}: {
+  ids: number[];
+  nameById: Map<number, string>;
+  onClear: () => void;
+}) {
+  const { t } = useTranslation("metadata");
+  const names = ids.map((id) => nameById.get(id) ?? `#${id}`).join(", ");
+  return <ActiveTriChip label={`${t("search.library")}: ${names}`} onClear={onClear} />;
+}
+
 function ActiveVrChip({ vr, onClear }: { vr: boolean; onClear: () => void }) {
   const { t } = useTranslation("metadata");
   return (
@@ -111,12 +160,19 @@ function ActiveTriChip({ label, onClear }: { label: string; onClear: () => void 
 function MetaIndexPage() {
   const { t } = useTranslation(["metadata", "common", "savedQueries"]);
   const search = Route.useSearch();
+  const semanticMode = search.semantic === 1;
+  const semanticQuery = semanticMode && search.q ? search.q : undefined;
+  const semanticActive = semanticQuery != null;
   const navigate = Route.useNavigate();
   const listLimit = useUIStore((s) => s.pageSizes.metaList);
   const narrowViewport = useNarrowViewport("md");
 
   const hasFiles = parseHasFiles(search.has_files);
   const vr = parseHasFiles(search.vr);
+  const libraryIds = search.library_id ?? [];
+  const { data: librariesData } = useQuery(listLibrariesOptions());
+  const libraries = librariesData?.items ?? [];
+  const libraryNameById = new Map(libraries.map((library) => [library.id, library.name]));
   const filePhase: FilePhaseFilters = {
     has_subtitle: parseHasFiles(search.has_subtitle),
     uncensored: parseHasFiles(search.uncensored),
@@ -131,7 +187,9 @@ function MetaIndexPage() {
     filePhase.definition != null ||
     filePhase.content_type != null;
   const [searchInput, setSearchInput] = useState(search.q ?? "");
-  const [advancedOpen, setAdvancedOpen] = useState(hasFiles !== null || vr !== null || phaseActive);
+  const [advancedOpen, setAdvancedOpen] = useState(
+    hasFiles !== null || vr !== null || phaseActive || libraryIds.length > 0,
+  );
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const filters: FacetFilters = {
@@ -144,10 +202,8 @@ function MetaIndexPage() {
     user_tag_id: search.user_tag_id,
   };
 
-  const listQueryParams = {
-    search: search.q || undefined,
-    sort_by: search.sort_by,
-    order: search.order,
+  const filterParams = {
+    library_id: libraryIds.length > 0 ? libraryIds : undefined,
     has_files: hasFiles === null ? undefined : hasFiles,
     vr: vr === null ? undefined : vr,
     has_subtitle: filePhase.has_subtitle === null ? undefined : filePhase.has_subtitle,
@@ -159,7 +215,43 @@ function MetaIndexPage() {
     ...(search.saved_query_id != null ? { saved_query_id: search.saved_query_id } : {}),
   };
 
+  const semanticParams: NonNullable<ListMetadataData["query"]> =
+    semanticQuery != null
+      ? { semantic_query: semanticQuery, semantic_kind: search.kind ?? "all" }
+      : {};
+
+  const listQueryParams = {
+    search: semanticActive ? undefined : search.q || undefined,
+    sort_by: semanticActive ? undefined : search.sort_by,
+    order: semanticActive ? undefined : search.order,
+    ...semanticParams,
+    ...filterParams,
+  };
+
   const isList = search.view === "list";
+  const { data: semanticStatus, refetch: refetchSemanticStatus } =
+    useQuery(semanticStatusOptions());
+  const semanticAvailable = semanticStatus?.available === true;
+
+  // 进入语义模式时重新获取: 索引任务可能刚在别处完成, 缓存的状态会过期.
+  useEffect(() => {
+    if (semanticMode) void refetchSemanticStatus();
+  }, [semanticMode, refetchSemanticStatus]);
+
+  const semanticNotice =
+    !semanticActive || semanticStatus == null
+      ? null
+      : !semanticStatus.enabled
+        ? t("semantic.disabled")
+        : !semanticStatus.search_ready
+          ? t("semantic.modelMissing", {
+              size: Math.round((semanticStatus.download_size ?? 0) / 1024 / 1024),
+            })
+          : !semanticStatus.has_embeddings
+            ? t("semantic.noEmbeddings")
+            : null;
+  // 语义状态未返回或不可检索时不发送列表请求, 避免先按普通排序渲染一屏.
+  const listEnabled = !semanticActive || (semanticStatus != null && semanticNotice == null);
 
   const gridQuery = useInfiniteQuery({
     ...listMetadataInfiniteOptions({
@@ -170,7 +262,7 @@ function MetaIndexPage() {
     }),
     initialPageParam: 0,
     getNextPageParam: nextOffsetPageParam,
-    enabled: !isList,
+    enabled: !isList && listEnabled,
   });
 
   const listOffset = (search.page - 1) * listLimit;
@@ -180,11 +272,9 @@ function MetaIndexPage() {
         ...listQueryParams,
         offset: listOffset,
         limit: listLimit,
-        sort_by: search.sort_by ?? "updated_at",
-        order: search.order ?? "desc",
       },
     }),
-    enabled: isList,
+    enabled: isList && listEnabled,
   });
 
   const gridItems = useMemo(
@@ -192,13 +282,45 @@ function MetaIndexPage() {
     [gridQuery.data],
   );
   const total = isList ? (listQuery.data?.total ?? 0) : (gridQuery.data?.pages[0]?.total ?? 0);
+  const semanticHits = useMemo(() => {
+    const map = new Map<number, SemanticHitInfo>();
+    if (!semanticActive) return map;
+    if (isList) {
+      for (const hit of listQuery.data?.semantic_hits ?? []) map.set(hit.id, hit);
+    } else {
+      for (const page of gridQuery.data?.pages ?? []) {
+        for (const hit of page.semantic_hits ?? []) map.set(hit.id, hit);
+      }
+    }
+    return map;
+  }, [semanticActive, isList, listQuery.data, gridQuery.data]);
 
   function handleSearchChange(v: string) {
     setSearchInput(v);
+    if (semanticMode) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       void navigate({ search: (prev) => ({ ...prev, q: v || undefined, page: 1 }) });
     }, 300);
+  }
+
+  function submitSearch() {
+    const value = searchInput.trim();
+    void navigate({ search: (prev) => ({ ...prev, q: value || undefined, page: 1 }) });
+  }
+
+  function toggleSemantic() {
+    // 切换搜索方式时清空输入, 避免将关键词作为画面描述提交, 或反向提交.
+    setSearchInput("");
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        q: undefined,
+        semantic: semanticMode ? undefined : 1,
+        kind: undefined,
+        page: 1,
+      }),
+    });
   }
 
   function appendFacet(kind: FacetKind, id: number) {
@@ -253,6 +375,16 @@ function MetaIndexPage() {
     });
   }
 
+  function setLibraryFilter(ids: number[]) {
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        library_id: ids.length > 0 ? ids : undefined,
+        page: 1,
+      }),
+    });
+  }
+
   function setVrFilter(value: HasFilesFilter) {
     void navigate({
       search: (prev) => ({
@@ -295,11 +427,14 @@ function MetaIndexPage() {
     hasFiles !== null ||
     vr !== null ||
     phaseActive ||
+    libraryIds.length > 0 ||
     search.saved_query_id != null;
 
   return (
     <BrowsePageShell
       fill={isList}
+      // 搜索槽内另有语义切换按钮, 放宽到 560, 使输入框宽度接近其他页面的 480
+      searchMaxWidth={560}
       title={<Title order={2}>{t("common:nav.meta")}</Title>}
       actions={<ListDefaultActions update={{ key: "meta", value: metaListDefaults(search) }} />}
       viewSwitch={
@@ -326,13 +461,69 @@ function MetaIndexPage() {
         </Text>
       }
       search={
-        <TextInput
-          value={searchInput}
-          onChange={(e) => handleSearchChange(e.currentTarget.value)}
-          placeholder={t("search.placeholder")}
-          leftSection={<IconSearch size={16} />}
-          w="100%"
-        />
+        <Group gap="xs" wrap="nowrap" w="100%">
+          <div
+            className={
+              semanticMode
+                ? `${classes.searchBox} ${classes.flowRing} ${classes.semanticInput}`
+                : classes.searchBox
+            }
+          >
+            <TextInput
+              value={searchInput}
+              onChange={(e) => handleSearchChange(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitSearch();
+              }}
+              placeholder={semanticMode ? t("semantic.placeholder") : t("search.placeholder")}
+              leftSection={
+                semanticMode ? (
+                  <span className={classes.glowIcon}>
+                    <IconSparkles size={16} />
+                  </span>
+                ) : (
+                  <IconSearch size={16} />
+                )
+              }
+              rightSection={
+                semanticMode ? (
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    aria-label={t("semantic.submit")}
+                    disabled={searchInput.trim().length === 0}
+                    onClick={submitSearch}
+                  >
+                    <IconArrowRight size={16} />
+                  </ActionIcon>
+                ) : undefined
+              }
+              rightSectionPointerEvents="all"
+            />
+          </div>
+          {semanticMode ? (
+            <Button
+              variant="default"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={toggleSemantic}
+            >
+              {t("semantic.back")}
+            </Button>
+          ) : semanticAvailable ? (
+            <Button
+              variant="default"
+              className={classes.semanticToggle}
+              leftSection={
+                <span className={classes.glowIcon}>
+                  <IconSparkles size={16} />
+                </span>
+              }
+              onClick={toggleSemantic}
+            >
+              <span className={classes.gradientText}>{t("semantic.toggle")}</span>
+            </Button>
+          ) : null}
+        </Group>
       }
       extras={
         <>
@@ -347,7 +538,21 @@ function MetaIndexPage() {
               <IconFilter size={16} />
             </HintedActionIcon>
           )}
-          {!isList && (
+          {semanticMode && (
+            <SegmentedControl
+              value={search.kind ?? "all"}
+              onChange={(v) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, kind: toEmbeddingKind(v), page: 1 }),
+                })
+              }
+              data={SEMANTIC_KIND_OPTIONS.map((value) => ({
+                value,
+                label: t(`semantic.kinds.${value}`),
+              }))}
+            />
+          )}
+          {!isList && !semanticMode && (
             <SortMenu
               options={METADATA_SORT_OPTIONS.map((option) => ({
                 value: option.value,
@@ -376,6 +581,9 @@ function MetaIndexPage() {
         <FacetFilterControls
           opened={narrowViewport || advancedOpen}
           filters={filters}
+          libraryIds={libraryIds}
+          libraries={libraries}
+          onLibrariesChange={setLibraryFilter}
           onSelect={appendFacet}
           hasFiles={hasFiles}
           onHasFilesChange={setHasFilesFilter}
@@ -418,6 +626,13 @@ function MetaIndexPage() {
                 <IconX size={14} />
               </ActionIcon>
             </Group>
+          )}
+          {libraryIds.length > 0 && (
+            <ActiveLibrariesChip
+              ids={libraryIds}
+              nameById={libraryNameById}
+              onClear={() => setLibraryFilter([])}
+            />
           )}
           {hasFiles !== null && (
             <ActiveHasFilesChip hasFiles={hasFiles} onClear={() => setHasFilesFilter(null)} />
@@ -464,7 +679,11 @@ function MetaIndexPage() {
         </Group>
       )}
 
-      {isList ? (
+      {semanticNotice != null ? (
+        <Alert color="blue" title={t("semantic.unavailableTitle")} maw={720} mx="auto" w="100%">
+          {semanticNotice}
+        </Alert>
+      ) : isList ? (
         <MetaTable
           key={listLimit}
           items={listQuery.data?.items ?? []}
@@ -479,9 +698,17 @@ function MetaIndexPage() {
       ) : (
         <>
           <PosterGrid
+            layout="adaptive"
             items={gridItems}
             loading={gridQuery.isLoading && gridItems.length === 0}
             emptyMessage={t("empty")}
+            imageUrlOf={(item) => {
+              const hit = semanticHits.get(item.id);
+              return hit?.kind === "still" ? hit.resource_url : undefined;
+            }}
+            imageRatioOf={(item) =>
+              semanticHits.get(item.id)?.kind === "still" ? 16 / 9 : undefined
+            }
           />
           {gridItems.length > 0 && (
             <InfiniteScrollSentinel

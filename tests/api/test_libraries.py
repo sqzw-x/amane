@@ -291,6 +291,38 @@ class TestLibraries:
         assert changed.json()["path"] == str(moved_real)
 
 
+@pytest.mark.asyncio(loop_scope="function")
+async def test_extrafanart_name_template_round_trip(client: AsyncClient, safe_path: Path):
+    """剧照文件名模板: 存取值往返, 空值回落默认, 非法写法 422."""
+    target = safe_path / "still"
+    target.mkdir()
+    base = {"path": str(target), "scan": False}
+
+    created = await client.post("libraries", json={**base, "extrafanart_name_template": "{number}-{index_padded}.jpg"})
+    assert created.status_code == 201
+    assert created.json()["extrafanart_name_template"] == "{number}-{index_padded}.jpg"
+
+    cleared = await client.patch(f"libraries/{created.json()['id']}", json={"extrafanart_name_template": "  "})
+    assert cleared.status_code == 200
+    assert cleared.json()["extrafanart_name_template"] is None
+
+    for payload in (
+        {"extrafanart_name_template": "1.jpg"},
+        {"extrafanart_name_template": "gallery/{index}.jpg"},
+        {"extrafanart_name_template": "{video_dir}-{index}.jpg"},
+    ):
+        rejected = await client.post("libraries", json={**base, **payload})
+        assert rejected.status_code == 422, payload
+
+    for payload, detail in (
+        ({"extrafanart_name_template": "1.jpg"}, "必须含"),
+        ({"extrafanart_name_template": "{video_dir}-{index}.jpg"}, "取值是路径"),
+    ):
+        patched = await client.patch(f"libraries/{created.json()['id']}", json=payload)
+        assert patched.status_code == 422, payload
+        assert detail in patched.text
+
+
 class TestAutoOrganize:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_default_off_and_patch_persists(self, client: AsyncClient, repo: Repository, safe_path: Path) -> None:

@@ -2,7 +2,6 @@ import { Group, Menu, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustmentsHorizontal,
-  IconSparkles,
   IconFolderDown,
   IconScan,
   IconTrash,
@@ -17,6 +16,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import { submitTask } from "@/client/sdk.gen";
 import type { LibraryResponse } from "@/client/types.gen";
+import { BroomIcon } from "@/components/common/broom-icon";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { CleanupPanel } from "@/components/library/cleanup-panel";
 import { extractErrorMessage } from "@/lib/api-error";
@@ -147,7 +147,7 @@ export function LibraryActionButtons({
         onClick={() => setCleanupOpen(true)}
         label={t("cleanup.tooltip")}
       >
-        <IconSparkles size={16} />
+        <BroomIcon size={16} />
       </HintedActionIcon>
       <HintedActionIcon variant="light" onClick={onConfigure} label={t("configureLibrary")}>
         <IconAdjustmentsHorizontal size={16} />

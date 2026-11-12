@@ -60,10 +60,32 @@ async def test_get_html_raises_source_error_on_block(client, mock_web, html: str
 
 
 @pytest.mark.asyncio
-async def test_get_rendered_returns_page_with_host_scope(client, mock_browser):
+async def test_post_html_forwards_form(client, mock_web):
+    mock_web.post_text.return_value = "<html><body>Normal Page</body></html>"
+
+    assert await client.post_html("https://example.com/search", data={"sn": "SERO-025"}) == (
+        "<html><body>Normal Page</body></html>"
+    )
+    mock_web.post_text.assert_awaited_once_with(
+        "https://example.com/search", data={"sn": "SERO-025"}, headers=None, cookies=None, encoding="utf-8"
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_html_raises_source_error_on_block(client, mock_web):
+    mock_web.post_text.return_value = "just a moment... cloudflare challenge"
+
+    with pytest.raises(SourceError) as exc:
+        await client.post_html("https://example.com/search", data={"sn": "SERO-025"})
+
+    assert exc.value.reason == FailureReason.CLOUDFLARE_CHALLENGE
+
+
+@pytest.mark.asyncio
+async def test_render_returns_page_with_host_scope(client, mock_browser):
     mock_browser.get_page.return_value = ("<html><body>Rendered</body></html>", None)
 
-    assert await client.get_rendered(_URL) == "<html><body>Rendered</body></html>"
+    assert await client._render(_URL) == "<html><body>Rendered</body></html>"
 
     call = mock_browser.get_page.await_args
     assert call.args == (_URL,)
@@ -84,31 +106,31 @@ _FAILURE_CASES: list[tuple[RequestFailure, FailureReason]] = [
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("failure", "reason"), _FAILURE_CASES)
-async def test_get_rendered_maps_backend_failure(client, mock_browser, failure: RequestFailure, reason: FailureReason):
+async def test_render_maps_backend_failure(client, mock_browser, failure: RequestFailure, reason: FailureReason):
     mock_browser.get_page.return_value = (None, failure)
 
     with pytest.raises(RequestError) as exc:
-        await client.get_rendered(_URL)
+        await client._render(_URL)
 
     assert (exc.value.reason, exc.value.message) == (reason, failure.message)
 
 
 @pytest.mark.asyncio
-async def test_get_rendered_rejects_block_page(client, mock_browser):
+async def test_render_rejects_block_page(client, mock_browser):
     mock_browser.get_page.return_value = ("<html>just a moment... cloudflare</html>", None)
 
     with pytest.raises(SourceError) as exc:
-        await client.get_rendered(_URL)
+        await client._render(_URL)
 
     assert exc.value.reason == FailureReason.CLOUDFLARE_CHALLENGE
 
 
 @pytest.mark.asyncio
-async def test_get_rendered_no_browser_raises(mock_web):
+async def test_render_no_browser_raises(mock_web):
     client = HttpClient(web=mock_web, browser=None)
 
     with pytest.raises(RequestError, match="browser backend disabled") as exc:
-        await client.get_rendered(_URL)
+        await client._render(_URL)
 
     assert exc.value.reason == FailureReason.UNEXPECTED
 
@@ -139,6 +161,44 @@ async def test_always_source_routes_get_html_through_browser(mock_web, mock_brow
     assert call.kwargs["backend"] is BrowserBackendName.CAMOUFOX
     assert call.kwargs["cookies"] == {"a": "b"}
     assert call.kwargs["timeout"] == 12345
+    assert call.kwargs["network_idle_timeout"] == 3000.0
+
+
+@pytest.mark.asyncio
+async def test_get_html_passes_selector_and_skips_network_idle(mock_web, mock_browser):
+    client = HttpClient(web=mock_web, browser=mock_browser)
+    view = client.for_source("minnano", SiteConfig(use_browser=BrowserMode.ALWAYS))
+    mock_browser.get_page.return_value = ("<html><body>ok</body></html>", None)
+
+    await view.get_html("https://www.minnano-av.com/search_result.php", wait_for="#tbllist")
+
+    call = mock_browser.get_page.await_args
+    assert call.kwargs["wait_for"] == "#tbllist"
+    assert call.kwargs["network_idle_timeout"] is None
+
+
+@pytest.mark.asyncio
+async def test_auto_challenge_switch_keeps_selector(mock_web, mock_browser):
+    client = HttpClient(web=mock_web, browser=mock_browser)
+    view = client.for_source("minnano", SiteConfig())
+    mock_web.get_text.return_value = "just a moment... cloudflare"
+    mock_browser.get_page.return_value = ("<html><body>ok</body></html>", None)
+
+    await view.get_html("https://www.minnano-av.com/search_result.php", wait_for="#tbllist")
+
+    call = mock_browser.get_page.await_args
+    assert call.kwargs["wait_for"] == "#tbllist"
+    assert call.kwargs["network_idle_timeout"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_html_ignores_selector_on_direct_response(mock_web, mock_browser):
+    client = HttpClient(web=mock_web, browser=mock_browser)
+    view = client.for_source("javdb", SiteConfig())
+    mock_web.get_text.return_value = "<html>ok</html>"
+
+    assert await view.get_html("https://javdb.com/", wait_for="#x") == "<html>ok</html>"
+    mock_browser.get_page.assert_not_awaited()
 
 
 # auto: 默认直连; 首次命中 Cloudflare 挑战后该来源改用浏览器并保持.

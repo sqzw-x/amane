@@ -6,7 +6,10 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 
 from ...db import MediaFile, Repository, TaskStatus, TaskType
+from ...db.embeddings import EmbeddingKind
 from ...handlers import (
+    ActorPushPayload,
+    ActorPushResult,
     ActorScrapeResult,
     CacheKind,
     CleanupPayload,
@@ -25,6 +28,8 @@ from ...handlers import (
     ScanInvalidResult,
     ScrapePayload,
     ScrapeResult,
+    SemanticBenchmarkResult,
+    SemanticIndexResult,
     UpscalePayload,
     UpscaleResult,
 )
@@ -50,7 +55,10 @@ TaskResultPayload = Annotated[
     | UpscaleResult
     | R18ImportResult
     | ActorScrapeResult
-    | RescrapeResult,
+    | ActorPushResult
+    | RescrapeResult
+    | SemanticIndexResult
+    | SemanticBenchmarkResult,
     Field(discriminator="type"),
 ]
 """任务结果按任务类型判别; 各成员自带 `type` 字面量, 前端据此收窄."""
@@ -122,7 +130,7 @@ class TaskBatchAction(StrEnum):
 
 class TaskBatchRequest(BaseModel):
     action: TaskBatchAction
-    task_ids: list[int] | None = Field(default=None, min_length=1)
+    task_ids: list[int] | None = Field(default=None, min_length=1, max_length=1000)
     """按 ID 操作; 与 status/type 互斥."""
     status: list[TaskStatus] | None = Field(default=None, min_length=1)
     """与列表查询同形; 未传则不限. 与 task_ids 互斥."""
@@ -246,6 +254,20 @@ class RescrapeSubmission(RescrapePayload):
     type: Literal["rescrape"]
 
 
+class SemanticIndexSubmission(BaseModel):
+    type: Literal["semantic_index"]
+    limit: int | None = Field(default=None, ge=1, description="单次最多处理的条目数; 空表示全库")
+    force: bool = Field(default=False, description="忽略未变化的跳过判据, 全部重算")
+    kinds: list[EmbeddingKind] = Field(
+        default_factory=lambda: list(EmbeddingKind),
+        min_length=1,
+    )
+
+
+class SemanticBenchmarkSubmission(BaseModel):
+    type: Literal["semantic_benchmark"]
+
+
 class ActorScrapeSubmission(BaseModel):
     type: Literal["actor_scrape"]
     actor_id: int = Field(description="Actor 实体 ID")
@@ -253,6 +275,10 @@ class ActorScrapeSubmission(BaseModel):
         default_factory=lambda: {CacheKind.metadata, CacheKind.trans},
         description="启用的缓存种类 (metadata: 复用 Actor.raw; trans: 预留译文). 空集 = 全部强制刷新",
     )
+
+
+class ActorPushSubmission(ActorPushPayload):
+    type: Literal["actor_push"]
 
 
 TaskSubmission = Annotated[
@@ -265,13 +291,16 @@ TaskSubmission = Annotated[
     | UpscaleSubmission
     | R18ImportSubmission
     | ActorScrapeSubmission
-    | RescrapeSubmission,
+    | ActorPushSubmission
+    | RescrapeSubmission
+    | SemanticIndexSubmission
+    | SemanticBenchmarkSubmission,
     Field(discriminator="type"),
 ]
 
 
 RoutineSubmission = Annotated[
-    CleanupSubmission | UpscaleSubmission | R18ImportSubmission | RescrapeSubmission,
+    CleanupSubmission | UpscaleSubmission | R18ImportSubmission | RescrapeSubmission | SemanticIndexSubmission,
     Field(discriminator="type"),
 ]
 

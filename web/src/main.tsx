@@ -37,15 +37,36 @@ if (viewportProbe.offsetHeight > 0) {
 }
 viewportProbe.remove();
 
+// 视觉视口占位写入 --amane-vvh (高度) 与 --amane-vv-top (上沿), 供浮层定位.
+// 变量与默认值见 global.css, 浮层为何不能按布局视口定位见 docs/dev/frontend.md.
+const visualViewport = window.visualViewport;
+if (visualViewport !== null) {
+  // 只在整数变化时写入: 每次写入都会让整棵文档重算样式, 而软键盘动画与视口滚动期间该事件按帧触发.
+  let publishedHeight = 0;
+  let publishedTop = 0;
+  const publishVisualViewport = (): void => {
+    const height = Math.round(visualViewport.height);
+    const top = Math.round(visualViewport.offsetTop);
+    if (height === publishedHeight && top === publishedTop) return;
+    publishedHeight = height;
+    publishedTop = top;
+    const root = document.documentElement.style;
+    root.setProperty("--amane-vvh", `${height}px`);
+    root.setProperty("--amane-vv-top", `${top}px`);
+  };
+  publishVisualViewport();
+  visualViewport.addEventListener("resize", publishVisualViewport);
+  visualViewport.addEventListener("scroll", publishVisualViewport);
+}
+
 // 壳内标记根元素: global.css 据此抑制内核的算法深色叠加. 桌面浏览器不加标记, 该规则不生效.
 if (shellEnvironment() !== null) {
   document.documentElement.dataset.amaneShell = "";
 }
 
-client.setConfig({
-  baseUrl: import.meta.env.VITE_API_URL || "",
-  fetch: apiFetch,
-});
+// 基址恒为当前 origin: 开发时由 Vite 把 /api 代理到后端, 生产由后端托管 SPA.
+// 不引入运行期 API 地址: 跨源会让 cookie 鉴权与 WS 握手失效 (见 docs/dev/android.md).
+client.setConfig({ baseUrl: "", fetch: apiFetch });
 initConnection(queryClient);
 
 // 路由组件按路由拆分, 悬停/聚焦时预取对应 chunk, 点击后无需等待下载.
@@ -91,7 +112,7 @@ function Root() {
   // 挂载探活: cookie 有效则直接进入应用, 无 cookie 则等登录门引导.
   useEffect(() => {
     let alive = true;
-    void apiFetch(`${import.meta.env.VITE_API_URL || ""}/api/system/desktop`)
+    void apiFetch("/api/system/desktop")
       .then((resp) => {
         if (alive) setAuthed(resp.ok);
       })

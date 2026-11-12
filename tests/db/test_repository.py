@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast, get_type_hints
 
 import pytest
-from sqlmodel import select
+from sqlalchemy import update
+from sqlmodel import col, select
 
 from amane.aggregate.actor import AggregatedActor
 from amane.db.models import (
@@ -18,6 +19,7 @@ from amane.db.models import (
     MetadataSortField,
     RoutineType,
     SortOrder,
+    Task,
     TaskSortField,
     TaskStatus,
     TaskType,
@@ -32,11 +34,12 @@ from amane.db.repo_types import (
     MetadataFields,
     WriteMode,
 )
+from amane.db.repos.metadata import _merge_raw_snapshots
 from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataField
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
 from amane.parsing import ContentType, Mosaic
 from amane.utils.path import resolved_path
-from tests.helpers import assert_exhaustive_enum
+from tests.helpers import assert_exhaustive_enum, finish_task
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -59,6 +62,35 @@ def test_metadata_sort_field_map_covers_columns():
         MetadataSortField.FILE_COUNT,
         MetadataSortField.SCORE,
     }
+
+
+@pytest.mark.parametrize(
+    ("target", "sources", "expect"),
+    [
+        (
+            {"javdb": {"title": "target"}},
+            [{"javdb": {"title": "source"}, "dmm": {"title": "a"}}],
+            {"javdb": {"title": "target"}, "dmm": {"title": "a"}},
+        ),
+        (
+            {"javdb": {"title": "target"}},
+            [
+                {"shared": {"from": "a"}},
+                {"shared": {"from": "b"}, "extra": {"from": "b"}},
+            ],
+            {"javdb": {"title": "target"}, "shared": {"from": "a"}, "extra": {"from": "b"}},
+        ),
+        ({}, [], {}),
+        ({}, [{}], {}),
+    ],
+    ids=["target_wins", "first_source_wins", "both_empty", "empty_snapshot"],
+)
+def test_merge_raw_snapshots(
+    target: dict[str, dict[str, object]],
+    sources: list[dict[str, dict[str, object]]],
+    expect: dict[str, dict[str, object]],
+) -> None:
+    assert _merge_raw_snapshots(target, sources) == expect
 
 
 class TestMediaFileRepo:
@@ -143,9 +175,9 @@ class TestMediaFileRepo:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_get_valid_chunks_union(self, repo: Repository, monkeypatch: pytest.MonkeyPatch):
         """路径多于 SQL_IN_CHUNK_SIZE 时分批 IN, 并集完整、不含缺失路径."""
-        from amane.db.repos import media as media_mod
+        from amane.db.repos import base as repos_base
 
-        monkeypatch.setattr(media_mod, "SQL_IN_CHUNK_SIZE", 2)
+        monkeypatch.setattr(repos_base, "SQL_IN_CHUNK_SIZE", 2)
         paths = [f"/video/{i}.mp4" for i in range(5)]
         for path in paths:
             await repo.create_media_file(library_id=1, path=path)
@@ -375,9 +407,9 @@ class TestMediaFileRepo:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_list_media_files_ids_chunks(self, repo: Repository, monkeypatch: pytest.MonkeyPatch):
         """ids 多于 SQL_IN_CHUNK_SIZE 且 limit None 时分批 IN, 并集完整."""
-        from amane.db.repos import media as media_mod
+        from amane.db.repos import base as repos_base
 
-        monkeypatch.setattr(media_mod, "SQL_IN_CHUNK_SIZE", 2)
+        monkeypatch.setattr(repos_base, "SQL_IN_CHUNK_SIZE", 2)
         created = [await repo.create_media_file(library_id=1, path=f"/video/{i}.mp4") for i in range(5)]
         ids = [m.id for m in created if m.id is not None]
         result = await repo.list_media_files(ids=ids, limit=None)
@@ -444,6 +476,24 @@ class TestMetadataRepo:
         assert found.title == "New"
         assert found.actors == ["C"]
         assert found.content_type is ContentType.CENSORED
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_merge_raw(self, repo: Repository):
+        """merge_raw 只替换/新增传入站点的快照; 默认仍整体替换."""
+        await repo.upsert_metadata(number="MIDV-123", raw={"a": {"title": "A"}})
+        await repo.upsert_metadata(
+            number="MIDV-123",
+            raw={"a": {"title": "A2"}, "b": {"title": "B"}},
+            merge_raw=True,
+        )
+        found = await repo.get_metadata_by_number("MIDV-123")
+        assert found is not None
+        assert found.raw == {"a": {"title": "A2"}, "b": {"title": "B"}}
+
+        await repo.upsert_metadata(number="MIDV-123", raw={"c": {"title": "C"}})
+        found = await repo.get_metadata_by_number("MIDV-123")
+        assert found is not None
+        assert found.raw == {"c": {"title": "C"}}
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_upsert_cleans_actor_alias_names(self, repo: Repository):
@@ -786,6 +836,51 @@ class TestMetadataRepo:
         assert items[0].number == "LINK-1"
 
     @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("selected", "expected_numbers"),
+        [
+            ("a", ["L-A", "L-CROSS"]),
+            ("b", ["L-B", "L-CROSS"]),
+            (("a", "b"), ["L-A", "L-B", "L-CROSS"]),
+            (("missing",), []),
+            (None, ["L-A", "L-B", "L-CROSS", "L-NONE"]),
+        ],
+    )
+    async def test_list_metadata_library_filter(
+        self,
+        repo: Repository,
+        selected: str | tuple[str, ...] | None,
+        expected_numbers: list[str],
+    ):
+        """同一筛选内多库取并集; 跨库条目只出现一次; 无关联文件的条目不命中任何库."""
+        lib_a = await repo.create_library(name="a", path="/lib/a")
+        lib_b = await repo.create_library(name="b", path="/lib/b")
+        assert lib_a.id is not None and lib_b.id is not None
+
+        only_a = await repo.upsert_metadata(number="L-A")
+        only_b = await repo.upsert_metadata(number="L-B")
+        cross = await repo.upsert_metadata(number="L-CROSS")
+        await repo.upsert_metadata(number="L-NONE")
+        assert only_a.id is not None and only_b.id is not None and cross.id is not None
+
+        await repo.create_media_file(library_id=lib_a.id, path="/lib/a/a.mp4", metadata_id=only_a.id)
+        await repo.create_media_file(library_id=lib_b.id, path="/lib/b/b.mp4", metadata_id=only_b.id)
+        await repo.create_media_file(library_id=lib_a.id, path="/lib/a/cross.mp4", metadata_id=cross.id)
+        await repo.create_media_file(library_id=lib_b.id, path="/lib/b/cross.mp4", metadata_id=cross.id)
+
+        keys = [selected] if isinstance(selected, str) else list(selected or [])
+        known = {"a": lib_a.id, "b": lib_b.id}
+        library_ids = [known.get(key, 9999) for key in keys] or None
+
+        items, total = await repo.list_metadata(
+            library_ids=library_ids, sort_by=MetadataSortField.NUMBER, order=SortOrder.ASC
+        )
+        assert total == len(expected_numbers)
+        assert [m.number for m in items] == expected_numbers
+        ids = await repo.list_metadata_ids(library_ids=library_ids)
+        assert {m.id for m in items} == set(ids)
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_count_media_by_metadata_ids(self, repo: Repository):
         a = await repo.upsert_metadata(number="CNT-A", title="A")
         b = await repo.upsert_metadata(number="CNT-B", title="B")
@@ -921,6 +1016,78 @@ class TestMetadataRepo:
 
         zero, all_miss = await repo.batch_delete_metadata([8888, 7777])
         assert (zero, all_miss) == (0, 2)
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_merge_metadata_entries_moves_links_and_merges_raw(self, repo: Repository):
+        target = await repo.upsert_metadata(
+            number="MRG-001",
+            title="target",
+            actors=["Target"],
+            field_sources={"title": "javdb"},
+            raw={"javdb": {"title": "target"}, "dmm": {"title": "target-dmm"}},
+        )
+        source_a = await repo.upsert_metadata(
+            number="MRG-0001",
+            title="source a",
+            raw={"javdb": {"title": "source-a"}, "shared": {"from": "a"}},
+        )
+        source_b = await repo.upsert_metadata(
+            number="MRG-0002",
+            title="source b",
+            raw={"shared": {"from": "b"}, "extra": {"from": "b"}},
+        )
+        assert target.id is not None and source_a.id is not None and source_b.id is not None
+        await repo.set_metadata_locks(target.id, [MetadataField.TITLE])
+        media = await repo.create_media_file(library_id=1, path="/video/MRG-0001.mp4", number="MRG-0001")
+        assert media.id is not None
+        await repo.update_media_file(media.id, status=MediaFileStatus.SCRAPED, metadata_id=source_a.id)
+        await repo.create_comment(source_a.id, "from a")
+        await repo.create_comment(source_b.id, "from b")
+        keep, added = (await repo.ensure_user_tags(["keep", "added"]))[0]
+        assert keep.id is not None and added.id is not None
+        await repo.apply_metadata_user_tags([target.id, source_a.id], [keep.id], action="attach")
+        await repo.apply_metadata_user_tags([source_b.id], [added.id], action="attach")
+
+        merged = await repo.merge_metadata_entries(target.id, [source_a.id, source_a.id, source_b.id])
+
+        assert merged is not None
+        assert merged.id == target.id
+        assert merged.title == "target"
+        assert merged.actors == ["Target"]
+        assert merged.field_sources == {"title": "javdb"}
+        assert merged.locked_fields == ["title"]
+        assert merged.raw == {
+            "javdb": {"title": "target"},
+            "dmm": {"title": "target-dmm"},
+            "shared": {"from": "a"},
+            "extra": {"from": "b"},
+        }
+        assert await repo.get_metadata(source_a.id) is None
+        assert await repo.get_metadata(source_b.id) is None
+
+        files = await repo.get_media_by_metadata_id(target.id)
+        assert [file.id for file in files] == [media.id]
+        assert files[0].status == MediaFileStatus.SCRAPED
+        assert [c.body for c in await repo.list_comments(target.id)] == ["from b", "from a"]
+        assert [tag.name for tag in await repo.list_metadata_user_tags(target.id)] == ["added", "keep"]
+        assert await repo.list_comments(source_a.id) == []
+        assert await repo.list_metadata_user_tags(source_b.id) == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_merge_metadata_entries_rejects_invalid_sources(self, repo: Repository):
+        target = await repo.upsert_metadata(number="MRG-010")
+        source = await repo.upsert_metadata(number="MRG-0011")
+        assert target.id is not None and source.id is not None
+
+        assert await repo.merge_metadata_entries(9999, [source.id]) is None
+        with pytest.raises(ValueError, match="合并目标不能是来源之一"):
+            await repo.merge_metadata_entries(target.id, [target.id])
+        with pytest.raises(ValueError, match="影片 9999 不存在"):
+            await repo.merge_metadata_entries(target.id, [9999])
+        with pytest.raises(ValueError, match="未提供要合并的影片"):
+            await repo.merge_metadata_entries(target.id, [])
+
+        assert await repo.get_metadata(source.id) is not None
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_get_media_by_metadata_id(self, repo: Repository):
@@ -1473,13 +1640,15 @@ class TestTaskRepo:
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_fail_task_clears_previous_result(self, repo: Repository):
-        """不带载荷地失败会清掉上一次运行的残留 (带载荷落库由 worker 与 API 层测试覆盖)."""
+        """不带载荷地失败会清掉运行中行遗留的载荷 (带载荷落库由 worker 与 API 层测试覆盖)."""
         task = await repo.create_task(task_type=TaskType.SCRAPE, payload={})
         assert task.id is not None
         await repo.claim_next_task()
-        await repo.complete_task(task.id, result={"type": "scrape", "metadata_id": None})
+        async with repo._session() as session:
+            await session.exec(update(Task).where(col(Task.id) == task.id).values(result={"old": True}))
+            await session.commit()
 
-        await repo.fail_task(task.id, error="again")
+        assert await repo.fail_task(task.id, error="again") is True
 
         fetched = await repo.get_task(task.id)
         assert fetched is not None
@@ -1584,9 +1753,9 @@ class TestTaskRepo:
         first = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         assert first.id is not None
         if status == TaskStatus.DONE:
-            await repo.complete_task(first.id)
+            await finish_task(repo, first.id)
         else:
-            await repo.fail_task(first.id, "boom")
+            assert await repo.fail_task(first.id, "boom") is True
         second = await repo.create_task(task_type=TaskType.ORGANIZE, payload={"library_id": 1})
         assert second.id is not None
         assert second.id != first.id

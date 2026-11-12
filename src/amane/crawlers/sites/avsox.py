@@ -7,12 +7,12 @@ from typing import Any
 from urllib.parse import quote
 
 from parsel import Selector
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from ...enums import Language, SiteName
 from ...net.errors import FailureReason, SourceError, parse_detail
 from ..base import Crawler, CrawlerProfile
-from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
+from ..models import FetchOptions, MediaMetadata, ResponseModel, SearchQuery, film_actors
 from ..parsing import fold_number
 
 _LANG: dict[Language, str] = {
@@ -52,11 +52,11 @@ def _named(entity: AvsoxNamed | None, prefix: str) -> str | None:
     return _first(*(payload.get(f"{prefix}Name{suffix}") for suffix in _NAME_SUFFIXES))
 
 
-class AvsoxNamed(BaseModel):
+class AvsoxNamed(ResponseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class AvsoxMovie(BaseModel):
+class AvsoxMovie(ResponseModel):
     model_config = ConfigDict(extra="ignore")
     movieId: str = ""
     movieFanHao: str = ""

@@ -12,14 +12,15 @@ import structlog
 
 from ..agent import AgentService, ResultCache
 from ..config import SAFE_DIRS_ALLOW_ALL, ColdSettings, ConfigManager
-from ..config.token import resolve_api_token
+from ..config.token import resolve_api_token, resolve_image_token
+from ..db.embeddings import EmbeddingStore
 from ..db.engine import create_async_engine_from_path
 from ..db.profiling import DbLogPolicy
 from ..db.repository import Repository
 from ..events import EventBus
 from ..handlers import LibraryTaskLocks
 from ..library import InventoryStore
-from ..llm import TranslationCache
+from ..llm import TranslationCache, TranslationCoalescer
 from ..media import ResourceStore
 from ..observability import setup_logging
 from ..playback import PlaybackFactory, PlaybackState
@@ -29,6 +30,7 @@ from ..scheduler.cron import CronScheduler
 from ..scheduler.feeds import FeedService
 from ..scheduler.service import WatcherService
 from ..scheduler.worker import AsyncWorker
+from ..semantic import SemanticService
 from ..utils.random_logging import run_random_logging
 from .proxy_failure_cache import ProxyFailureCache
 from .runtime import AppRuntime, build_handlers, build_network_stack, build_r18_db
@@ -94,6 +96,11 @@ class AppSession:
         await self.runtime.web_client.close()
         if self.runtime.translation_cache is not None:
             await self.runtime.translation_cache.close()
+        if self.runtime.semantic is not None:
+            self.runtime.semantic.close()
+        embeddings = self.runtime.embeddings
+        if embeddings is not None:
+            await embeddings.close()
         await self._engine.dispose()
         logger.info("amane service stopped")
 
@@ -122,7 +129,9 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
 
     db_log_policy = DbLogPolicy()
     engine = await create_async_engine_from_path(cold.db_path, policy=db_log_policy)
-    repo = Repository(engine)
+    # 向量 sidecar, 不纳入 Alembic; 删除该文件即清空索引. 惰性建立连接, 未使用语义检索时不创建文件.
+    embeddings = EmbeddingStore(cold.data_dir / "embeddings.db")
+    repo = Repository(engine, embeddings=embeddings)
 
     # 会话级只读引擎, 不纳入 Alembic; dsn 变更经 _rebuild() 重建
     r18_db = build_r18_db(hot.r18)
@@ -144,6 +153,8 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
 
     # 独立 SQLite, 不纳入 Alembic; 删除文件即清空. 惰性建连.
     translation_cache = TranslationCache(cold.data_dir / "translations.db")
+    # 同一文本的并发翻译合并为一个请求; 与缓存同属会话级, 热重载时复用.
+    translation_coalescer = TranslationCoalescer()
 
     # 会话级 ResultCache; rebuild 只换工厂, 不清除缓存
     agent_service = AgentService(
@@ -161,11 +172,16 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
     else:
         logger.info("safe dirs for file browser", dirs=[str(d) for d in safe_dirs])
     api_token = resolve_api_token(cold.token, cold.data_dir)
+    # 校验关闭时资源端点免鉴权, 图片 token 无意义.
+    image_token = resolve_image_token(cold.image_token, cold.data_dir) if api_token is not None else None
     if api_token is not None:
         logger.info("api token auth enabled", token=api_token)
+    if image_token is not None:
+        logger.info("image token auth enabled", token=image_token)
 
     library_locks = LibraryTaskLocks()
     inventory_store = InventoryStore()
+    semantic_service = SemanticService(repo, resource_store, cold.data_dir, hot.semantic)
     handlers = build_handlers(
         repo,
         factory,
@@ -174,10 +190,12 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         hot,
         safe_dirs,
         translation_cache,
+        translation_coalescer,
         cold.data_dir,
         plugin_manager,
         library_locks=library_locks,
         inventory_store=inventory_store,
+        semantic=semantic_service,
     )
 
     worker = AsyncWorker(
@@ -232,13 +250,16 @@ async def start_app(config: ConfigManager | None = None) -> AppSession:
         feed_service=feed_service,
         safe_dirs=safe_dirs,
         api_token=api_token,
+        image_token=image_token,
         translation_cache=translation_cache,
+        translation_coalescer=translation_coalescer,
         r18_db=r18_db,
         agent_service=agent_service,
         plugin_manager=plugin_manager,
         playback_state=playback_state,
         library_locks=library_locks,
         inventory_store=inventory_store,
+        semantic=semantic_service,
         playback_factory=PlaybackFactory(
             plugin_manager=plugin_manager,
             plugin_configs=hot.plugins,

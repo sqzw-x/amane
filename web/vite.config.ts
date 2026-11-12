@@ -8,6 +8,13 @@ import { tanstackRouter } from "@tanstack/router-vite-plugin";
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 /**
+ * 开发时代理指向的后端. 端口与 Justfile 的 `AMANE_PORT` 同源, 默认 8000.
+ *
+ * 只影响 dev server 的转发目标; 前端代码不读任何 API 地址, 一律走相对路径.
+ */
+const API_TARGET = `http://localhost:${process.env.AMANE_PORT || "8000"}`;
+
+/**
  * 运行期兼容下限, 面向版本落后于构建默认目标的内核 (壳的 WebView 由设备提供, 版本不受本仓库控制).
  *
  * `build.target` 只降语法: 内建方法 (`Array.prototype.toSorted` 等) 不会被降级, 缺失时只能由 polyfill 提供.
@@ -78,9 +85,11 @@ export default defineConfig({
     },
   },
   server: {
+    // 代理目标跟随后端端口 (与 Justfile 的 `port` 同源). 前端代码一律用相对路径,
+    // 同源是鉴权的前提: cookie 与 WS 握手都不能跨源, 见 docs/dev/android.md.
     proxy: {
       "/api": {
-        target: process.env.VITE_API_URL || "http://localhost:8000",
+        target: API_TARGET,
         changeOrigin: true,
         ws: true,
       },

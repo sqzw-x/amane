@@ -50,7 +50,7 @@ import { ListToolbar } from "@/components/common/list-toolbar";
 import { ResizableTh, SortableTh } from "@/components/common/sortable-th";
 import { SelectionBar } from "@/components/common/selection-bar";
 import { FacetRulesPanel } from "./facet-rules-panel";
-import { useFacetIdentityActions } from "@/hooks/use-facet-identity-actions";
+import { type FacetNamedTarget, useFacetIdentityActions } from "@/hooks/use-facet-identity-actions";
 import { useIdSelection } from "@/hooks/use-id-selection";
 import { useResizableColumns } from "@/hooks/use-resizable-columns";
 import { extractErrorMessage } from "@/lib/api-error";
@@ -60,6 +60,7 @@ import { exhaustiveRecord } from "@/lib/exhaustive";
 import { ageFromBirthday } from "@/lib/format-birthday";
 import { proxyImageUrl } from "@/lib/utils";
 import { ClearPersonNotice } from "@/components/media/clear-person-notice";
+import { MergeNotice } from "@/components/media/merge-notice";
 import { ProxyImage } from "@/components/media/proxy-image";
 import { type ActorTableColumnKey, useUIStore } from "@/stores/ui";
 import classes from "./actor-table.module.css";
@@ -176,6 +177,25 @@ function cellValue(actor: ActorResponse, field: SortableColumn): string {
   }
 }
 
+function MergeActorNotice({ name, count }: { name: string; count: number }) {
+  const { t } = useTranslation("metadata");
+  return (
+    <MergeNotice
+      lead={t("manage.mergeActorLead", { count, name })}
+      items={[
+        t("manage.mergeActorAlias"),
+        t("manage.mergeActorFill"),
+        t("manage.mergeActorTags"),
+        t("manage.mergeActorDelete"),
+      ]}
+    />
+  );
+}
+
+function actorMergeNotice(target: FacetNamedTarget, count: number) {
+  return <MergeActorNotice name={target.name} count={count} />;
+}
+
 export function ActorTable({
   items,
   isLoading,
@@ -205,7 +225,7 @@ export function ActorTable({
   const identity = useFacetIdentityActions({
     kind,
     listQueryKey: listActorsQueryKey(),
-    confirmMerge: false,
+    mergeNotice: actorMergeNotice,
     onMerged: clear,
   });
 
@@ -635,7 +655,9 @@ export function ActorTable({
                       variant="subtle"
                       label={t("manage.merge")}
                       disabled={identity.mergePending}
-                      onClick={() => void identity.openMerge(actor.id, selected)}
+                      onClick={() =>
+                        void identity.openMerge({ id: actor.id, name: actor.name }, selected)
+                      }
                     >
                       <IconArrowMerge size={16} />
                     </HintedActionIcon>
@@ -674,7 +696,9 @@ export function ActorTable({
                         <Menu.Item
                           leftSection={<IconArrowMerge size={14} />}
                           disabled={identity.mergePending}
-                          onClick={() => void identity.openMerge(actor.id, selected)}
+                          onClick={() =>
+                            void identity.openMerge({ id: actor.id, name: actor.name }, selected)
+                          }
                         >
                           {t("manage.merge")}
                         </Menu.Item>

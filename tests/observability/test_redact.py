@@ -27,6 +27,14 @@ def test_hot_slice_scrape_drops_noise():
         ({"scraping": {"site_config": {"javdb": {"cookie": {}}}}, "llm": {}, "network": {}, "r18": {}}, False),
         ({"scraping": {"site_config": {"javdb": {"cookie": {"a": "b"}}}}, "llm": {}, "network": {}, "r18": {}}, True),
         ({"scraping": {"site_config": {}}, "llm": {"api_key": "k"}, "network": {}, "r18": {}}, True),
+        (
+            {"scraping": {"site_config": {}}, "llm": {}, "network": {}, "r18": {}, "media_server": {"api_key": "m"}},
+            True,
+        ),
+        (
+            {"scraping": {"site_config": {}}, "llm": {}, "network": {}, "r18": {}, "media_server": {"api_key": None}},
+            False,
+        ),
         ({"scraping": {"site_config": {}}, "llm": {}, "network": {}, "r18": {"dsn": "postgresql://u:p@h/db"}}, True),
         ({"scraping": {"site_config": {}}, "llm": {}, "network": {}, "r18": {"read_password": "default"}}, False),
         ({"plugins": {"acme.fake": {"config": {"api_token": "secret"}}}}, True),
@@ -69,6 +77,14 @@ def test_needs_secrets_file(dump: dict, expected: bool):
             id="llm-api-key",
         ),
         pytest.param({"llm": {"api_key": None}}, lambda out: out["llm"]["api_key"] is None, id="llm-api-key-null"),
+        pytest.param(
+            {"media_server": {"kind": "jellyfin", "url": "http://media.local", "api_key": "live"}},
+            lambda out: (
+                out["media_server"]["api_key"] == REDACTION_PLACEHOLDER
+                and out["media_server"]["url"] == "http://media.local"
+            ),
+            id="media-server-api-key",
+        ),
         pytest.param(
             {"network": {"proxy": "socks5://user:pass@127.0.0.1:7890"}},
             lambda out: out["network"]["proxy"] == "socks5://127.0.0.1:7890",

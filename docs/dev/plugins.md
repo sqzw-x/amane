@@ -11,7 +11,7 @@
 
 播放源接收主机装配的当前 Metadata 与关联文件快照, 返回探测结果或由主机执行的播放目标. 浏览器只请求 Amane 同源、已鉴权的固定媒体端点, 上游查找、鉴权、跨域与会话留在后端; HTTP 形状见 [api.md](api.md).
 
-插件是可信的进程内纯 Python: `importlib` 从数据目录加载 `plugin.py`, 与主机共用解释器, 没有进程隔离. 插件不能声明自己的 pip 依赖或原生扩展, 只使用主机已提供的 API (经 `amane.plugin` 与 `context.http_client`). **标准库可以放心 import**: 桌面打包版按平台收集整个标准库 (只排除依赖包外产物的 GUI 与安装器, 见 [desktop.md](desktop.md)), Docker 与源码运行用的是完整标准库. 第三方包与原生扩展不可用: 安装时导入失败的模块以可读的 422 报出, 已放好的目录在发现期进入 `failures`.
+插件是可信的进程内纯 Python: `importlib` 从数据目录加载 `plugin.py`, 与主机共用解释器, 没有进程隔离. 插件不能声明自己的 pip 依赖或原生扩展, 只使用主机已提供的 API (经 `amane.plugin` 与 `context.http_client`). **标准库可以放心 import**: 桌面打包版按平台收集整个标准库 (只排除依赖包外产物的 GUI 与安装器, 见 [desktop.md](desktop.md)), Docker 与源码运行用的是完整标准库. 第三方包与原生扩展不可用: 安装时导入失败以可读的 422 报出, 已放好的目录在发现期进入 `failures`.
 
 ## 发现与身份
 
@@ -27,7 +27,7 @@
 
 ## 进程内重建
 
-安装 / 卸载 / 重新扫描 / 启用 / 禁用都不重启进程: 它们共用一把 rebuild 锁, 先处理源码树, 再 `AppRuntime._rebuild()` 构建新网络栈、Factory 和 Worker 并退役旧 Worker — 已认领任务不取消, 用旧插件对象跑到终态, 新任务使用新目录. 安装把一份 zip 解到 `plugins/sources/<id>/` (根目录或单一顶层文件夹里必须有 `plugin.py`), 同 ID 已存在则整棵替换; 把文件夹直接放到该路径后点「重新扫描」效果相同. zip 拒绝路径穿越和过大载荷. 重建会清理已加载的插件模块, 以便下一轮 `discover()` 执行到新代码; `amane` 本体不会被卸模块, 进程内解释器也无法阻止插件 `import amane.db`. 配置里的第三方来源路由和 `plugins` 段在卸载后可以残留 — 刮削时跳过, 不阻断写入 (见 [config.md](config.md)).
+安装 / 卸载 / 重新扫描 / 启用 / 禁用都不重启进程: 它们共用一把 rebuild 锁, 先处理源码树, 再 `AppRuntime._rebuild()` 构建新网络栈、Factory 和 Worker 并退役旧 Worker — 已认领任务不取消, 用旧插件对象跑到终态, 新任务使用新目录. 安装把一份 zip 解到 `plugins/sources/<id>/` (根目录或单一顶层文件夹里必须有 `plugin.py`), 同 ID 已存在则整棵替换. 安装在提交前对 staging 副本执行与发现期相同的校验 (`plugins/packaging.py::load_plugin`), 插件代码抛出的任何异常都报 422 且不触碰已装版本; 发现期独有的只有目录名与重复 ID 检查, 不允许在两处分别增删校验; 把文件夹直接放到该路径后点「重新扫描」效果相同. zip 拒绝路径穿越和过大载荷. 重建会清理已加载的插件模块, 以便下一轮 `discover()` 执行到新代码; `amane` 本体不会被卸模块, 进程内解释器也无法阻止插件 `import amane.db`. 配置里的第三方来源路由和 `plugins` 段在卸载后可以残留 — 刮削时跳过, 不阻断写入 (见 [config.md](config.md)).
 
 ## Descriptor
 

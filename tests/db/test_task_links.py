@@ -1,10 +1,14 @@
 """TaskLink 后继关系与 complete_task_with_followups 事务测试."""
 
-from typing import TYPE_CHECKING
+import sqlite3
+from typing import TYPE_CHECKING, Any
 
 import pytest
+from sqlalchemy import event
 
 from amane.db.models import TaskStatus, TaskType
+from amane.db.repos.base import SQL_IN_CHUNK_SIZE
+from tests.helpers import finish_task
 
 if TYPE_CHECKING:
     from amane.db.repository import Repository
@@ -76,8 +80,10 @@ async def test_complete_requires_running(repo: Repository):
     """非 RUNNING 父任务不产生后继 (防重复完成, 写库版)."""
     parent = await repo.create_task(TaskType.REFRESH, payload={})
     assert parent.id is not None
+    claimed = await repo.claim_next_task()
+    assert claimed is not None and claimed.id == parent.id
     # 已完成后再重复 complete: 必须读库判断 status, 不能只看内存对象.
-    await repo.complete_task(parent.id)
+    assert await repo.complete_task(parent.id) is True
     children = await repo.complete_task_with_followups(
         parent.id, result={}, followups=[("scrape", TaskType.SCRAPE, {"number": "A"}, 0)]
     )
@@ -199,8 +205,8 @@ async def test_delete_tasks_mixed_tree_keeps_root(repo: Repository):
     )
     done_child, failed_child = children
     assert done_child.id is not None and failed_child.id is not None
-    await repo.complete_task(done_child.id)
-    await repo.fail_task(failed_child.id, error="boom")
+    await finish_task(repo, done_child.id)
+    assert await repo.fail_task(failed_child.id, error="boom") is True
 
     assert await repo.delete_tasks([parent.id, done_child.id]) == 1
     assert await repo.get_task(done_child.id) is None
@@ -420,3 +426,35 @@ async def test_list_tasks_roots_only_filter_matches_children(repo: Repository):
     assert parent.id in scrape_ids
     assert standalone.id in scrape_ids
     assert child.id not in scrape_ids
+
+
+# 一条语句最多绑定两批 (边同时按父与子匹配); 上限压到这里, 整批绑定才会在测试规模下越界.
+_LOW_VARIABLE_LIMIT = 2 * SQL_IN_CHUNK_SIZE
+_CHILD_COUNT = 2 * SQL_IN_CHUNK_SIZE + 100
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_delete_tasks_binds_ids_in_chunks(repo: Repository) -> None:
+    """万级任务组一次删完: 边、行与按 id 查询都分批绑定, 上限较低的 SQLite 上也不报 too many SQL variables."""
+
+    @event.listens_for(repo._engine.sync_engine, "connect")
+    def _lower_limit(dbapi_connection: Any, _record: Any) -> None:
+        # 上限是连接级的, 只能经 aiosqlite 的底层 sqlite3 连接设置.
+        dbapi_connection.driver_connection._conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, _LOW_VARIABLE_LIMIT)
+
+    parent = await repo.create_task(TaskType.REFRESH, payload={"library_id": 1})
+    assert parent.id is not None
+    claimed = await repo.claim_next_task()
+    assert claimed is not None and claimed.id == parent.id
+    assert claimed.id is not None
+    children = await repo.complete_task_with_followups(
+        claimed.id,
+        result={},
+        followups=[(f"scrape:{i}", TaskType.SCRAPE, {"number": f"N-{i}"}, 0) for i in range(_CHILD_COUNT)],
+    )
+    child_ids = [child.id for child in children if child.id is not None]
+    assert len(child_ids) == _CHILD_COUNT
+
+    assert await repo.delete_tasks([parent.id, *child_ids]) == _CHILD_COUNT + 1
+    assert await repo.list_task_links(parent_task_id=parent.id) == []
+    assert await repo.find_tasks(task_ids=[parent.id, *child_ids]) == []

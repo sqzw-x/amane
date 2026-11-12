@@ -18,18 +18,21 @@
 | `sql_explore` | 中间推理; 默认只回样例. `create_view=true` 物化会话内 SavedQuery 供 `inspect_result` 翻页 — 视图是**纯行数组**, 无 entity / `id` 列要求, **不**纳入交付结果 |
 | `sql_deliver` | 面向用户的结果 → `saved_query` + 内存结果缓存. `entity=metadata\|actor` 交付须含主键列 `id`, 可作片库 / 演员筛选并深链; 省略 entity (或 `data`) 交付任意只读结果, 只进入数据页 |
 | `inspect_result` | 按 `saved_query_id` 取行 (交付或探查视图) |
+| `semantic_search` | 单次整句语义检索; 可传 `saved_query_id` 或返回 `id` 列的只读 SQL, 只在该候选集内排名 |
 
-写操作工具按域分组为 `Capability`, **不做延迟载入**: 每个请求都声明全部工具. 兼容端点 (DeepSeek 等) 没有「声明了但不开放」的通道, 逐次载入只能通过修改 `tools` 实现, 而工具定义渲染在 system 之后、对话之前, 每载入一次即重读整段对话前缀; 全量声明的固定前缀恒定不变, 首轮即命中缓存. 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务.
+写操作工具按域分组为 `Capability`, 清单在 `src/amane/agent/capabilities.py`, 内置助理与外部派发共用同一份 (两侧必须一致, 只登记一处才不会漂移). **不做延迟载入**: 每个请求都声明全部工具. 兼容端点 (DeepSeek 等) 没有「声明了但不开放」的通道, 逐次载入只能通过修改 `tools` 实现, 而工具定义渲染在 system 之后、对话之前, 每载入一次即重读整段对话前缀; 全量声明的固定前缀恒定不变, 首轮即命中缓存. 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务 / 语义检索回调.
 
 | `id` | 覆盖 |
 |------|------|
-| `metadata-ops` | 修改字段、合并、user tag、刮削入队、删除 |
-| `actor-ops` | 演员人物字段、别名行 (查询 / 解析 / 增删)、展示名切换、演员刮削入队 |
-| `facet-identity` | rename / merge / delete / 规则列表与删除 |
+| `metadata-ops` | 修改字段、字段锁、合并、user tag、刮削入队、删除 |
+| `actor-ops` | 演员人物字段、字段锁、别名行 (查询 / 解析 / 增删)、展示名切换、user tag、演员刮削入队 |
+| `facet-identity` | rename / merge / delete / 规则列表与删除 / user tag 按名取回 |
+| `comment-ops` | 评论增删改 |
 | `library-ops` | 库 CRUD、REFRESH 入队 |
 | `feed-ops` | 源 CRUD、立即拉取、FeedItem 历史批量操作 |
 | `schedule-ops` | CLEANUP / UPSCALE / R18_IMPORT / RESCRAPE 定时 CRUD 与触发 |
 | `task-ops` | 统一提交 / 取消 / 重试 (入队, 不代为运行) |
+| `saved-query-ops` | 预设改名 / 删除 |
 
 任务与定时任务的入参 (即 `submit_task` / `create_schedule` 的 `submission`) **不随工具签名内联**: 联合体大小远大于其余工具定义, 改为 `get_task_submission_schema` / `get_routine_submission_schema` 按需返回, 与提交时的校验共用同一个 `TypeAdapter`; 校验失败返回出错字段 (最多三条)、可用类型与该类型的字段定义, 模型无需再次试探形状.
 
@@ -47,13 +50,19 @@
 
 执行前只修改实际调用与落入 `messages.json` 的 `tool_name`: `__` 最后一段恰好是当前可调用名时裁成该段; 名字已在可调用集合里或后缀对不上则原样交给框架 (未知工具仍 `ModelRetry`). 工具卡片仍可能显示模型原始名.
 
+MANUAL 写入会把所改字段并入锁集合 (见 [data-model.md](data-model.md)「字段锁定」), 因此两域各有一个 `set_*_locks`: 与 REST 一样整体替换, 空列表即解锁全部, 解锁后字段才会被下一次刮削覆盖.
+
+用户标签有两步: `facet-identity.ensure_user_tags` 按名取回或新建并回 id, 再由 `batch_user_tags` / `batch_actor_user_tags` 挂载; 挂载工具只接受 id, 未知 id 报错而不是静默新建.
+
+`comment-ops` 只管正文, 评论 id 取自 `sql_explore` 的 `comments` 表; 正文按 Markdown 原文存储, 长度上界与请求模型共用 `api/models/comments.py::COMMENT_BODY_MAX`. `saved-query-ops` 不改 SQL (改 SQL 须先过只读沙箱, 那条路径留在 REST), 删除时与 REST 一样失效内存缓存.
+
 `actor-ops` 的别名工具对应别名模型 (见 [data-model.md](data-model.md) 演员身份): 别名是一对多行, `resolve_actor_name` 多命中即歧义, 应交由用户决定; `set_actor_display_name` 与 `facet-identity.rename_facet(kind=actor)` 等价, 二者任一即可, 不允许重复调用. `PATCH /config` **不**暴露为工具.
 
 `feed-ops` 只通过 `FeedService.poll_one` 触发远程拉取; 新条目是否入队 SCRAPE 由 Feed 的 `auto_enqueue` 决定, Agent 不在工具内解析 RSS 或直接运行刮削. 删除源或删除条目历史须批准. 条目 `scrape` 沿用该 Feed 当前配置, 语义见 [feeds.md](feeds.md).
 
 `schedule-ops` 创建时只接受 `RoutineSubmission`; 更新只允许 `name` / `cron` / `enabled`, 任务类型或 payload 变化须删除后重建. `trigger_schedule` 只把 `next_run` 设为当前时间, 实际 Task 由 `CronScheduler` 下一次 tick 创建, 不是同步执行.
 
-**批准流**: SQL 非法或 SQLite 运行时错误 → 工具返回 `error` 字符串, **不**升格为回合错误打断整轮. 慢查询 (`allow_slow`) 与破坏性写 (metadata / facet merge·delete·删规则 / 删库) 在工具体内 `raise ApprovalRequired`; 适配器把 `DeferredToolRequests` 映射成 AG-UI 中断 (`RUN_FINISHED.outcome.interrupts`), 中断 `id` 为 `int-{tool_call_id}`, 文案取自工具给的 metadata. 一次 `resume[]` 必须回答**全部**打开的中断, 故前端逐项暂存决定、集齐后整批提交, 批量批准即全部置 approve. 批准 → 工具体再次进入且 `tool_call_approved=True`; 拒绝 → `ToolDenied`. 模型只看见普通 tool return, **无**「用户已批准…」类附加说明; 刷新后用回放行末尾的中断还原待批状态. 
+**批准流**: SQL 非法或 SQLite 运行时错误 → 工具返回 `error` 字符串, **不**升格为回合错误打断整轮. 慢查询 (`allow_slow`) 与破坏性写 (metadata / facet merge·delete·删规则 / 删库 / 删评论 / 删预设) 在工具体内 `raise ApprovalRequired`; 适配器把 `DeferredToolRequests` 映射成 AG-UI 中断 (`RUN_FINISHED.outcome.interrupts`), 中断 `id` 为 `int-{tool_call_id}`, 文案取自工具给的 metadata. 一次 `resume[]` 必须回答**全部**打开的中断, 故前端逐项暂存决定、集齐后整批提交, 批量批准即全部置 approve. 批准 → 工具体再次进入且 `tool_call_approved=True`; 拒绝 → `ToolDenied`. 模型只看见普通 tool return, **无**「用户已批准…」类附加说明; 刷新后用回放行末尾的中断还原待批状态. 
 
 ## 会话数据
 
@@ -94,3 +103,43 @@
 `AgentService` 挂载于 `AppRuntime`: `_rebuild()` 按 `hot.agent` 重建工厂, **不清除** ResultCache; bootstrap 装配 `bridge` (safe_dirs / watcher / 动态 Worker 取消 / `FeedService.poll_one`).
 
 上游协议由 `hot.agent.api_type` 选择, 模型构造与翻译共用 `llm/model.py::build_model`; `base_url` / `api_key` / `model` 原样交给对应 Provider (Anthropic 需填 Anthropic 端点, 无隐式改写). 身份与规则经 agent `instructions` 注入而**不是** `system_prompt`: Responses 协议把 agent instructions 放在 API 顶层 `instructions` 字段, 服务端插在 `input` 之前; `system_prompt` 会变成 `input` 里的 system 消息, 于是各 capability 的注意事项反而排在身份定位之前. 思考强度: 全局 `hot.agent.thinking` 为默认 (`None` = 不传), 会话覆盖在 `meta.json`; 每回合经由 `model_settings` 注入 thinking 与 `hot.agent.max_tokens`. 运行使用无上限的 `UsageLimits`.
+
+## 外部接入
+
+外部智能体 (用户自己的 CLI 工具) 经同一套工具定义管理实例, 入口 `src/amane/agent/external.py`. 目录按名字暴露工具, 派发按名字调用工具函数本体, **不重写任何领域逻辑**. 目录与派发端点对外长期存在, 工具集与单个工具名随实例与版本变化: 调用方每次会话现取, 不做版本兼容承诺.
+
+外部通道与内置助理有三处差异:
+
+- **无审批**: 派发始终以已批准的上下文执行, 工具内的闸门只对内置助理生效. 破坏性操作的约束交给工具描述与 Skill 的审批礼仪, 服务端不校验.
+- **无会话**: 依赖里的 `session_id` 为空, 交付的查询预设因此与会话解耦并直接 `persisted`; 探查视图落库但 `persisted=false`, 不出现在预设页, 只能按 `saved_query_id` 经 `inspect_result` 取行.
+- **不依赖模型配置**: 目录从工具组构造, 不经助理工厂, 未配置模型时照常可用.
+
+`GET /api/agent-guide` 免鉴权, 只回固定文本 (装 CLI / 鉴权 / 装 Skill / 约束), **不拼接实例地址、版本、路径或 token** — 实例地址由调用方从请求 URL 推得. 正文随发布更新, 不得引入任何随实例变化的内容. 免鉴权路径由 `middleware.py::_TOKEN_EXEMPT` 显式登记, 见 [api.md](api.md).
+
+日志、配置与数据库不设读取接口: `GET /api/tools` 的 `paths` 给出位置, 由调用方自行读文件; 无法访问实例文件系统时, 改用 `amane api /api/tasks/<id>/record` 取任务记录包.
+
+### 目录分级
+
+目录是模型上下文的主要成本, 按「什么时候需要」拆三级, 不一次给全:
+
+- `GET /api/tools` 索引: 每个工具一行 (名字、一行描述、参数签名), 约 1700 tokens, 够选工具.
+- `GET /api/tools/{name}` 详情: 单个工具的完整入参, 约 170 tokens, 参数不确定时才取.
+- `GET /api/db-schema` 库结构: 写只读 SQL 时才取.
+
+签名由 `src/amane/agent/signature.py` 从同一份 Schema 生成, 是有损的紧凑表示: 保留类型、必填性、枚举、数值范围与嵌套结构. 校验仍在服务端, 参数错了回字段路径, 这个闭环让有损压缩安全. 响应不声明返回 Schema, 调用方按实际响应体处理.
+
+Skill 只生成 `SKILL.md` 与记录 CLI 版本的 `version` 两个文件, 安装时不连接实例, 工具清单不进 Skill: 清单随实例变化, 写进文件既会过期, 又让每次会话都为全部工具付一遍 token; 运行时用 `amane catalog` 取.
+
+### 客户端
+
+`cli/` 是配套的 Go 命令行工具, 单一静态二进制, 只依赖标准库与 `golang.org/x/term` (读取密码不回显), 与服务器**零共享代码**. 命令表**不随工具变化** —— 它不认识任何工具名, 只把目录与派发端点当作目标, 另有 REST 直通兜底, 因此新增工具不需要改 CLI.
+
+它存在的理由只有五条: 按 `--profile` 从 0600 配置文件读 token (token 因此不进入模型上下文; token 一律先校验一次, 连不上实例时把校验失败记为提示并照常写入; 本机地址另会读取桌面版留下的 token 文件, 不推断端口)、把嵌套入参经 `--file` 送出不经过 shell 引号、把任务轮询折叠成一次阻塞调用、在工具目录之外直通 REST 兜底、自检并报告连不上的原因. 为每个工具生成子命令、渲染表格、重复校验入参、用退出码表达业务错误都不做.
+
+`amane api` 直通任意方法与路径, 是工具目录的兜底: 目录覆盖不到时才用, 形状现取 OpenAPI (`GET /api/docs/openapi.json`). REST 供实例自己的界面使用, 不为智能体设计: 不承诺兼容性与易用性, 经 REST 的写入只留请求日志, 不进工具审计.
+
+工具集与 REST 形状都不做版本兼容承诺 (两者都是运行时现取), 稳定的只有目录与派发的端点语义.
+
+二进制经 GitHub Releases 分发, 不随实例或桌面包发布: 工具协议固定四个端点 (索引 / 详情 / 派发 / 库结构), 另有健康检查与桌面契约两个检查端点, 版本错配由 `doctor` 报告而不阻断. macOS 上必须用 `curl` 下载, 浏览器下载会带隔离属性而被 Gatekeeper 拦下.
+
+Go 由独立工作流 (`.github/workflows/cli.yaml`) 跑 `just cli-check`, 只在 `cli/` 变动时执行. CLI 的 recipe 在 `cli/justfile`, 由根 Justfile import, 与根一样同时兼容 sh 与 pwsh. `just check` 与 `just ci` 都不含它, 改完 CLI 要单独跑.

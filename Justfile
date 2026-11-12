@@ -4,10 +4,13 @@
 [windows]
 set shell := ["pwsh", "-NoProfile", "-Command"]
 
-default:
-    @just --list
+# CLI (Go) 的构建入口单独一份, 与根一样同时兼容 sh 与 pwsh
+import 'cli/justfile'
 
 CHECK_DIRS := "src/amane tests scripts"
+
+default:
+    @just --list
 
 host := env("AMANE_HOST", "127.0.0.1")
 port := env("AMANE_PORT", "8000")
@@ -32,7 +35,7 @@ _web-install:
 fixtures:
     uv run python scripts/fetch_fixtures.py
 
-# CI check job: frozen Python(dev+extras) + frozen web
+# CI static job: frozen Python(dev+extras) + frozen web
 ci-sync: _ci-sync-python _web-install-ci
 
 _ci-sync-python:
@@ -73,12 +76,13 @@ typecheck-ty:
 check-web:
     pnpm check
 
+# worker 数按逻辑核计: `-n auto` 按物理核计, 在超线程机器 (含 GitHub runner, 4 vCPU / 2 物理核) 上只开一半
 test: fixtures
-    uv run pytest tests/ -q -n auto --dist worksteal
+    uv run pytest tests/ -q -n logical --dist worksteal
 
 # Test with coverage (CI artifact)
 test-cov: fixtures
-    uv run pytest tests/ -n auto --dist worksteal --cov=amane --cov-report=term-missing --cov-report=html:coverage_html --cov-report=xml:coverage.xml
+    uv run pytest tests/ -n logical --dist worksteal --durations=20 --cov=amane --cov-report=term-missing --cov-report=html:coverage_html --cov-report=xml:coverage.xml
 
 check: lint typecheck check-web test-cov
 
@@ -86,14 +90,20 @@ check: lint typecheck check-web test-cov
 _check-openapi: generate
     git diff --exit-code --stat web/openapi.json web/src/client
 
-# Full CI gate after tool setup (uv/pnpm/node/just)
-ci: ci-sync _check-openapi check build
+# Full CI gate after tool setup (uv/pnpm/node/just); GitHub Actions 中两者由两个 job 并行执行
+ci: ci-static ci-test
+
+# 前端只打包: check-web 已做完整 tsc 检查, 而 noEmit 下 `tsc -b` 没有可复用的增量结果, 再跑一次是同样的全量检查
+ci-static: ci-sync _check-openapi lint typecheck check-web _web-bundle
+
+# 测试不依赖 Node 与前端产物, CI 的 test job 因此不安装 Node / pnpm
+ci-test: _ci-sync-python test-cov
 
 # Windows CI: 仅 Python 测试. generate / 前端 / lint / typecheck / coverage
 # 与 OS 无关, 由 Ubuntu `just ci` 覆盖. 不获取 crawler fixture (采集用例不依赖盘符).
 ci-windows:
     uv sync --frozen --all-extras --dev
-    uv run pytest tests/ -q -n auto --dist worksteal
+    uv run pytest tests/ -n logical --dist worksteal --durations=20
 
 deps: _deps-python _web-deps
 
@@ -124,6 +134,8 @@ _dev-servers: _dev-uvicorn _dev-web
 _dev-uvicorn:
     uv run uvicorn amane.api.app:create_app --factory --reload --host {{ host }} --port {{ port }}
 
+# 代理目标由 vite.config.ts 从 AMANE_PORT 读出, 因此端口可任意改; 前端代码不读 API 地址.
+[env('AMANE_PORT', port)]
 [working-directory('web')]
 _dev-web:
     pnpm dev
@@ -133,6 +145,10 @@ build: generate _web-build
 [working-directory('web')]
 _web-build:
     pnpm build
+
+[working-directory('web')]
+_web-bundle:
+    pnpm exec vite build
 
 [env('AMANE_HOST', host)]
 [env('AMANE_PORT', port)]
@@ -146,6 +162,10 @@ docs:
 # Rasterize assets/logo.svg → favicon + app.ico + app.icns
 icons:
     uv run python scripts/generate_icons.py
+
+# 同步 MediaWiki 简繁词表; 默认只报告差异, 写入加 --write
+sync-zhcdict:
+    uv run python scripts/sync_zhcdict.py
 
 # macOS-only: sync → web → frontend build → PyInstaller .app
 macos-app: sync build

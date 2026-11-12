@@ -1,8 +1,14 @@
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import type { RescrapeTarget, RoutineType, ScheduleResponse } from "@/client/types.gen";
+import type {
+  EmbeddingKind,
+  RescrapeTarget,
+  RoutineType,
+  ScheduleResponse,
+} from "@/client/types.gen";
 import { assertNever } from "@/lib/exhaustive";
+import { EMBEDDING_KINDS } from "@/lib/exhaustive-maps";
 import classes from "./payload-view.module.css";
 
 type Translate = TFunction<["schedules", "tasks"]>;
@@ -21,6 +27,10 @@ function targetLabel(t: Translate, target: RescrapeTarget): string {
     default:
       return assertNever(target, "RescrapeTarget");
   }
+}
+
+function kindLabels(kinds: readonly EmbeddingKind[], t: Translate): string {
+  return kinds.map((kind) => t(`tasks:submit.semantic_index.kinds.$.options.${kind}`)).join(" / ");
 }
 
 function yesNo(t: Translate, value: boolean): string {
@@ -70,6 +80,24 @@ function summaryParts(payload: SchedulePayload, t: Translate): string[] {
           ? t("tasks:submit.r18_import.force.label")
           : t("schedules:payload.r18_import.skipUnchanged"),
       ];
+    case "semantic_index": {
+      const parts = [
+        payload.force
+          ? t("schedules:payload.semantic_index.force")
+          : t("schedules:payload.semantic_index.skipUnchanged"),
+      ];
+      if (payload.limit != null) {
+        parts.push(
+          t("schedules:payload.semantic_index.limit", { limit: formatNumber(payload.limit) }),
+        );
+      }
+      // 缺省两种都建, 只在收窄到一种时提示.
+      const kinds = payload.kinds ?? [];
+      if (kinds.length === 1) {
+        parts.push(t("schedules:payload.semantic_index.kinds", { kinds: kindLabels(kinds, t) }));
+      }
+      return parts;
+    }
     case "rescrape": {
       const targets = payload.targets ?? ["metadata"];
       const parts: string[] = [];
@@ -132,6 +160,21 @@ function factRows(payload: SchedulePayload, t: Translate): { label: string; valu
         {
           label: t("tasks:submit.r18_import.force.label"),
           value: yesNo(t, payload.force ?? false),
+        },
+      ];
+    case "semantic_index":
+      return [
+        {
+          label: t("tasks:submit.semantic_index.limit.label"),
+          value: payload.limit == null ? t("schedules:payload.unset") : formatNumber(payload.limit),
+        },
+        {
+          label: t("tasks:submit.semantic_index.force.label"),
+          value: yesNo(t, payload.force ?? false),
+        },
+        {
+          label: t("tasks:submit.semantic_index.kinds.label"),
+          value: kindLabels(payload.kinds ?? EMBEDDING_KINDS, t),
         },
       ];
     case "rescrape": {

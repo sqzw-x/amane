@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from starlette.status import HTTP_403_FORBIDDEN
 
 from ..db import Library, MediaFileStatus, Repository
+from ..db.embeddings import EmbeddingKind
 from ..db.models import TaskType
 from ..enums import DownloadableResource
 from ..observability.models import OrganizeConflict, SiteOutcomeRecord
@@ -287,6 +288,49 @@ class UpscaleResult(BaseModel):
     failed: int
 
 
+# --- SEMANTIC_INDEX ---
+
+
+class SemanticIndexPayload(BaseModel):
+    limit: int | None = Field(default=None, ge=1)
+    """单次最多处理的条目数; None 表示全库."""
+    force: bool = False
+    """True 时忽略 (resource_url, content_hash) 未变的跳过判据, 全部重算."""
+    kinds: list[EmbeddingKind] = Field(default_factory=lambda: list(EmbeddingKind), min_length=1)
+    """要建立向量的图片来源."""
+
+
+class SemanticIndexResult(BaseModel):
+    type: Literal[TaskType.SEMANTIC_INDEX] = TaskType.SEMANTIC_INDEX
+    scanned: int
+    indexed: int
+    skipped: int
+    missing: int
+    failed: int
+
+
+class SemanticBenchmarkPayload(BaseModel):
+    """留空: 样本与轮次固定, 由服务决定."""
+
+
+class SemanticBenchmarkResult(BaseModel):
+    type: Literal[TaskType.SEMANTIC_BENCHMARK] = TaskType.SEMANTIC_BENCHMARK
+    backend: str
+    """推理后端展示名."""
+    model: str
+    """模型展示名."""
+    images_per_second: float
+    """端到端编码速度 (解码 + 推理)."""
+    query_ms: float
+    """单次查询的文本编码耗时中位数."""
+    load_ms: float
+    """本次测试冷加载两塔的耗时; 测试前已加载则为 0."""
+    samples: int
+    """参与测量的图片数."""
+    measured_at: str
+    """测量完成的本地时间 (ISO 8601)."""
+
+
 # --- R18 IMPORT ---
 
 
@@ -322,6 +366,38 @@ class ActorScrapeResult(BaseModel):
     image_count: int
     outcomes: list[SiteOutcomeRecord] = Field(default_factory=list)
     """各来源的结果明细; 与记录里的 summary 同源."""
+
+
+# --- ACTOR PUSH ---
+
+
+class ActorPushPayload(BaseModel):
+    actor_ids: list[int] = Field(default_factory=list, description="要推送的演员 ID; 空表示全部演员")
+    force: bool = Field(default=False, description="覆盖媒体服务器上已有的头像与人物字段")
+
+
+class ActorPushResult(BaseModel):
+    type: Literal[TaskType.ACTOR_PUSH] = TaskType.ACTOR_PUSH
+    requested: int
+    """本次选中的演员数; 自带 ID 列表时含不存在的 id."""
+    matched: int
+    """媒体服务器上命中的同名人物条目数; 同一人物按 Id 只计一次."""
+    updated: int
+    """写入了至少一个字段的人物数."""
+    images: int
+    """上传的主图数."""
+    skipped: int
+    """无需写入的人物数; 写入失败只计 ``failed``."""
+    not_found: int
+    """媒体服务器上没有同名人物的演员数."""
+    no_image: int
+    """本地没有可推送头像的演员数."""
+    missing: int
+    """自带 ID 列表中不存在的演员数."""
+    failed: int
+    """失败的人物数; 明细见 ``failures``."""
+    failures: list[str]
+    """失败明细 (演员 / 人物: 原因), 有上限."""
 
 
 # --- RESCRAPE ---

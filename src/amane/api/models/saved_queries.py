@@ -23,8 +23,13 @@ class SavedQueryListResponse(BaseModel):
     items: list[SavedQueryResponse]
 
 
-SavedQueryName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-SavedQueryDescription = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+SAVED_QUERY_NAME_MAX = 200
+SAVED_QUERY_DESCRIPTION_MAX = 2_000
+SAVED_QUERY_IDS_MAX = 1_000
+"""长度与批量上限. 助理工具不经请求模型, 与这里的约束共用同一组常量."""
+
+SavedQueryName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=SAVED_QUERY_NAME_MAX)]
+SavedQueryDescription = Annotated[str, StringConstraints(strip_whitespace=True, max_length=SAVED_QUERY_DESCRIPTION_MAX)]
 SavedQuerySql = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
@@ -67,7 +72,7 @@ class SavedQueryBatchAction(StrEnum):
 class SavedQueryBatchRequest(BaseModel):
     action: SavedQueryBatchAction
     # 单条 IN 查询为每个 id 绑定一个变量, 上限防 SQLite 变量数超限
-    ids: list[int] = Field(min_length=1, max_length=1000, description="查询预设 ID 列表")
+    ids: list[int] = Field(min_length=1, max_length=SAVED_QUERY_IDS_MAX, description="查询预设 ID 列表")
 
 
 class SavedQueryBatchResponse(BaseModel):

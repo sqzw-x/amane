@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import sys
+import time
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from typing import TYPE_CHECKING
 
@@ -17,6 +19,33 @@ if TYPE_CHECKING:
 
 
 MB = 1024 * 1024
+
+
+def _record_timestamp(created: float) -> str:
+    return datetime.fromtimestamp(created, UTC).isoformat().replace("+00:00", "Z")
+
+
+def _timestamp(
+    _logger: logging.Logger, _method_name: str, event_dict: structlog.typing.EventDict
+) -> structlog.typing.EventDict:
+    """stdlib 记录用 LogRecord 的创建时间, 与 WebSocket 事件共用同一来源."""
+    record = event_dict.get("_record")
+    created = record.created if isinstance(record, logging.LogRecord) else time.time()
+    event_dict["timestamp"] = _record_timestamp(created)
+    return event_dict
+
+
+# 共享处理器链 (渲染前注入上下文). app.log / task.log 的 foreign_pre_chain 也复用这份,
+# 否则 stdlib 记录落盘时没有 level / logger / timestamp, 与 WS 事件不同形.
+SHARED_PROCESSORS: tuple[structlog.types.Processor, ...] = (
+    structlog.contextvars.merge_contextvars,
+    structlog.stdlib.add_logger_name,
+    structlog.stdlib.add_log_level,
+    _timestamp,
+    structlog.processors.StackInfoRenderer(),
+    structlog.processors.ExceptionRenderer(),
+    structlog.stdlib.ExtraAdder(),
+)
 
 
 class WSEventLogHandler(logging.Handler):
@@ -77,6 +106,7 @@ class WSEventLogHandler(logging.Handler):
             else:
                 message = record.getMessage()
                 data = {
+                    **structlog.contextvars.get_contextvars(),
                     "level": record.levelname,
                     "source": source,
                     "message": message,
@@ -86,6 +116,9 @@ class WSEventLogHandler(logging.Handler):
                         continue
                     if isinstance(value, (str, int, float, bool, list, dict, type(None))):
                         data[key] = value
+
+            # stdlib 记录没有 structlog 的 TimeStamper, 用 LogRecord 的创建时间补齐.
+            data.setdefault("timestamp", _record_timestamp(record.created))
 
             try:
                 loop = asyncio.get_running_loop()
@@ -103,28 +136,15 @@ def setup_logging(level: str = "INFO", event_bus: EventBus | None = None, log_di
     if root.handlers:
         return
 
-    # 共享处理器链 (渲染前注入上下文)
-    shared_processors: list[structlog.types.Processor] = [
-        structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso", utc=True),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.ExceptionRenderer(),
-    ]
-
     structlog.configure(
         processors=[
-            *shared_processors,
+            *SHARED_PROCESSORS,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
-
-    # foreign_pre_chain: 非 structlog 的 stdlib 记录也注入 contextvars
-    foreign_pre_chain = shared_processors
 
     root.setLevel(level.upper())
 
@@ -133,7 +153,7 @@ def setup_logging(level: str = "INFO", event_bus: EventBus | None = None, log_di
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty()),
         ],
-        foreign_pre_chain=foreign_pre_chain,
+        foreign_pre_chain=SHARED_PROCESSORS,
     )
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(console_formatter)
@@ -147,7 +167,7 @@ def setup_logging(level: str = "INFO", event_bus: EventBus | None = None, log_di
                 structlog.stdlib.ProcessorFormatter.remove_processors_meta,
                 structlog.processors.JSONRenderer(),
             ],
-            foreign_pre_chain=foreign_pre_chain,
+            foreign_pre_chain=SHARED_PROCESSORS,
         )
         file_handler = RotatingFileHandler(
             log_dir / "app.log",
@@ -166,14 +186,14 @@ def setup_logging(level: str = "INFO", event_bus: EventBus | None = None, log_di
                 structlog.stdlib.ProcessorFormatter.remove_processors_meta,
                 structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty()),
             ],
-            foreign_pre_chain=foreign_pre_chain,
+            foreign_pre_chain=SHARED_PROCESSORS,
         )
         req_json_formatter = structlog.stdlib.ProcessorFormatter(
             processors=[
                 structlog.stdlib.ProcessorFormatter.remove_processors_meta,
                 structlog.processors.JSONRenderer(),
             ],
-            foreign_pre_chain=foreign_pre_chain,
+            foreign_pre_chain=SHARED_PROCESSORS,
         )
 
         req_file_handler = RotatingFileHandler(
@@ -197,7 +217,7 @@ def setup_logging(level: str = "INFO", event_bus: EventBus | None = None, log_di
                 structlog.stdlib.ProcessorFormatter.remove_processors_meta,
                 structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty()),
             ],
-            foreign_pre_chain=foreign_pre_chain,
+            foreign_pre_chain=SHARED_PROCESSORS,
         )
         req_stderr_handler = logging.StreamHandler(sys.stderr)
         req_stderr_handler.setFormatter(req_console_formatter)

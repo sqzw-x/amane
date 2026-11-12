@@ -1,0 +1,43 @@
+# 维护者待办: 汇总需要维护者关注的 open issue 与 PR 到一个 issue. 规则见 scripts/maintainer_queue.py.
+name: 维护者待办
+
+on:
+  schedule:
+    # 每 2 小时刷新正文
+    - cron: "5 */2 * * *"
+    # 每天 02:00 UTC (北京时间 10:00) 刷新正文并评论新增条目; 与 NOTIFY 的判断同步
+    - cron: "0 2 * * *"
+  issues:
+    types: [opened, closed, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      notify:
+        description: 通知新增条目 (默认只刷新)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+# 不取消进行中的运行: 通知运行被中途取消会推进状态而不发通知. 排队中的运行被新运行替换时,
+# 刷新运行沿用上次的通知状态, 新增条目顺延到下一次通知.
+concurrency:
+  group: maintainer-queue
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Update maintainer queue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAINTAINERS: sqzw-x
+          # 02:00 UTC 的定时运行带通知; workflow_dispatch 按 input 决定.
+          NOTIFY: ${{ (github.event.schedule == '0 2 * * *') || (inputs.notify == true) }}
+        run: python3 scripts/maintainer_queue.py

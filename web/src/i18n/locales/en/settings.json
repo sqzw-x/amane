@@ -2,6 +2,7 @@
   "title": "Settings",
   "tabs": {
     "scraping": "Movie Scraping",
+    "media_server": "Media server",
     "actor_scraping": "Actor Scraping",
     "agent": "Agent",
     "network": "Network",
@@ -10,7 +11,8 @@
     "logging": "Logging",
     "sr": "Super Resolution",
     "llm": "LLM Translation",
-    "watermark": "Watermark"
+    "watermark": "Watermark",
+    "semantic": "Semantic Search"
   },
   "config": {
     "loadError": "Failed to load configuration"
@@ -51,7 +53,7 @@
       },
       "crop_poster": {
         "label": "Crop Poster",
-        "description": "Auto-crop poster from the cover image"
+        "description": "Auto-crop a poster from the cover image, censored and uncensored only"
       },
       "poster_crop_skip_ratio": {
         "label": "Poster crop skip threshold",
@@ -319,6 +321,7 @@
               "off": "Off",
               "patchright": "Patchright",
               "camoufox": "Camoufox",
+              "bsk": "BrowserSkill",
               "solver": "Solver"
             }
           },
@@ -460,6 +463,28 @@
         }
       }
     },
+    "media_server": {
+      "label": "Media server",
+      "kind": {
+        "label": "Type",
+        "options": {
+          "emby": "Emby",
+          "jellyfin": "Jellyfin"
+        }
+      },
+      "url": {
+        "label": "URL",
+        "description": "Server address including scheme, port and optional subpath"
+      },
+      "api_key": {
+        "label": "API key",
+        "description": "Administrator API key"
+      },
+      "verify_tls": {
+        "label": "Verify certificate",
+        "description": "Verify HTTPS certificates; disable for self-signed"
+      }
+    },
     "network": {
       "proxy": {
         "label": "Proxy",
@@ -479,12 +504,17 @@
       },
       "browser": {
         "label": "Browser Rendering",
+        "bsk_path": {
+          "label": "bsk Path",
+          "description": "BrowserSkill CLI; leave empty to look up PATH; the desktop app needs an absolute path"
+        },
         "backend": {
           "label": "Browser backend",
           "options": {
             "off": "Off",
             "patchright": "Patchright",
             "camoufox": "Camoufox",
+            "bsk": "BrowserSkill",
             "solver": "Solver"
           }
         },
@@ -831,6 +861,10 @@
       "gfriends_repo": {
         "label": "gFriends Repository",
         "description": "gFriends GitHub repository URL"
+      },
+      "auto_push": {
+        "label": "Auto-push",
+        "description": "Push each actor to the media server after a successful scrape"
       }
     },
     "plugins": {
@@ -841,6 +875,12 @@
       "config": {
         "label": "Plugin configuration",
         "description": "Configuration fields provided by the plugin"
+      }
+    },
+    "semantic": {
+      "auto_maintain": {
+        "label": "Auto-maintain",
+        "description": "Recompute an entry's vectors as soon as its images change; keeps the model resident"
       }
     }
   }

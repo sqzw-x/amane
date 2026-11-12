@@ -51,7 +51,7 @@ macOS UI argv (`AmaneUI --base-url http://127.0.0.1:PORT [--token <token>] [--wa
 
 **macOS**: 打开 App → 设置环境 → spawn Python → 等 token 文件 → spawn UI; 第二次打开由 Launch Services 拦截. UI 意外退出或 Python 崩溃 (其它非 0) 时应用进程退避后再次启动, 另一方不受影响. 菜单「重启服务器」→ Python `exit 3` → 立刻再次启动 Python, UI 还在并重新连上. 对 onedir / Amane Force Quit (SIGKILL) 当成崩溃再次启动, 停 App 用菜单或结束应用进程.
 
-**Windows**: 打开 exe 时先抢 Mutex, 已有实例则立刻退出. 菜单「退出」置 stopping、停 Python、卸托盘、结束消息循环; 「重启服务器」同 macOS. Python 崩溃退避后再次启动, 托盘不拆; 任务管理器结束 `Amane.exe` 时 Job Object 结束 Python; explorer.exe 重启后收到 `TaskbarCreated` 再 `NIM_ADD`.
+**Windows**: 打开 exe 时先抢 Mutex, 已有实例则立刻退出. 菜单「退出」置 stopping、停 Python、卸托盘、结束消息循环; 「重启服务器」同 macOS. Python 崩溃退避后再次启动, 托盘不拆; 任务管理器结束 `Amane.exe` 时 Job Object 结束 Python; explorer.exe 重启后收到 `TaskbarCreated` 再 `NIM_ADD`. 该 Job 设 `KILL_ON_JOB_CLOSE | BREAKAWAY_OK`: Python 仍随壳结束, 而 bsk 以 `CREATE_BREAKAWAY_FROM_JOB` 脱离后拉起的 daemon 不随壳结束 — daemon 是跨应用复用的浏览器服务, 不能绑在 Amane 的生命周期上; 停止它用 `bsk daemon stop`.
 
 ## 桌面设置文件
 
@@ -69,8 +69,8 @@ macOS UI argv (`AmaneUI --base-url http://127.0.0.1:PORT [--token <token>] [--wa
 
 ## 打包
 
-macOS: `scripts/build_macos_app.sh` (`just macos-app`), 需要 Swift 工具链 — PyInstaller 打成 onedir 后再组装 `.app`, `AmaneUI` 包成 `Contents/Resources/AmaneUI.app`, Info.plist 补 `LSUIElement` / `LSMultipleInstancesProhibited` / `CFBundleIconFile`. Windows: `scripts/build_windows_app.ps1` (`just windows-app`), **必须在 Windows 上运行** (PyInstaller 与 Native AOT 都不能从 macOS 交叉), 需要 .NET 8 SDK + 能链 Native AOT 的 MSVC.
+macOS: `scripts/build_macos_app.sh` (`just macos-app`), 需要 Swift 工具链 — PyInstaller 打成 onedir 后再组装 `.app`, `AmaneUI` 包成 `Contents/Resources/AmaneUI.app`, Info.plist 补 `LSUIElement` / `LSMultipleInstancesProhibited` / `CFBundleIconFile`. 打包对解释器与依赖的来源有硬要求: 系统 Python 及其 wheel 变体、源码构建都以打包机的 macOS 为部署目标, 产物只能在同版本及以上的系统启动. 解释器固定为 uv 托管版本 (`[tool.uv]` 的 `python-preference`), 依赖由 `scripts/build_macos_app.sh` 按 `MACOSX_DEPLOYMENT_TARGET` 与 `--python-platform` 重装; 用系统解释器建过的 `.venv` 需删除重建. Windows: `scripts/build_windows_app.ps1` (`just windows-app`), **必须在 Windows 上运行** (PyInstaller 与 Native AOT 都不能从 macOS 交叉), 需要 .NET 8 SDK + 能链 Native AOT 的 MSVC.
 
-两边 PyInstaller 都要打进 `amane/db/migrations` 与 `amane/media/watermarks`, 并按平台收集整个标准库 (见 `scripts/stdlib_modules.py`). **插件是运行时从数据目录动态加载的**, PyInstaller 的静态导入图看不见它们引用什么; 只收标准库之外的部分会让插件在桌面版报 `ModuleNotFoundError`. 简繁转换依赖 `zhconv` 的数据文件 `zhcdict.json`, 该文件同样不在静态导入图内, 两个打包脚本都必须收集 (`--collect-data zhconv`); 桌面包缺失该文件时简繁转换失败.
+两边 PyInstaller 都要打进 `amane/db/migrations` 与 `amane/media/watermarks`, 并按平台收集整个标准库 (见 `scripts/stdlib_modules.py`). **插件是运行时从数据目录动态加载的**, PyInstaller 的静态导入图看不见它们引用什么; 只收标准库之外的部分会让插件在桌面版报 `ModuleNotFoundError`. 简繁转换的内置词表 `amane/utils/zhcdict.json` 同样不在静态导入图内, 两个打包脚本都必须用 `--add-data` 收集; 桌面包缺失该文件时简繁转换失败.
 
 开发回路: `just dev` 起服务, 壳侧用开发专用键指向未打包的 UI — macOS `AMANE_UI_BINARY`, Windows `AMANE_UI_ONLY=1` (只开托盘、不启动 Python). Android 端不监督本机服务, 见 [android.md](android.md).

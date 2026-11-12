@@ -255,6 +255,58 @@ class TestGetByUrlHash:
     async def test_missing_hash_returns_none(self, resource_store: ResourceStore):
         assert await resource_store.get_by_url_hash("deadbeefdeadbeef") is None
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "url_hash",
+        [
+            "",
+            "%",
+            "*",
+            "?",
+            "..",
+            "ab%",
+            "ab_",
+            "DEADBEEFDEADBEEF",
+            "deadbeefdeadbee",
+            "deadbeefdeadbeef0",
+            "deadbeefdeadbeeg",
+        ],
+        ids=[
+            "empty",
+            "like-wildcard",
+            "glob-star",
+            "glob-question",
+            "parent",
+            "shard-like",
+            "shard-underscore",
+            "uppercase",
+            "short",
+            "long",
+            "non-hex",
+        ],
+    )
+    async def test_malformed_hash_returns_none(self, resource_store: ResourceStore, url_hash: str):
+        """形状不符一律当不存在: GLOB 的 `*` / `?` / `[` 与大小写都会让匹配越出该 hash 的分片."""
+        assert await resource_store.get_by_url_hash(url_hash) is None
+
+    @pytest.mark.asyncio
+    async def test_wildcard_does_not_reach_existing_record(self, resource_store: ResourceStore):
+        """库里有可命中的资源时, 通配输入也不能靠前缀把它取出来."""
+
+        async def producer(dest: Path) -> bool:
+            dest.write_bytes(b"img")
+            return True
+
+        res = await resource_store.acquire_derived("https://s/t.jpg", "crop", "0.7", producer)
+        assert res is not None
+        h = ResourceStore.url_hash(res.url)
+
+        for probe in ("%", "*", f"{h[:2]}%", f"{h[:2]}*", f"{h[:-1]}*"):
+            assert await resource_store.get_by_url_hash(probe) is None, probe
+
+        found = await resource_store.get_by_url_hash(h)
+        assert found is not None and found[0].url == res.url
+
 
 class TestInternalUrl:
     @pytest.mark.parametrize(
@@ -401,6 +453,81 @@ async def test_acquire_forwards_egress_policy(
     assert kwargs["max_bytes"] == 1024
 
 
+@pytest.mark.asyncio
+async def test_acquire_records_content_type(
+    resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """入库按内容写 MIME: 无后缀 URL 的图片不再记成通用二进制."""
+    url = "https://img.example.com/actor/12345"
+    client = AsyncMock()
+    client.resolve_final_url = AsyncMock(return_value=url)
+
+    async def download(_url: str, dest: Path, **_kwargs: object) -> bool:
+        dest.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+        return True
+
+    client.download = AsyncMock(side_effect=download)
+    monkeypatch.setattr(resource_store, "_compute_path", lambda url: tmp_path / "resources" / "resource.bin")
+
+    assert await resource_store.acquire(url, client) is not None
+    record = await resource_store.get_by_url(url)
+    assert record is not None
+    assert record.mime_type == "image/png"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content", "image_only", "stored"),
+    [
+        (b"<html>challenge</html>", True, False),
+        (b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00", True, False),  # 能识别, 但不是图片
+        (b"", True, False),
+        (b"\x89PNG\r\n\x1a\n" + b"\x00" * 8, True, True),
+        (b"<html>challenge</html>", False, True),  # 缺省不限制内容类型 (刮削下载)
+    ],
+)
+async def test_acquire_image_only(
+    resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch, content: bytes, image_only: bool, stored: bool
+):
+    """``image_only`` 下非图片内容不写入记录、不保留文件; 缺省时照常写入."""
+    client, _ = _stub_client(monkeypatch, final_url=_REQUEST, content=content)
+    dest = resource_store._compute_path(_REQUEST)
+
+    path = await resource_store.acquire(_REQUEST, client, image_only=image_only)
+
+    assert (path is not None) is stored
+    assert (await resource_store.get_by_url(_REQUEST) is not None) is stored
+    assert dest.exists() is stored
+    assert _siblings(dest) == []
+
+
+@pytest.mark.asyncio
+async def test_derived_mime_follows_content(resource_store: ResourceStore):
+    """派生资源同样按内容写类型; 盘上字节被换掉后重跑并覆盖记录."""
+    url = "https://s/derived.jpg"
+
+    async def png(dest: Path) -> bool:
+        dest.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return True
+
+    first = await resource_store.acquire_derived(url, "crop", "0.7", png)
+    assert first is not None
+    assert first.mime_type == "image/png"
+
+    # 盘上字节不再是记录所指的那份, 下一次调用必须重跑 producer.
+    resource_store.full_path(first).write_bytes(b"stale")
+
+    async def jpeg(dest: Path) -> bool:
+        dest.write_bytes(b"\xff\xd8\xff\xe0")
+        return True
+
+    second = await resource_store.acquire_derived(url, "crop", "0.7", jpeg)
+    assert second is not None
+    saved = await resource_store.get_by_url(first.url)
+    assert saved is not None
+    assert saved.mime_type == "image/jpeg"
+
+
 _REQUEST = "https://pics.dmm.co.jp/digital/video/mide00030/mide00030pl.jpg"
 _PLACEHOLDER = "https://pics.dmm.com/mono/movie/n/now_printing/now_printing.jpg"
 
@@ -411,6 +538,7 @@ class TestPlaceholderRedirect:
         [
             (_PLACEHOLDER, True),
             ("https://imgsrc.dmm.com/pics/mono/movie/n/now_printing/now_printing.jpg?h=800&w=800", True),
+            ("https://cdn.up-timely.com/noimage.png", True),
             (_REQUEST, False),
             # 只匹配路径, 查询串里的同名字样不算
             ("https://pics.dmm.com/redirect?to=/now_printing/now_printing.jpg", False),

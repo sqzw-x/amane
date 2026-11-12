@@ -53,9 +53,18 @@
     "payload": "Payload",
     "result": "Result",
     "liveLogs": "Live Logs",
-    "progress": "Progress"
+    "progress": "Progress",
+    "logs": "Task Logs"
   },
   "empty": "No tasks",
+  "listLoadFailed": "Failed to load tasks",
+  "benchmark": {
+    "imagesPerSecond": "Image embedding {{value}} images/s",
+    "queryMs": "Single query {{value}} ms",
+    "samples": "{{count}} samples",
+    "samples_one": "benchmark.samples",
+    "samples_other": "benchmark.samples"
+  },
   "filters": {
     "all": "All",
     "queued": "Queued",
@@ -71,13 +80,19 @@
     "actor_scrape": "Actor Scrape",
     "rescrape": "Rescrape",
     "scan_invalid": "Scan unwanted",
-    "delete": "Delete"
+    "delete": "Delete",
+    "semantic_index": "Semantic index",
+    "semantic_benchmark": "Benchmark",
+    "actor_push": "Push actors"
   },
   "loadMoreChildren": "Load more ({{count}})",
   "loadMoreChildren_one": "Load more ({{count}})",
   "loadMoreChildren_other": "Load more ({{count}})",
   "logView": {
-    "empty": "No logs"
+    "empty": "No logs",
+    "loading": "Loading logs",
+    "loadFailed": "Failed to load logs",
+    "truncated": "Log is long; only the latest entries are shown"
   },
   "reason": {
     "http_error": "Request rejected by the site",
@@ -141,7 +156,25 @@
     },
     "detailTruncated": "Truncated",
     "loadFailed": "Failed to load details",
-    "noResultHint": "No result payload for this task; the task record keeps the full detail"
+    "noResultHint": "No result payload for this task; the task record keeps the full detail",
+    "semanticIndexed": "{{value}} indexed",
+    "semanticSkipped": "{{value}} skipped",
+    "semanticMissing": "{{value}} without images",
+    "semanticFailed": "{{value}} failed",
+    "semanticIndexed_one": "result.semanticIndexed",
+    "semanticIndexed_other": "result.semanticIndexed",
+    "semanticSkipped_one": "result.semanticSkipped",
+    "semanticSkipped_other": "result.semanticSkipped",
+    "semanticFailed_one": "result.semanticFailed",
+    "semanticFailed_other": "result.semanticFailed",
+    "actorPushMatched": "Matched {{value}}",
+    "actorPushUpdated": "Updated {{value}}",
+    "actorPushImages": "Images {{value}}",
+    "actorPushSkipped": "Skipped {{value}}",
+    "actorPushNotFound": "Not found {{value}}",
+    "actorPushNoImage": "No image {{value}}",
+    "actorPushMissing": "Missing actors {{value}}",
+    "actorPushFailed": "Failed {{value}}"
   },
   "status": {
     "queued": "Queued",
@@ -162,7 +195,10 @@
       "actor_scrape": "Actor Scrape",
       "rescrape": "Rescrape",
       "scan_invalid": "Scan unwanted",
-      "delete": "Delete"
+      "delete": "Delete",
+      "semantic_index": "Semantic index",
+      "semantic_benchmark": "Benchmark",
+      "actor_push": "Push actors"
     },
     "cleanup": {
       "remove_missing_files": {
@@ -387,6 +423,35 @@
       "prune_empty_dirs": {
         "label": "Prune emptied directories",
         "description": "Library root and .amane_trash excluded"
+      }
+    },
+    "semantic_index": {
+      "limit": {
+        "label": "Limit",
+        "description": "Maximum entries per run; empty means the whole library"
+      },
+      "force": {
+        "label": "Force",
+        "description": "Ignore the unchanged skip check and re-encode everything"
+      },
+      "kinds": {
+        "label": "Sources",
+        "$": {
+          "options": {
+            "cover": "Covers",
+            "still": "Stills"
+          }
+        }
+      }
+    },
+    "actor_push": {
+      "actor_ids": {
+        "label": "Actor IDs",
+        "description": "Leave empty for all actors"
+      },
+      "force": {
+        "label": "Force overwrite",
+        "description": "Overwrite existing images and person fields on the media server"
       }
     }
   },

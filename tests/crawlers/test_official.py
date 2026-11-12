@@ -17,6 +17,7 @@ from amane.crawlers.sites.official import (
     Manufacturer,
     OfficialCrawler,
     _extract_series_prefix,
+    _poster_urls,
 )
 
 
@@ -253,3 +254,25 @@ async def test_series_beats_studio_when_both_match(crawler):
     partial = AggregatedMetadata(number="MIDV-001", studio="S1 NO.1 STYLE")
     url = await crawler._search(SearchQuery("MIDV-001", partial_result=partial))
     assert "moodyz.com" in url  # series match wins
+
+
+# ------------------------------------------------------------------
+# 图片: 竖版海报推导
+# ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("thumb_url", "expected"),
+    [
+        (
+            "https://cdn.up-timely.com/image/2/content/8903/sivr067-pl.jpg",
+            ["https://cdn.up-timely.com/image/2/content/8903/sivr067-ps.jpg"],
+        ),
+        # 新目录是哈希文件名, 没有可推导的竖版地址
+        ("https://cdn.up-timely.com/image/2/content/72658/jYYpm41QBnuyDREA7Mnf8yIc0T3PAwmRSHA1welb.jpg", []),
+        ("https://cdn.up-timely.com/image/2/content/8903/sivr067-ps.jpg", []),
+        (None, []),
+    ],
+)
+def test_poster_urls(thumb_url: str | None, expected: list[str]):
+    assert _poster_urls(thumb_url) == expected

@@ -8,10 +8,11 @@ import pytest
 import sqlalchemy.exc
 from PIL import Image
 
-from amane.config import HotSettings, SrConfig
+from amane.config import HotSettings, ScrapingConfig, SrConfig
 from amane.enums import DownloadableResource
 from amane.media import CropRotation, ResourceStore, manual_crop_image, materialize_images
 from amane.media import pipeline as pipeline_mod
+from amane.parsing import ContentType
 from tests.helpers import LOAD_TOLERANT_TIMEOUT, await_for
 
 if TYPE_CHECKING:
@@ -71,7 +72,14 @@ async def test_poster_cropped_when_candidate_small(resource_store: ResourceStore
     )
     cfg = HotSettings()  # sr.enabled 默认 False; poster_ratio 默认 0.7
     out = await materialize_images(
-        ["https://s/p.jpg"], ["https://s/t.jpg"], [], resource_store, cast("WebClient", client), cfg, tmp_path
+        ["https://s/p.jpg"],
+        ["https://s/t.jpg"],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        cfg,
+        tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert out.thumb_urls == ["https://s/t.jpg"]  # 外部列表原样
     assert len(out.poster_urls) == 1
@@ -97,7 +105,14 @@ async def test_poster_external_when_candidate_tall(resource_store: ResourceStore
         }
     )
     out = await materialize_images(
-        ["https://s/p.jpg"], ["https://s/t.jpg"], [], resource_store, cast("WebClient", client), HotSettings(), tmp_path
+        ["https://s/p.jpg"],
+        ["https://s/t.jpg"],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        HotSettings(),
+        tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert out.poster_urls == ["https://s/p.jpg"]  # 外部列表原样
 
@@ -107,10 +122,56 @@ async def test_no_poster_source_crops_from_thumb(resource_store: ResourceStore, 
     """无 poster 候选 → 从 thumb 裁剪 (内部 URL)."""
     client = FakeClient({"https://s/t.jpg": (800, 538)})
     out = await materialize_images(
-        [], ["https://s/t.jpg"], [], resource_store, cast("WebClient", client), HotSettings(), tmp_path
+        [],
+        ["https://s/t.jpg"],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        HotSettings(),
+        tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert len(out.poster_urls) == 1
     assert out.poster_urls[0].startswith(pipeline_mod.RESOURCE_URL_PREFIX)
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expect_crop", "desc"),
+    [
+        (ContentType.CENSORED, True, "有码"),
+        (ContentType.UNCENSORED, True, "无码"),
+        (ContentType.WESTERN, False, "欧美"),
+        (ContentType.FC2, False, "FC2"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_poster_crop_gated_by_content_type(
+    resource_store: ResourceStore,
+    tmp_path: Path,
+    content_type: ContentType,
+    expect_crop: bool,
+    desc: str,
+):
+    """只对允许的类型裁切; 不允许时也不为裁切临时下载 thumb."""
+    cfg = HotSettings(scraping=ScrapingConfig(download_resources=[DownloadableResource.poster]))
+    client = FakeClient({"https://s/t.jpg": (800, 538)})
+    out = await materialize_images(
+        [],
+        ["https://s/t.jpg"],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        cfg,
+        tmp_path,
+        content_type=content_type,
+    )
+    if expect_crop:
+        assert len(out.poster_urls) == 1, desc
+        assert out.poster_urls[0].startswith(pipeline_mod.RESOURCE_URL_PREFIX), desc
+        assert "https://s/t.jpg" in client.downloaded, desc
+    else:
+        assert out.poster_urls == [], desc
+        assert "https://s/t.jpg" not in client.downloaded, desc
 
 
 @pytest.mark.asyncio
@@ -126,6 +187,7 @@ async def test_trailer_downloaded_external_url(resource_store: ResourceStore, tm
         cast("WebClient", client),
         settings,
         tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert out.trailer_urls == ["https://s/trailer.mp4"]
     assert "https://s/trailer.mp4" in client.downloaded  # 已下载到本地
@@ -134,7 +196,14 @@ async def test_trailer_downloaded_external_url(resource_store: ResourceStore, tm
 @pytest.mark.asyncio
 async def test_empty_sources(resource_store: ResourceStore, tmp_path: Path):
     out = await materialize_images(
-        [], [], [], resource_store, cast("WebClient", FakeClient({})), HotSettings(), tmp_path
+        [],
+        [],
+        [],
+        resource_store,
+        cast("WebClient", FakeClient({})),
+        HotSettings(),
+        tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert out.poster_urls == []
     assert out.thumb_urls == []
@@ -156,7 +225,14 @@ async def test_eager_sr_overwrites(resource_store: ResourceStore, tmp_path: Path
     cfg = HotSettings()
     cfg.sr.enabled = True
     out = await materialize_images(
-        [], ["https://s/t.jpg"], [], resource_store, cast("WebClient", client), cfg, tmp_path
+        [],
+        ["https://s/t.jpg"],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        cfg,
+        tmp_path,
+        content_type=ContentType.CENSORED,
     )
 
     thumb_res = await resource_store.get_by_url("https://s/t.jpg")
@@ -225,7 +301,14 @@ async def test_concurrent_materialize_keeps_sr_result(
         # 重复下载的落库被 url UNIQUE 拒绝: 文件已覆盖, 记录没写成 — 正是本用例要暴露的路径.
         with contextlib.suppress(sqlalchemy.exc.IntegrityError):
             await materialize_images(
-                [], ["https://s/t.jpg"], [], resource_store, cast("WebClient", client), cfg, tmp_path
+                [],
+                ["https://s/t.jpg"],
+                [],
+                resource_store,
+                cast("WebClient", client),
+                cfg,
+                tmp_path,
+                content_type=ContentType.CENSORED,
             )
 
     async def first_download_started() -> bool:
@@ -278,6 +361,7 @@ async def test_download_resources_gates_acquire(resource_store: ResourceStore, t
         cast("WebClient", client),
         cfg,
         tmp_path,
+        content_type=ContentType.CENSORED,
         extrafanart_urls={"javdb": ["https://s/e1.jpg"]},
     )
     assert await resource_store.get_by_url("https://s/t.jpg") is not None
@@ -288,18 +372,23 @@ async def test_download_resources_gates_acquire(resource_store: ResourceStore, t
     assert "https://s/trailer.mp4" not in client.downloaded
 
 
-def test_success_first_partition():
-    """稳定分区: 成功保序前置, 失败保序排到末尾; 空成功集幂等."""
-    cases = [
-        (["d1", "l1", "d2", "l2"], {"l1", "l2"}, ["l1", "l2", "d1", "d2"]),
-        (["a", "b"], {"a", "b"}, ["a", "b"]),  # 全成功
-        (["a", "b"], set(), ["a", "b"]),  # 全失败
-        (["a", "b", "c"], {"c"}, ["c", "a", "b"]),  # 尾部成功提至首位
-        (["a", "b", "c"], {"b"}, ["b", "a", "c"]),  # 中部成功前置
-        ([], set(), []),
-    ]
-    for urls, ok, expected in cases:
-        assert pipeline_mod._success_first(urls, ok) == expected
+@pytest.mark.asyncio
+async def test_redundant_candidate_not_downloaded(resource_store: ResourceStore, tmp_path: Path):
+    """首选候选成功即停: 同一张图的后续地址不下载, 只在元数据里留作回退."""
+    client = FakeClient(sizes={"https://s/hi.jpg": (800, 538), "https://s/std.jpg": (800, 538)})
+    out = await materialize_images(
+        ["https://s/hi.jpg", "https://s/std.jpg"],
+        [],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        HotSettings(),
+        tmp_path,
+        content_type=ContentType.CENSORED,
+    )
+    assert out.poster_urls == ["https://s/hi.jpg", "https://s/std.jpg"]
+    assert client.downloaded == ["https://s/hi.jpg"]
+    assert await resource_store.get_by_url("https://s/std.jpg") is None
 
 
 @pytest.mark.asyncio
@@ -314,6 +403,7 @@ async def test_poster_reordered_when_first_url_dead(resource_store: ResourceStor
         cast("WebClient", client),
         HotSettings(),
         tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert out.poster_urls == ["https://s/live.jpg", "https://s/dead.jpg"]
     assert "https://s/dead.jpg" in client.downloaded  # 死 URL 仍尝试下载
@@ -333,6 +423,7 @@ async def test_thumb_trailer_reordered_when_first_dead(resource_store: ResourceS
         cast("WebClient", client),
         settings,
         tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert out.thumb_urls == ["https://s/live.jpg", "https://s/dead.jpg"]
     assert out.trailer_urls == ["https://s/trailer.mp4", "https://s/dead.mp4"]
@@ -473,6 +564,7 @@ async def test_all_urls_fail_keeps_order(resource_store: ResourceStore, tmp_path
         cast("WebClient", client),
         HotSettings(),
         tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert out.poster_urls == ["https://s/a.jpg", "https://s/b.jpg"]
 
@@ -492,6 +584,7 @@ async def test_unselected_kind_not_reordered(resource_store: ResourceStore, tmp_
         cast("WebClient", client),
         cfg,
         tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert out.poster_urls == ["https://s/p1.jpg", "https://s/p2.jpg"]
 
@@ -511,6 +604,7 @@ async def test_cache_hit_counts_as_success(resource_store: ResourceStore, tmp_pa
         cast("WebClient", client),
         HotSettings(),
         tmp_path,
+        content_type=ContentType.CENSORED,
     )
     assert out.poster_urls == ["https://s/live.jpg", "https://s/dead.jpg"]
     assert "https://s/live.jpg" not in client.downloaded  # 缓存命中, 无网络请求

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 
 from ..db.models import FacetKind, TaskType
 from ..db.repo_types import ActorPersonFields, WriteMode
+from ..enums import ActorField
 from ..handlers.models import ActorScrapePayload, CacheKind
 from ..utils.dates import normalize_calendar_date
 from .tools import TOOL_OK, AgentDeps, unknown_field_error
@@ -147,6 +148,41 @@ def build_actor_ops_capability() -> Capability[AgentDeps]:
         if actor is None:
             return {"error": f"actor {actor_id} 不存在"}
         return TOOL_OK
+
+    @cap.tool
+    async def set_actor_locks(
+        ctx: RunContext[AgentDeps], actor_id: int, fields: list[ActorField]
+    ) -> str | dict[str, Any]:
+        """Replace the whole lock set; an empty list unlocks every field.
+
+        Profile rescrape skips locked fields, and update_actor locks what it writes — unlock
+        here before a rescrape can overwrite those fields.
+        """
+        if await ctx.deps.repo.set_actor_locks(actor_id, fields) is None:
+            return {"error": f"actor {actor_id} 不存在"}
+        return TOOL_OK
+
+    @cap.tool
+    async def batch_actor_user_tags(
+        ctx: RunContext[AgentDeps],
+        actor_ids: list[int],
+        user_tag_ids: list[int],
+        action: Literal["attach", "detach"] = "attach",
+    ) -> str | dict[str, Any]:
+        """Apply user tags to actor rows: attach = union, detach = remove; both idempotent.
+
+        Counts are per actor row (changed / unchanged / missing). Unknown ids → error; get ids
+        from ensure_user_tags, which also creates new tags.
+        """
+        if not actor_ids:
+            return {"error": "actor_ids 为空"}
+        if not user_tag_ids:
+            return {"error": "user_tag_ids 为空"}
+        try:
+            result = await ctx.deps.repo.apply_actor_user_tags(actor_ids, user_tag_ids, action=action)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {"changed": result.changed, "unchanged": result.unchanged, "missing": result.missing}
 
     @cap.tool
     async def enqueue_actor_scrape(

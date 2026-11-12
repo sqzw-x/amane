@@ -15,7 +15,7 @@ from ..library import (
     SubtitleExtensions,
     TrailerPattern,
 )
-from ..organize.path_templates import VIDEO_TEMPLATE_DEFAULT, PathTemplate
+from ..organize.path_templates import VIDEO_TEMPLATE_DEFAULT, ExtrafanartNameTemplate, PathTemplate
 from ..organize.strm_content import StrmContentTemplate
 from ..parsing import VR_TAGS, ContentType, Mosaic, is_vr
 
@@ -42,6 +42,9 @@ class TaskType(StrEnum):
     RESCRAPE = "rescrape"
     SCAN_INVALID = "scan_invalid"
     DELETE = "delete"
+    SEMANTIC_INDEX = "semantic_index"
+    SEMANTIC_BENCHMARK = "semantic_benchmark"
+    ACTOR_PUSH = "actor_push"
 
 
 class RoutineType(StrEnum):
@@ -49,6 +52,7 @@ class RoutineType(StrEnum):
     UPSCALE = "upscale"
     R18_IMPORT = "r18_import"
     RESCRAPE = "rescrape"
+    SEMANTIC_INDEX = "semantic_index"
 
 
 class TaskStatus(StrEnum):
@@ -240,8 +244,13 @@ class _VrProperty(property):
 
 class Metadata(SQLModel, table=True):
     __tablename__ = "metadata"  # type: ignore[assignment]
-    # number 唯一性大小写不敏感 (COLLATE NOCASE); 存库保留首次写入的原始大小写.
-    __table_args__ = (Index("ix_metadata_number", text("number COLLATE NOCASE"), unique=True),)
+    __table_args__ = (
+        # number 唯一性大小写不敏感 (COLLATE NOCASE); 存库保留首次写入的原始大小写.
+        Index("ix_metadata_number", text("number COLLATE NOCASE"), unique=True),
+        # 列表默认排序 ORDER BY updated_at DESC, id ASC; 方向写进索引定义才不必临时排序:
+        # 反向扫描升序索引得到的是 updated_at DESC, id DESC, 兜底列方向相反.
+        Index("ix_metadata_updated_at_id", text("updated_at DESC"), "id"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     number: str = Field(nullable=False)
@@ -396,6 +405,8 @@ class Library(SQLModel, table=True):
     poster_template: PathTemplate | None = None
     fanart_template: PathTemplate | None = None
     extrafanart_template: PathTemplate | None = None
+    extrafanart_name_template: ExtrafanartNameTemplate | None = None
+    """剧照文件名模板; 空则 `{index}.jpg`. 只能是文件名, 必须含 `{index}` 或 `{index_padded}`."""
     nfo_template: PathTemplate | None = None
     trailer_template: PathTemplate | None = None
     subtitle_template: PathTemplate | None = None
@@ -472,6 +483,9 @@ class FeedItem(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("feed_id", "item_key", name="uq_feed_items_feed_id_item_key"),
         Index("ix_feed_items_list_order", text("coalesce(published_at, created_at)"), "id"),
+        # 默认视图同时带 ignored_at IS NULL, 过滤列进前缀才能一并满足筛选与排序;
+        # state=all 不带该过滤, 仍走 ix_feed_items_list_order.
+        Index("ix_feed_items_state_list_order", "ignored_at", text("coalesce(published_at, created_at)"), "id"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -499,12 +513,13 @@ class Resource(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     url: str = Field(unique=True, nullable=False, index=True)
-    file_path: str = Field(nullable=False)
-    """相对 resources 目录的两级散列路径."""
+    file_path: str = Field(nullable=False, index=True)
+    """相对 resources 目录的两级散列路径; 按 hash 前缀定位时依赖其索引."""
     content_hash: str | None = None
     """文件 SHA-256; 就地超分后必须更新."""
     size: int | None = None
     mime_type: str | None = None
+    """入库与就地超分后按内容判定; ``NULL`` 与 ``application/octet-stream`` 表示类型未定."""
     meta: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     """派生/处理追溯. 裁剪: {'op':'crop','src':源url,'args':str};
     任意资源被超分后追加 {'sr': {tool,model,scale}}. 原始未处理图为 {}."""
@@ -650,6 +665,8 @@ class FacetRule(SQLModel, table=True):
 
 class MetadataActor(SQLModel, table=True):
     __tablename__ = "metadata_actors"  # type: ignore[assignment]
+    # 主键 (metadata_id, X) 只能从条目侧定位; 反向索引供按 X 筛选、计数与删 X 时的外键检查.
+    __table_args__ = (Index("ix_metadata_actors_actor_id", "actor_id", "metadata_id"),)
 
     metadata_id: int = Field(foreign_key="metadata.id", primary_key=True, ondelete="CASCADE")
     actor_id: int = Field(foreign_key="actors.id", primary_key=True)
@@ -658,6 +675,7 @@ class MetadataActor(SQLModel, table=True):
 
 class MetadataDirector(SQLModel, table=True):
     __tablename__ = "metadata_directors"  # type: ignore[assignment]
+    __table_args__ = (Index("ix_metadata_directors_director_id", "director_id", "metadata_id"),)
 
     metadata_id: int = Field(foreign_key="metadata.id", primary_key=True, ondelete="CASCADE")
     director_id: int = Field(foreign_key="directors.id", primary_key=True)
@@ -666,6 +684,7 @@ class MetadataDirector(SQLModel, table=True):
 
 class MetadataTag(SQLModel, table=True):
     __tablename__ = "metadata_tags"  # type: ignore[assignment]
+    __table_args__ = (Index("ix_metadata_tags_tag_id", "tag_id", "metadata_id"),)
 
     metadata_id: int = Field(foreign_key="metadata.id", primary_key=True, ondelete="CASCADE")
     tag_id: int = Field(foreign_key="tags.id", primary_key=True)
@@ -688,6 +707,7 @@ class UserTag(SQLModel, table=True):
 
 class MetadataUserTag(SQLModel, table=True):
     __tablename__ = "metadata_user_tags"  # type: ignore[assignment]
+    __table_args__ = (Index("ix_metadata_user_tags_user_tag_id", "user_tag_id", "metadata_id"),)
 
     metadata_id: int = Field(foreign_key="metadata.id", primary_key=True, ondelete="CASCADE")
     user_tag_id: int = Field(foreign_key="user_tags.id", primary_key=True, ondelete="CASCADE")
@@ -697,6 +717,7 @@ class ActorUserTag(SQLModel, table=True):
     """演员与用户标签的挂载关系; 与 ``MetadataUserTag`` 同形, 不保序."""
 
     __tablename__ = "actor_user_tags"  # type: ignore[assignment]
+    __table_args__ = (Index("ix_actor_user_tags_user_tag_id", "user_tag_id", "actor_id"),)
 
     actor_id: int = Field(foreign_key="actors.id", primary_key=True, ondelete="CASCADE")
     user_tag_id: int = Field(foreign_key="user_tags.id", primary_key=True, ondelete="CASCADE")

@@ -11,6 +11,7 @@ import type {
   CacheKind,
   ContentType,
   DownloadableResource,
+  EmbeddingKind,
   FacetKind,
   FacetSortField,
   FeedItemReadState,
@@ -40,8 +41,8 @@ export type TaskPayload = SubmitTaskData["body"];
 
 export type SubmittableTaskType = TaskPayload["type"];
 
-/** 面板专用类型: 只能由清理面板连同清单标识提交, 不出现在手动提交入口. */
-export type PanelOnlyTaskType = "delete";
+/** 面板专用类型: 由页内面板发起, 不出现在手动提交入口. */
+export type PanelOnlyTaskType = "delete" | "semantic_benchmark";
 
 export type ManualTaskType = Exclude<SubmittableTaskType, PanelOnlyTaskType>;
 
@@ -77,8 +78,14 @@ export const MOSAICS = exhaustiveTuple<Mosaic>()("uncensored", "cracked", "leake
 
 /** 顺序即优先级 (高→低). 与后端 DEFINITION_VALUES 对齐. */
 export const FILE_DEFINITIONS = exhaustiveTuple<
-  "8K" | "4K" | "1440p" | "1080p" | "720p" | "480p" | "HD" | "SD"
->()("8K", "4K", "1440p", "1080p", "720p", "480p", "HD", "SD");
+  "8K" | "4K" | "1440p" | "1080p" | "720p" | "480p"
+>()("8K", "4K", "1440p", "1080p", "720p", "480p");
+
+/** 合并前的档位名 → 现档位; 与后端筛选别名一致, 大小写不敏感. */
+export const LEGACY_FILE_DEFINITIONS: Record<string, (typeof FILE_DEFINITIONS)[number]> = {
+  sd: "480p",
+  hd: "720p",
+};
 
 export const TASK_STATUSES = exhaustiveTuple<TaskStatus>()("queued", "running", "done", "failed");
 
@@ -93,6 +100,9 @@ export const TASK_TYPES = exhaustiveTuple<TaskType>()(
   "rescrape",
   "scan_invalid",
   "delete",
+  "semantic_index",
+  "semantic_benchmark",
+  "actor_push",
 );
 
 export const DOWNLOADABLE_RESOURCES = exhaustiveTuple<DownloadableResource>()(
@@ -129,6 +139,7 @@ export const ROUTINE_TYPES = exhaustiveTuple<RoutineType>()(
   "upscale",
   "r18_import",
   "rescrape",
+  "semantic_index",
 );
 
 export const FACET_KINDS = exhaustiveTuple<FacetKind>()(
@@ -187,12 +198,17 @@ export const MANUAL_TASK_TYPES = exhaustiveTuple<ManualTaskType>()(
   "r18_import",
   "actor_scrape",
   "rescrape",
+  "semantic_index",
+  "actor_push",
 );
 
 /** 刮削站点结果分组顺序. */
 export const SITE_OUTCOME_KINDS = exhaustiveTuple<SiteOutcomeKind>()("ok", "cache_hit", "failed");
 
 export const SORT_ORDERS = exhaustiveTuple<SortOrder>()("asc", "desc");
+
+/** 语义检索的图片来源筛选; 顺序即分段控件顺序. */
+export const EMBEDDING_KINDS = exhaustiveTuple<EmbeddingKind>()("cover", "still");
 
 export const METADATA_SORT_FIELDS = exhaustiveTuple<MetadataSortField>()(
   "number",

@@ -30,6 +30,9 @@ jobs:
         uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
+          # 本 job 只安装 docs 依赖组, 必须使用独立的缓存 key: 与 CI 共用 key 时, main 上先结束的一方
+          # 保存缓存且之后不可覆盖, 只含 docs 依赖的缓存会被 CI 沿用.
+          cache-suffix: docs
 
       - name: Sync docs deps
         run: uv sync --frozen --only-group docs --no-install-project

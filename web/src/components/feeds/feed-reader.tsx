@@ -52,7 +52,7 @@ import { useResettingState } from "@/hooks/use-resetting-state";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import { FEED_ITEM_READ_STATES, FEED_ITEM_STATES } from "@/lib/exhaustive-maps";
-import { type DedupedFeedItem, dedupeFeedItems } from "@/lib/feeds/dedupe";
+import { type DedupedFeedItem, dedupeFeedItems, dedupedItemIds } from "@/lib/feeds/dedupe";
 import { UNGROUPED_GROUP } from "@/lib/feeds/groups";
 import { feedNavDelta, nextFeedItemIndex, shouldIgnoreFeedNavHotkey } from "@/lib/feeds/keyboard";
 import { feedDateBucket, feedDateBucketKey, feedDateBucketLabel } from "@/lib/feeds/time";
@@ -136,13 +136,13 @@ function FeedReaderRow({
   selected: boolean;
   showFeedName: boolean;
   busy: boolean;
-  onToggleExpand: (id: number) => void;
+  onToggleExpand: () => void;
   onToggleSelect: (id: number) => void;
   onScrape: (id: number) => void;
   onIgnore: (id: number) => void;
   onUnignore: (id: number) => void;
-  onMarkRead: (id: number) => void;
-  onMarkUnread: (id: number) => void;
+  onMarkRead: () => void;
+  onMarkUnread: () => void;
   onDelete: (id: number) => void;
   onOpenFeed: (feed: FeedResponse) => void;
 }) {
@@ -155,13 +155,13 @@ function FeedReaderRow({
       duplicateCount={row.duplicates.length}
       showFeedName={showFeedName}
       busy={busy}
-      onToggleExpand={() => onToggleExpand(row.item.id)}
+      onToggleExpand={onToggleExpand}
       onToggleSelect={() => onToggleSelect(row.item.id)}
       onScrape={() => onScrape(row.item.id)}
       onIgnore={() => onIgnore(row.item.id)}
       onUnignore={() => onUnignore(row.item.id)}
-      onMarkRead={() => onMarkRead(row.item.id)}
-      onMarkUnread={() => onMarkUnread(row.item.id)}
+      onMarkRead={onMarkRead}
+      onMarkUnread={onMarkUnread}
       onDelete={() => onDelete(row.item.id)}
       onOpenFeed={onOpenFeed}
     />
@@ -255,6 +255,17 @@ export function FeedReader({
         ? dedupeFeedItems(data?.items ?? [])
         : (data?.items ?? []).map((item) => ({ item, duplicates: [] })),
     [dedupe, data?.items],
+  );
+  /** 代表行 id 展开为该行折叠的全部条目; 非代表 id 原样保留. */
+  const readIds = useCallback(
+    (ids: readonly number[]): number[] => {
+      const byId = new Map(rows.map((row) => [row.item.id, row]));
+      return ids.flatMap((id) => {
+        const row = byId.get(id);
+        return row == null ? [id] : dedupedItemIds(row);
+      });
+    },
+    [rows],
   );
   const groups = useMemo(() => {
     const labels = {
@@ -387,6 +398,13 @@ export function FeedReader({
       });
     },
   });
+  /** 已读状态按折叠组整体写入: 代表行与它的重复条目共进退. */
+  const setRead = useCallback(
+    (action: "read" | "unread", ids: readonly number[], notify?: boolean) => {
+      readMutation.mutate({ action, ids: readIds(ids), notify });
+    },
+    [readIds, readMutation],
+  );
   const scrapeMutation = useMutation({
     mutationFn: (ids: number[]) => batchAcrossFeeds(items, ids, "scrape"),
     onSuccess: (result) => {
@@ -487,11 +505,11 @@ export function FeedReader({
     (id: number, unread: boolean) => {
       const isExpanded = expandAll ? !collapsed.has(id) : expanded.has(id);
       if (!isExpanded && unread) {
-        readMutation.mutate({ action: "read", ids: [id], notify: false });
+        setRead("read", [id], false);
       }
       toggleExpand(id);
     },
-    [collapsed, expandAll, expanded, readMutation, toggleExpand],
+    [collapsed, expandAll, expanded, setRead, toggleExpand],
   );
 
   const currentItemIndex = useCallback((): number => {
@@ -528,10 +546,10 @@ export function FeedReader({
       setCollapsed(new Set());
       setExpanded(new Set([id]));
       if (row.item.read_at == null) {
-        readMutation.mutate({ action: "read", ids: [id], notify: false });
+        setRead("read", [id], false);
       }
     },
-    [flatItems, readMutation, virtuosoIndexByItemId],
+    [flatItems, setRead, virtuosoIndexByItemId],
   );
 
   const moveExpanded = useCallback(
@@ -603,13 +621,13 @@ export function FeedReader({
           selected={selected.has(row.item.id)}
           showFeedName={feedId == null}
           busy={busy}
-          onToggleExpand={(id) => markReadOnExpand(id, row.item.read_at == null)}
+          onToggleExpand={() => markReadOnExpand(row.item.id, row.item.read_at == null)}
           onToggleSelect={toggleOne}
           onScrape={(id) => scrapeMutation.mutate([id])}
           onIgnore={(id) => batchMutation.mutate({ action: "ignore", ids: [id] })}
           onUnignore={(id) => batchMutation.mutate({ action: "unignore", ids: [id] })}
-          onMarkRead={(id) => readMutation.mutate({ action: "read", ids: [id] })}
-          onMarkUnread={(id) => readMutation.mutate({ action: "unread", ids: [id] })}
+          onMarkRead={() => setRead("read", [row.item.id])}
+          onMarkUnread={() => setRead("unread", [row.item.id])}
           onDelete={(id) => void deleteIds([id])}
           onOpenFeed={onOpenFeed}
         />
@@ -626,9 +644,9 @@ export function FeedReader({
       feedsById,
       markReadOnExpand,
       onOpenFeed,
-      readMutation,
       scrapeMutation,
       selected,
+      setRead,
       toggleOne,
     ],
   );
@@ -762,7 +780,7 @@ export function FeedReader({
             leftSection={<IconMailOpened size={14} />}
             loading={readMutation.isPending}
             disabled={selectedIds.length === 0 || busy}
-            onClick={() => readMutation.mutate({ action: "read", ids: selectedIds })}
+            onClick={() => setRead("read", selectedIds)}
           >
             {t("actions.markRead")}
           </Button>
@@ -774,7 +792,7 @@ export function FeedReader({
             leftSection={<IconMail size={14} />}
             loading={readMutation.isPending}
             disabled={selectedIds.length === 0 || busy}
-            onClick={() => readMutation.mutate({ action: "unread", ids: selectedIds })}
+            onClick={() => setRead("unread", selectedIds)}
           >
             {t("actions.markUnread")}
           </Button>

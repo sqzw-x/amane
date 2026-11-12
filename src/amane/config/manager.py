@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 import tomli_w
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
 from ..crawlers.actor.sites.wikipedia import WIKI_LANGUAGES
@@ -35,6 +35,7 @@ from ..enums import (
     WatermarkCorner,
     WatermarkKind,
 )
+from ..net.bsk import resolve_bsk_path
 from ..parsing import ContentType
 from ..plugins.models import PluginConfig
 from ..sr import SrPreset
@@ -194,11 +195,46 @@ class ColdSettings(BaseSettings):
     token: str | None = None
     """``off`` 显式关闭; 为空时自动生成并持久化到 data_dir/token."""
 
+    image_token: str | None = None
+    """``off`` 显式关闭; 为空时自动生成并持久化到 data_dir/image_token. 只用于资源端点."""
+
+    trusted_origins: Annotated[list[str], NoDecode] = []
+    """cookie 写请求缺少 Sec-Fetch-Site 时信任的来源 (AMANE_TRUSTED_ORIGINS, 逗号分隔).
+    为空时信任开发默认 (:5173); 非空则替换开发默认."""
+
+    cors_origins: Annotated[list[str], NoDecode] = []
+    """token 关闭时允许的跨源来源 (AMANE_CORS_ORIGINS, 逗号分隔). 为空则不放开 CORS, 只服务同源页面."""
+
     supervised: bool = False
     """为真时挂载重启端点 (AMANE_SUPERVISED=1)."""
 
     update_url: str | None = None
     """覆盖 GitHub /releases/latest. 空 = 官方 API."""
+
+    @field_validator("trusted_origins", "cors_origins", mode="before")
+    @classmethod
+    def _parse_origins(cls, v: object) -> list[str]:
+        """逗号分隔的 ``scheme://host[:port]``; 规范化后保存, 非法值拒绝启动."""
+        if v is None:
+            return []
+        parts = v.split(",") if isinstance(v, str) else v
+        if not isinstance(parts, (list, tuple)):
+            raise ValueError(f"来源列表格式无效: {v!r}")
+        origins: list[str] = []
+        for item in parts:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            parsed = urlsplit(item.strip())
+            if (
+                parsed.scheme.lower() not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.path not in ("", "/")
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(f"来源须形如 scheme://host[:port]: {item!r}")
+            origins.append(f"{parsed.scheme.lower()}://{parsed.netloc.lower()}")
+        return origins
 
     @field_validator("update_url", mode="before")
     @classmethod
@@ -286,7 +322,7 @@ class SiteConfig(BaseModel):
     @field_validator("browser_backend")
     @classmethod
     def _override_engine_available(cls, v: BrowserBackendName | None) -> BrowserBackendName | None:
-        return None if v is None else _require_browser_engine(v)
+        return None if v is None else _require_browser_engine(v, strict=False)
 
     api_token: str | None = Field(default=None, json_schema_extra={"x-visible-keys": _SITES_WITH_API_TOKEN})
     official_routes: dict[str, Manufacturer] = Field(
@@ -327,6 +363,7 @@ class ScrapingConfig(BaseModel):
         description="刮削时自动下载到 Resource 目录的资源类型",
     )
     crop_poster: bool = True
+    """仅有码与无码从封面自动裁切生成海报."""
 
     poster_ratio: float = Field(default=0.7, ge=0.3, le=1.0)
     """海报裁剪宽高比 (w/h). 从封面右侧裁剪生成海报. 默认 0.7 (贴近常见 379x538 / 高清海报)."""
@@ -525,8 +562,19 @@ class WatermarkConfig(BaseModel):
         return _complete_frozen_dict(v, dict.fromkeys(WatermarkKind, WatermarkCorner.TOP_LEFT))
 
 
-def _require_browser_engine(backend: BrowserBackendName) -> BrowserBackendName:
+def _require_browser_engine(
+    backend: BrowserBackendName, *, bsk_path: str | None = None, strict: bool = True
+) -> BrowserBackendName:
     """本地引擎不在当前分发时拒绝配置, 不等到启动浏览器才报 ModuleNotFoundError."""
+    if backend is BrowserBackendName.BSK:
+        # 来源级覆盖看不到全局 bsk_path, 只在这一层放行, 运行期再报.
+        if not strict:
+            return backend
+        if resolve_bsk_path(bsk_path) is None:
+            raise ValueError(
+                "浏览器后端 bsk 不可用: 未找到 bsk CLI, 请安装 BrowserSkill 并连接浏览器扩展, 或改用 solver"
+            )
+        return backend
     module = {BrowserBackendName.PATCHRIGHT: "patchright", BrowserBackendName.CAMOUFOX: "camoufox"}.get(backend)
     if module is None:
         return backend
@@ -539,15 +587,20 @@ def _require_browser_engine(backend: BrowserBackendName) -> BrowserBackendName:
 
 class BrowserConfig(BaseModel):
     backend: BrowserBackendName = BrowserBackendName.OFF
+    bsk_path: str | None = Field(
+        default=None,
+        json_schema_extra={"x-widget": "PathPicker", "x-path-type": "file"},
+    )
+    """``bsk`` CLI 的路径; 桌面壳的 PATH 不含登录 shell 条目, 留空时从 PATH 查找."""
     timeout: int = Field(default=30000, ge=5000, le=120000)
     """页面导航默认超时 (毫秒); 单次渲染可覆盖."""
     solver_url: str = Field(default="http://127.0.0.1:8191", pattern=r"^https?://.+")
     """FlareSolverr 兼容服务地址; 仅 ``solver`` 后端使用. 服务不允许暴露到公网."""
 
-    @field_validator("backend")
-    @classmethod
-    def _engine_available(cls, v: BrowserBackendName) -> BrowserBackendName:
-        return _require_browser_engine(v)
+    @model_validator(mode="after")
+    def _engine_available(self) -> BrowserConfig:
+        _require_browser_engine(self.backend, bsk_path=self.bsk_path)
+        return self
 
 
 class NetworkConfig(BaseModel):
@@ -688,8 +741,8 @@ class AgentConfig(BaseModel):
     """单次回复的输出上限. 超过模型上限时上游拒绝请求."""
 
     rate_limit: float = Field(default=2.0, ge=0.1, le=100)
-    sql_timeout_ms: int = Field(default=1000, ge=50, le=60_000, json_schema_extra={"x-hidden": True})
-    """只读 SQL 默认超时 (毫秒). 超过须用户批准放宽."""
+    sql_timeout_ms: int = Field(default=5000, ge=50, le=60_000, json_schema_extra={"x-hidden": True})
+    """只读 SQL 执行超时 (毫秒), 不计建连; 到期即中断语句."""
 
     result_cache_ttl_s: int = Field(default=3600, ge=60, le=86_400, json_schema_extra={"x-hidden": True})
     """过期后按 SQL 重新执行."""
@@ -710,6 +763,36 @@ class AgentConfig(BaseModel):
         return data
 
 
+class MediaServerConfig(BaseModel):
+    """Emby / Jellyfin 人物推送; url 与 api_key 齐备才启用."""
+
+    kind: Literal["emby", "jellyfin"] = Field(default="jellyfin", description="媒体服务器类型")
+    url: str | None = Field(default=None, description="服务器地址, 含协议、端口与可选子路径")
+    api_key: str | None = Field(default=None, description="管理员 API Key")
+    verify_tls: bool = Field(default=True, description="校验 HTTPS 证书; 自签名证书可关闭")
+
+    @field_validator("url")
+    @classmethod
+    def _normalize_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        normalized = value.strip().rstrip("/")
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("media_server.url 必须以 http:// 或 https:// 开头")
+        return normalized
+
+    @field_validator("api_key")
+    @classmethod
+    def _normalize_api_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.url and self.api_key)
+
+
 class ActorScrapingConfig(BaseModel):
     """资料来源顺序填空, 头像来源优先."""
 
@@ -727,6 +810,9 @@ class ActorScrapingConfig(BaseModel):
     auto_scrape: bool = True
     """影片刮削成功后自动入队该片演员的 ACTOR_SCRAPE; 已刮过的 Actor 跳过."""
 
+    auto_push: bool = Field(default=False, description="演员刮削成功后自动将该演员推送到媒体服务器")
+    """媒体服务器未配置时静默跳过."""
+
     gfriends_repo: str = Field(default="https://github.com/gfriends/gfriends", description="gFriends GitHub 仓库 URL")
 
     @field_validator("profile_sites")
@@ -738,6 +824,12 @@ class ActorScrapingConfig(BaseModel):
     @classmethod
     def _actor_image_sites(cls, v: list[SiteName]) -> list[SiteName]:
         return assert_sites_allowed(v, frozenset(ACTOR_IMAGE_SITES), field="image_sites")
+
+
+class SemanticConfig(BaseModel):
+    """封面与剧照语义检索. 模型身份由 ``semantic/models.py`` 的清单决定, 不随配置变化."""
+
+    auto_maintain: bool = Field(default=False, description="条目图片变化后立即增量索引; 打开时视觉模型常驻")
 
 
 class HotSettings(BaseModel):
@@ -788,10 +880,12 @@ class HotSettings(BaseModel):
         return data
 
     scraping: ScrapingConfig = ScrapingConfig()
+    media_server: MediaServerConfig = MediaServerConfig()
     actor_scraping: ActorScrapingConfig = ActorScrapingConfig()
     agent: AgentConfig = AgentConfig()
     network: NetworkConfig = NetworkConfig()
     sr: SrConfig = SrConfig()
+    semantic: SemanticConfig = SemanticConfig()
     watermark: WatermarkConfig = WatermarkConfig()
     llm: LLMConfig = LLMConfig()
     r18: R18Config = R18Config()

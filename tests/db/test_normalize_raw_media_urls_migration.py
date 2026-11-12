@@ -12,6 +12,9 @@ from sqlalchemy import create_engine, text
 
 from tests.helpers import alembic_config
 
+_PREVIOUS = "6d6ec00ff658"
+_TARGET = "c4f17334c3ea"
+
 
 @pytest.fixture
 def alembic_cfg(tmp_path: Path) -> Config:
@@ -20,7 +23,7 @@ def alembic_cfg(tmp_path: Path) -> Config:
 
 def test_normalize_metadata_raw_media_url_keys(alembic_cfg: Config) -> None:
     """旧 raw 单数字段在 upgrade 后变为 *_urls 列表; 已是列表的站点不动."""
-    command.upgrade(alembic_cfg, "6d6ec00ff658")
+    command.upgrade(alembic_cfg, _PREVIOUS)
 
     url = alembic_cfg.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -74,7 +77,7 @@ def test_normalize_metadata_raw_media_url_keys(alembic_cfg: Config) -> None:
             },
         )
 
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(alembic_cfg, _TARGET)
 
     with engine.connect() as conn:
         raw_s = conn.execute(text("SELECT raw FROM metadata WHERE number = 'MIG-RAW-1'")).scalar()

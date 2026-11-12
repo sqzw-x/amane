@@ -1,10 +1,27 @@
 {
+  "semantic": {
+    "toggle": "Semantic",
+    "back": "Back",
+    "placeholder": "Describe the picture, e.g. white shirt / lace / seaside",
+    "submit": "Search",
+    "kinds": {
+      "all": "All",
+      "cover": "Covers",
+      "still": "Stills"
+    },
+    "modelMissing": "The required model is missing. Submit a semantic index task and it will be downloaded automatically (about {{size}} MB).",
+    "unavailableTitle": "Semantic search unavailable",
+    "disabled": "Semantic search is not enabled on this instance.",
+    "noEmbeddings": "Image embeddings have not been created yet. Submit a semantic index task; depending on this machine and the number of images it may take from minutes to tens of minutes."
+  },
   "search": {
     "placeholder": "Search number, title…",
     "advanced": "Advanced search",
     "advancedHint": "Search each type and add filters",
     "facetPlaceholder": "Search…",
     "facetEmpty": "No matches",
+    "library": "Library",
+    "libraryAll": "All libraries",
     "hasFiles": "Linked files",
     "hasFilesAny": "Any",
     "hasFilesYes": "Has files",
@@ -279,8 +296,8 @@
       "title": "Crop photo",
       "success": "Photo updated"
     },
-    "genderHint": "When unknown, only generic sources are queried to avoid false matches. Some sources can fill this field automatically",
-    "genderUnknownHint": "Use when the gender cannot be determined; scraping only queries sites covering both",
+    "genderHint": "When unknown, generic sources are queried first, then sites for the learned gender. Some sources can fill this field automatically",
+    "genderUnknownHint": "Use when the gender cannot be determined; scraping queries sites covering both genders first, then sites for the learned gender",
     "aliasesHint": "Press Enter or comma to add; click × to remove",
     "setDisplayName": "Set as display name",
     "setDisplayNameBody": "Make \"{{alias}}\" the display name of \"{{name}}\"? \"{{name}}\" will be kept as an alias",
@@ -366,6 +383,21 @@
     "mergeConfirmBody": "Merge {{count}} sources into the target",
     "mergeConfirmBody_one": "Merge {{count}} source into the target",
     "mergeConfirmBody_other": "Merge {{count}} sources into the target",
+    "mergeEntriesLead": "Merge {{count}} films into \"{{number}}\"",
+    "mergeEntriesLead_one": "Merge {{count}} film into \"{{number}}\"",
+    "mergeEntriesLead_other": "Merge {{count}} films into \"{{number}}\"",
+    "mergeEntriesKeep": "The target keeps its current fields",
+    "mergeEntriesRaw": "Scraped source snapshots of the other films are merged into the target",
+    "mergeEntriesLinks": "Comments, user tags and linked files move to the target",
+    "mergeEntriesDelete": "The other films are deleted",
+    "mergeEntriesRescrape": "Re-scrape after merge (re-aggregate fields by priority)",
+    "mergeActorLead": "Merge {{count}} actors into \"{{name}}\"",
+    "mergeActorLead_one": "Merge {{count}} actor into \"{{name}}\"",
+    "mergeActorLead_other": "Merge {{count}} actors into \"{{name}}\"",
+    "mergeActorAlias": "Source actor names become aliases of the target",
+    "mergeActorFill": "Person info fills the target's gaps",
+    "mergeActorTags": "Source actor user tags move to the target",
+    "mergeActorDelete": "Source actors are deleted",
     "deleteFacetBody": "Remove \"{{name}}\" from all titles and add it to the drop list; later scrapes will drop it",
     "deleteUserTagBody": "Permanently delete user tag \"{{name}}\"? It will be removed from all titles",
     "rulesTitle": "Facet rules",
@@ -389,7 +421,8 @@
     "noChanges": "No changes",
     "changedCount_one": "{{count}} field(s) changed",
     "changedCount_other": "{{count}} field(s) changed",
-    "loadImages": "Load images"
+    "loadImages": "Load images",
+    "loadAllImages": "Load all images"
   },
   "lock": {
     "manage": "Field Locks",

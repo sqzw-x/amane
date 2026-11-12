@@ -9,6 +9,22 @@ from ..http import RequestError
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text, number_variants, select_number_index
 
+_COVER_PATH_RE = re.compile(r"/(?P<root>pics|imgs)/cover/(?P<stem>[^/]+?)(?:_b)?\.jpg$")
+# 海报与封面各有两个根, 必须同根对应: 有码在 ``/pics/``, 无码在 ``/imgs/`` (海报目录是复数 ``thumbs``).
+_POSTER_ROOTS: dict[str, str] = {"pics": "/pics/thumb/", "imgs": "/imgs/thumbs/"}
+
+
+def poster_url_for(base_url: str, cover: str | None) -> str | None:
+    """封面地址 → 竖版海报.
+
+    跨根推导会得到另一部作品的海报且照样 200 (短码命名空间重叠), 因此根认不出时返回 ``None``, 不回退.
+    """
+    path = cover.split("?", 1)[0] if cover else ""
+    match = _COVER_PATH_RE.search(path)
+    if match is None:
+        return None
+    return urljoin(base_url, f"{_POSTER_ROOTS[match.group('root')]}{match.group('stem')}.jpg")
+
 
 class JavBusCrawler(Crawler):
     @classmethod
@@ -88,11 +104,7 @@ class JavBusCrawler(Crawler):
         cover = extract_text(html, '//a[@class="bigImage"]/@href')
         thumb_url = urljoin(url, cover) if cover else None
 
-        # poster: /cover/ -> /thumb/, _b.jpg -> .jpg
-        poster_url = None
-        if cover:
-            poster = cover.replace("/cover/", "/thumb/").replace("_b.jpg", ".jpg")
-            poster_url = urljoin(url, poster)
+        poster_url = poster_url_for(self.base_url, cover)
 
         release_raw = extract_text(html, '//span[@class="header"][contains(text(), "發行日期:")]/parent::p/text()')
         release = release_raw.strip() if release_raw else None

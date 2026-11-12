@@ -3,12 +3,12 @@
  * 另含条目类型与关联文件相位筛选.
  */
 
-import { Collapse, Select, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Collapse, MultiSelect, Select, SimpleGrid, Stack, Text } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listFacetsOptions } from "@/client/@tanstack/react-query.gen";
-import type { ContentType, FacetKind, Mosaic } from "@/client/types.gen";
+import type { ContentType, FacetKind, LibraryResponse, Mosaic } from "@/client/types.gen";
 import { CONTENT_TYPES, FACET_KINDS, FILE_DEFINITIONS, MOSAICS } from "@/lib/exhaustive-maps";
 import { facetIdsOf, type FacetFilters } from "@/lib/facets";
 
@@ -31,6 +31,10 @@ interface FacetFilterControlsProps {
   /** 当前已激活的过滤参数; 已选同一实体时禁用对应选项. */
   filters: FacetFilters;
   onSelect: (kind: FacetKind, id: number) => void;
+  /** 当前媒体库筛选; 空数组 = 全部. */
+  libraryIds: number[];
+  libraries: LibraryResponse[];
+  onLibrariesChange: (ids: number[]) => void;
   /** 当前关联文件筛选; null = 不限. */
   hasFiles: HasFilesFilter;
   onHasFilesChange: (value: HasFilesFilter) => void;
@@ -132,6 +136,9 @@ export function FacetFilterControls({
   opened,
   filters,
   onSelect,
+  libraryIds,
+  libraries,
+  onLibrariesChange,
   hasFiles,
   onHasFilesChange,
   vr,
@@ -170,6 +177,20 @@ export function FacetFilterControls({
             ]}
             value={triSelectValue(hasFiles)}
             onChange={(v) => onHasFilesChange(parseTriSelect(v))}
+            clearable
+            size="sm"
+          />
+          <MultiSelect
+            label={t("search.library")}
+            placeholder={libraryIds.length > 0 ? undefined : t("search.libraryAll")}
+            data={libraries.map((library) => ({
+              value: String(library.id),
+              label: library.name,
+            }))}
+            value={libraryIds.map(String)}
+            onChange={(values) =>
+              onLibrariesChange(values.map(Number).filter((id) => Number.isInteger(id) && id > 0))
+            }
             clearable
             size="sm"
           />

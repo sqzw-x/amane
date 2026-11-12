@@ -15,8 +15,9 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import {
-  IconBrandGithub,
+  IconBook,
   IconBookmark,
+  IconBrandGithub,
   IconCategory,
   IconClock,
   IconDeviceMobile,
@@ -88,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/libraries", labelKey: "nav.libraries", icon: IconFolders },
       { to: "/plugins", labelKey: "nav.plugins", icon: IconPuzzle },
       { to: "/feeds/sources", labelKey: "nav.feedSources", icon: IconListTree },
+      { to: "/manual", labelKey: "nav.manual", icon: IconBook },
     ],
   },
   {

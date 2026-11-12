@@ -88,6 +88,7 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
     """配置 mock_web 的 side_effects, 按 URL 模式路由."""
     get_text_map: dict[str, str | dict[str, Any]] = {}
     get_json_map: dict[str, str | dict[str, Any]] = {}
+    post_text_map: dict[str, str | dict[str, Any]] = {}
     request_map: dict[str, str] = {}
     post_json_routes: list[tuple[str, str | None, str | dict[str, Any]]] = []
 
@@ -102,6 +103,8 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
         if method == "post_json":
             body = resp.get("body_contains")
             post_json_routes.append((pattern, body if isinstance(body, str) else None, data))
+        elif method == "post_text":
+            post_text_map[pattern] = data
         elif method == "get_json":
             get_json_map[pattern] = data
         else:
@@ -116,6 +119,16 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
             return "<html></html>"
 
         mock_web.get_text.side_effect = get_text_side_effect
+
+    if post_text_map:
+
+        async def post_text_side_effect(url: str, **kwargs: object) -> str:
+            for pattern, html in post_text_map.items():
+                if pattern in url:
+                    return str(html)
+            raise RequestError(url, "no mock matched")
+
+        mock_web.post_text.side_effect = post_text_side_effect
 
     if get_json_map:
 

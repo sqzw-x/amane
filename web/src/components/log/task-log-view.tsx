@@ -1,9 +1,12 @@
 import { Badge, Group, Text } from "@mantine/core";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Virtuoso } from "react-virtuoso";
+import { getTaskLogOptions } from "@/client/@tanstack/react-query.gen";
 import { LogKvPairs } from "@/components/log/log-kv";
 import { LogTimestamp } from "@/components/log/log-timestamp";
+import { mergeTaskLogEntries, TASK_LOG_LIMIT } from "@/lib/task/log";
 import { type LogEntry, logLevelMantineColor, useLogStore } from "@/stores/logs";
 
 interface TaskLogViewProps {
@@ -12,42 +15,68 @@ interface TaskLogViewProps {
 }
 
 /**
- * 按 task_id 过滤全局日志 store (与 /logs 页同源的 WebSocket 缓冲).
- * 仅覆盖 store 窗口内 (最近 5000 条); 更早历史见任务记录内 task.log.
+ * 历史取任务记录里的 task.log 尾部, 实时取 WebSocket store; 两者按记录去重合并.
+ * 挂载在任务详情内, 因此只在展开时请求历史.
  */
 export function TaskLogView({ taskId, height = 220 }: TaskLogViewProps) {
   const { t } = useTranslation("tasks");
   const entries = useLogStore((s) => s.entries);
+  const historyQuery = useQuery(
+    getTaskLogOptions({
+      path: { task_id: taskId },
+      query: { limit: TASK_LOG_LIMIT },
+    }),
+  );
 
-  const filtered = useMemo(
+  const live = useMemo(
     // task_id 是动态字段, 跨来源类型不一 (number/string), 统一按字符串比较
     () => entries.filter((e) => e.task_id != null && String(e.task_id) === String(taskId)),
     [entries, taskId],
   );
+  const merged = useMemo(
+    () => mergeTaskLogEntries(historyQuery.data?.entries ?? [], live),
+    [historyQuery.data, live],
+  );
+  const entriesToRender = merged.entries;
+  const truncated = merged.truncated || Boolean(historyQuery.data?.truncated);
 
-  if (filtered.length === 0) {
+  if (entriesToRender.length === 0) {
+    if (historyQuery.isPending) {
+      return (
+        <Text size="xs" c="dimmed" ta="center" py="md">
+          {t("logView.loading")}
+        </Text>
+      );
+    }
     return (
-      <Text size="xs" c="dimmed" ta="center" py="md">
-        {t("logView.empty")}
+      <Text size="xs" c={historyQuery.isError ? "red" : "dimmed"} ta="center" py="md">
+        {historyQuery.isError ? t("logView.loadFailed") : t("logView.empty")}
       </Text>
     );
   }
 
   return (
-    <div
-      style={{
-        height,
-        border: "1px solid var(--mantine-color-default-border)",
-        borderRadius: "var(--mantine-radius-sm)",
-      }}
-    >
-      <Virtuoso
-        style={{ height: "100%" }}
-        data={filtered}
-        initialTopMostItemIndex={filtered.length - 1}
-        followOutput="auto"
-        itemContent={renderTaskLogRow}
-      />
+    <div>
+      {truncated ? (
+        <Text size="xs" c="dimmed" mb={4}>
+          {t("logView.truncated")}
+        </Text>
+      ) : null}
+      <div
+        style={{
+          height,
+          border: "1px solid var(--mantine-color-default-border)",
+          borderRadius: "var(--mantine-radius-sm)",
+        }}
+      >
+        <Virtuoso
+          style={{ height: "100%" }}
+          data={entriesToRender}
+          initialTopMostItemIndex={entriesToRender.length - 1}
+          followOutput="auto"
+          itemContent={renderTaskLogRow}
+        />
+      </div>
     </div>
   );
 }

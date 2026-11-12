@@ -88,5 +88,6 @@ export function ProxyImage({
     );
   }
   if (!src) return placeholder;
-  return <img {...rest} src={src} loading={loading} />;
+  // onLoad/onError 已从 rest 中解构, 本分支要显式接回: 本地资源图的自然尺寸与失败回退同样依赖它们
+  return <img {...rest} src={src} loading={loading} onLoad={onLoad} onError={onError} />;
 }

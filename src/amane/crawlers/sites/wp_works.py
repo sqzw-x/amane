@@ -13,22 +13,22 @@ import re
 from collections.abc import Mapping
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from ...net.errors import FailureReason, SourceError, parse_detail
 from ..base import Crawler
-from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
+from ..models import FetchOptions, MediaMetadata, ResponseModel, SearchQuery, film_actors
 
 _ACTORS = re.compile(r"[/、\s]+")
 _SLUG_CHARS = re.compile(r"[^0-9a-z]")
 _SLUG_SHAPE = re.compile(r"^([a-z]+)(\d+)([a-z]*)$")
 
 
-class _Rendered(BaseModel):
+class _Rendered(ResponseModel):
     rendered: str | None = None
 
 
-class _WorksAcf(BaseModel):
+class _WorksAcf(ResponseModel):
     """作品自定义字段. 字段名即站点 ACF 键; 键改名时该项降级为空, 不影响其余字段."""
 
     model_config = ConfigDict(extra="ignore")
@@ -47,7 +47,7 @@ def _only_strings(value: Any) -> Any:
     return value
 
 
-class _WorksImages(BaseModel):
+class _WorksImages(ResponseModel):
     """主题按用途预生成的图片 URL: 横版主图 / 竖版海报 / 剧照全尺寸."""
 
     model_config = ConfigDict(extra="ignore")
@@ -62,7 +62,7 @@ class _WorksImages(BaseModel):
         return _only_strings(value)
 
 
-class _WorksPost(BaseModel):
+class _WorksPost(ResponseModel):
     model_config = ConfigDict(extra="ignore")
 
     slug: str | None = None

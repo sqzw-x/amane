@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from pathlib import Path
 
+import aiosqlite
 import pytest
 import pytest_asyncio
 
@@ -30,8 +33,6 @@ def test_as_id_subquery_sql(sql: str, expect: str) -> None:
 
 @pytest_asyncio.fixture
 async def sandbox(tmp_path: Path) -> ReadonlySqlSandbox:
-    import aiosqlite
-
     db = tmp_path / "t.db"
     async with aiosqlite.connect(db) as conn:
         await conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)")
@@ -123,18 +124,45 @@ async def test_allow_slow_approved(sandbox: ReadonlySqlSandbox) -> None:
     assert result.rows == [[1]]
 
 
+_ENDLESS_SQL = """
+WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t WHERE x < 2000000000)
+SELECT COUNT(*) FROM t
+"""
+
+
+@pytest.mark.parametrize(
+    ("connect_delay_s", "sql", "timeout_ms", "timed_out"),
+    [
+        # 建连慢不计入超时: 轻量查询不应因建连开销被判超时
+        (0.3, "SELECT 1", 100, False),
+        # 不中断时要跑几分钟; 期限一到当场中断, 而不是等语句跑完再判超时
+        (0.0, _ENDLESS_SQL, 200, True),
+    ],
+)
 @pytest.mark.asyncio
-async def test_timeout(sandbox: ReadonlySqlSandbox) -> None:
-    sql = """
-    WITH RECURSIVE t(x) AS (
-      SELECT 1
-      UNION ALL
-      SELECT x + 1 FROM t WHERE x < 5000000
-    )
-    SELECT COUNT(*) FROM t
-    """
-    with pytest.raises(SqlTimeoutError):
-        await sandbox.execute(sql, timeout_ms=1)
+async def test_timeout(
+    sandbox: ReadonlySqlSandbox,
+    monkeypatch: pytest.MonkeyPatch,
+    connect_delay_s: float,
+    sql: str,
+    timeout_ms: int,
+    timed_out: bool,
+) -> None:
+    enter = aiosqlite.Connection.__aenter__
+
+    async def slow_enter(self: aiosqlite.Connection) -> aiosqlite.Connection:
+        await asyncio.sleep(connect_delay_s)
+        return await enter(self)
+
+    monkeypatch.setattr(aiosqlite.Connection, "__aenter__", slow_enter)
+    started = time.perf_counter()
+    if timed_out:
+        with pytest.raises(SqlTimeoutError, match=rf"查询超时 \(\d+ms > {timeout_ms}ms\)"):
+            await sandbox.execute(sql, timeout_ms=timeout_ms)
+        # 余量留给 CI 抖动; 判别边界在「秒级 vs 分钟级」
+        assert time.perf_counter() - started < 30
+    else:
+        assert (await sandbox.execute(sql, timeout_ms=timeout_ms)).rows == [[1]]
 
 
 @pytest.mark.asyncio

@@ -70,6 +70,12 @@
     "rescrape": {
       "limit": "{{limit}} per target",
       "minAge": "Not updated for {{days}} days"
+    },
+    "semantic_index": {
+      "skipUnchanged": "Skip unchanged images",
+      "force": "Re-encode everything",
+      "limit": "Up to {{limit}} entries",
+      "kinds": "Sources {{kinds}}"
     }
   },
   "labels": {

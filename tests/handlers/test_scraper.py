@@ -13,7 +13,7 @@ from amane.config import HotSettings, ScrapingConfig
 from amane.crawlers.models import MediaMetadata
 from amane.db.models import MediaFileStatus, Task, TaskStatus, TaskType
 from amane.enums import MetadataField, SiteName
-from amane.handlers import RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
+from amane.handlers import CacheKind, RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
 from amane.library import CleanupInventory, InventorySource, InventoryStore, LibraryFileKind, LibraryHit, scan_inventory
 from amane.observability import Recorder
 from amane.parsing import ContentType
@@ -354,9 +354,18 @@ class TestScrapeHandler:
         assert declared.partials[0] is not None
         assert declared.partials[0].title == "FromDMM"
 
+    @pytest.mark.parametrize(
+        ("content_type", "expect_internal"),
+        [
+            (ContentType.CENSORED, True),
+            (ContentType.WESTERN, False),
+        ],
+    )
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_materializes_cropped_poster(self, repo: Repository, resource_store):
-        """有 web_client 时, scrape 物化: poster 候选偏矮 → 裁剪 → metadata 记内部 URL."""
+    async def test_materializes_poster_by_content_type(
+        self, repo: Repository, resource_store, content_type: ContentType, expect_internal: bool
+    ):
+        """有 web_client 时, scrape 物化: 仅有码与无码把偏矮的候选裁成内部海报."""
         from typing import ClassVar, cast
 
         from PIL import Image
@@ -400,14 +409,15 @@ class TestScrapeHandler:
             web_client=cast("WebClient", FakeWebClient()),
         )
         media = await repo.create_media_file(library_id=1, path="/media/MIDV-123.mp4")
-        result = await h.handle(
-            ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=ContentType.CENSORED)
-        )
+        result = await h.handle(ScrapePayload(media_file_id=media.id, number="MIDV-123", content_type=content_type))
         assert result.success is True
         metadata = await repo.get_metadata_by_number("MIDV-123")
         assert metadata is not None
         assert metadata.poster_urls is not None and len(metadata.poster_urls) == 1
-        assert metadata.poster_urls[0].startswith(RESOURCE_URL_PREFIX)  # 内部派生 (裁剪)
+        if expect_internal:
+            assert metadata.poster_urls[0].startswith(RESOURCE_URL_PREFIX)  # 内部派生 (裁剪)
+        else:
+            assert metadata.poster_urls == ["https://s/p.jpg"]  # 外部候选原样
         assert metadata.thumb_urls == ["https://s/t.jpg"]  # 外部原样
 
 
@@ -524,6 +534,61 @@ class TestContentRoutesFiltering:
         assert metadata.title == "FromDMM"
         assert metadata.studio == "StudioJavDB"
         assert set(factory.requested) == {SiteName.JAVDB, SiteName.DMM}
+
+
+class TestRawCacheWriteback:
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("raw_sites", "use_cache", "expected_sites", "expected_title"),
+        [
+            (
+                frozenset({"freejavbt", "javdb"}),
+                frozenset({CacheKind.metadata}),
+                frozenset({"freejavbt", "javdb"}),
+                "CachedJavDB",
+            ),
+            (
+                frozenset({"freejavbt"}),
+                frozenset({CacheKind.metadata}),
+                frozenset({"freejavbt", "javdb"}),
+                "Mock Title",
+            ),
+            (frozenset({"freejavbt", "javdb"}), frozenset(), frozenset({"javdb"}), "Mock Title"),
+        ],
+        ids=["removed-site-preserved", "new-site-added", "force-replaces"],
+    )
+    async def test_metadata_cache_raw_is_replace_add_only(
+        self,
+        repo: Repository,
+        resource_store,
+        raw_sites: frozenset[str],
+        use_cache: frozenset[CacheKind],
+        expected_sites: frozenset[str],
+        expected_title: str,
+    ):
+        """metadata 缓存生效时 raw 只替换/新增; 强制刮削仍由本次结果整体替换."""
+        raw: dict[str, dict] = {}
+        if "freejavbt" in raw_sites:
+            raw["freejavbt"] = MediaMetadata.model_validate({"number": "MIDV-123", "title": "FreeTitle"}).model_dump()
+        if "javdb" in raw_sites:
+            raw["javdb"] = MediaMetadata.model_validate({"number": "MIDV-123", "title": "CachedJavDB"}).model_dump()
+        await repo.upsert_metadata("MIDV-123", raw=raw)
+
+        config = _config_with({ContentType.CENSORED: [SiteName.JAVDB]})
+        factory = RecordingFactory({"javdb": MockCrawler()})
+        h = ScrapeHandler(repo=repo, factory=factory, resource_store=resource_store, pipeline_config=config)
+
+        result = await h.handle(
+            ScrapePayload(number="MIDV-123", content_type=ContentType.CENSORED, use_cache=set(use_cache))
+        )
+        assert result.success is True
+
+        metadata = await repo.get_metadata_by_number("MIDV-123")
+        assert metadata is not None
+        assert set(metadata.raw) == expected_sites
+        assert metadata.raw["javdb"]["title"] == expected_title
+        if "freejavbt" in expected_sites:
+            assert metadata.raw["freejavbt"]["title"] == "FreeTitle"
 
 
 # --- 翻译集成测试 ---

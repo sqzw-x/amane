@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..enums import ActorGender
 from ..utils.dates import normalize_calendar_date
@@ -27,6 +27,21 @@ class SearchQuery:
 @dataclass
 class FetchOptions:
     language: Language | None = None
+
+
+class ResponseModel(BaseModel):
+    """外部 API 响应模型的基类: null 与字段缺失等价, 校验前丢弃 null, 落到字段默认值.
+
+    默认值必须表达缺省: 集合用空集合, 可选对象与可空标量用 ``None``;
+    数值字段的 ``0`` 若本身是合法取值 (如评分), 默认值必须改用 ``None``.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_null(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        return {key: item for key, item in value.items() if item is not None}
 
 
 class FilmActor(BaseModel):

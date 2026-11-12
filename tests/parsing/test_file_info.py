@@ -6,6 +6,7 @@ import pytest
 
 from amane.parsing import (
     ContentType,
+    canonical_definition,
     detect_cd,
     extract_number,
     infer_content_type,
@@ -72,12 +73,20 @@ CASES: list[object] = [
     _Case("MIDV-123-U.mp4", mosaic="cracked", number="MIDV-123"),
     _Case("MIDV-123-C-U.mp4", has_subtitle=True, mosaic="cracked", number="MIDV-123"),
     _Case("MIDV-123-U-CD1.mp4", cd=1, mosaic="cracked", number="MIDV-123"),
+    # -LTX 是破解; 后面还可跟中字 / 分辨率. 裸 LTX 不是标记
+    _Case("SNIS-576-LTX.mp4", mosaic="cracked", number="SNIS-576"),
+    _Case("IPX-750-LTX-4K.mp4", mosaic="cracked", definition="4K", number="IPX-750"),
+    _Case("MIDV-123-LTX-C.mp4", has_subtitle=True, mosaic="cracked", number="MIDV-123"),
+    _Case("MIDV-123-ltx.mp4", mosaic="cracked", number="MIDV-123"),
+    _Case("LTX-123.mp4", number="LTX-123"),
     _Case("HEYZO-123.mp4", number="HEYZO-123"),
     _Case("HEYZO-123-1080p.mp4", definition="1080p", number="HEYZO-123"),
     _Case("HEYZO-123-流出.mp4", mosaic="leaked", number="HEYZO-123"),
     _Case("HEYZO-123-U.mp4", mosaic="cracked", number="HEYZO-123"),
     # --- 分辨率: 点号 / 连字符 ---
     _Case("ABC-123.8K.mp4", definition="8K", number="ABC-123"),
+    _Case("ABC-123.4320P.mp4", definition="8K", number="ABC-123"),
+    _Case("ABC-123.4320p60.mp4", definition="8K", number="ABC-123"),
     _Case("ABC-123-4K.mp4", definition="4K", number="ABC-123"),
     _Case("ABC-123.2160p.mp4", definition="4K", number="ABC-123"),
     _Case("ABC-123.2160P.mp4", definition="4K", number="ABC-123"),
@@ -85,13 +94,17 @@ CASES: list[object] = [
     _Case("ABC-123.1080p.mp4", definition="1080p", number="ABC-123"),
     _Case("ABC-123-720p.mp4", definition="720p", number="ABC-123"),
     _Case("ABC-123.480p.mp4", definition="480p", number="ABC-123"),
-    _Case("ABC-123.HD.mp4", definition="HD", number="ABC-123"),
-    _Case("ABC-123.SD.mp4", definition="SD", number="ABC-123"),
+    _Case("ABC-123.576P.mp4", definition="480p", number="ABC-123"),
+    _Case("ABC-123.HD.mp4", definition="720p", number="ABC-123"),
+    _Case("ABC-123.SD.mp4", definition="480p", number="ABC-123"),
     # 多命中取最高
     _Case("ABC-123.1080p.HD.mp4", definition="1080p", number="ABC-123"),
     _Case("ABC-123.4K.2160p.mp4", definition="4K", number="ABC-123"),
     _Case("ABC-123.8K.HD.mp4", definition="8K", number="ABC-123"),
     _Case("ABC-123.720p.1080p.mp4", definition="1080p", number="ABC-123"),
+    # 同档的多种写法 (SD / 576P / 480P) 仍取最高
+    _Case("ABC-123.8K.4320P.mp4", definition="8K", number="ABC-123"),
+    _Case("ABC-123.SD.480p.mp4", definition="480p", number="ABC-123"),
     # 下划线分隔 (番号剥离已把 _ 当标记分隔符)
     _Case("MIDV-123_4K.mp4", definition="4K", number="MIDV-123"),
     _Case("MIDV-123_4K_无码.mp4", mosaic="uncensored", definition="4K", number="MIDV-123"),
@@ -116,7 +129,7 @@ CASES: list[object] = [
     _Case("120115_318-mura-2160p.mp4", definition="4K", number="120115_318"),
     _Case("120115_318-mura-1440p.mp4", definition="1440p", number="120115_318"),
     _Case("120115_318-mura-480p.mp4", definition="480p", number="120115_318"),
-    _Case("112912_776-mura-whole1_hd.wmv", definition="HD", number="112912_776"),
+    _Case("112912_776-mura-whole1_hd.wmv", definition="720p", number="112912_776"),
     # 分集 + 分辨率
     _Case("MIDV-123-4K-CD1.mp4", cd=1, definition="4K", number="MIDV-123"),
     # --- 分辨率误报: 番号/编码里的字母数字不当作独立标记 ---
@@ -320,7 +333,7 @@ CASES: list[object] = [
         content_type=ContentType.CENSORED,
     ),
     _Case("/media/SSIS-456 CD2.mp4", number="SSIS-456", content_type=ContentType.CENSORED),
-    _Case("/media/[HD]SSIS-456.mp4", definition="HD", number="SSIS-456", content_type=ContentType.CENSORED),
+    _Case("/media/[HD]SSIS-456.mp4", definition="720p", number="SSIS-456", content_type=ContentType.CENSORED),
     _Case(
         "/media/videos/MIDV-123-UC.mp4",
         has_subtitle=True,
@@ -340,6 +353,12 @@ CASES: list[object] = [
         has_subtitle=True,
         mosaic="cracked",
         number="MIDV-123",
+        content_type=ContentType.CENSORED,
+    ),
+    _Case(
+        "/media/SNIS-576-LTX/489155.com@SNIS-576-LTX.mp4",
+        mosaic="cracked",
+        number="SNIS-576",
         content_type=ContentType.CENSORED,
     ),
     _Case(
@@ -598,3 +617,21 @@ VR_CASES: list[tuple[list[str], bool]] = [
 @pytest.mark.parametrize(("tags", "expected"), VR_CASES)
 def test_is_vr(tags: list[str], expected: bool) -> None:
     assert is_vr(tags) is expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("480p", "480p"),
+        ("480P", "480p"),
+        ("8k", "8K"),
+        ("SD", "480p"),
+        ("sd", "480p"),
+        ("Hd", "720p"),
+        ("2160P", None),
+        ("", None),
+        ("bogus", None),
+    ],
+)
+def test_canonical_definition(value: str, expected: str | None) -> None:
+    assert canonical_definition(value) == expected

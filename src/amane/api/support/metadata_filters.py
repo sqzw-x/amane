@@ -1,0 +1,139 @@
+"""列表与语义检索共用的筛选参数.
+
+两处端点暴露同一组 query 参数: 列表使用这些参数分页, 语义检索使用它们将候选集限制在筛选结果内.
+"""
+
+from dataclasses import dataclass
+from typing import Annotated
+
+from fastapi import HTTPException, Query
+
+from ...parsing import ContentType, Mosaic, canonical_definition
+from ...utils.collections import unique_ids
+
+
+@dataclass(frozen=True)
+class MetadataFilters:
+    actor_id: list[int] | None = None
+    director_id: list[int] | None = None
+    tag_id: list[int] | None = None
+    studio_id: list[int] | None = None
+    publisher_id: list[int] | None = None
+    series_id: list[int] | None = None
+    user_tag_id: list[int] | None = None
+    library_id: list[int] | None = None
+    has_files: bool | None = None
+    has_subtitle: bool | None = None
+    vr: bool | None = None
+    mosaic: Mosaic | None = None
+    uncensored: bool | None = None
+    definition: str | None = None
+    content_type: ContentType | None = None
+    saved_query_id: int | None = None
+
+    @property
+    def active(self) -> bool:
+        """任一项非空才需要查询候选 id; 全空时语义检索直接扫描整个索引."""
+        return any(
+            (
+                self.actor_id,
+                self.director_id,
+                self.tag_id,
+                self.studio_id,
+                self.publisher_id,
+                self.series_id,
+                self.user_tag_id,
+                self.library_id,
+                self.has_files is not None,
+                self.has_subtitle is not None,
+                self.vr is not None,
+                self.mosaic is not None,
+                self.uncensored is not None,
+                self.definition is not None,
+                self.content_type is not None,
+                self.saved_query_id is not None,
+            )
+        )
+
+
+# 列表 GET 的 id 组上限: 单个 IN 列表的表达式深度随 id 数增长, 各组累计的 AND 条件同样占深度.
+_MAX_IDS_PER_GROUP = 100
+_MAX_IDS_TOTAL = 200
+
+
+def _enforce_id_limits(filters: MetadataFilters) -> None:
+    """超限返回 422; 按去重后的数量计, 重复参数不会放大查询."""
+    groups = {
+        "actor_id": filters.actor_id,
+        "director_id": filters.director_id,
+        "tag_id": filters.tag_id,
+        "studio_id": filters.studio_id,
+        "publisher_id": filters.publisher_id,
+        "series_id": filters.series_id,
+        "user_tag_id": filters.user_tag_id,
+        "library_id": filters.library_id,
+    }
+    total = 0
+    for name, ids in groups.items():
+        count = len(unique_ids(ids))
+        if count > _MAX_IDS_PER_GROUP:
+            raise HTTPException(status_code=422, detail=f"{name} 最多 {_MAX_IDS_PER_GROUP} 个 id")
+        total += count
+    if total > _MAX_IDS_TOTAL:
+        raise HTTPException(status_code=422, detail=f"筛选参数 id 合计最多 {_MAX_IDS_TOTAL} 个")
+
+
+async def parse_metadata_filters(
+    actor_id: Annotated[list[int] | None, Query(description="Filter by actor facet id(s); AND")] = None,
+    director_id: Annotated[list[int] | None, Query(description="Filter by director facet id(s); AND")] = None,
+    tag_id: Annotated[list[int] | None, Query(description="Filter by scraped tag facet id(s); AND")] = None,
+    studio_id: Annotated[list[int] | None, Query(description="Filter by studio facet id(s); OR")] = None,
+    publisher_id: Annotated[list[int] | None, Query(description="Filter by publisher facet id(s); OR")] = None,
+    series_id: Annotated[list[int] | None, Query(description="Filter by series facet id(s); OR")] = None,
+    user_tag_id: Annotated[list[int] | None, Query(description="Filter by user tag id(s); AND")] = None,
+    library_id: Annotated[list[int] | None, Query(description="Filter by linked MediaFile library id(s); OR")] = None,
+    has_files: Annotated[bool | None, Query(description="Filter by presence of linked MediaFile(s)")] = None,
+    has_subtitle: Annotated[bool | None, Query(description="Filter by linked file subtitle marker")] = None,
+    vr: Annotated[bool | None, Query(description="Filter by VR marker (entry tag vocabulary)")] = None,
+    mosaic: Annotated[Mosaic | None, Query(description="Filter by linked file mosaic marker")] = None,
+    uncensored: Annotated[
+        bool | None, Query(description="Filter by uncensored number (own content type or linked file marker)")
+    ] = None,
+    definition: Annotated[
+        str | None, Query(description="Filter by linked file definition (8K/4K/1440p/1080p/720p/480p; SD/HD aliases)")
+    ] = None,
+    content_type: Annotated[ContentType | None, Query(description="Filter by number content type")] = None,
+    saved_query_id: Annotated[
+        int | None, Query(description="Saved query preset id; AND with other filters via SQL subquery")
+    ] = None,
+) -> MetadataFilters:
+    filters = MetadataFilters(
+        actor_id=actor_id,
+        director_id=director_id,
+        tag_id=tag_id,
+        studio_id=studio_id,
+        publisher_id=publisher_id,
+        series_id=series_id,
+        user_tag_id=user_tag_id,
+        library_id=library_id,
+        has_files=has_files,
+        has_subtitle=has_subtitle,
+        vr=vr,
+        mosaic=mosaic,
+        uncensored=uncensored,
+        definition=definition,
+        content_type=content_type,
+        saved_query_id=saved_query_id,
+    )
+    _enforce_id_limits(filters)
+    return filters
+
+
+def require_known_definition(definition: str | None) -> str | None:
+    """已合并的旧档位名 (SD / HD) 归一到现档位后照常筛选."""
+    if definition is None:
+        return None
+    canonical = canonical_definition(definition)
+    if canonical is None:
+        raise HTTPException(status_code=422, detail=f"未知分辨率: {definition}")
+    return canonical

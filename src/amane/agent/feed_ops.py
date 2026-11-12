@@ -338,7 +338,10 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
 
     @cap.tool
     async def delete_feed(ctx: RunContext[AgentDeps], feed_id: int) -> str | dict[str, object]:
-        """Delete a feed and its item history."""
+        """Delete a feed and its item history.
+
+        Metadata and tasks already created from the items are unaffected. Not undoable.
+        """
         detail = f"删除订阅源 id={feed_id} 及其条目历史"
         require_approval(ctx, sql=detail, tool="delete_feed", extra={"feed_id": feed_id})
         if not await ctx.deps.repo.delete_feed(feed_id):
@@ -390,7 +393,11 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
     async def batch_feed_items(
         ctx: RunContext[AgentDeps], feed_id: int, request: AgentFeedItemBatch
     ) -> dict[str, object]:
-        """Batch ignore, unignore, read, unread, delete, or scrape feed items."""
+        """Batch ignore, unignore, read, unread, delete, or scrape feed items.
+
+        Only rows of this feed are touched; `delete` removes history entries and does not
+        affect metadata or tasks already created. Not undoable for `delete`.
+        """
         feed = await ctx.deps.repo.get_feed(feed_id)
         if feed is None:
             return {"error": f"feed {feed_id} 不存在"}

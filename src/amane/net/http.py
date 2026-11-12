@@ -47,7 +47,7 @@ _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 def _rewrites_to_get(status: int, method: str) -> bool:
-    """重定向是否把方法改成 GET. 301/302 只改 POST, 303 除 HEAD 外都改 (与 curl 的跟随语义一致)."""
+    """重定向是否把方法改成 GET. 301/302 只改 POST, 303 除 GET / HEAD 外都改 (与 curl 的跟随语义一致)."""
     if status == 303:
         return method not in ("GET", "HEAD")
     return status in (301, 302) and method == "POST"

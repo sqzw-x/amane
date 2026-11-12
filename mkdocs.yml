@@ -9,14 +9,22 @@ docs_dir: docs
 theme:
   name: material
   language: zh
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  icon:
+    repo: fontawesome/brands/github
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: blue
+      accent: blue
       toggle:
         icon: material/brightness-7
         name: 深色模式
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: blue
+      accent: blue
       toggle:
         icon: material/brightness-4
         name: 浅色模式
@@ -24,10 +32,12 @@ theme:
     - navigation.tabs
     - navigation.indexes
     - navigation.top
+    - navigation.footer
     - search.highlight
     - search.suggest
     - content.code.copy
     - content.action.edit
+    - content.tabs.link
     - toc.follow
 
 plugins:
@@ -39,13 +49,27 @@ exclude_docs: |
 
 nav:
   - 首页: index.md
-  - 用户指南:
-      - 开始使用: user/index.md
-      - 配置指南: user/configuration.md
-      - 媒体库管理: user/libraries.md
-      - 刮削指南: user/scraping.md
+  - 快速开始: user/index.md
+  - 基础:
+      - 客户端: user/clients.md
+      - 刮削: user/scraping.md
+      - 片库与浏览: user/browse.md
+      - 网络与站点访问: user/network.md
+  - 自动化:
+      - 智能体: user/agent.md
+      - 任务与定时任务: user/tasks.md
+      - 订阅: user/feeds.md
+  - 本地文件:
+      - 媒体库: user/libraries.md
+      - 整理与路径模板: user/organize.md
+      - 对接 Emby / Jellyfin: user/media-server.md
+  - 扩展:
       - 插件: user/plugins.md
+      - 播放: user/playback.md
+  - 参考:
+      - 配置参考: user/configuration.md
       - 常见问题: user/faq.md
+      - 更新日志: https://github.com/sqzw-x/amane/blob/main/CHANGELOG.md
 
 markdown_extensions:
   - admonition
@@ -58,6 +82,14 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.superfences
+  - pymdownx.keys
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg

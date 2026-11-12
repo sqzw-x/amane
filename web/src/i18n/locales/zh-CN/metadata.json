@@ -1,10 +1,27 @@
 {
+  "semantic": {
+    "toggle": "语义",
+    "back": "返回",
+    "placeholder": "描述画面, 例如: 白色衬衫 / 蕾丝 / 海边",
+    "submit": "搜索",
+    "kinds": {
+      "all": "全部",
+      "cover": "封面",
+      "still": "剧照"
+    },
+    "modelMissing": "缺少所需模型。可提交一次「语义索引」任务，将自动下载（约 {{size}} MB）。",
+    "unavailableTitle": "语义检索暂不可用",
+    "disabled": "语义检索未在此实例启用。",
+    "noEmbeddings": "尚未为图片创建嵌入向量。可提交一次「语义索引」任务，视本机算力及图片数量情况，可能需要几分钟到几十分钟。"
+  },
   "search": {
     "placeholder": "搜索番号、标题…",
     "advanced": "高级搜索",
     "advancedHint": "在对应类型中搜索并添加筛选条件",
     "facetPlaceholder": "搜索…",
     "facetEmpty": "无匹配",
+    "library": "媒体库",
+    "libraryAll": "全部媒体库",
     "hasFiles": "关联文件",
     "hasFilesAny": "不限",
     "hasFilesYes": "有文件",
@@ -264,8 +281,8 @@
       "title": "裁切头像",
       "success": "头像已更新"
     },
-    "genderHint": "未知时仅查询通用来源, 避免误匹配. 部分来源可自动获取此字段",
-    "genderUnknownHint": "无法判断时选此项; 刮削只请求同时覆盖两性的站点",
+    "genderHint": "未知时先查询通用来源, 取得性别后再补查该性别的站点. 部分来源可自动获取此字段",
+    "genderUnknownHint": "无法判断时选此项; 刮削先请求同时覆盖两性的站点, 取得性别后再补查该性别的站点",
     "aliasesHint": "回车或逗号添加, 点 × 删除",
     "setDisplayName": "设为展示名",
     "setDisplayNameBody": "将「{{alias}}」设为「{{name}}」的展示名？「{{name}}」会保留为别名",
@@ -345,6 +362,17 @@
     "merge": "合并到此项",
     "mergeConfirm": "确认合并",
     "mergeConfirmBody": "将把 {{count}} 个来源合并到目标项",
+    "mergeEntriesLead": "将 {{count}} 部影片合并到「{{number}}」",
+    "mergeEntriesKeep": "目标影片保留, 现有字段保持不变",
+    "mergeEntriesRaw": "其余影片的刮削来源快照并入目标",
+    "mergeEntriesLinks": "评论、用户标签与关联文件转移到目标",
+    "mergeEntriesDelete": "其余影片会被删除",
+    "mergeEntriesRescrape": "合并后重新刮削 (按优先级重新聚合字段)",
+    "mergeActorLead": "将 {{count}} 名演员合并到「{{name}}」",
+    "mergeActorAlias": "来源演员的名字成为目标的别名",
+    "mergeActorFill": "人物信息填补目标的空缺",
+    "mergeActorTags": "来源演员的用户标签转移到目标",
+    "mergeActorDelete": "来源演员会被删除",
     "deleteFacetBody": "将从所有影片中移除「{{name}}」, 并加入剔除名单, 后续刮削时自动剔除",
     "deleteUserTagBody": "确定永久删除用户标签 「{{name}}」？将从所有影片上移除该标签",
     "rulesTitle": "分类规则",
@@ -366,7 +394,8 @@
     "current": "当前",
     "changedCount": "已修改 {{count}} 个字段",
     "noChanges": "无修改",
-    "loadImages": "加载图片"
+    "loadImages": "加载图片",
+    "loadAllImages": "加载全部图片"
   },
   "lock": {
     "manage": "字段锁定",

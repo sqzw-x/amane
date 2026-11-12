@@ -49,9 +49,13 @@
 
 图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素.
 
+## 海报栅格
+
+片库 grid 短边锚定 (`layout="adaptive"`, 行切分见 `lib/media/adaptive.ts`), 演员墙与分类详情列宽相等. 两者都按图片加载后的自然尺寸取比例, 缓存在 `lib/media/poster-image.ts`, 键是卡片实际请求的地址, 跨路由复用, 首屏混合比例的页面因此只重排一次. 自适应栅格另需复用上次测得的容器宽度: 行切分依赖它, 首帧没有行就没有高度, 路由回退的滚动恢复会被限制为列表顶部. `ProxyImage` 的每个渲染分支都必须转发 `onLoad` / `onError`, 否则拿不到比例, 失败也不退化为番号占位.
+
 ## 窄屏
 
-**视口高度统一经 `--amane-vh`**: 默认 `100vh`, 入口检测到 `dvh` 时替换成 `100dvh`. 禁止在样式或组件属性里写死 `dvh` — Chromium < 108 的 WebView 会整条丢弃含它的声明; 第三方样式 (Mantine) 里的 `dvh` 由构建期替换成同一变量.
+**视口高度统一经 `--amane-vh`**: 默认 `100vh`, 入口检测到 `dvh` 时替换成 `100dvh`. 禁止在样式或组件属性里写死 `dvh` — Chromium < 108 的 WebView 会整条丢弃含它的声明; 第三方样式 (Mantine) 里的 `dvh` 由构建期替换成同一变量. 浮层另取 `--amane-vv-top` / `--amane-vvh` (入口按 `visualViewport.offsetTop` 与 `height` 实时写入; 主题里 Drawer 的定位容器上沿与高度即取它们): 软键盘只缩小视觉视口, 布局视口是否跟着缩、是否被上推由内核决定, 贴布局视口绝对定位的浮层会随键盘跳动, 或在键盘上方留出与上推量同高的空白.
 
 **CSS 数学表达式只能经 `style` 写入**, 禁止作为 Mantine 样式属性的值: 样式属性把字符串中的裸数字视为像素并除以 16 转成 rem, 于是 `calc()` 内出现长度相乘, 该声明在计算时判为无效并退回初始值. 只有以 `calc(` / `clamp(` 开头的字符串原样透传.
 
@@ -80,7 +84,7 @@ Settings、任务提交、定时创建、metadata 编辑共用 `components/schem
 | 数据 | 存储位置 |
 |------|--------|
 | 列表 / 详情 | TanStack Query (invalidate) |
-| 高频流 (进度 / 日志) | Zustand |
+| 高频流 (进度 / 日志) | Zustand; 任务日志历史在展开详情时经 `GET /tasks/{id}/log` 取, 与实时条目按记录去重合并 (`lib/task/log.ts`) |
 | 对话增量 | AG-UI 事件流 (与 WS 正交) |
 | 导航态 (筛选 / 排序 / page / view) | URL search |
 | 列表密度 / 列宽 / 主题 / 播放源顺序 / 列表默认参数 | Zustand (`amane-web`) |
@@ -91,7 +95,7 @@ OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-ma
 
 外站图经由 `/api/resources/proxy` (`proxyImageUrl`); 评论正文的图片例外: 直接内联, 懒加载且不发送 Referer, 失败降级为链接 — 代理会写入 `Resource`, 评论 URL 不在清理存活集合内. `<img>` 不能带 Authorization, 鉴权靠 cookie. 裁切基准是源图 (海报 `thumb_urls[0]`, 演员头像 `image_urls[0]`) 对应的 Resource 本地文件; 两者共用 `ImageCropDialog`, 只提交像素坐标, 不上传 blob.
 
-相位水印是 CSS overlay (`FilePhaseOverlay`), 读列表聚合的 `file_phase`, 不修改 Resource 像素; 表格与文件列表仍用 `FilePhaseBadges`. `FanartLightbox` 必须 Portal 到 `document.body`. 外链图片的并发限流见 `components/media/proxy-image.tsx` 与 `lib/image-loader.ts` 的注释; 代理会下载上游原图并写入 `Resource`, 因此「对比来源」面板 (`components/metadata/merge-dialog.tsx`) 的图先渲染为与缩略图同形的占位块, 点击后才加载 — 展开面板不得触发回源.
+相位水印是 CSS overlay (`FilePhaseOverlay`), 读列表聚合的 `file_phase`, 不修改 Resource 像素; 表格与文件列表仍用 `FilePhaseBadges`. `FanartLightbox` 必须 Portal 到 `document.body`. 外链图片的并发限流见 `components/media/proxy-image.tsx` 与 `lib/image-loader.ts` 的注释; 代理会下载上游原图并写入 `Resource`, 因此「对比来源」面板 (`components/metadata/merge-dialog.tsx`) 的图先渲染为与缩略图同形的占位块, 点击后才加载; 面板头的「加载全部图片」一次放开整个对话框 — 展开面板不得触发回源.
 
 ## `lib/` 分层
 
@@ -102,5 +106,7 @@ OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-ma
 ## 工程入口
 
 `just generate` → OpenAPI 导出 + TS client 生成 (`web/src/client/` 为产物, 不手改); SPA 产物 `web/dist` 由 `src/amane/api/spa.py` 挂载, 缓存头与条件请求的约定见该文件. `vite.config.ts` 的 `legacy()` 声明运行期下限 (语法目标 + core-js polyfill), 面向版本落后的 Android WebView — 下限取舍见 [android.md](android.md).
+
+前端不保存可配置的 API 基址, 一律以当前 origin 为基址 (相对路径或 `window.location.origin`): 同源是鉴权的前提 (cookie 与 WS 握手都无法跨源, 理由见 [android.md](android.md)). 开发时由 `vite.config.ts` 的 `server.proxy` 把 `/api` 转发到后端, 目标端口取 `AMANE_PORT` (由 Justfile 的 `_dev-web` 注入, 与 uvicorn 同一个变量), 因此改端口只需改环境变量.
 
 路由组件由 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk: 只服务单个路由的重型依赖必须留在该路由的 chunk, 从共享模块导入会把它移回入口 chunk. 类型、i18n 与 lint 的硬性约束由 `pnpm check` (tsc / oxlint / oxfmt / i18next extract) 把关.

@@ -1,5 +1,6 @@
 from .images import (
     CropRotation,
+    allows_poster_crop,
     apply_cover_watermarks,
     apply_cover_watermarks_from_info,
     crop_box,
@@ -22,6 +23,7 @@ __all__ = [
     "MaterializedImages",
     "ResourceStore",
     "UpscaleOutcome",
+    "allows_poster_crop",
     "apply_cover_watermarks",
     "apply_cover_watermarks_from_info",
     "crop_box",

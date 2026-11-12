@@ -2,6 +2,7 @@
   "title": "设置",
   "tabs": {
     "scraping": "影片刮削",
+    "media_server": "媒体服务器",
     "actor_scraping": "演员刮削",
     "agent": "智能体",
     "network": "网络",
@@ -10,7 +11,8 @@
     "logging": "日志",
     "sr": "图像超分",
     "llm": "LLM 翻译",
-    "watermark": "水印"
+    "watermark": "水印",
+    "semantic": "语义检索"
   },
   "config": {
     "loadError": "加载配置失败"
@@ -51,7 +53,7 @@
       },
       "crop_poster": {
         "label": "裁切海报",
-        "description": "从封面自动裁切生成海报"
+        "description": "从封面自动裁切生成海报, 仅有码与无码生效"
       },
       "poster_crop_skip_ratio": {
         "label": "海报裁切跳过阈值比例",
@@ -319,6 +321,7 @@
               "off": "关闭",
               "patchright": "Patchright",
               "camoufox": "Camoufox",
+              "bsk": "BrowserSkill",
               "solver": "Solver 服务"
             }
           },
@@ -460,6 +463,28 @@
         }
       }
     },
+    "media_server": {
+      "label": "媒体服务器",
+      "kind": {
+        "label": "类型",
+        "options": {
+          "emby": "Emby",
+          "jellyfin": "Jellyfin"
+        }
+      },
+      "url": {
+        "label": "地址",
+        "description": "服务器地址, 含协议、端口与可选子路径"
+      },
+      "api_key": {
+        "label": "API Key",
+        "description": "管理员 API Key"
+      },
+      "verify_tls": {
+        "label": "校验证书",
+        "description": "校验 HTTPS 证书; 自签名证书可关闭"
+      }
+    },
     "network": {
       "proxy": {
         "label": "代理",
@@ -479,12 +504,17 @@
       },
       "browser": {
         "label": "浏览器渲染",
+        "bsk_path": {
+          "label": "bsk 路径",
+          "description": "BrowserSkill CLI; 留空则从 PATH 查找; 桌面版需要填绝对路径"
+        },
         "backend": {
           "label": "浏览器后端",
           "options": {
             "off": "关闭",
             "patchright": "Patchright",
             "camoufox": "Camoufox",
+            "bsk": "BrowserSkill",
             "solver": "Solver 服务"
           }
         },
@@ -831,6 +861,10 @@
       "gfriends_repo": {
         "label": "gFriends 仓库",
         "description": "gFriends GitHub 仓库 URL"
+      },
+      "auto_push": {
+        "label": "自动推送",
+        "description": "演员刮削成功后自动推送到媒体服务器"
       }
     },
     "plugins": {
@@ -841,6 +875,12 @@
       "config": {
         "label": "插件配置",
         "description": "由插件提供的配置项"
+      }
+    },
+    "semantic": {
+      "auto_maintain": {
+        "label": "自动维护",
+        "description": "图片变化后立即重算该条目的向量; 打开时模型常驻内存"
       }
     }
   }

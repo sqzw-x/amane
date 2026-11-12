@@ -35,6 +35,14 @@ if [[ ! -f "$ROOT/assets/app.icns" ]]; then
   exit 1
 fi
 
+# 依赖必须按最低支持系统 (macOS 13) 装: 打包机是更新的系统, 默认会选到 numpy / orjson 的
+# 高版本变体, 源码构建 (watchdog) 也会以打包机的系统为部署目标, 产物便只能在打包机同版本上启动.
+case "$(uname -m)" in
+  arm64) UV_PLATFORM=aarch64-apple-darwin ;;
+  *) UV_PLATFORM=x86_64-apple-darwin ;;
+esac
+MACOSX_DEPLOYMENT_TARGET=13.0 uv sync --all-extras --all-groups --python-platform "$UV_PLATFORM"
+
 rm -rf "$WORK" "$OUT"
 mkdir -p "$WORK" "$(dirname "$OUT")"
 
@@ -44,8 +52,9 @@ while IFS= read -r name; do
   STDLIB_ARGS+=(--collect-submodules "$name")
 done < <(.venv/bin/python scripts/stdlib_modules.py)
 
-# Excludes: patchright / camoufox / playwright (本地引擎, 桌面端仅 solver 可用) and IPython
-# (python-dotenv -> dotenv.ipython -> IPython.core.magic).
+# Excludes: patchright / camoufox / playwright (本地引擎, 桌面端仅 solver 可用), IPython
+# (python-dotenv -> dotenv.ipython -> IPython.core.magic) 与 onnxruntime (pyproject 已按
+# sys_platform 只装到非 macOS; 这里再排除一次, 免得 amane.semantic.onnx 的 import 在分析期报警).
 .venv/bin/pyinstaller \
   --noconfirm --clean --onedir --console \
   --name "$NAME" \
@@ -53,16 +62,20 @@ done < <(.venv/bin/python scripts/stdlib_modules.py)
   --add-data "$ROOT/web/dist:web/dist" \
   --add-data "$ROOT/src/amane/db/migrations:amane/db/migrations" \
   --add-data "$ROOT/src/amane/media/watermarks:amane/media/watermarks" \
+  --add-data "$ROOT/src/amane/utils/zhcdict.json:amane/utils" \
+  --add-data "$ROOT/src/amane/utils/zhconv_overrides.json:amane/utils" \
   --add-data "$ROOT/alembic.ini:." \
   --collect-submodules amane \
   --exclude-module patchright \
   --exclude-module camoufox \
   --exclude-module playwright \
   --exclude-module IPython \
+  --exclude-module onnxruntime \
+  --exclude-module huggingface_hub \
+  --exclude-module hf_xet \
   --collect-all pydantic_ai \
   --collect-all pydantic_graph \
   --collect-all genai_prices \
-  --collect-data zhconv \
   --hidden-import socksio \
   "${STDLIB_ARGS[@]}" \
   --copy-metadata genai_prices \
@@ -114,7 +127,7 @@ cat > "$UI_APP/Contents/Info.plist" <<'UIEOF'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
-  <string>12.0</string>
+  <string>13.0</string>
   <key>LSUIElement</key>
   <true/>
 </dict>
@@ -143,7 +156,7 @@ cat > "$OUT/Contents/Info.plist" <<EOF
   <key>CFBundleShortVersionString</key>
   <string>${APP_VERSION}</string>
   <key>LSMinimumSystemVersion</key>
-  <string>12.0</string>
+  <string>13.0</string>
   <key>LSUIElement</key>
   <true/>
   <key>LSMultipleInstancesProhibited</key>

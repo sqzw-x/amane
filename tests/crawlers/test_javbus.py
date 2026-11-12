@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from amane.crawlers.models import SearchQuery
-from amane.crawlers.sites.javbus import JavBusCrawler
+from amane.crawlers.sites.javbus import JavBusCrawler, poster_url_for
 from amane.net.errors import FailureKind, RequestError, RequestFailure
 
 from .driven import http_client
@@ -86,3 +86,23 @@ async def test_search_reports_other_failures(query: str, routes: dict[str, Route
     with pytest.raises(RequestError) as excinfo:
         await crawler._search(SearchQuery(query))
     assert excinfo.value.http_status == status
+
+
+# 海报根必须与封面根同源: 跨根拼出的地址是另一部作品的海报, 站上照样 200, 无法在下载期兜底.
+POSTER_CASES: list[tuple[str | None, str | None]] = [
+    ("/pics/cover/939o_b.jpg", "https://www.javbus.com/pics/thumb/939o.jpg"),
+    ("/imgs/cover/wsm_b.jpg", "https://www.javbus.com/imgs/thumbs/wsm.jpg"),
+    # 已展开成绝对地址、带查询串, 以及没有 _b 后缀的封面
+    ("https://www.javbus.com/imgs/cover/22nk_b.jpg?v=1", "https://www.javbus.com/imgs/thumbs/22nk.jpg"),
+    ("/pics/cover/9ma0.jpg", "https://www.javbus.com/pics/thumb/9ma0.jpg"),
+    # 认不出的根与形态不猜: 猜错只会把别的作品写成自己的海报
+    ("/img/cover/abc_b.jpg", None),
+    ("/pics/thumb/abc.jpg", None),
+    ("", None),
+    (None, None),
+]
+
+
+@pytest.mark.parametrize(("cover", "expected"), POSTER_CASES)
+def test_poster_root_follows_cover_root(cover: str | None, expected: str | None) -> None:
+    assert poster_url_for("https://www.javbus.com", cover) == expected

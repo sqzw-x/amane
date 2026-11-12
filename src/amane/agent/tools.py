@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 from pydantic_ai import ApprovalRequired, RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
+from ..db.embeddings import EmbeddingKind
 from ..db.models import SavedQueryEntity
 from ..db.repository import Repository
 from .bridge import AgentRuntimeBridge
 from .cache import CachedResult
 from .executor import QueryExecutor, extract_entity_ids
-from .sql import SqlNeedsApproval, SqlResult, SqlSandboxError, SqlTimeoutError
+from .sql import SqlNeedsApproval, SqlResult, SqlSandboxError, SqlTimeoutError, as_id_subquery_sql
 
 TOOL_OK = "OK"
 """成功回执: 模型下一步不需要任何观测的写操作只回它. 见 docs/dev/agent.md 返回值契约."""
@@ -45,11 +46,27 @@ class InspectResult(BaseModel):
     total: int
 
 
+class SemanticHitItem(BaseModel):
+    id: int
+    number: str
+    title: str | None
+    release: str | None
+    kind: str
+    resource_url: str
+    similarity: float
+
+
+class SemanticSearchResult(BaseModel):
+    total: int
+    items: list[SemanticHitItem]
+
+
 @dataclass
 class AgentDeps:
     repo: Repository
     executor: QueryExecutor
-    session_id: int
+    session_id: int | None
+    """None = 外部派发: 交付的查询预设与会话解耦, 直接进入预设列表."""
     sql_timeout_ms: int
     sample_limit: int = 20
     bridge: AgentRuntimeBridge = field(default_factory=AgentRuntimeBridge)
@@ -90,11 +107,19 @@ async def materialize_saved_query(
     entity: SavedQueryEntity | None,
     name: str | None,
     description: str | None = None,
+    persisted: bool = False,
     result: SqlResult,
 ) -> tuple[int, str, list[int]]:
     """把全量 SQL 结果写成会话 SavedQuery 并入缓存.
 
     ``entity`` 省略按 ``DATA`` 落库: 不校验/不抽取 id, 只作数据表交付或探查视图.
+
+    外部派发没有会话 (``deps.session_id is None``). ``sql_deliver`` 因此在无会话时传
+    ``persisted=True``; 探查视图这条路径没有传, 行落在 ``session_id=NULL, persisted=false``,
+    既不属于任何会话 (删会话时不会被回收), 也不在预设页 (那里只列 persisted). 结果是每次
+    外部 ``create_view`` 都留下一行, 且用户看不见、删不掉. 清理需要一个大于结果缓存存活窗口
+    的截止时间, 单独处理.
+
     ``entity`` 为 metadata/actor 时按交付契约抽取 ``id`` 列 (缺失抛 ValueError).
     """
     entity = entity or SavedQueryEntity.DATA
@@ -108,7 +133,7 @@ async def materialize_saved_query(
         sql=sql,
         entity=entity,
         session_id=deps.session_id,
-        persisted=False,
+        persisted=persisted,
     )
     assert saved.id is not None
     deps.executor.cache.put(CachedResult(saved_query_id=saved.id, sql=sql, columns=result.columns, rows=result.rows))
@@ -216,6 +241,7 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
                 entity=entity,
                 name=name,
                 description=description,
+                persisted=ctx.deps.session_id is None,
                 result=result,
             )
         except ValueError as exc:
@@ -227,6 +253,83 @@ def build_explore_toolset() -> FunctionToolset[AgentDeps]:
             row_count=len(result.rows),
         )
         return out.model_dump(mode="json")
+
+    @toolset.tool
+    async def semantic_search(
+        ctx: RunContext[AgentDeps],
+        query: str,
+        limit: int = 20,
+        kind: Literal["all", "cover", "still"] = "all",
+        saved_query_id: int | None = None,
+        sql: str | None = None,
+    ) -> dict[str, Any]:
+        """Search covers and stills by one natural-language description of the image.
+
+        The whole query is encoded once; do not split it into words. Pass saved_query_id or a
+        read-only sql returning an `id` column to rank only inside that result set.
+        """
+        text = query.strip()
+        if not text:
+            return {"error": "query 不能为空"}
+        limit = max(1, min(limit, 60))
+        if saved_query_id is not None and sql is not None:
+            return {"error": "saved_query_id 与 sql 只能传一个"}
+        search = ctx.deps.bridge.semantic_search
+        if search is None:
+            return {"error": "语义检索未启用"}
+
+        allowed_ids: list[int] | None = None
+        if sql is not None:
+            try:
+                result = await ctx.deps.executor.run_sql(
+                    sql,
+                    timeout_ms=ctx.deps.sql_timeout_ms,
+                    approved=ctx.tool_call_approved,
+                )
+            except SqlNeedsApproval:
+                require_approval(
+                    ctx,
+                    sql=sql,
+                    tool="semantic_search",
+                    extra={"query": text, "limit": limit, "kind": kind},
+                )
+                raise  # pragma: no cover - require_approval 必 raise
+            except (SqlSandboxError, SqlTimeoutError) as exc:
+                return {"error": str(exc)}
+            try:
+                allowed_ids = extract_entity_ids(result.columns, result.rows)
+            except ValueError as exc:
+                return {"error": str(exc)}
+        elif saved_query_id is not None:
+            saved = await ctx.deps.repo.get_saved_query(saved_query_id)
+            if saved is None:
+                return {"error": f"saved_query {saved_query_id} 不存在"}
+            if saved.entity is not SavedQueryEntity.METADATA:
+                return {"error": f"查询预设实体为 {saved.entity}, 需要 metadata"}
+            allowed_ids = await ctx.deps.repo.list_metadata_ids(id_subquery_sql=as_id_subquery_sql(saved.sql))
+
+        hits = await search(
+            text,
+            limit,
+            None if kind == "all" else EmbeddingKind(kind),
+            allowed_ids,
+        )
+        items, _ = await ctx.deps.repo.list_metadata(ids=[hit.metadata_id for hit in hits], limit=max(1, len(hits)))
+        by_id = {item.id: item for item in items}
+        rows = [
+            SemanticHitItem(
+                id=hit.metadata_id,
+                number=by_id[hit.metadata_id].number,
+                title=by_id[hit.metadata_id].title,
+                release=str(by_id[hit.metadata_id].release) if by_id[hit.metadata_id].release else None,
+                kind=hit.kind.value,
+                resource_url=hit.resource_url,
+                similarity=round(hit.score, 4),
+            )
+            for hit in hits
+            if hit.metadata_id in by_id
+        ]
+        return SemanticSearchResult(total=len(rows), items=rows).model_dump(mode="json")
 
     @toolset.tool
     async def inspect_result(

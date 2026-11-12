@@ -158,6 +158,103 @@ export const ActorLocksRequestSchema = {
     description: '整体替换锁定字段集合.'
 } as const;
 
+export const ActorPushResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'actor_push',
+            title: 'Type',
+            default: 'actor_push'
+        },
+        requested: {
+            type: 'integer',
+            title: 'Requested'
+        },
+        matched: {
+            type: 'integer',
+            title: 'Matched'
+        },
+        updated: {
+            type: 'integer',
+            title: 'Updated'
+        },
+        images: {
+            type: 'integer',
+            title: 'Images'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped'
+        },
+        not_found: {
+            type: 'integer',
+            title: 'Not Found'
+        },
+        no_image: {
+            type: 'integer',
+            title: 'No Image'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing'
+        },
+        failed: {
+            type: 'integer',
+            title: 'Failed'
+        },
+        failures: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Failures'
+        }
+    },
+    type: 'object',
+    required: [
+        'requested',
+        'matched',
+        'updated',
+        'images',
+        'skipped',
+        'not_found',
+        'no_image',
+        'missing',
+        'failed',
+        'failures'
+    ],
+    title: 'ActorPushResult'
+} as const;
+
+export const ActorPushSubmissionSchema = {
+    properties: {
+        actor_ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            title: 'Actor Ids',
+            description: '要推送的演员 ID; 空表示全部演员'
+        },
+        force: {
+            type: 'boolean',
+            title: 'Force',
+            description: '覆盖媒体服务器上已有的头像与人物字段',
+            default: false
+        },
+        type: {
+            type: 'string',
+            const: 'actor_push',
+            title: 'Type'
+        }
+    },
+    type: 'object',
+    required: [
+        'type'
+    ],
+    title: 'ActorPushSubmission'
+} as const;
+
 export const ActorResponseSchema = {
     properties: {
         id: {
@@ -492,6 +589,12 @@ export const ActorScrapingConfigSchema = {
             title: 'Auto Scrape',
             default: true
         },
+        auto_push: {
+            type: 'boolean',
+            title: 'Auto Push',
+            description: '演员刮削成功后自动将该演员推送到媒体服务器',
+            default: false
+        },
         gfriends_repo: {
             type: 'string',
             title: 'Gfriends Repo',
@@ -701,6 +804,7 @@ export const ActorUserTagsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids',
             description: '演员 ID 列表'
@@ -710,6 +814,7 @@ export const ActorUserTagsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'User Tag Ids',
             description: '用户标签 ID 列表'
@@ -802,7 +907,7 @@ export const AgentConfigSchema = {
             maximum: 60000,
             minimum: 50,
             title: 'Sql Timeout Ms',
-            default: 1000,
+            default: 5000,
             'x-hidden': true
         },
         result_cache_ttl_s: {
@@ -1166,15 +1271,87 @@ export const Body_install_pluginSchema = {
     title: 'Body_install_plugin'
 } as const;
 
+export const BrowserBackendItemResponseSchema = {
+    properties: {
+        backend: {
+            $ref: '#/components/schemas/BrowserBackendName'
+        },
+        available: {
+            type: 'boolean',
+            title: 'Available'
+        },
+        detail: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Detail'
+        },
+        version: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Version'
+        },
+        browsers: {
+            items: {
+                $ref: '#/components/schemas/BrowserInstanceResponse'
+            },
+            type: 'array',
+            title: 'Browsers'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'backend',
+        'available'
+    ],
+    title: 'BrowserBackendItemResponse',
+    description: '一个后端的可用性.\n\n``detail`` 是环境抛出的原文 (缺模块、缺 CLI、浏览器未连接、solver 应答错误), 界面原样展示;\n``version`` 目前只有 bsk 有 (daemon 版本).'
+} as const;
+
 export const BrowserBackendNameSchema = {
     type: 'string',
     enum: [
         'off',
         'patchright',
         'camoufox',
+        'bsk',
         'solver'
     ],
     title: 'BrowserBackendName'
+} as const;
+
+export const BrowserBackendReportResponseSchema = {
+    properties: {
+        selected: {
+            $ref: '#/components/schemas/BrowserBackendName'
+        },
+        items: {
+            items: {
+                $ref: '#/components/schemas/BrowserBackendItemResponse'
+            },
+            type: 'array',
+            title: 'Items'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'selected'
+    ],
+    title: 'BrowserBackendReportResponse',
+    description: '``selected`` 是当前生效的后端, 供界面标出「已选但不可用」这一种组合.'
 } as const;
 
 export const BrowserConfigSchema = {
@@ -1182,6 +1359,19 @@ export const BrowserConfigSchema = {
         backend: {
             $ref: '#/components/schemas/BrowserBackendName',
             default: 'off'
+        },
+        bsk_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Bsk Path',
+            'x-path-type': 'file',
+            'x-widget': 'PathPicker'
         },
         timeout: {
             type: 'integer',
@@ -1199,6 +1389,43 @@ export const BrowserConfigSchema = {
     },
     type: 'object',
     title: 'BrowserConfig'
+} as const;
+
+export const BrowserInstanceResponseSchema = {
+    properties: {
+        instance_id: {
+            type: 'string',
+            title: 'Instance Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        extension_version: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Extension Version'
+        },
+        unresponsive: {
+            type: 'boolean',
+            title: 'Unresponsive',
+            default: false
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'instance_id',
+        'name'
+    ],
+    title: 'BrowserInstanceResponse',
+    description: 'bsk 已连接的浏览器实例; 只用于展示, 选择实例属于后续能力.'
 } as const;
 
 export const BrowserModeSchema = {
@@ -1828,6 +2055,15 @@ export const DownloadableResourceSchema = {
     description: '影片附属资源类型: 刮削写入 Resource, 整理时按库配置复制到库路径.'
 } as const;
 
+export const EmbeddingKindSchema = {
+    type: 'string',
+    enum: [
+        'cover',
+        'still'
+    ],
+    title: 'EmbeddingKind'
+} as const;
+
 export const ErrorRowSchema = {
     properties: {
         seq: {
@@ -1882,6 +2118,7 @@ export const FacetBatchRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Facet Ids',
             description: '分类 ID 列表'
@@ -1975,6 +2212,7 @@ export const FacetMergeRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Source Ids',
             description: '待合并的来源 facet id 列表'
@@ -2249,6 +2487,7 @@ export const FeedItemBatchRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids'
         }
@@ -3299,6 +3538,13 @@ export const HotSettingsSchema = {
                 }
             }
         },
+        media_server: {
+            $ref: '#/components/schemas/MediaServerConfig',
+            default: {
+                kind: 'jellyfin',
+                verify_tls: true
+            }
+        },
         actor_scraping: {
             $ref: '#/components/schemas/ActorScrapingConfig',
             default: {
@@ -3314,6 +3560,7 @@ export const HotSettingsSchema = {
                 ],
                 download_images: true,
                 auto_scrape: true,
+                auto_push: false,
                 gfriends_repo: 'https://github.com/gfriends/gfriends'
             }
         },
@@ -3325,7 +3572,7 @@ export const HotSettingsSchema = {
                 model: 'gpt-4o-mini',
                 max_tokens: 128000,
                 rate_limit: 2,
-                sql_timeout_ms: 1000,
+                sql_timeout_ms: 5000,
                 result_cache_ttl_s: 3600,
                 result_cache_max_entries: 64,
                 history_ttl_s: 3600,
@@ -3359,6 +3606,12 @@ export const HotSettingsSchema = {
                 preset: 'waifu-photo-2x',
                 output_format: 'jpg',
                 tta: false
+            }
+        },
+        semantic: {
+            $ref: '#/components/schemas/SemanticConfig',
+            default: {
+                auto_maintain: false
             }
         },
         watermark: {
@@ -4020,6 +4273,17 @@ export const LibraryCreateRequestSchema = {
             ],
             title: 'Extrafanart Template'
         },
+        extrafanart_name_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Extrafanart Name Template'
+        },
         nfo_template: {
             anyOf: [
                 {
@@ -4252,6 +4516,17 @@ export const LibraryResponseSchema = {
                 }
             ],
             title: 'Extrafanart Template'
+        },
+        extrafanart_name_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Extrafanart Name Template'
         },
         nfo_template: {
             anyOf: [
@@ -4529,6 +4804,17 @@ export const LibraryUpdateRequestSchema = {
                 }
             ],
             title: 'Extrafanart Template'
+        },
+        extrafanart_name_template: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Extrafanart Name Template'
         },
         nfo_template: {
             anyOf: [
@@ -4992,6 +5278,54 @@ export const MediaListResponseSchema = {
     title: 'MediaListResponse'
 } as const;
 
+export const MediaServerConfigSchema = {
+    properties: {
+        kind: {
+            type: 'string',
+            enum: [
+                'emby',
+                'jellyfin'
+            ],
+            title: 'Kind',
+            description: '媒体服务器类型',
+            default: 'jellyfin'
+        },
+        url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Url',
+            description: '服务器地址, 含协议、端口与可选子路径'
+        },
+        api_key: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Api Key',
+            description: '管理员 API Key'
+        },
+        verify_tls: {
+            type: 'boolean',
+            title: 'Verify Tls',
+            description: '校验 HTTPS 证书; 自签名证书可关闭',
+            default: true
+        }
+    },
+    type: 'object',
+    title: 'MediaServerConfig',
+    description: 'Emby / Jellyfin 人物推送; url 与 api_key 齐备才启用.'
+} as const;
+
 export const MediaSortFieldSchema = {
     type: 'string',
     enum: [
@@ -5034,6 +5368,12 @@ export const MetadataBatchDeleteResponseSchema = {
             type: 'integer',
             title: 'Missing',
             description: '不存在的 id 数量'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped',
+            description: '请求内重复的 id 数量; 已去重',
+            default: 0
         }
     },
     type: 'object',
@@ -5051,6 +5391,7 @@ export const MetadataBatchIdsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids',
             description: 'Metadata ID 列表'
@@ -5070,6 +5411,7 @@ export const MetadataBatchScrapeRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids',
             description: 'Metadata ID 列表'
@@ -5113,6 +5455,12 @@ export const MetadataBatchScrapeResponseSchema = {
             type: 'integer',
             title: 'Missing',
             description: '不存在的 id 数量'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped',
+            description: '请求内重复的 id 数量; 已去重',
+            default: 0
         },
         task_ids: {
             items: {
@@ -5256,11 +5604,283 @@ export const MetadataFieldSchema = {
     title: 'MetadataField'
 } as const;
 
+export const MetadataListItemSchema = {
+    properties: {
+        id: {
+            type: 'integer',
+            title: 'Id'
+        },
+        number: {
+            type: 'string',
+            title: 'Number'
+        },
+        content_type: {
+            $ref: '#/components/schemas/ContentType'
+        },
+        title: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Title'
+        },
+        actors: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Actors',
+            default: []
+        },
+        studio: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Studio'
+        },
+        publisher: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Publisher'
+        },
+        release: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Release'
+        },
+        runtime: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime'
+        },
+        tags: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Tags',
+            default: []
+        },
+        series: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Series'
+        },
+        plot: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Plot'
+        },
+        directors: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Directors',
+            default: []
+        },
+        poster_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Poster Url'
+        },
+        thumb_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Thumb Url'
+        },
+        trailer_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Trailer Url'
+        },
+        extrafanart: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Extrafanart',
+            default: []
+        },
+        score: {
+            anyOf: [
+                {
+                    type: 'number'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Score'
+        },
+        vr: {
+            type: 'boolean',
+            title: 'Vr',
+            default: false
+        },
+        poster_urls: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Poster Urls',
+            default: []
+        },
+        thumb_urls: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Thumb Urls',
+            default: []
+        },
+        trailer_urls: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Trailer Urls',
+            default: []
+        },
+        extrafanart_urls: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Extrafanart Urls',
+            default: {}
+        },
+        scores: {
+            additionalProperties: {
+                type: 'number'
+            },
+            type: 'object',
+            title: 'Scores',
+            default: {}
+        },
+        external_ids: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'External Ids',
+            default: {}
+        },
+        source_urls: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Source Urls',
+            default: {}
+        },
+        locked_fields: {
+            items: {
+                $ref: '#/components/schemas/MetadataField'
+            },
+            type: 'array',
+            title: 'Locked Fields',
+            default: []
+        },
+        file_count: {
+            type: 'integer',
+            title: 'File Count',
+            default: 0
+        },
+        file_phase: {
+            $ref: '#/components/schemas/FilePhaseSummary'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'number',
+        'content_type'
+    ],
+    title: 'MetadataListItem',
+    description: '列表与语义检索的条目: 不含 raw / field_sources, 详情才返回全量.'
+} as const;
+
 export const MetadataListResponseSchema = {
     properties: {
         items: {
             items: {
-                $ref: '#/components/schemas/MetadataResponse'
+                $ref: '#/components/schemas/MetadataListItem'
             },
             type: 'array',
             title: 'Items'
@@ -5268,6 +5888,13 @@ export const MetadataListResponseSchema = {
         total: {
             type: 'integer',
             title: 'Total'
+        },
+        semantic_hits: {
+            items: {
+                $ref: '#/components/schemas/SemanticHitInfo'
+            },
+            type: 'array',
+            title: 'Semantic Hits'
         }
     },
     type: 'object',
@@ -5292,6 +5919,38 @@ export const MetadataLocksRequestSchema = {
     type: 'object',
     title: 'MetadataLocksRequest',
     description: '整体替换锁定字段集合.'
+} as const;
+
+export const MetadataMergeEntriesRequestSchema = {
+    properties: {
+        target_id: {
+            type: 'integer',
+            title: 'Target Id',
+            description: '合并目标 Metadata ID; 其字段与已有站点快照保持不变'
+        },
+        source_ids: {
+            items: {
+                type: 'integer'
+            },
+            type: 'array',
+            maxItems: 1000,
+            minItems: 1,
+            title: 'Source Ids',
+            description: '待合并的 Metadata ID 列表; 按顺序补入 raw 快照'
+        },
+        rescrape: {
+            type: 'boolean',
+            title: 'Rescrape',
+            description: '合并后按当前优先级对目标番号入队 SCRAPE, 复用 raw 缓存重新聚合字段',
+            default: false
+        }
+    },
+    type: 'object',
+    required: [
+        'target_id',
+        'source_ids'
+    ],
+    title: 'MetadataMergeEntriesRequest'
 } as const;
 
 export const MetadataPartialSchema = {
@@ -5747,18 +6406,6 @@ export const MetadataResponseSchema = {
             title: 'Source Urls',
             default: {}
         },
-        field_sources: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Field Sources',
-            default: {}
-        },
-        raw: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Raw',
-            default: {}
-        },
         locked_fields: {
             items: {
                 $ref: '#/components/schemas/MetadataField'
@@ -5798,6 +6445,18 @@ export const MetadataResponseSchema = {
                 }
             ],
             title: 'Updated At'
+        },
+        field_sources: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Field Sources',
+            default: {}
+        },
+        raw: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Raw',
+            default: {}
         }
     },
     type: 'object',
@@ -5806,7 +6465,8 @@ export const MetadataResponseSchema = {
         'number',
         'content_type'
     ],
-    title: 'MetadataResponse'
+    title: 'MetadataResponse',
+    description: '详情与单条写接口的全量条目: 在列表项之上补 raw / field_sources.'
 } as const;
 
 export const MetadataSortFieldSchema = {
@@ -5831,6 +6491,7 @@ export const MetadataUserTagsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Ids',
             description: 'Metadata ID 列表'
@@ -5840,6 +6501,7 @@ export const MetadataUserTagsRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'User Tag Ids',
             description: '用户标签 ID 列表'
@@ -5861,6 +6523,39 @@ export const MetadataUserTagsRequestSchema = {
         'action'
     ],
     title: 'MetadataUserTagsRequest'
+} as const;
+
+export const MetadataUserTagsResponseSchema = {
+    properties: {
+        changed: {
+            type: 'integer',
+            title: 'Changed',
+            description: '至少一处挂载关系发生变更的条目数'
+        },
+        unchanged: {
+            type: 'integer',
+            title: 'Unchanged',
+            description: '已处于目标态、未修改的条目数'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing',
+            description: '不存在的条目 id 数'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped',
+            description: '请求内重复的条目 id 数量; 已去重',
+            default: 0
+        }
+    },
+    type: 'object',
+    required: [
+        'changed',
+        'unchanged',
+        'missing'
+    ],
+    title: 'MetadataUserTagsResponse'
 } as const;
 
 export const MosaicSchema = {
@@ -5982,6 +6677,10 @@ export const OptionalPathTemplateDefaultsSchema = {
             type: 'string',
             title: 'Extrafanart Template'
         },
+        extrafanart_name_template: {
+            type: 'string',
+            title: 'Extrafanart Name Template'
+        },
         nfo_template: {
             type: 'string',
             title: 'Nfo Template'
@@ -6001,12 +6700,13 @@ export const OptionalPathTemplateDefaultsSchema = {
         'poster_template',
         'fanart_template',
         'extrafanart_template',
+        'extrafanart_name_template',
         'nfo_template',
         'trailer_template',
         'subtitle_template'
     ],
     title: 'OptionalPathTemplateDefaults',
-    description: '附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用).'
+    description: '附属模板缺省 (Library 对应列为 None 时 ORGANIZE 使用; 剧照文件名在写盘时按张数渲染).'
 } as const;
 
 export const OrganizeConflictSchema = {
@@ -6223,7 +6923,7 @@ export const PathTemplateSchemaResponseSchema = {
         'subtitle_extensions_default'
     ],
     title: 'PathTemplateSchemaResponse',
-    description: '与 resolve_paths 同源.'
+    description: '与 ORGANIZE 实际使用的默认值同源; 路径模板由 resolve_paths 解析, 剧照文件名模板由写盘阶段渲染.'
 } as const;
 
 export const PlaybackSourceListResponseSchema = {
@@ -6994,9 +7694,48 @@ export const RoutineTypeSchema = {
         'cleanup',
         'upscale',
         'r18_import',
-        'rescrape'
+        'rescrape',
+        'semantic_index'
     ],
     title: 'RoutineType'
+} as const;
+
+export const RuntimePathsSchema = {
+    properties: {
+        data_dir: {
+            type: 'string',
+            title: 'Data Dir'
+        },
+        log_dir: {
+            type: 'string',
+            title: 'Log Dir'
+        },
+        db_path: {
+            type: 'string',
+            title: 'Db Path'
+        },
+        config_path: {
+            type: 'string',
+            title: 'Config Path'
+        },
+        env: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Env'
+        }
+    },
+    type: 'object',
+    required: [
+        'data_dir',
+        'log_dir',
+        'db_path',
+        'config_path',
+        'env'
+    ],
+    title: 'RuntimePaths',
+    description: '智能体可直接读取的位置; 供它自行查日志 / 配置 / 数据库, 不为这些能力做接口.'
 } as const;
 
 export const SavedQueryBatchActionSchema = {
@@ -7429,6 +8168,9 @@ export const ScheduleCreateRequestSchema = {
                 },
                 {
                     $ref: '#/components/schemas/RescrapeSubmission'
+                },
+                {
+                    $ref: '#/components/schemas/SemanticIndexSubmission'
                 }
             ],
             title: 'Submission',
@@ -7438,6 +8180,7 @@ export const ScheduleCreateRequestSchema = {
                     cleanup: '#/components/schemas/CleanupSubmission',
                     r18_import: '#/components/schemas/R18ImportSubmission',
                     rescrape: '#/components/schemas/RescrapeSubmission',
+                    semantic_index: '#/components/schemas/SemanticIndexSubmission',
                     upscale: '#/components/schemas/UpscaleSubmission'
                 }
             }
@@ -7510,6 +8253,9 @@ export const ScheduleResponseSchema = {
                 },
                 {
                     $ref: '#/components/schemas/RescrapeSubmission'
+                },
+                {
+                    $ref: '#/components/schemas/SemanticIndexSubmission'
                 }
             ],
             title: 'Payload',
@@ -7519,6 +8265,7 @@ export const ScheduleResponseSchema = {
                     cleanup: '#/components/schemas/CleanupSubmission',
                     r18_import: '#/components/schemas/R18ImportSubmission',
                     rescrape: '#/components/schemas/RescrapeSubmission',
+                    semantic_index: '#/components/schemas/SemanticIndexSubmission',
                     upscale: '#/components/schemas/UpscaleSubmission'
                 }
             }
@@ -7947,6 +8694,7 @@ export const SelectionRequestSchema = {
                 type: 'integer'
             },
             type: 'array',
+            maxItems: 1000,
             minItems: 1,
             title: 'Media File Ids',
             description: '选中的媒体文件 ID; 必须属于该库'
@@ -8008,6 +8756,392 @@ export const SelectionSummaryResponseSchema = {
     ],
     title: 'SelectionSummaryResponse',
     description: '展开结果. 条目自库根展开 (库外产物挂在根下), 面板按分页接口读取.'
+} as const;
+
+export const SemanticBenchmarkResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'semantic_benchmark',
+            title: 'Type',
+            default: 'semantic_benchmark'
+        },
+        backend: {
+            type: 'string',
+            title: 'Backend'
+        },
+        model: {
+            type: 'string',
+            title: 'Model'
+        },
+        images_per_second: {
+            type: 'number',
+            title: 'Images Per Second'
+        },
+        query_ms: {
+            type: 'number',
+            title: 'Query Ms'
+        },
+        load_ms: {
+            type: 'number',
+            title: 'Load Ms'
+        },
+        samples: {
+            type: 'integer',
+            title: 'Samples'
+        },
+        measured_at: {
+            type: 'string',
+            title: 'Measured At'
+        }
+    },
+    type: 'object',
+    required: [
+        'backend',
+        'model',
+        'images_per_second',
+        'query_ms',
+        'load_ms',
+        'samples',
+        'measured_at'
+    ],
+    title: 'SemanticBenchmarkResult'
+} as const;
+
+export const SemanticBenchmarkSubmissionSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'semantic_benchmark',
+            title: 'Type'
+        }
+    },
+    type: 'object',
+    required: [
+        'type'
+    ],
+    title: 'SemanticBenchmarkSubmission'
+} as const;
+
+export const SemanticConfigSchema = {
+    properties: {
+        auto_maintain: {
+            type: 'boolean',
+            title: 'Auto Maintain',
+            description: '条目图片变化后立即增量索引; 打开时视觉模型常驻',
+            default: false
+        }
+    },
+    type: 'object',
+    title: 'SemanticConfig',
+    description: '封面与剧照语义检索. 模型身份由 ``semantic/models.py`` 的清单决定, 不随配置变化.'
+} as const;
+
+export const SemanticDiagnosticsResponseSchema = {
+    properties: {
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        backend: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Backend'
+        },
+        current_model: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Current Model'
+        },
+        current_model_label: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Current Model Label'
+        },
+        backend_label: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Backend Label'
+        },
+        text_loaded: {
+            type: 'boolean',
+            title: 'Text Loaded',
+            default: false
+        },
+        vision_loaded: {
+            type: 'boolean',
+            title: 'Vision Loaded',
+            default: false
+        },
+        search_ready: {
+            type: 'boolean',
+            title: 'Search Ready',
+            default: false
+        },
+        index_ready: {
+            type: 'boolean',
+            title: 'Index Ready',
+            default: false
+        },
+        download_size: {
+            type: 'integer',
+            title: 'Download Size',
+            default: 0
+        },
+        vision_size: {
+            type: 'integer',
+            title: 'Vision Size',
+            default: 0
+        },
+        text_size: {
+            type: 'integer',
+            title: 'Text Size',
+            default: 0
+        },
+        model_path: {
+            type: 'string',
+            title: 'Model Path',
+            default: ''
+        },
+        model_bytes: {
+            type: 'integer',
+            title: 'Model Bytes',
+            default: 0
+        },
+        embeddings_path: {
+            type: 'string',
+            title: 'Embeddings Path',
+            default: ''
+        },
+        embeddings_bytes: {
+            type: 'integer',
+            title: 'Embeddings Bytes',
+            default: 0
+        },
+        indexed_metadata: {
+            type: 'integer',
+            title: 'Indexed Metadata',
+            default: 0
+        },
+        indexed_at: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Indexed At'
+        },
+        models: {
+            additionalProperties: {
+                $ref: '#/components/schemas/SemanticModelCounts'
+            },
+            type: 'object',
+            title: 'Models',
+            default: {}
+        }
+    },
+    type: 'object',
+    required: [
+        'enabled'
+    ],
+    title: 'SemanticDiagnosticsResponse',
+    description: '用户手册的诊断数据: 运行时状态、路径、占用与索引统计; 不触发下载或加载.'
+} as const;
+
+export const SemanticHitInfoSchema = {
+    properties: {
+        id: {
+            type: 'integer',
+            title: 'Id'
+        },
+        kind: {
+            $ref: '#/components/schemas/EmbeddingKind'
+        },
+        resource_url: {
+            type: 'string',
+            title: 'Resource Url'
+        },
+        similarity: {
+            type: 'number',
+            title: 'Similarity'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'kind',
+        'resource_url',
+        'similarity'
+    ],
+    title: 'SemanticHitInfo',
+    description: '语义检索的命中图片: 与列表项按 id 对应, 不扩展列表项模型本身.'
+} as const;
+
+export const SemanticIndexResultSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'semantic_index',
+            title: 'Type',
+            default: 'semantic_index'
+        },
+        scanned: {
+            type: 'integer',
+            title: 'Scanned'
+        },
+        indexed: {
+            type: 'integer',
+            title: 'Indexed'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped'
+        },
+        missing: {
+            type: 'integer',
+            title: 'Missing'
+        },
+        failed: {
+            type: 'integer',
+            title: 'Failed'
+        }
+    },
+    type: 'object',
+    required: [
+        'scanned',
+        'indexed',
+        'skipped',
+        'missing',
+        'failed'
+    ],
+    title: 'SemanticIndexResult'
+} as const;
+
+export const SemanticIndexSubmissionSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'semantic_index',
+            title: 'Type'
+        },
+        limit: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Limit',
+            description: '单次最多处理的条目数; 空表示全库'
+        },
+        force: {
+            type: 'boolean',
+            title: 'Force',
+            description: '忽略未变化的跳过判据, 全部重算',
+            default: false
+        },
+        kinds: {
+            items: {
+                $ref: '#/components/schemas/EmbeddingKind'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Kinds'
+        }
+    },
+    type: 'object',
+    required: [
+        'type'
+    ],
+    title: 'SemanticIndexSubmission'
+} as const;
+
+export const SemanticModelCountsSchema = {
+    properties: {
+        count: {
+            type: 'integer',
+            title: 'Count'
+        },
+        covers: {
+            type: 'integer',
+            title: 'Covers'
+        },
+        stills: {
+            type: 'integer',
+            title: 'Stills'
+        }
+    },
+    type: 'object',
+    required: [
+        'count',
+        'covers',
+        'stills'
+    ],
+    title: 'SemanticModelCounts',
+    description: '单个模型的向量条数, 按来源拆分.'
+} as const;
+
+export const SemanticStatusResponseSchema = {
+    properties: {
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled',
+            default: false
+        },
+        available: {
+            type: 'boolean',
+            title: 'Available',
+            default: false
+        },
+        search_ready: {
+            type: 'boolean',
+            title: 'Search Ready',
+            default: false
+        },
+        has_embeddings: {
+            type: 'boolean',
+            title: 'Has Embeddings',
+            default: false
+        },
+        download_size: {
+            type: 'integer',
+            title: 'Download Size',
+            default: 0
+        }
+    },
+    type: 'object',
+    title: 'SemanticStatusResponse',
+    description: '语义检索的轻量状态: 页面据此决定入口与提示, 不读取存储统计.'
 } as const;
 
 export const SiteConfigSchema = {
@@ -8434,6 +9568,7 @@ export const TaskBatchRequestSchema = {
                         type: 'integer'
                     },
                     type: 'array',
+                    maxItems: 1000,
                     minItems: 1
                 },
                 {
@@ -8547,12 +9682,22 @@ export const TaskBatchSubmitRequestSchema = {
                         $ref: '#/components/schemas/ActorScrapeSubmission'
                     },
                     {
+                        $ref: '#/components/schemas/ActorPushSubmission'
+                    },
+                    {
                         $ref: '#/components/schemas/RescrapeSubmission'
+                    },
+                    {
+                        $ref: '#/components/schemas/SemanticIndexSubmission'
+                    },
+                    {
+                        $ref: '#/components/schemas/SemanticBenchmarkSubmission'
                     }
                 ],
                 discriminator: {
                     propertyName: 'type',
                     mapping: {
+                        actor_push: '#/components/schemas/ActorPushSubmission',
                         actor_scrape: '#/components/schemas/ActorScrapeSubmission',
                         cleanup: '#/components/schemas/CleanupSubmission',
                         delete: '#/components/schemas/DeleteSubmission',
@@ -8562,6 +9707,8 @@ export const TaskBatchSubmitRequestSchema = {
                         rescrape: '#/components/schemas/RescrapeSubmission',
                         scan_invalid: '#/components/schemas/ScanInvalidSubmission',
                         scrape: '#/components/schemas/ScrapeSubmission',
+                        semantic_benchmark: '#/components/schemas/SemanticBenchmarkSubmission',
+                        semantic_index: '#/components/schemas/SemanticIndexSubmission',
                         upscale: '#/components/schemas/UpscaleSubmission'
                     }
                 }
@@ -8908,6 +10055,69 @@ export const TaskListResponseSchema = {
     title: 'TaskListResponse'
 } as const;
 
+export const TaskLogEntrySchema = {
+    properties: {
+        timestamp: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Timestamp'
+        },
+        level: {
+            type: 'string',
+            title: 'Level'
+        },
+        source: {
+            type: 'string',
+            title: 'Source'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        },
+        context: {
+            additionalProperties: {
+                $ref: '#/components/schemas/JsonValue'
+            },
+            type: 'object',
+            title: 'Context'
+        }
+    },
+    type: 'object',
+    required: [
+        'level',
+        'source',
+        'message'
+    ],
+    title: 'TaskLogEntry',
+    description: '与 WebSocket LOG 事件同形; ``context`` 是原日志里未映射到固定字段的键.'
+} as const;
+
+export const TaskLogPageSchema = {
+    properties: {
+        entries: {
+            items: {
+                $ref: '#/components/schemas/TaskLogEntry'
+            },
+            type: 'array',
+            title: 'Entries'
+        },
+        truncated: {
+            type: 'boolean',
+            title: 'Truncated',
+            description: '``entries`` 之前还有未下发的行',
+            default: false
+        }
+    },
+    type: 'object',
+    title: 'TaskLogPage'
+} as const;
+
 export const TaskResponseSchema = {
     properties: {
         id: {
@@ -9044,12 +10254,22 @@ export const TaskResponseSchema = {
                             $ref: '#/components/schemas/ActorScrapeResult'
                         },
                         {
+                            $ref: '#/components/schemas/ActorPushResult'
+                        },
+                        {
                             $ref: '#/components/schemas/RescrapeResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/SemanticIndexResult'
+                        },
+                        {
+                            $ref: '#/components/schemas/SemanticBenchmarkResult'
                         }
                     ],
                     discriminator: {
                         propertyName: 'type',
                         mapping: {
+                            actor_push: '#/components/schemas/ActorPushResult',
                             actor_scrape: '#/components/schemas/ActorScrapeResult',
                             cleanup: '#/components/schemas/CleanupResult',
                             delete: '#/components/schemas/DeleteResult',
@@ -9059,6 +10279,8 @@ export const TaskResponseSchema = {
                             rescrape: '#/components/schemas/RescrapeResult',
                             scan_invalid: '#/components/schemas/ScanInvalidResult',
                             scrape: '#/components/schemas/ScrapeResult',
+                            semantic_benchmark: '#/components/schemas/SemanticBenchmarkResult',
+                            semantic_index: '#/components/schemas/SemanticIndexResult',
                             upscale: '#/components/schemas/UpscaleResult'
                         }
                     }
@@ -9116,7 +10338,10 @@ export const TaskTypeSchema = {
         'actor_scrape',
         'rescrape',
         'scan_invalid',
-        'delete'
+        'delete',
+        'semantic_index',
+        'semantic_benchmark',
+        'actor_push'
     ],
     title: 'TaskType'
 } as const;
@@ -9177,6 +10402,19 @@ export const TextDeltaRowSchema = {
     description: '正文增量; 归块同 `ReasoningDeltaRow`.'
 } as const;
 
+export const ToolCallRequestSchema = {
+    properties: {
+        args: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Args',
+            default: {}
+        }
+    },
+    type: 'object',
+    title: 'ToolCallRequest'
+} as const;
+
 export const ToolCallRowSchema = {
     properties: {
         seq: {
@@ -9223,6 +10461,63 @@ export const ToolCallRowSchema = {
     description: '工具调用成形 (协议按增量传参, 这里已解析). 卡片的名字与参数由此行给出.\n\n`args` 在生成的 TS 类型里退化为 `unknown` (pydantic 的 `JsonValue` 无法表达到 schema),\n类型层面的保证到后端为止.'
 } as const;
 
+export const ToolCatalogSchema = {
+    properties: {
+        version: {
+            type: 'string',
+            title: 'Version'
+        },
+        paths: {
+            $ref: '#/components/schemas/RuntimePaths'
+        },
+        tools: {
+            items: {
+                $ref: '#/components/schemas/ToolSummary'
+            },
+            type: 'array',
+            title: 'Tools'
+        }
+    },
+    type: 'object',
+    required: [
+        'version',
+        'paths',
+        'tools'
+    ],
+    title: 'ToolCatalog'
+} as const;
+
+export const ToolDetailSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        group: {
+            type: 'string',
+            title: 'Group'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        params: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Params'
+        }
+    },
+    type: 'object',
+    required: [
+        'name',
+        'group',
+        'description',
+        'params'
+    ],
+    title: 'ToolDetail',
+    description: '单个工具的完整入参. 响应不声明返回 Schema, 调用方按实际响应体处理.'
+} as const;
+
 export const ToolResultRowSchema = {
     properties: {
         seq: {
@@ -9262,6 +10557,36 @@ export const ToolResultRowSchema = {
     ],
     title: 'ToolResultRow',
     description: '工具回执. 名字与参数在同 id 的 `ToolCallRow`, 故本行只带结果 (续批的回合不会再报调用名).'
+} as const;
+
+export const ToolSummarySchema = {
+    properties: {
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        group: {
+            type: 'string',
+            title: 'Group'
+        },
+        summary: {
+            type: 'string',
+            title: 'Summary'
+        },
+        signature: {
+            type: 'string',
+            title: 'Signature'
+        }
+    },
+    type: 'object',
+    required: [
+        'name',
+        'group',
+        'summary',
+        'signature'
+    ],
+    title: 'ToolSummary',
+    description: '目录索引里的一条: 够选工具, 不够直接构造复杂入参.'
 } as const;
 
 export const TrashSummaryResponseSchema = {

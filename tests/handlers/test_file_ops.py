@@ -1,5 +1,6 @@
 """测试 file ops 消费已物化 URL (内部派生 / 外部) + trailer 落盘."""
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -7,12 +8,12 @@ import pytest
 from PIL import Image
 
 from amane.config import HotSettings, WatermarkConfig
-from amane.db.models import MediaFile, Metadata
+from amane.db.models import Library, MediaFile, Metadata
 from amane.enums import DownloadableResource
-from amane.handlers.file import execute_file_operations
+from amane.handlers.file import _write_into_library, execute_file_operations
 from amane.media import ResourceStore
-from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths
-from amane.parsing import parse_file_info
+from amane.organize import MoveMode, PlaceOutcome, ResolvedPaths, resolve_paths
+from amane.parsing import ContentType, parse_file_info
 
 if TYPE_CHECKING:
     from amane.net.http import WebClient
@@ -229,9 +230,18 @@ async def test_write_nfo_false_skips_nfo(resource_store: ResourceStore, tmp_path
     assert not paths.nfo.exists()
 
 
+@pytest.mark.parametrize(
+    ("content_type", "expected", "desc"),
+    [
+        (ContentType.CENSORED, True, "有码回退裁剪"),
+        (ContentType.WESTERN, False, "欧美不裁剪"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_missing_internal_resource_falls_back_to_crop(resource_store: ResourceStore, tmp_path: Path):
-    """poster 内部 URL 指向不存在资源 → 回退从 thumb 裁剪."""
+async def test_missing_internal_resource_crop_fallback_by_content_type(
+    resource_store: ResourceStore, tmp_path: Path, content_type: ContentType, expected: bool, desc: str
+):
+    """poster 内部 URL 指向不存在资源 → 仅允许的类型回退从 thumb 裁剪."""
     client = cast("WebClient", FakeClient())
     src = tmp_path / "src" / "MIDV-123.mp4"
     src.parent.mkdir(parents=True)
@@ -240,6 +250,7 @@ async def test_missing_internal_resource_falls_back_to_crop(resource_store: Reso
     mf = MediaFile(path=str(src), library_id=1)
     meta = Metadata(
         number="MIDV-123",
+        content_type=content_type,
         thumb_urls=["https://s/t.jpg"],
         poster_urls=["/api/resources/deadbeefdeadbeef"],  # 不存在
     )
@@ -255,7 +266,7 @@ async def test_missing_internal_resource_falls_back_to_crop(resource_store: Reso
         config=HotSettings(),
     )
     assert result.outcome is PlaceOutcome.PLACED
-    assert paths.poster.exists()  # 裁剪回退
+    assert paths.poster.exists() == expected, desc
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -410,3 +421,169 @@ async def test_fanart_follows_thumb_selection(
     assert paths.fanart.exists() is pre_existing
     if before is not None:
         assert _pixel(paths.fanart) == before
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 无 POSIX 权限位")
+def test_write_into_library_takes_permissions_from_target(tmp_path: Path) -> None:
+    """模式位来自目标目录, 不继承源文件."""
+    source = tmp_path / "src.jpg"
+    source.write_bytes(b"image")
+    source.chmod(0o600)
+    probe = tmp_path / "probe"
+    probe.write_bytes(b"")
+    target = tmp_path / "dst.jpg"
+
+    _write_into_library(source, target)
+
+    assert target.read_bytes() == b"image"
+    assert target.stat().st_mode & 0o777 == probe.stat().st_mode & 0o777
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 无 POSIX 权限位")
+def test_write_into_library_rewrites_existing_artifact(tmp_path: Path) -> None:
+    """目标已存在时按新文件重写, 旧产物的模式位不保留."""
+    source = tmp_path / "src.jpg"
+    source.write_bytes(b"new")
+    probe = tmp_path / "probe"
+    probe.write_bytes(b"")
+    target = tmp_path / "dst.jpg"
+    target.write_bytes(b"old")
+    target.chmod(0o600)
+
+    _write_into_library(source, target)
+
+    assert target.read_bytes() == b"new"
+    assert target.stat().st_mode & 0o777 == probe.stat().st_mode & 0o777
+
+
+def test_write_into_library_keeps_target_on_write_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """写入失败时保留旧产物, 不留下临时文件, 并带上路径记一条错误日志."""
+    source = tmp_path / "src.jpg"
+    target = tmp_path / "dst.jpg"
+    target.write_bytes(b"old")
+    recorded: list[tuple[str, dict[str, object]]] = []
+
+    def reject(*args: object, **kwargs: object) -> Path:
+        raise OSError(22, "Invalid argument")
+
+    def record(event: str, **fields: object) -> None:
+        recorded.append((event, fields))
+
+    monkeypatch.setattr("amane.handlers.file.shutil.copyfile", reject)
+    monkeypatch.setattr("amane.handlers.file.logger.error", record)
+
+    with pytest.raises(OSError):
+        _write_into_library(source, target)
+
+    assert target.read_bytes() == b"old"
+    assert [p.name for p in tmp_path.iterdir()] == ["dst.jpg"]
+    assert [(event, fields["source"], fields["target"]) for event, fields in recorded] == [
+        ("library write failed", str(source), str(target))
+    ]
+
+
+@pytest.mark.asyncio
+async def test_extrafanart_names_follow_library_template(resource_store: ResourceStore, tmp_path: Path):
+    """剧照文件名按库模板逐张渲染; 宽度由本轮数量决定."""
+    client = cast("WebClient", FakeClient())
+    root = tmp_path / "lib"
+    root.mkdir()
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(
+        number="MIDV-123",
+        extrafanart_urls={"dmm": [f"https://s/e{i}.jpg" for i in range(1, 11)]},
+    )
+    lib = Library(
+        name="t",
+        path=str(root),
+        video_template="{number}/{number}.{ext}",
+        extrafanart_name_template="{number}-{index_padded}.jpg",
+    )
+    paths = resolve_paths(lib, meta, ext="mp4", source_path=src)
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.COPY,
+        resource_store=resource_store,
+        file_info=parse_file_info(src),
+        web_client=client,
+        config=HotSettings(),
+        library=lib,
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    names = sorted(p.name for p in paths.extrafanart_dir.iterdir())
+    assert len(names) == 10
+    assert names[0] == "MIDV-123-01.jpg"
+    assert names[-1] == "MIDV-123-10.jpg"
+
+
+@pytest.mark.asyncio
+async def test_existing_stills_in_dir_are_left_alone(resource_store: ResourceStore, tmp_path: Path):
+    """换模板或张数跨位数后旧名字留在目录里: 本 PR 只写本次的写集, 不清理目录."""
+    client = cast("WebClient", FakeClient())
+    root = tmp_path / "lib"
+    root.mkdir()
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(number="MIDV-123", extrafanart_urls={"dmm": ["https://s/e1.jpg", "https://s/e2.jpg"]})
+    lib = Library(name="t", path=str(root), video_template="{number}/{number}.{ext}")
+    paths = resolve_paths(lib, meta, ext="mp4", source_path=src)
+    paths.extrafanart_dir.mkdir(parents=True)
+    stale = paths.extrafanart_dir / "99.jpg"
+    stale.write_bytes(b"old")
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.COPY,
+        resource_store=resource_store,
+        file_info=parse_file_info(src),
+        web_client=client,
+        config=HotSettings(),
+        library=lib,
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    assert stale.exists()
+    assert sorted(p.name for p in paths.extrafanart_dir.iterdir()) == ["1.jpg", "2.jpg", "99.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_extrafanart_names_fall_back_without_library(resource_store: ResourceStore, tmp_path: Path):
+    """未带库列时用默认模板, 与传入路径时的默认输出一致."""
+    client = cast("WebClient", FakeClient())
+    root = tmp_path / "lib"
+    root.mkdir()
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(number="MIDV-123", extrafanart_urls={"dmm": ["https://s/e1.jpg", "https://s/e2.jpg"]})
+    lib = Library(name="t", path=str(root), video_template="{number}/{number}.{ext}")
+    paths = resolve_paths(lib, meta, ext="mp4", source_path=src)
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.COPY,
+        resource_store=resource_store,
+        file_info=parse_file_info(src),
+        web_client=client,
+        config=HotSettings(),
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    assert sorted(p.name for p in paths.extrafanart_dir.iterdir()) == ["1.jpg", "2.jpg"]

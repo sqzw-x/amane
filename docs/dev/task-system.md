@@ -14,21 +14,24 @@
 | `ORGANIZE` | 范围内已有 Metadata 的 MediaFile 按路径模板落盘, 并删除本次腾空的目录; 缺资源时 `acquire` 可出站 HTTP | 扫描磁盘、运行爬虫、修改 Metadata |
 | `SCAN_INVALID` | 遍历库产出清理清单 (文件黑名单 / 小于最小视频大小 / 残留目录 / 空目录), 写入进程内清单存放 | 一切写操作 |
 | `DELETE` | 按清单标识删除文件与目录, 删对应索引, 按需剪枝 | 整库重新扫描、重新生成清单、写 NFO、回收 Resource |
+| `SEMANTIC_INDEX` | 遍历 Metadata 编码封面与剧照, 对账写 `{data_dir}/embeddings.db`; 首次运行会下载模型 | 不动文件、不写 Metadata |
+| `SEMANTIC_BENCHMARK` | 抽样本地封面与剧照测嵌入吞吐与文本查询延迟, 不写索引 | 不动文件、不写 Metadata / 向量 |
+| `ACTOR_PUSH` | 读取演员与已落盘头像, 匹配媒体服务器的同名人物并写回字段 / 主图 | 创建人物、修改影片、补下载头像 |
 
-`CLEANUP` / `UPSCALE` 扫描 DB / Resource; `ACTOR_SCRAPE` 刮人物; `R18_IMPORT` 导入 dump. 上述类型均不执行影片落盘.
+`CLEANUP` / `UPSCALE` 扫描 DB / Resource; `ACTOR_SCRAPE` 刮人物; `ACTOR_PUSH` 写媒体服务器; `R18_IMPORT` 导入 dump. 上述类型均不执行影片落盘.
 
 ORGANIZE 的入队来源只有三处: API / Agent 提交, retry 重跑, 库开启自动整理后的链式后继; DELETE 同样只经 API / Agent 提交. Handler 内不许直接 `create_task`, 后继一律经 `TaskResult.followups` 进入完成事务. Watcher 只注册文件并按 `automation` 入队 SCRAPE, 完整的扫描与落盘仍须提交 REFRESH. 手动把 `priority=-1` 用在整理上**不**使它等待刮削完成: 当时尚未刮削完成的文件会被跳过, 须再次运行 ORGANIZE.
 
 ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显式 `path` 按前缀过滤, `media_file_ids` 为勾选快照 (含其它库的 id 则 422); 后两者同时给出则 422. 库根必须是已存在的目录, 否则失败; `media_file_ids` 未给出且 path 为子目录时该子目录也必须存在 — 避免网络盘掉线时把选中行当失效索引删掉. 无 Metadata 的行与命中文件黑名单 / 最小视频大小 / 预告片规则的行跳过落盘; 路径落在 `.amane_trash` 内的行删除索引. SCAN_INVALID 的 `path` 同样可限定子目录. 整理默认与预告片跳过正则见 [data-model.md](data-model.md).
 
-入队互斥在 `create_task`: queued / running 的 ACTOR_SCRAPE 按 `payload.actor_id` 复用已有行; ORGANIZE 与 DELETE 每次提交都新建行, 禁止复用, 同库的二者共用 `LibraryTaskLocks` 在执行期串行 (都在同一棵树上动文件). 不同库 / 不同演员仍并行. API、Agent、链式入队、retry 都经由 `create_task`, Worker 不按类型加锁; 终态之后允许再入队; 互斥不比较 payload 其它字段. 检查与插入须在 Repository 上串行化 (单进程), 机制见 [database.md](database.md)「写入事务边界」.
+入队互斥在 `create_task`: queued / running 的 ACTOR_SCRAPE 按 `payload.actor_id` 复用已有行; ORGANIZE 与 DELETE 每次提交都新建行, 禁止复用, 同库的二者共用 `LibraryTaskLocks` 在执行期串行 (都在同一棵树上动文件). 不同库 / 不同演员仍并行. `ACTOR_PUSH` 不做入队互斥: 重复推送按当前服务器状态重算, 是幂等的. API、Agent、链式入队、retry 都经由 `create_task`, Worker 不按类型加锁; 终态之后允许再入队; 互斥不比较 payload 其它字段. 检查与插入须在 Repository 上串行化 (单进程), 机制见 [database.md](database.md)「写入事务边界」.
 
 ## 任务图 (TaskLink)
 
 后继任务只经 `TaskResult.followups` 进入完成事务:
 
-- **动态后继**: handler 在执行期间才确定后继数量与 payload, 经 `TaskResult.followups` 返回. REFRESH→SCRAPE、RESCRAPE→SCRAPE / ACTOR_SCRAPE、SCRAPE→ACTOR_SCRAPE 都是这一形态.
-- **统一完成事务**: worker 成功路径调用 `Repository.complete_task_with_followups` — 一个事务内完成父任务、创建子任务 (复用 `create_task` 的入队互斥)、写 `TaskLink` 边; 父完成与子创建原子, 失败路径不产生后继. 它与 `create_task` 同一把入队锁串行化, 因此两个父任务并发派生同一互斥键时只会复用同一行.
+- **动态后继**: handler 在执行期间才确定后继数量与 payload, 经 `TaskResult.followups` 返回. REFRESH→SCRAPE、RESCRAPE→SCRAPE / ACTOR_SCRAPE、SCRAPE→ACTOR_SCRAPE、ACTOR_SCRAPE→ACTOR_PUSH 都是这一形态. ACTOR_PUSH 只在 media server 已配置且 actor_scraping.auto_push 开启时产生, 优先级为 -1; 推送失败不回传父任务.
+- **统一完成事务**: worker 成功路径调用 `Repository.complete_task_with_followups` — 一个事务内完成父任务、创建子任务 (复用 `create_task` 的入队互斥)、写 `TaskLink` 边; 父完成与子创建原子, 失败路径不产生后继. 它与 `create_task` 同一把入队锁串行化, 因此两个父任务并发派生同一互斥键时只会复用同一行. 状态迁移一律为带源状态谓词的单条 UPDATE: 认领只认 QUEUED, 完成与运行中失败只认 RUNNING, 失败接受 QUEUED / RUNNING; 命中 0 行即状态已被并发改动, 不覆盖终态也不派生后继.
 - **`TaskLink`** 是父子边真值: `(parent_task_id, key)` 唯一, `key` 须在父节点内区分后继 (fan-out 带实体 id); 完成事务对同 key 只留第一条. 删除任务时清理其边, 不删除另一端任务.
 - **链聚合**: `tasks.root_task_id` 记录链根 (根指向自己), 一棵链一次 `list_tasks_by_root` 取回. 任务列表默认只显示链根, `child_count` / `child_status` 是直接后继的数量与状态分布, 折叠节点据此显示.
 - **筛选与 roots_only 正交**: `GET /tasks` 带 status / type 筛选时在 SQL 中匹配**全部**任务 (含子任务), 再 `DISTINCT COALESCE(root_task_id, id)` 还原链根行, 因此「父已 DONE、子排队中」时仍能看到父根行. 裸任务 (root 为空) 按自身 id 精确匹配.
@@ -47,7 +50,7 @@ ORGANIZE 只读取范围内的 `MediaFile` 行: 缺省为该库全部索引, 显
 
 ## 站点级复用
 
-SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完全不联网的纯整理由 ORGANIZE 承担. 它总是进入聚合, 但当 `CacheKind.metadata ∈ use_cache` 时把 `Metadata.raw` 作为 `cache` 传入, 请求某站前按 `cache_key` (`site` 或 `site:lang`) 查快照, 命中即还原并跳过爬虫调用, 未命中的站点按获取图请求. 不含 `metadata` 时全部站点强制重爬; 不含 `trans` 时跳过译文缓存读取 (仍写入), 见 [llm.md](llm.md). 复用与新结果统一写入 `fetched`, 输出 `raw` 为两者合并; 快照含非法字段时降级为正常 fetch.
+SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完全不联网的纯整理由 ORGANIZE 承担. 它总是进入聚合, 但当 `CacheKind.metadata ∈ use_cache` 时把 `Metadata.raw` 作为 `cache` 传入, 请求某站前按 `cache_key` (`site` 或 `site:lang`) 查快照, 命中即还原并跳过爬虫调用, 未命中的站点按获取图请求. 不含 `metadata` 时全部站点强制重爬; 不含 `trans` 时跳过译文缓存读取 (仍写入), 见 [llm.md](llm.md). 复用与新结果统一写入 `fetched`; 写回时以库内 `raw` 为基础, 本次结果按站点覆盖既有快照, 本次未取得的站点 (移出类型路由 / 未安装 / 禁用) 保留. 不含 `metadata` 时 `raw` 仍由本次结果整体替换. 快照含非法字段时降级为正常 fetch.
 
 ## 字段级多源聚合
 
@@ -93,9 +96,9 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 `execute_file_operations` 是落盘执行单元, 仅 ORGANIZE 经 `apply_file_operations` 调用. 不变量:
 
-- **整理 = 复制到库路径**: 优先用 Resource 已有文件, 缺失才现场 `acquire`; 复制哪些类型由 `Library.copy_resources` (或 payload 覆盖) 决定 (见 [data-model.md](data-model.md)). 目标路径上已有的产物一律按本次内容覆盖, NFO 同理, 不判断是否已存在; fanart 没有刮削来源, 内容取 thumb, 因此随 thumb 一同重写, 该路径上的自备背景图会被覆盖, 也没有单独的关闭途径.
+- **整理 = 复制到库路径**: 优先用 Resource 已有文件, 缺失才现场 `acquire`; 复制哪些类型由 `Library.copy_resources` (或 payload 覆盖) 决定 (见 [data-model.md](data-model.md)). 目标路径上已有的产物一律按本次内容覆盖, 落盘按新文件处理 (临时文件加改名, 权限与 ACL 取自库目录而非 Resource), NFO 同理, 不判断是否已存在; fanart 没有刮削来源, 内容取 thumb, 因此随 thumb 一同重写, 该路径上的自备背景图会被覆盖, 也没有单独的关闭途径.
 - **封面角标**: `watermark.enabled` 时 poster / thumb 副本按源文件 FileInfo 与条目类型叠 PNG; Resource 原图与 fanart 不修改.
-- **海报缺失**: 按 `scraping.crop_poster` 从已落盘 thumb 裁剪兜底.
+- **海报缺失**: 有码与无码在 `scraping.crop_poster` 开启时从已落盘 thumb 裁剪兜底; 其余类型不裁.
 - **目标占用**: 判定分为四态: 空闲 / 已就位 / 被占用 / 无法判定. 源与目标已是同一文件 (含硬链同一 inode) 时视为就位, 只跳过视频落盘, 附属文件照常重写; 被占用时跳过该文件, 不改名、不覆盖、不移动, 视频与字幕一视同仁, 由调用方按冲突记账, 冲突条目 (源路径 + 被占用的目标路径; 字幕冲突的 `path` 记字幕源路径, 不记视频源路径) 写进任务结果供界面显示, 且 `conflicts` 恒为 `conflicted` 条数的前缀 (差额只留在任务日志里), 冲突不自动解决, 未落盘的行留在源路径, 由用户自行处理. 无法判定 (stat 失败, 或两者在两次读取之间被替换) 按失败记账并带上 stat 的错误说明, 不得计入冲突或放宽为空闲. 存在性与占用判定都经 `existing_disk_path` (跟随符号链接; 读不出状态时按不存在处理, 不抛异常): 目标位置是断链符号链接时按空闲处理, MOVE 会替换它, SYMLINK 因 EEXIST 记失败. 判定与落盘之间还有窗口, MOVE / COPY 期间目标被外部写入仍会覆盖, 这条保证是尽力而为.
 - **链接**: `link_template` 非空时视频就位后在库外写 STRM 或符号链接, 指向这次整理后的路径; `MediaFile.path` 仍是真实视频. 链接写入失败时, 目标路径仍在本库内则回写 path, 任务记失败以便重试补链接.
 - **索引写回**: 整理后路径仍在本库内则更新 `MediaFile.path`; 已不在本库内且源路径不在磁盘上则删除该行. 不改 `library_id`, 不写其它库的行. 目标路径已被本库另一行占用时删除本行, 占用行缺少刮削字段则补上.
@@ -121,8 +124,8 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 `ScrapeHandler` 在聚合后、`upsert_metadata` 前调用 `materialize_images` (`src/amane/media/pipeline.py`) — 二进制写入 Resource 目录的主路径, 与是否整理无关:
 
 - **`scraping.download_resources`** 控制本步下载哪些类型 (thumb / poster / extrafanart / trailer).
-- **URL 重排契约**: 被下载类型的 URL 列表按本次下载成功 (含缓存命中) 稳定分区 — 成功者保序前置, 失败者保序沉底. 死 URL 不再占据首位, 但保留在尾部, 来源恢复后下次物化可重新尝试. 未选中下载的类型无成败信息, 保持聚合优先级原序; extrafanart 为站点分组 dict, 不重排. `raw` 快照保持站点原始数据.
-- 裁剪海报 → 按 `scraping.poster_ratio` 从 thumb 右侧裁切; 超分就地覆盖. 失败不阻断刮削.
+- **候选按序尝试, 命中即停**: 候选是同一张图的回退链, 首选成功后再下载后续地址只会把它在 Resource 里存成多份. 命中的那个置首位, 其余候选 (下载失败与未尝试) 保序留在尾部, 来源恢复后下次物化可重新尝试; 全部失败时列表保持原序. 未选中下载的类型无成败信息, 保持聚合优先级原序; extrafanart 为站点分组 dict, 不重排. `raw` 快照保持站点原始数据.
+- 裁剪海报 → 有码与无码按 `scraping.poster_ratio` 从 thumb 右侧裁切; 超分就地覆盖. 失败不阻断刮削.
 
 手动裁切复用同一派生通道 (`op=crop`, `args=box:…`), 见 [data-model.md](data-model.md).
 
@@ -170,11 +173,11 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 
 **即时** (`POST /tasks`): 接收 `TaskSubmission` (含全部即时 type), 经 `resolve_submission` 得到 `(TaskType, Payload)` 后建 Task. REFRESH / ORGANIZE / SCAN_INVALID 只接受 `library_id`, resolve 时由 library 派生 `path` (submission 可显式覆盖) 与 `recursive` / `patterns`; ORGANIZE 还可带 `media_file_ids`, 与显式 `path` 互斥且不含扫描字段. SCRAPE 采用 number / media_id, 二者可同时提交; **`content_type` 可空**, 为空时仅 media_id 按文件路径解析, 有 number 时按番号推断. 覆盖只作用于这一次 `POST /tasks`. ACTOR_SCRAPE 采用 `actor_id`.
 
-**定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape`). 触发时由 `CronScheduler` 用对应 Payload 的 `model_validate` 入队; 编辑只修改 name / cron / enabled, 修改任务类型或 payload 须删除后重建 (见 [api.md](api.md)).
+**定时** (`Schedule`): 仅接受 `RoutineSubmission` (`cleanup` / `upscale` / `r18_import` / `rescrape` / `semantic_index`). 触发时由 `CronScheduler` 用对应 Payload 的 `model_validate` 入队; 编辑只修改 name / cron / enabled, 修改任务类型或 payload 须删除后重建 (见 [api.md](api.md)).
 
 ## ACTOR_SCRAPE
 
-`ActorScrapeHandler` 按 `HotSettings.actor_scraping` 的资料来源 / 头像来源顺序获取 (见 [config.md](config.md)), **先按 `Actor.gender` 与各站 `profile().genders` 过滤** (`unknown` 只请求同时覆盖两性的站; 被裁站不发 HTTP、不消费其 raw 缓存). 站点内按查找名首命中; 聚合是标量填空 (含 `gender`, `unknown` 当空) + 头像优先, 无影片字段 DAG. `use_cache` 与影片同型: 含 `metadata` 时按**已允许**站复用 `Actor.raw` 跳过爬虫 (非法快照降级为重爬), 且只决定是否重新爬取, 不改变写回规则. 写回以本次聚合结果为准, 空位取库内值, 锁定字段保留库内值; 参与且有结果的站点整段覆盖 `Actor.raw`, 未参与站点的快照保留; 别名并入别名行.
+`ActorScrapeHandler` 按 `HotSettings.actor_scraping` 的资料来源 / 头像来源顺序获取 (见 [config.md](config.md)). **站点之间并发, 站内按查找名串行**: 只有「名字未命中」(`not_found` / `no_usable_metadata`) 才换下一个名, 其余 `SourceError` 立即中止本站并记该原因. 裁站按 `Actor.gender` 与各站 `profile().genders`: 性别为 `unknown` 时只先查同时覆盖两性的站, 其余站**暂缓**, 第一段结束后按学到的性别对暂缓站再判一次, 可用则补一段, 未取得性别则不补; 未查站不发 HTTP、不消费其 raw 缓存. 聚合是标量填空 (含 `gender`, `unknown` 当空) + 头像优先, 无影片字段 DAG. `use_cache` 与影片同型: 含 `metadata` 时按**已查**站复用 `Actor.raw` 跳过爬虫 (非法快照降级为重爬), 且只决定是否重新爬取, 不改变写回规则. 写回以本次聚合结果为准, 空位取库内值, 锁定字段保留库内值; 参与且有结果的站点整段覆盖 `Actor.raw`, 未参与站点的快照保留; 别名并入别名行.
 
 **链式自动触发**: `actor_scraping.auto_scrape` 开启 (默认) 时, 影片 SCRAPE 成功后在 `ScrapeHandler` 末尾按清洗解析后的 `meta.actors` 查询 Actor 实体, **`Actor.raw` 非空 (已刮过) 则跳过**, 其余以 **`priority=-1`** 入队 (不抢占影片任务优先级); 同 `actor_id` 已有 queued / running 时复用入队互斥. 链式块内异常只记录 warning, 不阻断刮削主流程.
 

@@ -276,7 +276,7 @@ function TasksPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const offset = (search.page - 1) * limit;
-  const { data, isLoading } = useQuery(
+  const { data, isLoading, isError, error, refetch } = useQuery(
     listTasksOptions({
       query: {
         status: search.status,
@@ -777,7 +777,26 @@ function TasksPage() {
           }}
         />
 
-        {!isLoading && items.length === 0 && (
+        {isError && (
+          <Stack align="center" gap="xs" py="xl">
+            <Text c="red" size="sm">
+              {t("listLoadFailed")}
+            </Text>
+            <Text
+              c="dimmed"
+              size="xs"
+              ta="center"
+              style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+            >
+              {extractErrorMessage(error, t("common:toast.operationFailed"))}
+            </Text>
+            <Button size="xs" variant="light" onClick={() => void refetch()}>
+              {t("common:actions.retry")}
+            </Button>
+          </Stack>
+        )}
+
+        {!isLoading && !isError && items.length === 0 && (
           <Text c="dimmed" size="sm" ta="center" py="xl">
             {t("empty")}
           </Text>

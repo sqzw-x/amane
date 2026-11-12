@@ -7,6 +7,9 @@ from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import extract_all_texts, extract_text, fc2_article_id, fc2_number, is_same_number, leading_token
 
+_SOURCE_LABELS = ("caribbeancom", "1pondo", "10musume", "pacopacomama")
+"""站内部分来源把来源名写在番号前 (``caribbeancom_051318-665``), 比对与取值前先剥除."""
+
 
 class AiravCrawler(Crawler):
     @classmethod
@@ -14,7 +17,7 @@ class AiravCrawler(Crawler):
         return CrawlerProfile(name=SiteName.AIRAV, base_url="https://airav.io")
 
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
-        """条目标题以番号开头, 与入参不同者视为未命中.
+        """条目标题以番号开头, 与入参不同者视为未命中; 标题前缀的来源名不参与比对.
 
         站内 FC2 恒写 ``FC2-PPV-<id>``, 该写法排在首位, 未命中时再尝试原样写法; 其余番号只用原样写法.
         """
@@ -35,7 +38,8 @@ class AiravCrawler(Crawler):
         for item in html.xpath('//div[contains(@class,"oneVideo")]'):
             href = item.xpath(".//a/@href").get()
             title = item.xpath("string(.//h5)").get() or ""
-            if href and is_same_number(leading_token(title), number):
+            token = _strip_source_label(leading_token(title))
+            if href and is_same_number(token, number):
                 return urljoin(self.base_url, href)
         return None
 
@@ -44,13 +48,13 @@ class AiravCrawler(Crawler):
         text = await self.client.get_html(url)
         html = Selector(text=text)
 
-        number = extract_text(html, '//li[contains(text(), "番")]/span/text()')
+        number = _strip_source_label(extract_text(html, '//li[contains(text(), "番")]/span/text()'))
         heading = extract_text(html, '//div[contains(@class, "video-title")]//h1/text()')
         if not number or not heading:
             return None
 
         token = leading_token(heading)
-        title = heading[len(token) :].strip() if is_same_number(token, number) else heading
+        title = heading[len(token) :].strip() if is_same_number(_strip_source_label(token), number) else heading
 
         cover = extract_text(html, '//meta[@property="og:image"]/@content')
         if cover and not cover.startswith("http"):
@@ -75,3 +79,22 @@ class AiravCrawler(Crawler):
             plot=plot or None,
             source_url=url,
         )
+
+
+def _strip_source_label(number: str) -> str:
+    """剥除来源名前缀: ``caribbeancom_051318-665`` / ``caribbeancom051318-665`` → ``051318-665``.
+
+    仅剥除后紧跟分隔符或数字、且剥除后非空的来源名: ``HEYZO-3607`` 这类站内番号本身带来源名的不剥.
+    """
+    folded = number.casefold()
+    for label in _SOURCE_LABELS:
+        if not folded.startswith(label):
+            continue
+        rest = number[len(label) :]
+        if rest[:1] in ("_", "-"):
+            rest = rest[1:]
+        elif not rest[:1].isdigit():
+            continue
+        if rest:
+            return rest
+    return number
