@@ -15,6 +15,9 @@ RUN pnpm build
 FROM python:3.14-slim AS base
 WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+# 解释器由基础镜像提供, 禁止 uv 另下托管版本: 版本对不上时要立刻失败,
+# 而不是换一个解释器继续装, 最后只剩 onnxruntime 之类的 wheel 缺失报错.
+ENV UV_PYTHON_DOWNLOADS=never
 
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
