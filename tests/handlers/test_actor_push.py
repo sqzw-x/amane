@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Self
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Self, Unpack
 
 import pytest
 
 from amane.config import HotSettings, MediaServerConfig
-from amane.db.repo_types import WriteMode
+from amane.db.repo_types import ActorPersonFields, WriteMode
+from amane.enums import ActorGender
 from amane.handlers import ActorPushHandler, ActorPushPayload
 from amane.media import ResourceStore
 from amane.media_server import SEARCH_LIMIT, MediaPerson, MediaServerError
@@ -81,29 +83,17 @@ class _TruncatedSearchClient(_FakeClient):
         return [MediaPerson(id=f"noise-{i}", name=f"Alice {i}") for i in range(SEARCH_LIMIT)]
 
 
-async def _actor(
-    repo: Repository,
-    name: str,
-    *,
-    overview: str | None = None,
-    birthday: str | None = None,
-    birthplace: str | None = None,
-    image_urls: list[str] | None = None,
-    aliases: list[str] | None = None,
-) -> int:
+async def _actor(repo: Repository, name: str, **fields: Unpack[ActorPersonFields]) -> int:
+    """建一条演员行并写入 ``fields`` 中给出的字段.
+
+    演员没有独立的创建入口, 生产上由影片刮削的 facet 同步建行, 因此先造一部同名影片;
+    字段经 ``update_actor`` 写入, 别名行与锁定集都由它维护.
+    """
     await repo.upsert_metadata(number=f"AP-{name}", actors=[name])
     actors = await repo.get_actors_by_names([name])
     actor = actors[0]
     assert actor.id is not None
-    await repo.update_actor(
-        actor.id,
-        mode=WriteMode.MANUAL,
-        overview=overview,
-        birthday=birthday,
-        birthplace=birthplace,
-        image_urls=image_urls or [],
-        aliases=aliases or [],
-    )
+    await repo.update_actor(actor.id, mode=WriteMode.MANUAL, **fields)
     return actor.id
 
 
@@ -339,6 +329,72 @@ async def test_force_overwrites_non_empty_values(
     assert updates["PremiereDate"] == "1990-01-01"
     assert updates["ProductionYear"] == 1990
     assert updates["ProductionLocations"] == ["Tokyo"]
+
+
+@dataclass(frozen=True)
+class _OverviewCase:
+    """一行资料组合; ``expected`` 为 ``None`` 表示本次不写简介."""
+
+    label: str
+    expected: str | None
+    fields: ActorPersonFields
+    server_overview: str | None = None
+    force: bool = False
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_overview_carries_profile_block(repo: Repository, resource_store: ResourceStore) -> None:
+    cases = [
+        _OverviewCase(
+            label="完整资料",
+            fields={
+                "overview": "bio",
+                "height": 168,
+                "bust": 88,
+                "waist": 59,
+                "hip": 89,
+                "cup": "C",
+                "gender": ActorGender.FEMALE,
+                "aliases": ["ありす", "ありす2"],
+            },
+            expected="bio\n\n性别 女\n别名 ありす / ありす2\n身高 168cm\n三围 B88 / W59 / H89\n罩杯 C",
+        ),
+        _OverviewCase(label="只有胸围", fields={"bust": 88}, expected="三围 B88"),
+        _OverviewCase(label="简介两侧空白", fields={"overview": "  bio  "}, expected="bio"),
+        _OverviewCase(
+            label="无统计只有别名",
+            fields={"aliases": ["ありす"]},
+            expected="别名 ありす",
+        ),
+        _OverviewCase(label="无任何资料", fields={}, expected=None),
+        _OverviewCase(
+            label="服务器已有简介时只补空白",
+            fields={"overview": "bio", "height": 168},
+            server_overview="old",
+            expected=None,
+        ),
+        _OverviewCase(
+            label="强制覆盖时合成",
+            fields={"overview": "bio", "height": 168, "gender": ActorGender.MALE},
+            server_overview="old",
+            force=True,
+            expected="bio\n\n性别 男\n身高 168cm",
+        ),
+    ]
+    for case in cases:
+        name = f"Case{case.label}"
+        actor_id = await _actor(repo, name, **case.fields)
+        client = _FakeClient([_person(name, overview=case.server_overview)])
+        handler = ActorPushHandler(repo, resource_store, _hot(), client_factory=lambda _cfg, c=client: c)
+        result = await handler.handle(ActorPushPayload(actor_ids=[actor_id], force=case.force))
+
+        assert result.success, case.label
+        assert result.result is not None, case.label
+        if case.expected is None:
+            assert client.updates == [], case.label
+            assert result.result.skipped == 1, case.label
+        else:
+            assert client.updates[0][1]["Overview"] == case.expected, case.label
 
 
 @pytest.mark.asyncio(loop_scope="function")
