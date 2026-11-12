@@ -64,7 +64,6 @@ docs = [
 
 [tool.uv]
 package = true
-python-preference = "only-managed"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/amane"]
