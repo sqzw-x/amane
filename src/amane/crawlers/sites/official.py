@@ -273,8 +273,9 @@ def _extract_series_prefix(number: str) -> str:
     return match.group(1).lower() if match else ""
 
 
-_THUMB_SUFFIX = "-pl.jpg"
-_POSTER_SUFFIX = "-ps.jpg"
+#: 横版封面 → 竖版海报: 旧目录后缀 ``-pl`` / ``-ps``, 序号目录 ``_2`` / ``_1``.
+#: 同一作品的图片目录只用其中一套命名, 按封面的实际后缀推导即可, 不探测另一套.
+_COVER_POSTER_SUFFIXES: tuple[tuple[str, str], ...] = (("-pl.jpg", "-ps.jpg"), ("_2.jpg", "_1.jpg"))
 #: 「无」的占位写法: 部分厂牌把空导演写成 ``---``, 当成人名落库就是错的.
 _NO_VALUE = "---"
 
@@ -285,13 +286,13 @@ def _values_without_placeholder(values: list[str]) -> list[str]:
 
 
 def _poster_urls(thumb_url: str | None) -> list[str]:
-    """旧图片目录的竖版海报与横版封面同目录, 只差文件名后缀; 新目录是哈希文件名, 无可推导地址.
-
-    详情页只引用横版封面, 所以竖版只能按命名推导.
-    """
-    if not thumb_url or not thumb_url.endswith(_THUMB_SUFFIX):
+    """详情页只引用横版封面, 竖版只能按命名推导; 哈希文件名的条目没有可推导地址."""
+    if not thumb_url:
         return []
-    return [f"{thumb_url.removesuffix(_THUMB_SUFFIX)}{_POSTER_SUFFIX}"]
+    for cover_suffix, poster_suffix in _COVER_POSTER_SUFFIXES:
+        if thumb_url.endswith(cover_suffix):
+            return [f"{thumb_url.removesuffix(cover_suffix)}{poster_suffix}"]
+    return []
 
 
 class OfficialCrawler(Crawler):
