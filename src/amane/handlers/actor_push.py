@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from ..enums import ActorGender
 from ..media.file_type import IMAGE_MIME_PREFIX, detect_media_type_bytes
 from ..media_server import (
     SEARCH_LIMIT,
@@ -212,7 +213,7 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
                 continue
             seen_persons.add(person.id)
             counts.matched += 1
-            await self._sync_person(actor, person, portrait, client, force=force, counts=counts)
+            await self._sync_person(actor, person, portrait, client, aliases=aliases, force=force, counts=counts)
 
     async def _find_persons(
         self,
@@ -263,10 +264,11 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
         portrait: _PortraitSource | None,
         client: MediaServerClientLike,
         *,
+        aliases: Sequence[str],
         force: bool,
         counts: _Counts,
     ) -> None:
-        updates = _profile_updates(actor, person, force=force)
+        updates = _profile_updates(actor, person, aliases, force=force)
         needs_image = portrait is not None and (force or not person.has_primary_image)
         if not updates and not needs_image:
             counts.skipped += 1
@@ -316,11 +318,12 @@ class ActorPushHandler(TaskHandler[ActorPushPayload, ActorPushResult]):
         )
 
 
-def _profile_updates(actor: Actor, person: MediaPerson, *, force: bool) -> dict[str, object]:
+def _profile_updates(actor: Actor, person: MediaPerson, aliases: Sequence[str], *, force: bool) -> dict[str, object]:
     """按覆盖规则给出目标字段; 不把空值写成清空动作."""
     updates: dict[str, object] = {}
-    if actor.overview and (force or not _has_text(person.overview)):
-        updates["Overview"] = actor.overview
+    overview = _overview_text(actor, aliases)
+    if overview is not None and (force or not _has_text(person.overview)):
+        updates["Overview"] = overview
 
     if actor.birthday and _ISO_DATE.fullmatch(actor.birthday):
         if force or not person.premiere_date:
@@ -331,6 +334,46 @@ def _profile_updates(actor: Actor, person: MediaPerson, *, force: bool) -> dict[
     if actor.birthplace and (force or not _has_text_list(person.production_locations)):
         updates["ProductionLocations"] = [actor.birthplace]
     return updates
+
+
+def _overview_text(actor: Actor, aliases: Sequence[str]) -> str | None:
+    """简介与资料块合成的写入文本; 两者皆空时为 ``None``.
+
+    人物条目没有身高 / 三围 / 别名对应的字段, 服务器上只有简介是自由文本, 因此这些值并入简介.
+    排版只用换行与斜杠: 每项字段一行, 不假定服务器解析 Markdown 或 HTML.
+    每次由 Amane 的数据重建, 不读取服务器上的现有文本, 重复推送不会累积.
+    """
+    overview = actor.overview.strip() if actor.overview else ""
+    block = "\n".join(_profile_lines(actor, aliases))
+    if overview and block:
+        return f"{overview}\n\n{block}"
+    return overview or block or None
+
+
+def _profile_lines(actor: Actor, aliases: Sequence[str]) -> list[str]:
+    """资料块的字段行, 每项一行; 同一项的多值用斜杠分隔, 无值的项不占位.
+
+    顺序为性别、别名、身高、三围、罩杯.
+    """
+    lines: list[str] = []
+    if (gender := _GENDER_TEXT.get(actor.gender)) is not None:
+        lines.append(f"性别 {gender}")
+    if aliases:
+        lines.append(f"别名 {' / '.join(aliases)}")
+    if actor.height:
+        lines.append(f"身高 {actor.height}cm")
+    measurements = [
+        f"{label}{value}" for label, value in (("B", actor.bust), ("W", actor.waist), ("H", actor.hip)) if value
+    ]
+    if measurements:
+        lines.append(f"三围 {' / '.join(measurements)}")
+    if actor.cup:
+        lines.append(f"罩杯 {actor.cup}")
+    return lines
+
+
+_GENDER_TEXT: dict[ActorGender, str] = {ActorGender.FEMALE: "女", ActorGender.MALE: "男"}
+"""只写得出确定的性别; ``UNKNOWN`` 不在表中, 因而不会出现在资料块里."""
 
 
 def _has_text(value: str | None) -> bool:
