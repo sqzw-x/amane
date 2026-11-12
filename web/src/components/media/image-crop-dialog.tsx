@@ -138,15 +138,15 @@ function toNaturalBox(crop: PixelCrop, canvas: HTMLCanvasElement): CropBox {
   };
 }
 
-/** 原图像素框 → 显示像素选区. */
+/** 原图像素框 → 显示像素选区; `displayScale` 是显示 → 自然方向的倍数, 此处须除以它. */
 function fromNaturalBox(box: CropBox, canvas: HTMLCanvasElement): PixelCrop {
   const scale = displayScale(canvas);
   return {
     unit: "px",
-    x: box.left * scale.x,
-    y: box.top * scale.y,
-    width: (box.right - box.left) * scale.x,
-    height: (box.bottom - box.top) * scale.y,
+    x: box.left / scale.x,
+    y: box.top / scale.y,
+    width: (box.right - box.left) / scale.x,
+    height: (box.bottom - box.top) / scale.y,
   };
 }
 
