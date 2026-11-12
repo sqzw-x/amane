@@ -268,7 +268,15 @@ async def test_series_beats_studio_when_both_match(crawler):
             "https://cdn.up-timely.com/image/2/content/8903/sivr067-pl.jpg",
             ["https://cdn.up-timely.com/image/2/content/8903/sivr067-ps.jpg"],
         ),
-        # 新目录是哈希文件名, 没有可推导的竖版地址
+        # 序号目录: _1 是竖版封面, _2 是横版封面
+        (
+            "https://cdn.up-timely.com/image/17/content/35217/PLA012_2.jpg",
+            ["https://cdn.up-timely.com/image/17/content/35217/PLA012_1.jpg"],
+        ),
+        # 已是竖版封面, 或首图落到剧照序号, 都不推导
+        ("https://cdn.up-timely.com/image/17/content/35217/PLA012_1.jpg", []),
+        ("https://cdn.up-timely.com/image/17/content/35217/PLA012_3.jpg", []),
+        # 哈希文件名没有可推导的竖版地址
         ("https://cdn.up-timely.com/image/2/content/72658/jYYpm41QBnuyDREA7Mnf8yIc0T3PAwmRSHA1welb.jpg", []),
         ("https://cdn.up-timely.com/image/2/content/8903/sivr067-ps.jpg", []),
         (None, []),
