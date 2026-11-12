@@ -5,7 +5,8 @@
 站点对分隔符与开头数字段的容忍度不一致 (有的番号去掉短横线可检索到, 有的必须带; 有的省略数字段), 故逐个尝试候选查询形态.
 
 ``casts[].actor.note`` 是唯一性别线索, 只有 ``男優`` 判为男优, 其余保持 ``unknown`` —— 自由文本无法
-推出女优. 封面 / 海报 / 剧照取自 ``work.products``; ``iteminfo.description`` 是截断文本, 不取.
+推出女优. 封面 / 海报 / 剧照取自 ``work.products``; 前两者按商品顺序拼候选链, 剧照只取首选商品一组.
+``iteminfo.description`` 是截断文本, 不取.
 """
 
 from __future__ import annotations
@@ -194,19 +195,29 @@ def build_metadata(work: dict[str, Any], *, url: str) -> MediaMetadata | None:
 def _build_images(products: list[dict[str, Any]]) -> tuple[list[str], list[str], list[str]]:
     """商品图 → (海报, 封面, 剧照).
 
-    同一作品常有多店商品 (fanza / mgstage / duga); 封面与海报成对的商品优先, 只有单图的商品排在其后.
+    同一作品常有多店商品 (fanza / mgstage / duga); 封面与海报成对的商品排链首, 其余商品按站点
+    顺序追加候选. 首发地址失效 (404 / 占位图) 时由下载层顺延到下一商品的图; 剧照没有组级容器,
+    仍只取一组.
     """
-    product = _image_product(products)
-    if product is None:
+    preferred = _image_product(products)
+    if preferred is None:
         return [], [], []
-    cover = _text(product.get("image_url"))
-    poster = _text(product.get("thumbnail_url"))
-    poster_urls = image_candidates(poster) if poster else (poster_candidates(cover) if cover else [])
-    thumb_urls = image_candidates(cover) if cover else []
-    return poster_urls, thumb_urls, _sample_urls(products, preferred=product)
+    poster_urls: list[str] = []
+    thumb_urls: list[str] = []
+    for product in (preferred, *(item for item in products if item is not preferred)):
+        cover = _text(product.get("image_url"))
+        poster = _text(product.get("thumbnail_url"))
+        thumb_urls.extend(image_candidates(cover) if cover else [])
+        poster_urls.extend(image_candidates(poster) if poster else (poster_candidates(cover) if cover else []))
+    return (
+        list(dict.fromkeys(poster_urls)),
+        list(dict.fromkeys(thumb_urls)),
+        _sample_urls(products, preferred=preferred),
+    )
 
 
 def _image_product(products: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """候选链首位: 封面与海报成对且不同的商品优先; 都不成对时取第一个有图的商品."""
     candidates = [p for p in products if _text(p.get("image_url")) or _text(p.get("thumbnail_url"))]
     if not candidates:
         return None
