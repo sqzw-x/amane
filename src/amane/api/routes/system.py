@@ -6,6 +6,7 @@ import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, Request, Response
 
+from ...desktop_file import can_open_desktop_file
 from ...release import is_newer
 from ...version import get_version
 from ..deps import ConfigDep, RuntimeDep
@@ -27,8 +28,12 @@ async def _trigger_shutdown(app: FastAPI) -> None:
 
 @router.get("/desktop", response_model=DesktopResponse)
 async def desktop_info(runtime: RuntimeDep) -> DesktopResponse:
+    supervised = runtime.config.cold.supervised
     return DesktopResponse(
-        version=get_version(), data_dir=str(runtime.config.cold.data_dir), supervised=runtime.config.cold.supervised
+        version=get_version(),
+        data_dir=str(runtime.config.cold.data_dir),
+        supervised=supervised,
+        can_open_local_files=can_open_desktop_file(),
     )
 
 
