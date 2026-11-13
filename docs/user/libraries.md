@@ -36,7 +36,7 @@
 | 配置媒体库 | 修改库配置 |
 | 删除此媒体库 | 删除媒体库及其文件记录; 磁盘上的文件不受影响 |
 
-详情页的文件表可按状态 (待处理 / 已刮削 / 失败 / 跳过) 筛选, 单行与勾选后的批量操作包括「刮削」「指定番号刮削」「批量刮削」「批量整理」与删除 (见 [删除影片文件](#delete-files)).
+详情页的文件表可按状态 (待处理 / 已刮削 / 失败 / 跳过) 筛选, 单行与勾选后的批量操作包括「刮削」「指定番号 / 网址刮削」「批量刮削」「批量整理」与删除 (见 [删除影片文件](#delete-files)). 「指定番号 / 网址刮削」可填写番号, 也可填写该影片的详情页网址, 见[指定网址刮削](scraping.md#scrape-by-url).
 
 ![媒体库详情页的文件表](../assets/screenshots/library-detail.webp#only-light){ loading=lazy }
 ![媒体库详情页的文件表](../assets/screenshots/library-detail-dark.webp#only-dark){ loading=lazy }
