@@ -98,7 +98,7 @@ Worker 替换不取消运行中任务: `_rebuild()` 构建新 worker 后旧 work
 - **`download_images`**: 是否经 ResourceStore 缓存头像 (URL 仍为远端 locator).
 - **`auto_scrape`**: 影片刮削成功后自动链式入队该片演员的 `ACTOR_SCRAPE` 任务; 见 [task-system.md](task-system.md).
 - **`auto_push`**: 演员刮削成功后链式入队该演员的 `ACTOR_PUSH`; `media_server` 未配置时静默跳过, 推送失败不回溯父任务.
-- **`gfriends_repo`**: gFriends 仓库 URL, Filetree 缓存在 `data_dir`.
+- **`gfriends_repo`**: gFriends 仓库 URL, Filetree 缓存与 ETag 记录都位于 `data_dir`.
 
 跨角色站点写入会被 section validator 拒绝. 发请求前仍按 `Actor.gender` 与站点性别覆盖再过滤 (见 [crawlers.md](crawlers.md)).
 

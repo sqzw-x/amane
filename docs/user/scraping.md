@@ -282,7 +282,7 @@ wikipedia 来源先在 Wikidata 中检索演员, 只采用描述或职业属于�
 
 ### gfriends 头像
 
-gfriends 从「gFriends 仓库」读取头像索引, 索引缓存在数据目录中. 访问 GitHub 受限时, 可以把仓库地址改为镜像, 或为 gfriends 配置站点代理 (见 [网络与站点访问](network.md#proxy)).
+gfriends 从「gFriends 仓库」读取头像索引, 索引缓存在数据目录中, 每天与上游比对一次; 内容没有变化时不重新下载, 上游新增的头像最多延迟一天; 比对或下载失败时继续使用旧索引, 稍后重试. 访问 GitHub 受限时, 可以把仓库地址改为镜像, 或为 gfriends 配置站点代理 (见 [网络与站点访问](network.md#proxy)).
 
 ## LLM 翻译 {#llm}
 

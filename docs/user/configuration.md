@@ -95,6 +95,7 @@ Docker 中填写容器内路径, 并覆盖所有挂载的媒体目录, 如 `/med
 ├── token                        API Token
 ├── image_token                  图片 Token
 ├── translations.db              LLM 翻译缓存
+├── gfriends.etag                gFriends 索引的 ETag, 用于与上游比对, 判断索引是否变化
 ├── gfriends.json                gFriends 头像索引缓存
 ├── r18_import.json              r18.dev 导入状态
 ├── resources/                   刮削下载的封面、海报、剧照、预告片与头像
