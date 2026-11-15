@@ -26,13 +26,19 @@ def _parse_actors(html: Selector) -> list[FilmActor]:
     return actors
 
 
-def reject_login_page(html: Selector, *, url: str) -> None:
-    """无码条目与无码演员档案要求登录: 未登录时站点重定向到登录页, 状态码与正常页同为 200.
+#: 登录面板整页渲染时的表单. 其余页面把同一份表单放进导航的模态框, 两处都带密码框, 只有模态框祖先能区分.
+_LOGIN_FORM = (
+    '//form[contains(@class, "auth-view")][.//input[@type="password"]][not(ancestor::div[contains(@class, "modal")])]'
+)
 
-    判据取登录表单自身 (会话表单的动作地址与密码框). 公开页面 (搜索页, 有码详情页) 的导航同样带「登入」
-    字样, 按文案判定会误伤; 只认动作地址则可能把带注销控件的已登录页面判成登录页.
+
+def reject_login_page(html: Selector, *, url: str) -> None:
+    """站点要求登录的页面: 无码条目、无码演员档案, 以及按 IP 限次期间的搜索.
+
+    受限时整页渲染登录面板, 状态码与正常页同为 200. 判据取面板自身 (整页渲染的表单), 不取「登入」文案:
+    每个页面的导航都带这个词.
     """
-    if html.xpath('//form[contains(@action, "user_sessions")]//input[@type="password"]'):
+    if html.xpath(_LOGIN_FORM):
         raise SourceError(
             FailureReason.LOGIN_REQUIRED,
             url=url,
