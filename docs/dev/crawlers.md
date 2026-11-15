@@ -18,7 +18,7 @@ CrawlerFactory (缓存实例)
 爬虫异步并发安全. `SiteConfig` 在构造期注入, `__init__` 内合并 profile 默认与用户配置, 子类直接使用 `self.base_url` / `self.cookies`; 实例可缓存, 仅配置变化时重建工厂.
 
 - 演员站与影片站共用 HttpClient / 限速; 实现位于 `crawlers/actor/`, 只注册 `actor_registry` (可以不在影片 `registry`). **双料站**指同一 `SiteName` 在影片 / 演员注册表各有一个类并共用 `site_config`; 不允许在 `site_roles` 中手写双料名单.
-- gFriends 额外依赖 `data_dir` (Filetree 缓存) 与 `actor_scraping.gfriends_repo`.
+- gFriends 额外依赖 `data_dir` (Filetree 索引缓存与 ETag 记录) 与 `actor_scraping.gfriends_repo`. 校验或下载失败时沿用旧索引并在退避间隔内不重发请求, 上游不可达时不允许每个演员各触发一次超时; ETag 必须随索引一起写, 索引没写成却更新 ETag, 下一次比对会误判为未变化.
 - **能力声明**位于 `CrawlerProfile`: 演员爬虫必须显式给出 `capabilities` (`ACTOR_PROFILE` / `ACTOR_IMAGE`) 与 `genders`; 影片爬虫空 `capabilities` 视为 `film_metadata`. 行为开关一律写在 `traits` (取值见 `SourceTrait`), 与「来源提供什么」分开: `needs_partial` 表示依赖前序聚合结果, 排在第二段执行; `multi_language` 表示消费 `FetchOptions.language`; `uses_file_hash` 表示刮削前需要文件指纹 (扫描不读取文件内容). `site_roles` 只从两个注册表推导配置 schema 用的站点列表 (档案序 = 注册序); 聚合引擎只对声明 `multi_language` 的站点展开 `(site, lang)` 节点. Handler 按 `Actor.gender` 对 `profile().genders` 裁站, 见 [task-system.md](task-system.md). 影片来源的这些声明经 `CrawlerProfile.to_descriptor()` 进入来源目录, 刮削只读目录, 不读实例的 profile; 演员来源不进入目录.
 
 ## 影片出演者

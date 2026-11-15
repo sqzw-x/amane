@@ -520,4 +520,6 @@ async def test_gfriends_probe_targets_the_tree_that_scraping_fetches() -> None:
     outcome = await crawler.check_connectivity()
 
     assert (outcome.status, outcome.url) == (ConnectivityStatus.OK, fetched_url)
-    assert [call[1] for call in web.calls] == [fetched_url, fetched_url]
+    # 索引校验 (HEAD 比对 + 下载) 与探测都落在同一个地址上.
+    assert {url for _, url, _ in web.calls} == {fetched_url}
+    assert web.calls[0][0] == "HEAD"
