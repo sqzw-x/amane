@@ -45,11 +45,16 @@ class FreejavbtCrawler(Crawler):
 
         行按 class 与值的形态辨认: 番号 / 导演 / 系列 / 类别 / 女优行带链接, 无链接的行只有日期与时长,
         因此 ``/zh`` / ``/en`` / ``/ru`` 各语言前缀下的页面共用同一套选择器. 站内没有片商与发行商栏.
+
+        站内把素人日期号的 ``_`` 写法重定向到 ``-`` 写法的另一部 (一本道 → 加勒比), 重定向对调用方不可见,
+        因此按页面自报的番号复核; 与请求不符即视为未命中.
         """
         text = await self.client.get_html(url)
         html = Selector(text=text)
 
         number = _number_from_url(url)
+        if not is_same_number(_page_number(html), number):
+            return None
         title = _title(html, number)
         if not title:
             return None
@@ -108,3 +113,14 @@ def _number_from_url(url: str) -> str:
     """取链接末段作为番号; 广告外链的末段不是番号, 比对自然不中."""
     path = url.split("?", 1)[0].rstrip("/")
     return unquote(path.rsplit("/", 1)[-1]) if path else ""
+
+
+def _page_number(html: Selector) -> str:
+    """详情页自报的番号: ``canonical`` 的末段, 缺 ``canonical`` 时取 ``og:url``; 都没有为空串.
+
+    软 404 (「猜你喜歡」) 页的 ``canonical`` 指向自己, 因此这一项只用来发现重定向, 不判断条目存在.
+    """
+    url = extract_text(html, '//link[@rel="canonical"]/@href') or extract_text(
+        html, '//meta[@property="og:url"]/@content'
+    )
+    return _number_from_url(url)
