@@ -40,7 +40,7 @@ import {
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 import { ACTOR_SORT_FIELDS } from "@/lib/exhaustive-maps";
-import { nextOffsetPageParam } from "@/lib/infinite-list";
+import { BROWSE_GC_TIME, nextOffsetPageParam } from "@/lib/infinite-list";
 import { actorListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
 
@@ -143,6 +143,7 @@ function ActorsIndexPage() {
     enabled: !isList,
     initialPageParam: 0,
     getNextPageParam: nextOffsetPageParam,
+    gcTime: BROWSE_GC_TIME,
   });
 
   const listItems = listQuery.data?.items ?? [];
