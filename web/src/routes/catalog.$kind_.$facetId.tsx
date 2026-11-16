@@ -28,7 +28,7 @@ import { PosterGrid } from "@/components/media/poster-grid";
 import { isOneOf } from "@/lib/exhaustive";
 import { CATALOG_FACET_KINDS, FAVORITE_FACET_KINDS } from "@/lib/exhaustive-maps";
 import { FACET_FILTER_PARAM, metaSearchForFacet } from "@/lib/facets";
-import { nextOffsetPageParam } from "@/lib/infinite-list";
+import { BROWSE_GC_TIME, nextOffsetPageParam } from "@/lib/infinite-list";
 
 const CHUNK = 30;
 
@@ -60,6 +60,7 @@ function FacetDetailPage() {
     enabled: validKind && validId,
     initialPageParam: 0,
     getNextPageParam: nextOffsetPageParam,
+    gcTime: BROWSE_GC_TIME,
   });
 
   const items = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
