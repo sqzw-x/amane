@@ -40,7 +40,7 @@ import {
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 import { ACTOR_SORT_FIELDS } from "@/lib/exhaustive-maps";
-import { BROWSE_GC_TIME, nextOffsetPageParam } from "@/lib/infinite-list";
+import { BROWSE_GC_TIME, GRID_PREFETCH_MARGIN, nextOffsetPageParam } from "@/lib/infinite-list";
 import { actorListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
 
@@ -394,6 +394,8 @@ function ActorsIndexPage() {
               hasNextPage={Boolean(gridQuery.hasNextPage)}
               isFetchingNextPage={gridQuery.isFetchingNextPage}
               fetchNextPage={gridQuery.fetchNextPage}
+              prefetchMargin={GRID_PREFETCH_MARGIN}
+              loadedCount={gridItems.length}
               loadedLabel={t("common:pagination.loadedOfTotal", {
                 loaded: gridItems.length,
                 total: gridTotal,

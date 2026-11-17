@@ -60,7 +60,7 @@ import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
 import { metaSearchForFacet } from "@/lib/facets";
 import { ageFromBirthday } from "@/lib/format-birthday";
-import { BROWSE_GC_TIME, nextOffsetPageParam } from "@/lib/infinite-list";
+import { BROWSE_GC_TIME, GRID_PREFETCH_MARGIN, nextOffsetPageParam } from "@/lib/infinite-list";
 import { DEFAULT_METADATA_SORT_PREFERENCE, METADATA_SORT_OPTIONS } from "@/lib/media/browse";
 import { proxyImageUrl } from "@/lib/utils";
 import { ProxyImage } from "@/components/media/proxy-image";
@@ -414,6 +414,8 @@ function ActorDetailPage() {
           hasNextPage={Boolean(hasNextPage)}
           isFetchingNextPage={isFetchingNextPage}
           fetchNextPage={() => void fetchNextPage()}
+          prefetchMargin={GRID_PREFETCH_MARGIN}
+          loadedCount={items.length}
           loadedLabel={t("common:pagination.loadedOfTotal", { loaded: items.length, total })}
         />
       )}
