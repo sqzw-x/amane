@@ -53,7 +53,7 @@ import { PosterGrid } from "@/components/media/poster-grid";
 import { activeFacetFilters, addFacetId, type FacetFilters, removeFacetId } from "@/lib/facets";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { EMBEDDING_KINDS } from "@/lib/exhaustive-maps";
-import { BROWSE_GC_TIME, nextOffsetPageParam } from "@/lib/infinite-list";
+import { BROWSE_GC_TIME, GRID_PREFETCH_MARGIN, nextOffsetPageParam } from "@/lib/infinite-list";
 import { metaSearchSchema, METADATA_SORT_OPTIONS } from "@/lib/media/browse";
 import { metaListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
@@ -716,6 +716,8 @@ function MetaIndexPage() {
               hasNextPage={Boolean(gridQuery.hasNextPage)}
               isFetchingNextPage={gridQuery.isFetchingNextPage}
               fetchNextPage={() => void gridQuery.fetchNextPage()}
+              prefetchMargin={GRID_PREFETCH_MARGIN}
+              loadedCount={gridItems.length}
               loadedLabel={t("common:pagination.loadedOfTotal", {
                 loaded: gridItems.length,
                 total,
