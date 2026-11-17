@@ -1,12 +1,16 @@
 import { Group, Text, Tooltip } from "@mantine/core";
 import type { ReactNode } from "react";
 
-/** 片库评分/日期与相位水印共用. */
+/**
+ * 片库评分/日期与相位水印共用.
+ *
+ * 不加 `backdrop-filter`: 每个 chip 都要单独成层并回读背景, 滚动时逐层合成; 实测栅格滚动
+ * 6 秒里有 1.3 秒耗在 Layerize, 去掉后减半, 半透明底本身已够读.
+ */
 export const OVERLAY_CHIP_STYLE = {
   zIndex: 1,
   borderRadius: "var(--mantine-radius-xl)",
   background: "rgba(0, 0, 0, 0.72)",
-  backdropFilter: "blur(6px)",
 } as const;
 
 interface OverlayChipProps {
