@@ -123,6 +123,18 @@ CASES: list[object] = [
     # 帧率后缀仍识别分辨率
     _Case("ABC-123.1080p60.mp4", definition="1080p", number="ABC-123"),
     _Case("ABC-123.2160p30.mp4", definition="4K", number="ABC-123"),
+    # 帧率 / 位深标记整段剥除: 尾段不得被无短横线素人规则吸成番号
+    _Case("/media/ABC-123-60FPS-98T.mp4", number="ABC-123", content_type=ContentType.CENSORED),
+    _Case("/media/ABC-123-30fps-98T.mp4", number="ABC-123", content_type=ContentType.CENSORED),
+    _Case("/media/ABC-123.120FPS.98T.mp4", number="ABC-123", content_type=ContentType.CENSORED),
+    _Case("/media/ABC-123-10BIT-98T.mp4", number="ABC-123", content_type=ContentType.CENSORED),
+    _Case("/media/ABC-123-60FPS-1080p.mp4", definition="1080p", number="ABC-123", content_type=ContentType.CENSORED),
+    # 素人番号的数字前缀属于番号本身, 不得随标记剥除而丢失
+    _Case("/media/300MIUM-123-60FPS-98T.mp4", number="300MIUM-123", content_type=ContentType.AMATEUR),
+    _Case("/media/261ARA-423-30FPS-98T.mp4", number="261ARA-423", content_type=ContentType.AMATEUR),
+    # 标记是番号本身 (开头位置), 不剥除
+    _Case("/media/60FPS-98T.mp4", number="60FPS-98T", content_type=ContentType.AMATEUR),
+    _Case("/media/60FPS-98T-1080p.mp4", definition="1080p", number="60FPS-98T", content_type=ContentType.AMATEUR),
     # 分辨率数字不得被番号规则吸走: 无短横线的日期号 + 分辨率
     _Case("120115_318-mura-1080p.mp4", definition="1080p", number="120115_318"),
     _Case("120115_318-mura-720p.mp4", definition="720p", number="120115_318"),
