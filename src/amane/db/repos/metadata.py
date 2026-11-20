@@ -419,6 +419,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         ``merge_raw`` 为真时把传入 ``raw`` 按站点合并进既有快照 (本次未取得的站点保留), 否则整体替换.
         """
         fields = _normalize_text_fields(kwargs)
+        changed = False
         async with self._session() as session:
             # pysqlite 只在 DML 之前发出 BEGIN, 查号落在事务之外时并发同号写入会双双判定为「无行」,
             # 后者在插入时违反 ix_metadata_number. 手工取得写锁后判定与写入同处一个事务.
@@ -444,21 +445,25 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 await session.commit()
                 await session.refresh(existing)
                 assert existing.id is not None
-                if _image_signature(existing) != before:
-                    await self.notify_media_changed(existing.id)
-                return existing
-            meta = Metadata(number=number, content_type=content_type or infer_content_type(number), **fields)
-            session.add(meta)
-            await session.flush()
-            await clean_actor_names(session, meta, actor_genders, rules_by_kind)
-            await apply_facet_rules_to_metadata(session, meta, rules_by_kind)
-            await sync_metadata_facets(session, meta)
-            await session.commit()
-            await session.refresh(meta)
-            assert meta.id is not None
-            if any(_image_signature(meta)):
-                await self.notify_media_changed(meta.id)
-            return meta
+                changed = _image_signature(existing) != before
+                metadata_id = existing.id
+            else:
+                meta = Metadata(number=number, content_type=content_type or infer_content_type(number), **fields)
+                session.add(meta)
+                await session.flush()
+                await clean_actor_names(session, meta, actor_genders, rules_by_kind)
+                await apply_facet_rules_to_metadata(session, meta, rules_by_kind)
+                await sync_metadata_facets(session, meta)
+                await session.commit()
+                await session.refresh(meta)
+                assert meta.id is not None
+                changed = any(_image_signature(meta))
+                metadata_id = meta.id
+        # 通知须在会话关闭之后: 其实现在写事务里另开连接, 留在事务内会让一次写入同时占两条连接,
+        # 并发写入互相等对方的第二条连接, 直到连接池超时 (见 docs/dev/database.md).
+        if changed:
+            await self.notify_media_changed(metadata_id)
+        return existing if existing is not None else meta
 
     async def update_metadata(
         self,
@@ -530,9 +535,11 @@ class MetadataRepoMixin(RepositoryMixinBase):
             await sync_metadata_facets(session, metadata)
             await session.commit()
             await session.refresh(metadata)
-            if _image_signature(metadata) != before:
-                await self.notify_media_changed(metadata_id)
-            return metadata
+            changed = _image_signature(metadata) != before
+        # 与 upsert_metadata 同一约束: 通知须在会话关闭之后.
+        if changed:
+            await self.notify_media_changed(metadata_id)
+        return metadata
 
     async def merge_metadata_entries(self, target_id: int, source_ids: Sequence[int]) -> Metadata | None:
         """把来源条目的 raw 快照补入目标, 迁移关联记录后删除来源.
