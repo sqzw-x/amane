@@ -83,6 +83,7 @@ def fold_number(number: str) -> str:
     """大小写、短横线、空格视为同一番号, 供来源比对检索结果.
 
     不允许把 ``_`` 当作 ``-``: 010115_001 与 010115-001 是两部片.
+    折叠丢掉了短横线的位置, 因此只能定「串相同」; 判是否同一部走 ``number_match``.
     """
     return number.casefold().replace("-", "").replace(" ", "")
 
@@ -142,6 +143,24 @@ def _split_leading_digits(number: str) -> tuple[str, str]:
     return (match.group(), folded[match.end() :]) if match else ("", folded)
 
 
+def _number_structure(number: str) -> tuple[str, ...]:
+    """番号的结构: 按短横线切段并折叠各段, 首段再剥掉开头的数字段.
+
+    段数与各段内容合起来就是短横线的位置; 开头的数字段站点写不写不一致, 因此不算结构的一部分. 只按
+    ``-`` 切段 —— ``_`` 是番号自身的字符, 不是分隔符.
+    """
+    segments = [fold_number(segment) for segment in number.split("-")]
+    _digits, head = _split_leading_digits(segments[0])
+    return (head, *segments[1:])
+
+
+def _same_dash_layout(left: str, right: str) -> bool:
+    """短横线位置是否一致; 有一侧不带短横线时没有位置可比, 视为一致."""
+    if "-" not in left or "-" not in right:
+        return True
+    return _number_structure(left) == _number_structure(right)
+
+
 #: FC2 番号: 官方电子市场写 ``FC2-PPV-<id>``, 索引站多写 ``FC2-<id>``. 对折叠后的串匹配, 分隔符只可能剩 ``_``.
 _FC2_NUMBER = re.compile(r"^fc2(?:_?ppv)?_?(\d+)$")
 
@@ -188,15 +207,20 @@ class NumberMatch(StrEnum):
 def number_match(found: str, query: str) -> NumberMatch:
     """站内番号与检索番号是否同一部, 以及精确度; 任一侧为空为 ``NONE``.
 
-    ``EXACT``: 折叠后相等, 同为欧美日期号且片商与发布日期相同, 或同为 FC2 番号且商品 ID 相同 (官方电子
-    市场只写带 ``PPV`` 的写法, 索引站多写不带 PPV 的写法).
+    ``EXACT``: 折叠后相等, 同为欧美日期号且片商与发布日期相同, 或同为 FC2 番号且商品 ID 相同 (官方
+    电子市场只写带 ``PPV`` 的写法, 索引站多写不带 PPV 的写法).
     ``WITHOUT_LEADING_DIGITS``: 只有一侧写了开头的数字段 (站点省略系列代码, 或入参本身没写), 其余部分
     仍须**全等** — 这样 ``ABF-35`` 不会命中 ``ABF-375``, 两侧都写了数字段却不同也判为不是同一部
     (``200MIUM-1000`` 不是 ``300MIUM-1000``).
+
+    折叠整串的两档另需短横线位置一致: 折叠抹掉了位置, ``071225-001`` 与 ``0712250-01`` 折叠后同为
+    ``071225001``, 却是两部片. 位置只看有过短横线的一侧, 因此 ``071225001`` 仍能对上
+    ``071225-001``. 欧美日期号与 FC2 两档按各自语义判定, 不受此限 (FC2 的 ``PPV`` 词缀本就增减一段).
     """
     if not found or not query:
         return NumberMatch.NONE
-    if fold_number(found) == fold_number(query):
+    same_layout = _same_dash_layout(found, query)
+    if same_layout and fold_number(found) == fold_number(query):
         return NumberMatch.EXACT
     if (article_id := fc2_article_id(found)) is not None and article_id == fc2_article_id(query):
         return NumberMatch.EXACT
@@ -205,7 +229,7 @@ def number_match(found: str, query: str) -> NumberMatch:
         return NumberMatch.EXACT
     found_digits, found_rest = _split_leading_digits(found)
     query_digits, query_rest = _split_leading_digits(query)
-    if found_rest == query_rest and not (found_digits and query_digits):
+    if same_layout and found_rest == query_rest and not (found_digits and query_digits):
         return NumberMatch.WITHOUT_LEADING_DIGITS
     return NumberMatch.NONE
 
