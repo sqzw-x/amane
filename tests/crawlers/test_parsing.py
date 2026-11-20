@@ -136,6 +136,10 @@ def test_parse_western_number(number: str, expected: tuple[str, str, str] | None
         ("Blacked.26.03.29", "Blacked.2026.03.29", True),
         ("Blacked.26.03.29", "Blacked.2026.03.24", False),
         ("Blacked.26.03.29", "BlackedRaw.2026.03.29", False),
+        # 折叠后同串但短横线位置不同: freejavbt 检索页的 0712250-01 不是 071225-001
+        ("071225-001", "0712250-01", False),
+        ("JAC-079", "JAC0-79", False),
+        ("ABF-355", "ABF3-55", False),
         # ``_`` 与 ``-`` 是两部片
         ("010115_001", "010115-001", False),
         ("", "ABF-355", False),
@@ -148,8 +152,16 @@ def test_is_same_number(left: str, right: str, expected: bool) -> None:
 
 
 NUMBER_MATCH_CASES: list[tuple[str, str, NumberMatch]] = [
-    # 折叠后相等
+    # 折叠后相等且有一侧不带短横线: 位置无从比较, 维持宽松
     ("ABF355", "ABF-355", NumberMatch.EXACT),
+    ("071225001", "071225-001", NumberMatch.EXACT),
+    ("HEYZO3607", "HEYZO-3607", NumberMatch.EXACT),
+    # 两侧都带短横线而位置不同不是同一部: 折叠后同为 071225001 / jac079 / abf355
+    ("071225-001", "0712250-01", NumberMatch.NONE),
+    ("JAC-079", "JAC0-79", NumberMatch.NONE),
+    ("ABF-355", "ABF3-55", NumberMatch.NONE),
+    ("SSIS-497", "SSIS4-97", NumberMatch.NONE),
+    ("071225-001", "0712-25001", NumberMatch.NONE),
     ("Heyzo-3607", "HEYZO3607", NumberMatch.EXACT),
     # 欧美日期号: 年份 2 位与 4 位同番号
     ("Blacked.2026.03.29", "Blacked.26.03.29", NumberMatch.EXACT),
@@ -190,6 +202,8 @@ def test_number_match(found: str, query: str, expected: NumberMatch) -> None:
 SELECT_NUMBER_CASES: list[tuple[list[str], str, int | None]] = [
     # 精确命中优先于宽松命中, 即使它排在后面
     (["JAC-078", "JAC-079", "390JAC-079"], "JAC-079", 1),
+    # 折叠后同串但短横线位置不同的候选不算精确命中, 真正的条目排在它后面也照样取到
+    (["0712250-01", "071225-001"], "071225-001", 1),
     # 只剩站点省略数字段这一种可能时取它
     (["JAC-078", "JAC-079"], "390JAC-079", 1),
     (["HYPN-038", "HYPN-037"], "107HYPN-037", 1),

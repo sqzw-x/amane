@@ -13,7 +13,7 @@ from ...enums import Language, SiteName
 from ...net.errors import FailureReason, SourceError, parse_detail
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, ResponseModel, SearchQuery, film_actors
-from ..parsing import fold_number
+from ..parsing import is_same_number
 
 _LANG: dict[Language, str] = {
     Language.ZH_CN: "cn",
@@ -175,7 +175,6 @@ class AvsoxCrawler(Crawler):
 
 def _pick_movie_id(movies: list[object], number: str) -> str | None:
     exact = number.casefold()
-    folded = fold_number(number)
     folded_hit: str | None = None
     for item in movies:
         if not isinstance(item, dict):
@@ -187,8 +186,8 @@ def _pick_movie_id(movies: list[object], number: str) -> str | None:
         # 精确匹配番号.
         if fanhao.casefold() == exact:
             return movie_id
-        # 折叠分隔符后的回退命中.
-        if folded_hit is None and fold_number(fanhao) == folded:
+        # 折叠分隔符后的回退命中: 折叠抹掉了短横线的位置, 位置不同的一侧不算 (与 number_match 同一判据).
+        if folded_hit is None and is_same_number(fanhao, number):
             folded_hit = movie_id
     return folded_hit
 
