@@ -13,23 +13,42 @@
 
 import type { MouseEvent } from "react";
 import { z } from "zod";
-import { actorsBrowseSearchSchema, type ActorsBrowseSearch } from "@/lib/actors/browse";
+import {
+  actorQuickFilterNodes,
+  actorsBrowseSearchSchema,
+  type ActorsBrowseSearch,
+} from "@/lib/actors/browse";
 import { feedsSearchSchema, type FeedsSearch } from "@/lib/feeds/browse";
-import { metaSearchSchema, type MetaSearch } from "@/lib/media/browse";
+import { FILTER_MAX_ENCODED_LENGTH } from "@/lib/filter-expression";
+import { readBrowseFilter } from "@/lib/browse-filter";
+import { metadataQuickFilterNodes, metaSearchSchema, type MetaSearch } from "@/lib/media/browse";
 
 /** 带列表参数的侧栏条目; 分类入口是种类索引页, 没有可承载的参数. */
 export type NavListKey = "meta" | "actors" | "feeds";
 
-export const metaListDefaultsSchema = metaSearchSchema.omit({
-  q: true,
-  page: true,
-  saved_query_id: true,
-});
-export const actorListDefaultsSchema = actorsBrowseSearchSchema.omit({
-  q: true,
-  page: true,
-  saved_query_id: true,
-});
+/**
+ * 条件组合是地址栏里的 JSON 字符串; 存进默认参数前按实体整份校验, 解不出的默认直接丢弃,
+ * 免得侧栏把打不开的链接塞给页面.
+ */
+const storedFilter = z.string().max(FILTER_MAX_ENCODED_LENGTH).optional();
+
+export const metaListDefaultsSchema = metaSearchSchema
+  .omit({ q: true, f: true, page: true, saved_query_id: true })
+  .extend({ f: storedFilter })
+  .refine(
+    (search) =>
+      search.f === undefined ||
+      !readBrowseFilter("metadata", search, metadataQuickFilterNodes({ ...search, page: 1 }))
+        .blocked,
+  );
+export const actorListDefaultsSchema = actorsBrowseSearchSchema
+  .omit({ q: true, f: true, page: true, saved_query_id: true })
+  .extend({ f: storedFilter })
+  .refine(
+    (search) =>
+      search.f === undefined ||
+      !readBrowseFilter("actor", search, actorQuickFilterNodes({ ...search, page: 1 })).blocked,
+  );
 export const feedsListDefaultsSchema = feedsSearchSchema.omit({
   feed: true,
   group: true,

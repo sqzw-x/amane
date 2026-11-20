@@ -1314,6 +1314,47 @@
         }
       }
     },
+    "/api/metadata/search": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Search Metadata",
+        "operationId": "search_metadata",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata/batch/delete": {
       "post": {
         "tags": [
@@ -3021,6 +3062,47 @@
             "description": "Saved query preset id; AND with other filters via SQL subquery"
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActorListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/actors/search": {
+      "post": {
+        "tags": [
+          "actors"
+        ],
+        "summary": "Search Actors",
+        "operationId": "search_actors",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7364,6 +7446,63 @@
         "title": "ActorScrapingConfig",
         "description": "资料来源顺序填空, 头像来源优先."
       },
+      "ActorSearchRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version"
+          },
+          "expression": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilterGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "search": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoundedString"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "default": 0
+          },
+          "order": {
+            "$ref": "#/components/schemas/SortOrder",
+            "default": "asc"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 50
+          },
+          "sort_by": {
+            "$ref": "#/components/schemas/ActorSortField",
+            "default": "name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "ActorSearchRequest"
+      },
       "ActorSortField": {
         "type": "string",
         "enum": [
@@ -8010,6 +8149,10 @@
         },
         "type": "object",
         "title": "Body_install_plugin"
+      },
+      "BoundedString": {
+        "type": "string",
+        "maxLength": 200
       },
       "BrowserBackendItemResponse": {
         "properties": {
@@ -9775,6 +9918,141 @@
         "type": "object",
         "title": "FilePhaseSummary",
         "description": "条目相位聚合; 判定见 ``parsing/file_info.py::summarize_file_phases``, definition 取最高档."
+      },
+      "FilterField": {
+        "type": "string",
+        "enum": [
+          "actor_id",
+          "director_id",
+          "tag_id",
+          "user_tag_id",
+          "studio_id",
+          "publisher_id",
+          "series_id",
+          "library_id",
+          "has_files",
+          "has_subtitle",
+          "vr",
+          "uncensored",
+          "mosaic",
+          "definition",
+          "content_type",
+          "number",
+          "title",
+          "gender",
+          "has_person",
+          "has_image",
+          "birthday",
+          "height",
+          "bust",
+          "waist",
+          "hip",
+          "cup",
+          "name",
+          "alias",
+          "birthplace"
+        ]
+      },
+      "FilterGroup": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "group",
+            "title": "Type"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "title": "Op"
+          },
+          "negate": {
+            "type": "boolean",
+            "title": "Negate",
+            "default": false
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/FilterNode"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Children"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "op",
+          "children"
+        ],
+        "title": "FilterGroup"
+      },
+      "FilterNode": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/FilterGroup"
+          },
+          {
+            "$ref": "#/components/schemas/FilterRule"
+          }
+        ]
+      },
+      "FilterOperator": {
+        "type": "string",
+        "enum": [
+          "eq",
+          "contains",
+          "gte",
+          "lte"
+        ]
+      },
+      "FilterRule": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "rule",
+            "title": "Type"
+          },
+          "field": {
+            "$ref": "#/components/schemas/FilterField"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/FilterOperator"
+          },
+          "value": {
+            "$ref": "#/components/schemas/FilterValue"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "field",
+          "operator",
+          "value"
+        ],
+        "title": "FilterRule"
+      },
+      "FilterValue": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "$ref": "#/components/schemas/BoundedString"
+          }
+        ]
       },
       "FootprintNoticeKind": {
         "type": "string",
@@ -13106,6 +13384,86 @@
         ],
         "title": "MetadataResponse",
         "description": "详情与单条写接口的全量条目: 在列表项之上补 raw / field_sources."
+      },
+      "MetadataSearchRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version"
+          },
+          "expression": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilterGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "search": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoundedString"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "default": 0
+          },
+          "order": {
+            "$ref": "#/components/schemas/SortOrder",
+            "default": "desc"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 20
+          },
+          "sort_by": {
+            "$ref": "#/components/schemas/MetadataSortField",
+            "default": "updated_at"
+          },
+          "semantic_query": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Query"
+          },
+          "semantic_kind": {
+            "type": "string",
+            "enum": [
+              "all",
+              "cover",
+              "still"
+            ],
+            "title": "Semantic Kind",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "MetadataSearchRequest"
       },
       "MetadataSortField": {
         "type": "string",

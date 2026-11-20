@@ -24,20 +24,6 @@ function SavedQueryCardLink({
   query: SavedQueryResponse;
   children: ReactNode;
 }) {
-  if (query.entity === "metadata") {
-    return (
-      <Link to="/meta" search={{ saved_query_id: query.id }} style={CARD_LINK_STYLE}>
-        {children}
-      </Link>
-    );
-  }
-  if (query.entity === "actor") {
-    return (
-      <Link to="/actors" search={{ saved_query_id: query.id }} style={CARD_LINK_STYLE}>
-        {children}
-      </Link>
-    );
-  }
   return (
     <Link
       to="/saved-queries/$queryId"

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from ..app.bootstrap import start_app
 from ..version import get_version
-from .middleware import CORSPolicyMiddleware, LoggingMiddleware, TokenAuthMiddleware
+from .middleware import CORSPolicyMiddleware, FilterRequestBodyLimitMiddleware, LoggingMiddleware, TokenAuthMiddleware
 from .routes import router
 from .spa import mount_spa
 
@@ -50,6 +50,7 @@ def create_app() -> FastAPI:
     app.state.server = None
     app.include_router(router)
     mount_spa(app)  # 必须在 API 路由之后, 以免 catch-all 覆盖 API
+    app.add_middleware(FilterRequestBodyLimitMiddleware)
     app.add_middleware(TokenAuthMiddleware)
     # token 关闭时不放开跨源, 见 CORSPolicyMiddleware
     app.add_middleware(CORSPolicyMiddleware)

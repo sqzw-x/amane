@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import String, and_, cast, func, literal, or_, text
+from sqlalchemy import String, and_, cast, distinct, func, literal, or_, text
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
@@ -11,6 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from ...enums import ActorGender
 from ...utils.collections import unique_ids
 from ..models import Actor, ActorAlias, ActorSortField, ActorUserTag, MetadataActor, SortOrder
+from ..query_budget import sqlite_query_budget
 from ..repo_types import ActorBrowseItem, ActorBrowseParams
 
 
@@ -87,9 +88,14 @@ def _append_comparable_range(
 
 
 def _build_browse_filters(
-    params: ActorBrowseParams, *, id_subquery_sql: str | None = None
+    params: ActorBrowseParams,
+    *,
+    id_subquery_sql: str | None = None,
+    advanced_filter: ColumnElement[bool] | None = None,
 ) -> list[ColumnElement[bool]]:
     filters: list[ColumnElement[bool]] = []
+    if advanced_filter is not None:
+        filters.append(advanced_filter)
     if params.ids is not None:
         id_list = unique_ids(params.ids)
         if not id_list:
@@ -112,10 +118,15 @@ def _build_browse_filters(
         filters.append(_has_person_expr())
     elif params.has_person is False:
         filters.append(~_has_person_expr())
-    filters.extend(
-        col(Actor.id).in_(select(ActorUserTag.actor_id).where(col(ActorUserTag.user_tag_id) == user_tag_id))
-        for user_tag_id in unique_ids(params.user_tag_ids)
-    )
+    user_tag_ids = unique_ids(params.user_tag_ids)
+    if user_tag_ids:
+        matching_actors = (
+            select(col(ActorUserTag.actor_id))
+            .where(col(ActorUserTag.user_tag_id).in_(user_tag_ids))
+            .group_by(col(ActorUserTag.actor_id))
+            .having(count(distinct(col(ActorUserTag.user_tag_id))) == len(user_tag_ids))
+        )
+        filters.append(col(Actor.id).in_(matching_actors))
     if params.has_image is True:
         filters.append(_has_image_expr())
     elif params.has_image is False:
@@ -142,49 +153,55 @@ def _build_browse_filters(
 
 
 async def browse_actors(
-    session: AsyncSession, params: ActorBrowseParams, *, id_subquery_sql: str | None = None
+    session: AsyncSession,
+    params: ActorBrowseParams,
+    *,
+    id_subquery_sql: str | None = None,
+    advanced_filter: ColumnElement[bool] | None = None,
+    execution_deadline: float | None = None,
 ) -> tuple[list[ActorBrowseItem], int]:
     """列表行不含简介/别名/源字典."""
-    filters = _build_browse_filters(params, id_subquery_sql=id_subquery_sql)
+    async with sqlite_query_budget(session, execution_deadline):
+        filters = _build_browse_filters(params, id_subquery_sql=id_subquery_sql, advanced_filter=advanced_filter)
 
-    base = select(Actor)
-    for f in filters:
-        base = base.where(f)
-    total = (await session.exec(select(count()).select_from(base.subquery()))).one() or 0
+        base = select(Actor)
+        for f in filters:
+            base = base.where(f)
+        total = (await session.exec(select(count()).select_from(base.subquery()))).one() or 0
 
-    count_expr = count(col(MetadataActor.metadata_id))
-    stmt = (
-        select(Actor, count_expr)
-        .outerjoin(MetadataActor, col(MetadataActor.actor_id) == col(Actor.id))
-        .group_by(col(Actor.id))
-        .order_by(_actor_primary_order(params.sort_by, params.order, count_expr=count_expr), col(Actor.id).asc())
-        .offset(params.offset)
-        .limit(params.limit)
-    )
-    for f in filters:
-        stmt = stmt.where(f)
-
-    rows = (await session.exec(stmt)).all()
-    items: list[ActorBrowseItem] = []
-    for row in rows:
-        actor, cnt = row[0], row[1]
-        assert isinstance(actor, Actor)
-        assert actor.id is not None
-        items.append(
-            ActorBrowseItem(
-                id=actor.id,
-                name=actor.name,
-                count=int(cnt or 0),
-                gender=actor.gender,
-                birthday=actor.birthday,
-                birthplace=actor.birthplace,
-                height=actor.height,
-                bust=actor.bust,
-                waist=actor.waist,
-                hip=actor.hip,
-                cup=actor.cup,
-                image_urls=list(actor.image_urls or []),
-                updated_at=actor.updated_at,
-            )
+        count_expr = count(col(MetadataActor.metadata_id))
+        stmt = (
+            select(Actor, count_expr)
+            .outerjoin(MetadataActor, col(MetadataActor.actor_id) == col(Actor.id))
+            .group_by(col(Actor.id))
+            .order_by(_actor_primary_order(params.sort_by, params.order, count_expr=count_expr), col(Actor.id).asc())
+            .offset(params.offset)
+            .limit(params.limit)
         )
-    return items, int(total)
+        for f in filters:
+            stmt = stmt.where(f)
+
+        rows = (await session.exec(stmt)).all()
+        items: list[ActorBrowseItem] = []
+        for row in rows:
+            actor, cnt = row[0], row[1]
+            assert isinstance(actor, Actor)
+            assert actor.id is not None
+            items.append(
+                ActorBrowseItem(
+                    id=actor.id,
+                    name=actor.name,
+                    count=int(cnt or 0),
+                    gender=actor.gender,
+                    birthday=actor.birthday,
+                    birthplace=actor.birthplace,
+                    height=actor.height,
+                    bust=actor.bust,
+                    waist=actor.waist,
+                    hip=actor.hip,
+                    cup=actor.cup,
+                    image_urls=list(actor.image_urls or []),
+                    updated_at=actor.updated_at,
+                )
+            )
+        return items, int(total)

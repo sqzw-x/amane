@@ -12,54 +12,62 @@ import {
 import {
   IconArrowLeft,
   IconArrowRight,
-  IconFilter,
   IconSearch,
   IconSparkles,
   IconTable,
   IconX,
 } from "@tabler/icons-react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getFacetOptions,
   listLibrariesOptions,
-  listMetadataInfiniteOptions,
-  listMetadataOptions,
+  listMetadataInfiniteQueryKey,
+  listMetadataQueryKey,
   semanticStatusOptions,
 } from "@/client/@tanstack/react-query.gen";
+import { listMetadata, searchMetadata } from "@/client/sdk.gen";
+import { metadataAdvancedFilterQueryKey } from "@/lib/advanced-filter-query-keys";
 import type {
   EmbeddingKind,
   FacetKind,
-  ListMetadataData,
+  MetadataSearchRequest,
   MetadataSortField,
   SemanticHitInfo,
 } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
-import { HintedActionIcon } from "@/components/common/hinted-action-icon";
+import {
+  ActiveExpressionChip,
+  ActiveFilterChip,
+  BrowseFilterAlerts,
+  BrowseFilterPanel,
+  BrowseFilterToggle,
+  useBrowseFilterPanel,
+} from "@/components/media/browse-filter-panel";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
 import { ListDefaultActions } from "@/components/common/list-default-actions";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { SortMenu } from "@/components/common/sort-menu";
 import { FacetBadge } from "@/components/media/facet-badge";
-import {
-  FacetFilterControls,
-  type FilePhaseFilters,
-  type HasFilesFilter,
-} from "@/components/media/facet-filter-controls";
 import { MetaTable } from "@/components/media/meta-table";
 import { PosterGrid } from "@/components/media/poster-grid";
-import { activeFacetFilters, addFacetId, type FacetFilters, removeFacetId } from "@/lib/facets";
-import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
+import { activeFacetFilters, type FacetFilters, removeFacetId } from "@/lib/facets";
+import { useBrowseQueries } from "@/hooks/use-browse-queries";
+import { readBrowseFilter } from "@/lib/browse-filter";
+import { useResettingState } from "@/hooks/use-resetting-state";
 import { EMBEDDING_KINDS } from "@/lib/exhaustive-maps";
-import { BROWSE_GC_TIME, GRID_PREFETCH_MARGIN, nextOffsetPageParam } from "@/lib/infinite-list";
-import { metaSearchSchema, METADATA_SORT_OPTIONS } from "@/lib/media/browse";
+import { GRID_PREFETCH_MARGIN } from "@/lib/infinite-list";
+import {
+  metaSearchSchema,
+  METADATA_SORT_OPTIONS,
+  metadataQuickFilterNodes,
+  withoutMetadataQuickFilters,
+} from "@/lib/media/browse";
 import { metaListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
 import classes from "./meta.module.css";
-
-const CHUNK = 30;
 
 const SEMANTIC_KIND_OPTIONS = ["all", ...EMBEDDING_KINDS] as const;
 
@@ -74,15 +82,9 @@ export const Route = createFileRoute("/meta/")({
   component: MetaIndexPage,
 });
 
-function parseHasFiles(value: "true" | "false" | undefined): HasFilesFilter {
+function parseBoolean(value: "true" | "false" | undefined) {
   if (value === "true") return true;
   if (value === "false") return false;
-  return null;
-}
-
-function triToSearch(value: HasFilesFilter): "true" | "false" | undefined {
-  if (value === true) return "true";
-  if (value === false) return "false";
   return undefined;
 }
 
@@ -96,7 +98,7 @@ function ActiveFacetChip({
   onClear: () => void;
 }) {
   const { data } = useQuery(getFacetOptions({ path: { kind, facet_id: id } }));
-  const { t } = useTranslation("metadata");
+  const { t } = useTranslation(["metadata", "common"]);
   return (
     <Group gap={4} wrap="nowrap">
       <FacetBadge
@@ -105,52 +107,13 @@ function ActiveFacetChip({
         name={`${t(`browse.kinds.${kind}`)}: ${data?.name ?? `#${id}`}`}
         variant="outline"
       />
-      <ActionIcon size="sm" variant="subtle" color="gray" onClick={onClear} aria-label="clear">
-        <IconX size={14} />
-      </ActionIcon>
-    </Group>
-  );
-}
-
-function ActiveHasFilesChip({ hasFiles, onClear }: { hasFiles: boolean; onClear: () => void }) {
-  const { t } = useTranslation("metadata");
-  return (
-    <ActiveTriChip
-      label={`${t("search.hasFiles")}: ${hasFiles ? t("search.hasFilesYes") : t("search.hasFilesNo")}`}
-      onClear={onClear}
-    />
-  );
-}
-
-function ActiveLibrariesChip({
-  ids,
-  nameById,
-  onClear,
-}: {
-  ids: number[];
-  nameById: Map<number, string>;
-  onClear: () => void;
-}) {
-  const { t } = useTranslation("metadata");
-  const names = ids.map((id) => nameById.get(id) ?? `#${id}`).join(", ");
-  return <ActiveTriChip label={`${t("search.library")}: ${names}`} onClear={onClear} />;
-}
-
-function ActiveVrChip({ vr, onClear }: { vr: boolean; onClear: () => void }) {
-  const { t } = useTranslation("metadata");
-  return (
-    <ActiveTriChip
-      label={`${t("search.vr")}: ${vr ? t("search.yes") : t("search.no")}`}
-      onClear={onClear}
-    />
-  );
-}
-
-function ActiveTriChip({ label, onClear }: { label: string; onClear: () => void }) {
-  return (
-    <Group gap={4} wrap="nowrap">
-      <Badge variant="outline">{label}</Badge>
-      <ActionIcon size="sm" variant="subtle" color="gray" onClick={onClear} aria-label="clear">
+      <ActionIcon
+        size="sm"
+        variant="subtle"
+        color="gray"
+        onClick={onClear}
+        aria-label={`${t("common:actions.remove")} ${t(`browse.kinds.${kind}`)}: ${data?.name ?? `#${id}`}`}
+      >
         <IconX size={14} />
       </ActionIcon>
     </Group>
@@ -165,32 +128,44 @@ function MetaIndexPage() {
   const semanticActive = semanticQuery != null;
   const navigate = Route.useNavigate();
   const listLimit = useUIStore((s) => s.pageSizes.metaList);
-  const narrowViewport = useNarrowViewport("md");
+  const filter = useMemo(
+    () => readBrowseFilter("metadata", search, metadataQuickFilterNodes(search)),
+    [search],
+  );
 
-  const hasFiles = parseHasFiles(search.has_files);
-  const vr = parseHasFiles(search.vr);
+  const { mosaic, definition, content_type: contentType } = search;
+  const hasFiles = parseBoolean(search.has_files);
+  const vr = parseBoolean(search.vr);
+  const hasSubtitle = parseBoolean(search.has_subtitle);
+  const uncensored = parseBoolean(search.uncensored);
   const libraryIds = search.library_id ?? [];
   const { data: librariesData } = useQuery(listLibrariesOptions());
   const libraries = librariesData?.items ?? [];
   const libraryNameById = new Map(libraries.map((library) => [library.id, library.name]));
-  const filePhase: FilePhaseFilters = {
-    has_subtitle: parseHasFiles(search.has_subtitle),
-    uncensored: parseHasFiles(search.uncensored),
-    mosaic: search.mosaic ?? null,
-    definition: search.definition ?? null,
-    content_type: search.content_type ?? null,
-  };
-  const phaseActive =
-    filePhase.has_subtitle !== null ||
-    filePhase.uncensored !== null ||
-    filePhase.mosaic != null ||
-    filePhase.definition != null ||
-    filePhase.content_type != null;
-  const [searchInput, setSearchInput] = useState(search.q ?? "");
-  const [advancedOpen, setAdvancedOpen] = useState(
-    hasFiles !== null || vr !== null || phaseActive || libraryIds.length > 0,
-  );
+  const legacyPanelActive =
+    hasFiles !== undefined ||
+    vr !== undefined ||
+    hasSubtitle !== undefined ||
+    uncensored !== undefined ||
+    mosaic != null ||
+    definition != null ||
+    contentType != null ||
+    libraryIds.length > 0;
+  const [searchInput, setSearchInput] = useResettingState(() => search.q ?? "", search.q);
+  const panel = useBrowseFilterPanel(legacyPanelActive || filter.active);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const composingRef = useRef(false);
+  const committedSearchRef = useRef({ q: search.q, semantic: semanticMode });
+  useEffect(() => {
+    if (
+      committedSearchRef.current.q !== search.q ||
+      committedSearchRef.current.semantic !== semanticMode
+    ) {
+      committedSearchRef.current = { q: search.q, semantic: semanticMode };
+      clearTimeout(debounceRef.current);
+    }
+    return () => clearTimeout(debounceRef.current);
+  }, [search.q, semanticMode]);
 
   const filters: FacetFilters = {
     actor_id: search.actor_id,
@@ -204,29 +179,30 @@ function MetaIndexPage() {
 
   const filterParams = {
     library_id: libraryIds.length > 0 ? libraryIds : undefined,
-    has_files: hasFiles === null ? undefined : hasFiles,
-    vr: vr === null ? undefined : vr,
-    has_subtitle: filePhase.has_subtitle === null ? undefined : filePhase.has_subtitle,
-    uncensored: filePhase.uncensored === null ? undefined : filePhase.uncensored,
-    mosaic: filePhase.mosaic ?? undefined,
-    definition: filePhase.definition ?? undefined,
-    content_type: filePhase.content_type ?? undefined,
+    has_files: hasFiles,
+    vr,
+    has_subtitle: hasSubtitle,
+    uncensored,
+    mosaic,
+    definition,
+    content_type: contentType,
     ...filters,
-    ...(search.saved_query_id != null ? { saved_query_id: search.saved_query_id } : {}),
+    saved_query_id: filter.presetId,
   };
 
-  const semanticParams: NonNullable<ListMetadataData["query"]> =
-    semanticQuery != null
-      ? { semantic_query: semanticQuery, semantic_kind: search.kind ?? "all" }
-      : {};
-
-  const listQueryParams = {
+  const commonQuery = {
     search: semanticActive ? undefined : search.q || undefined,
     sort_by: semanticActive ? undefined : search.sort_by,
     order: semanticActive ? undefined : search.order,
-    ...semanticParams,
-    ...filterParams,
-  };
+    semantic_query: semanticQuery,
+    semantic_kind: semanticActive ? (search.kind ?? "all") : undefined,
+  } satisfies Partial<MetadataSearchRequest>;
+  const listQueryParams = { ...filterParams, ...commonQuery };
+  const postBody = {
+    version: 1,
+    expression: filter.expression,
+    ...commonQuery,
+  } satisfies MetadataSearchRequest;
 
   const isList = search.view === "list";
   const { data: semanticStatus, refetch: refetchSemanticStatus } =
@@ -253,30 +229,36 @@ function MetaIndexPage() {
   // 语义状态未返回或不可检索时不发送列表请求, 避免先按普通排序渲染一屏.
   const listEnabled = !semanticActive || (semanticStatus != null && semanticNotice == null);
 
-  const gridQuery = useInfiniteQuery({
-    ...listMetadataInfiniteOptions({
-      query: {
-        ...listQueryParams,
-        limit: CHUNK,
-      },
-    }),
-    initialPageParam: 0,
-    getNextPageParam: nextOffsetPageParam,
-    gcTime: BROWSE_GC_TIME,
-    enabled: !isList && listEnabled,
+  const { listQuery, gridQuery, activeQuery } = useBrowseQueries({
+    isList,
+    page: search.page,
+    listLimit,
+    enabled: !filter.blocked && listEnabled,
+    queryKey: ({ offset, limit }) => {
+      if (filter.active) {
+        return metadataAdvancedFilterQueryKey(
+          offset === undefined ? "grid" : "list",
+          search.f,
+          postBody,
+          limit,
+          offset,
+        );
+      }
+      const key = offset === undefined ? listMetadataInfiniteQueryKey : listMetadataQueryKey;
+      return key({ query: { ...listQueryParams, offset, limit } });
+    },
+    loadPage: async (page, signal) => {
+      const { data } = filter.active
+        ? await searchMetadata({ body: { ...postBody, ...page }, signal, throwOnError: true })
+        : await listMetadata({
+            query: { ...listQueryParams, ...page },
+            signal,
+            throwOnError: true,
+          });
+      return data;
+    },
   });
-
-  const listOffset = (search.page - 1) * listLimit;
-  const listQuery = useQuery({
-    ...listMetadataOptions({
-      query: {
-        ...listQueryParams,
-        offset: listOffset,
-        limit: listLimit,
-      },
-    }),
-    enabled: isList && listEnabled,
-  });
+  const showResults = !activeQuery.isError || activeQuery.data != null;
 
   const gridItems = useMemo(
     () => gridQuery.data?.pages.flatMap((p) => p.items) ?? [],
@@ -298,7 +280,7 @@ function MetaIndexPage() {
 
   function handleSearchChange(v: string) {
     setSearchInput(v);
-    if (semanticMode) return;
+    if (semanticMode || composingRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       void navigate({ search: (prev) => ({ ...prev, q: v || undefined, page: 1 }) });
@@ -306,11 +288,13 @@ function MetaIndexPage() {
   }
 
   function submitSearch() {
+    clearTimeout(debounceRef.current);
     const value = searchInput.trim();
     void navigate({ search: (prev) => ({ ...prev, q: value || undefined, page: 1 }) });
   }
 
   function toggleSemantic() {
+    clearTimeout(debounceRef.current);
     // 切换搜索方式时清空输入, 避免将关键词作为画面描述提交, 或反向提交.
     setSearchInput("");
     void navigate({
@@ -324,90 +308,12 @@ function MetaIndexPage() {
     });
   }
 
-  function appendFacet(kind: FacetKind, id: number) {
-    void navigate({
-      search: (prev) => {
-        const next = addFacetId(
-          {
-            actor_id: prev.actor_id,
-            director_id: prev.director_id,
-            tag_id: prev.tag_id,
-            studio_id: prev.studio_id,
-            publisher_id: prev.publisher_id,
-            series_id: prev.series_id,
-            user_tag_id: prev.user_tag_id,
-          },
-          kind,
-          id,
-        );
-        return { ...prev, ...next, page: 1 };
-      },
-    });
-  }
-
   function clearFacet(kind: FacetKind, id: number) {
-    void navigate({
-      search: (prev) => {
-        const next = removeFacetId(
-          {
-            actor_id: prev.actor_id,
-            director_id: prev.director_id,
-            tag_id: prev.tag_id,
-            studio_id: prev.studio_id,
-            publisher_id: prev.publisher_id,
-            series_id: prev.series_id,
-            user_tag_id: prev.user_tag_id,
-          },
-          kind,
-          id,
-        );
-        return { ...prev, ...next, page: 1 };
-      },
-    });
+    void navigate({ search: (prev) => ({ ...prev, ...removeFacetId(prev, kind, id), page: 1 }) });
   }
 
-  function setHasFilesFilter(value: HasFilesFilter) {
-    void navigate({
-      search: (prev) => ({
-        ...prev,
-        has_files: triToSearch(value),
-        page: 1,
-      }),
-    });
-  }
-
-  function setLibraryFilter(ids: number[]) {
-    void navigate({
-      search: (prev) => ({
-        ...prev,
-        library_id: ids.length > 0 ? ids : undefined,
-        page: 1,
-      }),
-    });
-  }
-
-  function setVrFilter(value: HasFilesFilter) {
-    void navigate({
-      search: (prev) => ({
-        ...prev,
-        vr: triToSearch(value),
-        page: 1,
-      }),
-    });
-  }
-
-  function setFilePhaseFilter(value: FilePhaseFilters) {
-    void navigate({
-      search: (prev) => ({
-        ...prev,
-        has_subtitle: triToSearch(value.has_subtitle),
-        uncensored: triToSearch(value.uncensored),
-        mosaic: value.mosaic ?? undefined,
-        definition: value.definition ?? undefined,
-        content_type: value.content_type ?? undefined,
-        page: 1,
-      }),
-    });
+  function clearLegacyFilter(key: keyof typeof filterParams) {
+    void navigate({ search: (prev) => ({ ...prev, [key]: undefined, page: 1 }) });
   }
 
   function handleSort(field: MetadataSortField) {
@@ -422,18 +328,22 @@ function MetaIndexPage() {
     });
   }
 
-  const active = activeFacetFilters(filters);
+  function applyExpression(f: string | undefined) {
+    void navigate({ search: (prev) => ({ ...withoutMetadataQuickFilters(prev), f }) });
+  }
+
+  function clearExpression() {
+    void navigate({ search: (prev) => ({ ...prev, f: undefined, page: 1 }) });
+  }
+
+  const active = activeFacetFilters(search);
   const hasActiveFilters =
-    active.length > 0 ||
-    hasFiles !== null ||
-    vr !== null ||
-    phaseActive ||
-    libraryIds.length > 0 ||
-    search.saved_query_id != null;
+    active.length > 0 || legacyPanelActive || filter.active || filter.presetId != null;
 
   return (
     <BrowsePageShell
       fill={isList}
+      filterDrawerFullHeight
       // 搜索槽内另有语义切换按钮, 放宽到 560, 使输入框宽度接近其他页面的 480
       searchMaxWidth={560}
       title={<Title order={2}>{t("common:nav.meta")}</Title>}
@@ -457,9 +367,11 @@ function MetaIndexPage() {
         />
       }
       summary={
-        <Text size="sm" c="dimmed">
-          {t("common:pagination.totalItems", { count: total })}
-        </Text>
+        !filter.blocked && !activeQuery.isError ? (
+          <Text size="sm" c="dimmed">
+            {t("common:pagination.totalItems", { count: total })}
+          </Text>
+        ) : undefined
       }
       search={
         <Group gap="xs" wrap="nowrap" w="100%">
@@ -473,8 +385,16 @@ function MetaIndexPage() {
             <TextInput
               value={searchInput}
               onChange={(e) => handleSearchChange(e.currentTarget.value)}
+              onCompositionStart={() => {
+                composingRef.current = true;
+                clearTimeout(debounceRef.current);
+              }}
+              onCompositionEnd={(e) => {
+                composingRef.current = false;
+                handleSearchChange(e.currentTarget.value);
+              }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") submitSearch();
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) submitSearch();
               }}
               placeholder={semanticMode ? t("semantic.placeholder") : t("search.placeholder")}
               leftSection={
@@ -528,17 +448,7 @@ function MetaIndexPage() {
       }
       extras={
         <>
-          {/* 窄屏的筛选在底部面板里常驻展开, 该开关只在宽屏有意义. */}
-          {narrowViewport ? null : (
-            <HintedActionIcon
-              variant={advancedOpen || hasFiles !== null || vr !== null ? "filled" : "default"}
-              size={36}
-              onClick={() => setAdvancedOpen((v) => !v)}
-              label={t("search.advanced")}
-            >
-              <IconFilter size={16} />
-            </HintedActionIcon>
-          )}
+          <BrowseFilterToggle panel={panel} active={hasActiveFilters} />
           {semanticMode && (
             <SegmentedControl
               value={search.kind ?? "all"}
@@ -579,22 +489,20 @@ function MetaIndexPage() {
         ) : undefined
       }
       filterPanel={
-        <FacetFilterControls
-          opened={narrowViewport || advancedOpen}
-          filters={filters}
-          libraryIds={libraryIds}
+        <BrowseFilterPanel
+          panel={panel}
+          filter={filter}
           libraries={libraries}
-          onLibrariesChange={setLibraryFilter}
-          onSelect={appendFacet}
-          hasFiles={hasFiles}
-          onHasFilesChange={setHasFilesFilter}
-          vr={vr}
-          onVrChange={setVrFilter}
-          filePhase={filePhase}
-          onFilePhaseChange={setFilePhaseFilter}
+          onApply={applyExpression}
         />
       }
     >
+      <BrowseFilterAlerts
+        filter={filter}
+        failed={activeQuery.isError}
+        onRetry={() => void activeQuery.refetch()}
+        onClear={clearExpression}
+      />
       {hasActiveFilters && (
         <Group gap="xs">
           {search.saved_query_id != null && (
@@ -617,56 +525,60 @@ function MetaIndexPage() {
                 size="sm"
                 variant="subtle"
                 color="gray"
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, saved_query_id: undefined, page: 1 }),
-                  })
-                }
-                aria-label="clear"
+                onClick={() => clearLegacyFilter("saved_query_id")}
+                aria-label={`${t("common:actions.remove")} ${t("common:nav.savedQueries")}`}
               >
                 <IconX size={14} />
               </ActionIcon>
             </Group>
           )}
+          <ActiveExpressionChip filter={filter} onClear={clearExpression} />
           {libraryIds.length > 0 && (
-            <ActiveLibrariesChip
-              ids={libraryIds}
-              nameById={libraryNameById}
-              onClear={() => setLibraryFilter([])}
+            <ActiveFilterChip
+              label={`${t("search.library")}: ${libraryIds.map((id) => libraryNameById.get(id) ?? `#${id}`).join(", ")}`}
+              onClear={() => clearLegacyFilter("library_id")}
             />
           )}
-          {hasFiles !== null && (
-            <ActiveHasFilesChip hasFiles={hasFiles} onClear={() => setHasFilesFilter(null)} />
-          )}
-          {vr !== null && <ActiveVrChip vr={vr} onClear={() => setVrFilter(null)} />}
-          {filePhase.has_subtitle !== null && (
-            <ActiveTriChip
-              label={`${t("search.hasSubtitle")}: ${filePhase.has_subtitle ? t("search.yes") : t("search.no")}`}
-              onClear={() => setFilePhaseFilter({ ...filePhase, has_subtitle: null })}
+          {hasFiles !== undefined && (
+            <ActiveFilterChip
+              label={`${t("search.hasFiles")}: ${hasFiles ? t("search.hasFilesYes") : t("search.hasFilesNo")}`}
+              onClear={() => clearLegacyFilter("has_files")}
             />
           )}
-          {filePhase.uncensored !== null && (
-            <ActiveTriChip
-              label={`${t("search.uncensored")}: ${filePhase.uncensored ? t("search.yes") : t("search.no")}`}
-              onClear={() => setFilePhaseFilter({ ...filePhase, uncensored: null })}
+          {vr !== undefined && (
+            <ActiveFilterChip
+              label={`${t("search.vr")}: ${vr ? t("search.yes") : t("search.no")}`}
+              onClear={() => clearLegacyFilter("vr")}
             />
           )}
-          {filePhase.mosaic != null && (
-            <ActiveTriChip
-              label={`${t("search.mosaic")}: ${t(`search.mosaics.${filePhase.mosaic}`)}`}
-              onClear={() => setFilePhaseFilter({ ...filePhase, mosaic: null })}
+          {hasSubtitle !== undefined && (
+            <ActiveFilterChip
+              label={`${t("search.hasSubtitle")}: ${hasSubtitle ? t("search.yes") : t("search.no")}`}
+              onClear={() => clearLegacyFilter("has_subtitle")}
             />
           )}
-          {filePhase.definition != null && (
-            <ActiveTriChip
-              label={`${t("search.definition")}: ${filePhase.definition}`}
-              onClear={() => setFilePhaseFilter({ ...filePhase, definition: null })}
+          {uncensored !== undefined && (
+            <ActiveFilterChip
+              label={`${t("search.uncensored")}: ${uncensored ? t("search.yes") : t("search.no")}`}
+              onClear={() => clearLegacyFilter("uncensored")}
             />
           )}
-          {filePhase.content_type != null && (
-            <ActiveTriChip
-              label={`${t("search.contentType")}: ${t(`search.contentTypes.${filePhase.content_type}`)}`}
-              onClear={() => setFilePhaseFilter({ ...filePhase, content_type: null })}
+          {mosaic != null && (
+            <ActiveFilterChip
+              label={`${t("search.mosaic")}: ${t(`search.mosaics.${mosaic}`)}`}
+              onClear={() => clearLegacyFilter("mosaic")}
+            />
+          )}
+          {definition != null && (
+            <ActiveFilterChip
+              label={`${t("search.definition")}: ${definition}`}
+              onClear={() => clearLegacyFilter("definition")}
+            />
+          )}
+          {contentType != null && (
+            <ActiveFilterChip
+              label={`${t("search.contentType")}: ${t(`search.contentTypes.${contentType}`)}`}
+              onClear={() => clearLegacyFilter("content_type")}
             />
           )}
           {active.map(({ kind, id }) => (
@@ -680,7 +592,8 @@ function MetaIndexPage() {
         </Group>
       )}
 
-      {semanticNotice != null ? (
+      {filter.blocked || (!showResults && semanticNotice == null) ? null : semanticNotice !=
+        null ? (
         <Alert color="blue" title={t("semantic.unavailableTitle")} maw={720} mx="auto" w="100%">
           {semanticNotice}
         </Alert>

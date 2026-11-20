@@ -17,7 +17,6 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconDownload,
-  IconExternalLink,
   IconPencil,
   IconTrash,
 } from "@tabler/icons-react";
@@ -47,11 +46,7 @@ import {
 import { confirm } from "@/lib/confirm";
 import { extractErrorMessage } from "@/lib/api-error";
 import { formatRelativeTime } from "@/lib/format-relative-time";
-import {
-  savedQueryBrowseHref,
-  SAVED_QUERY_BADGE_COLOR,
-  SAVED_QUERY_ENTITY_LABEL_KEY,
-} from "@/lib/saved-query/display";
+import { SAVED_QUERY_BADGE_COLOR, SAVED_QUERY_ENTITY_LABEL_KEY } from "@/lib/saved-query/display";
 import { downloadSavedQueryResult } from "@/lib/saved-query/download";
 import { useUIStore } from "@/stores/ui";
 
@@ -143,8 +138,6 @@ function SavedQueryDataPage() {
   });
 
   const query = metaQuery.data;
-  const entity = query?.entity;
-  const href = query != null ? savedQueryBrowseHref({ id, entity: query.entity }) : null;
   const total = resultQuery.data?.total ?? 0;
   const columns = resultQuery.data?.columns ?? [];
   const rows = resultQuery.data?.rows ?? [];
@@ -223,19 +216,6 @@ function SavedQueryDataPage() {
           >
             {t("common:actions.edit")}
           </Button>
-          {href != null && (
-            <Button
-              component="a"
-              href={href}
-              target="_blank"
-              rel="noreferrer"
-              size="xs"
-              variant="light"
-              leftSection={<IconExternalLink size={14} />}
-            >
-              {entity === "actor" ? t("openActors") : t("openMeta")}
-            </Button>
-          )}
           {!query.persisted && (
             <Button
               size="xs"

@@ -51,17 +51,6 @@ export function metaSearchForFacet(kind: FacetKind, id: number): FacetFilters {
   return filters;
 }
 
-export function facetIdsOf(filters: FacetFilters, kind: FacetKind): number[] {
-  return filters[FACET_FILTER_PARAM[kind]] ?? [];
-}
-
-export function addFacetId(filters: FacetFilters, kind: FacetKind, id: number): FacetFilters {
-  const param = FACET_FILTER_PARAM[kind];
-  const current = filters[param] ?? [];
-  if (current.includes(id)) return filters;
-  return { ...filters, [param]: [...current, id] };
-}
-
 export function removeFacetId(filters: FacetFilters, kind: FacetKind, id: number): FacetFilters {
   const param = FACET_FILTER_PARAM[kind];
   const next = (filters[param] ?? []).filter((x) => x !== id);

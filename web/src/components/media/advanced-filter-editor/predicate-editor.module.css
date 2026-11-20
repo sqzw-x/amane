@@ -1,0 +1,108 @@
+.editor {
+  --predicate-control-height: 2.5rem;
+  display: grid;
+  gap: var(--mantine-spacing-xs);
+  min-inline-size: 0;
+}
+
+.layout {
+  display: grid;
+  gap: var(--mantine-spacing-xs);
+  inline-size: 100%;
+  max-inline-size: 38rem;
+}
+
+.row {
+  --predicate-border: var(--mantine-color-default-border);
+  inline-size: 100%;
+  min-inline-size: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 12fr) minmax(0, 9fr) minmax(0, 17fr);
+  border: 1px solid var(--predicate-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-body);
+}
+
+.row > * {
+  min-inline-size: 0;
+}
+
+.row > :not(:first-child) {
+  border-inline-start: 1px solid var(--predicate-border);
+}
+
+.row .input {
+  min-block-size: var(--predicate-control-height);
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+}
+
+.input[readonly] {
+  text-overflow: ellipsis;
+}
+
+.row .input:disabled {
+  opacity: 1;
+}
+
+.row .input:focus-visible,
+.row button:focus-visible,
+.actions button:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+
+.row [data-next] .input::placeholder {
+  color: var(--mantine-color-text);
+}
+
+.row .input[aria-invalid="true"] {
+  box-shadow: inset 0 -2px 0 var(--mantine-color-error);
+}
+
+.actions {
+  justify-self: end;
+}
+
+.dropdown {
+  max-block-size: min(14rem, var(--predicate-dropdown-height, 14rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dropdown [role="option"] {
+  overflow-wrap: anywhere;
+}
+
+.loadFeedback {
+  padding: 0 var(--mantine-spacing-xs) var(--mantine-spacing-xs);
+}
+
+.validationError {
+  margin-block-start: 4px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 61.99em) {
+  .editor {
+    --predicate-control-height: 2.75rem;
+  }
+
+  .row .input:not([readonly]) {
+    font-size: max(16px, var(--mantine-font-size-sm));
+  }
+}
+
+@media (max-width: 35.99em) {
+  .row {
+    flex-basis: 100%;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+
+  .row > .value {
+    grid-column: 1 / -1;
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--predicate-border);
+  }
+}
