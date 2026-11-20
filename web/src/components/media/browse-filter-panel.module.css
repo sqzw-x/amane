@@ -1,0 +1,13 @@
+.panel {
+  background: var(--mantine-color-body);
+  min-width: 0;
+}
+
+@media (max-width: 61.99em) {
+  /* 窄屏时面板整个搬进底部抽屉, 抽屉已是浮层; 再套一层卡片会读成容器套容器. */
+  .panel {
+    border: 0;
+    padding: 0;
+    background: transparent;
+  }
+}

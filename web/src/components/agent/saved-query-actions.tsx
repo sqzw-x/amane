@@ -1,9 +1,8 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
-import { IconDownload, IconExternalLink, IconTable } from "@tabler/icons-react";
+import { IconDownload, IconTable } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { getSavedQueryOptions } from "@/client/@tanstack/react-query.gen";
-import { savedQueryBrowseHref, SAVED_QUERY_OPEN_LABEL_KEY } from "@/lib/saved-query/display";
 
 export function SavedQueryActions({
   ids,
@@ -34,7 +33,6 @@ function SavedQueryActionRow({
 }) {
   const { t } = useTranslation(["agent", "savedQueries"]);
   const { data } = useQuery(getSavedQueryOptions({ path: { query_id: id } }));
-  const href = data != null ? savedQueryBrowseHref({ id, entity: data.entity }) : null;
   const label = data?.name ?? t("savedQueryChip", { id });
   return (
     <Group gap={6} wrap="wrap">
@@ -56,21 +54,8 @@ function SavedQueryActionRow({
         variant="light"
         leftSection={<IconTable size={14} />}
       >
-        {t(SAVED_QUERY_OPEN_LABEL_KEY.data, { ns: "savedQueries" })}
+        {t("openData", { ns: "savedQueries" })}
       </Button>
-      {data != null && href != null && (
-        <Button
-          component="a"
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          size="xs"
-          variant="light"
-          leftSection={<IconExternalLink size={14} />}
-        >
-          {t(SAVED_QUERY_OPEN_LABEL_KEY[data.entity], { ns: "savedQueries" })}
-        </Button>
-      )}
       <Button
         size="xs"
         variant="default"

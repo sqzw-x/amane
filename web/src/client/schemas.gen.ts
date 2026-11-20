@@ -607,6 +607,64 @@ export const ActorScrapingConfigSchema = {
     description: '资料来源顺序填空, 头像来源优先.'
 } as const;
 
+export const ActorSearchRequestSchema = {
+    properties: {
+        version: {
+            type: 'integer',
+            const: 1,
+            title: 'Version'
+        },
+        expression: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/FilterGroup'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        search: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/BoundedString'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        offset: {
+            type: 'integer',
+            maximum: 2147483647,
+            minimum: 0,
+            title: 'Offset',
+            default: 0
+        },
+        order: {
+            $ref: '#/components/schemas/SortOrder',
+            default: 'asc'
+        },
+        limit: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Limit',
+            default: 50
+        },
+        sort_by: {
+            $ref: '#/components/schemas/ActorSortField',
+            default: 'name'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'version'
+    ],
+    title: 'ActorSearchRequest'
+} as const;
+
 export const ActorSortFieldSchema = {
     type: 'string',
     enum: [
@@ -1269,6 +1327,11 @@ export const Body_install_pluginSchema = {
     },
     type: 'object',
     title: 'Body_install_plugin'
+} as const;
+
+export const BoundedStringSchema = {
+    type: 'string',
+    maxLength: 200
 } as const;
 
 export const BrowserBackendItemResponseSchema = {
@@ -3088,6 +3151,147 @@ export const FilePhaseSummarySchema = {
     type: 'object',
     title: 'FilePhaseSummary',
     description: '条目相位聚合; 判定见 ``parsing/file_info.py::summarize_file_phases``, definition 取最高档.'
+} as const;
+
+export const FilterFieldSchema = {
+    type: 'string',
+    enum: [
+        'actor_id',
+        'director_id',
+        'tag_id',
+        'user_tag_id',
+        'studio_id',
+        'publisher_id',
+        'series_id',
+        'library_id',
+        'has_files',
+        'has_subtitle',
+        'vr',
+        'uncensored',
+        'mosaic',
+        'definition',
+        'content_type',
+        'number',
+        'title',
+        'gender',
+        'has_person',
+        'has_image',
+        'birthday',
+        'height',
+        'bust',
+        'waist',
+        'hip',
+        'cup',
+        'name',
+        'alias',
+        'birthplace'
+    ]
+} as const;
+
+export const FilterGroupSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'group',
+            title: 'Type'
+        },
+        op: {
+            type: 'string',
+            enum: [
+                'and',
+                'or'
+            ],
+            title: 'Op'
+        },
+        negate: {
+            type: 'boolean',
+            title: 'Negate',
+            default: false
+        },
+        children: {
+            items: {
+                $ref: '#/components/schemas/FilterNode'
+            },
+            type: 'array',
+            maxItems: 256,
+            minItems: 1,
+            title: 'Children'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'type',
+        'op',
+        'children'
+    ],
+    title: 'FilterGroup'
+} as const;
+
+export const FilterNodeSchema = {
+    anyOf: [
+        {
+            $ref: '#/components/schemas/FilterGroup'
+        },
+        {
+            $ref: '#/components/schemas/FilterRule'
+        }
+    ]
+} as const;
+
+export const FilterOperatorSchema = {
+    type: 'string',
+    enum: [
+        'eq',
+        'contains',
+        'gte',
+        'lte'
+    ]
+} as const;
+
+export const FilterRuleSchema = {
+    properties: {
+        type: {
+            type: 'string',
+            const: 'rule',
+            title: 'Type'
+        },
+        field: {
+            $ref: '#/components/schemas/FilterField'
+        },
+        operator: {
+            $ref: '#/components/schemas/FilterOperator'
+        },
+        value: {
+            $ref: '#/components/schemas/FilterValue'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'type',
+        'field',
+        'operator',
+        'value'
+    ],
+    title: 'FilterRule'
+} as const;
+
+export const FilterValueSchema = {
+    anyOf: [
+        {
+            type: 'boolean'
+        },
+        {
+            type: 'integer'
+        },
+        {
+            type: 'number'
+        },
+        {
+            $ref: '#/components/schemas/BoundedString'
+        }
+    ]
 } as const;
 
 export const FootprintNoticeKindSchema = {
@@ -6462,6 +6666,87 @@ export const MetadataResponseSchema = {
     ],
     title: 'MetadataResponse',
     description: '详情与单条写接口的全量条目: 在列表项之上补 raw / field_sources.'
+} as const;
+
+export const MetadataSearchRequestSchema = {
+    properties: {
+        version: {
+            type: 'integer',
+            const: 1,
+            title: 'Version'
+        },
+        expression: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/FilterGroup'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        search: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/BoundedString'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        offset: {
+            type: 'integer',
+            maximum: 2147483647,
+            minimum: 0,
+            title: 'Offset',
+            default: 0
+        },
+        order: {
+            $ref: '#/components/schemas/SortOrder',
+            default: 'desc'
+        },
+        limit: {
+            type: 'integer',
+            maximum: 200,
+            minimum: 1,
+            title: 'Limit',
+            default: 20
+        },
+        sort_by: {
+            $ref: '#/components/schemas/MetadataSortField',
+            default: 'updated_at'
+        },
+        semantic_query: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 200,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Semantic Query'
+        },
+        semantic_kind: {
+            type: 'string',
+            enum: [
+                'all',
+                'cover',
+                'still'
+            ],
+            title: 'Semantic Kind',
+            default: 'all'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'version'
+    ],
+    title: 'MetadataSearchRequest'
 } as const;
 
 export const MetadataSortFieldSchema = {

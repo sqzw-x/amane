@@ -1,46 +1,54 @@
-import { ActionIcon, Badge, Group, SegmentedControl, Text, TextInput, Title } from "@mantine/core";
-import { IconFilter, IconSearch, IconTable, IconX } from "@tabler/icons-react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { ActionIcon, Group, SegmentedControl, Text, TextInput, Title } from "@mantine/core";
+import { IconSearch, IconTable } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
 import type { ParseKeys } from "i18next";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getFacetOptions,
-  listActorsInfiniteOptions,
-  listActorsOptions,
+  listActorsInfiniteQueryKey,
+  listActorsQueryKey,
 } from "@/client/@tanstack/react-query.gen";
-import type { ActorGender, ActorSortField } from "@/client/types.gen";
+import { listActors, searchActors } from "@/client/sdk.gen";
+import { actorAdvancedFilterQueryKey } from "@/lib/advanced-filter-query-keys";
+import type { ActorGender, ActorSearchRequest, ActorSortField } from "@/client/types.gen";
 import { BrowsePageShell } from "@/components/common/browse-page-shell";
-import { HintedActionIcon } from "@/components/common/hinted-action-icon";
+import {
+  ActiveExpressionChip,
+  ActiveFilterChip,
+  BrowseFilterAlerts,
+  BrowseFilterPanel,
+  BrowseFilterToggle,
+  useBrowseFilterPanel,
+} from "@/components/media/browse-filter-panel";
 import { InfiniteScrollSentinel } from "@/components/common/infinite-scroll-sentinel";
 import { ListDefaultActions } from "@/components/common/list-default-actions";
 import { PageSizeSelect } from "@/components/common/page-size-select";
 import { SortMenu } from "@/components/common/sort-menu";
-import { ActorFilterControls } from "@/components/media/actor-filter-controls";
 import { ActorGrid } from "@/components/media/actor-grid";
 import { ActorTable } from "@/components/media/actor-table";
 import {
   ACTOR_RANGE_FILTERS,
   type ActorFilterKey,
   type ActorFilterPatch,
-  type ActorFilterValues,
   actorFilterValuesFromSearch,
   actorListQueryFromSearch,
+  actorQuickFilterNodes,
   actorsBrowseSearchSchema,
   clearActorFilterKeys,
-  DEFAULT_ACTOR_GENDER_FILTER,
+  stripDefaultActorGender,
   formatActorRangeChip,
   hasActiveActorFilters,
   hasNonDefaultActorFilters,
-  mergeActorFilterPatch,
-  rangeValue,
-  replaceActorFilters,
+  applyActorExpression,
 } from "@/lib/actors/browse";
-import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
+import { useBrowseQueries } from "@/hooks/use-browse-queries";
+import { readBrowseFilter } from "@/lib/browse-filter";
+import { useResettingState } from "@/hooks/use-resetting-state";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 import { ACTOR_SORT_FIELDS } from "@/lib/exhaustive-maps";
-import { BROWSE_GC_TIME, GRID_PREFETCH_MARGIN, nextOffsetPageParam } from "@/lib/infinite-list";
+import { GRID_PREFETCH_MARGIN } from "@/lib/infinite-list";
 import { actorListDefaults } from "@/lib/nav-defaults";
 import { useUIStore } from "@/stores/ui";
 
@@ -72,26 +80,12 @@ export const Route = createFileRoute("/actors/")({
         page: 1,
         sort_by: "count",
         order: "desc",
-        gender: [...DEFAULT_ACTOR_GENDER_FILTER],
       }),
+      ({ search, next }) => stripDefaultActorGender(next(search)),
     ],
   },
   component: ActorsIndexPage,
 });
-
-/** 头像墙每批条数 - 与片库 grid 一样固定 chunk, 不暴露页大小控件. */
-const GRID_CHUNK = 30;
-
-function ActiveFilterChip({ label, onClear }: { label: string; onClear: () => void }) {
-  return (
-    <Group gap={4} wrap="nowrap">
-      <Badge variant="outline">{label}</Badge>
-      <ActionIcon size="sm" variant="subtle" color="gray" onClick={onClear} aria-label="clear">
-        <IconX size={14} />
-      </ActionIcon>
-    </Group>
-  );
-}
 
 /** 标签名经单条分类查询, 与片库的芯片同形. */
 function ActiveUserTagChip({ tagId, onClear }: { tagId: number; onClear: () => void }) {
@@ -107,44 +101,64 @@ function ActorsIndexPage() {
   const navigate = Route.useNavigate();
   const { t } = useTranslation(["metadata", "common", "savedQueries"]);
   const listLimit = useUIStore((s) => s.pageSizes.actorsList);
+  const filter = useMemo(
+    () => readBrowseFilter("actor", search, actorQuickFilterNodes(search)),
+    [search],
+  );
 
   const filters = actorFilterValuesFromSearch(search);
-  const hasActiveFilters = hasActiveActorFilters(filters) || search.saved_query_id != null;
-  const hasNonDefaultFilters = hasNonDefaultActorFilters(filters) || search.saved_query_id != null;
+  const hasActiveFilters =
+    hasActiveActorFilters(filters) || filter.active || filter.presetId != null;
+  const hasNonDefaultFilters = hasNonDefaultActorFilters(filters) || filter.presetId != null;
 
-  const [searchInput, setSearchInput] = useState(search.q ?? "");
-  const [advancedOpen, setAdvancedOpen] = useState(hasNonDefaultFilters);
-  const narrowViewport = useNarrowViewport("md");
+  const [searchInput, setSearchInput] = useResettingState(() => search.q ?? "", search.q);
+  const panel = useBrowseFilterPanel(hasNonDefaultFilters || filter.active);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const composingRef = useRef(false);
+  const committedSearchRef = useRef(search.q);
+  useEffect(() => {
+    if (committedSearchRef.current !== search.q) {
+      committedSearchRef.current = search.q;
+      clearTimeout(debounceRef.current);
+    }
+    return () => clearTimeout(debounceRef.current);
+  }, [search.q]);
 
   const isList = search.view === "list";
-  const offset = (search.page - 1) * listLimit;
   const listQueryParams = actorListQueryFromSearch(search);
-
-  // list 仅 list 视图订阅; grid 不再并行预热, 避免和无限滚动/头像抢连接.
-  const listQuery = useQuery({
-    ...listActorsOptions({
-      query: {
-        ...listQueryParams,
-        offset,
-        limit: listLimit,
-      },
-    }),
-    enabled: isList,
+  const postBody: Omit<ActorSearchRequest, "offset" | "limit"> = {
+    version: 1,
+    expression: filter.expression,
+    search: listQueryParams.search,
+    sort_by: search.sort_by,
+    order: search.order,
+  };
+  const { listQuery, gridQuery, activeQuery } = useBrowseQueries({
+    isList,
+    page: search.page,
+    listLimit,
+    enabled: !filter.blocked,
+    queryKey: ({ offset, limit }) => {
+      if (filter.active) {
+        return actorAdvancedFilterQueryKey(
+          offset === undefined ? "grid" : "list",
+          search.f,
+          postBody,
+          limit,
+          offset,
+        );
+      }
+      const key = offset === undefined ? listActorsInfiniteQueryKey : listActorsQueryKey;
+      return key({ query: { ...listQueryParams, offset, limit } });
+    },
+    loadPage: async (page, signal) => {
+      const { data } = filter.active
+        ? await searchActors({ body: { ...postBody, ...page }, signal, throwOnError: true })
+        : await listActors({ query: { ...listQueryParams, ...page }, signal, throwOnError: true });
+      return data;
+    },
   });
-
-  const gridQuery = useInfiniteQuery({
-    ...listActorsInfiniteOptions({
-      query: {
-        ...listQueryParams,
-        limit: GRID_CHUNK,
-      },
-    }),
-    enabled: !isList,
-    initialPageParam: 0,
-    getNextPageParam: nextOffsetPageParam,
-    gcTime: BROWSE_GC_TIME,
-  });
+  const showResults = !activeQuery.isError || activeQuery.data != null;
 
   const listItems = listQuery.data?.items ?? [];
   const listTotal = listQuery.data?.total ?? 0;
@@ -157,6 +171,7 @@ function ActorsIndexPage() {
 
   function handleSearchChange(v: string) {
     setSearchInput(v);
+    if (composingRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       void navigate({
@@ -185,13 +200,7 @@ function ActorsIndexPage() {
 
   function applyFilterPatch(patch: ActorFilterPatch) {
     void navigate({
-      search: (prev) => mergeActorFilterPatch(prev, patch),
-    });
-  }
-
-  function applyFilters(next: ActorFilterValues) {
-    void navigate({
-      search: (prev) => replaceActorFilters(prev, next),
+      search: (prev) => ({ ...prev, ...patch, page: 1 }),
     });
   }
 
@@ -201,9 +210,20 @@ function ActorsIndexPage() {
     });
   }
 
+  function applyExpression(f: string | undefined) {
+    void navigate({
+      search: (prev) => applyActorExpression(prev, f),
+    });
+  }
+
+  function clearExpression() {
+    void navigate({ search: (prev) => ({ ...prev, f: undefined, page: 1 }) });
+  }
+
   return (
     <BrowsePageShell
       fill={isList}
+      filterDrawerFullHeight
       title={<Title order={2}>{t("actors.title")}</Title>}
       actions={<ListDefaultActions update={{ key: "actors", value: actorListDefaults(search) }} />}
       viewSwitch={
@@ -225,14 +245,32 @@ function ActorsIndexPage() {
         />
       }
       summary={
-        <Text size="sm" c="dimmed">
-          {t("common:pagination.totalItems", { count: total })}
-        </Text>
+        !filter.blocked && !activeQuery.isError ? (
+          <Text size="sm" c="dimmed">
+            {t("common:pagination.totalItems", { count: total })}
+          </Text>
+        ) : undefined
       }
       search={
         <TextInput
           value={searchInput}
           onChange={(e) => handleSearchChange(e.currentTarget.value)}
+          onCompositionStart={() => {
+            composingRef.current = true;
+            clearTimeout(debounceRef.current);
+          }}
+          onCompositionEnd={(e) => {
+            composingRef.current = false;
+            handleSearchChange(e.currentTarget.value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              clearTimeout(debounceRef.current);
+              void navigate({
+                search: (prev) => ({ ...prev, q: searchInput.trim() || undefined, page: 1 }),
+              });
+            }
+          }}
           placeholder={t("actors.searchPlaceholder")}
           leftSection={<IconSearch size={16} />}
           w="100%"
@@ -240,17 +278,7 @@ function ActorsIndexPage() {
       }
       extras={
         <>
-          {/* 窄屏的筛选在底部面板里常驻展开, 该开关只在宽屏有意义. */}
-          {narrowViewport ? null : (
-            <HintedActionIcon
-              variant={advancedOpen || hasNonDefaultFilters ? "filled" : "default"}
-              size={36}
-              onClick={() => setAdvancedOpen((v) => !v)}
-              label={t("search.advanced")}
-            >
-              <IconFilter size={16} />
-            </HintedActionIcon>
-          )}
+          <BrowseFilterToggle panel={panel} active={hasNonDefaultFilters || filter.active} />
           {!isList && (
             <SortMenu
               options={ACTOR_SORT_FIELDS.map((f) => ({
@@ -283,14 +311,14 @@ function ActorsIndexPage() {
           />
         ) : undefined
       }
-      filterPanel={
-        <ActorFilterControls
-          opened={narrowViewport || advancedOpen}
-          committed={filters}
-          onApply={applyFilters}
-        />
-      }
+      filterPanel={<BrowseFilterPanel panel={panel} filter={filter} onApply={applyExpression} />}
     >
+      <BrowseFilterAlerts
+        filter={filter}
+        failed={activeQuery.isError}
+        onRetry={() => void activeQuery.refetch()}
+        onClear={clearExpression}
+      />
       {hasActiveFilters && (
         <Group gap="xs">
           {search.saved_query_id != null && (
@@ -316,6 +344,7 @@ function ActorsIndexPage() {
               </ActionIcon>
             </Group>
           )}
+          <ActiveExpressionChip filter={filter} onClear={clearExpression} />
           {filters.gender.map((g) => (
             <ActiveFilterChip
               key={g}
@@ -324,8 +353,8 @@ function ActorsIndexPage() {
             />
           ))}
           {ACTOR_RANGE_FILTERS.map((range) => {
-            const min = rangeValue(filters, range.min);
-            const max = rangeValue(filters, range.max);
+            const min = filters[range.min];
+            const max = filters[range.max];
             if (min == null && max == null) return null;
             return (
               <ActiveFilterChip
@@ -370,7 +399,7 @@ function ActorsIndexPage() {
         </Group>
       )}
 
-      {isList ? (
+      {filter.blocked || !showResults ? null : isList ? (
         <ActorTable
           key={listLimit}
           items={listItems}

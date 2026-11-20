@@ -1,20 +1,26 @@
+import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Literal, cast
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import TypeAdapter
 
 from ...aggregate import compute_merge_updates
 from ...db.embeddings import EmbeddingKind
 from ...db.models import Metadata, MetadataSortField, SavedQueryEntity, SortOrder, TaskType
+from ...db.query_budget import (
+    DEFAULT_ADVANCED_FILTER_TIMEOUT_SECONDS,
+    QueryBudgetExceeded,
+    QueryBudgetUnavailable,
+)
 from ...db.repo_types import WriteMode
 from ...db.repos.media import file_phase_of
 from ...handlers import ScrapePayload
 from ...media import manual_crop_image
 from ...parsing import FilePhaseSummary as ParsedFilePhase
 from ...parsing import summarize_file_phases
-from ...semantic import SemanticUnavailable
+from ...semantic import SemanticService, SemanticUnavailable
 from ...utils.collections import unique_ids
 from ...utils.dates import normalize_calendar_date
 from ...utils.model import to_resp
@@ -41,6 +47,8 @@ from ..models import (
     UserTagResponse,
     to_media_file_response,
 )
+from ..models.filter_expression import MAX_FILTER_CANDIDATE_IDS, MetadataSearchRequest
+from ..support.filter_expression import compile_metadata_filter
 from ..support.metadata_filters import MetadataFilters, parse_metadata_filters, require_known_definition
 from .saved_queries import resolve_saved_query_id_subquery
 
@@ -181,6 +189,22 @@ async def _semantic_list(
             content_type=filters.content_type,
             id_subquery_sql=id_subquery_sql,
         )
+    return await _ranked_metadata_page(
+        service, repo, semantic_query, semantic_kind, allowed_ids, offset=offset, limit=limit
+    )
+
+
+async def _ranked_metadata_page(
+    service: SemanticService,
+    repo: RepoDep,
+    semantic_query: str,
+    semantic_kind: Literal["all", "cover", "still"],
+    allowed_ids: list[int] | None,
+    *,
+    offset: int,
+    limit: int,
+    execution_deadline: float | None = None,
+) -> MetadataListResponse:
     kind = None if semantic_kind == "all" else EmbeddingKind(semantic_kind)
     try:
         hits = await service.search(semantic_query, limit, kind, allowed_ids, offset)
@@ -190,12 +214,11 @@ async def _semantic_list(
     if not hits:
         return MetadataListResponse(items=[], total=total)
     ids = [hit.metadata_id for hit in hits]
-    items, _ = await repo.list_metadata(ids=ids, limit=len(ids))
+    items, _ = await repo.list_metadata(ids=ids, limit=len(ids), execution_deadline=execution_deadline)
     by_id = {item.id: item for item in items}
-    ordered = [by_id[hit.metadata_id] for hit in hits if hit.metadata_id in by_id]
-    responses = {response.id: response for response in await build_metadata_responses(repo, ordered)}
+    ranked = [(hit, by_id[hit.metadata_id]) for hit in hits if hit.metadata_id in by_id]
     return MetadataListResponse(
-        items=[responses[hit.metadata_id] for hit in hits if hit.metadata_id in responses],
+        items=await build_metadata_responses(repo, [item for _, item in ranked]),
         total=total,
         semantic_hits=[
             SemanticHitInfo(
@@ -204,9 +227,75 @@ async def _semantic_list(
                 resource_url=hit.resource_url,
                 similarity=hit.score,
             )
-            for hit in hits
-            if hit.metadata_id in responses
+            for hit, _ in ranked
         ],
+    )
+
+
+@router.post("/search")
+async def search_metadata(
+    req: MetadataSearchRequest, request: Request, repo: RepoDep, runtime: RuntimeDep
+) -> MetadataListResponse:
+    if "saved_query_id" in request.query_params:
+        raise HTTPException(status_code=422, detail="saved_query_id cannot be combined with advanced search")
+    try:
+        if req.semantic_query is not None:
+            return await _semantic_expression_list(req, repo=repo, runtime=runtime)
+        advanced_filter = compile_metadata_filter(req.expression)
+        deadline = time.monotonic() + DEFAULT_ADVANCED_FILTER_TIMEOUT_SECONDS
+        items, total = await repo.list_metadata(
+            keyword=req.search,
+            advanced_filter=advanced_filter,
+            offset=req.offset,
+            limit=req.limit,
+            sort_by=req.sort_by,
+            order=req.order,
+            execution_deadline=deadline,
+        )
+    except QueryBudgetExceeded as exc:
+        raise HTTPException(status_code=503, detail="高级筛选查询超时，请缩小条件后重试") from exc
+    except QueryBudgetUnavailable as exc:
+        raise HTTPException(status_code=503, detail="当前数据库驱动无法限制高级筛选查询") from exc
+    return MetadataListResponse(items=await build_metadata_responses(repo, items), total=total)
+
+
+async def _semantic_expression_list(
+    req: MetadataSearchRequest,
+    *,
+    repo: RepoDep,
+    runtime: RuntimeDep,
+) -> MetadataListResponse:
+    service = runtime.semantic
+    if service is None or not service.enabled:
+        raise HTTPException(status_code=503, detail="语义检索未启用")
+    semantic_query = req.semantic_query
+    assert semantic_query is not None
+    advanced_filter = compile_metadata_filter(req.expression)
+    deadline = time.monotonic() + DEFAULT_ADVANCED_FILTER_TIMEOUT_SECONDS
+    allowed_ids = None
+    if advanced_filter is not None or req.search:
+        allowed_ids = await repo.list_metadata_ids(
+            keyword=req.search,
+            advanced_filter=advanced_filter,
+            id_limit=MAX_FILTER_CANDIDATE_IDS + 1,
+            execution_deadline=deadline,
+        )
+        if len(allowed_ids) > MAX_FILTER_CANDIDATE_IDS:
+            raise HTTPException(
+                status_code=422,
+                detail="语义筛选候选条目过多，请增加条件后重试",
+            )
+    if allowed_ids == []:
+        return MetadataListResponse(items=[], total=0)
+    return await _ranked_metadata_page(
+        service,
+        repo,
+        semantic_query,
+        req.semantic_kind,
+        allowed_ids,
+        offset=req.offset,
+        limit=req.limit,
+        execution_deadline=deadline,
     )
 
 

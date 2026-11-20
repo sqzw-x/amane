@@ -71,10 +71,11 @@ typecheck-pyright:
 typecheck-ty:
     uv run ty check
 
-# web: oxlint + oxfmt + tsc + i18n
+# web: oxlint + oxfmt + tsc + i18n + regression tests
 [working-directory('web')]
 check-web:
     pnpm check
+    pnpm test
 
 # worker 数按逻辑核计: `-n auto` 按物理核计, 在超线程机器 (含 GitHub runner, 4 vCPU / 2 物理核) 上只开一半
 test: fixtures

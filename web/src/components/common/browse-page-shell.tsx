@@ -31,6 +31,8 @@ export interface BrowsePageShellProps {
    * 宽屏按原样渲染在 children 之前; 窄屏进底部面板, 与它的开关同处一地.
    */
   filterPanel?: ReactNode;
+  /** 片库与演员的条件编辑器在窄屏使用接近视觉视口全高的面板. */
+  filterDrawerFullHeight?: boolean;
   /**
    * 撑满 AppShell.Main 剩余高度, children 吃掉标题/搜索之下的空间.
    * 给 list + ListToolbar; 不要给依赖 window 滚动的 grid/cloud.
@@ -62,6 +64,7 @@ export function BrowsePageShell({
   extras,
   pageSize,
   filterPanel,
+  filterDrawerFullHeight = false,
   fill = false,
   children,
 }: BrowsePageShellProps) {
@@ -171,7 +174,17 @@ export function BrowsePageShell({
         opened={filtersOpened && narrowViewport}
         onClose={closeFilters}
         position="bottom"
-        size="60%"
+        size={filterDrawerFullHeight ? undefined : "60%"}
+        styles={
+          filterDrawerFullHeight
+            ? {
+                content: { height: "calc(var(--amane-vvh) - env(safe-area-inset-top) - 0.75rem)" },
+                body: {
+                  paddingBottom: "calc(env(safe-area-inset-bottom) + var(--mantine-spacing-md))",
+                },
+              }
+            : undefined
+        }
         title={t("actions.filters")}
       >
         <Stack gap="md" style={{ minWidth: 0 }}>

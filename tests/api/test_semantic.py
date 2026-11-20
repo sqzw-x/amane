@@ -12,7 +12,7 @@ from PIL import Image
 from amane.api.routes import API_PREFIX
 from amane.config import HotSettings
 from amane.db import Resource
-from amane.db.models import SavedQueryEntity
+from amane.db.models import FacetKind, SavedQueryEntity
 from amane.semantic import ImageEncoder, SemanticService, SemanticUnavailable, TextEncoder
 from amane.semantic.models import (
     DEFAULT_SPEC,
@@ -279,6 +279,64 @@ async def test_search_intersects_filters_and_saved_query(
         )
     ).json()
     assert empty["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_advanced_search_uses_ast_candidates_for_not_and_empty_results(
+    semantic_app: FastAPI, semantic_client: AsyncClient
+) -> None:
+    service = _install_service(semantic_app)
+    repo = semantic_app.state.runtime.repo
+    low = await repo.upsert_metadata(
+        number="AF-SEM-LOW", actors=["Allowed Actor"], poster_urls=["http://example.com/af-low.jpg"]
+    )
+    high = await repo.upsert_metadata(
+        number="AF-SEM-HIGH", actors=["Excluded Actor"], poster_urls=["http://example.com/af-high.jpg"]
+    )
+    await repo.upsert_metadata(number="AF-SEM-NOINDEX", actors=["Allowed Actor"])
+    await _seed_image(semantic_app, low, "http://example.com/af-low.jpg", 20)
+    await _seed_image(semantic_app, high, "http://example.com/af-high.jpg", 10)
+    assert (await service.build_index()).indexed == 2
+    actors, _ = await repo.list_facets(FacetKind.ACTOR)
+    excluded_id = next(actor.id for actor in actors if actor.name == "Excluded Actor")
+    assert excluded_id is not None
+
+    only_not = {
+        "type": "group",
+        "op": "and",
+        "negate": True,
+        "children": [{"type": "rule", "field": "actor_id", "operator": "eq", "value": excluded_id}],
+    }
+    ordinary = await semantic_client.post("metadata/search", json={"version": 1, "expression": only_not})
+    assert ordinary.status_code == 200, ordinary.text
+    assert ordinary.json()["total"] == 2
+    filtered = await semantic_client.post(
+        "metadata/search", json={"version": 1, "expression": only_not, "semantic_query": "scene"}
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.json()["total"] == 1
+    assert [item["number"] for item in filtered.json()["items"]] == [low.number]
+    assert filtered.json()["semantic_hits"][0]["resource_url"] == "http://example.com/af-low.jpg"
+
+    for expression in (
+        {
+            "type": "group",
+            "op": "and",
+            "children": [{"type": "rule", "field": "actor_id", "operator": "eq", "value": 999999}],
+        },
+        {
+            "type": "group",
+            "op": "and",
+            "negate": True,
+            "children": [{"type": "rule", "field": "has_files", "operator": "eq", "value": False}],
+        },
+    ):
+        empty = await semantic_client.post(
+            "metadata/search", json={"version": 1, "expression": expression, "semantic_query": "scene"}
+        )
+        assert empty.status_code == 200, empty.text
+        assert empty.json()["items"] == []
+        assert empty.json()["total"] == 0
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-import { createTheme, Drawer, type MantineColorsTuple } from "@mantine/core";
+import { Combobox, createTheme, Drawer, type MantineColorsTuple } from "@mantine/core";
 
 const brand: MantineColorsTuple = [
   "#e8f3ff",
@@ -24,6 +24,15 @@ export const theme = createTheme({
     fontWeight: "600",
   },
   components: {
+    // 下拉一律与输入框左边缘对齐: Mantine 9 默认居中, 下拉比输入框宽时就会左右错开.
+    // 因此只允许上下翻转; 左右方向的翻转与位移都会破坏对齐, 溢出改由 size 收窄下拉宽度.
+    // size 不带 apply, 高度不被压成可用空间, 仍由各处的下拉自行滚动 (见 predicate-combobox.ts).
+    Combobox: Combobox.extend({
+      defaultProps: {
+        position: "bottom-start",
+        middlewares: { flip: { flipAlignment: false }, shift: false, size: true },
+      },
+    }),
     Drawer: Drawer.extend({
       styles: {
         // 抽屉的定位容器贴住视觉视口: 上沿取 --amane-vv-top, 高度取 --amane-vvh (理由见 docs/dev/frontend.md).
