@@ -220,6 +220,11 @@ CASES: list[object] = [
     _Case("/media/C0930-ki220519.mp4", number="C0930-KI220519", content_type=ContentType.UNCENSORED),
     _Case("/media/H0930-ki190101.mp4", number="H0930-KI190101", content_type=ContentType.UNCENSORED),
     _Case("/media/MCB3D-012.mp4", number="MCB3D-012", content_type=ContentType.UNCENSORED),
+    _Case("/media/MXX-13-1080p.mp4", definition="1080p", number="MXX-13", content_type=ContentType.UNCENSORED),
+    _Case("/media/[無碼]MCB-11.mp4", mosaic="uncensored", number="MCB-11", content_type=ContentType.UNCENSORED),
+    _Case("/media/MCBD-11-CD1.mp4", cd=1, number="MCBD-11", content_type=ContentType.UNCENSORED),
+    # 逐字前缀须连短横线相等, 同字母开头的其它厂牌番号仍是分类器的默认判定
+    _Case("/media/MERMAID-01.mp4", number="MERMAID-01", content_type=ContentType.CENSORED),
     # 纯数字后缀非站内写法 (该族后缀带字母段): 整段保留, 类型仍按无码前缀表
     _Case("/media/H4610-123.mp4", number="H4610-123", content_type=ContentType.UNCENSORED),
     # 单段 TH101 与短 FC2 同样非站内写法: 整段保留, 类型不从形态推断
@@ -444,6 +449,11 @@ INFER_CONTENT_TYPE_CASES: list[tuple[str, str | None, ContentType]] = [
     ("C0930-ki220519", None, ContentType.UNCENSORED),
     ("H0930-ki190101", None, ContentType.UNCENSORED),
     ("MCB3D-012", None, ContentType.UNCENSORED),
+    ("MCDV-30", None, ContentType.UNCENSORED),
+    ("MXX-13", None, ContentType.UNCENSORED),
+    ("MCB-11", None, ContentType.UNCENSORED),
+    ("MCBD-11", None, ContentType.UNCENSORED),
+    ("MERMAID-01", None, ContentType.CENSORED),
     ("FC2-123", None, ContentType.WESTERN),
     ("010115-001", None, ContentType.UNCENSORED),
     ("010115_001", None, ContentType.UNCENSORED),
@@ -496,6 +506,16 @@ UNCENSORED_CASES: list[tuple[str, bool]] = [
     ("DRG-123", True),
     ("DRGBD-045", True),
     ("SMDV-028", True),
+    # メルシーボークー 的发行前缀: 该社作品以完全無修正发行
+    # MER 不收录: 该前缀同时是有码作品线 (メビウス 2003), 数量更多, 维持默认的有码判定
+    ("MER-03", False),
+    ("MER-003", False),
+    ("MXX-13", True),
+    ("MCB-11", True),
+    ("MCBD-11", True),
+    # 前缀须连短横线一起相等: 同字母开头的其它厂牌番号不命中
+    ("MERMAID-01", False),
+    ("MCBRIDE-12", False),
     ("vixen.23.04.15", False),
     ("MIDV-123", False),
     ("SSIS-456", False),
