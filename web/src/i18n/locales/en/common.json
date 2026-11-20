@@ -24,7 +24,9 @@
     "scrapeForce": "Force Scrape",
     "scrapeForceDesc": "Re-fetch all sources (overwrite cache)",
     "moveUp": "Move up",
-    "moveDown": "Move down"
+    "moveDown": "Move down",
+    "zoomIn": "Zoom to original pixels",
+    "zoomOut": "Fit to window"
   },
   "status": {
     "loading": "Loading...",

@@ -24,7 +24,9 @@
     "scrapeForce": "强制刮削",
     "scrapeForceDesc": "重新获取全部来源(覆盖缓存)",
     "moveUp": "上移",
-    "moveDown": "下移"
+    "moveDown": "下移",
+    "zoomIn": "放大到原始像素",
+    "zoomOut": "缩放至适应窗口"
   },
   "status": {
     "loading": "加载中...",
