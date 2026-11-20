@@ -37,6 +37,20 @@ _SSIS_497 = _scene("SSIS-497", title="Sample Title", date="2024-01-01", studio="
 _BLACKED = _scene("blacked:first-anal", title="First Anal", date="2026-03-29", studio="Blacked")
 _BLACKED_SAME_DAY = _scene("blacked:another", title="Another", date="2026-03-29", studio="Blacked")
 _BLACKED_OTHER_STUDIO = _scene("blackedraw:first-anal", title="First Anal", date="2026-03-29", studio="BlackedRaw")
+_TUSHY = _scene(
+    "tushy:i-only-gape-for-you",
+    title="I Only Gape for You",
+    date="2018-02-05",
+    studio="Tushy",
+    scene_id="69e638f5-c687-4ae3-ae68-a46f691f38a2",
+)
+_SEXART = _scene(
+    "20120413_sexart",
+    title="SexArt",
+    date="2012-04-13",
+    studio="SexArt",
+    scene_id="0b9d67e2-bc43-4041-bb13-3ef81a33a89f",
+)
 
 PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] = [
     # kin8 番号带站前缀, TPDB 的 code 是站内 4 位补零 id
@@ -95,6 +109,72 @@ async def test_fetch(number: str, scenes: list[dict[str, Any]], expected: tuple[
         return
     assert metadata is not None
     assert (metadata.number, metadata.title, metadata.release, metadata.studio) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://theporndb.net/scenes/96842b9f-0405-481b-a44a-1c7fb5b0370c",
+        "https://theporndb.net/scenes/96842b9f-0405-481b-a44a-1c7fb5b0370c/some-title",
+        "gql://scene/96842b9f-0405-481b-a44a-1c7fb5b0370c",
+    ],
+)
+async def test_fetch_by_url_queries_scene_id(url: str) -> None:
+    """公开作品页与内部检索地址都按 id 取单条, 不经过检索."""
+    web = AsyncMock()
+    web.post_json.return_value = {"data": {"findScene": _KIN8_CUTIE}}
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="", url=url))
+
+    assert metadata is not None
+    assert metadata.number == "0236"
+    assert web.post_json.await_args.kwargs["json"]["variables"] == {"id": "96842b9f-0405-481b-a44a-1c7fb5b0370c"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_url_rejects_non_scene_path() -> None:
+    web = AsyncMock()
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="", url="https://theporndb.net/movies/123"))
+
+    assert metadata is None
+    web.post_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("scene", "slug", "expected"),
+    [
+        (_TUSHY, "tushy-i-only-gape-for-you", "Tushy.18.02.05"),
+        (_SEXART, "sexart-sexart", "SexArt.12.04.13"),
+    ],
+)
+async def test_fetch_by_url_uses_western_date_number(scene: dict[str, Any], slug: str, expected: str) -> None:
+    """欧美条目的 code 不是番号; 条目按文件侧的 Studio.YY.MM.DD 建立."""
+    web = AsyncMock()
+    web.post_json.return_value = {"data": {"findScene": scene}}
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="", url=f"https://theporndb.net/scenes/{slug}"))
+
+    assert metadata is not None
+    assert metadata.number == expected
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_url_keeps_jav_number() -> None:
+    """JAV 的 code 本身就是番号, 不按欧美日期号改写."""
+    web = AsyncMock()
+    web.post_json.return_value = {"data": {"findScene": _SSIS_497}}
+    crawler = _crawler(web)
+
+    metadata = await crawler.fetch(SearchQuery(number="", url="https://theporndb.net/scenes/ssis-497"))
+
+    assert metadata is not None
+    assert metadata.number == "SSIS-497"
 
 
 @pytest.mark.asyncio
