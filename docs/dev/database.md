@@ -25,6 +25,7 @@ r18 库由项目导入 / 管理但 schema 不受我们控制, **不能纳入 Ale
 这类写入读取前统一经 `src/amane/db/repos/base.py::acquire_write_lock` 取得写锁 (条目的 upsert / update / merge、分类治理、用户标签挂载); 事务由 Repo 公开方法提交, `src/amane/db/repos/facet_helpers.py` 内的 helper 不提交. 也可写成带源状态谓词的单条 UPDATE 并检查命中行数 (任务状态迁移, 见 `src/amane/db/repos/tasks.py`).
 
 - 写锁是库级的, 从取得写锁到提交之间其它写入被阻塞. 临界区内不允许出现联网或磁盘等待, 否则全库写入一并被拖住.
+- 写事务内不得再借连接: 会话已从池里取走一条, 事务内另开会话 (`set_media_hook` 之类会回查库的钩子) 让单次写入同时占两条, 并发写入互相等对方的第二条, 池耗尽后按 pool_timeout 超时. 这类钩子一律放在会话退出之后调用.
 - 会话在进入该调用之前不得已有未结束的数据库事务, 否则 `BEGIN IMMEDIATE` 失败.
 - 该写法依赖驱动不自行发出 `BEGIN`; 驱动或方言改为显式发出时失效.
 - 番号比较一律经 `src/amane/db/models.py::metadata_number_predicate`, 才能命中 `ix_metadata_number`.

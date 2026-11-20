@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, cast, get_type_hints
 
 import pytest
 from sqlalchemy import update
+from sqlalchemy.pool import QueuePool
 from sqlmodel import col, select
 
 from amane.aggregate.actor import AggregatedActor
@@ -2104,3 +2105,41 @@ class TestRepositoryInit:
     async def test_initialize_runs_without_error(self, repo: Repository):
         """initialize() 在当前已创建表的内存 DB 中应无错误执行"""
         await repo.initialize()
+
+
+class TestMediaHookOutsideWriteSession:
+    """条目写库后的图片通知不得留在写事务内.
+
+    实现方 (语义服务) 会另开连接回查条目, 留在事务内则一次写入同时占两条连接; 并发写入互相
+    等对方的第二条连接, 连接池耗尽后按 pool_timeout 超时.
+    """
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize("write", ["upsert_existing", "upsert_new", "update"])
+    async def test_hook_runs_after_session_closes(self, repo: Repository, write: str) -> None:
+        seeded = await repo.upsert_metadata(number="HOOK-001", studio="S")
+        assert seeded.id is not None
+        poster_urls = ["https://example.com/1.jpg"]
+
+        checked_out_during_hook: list[int] = []
+
+        class _Hook:
+            async def metadata_changed(self, metadata_id: int) -> None:
+                # 钩子自己也要开一次读: 未修的写法在这里必然再借一条连接.
+                pool = cast("QueuePool", repo._engine.pool)
+                checked_out_during_hook.append(pool.checkedout())
+                rows, _total = await repo.list_metadata(ids=[metadata_id], limit=1)
+                assert rows
+
+        repo.set_media_hook(_Hook())
+        try:
+            if write == "upsert_existing":
+                await repo.upsert_metadata(number="HOOK-001", poster_urls=poster_urls)
+            elif write == "upsert_new":
+                await repo.upsert_metadata(number="HOOK-002", poster_urls=poster_urls)
+            else:
+                await repo.update_metadata(seeded.id, poster_urls=poster_urls)
+        finally:
+            repo.set_media_hook(None)
+
+        assert checked_out_during_hook == [0], "通知触发时写会话应已关闭"
