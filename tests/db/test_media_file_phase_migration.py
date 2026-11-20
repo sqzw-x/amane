@@ -103,6 +103,52 @@ def test_ltx_media_file_mosaic_reprojected_from_path(tmp_path: Path) -> None:
     engine.dispose()
 
 
+def test_merci_beaucoup_prefixes_reprojected_to_uncensored(tmp_path: Path) -> None:
+    """三个发行前缀的条目改判无码; MER 与其它的条目与文件保持原值, 重跑结果相同."""
+    db_path = tmp_path / "migrate.db"
+    cfg = alembic_config(db_path)
+
+    previous, target = "e06def65f72a", "dc04a8ae624e"
+    command.upgrade(cfg, previous)
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        lib_id = _seed_library(conn)
+        for number in ["MER-03", "MXX-13", "MCB-11", "MCBD-11", "MIDV-123"]:
+            conn.execute(
+                text("UPDATE metadata SET content_type = 'CENSORED' WHERE id = :id"),
+                {"id": _seed_metadata(conn, number)},
+            )
+        for path in ["/media/MCB-11.mp4", "/media/MER-03.mp4", "/media/MIDV-123.mp4"]:
+            conn.execute(
+                text(
+                    "INSERT INTO media_files (path, status, library_id, created_at, updated_at, mosaic) "
+                    "VALUES (:path, 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', NULL)"
+                ),
+                {"path": path, "lib": lib_id},
+            )
+
+    command.upgrade(cfg, target)
+
+    expected_types = {
+        "MER-03": "CENSORED",
+        "MXX-13": "UNCENSORED",
+        "MCB-11": "UNCENSORED",
+        "MCBD-11": "UNCENSORED",
+        "MIDV-123": "CENSORED",
+    }
+    expected_mosaics = {"/media/MCB-11.mp4": None, "/media/MER-03.mp4": None, "/media/MIDV-123.mp4": None}
+    assert _entry_types(engine) == expected_types
+    assert _mosaics(engine) == expected_mosaics
+
+    # downgrade 留空 (数据迁移不可逆), 再次升级不改变已写入的值
+    command.downgrade(cfg, previous)
+    command.upgrade(cfg, target)
+    assert _entry_types(engine) == expected_types
+    assert _mosaics(engine) == expected_mosaics
+    engine.dispose()
+
+
 def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
