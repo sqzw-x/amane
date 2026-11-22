@@ -22,8 +22,9 @@ TOML 格式:
     responses = [{ url_contains = "...", method = "post_json", file = "response.json" }]
     expected_none = true                   # 可选: 期望 fetch() 返回 None (空搜索 / 未配凭据)
 
-    responses 项默认走 get_text; method = "post_text" / "post_json" / "get_json" 换通道,
-    method = "request" 是低层 ``web_client.request`` 的应答 (无正文, 用 set_cookie 给响应头).
+    responses 项默认走 get_text; method = "post_text" / "post_json" / "get_json" / "get_bytes" 换通道
+    (get_bytes 的夹具 .gz 后缀会解压), method = "request" 是低层 ``web_client.request`` 的应答
+    (无正文, 用 set_cookie 给响应头). 给出 status 表示该地址以该 HTTP 状态码失败, 此时可省 file.
 
     [scrape.expected]                     # 字段断言 (fetch 段同)
     field = value                         # 精确匹配

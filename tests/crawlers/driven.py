@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import math
 import tomllib
@@ -16,7 +17,7 @@ from curl_cffi.requests import Headers
 
 from amane.crawlers.http import HttpClient
 from amane.crawlers.registry import registry
-from amane.net.errors import RequestError, SourceError
+from amane.net.errors import FailureKind, RequestError, RequestFailure, SourceError
 
 CASES_DIR = Path(__file__).parent / "cases"
 
@@ -84,10 +85,32 @@ def load_response_file(case_dir: Path, filename: str) -> str | dict[str, Any]:
     return text
 
 
+def _missing(url: str, status: int | None) -> RequestError:
+    """夹具没有声明的地址按失败应答; ``status`` 给出时按该 HTTP 状态码失败 (末端点为 404 的用例靠它)."""
+    if status is None:
+        return RequestError(url, "no mock matched")
+    return RequestError(url, RequestFailure(kind=FailureKind.HTTP_STATUS, status=status, message=f"HTTP {status}"))
+
+
+def load_binary_response_file(case_dir: Path, filename: str) -> bytes:
+    """加载二进制夹具; ``.gz`` 当场解压 (``get_bytes`` 的调用方拿到的是解压后的正文), 其余原样返回."""
+    path = case_dir / filename
+    if not path.is_file():
+        pytest.skip("no test cases found")
+    payload = path.read_bytes()
+    return gzip.decompress(payload) if filename.endswith(".gz") else payload
+
+
 def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, Any]]) -> None:
-    """配置 mock_web 的 side_effects, 按 URL 模式路由."""
+    """配置 mock_web 的 side_effects, 按 URL 模式路由.
+
+    ``status`` 声明该地址以该 HTTP 状态码失败, ``file`` 因此可省, 用于「裸番号不存在」这类只验证检索
+    降级的用例; ``method = "get_bytes"`` 读取二进制夹具 (``.gz`` 解压后给出, 供大正文使用).
+    """
     get_text_map: dict[str, str | dict[str, Any]] = {}
     get_json_map: dict[str, str | dict[str, Any]] = {}
+    get_bytes_map: dict[str, bytes] = {}
+    failing: dict[str, int] = {}
     post_text_map: dict[str, str | dict[str, Any]] = {}
     request_map: dict[str, str] = {}
     post_json_routes: list[tuple[str, str | None, str | dict[str, Any]]] = []
@@ -98,6 +121,13 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
         if method == "request":
             # 低层通道没有正文; 来源读的是响应头, 夹具按 Set-Cookie 给出.
             request_map[pattern] = str(resp["set_cookie"])
+            continue
+        status = resp.get("status")
+        if isinstance(status, int):
+            failing[pattern] = status
+            continue
+        if method == "get_bytes":
+            get_bytes_map[pattern] = load_binary_response_file(case_dir, resp["file"])
             continue
         data = load_response_file(case_dir, resp["file"])
         if method == "post_json":
@@ -130,15 +160,33 @@ def build_mock(mock_web: AsyncMock, case_dir: Path, responses: list[dict[str, An
 
         mock_web.post_text.side_effect = post_text_side_effect
 
-    if get_json_map:
+    # 通道一旦出现在 responses 里 (含只声明 status 的失败项) 就必须装上 side_effect: 否则 AsyncMock 会返回
+    # 一个自动生成的假响应, 声明过的失败与夹具缺口都不会发生.
+    if get_json_map or failing:
 
         async def get_json_side_effect(url: str, **kwargs: object) -> object:
             for pattern, payload in get_json_map.items():
                 if pattern in url:
                     return payload
-            raise RequestError(url, "no mock matched")
+            for pattern, status in failing.items():
+                if pattern in url:
+                    raise _missing(url, status)
+            raise _missing(url, None)
 
         mock_web.get_json.side_effect = get_json_side_effect
+
+    if get_bytes_map or failing:
+
+        async def get_bytes_side_effect(url: str, **kwargs: object) -> bytes:
+            for pattern, payload in get_bytes_map.items():
+                if pattern in url:
+                    return payload
+            for pattern, status in failing.items():
+                if pattern in url:
+                    raise _missing(url, status)
+            raise _missing(url, None)
+
+        mock_web.get_bytes.side_effect = get_bytes_side_effect
 
     if post_json_routes:
 
