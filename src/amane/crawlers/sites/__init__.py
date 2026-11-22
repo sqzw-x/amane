@@ -1,6 +1,14 @@
 from .airav import AiravCrawler
 from .avbase import AvbaseCrawler
 from .avsox import AvsoxCrawler
+from .caribbeancom import CaribbeanComCrawler
+from .d2pass import (
+    D2PassCrawler,
+    MuramuraCrawler,
+    OnePondoCrawler,
+    PacoPacoMamaCrawler,
+    TenMusumeCrawler,
+)
 from .dahlia import DahliaCrawler
 from .dmm import DmmCrawler
 from .faleno import FalenoCrawler
@@ -27,6 +35,8 @@ __all__ = [
     "AiravCrawler",
     "AvbaseCrawler",
     "AvsoxCrawler",
+    "CaribbeanComCrawler",
+    "D2PassCrawler",
     "DahliaCrawler",
     "DmmCrawler",
     "FC2ClubCrawler",
@@ -43,9 +53,13 @@ __all__ = [
     "JavLibraryCrawler",
     "Kin8Crawler",
     "MGStageCrawler",
+    "MuramuraCrawler",
     "OfficialCrawler",
+    "OnePondoCrawler",
+    "PacoPacoMamaCrawler",
     "PrestigeCrawler",
     "R18DevCrawler",
+    "TenMusumeCrawler",
     "ThePornDBCrawler",
     "XCityCrawler",
 ]

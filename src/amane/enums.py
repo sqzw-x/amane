@@ -4,9 +4,12 @@ from enum import StrEnum
 class SiteName(StrEnum):
     """爬虫站点名称 (影片与演员源共用)."""
 
+    TENMUSUME = "10musume"
+    ONEPONDO = "1pondo"
     AIRAV = "airav"
     AVBASE = "avbase"
     AVSOX = "avsox"
+    CARIBBEANCOM = "caribbeancom"
     DAHLIA = "dahlia"
     DMM = "dmm"
     FALENO = "faleno"
@@ -25,7 +28,9 @@ class SiteName(StrEnum):
     KIN8 = "kin8"
     MGSTAGE = "mgstage"
     MINNANO = "minnano"
+    MURAMURA = "muramura"
     OFFICIAL = "official"
+    PACOPACOMAMA = "pacopacomama"
     PRESTIGE = "prestige"
     R18DEV = "r18dev"
     THEPORNDB = "theporndb"

@@ -112,7 +112,7 @@ Cloudflare managed challenge 只能执行 JS 越过, 因此受保护的来源由
 ## 新爬虫接入
 
 1. `enums.py` 加 `SiteName` (frozen dict 加载时按代码枚举补默认槽, 见 [config.md](config.md)).
-2. 影片: `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`); 演员: `crawlers/actor/sites/{site}.py`, `profile()` 声明 `capabilities` 与 `genders`. 消费 language 的影片爬虫在 `traits` 声明 `multi_language`, 需要文件指纹的声明 `uses_file_hash`; 测试须覆盖番号有无短横线两种形态.
+2. 影片: `crawlers/sites/{site}.py` 实现 `profile` + `_search` / `_scrape` (或 override `fetch`); 演员: `crawlers/actor/sites/{site}.py`, `profile()` 声明 `capabilities` 与 `genders`. 共用同一套接口或 CMS、只差番号形态与厂牌名的站群收在一个模块里 (`official.py` 用表, `d2pass.py` 用子类), 不按站拆文件. 消费 language 的影片爬虫在 `traits` 声明 `multi_language`, 需要文件指纹的声明 `uses_file_hash`; 测试须覆盖番号有无短横线两种形态.
 3. 导出后 `registry.register` / `actor_registry.register`. 双料站两个类用同一 `SiteName` 各注册一次; 不允许修改 `site_roles` 常量. 演员 `register` 顺序即默认 `profile_sites` 优先级. 需要 cookie / token 时给 `SiteConfig` 加字段.
 4. 加 TOML 用例 (见 [crawler-testing.md](crawler-testing.md)) 并 `just test`.
 

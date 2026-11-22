@@ -82,6 +82,11 @@ _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
         SiteName.JAVBUS,
         SiteName.AVSOX,
         SiteName.FREEJAVBT,
+        SiteName.ONEPONDO,
+        SiteName.CARIBBEANCOM,
+        SiteName.TENMUSUME,
+        SiteName.PACOPACOMAMA,
+        SiteName.MURAMURA,
     ],
     ContentType.FC2: [
         SiteName.JAVDB,

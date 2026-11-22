@@ -18,6 +18,7 @@ from .sites import (
     AiravCrawler,
     AvbaseCrawler,
     AvsoxCrawler,
+    CaribbeanComCrawler,
     DahliaCrawler,
     DmmCrawler,
     FalenoCrawler,
@@ -34,9 +35,13 @@ from .sites import (
     JavLibraryCrawler,
     Kin8Crawler,
     MGStageCrawler,
+    MuramuraCrawler,
     OfficialCrawler,
+    OnePondoCrawler,
+    PacoPacoMamaCrawler,
     PrestigeCrawler,
     R18DevCrawler,
+    TenMusumeCrawler,
     ThePornDBCrawler,
     XCityCrawler,
 )
@@ -51,6 +56,11 @@ registry.register(FreejavbtCrawler)
 registry.register(Jav321Crawler)
 registry.register(AiravCrawler)
 registry.register(AvsoxCrawler)
+registry.register(CaribbeanComCrawler)
+registry.register(OnePondoCrawler)
+registry.register(TenMusumeCrawler)
+registry.register(PacoPacoMamaCrawler)
+registry.register(MuramuraCrawler)
 registry.register(AvbaseCrawler)
 registry.register(XCityCrawler)
 registry.register(DahliaCrawler)
@@ -75,6 +85,7 @@ __all__ = [
     "AvbaseActorCrawler",
     "AvbaseCrawler",
     "AvsoxCrawler",
+    "CaribbeanComCrawler",
     "Crawler",
     "DahliaCrawler",
     "DmmCrawler",
@@ -101,10 +112,14 @@ __all__ = [
     "MediaMetadata",
     "MetadataField",
     "MinnanoActorCrawler",
+    "MuramuraCrawler",
     "OfficialCrawler",
+    "OnePondoCrawler",
+    "PacoPacoMamaCrawler",
     "PrestigeCrawler",
     "R18DevCrawler",
     "SiteName",
+    "TenMusumeCrawler",
     "ThePornDBActorCrawler",
     "ThePornDBCrawler",
     "WikipediaActorCrawler",
