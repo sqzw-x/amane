@@ -376,20 +376,19 @@ async def test_checker_plugin_probe_and_fallback(
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_prestige_probe_targets_the_scrape_entry() -> None:
-    """探测与刮削取同一个入口: 探测落回带年龄墙的首页会得到 age_verification."""
+    """探测落在 SKU 端点上, 不落回带年龄墙的首页, 也不取全量索引.
+
+    索引端点每次应答 4.74 MB, 逐来源检测与逐站点重试都付不起这个体积, 因此探测与刮削的直连档同址.
+    """
     base = PrestigeCrawler.profile().base_url
     sku = {"parentProduct": {"uuid": "bdcdcfc9-f375-431a-80c5-87b688f1548a"}}
     web = _FakeWeb({base: _Resp("<div id='driver-verify'></div>")}, default=_Resp('{"uuid":"a55b0c4b"}', payload=sku))
     crawler = PrestigeCrawler(HttpClient(web=cast("WebClient", web)))
 
-    # 先看刮削路径 (同一个番号) 请求了哪个地址, 再要求探测落在同一处.
-    await crawler._search(SearchQuery(number=_PROBE_SKU))
-    scraped_url = web.calls[0][1]
-
     outcome = await crawler.check_connectivity()
 
-    assert (outcome.status, outcome.url) == (ConnectivityStatus.OK, scraped_url)
-    assert [call[1] for call in web.calls] == [scraped_url, scraped_url]
+    assert (outcome.status, outcome.url) == (ConnectivityStatus.OK, f"{base}/api/sku/item/{_PROBE_SKU}")
+    assert [call[1] for call in web.calls] == [f"{base}/api/sku/item/{_PROBE_SKU}"]
 
 
 _ThePornDBCases: list[
