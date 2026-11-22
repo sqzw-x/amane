@@ -9876,7 +9876,8 @@
                   "muramura",
                   "h4610",
                   "c0930",
-                  "h0930"
+                  "h0930",
+                  "heyzo"
                 ],
                 "western": [
                   "theporndb",
@@ -10114,6 +10115,18 @@
                   "use_proxy": true
                 },
                 "h4610": {
+                  "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
+                  "official_routes": {},
+                  "rate_limit": 2.0,
+                  "use_browser": "auto",
+                  "use_proxy": true
+                },
+                "heyzo": {
                   "cookie": {},
                   "languages": [
                     "zh",
@@ -15204,6 +15217,7 @@
                   "giga",
                   "h0930",
                   "h4610",
+                  "heyzo",
                   "iqqtv",
                   "jav321",
                   "javbus",
@@ -15253,6 +15267,7 @@
                   "giga",
                   "h0930",
                   "h4610",
+                  "heyzo",
                   "iqqtv",
                   "jav321",
                   "javbus",
@@ -15302,6 +15317,7 @@
                   "giga",
                   "h0930",
                   "h4610",
+                  "heyzo",
                   "iqqtv",
                   "jav321",
                   "javbus",
@@ -15975,6 +15991,7 @@
           "giga",
           "h0930",
           "h4610",
+          "heyzo",
           "iqqtv",
           "jav321",
           "javbus",

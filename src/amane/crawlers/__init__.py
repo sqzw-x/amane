@@ -31,6 +31,7 @@ from .sites import (
     GigaCrawler,
     H0930Crawler,
     H4610Crawler,
+    HeyzoCrawler,
     IqqtvCrawler,
     Jav321Crawler,
     JavBusCrawler,
@@ -79,6 +80,7 @@ registry.register(R18DevCrawler)
 registry.register(ThePornDBCrawler)
 registry.register(OfficialCrawler)
 registry.register(H4610Crawler)
+registry.register(HeyzoCrawler)
 registry.register(C0930Crawler)
 registry.register(H0930Crawler)
 
@@ -108,6 +110,7 @@ __all__ = [
     "GigaCrawler",
     "H0930Crawler",
     "H4610Crawler",
+    "HeyzoCrawler",
     "HttpClient",
     "IqqtvCrawler",
     "Jav321Crawler",
