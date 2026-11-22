@@ -3193,7 +3193,8 @@ export const HotSettingsSchema = {
                         'muramura',
                         'h4610',
                         'c0930',
-                        'h0930'
+                        'h0930',
+                        'heyzo'
                     ],
                     western: [
                         'theporndb',
@@ -3431,6 +3432,18 @@ export const HotSettingsSchema = {
                         use_proxy: true
                     },
                     h4610: {
+                        cookie: {},
+                        languages: [
+                            'zh',
+                            'ja',
+                            'en'
+                        ],
+                        official_routes: {},
+                        rate_limit: 2,
+                        use_browser: 'auto',
+                        use_proxy: true
+                    },
+                    heyzo: {
                         cookie: {},
                         languages: [
                             'zh',
@@ -8616,6 +8629,7 @@ export const ScrapingConfigSchema = {
                         'giga',
                         'h0930',
                         'h4610',
+                        'heyzo',
                         'iqqtv',
                         'jav321',
                         'javbus',
@@ -8665,6 +8679,7 @@ export const ScrapingConfigSchema = {
                         'giga',
                         'h0930',
                         'h4610',
+                        'heyzo',
                         'iqqtv',
                         'jav321',
                         'javbus',
@@ -8714,6 +8729,7 @@ export const ScrapingConfigSchema = {
                         'giga',
                         'h0930',
                         'h4610',
+                        'heyzo',
                         'iqqtv',
                         'jav321',
                         'javbus',
@@ -9401,6 +9417,7 @@ export const SiteNameSchema = {
         'giga',
         'h0930',
         'h4610',
+        'heyzo',
         'iqqtv',
         'jav321',
         'javbus',

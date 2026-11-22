@@ -101,6 +101,7 @@
 | official | Will / Outvision 等制作商官网 | 有码 | | 按番号前缀匹配制作商官网, 匹配不到时不发出请求; 提供剧情、导演与剧照; 可在站点配置的「制作商路由」中按前缀指定 |
 | avsox | avsox.click | 无码 | | 无码专站 |
 | h4610 | h4610.com | 无码 | | 同模板三站 (h4610、c0930、h0930) 各自编号, 同一站内 id 在三站是不同影片 |
+| heyzo | heyzo.com | 无码 | | 自营无码厂牌; 预告片是 HLS; 不提供时长 |
 | c0930 | c0930.com | 无码 | | 同上 |
 | h0930 | h0930.com | 无码 | | 同上 |
 | freejavbt | freejavbt.com | 无码、FC2、国产、欧美 | | 覆盖面宽, 位于链尾; 不提供制作商与发行商 |
@@ -153,7 +154,7 @@
 | 类型 | 默认路由 |
 |------|----------|
 | 有码 | dmm → javdb → javbus → official |
-| 无码 | javdb → javbus → avsox → freejavbt → 1pondo → caribbeancom → 10musume → pacopacomama → muramura |
+| 无码 | javdb → javbus → avsox → freejavbt → 1pondo → caribbeancom → 10musume → pacopacomama → muramura → h4610 → c0930 → h0930 → heyzo |
 | FC2 | javdb → fc2ppvdb → fc2 → freejavbt → airav |
 | 国产 | iqqtv → javdb → airav → freejavbt |
 | 素人 | mgstage → dmm → javdb → javbus |

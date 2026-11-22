@@ -90,6 +90,7 @@ _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
         SiteName.H4610,
         SiteName.C0930,
         SiteName.H0930,
+        SiteName.HEYZO,
     ],
     ContentType.FC2: [
         SiteName.JAVDB,

@@ -19,6 +19,7 @@ from .freejavbt import FreejavbtCrawler
 from .getchu import GetchuCrawler
 from .giga import GigaCrawler
 from .h4610 import C0930Crawler, H0930Crawler, H4610Crawler
+from .heyzo import HeyzoCrawler
 from .iqqtv import IqqtvCrawler
 from .jav321 import Jav321Crawler
 from .javbus import JavBusCrawler
@@ -50,6 +51,7 @@ __all__ = [
     "GigaCrawler",
     "H0930Crawler",
     "H4610Crawler",
+    "HeyzoCrawler",
     "IqqtvCrawler",
     "Jav321Crawler",
     "JavBusCrawler",
