@@ -56,7 +56,8 @@ class SkuPrefix(StrEnum):
     JTKT = "JTKT"
 
 
-#: 剥离顺序按前缀长度降序: ``CTKT`` 必须先于 ``TKT`` 尝试, 否则 ``CTKTBGN-066`` 剥出的不是番号.
+#: 剥离顺序按前缀长度降序. 现有前缀互不为前缀, 顺序不影响结果; 按长度排是给「新前缀包含旧前缀」留出正确性,
+#: 否则短的那个先命中, 剥出的不是番号.
 _PREFIXES_BY_LENGTH: tuple[SkuPrefix, ...] = tuple(sorted(SkuPrefix, key=lambda item: len(item.value), reverse=True))
 
 
@@ -330,9 +331,11 @@ class PrestigeCrawler(Crawler):
         if time.time() < self._retry_at:
             return self._index
         async with self._index_lock:
-            # 等锁期间可能已被并发调用刷新完.
+            # 等锁期间可能已被并发调用刷新完, 或已经失败并进入退避: 两者都不能再发一次请求.
             if (fresh := self._fresh_index()) is not None:
                 return fresh
+            if time.time() < self._retry_at:
+                return self._index
             return await self._refresh_index()
 
     def _fresh_index(self) -> SitemapIndex | None:
