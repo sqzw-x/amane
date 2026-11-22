@@ -33,14 +33,22 @@
   },
   "actions": {
     "scrape": "刮削",
-    "scrapeWithNumber": "指定番号刮削",
+    "scrapeWithNumber": "指定番号 / 网址刮削",
     "batchScrape": "批量刮削",
     "batchOrganize": "批量整理"
   },
   "scrapeOverride": {
-    "title": "指定番号刮削",
+    "title": "指定番号 / 网址刮削",
+    "mode": {
+      "number": "番号",
+      "url": "网址"
+    },
     "number": "番号",
     "numberPlaceholder": "例如 MIDV-123",
+    "url": "网址",
+    "urlPlaceholder": "例如 https://javdb.com/v/xxxxx",
+    "urlHint": "只解析该网址对应的来源, 不使用类型路由与番号检索; 内容类型按页面中的番号推断",
+    "urlInvalid": "请填写 http(s) 开头的详情页网址",
     "contentType": "内容类型",
     "contentTypeHint": "留空则根据填写的番号推断",
     "contentTypeAuto": "自动推断",

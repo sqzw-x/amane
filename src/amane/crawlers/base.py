@@ -39,6 +39,8 @@ class CrawlerProfile:
     # 与 capabilities (来源提供什么) 分开.
     traits: frozenset[SourceTrait] = field(default_factory=frozenset)
     genders: frozenset[ActorGender] | None = None
+    # False: 源头没有可解码的详情页 (检索走 GraphQL 或离线库), 不参与指定网址刮削.
+    url_scrape: bool = True
 
     def effective_capabilities(self) -> frozenset[SourceCapability]:
         return self.capabilities or frozenset({SourceCapability.FILM_METADATA})
@@ -99,6 +101,15 @@ class Crawler(ABC):
         lang = options.language if options else None
         t0 = time.monotonic()
 
+        if query.url:
+            result = await self._fetch_url(query.url, options)
+            elapsed = round(time.monotonic() - t0, 2)
+            if result is None:
+                self.logger.warning("url scrape failed", url=query.url, duration_s=elapsed)
+            else:
+                self.logger.info("url scrape ok", url=query.url, number=result.number, duration_s=elapsed)
+            return result
+
         url = await self._search(query, options)
         if not url:
             self.logger.warning("search miss", number=number, language=lang)
@@ -112,6 +123,10 @@ class Crawler(ABC):
         else:
             self.logger.info("scrape ok", number=number, title=result.title, duration_s=elapsed)
         return result
+
+    async def _fetch_url(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
+        """指定网址刮削: 该地址就是详情页, 不再检索."""
+        return await self._scrape(url, options)
 
     async def check_connectivity(self) -> ConnectivityOutcome:
         """连通性自检: 缺省 GET ``base_url``, 用与刮削相同的视图 (渲染来源经浏览器, 其余直接请求).

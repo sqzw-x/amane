@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Self
 
 from fastapi import HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.status import HTTP_403_FORBIDDEN
 
 from ..db import Library, MediaFileStatus, Repository
@@ -101,10 +101,24 @@ class RefreshResult(BaseModel):
 
 
 class ScrapePayload(BaseModel):
-    number: str
-    content_type: ContentType = ContentType.CENSORED
+    number: str = Field(default="", description="番号; 指定网址刮削时为空, 由页面结果确定")
+    url: str | None = Field(
+        default=None,
+        description="详情页网址; 与番号二选一, 只解析该网址所在的来源, 不经过类型路由与番号检索",
+    )
+    content_type: ContentType | None = Field(
+        default=None, description="内容类型; None 时按番号推断, 网址刮削按页面中的番号推断"
+    )
     media_file_id: int | None = None
     use_cache: set[CacheKind] = {CacheKind.metadata, CacheKind.trans}
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> Self:
+        if bool(self.number) == bool(self.url):
+            raise ValueError("number 与 url 必须二选一")
+        if self.url is not None and not self.url.startswith(("http://", "https://")):
+            raise ValueError("url 必须是 http(s) 地址")
+        return self
 
 
 def build_feed_scrape_payload(feed: Feed, number: str) -> ScrapePayload:

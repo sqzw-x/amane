@@ -225,7 +225,7 @@ class PrestigeCrawler(Crawler):
 
     @classmethod
     def profile(cls) -> CrawlerProfile:
-        return CrawlerProfile(name=SiteName.PRESTIGE, base_url="https://www.prestige-av.com")
+        return CrawlerProfile(name=SiteName.PRESTIGE, base_url="https://www.prestige-av.com", url_scrape=False)
 
     @override
     async def check_connectivity(self) -> ConnectivityOutcome:

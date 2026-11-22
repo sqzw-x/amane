@@ -33,14 +33,22 @@
   },
   "actions": {
     "scrape": "Scrape",
-    "scrapeWithNumber": "Scrape with number",
+    "scrapeWithNumber": "Scrape with number or URL",
     "batchScrape": "Batch Scrape",
     "batchOrganize": "Batch Organize"
   },
   "scrapeOverride": {
-    "title": "Scrape with number",
+    "title": "Scrape with number or URL",
+    "mode": {
+      "number": "Number",
+      "url": "URL"
+    },
     "number": "Number",
     "numberPlaceholder": "e.g. MIDV-123",
+    "url": "URL",
+    "urlPlaceholder": "e.g. https://javdb.com/v/xxxxx",
+    "urlHint": "Only the source owning this URL is queried; type routes and number search are skipped; the content type is inferred from the number on the page",
+    "urlInvalid": "Enter an http(s) detail page URL",
     "contentType": "Content type",
     "contentTypeHint": "Leave empty to infer from the number you enter",
     "contentTypeAuto": "Infer automatically",
