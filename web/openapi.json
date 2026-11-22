@@ -9873,7 +9873,10 @@
                   "caribbeancom",
                   "10musume",
                   "pacopacomama",
-                  "muramura"
+                  "muramura",
+                  "h4610",
+                  "c0930",
+                  "h0930"
                 ],
                 "western": [
                   "theporndb",
@@ -9943,6 +9946,18 @@
                   "use_proxy": true
                 },
                 "avsox": {
+                  "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
+                  "official_routes": {},
+                  "rate_limit": 2.0,
+                  "use_browser": "auto",
+                  "use_proxy": true
+                },
+                "c0930": {
                   "cookie": {},
                   "languages": [
                     "zh",
@@ -10075,6 +10090,30 @@
                   "use_proxy": true
                 },
                 "giga": {
+                  "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
+                  "official_routes": {},
+                  "rate_limit": 2.0,
+                  "use_browser": "auto",
+                  "use_proxy": true
+                },
+                "h0930": {
+                  "cookie": {},
+                  "languages": [
+                    "zh",
+                    "ja",
+                    "en"
+                  ],
+                  "official_routes": {},
+                  "rate_limit": 2.0,
+                  "use_browser": "auto",
+                  "use_proxy": true
+                },
+                "h4610": {
                   "cookie": {},
                   "languages": [
                     "zh",
@@ -15152,6 +15191,7 @@
                   "airav",
                   "avbase",
                   "avsox",
+                  "c0930",
                   "caribbeancom",
                   "dahlia",
                   "dmm",
@@ -15162,6 +15202,8 @@
                   "freejavbt",
                   "getchu",
                   "giga",
+                  "h0930",
+                  "h4610",
                   "iqqtv",
                   "jav321",
                   "javbus",
@@ -15198,6 +15240,7 @@
                   "airav",
                   "avbase",
                   "avsox",
+                  "c0930",
                   "caribbeancom",
                   "dahlia",
                   "dmm",
@@ -15208,6 +15251,8 @@
                   "freejavbt",
                   "getchu",
                   "giga",
+                  "h0930",
+                  "h4610",
                   "iqqtv",
                   "jav321",
                   "javbus",
@@ -15244,6 +15289,7 @@
                   "airav",
                   "avbase",
                   "avsox",
+                  "c0930",
                   "caribbeancom",
                   "dahlia",
                   "dmm",
@@ -15254,6 +15300,8 @@
                   "freejavbt",
                   "getchu",
                   "giga",
+                  "h0930",
+                  "h4610",
                   "iqqtv",
                   "jav321",
                   "javbus",
@@ -15913,6 +15961,7 @@
           "airav",
           "avbase",
           "avsox",
+          "c0930",
           "caribbeancom",
           "dahlia",
           "dmm",
@@ -15924,6 +15973,8 @@
           "getchu",
           "gfriends",
           "giga",
+          "h0930",
+          "h4610",
           "iqqtv",
           "jav321",
           "javbus",

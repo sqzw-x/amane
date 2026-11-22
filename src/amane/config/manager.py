@@ -87,6 +87,9 @@ _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
         SiteName.TENMUSUME,
         SiteName.PACOPACOMAMA,
         SiteName.MURAMURA,
+        SiteName.H4610,
+        SiteName.C0930,
+        SiteName.H0930,
     ],
     ContentType.FC2: [
         SiteName.JAVDB,

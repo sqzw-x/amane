@@ -557,7 +557,7 @@ def _match(basename: str, escape_strings: list[str], *, generic: bool) -> tuple[
         hd = re.sub(r"[-_. ]+", "-", c)
         if m := re.search(r"HEYDOUGA-?(\d{2,4})-(\d{1,4})", hd):
             return f"HEYDOUGA-{m[1]}-{m[2]}", ContentType.UNCENSORED
-    if m := re.search(r"(H4610|C0930|H0930)-[A-Z]+\d{4,}", c):
+    if m := re.search(r"(H4610|C0930|H0930)-[A-Z]+\d{3,}", c):
         return m.group(), ContentType.UNCENSORED
     # kin8 归欧美链 (theporndb 为第一源); 该类型表示路由归属, 与马赛克标记正交.
     if m := re.search(r"KIN8(TENGOKU)?-?\d{3,}", c):
