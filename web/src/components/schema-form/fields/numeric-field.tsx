@@ -6,6 +6,10 @@ import { useFieldDomId } from "./dict-entry-form";
 import { FieldChrome } from "./field-chrome";
 import { fieldError } from "./field-error";
 
+/**
+ * 数值输入框不传 min / max / step: 控件既不钳位也不提供微调箭头, 越界值原样保留,
+ * 由表单校验在字段下方提示, 保存随之禁用.
+ */
 export function NumericField({
   name,
   label,
@@ -31,8 +35,9 @@ export function NumericField({
         >
           <NumberInput
             id={id}
+            hideControls
             allowDecimal={!isInteger}
-            value={field.state.value == null ? "" : (field.state.value as number)}
+            value={typeof field.state.value === "number" ? field.state.value : ""}
             onChange={(value) => {
               if (value === "") {
                 field.handleChange(nullable ? null : 0);

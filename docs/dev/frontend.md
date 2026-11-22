@@ -67,7 +67,7 @@
 
 ## Schema 表单
 
-Settings、任务提交、定时创建、metadata 编辑共用 `components/schema-form/`: Pydantic → OpenAPI → FieldRouter; `x-*` 清单见 `schema/types.ts`, 字段控件细节见该目录与字段注释.
+Settings、任务提交、定时创建、metadata 编辑共用 `components/schema-form/`: Pydantic → OpenAPI → FieldRouter; `x-*` 清单见 `schema/types.ts`, 字段控件细节见该目录与字段注释. 数值字段不设 `min` / `max` / `step`: 越界值由表单校验在字段下方提示, 控件既不钳位也不提供微调箭头, 这是既定形态而非遗漏的参数.
 
 `SchemaForm` 双模式 `patch` (dirty 门控, 只提交 diff) / `create` (完整值); dirty 保存条用 `affix` 固定于视口底, 编辑弹窗里必须抬到 Modal 之上. 空值编码统一经 `schema-form/encode.ts` (按 Create / 列 schema 判空), `x-frozen-keys` 必须保留全部 key; 不允许对着 PATCH partial schema 编码, 手写 Library / Feed 表单经同一个编码器出 body. 任务与定时提交用 `DiscriminatedSchemaForm`; 短枚举共用 `EnumToggle`, 定时 cron 用 `CronPicker` (产出 5-field, 与后端 croniter 一致).
 
