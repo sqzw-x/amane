@@ -3,6 +3,8 @@ import re
 from parsel import Selector
 
 from ...enums import SiteName
+from ...net.connectivity import ConnectivityOutcome
+from ...net.errors import FailureReason, SourceError
 from ...plugins.models import SourceTrait
 from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
@@ -15,40 +17,66 @@ _LANG_PREFIX = {
     "zh_cn": "/cn",
     "zh_tw": "",
     "jp": "/jp",
+    "en": "/en",
 }
+
+#: 站点按 ``Accept-Language`` 判定访问者地区: 落在中国大陆以外时非中文取值对任何语言前缀都回 404 空页,
+#: 因此四个前缀共用同一个中文取值.
+_HEADERS = {"Accept-Language": "zh-CN,zh;q=0.9"}
+
+#: 域名失效后站点对任何路径都回 200 的跳转壳: 没有 title, 只有一行 JS 转到 /lander.
+#: 正常页面也用窗口跳转做站内导航, 因此只认落到 /lander 的那一行.
+_LANDER_LINK = re.compile(r'window\.location\.href\s*=\s*"/lander')
 
 
 class IqqtvCrawler(Crawler):
     @classmethod
     def profile(cls) -> CrawlerProfile:
         return CrawlerProfile(
-            name=SiteName.IQQTV, base_url="https://iqq5.xyz", traits=frozenset({SourceTrait.MULTI_LANGUAGE})
+            name=SiteName.IQQTV, base_url="https://iqqbl.com", traits=frozenset({SourceTrait.MULTI_LANGUAGE})
         )
 
     def _get_lang_prefix(self, options: FetchOptions | None) -> str:
         lang = (options.language if options else None) or "zh_cn"
         return _LANG_PREFIX.get(lang, "/cn")
 
+    async def check_connectivity(self) -> ConnectivityOutcome:
+        """站点轮换域名后旧域名对任何路径都回 200 的跳转壳, 必须核对正文才知道入口是否还在.
+
+        探检索入口: 空查询的检索页会 302 回首页, 跳转被跟随, 因此正文与首页一致而报出的地址是真实入口.
+        """
+        url = f"{self.base_url}{_LANG_PREFIX['zh_cn']}/search.php"
+        try:
+            await self._get_html(url)
+        except SourceError as exc:
+            return ConnectivityOutcome.failed(exc.reason, url=exc.url or url, http_status=exc.http_status)
+        return ConnectivityOutcome.ok(url, None)
+
+    async def _get_html(self, url: str) -> str:
+        """站点 HTML 的唯一入口: 补语言头, 并把失效域名的跳转壳判为来源失败而非未命中."""
+        text = await self.client.get_html(url, headers=_HEADERS)
+        if _LANDER_LINK.search(text) is not None:
+            raise SourceError(FailureReason.EMPTY_RESPONSE, url=url)
+        return text
+
     async def _search(self, query: SearchQuery, options: FetchOptions | None = None) -> str | None:
         """条目标题里的番号是独立词, 只认整词与入参相等; 排除破坏版等条目."""
         number = query.number if re.match(r"n\d{4}", query.number) else query.number.upper()
         prefix = self._get_lang_prefix(options)
         url = f"{self.base_url}{prefix}/search.php?kw={number}"
-        text = await self.client.get_html(url)
-        html = Selector(text=text)
+        html = Selector(text=await self._get_html(url))
         for item in html.xpath('//span[@class="title"]'):
             href = item.xpath("./a/@href").get()
             title = item.xpath("./a/@title").get() or ""
             if not href or any(kw in title for kw in _EXCLUDED_KEYWORDS):
                 continue
             if any(is_same_number(token, number) for token in title.split()):
-                detail_path = re.sub(r"^/(cn|jp)/", "", href).lstrip("/")
+                detail_path = re.sub(r"^/(cn|jp|en)/", "", href).lstrip("/")
                 return f"{self.base_url}{prefix}/{detail_path}"
         return None
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
-        text = await self.client.get_html(url)
-        html = Selector(text=text)
+        html = Selector(text=await self._get_html(url))
 
         # 标题; 破坏版视为未命中.
         title = extract_text(html, '//h1[@class="h4 b"]/text()')
