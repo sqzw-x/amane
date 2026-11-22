@@ -113,7 +113,7 @@
 | javlibrary | javlibrary.com | | | 经常出现 Cloudflare 验证页 |
 | avbase | avbase.net | | :material-check: | 受 Cloudflare 保护, 通常需要 [浏览器渲染](network.md#browser) |
 | xcity | xcity.jp | | | 内容与 DMM 重叠 |
-| prestige | prestige-av.com | | | 单一制作商; 对每个番号都会发出多次请求 |
+| prestige | prestige-av.com | | | 单一制作商; 带特典的版本与通常版视为同一部影片; 首次刮削会先下载站点商品目录 |
 | faleno | faleno.jp | | | 单一制作商, 含 maryGOLD 与 JimmyScandal |
 | dahlia | dahlia-av.jp | | | 单一制作商 |
 | giga | giga-web.jp | | | 单一制作商; 自动完成年龄确认, 同一时刻只处理一个请求 |
