@@ -12,6 +12,7 @@ from ..llm import build_model as build_llm_model
 from .capabilities import build_capabilities
 from .schema_docs import build_schema_docs
 from .tool_names import ToolNameAlias
+from .tool_schema import build_tool_schema_capability
 from .tools import AgentDeps, build_explore_toolset
 
 # 工具 / 输出校验重试: 框架默认 1, 此处拉高避免早停.
@@ -111,5 +112,5 @@ def build_agent(config: AgentConfig) -> Agent[AgentDeps, str | DeferredToolReque
         instructions=_SYSTEM + build_schema_docs(),
         retries=_AGENT_RETRIES,
         toolsets=[build_explore_toolset()],
-        capabilities=[ToolNameAlias(), *build_capabilities()],
+        capabilities=[ToolNameAlias(), build_tool_schema_capability(), *build_capabilities()],
     )

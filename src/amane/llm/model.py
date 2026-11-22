@@ -5,12 +5,12 @@ from urllib.parse import urlsplit
 import httpx2
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from ..enums import ApiType
+from .tolerant import TolerantChatModel, TolerantResponsesModel
 
 _RESPONSES_PROFILE = OpenAIModelProfile(tool_addition_mode=None)
 """``additional_tools`` 是 OpenAI 自家 Responses 端点专有的追加通道: 兼容端点 (DeepSeek 等) 静默
@@ -39,11 +39,11 @@ def build_model(
     """
     match api_type:
         case ApiType.CHAT:
-            return OpenAIChatModel(
+            return TolerantChatModel(
                 model, provider=OpenAIProvider(base_url=base_url, api_key=api_key, http_client=http_client)
             )
         case ApiType.RESPONSE:
-            return OpenAIResponsesModel(
+            return TolerantResponsesModel(
                 model,
                 provider=OpenAIProvider(base_url=base_url, api_key=api_key, http_client=http_client),
                 profile=_responses_profile(base_url),

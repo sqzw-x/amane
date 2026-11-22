@@ -22,6 +22,8 @@
 
 写操作工具按域分组为 `Capability`, 清单在 `src/amane/agent/capabilities.py`, 内置助理与外部派发共用同一份 (两侧必须一致, 只登记一处才不会漂移). **不做延迟载入**: 每个请求都声明全部工具. 兼容端点 (DeepSeek 等) 没有「声明了但不开放」的通道, 逐次载入只能通过修改 `tools` 实现, 而工具定义渲染在 system 之后、对话之前, 每载入一次即重读整段对话前缀; 全量声明的固定前缀恒定不变, 首轮即命中缓存. 不经由 HTTP 自调用. `AgentDeps.bridge` 提供库路径边界 / watcher / 取消运行中任务 / 语义检索回调.
 
+`agent/tool_schema.py::ToolSchemaCapability` 收敛发给上游的工具定义, 挂在 `runtime.py::build_agent` 的 `capabilities`. pydantic-ai 逐工具推断 strict, 同一请求里混有 strict 与非 strict 工具会被部分中转站判为非法请求; 故统一 `strict=False`, 不置 `True` (strict 下带默认值的参数必须进 `required`, 会把可选参数变成必填). 取值为 `False` 的 `additionalProperties` 一并删除 — 多余字段由 pydantic 本地校验拒绝, `true` 与子 schema 表达开放结构则保留.
+
 | `id` | 覆盖 |
 |------|------|
 | `metadata-ops` | 修改字段、字段锁、合并、user tag、刮削入队、删除 |

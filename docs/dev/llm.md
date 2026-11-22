@@ -10,6 +10,7 @@
 - **单轮调用不使用 Agent**: 请求经 `pydantic_ai.direct.model_request` 发出并取 `ModelResponse.text` — 该属性只拼接文本部分, 推理模型写在 `ThinkingPart` 的思维链天然排除; 写进正文的 `<think>` 块由翻译器剥离.
 - **传输客户端归属**: 翻译路径自建 `httpx.AsyncClient` (超时 60 秒, 代理取 `network.proxy`) 交给 provider; 助理不传, 由 pydantic-ai 构造默认客户端.
 - **重试由 SDK 按其默认策略承担**: Amane 不配置重试次数与退避. SDK 重试结束后仍失败, 或正文为空时, 翻译器返回 `None` 且不抛出 — 调用方保留原值.
+- **非标准响应由 `llm/tolerant.py` 处理**: 中转站与国内厂商常在必需字段返回 `null`, pydantic-ai 会在校验或累加参数增量时抛错并中断整个 run. 补齐规范默认值, 只填写不改写; Anthropic 的 SDK 接受这些字段为 `null`, 无需处理.
 - **`Translator` 协议**是管线唯一依赖的翻译面, `ScrapeHandler` 仅依赖此协议, 测试可用结构兼容的替代实现.
 
 ### dspy 边界
