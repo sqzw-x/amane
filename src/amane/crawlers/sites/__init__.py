@@ -18,6 +18,7 @@ from .fc2ppvdb import FC2PPVDBCrawler
 from .freejavbt import FreejavbtCrawler
 from .getchu import GetchuCrawler
 from .giga import GigaCrawler
+from .h4610 import C0930Crawler, H0930Crawler, H4610Crawler
 from .iqqtv import IqqtvCrawler
 from .jav321 import Jav321Crawler
 from .javbus import JavBusCrawler
@@ -35,6 +36,7 @@ __all__ = [
     "AiravCrawler",
     "AvbaseCrawler",
     "AvsoxCrawler",
+    "C0930Crawler",
     "CaribbeanComCrawler",
     "D2PassCrawler",
     "DahliaCrawler",
@@ -46,6 +48,8 @@ __all__ = [
     "FreejavbtCrawler",
     "GetchuCrawler",
     "GigaCrawler",
+    "H0930Crawler",
+    "H4610Crawler",
     "IqqtvCrawler",
     "Jav321Crawler",
     "JavBusCrawler",

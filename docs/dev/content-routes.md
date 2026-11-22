@@ -61,6 +61,8 @@
 
 **getchu.com** — 美少女游戏 / 同人 / 动画周边, 商品是数字 id; 里番靠路径关键词分类, 所以是里番第一源.
 
+**h4610.com / c0930.com / h0930.com** — 同模板三站 (エッチな4610 / エッチな0930 人妻 / エッチな0930 熟女), 无码路由成员。番号须带 `H4610-` / `C0930-` / `H0930-` 前缀, 裸站内 id 不发 HTTP; **同一个 id 在三站是三部不同作品**, 归属只由前缀与路由决定, 不允许跨站重试。不存在的 id 回 302 到首页 (200) 而非 404, 命中由页面自报的 `movie_id` 确认。页是 euc-jp 静态 HTML + schema.org `Movie` JSON-LD (与同集团 d2pass 站群的 `/dyn/phpauto/` JSON 接口不同, 该接口在这三站 404); 站点无系列字段, 简介是站点截断的摘要。
+
 **kin8tengoku.com** — 单厂牌, 不纳入默认表. 番号 `KIN8-####` 的类型归欧美链 (第一源 theporndb, 按 4 位 `movie_id` 对齐), `release` 恒为空; 番号须带 `kin8` / `kin8tengoku` 前缀, 数字段 1–9999 补零为 4 位拼详情页, 越界或无前缀不发 HTTP. 页是 Next.js 应用, 可解析的只剩 `og:` 元标签与 CSS-module 类名.
 
 **theporndb.net** — 未登录跳转 `/login`; 无 token 时影片 / 演员爬虫都直接 `None`. 欧美路由第一, 与影片共用 `site_config.api_token`. 欧美条目 `code` 是 `studio:title-slug`, 与文件名番号不同构, 日期号 (`Studio.YY.MM.DD`) 按片商 + 发布日期确认. GraphQL 面是自研的 stash-box 兼容层, 可空标注与上游不一致: 请求按上游最严的形态构造, 应答按最宽松的形态解析.

@@ -190,6 +190,9 @@ CASES: list[object] = [
     _Case("/media/FC2PPV1234567.mp4", number="FC2-1234567", content_type=ContentType.FC2),
     _Case("/media/HEYZO-1234.mp4", number="HEYZO-1234", content_type=ContentType.UNCENSORED),
     _Case("/media/H4610-ki221218.mp4", number="H4610-KI221218", content_type=ContentType.UNCENSORED),
+    # gol 系列只有三位序号, 与 ori / hitozuma / ki 等四位以上的系列同属站内写法
+    _Case("/media/H4610-gol207.mp4", number="H4610-GOL207", content_type=ContentType.UNCENSORED),
+    _Case("/media/H0930-gol143.mp4", number="H0930-GOL143", content_type=ContentType.UNCENSORED),
     # heydouga 的两段数字都属于番号; 省略短横线与 4K / 分集尾标不改变结果
     _Case(
         "/media/heydouga-4037-1002-4K.mp4",

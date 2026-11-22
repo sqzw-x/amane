@@ -18,6 +18,7 @@ from .sites import (
     AiravCrawler,
     AvbaseCrawler,
     AvsoxCrawler,
+    C0930Crawler,
     CaribbeanComCrawler,
     DahliaCrawler,
     DmmCrawler,
@@ -28,6 +29,8 @@ from .sites import (
     FreejavbtCrawler,
     GetchuCrawler,
     GigaCrawler,
+    H0930Crawler,
+    H4610Crawler,
     IqqtvCrawler,
     Jav321Crawler,
     JavBusCrawler,
@@ -75,6 +78,9 @@ registry.register(PrestigeCrawler)
 registry.register(R18DevCrawler)
 registry.register(ThePornDBCrawler)
 registry.register(OfficialCrawler)
+registry.register(H4610Crawler)
+registry.register(C0930Crawler)
+registry.register(H0930Crawler)
 
 # 演员站在 amane.crawlers.actor 导入时注册.
 
@@ -85,6 +91,7 @@ __all__ = [
     "AvbaseActorCrawler",
     "AvbaseCrawler",
     "AvsoxCrawler",
+    "C0930Crawler",
     "CaribbeanComCrawler",
     "Crawler",
     "DahliaCrawler",
@@ -99,6 +106,8 @@ __all__ = [
     "GFriendsActorCrawler",
     "GetchuCrawler",
     "GigaCrawler",
+    "H0930Crawler",
+    "H4610Crawler",
     "HttpClient",
     "IqqtvCrawler",
     "Jav321Crawler",
