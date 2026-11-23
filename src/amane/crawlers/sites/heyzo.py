@@ -14,7 +14,8 @@
 「配信日」的取值, 两者是互斥的标签.
 
 预告片是 HLS 单档 `og:video`, 不转封装. 站点没有竖版海报: `player_thumbnail.jpg` 是横版封面,
-因此只填 `thumb_urls`, 竖版由刮削流程裁切. 页内没有时长字段, runtime 恒为空.
+因此只填 `thumb_urls`, 竖版由刮削流程裁切. 剧照与封面同目录层级: 页面只引用 `gallery/thumbnail_NNN.jpg`,
+原图是 `gallery/NNN.jpg` (1280×853), 按缩略图序号推导. 页内没有时长字段, runtime 恒为空.
 """
 
 from __future__ import annotations
@@ -92,7 +93,8 @@ def to_metadata(text: str, url: str) -> MediaMetadata | None:
     title = _og(text, "og:title") or extract_text(html, "//title/text()")
     # 未知 id 的 404 页同样带 og:title / og:description (标题写作 "Not Found"),
     # 但没有封面与预告片这两个只有条目页才有的标签, 因此以它们判定命中.
-    if not title or not _og(text, "og:image"):
+    cover = _og(text, "og:image")
+    if not title or not cover:
         return None
     return MediaMetadata(
         number=_number_from_url(url),
@@ -104,8 +106,9 @@ def to_metadata(text: str, url: str) -> MediaMetadata | None:
         runtime=None,
         tags=extract_all_texts(html, _TAG_LINKS),
         plot=_og(text, "og:description") or None,
-        thumb_urls=_one(_og(text, "og:image")),
+        thumb_urls=_one(cover),
         trailer_urls=_one(_og(text, "og:video")),
+        extrafanart=_gallery_urls(text, cover),
         source_url=url,
     )
 
@@ -136,6 +139,17 @@ def _number_from_url(url: str) -> str:
 
 def _actors(html: Selector) -> list[str]:
     return [name for name in extract_all_texts(html, _ACTORS) if name]
+
+
+def _gallery_urls(text: str, cover: str) -> list[str]:
+    """剧照原图与封面同级: 页面只引用 gallery/thumbnail_NNN.jpg, 原图是同序号的 gallery/NNN.jpg."""
+    if "/images/" not in cover:
+        return []
+    base = cover.rsplit("/images/", 1)[0]
+    prefix = base.split("://", 1)[-1].split("/", 1)[-1]
+    pattern = re.compile(rf"{re.escape(prefix)}/gallery/thumbnail_(\d{{3}})\.jpg")
+    indexes = sorted(set(pattern.findall(re.sub(r"%2[fF]", "/", text))))
+    return [f"{base}/gallery/{index}.jpg" for index in indexes]
 
 
 def _release(html: Selector) -> str | None:

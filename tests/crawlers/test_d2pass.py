@@ -105,3 +105,83 @@ async def test_number_shape_gate_sends_no_request(
     if not accepted:
         assert url is None
         web.get_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("crawler_cls", "number", "poster"),
+    [
+        (
+            OnePondoCrawler,
+            "112226_001",
+            "https://www.1pondo.tv/dyn/dla/images/movies/112226_001/jacket/jacket.jpg",
+        ),
+        (
+            TenMusumeCrawler,
+            "112226_01",
+            "https://www.10musume.com/moviepages/112226_01/images/jacket.jpg",
+        ),
+    ],
+)
+async def test_poster_is_derived_before_detail_thumb(
+    crawler_cls: type[TenMusumeCrawler] | type[OnePondoCrawler], number: str, poster: str
+) -> None:
+    """原生竖版海报排在详情缩略之前: 候选是同一张图的回退链."""
+    web = AsyncMock()
+
+    async def get_json(url: str, **kwargs: object) -> object:
+        return {**_payload(movie_id=number), "MovieThumb": "https://example.test/thum.jpg"}
+
+    web.get_json.side_effect = get_json
+    crawler = crawler_cls(client=HttpClient(web=web))
+
+    meta = await crawler.fetch(SearchQuery(number=number))
+
+    assert meta is not None
+    assert meta.poster_urls == [poster, "https://example.test/thum.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_gallery_contributes_public_stills_only() -> None:
+    """详情声明 Gallery: true 时才取剧照; 会员样本不取."""
+    web = AsyncMock()
+    gallery_url = "https://www.10musume.com/dyn/dla/json/movie_gallery/112226_01.json"
+
+    async def get_json(url: str, **kwargs: object) -> object:
+        if url == gallery_url:
+            return {
+                "MovieID": "112226_01",
+                "Rows": [
+                    {"Img": "movie_gallery/sample/112226_01/a.jpg", "Protected": False},
+                    {"Img": "movie_gallery/member/112226_01/b.jpg", "Protected": True},
+                ],
+            }
+        return {**_payload(), "Gallery": True}
+
+    web.get_json.side_effect = get_json
+    crawler = TenMusumeCrawler(client=HttpClient(web=web))
+
+    meta = await crawler.fetch(SearchQuery(number="112226_01"))
+
+    assert meta is not None
+    assert meta.extrafanart == ["https://www.10musume.com/dyn/dla/images/movie_gallery/sample/112226_01/a.jpg"]
+    assert web.get_json.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_gallery_failure_keeps_metadata() -> None:
+    """剧照是附加资源: 取剧照失败不把整条刮削变成失败."""
+    web = AsyncMock()
+
+    async def get_json(url: str, **kwargs: object) -> object:
+        if "movie_gallery" in url:
+            raise RequestError(url, RequestFailure(kind=FailureKind.HTTP_STATUS, status=500, message="HTTP 500"))
+        return {**_payload(), "Gallery": True}
+
+    web.get_json.side_effect = get_json
+    crawler = TenMusumeCrawler(client=HttpClient(web=web))
+
+    meta = await crawler.fetch(SearchQuery(number="112226_01"))
+
+    assert meta is not None
+    assert meta.extrafanart == []
