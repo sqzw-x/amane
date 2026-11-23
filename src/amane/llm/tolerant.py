@@ -5,10 +5,12 @@ pydantic-ai 假设端点遵守其声明协议, 但中转站与国内厂商常在
 
 只处理 Chat Completions 与 Responses, 二者的接入位置不同:
 
-- Chat Completions: `_validate_completion` 与流式 `_validate_response` 在校验前接收原始数据.
+- Chat Completions: 只处理非流式响应, 挂在 `_validate_completion`. 流式 chunk 由 SDK 直接构造,
+  不经过校验, 缺字段不会中断映射; pydantic-ai 对缺 id 的调用自行生成唯一 id. 逐 chunk 补 id 反而
+  会覆盖服务端已给出的 id —— 规范里 `id` 只在首个增量出现, 后续增量没有该键.
 - Responses: 没有校验前置钩子, 覆写 `_process_response` 补 `output` (缺该键或为 `null` 时父类
-  遍历 `None`, 抛出 `TypeError`); 流式的参数增量`delta` 为 `null` 时父类直接累加, 在 `_process_streamed_response`
-  入口归一化事件流.
+  遍历 `None`, 抛出 `TypeError`); 流式的参数增量 `delta` 为 `null` 时父类直接累加, 在
+  `_process_streamed_response` 入口归一化事件流.
 
 Anthropic 无需处理: SDK 接受 `tool_use` 的 `id` / `input` 为 `null`, 且重放时自行生成 id.
 
@@ -20,11 +22,11 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterable, AsyncIterator
 from typing import TYPE_CHECKING, Any, cast
+from uuid import uuid4
 
 from pydantic_ai.models.openai import (
     OpenAIChatModel,
     OpenAIResponsesModel,
-    OpenAIStreamedResponse,
     _ChatCompletion,  # type: ignore[attr-defined]
 )
 
@@ -33,15 +35,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PLACEHOLDER_TOOL_CALL_ID = "call_0"
-"""占位 id. 上游返回 `null` 时补齐, 避免校验失败; 重放时 pydantic-ai 另行生成 id, 该值不外泄."""
 
+def _normalize_tool_call(tool_call: dict[str, Any]) -> bool:
+    """补齐一个工具调用的必需字段. 返回是否改动过.
 
-def _normalize_tool_call(tool_call: dict[str, Any], index: int) -> bool:
-    """补齐一个工具调用的必需字段. 返回是否改动过."""
+    缺 id 时生成随机值而不是按位置编号: pydantic-ai 按 `tool_call_id` 绑定调用与结果, 同一批
+    出现重复 id 即拒绝执行整批, 位置编号会让一次返回的多个无 id 调用撞成同一个.
+    """
     changed = False
     if not tool_call.get("id"):
-        tool_call["id"] = f"{_PLACEHOLDER_TOOL_CALL_ID}{index}"
+        tool_call["id"] = f"call_{uuid4().hex}"
         changed = True
     if not tool_call.get("type"):
         tool_call["type"] = "function"
@@ -53,45 +56,25 @@ def _normalize_tool_call(tool_call: dict[str, Any], index: int) -> bool:
     return changed
 
 
-def _normalize_chat_payload(raw: dict[str, Any]) -> bool:
-    """就地归一化 Chat Completions 响应体的工具调用. 返回是否改动过."""
+def _normalize_completion(raw: dict[str, Any]) -> bool:
+    """就地归一化非流式响应体的工具调用. 返回是否改动过."""
     changed = False
     for choice in raw.get("choices") or []:
-        message = choice.get("message") or choice.get("delta") or {}
-        for index, tool_call in enumerate(message.get("tool_calls") or []):
-            if _normalize_tool_call(tool_call, index):
+        message = choice.get("message") or {}
+        for tool_call in message.get("tool_calls") or []:
+            if _normalize_tool_call(tool_call):
                 changed = True
     return changed
 
 
 class TolerantChatModel(OpenAIChatModel):
-    """Chat Completions: 校验前归一化非流式与流式响应."""
+    """Chat Completions: 校验前归一化非流式响应."""
 
     def _validate_completion(self, response: Any) -> _ChatCompletion:
         data = response.model_dump(warnings=False)
-        if _normalize_chat_payload(data):
+        if _normalize_completion(data):
             logger.warning("上游 %s 的工具调用缺少必需字段, 已按协议补齐", self.system)
         return _ChatCompletion.model_validate(data)
-
-    @property
-    def _streamed_response_cls(self) -> type[OpenAIStreamedResponse]:
-        return _TolerantChatStreamedResponse
-
-
-class _TolerantChatStreamedResponse(OpenAIStreamedResponse):
-    """在流式 chunk 进入默认映射之前逐个归一化."""
-
-    def _validate_response(self) -> AsyncIterable[Any]:
-        return _normalize_chunks(self._response)
-
-
-async def _normalize_chunks(source: AsyncIterable[Any]) -> AsyncIterator[Any]:
-    async for chunk in source:
-        data = chunk.model_dump(warnings=False)
-        if _normalize_chat_payload(data):
-            yield type(chunk).model_validate(data)
-        else:
-            yield chunk
 
 
 class TolerantResponsesModel(OpenAIResponsesModel):
