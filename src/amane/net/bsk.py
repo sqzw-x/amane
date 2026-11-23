@@ -76,6 +76,9 @@ _DEAD_SESSION_CODES = frozenset({"not_found", "session_closed", "session_window_
 _DEAD_SESSION_MARKERS = ("could not establish connection", "receiving end does not exist", "extension disconnected")
 # 写 cookie 失败后冷却这么久再试: 瞬时失败不该让该来源在进程内一直带着旧页面.
 _COOKIE_RETRY_COOLDOWN_S = 120.0
+# 写 cookie 与页面内容无关; 动态区域 (广告轮播 / 直播列表) 会让严格观察在 sync 与 evaluate 之间失效,
+# 因此只校验脚本真正依赖的 body 存在, 不带观察 ID.
+_COOKIE_WRITE_EXPECT = json.dumps([{"target": "body", "field": "exists", "equals": True}])
 # 取完正文后关标签页的同步预算; 每次关页重新同步, 动态页面上观察常在往返途中失效.
 _CLOSE_SYNC_TIMEOUT_S = 5.0
 _CLOSE_ATTEMPTS = 2
@@ -296,6 +299,12 @@ def _is_dead_session(exc: BskError) -> bool:
         return True
     message = str(exc).lower()
     return any(marker in message for marker in _DEAD_SESSION_MARKERS)
+
+
+def _is_missing_expect_flag(exc: BskError) -> bool:
+    """bsk 0.4.0 的 CLI 不认 ``--expect``; clap 把未知识别成参数错误, 输出留在 stderr."""
+    message = str(exc).lower()
+    return "unexpected argument" in message or "unknown argument" in message
 
 
 def _parse_protocol(raw: str | None) -> tuple[int, int] | None:
@@ -558,6 +567,9 @@ class BskBackend:
 
         用一张独立的空白标签页完成, 让取页标签页的首次导航保持免费. 写入失败只告警:
         站点接下来会以被拦或要求验证的形式表现出来, 由调用方按结果处理.
+
+        脚本只带控制上下文与 body 存在性校验, 不带观察 ID: 动态区域会让严格观察在
+        sync 与 evaluate 之间失效, 带上它会让这一次写入被间歇拒绝.
         """
         key = (urlsplit(url).netloc, scope, tuple(sorted(cookies.items())))
         if key in self._cookie_applied or time.monotonic() < self._cookie_retry_at.get(key, 0.0):
@@ -573,18 +585,38 @@ class BskBackend:
                 control = await self._control(session_id, tab_id)
                 if control is None:
                     return self._skip_cookies(key, scope, "观察面不可用", session_id)
-                await self._call(
-                    (
-                        "evaluate",
-                        script,
-                        "--session",
-                        session_id,
-                        "--tab-id",
-                        str(tab_id),
-                        *_control_flags(control),
-                    ),
-                    timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
-                )
+                try:
+                    await self._call(
+                        (
+                            "evaluate",
+                            script,
+                            "--session",
+                            session_id,
+                            "--tab-id",
+                            str(tab_id),
+                            "--context",
+                            control.context_id,
+                            "--expect",
+                            _COOKIE_WRITE_EXPECT,
+                        ),
+                        timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
+                    )
+                except BskError as exc:
+                    if not _is_missing_expect_flag(exc):
+                        raise
+                    # bsk 0.4.0 不认 --expect: 退回带观察 ID 的旧口径.
+                    await self._call(
+                        (
+                            "evaluate",
+                            script,
+                            "--session",
+                            session_id,
+                            "--tab-id",
+                            str(tab_id),
+                            *_control_flags(control),
+                        ),
+                        timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
+                    )
             except BskError as exc:
                 if _is_dead_session(exc):
                     await self._stop(session, timeout_s=_COMMAND_SLACK_S)

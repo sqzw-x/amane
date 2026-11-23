@@ -133,6 +133,14 @@ class _FakeBsk:
             return {"final_url": args[1], "reached": wait_until}
         if command == "evaluate":
             self._maybe_fail(config, "evaluate_error")
+            once = config.pop("evaluate_expect_error_once", None)
+            if isinstance(once, dict) and "--expect" in args:
+                (self.root / "scenario.json").write_text(json.dumps(config), encoding="utf-8")
+                raise BskError(
+                    str(once.get("message", "bsk evaluate 无输出: error: unexpected argument '--expect' found")),
+                    code=once.get("code") if isinstance(once.get("code"), str) else None,
+                    exit_code=1,
+                )
             return {"ok": True}
         if command == "snapshot":
             self._maybe_fail(config, "snapshot_error")
@@ -149,7 +157,7 @@ class _FakeBsk:
             context_id = f"ctx-{self._count('cooperate')}"
             tab_id = args[args.index("--tab-id") + 1]
             if config.get("sync_no_context"):
-                # 页面不可同步 (minnano 这类有跨域广告框的页面): 严格策略、未就绪、没有上下文.
+                # 页面不可同步 (共享控制的观察面不可用): 严格策略、未就绪、没有上下文.
                 return {
                     "tab_id": int(tab_id),
                     "control_policy": "strict",
@@ -604,10 +612,29 @@ async def test_cookies_applied_once_per_scope(bsk_env: Path) -> None:
     assert len(evaluate) == 1
     assert "age_verified=1; path=/" in evaluate[0][1]
     assert evaluate[0][evaluate[0].index("--context") + 1].startswith("ctx-")
-    assert evaluate[0][evaluate[0].index("--observation") + 1].startswith("obs-")
+    # 广告轮播会让严格观察在 sync 与 evaluate 之间失效, 写 cookie 只校验 body 存在.
+    assert "--observation" not in evaluate[0]
+    assert json.loads(evaluate[0][evaluate[0].index("--expect") + 1]) == [
+        {"target": "body", "field": "exists", "equals": True}
+    ]
     # 两张取页标签页 + 一张 cookie 引导页, 全部关掉
     assert _creates(bsk_env) == 3
     assert len([args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]) == 3
+
+
+@pytest.mark.asyncio
+async def test_cookie_write_falls_back_when_expect_is_unsupported(bsk_env: Path) -> None:
+    """bsk 0.4.0 没有 --expect: 退回带观察 ID 的旧口径, 不因此放弃写入."""
+    _scenario(bsk_env, pages=[CLEAN], evaluate_expect_error_once={"code": "empty_output"})
+    backend = _backend(bsk_env)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a", cookies={"k": "v"}) == (CLEAN, None)
+    finally:
+        await backend.close()
+    evaluate = [args for args in _calls(bsk_env) if args[0] == "evaluate"]
+    assert len(evaluate) == 2
+    assert "--expect" in evaluate[0]
+    assert "--observation" in evaluate[1]
 
 
 @pytest.mark.asyncio
