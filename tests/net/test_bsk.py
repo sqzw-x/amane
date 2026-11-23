@@ -149,7 +149,7 @@ class _FakeBsk:
             context_id = f"ctx-{self._count('cooperate')}"
             tab_id = args[args.index("--tab-id") + 1]
             if config.get("sync_no_context"):
-                # 页面不可同步 (minnano 这类有跨域广告框的页面): 严格策略、未就绪、没有上下文.
+                # 页面不可同步 (共享控制的观察面不可用): 严格策略、未就绪、没有上下文.
                 return {
                     "tab_id": int(tab_id),
                     "control_policy": "strict",
@@ -604,7 +604,11 @@ async def test_cookies_applied_once_per_scope(bsk_env: Path) -> None:
     assert len(evaluate) == 1
     assert "age_verified=1; path=/" in evaluate[0][1]
     assert evaluate[0][evaluate[0].index("--context") + 1].startswith("ctx-")
-    assert evaluate[0][evaluate[0].index("--observation") + 1].startswith("obs-")
+    # 广告轮播会让严格观察在 sync 与 evaluate 之间失效, 写 cookie 只校验 body 存在.
+    assert "--observation" not in evaluate[0]
+    assert json.loads(evaluate[0][evaluate[0].index("--expect") + 1]) == [
+        {"target": "body", "field": "exists", "equals": True}
+    ]
     # 两张取页标签页 + 一张 cookie 引导页, 全部关掉
     assert _creates(bsk_env) == 3
     assert len([args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]) == 3
