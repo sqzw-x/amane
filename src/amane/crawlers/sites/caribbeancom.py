@@ -4,9 +4,10 @@
 不会把无关番号拼成详情页. 短横线是本站专属形态: 同日期号的一本道作品写下划线, 两者不是同一部,
 形态不符时不发请求.
 
-页面是 euc-jp 且正文偶有坏字节, 按替换解码. 站点没有竖版海报: ``images/l_l.jpg`` 是 960×540 横版封面,
-因此只填 ``thumb_urls``, 竖版由刮削流程从封面裁切. 预告片取页面声明的 sample URL, 早年条目没有 sample,
-不按命名规则构造地址.
+页面是 euc-jp 且正文偶有坏字节, 按替换解码. 竖版海报是 ``images/jacket.jpg``, 页面不引用, 按命名推导;
+``images/l_l.jpg`` 是 960×540 横版封面, 仍填 ``thumb_urls``. 剧照取画像ギャラリー里公开样本的
+``images/l/NNN.jpg``, 会员样本的 href 前缀是 ``/member/``, 不取. 预告片取页面声明的 sample URL,
+早年条目没有 sample, 不按命名规则构造地址.
 """
 
 from __future__ import annotations
@@ -37,6 +38,8 @@ _PAGE_NUMBER = re.compile(r"""movie_id['"]?\s*:\s*['"](?P<number>[0-9]{6}-[0-9]{
 _DURATION = re.compile(r"T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?")
 
 _INFO = "//div[contains(@class, 'movie-info')]"
+#: 画像ギャラリー: 公开样本指向 /moviepages/<番号>/images/l/NNN.jpg, 会员样本前缀是 /member/, 只取前者.
+_GALLERY_ITEM = '//div[contains(@class,"movie-gallery")]//a[contains(@class,"gallery-item")]/@href'
 
 
 class CaribbeanComCrawler(Crawler):
@@ -97,10 +100,18 @@ def to_metadata(text: str, number: str, url: str, *, base_url: str) -> MediaMeta
         series=extract_text(html, f"{_INFO}//li[.//span[@class='spec-title'][normalize-space()='シリーズ']]//a/text()")
         or None,
         plot=extract_text(html, f"{_INFO}//p[@itemprop='description']/text()") or None,
+        poster_urls=[f"{base_url}/moviepages/{number}/images/jacket.jpg"],
         thumb_urls=[f"{base_url}/moviepages/{number}/images/l_l.jpg"],
         trailer_urls=_trailer_urls(text),
+        extrafanart=_gallery_urls(html, number, base_url),
         source_url=url,
     )
+
+
+def _gallery_urls(html: Selector, number: str, base_url: str) -> list[str]:
+    """画像ギャラリー的公开样本; 会员样本的 href 前缀是 /member/."""
+    public = f"/moviepages/{number}/images/l/"
+    return [f"{base_url}{href}" for href in extract_all_texts(html, _GALLERY_ITEM) if href.startswith(public)]
 
 
 def _release(html: Selector) -> str | None:

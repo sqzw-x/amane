@@ -101,14 +101,14 @@
 | official | Will / Outvision 等制作商官网 | 有码 | | 按番号前缀匹配制作商官网, 匹配不到时不发出请求; 提供剧情、导演与剧照; 可在站点配置的「制作商路由」中按前缀指定 |
 | avsox | avsox.click | 无码 | | 无码专站 |
 | h4610 | h4610.com | 无码 | | 同模板三站 (h4610、c0930、h0930) 各自编号, 同一站内 id 在三站是不同影片 |
-| heyzo | heyzo.com | 无码 | | 自营无码厂牌; 预告片是 HLS; 不提供时长 |
+| heyzo | heyzo.com | 无码 | | 自营无码厂牌; 预告片是 HLS; 不提供时长与竖版海报, 提供公开剧照 |
 | c0930 | c0930.com | 无码 | | 同上 |
 | h0930 | h0930.com | 无码 | | 同上 |
 | freejavbt | freejavbt.com | 无码、FC2、国产、欧美 | | 覆盖面宽, 位于链尾; 不提供制作商与发行商 |
-| 1pondo | 1pondo.tv | 无码 | | 一本道官网; 提供无码预告片; 番号形如 `112226_001` |
-| caribbeancom | caribbeancom.com | 无码 | | カリビアンコム官网; 提供无码预告片; 番号形如 `112226-001` |
-| 10musume | 10musume.com | 无码 | | 天然むすめ官网; 提供无码预告片; 番号形如 `112226_01` |
-| pacopacomama | pacopacomama.com | 无码 | | パコパコママ官网; 提供无码预告片; 番号形如 `112126_100` |
+| 1pondo | 1pondo.tv | 无码 | | 一本道官网; 提供无码预告片、原生竖版海报与公开剧照; 番号形如 `112226_001` |
+| caribbeancom | caribbeancom.com | 无码 | | カリビアンコム官网; 提供无码预告片、原生竖版海报与公开剧照; 番号形如 `112226-001` |
+| 10musume | 10musume.com | 无码 | | 天然むすめ官网; 提供无码预告片、原生竖版海报与公开剧照; 番号形如 `112226_01` |
+| pacopacomama | pacopacomama.com | 无码 | | パコパコママ官网; 提供无码预告片与公开剧照, 没有竖版海报; 番号形如 `112126_100` |
 | muramura | muramura.tv | 无码 | | ムラムラ官网; 提供无码预告片; 番号形如 `112126_1276` |
 | fc2ppvdb | fc2ppvdb.com | FC2 | | 可能被 Cloudflare 拦截, 拦截时由后续站点补位 |
 | fc2 | adult.contents.fc2.com | FC2 | | FC2 官方市场; 已下架的商品视为无此番号 |

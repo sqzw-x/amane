@@ -7,7 +7,10 @@
 番号形态不符时不发请求: 同集团的日期号会跨厂牌撞号, 抽日期段去拼别站的地址会取到无关作品.
 站点自报的 ``MovieID`` 与入参不一致时同样判未命中, 不写入无关作品.
 
-``MovieThumb`` 是竖版海报, ``ThumbHigh`` 是横版封面 (个别站给的是正方形缩略, 缺竖版的由抓取层裁切);
+``MovieThumb`` 只是列表缩略 (一本道 180×240、天然むすめ 225×300、パコパコママ / ムラムラ 正方形),
+一本道与天然むすめ 的原生竖版海报页面不引用, 按命名推导, 取不到时由抓取层从 ``ThumbHigh`` 裁切;
+``ThumbHigh`` 是 960×540 横版封面. 剧照在 ``/dyn/dla/json/movie_gallery/<番号>.json``,
+行上的 ``Protected`` 区分公开与会员, 只取公开; 详情声明 ``Gallery: false`` 时没有该接口, 不发请求.
 预告片按 ``SampleFiles`` 的档位名选, 不按 URL 猜.
 """
 
@@ -25,6 +28,8 @@ from ..base import Crawler, CrawlerProfile
 from ..models import FetchOptions, MediaMetadata, ResponseModel, SearchQuery, film_actors
 
 _DETAIL_PATH = "/dyn/phpauto/movie_details/movie_id"
+_GALLERY_PATH = "/dyn/dla/json/movie_gallery"
+_GALLERY_IMAGE_PATH = "/dyn/dla/images"
 # 预告片优先级: 720p 体积与画质平衡; 站点缺档时按序降级.
 _SAMPLE_ORDER = ("720p.mp4", "1080p.mp4", "480p.mp4", "360p.mp4", "240p.mp4")
 
@@ -46,9 +51,20 @@ class D2PassMovie(ResponseModel):
     ActressesJa: list[str] = Field(default_factory=list)
     ActressesEn: list[str] = Field(default_factory=list)
     UCNAME: list[str] = Field(default_factory=list)
+    Gallery: bool = False
     MovieThumb: str | None = None
     ThumbHigh: str | None = None
     SampleFiles: list[D2PassSample] = Field(default_factory=list)
+
+
+class D2PassGalleryRow(ResponseModel):
+    Img: str = ""
+    Protected: bool = False
+
+
+class D2PassGallery(ResponseModel):
+    MovieID: str = ""
+    Rows: list[D2PassGalleryRow] = Field(default_factory=list)
 
 
 class D2PassCrawler(Crawler):
@@ -56,6 +72,8 @@ class D2PassCrawler(Crawler):
 
     number_pattern: ClassVar[re.Pattern[str]]
     studio: ClassVar[str]
+    #: 竖版海报不在详情 JSON 里, 按站点命名推导; 取不到时回退 ``MovieThumb``, 之后由抓取层裁切.
+    jacket_path: ClassVar[str | None] = None
 
     @override
     async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:
@@ -99,9 +117,39 @@ class D2PassCrawler(Crawler):
             raise SourceError(FailureReason.PARSE_ERROR, detail=parse_detail(exc)) from exc
         if not movie.MovieID or movie.MovieID.casefold() != number.casefold():
             return None
-        return self._to_metadata(movie, url)
+        extrafanart = await self._gallery(movie.MovieID) if movie.Gallery else []
+        return self._to_metadata(movie, url, extrafanart)
 
-    def _to_metadata(self, movie: D2PassMovie, url: str) -> MediaMetadata:
+    async def _gallery(self, number: str) -> list[str]:
+        """公开剧照. 剧照是附加资源: 取不到就按没有处理, 不让整条刮削失败.
+
+        ``Gallery: false`` 的条目没有该接口, 调用方已跳过; 其余失败同一口径.
+        """
+        url = f"{self.base_url}{_GALLERY_PATH}/{number}.json"
+        try:
+            payload = await self.client.get_json(url, cookies=self.cookies, headers=self.headers)
+        except RequestError as exc:
+            self.logger.debug("gallery unavailable", number=number, reason=exc.reason)
+            return []
+        try:
+            gallery = D2PassGallery.model_validate(payload)
+        except ValidationError as exc:
+            self.logger.warning("gallery parse failed", number=number, detail=parse_detail(exc))
+            return []
+        if gallery.MovieID and gallery.MovieID.casefold() != number.casefold():
+            return []
+        return [
+            f"{self.base_url}{_GALLERY_IMAGE_PATH}/{row.Img}" for row in gallery.Rows if row.Img and not row.Protected
+        ]
+
+    def _poster_urls(self, movie: D2PassMovie) -> list[str]:
+        """原生竖版海报在前, 详情给的缩略在后: 候选是同一张图的回退链, 命中即停."""
+        derived = [f"{self.base_url}{self.jacket_path.format(number=movie.MovieID)}"] if self.jacket_path else []
+        if not movie.MovieThumb:
+            return derived
+        return [*derived, movie.MovieThumb]
+
+    def _to_metadata(self, movie: D2PassMovie, url: str, extrafanart: list[str]) -> MediaMetadata:
         actors = movie.ActressesJa or movie.ActressesEn
         return MediaMetadata(
             number=movie.MovieID,
@@ -113,9 +161,10 @@ class D2PassCrawler(Crawler):
             tags=list(movie.UCNAME),
             series=movie.Series or None,
             plot=movie.Desc or movie.DescEn,
-            poster_urls=[movie.MovieThumb] if movie.MovieThumb else [],
+            poster_urls=self._poster_urls(movie),
             thumb_urls=[movie.ThumbHigh] if movie.ThumbHigh else [],
             trailer_urls=trailer_urls(movie.SampleFiles),
+            extrafanart=extrafanart,
             source_url=f"{self.base_url}/moviepages/{movie.MovieID}/index.html",
         )
 
@@ -125,6 +174,7 @@ class OnePondoCrawler(D2PassCrawler):
 
     number_pattern = re.compile(r"\d{6}_\d{3}")
     studio = "一本道"
+    jacket_path = "/dyn/dla/images/movies/{number}/jacket/jacket.jpg"
 
     @classmethod
     def profile(cls) -> CrawlerProfile:
@@ -136,6 +186,7 @@ class TenMusumeCrawler(D2PassCrawler):
 
     number_pattern = re.compile(r"\d{6}_\d{2}")
     studio = "天然むすめ"
+    jacket_path = "/moviepages/{number}/images/jacket.jpg"
 
     @classmethod
     def profile(cls) -> CrawlerProfile:
