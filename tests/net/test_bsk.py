@@ -133,6 +133,14 @@ class _FakeBsk:
             return {"final_url": args[1], "reached": wait_until}
         if command == "evaluate":
             self._maybe_fail(config, "evaluate_error")
+            once = config.pop("evaluate_expect_error_once", None)
+            if isinstance(once, dict) and "--expect" in args:
+                (self.root / "scenario.json").write_text(json.dumps(config), encoding="utf-8")
+                raise BskError(
+                    str(once.get("message", "bsk evaluate 无输出: error: unexpected argument '--expect' found")),
+                    code=once.get("code") if isinstance(once.get("code"), str) else None,
+                    exit_code=1,
+                )
             return {"ok": True}
         if command == "snapshot":
             self._maybe_fail(config, "snapshot_error")
@@ -612,6 +620,21 @@ async def test_cookies_applied_once_per_scope(bsk_env: Path) -> None:
     # 两张取页标签页 + 一张 cookie 引导页, 全部关掉
     assert _creates(bsk_env) == 3
     assert len([args for args in _calls(bsk_env) if args[:2] == ["tab", "close"]]) == 3
+
+
+@pytest.mark.asyncio
+async def test_cookie_write_falls_back_when_expect_is_unsupported(bsk_env: Path) -> None:
+    """bsk 0.4.0 没有 --expect: 退回带观察 ID 的旧口径, 不因此放弃写入."""
+    _scenario(bsk_env, pages=[CLEAN], evaluate_expect_error_once={"code": "empty_output"})
+    backend = _backend(bsk_env)
+    try:
+        assert await backend.get_page("https://a.example/", scope="a", cookies={"k": "v"}) == (CLEAN, None)
+    finally:
+        await backend.close()
+    evaluate = [args for args in _calls(bsk_env) if args[0] == "evaluate"]
+    assert len(evaluate) == 2
+    assert "--expect" in evaluate[0]
+    assert "--observation" in evaluate[1]
 
 
 @pytest.mark.asyncio

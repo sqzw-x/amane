@@ -301,6 +301,12 @@ def _is_dead_session(exc: BskError) -> bool:
     return any(marker in message for marker in _DEAD_SESSION_MARKERS)
 
 
+def _is_missing_expect_flag(exc: BskError) -> bool:
+    """bsk 0.4.0 的 CLI 不认 ``--expect``; clap 把未知识别成参数错误, 输出留在 stderr."""
+    message = str(exc).lower()
+    return "unexpected argument" in message or "unknown argument" in message
+
+
 def _parse_protocol(raw: str | None) -> tuple[int, int] | None:
     """``1.7`` → ``(1, 7)``; 只比较主次版本, 补丁号不参与."""
     if raw is None:
@@ -579,21 +585,38 @@ class BskBackend:
                 control = await self._control(session_id, tab_id)
                 if control is None:
                     return self._skip_cookies(key, scope, "观察面不可用", session_id)
-                await self._call(
-                    (
-                        "evaluate",
-                        script,
-                        "--session",
-                        session_id,
-                        "--tab-id",
-                        str(tab_id),
-                        "--context",
-                        control.context_id,
-                        "--expect",
-                        _COOKIE_WRITE_EXPECT,
-                    ),
-                    timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
-                )
+                try:
+                    await self._call(
+                        (
+                            "evaluate",
+                            script,
+                            "--session",
+                            session_id,
+                            "--tab-id",
+                            str(tab_id),
+                            "--context",
+                            control.context_id,
+                            "--expect",
+                            _COOKIE_WRITE_EXPECT,
+                        ),
+                        timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
+                    )
+                except BskError as exc:
+                    if not _is_missing_expect_flag(exc):
+                        raise
+                    # bsk 0.4.0 不认 --expect: 退回带观察 ID 的旧口径.
+                    await self._call(
+                        (
+                            "evaluate",
+                            script,
+                            "--session",
+                            session_id,
+                            "--tab-id",
+                            str(tab_id),
+                            *_control_flags(control),
+                        ),
+                        timeout_s=_remaining(deadline) + _COMMAND_SLACK_S,
+                    )
             except BskError as exc:
                 if _is_dead_session(exc):
                     await self._stop(session, timeout_s=_COMMAND_SLACK_S)
