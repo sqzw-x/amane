@@ -328,3 +328,73 @@ async def test_responses_streaming_tolerates_null_arguments(
     tool_calls = [part for part in response.parts if isinstance(part, ToolCallPart)]
     assert len(tool_calls) == 1, label
     assert _args_of(tool_calls[0]) == expected_args, label
+
+
+@pytest.mark.asyncio
+async def test_agent_executes_parallel_tool_calls_without_ids() -> None:
+    """上游一次给出的多个工具调用缺 id 时, 两个调用都要真正执行.
+
+    真实端点会把同一个调用的声明与参数拆成同 index 的两条增量, 其中只有一条带 id.
+    pydantic-ai 在执行前按 `tool_call_id` 绑定调用与结果, id 撞车会让整个 run 失败.
+    """
+    from pydantic_ai import Agent
+
+    executed: list[tuple[str, dict[str, Any]]] = []
+    turns = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal turns
+        turns += 1
+        if turns > 1:
+            return httpx2.Response(
+                200,
+                content=_sse(_chunk({"role": "assistant", "content": "done"}, "stop")) + b"data: [DONE]\n\n",
+                headers={"content-type": "text/event-stream"},
+            )
+        chunks = [
+            _chunk(
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {"index": 0, "type": "function", "function": {"name": "alpha", "arguments": None}},
+                        {"index": 0, "type": "function", "function": {"name": None, "arguments": '{"x":1}'}},
+                    ],
+                }
+            ),
+            _chunk(
+                {
+                    "tool_calls": [
+                        {"index": 1, "type": "function", "function": {"name": "beta", "arguments": None}},
+                        {"index": 1, "type": "function", "function": {"name": None, "arguments": '{"y":2}'}},
+                    ]
+                }
+            ),
+            _chunk({}, "tool_calls"),
+        ]
+        return httpx2.Response(
+            200,
+            content=b"".join(_sse(c) for c in chunks) + b"data: [DONE]\n\n",
+            headers={"content-type": "text/event-stream"},
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        model = build_model(ApiType.CHAT, base_url=_ENDPOINT, api_key="k", model="m", http_client=client)
+        agent = Agent(model)
+
+        @agent.tool_plain
+        def alpha(x: int) -> str:
+            """返回 alpha 结果."""
+            executed.append(("alpha", {"x": x}))
+            return "a-ok"
+
+        @agent.tool_plain
+        def beta(y: int) -> str:
+            """返回 beta 结果."""
+            executed.append(("beta", {"y": y}))
+            return "b-ok"
+
+        async with agent.run_stream("hi") as stream:
+            async for _ in stream.stream_text(delta=True):
+                pass
+
+    assert executed == [("alpha", {"x": 1}), ("beta", {"y": 2})]
