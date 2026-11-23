@@ -1,7 +1,8 @@
 """演员名字行: 名字后面跟一到多个括号组, 最右边一组是读音, 其余是注记.
 
-读音写作「假名 / 罗马字」并作为别名; 注记多为名字来源站点 (如 ``相川美羽(tenshigao)``),
-不进别名. 站点名也会被填进读音的位置, 用同页标签行 (演员所属站点与系列) 比对后丢弃.
+读音写作「假名 / 罗马字」并作为别名; 注记多为名字来源站点 (如 ``相川美羽(tenshigao)``)
+或年龄 (``ななせ 23歳``), 不进别名, 角括号组 (``【DTI系】``) 同样按注记处理. 站点名也会被
+填进读音的位置, 用同页标签行 (演员所属站点与系列) 比对后丢弃.
 """
 
 from __future__ import annotations
@@ -23,8 +24,12 @@ from ...parsing import extract_text, is_same_name, normalize_name
 from ..base import ActorCrawler
 from ..models import ActorMetadata
 
-# 名字后面可能有多个括号组; 从右往左剥, 只有最右边一组是读音, 其余都是注记.
-_TRAILING_GROUP_RE = re.compile(r"^(?P<head>.*?)\s*[（(]\s*(?P<inner>[^（）()]*?)\s*[）)]\s*$")
+# 名字后面可能有多个括号组; 从右往左剥, 圆括号组里只有最右边一组是读音, 其余与角括号组都是注记.
+_TRAILING_GROUP_RE = re.compile(
+    r"^(?P<head>.*?)\s*(?:[（(]\s*(?P<parenthesis>[^（）()【】]*?)\s*[）)]|【\s*(?P<angle>[^【】]*?)\s*】)\s*$"
+)
+# 年龄直接写在名字后 (``ななせ 23歳(ソープ嬢)``), 不是名字的一部分.
+_TRAILING_AGE_RE = re.compile(r"\s*\d{1,2}\s*[歳才]\s*$")
 # 读音只由假名或拉丁字母构成; 站点名、系列名常带汉字或数字.
 _READING_RE = re.compile(r"^(?:[ぁ-んァ-ヶー・\s]+|[A-Za-z0-9][A-Za-z0-9 .'\-]*)$")
 _READING_SEPARATOR_RE = re.compile(r"[/／]")
@@ -153,9 +158,9 @@ def parse_minnano_detail(html_text: str, *, page_url: str, base_url: str) -> Act
 
 
 def _parse_name_line(raw: str, tags: frozenset[str]) -> tuple[str, list[str]]:
-    """剥掉末尾括号: 名字取括号前的主体, 只有最右边一组的假名或拉丁片段算读音."""
+    """剥掉末尾括号组与年龄: 名字取剩下的主体, 圆括号组里只有最右边一组是读音."""
     text = normalize_name(raw)
-    groups: list[str] = []
+    groups: list[tuple[str, bool]] = []
     while True:
         m = _TRAILING_GROUP_RE.match(text)
         if m is None:
@@ -164,11 +169,17 @@ def _parse_name_line(raw: str, tags: frozenset[str]) -> tuple[str, list[str]]:
         if not head:
             # 整串只有一个括号组: 没有名字可言.
             return "", []
-        groups.append(m.group("inner"))
+        parenthesis = m.group("parenthesis")
+        if parenthesis is None:
+            groups.append((m.group("angle") or "", False))
+        else:
+            groups.append((parenthesis, True))
         text = head
-    if not groups:
-        return text, []
-    return text, _alias_readings(groups[0], tags)
+    text = _TRAILING_AGE_RE.sub("", text).strip()
+    if not text:
+        return "", []
+    reading = next((inner for inner, is_parenthesis in groups if is_parenthesis), "")
+    return text, _alias_readings(reading, tags) if reading else []
 
 
 def _alias_readings(inner: str, tags: frozenset[str]) -> list[str]:
