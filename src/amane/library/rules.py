@@ -38,8 +38,8 @@ _SUBTITLE_EXT_RE = re.compile(r"^\.[a-z0-9]+$")
 # 固定保留名. 路径任一深度含此目录名则不入库.
 TRASH_DIRNAME = ".amane_trash"
 
-# .strm 在扫描扩展名里 (当正片入口), 但是路径指针不是视频字节; 大小过滤不把它当视频字节.
-_POINTER_EXTENSIONS = frozenset({".strm"})
+POINTER_EXTENSIONS = frozenset({".strm"})
+"""路径指针: 在扫描扩展名里 (当正片入口), 但内容是地址而不是视频字节, 大小过滤不按它算."""
 
 
 def compile_skip_patterns(patterns: Sequence[str | None] | None) -> list[Pattern[str]] | None:
@@ -129,7 +129,7 @@ def is_undersized_video(path: Path, min_file_size: int, media_extensions: frozen
     if min_file_size <= 0:
         return False
     suffix = path.suffix.lower()
-    if suffix in _POINTER_EXTENSIONS:
+    if suffix in POINTER_EXTENSIONS:
         return False
     if not is_video_media(path, media_extensions):
         return False

@@ -5,6 +5,7 @@ from pathlib import Path
 import structlog
 
 from ..enums import MoveMode
+from ..library.rules import POINTER_EXTENSIONS
 from ..utils.path import existing_disk_path
 from ..utils.threads import in_thread
 
@@ -74,6 +75,22 @@ def video_dest(target_dir: Path, target_stem: str, source: Path, suffix: str | N
 
 
 @in_thread
+def is_rebuildable_pointer(source: Path, dest: Path) -> bool:
+    """目标是一份可由源重建的指针: 两侧都是 `.strm`, 且目标是普通文件.
+
+    `.strm` 只写一行播放地址, 内容由源决定, 不承载用户数据; 上游每天刷新源时,
+    目标上的旧指针必须跟着换, 否则媒体服务器一直读到旧地址.
+    符号链接与目录一律不算: 它们不是上一轮整理写出的指针产物.
+    """
+    return (
+        source.suffix.lower() in POINTER_EXTENSIONS
+        and dest.suffix.lower() in POINTER_EXTENSIONS
+        and not dest.is_symlink()
+        and dest.is_file()
+    )
+
+
+@in_thread
 def execute_organize(
     source: Path,
     target_dir: Path,
@@ -85,6 +102,7 @@ def execute_organize(
     """落盘单元, 一次一个文件.
 
     目标被占用时不改名、不动磁盘, 返回 CONFLICT 交给调用方记账; 冲突不自动解决.
+    例外是 `.strm` 指针: 目标由源重建, 内容不同即换掉.
     无法判定时返回 FAILED 并带上错误说明, 不改动磁盘.
     """
     disk_source = existing_disk_path(source)
@@ -100,6 +118,14 @@ def execute_organize(
             case TargetState.SAME:
                 # 已就位则无需动作.
                 return OrganizeResult(outcome=PlaceOutcome.PLACED, dest=dest)
+            case TargetState.OCCUPIED if is_rebuildable_pointer.sync(disk_source, dest):
+                # 旧指针是上一轮整理的产物: 内容一致即已就位, 不一致则移除, 由本轮重新落盘.
+                if disk_source.read_bytes() == dest.read_bytes():
+                    if mode is MoveMode.MOVE:
+                        disk_source.unlink()
+                    return OrganizeResult(outcome=PlaceOutcome.PLACED, dest=dest)
+                logger.info("organize replacing stale pointer", source=str(disk_source), dest=str(dest))
+                dest.unlink()
             case TargetState.OCCUPIED:
                 logger.warning("organize target occupied", source=str(disk_source), dest=str(dest))
                 return OrganizeResult(outcome=PlaceOutcome.CONFLICT, dest=dest)

@@ -27,6 +27,7 @@ from ..organize import (
     TargetState,
     discover_subtitles,
     execute_organize,
+    is_rebuildable_pointer,
     place_subtitles,
     render_extrafanart_names,
     render_strm_content,
@@ -97,11 +98,12 @@ async def execute_file_operations(
         return FileOperationsResult(outcome=PlaceOutcome.FAILED, error=f"源文件不存在: {media_file.path}")
 
     # 目标被别的文件占用时立即返回: 不下载图片, 不写附属文件, 不改库内任何路径.
+    # 目标是可重建的 .strm 指针时继续, 由 execute_organize 换掉旧内容.
     # 读不出目标状态时同样立即返回, 但记为失败而不是冲突.
     # 目标路径必须与 execute_organize 同一算法: 模板写死扩展名时, 模板渲染结果与真实目标不同.
     dest = video_dest(paths.video.parent, paths.video.stem, source_path)
     check = await target_state(source_path, dest)
-    if check.state is TargetState.OCCUPIED:
+    if check.state is TargetState.OCCUPIED and not await is_rebuildable_pointer(source_path, dest):
         logger.warning("organize target occupied", source=str(source_path), dest=str(dest))
         return FileOperationsResult(outcome=PlaceOutcome.CONFLICT, conflict_target=dest)
     if check.state is TargetState.UNKNOWN:
