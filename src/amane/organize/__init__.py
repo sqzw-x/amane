@@ -1,5 +1,14 @@
 from ..enums import MoveMode
-from .file import OrganizeResult, PlaceOutcome, TargetCheck, TargetState, execute_organize, target_state, video_dest
+from .file import (
+    OrganizeResult,
+    PlaceOutcome,
+    TargetCheck,
+    TargetState,
+    execute_organize,
+    is_rebuildable_pointer,
+    target_state,
+    video_dest,
+)
 from .link import create_video_link
 from .path_templates import (
     EXTRAFANART_NAME_TEMPLATE_DEFAULT,
@@ -39,6 +48,7 @@ __all__ = [
     "create_video_link",
     "discover_subtitles",
     "execute_organize",
+    "is_rebuildable_pointer",
     "normalize_link_template",
     "normalize_strm_content_template",
     "place_subtitles",

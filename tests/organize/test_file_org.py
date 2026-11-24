@@ -344,6 +344,89 @@ class TestExecuteOrganize:
         assert result.dest.is_symlink()
 
 
+class TestPointerTarget:
+    """源与目标都是 .strm 时按指针重建: 内容不同换掉, 内容相同算已就位."""
+
+    @pytest.mark.parametrize(
+        ("mode", "existing", "expected", "source_kept"),
+        [
+            (MoveMode.COPY, "https://s/old\n", "https://s/new\n", True),
+            (MoveMode.COPY, "https://s/new\n", "https://s/new\n", True),
+            (MoveMode.MOVE, "https://s/old\n", "https://s/new\n", False),
+            (MoveMode.MOVE, "https://s/new\n", "https://s/new\n", False),
+        ],
+    )
+    def test_stale_target_rebuilt(
+        self, tmp_path: Path, mode: MoveMode, existing: str, expected: str, source_kept: bool
+    ):
+        """内容不同则换掉, 相同则视为已就位; 复制保留源, 移动消费源."""
+        src = tmp_path / "src" / "MIDV-123.strm"
+        src.parent.mkdir()
+        src.write_text("https://s/new\n", encoding="utf-8")
+        target_dir = tmp_path / "output"
+        target_dir.mkdir()
+        dest = target_dir / "MIDV-123.strm"
+        dest.write_text(existing, encoding="utf-8")
+
+        result = execute_organize.sync(source=src, target_dir=target_dir, target_stem="MIDV-123", mode=mode)
+
+        assert result.outcome is PlaceOutcome.PLACED
+        assert result.dest == dest
+        assert dest.read_text(encoding="utf-8") == expected
+        assert src.exists() is source_kept
+
+    def test_identical_target_not_rewritten(self, tmp_path: Path):
+        """内容相同时不重写目标, 免得每次整理都刷新 mtime."""
+        src = tmp_path / "src" / "MIDV-123.strm"
+        src.parent.mkdir()
+        src.write_text("https://s/new\n", encoding="utf-8")
+        target_dir = tmp_path / "output"
+        target_dir.mkdir()
+        dest = target_dir / "MIDV-123.strm"
+        dest.write_text("https://s/new\n", encoding="utf-8")
+        inode = dest.stat().st_ino
+
+        execute_organize.sync(source=src, target_dir=target_dir, target_stem="MIDV-123", mode=MoveMode.COPY)
+
+        assert dest.stat().st_ino == inode
+
+    def test_non_pointer_target_is_conflict(self, tmp_path: Path):
+        """目标不是 .strm 时仍按占用处理, 两侧文件都不动."""
+        src = tmp_path / "src" / "MIDV-123.strm"
+        src.parent.mkdir()
+        src.write_text("https://s/new\n", encoding="utf-8")
+        target_dir = tmp_path / "output"
+        target_dir.mkdir()
+        dest = target_dir / "MIDV-123.mp4"
+        dest.write_text("video", encoding="utf-8")
+
+        result = execute_organize.sync(
+            source=src, target_dir=target_dir, target_stem="MIDV-123", mode=MoveMode.COPY, suffix=".mp4"
+        )
+
+        assert result.outcome is PlaceOutcome.CONFLICT
+        assert dest.read_text(encoding="utf-8") == "video"
+        assert src.exists()
+
+    def test_symlink_target_is_conflict(self, tmp_path: Path):
+        """目标是符号链接, 不是上一轮写出的指针产物, 不替换."""
+        src = tmp_path / "src" / "MIDV-123.strm"
+        src.parent.mkdir()
+        src.write_text("https://s/new\n", encoding="utf-8")
+        other = tmp_path / "other.strm"
+        other.write_text("https://s/other\n", encoding="utf-8")
+        target_dir = tmp_path / "output"
+        target_dir.mkdir()
+        dest = target_dir / "MIDV-123.strm"
+        dest.symlink_to(other)
+
+        result = execute_organize.sync(source=src, target_dir=target_dir, target_stem="MIDV-123", mode=MoveMode.COPY)
+
+        assert result.outcome is PlaceOutcome.CONFLICT
+        assert dest.is_symlink()
+        assert other.read_text(encoding="utf-8") == "https://s/other\n"
+
+
 class TestCreateVideoLink:
     def test_strm_writes_target_path(self, tmp_path: Path):
         target = tmp_path / "lib" / "A.mp4"

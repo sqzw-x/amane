@@ -135,6 +135,41 @@ async def test_target_occupied_returns_before_side_effects(resource_store: Resou
 
 
 @pytest.mark.asyncio
+async def test_stale_pointer_target_is_rebuilt(resource_store: ResourceStore, tmp_path: Path):
+    """视频源是 .strm 指针时, 旧目标不算占用: 覆盖内容并照常写附属文件."""
+    client = cast("WebClient", FakeClient())
+
+    src = tmp_path / "src" / "MIDV-123.strm"
+    src.parent.mkdir(parents=True)
+    src.write_text("https://s/new\n", encoding="utf-8")
+
+    paths = _paths(tmp_path / "out")
+    paths.video.parent.mkdir(parents=True)
+    dest = paths.video.with_suffix(".strm")
+    dest.write_text("https://s/old\n", encoding="utf-8")
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(number="MIDV-123", thumb_urls=["https://s/t.jpg"])
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.COPY,
+        resource_store=resource_store,
+        file_info=parse_file_info(src),
+        web_client=client,
+        config=HotSettings(),
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    assert dest.read_text(encoding="utf-8") == "https://s/new\n"
+    assert src.exists()
+    assert paths.thumb.exists()
+    assert paths.nfo.exists()
+
+
+@pytest.mark.asyncio
 async def test_unknown_target_state_returns_before_side_effects(
     resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
