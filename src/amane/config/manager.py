@@ -115,6 +115,7 @@ _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
         SiteName.THEPORNDB,
         SiteName.JAVDB,
         SiteName.FREEJAVBT,
+        SiteName.GAMMA,
     ],
     ContentType.HENTAI: [
         SiteName.GETCHU,

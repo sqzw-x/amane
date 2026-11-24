@@ -18,6 +18,7 @@ class SiteName(StrEnum):
     FC2CLUB = "fc2club"
     FC2PPVDB = "fc2ppvdb"
     FREEJAVBT = "freejavbt"
+    GAMMA = "gamma"
     GETCHU = "getchu"
     GFRIENDS = "gfriends"
     GIGA = "giga"
