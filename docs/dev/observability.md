@@ -76,6 +76,8 @@ Feed 失败记在源的 `last_error`, 不写入站点 outcome 表.
 
 默认脱敏 (`manifest.redacted=true`), 占位符 `***`; HTTP 索引不收录 Cookie / Authorization; 无密钥时不写 `.secrets.hot.json`.
 
+`redact_hot` 按 section 硬编码 (`llm` / `agent` / `media_server` / `network` / `r18` / `scraping.site_config`), 新增携带凭据的 section 或字段必须同步这里, 否则明文进入 `config.hot.json`. 代理与 DSN 是复合值, 走 `redact_proxy` / `redact_dsn` 保留结构只脱凭据: 代理留 `***@` 在 userinfo 位置, DSN 保留用户名, 以便读记录的人看出该字段被改过; 解析失败整体打码. 没有凭据的值原样保留, 不因脱敏多出标记. `tests/observability/test_redact.py` 的标记串与占位符用例覆盖全部任务类型, 漏改会直接失败.
+
 ### 回放 CLI
 
 经 `just repro` (或 `python -m amane.observability`) 回放: 有 `http/` 且未 `--online` 时使用 Offline 模式 (`ReplayWebClient` + `ScrapeHandler`), 否则 Online. v1 仅 `type=scrape`, 只读取 `http/` 与 `task.json`, 不依赖站点结果结构化字段.
