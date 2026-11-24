@@ -1,7 +1,7 @@
 ---
 name: amane-pr
 description: >-
-  Amane PR 规范: 正文组织、跟踪并修复 CI、用 Close/Fix 关联 Issue、squash/rebase
+  Amane PR 规范: 正文组织、后台跟踪 CI、用 Close/Fix 关联 Issue、squash/rebase
   合入并清理、以及 Alembic migration 的 multi-head 处理.
   Use when creating, updating, or merging a pull request, 开 PR, 更新 PR,
   写 PR 正文, 合并 PR, 处理 CI 失败, or when a PR adds an Alembic migration.
@@ -60,17 +60,19 @@ git worktree add ../<repo>-<topic> -b <branch> main
 
 **推送时机**: 不要每提交一次就推一次. 本地先把改动做完, 由用户确认功能或修复已经完全实现之后再推 — 一轮 CI 要几分钟, 逐次推送会把同一套检查反复跑.
 
-推送时按情况压缩本地提交 (按逻辑变更 squash, 保留可分节的粒度), 不要把一个功能的十几次微调原样推上去.
+**只在首次推送前压提交.** 按逻辑变更 squash, 保留可分节的粒度, 不要把一个功能的十几次微调原样推上去.
+
+**已推送的分支不 force push.** 之后只追加新提交, 细碎混乱的提交由合入时的 squash 消除, 不影响 main. 确需重写历史时 (rebase 到新 main、改 migration 的 `down_revision`、堆叠式 PR 重基) 先向用户请求同意.
 
 推送前用 `git diff --stat origin/main...HEAD` 对照正文范围: 出现自己没删过的 `D`, 或没写过的模块被改动, 停下查.
 
-推送之后必须跟踪这一轮 CI, 失败则尝试修复:
+**后台跟踪 CI.** 推送后用后台任务 (`run_in_background`) 跑 `gh pr checks --watch`, 不阻塞等待; 其间继续别的工作, 拿到结果再处理失败:
 
 - CI 失败通常是测试失败造成的, 这里的界定点是: 如果只需要改测试代码则直接操作, 如果要改业务代码就要先报告给用户获得许可.
 - 如果修复需要改动本 PR 的设计方案则需向用户报告.
 - 修完按同样的节奏攒着, 等用户确认后再推, 不逐次推送.
 
-PR 的 CI 通过之后再合入, main 上的那一轮 CI 不需要等待 — 那是同一棵树的重复运行. 改动只涉及文档与注释时, 这一轮 CI 同样不必等待. rebase / force-push 会作废上一轮, 这类改动必须重新等这一轮通过.
+PR 的 CI 通过之后再合入, main 上的那一轮 CI 不需要等待 — 那是同一棵树的重复运行. 改动只涉及文档与注释时, 这一轮 CI 同样不必等待. 重写历史会作废上一轮, 这类改动必须重新等这一轮通过.
 
 ## Issue
 
