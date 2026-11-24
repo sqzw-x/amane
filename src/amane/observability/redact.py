@@ -36,6 +36,9 @@ def needs_secrets_file(hot_dump: dict[str, Any]) -> bool:
     llm = hot_dump.get("llm")
     if isinstance(llm, dict) and llm.get("api_key"):
         return True
+    agent = hot_dump.get("agent")
+    if isinstance(agent, dict) and agent.get("api_key"):
+        return True
     media_server = hot_dump.get("media_server")
     if isinstance(media_server, dict) and media_server.get("api_key"):
         return True
@@ -77,6 +80,8 @@ def redact_hot(data: dict[str, Any]) -> dict[str, Any]:
                     site_cfg["cookie"] = dict.fromkeys(cookie, REDACTION_PLACEHOLDER)
                 if site_cfg.get("api_token"):
                     site_cfg["api_token"] = REDACTION_PLACEHOLDER
+                if site_cfg.get("proxy"):
+                    site_cfg["proxy"] = redact_proxy(str(site_cfg["proxy"]))
 
     llm = out.get("llm")
     if isinstance(llm, dict) and llm.get("api_key"):
@@ -85,6 +90,10 @@ def redact_hot(data: dict[str, Any]) -> dict[str, Any]:
     media_server = out.get("media_server")
     if isinstance(media_server, dict) and media_server.get("api_key"):
         media_server["api_key"] = REDACTION_PLACEHOLDER
+
+    agent = out.get("agent")
+    if isinstance(agent, dict) and agent.get("api_key"):
+        agent["api_key"] = REDACTION_PLACEHOLDER
 
     network = out.get("network")
     if isinstance(network, dict) and network.get("proxy"):
@@ -106,7 +115,8 @@ def redact_hot(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-_SECRET_KEY_PARTS = ("api_key", "apikey", "token", "secret", "password", "cookie", "credential", "dsn")
+# proxy 也在此列: 代理地址带 userinfo 时本身就是凭据.
+_SECRET_KEY_PARTS = ("api_key", "apikey", "token", "secret", "password", "cookie", "credential", "dsn", "proxy")
 
 
 def _is_secret_key(key: object) -> bool:
@@ -135,12 +145,18 @@ def _redact_secret_values(value: object, *, key: object | None = None) -> object
 
 
 def redact_proxy(proxy: str) -> str:
-    """剥离 proxy URL 中的 userinfo, 保留 scheme/host/port/path."""
+    """剥离 proxy URL 的 userinfo 并留占位标记; 解析不出主机的地址整体打码.
+
+    占位符留在 userinfo 位置而非直接删掉: 删掉得到的是另一个合法地址, 读记录的人会以为那就是原配置.
+    没有凭据的地址原样返回, 不因脱敏多出一个空标记.
+    """
     parts = urlsplit(proxy)
-    host = parts.hostname
-    if host is None:
+    if parts.hostname is None:
+        return REDACTION_PLACEHOLDER
+    userinfo, sep, authority = parts.netloc.rpartition("@")
+    if not sep or not userinfo:
         return proxy
-    netloc = host if parts.port is None else f"{host}:{parts.port}"
+    netloc = f"{REDACTION_PLACEHOLDER}@{authority}"
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
