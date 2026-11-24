@@ -15,6 +15,12 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const API_TARGET = `http://localhost:${process.env.AMANE_PORT || "8000"}`;
 
 /**
+ * dev server 的监听地址. 与 Justfile 的 `AMANE_HOST` 同源: 默认只开回环, 需要局域网访问时
+ * 以 `AMANE_HOST=0.0.0.0` 启动, 此时后端与 dev server 同步放开.
+ */
+const DEV_HOST = process.env.AMANE_HOST || "127.0.0.1";
+
+/**
  * 运行期兼容下限, 面向版本落后于构建默认目标的内核 (壳的 WebView 由设备提供, 版本不受本仓库控制).
  *
  * `build.target` 只降语法: 内建方法 (`Array.prototype.toSorted` 等) 不会被降级, 缺失时只能由 polyfill 提供.
@@ -85,6 +91,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: DEV_HOST,
     // 代理目标跟随后端端口 (与 Justfile 的 `port` 同源). 前端代码一律用相对路径,
     // 同源是鉴权的前提: cookie 与 WS 握手都不能跨源, 见 docs/dev/android.md.
     proxy: {
