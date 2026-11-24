@@ -191,8 +191,11 @@ class FeedsRepoMixin(RepositoryMixinBase):
         number: str | None = None,
         published_at: datetime | None = None,
         ignored: bool = False,
+        read: bool = False,
     ) -> FeedItem:
+        """ignored / read 写入对应时间戳, 二者正交."""
         async with self._session() as session:
+            now = datetime.now(UTC)
             item = FeedItem(
                 feed_id=feed_id,
                 item_key=item_key,
@@ -201,7 +204,8 @@ class FeedsRepoMixin(RepositoryMixinBase):
                 description=description,
                 number=number,
                 published_at=published_at,
-                ignored_at=datetime.now(UTC) if ignored else None,
+                ignored_at=now if ignored else None,
+                read_at=now if read else None,
             )
             session.add(item)
             await session.commit()

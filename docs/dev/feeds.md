@@ -16,7 +16,7 @@
 
 `FeedService` (`scheduler/feeds.py`) 每 60s 扫描 `enabled AND (next_fetch_at IS NULL OR <= now)`. `enabled` 只控制是否进入这轮扫描 — 关闭后创建时的立即拉取与 `POST /feeds/{id}/poll` 仍执行. 完成后按该源间隔排列下次; 失败也按间隔重试, 不另做指数退避. `_rebuild()` 只替换 WebClient 引用, 循环不停.
 
-`auto_enqueue` 只决定发现**新**条目且解析出番号时是否入队 SCRAPE (`priority=-1`, 避免一次追赶抢占手动刮削的优先级); 关闭后仍写 `FeedItem`, 定时与立即拉取经由同一 `poll_one` 遵守同一开关. 已见过的 `item_key` 不会在后来打开开关时补入队.
+`auto_enqueue` 只决定发现**新**条目且解析出番号时是否入队 SCRAPE (`priority=-1`, 避免一次追赶抢占手动刮削的优先级); 关闭后仍写 `FeedItem`, 定时与立即拉取经由同一 `poll_one` 遵守同一开关. 已见过的 `item_key` 不会在后来打开开关时补入队. 入队与写入条目同时发生, 入队条目的 `read_at` 在同一步写入 — 自动流程已处理这些条目, 未读角标只统计需要用户阅读的条目; 同番号的其余条目、无番号条目与命中忽略关键词的条目都不入队, 保持未读.
 
 `ignore_keywords` 是每源字面量列表 (大小写不敏感子串, 去空白去重), 只匹配标题与番号不匹配正文; 新条目命中任一关键词则写入 `ignored_at` 且不入队 SCRAPE. 保存该列表时当前未忽略的匹配条目同样写入忽略; 取消忽略后不会在下次拉取自动再忽略同一 `item_key`. 空列表关闭过滤.
 

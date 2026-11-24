@@ -199,13 +199,26 @@ class FeedService:
                     title=entry.title,
                 )
 
-        ignored_keys: set[str] = set()
-        for entry, number in reversed(new_entries):
-            ignored = item_matches_ignore_keywords(
+        # 入队与忽略都是每条目的独立判定, 先算好再写库: 入队的条目直接记为已读.
+        ignored_by_key = {
+            entry.item_key: item_matches_ignore_keywords(
                 feed.ignore_keywords or [],
                 title=entry.title,
                 number=number,
             )
+            for entry, number in new_entries
+        }
+        # item_key → 番号; 只收本 tick 首见的番号, 同一番号的多条只入队第一条.
+        enqueue_numbers: dict[str, str] = {}
+        if feed.auto_enqueue:
+            seen_numbers: set[str] = set()
+            for entry, number in new_entries:
+                if number is None or number in seen_numbers or ignored_by_key[entry.item_key]:
+                    continue
+                seen_numbers.add(number)
+                enqueue_numbers[entry.item_key] = number
+
+        for entry, number in reversed(new_entries):
             await self._repo.create_feed_item(
                 feed_id,
                 entry.item_key,
@@ -214,24 +227,17 @@ class FeedService:
                 description=entry.description,
                 number=number,
                 published_at=entry.published_at,
-                ignored=ignored,
+                ignored=ignored_by_key[entry.item_key],
+                # 已入队的条目无需再阅读, 直接记为已读, 免得未读角标被自动流程产生的条目撑满.
+                read=entry.item_key in enqueue_numbers,
             )
-            if ignored:
-                ignored_keys.add(entry.item_key)
 
-        enqueued_numbers: set[str] = set()
-        enqueued = 0
-        if feed.auto_enqueue:
-            for _entry, number in new_entries:
-                if number is None or number in enqueued_numbers or _entry.item_key in ignored_keys:
-                    continue
-                enqueued_numbers.add(number)
-                await self._repo.create_task(
-                    task_type=TaskType.SCRAPE,
-                    payload=build_feed_scrape_payload(feed, number),
-                    priority=_SCRAPE_PRIORITY,
-                )
-                enqueued += 1
+        for number in enqueue_numbers.values():
+            await self._repo.create_task(
+                task_type=TaskType.SCRAPE,
+                payload=build_feed_scrape_payload(feed, number),
+                priority=_SCRAPE_PRIORITY,
+            )
 
         await self._repo.backfill_feed_item_snapshots(
             feed_id, descriptions=description_backfill, published_at=published_backfill
@@ -245,9 +251,9 @@ class FeedService:
             last_error=None,
             last_fetched_at=now,
             next_fetch_at=next_fetch,
-            last_enqueued=enqueued,
+            last_enqueued=len(enqueue_numbers),
             etag=etag if isinstance(etag, str) else feed.etag,
             last_modified=last_modified if isinstance(last_modified, str) else feed.last_modified,
             name=title if title is not None else feed.name,
         )
-        logger.info("feed polled", feed_id=feed_id, url=feed.url, entries=len(entries), enqueued=enqueued)
+        logger.info("feed polled", feed_id=feed_id, url=feed.url, entries=len(entries), enqueued=len(enqueue_numbers))

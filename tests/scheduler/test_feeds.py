@@ -251,6 +251,51 @@ async def test_poll_enqueues_unique_numbers(repo: Repository):
 
 
 @pytest.mark.asyncio
+async def test_poll_marks_enqueued_items_read(repo: Repository):
+    feed = await repo.create_feed(name="t", url="https://example.com/rss.xml")
+    assert feed.id is not None
+    await _service(repo, FakeWeb(FakeResp(200, RSS_TWO_ITEMS))).poll_one(feed.id)
+
+    rows, _ = await repo.list_feed_items(feed.id, state="all")
+    by_key = {item.item_key: item for item, _ in rows}
+    # 同番号的两条里第二条不入队, 仍留给用户阅读.
+    assert by_key["g-midv"].read_at is not None
+    assert by_key["g-dup"].read_at is None
+    # 无番号不入队, 也不算已读.
+    assert by_key["g-none"].read_at is None
+    unread = await repo.count_unread_feed_items(feed.id)
+    assert unread[feed.id] == 2
+
+
+@pytest.mark.asyncio
+async def test_poll_keeps_all_items_unread_without_auto_enqueue(repo: Repository):
+    feed = await repo.create_feed(name="t", url="https://example.com/rss.xml", auto_enqueue=False)
+    assert feed.id is not None
+    await _service(repo, FakeWeb(FakeResp(200, RSS_TWO_ITEMS))).poll_one(feed.id)
+
+    rows, _ = await repo.list_feed_items(feed.id, state="all")
+    assert all(item.read_at is None for item, _ in rows)
+    assert (await repo.count_unread_feed_items(feed.id))[feed.id] == 3
+
+
+@pytest.mark.asyncio
+async def test_poll_keeps_ignored_duplicate_unread(repo: Repository):
+    feed = await repo.create_feed(
+        name="t",
+        url="https://example.com/rss.xml",
+        ignore_keywords=["again"],
+    )
+    assert feed.id is not None
+    await _service(repo, FakeWeb(FakeResp(200, RSS_TWO_ITEMS))).poll_one(feed.id)
+
+    rows, _ = await repo.list_feed_items(feed.id, state="all")
+    by_key = {item.item_key: item for item, _ in rows}
+    assert by_key["g-midv"].read_at is not None
+    assert by_key["g-dup"].ignored_at is not None
+    assert by_key["g-dup"].read_at is None
+
+
+@pytest.mark.asyncio
 async def test_poll_ignores_keyword_matches_and_skips_enqueue(repo: Repository):
     feed = await repo.create_feed(
         name="t",
